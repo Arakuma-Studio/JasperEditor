@@ -259,11 +259,14 @@ export class AudioService {
 				scope.type !== 'range'
 			)
 				range = { start: req.activity.startFrame, end: req.activity.endFrame };
+			// the whole sequence: also the export's converged delivery for the target (the preview plays its gain)
+			const deliveryTarget = scope.type === 'sequence' && range === planned.range ? this.deliveryTarget(planned, req) : null;
 			mix = await renderMixdown({
 				...base,
 				range,
 				...(scope.type === 'tracks' ? { onlyTracks: new Set(this.trackIds(planned, scope.trackIds)) } : {}),
 				...(env ? { onBlock: (p: Float32Array[], n: number) => env.push(p, n) } : {}),
+				...(deliveryTarget ? { normalize: deliveryTarget } : {}),
 				onProgress: (f, stage) => ctx.progress(f * 0.95, { stage }),
 			});
 		}
@@ -286,14 +289,42 @@ export class AudioService {
 				]),
 			};
 		}
+		const n = mix.normalized;
+		const fin = (x: number) => Number.isFinite(x);
+		const r3 = (x: number) => Math.round(x * 1000) / 1000;
 		return {
 			sampleRate: sr,
 			range: { startFrame: range.start, endFrame: range.end },
-			loudness: measureOf(mix.loudness, mix.samples / sr),
+			// the mix as it plays, before the normalisation
+			loudness: measureOf(n?.before ?? mix.loudness, mix.samples / sr),
 			...(scope.type === 'clips' ? { clips } : {}),
 			...(activity ? { activity } : {}),
 			mixHash: mixFingerprint(planned.document, planned.sequenceId),
+			...(n && fin(n.delivery.params.gainDb)
+				? {
+						delivery: {
+							targetLufs: n.targetLufs,
+							truePeakDbtp: n.truePeakDb,
+							gainDb: r3(n.delivery.params.gainDb),
+							limiterCeilingDbtp: n.delivery.params.ceilingDb,
+							passes: n.delivery.passes,
+							ceilingLimited: n.delivery.ceilingLimited,
+							deliveredLufs: fin(n.delivery.pcm.integrated) ? r3(n.delivery.pcm.integrated) : null,
+						},
+					}
+				: {}),
 		};
+	}
+
+	/** The target of an analysis's delivery: the request's, else the sequence's Mix normalisation when it is on. */
+	private deliveryTarget(
+		planned: PlannedExport,
+		req: AudioAnalyzeRequest,
+	): { targetLufs: number; truePeakDb: number } | null {
+		if (req.delivery === null) return null;
+		if (req.delivery) return { targetLufs: req.delivery.targetLufs, truePeakDb: req.delivery.truePeakDb };
+		const l = planned.document.sequences[planned.sequenceId]?.master.loudness;
+		return l?.enabled ? { targetLufs: l.targetLufs, truePeakDb: l.truePeakDb } : null;
 	}
 
 	private trackIds(planned: PlannedExport, refs: string[]): string[] {

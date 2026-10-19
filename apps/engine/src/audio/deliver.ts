@@ -396,6 +396,15 @@ export type DeliveryOutcome = {
 	timings: { passesMs: number; encodeMs: number; decodeMs: number };
 };
 
+/** A loudness convergence: the parameters, the PCM loudness, whether the ceiling took the push, its passes. */
+type Converged = {
+	params: DeliveryParams;
+	pcm: LoudnessSummary;
+	limited: boolean;
+	/** Gain and integrated loudness of each pass at these parameters' ceiling and correction. */
+	points: { g: number; i: number }[];
+};
+
 /** A solved delivery remembered by `DELIVERY_CACHE`. */
 type CachedDelivery = { params: DeliveryParams; aim: number; limited: boolean };
 
@@ -553,11 +562,13 @@ export async function solveDelivery(o: {
 		start: DeliveryParams,
 		aim: number,
 		writeFirst: boolean,
-	): Promise<{ params: DeliveryParams; pcm: LoudnessSummary; limited: boolean }> => {
+	): Promise<Converged> => {
 		let p = start;
 		let s = await measure(p, writeFirst);
+		const points: { g: number; i: number }[] = [];
 		if (!Number.isFinite(s.integrated) || !Number.isFinite(o.before.integrated))
-			return { params: p, pcm: s, limited: false };
+			return { params: p, pcm: s, limited: false, points };
+		points.push({ g: p.gainDb, i: s.integrated });
 		let best = { params: p, pcm: s };
 		let prev: { g: number; i: number } | null = null;
 		let limited = false;
@@ -589,22 +600,41 @@ export async function solveDelivery(o: {
 				'Matching loudness under the true-peak ceiling',
 			);
 			s = await measure(p, false);
+			if (Number.isFinite(s.integrated)) points.push({ g: p.gainDb, i: s.integrated });
 			if (Math.abs(aim - s.integrated) < Math.abs(aim - best.pcm.integrated)) best = { params: p, pcm: s };
 		}
 		if (!limited && Math.abs(aim - best.pcm.integrated) > 0.5) limited = aim > best.pcm.integrated;
-		return { params: best.params, pcm: best.pcm, limited };
+		return { params: best.params, pcm: best.pcm, limited, points };
+	};
+
+	/**
+	 * The gain that lands `aim` at a lower ceiling `ceil`, from the loudness measured at the base ceiling (`points`): the
+	 * limiter is scale-invariant (limiting `g·x` at `c` is `c` × limiting `(g − c)·x` at 0 dBFS, corrections included),
+	 * so every pass is a point on one curve F(push = g − c) = I − c, and the gain at `ceil` follows from F by secant
+	 * inter/extrapolation (slope 1 with one point).
+	 */
+	const gainAtCeiling = (pts: readonly { p: number; f: number }[], ceil: number, aimAt: number): number => {
+		const want = aimAt - ceil;
+		const sorted = [...pts].sort((a, b) => Math.abs(a.f - want) - Math.abs(b.f - want));
+		const a = sorted[0]!;
+		const b = sorted.find((x) => Math.abs(x.p - a.p) > 1e-6);
+		let slope = b ? (a.f - b.f) / (a.p - b.p) : 1;
+		if (!Number.isFinite(slope)) slope = 1;
+		slope = Math.min(1, Math.max(L.minSlope, slope));
+		const push = Math.min(initialGainDb + L.maxPushDb - ceil, a.p + (want - a.f) / slope);
+		return push + ceil;
 	};
 
 	const clampAim = (a: number) =>
 		Math.max(target - L.maxLoudnessOffsetLu, Math.min(target + L.maxLoudnessOffsetLu, a));
 	// a lossy codec decodes a little quieter than its input: the PCM aim starts over the target by its typical loss
 	let aim = clampAim(target + (verify && o.codec ? codecLoudnessLossLu(o.codec) : 0));
-	let r: { params: DeliveryParams; pcm: LoudnessSummary; limited: boolean };
+	let r: Converged;
 	if (hit) {
 		// the same mix delivered before to this target and codec: start from its parameters (one pass)
 		params = copyParams(hit.params);
 		aim = hit.aim;
-		r = { params, pcm: await measure(params, true), limited: hit.limited };
+		r = { params, pcm: await measure(params, true), limited: hit.limited, points: [] };
 	} else {
 		r = await converge(params, aim, true);
 		params = r.params;
@@ -701,15 +731,34 @@ export async function solveDelivery(o: {
 			tag: string,
 		): Promise<Cand[]> => {
 			const out: Cand[] = [];
+			// the base's passes as points on the scale-free loudness curve (see gainAtCeiling)
+			const pts = base.points.map((x) => ({ p: x.g - ceiling, f: x.i - ceiling }));
+			if (Number.isFinite(base.pcm.integrated))
+				pts.push({ p: base.params.gainDb - ceiling, f: base.pcm.integrated - ceiling });
+			if (!pts.length) return out;
 			for (const [n, step] of DELIVERY_CEILING_STEPS_DB.entries()) {
 				if (out.length + 1 >= parallel || encodePasses >= L.maxEncodePasses) break;
 				const ceil = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - step);
 				if (!(ceil < ceiling) || !(base.pcm.truePeakDb > ceil + 0.01)) continue;
-				const ra = await converge(withCorrection(base.params, raw, ceil), aimAt, false);
 				const wav = `${outPath}.alt-${tag}-${n}.wav`;
 				made.push(wav);
-				const pcm = await measure(ra.params, true, wav);
-				out.push(start({ params: ra.params, r: { ...ra, pcm }, raw, ceiling: ceil, aim: aimAt, wav }, `${tag}${'bcd'[n]}`));
+				// one written pass at the predicted gain; a second (secant on the curve) when it misses the aim
+				let p = withCorrection({ ...base.params, gainDb: gainAtCeiling(pts, ceil, aimAt) }, raw, ceil);
+				let pcm = await measure(p, true, wav);
+				if (Number.isFinite(pcm.integrated)) {
+					pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
+					if (Math.abs(aimAt - pcm.integrated) > L.loudnessTolLu) {
+						p = { ...p, gainDb: gainAtCeiling(pts, ceil, aimAt) };
+						pcm = await measure(p, true, wav);
+						if (Number.isFinite(pcm.integrated)) pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
+					}
+				}
+				out.push(
+					start(
+						{ params: p, r: { params: p, pcm, limited: base.limited, points: [] }, raw, ceiling: ceil, aim: aimAt, wav },
+						`${tag}${'bcd'[n]}`,
+					),
+				);
 			}
 			return out;
 		};

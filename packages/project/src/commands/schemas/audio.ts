@@ -4,7 +4,7 @@ import {
 	AudioChannelFormatSchema,
 	AutomationModeSchema,
 	InputMapSchema,
-	LoudnessAnalysisSchema,
+	LoudnessAnalysisCommandSchema,
 } from '../../schema/audio.ts';
 import { AnimNumberSchema } from '../../schema/common.ts';
 import { cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
@@ -176,7 +176,7 @@ export const MixerSetLoudnessCmd = cmd('mixer.setLoudness', {
 	enabled: z.boolean().optional(),
 	targetLufs: z.number().min(-60).max(0).optional(),
 	truePeakDb: z.number().min(-20).max(0).optional(),
-	analysis: LoudnessAnalysisSchema.nullable().optional(),
+	analysis: LoudnessAnalysisCommandSchema.nullable().optional(),
 });
 
 export const AUDIO_COMMANDS = [

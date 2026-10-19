@@ -53,6 +53,7 @@ import {
 	SOUND_DESIGN_FEATURE,
 	type SoundDelivery,
 	sequenceDuration,
+	soundDesignSettingsOf,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
 import { renderMixdown } from '../audio/mixdown.ts';
@@ -271,6 +272,8 @@ async function mixLoudness(
 	range: { start: number; end: number },
 	clipIds: ReadonlySet<string> | null,
 	deps: DeliveryMeasureDeps,
+	/** Also solve the export's converged delivery of this mix for the target (PCM path; `deliveryOf`). */
+	normalize?: { targetLufs: number; truePeakDb: number } | null,
 ) {
 	const sr = world.snapshot.audioMix?.sampleRate ?? world.snapshot.settings.sampleRate;
 	const hop = Math.max(1, Math.round(sr * HOP_SEC));
@@ -281,6 +284,7 @@ async function mixLoudness(
 		...base(world, deps),
 		range,
 		...(clipIds ? { onlyClips: clipIds, skipSilentStrips: true } : {}),
+		...(normalize ? { normalize } : {}),
 		// one meter: this one (the mixdown's own would measure the same samples again)
 		meter: false,
 		onBlock: (planar, n) => {
@@ -297,7 +301,31 @@ async function mixLoudness(
 	});
 	const m = (meter ?? new LoudnessMeter(sr, Math.max(1, r.channels))) as LoudnessMeter;
 	m.flush();
-	return { summary: m.summary(), momentary: mom };
+	return { summary: m.summary(), momentary: mom, delivery: r.normalized ? deliveryOf(r.normalized) : null };
+}
+
+/** The stored analysis's `delivery` (LoudnessDeliverySchema) of a solved normalisation. */
+function deliveryOf(n: NonNullable<Awaited<ReturnType<typeof renderMixdown>>['normalized']>): Cmd | null {
+	const d = n.delivery;
+	if (!fin(d.params.gainDb)) return null;
+	return {
+		targetLufs: n.targetLufs,
+		truePeakDbtp: n.truePeakDb,
+		gainDb: r3(d.params.gainDb),
+		limiterCeilingDbtp: d.params.ceilingDb,
+		passes: d.passes,
+		ceilingLimited: d.ceilingLimited,
+		deliveredLufs: fin(d.pcm.integrated) ? r3(d.pcm.integrated) : null,
+	};
+}
+
+/** The Mix normalisation target of `doc`'s sequence: its own when on, else its delivery preset's. */
+function normalizeTargetOf(doc: ProjectDocument, seqId: string): { targetLufs: number; truePeakDb: number } {
+	const seq = doc.sequences[seqId] as Sequence;
+	const l = seq.master.loudness;
+	if (l?.enabled) return { targetLufs: l.targetLufs, truePeakDb: l.truePeakDb };
+	const p = deliveryPreset(soundDesignSettingsOf(seq).delivery);
+	return { targetLufs: p.integratedLufs, truePeakDb: p.truePeakDb };
 }
 
 /**
@@ -314,16 +342,28 @@ export async function mixAnalysis(
 	const range = { start: 0, end: Math.max(1, Math.ceil(sequenceDuration(seq))) };
 	const cache = deps.cache ?? measureCache;
 	const key = wholeMixKey(world, range);
+	// with the export's converged delivery for the Mix target (the preview plays its gain, not target − measured)
+	const target = normalizeTargetOf(doc, seqId);
+	const dkey = `${key}|deliver:${target.targetLufs}/${target.truePeakDb}`;
 	let s = cache.getMix(key);
-	if (!s) {
-		s = (await mixLoudness(world, range, null, deps as DeliveryMeasureDeps)).summary;
+	let delivery = cache.getMixDelivery(dkey);
+	if (!s || delivery === undefined) {
+		const m = await mixLoudness(world, range, null, deps as DeliveryMeasureDeps, target);
+		s = m.summary;
+		delivery = m.delivery;
 		cache.putMix(key, s);
+		cache.putMixDelivery(dkey, delivery);
 	}
-	return analysisOf(s, doc, seqId);
+	return analysisOf(s, doc, seqId, delivery);
 }
 
 /** A stored loudness analysis of a measured mix (`mixer.setLoudness` / `soundDesign.applyDelivery` `analysis`). */
-function analysisOf(s: LoudnessSummary, doc: ProjectDocument, seqId: string): Cmd | null {
+function analysisOf(
+	s: LoudnessSummary,
+	doc: ProjectDocument,
+	seqId: string,
+	delivery?: Cmd | null,
+): Cmd | null {
 	if (!fin(s.integrated)) return null;
 	return {
 		integratedLufs: r3(s.integrated),
@@ -333,6 +373,7 @@ function analysisOf(s: LoudnessSummary, doc: ProjectDocument, seqId: string): Cm
 		maxShortTermLufs: fin(s.maxShortTerm) ? r3(s.maxShortTerm) : null,
 		mixHash: mixFingerprint(doc, seqId),
 		analyzedAt: new Date().toISOString(),
+		...(delivery ? { delivery } : {}),
 	};
 }
 
@@ -376,7 +417,14 @@ async function measureResult(
 	const seq = doc.sequences[seqId] as Sequence;
 	const range = { start: 0, end: Math.max(1, Math.ceil(sequenceDuration(seq))) };
 	const preset = deliveryPreset(delivery);
-	const all = await mixLoudness(world, range, null, deps);
+	// with loudness on, the stored analysis carries the export's converged delivery for the preset's target
+	const all = await mixLoudness(
+		world,
+		range,
+		null,
+		deps,
+		loudnessOn ? { targetLufs: preset.integratedLufs, truePeakDb: preset.truePeakDb } : null,
+	);
 	const types = clipsByType(seq, world);
 	const integ = all.summary.integrated;
 	const tp = all.summary.truePeakDb;
@@ -409,7 +457,7 @@ async function measureResult(
 		musicUnderVoiceLu: musicUnder,
 		ambienceUnderVoiceLu: ambienceUnder,
 	};
-	return { measure, analysis: analysisOf(all.summary, doc, seqId) };
+	return { measure, analysis: analysisOf(all.summary, doc, seqId, all.delivery) };
 }
 
 /**

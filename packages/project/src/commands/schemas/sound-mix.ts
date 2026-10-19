@@ -3,7 +3,7 @@
 // Every one is made of ordinary edits (volume / lane keyframes, a filter insert, a submix with a reverb, sends,
 // `mixer.setLoudness`, Essential Sound Auto-Match and ducking) and is one undo step.
 import { z } from 'zod';
-import { LoudnessAnalysisSchema } from '../../schema/audio.ts';
+import { LoudnessAnalysisCommandSchema } from '../../schema/audio.ts';
 import { SOUND_DELIVERIES, SOUND_MIX_LIMITS } from '../../schema/sound.ts';
 import { cmd, IdListSchema, IdRefSchema, TrackRefSchema } from './common.ts';
 
@@ -113,7 +113,7 @@ export const SoundDesignApplyDeliveryCmd = cmd('soundDesign.applyDelivery', {
 	delivery: z.enum(SOUND_DELIVERIES),
 	/** Loudness normalisation of the Mix (default true). */
 	loudness: z.boolean().optional(),
-	analysis: LoudnessAnalysisSchema.nullable().optional(),
+	analysis: LoudnessAnalysisCommandSchema.nullable().optional(),
 	measuredLufs: z
 		.record(z.string().min(1).max(128), z.number().min(-200).max(50).nullable())
 		.refine(

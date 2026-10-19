@@ -62,7 +62,7 @@ function resultOf<T>(job: EngineJob): T {
 export async function analyze(
 	ctx: ToolContext,
 	projectId: string,
-	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity'>,
+	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity' | 'delivery'>,
 ): Promise<AudioAnalyzeResult> {
 	const { doc, revision } = await loadDoc(ctx, projectId);
 	const job = await ctx.engine((c) =>
@@ -196,6 +196,8 @@ export function registerAudioTools(ctx: ToolContext): void {
 				sequenceId: seq.id,
 				scope: s,
 				...(levels ? { levels } : {}),
+				// a measurement: the export's converged delivery is solved by set_loudness_normalization
+				delivery: null,
 			});
 			return jsonResult({ ...r, stale: false });
 		},
@@ -549,7 +551,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 		{
 			title: 'Set loudness normalization',
 			description:
-				'Normalises the Mix of a sequence to a target loudness with a true-peak limit: heard in the preview (gain target − measured + a look-ahead true-peak limiter) and applied two-pass on every export. analyze: true (default) measures the current mix now and stores it for the preview.',
+				'Normalises the Mix of a sequence to a target loudness with a true-peak limit: applied two-pass on every export (the gain converged under the look-ahead true-peak limiter) and heard in the preview with the same gain and limiter ceiling. analyze: true (default) measures the current mix now and stores it for the preview with the export\'s converged delivery for this target (analysis.delivery {gainDb, limiterCeilingDbtp, passes, ceilingLimited, deliveredLufs}); without it (or after changing the target) the preview plays the one-pass gain target − measured, up to ≈ 1 dB under the export on a heavily limited mix.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -565,7 +567,16 @@ export function registerAudioTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, sequenceId);
 			let analysis: Record<string, unknown> | undefined;
 			if (doAnalyze !== false) {
-				const r = await analyze(ctx, projectId, { sequenceId: seq.id, scope: { type: 'sequence' } });
+				// the export's converged delivery for the target being set (the preview plays its gain)
+				const cur = seq.master.loudness;
+				const r = await analyze(ctx, projectId, {
+					sequenceId: seq.id,
+					scope: { type: 'sequence' },
+					delivery: {
+						targetLufs: targetLufs ?? cur?.targetLufs ?? -23,
+						truePeakDb: truePeakDb ?? cur?.truePeakDb ?? -1,
+					},
+				});
 				analysis = {
 					integratedLufs: r.loudness.integratedLufs,
 					truePeakDbtp: r.loudness.truePeakDbtp,
@@ -574,6 +585,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 					maxShortTermLufs: r.loudness.maxShortTermLufs,
 					mixHash: r.mixHash,
 					analyzedAt: new Date().toISOString(),
+					...(r.delivery ? { delivery: r.delivery } : {}),
 				};
 			}
 			const body = await apply(

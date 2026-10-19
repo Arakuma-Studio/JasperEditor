@@ -946,7 +946,9 @@ export async function checkSequence(
 	const meters: Partial<Record<Stem, CurveMeter>> = {};
 	for (const s of STEMS) if (stemIds[s].size > 0) meters[s] = new CurveMeter(sr, channels);
 	const mixMeter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
-	const pass1 = normalize ? join(env.scratchDir, 'check-pass1.f32') : null;
+	// pass 1 of the delivery (with normalisation); without it, of the whole sequence too: a loudness fix then stores the
+	// export's converged delivery with its analysis (the preview plays the export's gain)
+	const pass1 = normalize || whole ? join(env.scratchDir, 'check-pass1.f32') : null;
 	const fh = pass1 ? await open(pass1, 'w') : null;
 	// the content of the mix: the export of the same mix starts from this delivery (deliver.ts DELIVERY_CACHE)
 	const pass1Hash = fh ? createHash('sha256') : null;
@@ -1005,7 +1007,8 @@ export async function checkSequence(
 					if (b <= a) return;
 					const off = a - at;
 					mixMeter.process(planar, off, b - a);
-					if (!fh) {
+					// without normalisation this pass is the delivered mix (with it, the delivery pass below is)
+					if (!normalize) {
 						const view = planar.map((c) => c.subarray(off, off + (b - a)));
 						tap.push(view, b - a);
 						profileMeter?.push(view, b - a);
@@ -1114,6 +1117,51 @@ export async function checkSequence(
 			await rm(pass1, { force: true });
 		}
 	}
+	// without normalisation: the converged delivery a loudness fix stores with its analysis (`analysis.delivery`), solved
+	// only when the check will offer one (the mix is off the target or over the ceiling)
+	let fixDelivery: Record<string, unknown> | null = null;
+	if (!normalize && pass1) {
+		try {
+			const off =
+				fin(before.integrated) &&
+				(Math.abs(before.integrated - preset.integratedLufs) > SOUND_CHECK_THRESHOLDS.loudnessToleranceLu ||
+					before.truePeakDb > preset.truePeakDb + SOUND_CHECK_THRESHOLDS.truePeakToleranceDb);
+			if (whole && off) {
+				aborted();
+				const d = await solveDelivery({
+					ff: env.ff,
+					pass1: { path: pass1, headerBytes: 0 },
+					sampleRate: sr,
+					channels,
+					total: rangeSamples,
+					before,
+					targetLufs: preset.integratedLufs,
+					truePeakDb: preset.truePeakDb,
+					codec: null,
+					soxr: await hasSoxr(env.ff),
+					scratchDir: env.scratchDir,
+					contentHash: pass1Hash?.digest('hex'),
+					signal: env.signal,
+				});
+				if (fin(d.params.gainDb))
+					fixDelivery = {
+						targetLufs: preset.integratedLufs,
+						truePeakDbtp: preset.truePeakDb,
+						gainDb: r3(d.params.gainDb),
+						limiterCeilingDbtp: d.params.ceilingDb,
+						passes: d.passes,
+						ceilingLimited: d.ceilingLimited,
+						deliveredLufs: fin(d.pcm.integrated) ? r3(d.pcm.integrated) : null,
+					};
+			}
+		} catch (e) {
+			if (env.signal?.aborted || (e as Error).message === 'aborted')
+				throw new JobError('CANCELLED', 'Cancelled', false);
+			throw e;
+		} finally {
+			await rm(pass1, { force: true });
+		}
+	}
 	lap('delivery', t);
 	// curves over the range: index 0 = rangeStart
 	const crop = (c: Float32Array, off: number) => c.subarray(off, off + rangeHops);
@@ -1183,6 +1231,7 @@ export async function checkSequence(
 					maxShortTermLufs: fin(before.maxShortTerm) ? r3(before.maxShortTerm) : null,
 					mixHash: mixFingerprint(doc, seq.id),
 					analyzedAt: new Date().toISOString(),
+					...(fixDelivery ? { delivery: fixDelivery } : {}),
 				}
 			: null;
 	const loudnessFix = (why: SoundCheckMessage): SoundCheckFix | undefined => {

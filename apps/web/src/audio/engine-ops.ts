@@ -12,6 +12,7 @@ import {
 	type MediaAsset,
 	mixFingerprint,
 	type ProjectDocument,
+	readLoudnessDelivery,
 	type Sequence,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -27,7 +28,7 @@ function resultOf<T>(job: EngineJob): T {
 export async function analyzeAudio(
 	session: EditorSession,
 	engine: EngineClient,
-	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity'>,
+	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity' | 'delivery'>,
 ): Promise<AudioAnalyzeResult> {
 	const body: AudioAnalyzeRequest = {
 		...req,
@@ -38,13 +39,20 @@ export async function analyzeAudio(
 	return resultOf<AudioAnalyzeResult>(job);
 }
 
-/** Analyses the sequence's mix and stores the result as the Mix's loudness analysis (one undo step). */
+/**
+ * Analyses the sequence's mix and stores the result as the Mix's loudness analysis (one undo step), with the export's
+ * converged delivery for `target` (default the Mix's own target): the Program monitor then plays the gain the export
+ * lands the target with under the true-peak limiter, not the one-pass `target − measured`.
+ */
 export async function analyzeSequenceLoudness(
 	session: EditorSession,
 	engine: EngineClient,
 	sequenceId: string,
+	target?: { targetLufs: number; truePeakDb: number },
 ): Promise<AudioAnalyzeResult> {
-	const r = await analyzeAudio(session, engine, { sequenceId, scope: { type: 'sequence' } });
+	const cur = (session.getCommitted().sequences[sequenceId] as Sequence | undefined)?.master.loudness;
+	const delivery = target ?? (cur ? { targetLufs: cur.targetLufs, truePeakDb: cur.truePeakDb } : null);
+	const r = await analyzeAudio(session, engine, { sequenceId, scope: { type: 'sequence' }, delivery });
 	const l = r.loudness;
 	const res = session.apply({
 		label: 'Analyze Loudness',
@@ -61,12 +69,35 @@ export async function analyzeSequenceLoudness(
 					maxShortTermLufs: l.maxShortTermLufs,
 					mixHash: r.mixHash,
 					analyzedAt: new Date().toISOString(),
+					...(r.delivery ? { delivery: r.delivery } : {}),
 				},
 			},
 		],
 	});
 	if (!res.ok) throw new Error(res.errors[0]?.message ?? 'The loudness analysis could not be stored');
 	return r;
+}
+
+/**
+ * The gain the preview plays for a target: the stored analysis's converged delivery when it was solved for this
+ * target and ceiling (`converged: true`), else the one-pass `target − measured`. Null without a measurement.
+ */
+export function previewLoudnessGain(
+	analysis: { integratedLufs: number | null; delivery?: unknown } | null | undefined,
+	targetLufs: number,
+	truePeakDb: number,
+): { gainDb: number; converged: boolean; passes?: number; ceilingLimited?: boolean } | null {
+	const i = analysis?.integratedLufs;
+	if (i === null || i === undefined || !Number.isFinite(i)) return null;
+	const d = readLoudnessDelivery(analysis?.delivery);
+	if (d && Math.abs(d.targetLufs - targetLufs) < 1e-6 && Math.abs(d.truePeakDbtp - truePeakDb) < 1e-6)
+		return {
+			gainDb: d.gainDb,
+			converged: true,
+			passes: d.passes,
+			...(d.ceilingLimited ? { ceilingLimited: true } : {}),
+		};
+	return { gainDb: targetLufs - i, converged: false };
 }
 
 /** Whether the stored analysis of a sequence still matches its mix. */

@@ -5,7 +5,7 @@
 // deliverable after encoding (`deliver.ts`). Output: a float32 WAV (WAVE_FORMAT_EXTENSIBLE) that every export path
 // muxes as the deliverable's audio.
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { open, rm } from 'node:fs/promises';
 import { endianness } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +59,8 @@ export type MixdownOptions = {
 	 * rate and the encoded audio is decoded and checked against the true-peak target (`deliver.ts`).
 	 */
 	deliver?: DeliveryCodec | null;
+	/** Encodes of the decoded check run at once (`deliver.ts`; the job's CPU slots, default 3). */
+	parallel?: number;
 	scratchDir: string;
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
@@ -224,8 +226,12 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		o.meter === false && !keep && !solveOnly
 			? null
 			: new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
-	const pass1 =
-		keep || solveOnly ? join(o.scratchDir, o.normalize ? 'mix-pass1.wav' : 'mix.wav') : null;
+	// (a measure-only render may share its scratch directory: its pass 1 gets a name of its own)
+	const pass1 = keep
+		? join(o.scratchDir, o.normalize ? 'mix-pass1.wav' : 'mix.wav')
+		: solveOnly
+			? join(o.scratchDir, `mix-pass1-${randomUUID()}.wav`)
+			: null;
 	const fh = pass1 ? await open(pass1, 'w') : null;
 	// the content of the mix (the solved delivery is remembered by it: deliver.ts DELIVERY_CACHE)
 	const hash = o.normalize ? createHash('sha256') : null;
@@ -323,6 +329,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			write,
 			outPath: out,
 			contentHash,
+			...(o.parallel ? { parallel: o.parallel } : {}),
 			signal: o.signal,
 			...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
 			onProgress: (f, stage) => o.onProgress?.(0.9 + f * 0.1, stage),
