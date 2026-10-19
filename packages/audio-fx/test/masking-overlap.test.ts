@@ -318,6 +318,8 @@ const arbEvents = fc
 		),
 	);
 const ceilingArb = fc.double({ min: -12, max: 0, noNaN: true });
+/** A time (s) rounded to the 48 kHz sample grid. */
+const onSampleGrid = (sec: number): number => Math.round(sec * 48_000) / 48_000;
 
 /** Largest summed true peak (dBTP) of measured events active together, at the solved gains (interval cliques). */
 function worstOverlapDb(events: SolverEvent[], r: SolverResult, unexplained: boolean): number {
@@ -382,8 +384,15 @@ describe('properties', () => {
 				fc.array(prof, { minLength: 12, maxLength: 12 }),
 				ceilingArb,
 				(raw, profs, ceiling) => {
+					// on the sample grid, as every timeline time is: with arbitrary doubles fast-check also made events of
+					// 1e-223 s at 1.5e-208 s, whose 32 profile slices round onto one or two representable instants, so the
+					// solver's slice boundaries and this oracle's slice midpoints disagree about which slice plays when
+					// (≈ 1 seed in 40 failed by 0.25–2.5 dB that way, and shrinking such a case once held a gate run for
+					// over 30 minutes; Final verification A). Sub-sample events are never measured: a clip lasts ≥ 1 frame.
 					const events = raw.map((e, i) => ({
 						...e,
+						startSec: onSampleGrid(e.startSec),
+						endSec: onSampleGrid(e.startSec) + onSampleGrid(e.endSec - e.startSec),
 						soundId: `u${i}`,
 						type: `t${i}`,
 						peakProfileDb: profs[i]!,
