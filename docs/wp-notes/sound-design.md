@@ -10594,3 +10594,53 @@ The guarantee is unchanged: the delivered stream is an encode whose decoded true
   choosing Opus 160 kb/s: "Stale: the export encoding to check for changed since this check"
   (`03-sound-check-stale-opus.png`). `e2e/sound-design.spec.ts` (the user walkthrough with its measured AAC export)
   passes on this branch: the file −14.0 LUFS / −1.4 dBTP by ffmpeg.
+- **Export time** (`JASPER_DELIVERY_BENCH=1 pnpm vitest run apps/engine/test/delivery-speed.bench.test.ts
+  --maxWorkers=1`: 10 s mixes exported with the native path at 320×180, H.264 + AAC / VP9 + Opus / ProRes + PCM,
+  normalised to Web −14 LUFS / −1 dBTP; each run a mix of its own so nothing is reused, median of 3; `warm` = the same
+  mix exported a second time). The same bench file run on three detached checkouts on the build server one after the
+  other: **pre-fix** = ea77ae2c (one-pass normalisation, before the lossy fix), **before** = 6cdc304d (the lossy fix),
+  **after** = this branch. The machine was shared (other agents' e2e runs): 1-min load 3–7 during the pre-fix and
+  before runs, ≈ 7 during the after run; a later repeat of all three at load 5–21 is in line (after: typical AAC 256
+  2.67 s, AAC 128 2.24, Opus 1.88; loud AAC 256 3.23, AAC 128 5.58) but its pre-fix run was inflated by the load (3 s+
+  for everything) and is not used.
+
+| Mix, delivery | pre-fix | before | after | after / pre-fix |
+|---|---|---|---|---|
+| typical, AAC 256 (no normalisation) | 2.23 s | 2.31 s | 1.93 s | — |
+| typical, AAC 256 | 2.07 s | 4.76 s | **2.58 s** | 1.25× |
+| typical, AAC 128 | 1.99 s | 5.17 s | **2.21 s** | 1.11× |
+| typical, Opus 160 | 2.05 s | 3.29 s | **1.97 s** | 0.96× |
+| typical, PCM | 2.63 s | 3.25 s | **2.57 s** | 0.98× |
+| loud, AAC 256 | 2.23 s | 8.73 s | **3.17 s** | 1.42× |
+| loud, AAC 128 | 2.05 s | 7.98 s | **5.48 s** | 2.67× |
+| loud, Opus 160 | 1.84 s | 5.18 s | **2.53 s** | 1.38× |
+| loud, PCM | 2.46 s | 3.00 s | **2.44 s** | 0.99× |
+| warm typical, AAC 256 (same mix again) | 2.14 s | 4.18 s | **1.78 s** | 0.83× |
+| warm loud, AAC 256 | 2.30 s | 7.33 s | **2.22 s** | 0.97× |
+
+  The typical mix (`typicalMix` in `apps/engine/test/loud-fixture.ts`: a voice-like part, a bed, two hits) meets the
+  ≤ 1.5× target on every codec; the loud stress fixture does on AAC 256 and Opus, not on AAC 128 kb/s (two encode
+  rounds: its first round's three ceilings all overshoot after the encoder; the second meets at −4 dBTP). A typical
+  delivery's job log: `audio: mixed (240 ms) and delivered in 2163 ms — 5 passes (953 ms), 3 encodes (2000 ms summed),
+  decoded checks 301 ms, the checked encode is muxed as it is` (the alternatives' encodes are stopped when the first
+  meets; their time is summed in, not waited for), with the picture rendered alongside.
+
+#### Limits and notes
+
+- The preview plays the converged PCM delivery, not the codec's: its peaks are the PCM's (the decoded AAC can be up to
+  the limiter's headroom lower in places where the export turned a hop down). An analysis made before this fix, or for
+  another target than the Mix's, still plays the one-pass gain until Analyze runs again (the Loudness dialog says so);
+  the analysis goes stale with the mix (`mixHash`) exactly as before.
+- Lower-ceiling alternatives trade the old local corrections for up to 1 dB more headroom across the mix when the
+  table's ceiling overshoots after the encoder (the gentlest that meets is chosen; local corrections still follow in a
+  second round). On a loud mix this is more limiting overall and fewer dents on single hits.
+- The alternatives use up to three cores for the length of an encode (stopped as soon as the first one meets); with one
+  CPU slot the delivery is sequential as before.
+- The delivery cache lives in the engine process (not across restarts) and needs bit-identical pass-1 samples (the
+  same mix, range, length and rate): a Sound Check before export qualifies (tested), an analysis of the whole sequence
+  usually differs from the export by a sample of length and does not.
+- The loud stress fixture at AAC 128 kb/s still takes ≈ 2.7× the pre-fix export; long programmes were not measured
+  (estimated: each round ≈ one limiter pass + one AAC encode of the programme, the encode ≈ 0.05–0.15 × real time on
+  this machine, so a 1 h programme's delivery is minutes; it now overlaps the picture render).
+- `e2e/sound-check.spec.ts` fails at its setup (the Auto Sound Pass placed no cut sound to nudge, line 234) on this
+  branch and identically on 6cdc304d (run there with the same build server and fixtures): not caused by this fix.
