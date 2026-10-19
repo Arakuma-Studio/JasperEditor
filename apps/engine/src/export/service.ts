@@ -2009,15 +2009,15 @@ export class ExportService {
 					checked
 						? { loudness: checked }
 						: audio.normalized && needsDecodedCheck(deliveryCodecOf(planned), audio.sampleRate)
-						? await measureEncodedAudio({
-								ff: this.deps.ff,
-								file: output,
-								channels: planned.output.audioChannels,
-								sampleRate: planned.output.audioSampleRate,
-								signal: ctx.signal,
-								onSpawn: ctx.trackChild,
-							})
-						: null,
+							? await measureEncodedAudio({
+									ff: this.deps.ff,
+									file: output,
+									channels: planned.output.audioChannels,
+									sampleRate: planned.output.audioSampleRate,
+									signal: ctx.signal,
+									onSpawn: ctx.trackChild,
+								})
+							: null,
 					!!copied,
 				)
 			: null;

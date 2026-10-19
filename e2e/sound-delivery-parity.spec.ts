@@ -59,8 +59,12 @@ test('Analyze stores the converged delivery; Sound Check checks for the export e
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press('Control+KeyI');
 	await (await chooser).setFiles([wav]);
-	await expect(page.getByTestId('project-row').filter({ hasText: 'loud.wav' })).toBeVisible({ timeout: 120_000 });
-	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', { path: ['items'] });
+	await expect(page.getByTestId('project-row').filter({ hasText: 'loud.wav' })).toBeVisible({
+		timeout: 120_000,
+	});
+	const items = await query<Record<string, { id: string; name: string }>>(page, 'doc.get', {
+		path: ['items'],
+	});
 	const item = Object.values(items).find((i) => i.name === 'loud.wav')!;
 	const setup = await transact(page, [
 		{ type: 'clip.place', source: { projectItemId: item.id }, at: 0, tracks: { audio: 'A1' } },
@@ -75,11 +79,17 @@ test('Analyze stores the converged delivery; Sound Check checks for the export e
 	const dialog = page.getByTestId('loudness-dialog');
 	await expect(dialog).toBeVisible();
 	await dialog.getByTestId('loudness-analyze').click();
-	await expect(dialog.getByTestId('loudness-gain')).toContainText('as the export delivers it', { timeout: CHECK_MS });
-	await page.screenshot({ path: join(outDir, '01-loudness-dialog.png') });
-	const seqs = await query<Record<string, { master: { loudness: { analysis: Analysis } } }>>(page, 'doc.get', {
-		path: ['sequences'],
+	await expect(dialog.getByTestId('loudness-gain')).toContainText('as the export delivers it', {
+		timeout: CHECK_MS,
 	});
+	await page.screenshot({ path: join(outDir, '01-loudness-dialog.png') });
+	const seqs = await query<Record<string, { master: { loudness: { analysis: Analysis } } }>>(
+		page,
+		'doc.get',
+		{
+			path: ['sequences'],
+		},
+	);
 	const analysis = Object.values(seqs)[0]!.master.loudness.analysis;
 	console.log('e2e analysis', JSON.stringify(analysis));
 	expect(analysis.delivery).toBeDefined();
@@ -112,10 +122,15 @@ test('Analyze stores the converged delivery; Sound Check checks for the export e
 		'doc.get',
 		{ path: ['sequences'] },
 	);
-	expect(Object.values(seqs2)[0]!.soundDesign?.lastCheck?.exportAudio).toEqual({ codec: 'aac', bitrateKbps: 256 });
+	expect(Object.values(seqs2)[0]!.soundDesign?.lastCheck?.exportAudio).toEqual({
+		codec: 'aac',
+		bitrateKbps: 256,
+	});
 	// another encoding to check for: the summary is stale for it
 	await row.getByRole('combobox').click();
 	await page.getByRole('option', { name: 'Opus 160 kb/s' }).click();
-	await expect(panel.getByTestId('sound-check-stale')).toContainText('the export encoding to check for changed');
+	await expect(panel.getByTestId('sound-check-stale')).toContainText(
+		'the export encoding to check for changed',
+	);
 	await page.screenshot({ path: join(outDir, '03-sound-check-stale-opus.png') });
 });

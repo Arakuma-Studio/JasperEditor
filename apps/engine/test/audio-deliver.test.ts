@@ -15,8 +15,8 @@ import {
 	DELIVERY_CACHE,
 	DELIVERY_CACHE_SIZE,
 	DELIVERY_LIMITS,
-	deliveryCacheKey,
 	type DeliveryParams,
+	deliveryCacheKey,
 	measureEncodedAudio,
 	solveDelivery,
 } from '../src/audio/deliver.ts';
