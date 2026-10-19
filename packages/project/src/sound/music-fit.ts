@@ -16,6 +16,14 @@ const end = (c: { start: number; duration: number }) => c.start + c.duration;
 export const END_ON_BAR_LEAD_SEC = 0.003;
 /** The fade-out of End on Bar when the tempo is unknown (s). */
 export const END_ON_BAR_FADE_SEC = 0.5;
+/**
+ * A remix joint's crossfade where the music would otherwise be heard chopped (Sound Check EDGE: the source after the
+ * outgoing piece keeps sounding within 6 dB of its last 50 ms and over 6 dB above what enters, with a crossfade under
+ * 100 ms): 110 ms, the engine's plan asks for it per joint (`jointCrossfadeSeconds`; final verification B).
+ */
+export const REMIX_CHOP_CROSSFADE_SEC = 0.11;
+/** Longest per-joint crossfade a `clip.remix` takes (frames). */
+export const REMIX_MAX_CROSSFADE_FRAMES = 30;
 
 /** The pieces of the remix a clip belongs to (by start), or the clip alone. */
 export function remixPiecesOf(seq: Sequence, clip: AudioClip): AudioClip[] {
@@ -46,6 +54,8 @@ export type RemixPlanLike = {
 	headTrimSeconds?: number;
 	/** Each anchor's source moment (seconds from the clip's content start) and where it lands (seconds of output). */
 	anchors?: { sourceSeconds: number; outputSeconds: number; landedSeconds: number }[];
+	/** The crossfade each joint needs (seconds; one per joint), when the engine measured them. */
+	jointCrossfadeSeconds?: number[];
 };
 
 /**
@@ -89,6 +99,22 @@ export function remixCommandOf(
 		...(opts.variations !== undefined ? { variations: opts.variations } : {}),
 		...(anchors.length ? { anchors } : {}),
 		...((plan.headTrimSeconds ?? 0) > 0.0005 ? { fadeInFrames: 1 } : {}),
+		...jointCrossfadesOf(plan, fps),
+	};
+}
+
+/**
+ * The per-joint crossfades (frames) of a plan whose engine measured a joint that would sound chopped with the default
+ * 30 ms (`jointCrossfadeSeconds`), else nothing (every joint takes the default).
+ */
+function jointCrossfadesOf(plan: RemixPlanLike, fps: number): { jointCrossfadeFrames?: number[] } {
+	const s = plan.jointCrossfadeSeconds;
+	if (!Array.isArray(s) || s.length !== Math.max(0, plan.pieces.length - 1)) return {};
+	if (!s.some((x) => fin(x) && x > 0.03 + 1e-6)) return {};
+	return {
+		jointCrossfadeFrames: s.map((x) =>
+			Math.min(REMIX_MAX_CROSSFADE_FRAMES, Math.max(1, Math.ceil((fin(x) && x > 0 ? x : 0.03) * fps - 1e-9))),
+		),
 	};
 }
 

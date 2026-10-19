@@ -99,6 +99,12 @@ export const RemixPlanResultSchema = z.object({
 	lengthSeconds: z.number(),
 	/** Crossfade at each joint (seconds). */
 	crossfadeSeconds: z.number(),
+	/**
+	 * The crossfade each joint needs on the timeline (seconds, one per joint): 0.03, or 0.11 where the source after the
+	 * outgoing piece keeps sounding within 6 dB of its last 50 ms and over 6 dB above what enters (Sound Check would
+	 * find the music chopped there, EDGE).
+	 */
+	jointCrossfadeSeconds: z.array(z.number()).optional(),
 	/** Source position of each joint: [end of the outgoing piece, start of the incoming one] (seconds). */
 	cuts: z.array(z.tuple([z.number(), z.number()])),
 	/** P6-E11: the bar lines (seconds from the range start: each downbeat's joint position) and beats per bar. */

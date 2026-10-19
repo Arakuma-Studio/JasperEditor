@@ -443,7 +443,7 @@ export const essentialHandlers = {
 					trackId: clip.trackId,
 					at: made[i]!.start,
 					effectId: 'jasper.constant-power',
-					duration: xf,
+					duration: cmd.jointCrossfadeFrames?.[i - 1] ?? xf,
 					alignment: 'end-at-cut',
 				},
 				h,

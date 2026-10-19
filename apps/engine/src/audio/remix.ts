@@ -8,6 +8,7 @@ import {
 	type Analysis,
 	analyzeMusic,
 	beatsPerBarOf,
+	isChoppedMusic,
 	type Plan,
 	planAnchoredRemix,
 	planCuts,
@@ -15,6 +16,7 @@ import {
 	planRemix,
 	RemixError,
 } from '@jasper/audio-fx';
+import { REMIX_CHOP_CROSSFADE_SEC, SOUND_CHECK_EDGE_THRESHOLDS } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 
 /** Analysis rate: the reference's (FilmCraft analyses 22.05 kHz); beats are found within 10 ms at it. */
@@ -38,8 +40,68 @@ export class RemixPlanError extends Error {
 	}
 }
 
+/** Hop (s) of the level envelope the joints are judged on. */
+export const JOINT_LEVEL_HOP_S = 0.005;
+/** The default crossfade of a remix joint (s; `clip.remix`'s 30 ms). */
+const JOINT_DEFAULT_S = 0.03;
+
+/** Mean square of each `hop`-sample block of a mono signal (non-finite samples count as 0). Pure. */
+export function blockMeanSquares(x: Float32Array, hop: number): Float32Array {
+	const h = Math.max(1, Math.floor(hop));
+	const out = new Float32Array(Math.ceil(x.length / h));
+	for (let b = 0; b < out.length; b++) {
+		let e = 0;
+		const a = b * h;
+		const z = Math.min(x.length, a + h);
+		for (let i = a; i < z; i++) {
+			const v = x[i]!;
+			if (v - v === 0) e += v * v;
+		}
+		out[b] = z > a ? e / (z - a) : 0;
+	}
+	return out;
+}
+
+/**
+ * The crossfade (s) each joint of a plan needs on the timeline so the music is not heard chopped there — Sound Check's
+ * EDGE rule (`isChoppedMusic` with its thresholds): the source after the outgoing piece (what the cut removes) within
+ * 6 dB of the piece's last 50 ms and over 6 dB above the incoming piece's first 50 ms needs ≥ 100 ms
+ * (`REMIX_CHOP_CROSSFADE_SEC`), else the default 30 ms. `cuts` are [end of the outgoing piece, start of the incoming
+ * one] in samples of `ms`'s signal; `ms` its block mean squares (`blockMeanSquares`, `hop` samples). Pure; final
+ * verification B (a landed drop's joint was found chopped by the next Sound Check).
+ */
+export function jointCrossfadesSeconds(
+	ms: Float32Array,
+	hop: number,
+	cuts: readonly [number, number][],
+): number[] {
+	const T = SOUND_CHECK_EDGE_THRESHOLDS;
+	const w = Math.max(1, Math.round(T.musicWindowMs / 1000 / ((hop || 1) / REMIX_ANALYSIS_RATE)));
+	const dbOf = (from: number, n: number) => {
+		const a = Math.max(0, Math.min(ms.length, Math.round(from)));
+		const b = Math.max(a, Math.min(ms.length, a + n));
+		if (b <= a) return -120;
+		let e = 0;
+		for (let i = a; i < b; i++) e += ms[i]!;
+		const m = e / (b - a);
+		return m > 0 ? Math.max(-120, 10 * Math.log10(m)) : -120;
+	};
+	return cuts.map(([o, i]) => {
+		const ho = o / hop;
+		const hi = i / hop;
+		const chopped = isChoppedMusic(
+			{ outDb: dbOf(ho - w, w), cutOffDb: dbOf(ho, w), nextInDb: dbOf(hi, w) },
+			JOINT_DEFAULT_S * 1000,
+			{ sustainDb: T.musicSustainDb, overNextDb: T.musicOverNextDb, crossfadeMs: T.musicCrossfadeMs },
+		);
+		return chopped ? REMIX_CHOP_CROSSFADE_SEC : JOINT_DEFAULT_S;
+	});
+}
+
 export class RemixPlanner {
 	private readonly cache = new Map<string, Analysis>();
+	/** The level envelope of each cached analysis (`blockMeanSquares` at JOINT_LEVEL_HOP_S): ≈ 0.8 MB per hour. */
+	private readonly levels = new WeakMap<Analysis, Float32Array>();
 
 	constructor(private readonly ff: Ffmpeg) {}
 
@@ -97,6 +159,7 @@ export class RemixPlanner {
 			} catch (e) {
 				throw this.wrap(e);
 			}
+			this.levels.set(a, blockMeanSquares(mono, Math.round(JOINT_LEVEL_HOP_S * REMIX_ANALYSIS_RATE)));
 			this.cache.set(key, a);
 			if (this.cache.size > CACHE_MAX) this.cache.delete(this.cache.keys().next().value!);
 		} else {
@@ -134,6 +197,15 @@ export class RemixPlanner {
 			lengthSeconds: planLength(plan) / sr,
 			crossfadeSeconds: plan.xfade / sr,
 			cuts: planCuts(plan).map(([o, i]) => [o / sr, i / sr] as [number, number]),
+			...(this.levels.has(a)
+				? {
+						jointCrossfadeSeconds: jointCrossfadesSeconds(
+							this.levels.get(a)!,
+							Math.round(JOINT_LEVEL_HOP_S * sr),
+							planCuts(plan),
+						),
+					}
+				: {}),
 			downbeats: a.downbeats.map((i) => r6(a.beats[i]! / sr)),
 			beatsPerBar: a.beatsPerBar,
 			barsGuessed: a.barsGuessed,

@@ -98,6 +98,11 @@ export const ClipRemixCmd = cmd('clip.remix', {
 	 */
 	crossfadeFrames: z.number().int().min(1).max(30).optional(),
 	/**
+	 * The crossfade of each joint (frames, one per joint, in order), when the plan measured joints that need longer
+	 * than `crossfadeFrames` (music that would sound chopped there: `RemixPlanResult.jointCrossfadeSeconds`).
+	 */
+	jointCrossfadeFrames: z.array(z.number().int().min(1).max(30)).max(255).optional(),
+	/**
 	 * Spec 12 P6-E11: what the plan landed (`POST /api/audio/remix-plan {anchors}`): each source moment (seconds from the
 	 * clip's content start) and the sequence frame it plays at. Recorded on the pieces so a later remix lands them again.
 	 */
