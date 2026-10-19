@@ -66,7 +66,15 @@ describe.runIf(RUN)('delivery export time (benchmark)', { timeout: 3_600_000 }, 
 		expect(start.statusCode, start.body).toBe(202);
 		const done = await coreServices(app).queue.wait(start.json().id);
 		expect(done.error, JSON.stringify(done.error)).toBeUndefined();
-		return performance.now() - t0;
+		const ms = performance.now() - t0;
+		if (process.env.JASPER_DELIVERY_BENCH_LOG === '1') {
+			// the job's own account of the audio (export/service.ts renderAudio's log line)
+			const entries = (coreServices(app).queue as unknown as { entries: Map<string, { logLines: string[] }> })
+				.entries;
+			const lines = entries.get(start.json().id)?.logLines.filter((l) => l.startsWith('audio:')) ?? [];
+			console.log(`bench-log ${(ms / 1000).toFixed(2)} s ${lines.join(' | ')}`);
+		}
+		return ms;
 	}
 
 	const WEB = { targetLufs: -14, truePeakDb: -1 };

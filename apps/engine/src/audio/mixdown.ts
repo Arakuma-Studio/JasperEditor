@@ -100,6 +100,8 @@ export type MixdownResult = {
 	samples: number;
 	/** Loudness of the delivered audio (after normalisation). */
 	loudness: LoudnessSummary;
+	/** Wall time of the mix itself (pass 1: the mixer, the meter, the file), ms. */
+	mixMs?: number;
 	/**
 	 * Loudness before normalisation, the gain applied (after convergence), the delivery target and how the delivery
 	 * came to it (limiter ceiling, passes, the decoded check of a lossy codec: `deliver.ts`).
@@ -235,6 +237,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	const fh = pass1 ? await open(pass1, 'w') : null;
 	// the content of the mix (the solved delivery is remembered by it: deliver.ts DELIVERY_CACHE)
 	const hash = o.normalize ? createHash('sha256') : null;
+	const t0 = performance.now();
 	try {
 		if (fh) await fh.write(wavHeaderF32(channels, sr, total));
 		const block = Array.from({ length: channels }, () => new Float32Array(BLOCK));
@@ -259,8 +262,9 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	}
 	meter?.flush();
 	const before = meter ? meter.summary() : SILENT_SUMMARY;
+	const mixMs = performance.now() - t0;
 	if (!o.normalize || !pass1) {
-		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before };
+		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before, mixMs };
 	}
 	const norm = o.normalize;
 	const contentHash = hash?.digest('hex');
@@ -293,6 +297,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			sampleRate: sr,
 			channels,
 			samples: total,
+			mixMs,
 			loudness: outcome.pcm,
 			normalized: {
 				before,
@@ -342,6 +347,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		sampleRate: sr,
 		channels,
 		samples: total,
+		mixMs,
 		loudness: outcome.pcm,
 		normalized: {
 			before,

@@ -598,7 +598,8 @@ export async function solveDelivery(o: {
 				Math.min(0.95, k / L.maxLoudnessPasses),
 				'Matching loudness under the true-peak ceiling',
 			);
-			s = await measure(p, false);
+			// with a writer every pass is written: the pass that lands is then already the delivered file (no pass again)
+			s = await measure(p, writeFirst);
 			if (Number.isFinite(s.integrated)) points.push({ g: p.gainDb, i: s.integrated });
 			if (Math.abs(aim - s.integrated) < Math.abs(aim - best.pcm.integrated)) best = { params: p, pcm: s };
 		}
@@ -689,6 +690,9 @@ export async function solveDelivery(o: {
 					},
 				)
 				.finally(() => o.signal?.removeEventListener('abort', stop));
+			// a failed encode is reported where it is awaited; until then it must not count as unhandled (the next
+			// candidates are converged while it runs)
+			done.catch(() => {});
 			return { ...c, file, ac, done };
 		};
 		/** Corrections of `raw` from a decoded hop map at a margin and over-correction (a copy). */

@@ -12,7 +12,10 @@ import {
 	CODEC_HEADROOM_TABLE,
 	codecHeadroomDb,
 	correctionGains,
+	DELIVERY_CACHE,
+	DELIVERY_CACHE_SIZE,
 	DELIVERY_LIMITS,
+	deliveryCacheKey,
 	type DeliveryParams,
 	measureEncodedAudio,
 	solveDelivery,
@@ -299,4 +302,123 @@ describe('the decoded check of a lossy encode', () => {
 			expect(kept.loudness.truePeakDb).toBe(r.decoded!.truePeakDb);
 			expect(kept.loudness.integrated).toBe(r.decoded!.integrated);
 		}, 600_000);
+});
+
+describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sound Check, delivery speed")', () => {
+	it('the limiter is scale-invariant: gain g at ceiling c is c × gain g − c at 0 dBFS (the alternatives’ gain prediction)', () => {
+		const mix = loudMix(2, SR);
+		const at = (gainDb: number, ceilingDb: number) =>
+			limitBuffer(
+				mix.map((c) => Float32Array.from(c, (v) => v * 10 ** (gainDb / 20))),
+				SR,
+				{ ceilingDb, lookaheadMs: 5, releaseMs: 100 },
+			);
+		const a = at(6, -1.5);
+		const b = at(7.5, 0).map((c) => Float32Array.from(c, (v) => v * 10 ** (-1.5 / 20)));
+		let worst = 0;
+		for (let ch = 0; ch < 2; ch++)
+			for (let i = 0; i < a[0]!.length; i++) worst = Math.max(worst, Math.abs(a[ch]![i]! - b[ch]![i]!));
+		expect(worst).toBeLessThan(1e-6);
+	});
+
+	it('a second delivery of the same mix starts from the first (one pass, one encode, the same result); the cache is bounded', async () => {
+		DELIVERY_CACHE.clear();
+		const mix = loudMix(6, SR);
+		const before = measureLoudness(mix, SR);
+		const p1 = pass1Of('cache.f32', mix);
+		const out = join(dir, 'cache.wav');
+		const solve = () =>
+			solveDelivery({
+				ff,
+				pass1: p1,
+				sampleRate: SR,
+				channels: 2,
+				total: mix[0]!.length,
+				before,
+				targetLufs: -14,
+				truePeakDb: -1,
+				codec: { codec: 'aac', bitrateKbps: 192, sampleRate: SR, channels: 2 },
+				soxr: false,
+				scratchDir: dir,
+				outPath: out,
+				write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, params),
+				contentHash: 'test-content-hash',
+			});
+		const first = await solve();
+		expect(first.cached).toBe(false);
+		expect(first.truePeakMet).toBe(true);
+		const second = await solve();
+		expect(second.cached).toBe(true);
+		expect(second.passes).toBe(1);
+		expect(second.encodePasses).toBe(1);
+		expect(second.params.gainDb).toBe(first.params.gainDb);
+		expect(second.params.ceilingDb).toBe(first.params.ceilingDb);
+		// the encoder is deterministic: the same delivery decodes the same
+		expect(second.decoded!.truePeakDb).toBe(first.decoded!.truePeakDb);
+		expect(second.decoded!.integrated).toBe(first.decoded!.integrated);
+		// another target or codec is another key
+		expect(
+			deliveryCacheKey({
+				contentHash: 'x',
+				sampleRate: SR,
+				channels: 2,
+				total: 1,
+				targetLufs: -14,
+				truePeakDb: -1,
+				codec: null,
+				soxr: false,
+			}),
+		).not.toBe(
+			deliveryCacheKey({
+				contentHash: 'x',
+				sampleRate: SR,
+				channels: 2,
+				total: 1,
+				targetLufs: -16,
+				truePeakDb: -1,
+				codec: null,
+				soxr: false,
+			}),
+		);
+		expect(DELIVERY_CACHE.size).toBeLessThanOrEqual(DELIVERY_CACHE_SIZE);
+		DELIVERY_CACHE.clear();
+	}, 600_000);
+
+	it('an encode that fails is reported, never an unhandled rejection; the encodes run at most `parallel` at once', async () => {
+		const mix = loudMix(4, SR);
+		const before = measureLoudness(mix, SR);
+		const p1 = pass1Of('fail.f32', mix);
+		const out = join(dir, 'fail.wav');
+		let running = 0;
+		let most = 0;
+		const flaky = Object.create(ff) as Ffmpeg;
+		flaky.run = async (args, opts) => {
+			running++;
+			most = Math.max(most, running);
+			try {
+				if (args.some((a) => /verify-/.test(String(a)))) throw new Error('encoder exploded');
+				return await ff.run(args, opts);
+			} finally {
+				running--;
+			}
+		};
+		const r = solveDelivery({
+			ff: flaky,
+			pass1: p1,
+			sampleRate: SR,
+			channels: 2,
+			total: mix[0]!.length,
+			before,
+			targetLufs: -14,
+			truePeakDb: -1,
+			codec: { codec: 'aac', bitrateKbps: 128, sampleRate: SR, channels: 2 },
+			soxr: false,
+			scratchDir: dir,
+			outPath: out,
+			write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, params),
+			parallel: 2,
+		});
+		await expect(r).rejects.toThrow('encoder exploded');
+		expect(most).toBeLessThanOrEqual(2);
+	}, 300_000);
 });
