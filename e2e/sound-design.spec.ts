@@ -823,11 +823,20 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 		url?: string;
 		credits?: { format: string; count: number; name: string; url: string };
 		warnings?: { code: string; message: string }[];
-		audioLoudness?: { integratedLufs: number | null; truePeakDbtp: number | null };
+		audioLoudness?: {
+			integratedLufs: number | null;
+			truePeakDbtp: number | null;
+			measuredOn?: string;
+			pcm?: { integratedLufs: number | null; truePeakDbtp: number | null };
+			limiterCeilingDbtp?: number;
+			codecHeadroomDb?: number;
+			ceilingLimited?: boolean;
+			truePeakMet?: boolean;
+		};
 	};
 	report.exportWarnings = result.warnings ?? [];
-	// the engine's own measurement of the mix it encoded (PCM, after its true-peak limiter)
-	report.exportPcmLoudness = result.audioLoudness ?? null;
+	// the engine's measurement of the delivered file (decoded AAC) and of the PCM it encoded, with the limiter ceiling
+	report.exportLoudness = result.audioLoudness ?? null;
 	expect(result.credits?.format).toBe('md');
 	const creditsText = await (await request.get(result.credits!.url)).text();
 	writeFileSync(join(outDir, 'walkthrough.credits.md'), creditsText);
@@ -841,7 +850,7 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	await (await download).saveAs(file);
 	await snap('exported');
 
-	// MEASURED: loudness and true peak (web: −14 LUFS ± 1, ≤ −1 dBTP), and every peak-aligned sound on its cue frame
+	// MEASURED: loudness and true peak of the file (web: −14 LUFS ± 0.5, ≤ −1 dBTP), and every peak-aligned sound on its cue frame
 	const loud = ebur128(file);
 	report.loudness = loud;
 	seq = await sequence();
@@ -911,15 +920,20 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 		join(outDir, 'export-wave.png'),
 	]);
 	console.log('walkthrough', JSON.stringify({ loudness: loud, peaks }));
-	expect(Math.abs(loud.integrated + 14), JSON.stringify(loud)).toBeLessThanOrEqual(1);
-	// −1 dBTP is a ceiling on the mix before the encoder (BS.1770 / R128 deliveries are measured there): the engine's
-	// true-peak limiter holds it on the PCM it encodes. The decoded AAC (256 kb/s) reads higher: inter-sample overshoot of
-	// the codec on bright transients (−0.9 … +0.1 dBTP over five runs, reported as measured; a codec-aware ceiling is not
-	// built, docs/gaps.md). Not clipped by more than half a dB either way.
-	const pcm = result.audioLoudness;
-	expect(pcm?.truePeakDbtp ?? 99, JSON.stringify(pcm)).toBeLessThanOrEqual(-1 + 0.05);
-	expect(Math.abs((pcm?.integratedLufs ?? 0) + 14), JSON.stringify(pcm)).toBeLessThanOrEqual(0.5);
-	expect(loud.truePeak, JSON.stringify(loud)).toBeLessThanOrEqual(0.5);
+	// The delivered FILE meets the Web target (ffmpeg's ebur128 on the decoded AAC 256 kb/s): true peak ≤ −1 dBTP and
+	// −14 LUFS ± 0.5 LU. The limiter runs 0.5 dB under the target in front of the encoder (the codec's headroom) and the
+	// engine decodes its own encode and turns down the moments the codec still pushes over (wp-note "Fix: lossy-codec
+	// true-peak headroom and loudness convergence"; before it the file read −0.9 … +0.1 dBTP).
+	const a = result.audioLoudness;
+	expect(loud.truePeak, JSON.stringify({ loud, a })).toBeLessThanOrEqual(-1);
+	if (a?.ceilingLimited) expect(result.warnings?.map((w) => w.code)).toContain('AUDIO_LOUDNESS_CEILING');
+	else expect(Math.abs(loud.integrated + 14), JSON.stringify({ loud, a })).toBeLessThanOrEqual(0.5);
+	expect(a?.measuredOn, JSON.stringify(a)).toBe('decoded-file');
+	expect(a?.truePeakMet, JSON.stringify(a)).toBe(true);
+	expect(a?.codecHeadroomDb, JSON.stringify(a)).toBe(0.5);
+	expect(a?.limiterCeilingDbtp ?? 99, JSON.stringify(a)).toBeLessThanOrEqual(-1.5);
+	expect(Math.abs((a?.truePeakDbtp ?? 99) - loud.truePeak), JSON.stringify({ loud, a })).toBeLessThanOrEqual(0.15);
+	expect(a?.pcm?.truePeakDbtp ?? 99, JSON.stringify(a)).toBeLessThanOrEqual((a?.limiterCeilingDbtp ?? -1) + 0.05);
 	// a sound is found in the mix when its 100 ms around the peak correlates with the mix at r ≥ 0.2 (chance for 4800
 	// samples ≈ 1/√4800 ≈ 0.014; the music, beds and limiter keep a placed sound under r ≈ 0.85, measured 0.24–0.84 over the runs)
 	const clear = peaks.filter((p) => (p.r as number) >= 0.2);

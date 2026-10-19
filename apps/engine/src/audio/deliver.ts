@@ -9,8 +9,11 @@
 //    (`codecHeadroomDb`, sources in the wp-note: EBU Tech 3344 Annex A, AES TD1008 §4 / §7B, Spotify). Then the encoded
 //    audio is decoded and measured: where its true peak still passes the target (the codec's overshoot is
 //    content-dependent: measured 0.3 … 4 dB on loud material with ffmpeg's AAC), those 10 ms hops (±30 ms) are turned
-//    down by the measured overshoot + 0.3 dB and the audio is encoded again (≤ 6 encodes). The decoded loudness also
-//    steers the PCM target (AAC at 128 kb/s measures ≈ 0.3–0.5 LU under its input).
+//    down by 1.5 × the measured overshoot + 0.3 dB and the audio is encoded again (≤ 8 encodes); the encoder's rate
+//    control moves its overshoot to other hits when anything changes, so an encode that finds new offenders also
+//    lowers the whole ceiling by 0.25 dB. The best encode is delivered (the encoder is deterministic: the mux encodes
+//    the same bits), and a miss is reported. The decoded loudness also steers the PCM target (AAC at 128 kb/s
+//    measures ≈ 0.3–0.5 LU under its input).
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -40,7 +43,7 @@ export const DELIVERY_LIMITS = {
 	/** …and the decoded file at ±0.2 LU (the requirement is ±0.5). */
 	decodedTolLu: 0.2,
 	maxLoudnessPasses: 8,
-	maxEncodePasses: 6,
+	maxEncodePasses: 8,
 	/** Most extra gain pushed into the limiter over the plain normalisation gain (dB). */
 	maxPushDb: 6,
 	/** Under this many LU per dB of gain the limiter takes the push: the ceiling prevents the target. */
@@ -56,6 +59,12 @@ export const DELIVERY_LIMITS = {
 	maxCorrectionDb: 12,
 	/** The PCM loudness target moves at most this far from the delivery target to land the decoded one. */
 	maxLoudnessOffsetLu: 1.5,
+	/** A correction turns an overshooting hop down by this times its overshoot (+ the margin). */
+	overCorrection: 1.5,
+	/** Each encode that finds new offenders lowers the whole ceiling by this much (dB)… */
+	ceilingStepDb: 0.25,
+	/** …to at most this far under the target. */
+	maxCodecHeadroomDb: 4,
 } as const;
 
 /**
@@ -424,7 +433,14 @@ export async function solveDelivery(o: {
 	let truePeakMet = true;
 	const raw = new Float32Array(hops);
 	if (verify && o.codec && o.outPath && o.write) {
-		const enc = join(o.scratchDir, `verify.${isLossyCodec(o.codec.codec) ? (o.codec.codec === 'libopus' ? 'webm' : 'm4a') : 'wav'}`);
+		const enc = join(
+			o.scratchDir,
+			`verify.${isLossyCodec(o.codec.codec) ? (o.codec.codec === 'libopus' ? 'webm' : 'm4a') : 'wav'}`,
+		);
+		/** The best encode so far: true peak met first, then the smallest overshoot, then the loudness error. */
+		let best: { params: DeliveryParams; r: typeof r; decoded: LoudnessSummary; score: [number, number] } | null =
+			null;
+		let ceiling = params.ceilingDb;
 		for (let e = 0; e < L.maxEncodePasses; e++) {
 			if (writtenWith !== params) r = { ...r, pcm: await measure(params, true) };
 			o.onProgress?.(0.96, 'Checking the encoded audio');
@@ -441,29 +457,47 @@ export async function solveDelivery(o: {
 				signal: o.signal,
 				...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
 			});
-			decoded = m.loudness;
-			const over = m.loudness.truePeakDb > tpTarget - L.truePeakMarginDb;
+			const excess = Math.max(0, m.loudness.truePeakDb - (tpTarget - L.truePeakMarginDb));
 			const loudErr = Number.isFinite(m.loudness.integrated) ? target - m.loudness.integrated : 0;
-			truePeakMet = !over;
-			if (!over && (Math.abs(loudErr) <= L.decodedTolLu || r.limited)) break;
+			const score: [number, number] = [excess, Math.abs(loudErr)];
+			if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && score[1] < best.score[1]))
+				best = { params, r, decoded: m.loudness, score };
+			if (excess === 0 && (Math.abs(loudErr) <= L.decodedTolLu || r.limited)) break;
 			if (e === L.maxEncodePasses - 1) break;
-			if (over) {
-				// the decoded hops over the target, mapped to the mix's hops by time
-				// the decoded hops over the target (hops are 10 ms of time at either rate: same index in the mix)
+			if (excess > 0) {
+				// the decoded hops over the target (10 ms of time at either rate: the same index in the mix) are turned
+				// down by their overshoot + the margin, over-corrected by half: the encoder's rate control moves with
+				// every change, so a hit corrected exactly tends to come back a little over
 				const aimTp = tpTarget - L.correctionMarginDb;
+				let fresh = false;
 				for (let h = 0; h < Math.min(raw.length, m.hopTruePeakDb.length); h++) {
 					const v = m.hopTruePeakDb[h]!;
-					if (v > aimTp) raw[h] = Math.min(L.maxCorrectionDb, raw[h]! + (v - aimTp));
+					if (!(v > aimTp)) continue;
+					if (raw[h] === 0 && v > tpTarget) fresh = true;
+					raw[h] = Math.min(L.maxCorrectionDb, raw[h]! + L.overCorrection * (v - aimTp));
 				}
+				// offenders the last corrections did not know: the codec moves its overshoot around (bit reservoir, rate
+				// control), so the whole mix also gets a little more headroom
+				if (fresh && e > 0) ceiling = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - L.ceilingStepDb);
 			}
 			if (Number.isFinite(m.loudness.integrated) && !r.limited)
 				aim = Math.max(target - L.maxLoudnessOffsetLu, Math.min(target + L.maxLoudnessOffsetLu, aim + loudErr));
 			const next: DeliveryParams = {
 				...params,
+				ceilingDb: ceiling,
 				correction: raw.some((v) => v > 0) ? Float32Array.from(raw) : null,
 			};
 			r = await converge(next, aim, true);
 			params = r.params;
+		}
+		if (best) {
+			// deliver the best encode (the last one when it met the target); its numbers are known (the encoder is
+			// deterministic), the WAV is written again only when it is not the last pass
+			params = best.params;
+			r = best.r;
+			decoded = best.decoded;
+			truePeakMet = best.score[0] === 0;
+			if (writtenWith !== params) await measure(params, true);
 		}
 	} else if (o.write && writtenWith !== params) {
 		r = { ...r, pcm: await measure(params, true) };
