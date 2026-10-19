@@ -107,10 +107,12 @@ describe('loadable', () => {
 		expect(screen.getByTestId('state').textContent).toBe('ready');
 	});
 
+	// The time here is the first import of the registry (Vite transforms its whole module graph): 15.6 s under the
+	// full suite at load 30 on the build server (Final verification A), so it has its own timeout; the check is not timed.
 	it('every panel of the registry is loadable (the dock mounts them through state)', async () => {
 		const { listPanels } = await import('../src/panels/registry.ts');
 		for (const def of listPanels()) expect(isLoadable(def.component), def.kind).toBe(true);
 		const p = lazyPanel(async () => ({ Missing: undefined as never }), 'Missing');
 		await expect(p.load()).rejects.toThrow(/no export/);
-	});
+	}, 180_000);
 });

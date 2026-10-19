@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 import {
@@ -907,11 +908,22 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 		]);
 		process.env.JASPER_SOUND_PACK_FILE_INTERVAL_MS = '300';
 		const app = await makeApp();
+		// The engine paces the starts of its requests; this server stamps their arrival on the same event loop, so an
+		// arrival can be stamped late by as much as the loop was held up (measured: 282 ms between two stamps under the
+		// full suite at load 30, Final verification A). The allowance is that hold-up, measured over the download.
+		const loop = monitorEventLoopDelay({ resolution: 5 });
+		loop.enable();
 		const job = await wait(app, (await install(app, 'test-files')).id);
+		loop.disable();
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
 		expect(hits.map((h) => h.path)).toEqual(['/f/0.wav', '/f/1.wav', '/f/2.wav']);
 		expect(maxOpen).toBe(1);
-		for (let i = 1; i < hits.length; i++) expect(hits[i]!.at - hits[i - 1]!.at).toBeGreaterThanOrEqual(295);
+		const heldUpMs = loop.max / 1e6;
+		for (let i = 1; i < hits.length; i++)
+			expect(
+				hits[i]!.at - hits[i - 1]!.at,
+				`the loop was held up ${heldUpMs.toFixed(1)} ms`,
+			).toBeGreaterThanOrEqual(295 - heldUpMs);
 		expect(hits.every((h) => h.ua === PACK_USER_AGENT)).toBe(true);
 		expect(PACK_USER_AGENT).toMatch(/^JasperEditor .*<=1 request\/s\)$/);
 		expect(PACK_FILE_INTERVAL_MS).toBe(1000);
