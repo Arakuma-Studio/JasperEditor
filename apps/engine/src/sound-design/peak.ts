@@ -59,7 +59,7 @@ export function peakPlan(doc: ProjectDocument, sequenceId: string | undefined, c
 	if (clip.kind !== 'audio') throw new HttpError(400, 'NOT_AUDIO', `${clip.name} is not an audio clip`);
 	const a = clip as AudioClip;
 	if (a.speed?.reverse) throw new HttpError(400, 'REVERSED', 'A reversed clip has no peak to detect');
-	const asset = (doc.media ?? {})[a.mediaId] as MediaAsset | undefined;
+	const asset = doc.media?.[a.mediaId] as MediaAsset | undefined;
 	const mediaKey = engineMediaKey(asset);
 	if (!asset || !mediaKey)
 		throw new HttpError(409, 'NOT_IN_ENGINE', `${clip.name}: its media is not in the engine's media store`);

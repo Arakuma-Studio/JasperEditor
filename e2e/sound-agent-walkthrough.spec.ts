@@ -323,7 +323,10 @@ test('agent walkthrough through jasper-mcp: the guide holds', async () => {
 	await page.getByTestId('review-details').locator('[data-review-detail="note"]').click();
 	await page.getByLabel('Note for the agent').fill('Good, but try a softer one here next time');
 	await page.getByTestId('review-details').locator('[data-review-detail="save-note"]').click();
-	await expect(page.locator(`[data-review-row="${firstItem}"]`)).toHaveAttribute('aria-label', /note: Good, but/);
+	await expect(page.locator(`[data-review-row="${firstItem}"]`)).toHaveAttribute(
+		'aria-label',
+		/note: Good, but/,
+	);
 	await page.getByTestId('review-bar-accept-all').click();
 	await page.screenshot({ path: join(outDir, 'user-review.png') });
 	const before = await appliedLabels(page);

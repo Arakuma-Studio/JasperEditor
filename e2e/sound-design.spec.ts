@@ -587,10 +587,10 @@ test('user walkthrough: library → Suggest Cues → Auto Sound Pass → review 
 	const after = await storedItems();
 	report.reviewOutcome = {
 		accepted,
-		stateCounts: after.reduce<Record<string, number>>(
-			(a, i) => ({ ...a, [i.state]: (a[i.state] ?? 0) + 1 }),
-			{},
-		),
+		stateCounts: after.reduce<Record<string, number>>((a, i) => {
+			a[i.state] = (a[i.state] ?? 0) + 1;
+			return a;
+		}, {}),
 		rejected: toReject.id,
 		alternate: withAlt?.id ?? null,
 		noted: toNote.id,
