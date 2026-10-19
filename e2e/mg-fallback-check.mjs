@@ -15,9 +15,34 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const base = Number(process.env.MG_CHECK_PORT ?? 48150);
 const children = [];
 const temps = [];
+/** Stops the engines and waits for them before removing their appdirs (a running engine still writes there). */
+async function cleanup() {
+	await Promise.all(
+		children.map(
+			(c) =>
+				new Promise((resolve) => {
+					if (c.exitCode !== null || c.signalCode !== null) return resolve();
+					const force = setTimeout(() => c.kill('SIGKILL'), 5000);
+					c.once('exit', () => {
+						clearTimeout(force);
+						resolve();
+					});
+					c.kill('SIGTERM');
+				}),
+		),
+	);
+	for (const d of temps) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+	temps.length = 0;
+}
+// Last resort (an exception): never throw from here.
 process.on('exit', () => {
-	for (const c of children) if (c.exitCode === null) c.kill('SIGTERM');
-	for (const d of temps) rmSync(d, { recursive: true, force: true });
+	for (const c of children) if (c.exitCode === null) c.kill('SIGKILL');
+	for (const d of temps)
+		try {
+			rmSync(d, { recursive: true, force: true });
+		} catch {
+			// an engine was still writing: the OS temp directory keeps it
+		}
 });
 
 // This harness supplies both the engine token and editor key, as the desktop shell does.
@@ -26,8 +51,9 @@ const EDITOR_KEY = randomBytes(24).toString('base64url');
 const AUTH_ENV = { JASPER_LOCAL_TOKEN: TOKEN, JASPER_EDITOR_KEY: EDITOR_KEY };
 const AUTH_HEADERS = { authorization: `Bearer ${TOKEN}`, cookie: `jasper_editor=${EDITOR_KEY}` };
 
-function fail(msg) {
+async function fail(msg) {
 	console.error(`[mg-fallback] FAIL: ${msg}`);
+	await cleanup();
 	process.exit(1);
 }
 
@@ -48,7 +74,7 @@ async function engine(port, extraEnv) {
 		}
 		await new Promise((r) => setTimeout(r, 250));
 	}
-	fail(`engine on ${port} did not start`);
+	await fail(`engine on ${port} did not start`);
 }
 
 async function call(url, method, path, body) {
@@ -58,7 +84,7 @@ async function call(url, method, path, body) {
 		body: body ? JSON.stringify(body) : undefined,
 	});
 	const json = await res.json();
-	if (!res.ok) fail(`${method} ${path} → ${res.status} ${JSON.stringify(json)}`);
+	if (!res.ok) await fail(`${method} ${path} → ${res.status} ${JSON.stringify(json)}`);
 	return json;
 }
 
@@ -85,7 +111,7 @@ async function planFor(url) {
 			],
 		},
 	});
-	if (!tx.result.ok) fail(`tx rejected: ${JSON.stringify(tx.result.errors)}`);
+	if (!tx.result.ok) await fail(`tx rejected: ${JSON.stringify(tx.result.errors)}`);
 	const { envelope } = await call(url, 'GET', `/api/projects/${projectId}`);
 	const doc = envelope.document;
 	const sequenceId = Object.keys(doc.sequences)[0];
@@ -110,13 +136,14 @@ console.log(
 	`[mg-fallback] binary missing: fframes=${missing.fframes} (${missing.reason}), plan=${missing.plan.path}; blockers: ${missing.plan.blockers.map((b) => b.reason).join(' | ')}`,
 );
 if (ready.fframes !== 'ready' || ready.plan.path !== 'native')
-	fail('expected fframes ready → native (run `pnpm mg:build`)');
+	await fail('expected fframes ready → native (run `pnpm mg:build`)');
 if (missing.fframes !== 'unavailable' || missing.plan.path !== 'remotion')
-	fail('expected unavailable → remotion');
+	await fail('expected unavailable → remotion');
 if (!missing.plan.blockers.some((b) => /fframes/.test(b.reason)))
-	fail('the remotion plan does not explain why');
+	await fail('the remotion plan does not explain why');
 const artifactDir = join(root, 'test-results');
 mkdirSync(artifactDir, { recursive: true });
 writeFileSync(join(artifactDir, 'e2e-mg-fallback.json'), JSON.stringify({ ready, missing }, null, 2));
 console.log('[mg-fallback] PASS');
+await cleanup();
 process.exit(0);
