@@ -54,7 +54,9 @@ folders); Describe-it search needs a ≈ 780 MB optional download and its verdic
 precise, measured); the beat tracker reads 3 or 4 beats per bar (other metres when given); picture motion under ≈ 0.6 px
 per frame is not seen; the preview transport relies on Remotion 4.0.499 internals (the e2e specs fail if they change);
 a 1 000-item proposal preview costs ≈ 1.1–1.4 s of sliced work (measured, idle build server); Auto Tag reads a regular
-untonal pulse (footsteps) as music; a read-ahead over 3 s starts playback unprimed.
+untonal pulse (footsteps) as music; a read-ahead over 3 s starts playback unprimed; the Program monitor normalises with
+the one-pass gain, so on a hard-limited mix it plays up to ≈ 1 dB under the export, whose delivered file (decoded
+AAC / Opus included) meets the target ("Fix: lossy-codec true-peak headroom and loudness convergence").
 
 ## Phase 0: pre-existing audio bugs
 
@@ -10305,12 +10307,14 @@ Check share: `apps/engine/src/audio/deliver.ts`.
 - **Measured here** (build server, ffmpeg 7.1.5 LGPL vendor build: native `aac`, `libopus`; a loud synthetic mix —
   sawtooth chords, noise snares with an instantaneous attack, kicks, hats — and a voice-like buzz with noise hits,
   normalised to the targets with our limiter at −1 / −2 / −3 dBTP, encoded at AAC 128 / 192 / 256 / 320 and Opus 64 …
-  192 kb/s, decoded and metered by ours and by ffmpeg `ebur128=peak=true`, the two within 0.05 dB): the decoded true
-  peak is 0.3 … 2.4 dB over the PCM's on the loud mix and up to 4.1 dB (AAC 320 kb/s!) on the voice-like one, and it
-  is **not monotonic** — lowering the ceiling 1 dB can raise the decoded peak (AAC 320, voice: −2 dBTP → +2.1, −3 dBTP →
-  +1.1); ffmpeg's AAC also decodes 0.1–0.5 LU under its input (its low-pass; 0.5 LU at 128 kb/s). So no table alone can
-  guarantee the delivered peak with this encoder: the table is the starting headroom, a check of the decoded audio
-  makes the guarantee.
+  192 kb/s, decoded and metered by ours and by ffmpeg `ebur128=peak=true`, the two within 0.05 dB): where the limiter
+  works, the decoded true peak is 1.0 … 2.5 dB over the PCM's on the loud mix (AAC 128 kb/s at −1 dBTP: +0.93 dBTP;
+  AAC 256: +1.42) and up to 4.1 dB on the voice-like one (AAC 320 kb/s at −2 dBTP: +2.12), and it is **not monotonic**
+  — lowering the ceiling can raise the decoded peak (AAC 320, voice: −2 dBTP → +2.12, −3 dBTP → +1.10; the encoder's
+  rate control moves bits between frames when anything changes); where it does not (R 128, −23 LUFS) the codec adds
+  0.0 … 0.8 dB. ffmpeg's AAC also decodes 0.1–0.5 LU under its input (0.47 LU at 128 kb/s, 0.07 at 320; Opus ≈ 0.25).
+  So no table alone guarantees the delivered peak with these encoders: the table is the starting headroom, a check of
+  the decoded audio makes the guarantee.
 
 Decision — **codec headroom table** (`CODEC_HEADROOM_TABLE`; the limiter ceiling = target − headroom; per channel pair,
 so 5.1 at 384 kb/s counts as 128):
@@ -10318,7 +10322,7 @@ so 5.1 at 384 kb/s counts as 128):
 | Codec | ≥ 256 kb/s | 160–255 | 96–159 | < 96 |
 |---|---|---|---|---|
 | AAC (ffmpeg `aac`) | 0.5 dB (TD1008 §7B) | 1 dB (Tech 3344: −2 dBTP for −1) | 1.5 dB | 2 dB |
-| Opus (`libopus`) | 0.5 dB (≥ 160) | 0.5 dB | 1 dB | 2 dB |
+| Opus (`libopus`) | 0.5 dB | 0.5 dB (≥ 160 kb/s) | 1 dB | 2 dB |
 | PCM | 0 | | | |
 
 (the low-rate rows follow "overshoot increases as the bit rate decreases"; the steps are ours). Then the **decoded
@@ -10369,3 +10373,88 @@ written by that pass alone: sample for sample what the export wrote before this 
 - `e2e/sound-design.spec.ts`: the walkthrough checks the **decoded file** against the Web target again (true peak ≤ −1
   dBTP by ffmpeg `ebur128`, −14 LUFS ± 0.5) and the result's ceiling (≤ −1.5 dBTP at 256 kb/s), instead of B's PCM-only
   check.
+
+#### Verified (measured; build server `jasper-build`, 16 × Haswell vCPU, Node 20.20.2, vendored LGPL ffmpeg 7.1.5)
+
+Exports of the loud fixture (`apps/engine/test/loud-fixture.ts`, 10 s), the file measured by ffmpeg `ebur128=peak=true`
+(true peak, 4× oversampled; ffmpeg prints 0.1 dB), `pnpm vitest run apps/engine/test/export-lossy-true-peak.test.ts`.
+**Before** (the same oracle assertions run on `feat/sound-design` ea77ae2c in a throwaway worktree): 11 of 16 failed.
+**After**: 17 of 17 pass.
+
+| Target | Codec | Before: file I / TP | After: file I / TP | After: limiter ceiling · loudness passes · encodes · local corrections (hops, max dB) |
+|---|---|---|---|---|
+| Web −14 / −1 | AAC 128 | −15.2 / **+1.3** | −14.0 / −1.3 | −2.5 · 9 · 3 · 9, 3.54 |
+| | AAC 192 | −15.1 / **+0.4** | −14.0 / −1.5 | −2.0 · 10 · 4 · 10, 3.05 |
+| | AAC 320 | −14.9 / **+0.3** | −13.9 / −1.4 | −2.0 · 13 · 4 · 9, 1.88 |
+| | Opus 96 | −15.0 / **+0.5** | −14.0 / −1.3 | −2.0 · 9 · 3 · 8, 1.14 |
+| | Opus 160 | −15.0 / **+0.1** | −13.9 / −1.3 | −1.5 · 9 · 3 · 15, 1.85 |
+| Podcast −16 / −1 | AAC 128 | −16.7 / **+0.1** | −16.0 / −1.3 | −2.5 · 10 · 4 · 6, 1.23 |
+| | AAC 192 | −16.5 / **0.0** | −16.0 / −1.4 | −2.25 · 11 · 3 · 6, 2.02 |
+| | AAC 320 | −16.3 / **+0.5** | −15.9 / −1.4 | −1.5 · 8 · 3 · 5, 1.72 |
+| | Opus 96 | −16.4 / **+0.4** | −16.1 / −1.3 | −2.0 · 7 · 2 · 2, 1.01 |
+| | Opus 160 | −16.4 / **+0.3** | −15.9 / −1.2 | −1.5 · 7 · 2 · 6, 1.57 |
+| EBU R 128 −23 / −1 | AAC 128 | **−23.5** / −6.2 | −23.0 / −5.6 | −2.5 · 4 · 2 · 0 |
+| | AAC 192 | −23.3 / −6.2 | −23.0 / −5.9 | −2.0 · 4 · 2 · 0 |
+| | AAC 320 | −23.1 / −6.3 | −23.1 / −6.3 | −1.5 · 1 · 1 · 0 |
+| | Opus 96 | −23.3 / −6.2 | −23.0 / −6.0 | −2.0 · 4 · 2 · 0 |
+| | Opus 160 | −23.3 / −6.3 | −23.0 / −6.0 | −1.5 · 4 · 2 · 0 |
+| Web −14 / −1 | PCM 24-bit (MOV) | **−14.8** / −1.0 | −14.0 / −1.0 | −1 · 4 · 0 · 0 |
+
+(Before, R 128 passed the oracle at ±0.5 LU but AAC 128 kb/s delivered −23.5 LUFS: the codec's 0.5 LU loss; after,
+the decoded loudness steers the PCM aim, −22.50 LUFS in front of the encoder.) The result's own numbers (decoded from
+the file) agree with ffmpeg's to its 0.1 dB print precision in every row (the test bounds: 0.15 dB, 0.1 LU). Podcast AAC 192 ended at −2.25 dBTP: an encode that
+found a fresh offender lowered the table's −2.0 by one 0.25 dB step.
+
+- `apps/engine/test/audio-deliver.test.ts` (7): the table; corrections hold the corrected hop fully down, ramp at most
+  one hop's step per sample (no click); **convergence**: the loud mix lands −14.009 LUFS in 4 passes where the
+  one-pass delivery gave −14.776 (gain +5.31 dB vs +4.17); a steady tone pushed to −2 LUFS under −6 dBTP reports
+  `ceilingLimited` (the limiter takes the push) within 8 passes; **sample-exact**: a quiet mix (no limiting) written in
+  one pass equals `limitBuffer(gain · x)` bit for bit (max difference 0); AAC 128 / Opus 96 on the loud mix: decoded
+  −1.27 / −1.34 dBTP, −13.96 / −13.97 LUFS in 2 / 3 encodes, and encoding the delivered WAV again decodes the same true
+  peak (to 10⁻³ dB: the mux's encode is the checked one).
+- `export-lossy-true-peak.test.ts` "PCM … sample for sample": a 24-bit MOV of a mix that needs no limiting equals the
+  one-pass delivery within 1 LSB (1 pass, 0 encodes, ceiling −1).
+- `apps/engine/test/sound-check-stems.test.ts` "with an export's AAC encoding…": Sound Check with `exportAudio {aac,
+  128}` and `renderMixdown({deliver})` agree on the ceiling (−2.5), the gain, the encodes, the corrections and the
+  decoded true peak / loudness (2 dp); no TRUE_PEAK finding. The existing "delivered loudness equals the export's"
+  check passes with the convergence.
+- `apps/mcp/test/export-delivery.test.ts` (real engine over stdio, port 53401): `start_export {preset:
+  "draft-720p-h264", wait: true}` → `plan.loudness {−14, −1, limiterCeilingDb −2.5, codecHeadroomDb 1.5}`, result
+  `audioLoudness` measured on the decoded file −13.98 LUFS / −1.31 dBTP (PCM −13.63 / −2.50), 9 passes, 3 encodes, 9
+  hops corrected (max 3.54 dB), `truePeakMet`; `wait_for_job` returns the same; `sound_check {exportPreset}` →
+  `delivered {aac, 128, −13.98 LUFS, −1.31 dBTP, truePeakMet}`, the same ceiling, no TRUE_PEAK / LOUDNESS; refusals
+  (both arguments, an unknown preset, an unknown key).
+- Regressions: `apps/engine/test/{audio-mix,sound-check,sound-check-joint,sound-design-delivery,export-container}.test.ts`
+  pass (64 tests with the new files); web `export-warning-text`, `sound-check-model`, `sound-check-panel`,
+  `export-format`, `export-credits` (49); MCP `sound-check`, `readme-tools`, `conventions`, `sound-guide`,
+  `export-credits` (22 with the new one); `@jasper/api` (17). `pnpm typecheck` clean; `SD_GIT=1 pnpm lint` clean (the one
+  warning is in `e2e/sound-p6-transport.spec.ts`, not this branch's); `node scripts/i18n.mjs --check` (10 534 strings);
+  `pnpm notices --check` current after `pnpm notices` (the earshot record gained the `master.py` row).
+- **Real app** (built stack, `pnpm build`, `JASPER_FFMPEG=$PWD/vendor/ffmpeg-lgpl/linux-x64/ffmpeg JASPER_FFMPEG_LGPL_ONLY=1
+  pnpm fixtures`, `E2E_PORT=53402 E2E_SKIP_BUILD=1 E2E_SERVER_TIMEOUT_MS=600000 pnpm exec playwright test
+  e2e/sound-design.spec.ts`: 1 passed, 4.1 min): the walkthrough's export (H.264 + AAC 256 kb/s, Web) measures **−14.0
+  LUFS / −1.4 dBTP** on the file by ffmpeg (Final verification B: −14.6 LUFS / −0.1 dBTP); the result: decoded
+  −13.975 LUFS / −1.407 dBTP, PCM −13.88 / −1.50 in front of the encoder, ceiling −1.5 (0.5 dB headroom), 7 loudness
+  passes, 3 encodes, one hop corrected by 2.17 dB (the explosion), no warning. Looked at: `export-wave.png` (the bed,
+  the dialogue's syllables, the build into the drop and the bar hits fading out; no flattened hit) and `23-exported.png`
+  (the Jobs panel: Export Done, credits.md).
+- Cost (measured in these runs, 10 s of stereo at 48 kHz): a Web AAC export took 17–18 s here against 3–4 s before (the
+  passes and encodes, under the parallel test load of 8 workers); a mix within ±0.1 LU after one pass and no lossy
+  codec costs nothing extra. Estimated for a 1 h programme: each loudness pass ≈ one limiter run over the mix and each
+  encode ≈ one AAC encode + decode, so ≈ 10–15 extra passes over the audio (minutes, not hours; not measured).
+
+#### Limits and notes
+
+- The guarantee is per encode of this engine's ffmpeg: a platform that transcodes again (YouTube, Spotify) adds its own
+  overshoot; the file we deliver meets the target as decoded by ffmpeg.
+- After 8 encodes the best is delivered; if it still misses, the result says `truePeakMet: false` with
+  `AUDIO_TRUE_PEAK_OVER` (not seen in these runs, nor on the harsher voice-like synthetic at AAC 192 / 320 and Opus 64 /
+  96 in the debugging runs).
+- Local corrections are gain reductions of ≈ 30–70 ms around the hits the codec overshoots (up to 3.5 dB measured):
+  audible as slightly softer hits, never as clicks (10 ms ramps).
+- The Program monitor normalises with the one-pass gain (target − measured) and limits at the target: on a mix the
+  limiter works hard it plays up to ≈ 1 dB under the export (the push measured on the test mix: +1.1 dB) — not changed
+  here (the preview's gain comes from the stored analysis; carrying the converged gain there is a model change).
+- Sound Check judges the decoded codec only when told the export's encoding (Export ▸ Run Sound Check before export,
+  MCP `sound_check {exportPreset | exportAudio}`); the panel's own Run checks the PCM (its chips say so by not naming a
+  codec). A stored summary does not record which encoding it was checked with.
