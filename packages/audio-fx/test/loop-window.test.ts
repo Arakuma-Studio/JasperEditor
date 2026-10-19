@@ -281,6 +281,11 @@ describe('hostile input', () => {
 			),
 			{ numRuns: 200 },
 		);
+		// found by the property (seed −1099340938, Final verification A): a difference that overflowed to Infinity
+		expect(Number.isFinite(spectralDistanceDb([2.8939684488253437e293], [-1.797693134862313e308]))).toBe(
+			true,
+		);
+		expect(Number.isFinite(spectralDistanceDb([1e308, -1e308, 0], [-1e308, 1e308, 0]))).toBe(true);
 		expect(findCleanWindow(null as never, SR)).toBeNull();
 		expect(findLoopPoints(new Float32Array(10), SR, null as never)).toBeNull();
 		expect(LOOP_WINDOW.spikeDb).toBe(10);

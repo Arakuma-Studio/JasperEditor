@@ -353,6 +353,9 @@ function segmentBands(
 	};
 }
 
+/** A dB level bounded to ±1e6 dB (far outside any real level; keeps sums of differences finite). */
+const clampDb = (v: number) => Math.max(-1e6, Math.min(1e6, v));
+
 /**
  * How far two octave spectra differ in shape (dB): the mean absolute deviation of `a − b` from its median over the
  * bands within 40 dB of `ref`'s loudest band (`ref` default `a`). 0 for identical shapes at any level; never NaN.
@@ -371,7 +374,8 @@ export function spectralDistanceDb(
 		const y = b[i];
 		const r = ref[i];
 		if (!fin(x) || !fin(y) || !fin(r) || r < top - ROOM_TONE_STRETCH.distanceRangeDb) continue;
-		diffs.push(x - y);
+		// levels are dB: bounded so that hostile values cannot overflow the difference (2.9e293 − (−1.8e308) = Infinity)
+		diffs.push(clampDb(x) - clampDb(y));
 	}
 	if (!diffs.length) return 0;
 	const m = median(diffs);
