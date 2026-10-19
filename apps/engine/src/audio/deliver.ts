@@ -190,7 +190,10 @@ export async function runDeliveryPass(o: {
 		let written = 0;
 		const raw = Buffer.alloc(BLOCK * channels * 4);
 		// little-endian hosts read the float32 samples through a typed view (the WAV's byte order), else per sample
-		const f32 = LITTLE_ENDIAN && raw.byteOffset % 4 === 0 ? new Float32Array(raw.buffer, raw.byteOffset, BLOCK * channels) : null;
+		const f32 =
+			LITTLE_ENDIAN && raw.byteOffset % 4 === 0
+				? new Float32Array(raw.buffer, raw.byteOffset, BLOCK * channels)
+				: null;
 		const block = Array.from({ length: channels }, () => new Float32Array(BLOCK));
 		const emit = async (n: number) => {
 			limiter.process(block, 0, n);
@@ -558,11 +561,7 @@ export async function solveDelivery(o: {
 	};
 
 	/** Loudness convergence at a ceiling / correction: the gain that lands `aim` (PCM), ≤ maxLoudnessPasses. */
-	const converge = async (
-		start: DeliveryParams,
-		aim: number,
-		writeFirst: boolean,
-	): Promise<Converged> => {
+	const converge = async (start: DeliveryParams, aim: number, writeFirst: boolean): Promise<Converged> => {
 		let p = start;
 		let s = await measure(p, writeFirst);
 		const points: { g: number; i: number }[] = [];
@@ -755,7 +754,14 @@ export async function solveDelivery(o: {
 				}
 				out.push(
 					start(
-						{ params: p, r: { params: p, pcm, limited: base.limited, points: [] }, raw, ceiling: ceil, aim: aimAt, wav },
+						{
+							params: p,
+							r: { params: p, pcm, limited: base.limited, points: [] },
+							raw,
+							ceiling: ceil,
+							aim: aimAt,
+							wav,
+						},
 						`${tag}${'bcd'[n]}`,
 					),
 				);
@@ -770,7 +776,8 @@ export async function solveDelivery(o: {
 			for (let k = 0; ; k++) {
 				// the candidates in order of preference (the gentlest correction first): the first that meets the target is
 				// delivered and the others stop
-				let roundBest: { c: Cand; hopDb: Float32Array; loudErr: number; score: [number, number] } | null = null;
+				let roundBest: { c: Cand; hopDb: Float32Array; loudErr: number; score: [number, number] } | null =
+					null;
 				for (const [i, c] of round.entries()) {
 					if (!(await c.done)) continue;
 					const t0 = performance.now();
@@ -812,7 +819,8 @@ export async function solveDelivery(o: {
 					raw = c1.raw;
 					// offenders the last corrections did not know: the codec moves its overshoot around (bit reservoir, rate
 					// control), so the whole mix also gets a little more headroom
-					if (c1.fresh && k > 0) ceiling = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - L.ceilingStepDb);
+					if (c1.fresh && k > 0)
+						ceiling = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - L.ceilingStepDb);
 				}
 				let nextAim = from.aim;
 				if (!from.r.limited) nextAim = clampAim(from.aim + roundBest.loudErr);

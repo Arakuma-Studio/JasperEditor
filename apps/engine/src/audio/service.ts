@@ -260,7 +260,8 @@ export class AudioService {
 			)
 				range = { start: req.activity.startFrame, end: req.activity.endFrame };
 			// the whole sequence: also the export's converged delivery for the target (the preview plays its gain)
-			const deliveryTarget = scope.type === 'sequence' && range === planned.range ? this.deliveryTarget(planned, req) : null;
+			const deliveryTarget =
+				scope.type === 'sequence' && range === planned.range ? this.deliveryTarget(planned, req) : null;
 			mix = await renderMixdown({
 				...base,
 				range,

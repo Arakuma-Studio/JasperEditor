@@ -102,8 +102,17 @@ export function repairAudioMix(
 	});
 	// an unreadable converged delivery is dropped: the preview plays the one-pass gain until the mix is analysed again
 	const analysis = seq.master.loudness?.analysis as { delivery?: unknown } | null | undefined;
-	if (analysis && analysis.delivery !== undefined && analysis.delivery !== null && !readLoudnessDelivery(analysis.delivery)) {
+	if (
+		analysis &&
+		analysis.delivery !== undefined &&
+		analysis.delivery !== null &&
+		!readLoudnessDelivery(analysis.delivery)
+	) {
 		delete analysis.delivery;
-		note('drop-loudness-delivery', seq.id, 'removed an unreadable converged delivery from the loudness analysis');
+		note(
+			'drop-loudness-delivery',
+			seq.id,
+			'removed an unreadable converged delivery from the loudness analysis',
+		);
 	}
 }

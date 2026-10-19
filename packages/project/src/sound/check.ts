@@ -271,6 +271,8 @@ export function soundCheckInputsHash(
 	target?: SoundCheckTarget | null,
 	/** The reference profile the check compared with (P6-E8); default the sequence's (`settings.referenceProfile`). */
 	referenceProfile?: string | null,
+	/** The export encoding the check delivered through (absent / the PCM master: hashes stored before stay valid). */
+	exportAudio?: unknown,
 ): string {
 	try {
 		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
@@ -293,11 +295,55 @@ export function soundCheckInputsHash(
 				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
 				// the reference profile compared with (absent without one: hashes stored before stay valid)
 				...(profile ? { referenceProfile: profile } : {}),
+				// the export encoding checked for (absent for the PCM master: hashes stored before stay valid)
+				...(soundCheckAudioKey(exportAudio) ? { exportAudio: soundCheckAudioKey(exportAudio) } : {}),
 			}),
 		);
 	} catch {
 		return '';
 	}
+}
+
+/**
+ * The export audio encoding a Sound Check delivers the mix through before judging LOUDNESS / TRUE_PEAK (wp-note "Fix:
+ * preview loudness parity, codec-aware Sound Check, delivery speed"; the request's `exportAudio`, the summary's
+ * `exportAudio`): AAC or Opus at a bit rate, or PCM at another rate. Absent = the PCM master (the mix as it is).
+ */
+export type SoundCheckAudio = {
+	codec: 'aac' | 'opus' | 'pcm';
+	bitrateKbps?: number;
+	sampleRate?: 44100 | 48000 | 96000;
+};
+
+/** A Sound Check encoding read from untrusted data, or null (absent, unreadable, or the PCM master). Never throws. */
+export function readSoundCheckAudio(v: unknown): SoundCheckAudio | null {
+	if (!isRecord(v)) return null;
+	const { codec, bitrateKbps: b, sampleRate: r } = v;
+	if (codec !== 'aac' && codec !== 'opus' && codec !== 'pcm') return null;
+	const rate = r === 44100 || r === 48000 || r === 96000 ? r : undefined;
+	if (codec === 'pcm') return rate ? { codec, sampleRate: rate } : null;
+	const kbps = typeof b === 'number' && Number.isInteger(b) && b >= 16 && b <= 1536 ? b : undefined;
+	return {
+		codec,
+		...(kbps !== undefined ? { bitrateKbps: kbps } : {}),
+		...(rate && codec !== 'opus' ? { sampleRate: rate } : {}),
+	};
+}
+
+/** A stable key of a Sound Check encoding ('' for the PCM master): `aac/256`, `opus/160`, `pcm@44100`. */
+export function soundCheckAudioKey(v: unknown): string {
+	const a = readSoundCheckAudio(v);
+	if (!a) return '';
+	if (a.codec === 'pcm') return `pcm@${a.sampleRate}`;
+	return `${a.codec}/${a.bitrateKbps ?? 'default'}${a.sampleRate ? `@${a.sampleRate}` : ''}`;
+}
+
+/** The English label of a Sound Check encoding (the editor translates it): "AAC 256 kb/s", "PCM / master". */
+export function soundCheckAudioLabel(v: unknown): string {
+	const a = readSoundCheckAudio(v);
+	if (!a) return 'PCM / master';
+	if (a.codec === 'pcm') return `PCM ${a.sampleRate! / 1000} kHz`;
+	return `${a.codec === 'aac' ? 'AAC' : 'Opus'}${a.bitrateKbps ? ` ${a.bitrateKbps} kb/s` : ''}`;
 }
 
 /**
@@ -574,8 +620,11 @@ export type SoundCheckStatus = {
 	/** `none`: never checked; `current`: the summary describes this mix; `stale`: something it measured changed. */
 	state: 'none' | 'current' | 'stale';
 	summary: SoundCheckSummary | null;
-	/** What changed since: the mix (`mixFingerprint`), the cues / loudness settings / credits, the delivery preset. */
-	reasons: ('mix' | 'inputs' | 'preset')[];
+	/**
+	 * What changed since: the mix (`mixFingerprint`), the cues / loudness settings / credits, the delivery preset, the
+	 * export encoding to check for (`codec`: only with `soundCheckStatus(…, {checkFor})`).
+	 */
+	reasons: ('mix' | 'inputs' | 'preset' | 'codec')[];
 	/** The sequence's current mix fingerprint. */
 	mixHash: string;
 };
@@ -585,7 +634,15 @@ export type SoundCheckStatus = {
  * fingerprint, the other inputs (`soundCheckInputsHash` at the summary's preset) or the sequence's delivery preset
  * differ. Never throws.
  */
-export function soundCheckStatus(doc: ProjectDocument, sequenceId: string): SoundCheckStatus {
+export function soundCheckStatus(
+	doc: ProjectDocument,
+	sequenceId: string,
+	/**
+	 * `checkFor`: the export encoding the next export will have (the Sound Check panel's "Check for"); a summary checked
+	 * for another one (or for the PCM master when this is a codec) is stale with reason `codec`.
+	 */
+	opts: { checkFor?: SoundCheckAudio | null } = {},
+): SoundCheckStatus {
 	const seq = doc?.sequences?.[sequenceId] as Sequence | undefined;
 	if (!seq) return { state: 'none', summary: null, reasons: [], mixHash: '' };
 	const mixHash = mixFingerprint(doc, sequenceId);
@@ -597,11 +654,25 @@ export function soundCheckStatus(doc: ProjectDocument, sequenceId: string): Soun
 	const preset = (summary.preset ?? soundDesignSettingsOf(seq).delivery) as SoundDelivery;
 	if (
 		summary.inputsHash !== undefined &&
-		summary.inputsHash !== soundCheckInputsHash(doc, sequenceId, preset, readSoundCheckTarget(summary.target))
+		summary.inputsHash !==
+			soundCheckInputsHash(
+				doc,
+				sequenceId,
+				preset,
+				readSoundCheckTarget(summary.target),
+				undefined,
+				(summary as { exportAudio?: unknown }).exportAudio,
+			)
 	)
 		reasons.push('inputs');
 	if (summary.preset !== undefined && summary.preset !== soundDesignSettingsOf(seq).delivery)
 		reasons.push('preset');
+	if (
+		opts.checkFor !== undefined &&
+		soundCheckAudioKey(opts.checkFor) !==
+			soundCheckAudioKey((summary as { exportAudio?: unknown }).exportAudio)
+	)
+		reasons.push('codec');
 	return { state: reasons.length ? 'stale' : 'current', summary, reasons, mixHash };
 }
 

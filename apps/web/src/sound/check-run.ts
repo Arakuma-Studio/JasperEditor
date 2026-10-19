@@ -42,12 +42,15 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { confirmDialog } from '@jasper/ui';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { lastExportAudio } from '../export/settings.ts';
 import { t } from '../i18n/runtime.ts';
 import {
 	ackCommand,
 	acknowledgedView,
+	checkForAudio,
 	choiceRequest,
 	type DeliveryChoice,
+	defaultCheckFor,
 	defaultChoice,
 	type FixPlan,
 	type FixUnit,
@@ -88,6 +91,8 @@ export type SoundCheckState = {
 	fixed: readonly string[];
 	/** The delivery target chosen per sequence (absent: `defaultChoice`). */
 	choice: Readonly<Record<string, DeliveryChoice>>;
+	/** "Check for" per sequence: a `checkForValue` (absent: `checkForOf`'s default). */
+	checkFor: Readonly<Record<string, string>>;
 	/** Play all: the listen row playing (its index), or null. */
 	playing: { sequenceId: string; index: number; all: boolean } | null;
 	/** The last thing done, for screen readers (aria-live), with a counter so the same text is announced again. */
@@ -116,6 +121,7 @@ export function soundCheckStore(session: EditorSession): StoreApi<SoundCheckStat
 			fixing: null,
 			fixed: [],
 			choice: {},
+			checkFor: {},
 			playing: null,
 			announcement: { message: '', n: 0 },
 			cursor: null,
@@ -147,6 +153,28 @@ export function setChoice(session: EditorSession, sequenceId: string, choice: De
 	soundCheckStore(session).setState((s) => ({ choice: { ...s.choice, [sequenceId]: choice } }));
 }
 
+/**
+ * "Check for" of a sequence: the user's choice in this window, else the last export settings' encoding, else the
+ * delivery preset's typical one (`defaultCheckFor`). `source` names where a default came from (`choice` when chosen).
+ */
+export function checkForOf(
+	session: EditorSession,
+	sequenceId: string,
+): { audio: SoundCheckExportAudio | null; source: 'choice' | 'export' | 'preset' } {
+	const chosen = soundCheckStore(session).getState().checkFor[sequenceId];
+	if (chosen !== undefined) return { audio: checkForAudio(chosen), source: 'choice' };
+	const seq = seqOf(session, sequenceId);
+	return defaultCheckFor(
+		seq,
+		choiceOf(session, sequenceId),
+		seq ? lastExportAudio(session.projectId, seq) : null,
+	);
+}
+
+export function setCheckFor(session: EditorSession, sequenceId: string, value: string): void {
+	soundCheckStore(session).setState((s) => ({ checkFor: { ...s.checkFor, [sequenceId]: value } }));
+}
+
 /** The report of a sequence, when the store has one for it. */
 export function reportFor(session: EditorSession, sequenceId: string | null): SoundCheckResult | null {
 	const r = soundCheckStore(session).getState().result;
@@ -167,8 +195,11 @@ export async function runSoundCheck(
 	opts: {
 		sequenceId?: string;
 		choice?: DeliveryChoice;
-		/** The export's audio encoding (Export ▸ Run Sound Check before export): judge the decoded codec audio. */
-		exportAudio?: SoundCheckExportAudio;
+		/**
+		 * The export's audio encoding: judge the decoded codec audio (Export ▸ Run Sound Check before export passes the
+		 * plan's). Absent: the sequence's "Check for" (`checkForOf`); null: the PCM master.
+		 */
+		exportAudio?: SoundCheckExportAudio | null;
 		sleep?(ms: number): Promise<void>;
 	} = {},
 ): Promise<RunOutcome> {
@@ -186,6 +217,7 @@ export async function runSoundCheck(
 	const choice = opts.choice ?? choiceOf(session, seq.id);
 	if (opts.choice) setChoice(session, seq.id, opts.choice);
 	const req = choiceRequest(choice, seq);
+	const exportAudio = opts.exportAudio === undefined ? checkForOf(session, seq.id).audio : opts.exportAudio;
 	stopPlaying(session);
 	store.setState({
 		running: { sequenceId: seq.id, jobId: null, progress: null, stage: t('Starting') },
@@ -202,7 +234,7 @@ export async function runSoundCheck(
 						sequenceId: seq.id,
 						preset: req.preset,
 						...(req.target ? { target: req.target } : {}),
-						...(opts.exportAudio ? { exportAudio: opts.exportAudio } : {}),
+						...(exportAudio ? { exportAudio } : {}),
 						store: !session.getState().readOnly,
 					},
 					signal,

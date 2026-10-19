@@ -1,6 +1,7 @@
 // Sound Check model (spec 12 §2.6, P5-R1; wp-note "Phase 5 → WP5.1"): `soundDesign.setCheck` (store / clear the summary,
 // undo / redo, refusals), the credits setting, staleness (`soundCheckStatus`: the mix, the cues / loudness settings,
 // the preset), the verdict and counts, the message templates, load and repair.
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
@@ -9,6 +10,7 @@ import {
 	loadProject,
 	makeEnvelope,
 	mixFingerprint,
+	readSoundCheckAudio,
 	readSoundDesign,
 	repairDocument,
 	SOUND_CHECK_CATEGORY,
@@ -16,6 +18,8 @@ import {
 	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_MODEL_STRINGS,
 	SYNC_TOLERANCE_FRAMES,
+	soundCheckAudioKey,
+	soundCheckAudioLabel,
 	soundCheckCounts,
 	soundCheckInputsHash,
 	soundCheckMessage,
@@ -160,6 +164,81 @@ describe('soundDesign.setCheck', () => {
 		expect(soundCheckInputsHash(h.doc, h.seqId, 'web')).toBe(summary(h).inputsHash);
 	});
 
+	it('the export encoding checked for: recorded, hashed (absent = the PCM master, old hashes valid), stale against another Check for; undo / redo', () => {
+		const { h } = fixture();
+		const aac = { codec: 'aac', bitrateKbps: 256 } as const;
+		// absent / the PCM master: the same hash as before the field existed
+		const plain = soundCheckInputsHash(h.doc, h.seqId, 'web');
+		expect(soundCheckInputsHash(h.doc, h.seqId, 'web', null, undefined, null)).toBe(plain);
+		expect(soundCheckInputsHash(h.doc, h.seqId, 'web', null, undefined, { codec: 'pcm' })).toBe(plain);
+		const withAac = soundCheckInputsHash(h.doc, h.seqId, 'web', null, undefined, aac);
+		expect(withAac).not.toBe(plain);
+		expect(
+			soundCheckInputsHash(h.doc, h.seqId, 'web', null, undefined, { codec: 'aac', bitrateKbps: 128 }),
+		).not.toBe(withAac);
+		const before = h.doc;
+		h.ok([{ type: 'soundDesign.setCheck', summary: summary(h, { inputsHash: withAac, exportAudio: aac }) }]);
+		// undo: the document before is untouched
+		expect(
+			readSoundDesign((Object.values(before.sequences)[0] as { soundDesign?: unknown }).soundDesign)
+				?.lastCheck,
+		).toBeUndefined();
+		const st = soundCheckStatus(h.doc, h.seqId);
+		expect(st.state).toBe('current');
+		expect(st.summary!.exportAudio).toEqual(aac);
+		// "Check for" the same encoding: current; another one, or the master: stale with reason codec
+		expect(soundCheckStatus(h.doc, h.seqId, { checkFor: aac }).state).toBe('current');
+		expect(
+			soundCheckStatus(h.doc, h.seqId, { checkFor: { codec: 'opus', bitrateKbps: 160 } }).reasons,
+		).toEqual(['codec']);
+		expect(soundCheckStatus(h.doc, h.seqId, { checkFor: null }).reasons).toEqual(['codec']);
+		// a summary without an encoding (older ones, the master) is current for the master and stale for a codec
+		h.ok([{ type: 'soundDesign.setCheck', summary: summary(h) }]);
+		expect(soundCheckStatus(h.doc, h.seqId, { checkFor: null }).state).toBe('current');
+		expect(soundCheckStatus(h.doc, h.seqId, { checkFor: aac }).reasons).toEqual(['codec']);
+		expect(soundCheckStatus(h.doc, h.seqId).state).toBe('current');
+		// it survives a save and load
+		const loaded = loadProject(
+			clone(makeEnvelope(h.doc, { revision: 3, savedAt: '2026-10-16T12:00:00.000Z', platform: 'test' })),
+			{ ids: createCounterIdSource(900) },
+		);
+		expect(loaded.repairs).toEqual([]);
+	});
+
+	it('readSoundCheckAudio / soundCheckAudioKey / soundCheckAudioLabel read untrusted encodings', () => {
+		expect(readSoundCheckAudio({ codec: 'aac', bitrateKbps: 256 })).toEqual({
+			codec: 'aac',
+			bitrateKbps: 256,
+		});
+		expect(readSoundCheckAudio({ codec: 'opus', bitrateKbps: 160, sampleRate: 44100 })).toEqual({
+			codec: 'opus',
+			bitrateKbps: 160,
+		});
+		expect(readSoundCheckAudio({ codec: 'pcm' })).toBeNull();
+		expect(readSoundCheckAudio({ codec: 'pcm', sampleRate: 44100 })).toEqual({
+			codec: 'pcm',
+			sampleRate: 44100,
+		});
+		for (const bad of [null, 1, 'aac', {}, { codec: 'mp3' }, { codec: 'aac', bitrateKbps: 'x' }])
+			expect(soundCheckAudioKey(bad)).toBe(
+				bad && typeof bad === 'object' && 'codec' in bad && bad.codec === 'aac' ? 'aac/default' : '',
+			);
+		expect(soundCheckAudioKey({ codec: 'aac', bitrateKbps: 99999 })).toBe('aac/default');
+		expect(soundCheckAudioLabel({ codec: 'aac', bitrateKbps: 256 })).toBe('AAC 256 kb/s');
+		expect(soundCheckAudioLabel({ codec: 'opus', bitrateKbps: 160 })).toBe('Opus 160 kb/s');
+		expect(soundCheckAudioLabel(undefined)).toBe('PCM / master');
+		expect(soundCheckAudioLabel({ codec: 'pcm', sampleRate: 44100 })).toBe('PCM 44.1 kHz');
+		// never throws on anything
+		fc.assert(
+			fc.property(fc.anything(), (v) => {
+				readSoundCheckAudio(v);
+				soundCheckAudioKey(v);
+				soundCheckAudioLabel(v);
+			}),
+			{ numRuns: 300 },
+		);
+	});
+
 	it('refusals', () => {
 		const { h } = fixture();
 		const code = (cmd: Record<string, unknown>) => {
@@ -180,6 +259,21 @@ describe('soundDesign.setCheck', () => {
 			'E_SCHEMA',
 		);
 		expect(code({ type: 'soundDesign.setCheck' })).toBe('E_SCHEMA');
+		expect(code({ type: 'soundDesign.setCheck', summary: { ...base, exportAudio: { codec: 'mp3' } } })).toBe(
+			'E_SCHEMA',
+		);
+		expect(
+			code({
+				type: 'soundDesign.setCheck',
+				summary: { ...base, exportAudio: { codec: 'aac', bitrateKbps: 8 } },
+			}),
+		).toBe('E_SCHEMA');
+		expect(
+			code({
+				type: 'soundDesign.setCheck',
+				summary: { ...base, exportAudio: { codec: 'aac', sampleRate: 22050 } },
+			}),
+		).toBe('E_SCHEMA');
 		expect(code({ type: 'soundDesign.setSettings', credits: 'pdf' })).toBe('E_SCHEMA');
 		expect(code({ type: 'soundDesign.setCheck', summary: base })).toBe('ok');
 	});

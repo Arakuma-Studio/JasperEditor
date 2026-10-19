@@ -105,6 +105,7 @@ import {
 	readClipSfx,
 	readEssentialSound,
 	readLibraryProvenance,
+	readSoundCheckAudio,
 	readSoundCheckTarget,
 	requiresAttribution,
 	roomToneSpan,
@@ -1072,8 +1073,7 @@ export async function checkSequence(
 				...(wav
 					? {
 							outPath: wav,
-							write: (params, path = wav) =>
-								writeDeliveryWav(p1, path, sr, channels, rangeSamples, params),
+							write: (params, path = wav) => writeDeliveryWav(p1, path, sr, channels, rangeSamples, params),
 						}
 					: {}),
 				contentHash: pass1Hash?.digest('hex'),
@@ -2782,7 +2782,8 @@ export async function checkSequence(
 		sequenceId: seq.id,
 		revision: opts.revision,
 		mixHash: mixFingerprint(doc, seq.id),
-		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, target, profileId),
+		inputsHash: soundCheckInputsHash(doc, seq.id, opts.preset, target, profileId, opts.exportAudio),
+		...(readSoundCheckAudio(opts.exportAudio) ? { exportAudio: readSoundCheckAudio(opts.exportAudio)! } : {}),
 		preset: {
 			id: opts.preset,
 			label: preset.label,
@@ -2994,6 +2995,8 @@ async function soundCheckJob(ctx: JobContext, deps: SoundCheckDeps): Promise<Sou
 							inputsHash: report.inputsHash || 'none',
 							jobId: ctx.job.id,
 							...(report.wholeSequence ? {} : { range: report.range }),
+							// what the check was for: the export encoding (absent: the PCM master)
+							...(report.exportAudio ? { exportAudio: report.exportAudio } : {}),
 						},
 					},
 				],

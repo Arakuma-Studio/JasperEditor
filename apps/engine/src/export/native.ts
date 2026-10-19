@@ -1189,7 +1189,11 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				: copiedAudio !== null
 					? ['-c:a', 'copy']
 					: [
-							...audioEncodeArgs(audioCodecOf(encoder, output), output.audioBitrateKbps, output.audioChannels),
+							...audioEncodeArgs(
+								audioCodecOf(encoder, output),
+								output.audioBitrateKbps,
+								output.audioChannels,
+							),
 							'-ar',
 							String(output.audioSampleRate),
 							'-ac',

@@ -201,6 +201,21 @@ describe('sound_check humanVerdicts / target', () => {
 		expect(engine.requests[0]).not.toHaveProperty('target');
 	});
 
+	it('checks for the delivery preset’s typical encoding by default; exportAudio {codec: "pcm"} is the PCM master', async () => {
+		const { call, engine } = await connect();
+		expect((await call({})).isError).toBe(false);
+		// the sequence's delivery is Web: AAC 256 kb/s, as the editor's "Check for" before an export
+		expect(engine.requests.at(-1)!.exportAudio).toEqual({ codec: 'aac', bitrateKbps: 256 });
+		expect((await call({ preset: 'podcast' })).isError).toBe(false);
+		expect(engine.requests.at(-1)!.exportAudio).toEqual({ codec: 'aac', bitrateKbps: 128 });
+		expect((await call({ preset: 'broadcast-r128' })).isError).toBe(false);
+		expect(engine.requests.at(-1)).not.toHaveProperty('exportAudio');
+		expect((await call({ exportAudio: { codec: 'pcm' } })).isError).toBe(false);
+		expect(engine.requests.at(-1)).not.toHaveProperty('exportAudio');
+		expect((await call({ exportAudio: { codec: 'opus', bitrateKbps: 160 } })).isError).toBe(false);
+		expect(engine.requests.at(-1)!.exportAudio).toEqual({ codec: 'opus', bitrateKbps: 160 });
+	});
+
 	it('a verdict bound to its moment (soundDesign.setVerdict) says whether it is still current; older ones cannot tell', async () => {
 		const { call, engine } = await connect();
 		const clipId = engine.audioClip();

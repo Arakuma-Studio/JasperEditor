@@ -17,6 +17,13 @@ export type DeliveryPreset = {
 	truePeakDb: number;
 	/** Where the numbers come from. */
 	source: string;
+	/**
+	 * The audio encoding a deliverable to this target typically has: what Sound Check checks for until the sequence has
+	 * been exported (wp-note "Fix: preview loudness parity, codec-aware Sound Check, delivery speed"). Web: the
+	 * editor's own export default (H.264 + AAC 256 kb/s); podcast: Apple Podcasts' audio requirements (AAC recommended
+	 * over MP3, stereo 128–256 kb/s — the lowest, the strictest check); broadcast: PCM masters (no codec headroom).
+	 */
+	typicalAudio: { codec: 'aac' | 'opus' | 'pcm'; bitrateKbps?: number };
 };
 
 export const DELIVERY_PRESETS: Readonly<Record<SoundDelivery, DeliveryPreset>> = {
@@ -26,6 +33,7 @@ export const DELIVERY_PRESETS: Readonly<Record<SoundDelivery, DeliveryPreset>> =
 		integratedLufs: -14,
 		truePeakDb: -1,
 		source: 'Streaming platforms normalise to about −14 LUFS; −1 dBTP for lossy encoding headroom',
+		typicalAudio: { codec: 'aac', bitrateKbps: 256 },
 	},
 	podcast: {
 		id: 'podcast',
@@ -33,6 +41,7 @@ export const DELIVERY_PRESETS: Readonly<Record<SoundDelivery, DeliveryPreset>> =
 		integratedLufs: -16,
 		truePeakDb: -1,
 		source: 'AES TD1008 (−16 LUFS, −1 dBTP)',
+		typicalAudio: { codec: 'aac', bitrateKbps: 128 },
 	},
 	'broadcast-r128': {
 		id: 'broadcast-r128',
@@ -40,6 +49,7 @@ export const DELIVERY_PRESETS: Readonly<Record<SoundDelivery, DeliveryPreset>> =
 		integratedLufs: -23,
 		truePeakDb: -1,
 		source: 'EBU R 128 (2020): −23 LUFS ±1 LU, −1 dBTP',
+		typicalAudio: { codec: 'pcm' },
 	},
 	'atsc-a85': {
 		id: 'atsc-a85',
@@ -47,6 +57,7 @@ export const DELIVERY_PRESETS: Readonly<Record<SoundDelivery, DeliveryPreset>> =
 		integratedLufs: -24,
 		truePeakDb: -2,
 		source: 'ATSC A/85: −24 LKFS ±2 dB, −2 dBTP',
+		typicalAudio: { codec: 'pcm' },
 	},
 };
 

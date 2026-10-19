@@ -263,7 +263,9 @@ describe('the decoded check of a lossy encode', () => {
 				}),
 			);
 			// the table's ceiling, or under it by the steps an encode with fresh offenders takes (DELIVERY_ALTERNATIVES)
-			expect(r.params.ceilingDb).toBeLessThanOrEqual(-1 - codecHeadroomDb({ codec, bitrateKbps: kbps, channels: 2 }));
+			expect(r.params.ceilingDb).toBeLessThanOrEqual(
+				-1 - codecHeadroomDb({ codec, bitrateKbps: kbps, channels: 2 }),
+			);
 			expect(r.params.ceilingDb).toBeGreaterThanOrEqual(-1 - DELIVERY_LIMITS.maxCodecHeadroomDb);
 			expect(r.encodePasses).toBeGreaterThanOrEqual(1);
 			expect(r.decoded).not.toBeNull();

@@ -15,6 +15,7 @@ import type {
 } from '@jasper/api';
 import {
 	mixFingerprint,
+	readSoundCheckAudio,
 	type Sequence,
 	SOUND_CHECK_VERDICT_MARKER,
 	soundAcknowledgementsOf,
@@ -36,7 +37,7 @@ import { SoundCheckPanel } from '../src/panels/soundCheck/SoundCheckPanel.tsx';
 import { shortcutRows } from '../src/shell/keymap/KeyboardShortcutsDialog.tsx';
 import { assignShortcut, restoreBindings } from '../src/shell/keymap/store.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
-import { soundCheckStore } from '../src/sound/check-run.ts';
+import { setCheckFor, soundCheckStore } from '../src/sound/check-run.ts';
 import { cuesOf } from '../src/sound/cues/model.ts';
 import { audioAsset } from './proposal-helpers.ts';
 import { registered, soundEntry } from './sound-helpers.ts';
@@ -176,7 +177,16 @@ function fakeCheckEngine(
 			return start(() => {
 				const doc = session.getCommitted();
 				const mixHash = mixFingerprint(doc, seqId);
-				const inputsHash = soundCheckInputsHash(doc, seqId, req.preset ?? 'web', req.target);
+				// as the engine: the export encoding checked for is part of the hash, the report and the summary
+				const exportAudio = readSoundCheckAudio(req.exportAudio);
+				const inputsHash = soundCheckInputsHash(
+					doc,
+					seqId,
+					req.preset ?? 'web',
+					req.target,
+					undefined,
+					req.exportAudio,
+				);
 				const result = resultFixture({
 					projectId: session.projectId,
 					sequenceId: seqId,
@@ -186,6 +196,7 @@ function fakeCheckEngine(
 					without,
 					stored: !!req.store,
 				});
+				if (exportAudio) result.report.exportAudio = exportAudio;
 				if (req.store) {
 					const r = session.apply({
 						label: 'Sound Check Result',
@@ -202,6 +213,7 @@ function fakeCheckEngine(
 									at: '2026-10-17T10:00:00.000Z',
 									preset: req.preset ?? 'web',
 									...(req.target ? { target: req.target } : {}),
+									...(exportAudio ? { exportAudio } : {}),
 									jobId: `job_${n}`,
 								},
 							} as never,
@@ -389,6 +401,57 @@ describe('Sound Check panel', () => {
 		expect(screen.getByTestId('sound-check-live').textContent).toContain(
 			'Sound Check Fail: 1 error, 4 warnings',
 		);
+	});
+
+	it('Check for: defaults to the delivery preset’s typical encoding, then to the last export settings; Run passes it, the summary records it, another choice makes it stale', async () => {
+		localStorage.clear();
+		const f = fixture();
+		mount(f);
+		// Web: AAC 256 kb/s (the editor's export default), until the sequence has been exported
+		const row = screen.getByTestId('sound-check-check-for');
+		expect(row.textContent).toContain('AAC 256 kb/s');
+		expect(row.textContent).toContain('(typical for this delivery target)');
+		await run();
+		expect(f.engine.checks[0]!.exportAudio).toEqual({ codec: 'aac', bitrateKbps: 256 });
+		const summary = soundCheckStatus(f.session.getCommitted(), f.seqId).summary!;
+		expect(summary.exportAudio).toEqual({ codec: 'aac', bitrateKbps: 256 });
+		expect(screen.getByTestId('sound-check-checked-for').textContent).toBe('checked for AAC 256 kb/s');
+		expect(screen.queryByTestId('sound-check-stale')).toBeNull();
+		// another encoding to check for: the summary (and the report) are stale for it
+		await act(async () => {
+			setCheckFor(f.session, f.seqId, 'opus:160');
+		});
+		expect((await screen.findByTestId('sound-check-stale')).textContent).toContain(
+			'it was checked for another export encoding',
+		);
+		expect(
+			soundCheckStatus(f.session.getCommitted(), f.seqId, { checkFor: { codec: 'opus', bitrateKbps: 160 } })
+				.reasons,
+		).toEqual(['codec']);
+		// PCM / master: no encoding in the request
+		await act(async () => {
+			setCheckFor(f.session, f.seqId, 'master');
+		});
+		await run();
+		await waitFor(() => expect(f.engine.checks).toHaveLength(2));
+		expect(f.engine.checks.at(-1)!.exportAudio).toBeUndefined();
+		await waitFor(() =>
+			expect(soundCheckStatus(f.session.getCommitted(), f.seqId).summary!.exportAudio).toBeUndefined(),
+		);
+		await settle();
+		expect(screen.getByTestId('sound-check-checked-for').textContent).toBe('checked for PCM / master');
+		// the sequence was exported as VP9 (WebM + Opus at the dialog's 256 kb/s) before: the last export settings win
+		soundCheckStore(f.session).setState({ checkFor: {} });
+		localStorage.setItem(
+			`jasper.export.${f.session.projectId}.${f.seqId}`,
+			JSON.stringify({ range: 'entire', engine: 'auto', codec: 'vp9' }),
+		);
+		cleanup();
+		mount(f);
+		const again = screen.getByTestId('sound-check-check-for');
+		expect(again.textContent).toContain('Opus 256 kb/s');
+		expect(again.textContent).toContain('(the last export settings)');
+		localStorage.clear();
 	});
 
 	it('cancel stops the job; a run that fails says why', async () => {

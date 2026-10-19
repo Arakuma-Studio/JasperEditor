@@ -376,6 +376,8 @@ export const SoundCheckReportSchema = z.object({
 	/** `mixFingerprint` and `soundCheckInputsHash` of what was checked (staleness, `soundCheckStatus`). */
 	mixHash: z.string(),
 	inputsHash: z.string(),
+	/** The export encoding the mix was delivered through (`request.exportAudio`; absent: the PCM master). */
+	exportAudio: SoundCheckExportAudioSchema.optional(),
 	preset: z.object({
 		id: z.enum(SOUND_DELIVERIES),
 		label: z.string(),

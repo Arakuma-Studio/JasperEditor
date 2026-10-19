@@ -89,13 +89,16 @@ describe.runIf(RUN)('delivery export time (benchmark)', { timeout: 3_600_000 }, 
 				console.log(`bench ${kind} ${name}: ${fmt(ms)}`);
 			});
 	for (const kind of ['typical', 'loud'] as const)
-		it.runIf(!ONLY || `warm ${kind}`.includes(ONLY))(`warm ${kind}: aac 256, web (the same mix again)`, async () => {
-			const ms: number[] = [];
-			for (let i = 0; i < RUNS; i++) {
-				const wav = wavOf(kind, 100 + i);
-				await exportMs(wav, { codec: 'aac', bitrateKbps: 256, normalize: WEB }, 'mp4');
-				ms.push(await exportMs(wav, { codec: 'aac', bitrateKbps: 256, normalize: WEB }, 'mp4'));
-			}
-			console.log(`bench warm ${kind} aac 256, web: ${fmt(ms)}`);
-		});
+		it.runIf(!ONLY || `warm ${kind}`.includes(ONLY))(
+			`warm ${kind}: aac 256, web (the same mix again)`,
+			async () => {
+				const ms: number[] = [];
+				for (let i = 0; i < RUNS; i++) {
+					const wav = wavOf(kind, 100 + i);
+					await exportMs(wav, { codec: 'aac', bitrateKbps: 256, normalize: WEB }, 'mp4');
+					ms.push(await exportMs(wav, { codec: 'aac', bitrateKbps: 256, normalize: WEB }, 'mp4'));
+				}
+				console.log(`bench warm ${kind} aac 256, web: ${fmt(ms)}`);
+			},
+		);
 });

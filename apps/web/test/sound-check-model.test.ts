@@ -26,6 +26,11 @@ import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { exportAudioOf } from '../src/export/SoundCheckGate.tsx';
 import { __setCatalogForTests } from '../src/i18n/runtime.ts';
 import {
+	CHECK_FOR_ENCODINGS,
+	checkForAudio,
+	checkForOptions,
+	checkForValue,
+	defaultCheckFor,
 	defaultChoice,
 	fixWhyText,
 	groupIssues,
@@ -477,5 +482,36 @@ describe('checked as an export encodes it (loudness.delivered)', () => {
 			sampleRate: 44100,
 		});
 		expect(exportAudioOf(undefined, undefined)).toBeUndefined();
+	});
+
+	it('Check for: values round-trip, the options list each encoding once, the default follows the last export, else the preset', () => {
+		for (const a of [null, ...CHECK_FOR_ENCODINGS, { codec: 'pcm', sampleRate: 44100 } as const])
+			expect(checkForAudio(checkForValue(a))).toEqual(a);
+		expect(checkForAudio('aac:x')).toBeNull();
+		expect(checkForAudio('nope')).toBeNull();
+		const opts = checkForOptions({ codec: 'pcm', sampleRate: 44100 });
+		expect(opts[0]).toEqual({ value: 'master', label: 'PCM / master' });
+		expect(opts.map((o) => o.value)).toContain('aac:256');
+		expect(opts.at(-1)).toEqual({ value: 'pcm@44100', label: 'PCM 44.1 kHz' });
+		expect(new Set(opts.map((o) => o.value)).size).toBe(opts.length);
+		expect(checkForOptions({ codec: 'aac', bitrateKbps: 256 })).toHaveLength(opts.length - 1);
+		// the default: the last export settings, else the delivery preset's typical encoding
+		const preset = (p: 'web' | 'podcast' | 'broadcast-r128' | 'atsc-a85') =>
+			defaultCheckFor(undefined, { kind: 'preset', preset: p }, null);
+		expect(preset('web')).toEqual({ audio: { codec: 'aac', bitrateKbps: 256 }, source: 'preset' });
+		expect(preset('podcast')).toEqual({ audio: { codec: 'aac', bitrateKbps: 128 }, source: 'preset' });
+		expect(preset('broadcast-r128')).toEqual({ audio: null, source: 'preset' });
+		expect(preset('atsc-a85')).toEqual({ audio: null, source: 'preset' });
+		expect(
+			defaultCheckFor(
+				undefined,
+				{ kind: 'preset', preset: 'broadcast-r128' },
+				{ audio: { codec: 'opus', bitrateKbps: 160 } },
+			),
+		).toEqual({ audio: { codec: 'opus', bitrateKbps: 160 }, source: 'export' });
+		expect(defaultCheckFor(undefined, { kind: 'preset', preset: 'web' }, { audio: null })).toEqual({
+			audio: null,
+			source: 'export',
+		});
 	});
 });

@@ -6,7 +6,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mgRegistry } from '@jasper/mg-templates';
-import { defaultRegistries, frameToSample, type Sequence } from '@jasper/project';
+import { defaultRegistries, frameToSample, type Sequence, soundCheckInputsHash } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DELIVERY_LIMITS } from '../src/audio/deliver.ts';
 import { renderMixdown, WAV_F32_HEADER_BYTES } from '../src/audio/mixdown.ts';
@@ -159,6 +159,12 @@ describe('renderStems', { timeout: 600_000 }, () => {
 			deliver: { codec: 'aac', bitrateKbps: 128, sampleRate: 48000, channels: 2 },
 			scratchDir: scratch,
 		});
+		// the report says what it was checked for, and its inputs hash includes it
+		expect(report.exportAudio).toEqual({ codec: 'aac', bitrateKbps: 128 });
+		expect(report.inputsHash).toBe(
+			soundCheckInputsHash(doc, seq.id, 'web', null, undefined, { codec: 'aac', bitrateKbps: 128 }),
+		);
+		expect(report.inputsHash).not.toBe(soundCheckInputsHash(doc, seq.id, 'web'));
 		const d = r.normalized!.delivery;
 		const n = report.loudness.normalization;
 		expect(n.limiterCeilingDb).toBeCloseTo(d.params.ceilingDb, 2);

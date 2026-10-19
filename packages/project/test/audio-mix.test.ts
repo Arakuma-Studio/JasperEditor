@@ -656,7 +656,14 @@ describe('mixer commands', () => {
 			ceilingLimited: false,
 			deliveredLufs: -14.01,
 		};
-		const analysis = { integratedLufs: -18.18, truePeakDbtp: -1.47, lra: 3, mixHash: hash, analyzedAt: 'now', delivery };
+		const analysis = {
+			integratedLufs: -18.18,
+			truePeakDbtp: -1.47,
+			lra: 3,
+			mixHash: hash,
+			analyzedAt: 'now',
+			delivery,
+		};
 		const before = h.doc;
 		h.ok([{ type: 'mixer.setLoudness', enabled: true, targetLufs: -14, truePeakDb: -1, analysis }]);
 		// the converged gain (+5.31 dB), not the one-pass target − measured (+4.18 dB)

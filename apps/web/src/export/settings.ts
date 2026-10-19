@@ -6,6 +6,7 @@ import type {
 	EncodingCapabilities,
 	ExportSettings,
 	RenderPlan,
+	SoundCheckExportAudio,
 	VideoCodec,
 } from '@jasper/api';
 import {
@@ -429,6 +430,36 @@ type Remembered = {
 	credits?: CreditsChoice;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
+
+/**
+ * The audio encoding the sequence's last export settings write (the Export dialog's remembered choice: its codec's
+ * audio — ProRes PCM, VP9 Opus, else AAC — at the dialog's bit rate and the chosen rate), as Sound Check's "Check for"
+ * names it: `audio` null for PCM at the sequence rate (the master). Null when the sequence was never exported here.
+ */
+export function lastExportAudio(
+	projectId: string,
+	seq: Sequence,
+	opus = true,
+): { audio: SoundCheckExportAudio | null } | null {
+	const r = loadExportChoice(projectId, seq.id);
+	if (!r) return null;
+	const format = exportFormatOf(r.codec ?? 'h264', opus);
+	const a = r.audio ?? {};
+	const channels =
+		a.channels && a.channels !== 'auto' ? a.channels : seq.settings.masterLayout === '5.1' ? 6 : 2;
+	const rate = typeof a.sampleRate === 'number' ? a.sampleRate : undefined;
+	if (format.audio === 'pcm')
+		return {
+			audio: rate && rate !== seq.settings.audioSampleRate ? { codec: 'pcm', sampleRate: rate } : null,
+		};
+	return {
+		audio: {
+			codec: format.audio,
+			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
+			...(rate && format.audio === 'aac' ? { sampleRate: rate } : {}),
+		},
+	};
+}
 
 export function loadExportChoice(projectId: string, sequenceId: string): Remembered | null {
 	try {
