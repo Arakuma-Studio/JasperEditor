@@ -1245,7 +1245,8 @@ outputSeconds}` (seconds from the analysed range and from the remix's start; the
 the clip moves by at most half a bar, never over the next clip); a landed drop is recorded on the remix
 (`ClipRemix.anchors`) and lands again when the clip is remixed to another length; every remix's joints sit 5 ms before
 each beat's measured attack and its crossfades end at the joint (`end-at-cut`, ≥ 30 ms; 110 ms at a joint the plan measures
-as chopped by Sound Check's EDGE rule, `jointCrossfadeSeconds`, final verification B); MCP also has
+as chopped by Sound Check's EDGE rule, `jointCrossfadeSeconds`, final verification B; Auto-Match and Delivery Target give
+the pieces of one remix one gain); MCP also has
 `fit_music_to_picture {mode: land-drop | end-on-bar}` and the editor Clip ▸ Audio Options ▸ Land Drop on Playhead / Hero
 Cue and End on Bar (a music clip ends just before a downbeat, faded over a beat); a stop moves onto the bar inside
 0.1–0.5 s before the hit (earshot's stop-down norm) or the cue's own window; tuning goes to the nearest scale note (≤ 1 st
