@@ -537,7 +537,10 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 		const wait = (30 * HL20 + MARGIN) / SR;
 		const plays = Math.max(2, Math.ceil(PLAYS / 2));
 		let measured = 0;
-		for (let i = 0; i < plays * 3 && measured < plays; i++) {
+		// up to 8 tries per measured play: a play whose audio clock slipped is played again (below), and on a shared host
+		// most can slip — 7 of 9 in one run at load ≈ 10 (Final verification A, round 8), with 3 tries per play the test
+		// ran out of plays without one measurement failing
+		for (let i = 0; i < plays * 8 && measured < plays; i++) {
 			await takeLog(page);
 			await seekPaused(page, frameAt(1));
 			await seekPaused(page, 0);
