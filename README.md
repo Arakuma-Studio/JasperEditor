@@ -994,7 +994,11 @@ on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` re
 `E2E_SERVER_TIMEOUT_MS=<ms>` (1 000 … 3 600 000) changes it for one run, e.g. `E2E_SERVER_TIMEOUT_MS=600000` on a
 heavily loaded shared host. The pre-step also fetches the LGPL FFmpeg directory
 where a pinned prebuilt exists (`E2E_SKIP_LGPL=1` skips it), so the exports in the specs are made by the
-shipped build (H.264 by OpenH264).
+shipped build (H.264 by OpenH264). The specs run in the system Chrome; `JASPER_BROWSER_EXECUTABLE=<chrome>` gives
+the pages, the engine's renders and the GL unit tests one other Chrome instead (specs that need flags take them from
+`browserLaunch` in `e2e/support.ts`, which keeps it). HTML-in-Canvas specs (GL blend modes, adjustment layers with GPU
+effects, the HDR display transform, 3D) need Chrome 148+: the build server's gate runs with Chrome for Testing
+150.0.7871.124 that way (its system Chrome is 142).
 
 `pnpm test` includes the MCP integration suite (`apps/mcp/test/integration.test.ts`): it boots a real engine
 in token mode on a free loopback port (`MCP_TEST_PORT` pins one; `--start-engine` on another) with a temp
