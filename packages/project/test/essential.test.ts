@@ -420,6 +420,32 @@ describe('Remix', () => {
 		{ srcSeconds: 16, lenSeconds: 4 },
 	];
 
+	it('Auto-Match gives the pieces of one remix ONE gain (their joints do not jump); other clips match on their own', () => {
+		// final verification B: matched one by one, the quiet intro piece and the loud drop piece got gains 9 dB apart
+		const { h, clip } = setup(20);
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'music' }]);
+		h.ok([{ type: 'clip.remix', clipId: id, targetFrames: 360, pieces, bpm: 120 }]);
+		const m = h.registerVideo({ kind: 'audio', seconds: 5 });
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 400, tracks: { audio: 'A1' } }]);
+		const list = h.clips('A1');
+		expect(list.length).toBe(4);
+		const other = list[3]!.id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [other], audioType: 'music' }]);
+		const measuredLufs = { [list[0]!.id]: -30, [list[1]!.id]: -20, [list[2]!.id]: null, [other]: -26 };
+		const r = h.ok([{ type: 'essentialSound.autoMatch', measuredLufs, targetLufs: -23 }]);
+		const out = (r.results[0] as { clips: Record<string, { gainDb?: number; skipped?: string }> }).clips;
+		// the duration-weighted power mean of the measured pieces (123 and 117 frames)
+		const mean = 10 * Math.log10((123 * 10 ** -3 + 117 * 10 ** -2) / 240);
+		const gains = h.clips('A1').map((c) => (c as unknown as { gainDb: number }).gainDb);
+		expect(gains[0]).toBeCloseTo(-23 - mean, 9);
+		expect(gains[1]).toBeCloseTo(gains[0]!, 9);
+		// the silent piece is left alone (as any unmeasured clip), the other music clip matches its own −26
+		expect(out[list[2]!.id]!.skipped).toBe('silent');
+		expect(gains[3]).toBeCloseTo(3, 9);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
 	it('replaces the clip by grouped pieces with crossfades, exact jump offsets; revert restores', () => {
 		const { h, clip } = setup(20);
 		const id = clip().id;

@@ -379,7 +379,7 @@ bed) through `renderMixdown` (`measureOnly`), runs VAD, and computes 10 ms curve
 | `HARSH` (P6-E2) | a placed sound's 2–6 kHz 5 ms-RMS peak more than 6 dB over the music stem's loudest (else the dialogue's; neither: not judged): warning, fix −excess dB (safe when MASKED still holds; else a Parametric Equalizer dip, not safe); centroid > 6.5 kHz: info |
 | `LAYER_INAUDIBLE` (P6-E2) | a layer of a multi-layer cue adding < 1 dB in every 1/3-octave band (100 Hz–12.6 kHz) over the bed plus its cue's other layers, over its loudest 60 ms: info; fix the gain that adds 3 dB in its dominant band (≤ 18 dB), else remove the layer (not safe) |
 | `COVERAGE` (P6-E3) | ≥ 2 cues of a class (kind + anchor source; text / keyframe cues by clip, cuts by track) filled and ≥ 1 not (muted, ambient and dialogue-silenced cues excluded): warning; fix fill them with the class's sound (not safe), else mute them |
-| `ENDING`, `HEAD` (P6-E3) | the delivered mix's last 50 ms RMS > −45 dBFS or last 10 ms peak > −60 dBFS at the sequence end: warning, a 0.5 s Mix fade-out reaching silence 50 ms before the end (not safe) / first 5 ms peak > −40 dBFS: info, a 20 ms Mix fade-in |
+| `ENDING`, `HEAD` (P6-E3) | the delivered mix's last 50 ms RMS > −45 dBFS or last 10 ms peak > −60 dBFS at the sequence end, unless the mix fades out to silence there (last 50 ms ≥ 18 dB under the level 0.5 s before and still falling; final verification B): warning, a 0.5 s Mix fade-out reaching silence 50 ms before the end (not safe) / first 5 ms peak > −40 dBFS: info, a 20 ms Mix fade-in |
 | `ARC` (P6-E3) | info: the loudest 3 s short-term window holds no hero while heroes exist, or lies in the last 15 % with no hero there |
 
 Every issue has `{code, severity, frame?, range?, message, fix?{tool|command,args}}`.
@@ -1244,7 +1244,8 @@ outputSeconds}` (seconds from the analysed range and from the remix's start; the
 `fit: 'nearest'` plans the nearest length a bar-line plan reaches (the editor and MCP use it when no length is given:
 the clip moves by at most half a bar, never over the next clip); a landed drop is recorded on the remix
 (`ClipRemix.anchors`) and lands again when the clip is remixed to another length; every remix's joints sit 5 ms before
-each beat's measured attack and its crossfades end at the joint (`end-at-cut`, ≥ 30 ms); MCP also has
+each beat's measured attack and its crossfades end at the joint (`end-at-cut`, ≥ 30 ms; 110 ms at a joint the plan measures
+as chopped by Sound Check's EDGE rule, `jointCrossfadeSeconds`, final verification B); MCP also has
 `fit_music_to_picture {mode: land-drop | end-on-bar}` and the editor Clip ▸ Audio Options ▸ Land Drop on Playhead / Hero
 Cue and End on Bar (a music clip ends just before a downbeat, faded over a beat); a stop moves onto the bar inside
 0.1–0.5 s before the hit (earshot's stop-down norm) or the cue's own window; tuning goes to the nearest scale note (≤ 1 st
