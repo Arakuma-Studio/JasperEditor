@@ -471,17 +471,28 @@ test('a latency added while playing: after the restart the Mix is on time again'
 });
 
 /**
- * Picture − audio (s) after `after` + `skip`: the picture's anchor (the smallest `contextTime − frame / fps` the
- * Program monitor showed while playing, sampled into `__p6frames`) minus the program's (a whole-second click, named by
+ * Picture − audio (s) after `after` + `skip`: the picture's anchor minus the program's (a whole-second click, named by
  * its marker, minus its content time). Positive: the picture shows a time after the program played it.
+ * The anchor is `contextTime − frame / fps` when a frame is first seen (`__p6frames`: one sample per animation frame,
+ * so up to one refresh after the frame appeared), taken over the frames as their 10th percentile: the smallest sample
+ * alone (the estimate until Final verification A) followed single samples whose output timestamp read 11–38 ms early
+ * (measured on Chrome 150: the lowest sample of a play that far under the next lowest ones, the rest of the play on
+ * time), which failed the bounds below in 4 of 35 long-wait plays.
  */
 async function pictureLag(rec: Recording, after: number, skip = 0.6): Promise<number> {
 	const samples = await page.evaluate(
 		() => (window as unknown as { __p6frames?: [number, number][] }).__p6frames ?? [],
 	);
-	let picture = Number.POSITIVE_INFINITY;
+	const firstSeen = new Map<number, number>();
+	let smallest = Number.POSITIVE_INFINITY;
 	for (const [t, frame] of samples)
-		if (t > after + skip) picture = Math.min(picture, t - (frame * fps.den) / fps.num);
+		if (t > after + skip) {
+			const off = t - (frame * fps.den) / fps.num;
+			firstSeen.set(frame, Math.min(firstSeen.get(frame) ?? Number.POSITIVE_INFINITY, off));
+			smallest = Math.min(smallest, off);
+		}
+	const perFrame = [...firstSeen.values()].sort((x, y) => x - y);
+	const picture = perFrame[Math.floor(perFrame.length / 10)] ?? Number.POSITIVE_INFINITY;
 	const cs = clicks(rec);
 	const named = cs.findIndex((c, i) => !c.marker && c.t > after + skip && cs[i + 1]?.marker);
 	if (named < 0 || !Number.isFinite(picture)) {
@@ -494,7 +505,16 @@ async function pictureLag(rec: Recording, after: number, skip = 0.6): Promise<nu
 	const c = cs[named]!;
 	// content time of the named click: a whole second + 0.03 s, the one the picture puts nearest
 	const m = Math.round(c.t - picture - 0.03);
-	return picture - (c.t - (m + 0.03));
+	const program = c.t - (m + 0.03);
+	console.log(
+		'pictureLag',
+		JSON.stringify({
+			frames: perFrame.length,
+			p10: +(picture - program).toFixed(4),
+			smallestSample: +(smallest - program).toFixed(4),
+		}),
+	);
+	return picture - program;
 }
 
 test('Play with a long read-ahead (0.62 s): the first click is heard, the picture waits for it and shows buffering', async () => {
