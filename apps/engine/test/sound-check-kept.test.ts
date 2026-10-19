@@ -237,6 +237,21 @@ describe('the last report on a real engine', { timeout: 600_000 }, () => {
 			(await post('/api/sound-design/check/last', { projectId })).json(),
 		);
 		expect(stale).toMatchObject({ state: 'stale', reasons: ['mix'] });
+		// checked for a lossy export (as jasper-mcp's sound_check does by default): current until something changes
+		// (the route hashed the inputs without the encoding: every such report read stale, Final verification A)
+		const aac = await post(
+			'/api/sound-design/check',
+			{ projectId, exportAudio: { codec: 'aac', bitrateKbps: 256 } },
+			EDITOR_H,
+		);
+		expect(aac.statusCode, aac.body).toBe(202);
+		const aacJob = await coreServices(app).queue.wait((aac.json() as EngineJob).id);
+		expect(aacJob.state, JSON.stringify(aacJob.error)).toBe('succeeded');
+		const keptAac = SoundCheckLastResponseSchema.parse(
+			(await post('/api/sound-design/check/last', { projectId })).json(),
+		);
+		expect(keptAac.result.report.exportAudio).toMatchObject({ codec: 'aac' });
+		expect(keptAac).toMatchObject({ jobId: aacJob.id, state: 'current', reasons: [] });
 		const unknown = await post('/api/sound-design/check/last', { projectId, sequenceId: 'seq_nope' });
 		expect(unknown.statusCode).toBe(404);
 		// strict arguments

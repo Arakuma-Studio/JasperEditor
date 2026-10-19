@@ -458,7 +458,11 @@ export default async function soundDesignRoutes(app: FastifyInstance): Promise<v
 			const target = report.preset.custom
 				? { integratedLufs: report.preset.integratedLufs, truePeakDb: report.preset.truePeakDb }
 				: null;
-			if (report.inputsHash !== soundCheckInputsHash(doc, seq.id, report.preset.id, target))
+			// with the encoding it was checked for, as the check hashed it (and as the editor's panel compares it)
+			if (
+				report.inputsHash !==
+				soundCheckInputsHash(doc, seq.id, report.preset.id, target, undefined, report.exportAudio)
+			)
 				reasons.push('inputs');
 			const out: SoundCheckLastResponse = {
 				projectId: body.projectId,
