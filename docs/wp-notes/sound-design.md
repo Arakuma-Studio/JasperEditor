@@ -10443,6 +10443,12 @@ found a fresh offender lowered the table's −2.0 by one 0.25 dB step.
   codec costs nothing extra. Estimated for a 1 h programme: each loudness pass ≈ one limiter run over the mix and each
   encode ≈ one AAC encode + decode, so ≈ 10–15 extra passes over the audio (minutes, not hours; not measured).
 
+Gate on this branch before the fast-forward (build server): `pnpm vitest run --project @jasper/engine --maxWorkers=8`
+1668 passed (102 skipped); `--project @jasper/web` 1117 passed; `--project @jasper/mcp` 649 passed, 8 skipped, 1 failed
+in 88 ms under the parallel load (`sound-packs.test.ts` "lists, installs…", a pack-server start-up race in code this fix
+does not touch) — run alone it passes (2 of 2); `pnpm typecheck`, `SD_GIT=1 pnpm lint`, i18n and notices checks as
+above. The full `pnpm verify` is final verification A's.
+
 #### Limits and notes
 
 - The guarantee is per encode of this engine's ffmpeg: a platform that transcodes again (YouTube, Spotify) adds its own
