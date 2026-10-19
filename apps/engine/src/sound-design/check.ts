@@ -19,6 +19,7 @@
 //    moments; the verdict. Command fixes are dry-run on a copy of the document and only kept when they apply.
 //
 // Short media never pass trivially: less than 400 ms of audible audio makes the loudness "not measurable" (a warning).
+import { createHash } from 'node:crypto';
 import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
@@ -947,6 +948,8 @@ export async function checkSequence(
 	const mixMeter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 	const pass1 = normalize ? join(env.scratchDir, 'check-pass1.f32') : null;
 	const fh = pass1 ? await open(pass1, 'w') : null;
+	// the content of the mix: the export of the same mix starts from this delivery (deliver.ts DELIVERY_CACHE)
+	const pass1Hash = fh ? createHash('sha256') : null;
 	// without normalisation the mix is delivered as it is: its true peak per 10 ms hop (from renderStart) bounds what a
 	// gain fix may add where a sound plays (`planSoundCheckFixes`)
 	const tpDetector = normalize ? null : new TruePeakDetector(sr, channels);
@@ -1012,6 +1015,7 @@ export async function checkSequence(
 						for (let i = 0; i < b - a; i++)
 							for (let ch = 0; ch < planar.length; ch++)
 								buf.writeFloatLE(planar[ch]![off + i]!, (i * planar.length + ch) * 4);
+						pass1Hash?.update(buf);
 						await fh.write(buf);
 					}
 				},
@@ -1063,13 +1067,19 @@ export async function checkSequence(
 				soxr: await hasSoxr(env.ff),
 				scratchDir: env.scratchDir,
 				...(wav
-					? { outPath: wav, write: (params) => writeDeliveryWav(p1, wav, sr, channels, rangeSamples, params) }
+					? {
+							outPath: wav,
+							write: (params, path = wav) =>
+								writeDeliveryWav(p1, path, sr, channels, rangeSamples, params),
+						}
 					: {}),
+				contentHash: pass1Hash?.digest('hex'),
 				signal: env.signal,
 				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
 				onProgress: (f, stage) => progress(0.47 + 0.02 * f, stage),
 			});
 			if (wav) await rm(wav, { force: true });
+			if (delivery.encoded) await rm(delivery.encoded, { force: true });
 			gainDb = delivery.params.gainDb;
 			const meter2 = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 			const cm = new CurveMeter(sr, channels);

@@ -56,6 +56,63 @@ export function quietMix(seconds = 6, sampleRate = 48_000): [Float32Array, Float
 	return [L, R];
 }
 
+/**
+ * A typical programme mix (wp-note sound-design "Fix: preview loudness parity, codec-aware Sound Check, delivery
+ * speed"): a voice-like part (a glottal buzz with a gliding pitch through three formant bands, syllables at ≈ 4 Hz in
+ * 2 s phrases with pauses and fricative noise at syllable starts), a soft music bed ≈ 12 dB under it and two hard hits
+ * (a noise slam with an instantaneous attack). Normalised to −14 LUFS / −1 dBTP the limiter works only on the hits and
+ * the loudest syllables. Deterministic (LCG noise).
+ */
+export function typicalMix(seconds = 10, sampleRate = 48_000): [Float32Array, Float32Array] {
+	const n = Math.round(seconds * sampleRate);
+	const L = new Float32Array(n);
+	const R = new Float32Array(n);
+	let seed = 7;
+	const rnd = () => {
+		seed = (seed * 1103515245 + 12345) >>> 0;
+		return (seed / 2 ** 32) * 2 - 1;
+	};
+	let phase = 0;
+	let fric = 0;
+	// fixed random harmonic phases: a voice-like crest factor (in-phase harmonics would make a pulse train)
+	const phases = Array.from({ length: 31 }, () => Math.PI * (rnd() + 1));
+	const formants = [
+		[500, 1],
+		[1500, 0.5],
+		[2500, 0.25],
+	] as const;
+	for (let i = 0; i < n; i++) {
+		const t = i / sampleRate;
+		// voice: phrases of 2 s with 0.4 s pauses, syllables of 250 ms (raised cosine)
+		const inPhrase = t % 2.4 < 2;
+		const syl = (t % 0.25) / 0.25;
+		const env = inPhrase ? 0.5 - 0.5 * Math.cos(2 * Math.PI * syl) : 0;
+		const f0 = 120 + 30 * Math.sin(2 * Math.PI * 0.3 * t) + 15 * Math.sin(2 * Math.PI * 1.7 * t);
+		phase += f0 / sampleRate;
+		let v = 0;
+		for (let k = 1; k <= 30; k++) {
+			const f = k * f0;
+			let w = 0;
+			for (const [fc, a] of formants) w += a / (1 + ((f - fc) / 150) ** 2);
+			v += (w / k ** 0.3) * Math.sin(2 * Math.PI * k * phase + phases[k]!);
+		}
+		const noise = rnd();
+		fric = 0.6 * (noise - fric) + 0.4 * fric;
+		const fricEnv = inPhrase && syl < 0.12 && Math.floor(t / 0.25) % 3 === 0 ? 0.25 : 0;
+		const voice = 0.05 * env * v + fricEnv * fric * 0.3;
+		// music bed: a soft triangle chord, slowly swelling
+		let bed = 0;
+		for (const f of [220, 277.2, 329.6]) bed += 1 - 4 * Math.abs(((t * f) % 1) - 0.5);
+		bed *= 0.012 * (1 + 0.3 * Math.sin(2 * Math.PI * 0.1 * t));
+		// two hits with an instantaneous attack
+		let hit = 0;
+		for (const at of [3.2, 7.5]) if (t >= at) hit += noise * 0.25 * Math.exp(-(t - at) / 0.06);
+		L[i] = voice + bed + hit;
+		R[i] = voice * 0.95 + bed * 1.05 + hit * 0.9;
+	}
+	return [L, R];
+}
+
 export function writeMixWav(path: string, planar: Float32Array[], sampleRate = 48_000): string {
 	writeFileSync(path, encodeWav(planar, sampleRate, 'f32'));
 	return path;

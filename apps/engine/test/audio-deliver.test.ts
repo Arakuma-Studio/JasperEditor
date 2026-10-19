@@ -124,7 +124,7 @@ describe('loudness convergence under the true-peak ceiling', () => {
 			soxr: false,
 			scratchDir: dir,
 			outPath: out,
-			write: (params) => writeDeliveryWav(p1, out, SR, 2, mix[0]!.length, params),
+			write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, params),
 		});
 		console.log(
 			'convergence',
@@ -193,7 +193,7 @@ describe('loudness convergence under the true-peak ceiling', () => {
 			soxr: false,
 			scratchDir: dir,
 			outPath: out,
-			write: (params) => writeDeliveryWav(p1, out, SR, 2, mix[0]!.length, params),
+			write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, params),
 		});
 		expect(r.passes).toBe(1);
 		expect(r.encodePasses).toBe(0);
@@ -241,9 +241,9 @@ describe('the decoded check of a lossy encode', () => {
 				soxr: false,
 				scratchDir: dir,
 				outPath: out,
-				write: (p) => {
+				write: (p, path = out) => {
 					params.push(p);
-					return writeDeliveryWav(p1, out, SR, 2, mix[0]!.length, p);
+					return writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, p);
 				},
 			});
 			console.log(
@@ -262,7 +262,9 @@ describe('the decoded check of a lossy encode', () => {
 					corrections: r.corrections,
 				}),
 			);
-			expect(r.params.ceilingDb).toBe(-1 - codecHeadroomDb({ codec, bitrateKbps: kbps, channels: 2 }));
+			// the table's ceiling, or under it by the steps an encode with fresh offenders takes (DELIVERY_ALTERNATIVES)
+			expect(r.params.ceilingDb).toBeLessThanOrEqual(-1 - codecHeadroomDb({ codec, bitrateKbps: kbps, channels: 2 }));
+			expect(r.params.ceilingDb).toBeGreaterThanOrEqual(-1 - DELIVERY_LIMITS.maxCodecHeadroomDb);
 			expect(r.encodePasses).toBeGreaterThanOrEqual(1);
 			expect(r.decoded).not.toBeNull();
 			expect(r.truePeakMet).toBe(true);
@@ -289,5 +291,10 @@ describe('the decoded check of a lossy encode', () => {
 			]);
 			const again = await measureEncodedAudio({ ff, file: enc, channels: 2, sampleRate: SR });
 			expect(again.loudness.truePeakDb).toBeCloseTo(r.decoded!.truePeakDb, 3);
+			// the checked encode is kept for the mux (stream copy): it decodes to exactly the delivered numbers
+			expect(r.encoded).not.toBeNull();
+			const kept = await measureEncodedAudio({ ff, file: r.encoded!, channels: 2, sampleRate: SR });
+			expect(kept.loudness.truePeakDb).toBe(r.decoded!.truePeakDb);
+			expect(kept.loudness.integrated).toBe(r.decoded!.integrated);
 		}, 600_000);
 });

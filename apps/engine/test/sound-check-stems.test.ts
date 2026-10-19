@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { mgRegistry } from '@jasper/mg-templates';
 import { defaultRegistries, frameToSample, type Sequence } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DELIVERY_LIMITS } from '../src/audio/deliver.ts';
 import { renderMixdown, WAV_F32_HEADER_BYTES } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
 import { checkSequence } from '../src/sound-design/check.ts';
@@ -161,10 +162,17 @@ describe('renderStems', { timeout: 600_000 }, () => {
 		const d = r.normalized!.delivery;
 		const n = report.loudness.normalization;
 		expect(n.limiterCeilingDb).toBeCloseTo(d.params.ceilingDb, 2);
-		expect(n.limiterCeilingDb).toBe(-2.5);
+		// the table's −2.5 dBTP for AAC 128 kb/s, or a lower ceiling the decoded check chose (DELIVERY_CEILING_STEPS_DB)
+		expect(n.limiterCeilingDb).toBeLessThanOrEqual(-2.5);
+		expect(n.limiterCeilingDb).toBeGreaterThanOrEqual(-1 - DELIVERY_LIMITS.maxCodecHeadroomDb);
 		expect(n.codecHeadroomDb).toBe(1.5);
 		expect(n.gainDb).toBeCloseTo(d.params.gainDb, 2);
-		expect(n.encodePasses).toBe(d.encodePasses);
+		// the export of the same mix starts from the check's delivery (the same pass-1 samples: deliver.ts
+		// DELIVERY_CACHE): one pass and one encode, the same parameters
+		expect(d.cached).toBe(true);
+		expect(d.encodePasses).toBe(1);
+		expect(d.passes).toBe(1);
+		expect(n.encodePasses).toBeGreaterThanOrEqual(1);
 		expect(n.localCorrections).toEqual({
 			count: d.corrections.hops,
 			maxDb: Math.round(d.corrections.maxDb * 100) / 100,
