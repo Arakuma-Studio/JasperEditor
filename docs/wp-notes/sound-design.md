@@ -10464,3 +10464,133 @@ above. The full `pnpm verify` is final verification A's.
 - Sound Check judges the decoded codec only when told the export's encoding (Export ▸ Run Sound Check before export,
   MCP `sound_check {exportPreset | exportAudio}`); the panel's own Run checks the PCM (its chips say so by not naming a
   codec). A stored summary does not record which encoding it was checked with.
+
+### Fix: preview loudness parity, codec-aware Sound Check, delivery speed
+
+Branch `feat/sd-fix-delivery-parity` (from `feat/sound-design` 6cdc304d). Three limits the lossy-delivery fix above left:
+(1) the Program monitor normalised with the one-pass gain, so a heavily limited mix played up to ≈ 1 dB under the
+export; (2) Sound Check judged the codec only from the Export dialog / MCP, the panel's own Run checked the PCM and a
+stored summary did not say for which encoding; (3) a 10 s Web AAC export took 17–18 s under load (≈ 3–4× the one-pass
+export).
+
+#### 1. Preview = export loudness
+
+- **Model** (`packages/project/src/schema/audio.ts`): `LoudnessAnalysis.delivery` — `LoudnessDeliverySchema
+  {targetLufs, truePeakDbtp, gainDb, limiterCeilingDbtp, passes, ceilingLimited?, deliveredLufs?}`, the export's PCM
+  delivery of the analysed mix (the gain the two-pass normalisation converges to under the true-peak limiter). Optional,
+  read leniently (`z.custom`, `readLoudnessDelivery`); commands validate it strictly (`LoudnessAnalysisCommandSchema` in
+  `mixer.setLoudness`, `soundDesign.applyDelivery`); INV-MIX reports an unreadable one and `repairDocument` drops it
+  (`drop-loudness-delivery`). No schema bump: the analysis is a loose object older builds keep (docs/project-files.md
+  row). It is not part of `mixFingerprint`; the analysis stays stale-checked by `mixHash` as before.
+- **Preview** (`loudnessGainOf`, `audio/plan.ts`): while the delivery was solved for the Mix's current target and
+  ceiling, `RenderAudioMix.loudness` is `{gainDb: delivery.gainDb, truePeakDb: limiterCeilingDbtp}` (the PCM path's
+  ceiling = the target; the preview's `jasper-limiter` is the export's `TruePeakLimiter`, 5 ms / 100 ms); otherwise (older
+  analyses, another target) the one-pass `target − integrated` as before.
+- **Who stores it**: the engine's analysis job (`POST /api/audio/analyze`, `sequence` scope) solves it — request
+  `delivery {targetLufs, truePeakDb}` (default the Mix's target when normalisation is on; `null`: none), result
+  `delivery`; `renderMixdown({measureOnly, normalize})` keeps pass 1 in a uniquely named scratch file and runs
+  `solveDelivery` measure-only (nothing written). Callers: the Loudness Normalization dialog's Analyze (with the dialog's
+  target; the dialog now says "Gain to target: 5.3 dB, as the export delivers it (… 3 limiter passes)", or "analyze to
+  match the export exactly" for an older analysis), MCP `set_loudness_normalization` (the target being set),
+  `soundDesign.applyDelivery` / the plan's delivery item (`sound-design/delivery.ts` `mixLoudness(…, normalize)`, cached
+  per mix key and target), and Sound Check's "Normalise the mix" fix (without normalisation the check keeps its pass 1
+  of the whole sequence and solves the preset's delivery only when it offers the fix). `measure_loudness` passes
+  `delivery: null` (a measurement).
+
+#### 2. Codec-aware Sound Check
+
+- **Model** (`packages/project/src/sound/check.ts`): `SoundCheckAudio {codec: aac | opus | pcm, bitrateKbps?,
+  sampleRate?}`, `readSoundCheckAudio` (PCM without a rate = the master → null), `soundCheckAudioKey`,
+  `soundCheckAudioLabel`; `SoundCheckSummary.exportAudio` (optional; `soundDesign.setCheck` validates it);
+  `soundCheckInputsHash(…, exportAudio)` includes it only when present (older hashes stay valid);
+  `soundCheckStatus(doc, seq, {checkFor})` adds the stale reason `codec` when the summary was checked for another
+  encoding. `DELIVERY_PRESETS[…].typicalAudio`: Web AAC 256 kb/s (the editor's export default), Podcast AAC 128 kb/s
+  (Apple Podcasts' audio requirements: AAC recommended over MP3, stereo 128–256 kb/s — the lowest, the strictest
+  check; podcasters.apple.com/support/893-audio-requirements, read 2026-10-19), EBU R 128 / ATSC A/85 PCM (broadcast
+  masters).
+- **Engine**: the report carries `exportAudio` and hashes it; the job stores it in the summary; a kept report is
+  reused for a proposal check only when it was checked for the same encoding (`keptIsCurrent`).
+- **Panel**: a "Check for" row under the target — PCM / master, AAC 128 / 192 / 256 / 320, Opus 96 / 128 / 160 (and
+  the last export's PCM rate when it is another). Default: the sequence's last export settings
+  (`lastExportAudio`: the Export dialog's remembered codec → its audio, at the dialog's bit rate), else the delivery
+  target's typical encoding; the hint says which. Run, Re-run, Fix all safe's re-run and the menu command pass it
+  (`runSoundCheck` defaults to it; Export ▸ Run Sound Check before export still passes the plan's own encoding). The
+  summary says "checked for AAC 256 kb/s"; another choice makes it stale ("Stale: the export encoding to check for
+  changed since this check").
+- **MCP** `sound_check`: without `exportPreset` / `exportAudio` it checks for the preset's typical encoding (the
+  request's preset, else the sequence's); `exportAudio {codec: "pcm"}` is the PCM master. Tool description, SOUND_GUIDE
+  "Check" and README updated; `get_sound_check` returns the summary with `exportAudio`.
+
+#### 3. Delivery speed
+
+Profiled first (build server, `apps/engine/test` scratch profilers, 10 s stereo): one ffmpeg AAC 256 kb/s encode of the
+delivered WAV took 0.5–1.5 s (content-dependent: 1.4 s on the loud fixture, 0.4 s on pink noise), a decode + meter
+0.25 s, a limiter pass 0.15–0.2 s; the loud fixture needed 9 passes and 3 sequential encodes (6.4 s), and the export's
+mux then encoded the same WAV a fourth time. What changed (`apps/engine/src/audio/deliver.ts`, `mixdown.ts`,
+`export/service.ts`, `export/native.ts`):
+
+- **The checked encode is the delivered stream.** Each encode of the decoded check is kept in its own file; the best
+  (`DeliveryOutcome.encoded`) is muxed by stream copy (`-c:a copy`) on every export path (smart render, previews, native,
+  Remotion's mux, the intermediate encode) — one encode fewer, and the delivered bits are the checked bits (the result
+  then reports the check's decode of those bits instead of decoding the file again: `streamCopied: true`).
+- **Alongside the picture.** A lossy normalised native export renders the picture alone while the audio is delivered
+  (`runNativeAlongside`), then joins them by stream copy; before, the native ffmpeg waited for the audio.
+- **Parallel lower-ceiling alternatives** (`DELIVERY_CEILING_STEPS_DB` 0.5 / 1 dB, `parallel` = min(3, the job's CPU
+  slots)): each encode round runs its own candidate plus up to two with the ceiling 0.5 and 1 dB lower, each at its own
+  gain predicted from the round's loudness passes (the limiter is scale-invariant: limiting `g·x` at `c` is `c` ×
+  limiting `(g − c)·x` at 0 dBFS — tested to 10⁻⁶ — so the passes are points on one curve; one written pass, a second
+  when it misses by more than 0.1 LU), encoded on other cores while the first one encodes. The gentlest that meets the
+  target is delivered; the others are stopped. The codec's overshoot moves with every change (a segment-wise encode
+  predicted it no better than ±1.7–2.8 dB per hop, measured, so it was not used), so the strength that suffices cannot
+  be known in advance — encoding the likely ones together turns sequential rounds into one.
+- **Loudness prior**: the PCM aim starts over the target by the codec's typical decoded loss (`codecLoudnessLossLu`:
+  AAC ≥ 256 kb/s 0.1, 160–255 0.2, 96–159 0.4, lower 0.5, Opus 0.2 LU; measured 0.05–0.47 above), so the first encode
+  usually lands within ±0.2 LU (before, AAC 128 needed a second encode for loudness alone on the typical mix).
+- **Delivery cache** (`DELIVERY_CACHE`, 32 entries): solved parameters by a SHA-256 of the pass-1 samples, length,
+  target, ceiling, codec and resampler. A later delivery of the same mix — Sound Check with this encoding then the
+  export (Sound Check's pass 1 is bit-identical to the export's: tested), a re-export — writes once and encodes once,
+  still checked on the decoded audio (`deliveryReused: true`).
+- **Cheaper passes**: little-endian typed views instead of per-sample `readFloatLE` / `writeFloatLE` / `DataView`
+  (pass 1, delivery passes, `PcmStreamReader`), measuring passes skip the meter's true peak (`LoudnessMeter {truePeak:
+  false}`, new in `@jasper/audio-dsp`, tested equal otherwise), the decoded check reads 100 hops at a time and measures
+  the true peak once (not twice), convergence passes are written (the pass that lands is the file: no extra pass).
+- **Corrections** aim 0.6 dB under the target and over-correct ×2 (were 0.3 dB, ×1.5): measured 14 instead of 20
+  encodes over six codecs on the loud fixture, before the alternatives existed.
+- The export logs `audio: mixed (… ms) and delivered in … ms — n passes, n encodes, decoded checks …` per job.
+
+The guarantee is unchanged: the delivered stream is an encode whose decoded true peak was measured under the target
+(or the best one with `AUDIO_TRUE_PEAK_OVER`), loudness within ±0.2 LU of the target or `ceilingLimited` with
+`AUDIO_LOUDNESS_CEILING`.
+
+#### Verified (measured; build server `jasper-build`, 16 vCPU, Node 20.20.2, vendored LGPL ffmpeg 7.1.5)
+
+- **Preview oracle** `pnpm vitest run apps/engine/test/preview-loudness-parity.test.ts` (headless Chrome, the Phase 0
+  oracle harness `packages/compositions/test/audio-oracle/entry.ts` with the real `MixGraph` and `jasper-limiter`
+  worklet, the loud fixture, 10 s): analysis −18.17 LUFS, one-pass gain +4.17 dB, converged +5.31 dB (3 passes); PCM
+  export (ProRes + 24-bit PCM, normalisation from the Mix) −14.0 LUFS / −1.0 dBTP by ffmpeg `ebur128`, −14.008 by ours,
+  its gain +5.31 dB; **preview −14.07 LUFS / −1.0 dBTP (0.06 LU from the export)**; the same preview with the one-pass
+  gain −14.84 LUFS (0.84 LU under: the defect).
+- Model: `packages/project/test/audio-mix.test.ts` (the plan plays the converged gain for its target only; other target
+  or ceiling → one-pass; undo / redo; four refusals; a damaged delivery loads, is reported and dropped by repair),
+  `packages/project/test/sound-check.test.ts` (hash with / without the encoding, `codec` staleness both ways, setCheck
+  refusals, `readSoundCheckAudio` & co. on 300 arbitrary values); web `sound-check-model` (Check for values, options,
+  defaults), `sound-check-panel` ("Check for" default AAC 256 typical → Run passes it → summary records it → Opus 160
+  makes it stale → master sends none → a remembered VP9 export makes the default Opus 256 "the last export settings");
+  MCP `sound-check-verdicts` (defaults per preset, PCM master); engine `sound-check-stems` (the report's encoding and
+  hash; **the export after a Sound Check of the same mix reuses its delivery: 1 pass, 1 encode**), `audio-deliver`
+  (scale invariance, cache hit with identical decoded numbers, a failing encode is reported, never an unhandled
+  rejection, at most `parallel` encodes), `export-lossy-true-peak` (all 17 pass with the new path: every file ≤ the
+  target by ffmpeg, ±0.5 LU), `audio-dsp` loudness (`truePeak: false`).
+- Commands: `pnpm vitest run packages/project/test/{audio-mix,sound-check,sound-mix}.test.ts
+  packages/audio-dsp/test/loudness.test.ts apps/web/test/{sound-check-model,sound-check-panel,sound-check-p6-model}.test.ts
+  apps/mcp/test/{sound-check-verdicts,sound-check,sound-check-ack,readme-tools,conventions}.test.ts --maxWorkers=8`
+  (12 files, 132 passed); the engine's `audio-*`, `export-container`, `export-lossy-true-peak`, `preview-loudness-parity`,
+  `sound-check*`, `sound-design-delivery` (21 files, 125 passed, 1 skipped).
+- **Real app** (built stack, `E2E_PORT=53502 E2E_SKIP_BUILD=1 pnpm exec playwright test
+  e2e/sound-delivery-parity.spec.ts`, 1 passed): Sequence ▸ Loudness Normalization… ▸ Analyze on a noise-snare mix
+  (−17.8 LUFS) stored `delivery {gainDb 9.81, passes 3, ceilingLimited: true, deliveredLufs −15.03}` and the dialog
+  said so (looked at: `01-loudness-dialog.png`); Sequence ▸ Sound Design ▸ Run Sound Check: "Check for AAC 256 kb/s
+  (typical for this delivery target)", "checked for AAC 256 kb/s", the summary's `exportAudio` (`02-sound-check-aac.png`);
+  choosing Opus 160 kb/s: "Stale: the export encoding to check for changed since this check"
+  (`03-sound-check-stale-opus.png`). `e2e/sound-design.spec.ts` (the user walkthrough with its measured AAC export)
+  passes on this branch: the file −14.0 LUFS / −1.4 dBTP by ffmpeg.
