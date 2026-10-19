@@ -10561,5 +10561,6 @@
   "The delivered audio measures {0} LUFS, not the {1} LUFS target": "El audio entregado mide {0} LUFS, no los {1} LUFS del objetivo",
   "as {0} {1} kb/s decodes": "tal como se decodifica en {0} a {1} kb/s",
   "as {0} decodes": "tal como se decodifica en {0}",
-  "limiter {0} dBTP in front of the encoder": "limitador a {0} dBTP antes del codificador"
+  "limiter {0} dBTP in front of the encoder": "limitador a {0} dBTP antes del codificador",
+  "Opus": "Opus"
 }
