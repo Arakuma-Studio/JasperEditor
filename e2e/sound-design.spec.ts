@@ -19,6 +19,7 @@ import { encodeWav } from '../packages/audio-dsp/src/index.ts';
 import { dropMusic } from '../packages/audio-fx/test/music.ts';
 import {
 	appliedLabels,
+	browserLaunch,
 	clipBox,
 	clipElement,
 	createProject,
@@ -31,7 +32,7 @@ import {
 	waitForJob,
 } from './support.ts';
 
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-required']) });
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-design');
