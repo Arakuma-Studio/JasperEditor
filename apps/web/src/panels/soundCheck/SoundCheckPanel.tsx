@@ -1,5 +1,7 @@
 // Sound Check panel (spec 12 §2.6 / §2.7 "Sound Check panel", P5-R3; wp-note "Phase 5 → WP5.2"): the delivery target
-// (the four presets or Custom… LUFS / dBTP) with "Use as sequence target" (one undoable edit) and Run (the engine's
+// (the four presets or Custom… LUFS / dBTP) with "Use as sequence target" (one undoable edit), "Check for" (the export
+// encoding the check delivers through: the last export settings', else the target's typical one; the summary records it
+// and is stale for another one) and Run (the engine's
 // `sound-check` job: progress here and in the Jobs panel, Cancel); the summary chips (integrated, true peak, LRA,
 // findings by severity, the verdict) with a stale badge and Re-run when the mix changed since the stored summary; the
 // findings grouped by category — severity by shape and word, the timecode (jumps the playhead and selects the clip or

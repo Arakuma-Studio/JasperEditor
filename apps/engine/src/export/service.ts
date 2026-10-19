@@ -1333,10 +1333,6 @@ export class ExportService {
 				? `audio: mixed and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
 				: `audio: mixed in ${t(performance.now() - t0)}`,
 		);
-		if (process.env.JASPER_DELIVERY_TRACE)
-			console.log(
-				`trace ${ctx.job.id} audio ${t(performance.now() - t0)} ${d ? JSON.stringify(d.timings) + ` p${d.passes} e${d.encodePasses} c${d.cached}` : ''}`,
-			);
 		return mix;
 	}
 
@@ -1760,10 +1756,7 @@ export class ExportService {
 		}
 		if (path === 'native' || path === 'hybrid') {
 			try {
-				const tn = performance.now();
 				frames = await this.runNative(planned, masters, output, ctx, false, audio);
-				if (process.env.JASPER_DELIVERY_TRACE)
-					console.log(`trace ${ctx.job.id} native ${Math.round(performance.now() - tn)} ms`);
 			} catch (e) {
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
 				const replanned = await this.fallbackToRemotion(
@@ -1939,7 +1932,6 @@ export class ExportService {
 			.map((w) => ({ code: w.code, message: w.message, ...(w.params ? { params: w.params } : {}) }));
 		// a normalised export's delivered audio itself, decoded from the file, when it is not the PCM mix (lossy codec or
 		// another rate): the numbers the delivery target is met on
-		const tl = performance.now();
 		const audioLoudness = audio
 			? audioLoudnessOf(
 					audio,
@@ -1956,8 +1948,6 @@ export class ExportService {
 					!!deliveredEncode(planned, audio),
 				)
 			: null;
-		if (process.env.JASPER_DELIVERY_TRACE)
-			console.log(`trace ${ctx.job.id} final-decode ${Math.round(performance.now() - tl)} ms`);
 		const allWarnings = [
 			...formatChanges,
 			...warnings,
