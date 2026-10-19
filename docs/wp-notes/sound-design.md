@@ -10266,3 +10266,10 @@ search → `acknowledge_sound_issue` (a warning: ok; an error: E_APPROVAL_REQUIR
   alternate" picked "Jasper Synth tick 1"); it is labelled Synth and only plays where the user picks it.
 - B12 measures joints on the planner's mono 22.05 kHz analysis; it did not fire in this walkthrough (the joint's raw
   levels match) and guards against joints the plan itself leaves chopped.
+
+#### Gate on this branch (build server, before the fast-forward)
+
+`SD_GIT=1 pnpm lint` ok (one warning in `e2e/sound-p6-transport.spec.ts`, not this branch's); `pnpm typecheck` ok;
+`pnpm notices --check` current (150 packages, 33 ported records); `node scripts/i18n.mjs --check` (es.json covers all
+10 527 strings); `pnpm vitest run --project <p> --maxWorkers=6`: project 2361 passed, api 17, engine-client 22, mcp 649
+(8 skipped), web 1114, engine 1646 (99 skipped). The full `pnpm verify` and every e2e spec are final verification A's.
