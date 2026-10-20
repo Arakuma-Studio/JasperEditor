@@ -203,7 +203,14 @@ function gradientPaint(
 	};
 }
 
-type Ctx = { t: number; seconds: number; arena: BezPath[] };
+type Ctx = {
+	t: number;
+	seconds: number;
+	arena: BezPath[];
+	/** Probing a Trim Paths (`trimInputPaths`): the path item each arena slot came from, and what the trim saw. */
+	origin?: string[];
+	probe?: { trimId: string; hit: TrimInput | null };
+};
 type Collected = { draws: (ShapeDraw & { slots: number[] })[]; live: number[] };
 
 function usedSlots(live: number[], draws: { slots: number[] }[]): number[] {
@@ -217,9 +224,45 @@ function applyOp(ctx: Ctx, live: number[], f: (p: BezPath[]) => BezPath[]): void
 	});
 }
 
-function pushPath(ctx: Ctx, live: number[], p: BezPath, reversed: boolean): void {
-	ctx.arena.push(reversed ? reversePath(p) : p);
+function pushPath(ctx: Ctx, live: number[], p: BezPath, origin: string): void {
+	ctx.arena.push(p);
+	ctx.origin?.push(origin);
 	live.push(ctx.arena.length - 1);
+}
+
+/**
+ * The outline of a path item (rectangle, ellipse, polystar, free path) at content time `t` in the space of the group
+ * it lives in, its Path Direction applied — what the item contributes to the stack.
+ */
+export function pathItemOutline(
+	it: ShapeItemOf<'rect' | 'ellipse' | 'polystar' | 'path'>,
+	t: number,
+): BezPath {
+	let p: BezPath;
+	switch (it.type) {
+		case 'rect':
+			p = rectShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0]), num(it.roundness, t, 0));
+			break;
+		case 'ellipse':
+			p = ellipseShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0]));
+			break;
+		case 'polystar':
+			p = polystarShapePath({
+				star: it.starType !== 'polygon',
+				points: num(it.points, t, 5),
+				position: vec(it.position, t, [0, 0]),
+				rotation: num(it.rotation, t, 0),
+				innerRadius: num(it.innerRadius, t, 50),
+				outerRadius: num(it.outerRadius, t, 100),
+				innerRoundness: num(it.innerRoundness, t, 0),
+				outerRoundness: num(it.outerRoundness, t, 0),
+			});
+			break;
+		case 'path':
+			p = bezierPathToBez(evaluate(it.path, t) as BezierPath);
+			break;
+	}
+	return it.direction === 'reversed' ? reversePath(p) : p;
 }
 
 function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
@@ -231,47 +274,24 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 		else draws.push(d);
 	};
 	for (const it of contents) {
+		const probe = ctx.probe;
+		// Probing stops at the trim: nothing after it changes what it measured.
+		if (probe?.hit) break;
+		if (probe && it.id === probe.trimId && it.type === 'trim') {
+			probe.hit = {
+				mode: it.mode === 'individual' ? 'individual' : 'simultaneous',
+				paths: live.map((i) => ({ itemId: ctx.origin![i]!, path: ctx.arena[i]! })),
+			};
+			break;
+		}
 		if (it.enabled === false) continue;
 		switch (it.type) {
-			case 'rect': {
-				const p = rectShapePath(
-					vec(it.size, t, [100, 100]),
-					vec(it.position, t, [0, 0]),
-					num(it.roundness, t, 0),
-				);
-				pushPath(ctx, live, p, it.direction === 'reversed');
-				break;
-			}
+			case 'rect':
 			case 'ellipse':
-				pushPath(
-					ctx,
-					live,
-					ellipseShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0])),
-					it.direction === 'reversed',
-				);
-				break;
 			case 'polystar':
-				pushPath(
-					ctx,
-					live,
-					polystarShapePath({
-						star: it.starType !== 'polygon',
-						points: num(it.points, t, 5),
-						position: vec(it.position, t, [0, 0]),
-						rotation: num(it.rotation, t, 0),
-						innerRadius: num(it.innerRadius, t, 50),
-						outerRadius: num(it.outerRadius, t, 100),
-						innerRoundness: num(it.innerRoundness, t, 0),
-						outerRoundness: num(it.outerRoundness, t, 0),
-					}),
-					it.direction === 'reversed',
-				);
+			case 'path':
+				pushPath(ctx, live, pathItemOutline(it, t), it.id);
 				break;
-			case 'path': {
-				const v = evaluate(it.path, t) as BezierPath;
-				pushPath(ctx, live, bezierPathToBez(v), it.direction === 'reversed');
-				break;
-			}
 			case 'fill':
 			case 'gradientFill': {
 				const paint: ShapePaint =
@@ -375,6 +395,7 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 					it.mode,
 				);
 				ctx.arena.push(merged);
+				ctx.origin?.push(it.id);
 				live = [ctx.arena.length - 1];
 				// As in After Effects, paints above a Merge Paths in its group are not rendered: the merged path is
 				// painted by the paints below it.
@@ -436,6 +457,7 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 					const map = new Map<number, number>();
 					for (const s of baseSlots) {
 						ctx.arena.push(transformPath(ctx.arena[s]!, m));
+						ctx.origin?.push(ctx.origin[s]!);
 						map.set(s, ctx.arena.length - 1);
 					}
 					live.push(...baseLive.map((s) => map.get(s)!));
@@ -482,6 +504,24 @@ export function evaluateVectorShape(contents: readonly ShapeItem[], t: number): 
 		out.push({ ...d, paths });
 	}
 	return out;
+}
+
+/** What a Trim Paths measures: the paths above it in its stack, in the space of the group it lives in. */
+export type TrimInput = {
+	mode: 'simultaneous' | 'individual';
+	/** One entry per path slot in stacking order, with the path item it came from (a Merge Paths for merged ones). */
+	paths: { itemId: string; path: BezPath }[];
+};
+
+/**
+ * The paths the Trim Paths `trimId` trims at content time `t`, exactly as the renderer hands them to it (operators
+ * above it applied, nested groups' paths mapped into its group's space, repeated copies included). Null when the
+ * trim is not in the tree or sits in a disabled group (it trims nothing then). A disabled trim reports its input.
+ */
+export function trimInputPaths(contents: readonly ShapeItem[], trimId: string, t: number): TrimInput | null {
+	const ctx: Ctx = { t, seconds: t / FLICKS_PER_SECOND, arena: [], origin: [], probe: { trimId, hit: null } };
+	collect(ctx, contents);
+	return ctx.probe!.hit;
 }
 
 /** The paths of a draw in its paint-group space (what the renderer strokes/fills inside `xf`). */

@@ -13,4 +13,7 @@ export const OP = {
 	TEXT: 10,
 	SAMPLE: 11,
 	PROJ: 12,
+	PATH: 13,
+	PATHAT: 14,
+	SPACE: 15,
 } as const;

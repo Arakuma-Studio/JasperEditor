@@ -128,13 +128,21 @@ export const EXPRESSION_PRESETS: readonly ExpressionPreset[] = [
 		kinds: NUM_VEC,
 	},
 	{
-		// Original (JasperEditor): the value bounces back off its last key like a ball off a wall — each arc is a
-		// parabola of `gravity`, and each bounce keeps `elasticity` of the previous one's speed.
-		id: 'bounce',
-		label: 'Bounce back',
+		id: 'overshoot',
+		label: 'Overshoot',
 		category: 'Physics',
-		description: 'Bounces back off each keyframe and settles (the arrival speed, decaying with each bounce).',
-		text: 'elasticity = 0.6;\ngravity = 5000;\nmaxBounces = 6;\nn = 0;\nif (numKeys > 0) {\n  n = nearestKey(time).index;\n  if (key(n).time > time) n--;\n}\nif (n > 0 && time > key(n).time) {\n  v = velocityAtTime(key(n).time - thisComp.frameDuration / 10);\n  s = length(v) * elasticity;\n  t = time - key(n).time;\n  for (b = 0; b < maxBounces; b++) {\n    d = 2 * s / gravity;\n    if (t <= d) break;\n    t -= d;\n    s *= elasticity;\n  }\n  if (b < maxBounces && s > 0) {\n    value - normalize(v) * (s * t - gravity * t * t / 2);\n  } else {\n    value;\n  }\n} else {\n  value;\n}',
+		description:
+			'After each keyframe the value swings past it by a share of the change into the key and settles (a damped spring).',
+		text: 'amount = 0.15; // overshoot as a share of the change into the keyframe\nfreq = 2.5; // swings per second\ndecay = 6; // how fast it settles\nn = 0;\nif (numKeys > 1) {\n  n = nearestKey(time).index;\n  if (key(n).time > time) n--;\n}\nif (n > 1 && time > key(n).time) {\n  t = time - key(n).time;\n  change = key(n).value - key(n - 1).value;\n  value + change * amount * Math.sin(freq * t * 2 * Math.PI) / Math.exp(decay * t);\n} else {\n  value;\n}',
+		kinds: NUM_VEC,
+	},
+	{
+		id: 'bounce-back',
+		label: 'Bounce',
+		category: 'Physics',
+		description:
+			'The value hits each keyframe and bounces back off it like a ball, losing speed on every bounce (needs speed into the keyframe).',
+		text: 'elasticity = 0.6; // share of the speed kept per bounce (0 … 1)\ngravity = 4000; // pull back toward the keyframe (units per second²)\nmaxBounces = 8;\nn = 0;\nif (numKeys > 0) {\n  n = nearestKey(time).index;\n  if (key(n).time > time) n--;\n}\nresult = value;\nif (n > 0 && time > key(n).time) {\n  t = time - key(n).time;\n  v = velocityAtTime(key(n).time - thisComp.frameDuration / 10);\n  speed = length(v);\n  if (speed > 0) {\n    dir = v / speed;\n    s = speed * elasticity;\n    for (b = 0; b < maxBounces; b++) {\n      flight = 2 * s / gravity;\n      if (t < flight) {\n        result = value - dir * (s * t - gravity * t * t / 2);\n        break;\n      }\n      t -= flight;\n      s *= elasticity;\n    }\n  }\n}\nresult;',
 		kinds: NUM_VEC,
 	},
 	{

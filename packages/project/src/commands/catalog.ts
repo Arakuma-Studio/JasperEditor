@@ -8,6 +8,7 @@ import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { colorMgmtHandlers } from './handlers/color-mgmt.ts';
 import { compositionHandlers } from './handlers/composition.ts';
+import { EASE_OWNER, easeHandlers } from './handlers/ease.ts';
 import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
@@ -27,6 +28,8 @@ import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
+import { shapeTracerHandlers } from './handlers/shape-tracer.ts';
+import { shapeTrimHandlers } from './handlers/shape-trim.ts';
 import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
@@ -72,7 +75,8 @@ export type CommandOwner =
 	| 'color-mgmt'
 	| 'imports'
 	| 'previews'
-	| 'gaps';
+	| 'gaps'
+	| 'keyframe-ease';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -193,6 +197,10 @@ const LABELS: Record<CommandType, string> = {
 	'shape.convertToVector': 'Convert to Vector Shape',
 	'shape.editPath': 'Edit Shape Path',
 	'shape.convertToPath': 'Convert to Bezier Path',
+	'shape.animateTrim': 'Animate Trim Paths',
+	'shape.reversePathDirection': 'Reverse Path Direction',
+	'shape.addLine': 'New Line',
+	'shape.addTrimTracer': 'Add Trim Tracer',
 	'font.add': 'Add Font',
 	'textAnimator.add': 'Add Text Animator',
 	'textAnimator.remove': 'Remove Text Animator',
@@ -341,6 +349,12 @@ const LABELS: Record<CommandType, string> = {
 	'graphic.align': 'Align',
 	'graphic.setPins': 'Responsive Design – Position',
 	'graphic.importTemplate': 'Add Graphic Template',
+	'keyframe.applyEase': 'Apply Ease',
+	'keyframe.pasteEase': 'Paste Ease',
+	'keyframe.pasteValues': 'Paste Keyframe Values',
+	'keyframe.setVelocity': 'Keyframe Velocity',
+	'keyframe.createPathController': 'Create Path Controller',
+	'keyframes.cleanupPath': 'Clean Up Motion Path',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -359,6 +373,8 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[trackerHandlers, 'wp-m2-track'],
 	[simplifyHandlers, 'wp-m3-trackui'],
 	[shapeHandlers, SHAPE_OWNER],
+	[shapeTrimHandlers, SHAPE_OWNER],
+	[shapeTracerHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
 	[textAnimatorHandlers, TEXT_ANIMATOR_OWNER],
@@ -381,6 +397,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[interpretHandlers, INTERPRET_OWNER],
 	[previewsHandlers, PREVIEWS_OWNER],
 	[gapsHandlers, GAPS_OWNER],
+	[easeHandlers, EASE_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -415,7 +432,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === THREE_D_OWNER ||
 				owner === INTERPRET_OWNER ||
 				owner === PREVIEWS_OWNER ||
-				owner === GAPS_OWNER
+				owner === GAPS_OWNER ||
+				owner === EASE_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

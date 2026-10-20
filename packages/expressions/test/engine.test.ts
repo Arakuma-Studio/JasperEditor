@@ -1,11 +1,6 @@
 import type { ExpressionRef } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
-import {
-	EXPRESSION_PRESETS,
-	evaluateExpressionText,
-	loadExpressionEngine,
-	storedTimeAtFrame,
-} from '../src/index.ts';
+import { evaluateExpressionText, loadExpressionEngine, storedTimeAtFrame } from '../src/index.ts';
 import { basicDoc, type Doc } from './fixture.ts';
 
 beforeAll(async () => {
@@ -119,20 +114,6 @@ describe('keyframes, loops and time', () => {
 		expect(num(d, 'loopIn("offset")', 15)).toBeCloseTo(-45, 9);
 		expect(num(d, 'loopOutDuration("cycle", 0.5)', 66)).toBeCloseTo(63, 9);
 		expect(ev(d, '$a', 'transform.rotation', 'loopOut("bogus")').error).toMatch(/unknown type/);
-	});
-	it('the Bounce back preset bounces off the last key and settles', () => {
-		// Arrival at 90°/s (frames 30 → 60, 0 → 90): the first bounce leaves at 0.6 · 90 = 54°/s; with gravity 180 its
-		// arc lasts 2 · 54 / 180 = 0.6 s and peaks after 0.3 s (9 frames) at 54² / (2 · 180) = 8.1° back.
-		const text = EXPRESSION_PRESETS.find((p) => p.id === 'bounce')!.text.replace(
-			'gravity = 5000',
-			'gravity = 180',
-		);
-		expect(num(d, text, 45)).toBeCloseTo(45, 6);
-		expect(num(d, text, 69)).toBeCloseTo(90 - 8.1, 3);
-		expect(num(d, text, 78)).toBeCloseTo(90, 3);
-		// The second arc: 0.6 · 54 = 32.4°/s, peak 32.4² / 360 = 2.916° after 0.18 s.
-		expect(num(d, text, 83)).toBeLessThan(90);
-		expect(num(d, text, 600)).toBe(90);
 	});
 	it('posterizeTime, timeToFrames, framesToTime, timeToTimecode', () => {
 		expect(num(d, 'posterizeTime(2); value', 50)).toBeCloseTo(45, 9);

@@ -388,20 +388,27 @@ const vectorHandlers: HandlerMap = {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 		if (clip.kind !== 'shape') return h.fail('E_INVALID_PARAM', `Clip ${cmd.clipId} is not a shape`);
-		const c = clip as Draft<ShapeClip>;
-		if (c.shape.type === 'vector') return { converted: false };
-		const legacy = JSON.parse(JSON.stringify(c.shape)) as LegacyShapeData;
-		const before = shapeIntrinsicBox(legacy);
-		const frame = frameBox(seq);
-		// Old box: geometry centred in it; new box: the frame, contents around its centre. Keep M(c) unchanged.
-		shiftAnchor(c, (frame.width - before.width) / 2, (frame.height - before.height) / 2);
-		c.shape = { type: 'vector', contents: legacyToVectorItems(legacy, idGen(h)) } as never;
-		return { converted: true };
+		return { converted: convertShapeClipToVector(seq, clip as Draft<ShapeClip>, h) };
 	},
 };
 
+/**
+ * A rectangle / ellipse clip → a vector shape with the same picture (false when it already is one). The caller
+ * checks the track lock.
+ */
+export function convertShapeClipToVector(seq: DSeq, c: Draft<ShapeClip>, h: HandlerContext): boolean {
+	if (c.shape.type === 'vector') return false;
+	const legacy = JSON.parse(JSON.stringify(c.shape)) as LegacyShapeData;
+	const before = shapeIntrinsicBox(legacy);
+	const frame = frameBox(seq);
+	// Old box: geometry centred in it; new box: the frame, contents around its centre. Keep M(c) unchanged.
+	shiftAnchor(c, (frame.width - before.width) / 2, (frame.height - before.height) / 2);
+	c.shape = { type: 'vector', contents: legacyToVectorItems(legacy, idGen(h)) } as never;
+	return true;
+}
+
 /** Fresh keyframe ids everywhere inside a copied item. */
-function reidKeyframes<T>(v: T, next: () => string): T {
+export function reidKeyframes<T>(v: T, next: () => string): T {
 	const visit = (x: unknown): void => {
 		if (!x || typeof x !== 'object') return;
 		if (Array.isArray(x)) {
