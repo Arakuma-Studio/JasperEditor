@@ -221,7 +221,9 @@ Expressions (expressions workstream): every number / point / colour item propert
 (`expression.set` on its ParamPath; gradients and paths are refused like masks' paths); the object model follows
 After Effects: `content("Group 1").content("Rectangle Path 1").size`, `content("Group 1").transform.position`,
 `thisLayer.content(…)`, items by name, index or id, AE match names. Bound in documents and render snapshots
-(`mapShapeItemAnimatables`).
+(`mapShapeItemAnimatables`). Path items (and rectangle / ellipse / polystar outlines) expose AE's Path methods
+(`.path.points()`, `pointOnPath()`, `tangentOnPath()`…), shape items `toLayer()` / `fromLayer()` and Trim Paths
+`trimPath()`; `shape.addTrimTracer` makes a follower clip ride a trim's tip with them (expressions note §1.9).
 
 Blend modes: groups, fills and strokes take the full clip set (`BLEND_MODES`, keyframes-blend's 32). Interchange:
 vector shape clips are reported / pre-rendered as shape clips like every DOM graphic.

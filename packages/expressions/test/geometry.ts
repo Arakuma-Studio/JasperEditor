@@ -29,7 +29,9 @@ export function measure(segs: readonly Cub[]): ((u: number) => { p: Pt; tan: Pt 
 			const p = bez(c, i / N);
 			const q = pts[pts.length - 1];
 			pts.push(p);
-			cum.push(q === undefined ? 0 : cum[cum.length - 1]! + (i === 0 ? 0 : Math.hypot(p[0] - q[0], p[1] - q[1])));
+			cum.push(
+				q === undefined ? 0 : cum[cum.length - 1]! + (i === 0 ? 0 : Math.hypot(p[0] - q[0], p[1] - q[1])),
+			);
 		}
 	});
 	const total = cum[cum.length - 1]!;
@@ -67,7 +69,10 @@ export const mulA = (m: Aff, n: Aff): Aff => [
 	m[0] * n[4] + m[2] * n[5] + m[4],
 	m[1] * n[4] + m[3] * n[5] + m[5],
 ];
-export const applyA = (m: Aff, p: Pt): Pt => [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
+export const applyA = (m: Aff, p: Pt): Pt => [
+	m[0] * p[0] + m[2] * p[1] + m[4],
+	m[1] * p[0] + m[3] * p[1] + m[5],
+];
 export const applyVec = (m: Aff, v: Pt): Pt => [m[0] * v[0] + m[2] * v[1], m[1] * v[0] + m[3] * v[1]];
 export const T = (x: number, y: number): Aff => [1, 0, 0, 1, x, y];
 export const S = (x: number, y: number): Aff => [x, 0, 0, y, 0, 0];
@@ -78,6 +83,9 @@ export const R = (deg: number): Aff => {
 };
 /** A shape group (or Motion) transform: translate(position) · rotate · scale · translate(−anchor). */
 export const groupMatrix = (g: { position: Pt; rotation: number; scale: Pt; anchor: Pt }): Aff =>
-	mulA(T(...g.position), mulA(R(g.rotation), mulA(S(g.scale[0] / 100, g.scale[1] / 100), T(-g.anchor[0], -g.anchor[1]))));
+	mulA(
+		T(...g.position),
+		mulA(R(g.rotation), mulA(S(g.scale[0] / 100, g.scale[1] / 100), T(-g.anchor[0], -g.anchor[1]))),
+	);
 export const mapCub = (m: Aff, c: Cub): Cub => c.map((p) => applyA(m, p)) as Cub;
 export const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!);

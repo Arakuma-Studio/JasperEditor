@@ -234,7 +234,10 @@ function pushPath(ctx: Ctx, live: number[], p: BezPath, origin: string): void {
  * The outline of a path item (rectangle, ellipse, polystar, free path) at content time `t` in the space of the group
  * it lives in, its Path Direction applied — what the item contributes to the stack.
  */
-export function pathItemOutline(it: ShapeItemOf<'rect' | 'ellipse' | 'polystar' | 'path'>, t: number): BezPath {
+export function pathItemOutline(
+	it: ShapeItemOf<'rect' | 'ellipse' | 'polystar' | 'path'>,
+	t: number,
+): BezPath {
 	let p: BezPath;
 	switch (it.type) {
 		case 'rect':

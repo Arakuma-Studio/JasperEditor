@@ -46,9 +46,9 @@ import {
 	maskPropertySpec,
 	mat4Invert,
 	type ParamSpec,
+	PathQuery,
 	type PropertySpec,
 	PUPPET_PIN_LABELS,
-	PathQuery,
 	PUPPET_PIN_PROPS,
 	planeHomography,
 	propertyEvaluateOptions,
@@ -179,6 +179,7 @@ export class World {
 	private readonly layerCache = new Map<string, string[]>();
 	private readonly propCache = new Map<string, ResolvedProp | null>();
 	private readonly valueCache = new Map<string, Map<string, EvalStatus>>();
+	private readonly childCache = new Map<string, Node[]>();
 	/** Measured paths of the path methods per (layer, locator, time); bounded. */
 	private readonly pathCache = new Map<string, PathQuery>();
 
@@ -278,7 +279,28 @@ export class World {
 		}));
 	}
 
+	/**
+	 * The property tree under `group` of an owner. Cached per world (a world belongs to one immutable document or
+	 * snapshot): `content(…)` chains resolve through it on every evaluation.
+	 */
 	children(info: OwnerInfo, group: string): Node[] {
+		const owner =
+			info.kind === 'clip'
+				? info.clip.id
+				: info.kind === 'track'
+					? `track:${info.track.id}`
+					: info.kind === 'transition'
+						? `transition:${info.id}`
+						: 'master';
+		const key = `${info.seqId}\u0000${owner}\u0000${group}`;
+		const hit = this.childCache.get(key);
+		if (hit) return hit;
+		const out = this.computeChildren(info, group);
+		this.childCache.set(key, out);
+		return out;
+	}
+
+	private computeChildren(info: OwnerInfo, group: string): Node[] {
 		const leaf = (path: string, name: string, ...aliases: string[]): Node => ({
 			path,
 			group: false,
@@ -988,7 +1010,12 @@ export class World {
 				return this.sample(info.seq, info.clip, args.slice(2) as never);
 			}
 			case OP.PATH: {
-				const v = this.pathQuery(String(args[0]), String(args[1]), String(args[2]), Number(args[3])).vertices();
+				const v = this.pathQuery(
+					String(args[0]),
+					String(args[1]),
+					String(args[2]),
+					Number(args[3]),
+				).vertices();
 				return [v.closed, v.points, v.inTangents, v.outTangents];
 			}
 			case OP.PATHAT: {

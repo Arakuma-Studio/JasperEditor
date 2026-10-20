@@ -2,8 +2,8 @@
 // The tip positions those expressions compute are verified in packages/expressions/test/trim-tracer.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
-	checkInvariants,
 	type Clip,
+	checkInvariants,
 	type ShapeClip,
 	type ShapeItem,
 	trimInputPaths,
@@ -58,14 +58,20 @@ const codeOf = (h: Harness, cmd: Record<string, unknown>) => {
 	return r.ok ? 'ok' : r.errors[0]!.code;
 };
 const posExpr = (h: Harness, id: string) =>
-	(h.seq.clips[id] as Clip & { transform: { position: { expression?: { text: string } } } }).transform.position
-		.expression?.text;
+	(h.seq.clips[id] as Clip & { transform: { position: { expression?: { text: string } } } }).transform
+		.position.expression?.text;
 
 describe('shape.addTrimTracer', () => {
 	it('creates a dot clip on the track above over the same span, driven by an id-addressed expression', () => {
 		const { h, shapeId, groupId, pathId, trimId } = setup();
 		const r = tracer(h, { clipId: shapeId, trimItemId: trimId, ref: '$f' });
-		expect(r).toMatchObject({ created: true, trimItemId: trimId, pathItemId: pathId, mode: 'simultaneous', tip: 'end' });
+		expect(r).toMatchObject({
+			created: true,
+			trimItemId: trimId,
+			pathItemId: pathId,
+			mode: 'simultaneous',
+			tip: 'end',
+		});
 		const f = h.seq.clips[r.clipId]!;
 		expect(f.trackId).toBe(h.seq.videoTracks[1]!.id);
 		expect([f.start, f.duration, f.name, f.kind]).toEqual([10, 80, 'Tracer', 'shape']);
@@ -87,8 +93,18 @@ describe('shape.addTrimTracer', () => {
 	it('picks the tip whose keyframes change most (End on a tie), follows Individually trims along every path', () => {
 		const a = setup({ end: 100 });
 		a.h.ok([
-			{ type: 'keyframe.add', target: ['clip', a.shapeId, 'shape', 'items', a.trimId, 'start'], at: { frames: 0 }, value: 0 },
-			{ type: 'keyframe.add', target: ['clip', a.shapeId, 'shape', 'items', a.trimId, 'start'], at: { frames: 30 }, value: 100 },
+			{
+				type: 'keyframe.add',
+				target: ['clip', a.shapeId, 'shape', 'items', a.trimId, 'start'],
+				at: { frames: 0 },
+				value: 0,
+			},
+			{
+				type: 'keyframe.add',
+				target: ['clip', a.shapeId, 'shape', 'items', a.trimId, 'start'],
+				at: { frames: 30 },
+				value: 100,
+			},
 		]);
 		const ra = tracer(a.h, { clipId: a.shapeId, trimItemId: a.trimId });
 		expect(ra.tip).toBe('start');
@@ -121,7 +137,9 @@ describe('shape.addTrimTracer', () => {
 			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V4', color: [1, 0, 0, 1], ref: '$x' },
 			{ type: 'expression.set', target: ['clip', '$x', 'transform', 'position'], text: '[0, 0]' },
 		]).refs.$x!;
-		const res = h.ok([{ type: 'shape.addTrimTracer', clipId: shapeId, trimItemId: trimId, follower: { clipId: solid } }]);
+		const res = h.ok([
+			{ type: 'shape.addTrimTracer', clipId: shapeId, trimItemId: trimId, follower: { clipId: solid } },
+		]);
 		expect((res.results[0] as Tracer).created).toBe(false);
 		expect(res.warnings.map((w) => w.code)).toContain('W_EXPRESSION_REPLACED');
 		expect(posExpr(h, solid)).toContain('pointOnPath(u)');
@@ -152,12 +170,24 @@ describe('shape.addTrimTracer', () => {
 			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V4', color: [1, 0, 0, 1], ref: '$l' },
 			{ type: 'track.update', trackId: 'V4', patch: { locked: true } },
 		]).refs.$l!;
-		expect(codeOf(h, { clipId: shapeId, trimItemId: trimId, follower: { clipId: locked } })).toBe('E_TRACK_LOCKED');
+		expect(codeOf(h, { clipId: shapeId, trimItemId: trimId, follower: { clipId: locked } })).toBe(
+			'E_TRACK_LOCKED',
+		);
 		const other = h.ok([{ type: 'sequence.create', name: 'Other', ref: '$seq' }]).refs.$seq!;
 		const foreign = h.ok([
-			{ type: 'clip.addSolid', sequenceId: other, at: 0, duration: 30, track: 'V1', color: [0, 1, 0, 1], ref: '$o' },
+			{
+				type: 'clip.addSolid',
+				sequenceId: other,
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				color: [0, 1, 0, 1],
+				ref: '$o',
+			},
 		]).refs.$o!;
-		expect(codeOf(h, { clipId: shapeId, trimItemId: trimId, follower: { clipId: foreign } })).toBe('E_INVALID_PARAM');
+		expect(codeOf(h, { clipId: shapeId, trimItemId: trimId, follower: { clipId: foreign } })).toBe(
+			'E_INVALID_PARAM',
+		);
 		// nothing was created by the refused transactions
 		expect(Object.values(h.seq.clips).filter((c) => c.name === 'Tracer')).toEqual([]);
 	});
@@ -173,7 +203,12 @@ describe('shape.addTrimTracer', () => {
 					type: 'vector',
 					contents: [
 						{ type: 'trim', name: 'Lonely' },
-						{ type: 'group', name: 'Off', enabled: false, contents: [{ type: 'path', path: 'M0 0 L9 9' }, { type: 'trim' }] },
+						{
+							type: 'group',
+							name: 'Off',
+							enabled: false,
+							contents: [{ type: 'path', path: 'M0 0 L9 9' }, { type: 'trim' }],
+						},
 					],
 				},
 				ref: '$s',

@@ -44,7 +44,11 @@ describe('shape.addTrimTracer undo / redo', () => {
 					track: 'V1',
 					shape: {
 						type: 'vector',
-						contents: [{ type: 'path', path: 'M0 0 L100 0' }, { type: 'trim', name: 'T' }, { type: 'stroke' }],
+						contents: [
+							{ type: 'path', path: 'M0 0 L100 0' },
+							{ type: 'trim', name: 'T' },
+							{ type: 'stroke' },
+						],
 					},
 					ref: '$s',
 				},
@@ -76,14 +80,18 @@ describe('shape.addTrimTracer undo / redo', () => {
 		const prev = s.apply({
 			label: 'Expr',
 			origin: 'user',
-			commands: [{ type: 'expression.set', target: ['clip', follower, 'transform', 'position'], text: '[1, 2]' }],
+			commands: [
+				{ type: 'expression.set', target: ['clip', follower, 'transform', 'position'], text: '[1, 2]' },
+			],
 		});
 		expect(prev.ok).toBe(true);
 		const withExpr = s.getCommitted();
 		const again = s.apply({
 			label: 'Retrace',
 			origin: 'user',
-			commands: [{ type: 'shape.addTrimTracer', clipId: shapeId, trimItemId: trimId, follower: { clipId: follower } }],
+			commands: [
+				{ type: 'shape.addTrimTracer', clipId: shapeId, trimItemId: trimId, follower: { clipId: follower } },
+			],
 		});
 		expect(again.ok && again.warnings.map((w) => w.code)).toEqual(['W_EXPRESSION_REPLACED']);
 		expect(s.undo().ok).toBe(true);

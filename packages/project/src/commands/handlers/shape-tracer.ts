@@ -6,7 +6,7 @@ import type { Draft } from 'immer';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Expression } from '../../schema/common.ts';
 import type { Clip, ShapeClip } from '../../schema/sequence.ts';
-import type { ShapeItem, ShapeTrimItem } from '../../schema/shapes.ts';
+import type { ShapeTrimItem, VectorShapeData } from '../../schema/shapes.ts';
 import { findItem } from '../../vector/defaults.ts';
 import { trimInputPaths } from '../../vector/evaluate.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -23,7 +23,8 @@ const DOT_SIZE = 12;
 /** Sum of the keyframe value changes of a trim property (how much it animates). */
 function variation(a: Animatable<number>): number {
 	let v = 0;
-	for (let i = 1; i < a.keyframes.length; i++) v += Math.abs(a.keyframes[i]!.value - a.keyframes[i - 1]!.value);
+	for (let i = 1; i < a.keyframes.length; i++)
+		v += Math.abs(a.keyframes[i]!.value - a.keyframes[i - 1]!.value);
 	return Number.isFinite(v) ? v : 0;
 }
 
@@ -33,7 +34,7 @@ const label = (s: string) => s.replace(/[\r\n\u2028\u2029]+/g, ' ');
 /** The follower's track: the free, unlocked video track right above the shape clip, else a new one there. */
 function followerTrack(doc: DDoc, seq: DSeq, shape: DClip, h: HandlerContext): string {
 	const loc = findTrackIn(seq, shape.trackId);
-	if (!loc || loc.kind !== 'video') return h.fail('E_TRACK_KIND', 'The shape clip is not on a video track');
+	if (loc?.kind !== 'video') return h.fail('E_TRACK_KIND', 'The shape clip is not on a video track');
 	const above = seq.videoTracks[loc.index + 1];
 	const end = shape.start + shape.duration;
 	if (
@@ -88,9 +89,10 @@ export const shapeTracerHandlers = {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'shape' || (clip as Draft<ShapeClip>).shape.type !== 'vector')
 			return h.fail('E_INVALID_PARAM', `Clip ${cmd.clipId} is not a vector shape`, { path: ['clipId'] });
-		const contents = (clip as Draft<ShapeClip>).shape.contents as ShapeItem[];
+		const contents = ((clip as Draft<ShapeClip>).shape as VectorShapeData).contents;
 		const found = findItem(contents, cmd.trimItemId);
-		if (!found) return h.fail('E_NOT_FOUND', `Shape item not found: ${cmd.trimItemId}`, { path: ['trimItemId'] });
+		if (!found)
+			return h.fail('E_NOT_FOUND', `Shape item not found: ${cmd.trimItemId}`, { path: ['trimItemId'] });
 		if (found.item.type !== 'trim')
 			return h.fail('E_INVALID_PARAM', `${found.item.name} is not a Trim Paths`, { path: ['trimItemId'] });
 		const trim = found.item as ShapeTrimItem;
@@ -129,9 +131,13 @@ export const shapeTracerHandlers = {
 					path: ['follower', 'clipId'],
 				});
 			if (f.clip.id === clip.id)
-				return h.fail('E_CYCLE', 'A shape clip cannot follow its own Trim Paths (its position moves the path)', {
-					path: ['follower', 'clipId'],
-				});
+				return h.fail(
+					'E_CYCLE',
+					'A shape clip cannot follow its own Trim Paths (its position moves the path)',
+					{
+						path: ['follower', 'clipId'],
+					},
+				);
 			if (!kindCapabilities(f.clip.kind)?.visual || !('transform' in f.clip) || !f.clip.transform)
 				return h.fail('E_INVALID_PARAM', `Clip ${f.clip.id} has no Motion to drive (${f.clip.kind} clip)`, {
 					path: ['follower', 'clipId'],

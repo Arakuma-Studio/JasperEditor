@@ -51,7 +51,12 @@ function shapeDoc() {
 /** Evaluates `text` on the title's Source Text (a string property) at `frame`; JSON-decodes the result. */
 function ev(d: Doc, text: string, frame = 30): { value: unknown; error: string | null } {
 	const ref = { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' };
-	const st = evaluateExpressionText(d.doc, ref, `var L = thisComp.layer("Logo");\nJSON.stringify(${text})`, storedTimeAtFrame(d.doc, ref, frame));
+	const st = evaluateExpressionText(
+		d.doc,
+		ref,
+		`var L = thisComp.layer("Logo");\nJSON.stringify(${text})`,
+		storedTimeAtFrame(d.doc, ref, frame),
+	);
 	return { value: st.error ? null : JSON.parse(String(st.value)), error: st.error };
 }
 const val = (d: Doc, text: string, frame = 30) => {
@@ -72,10 +77,30 @@ const RECT = rect(200, 100, 10, 20);
 const ELLIPSE: Cub[] = (() => {
 	const [rx, ry] = [50, 30];
 	return [
-		[[0, -ry], [rx * K, -ry], [rx, -ry * K], [rx, 0]],
-		[[rx, 0], [rx, ry * K], [rx * K, ry], [0, ry]],
-		[[0, ry], [-rx * K, ry], [-rx, ry * K], [-rx, 0]],
-		[[-rx, 0], [-rx, -ry * K], [-rx * K, -ry], [0, -ry]],
+		[
+			[0, -ry],
+			[rx * K, -ry],
+			[rx, -ry * K],
+			[rx, 0],
+		],
+		[
+			[rx, 0],
+			[rx, ry * K],
+			[rx * K, ry],
+			[0, ry],
+		],
+		[
+			[0, ry],
+			[-rx * K, ry],
+			[-rx, ry * K],
+			[-rx, 0],
+		],
+		[
+			[-rx, 0],
+			[-rx, -ry * K],
+			[-rx * K, -ry],
+			[0, -ry],
+		],
 	];
 })();
 const STAR: Cub[] = (() => {
@@ -122,7 +147,10 @@ describe('path methods', { timeout: 120_000 }, () => {
 			[-90, 70],
 			[110, 70],
 		]);
-		const e = val(d, `[${item('E')}.path.points(), ${item('E')}.path.outTangents(), ${item('E')}.path.inTangents()]`) as Pt[][];
+		const e = val(
+			d,
+			`[${item('E')}.path.points(), ${item('E')}.path.outTangents(), ${item('E')}.path.inTangents()]`,
+		) as Pt[][];
 		expect(e[0]).toEqual([
 			[0, -30],
 			[50, 0],
@@ -135,14 +163,18 @@ describe('path methods', { timeout: 120_000 }, () => {
 			[0, 0],
 			[200, 100],
 		]);
-		expect(val(d, `[${item('B')}.path.outTangents()[0], ${item('B')}.path.inTangents()[1], ${item('B')}.path.isClosed()]`)).toEqual([
-			[100, 0],
-			[-100, 0],
-			false,
-		]);
+		expect(
+			val(
+				d,
+				`[${item('B')}.path.outTangents()[0], ${item('B')}.path.inTangents()[1], ${item('B')}.path.isClosed()]`,
+			),
+		).toEqual([[100, 0], [-100, 0], false]);
 		expect(val(d, `${item('S')}.path.points().length`)).toBe(10);
 		// the property object: AE's name and match name
-		expect(val(d, `[${item('B')}.path.name, ${item('B')}.path.matchName]`)).toEqual(['Path', 'ADBE Vector Shape']);
+		expect(val(d, `[${item('B')}.path.name, ${item('B')}.path.matchName]`)).toEqual([
+			'Path',
+			'ADBE Vector Shape',
+		]);
 	});
 
 	it('pointOnPath / tangentOnPath / normalOnPath run along arc length within 0.01 px (rect, ellipse, star, bezier, reversed)', () => {
@@ -156,7 +188,10 @@ describe('path methods', { timeout: 120_000 }, () => {
 		];
 		const us = [0, 0.07, 0.25, 0.33, 0.47, 0.61, 0.9, 1];
 		for (const [name, segs] of cases) {
-			const got = val(d, `[${us.join(', ')}].map(function (u) { var p = ${item(name)}.path; return [p.pointOnPath(u), p.tangentOnPath(u), p.normalOnPath(u)]; })`) as Pt[][];
+			const got = val(
+				d,
+				`[${us.join(', ')}].map(function (u) { var p = ${item(name)}.path; return [p.pointOnPath(u), p.tangentOnPath(u), p.normalOnPath(u)]; })`,
+			) as Pt[][];
 			const m = measure(segs);
 			us.forEach((u, i) => {
 				const ref = m(u);
@@ -166,7 +201,8 @@ describe('path methods', { timeout: 120_000 }, () => {
 				expect(nor[0]).toBeCloseTo(-tan[1], 12);
 				expect(nor[1]).toBeCloseTo(tan[0], 12);
 				// away from vertices the tangent matches the curve direction
-				if (u > 0 && u < 1 && name !== 'S') expect(dist(tan, ref.tan), `${name} tangent @${u}`).toBeLessThan(1e-3);
+				if (u > 0 && u < 1 && name !== 'S')
+					expect(dist(tan, ref.tan), `${name} tangent @${u}`).toBeLessThan(1e-3);
 			});
 		}
 		// rect: a quarter of the way is 50 px into the bottom edge (100 down the right edge first), heading left
@@ -186,15 +222,29 @@ describe('path methods', { timeout: 120_000 }, () => {
 		const g = (clip.shape as VectorShapeData).contents[0] as Extract<ShapeItem, { type: 'group' }>;
 		const r = g.contents[0]!.id;
 		d.tx([
-			{ type: 'keyframe.add', target: ['clip', '$s', 'shape', 'items', r, 'size'], at: { frames: 0 }, value: [200, 100], interpolation: 'linear' },
-			{ type: 'keyframe.add', target: ['clip', '$s', 'shape', 'items', r, 'size'], at: { frames: 60 }, value: [400, 300], interpolation: 'linear' },
+			{
+				type: 'keyframe.add',
+				target: ['clip', '$s', 'shape', 'items', r, 'size'],
+				at: { frames: 0 },
+				value: [200, 100],
+				interpolation: 'linear',
+			},
+			{
+				type: 'keyframe.add',
+				target: ['clip', '$s', 'shape', 'items', r, 'size'],
+				at: { frames: 60 },
+				value: [400, 300],
+				interpolation: 'linear',
+			},
 		]);
 		expect(val(d, `${item('R')}.path.points()[0]`, 30)).toEqual([160, -80]);
 		expect(val(d, `${item('R')}.path.points(2)[0]`, 30)).toEqual([210, -130]);
 		expect(val(d, `${item('R')}.path.points(0)[0]`, 30)).toEqual([110, -30]);
 		const p30 = val(d, `${item('R')}.path.pointOnPath(0.25)`, 30) as Pt;
 		expect(dist(p30, along(rect(300, 200, 10, 20), 0.25).p)).toBeLessThan(0.01);
-		expect(dist(val(d, `${item('R')}.path.pointOnPath(0.25, 2)`, 30) as Pt, along(rect(400, 300, 10, 20), 0.25).p)).toBeLessThan(0.01);
+		expect(
+			dist(val(d, `${item('R')}.path.pointOnPath(0.25, 2)`, 30) as Pt, along(rect(400, 300, 10, 20), 0.25).p),
+		).toBeLessThan(0.01);
 
 		// group G's contents space → layer pixels: the group transform, then the layer box centre (1920×1080 frame).
 		const M = mulA(T(960, 540), groupMatrix(G));
@@ -215,14 +265,18 @@ describe('path methods', { timeout: 120_000 }, () => {
 
 	it('bad arguments are expression errors, never crashes; evaluation carries on afterwards', () => {
 		const d = shapeDoc();
-		expect(ev(d, `${item('R')}.path.pointOnPath(NaN)`).error).toMatch(/pointOnPath: percentage must be a finite number/);
+		expect(ev(d, `${item('R')}.path.pointOnPath(NaN)`).error).toMatch(
+			/pointOnPath: percentage must be a finite number/,
+		);
 		expect(ev(d, `${item('R')}.path.tangentOnPath("half")`).error).toMatch(/finite number/);
 		expect(ev(d, `${item('R')}.path.points(Infinity)`).error).toMatch(/points: time must be a finite number/);
 		expect(ev(d, `${item('R')}.toLayer([1])`).error).toMatch(/toLayer: expected a point/);
 		expect(ev(d, `${item('R')}.trimPath()`).error).toMatch(/is not a Trim Paths/);
 		expect(ev(d, 'L.content("Flat").content(1).fromLayer([0, 0])').error).toMatch(/not invertible/);
 		expect(ev(d, 'L.content("G").path.points()').error).not.toBeNull();
-		expect(ev(d, 'createPath([[0, 0]], [], [], false)').error).toMatch(/createPath\(\): no property takes a path value/);
+		expect(ev(d, 'createPath([[0, 0]], [], [], false)').error).toMatch(
+			/createPath\(\): no property takes a path value/,
+		);
 		expect(ev(d, 'thisLayer.content("x")').error).toMatch(/not a shape/);
 		expect(val(d, `${item('R')}.path.pointOnPath(0.25)`)).toEqual([60, 70]);
 	});

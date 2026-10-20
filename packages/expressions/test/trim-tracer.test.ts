@@ -14,7 +14,12 @@ import {
 	type VectorShapeData,
 } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { bindSnapshotExpressions, loadExpressionEngine, propertyStatusAt, storedTimeAtFrame } from '../src/index.ts';
+import {
+	bindSnapshotExpressions,
+	loadExpressionEngine,
+	propertyStatusAt,
+	storedTimeAtFrame,
+} from '../src/index.ts';
 import { basicDoc, type Doc } from './fixture.ts';
 import {
 	type Aff,
@@ -66,10 +71,30 @@ const RECT_REV: Cub[] = (() => {
 	return [line(tr, tl), line(tl, bl), line(bl, br), line(br, tr)];
 })();
 const CIRCLE = (r: number, c: Pt): Cub[] => [
-	[[c[0], c[1] - r], [c[0] + r * K, c[1] - r], [c[0] + r, c[1] - r * K], [c[0] + r, c[1]]],
-	[[c[0] + r, c[1]], [c[0] + r, c[1] + r * K], [c[0] + r * K, c[1] + r], [c[0], c[1] + r]],
-	[[c[0], c[1] + r], [c[0] - r * K, c[1] + r], [c[0] - r, c[1] + r * K], [c[0] - r, c[1]]],
-	[[c[0] - r, c[1]], [c[0] - r, c[1] - r * K], [c[0] - r * K, c[1] - r], [c[0], c[1] - r]],
+	[
+		[c[0], c[1] - r],
+		[c[0] + r * K, c[1] - r],
+		[c[0] + r, c[1] - r * K],
+		[c[0] + r, c[1]],
+	],
+	[
+		[c[0] + r, c[1]],
+		[c[0] + r, c[1] + r * K],
+		[c[0] + r * K, c[1] + r],
+		[c[0], c[1] + r],
+	],
+	[
+		[c[0], c[1] + r],
+		[c[0] - r * K, c[1] + r],
+		[c[0] - r, c[1] + r * K],
+		[c[0] - r, c[1]],
+	],
+	[
+		[c[0] - r, c[1]],
+		[c[0] - r, c[1] - r * K],
+		[c[0] - r * K, c[1] - r],
+		[c[0], c[1] - r],
+	],
 ];
 
 /** The renderer's Trim Paths semantics for a tip: Start / End clamped to 0…100 %, Offset wrapping by whole lengths. */
@@ -115,7 +140,9 @@ function build(contents: unknown[]): { d: Doc; items: Map<string, string> } {
 }
 
 function addTracer(d: Doc, cmd: Record<string, unknown>) {
-	const r = d.tx([{ type: 'shape.addTrimTracer', clipId: '$s', ref: '$f', ...cmd }]);
+	const r = d.tx([{ type: 'shape.addTrimTracer', clipId: '$s', ref: '$f', ...cmd }]) as {
+		results: unknown[];
+	};
 	return r.results[0] as { clipId: string; tip: string; mode: string };
 }
 
@@ -137,7 +164,9 @@ function drawnTip(d: Doc, frame: number, tip: 'start' | 'end'): Pt | null {
 	const subs = draws.flatMap((x) => x.paths).filter((sp) => sp.segs.length);
 	if (!subs.length) return null;
 	const p =
-		tip === 'start' ? subs[0]!.segs[0]![0] : subs[subs.length - 1]!.segs[subs[subs.length - 1]!.segs.length - 1]![3];
+		tip === 'start'
+			? subs[0]!.segs[0]![0]
+			: subs[subs.length - 1]!.segs[subs[subs.length - 1]!.segs.length - 1]![3];
 	return applyA(CONTENT_TO_SEQ, [p[0], p[1]]);
 }
 
@@ -172,7 +201,12 @@ describe('shape.addTrimTracer: the follower rides the trim tip', { timeout: 300_
 				name: 'Outer',
 				transform: OUTER,
 				contents: [
-					{ type: 'group', name: 'Inner', transform: INNER, contents: [{ type: 'path', name: 'Wave', path: 'M-200 0 C-100 -150 100 150 200 0' }] },
+					{
+						type: 'group',
+						name: 'Inner',
+						transform: INNER,
+						contents: [{ type: 'path', name: 'Wave', path: 'M-200 0 C-100 -150 100 150 200 0' }],
+					},
 					{ type: 'trim', name: 'Trim', start: 0, end: 0 },
 					{ type: 'stroke', width: 4 },
 				],
@@ -196,7 +230,10 @@ describe('shape.addTrimTracer: the follower rides the trim tip', { timeout: 300_
 		for (const f of FRAMES.slice(1)) {
 			const tan = applyVec(outer, m(tipU(0, lin(f, 0, 100), 0, 'end')).tan);
 			const want = (Math.atan2(tan[1], tan[0]) * 180) / Math.PI;
-			expect(Math.abs((at(d, r.clipId, 'transform.rotation', f) as number) - want), `frame ${f}`).toBeLessThan(0.05);
+			expect(
+				Math.abs((at(d, r.clipId, 'transform.rotation', f) as number) - want),
+				`frame ${f}`,
+			).toBeLessThan(0.05);
 		}
 	});
 
@@ -264,8 +301,18 @@ describe('shape.addTrimTracer: the follower rides the trim tip', { timeout: 300_
 
 	it('Individually: the tip runs over the paths laid end to end; Simultaneously: it follows the chosen path', () => {
 		const contents = (mode: string) => [
-			{ type: 'group', name: 'A', transform: { ...OUTER }, contents: [{ type: 'path', name: 'Line', path: 'M-100 0 L100 40' }] },
-			{ type: 'group', name: 'B', transform: B, contents: [{ type: 'ellipse', name: 'Circle', size: [120, 120] }] },
+			{
+				type: 'group',
+				name: 'A',
+				transform: { ...OUTER },
+				contents: [{ type: 'path', name: 'Line', path: 'M-100 0 L100 40' }],
+			},
+			{
+				type: 'group',
+				name: 'B',
+				transform: B,
+				contents: [{ type: 'ellipse', name: 'Circle', size: [120, 120] }],
+			},
 			{ type: 'trim', name: 'Trim', start: 0, end: 0, mode },
 			{ type: 'stroke' },
 		];
@@ -312,7 +359,12 @@ describe('shape.addTrimTracer: the follower rides the trim tip', { timeout: 300_
 				name: 'Outer',
 				transform: OUTER,
 				contents: [
-					{ type: 'group', name: 'Inner', transform: INNER, contents: [{ type: 'path', name: 'Wave', path: 'M-200 0 C-100 -150 100 150 200 0' }] },
+					{
+						type: 'group',
+						name: 'Inner',
+						transform: INNER,
+						contents: [{ type: 'path', name: 'Wave', path: 'M-200 0 C-100 -150 100 150 200 0' }],
+					},
 					{ type: 'trim', name: 'Trim', start: 0, end: 0 },
 					{ type: 'stroke', width: 4 },
 				],

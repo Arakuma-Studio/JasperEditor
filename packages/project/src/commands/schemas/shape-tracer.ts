@@ -21,12 +21,17 @@ export const ShapeAddTrimTracerCmd = cmd('shape.addTrimTracer', {
 	tip: z
 		.enum(['start', 'end', 'auto'])
 		.optional()
-		.describe('Which end of the trimmed stroke to follow; auto (default) = the one whose keyframes change most (End on a tie)'),
+		.describe(
+			'Which end of the trimmed stroke to follow; auto (default) = the one whose keyframes change most (End on a tie)',
+		),
 	follower: z
 		.strictObject({ clipId: IdRefSchema.describe('Visual clip of the same sequence to drive') })
 		.optional()
 		.describe('Existing clip to drive instead of creating a dot'),
-	orient: z.boolean().optional().describe('Also rotate the follower along the path (its own Rotation adds); default false'),
+	orient: z
+		.boolean()
+		.optional()
+		.describe('Also rotate the follower along the path (its own Rotation adds); default false'),
 	name: z.string().min(1).max(200).optional().describe('Name of the created follower (default "Tracer")'),
 	ref: RefDeclSchema.optional().describe('Binds the follower clip id'),
 });
