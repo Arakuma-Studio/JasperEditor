@@ -71,7 +71,9 @@ export class SurroundReverb extends EffectBase {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = Math.min(ch.length, this.channels, 2);
+		// Channels beyond the configured count are left alone (another processor's).
+		const all = Math.min(ch.length, this.channels);
+		const nch = Math.min(all, 2);
 		if (nch === 0) return;
 		const alc = OnePole.alpha(this.pv.v('lowCut'), this.sampleRate);
 		const ahc = OnePole.alpha(this.pv.v('highCut'), this.sampleRate);
@@ -80,7 +82,7 @@ export class SurroundReverb extends EffectBase {
 		const R = nch === 2 ? ch[1]! : ch[0]!;
 		// 5.1 (L R C LFE Ls Rs): the centre channel feeds the reverb with the L/R mid (Center Input); every channel
 		// beyond L/R gets the Dry level, so Dry and Wet act on the whole signal.
-		const C = ch.length >= 3 ? ch[2]! : null;
+		const C = all >= 3 ? ch[2]! : null;
 		const [s0, s1] = this.scratch;
 		const dryAt = this.dryAt;
 		for (let a = start; a < end; a += CHUNK) {
@@ -119,7 +121,7 @@ export class SurroundReverb extends EffectBase {
 					R[a + i] = dry * R[a + i]! + wet * (m + width * (w1 - m));
 				} else L[a + i] = dry * L[a + i]! + wet * m;
 			}
-			for (let k = 2; k < ch.length; k++) {
+			for (let k = 2; k < all; k++) {
 				const x = ch[k]!;
 				for (let i = 0; i < len; i++) x[a + i] = dryAt[i]! * x[a + i]!;
 			}

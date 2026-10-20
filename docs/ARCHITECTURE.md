@@ -769,7 +769,7 @@ MCP client ──Streamable HTTP /mcp──▶ engine (same tools)      └─ n
 
 ### 11.3 Proposals, and later
 
-**Proposals (built, D-51; spec 12 Phase 3 on `feat/sound-design`).** Agents propose reviewable edits instead of applying
+**Proposals (built, D-51; spec 12 Phase 3).** Agents propose reviewable edits instead of applying
 them: the generic model (`packages/project/src/proposals/`: schema, validation by dry runs, anchors and stale reasons with
 timecodes, `composeAcceptTx`, `proposalGhost`, `previewProposal` / `previewProposalSteps`, decisions), the engine store and
 routes (`apps/engine/src/proposals/`, `/api/projects/:id/proposals`: list, create, get, accept, reject, reopen, note,
@@ -779,7 +779,7 @@ Auto Sound Pass…). MCP: `plan_sound_design`, `place_sound` (propose mode), `li
 `wait_for_proposal`, `accept_proposal` (policy-gated), `reject_proposal`, `PROPOSALS_GUIDE`. Sound design is the first
 feature; another feature registers its accept policy (`ProposalService.registerPolicy`; default: agents refused).
 
-**Sound design (built, D-50…D-53; spec 12 on `feat/sound-design`).** Agents cannot hear, so every audible property has a
+**Sound design (built, D-50…D-53; spec 12).** Agents cannot hear, so every audible property has a
 measured or visual proxy, and every surface the editor has has an MCP twin (spec 12 §1): the library (`sound_library_status`,
 `search_sounds` with descriptors, takes and the optional `describe` model, `get_sound`, `view_sounds` contact sheets,
 `import_sounds`, `insert_sound`, credits `list_sound_credits` / `export_sound_credits`, folders and packs behind approval
