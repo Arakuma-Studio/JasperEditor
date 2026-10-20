@@ -14,4 +14,5 @@ export * from './render-plan.ts';
 export * from './summary.ts';
 export * from './svg-import.ts';
 export * from './svg-path.ts';
+export * from './trim-animate.ts';
 export * from './values.ts';

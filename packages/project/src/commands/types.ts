@@ -60,6 +60,8 @@ export const WARNING_CODES = [
 	'W_TRACKING_UNLINKED',
 	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
 	'W_TRACK_MATTE_CLEARED',
+	/** shape.animateTrim / shape.reversePathDirection: clips that cannot hold paths (or a trim) were left alone. */
+	'W_TRIM_SKIPPED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */
