@@ -25,6 +25,7 @@ export const PANEL_KINDS = [
 	'essentialSound',
 	'essentialGraphics',
 	'mediaBrowser',
+	'easing',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 

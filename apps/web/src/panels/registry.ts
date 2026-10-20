@@ -3,6 +3,7 @@
 import audioClipMixer from './audioClipMixer/index.ts';
 import audioMeters from './audioMeters/index.ts';
 import audioTrackMixer from './audioTrackMixer/index.ts';
+import easing from './easing/index.ts';
 import effectControls from './effectControls/index.ts';
 import effects from './effects/index.ts';
 import essentialGraphics from './essentialGraphics/index.ts';
@@ -47,6 +48,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	essentialSound,
 	essentialGraphics,
 	mediaBrowser,
+	easing,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

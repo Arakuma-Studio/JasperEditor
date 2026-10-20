@@ -226,6 +226,8 @@ export const ICONS = {
 	'panel.scopes': Activity,
 	'panel.text': Captions,
 	'panel.mediaBrowser': FolderSearch,
+	// An ease-in-out curve between two key dots (our own drawing).
+	'panel.easing': g('M4 19C11 19 13 5 20 5', 'M4 19h.01', 'M20 5h.01', 'M4 19h4', 'M20 5h-4'),
 
 	'media.video': Film,
 	'media.image': Image,

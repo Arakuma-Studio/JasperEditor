@@ -61,6 +61,7 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	essentialSound: 'Essential Sound',
 	essentialGraphics: 'Essential Graphics',
 	mediaBrowser: 'Media Browser',
+	easing: 'Easing',
 };
 
 const save: UiCommand = {

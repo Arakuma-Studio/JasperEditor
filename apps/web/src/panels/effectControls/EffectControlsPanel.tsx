@@ -48,6 +48,7 @@ import { TextAnimationSection } from '../../text-animation/TextAnimationSection.
 import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
 import { TimeRemapSection } from '../../time/TimeRemapSection.tsx';
 import { openSimplify } from '../../tracking/simplify-actions.ts';
+import { EaseKeyMenuItems } from '../easing/KeyMenu.tsx';
 import {
 	applyEffectToClips,
 	isEffectDrag,
@@ -1065,6 +1066,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							setMenu(null);
 						}}
 					/>
+					{/* Keyframe easing: Apply Ease ▸ (recent, favourites), Copy / Paste Ease, Open Easing Panel. */}
+					<EaseKeyMenuItems onDone={() => setMenu(null)} />
 					{shell ? (
 						// S03:EC-024 / wp-clipboard: Copy keys (pasted at the playhead with Ctrl/Cmd+V).
 						<button

@@ -128,6 +128,16 @@ export const EXPRESSION_PRESETS: readonly ExpressionPreset[] = [
 		kinds: NUM_VEC,
 	},
 	{
+		// Original (JasperEditor): the value bounces back off its last key like a ball off a wall — each arc is a
+		// parabola of `gravity`, and each bounce keeps `elasticity` of the previous one's speed.
+		id: 'bounce',
+		label: 'Bounce back',
+		category: 'Physics',
+		description: 'Bounces back off each keyframe and settles (the arrival speed, decaying with each bounce).',
+		text: 'elasticity = 0.6;\ngravity = 5000;\nmaxBounces = 6;\nn = 0;\nif (numKeys > 0) {\n  n = nearestKey(time).index;\n  if (key(n).time > time) n--;\n}\nif (n > 0 && time > key(n).time) {\n  v = velocityAtTime(key(n).time - thisComp.frameDuration / 10);\n  s = length(v) * elasticity;\n  t = time - key(n).time;\n  for (b = 0; b < maxBounces; b++) {\n    d = 2 * s / gravity;\n    if (t <= d) break;\n    t -= d;\n    s *= elasticity;\n  }\n  if (b < maxBounces && s > 0) {\n    value - normalize(v) * (s * t - gravity * t * t / 2);\n  } else {\n    value;\n  }\n} else {\n  value;\n}',
+		kinds: NUM_VEC,
+	},
+	{
 		id: 'posterize',
 		label: 'Posterize time (12 fps)',
 		category: 'Time',
