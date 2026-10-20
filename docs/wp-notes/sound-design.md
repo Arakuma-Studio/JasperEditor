@@ -10772,3 +10772,14 @@ Decisions (the conflicts are listed in the merge commit a7699132):
   `proposals/ghost.ts`); `@jasper/testkit` is an MCP devDependency again (`sound-motion`, `sound-semantic`).
 - Semantic conflict found by the gate: the audit's registry contract failed for Surround Reverb, whose 5.1 handling
   (c0eb6ca6) touched every channel of the block; it now stays within its configured channels (641436cd).
+
+Verified on `jasper-build` (16 vCPU, Node 20.20.2, CfT 150 via `JASPER_BROWSER_EXECUTABLE`, load 0.3–12), measured with
+the Final verification A scripts (`gate.sh`, `final.sh`):
+
+- Gate at 6e449fcb: lint, typecheck, build, `notices --check`, `i18n:check` (es.json covers all 10 544 strings),
+  `e2e:typecheck` ok; `pnpm test --maxWorkers=8` 1 failed (the Surround Reverb contract above) / 7 362 passed / 244 skipped.
+- E2E at 641436cd: `node scripts/e2e-prepare.mjs`, then each of the 55 `e2e/*.spec.ts` (83 before the audit removed 28)
+  in its own `e2e/serve.mjs`: **55 / 55** specs, 122 tests passed, 1 skipped (`sound-describe`'s CLAP test, no model),
+  44.5 min; `e2e/mg-fallback-check.mjs` PASS.
+- Gate at 7c2150f5 (the fix and this note): lint 52 s, typecheck 350 s, **7 366 passed, 241 skipped, 0 failed** (771
+  files, 22.0 min), build 102 s, `notices --check`, `i18n:check`, `e2e:typecheck` ok.
