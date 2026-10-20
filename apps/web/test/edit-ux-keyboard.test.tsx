@@ -74,7 +74,10 @@ describe('keyboard layouts', () => {
 describe('shortcut store', () => {
 	it('switching layouts changes resolution; edits make a "Custom" layout that persists', () => {
 		const opts = { platform: 'win' as const, runtime: 'desktop' as const };
-		expect(resolveBindings('F9', ['timeline', 'editing', 'global'], opts)).toEqual([]);
+		// Premiere layout: F9 is only the global Easy Ease; Final Cut Pro 7 puts Insert first in the editing panels.
+		expect(resolveBindings('F9', ['timeline', 'editing', 'global'], opts).map((b) => b.command)).toEqual([
+			'ease.easyEase',
+		]);
 		setLayout('fcp7');
 		expect(resolveBindings('F9', ['timeline', 'editing', 'global'], opts)[0]!.command).toBe(
 			'timeline.insertFromSource',
