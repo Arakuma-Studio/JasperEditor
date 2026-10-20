@@ -278,6 +278,26 @@ describe('shape.animateTrim keys', () => {
 		}
 		expect(h.tx([{ type: 'shape.animateTrim', clipIds: [], style: 'in' }]).ok).toBe(false);
 	});
+
+	it('refuses inOutLag 0 (nothing would ever be visible) and accepts the bounds just inside', () => {
+		const h = new Harness();
+		const id = addVector(h, LINE);
+		const r = h.tx([{ type: 'shape.animateTrim', clipIds: [id], style: 'inOut', inOutLag: 0 }]);
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.errors[0]!.code).toBe('E_SCHEMA');
+			expect(r.errors[0]!.path).toEqual(['inOutLag']);
+			expect(r.errors[0]!.message).toMatch(/greater than 0.*nothing is ever visible/);
+		}
+		expect(h.tx([{ type: 'shape.animateTrim', clipIds: [id], style: 'inOut', inOutLag: -0.1 }]).ok).toBe(
+			false,
+		);
+		// The refusal leaves the document as it was; tiny and full lags still work.
+		expect(trims(contentsOf(h, id))).toEqual([]);
+		animate(h, [id], { style: 'inOut', inOutLag: 1e-6 });
+		animate(h, [id], { style: 'inOut', inOutLag: 1 });
+		expect(trims(contentsOf(h, id))[0]!.start.keyframes.map((k) => k.time)).toEqual([10 * F, 20 * F]);
+	});
 });
 
 /** Positional shape of the contents: types, names and trims' values / keys / expression shapes, ids replaced. */
