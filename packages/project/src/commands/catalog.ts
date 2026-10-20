@@ -8,6 +8,7 @@ import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { colorMgmtHandlers } from './handlers/color-mgmt.ts';
 import { compositionHandlers } from './handlers/composition.ts';
+import { EASE_OWNER, easeHandlers } from './handlers/ease.ts';
 import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
@@ -72,7 +73,8 @@ export type CommandOwner =
 	| 'color-mgmt'
 	| 'imports'
 	| 'previews'
-	| 'gaps';
+	| 'gaps'
+	| 'keyframe-ease';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -341,6 +343,12 @@ const LABELS: Record<CommandType, string> = {
 	'graphic.align': 'Align',
 	'graphic.setPins': 'Responsive Design – Position',
 	'graphic.importTemplate': 'Add Graphic Template',
+	'keyframe.applyEase': 'Apply Ease',
+	'keyframe.pasteEase': 'Paste Ease',
+	'keyframe.pasteValues': 'Paste Keyframe Values',
+	'keyframe.setVelocity': 'Keyframe Velocity',
+	'keyframe.createPathController': 'Create Path Controller',
+	'keyframes.cleanupPath': 'Clean Up Motion Path',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -381,6 +389,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[interpretHandlers, INTERPRET_OWNER],
 	[previewsHandlers, PREVIEWS_OWNER],
 	[gapsHandlers, GAPS_OWNER],
+	[easeHandlers, EASE_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -415,7 +424,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === THREE_D_OWNER ||
 				owner === INTERPRET_OWNER ||
 				owner === PREVIEWS_OWNER ||
-				owner === GAPS_OWNER
+				owner === GAPS_OWNER ||
+				owner === EASE_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||
