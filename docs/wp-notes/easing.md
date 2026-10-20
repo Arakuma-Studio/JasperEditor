@@ -522,6 +522,13 @@ path (`reversedKeyTiming`, `reversedSpatial`), so each segment's ease is mirrore
   Paste Values, Drive Along Path, Clean Up Motion Path, Mirror Keys at Playhead, Add Overshoot Expression, a refusal
   toast (flat span), Auto-apply drag (live gesture, one "Apply Ease" history entry), F9 Easy Ease, Apply Ease ▸
   recent curve from the key menu.
+- Export (2026-10-20, shared host at load ≈ 40–55, `--maxWorkers=1`): `apps/engine/test/native-animated.test.ts`
+  exports a card eased by `keyframe.applyEase` (Overshoot Out (Strong) on Scale — peak 95 % for keys 45 → 85 —, Bounce
+  Out: 3 / 2 Bounces on Rotation / Opacity, Anticipate & Overshoot (Medium) rebuilding a curved Position path) and a
+  `keyframe.createPathController` card natively (ProRes 4444, 1080p, 48 frames): measured corners within 0.043 px
+  (eased) / 0.004 px (controller) of the evaluator's quad on every frame (≤ 0.1 px required), colour ≤ 1.6/255 at the
+  overshoot and bounce frames. With `REMOTION_E2E=1`, native vs Remotion SSIM min 0.9994 (eased) / 0.9988
+  (controller), ≥ 0.98 required.
 - Tests: `apps/web/test/easing-curve-edit.test.ts`, `easing-library.test.ts`, `easing-commands.test.ts` (the real
   commands: apply cubic and multi, undo, refusal, copy / paste ease and values, velocity, path controller, clean-up,
   duplicate / mirror, expressions, shortcuts), `easing-panel.test.tsx` (editor, targeting, velocity editor, library).

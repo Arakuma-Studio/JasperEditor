@@ -2,7 +2,16 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Vec2 } from '@jasper/project';
+import {
+	type Animatable,
+	builtinEasePresets,
+	clipContentTime,
+	type EaseCurve,
+	type RenderSnapshot,
+	type RenderVisualClip,
+	resolveLayerProps,
+	type Vec2,
+} from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fitPieces, pieceValue } from '../src/export/keyframed.ts';
 import { buildNativeGraph } from '../src/export/native.ts';
@@ -142,6 +151,135 @@ async function cardDoc(app: TestApp | RunningEngine['app'], hostH: Record<string
 	animateCard(d, clip);
 	return { d, clip };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Keyframe assistant (docs/wp-notes/easing.md): eases applied with `keyframe.applyEase` (a cubic overshoot preset, a
+// multi-point bounce that creates in-between keys, a multi-point anticipate-overshoot rebuilding a curved spatial
+// path) and a slider-driven `keyframe.createPathController`.
+
+const presetCurve = (id: string): EaseCurve => {
+	const p = builtinEasePresets().find((x) => x.id === id);
+	if (!p) throw new Error(`no built-in ease preset ${id}`);
+	return p.curve;
+};
+
+type DocClip = { transform: Record<string, Animatable<unknown>>; opacity: Animatable<number> };
+const docClip = (d: DocBuilder, clip: string) => d.doc.sequences[d.seqId]!.clips[clip] as unknown as DocClip;
+const keyIdsOf = (a: Animatable<unknown>) => a.keyframes.map((k) => k.id);
+
+/** The card on the plate (48 frames) with keys set by `keys`, then `edit` (assistant commands) applied. */
+async function assistantCardDoc(
+	app: TestApp | RunningEngine['app'],
+	keys: (
+		at: (f: number) => { sequenceFrame: number },
+		t: (p: string) => unknown[],
+		clip: string,
+	) => unknown[],
+	edit: (d: DocBuilder, clip: string) => void,
+	hostH: Record<string, string> = {},
+) {
+	const card = await register(app, makeCard(), hostH);
+	const d = new DocBuilder();
+	const cardId = d.addMedia(card);
+	d.tx([
+		{ type: 'clip.addSolid', at: 0, duration: 48, track: 'V1', color: [20 / 255, 20 / 255, 20 / 255, 1] },
+	]);
+	const clip = d.tx([
+		{ type: 'clip.place', source: { mediaId: cardId }, at: 0, tracks: { video: 'V2' }, ref: '$c' },
+	]).refs.$c!;
+	d.tx(
+		keys(
+			(f) => ({ sequenceFrame: f }),
+			(p) => ['clip', clip, 'transform', p],
+			clip,
+		),
+	);
+	edit(d, clip);
+	return { d, clip };
+}
+
+/**
+ * Scale eased with the cubic overshoot preset (cubic-bezier(⅓, 2, ⅔, 1): past the end value and back), Rotation
+ * and Opacity with the multi-point Bounce Out preset (in-between keys), Position along a curved (Auto Bezier) motion
+ * path rebuilt by the multi-point Anticipate & Overshoot preset.
+ */
+async function easedCardDoc(app: TestApp | RunningEngine['app'], hostH: Record<string, string> = {}) {
+	return assistantCardDoc(
+		app,
+		(at, t, clip) => [
+			{ type: 'keyframe.add', target: t('scale'), at: at(2), value: 45 },
+			{ type: 'keyframe.add', target: t('scale'), at: at(22), value: 85 },
+			{ type: 'keyframe.add', target: t('rotation'), at: at(0), value: -20 },
+			{ type: 'keyframe.add', target: t('rotation'), at: at(36), value: 25 },
+			{ type: 'keyframe.add', target: ['clip', clip, 'opacity'], at: at(4), value: 55 },
+			{ type: 'keyframe.add', target: ['clip', clip, 'opacity'], at: at(40), value: 100 },
+		],
+		(d, clip) => {
+			// Point keys through param.set: they get the default Auto Bezier spatial interpolation (a curved path).
+			const pos = ['clip', clip, 'transform', 'position'];
+			d.tx([
+				{ type: 'param.setAnimated', target: pos, animated: true, at: { sequenceFrame: 0 } },
+				{ type: 'param.set', target: pos, value: [620, 430], at: { sequenceFrame: 0 } },
+				{ type: 'param.set', target: pos, value: [1250, 330], at: { sequenceFrame: 22 } },
+				{ type: 'param.set', target: pos, value: [1150, 700], at: { sequenceFrame: 44 } },
+			]);
+			const c = docClip(d, clip);
+			d.tx([
+				{
+					type: 'keyframe.applyEase',
+					keyframeIds: keyIdsOf(c.transform.scale!),
+					curve: presetCurve('overshoot.overshoot-out-strong'),
+				},
+				{
+					type: 'keyframe.applyEase',
+					keyframeIds: keyIdsOf(c.transform.rotation!),
+					curve: presetCurve('bounce.out-3'),
+				},
+				{ type: 'keyframe.applyEase', keyframeIds: keyIdsOf(c.opacity), curve: presetCurve('bounce.out-2') },
+				{
+					type: 'keyframe.applyEase',
+					keyframeIds: keyIdsOf(c.transform.position!),
+					curve: presetCurve('overshoot.anticipate-overshoot-medium'),
+				},
+			]);
+			const after = docClip(d, clip);
+			// The multi-point curves replaced the span's interior with keys at the curve's points.
+			expect(after.transform.rotation!.keyframes.length).toBeGreaterThan(2);
+			expect(after.opacity.keyframes.length).toBeGreaterThan(2);
+			expect(after.transform.position!.keyframes.length).toBeGreaterThan(3);
+		},
+		hostH,
+	);
+}
+
+/** Position keyed along a curved path, then made slider-driven by `keyframe.createPathController`. */
+async function controllerCardDoc(app: TestApp | RunningEngine['app'], hostH: Record<string, string> = {}) {
+	return assistantCardDoc(
+		app,
+		(_at, t) => [{ type: 'param.set', target: t('scale'), value: 60 }],
+		(d, clip) => {
+			const pos = ['clip', clip, 'transform', 'position'];
+			d.tx([
+				{ type: 'param.setAnimated', target: pos, animated: true, at: { sequenceFrame: 2 } },
+				{ type: 'param.set', target: pos, value: [560, 420], at: { sequenceFrame: 2 } },
+				{ type: 'param.set', target: pos, value: [1300, 360], at: { sequenceFrame: 18 } },
+				{ type: 'param.set', target: pos, value: [1100, 760], at: { sequenceFrame: 42 } },
+			]);
+			d.tx([
+				{
+					type: 'keyframe.createPathController',
+					keyframeIds: keyIdsOf(docClip(d, clip).transform.position!),
+				},
+			]);
+			expect(docClip(d, clip).transform.position!.expression?.enabled).toBe(true);
+		},
+		hostH,
+	);
+}
+
+/** The card layer of a planned snapshot (V2). */
+const cardLayer = (snap: RenderSnapshot, clip: string): RenderVisualClip =>
+	snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clip)!;
 
 const proresSettings = (seqId: string, engine: 'auto' | 'native' | 'remotion' = 'auto') => ({
 	sequenceId: seqId,
@@ -595,6 +733,91 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 	}, 300_000);
 });
 
+/** Card point of a sequence pixel under the affine quad `q` of the 640×360 card (inverse of its layer map). */
+function cardPointOf(q: readonly Vec2[]): (x: number, y: number) => Vec2 {
+	const ux = (q[1]![0] - q[0]![0]) / CARD.w;
+	const uy = (q[1]![1] - q[0]![1]) / CARD.w;
+	const vx = (q[3]![0] - q[0]![0]) / CARD.h;
+	const vy = (q[3]![1] - q[0]![1]) / CARD.h;
+	const det = ux * vy - uy * vx;
+	return (x, y) => {
+		const dx = x - q[0]![0];
+		const dy = y - q[0]![1];
+		return [(dx * vy - dy * vx) / det, (ux * dy - uy * dx) / det];
+	};
+}
+
+describe('native export of keyframe-assistant eases and a path controller (easing.md)', () => {
+	/**
+	 * Every frame's measured card corners against the quad the shared evaluator (what Program preview draws) gives
+	 * for that frame, ≤ 0.1 px as the authored-pose test above; colours at the overshoot / bounce frames.
+	 */
+	async function exportMatchesEvaluator(d: DocBuilder, clip: string, name: string) {
+		const settings = proresSettings(d.seqId);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings as never,
+		});
+		expect(planned.plan).toMatchObject({ path: 'native', blockers: [] });
+		const layer = cardLayer(planned.snapshot, clip);
+		const fps = planned.snapshot.settings.fps;
+		const props = Array.from({ length: 48 }, (_, f) =>
+			resolveLayerProps(layer, clipContentTime(layer, f, fps)),
+		);
+		const { done, out } = await runExport(d, settings);
+		expect(done.result).toMatchObject({ renderPath: 'native', frames: 48 });
+		if (process.env.NATIVE_ANIM_KEEP)
+			copyFileSync(out, join(process.env.NATIVE_ANIM_KEEP, `native-${name}-${Date.now()}.mov`));
+		const frames = decodeAll(out);
+		expect(frames).toHaveLength(48);
+		let worst = 0;
+		let worstFrame = -1;
+		for (const [f, img] of frames.entries()) {
+			const quad = props[f]!.quad;
+			const err = cornerError(measureCorners(img, quad, PLATE[0]), quad);
+			if (err > worst) [worst, worstFrame] = [err, f];
+			expect(err, `${name} frame ${f} corners`).toBeLessThanOrEqual(0.1);
+		}
+		return { frames, props, worst, worstFrame };
+	}
+
+	it('cubic overshoot, multi-point bounces and a rebuilt spatial path render as evaluated (≤ 0.1 px, 8/255)', async () => {
+		const { d, clip } = await easedCardDoc(app);
+		const { frames, props, worst, worstFrame } = await exportMatchesEvaluator(d, clip, 'eased');
+		const scale = props.map((p) => p.transform!.scale);
+		const peak = scale.indexOf(Math.max(...scale));
+		// cubic-bezier(⅓, 2, ⅔, 1) from 45 to 85 % peaks ≈ 13 % of the change past the end value.
+		expect(scale[peak]!).toBeGreaterThan(88);
+		// Anticipation: Position first moves away from the second key (x below its first value).
+		const xs = props.map((p) => p.transform!.position[0]);
+		expect(Math.min(...xs)).toBeLessThan(615);
+		const opacity = props.map((p) => p.opacity / 100);
+		const checkAt = [...new Set([peak, peak - 3, peak + 3, xs.indexOf(Math.min(...xs)), 12, 30, 47])];
+		let worstColour = 0;
+		for (const f of checkAt) {
+			const col = colourError(frames[f]!, cardPointOf(props[f]!.quad), opacity[f]!);
+			worstColour = Math.max(worstColour, col.max);
+			expect(col.count).toBeGreaterThan(1000);
+			expect(col.max, `frame ${f} colour ${col.where}`).toBeLessThanOrEqual(8);
+			expect(col.mean, `frame ${f} mean colour error`).toBeLessThan(1);
+		}
+		report(
+			`[ease] eased card (overshoot scale peak ${scale[peak]!.toFixed(2)} % at frame ${peak}): worst corner error ${worst.toFixed(3)} px (frame ${worstFrame}), worst colour error ${worstColour}/255 at frames ${checkAt.join(',')}`,
+		);
+	}, 600_000);
+
+	it('a path controller (slider + Position expression) renders as evaluated (≤ 0.1 px)', async () => {
+		const { d, clip } = await controllerCardDoc(app);
+		const { props, worst, worstFrame } = await exportMatchesEvaluator(d, clip, 'controller');
+		// The expression drives the card: still before the first key, moving along the path between.
+		const xs = props.map((p) => p.transform!.position);
+		expect(xs[0]).toEqual([560, 420]);
+		expect(Math.hypot(xs[20]![0] - xs[10]![0], xs[20]![1] - xs[10]![1])).toBeGreaterThan(50);
+		report(`[ease] path controller card: worst corner error ${worst.toFixed(3)} px (frame ${worstFrame})`);
+	}, 600_000);
+});
+
 function decodeRegion(file: string, x: number, y: number, w: number, h: number): Img[] {
 	const r = spawnSync(
 		'ffmpeg',
@@ -840,4 +1063,16 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		report(`[anim parity] keyframed card, 48 frames: ${animated.line}`);
 		for (const [f, v] of animated.ssim.entries()) expect(v, `frame ${f}`).toBeGreaterThanOrEqual(0.98);
 	}, 1_800_000);
+
+	it('keyframe-assistant eases and a path controller: native vs Remotion SSIM ≥ 0.98 on every frame', async () => {
+		for (const [name, build] of [
+			['eased card', easedCardDoc],
+			['path controller', controllerCardDoc],
+		] as const) {
+			const { d } = await build(engine.app, hostH());
+			const r = await compare(d, 48);
+			report(`[anim parity] ${name}, 48 frames: ${r.line}`);
+			for (const [f, v] of r.ssim.entries()) expect(v, `${name} frame ${f}`).toBeGreaterThanOrEqual(0.98);
+		}
+	}, 3_600_000);
 });

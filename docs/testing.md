@@ -82,8 +82,12 @@ What is covered:
 | `transition-gl.test.ts` → `goldens/transition-fingerprints.json` | every GPU transition two-sided over two cards at p = 0.25 / 0.5 / 0.75 (±4 levels) | Chrome present |
 | `fx-motion-blur-gl.test.ts` → `goldens/motion-blur/*.png` | 36 static cases (motion blur off or nothing moving) must equal the pre-motion-blur output; blessed from that output — their pixel checksums equal the former `baseline.json` pins | Chrome present |
 
-Native-vs-Remotion parity: `apps/engine/test/native-animated.test.ts` (keyframed Motion / Opacity / crop, SSIM ≥ 0.98,
-`REMOTION_E2E=1`) and `apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and
+Native-vs-Remotion parity: `apps/engine/test/native-animated.test.ts` (keyframed Motion / Opacity / crop, and the keyframe
+assistant's eases — a cubic overshoot preset, multi-point bounces, a rebuilt spatial path — and a path controller:
+native corners ≤ 0.1 px from the shared evaluator on every frame without Remotion; SSIM ≥ 0.98 against Remotion with
+`REMOTION_E2E=1`), `apps/engine/test/trim-paths-export.e2e.test.ts` (`REMOTION_E2E=1`: Trim Paths animations and
+trim tracers exported on the hybrid layer-bake and Remotion paths, compared frame by frame and with the evaluated
+tips and trims) and `apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and
 by Remotion, compared with each other and with goldens). `apps/engine/test/blend-export.test.ts` checks a native
 Multiply / half-opacity Normal / Difference stack against independently calculated pixels, plus literal kernel
 vectors for transparent layer pixels, stencil clearing and inactive-frame passthrough.
