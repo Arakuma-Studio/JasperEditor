@@ -1,7 +1,7 @@
 // Stroke Animation UI commands (docs/wp-notes/shapes.md § "Stroke Animation panel"): every panel button, the
-// Graphics ▸ Stroke Animation menu and the palette run these. Each click is one undo step (an animation with
-// "Tracer on Next" adds its tracers in a second transaction merged into the same History entry). Refusals and
-// warnings (skipped clips) are shown as notifications; nothing is applied when the command refuses.
+// Graphics ▸ Stroke Animation menu and the palette run these. Each click is one transaction, one undo step (an
+// animation with "Tracer on Next" carries its tracers in the same transaction). Refusals and warnings (skipped
+// clips) are shown as notifications; nothing is applied when the command refuses.
 import { DEFAULT_SHAPE_SECONDS, type TransactionResult } from '@jasper/project';
 import { z } from 'zod';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
@@ -31,7 +31,6 @@ const AnimateArgsSchema = z
 	.optional();
 
 const W_TRIM_SKIPPED = 'W_TRIM_SKIPPED';
-let txCounter = 0;
 
 /** Shows a refusal or the warnings of a transaction; true when it applied. */
 function report(
@@ -63,7 +62,7 @@ function apply(
 	label: string,
 	sequenceId: string,
 	commands: StrokeCommand[],
-	extra: { coalesceKey?: string; selectCreated?: boolean } = {},
+	extra: { selectCreated?: boolean } = {},
 ): Extract<TransactionResult, { ok: true }> | null {
 	if (!ctx.session || !commands.length) return null;
 	const r = strokeAdapter().apply(ctx.session, { label, sequenceId, commands, ...extra });
@@ -87,25 +86,23 @@ function animate(ctx: CommandCtx, action: StrokeAction, args: z.infer<typeof Ani
 	};
 	const label = STROKE_MENU_LABELS[action.id];
 	const commands = buildAnimateCommands(style, t.clips, prefs, flags, session.transport.getState().frame);
-	const coalesceKey = prefs.addTracer ? `stroke-animation:${++txCounter}` : undefined;
-	const r = apply(ctx, label, t.sequence.id, commands, coalesceKey ? { coalesceKey } : {});
-	if (!r || !prefs.addTracer) return;
-	const trims = masterTrims(r.results);
-	if (!trims.length) {
-		ctx.ui.toast({
-			kind: 'warning',
-			message: `${label}: no tracer added`,
-			detail: 'The animation did not report its Trim Paths, so no tracer could follow it.',
+	const tracers: StrokeCommand[] = [];
+	if (prefs.addTracer) {
+		// Which clips get animated is the command's decision (skipped clips warn): a dry run tells, then one tracer per
+		// animated clip goes into the same transaction (without a trim id it follows the clip's master trim).
+		const probe = strokeAdapter().apply(session, {
+			label,
+			sequenceId: t.sequence.id,
+			commands,
+			dryRun: true,
 		});
-		return;
+		if (!probe.ok) {
+			report(ctx, label, probe);
+			return;
+		}
+		for (const m of masterTrims(probe.results)) tracers.push(tracerCommand(m.clipId, null, prefs));
 	}
-	apply(
-		ctx,
-		label,
-		t.sequence.id,
-		trims.map((m) => tracerCommand(m.clipId, m.trimItemId, prefs)),
-		{ coalesceKey },
-	);
+	apply(ctx, label, t.sequence.id, [...commands, ...tracers]);
 }
 
 function reversePath(ctx: CommandCtx): void {

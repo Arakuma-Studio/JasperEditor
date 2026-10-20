@@ -186,8 +186,9 @@ paint, Wiggle's noise, Offset Paths on open paths), the choice above is EffectCr
 
 ## Stroke Animation panel
 
-One-click Trim Paths animations for the selected shape clips (Window ▸ Stroke Animation, docked with Essential
-Graphics when the layout has no place for it). Code: `apps/web/src/panels/strokeAnimation/StrokeAnimationPanel.tsx`
+One-click Trim Paths animations for the selected shape clips (Window ▸ Stroke Animation; it opens as a tab beside
+Effect Controls, else Properties, else Project — `dockWith` takes a preference list — so it docks in every built-in
+layout instead of floating; `apps/web/test/stroke-animation-dock.test.ts`). Code: `apps/web/src/panels/strokeAnimation/StrokeAnimationPanel.tsx`
 (panel), `apps/web/src/stroke-animation/` (`model.ts` pure button → payload logic, `commands.ts` UI commands,
 `prefs.ts` preferences, `adapter.ts` the single dispatch point to the `shape.*` commands). The workflow — buttons
 that set up a draw-on / draw-off / from-the-middle / divided Trim Paths animation in one click, modifier clicks for
@@ -218,13 +219,10 @@ scripts; names, glyphs and layout are our own.
 - **Start**: "Playhead (inside the clip)" (default) starts each clip's animation at the playhead when the playhead is
   inside that clip, else at the clip start; "Clip start" always uses the clip start. Clips with different starts get
   one `shape.animateTrim` each, in one transaction.
-- **One undo step per click**: the animation is one transaction. With Tracer on Next the tracers need the master trim
-  ids that `shape.animateTrim` returns (`clips[].trimIds[0]`); a later command of the same transaction cannot use them
-  (`trimItemId` is a plain id, not a `$ref`), so they are a second transaction issued synchronously with the same label
-  and a per-click coalesce key: the session merges it into the animation's History entry (S01:UND-006), so one Undo
-  removes the tracers and the animation together (tested with the real commands and the app's coalescing window).
-  Refusals are an error notification and change nothing; if the tracer transaction is refused the animation stays and
-  the refusal is shown.
+- **One transaction, one undo step per click**. With Tracer on Next the click first dry-runs the animation
+  (`dryRun`, nothing changes) to learn which clips it animates (skipped clips get no tracer), then applies
+  `shape.animateTrim` plus one `shape.addTrimTracer` per animated clip, without `trimItemId` (the tracer follows the
+  clip's master trim), as one transaction. Refusals are an error notification and change nothing.
 - **Settings** (collapsible; per-user, `localStorage` key `jasper:stroke-animation-prefs`, zod schema version 1,
   validated field by field so a corrupt or newer value keeps every valid field): Duration (frames, shown also as
   sequence timecode; 1–3600, default 10), Offset (degrees, used with Animate offset; default 180), Copies (Divide,
@@ -238,7 +236,7 @@ scripts; names, glyphs and layout are our own.
   and the panel); palette entries "Stroke Animation: …". No default shortcuts (they can be bound in Keyboard
   Shortcuts); `apps/web/test/keymap.test.ts` stays conflict-free.
 - **Checked in the running app** (engine 47932 / Vite 5192, 1080p 29.97, Duration 30 frames): Horizontal Line +
-  Draw In with Tracer on Next (one History entry, the dot rides the tip), a rectangle (fill only, converted) + Grow
+  Draw In with Tracer on Next (one transaction, the dot rides the tip), a rectangle (fill only, converted) + Grow
   from Middle, Vertical Line + Divide In (4 parts), Add Tracer on the divided line (follows Part 1's master); scrubbed
   to frames 8, 12 and 20 and inspected the Program monitor: the parts and tips are where the keys put them. Clicking
   3.5 screen px beside the 8 px vertical line at 25 % zoom selects it. A shape whose stroke is fully trimmed (e.g. at
@@ -254,7 +252,7 @@ scripts; names, glyphs and layout are our own.
   buttons, start rules, settings persistence and validation with fast-check, curve text and presets, disabled states,
   tracer targeting, menu ↔ command coverage (stubbed adapter); and end to end with the real commands: keys at the
   playhead, re-run replaces, undo; every style on a vector shape and a converted rectangle; skipped-clip warning and
-  refusal (document unchanged); Tracer on Next in one History entry; Add Tracer with a follower (Position and
+  refusal (document unchanged); Tracer on Next in one transaction (skipped clips get none; one undo removes both); Add Tracer with a follower (Position and
   Rotation expressions); Reverse Path Direction; Add Horizontal Line at the playhead, selected.
 
 ## 7. SVG → shapes (for paste, import and agents)

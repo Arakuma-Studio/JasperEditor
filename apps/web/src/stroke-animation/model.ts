@@ -344,16 +344,17 @@ export function masterTrims(results: readonly unknown[]): { clipId: string; trim
 	return out;
 }
 
+/** `trimItemId` null = the clip's master trim (the one `shape.animateTrim` animates). */
 export function tracerCommand(
 	clipId: string,
-	trimItemId: string,
+	trimItemId: string | null,
 	prefs: Pick<StrokePrefs, 'tracerTip' | 'tracerOrient'>,
 	followerId: string | null = null,
 ): AddTrimTracerCommand {
 	return {
 		type: 'shape.addTrimTracer',
 		clipId,
-		trimItemId,
+		...(trimItemId ? { trimItemId } : {}),
 		tip: prefs.tracerTip,
 		...(followerId ? { follower: { clipId: followerId }, orient: prefs.tracerOrient } : {}),
 	};

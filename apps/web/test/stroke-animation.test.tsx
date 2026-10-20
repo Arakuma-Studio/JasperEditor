@@ -433,7 +433,7 @@ describe('UI commands', () => {
 		expect(toasts.at(-1)!.message).toContain('1 skipped');
 	});
 
-	it('adds tracers to the next animation in the same undo step', async () => {
+	it('adds tracers to the next animation in the same transaction', async () => {
 		const { session } = makeSession();
 		const a = addShape(session, { type: 'vector', contents: STROKED_PATH });
 		session.select('timeline', [a]);
@@ -451,13 +451,15 @@ describe('UI commands', () => {
 			),
 		}));
 		await runCommand('strokeAnimation.drawIn', ctxFor(session));
+		// A dry run learns which clips get animated, then animation + tracers go in one transaction.
 		expect(txs).toHaveLength(2);
+		expect(txs[0]!.dryRun).toBe(true);
+		expect(txs[0]!.commands.map((c) => c.type)).toEqual(['shape.animateTrim']);
+		expect(txs[1]!.dryRun).toBeUndefined();
 		expect(txs[1]!.commands).toEqual([
-			{ type: 'shape.addTrimTracer', clipId: a, trimItemId: 'trimA', tip: 'end' },
+			txs[0]!.commands[0],
+			{ type: 'shape.addTrimTracer', clipId: a, tip: 'end' },
 		]);
-		expect(txs[0]!.coalesceKey).toBeDefined();
-		expect(txs[1]!.coalesceKey).toBe(txs[0]!.coalesceKey);
-		expect(txs[1]!.label).toBe(txs[0]!.label);
 		expect(getCommand('strokeAnimation.toggleTracer')!.checked!(ctxFor(session))).toBe(true);
 		await runCommand('strokeAnimation.toggleTracer', ctxFor(session));
 		expect(strokePrefs.get().addTracer).toBe(false);
@@ -630,17 +632,6 @@ describe('with the real shape commands', () => {
 	const clipsOf = (session: EditorSession) =>
 		Object.values(session.getCommitted().sequences[session.getState().activeSequenceId!]!.clips);
 	const historyLength = (session: EditorSession) => session.getState().history.entries.length;
-	/** A session with the app's History coalescing window (the tracer test relies on it). */
-	function liveSession() {
-		const ids = createCounterIdSource(1);
-		const document = createEmptyProject({ ids, name: 'Stroke', preset: 'hd-1080p-30' });
-		return new EditorSession({
-			projectId: document.projectId,
-			document,
-			ctx: { ids, now: () => 't', registries: defaultRegistries() },
-		});
-	}
-
 	it('Draw In keys Trim Paths at the playhead in one undo step; a re-run replaces it; undo restores', async () => {
 		const { session } = makeSession();
 		const a = addShape(session, { type: 'vector', contents: STROKED_PATH }, 0, 90);
@@ -721,18 +712,23 @@ describe('with the real shape commands', () => {
 		expect(session.getCommitted()).toBe(doc);
 	});
 
-	it('Tracer on Next adds a tracer for the animated trim in the same History entry', async () => {
-		const session = liveSession();
+	it('Tracer on Next adds a tracer for each animated clip in the same History entry', async () => {
+		// No History coalescing (window 0): one entry proves one transaction.
+		const { session } = makeSession();
 		const a = addShape(session, { type: 'vector', contents: STROKED_PATH }, 0, 90, 'V1');
-		session.select('timeline', [a]);
+		// Skipped by the animation (nothing to trim): it must not get a tracer.
+		const fillOnly = addShape(session, { type: 'vector', contents: [{ type: 'fill' }] }, 0, 90, 'V2');
+		session.select('timeline', [a, fillOnly]);
 		strokePrefs.set({ addTracer: true });
 		const before = historyLength(session);
 		const clipsBefore = clipsOf(session).length;
 		const toasts: ToastRequest[] = [];
 		await runCommand('strokeAnimation.growFromMiddle', ctxFor(session, toasts));
-		expect(toasts).toEqual([]);
+		expect(toasts).toHaveLength(1);
+		expect(toasts[0]).toMatchObject({ kind: 'warning' });
+		expect(toasts[0]!.message).toContain('1 skipped');
 		expect(clipsOf(session)).toHaveLength(clipsBefore + 1);
-		const tracer = clipsOf(session).find((c) => c.id !== a)! as unknown as {
+		const tracer = clipsOf(session).find((c) => c.id !== a && c.id !== fillOnly)! as unknown as {
 			transform: { position: { expression?: { text: string } } };
 		};
 		expect(tracer.transform.position.expression?.text).toContain(a);
@@ -740,6 +736,8 @@ describe('with the real shape commands', () => {
 		session.undo();
 		expect(clipsOf(session)).toHaveLength(clipsBefore);
 		expect(contentsOf(session, a).some((i) => i.type === 'trim')).toBe(false);
+		session.redo();
+		expect(clipsOf(session)).toHaveLength(clipsBefore + 1);
 	});
 
 	it('Add Tracer drives a selected follower; lines and path reversal apply', async () => {

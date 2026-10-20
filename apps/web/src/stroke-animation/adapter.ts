@@ -24,8 +24,8 @@ export type StrokeTx = {
 	label: string;
 	sequenceId: string;
 	commands: StrokeCommand[];
-	/** Same key + label within the history window: merged into the previous entry (one undo step). */
-	coalesceKey?: string;
+	/** Validate and compute the results without changing the document (no History entry). */
+	dryRun?: boolean;
 	/** Select the clips the transaction creates (a new line). */
 	selectCreated?: boolean;
 };
@@ -41,7 +41,7 @@ const sessionAdapter: StrokeAnimationAdapter = {
 			origin: 'user',
 			sequenceId: tx.sequenceId,
 			commands: tx.commands,
-			...(tx.coalesceKey ? { coalesceKey: tx.coalesceKey } : {}),
+			...(tx.dryRun ? { dryRun: true } : {}),
 			// The session keeps only the created ids that are clips.
 			...(tx.selectCreated
 				? { selectAfter: (r: Extract<TransactionResult, { ok: true }>) => ({ timeline: r.created }) }
