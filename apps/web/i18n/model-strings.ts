@@ -65,6 +65,9 @@ for (const presets of presetFamilies) {
 	}
 }
 for (const p of project.builtinEssentialPresets()) add(p.name);
+// Ease presets: `group` holds a group id, so only preset and group names are display strings.
+for (const p of project.builtinEasePresets()) add(p.name);
+for (const g of project.BUILTIN_EASE_GROUPS) add(g.name);
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
 writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);
