@@ -64,26 +64,13 @@
    Draw generic symbols from scratch; use neutral UI names and no third-party brand assets.
 2. Use only openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
    work licensed `LicenseRef-JasperEditor`. Never add assets with unknown licences or NC/ND terms.
-3. Give every asset `X` a neighboring `X.attribution` and a row in [ATTRIBUTION.md](ATTRIBUTION.md).
-   This includes fixtures, model weights, WASM, embedded bytes and hard-coded artwork.
-   Use these sidecar fields; `node scripts/check-assets.mjs` validates them:
-   ```text
-   asset:        <file name>
-   title:        <what it is>
-   author:       <creator / copyright holder>
-   source:       <URL, or "original work">
-   license:      <SPDX id, or LicenseRef-JasperEditor>
-   license-file: <repo path when shipping licence text is required; else "none">
-   added:        <YYYY-MM-DD> by <contributor>
-   notes:        <creation/modifications; screenshot content and media provenance>
-   ```
-4. Port code or algorithms only from permissive licences; record source URLs, upstream-to-local
+3. Port code or algorithms only from permissive licences; record source URLs, upstream-to-local
    paths, licence and copyright in `licenses/ported/<name>.md` using the
    [record format](licenses/ported/README.md).
-5. Commit screenshots only of JasperEditor or other open projects, with generated or openly
+4. Commit screenshots only of JasperEditor or other open projects, with generated or openly
    licensed media.
-6. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
-7. Leave out assets whose provenance cannot be established.
+5. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
+6. Leave out assets whose provenance cannot be established.
 
 ## 4. Preview and export fidelity
 

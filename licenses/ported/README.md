@@ -1,7 +1,7 @@
 # Ported source code records
 
 Code or algorithms ported into JasperEditor from another project need one record here
-([AGENTS.md](../../AGENTS.md) §3.4, [ARCHITECTURE](../../docs/ARCHITECTURE.md) D-36). Only permissive licences
+([AGENTS.md](../../AGENTS.md) §3.3, [ARCHITECTURE](../../docs/ARCHITECTURE.md) D-36). Only permissive licences
 (MIT, Apache-2.0, BSD, ISC, Zlib…) may be ported. Never port anything from `.reference/` or `editor-starter.zip`.
 
 `pnpm notices` copies every record in this folder (all `*.md` files except this README) into
