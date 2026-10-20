@@ -300,7 +300,7 @@ function ActionButton({
 					onClick(e);
 				}}
 			>
-				<Icon id={action.icon} size={18} />
+				<Icon id={action.icon} size={20} className="shrink-0" />
 				{narrow ? null : <span className="max-w-full truncate text-pr-small">{label}</span>}
 			</button>
 		</Tooltip>
