@@ -6,9 +6,10 @@ import type { Draft } from 'immer';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Expression } from '../../schema/common.ts';
 import type { Clip, ShapeClip } from '../../schema/sequence.ts';
-import type { ShapeTrimItem, VectorShapeData } from '../../schema/shapes.ts';
+import type { ShapeItem, ShapeTrimItem, VectorShapeData } from '../../schema/shapes.ts';
 import { findItem } from '../../vector/defaults.ts';
 import { trimInputPaths } from '../../vector/evaluate.ts';
+import { findTrimParts } from '../../vector/trim-animate.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn, trackClipIds } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -84,15 +85,32 @@ export function trimTracerExpressions(o: {
 	};
 }
 
+/**
+ * The trim `shape.animateTrim` animates (and reuses on a re-run): Part 1's master after a divide, else the last
+ * top-level item when it is a Trim Paths; null when there is none.
+ */
+function masterTrimId(contents: readonly ShapeItem[]): string | null {
+	const parts = findTrimParts(contents);
+	if (parts) return parts.trim.id;
+	const last = contents[contents.length - 1];
+	return last?.type === 'trim' ? last.id : null;
+}
+
 export const shapeTracerHandlers = {
 	'shape.addTrimTracer': (doc, cmd: CommandOf<'shape.addTrimTracer'>, h: HandlerContext) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'shape' || (clip as Draft<ShapeClip>).shape.type !== 'vector')
 			return h.fail('E_INVALID_PARAM', `Clip ${cmd.clipId} is not a vector shape`, { path: ['clipId'] });
 		const contents = ((clip as Draft<ShapeClip>).shape as VectorShapeData).contents;
-		const found = findItem(contents, cmd.trimItemId);
-		if (!found)
-			return h.fail('E_NOT_FOUND', `Shape item not found: ${cmd.trimItemId}`, { path: ['trimItemId'] });
+		const trimItemId = cmd.trimItemId ?? masterTrimId(contents);
+		if (trimItemId === null)
+			return h.fail(
+				'E_INVALID_PARAM',
+				`${clip.name} has no master Trim Paths (none animated by shape.animateTrim, no Trim Paths last in its contents): give trimItemId`,
+				{ path: ['trimItemId'] },
+			);
+		const found = findItem(contents, trimItemId);
+		if (!found) return h.fail('E_NOT_FOUND', `Shape item not found: ${trimItemId}`, { path: ['trimItemId'] });
 		if (found.item.type !== 'trim')
 			return h.fail('E_INVALID_PARAM', `${found.item.name} is not a Trim Paths`, { path: ['trimItemId'] });
 		const trim = found.item as ShapeTrimItem;

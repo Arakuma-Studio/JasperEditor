@@ -17,6 +17,7 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
+import { EASE_GUIDE, registerEaseTools } from './tools/ease.ts';
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
@@ -46,6 +47,7 @@ import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
+import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
 import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -85,9 +87,11 @@ const FULL_GUIDE = [
 	TEXT_ANIMATORS_GUIDE,
 	MOTION_PATH_GUIDE,
 	KEYFRAMES_BLEND_GUIDE,
+	EASE_GUIDE,
 	THREE_D_GUIDE,
 	MASKS_GUIDE,
 	SHAPES_GUIDE,
+	TRIM_PATHS_GUIDE,
 	TEMPLATES_GUIDE,
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
@@ -144,10 +148,12 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTextAnimatorTools(ctx);
 	registerMotionPathTools(ctx);
 	registerKeyframesBlendTools(ctx);
+	registerEaseTools(ctx);
 	registerThreeDTools(ctx);
 	registerMaskTools(ctx);
 	registerShapeTools(ctx);
 	registerVectorShapeTools(ctx);
+	registerTrimPathTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
