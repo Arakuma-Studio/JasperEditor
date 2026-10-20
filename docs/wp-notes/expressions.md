@@ -271,9 +271,10 @@ the `trim-ui` workstream).
   chosen path, still exact after renaming the items and the clip. **Export fidelity:** the follower's Position and
   Rotation from the render snapshot bound in Node — sampled with `resolveLayerProps(clip, clipContentTime(…))`
   exactly as `apps/engine/src/export/native.ts` does — equal the values from the snapshot after a JSON round trip
-  and `bindSnapshotExpressions` (what the Remotion renderer does) and the document's (`toEqual`). No real export run
-  was made on this host (load ≈ 100 on 16 cores; engine + ffmpeg + Remotion bundle not started): the export paths
-  evaluate expressions with this same engine and binding, which is what the test exercises.
+  and `bindSnapshotExpressions` (what the Remotion renderer does) and the document's (`toEqual`). Real exports:
+  `apps/engine/test/trim-paths-export.e2e.test.ts` (`REMOTION_E2E=1`; shapes.md § 12 "Verification and limits")
+  measures the exported dot / oriented follower on the evaluated tip on the hybrid (layer bake) and Remotion paths:
+  centroid ≤ 0.09 px (dot), ≤ 0.13 px and 0.28° (bar).
 - `packages/project/test/vector/tracer.test.ts` (5) and `packages/session/test/trim-tracer.test.ts` (1): created
   dot (track above, span, contents), generated text, auto tip, Individually, busy / locked track above → new track,
   driving an existing clip with `W_EXPRESSION_REPLACED`, every refusal code, invariants clean; undo / redo restore

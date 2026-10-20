@@ -441,9 +441,18 @@ Measured 2026-10-20 on the shared host (load average ≈ 65), `--maxWorkers=1`:
   in the renderer (`bindSnapshotExpressions`, §1); the test builds the snapshot, round-trips it through JSON, binds
   it and draws the layer at its resolved content time: identical SVG path data to the document-bound (preview)
   evaluation for the linked-offset and divide styles at six frames, and different from the unbound document (the
-  expressions do run). A real Remotion / layer-bake export run was **not** performed on this host (load ≈ 65;
-  `REMOTION_E2E=1 …vector-shapes-remotion.e2e.test.ts` needs the Remotion bundle and Chromium); this change adds no
-  renderer code — the trims, keys and expressions it writes are the ones that suite already renders.
+  expressions do run).
+- **Real exports** (2026-10-20, shared host at load ≈ 40–55, `--maxWorkers=1`, LGPL binaries directory,
+  `JASPER_FFMPEG_LGPL_ONLY=1`): `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/trim-paths-export.e2e.test.ts`
+  plans a 1280×720, 36-frame scene (`in` on a line with a created tracer dot, `in` + reverse on a curve with an
+  oriented follower, `middleIn` + reverse with the linked Offset on a rectangle starting at frame 6, `divideIn` × 4 with
+  animated Offset starting at frame 3) as `hybrid` (each shape baked through Remotion) and exports it there and on the
+  Remotion path (ProRes 4444). Hybrid vs Remotion: SSIM min 0.9980 (≥ 0.98 required), worst per-frame mean |Δ|
+  0.080, ≤ 0.128 % of values off by > 24. Against the evaluator, both exports: drawn outline share within 0.0006
+  (middleIn) and 0.010 (divideIn) of End − Start (× N), tracer dot centroid ≤ 0.09 px from the evaluated tip,
+  oriented bar ≤ 0.13 px / 0.28°. The run found that the Remotion path captured frames as JPEG (edges of a 10 px
+  stroke at 216 / 246 instead of 255, ±7 ringing beside it; the share of values off by > 24 reached 0.30 % at frame
+  12); fixed in `remotion/service.ts` (PNG capture, wp-3l.md).
 - `pnpm --filter @jasper/project typecheck`, `@jasper/expressions`, `@jasper/mcp`: pass. Existing
   `packages/project/test/vector/{commands,evaluate}.test.ts` and `packages/expressions/test/shapes.test.ts`: pass.
 
