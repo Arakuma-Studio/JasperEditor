@@ -154,7 +154,6 @@ describe.runIf(PACG_GL)('object mattes in WebGL2', { timeout: 240_000 }, () => {
 			[8, 56],
 		);
 		expect(near(fill[0]!, [0, 0, 255, 255])).toBe(true);
-		expect(fill[1]![2]).toBeLessThan(255 + 1);
 		const src = await row(
 			{ id: OB, params: { method: 'fill', feather: 0, opacity: 0 }, picture: bars, mattes: m },
 			[56],

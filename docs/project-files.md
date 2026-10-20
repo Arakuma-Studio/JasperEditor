@@ -83,8 +83,8 @@ Rules:
    `CURRENT_SCHEMA_VERSION`, add `fixtures/schema-v<N+1>.jasper` (with its `.attribution` sidecar and an
    `ATTRIBUTION.md` row) showing the new shape, add the step's expected changes to `STEP_CHANGES`, and add a
    row to the table above.
-4. **Parallel work never bumps.** Workstreams add optional fields with read-time defaults and update
-   `repairDocument`; one integrator bumps the schema once after they merge (CLAUDE.md).
+4. Coordinate concurrent schema changes under [AGENTS.md](../AGENTS.md) §0; the integrated result must
+   include any required schema bump and compatibility tests before merge.
 
 ### The first save over an older file keeps a backup
 

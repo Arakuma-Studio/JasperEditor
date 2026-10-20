@@ -36,13 +36,13 @@ export class Amplify extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		for (let i = start; i < end; i++) {
 			const a = this.gl.tick();
 			const b = this.gr.tick();
 			if (l) l[i] = l[i]! * a;
 			if (r) r[i] = r[i]! * b;
-			for (let c = 2; c < ch.length; c++) ch[c]![i] = ch[c]![i]! * a;
+			for (let c = 2; c < Math.min(ch.length, this.channels); c++) ch[c]![i] = ch[c]![i]! * a;
 		}
 	}
 }
@@ -66,7 +66,7 @@ export class ChannelVolume extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		for (let i = start; i < end; i++) {
 			const a = this.gl.tick();
 			const b = this.gr.tick();
@@ -107,7 +107,7 @@ export class Balance extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) return;
 		for (let i = start; i < end; i++) {
 			const gl = this.gl.tick();
@@ -130,9 +130,11 @@ export class Invert extends EffectBase {
 	reset(): void {}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const which = this.pv.idx('channels');
-		ch.forEach((buf, c) => {
+		const nch = Math.min(ch.length, this.channels);
+		for (let c = 0; c < nch; c++) {
+			const buf = ch[c]!;
 			if (which === 0 || which === c + 1) for (let i = start; i < end; i++) buf[i] = -buf[i]!;
-		});
+		}
 	}
 }
 
@@ -155,7 +157,7 @@ export class Route extends EffectBase {
 	reset(): void {}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) return;
 		if (this.kind === 'swap')
 			for (let i = start; i < end; i++) {
@@ -194,7 +196,7 @@ export class ChannelMixer extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		const [g0, g1, g2, g3] = this.g as [Smoothed, Smoothed, Smoothed, Smoothed];
 		if (!l) return;
 		if (!r) {
@@ -243,7 +245,7 @@ export class StereoExpander extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) return;
 		for (let i = start; i < end; i++) {
 			const gl = this.gl.tick();
@@ -275,7 +277,7 @@ export class StereoWidth extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) {
 			for (let i = start; i < end; i++) this.width.tick();
 			return;
@@ -351,7 +353,7 @@ export class MonoMaker extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) {
 			for (let i = start; i < end; i++) {
 				this.freq.tick();
@@ -460,7 +462,7 @@ export class Binauralizer extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) return;
 		const [s0, s1, s2, s3] = this.sh as [Shadow, Shadow, Shadow, Shadow];
 		for (let i = start; i < end; i++) {
@@ -492,7 +494,7 @@ export class AmbisonicsPanner extends EffectBase {
 	}
 
 	/** `[left, right]` gains of a source at azimuth `az` (degrees, + = left) after the rotation. */
-	static sourceGains(az: number, pan: number, tilt: number, roll: number): [number, number] {
+	private static sourceGains(az: number, pan: number, tilt: number, roll: number): [number, number] {
 		const rad = (d: number) => (d * Math.PI) / 180;
 		let v: [number, number, number] = [Math.cos(rad(az)), Math.sin(rad(az)), 0];
 		const rot = (w: [number, number, number], axis: number, ang: number): [number, number, number] => {
@@ -529,7 +531,7 @@ export class AmbisonicsPanner extends EffectBase {
 	}
 	process(ch: readonly Float32Array[], start: number, end: number): void {
 		const l = ch[0];
-		const r = ch[1];
+		const r = this.channels > 1 ? ch[1] : undefined;
 		if (!l || !r) return;
 		const [m0, m1, m2, m3] = this.m as [Smoothed, Smoothed, Smoothed, Smoothed];
 		for (let i = start; i < end; i++) {

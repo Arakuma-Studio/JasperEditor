@@ -92,7 +92,7 @@ const SIMPLE_3_BAND: BankLayout = {
 };
 
 /** ISO 266 nominal centre frequencies: octave, half-octave and third-octave bands. */
-export const GRAPHIC_EQ_FREQS: Readonly<Record<10 | 20 | 30, readonly number[]>> = {
+const GRAPHIC_EQ_FREQS: Readonly<Record<10 | 20 | 30, readonly number[]>> = {
 	10: [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
 	20: [
 		31.5, 45, 63, 90, 125, 180, 250, 355, 500, 710, 1000, 1400, 2000, 2800, 4000, 5600, 8000, 11200, 16000,
@@ -105,7 +105,7 @@ export const GRAPHIC_EQ_FREQS: Readonly<Record<10 | 20 | 30, readonly number[]>>
 };
 
 /** Band Q of the graphic equalisers (octave, half-octave, third-octave bandwidth). */
-export function graphicEqQ(bands: 10 | 20 | 30): number {
+function graphicEqQ(bands: 10 | 20 | 30): number {
 	return qForOctaves(bands === 10 ? 1 : bands === 20 ? 0.5 : 1 / 3);
 }
 

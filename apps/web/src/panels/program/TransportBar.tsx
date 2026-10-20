@@ -303,7 +303,7 @@ const BUTTONS: readonly ButtonDef[] = [
 ];
 
 /** Premiere's default rows (Program: Add Marker … Extract; Source: Mark In … Overwrite). */
-export const DEFAULT_BUTTONS: Record<MonitorKind, string[]> = {
+const DEFAULT_BUTTONS: Record<MonitorKind, string[]> = {
 	program: [
 		'addMarker',
 		'markIn',
@@ -332,7 +332,7 @@ export const DEFAULT_BUTTONS: Record<MonitorKind, string[]> = {
 	],
 };
 
-export function layoutFor(monitor: MonitorKind, stored: string[] | null): ButtonDef[] {
+function layoutFor(monitor: MonitorKind, stored: string[] | null): ButtonDef[] {
 	const ids = stored ?? DEFAULT_BUTTONS[monitor];
 	return ids
 		.map((id) => BUTTONS.find((b) => b.id === id && b.monitors.includes(monitor)))

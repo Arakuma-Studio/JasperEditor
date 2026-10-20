@@ -37,23 +37,6 @@ export type GestureFrames = {
 	dispose(): void;
 };
 
-type TimerHandle = ReturnType<typeof setTimeout> | number;
-
-type Timers = {
-	now(): number;
-	setTimeout(fn: () => void, ms: number): TimerHandle;
-	clearTimeout(handle: TimerHandle): void;
-	/** Runs after the renders a notification scheduled (React flushes store updates in a microtask). */
-	afterRender(fn: () => void): void;
-};
-
-const defaultTimers: Timers = {
-	now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
-	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-	clearTimeout: (h) => globalThis.clearTimeout(h),
-	afterRender: (fn) => queueMicrotask(fn),
-};
-
 const cache = new WeakMap<StoreApi<SessionState>, GestureFrames>();
 
 /** The shared gesture-frame view of a session store (one per store). */
@@ -67,15 +50,12 @@ export function gestureFrames(store: StoreApi<SessionState>): GestureFrames {
 }
 
 const drawnOf = (s: SessionState) => s.transient ?? s.document;
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-/** A gesture-frame view with its own timers (tests); `gestureFrames` shares one per store. */
-export function createGestureFrames(
-	store: StoreApi<SessionState>,
-	timers: Timers = defaultTimers,
-): GestureFrames {
+function createGestureFrames(store: StoreApi<SessionState>): GestureFrames {
 	let shown = drawnOf(store.getState());
 	const listeners = new Set<() => void>();
-	let timer: TimerHandle | null = null;
+	let timer: ReturnType<typeof setTimeout> | null = null;
 	let lastPublish = Number.NEGATIVE_INFINITY;
 	const stats: GestureFrameStats = { published: 0, skipped: 0, costMs: 0, intervalMs: 0 };
 
@@ -83,7 +63,7 @@ export function createGestureFrames(
 		for (const l of [...listeners]) l();
 	};
 	const cancel = () => {
-		if (timer !== null) timers.clearTimeout(timer);
+		if (timer !== null) globalThis.clearTimeout(timer);
 		timer = null;
 	};
 	const publishTransient = () => {
@@ -93,11 +73,11 @@ export function createGestureFrames(
 		if (next === shown) return;
 		shown = next;
 		stats.published++;
-		const t0 = timers.now();
+		const t0 = now();
 		lastPublish = t0;
 		notify();
-		timers.afterRender(() => {
-			const cost = timers.now() - t0;
+		queueMicrotask(() => {
+			const cost = now() - t0;
 			stats.costMs = stats.published === 1 ? cost : stats.costMs * 0.6 + cost * 0.4;
 			stats.intervalMs = Math.min(MAX_INTERVAL_MS, stats.costMs * DUTY);
 		});
@@ -119,8 +99,8 @@ export function createGestureFrames(
 			stats.skipped++;
 			return;
 		}
-		const wait = Math.max(0, lastPublish + stats.intervalMs - timers.now());
-		timer = timers.setTimeout(publishTransient, wait);
+		const wait = Math.max(0, lastPublish + stats.intervalMs - now());
+		timer = globalThis.setTimeout(publishTransient, wait);
 	});
 
 	return {

@@ -10,8 +10,7 @@ Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, resea
 The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
 notes and known gaps are in `docs/wp-notes/`.
 
-**Rules first:** [`AGENTS.md`](AGENTS.md) holds the rules every contributor and agent must follow, and
-[`CLAUDE.md`](CLAUDE.md) the working instructions (gate, running the app headlessly, Definition of Done). Never
+**Rules first:** [`AGENTS.md`](AGENTS.md) is the operating manual for contributors and coding agents. Never
 open, read, grep or copy anything from `.reference/` or `editor-starter.zip` (a paid licence; ARCHITECTURE §0,
 D-36). Code ported from permissively licensed projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
 and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)
@@ -452,7 +451,8 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (378; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (use MCP `listTools` for the current catalog and schemas):
+
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -845,7 +845,7 @@ Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.
   of its Motion scale, so strokes keep their width (Alt keeps the opposite side in place, Shift the ratio).
 - Shapes are drawn as inline SVG (`@remotion/shapes` geometry) in the preview and in Remotion renders; with the
   layer bake they export natively. Agents use `add_shape`, or `clip.update {shape}` / `param.set` on `shape.*`.
-- Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
+- Tests: `apps/web/test/shapes.test.tsx` exercises drawing and editing; pixel check against an analytic reference with
   `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
 - **Vector shapes** (After Effects-style shape layers, `docs/wp-notes/shapes.md`): nested groups with transforms;
   rectangle, ellipse, polystar and free Bézier paths; solid and gradient (linear / radial with highlight) fills and
@@ -939,7 +939,7 @@ graphics)** and lists one graphics group per baked layer.
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
   test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte);
-  Playwright: `e2e/layer-bake.spec.ts`.
+  preview request timing and stale-result handling: `apps/web/test/layer-bake-runtime.test.ts`.
 
 ## Media cache
 
@@ -1013,37 +1013,29 @@ edits only through `jasper-mcp` over MCP JSON-RPC against a real engine — a ro
 cross dissolve, keyframed opacity and position, an export re-imported into another project, and a cancelled
 export — and asserts on rendered pixels (coverage, centroid, luma, mean difference) and on the written files.
 `MCP_QA_PORT` picks the engine port (49025), `MCP_QA_KEEP=1` keeps the frames in `test-results/mcp-qa/`.
-`apps/mcp/test/jasper-cli.test.ts` runs every `jasper` command against a real engine.
+`apps/mcp/test/jasper-cli.test.ts` exercises CLI project resolution, editing, JSON-lines output and rendered files
+against a real engine.
 
 Playwright specs:
 
-- `e2e/smoke.spec.ts` — Home → New Project → import `clip-a.mp4` (file chooser) → poster → drag to the
-  timeline → play → move/trim/razor → undo/redo → native export (ffprobe frame count) → Motion Templates
-  `lower-third@1` → native export with the fframes master → text clip → Remotion export → Program drops →
-  fframes render badge.
-- `e2e/editing.spec.ts` — workspace chrome, analysis jobs, filmstrip/waveform, Ctrl-drop insert, JKL and
-  timecode entry, Ctrl+K, Delete / Shift+Delete, ripple trim, Ctrl-move, snapping, Graphics ▸ Text,
-  Properties scrub, Program overlay move/scale.
-- `e2e/agent.spec.ts` — an MCP SDK client connected to the built `jasper-mcp` over stdio: `apply_commands`
-  while the editor is open (live, `Agent:` History entry and toast), helper tools / `set_playhead` / `undo`,
-  an approval-gated `track.remove` denied and then approved on the shell's approval card, Help ▸ Connect an AI
-  Agent…, a headless apply with the editor closed, and `open_project_in_editor` bringing the project back.
-- `e2e/agent-ui.spec.ts` — the live-UI tools through the built `jasper-mcp`: `ui_state`, `ui_elements`, timeline and
-  Program coordinate mapping, a clip dragged by `ui_drag` and undone with `ui_key Cmd+Z`, `ui_set` on a scrubby
-  number, `ui_commands` / `ui_command` (workspaces), `ui_screenshot` of the window and of a panel.
+- `e2e/smoke.spec.ts` — create a project, import and edit linked footage, play, undo and export a native movie;
+  insert a motion graphic and export it over footage; create a title with the Type tool and export through Remotion.
+- `e2e/agent.spec.ts` — apply MCP commands to the open editor as one `Agent:` History entry, render the edited
+  result and undo/redo it; apply commands headlessly and reopen the project in the editor.
+- `e2e/agent-ui.spec.ts` — timeline and Program coordinate mapping through the built `jasper-mcp`, clip dragging,
+  scrubby-number editing, window and panel screenshots, and revealing an offscreen clip before targeting it.
 - `e2e/ui-audit.spec.ts` — every interactive element of every panel in every workspace, the menu bar menus and the
   clip context menu has a stable automation id.
-- `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
-- `e2e/polish.spec.ts` — Engine Status / Connect, Third-Party Notices, the Media Browser (browse, preview, import
-  in place), Edit Parameters, the live language switch in both directions (no string left behind, undo history
-  kept) and the 2 000-item project open (two status requests, a windowed bin, the open-time budget).
+- `e2e/pwa.spec.ts` — the production manifest, file association and icon responses with their declared dimensions.
+- `e2e/polish.spec.ts` — Media Browser browse/preview/import, live language switching that preserves the document
+  and undo history, and a failed editor download with a reload action.
 - `e2e/project-files.spec.ts` — crash recovery, saved versions, Save As; a reloaded tab keeps its lease even when
   its release is lost, another tab stays read-only.
-- `e2e/security-review.spec.ts` — the live-UI tools cannot approve their own requests.
-- `e2e/layer-bake.spec.ts` — footage + static title + keyframed title, a Lumetri grade on a title ("Grade
-  pending" → graded preview in the Program), Auto export planned `hybrid` with baked titles, output pixels.
-- `e2e/mg-clips.spec.ts` — Remotion page-protocol contract (4.0.499), File ▸ Import Remotion Project… →
-  Remotion tab → live host → props edit within 500 ms → preview WebM, and the MCP composition tools.
+- `e2e/security-review.spec.ts` — agent requests require a trusted user approval; denial preserves the document;
+  unauthenticated engine requests fail and editor cookies remain HttpOnly.
+- `e2e/mg-clips.spec.ts` — Remotion page-protocol contract (4.0.499), opaque-origin sandbox isolation, and importing
+  a composition into the live preview with a props edit visible within 500 ms. Writes protocol JSON and a preview
+  screenshot.
 
 ## Performance measurements
 

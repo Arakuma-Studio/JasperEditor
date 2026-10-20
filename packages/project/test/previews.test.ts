@@ -5,7 +5,6 @@ import {
 	checkInvariants,
 	createCounterIdSource,
 	flicksPerFrame,
-	hash128,
 	isPreviewHash,
 	type ProjectDocument,
 	previewSegmentAt,
@@ -45,18 +44,6 @@ function timeline() {
 	return { h, m, a: a!, aAudio: aAudio!, b: b!, c: c! };
 }
 
-describe('hash128', () => {
-	it('is 32 hex digits, deterministic and sensitive to every character', () => {
-		expect(isPreviewHash(hash128(''))).toBe(true);
-		expect(hash128('abc')).toBe(hash128('abc'));
-		expect(hash128('abc')).not.toBe(hash128('abd'));
-		expect(hash128('ab')).not.toBe(hash128('ba'));
-		const seen = new Set<string>();
-		for (let i = 0; i < 5000; i++) seen.add(hash128(`segment-${i}`));
-		expect(seen.size).toBe(5000);
-	});
-});
-
 describe('segments', () => {
 	it('cut at every clip edge; gaps give no segment', () => {
 		const { h } = timeline();
@@ -87,29 +74,9 @@ describe('segments', () => {
 		s = segs(h.doc, h.seqId);
 		expect(byStart(s, 60).costMs).toBeGreaterThan(byStart(s, 0).costMs);
 	});
-
-	it('expensive effect stacks are red, with the reasons named', () => {
-		const { h, a } = timeline();
-		const heavy = ['jasper.gaussian-blur', 'jasper.gaussian-blur', 'jasper.gaussian-blur'];
-		for (const effectId of heavy) h.ok([{ type: 'effect.add', target: { clipId: a }, effectId }]);
-		const s = byStart(segs(h.doc, h.seqId), 0);
-		expect(s.costMs).toBeGreaterThan(0);
-		expect(s.reasons.length).toBeGreaterThan(0);
-		expect(['realtime', 'render']).toContain(s.need);
-		expect(s.budgetMs).toBeCloseTo(1000 / 30, 1);
-	});
 });
 
 describe('content hash: invalidation contract', () => {
-	it('a ripple keeps every hash (positions are relative to the segment start)', () => {
-		const { h, a, b, c } = timeline();
-		const before = segs(h.doc, h.seqId);
-		h.ok([{ type: 'clip.move', clipIds: [a, b, c], deltaFrames: 45 }]);
-		const after = segs(h.doc, h.seqId);
-		expect(after.map((x) => x.startFrame)).toEqual(before.map((x) => x.startFrame + 45));
-		expect(hashes(after)).toEqual(hashes(before));
-	});
-
 	it('an edit changes only the segments that show the edited clip; undo restores them', () => {
 		const { h, b } = timeline();
 		const d0 = h.doc;

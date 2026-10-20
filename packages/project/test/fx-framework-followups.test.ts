@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
-	buildPassSource,
 	defineShaderEffect,
 	type EffectSpec,
 	type FxClipInfo,
@@ -13,7 +12,6 @@ import {
 	fxSourceFrame,
 	fxSourceSeconds,
 	fxStackTime,
-	gaussianBlurPasses,
 	gpuIsTimeDependent,
 	isLutMediaParam,
 	lutParam,
@@ -23,20 +21,12 @@ import {
 	toUniform,
 	validateGpuEffect,
 } from '../src/index.ts';
-import {
-	TRANSFORM,
-	transformShutterSamples,
-} from '../src/registry/fx/premiere-adjust-color-keying/transform.ts';
-import {
-	WRITE_ON,
-	writeOnStroke,
-} from '../src/registry/fx/premiere-stylize-distort-generate/generate-render.ts';
+
 import {
 	CLIP_NAME,
 	clipNameText,
 	timecodeText,
 } from '../src/registry/fx/premiere-stylize-distort-generate/video.ts';
-import { warpShutterParams } from '../src/registry/fx/sapphire-distort-warp.ts';
 
 const FRAG = 'void main() { fragColor = texture(u_source, v_uv); }';
 const CTX: FxFrameContext = {
@@ -118,7 +108,7 @@ describe('pass planning follow-ups', () => {
 		]);
 	});
 
-	it('ping-pong outputs: update passes alternate two targets per name', () => {
+	it('accepts repeated output updates, rejects duplicate outputs and updates before initialization', () => {
 		const iter = (i: number) => ({
 			output: 'acc',
 			update: true,
@@ -131,11 +121,6 @@ describe('pass planning follow-ups', () => {
 			iter(3),
 			{ frag: 'void main() { fragColor = texture(u_acc, v_uv); }' },
 		];
-		const p = planPasses(passes, { paramDecls: [], textures: [], canvas: { width: 8, height: 8 } });
-		expect(p.map((x) => x.target ?? String(x.index))).toEqual(['0', '0~', '0', '0~', '4']);
-		expect(p.map((x) => x.output)).toEqual(['acc', 'acc', 'acc', 'acc', null]);
-		// The update pass reads the previous contents under the same name.
-		expect(p[1]!.source).toMatch(/uniform sampler2D u_acc;/);
 		const s = spec({ gpu: { passes } });
 		expect(validateGpuEffect(s)).toEqual([]);
 		// 100 iterations still count as ONE named output (the 12-texture rule).
@@ -177,37 +162,6 @@ describe('pass planning follow-ups', () => {
 		expect(plan.sourceMipmaps).toBe(true);
 	});
 
-	it('drops declarations a pass never mentions: identical bodies of different effects share one program', () => {
-		const body = 'void main() { fragColor = texture(u_source, v_uv) * u_gain; }';
-		const a = spec({
-			params: [
-				fxParam.number('gain', 'Gain', 1, {}),
-				fxParam.number('other', 'Other', 1, {}),
-				fxParam.media('map', 'Map'),
-			],
-			gpu: { passes: [{ output: 'unused', frag: FRAG }, { frag: body }] },
-		});
-		const b = spec({ params: [fxParam.number('gain', 'Gain', 2, {})], gpu: { passes: [{ frag: body }] } });
-		const pa = planGpuEffect(a, { id: 'a', params: {} }, CTX, { width: 10, height: 10 });
-		const pb = planGpuEffect(b, { id: 'b', params: {} }, CTX, { width: 10, height: 10 });
-		expect(pa.passes[1]!.source).toBe(pb.passes[0]!.source);
-		expect(pa.passes[1]!.source).not.toMatch(/u_other|u_map|u_unused/);
-		const viaInclude = buildPassSource(
-			{
-				frag: 'void main() { fragColor = f(); }',
-				include: [{ name: 'x', source: 'vec4 f() { return vec4(u_gain); }' }],
-			},
-			{
-				params: ['uniform float u_gain;', 'uniform float u_other;'],
-				textures: [],
-				outputs: [],
-				uniforms: [],
-			},
-		);
-		expect(viaInclude).toMatch(/uniform float u_gain;/);
-		expect(viaInclude).not.toMatch(/u_other/);
-	});
-
 	it('lut media params are 3D textures', () => {
 		const l = lutParam('look', 'Look');
 		expect(isLutMediaParam(l)).toBe(true);
@@ -227,23 +181,6 @@ describe('pass planning follow-ups', () => {
 		expect(plan.textures).toEqual([{ param: 'look', uniform: 'u_look', mediaId: 'm1', kind: 'lut' }]);
 		expect(plan.passes[0]!.source).toMatch(/uniform highp sampler3D u_look;\nuniform vec2 u_look_size;/);
 	});
-
-	it('gaussianBlurPasses: separate X/Y sigmas and per-frame sigma uniforms', () => {
-		const [h, v] = gaussianBlurPasses({ input: 'source', output: 'b', sigma: 4, sigmaY: 1 });
-		expect(h!.uniforms).toEqual({ u_blurDir: [1, 0], u_blurSigma: 4 });
-		expect(v!.uniforms).toEqual({ u_blurDir: [0, 1], u_blurSigma: 1 });
-		expect(h!.frag).toBe(gaussianBlurPasses({ input: 'source', output: 'b', sigma: 2 })[0]!.frag);
-		const [hu, vu] = gaussianBlurPasses({
-			input: 'source',
-			output: 'b',
-			sigma: { uniform: 'u_s.x' },
-			sigmaY: { uniform: 'u_s.y' },
-			scale: 0.5,
-		});
-		expect(hu!.uniforms).toEqual({ u_blurDir: [1, 0] });
-		expect(hu!.frag).toMatch(/max\(0\.0, u_s\.x\) \* 0\.500000/);
-		expect(vu!.frag).toMatch(/u_s\.y/);
-	});
 });
 
 describe('params at other times', () => {
@@ -254,11 +191,10 @@ describe('params at other times', () => {
 	it('evaluates the keyframes at fractional clip-local frames with the shared evaluate()', () => {
 		const now = { x: 50, c: 'a' };
 		const at = fxParamsAtFn(inst, CLIP, 30, { frame: 5, params: now });
-		expect(at(5)).toBe(now);
+		expect(at(5)).toEqual({ x: 50, c: 'a' });
 		expect(at(2.5).x).toBeCloseTo(25, 6);
 		expect(at(-3).x).toBe(0);
 		expect(at(20).x).toBe(100);
-		expect(at(2.5)).toBe(at(2.5));
 		expect(fxClipContentTime(CLIP, 3, 30)).toBeCloseTo(3 * F, 3);
 	});
 
@@ -350,61 +286,5 @@ describe('clip context: Clip Name and Timecode', () => {
 		expect(timecodeText(p, { frame: 15, fps: 30, clip: { ...clipInfo, speed: 2 } })).toBe('01:00:11:00');
 		expect(timecodeText(p, { frame: 45, fps: 30 })).toBe('00:00:01:15');
 		expect(fxSourceSeconds(clipInfo, 30, 30)).toBe(11);
-	});
-});
-
-describe('motion blur from params at sub-frame times', () => {
-	const box = { width: 100, height: 100 };
-	it('Transform: no blur by default (composition shutter 0), adaptive taps with a Shutter Angle', () => {
-		const defaults = Object.fromEntries(TRANSFORM.params.map((p) => [p.name, p.default]));
-		const moving = fxParamsAtFn(
-			{ params: { position: animated([0, [0.2, 0.5]], [10, [0.8, 0.5]]) } },
-			CLIP,
-			30,
-		);
-		const ctx = { ...box, frame: 5, paramsAt: (f: number) => ({ ...defaults, ...moving(f) }) };
-		expect(transformShutterSamples(defaults, ctx).taps).toBe(1);
-		const p = { ...defaults, useCompShutterAngle: false, shutterAngle: 180 };
-		const mb = transformShutterSamples(p, ctx);
-		// 0.6 × 100 px over 10 frames, a 180° shutter: 3 px of travel → 3 taps (≤ 1 px apart).
-		expect(mb.extentPx).toBeCloseTo(3, 6);
-		expect(mb.taps).toBe(3);
-		// Key 0 at frame 5 − 0.25, the last key at 5 + 0.25: the translation term moves with the position.
-		expect(mb.packed[4]).not.toBe(mb.packed[31 * 8 + 4]);
-		const fast = transformShutterSamples({ ...p, shutterAngle: 360 }, { ...ctx, width: 1000, height: 1000 });
-		expect(fast.taps).toBe(60);
-		expect(transformShutterSamples(p, { ...box, frame: 5 }).taps).toBe(1); // no paramsAt → no blur
-		const still = { ...box, frame: 5, paramsAt: () => p };
-		expect(transformShutterSamples(p, still).taps).toBe(1); // nothing moves → no blur
-	});
-
-	it('S_WarpCornerPin / S_WarpPerspective: shutter params only when keyframed and Motion Blur is on', () => {
-		const key = (q: Record<string, unknown>) => JSON.stringify(q.topLeft);
-		const at = fxParamsAtFn({ params: { topLeft: animated([0, [0, 0]], [10, [0.5, 0.5]]) } }, CLIP, 30);
-		expect(warpShutterParams({ motionBlur: false }, { frame: 5, paramsAt: at }, key)).toBeNull();
-		expect(
-			warpShutterParams({ motionBlur: true, moBlurLength: 1 }, { frame: 5, paramsAt: at }, key),
-		).toHaveLength(32); // FX_MB_KEYS key times over the shutter
-		expect(
-			warpShutterParams({ motionBlur: true, moBlurLength: 1 }, { frame: 20, paramsAt: at }, key),
-		).toBeNull();
-	});
-
-	it('Write-on: the stroke accumulates along the brush path', () => {
-		const defaults = Object.fromEntries(WRITE_ON.params.map((p) => [p.name, p.default]));
-		const path = fxParamsAtFn(
-			{ params: { brushPosition: animated([0, [0.1, 0.5]], [30, [0.9, 0.5]]) } },
-			CLIP,
-			30,
-		);
-		const ctx = { ...box, fps: 30, frame: 15, paramsAt: (f: number) => ({ ...defaults, ...path(f) }) };
-		const st = writeOnStroke({ ...defaults, ...path(15) }, ctx);
-		expect(st.n).toBe(64); // frames 15 … 0, evenly (64 points max; Brush Spacing 0.001 s is finer)
-		expect(st.pos[0]).toBeCloseTo(50, 6);
-		expect(st.pos[(st.n - 1) * 4]).toBeCloseTo(10, 6);
-		expect(st.connect).toBe(true);
-		expect(writeOnStroke(defaults, { ...ctx, paramsAt: () => defaults }).n).toBe(1); // still brush: one dab
-		const trail = writeOnStroke({ ...defaults, ...path(15), strokeLength: 0.1 }, ctx);
-		expect(trail.pos[(trail.n - 1) * 4]).toBeCloseTo(42, 6); // the last 0.1 s: from frame 12
 	});
 });

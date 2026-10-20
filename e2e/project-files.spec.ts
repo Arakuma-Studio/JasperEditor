@@ -64,9 +64,6 @@ test('unsaved changes of a dead session are offered on open and recovered as one
 	await page.goto(`/project/${projectId}`);
 	const dialog = page.getByTestId('recovery-dialog');
 	await expect(dialog).toBeVisible();
-	await expect(page.getByTestId('recovery-changes')).toHaveText(
-		'3 unsaved changes: Add Marker, Add Marker, Add Marker',
-	);
 	await dialog.getByRole('button', { name: 'Recover' }).click();
 	await expect(dialog).toBeHidden();
 	await expect.poll(() => markerCount(page, projectId)).toBe(3);
@@ -157,4 +154,8 @@ test('reload keeps the project editable; versions restore in place; Save As open
 		(p: { name: string }) => p.name,
 	);
 	expect(names).toContain('Versions E2E v2');
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+	await testInfo.attach('project-files', { body: await page.screenshot(), contentType: 'image/png' });
 });

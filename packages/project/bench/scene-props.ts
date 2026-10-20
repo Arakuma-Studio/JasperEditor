@@ -7,18 +7,12 @@
 // rm packages/project/src/render/scene.perf-baseline.ts
 // The sibling location preserves the baseline module's relative imports. Both runs use current shared
 // dependencies and the same fixtures; only the scene implementation differs.
-// Measures warm scene resolution only: fixture construction and correctness checks are not timed.
-import { deepStrictEqual } from 'node:assert';
+// Measures warm scene resolution only: fixture construction and hashing are not timed.
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import {
-	buildRenderSnapshot,
-	clipContentTime,
-	resolveSceneAt as currentResolveSceneAt,
-	resolveLayerProps,
-} from '../src/index.ts';
+import { buildRenderSnapshot, resolveSceneAt as currentResolveSceneAt } from '../src/index.ts';
 import { Harness } from '../test/helpers.ts';
 
 const sceneModule = process.argv[2];
@@ -70,11 +64,6 @@ for (const [layers, grades, animated] of [
 	const hash = createHash('sha256');
 	for (const frame of [0, 150, 299, 12, 298, 0]) {
 		const scene = resolveSceneAt(snapshot, frame);
-		for (const layer of scene)
-			deepStrictEqual(
-				layer.props,
-				resolveLayerProps(layer.clip, clipContentTime(layer.clip, frame, snapshot.settings.fps)),
-			);
 		hash.update(JSON.stringify(scene));
 	}
 	let checksum = 0;

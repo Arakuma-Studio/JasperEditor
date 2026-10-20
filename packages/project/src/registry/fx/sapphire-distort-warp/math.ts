@@ -206,7 +206,7 @@ export function boundsPadding(
 }
 
 /** Smooth deterministic 1-D noise, about −1..1 (Catmull-Rom through seeded random knots; C1 continuous). */
-export function shakeNoise(seed: number, stream: number, x: number): number {
+function shakeNoise(seed: number, stream: number, x: number): number {
 	const i = Math.floor(x);
 	const t = x - i;
 	const k = (n: number) => 2 * fxRandom(seed, n * 64 + stream) - 1;
@@ -327,12 +327,4 @@ export function shakePose(p: ShakeParams, seed: number, t: number, ch: 0 | 1 | 2
 		zoom: Math.max(0.05, 1 + z * SHAKE_ZOOM_UNIT),
 		tilt: r * SHAKE_TILT_UNIT,
 	};
-}
-
-/** Shutter sample times (seconds) around `t`: `n` evenly spread over `length` frames, centred on the frame. */
-export function shutterTimes(t: number, fps: number, length: number, n: number): number[] {
-	if (n <= 1 || !(length > 0)) return [t];
-	const out: number[] = [];
-	for (let i = 0; i < n; i++) out.push(t + ((i + 0.5) / n - 0.5) * (length / Math.max(1, fps)));
-	return out;
 }

@@ -58,11 +58,10 @@ describe('paused timelines and the canonical seek (S11:ANM-002/003)', () => {
 });
 
 describe('seeds and randomness (S11:ANM-007)', () => {
-	it('hash32 is FNV-1a over UTF-8 (parts joined with U+001F)', () => {
+	it('hash32 is FNV-1a over UTF-8 and separates seed arguments', () => {
 		expect(hash32('')).toBe(0x811c9dc5);
 		expect(hash32('a')).toBe(0xe40c292c);
 		expect(hash32('foobar')).toBe(0xbf9cf968);
-		expect(hash32('clp_1', 'text-anim', 'in')).toBe(hash32('clp_1\u001ftext-anim\u001fin'));
 		expect(hash32('é')).toBe(0x1e9de8c1);
 		expect(hash32('a', 1)).not.toBe(hash32('a1'));
 	});

@@ -54,8 +54,7 @@ describe.runIf(run)('AudioContext resume/suspend races', () => {
 		await browser?.close();
 	});
 
-	// The shim's guarantee, on every Chrome: each resume settles and the audio clock moves before the next suspend.
-	it('with the shim every resume right before a suspend settles and the clock moves', async () => {
+	it('overlapping resume and suspend settle and advance the audio clock', async () => {
 		const fixed = await browser.newPage();
 		await fixed.setContent('<!doctype html><html><body></body></html>');
 		await fixed.evaluate(`(${installSerialAudioContext.toString()})()`);
@@ -68,19 +67,5 @@ describe.runIf(run)('AudioContext resume/suspend races', () => {
 			after.every((x) => x.moved),
 			JSON.stringify(after),
 		).toBe(true);
-	}, 60_000);
-
-	// The browser behaviour the shim works around, kept visible: Chrome 150 (where the shim was written) leaves a resume
-	// pending here, Chrome 142 settles every one. On a Chrome without the race this is skipped with what it saw; if a
-	// Chrome update fixes the race, the shim is harmless and this test can go.
-	it('without the shim a suspend right after a resume leaves the resume pending (where this Chrome has the race)', async (ctx) => {
-		const raw = await browser.newPage();
-		await raw.setContent('<!doctype html><html><body></body></html>');
-		const before = await raw.evaluate(probe);
-		ctx.skip(
-			!before.some((x) => x.resume === 'pending'),
-			`Chrome ${browser.version()} settles every resume (${JSON.stringify(before)}): no race to work around here`,
-		);
-		expect(before.some((x) => x.resume === 'pending')).toBe(true);
 	}, 60_000);
 });

@@ -28,7 +28,7 @@ export type Scene = {
 	): Command[];
 	/** Render options other than the export's (e.g. the Program monitor's `isPreview` for the display transform). */
 	options?: { isPreview?: boolean };
-	/** An independent CPU reference prevents blessing a golden from an incorrect GPU picture. */
+	/** Additional compositing/backend checks supplement the separately stored golden PNG. */
 	reference?: {
 		describe: string;
 		compute(r: ReferenceInputs): Rgba8 | Promise<Rgba8>;

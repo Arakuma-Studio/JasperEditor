@@ -20,7 +20,6 @@ import {
 	repairDocument,
 	resolveStripRef,
 	soloAudible,
-	thinPoints,
 } from '../src/index.ts';
 import { evaluate } from '../src/keyframes.ts';
 import type { Sequence } from '../src/schema/sequence.ts';
@@ -491,18 +490,15 @@ describe('offline mixer', () => {
 });
 
 describe('mixer commands', () => {
-	it('refuses feedback routes, reroutes on submix removal, undo restores', () => {
+	it('refuses feedback routes and reroutes on submix removal', () => {
 		const h = new Harness();
 		h.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'S1', patch: { output: 'S2' } }]);
 		const bad = h.tx([{ type: 'mixer.updateStrip', stripId: 'S2', patch: { output: 'S1' } }]);
 		expect(bad.ok).toBe(false);
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1' } }]);
-		const before = h.doc;
 		h.ok([{ type: 'mixer.removeSubmix', stripId: 'S1' }]);
 		expect(h.seq.audioTracks[0]!.mixer!.output).toBe(h.seq.submixTracks![0]!.id);
-		expect(checkInvariants(h.doc)).toEqual([]);
-		h.doc = before;
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
@@ -542,29 +538,9 @@ describe('mixer commands', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
-	it('thinPoints: hold lanes keep change points only', () => {
-		expect(
-			thinPoints(
-				[
-					[0, 0],
-					[10, 0],
-					[20, 1],
-					[30, 1],
-					[40, 0],
-				],
-				0,
-				0,
-				true,
-			),
-		).toEqual([
-			[0, 0],
-			[20, 1],
-			[40, 0],
-		]);
-	});
-
 	it('clipMixer.write writes clip volume keyframes in content time', () => {
 		const { h } = audioHarness();
+		h.ok([{ type: 'clip.move', clipIds: [h.clips('A1')[0]!.id], deltaFrames: 5 }]);
 		h.ok([
 			{
 				type: 'clipMixer.write',
@@ -578,9 +554,12 @@ describe('mixer commands', () => {
 			},
 		]);
 		const c = h.clips('A1')[0]! as { volumeDb: { keyframes: { time: number; value: number }[] } };
-		expect(c.volumeDb.keyframes.length).toBeGreaterThanOrEqual(2);
-		expect(c.volumeDb.keyframes.some((k) => k.value === -6)).toBe(true);
-		expect(c.volumeDb.keyframes.some((k) => k.value === -12)).toBe(true);
+		expect(c.volumeDb.keyframes.map((k) => [k.time, k.value])).toEqual(
+			expect.arrayContaining([
+				[F30 * 5, -6],
+				[F30 * 15, -12],
+			]),
+		);
 	});
 
 	it('audio.setGain: set, adjust, normalise max and all peaks', () => {

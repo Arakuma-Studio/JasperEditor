@@ -2,7 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeWav, measureLoudness } from '@jasper/audio-dsp';
+import { encodeWav } from '@jasper/audio-dsp';
+import { measureLoudness } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { testMusic } from '../../../packages/audio-fx/test/music.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -177,25 +178,6 @@ describe('audio-fx native export', () => {
 		expect(amp(rl, 24000, 96000)).toBeGreaterThan(0.1);
 		expect(amp(rr, 24000, 96000)).toBeLessThan(1e-3);
 	});
-
-	it('the Remotion path carries the same mixer audio (effects too)', async () => {
-		const { d, clipId } = await toneDoc();
-		d.tx([
-			{
-				type: 'effect.add',
-				target: { clipId },
-				effectId: 'jasper.audio.amplify',
-				params: { leftGain: -6.0206, rightGain: -6.0206 },
-			},
-		]);
-		const planned = await coreServices(app).exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: settings(d.seqId, 'mov', 'remotion') as never,
-		});
-		expect(planned.plan.path).toBe('remotion');
-		expect(planned.plan.blockers.some((b) => /audio effect/i.test(b.reason))).toBe(false);
-	});
 });
 
 describe('remix plan route + clip.remix', () => {
@@ -266,8 +248,7 @@ describe('Essential Sound Auto-Match', () => {
 		const lufs = job.json().result.clips[clipId].integratedLufs as number;
 		d.tx([{ type: 'essentialSound.autoMatch', measuredLufs: { [clipId]: lufs }, targetLufs: -23 }]);
 		const { file } = await exportOf(d);
-		const [l, r] = planar(file);
-		const meas = measureLoudness([l.subarray(0, 90000), r.subarray(0, 90000)], 48000);
+		const meas = measureLoudness(file);
 		expect(Math.abs(meas.integrated - -23)).toBeLessThan(0.5);
 	});
 });

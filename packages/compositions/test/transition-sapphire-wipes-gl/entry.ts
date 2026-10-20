@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_FAMILIES,
@@ -28,7 +27,7 @@ const side = (c: HTMLCanvasElement) => ({
 	side: { width: c.width, height: c.height, compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity: 1 },
 });
 const spec = (label: string): TransitionSpec => {
-	const s = WIPES.find((x) => x.label === label);
+	const s = WIPES.find((x) => x.id === label || x.label === label);
 	if (!s) throw new Error(`no ${label}`);
 	return s;
 };
@@ -95,11 +94,8 @@ const hash = (c: HTMLCanvasElement) => {
 };
 
 const api = {
-	info: () => ({ webgl2: !!fxHost(), labels: WIPES.map((s) => s.label) }),
-	shares() {
-		const r: Record<string, number[]> = {};
-		for (const s of WIPES) r[s.label] = [0.2, 0.5, 0.8].map((p) => shareB(render(s.label, p)));
-		return r;
+	shares(id: string) {
+		return [0.2, 0.5, 0.8].map((p) => shareB(render(id, p)));
 	},
 	pixel(label: string, p: number, x: number, y: number, over: Record<string, unknown> = {}) {
 		return pxOf(render(label, p, over), x * W, y * H);

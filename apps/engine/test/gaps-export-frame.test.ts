@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eotf, jpegQscale, stillCurveFor } from '../src/export/still-formats.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -57,16 +56,6 @@ function codecOf(file: string): string {
 }
 
 describe('Export Frame formats', () => {
-	it('maps quality and curves', () => {
-		expect(jpegQscale(100)).toBe(2);
-		expect(jpegQscale(1)).toBe(31);
-		expect(stillCurveFor('rec709')).toBe('bt1886');
-		expect(stillCurveFor('srgb')).toBe('srgb');
-		expect(stillCurveFor('rec2100-pq')).toBe('bt1886');
-		expect(eotf('srgb', 0.5)).toBeCloseTo(0.214, 3);
-		expect(eotf('bt1886', 0.5)).toBeCloseTo(0.5 ** 2.4, 6);
-	});
-
 	it.each([
 		['jpeg', 'jpg', /^mjpeg,1280,720,yuvj444p/],
 		['tiff', 'tif', /^tiff,1280,720,rgb24/],

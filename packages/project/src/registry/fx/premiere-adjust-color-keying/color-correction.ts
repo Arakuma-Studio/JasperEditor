@@ -170,7 +170,7 @@ function channelMixerParams(): ParamSpec[] {
 }
 
 /** The mixer as a column-major mat3 (inputs → outputs, /100) and the constant column. */
-export function channelMixerUniforms(p: EffectParams) {
+function channelMixerUniforms(p: EffectParams) {
 	const v = (r: string, c: string) => num(p[`${r.toLowerCase()}${c}`], r === c ? 100 : 0) / 100;
 	const mono = p.monochrome === true;
 	const row = (r: (typeof MIX_ROWS)[number]) => (mono ? 'Red' : r);

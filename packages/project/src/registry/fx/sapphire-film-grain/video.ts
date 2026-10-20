@@ -29,7 +29,7 @@ import { GLSL_FILM } from './glsl.ts';
 const STYLIZE = SAPPHIRE_BINS.stylize;
 
 /** Vertical-hold state per frame: whether the picture rolls and its roll offset (frame heights). */
-export function tvRoll(p: EffectParams, ctx: { frame: number; fps: number; seed: number }) {
+function tvRoll(p: EffectParams, ctx: { frame: number; fps: number; seed: number }) {
 	const t = ctx.frame / Math.max(1, ctx.fps);
 	const R = Math.max(0, num(p.receptionMaster, 0.4));
 	const vFreq = Math.max(0.01, num(p.vFrequency, 2));

@@ -79,7 +79,12 @@ describe('GPU shader effects in the export planner and layer bakes', () => {
 	});
 
 	it('bake keys keep the clip id of layers with shader effects (u_seed hashes it)', () => {
-		expect(normalisedClip(clip('shape', []), registry).clipId).toBe('clip');
-		expect(normalisedClip(clip('shape', ['test.still']), registry).clipId).toBe('clp_X');
+		for (const effects of [[], ['test.still']]) {
+			const first = clip('shape', effects);
+			const second = { ...first, clipId: 'clp_Y' };
+			const sameBake =
+				JSON.stringify(normalisedClip(first, registry)) === JSON.stringify(normalisedClip(second, registry));
+			expect(sameBake).toBe(effects.length === 0);
+		}
 	});
 });

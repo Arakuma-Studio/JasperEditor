@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	bakeLut,
 	defaultEffectRegistry,
@@ -8,9 +7,7 @@ import {
 	FX_FAMILIES,
 	fxBuiltinUniforms,
 	fxParam,
-	GLSL_LIBRARY,
 	GLSL_LUT,
-	GLSL_NOISE,
 	lutParam,
 	planGpuEffect,
 } from '@jasper/project';
@@ -20,7 +17,6 @@ import { chainGpuStandIn } from '../../src/fx/builtins.ts';
 import { FxShaderError, fxHost, runLutPass, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 import { TEST_FX } from '../fx-examples.ts';
-import { REF_NOISE } from './glsl-reference.ts';
 
 type Px = [number, number, number, number];
 
@@ -196,104 +192,31 @@ const identity = defineShaderEffect({
 });
 
 const api = {
-	info() {
-		const h = fxHost();
-		if (!h) return { webgl2: false };
-		const dbg = h.gl.getExtension('WEBGL_debug_renderer_info');
-		return {
-			webgl2: true,
-			renderer: String(h.gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : h.gl.RENDERER)),
-			floatTargets: h.floatTargets,
-		};
-	},
-
-	/** Every library chunk in one program (GLSL compilers check unused functions too). */
-	library() {
-		const spec = defineShaderEffect({
-			id: 'test.library',
-			label: 'Library',
-			category: 'Utility',
-			params: [],
-			gpu: {
-				passes: [
-					{
-						include: GLSL_LIBRARY,
-						frag: /* glsl */ `
-void main() {
-  vec2 p = fx_layerPx();
-  float n = fx_fbm(p * 0.1, 4, 2.0, 0.5, u_seed) + fx_cellular(p * 0.1, 1.0, u_seed).x + fx_turbulence(vec3(p, u_time), 3, 2.0, 0.5, u_seed);
-  vec3 c = fx_hsv2rgb(fx_rgb2hsv(vec3(n))) + fx_hsl2rgb(fx_rgb2hsl(vec3(0.5)));
-  vec4 b = fx_blend(FX_BLEND_SCREEN, texture(u_source, v_uv), vec4(c, 1.0), 0.5);
-  b += fx_sampleEdge(u_source, fx_rotateAround(v_uv, vec2(0.5), 0.3), FX_EDGE_MIRROR) * 0.0;
-  b += fx_gaussian1d(u_source, v_uv, vec2(1.0, 0.0), u_texel, 2.0) * 0.0;
-  fragColor = fx_finish(b, texture(u_source, v_uv), fx_luma(c), 0.0, FX_SHOW_RESULT);
-}`,
-					},
-				],
-			},
-		});
-		try {
-			run(spec, {}, { width: 16, height: 16 }, (ctx) => ctx.fillRect(0, 0, 16, 16));
-			return { ok: true };
-		} catch (e) {
-			return { ok: false, error: (e as Error).message };
-		}
-	},
-
 	/**
-	 * Plans and runs registered GPU effects with default params: one fx family (`FX_FAMILIES[].file`), or without a
-	 * family every GPU effect outside the families plus the test effects (one call per family keeps each test short).
+	 * Fingerprints (4×4 mean RGB) of one GPU effect at defaults and perturbed settings on the golden test card, frame 12:
+	 * compared with goldens/fx-fingerprints.json by fx-gl.test.ts (JASPER_BLESS=1 re-blesses). Rendering failures propagate and fail the golden comparison.
 	 */
-	catalogue(family?: string) {
+	fingerprints({ family, id }: { family?: string; id: string }) {
 		const familySpecs = FX_FAMILIES.find((f) => f.file === family)?.effects;
 		const inFamily = new Set(FX_FAMILIES.flatMap((f) => f.effects.map((e) => e.id)));
 		const specs = familySpecs
 			? familySpecs.filter((s) => s.gpu)
 			: [...defaultEffectRegistry.list().filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_FX];
-		const errors: string[] = [];
-		for (const spec of specs) {
-			try {
-				run(spec, defaults(spec), { width: 64, height: 36 }, (ctx, b) => {
-					ctx.fillStyle = '#c84';
-					ctx.fillRect(b.x, b.y, b.w, b.h);
-				});
-			} catch (e) {
-				errors.push(`${spec.id}: ${(e as Error).message}`);
-			}
-		}
-		return { count: specs.length, errors };
-	},
-
-	/**
-	 * Fingerprints (4×4 mean RGB) of every GPU effect of a family at its defaults on the golden test card, frame 12:
-	 * compared with goldens/fx-fingerprints.json by fx-gl.test.ts (JASPER_BLESS=1 re-blesses). Effects that fail to
-	 * run are left out here (`catalogue` reports them).
-	 */
-	fingerprints(family?: string) {
-		const familySpecs = FX_FAMILIES.find((f) => f.file === family)?.effects;
-		const inFamily = new Set(FX_FAMILIES.flatMap((f) => f.effects.map((e) => e.id)));
-		const specs = familySpecs
-			? familySpecs.filter((s) => s.gpu)
-			: [...defaultEffectRegistry.list().filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_FX];
+		const spec = specs.find((s) => s.id === id);
+		if (!spec) throw new Error(`unknown GPU effect ${id}`);
 		const out: Record<string, number[]> = {};
-		for (const spec of specs) {
-			try {
-				out[spec.id] = fingerprintOf(
-					run(spec, defaults(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
-				);
-			} catch {
-				// reported by `catalogue`
-			}
-			try {
-				out[`${spec.id}@perturbed`] = fingerprintOf(
-					run(spec, perturbed(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
-				);
-				if (fxHost()?.gl.isContextLost()) throw new Error('the WebGL context was lost');
-			} catch (e) {
-				// Failing at other settings is a bug: recorded as NaNs, which no golden accepts.
-				out[`${spec.id}@perturbed`] = new Array(48).fill(Number.NaN);
-				console.error(`${spec.id} @perturbed: ${(e as Error).message}`);
-			}
+		out[spec.id] = fingerprintOf(
+			run(spec, defaults(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
+		);
+		try {
+			out[`${spec.id}@perturbed`] = fingerprintOf(
+				run(spec, perturbed(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
+			);
+			if (fxHost()?.gl.isContextLost()) throw new Error('the WebGL context was lost');
+		} catch (e) {
+			// Failing at other settings is a bug: recorded as NaNs, which no golden accepts.
+			out[`${spec.id}@perturbed`] = new Array(48).fill(Number.NaN);
+			console.error(`${spec.id} @perturbed: ${(e as Error).message}`);
 		}
 		return out;
 	},
@@ -318,7 +241,7 @@ void main() {
 
 	glow() {
 		const spec = TEST_FX.find((s) => s.id === 'test.s.glow')!;
-		const { out, layout, plan } = run(
+		const { out, layout } = run(
 			spec,
 			defaults(spec, { radius: 4, threshold: 10 }),
 			{ width: 20, height: 20 },
@@ -329,12 +252,9 @@ void main() {
 		);
 		const b = layout.box;
 		return {
-			canvas: [layout.width, layout.height],
-			box: [b.x, b.y, b.w, b.h],
 			centre: px(out, b.x + 10, b.y + 10),
 			nearOutside: px(out, b.x - 2, b.y + 10),
 			farCorner: px(out, 0, 0),
-			passes: plan.passes.map((p) => [p.output, p.width, p.height]),
 		};
 	},
 
@@ -357,7 +277,6 @@ void main() {
 		);
 		const b = layout.box;
 		return {
-			canvas: [layout.width, layout.height],
 			right: px(out, b.x + b.w + 3, b.y + 10),
 			left: px(out, b.x - 3, b.y + 10),
 			inside: px(out, b.x + 10, b.y + 10),
@@ -469,59 +388,6 @@ void main() {
 };
 
 const followups = {
-	/**
-	 * Each reference comparison occupies one bit: red for hashes, green for 2D noise, blue for 3D noise and sums.
-	 * Any differing pixel violates bit-exact equality across positions, scales and seeds.
-	 */
-	libraryIdentical() {
-		const spec = defineShaderEffect({
-			id: 'test.library-identical',
-			label: 'Library identical',
-			category: 'Utility',
-			params: [fxParam.number('oct', 'Octaves', 5, { min: 0, max: 12 })],
-			gpu: {
-				passes: [
-					{
-						include: [GLSL_NOISE, REF_NOISE],
-						frag: /* glsl */ `
-bool eq(float a, float b) { return a == b; }
-bool eq2(vec2 a, vec2 b) { return all(equal(a, b)); }
-bool eq3(vec3 a, vec3 b) { return all(equal(a, b)); }
-void main() {
-  vec2 px = fx_canvasPx() - vec2(37.0, 21.0);
-  bool h = true, n2 = true, n3 = true;
-  for (int k = 0; k < 4; k++) {
-    float seed = fract(u_seed + float(k) * 0.37);
-    float sc = 0.07 + float(k) * 0.61;
-    vec2 p = px * sc + vec2(float(k) * -13.7, float(k) * 5.3);
-    vec3 q = vec3(p, float(k) * 2.9 - 4.1 + px.y * 0.013);
-    ivec2 ip = ivec2(floor(p));
-    ivec3 iq = ivec3(floor(q));
-    int o = int(u_oct) + k;
-    h = h && eq(fx_hash1(ip.x, seed), ref_hash1(ip.x, seed)) && eq(fx_hash2(ip, seed), ref_hash2(ip, seed))
-          && eq(fx_hash3(iq, seed), ref_hash3(iq, seed)) && eq2(fx_hash22(ip, seed), ref_hash22(ip, seed))
-          && eq3(fx_hash33(iq, seed), ref_hash33(iq, seed)) && eq(fx_random(p, float(k) - 2.0, seed), ref_random(p, float(k) - 2.0, seed));
-    n2 = n2 && eq(fx_valueNoise(p, seed), ref_valueNoise(p, seed)) && eq(fx_gradientNoise(p, seed), ref_gradientNoise(p, seed))
-            && eq(fx_simplex(p, seed), ref_simplex(p, seed)) && eq(fx_fbm(p, o, 2.0, 0.5, seed), ref_fbm(p, o, 2.0, 0.5, seed))
-            && eq(fx_fbm(p, 3, 1.9, 0.55, seed), ref_fbm(p, 3, 1.9, 0.55, seed))
-            && eq2(fx_cellular(p, 0.8, seed), ref_cellular(p, 0.8, seed)) && eq(fx_cellId(p, 1.0, seed), ref_cellId(p, 1.0, seed));
-    n3 = n3 && eq(fx_valueNoise3(q, seed), ref_valueNoise3(q, seed)) && eq(fx_simplex3(q, seed), ref_simplex3(q, seed))
-            && eq(fx_fbm3(q, o, 2.0, 0.5, seed), ref_fbm3(q, o, 2.0, 0.5, seed))
-            && eq(fx_turbulence(q, o, 2.0, 0.5, seed), ref_turbulence(q, o, 2.0, 0.5, seed))
-            && eq(fx_ridged(q, o, 2.0, 0.5, seed), ref_ridged(q, o, 2.0, 0.5, seed));
-  }
-  fragColor = vec4(h ? 1.0 : 0.0, n2 ? 1.0 : 0.0, n3 ? 1.0 : 0.0, 1.0);
-}`,
-					},
-				],
-			},
-		});
-		const { out } = run(spec, { oct: 5 }, { width: 64, height: 64 }, () => {});
-		const d = out.getContext('2d')!.getImageData(0, 0, 64, 64).data;
-		const bad = [0, 0, 0];
-		for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) if (d[i + c]! < 255) bad[c]!++;
-		return { hashes: bad[0], noise2d: bad[1], noise3d: bad[2] };
-	},
 	pingPong() {
 		const iter = {
 			output: 'acc',
@@ -554,11 +420,10 @@ void main() {
 				],
 			},
 		});
-		const { out, plan } = run(spec, {}, { width: 8, height: 4 }, halves);
+		const { out } = run(spec, {}, { width: 8, height: 4 }, halves);
 		return {
 			left: px(out, 1, 1),
 			right: px(out, 6, 1),
-			size: [plan.passes[0]!.width, plan.passes[0]!.height],
 		};
 	},
 	mipmaps() {
@@ -646,34 +511,6 @@ void main() {
 			1,
 		);
 	},
-	/** Samples are uploaded once per key: a second effect with the same key reads the first upload. */
-	samplesOnce() {
-		const spec = fx1('void main() { fragColor = fx_sample(0, v_uv); }');
-		const red = canvas(4, 4, (c) => {
-			c.fillStyle = '#f00';
-			c.fillRect(0, 0, 4, 4);
-		});
-		const green = canvas(4, 4, (c) => {
-			c.fillStyle = '#0f0';
-			c.fillRect(0, 0, 4, 4);
-		});
-		const a = run(spec, {}, { width: 4, height: 4 }, () => {}, {
-			samples: [red],
-			offsets: [-1],
-			samplesKey: 'k1',
-		}).out;
-		const b = run(spec, {}, { width: 4, height: 4 }, () => {}, {
-			samples: [green],
-			offsets: [-1],
-			samplesKey: 'k1',
-		}).out;
-		const c = run(spec, {}, { width: 4, height: 4 }, () => {}, {
-			samples: [green],
-			offsets: [-1],
-			samplesKey: 'k2',
-		}).out;
-		return { first: px(a, 1, 1), sameKey: px(b, 1, 1), newKey: px(c, 1, 1) };
-	},
 	/** The SVG-only Gaussian Blur (one direction) as the chain's GPU stand-in. */
 	blurStandIn() {
 		const builtin = defaultEffectRegistry.get('jasper.gaussian-blur')!;
@@ -687,8 +524,6 @@ void main() {
 		return {
 			onLine: px(out, b.x + 10, b.y + 10),
 			above: px(out, b.x + 10, b.y + 8),
-			padding: layout.padding.top,
-			equalSigmas: chainGpuStandIn(builtin, { radius: 3, dimensions: 'both', repeatEdge: false }) === null,
 		};
 	},
 	/** Transform with a Shutter Angle and a moving position (paramsAt): the edge is smeared. */

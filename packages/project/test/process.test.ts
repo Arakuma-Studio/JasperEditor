@@ -7,7 +7,6 @@ import {
 	originalMediaId,
 	type ProcessStep,
 	type ProjectDocument,
-	processedItemName,
 	type VideoClip,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -140,23 +139,6 @@ describe('media.derive (S07:PRC-001, PRC-004, PRC-005)', () => {
 		expect(diff.created).toEqual(expect.arrayContaining([m.id, res.itemId, res.binId]));
 		expect(diff.changed).toEqual(expect.arrayContaining([videoId]));
 		expect(diff.changed).not.toContain(audioId);
-	});
-
-	it('names items from the step labels', () => {
-		expect(processedItemName('crudo', recipe(STABILIZE, UPSCALE_2X))).toBe(
-			'crudo [Stabilized · Upscaled 2×]',
-		);
-		expect(
-			processedItemName(
-				'x',
-				recipe(
-					{ op: 'dejudder', mode: 'auto' },
-					DENOISE,
-					{ op: 'deblock', filter: 'weak' },
-					{ op: 'upscale', model: 'm', scale: 4 },
-				),
-			),
-		).toBe('x [De-juddered · Denoised · Deblocked · Upscaled 4×]');
 	});
 
 	it('is idempotent: the same file (or the same recipe of the same source) is reused, the swaps still happen', () => {

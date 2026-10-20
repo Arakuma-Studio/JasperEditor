@@ -3,7 +3,6 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { clipDecodeArgs } from '../src/audio/decode.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
 
@@ -62,33 +61,6 @@ function analyse(file: string): { rms: number; hz: number }[] {
 }
 
 describe('Audio Channels in the export mix', () => {
-	it('decodes a muted clip channel as silence', () => {
-		const { args } = clipDecodeArgs({
-			clip: {
-				start: 0,
-				duration: 30,
-				sourceIn: 0,
-				speed: { rate: 1, reverse: false, maintainPitch: true },
-				channels: { streamIndex: 0, map: [1, 1], mute: [1] },
-			} as never,
-			path: src,
-			stream: {
-				index: 0,
-				type: 'audio',
-				codec: 'pcm_s16le',
-				sampleRate: 48000,
-				channels: 2,
-				channelLayout: 'stereo',
-			},
-			fps: { num: 30, den: 1 },
-			sampleRate: 48000,
-			offset: 0,
-			length: 4800,
-			soxr: false,
-		});
-		expect(args.join(' ')).toContain('pan=stereo|c0=c1|c1=0*c0');
-	});
-
 	it('routes the right source channel to the left clip channel and mutes the right one', async () => {
 		const reg = await register(app, src);
 		const d = new DocBuilder('hd-720p-30');

@@ -9,7 +9,7 @@ import { CHROME, openGlPage } from './gl-browser.ts';
 const here = dirname(fileURLToPath(import.meta.url));
 
 type Px = [number, number, number, number];
-type Out = { probes: Px[]; checksum: number; canvas: number[]; box: number[] };
+type Out = { probes: Px[]; checksum: number };
 const near = (a: Px, b: Px, tol = 6) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
 const W = 160;
 const H = 90;
@@ -26,18 +26,72 @@ const P = {
 const RED: Px = [221, 51, 51, 255];
 const WHITE: Px = [255, 255, 255, 255];
 
+// Public effect inputs: missing registrations must fail a case, not remove it.
+const DISTORT_EFFECTS = [
+	'jasper.s.distort',
+	'jasper.s.distort-blur',
+	'jasper.s.distort-chroma',
+	'jasper.s.distort-rgb',
+	'jasper.s.infinite-zoom',
+	'jasper.s.parallax-strips',
+	'jasper.s.shake',
+	'jasper.s.stretch-frame-edges',
+	'jasper.s.warp-bubble',
+	'jasper.s.warp-bubble2',
+	'jasper.s.warp-chroma',
+	'jasper.s.warp-corner-pin',
+	'jasper.s.warp-drops',
+	'jasper.s.warp-fish-eye',
+	'jasper.s.warp-magnify',
+	'jasper.s.warp-perspective',
+	'jasper.s.warp-polar',
+	'jasper.s.warp-puddle',
+	'jasper.s.warp-puff',
+	'jasper.s.warp-repeat',
+	'jasper.s.warp-transform',
+	'jasper.s.warp-vortex',
+	'jasper.s.warp-waves',
+	'jasper.s.warp-waves2',
+];
+
+const IDENTITIES: [string, Record<string, unknown>][] = [
+	['jasper.s.warp-fish-eye', { amount: 0 }],
+	['jasper.s.warp-magnify', { magnifyAmount: 1 }],
+	['jasper.s.warp-waves', { amplitude: 0 }],
+	['jasper.s.warp-waves2', { aAmplitude: 0, bAmplitude: 0 }],
+	['jasper.s.warp-puddle', { amplitude: 0 }],
+	['jasper.s.warp-bubble', { amplitude: 0 }],
+	['jasper.s.warp-vortex', { vortexStart: 0 }],
+	['jasper.s.distort', { amount: 0 }],
+	['jasper.s.distort-rgb', { amount: 0 }],
+	['jasper.s.distort-chroma', { amount: 0 }],
+	['jasper.s.warp-puff', { amount: 0 }],
+	['jasper.s.shake', { amplitude: 0 }],
+	['jasper.s.stretch-frame-edges', { centerSqueeze: 1, smooth: 0 }],
+	['jasper.s.warp-repeat', { warpAmount: 0 }],
+	['jasper.s.warp-chroma', { warpAmount: 0 }],
+	['jasper.s.warp-perspective', { latitude: 0, zDist: 1 }],
+	['jasper.s.parallax-strips', { mode: 'manual', manualAmount: 0 }],
+];
+
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	'Sapphire Distort effects in WebGL2 (headless Chrome)',
 	{ timeout: 120_000 },
 	() => {
 		let browser: Browser;
 		let page: Page;
+		let identitySource: Out | undefined;
 		const run = (a: Partial<RunArgs> & { id: string }): Promise<Out> =>
 			page.evaluate(
 				(args) =>
 					(window as unknown as { __dw: { run(a: unknown): unknown } }).__dw.run(args) as Promise<Out>,
 				{ width: W, height: H, ...a },
 			) as Promise<Out>;
+		const source = (probes = Object.values(P) as [number, number][]): Promise<Out> =>
+			page.evaluate(
+				(args) => (window as unknown as { __dw: { source(a: unknown): Out } }).__dw.source(args),
+				{ width: W, height: H, probes },
+			);
 		const probe = (id: string, params: Record<string, unknown> = {}, extra: Partial<RunArgs> = {}) =>
 			run({ id, params, probes: Object.values(P) as [number, number][], ...extra });
 		const at = (o: Out, k: keyof typeof P) => o.probes[Object.keys(P).indexOf(k)]!;
@@ -50,53 +104,40 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('runs all 24 effects with their defaults; transparent input stays transparent', async () => {
-			const ids = await page.evaluate(() => (window as unknown as { __dw: { ids(): string[] } }).__dw.ids());
-			expect(ids).toHaveLength(24);
-			for (const id of ids) {
-				const o = await probe(id, {}, { paint: 'none', frame: 5 });
-				for (const px of o.probes) expect(px, id).toEqual([0, 0, 0, 0]);
-			}
+		it.each(DISTORT_EFFECTS)('%s preserves transparent input at its defaults', async (id) => {
+			const o = await probe(id, {}, { paint: 'none', frame: 5 });
+			for (const px of o.probes) expect(px, id).toEqual([0, 0, 0, 0]);
 		});
 
-		it('identity settings give the source back', async () => {
-			const src = await probe('jasper.s.warp-transform');
-			expect(near(at(src, 'red'), RED)).toBe(true);
-			expect(near(at(src, 'centre'), WHITE)).toBe(true);
-			const identities: [string, Record<string, unknown>][] = [
-				['jasper.s.warp-fish-eye', { amount: 0 }],
-				['jasper.s.warp-magnify', { magnifyAmount: 1 }],
-				['jasper.s.warp-waves', { amplitude: 0 }],
-				['jasper.s.warp-waves2', { aAmplitude: 0, bAmplitude: 0 }],
-				['jasper.s.warp-puddle', { amplitude: 0 }],
-				['jasper.s.warp-bubble', { amplitude: 0 }],
-				['jasper.s.warp-vortex', { vortexStart: 0 }],
-				['jasper.s.distort', { amount: 0 }],
-				['jasper.s.distort-rgb', { amount: 0 }],
-				['jasper.s.distort-chroma', { amount: 0 }],
-				['jasper.s.warp-puff', { amount: 0 }],
-				['jasper.s.shake', { amplitude: 0 }],
-				['jasper.s.stretch-frame-edges', { centerSqueeze: 1, smooth: 0 }],
-				['jasper.s.warp-repeat', { warpAmount: 0 }],
-				['jasper.s.warp-chroma', { warpAmount: 0 }],
-				['jasper.s.warp-perspective', { latitude: 0, zDist: 1 }],
-				['jasper.s.parallax-strips', { mode: 'manual', manualAmount: 0 }],
-			];
-			for (const [id, params] of identities) {
-				const o = await probe(id, params, { frame: 7 });
-				for (const k of Object.keys(P) as (keyof typeof P)[])
-					expect(near(at(o, k), at(src, k), 10), `${id} ${k}: ${at(o, k)} vs ${at(src, k)}`).toBe(true);
-			}
+		it.each(IDENTITIES)('%s identity settings return the source', async (id, params) => {
+			const src = (identitySource ??= await source());
+			const o = await probe(id, params, { frame: 7 });
+			for (const k of Object.keys(P) as (keyof typeof P)[])
+				expect(near(at(o, k), at(src, k), 10), `${id} ${k}: ${at(o, k)} vs ${at(src, k)}`).toBe(true);
 		});
 
-		it('magnifiers enlarge the centre disc; a pinch shrinks it', async () => {
-			for (const id of ['jasper.s.warp-magnify', 'jasper.s.warp-fish-eye'])
+		it.each(['jasper.s.warp-magnify', 'jasper.s.warp-fish-eye'])(
+			'%s enlarges the centre disc',
+			async (id) => {
 				expect(near(at(await probe(id), 'nearDisc'), WHITE), id).toBe(true);
+			},
+		);
+
+		it('negative fish-eye amounts shrink the disc and preserve visible pixels', async () => {
 			const pinch = await probe('jasper.s.warp-fish-eye', { amount: -1 });
 			expect(near(at(pinch, 'centre'), WHITE)).toBe(true);
-			// The disc edge moved inwards: 9 px above the centre is no longer white.
-			const o = await run({ id: 'jasper.s.warp-fish-eye', params: { amount: -1.5 }, probes: [[80, 36]] });
+			// The disc edge moves inwards; the same output must still contain the opaque white center.
+			const o = await run({
+				id: 'jasper.s.warp-fish-eye',
+				params: { amount: -1.5 },
+				probes: [
+					[80, 36],
+					[80, 45],
+				],
+			});
 			expect(o.probes[0]![0] + o.probes[0]![1] + o.probes[0]![2]).toBeLessThan(700);
+			expect(o.probes[0]![3]).toBe(255);
+			expect(near(o.probes[1]!, WHITE)).toBe(true);
 		});
 
 		it('S_WarpTransform moves the picture and pads the layer to keep it', async () => {
@@ -109,7 +150,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					[25, 15],
 				],
 			});
-			expect(o.canvas).toEqual([W + 82, H]); // 0.5 × 160 + 2 px slack on the right
 			expect(near(o.probes[0]!, RED)).toBe(true); // red quadrant moved right by half a width
 			expect(o.probes[1]![3]).toBeGreaterThan(200); // drawn outside the box (padding)
 			expect(o.probes[2]![3]).toBe(0); // vacated area: Wrap No → transparent
@@ -161,7 +201,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(a.checksum).toBe(b.checksum);
 			expect(c.checksum).not.toBe(a.checksum);
 			expect(d.checksum).not.toBe(a.checksum);
-			expect(a.canvas[0]).toBeGreaterThan(W);
 			const mb = await run({
 				id: 'jasper.s.shake',
 				frame: 12,
@@ -192,7 +231,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('S_WarpDrops ripples around the bright spots of the Centers map only', async () => {
-			const plain = await probe('jasper.s.warp-transform');
 			// Centers: white dots at (40, 27), (80, 54), (120, 31.5).
 			const pts: [number, number][] = [
 				[40, 22],
@@ -200,7 +238,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				[5, 85],
 				[155, 85],
 			];
-			const src = await run({ id: 'jasper.s.warp-transform', probes: pts });
+			const src = await source(pts);
 			const o = await run({
 				id: 'jasper.s.warp-drops',
 				params: { amplitude: 6 },
@@ -208,7 +246,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				probes: pts,
 				paint: 'grid',
 			});
-			expect(plain.probes.length).toBeGreaterThan(0);
 			const moved = (i: number) => !near(o.probes[i]!, src.probes[i]!, 10);
 			// Far corners are untouched; around the first dot something moved (one of two probes at least).
 			expect(moved(2)).toBe(false);
@@ -228,7 +265,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('S_Distort follows the Lens: a flat lens changes nothing, the dots lens warps', async () => {
-			const src = await run({ id: 'jasper.s.warp-transform' });
+			const src = await source([]);
 			const flat = await run({ id: 'jasper.s.distort', media: { lens: 'solid' } });
 			expect(flat.checksum).toBe(src.checksum);
 			const dots = await run({ id: 'jasper.s.distort', media: { lens: 'dots' } });

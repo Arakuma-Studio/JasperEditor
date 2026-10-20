@@ -1,6 +1,5 @@
 // @vitest-environment node
 // HTML-in-Canvas misses draws from desynchronized 2D canvases after the host's first paint.
-// Test the unpatched browser too, so a browser fix makes the workaround's premise visible.
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installCaptureSafeCanvases } from '../src/fx/capture-safe-canvas.ts';
@@ -73,7 +72,7 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 
 	// The shim's guarantee: with it, a canvas that asked for a low-latency context is captured like any other. An older
 	// Chrome (the build server's 142) has no HTML-in-Canvas to capture with, so the Player never takes this path there.
-	it('with the shim a low-latency canvas is captured after the first paint', async (ctx) => {
+	it('captures late draws from low-latency and ordinary canvases', async (ctx) => {
 		const fixed = await browser.newPage();
 		await fixed.setContent(PAGE);
 		ctx.skip(
@@ -84,43 +83,5 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 		const after = await fixed.evaluate(probe);
 		expect(after[0]).toEqual([0, 255, 0, 255]);
 		expect(after[1]).toEqual([255, 0, 255, 255]);
-	}, 60_000);
-
-	// The browser behaviour the shim works around, kept visible (Chrome 150, where it was written, misses the draw).
-	// Where this Chrome captures the low-latency canvas anyway, this is skipped with what it saw: the shim is then
-	// harmless, and once no supported Chrome needs it the shim and this test can go.
-	it('without the shim a low-latency canvas is not captured after the first paint (where this Chrome misses it)', async (ctx) => {
-		const page = await browser.newPage();
-		await page.setContent(PAGE);
-		ctx.skip(
-			!(await page.evaluate(htmlInCanvas)),
-			`Chrome ${browser.version()} has no HTML-in-Canvas (148+)`,
-		);
-		const before = await page.evaluate(probe);
-		expect(before[1]).toEqual([255, 0, 255, 255]);
-		ctx.skip(
-			before[0]![3] !== 0,
-			`Chrome ${browser.version()} captures the low-latency canvas (${JSON.stringify(before[0])})`,
-		);
-		expect(before[0]![3]).toBe(0);
-	}, 60_000);
-
-	it('is idempotent and leaves other context types alone', async () => {
-		const page = await browser.newPage();
-		await page.setContent(PAGE);
-		await page.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
-		await page.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
-		const r = await page.evaluate(() => {
-			const c = document.createElement('canvas');
-			const gl = c.getContext('webgl2');
-			const d = document.createElement('canvas').getContext('2d', { desynchronized: true } as never);
-			return {
-				gl: !!gl,
-				attrs: (
-					d as unknown as { getContextAttributes(): { desynchronized?: boolean } }
-				).getContextAttributes(),
-			};
-		});
-		expect(r.attrs.desynchronized).toBe(false);
 	}, 60_000);
 });

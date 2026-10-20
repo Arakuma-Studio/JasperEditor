@@ -6,15 +6,9 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { SequenceColorDialog } from '../src/color-mgmt/dialogs.tsx';
 import { colorPatchOf } from '../src/color-mgmt/model.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
-import { getCommand } from '../src/commands/registry.ts';
-import { buildExportSettings, exportColorSpaceOptions, hdrOutput } from '../src/export/settings.ts';
+import { buildExportSettings } from '../src/export/settings.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
-import {
-	InterpretFootageDialog,
-	interpretCommands,
-	interpretSections,
-} from '../src/imports/interpret-dialog.tsx';
-import { MENUBAR } from '../src/shell/menus/model.ts';
+import { InterpretFootageDialog } from '../src/imports/interpret-dialog.tsx';
 import { makeSession } from './timeline-helpers.ts';
 import { registered } from './wp2e/helpers.ts';
 
@@ -37,29 +31,25 @@ function addMedia(session: ReturnType<typeof makeSession>['session'], reg: Regis
 }
 
 describe('Interpret Footage ▸ Colour', () => {
-	it('is the section after Loop and joins the dialog transaction', async () => {
+	it('commits colour and Loop edits from the dialog in one undo step', async () => {
 		const { session } = makeSession();
 		const id = addMedia(session, registered('log.mov', { key: 'mk_LOGCLIP01', seconds: 10 }));
-		const sections = interpretSections().map((s) => s.id);
-		expect(sections.indexOf('color')).toBe(sections.indexOf('loop') + 1);
-		render(<DialogHost />);
 		render(<InterpretFootageDialog session={session} mediaIds={[id]} close={() => {}} />);
-		const dialog = await screen.findByTestId('interpret-footage-dialog');
-		expect(
-			dialog.querySelector('[data-section="color"] [data-testid="color-interpretation"]'),
-		).not.toBeNull();
-		expect(dialog.textContent).toMatch(/Automatic \(Rec\. 709\)/);
-		const asset = session.getCommitted().media[id]!;
-		const cmds = interpretCommands([asset], {
-			patch: { loop: 2 },
-			sections: { color: { space: 'slog3-sgamut3cine', range: 'pc' } },
+		fireEvent.change(screen.getByLabelText('Loop count'), { target: { value: '2' } });
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('combobox', { name: 'Color Space' }), { key: 'Enter' });
 		});
-		expect(cmds.map((c) => c.type)).toEqual(['media.interpret', 'media.interpretColor']);
-		const r = session.apply({ label: 'Interpret Footage', origin: 'user', commands: cmds });
-		expect(r.ok).toBe(true);
+		await act(async () => {
+			fireEvent.keyDown(await screen.findByRole('option', { name: /S-Log3.*S-Gamut3.Cine/ }), {
+				key: 'Enter',
+			});
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+		});
 		expect(session.getCommitted().media[id]!.interpretation).toEqual({
 			loop: 2,
-			color: { space: 'slog3-sgamut3cine', range: 'pc' },
+			color: { space: 'slog3-sgamut3cine' },
 		});
 		session.undo();
 		expect(session.getCommitted().media[id]!.interpretation).toBeUndefined();
@@ -90,17 +80,8 @@ describe('Sequence Settings ▸ Colour', () => {
 			blendLinear: true,
 			autoToneMap: false,
 		});
-	});
-
-	it('the commands and menus are wired', () => {
-		const { session } = makeSession();
-		expect(getCommand('sequence.settings')).toBeTruthy();
-		expect(getCommand('sequence.colorSettings')).toBeTruthy();
-		expect(getCommand('clip.colorSpace')).toBeTruthy();
-		const ids = JSON.stringify(MENUBAR);
-		expect(ids).toContain('sequence.settings');
-		expect(ids).toContain('clip.colorSpace');
-		void session;
+		session.undo();
+		expect(session.getCommitted().sequences[seqId]!.settings.color).toBeUndefined();
 	});
 });
 
@@ -113,9 +94,7 @@ describe('export colour settings', () => {
 			commands: [{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq' } } as never],
 		});
 		const seq = session.getCommitted().sequences[seqId]!;
-		expect(exportColorSpaceOptions(seq)[0]!.label).toBe('Working (Rec. 2100 PQ)');
 		const color = { colorSpace: 'working' as const, bitDepth: 10 as const, maxCll: 800, maxFall: 0 };
-		expect(hdrOutput(seq, color)).toBe(true);
 		const s = buildExportSettings(seq, { range: 'entire', engine: 'auto', color });
 		expect(s.video).toMatchObject({ bitDepth: 10, hdrMetadata: { maxCll: 800 } });
 		expect(s.video?.colorSpace).toBeUndefined();

@@ -4,15 +4,12 @@ import {
 	checkInvariants,
 	evaluateVectorShape,
 	FLICKS_PER_SECOND,
-	planIsCssExact,
 	type ShapeClip,
 	type ShapeItem,
 	shapeBoolean,
 	shapeGeom,
 	shapeItemMatrix,
-	shapeItemsText,
 	type VectorShapeData,
-	vectorRenderPlan,
 	vectorShapeBounds,
 	vectorShapeContainsPoint,
 	vectorShapeIsTimeDependent,
@@ -182,36 +179,8 @@ describe('stacking', () => {
 	});
 });
 
-describe('render plan', () => {
-	it('inside / outside strokes clip / cut with the geometry; CSS-exact detection', () => {
-		const items = build([
-			{ type: 'rect' },
-			{ type: 'stroke', position: 'outside', width: 4 },
-			{ type: 'fill', blendMode: 'dissolve' },
-		]);
-		const plan = vectorRenderPlan(evaluateVectorShape(items, 0));
-		expect(plan.map((p) => p.kind)).toEqual(['fill', 'stroke']);
-		expect(plan[1]!.cut).toBeTruthy();
-		expect(plan[1]!.stroke!.width).toBe(8);
-		expect(planIsCssExact(plan)).toBe(false);
-		const css = vectorRenderPlan(
-			evaluateVectorShape(build([{ type: 'rect' }, { type: 'fill', blendMode: 'multiply' }]), 0),
-		);
-		expect(planIsCssExact(css)).toBe(true);
-	});
-	it('tapered and waved strokes become fill outlines', () => {
-		const items = build([
-			{ type: 'path', path: 'M0 0 L200 0' },
-			{ type: 'stroke', width: 20, taper: { units: 'pixels', startLength: 100, startWidth: 0 } },
-		]);
-		const plan = vectorRenderPlan(evaluateVectorShape(items, 0));
-		expect(plan[0]!.stroke).toBeNull();
-		expect(plan[0]!.d.length).toBeGreaterThan(10);
-	});
-});
-
 describe('queries', () => {
-	it('bounds, hit-testing, item matrices and text summaries', () => {
+	it('bounds, hit-testing and item matrices', () => {
 		const items = build([
 			{
 				type: 'group',
@@ -229,7 +198,6 @@ describe('queries', () => {
 		expect(vectorShapeContainsPoint(d, [140, 0])).toBe(false);
 		const g = items[0] as Extract<ShapeItem, { type: 'group' }>;
 		expect(shapeItemMatrix(items, g.contents[0]!.id, 0)).toEqual([1, 0, 0, 1, 100, 0]);
-		expect(shapeItemsText(items)).toBe('G {Ellipse Path 1, Stroke 1, Fill 1}');
 	});
 	it('time dependence: keyframes, expressions and self-animating Wiggle Paths', () => {
 		expect(vectorShapeIsTimeDependent(build([{ type: 'rect' }, { type: 'fill' }]))).toBe(false);

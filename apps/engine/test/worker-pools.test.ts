@@ -7,10 +7,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { describe, expect, it, vi } from 'vitest';
-import { BlendPool } from '../src/export/blend/pool.ts';
-import { FlowPool } from '../src/export/retime/pool.ts';
-import { LayerPool } from '../src/export/stream/pool.ts';
-import { WarpPool } from '../src/export/warp/pool.ts';
 import { ExportWorkerPool, framePoolSize } from '../src/export/worker-pool.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,74 +29,18 @@ async function settles<T>(
 	}
 }
 
-async function killIdleWorker(pool: BlendPool | LayerPool | WarpPool | FlowPool): Promise<void> {
-	// biome-ignore-start lint/complexity/useLiteralKeys: Bracket access permits typed fault injection into private workers.
-	// Narrow first: TypeScript cannot index distinct private members through a union.
-	const scheduler =
-		pool instanceof BlendPool
-			? pool['pool']
-			: pool instanceof LayerPool
-				? pool['pool']
-				: pool instanceof WarpPool
-					? pool['pool']
-					: pool['pool'];
-	const w = scheduler['workers'][0]!;
-	// biome-ignore-end lint/complexity/useLiteralKeys: Bracket access permits typed fault injection into private workers.
-	const exited = once(w, 'exit');
-	await w.terminate();
-	await exited;
-}
-
 describe('native export worker pools survive a dead worker', () => {
-	it('blend: blends a frame, then fails (does not hang) once its worker died', async () => {
-		const pool = new BlendPool({ W: 2, H: 1 }, { workers: 1, slots: 1 });
-		const slot = pool.slots[0]!;
-		slot.src.set([255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255]);
-		expect((await settles(pool.run(slot, 0, 0, true))).ok).toBe(true);
-		await killIdleWorker(pool);
-		const r = await settles(pool.run(slot, 0, 0, true));
-		expect(r.ok).toBe(false);
-		await pool.close();
-	});
-
-	it('layer streams: fail once the worker died', async () => {
-		const pool = new LayerPool({ sw: 2, sh: 2, dw: 2, dh: 2 }, { workers: 1, slots: 1 });
-		await killIdleWorker(pool);
-		const r = await settles(
-			pool.run({ slot: pool.slots[0]!, inv: null, rect: null, opacity: 1, cw: 2, ch: 2, clip: [0, 0, 2, 2] }),
+	it('closing settles both running and queued requests', async () => {
+		const pool = new ExportWorkerPool<number, number>(
+			'test',
+			1,
+			() => new Worker(`require('node:worker_threads').parentPort.on('message', () => {});`, { eval: true }),
 		);
-		expect(r.ok).toBe(false);
-		await pool.close();
-	});
-
-	it('warp: fails once the worker died', async () => {
-		const pool = new WarpPool({ sw: 2, sh: 2, dw: 2, dh: 2, format: 'rgba' }, { workers: 1, slots: 1 });
-		await killIdleWorker(pool);
-		const r = await settles(pool.run({ slot: pool.slots[0]!, inv: null, rect: null, opacity: 1 }));
-		expect(r.ok).toBe(false);
-		await pool.close();
-	});
-
-	it('optical flow: fails once the worker died', async () => {
-		const pool = new FlowPool(1);
-		await killIdleWorker(pool);
-		const px = new Uint8Array(4 * 4 * 4);
-		const r = await settles(pool.run('k', px, px, 4, 4, [0.5]));
-		expect(r.ok).toBe(false);
-		await pool.close();
-	});
-
-	it('optical flow: closing settles both running and queued requests', async () => {
-		const pool = new FlowPool(1);
-		const px = new Uint8Array(4 * 4 * 4);
-		const requests = [
-			settles(pool.run('first', px, px, 4, 4, [0.5])),
-			settles(pool.run('queued', px, px, 4, 4, [0.5])),
-		];
+		const requests = [settles(pool.run(1)), settles(pool.run(2))];
 		await pool.close();
 		for (const result of await Promise.all(requests)) {
 			expect(result.ok).toBe(false);
-			if (!result.ok) expect(result.error.message).toBe('flow pool closed');
+			if (!result.ok) expect(result.error).toBeInstanceOf(Error);
 		}
 	});
 

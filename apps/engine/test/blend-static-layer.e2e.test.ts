@@ -1,6 +1,6 @@
 // A static layer must deliver its picture on every frame a Remotion page renders; one-frame stills cannot catch starvation.
 import { spawnSync } from 'node:child_process';
-import { blendPixel, type Rgba } from '@jasper/project';
+import type { Rgba } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -11,8 +11,6 @@ const W = 640;
 const H = 360;
 const FRAMES = 36;
 type Rgb = [number, number, number];
-
-const to8 = (c: Rgba): Rgb => [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)];
 
 describe.runIf(enabled)(
 	'static DOM layers in GL blend modes, exported over many frames (REMOTION_E2E=1)',
@@ -100,8 +98,9 @@ describe.runIf(enabled)(
 			expect(done.error, JSON.stringify(done.error)).toBeUndefined();
 			expect((done.result as { renderPath: string }).renderPath).toBe('remotion');
 			const file = (await coreServices(engine.app).exports.outputFile(start.json().id))!;
-			const inside = to8(blendPixel('color-dodge', base, fill, 0));
-			const outside = to8(base);
+			// Color Dodge: min(1, backdrop / (1 - source)), converted to 8-bit RGB.
+			const inside: Rgb = [204, 191, 170];
+			const outside: Rgb = [102, 77, 51];
 			for (const f of [0, 1, 7, 20, FRAMES - 1]) {
 				const c = pixel(file, f, W / 2, H / 2);
 				expect(near(c, inside, 6), `frame ${f}: centre ${c}, expected ${inside}`).toBe(true);

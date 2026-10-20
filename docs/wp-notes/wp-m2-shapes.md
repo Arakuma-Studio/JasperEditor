@@ -50,10 +50,9 @@ None new. `@remotion/shapes` / `@remotion/paths` 4.0.499 were added by the contr
 
 ## How to test
 
-- Unit/component: `pnpm vitest run packages/project/test/shapes.test.ts apps/web/test/shapes.test.tsx`; browser/agent workflow: `pnpm exec playwright test e2e/shapes.spec.ts`.
+- Unit/component: `pnpm vitest run packages/project/test/shapes.test.ts apps/web/test/shapes.test.tsx`.
 - Pixel test (real Chrome render through the engine's `/api/stills`, compared with a 4×4-supersampled analytic reference): `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
 - MCP end to end: `MCP_TEST_PORT=<free> pnpm vitest run apps/mcp/test/integration.test.ts`.
-- Playwright: `E2E_PORT=<free> pnpm e2e e2e/shapes.spec.ts` (without `--`; builds engine, web and jasper-mcp first).
 
 ## Verification (2026-10-01, load average 23–66 on 12 cores, shared machine)
 
@@ -112,16 +111,13 @@ e2e/shapes.spec.ts`: 6/6 passed (2.3 min) after updating the MCP regex.
 
 ## Known gaps / notes for the integrator
 
-- **After merging wp-m2-layer-bake:** re-run `E2E_PORT=<free> pnpm e2e e2e/shapes.spec.ts` — its export step then
-  must plan `native`/`hybrid` (the branch taken when `features.layerBake.state === 'ready'`; not exercised here) and
-  match the still with the same tolerances; and re-run `REMOTION_E2E=1 … shapes-remotion.e2e.test.ts`, whose still
-  then renders natively with baked layers (`renderPath` native/hybrid accepted). Check that the bake's
-  per-frame-bounds crop (LBK-005) uses the shape's layer box: geometry never leaves `intrinsicBox`.
+- Shape stills are checked against analytic geometry by `apps/engine/test/shapes-remotion.e2e.test.ts`
+  (`REMOTION_E2E=1`), allowing the Remotion or native/hybrid path with baked layers.
 - ANA-007 (`queries.clipSource` shape geometry) belongs to wp-m2-text-anim (`agent/queries.ts`); shapes are
   described by `get_timeline` (format.ts) here.
 - An animated shape's selection quad is its largest box, not the current size (handles act on the box).
 - KND-055 "Color Matte as a solid shape" and polygon/star/line shapes are out of scope (S11 non-goals, P2).
 - The shared e2e helper `regionLuma` seeks with `-ss (frame + 0.5)/fps`, which lands one frame late on the
   exported H.264 (first frame with pts ≥ t); harmless for its static-region uses, so left unchanged —
-  `e2e/shapes.spec.ts` selects frames by index instead.
+  the former `e2e/shapes.spec.ts` selected frames by index instead.
 - `main` gained 48b5897 (biome.json) after this branch was cut; no conflict expected.

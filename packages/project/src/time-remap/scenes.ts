@@ -216,25 +216,3 @@ export function sceneFlashTest(at: (k: number) => SceneSignature | undefined, th
 	if (near(before, at(1)) || near(before, at(2))) return true;
 	return near(at(0), at(-2)) || near(at(0), at(-3));
 }
-
-/** Precision and recall of detected cuts against true cuts (a hit within `tolerance` frames counts once). */
-export function cutAccuracy(
-	found: readonly number[],
-	truth: readonly number[],
-	tolerance = 0,
-): { precision: number; recall: number; hits: number } {
-	const used = new Set<number>();
-	let hits = 0;
-	for (const f of found) {
-		const t = truth.findIndex((x, k) => !used.has(k) && Math.abs(x - f) <= tolerance);
-		if (t >= 0) {
-			used.add(t);
-			hits++;
-		}
-	}
-	return {
-		precision: found.length === 0 ? 1 : hits / found.length,
-		recall: truth.length === 0 ? 1 : hits / truth.length,
-		hits,
-	};
-}

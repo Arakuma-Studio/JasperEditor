@@ -64,7 +64,7 @@ Also fixed (found while verifying the UI): every `Select` inside a dialog opened
   document refs = export/editor render keys, CA-004 regeneration, **a real native export (keyframed grade + keyframed
   Motion/warp) while Clean All runs in a loop**: succeeds, 30 identical-table states → 1 LUT file byte-identical to the
   M2 text, refs recorded, same pictures on re-export, Clean Unused keeps / Clean All removes after the grace window).
-  `apps/web/test/media-cache.test.tsx`, `apps/mcp/test/cache.test.ts`, `e2e/media-cache.spec.ts`.
+  `apps/web/test/media-cache.test.tsx`, `apps/mcp/test/cache.test.ts`.
 - Real material: a copy of `MatsSmileTrailer/editor-appdata` (renders hard-linked). Before: 18.0 GB, of which
   17.9 GB unused export outputs and stills; derivatives/proxies all referenced by the 17 trailer projects. Clean
   Unused removed the 48 render dirs and kept 830 referenced entries. Trailer v6 + keyframed Lumetri on T01 (124
@@ -86,8 +86,7 @@ Also fixed (found while verifying the UI): every `Select` inside a dialog opened
 Tests: `apps/engine/test/cache-location.test.ts` (validation, same-disk move + export through the links + restart +
 move back, cross-disk copy /var → /tmp, fresh + keepOld, repair of an interrupted switch, unavailable location
 fallback, token-mode access), `cache.test.ts` (fframes refs, logs retention + usage-log trim, journal prune),
-`media-cache.test.tsx` (never, logs limits, location flow), `apps/mcp/test/cache.test.ts` (set_cache_location),
-`e2e/media-cache.spec.ts` (never + logs saved; move to a folder and back in the real UI).
+`media-cache.test.tsx` (never, logs limits, location flow), `apps/mcp/test/cache.test.ts` (set_cache_location).
 
 ### Dropdowns inside dialogs (for the integrator)
 

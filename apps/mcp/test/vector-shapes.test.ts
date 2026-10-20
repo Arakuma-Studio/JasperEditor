@@ -80,10 +80,8 @@ const shapeClips = (doc: ProjectDocument) =>
 	}[];
 
 describe('vector shape MCP tools', () => {
-	it('presets, add, get, update (nested taper / transform), path edits, remove', async () => {
+	it('add, get, update (nested taper / transform), path edits, remove', async () => {
 		const { engine, call } = await connect();
-		const presets = await call('list_shape_presets');
-		expect((presets.json.presets as { id: string }[]).map((p) => p.id)).toContain('heart');
 		const add = await call('add_vector_shape', {
 			projectId: 'prj_t',
 			at: 0,

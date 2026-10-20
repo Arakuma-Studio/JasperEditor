@@ -28,7 +28,7 @@ const BIN = TRANSITION_BINS.sapphire;
 const OTHER = SAPPHIRE_TRANSITION_SUBBINS.other;
 
 /** Spin axis (0 vertical, 1 horizontal) and sign of a Spin Direction. */
-export function cardSpin(direction: ParamValue | undefined): { axis: number; sign: number } {
+function cardSpin(direction: ParamValue | undefined): { axis: number; sign: number } {
 	switch (str(direction, 'left')) {
 		case 'right':
 			return { axis: 0, sign: -1 };
@@ -42,7 +42,7 @@ export function cardSpin(direction: ParamValue | undefined): { axis: number; sig
 }
 
 /** Total rotation (half turns) of S_CardFlip for Revolutions: 0 = a slide/shuffle, n ≥ 1 = 2n − 1 half turns. */
-export function cardHalfTurns(revolutions: ParamValue | undefined): number {
+function cardHalfTurns(revolutions: ParamValue | undefined): number {
 	const r = Math.max(0, Math.round(num(revolutions, 1)));
 	return r === 0 ? 0 : 2 * r - 1;
 }
@@ -140,17 +140,6 @@ void main() {
 });
 
 export const STRIP_ORDERS = ['topDown', 'bottomUp', 'random', 'centerOut', 'edgesIn'] as const;
-
-/**
- * Timing of one strip (pure; the shader does the same): each strip moves during a window of `min(1, 3 / Speed)` of
- * the transition, the windows start in Order rank, and Slow Start eases the start. 0..1 (1 = arrived / gone).
- */
-export function stripProgress(amount: number, rank: number, speed: number, slowStart: number): number {
-	const d = Math.min(1, 3 / Math.max(1, speed));
-	const start = clamp(rank, 0, 1) * (1 - d);
-	const t = clamp((amount - start) / d, 0, 1);
-	return t + (t * t - t) * clamp(slowStart, 0, 1);
-}
 
 export const S_STRIP_SLIDE_TRANSITION = defineShaderTransition({
 	id: 'jasper.s.strip-slide-transition',
@@ -253,7 +242,7 @@ void main() {
 });
 
 /** Growth (0..1) of the strips at eased progress e: up to the middle and back, Slow Grow easing the start. */
-export function parallaxGrowth(e: number, slowGrow: number): number {
+function parallaxGrowth(e: number, slowGrow: number): number {
 	return (1 - Math.abs(2 * clamp(e, 0, 1) - 1)) ** (1 + 2 * clamp(slowGrow, 0, 2));
 }
 

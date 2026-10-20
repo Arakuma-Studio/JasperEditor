@@ -31,7 +31,6 @@ class PreviewStatusStore {
 	private version = 0;
 	private pending = new Map<string, { settings: PreviewSettings; video: Set<string>; audio: Set<string> }>();
 	private timer: ReturnType<typeof setTimeout> | null = null;
-	private inflight = 0;
 
 	connect(client: EngineClient | null): void {
 		if (this.client === client) return;
@@ -84,7 +83,6 @@ class PreviewStatusStore {
 		this.pending.clear();
 		if (!client) return;
 		for (const p of batch) {
-			this.inflight++;
 			try {
 				const st = await client.previewStatus({
 					settings: p.settings,
@@ -95,8 +93,6 @@ class PreviewStatusStore {
 				this.merge(p.settings, st, p.video, p.audio);
 			} catch {
 				// engine unavailable: the bar stays yellow/red; the next commit asks again
-			} finally {
-				this.inflight--;
 			}
 		}
 	}
@@ -148,11 +144,6 @@ class PreviewStatusStore {
 		};
 		this.entries.set(key!, next);
 		this.emit();
-	}
-
-	/** Pending requests (tests). */
-	get busy(): boolean {
-		return this.timer !== null || this.inflight > 0;
 	}
 }
 

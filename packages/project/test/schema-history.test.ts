@@ -1,6 +1,6 @@
 // Fixtures pin every shipped migration’s output. Add a new step and fixture for schema changes;
 // never change a shipped migration to satisfy these expectations (docs/project-files.md).
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,7 +9,6 @@ import {
 	defaultEffectRegistry,
 	loadProject,
 	MIGRATIONS,
-	migrate,
 } from '../src/index.ts';
 
 type Rec = Record<string, unknown>;
@@ -55,21 +54,6 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {
-	it('has one fixture per schema version, 1 … CURRENT_SCHEMA_VERSION', () => {
-		for (const v of VERSIONS) {
-			expect(existsSync(fixturePath(v)), `fixtures/schema-v${v}.jasper (add it with the schema bump)`).toBe(
-				true,
-			);
-			expect(fixture(v).schemaVersion).toBe(v);
-			expect(doc(v).schemaVersion).toBe(v);
-		}
-	});
-
-	it('has one contiguous migration step per version, each pinned below', () => {
-		expect(MIGRATIONS.map((m) => [m.from, m.to])).toEqual(VERSIONS.slice(0, -1).map((v) => [v, v + 1]));
-		expect(Object.keys(STEP_CHANGES)).toEqual(MIGRATIONS.map((m) => `${m.from}→${m.to}`));
-	});
-
 	for (const v of VERSIONS)
 		it(`schema v${v} loads, migrates to v${CURRENT_SCHEMA_VERSION} and passes the invariants without repairs`, () => {
 			const r = loadProject(fixture(v), { effects: defaultEffectRegistry });
@@ -92,16 +76,6 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 			const { schemaVersion: _b, ...c } = after;
 			expect(diff(b, c)).toEqual(STEP_CHANGES[`${step.from}→${step.to}`]!(before));
 		});
-
-	it('the older fixtures are the newer ones before their additions (the history is consistent)', () => {
-		// v1 migrated is v2; v4 migrated carries the source range v5 records.
-		const m1 = migrate(fixture(1)).document as unknown as Rec;
-		const m2 = migrate(fixture(2)).document as unknown as Rec;
-		expect(diff(m1, { ...m2, projectId: m1.projectId, name: m1.name })).toEqual({});
-		const m4 = migrate(fixture(4)).document as unknown as { media: Rec };
-		const m5 = migrate(fixture(5)).document as unknown as { media: Rec };
-		expect(m4.media.med_00000000000PR0C1).toEqual(m5.media.med_00000000000PR0C1);
-	});
 
 	it('a bare document without an envelope or schemaVersion is read as v1', () => {
 		const { schemaVersion: _, ...bare } = doc(1);

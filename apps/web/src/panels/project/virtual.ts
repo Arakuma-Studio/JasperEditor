@@ -3,7 +3,7 @@ import { type RefObject, useEffect, useState } from 'react';
 /** Bins with fewer items render every row. */
 export const VIRTUALIZE_MIN_ROWS = 200;
 /** Rows rendered before the first measurement. */
-export const INITIAL_ROWS = 80;
+const INITIAL_ROWS = 80;
 
 type RowWindow = {
 	/** Whether windowing is on (the views render spacers). */

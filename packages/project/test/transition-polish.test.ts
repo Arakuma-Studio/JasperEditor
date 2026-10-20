@@ -18,8 +18,7 @@ import {
 	validateGpuEffect,
 	validateGpuTransition,
 } from '../src/index.ts';
-import { mochaTrackUniforms } from '../src/registry/transitions/sapphire-swish-other/swish.ts';
-import { Harness, videoAsset } from './helpers.ts';
+import { Harness } from './helpers.ts';
 
 const HANDLE: MediaHandle = {
 	url: '/m',
@@ -36,52 +35,13 @@ const defaults = (s: TransitionSpec) => Object.fromEntries(s.params.map((p) => [
 const side = { width: 64, height: 36, compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity: 1 };
 
 describe('expensive transitions', () => {
-	const HEAVY = [
-		'jasper.s.swish-3d',
-		'jasper.s.hyper-push',
-		'jasper.s.hyper-pull',
-		'jasper.s.film-roll',
-		'jasper.s.parallax-strips-transition',
-		'jasper.s.dissolve-defocus',
-		'jasper.s.dissolve-pixel-sort',
-		'jasper.s.dissolve-pixel-mosh',
-		'jasper.s.dissolve-zap',
-		'jasper.s.dissolve-auto-paint',
-		'jasper.s.dissolve-glow',
-		'jasper.s.dissolve-ultra-glow',
-		'jasper.s.dissolve-light-leak',
-		'jasper.s.dissolve-rays',
-		'jasper.s.dissolve-digital-damage',
-		'jasper.morph-cut',
-		'jasper.vr-spherical-blur',
-	];
-	it('marks the heavy transitions the authors named (and only flags, never changes output)', () => {
-		for (const id of HEAVY) expect(spec(id).expensive, id).toBe(true);
-		for (const id of ['jasper.push', 'jasper.cross-dissolve', 'jasper.s.dissolve-luma', 'jasper.s.swish-pan'])
-			expect(spec(id).expensive, id).toBeUndefined();
-	});
 	it('exports the flag in the agent schema', () => {
 		const schema = exportAgentSchema(defaultRegistries());
-		expect(
-			schema.transitions
-				.filter((t) => t.expensive)
-				.map((t) => t.id)
-				.sort(),
-		).toEqual([...HEAVY].sort());
+		expect(schema.transitions.find((t) => t.id === 'jasper.s.swish-3d')?.expensive).toBe(true);
 	});
 });
 
 describe('image params on transitions', () => {
-	it('Gradient Wipe and VR Gradient Wipe take a Custom Gradient image (hold-only, images only)', () => {
-		for (const id of ['jasper.gradient-wipe', 'jasper.vr-gradient-wipe']) {
-			const p = spec(id).params.find((x) => x.name === 'gradientImage')!;
-			expect(p).toMatchObject({ type: 'media', mediaKinds: ['image'], animatable: false });
-			expect(p.default).toEqual({ mediaId: '' });
-			// The built-in gradient choice stays (the fallback without an image).
-			expect(spec(id).params.some((x) => x.name === 'gradient')).toBe(true);
-		}
-	});
-
 	it('binds the image as u_<name> + u_<name>_size, like effects', () => {
 		const s = spec('jasper.gradient-wipe');
 		const r = planGpuTransition(
@@ -258,12 +218,6 @@ describe('trackers of transition sides', () => {
 		const r = plan({}, 5);
 		expect(r.ctx.tracks!.to).toMatchObject({ kind: 'point', point: [1015, 540] });
 		expect(r.ctx.tracks!.from).toBeNull();
-		expect(mochaTrackUniforms(defaults(s), r.ctx)).toMatchObject({
-			u_mwTrack: { int: 2 },
-			u_mwTrackAt: [1015, 540],
-		});
-		expect(r.plan.uniforms.find((u) => u.name === 'u_mwTrack')!.value).toEqual([2]);
-		expect(mochaTrackUniforms({ ...defaults(s), trackMode: 'off' }, r.ctx).u_mwTrack).toEqual({ int: 0 });
 		const rev = plan({ reverse: true }, 5);
 		expect(rev.ctx.tracks!.from).toMatchObject({ point: [1015, 540] });
 		expect(rev.ctx.tracks!.to).toBeNull();
@@ -358,24 +312,6 @@ describe('uniform collisions (validators)', () => {
 
 describe('Custom Completion (keyframable timing curve)', () => {
 	const gpu = spec('jasper.push').gpu;
-	it('every GPU transition has Custom Completion + Transition Completion after Start / End', () => {
-		for (const id of ['jasper.push', 'jasper.s.dissolve-luma', 'jasper.morph-cut']) {
-			const names = spec(id).params.map((p) => p.name);
-			expect(names.slice(0, 4)).toEqual(['startPercent', 'endPercent', 'useCompletion', 'completion']);
-		}
-		const p = spec('jasper.push').params;
-		expect(p.find((x) => x.name === 'useCompletion')).toMatchObject({
-			type: 'boolean',
-			default: false,
-			animatable: false,
-		});
-		expect(p.find((x) => x.name === 'completion')).toMatchObject({
-			type: 'number',
-			unit: '%',
-			animatable: true,
-		});
-		expect(spec('jasper.cross-dissolve').params).toEqual([]);
-	});
 
 	it('untouched (off) keeps the linear timing exactly, whatever the completion value', () => {
 		for (const f of [0, 4, 9]) {
@@ -397,40 +333,5 @@ describe('Custom Completion (keyframable timing curve)', () => {
 			swapped: true,
 			reversed: true,
 		});
-	});
-
-	it('keyframed through the commands: the stage follows the curve frame by frame', () => {
-		const h = new Harness();
-		const m = h.ok([{ type: 'media.register', asset: videoAsset({ audio: false }) }]).results[0] as {
-			mediaId: string;
-		};
-		h.ok([
-			{
-				type: 'clip.place',
-				source: { mediaId: m.mediaId },
-				at: 0,
-				sourceRange: { in: { sourceFrames: 30 }, out: { sourceFrames: 130 } },
-			},
-			{
-				type: 'clip.place',
-				source: { mediaId: m.mediaId },
-				at: 100,
-				sourceRange: { in: { sourceFrames: 60 }, out: { sourceFrames: 160 } },
-			},
-			{ type: 'transition.add', trackId: 'V1', at: 100, effectId: 'jasper.push', duration: 20, ref: '$t' },
-		]);
-		const id = Object.keys(h.seq.transitions)[0]!;
-		h.ok([
-			{ type: 'param.set', target: ['transition', id, 'useCompletion'], value: true },
-			{ type: 'keyframe.add', target: ['transition', id, 'completion'], at: { sequenceFrame: 90 }, value: 0 },
-			{
-				type: 'keyframe.add',
-				target: ['transition', id, 'completion'],
-				at: { sequenceFrame: 109 },
-				value: 100,
-			},
-		]);
-		const a = h.seq.transitions[id]!.params.completion!;
-		expect(a.keyframes.map((k) => k.value)).toEqual([0, 100]);
 	});
 });

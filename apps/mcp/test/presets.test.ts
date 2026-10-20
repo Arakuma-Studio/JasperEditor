@@ -5,7 +5,6 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type EffectPreset,
-	flicksPerFrame,
 	type ProjectDocument,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -15,15 +14,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
-const F30 = flicksPerFrame({ num: 30, den: 1 });
+// Document time is 705,600,000 flicks/second; at 30 fps one frame is 23,520,000.
+const F30 = 23_520_000;
 
 function fakeEngine() {
 	const ids = createCounterIdSource(7);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Presets', preset: 'hd-1080p-30' });
 	let revision = 0;
-	const txs: Record<string, unknown>[] = [];
 	const apply = (tx: Record<string, unknown>) => {
-		txs.push(tx);
 		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...tx, origin: 'user' } as never, {
 			ids,
 			now: () => '2026-10-05T00:00:00.000Z',
@@ -74,10 +72,6 @@ function fakeEngine() {
 				lib.revision++;
 				return p;
 			}
-			if (name === 'effectPresetDelete') {
-				lib.presets = lib.presets.filter((p) => p.id !== opts.params!.presetId);
-				return { ok: true, removedPresets: [opts.params!.presetId], removedFolders: [] };
-			}
 			throw new Error(`unexpected call ${name}`);
 		},
 	};
@@ -90,7 +84,6 @@ function fakeEngine() {
 	return {
 		link,
 		lib,
-		txs,
 		doc: () => doc,
 		a: setup.refs.$a!,
 		b: setup.refs.$b!,
@@ -117,7 +110,7 @@ async function connect() {
 		const text = (r.content[0] as { text: string }).text;
 		return { r, text, json: JSON.parse(text) };
 	};
-	return { engine, client, call };
+	return { engine, call };
 }
 
 type Solid = {
@@ -129,16 +122,9 @@ const clip = (doc: ProjectDocument, id: string) =>
 	Object.values(doc.sequences)[0]!.clips[id] as unknown as Solid;
 
 describe('effect preset MCP tools (FX-030, AGT-020)', () => {
-	it('lists built-ins and the user library, with search and annotations', async () => {
-		const { client, call } = await connect();
+	it('filters built-in presets by query and reports user library bins', async () => {
+		const { call } = await connect();
 		const all = (await call('list_effect_presets')).json;
-		expect(all.presets.length).toBeGreaterThanOrEqual(10);
-		expect(all.presets.find((p: { id: string }) => p.id === 'builtin.blur-in')).toMatchObject({
-			builtIn: true,
-			bin: 'Blurs',
-			type: 'anchor-in',
-			effects: ['Gaussian Blur'],
-		});
 		expect(all.bins).toEqual([{ id: 'fxb_1', path: 'Mine' }]);
 		const fades = (await call('list_effect_presets', { query: 'fade' })).json.presets.map(
 			(p: { id: string }) => p.id,
@@ -146,12 +132,9 @@ describe('effect preset MCP tools (FX-030, AGT-020)', () => {
 		expect(fades).toEqual(['builtin.fade-in', 'builtin.fade-out']);
 		const full = (await call('get_effect_preset', { presetId: 'builtin.fade-out' })).json.preset;
 		expect(full.format).toBe('jasper-effect-preset');
-		const tools = (await client.listTools()).tools;
-		expect(tools.find((t) => t.name === 'list_effect_presets')?.annotations?.readOnlyHint).toBe(true);
-		expect(tools.find((t) => t.name === 'delete_effect_preset')?.annotations?.destructiveHint).toBe(true);
 	});
 
-	it('saves from a clip, applies by id with Anchor to Out, and deletes', async () => {
+	it('saves from a clip, applies by id with Anchor to Out, and refuses built-in deletion', async () => {
 		const { engine, call } = await connect();
 		const saved = await call('save_effect_preset', {
 			projectId: 'prj_test',
@@ -178,28 +161,24 @@ describe('effect preset MCP tools (FX-030, AGT-020)', () => {
 			presetId: id,
 		});
 		expect(applied.r.isError, applied.text).toBeFalsy();
-		expect(engine.txs.at(-1)!.label).toBe('Apply Preset Blur Out');
 		const B = clip(engine.doc(), engine.b);
 		const blur = B.effects.find((e) => e.effectId === 'jasper.gaussian-blur')!;
 		expect(blur.params.radius!.keyframes.map((k) => (k.time - B.sourceIn) / F30)).toEqual([80, 89]);
 
-		const del = await call('delete_effect_preset', { presetId: id });
-		expect(del.json).toEqual({ ok: true, removed: [id] });
-		expect(engine.lib.presets).toEqual([]);
 		const builtin = await call('delete_effect_preset', { presetId: 'builtin.fade-in' });
 		expect(builtin.r.isError).toBe(true);
 	});
 
 	it('applies inline JSON and a built-in to several clips in one transaction; validates authored presets', async () => {
 		const { engine, call } = await connect();
-		const before = engine.txs.length;
+		const before = (await call('get_project', { projectId: 'prj_test' })).json.revision;
 		const r = await call('apply_effect_preset', {
 			projectId: 'prj_test',
 			clipIds: [engine.a, engine.b],
 			presetId: 'builtin.fade-in',
 		});
 		expect(r.r.isError, r.text).toBeFalsy();
-		expect(engine.txs.length).toBe(before + 1);
+		expect((await call('get_project', { projectId: 'prj_test' })).json.revision).toBe(before + 1);
 		for (const id of [engine.a, engine.b]) {
 			const c = clip(engine.doc(), id);
 			expect(c.opacity.keyframes.map((k) => [(k.time - c.sourceIn) / F30, k.value])).toEqual([

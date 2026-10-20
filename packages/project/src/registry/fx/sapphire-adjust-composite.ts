@@ -471,7 +471,7 @@ vec4 sac_apply(vec4 c) {
  * segment from a stop to the next (Softness × Softness ij): 1 = a linear blend across the whole segment, smaller
  * values a sharper transition at its middle (0.001 ≈ posterised); values above 1 act as 1.
  */
-export function toneStops(p: EffectParams, n: 3 | 4) {
+function toneStops(p: EffectParams, n: 3 | 4) {
 	const defaults = n === 4 ? [0, 0.33, 0.66, 1] : [0, 0.5, 1];
 	const softness = Math.max(0.001, num(p, 'softness', 1));
 	const stops = Array.from({ length: n }, (_, i) => {

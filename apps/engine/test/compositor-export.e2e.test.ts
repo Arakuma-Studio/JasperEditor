@@ -1,6 +1,6 @@
-// Compare nested composition scopes against blendPixel and compare the chosen export path with forced Remotion.
+// Nested compositing uses authored blend results; export paths also obey their independent parity contract.
 import { spawnSync } from 'node:child_process';
-import { blendPixel, type Rgba } from '@jasper/project';
+import type { Rgba } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -30,16 +30,9 @@ const settings = (seqId: string, engine: 'auto' | 'native' | 'remotion') => ({
 
 const to8 = (c: Rgba): Rgb => [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)];
 const invert = (c: Rgba): Rgba => [1 - c[0], 1 - c[1], 1 - c[2], c[3]];
-const gray = (c: Rgba): Rgba => {
-	// Black & White: Rec. 709 luma of the encoded values (the colour op of jasper.black-white).
-	const y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-	return [y, y, y, c[3]];
-};
-const over = (layers: { c: Rgba; mode?: string }[], from: Rgba = [0, 0, 0, 1]): Rgba => {
-	let dst = from;
-	for (const l of layers) dst = blendPixel(l.mode ?? 'normal', dst, l.c, 0);
-	return dst;
-};
+// Burn(base, mid) = max(0, base + mid - 1) = [.1, 0, .1].
+// Rec.709 luma is .02848; Dodge(gray, top) = gray / (1 - top).
+const ADJUSTED_DODGE: Rgba = [0.05696, 0.05696, 0.03797333333333333, 1];
 
 describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOTION_E2E=1)', () => {
 	let engine: RunningEngine;
@@ -144,7 +137,7 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		]);
 		const { file, path } = await exportDoc(d, 'auto');
 		expect(path).toBe('remotion');
-		check(file, W / 2, H / 2, invert(over([{ c: base }, { c: mid, mode: 'linear-burn' }])));
+		check(file, W / 2, H / 2, [0.9, 1, 0.9, 1]);
 	}, 600_000);
 
 	it('two GL blend tracks separated by an adjustment layer: native and Remotion agree with the formulas', async () => {
@@ -157,10 +150,7 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 			solid('V4', top, '$t'),
 			mode('$t', 'color-dodge'),
 		]);
-		const want = over([
-			{ c: gray(over([{ c: base }, { c: mid, mode: 'linear-burn' }])) },
-			{ c: top, mode: 'color-dodge' },
-		]);
+		const want = ADJUSTED_DODGE;
 		const auto = await exportDoc(d, 'auto');
 		expect(auto.path).toBe('native');
 		check(auto.file, W / 2, H / 2, want, 6);
@@ -189,10 +179,7 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		const hybrid = await exportDoc(d, 'auto');
 		expect(hybrid.path).toBe('hybrid');
 		const rem = await exportDoc(d, 'remotion');
-		const want = over([
-			{ c: gray(over([{ c: base }, { c: mid, mode: 'linear-burn' }])) },
-			{ c: top, mode: 'color-dodge' },
-		]);
+		const want = ADJUSTED_DODGE;
 		check(hybrid.file, 10, 10, want, 6);
 		check(rem.file, 10, 10, want, 6);
 		let inGlyph = 0;
@@ -223,13 +210,8 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		]);
 		const r1 = await exportDoc(run, 'auto');
 		expect(r1.path).toBe('remotion');
-		check(
-			r1.file,
-			10,
-			10,
-			over([{ c: base }, { c: mid, mode: 'linear-burn' }, { c: top, mode: 'color-dodge' }]),
-		);
-		check(r1.file, W / 2, H / 2, over([{ c: [1, 0, 0, 1] }, { c: top, mode: 'color-dodge' }]));
+		check(r1.file, 10, 10, [0.2, 0, 0.13333333333333333, 1]);
+		check(r1.file, W / 2, H / 2, [1, 0, 0, 1]);
 
 		const lin = doc([
 			{ type: 'sequence.updateSettings', settings: { color: { blendLinear: true } } },

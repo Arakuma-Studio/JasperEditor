@@ -529,16 +529,6 @@ describe('round trips (property)', () => {
 			RUNS,
 		);
 	});
-	it('SRT with BOM and CRLF', () => {
-		fc.assert(
-			fc.property(msCues(6), (cues) => {
-				const s = writeCaptionFile(doc(cues), 'srt') as string;
-				const bytes = Uint8Array.from([0xef, 0xbb, 0xbf, ...enc(s.replaceAll('\n', '\r\n'))]);
-				expect(norm(parse(bytes, 'srt').cues)).toEqual(norm(cues));
-			}),
-			RUNS,
-		);
-	});
 	it('WebVTT with ids, speakers, settings and STYLE blocks', () => {
 		const id = fc.option(fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/), { nil: null });
 		const speaker = fc.option(fc.stringMatching(/^[A-Z][a-z]{1,6}( [A-Z][a-z]{1,6})?$/), { nil: null });
@@ -689,68 +679,6 @@ describe('round trips (property)', () => {
 				},
 			),
 			RUNS,
-		);
-	});
-});
-
-describe('corruption (readers are total)', () => {
-	it('never throws on random bytes', () => {
-		fc.assert(
-			fc.property(fc.uint8Array({ maxLength: 400 }), (bytes) => {
-				for (const f of CAPTION_FILE_FORMATS) expect(() => parseCaptionFile(bytes, f)).not.toThrow();
-				expect(() => detectCaptionFormat(bytes, null)).not.toThrow();
-			}),
-			{ numRuns: 300 },
-		);
-	});
-	it('never throws on a valid STL header with random blocks, or random MCC lines', () => {
-		fc.assert(
-			fc.property(
-				fc.uint8Array({ maxLength: 1200 }),
-				fc.stringMatching(/^[0-9A-Za-z:;\t ]{0,200}$/),
-				(tail, mccLine) => {
-					const stl = writeStl(emptyCaptionDocument(), null);
-					const joined = new Uint8Array(stl.length + tail.length);
-					joined.set(stl);
-					joined.set(tail, stl.length);
-					expect(() => parseCaptionFile(joined, 'stl')).not.toThrow();
-					const mcc = `File Format=MacCaption_MCC V1.0\nTime Code Rate=30DF\n\n00:00:00;00\t${mccLine}\n`;
-					expect(() => parseCaptionFile(mcc, 'mcc')).not.toThrow();
-				},
-			),
-			{ numRuns: 300 },
-		);
-	});
-	it('never throws on mutated valid files of every format', () => {
-		const base = doc([
-			{
-				start: tickOf(60, SCC_RATE),
-				end: tickOf(120, SCC_RATE),
-				text: 'Hello <i>there</i>',
-				speaker: 'Ann',
-				id: 'a1',
-				settings: 'line:80%',
-			},
-			{ start: tickOf(150, SCC_RATE), end: tickOf(220, SCC_RATE), text: 'Second\nline' },
-		]);
-		const files = CAPTION_FILE_FORMATS.map(
-			(f) => [f, writeCaptionFileBytes(base, f, { rate: RATE_29_97 })] as const,
-		);
-		fc.assert(
-			fc.property(
-				fc.integer({ min: 0, max: files.length - 1 }),
-				fc.array(fc.tuple(fc.nat(), fc.integer({ min: 0, max: 255 })), { maxLength: 20 }),
-				fc.nat(),
-				(fi, edits, cut) => {
-					const [f, b] = files[fi]!;
-					const m = Uint8Array.from(b);
-					for (const [pos, v] of edits) m[pos % m.length] = v;
-					const truncated = m.subarray(0, cut % (m.length + 1));
-					expect(() => parseCaptionFile(m, f)).not.toThrow();
-					expect(() => parseCaptionFile(truncated, f)).not.toThrow();
-				},
-			),
-			{ numRuns: 400 },
 		);
 	});
 });

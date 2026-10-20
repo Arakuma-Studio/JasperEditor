@@ -11,10 +11,7 @@ import { defineShaderTransition, SAPPHIRE_TRANSITION_SUBBINS, TRANSITION_BINS } 
 import { bool, check, GLSL_SW, num, shakeOffset, sInt, slowParams, sNum, wrapParam } from './common.ts';
 
 /** Camera shake of the Hyper transitions at a frame (frame heights), scaled by the bell of the transition. */
-export function hyperShake(
-	p: EffectParams,
-	ctx: { frame: number; fps: number; seed: number; progress: number },
-) {
+function hyperShake(p: EffectParams, ctx: { frame: number; fps: number; seed: number; progress: number }) {
 	if (!bool(p.cameraShake, false)) return [0, 0] as [number, number];
 	const [x, y] = shakeOffset(ctx.seed, ctx.frame / Math.max(1, ctx.fps), {
 		amplitude: num(p.amplitude, 2),

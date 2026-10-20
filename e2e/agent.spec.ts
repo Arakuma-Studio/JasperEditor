@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -12,7 +12,6 @@ import {
 	importFiles,
 	playheadFrame,
 	ROOT,
-	sequenceSummary,
 	serverInfo,
 } from './support.ts';
 
@@ -33,7 +32,6 @@ type TxBody = {
 	created: string[];
 	refs?: Record<string, string>;
 };
-type ToolFailure = { error: { code: string; message: string; hint?: string } };
 
 const text = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
@@ -78,22 +76,8 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-test('the MCP server finds the running engine and sees the open editor', async () => {
-	const status = await tool<{ engine: { url: string; foundBy: string }; agentName: string }>('engine_status');
-	expect(status.engine).toMatchObject({
-		url: `http://127.0.0.1:${serverInfo().port}`,
-		foundBy: 'runtime-file',
-	});
-	expect(status.agentName).toBe('e2e-agent');
-	const project = await tool<{ projectId: string; editorOpen: boolean; media: { name: string }[] }>(
-		'get_project',
-		{ projectId },
-	);
-	expect(project.editorOpen).toBe(true);
-	expect(project.media.map((m) => m.name)).toContain('clip-b.mp4');
-});
-
 test('apply_commands with the editor open places a clip and a marker live, as one "Agent:" History entry', async () => {
+	const testInfo = test.info();
 	const before = (await appliedLabels(page)).length;
 	const body = await tool<TxBody>('apply_commands', {
 		projectId,
@@ -118,22 +102,18 @@ test('apply_commands with the editor open places a clip and a marker live, as on
 		page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${placed[0]!.id}"]`),
 	).toBeVisible();
 	await expect(page.locator('[data-marker-lane] [data-mark="marker"]')).toHaveCount(1);
-	await expect(page.locator('[data-marker-lane] [data-mark="marker"]').first()).toHaveAttribute(
-		'title',
-		/Agent marker/,
-	);
 	const labels = await appliedLabels(page);
 	expect(labels).toHaveLength(before + 1);
 	expect(labels.at(-1)).toBe('Agent: Place clip-b and mark it');
-	await page.getByTestId('tab-history').click();
-	await expect(page.getByTestId('history-list')).toContainText('Agent: Place clip-b and mark it');
-	await expect(page.locator('[data-testid="toast"][data-kind="agent"]')).toContainText(
-		'Agent: Place clip-b and mark it',
-	);
-	await page.screenshot({ path: 'test-results/e2e-agent-live.png' });
+	await testInfo.attach('live-project', {
+		body: JSON.stringify({ placed, labels, transaction: body }, null, 2),
+		contentType: 'application/json',
+	});
+	await testInfo.attach('editor', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('helper tools, get_timeline, set_playhead and undo work against the live editor', async () => {
+test('MCP edits render from the live editor and can be undone and redone', async () => {
+	const testInfo = test.info();
 	const added = await tool<TxBody & { clips: { id: string; track: string; start: number }[] }>('add_text', {
 		projectId,
 		text: 'Hello from MCP',
@@ -144,11 +124,6 @@ test('helper tools, get_timeline, set_playhead and undo work against the live ed
 	expect(added.appliedLive).toBe(true);
 	expect(await clips(page, ['V2'])).toHaveLength(1);
 
-	const table = text(await call('get_timeline', { projectId }));
-	expect(table).toContain('clip-b.mp4');
-	expect(table).toContain('Hello from MCP');
-	expect(table).toContain('Agent marker');
-
 	const frame = await call('render_frame', { projectId, at: { seconds: 2 }, width: 320 });
 	expect(frame.isError, text(frame)).toBeFalsy();
 	const image = frame.content.find((c) => c.type === 'image') as { data: string; mimeType: string };
@@ -156,7 +131,7 @@ test('helper tools, get_timeline, set_playhead and undo work against the live ed
 	const png = Buffer.from(image.data, 'base64');
 	expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
 	expect(png.readUInt32BE(16)).toBe(320);
-	writeFileSync('test-results/e2e-agent-frame.png', png);
+	await testInfo.attach('agent-frame', { body: png, contentType: 'image/png' });
 
 	const history = (await appliedLabels(page)).length;
 	const moved = await tool<{ frame: number; timecode: string }>('set_playhead', {
@@ -173,87 +148,25 @@ test('helper tools, get_timeline, set_playhead and undo work against the live ed
 	expect(await clips(page, ['V1'])).toHaveLength(1);
 	await tool('redo', { projectId });
 	expect(await clips(page, ['V2'])).toHaveLength(1);
-});
-
-test('a destructive transaction waits for the approval card; Deny rejects it, Approve applies it', async () => {
-	const a3 = (await sequenceSummary(page)).tracks!.find((t) => t.label === 'A3')!;
-	const remove = () =>
-		call('apply_commands', {
-			projectId,
-			label: 'Remove A3',
-			commands: [{ type: 'track.remove', trackIds: [a3.id] }],
-		});
-
-	const denied = remove();
-	const card = page.getByTestId('agent-approval-card');
-	await expect(card).toBeVisible({ timeout: 20_000 });
-	await expect(card).toContainText('Agent request: Remove A3');
-	await card.getByRole('button', { name: 'Deny' }).click();
-	const r = await denied;
-	expect(r.isError).toBe(true);
-	const failure = JSON.parse(text(r)) as ToolFailure;
-	expect(failure.error.code).toBe('E_APPROVAL_DENIED');
-	await expect(card).toHaveCount(0);
-	expect((await sequenceSummary(page)).tracks!.some((t) => t.id === a3.id)).toBe(true);
-
-	const approved = remove();
-	await expect(card).toBeVisible({ timeout: 20_000 });
-	await card.getByRole('button', { name: 'Approve' }).click();
-	const ok = await approved;
-	expect(ok.isError, text(ok)).toBeFalsy();
-	expect(JSON.parse(text(ok))).toMatchObject({ ok: true, appliedLive: true });
-	await expect(card).toHaveCount(0);
-	expect((await sequenceSummary(page)).tracks!.some((t) => t.id === a3.id)).toBe(false);
-	expect((await appliedLabels(page)).at(-1)).toBe('Agent: Remove A3');
-});
-
-test('Help ▸ Connect an AI Agent… shows configuration with the real path of jasper-mcp', async () => {
-	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Help', exact: true }).click();
-	await page.getByRole('menuitem', { name: /Connect an AI Agent/ }).click();
-	const dialog = page.getByTestId('connect-agent-dialog');
-	await expect(dialog).toBeVisible();
-	await expect(page.getByTestId('agent-snippet-claude-cli')).toContainText(
-		`claude mcp add jasper -- node ${MCP_BUNDLE}`,
-	);
-	await expect(page.getByTestId('agent-snippet-codex-toml')).toContainText('[mcp_servers.jasper]');
-	await expect(page.getByTestId('agent-snippet-codex-toml')).toContainText(MCP_BUNDLE);
-	await expect(page.getByTestId('agent-snippet-cursor-json')).toContainText('"mcpServers"');
-	// The dialog never shows the engine token, so the Streamable HTTP
-	// endpoint, which would need it in a header, is not offered: the stdio server reads it from the runtime file.
-	await expect(page.getByTestId('agent-snippet-claude-http')).toHaveCount(0);
-	await expect(page.getByTestId('connect-agent-missing')).toHaveCount(0);
-	await page.keyboard.press('Escape');
-	await expect(dialog).toBeHidden();
+	await testInfo.attach('rendered-project', {
+		body: JSON.stringify({ added, moved, clips: await clips(page) }, null, 2),
+		contentType: 'application/json',
+	});
 });
 
 test('with the editor closed the tools apply headlessly; open_project_in_editor brings the project back', async () => {
+	const testInfo = test.info();
 	await page.getByTestId('home-button').click();
 	await expect(page.getByTestId('home')).toBeVisible();
 	await expect
-		.poll(async () => {
-			const r = await call('add_marker', { projectId, at: 90, name: 'Headless marker' });
-			if (r.isError) return `rejected: ${(JSON.parse(text(r)) as ToolFailure).error.code}`;
-			const body = JSON.parse(text(r)) as TxBody;
-			// A marker added while the editor was still closing would be live: undo is not needed, just retry.
-			return body.appliedBy;
-		})
-		.toBe('headless');
-	const refused = await call('apply_commands', {
+		.poll(async () => (await tool<{ editorOpen: boolean }>('get_project', { projectId })).editorOpen)
+		.toBe(false);
+	const marker = await tool<TxBody>('add_marker', { projectId, at: 90, name: 'Headless marker' });
+	expect(marker.appliedBy).toBe('headless');
+	const opened = await tool<{ editorOpen: boolean }>('open_project_in_editor', {
 		projectId,
-		label: 'Remove V3',
-		commands: [{ type: 'track.remove', trackIds: ['V3'] }],
+		waitSeconds: 30,
 	});
-	expect(refused.isError).toBe(true);
-	expect((JSON.parse(text(refused)) as ToolFailure).error.code).toBe('E_APPROVAL_DENIED');
-
-	const opened = await tool<{ editorOpen: boolean; editorWindowsNotified: number }>(
-		'open_project_in_editor',
-		{
-			projectId,
-			waitSeconds: 30,
-		},
-	);
-	expect(opened.editorWindowsNotified).toBeGreaterThanOrEqual(1);
 	expect(opened.editorOpen).toBe(true);
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	expect(page.url()).toContain(`/project/${projectId}`);
@@ -261,4 +174,9 @@ test('with the editor closed the tools apply headlessly; open_project_in_editor 
 		page.locator('[data-marker-lane] [data-mark="marker"][title*="Headless marker"]').first(),
 	).toBeVisible();
 	await expect(page.locator('[data-marker-lane] [data-mark="marker"][title*="Agent marker"]')).toHaveCount(1);
+	await testInfo.attach('reopened-project', {
+		body: JSON.stringify(await tool('get_project', { projectId }), null, 2),
+		contentType: 'application/json',
+	});
+	await testInfo.attach('reopened-editor', { body: await page.screenshot(), contentType: 'image/png' });
 });

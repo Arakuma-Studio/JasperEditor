@@ -90,7 +90,7 @@ const fps = (r: Rational | null) => (r ? Math.round((r.num / r.den) * 1000) / 10
 const ratio = (r: Rational) => Math.round((r.num / r.den) * 10000) / 10000;
 
 /** What get_media_interpretation reports for one asset. */
-export function describeInterpretation(asset: MediaAsset) {
+function describeInterpretation(asset: MediaAsset) {
 	const timed = isTimedMedia(asset);
 	const picture = isPictureMedia(asset);
 	const dur = mediaDurationFlicks(asset);

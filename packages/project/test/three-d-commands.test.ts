@@ -6,9 +6,7 @@ import {
 	type CameraClip,
 	checkInvariants,
 	createCounterIdSource,
-	defaultCamera,
 	FLICKS_PER_SECOND,
-	focalLengthForZoom,
 	type LightClip,
 	type MediaHandle,
 	propertiesForClip,
@@ -161,8 +159,11 @@ describe('cameras', () => {
 		const s = snap(h);
 		expect(s.scene3d?.cameras.map((x) => x.clipId)).toEqual([id]);
 		const cam = activeCameraAt(s, 0);
-		const d = defaultCamera(1920, 1080);
-		for (let i = 0; i < 16; i++) expect(cam.view[i]!).toBeCloseTo(d.view[i]!, 9);
+		// 50 mm on a 36 mm sensor: zoom = 1920×50/36; eye is one zoom behind the frame centre.
+		expect(cam.zoom).toBeCloseTo(8000 / 3, 9);
+		expect(cam.eye).toEqual([960, 540, expect.closeTo(-8000 / 3, 9)]);
+		expect(c.camera.transform.pointOfInterest.value).toEqual([960, 540, 0]);
+		expect(c.camera.transform.autoOrient).toBe('poi');
 		clean(h);
 	});
 
@@ -171,7 +172,7 @@ describe('cameras', () => {
 		const id = (h.ok([{ type: 'clip.addCamera', at: 0, preset: '35mm' }]).results[0] as { clipId: string })
 			.clipId;
 		const zoom = () => (h.seq.clips[id] as CameraClip).camera.zoom.value;
-		expect(focalLengthForZoom(zoom(), { width: 1920, height: 1080 })).toBeCloseTo(35, 6);
+		expect(zoom()).toBeCloseTo(5600 / 3, 6); // 1920×35mm/36mm
 		h.ok([
 			{
 				type: 'camera.settings',
@@ -183,7 +184,7 @@ describe('cameras', () => {
 			},
 		]);
 		const cam = (h.seq.clips[id] as CameraClip).camera;
-		expect(focalLengthForZoom(cam.zoom.value, { width: 1920, height: 1080 })).toBeCloseTo(80, 6);
+		expect(cam.zoom.value).toBeCloseTo(12800 / 3, 6); // 1920×80mm/36mm
 		expect(cam.focusDistance.value).toBeCloseTo(cam.zoom.value, 6);
 		expect(cam.depthOfField).toBe(true);
 		expect(cam.aperture.value).toBeCloseTo(40, 6); // 80 mm / f2 = 40 mm at the 1920 px reference

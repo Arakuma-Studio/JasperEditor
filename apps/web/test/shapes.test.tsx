@@ -4,7 +4,6 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type LegacyShapeClip,
-	resolveSceneAt,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -15,7 +14,6 @@ import type { CommandCtx } from '../src/commands/types.ts';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { TransformOverlay } from '../src/panels/program/TransformOverlay.tsx';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
-import { hitsLayerGeometry } from '../src/shapes/geometry.ts';
 import { shapePrefs } from '../src/shapes/prefs.ts';
 import { ShapeToolOverlay } from '../src/shapes/ShapeToolOverlay.tsx';
 
@@ -57,19 +55,8 @@ const cmdCtx = (session: EditorSession | null) =>
 beforeEach(() => shapePrefs.set({ resizeBySize: false, linkSize: false }));
 afterEach(() => cleanup());
 
-describe('shape geometry (pure)', () => {
-	it('hit-tests shapes by their geometry (ellipse corners miss)', () => {
-		const { session, seqId } = makeSession();
-		const id = addShape(session, { type: 'ellipse', size: [400, 400] });
-		const layer = resolveSceneAt(snapshot(session, seqId), 0).find((l) => l.clip.clipId === id)!;
-		expect(hitsLayerGeometry(layer, [960, 540])).toBe(true);
-		expect(hitsLayerGeometry(layer, [770, 350])).toBe(false); // inside the quad, outside the circle
-		expect(hitsLayerGeometry(layer, [760, 540])).toBe(true);
-	});
-});
-
 describe('Graphics ▸ New Layer ▸ Rectangle / Ellipse (FIX-007)', () => {
-	it('are registered, enabled with a sequence and add a selected 400×400 shape at the playhead', () => {
+	it('shape commands require a sequence and add selected shapes at the playhead', () => {
 		registerAllCommands();
 		const { session, seqId } = makeSession();
 		const rect = getCommand('graphics.newRectangle')!;

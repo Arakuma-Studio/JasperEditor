@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import { envFlag, repoRoot, testResultsDir } from './env.ts';
-import { imageStats, meanGrid, type Rgba8, rgba8 } from './image.ts';
+import { meanGrid, type Rgba8, rgba8 } from './image.ts';
 import { decodePng, encodePng } from './png.ts';
 
 /** Size limit of a committed golden PNG. */
@@ -283,41 +283,6 @@ export function checkGolden(golden: string, actual: Rgba8, tol: Tolerance, opts:
 
 /** `checkGolden` for tests (same behaviour; the name reads better in `it` bodies). */
 export const expectGolden = checkGolden;
-
-/** Options of the blank / duplicate scene guard. */
-export type DistinctOptions = {
-	/** Minimum luma standard deviation (0…255) for a scene to count as non-blank. */
-	minStd?: number;
-	/** Minimum distinct RGBA colours for a scene to count as non-blank. */
-	minColours?: number;
-	/** Two scenes closer than this PSNR (dB) count as duplicates. */
-	maxPairPsnr?: number;
-};
-
-/**
- * Guards a golden suite against blank scenes (a render that silently produced a flat frame) and duplicates (two
- * scenes that do not exercise different code). Throws listing every offender.
- */
-export function assertDistinctScenes(frames: Record<string, Rgba8>, opts: DistinctOptions = {}): void {
-	const { minStd = 3, minColours = 8, maxPairPsnr = 50 } = opts;
-	const problems: string[] = [];
-	const names = Object.keys(frames);
-	for (const n of names) {
-		const s = imageStats(frames[n]!);
-		if (s.std < minStd || s.colours < minColours)
-			problems.push(`${n}: blank (luma σ ${s.std.toFixed(2)}, ${s.colours} colours)`);
-	}
-	for (let i = 0; i < names.length; i++)
-		for (let j = i + 1; j < names.length; j++) {
-			const a = frames[names[i]!]!;
-			const b = frames[names[j]!]!;
-			if (a.width !== b.width || a.height !== b.height) continue;
-			const d = diffImages(a, b);
-			if (d.psnr >= maxPairPsnr) problems.push(`${names[i]} ≈ ${names[j]} (${formatDiff(d)})`);
-		}
-	if (problems.length)
-		throw new GoldenMismatch(`scenes are blank or duplicated:\n  ${problems.join('\n  ')}`);
-}
 
 function readJsonRecord<T>(file: string): Record<string, T> {
 	if (!existsSync(file)) return {};

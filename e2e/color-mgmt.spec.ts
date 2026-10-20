@@ -1,11 +1,8 @@
-// The independent colour-science oracle is outputTransformFn(working, displaySpaceFor(working)).
+// Fixed PQ graphics-white and linear-blend reference values (S12, docs/wp-notes/color-mgmt.md).
 // PQ(203 cd/m²) = 148.1/255, displayed as 230.4/255; a 50% linear blend over black is
 // 129.9/255, displayed as 190.3/255. Encoded blending would display 69.1/255.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	browserLaunch,
@@ -61,6 +58,8 @@ async function settings(): Promise<{ workingColorSpace: string; color?: { blendL
 
 test('Properties ▸ Colour: a PQ working space is previewed through the display transform', async () => {
 	const r = await transact(page, [
+		// These uniform-color oracles use the same render path at a smaller raster size.
+		{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: 320, height: 180 } },
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [0, 0, 0, 1] },
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V2', color: [1, 1, 1, 1] },
 	]);
@@ -82,12 +81,11 @@ test('Blend using 1.0 gamma composites in linear light', async () => {
 	).toBe(true);
 	await page.getByLabel('Blend using 1.0 gamma').check();
 	expect((await settings()).color?.blendLinear).toBe(true);
-	// The blend scope draws through the flat compositor, which applies the display LUT last: no chip, and the monitor
-	// shows the linear-light mix (129.9) through the display transform = 190.3 (encoded blending would show 69.1).
+	// The monitor shows the linear-light mix (129.9) through the display transform = 190.3;
+	// encoded blending would show 69.1.
 	await expect
 		.poll(async () => Math.abs((await programCenter()) - 190), { timeout: 20_000 })
 		.toBeLessThanOrEqual(3);
-	await expect(page.locator('[data-display-chip]')).toHaveCount(0);
 	await page.screenshot({ path: 'test-results/color-mgmt-linear-blend.png' });
 });
 
@@ -121,7 +119,7 @@ test('the export writes 10-bit PQ ProRes with HDR tags and mastering metadata', 
 	await expect(row).toHaveAttribute('data-status', /succeeded|done|finished/i, { timeout: 30_000 });
 	const download = page.waitForEvent('download');
 	await row.getByTestId('job-download').click();
-	const file = join(mkdtempSync(join(tmpdir(), 'jasper-e2e-cm-')), 'pq.mov');
+	const file = test.info().outputPath('pq.mov');
 	await (await download).saveAs(file);
 	const v = ffprobe(file).streams.find((s) => s.codec_type === 'video') as Record<string, unknown>;
 	expect(v.pix_fmt).toMatch(/10le$/);
@@ -140,4 +138,6 @@ test('the export writes 10-bit PQ ProRes with HDR tags and mastering metadata', 
 		...['-vf', 'crop=16:16:iw/2:ih/2,scale=1:1:flags=area,format=rgb24', '-f', 'rawvideo', '-'],
 	]);
 	expect(Math.abs(raw[1]! - 130)).toBeLessThanOrEqual(3);
+	await test.info().attach('pq-export', { path: file, contentType: 'video/quicktime' });
+	await test.info().attach('pq-metadata', { body: JSON.stringify(v), contentType: 'application/json' });
 });

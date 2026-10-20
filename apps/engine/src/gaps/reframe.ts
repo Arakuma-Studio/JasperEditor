@@ -102,8 +102,8 @@ function dominantShift(prev: Float32Array, cur: Float32Array, w: number, h: numb
 	return [bx, by];
 }
 
-/** Saliency map of one RGB frame (and the previous luma for motion). Exported for tests. */
-export function saliency(
+/** Saliency map of one RGB frame (and the previous luma for motion). */
+function saliency(
 	rgb: Uint8Array,
 	w: number,
 	h: number,

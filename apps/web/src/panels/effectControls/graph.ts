@@ -181,7 +181,7 @@ function segmentOf(kfs: readonly Kf[], i: number, side: Side): [number, number] 
  * Ease the evaluator actually uses on one side of key `i`. A segment leaving a Linear key is linear
  * whatever its end key stores, so the arriving side then reads as the linear-equivalent ease.
  */
-export function effectiveEase(kfs: readonly Kf[], i: number, side: Side): Ease {
+function effectiveEase(kfs: readonly Kf[], i: number, side: Side): Ease {
 	if (side === 'out') return outgoingEase(kfs, i);
 	const prev = kfs[i - 1];
 	if (prev && prev.interpolation === 'linear') return LINEAR;
@@ -193,7 +193,7 @@ export function effectiveEase(kfs: readonly Kf[], i: number, side: Side): Ease {
  * segment is linear-equivalent (progress = u, so the derivative at the key is exactly the unit). This
  * follows whatever distance the evaluator normalises by (straight or spatial paths).
  */
-export function unitVelocity(anim: Anim, i: number, side: Side, map: TimeMap): number {
+function unitVelocity(anim: Anim, i: number, side: Side, map: TimeMap): number {
 	const seg = segmentOf(anim.keyframes, i, side);
 	if (!seg) return 0;
 	const [ai, bi] = seg;

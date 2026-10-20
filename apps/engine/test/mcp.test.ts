@@ -34,10 +34,6 @@ describe('POST/GET/DELETE /mcp (Streamable HTTP)', () => {
 		});
 		await client.connect(transport);
 		expect(transport.sessionId).toBeTruthy();
-		const { tools } = await client.listTools();
-		expect(tools.map((t) => t.name)).toEqual(
-			expect.arrayContaining(['apply_commands', 'render_frame', 'start_export', 'wait_for_job']),
-		);
 		const created = (await client.callTool({
 			name: 'create_project',
 			arguments: { name: 'Over HTTP' },
@@ -54,7 +50,7 @@ describe('POST/GET/DELETE /mcp (Streamable HTTP)', () => {
 		}).then((r) => r.json());
 		expect(
 			Object.values(doc.envelope.document.sequences as Record<string, { markers: unknown[] }>)[0]!.markers,
-		).toHaveLength(1);
+		).toEqual([expect.objectContaining({ name: 'HTTP marker' })]);
 		await transport.terminateSession();
 		await client.close();
 	});

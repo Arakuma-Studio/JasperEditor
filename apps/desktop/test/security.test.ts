@@ -142,11 +142,11 @@ describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
 	});
 
 	it('names the session and editor cookies by the engine port and keeps the two secrets apart', () => {
-		expect(sessionCookies(48123, 'tok', 'key')).toEqual({
-			jasper_session_48123: 'tok',
-			jasper_editor_48123: 'key',
-		});
-		expect(sessionCookies('48123', 'tok', 'key')).toEqual(sessionCookies(48123, 'tok', 'key'));
+		for (const port of [48123, '48123'])
+			expect(sessionCookies(port, 'tok', 'key')).toEqual({
+				jasper_session_48123: 'tok',
+				jasper_editor_48123: 'key',
+			});
 	});
 });
 

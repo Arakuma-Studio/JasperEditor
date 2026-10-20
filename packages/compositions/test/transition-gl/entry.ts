@@ -1,10 +1,5 @@
-import '../gl-poison.ts';
 import {
-	defineShaderTransition,
-	GLSL_LIBRARY,
-	GLSL_TR_LIBRARY,
 	planGpuTransition,
-	TRANSITION_BINS,
 	TRANSITION_FAMILIES,
 	TRANSITION_SPECS,
 	type TransitionSides,
@@ -16,6 +11,7 @@ import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { TEST_TRANSITIONS } from '../transition-examples.ts';
 
 type Px = [number, number, number, number];
+type CatalogueCase = { family?: string; id: string };
 const W = 64;
 const H = 36;
 
@@ -142,121 +138,74 @@ const fingerprintOf = (c: HTMLCanvasElement) =>
 
 const spec = (id: string) => TRANSITION_SPECS.find((s) => s.id === id)!;
 
-/**
- * The GPU transitions of one family (`TRANSITION_FAMILIES[].file`), or without a family every GPU transition outside
- * the families plus the test transitions (one call per family keeps each test inside its timeout).
- */
-function specsOf(family?: string): TransitionSpec[] {
+/** Select one transition from the same family/test catalogue used by the original render sequence. */
+function specOf({ family, id }: CatalogueCase): TransitionSpec {
 	const fam = TRANSITION_FAMILIES.find((f) => f.file === family);
 	if (family && !fam) throw new Error(`unknown transition family ${family}`);
-	if (fam) return fam.transitions.filter((s) => s.gpu);
 	const inFamily = new Set(TRANSITION_FAMILIES.flatMap((f) => f.transitions.map((s) => s.id)));
-	return [...TRANSITION_SPECS.filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_TRANSITIONS];
+	const specs = fam
+		? fam.transitions.filter((s) => s.gpu)
+		: [...TRANSITION_SPECS.filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_TRANSITIONS];
+	const selected = specs.find((s) => s.id === id);
+	if (!selected) throw new Error(`unknown GPU transition ${id}`);
+	return selected;
 }
 
 const api = {
-	info() {
-		return { webgl2: !!fxHost() };
-	},
-
-	library() {
-		const lib = defineShaderTransition({
-			id: 'test.tr-library',
-			label: 'Library',
-			bin: TRANSITION_BINS.dissolve,
-			description: 'Compiles every chunk.',
-			options: { border: true, antiAliasing: true, center: true },
-			gpu: {
-				passes: [
-					{
-						include: [...GLSL_LIBRARY, ...GLSL_TR_LIBRARY],
-						frag: /* glsl */ `
-void main() {
-  float p = tr_easeInOut(tr_phase(tr_progress(), 0.1, 0.9)) + tr_easeInOutSine(0.3) * 0.0 + tr_easeInOutExpo(0.2) * 0.0 + tr_smoother(0.5) * 0.0;
-  vec2 c = u_center * u_compSize;
-  float d = tr_linearWipe(tr_px(), vec2(1.0, 0.0), p, 2.0) + tr_circle(tr_px(), c, 3.0) * 0.0
-    + tr_clockWipe(tr_px(), c, p, 0.0) * 0.0 + tr_boxDist(tr_px(), c, vec2(4.0)) * 0.0 + tr_irisRadius(c, p, 1.0) * 0.0;
-  vec3 card = tr_card(v_uv, 0.3, 0, 2.0, 1.0) + tr_card(v_uv, 0.3, 1, 2.0, 1.0) * 0.0;
-  ivec2 cell = tr_cell(v_uv, tr_squareGrid(8.0));
-  float r = tr_cellRandom(cell, u_seed) * 0.0 + tr_stagger(p, 0.5, 0.2) * 0.0 + tr_cellUv(v_uv, vec2(4.0)).x * 0.0;
-  vec4 a = tr_from(card.xy) * 0.0 + tr_from(v_uv);
-  fragColor = tr_over(tr_premul(vec4(0.0)), tr_wipeMix(a, tr_to(v_uv), d + r, 0.0, tr_aaWidth(u_antiAliasing), u_borderWidth, u_borderColor)) + fx_luma(a.rgb) * 0.0;
-}`,
-					},
-				],
-			},
-		});
-		try {
-			run(lib, defaults(lib), { frame: 5, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
-			return { ok: true };
-		} catch (e) {
-			return { ok: false, error: (e as Error).message };
-		}
-	},
-
-	catalogue(family?: string) {
-		const specs = specsOf(family);
+	catalogue(selection: CatalogueCase) {
+		const s = specOf(selection);
 		const errors: string[] = [];
 		const a = () => full(solid('#c84'));
 		const b = () => full(solid('#48c'));
-		for (const s of specs) {
-			const cases: [string, Parameters<typeof run>[2], Record<string, unknown>][] = [
-				['both', { frame: 0, duration: 10, out: a(), in: b() }, {}],
-				['mid', { frame: 5, duration: 10, out: a(), in: b() }, {}],
-				['in', { frame: 3, duration: 10, sides: 'in', in: b() }, {}],
-				['out', { frame: 9, duration: 10, sides: 'out', out: a() }, {}],
-				['reverse', { frame: 5, duration: 10, out: a(), in: b() }, { reverse: true }],
-			];
-			for (const [name, o, over] of cases) {
-				try {
-					const out = run(s, defaults(s, over), o);
-					// Fully progressed two-sided frames are not required to match exactly, but nothing may be NaN-black
-					// over an opaque frame in the middle of the transition.
-					if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0)
-						errors.push(`${s.id} ${name}: transparent centre`);
-				} catch (e) {
-					errors.push(`${s.id} ${name}: ${(e as Error).message}`);
-				}
+		const cases: [string, Parameters<typeof run>[2], Record<string, unknown>][] = [
+			['both', { frame: 0, duration: 10, out: a(), in: b() }, {}],
+			['mid', { frame: 5, duration: 10, out: a(), in: b() }, {}],
+			['in', { frame: 3, duration: 10, sides: 'in', in: b() }, {}],
+			['out', { frame: 9, duration: 10, sides: 'out', out: a() }, {}],
+			['reverse', { frame: 5, duration: 10, out: a(), in: b() }, { reverse: true }],
+		];
+		for (const [name, o, over] of cases) {
+			try {
+				const out = run(s, defaults(s, over), o);
+				// Fully progressed two-sided frames are not required to match exactly, but nothing may be NaN-black
+				// over an opaque frame in the middle of the transition.
+				if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0)
+					errors.push(`${s.id} ${name}: transparent centre`);
+			} catch (e) {
+				errors.push(`${s.id} ${name}: ${(e as Error).message}`);
 			}
 		}
-		return { count: specs.length, errors };
+		return { errors };
 	},
 
 	/**
-	 * Golden fingerprints (FilmCraft's transition fingerprints): every GPU transition of a family at its defaults,
+	 * Golden fingerprints (FilmCraft's transition fingerprints): one GPU transition at its defaults,
 	 * two-sided over the golden cards, at p = 0.25 / 0.5 / 0.75 (frames 5 / 10 / 15 of 20) → 4×4 mean RGB, compared
 	 * with goldens/transition-fingerprints.json (±4 levels) by transition-gl.test.ts.
 	 */
-	fingerprints(family?: string) {
+	fingerprints(selection: CatalogueCase) {
+		const s = specOf(selection);
 		const out: Record<string, number[]> = {};
-		for (const s of specsOf(family))
-			for (const [p, frame] of [
-				['0.25', 5],
-				['0.5', 10],
-				['0.75', 15],
-			] as const) {
-				try {
-					out[`${s.id}@${p}`] = fingerprintOf(
-						run(s, defaults(s), { frame, duration: 20, out: full(cardA()), in: full(cardB()) }),
-					);
-				} catch {
-					// reported by `catalogue`
-				}
-			}
+		for (const [p, frame] of [
+			['0.25', 5],
+			['0.5', 10],
+			['0.75', 15],
+		] as const) {
+			out[`${s.id}@${p}`] = fingerprintOf(
+				run(s, defaults(s), { frame, duration: 20, out: full(cardA()), in: full(cardB()) }),
+			);
+		}
 		return out;
 	},
 
 	/** Ends of a two-sided transition: start ≈ A, end ≈ B (Start 0 % / End 100 % around the linear ramp). */
-	ends(family?: string) {
-		const out: Record<string, { first: Px; last: Px }> = {};
-		for (const s of specsOf(family)) {
-			const p = defaults(s, { startPercent: 0, endPercent: 0 });
-			const q = defaults(s, { startPercent: 100, endPercent: 100 });
-			const first = run(s, p, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
-			const last = run(s, q, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
-			out[s.id] = { first: px(first, W / 2, H / 2), last: px(last, W / 2, H / 2) };
-		}
-		return out;
+	ends(selection: CatalogueCase) {
+		const s = specOf(selection);
+		const p = defaults(s, { startPercent: 0, endPercent: 0 });
+		const q = defaults(s, { startPercent: 100, endPercent: 100 });
+		const first = run(s, p, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
+		const last = run(s, q, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
+		return { [s.id]: { first: px(first, W / 2, H / 2), last: px(last, W / 2, H / 2) } };
 	},
 
 	placement() {

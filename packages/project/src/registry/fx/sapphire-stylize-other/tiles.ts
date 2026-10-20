@@ -15,7 +15,6 @@ import { fxParam, sapphireCommonParams } from '../params.ts';
 import type { FxPlanContext, ShaderPass } from '../shader.ts';
 import {
 	blurPasses,
-	clamp,
 	GLSL_SSO_COMMON,
 	GLSL_SSO_MASK,
 	maskParams,
@@ -28,7 +27,7 @@ import {
 const BIN = SAPPHIRE_BINS.stylize;
 
 /** Block size of S_Mosaic in canvas px: Pixel Frequency blocks across the layer width, Pixel Rel Height tall. */
-export function mosaicBlockPx(
+function mosaicBlockPx(
 	p: { pixelFrequency?: ParamValue; pixelRelHeight?: ParamValue },
 	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
 ): [number, number] {
@@ -98,10 +97,7 @@ void main() {
 });
 
 /** Tile width of S_RomanTile in canvas px (Tile Size 1.0 = 6 % of the layer width; the default 0.5 ≈ 33 tiles across). */
-export function romanTilePx(
-	p: { tileSize?: ParamValue },
-	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
-): number {
+function romanTilePx(p: { tileSize?: ParamValue }, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>): number {
 	return Math.max(2, num(p.tileSize, 0.5) * 0.06 * ctx.width * ctx.pxScale);
 }
 
@@ -257,18 +253,6 @@ void main() {
 }`;
 
 export const STRIP_SLIDE_ORDERS = ['topDown', 'bottomUp', 'random', 'centerOut', 'edgesIn'] as const;
-
-/**
- * Timing of one strip of S_StripSlide (pure, also used by the shader's maths): each strip moves for a window of
- * `min(1, 3 / Speed)` of the Amount, windows start in Order rank, and Slow Start eases the motion in.
- * Returns the strip's eased progress 0..1 (1 = fully off the layer).
- */
-export function stripSlideProgress(amount: number, rank: number, speed: number, slowStart: number): number {
-	const d = Math.min(1, 3 / Math.max(1, speed));
-	const start = clamp(rank, 0, 1) * (1 - d);
-	const t = clamp((amount - start) / d, 0, 1);
-	return t + (t * t - t) * clamp(slowStart, 0, 1);
-}
 
 export const S_STRIP_SLIDE: EffectSpec = defineShaderEffect({
 	id: 'jasper.s.strip-slide',

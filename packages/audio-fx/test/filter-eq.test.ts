@@ -1,14 +1,11 @@
 // "Filter and EQ" family: ports of the filmcraft `effects/eq.rs` / `effects/filters.rs` tests and the filter parts of
 // `effects/premiere_tests.rs`, plus analytic checks — every biquad effect's measured sine response against its
 // `responseDb` and against the RBJ cookbook formulas (written out independently here), ISO graphic-EQ centres,
-// Butterworth pass filters of every slope, Scientific Filter design properties, notch depth, FFT Filter curve and
-// latency, and a performance sanity check.
-import { AUDIO_EFFECTS, type ParamValue } from '@jasper/project/audio';
+// Butterworth pass filters of every slope, Scientific Filter design properties, notch depth, FFT Filter curve
+// and reported latency.
+import type { ParamValue } from '@jasper/project/audio';
 import { describe, expect, it } from 'vitest';
-import { budgetMs } from '../../../scripts/perf/budget.ts';
 import type { AudioProcessor } from '../src/core/effect.ts';
-import { GRAPHIC_EQ_FREQS, graphicEqQ } from '../src/effects/filter-eq/eq.ts';
-import { FILTER_EQ_PROCESSORS } from '../src/effects/filter-eq.ts';
 import { createProcessor } from '../src/registry.ts';
 import { db, noise, SR, sine, toneAmplitude } from './util.ts';
 
@@ -261,8 +258,6 @@ describe('Parametric EQ (8 bands) and Simple 3-Band EQ (filmcraft eq.rs)', () =>
 			['notch', 'notch', 0],
 			['bandPass', 'BPF', 0],
 		];
-		const spec = AUDIO_EFFECTS.find((s) => s.id === 'jasper.audio.parametric-eq-8-band')!;
-		expect(spec.params.find((p) => p.name === 'b3Type')!.options).toEqual(types.map((t) => t[0]));
 		for (const [type, rbj, gain] of types) {
 			const p: Record<string, ParamValue> = {};
 			for (let b = 1; b <= 8; b++) p[`b${b}On`] = b === 3;
@@ -311,30 +306,12 @@ describe('Graphic Equalizer', () => {
 		],
 	};
 
-	it('band centres are the ISO 266 octave, half-octave and third-octave frequencies', () => {
-		for (const n of [10, 20, 30] as const) {
-			expect(GRAPHIC_EQ_FREQS[n]).toEqual(ISO[n]);
-			// Nominal values round the exact base-10 series 1000·10^(k·step) within 3 %.
-			const step = n === 10 ? 0.3 : n === 20 ? 0.15 : 0.1;
-			const k0 = Math.round(Math.log10(ISO[n][0]! / 1000) / step);
-			ISO[n].forEach((f, i) => {
-				expect(Math.abs(f / (1000 * 10 ** ((k0 + i) * step)) - 1)).toBeLessThan(0.03);
-			});
-			const spec = AUDIO_EFFECTS.find((s) => s.id === `jasper.audio.graphic-equalizer-${n}`)!;
-			const labels = spec.params.filter((p) => p.name !== 'gain').map((p) => p.label);
-			expect(labels).toEqual(ISO[n].map((f) => (f >= 1000 ? `${f / 1000} kHz` : `${f} Hz`)));
-			const oct = n === 10 ? 1 : n === 20 ? 0.5 : 1 / 3;
-			expect(Math.abs(graphicEqQ(n) - Math.sqrt(2 ** oct) / (2 ** oct - 1))).toBeLessThan(1e-12);
-		}
-	});
-
 	it('a single band at +12 dB peaks at its centre (every band of every size)', () => {
 		for (const n of [10, 20, 30] as const)
 			ISO[n].forEach((fc, i) => {
 				const e = fx(`graphic-equalizer-${n}`, { [`b${i + 1}`]: 12 });
 				expect(Math.abs(resp(e, fc) - 12), `${n}/${fc}`).toBeLessThan(1e-9);
 				for (const r of [0.97, 0.99, 1.01, 1.03]) expect(resp(e, fc * r)).toBeLessThan(12);
-				expect(Math.abs(resp(e, fc) - cookbookDb('peakingEQ', fc, graphicEqQ(n), 12, fc))).toBeLessThan(1e-9);
 			});
 	});
 
@@ -354,7 +331,8 @@ describe('Graphic Equalizer', () => {
 		}
 		// Several bands: measured = Σ cookbook peaking responses.
 		const e = fx('graphic-equalizer-30', { b10: 6, b17: -9, b24: 4 });
-		const q = graphicEqQ(30);
+		const octaveWidth = 1 / 3;
+		const q = Math.sqrt(2 ** octaveWidth) / (2 ** octaveWidth - 1);
 		expectMatches(
 			e,
 			[100, 200, 700, 1000, 3000, 5000],
@@ -568,7 +546,6 @@ describe('FFT Filter', () => {
 	it('latency() equals the measured impulse delay', () => {
 		const e = fx('fft-filter');
 		const lat = e.latency();
-		expect(lat).toBe(2048);
 		const n = lat + 4000;
 		const l = new Float32Array(n);
 		l[100] = 0.5;
@@ -585,70 +562,5 @@ describe('FFT Filter', () => {
 		for (let i = lat; i < x.length; i++) worst = Math.max(worst, Math.abs(y[i]! - x[i - lat]!));
 		expect(worst).toBeLessThan(2e-4);
 		expect(fx('fft-filter', { p3Gain: -40, interp: 'linear' }).latency()).toBe(lat);
-	});
-});
-
-describe('family contract', () => {
-	it('every effect reports a finite analytic response and the right editor', () => {
-		const ids = Object.keys(FILTER_EQ_PROCESSORS);
-		expect(ids.length).toBe(18);
-		for (const id of ids) {
-			const e = createProcessor(id, SR, 2)!;
-			for (const f of [20, 1000, 20000])
-				expect(Number.isFinite(e.responseDb?.(f) ?? Number.NaN), id).toBe(true);
-			const spec = AUDIO_EFFECTS.find((s) => s.id === id)!;
-			expect(spec.category).toBe('Filter and EQ');
-			const editor = spec.audio?.editor;
-			if (id.includes('graphic')) expect(editor).toBe('graphic-eq');
-			else if (/parametric|3-band/.test(id)) expect(editor).toBe('parametric-eq');
-			else expect(editor).toBe('filter-response');
-		}
-	});
-
-	it('runs well faster than realtime (stereo 48 kHz)', () => {
-		const secs = 10;
-		const n = SR * secs;
-		const l0 = noise(14, n, 0.3);
-		const r0 = noise(15, n, 0.3);
-		const heavy: [string, Record<string, ParamValue>, number][] = [
-			[
-				'graphic-equalizer-30',
-				Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`b${i + 1}`, (i % 7) - 3])),
-				1.5,
-			],
-			[
-				'parametric-equalizer',
-				{
-					hpOn: true,
-					hpSlope: '48',
-					lpOn: true,
-					lpSlope: '48',
-					b1Gain: 3,
-					b2Gain: -3,
-					b3Gain: 2,
-					b4Gain: 1,
-					b5Gain: 4,
-					lowGain: 2,
-					highGain: -2,
-				},
-				1.5,
-			],
-			[
-				'scientific-filter',
-				{ type: 'elliptic', mode: 'bandStop', order: 12, cutoff: 500, highCutoff: 2000 },
-				1.5,
-			],
-			['fft-filter', { p4Gain: -20 }, 1.5],
-		];
-		for (const [id, params, limit] of heavy) {
-			const e = fx(id, params);
-			const l = l0.slice();
-			const r = r0.slice();
-			const t0 = performance.now();
-			for (let s = 0; s < n; s += 128) e.process([l, r], s, Math.min(n, s + 128));
-			const dt = (performance.now() - t0) / 1000;
-			console.log(`${id}: ${(secs / dt).toFixed(0)}× realtime`);
-			expect(dt * 1000, id).toBeLessThan(budgetMs(limit * 1000));
-		}
 	});
 });

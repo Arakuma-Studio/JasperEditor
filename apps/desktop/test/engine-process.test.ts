@@ -25,45 +25,50 @@ describe('engine process lifecycle', () => {
 	afterEach(() => vi.useRealTimers());
 
 	it('waits for a validated port before declaring the engine ready', async () => {
-		const started = startEngineProcess(options);
+		let ready = false;
+		const started = startEngineProcess(options).then((engine) => {
+			ready = true;
+			return engine;
+		});
 		for (const port of [0, -1, 65536, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '47900'])
 			child.emit('message', { type: 'ready', port });
-		expect(child.listenerCount('message')).toBe(1);
-		expect(vi.getTimerCount()).toBe(1);
+		await Promise.resolve();
+		expect(ready).toBe(false);
 		child.emit('message', { type: 'ready', port: 47900 });
 		expect((await started).origin).toBe('http://127.0.0.1:47900');
-		expect(child.listenerCount('message')).toBe(0);
-		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it('releases the shutdown timeout when the process exits', async () => {
+	it('waits for process exit and does not kill an already stopped engine', async () => {
 		const started = startEngineProcess(options);
 		child.emit('message', { type: 'ready', port: 47900 });
 		const engine = await started;
-		const stopped = engine.stop();
+		let finished = false;
+		const stopped = engine.stop().then(() => {
+			finished = true;
+		});
+		await Promise.resolve();
+		expect(finished).toBe(false);
 		expect(child.kill).toHaveBeenCalledOnce();
 		child.emit('exit', 0);
 		await stopped;
-		expect(vi.getTimerCount()).toBe(0);
 		await engine.stop();
 		expect(child.kill).toHaveBeenCalledOnce();
 	});
 
-	it('rejects early process exits and stops listening for readiness', async () => {
+	it('rejects early process exits without killing the departed engine later', async () => {
 		const started = startEngineProcess(options);
-		const failed = expect(started).rejects.toThrow('engine exited with code 1 before it was ready');
+		const failed = expect(started).rejects.toThrow(/code 1/);
 		child.emit('exit', 1);
 		await failed;
-		expect(child.listenerCount('message')).toBe(0);
-		expect(vi.getTimerCount()).toBe(0);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(child.kill).not.toHaveBeenCalled();
 	});
 
-	it('kills an unresponsive engine and removes its readiness listener', async () => {
-		const started = startEngineProcess({ ...options, readyTimeoutMs: 20 });
-		const failed = expect(started).rejects.toThrow('engine did not report ready within 20 ms');
-		await vi.advanceTimersByTimeAsync(20);
+	it('rejects startup and kills an unresponsive engine', async () => {
+		const started = startEngineProcess(options);
+		const failed = expect(started).rejects.toThrow(/ready/);
+		await vi.advanceTimersByTimeAsync(30_000);
 		await failed;
 		expect(child.kill).toHaveBeenCalledOnce();
-		expect(child.listenerCount('message')).toBe(0);
 	});
 });

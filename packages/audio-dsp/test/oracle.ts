@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
-import { encodeWav, kWeightingPower, LoudnessMeter } from '../src/index.ts';
+import { encodeWav, LoudnessMeter } from '../src/index.ts';
 import { fadeEdges } from './util.ts';
 
 export const TOL_LU = 0.1;
@@ -319,12 +319,3 @@ export class Oracle {
 }
 
 export const dual = (x: Float32Array): Float32Array[] => [x, x.slice()];
-
-/** Analytic integrated loudness of steady sines: Σ_c w_c·A_c²/2·|K(f)|² → LUFS. */
-export function sineLufs(freq: number, sr: number, amps: number[], weights: number[]): number {
-	let e = 0;
-	amps.forEach((a, c) => {
-		e += (weights[c] * a * a) / 2;
-	});
-	return -0.691 + 10 * Math.log10(e * kWeightingPower(freq, sr));
-}

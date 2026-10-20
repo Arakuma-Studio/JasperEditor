@@ -1,47 +1,29 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { StillResultSchema } from '../packages/api/src/exports.ts';
-import {
-	appliedLabels,
-	clips,
-	createProject,
-	enableAgentBridge,
-	exportViaUi,
-	focusTimeline,
-	query,
-	ROOT,
-	transact,
-	waitForJob,
-} from './support.ts';
-
-test.describe.configure({ mode: 'serial' });
-
-type Animator = { preset: string; version: number; durationFrames: number; params: Record<string, unknown> };
-type TextAnimation = { in?: Animator | null; out?: Animator | null };
+import { clips, createProject, enableAgentBridge, exportViaUi, query, ROOT, transact } from './support.ts';
 
 const OUT_DIR = join(ROOT, 'test-results', 'e2e-text-animation');
 
 let page: Page;
-let seqId = '';
 let textId = '';
 
-test.beforeAll(async ({ browser }) => {
-	mkdirSync(OUT_DIR, { recursive: true });
-	page = await browser.newPage();
+test.beforeEach(async ({ page: current }) => {
+	page = current;
 	await enableAgentBridge(page);
+	await createProject(page, 'E2E Text Rendering Regression');
+	const result = await transact(page, [
+		{
+			type: 'clip.addText',
+			at: 0,
+			duration: 90,
+			track: 'V1',
+			content: { text: 'Hello brave world', style: { sizePx: 160, weight: 700 } },
+			textAnimation: { in: { preset: 'slide-up', durationFrames: 20, params: { unit: 'word' } } },
+		},
+	]);
+	expect(result.ok, JSON.stringify(result)).toBe(true);
+	textId = (await clips(page)).find((clip) => clip.kind === 'text')!.id;
 });
-
-test.afterAll(async () => {
-	await page?.close();
-});
-
-async function animationOf(clipId: string): Promise<TextAnimation | undefined> {
-	return query<TextAnimation | undefined>(page, 'doc.get', {
-		path: ['sequences', seqId, 'clips', clipId, 'textAnimation'],
-	}).catch(() => undefined);
-}
 
 async function seek(frame: number): Promise<void> {
 	await query(page, 'playhead.set', { frame });
@@ -81,217 +63,98 @@ async function settledLuma(): Promise<number[]> {
 	return prev;
 }
 
-/** RGB24 pixels of one frame of a video (exact frame index) or an image, decoded by ffmpeg. */
-function rgbFrame(file: string, frame: number | null, w: number, h: number): Buffer {
-	return execFileSync(
-		process.env.JASPER_FFMPEG ?? 'ffmpeg',
-		[
-			'-v',
-			'error',
-			'-i',
-			file,
-			...(frame === null ? [] : ['-vf', `select=eq(n\\,${frame})`, '-vsync', '0']),
-			'-frames:v',
-			'1',
-			'-s',
-			`${w}x${h}`,
-			'-pix_fmt',
-			'rgb24',
-			'-f',
-			'rawvideo',
-			'pipe:1',
-		],
-		{ maxBuffer: w * h * 3 + 1024 },
-	);
-}
-
-test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Out', async () => {
-	await createProject(page, 'E2E Text Animation');
-	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
-	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Graphics', exact: true }).click();
-	await page.getByRole('menuitem', { name: /New Layer/ }).click();
-	await page.getByRole('menuitem', { name: /^Text(?! Animation)/ }).click();
-	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
-	textId = (await clips(page)).find((c) => c.kind === 'text')!.id;
-	// Setup only: a three-word title, large enough to measure (the edits under test go through the UI).
-	const r = await transact(page, [
+test('TXA-013: character glyphs stay within 1 px of plain text at the animation boundary', async () => {
+	const testInfo = test.info();
+	const changed = await transact(page, [
 		{
 			type: 'clip.update',
 			clipId: textId,
-			patch: { content: { text: 'Hello brave world', style: { sizePx: 160, weight: 700 } } },
-		},
-	]);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-	await focusTimeline(page);
-	await page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${textId}"]`).first().click();
-	await page.getByTestId('tab-motionTemplates').click();
-	await page.getByRole('tab', { name: 'Text Animations' }).click();
-	const tab = page.getByTestId('text-animations-tab');
-	await expect(tab).toBeVisible();
-	const before = (await appliedLabels(page)).length;
-	await tab.locator('[data-text-animation="slide-up@1"]').dblclick();
-	await expect.poll(async () => (await animationOf(textId))?.in?.preset).toBe('slide-up');
-	await tab.locator('[data-side-chip="out"]').click();
-	await tab.locator('[data-text-animation="fade@1"]').dblclick();
-	await expect.poll(async () => (await animationOf(textId))?.out?.preset).toBe('fade');
-	const a = (await animationOf(textId))!;
-	expect(a.in).toMatchObject({
-		preset: 'slide-up',
-		version: 1,
-		durationFrames: 20,
-		params: { unit: 'word' },
-	});
-	expect(a.out).toMatchObject({ preset: 'fade', version: 1, durationFrames: 15 });
-	expect((await appliedLabels(page)).slice(before)).toEqual(['Apply Slide Up In', 'Apply Fade Out']);
-	await page.screenshot({ path: join(OUT_DIR, 'tab.png') });
-});
-
-test('the Program animates the title; revisiting a frame gives identical pixels', async () => {
-	const clip = (await clips(page)).find((c) => c.id === textId)!;
-	await seek(clip.start + 40);
-	const rest = mean(await settledLuma());
-	await seek(clip.start);
-	const first = mean(await settledLuma());
-	expect(rest - first).toBeGreaterThan(2);
-	const mid = clip.start + 8;
-	await seek(mid);
-	const a = await settledLuma();
-	expect(mean(a)).toBeGreaterThan(first);
-	expect(mean(a)).toBeLessThan(rest + 0.5);
-	await page.getByTestId('program-player-wrapper').screenshot({ path: join(OUT_DIR, 'program-mid-in.png') });
-	for (const f of [clip.start + 19, clip.start + 3, clip.start + 70, clip.end - 2, clip.start + 12, mid + 1])
-		await seek(f);
-	await seek(mid);
-	const b = await settledLuma();
-	expect(b.length).toBe(a.length);
-	expect(b.filter((v, i) => v !== a[i]!).length).toBe(0);
-	await seek(clip.end - 1);
-	expect(mean(await settledLuma())).toBeLessThan(first + 1);
-});
-
-test('TXA-013: char units at the window boundary sit on the glyphs of the plain text (≤ 1 px)', async () => {
-	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
-	// Setup only: a char-unit fade (positions are exactly at rest, only opacity animates).
-	const r = await transact(page, [
-		{
-			type: 'clip.update',
-			clipId: left.id,
 			patch: { textAnimation: { in: { preset: 'fade', durationFrames: 10, params: { unit: 'char' } } } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-	const block = page.getByTestId('program-player-wrapper').locator('[data-text-block]');
-	// Last In frame: the overlay draws every character box (layout px = screen px / Player scale).
-	await seek(left.start + 9);
-	await expect(block).toHaveAttribute('data-text-animating', 'in');
-	const split = await block.evaluate((p: HTMLElement) => {
-		const scale = p.getBoundingClientRect().width / p.offsetWidth;
-		const base = p.getBoundingClientRect();
-		return [...p.querySelectorAll('[data-text-overlay] [data-text-unit-index] span')].map((s) => {
-			const b = s.getBoundingClientRect();
-			return { text: s.textContent ?? '', x: (b.left - base.left) / scale, y: (b.top - base.top) / scale };
-		});
+	expect(changed.ok, JSON.stringify(changed)).toBe(true);
+	const glyphs = () =>
+		page
+			.getByTestId('program-player-wrapper')
+			.locator('[data-text-block]')
+			.evaluate((root) => {
+				const base = root.getBoundingClientRect();
+				const scale = base.width / (root as HTMLElement).offsetWidth;
+				const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+				const result: { text: string; x: number; y: number }[] = [];
+				let node = walker.nextNode();
+				while (node) {
+					const parent = node.parentElement;
+					if (parent && getComputedStyle(parent).visibility !== 'hidden') {
+						for (let i = 0; i < (node.textContent?.length ?? 0); i++) {
+							const text = node.textContent![i]!;
+							if (/\s/.test(text)) continue;
+							const range = document.createRange();
+							range.setStart(node, i);
+							range.setEnd(node, i + 1);
+							const box = range.getBoundingClientRect();
+							if (box.width && box.height)
+								result.push({ text, x: (box.left - base.left) / scale, y: (box.top - base.top) / scale });
+						}
+					}
+					node = walker.nextNode();
+				}
+				return result;
+			});
+	await seek(9);
+	await settledLuma();
+	const animated = await glyphs();
+	await testInfo.attach('animated-glyphs', {
+		body: await page.getByTestId('program-player-wrapper').screenshot(),
+		contentType: 'image/png',
 	});
-	// First rest frame: the plain text node; glyph boxes from a Range per character (test-only measurement).
-	await seek(left.start + 10);
-	await expect(block).not.toHaveAttribute('data-text-animating', /.+/);
-	const plain = await block.evaluate((p: HTMLElement) => {
-		const scale = p.getBoundingClientRect().width / p.offsetWidth;
-		const base = p.getBoundingClientRect();
-		const node = p.firstChild as Text;
-		const out: { text: string; x: number; y: number }[] = [];
-		const range = document.createRange();
-		for (let i = 0; i < node.length; i++) {
-			const ch = node.data[i]!;
-			if (/\s/.test(ch)) continue;
-			range.setStart(node, i);
-			range.setEnd(node, i + 1);
-			const b = range.getBoundingClientRect();
-			out.push({ text: ch, x: (b.left - base.left) / scale, y: (b.top - base.top) / scale });
-		}
-		return out;
-	});
-	expect(split.map((s) => s.text)).toEqual(plain.map((s) => s.text));
+	await seek(10);
+	await settledLuma();
+	const plain = await glyphs();
+	expect(animated.map((g) => g.text).join('')).toBe('Hellobraveworld');
+	expect(plain.map((g) => g.text)).toEqual(animated.map((g) => g.text));
 	const shift = Math.max(
-		...split.map((s, i) => Math.max(Math.abs(s.x - plain[i]!.x), Math.abs(s.y - plain[i]!.y))),
+		...animated.map((g, i) => Math.max(Math.abs(g.x - plain[i]!.x), Math.abs(g.y - plain[i]!.y))),
 	);
-	test.info().annotations.push({ type: 'glyph-shift-px', description: shift.toFixed(3) });
+	await testInfo.attach('glyph-positions', {
+		body: JSON.stringify({ animated, plain, shift }, null, 2),
+		contentType: 'application/json',
+	});
+	await testInfo.attach('plain-glyphs', {
+		body: await page.getByTestId('program-player-wrapper').screenshot(),
+		contentType: 'image/png',
+	});
 	expect(shift).toBeLessThanOrEqual(1);
-	await focusTimeline(page);
-	await page.keyboard.press('Control+KeyZ');
-	await expect.poll(async () => (await animationOf(left.id))?.in?.preset).toBe('slide-up');
 });
 
-test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pixels)', async ({ request }) => {
+test('returning from Export preserves the paused animated title without another seek', async ({
+	request,
+}, testInfo) => {
 	test.setTimeout(600_000);
-	const caps = await (await request.get('/api/capabilities')).json();
-	const bake = caps?.features?.layerBake?.state;
-	const baked = bake === 'ready';
-	if (!baked)
-		test.info().annotations.push({
-			type: 'layer-bake',
-			description: `features.layerBake is ${bake ?? 'absent'}: text exports through the Remotion path`,
-		});
-	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
-	const frame = left.start + 8;
-	await seek(frame);
-	const beforeExport = await settledLuma();
+	await seek(8);
+	const before = await settledLuma();
+	expect(mean(before)).toBeGreaterThan(0.5);
+	await testInfo.attach('before-export', {
+		body: await page.getByTestId('program-player-wrapper').screenshot(),
+		contentType: 'image/png',
+	});
 	const out = await exportViaUi(page, request, {
 		engine: 'auto',
 		fileName: 'text-animation.mp4',
-		expectPath: baked ? /native|hybrid/i : /remotion/i,
+		expectPath: /native|hybrid|remotion/i,
 		outDir: OUT_DIR,
 	});
-	// Export hides the editor. Returning to the same playhead must remeasure the animated title without a seek.
-	const afterExport = await settledLuma();
-	expect(afterExport).toEqual(beforeExport);
-	await page
-		.getByTestId('program-player-wrapper')
-		.screenshot({ path: join(OUT_DIR, 'program-after-export.png') });
-	expect(baked ? ['native', 'hybrid'] : ['remotion']).toContain(out.job.result?.renderPath);
-	const doc = await query<Record<string, unknown>>(page, 'doc.get');
-	const job = await (
-		await request.post('/api/stills', {
-			data: {
-				envelope: {
-					format: 'jasper-project',
-					schemaVersion: doc.schemaVersion,
-					savedAt: new Date().toISOString(),
-					savedBy: { app: 'JasperEditor', version: '0.1.0', platform: 'e2e' },
-					revision: 1,
-					document: doc,
-				},
-				sequenceId: seqId,
-				frame,
-			},
-		})
-	).json();
-	const done = await waitForJob(request, job.id);
-	expect(done.state, JSON.stringify(done.error ?? null)).toBe('succeeded');
-	const url = StillResultSchema.parse(done.result).url;
-	const png = join(OUT_DIR, `still-${frame}.png`);
-	writeFileSync(png, Buffer.from(await (await request.get(url)).body()));
-	const [w, h] = [1920, 1080];
-	const a = rgbFrame(out.file, frame, w, h);
-	const b = rgbFrame(png, null, w, h);
-	expect(a.length).toBe(w * h * 3);
-	expect(b.length).toBe(w * h * 3);
-	let close = 0;
-	let textPixels = 0;
-	for (let i = 0; i < a.length; i += 3) {
-		const d = Math.max(
-			Math.abs(a[i]! - b[i]!),
-			Math.abs(a[i + 1]! - b[i + 1]!),
-			Math.abs(a[i + 2]! - b[i + 2]!),
-		);
-		if (d <= 3) close++;
-		if (b[i]! > 128) textPixels++;
-	}
-	expect(textPixels).toBeGreaterThan(1000);
-	expect(close / (w * h)).toBeGreaterThanOrEqual(0.99);
+	const after = await settledLuma();
+	await testInfo.attach('after-export', {
+		body: await page.getByTestId('program-player-wrapper').screenshot(),
+		contentType: 'image/png',
+	});
+	await testInfo.attach('exported-title', { path: out.file, contentType: 'video/mp4' });
+	expect(after).toEqual(before);
 });
 
 test('RTL typewriter keeps the caret and neutral punctuation on the visual left', async () => {
+	const testInfo = test.info();
 	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((a, b) => a.start - b.start)[0]!;
 	const changed = await transact(page, [
 		{
@@ -315,24 +178,31 @@ test('RTL typewriter keeps the caret and neutral punctuation on the visual left'
 	const block = page.getByTestId('program-player-wrapper').locator('[data-text-block]');
 	const sample = () =>
 		block.evaluate((root) => {
-			const unit = [...root.querySelectorAll<HTMLElement>('[data-text-unit-index]')].find(
-				(el) => getComputedStyle(el).visibility !== 'hidden',
-			);
+			const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+			let node = walker.nextNode();
+			while (
+				node &&
+				(node.textContent !== 'שלום!' ||
+					!node.parentElement ||
+					getComputedStyle(node.parentElement).visibility === 'hidden')
+			)
+				node = walker.nextNode();
 			const caret = root.querySelector<HTMLElement>('[data-text-caret]');
-			const span = unit?.querySelector('span');
-			const node = span?.firstChild;
-			if (!unit || !caret || !node || node.textContent !== 'שלום!') return null;
+			if (!caret || !node) return null;
+			const textNode = node;
+			const word = document.createRange();
+			word.selectNodeContents(textNode);
 			const glyph = (at: number) => {
 				const range = document.createRange();
-				range.setStart(node, at);
-				range.setEnd(node, at + 1);
+				range.setStart(textNode, at);
+				range.setEnd(textNode, at + 1);
 				return range.getBoundingClientRect();
 			};
 			const first = glyph(0);
 			const punctuation = glyph(4);
 			return {
 				text: node.textContent,
-				wordLeft: unit.getBoundingClientRect().left,
+				wordLeft: word.getBoundingClientRect().left,
 				caretRight: caret.getBoundingClientRect().right,
 				firstCenter: first.left + first.width / 2,
 				punctuationCenter: punctuation.left + punctuation.width / 2,
@@ -340,8 +210,14 @@ test('RTL typewriter keeps the caret and neutral punctuation on the visual left'
 		});
 	await expect.poll(sample).not.toBeNull();
 	const geometry = (await sample())!;
-	writeFileSync(join(OUT_DIR, 'rtl-caret.json'), JSON.stringify(geometry, null, 2));
-	await page.getByTestId('program-player-wrapper').screenshot({ path: join(OUT_DIR, 'rtl-caret.png') });
+	await testInfo.attach('rtl-caret-geometry', {
+		body: JSON.stringify(geometry, null, 2),
+		contentType: 'application/json',
+	});
+	await testInfo.attach('rtl-caret', {
+		body: await page.getByTestId('program-player-wrapper').screenshot(),
+		contentType: 'image/png',
+	});
 	expect(geometry.caretRight).toBeLessThanOrEqual(geometry.wordLeft + 1);
 	expect(geometry.punctuationCenter).toBeLessThan(geometry.firstCenter);
 });

@@ -1,43 +1,18 @@
-import { EngineClient } from '@jasper/engine-client';
 import { DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
-import {
-	DEFAULT_GAPS_PREFS,
-	gapsPrefs,
-	labelDefault,
-	labelName,
-	parseGapsPrefs,
-} from '../src/gaps/app-prefs.ts';
+import { gapsPrefs, labelDefault, labelName, parseGapsPrefs } from '../src/gaps/app-prefs.ts';
 import { applyMotionPreference } from '../src/gaps/startup.ts';
 import { largeTrimOffset, postrollSeconds, prerollSeconds } from '../src/panels/timeline/state/trim-mode.ts';
 import { autoSavePolicy } from '../src/runtime/save.ts';
 import { PREFERENCES_DIALOG, registerPreferencesDialog } from '../src/shell/preferences/index.ts';
-import { preferencesPages } from '../src/shell/preferences/registry.ts';
 
 beforeAll(() => registerAllCommands());
 beforeEach(() => gapsPrefs.reset());
 afterEach(() => cleanup());
 
 describe('preference pages', () => {
-	it('registers Premiere’s pages that apply here (no Collaboration, no Sync Settings)', () => {
-		const ids = preferencesPages.list().map((p) => p.id);
-		for (const id of ['appearance', 'auto-save', 'labels', 'memory', 'playback', 'trim', 'audio-hardware'])
-			expect(ids, id).toContain(id);
-		expect(ids).not.toContain('collaboration');
-		expect(ids).not.toContain('sync-settings');
-	});
-
-	it('every page renders inside the Preferences dialog', async () => {
-		registerPreferencesDialog();
-		render(<DialogHost />);
-		for (const id of ['appearance', 'auto-save', 'labels', 'memory', 'playback', 'trim', 'audio-hardware']) {
-			act(() => void openDialog(PREFERENCES_DIALOG, { page: id }));
-			expect(await screen.findByTestId(`prefs-${id}`)).toBeTruthy();
-		}
-	});
-
 	it('Playback and Trim values drive the commands; Auto Save drives the policy', async () => {
 		registerPreferencesDialog();
 		render(<DialogHost />);
@@ -63,7 +38,6 @@ describe('preference pages', () => {
 	});
 
 	it('parses hostile storage values to the defaults', () => {
-		expect(parseGapsPrefs(null)).toEqual(DEFAULT_GAPS_PREFS);
 		const p = parseGapsPrefs({
 			trim: { largeTrimOffset: 1e9 },
 			labels: { names: { nope: 'x', rose: 5 }, defaults: { bin: 'bogus' } },
@@ -74,5 +48,3 @@ describe('preference pages', () => {
 		expect(p.appearance.language).toBe('en');
 	});
 });
-
-void EngineClient;

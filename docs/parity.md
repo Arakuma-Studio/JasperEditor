@@ -22,10 +22,10 @@ the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction); no row's grade 
 | P0 / P1 / P2 | 97% / 99% / 100% (fractions) |
 | Features done / partial / missing | 89 / 3 / 0 of 92 (partial: CL-4, EX-2, PL-2) |
 | Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
-| Menu entries | 291, all registered; the 280 default key bindings resolve to commands too (`apps/web/test/polish-menu-wiring.test.ts` fails otherwise; counted from `MENUBAR` and `DEFAULT_KEYMAP` against the registry after `registerAllCommands()`) |
+| Menu entries | 291 menu entries and 280 default key bindings at the polish assessment (historical inventory); current dispatch behavior: `apps/web/test/registry.test.tsx`; shortcut conflicts: `apps/web/test/keymap.test.ts` |
 | Panels | 22 (`listPanels()`), the Media Browser among them |
 | Document commands | 256 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
-| Agent tools | 338 MCP tools (counted from a live `listTools`; the README list is checked by `apps/mcp/test/readme-tools.test.ts`) |
+| Agent tools | 378 MCP tools at the sound-design merge (counted from `listTools`; query it for the current catalog) |
 | UI languages | English and Spanish, 8 614 strings (`pnpm i18n:check`), switched without a restart |
 
 How a row is graded: **done** when the model, an undoable command, the UI, the preview and every export path exist
@@ -64,7 +64,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| PRJ-1 | Project panel: bins, list and icon views, search, labels, drag to timeline | P0 | done | WP-2E; windowed from 200 items (ui-perf); Set / Clear Poster Frame and Get Properties for Selection (`item.setPoster`, wp-notes/polish.md; `packages/project/test/polish-poster.test.ts`, `apps/web/test/polish-keybindings.test.tsx`) | — |
+| PRJ-1 | Project panel: bins, list and icon views, search, labels, drag to timeline | P0 | done | WP-2E; windowed project lists (ui-perf); project-open budget: `scripts/perf/ui-run.ts` via `pnpm perf --sections ui --ui open`; Set / Clear Poster Frame and Get Properties for Selection (`item.setPoster`, wp-notes/polish.md; `packages/project/test/polish-poster.test.ts`, `apps/web/test/polish-keybindings.test.tsx`) | — |
 | PRJ-2 | Import media (upload / register path), probe, posters, filmstrips, waveforms | P0 | done | WP-2E, WP-2F; Media Browser panel: browse the engine host, preview, import in place, drag to the Project panel or Timeline (wp-notes/polish.md; `apps/engine/test/browse.test.ts`, `apps/web/test/polish-media-browser.test.tsx`, `e2e/polish.spec.ts`) | polish |
 | PRJ-3 | Relink and Replace Footage | P1 | done | Link Media dialog (Project panel and File menu, folder search, relink by name / path), `media.relink`, MCP `link_media` / `replace_footage` (wp-notes/interchange.md §Link Media; `e2e/interchange.spec.ts`, `apps/engine/test/interchange.test.ts`); no Tape Name match | interchange |
 | PRJ-4 | Project Settings dialog | P1 | done | File ▸ Project Settings…: display formats (timecode / frames / feet+frames, samples / ms), Scratch Disks, Ingest Settings (wp-notes/gaps.md; `apps/web/test/gaps-settings-dialogs.test.tsx`, `packages/project/test/gaps-display-format.test.ts`) | gaps |
@@ -90,7 +90,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | MON-1 | Program monitor: Player preview, JKL, timecode entry, playback resolution | P0 | done | WP-2C | — |
 | MON-2 | Source monitor: in/out, insert and overwrite | P0 | done | apps/web/src/panels/source | — |
 | MON-3 | Match Frame / Reverse Match Frame | P1 | done | F / Shift+R, through nests (`apps/web/src/commands/structure.ts`, edit-structure web tests) | edit-ux |
-| MON-4 | Rulers, guides, safe margins | P2 | done | Show Rulers / Guides / Lock Guides, Add Guide…, guide templates, snapping (wp-notes/edit-ux.md; `apps/web/test/edit-ux-monitors.test.tsx`, `e2e/edit-ux.spec.ts`); guides are per-browser view state | edit-ux |
+| MON-4 | Rulers, guides, safe margins | P2 | done | Show Rulers / Guides / Lock Guides, Add Guide…, guide templates, snapping (wp-notes/edit-ux.md; `apps/web/test/edit-ux-monitors.test.tsx`); guides are per-browser view state | edit-ux |
 | MON-5 | Direct manipulation in the Program monitor (move, scale, rotate, anchor) | P0 | done | WP-2C, wp-3v | — |
 
 ### Timeline
@@ -100,7 +100,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | TL-1 | Tracks, linked A/V, targeting, sync lock, track lock | P0 | done | WP-2B | — |
 | TL-2 | Insert / overwrite, lift / extract, ripple delete | P0 | done | WP-2B | — |
 | TL-3 | Trim: regular, ripple, roll; slip, slide; razor / Add Edit | P0 | done | WP-2B, `clip.slip`, `clip.slide` | — |
-| TL-4 | Snapping, zoom, JKL, Space | P0 | done | WP-2B, editing.spec.ts | — |
+| TL-4 | Snapping, zoom, JKL, Space | P0 | done | WP-2B; `apps/web/test/timeline-gestures.test.ts`, `apps/web/test/transport.test.ts` | — |
 | TL-5 | Markers (sequence and clip) and the Markers panel | P1 | done | WP-2B | — |
 | TL-6 | Undo / redo with the History panel | P0 | done | packages/session | — |
 | TL-7 | Copy / paste, paste insert, paste attributes | P1 | done | wp-clipboard | — |
@@ -125,7 +125,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | KF-1 | Keyframes on Motion, Opacity, crop, volume and effect parameters; linear, Bezier, hold | P0 | done | S01 KF, wave1 native export | — |
 | KF-2 | Value and velocity graphs with Bezier handles | P1 | done | graph-editor.md | — |
 | KF-3 | Spatial motion paths in the Program monitor | P1 | done | spatial-motion-path.md | — |
-| KF-4 | Blend modes (Premiere has 27) | P1 | done | `BLEND_MODES` holds Premiere's 27 in menu order, native in the sequence's own stack (wp-notes/keyframes-blend.md §7; `apps/web/test/keyframes-blend-ui.test.tsx`, `e2e/keyframes-blend.spec.ts`); inside nests through Remotion | keyframes-blend |
+| KF-4 | Blend modes (Premiere has 27) | P1 | done | `BLEND_MODES` holds Premiere's 27 in menu order, native in the sequence's own stack (wp-notes/keyframes-blend.md §7; `apps/web/test/keyframes-blend-ui.test.tsx`, `apps/engine/test/blend-export.test.ts`, `packages/compositions/test/blend-gl.test.ts`); inside nests through Remotion | keyframes-blend |
 | KF-5 | Effect presets | P2 | done | effect-presets.md | — |
 | KF-6 | Expressions (After Effects overlap) | P2 | done | QuickJS-wasm sandbox (D-41), AE object model, Expression Controls (wp-notes/expressions.md; `packages/expressions/test/*`, `e2e/expressions.spec.ts`); `sampleImage` exact on solids only | expressions |
 
@@ -153,39 +153,39 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | MT-1 | Point and planar tracking, corner pin, screen replacement (beyond Premiere) | P1 | done | wp-m2-track, wp-m3-trackui | — |
-| MT-2 | Roto brush / segmentation (After Effects overlap) | P2 | done | wp-notes/roto, `apps/mcp/test/roto.test.ts`, `e2e/roto.spec.ts` | roto |
+| MT-2 | Roto brush / segmentation (After Effects overlap) | P2 | done | wp-notes/roto, `apps/mcp/test/roto.test.ts`, `apps/engine/test/roto.test.ts` | roto |
 
 ### Graphics
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | GR-1 | Text clips: fonts, fill, strokes, shadow, background box | P0 | done | S01 text, layer bake (D-31) | — |
-| GR-2 | Shapes: pen paths, polygons, stars, groups, fills, strokes, path operators | P1 | done | vector shapes with the nine AE path operators, Pen / Rectangle / Ellipse / Polygon / Star tools (wp-notes/shapes.md; `packages/project/test/vector/*`, `apps/engine/test/vector-shapes-remotion.e2e.test.ts`, `e2e/vector-shapes.spec.ts`) | shapes |
-| GR-3 | Text animators: presets and After Effects range selectors | P1 | done | range / wiggly / expression selectors, text on a path, typography (wp-notes/text-animators.md; `packages/project/test/text-animators.test.ts`, `packages/compositions/test/text-animators.e2e.test.ts`, `e2e/text-animators.spec.ts`) | text-animators |
+| GR-2 | Shapes: pen paths, polygons, stars, groups, fills, strokes, path operators | P1 | done | vector shapes with the nine AE path operators, Pen / Rectangle / Ellipse / Polygon / Star tools (wp-notes/shapes.md; `packages/project/test/vector/*`, `apps/engine/test/vector-shapes-remotion.e2e.test.ts`) | shapes |
+| GR-3 | Text animators: presets and After Effects range selectors | P1 | done | range / wiggly / expression selectors, text on a path, typography (wp-notes/text-animators.md; `packages/project/test/text-animators.test.ts`, `packages/compositions/test/text-animators.e2e.test.ts`) | text-animators |
 | GR-4 | Motion graphics templates with editable parameters (fframes, anime.js) | P1 | done | wp-m2-mg, wp-m2-anime-templates; graphic templates (.jgt) export / import with responsive design; MOGRT import not supported, documented why (wp-notes/gaps.md §2) | gaps |
-| GR-5 | Essential Graphics panel (layers, align, responsive pins), rolling / crawling titles | P1 | done | Essential Graphics panel: layers, New Layer, align / distribute, Responsive Design position (pins) and time (intro / outro), Roll / Crawl with off-screen, pre-roll, ease, post-roll, applied on every render path (wp-notes/gaps.md; `packages/project/test/gaps-graphics.test.ts`, `e2e/gaps.spec.ts`) | gaps |
-| GR-6 | 3D layers, cameras and lights (After Effects overlap) | P2 | done | classic and advanced 3D, cameras, lights, models, 3D camera tracker (wp-notes/three-d.md; `packages/compositions/test/three-d-gl.test.ts`, `packages/compositions/test/three-d-render.e2e.test.ts`, `e2e/three-d.spec.ts`) | three-d |
-| GR-7 | Simulation and warp effects beyond the catalogue (particles, mesh warp, liquify) | P2 | done | 18 AE simulation effects, Mesh Warp, Liquify, Puppet, Bezier Warp… as deterministic GPU effects with monitor tools (wp-notes/sim-warp.md; `packages/compositions/test/fx-sim-warp-gl.test.ts`, `packages/project/test/sim-warp-commands.test.ts`, `e2e/sim-warp.spec.ts`) | sim-warp |
+| GR-5 | Essential Graphics panel (layers, align, responsive pins), rolling / crawling titles | P1 | done | Essential Graphics panel: layers, New Layer, align / distribute, Responsive Design position (pins) and time (intro / outro), Roll / Crawl with off-screen, pre-roll, ease, post-roll, applied on every render path (wp-notes/gaps.md; `packages/project/test/gaps-graphics.test.ts`) | gaps |
+| GR-6 | 3D layers, cameras and lights (After Effects overlap) | P2 | done | classic and advanced 3D, cameras, lights, models, 3D camera tracker (wp-notes/three-d.md; `packages/compositions/test/three-d-gl.test.ts`, `packages/compositions/test/three-d-render.e2e.test.ts`) | three-d |
+| GR-7 | Simulation and warp effects beyond the catalogue (particles, mesh warp, liquify) | P2 | done | 18 AE simulation effects, Mesh Warp, Liquify, Puppet, Bezier Warp… as deterministic GPU effects with monitor tools (wp-notes/sim-warp.md; `packages/compositions/test/fx-sim-warp-gl.test.ts`, `packages/project/test/sim-warp-commands.test.ts`) | sim-warp |
 
 ### Colour
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| CL-1 | Lumetri-style grade: basic, creative, curves, colour wheels, HSL secondary, vignette | P0 | done | wp-m2-color plus HSL Secondary, hue-vs curves, vignette with native export (wp-notes/color-grade.md; `apps/web/test/color-grade.test.tsx`, `e2e/color-grade.spec.ts`) | color-grade |
+| CL-1 | Lumetri-style grade: basic, creative, curves, colour wheels, HSL secondary, vignette | P0 | done | wp-m2-color plus HSL Secondary, hue-vs curves, vignette with native export (wp-notes/color-grade.md; `apps/web/test/color-grade.test.tsx`, `apps/engine/test/color.test.ts`, `apps/engine/test/color-remotion.test.ts`) | color-grade |
 | CL-2 | Lumetri scopes: waveform, parade, vectorscope, histogram | P1 | done | apps/web/src/panels/scopes | — |
 | CL-3 | LUT import (.cube) | P1 | done | wp-m2-color | — |
 | CL-4 | Colour management: working space, log / HDR input, output transforms | P1 | partial (0.75) | working spaces incl. Rec. 2100 PQ / HLG, 18 log curves, OCIO, HDR exports (wp-notes/color-mgmt.md; `packages/project/test/color-mgmt-*.test.ts`, `e2e/color-mgmt.spec.ts`); no HDR display output (needs HDR hardware), 8-bit composite; stacks whose canvas scopes would nest render through the flat compositor since `compositor` (D-43) | color-mgmt |
-| CL-5 | Comparison view, Color Match | P2 | done | Program monitor Comparison View (edit-ux), Colour Match with Face Detection (wp-notes/color-grade.md; `apps/web/test/edit-ux-monitors.test.tsx`, `e2e/color-grade.spec.ts`) | color-grade |
+| CL-5 | Comparison view, Color Match | P2 | done | Program monitor Comparison View (edit-ux), Colour Match with Face Detection (wp-notes/color-grade.md; `apps/web/test/edit-ux-monitors.test.tsx`, `packages/project/test/color-match.test.ts`, `apps/engine/test/grading.test.ts`) | color-grade |
 
 ### Audio
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | AU-1 | Clip gain, volume and pan with keyframes; audio in preview and export | P0 | done | S01 audio, D-34 volumes | — |
-| AU-2 | Track volume / pan, mute / solo | P0 | done | Audio Track Mixer strips with automation (wp-notes/audio-mix.md; `packages/project/test/audio-mix.test.ts`, `apps/engine/test/audio-mix.test.ts`, `e2e/audio-mix.spec.ts`) | audio-mix |
-| AU-3 | Live audio meters | P0 | done | Audio Meters panel: BS.1770 loudness, true peak, peak / RMS (wp-notes/audio-mix.md; `apps/web/test/audio-mix-panels.test.tsx`, `e2e/audio-mix.spec.ts`) | audio-mix |
-| AU-4 | Audio Track Mixer and Clip Mixer, submixes | P1 | done | mixers, sends, submixes, automation modes (wp-notes/audio-mix.md; `apps/web/test/audio-mix-panels.test.tsx`, `e2e/audio-mix.spec.ts`); submixes are not timeline rows | audio-mix |
-| AU-5 | Audio effects (EQ, dynamics, reverb, noise reduction, pitch) | P1 | done | 60 audio effects in one DSP for preview and export (D-42; wp-notes/audio-fx.md; `packages/audio-fx/test/*`, `apps/engine/test/audio-fx.test.ts`, `e2e/audio-fx.spec.ts`) | audio-fx |
+| AU-2 | Track volume / pan, mute / solo | P0 | done | Audio Track Mixer strips with automation (wp-notes/audio-mix.md; `packages/project/test/audio-mix.test.ts`, `apps/engine/test/audio-mix.test.ts`, `apps/web/test/audio-mix-panels.test.tsx`) | audio-mix |
+| AU-3 | Live audio meters | P0 | done | Audio Meters panel: BS.1770 loudness, true peak, peak / RMS (wp-notes/audio-mix.md); live playback-to-meter integration: `e2e/audio-mix.spec.ts` | audio-mix |
+| AU-4 | Audio Track Mixer and Clip Mixer, submixes | P1 | done | mixers, sends, submixes, automation modes (wp-notes/audio-mix.md; `apps/web/test/audio-mix-panels.test.tsx`, `apps/web/test/audio-mix.test.ts`); submixes are not timeline rows | audio-mix |
+| AU-5 | Audio effects (EQ, dynamics, reverb, noise reduction, pitch) | P1 | done | 60 audio effects in one DSP for preview and export (D-42; wp-notes/audio-fx.md; `packages/audio-fx/test/*`, `apps/engine/test/audio-fx.test.ts`) | audio-fx |
 | AU-6 | Essential Sound, loudness normalisation, ducking | P1 | done | Essential Sound panel, two-pass loudness normalisation with true-peak limiter, auto-ducking, Music Remix (wp-notes/audio-mix.md, wp-notes/audio-fx.md; `packages/audio-fx/test/remix.test.ts`, `apps/engine/test/audio-mix.test.ts`) | audio-fx |
 | AU-7 | Audio channel mapping (Modify ▸ Audio Channels) | P2 | done | Clip ▸ Modify ▸ Audio Channels: matrix, clip channel format, number of clips, muted channels in preview and export, routings on Project items (wp-notes/gaps.md; `gaps-audio-channels` project + engine tests) | gaps |
 | AU-8 | Sound effects library: browse, audition, insert (Essential Sound's "Browse") | P2 | done | Sound Library panel + Sound Design workspace, starter kit (60 CC0 sounds), user folders, peak / end / start-aligned insert exact to the sample, provenance and credits, MCP tools (wp-notes/sound-design.md "Phase 1 verification"; `e2e/sound-library.spec.ts`, `apps/mcp/test/sound.test.ts`, `apps/engine/test/sounds-routes.test.ts`); added by sound-design on `feat/sound-design`, not yet counted in the numbers above | sound-design |
@@ -205,7 +205,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | CP-1 | Caption tracks: create, style, import / export SRT and VTT | P1 | done | caption tracks, styles, SRT / VTT / SCC / MCC import and export, burn-in (wp-notes/captions.md; `packages/project/test/captions-commands.test.ts`, `apps/engine/test/captions-export.test.ts`, `e2e/captions.spec.ts`); burn-in needs the layer bake | captions |
-| CP-2 | Speech to text, transcripts, text-based editing | P1 | done | local Whisper (ONNX, CPU), word timings, diarization, captions from transcripts, text-based editing (wp-notes/speech.md; `apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`, `e2e/speech.spec.ts`) | speech |
+| CP-2 | Speech to text, transcripts, text-based editing | P1 | done | local Whisper (ONNX, CPU), word timings, diarization, captions from transcripts, text-based editing (wp-notes/speech.md; `apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`) | speech |
 
 ### Interchange
 
@@ -220,7 +220,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | EX-1 | Export mode, presets, planner with native / hybrid / Remotion paths and named blockers | P0 | done | D-11, D-22, D-34, D-35 | — |
 | EX-2 | Codecs: H.264 (hardware or OpenH264), VP9, AV1, ProRes, alpha; AAC / Opus | P0 | partial (0.9) | D-13; HEVC Main via libkvazaar (hvc1, BT.709 / PQ / HLG tags), Main10 through hardware encoders only (wp-notes/gaps.md; `apps/engine/test/gaps-export-formats.test.ts`); OpenH264 quality below x264 | gaps |
 | EX-3 | Export Frame, Quick Export, export queue | P1 | done | File ▸ Export ▸ Frame (PNG / JPEG / TIFF / DPX / EXR / BMP / Targa, import into project, camera buttons in both monitors, Shift+E); smart-rendered avc3 plays in Chrome and Electron (wp-notes/gaps.md; `gaps-export-frame`, `gaps-avc3-playback`) | gaps |
-| EX-4 | Render previews (timeline render bar), smart rendering | P1 | done | render bar with reasons, Render Effects In to Out / In to Out / Selection / Audio, Delete Render Files, previews played by the Program monitor, Export ▸ Use Previews, smart rendering (ProRes; H.264 opt-in) (wp-notes/previews.md; `apps/engine/test/previews.test.ts`, `apps/engine/test/smart-render.test.ts`, `e2e/previews.spec.ts`); no HEVC smart rendering | previews |
+| EX-4 | Render previews (timeline render bar), smart rendering | P1 | done | render bar with reasons, Render Effects In to Out / In to Out / Selection / Audio, Delete Render Files, previews played by the Program monitor, Export ▸ Use Previews, smart rendering (ProRes; H.264 opt-in) (wp-notes/previews.md; `apps/engine/test/previews.test.ts`, `apps/engine/test/smart-render.test.ts`); no HEVC smart rendering | previews |
 
 ### Processing
 
@@ -248,7 +248,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | UI-3 | Keyboard Shortcuts editor | P1 | done | Edit ▸ Keyboard Shortcuts… (Ctrl+Alt+K) with layouts and conflict display (wp-notes/edit-ux.md; `apps/web/test/edit-ux-keyboard.test.tsx`) | edit-ux |
 | UI-4 | Preferences dialog | P1 | done | pages General, Timeline, Audio, Graphics, Media Cache, Transcription, Processing, Roto & Face Tracking plus Appearance, Auto Save, Labels, Memory, Playback, Trim, Audio Hardware wired to behaviour; Collaboration / Sync Settings omitted (no such services) (wp-notes/gaps.md; `apps/web/test/gaps-preferences.test.tsx`) | gaps |
 | UI-5 | Find, Edit Original, Exit | P2 | done | Edit ▸ Find…, Edit Original, File ▸ Exit (desktop) (wp-notes/gaps.md; `apps/web/test/gaps-ui5-tracks.test.tsx`, `apps/engine/test/gaps-routes.test.ts`) | gaps |
-| UI-6 | Localisation and accessibility | P2 | done | every UI string externalised at build time (English + complete Spanish, 8 614 strings, `pnpm i18n:check`), language in Preferences ▸ Appearance, switched while the editor runs with the undo history kept (D-46; `e2e/polish.spec.ts` leaves no string behind in either direction), labels built from effect and preset names translated (`apps/web/test/polish-i18n.test.tsx`); ARIA roles/labels, focus rings, reduced motion, high-contrast theme; axe-core audit with no serious or critical violation in six workspaces × two themes (wp-notes/gaps.md; `apps/web/test/i18n.test.ts`, `e2e/gaps.spec.ts`) | gaps |
+| UI-6 | Localisation and accessibility | P2 | done | every UI string externalised at build time (English + complete Spanish, 8 614 strings, `pnpm i18n:check`), language in Preferences ▸ Appearance, switched while the editor runs with the undo history kept (D-46; `e2e/polish.spec.ts` checks document and undo-history preservation across a language switch), labels built from effect and preset names translated (`apps/web/test/polish-i18n.test.tsx`); ARIA roles/labels, focus rings, reduced motion, high-contrast theme; axe-core audit with no serious or critical violation in six workspaces × two themes (wp-notes/gaps.md; `e2e/gaps.spec.ts`) | gaps |
 
 ### Agents
 

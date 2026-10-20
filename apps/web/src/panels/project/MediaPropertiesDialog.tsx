@@ -40,7 +40,7 @@ function clock(seconds: number): string {
 type MediaFact = { label: string; value: string };
 
 /** The facts of one medium, in the order Premiere's Properties window lists them. */
-export function mediaFacts(asset: MediaAsset, path: string | null | undefined): MediaFact[] {
+function mediaFacts(asset: MediaAsset, path: string | null | undefined): MediaFact[] {
 	const out: MediaFact[] = [];
 	const add = (label: string, value: string | null | undefined) => {
 		if (value) out.push({ label, value });

@@ -8,11 +8,7 @@ import type { FxPlanContext } from '../shader.ts';
 import { blurPasses, PKE_COMMON, PKE_SOBEL, rgbParam, sNum, sUnitsPx, xyParam } from './common.ts';
 
 /** Pre-smoothing sigma in canvas px (Subpixel Smooth off → whole pixels, like Sapphire). */
-export function edgeSmoothSigma(
-	p: EffectParams,
-	name: string,
-	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
-) {
+function edgeSmoothSigma(p: EffectParams, name: string, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>) {
 	const s = sUnitsPx(p[name], ctx);
 	return p.subpixelSmooth === false ? Math.round(s) : s;
 }
@@ -22,7 +18,7 @@ export function edgeSmoothSigma(
  * brightness of unsmoothed ones (a blurred step has a lower slope): constant below one pixel, growing like the blur
  * width above.
  */
-export function edgeGain(sigma: number): number {
+function edgeGain(sigma: number): number {
 	return 2 * Math.sqrt(1 + (1.5 * Math.max(0, sigma)) ** 2);
 }
 

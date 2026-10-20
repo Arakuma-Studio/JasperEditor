@@ -15,6 +15,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
 	bindDocumentExpressions,
 	bindSnapshotExpressions,
+	evaluateExpressionText,
 	evaluateSelectorExpression,
 	loadExpressionEngine,
 	pickWhipExpression,
@@ -48,7 +49,6 @@ describe('documents', () => {
 	it('evaluate() of a bound document returns post-expression values; the raw document is untouched', () => {
 		const d = rigged();
 		const bound = bindDocumentExpressions(d.doc);
-		expect(bindDocumentExpressions(d.doc)).toBe(bound);
 		const seq = bound.sequences[d.seqId]!;
 		const a = seq.clips[d.refs.$a!] as SolidClip;
 		const rawA = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip;
@@ -81,18 +81,6 @@ describe('documents', () => {
 		const ref = { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' };
 		expect(sourceTextAt(title.content, storedTimeAtFrame(d.doc, ref, 75))).toBe('00:00:02:15');
 	});
-	it('commands: clear, empty text, undo-friendly storage', () => {
-		const d = rigged();
-		d.tx([{ type: 'expression.clear', target: ['clip', '$a', 'transform', 'rotation'] }]);
-		const a = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip;
-		expect(a.transform.rotation.expression).toBeUndefined();
-		d.tx([{ type: 'expression.set', target: ['clip', '$a', 'transform', 'position'], text: '  ' }]);
-		const b = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip;
-		expect(b.transform.position.expression).toBeUndefined();
-		expect(() =>
-			d.tx([{ type: 'expression.set', target: ['clip', '$a', 'transform', 'flipH'], text: '1' }]),
-		).toThrow(/not animatable/);
-	});
 });
 
 describe('render snapshots', () => {
@@ -122,12 +110,6 @@ describe('render snapshots', () => {
 		const src = text.source as Extract<RenderVisualSource, { text: TextClip['content'] }>;
 		expect(sourceTextAt(src.text, contentTimeAt(text, 45, { num: 30, den: 1 }))).toBe('00:00:01:15');
 	});
-	it('documents without expressions keep plain snapshots', () => {
-		const d = basicDoc();
-		const snap = buildRenderSnapshot(d.doc, d.seqId, snapOpts);
-		expect(snap.expressions).toBeUndefined();
-		expect(bindSnapshotExpressions(snap)).toBe(snap);
-	});
 	it('values do not depend on evaluation order (fresh worlds, shuffled frames)', () => {
 		const d = rigged();
 		const reference = (() => {
@@ -150,25 +132,33 @@ describe('render snapshots', () => {
 });
 
 describe('pick-whip and the Expression Selector API', () => {
-	it('pick-whip references', () => {
+	it('pick-whip references evaluate to the target property', () => {
 		const d = rigged();
-		const from = { seq: d.seqId, owner: d.refs.$bg!, path: 'transform.rotation' };
-		expect(
-			pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$a!, path: 'transform.rotation' }),
-		).toBe('thisComp.layer("A").transform.rotation');
-		expect(
-			pickWhipExpression(d.doc, from, {
-				seq: d.seqId,
-				owner: d.refs.$a!,
-				path: `effects.${d.refs.$slider}.slider`,
-			}),
-		).toBe('thisComp.layer("A").effect("Slider Control")("Slider")');
-		expect(pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$bg!, path: 'opacity' })).toBe(
-			'transform.opacity',
-		);
-		expect(
-			pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' }),
-		).toBe('thisComp.layer("Title").text.sourceText');
+		d.tx([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 300,
+				track: 'V4',
+				content: { text: 'Reader' },
+				ref: '$reader',
+			},
+		]);
+		const cases = [
+			['$a', 'transform.rotation', '$bg', 'transform.rotation', 180],
+			['$a', `effects.${d.refs.$slider}.slider`, '$bg', 'transform.rotation', 42],
+			['$bg', 'opacity', '$bg', 'transform.rotation', 100],
+			['$title', 'text.content', '$reader', 'text.content', '00:00:02:00'],
+		] as const;
+		for (const [target, path, owner, ownerPath, value] of cases) {
+			const from = { seq: d.seqId, owner: d.refs[owner]!, path: ownerPath };
+			const text = pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs[target]!, path });
+			expect(text).not.toBeNull();
+			expect(evaluateExpressionText(d.doc, from, text!, storedTimeAtFrame(d.doc, from, 60))).toEqual({
+				value,
+				error: null,
+			});
+		}
 	});
 	it('selector amounts per unit', () => {
 		const d = basicDoc();

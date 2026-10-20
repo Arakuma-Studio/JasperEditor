@@ -18,7 +18,7 @@ import { MENUBAR } from '../src/shell/menus/model.ts';
 import { resolveMenu } from '../src/shell/menus/resolve.ts';
 import { BUILTIN_WORKSPACES } from '../src/shell/workspaces/definitions.ts';
 import { buildLayout, sanitizeLayout } from '../src/shell/workspaces/layout.ts';
-import { WORKSPACES_KEY, WorkspaceStore } from '../src/shell/workspaces/store.ts';
+import { WorkspaceStore } from '../src/shell/workspaces/store.ts';
 import { memoryStorage } from './shell-storage.ts';
 
 const engine = new EngineClient({
@@ -62,12 +62,12 @@ describe('workspace layout compatibility', () => {
 describe('workspace store', () => {
 	it('a newer workspace storage version falls back without loading its data (SH-021)', () => {
 		const storage = memoryStorage({
-			[WORKSPACES_KEY]: JSON.stringify({ version: 99, data: { activeId: 'custom:foreign' } }),
+			'jasper:workspaces': JSON.stringify({ version: 99, data: { activeId: 'custom:foreign' } }),
 		});
 		const store = new WorkspaceStore(storage);
 		expect(store.resetReason).toBe('newer');
 		expect(store.getState().activeId).toBe('editing');
-		expect(storage.getItem(WORKSPACES_KEY)).toBeNull();
+		expect(storage.getItem('jasper:workspaces')).toBeNull();
 	});
 
 	it('ignores inherited object keys as workspace ids (storage and workspace.switch args)', () => {
@@ -75,7 +75,7 @@ describe('workspace store', () => {
 			version: 1,
 			data: { activeId: 'constructor', order: ['toString', 'editing'], workspaces: {} },
 		});
-		const store = new WorkspaceStore(memoryStorage({ [WORKSPACES_KEY]: stored }));
+		const store = new WorkspaceStore(memoryStorage({ 'jasper:workspaces': stored }));
 		expect(store.getState().activeId).toBe('editing');
 		expect(store.get('constructor')).toBeUndefined();
 		store.setActive('constructor');
@@ -94,7 +94,7 @@ describe('workspace store', () => {
 				},
 			},
 		});
-		const store = new WorkspaceStore(memoryStorage({ [WORKSPACES_KEY]: stored }));
+		const store = new WorkspaceStore(memoryStorage({ 'jasper:workspaces': stored }));
 		expect(store.resetReason).toBeNull();
 		expect(store.get('agent')).toBeUndefined();
 		expect(store.getState().activeId).toBe('editing');

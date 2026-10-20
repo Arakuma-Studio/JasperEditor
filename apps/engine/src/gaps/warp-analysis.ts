@@ -184,8 +184,8 @@ export class WarpAnalysisService {
 	}
 }
 
-/** Converts the worker's per-frame values (tracking px) into the stored analysis (media px). Exported for tests. */
-export function buildWarpAnalysis(
+/** Converts the worker's per-frame values (tracking px) into the stored analysis (media px). */
+function buildWarpAnalysis(
 	perFrame: number[][],
 	o: {
 		size: { sx: number; sy: number };

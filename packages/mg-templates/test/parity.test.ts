@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { type Browser, chromium, type Page } from '@playwright/test';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { MgCatalogEntryJson } from '../src/index.ts';
 import { FFRAMES_CATALOG, mgRegistry } from '../src/index.ts';
 
@@ -52,30 +54,30 @@ describe('checked-in schemas', () => {
 	});
 });
 
-type Token = { n: number } | { s: string };
-function tokens(svg: string): Token[] {
-	const out: Token[] = [];
-	for (const part of svg.split(/(-?\d+(?:\.\d+)?)/)) {
-		if (part === '') continue;
-		out.push(/^-?\d+(?:\.\d+)?$/.test(part) ? { n: Number(part) } : { s: part });
-	}
-	return out;
-}
+describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', { timeout: 120_000 }, () => {
+	let browser: Browser;
+	let page: Page;
+	let artifacts: string;
+	beforeAll(async () => {
+		browser = await chromium.launch({
+			executablePath:
+				process.env.JASPER_BROWSER_EXECUTABLE ??
+				(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined),
+			headless: true,
+		});
+		page = await browser.newPage();
+		artifacts = mkdtempSync(join(tmpdir(), 'jasper-mg-svg-parity-'));
+		console.info(`[mg parity] raster artifacts: ${artifacts}`);
+	});
+	afterAll(async () => browser?.close());
 
-function expectSameMarkup(native: string, twin: string, label: string) {
-	const a = tokens(native);
-	const b = tokens(twin);
-	expect(a.length, `${label}: token count`).toBe(b.length);
-	for (let i = 0; i < a.length; i++) {
-		const x = a[i]!;
-		const y = b[i]!;
-		if ('n' in x && 'n' in y)
-			expect(Math.abs(x.n - y.n), `${label}: number #${i}`).toBeLessThanOrEqual(0.002);
-		else expect(x, `${label}: token #${i}`).toEqual(y);
+	async function raster(svg: string, name: string): Promise<Buffer> {
+		await page.setContent(`<!doctype html><html><body style="margin:0">${svg}</body></html>`);
+		const png = await page.screenshot({ omitBackground: true });
+		writeFileSync(join(artifacts, `${name}.png`), png);
+		return png;
 	}
-}
 
-describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 	it('`jasper-mg schema` equals the TS catalog', () => {
 		const native = JSON.parse(execFileSync(binary, ['schema'], { encoding: 'utf8' })) as {
 			templates: MgCatalogEntryJson[];
@@ -101,7 +103,7 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 		}
 	});
 
-	it('`jasper-mg svg` equals the TS twins', () => {
+	it('native and TS SVGs paint identical frames', async () => {
 		const cases = [
 			{ width: 1920, height: 1080, fps: { num: 30, den: 1 }, durationFrames: 150 },
 			{ width: 1280, height: 720, fps: { num: 30000, den: 1001 }, durationFrames: 97, sourceInFrames: 12 },
@@ -118,6 +120,9 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 			for (const params of paramSets[def.id]!) {
 				for (const c of cases) {
 					const spec = { template: { id: def.id, version: def.version }, params, ...c };
+					await page.setViewportSize({ width: c.width, height: c.height });
+					let first: Buffer | undefined;
+					let changes = false;
 					for (const frame of [0, 7, Math.floor(c.durationFrames / 2), c.durationFrames - 1]) {
 						const native = execFileSync(binary, ['svg', '--spec', '-', '--frame', String(frame)], {
 							input: JSON.stringify(spec),
@@ -130,8 +135,13 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 							{ width: c.width, height: c.height },
 							{ durationFrames: c.durationFrames, sourceInFrames: c.sourceInFrames ?? 0 },
 						);
-						expectSameMarkup(native, twin, `${def.id} ${c.width}x${c.height} f${frame}`);
+						const label = `${def.id}-${c.width}x${c.height}-p${paramSets[def.id]!.indexOf(params)}-f${frame}`;
+						const painted = await raster(native, `${label}-native`);
+						expect(painted.equals(await raster(twin, `${label}-preview`)), label).toBe(true);
+						if (!first) first = painted;
+						else changes ||= !first.equals(painted);
 					}
+					expect(changes, `${def.id}: distinct animation frames`).toBe(true);
 				}
 			}
 		}

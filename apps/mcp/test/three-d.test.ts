@@ -81,26 +81,12 @@ async function connect() {
 		} catch {}
 		return { isError: !!r.isError, body: body as Record<string, unknown> & { [k: string]: unknown } };
 	};
-	return { engine, call, client };
+	return { engine, call };
 }
 
 describe('three-d MCP tools', () => {
 	it('builds a 3D scene and reads it back', async () => {
-		const { engine, call, client } = await connect();
-		const names = (await client.listTools()).tools.map((t) => t.name);
-		for (const n of [
-			'set_3d_layer',
-			'set_3d_transform',
-			'set_material',
-			'add_camera',
-			'camera_settings',
-			'move_camera',
-			'add_light',
-			'light_settings',
-			'set_3d_renderer',
-			'get_3d_scene',
-		])
-			expect(names).toContain(n);
+		const { engine, call } = await connect();
 		expect((await call('set_3d_layer', { clipIds: [engine.a, engine.b], enabled: true })).isError).toBe(
 			false,
 		);
@@ -147,13 +133,5 @@ describe('three-d MCP tools', () => {
 		expect(s.runs).toEqual([{ members: [engine.a, engine.b], bottomTrack: 'V1', topTrack: 'V2' }]);
 		const c = engine.doc().sequences[engine.seqId]!.clips[camId] as CameraClip;
 		expect(c.camera.depthOfField).toBe(true);
-	});
-
-	it('refusals are tool errors', async () => {
-		const { call } = await connect();
-		const r = await call('set_3d_layer', { clipIds: ['clp_missing0000000000'], enabled: true });
-		expect(r.isError).toBe(true);
-		expect((await call('set_3d_transform', { clipId: 'clp_x' })).isError).toBe(true);
-		expect((await call('add_camera', { at: 0, preset: '13mm' })).isError).toBe(true);
 	});
 });

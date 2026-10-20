@@ -561,7 +561,7 @@ function growTripod(d: Data, kfs: number[], f: number, cfg: Cfg, cancelled: () =
 }
 
 /** Focal length (pixels) of a horizontal angle of view. */
-export const focalOf = (w: number, hfov: number) =>
+const focalOf = (w: number, hfov: number) =>
 	(w * 0.5) / Math.tan(((Math.min(170, Math.max(1, hfov)) * Math.PI) / 180) * 0.5);
 
 type Attempt = { recon: Recon; err: number; method: Exclude<SolveMethod, 'auto'> };

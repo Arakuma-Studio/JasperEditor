@@ -90,12 +90,19 @@ async function ui(
 	) as Promise<{ result: unknown; window: { projectId: string; sessionId: string } }>;
 }
 
-/** The window's answer, with which window answered (`window: {projectId, sessionId}`). */
+/** Preserve the window's measurements alongside the authoritative relay identity. */
 async function uiJson(...a: Parameters<typeof ui>) {
 	const r = await ui(...a);
 	const body =
 		r.result && typeof r.result === 'object' && !Array.isArray(r.result) ? r.result : { result: r.result };
-	return jsonResult({ ...body, window: r.window });
+	const window = 'window' in body ? body.window : undefined;
+	return jsonResult({
+		...body,
+		window: {
+			...(window && typeof window === 'object' && !Array.isArray(window) ? window : {}),
+			...r.window,
+		},
+	});
 }
 
 const strip = <T extends Record<string, unknown>>(o: T) =>

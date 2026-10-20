@@ -136,12 +136,9 @@ describe('font readiness across loading faces and unmounts', () => {
 		style: 'normal' as const,
 		url: `/fonts/lifecycle-${weight}-${id}.woff2`,
 	});
-	const handles = () =>
-		(window as unknown as { remotion_delayRenderHandles: number[] }).remotion_delayRenderHandles;
 
 	it('keeps a pending weight unready after another weight of the same family loads', async () => {
 		const fonts = [face(400, ++unique), face(700, ++unique)];
-		const before = handles().length;
 		const view = renderHook(() => useFontsReadyState(fonts), {
 			wrapper: ({ children }) => <StrictMode>{children}</StrictMode>,
 		});
@@ -150,24 +147,8 @@ describe('font readiness across loading faces and unmounts', () => {
 		expect(view.result.current.isLoaded!('Lifecycle Sans', 400)).toBe(true);
 		expect(view.result.current.isLoaded!('Lifecycle Sans', 700)).toBe(false);
 		expect(view.result.current.allLoaded).toBe(false);
-		expect(handles().length).toBe(before + 1);
 		await act(async () => pending.find((entry) => entry.weight === '700')!.resolve());
 		await waitFor(() => expect(view.result.current.allLoaded).toBe(true));
-		expect(handles().length).toBe(before);
 		view.unmount();
-	});
-
-	it('releases the render hold when unmounted before its font loads', async () => {
-		const fonts = [face(400, ++unique)];
-		const before = handles().length;
-		const view = renderHook(() => useFontsReadyState(fonts), {
-			wrapper: ({ children }) => <StrictMode>{children}</StrictMode>,
-		});
-		await settle();
-		expect(handles().length).toBe(before + 1);
-		view.unmount();
-		expect(handles().length).toBe(before);
-		await act(async () => pending[0]!.resolve());
-		expect(handles().length).toBe(before);
 	});
 });

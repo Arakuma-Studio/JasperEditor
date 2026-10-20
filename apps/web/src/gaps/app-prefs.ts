@@ -42,7 +42,7 @@ export type GapsPrefs = {
 	};
 };
 
-export const DEFAULT_GAPS_PREFS: GapsPrefs = {
+const DEFAULT_GAPS_PREFS: GapsPrefs = {
 	autoSave: { enabled: true, maxIntervalSeconds: 10 },
 	labels: { names: {}, defaults: {} },
 	playback: { prerollSeconds: 2, postrollSeconds: 2 },

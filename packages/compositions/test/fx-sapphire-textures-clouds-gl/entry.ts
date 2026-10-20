@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
@@ -124,24 +123,11 @@ const px = (c: HTMLCanvasElement, x: number, y: number): Px =>
 
 const api = {
 	ids: () => SAPPHIRE_TEXTURES_CLOUDS_EFFECTS.map((s) => s.id),
-	catalogue() {
-		const errors: string[] = [];
-		for (const s of SAPPHIRE_TEXTURES_CLOUDS_EFFECTS)
-			for (const frame of [0, 45])
-				try {
-					run(s.id, {}, { width: 64, height: 36, frame });
-				} catch (e) {
-					errors.push(`${s.id}@${frame}: ${(e as Error).message}`);
-				}
-		return errors;
-	},
 	stats: (id: string, over: Record<string, unknown> = {}, o: Opts = {}) => stats(run(id, over, o)),
 	diff: (id: string, a: [Record<string, unknown>, Opts], b: [Record<string, unknown>, Opts]) =>
 		diff(run(id, a[0], a[1]), run(id, b[0], b[1])),
 	pixel: (id: string, over: Record<string, unknown>, o: Opts, x: number, y: number) =>
 		px(run(id, over, o), x, y),
-	png: (id: string, over: Record<string, unknown> = {}, o: Opts = {}) =>
-		run(id, over, o).toDataURL('image/png'),
 };
 
 (window as unknown as { __stc: typeof api }).__stc = api;

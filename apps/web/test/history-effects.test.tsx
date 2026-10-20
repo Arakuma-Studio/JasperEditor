@@ -17,7 +17,7 @@ const effectIds = (s: ReturnType<typeof makeSession>, id: string) =>
 	(clipOf(s, id) as unknown as { effects: { effectId: string }[] }).effects.map((e) => e.effectId);
 
 describe('History panel (S05:HIS-001…003, S01:UND-009)', () => {
-	it('lists labelled entries with agent sparkle, jumps on click and clears with confirmation', () => {
+	it('jumps to the chosen history entry and clears only after confirmation', () => {
 		const session = makeSession();
 		const [id] = addSolids(session, [0], 30);
 		act(() => {
@@ -33,8 +33,6 @@ describe('History panel (S05:HIS-001…003, S01:UND-009)', () => {
 			});
 		});
 		renderWithSession(session, <HistoryPanel instanceId="h1" visible />);
-		const agentRow = screen.getByTestId('history-row-2');
-		expect(agentRow.textContent).toContain('Agent: Fade in title');
 		expect(screen.getByTestId('history-row-3').getAttribute('aria-selected')).toBe('true');
 		const opacity = () => (clipOf(session, id!) as unknown as { opacity: { value: number } }).opacity.value;
 		act(() => {

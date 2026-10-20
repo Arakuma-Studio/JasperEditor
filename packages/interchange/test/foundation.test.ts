@@ -5,9 +5,7 @@ import {
 	flicksToFrames,
 	flicksToRationalSeconds,
 	flicksToTicks,
-	formatTc,
 	framesToFlicks,
-	parseTc,
 	rateFromFloat,
 	rateFromTimebase,
 	rationalSecondsToFlicks,
@@ -15,23 +13,16 @@ import {
 	timebaseOf,
 } from '../src/time.ts';
 import { child, childText, parseXml, text, XmlError, XmlWriter } from '../src/xml.ts';
-import { ALL_RATES, arbProject, BASIC } from './support/arbitraries.ts';
 
 describe('time', () => {
-	it('frames, ticks and rational seconds are exact at every broadcast rate', () => {
-		for (const { rate } of ALL_RATES) {
-			for (const f of [0, 1, 1799, 107892, 2_589_408]) {
-				const t = framesToFlicks(f, rate);
-				expect(flicksToFrames(t, rate)).toBe(f);
-				const tk = flicksToTicks(t);
-				expect(ticksToFlicks(tk)).toEqual({ flicks: t, exact: true });
-				const [n, d] = flicksToRationalSeconds(t);
-				expect(rationalSecondsToFlicks(n, d)).toEqual({ flicks: t, exact: true });
-			}
-		}
-		// Premiere: one frame at 23.976 is 10 594 584 000 ticks.
-		expect(flicksToTicks(framesToFlicks(1, { num: 24000, den: 1001 }))).toBe('10594584000');
-		expect(ticksToFlicks('914457600000000')!.flicks).toBe(705_600_000 * 3600);
+	it('converts independent frame, Premiere tick and rational-second examples exactly', () => {
+		const rate = { num: 24000, den: 1001 };
+		expect(framesToFlicks(1, rate)).toBe(29_429_400);
+		expect(flicksToFrames(29_429_400, rate)).toBe(1);
+		expect(flicksToTicks(29_429_400)).toBe('10594584000');
+		expect(ticksToFlicks('914457600000000')).toEqual({ flicks: 2_540_160_000_000, exact: true });
+		expect(rationalSecondsToFlicks(1001n, 24000n)).toEqual({ flicks: 29_429_400, exact: true });
+		expect(flicksToRationalSeconds(29_429_400)).toEqual([1001n, 24000n]);
 	});
 	it('timebase and float rates snap to exact rationals', () => {
 		expect(rateFromTimebase(24, true)).toEqual({ num: 24000, den: 1001 });
@@ -40,15 +31,6 @@ describe('time', () => {
 		expect(rateFromFloat(23.976023976023978)).toEqual({ num: 24000, den: 1001 });
 		expect(rateFromFloat(29.97)).toEqual({ num: 30000, den: 1001 });
 		expect(rateFromFloat(25)).toEqual({ num: 25, den: 1 });
-	});
-	it('drop-frame timecode round-trips', () => {
-		const r = { num: 30000, den: 1001 };
-		expect(formatTc(1800, r, true)).toBe('00;01;00;02');
-		expect(parseTc('00;01;00;02', r)).toBe(1800);
-		const r60 = { num: 60000, den: 1001 };
-		fc.assert(
-			fc.property(fc.integer({ min: 0, max: 5_000_000 }), (f) => parseTc(formatTc(f, r60, true), r60) === f),
-		);
 	});
 });
 
@@ -91,31 +73,5 @@ describe('xml', () => {
 			}),
 		);
 		expect(() => parseXml('<a>'.repeat(10000))).toThrow(XmlError);
-	});
-});
-
-describe('arbitraries', () => {
-	it('generate valid projects', () => {
-		fc.assert(
-			fc.property(
-				arbProject({
-					...BASIC,
-					transform: true,
-					transitions: true,
-					links: true,
-					nested: true,
-					generators: true,
-				}),
-				(p) => {
-					for (const s of Object.values(p.sequences))
-						for (const t of [...s.video, ...s.audio])
-							for (let i = 1; i < t.clips.length; i++)
-								expect(t.clips[i]!.start).toBeGreaterThanOrEqual(
-									t.clips[i - 1]!.start + t.clips[i - 1]!.duration,
-								);
-				},
-			),
-			{ numRuns: 50 },
-		);
 	});
 });

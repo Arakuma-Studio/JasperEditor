@@ -76,7 +76,7 @@ function formatBytes(n: number | null | undefined): string {
 }
 
 /** One line per feature block of the capabilities (its `status`, else what it reports). */
-export function featureRows(features: EngineCapabilities['features']): [string, string][] {
+function featureRows(features: EngineCapabilities['features']): [string, string][] {
 	const out: [string, string][] = [];
 	for (const [key, value] of Object.entries(features ?? {})) {
 		if (!value || typeof value !== 'object') continue;

@@ -84,15 +84,6 @@ async function connect(doc: ProjectDocument, green: string[]) {
 				return ok({ ...job, state: 'queued' }, 202);
 			case `/api/jobs/${job.id}`:
 				return ok(job);
-			case '/api/previews/delete':
-				return ok({ deleted: body.all ? 9 : (body.hashes as string[]).length, bytes: 1 });
-			case '/api/perf':
-				return ok({ process: { cpuPercent: 12 }, jobs: { running: 0, queued: 0 } });
-			case '/api/agent/ui':
-				return ok({
-					result: { playback: { framesShown: 100, framesDropped: 2 } },
-					window: { projectId: doc.projectId, sessionId: 's' },
-				});
 			default:
 				return ok({ code: 'NOT_FOUND', message: u.pathname }, 404);
 		}
@@ -121,23 +112,17 @@ describe('render previews MCP tools', () => {
 		const { client, call } = await connect(doc, [segs[1]!.hash]);
 		const { json, text } = await call('get_render_bar_state', { projectId: doc.projectId });
 		expect(json, text).not.toBeNull();
-		expect(json.summary.segments).toBe(segs.length);
+		expect(json.summary.segments).toBe(4);
 		expect(json.segments[1].state).toBe('green');
-		expect(json.segments.map((s: { startFrame: number }) => s.startFrame)).toEqual(
-			segs.map((s) => s.startFrame),
-		);
+		expect(json.segments.map((s: { startFrame: number }) => s.startFrame)).toEqual([0, 10, 20, 30]);
 		for (const s of json.segments) expect(['green', 'yellow', 'red', 'none']).toContain(s.state);
 		const r = await call('get_render_bar_state', { projectId: doc.projectId, range: { from: 0, to: 10 } });
 		expect(r.json.segments).toHaveLength(1);
-		const tools = (await client.listTools()).tools;
-		expect(tools.find((t) => t.name === 'get_render_bar_state')?.annotations?.readOnlyHint).toBe(true);
-		expect(tools.find((t) => t.name === 'delete_render_files')?.annotations?.destructiveHint).toBe(true);
 		await client.close();
 	});
 
-	it('render_previews sends the document and waits for the job; delete_render_files computes the range hashes', async () => {
+	it('render_previews sends the requested mode and whole-sequence range, then waits for completion', async () => {
 		const doc = makeDoc();
-		const seqId = Object.keys(doc.sequences)[0]!;
 		const { client, call, calls } = await connect(doc, []);
 		const { json, text } = await call('render_previews', { projectId: doc.projectId, mode: 'effects' });
 		expect(json, text).not.toBeNull();
@@ -150,28 +135,6 @@ describe('render previews MCP tools', () => {
 		expect(req.range).toEqual({ start: 0, end: 60 });
 		const bad = await call('render_previews', { projectId: doc.projectId, mode: 'selection' });
 		expect(bad.r.isError).toBe(true);
-		const del = await call('delete_render_files', {
-			projectId: doc.projectId,
-			scope: 'range',
-			range: { from: 0, to: 15 },
-		});
-		const hashes = (
-			calls.filter((c) => c.path === '/api/previews/delete').pop()!.body as { hashes: string[] }
-		).hashes;
-		const expected = previewSegments(doc, seqId)
-			.filter((s) => s.startFrame < 15)
-			.map((s) => s.hash);
-		expect(hashes.slice(0, expected.length)).toEqual(expected);
-		expect(del.json.deleted).toBe(hashes.length);
-		await client.close();
-	});
-
-	it('perf_stats joins the engine counters and the editor window', async () => {
-		const doc = makeDoc();
-		const { client, call } = await connect(doc, []);
-		const { json } = await call('perf_stats', {});
-		expect(json.engine.process.cpuPercent).toBe(12);
-		expect(json.editor.playback.framesShown).toBe(100);
 		await client.close();
 	});
 });

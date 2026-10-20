@@ -37,7 +37,7 @@ import {
 export const GLOW_GAIN = 0.1;
 
 /** Glow σ (frame px, x / y) of the wide component for a Sapphire glow width, mixed between the two sides' widths. */
-export function glowSigma(p: EffectParams, width: number, mix: number, widthName = 'glowWidth', def = 0.4) {
+function glowSigma(p: EffectParams, width: number, mix: number, widthName = 'glowWidth', def = 0.4) {
 	const w = Math.max(0, num(p[widthName], def)) * SAPPHIRE_GLOW_UNIT * width;
 	const rel = num(p.relFromWidth, 1) * (1 - mix) + num(p.relToWidth, 1) * mix;
 	return [w * Math.max(0, num(p.widthX, 1)) * rel, w * Math.max(0, num(p.widthY, 1)) * rel] as [
@@ -392,7 +392,7 @@ const leakElementParams = (i: number, d: LeakDefaults) =>
 	]);
 
 /** Size factor of the light-leak elements at timing t (Transition Scale Mode between Elements Min / Max Size). */
-export function leakScale(p: EffectParams, t: number, env: number): number {
+function leakScale(p: EffectParams, t: number, env: number): number {
 	const lo = Math.max(0, num(p.elementsMinSize, 1));
 	const hi = Math.max(0, num(p.elementsMaxSize, 4.9));
 	switch (p.transitionScaleMode) {
@@ -408,7 +408,7 @@ export function leakScale(p: EffectParams, t: number, env: number): number {
 }
 
 /** Per-element uniforms of a frame: position (frame px), radii (px), brightness, colours, noise. */
-export function leakUniforms(
+function leakUniforms(
 	p: EffectParams,
 	ctx: { width: number; height: number; time: number; t: number; env: number; seed: number },
 ) {

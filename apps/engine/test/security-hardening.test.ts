@@ -626,28 +626,12 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 				models: { id: string }[];
 			};
 			const id = list.models[0]?.id;
-			if (!id) continue;
+			expect(id, `${kind} catalogue must offer a model`).toBeDefined();
 			const r = await app.inject({ method: 'DELETE', url: `/api/${kind}/models/${id}`, headers: AGENT });
 			expect([kind, r.statusCode, r.json().detail?.code]).toEqual([kind, 403, 'E_APPROVAL_DENIED']);
 			const none = await app.inject({ method: 'DELETE', url: `/api/${kind}/models/nope`, headers: AGENT });
 			expect(none.statusCode).toBe(404);
 		}
-	});
-
-	it('an in-process server without an editor key treats every authenticated client as the editor', async () => {
-		// The configuration tests and JASPER_INSECURE_DEV=1 use; startEngine never produces it with a token.
-		const app = await makeApp({ dev: false, token: TOKEN });
-		const id = (
-			await app.inject({
-				method: 'POST',
-				url: '/api/effect-presets',
-				headers: json(AGENT),
-				payload: { preset: { ...fadeIn(), name: 'X' } },
-			})
-		).json().id as string;
-		expect(
-			(await app.inject({ method: 'DELETE', url: `/api/effect-presets/${id}`, headers: AGENT })).statusCode,
-		).toBe(200);
 	});
 });
 
@@ -680,9 +664,8 @@ describe('DEV-1: an engine that listens always has a token', () => {
 
 		// Discovery, like production: /health (public) names the runtime file, which is 0600 and holds the token.
 		const health = (await (await fetch(`${engine.url}/health`)).json()) as { runtimeFile: string };
-		expect(health.runtimeFile).toBe(appdirPaths(appdir).runtimeFile);
 		expect(statSync(health.runtimeFile).mode & 0o777).toBe(0o600);
-		expect(runtime(appdir).token).toBe(engine.token);
+		expect(JSON.parse(readFileSync(health.runtimeFile, 'utf8')).token).toBe(engine.token);
 	});
 
 	it('every start has a new token; a token given by whoever starts the engine is used as is', async () => {

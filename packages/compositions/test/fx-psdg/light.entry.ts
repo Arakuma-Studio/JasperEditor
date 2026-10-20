@@ -27,7 +27,6 @@ const api = {
 		});
 		const b = layout.box;
 		return {
-			canvas: [layout.width, layout.height],
 			core: px(out, b.x + 32, b.y + 18),
 			near: px(out, b.x + 40, b.y + 18),
 			darkCorner: px(out, b.x + 1, b.y + 1),

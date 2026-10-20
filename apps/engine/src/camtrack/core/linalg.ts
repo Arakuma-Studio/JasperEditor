@@ -2,7 +2,7 @@
 // `crates/track/src/camtrack/linalg.rs` (MIT OR Apache-2.0; licenses/ported/three-d.md), from the textbook methods:
 // 3-vectors / 3×3 matrices and rotations (Rodrigues' formula and its inverse); the one-sided Jacobi SVD (Hestenes 1958;
 // Golub & Van Loan §8.6.4); the cyclic Jacobi eigenvalue method (Golub & Van Loan §8.5); Cholesky for the bundle
-// adjustment's normal equations; the closed-form similarity alignment of two point sets (Umeyama, PAMI 1991).
+// adjustment's normal equations.
 
 export type V3 = [number, number, number];
 export type M3 = [V3, V3, V3];
@@ -315,41 +315,4 @@ export function choleskySolve(a: Float64Array, n: number, b: Float64Array): bool
 	}
 	for (let i = 0; i < n; i++) if (!Number.isFinite(b[i]!)) return false;
 	return true;
-}
-
-/** A similarity `x ↦ s R x + t`. */
-export type Similarity = { s: number; r: M3; t: V3 };
-
-/** The similarity minimising Σ |dst − (s R src + t)|² (Umeyama 1991). */
-export function umeyama(src: V3[], dst: V3[]): Similarity | null {
-	const n = Math.min(src.length, dst.length);
-	if (n < 3) return null;
-	const k = 1 / n;
-	let ms: V3 = [0, 0, 0];
-	let md: V3 = [0, 0, 0];
-	for (let i = 0; i < n; i++) {
-		ms = add(ms, src[i]!);
-		md = add(md, dst[i]!);
-	}
-	ms = scale(ms, k);
-	md = scale(md, k);
-	let cov: M3 = [
-		[0, 0, 0],
-		[0, 0, 0],
-		[0, 0, 0],
-	];
-	let variance = 0;
-	for (let i = 0; i < n; i++) {
-		const a = sub(src[i]!, ms);
-		const b = sub(dst[i]!, md);
-		cov = madd(cov, outer(b, a), k);
-		variance += dot(a, a) * k;
-	}
-	if (variance < 1e-300) return null;
-	const { u, s: d, v } = svd3(cov);
-	const sgn: V3 = [1, 1, det3(u) * det3(v) < 0 ? -1 : 1];
-	const ud = fromCols(scale(col(u, 0), sgn[0]), scale(col(u, 1), sgn[1]), scale(col(u, 2), sgn[2]));
-	const r = mm(ud, mt(v));
-	const s = (d[0] * sgn[0] + d[1] * sgn[1] + d[2] * sgn[2]) / variance;
-	return { s, r, t: sub(md, scale(mv(r, ms), s)) };
 }

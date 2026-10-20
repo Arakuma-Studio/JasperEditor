@@ -1,7 +1,7 @@
 // Freeze maps output frames to a reordered scene frame sequence on one renderer page,
 // exposing state that persists between seeks.
-import type { ComponentType } from 'react';
-import { Composition, Freeze, registerRoot, useCurrentFrame } from 'remotion';
+import { type ComponentType, useEffect, useState } from 'react';
+import { Composition, continueRender, delayRender, Freeze, registerRoot, useCurrentFrame } from 'remotion';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
 import { PARITY_SCENE, parityDoc } from './doc.ts';
 import { reversedOrder, shuffledOrder } from './order.ts';
@@ -29,6 +29,18 @@ const COMPONENTS: [id: string, component: ComponentType<ParityProps>][] = [];
 for (const [suffix, order] of ORDERS)
 	COMPONENTS.push([`Sequence${suffix}`, order ? ordered(SequenceComposition, order) : SequenceComposition]);
 
+function RegistrationReady() {
+	const [handle] = useState(() => delayRender('Waiting for parity composition registration'));
+	const [committed, setCommitted] = useState(false);
+	// Composition registers in passive effects. This last sibling queues a subsequent commit;
+	// releasing in the mount effect can expose only the first eagerly registered composition.
+	useEffect(() => setCommitted(true), []);
+	useEffect(() => {
+		if (committed) continueRender(handle);
+	}, [committed, handle]);
+	return null;
+}
+
 function Root() {
 	return (
 		<>
@@ -47,6 +59,7 @@ function Root() {
 					}}
 				/>
 			))}
+			<RegistrationReady />
 		</>
 	);
 }

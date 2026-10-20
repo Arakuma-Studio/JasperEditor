@@ -1,5 +1,5 @@
 // Processor registry: effect id → factory (one family file per catalogue family, same names as
-// packages/project/src/registry/audio/*). Every catalogue entry has exactly one processor (tested).
+// packages/project/src/registry/audio/*).
 import type { AudioProcessor, ProcessorFactory } from './core/effect.ts';
 import { DELAY_MODULATION_PROCESSORS } from './effects/delay-modulation.ts';
 import { DYNAMICS_PROCESSORS } from './effects/dynamics.ts';

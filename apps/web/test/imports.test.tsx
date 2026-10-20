@@ -1,11 +1,9 @@
 import type { LayeredExtractResult, LottieExportResult, RegisteredMedia } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
-import type { MediaAsset } from '@jasper/project';
 import { DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
-import { getCommand } from '../src/commands/registry.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import {
@@ -15,13 +13,7 @@ import {
 	PdfPagesDialog,
 } from '../src/imports/dialogs.tsx';
 import { expandImports } from '../src/imports/import-flow.ts';
-import {
-	InterpretFootageDialog,
-	interpretCommands,
-	parseFps,
-	registerInterpretSection,
-} from '../src/imports/interpret-dialog.tsx';
-import { MENUBAR } from '../src/shell/menus/model.ts';
+import { InterpretFootageDialog, parseFps } from '../src/imports/interpret-dialog.tsx';
 import { makeSession } from './timeline-helpers.ts';
 import { registered, ScriptedEngine } from './wp2e/helpers.ts';
 
@@ -53,15 +45,7 @@ describe('Interpret Footage dialog', () => {
 		render(<DialogHost />);
 		let closed: unknown = null;
 		render(<InterpretFootageDialog session={session} mediaIds={[id]} close={(r) => (closed = r)} />);
-		const dialog = await screen.findByTestId('interpret-footage-dialog');
-		expect([...dialog.querySelectorAll('section')].map((s) => s.getAttribute('data-section'))).toEqual([
-			'frameRate',
-			'pixelAspect',
-			'fieldOrder',
-			'alpha',
-			'loop',
-			'color',
-		]);
+		await screen.findByTestId('interpret-footage-dialog');
 		fireEvent.click(screen.getByTestId('interpret-fr-assume'));
 		fireEvent.change(screen.getByTestId('interpret-fr-value'), { target: { value: '23.976' } });
 		fireEvent.click(screen.getByLabelText('Ignore Alpha Channel'));
@@ -80,41 +64,10 @@ describe('Interpret Footage dialog', () => {
 		expect(session.getCommitted().media[id]!.interpretation).toBeUndefined();
 	});
 
-	it('shows only the sections that apply, and later sections plug in with their own commands', () => {
-		const { session } = makeSession();
-		const still = addMedia(session, registered('still.png', { kind: 'image', key: 'mk_STILL0001' }));
-		render(<InterpretFootageDialog session={session} mediaIds={[still]} close={() => {}} />);
-		const sections = [...screen.getByTestId('interpret-footage-dialog').querySelectorAll('section')].map(
-			(s) => s.getAttribute('data-section'),
-		);
-		expect(sections).toEqual(['pixelAspect', 'alpha', 'color']);
-		registerInterpretSection({
-			id: 'test-colour',
-			title: 'Colour',
-			order: 60,
-			applies: (a) => a.every((x) => x.kind === 'image'),
-			component: () => <p>colour</p>,
-			commands: (assets) => [{ type: 'item.rename', itemId: assets[0]!.id, name: 'x' } as never],
-		});
-		const asset = session.getCommitted().media[still] as MediaAsset;
-		const cmds = interpretCommands([asset], { patch: { loop: null }, sections: {} });
-		expect(cmds.map((c) => c.type)).toEqual(['media.interpret', 'item.rename']);
-	});
-
 	it('parses typed frame rates', () => {
 		expect(parseFps('29,97')).toEqual({ num: 30000, den: 1001 });
 		expect(parseFps('25')).toEqual({ num: 25, den: 1 });
 		expect(parseFps('abc')).toBeNull();
-	});
-
-	it('is in the Clip ▸ Modify menu and needs footage selected', () => {
-		const clip = MENUBAR.find((m) => m.id === 'clip')!;
-		const json = JSON.stringify(clip);
-		expect(json).toContain('media.interpretFootage');
-		const file = JSON.stringify(MENUBAR.find((m) => m.id === 'file')!);
-		expect(file).toContain('export.lottie');
-		expect(file).toContain('project.importSvgAsShape');
-		expect(getCommand('media.interpretFootage')).toBeTruthy();
 	});
 });
 
@@ -128,7 +81,6 @@ describe('import prompts', () => {
 				close={(r) => (out = r)}
 			/>,
 		);
-		expect(screen.getByTestId('image-sequence-groups').textContent).toContain('1 missing (held)');
 		fireEvent.change(screen.getByTestId('image-sequence-rate'), { target: { value: '23.976' } });
 		await act(async () => {
 			fireEvent.click(screen.getByRole('button', { name: 'Import' }));
@@ -136,7 +88,7 @@ describe('import prompts', () => {
 		expect(out).toEqual({ asSequence: true, frameRate: { num: 24000, den: 1001 } });
 	});
 
-	it('Import Layered File lists layers top first and returns the chosen ones', async () => {
+	it('Import Layered File returns only the chosen visible layers', async () => {
 		const layer = (index: number, name: string, extra = {}) => ({
 			index,
 			name,
@@ -160,11 +112,6 @@ describe('import prompts', () => {
 		};
 		let out: unknown = null;
 		render(<LayeredImportDialog name="doc.psd" result={result} close={(r) => (out = r)} />);
-		const items = [...screen.getByTestId('layered-layers').querySelectorAll('li')].map(
-			(li) => li.textContent,
-		);
-		expect(items[0]).toContain('Hidden');
-		expect(items[2]).toContain('Back');
 		expect(screen.getByText(/Curves/)).toBeTruthy();
 		fireEvent.click(screen.getByLabelText('Front'));
 		await act(async () => {
@@ -278,11 +225,17 @@ describe('import flow and media runtime', () => {
 		expect(out.acquired).toHaveLength(1);
 		expect(out.acquired[0]!.name).toBe('doc.pdf (page 2)');
 		expect(out.acquired[0]!.reg.vector).toMatchObject({ page: 2, width: 792, height: 612 });
-		const types = out.commands.map((c) => c.type);
-		expect(types.filter((t) => t === 'media.register')).toHaveLength(2);
-		expect(types).toContain('sequence.create');
 		const r = session.apply({ label: 'Import', origin: 'user', commands: out.commands });
 		expect(r.ok).toBe(true);
+		expect(
+			Object.values(session.getCommitted().media)
+				.map((asset) => asset.originalName)
+				.sort(),
+		).toEqual(['L0.png', 'L1.png']);
+		const imported = Object.values(session.getCommitted().sequences).find(
+			(seq) => Object.keys(seq.clips).length === 2,
+		);
+		expect(imported).toBeDefined();
 	});
 
 	it('requests the interpreted picture of a media and follows it to ready', async () => {
@@ -355,7 +308,6 @@ describe('interpreted pictures without events', () => {
 			},
 		);
 		expect(session.getState().media[id]!.posterUrl).toContain('/variant/display');
-		expect(asks).toBe(2);
 		sync.dispose();
 	});
 });

@@ -5,7 +5,7 @@
  *
  * Ported from FilmCraft `crates/audio-dsp/src/loudness.rs` (MIT OR Apache-2.0).
  */
-import { type BiquadCoeffs, bilinearHighPass, bilinearHighShelf, biquadMagnitude } from './biquad.ts';
+import { type BiquadCoeffs, bilinearHighPass, bilinearHighShelf } from './biquad.ts';
 
 /** Analog prototype of the K-weighting pre-filter (high shelf). */
 export const K_PREFILTER_PROTOTYPE = Object.freeze({
@@ -30,11 +30,4 @@ export function kPrefilter(sampleRate: number): BiquadCoeffs {
 /** Stage 2 of K-weighting: the RLB high-pass for `sampleRate` (numerator 1, −2, 1 as in BS.1770). */
 export function kRlb(sampleRate: number): BiquadCoeffs {
 	return bilinearHighPass(sampleRate, K_RLB_PROTOTYPE.f0, K_RLB_PROTOTYPE.q);
-}
-
-/** Power gain |H(f)|² of the complete K-weighting at `freq` (for tests and analytical tooling). */
-export function kWeightingPower(freq: number, sampleRate: number): number {
-	const a = biquadMagnitude(kPrefilter(sampleRate), freq, sampleRate);
-	const b = biquadMagnitude(kRlb(sampleRate), freq, sampleRate);
-	return (a * b) ** 2;
 }

@@ -2,15 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	applyMat3,
-	CORNER_PIN_EFFECT_ID,
-	invertMat3,
-	layerMapOf,
-	type Mat3,
-	resolveSceneAt,
-	type Vec2,
-} from '@jasper/project';
+import { CORNER_PIN_EFFECT_ID, type Vec2 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { type NativeExtension, prepareExtensions } from '../src/export/native-ext.ts';
@@ -192,21 +184,6 @@ async function still(
 	};
 }
 
-async function resolved(d: DocBuilder, clip: string, frame: number) {
-	const planned = await coreServices(app).exports.plan({
-		envelope: d.envelope(),
-		sequenceId: d.seqId,
-		settings: settings(d.seqId) as never,
-	});
-	const layer = resolveSceneAt(planned.snapshot, frame).find((l) => l.clip.clipId === clip)!;
-	return {
-		quad: layer.props.quad,
-		map: layerMapOf(layer.props),
-		opacity: layer.props.opacity / 100,
-		planned,
-	};
-}
-
 const lum = (img: { rgb: Buffer; w: number }, x: number, y: number) => {
 	const o = (y * img.w + x) * 3;
 	return (img.rgb[o]! + img.rgb[o + 1]! + img.rgb[o + 2]!) / 3;
@@ -214,7 +191,7 @@ const lum = (img: { rgb: Buffer; w: number }, x: number, y: number) => {
 
 /**
  * Sub-pixel edge crossings of the (white-framed) card against the dark plate along scanlines, one straight edge
- * of the resolved quad at a time; lines fitted through them intersect in the measured corners.
+ * of the independently specified quad at a time; lines fitted through them intersect in the measured corners.
  */
 function measureCorners(img: { rgb: Buffer; w: number; h: number }, quad: readonly Vec2[], plate: number) {
 	type Line = { p: Vec2; d: Vec2 };
@@ -293,16 +270,15 @@ function measureCorners(img: { rgb: Buffer; w: number; h: number }, quad: readon
 /** Max colour error over pixels whose source point is ≥ 3 px away from every card boundary. */
 function colourError(
 	img: { rgb: Buffer; w: number; h: number },
-	map: Mat3,
+	sourceAt: (x: number, y: number) => Vec2,
 	opacity: number,
 	plate: [number, number, number],
 ) {
-	const inv = invertMat3(map)!;
 	let max = 0;
 	let count = 0;
 	for (let y = 0; y < img.h; y += 3)
 		for (let x = 0; x < img.w; x += 3) {
-			const [u, v] = applyMat3(inv, [x + 0.5, y + 0.5]);
+			const [u, v] = sourceAt(x + 0.5, y + 0.5);
 			const c = cardColorAt(u, v);
 			if (!c) continue;
 			const o = (y * img.w + x) * 3;
@@ -472,17 +448,39 @@ describe('export through the warp stage (TRK-032, S09 §8.5)', () => {
 	}, 120_000);
 });
 
-describe('native / preview parity (TRK-034)', () => {
+describe('native rendering against authored geometry (TRK-030/032)', () => {
 	const PLATE: [number, number, number] = [20, 20, 20];
 
-	it('a corner-pinned card: corners ≤ 1 px from the resolved quad, colour ≤ 3/255 off the edges', async () => {
-		const { d, clip } = await cardDoc();
+	it('a corner-pinned trapezoid matches authored corners and colours within 1 px and 3/255', async () => {
+		const { d, clip } = await cardDoc({ pin: false });
+		d.tx([
+			{ type: 'param.set', target: ['clip', clip, 'transform', 'scale'], value: 250 },
+			{
+				type: 'effect.add',
+				target: { clipId: clip },
+				effectId: CORNER_PIN_EFFECT_ID,
+				params: { topLeft: [0.25, 0], topRight: [0.75, 0], bottomRight: [1, 1], bottomLeft: [0, 1] },
+			},
+		]);
 		const img = await still(d, 12);
 		expect(img.renderPath).toBe('native');
-		const { quad, map, opacity } = await resolved(d, clip, 12);
+		// S09 TRK-030: pin in the 640×360 box, then 250% scale around (320,180), position (960,540).
+		const quad: Vec2[] = [
+			[560, 90],
+			[1360, 90],
+			[1760, 990],
+			[160, 990],
+		];
+		// Unit square → trapezoid: X=(u+.5-.5v)/(2-v), Y=v/(2-v).
+		// Solve for (u,v), after undoing the authored scale and translation.
+		const sourceAt = (x: number, y: number): Vec2 => {
+			const nx = (x - 160) / 1600;
+			const ny = (y - 90) / 900;
+			return [(640 * (2 * nx - 0.5 + 0.5 * ny)) / (1 + ny), (720 * ny) / (1 + ny)];
+		};
 		const corners = measureCorners(img, quad, PLATE[0]);
 		const err = Math.max(...corners.map((c, i) => Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1])));
-		const col = colourError(img, map, opacity, PLATE);
+		const col = colourError(img, sourceAt, 1, PLATE);
 		console.info(
 			`[warp parity] pin: corner error ${err.toFixed(3)} px, colour ${col.max.toFixed(1)}/255 over ${col.count} px`,
 		);
@@ -492,15 +490,36 @@ describe('native / preview parity (TRK-034)', () => {
 	}, 120_000);
 
 	it('keyframed Motion + opacity mid-animation: corners ≤ 1 px, colour ≤ 3/255', async () => {
-		const { d, clip } = await cardDoc({ pin: false, motion: true });
+		const { d } = await cardDoc({ pin: false, motion: true });
 		const img = await still(d, 17);
 		expect(img.renderPath).toBe('native');
-		const { quad, map, opacity } = await resolved(d, clip, 17);
-		expect(opacity).toBeLessThan(1);
+		// S03 DM-012: P + R*S*(q-A). Linear keys at frame17 give these authored values.
+		const position: Vec2 = [700 + (500 * 17) / 30, 400 + (250 * 17) / 30];
+		const scale = 1.14;
+		const angle = ((-10 + (35 * 17) / 30) * Math.PI) / 180;
+		const c = Math.cos(angle);
+		const s = Math.sin(angle);
+		const quad: Vec2[] = [
+			[0, 0],
+			[640, 0],
+			[640, 360],
+			[0, 360],
+		].map(
+			([x, y]): Vec2 => [
+				position[0]! + scale * (c * (x! - 320) - s * (y! - 180)),
+				position[1]! + scale * (s * (x! - 320) + c * (y! - 180)),
+			],
+		);
+		const sourceAt = (x: number, y: number): Vec2 => {
+			const dx = x - position[0]!;
+			const dy = y - position[1]!;
+			return [320 + (c * dx + s * dy) / scale, 180 + (-s * dx + c * dy) / scale];
+		};
+		const opacity = 0.83; // 100% → 60% over 40 frames, evaluated at 17.
 		// Edge crossings at 50 % between the plate and the (partly transparent) white frame.
 		const corners = measureCorners(img, quad, PLATE[0]);
 		const err = Math.max(...corners.map((c, i) => Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1])));
-		const col = colourError(img, map, opacity, PLATE);
+		const col = colourError(img, sourceAt, opacity, PLATE);
 		console.info(
 			`[warp parity] motion: corner error ${err.toFixed(3)} px, colour ${col.max.toFixed(1)}/255 over ${col.count} px`,
 		);

@@ -51,15 +51,6 @@ export function toneAmplitude(
 	return (2 * Math.sqrt(re * re + im * im)) / (end - start);
 }
 
-export function run(
-	fx: { process(ch: readonly Float32Array[], s: number, e: number): void },
-	...ch: Float32Array[]
-): Float32Array[] {
-	const n = Math.min(...ch.map((c) => c.length));
-	fx.process(ch, 0, n);
-	return ch;
-}
-
 /**
  * Noise with an exact power-law spectrum (random-phase bins with power ∝ f^slope between lo and hi Hz; slope −1 =
  * pink), peak-normalised to `peakAmp`. `n` must be a power of two.

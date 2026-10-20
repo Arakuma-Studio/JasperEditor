@@ -95,7 +95,7 @@ describe('interpretation model', () => {
 		expect(mediaPixelVariant(a)).toBe('fo=upper');
 	});
 
-	it('pixel variant keys round-trip (property)', () => {
+	it('pixel variant keys preserve interpretation and safely parse arbitrary text (properties)', () => {
 		const unit = fc.integer({ min: 0, max: 255 }).map((v) => v / 255);
 		const interp: fc.Arbitrary<PixelInterpretation> = fc.record(
 			{
@@ -110,16 +110,29 @@ describe('interpretation model', () => {
 		);
 		fc.assert(
 			fc.property(interp, (p) => {
-				const key = pixelVariantKey(p);
-				const back = parsePixelVariant(key);
-				expect(pixelVariantKey(back)).toBe(key);
+				const back = parsePixelVariant(pixelVariantKey(p));
+				expect(back?.deinterlace ?? null).toBe(p.deinterlace ?? null);
+				expect(back?.alpha?.mode ?? 'straight').toBe(p.alpha?.mode ?? 'straight');
+				expect(back?.alpha?.invert ?? false).toBe(p.alpha?.invert ?? false);
+				if (p.alpha?.mode === 'premultiplied') expect(back?.alpha?.matte).toEqual(p.alpha.matte);
 			}),
 		);
 		fc.assert(
-			fc.property(fc.string({ maxLength: 100 }), (s) => {
-				const p = parsePixelVariant(s);
-				if (p) expect(pixelVariantKey(p)).toBe(s);
+			fc.property(fc.string({ maxLength: 256 }), (text) => {
+				const parsed = parsePixelVariant(text);
+				if (parsed === null) return;
+				expect(parsed).toBeTypeOf('object');
+				expect(Array.isArray(parsed)).toBe(false);
+				expect([undefined, 'upper', 'lower']).toContain(parsed.deinterlace);
+				if (parsed.alpha !== undefined) {
+					expect(['straight', 'premultiplied', 'ignore']).toContain(parsed.alpha.mode);
+					expect(parsed.alpha.invert).toBeTypeOf('boolean');
+					expect(parsed.alpha.matte).toHaveLength(3);
+					for (const channel of parsed.alpha.matte)
+						expect(Number.isFinite(channel) && channel >= 0 && channel <= 1).toBe(true);
+				}
 			}),
+			{ examples: [['fo=upper'], ['a=premultiplied;m=ff0080;inv=1']] },
 		);
 		expect(parsePixelVariant('fo=upper;fo=lower')).toBeNull();
 		expect(parsePixelVariant('a=premultiplied;m=zzzzzz')).toBeNull();

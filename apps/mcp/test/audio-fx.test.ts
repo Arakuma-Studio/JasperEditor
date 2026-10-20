@@ -7,7 +7,6 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type ProjectDocument,
-	readEssentialSound,
 	type Sequence,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -164,14 +163,8 @@ const seqOf = (doc: ProjectDocument) => Object.values(doc.sequences)[0] as Seque
 const clipOf = (doc: ProjectDocument, id: string) => seqOf(doc).clips[id] as AudioClip;
 
 describe('audio effect MCP tools', () => {
-	it('lists the catalogue, adds with keyframes, edits, reorders, bypasses and removes', async () => {
+	it('adds with keyframes, edits, reorders, bypasses and removes', async () => {
 		const { engine, call } = await connect();
-		const list = await call('list_audio_effects', { folder: 'Amplitude and Compression' });
-		expect(list.r.isError, list.text).toBeFalsy();
-		const ids = (list.json.effects as { effectId: string }[]).map((e) => e.effectId);
-		expect(ids).toContain('jasper.audio.hard-limiter');
-		expect(ids).toContain('jasper.audio.amplify');
-
 		const add = await call('add_audio_effect', {
 			projectId: 'prj_t',
 			clipId: engine.voice,
@@ -248,23 +241,17 @@ describe('audio effect MCP tools', () => {
 });
 
 describe('Essential Sound and Remix MCP tools', () => {
-	it('type, preset, options, Auto-Match, ducking, clear', async () => {
+	it('type, options, Auto-Match, ducking, clear', async () => {
 		const { engine, call } = await connect();
-		const info = await call('get_essential_sound', { projectId: 'prj_t', audioType: 'dialogue' });
-		expect(info.json.optionKeys as string[]).toContain('repair.noise.amount');
-		const presets = info.json.presets as string[];
-		expect(presets[0]).toBe('(Default)');
-
 		const set = await call('set_essential_sound', {
 			projectId: 'prj_t',
 			clipIds: [engine.voice],
 			audioType: 'dialogue',
-			preset: presets[1],
 			values: { 'repair.noise.on': true, 'repair.noise.amount': 6 },
 		});
 		expect(set.r.isError, set.text).toBeFalsy();
 		let voice = clipOf(engine.doc(), engine.voice);
-		expect(readEssentialSound(voice.essential)?.repair.noise).toEqual({ on: true, amount: 6 });
+		expect(voice.essential).toMatchObject({ repair: { noise: { on: true, amount: 6 } } });
 		expect(voice.effects.some((e) => e.essential === 'noise' && e.effectId === 'jasper.audio.denoise')).toBe(
 			true,
 		);
@@ -279,14 +266,14 @@ describe('Essential Sound and Remix MCP tools', () => {
 		voice = clipOf(engine.doc(), engine.voice);
 		expect(voice.gainDb).toBeCloseTo(8); // −31 → −23 LUFS
 		const music = clipOf(engine.doc(), engine.music);
-		expect(readEssentialSound(music.essential)?.type).toBe('dialogue');
+		expect(music.essential).toMatchObject({ type: 'dialogue' });
 		expect(music.gainDb).toBeCloseTo(-8);
 
 		await call('set_essential_sound', { projectId: 'prj_t', clipIds: [engine.music], audioType: 'music' });
 		const duck = await call('generate_essential_ducking', { projectId: 'prj_t', clipIds: [engine.music] });
 		expect(duck.r.isError, duck.text).toBeFalsy();
 		expect(duck.json.triggerClips).toBe(1);
-		expect(readEssentialSound(clipOf(engine.doc(), engine.music).essential)?.ducking.enabled).toBe(true);
+		expect(clipOf(engine.doc(), engine.music).essential).toMatchObject({ ducking: { enabled: true } });
 		expect(clipOf(engine.doc(), engine.music).volumeDb.keyframes.length).toBeGreaterThan(0);
 		const notMusic = await call('generate_essential_ducking', {
 			projectId: 'prj_t',

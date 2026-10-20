@@ -8,15 +8,11 @@ import {
 	DEFAULT_SCOPE_PARAMS,
 	histogram,
 	paintGrids,
-	paintVectorscope,
 	parade,
 	paradeTypeFromName,
 	readScopes,
 	redAngle,
 	rgbToYcbcr,
-	rowOf,
-	SCOPE_KIND_LABELS,
-	SCOPE_KINDS,
 	type ScopeGrid,
 	type ScopeMatrix,
 	type ScopeSignal,
@@ -28,8 +24,6 @@ import {
 	signalFromFn,
 	signalFromRgba8,
 	traceColumns,
-	VECTOR_EXTENT,
-	vectorCell,
 	vectorPeaks,
 	vectorscopeHls,
 	vectorscopeYuv,
@@ -91,8 +85,8 @@ describe('scopes maths (FilmCraft port)', () => {
 		const n = 64 * 36;
 		expect(h.samples).toBe(n);
 		expect([h.r[200], h.g[100], h.b[50]]).toEqual([n, n, n]);
-		const [y] = rgbToYcbcr(200 / 255, 100 / 255, 50 / 255, 'bt709');
-		expect(h.y[Math.round(y * 255)]).toBe(n);
+		// BT.709: 0.2126×200 + 0.7152×100 + 0.0722×50 = 117.65.
+		expect(h.y[118]).toBe(n);
 		expect([h.below, h.above]).toEqual([
 			[0, 0, 0, 0],
 			[0, 0, 0, 0],
@@ -119,7 +113,7 @@ describe('scopes maths (FilmCraft port)', () => {
 		for (const t of w.traces) for (let x = 0; x < 256; x++) expect(rowsIn(t, x)).toEqual([x]);
 	});
 
-	it('colour bars: parade levels and vectorscope targets for every matrix', () => {
+	it('colour bars have exact RGB parade levels', () => {
 		const s = bars();
 		const par = parade(s, 'rgb');
 		['R', 'G', 'B'].forEach((name, ch) => {
@@ -133,22 +127,6 @@ describe('scopes maths (FilmCraft port)', () => {
 		});
 		expect(parade(s, 'rgbWhite').traces.map((t) => t.name)).toEqual(['R', 'G', 'B', 'Y']);
 		expect(parade(s, 'yuv').traces.map((t) => t.name)).toEqual(['Y', 'Cb', 'Cr']);
-		for (const m of MATRICES) {
-			const v = vectorscopeYuv(s, { ...DEFAULT_SCOPE_PARAMS, matrix: m });
-			expect(v.samples).toBe(256 * 16);
-			for (const t of vectorTargets(m, 75).map((t) =>
-				rgbToYcbcr(...(t.rgb.map((c) => (c > 0 ? BAR / 255 : 0)) as [number, number, number]), m),
-			)) {
-				const [x, y] = vectorCell(t[1], t[2], v.size)!;
-				expect(v.data[y * v.size + x]).toBe(32 * 16);
-			}
-			const [cx, cy] = vectorCell(0, 0, v.size)!;
-			expect(v.data[cy * v.size + cx]).toBe(2 * 32 * 16);
-			const pk = vectorPeaks(v, 10, 0.01);
-			expect(pk.length).toBe(7);
-			expect([pk[0]!.x, pk[0]!.y, pk[0]!.share]).toEqual([cx, cy, 0.25]);
-			expect(pk.slice(1).every((k) => k.share === 0.125)).toBe(true);
-		}
 	});
 
 	it('vectorscope positions of primaries are known', () => {
@@ -158,9 +136,9 @@ describe('scopes maths (FilmCraft port)', () => {
 		expect([pk.share, v.samples]).toEqual([1, 64]);
 		expect(Math.abs(redAngle('bt709') - 102.906)).toBeLessThan(0.01);
 		expect(Math.abs(redAngle('bt601') - 108.645)).toBeLessThan(0.01);
-		const [, cb, cr] = rgbToYcbcr(1, 0, 0, 'bt709');
-		expect(Math.abs(v.mean[0] - cb)).toBeLessThan(1e-6);
-		expect(Math.abs(v.mean[1] - cr)).toBeLessThan(1e-6);
+		// BT.709 red: Cb = −0.2126 / (2×0.9278), Cr = 0.5.
+		expect(Math.abs(v.mean[0] + 0.114572106)).toBeLessThan(1e-6);
+		expect(Math.abs(v.mean[1] - 0.5)).toBeLessThan(1e-6);
 		for (const m of MATRICES) {
 			const g = vectorscopeYuv(solid(4, 4, [77, 77, 77]), { ...DEFAULT_SCOPE_PARAMS, matrix: m });
 			expect(g.data[127 * g.size + 127]).toBe(16);
@@ -170,26 +148,24 @@ describe('scopes maths (FilmCraft port)', () => {
 	});
 
 	it('the HLS vectorscope puts hue on the angle and saturation on the radius', () => {
-		const red = redAngle('bt709');
-		const cases: [[number, number, number], number][] = [
-			[[255, 0, 0], 0],
-			[[255, 255, 0], 60],
-			[[0, 255, 0], 120],
-			[[0, 255, 255], 180],
-			[[0, 0, 255], 240],
-			[[255, 0, 255], 300],
+		// BT.709 red direction 102.906186° + HLS hue, at full-saturation radius 0.5.
+		const cases: [number, number, number, number][] = [
+			[255, 0, 0, 102.906186],
+			[255, 255, 0, 162.906186],
+			[0, 255, 0, 222.906186],
+			[0, 255, 255, 282.906186],
+			[0, 0, 255, 342.906186],
+			[255, 0, 255, 42.906186],
 		];
-		for (const [rgb, hue] of cases) {
-			const v = vectorscopeHls(solid(4, 4, rgb));
-			const a = ((red + hue) * Math.PI) / 180;
-			const want = vectorCell(0.5 * Math.cos(a), 0.5 * Math.sin(a), 255, VECTOR_EXTENT);
+		for (const [r, g, b, angle] of cases) {
+			const v = vectorscopeHls(solid(4, 4, [r, g, b]));
 			const pk = vectorPeaks(v, 1)[0]!;
-			expect([pk.x, pk.y]).toEqual(want);
+			expect(Math.abs(pk.angleDeg - angle)).toBeLessThan(0.5);
 			expect(Math.abs(pk.magnitude - 100)).toBeLessThan(0.6);
 		}
 		const half = vectorPeaks(vectorscopeHls(solid(4, 4, [191, 64, 64])), 1)[0]!;
 		expect(Math.abs(half.magnitude - 50)).toBeLessThan(1);
-		expect(Math.abs(half.angleDeg - red)).toBeLessThan(0.5);
+		expect(Math.abs(half.angleDeg - 102.906186)).toBeLessThan(0.5);
 		const grey = vectorscopeHls(solid(4, 4, [90, 90, 90]));
 		expect(grey.data[127 * grey.size + 127]).toBe(16);
 	});
@@ -198,11 +174,9 @@ describe('scopes maths (FilmCraft port)', () => {
 		const w0 = waveform(solid(4, 4, [128, 128, 128]), 'yc');
 		expect([rowsIn(trace(w0, 'Y'), 0), rowsIn(trace(w0, 'C'), 0)]).toEqual([[128], [128]]);
 		const w = waveform(solid(4, 4, [255, 0, 0]), 'yc');
-		const [y, cb, cr] = rgbToYcbcr(1, 0, 0, 'bt709');
-		const c = Math.hypot(cb, cr);
-		const row = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
-		expect(rowsIn(trace(w, 'Y'), 2)).toEqual([row(y)]);
-		expect(rowsIn(trace(w, 'C'), 2)).toEqual([row(y - c), row(y + c)]);
+		// BT.709 red: Y=0.2126, C=sqrt(0.114572106² + 0.5²).
+		expect(rowsIn(trace(w, 'Y'), 2)).toEqual([54]);
+		expect(rowsIn(trace(w, 'C'), 2)).toEqual([0, 185]);
 		const p = parade(solid(4, 4, [128, 128, 128]), 'yuv');
 		for (const n of ['Y', 'Cb', 'Cr']) expect(rowsIn(trace(p, n), 0)).toEqual([128]);
 	});
@@ -237,7 +211,7 @@ describe('scopes maths (FilmCraft port)', () => {
 		const w = waveform(s, 'rgb', off);
 		expect([w.lo, w.hi]).toEqual([-0.1, 1.1]);
 		expect(rowsIn(trace(w, 'R'), 0)).toEqual([]);
-		expect(rowsIn(trace(w, 'B'), 0)).toEqual([rowOf(-0.05, -0.1, 1.1, 256)]);
+		expect(rowsIn(trace(w, 'B'), 0)).toEqual([11]);
 	});
 
 	it('NaN (transparent) samples and empty signals do not throw', () => {
@@ -291,23 +265,13 @@ describe('scopes maths (FilmCraft port)', () => {
 			waveformReference(w.perColumn),
 			1,
 		);
-		expect([p.width, p.height, p.image.length]).toEqual([4, 256, 4 * 256 * 4]);
 		const i = 127 * 4 * 4;
 		expect([...p.image.slice(i, i + 4)]).toEqual([255, 255, 255, 255]);
 		expect([...p.image.slice(0, 4)]).toEqual([0, 0, 0, 0]);
 		expect(scopeIntensity(3, 100, 0.55)).toBeLessThan(scopeIntensity(3, 100, 1.6));
-		const v = vectorscopeYuv(bars());
-		const vp = paintVectorscope(v, [255, 255, 255], 1, true);
-		let lit = 0;
-		for (let k = 3; k < vp.image.length; k += 4) if (vp.image[k]! > 0) lit++;
-		expect(lit).toBe(7 * 9);
 	});
 
-	it('names round trip', () => {
-		for (const k of SCOPE_KINDS) {
-			expect(scopeKindFromName(k)).toBe(k);
-			expect(scopeKindFromName(SCOPE_KIND_LABELS[k])).toBe(k);
-		}
+	it('accepts public scope aliases', () => {
 		expect(scopeKindFromName('vectorscope')).toBe('vectorscopeYuv');
 		expect(waveformTypeFromName('YC no Chroma')).toBe('ycNoChroma');
 		expect(paradeTypeFromName('rgb-white')).toBe('rgbWhite');

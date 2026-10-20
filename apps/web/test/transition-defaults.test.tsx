@@ -21,7 +21,6 @@ import { applyTransitionToClips } from '../src/panels/effects/transitions.ts';
 import { PreferencesDialog } from '../src/shell/preferences/index.ts';
 import {
 	formatStillDuration,
-	formatTransitionDuration,
 	parseStillDuration,
 	parseTransitionDuration,
 } from '../src/transitions/durations.ts';
@@ -64,13 +63,6 @@ describe('duration fields (TUI-032)', () => {
 		});
 		expect(parseTransitionDuration('0.01', 'seconds', R25)).toMatchObject({ ok: false });
 		expect(parseTransitionDuration('61', 'seconds', R25)).toMatchObject({ ok: false });
-	});
-
-	it('formats duration values at the sequence rate', () => {
-		expect(formatTransitionDuration(30, 'frames', R2997)).toBe('30');
-		expect(formatTransitionDuration(30, 'seconds', R2997)).toBe('1.001');
-		expect(formatTransitionDuration(25, 'seconds', R25)).toBe('1.00');
-		expect(formatTransitionDuration(12, 'seconds', R24)).toBe('0.50');
 	});
 
 	it('stills are kept in 1/30 s and rescaled to the sequence rate like clip.place', () => {

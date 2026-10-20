@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RegisteredMediaSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -148,31 +148,19 @@ describe('uploads (S04:IN-005)', () => {
 		});
 	});
 
-	it('reports background sweep errors and starts only one sweep timer', async () => {
-		vi.useFakeTimers();
-		const error = new Error('Cannot remove expired upload');
-		const onError = vi.fn();
-		const svc = new UploadService({
-			dir: join(tempAppdir('jasper-up-'), '.uploads'),
-			media: coreServices(app).media,
-			onError,
+	it('reports a background sweep filesystem failure without crashing', async () => {
+		const dir = join(tempAppdir('jasper-up-'), '.uploads');
+		writeFileSync(dir, 'a file cannot be enumerated as the upload directory');
+		let report: (error: unknown) => void = () => {};
+		const reported = new Promise<unknown>((resolve) => {
+			report = resolve;
 		});
-		const sweep = vi.spyOn(svc, 'sweep').mockRejectedValue(error);
+		const svc = new UploadService({ dir, media: coreServices(app).media, onError: report });
 		try {
 			svc.start();
-			svc.start();
-			await vi.advanceTimersByTimeAsync(0);
-			expect(sweep).toHaveBeenCalledTimes(1);
-			expect(onError).toHaveBeenLastCalledWith(error);
-			await vi.advanceTimersByTimeAsync(3600_000);
-			expect(sweep).toHaveBeenCalledTimes(2);
-			svc.stop();
-			svc.start();
-			await vi.advanceTimersByTimeAsync(0);
-			expect(sweep).toHaveBeenCalledTimes(3);
+			expect(await reported).toMatchObject({ code: 'ENOTDIR' });
 		} finally {
 			svc.stop();
-			vi.useRealTimers();
 		}
 	});
 

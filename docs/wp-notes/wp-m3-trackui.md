@@ -107,7 +107,6 @@ pnpm vitest run --project @jasper/project packages/project/test/simplify.test.ts
 pnpm vitest run --project @jasper/engine apps/engine/test/simplify-export.test.ts
 MCP_TRACK_TEST_PORT=48640 pnpm vitest run --project @jasper/mcp apps/mcp/test/tracking.test.ts
 pnpm vitest run --project @jasper/web apps/web/test/tracking-timeline.test.tsx apps/web/test/tracking-simplify.test.tsx apps/web/test/tracking-live.test.tsx
-E2E_PORT=48640 pnpm e2e -- e2e/tracking.spec.ts
 ```
 
 `JASPER_TRAILER_TRACKS` points the real-track test elsewhere; it is skipped when the directory is missing.

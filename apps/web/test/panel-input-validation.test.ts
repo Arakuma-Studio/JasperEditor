@@ -14,10 +14,6 @@ const template: GraphicTemplate = {
 const entry = { id: 'title', template, savedAt: '2026-10-11T10:00:00Z' };
 
 describe('panel input validation', () => {
-	it('preserves valid graphic templates beside malformed entries', () => {
-		expect(parseGraphicLibrary([null, entry, {}, { ...entry, id: 3 }])).toEqual([entry]);
-	});
-
 	it('handles arbitrary persisted library values without discarding a valid neighbor', () => {
 		fc.assert(
 			fc.property(fc.jsonValue(), (raw) => {

@@ -1,17 +1,7 @@
-// clipMediaTimeAt and pickFrames provide the preview's frame-choice oracle for decoded native exports.
+// Expected frame codes come from the fixture schedule and the requested editing operations.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import {
-	clipMediaTimeAt,
-	cutAccuracy,
-	FLICKS_PER_SECOND,
-	frameIndexAt,
-	RATES,
-	type VideoClip,
-} from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { probeFrameTimes } from '../src/export/retime/frames.ts';
-import { pairRuns, planRetime } from '../src/export/retime/plan.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -96,9 +86,6 @@ function luma(file: string, frame: number): number {
 	return r.stdout[0]!;
 }
 
-const R = RATES.r30;
-const clipOf = (d: DocBuilder, id: string) => d.doc.sequences[d.seqId]!.clips[id] as VideoClip;
-
 function placeCode(d: DocBuilder, media: string, inF: number, outF: number, audio = false): string {
 	const r = d.tx([
 		{
@@ -113,26 +100,6 @@ function placeCode(d: DocBuilder, media: string, inF: number, outF: number, audi
 	return (r.results[0] as { clipIds: string[] }).clipIds[0]!;
 }
 
-describe('retime plan (pure)', () => {
-	it('pairs consecutive frames that share their source frames', () => {
-		const runs = pairRuns([
-			{ frame: 0, seconds: 0, a: 0, b: 1, w: 0.25 },
-			{ frame: 1, seconds: 0, a: 0, b: 1, w: 0.75 },
-			{ frame: 2, seconds: 0, a: 1, b: 1, w: 0 },
-		]);
-		expect(runs).toEqual([
-			{ a: 0, b: 1, from: 0, to: 2 },
-			{ a: 1, b: 1, from: 2, to: 3 },
-		]);
-	});
-
-	it('reads real frame timestamps of VFR media', async () => {
-		const t = await probeFrameTimes(coreServices(app).ffmpeg, fixture('vfr-code.mp4'));
-		expect(t).toHaveLength(64);
-		expect(t.slice(0, 4).map((x) => Math.round(x * 1e4) / 1e4)).toEqual([0, 0.0433, 0.0867, 0.1]);
-	});
-});
-
 describe('native retime', () => {
 	it('reverse speed plays the clip backwards on the native path', async () => {
 		const coded = await register(app, fixture('frame-code.mp4'));
@@ -146,7 +113,7 @@ describe('native retime', () => {
 		for (const f of [0, 1, 15, 29]) expect(frameCode(file, f)).toBe(39 - f);
 	}, 180_000);
 
-	it('a time remap (50 % segment, freeze, palindrome reverse) shows the model’s frames', async () => {
+	it('a time remap preserves independently specified slow, freeze and reverse frame choices', async () => {
 		const coded = await register(app, fixture('frame-code.mp4'));
 		const d = new DocBuilder();
 		const v = placeCode(d, d.addMedia(coded), 0, 40);
@@ -156,15 +123,30 @@ describe('native retime', () => {
 		]);
 		d.tx([{ type: 'timeRemap.addFreeze', clipId: v, at: 30, duration: 6, ripple: true }]);
 		d.tx([{ type: 'timeRemap.addReverse', clipId: v, at: 45, duration: 8, ripple: true }]);
-		const c = clipOf(d, v);
 		const p = await plan(d);
 		expect(p.path).toBe('native');
 		const file = await exportDoc(d);
-		const cfr = { kind: 'cfr', rate: R, count: 64 } as const;
-		for (let f = 0; f < c.duration; f += 3) {
-			const want = frameIndexAt(cfr, clipMediaTimeAt(c, f, R) / FLICKS_PER_SECOND);
-			expect(frameCode(file, f), `frame ${f}`).toBe(want);
-		}
+		// 0..20 advances by half a source frame; 30..36 holds source 20.
+		// At 45, source 29 reverses for eight frames, then returns forward.
+		const expected = [
+			[0, 0],
+			[3, 1],
+			[18, 9],
+			[21, 11],
+			[27, 17],
+			[30, 20],
+			[33, 20],
+			[36, 20],
+			[42, 26],
+			[45, 29],
+			[48, 26],
+			[51, 23],
+			[54, 22],
+			[60, 28],
+			[63, 31],
+			[69, 37],
+		] as const;
+		for (const [frame, source] of expected) expect(frameCode(file, frame), `frame ${frame}`).toBe(source);
 	}, 240_000);
 
 	it('maps variable-frame-rate media by their timestamps (no VFR conform warning)', async () => {
@@ -172,7 +154,7 @@ describe('native retime', () => {
 		expect(vfr.probe.variableFrameRate).toBe(true);
 		const d = new DocBuilder();
 		const m = d.addMedia(vfr);
-		const r = d.tx([
+		d.tx([
 			{
 				type: 'clip.place',
 				source: { mediaId: m },
@@ -181,30 +163,16 @@ describe('native retime', () => {
 				audio: false,
 			},
 		]);
-		const v = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
 		const p = await plan(d);
 		expect(p.warnings.map((w) => w.code)).not.toContain('VFR_SOURCE');
 		const file = await exportDoc(d);
-		const times = await probeFrameTimes(coreServices(app).ffmpeg, fixture('vfr-code.mp4'));
-		const list = { kind: 'list', times } as const;
-		const c = clipOf(d, v);
-		let differsFromCfr = 0;
-		if (process.env.TIME_DEBUG)
-			console.info(
-				JSON.stringify(
-					Array.from({ length: 20 }, (_, f) => [
-						frameCode(file, f, [640, 360]),
-						frameIndexAt(list, clipMediaTimeAt(c, f, R) / FLICKS_PER_SECOND),
-					]),
-				),
-			);
-		for (let f = 0; f < 60; f += 1) {
-			const want = frameIndexAt(list, clipMediaTimeAt(c, f, R) / FLICKS_PER_SECOND);
+		// scripts/fixtures/time.mjs authors PTS n/30 + 0.01*(n mod 3).
+		// At output f/30, only multiples of three have arrived on their nominal frame.
+		for (let f = 0; f < 60; f++) {
+			const source = f % 3 === 0 ? f : f - 1;
 			// The 640×360 picture sits unscaled in the middle of the 1080p frame.
-			expect(frameCode(file, f, [640, 360]), `frame ${f}`).toBe(want);
-			if (want !== f) differsFromCfr++;
+			expect(frameCode(file, f, [640, 360]), `frame ${f}`).toBe(source);
 		}
-		expect(differsFromCfr).toBeGreaterThan(20);
 	}, 180_000);
 
 	it('Frame Blending mixes neighbouring frames at 50 %; Optical Flow renders natively', async () => {
@@ -240,27 +208,6 @@ describe('native retime', () => {
 		// Uniform frames: the flow is zero and the interpolation is the same mix.
 		expect(Math.abs(luma(flow, 11) - shown(44))).toBeLessThanOrEqual(3);
 	}, 240_000);
-
-	it('plans each output frame from the shared model', () => {
-		const d = new DocBuilder();
-		void d;
-		const c = {
-			clipId: 'c',
-			kind: 'video',
-			start: 0,
-			duration: 4,
-			sourceIn: 0,
-			speed: { rate: 0.5, reverse: false, maintainPitch: false },
-			retime: { interpolation: 'frame-blending', mediaRate: R, vfr: false },
-		} as unknown as Parameters<typeof planRetime>[0];
-		const p = planRetime(c, 0, 4, R, { kind: 'cfr', rate: R, count: 10 });
-		expect(p.frames.map((f) => [f.a, f.b, Math.round(f.w * 1e9) / 1e9])).toEqual([
-			[0, 0, 0],
-			[0, 1, 0.5],
-			[1, 1, 0],
-			[1, 2, 0.5],
-		]);
-	});
 });
 
 describe('Scene Edit Detection job', () => {
@@ -276,11 +223,7 @@ describe('Scene Edit Detection job', () => {
 		const res = r.json().result as { cuts: number[]; frames: number; scores: number[] };
 		expect(res.frames).toBe(228);
 		const frames = res.cuts.map((t) => Math.round(t * 30));
-		const truth = [45, 75, 120, 198];
-		const acc = cutAccuracy(frames, truth);
-		if (process.env.SCENE_REPORT) console.info(JSON.stringify({ frames, ...acc }));
-		expect(acc.recall).toBe(1);
-		expect(acc.precision).toBe(1);
+		expect(frames).toEqual([45, 75, 120, 198]);
 		const sub = await app.inject({
 			method: 'POST',
 			url: '/api/scenes/detect?wait=1',

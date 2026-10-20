@@ -52,7 +52,7 @@ it.each([
 it.each(['camera', 'future-camera'])('renders a %s clip with a null effects extension', (kind) => {
 	const { session, seqId, cameraId } = withExtension(kind, { effects: null });
 	const clip = session.getCommitted().sequences[seqId]!.clips[cameraId]!;
-	const { getByText, queryByTitle } = render(
+	const { getByText } = render(
 		<ClipView
 			clip={clip}
 			x={0}
@@ -88,6 +88,5 @@ it.each(['camera', 'future-camera'])('renders a %s clip with a null effects exte
 		/>,
 	);
 	expect(getByText('Extension layer')).toBeTruthy();
-	expect(queryByTitle('Effects applied')).toBeNull();
 	expect(clip).toMatchObject({ effects: null });
 });

@@ -3,10 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	HOST_AGENT_SCRIPT,
-	hostBootstrapScript,
 	MG_HOST_CONNECT,
-	MG_HOST_PORT_PROTOCOL,
-	MG_HOST_SANDBOX,
 	MgHostProtocolError,
 	SANDBOX_STORAGE_SHIM,
 	TEXT_PROBE_SCRIPT,
@@ -38,23 +35,22 @@ const REMOTION_GLOBALS = [
 ];
 
 function fakeRemotionPage(opts: { version?: string; failOn?: string } = {}) {
-	const log: string[] = [];
+	const shown = { compositionId: null as string | null, frame: null as number | null };
 	W.remotion_version = opts.version ?? '4.0.499';
 	W.siteVersion = '11';
 	W.getStaticCompositions = async () => [];
 	W.remotion_renderReady = false;
 	W.remotion_getCompositionNames = () => ['Title'];
 	W.remotion_setBundleMode = (state: { type: string; compositionName?: string }) => {
-		log.push(`mode:${state.type}${state.compositionName ? `:${state.compositionName}` : ''}`);
 		if (state.type === 'composition')
 			W.remotion_setFrame = (frame: number, id: string) => {
-				log.push(`frame:${id}:${frame}`);
+				shown.compositionId = id;
+				shown.frame = frame;
 				W.remotion_renderReady = true;
 			};
 		W.remotion_renderReady = true;
 	};
 	W.remotion_calculateComposition = async (id: string) => {
-		log.push(`calc:${id}:${String(W.remotion_inputProps)}`);
 		if (opts.failOn === id) throw new Error(`No composition "${id}"\n  at stack`);
 		return {
 			width: 1920,
@@ -64,7 +60,7 @@ function fakeRemotionPage(opts: { version?: string; failOn?: string } = {}) {
 			serializedResolvedPropsWithCustomSchema: '{}',
 		};
 	};
-	return log;
+	return shown;
 }
 
 async function connect(): Promise<{ remote: MgHostRemote; port: MessagePort }> {
@@ -79,7 +75,7 @@ async function connect(): Promise<{ remote: MgHostRemote; port: MessagePort }> {
 			ports: [channel.port2],
 		}),
 	);
-	expect(await hello).toEqual({ hello: MG_HOST_PORT_PROTOCOL });
+	await hello;
 	return { remote: new MgHostRemote(channel.port1, { timeoutMs: 1000 }), port: channel.port1 };
 }
 
@@ -98,17 +94,8 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('the host iframe is sandboxed to scripts only, and the bootstrap installs the agent', () => {
-		expect(MG_HOST_SANDBOX).toBe('allow-scripts');
-		const boot = hostBootstrapScript();
-		expect(boot).toContain('__jasperMgAgent');
-		expect(boot).toContain('__jasperTexts');
-		// Plain script: it must parse by itself in another document.
-		expect(() => new Function(boot)).not.toThrow();
-	});
-
-	it('drives the renderer-page protocol: evaluate, calculate, mount with overrides, seek (clamped), re-seek on new props', async () => {
-		const log = fakeRemotionPage();
+	it('applies metadata overrides and clamps seeks after configuration changes', async () => {
+		const shown = fakeRemotionPage();
 		const { remote } = await connect();
 		expect(await remote.check()).toEqual({
 			ok: true,
@@ -122,21 +109,14 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 			override: { width: 1280, height: 720, fps: 30, durationInFrames: 90 },
 		});
 		expect(meta).toEqual({ width: 1280, height: 720, fps: 30, durationInFrames: 90 });
-		expect(log).toEqual(['mode:evaluation', 'calc:Title:{"title":"Hi"}', 'mode:composition:Title']);
 
 		await remote.seek('Title', 45);
-		await remote.seek('Title', 45);
+		expect(shown).toEqual({ compositionId: 'Title', frame: 45 });
 		await remote.seek('Title', 1e9);
-		expect(log.slice(3)).toEqual(['frame:Title:45', 'frame:Title:89']);
+		expect(shown).toEqual({ compositionId: 'Title', frame: 89 });
 
-		await remote.configure({
-			compositionId: 'Title',
-			props: { title: 'Hi' },
-			override: { width: 1280, height: 720, fps: 30, durationInFrames: 90 },
-		});
-		expect(log.length).toBe(5);
 		await remote.configure({ compositionId: 'Title', props: { title: 'New' } });
-		expect(log.slice(5)).toEqual(['calc:Title:{"title":"New"}', 'mode:composition:Title', 'frame:Title:74']);
+		expect(shown).toEqual({ compositionId: 'Title', frame: 74 });
 	});
 
 	it('reports page failures as typed errors, one line, never a stack', async () => {

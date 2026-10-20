@@ -529,10 +529,6 @@ type SequenceMemo = {
 const sequenceMemo = new WeakMap<object, SequenceMemo>();
 const NO_MEMO = Symbol('checkInvariants.noMemo');
 
-/** `checkInvariants` without the per-sequence memo (the reference the memo is tested against). */
-export function checkInvariantsUncached(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
-	return checkInvariants(doc, { ...opts, [NO_MEMO]: true } as InvariantOptions);
-}
 const sameDeps = (a: SequenceDeps, b: SequenceDeps) =>
 	a.media === b.media &&
 	a.synthetics === b.synthetics &&

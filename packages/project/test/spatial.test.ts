@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
 	arcLengthTable,
-	autoSlope,
 	type BezierSegment,
 	bezierPoint,
 	buildClipsPayload,
@@ -88,7 +87,7 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(spatialSegment(kfs, 0)).toEqual([A, [50, 50], [200, 300], B]);
 		// Golden (independent 10⁶-step arc-length integration): segment length 432.959, arc midpoint
 		// (132.913, 170.778) — reached at half the segment's time with Linear temporal.
-		expect(arcLengthTable(spatialSegment(kfs, 0)!)[64]).toBeCloseTo(432.959, 1);
+		expect(arcLengthTable(spatialSegment(kfs, 0)!).at(-1)).toBeCloseTo(432.959, 1);
 		const mid = at(a, 15);
 		expect(mid[0]).toBeCloseTo(132.913, 1);
 		expect(mid[1]).toBeCloseTo(170.778, 1);
@@ -119,8 +118,7 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(m[0]).toBeCloseTo(b[0], 6);
 		expect(m[1]).toBeCloseTo(b[1], 6);
 		// Quarter circle of radius 100: arc length ≈ 157.08.
-		expect(arcLengthTable(seg)[64]).toBeCloseTo(157.08, 0);
-		expect(arcLengthTable(seg)).toBe(arcLengthTable([...seg] as BezierSegment));
+		expect(arcLengthTable(seg).at(-1)).toBeCloseTo(157.08, 0);
 		expect(pathPointAt(seg, 0)).toEqual([0, 0]);
 		expect(pathPointAt(seg, 1)).toEqual([100, 100]);
 		const over = pathPointAt(seg, 1.1);
@@ -136,12 +134,11 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		kfs[0]!.spatial!.outTangent = [0, 300];
 		kfs[1]!.spatial!.inTangent = [0, 300];
 		const a = anim(kfs);
-		const seg = spatialSegment(kfs, 0)!;
-		const total = arcLengthTable(seg)[64]!;
 		// Symmetric ease on a symmetric arc: half the time = half the arc.
 		const mid = at(a, 15);
 		expect(mid[0]).toBeCloseTo(300, 6);
-		expect(dist(at(a, 0), at(a, 1))).toBeLessThan(total / 30 / 2);
+		// The 600 px chord averages 20 px/frame; the eased first step stays below half that.
+		expect(dist(at(a, 0), at(a, 1))).toBeLessThan(10);
 	});
 
 	it('Bezier / Continuous keys use their stored tangents; a linear neighbour contributes none', () => {
@@ -151,19 +148,6 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(p[1]).toBeGreaterThan(50);
 		const held = anim([key(0, A, 'auto-bezier', { interpolation: 'hold' }), key(30, B), key(60, C)]);
 		expect(at(held, 20)).toEqual(A);
-	});
-
-	it('temporal Auto Bezier measures speeds along a curved path', () => {
-		const kfs = [
-			key(0, A, 'auto-bezier', { interpolation: 'auto-bezier' }),
-			key(30, B, 'auto-bezier', { interpolation: 'auto-bezier' }),
-			key(90, C, 'auto-bezier', { interpolation: 'auto-bezier' }),
-		];
-		const l0 = arcLengthTable(spatialSegment(kfs, 0)!)[64]!;
-		const l1 = arcLengthTable(spatialSegment(kfs, 1)!)[64]!;
-		expect(autoSlope(kfs, 1, 'out')).toBeCloseTo((l0 + l1) / 90 / (l1 / 60), 9);
-		const straight = kfs.map((k) => ({ ...k, spatial: undefined }));
-		expect(autoSlope(straight, 1, 'out')).toBeCloseTo(600 / 90 / (Math.hypot(300, 300) / 60), 9);
 	});
 });
 

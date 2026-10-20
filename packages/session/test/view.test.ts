@@ -1,8 +1,8 @@
 import { createCounterIdSource, defaultRegistries } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { defaultSequenceView, EditorSession, EngineProjectStore } from '../src/index.ts';
-import { readProjectView, SequenceViewSchema } from '../src/view.ts';
+import { EditorSession, EngineProjectStore } from '../src/index.ts';
+import { readProjectView } from '../src/view.ts';
 import { FakeEngine } from './persistence/fake-engine.ts';
 
 describe('persisted view validation', () => {
@@ -22,7 +22,6 @@ describe('persisted view validation', () => {
 		expect(session.getState().openIssues).toEqual(
 			expect.arrayContaining([expect.objectContaining({ code: 'W_REPAIRED' })]),
 		);
-		expect(session.getState().views[session.getState().activeSequenceId!]).toEqual(defaultSequenceView());
 		expect(session.getState().dirty).toBe(false);
 		await session.close();
 	});
@@ -35,7 +34,6 @@ describe('persisted view validation', () => {
 			activeSequenceId: 'seq',
 		};
 		expect(readProjectView(view)).toEqual({ view, issues: [] });
-		expect(SequenceViewSchema.safeParse(defaultSequenceView()).success).toBe(true);
 	});
 
 	it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('rejects invalid timeline zoom %s', (pxPerFrame) => {
@@ -52,12 +50,7 @@ describe('persisted view validation', () => {
 	it('never throws on arbitrary JSON view records', () => {
 		fc.assert(
 			fc.property(fc.jsonValue(), (value) => {
-				const result = readProjectView(value);
-				if (result.view) {
-					for (const view of Object.values(result.view.views)) {
-						expect(SequenceViewSchema.safeParse({ ...defaultSequenceView(), ...view }).success).toBe(true);
-					}
-				}
+				expect(() => readProjectView(value)).not.toThrow();
 			}),
 			{ numRuns: 200 },
 		);

@@ -17,7 +17,7 @@ import {
 	JobListResponseSchema,
 	TERMINAL_JOB_STATES,
 } from '../packages/api/src/jobs.ts';
-import type { CommandInput, MediaAsset, Origin, TransactionResult } from '../packages/project/src/index.ts';
+import type { CommandInput, MediaAsset, TransactionResult } from '../packages/project/src/index.ts';
 
 declare global {
 	interface Window {
@@ -47,7 +47,7 @@ type ClipRow = {
 	linked: string[];
 };
 
-type HistoryEntry = { label: string; origin: Origin; applied: boolean };
+type HistoryEntry = { label: string; applied: boolean };
 
 /** Engine info written by e2e/serve.mjs (port + temp appdir). */
 export function serverInfo(): { port: number; appdir: string } {
@@ -108,9 +108,7 @@ export async function playheadFrame(page: Page): Promise<number> {
 export async function sequenceSummary(page: Page): Promise<{
 	sequenceId: string;
 	settings: { width: number; height: number; frameRate: { num: number; den: number } };
-	duration: { frames: number; timecode: string; seconds: number };
-	markers: { name?: string; frame?: number; start?: number }[];
-	tracks?: { id: string; label: string; kind: string; clipCount: number }[];
+	tracks?: { id: string; label: string }[];
 }> {
 	return query(page, 'sequence.summary');
 }
@@ -174,9 +172,8 @@ export async function pointerDrag(
 	page: Page,
 	from: { x: number; y: number },
 	to: { x: number; y: number },
-	opts: { modifiers?: ('Control' | 'Shift' | 'Alt')[]; steps?: number } = {},
+	opts: { steps?: number } = {},
 ): Promise<void> {
-	for (const m of opts.modifiers ?? []) await page.keyboard.down(m);
 	await page.mouse.move(from.x, from.y);
 	await page.mouse.down();
 	const steps = opts.steps ?? 12;
@@ -185,7 +182,6 @@ export async function pointerDrag(
 		await page.waitForTimeout(16);
 	}
 	await page.mouse.up();
-	for (const m of opts.modifiers ?? []) await page.keyboard.up(m);
 }
 
 /** Focuses the timeline panel without clicking a clip (click on its empty ruler-free header strip). */
@@ -194,8 +190,8 @@ export async function focusTimeline(page: Page): Promise<void> {
 	await page.keyboard.press('Escape');
 }
 
-/** Mean luminance and variance of the Program monitor output, read from its canvases/videos in the page. */
-export async function programPixels(page: Page): Promise<{ layers: number; mean: number; std: number }> {
+/** Luminance standard deviation of the Program output, read from its canvases/videos in the page. */
+export async function programPixels(page: Page): Promise<{ std: number }> {
 	return page.getByTestId('program-player-wrapper').evaluate((root) => {
 		const w = 192;
 		const h = 108;
@@ -210,11 +206,9 @@ export async function programPixels(page: Page): Promise<{ layers: number; mean:
 			| HTMLVideoElement
 			| HTMLImageElement
 		)[];
-		let layers = 0;
 		for (const s of sources) {
 			try {
 				g.drawImage(s, 0, 0, w, h);
-				layers++;
 			} catch {
 				// not drawable yet
 			}
@@ -229,7 +223,7 @@ export async function programPixels(page: Page): Promise<{ layers: number; mean:
 			sq += y * y;
 		}
 		const mean = sum / n;
-		return { layers, mean, std: Math.sqrt(Math.max(0, sq / n - mean * mean)) };
+		return { std: Math.sqrt(Math.max(0, sq / n - mean * mean)) };
 	});
 }
 
@@ -242,7 +236,7 @@ type ProbeResult = {
 		height?: number;
 		r_frame_rate?: string;
 	}[];
-	format: { duration: string; format_name: string };
+	format: { duration: string };
 };
 
 /** ffprobe with an exact frame count of the first video stream. */
@@ -318,8 +312,6 @@ export async function exportViaUi(
 		fileName: string;
 		expectPath: RegExp;
 		outDir: string;
-		/** The plan's blocker list must explain the path choice (S04:RP-010). */
-		expectBlocker?: RegExp;
 		jobTimeoutMs?: number;
 		/** Screenshot of Export mode just before Export is clicked (with whatever toasts are showing). */
 		screenshot?: string;
@@ -332,7 +324,6 @@ export async function exportViaUi(
 	await page.getByTestId('export-filename').fill(opts.fileName);
 	const planPath = page.getByTestId('plan-path');
 	await expect(planPath).toContainText(opts.expectPath, { timeout: 30_000 });
-	if (opts.expectBlocker) await expect(page.getByTestId('plan-blockers')).toContainText(opts.expectBlocker);
 	const before = new Set(
 		JobListResponseSchema.parse(await (await request.get('/api/jobs')).json()).jobs.map((j) => j.id),
 	);

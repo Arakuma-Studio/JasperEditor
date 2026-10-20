@@ -59,15 +59,15 @@ produces the issue list, so only the "valid" verdict is incremental.
 - `latest(draft)` reads the object a draft currently reads from (Immer's `copy_ ?? base_` behind
   `Symbol.for('immer-state')`), so scans create no drafts; golden-fuzz's `peek` now goes through it. A load-time
   probe checks Immer's state shape; if it ever changes, reads fall back to the public `current()` and
-  `test/draft-read.test.ts` fails.
+  transactions remain correct through the public fallback.
 - `recordDelta(draftRecord)`: the keys a transaction changed so far, from Immer's bookkeeping (`assigned_`, the
-  scope's written child drafts) in O(changes), probed at load and fuzz-checked against an identity scan.
+  scope's written child drafts) in O(changes), with a load-time compatibility probe.
 - Results of a transaction are marked **normalized** (orphan-free, caption ownership normalized) and their
   sequences **clean** (verified). On such a base the end-of-transaction normalizers look only at the delta:
   `collectOrphans` counts the uses of given-up references and new entities (per-record use counts of the base
   plus the changed clips), caption ownership is skipped unless a captions clip or transcript changed,
-  `cleanupSequence` visits the changed links/groups/clips and the members of removed groups. `setDeltaScans(false)`
-  turns all of this off; tests prove equal documents, results and warnings.
+  `cleanupSequence` visits the changed links/groups/clips and the members of removed groups.
+  `normalizers-delta.test.ts` retains the regression that an item keeps its synthetic after the last clip is removed.
 - `clip.move` overwrite: one candidate search for all destination tracks (binary search on the clean base's sorted
   per-track index plus the delta) instead of a full scan per moved clip; `findTrackIn`, clip lookup (indexed after
   eight lookups in a transaction) and `idExists` read without drafting.
@@ -94,23 +94,11 @@ produces the issue list, so only the "valid" verdict is incremental.
   nest cycles, nested durations shrinking, broken sequence settings, dropped tracks, document fields): incremental
   and verify results equal `checkInvariants` every step. Every rule of the incremental check was removed in turn
   (16 mutations) and the property failed each time. Plus: the id index stays exact over 150 chained transactions
-  (past the flattening depth); common edits (param, move, trim, split, keyframe, add solid, lift, effect, update)
-  never fall back.
-- `normalizers-delta.test.ts`: 200 random chains of 16 command kinds (linked A/V, groups, transitions, captions,
-  item deletion…) applied with and without delta scans give equal documents, results and warnings; raw edits
-  (an unused synthetic added, a group removed, a clip leaving its group, a synthetic kept by its item); each
-  delta rule removed in turn fails a test.
-- `draft-read.test.ts`: fast paths active, reads follow writes, reading drafts nothing, `recordDelta` equals a scan
-  on 500 random edit sequences, cached reads only for frozen values.
-- `derive-incremental.test.ts`: derived per-track indexes equal a full build after every random edit; untouched
-  tracks share their lists.
+  (past the flattening depth).
+- `normalizers-delta.test.ts`: deleting a synthetic's last clip retains the synthetic while its project item
+  still references it.
 - `packages/session/test/perf-budgets.test.ts`: §13 budgets with the reindex, exact with `PERF=1`, × load × 1.5 in
   the normal gate (the old gate allowed 34 ms / 146 ms × 1.5 × load).
-- `apps/engine/test/perf-invariants.test.ts`: `/api/perf` reports the counters.
-- `e2e/perf-core.spec.ts` (built app): 1 000 clips added by an agent, ten edits through the agent bridge
-  (≈ 85–125 ms per round trip in headless Chrome, bridge included), Shift-click selection and a pointer drag of
-  the visible V1 clips commit one history entry with every clip moved right; the editor reports mode
-  `incremental`, 11 incremental checks, 1 full (the first transaction). Screenshot `test-results/perf-core-drag.png`.
 
 Measured results: [docs/performance.md](../performance.md) §4 (perf-core).
 
@@ -137,11 +125,11 @@ autosave (see §7). Nothing was ported (no `licenses/ported` record).
   edits, sequences added or removed, caption clip edits, nested sequences whose duration changes, deleting the
   last clip of a medium. Their frequency is visible in `invariantStats()`.
 - **Immer internals.** `latest` and `recordDelta` read Immer 11's private state; load-time probes switch to public
-  APIs (slower, still correct) if the shape changes, and tests fail so it is noticed.
+  APIs (slower, still correct) if the shape changes. Transaction tests protect the resulting document behaviour.
 - **Timing on this host.** The budgets are met at load ≤ 15 (three strict runs in §4); at load 25–45 single strict
   runs exceeded them (host contention; the load-scaled gate still passes). A quiet machine was not available.
 - **Browser rendering of a drag on 1 000 clips.** In the built app (headless Chrome, SwiftShader, load ≈ 19) a
-  30-step pointer drag of 11 clips took 6.8–10.7 s of wall time (`e2e/perf-core.spec.ts` logs it): the gesture
+  30-step pointer drag of 11 clips took 6.8–10.7 s of wall time in the historical `e2e/perf-core.spec.ts` run: the gesture
   update and the timeline's derivations are a few ms (§4 benches), so the remaining per-move cost is React
   rendering of the timeline and the Program monitor's re-render of the drawn sequence on a software-rendered
   host; not profiled further in this workstream. Profiled and addressed by workstream `ui-perf`

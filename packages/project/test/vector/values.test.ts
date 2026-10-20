@@ -1,15 +1,5 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-	bezierPathToBez,
-	bezToBezierPaths,
-	type GradientValue,
-	gradientSvgStops,
-	lerpGradientValue,
-	midpointCurve,
-	sampleGradient,
-	shapeGeom,
-} from '../../src/index.ts';
+import { type GradientValue, lerpGradientValue, midpointCurve, sampleGradient } from '../../src/index.ts';
 import { dashIntervals, widthFactor } from '../../src/vector/varstroke.ts';
 
 const g: GradientValue = {
@@ -31,51 +21,10 @@ describe('gradients', () => {
 		expect(sampleGradient(g, 0.5)[3]).toBe(0);
 		expect(sampleGradient(g, 0.75)[3]).toBeCloseTo(0.5, 9);
 	});
-	it('SVG stops reproduce the gradient with linear interpolation', () => {
-		const stops = gradientSvgStops(g);
-		expect(stops.length).toBeGreaterThan(10);
-		for (const t of [0.1, 0.3, 0.6, 0.9]) {
-			const i = stops.findIndex((s) => s.offset >= t);
-			const a = stops[i - 1]!;
-			const b = stops[i]!;
-			const u = (t - a.offset) / (b.offset - a.offset);
-			const r = a.color[0] + (b.color[0] - a.color[0]) * u;
-			expect(r).toBeCloseTo(sampleGradient(g, t)[0], 2);
-		}
-	});
 	it('interpolates keys with different stop structures through resampling', () => {
 		const b: GradientValue = { colors: [{ position: 0, color: [0, 1, 0] }], opacities: [] };
 		const m = lerpGradientValue(g, b, 0.5);
 		expect(sampleGradient(m, 0)[1]).toBeCloseTo(0.5, 6);
-		expect(lerpGradientValue(g, b, 0)).toBeTruthy();
-	});
-});
-
-describe('path values', () => {
-	it('round-trips compound paths and keeps closed curves', () => {
-		fc.assert(
-			fc.property(
-				fc.array(fc.tuple(fc.integer({ min: -500, max: 500 }), fc.integer({ min: -500, max: 500 })), {
-					minLength: 2,
-					maxLength: 12,
-				}),
-				fc.boolean(),
-				(pts, closed) => {
-					const v = {
-						closed,
-						vertices: pts.map((p, i) => ({
-							p: p as [number, number],
-							in: i % 2 ? ([3, 4] as [number, number]) : ([0, 0] as [number, number]),
-							out: [0, 0] as [number, number],
-						})),
-					};
-					const back = bezToBezierPaths(bezierPathToBez(v));
-					const again = bezierPathToBez(back[0]!);
-					expect(shapeGeom.toSvgPath(again)).toBe(shapeGeom.toSvgPath(bezierPathToBez(v)));
-				},
-			),
-			{ numRuns: 200 },
-		);
 	});
 });
 

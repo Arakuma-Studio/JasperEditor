@@ -2,16 +2,9 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { browseCategoryOf } from '@jasper/api';
+import { type BrowseList, browseCategoryOf } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, engineConfig } from '../src/index.ts';
-import {
-	BROWSE_LIST_LIMIT,
-	browseRoots,
-	checkBrowsePath,
-	listFolder,
-	sortEntries,
-} from '../src/routes/browse.ts';
 import { closeApps, ensureFixtures, FIXTURES, fixture, H, makeApp, tempAppdir } from './helpers.ts';
 
 beforeAll(() => ensureFixtures(), 180_000);
@@ -19,7 +12,7 @@ afterAll(() => closeApps());
 
 const q = (path: string) => encodeURIComponent(path);
 
-describe('Media Browser helpers', () => {
+describe('Media Browser listing', () => {
 	it('classifies files by extension, case-insensitively', () => {
 		expect(browseCategoryOf('a.MP4')).toBe('video');
 		expect(browseCategoryOf('tone.wav')).toBe('audio');
@@ -34,54 +27,55 @@ describe('Media Browser helpers', () => {
 		expect(browseCategoryOf('trailing.')).toBeNull();
 	});
 
-	it('validates and normalises paths', () => {
-		expect(checkBrowsePath('/a/b/../c')).toBe('/a/c');
-		expect(() => checkBrowsePath('relative/x')).toThrow(/absolute/);
-		expect(() => checkBrowsePath('/a\0b')).toThrow(/NUL/);
-	});
-
-	it('sorts folders first, then names in natural order', () => {
-		const r = sortEntries([
-			{ kind: 'file', name: 'clip 10.mp4' },
-			{ kind: 'folder', name: 'b' },
-			{ kind: 'file', name: 'clip 2.mp4' },
-			{ kind: 'folder', name: 'A' },
-		] as { kind: 'folder' | 'file'; name: string }[]);
-		expect(r.map((e) => e.name)).toEqual(['A', 'b', 'clip 2.mp4', 'clip 10.mp4']);
-	});
-
-	it('offers Home, existing media folders, volumes and the root', () => {
-		const have = new Set(['/home/u/Videos', '/home/u/Music']);
-		const roots = browseRoots(
-			'/home/u',
-			'linux',
-			(p) => have.has(p),
-			(d) => (d === '/mnt' ? ['usb'] : []),
-		);
-		expect(roots.map((r) => r.path)).toEqual(['/home/u', '/home/u/Videos', '/home/u/Music', '/mnt/usb', '/']);
-		const win = browseRoots('C:\\Users\\u', 'win32', (p) => p === 'C:\\' || p === 'D:\\');
-		expect(win.filter((r) => r.kind === 'root').map((r) => r.label)).toEqual(['C:', 'D:']);
-	});
-
 	it('lists importable files and folders, hides the rest unless asked, follows symlinks', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-browse-'));
+		const app = await makeApp();
 		mkdirSync(join(dir, 'Sub'));
+		mkdirSync(join(dir, 'A'));
+		mkdirSync(join(dir, 'b'));
 		mkdirSync(join(dir, '.hidden'));
 		writeFileSync(join(dir, 'a.mp4'), 'x');
+		writeFileSync(join(dir, 'clip 10.mp4'), 'x');
+		writeFileSync(join(dir, 'clip 2.mp4'), 'x');
 		writeFileSync(join(dir, 'notes.txt'), 'x');
 		writeFileSync(join(dir, '.secret.mov'), 'x');
 		symlinkSync(join(dir, 'a.mp4'), join(dir, 'link.mp4'));
 		symlinkSync(join(dir, 'missing.mp4'), join(dir, 'broken.mp4'));
-		const some = await listFolder(dir, false);
-		expect(some.entries.map((e) => e.name)).toEqual(['Sub', 'a.mp4', 'link.mp4']);
-		expect(some.entries[1]).toMatchObject({ kind: 'file', size: 1, category: 'video', hidden: false });
+		const response = await app.inject({
+			method: 'GET',
+			url: `/api/browse/list?path=${q(`${dir}/Sub/..`)}`,
+			headers: H,
+		});
+		expect(response.statusCode).toBe(200);
+		const some = response.json<BrowseList>();
+		expect(some.path).toBe(dir);
+		expect(some.entries.map((e) => e.name)).toEqual([
+			'A',
+			'b',
+			'Sub',
+			'a.mp4',
+			'clip 2.mp4',
+			'clip 10.mp4',
+			'link.mp4',
+		]);
+		expect(some.entries[3]).toMatchObject({ kind: 'file', size: 1, category: 'video', hidden: false });
 		expect(some.entries[0]).toMatchObject({ kind: 'folder', size: null, category: null });
-		const all = await listFolder(dir, true);
+		const responseAll = await app.inject({
+			method: 'GET',
+			url: `/api/browse/list?path=${q(dir)}&all=1`,
+			headers: H,
+		});
+		expect(responseAll.statusCode).toBe(200);
+		const all = responseAll.json<BrowseList>();
 		expect(all.entries.map((e) => e.name)).toEqual([
 			'.hidden',
+			'A',
+			'b',
 			'Sub',
 			'.secret.mov',
 			'a.mp4',
+			'clip 2.mp4',
+			'clip 10.mp4',
 			'link.mp4',
 			'notes.txt',
 		]);
@@ -90,9 +84,12 @@ describe('Media Browser helpers', () => {
 
 	it('caps huge folders and says so', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-browse-big-'));
-		for (let i = 0; i < BROWSE_LIST_LIMIT + 5; i++) writeFileSync(join(dir, `f${i}.wav`), '');
-		const r = await listFolder(dir, false);
-		expect(r.entries).toHaveLength(BROWSE_LIST_LIMIT);
+		for (let i = 0; i < 2005; i++) writeFileSync(join(dir, `f${i}.wav`), '');
+		const app = await makeApp();
+		const response = await app.inject({ method: 'GET', url: `/api/browse/list?path=${q(dir)}`, headers: H });
+		expect(response.statusCode).toBe(200);
+		const r = response.json<BrowseList>();
+		expect(r.entries).toHaveLength(2000);
 		expect(r.truncated).toBe(true);
 		expect(r.entries[0]!.name).toBe('f0.wav');
 	});
@@ -160,6 +157,9 @@ describe('Media Browser routes', () => {
 		const rel = await app.inject({ method: 'GET', url: '/api/browse/list?path=fixtures', headers: H });
 		expect(rel.statusCode).toBe(400);
 		expect(rel.json().code).toBe('BAD_PATH');
+		const nul = await app.inject({ method: 'GET', url: `/api/browse/list?path=${q('/a\0b')}`, headers: H });
+		expect(nul.statusCode).toBe(400);
+		expect(nul.json().code).toBe('BAD_PATH');
 		const missing = await app.inject({
 			method: 'GET',
 			url: `/api/browse/list?path=${q('/definitely/not/here')}`,

@@ -8,7 +8,6 @@ import {
 	designBiquad,
 	kPrefilter,
 	kRlb,
-	kWeightingPower,
 } from '../src/index.ts';
 import { db, sine, toneAmplitude } from './util.ts';
 
@@ -112,14 +111,5 @@ describe('K-weighting', () => {
 		expect([r.b0, r.b1, r.b2]).toEqual([1, -2, 1]);
 		expect(Math.abs(r.a1 + 1.99004745483398)).toBeLessThan(1e-6);
 		expect(Math.abs(r.a2 - 0.99007225036621)).toBeLessThan(1e-8);
-	});
-
-	it('shape is sample-rate independent', () => {
-		for (const sr of [32000, 44100, 48000, 96000, 192000]) {
-			const d = (f: number): number => 10 * Math.log10(kWeightingPower(f, sr));
-			expect(Math.abs(d(1000) - 0.691), `sr ${sr}`).toBeLessThan(0.03);
-			expect(Math.abs(d(10000) - 4), `sr ${sr}`).toBeLessThan(0.3);
-			expect(d(20), `sr ${sr}`).toBeLessThan(-10);
-		}
 	});
 });

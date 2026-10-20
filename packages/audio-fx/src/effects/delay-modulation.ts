@@ -15,7 +15,7 @@ const snapAll = (xs: readonly Smoothed[]) => {
 const DIVISION_QUARTERS = [4, 2, 1, 0.5, 0.25, 1.5, 0.75, 2 / 3, 1 / 3];
 
 /** Delay time (ms) for a tempo and division index. */
-export function tempoDelayMs(bpm: number, division: number): number {
+function tempoDelayMs(bpm: number, division: number): number {
 	return (
 		(60_000 / Math.max(bpm, 1)) *
 		DIVISION_QUARTERS[Math.min(Math.max(division, 0), DIVISION_QUARTERS.length - 1)]!
@@ -271,7 +271,7 @@ export class Phaser extends EffectBase {
 	}
 
 	/** Centre frequency (Hz) of the sweep for an LFO phase: down from the upper frequency by up to 6 octaves. */
-	sweepHz(phase: number): number {
+	private sweepHz(phase: number): number {
 		return this.pv.v('upperFreq') * 2 ** (-6 * (this.pv.v('depth') / 100) * uniSine(phase));
 	}
 

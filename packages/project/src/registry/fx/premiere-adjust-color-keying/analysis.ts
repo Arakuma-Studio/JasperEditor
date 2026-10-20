@@ -219,7 +219,7 @@ export const AUTO_LEVELS = defineShaderEffect({
 });
 
 /** Scale of the cumulative-histogram pass: ≥ 256 texels (one per 8-bit level) on the canvas. */
-export function equalizeLutScale(ctx: FxPlanContext): number {
+function equalizeLutScale(ctx: FxPlanContext): number {
 	const w = Math.max(1, ctx.width * ctx.pxScale);
 	const h = Math.max(1, ctx.height * ctx.pxScale);
 	return Math.min(1, Math.max(1e-3, Math.sqrt(320 / (w * h))));

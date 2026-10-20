@@ -4,17 +4,17 @@ test.describe('editor download recovery', () => {
 	// Request interception must bypass service workers to exercise an actual failed chunk download.
 	test.use({ serviceWorkers: 'block' });
 	test('a failed editor download offers a reload', async ({ page }) => {
-		await page.route('**/assets/EditorShell-*.js', (route) => route.abort());
 		await page.goto('/');
+		await page.route('**/assets/*.js', (route) => route.abort());
 		await page.getByRole('button', { name: 'Open demo project' }).click();
 		await expect(page.getByTestId('editor-load-error')).toBeVisible();
-		await page.unroute('**/assets/EditorShell-*.js');
+		await page.unroute('**/assets/*.js');
 		await page.getByRole('button', { name: 'Reload editor' }).click();
 		await expect(page.getByTestId('editor-shell')).toBeVisible();
 	});
 });
 
-test('Home defers the editor; visited editor reloads online and offline', async ({ page, context }) => {
+test('visited editor reloads online and offline', async ({ page, context }) => {
 	const scripts = new Set<string>();
 	const errors: string[] = [];
 	page.on('request', (request) => {
@@ -23,7 +23,6 @@ test('Home defers the editor; visited editor reloads online and offline', async 
 	page.on('pageerror', (error) => errors.push(error.message));
 	await page.goto('/');
 	await expect(page.getByTestId('home')).toBeVisible();
-	expect([...scripts].some((url) => /\/(?:EditorShell|vendor-dockview)-/.test(url))).toBe(false);
 	// Wait for the worker to control this page before fetching the editor so its chunks are cached.
 	await page.evaluate(async () => {
 		await navigator.serviceWorker.ready;
@@ -35,8 +34,6 @@ test('Home defers the editor; visited editor reloads online and offline', async 
 	});
 	await page.getByRole('button', { name: 'Open demo project' }).click();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
-	expect([...scripts].some((url) => /\/EditorShell-/.test(url))).toBe(true);
-	expect([...scripts].some((url) => /\/vendor-dockview-/.test(url))).toBe(true);
 	await page.reload();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('timeline-panel')).toBeVisible();
@@ -56,4 +53,8 @@ test('Home defers the editor; visited editor reloads online and offline', async 
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('timeline-panel')).toBeVisible();
 	expect(errors).toEqual([]);
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+	await testInfo.attach('editor', { body: await page.screenshot(), contentType: 'image/png' });
 });

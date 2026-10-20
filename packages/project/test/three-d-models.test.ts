@@ -4,7 +4,6 @@ import {
 	type Clip,
 	checkInvariants,
 	createCounterIdSource,
-	FLICKS_PER_SECOND,
 	type MediaHandle,
 	ModelParseError,
 	modelFormatOf,
@@ -178,7 +177,6 @@ describe('model layers', () => {
 		expect(s.warnings.some((w) => w.code === 'THREE_D_MODEL_CLASSIC' && w.clipId === clip().id)).toBe(true);
 		h.ok([{ type: 'sequence.set3dRenderer', renderer: 'advanced' }]);
 		expect(snap().warnings.some((w) => w.code === 'THREE_D_MODEL_CLASSIC')).toBe(false);
-		void FLICKS_PER_SECOND;
 	});
 
 	it('repair turns a model layer back into a 3D layer', () => {

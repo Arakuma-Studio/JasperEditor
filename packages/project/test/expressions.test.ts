@@ -5,7 +5,6 @@ import {
 	checkInvariants,
 	createCounterIdSource,
 	documentHasActiveExpressions,
-	EXPRESSION_CONTROL_EFFECTS,
 	evaluate,
 	expressionRefToParamPath,
 	isAnimated,
@@ -68,23 +67,23 @@ describe('commands', () => {
 		const fail = (cmd: unknown) => {
 			const r = h.tx([cmd]);
 			expect(r.ok).toBe(false);
-			return r.ok ? '' : r.errors[0]!.message;
+			return r.ok ? '' : r.errors[0]!.code;
 		};
-		expect(fail({ type: 'expression.set', target: ['clip', a, 'transform', 'flipH'], text: '1' })).toMatch(
-			/not animatable/,
+		expect(fail({ type: 'expression.set', target: ['clip', a, 'transform', 'flipH'], text: '1' })).toBe(
+			'E_INVALID_PARAM',
 		);
 		const track = h.seq.audioTracks[0]!.id;
-		expect(fail({ type: 'expression.set', target: ['track', track, 'volumeDb'], text: '0' })).toMatch(
-			/Audio Track Mixer/,
+		expect(fail({ type: 'expression.set', target: ['track', track, 'volumeDb'], text: '0' })).toBe(
+			'E_INVALID_PARAM',
 		);
-		expect(fail({ type: 'expression.set', target: ['master', 'volumeDb'], text: '0' })).toMatch(
-			/Audio Track Mixer/,
+		expect(fail({ type: 'expression.set', target: ['master', 'volumeDb'], text: '0' })).toBe(
+			'E_INVALID_PARAM',
 		);
-		expect(fail({ type: 'expression.setEnabled', target: ['clip', a, 'opacity'], enabled: true })).toMatch(
-			/no expression/,
+		expect(fail({ type: 'expression.setEnabled', target: ['clip', a, 'opacity'], enabled: true })).toBe(
+			'E_INVALID_PARAM',
 		);
-		expect(fail({ type: 'expression.set', target: ['clip', a, 'params', 'x'], text: '1' })).toMatch(
-			/template parameters/,
+		expect(fail({ type: 'expression.set', target: ['clip', a, 'params', 'x'], text: '1' })).toBe(
+			'E_INVALID_PARAM',
 		);
 	});
 	it('effect.rename', () => {
@@ -152,17 +151,6 @@ describe('effect presets', () => {
 
 describe('Expression Controls', () => {
 	it('are passthrough, applied with clip-centred points, and left out of render snapshots', () => {
-		expect(EXPRESSION_CONTROL_EFFECTS.map((e) => e.label)).toEqual([
-			'Slider Control',
-			'Angle Control',
-			'Checkbox Control',
-			'Color Control',
-			'Point Control',
-			'3D Point Control',
-			'Layer Control',
-			'Dropdown Menu Control',
-		]);
-		for (const e of EXPRESSION_CONTROL_EFFECTS) expect(e.passthrough).toBe(true);
 		const { h, a } = setup();
 		const r = h.ok([
 			{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.point-control' },
@@ -217,14 +205,12 @@ describe('model helpers', () => {
 		seq.master.volumeDb.expression = { text: '0', enabled: true };
 		const expr = (d: unknown) =>
 			checkInvariants(d as never).filter((i) => (i as { invariant?: string }).invariant === 'INV-EXPR');
-		expect(
-			expr(doc)
-				.map((i) => i.message)
-				.sort(),
-		).toEqual([
-			'INV-EXPR: Malformed expression (expected {text, enabled})',
-			'INV-EXPR: This property does not take expressions',
-		]);
+		expect(expr(doc).map((i) => i.path)).toEqual(
+			expect.arrayContaining([
+				['sequences', h.seqId, 'clips', a, 'transform', 'rotation'],
+				['sequences', h.seqId, 'master', 'volumeDb'],
+			]),
+		);
 		const { document, report } = repairDocument(doc, createCounterIdSource(99));
 		expect(report.filter((r) => r.action === 'drop-expression')).toHaveLength(2);
 		expect(expr(document)).toEqual([]);

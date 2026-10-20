@@ -46,7 +46,7 @@ export const PIXEL_SORT_TYPES = [
 ] as const;
 
 /** Resolution scale of the sort pass: Downsample → Sort Resolution lines (of the canvas height), else 1. */
-export function pixelSortScale(p: EffectParams, canvasHeight: number): number {
+function pixelSortScale(p: EffectParams, canvasHeight: number): number {
 	if (p.downsample !== true) return 1;
 	return clamp(Math.round(num(p.sortResolution, 720)) / Math.max(1, canvasHeight), 0.05, 1);
 }
@@ -300,7 +300,7 @@ void main() {
  * The hold frame ("dropped I-frame") in effect at clip-local `frame`: automatic = seeded intervals of Frame Interval
  * frames varied by ± Vary Frame Interval, from frame 0; manual = Flow Warp Hold Frame. Never after `frame`.
  */
-export function pixelMoshHoldFrame(p: EffectParams, frame: number, seed: number): number {
+function pixelMoshHoldFrame(p: EffectParams, frame: number, seed: number): number {
 	const f = Math.floor(frame);
 	if (f <= 0) return f;
 	if (p.varyHoldFrame === 'manual') return Math.min(f, Math.max(0, Math.floor(num(p.flowWarpHoldFrame))));
@@ -316,7 +316,7 @@ export function pixelMoshHoldFrame(p: EffectParams, frame: number, seed: number)
 }
 
 /** Time samples of S_PixelMosh: the previous frame (motion) and the hold frame (when they differ). */
-export function pixelMoshSamples(p: EffectParams, frame: number, seed: number): number[] {
+function pixelMoshSamples(p: EffectParams, frame: number, seed: number): number[] {
 	if (p.useFlowWarp === false) return [];
 	const elapsed = Math.floor(frame) - pixelMoshHoldFrame(p, frame, seed);
 	if (elapsed < 1) return [];
@@ -324,7 +324,7 @@ export function pixelMoshSamples(p: EffectParams, frame: number, seed: number): 
 }
 
 /** Macroblock size in canvas px. */
-export function pixelMoshBlockPx(p: EffectParams, pxScale: number): [number, number] {
+function pixelMoshBlockPx(p: EffectParams, pxScale: number): [number, number] {
 	return [
 		Math.max(4, Math.round(num(p.blockSizeX, 32))) * pxScale,
 		Math.max(4, Math.round(num(p.blockSizeY, 32))) * pxScale,

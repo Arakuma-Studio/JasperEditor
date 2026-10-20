@@ -1,5 +1,5 @@
 import { EngineClient } from '@jasper/engine-client';
-import { type Clip, FLICKS_PER_SECOND } from '@jasper/project';
+import type { Clip } from '@jasper/project';
 import { TransportStore } from '@jasper/session';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ import {
 	SubclipDialog,
 } from '../src/edit-ux/dialogs.tsx';
 import { setSourceTransport } from '../src/panels/program/transport-registry.ts';
-import { openInSource, performSourceEdit, sourceMonitorState } from '../src/panels/source/source-state.ts';
+import { openInSource, sourceMonitorState } from '../src/panels/source/source-state.ts';
 import { setupTimeline, videoAsset } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
@@ -41,7 +41,7 @@ function harness() {
 }
 
 describe('Speed/Duration dialog', () => {
-	it('speed and duration stay linked; ripple, reverse and pitch apply in one entry', () => {
+	it('halving speed ripples linked video and audio in one entry', () => {
 		const h = harness();
 		h.apply([
 			{
@@ -107,27 +107,16 @@ describe('Fit Clip', () => {
 		await runCommand('source.clearFitChoice', h.ctx());
 		expect(rememberedFitChoice()).toBeNull();
 	});
-
-	it('performSourceEdit reports needsFit without a choice', () => {
-		const h = harness();
-		fourPoints(h);
-		expect(performSourceEdit(h.session, 'insert')).toMatchObject({ ok: false, needsFit: true });
-	});
 });
 
 describe('subclips and Mark Split', () => {
-	it('Make Subclip from the Source monitor marks; Edit Subclip renames and restricts', async () => {
+	it('makes a named, trim-restricted subclip from Source monitor marks', async () => {
 		const h = harness();
 		h.apply([{ type: 'item.setMarks', itemId: h.itemId, in: { seconds: 2 }, out: { seconds: 4 } }]);
 		openInSource(h.session, h.itemId);
 		await runCommand('project.makeSubclip', h.ctx('source'));
 		const d = h.dialogs.at(-1)!;
 		expect(d.kind).toBe('editux.subclip');
-		expect(d.props).toMatchObject({
-			mode: 'make',
-			itemId: h.itemId,
-			range: { in: 2 * FLICKS_PER_SECOND, out: 4 * FLICKS_PER_SECOND },
-		});
 		render(
 			<SubclipDialog {...(d.props as unknown as Parameters<typeof SubclipDialog>[0])} close={() => {}} />,
 		);
@@ -138,7 +127,7 @@ describe('subclips and Mark Split', () => {
 		expect(sub).toMatchObject({
 			name: 'Take A',
 			restrictTrims: true,
-			range: { in: 2 * FLICKS_PER_SECOND, out: 4 * FLICKS_PER_SECOND },
+			range: { in: 1_411_200_000, out: 2_822_400_000 },
 		});
 		expect(h.session.getState().selection.project.items).toEqual([sub.id]);
 	});
@@ -155,16 +144,10 @@ describe('subclips and Mark Split', () => {
 		const it = h.session.getCommitted().items[h.itemId] as {
 			marks: { split?: { audioIn?: { flicks: number } } };
 		};
-		expect(it.marks.split?.audioIn?.flicks).toBe(1.5 * FLICKS_PER_SECOND);
+		expect(it.marks.split?.audioIn?.flicks).toBe(1_058_400_000);
 		h.session.transport.seek(200);
 		await runCommand('timeline.insertFromSource', h.ctx());
 		expect(h.spans('V1')).toEqual([[215, 275]]);
 		expect(h.spans('A1')).toEqual([[200, 275]]);
-	});
-
-	it('Linked Selection toggles', async () => {
-		const h = harness();
-		await runCommand('timeline.toggleLinkedSelection', h.ctx());
-		expect(h.session.getState().toggles.linkedSelection).toBe(false);
 	});
 });

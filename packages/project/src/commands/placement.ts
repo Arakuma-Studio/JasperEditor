@@ -12,7 +12,7 @@ import type { Clip, Sequence, TrackKind } from '../schema/sequence.ts';
 import { followMixSplit, followSfxSplit, mixNamesClip, nestedEntityIds } from '../sound/repair.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
-import { deltaScans, isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
+import { isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';
 import { clone as snapshot } from './handlers/util.ts';
 
@@ -397,7 +397,6 @@ function scopedCandidates(
 	hulls: ReadonlyMap<string, { lo: number; hi: number }>,
 	except: ReadonlySet<string>,
 ): Map<string, Candidate[]> | null {
-	if (!deltaScans()) return null;
 	const d = recordDelta(seq.clips as Readonly<Record<string, Clip>>);
 	if (!Object.isFrozen(d.base)) return null;
 	const touched = new Set([...d.changed, ...d.deleted]);
@@ -633,7 +632,7 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
  * after, and the members of removed groups. Null: look at everything.
  */
 function cleanupScope(seq: DSeq): { links: string[]; groups: string[]; clips: string[] } | null {
-	if (!deltaScans() || !isDraft(seq)) return null;
+	if (!isDraft(seq)) return null;
 	const base = original(seq) as Sequence;
 	if (!isClean(base)) return null;
 	const dc = recordDelta(seq.clips as Readonly<Record<string, Clip>>);

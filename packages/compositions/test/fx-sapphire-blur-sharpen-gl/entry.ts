@@ -1,17 +1,8 @@
-import '../gl-poison.ts';
-import {
-	defaultEffectRegistry,
-	type EffectSpec,
-	FX_FAMILIES,
-	fxBuiltinUniforms,
-	planGpuEffect,
-} from '@jasper/project';
+import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 type Px = [number, number, number, number];
-
-const SAPPHIRE_BLUR_SHARPEN_EFFECTS = FX_FAMILIES.find((f) => f.file === 'sapphire-blur-sharpen')!.effects;
 type Box = { x: number; y: number; w: number; h: number };
 
 function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
@@ -27,7 +18,7 @@ const px = (c: HTMLCanvasElement, x: number, y: number): Px =>
 	Array.from(c.getContext('2d')!.getImageData(Math.floor(x), Math.floor(y), 1, 1).data) as Px;
 
 const specOf = (id: string): EffectSpec => {
-	const s = SAPPHIRE_BLUR_SHARPEN_EFFECTS.find((e) => e.id === id) ?? defaultEffectRegistry.get(id);
+	const s = defaultEffectRegistry.get(id);
 	if (!s) throw new Error(`unknown effect ${id}`);
 	return s;
 };
@@ -104,11 +95,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 		}
 	},
 	empty() {},
-	/** Opaque white square in the middle of a transparent layer (alpha behaviour). */
-	square(ctx, b) {
-		ctx.fillStyle = '#fff';
-		ctx.fillRect(b.x + b.w / 4, b.y + b.h / 4, b.w / 2, b.h / 2);
-	},
 	/** Skin-tone left half, blue right half (Beauty's skin key). */
 	skin(ctx, b) {
 		ctx.fillStyle = '#c8906c';
@@ -119,15 +105,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 };
 
 const MEDIA: Record<string, (w: number, h: number) => HTMLCanvasElement> = {
-	/** Depth ramp: white (near) at the left → black (far) at the right. */
-	depthRamp: (w, h) =>
-		canvas(w, h, (ctx) => {
-			const g = ctx.createLinearGradient(0, 0, w, 0);
-			g.addColorStop(0, '#fff');
-			g.addColorStop(1, '#000');
-			ctx.fillStyle = g;
-			ctx.fillRect(0, 0, w, h);
-		}),
 	/** Depth: near (white) bottom half, far (black) top half. */
 	depthSplit: (w, h) =>
 		canvas(w, h, (ctx) => {
@@ -146,58 +123,18 @@ const MEDIA: Record<string, (w: number, h: number) => HTMLCanvasElement> = {
 			ctx.arc(w / 2, h / 2, Math.min(w, h) * 0.04, 0, Math.PI * 2);
 			ctx.fill();
 		}),
-	/** A 4-ray star kernel. */
-	star: (w, h) =>
-		canvas(w, h, (ctx) => {
-			ctx.fillStyle = '#000';
-			ctx.fillRect(0, 0, w, h);
-			ctx.strokeStyle = '#fff';
-			ctx.lineWidth = Math.max(1, w / 400);
-			ctx.beginPath();
-			ctx.moveTo(w / 2 - w * 0.05, h / 2);
-			ctx.lineTo(w / 2 + w * 0.05, h / 2);
-			ctx.moveTo(w / 2, h / 2 - w * 0.05);
-			ctx.lineTo(w / 2, h / 2 + w * 0.05);
-			ctx.stroke();
-		}),
-	/** A green/blue checker background plate. */
-	plate: (w, h) =>
-		canvas(w, h, (ctx) => {
-			for (let y = 0; y < 8; y++)
-				for (let x = 0; x < 8; x++) {
-					ctx.fillStyle = (x + y) % 2 ? '#20a040' : '#2040a0';
-					ctx.fillRect((x * w) / 8, (y * h) / 8, w / 8 + 1, h / 8 + 1);
-				}
-		}),
-	/** Left half white, right half black (mattes). */
-	halfMatte: (w, h) =>
-		canvas(w, h, (ctx) => {
-			ctx.fillStyle = '#000';
-			ctx.fillRect(0, 0, w, h);
-			ctx.fillStyle = '#fff';
-			ctx.fillRect(0, 0, w / 2, h);
-		}),
 };
-
-async function loadImage(url: string): Promise<HTMLImageElement> {
-	const img = new Image();
-	img.src = url;
-	await img.decode();
-	return img;
-}
 
 export type RunOptions = {
 	effectId: string;
 	params?: Record<string, unknown>;
 	width: number;
 	height: number;
-	/** A scene name of SCENES, or `image` with `imageUrl`. */
+	/** A scene name of SCENES. */
 	scene: string;
-	imageUrl?: string;
-	/** Media params: param name → MEDIA name or an image URL (`url:<data url>`). */
+	/** Media params: param name → MEDIA name. */
 	media?: Record<string, string>;
 	frame?: number;
-	png?: boolean;
 	/** Pixels to read (layer px, relative to the layer box). */
 	probes?: [number, number][];
 	/** Pixels to read in canvas px. */
@@ -205,7 +142,7 @@ export type RunOptions = {
 	seed?: number;
 };
 
-async function run(o: RunOptions) {
+function run(o: RunOptions) {
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
 	const spec = specOf(o.effectId);
@@ -226,12 +163,8 @@ async function run(o: RunOptions) {
 			textures[`u_${p.name}`] = null;
 			continue;
 		}
-		const src = m.startsWith('url:')
-			? await loadImage(m.slice(4))
-			: (MEDIA[m]?.(o.width, o.height) ??
-				(() => {
-					throw new Error(`unknown media ${m}`);
-				})());
+		const src = MEDIA[m]?.(o.width, o.height);
+		if (!src) throw new Error(`unknown media ${m}`);
 		textures[`u_${p.name}`] = { source: src, width: src.width, height: src.height, version: m.slice(0, 64) };
 		(params as Record<string, unknown>)[p.name] = { mediaId: `m-${p.name}` };
 	}
@@ -250,14 +183,11 @@ async function run(o: RunOptions) {
 		},
 		{ width: layout.width, height: layout.height },
 	);
-	const img = o.scene === 'image' && o.imageUrl ? await loadImage(o.imageUrl) : null;
 	const input = canvas(layout.width, layout.height, (ctx) => {
 		const b = layout.box;
-		if (img) ctx.drawImage(img, b.x, b.y, b.w, b.h);
-		else (SCENES[o.scene] ?? SCENES.flat!)(ctx, b);
+		(SCENES[o.scene] ?? SCENES.flat!)(ctx, b);
 	});
 	const out = canvas(layout.width, layout.height);
-	const t0 = performance.now();
 	runShaderPlan(
 		h,
 		plan,
@@ -280,30 +210,13 @@ async function run(o: RunOptions) {
 		},
 		out.getContext('2d')!,
 	);
-	const ms = performance.now() - t0;
 	const b = layout.box;
 	return {
-		canvas: [layout.width, layout.height],
 		box: [b.x, b.y, b.w, b.h],
-		passes: plan.passes.map((p) => [p.output, p.width, p.height]),
 		probes: (o.probes ?? []).map(([x, y]) => px(out, b.x + x, b.y + y)),
 		canvasProbes: (o.canvasProbes ?? []).map(([x, y]) => px(out, x, y)),
-		png: o.png ? out.toDataURL('image/png') : undefined,
-		ms,
 	};
 }
 
-async function smoke() {
-	const errors: string[] = [];
-	for (const spec of SAPPHIRE_BLUR_SHARPEN_EFFECTS) {
-		try {
-			await run({ effectId: spec.id, width: 96, height: 54, scene: 'night' });
-		} catch (e) {
-			errors.push(`${spec.id}: ${(e as Error).message}`);
-		}
-	}
-	return { count: SAPPHIRE_BLUR_SHARPEN_EFFECTS.length, errors };
-}
-
-const api = { run, smoke, ids: () => SAPPHIRE_BLUR_SHARPEN_EFFECTS.map((s) => s.id) };
+const api = { run };
 (window as unknown as { __sbs: typeof api }).__sbs = api;

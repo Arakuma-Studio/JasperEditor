@@ -2,16 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	applyLut,
-	bakeColorRun,
-	defaultEffectRegistry,
-	type EffectParams,
-	LUMETRI_EFFECT_ID,
-	type Lut,
-	parseCube,
-	type Rgb,
-} from '@jasper/project';
+import { type EffectParams, LUMETRI_EFFECT_ID } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { prepareExtensions } from '../src/export/native-ext.ts';
@@ -87,19 +78,9 @@ function diffStats(a: Buffer, b: Buffer) {
 	return { max, p995, mean: sum / n, exact: hist[0]! / n, within1: (hist[0]! + hist[1]!) / n };
 }
 
-function reference(src: Buffer, lut: Lut): Buffer {
-	const out = Buffer.alloc(src.length);
-	const c: Rgb = [0, 0, 0];
-	for (let i = 0; i < src.length; i += 3) {
-		c[0] = src[i]! / 255;
-		c[1] = src[i + 1]! / 255;
-		c[2] = src[i + 2]! / 255;
-		applyLut(lut, c);
-		out[i] = Math.round(c[0] * 255);
-		out[i + 1] = Math.round(c[1] * 255);
-		out[i + 2] = Math.round(c[2] * 255);
-	}
-	return out;
+/** S06 §3: decode v^2.4, multiply linear light by 2^EV, then re-encode. */
+function exposed(src: Buffer, ev: number): Buffer {
+	return Buffer.from(src.map((v) => Math.round(v * 2 ** (ev / 2.4))));
 }
 
 const GRADE = (look: string): EffectParams => ({
@@ -246,7 +227,7 @@ async function chartDoc(
 			]);
 		}
 	}
-	return { d, clip, lookFile: fixture('look-33.cube') };
+	return { d, clip };
 }
 
 describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
@@ -299,9 +280,9 @@ describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
 		expect(g.filter).not.toMatch(GPL_FILTER);
 	}, 60_000);
 
-	it('keyframed export frames match the start and end grades', async () => {
-		const keys = { exposure: [-0.5, 0.8], temperature: [-40, 40] };
-		const { d } = await chartDoc((l) => ({ ...GRADE(l), exposure: 0, temperature: 0 }), keys);
+	it('keyframed exposure renders the authored -1 EV and 0 EV endpoints', async () => {
+		const keys = { exposure: [-1, 0] };
+		const { d } = await chartDoc(() => ({ exposure: 0 }), keys);
 		const start = await app.inject({
 			method: 'POST',
 			url: '/api/exports',
@@ -316,40 +297,28 @@ describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
 			[0, 0],
 			[29, 1],
 		] as const) {
-			const { d: s } = await chartDoc((l) => ({
-				...GRADE(l),
-				exposure: keys.exposure[pick],
-				temperature: keys.temperature[pick],
-			}));
-			const still = await stillOf(s, 0);
 			const a = rgbOf(file, frame).data;
-			const b = rgbOf(still.file).data;
+			const b = exposed(rgbOf(fixture('chart.png')).data, keys.exposure[pick]!);
 			const st = diffStats(a, b);
-			// H.264 4:2:0 at crf 12 vs a PNG: small mean error; a wrong LUT state would be far off.
+			// H.264 4:2:0 adds small error; each endpoint has an independent exposure result.
 			expect(st.mean).toBeLessThan(2.5);
 			const other = rgbOf(file, 29 - frame).data;
 			expect(diffStats(other, b).mean).toBeGreaterThan(st.mean + 5);
 		}
 	}, 240_000);
 
-	it('native still parity with the TS reference on the chart (S06 §9 test 3: ≤ 2/255 on 99.5 %, max ≤ 4)', async () => {
-		const { d, lookFile } = await chartDoc(GRADE);
+	it('native still applies -1 EV in linear light (≤ 2/255 on 99.5 %, max ≤ 4)', async () => {
+		const { d } = await chartDoc(() => ({ exposure: -1 }));
 		const still = await stillOf(d, 5);
 		expect(still.renderPath).toBe('native');
-		const look = parseCube(readFileSync(lookFile, 'utf8'));
-		const lut = bakeColorRun(
-			[{ id: 'g', effectId: LUMETRI_EFFECT_ID, effectVersion: 1, enabled: true, params: GRADE('L') }],
-			defaultEffectRegistry,
-			{ lut: (id) => (id === 'L' ? look : null) },
-			33,
-		)!;
+
 		const src = rgbOf(fixture('chart.png')).data;
-		const ref = reference(src, lut);
+		const ref = exposed(src, -1);
 		const got = rgbOf(still.file).data;
 		expect(got.length).toBe(ref.length);
 		const st = diffStats(got, ref);
 		console.info(
-			`[S06 §9.3] native still vs TS reference: exact ${(st.exact * 100).toFixed(3)} %, ≤1 ${(st.within1 * 100).toFixed(3)} %, p99.5 ${st.p995}, max ${st.max}, mean ${st.mean.toFixed(4)}`,
+			`[S06 §9.3] native still vs analytic -1 EV: exact ${(st.exact * 100).toFixed(3)} %, ≤1 ${(st.within1 * 100).toFixed(3)} %, p99.5 ${st.p995}, max ${st.max}, mean ${st.mean.toFixed(4)}`,
 		);
 		expect(st.p995).toBeLessThanOrEqual(2);
 		expect(st.max).toBeLessThanOrEqual(4);

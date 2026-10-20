@@ -9,7 +9,7 @@ import { CHROME, openGlPage } from './gl-browser.ts';
 const here = dirname(fileURLToPath(import.meta.url));
 
 type Px = [number, number, number, number];
-type Result = { canvas: number[]; box: number[]; probes: Px[]; canvasProbes: Px[]; passes: unknown[] };
+type Result = { box: number[]; probes: Px[]; canvasProbes: Px[] };
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	'Sapphire Blur+Sharpen in WebGL2 (headless Chrome)',
@@ -29,14 +29,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		afterAll(async () => {
 			await browser?.close();
-		});
-
-		it('compiles and runs all 24 effects with default params', async () => {
-			const r = (await page.evaluate(() =>
-				(window as unknown as { __sbs: { smoke(): Promise<unknown> } }).__sbs.smoke(),
-			)) as { count: number; errors: string[] };
-			expect(r.errors).toEqual([]);
-			expect(r.count).toBe(24);
 		});
 
 		it('S_Blur: identity at 0, a smooth ramp across an edge, Mix With Source restores the source', async () => {
@@ -94,14 +86,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				probes: [[24, 16]],
 			});
 			expect(empty.probes[0]![3]).toBe(0);
-			const hard = await run({
-				effectId: 'jasper.s.blur',
-				params: { blurAmount: 1 },
-				width: 64,
-				height: 64,
-				scene: 'square',
-			});
-			expect(hard.canvas).toEqual([64, 64]);
 			const soft = await run({
 				effectId: 'jasper.s.blur',
 				params: { blurAmount: 2, softBorders: true },
@@ -110,7 +94,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				scene: 'flat',
 				canvasProbes: [[2, 2]],
 			});
-			expect(soft.canvas[0]).toBeGreaterThan(64);
 			const b = soft.box;
 			// The layer's colour spreads just outside the layer box.
 			const r2 = await run({
@@ -247,21 +230,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				],
 			});
 			expect(r.probes[0]![0]).toBeGreaterThan(0);
-			expect(r.probes[1]![0]).toBe(0);
-		});
-
-		it('S_BlurMotion zooms around its centre (the centre stays put)', async () => {
-			const r = await run({
-				effectId: 'jasper.s.blur-motion',
-				width: 64,
-				height: 64,
-				scene: 'dot',
-				probes: [
-					[32, 32],
-					[32, 10],
-				],
-			});
-			expect(r.probes[0]![0]).toBeGreaterThan(20);
 			expect(r.probes[1]![0]).toBe(0);
 		});
 

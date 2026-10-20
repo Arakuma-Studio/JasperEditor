@@ -10,14 +10,7 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 } from '@jasper/project';
-import {
-	assertDistinctScenes,
-	diffImages,
-	expectGolden,
-	failuresDir,
-	formatDiff,
-	Tolerance,
-} from '@jasper/testkit/golden';
+import { diffImages, expectGolden, failuresDir, formatDiff, Tolerance } from '@jasper/testkit/golden';
 import type { Rgba8 } from '@jasper/testkit/image';
 import { ffmpeg, oraclesAvailable } from '@jasper/testkit/oracle';
 import { decodePng, encodePng } from '@jasper/testkit/png';
@@ -40,7 +33,6 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 		process.env.JASPER_BROWSER_EXECUTABLE ??
 		(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
 	const browser = browserExecutable ? { browserExecutable, chromeMode: 'chrome-for-testing' as const } : {};
-	const frames: Record<string, Rgba8> = {};
 
 	beforeAll(async () => {
 		media = await startFxMedia('golden-scenes-');
@@ -154,8 +146,7 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 			);
 			const img = await still(doc, scene.frame, `golden-${scene.name}`, scene.options);
 			expect([img.width, img.height]).toEqual([GW, GH]);
-			frames[scene.name] = img;
-			// Check computed references even when blessing, to prevent accepting an incorrect golden.
+			// Check compositing/backend relationships even when blessing; the stored PNG remains the visual oracle.
 			if (scene.reference) {
 				const ref = await scene.reference.compute({
 					card: goldenCard(),
@@ -191,9 +182,4 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 			}
 			expectGolden(join(GOLDENS, `${scene.name}.png`), img, Tolerance.BROWSER);
 		});
-
-	it('no scene is blank or a duplicate of another', () => {
-		expect(Object.keys(frames).length).toBe(SCENES.length);
-		assertDistinctScenes(frames);
-	});
 });

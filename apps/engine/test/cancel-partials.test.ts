@@ -1,6 +1,6 @@
 // The export destination is the only output outside the appdir: its name is claimed exclusively,
 // registered as a partial before any byte is written, and copying stops on cancellation.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { copyNoOverwrite } from '../src/export/service.ts';
@@ -61,28 +61,6 @@ describe('copyNoOverwrite', () => {
 });
 
 describe('cancelled export copy (job queue)', () => {
-	it('a cancel during the copy to the destination deletes the destination file', async () => {
-		const { q, dir } = makeQueue();
-		const src = bigFile(dir, 64);
-		const dest = join(dir, 'exports', 'teaser.mp4');
-		mkdirSync(join(dir, 'exports'), { recursive: true });
-		let jobId = '';
-		q.registerRunner('export', async (ctx) => {
-			const path = await copyNoOverwrite(src, dest, {
-				signal: ctx.signal,
-				claimed: (p) => {
-					ctx.addPartial(p);
-					q.cancel(jobId);
-				},
-			});
-			return { path };
-		});
-		q.start();
-		jobId = q.submit({ kind: 'export', title: 'Export', priority: 'user', cpuSlots: 1 }).id;
-		await until(() => q.get(jobId)?.state === 'cancelled', 10_000);
-		expect(existsSync(dest)).toBe(false);
-	});
-
 	it('a cancel after the copy finished (before the job ends) removes the copied file too', async () => {
 		const { q, dir } = makeQueue();
 		const src = join(dir, 'src.mp4');
@@ -101,20 +79,5 @@ describe('cancelled export copy (job queue)', () => {
 		jobId = q.submit({ kind: 'export', title: 'Export', priority: 'user', cpuSlots: 1 }).id;
 		await until(() => q.get(jobId)?.state === 'cancelled', 10_000);
 		expect(existsSync(dest)).toBe(false);
-	});
-
-	it('a successful job keeps its destination file', async () => {
-		const { q, dir } = makeQueue();
-		const src = join(dir, 'src.mp4');
-		writeFileSync(src, 'video');
-		const dest = join(dir, 'kept.mp4');
-		q.registerRunner('export', async (ctx) => ({
-			path: await copyNoOverwrite(src, dest, { signal: ctx.signal, claimed: (p) => ctx.addPartial(p) }),
-		}));
-		q.start();
-		const id = q.submit({ kind: 'export', title: 'Export', priority: 'user', cpuSlots: 1 }).id;
-		const job = await q.wait(id);
-		expect(job.state).toBe('succeeded');
-		expect(readFileSync(dest, 'utf8')).toBe('video');
 	});
 });

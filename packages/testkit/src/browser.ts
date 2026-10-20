@@ -24,7 +24,6 @@ export const SWIFTSHADER_ARGS = [
 
 export async function bundleForBrowser(
 	entry: string,
-	define: Record<string, string> = {},
 	options: { globalName?: string } = {},
 ): Promise<string> {
 	const out = await build({
@@ -36,7 +35,7 @@ export async function bundleForBrowser(
 		platform: 'browser',
 		target: 'es2022',
 		jsx: 'automatic',
-		define: { 'process.env.NODE_ENV': '"production"', ...define },
+		define: { 'process.env.NODE_ENV': '"production"' },
 		logLevel: 'silent',
 	});
 	return out.outputFiles[0]!.text;

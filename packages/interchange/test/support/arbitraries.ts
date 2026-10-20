@@ -1,5 +1,5 @@
-// fast-check generators of interchange projects (port of FilmCraft's proptest strategies) and a canonical form
-// for comparing a project with its export → import round trip. Formats pick the features they carry.
+// fast-check generators of interchange projects (port of FilmCraft's proptest strategies)
+// used by format fixtures, corruption seeds and independent-reader checks. Formats select supported features.
 import type { Animatable, Keyframe, LabelColor } from '@jasper/project';
 import fc from 'fast-check';
 import { sourceOut } from '../../src/build.ts';

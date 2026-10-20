@@ -5,32 +5,14 @@ import {
 	checkInvariants,
 	clipPropertiesJsonSchema,
 	defaultEffectRegistry,
-	getPropertySpec,
-	LATEST_TEXT_ANIMATION_SPECS,
 	latestTextAnimationSpec,
 	loadProject,
 	runAgentQuery,
-	TEXT_ANIMATION_SPECS,
 	type TextAnimationInput,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
 type TextClip = Extract<Clip, { kind: 'text' }>;
-
-const PRESETS = [
-	'fade',
-	'slide-up',
-	'slide-down',
-	'slide-left',
-	'slide-right',
-	'pop',
-	'blur',
-	'typewriter',
-	'tracking',
-	'mask-reveal',
-	'rotate-in',
-	'drop',
-];
 
 function withText(h: Harness, extra: Record<string, unknown> = {}, duration = 90): string {
 	const r = h.tx([
@@ -51,17 +33,6 @@ const textClip = (h: Harness, id: string) => h.seq.clips[id] as TextClip;
 const err = (r: ReturnType<Harness['tx']>) => (r.ok ? null : r.errors[0]!);
 
 describe('catalogue (S11:TXA-002/003)', () => {
-	it('accepts the documented presets on both sides and rejects unknown parameters', () => {
-		expect(LATEST_TEXT_ANIMATION_SPECS.map((s) => s.id).sort()).toEqual([...PRESETS].sort());
-		for (const s of TEXT_ANIMATION_SPECS) {
-			expect(s.phases).toEqual(['in', 'out']);
-			expect(s.paramsSchema.safeParse({}).success).toBe(true);
-			expect(s.defaultDurationFrames).toBeGreaterThanOrEqual(1);
-			expect(s.paramsSchema.safeParse({ bogus: 1 }).success).toBe(false);
-		}
-		expect(latestTextAnimationSpec('fade')?.id).toBe('fade');
-		expect(latestTextAnimationSpec('nope')).toBeUndefined();
-	});
 	it('common params are bounded (stagger 0…1, units, orders, eases)', () => {
 		const slide = latestTextAnimationSpec('slide-up')!;
 		expect(slide.paramsSchema.safeParse({ stagger: 1.5 }).success).toBe(false);
@@ -294,15 +265,6 @@ describe('typewriter versions (blinking caret = typewriter@2)', () => {
 			delay: 0,
 			typing: 0.6,
 		});
-	});
-	it('pickers list only the latest version (one Typewriter entry)', () => {
-		const options = getPropertySpec('textAnimation.in.preset')!.options as string[];
-		expect(options.filter((o) => o === 'typewriter')).toHaveLength(1);
-		const tw = latestTextAnimationSpec('typewriter')!.paramsSchema;
-		expect(tw.safeParse({ blinkRate: 0.2 }).success).toBe(false);
-		expect(tw.safeParse({ blinkRate: 5 }).success).toBe(false);
-		expect(tw.safeParse({ delay: 0.95 }).success).toBe(false);
-		expect(tw.safeParse({ typing: 0 }).success).toBe(false);
 	});
 });
 

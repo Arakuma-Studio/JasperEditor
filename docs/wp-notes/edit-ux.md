@@ -205,8 +205,6 @@ the exported frames show the fade (black first frame, picture later).
   `edit-ux-monitors.test.tsx`, `edit-ux-lanes.test.tsx` — components, dialogs, layouts (conflict-free on every
   platform/runtime), store, spring tools, guides, comparison, dropped frames, Button Editor, lanes and fades.
 - `apps/mcp/test/edit-ux.test.ts` — the MCP tools over the protocol.
-- `e2e/edit-ux.spec.ts` — the built app: Fit Clip, Trim Monitor + keys + dynamic trim + undo, Match Frame, lanes,
-  shortcuts editor, guides, export frames.
 
 ## 11. Comparison with FilmCraft
 

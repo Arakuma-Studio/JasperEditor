@@ -73,7 +73,7 @@ const LUMA_SOURCE_LABELS = ['Difference', 'Subtract', 'Mult', 'Screen', 'Foregro
  * clip first; Sapphire's Foreground switches the dark areas of the outgoing clip first, Background the bright areas
  * of the incoming clip first.
  */
-export function migrateLumaV1(from: number, p: Record<string, unknown>): Record<string, unknown> {
+function migrateLumaV1(from: number, p: Record<string, unknown>): Record<string, unknown> {
 	if (from >= 2) return p;
 	const { lumaFrom, width, invert, blurLuma, ...rest } = p;
 	const inv = invert === true;

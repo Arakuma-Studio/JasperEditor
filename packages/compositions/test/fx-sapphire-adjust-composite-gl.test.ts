@@ -18,10 +18,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	() => {
 		let browser: Browser;
 		let page: Page;
-		const call = <T>(name: string): Promise<T> =>
+		const call = <T>(name: string, ...args: unknown[]): Promise<T> =>
 			page.evaluate(
-				(n) => (window as unknown as { __sac: Record<string, () => unknown> }).__sac[n]!(),
-				name,
+				([n, a]) =>
+					(window as unknown as { __sac: Record<string, (...values: unknown[]) => unknown> }).__sac[n]!(...a),
+				[name, args] as const,
 			) as Promise<T>;
 
 		beforeAll(async () => {
@@ -32,14 +33,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('defaults are the identity where Sapphire’s are', async () => {
-			const r = await call<Record<string, Px>>('identity');
-			for (const [id, p] of Object.entries(r))
-				expect(rgbNear(p, [200, 120, 60, 255], 2), `${id}: ${p}`).toBe(true);
-		});
-
 		it('adjust effects: one characteristic pixel each', async () => {
-			const r = await call<Record<string, Px> & { ocioExpected: number[][] }>('adjust');
+			const r = await call<Record<string, Px>>('adjust');
 			expectRgb(r.invert, [0, 255, 255, 255]);
 			expectRgb(r.invertLumaOnly, [127, 127, 127]);
 			expectRgb(r.invertRedOnly, [0, 100, 0]);
@@ -63,14 +58,22 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.badHigh, [255, 0, 0]);
 			expectRgb(r.badLow, [0, 0, 255]);
 			expectRgb(r.badMatte, [255, 255, 255, 255]);
-			// S_OCIOTransform matches the TypeScript reference of the published curves and matrices.
-			expectRgb(r.ocioLogToRec709, r.ocioExpected[0]!);
-			expectRgb(r.ocioSrgbToLinear, r.ocioExpected[1]!);
-			expectRgb(r.ocioSwitched, r.ocioExpected[2]!);
+			// IEC 61966-2-1 transfer: sRGB code 188 decodes to linear code 128;
+			// linear code 55 encodes to sRGB code 128 (rounded to 8 bits).
+			expectRgb(r.ocioSrgbToLinear, [128, 128, 128]);
+			expectRgb(r.ocioSwitched, [128, 128, 128]);
+		});
+
+		it('S_OCIOTransform encodes 18% gray at published reference levels', async () => {
+			// Published reference levels and quantization rationale: docs/test-cleanup/compositions2.md.
+			const expected = { logc3: 100, slog3: 105, vlog: 108, acescct: 105, rec709: 104 };
+			const pixels = await call<Record<string, Px>>('ocioGray');
+			for (const [space, value] of Object.entries(expected))
+				expect(rgbNear(pixels[space]!, [value, value, value, 255], 3), space).toBe(true);
 		});
 
 		it('alpha is kept and the Mask block blends effect and source', async () => {
-			const r = await call<Record<string, Px> & { softPasses: (string | null)[] }>('alphaAndMask');
+			const r = await call<Record<string, Px>>('alphaAndMask');
 			expectRgb(r.half, [0, 255, 255, 128], 3);
 			expect(r.clear).toEqual([0, 0, 0, 0]);
 			expectRgb(r.invAlpha, [255, 255, 255, 255]);
@@ -80,13 +83,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.invMaskRight, [0, 255, 255]);
 			expect(r.softMid[0]).toBeGreaterThan(30);
 			expect(r.softMid[0]).toBeLessThan(225);
-			expect(r.softPasses).toEqual(['maskRaw', 'maskSoftH', 'maskSoft', null]);
 		});
 
 		it('S_Layer: blend modes, opacity, swap, matte, result controls', async () => {
-			const r = await call<Record<string, Px> & { fgBlurPasses: number; dissolveRedFraction: number }>(
-				'layer',
-			);
+			const r = await call<Record<string, Px> & { dissolveRedFraction: number }>('layer');
 			expectRgb(r.normal, [255, 0, 0]);
 			expectRgb(r.multiply, [128, 64, 0]);
 			expectRgb(r.screen, [128, 128, 128]);
@@ -98,7 +98,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.resultSat, [54, 54, 54]);
 			expectRgb(r.matteLeft, [255, 0, 0]);
 			expectRgb(r.matteRight, [128, 128, 128]);
-			expect(r.fgBlurPasses).toBe(4);
 			expect(Math.abs(r.dissolveRedFraction - 0.5)).toBeLessThan(0.1); // Dissolve: opacity = probability
 		});
 
@@ -117,32 +116,45 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.swap, [0, 0, 100]);
 		});
 
-		it('S_MatteOps: shrink/grow with every filter, invert, outputs, post blur, deterministic noise', async () => {
+		it('S_MatteOps: identity preserves the original edge', async () => {
+			expect(await call<number[]>('matteOps', 'identity')).toEqual([255, 0]);
+		});
+
+		it.each(['box', 'triangle', 'gauss'])('S_MatteOps: %s grows the matte', async (filter) => {
+			const edge = await call<number[]>('matteOps', 'grow', filter);
+			expect(edge[0], `${filter} grown edge`).toBeGreaterThan(240);
+			expect(edge[1], `${filter} beyond`).toBeLessThan(15);
+		});
+
+		it.each(['box', 'triangle', 'gauss'])('S_MatteOps: %s shrinks the matte', async (filter) => {
+			const edge = await call<number[]>('matteOps', 'shrink', filter);
+			expect(edge[0], `${filter} shrunk edge`).toBeLessThan(15);
+			expect(edge[1], `${filter} inside`).toBeGreaterThan(240);
+		});
+
+		it('S_MatteOps: Matte output is an opaque grayscale mask', async () => {
+			expectRgb(await call<Px>('matteOps', 'output'), [0, 0, 0, 255]);
+		});
+
+		it('S_MatteOps: Invert selects the original exterior', async () => {
+			expect(await call<number>('matteOps', 'invert')).toBe(255);
+		});
+
+		it('S_MatteOps: Post Blur softens the edge', async () => {
+			const edge = await call<number>('matteOps', 'blur');
+			expect(edge).toBeGreaterThan(30);
+			expect(edge).toBeLessThan(150);
+		});
+
+		it('S_MatteOps: noise follows Seed and Jitter Frames deterministically', async () => {
 			const r = await call<{
-				identityEdge: number[];
-				growOut: Record<string, number[]>;
-				shrink: Record<string, number[]>;
-				matteOut: Px;
-				invert: number;
-				postBlurEdge: number;
 				noiseA: number[];
 				noiseB: number[];
 				noiseSeed: number[];
 				noiseFrame: number[];
 				noiseStatic: number[];
 				noiseStatic0: number[];
-			}>('matteOps');
-			expect(r.identityEdge).toEqual([255, 0]);
-			for (const f of ['box', 'triangle', 'gauss']) {
-				expect(r.growOut[f]![0], `${f} grown edge`).toBeGreaterThan(240);
-				expect(r.growOut[f]![1], `${f} beyond`).toBeLessThan(15);
-				expect(r.shrink[f]![0], `${f} shrunk edge`).toBeLessThan(15);
-				expect(r.shrink[f]![1], `${f} inside`).toBeGreaterThan(240);
-			}
-			expectRgb(r.matteOut, [0, 0, 0, 255]);
-			expect(r.invert).toBe(255);
-			expect(r.postBlurEdge).toBeGreaterThan(30);
-			expect(r.postBlurEdge).toBeLessThan(150);
+			}>('matteOps', 'noise');
 			expect(r.noiseA).toEqual(r.noiseB);
 			expect(r.noiseSeed).not.toEqual(r.noiseA);
 			expect(r.noiseFrame).not.toEqual(r.noiseA); // Jitter Frames 1: new noise every frame

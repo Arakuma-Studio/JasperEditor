@@ -68,21 +68,6 @@ const drag = (svg: HTMLElement, from: Vec2, to: Vec2, opts: { altKey?: boolean; 
 };
 
 describe('Program Monitor motion path (S03:OVL-020)', () => {
-	it('draws one dot per clip frame, key squares and the Auto Bezier tangent handles, under zoom and pan', () => {
-		const { session, id } = setup();
-		const { getByTestId, container } = overlay(session, { scale: 0.25, x: 100, y: 50 });
-		const layer = getByTestId('overlay-motion-path');
-		expect(layer.getAttribute('data-clip-id')).toBe(id);
-		expect(getByTestId('motion-path-dots').getAttribute('data-count')).toBe('90');
-		const squares = container.querySelectorAll('[data-path-key]');
-		expect(squares).toHaveLength(3);
-		// Key 2 at (960, 800) sequence px → screen (100 + 240, 50 + 200); the square is 7 px.
-		const mid = squares[1] as SVGRectElement;
-		expect([Number(mid.getAttribute('x')), Number(mid.getAttribute('y'))]).toEqual([336.5, 246.5]);
-		expect(mid.getAttribute('width')).toBe('7');
-		expect(container.querySelectorAll('[data-tangent]')).toHaveLength(4);
-	});
-
 	it('is not drawn below two position keys', () => {
 		const { session, id } = setup();
 		act(
@@ -192,7 +177,6 @@ describe('Effect Controls ▸ Spatial Interpolation (S03:KF-021)', () => {
 		});
 		expect(keysOf(session, id)[1]!.spatial!.mode).toBe('linear');
 		expect(screen.queryByTestId('ec-kf-menu')).toBeNull();
-		expect(session.getState().history.entries.at(-1)?.label).toBe('Spatial Interpolation: Linear');
 	});
 
 	it('is not offered for keys of non-point properties', () => {

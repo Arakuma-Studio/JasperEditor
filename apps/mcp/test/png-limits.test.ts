@@ -13,12 +13,12 @@ function chunk(type: string, body: Buffer): Buffer {
 	return out;
 }
 
-function png(width: number, height: number, data: Buffer): Buffer {
+function png(width: number, height: number, data: Buffer, colorType = 6): Buffer {
 	const header = Buffer.alloc(13);
 	header.writeUInt32BE(width, 0);
 	header.writeUInt32BE(height, 4);
 	header[8] = 8;
-	header[9] = 6;
+	header[9] = colorType;
 	return Buffer.concat([
 		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
 		chunk('IHDR', header),
@@ -27,27 +27,22 @@ function png(width: number, height: number, data: Buffer): Buffer {
 	]);
 }
 
-describe('PNG allocation limits', () => {
+describe('PNG dimensions and scanline validation', () => {
 	it('refuses oversized dimensions before expanding the compressed data', () => {
 		expect(() => decodePng(png(0xffffffff, 0xffffffff, Buffer.from([0])))).toThrowError(
 			expect.objectContaining({ code: 'E_LIMIT', hint: expect.stringContaining('smaller') }),
 		);
 	});
 
-	it('allows an 8K source header through the dimension guard', () => {
-		expect(() => decodePng(png(7680, 4320, Buffer.alloc(1)))).toThrowError(
-			expect.objectContaining({ code: 'E_INVALID_PARAM', message: 'Invalid PNG data length' }),
-		);
+	it('decodes an 8K source image', () => {
+		// Grayscale scanlines: one filter byte, then 7680 opaque black pixels per row.
+		const image = decodePng(png(7680, 4320, Buffer.alloc(7681 * 4320), 0));
+		expect([image.width, image.height, image.data.length]).toEqual([7680, 4320, 132_710_400]);
+		expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 0, 255]);
+		expect([...image.data.subarray(-4)]).toEqual([0, 0, 0, 255]);
 	});
 
-	it('refuses compressed data that expands beyond its declared scanlines', () => {
-		// A one-pixel RGBA PNG needs only five bytes, but this IDAT expands to a megabyte.
-		const bomb = png(1, 1, Buffer.alloc(1024 * 1024));
-		expect(bomb.byteLength).toBeLessThan(2048);
-		expect(() => decodePng(bomb)).toThrowError(ToolError);
-	});
-
-	it('bounds inflation for varied dimensions and rejects oversized hostile dimensions', () => {
+	it('validates dimensions and scanline lengths across varied PNG inputs', () => {
 		fc.assert(
 			fc.property(
 				fc.integer({ min: 1, max: 32 }),

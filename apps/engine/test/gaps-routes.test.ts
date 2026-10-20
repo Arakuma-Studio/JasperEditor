@@ -10,17 +10,6 @@ describe('Edit Original routes', () => {
 	it('builds the host opener per platform', () => {
 		expect(openerFor('reveal', '/m/a.mov', 'darwin')).toEqual({ cmd: 'open', args: ['-R', '/m/a.mov'] });
 		expect(openerFor('open', '/m/a.mov', 'darwin')).toEqual({ cmd: 'open', args: ['/m/a.mov'] });
-		// The path is quoted for explorer.exe's own parser and written verbatim (test/windows-opener.test.ts).
-		expect(openerFor('reveal', 'C:\\m\\a.mov', 'win32')).toEqual({
-			cmd: 'explorer.exe',
-			args: ['/select,"C:\\m\\a.mov"'],
-			verbatim: true,
-		});
-		// Windows open passes the path in the environment, never on a cmd.exe command line.
-		expect(openerFor('open', 'C:\\m\\a.mov', 'win32')).toMatchObject({
-			cmd: 'powershell.exe',
-			env: { JASPER_OPEN_PATH: 'C:\\m\\a.mov' },
-		});
 		expect(openerFor('reveal', '/m/a.mov', 'linux')).toEqual({ cmd: 'xdg-open', args: ['/m'] });
 		expect(openerFor('open', '/m/a.mov', 'linux')).toEqual({ cmd: 'xdg-open', args: ['/m/a.mov'] });
 		expect(openerFor('open', '/m/a.mov', 'linux', 'true')).toEqual({

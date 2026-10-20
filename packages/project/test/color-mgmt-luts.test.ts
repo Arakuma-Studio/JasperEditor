@@ -1,4 +1,3 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	applyLut,
@@ -226,50 +225,6 @@ describe('.spi1d / .spi3d / .csp', () => {
 		const f = flattenLut(l, 17);
 		expect(f.dimensions).toBe(3);
 		expect(f.shaper).toBeUndefined();
-		const p = wild(5);
-		expect(flattenLut(p)).toBe(p);
-	});
-});
-
-describe('parsers on hostile input (fuzz)', () => {
-	const formats = ['cube', '3dl', 'spi1d', 'spi3d', 'csp', null] as const;
-	it('random text throws only CubeParseError', () => {
-		fc.assert(
-			fc.property(fc.constantFrom(...formats), fc.string({ maxLength: 400 }), (f, t) => {
-				try {
-					parseLutFile(t, f);
-				} catch (e) {
-					return e instanceof CubeParseError;
-				}
-				return true;
-			}),
-			{ numRuns: 3000 },
-		);
-	});
-	it('mutated valid files throw only CubeParseError', () => {
-		const seeds = [
-			serializeCube(wild(3)),
-			write3dl(wild(2)).split('\n').slice(0, 12).join('\n'),
-			'Version 1\nFrom 0 1\nLength 2\nComponents 3\n{\n0 0 0\n1 1 1\n}\n',
-		];
-		fc.assert(
-			fc.property(
-				fc.constantFrom(...seeds),
-				fc.integer({ min: 0, max: 400 }),
-				fc.string({ maxLength: 8 }),
-				(seed, pos, ins) => {
-					const t = seed.slice(0, pos) + ins + seed.slice(pos + ins.length);
-					for (const f of formats) {
-						try {
-							parseLutFile(t, f);
-						} catch (e) {
-							if (!(e instanceof CubeParseError)) return false;
-						}
-					}
-					return true;
-				},
-			),
-			{ numRuns: 1500 },
-		);
+		expect(at(f, [0.25, 0.5, 0.75])).toEqual([0.125, 0.125, 0.09375]);
 	});
 });

@@ -185,10 +185,7 @@ export const S_FILM_EFFECT = defineShaderEffect({
 });
 
 /** Per-frame signals of S_FilmDamage (pure functions of params, frame, fps, seed). */
-export function filmDamageSignals(
-	p: EffectParams,
-	ctx: Pick<FxFrameContext, 'frame' | 'fps' | 'seed' | 'height'>,
-) {
+function filmDamageSignals(p: EffectParams, ctx: Pick<FxFrameContext, 'frame' | 'fps' | 'seed' | 'height'>) {
 	const fps = Math.max(1, ctx.fps);
 	const t = ctx.frame / fps;
 	// flicker: random (smooth at Flicker Rand Freq) + wave
@@ -590,7 +587,7 @@ function flashParams(i: number, d: FlashDefaults): ParamSpec[] {
 }
 
 /** Per-frame flash motion (Sapphire units, y up) and flicker gain of flash i (1-based). */
-export function flashMotion(p: EffectParams, i: number, ctx: { frame: number; fps: number; seed: number }) {
+function flashMotion(p: EffectParams, i: number, ctx: { frame: number; fps: number; seed: number }) {
 	const t = ctx.frame / Math.max(1, ctx.fps);
 	const ph = num(p[`motionFreq${i}`], 0.5) * (t - num(p[`motionDelay${i}`]));
 	const wave =

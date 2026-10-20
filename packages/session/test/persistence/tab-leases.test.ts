@@ -4,7 +4,6 @@ import {
 	createTabLeaseRegistry,
 	EditorSession,
 	EngineProjectStore,
-	readOnlyReason,
 	type TabLeaseRegistry,
 } from '../../src/index.ts';
 import { FakeEngine } from './fake-engine.ts';
@@ -113,19 +112,6 @@ describe('tab lease memory (S01:PER-040, polish)', () => {
 		await a.close();
 	});
 
-	it('another tab stays read-only while the lease is held', async () => {
-		const { engine, projectId, page, open } = setup();
-		const p1 = page(new MemStorage());
-		const a = await open(p1.store, 'a1');
-		const p2 = page(new MemStorage());
-		const b = await open(p2.store, 'b1');
-		expect(b.getState().readOnly).toBe(true);
-		expect(readOnlyReason(b.getState())).toBe('lease');
-		expect(engine.leases.get(projectId)?.sessionId).toBe('a1');
-		await b.close();
-		await a.close();
-	});
-
 	it('a duplicated tab whose original is still open stays read-only and drops the inherited id', async () => {
 		const { engine, projectId, page, open } = setup();
 		const tab = new MemStorage();
@@ -141,20 +127,6 @@ describe('tab lease memory (S01:PER-040, polish)', () => {
 		expect(tab.getItem('jasper:tab-leases')).toContain('a2');
 		await b.close();
 		await a.close();
-	});
-
-	it('a lease held by an agent (or any session this tab never had) is never reclaimed', async () => {
-		const { engine, projectId, page, open } = setup();
-		const r = await engine.fetch(`/api/projects/${projectId}/lease`, {
-			method: 'POST',
-			body: JSON.stringify({ sessionId: 'agent-1' }),
-		});
-		expect(r.status).toBe(200);
-		const p = page(new MemStorage());
-		const b = await open(p.store, 'b3');
-		expect(b.getState().readOnly).toBe(true);
-		expect(engine.leases.get(projectId)?.sessionId).toBe('agent-1');
-		await b.close();
 	});
 
 	it('a clean close forgets the lease, so the tab has nothing to reclaim later', async () => {

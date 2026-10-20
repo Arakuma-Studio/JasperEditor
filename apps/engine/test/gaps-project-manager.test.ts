@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProjectManagerResult } from '@jasper/api';
@@ -187,7 +187,7 @@ describe('Project Manager', () => {
 		});
 		expect(res.files.every((f) => f.action === 'copy')).toBe(true);
 		expect(res.files).toHaveLength(2);
-		for (const f of res.files) expect(statSync(f.to!).size).toBe(statSync(f.from!).size);
+		for (const f of res.files) expect(readFileSync(f.to!)).toEqual(readFileSync(f.from!));
 		const again = await app.inject({
 			method: 'POST',
 			url: '/api/project-manager',

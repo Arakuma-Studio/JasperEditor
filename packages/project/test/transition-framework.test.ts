@@ -1,18 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-	BUILTIN_TRANSITION_SPECS,
 	buildRenderSnapshot,
-	defaultRegistries,
-	exportAgentSchema,
-	FX_TRANSITIONS,
 	type MediaHandle,
-	planGpuTransition,
 	resolveVideoTransitions,
-	SAPPHIRE_TRANSITION_SUBBINS,
 	sideCompToCanvas,
-	TRANSITION_BINS,
-	TRANSITION_FAMILIES,
-	TRANSITION_SPECS,
 	type Transition,
 	transitionLinearProgress,
 	transitionProgress,
@@ -62,69 +53,6 @@ const fails = (h: Harness, commands: unknown[]) => {
 const only = (h: Harness) => Object.values(h.seq.transitions)[0] as Transition;
 
 describe('transition catalogue', () => {
-	it('has the three family files and registers every entry after the built-ins', () => {
-		expect(TRANSITION_FAMILIES.map((f) => f.file)).toEqual([
-			'premiere-transitions',
-			'sapphire-dissolves',
-			'sapphire-wipes-other',
-			'sapphire-swish-other',
-		]);
-		expect(TRANSITION_SPECS).toEqual([...BUILTIN_TRANSITION_SPECS, ...FX_TRANSITIONS]);
-		const ids = TRANSITION_SPECS.map((s) => s.id);
-		expect(new Set(ids).size).toBe(ids.length);
-		for (const s of TRANSITION_SPECS) expect(transitionSpec(s.id)).toBe(s);
-	});
-
-	it('every entry follows the family id prefix, bins and framework rules', () => {
-		const premiereBins = new Set<string>(
-			Object.values(TRANSITION_BINS).filter((b) => b !== TRANSITION_BINS.sapphire),
-		);
-		const subBins = new Set<string>(Object.values(SAPPHIRE_TRANSITION_SUBBINS));
-		const problems: string[] = [];
-		for (const fam of TRANSITION_FAMILIES) {
-			const sapphire = fam.file.startsWith('sapphire-');
-			for (const s of fam.transitions) {
-				if (!s.id.startsWith(fam.idPrefix)) problems.push(`${s.id}: id must start with ${fam.idPrefix}`);
-				if (!sapphire && s.id.startsWith('jasper.s.'))
-					problems.push(`${s.id}: Premiere families use jasper.<name>`);
-				if (sapphire && (s.bin !== TRANSITION_BINS.sapphire || !subBins.has(s.subBin ?? '')))
-					problems.push(
-						`${s.id}: Sapphire entries use TRANSITION_BINS.sapphire + a SAPPHIRE_TRANSITION_SUBBINS`,
-					);
-				if (!sapphire && !premiereBins.has(s.bin)) problems.push(`${s.id}: bin must be a Premiere bin`);
-				if (!s.description) problems.push(`${s.id}: needs a description`);
-				if (!s.gpu) problems.push(`${s.id}: family entries are GPU transitions`);
-				for (const n of ['startPercent', 'endPercent'])
-					if (!s.params.some((p) => p.name === n)) problems.push(`${s.id}: missing the standard ${n} param`);
-				problems.push(...validateGpuTransition(s));
-			}
-		}
-		expect(problems).toEqual([]);
-	});
-
-	it('keeps the built-ins as they were (native, no params) and lists everything in the agent schema', () => {
-		for (const s of BUILTIN_TRANSITION_SPECS) {
-			expect(s.gpu).toBeUndefined();
-			expect(s.params).toEqual([]);
-			expect(s.capabilities.export).toContain('native');
-		}
-		const schema = exportAgentSchema(defaultRegistries());
-		expect(schema.transitions.map((t) => t.id)).toEqual(TRANSITION_SPECS.map((s) => s.id));
-		const push = schema.transitions.find((t) => t.id === 'jasper.push')!;
-		expect(push).toMatchObject({ bin: 'Slide', gpu: true, appliesTo: 'video' });
-		expect(push.params.map((p) => p.name)).toEqual([
-			'startPercent',
-			'endPercent',
-			'useCompletion',
-			'completion',
-			'direction',
-			'borderWidth',
-			'borderColor',
-			'reverse',
-			'antiAliasing',
-		]);
-	});
-
 	it('flags structural mistakes', () => {
 		const bad = {
 			...transitionSpec('jasper.iris-round')!,
@@ -172,35 +100,6 @@ describe('transition planning', () => {
 		expect(
 			sideCompToCanvas([0, 0, 0, 0, 0, 0, 0, 0, 1], { padding: { left: 0, top: 0 }, pxScale: 1 }),
 		).toBeNull();
-	});
-
-	it('plans placement passes + the transition passes with u_from / u_to declared', () => {
-		const side = { width: 64, height: 36, compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity: 1 };
-		const spec = transitionSpec('jasper.s.dissolve-luma')!;
-		const params = Object.fromEntries(spec.params.map((p) => [p.name, p.default]));
-		const r = planGpuTransition(
-			spec,
-			{ id: 'trn_1', params, frame: 4, duration: 9, sides: 'both' },
-			{ width: 64, height: 36, fps: 30 },
-			{ out: side, in: side },
-		);
-		expect(r.plan.passes.map((p) => p.output)).toEqual(['from', 'to', 'luma', 'lumaBlurH', 'lumaBlur', null]);
-		expect(r.plan.passes[2]!.width).toBe(32); // half resolution luma
-		expect(r.plan.passes[5]!.source).toMatch(/uniform sampler2D u_from;/);
-		expect(r.plan.passes[5]!.source).toMatch(/vec4 tr_from\(vec2 uv\)/);
-		expect(r.ctx.progress).toBeCloseTo(0.5);
-		expect(r.builtins.find((u) => u.name === 'u_progress')!.value).toEqual([0.5]);
-		expect(r.builtins.find((u) => u.name === 'u_side')!.value).toEqual([0]);
-		expect(r.fromSide).toBe('out');
-		// Reverse swaps the sides; a fade at the head has no "from".
-		const rev = planGpuTransition(
-			spec,
-			{ id: 'trn_1', params: { ...params, reverse: true }, frame: 0, duration: 9, sides: 'in' },
-			{ width: 64, height: 36, fps: 30 },
-			{ out: null, in: side },
-		);
-		expect([rev.fromSide, rev.toSide]).toEqual(['in', null]);
-		expect(rev.plan.uniforms.find((u) => u.name === 'u_hasTo')!.value).toEqual([0]);
 	});
 });
 

@@ -141,7 +141,10 @@ add. Image maps referenced by params (`{mediaId}`) are part of the bake key. Two
 - Liquify meshes were in layer px with a grid derived from the box, so a layer drawn at another size read a
   mismatched grid — now cells (above).
 
-## 6. Verified behaviour (measured)
+## 6. Historical validation measurements
+
+These results record the original workstream. The browser tour, catalogue inventory and contact-sheet
+generator mentioned below were removed during test cleanup; the retained GL and command suites remain runnable.
 
 - `packages/compositions/test/fx-sim-warp-gl.test.ts` (headless Chrome WebGL2, `--maxWorkers=2`): 29 passed, 1
   skipped (the opt-in gallery). Per effect: compiles, no NaN / non-finite pixels, determinism (two renders identical;
@@ -169,9 +172,9 @@ add. Image maps referenced by params (`{mediaId}`) are part of the bake key. Two
   match, particles and shards are where the previews put them.
 - `packages/compositions/test/fx-compile-budget.test.ts` (SwiftShader, draw passes compiled with their generated vertex
   shader): passes — every sim-warp program compiles, links and draws within the 5000 ms budget.
-- Contact sheets: `SIM_GALLERY=<dir> [SIM_GALLERY_IDS=a,b] pnpm vitest run packages/compositions/test/fx-sim-warp-gl.test.ts -t gallery`
-  writes one PNG per effect / setting (26 sheets: particle-world, particle-world-cubes, shatter, shatter-wire, wave-world,
-  wave-world-wire, liquify-view…); looked at for this note.
+- Historical contact sheets: the former `SIM_GALLERY` generator wrote one PNG per effect / setting
+  (26 sheets: particle-world, particle-world-cubes, shatter, shatter-wire, wave-world, wave-world-wire,
+  liquify-view…); they were inspected for this note. The generator flags are no longer supported.
 
 ## 7. Comparison with the reference (EffectCraft)
 

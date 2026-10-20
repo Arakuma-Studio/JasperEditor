@@ -112,7 +112,7 @@ function emptySeg(w: number, h: number): FrameSeg {
 }
 
 /** Pixels covered by `strokes` of the given kinds (1 = covered). */
-export function rasterize(
+function rasterize(
 	strokes: readonly Stroke[],
 	kinds: readonly StrokeKind[],
 	w: number,

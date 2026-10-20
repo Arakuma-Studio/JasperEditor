@@ -1,51 +1,100 @@
-// Heavy compositions on software GL may mount on one page when concurrent pages exhaust the timeout.
-import { describe, expect, it } from 'vitest';
-import { withSinglePageRetry } from '../src/remotion/service.ts';
+// Recovery policy is documented in docs/verification.md §8 #5: overloaded concurrent
+// renders retry once on one page. Faults belong to the external renderer; the real service retries.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RemotionService } from '../src/remotion/service.ts';
 
-const timeout = () => new Error('A delayRender() "Retimed layer x" was called but not cleared after 58000ms');
+const renderer = vi.hoisted(() => ({
+	renderMedia: vi.fn<(options: { concurrency: number }) => Promise<void>>(),
+	selectComposition: vi.fn(async () => ({
+		id: 'JasperSequence',
+		width: 16,
+		height: 16,
+		fps: 30,
+		durationInFrames: 30,
+	})),
+}));
+vi.mock('@remotion/renderer', () => ({
+	renderMedia: renderer.renderMedia,
+	selectComposition: renderer.selectComposition,
+	makeCancelSignal: () => ({ cancelSignal: undefined, cancel: () => undefined }),
+}));
 
-describe('withSinglePageRetry', () => {
-	it('a timeout on several pages is retried once on one page, and logged', async () => {
-		const pages: number[] = [];
-		const lines: string[] = [];
-		await withSinglePageRetry(
-			6,
-			new AbortController().signal,
-			(l) => lines.push(l),
-			async (c) => {
-				pages.push(c);
-				if (c > 1) throw timeout();
-			},
+const bundle = mkdtempSync(join(tmpdir(), 'jasper-retry-'));
+writeFileSync(join(bundle, 'index.html'), '<html></html>');
+afterAll(() => rmSync(bundle, { recursive: true, force: true }));
+beforeEach(() => {
+	renderer.renderMedia.mockReset();
+	renderer.selectComposition.mockReset();
+});
+const timeout = () => new Error('delayRender timed out at frame 12');
+
+function render(signal = new AbortController().signal, concurrency = 4) {
+	const service = new RemotionService({
+		bundleCacheDir: bundle,
+		prebuiltBundleDir: bundle,
+		usageLog: null,
+		// These scenes need no GL. An unavailable configured browser prevents host-specific discovery;
+		// rendering itself is supplied by the SDK fault fixture, without starting Chrome.
+		env: { JASPER_REMOTION_GL: 'off', JASPER_BROWSER_EXECUTABLE: join(bundle, 'missing-browser') },
+	});
+	return service.renderMedia({
+		inputProps: { doc: { videoTracks: [] } },
+		output: join(bundle, 'output.mov'),
+		signal,
+		concurrency,
+		intermediate: true,
+	});
+}
+
+describe('RemotionService timeout recovery', () => {
+	it('reports a composition setup timeout as retryable RENDER_TIMEOUT', async () => {
+		renderer.selectComposition.mockRejectedValueOnce(
+			new Error('Timed out after 60000ms while setting up the headless browser.'),
 		);
-		expect(pages).toEqual([6, 1]);
-		expect(lines[0]).toMatch(/rendering again on one page \(was 6\)/);
+		renderer.renderMedia.mockResolvedValue(undefined);
+		await expect(render()).rejects.toMatchObject({ code: 'RENDER_TIMEOUT', retryable: true });
 	});
 
-	it('a second timeout fails with the typed error', async () => {
-		const pages: number[] = [];
-		const err = await withSinglePageRetry(4, new AbortController().signal, undefined, async (c) => {
-			pages.push(c);
-			throw timeout();
-		}).catch((e) => e);
-		expect(pages).toEqual([4, 1]);
-		expect(err).toMatchObject({ code: 'RENDER_TIMEOUT' });
+	it('reports cancellation during composition setup as JOB_CANCELLED', async () => {
+		const controller = new AbortController();
+		renderer.selectComposition.mockImplementationOnce(async () => {
+			controller.abort();
+			throw new Error('Timed out after 60000ms while setting up the headless browser.');
+		});
+		renderer.renderMedia.mockResolvedValue(undefined);
+		await expect(render(controller.signal)).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
 	});
 
-	it('no retry for other errors, a single page or a cancelled render', async () => {
-		const run = async (concurrency: number, error: Error, signal = new AbortController().signal) => {
-			const pages: number[] = [];
-			const e = await withSinglePageRetry(concurrency, signal, undefined, async (c) => {
-				pages.push(c);
-				throw error;
-			}).catch((x) => x);
-			return { pages, e };
-		};
-		expect((await run(6, new Error('boom'))).pages).toEqual([6]);
-		expect((await run(1, timeout())).pages).toEqual([1]);
-		const ac = new AbortController();
-		ac.abort();
-		const cancelled = await run(6, timeout(), ac.signal);
-		expect(cancelled.pages).toEqual([6]);
-		expect(cancelled.e).toMatchObject({ code: 'JOB_CANCELLED' });
+	it('recovers a concurrent renderer timeout through the public render operation', async () => {
+		renderer.renderMedia.mockImplementation(async ({ concurrency }) => {
+			if (concurrency !== 1) throw timeout();
+		});
+		await expect(render()).resolves.toEqual({ frames: 30 });
+	});
+
+	it('reports RENDER_TIMEOUT after the recovery attempt also times out', async () => {
+		renderer.renderMedia
+			.mockRejectedValueOnce(timeout())
+			.mockRejectedValueOnce(timeout())
+			.mockResolvedValue(undefined);
+		await expect(render()).rejects.toMatchObject({ code: 'RENDER_TIMEOUT', retryable: true });
+	});
+
+	it.each([
+		{ name: 'unrelated render failure', concurrency: 4, cancelled: false, code: 'RENDER_FAILED' },
+		{ name: 'one-page timeout', concurrency: 1, cancelled: false, code: 'RENDER_TIMEOUT' },
+		{ name: 'cancellation during render failure', concurrency: 4, cancelled: true, code: 'JOB_CANCELLED' },
+	])('does not retry $name', async ({ concurrency, cancelled, code }) => {
+		const controller = new AbortController();
+		renderer.renderMedia
+			.mockImplementationOnce(async () => {
+				if (cancelled) controller.abort();
+				throw code === 'RENDER_FAILED' ? new Error('encoder failed') : timeout();
+			})
+			.mockResolvedValue(undefined);
+		await expect(render(controller.signal, concurrency)).rejects.toMatchObject({ code });
 	});
 });

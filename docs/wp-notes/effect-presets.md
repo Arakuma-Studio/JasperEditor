@@ -59,8 +59,6 @@ EC-004 (header menu with Save Preset…), §12.5 (key retiming: deep copy, new i
 - `apps/web/test/effect-presets.test.tsx`: Presets bin (built-ins, search, empty state, double-click = one undo entry
   for 2 clips), user bins + delete with confirmation, drag payload round trip + Effect Controls drop, Save Preset… from
   multi-selected headers through the dialog into the (faked) engine library.
-- `e2e/effect-presets.spec.ts` (built app): double-click a built-in preset; Save Preset… from the Opacity header;
-  after a reload the user preset is in Effects ▸ Presets and applies Anchor to Out to a longer clip.
 
 ## Known gaps / follow-ups
 

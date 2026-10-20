@@ -10,6 +10,34 @@ const here = dirname(fileURLToPath(import.meta.url));
 type Px = [number, number, number, number];
 const RED: Px = [255, 0, 0, 255];
 const BLUE: Px = [0, 0, 255, 255];
+// Explicit public inputs preserve the cases when registry membership changes.
+const WIPE_IDS = [
+	'jasper.s.wipe-blobs',
+	'jasper.s.wipe-bubble',
+	'jasper.s.wipe-cells',
+	'jasper.s.wipe-checker',
+	'jasper.s.wipe-circle',
+	'jasper.s.wipe-clock',
+	'jasper.s.wipe-clouds',
+	'jasper.s.wipe-diffuse',
+	'jasper.s.wipe-dots',
+	'jasper.s.wipe-double-wedge',
+	'jasper.s.wipe-flux',
+	'jasper.s.wipe-four-wedges',
+	'jasper.s.wipe-line',
+	'jasper.s.wipe-moire',
+	'jasper.s.wipe-pixelate',
+	'jasper.s.wipe-plasma',
+	'jasper.s.wipe-pointalize',
+	'jasper.s.wipe-rectangle',
+	'jasper.s.wipe-rings',
+	'jasper.s.wipe-star',
+	'jasper.s.wipe-stripes',
+	'jasper.s.wipe-tiles',
+	'jasper.s.wipe-weave',
+	'jasper.s.wipe-wedge',
+];
+
 const near = (a: Px, b: Px, tol = 6) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
@@ -39,15 +67,12 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('runs all 24 wipes, each moving monotonically from A to B', async () => {
-			const info = await call<{ webgl2: boolean; labels: string[] }>('info');
-			expect(info.webgl2).toBe(true);
-			expect(info.labels).toHaveLength(24);
-			const r = await call<Record<string, number[]>>('shares');
-			const bad = Object.entries(r)
-				.filter(([, [a, b, c]]) => !(a! < b! && b! < c!) || b! < 0.05 || b! > 0.95)
-				.map(([k, v]) => `${k}: ${v.map((x) => x.toFixed(2)).join(' → ')}`);
-			expect(bad).toEqual([]);
+		it.each(WIPE_IDS)('%s moves monotonically from A to B', async (id) => {
+			const [a, b, c] = await call<number[]>('shares', id);
+			expect(a).toBeLessThan(b!);
+			expect(b).toBeLessThan(c!);
+			expect(b).toBeGreaterThanOrEqual(0.05);
+			expect(b).toBeLessThanOrEqual(0.95);
 		});
 
 		it('S_WipeLine: B enters along Angle, with a centred border and a glow', async () => {

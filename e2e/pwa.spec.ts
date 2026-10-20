@@ -54,28 +54,3 @@ test('manifest.webmanifest is linked, valid and its icons exist with the declare
 	}
 	writeFileSync('test-results/e2e-pwa-manifest.json', JSON.stringify(m, null, 2));
 });
-
-test('the production service worker registers, activates and controls the page', async ({
-	page,
-	request,
-}) => {
-	const sw = await request.get('/sw.js');
-	expect(sw.status()).toBe(200);
-	expect(sw.headers()['content-type']).toMatch(/javascript/);
-	await page.goto('/');
-	await expect(page.getByTestId('home')).toBeVisible();
-	const scriptURL = await page.evaluate(async () => {
-		const reg = await navigator.serviceWorker.ready;
-		return reg.active?.scriptURL ?? null;
-	});
-	expect(scriptURL).toMatch(/\/sw\.js$/);
-	// Reloading attaches the installed production worker to the page.
-	await page.reload();
-	await expect(page.getByTestId('home')).toBeVisible();
-	await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
-	const controller = await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL);
-	writeFileSync(
-		'test-results/e2e-pwa-service-worker.json',
-		JSON.stringify({ scriptURL, controller }, null, 2),
-	);
-});

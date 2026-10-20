@@ -146,6 +146,9 @@ a Bezier path), `convert_text_animation`; `TEXT_ANIMATORS_GUIDE` in the server i
 
 ## 2. Verified behaviour (measured)
 
+These are historical workstream results. Browser tours and implementation-only tests named below may
+have been removed during cleanup; the counts are not current suite totals.
+
 - `pnpm vitest run packages/project/test/text-animators-maths.test.ts` — 14: Range (126 cases), ease, SplitMix64,
   permutations, noise and Wiggly **bit-identical** to the Rust reference; path measure/placement/arc positions equal;
   property tests (shapes in range, ease monotonic, permutations, wiggly bounds/smoothness, combine bounds); character

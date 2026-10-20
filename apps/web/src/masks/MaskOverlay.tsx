@@ -1,4 +1,4 @@
-import type { BezierPath, CommandInput, ResolvedLayer, ResolvedMask } from '@jasper/project';
+import type { CommandInput, ResolvedLayer, ResolvedMask } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useMemo } from 'react';
@@ -8,12 +8,10 @@ import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { resolveProgramScene } from '../three-d/scene.ts';
 import { type DragSpec, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
 import {
-	type MaskSpace,
 	maskSpace,
 	offsetPolyline,
 	outwardDistance,
 	type Pt,
-	pointInPolygon,
 	screenPolyline,
 	segmentAt,
 	svgPathOf,
@@ -522,9 +520,4 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 			</g>
 		);
 	}
-}
-
-/** Re-exported for tests: whether a screen point lies inside a mask's outline. */
-export function insideMask(path: BezierPath, sp: MaskSpace, s: Pt): boolean {
-	return pointInPolygon(s, screenPolyline(path, sp));
 }

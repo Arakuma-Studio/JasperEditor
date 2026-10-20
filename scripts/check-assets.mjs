@@ -100,7 +100,7 @@ const ALLOWED_LICENSES = [
 ];
 
 const EXT_RE = new RegExp(`\\.(?:${ASSET_EXTENSIONS.join('|')})$`, 'i');
-export const isAsset = (path) => EXT_RE.test(path);
+const isAsset = (path) => EXT_RE.test(path);
 
 /** `key: value` lines of a sidecar (continuation lines indented by whitespace join the previous value). */
 export function parseSidecar(text) {
@@ -118,7 +118,7 @@ export function parseSidecar(text) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function template(path) {
+function template(path) {
 	const name = basename(path);
 	return [
 		`  Create ${path}.attribution with:`,
@@ -235,7 +235,7 @@ function repoFiles(root) {
 	return [...new Set(r.stdout.split('\0').filter(Boolean))].filter((f) => existsSync(join(root, f)));
 }
 
-export function checkRepo(root) {
+function checkRepo(root) {
 	const read = (p) => {
 		try {
 			return readFileSync(join(root, p), 'utf8');

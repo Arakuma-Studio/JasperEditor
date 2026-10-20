@@ -2,7 +2,6 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
-import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
 import { defaultSequenceView, EngineProjectStore, type ProjectViewState } from '@jasper/session';
 import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -60,7 +59,6 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 				projectId: id,
 				name: 'My Project',
 				revision: 0,
-				schemaVersion: CURRENT_SCHEMA_VERSION,
 				thumbnail: null,
 			}),
 		]);
@@ -69,7 +67,6 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		expect(got.view).toBeNull();
 		expect(got.envelope).toMatchObject({
 			format: 'jasper-project',
-			schemaVersion: CURRENT_SCHEMA_VERSION,
 			revision: 0,
 		});
 		const seq = Object.values(

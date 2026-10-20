@@ -3,7 +3,7 @@
 // at the frame centre; camera space is x right, y down, z forward (After Effects'); a camera is `(R, C, f)` with
 // `X_cam = R (X − C)` and pixel `u = f x / z + w / 2`. The solve is stored in a canonical frame: the first solved
 // frame's camera at the origin looking along +z, scaled so the median depth of the points it sees is 1.
-import { logRot, rodrigues, type V3 } from './linalg.ts';
+import type { V3 } from './linalg.ts';
 
 /** One feature track: positions (frame pixels) on consecutive frames from `start`. */
 export type Track2D = { id: number; start: number; pts: [number, number][] };
@@ -111,9 +111,6 @@ export type CameraSolve = {
 	points: SolvedPoint[];
 	distortion: Distortion | null;
 };
-
-export const frameR = (f: SolvedFrame) => rodrigues(f.rot);
-export { logRot };
 
 /** Median focal length of the solved frames (pixels). */
 export function solveFocal(s: Pick<CameraSolve, 'frames'>): number {

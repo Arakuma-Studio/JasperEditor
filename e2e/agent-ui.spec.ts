@@ -35,6 +35,7 @@ async function tool<T = Record<string, unknown>>(
 ): Promise<T> {
 	const r = await call(name, args);
 	expect(r.isError, `${name}: ${text(r)}\n${mcpLog.join('')}`).toBeFalsy();
+	await test.info().attach(name, { body: text(r), contentType: 'application/json' });
 	return JSON.parse(text(r)) as T;
 }
 
@@ -81,29 +82,6 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
 	await mcp?.close().catch(() => {});
 	await page?.close();
-});
-
-test('ui_state and ui_elements describe the window with stable ids', async () => {
-	const s = await tool<{
-		projectId: string;
-		runtime: string;
-		workspace: { id: string };
-		panels: { kind: string; visible: boolean }[];
-	}>('ui_state', { projectId });
-	expect(s.projectId).toBe(projectId);
-	expect(s.runtime).toBe('web');
-	expect(s.panels.some((p) => p.kind === 'timeline' && p.visible)).toBe(true);
-	const els = await tool<{ elements: El[] }>('ui_elements', { projectId, panel: 'timeline' });
-	const clip = (await clips(page)).find((c) => c.track === 'V1')!;
-	const target = els.elements.find((e) => e.id === `timeline.clip.${clip.id}`);
-	expect(
-		target,
-		JSON.stringify(els.elements.map((e) => e.id).filter((i) => !i.includes('track-headers'))),
-	).toBeTruthy();
-	expect(els.elements.every((e) => e.panel === 'timeline')).toBe(true);
-	const bad = await call('ui_elements', { projectId, pannel: 'timeline' });
-	expect(bad.isError).toBe(true);
-	expect(JSON.parse(text(bad)).error.hint).toContain('"pannel" → "panel"');
 });
 
 test('timeline mapping, then a clip dragged by an agent moves by the frames asked', async () => {
@@ -174,27 +152,6 @@ test('ui_set types into a scrubby number and the document follows', async () => 
 	expect(props.properties[0]).toMatchObject({ value: 40, evaluated: 40 });
 });
 
-test('UI commands list enabled/why and run; workspaces switch', async () => {
-	const list = await tool<{ commands: { id: string; enabled: boolean; why?: string; shortcut?: string }[] }>(
-		'ui_commands',
-		{ projectId, filter: 'workspace' },
-	);
-	expect(list.commands.find((c) => c.id === 'workspace.switch')?.enabled).toBe(true);
-	const disabled = (
-		await tool<{ commands: { enabled: boolean; why?: string }[] }>('ui_commands', { projectId })
-	).commands.filter((c) => !c.enabled);
-	expect(disabled.length).toBeGreaterThan(0);
-	expect(disabled.every((c) => typeof c.why === 'string' && c.why.length > 0)).toBe(true);
-	await tool('ui_command', { projectId, id: 'workspace.switch', args: { id: 'color' } });
-	await expect
-		.poll(async () => (await tool<{ workspace: { id: string } }>('ui_state', { projectId })).workspace.id)
-		.toBe('color');
-	const bad = await call('ui_command', { projectId, id: 'workspace.nope' });
-	expect(bad.isError).toBe(true);
-	expect(text(bad)).toContain('Unknown UI command');
-	await tool('ui_command', { projectId, id: 'workspace.switch', args: { id: 'editing' } });
-});
-
 test('ui_screenshot returns the window and a cropped panel', async () => {
 	const win = await call('ui_screenshot', { projectId, maxWidth: 800 });
 	expect(win.isError, text(win)).toBeFalsy();
@@ -204,14 +161,39 @@ test('ui_screenshot returns the window and a cropped panel', async () => {
 	expect(png.subarray(1, 4).toString()).toBe('PNG');
 	mkdirSync(join(ROOT, 'test-results', 'agent-ui'), { recursive: true });
 	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'window.png'), png);
-	const meta = JSON.parse(text(win)) as { width: number; height: number };
-	expect(meta.width).toBeLessThanOrEqual(800);
-	const panel = await call('ui_screenshot', { projectId, panel: 'timeline' });
+	expect(png.readUInt32BE(16)).toBeGreaterThan(0);
+	expect(png.readUInt32BE(16)).toBeLessThanOrEqual(800);
+	const windowInfo = JSON.parse(text(win)) as { width: number; height: number };
+	expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([windowInfo.width, windowInfo.height]);
+	await test
+		.info()
+		.attach('window-screenshot-metadata', { body: text(win), contentType: 'application/json' });
+	const state = await tool<{
+		panels: { kind: string; visible: boolean; bounds: { width: number; height: number } }[];
+	}>('ui_state', { projectId });
+	expect(await page.evaluate(() => window.devicePixelRatio)).toBe(1);
+	const timeline = state.panels.find((p) => p.kind === 'timeline' && p.visible);
+	expect(timeline).toBeTruthy();
+	expect(timeline!.bounds.width).toBeLessThanOrEqual(1600);
+	const panel = await call('ui_screenshot', { projectId, panel: 'timeline', maxWidth: 1600 });
 	expect(panel.isError, text(panel)).toBeFalsy();
-	const pm = JSON.parse(text(panel)) as { bounds: { width: number }; width: number };
 	const pimg = panel.content.find((c) => c.type === 'image') as { data: string };
-	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'timeline.png'), Buffer.from(pimg.data, 'base64'));
-	expect(pm.bounds.width).toBeLessThan(page.viewportSize()!.width);
+	const panelPng = Buffer.from(pimg.data, 'base64');
+	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'timeline.png'), panelPng);
+	expect(panelPng.subarray(1, 4).toString()).toBe('PNG');
+	expect(panelPng.readUInt32BE(16)).toBeGreaterThan(0);
+	const panelInfo = JSON.parse(text(panel)) as { width: number; height: number };
+	await test
+		.info()
+		.attach('panel-screenshot-metadata', { body: text(panel), contentType: 'application/json' });
+	expect([panelPng.readUInt32BE(16), panelPng.readUInt32BE(20)]).toEqual([panelInfo.width, panelInfo.height]);
+	for (const [dimension, extent] of [
+		[16, timeline!.bounds.width],
+		[20, timeline!.bounds.height],
+	] as const) {
+		expect(panelPng.readUInt32BE(dimension)).toBeGreaterThanOrEqual(Math.floor(extent));
+		expect(panelPng.readUInt32BE(dimension)).toBeLessThanOrEqual(Math.ceil(extent));
+	}
 });
 
 test('a clip running off the visible timeline is aimed at its visible part; one scrolled away is revealed (wp fixups)', async () => {

@@ -115,7 +115,7 @@ const distortEffect = (init: Omit<ShaderEffectInit, 'category' | 'bin'>) =>
  * Passes producing the blurred lens luminance `lensB` (half-float): the Lens media (stretched over the layer box)
  * when one is chosen, else the source's own luminance (premultiplied: transparent areas are dark).
  */
-export function lensPasses(blur: number, ctx: FxPlanContext, media: boolean): ShaderPass[] {
+function lensPasses(blur: number, ctx: FxPlanContext, media: boolean): ShaderPass[] {
 	const sigma = Math.max(0, blur) * DW_LENS_BLUR_UNIT * ctx.width * ctx.pxScale;
 	const pick = media
 		? 'u_lens_size.x > 0.0 ? texture(u_lens, clamp(fx_layerNorm(), vec2(0.0), vec2(1.0))) : texture(u_source, v_uv)'
@@ -737,7 +737,7 @@ const motionBlurParams = () => [
  * the frame), or null when there is no blur: Motion Blur off, a zero length, no `paramsAt`
  * (the host cannot evaluate other times) or `key` (the values that move the warp) identical at every key.
  */
-export function warpShutterParams(
+function warpShutterParams(
 	p: EffectParams,
 	ctx: { frame?: number; paramsAt?: (f: number) => EffectParams },
 	key: (q: EffectParams) => string,
@@ -998,7 +998,7 @@ vec2 dw_warp(vec2 f) {
 });
 
 /** Cells across the layer for S_WarpDrops' centre search (≈ 192 cells in all). */
-export function dropGrid(width: number, height: number): number {
+function dropGrid(width: number, height: number): number {
 	return Math.max(4, Math.min(32, Math.round(Math.sqrt((192 * width) / Math.max(1, height)))));
 }
 
@@ -1258,7 +1258,7 @@ function perspectivePose(q: EffectParams): number[] {
 }
 
 /** The plane point (source frame units) seen at output f under a pose (`wp_hit` of the shader), null on a miss. */
-export function perspectiveHit(pose: readonly number[], fx: number, fy: number): [number, number] | null {
+function perspectiveHit(pose: readonly number[], fx: number, fy: number): [number, number] | null {
 	const [roll, F, lat, zd, swing, sx, sy] = pose as [number, number, number, number, number, number, number];
 	const r = (roll * Math.PI) / 180;
 	const gx = Math.cos(r) * fx + Math.sin(r) * fy;
@@ -1277,7 +1277,7 @@ export function perspectiveHit(pose: readonly number[], fx: number, fy: number):
 }
 
 /** Where a plane point (source frame units) appears on the output under a pose (inverse of `perspectiveHit`). */
-export function perspectiveProject(pose: readonly number[], ux: number, uy: number): [number, number] | null {
+function perspectiveProject(pose: readonly number[], ux: number, uy: number): [number, number] | null {
 	const [roll, F, lat, zd, swing, sx, sy] = pose as [number, number, number, number, number, number, number];
 	const w = (swing * Math.PI) / 180;
 	const lx = Math.cos(w) * (ux + sx) - Math.sin(w) * (uy + sy);
@@ -1680,7 +1680,7 @@ const shakeAxisParams = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp:
 };
 
 /** S_Shake params → the pure shake model (sapphire-distort-warp/math.ts). */
-export function shakeParamsOf(p: EffectParams): ShakeParams {
+function shakeParamsOf(p: EffectParams): ShakeParams {
 	const axis = (a: string, randAmp: number) => ({
 		randAmp: Math.max(0, num(p[`${a}RandAmp`], randAmp)),
 		randFreq: Math.max(0, num(p[`${a}RandFreq`], 1)),

@@ -1,6 +1,6 @@
 // DeHummer (ported from filmcraft `effects/restoration.rs` DeHum): a cascade of RBJ notches at the mains fundamental
 // and its harmonics, each stage cross-faded in/out so changing the harmonic count is click-free.
-import { Biquad, type Coeffs, designBiquad, IDENTITY, magnitude } from '../../core/biquad.ts';
+import { Biquad, type Coeffs, designBiquad, IDENTITY } from '../../core/biquad.ts';
 import { EffectBase } from '../../core/effect.ts';
 import { Smoothed } from '../../core/smooth.ts';
 
@@ -78,11 +78,6 @@ export class DeHum extends EffectBase {
 			yi = -yi;
 		}
 		return 20 * Math.log10(Math.max(Math.hypot(yr, yi), 1e-12));
-	}
-
-	/** Exposed for tests: |H| of one notch stage. */
-	stageMagnitude(k: number, freq: number): number {
-		return magnitude(this.coeffs[k]!, freq, this.sampleRate);
 	}
 
 	reset(): void {

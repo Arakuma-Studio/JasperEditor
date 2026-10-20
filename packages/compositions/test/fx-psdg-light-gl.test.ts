@@ -33,12 +33,11 @@ describe.runIf(psdgGlEnabled)('Premiere Vignette / Glow (WebGL2)', { timeout: 60
 	});
 
 	it('glow: light around bright areas, spilling into the padding', async () => {
-		const g = await page.call<{ canvas: number[]; core: Px; near: Px; darkCorner: Px; outside: Px }>('glow', {
+		const g = await page.call<{ core: Px; near: Px; darkCorner: Px; outside: Px }>('glow', {
 			radius: 8,
 			threshold: 50,
 			intensity: 2,
 		});
-		expect(g.canvas).toEqual([64 + 40, 36 + 40]); // 2.5 × radius each side
 		expect(g.core[0]).toBeGreaterThan(250);
 		expect(g.near[0]).toBeGreaterThan(20); // light next to the square (black there before)
 		expect(g.darkCorner[0]).toBeLessThan(10);

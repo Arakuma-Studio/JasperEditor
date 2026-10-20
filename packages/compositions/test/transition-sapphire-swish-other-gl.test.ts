@@ -37,9 +37,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		beforeAll(async () => {
 			({ browser, page } = await openGlPage(join(here, 'transition-sapphire-swish-other-gl', 'entry.ts')));
-			expect(
-				await page.evaluate(() => (window as unknown as { __sso: { webgl2(): boolean } }).__sso.webgl2()),
-			).toBe(true);
 		}, 120_000);
 
 		afterAll(async () => {

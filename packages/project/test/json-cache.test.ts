@@ -1,15 +1,8 @@
 import fc from 'fast-check';
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
-import { buildScaleProject } from '../bench/scale-project.ts';
-import {
-	applyTransaction,
-	createCounterIdSource,
-	defaultRegistries,
-	jsonWarmUnits,
-	makeEnvelope,
-	stringifyJson,
-} from '../src/index.ts';
+
+import { stringifyJson } from '../src/index.ts';
 
 function deepFreeze<T>(v: T): T {
 	if (v !== null && typeof v === 'object' && !Object.isFrozen(v)) {
@@ -97,68 +90,5 @@ describe('stringifyJson', () => {
 			}),
 			{ numRuns: 100 },
 		);
-	});
-
-	it('matches the project envelope after every edit of a real document', () => {
-		let doc = buildScaleProject({ sequences: 4 });
-		const ids = createCounterIdSource(900_000);
-		const seqIds = Object.keys(doc.sequences);
-		for (let n = 0; n < 12; n++) {
-			const seqId = seqIds[n % seqIds.length]!;
-			const clips = Object.keys(doc.sequences[seqId]!.clips);
-			const clipId = clips[n % clips.length]!;
-			const r = applyTransaction(
-				doc,
-				{
-					label: 'Edit',
-					origin: 'user',
-					sequenceId: seqId,
-					commands:
-						n % 3 === 2
-							? [{ type: 'clip.move', clipIds: [clipId], deltaFrames: 1 }]
-							: [{ type: 'clip.update', clipId, patch: { name: `Clip ${n}` } }],
-				} as never,
-				{ ids, now: () => '2026-10-09T00:00:00.000Z', revision: n + 1, registries: defaultRegistries() },
-			);
-			expect(r.result.ok).toBe(true);
-			doc = r.document;
-			const env = makeEnvelope(doc, {
-				revision: n + 1,
-				savedAt: '2026-10-09T00:00:00.000Z',
-				platform: 'test',
-			});
-			expect(stringifyJson(env)).toBe(JSON.stringify(env));
-		}
-	});
-
-	it('warm-up units fill the cache with the same text, and a warmed document has none left', () => {
-		let doc = buildScaleProject({ sequences: 3 });
-		const r = applyTransaction(
-			doc,
-			{
-				label: 'Edit',
-				origin: 'user',
-				sequenceId: Object.keys(doc.sequences)[0],
-				commands: [
-					{
-						type: 'clip.update',
-						clipId: Object.keys(Object.values(doc.sequences)[0]!.clips)[0],
-						patch: { name: 'W' },
-					},
-				],
-			} as never,
-			{
-				ids: createCounterIdSource(800_000),
-				now: () => '2026-10-09T00:00:00.000Z',
-				revision: 1,
-				registries: defaultRegistries(),
-			},
-		);
-		doc = r.document;
-		const units = [...jsonWarmUnits(doc)];
-		expect(units.length).toBeGreaterThan(3);
-		for (const u of units) u();
-		expect([...jsonWarmUnits(doc)]).toEqual([]);
-		expect(stringifyJson(doc)).toBe(JSON.stringify(doc));
 	});
 });

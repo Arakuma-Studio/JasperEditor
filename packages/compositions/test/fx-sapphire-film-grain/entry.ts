@@ -1,9 +1,8 @@
-import '../gl-poison.ts';
 import { defaultEffectRegistry, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
-type Paint = 'image' | 'grey' | 'gradient' | 'clear' | 'half' | 'black' | 'white' | 'orange' | 'blue';
+type Paint = 'grey' | 'gradient' | 'clear' | 'half' | 'black' | 'white' | 'orange' | 'blue';
 
 export type FilmRunOptions = {
 	id: string;
@@ -14,13 +13,10 @@ export type FilmRunOptions = {
 	paint?: Paint;
 	/** Canvas px probes (relative to the layer box) → RGBA. */
 	probes?: [number, number][];
-	png?: boolean;
 	/** Return every pixel of the layer box (small canvases only). */
 	all?: boolean;
 	clip?: string;
 };
-
-let image: HTMLImageElement | null = null;
 
 function canvas(w: number, h: number): HTMLCanvasElement {
 	const c = document.createElement('canvas');
@@ -34,8 +30,7 @@ function paint(
 	b: { x: number; y: number; w: number; h: number },
 	kind: Paint,
 ) {
-	if (kind === 'image' && image) ctx.drawImage(image, b.x, b.y, b.w, b.h);
-	else if (kind === 'grey') {
+	if (kind === 'grey') {
 		ctx.fillStyle = 'rgb(128, 128, 128)';
 		ctx.fillRect(b.x, b.y, b.w, b.h);
 	} else if (kind === 'black') {
@@ -67,8 +62,8 @@ function render(o: FilmRunOptions) {
 		...Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
 		...(o.params ?? {}),
 	};
-	const w = o.width ?? (image ? image.naturalWidth : 64);
-	const h = o.height ?? (image ? image.naturalHeight : 36);
+	const w = o.width ?? 64;
+	const h = o.height ?? 36;
 	const box = { width: w, height: h };
 	const pad = spec.gpu.padding?.(params as never, { ...box, pxScale: 1, fps: 30 }) ?? 0;
 	const padding =
@@ -96,7 +91,7 @@ function render(o: FilmRunOptions) {
 	const hst = fxHost();
 	if (!hst) throw new Error('no WebGL2');
 	const input = canvas(layout.width, layout.height);
-	paint(input.getContext('2d')!, layout.box, o.paint ?? (image ? 'image' : 'grey'));
+	paint(input.getContext('2d')!, layout.box, o.paint ?? 'grey');
 	const out = canvas(layout.width, layout.height);
 	runShaderPlan(
 		hst,
@@ -126,77 +121,13 @@ function render(o: FilmRunOptions) {
 		([x, y]) => Array.from(ctx.getImageData(Math.floor(b.x + x), Math.floor(b.y + y), 1, 1).data) as number[],
 	);
 	return {
-		canvas: [layout.width, layout.height],
-		box: [b.x, b.y, b.w, b.h],
-		passes: plan.passes.length,
 		probes,
 		all: o.all ? Array.from(ctx.getImageData(b.x, b.y, b.w, b.h).data) : undefined,
-		png: o.png ? out.toDataURL('image/png') : undefined,
 	};
 }
 
 const api = {
-	async loadImage(dataUrl: string | null) {
-		if (!dataUrl) {
-			image = null;
-			return null;
-		}
-		const img = new Image();
-		img.src = dataUrl;
-		await img.decode();
-		image = img;
-		return [img.naturalWidth, img.naturalHeight];
-	},
-	ids() {
-		return defaultEffectRegistry
-			.list()
-			.filter((s) => s.gpu && s.id.startsWith('jasper.s.'))
-			.map((s) => s.id);
-	},
 	render,
-	compileTimes(id: string, over: Record<string, unknown> = {}) {
-		const spec = defaultEffectRegistry.get(id)!;
-		const params = { ...Object.fromEntries(spec.params.map((p) => [p.name, p.default])), ...over };
-		const ctx = {
-			width: 64,
-			height: 36,
-			pxScale: 1,
-			fps: 30,
-			frame: 0,
-			duration: 300,
-			seed: 0.5,
-			progress: 0,
-		};
-		const plan = planGpuEffect(spec, { id: 'fx1', params: params as never }, ctx, { width: 64, height: 36 });
-		const gl = document.createElement('canvas').getContext('webgl2')!;
-		const vs = gl.createShader(gl.VERTEX_SHADER)!;
-		gl.shaderSource(
-			vs,
-			'#version 300 es\nin vec2 a;out vec2 v_uv;void main(){v_uv=a;gl_Position=vec4(a,0.,1.);}',
-		);
-		gl.compileShader(vs);
-		return plan.passes.map((pass) => {
-			const t0 = performance.now();
-			const sh = gl.createShader(gl.FRAGMENT_SHADER)!;
-			gl.shaderSource(sh, pass.source);
-			gl.compileShader(sh);
-			const ok = gl.getShaderParameter(sh, gl.COMPILE_STATUS);
-			const t1 = performance.now();
-			const prog = gl.createProgram()!;
-			gl.attachShader(prog, vs);
-			gl.attachShader(prog, sh);
-			gl.linkProgram(prog);
-			gl.useProgram(prog);
-			gl.drawArrays(gl.TRIANGLES, 0, 3);
-			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-			return {
-				compile: Math.round(t1 - t0),
-				linkDraw: Math.round(performance.now() - t1),
-				ok,
-				chars: pass.source.length,
-			};
-		});
-	},
 };
 
 (window as unknown as { __film: typeof api }).__film = api;

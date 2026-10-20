@@ -68,7 +68,7 @@ function noise1(seed: number, t: number): number {
 }
 
 /** Random lens motion at clip time `sec`: offsets of shift (S units), tilt (deg), distance and leak intensity. */
-export function freeLensShake(p: EffectParams, seed: number, sec: number) {
+function freeLensShake(p: EffectParams, seed: number, sec: number) {
 	const zero = { x: 0, y: 0, tiltX: 0, tiltY: 0, distance: 0, leak: 0 };
 	if (!bool(p.shake, true)) return zero;
 	const amp = num(p.amplitude, 1);
@@ -103,7 +103,7 @@ export function freeLensShake(p: EffectParams, seed: number, sec: number) {
 }
 
 /** The lens pose (base params + shake) and the derived amounts. */
-export function freeLensPose(p: EffectParams, seed: number, sec: number) {
+function freeLensPose(p: EffectParams, seed: number, sec: number) {
 	const sh = freeLensShake(p, seed, sec);
 	const shift = vec2(p.shift, [0, 0]);
 	const tiltX = clamp(num(p.tiltX, 12.5) + sh.tiltX, -89, 89);

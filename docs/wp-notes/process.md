@@ -74,7 +74,9 @@ its lease, Recover, Edit ▸ Undo of the recovery; reload stays editable; Revert
 held 15 s after a full navigation to Home that followed the project's opening by a second or two; not reproduced
 since, cause unknown (recorded in M1-STATUS).
 
-## Tests added
+## Historical tests added
+
+This list records the original workstream, including tests removed by the later cleanup.
 
 `scripts/check-layers.test.mjs` (8), `scripts/check-assets.test.mjs` (8), `scripts/third-party-notices.test.mjs`
 (+4), `packages/project/test/schema-history.test.ts` (14), `apps/engine/test/recovery-versions.test.ts` (9),

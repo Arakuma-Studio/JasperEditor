@@ -24,6 +24,26 @@ Branch `wp/m2-layer-bake` (from `main` a7f1f47, contracts merge 3ece27f). Spec: 
 | LBK-030 | `routes/layer-bake.ts`, `service.ts` (`capability`) | `features.layerBake = {state, reason?, cacheBytes}` (size walked in the background). `features.anime` stays with `routes/anime.ts`. |
 | LBK-031 | tests | Builder output (unit) and every ffmpeg command of the e2e run (`-filter_complex` / `-vf`) pass `gplFiltersIn`. Filters used: `lut3d`, `format`, `scale`, `fade`, `overlay`, `setparams`, `alphaextract`, `signalstats`, `metadata`, `crop`. |
 
+## Composition setup failures
+
+The render operation includes `selectComposition` before drawing frames (S04 RR-001). Its SDK failures use the
+same engine error mapping as drawing: a timeout returns retryable `RENDER_TIMEOUT` (RR-006), and cancellation
+arriving during selection returns `JOB_CANCELLED` (RR-005). Existing typed refusals are preserved. The shared
+`RemotionService` composition boundary covers exports, alpha masters and stills; binary, WebGL and bundle
+preconditions remain outside the SDK catch. This changes error classification, not render deadlines or recovery.
+
+The cleanup validation run exposed the gap in `layer-bake.e2e.test.ts`: a Fresh-layer bake reported a render
+timeout, but the fallback still's composition-selection timeout escaped as `INTERNAL`; RED title selection
+timeouts were wrapped as `LAYER_BAKE_FAILED`. Those failures preceded pixel comparisons. The FADE export used
+the documented Remotion fallback and failed the test's hybrid-path assertion before fade comparisons.
+
+`apps/engine/test/remotion-retry.test.ts` now injects selection timeout and cancellation faults at the external
+SDK boundary and asserts the public service errors. Both regressions failed before the owner fix with an untyped
+SDK Error. After the fix, all seven retry-suite cases pass; targeted Biome and diff whitespace checks also pass.
+These SDK fault tests do not establish real-browser rendering success or resolve the host's setup timeouts.
+Integrated typecheck/gates and browser reruns remain pending. Detailed before-edit evidence and six-bar retention rationale are
+in [the cleanup ledger](../test-cleanup/compositions2.md#composition-setup-error-normalization--before-edit-record).
+
 ## Contract changes (additive; `Contract-Change:` in the commits)
 
 - `NativeExtension.bakes?(clip): 'remotion' | null`; `NativePrepareContext.purpose?: 'native' | 'remotion'`, `concurrency?`; `LayerOverride.still/rect/colorRuns` are now implemented by the builder.
@@ -61,10 +81,20 @@ pnpm vitest run --project @jasper/web apps/web/test/layer-bake-runtime.test.ts
 REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts   # ~3–4 min, headless Chrome
 REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake-parallel.e2e.test.ts   # parallel = sequential, joins, cancel (~5 min)
 pnpm vitest run --project @jasper/engine apps/engine/test/page-pool.test.ts   # pool: budget, progress, abort
-E2E_PORT=48460 pnpm exec playwright test e2e/layer-bake.spec.ts                         # after `node scripts/e2e-prepare.mjs`
 ```
 
 The e2e suite appends its measurements to `<tmpdir>/layer-bake-e2e.txt`.
+
+`gpu-spans.e2e.test.ts` compares the hybrid export with full-sequence composition
+stills built through public `buildRenderSnapshot` and signed media handles. Its
+reference setup does not call the export planner or private export methods;
+the ten boundary/effect frames, pixel tolerance and repeat-export cache checks
+remain unchanged. At integration source `30a8430e`, the rewritten case passed
+with all ten RGB comparison shares at 1.0000 within 3/255, no new bake jobs on
+repeat export, and byte-identical frame 45 (exit 0). Semantic engine typecheck
+also passed. The [cleanup ledger](../test-cleanup/engine2.md#gpu-span-reference-setup-follow-up--before-edit-record)
+records the exact source, measured run durations and evidence files separately
+from the earlier historical run.
 
 ## Results (this box: 12 cores, no GPU, load average 20–45 from other agents)
 

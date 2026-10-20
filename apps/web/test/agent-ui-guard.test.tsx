@@ -1,25 +1,25 @@
-import { AGENT_INPUT_HEADER } from '@jasper/api';
 import { JsonText } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-	AGENT_INPUT_GRACE_MS,
-	agentInputActive,
-	agentUiTxGuard,
-	resetAgentInputForTests,
-	runAgentInput,
-} from '../src/agent-bridge/agent-input.ts';
+import { agentInputActive, agentUiTxGuard, runAgentInput } from '../src/agent-bridge/agent-input.ts';
 import type { AgentBridge, PendingApproval } from '../src/agent-bridge/bridge.ts';
 import { registerCommands, runCommand } from '../src/commands/registry.ts';
 import type { CommandCtx } from '../src/commands/types.ts';
 import { ApprovalCard } from '../src/shell/AgentApprovals.tsx';
 import { createEditorEngineClient } from '../src/state/engine.tsx';
 
+function trustedUserInput() {
+	const event = new KeyboardEvent('keydown', { key: 'Escape' });
+	Object.defineProperty(event, 'isTrusted', { value: true });
+	window.dispatchEvent(event);
+}
+
 afterEach(() => {
 	cleanup();
-	resetAgentInputForTests();
+	vi.restoreAllMocks();
+	trustedUserInput();
 	vi.useRealTimers();
 });
 
@@ -49,7 +49,7 @@ describe('requests the editor makes while it handles agent input (security revie
 		const seen: { url: string; marked: boolean }[] = [];
 		const fetchImpl = (async (url: string, init?: RequestInit) => {
 			const headers = (init?.headers ?? {}) as Record<string, string>;
-			seen.push({ url: String(url), marked: headers[AGENT_INPUT_HEADER] === '1' });
+			seen.push({ url: String(url), marked: headers['x-jasper-agent-input'] === '1' });
 			return new Response(JSON.stringify({ ok: true, revision: 1, removedPresets: [], removedFolders: [] }), {
 				headers: { 'x-jasper-api': '1', 'content-type': 'application/json' },
 			});
@@ -86,7 +86,7 @@ describe('requests the editor makes while it handles agent input (security revie
 			expect(last().marked).toBe(true);
 		});
 
-		resetAgentInputForTests();
+		trustedUserInput();
 		await del();
 		expect(last().marked).toBe(false);
 		vi.unstubAllGlobals();
@@ -107,10 +107,20 @@ describe('session guard', () => {
 
 	it('covers asynchronous aftermath, ends after the grace period or a real user input', async () => {
 		const s = session();
+		const started = performance.now() - 2000;
+		const clock = vi.spyOn(performance, 'now').mockReturnValue(started - 1);
+		trustedUserInput();
+		clock.mockReturnValue(started);
 		await runAgentInput(async () => undefined);
 		expect(agentInputActive()).toBe(true);
 		expect(s.apply(deleteSequence(s)).ok).toBe(false);
-		expect(agentInputActive(performance.now() + AGENT_INPUT_GRACE_MS + 1)).toBe(false);
+		clock.mockReturnValue(started + 1499);
+		expect(s.apply(deleteSequence(s)).ok).toBe(false);
+		clock.mockReturnValue(started + 1500);
+		expect(agentInputActive()).toBe(false);
+		clock.mockRestore();
+		await runAgentInput(async () => undefined);
+		expect(agentInputActive()).toBe(true);
 		// A trusted user key press ends it at once (jsdom events are untrusted: simulate the flag).
 		const e = new KeyboardEvent('keydown', { key: 'Delete' });
 		Object.defineProperty(e, 'isTrusted', { value: true });
@@ -132,7 +142,7 @@ describe('irreversible UI commands', () => {
 			const r = await runAgentInput(() => runCommand('history.clear', ctx, { confirmed: true }));
 			expect(r).toMatchObject({ ran: false, reason: 'error' });
 			expect(run).not.toHaveBeenCalled();
-			resetAgentInputForTests();
+			trustedUserInput();
 			expect(await runCommand('history.clear', ctx, { confirmed: true })).toEqual({ ran: true });
 			expect(run).toHaveBeenCalledOnce();
 		} finally {

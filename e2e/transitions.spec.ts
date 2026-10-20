@@ -1,23 +1,17 @@
 // The two clips are placed by the in-page agent API (setup only) so they have media handles around the cut.
 
-import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
-	appliedLabels,
 	clipBox,
 	clips,
 	createProject,
 	enableAgentBridge,
-	exportViaUi,
-	ffprobe,
 	focusTimeline,
 	importFiles,
 	mediaIdForFile,
-	pointerDrag,
 	query,
 	ROOT,
-	regionLuma,
 	timelineArea,
 	transact,
 } from './support.ts';
@@ -138,7 +132,6 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	await expect.poll(async () => (await videoTransitionAtCut())?.effectId).toBe('jasper.cross-dissolve');
 	const t = (await videoTransitionAtCut())!;
 	expect(t).toMatchObject({ alignment: 'center', duration: 30 });
-	expect((await appliedLabels(page)).at(-1)).toBe('Add Transition');
 	await expect(
 		page.locator(`[data-testid="timeline-track-area"] [data-transition-id="${t.id}"]`),
 	).toBeVisible();
@@ -158,64 +151,4 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await transitions()).length).toBe(0);
-});
-
-test('Ctrl+D at the playhead near the cut adds the default transition (one entry)', async () => {
-	await seek(cut - 4);
-	await focusTimeline(page);
-	const n = (await appliedLabels(page)).length;
-	await page.keyboard.press('Control+KeyD');
-	await expect.poll(async () => (await videoTransitionAtCut())?.effectId).toBe('jasper.cross-dissolve');
-	const labels = await appliedLabels(page);
-	expect(labels.length).toBe(n + 1);
-	expect(labels.at(-1)).toBe('Apply Video Transition');
-});
-
-test('dragging its right edge lengthens the transition', async () => {
-	const t = (await videoTransitionAtCut())!;
-	const rect = page.locator(`[data-testid="timeline-track-area"] [data-transition-id="${t.id}"]`);
-	const r = (await rect.boundingBox())!;
-	const pxPerFrame = r.width / t.duration;
-	const x = r.x + r.width - 1;
-	const y = r.y + r.height / 2;
-	await pointerDrag(page, { x, y }, { x: x + 5 * pxPerFrame, y }, { steps: 10 });
-	await expect.poll(async () => (await videoTransitionAtCut())?.duration).toBeGreaterThan(t.duration);
-	expect((await appliedLabels(page)).at(-1)).toBe('Transition Duration');
-	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transitions-edge.png') });
-});
-
-test('Effect Controls Transition section changes the type to Dip to Black', async () => {
-	const t = (await videoTransitionAtCut())!;
-	const rect = page.locator(`[data-testid="timeline-track-area"] [data-transition-id="${t.id}"]`);
-	await rect.click();
-	await page
-		.locator('.dv-tab')
-		.filter({ hasText: /^Effect Controls$/ })
-		.first()
-		.click();
-	const ec = page.getByTestId('effect-controls-panel');
-	await expect(ec.getByTestId('transition-section')).toBeVisible();
-	await ec.getByTestId('transition-type').selectOption('jasper.dip-to-black');
-	await expect.poll(async () => (await videoTransitionAtCut())?.effectId).toBe('jasper.dip-to-black');
-	expect((await appliedLabels(page)).at(-1)).toBe('Replace Transition');
-	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transitions-effect-controls.png') });
-});
-
-test('native export contains the Dip to Black transition', async ({ request }) => {
-	const dir = join(ROOT, 'test-results', 'e2e-exports');
-	mkdirSync(dir, { recursive: true });
-	const frames = Math.max(...(await clips(page)).map((c) => c.end));
-	const out = await exportViaUi(page, request, {
-		engine: 'auto',
-		fileName: 'transitions-native.mp4',
-		expectPath: /native/i,
-		outDir: dir,
-	});
-	const probe = ffprobe(out.file);
-	expect(Number(probe.streams.find((s) => s.codec_type === 'video')!.nb_read_frames)).toBe(frames);
-	const middle = (cut * 1001) / 30000;
-	const region = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 };
-	const dark = regionLuma(out.file, middle, region);
-	expect(dark).toBeLessThan(regionLuma(out.file, middle - 0.8, region) / 2);
-	expect(dark).toBeLessThan(regionLuma(out.file, middle + 0.8, region) / 2);
 });

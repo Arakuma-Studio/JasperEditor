@@ -97,7 +97,7 @@ export function transformShutterFrames(p: EffectParams): number {
  * from the travel of the transformed layer box corners and centre in canvas px. `taps: 1` (no blur) when the shutter
  * is 0, `paramsAt` is unavailable or the transform does not change.
  */
-export function transformShutterSamples(
+function transformShutterSamples(
 	p: EffectParams,
 	ctx: Pick<FxFrameContext, 'frame' | 'width' | 'height' | 'paramsAt'> & { pxScale?: number },
 ): MbPlan {

@@ -61,7 +61,7 @@ k=v values are JSON when they parse (3, true, [1,2], {"a":1}), else strings; dot
 Times in k=v accept 30 (frames), {"seconds":2.5} or "00:00:01:15"; --at also takes 2.5s.
 Exit status: 0 ok, 1 the command failed, 2 usage error.`;
 
-export class UsageError extends Error {
+class UsageError extends Error {
 	override readonly name = 'UsageError';
 }
 
@@ -87,9 +87,9 @@ const VALUE_FLAGS = new Set([
 ]);
 const BOOL_FLAGS = new Set(['json', 'dry-run', 'keep-going', 'start-engine', 'help', 'version', 'h']);
 
-export type ParsedArgs = { flags: Record<string, string | true>; positional: string[] };
+type ParsedArgs = { flags: Record<string, string | true>; positional: string[] };
 
-export function parseArgv(argv: readonly string[]): ParsedArgs {
+function parseArgv(argv: readonly string[]): ParsedArgs {
 	const flags: Record<string, string | true> = {};
 	const positional: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
@@ -115,7 +115,7 @@ export function parseArgv(argv: readonly string[]): ParsedArgs {
 }
 
 /** A JSON value when it parses, else the string itself. */
-export function looseValue(s: string): unknown {
+function looseValue(s: string): unknown {
 	try {
 		return JSON.parse(s);
 	} catch {
@@ -124,7 +124,7 @@ export function looseValue(s: string): unknown {
 }
 
 /** `k=v` pairs → an object (dotted keys nest); a single JSON object argument is taken as is. */
-export function kvArgs(items: readonly string[]): Record<string, unknown> {
+function kvArgs(items: readonly string[]): Record<string, unknown> {
 	if (items.length === 1 && items[0]!.trim().startsWith('{')) {
 		const v = looseValue(items[0]!);
 		if (!v || typeof v !== 'object' || Array.isArray(v))
@@ -150,7 +150,7 @@ export function kvArgs(items: readonly string[]): Record<string, unknown> {
 }
 
 /** `--at`: 30 (frames), 2.5s (seconds), HH:MM:SS:FF, or JSON. */
-export function timeValue(s: string): unknown {
+function timeValue(s: string): unknown {
 	const sec = /^(-?\d+(?:\.\d+)?)s$/.exec(s.trim());
 	if (sec) return { seconds: Number(sec[1]) };
 	if (/^-?\d+$/.test(s.trim())) return Number(s);
@@ -255,7 +255,7 @@ function splitPath(p: string): string[] {
 }
 
 /** clip/<id>/transform.position → ["clip", id, "transform", "position"]. */
-export function paramTarget(path: string): string[] | null {
+function paramTarget(path: string): string[] | null {
 	const parts = splitPath(path);
 	if (parts.length < 3 || !PARAM_HEADS.has(parts[0]!)) return null;
 	const [head, id, ...rest] = parts;

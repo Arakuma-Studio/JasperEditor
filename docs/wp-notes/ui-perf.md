@@ -4,7 +4,7 @@ Workstream `ui-perf` of the parity program (BASE port 49580). perf-core made the
 a 50-clip gesture update in 3.6–6.5 ms on 1 000 clips), yet a 30-step drag of 11 clips on a 1 000-clip sequence took
 6.8–10.7 s of wall time in headless Chrome: the cost was in the UI. This workstream profiled the built app at scale,
 fixed the hot spots without behaviour changes, moved autosave serialisation off the critical path, made the first
-edit after opening incremental and added `pnpm perf --sections ui` and `e2e/ui-perf.spec.ts`.
+edit after opening incremental and added `pnpm perf --sections ui`.
 Measured results: [docs/performance.md](../performance.md) §5. Nothing was ported (no `licenses/ported` record).
 
 ## 1. How it was measured
@@ -53,9 +53,9 @@ node each), all lanes re-rendered at every playhead step.
 | Change | Where | Behaviour |
 |---|---|---|
 | **Gesture frames for the Program monitor.** The drawn document reaches costly views through `gestureFrames(store)`: outside gestures and at commit / cancel / undo in the same notification as the session store; during a gesture each transient document is published from its own task (after the frame that produced it is painted) and no more often than the views can afford — after a publish whose renders cost `c` ms (moving average, measured to the end of React's flush), the next waits `5 × c` (≤ 250 ms). Cheap views get every frame; a 1 000-clip monitor ≈ 10–20 per second | `packages/session/src/gesture-frames.ts`, `useGestureFrameDocument`, `ProgramMonitor.tsx` | the monitor's picture during a heavy gesture updates at a lower rate; the last frame of a gesture and every commit are shown at once (explicitly allowed by the scope: "throttle it, or show a gesture preview") |
-| **Clip windowing in compositions.** `FrameWindow` mounts only the clips whose Sequence span (premount included) meets a page-aligned window around the current frame (pages of 60 frames, one page before, two after) | `packages/compositions/src/frame-window.tsx`, `SequenceComposition.tsx` (video, flat, matte, audio clips) | none: a Sequence outside its span renders nothing either way (property test) — also removes 1 000 Sequence re-renders per played frame |
+| **Clip windowing in compositions.** `FrameWindow` mounts only the clips whose Sequence span (premount included) meets a page-aligned window around the current frame (pages of 60 frames, one page before, two after) | `packages/compositions/src/frame-window.tsx`, `SequenceComposition.tsx` (video, flat, matte, audio clips) | none: a Sequence outside its span renders nothing either way — also removes 1 000 Sequence re-renders per played frame |
 | **Background panels frozen.** `FreezeStoreUpdates`: inside a frozen subtree `useStoreSelector` keeps returning the value it last rendered; dock panels in a background tab (not keep-alive) are frozen and read the current state when shown | `packages/session/src/react/index.ts`, `shell/dock/DockHost.tsx` | none visible (their DOM is detached); effects stay mounted |
-| **Expression lookups memoised** per clip and per sequence object; owner index (effect / mask / puppet pin → holder) per sequence; `locateExpressionTarget` walks only the owner | `packages/project/src/expressions.ts` | none (property test against the old scans) |
+| **Expression lookups memoised** per clip and per sequence object; owner index (effect / mask / puppet pin → holder) per sequence; `locateExpressionTarget` walks only the owner | `packages/project/src/expressions.ts` | none |
 | **Track headers / toolbar memoised.** Header rows skip renders unless their track, row, the view's targeting / source patching / keyframe display or their callbacks change; the context menu reads the clips from the session | `TrackHeaders.tsx`, `Chrome.tsx`, `TimelinePanel.tsx` | none |
 | **Clip scroll layer.** The track area draws at a scroll offset snapped to device pixels; clips sit in content pixels on a layer moved by it, and a clip view re-renders for a scroll only when its sticky name, its visible canvas tiles or its decorations depend on it | `TrackArea.tsx`, `ClipView.tsx` | clip edges land on the same device pixels as before relative to each other; the whole track area may shift by < 1 device pixel against the unsnapped scroll offset (the ruler and playhead are unaffected) |
 | **Canvas tile caching.** Filmstrip / waveform tiles are drawn in clip-local coordinates on tile-aligned canvases (≤ 512 px, as before), so a scroll redraws only tiles that come into view; the ruler's ticks likewise in content coordinates on a translated strip | `ClipView.tsx`, `Ruler.tsx`, `canvas.tsx` | ruler ticks may sit ≤ 1 px from where per-frame rounding put them |
@@ -99,7 +99,6 @@ pnpm perf --sections ui --ui drag,scroll      # a subset
 PERF_PORT=49580 pnpm exec tsx scripts/perf/ui-profile.ts timeline:1000 drag --save /tmp/p   # trace + CPU profile
 pnpm exec tsx scripts/perf/ui-compare.ts /tmp/web-before apps/web/dist --rounds 3             # before/after
 pnpm exec tsx packages/project/bench/json-cache.ts                                           # autosave serialisation
-E2E_PORT=49580 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/ui-perf.spec.ts
 ```
 
 The editor's `perf` UI action and MCP `perf_stats` report `gestureFrames` (published / skipped gesture frames and the
@@ -107,25 +106,15 @@ cost of one) next to the invariant counters.
 
 ## 5. Verified behaviour (tests)
 
-- `packages/session/test/ui-perf.test.tsx`: gesture frames — cheap views get every frame (each from its own task),
-  costly ones at most one per `5 × cost`, the latest transient always wins, commit / cancel / undo arrive in the same
-  notification with no timer left; `FreezeStoreUpdates` keeps the last value while frozen and catches up when shown;
-  idle verification makes the first edit incremental (and is a no-op without `requestIdleCallback`); autosave PUTs
-  exactly `JSON.stringify(envelope)` after edits.
+- `packages/session/test/ui-perf.test.tsx`: a published transient returns to the committed document immediately
+  after cancellation and stays there after pending timers; edits and undo reach the monitor immediately.
+  `FreezeStoreUpdates` keeps the last displayed value while frozen and catches up when shown. These tests use
+  the shared production gesture-frame seam. The standalone browser benchmarks in §4 own performance budgets;
+  unit tests do not pin the throttle's internal cost formula, React render counts or invariant-cache counters.
 - `packages/project/test/json-cache.test.ts`: `stringifyJson` equals `JSON.stringify` on arbitrary JSON (frozen or
   not, cold and cached), large composed containers with every special value (`undefined`, functions, symbols, `NaN`,
   `-0`, `toJSON`, boxed primitives, U+2028), cycles and `BigInt` throw, objects that can still change are never cached,
   Immer edit chains, the project envelope after real edits.
-- `packages/project/test/expressions-memo.test.ts`: the memoised flags, owner index and owner-scoped location equal the
-  whole-document scans over random edit chains.
-- `apps/web/test/project-windowing.test.tsx`: every row below the threshold, a window above it.
-- `packages/compositions/test/frame-window.test.ts`: every item whose span holds the frame (premount included) is
-  mounted, for the whole page.
-- `e2e/ui-perf.spec.ts` (built app): the drag commits and moves every picked clip, with the per-frame budget (best of
-  two runs) and a wall-time guard (`PERF=1`: the documented 1.5 s; otherwise the blank-page floor measured in the test
-  plus 1 s scaled by load — the old build exceeded the floor by 2–7 s); scroll and zoom of 5 000 clips with clips drawn where the model puts them (≤ 1 px) and the frame-rate
-  floor; the 2 000-item Project panel renders fewer than 400 rows, reaches its last item and scrolls above the floor;
-  Effect Controls with 1 800 keys scrubs within budget. Screenshots `test-results/ui-perf-*.png`.
 
 ## 6. Comparison with the references
 
@@ -146,15 +135,15 @@ different trade-off (EffectCraft renders off-thread; here the throttle bounds th
   acknowledged after the renderer's frame), so ≈ 0.6–0.9 s is the page's: about one extra frame per step for the
   gesture update (≈ 4 ms, perf-core), the timeline's render and the Program monitor's gesture frames. The per-frame
   budget (mean < 16 ms) is met (11.5–12.4 ms).
-- **Host.** Every number of §5 comes from a shared 12-core host at load average 20–60 (other agents' builds); the
-  e2e spec scales its budgets by the measured load factor squared (the browser is another process).
+- **Host.** The historical UI measurements came from a shared 12-core host at load average 20–60 (other agents'
+  builds). The former E2E performance spec scaled its budgets by the measured load factor squared.
 - **Zoom** re-renders every visible clip (its position and width change); scrolling does not.
 - **Gesture frames** of a heavy Program monitor are 25–40 ms tasks; they are spaced (≤ 20 % of the main thread) but
   each one still makes one long frame.
 - **Program monitor overlays** (transform handles, masks, tracking) follow a gesture at full rate while the picture
   under them may lag by one throttled gesture frame on a heavy sequence; both agree again at the commit.
 - **Reveal in Project** on a windowed bin scrolls the item's row into view first; it is exercised by the code path
-  only (the e2e spec scrolls to the last item; no test reveals one).
+  only; the removed E2E tour scrolled to the last item without testing Reveal.
 - **Effect Controls** with 1 800 keys still repaints the value column and the Program monitor per scrub step.
 - **Project panel windowing** takes rows out of view out of the DOM from 200 items: UI automation finds items in view.
 - **Not changed:** project loading (parse, zod, repair: ≈ 1.4 s for the 8 MB scale project; the loader's own invariant

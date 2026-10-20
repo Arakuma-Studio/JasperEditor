@@ -123,7 +123,7 @@ export const swParam = {
  * How far (px) the edge must travel beyond the frame at both ends so that nothing of the soft edge, the border or the
  * glow is left at progress 0 / 1 (`u_swMargin`). Pure; mirrors `sw_composite`.
  */
-export function wipeMargin(p: EffectParams): number {
+function wipeMargin(p: EffectParams): number {
 	const soft = Math.max(num(p.edgeSoftness), 1) / 2;
 	const bw = Math.max(0, num(p.borderWidth));
 	const shift = Math.abs(num(p.borderShift));

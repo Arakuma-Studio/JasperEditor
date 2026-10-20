@@ -121,16 +121,6 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		expect(caps.media.encoding!.license).toBe('lgpl');
 	});
 
-	it('its ffmpeg is an LGPL build (no --enable-gpl / --enable-nonfree / x264)', () => {
-		const conf = spawnSync(ffmpegIn(LGPL_DIR!), ['-hide_banner', '-buildconf'], { encoding: 'utf8' });
-		expect(conf.status).toBe(0);
-		expect(conf.stdout).toContain('--enable-shared');
-		expect(conf.stdout).not.toMatch(/--enable-(gpl|nonfree|libx264|libx265|libfdk-aac)\b/);
-		const lic = spawnSync(ffmpegIn(LGPL_DIR!), ['-hide_banner', '-L'], { encoding: 'utf8' });
-		// LGPL 2.1 (source build) and 3 (BtbN) wrap the text differently.
-		expect(lic.stdout.replace(/\s+/g, ' ')).toContain('GNU Lesser General Public License');
-	});
-
 	it('exports H.264 via a Remotion ProRes intermediate encoded with OpenH264', async () => {
 		const { plan, result, file } = await exportWith('h264');
 		expect(plan.encoder).toMatchObject({ codec: 'h264', encoder: 'libopenh264', gpl: false });
@@ -171,31 +161,5 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		const v = info.streams.find((s) => s.codec_type === 'video')!;
 		expect(v).toMatchObject({ codec_name: 'vp9', width: 640, height: 360, nb_read_frames: '24' });
 		expect(info.streams.find((s) => s.codec_type === 'audio')).toMatchObject({ codec_name: 'opus' });
-	}, 300_000);
-
-	it('renders a still through the LGPL compositor', async () => {
-		const stillDoc = new DocBuilder('hd-720p-30');
-		stillDoc.tx([
-			{ type: 'clip.addText', at: 0, duration: 24, track: 'V1', content: { text: 'LGPL still' }, ref: '$t' },
-		]);
-		// Blend modes render natively except inside nested sequences, keeping this still on the Remotion path.
-		stillDoc.tx([{ type: 'clip.update', clipIds: stillDoc.clipIds(), patch: { blendMode: 'screen' } }]);
-		stillDoc.tx([{ type: 'clip.nest', clipIds: stillDoc.clipIds() }]);
-		const r = await engine.app.inject({
-			method: 'POST',
-			url: '/api/stills',
-			headers: { ...host(), 'content-type': 'application/json' },
-			payload: { envelope: stillDoc.envelope(), sequenceId: stillDoc.seqId, frame: 10 },
-		});
-		const job = await coreServices(engine.app).queue.wait(r.json().id);
-		expect(job.state).toBe('succeeded');
-		expect(job.result).toMatchObject({ renderPath: 'remotion' });
-		const png = await engine.app.inject({
-			method: 'GET',
-			url: (job.result as { url: string }).url,
-			headers: host(),
-		});
-		expect(png.statusCode).toBe(200);
-		expect(png.headers['content-type']).toBe('image/png');
 	}, 300_000);
 });

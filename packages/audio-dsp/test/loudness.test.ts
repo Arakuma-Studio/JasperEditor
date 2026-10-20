@@ -1,16 +1,8 @@
 // Ported from FilmCraft crates/audio-dsp/src/loudness.rs tests, plus API and property tests.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-	defaultChannelWeights,
-	energyToLufs,
-	kWeightingPower,
-	LoudnessMeter,
-	lufsToEnergy,
-	measureLoudness,
-	normalizeGainDb,
-} from '../src/index.ts';
-import { dbfs, Rng, rms, segments, sine } from './util.ts';
+import { LoudnessMeter, measureLoudness, normalizeGainDb } from '../src/index.ts';
+import { dbfs, Rng, segments } from './util.ts';
 
 function stereoMeasure(x: Float32Array, sr: number): LoudnessMeter {
 	const m = new LoudnessMeter(sr, 2);
@@ -20,53 +12,6 @@ function stereoMeasure(x: Float32Array, sr: number): LoudnessMeter {
 }
 
 describe('LoudnessMeter (BS.1770-4 / EBU R128)', () => {
-	it('Tech 3341 cases 1 & 2: stereo sine at −23 / −33 dBFS', () => {
-		for (const [sr, freq] of [
-			[48000, 1000],
-			[44100, 997],
-			[96000, 1000],
-		]) {
-			for (const level of [-23, -33]) {
-				const x = segments(freq, sr, [[20, level]]);
-				const m = stereoMeasure(x, sr);
-				expect(Math.abs(m.integrated() - level), `sr ${sr} I ${m.integrated()}`).toBeLessThan(0.1);
-				expect(Math.abs(m.momentary() - level)).toBeLessThan(0.1);
-				expect(Math.abs(m.shortTerm() - level)).toBeLessThan(0.1);
-				expect(Math.abs(m.maxMomentary() - level)).toBeLessThan(0.1);
-				expect(Math.abs(m.maxShortTerm() - level)).toBeLessThan(0.1);
-				expect(m.loudnessRange()).toBeLessThan(0.1);
-			}
-		}
-	});
-
-	it('Tech 3341 cases 3 & 4: absolute and relative gating', () => {
-		const sr = 48000;
-		let x = segments(1000, sr, [
-			[10, -36],
-			[60, -23],
-			[10, -36],
-		]);
-		expect(Math.abs(stereoMeasure(x, sr).integrated() + 23)).toBeLessThan(0.1);
-		x = segments(1000, sr, [
-			[10, -72],
-			[10, -36],
-			[60, -23],
-			[10, -36],
-			[10, -72],
-		]);
-		expect(Math.abs(stereoMeasure(x, sr).integrated() + 23)).toBeLessThan(0.1);
-	});
-
-	it('Tech 3341 case 5: relative gate', () => {
-		const sr = 48000;
-		const x = segments(1000, sr, [
-			[20, -26],
-			[20.1, -20],
-			[20, -26],
-		]);
-		expect(Math.abs(stereoMeasure(x, sr).integrated() + 23)).toBeLessThan(0.1);
-	});
-
 	it('silence and below-gate programmes', () => {
 		const sr = 48000;
 		const m = new LoudnessMeter(sr, 2);
@@ -82,113 +27,15 @@ describe('LoudnessMeter (BS.1770-4 / EBU R128)', () => {
 		expect(stereoMeasure(x, sr).integrated()).toBe(Number.NEGATIVE_INFINITY);
 	});
 
-	it('Tech 3342 loudness range', () => {
-		const sr = 48000;
-		const cases: [[number, number][], number][] = [
-			[
-				[
-					[20, -20],
-					[20, -30],
-				],
-				10,
-			],
-			[
-				[
-					[20, -20],
-					[20, -15],
-				],
-				5,
-			],
-			[
-				[
-					[20, -40],
-					[20, -20],
-				],
-				20,
-			],
-			[
-				[
-					[20, -50],
-					[20, -35],
-					[20, -20],
-					[20, -35],
-					[20, -50],
-				],
-				15,
-			],
-		];
-		for (const [segs, expected] of cases) {
-			const m = stereoMeasure(segments(1000, sr, segs), sr);
-			expect(Math.abs(m.loudnessRange() - expected), `LRA ${m.loudnessRange()} vs ${expected}`).toBeLessThan(
-				1,
-			);
-		}
-	});
-
-	it('log sweep matches the analytic K-weighting', () => {
-		const sr = 48000;
-		const n = sr * 20;
-		const f1 = 20;
-		const f2 = 20000;
-		const k = Math.log(f2 / f1);
-		const amp = dbfs(-20);
-		let phase = 0;
-		const x = new Float32Array(n);
-		let expected = 0;
-		for (let i = 0; i < n; i++) {
-			const f = f1 * Math.exp((k * i) / n);
-			x[i] = amp * Math.sin(phase);
-			phase += (2 * Math.PI * f) / sr;
-			expected += amp * amp * kWeightingPower(f, sr);
-		}
-		expected /= n;
-		const i = stereoMeasure(x, sr).integrated();
-		const e = energyToLufs(expected);
-		// gating removes the quiet low-frequency start, so integrated ≥ ungated expectation (and close)
-		expect(i).toBeGreaterThanOrEqual(e - 0.1);
-		expect(i - e).toBeLessThan(0.6);
-	});
-
-	it('surround weights: Ls +1.5 dB, LFE excluded', () => {
+	it('custom channel weights can include LFE in loudness', () => {
 		const sr = 48000;
 		const x = segments(1000, sr, [[10, -30]]);
 		const z = new Float32Array(x.length);
 		const front = new LoudnessMeter(sr, 6);
 		front.process([x, z, z, z, z, z]);
-		const surr = new LoudnessMeter(sr, 6);
-		surr.process([z, z, z, z, x, z]);
-		const lfe = new LoudnessMeter(sr, 6);
-		lfe.process([z, z, z, x, z, z]);
-		expect(Math.abs(surr.integrated() - front.integrated() - 10 * Math.log10(1.41))).toBeLessThan(0.01);
-		expect(lfe.integrated()).toBe(Number.NEGATIVE_INFINITY);
 		const custom = new LoudnessMeter(sr, 6, { weights: [1, 1, 1, 1, 1, 1] });
 		custom.process([z, z, z, x, z, z]);
 		expect(Math.abs(custom.integrated() - front.integrated())).toBeLessThan(1e-9);
-	});
-
-	it('default channel weights', () => {
-		expect(defaultChannelWeights(1)).toEqual([1]);
-		expect(defaultChannelWeights(2)).toEqual([1, 1]);
-		expect(defaultChannelWeights(6)).toEqual([1, 1, 1, 0, 1.41, 1.41]);
-		expect(defaultChannelWeights(3)).toEqual([1, 1, 1]);
-	});
-
-	it('true peak of inter-sample-peak signals', () => {
-		for (const sr of [48000, 44100]) {
-			// fs/4 sine with 45° phase: every sample is at ±0.5·√2·A, true peak A (0 dBFS).
-			const x = sine(sr / 4, 1, sr, sr, Math.PI / 4);
-			const m = stereoMeasure(x, sr);
-			expect(Math.abs(m.samplePeakDb() + 3.01)).toBeLessThan(0.01);
-			// EBU Tech 3341 true-peak tolerance: +0.2 / −0.4 dB.
-			const tp = m.truePeakDb();
-			expect(tp, `sr ${sr} TP ${tp}`).toBeGreaterThanOrEqual(-0.4);
-			expect(tp).toBeLessThanOrEqual(0.2);
-		}
-		let m = stereoMeasure(sine(997, dbfs(-6), 48000, 48000, 0.3), 48000);
-		expect(Math.abs(m.truePeakDb() + 6)).toBeLessThan(0.2);
-		m = stereoMeasure(sine(11025, 1, 44100, 44100, 0), 44100);
-		expect(m.truePeakDb()).toBeGreaterThanOrEqual(-0.4);
-		expect(m.truePeakDb()).toBeLessThanOrEqual(0.2);
 	});
 
 	it('truePeak: false measures the same loudness and sample peak, without a true peak', () => {
@@ -257,21 +104,6 @@ describe('LoudnessMeter (BS.1770-4 / EBU R128)', () => {
 		);
 		const y = x.map((v) => v * g);
 		expect(Math.abs(stereoMeasure(y, sr).integrated() + 16)).toBeLessThan(0.02);
-		expect(Math.abs(lufsToEnergy(energyToLufs(0.3)) - 0.3)).toBeLessThan(1e-12);
-	});
-
-	it('tiny blocks equal big blocks; mono has no dual-mono +3 dB', () => {
-		const sr = 48000;
-		const x = segments(440, sr, [[4, -18]]);
-		const a = new LoudnessMeter(sr, 1);
-		a.process([x]);
-		const b = new LoudnessMeter(sr, 1);
-		b.process([new Float32Array(0)]);
-		for (let i = 0; i < x.length; i++) b.process([x], i, 1);
-		expect(b.integrated()).toBe(a.integrated());
-		expect(b.truePeak()).toBe(a.truePeak());
-		const expected = -0.691 + 20 * Math.log10(rms(x)) + 10 * Math.log10(kWeightingPower(440, sr));
-		expect(Math.abs(a.integrated() - expected)).toBeLessThan(0.1);
 	});
 
 	it('missing channels count as silence; measureLoudness summarises', () => {

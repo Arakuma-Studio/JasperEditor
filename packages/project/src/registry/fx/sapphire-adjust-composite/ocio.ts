@@ -55,10 +55,7 @@ const VGAMUT_TO_AP0: Mat3 = [
 	-0.00629840111620089, -0.00923556287076561, -0.00105690563900513, 1.01029246850977,
 ];
 
-/** `a · b` (apply b first). */
-export { mulMat3 };
-
-export function invertMat3(m: Mat3): Mat3 {
+function invertMat3(m: Mat3): Mat3 {
 	const [a, b, c, d, e, f, g, h, i] = m;
 	const A = e * i - f * h;
 	const B = -(d * i - f * g);
@@ -79,7 +76,7 @@ export function invertMat3(m: Mat3): Mat3 {
 	];
 }
 
-export const OCIO_GAMUTS = {
+const OCIO_GAMUTS = {
 	rec709: REC709_TO_AP0,
 	rec2020: mulMat3(AP1_TO_AP0, REC2020_TO_AP1),
 	ap1: AP1_TO_AP0,
@@ -135,76 +132,6 @@ const SLOG3_TOE = 171.2102946929;
 const VLOG = { cut1: 0.01, cut2: 0.181, b: 0.00873, c: 0.241514, d: 0.598206 };
 const R2020 = { alpha: 1.09929682680944, beta: 0.018053968510807 };
 const CCT = { a: 10.5402377416545, b: 0.0729055341958355, cut: 0.0078125, ycut: 0.155251141552511 };
-
-const spow = (x: number, g: number) => Math.sign(x) * Math.abs(x) ** g;
-
-/** Encoded value → linear light. */
-export function ocioDecode(curve: OcioCurve, v: number): number {
-	switch (curve) {
-		case 'srgb':
-			return Math.abs(v) <= 0.04045 ? v / 12.92 : Math.sign(v) * ((Math.abs(v) + 0.055) / 1.055) ** 2.4;
-		case 'rec709':
-			return v < 0.081 ? v / 4.5 : ((v + 0.099) / 1.099) ** (1 / 0.45);
-		case 'gamma24':
-			return spow(v, 2.4);
-		case 'gamma22':
-			return spow(v, 2.2);
-		case 'rec2020':
-			return v < 4.5 * R2020.beta ? v / 4.5 : ((v + R2020.alpha - 1) / R2020.alpha) ** (1 / 0.45);
-		case 'acescct':
-			if (v <= CCT.ycut) return (v - CCT.b) / CCT.a;
-			if (v < 1.4679963120447153) return 2 ** (v * 17.52 - 9.72);
-			return 65504;
-		case 'logc3':
-			return v > LOGC.e * LOGC.cut + LOGC.f
-				? (10 ** ((v - LOGC.d) / LOGC.c) - LOGC.b) / LOGC.a
-				: (v - LOGC.f) / LOGC.e;
-		case 'slog3':
-			return v >= SLOG3_TOE / 1023
-				? 10 ** ((v * 1023 - 420) / 261.5) * 0.19 - 0.01
-				: ((v * 1023 - 95) * 0.01125) / (SLOG3_TOE - 95);
-		case 'vlog':
-			return v < VLOG.cut2 ? (v - 0.125) / 5.6 : 10 ** ((v - VLOG.d) / VLOG.c) - VLOG.b;
-		default:
-			return v;
-	}
-}
-
-/** Linear light → encoded value. */
-export function ocioEncode(curve: OcioCurve, x: number): number {
-	switch (curve) {
-		case 'srgb':
-			return Math.abs(x) <= 0.0031308 ? x * 12.92 : Math.sign(x) * (1.055 * Math.abs(x) ** (1 / 2.4) - 0.055);
-		case 'rec709':
-			return x < 0.018 ? 4.5 * x : 1.099 * x ** 0.45 - 0.099;
-		case 'gamma24':
-			return spow(x, 1 / 2.4);
-		case 'gamma22':
-			return spow(x, 1 / 2.2);
-		case 'rec2020':
-			return x < R2020.beta ? 4.5 * x : R2020.alpha * x ** 0.45 - (R2020.alpha - 1);
-		case 'acescct':
-			return x <= CCT.cut ? CCT.a * x + CCT.b : (Math.log2(x) + 9.72) / 17.52;
-		case 'logc3':
-			return x > LOGC.cut ? LOGC.c * Math.log10(LOGC.a * x + LOGC.b) + LOGC.d : LOGC.e * x + LOGC.f;
-		case 'slog3':
-			return x >= 0.01125
-				? (420 + Math.log10((x + 0.01) / 0.19) * 261.5) / 1023
-				: (x * ((SLOG3_TOE - 95) / 0.01125) + 95) / 1023;
-		case 'vlog':
-			return x < VLOG.cut1 ? 5.6 * x + 0.125 : VLOG.c * Math.log10(x + VLOG.b) + VLOG.d;
-		default:
-			return x;
-	}
-}
-
-/** One full conversion of a straight RGB triple (TS reference of the shader, used by tests). */
-export function ocioConvert(from: OcioSpace, to: OcioSpace, rgb: readonly [number, number, number]) {
-	const m = ocioMatrix(from, to);
-	const lin = rgb.map((v) => ocioDecode(from.curve, v));
-	const out = [0, 1, 2].map((r) => m[3 * r]! * lin[0]! + m[3 * r + 1]! * lin[1]! + m[3 * r + 2]! * lin[2]!);
-	return out.map((v) => ocioEncode(to.curve, v)) as [number, number, number];
-}
 
 const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 

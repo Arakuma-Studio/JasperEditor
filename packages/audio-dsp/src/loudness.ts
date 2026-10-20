@@ -32,11 +32,6 @@ export function energyToLufs(e: number): number {
 	return e <= 0 ? Number.NEGATIVE_INFINITY : -0.691 + 10 * Math.log10(e);
 }
 
-/** Inverse of {@link energyToLufs}. */
-export function lufsToEnergy(l: number): number {
-	return 10 ** ((l + 0.691) / 10);
-}
-
 /**
  * Default BS.1770 channel weights for a channel count: L R C LFE Ls Rs (Lb Rb) order for 5.1 / 7.1, LFE
  * excluded (0), surrounds 1.41 (≈ +1.5 dB); 5 channels = L R C Ls Rs; anything else 1 each.

@@ -8,7 +8,7 @@ import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
 import { RecoveryJournal } from '../src/projects/recovery.ts';
-import { ProjectStoreFs, schemaBackupName } from '../src/projects/store.ts';
+import { ProjectStoreFs } from '../src/projects/store.ts';
 import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir } from './helpers.ts';
 
 const FIXTURE_V4 = join(__dirname, '../../../packages/project/test/fixtures/schema-v4.jasper');
@@ -94,7 +94,7 @@ describe('schema backup on the first save over a migrated project (S01:MIG-004)'
 				rev,
 			);
 		await save(env.revision);
-		const backup = join(s.paths.projectDir(id), schemaBackupName(4));
+		const backup = join(s.paths.projectDir(id), 'project (schema v4 backup).jasper');
 		expect(readFileSync(backup, 'utf8')).toBe(before);
 		s.tick(10 * 60_000);
 		await save(env.revision + 1);
@@ -447,12 +447,6 @@ describe('journal locks across engine processes', () => {
 		expect(recovered.info.sessionId).toBe('ses_x');
 		expect(recovered.envelope.document).toMatchObject({ name: 'Unsaved' });
 		expect(readFileSync(join(incomplete, 'snapshot.jasper'), 'utf8')).toBe('{');
-	});
-
-	it('an engine restart (new instance, no leases) offers the journal of the dead session', async () => {
-		const { s, id, saved } = await journalled();
-		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
-		expect((await restarted.list(id)).candidates.map((c) => c.sessionId)).toEqual(['ses_x']);
 	});
 
 	it('a journal written by another live engine process is never touched', async () => {

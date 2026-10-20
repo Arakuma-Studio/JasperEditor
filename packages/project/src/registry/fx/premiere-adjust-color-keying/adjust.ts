@@ -114,7 +114,7 @@ function levelsParams(): ParamSpec[] {
 }
 
 /** Levels as uniforms (levels 0..1, gamma = value / 100): the master (RGB) set and the per-channel sets as vec3. */
-export function levelsUniforms(p: EffectParams) {
+function levelsUniforms(p: EffectParams) {
 	const set = (k: string) =>
 		[
 			num(p[`blackInput${k}`], 0) / 255,

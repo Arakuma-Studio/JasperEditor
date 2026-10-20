@@ -30,7 +30,7 @@ import { hann } from '../core/stft.ts';
 /** Beats of context on each side of a joint that the similarity looks at. */
 export const CONTEXT = 4;
 /** Shortest piece, in beats (no stutter edits). */
-export const MIN_PIECE_BEATS = 4;
+const MIN_PIECE_BEATS = 4;
 /** Crossfade at each joint (seconds). */
 export const XFADE_S = 0.02;
 /**
@@ -111,7 +111,7 @@ export function planCuts(p: Plan): [number, number][] {
 	return out;
 }
 
-export function jumpScore(a: Analysis, i: number, j: number): number {
+function jumpScore(a: Analysis, i: number, j: number): number {
 	const m = a.beats.length;
 	let s = 0;
 	let n = 0;

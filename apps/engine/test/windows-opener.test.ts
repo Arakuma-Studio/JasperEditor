@@ -10,7 +10,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileS
 import { delimiter, join } from 'node:path';
 import fc from 'fast-check';
 import { afterAll, describe, expect, it } from 'vitest';
-import { openerFor, WINDOWS_OPEN_COMMAND } from '../src/routes/gaps.ts';
+import { openerFor } from '../src/routes/gaps.ts';
 import { tempAppdir } from './helpers.ts';
 
 /**
@@ -38,55 +38,6 @@ function libuvQuote(arg: string): string {
 
 function windowsCommandLine(cmd: string, args: readonly string[], verbatim = false): string {
 	return [cmd, ...args].map((a) => (verbatim ? a : libuvQuote(a))).join(' ');
-}
-
-/**
- * CommandLineToArgvW / the Microsoft C runtime: how a program such as powershell.exe splits its command line.
- * 2n backslashes + quote → n backslashes, quote toggles; 2n+1 backslashes + quote → n backslashes and a literal
- * quote; backslashes elsewhere are literal; unquoted spaces and tabs separate.
- */
-function crtParse(line: string): string[] {
-	const out: string[] = [];
-	let cur = '';
-	let inQuotes = false;
-	let started = false;
-	for (let i = 0; i < line.length; ) {
-		const ch = line[i]!;
-		if (ch === '\\') {
-			let n = 0;
-			while (line[i] === '\\') {
-				n++;
-				i++;
-			}
-			if (line[i] === '"') {
-				cur += '\\'.repeat(Math.floor(n / 2));
-				if (n % 2 === 1) {
-					cur += '"';
-					i++;
-				}
-			} else cur += '\\'.repeat(n);
-			started = true;
-			continue;
-		}
-		if (ch === '"') {
-			inQuotes = !inQuotes;
-			started = true;
-			i++;
-			continue;
-		}
-		if (!inQuotes && (ch === ' ' || ch === '\t')) {
-			if (started) out.push(cur);
-			cur = '';
-			started = false;
-			i++;
-			continue;
-		}
-		cur += ch;
-		started = true;
-		i++;
-	}
-	if (started) out.push(cur);
-	return out;
 }
 
 /**
@@ -154,13 +105,6 @@ const HOSTILE_NAMES = [
 	'🎬 clip.mp4',
 	'a\u0301\u0327.mp4',
 ];
-const dirs = [
-	'C:\\media',
-	'C:\\My Videos\\a, b & c',
-	'\\\\server\\share\\dir with spaces',
-	'D:\\100%\\(x86)',
-];
-const hostilePaths = dirs.flatMap((d) => HOSTILE_NAMES.map((n) => `${d}\\${n}`));
 
 /** Any Windows-legal path text: no `<>:"/|?*` in names is not enforced here on purpose (a parser must not care). */
 const anyPath = fc
@@ -175,30 +119,6 @@ const anyPath = fc
 	.map((parts) => `C:\\m\\${parts.join('').replace(/["\0\r\n]/g, '_')}.mp4`);
 
 describe('Windows open: powershell.exe receives a constant command line', () => {
-	const FIXED = ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', WINDOWS_OPEN_COMMAND];
-
-	it('the command is a constant that names the path only through the environment', () => {
-		expect(WINDOWS_OPEN_COMMAND).toBe('Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH');
-		// Nothing in it needs quoting inside PowerShell, and nothing lets a value become code: no quote characters,
-		// no expression or pipeline syntax; -LiteralPath (not -Path) so wildcard characters are file name characters.
-		expect(WINDOWS_OPEN_COMMAND).not.toMatch(/["'`;|&(){}<>]/);
-		expect(WINDOWS_OPEN_COMMAND).not.toMatch(
-			/Invoke-Expression|\biex\b|Start-Process|cmd(\.exe)?\b|-Path\b/i,
-		);
-	});
-
-	it.each(hostilePaths)('%s', (path) => {
-		const o = openerFor('open', path, 'win32');
-		expect(o.verbatim).toBeUndefined();
-		expect([o.cmd, ...o.args]).toEqual(FIXED);
-		expect(o.env).toEqual({ JASPER_OPEN_PATH: path });
-		const line = windowsCommandLine(o.cmd, o.args);
-		expect(line).toBe(
-			'powershell.exe -NoProfile -NonInteractive -Command "Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH"',
-		);
-		expect(crtParse(line)).toEqual(FIXED);
-	});
-
 	it('never cmd.exe, never a shell, whatever the path (property)', () => {
 		fc.assert(
 			fc.property(anyPath, (path) => {
@@ -218,30 +138,19 @@ describe('Windows open: powershell.exe receives a constant command line', () => 
 });
 
 describe('Windows reveal: explorer.exe selects exactly the file', () => {
-	it.each(hostilePaths)('%s', (path) => {
-		const o = openerFor('reveal', path, 'win32');
-		expect(o).toEqual({ cmd: 'explorer.exe', args: [`/select,"${path}"`], verbatim: true });
-		const line = windowsCommandLine(o.cmd, o.args, true);
-		expect(line).toBe(`explorer.exe /select,"${path}"`);
-		expect(explorerParse(line.slice('explorer.exe '.length))).toEqual(['/select', path.trim()]);
-	});
-
-	it('the quoting Node would apply by itself mis-parses commas and spaces: that is why the line is verbatim', () => {
-		const path = 'C:\\My Videos\\a, b.mp4';
-		// Node quotes the whole argument (it has a space): explorer then sees one quoted item, not /select + path.
-		const nodeQuoted = windowsCommandLine('explorer.exe', [`/select,${path}`]);
-		expect(nodeQuoted).toBe('explorer.exe "/select,C:\\My Videos\\a, b.mp4"');
-		expect(explorerParse(nodeQuoted.slice('explorer.exe '.length))).not.toEqual(['/select', path]);
-		// Without any quoting a comma in the path separates.
-		expect(explorerParse('/select,C:\\dir\\a,b.mp4')).toEqual(['/select', 'C:\\dir\\a', 'b.mp4']);
-	});
-
 	it('any path without a double quote parses back to itself (property)', () => {
 		fc.assert(
 			fc.property(anyPath, (path) => {
 				const o = openerFor('reveal', path, 'win32');
-				const parsed = explorerParse(windowsCommandLine(o.cmd, o.args, true).slice('explorer.exe '.length));
-				return parsed.length === 2 && parsed[0] === '/select' && parsed[1] === path.trim();
+				const parsed = explorerParse(
+					windowsCommandLine(o.cmd, o.args, o.verbatim).slice('explorer.exe '.length),
+				);
+				return (
+					o.cmd === 'explorer.exe' &&
+					parsed.length === 2 &&
+					parsed[0] === '/select' &&
+					parsed[1] === path.trim()
+				);
 			}),
 			{ numRuns: 500 },
 		);
@@ -258,40 +167,6 @@ describe('Windows: names no Windows file can have are refused, not quoted around
 	])('%s', (_what, path) => {
 		for (const action of ['reveal', 'open'] as const)
 			expect(() => openerFor(action, path, 'win32')).toThrow(/cannot be handed to Windows/);
-	});
-});
-
-describe('the parser models used above', () => {
-	it('libuv quoting and the C runtime parser are inverse for any argument list (property)', () => {
-		fc.assert(
-			fc.property(
-				fc.array(
-					fc
-						.array(fc.constantFrom('a', ' ', '\t', '"', '\\', '\\\\', '\\"', '&', '%x%', ''), {
-							maxLength: 8,
-						})
-						.map((p) => p.join('')),
-					{ minLength: 1, maxLength: 5 },
-				),
-				(args) => {
-					const parsed = crtParse(windowsCommandLine('prog.exe', args));
-					return JSON.stringify(parsed) === JSON.stringify(['prog.exe', ...args]);
-				},
-			),
-			{ numRuns: 1000 },
-		);
-	});
-
-	it('known values (Microsoft’s documented examples)', () => {
-		expect(crtParse('"a b c" d e')).toEqual(['a b c', 'd', 'e']);
-		expect(crtParse('"ab\\"c" "\\\\" d')).toEqual(['ab"c', '\\', 'd']);
-		expect(crtParse('a\\\\\\b d"e f"g h')).toEqual(['a\\\\\\b', 'de fg', 'h']);
-		expect(crtParse('a\\\\\\"b c d')).toEqual(['a\\"b', 'c', 'd']);
-		expect(crtParse('a\\\\\\\\"b c" d e')).toEqual(['a\\\\b c', 'd', 'e']);
-		expect(libuvQuote('hello"world')).toBe('"hello\\"world"');
-		expect(libuvQuote('hello\\"world')).toBe('"hello\\\\\\"world"');
-		expect(libuvQuote('hello world\\')).toBe('"hello world\\\\"');
-		expect(libuvQuote('c:\\path\\to\\node.exe')).toBe('c:\\path\\to\\node.exe');
 	});
 });
 

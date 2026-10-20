@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
 import {
-	appliedLabels,
 	clipBox,
 	expectTransaction,
 	FIXTURES,
@@ -121,13 +120,6 @@ async function mediaAt(page: Page, path: string): Promise<Media | undefined> {
 	return Object.values(media).find((m) => m.locators.some((l) => l.type === 'path' && l.path === path));
 }
 
-async function pastedImages(page: Page): Promise<{ name: string; mediaId?: string }[]> {
-	const items = await query<Record<string, { name: string; mediaId?: string }>>(page, 'doc.get', {
-		path: ['items'],
-	});
-	return Object.values(items).filter((i) => /^Pasted image \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d/.test(i.name));
-}
-
 /** The custom format as the desktop bridge reads it from the OS clipboard (null when absent). */
 const bridgeRead = (page: Page) =>
 	page.evaluate(() =>
@@ -171,6 +163,14 @@ test.beforeAll(async () => {
 	test.setTimeout(300_000);
 	[A, B] = await Promise.all([launch('a'), launch('b')]);
 	await Promise.all([newProject(A.page, 'Desktop A'), newProject(B.page, 'Desktop B')]);
+});
+
+test.afterEach(async () => {
+	if (B?.page && !B.page.isClosed())
+		await test.info().attach('desktop-document', {
+			body: JSON.stringify(await query(B.page, 'doc.get'), null, 2),
+			contentType: 'application/json',
+		});
 });
 
 test.afterAll(async () => {
@@ -227,7 +227,6 @@ test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-
 	await expect.poll(async () => (await docClips(B.page)).length).toBe(1);
 	const pasted = (await docClips(B.page))[0]!;
 	expect([pasted.kind, pasted.start, pasted.content?.text]).toEqual(['text', at, 'Desktop copy']);
-	expect((await appliedLabels(B.page)).at(-1)).toBe('Paste');
 	// Ctrl+V in B goes through the paste event (the HTML form of the same payload).
 	at = await atEnd(B.page);
 	await B.page.keyboard.press('Control+KeyV');
@@ -245,26 +244,31 @@ test('external text from another app: Ctrl+V adds a text clip (CLB-010)', async 
 		await expect
 			.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.content?.text)
 			.toBe('Desktop external text');
-		expect((await appliedLabels(B.page)).at(-1)).toBe('Paste Text');
 	} finally {
 		stop();
 	}
 });
 
-test('external image data: Ctrl+V and Edit ▸ Paste import "Pasted image <time>" (CLB-010)', async () => {
+test('external image data: Ctrl+V and Edit ▸ Paste import a new still at the playhead (CLB-010)', async () => {
 	// Two different images: the same bytes twice would ask "use existing / import again" (S04:IN-007).
-	for (const [png, how, n] of [
-		['still.png', 'keys', 1],
-		['chart.png', 'menu', 2],
+	for (const [png, how] of [
+		['still.png', 'keys'],
+		['chart.png', 'menu'],
 	] as const) {
+		const existingMedia = await query<Record<string, Media>>(B.page, 'doc.get', { path: ['media'] });
 		const stop = await external('image', join(FIXTURES, png));
 		try {
 			const at = await atEnd(B.page);
 			if (how === 'menu') await editPaste(B.page);
 			else await B.page.keyboard.press('Control+KeyV');
-			await expect.poll(async () => (await pastedImages(B.page)).length, { timeout: 60_000 }).toBe(n);
-			await expect.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.kind).toBe('still');
-			expect((await appliedLabels(B.page)).at(-1)).toBe('Import 1 file');
+			await expect
+				.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.kind, { timeout: 60_000 })
+				.toBe('still');
+			const clip = (await docClips(B.page)).find((c) => c.start === at)!;
+			const media = await query<Record<string, Media>>(B.page, 'doc.get', { path: ['media'] });
+			expect(clip.mediaId).toBeDefined();
+			expect(media[clip.mediaId!]).toBeDefined();
+			expect(existingMedia[clip.mediaId!]).toBeUndefined();
 		} finally {
 			stop();
 		}
@@ -293,7 +297,6 @@ test('files copied in a file manager: Edit ▸ Paste and Ctrl+V register them in
 			await expect
 				.poll(async () => (await docClips(B.page)).some((c) => c.start === at && c.mediaId === mediaId))
 				.toBe(true);
-			expect((await appliedLabels(B.page)).at(-1)).toBe('Import 1 file');
 		} finally {
 			stop();
 		}

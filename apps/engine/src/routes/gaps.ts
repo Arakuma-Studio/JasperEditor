@@ -69,7 +69,7 @@ export type OpenerCommand = {
 };
 
 /** The fixed PowerShell command of "open" on Windows. No part of it comes from the file. */
-export const WINDOWS_OPEN_COMMAND = 'Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH';
+const WINDOWS_OPEN_COMMAND = 'Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH';
 
 /**
  * The host command that reveals / opens a path (overridable with `JASPER_OPEN_COMMAND` for tests and kiosks).

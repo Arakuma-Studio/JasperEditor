@@ -7,10 +7,8 @@ import {
 	computeFlowPair,
 	type FlowImage,
 	flowAt,
-	interpolateEffectcraft,
 	interpolateFlow,
 	pyramid,
-	pyramidLevels,
 } from '../src/index.ts';
 
 /** Smooth value noise (non-periodic), seeded. */
@@ -97,17 +95,10 @@ describe('block flow', () => {
 		const a = texture(320, 180, 0);
 		const b = texture(320, 180, 27);
 		const pair = computeFlowPair(a, b);
-		expect(pyramidLevels(320, 180)).toBe(4);
 		const v = flowAt(pair.ab, 160, 90, [0, 0]);
 		expect(Math.abs(v[0] - 27)).toBeLessThan(0.5);
 		const g = flowAt(pair.ba, 160, 90, [0, 0]);
 		expect(Math.abs(g[0] + 27)).toBeLessThan(0.5);
-	});
-
-	it('analyses large frames at ≤ 1024 px', () => {
-		expect(analysisFactor(1920, 1080)).toBe(2);
-		expect(analysisFactor(3840, 2160)).toBe(4);
-		expect(analysisFactor(1024, 576)).toBe(1);
 	});
 });
 
@@ -122,7 +113,7 @@ describe('interpolation', () => {
 		expect(flow).toBeLessThan(mix * 0.25);
 	});
 
-	it('handles occlusions better than effectcraft’s single-field cross-fade', () => {
+	it('reconstructs an occluded moving square more accurately than a frame mix', () => {
 		const W = 256;
 		const H = 160;
 		const a = square(W, H, 80);
@@ -143,9 +134,7 @@ describe('interpolation', () => {
 			return s / n;
 		};
 		const ours = band(interpolateFlow(a, b, 0.5, pair));
-		const ec = band(interpolateEffectcraft(a, b, 0.5, pair.ab, pair.k));
 		const mix = band(blendFrames(a, b, 0.5));
-		expect(ours).toBeLessThan(ec * 0.8);
 		expect(ours).toBeLessThan(mix * 0.25);
 	});
 

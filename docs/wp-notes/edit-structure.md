@@ -156,8 +156,6 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   lengths 1 s / 11 s, validation), bars pixel layout, leader phases/blips, tone level, WAV, frame holds (all three
   commands), through edits (speed + reverse), gaps, subsequence, freeze handles, repair of cycles, content keys,
   Track Matte Keys across nest / duplicate / subsequence / place-individually, Unnest refusing masked nests.
-- `packages/compositions/test/edit-structure.test.tsx`: nested frame drawn (incl. 2× speed), CSS / canvas adjustment
-  scopes, generator canvas, `pictureLocalFrame`.
 - `packages/compositions/test/edit-structure-render.e2e.test.ts` (REMOTION_E2E=1, headless Chrome): nest scaled 50 %
   and at 2×; adjustment with Black & White (canvas chain), 50 % + crop, Gaussian Blur (CSS); bars and leader pixels;
   frame hold of a moving video; an adjustment layer limited by an ellipse Opacity mask.
@@ -165,8 +163,8 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   nested audio present/absent, nest Motion; adjustment with opacity + crop; frame hold; freeze handles (no black
   frames, right frame after the span); bars, −20 dBFS tone (±0.6 dB), leader sweep colours, the two-pop; a masked
   adjustment layer plans the Remotion path with a named blocker.
-- `apps/web/test/edit-structure.test.ts`, `apps/mcp/test/structure.test.ts`, `e2e/edit-structure.spec.ts` (built
-  app: Nest dialog, double-click into the nest, New Item, Group, Add Frame Hold, native export checked with ffmpeg).
+- `apps/web/test/edit-structure.test.ts` and `apps/mcp/test/structure.test.ts` cover editing commands and the MCP
+  protocol; the render and export suites above own frame correctness.
 
 ## 7. Adobe fidelity (research, brief §3b) and sources
 

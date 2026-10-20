@@ -16,7 +16,7 @@ vi.mock('path-bool', async (importOriginal) => {
 });
 
 const { filledArea } = await import('../../src/vector/boolean.ts');
-const { circlePath, polyline } = await import('../../src/vector/geom.ts');
+const { polyline } = await import('../../src/vector/geom.ts');
 const { merge } = await import('../../src/vector/ops.ts');
 
 const sq = (x: number, y: number, s: number) => [
@@ -34,13 +34,11 @@ const sq = (x: number, y: number, s: number) => [
 describe('boolean retry', () => {
 	it('retries in a rotated frame and returns the same geometry', () => {
 		const a = sq(0, 0, 100);
-		const b = [circlePath([100, 50], 30)];
-		const direct = merge([a, b], 'add');
+		const b = sq(50, 50, 100);
 		failures.left = 1;
 		const retried = merge([a, b], 'add');
 		expect(failures.left).toBe(0);
-		expect(Math.abs(filledArea(retried) - filledArea(direct))).toBeLessThan(1e-6);
-		expect(retried.flatMap((sp) => sp.segs)).toHaveLength(direct.flatMap((sp) => sp.segs).length);
+		expect(filledArea(retried)).toBeCloseTo(17_500, 6);
 		// Vertices come back in the original frame (rotated there and back: round-off only).
 		const corners = retried.flatMap((sp) => sp.segs.map((c) => c[0]));
 		for (const p of [

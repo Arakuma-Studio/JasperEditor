@@ -14,7 +14,6 @@ import {
 	type MediaAsset,
 	normalizedFromSignal,
 	type ParamValue,
-	pqFromNits,
 	type RenderVisualClip,
 	type Rgb,
 	repairDocument,
@@ -232,11 +231,12 @@ describe('snapshot colour input transforms', () => {
 		]);
 		h.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' } }]);
 		const snap = snapOf(h);
-		for (const k of [0, 1, 2]) expect(snap.settings.backgroundColor[k]).toBeCloseTo(pqFromNits(203), 6);
+		// 203 cd/m² in ST 2084 PQ; independent standard calculation in docs/test-cleanup/project2.md.
+		for (const k of [0, 1, 2]) expect(snap.settings.backgroundColor[k]).toBeCloseTo(0.5806888810416078, 6);
 		const text = snap.videoTracks[0]!.clips[0]!;
 		expect(text.effects[0]!.effectId).toBe(COLOR_INPUT_ID);
 		const white = grade(text, { lut: () => null, working: snap.settings.color }, [1, 1, 1]);
-		for (const v of white) expect(v).toBeCloseTo(pqFromNits(203), 2);
+		for (const v of white) expect(v).toBeCloseTo(0.5806888810416078, 2);
 	});
 	it('the working settings enter the run key (a changed setting re-bakes)', () => {
 		const a = sequenceColorInfo({ workingColorSpace: 'rec2100-pq' });
@@ -266,17 +266,14 @@ describe('Lumetri in HDR', () => {
 		expect(bakeColorRun(lum({}), defaultEffectRegistry, { lut: () => null, working: pq }, 33)).toBeNull();
 	});
 	it('HDR Specular pulls the highlights above HDR White down, leaves the rest', () => {
-		const spec = pqFromNits(4000);
-		const mid = pqFromNits(100);
+		// ST 2084 reference signals for 4000 and 100 cd/m², independently calculated as above.
+		const spec = 0.9025723933109405;
+		const mid = 0.5080784215173949;
 		const o = run({ hdrWhite: 1000, hdrSpecular: -60 }, [spec, spec, spec]);
 		expect(o[0]).toBeLessThan(spec - 0.02);
-		expect(o[0]).toBeGreaterThan(pqFromNits(1000) - 0.01);
+		expect(o[0]).toBeGreaterThan(0.7518270962470418 - 0.01); // 1000 cd/m² minus the existing tolerance.
 		const m = run({ hdrWhite: 1000, hdrSpecular: -60 }, [mid, mid, mid]);
 		expect(m[0]).toBeCloseTo(mid, 2);
-	});
-	it('exposure works on the grading signal (1 = HDR White) and is SDR-identical in Rec. 709', () => {
-		const lift = run({ exposure: 1 }, [pqFromNits(100), pqFromNits(100), pqFromNits(100)]);
-		expect(lift[0]).toBeGreaterThan(pqFromNits(100));
 	});
 });
 

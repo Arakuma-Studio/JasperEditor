@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import { type CompositeItem, type CompositePicture, planComposite } from '../../src/fx/composite-plan.ts';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 
@@ -125,7 +124,6 @@ async function css(arg: string): Promise<number[]> {
 }
 
 (window as unknown as { __blend: Record<string, (a: string) => unknown> }).__blend = {
-	info: () => ({ webgl2: !!fxHost() }),
 	composite,
 	css,
 };

@@ -28,7 +28,6 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
-    "@jasper/testkit": "workspace:*",
     "esbuild": "^0.25.0"
   }
 }

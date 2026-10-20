@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import { TrimMonitor } from '../src/panels/program/TrimMonitor.tsx';
-import { patchedLabelOn, resolvePatch, setPatch, sourceTracksOf } from '../src/panels/source/patching.ts';
+import { resolvePatch, setPatch, sourceTracksOf } from '../src/panels/source/patching.ts';
 import { registerTimelineInstance } from '../src/panels/timeline/env.tsx';
 import { exitTrimMode, trimMode } from '../src/panels/timeline/state/trim-mode.ts';
 import { setupTimeline, solid, videoAsset } from './timeline-helpers.ts';
@@ -86,7 +86,7 @@ describe('Trim Monitor', () => {
 });
 
 describe('source patching', () => {
-	it('defaults to the same tracks; patches and switches off; the header label follows', () => {
+	it('defaults to the same tracks and routes patched or disabled source tracks', () => {
 		const h = harness();
 		const r = h.apply([{ type: 'media.register', asset: videoAsset(10) }]);
 		const mediaId = (r.results[0] as { mediaId: string }).mediaId;
@@ -103,7 +103,5 @@ describe('source patching', () => {
 		setPatch(h.session, h.seqId, 'V1', seq.videoTracks[1]!.id);
 		setPatch(h.session, h.seqId, 'A1', null);
 		expect(resolvePatch(seq, view(), counts)).toEqual({ video: [seq.videoTracks[1]!.id], audio: [null] });
-		expect(patchedLabelOn(seq, view(), counts, seq.videoTracks[1]!.id)).toEqual({ label: 'V1', on: true });
-		expect(patchedLabelOn(seq, view(), counts, seq.audioTracks[0]!.id)).toEqual({ label: 'A1', on: false });
 	});
 });

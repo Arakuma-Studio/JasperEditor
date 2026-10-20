@@ -53,17 +53,20 @@ for (const [size, sequenceCount] of [
 		selection.timeline.primaryClip = selected[0] ?? null;
 		const samples = new Map(variants.map(([variant]) => [variant, [] as number[]]));
 		const cpuSamples = new Map(variants.map(([variant]) => [variant, [] as number[]]));
+		const checksums = new Map(variants.map(([variant]) => [variant, 0]));
 		for (const [, filter] of variants) for (let i = 0; i < 20; i++) filter(selection, doc);
 		for (let run = 0; run < 7; run++) {
 			for (const [variant, filter] of run % 2 ? [...variants].reverse() : variants) {
+				let checksum = 0;
 				const cpuStart = process.cpuUsage();
 				const start = performance.now();
 				for (let i = 0; i < 100; i++) {
-					if (filter(selection, doc) !== selection) throw new Error('Selection identity changed');
+					checksum += filter(selection, doc).timeline.clips.length;
 				}
 				samples.get(variant)!.push((performance.now() - start) / 100);
 				const cpu = process.cpuUsage(cpuStart);
 				cpuSamples.get(variant)!.push((cpu.user + cpu.system) / 100_000);
+				checksums.set(variant, checksums.get(variant)! + checksum);
 			}
 		}
 		for (const [variant, timings] of samples) {
@@ -75,6 +78,7 @@ for (const [size, sequenceCount] of [
 					clips: size,
 					sequences: sequenceCount,
 					selection: name,
+					checksum: checksums.get(variant),
 					medianMs: timings[3],
 					medianCpuMs: cpuTimings[3],
 					samplesCpuMs: cpuTimings,

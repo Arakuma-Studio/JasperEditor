@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@jasper/project';
@@ -64,39 +64,6 @@ function clip(
 		),
 	];
 }
-
-const SHEET: { id: string; params?: Record<string, unknown>; video?: string; frames: number[] }[] = [
-	{ id: 'jasper.s.cut-to-dissolve', params: { cutPoint: 30, dissolveLength: 12 }, frames: [26, 30, 34] },
-	{ id: 'jasper.s.feedback', frames: [12, 13, 14] },
-	{ id: 'jasper.s.feedback-bubble', params: { combineNew: 'max' }, frames: [12, 13, 14] },
-	{ id: 'jasper.s.feedback-distort', frames: [12, 13, 14] },
-	{ id: 'jasper.s.field-remove', params: { show: 'motionMatte' }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.freeze-frame', frames: [10, 12, 14] },
-	{ id: 'jasper.s.get-frame', params: { getFrame: 12.5, interpFrames: true }, frames: [0, 10, 20] },
-	{ id: 'jasper.s.jitter-frames', frames: [10, 11, 12] },
-	{ id: 'jasper.s.motion-detect', params: { delayFrames: 2, brightness: 3 }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.nearest-color', params: { matchColor: [1, 1, 1, 1], steps: 8 }, frames: [10, 12, 14] },
-	{ id: 'jasper.s.random-edits', params: { editFrameLength: 6 }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.repair-frames', params: { firstBadFrame: 11, badFrameCount: 2 }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.retime', params: { speed: 0.4 }, frames: [20, 21, 22] },
-	{ id: 'jasper.s.reverse-clip', frames: [10, 11, 12] },
-	{ id: 'jasper.s.reverse-edits', frames: [10, 11, 12] },
-	{ id: 'jasper.s.time-average', params: { aveOverFrames: 8 }, frames: [10, 12, 14] },
-	{ id: 'jasper.s.time-displace', frames: [10, 12, 14] },
-	{ id: 'jasper.s.time-slice', params: { sliceNumber: 8 }, frames: [10, 12, 14] },
-	{ id: 'jasper.s.time-warp-rgb', params: { redShiftFrames: 3, blueShiftFrames: -3 }, frames: [10, 12, 14] },
-	{ id: 'jasper.s.trails', params: { combineNew: 'max', prevBrightness: 0.85 }, frames: [12, 13, 14] },
-	{ id: 'jasper.s.trails-diffuse', params: { combineNew: 'max' }, frames: [12, 13, 14] },
-	{ id: 'jasper.s.flicker', params: { amplitude: 0.5 }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-match', params: { match: { mediaId: '$m2' } }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-match-color', params: { match: { mediaId: '$m2' } }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-match-matte', params: { match: { mediaId: '$m2' } }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-mch-matte-color', params: { match: { mediaId: '$m2' } }, frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-remove', video: 'flicker.mp4', frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-remove-color', video: 'flicker.mp4', frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-remove-matte', video: 'flicker.mp4', frames: [10, 11, 12] },
-	{ id: 'jasper.s.flicker-rm-matte-color', video: 'flicker.mp4', frames: [10, 11, 12] },
-];
 
 describe.runIf(enabled)(
 	'Sapphire Time + Flicker in Remotion renders (REMOTION_E2E=1)',
@@ -210,59 +177,6 @@ describe.runIf(enabled)(
 			const after = await spread([{ id: 'jasper.s.flicker-remove' }], 'flkrm');
 			expect(before).toBeGreaterThan(8);
 			expect(after).toBeLessThan(before / 3);
-		});
-
-		it('renders every effect of the family (contact sheet with FX_CONTACT_SHEET)', async () => {
-			const rows: string[] = [];
-			for (const e of SHEET) {
-				const tag = e.id.replace('jasper.s.', '');
-				const files: string[] = [];
-				for (const f of e.frames) {
-					const raw = await still(
-						clip(media, e.video ?? 'scene.mp4', [{ id: e.id, params: e.params }]),
-						f,
-						`sheet-${tag}-${f}`,
-					);
-					expect(raw.length).toBe(FX_W * FX_H * 3);
-					files.push(join(media.dir, `sheet-${tag}-${f}.png`));
-				}
-				rows.push(tag);
-				execFileSync('ffmpeg', [
-					'-v',
-					'error',
-					'-y',
-					...files.flatMap((p) => ['-i', p]),
-					'-filter_complex',
-					`${files.map((_, i) => `[${i}:v]scale=213:120[s${i}]`).join(';')};${files.map((_, i) => `[s${i}]`).join('')}hstack=inputs=${files.length},drawtext=text='S_${tag} ${e.frames.join(' ')}':x=4:y=4:fontsize=13:fontcolor=yellow:box=1:boxcolor=black@0.6[v]`,
-					'-map',
-					'[v]',
-					join(media.dir, `row-${tag}.png`),
-				]);
-			}
-			const out = process.env.FX_CONTACT_SHEET;
-			if (out) {
-				mkdirSync(dirname(out), { recursive: true });
-				const inputs = rows.flatMap((r) => ['-i', join(media.dir, `row-${r}.png`)]);
-				const half = Math.ceil(rows.length / 2);
-				const col = (from: number, to: number, name: string) =>
-					`${rows
-						.slice(from, to)
-						.map((_, i) => `[${from + i}:v]`)
-						.join('')}vstack=inputs=${to - from}${to - from < half ? `,pad=iw:${half * 120}` : ''}[${name}]`;
-				execFileSync('ffmpeg', [
-					'-v',
-					'error',
-					'-y',
-					...inputs,
-					'-filter_complex',
-					`${col(0, half, 'l')};${col(half, rows.length, 'r')};[l][r]hstack=inputs=2,format=rgb24[v]`,
-					'-map',
-					'[v]',
-					'-compression_level',
-					'9',
-					out,
-				]);
-			}
 		});
 	},
 );

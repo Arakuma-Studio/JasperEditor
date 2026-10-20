@@ -29,7 +29,7 @@ import {
 export const PAINT_STYLES = ['vanGogh', 'hairyPaint', 'pointalize'] as const;
 
 /** Paint amount (0..1) at timing t: fades in over Paint Fade at the start, out over Paint Fade at the end. */
-export function paintAmount(p: EffectParams, t: number): number {
+function paintAmount(p: EffectParams, t: number): number {
 	const f = clamp(num(p.paintFade, 0.25), 0.001, 0.5);
 	const s = (x: number) => {
 		const c = clamp(x, 0, 1);
@@ -39,7 +39,7 @@ export function paintAmount(p: EffectParams, t: number): number {
 }
 
 /** Brush size (frame px) at envelope env: Min Brush Size at the ends → Max Brush Size at the peak (1.0 = a quarter of the frame width; eased so detail lasts). */
-export function brushPx(p: EffectParams, env: number, width: number): number {
+function brushPx(p: EffectParams, env: number, width: number): number {
 	const lo = clamp(num(p.minBrushSize, 0.04), 0.0025, 1);
 	const hi = clamp(num(p.maxBrushSize, 0.4), 0.0025, 1);
 	return Math.max(2, (lo + (hi - lo) * env * env) * 0.25 * width);

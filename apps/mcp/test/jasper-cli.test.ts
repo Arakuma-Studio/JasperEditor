@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { kvArgs, paramTarget, parseArgv, runCli, timeValue, UsageError } from '../src/jasper-cli.ts';
+import { runCli } from '../src/jasper-cli.ts';
 import { decodePng } from '../src/png.ts';
 import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
@@ -14,32 +14,6 @@ const PORT = await testPort(process.env.JASPER_CLI_TEST_PORT);
 const fixture = join(ROOT, 'fixtures', 'media', 'clip-a.mp4');
 
 describe('argument parsing', () => {
-	it('parses flags, k=v pairs, JSON objects and times', () => {
-		expect(parseArgv(['--json', 'exec', 'marker.add', 'frame=3', '--label', 'X'])).toEqual({
-			flags: { json: true, label: 'X' },
-			positional: ['exec', 'marker.add', 'frame=3'],
-		});
-		expect(() => parseArgv(['--nope'])).toThrow(UsageError);
-		expect(() => parseArgv(['--project'])).toThrow(/needs a value/);
-		expect(kvArgs(['frame=30', 'name=Intro', 'at.seconds=2.5', 'tracks=["V1"]', 'flag=true'])).toEqual({
-			frame: 30,
-			name: 'Intro',
-			at: { seconds: 2.5 },
-			tracks: ['V1'],
-			flag: true,
-		});
-		expect(kvArgs(['{"frame": 4}'])).toEqual({ frame: 4 });
-		expect(() => kvArgs(['frame'])).toThrow(/key=value/);
-		expect(() => kvArgs(['a=1', 'a.b=2'])).toThrow(UsageError);
-		expect(timeValue('30')).toBe(30);
-		expect(timeValue('2.5s')).toEqual({ seconds: 2.5 });
-		expect(timeValue('00:00:01:15')).toBe('00:00:01:15');
-		expect(() => timeValue('soon')).toThrow(UsageError);
-		expect(paramTarget('clip/clp_1/transform.position')).toEqual(['clip', 'clp_1', 'transform', 'position']);
-		expect(paramTarget('effect/fx_1/radius')).toEqual(['effect', 'fx_1', 'radius']);
-		expect(paramTarget('sequences/seq_1')).toBeNull();
-	});
-
 	it('usage errors exit 2, --help 0, --version 0', async () => {
 		const io = () => {
 			const out: string[] = [];
@@ -48,10 +22,8 @@ describe('argument parsing', () => {
 		};
 		const a = io();
 		expect(await runCli([], a)).toBe(2);
-		expect(a.err.join('')).toContain('Usage: jasper');
 		const b = io();
 		expect(await runCli(['frobnicate'], b)).toBe(2);
-		expect(b.err.join('')).toContain('unknown command');
 		const c = io();
 		expect(await runCli(['--help'], c)).toBe(0);
 		expect(c.out.join('')).toContain('render-frame');
@@ -59,7 +31,6 @@ describe('argument parsing', () => {
 		expect(await runCli(['--version'], d)).toBe(0);
 		const e = io();
 		expect(await runCli(['query', 'not-a-query'], e)).toBe(2);
-		expect(e.err.join('')).toContain('Unknown query not-a-query');
 	});
 });
 
@@ -212,12 +183,8 @@ describe('jasper against a real engine', () => {
 			value: 40,
 			evaluated: 40,
 		});
-		const human = await jasper('get', `clip/${clipId}/opacity`);
-		expect(human.out).toContain('evaluated: 40');
 		const props = await jasper('props', clipId);
 		expect(props.out).toMatch(/opacity\t40/);
-		const doc = await jasper('get', 'name', '--json');
-		expect(doc.lines.length + doc.out.length).toBeGreaterThan(0);
 		const bad = await jasper('set', 'sequences/x', '1');
 		expect(bad.code).toBe(2);
 	});

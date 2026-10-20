@@ -42,7 +42,7 @@ import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 /** At most this many entries per listing (folders first, then by name); `truncated` says when more exist. */
-export const BROWSE_LIST_LIMIT = 2000;
+const BROWSE_LIST_LIMIT = 2000;
 const STAT_CONCURRENCY = 32;
 const PROBE_TIMEOUT_MS = 15_000;
 const THUMB_TIMEOUT_MS = 20_000;
@@ -54,7 +54,7 @@ const THUMB_CONCURRENCY = 2;
 const LOCAL_PROTOCOLS = ['-protocol_whitelist', 'file,crypto,data'] as const;
 
 /** Validates an absolute host path from a query (no NUL, absolute) and normalises it (`..` resolved). */
-export function checkBrowsePath(p: string): string {
+function checkBrowsePath(p: string): string {
 	if (p.includes('\0')) throw new HttpError(400, 'BAD_PATH', 'The path contains a NUL byte');
 	if (!isAbsolute(p)) throw new HttpError(400, 'BAD_PATH', 'The path must be absolute');
 	return resolve(p);
@@ -63,7 +63,7 @@ export function checkBrowsePath(p: string): string {
 const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 /** Folders first, then by name in natural order ("clip 2" before "clip 10"). */
-export function sortEntries<T extends { kind: 'folder' | 'file'; name: string }>(list: T[]): T[] {
+function sortEntries<T extends { kind: 'folder' | 'file'; name: string }>(list: T[]): T[] {
 	return list.sort((a, b) =>
 		a.kind !== b.kind ? (a.kind === 'folder' ? -1 : 1) : naturalOrder.compare(a.name, b.name),
 	);
@@ -88,8 +88,8 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (t: T) => 
 	return out;
 }
 
-/** Lists one folder (exported for tests). */
-export async function listFolder(
+/** Lists one folder. */
+async function listFolder(
 	path: string,
 	all: boolean,
 ): Promise<{ entries: BrowseEntry[]; truncated: boolean }> {
@@ -152,21 +152,18 @@ export async function listFolder(
 }
 
 /** Home, its usual media folders, mounted volumes and the file-system root(s) that exist on this host. */
-export function browseRoots(
-	home = homedir(),
-	plat: NodeJS.Platform = osPlatform(),
-	exists: (p: string) => boolean = existsSync,
-	list: (p: string) => string[] = listDirSync,
-): BrowseRoot[] {
+function browseRoots(): BrowseRoot[] {
+	const home = homedir();
+	const plat = osPlatform();
 	const roots: BrowseRoot[] = [{ label: 'Home', path: home, kind: 'home' }];
 	for (const name of ['Desktop', 'Movies', 'Videos', 'Music', 'Pictures', 'Downloads', 'Documents']) {
 		const p = join(home, name);
-		if (exists(p)) roots.push({ label: name, path: p, kind: 'folder' });
+		if (existsSync(p)) roots.push({ label: name, path: p, kind: 'folder' });
 	}
 	if (plat === 'win32') {
 		for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
 			const p = `${letter}:\\`;
-			if (exists(p)) roots.push({ label: `${letter}:`, path: p, kind: 'root' });
+			if (existsSync(p)) roots.push({ label: `${letter}:`, path: p, kind: 'root' });
 		}
 		return roots;
 	}
@@ -182,7 +179,7 @@ export function browseRoots(
 			: ['/media', ...(user ? [`/media/${user}`, `/run/media/${user}`] : []), '/mnt'];
 	const seen = new Set<string>();
 	for (const dir of volumeDirs) {
-		for (const name of list(dir)) {
+		for (const name of listDirSync(dir)) {
 			const p = join(dir, name);
 			if (seen.has(p) || (user && p === `/media/${user}`)) continue;
 			seen.add(p);

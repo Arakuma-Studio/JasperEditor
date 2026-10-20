@@ -330,7 +330,7 @@ void main() {
  * px). `u_mwTrack` 0 = none / Track Mode Off, 1 = planar (`u_mwQuad` = TL, TR, BR, BL), 2 = point; `u_mwTrackAt` =
  * the tracked centre.
  */
-export function mochaTrackUniforms(p: EffectParams, ctx: TrFrameContext) {
+function mochaTrackUniforms(p: EffectParams, ctx: TrFrameContext) {
 	const tr = p.trackMode === 'off' ? null : (ctx.tracks?.to ?? null);
 	const quad = tr?.corners?.length === 4 ? tr.corners : null;
 	const at = tr?.point ?? [0, 0];

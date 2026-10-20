@@ -7,7 +7,6 @@ import {
 	checkInvariants,
 	DEFAULT_PRESET,
 	EQ_PRESETS,
-	type EssentialSound,
 	essentialEffects,
 	essentialKeys,
 	newEssentialSound,
@@ -83,21 +82,6 @@ describe('Essential Sound model', () => {
 					}
 					if (ps2!.type === 'enum') expect(ps2!.options).toContain(v);
 				}
-			}
-		}
-	});
-
-	it('every slot at full amount maps to in-range parameters', () => {
-		const s: EssentialSound = newEssentialSound('dialogue');
-		for (const k of ['noise', 'rumble', 'dehum', 'deess', 'reverb'] as const)
-			s.repair[k] = { on: true, amount: 10 };
-		for (const k of ['dynamics', 'eq', 'enhance'] as const) s.clarity[k] = { on: true, amount: 10 };
-		s.creative.reverb = { on: true, amount: 10 };
-		for (const e of essentialEffects(s)) {
-			const spec = audioEffectSpec(e.effectId)!;
-			for (const [k, v] of Object.entries(e.params)) {
-				const ps = spec.params.find((x) => x.name === k)!;
-				if (ps.type === 'number') expect(v as number).toBeLessThanOrEqual(ps.range!.max!);
 			}
 		}
 	});

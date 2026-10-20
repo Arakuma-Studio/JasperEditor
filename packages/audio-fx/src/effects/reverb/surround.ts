@@ -71,7 +71,7 @@ export class SurroundReverb extends EffectBase {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = Math.min(ch.length, 2);
+		const nch = Math.min(ch.length, this.channels, 2);
 		if (nch === 0) return;
 		const alc = OnePole.alpha(this.pv.v('lowCut'), this.sampleRate);
 		const ahc = OnePole.alpha(this.pv.v('highCut'), this.sampleRate);

@@ -13,7 +13,7 @@ const RULER_PX = 16;
 type View = { x: number; y: number; scale: number };
 
 /** Ruler tick spacing in frame pixels for a view scale: ~60 screen px between labels. */
-export function rulerStep(scale: number): number {
+function rulerStep(scale: number): number {
 	const target = 60 / Math.max(1e-6, scale);
 	for (const s of [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000]) if (s >= target) return s;
 	return 10000;

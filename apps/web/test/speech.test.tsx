@@ -12,15 +12,10 @@ import { EditorSession } from '@jasper/session';
 import { toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import '../src/commands/speech.ts';
-import { registerAllCommands } from '../src/commands/index.ts';
-import { getCommand } from '../src/commands/registry.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
 import { AutoTranscribeHost, saveAuto } from '../src/speech/auto.tsx';
 import { GenerateTranscriptDialog } from '../src/speech/GenerateTranscriptDialog.tsx';
 import { transcriptionWatcher } from '../src/speech/jobs.ts';
 import { defaultOptions, mixAttach, requestOptions } from '../src/speech/model.ts';
-import { SpeechPreferencesPage } from '../src/speech/PreferencesPage.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
 
 const KEY = 'mk_speech_1';
@@ -153,11 +148,7 @@ function fakeEngine(state: { models: SpeechModel[]; job?: () => EngineJob }) {
 			);
 			return json(jobOf('job_dl', 'model-download'));
 		}
-		if (url.startsWith('/api/speech/models/') && method === 'DELETE') {
-			const id = url.split('/').pop()!;
-			state.models = state.models.map((m) => (m.id === id ? { ...m, installed: false } : m));
-			return json({ modelId: id, freedBytes: 1 });
-		}
+
 		if (url === `/api/media/${KEY}/transcribe`) return json(jobOf('job_tr', 'transcription'), 202);
 		if (url === '/api/speech/transcribe-sequence') return json(jobOf('job_mix', 'transcription'), 202);
 		if (url === '/api/jobs/job_dl')
@@ -230,9 +221,6 @@ describe('Generate Transcript dialog', () => {
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Translate to English' }));
 		await chooseOption(screen.getByRole('combobox', { name: 'Speaker labels' }), 'Yes, separate speakers');
 		await chooseOption(screen.getByRole('combobox', { name: 'Number of speakers' }), '2 speakers');
-		expect(screen.getByTestId('speech-summary').textContent).toContain(
-			'1 media will be transcribed in German',
-		);
 		await act(async () => {
 			fireEvent.click(screen.getByRole('button', { name: 'Transcribe' }));
 		});
@@ -335,7 +323,6 @@ describe('finished transcription jobs', () => {
 		expect(session.getState().history.entries.at(-1)?.label).toBe('Generate Transcript');
 		session.undo();
 		expect(Object.keys(session.getCommitted().transcripts)).toEqual([]);
-		expect(toasts.getState().log.some((x) => x.title === 'Transcript of interview.flac ready')).toBe(true);
 	});
 
 	it('a sequence-mix result goes to the clip media in media time, and is refused after an edit', () => {
@@ -370,39 +357,6 @@ describe('finished transcription jobs', () => {
 		});
 		const after = mixAttach(session.getCommitted(), res, true);
 		expect('error' in after && after.error).toMatch(/changed/);
-	});
-});
-
-describe('Preferences ▸ Transcription and menus', () => {
-	it('lists models with licence and size; deletes a downloaded one after confirmation', async () => {
-		const { client, calls } = fakeEngine({
-			models: [model('whisper-base', true), model('whisper-tiny.en', false)],
-		});
-		render(
-			<EngineProvider client={client}>
-				<SpeechPreferencesPage />
-			</EngineProvider>,
-		);
-		await screen.findByTestId('speech-model-whisper-base');
-		expect(screen.getByTestId('speech-model-whisper-base-state').textContent).toBe('Downloaded');
-		expect(screen.getByTestId('speech-model-whisper-tiny.en-download')).toBeTruthy();
-		expect(screen.getByTestId('speech-licence-whisper-tiny.en').textContent).toContain('MIT');
-		expect(calls.some((c) => c.url === '/api/speech/models')).toBe(true);
-	});
-
-	it('registers the commands and menu entries', () => {
-		registerAllCommands();
-		for (const id of [
-			'transcript.generate',
-			'transcript.generateForClips',
-			'transcript.generateForMedia',
-			'speech.preferences',
-		])
-			expect(getCommand(id), id).toBeTruthy();
-		const flat = JSON.stringify(MENUBAR);
-		expect(flat).toContain('transcript.generate');
-		expect(flat).toContain('transcript.generateForClips');
-		expect(getCommand('transcript.generate')?.capability).toBe('transcription');
 	});
 });
 

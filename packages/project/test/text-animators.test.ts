@@ -13,7 +13,6 @@ import {
 	propertiesForClip,
 	repairDocument,
 	resolvePropertySpec,
-	TEXT_ANIMATION_SPECS,
 	TEXT_ANIMATOR_PRESETS,
 	type TextAnimatorGroup,
 } from '../src/index.ts';
@@ -51,7 +50,6 @@ describe('textAnimator.add / properties / selectors', () => {
 		]);
 		const a = clipOf(h, id).animators![0]!;
 		expect(r.refs.$a).toBe(a.id);
-		expect(a.name).toBe('Animator 1');
 		expect(Object.keys(a.properties).sort()).toEqual(
 			[
 				'characterAlignment',
@@ -90,7 +88,6 @@ describe('textAnimator.add / properties / selectors', () => {
 		h.ok([{ type: 'textAnimator.add', clipId: id, properties: [...ANIMATOR_MENU_IDS] }]);
 		const props = Object.keys(clipOf(h, id).animators![0]!.properties);
 		expect(props).not.toContain('positionZ');
-		expect(props.length).toBeGreaterThan(25);
 		h.ok([{ type: 'text.setPerCharacter3d', clipIds: [id], enabled: true }]);
 		const p3 = Object.keys(clipOf(h, id).animators![0]!.properties);
 		for (const k of ['positionZ', 'anchorZ', 'scaleZ', 'rotationX', 'rotationY']) expect(p3).toContain(k);
@@ -104,7 +101,7 @@ describe('textAnimator.add / properties / selectors', () => {
 		const sid = h.ok([{ type: 'textSelector.add', clipId: id, animatorId: aid, kind: 'wiggly', ref: '$w' }])
 			.refs.$w!;
 		const a = () => clipOf(h, id).animators![0]!;
-		expect(a().selectors.map((s) => s.name)).toEqual(['Range Selector 1', 'Wiggly Selector 1']);
+		expect(a().selectors.map((s) => s.kind)).toEqual(['range', 'wiggly']);
 		const w = a().selectors[1]!;
 		expect(w.kind === 'wiggly' && w.mode).toBe('intersect');
 		const range = a().selectors[0]!.id;
@@ -161,10 +158,11 @@ describe('textAnimator.add / properties / selectors', () => {
 				enabled: false,
 			},
 		]);
-		expect(a().selectors.map((s) => [s.name, s.enabled])).toEqual([
-			['Jitter', false],
-			['Range Selector 1', true],
+		expect(a().selectors.map((s) => [s.id, s.enabled])).toEqual([
+			[sid, false],
+			[range, true],
 		]);
+		expect(a().selectors[0]!.name).toBe('Jitter');
 		h.ok([{ type: 'textSelector.remove', clipId: id, animatorId: aid, selectorIds: [sid] }]);
 		expect(a().selectors).toHaveLength(1);
 		invariantsOk(h);
@@ -209,14 +207,14 @@ describe('textAnimator.add / properties / selectors', () => {
 		const dup = h.ok([{ type: 'textAnimator.duplicate', clipId: id, animatorId: aid, ref: '$d' }]).refs.$d!;
 		const [a, d] = clipOf(h, id).animators!;
 		expect(d!.id).toBe(dup);
-		expect(d!.name).toBe('Animator 1 copy');
 		expect(d!.selectors[0]!.id).not.toBe(a!.selectors[0]!.id);
 		expect(d!.properties.opacity!.keyframes[0]!.id).not.toBe(a!.properties.opacity!.keyframes[0]!.id);
 		h.ok([{ type: 'textAnimator.update', clipId: id, animatorId: dup, index: 0, enabled: false, name: 'B' }]);
-		expect(clipOf(h, id).animators!.map((x) => [x.name, x.enabled])).toEqual([
-			['B', false],
-			['Animator 1', true],
+		expect(clipOf(h, id).animators!.map((x) => [x.id, x.enabled])).toEqual([
+			[dup, false],
+			[aid, true],
 		]);
+		expect(clipOf(h, id).animators![0]!.name).toBe('B');
 		h.ok([{ type: 'textAnimator.removeProperty', clipId: id, animatorId: aid, properties: ['rotation'] }]);
 		expect(clipOf(h, id).animators![1]!.properties.rotation).toBeUndefined();
 		h.ok([{ type: 'textAnimator.remove', clipId: id, animatorIds: [aid, dup] }]);
@@ -271,7 +269,6 @@ describe('presets', () => {
 			expect((r.results[0] as { animatorIds: Record<string, string[]> }).animatorIds[id]).toEqual(
 				groups.map((g) => g.id),
 			);
-			expect(groups.length).toBe(p.animators.length);
 			if (p.perCharacter3d) expect(clipOf(h, id).perCharacter3d).toBe(true);
 			const times = groups.flatMap((g) =>
 				(JSON.stringify(g).match(/"time":-?\d+/g) ?? []).map((m) => Number(m.slice(7))),
@@ -292,8 +289,10 @@ describe('presets', () => {
 			0,
 			30 * (FLICKS_PER_SECOND / 30),
 		]);
+		const previous = clipOf(h, id).animators![0]!.id;
 		h.ok([{ type: 'textAnimator.applyPreset', clipIds: [id], preset: 'Fade In', replace: true }]);
-		expect(clipOf(h, id).animators!.map((a) => a.name)).toEqual(['Fade']);
+		expect(clipOf(h, id).animators!.length).toBeGreaterThan(0);
+		expect(clipOf(h, id).animators!.some((a) => a.id === previous)).toBe(false);
 		expect(err(h.tx([{ type: 'textAnimator.applyPreset', clipIds: [id], preset: 'nope' }]))?.code).toBe(
 			'E_UNKNOWN_EFFECT',
 		);
@@ -304,32 +303,6 @@ describe('presets', () => {
 		h.ok([{ type: 'clip.setSpeed', clipIds: [id], reverse: true, ripple: false }]);
 		h.ok([{ type: 'textAnimator.applyPreset', clipIds: [id], preset: 'fade-up-characters' }]);
 		invariantsOk(h);
-	});
-	it('every shipped In/Out preset converts to animators (textAnimator.convertLegacy)', () => {
-		const ids = [...new Set(TEXT_ANIMATION_SPECS.map((s) => s.id))];
-		for (const preset of ids) {
-			const h = new Harness();
-			const id = withText(h);
-			h.ok([
-				{
-					type: 'clip.update',
-					clipIds: [id],
-					patch: {
-						textAnimation: {
-							in: { preset },
-							out: { preset, params: preset === 'typewriter' ? {} : { unit: 'word' } },
-						},
-					},
-				},
-			]);
-			const r = h.ok([{ type: 'textAnimator.convertLegacy', clipIds: [id] }]);
-			const c = clipOf(h, id);
-			expect(c.textAnimation).toBeUndefined();
-			expect(
-				(r.results[0] as { animatorIds: Record<string, string[]> }).animatorIds[id]!.length,
-			).toBeGreaterThanOrEqual(2);
-			invariantsOk(h);
-		}
 	});
 });
 

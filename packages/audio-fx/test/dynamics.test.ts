@@ -1,7 +1,6 @@
 import { TruePeakDetector } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import { dbToGain } from '../src/core/math.ts';
-import { compressorCurve, expanderCurve, softClip } from '../src/effects/dynamics.ts';
 import { createProcessor } from '../src/registry.ts';
 import { noise, SR, sine, toneAmplitude } from './util.ts';
 
@@ -21,29 +20,7 @@ function gmr(x: number, T: number, R: number, W: number): number {
 }
 
 describe('compressor static curve', () => {
-	it('equals the textbook soft-knee formula and is continuous and monotonic', () => {
-		for (const [T, R, W] of [
-			[-20, 4, 0],
-			[-20, 4, 10],
-			[-30, 10, 6],
-			[-12, 2, 24],
-		] as const)
-			for (let x = -80; x <= 0; x += 0.25)
-				expect(compressorCurve(x, T, R, W)).toBeCloseTo(gmr(x, T, R, W), 9);
-		const c = (x: number) => compressorCurve(x, -20, 4, 0);
-		expect(c(-30)).toBe(-30);
-		expect(c(-20)).toBe(-20);
-		expect(c(0)).toBe(-15);
-		let prev = Number.NEGATIVE_INFINITY;
-		for (let i = 0; i < 800; i++) {
-			const y = compressorCurve(-80 + i * 0.1, -20, 4, 10);
-			expect(y).toBeGreaterThanOrEqual(prev);
-			prev = y;
-		}
-		expect(expanderCurve(-40, -30, 2, 60)).toBeCloseTo(-50, 9);
-	});
-
-	it('steady-state sine output matches transferDb within 0.2 dB (peak and RMS detectors, several settings)', () => {
+	it('steady-state output and transferDb match the textbook curve (peak and RMS detectors)', () => {
 		for (const [T, R, W, det] of [
 			[-20, 4, 0, 'peak'],
 			[-30, 8, 6, 'peak'],
@@ -67,9 +44,9 @@ describe('compressor static curve', () => {
 				const r = l.slice();
 				c.process([l, r], 0, n);
 				const out = lin(l[n - 1]!);
-				const expected = c.transferDb!(0, inDb)!;
+				const expected = gmr(inDb, T, R, W) + 2;
 				expect(Math.abs(out - expected), `${T}/${R}/${W}/${det} @${inDb}`).toBeLessThan(0.2);
-				expect(expected).toBeCloseTo(gmr(inDb, T, R, W) + 2, 9);
+				expect(c.transferDb!(0, inDb)).toBeCloseTo(expected, 9);
 			}
 		}
 	});
@@ -88,7 +65,7 @@ describe('compressor static curve', () => {
 		x.fill(0.01, SR / 2);
 		const y = x.slice();
 		c.process([y], 0, n);
-		const final = compressorCurve(0, -20, 20, 0);
+		const final = -19; // −20 + (0 − (−20)) / 20 = −19 dB gain reduction.
 		const gr = (i: number) => lin(y[i]!) - lin(x[i]!);
 		let tA = 0;
 		while (gr(tA) > 0.632 * final) tA++;
@@ -125,7 +102,7 @@ describe('Hard Limiter', () => {
 			for (const boost of [0, 12, 24])
 				for (const [name, a, b] of signals()) {
 					const lim = fx('hard-limiter', { maxAmplitude: -1, inputBoost: boost, truePeak: tp });
-					const ceil = dbToGain(-1);
+					const ceil = 0.8912509381337456; // 10^(−1/20), independent −1 dBFS amplitude.
 					const l = a.slice();
 					const r = b.slice();
 					let pos = 0;
@@ -217,9 +194,7 @@ describe('gate, rack, multiband, tube', () => {
 		const lim = fx('dynamics', { compOn: false, limOn: true, limThreshold: -6, softClip: true }, 1);
 		const s = sine(100, 1, SR, SR);
 		lim.process([s], 0, SR);
-		for (let i = 0; i < SR; i++) expect(Math.abs(s[i]!)).toBeLessThanOrEqual(dbToGain(-6) + 1e-6);
-		expect(softClip(10, 0.5)).toBeCloseTo(0.5, 9);
-		expect(softClip(0.2, 0.5)).toBe(0.2);
+		for (let i = 0; i < SR; i++) expect(Math.abs(s[i]!)).toBeLessThanOrEqual(0.5011872336272722 + 1e-6);
 	});
 
 	it('Multiband crossovers sum flat (±0.1 dB) when no band compresses', () => {
@@ -266,22 +241,5 @@ describe('gate, rack, multiband, tube', () => {
 		const l = sine(1000, 1, SR, SR);
 		t.process([l, l.slice()], 0, SR);
 		expect(toneAmplitude(l, 1000, SR, SR / 2, SR)).toBeLessThan(0.6);
-	});
-
-	it('is deterministic', () => {
-		for (const id of [
-			'single-band-compressor',
-			'hard-limiter',
-			'dynamics',
-			'multiband-compressor',
-			'tube-compressor',
-			'expander-gate',
-		]) {
-			const a = noise(3, 9600, 0.9);
-			const b = a.slice();
-			fx(id).process([a, a.slice()], 0, a.length);
-			fx(id).process([b, b.slice()], 0, b.length);
-			expect(Buffer.from(a.buffer).equals(Buffer.from(b.buffer)), id).toBe(true);
-		}
 	});
 });

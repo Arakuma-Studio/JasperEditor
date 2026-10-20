@@ -88,17 +88,7 @@ function fakeEngine() {
 		],
 	});
 	if (!placed.ok) throw new Error(JSON.stringify(placed.errors));
-	const sceneRequests: unknown[] = [];
 	const client = {
-		detectScenes: async (req: unknown) => {
-			sceneRequests.push(req);
-			return {
-				id: 'job_scene1',
-				state: 'succeeded',
-				result: { cuts: [1, 2.5], frames: 120, scores: [], times: [], threshold: 0.25 },
-			};
-		},
-		getJob: async () => ({ id: 'job_scene1', state: 'succeeded' }),
 		registerMedia: async () => ({
 			items: [
 				{
@@ -148,7 +138,6 @@ function fakeEngine() {
 		link,
 		doc: () => doc,
 		seqId,
-		sceneRequests,
 		clipIds: (placed.results[0] as { clipIds: string[] }).clipIds,
 	};
 }

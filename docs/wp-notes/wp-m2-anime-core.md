@@ -25,7 +25,7 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
 | ANM-023 | `apps/web/vite.config.ts` (`vendorChunk`), lint | `animejs` → `vendor-anime`; motion value imports use subpaths except the runtime index (`animejs-root-import`). |
 | FIX-003 | `packages/compositions/src/fonts.ts`, `SequenceComposition.tsx` (2 hunks), `test/fonts-ready.test.tsx` | `useFontsReadyState(fonts)` tracks every face (family/weight/style; failed loads settle → fallback). One `delayRender` handle (via `useDelayRender`) created in a layout effect — never in a state initializer — and released by the commit that first renders every face as settled, i.e. the one that mounts the gated layers. `ClipLayer` renders nothing until the faces of its layer (`layerFontFaces`: text style + styled runs; anime-template params naming a document font) have settled: no split/measure/build and no fallback-font paint in the Player. Faces already settled on the page never hide a layer again (no blink on a new document). Component test with a deferred `FontFace`. |
 | FIX-010 | `scripts/third-party-notices.mjs` (+ test), `THIRD_PARTY_NOTICES.md`, `package.json` (`pnpm notices`), `apps/web/vite.config.ts`, `apps/web/src/shell/licenses.tsx`, `apps/desktop/scripts/package.mjs` | Production closure of `apps/web` + `packages/compositions` through workspace packages (deps + required peers; optional deps skipped → platform-independent), 98 packages with licence and licence/notice texts; Remotion packages without a declared licence get the Remotion License text. `pnpm notices --check` (also a test). Vite serves/emits `/THIRD_PARTY_NOTICES.md`; Help ▸ About links it and shows it on demand; packaging fails on stale notices, checks the web build has them and copies them next to the engine. |
-| Acceptance 8 | `apps/engine/src/anime/index.ts`, `apps/engine/test/anime.test.ts`, `e2e/anime-core.spec.ts` | `/api/licenses` lists anime.js (MIT, text). Packaged-like verified for real: `dist/engine.mjs` + `dist/third-party/` copied outside the repo answered with the committed text and version 4.5.0; unit test for the same path (`animeLicense(null)`). The engine-less About names anime.js (MIT). |
+| Acceptance 8 | `apps/engine/src/anime/index.ts`, `apps/engine/test/anime.test.ts` | `/api/licenses` lists anime.js (MIT, text). Packaged-like verified for real: `dist/engine.mjs` + `dist/third-party/` copied outside the repo answered with the committed text and version 4.5.0; unit test for the same path (`animeLicense(null)`). The engine-less About names anime.js (MIT). |
 
 ## Contract changes (additive)
 
@@ -51,7 +51,6 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
 - Parity + cost: `REMOTION_E2E=1 pnpm vitest run packages/motion/test/determinism-render.e2e.test.ts`
   (Chrome: `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`; ~5–7 min on a loaded box). Results
   (`anm-015.json`, `player-*.json`) are written to a temp dir `jasper-anm014-*`.
-- Playwright: `E2E_SKIP_LGPL=1 E2E_PORT=<free port> pnpm e2e e2e/anime-core.spec.ts`.
 - `pnpm notices --check`.
 
 ## Defects fixed
@@ -259,3 +258,30 @@ Player revisits: AnimeScene 3, Sequence 22 differing).
   `layer-bake.e2e`, `layer-bake`, `shapes-remotion.e2e`, `remotion-lgpl.e2e`): 40/40.
 - `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck` ok. `pnpm test`: 1585 passed, 40 skipped, 1 failed —
   `packages/project/test/color.test.ts` "a 33³ bake … < 15 ms" (load timing; 22/22 re-run alone).
+
+## Parity fixture registration readiness
+
+The three-composition parity fixture holds Remotion's public `delayRender` handle until a subsequent React
+commit has completed. Its final-sibling `RegistrationReady` component queues its own update after the
+Composition registration effects and releases the handle from that update's committed effect. Only the guard
+rerenders, so the composition subtrees and their default props stay stable. No frame, order, concurrency,
+assertion or deadline changes, and the production renderer/window setup remains unchanged.
+
+The retained browser test first failed selecting `SequenceShuffled` with only `Sequence` available. The actual
+generated bundle contained all three variants and its error line matched the stack. Installed Remotion 4.0.499
+source explains the ordering: `select-composition` waits for public render readiness; the bundler releases its
+root handle one animation frame after `createRoot().render`; `Composition` registers in passive effects, and
+`CompositionManagerProvider` updates its registry ref inside queued state updaters. An actual React 19.3 /
+Remotion diagnostic under happy-dom observed readiness with incomplete registration in ten unguarded mounts;
+ten guarded mounts had no such observation and released with all three variants registered. This diagnostic
+checks scheduling with the real libraries, not browser pixel output.
+
+The unchanged six-case browser suite subsequently passed at integrated `90c061a0`, with exit code 0 and no
+signal, using `REMOTION_E2E=1 pnpm exec vitest run
+packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=1`. The run took 177.73 seconds, including
+110885 ms for the previously failing still/sequential/concurrent/reversed/shuffled parity case. Its entry and
+test file exactly match the reviewed fixture change. Rendered artifacts remain at
+`/var/lib/orquester/tmp/jasper-anm014-Za3f3p`; `/tmp/jasper-test-prune2/motion-readiness-results.json` records
+the source and clean exit, with detailed results in adjacent `motion-readiness-suite.log`, `.json` and
+`.events.jsonl`. The cleanup ledger retains the original failure and diagnostic evidence. No retries,
+private registration-count seam or dependency patch is retained.

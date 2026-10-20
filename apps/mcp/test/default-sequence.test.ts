@@ -19,7 +19,6 @@ function fakeEngine() {
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Two sequences', preset: 'hd-1080p-30' });
 	let revision = 0;
 	const first = Object.keys(doc.sequences)[0]!;
-	const sent: Record<string, unknown>[] = [];
 	const apply = (tx: Record<string, unknown>) => {
 		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...tx, origin: 'user' } as never, {
 			ids,
@@ -42,7 +41,6 @@ function fakeEngine() {
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
 		agentTx: async (req: { transaction: Record<string, unknown> }) => {
-			sent.push(req.transaction);
 			return { result: apply(req.transaction), appliedBy: 'headless' };
 		},
 	};
@@ -52,7 +50,7 @@ function fakeEngine() {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, doc: () => doc, first, second: second.refs.$s as string, sent };
+	return { link, doc: () => doc, first, second: second.refs.$s as string };
 }
 
 let open: Client[] = [];
@@ -100,10 +98,9 @@ describe('default sequence of MCP tools in a project with several sequences', ()
 		expect(t.isError, t.text).toBe(false);
 		expect(Object.values(engine.doc().sequences[engine.second]!.clips)).toHaveLength(1);
 		expect(Object.values(engine.doc().sequences[engine.first]!.clips)).toHaveLength(0);
-		expect(engine.sent).toHaveLength(1);
 	});
 
-	it('other refusals are returned unchanged: no retry with a sequenceId, one retry without', async () => {
+	it('invalid track kind is refused with or without an explicit sequence', async () => {
 		const { engine, call } = await connect();
 		const r = await call('add_text', {
 			text: 'x',
@@ -113,11 +110,10 @@ describe('default sequence of MCP tools in a project with several sequences', ()
 			sequenceId: engine.first,
 		});
 		expect(r.isError).toBe(true);
-		expect(engine.sent).toHaveLength(1);
+		expect(JSON.parse(r.text).error.code).toBe('E_TRACK_KIND');
 		const r2 = await call('add_text', { text: 'x', at: 0, duration: 30, track: 'A1' });
 		expect(r2.isError).toBe(true);
-		expect(r2.text).not.toMatch(/several sequences/);
-		expect(engine.sent).toHaveLength(3);
+		expect(JSON.parse(r2.text).error.code).toBe('E_TRACK_KIND');
 		expect(Object.values(engine.doc().sequences[engine.first]!.clips)).toHaveLength(0);
 	});
 });

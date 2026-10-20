@@ -46,7 +46,7 @@ type Form = {
 	layout: 'mono' | 'stereo' | '5.1';
 };
 
-export function formOf(seq: Sequence): Form {
+function formOf(seq: Sequence): Form {
 	const f = sequenceFormatOf(seq.settings);
 	const parId =
 		SEQUENCE_PAR_CHOICES.find((c) => c.par.num * f.par.den === f.par.num * c.par.den)?.id ??
@@ -71,10 +71,7 @@ const parOf = (id: string): Rational => {
 };
 
 /** The `sequence.updateSettings` patch for a form (only what changed), or a validation message. */
-export function settingsPatch(
-	seq: Sequence,
-	f: Form,
-): { patch: Record<string, unknown> } | { error: string } {
+function settingsPatch(seq: Sequence, f: Form): { patch: Record<string, unknown> } | { error: string } {
 	const [num, den] = f.rate.split('/').map(Number) as [number, number];
 	const rate = { num, den };
 	if (!isAllowedSequenceRate(rate)) return { error: 'Choose one of the listed timebases.' };

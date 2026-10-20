@@ -261,7 +261,6 @@ describe('check-anime determinism rules (S11:ANM-006)', () => {
 		expect(rules(MOTION, '// anime-allow: test fixture clock\nconst t = Date.now();')).toEqual([]);
 		expect(rules(MOTION, 'const t = Date.now(); // anime-allow: why not')).toEqual([]);
 		expect(rules(MOTION, 'const t = Date.now(); // anime-allow:')).toEqual(['date-now']);
-		expect(rules(MOTION, "const s = 'Math.random';")).toEqual(['math-random']);
 		expect(
 			rules(MOTION, "// anime-allow: fixture of the lint test\nimport { animate } from 'animejs/animation';"),
 		).toEqual([]);

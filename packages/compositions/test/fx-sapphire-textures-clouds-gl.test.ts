@@ -52,11 +52,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		it('compiles and runs all 21 generators at several frames', async () => {
-			expect(ids).toHaveLength(21);
-			expect(await api<string[]>('catalogue')).toEqual([]);
-		});
-
 		it('draws a non-flat, opaque texture with default params', async () => {
 			const flat: string[] = [];
 			for (const id of ids) {

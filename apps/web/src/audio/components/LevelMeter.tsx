@@ -9,7 +9,7 @@ import { cssVar as tokenVar } from '../../panels/timeline/components/canvas.tsx'
 export const METER_FLOOR_DB = -60;
 
 /** Fraction of the meter height (0 bottom … 1 top) of a dB value. */
-export function meterPos(db: number, floor = METER_FLOOR_DB): number {
+function meterPos(db: number, floor = METER_FLOOR_DB): number {
 	if (!Number.isFinite(db) || db <= floor) return 0;
 	return Math.min(1, Math.max(0, (db - floor) / -floor));
 }

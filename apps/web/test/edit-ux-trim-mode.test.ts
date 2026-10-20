@@ -1,6 +1,6 @@
 // Dynamic J/K/L trimming tests are ported from FilmCraft trim_tests to session gestures.
 import { EngineClient } from '@jasper/engine-client';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -11,7 +11,6 @@ import {
 import { registerTimelineInstance, type TimelineHandle } from '../src/panels/timeline/env.tsx';
 import {
 	activeDynamicTrim,
-	DynamicTrim,
 	dynamicShuttle,
 	exitTrimMode,
 	trimMode,
@@ -25,6 +24,7 @@ const offs: (() => void)[] = [];
 afterEach(() => {
 	for (const o of offs.splice(0)) o();
 	exitTrimMode();
+	vi.restoreAllMocks();
 });
 
 function harness() {
@@ -138,8 +138,10 @@ describe('trim mode commands', () => {
 describe('dynamic trimming (FilmCraft trim_tests on a session gesture)', () => {
 	function clockAt() {
 		let now = 0;
-		const raf = { request: () => 0, cancel: () => undefined };
-		return { clock: () => now, set: (t: number) => (now = t), raf };
+		vi.spyOn(performance, 'now').mockImplementation(() => now * 1000);
+		vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(0);
+		vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+		return { set: (t: number) => (now = t) };
 	}
 
 	it('L rolls the edit live, K commits ONE undo step "Dynamic Rolling Edit"; undo restores', async () => {
@@ -148,8 +150,7 @@ describe('dynamic trimming (FilmCraft trim_tests on a session gesture)', () => {
 		await h.run('timeline.selectNearestEditRoll');
 		const c = clockAt();
 		const entries = h.history().length;
-		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, 1, false, { clock: c.clock, raf: c.raf })!;
-		expect(d).toBeInstanceOf(DynamicTrim);
+		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, 1, false)!;
 		c.set(0.5);
 		d.tick();
 		expect(h.session.getDrawn().sequences[h.seqId]!.clips[h.clipsOn('V1')[0]!.id]!.duration).toBe(115);
@@ -181,7 +182,7 @@ describe('dynamic trimming (FilmCraft trim_tests on a session gesture)', () => {
 		await h.run('timeline.selectNearestEditRippleOut');
 		const c = clockAt();
 		const entries = h.history().length;
-		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, -1, false, { clock: c.clock, raf: c.raf })!;
+		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, -1, false)!;
 		c.set(10);
 		d.tick();
 		expect(trimMode.getState().dynamic).toMatchObject({ atLimit: true, speed: 0, offset: -99 });
@@ -202,14 +203,14 @@ describe('dynamic trimming (FilmCraft trim_tests on a session gesture)', () => {
 		await h.run('timeline.selectNearestEditRoll');
 		const c = clockAt();
 		const entries = h.history().length;
-		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, 1, true, { clock: c.clock, raf: c.raf })!;
+		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, 1, true)!;
 		c.set(2);
 		d.tick();
 		expect(trimMode.getState().dynamic).toMatchObject({ offset: 15, speed: 0.25 });
 		await h.run('timeline.addMarker');
 		expect(activeDynamicTrim()).toBeNull();
 		expect(h.history().slice(entries)).toEqual(['Dynamic Rolling Edit', 'Add Marker']);
-		const d2 = dynamicShuttle(h.session, h.handle, h.seqId, 30, 1, false, { clock: c.clock, raf: c.raf })!;
+		const d2 = dynamicShuttle(h.session, h.handle, h.seqId, 30, 1, false)!;
 		expect(d2.commit()).toBe(0);
 		expect(h.history().length).toBe(entries + 2);
 	});

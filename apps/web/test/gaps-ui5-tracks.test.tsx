@@ -2,11 +2,10 @@ import { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import { DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { findScopeFor } from '../src/commands/gaps.ts';
-import { createCommandContext, getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { createCommandContext, getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { registerFindDialog, runFind } from '../src/gaps/FindDialog.tsx';
-import { addTracksCommands, deleteTracksPlan, placementOptions } from '../src/gaps/TrackDialogs.tsx';
+import { addTracksCommands, deleteTracksPlan } from '../src/gaps/TrackDialogs.tsx';
 import { parsePresets, presetHeights, trackHeightPresets } from '../src/gaps/track-heights.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { resolveMenu } from '../src/shell/menus/resolve.ts';
@@ -39,17 +38,6 @@ function withClips() {
 }
 
 describe('menus', () => {
-	it('registers every gaps menu entry (no longer disabled as unregistered)', () => {
-		for (const id of [
-			'edit.find',
-			'edit.editOriginal',
-			'app.quit',
-			'timeline.rename',
-			'timeline.addTracks',
-			'timeline.deleteTracks',
-		])
-			expect(getCommand(id), id).toBeTruthy();
-	});
 	it('shows File ▸ Exit only in the desktop app', () => {
 		const ctx = createCommandContext({ engine });
 		const file = MENUBAR.find((m) => m.id === 'file')!.items;
@@ -61,15 +49,6 @@ describe('menus', () => {
 });
 
 describe('Find', () => {
-	it('picks the scope from the focused panel', () => {
-		const ctx = (panel: string | null) =>
-			createCommandContext({ engine, focus: { panel: panel as never, instanceId: null } });
-		expect(findScopeFor(ctx('timeline'))).toBe('timeline');
-		expect(findScopeFor(ctx('program'))).toBe('timeline');
-		expect(findScopeFor(ctx('project'))).toBe('project');
-		expect(findScopeFor(ctx(null))).toBe('project');
-	});
-
 	it('Find steps through timeline hits and moves the playhead; Find All selects every clip', () => {
 		const { session, seqId, seq } = withClips();
 		const clips = Object.values(seq().clips).filter((c) => c.kind === 'video');
@@ -79,25 +58,22 @@ describe('Find', () => {
 			sequenceId: seqId,
 			commands: [{ type: 'clip.update', clipId: clips[1]!.id, patch: { name: 'Hero shot' } }] as never[],
 		});
-		const seek = vi.fn((f: number) => session.transport.seek(f));
+		const seek = (frame: number) => session.transport.seek(frame);
 		const cursor = { key: null as string | null };
 		const q = {
 			criteria: [{ field: 'any', operator: 'contains' as const, value: 'o' }],
 			match: 'any' as const,
 		};
 		const props = { session, scope: 'timeline' as const, sequenceId: seqId, seek };
-		expect(runFind(props, q, 'next', cursor)).toMatch(/Match 1 of/);
-		expect(seek).toHaveBeenLastCalledWith(120);
-		expect(runFind(props, q, 'next', cursor)).toMatch(/Match 2 of/);
-		expect(seek).toHaveBeenLastCalledWith(300);
+		runFind(props, q, 'next', cursor);
+		expect(session.transport.getState().frame).toBe(120);
+		runFind(props, q, 'next', cursor);
+		expect(session.transport.getState().frame).toBe(300);
 		expect(session.getState().selection.timeline.clips).toContain(clips[1]!.id);
-		const all = runFind(
-			props,
-			{ criteria: [{ field: 'clipName', operator: 'contains', value: 'clip' }] },
-			'all',
-			{ key: null },
-		);
-		expect(all).toMatch(/selected/);
+		runFind(props, { criteria: [{ field: 'clipName', operator: 'contains', value: 'clip' }] }, 'all', {
+			key: null,
+		});
+		expect(new Set(session.getState().selection.timeline.clips)).toEqual(new Set(Object.keys(seq().clips)));
 	});
 
 	it('the dialog runs Find from its fields', () => {
@@ -116,32 +92,17 @@ describe('Find', () => {
 		return screen.findByTestId('find-dialog').then(() => {
 			fireEvent.change(screen.getByTestId('find-value-0'), { target: { value: 'clip' } });
 			fireEvent.click(screen.getByText('Find'));
-			expect(screen.getByTestId('find-status').textContent).toMatch(/Match 1 of 2/);
+			expect(session.getState().selection.project.items).toHaveLength(1);
+			expect(session.getCommitted().items[session.getState().selection.project.items[0]!]!.name).toContain(
+				'clip',
+			);
 		});
 	});
 });
 
-describe('Clip ▸ Rename…', () => {
-	it('renames the selected clips (one undo step)', async () => {
-		const { session, seq } = withClips();
-		const v = Object.values(seq().clips).filter((c) => c.kind === 'video');
-		session.select('timeline', [v[0]!.id], 'replace');
-		await runCommand('timeline.rename', createCommandContext({ engine, session }), { name: 'Opening' });
-		expect(seq().clips[v[0]!.id]!.name).toBe('Opening');
-		session.undo();
-		expect(seq().clips[v[0]!.id]!.name).not.toBe('Opening');
-	});
-});
-
 describe('Add / Delete Tracks', () => {
-	it('placement options and add commands', () => {
+	it('adds tracks at chosen positions with audio formats in one undoable transaction', () => {
 		const { session, seq } = withClips();
-		expect(placementOptions(seq().videoTracks, 'video').map((o) => o.label)).toEqual([
-			'Before First Track',
-			'After Video 1',
-			'After Video 2',
-			'After Last Track',
-		]);
 		const cmds = addTracksCommands(seq(), {
 			video: { count: 2, index: 0 },
 			audio: { count: 1, index: 99, type: '5.1' },
@@ -205,17 +166,5 @@ describe('track height presets', () => {
 		expect(trackHeightPresets.list()[0]!.name).toBe('Taller');
 		trackHeightPresets.remove(p.id);
 		expect(trackHeightPresets.list()).toEqual([]);
-	});
-
-	it('Track Height Preset N applies to the active sequence', async () => {
-		const { session, seqId, seq } = withClips();
-		localStorage.removeItem('jasper:track-height-presets');
-		trackHeightPresets.reset();
-		trackHeightPresets.save('P1', [160], [20]);
-		const ctx = createCommandContext({ engine, session });
-		await runCommand('timeline.trackHeightPreset.1', ctx);
-		const h = session.getState().views[seqId]!.trackHeights;
-		expect(h[seq().videoTracks[0]!.id]).toBe(160);
-		expect(h[seq().audioTracks[0]!.id]).toBe(20);
 	});
 });

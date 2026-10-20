@@ -108,7 +108,7 @@ const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
 const NO_SEQ = 'Open a sequence first';
 
 /** Where Find searches: the focused panel decides (Timeline / monitors → the sequence; otherwise the project). */
-export function findScopeFor(ctx: CommandCtx): FindScope {
+function findScopeFor(ctx: CommandCtx): FindScope {
 	const p = ctx.focus.panel;
 	return p === 'timeline' || p === 'program' ? 'timeline' : 'project';
 }

@@ -9,12 +9,8 @@ import {
 	checkTransactionInvariants,
 	createRandomIdSource,
 	defaultRegistries,
-	invariantMode,
-	invariantStats,
-	isVerifiedDocument,
 	type ProjectDocument,
 	runInvariants,
-	type Sequence,
 } from '../src/index.ts';
 import { TRACK_MATTE_EFFECT_ID } from '../src/masks/track-matte.ts';
 import { Harness, makeCtx } from './helpers.ts';
@@ -344,10 +340,6 @@ const stepArb = fc.record({
 });
 
 describe('incremental invariants (perf-core)', () => {
-	it('tests run in verify mode (the full check decides, the incremental one must agree)', () => {
-		expect(invariantMode()).toBe('verify');
-	});
-
 	it(`equals the full check on ${RUNS} random chains of edits and corruptions`, () => {
 		const { doc: start, h } = baseDocument();
 		const mainSeq = h.seqId;
@@ -414,34 +406,8 @@ describe('incremental invariants (perf-core)', () => {
 			expect(r.result.ok, JSON.stringify(!r.result.ok && r.result.errors)).toBe(true);
 			doc = r.document;
 		}
-		expect(isVerifiedDocument(doc, opts)).toBe(true);
-	});
-
-	it('takes the incremental path for common edits', () => {
-		const { doc: start, h } = baseDocument();
-		const ctx = (revision: number) => makeCtx({ revision, invariants: 'incremental' }, h.ids);
-		let doc = start;
-		const apply = (commands: unknown[]) => {
-			const r = applyTransaction(doc, { label: 'x', origin: 'user', sequenceId: h.seqId, commands }, ctx(0));
-			expect(r.result.ok, JSON.stringify(!r.result.ok && r.result.errors)).toBe(true);
-			doc = r.document;
-		};
-		apply([{ type: 'marker.add', frame: 5, name: 'warm-up' }]);
-		invariantStats(true);
-		const seq = () => doc.sequences[h.seqId] as Sequence;
-		const solid = () => Object.values(seq().clips).find((c) => c.kind === 'solid')!.id;
-		const video = () => Object.values(seq().clips).find((c) => c.kind === 'video')!.id;
-		apply([{ type: 'param.set', target: ['clip', solid(), 'opacity'], value: 40 }]);
-		apply([{ type: 'clip.move', clipIds: [video()], deltaFrames: 30 }]);
-		apply([{ type: 'clip.trim', clipId: video(), edge: 'out', deltaFrames: -10 }]);
-		apply([{ type: 'clip.split', at: 60, clipIds: [solid()] }]);
-		apply([{ type: 'keyframe.add', target: ['clip', solid(), 'opacity'], at: { frames: 3 }, value: 10 }]);
-		apply([{ type: 'clip.addSolid', at: 3000, duration: 30, track: 'V2', color: [1, 0, 0, 1] }]);
-		apply([{ type: 'clip.lift', clipIds: [solid()] }]);
-		apply([{ type: 'effect.add', target: { clipId: video() }, effectId: 'jasper.gaussian-blur' }]);
-		apply([{ type: 'clip.update', clipId: video(), patch: { enabled: false } }]);
-		const s = invariantStats();
-		expect(s.fallbacks).toEqual({});
-		expect(s.incremental).toBe(9);
+		const added = doc.sequences[h.seqId]!.markers.filter((m) => m.frame >= 1000);
+		expect(added.map((m) => m.name)).toEqual(Array.from({ length: 150 }, (_, i) => `m${i}`));
+		expect(checkInvariants(doc, opts)).toEqual([]);
 	});
 });

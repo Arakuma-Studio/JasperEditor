@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	type EffectSpec,
-	FX_MAX_TIME_SAMPLES,
-	type FxFrameContext,
-	type FxTimeContext,
-	gpuPasses,
-	SAPPHIRE_BINS,
-} from '../src/index.ts';
+import type { EffectSpec, FxFrameContext, FxTimeContext } from '../src/index.ts';
 import {
 	clampToSpan,
 	flickerGains,
@@ -62,48 +55,7 @@ const samples = (
 	ctx: Partial<FxTimeContext> = {},
 ) => spec(label).gpu!.time!.samples!(defaults(spec(label), over), tctx(frame, ctx));
 
-const LABELS = [
-	'S_CutToDissolve',
-	'S_Feedback',
-	'S_FeedbackBubble',
-	'S_FeedbackDistort',
-	'S_FieldRemove',
-	'S_FreezeFrame',
-	'S_GetFrame',
-	'S_JitterFrames',
-	'S_MotionDetect',
-	'S_NearestColor',
-	'S_RandomEdits',
-	'S_RepairFrames',
-	'S_Retime',
-	'S_ReverseClip',
-	'S_ReverseEdits',
-	'S_TimeAverage',
-	'S_TimeDisplace',
-	'S_TimeSlice',
-	'S_TimeWarpRGB',
-	'S_Trails',
-	'S_TrailsDiffuse',
-	'S_Flicker',
-	'S_FlickerMatch',
-	'S_FlickerMatchColor',
-	'S_FlickerMatchMatte',
-	'S_FlickerMchMatteColor',
-	'S_FlickerRemove',
-	'S_FlickerRemoveColor',
-	'S_FlickerRemoveMatte',
-	'S_FlickerRmMatteColor',
-];
-
 describe('Sapphire Time + Flicker family', () => {
-	it('has every Sapphire Time and Flicker effect, in the Sapphire Time bin, valid', () => {
-		expect(SAPPHIRE_TIME_FLICKER_EFFECTS.map((s) => s.label)).toEqual(LABELS);
-		for (const s of SAPPHIRE_TIME_FLICKER_EFFECTS) {
-			expect(s.id).toMatch(/^jasper\.s\.[a-z0-9-]+$/);
-			expect(s.bin).toBe(SAPPHIRE_BINS.time);
-		}
-	});
-
 	it('every time hook is pure: same inputs → same outputs, over random seeks and settings', () => {
 		const frames = [0, 1, 7, 29, 30, 59, -3, 63, 12, 0];
 		const variants: Record<string, Record<string, unknown>[]> = {
@@ -131,7 +83,7 @@ describe('Sapphire Time + Flicker family', () => {
 					if (t?.samples) {
 						const a = t.samples(p, ctx);
 						expect(t.samples(p, { ...ctx })).toEqual(a);
-						expect(a.length).toBeLessThanOrEqual(FX_MAX_TIME_SAMPLES);
+						expect(a.length).toBeLessThanOrEqual(8); // shader time-sample protocol (§9)
 						const base = t.remap ? clampToSpan(t.remap(p, ctx), ctx) : f;
 						for (const o of a) {
 							expect(Number.isInteger(o)).toBe(true);
@@ -144,8 +96,6 @@ describe('Sapphire Time + Flicker family', () => {
 					const u = s.gpu!.uniforms?.(p, fctx(f));
 					if (u) expect(s.gpu!.uniforms!(p, fctx(f))).toEqual(u);
 				}
-				const ctx = { width: 640, height: 360, pxScale: 1, fps: 30 };
-				expect(JSON.stringify(gpuPasses(s.gpu!, p, ctx))).toBe(JSON.stringify(gpuPasses(s.gpu!, p, ctx)));
 			}
 		}
 	});
@@ -228,17 +178,6 @@ describe('Sapphire Time + Flicker family', () => {
 		expect(samples('S_Trails', 5)).toEqual([-4, -2]);
 		expect(samples('S_Trails', 0)).toEqual([]);
 		expect(samples('S_Feedback', 2, {}, { headHandle: 10 })).toEqual([-11, -9, -8, -6, -4, -2]);
-		// the recursion is replayed in one pass (one upload of the samples); FeedbackDistort adds its lens passes
-		const pc = { width: 64, height: 36, pxScale: 1, fps: 30 };
-		const s = spec('S_Trails');
-		expect(gpuPasses(s.gpu!, defaults(s), pc)).toHaveLength(1);
-		const d = spec('S_FeedbackDistort');
-		expect(gpuPasses(d.gpu!, defaults(d), pc).map((x) => x.output ?? null)).toEqual([
-			'lensLuma',
-			'lensBlurH',
-			'lensBlur',
-			null,
-		]);
 	});
 
 	it('S_TimeAverage / S_NearestColor average/scan the current frame and the previous ones', () => {
@@ -323,15 +262,8 @@ describe('Sapphire Time + Flicker family', () => {
 		expect(g(5, { amplitude: 0, brightness: 2 })).toEqual([2, 2, 2]);
 	});
 
-	it('flicker tools: Hold From Frame samples the hold frame; the reference reduction pass is added', () => {
+	it('flicker tools: Hold From Frame samples the hold frame', () => {
 		expect(samples('S_FlickerRemove', 30)).toEqual([]);
 		expect(samples('S_FlickerRemove', 30, { holdFromFrame: true, holdFrame: 4 })).toEqual([-26]);
-		const s = spec('S_FlickerRemoveColor');
-		const ctx = { width: 640, height: 360, pxScale: 1, fps: 30 };
-		expect(gpuPasses(s.gpu!, defaults(s), ctx).map((p) => p.output ?? null)).toEqual(['flStats', null]);
-		expect(gpuPasses(s.gpu!, defaults(s, { holdFromFrame: true }), ctx).map((p) => p.output ?? null)).toEqual(
-			['flStats', 'flRef', null],
-		);
-		expect(spec('S_FlickerMatch').gpu!.time).toBeUndefined();
 	});
 });

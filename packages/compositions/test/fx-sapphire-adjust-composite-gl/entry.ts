@@ -1,4 +1,3 @@
-import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,
@@ -6,7 +5,6 @@ import {
 	fxSeed,
 	planGpuEffect,
 } from '@jasper/project';
-import { ocioConvert, ocioSpace } from '../../../project/src/registry/fx/sapphire-adjust-composite/ocio.ts';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
@@ -107,7 +105,7 @@ function run(
 		},
 		out.getContext('2d')!,
 	);
-	return { out, plan, at: (x: number, y: number) => px(out, x, y) };
+	return { out, at: (x: number, y: number) => px(out, x, y) };
 }
 
 const allPixels = (c: HTMLCanvasElement) =>
@@ -122,21 +120,6 @@ const square =
 	};
 
 const api = {
-	identity() {
-		const ids = [
-			'jasper.s.gamma',
-			'jasper.s.hue-sat-bright',
-			'jasper.s.tint',
-			'jasper.s.show-bad-colors',
-			'jasper.s.channel-switcher',
-			'jasper.s.math-ops',
-			'jasper.s.matte-ops',
-			'jasper.s.layer',
-			'jasper.s.z-comp',
-		];
-		return Object.fromEntries(ids.map((id) => [id, run(id, {}, [8, 8], 'rgb(200, 120, 60)').at(4, 4)]));
-	},
-
 	adjust() {
 		const r = (id: string, over: Record<string, unknown>, color: string) =>
 			run(id, over, [8, 8], color).at(4, 4);
@@ -172,19 +155,22 @@ const api = {
 			badHigh: r('jasper.s.show-bad-colors', { max: 0.9 }, 'rgb(255, 255, 255)'),
 			badLow: r('jasper.s.show-bad-colors', { minLuma: 0.1 }, 'rgb(5, 5, 5)'),
 			badMatte: r('jasper.s.show-bad-colors', { max: 0.9, outputMatte: true }, 'rgb(255, 255, 255)'),
-			ocioLogToRec709: r('jasper.s.ocio-transform', {}, 'rgb(100, 150, 200)'),
 			ocioSrgbToLinear: r('jasper.s.ocio-transform', { from: 'srgb', to: 'linRec709' }, 'rgb(188, 188, 188)'),
 			ocioSwitched: r(
 				'jasper.s.ocio-transform',
 				{ from: 'srgb', to: 'linRec709', switchToAndFrom: true },
 				'rgb(55, 55, 55)',
 			),
-			ocioExpected: [
-				ocioConvert(ocioSpace('logc3'), ocioSpace('rec709'), [100 / 255, 150 / 255, 200 / 255]),
-				ocioConvert(ocioSpace('srgb'), ocioSpace('linRec709'), [188 / 255, 188 / 255, 188 / 255]),
-				ocioConvert(ocioSpace('linRec709'), ocioSpace('srgb'), [55 / 255, 55 / 255, 55 / 255]),
-			].map((c) => c.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255))),
 		};
+	},
+
+	ocioGray() {
+		return Object.fromEntries(
+			['logc3', 'slog3', 'vlog', 'acescct', 'rec709'].map((to) => [
+				to,
+				run('jasper.s.ocio-transform', { from: 'linRec709', to }, [8, 8], 'rgb(46, 46, 46)').at(4, 4),
+			]),
+		);
 	},
 
 	alphaAndMask() {
@@ -208,7 +194,6 @@ const api = {
 			invMaskLeft: mi.at(2, 4),
 			invMaskRight: mi.at(13, 4),
 			softMid: soft.at(8, 4),
-			softPasses: soft.plan.passes.map((p) => p.output),
 		};
 	},
 
@@ -242,8 +227,6 @@ const api = {
 				for (let i = 0; i < px.length; i += 4) if (px[i]! > 200) red++;
 				return red / (px.length / 4);
 			})(),
-			fgBlurPasses: run('jasper.s.layer', { fgBlur: 0.2 }, [8, 8], 'rgb(255, 0, 0)', { background: bg }).plan
-				.passes.length,
 		};
 	},
 
@@ -269,37 +252,45 @@ const api = {
 		};
 	},
 
-	matteOps() {
-		// A 30×30 white opaque square in a 60×60 transparent layer: edges at x = 15 and x = 45 (pixels 15…44 inside).
+	matteOps(
+		operation: 'identity' | 'grow' | 'shrink' | 'output' | 'invert' | 'blur' | 'noise',
+		filter = 'triangle',
+	) {
+		// A 30×30 white opaque square in a 60×60 transparent layer: pixels 15…44 inside.
 		const L: [number, number] = [60, 60];
 		const at = (over: Record<string, unknown>, x: number) =>
 			run('jasper.s.matte-ops', over, L, square(30)).at(x, 30)[3];
-		const grow = { shrinkGrow: 4, edgeSoftness: 1 };
-		const filters = ['box', 'triangle', 'gauss'];
-		const noise = { shrinkGrow: 1, noiseAmplitude: 2, noiseWidth: 0.2, frequency: 3 };
-		const noisy = (over: Record<string, unknown>, frame = 0) =>
-			allPixels(run('jasper.s.matte-ops', { ...noise, ...over }, L, square(30), {}, frame).out);
-		return {
-			identityEdge: [at({}, 44), at({}, 45)],
-			growOut: Object.fromEntries(
-				filters.map((f) => [f, [at({ ...grow, filter: f }, 47), at({ ...grow, filter: f }, 50)]]),
-			),
-			shrink: Object.fromEntries(
-				filters.map((f) => [
-					f,
-					[at({ shrinkGrow: -3, filter: f }, 43), at({ shrinkGrow: -3, filter: f }, 40)],
-				]),
-			),
-			matteOut: run('jasper.s.matte-ops', { output: 'matte' }, L, square(30)).at(2, 2),
-			invert: at({ invertMatte: true }, 2),
-			postBlurEdge: at({ postBlur: 3 }, 46),
-			noiseA: noisy({}),
-			noiseB: noisy({}),
-			noiseSeed: noisy({ seed: 7 }),
-			noiseFrame: noisy({}, 5),
-			noiseStatic: noisy({ jitterFrames: 0 }, 5),
-			noiseStatic0: noisy({ jitterFrames: 0 }, 0),
-		};
+		switch (operation) {
+			case 'identity':
+				return [at({}, 44), at({}, 45)];
+			case 'grow': {
+				const p = { shrinkGrow: 4, edgeSoftness: 1, filter };
+				return [at(p, 47), at(p, 50)];
+			}
+			case 'shrink': {
+				const p = { shrinkGrow: -3, filter };
+				return [at(p, 43), at(p, 40)];
+			}
+			case 'output':
+				return run('jasper.s.matte-ops', { output: 'matte' }, L, square(30)).at(2, 2);
+			case 'invert':
+				return at({ invertMatte: true }, 2);
+			case 'blur':
+				return at({ postBlur: 3 }, 46);
+			case 'noise': {
+				const noise = { shrinkGrow: 1, noiseAmplitude: 2, noiseWidth: 0.2, frequency: 3 };
+				const noisy = (over: Record<string, unknown>, frame = 0) =>
+					allPixels(run('jasper.s.matte-ops', { ...noise, ...over }, L, square(30), {}, frame).out);
+				return {
+					noiseA: noisy({}),
+					noiseB: noisy({}),
+					noiseSeed: noisy({ seed: 7 }),
+					noiseFrame: noisy({}, 5),
+					noiseStatic: noisy({ jitterFrames: 0 }, 5),
+					noiseStatic0: noisy({ jitterFrames: 0 }, 0),
+				};
+			}
+		}
 	},
 
 	matteOpsComp() {

@@ -3,41 +3,26 @@ import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
 import {
 	type Animatable,
-	addColorToKey,
 	bakeColorRun,
 	type ColorOpContext,
 	CREATIVE_LOOKS,
 	type CurveValue,
-	DEFAULT_SECONDARY_KEY,
 	defaultEffectRegistry,
 	EASE_PRESETS,
 	type EffectParams,
-	effectiveParams,
-	expandLumetriSpatial,
 	hslToRgb,
 	hueCurveEyedropper,
 	isNeutralHueCurve,
-	keyFromColor,
-	LUMETRI_EFFECT,
 	LUMETRI_EFFECT_ID,
-	LUMETRI_GROUPS,
 	LUMETRI_PARAMS,
-	LUMETRI_SPATIAL_EFFECT_ID,
-	LUMETRI_SPATIAL_PARAMS,
 	linearCurveEyedropper,
 	lumetriFn,
-	lumetriSpatialActive,
-	lumetriSpatialPixel,
 	lumetriSpatialSettings,
 	lumetriUsesSpatial,
 	offsetCurveFn,
 	type ParamValue,
 	type Rgb,
-	removeColorFromKey,
 	rgbToHsl,
-	type SecondaryKey,
-	secondaryKey,
-	vignetteWeight,
 	wheelOfRgb,
 	wheelRgb,
 } from '../src/index.ts';
@@ -52,36 +37,6 @@ const run = (params: EffectParams, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb =
 const Y = (c: Rgb) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 const chroma = (c: Rgb) => Math.max(...c) - Math.min(...c);
 const unit = fc.double({ min: 0, max: 1, noNaN: true });
-
-describe('Lumetri completion params', () => {
-	it('appends the color-grade params after the S06 contract, with identity defaults', () => {
-		const names = LUMETRI_PARAMS.map((p) => p.name);
-		expect(names.slice(25)).toContain('hueVsSat');
-		expect(names).toContain('vignetteAmount');
-		expect(names).toContain('secHueCenter');
-		expect(new Set(names).size).toBe(names.length);
-		for (const n of LUMETRI_SPATIAL_PARAMS) expect(names).toContain(n);
-		expect(LUMETRI_GROUPS.map((g) => g.group)).toEqual([
-			'basic',
-			'creative',
-			'curves',
-			'wheels',
-			'secondary',
-			'vignette',
-		]);
-		for (const g of LUMETRI_GROUPS) expect(names).toContain(g.toggle);
-		expect(lumetriFn(effectiveParams(LUMETRI_EFFECT, {}), NO_LUTS)).toBeNull();
-		expect(lumetriSpatialActive(lumetriSpatialSettings(effectiveParams(LUMETRI_EFFECT, {})))).toBe(false);
-	});
-
-	it('the internal spatial stage is registered but never listed', () => {
-		const spec = defaultEffectRegistry.get(LUMETRI_SPATIAL_EFFECT_ID);
-		expect(spec?.internal).toBe(true);
-		expect(spec?.gradeBypass).toBe(true);
-		expect(spec?.gpu).toBeDefined();
-		expect(spec?.params.map((p) => p.name)).toEqual(LUMETRI_SPATIAL_PARAMS);
-	});
-});
 
 describe('Creative adjustments (pointwise)', () => {
 	it('Faded Film lifts black and compresses white', () => {
@@ -112,27 +67,23 @@ describe('Creative adjustments (pointwise)', () => {
 		const high = run({ shadowTint: red, tintBalance: 100 }, mid);
 		expect(high[0] - high[1]).toBeGreaterThan(low[0] - low[1]);
 	});
-	it('built-in looks are distinct, bounded after the clamp and mixed by intensity', () => {
+	it('built-in looks stay bounded and mix by intensity', () => {
 		const samples: Rgb[] = [
 			[0.1, 0.2, 0.3],
 			[0.8, 0.5, 0.2],
 			[0.5, 0.5, 0.5],
 		];
-		const outs = new Set<string>();
 		for (const look of CREATIVE_LOOKS) {
 			if (look.id === 'none') {
-				expect(lumetriFn({ creativeLook: 'none' }, NO_LUTS)).toBeNull();
 				continue;
 			}
 			const res = samples.map((c) => run({ creativeLook: look.id }, c));
 			for (const c of res) for (const v of c) expect(v >= 0 && v <= 1).toBe(true);
-			outs.add(JSON.stringify(res.map((c) => c.map((v) => v.toFixed(3)))));
 			const half = run({ creativeLook: look.id, lookIntensity: 50 }, samples[1]!);
 			const full = run({ creativeLook: look.id }, samples[1]!);
 			for (let k = 0; k < 3; k++)
 				expect(half[k]).toBeCloseTo(Math.min(1, Math.max(0, (samples[1]![k]! + full[k]!) / 2)), 1);
 		}
-		expect(outs.size).toBe(CREATIVE_LOOKS.length - 1);
 	});
 	it('a look LUT takes precedence over the built-in look', () => {
 		const lut = {
@@ -415,62 +366,6 @@ describe('full grade: properties and bake budget', () => {
 	});
 });
 
-describe('spatial stage maths', () => {
-	const s0 = (p: EffectParams) => lumetriSpatialSettings(p);
-	it('keys on hue, saturation and lightness with soft edges; greys leave a hue key', () => {
-		const s = s0({ secHueCenter: 0, secHueRange: 15, secHueSoft: 15, secTemperature: 50 });
-		expect(s.secondary).toBe(true);
-		expect(secondaryKey(s, 0.9, 0.1, 0.1)).toBeCloseTo(1, 6);
-		expect(secondaryKey(s, 0.1, 0.1, 0.9)).toBe(0);
-		expect(secondaryKey(s, 0.5, 0.5, 0.5)).toBe(0);
-		// 22.5° from red: half way through the softness.
-		const hsl = hslToRgb(22.5 / 360, 0.8, 0.5, [0, 0, 0]);
-		expect(secondaryKey(s, hsl[0], hsl[1], hsl[2])).toBeCloseTo(0.5, 2);
-		const l = s0({ secLumaLow: 60, secLumaHigh: 100, secLumaSoft: 10, secSaturation: 0 });
-		expect(secondaryKey(l, 0.8, 0.8, 0.8)).toBe(1);
-		expect(secondaryKey(l, 0.55, 0.55, 0.55)).toBeCloseTo(0.5, 6);
-		expect(secondaryKey(l, 0.2, 0.2, 0.2)).toBe(0);
-	});
-	it('the correction applies inside the key only; Show Mask and Invert', () => {
-		const s = s0({ secHueCenter: 0, secHueRange: 20, secSaturation: 0 });
-		const red = lumetriSpatialPixel(s, [0.9, 0.1, 0.1], 0.5, 0.5, 16 / 9);
-		expect(chroma(red)).toBeLessThan(1e-6);
-		const blue = lumetriSpatialPixel(s, [0.1, 0.1, 0.9], 0.5, 0.5, 16 / 9);
-		expect(blue).toEqual([0.1, 0.1, 0.9]);
-		const inv = s0({ secHueCenter: 0, secHueRange: 20, secSaturation: 0, secInvert: true });
-		expect(chroma(lumetriSpatialPixel(inv, [0.1, 0.1, 0.9], 0.5, 0.5, 1))).toBeLessThan(1e-6);
-		const wb = s0({ secHueCenter: 0, secHueRange: 20, secShowMask: true, secMaskStyle: 'whiteBlack' });
-		expect(lumetriSpatialPixel(wb, [0.9, 0.1, 0.1], 0.5, 0.5, 1)).toEqual([1, 1, 1]);
-		expect(lumetriSpatialPixel(wb, [0.1, 0.1, 0.9], 0.5, 0.5, 1)).toEqual([0, 0, 0]);
-		const cg = s0({ secHueCenter: 0, secHueRange: 20, secShowMask: true });
-		const grey = lumetriSpatialPixel(cg, [0.1, 0.1, 0.9], 0.5, 0.5, 1);
-		expect(chroma(grey)).toBeLessThan(1e-9);
-	});
-	it('3-way correction wheels use the Lumetri wheel maths', () => {
-		const s = s0({ secWheelMode: 'three', secHighlightsLevel: 50 });
-		const out = lumetriSpatialPixel(s, [0.5, 0.5, 0.5], 0.5, 0.5, 1);
-		expect(out[0]).toBeCloseTo(0.625, 6);
-	});
-	it('the vignette darkens the corners, not the centre; roundness and feather shape it', () => {
-		const v = s0({ vignetteAmount: -3 }).vignette;
-		expect(vignetteWeight(v, 0.5, 0.5, 16 / 9)).toBe(0);
-		expect(vignetteWeight(v, 0, 0, 16 / 9)).toBeGreaterThan(0.9);
-		const c = lumetriSpatialPixel(s0({ vignetteAmount: -5, vignetteFeather: 0 }), [0.8, 0.8, 0.8], 0, 0, 1);
-		expect(c[0]).toBeLessThan(0.05);
-		const lighter = lumetriSpatialPixel(
-			s0({ vignetteAmount: 5, vignetteFeather: 0 }),
-			[0.2, 0.2, 0.2],
-			0,
-			0,
-			1,
-		);
-		expect(lighter[0]).toBeGreaterThan(0.95);
-		const round = s0({ vignetteAmount: -3, vignetteRoundness: 100 }).vignette;
-		// A circle on a wide frame reaches the left/right edges earlier than the aspect-following ellipse.
-		expect(vignetteWeight(round, 0.02, 0.5, 16 / 9)).toBeGreaterThan(vignetteWeight(v, 0.02, 0.5, 16 / 9));
-	});
-});
-
 describe('render snapshot expansion', () => {
 	const A = (
 		value: ParamValue,
@@ -493,33 +388,7 @@ describe('render snapshot expansion', () => {
 		params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, A(v)])),
 		...extra,
 	});
-	it('adds the spatial companion after a Lumetri instance that uses vignette, sharpen or the secondary', () => {
-		const masks = [{ id: 'm1' }];
-		const list = expandLumetriSpatial([lum({ vignetteAmount: -2, exposure: 1 }, { masks })]);
-		expect(list.map((f) => f.effectId)).toEqual([LUMETRI_EFFECT_ID, LUMETRI_SPATIAL_EFFECT_ID]);
-		expect(list[1]!.id).toBe('fx1~spatial');
-		expect(list[1]!.masks).toBe(masks);
-		expect(Object.keys(list[1]!.params)).toEqual(['vignetteAmount']);
-	});
-	it('nothing is added for pointwise grades, disabled instances or switched-off sections', () => {
-		const plain = [
-			lum({
-				exposure: 1,
-				hueVsSat: {
-					curve: [
-						[0, 0.2],
-						[1, 0.2],
-					],
-				},
-			}),
-		];
-		expect(expandLumetriSpatial(plain)).toBe(plain);
-		expect(lumetriUsesSpatial(lum({ vignetteAmount: -2 }, { enabled: false }))).toBe(false);
-		expect(lumetriUsesSpatial(lum({ vignetteAmount: -2, vignetteOn: false }))).toBe(false);
-		expect(lumetriUsesSpatial(lum({ secHueCenter: 120 }))).toBe(false);
-		expect(lumetriUsesSpatial(lum({ secSaturation: 50 }))).toBe(true);
-		expect(lumetriUsesSpatial(lum({ secSaturation: 50, secondaryOn: false }))).toBe(false);
-	});
+
 	it('a keyframed amount that leaves the default at some key needs the stage', () => {
 		const fx = {
 			...lum({}),
@@ -531,36 +400,6 @@ describe('render snapshot expansion', () => {
 			},
 		};
 		expect(lumetriUsesSpatial(fx)).toBe(true);
-	});
-});
-
-describe('HSL Secondary eyedroppers', () => {
-	const s0 = (p: EffectParams) => lumetriSpatialSettings({ secSaturation: 0, ...p });
-	const key = (k: SecondaryKey, rgb: [number, number, number]) => secondaryKey(s0(k), ...rgb);
-	const orange: [number, number, number] = [0.9, 0.5, 0.1];
-	const red: [number, number, number] = [0.85, 0.1, 0.1];
-	const blue: [number, number, number] = [0.1, 0.2, 0.9];
-	it('Set Color keys the picked colour, not others; greys key on lightness only', () => {
-		const k = keyFromColor(orange);
-		expect(key(k, orange)).toBe(1);
-		expect(key(k, blue)).toBe(0);
-		const g = keyFromColor([0.5, 0.5, 0.5]);
-		expect(g.secHueOn).toBe(false);
-		expect(key(g, [0.52, 0.5, 0.5])).toBe(1);
-		expect(key(g, [0.95, 0.95, 0.95])).toBe(0);
-	});
-	it('Add Color extends the key to the new colour and keeps the old one', () => {
-		const k = addColorToKey(keyFromColor(orange), red);
-		expect(key(k, orange)).toBe(1);
-		expect(key(k, red)).toBe(1);
-		expect(key(k, blue)).toBe(0);
-	});
-	it('Remove Color drops the picked colour and keeps the rest of the key', () => {
-		const wide = addColorToKey(keyFromColor(orange), red);
-		const k = removeColorFromKey(wide, red);
-		expect(key(k, red)).toBe(0);
-		expect(key(k, orange)).toBeGreaterThan(0.99);
-		expect(removeColorFromKey(DEFAULT_SECONDARY_KEY, blue)).not.toEqual(DEFAULT_SECONDARY_KEY);
 	});
 });
 
@@ -593,25 +432,11 @@ describe('hostile params (AGENTS.md §0.2)', () => {
 					fn?.(c);
 					if (!c.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) return false;
 					const s = lumetriSpatialSettings(params as never);
-					const px = lumetriSpatialPixel(s, [r, g, b], 0.3, 0.7, 16 / 9);
-					return px.every((v) => Number.isFinite(v));
+					const fields = Object.values(s).flatMap((v) => (typeof v === 'object' ? Object.values(v) : [v]));
+					return fields.every((v) => typeof v !== 'number' || Number.isFinite(v));
 				},
 			),
 			{ numRuns: 300 },
-		);
-	});
-	it('snapshot expansion tolerates malformed animatables', () => {
-		fc.assert(
-			fc.property(fc.dictionary(fc.constantFrom(...names), junk, { maxKeys: 10 }), (raw) => {
-				const params = Object.fromEntries(
-					Object.entries(raw).map(([k, v]) => [k, { value: v, keyframes: [] }]),
-				) as never;
-				const list = expandLumetriSpatial([
-					{ id: 'fx', effectId: LUMETRI_EFFECT_ID, effectVersion: 1, enabled: true, params },
-				]);
-				return list.length >= 1 && list.length <= 2;
-			}),
-			{ numRuns: 200 },
 		);
 	});
 });

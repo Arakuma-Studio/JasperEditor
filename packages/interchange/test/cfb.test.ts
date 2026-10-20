@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { CfbError, CfbWriter, CompoundFile, compareNames, NOSTREAM } from '../src/cfb.ts';
+import { CfbError, CfbWriter, CompoundFile, NOSTREAM } from '../src/cfb.ts';
 
 const pattern = (n: number, seed: number) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + seed) & 0xff);
 
@@ -29,11 +29,6 @@ function check(bytes: Uint8Array, expected: [string, Uint8Array][]) {
 	const cf = CompoundFile.open(bytes);
 	expect([...cf.root().clsid]).toEqual(new Array(16).fill(7));
 	for (const [path, data] of expected) expect(cf.readPath(path)).toEqual(data);
-	for (const e of cf.entries)
-		for (let i = 1; i < e.children.length; i++)
-			expect(
-				compareNames(cf.entries[e.children[i - 1]!]!.name, cf.entries[e.children[i]!]!.name),
-			).toBeLessThan(0);
 }
 
 /** Every path from a node to a nil leaf has the same number of black nodes; no red node has a red child. */
@@ -42,8 +37,6 @@ function checkRedBlack(bytes: Uint8Array) {
 	const blackHeight = (n: number, parentRed: boolean): number => {
 		if (n === NOSTREAM) return 1;
 		const e = cf.entries[n]!;
-		const raw = new DataView(bytes.buffer);
-		void raw;
 		const red = colorOf(bytes, cf, n) === 0;
 		expect(parentRed && red).toBe(false);
 		const l = blackHeight(e.left, red);

@@ -151,7 +151,7 @@ async function connect(offsets: Record<string, number>, reliable = true) {
 		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 		return { isError: !!r.isError, body: JSON.parse(text) };
 	};
-	return { engine, call, client };
+	return { engine, call };
 }
 
 const S = FLICKS_PER_SECOND;
@@ -159,21 +159,7 @@ const S = FLICKS_PER_SECOND;
 describe('multi-camera MCP tools', () => {
 	it('creates a multicam by audio, places it, switches, records, lists and flattens', async () => {
 		// B started 2 s after A; the recorder 1 s before A
-		const { engine, call, client } = await connect({ mk_1: 0, mk_2: -2 * S, mk_3: 1 * S });
-		const names = (await client.listTools()).tools.map((t) => t.name);
-		for (const t of [
-			'measure_audio_sync',
-			'synchronize_clips',
-			'merge_clips',
-			'create_multicam_sequence',
-			'switch_multicam_angle',
-			'record_multicam_cuts',
-			'set_multicam_enabled',
-			'flatten_multicam',
-			'edit_multicam_cameras',
-			'get_multicam',
-		])
-			expect(names).toContain(t);
+		const { engine, call } = await connect({ mk_1: 0, mk_2: -2 * S, mk_3: 1 * S });
 		const { $a, $b, $r } = engine.items as Record<string, string>;
 		const m = await call('measure_audio_sync', { itemIds: [$a, $b, $r] });
 		expect(m.isError).toBe(false);

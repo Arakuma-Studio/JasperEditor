@@ -45,14 +45,6 @@ export function flatten(img: Rgba8, bg: [number, number, number] = [0, 0, 0]): R
 	return out;
 }
 
-/** Rec. 709 luma per pixel, 0…255. */
-export function luma(img: Rgba8): Float64Array {
-	const out = new Float64Array(img.width * img.height);
-	for (let i = 0, j = 0; j < out.length; i += 4, j++)
-		out[j] = 0.2126 * img.data[i]! + 0.7152 * img.data[i + 1]! + 0.0722 * img.data[i + 2]!;
-	return out;
-}
-
 /**
  * Mean RGB over an `n`×`n` grid of cells (cell boundaries rounded; every pixel belongs to exactly one cell):
  * `n*n*3` numbers in row-major cell order. A compact, resolution-independent fingerprint of a frame.
@@ -88,23 +80,4 @@ export function fnv1a(img: Rgba8 | Uint8Array): number {
 		h = Math.imul(h, 0x01000193) >>> 0;
 	}
 	return h >>> 0;
-}
-
-/** Simple statistics: luma mean / standard deviation and the number of distinct colours (capped at `cap`). */
-export function imageStats(img: Rgba8, cap = 4096): { mean: number; std: number; colours: number } {
-	const l = luma(img);
-	let sum = 0;
-	let sq = 0;
-	for (const v of l) {
-		sum += v;
-		sq += v * v;
-	}
-	const n = Math.max(1, l.length);
-	const mean = sum / n;
-	const colours = new Set<number>();
-	for (let i = 0; i < img.data.length && colours.size < cap; i += 4)
-		colours.add(
-			((img.data[i]! << 24) | (img.data[i + 1]! << 16) | (img.data[i + 2]! << 8) | img.data[i + 3]!) >>> 0,
-		);
-	return { mean, std: Math.sqrt(Math.max(0, sq / n - mean * mean)), colours: colours.size };
 }

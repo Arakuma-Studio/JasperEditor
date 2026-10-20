@@ -13,7 +13,7 @@ import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
 /** Largest picture side made for a vector layer (canvas limits; ≥ 8K covers any 4K frame at 2×). */
-export const VECTOR_MAX_SIDE = 8192;
+const VECTOR_MAX_SIDE = 8192;
 
 const maxAbs = (a: Animatable<number> | undefined) =>
 	a ? Math.max(Math.abs(a.value), ...a.keyframes.map((k) => Math.abs(k.value))) : 1;
@@ -22,7 +22,7 @@ const maxAbs = (a: Animatable<number> | undefined) =>
  * Picture scale of a vector layer: the largest Motion scale over the clip (its keys; a scale driven by an expression
  * is not known ahead and counts as its static value), rounded up to a power of two, at least 1, at most what keeps the picture ≤ `VECTOR_MAX_SIDE`.
  */
-export function vectorRasterScale(
+function vectorRasterScale(
 	clip: Pick<RenderVisualClip, 'transform'>,
 	box: { width: number; height: number },
 ): number {

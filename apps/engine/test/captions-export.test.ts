@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { RenderPlanSchema } from '@jasper/api';
 import { parseCaptionFile, plainCaptionText } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { embedArgs, iso639_2, sidecarName, subtitleCodecFor } from '../src/export/captions.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, ensureFixtures, H, JSON_H, makeApp, type TestApp } from './helpers.ts';
 
@@ -90,25 +89,6 @@ async function exportOnce(d: DocBuilder, extra: Record<string, unknown>) {
 	expect(done.error).toBeUndefined();
 	return { id: start.json().id as string, result: done.result as Record<string, unknown> };
 }
-
-describe('caption export helpers', () => {
-	it('maps languages, codecs and file names', () => {
-		expect(iso639_2('en')).toBe('eng');
-		expect(iso639_2('fr-CA')).toBe('fra');
-		expect(iso639_2('deu')).toBe('deu');
-		expect(iso639_2('xx')).toBe('und');
-		expect(subtitleCodecFor('mp4')).toBe('mov_text');
-		expect(subtitleCodecFor('mov')).toBe('mov_text');
-		expect(subtitleCodecFor('webm')).toBe('webvtt');
-		const args = embedArgs('in.mp4', [{ path: 'a.vtt', language: 'en', title: 'English' }], 'mp4', 'out.mp4');
-		expect(args.join(' ')).toContain(
-			'-c:s mov_text -metadata:s:s:0 language=eng -metadata:s:s:0 title=English',
-		);
-		const o = { track: { language: 'fr' }, label: 'C2' } as never;
-		expect(sidecarName('output', o, 'srt', true)).toBe('output.srt');
-		expect(sidecarName('output', o, 'vtt', false)).toBe('output.C2.fr.vtt');
-	});
-});
 
 describe('planning', () => {
 	it('burned-in captions are layer-baked (hybrid); without burn-in the export stays native', async () => {

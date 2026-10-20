@@ -1,25 +1,37 @@
-import { describe, expect, it } from 'vitest';
-import { webTestTimeoutMs } from '../vitest.config.ts';
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest';
 
-describe('web test timeout', () => {
-	it('is 15 s on a quiet host, grows with the square of the load factor, and is capped at a minute', () => {
-		expect(webTestTimeoutMs(1, false)).toBe(15_000);
-		expect(webTestTimeoutMs(1.5, false)).toBe(15_000);
-		expect(webTestTimeoutMs(2, false)).toBe(20_000);
-		expect(webTestTimeoutMs(3, false)).toBe(45_000);
-		expect(webTestTimeoutMs(10, false)).toBe(60_000);
-		expect(webTestTimeoutMs(Number.POSITIVE_INFINITY, false)).toBe(60_000);
+const calibration = vi.hoisted(() => ({ factor: 1, strict: false }));
+vi.mock('../../../scripts/perf/budget.ts', () => ({
+	loadFactor: () => calibration.factor,
+	get PERF_STRICT() {
+		return calibration.strict;
+	},
+}));
+
+async function configuredTimeout(factor: number, strict: boolean) {
+	calibration.factor = factor;
+	calibration.strict = strict;
+	vi.resetModules();
+	return (await import('../vitest.config.ts')).default.test?.testTimeout;
+}
+
+describe('web timeout configuration (docs/performance.md)', () => {
+	it('exports load-scaled timeouts bounded between 15 and 60 seconds', async () => {
+		for (const [factor, timeout] of [
+			[1, 15_000],
+			[1.5, 15_000],
+			[2, 20_000],
+			[3, 45_000],
+			[10, 60_000],
+		] as const) {
+			expect(await configuredTimeout(factor, false)).toBe(timeout);
+		}
 	});
 
-	it('PERF=1 keeps the strict 5 s whatever the load', () => {
-		expect(webTestTimeoutMs(1, true)).toBe(5000);
-		expect(webTestTimeoutMs(8, true)).toBe(5000);
-	});
-
-	it('this run is configured with it: never unlimited, never above the ceiling', (ctx) => {
-		const timeout = ctx.task.timeout;
-		expect(timeout).toBeGreaterThanOrEqual(5000);
-		expect(timeout).toBeLessThanOrEqual(60_000);
-		if (process.env.PERF !== '1') expect(timeout).toBeGreaterThanOrEqual(15_000);
+	it('exports the strict 5-second timeout when PERF mode is enabled', async () => {
+		for (const factor of [1, 8]) {
+			expect(await configuredTimeout(factor, true)).toBe(5_000);
+		}
 	});
 });

@@ -3,17 +3,6 @@ import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_PACG, popup, slider } from './common.ts';
 
-/**
- * Kodak Cineon log ↔ linear (printing density 0.002 per 10-bit code value, negative gamma 0.6). Reference TS
- * implementation of the shader maths (tests): `code` is the 10-bit value 0..1023, the result linear 0..1 (before
- * the display gamma).
- */
-export function cineonLogToLinear(code: number, black: number, white: number): number {
-	const k = 0.002 / 0.6;
-	const offset = 10 ** ((black - white) * k);
-	return (10 ** ((code - white) * k) - offset) / (1 - offset);
-}
-
 export const CINEON_CONVERTER = defineShaderEffect({
 	id: 'jasper.cineon-converter',
 	label: 'Cineon Converter',

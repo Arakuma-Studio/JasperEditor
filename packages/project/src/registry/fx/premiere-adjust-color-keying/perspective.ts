@@ -38,7 +38,7 @@ export function basic3dRotation(p: EffectParams): number[] {
 }
 
 /** Layer px the projected plane may reach outside the box (corners projected through the pinhole camera). */
-export function basic3dPadding(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
+function basic3dPadding(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
 	const { f, dz } = basic3dCamera(p, ctx);
 	const m = basic3dRotation(p);
 	let reach = 0;
@@ -214,14 +214,14 @@ void main() {
 });
 
 /** Drop Shadow offset (layer px) along Premiere's direction (0° = up, clockwise). */
-export function dropShadowOffset(p: EffectParams): [number, number] {
+function dropShadowOffset(p: EffectParams): [number, number] {
 	const [x, y] = premiereDirection(num(p.direction, 135));
 	const d = Math.max(0, num(p.distance, 5));
 	return [x * d, y * d];
 }
 
 /** Padding (layer px) per side so the shadow is never clipped. */
-export function dropShadowPadding(p: EffectParams) {
+function dropShadowPadding(p: EffectParams) {
 	const [x, y] = dropShadowOffset(p);
 	const blur = 3 * softnessSigma(num(p.softness)) + 1;
 	return {
@@ -280,7 +280,7 @@ void main() {
 /** Radial Shadow's projection scale about the light (1 + distance / 100). */
 export const radialShadowScale = (p: EffectParams) => 1 + Math.max(0, num(p.projectionDistance, 10)) / 100;
 
-export function radialShadowPadding(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
+function radialShadowPadding(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
 	if (!bool(p.resizeLayer)) return 0;
 	const s = radialShadowScale(p);
 	const light = Array.isArray(p.lightSource) ? (p.lightSource as number[]) : [0.33, 0.25];

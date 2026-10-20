@@ -145,13 +145,11 @@ and unit. Tested in `packages/expressions/test/bind.test.ts`. The text-animators
 
 ## 2. Verified behaviour (measured)
 
-- `pnpm vitest run packages/expressions` — 48 tests: transform (rewrite.rs cases, completion values, nesting),
-  the object model and helpers (`time`, array maths, `effect()()`, layers, markers, keys, all loop types,
-  `posterizeTime`, time/colour conversions, interpolation incl. easeIn/easeOut sides), determinism (random seeds,
-  wiggle bounds and smoothness, noise range, no clock), limits (endless loop, recursion, memory), reference cycles,
-  Expression Controls, binding (documents, snapshots after JSON equal to in-process snapshots at 5 frames, a
-  fast-check property that values are independent of evaluation order and of fresh engines), pick-whip, selector
-  API, and the reference ↔ docs sync.
+- `pnpm exec vitest run packages/expressions --maxWorkers=1` exercises observable expression values,
+  syntax locations, bounded nesting, object-model helpers, deterministic randomness, sandbox isolation and
+  quarantine, document/snapshot binding, pick-whip evaluation and selector results. The test cleanup removed
+  private emitted-source assertions, generated-reference inventories and duplicate resource-limit probes;
+  [the per-test audit](../test-cleanup/formats.md) records dispositions and current validation status.
 - `packages/project/test/expressions.test.ts` (10): commands, refusals, rename, paste with expressions, controls
   (passthrough, centred points, vec3 validation, left out of snapshots), ParamPath ↔ ref round trip, INV-EXPR and
   repair.

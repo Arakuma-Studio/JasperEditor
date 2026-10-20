@@ -11,7 +11,7 @@ import { expandImports } from '../src/imports/import-flow.ts';
 import { parseMulticamView } from '../src/multicam/state.ts';
 import { pollActiveJob } from '../src/processing/engine-jobs.ts';
 import { loadAuto, parseAutoTranscribe } from '../src/speech/auto.tsx';
-import { defaultOptions, loadOptions, parseGenerateOptions } from '../src/speech/model.ts';
+import { loadOptions, parseGenerateOptions } from '../src/speech/model.ts';
 import { addTracker, startTrack } from '../src/tracking/actions.ts';
 import { trackingStore } from '../src/tracking/store.ts';
 import { fakeEngine, trackingSession } from './tracking-helpers.tsx';
@@ -135,7 +135,11 @@ describe('stored feature preferences', () => {
 			'jasper:speech-options',
 			JSON.stringify({ model: {}, speakerCount: 100, analysis: 'mix', replace: 'false' }),
 		);
-		expect(loadOptions('whisper-small')).toEqual({ ...defaultOptions('whisper-small'), analysis: 'mix' });
+		const options = loadOptions('whisper-small');
+		expect(options).toMatchObject({ model: 'whisper-small', analysis: 'mix' });
+		expect(typeof options.replace).toBe('boolean');
+		expect(options.speakerCount).toBeGreaterThanOrEqual(0);
+		expect(options.speakerCount).toBeLessThanOrEqual(32);
 		expect(
 			parseMulticamView({ view: 'false', audioFollowsVideo: null, layout: 3, showNames: false, page: 99 }),
 		).toMatchObject({ view: false, audioFollowsVideo: true, layout: 3, showNames: false, page: 0 });

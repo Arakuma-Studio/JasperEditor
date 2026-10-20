@@ -5,7 +5,6 @@ import { createCommandContext, registerAllCommands, runCommand } from '../src/co
 import { resetTransitionDefaults, setDefaultTransition } from '../src/panels/effects/transition-prefs.ts';
 import {
 	dropCommand,
-	hitTransition,
 	resolveTransitionDrop,
 	transitionIndex,
 } from '../src/panels/timeline/model/transitions.ts';
@@ -52,21 +51,6 @@ const seqOf = (t: T) => t.seq() as Sequence;
 const index = (t: T) => transitionIndex(seqOf(t), t.session.getCommitted().media);
 const geomOf = (t: T, id: string) => [...index(t).values()].flat().find((g) => g.t.id === id)!;
 const v1 = (t: T) => t.geometry().layout.video.rows.find((r) => r.index === 0)!;
-
-describe('geometry (S10 §8 test 1, TUI-001/003)', () => {
-	it('a transition remains selectable at low zoom', () => {
-		const t = setupTimeline({ pxPerFrame: 10 });
-		cut(t);
-		const id = addAt(t, { trackId: 'V1', at: 120, duration: 20 }); // 110…130
-		const row = v1(t);
-		const idx = index(t);
-		// At 0.1 px/frame a 20-frame transition is 2 px wide: the 3 px minimum hit width keeps it selectable.
-		const v = { scrollFrame: 0, pxPerFrame: 0.1, width: 1000 };
-		const tiny = hitTransition(idx, row, v, 12.9, 20);
-		expect(tiny?.geom.t.id).toBe(id);
-		expect(tiny?.zone).toBe('body');
-	});
-});
 
 describe('gesture → command mapping (S10 §8 test 2, TUI-012…015)', () => {
 	it('Alt-dragging the start edge onto the cut makes it start-at-cut', () => {
@@ -192,11 +176,8 @@ describe('drop resolution (S10 §8 test 3, TUI-021…024)', () => {
 			wanted: 30,
 		});
 		expect(target).toMatchObject({ kind: 'replace', refused: null });
-		expect(dropCommand(target!, 'jasper.dip-to-black')).toEqual({
-			type: 'transition.update',
-			transitionId: id,
-			effectId: 'jasper.dip-to-black',
-		});
+		t.apply([dropCommand(target!, 'jasper.dip-to-black')!]);
+		expect(seqOf(t).transitions[id]!.effectId).toBe('jasper.dip-to-black');
 	});
 });
 

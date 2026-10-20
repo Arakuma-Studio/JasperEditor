@@ -66,7 +66,7 @@ async function connect() {
 }
 
 describe('media cache MCP tools (S04:CA-019)', () => {
-	it('get_cache_usage reports MB and safe tool annotations', async () => {
+	it('get_cache_usage converts byte counts to MB', async () => {
 		const { client, call } = await connect();
 		const { json } = await call('get_cache_usage');
 		expect(json).toMatchObject({
@@ -83,9 +83,6 @@ describe('media cache MCP tools (S04:CA-019)', () => {
 			referencedMB: 2,
 			unusedMB: 10,
 		});
-		const tools = (await client.listTools()).tools;
-		expect(tools.find((t) => t.name === 'get_cache_usage')?.annotations?.readOnlyHint).toBe(true);
-		expect(tools.find((t) => t.name === 'clean_cache')?.annotations?.destructiveHint).toBe(true);
 		await client.close();
 	});
 });

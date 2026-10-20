@@ -7,7 +7,7 @@
 // options into it. Documented in FFmpeg's filters manual, "Notes on filtergraph escaping".
 
 /** A filter option value (file path or text) escaped for both FFmpeg parsing levels. */
-export function filterValue(value: string): string {
+function filterValue(value: string): string {
 	const option = value.replace(/[\\':]/g, (c) => `\\${c}`);
 	return `'${option.replace(/'/g, "'\\''")}'`;
 }
@@ -16,6 +16,6 @@ export function filterValue(value: string): string {
  * A file path as a filter option value. On Windows backslashes become `/` (FFmpeg opens both there); elsewhere a
  * backslash is an ordinary file-name character and is kept (escaped).
  */
-export function filterPath(path: string, platform: NodeJS.Platform = process.platform): string {
-	return filterValue(platform === 'win32' ? path.replace(/\\/g, '/') : path);
+export function filterPath(path: string): string {
+	return filterValue(process.platform === 'win32' ? path.replace(/\\/g, '/') : path);
 }

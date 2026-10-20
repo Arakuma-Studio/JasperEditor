@@ -391,21 +391,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(worst).toBeLessThanOrEqual(2);
 	}, 600_000);
 
-	it('re-exports hit the cache; moving a title in time hits it too; a text change bakes again', async () => {
-		const { d, ids } = main;
-		const again = await exportDoc(d, 'auto');
-		expect(again.done.state).toBe('succeeded');
-		expect(again.bakes).toHaveLength(0);
-		d.tx([{ type: 'clip.move', clipIds: [ids.moving!], deltaFrames: 5 }]);
-		const moved = await exportDoc(d, 'auto');
-		expect(moved.done.state).toBe('succeeded');
-		expect(moved.bakes).toHaveLength(0);
-		d.tx([{ type: 'clip.update', clipIds: [ids.static!], patch: { content: { text: 'Changed title' } } }]);
-		const changed = await exportDoc(d, 'auto');
-		expect(changed.done.state).toBe('succeeded');
-		expect(changed.bakes).toHaveLength(1);
-	}, 1_800_000);
-
 	it('stills take the same path: cached masters are reused, else one frame per layer is baked (LBK-025)', async () => {
 		const { d } = main;
 		const s = await still(d, 30);

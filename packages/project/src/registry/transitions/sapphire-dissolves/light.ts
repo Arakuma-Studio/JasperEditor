@@ -72,7 +72,7 @@ vec3 streaks(sampler2D t, float thickness) {
 }`;
 
 /** Packs ray directions (degrees, clockwise) with lengths (frame px) and brightnesses for `u_rays`. */
-export function packRays(rays: readonly { angle: number; length: number; brightness: number }[]) {
+function packRays(rays: readonly { angle: number; length: number; brightness: number }[]) {
 	const floats: number[] = [];
 	for (const r of rays.slice(0, 16)) {
 		const a = (r.angle * Math.PI) / 180;
@@ -84,7 +84,7 @@ export function packRays(rays: readonly { angle: number; length: number; brightn
 }
 
 /** The 4 glint rays of a frame: X, Y, Diag1 (top right → bottom left), Diag2 (top left → bottom right). */
-export function glintRays(p: EffectParams, width: number, env: number, mix: number) {
+function glintRays(p: EffectParams, width: number, env: number, mix: number) {
 	const relSize = num(p.relFromSize, 1) * (1 - mix) + num(p.relToSize, 1) * mix;
 	const shrink = clamp(num(p.glintShrink, 0.8), 0, 1);
 	const L = Math.max(0, num(p.glintSize, 2)) * GLINT_UNIT * width * (1 - shrink + shrink * env) * relSize;
@@ -243,7 +243,7 @@ const GLARE_DESIGNS: Record<
 	anamorphic: { lines: 1, alt: 1, halo: 0.4, ring: 0, tint: [0.55, 0.75, 1], rainbow: 0, aspect: 0.6 },
 };
 
-export function glareRays(p: EffectParams, width: number, env: number) {
+function glareRays(p: EffectParams, width: number, env: number) {
 	const style = GLARE_DESIGNS[String(p.style) as keyof typeof GLARE_DESIGNS] ?? GLARE_DESIGNS.star4;
 	const size = Math.max(0, num(p.size, 2.4)) * GLINT_UNIT * width * (0.35 + 0.65 * env);
 	const n = Math.max(1, Math.min(8, Math.round(style.lines * Math.max(0, num(p.raysNumScale, 1)))));
@@ -389,7 +389,7 @@ export const MAX_HOLD = 6;
  * Flash counts of the current frame and the held ones (frame − h, h = 0 … Hold Frames): Max Flashes × the envelope
  * at that frame × a per-frame random reduction (Flash Randomness), with the decay weight of each held frame.
  */
-export function flashFrames(
+function flashFrames(
 	p: EffectParams,
 	ctx: { frame: number; duration: number; seed: number; progressAt(frame: number): number },
 ) {
@@ -568,10 +568,7 @@ const LENS_HOTSPOT: Record<
 	sun: { rays: 24, streak: 0, halo: 1.8, tint: [1, 0.9, 0.7] },
 };
 
-export function lensFlareUniforms(
-	p: EffectParams,
-	ctx: { width: number; height: number; env: number; t: number },
-) {
+function lensFlareUniforms(p: EffectParams, ctx: { width: number; height: number; env: number; t: number }) {
 	const lens =
 		(String(p.lens) as (typeof LENS_TYPES)[number]) in LENS_GHOSTS
 			? (String(p.lens) as (typeof LENS_TYPES)[number])
@@ -726,10 +723,7 @@ void main() {
 /** Most bolts drawn (Max Bolts is clamped to it). */
 export const MAX_BOLTS = 64;
 
-export function zapUniforms(
-	p: EffectParams,
-	ctx: { width: number; height: number; env: number; mix: number },
-) {
+function zapUniforms(p: EffectParams, ctx: { width: number; height: number; env: number; mix: number }) {
 	const s = vec2(p.start, [0.5, 0.5]);
 	const e = vec2(p.end, [0.5, 0.5]);
 	const glow = Math.max(0, num(p.zapGlowWidth, 0.224)) * SAPPHIRE_GLOW_UNIT * ctx.width;

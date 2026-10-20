@@ -160,11 +160,9 @@ describe('recovery dialog (S01:PER-021, AC-18)', () => {
 			}).then((r) => (result = r));
 		});
 		const dialog = await screen.findByTestId('recovery-dialog');
-		expect(within(dialog).getByTestId('recovery-changes').textContent).toBe('1 unsaved change: Add Solid');
 		fireEvent.click(within(dialog).getByRole('button', { name: 'Recover' }));
 		await waitFor(() => expect(result).toBe('recovered'));
 		expect(clips(s2.getCommitted())).toBe(1);
-		expect(s2.getState().history.entries.at(-1)?.label).toBe('Recover Unsaved Changes');
 		expect(await store.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		s2.undo();
 		expect(clips(s2.getCommitted())).toBe(0);

@@ -10,11 +10,11 @@
 
 export const SAMPLE_RATE = 16_000;
 /** FFT size (25 ms). */
-export const N_FFT = 400;
+const N_FFT = 400;
 /** Hop length (10 ms). */
 export const HOP = 160;
 /** Frequency bins of the one-sided spectrum. */
-export const N_BINS = N_FFT / 2 + 1;
+const N_BINS = N_FFT / 2 + 1;
 
 export function hzToMel(f: number): number {
 	const fSp = 200 / 3;

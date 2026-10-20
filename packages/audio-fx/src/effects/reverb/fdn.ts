@@ -42,7 +42,10 @@ export class FdnReverb {
 	readonly preLen: Smoothed;
 	private counter = 0;
 
-	constructor(readonly sampleRate: number) {
+	constructor(
+		readonly sampleRate: number,
+		private readonly channels = 2,
+	) {
 		const maxLine = Math.floor(BASE_MS[FDN - 1]! * MAX_SIZE_SCALE * 0.001 * sampleRate) + 4;
 		this.lines = Array.from({ length: FDN }, () => new Float32Array(maxLine));
 		const sm = (v: number) => Smoothed.withMs(v, sampleRate, 50);
@@ -88,7 +91,7 @@ export class FdnReverb {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = ch.length;
+		const nch = Math.min(ch.length, this.channels);
 		if (nch === 0) return;
 		const lineLen = this.lines[0]!.length;
 		const preLen = this.pre.length;
@@ -139,7 +142,7 @@ export class StudioReverb extends EffectBase {
 
 	constructor(sr: number, ch: number) {
 		super('jasper.audio.studio-reverb', sr, ch);
-		this.fdn = new FdnReverb(sr);
+		this.fdn = new FdnReverb(sr, ch);
 		this.applyParams(true);
 	}
 

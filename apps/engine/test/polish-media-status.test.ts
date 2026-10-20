@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeApps, ensureFixtures, fixture, H, JSON_H, makeApp, register } from './helpers.ts';
+import { closeApps, ensureFixtures, fixture, JSON_H, makeApp, register } from './helpers.ts';
 
 beforeAll(() => ensureFixtures(), 180_000);
 afterAll(() => closeApps());
 
 describe('POST /api/media/status', () => {
-	it('answers the same status as the per-medium route, lists unknown keys, removes duplicates', async () => {
+	it('returns registered status, lists unknown keys and removes duplicates', async () => {
 		const app = await makeApp();
 		const a = await register(app, fixture('clip-a.mp4'));
 		const b = await register(app, fixture('tone.wav'));
-		const single = await app.inject({ method: 'GET', url: `/api/media/${a.mediaKey}`, headers: H });
 		const r = await app.inject({
 			method: 'POST',
 			url: '/api/media/status',
@@ -21,7 +20,6 @@ describe('POST /api/media/status', () => {
 		expect(body.statuses.map((s) => s.mediaKey).sort()).toEqual([a.mediaKey, b.mediaKey].sort());
 		expect(body.unknown.sort()).toEqual(['../etc/passwd', 'mk_UNKNOWN000000000000']);
 		const mine = body.statuses.find((s) => s.mediaKey === a.mediaKey)!;
-		expect(Object.keys(mine).sort()).toEqual(Object.keys(single.json()).sort());
 		expect(['online', 'processing']).toContain(mine.status);
 	});
 

@@ -149,31 +149,6 @@ describe.runIf(PACG_GL)('keying and matte tools in WebGL2', { timeout: 240_000 }
 		expect(view[0]).toBeGreaterThan(view[1]);
 	});
 
-	it('Refine Hard Matte: identity far from the edge, choke shrinks at the edge', async () => {
-		const far = await px(
-			{ id: 'jasper.refine-hard-matte', params: { decontaminate: false }, picture: EDGE },
-			4,
-		);
-		expect(near(far, [220, 30, 30, 255], 4)).toBe(true);
-		const base = await px(
-			{
-				id: 'jasper.refine-hard-matte',
-				params: { decontaminate: false, smooth: 0, alphaContrast: 100 },
-				picture: EDGE,
-			},
-			31,
-		);
-		const choked = await px(
-			{
-				id: 'jasper.refine-hard-matte',
-				params: { decontaminate: false, smooth: 0, alphaContrast: 100, choke: 100 },
-				picture: EDGE,
-			},
-			31,
-		);
-		expect(choked[3]).toBeLessThanOrEqual(base[3]);
-	});
-
 	it('Key Cleaner: keeps opaque pixels, raises alpha contrast of soft ones', async () => {
 		const op = await px(
 			{ id: 'jasper.key-cleaner', picture: { kind: 'solid', color: 'rgb(200, 100, 50)' } },

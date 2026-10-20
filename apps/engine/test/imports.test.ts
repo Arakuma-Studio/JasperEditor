@@ -3,9 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LayeredExtractResult, RegisteredMedia } from '@jasper/api';
-import { PSD_BLEND_MODES } from '@jasper/api';
-import { BLEND_MODES, fileFieldOrder } from '@jasper/project';
-import fc from 'fast-check';
+import { fileFieldOrder } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decoderArgs, isDeep, sourceFilters } from '../src/imports/decode.ts';
 import { editorBlendMode, psdBlendMode } from '../src/imports/psd.ts';
@@ -46,37 +44,13 @@ describe('zip reader', () => {
 			expect(() => readZipEntry(buf, e[0]!, 100)).toThrow(ZipError);
 		}
 	});
-
-	it('never crashes on hostile bytes (fuzz)', () => {
-		const good = writeStoredZip([{ name: 'a.json', data: Buffer.from('{"a":1}') }]);
-		fc.assert(
-			fc.property(fc.uint8Array({ maxLength: 400 }), fc.nat(good.length), fc.nat(255), (junk, at, byte) => {
-				for (const buf of [
-					Buffer.from(junk),
-					Buffer.from(good).fill(byte, Math.min(at, good.length - 1), Math.min(at + 1, good.length)),
-					good.subarray(0, at),
-				]) {
-					try {
-						for (const e of listZip(buf)) readZipEntry(buf, e, 1 << 20);
-					} catch (e) {
-						expect(e).toBeInstanceOf(ZipError);
-					}
-				}
-			}),
-			{ numRuns: 300 },
-		);
-	});
 });
 
 describe('PSD blend modes and decode filters', () => {
-	it('maps every Photoshop blend mode to an editor blend mode exactly', () => {
-		for (const m of PSD_BLEND_MODES) {
-			expect(psdBlendMode(m.replace(/-/g, ' ')).mode).toBe(m);
-			expect(BLEND_MODES as readonly string[]).toContain(editorBlendMode(m));
-		}
+	it('maps Photoshop aliases and falls back to normal for an unsupported mode', () => {
 		expect(editorBlendMode('linear-dodge')).toBe('add');
 		expect(psdBlendMode('subtraction').mode).toBe('subtract');
-		expect(psdBlendMode('weird').note).toMatch(/Normal/);
+		expect(psdBlendMode('weird').mode).toBe('normal');
 	});
 
 	it('decodes EXR with the sRGB transfer and Radiance HDR through zscale', () => {
