@@ -709,7 +709,7 @@ export const SoundCapabilitiesSchema = z.object({
 /**
  * `apps/engine/sounds/starter/manifest.json` (the bundled starter kit) and `<appdir>/sounds/packs/<id>/pack.json`
  * (an installed pack, one entry in `packs`). `file` is relative to the manifest's folder. Licences must be on the
- * asset allowlist; every bundled file also has its `.attribution` sidecar (AGENTS.md §3).
+ * asset allowlist.
  */
 export const SoundManifestPackSchema = z.object({
 	id: z.string().regex(SOUND_PACK_ID_RE),

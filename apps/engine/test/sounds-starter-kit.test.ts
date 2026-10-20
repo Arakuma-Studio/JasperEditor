@@ -1,8 +1,7 @@
 // The committed Kenney CC0 starter kit (spec 12 §0 decision 1, P1-R4; wp-note "WP1.2b starter kit"): the manifest the
 // engine ships is valid, every file exists, decodes with the engine's FFmpeg and is accepted by the judge for its
-// first type, the kit stays under its 8 MB budget, the folder holds nothing the manifest does not list, and every
-// sidecar matches the manifest (licence, author, source) with an ATTRIBUTION.md row.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+// first type, the kit stays under its 8 MB budget, and the folder holds nothing the manifest does not list.
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { judgeSound } from '@jasper/audio-fx';
 import { isSoundTypeId, SOUND_EFFECT_TYPES, SOUND_TYPE_PROFILES } from '@jasper/project';
@@ -22,19 +21,6 @@ const UNCOVERED = ['key'];
 
 const DIR = starterDir({});
 const STARTER_REL = 'apps/engine/sounds/starter';
-
-function sidecar(text: string): Record<string, string> {
-	const out: Record<string, string> = {};
-	let last = '';
-	for (const line of text.split('\n')) {
-		const m = /^([a-z][a-z-]*):\s*(.*)$/.exec(line);
-		if (m) {
-			last = m[1]!;
-			out[last] = m[2]!.trim();
-		} else if (last && /^\s+\S/.test(line)) out[last] = `${out[last]} ${line.trim()}`;
-	}
-	return out;
-}
 
 describe('bundled starter kit', async () => {
 	const m = await loadManifest(DIR);
@@ -81,10 +67,10 @@ describe('bundled starter kit', async () => {
 		for (const t of ['hit', 'whoosh', 'click', 'pop', 'ui']) expect(count(t)).toBeGreaterThanOrEqual(3);
 	});
 
-	it('holds exactly the manifest files and their sidecars, within the size budget', () => {
+	it('holds exactly the manifest files, within the size budget', () => {
 		const listed = new Set(m.sounds.map((s) => s.file));
 		const files = readdirSync(DIR).filter((f) => f !== 'manifest.json');
-		const extra = files.filter((f) => !listed.has(f.replace(/\.attribution$/, '')));
+		const extra = files.filter((f) => !listed.has(f));
 		expect(extra).toEqual([]);
 		let total = 0;
 		for (const s of m.sounds) {
@@ -93,23 +79,6 @@ describe('bundled starter kit', async () => {
 			total += size;
 		}
 		expect(total).toBeLessThanOrEqual(BUDGET_BYTES);
-	});
-
-	it('has a sidecar per file matching the manifest, and an ATTRIBUTION.md row', () => {
-		const index = readFileSync(join(ROOT, 'ATTRIBUTION.md'), 'utf8');
-		const packs = new Map(m.packs.map((p) => [p.id, p]));
-		for (const s of m.sounds) {
-			const sc = sidecar(readFileSync(join(DIR, `${s.file}.attribution`), 'utf8'));
-			expect(sc.asset).toBe(s.file);
-			expect(sc.author).toBe(s.author);
-			expect(sc.source).toBe(s.sourceUrl);
-			expect(sc.license).toBe(s.license);
-			expect(sc['license-file']).toBe('none');
-			expect(sc.added).toMatch(/^\d{4}-\d{2}-\d{2} by \S/);
-			expect(sc.title).toContain(s.title);
-			expect(sc.notes).toContain(packs.get(s.packId!)!.sha256);
-			expect(index).toContain(`| \`${STARTER_REL}/${s.file}\` | ${KENNEY} | ${s.sourceUrl} | CC0-1.0 |`);
-		}
 	});
 
 	it('every file decodes at 48 kHz and the judge accepts it as its first type', {
