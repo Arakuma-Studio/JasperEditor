@@ -27,6 +27,8 @@ import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
+import { shapeTracerHandlers } from './handlers/shape-tracer.ts';
+import { shapeTrimHandlers } from './handlers/shape-trim.ts';
 import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
@@ -193,6 +195,10 @@ const LABELS: Record<CommandType, string> = {
 	'shape.convertToVector': 'Convert to Vector Shape',
 	'shape.editPath': 'Edit Shape Path',
 	'shape.convertToPath': 'Convert to Bezier Path',
+	'shape.animateTrim': 'Animate Trim Paths',
+	'shape.reversePathDirection': 'Reverse Path Direction',
+	'shape.addLine': 'New Line',
+	'shape.addTrimTracer': 'Add Trim Tracer',
 	'font.add': 'Add Font',
 	'textAnimator.add': 'Add Text Animator',
 	'textAnimator.remove': 'Remove Text Animator',
@@ -359,6 +365,8 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[trackerHandlers, 'wp-m2-track'],
 	[simplifyHandlers, 'wp-m3-trackui'],
 	[shapeHandlers, SHAPE_OWNER],
+	[shapeTrimHandlers, SHAPE_OWNER],
+	[shapeTracerHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
 	[textAnimatorHandlers, TEXT_ANIMATOR_OWNER],

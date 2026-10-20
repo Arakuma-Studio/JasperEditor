@@ -114,6 +114,24 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		transform: { position: [960, 900] },
 	},
+	// Trim Paths animations (docs/wp-notes/shapes.md § 12); "$line" is bound by the shape.addLine example.
+	'shape.addLine': {
+		type: 'shape.addLine',
+		orientation: 'horizontal',
+		at: 0,
+		durationFrames: 90,
+		strokeWidth: 12,
+		color: [1, 0.8, 0, 1],
+		ref: '$line',
+	},
+	'shape.animateTrim': {
+		type: 'shape.animateTrim',
+		clipIds: ['$line'],
+		style: 'inOut',
+		durationFrames: 20,
+		inOutLag: 0.5,
+	},
+	'shape.reversePathDirection': { type: 'shape.reversePathDirection', clipIds: ['$line'] },
 	// wp masks
 	'mask.add': {
 		type: 'mask.add',

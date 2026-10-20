@@ -16,6 +16,10 @@ whose result replaces the property's keyframed value. Design and verification: [
   3D Point, Layer and Dropdown Menu Control. They draw nothing; expressions read them, e.g.
   `effect("Slider Control")("Slider")`. Right-click an effect header ▸ Rename… to name an instance
   (`effect("Speed")("Slider")`).
+- **Shape paths:** `content("Group 1").content("Path 1").path` has After Effects' path methods (`points()`,
+  `pointOnPath(0.5)`, `tangentOnPath()`, `normalOnPath()`…, in the group's space); `item.toLayer(point)` maps a
+  shape item's space to layer pixels for `toComp`. The command `shape.addTrimTracer` (`apply_commands`) makes a clip
+  follow the moving end of a Trim Paths with such an expression.
 - **Graphs:** the Value and Velocity graphs of a property with an expression also draw the post-expression curve.
 - **Agents:** `set_expression`, `clear_expression`, `enable_expression`, `test_expression`, `get_property_values`,
   `list_expression_properties`, `list_expression_presets`, `add_expression_control` (MCP), or the commands
@@ -150,6 +154,8 @@ result may also be the item name); text a string; Layer Control a layer.
 | `thisLayer.text.sourceText` | Text clips: the Source Text (string; .style.fontSize, .fillColor, … read the style). |
 | `thisLayer.shape` | Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius (rectangles / ellipses); vector shapes: their contents. |
 | `content("Group 1").content("Rectangle Path 1").size` | Vector shapes: an item by name, index or id; groups have .content(name) and .transform (anchorPoint, position, scale, skew, skewAxis, rotation, opacity); items expose their properties by name (size, roundness, color, opacity, strokeWidth → width, start, end, offset, copies…). |
+| `content(…).toLayer(point, t = time)` | Ours (not After Effects): a point in the space a shape item’s values live in (its enclosing groups’ transforms) → layer pixels; follow with toComp for sequence pixels. fromLayer, toLayerVec and fromLayerVec likewise. |
+| `content("Trim Paths 1").trimPath(item)` | Ours: the path a Trim Paths measures, in its group’s space (operators above it applied, nested groups mapped in): one path item by id or name (Simultaneously), or with no argument all its paths laid end to end (Individually). It has the path methods; pointOnPath at the trim’s tip fraction lands on the trimmed stroke’s end. |
 | `thisLayer.audio` | Audio clips: audioLevels (Volume, dB) and pan. |
 | `thisLayer.params(name)` | Motion-graphic template parameters (read only). |
 | `thisLayer.marker` | Clip markers. |
@@ -176,6 +182,14 @@ result may also be the item name); text a string; Layer Control a layer.
 | `prop.name` | Property name. |
 | `prop.propertyIndex` | Index inside its group. |
 | `prop.preExpressionValue` | Keyframed value at the current time. |
+| `path.points(t = time)` | Vertices [[x, y], …] of a shape path item (Path, Rectangle, Ellipse, Polystar outline) in the space of its group (group transforms not applied, as in After Effects); Path Direction Reversed lists them the other way. |
+| `path.inTangents(t = time)` | Incoming tangent handles, relative to their vertex. |
+| `path.outTangents(t = time)` | Outgoing tangent handles, relative to their vertex. |
+| `path.isClosed()` | Whether the path is closed. |
+| `path.pointOnPath(percentage = 0.5, t = time)` | Point at a fraction 0…1 of the arc length (clamped, closed paths do not wrap, as in After Effects), in the group’s space. |
+| `path.tangentOnPath(percentage = 0.5, t = time)` | Unit tangent (direction of travel) there. |
+| `path.normalOnPath(percentage = 0.5, t = time)` | Unit normal there: the tangent turned a quarter, [-ty, tx]. |
+| `createPath(points, inTangents, outTangents, isClosed)` | Not available: no property takes a path value (shape and mask paths take no expressions); raises an error. |
 
 ### Keyframe (`key(n)`)
 
