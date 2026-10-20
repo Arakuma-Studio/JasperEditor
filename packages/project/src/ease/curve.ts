@@ -128,3 +128,70 @@ export function easesToCubic(easeOut: Ease, easeIn: Ease): CubicEase {
 		y2: 1 - inInfluence * finiteOr(easeIn.slope, 0),
 	};
 }
+
+/** One cubic Bézier piece of a curve: start, its out handle, the end's in handle, end — [x, y] each. */
+export type EaseSegment = readonly [
+	readonly [number, number],
+	readonly [number, number],
+	readonly [number, number],
+	readonly [number, number],
+];
+
+/** The curve as cubic pieces in order, missing multi-curve handles filled in as linear (one third along the chord). */
+export function easeCurveSegments(curve: EaseCurve): EaseSegment[] {
+	if (curve.kind === 'cubic')
+		return [
+			[
+				[0, 0],
+				[curve.x1, curve.y1],
+				[curve.x2, curve.y2],
+				[1, 1],
+			],
+		];
+	const out: EaseSegment[] = [];
+	for (let i = 0; i + 1 < curve.points.length; i++) {
+		const a = curve.points[i] as EaseCurvePoint;
+		const b = curve.points[i + 1] as EaseCurvePoint;
+		const dx = b.x - a.x;
+		const dy = b.y - a.y;
+		out.push([
+			[a.x, a.y],
+			a.out ? [a.out[0], a.out[1]] : [a.x + dx / 3, a.y + dy / 3],
+			b.in ? [b.in[0], b.in[1]] : [b.x - dx / 3, b.y - dy / 3],
+			[b.x, b.y],
+		]);
+	}
+	return out;
+}
+
+const bez = (t: number, p0: number, p1: number, p2: number, p3: number) => {
+	const s = 1 - t;
+	return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3;
+};
+
+/**
+ * Progress y at time fraction x ∈ [0, 1] (clamped). Each piece's x(t) is monotone because its handles stay inside
+ * the piece's x range, so bisection finds the unique t (to below 1e-15 in 64 halvings).
+ */
+export function evaluateEaseCurve(curve: EaseCurve, x: number): number {
+	const u = Math.min(1, Math.max(0, Number.isFinite(x) ? x : 0));
+	const segments = easeCurveSegments(curve);
+	let seg = segments[segments.length - 1] as EaseSegment;
+	for (const s of segments) {
+		if (u <= s[3][0]) {
+			seg = s;
+			break;
+		}
+	}
+	const [p0, p1, p2, p3] = seg;
+	if (u <= p0[0]) return p0[1];
+	if (u >= p3[0]) return p3[1];
+	let lo = 0;
+	let hi = 1;
+	for (let i = 0; i < 64; i++) {
+		const mid = (lo + hi) / 2;
+		if (bez(mid, p0[0], p1[0], p2[0], p3[0]) < u) lo = mid;
+		else hi = mid;
+	}
+	return bez((lo + hi) / 2, p0[1], p1[1], p2[1], p3[1]);
+}

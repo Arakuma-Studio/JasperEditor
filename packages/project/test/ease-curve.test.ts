@@ -6,6 +6,7 @@ import {
 	cubicToEases,
 	EaseCurveSchema,
 	easesToCubic,
+	evaluateEaseCurve,
 	MIN_EASE_INFLUENCE,
 } from '../src/index.ts';
 
@@ -102,5 +103,28 @@ describe('ease curves ↔ keyframe eases', () => {
 			],
 		};
 		expect(EaseCurveSchema.safeParse(badHandle).success).toBe(false);
+	});
+	it('evaluates cubic curves like CSS and multi curves through their points', () => {
+		fc.assert(
+			fc.property(cubicArb, fc.double({ min: 0, max: 1, noNaN: true }), (c, u) => {
+				expect(evaluateEaseCurve(c, u)).toBeCloseTo(cssCubic(c, u), 9);
+			}),
+		);
+		const multi = {
+			kind: 'multi' as const,
+			points: [
+				{ x: 0, y: 0 },
+				{ x: 0.5, y: 1.2, in: [0.4, 1.2] as [number, number], out: [0.6, 1.2] as [number, number] },
+				{ x: 1, y: 1 },
+			],
+		};
+		expect(evaluateEaseCurve(multi, 0)).toBe(0);
+		expect(evaluateEaseCurve(multi, 0.5)).toBeCloseTo(1.2, 12);
+		expect(evaluateEaseCurve(multi, 1)).toBe(1);
+		expect(evaluateEaseCurve(multi, 0.25)).toBeCloseTo(
+			cssCubic({ kind: 'cubic', x1: 1 / 3, y1: 1 / 3, x2: 0.8, y2: 1 }, 0.5) * 1.2,
+			9,
+		);
+		expect(evaluateEaseCurve(multi, Number.NaN)).toBe(0);
 	});
 });
