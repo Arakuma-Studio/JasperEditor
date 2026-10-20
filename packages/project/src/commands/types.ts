@@ -28,6 +28,8 @@ export const ERROR_CODES = [
 	'E_NOT_OWNER',
 	'E_NOT_IMPLEMENTED',
 	'E_APPROVAL_DENIED',
+	/** Only the user can do this (an agent acknowledging a Sound Check error, spec 12 §4 P6-E4): not retryable. */
+	'E_APPROVAL_REQUIRED',
 	'E_APPROVAL_TIMEOUT',
 	'E_NO_SESSION',
 	'E_INVARIANT',
@@ -74,6 +76,8 @@ export const WARNING_CODES = [
 	'W_EASE_COUNT_MISMATCH',
 	/** keyframe assistant: keys in an eased / cleaned span stopped roving. */
 	'W_EASE_ROVING_CLEARED',
+	/** sound design: a cue's stop-before / build skipped a place (its track is locked, or its automation is too dense). */
+	'W_MIX_SKIPPED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */
@@ -132,6 +136,11 @@ export interface CommandContext {
 	 * `full`, or `verify` (both, must agree; the default under tests). Default: `invariantMode()`.
 	 */
 	invariants?: 'full' | 'incremental' | 'verify';
+	/**
+	 * Called before each command of the transaction runs, with its index. Proposal previews apply many items in one
+	 * transaction and switch `ids` to the item a command belongs to (each item keeps its own seeded ids).
+	 */
+	onCommand?: (index: number) => void;
 }
 
 export class CommandError extends Error {

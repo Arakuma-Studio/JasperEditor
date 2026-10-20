@@ -35,10 +35,20 @@ import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PREVIEWS_GUIDE, registerPreviewTools } from './tools/previews.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
+import { PROPOSALS_GUIDE, registerProposalTools } from './tools/proposals.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { ROTO_GUIDE, registerRotoTools } from './tools/roto.ts';
 import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerSimWarpTools, SIM_WARP_GUIDE } from './tools/sim-warp.ts';
+import { registerSoundTools, SOUND_GUIDE } from './tools/sound.ts';
+import { registerSoundBedTools } from './tools/sound-beds.ts';
+import { registerSoundCheckTools } from './tools/sound-check.ts';
+import { registerSoundDesignTools } from './tools/sound-design.ts';
+import { registerSoundListenTools } from './tools/sound-listen.ts';
+import { registerSoundMotionTools } from './tools/sound-motion.ts';
+import { registerSoundProfileTools } from './tools/sound-profile.ts';
+import { registerSoundSemanticTools } from './tools/sound-semantic.ts';
+import { registerSoundTimelineTools } from './tools/sound-timeline.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
@@ -105,6 +115,8 @@ const FULL_GUIDE = [
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
 	AUDIO_FX_GUIDE,
+	SOUND_GUIDE,
+	PROPOSALS_GUIDE,
 	CAPTIONS_GUIDE,
 	SPEECH_GUIDE,
 	ROTO_GUIDE,
@@ -168,6 +180,16 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);
 	registerAudioFxTools(ctx);
+	registerSoundTools(ctx);
+	registerSoundDesignTools(ctx);
+	registerSoundBedTools(ctx);
+	registerSoundCheckTools(ctx);
+	registerSoundMotionTools(ctx);
+	registerSoundTimelineTools(ctx);
+	registerSoundListenTools(ctx);
+	registerSoundSemanticTools(ctx);
+	registerSoundProfileTools(ctx);
+	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);
 	registerRotoTools(ctx);

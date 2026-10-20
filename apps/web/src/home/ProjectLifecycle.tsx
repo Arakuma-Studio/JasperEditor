@@ -1,4 +1,4 @@
-import { TERMINAL_JOB_STATES } from '@jasper/api';
+import { type ExportWarningParams, TERMINAL_JOB_STATES } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	type AutosaveStatus,
@@ -18,12 +18,15 @@ import { useNavigate } from 'react-router';
 import { useAgentBridge } from '../agent-bridge/index.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
+import { exportWarningText } from '../export/warning-text.ts';
 import { useLanguageEpoch } from '../i18n/react.ts';
+import { t } from '../i18n/runtime.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
 import { ProjectDialogHost } from '../panels/project/dialogs.tsx';
 import { activeProjectBin } from '../panels/project/instances.ts';
+import { useProposalsSync } from '../proposals/state.ts';
 import { autoSavePolicy } from '../runtime/save.ts';
 import { useEngine } from '../state/engine.tsx';
 import { registerImportService } from '../state/services.ts';
@@ -86,6 +89,8 @@ function LifecycleBody(props: {
 }) {
 	const { session } = props;
 	useAgentBridge(session);
+	// spec 12 §2.5: the session's proposals follow the engine (list, proposal.changed)
+	useProposalsSync(session);
 	const engine = useEngine();
 	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();
@@ -171,14 +176,16 @@ function LifecycleBody(props: {
 				if (!TERMINAL_JOB_STATES.has(job.state)) return;
 				const fileName = takeTrackedExport(job.id);
 				if (fileName === null) return;
-				if (job.state === 'succeeded')
+				if (job.state === 'succeeded') {
+					const detail = exportResultDetail(job.result);
 					notices.push({
 						kind: 'success',
 						message: `Export finished: ${fileName}`,
+						...(detail ? { detail } : {}),
 						action: { label: 'Download', href: engine.client.renderOutputUrl(job.id) },
 						durationMs: null,
 					});
-				else if (job.state !== 'cancelled')
+				} else if (job.state !== 'cancelled')
 					notices.push({
 						kind: 'error',
 						message: `Export failed: ${fileName}`,
@@ -391,4 +398,46 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 			</Banner>,
 		);
 	return <>{banners}</>;
+}
+
+/**
+ * Result warnings the finished-export notice repeats: the sound ones, a file not written in the requested container
+ * or audio codec (WP6.5a, AGENTS §4), and delivered audio that misses its loudness or true-peak target.
+ */
+const SHOWN_RESULT_WARNING =
+	/^(W_SOUND_|OUTPUT_CONTAINER_CHANGED$|AUDIO_CODEC_CHANGED$|AUDIO_TRUE_PEAK_OVER$|AUDIO_LOUDNESS_CEILING$)/;
+
+/**
+ * spec 12 §2.11: what the finished export says about sound credits — the credits file it wrote and its sound warnings
+ * (W_SOUND_CREDITS, W_SOUND_CHECK_STALE…), and a container / audio codec other than the one asked for. Undefined when
+ * there is nothing to say.
+ */
+export function exportResultDetail(result: unknown): string | undefined {
+	const r = result as
+		| {
+				credits?: { count?: unknown; name?: unknown };
+				warnings?: { code?: unknown; message?: unknown; params?: unknown }[];
+		  }
+		| undefined;
+	const parts: string[] = [];
+	const c = r?.credits;
+	if (c && typeof c.name === 'string' && typeof c.count === 'number')
+		parts.push(
+			c.count === 1
+				? t('Sound credits file written (1 sound).')
+				: t('Sound credits file written ({0} sounds).', c.count),
+		);
+	else if (c && c.count === 0)
+		parts.push(t('No library sound is heard in the export: no credits file was written.'));
+	// the engine's code + params in the UI language (its English message when they cannot be read)
+	for (const w of Array.isArray(r?.warnings) ? r.warnings : [])
+		if (typeof w?.code === 'string' && SHOWN_RESULT_WARNING.test(w.code) && typeof w.message === 'string')
+			parts.push(
+				exportWarningText({
+					code: w.code,
+					message: w.message,
+					params: w.params && typeof w.params === 'object' ? (w.params as ExportWarningParams) : undefined,
+				}),
+			);
+	return parts.length ? parts.join(' ') : undefined;
 }

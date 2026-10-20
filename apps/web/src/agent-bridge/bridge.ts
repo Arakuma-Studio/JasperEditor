@@ -6,9 +6,12 @@ import {
 	applyTransaction,
 	approvalReasons,
 	checkAgentTxLimits,
+	createPresetIdSource,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
 	historyPseudoCommand,
+	ID_BODY_RE,
+	MAX_PRESET_IDS,
 	makeEnvelope,
 	normalizeAgentTransaction,
 	resolveAgentAddresses,
@@ -22,6 +25,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
+import { runBeforeAgentTransaction } from './hooks.ts';
 import { AgentRelayClient, type RelayState } from './relay-client.ts';
 import type { AgentBridgeEvent, JasperAgentApi } from './types.ts';
 
@@ -67,6 +71,16 @@ export type TransactOptions = {
 	via?: ActivityEntry['via'];
 	/** Agent name when the transaction's origin is not an agent. */
 	fallbackAgent?: string;
+	/**
+	 * The engine relays the user's own decision made in this window (accepting a proposal with the editor key): the
+	 * edit is the user's (History "Accept …"), already approved, and not an agent activity.
+	 */
+	asUser?: boolean;
+	/**
+	 * Id bodies the engine journalled for this transaction (a proposal accept, `createPresetIdSource`): its entities are
+	 * created with them, so an engine that stopped before it heard the answer can find out whether it applied.
+	 */
+	ids?: readonly string[];
 };
 
 export type AgentBridgeOptions = {
@@ -324,7 +338,10 @@ export class AgentBridge {
 		if (unknownKeys.length) return this.record(tx, via, { ok: false, revision, errors: unknownKeys });
 
 		const pseudo = historyPseudoCommand(tx);
-		if (pseudo) return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));
+		if (pseudo) {
+			runBeforeAgentTransaction(this.session);
+			return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));
+		}
 
 		const addr = resolveAgentAddresses(this.session.getCommitted(), tx.commands, {
 			sequenceId: tx.sequenceId,
@@ -347,14 +364,16 @@ export class AgentBridge {
 		}
 		const input: TxInput = {
 			label: tx.label,
-			origin: tx.origin,
+			origin: opts.asUser ? 'user' : tx.origin,
 			commands: addr.commands as TxInput['commands'],
 			...(tx.expectedRevision !== undefined ? { expectedRevision: tx.expectedRevision } : {}),
 			...(tx.dryRun ? { dryRun: true } : {}),
 			...(tx.sequenceId ? { sequenceId: tx.sequenceId } : {}),
 		};
-		const result = await this.session.submit(input);
-		return this.record(tx, via, result);
+		runBeforeAgentTransaction(this.session);
+		const ids = opts.ids?.length ? createPresetIdSource(opts.ids, this.session.ctx.ids) : null;
+		const result = await this.session.submit(ids ? { ...input, ids } : input);
+		return opts.asUser ? result : this.record(tx, via, result);
 	}
 
 	/** history.undo / history.redo for agents: only their own entry (S01:UND-008). */
@@ -512,8 +531,26 @@ export class AgentBridge {
 				const result = await this.query(String(p.query), p.args ?? {});
 				return { result: { result, revision: this.session.revision } };
 			}
-			const p = (payload ?? {}) as { transaction?: AgentTxInput; approved?: boolean };
-			const result = await this.transact(p.transaction ?? {}, { via: 'relay', approved: !!p.approved });
+			const p = (payload ?? {}) as {
+				transaction?: AgentTxInput;
+				approved?: boolean;
+				asUser?: boolean;
+				ids?: unknown;
+			};
+			// `asUser` comes from the engine only for a request that carried this window's editor key.
+			const asUser = p.asUser === true && p.approved === true;
+			// `ids`: the engine's journalled id bodies of a proposal accept (well-formed ones only, bounded).
+			const ids = Array.isArray(p.ids)
+				? p.ids
+						.slice(0, MAX_PRESET_IDS)
+						.filter((b): b is string => typeof b === 'string' && ID_BODY_RE.test(b))
+				: [];
+			const result = await this.transact(p.transaction ?? {}, {
+				via: 'relay',
+				approved: !!p.approved,
+				...(asUser ? { asUser: true } : {}),
+				...(ids.length ? { ids } : {}),
+			});
 			return { result };
 		} catch (e) {
 			if (e instanceof AgentQueryError || e instanceof UiAutomationError)

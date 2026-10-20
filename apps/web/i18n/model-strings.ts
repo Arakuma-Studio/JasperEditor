@@ -1,5 +1,6 @@
 // UI-6: the model's names the UI shows (effects and their parameters / options, transitions, command labels shown in
-// History and menus, property labels of the inspectors) → apps/web/src/i18n/model-strings.json (`pnpm i18n:model`).
+// History and menus, property labels of the inspectors, sound-design label and refusal templates)
+// → apps/web/src/i18n/model-strings.json (`pnpm i18n:model`).
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,6 +69,18 @@ for (const p of project.builtinEssentialPresets()) add(p.name);
 // Ease presets: `group` holds a group id, so only preset and group names are display strings.
 for (const p of project.builtinEasePresets()) add(p.name);
 for (const g of project.BUILTIN_EASE_GROUPS) add(g.name);
+// Delivery presets (sound design, Phase 4): the names and where their numbers come from (Delivery Target…).
+for (const p of Object.values(project.DELIVERY_PRESETS)) {
+	add(p.label);
+	add(p.source);
+}
+// Sound design: the History labels agents' tools compose and the refusals the editor shows in notices, as templates
+// (`{0}`… are ids, titles and numbers); the runtime translates a text that matches one (`translateName`).
+for (const t of project.SOUND_MODEL_STRINGS) add(t);
+// Proposals: why a previewed item fails (WP6.5b: an invariant broken only together with the items before it).
+for (const t of project.PROPOSAL_MODEL_STRINGS) add(t);
+// The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
+add('Agent');
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
 writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);

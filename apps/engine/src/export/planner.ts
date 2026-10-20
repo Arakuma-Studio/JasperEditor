@@ -37,6 +37,7 @@ import {
 	transitionSpec,
 	warpExportIssues,
 } from '@jasper/project';
+import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
@@ -49,9 +50,15 @@ import {
 	missingTemplatesMessage,
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
-import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
+import {
+	type EncoderRequest,
+	fitOutputFormat,
+	LEGACY_X264_CHOICE,
+	outputFormatChanges,
+} from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
+import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
 
 // audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
@@ -354,6 +361,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				message: `The sequence is ${f.fieldOrder} field first; exports are progressive (field-rendered interlaced output is not available)`,
 			});
 	}
+	// spec 12 §2.11: sounds heard that need a credit without a credits sidecar; a stale / failed Sound Check (info).
+	warnings.push(
+		...soundPlanWarnings(document, input.sequenceId, snapshot, settings, input.still ? { still: true } : {}),
+	);
 	if (draftProxies.length)
 		warnings.push({
 			code: 'DRAFT_PROXIES',
@@ -473,13 +484,20 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		);
 	const audioOut = audioOutputOf(seq, settings);
 	const video0 = settings.video;
+	// The requested container and audio codec are written where they fit the codec (WP6.5a); what does not fit is
+	// reported below (OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED), never changed silently (AGENTS §4).
+	const want = {
+		container: settings.container,
+		...(settings.audio && !settings.videoOnly ? { audio: settings.audio.codec } : {}),
+	};
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
 				purpose: 'export',
 				codec: video0?.codec ?? 'h264',
 				...(video0?.encoder ? { encoder: video0.encoder } : {}),
+				...want,
 			})
-		: LEGACY_X264_CHOICE;
+		: { ...LEGACY_X264_CHOICE, ...fitOutputFormat('h264', 'export', true, want) };
 	if (!deps.capabilities.native)
 		blockers.push({ path: 'native', reason: 'ffmpeg (with a video encoder and aac) is not available' });
 	else if (!encoder && !input.still)
@@ -556,6 +574,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		}
 	}
 	if (encoder?.message) warnings.push({ code: 'ENCODER_FALLBACK', message: encoder.message });
+	if (!input.still)
+		warnings.push(
+			// no native encoder: only the dev-only Remotion GPL path can write, and it writes H.264 + AAC in MP4
+			...outputFormatChanges(encoder ?? { codec: 'h264', container: 'mp4', audioEncoder: 'aac' }, want),
+		);
 
 	const seqFps = seq.settings.frameRate;
 	const video = settings.video;
@@ -750,7 +773,22 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		],
 		audio: {
 			mode: 'native-mix',
-			...(audioOut.normalize ? { normalize: audioOut.normalize } : {}),
+			...(audioOut.normalize
+				? {
+						normalize: (() => {
+							const headroom = codecHeadroomDb({
+								codec: audioCodecOf(encoder, output),
+								bitrateKbps: output.audioBitrateKbps,
+								channels: output.audioChannels,
+							});
+							return {
+								...audioOut.normalize,
+								limiterCeilingDb: audioOut.normalize.truePeakDb - headroom,
+								codecHeadroomDb: headroom,
+							};
+						})(),
+					}
+				: {}),
 			sampleRate: output.audioSampleRate,
 			channels: output.audioChannels,
 			codec: audioCodecOf(encoder, output),
@@ -821,7 +859,8 @@ export function audioCodecOf(encoder: EncoderChoice | null, output: Pick<OutputS
 	return base;
 }
 
-function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
+/** The snapshot handle of an engine-local media file (exports, bed renders). */
+export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 	const r = m.record;
 	return {
 		url: m.path,

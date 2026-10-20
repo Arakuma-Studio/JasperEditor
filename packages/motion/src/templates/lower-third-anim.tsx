@@ -3,8 +3,11 @@
 // the panel width comes from the deterministic text-width estimate shared with the fframes templates.
 import {
 	estimateTextWidth,
+	LOWER_THIRD_ANIM_BAR_W,
+	LOWER_THIRD_ANIM_PHASES,
 	type LowerThirdAnimParams,
 	lowerThirdAnimParams,
+	lowerThirdWordPhase,
 	rgbaCss,
 } from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
@@ -24,14 +27,14 @@ import type { AnimeTemplateProps } from './types.ts';
 /** `s` bar scale, `w` panel reveal 0…1, `o`/`x` word opacity and offset (px, towards the bar). */
 type Values = { s: number; w: number; o: number; x: number };
 
-type LowerThirdAnimBuildInput = TemplateTiming & {
+export type LowerThirdAnimBuildInput = TemplateTiming & {
 	nameWords: number;
 	roleWords: number;
 	ease: string;
 };
 
 /** Targets `[bar, panel, ...nameWords, ...roleWords]`. */
-function buildLowerThirdAnim(input: LowerThirdAnimBuildInput): {
+export function buildLowerThirdAnim(input: LowerThirdAnimBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
@@ -41,22 +44,23 @@ function buildLowerThirdAnim(input: LowerThirdAnimBuildInput): {
 	const word = (): Values => ({ s: 1, w: 1, o: 0, x: -24 });
 	const names = Array.from({ length: input.nameWords }, word);
 	const roles = Array.from({ length: input.roleWords }, word);
-	addInOut(tl, input, bar, { s: [0, 1] }, { at: 0, dur: 0.3, ease: 'outExpo', outEase: 'inExpo' });
-	addInOut(tl, input, panel, { w: [0, 1] }, { at: 0.15, dur: 0.5, ease: input.ease, outEase: 'inOut' });
+	// the phases are shared with the sound-design motion model (@jasper/mg-templates)
+	const P = LOWER_THIRD_ANIM_PHASES;
+	addInOut(tl, input, bar, { s: [0, 1] }, P.bar);
+	addInOut(tl, input, panel, { w: [0, 1] }, { ...P.panel, ease: input.ease });
 	const words = (list: Values[], from: number, to: number) => {
 		const n = list.length;
-		const dur = Math.min(0.35, to - from);
 		list.forEach((w, i) => {
-			const at = n > 1 ? from + (i / (n - 1)) * (to - from - dur) : from;
+			const { at, dur } = lowerThirdWordPhase(i, n, from, to);
 			addInOut(tl, input, w, { o: [0, 1], x: [-24, 0] }, { at, dur, ease: input.ease, outEase: 'in' });
 		});
 	};
-	words(names, 0.35, 0.85);
-	words(roles, 0.5, 1);
+	words(names, P.names.from, P.names.to);
+	words(roles, P.roles.from, P.roles.to);
 	return { timeline: tl, targets: [bar, panel, ...names, ...roles] };
 }
 
-const BAR_W = 10;
+const BAR_W = LOWER_THIRD_ANIM_BAR_W;
 
 function Words({
 	segments,

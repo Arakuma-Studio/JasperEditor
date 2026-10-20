@@ -9,9 +9,11 @@ import { cx, Dialog, Icon, type IconId, Kbd } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { listCommands } from '../../commands/registry.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
+import { t } from '../../i18n/runtime.ts';
 import type { PanelDefinition } from '../../panels/types.ts';
 import { recentCommands, useCommandCtx, useShellRuntime } from '../context.tsx';
 import { commandState } from '../menus/resolve.ts';
+import { workspaceName } from '../workspaces/definitions.ts';
 import type { WorkspaceStore } from '../workspaces/store.ts';
 import { fuzzyScore, parsePaletteQuery } from './fuzzy.ts';
 
@@ -110,7 +112,7 @@ function buildPaletteRows(
 		src.workspaces
 			.list()
 			.map((w) => {
-				const label = `Workspace: ${w.name}`;
+				const label = t('Workspace: {0}', workspaceName(w));
 				const score = text ? fuzzyScore(text, label) : 0;
 				const n = src.workspaces.shortcutNumber(w.id);
 				return score === null

@@ -162,12 +162,13 @@ export function sceneScores(sigs: readonly SceneSignature[]): number[] {
 
 /**
  * Frames that start a new shot (indices into `scores`, never 0). `sigs` (the same frames' signatures) enables the
- * flash test; without them every peak counts.
+ * flash test; without them every peak counts. A streaming caller that cannot keep every signature (a long reference
+ * film, WP-E4) passes the flash test's answers instead: `flash(i)` = `sceneFlashTest` of frames i − 3 … i + 2.
  */
 export function detectSceneCuts(
 	scores: readonly number[],
 	o: SceneOptions = DEFAULT_SCENE_OPTIONS,
-	sigs?: readonly SceneSignature[],
+	sigs?: readonly SceneSignature[] | ((i: number) => boolean),
 ): number[] {
 	const thr = sceneThreshold(o.sensitivity);
 	const ratio = o.peakRatio ?? 3;
@@ -184,7 +185,7 @@ export function detectSceneCuts(
 		nb.sort((a, b) => a - b);
 		const med = nb[nb.length >> 1] ?? 0;
 		if (s < ratio * Math.max(med, 0.02)) continue;
-		if (sigs && isFlash(sigs, i, thr)) continue;
+		if (sigs && (typeof sigs === 'function' ? sigs(i) : isFlash(sigs, i, thr))) continue;
 		const last = cuts[cuts.length - 1];
 		if (last !== undefined && i - last < minShot) {
 			if (s > scores[last]!) {
@@ -201,9 +202,17 @@ export function detectSceneCuts(
  * at i), or frame i looks like frame i − 2 or i − 3 (it ended at i).
  */
 function isFlash(sigs: readonly SceneSignature[], i: number, thr: number): boolean {
+	return sceneFlashTest((k) => sigs[i + k], thr);
+}
+
+/**
+ * The flash test of frame i from its neighbours `at(k)` = frame i + k (k = −3 … 2; undefined outside the clip), at the
+ * threshold of the sensitivity (`sceneThreshold`).
+ */
+export function sceneFlashTest(at: (k: number) => SceneSignature | undefined, thr: number): boolean {
 	const near = (a: SceneSignature | undefined, b: SceneSignature | undefined) =>
 		!!a && !!b && sceneDissimilarity(a, b) < thr * 0.5;
-	const before = sigs[i - 1];
-	if (near(before, sigs[i + 1]) || near(before, sigs[i + 2])) return true;
-	return near(sigs[i], sigs[i - 2]) || near(sigs[i], sigs[i - 3]);
+	const before = at(-1);
+	if (near(before, at(1)) || near(before, at(2))) return true;
+	return near(at(0), at(-2)) || near(at(0), at(-3));
 }

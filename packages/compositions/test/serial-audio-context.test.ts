@@ -59,7 +59,13 @@ describe.runIf(run)('AudioContext resume/suspend races', () => {
 		await fixed.setContent('<!doctype html><html><body></body></html>');
 		await fixed.evaluate(`(${installSerialAudioContext.toString()})()`);
 		const after = await fixed.evaluate(probe);
-		expect(after.every((x) => x.resume === 'ok')).toBe(true);
-		expect(after.every((x) => x.moved)).toBe(true);
+		expect(
+			after.every((x) => x.resume === 'ok'),
+			JSON.stringify(after),
+		).toBe(true);
+		expect(
+			after.every((x) => x.moved),
+			JSON.stringify(after),
+		).toBe(true);
 	}, 60_000);
 });

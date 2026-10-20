@@ -117,6 +117,204 @@ describe('EngineClient requests', () => {
 		expect(c.mediaUrl('mk_abc', { peaks: 1 })).toBe('/media/mk_abc/peaks/1.bin');
 		expect(c.renderOutputUrl('job_1')).toBe('/renders/job_1/output');
 		expect(c.eventsUrl({ since: 5, projectId: 'p' })).toBe('/events?since=5&projectId=p');
+		expect(c.soundAudioUrl('snd_0123456789abcdef')).toBe('/api/sounds/snd_0123456789abcdef/audio');
+	});
+
+	it('searches sounds with a typed request and posts sound routes', async () => {
+		const empty = {
+			snapshotHash: 'h',
+			librarySize: 0,
+			total: 0,
+			offset: 0,
+			results: [],
+			facets: { types: {}, families: {}, licenses: {}, sources: {} },
+			indexing: false,
+		};
+		const m = mockFetch((url, init) => {
+			if (url.startsWith('/api/sounds?')) return json(empty);
+			if (url === '/api/sounds/index' && init.method === 'POST') return json({ ...job, kind: 'sound-index' });
+			if (url === '/api/sounds/roots' && init.method === 'PUT')
+				return json({ roots: [], local: true, job: null, removedSounds: 0 });
+			return json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404);
+		});
+		const c = new EngineClient({ fetch: m.fetch });
+		expect(
+			(await c.searchSounds({ q: 'door slam', types: ['hit', 'thump'], sources: [], limit: 5 })).total,
+		).toBe(0);
+		expect(m.calls[0]!.url).toBe('/api/sounds?q=door%20slam&types=hit%2Cthump&limit=5');
+		expect((await c.indexSounds({ full: true })).kind).toBe('sound-index');
+		expect(JSON.parse(String(m.calls[1]!.init.body))).toEqual({ full: true });
+		expect((await c.putSoundRoots({ roots: [] })).removedSounds).toBe(0);
+		await expect(c.getSound('snd_0123456789abcdef')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+	});
+
+	it('lists, installs and removes sound packs (spec 12 P6-R1)', async () => {
+		const m = mockFetch((url, init) => {
+			if (url === '/api/sounds/packs' && (init.method ?? 'GET') === 'GET')
+				return json({ packs: [], catalogErrors: [] });
+			if (url === '/api/sounds/packs/kenney-ui-audio/install' && init.method === 'POST')
+				return json({ ...job, kind: 'sound-pack-install' }, 202);
+			if (url === '/api/sounds/packs/kenney-ui-audio' && init.method === 'DELETE')
+				return json({
+					packId: 'kenney-ui-audio',
+					removed: true,
+					removedSounds: 45,
+					freedBytes: 1,
+					job: null,
+				});
+			return json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404);
+		});
+		const c = new EngineClient({ fetch: m.fetch });
+		expect((await c.listSoundPacks()).packs).toEqual([]);
+		expect((await c.installSoundPack('kenney-ui-audio')).kind).toBe('sound-pack-install');
+		expect((await c.removeSoundPack('kenney-ui-audio')).removedSounds).toBe(45);
+		await expect(c.installSoundPack('nope')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+	});
+
+	it('posts the cue derivation request (spec 12 §2.8)', async () => {
+		const m = mockFetch((url, init) =>
+			url === '/api/sound-design/cues' && init.method === 'POST'
+				? json({
+						projectId: 'p1',
+						sequenceId: 'seq_1',
+						revision: 3,
+						frameRate: { num: 30, den: 1 },
+						durationFrames: 90,
+						density: 'balanced',
+						respectDialogue: true,
+						cues: [],
+						stats: {
+							bySource: {},
+							dropped: { rate: 0, gap: 0, maxCues: 0, confidence: 0, range: 0 },
+							heroesDemoted: 0,
+							found: 0,
+							kept: 0,
+						},
+						warnings: [],
+						dialogue: [],
+						storedCues: 0,
+					})
+				: json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404),
+		);
+		const c = new EngineClient({ fetch: m.fetch });
+		const r = await c.soundDesignCues({ projectId: 'p1', opts: { density: 'sparse', sources: ['edits'] } });
+		expect(r.revision).toBe(3);
+		expect(JSON.parse(String(m.calls[0]!.init.body))).toEqual({
+			projectId: 'p1',
+			opts: { density: 'sparse', sources: ['edits'] },
+		});
+	});
+
+	it('starts a sound-design plan job (spec 12 §2.8, P3-R3)', async () => {
+		const m = mockFetch((url, init) =>
+			url === '/api/sound-design/plan' && init.method === 'POST'
+				? json({ ...job, kind: 'sound-design', title: 'Sound design plan' }, 202)
+				: json({ code: 'NOT_FOUND', message: 'nope', retryable: false }, 404),
+		);
+		const c = new EngineClient({ fetch: m.fetch });
+		const body = {
+			projectId: 'prj_0000000000000001',
+			cues: 'auto' as const,
+			style: {
+				density: 'sparse' as const,
+				sources: ['starter' as const],
+				seed: 4,
+				palette: 'project' as const,
+			},
+			maxCues: 20,
+		};
+		expect((await c.planSoundDesign(body)).kind).toBe('sound-design');
+		expect(JSON.parse(String(m.calls[0]!.init.body))).toEqual(body);
+	});
+
+	it('calls the proposal routes (spec 12 §2.5) with their paths, queries and bodies', async () => {
+		const proposal = {
+			version: 1,
+			id: 'prp_0000000000000001',
+			projectId: 'prj_0000000000000001',
+			sequenceId: null,
+			feature: 'sound-design',
+			title: 'T',
+			summary: '',
+			author: 'user',
+			createdAt: 'x',
+			updatedAt: 'x',
+			baseRevision: 0,
+			docHash: '0',
+			items: [
+				{
+					id: 'a',
+					label: 'A',
+					group: '',
+					commands: [{ type: 'marker.add' }],
+					requires: [],
+					state: 'pending',
+				},
+			],
+		};
+		const m = mockFetch((url, init) => {
+			if (url.endsWith('/accept'))
+				return json({
+					proposal,
+					applied: [],
+					added: [],
+					skipped: [],
+					stale: [],
+					result: null,
+					appliedBy: null,
+					revision: 3,
+				});
+			if (
+				url.endsWith('/note') ||
+				url.endsWith('/reject') ||
+				url.endsWith('/select') ||
+				url.endsWith('/reopen') ||
+				url.endsWith('/applied')
+			)
+				return json({ proposal, changed: ['a'] });
+			if (init.method === 'DELETE') return json({ proposalId: proposal.id, deleted: true });
+			if (url.includes('/proposals/')) return json({ proposal, expiresAt: 'y', revision: 2 });
+			return json({ proposals: [], warnings: [] });
+		});
+		const c = new EngineClient({ fetch: m.fetch });
+		const base = '/api/projects/prj_0000000000000001/proposals';
+		await c.listProposals('prj_0000000000000001');
+		expect((await c.getProposal('prj_0000000000000001', proposal.id, { revalidate: true })).revision).toBe(2);
+		expect(m.calls[1]!.url).toBe(`${base}/${proposal.id}?revalidate=1`);
+		const acc = await c.acceptProposal('prj_0000000000000001', proposal.id, {
+			itemIds: 'all',
+			partial: true,
+		});
+		expect(acc.revision).toBe(3);
+		expect([m.calls[2]!.url, m.calls[2]!.init.method]).toEqual([`${base}/${proposal.id}/accept`, 'POST']);
+		expect(JSON.parse(String(m.calls[2]!.init.body))).toEqual({ itemIds: 'all', partial: true });
+		await c.noteProposalItem('prj_0000000000000001', proposal.id, { itemId: 'a', note: 'quieter' });
+		expect(JSON.parse(String(m.calls[3]!.init.body))).toEqual({ itemId: 'a', note: 'quieter' });
+		await c.selectProposalAlternative('prj_0000000000000001', proposal.id, { itemId: 'a', alternative: 1 });
+		await c.rejectProposal('prj_0000000000000001', proposal.id, { itemIds: ['a'] });
+		await c.reopenProposal('prj_0000000000000001', proposal.id, { itemIds: 'all' });
+		await c.markProposalApplied('prj_0000000000000001', proposal.id, {
+			itemIds: ['a'],
+			revision: 4,
+			refs: { $x: 'trk_0000000000000001' },
+		});
+		expect(JSON.parse(String(m.calls[7]!.init.body))).toEqual({
+			itemIds: ['a'],
+			revision: 4,
+			refs: { $x: 'trk_0000000000000001' },
+		});
+		expect((await c.deleteProposal('prj_0000000000000001', proposal.id)).deleted).toBe(true);
+		expect(m.calls.map((x) => x.url.slice(base.length))).toEqual([
+			'',
+			`/${proposal.id}?revalidate=1`,
+			`/${proposal.id}/accept`,
+			`/${proposal.id}/note`,
+			`/${proposal.id}/select`,
+			`/${proposal.id}/reject`,
+			`/${proposal.id}/reopen`,
+			`/${proposal.id}/applied`,
+			`/${proposal.id}`,
+		]);
 	});
 });
 

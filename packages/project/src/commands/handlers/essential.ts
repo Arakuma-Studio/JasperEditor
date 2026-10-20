@@ -6,7 +6,9 @@ import {
 	DEFAULT_LOUDNESS_TARGET,
 	type EssentialSound,
 	EssentialSoundError,
+	migrateLegacyPan,
 	newEssentialSound,
+	parseEssentialSound,
 	readEssentialSound,
 	setEssentialValue,
 	withPreset,
@@ -41,6 +43,8 @@ function audioClips(doc: DDoc, ids: readonly string[], h: HandlerContext): { seq
 				path: [c.id],
 			});
 		assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
+		// settings saved before Pan became an offset are read the way they were written (load does this too)
+		migrateLegacyPan(c as never);
 	}
 	return { seq, clips: clips as unknown as DAudio[] };
 }
@@ -60,9 +64,15 @@ function timeIn(
 
 /** Writes the new settings and reconciles the clip's effects and levels (one place for every command). */
 function update(clip: DAudio, next: EssentialSound | null, time: number, h: HandlerContext): void {
+	migrateLegacyPan(clip as never);
 	const old = readEssentialSound(clip.essential);
+	const residual = {
+		volume: { ...(old?.residual?.volume ?? {}) },
+		pan: { ...(old?.residual?.pan ?? {}) },
+	};
 	reconcileEssential(clip as never, old, next, {
 		time,
+		residual,
 		newEffectId: () => h.ids.next('fx'),
 		newKey: (t, value: ParamValue, hold) => ({
 			id: h.ids.next('kf'),
@@ -73,8 +83,21 @@ function update(clip: DAudio, next: EssentialSound | null, time: number, h: Hand
 			easeOut: { ...EASE_PRESETS.linear },
 		}),
 	});
-	if (next) clip.essential = next as never;
-	else delete clip.essential;
+	if (next) {
+		// Residuals of values that no longer exist (deleted keyframes) are dropped.
+		const live = new Set([
+			'value',
+			...clip.volumeDb.keyframes.map((k) => k.id),
+			...clip.pan.keyframes.map((k) => k.id),
+		]);
+		const keep = (r: Record<string, number>) =>
+			Object.fromEntries(Object.entries(r).filter(([k]) => live.has(k)));
+		const r = { volume: keep(residual.volume), pan: keep(residual.pan) };
+		const stored = { ...next } as EssentialSound;
+		if (Object.keys(r.volume).length + Object.keys(r.pan).length > 0) stored.residual = r;
+		else delete stored.residual;
+		clip.essential = stored as never;
+	} else delete clip.essential;
 }
 
 function tryValue<T>(f: () => T, h: HandlerContext, clipId: string): T {
@@ -87,6 +110,36 @@ function tryValue<T>(f: () => T, h: HandlerContext, clipId: string): T {
 }
 
 const end = (c: { start: number; duration: number }) => c.start + c.duration;
+/** Shortest remix joint crossfade (s): the frames of it, at least one (Sound Check's chopped-decay fade). */
+export const REMIX_MIN_CROSSFADE_S = 0.03;
+
+/**
+ * The measured loudness Auto-Match uses for each clip: its own, except that the pieces of one remix (`remix.id`) are
+ * one piece of music and get ONE match gain: the duration-weighted power mean of their measurements (≈ the integrated
+ * loudness of the pieces played in a row, BS.1770 gating aside). Matched one by one, an intro piece and a drop piece
+ * got gains 9 dB apart and the joint between them jumped (final verification B: Sound Check EDGE after a delivery).
+ */
+function remixMeasured(
+	clips: readonly DClip[],
+	measuredLufs: Record<string, number | null>,
+): (c: DClip) => number | null | undefined {
+	const groups = new Map<string, { e: number; d: number }>();
+	for (const c of clips) {
+		const r = (c as DAudio).remix?.id;
+		const m = measuredLufs[c.id];
+		if (!r || m === null || m === undefined || !Number.isFinite(m) || !(c.duration > 0)) continue;
+		const g = groups.get(r) ?? { e: 0, d: 0 };
+		g.e += c.duration * 10 ** (m / 10);
+		g.d += c.duration;
+		groups.set(r, g);
+	}
+	return (c) => {
+		const m = measuredLufs[c.id];
+		const g = (c as DAudio).remix?.id ? groups.get((c as DAudio).remix!.id) : undefined;
+		if (!g || m === null || m === undefined || !Number.isFinite(m)) return m;
+		return 10 * Math.log10(g.e / g.d);
+	};
+}
 
 /** The pieces of the remix a clip belongs to (sorted by start), or just the clip. */
 function remixPieces(seq: DSeq, clip: DClip): DAudio[] {
@@ -111,6 +164,10 @@ function revertRemix(seq: DSeq, clip: DAudio, h: HandlerContext): DAudio {
 	for (const p of pieces.slice(1)) removeClip(seq, p.id, h);
 	for (const t of Object.values(seq.transitions))
 		if (t.outgoingClipId === first.id && t.incomingClipId) delete seq.transitions[t.id];
+	// P6-E11: the fade-in the remix added over a trimmed intro goes with it
+	const fadeIn = typeof info.fadeInId === 'string' ? seq.transitions[info.fadeInId] : undefined;
+	if (fadeIn && fadeIn.incomingClipId === first.id && !fadeIn.outgoingClipId)
+		delete seq.transitions[fadeIn.id];
 	first.start = info.original.start;
 	first.duration = info.original.duration;
 	first.sourceIn = info.original.sourceIn;
@@ -124,12 +181,73 @@ function revertRemix(seq: DSeq, clip: DAudio, h: HandlerContext): DAudio {
 export const essentialHandlers = {
 	'essentialSound.setType': (doc, cmd: CommandOf<'essentialSound.setType'>, h) => {
 		const { seq, clips } = audioClips(doc, idList(cmd.clipIds), h);
+		const confirmed: string[] = [];
 		for (const c of clips) {
 			const cur = readEssentialSound(c.essential);
-			if (cur?.type === cmd.audioType) continue;
+			if (cur?.type === cmd.audioType) {
+				// the user chose the type Auto Tag gave: the tag is confirmed (settings untouched)
+				if (cur.tagged) {
+					const { tagged: _t, ...rest } = cur;
+					update(c, rest as EssentialSound, timeIn(seq, c, undefined, h), h);
+					confirmed.push(c.id);
+				}
+				continue;
+			}
 			update(c, newEssentialSound(cmd.audioType as AudioType), timeIn(seq, c, undefined, h), h);
 		}
-		return { clips: clips.map((c) => c.id), audioType: cmd.audioType };
+		return {
+			clips: clips.map((c) => c.id),
+			audioType: cmd.audioType,
+			...(confirmed.length ? { confirmed } : {}),
+		};
+	},
+
+	'essentialSound.autoTag': (doc, cmd: CommandOf<'essentialSound.autoTag'>, h) => {
+		const ids = Object.keys(cmd.results);
+		const { seq, clips } = audioClips(doc, ids, h);
+		const min = cmd.minConfidence ?? 0;
+		const tagged: { clipId: string; audioType: AudioType; confidence: number; from: AudioType | null }[] = [];
+		const skipped: { clipId: string; code: 'USER_TYPE' | 'SAME' | 'LOW_CONFIDENCE'; reason: string }[] = [];
+		for (const c of clips) {
+			const r = cmd.results[c.id]!;
+			const cur = readEssentialSound(c.essential);
+			const type = r.category as AudioType;
+			if (r.confidence < min) {
+				skipped.push({
+					clipId: c.id,
+					code: 'LOW_CONFIDENCE',
+					reason: `${type} at ${Math.round(r.confidence * 100)} % confidence is under ${Math.round(min * 100)} %`,
+				});
+				continue;
+			}
+			if (cur && !cur.tagged && !cmd.force) {
+				skipped.push({
+					clipId: c.id,
+					code: cur.type === type ? 'SAME' : 'USER_TYPE',
+					reason:
+						cur.type === type
+							? `already ${cur.type}`
+							: `the audio type ${cur.type} was set by hand (pass force to replace it)`,
+				});
+				continue;
+			}
+			if (cur && !cur.tagged && cur.type === type) {
+				skipped.push({ clipId: c.id, code: 'SAME', reason: `already ${cur.type}` });
+				continue;
+			}
+			const mark = {
+				by: 'auto' as const,
+				confidence: Math.round(r.confidence * 1000) / 1000,
+				...(r.scores ? { scores: { ...r.scores } } : {}),
+				...(r.reasons ? { reasons: r.reasons.slice(0, 6) } : {}),
+			};
+			// re-tagged as the same type: the settings stay, only the mark is refreshed
+			const next: EssentialSound =
+				cur?.type === type ? { ...cur, tagged: mark } : { ...newEssentialSound(type), tagged: mark };
+			update(c, next, timeIn(seq, c, undefined, h), h);
+			tagged.push({ clipId: c.id, audioType: type, confidence: mark.confidence, from: cur?.type ?? null });
+		}
+		return { tagged, skipped };
 	},
 
 	'essentialSound.clearType': (doc, cmd: CommandOf<'essentialSound.clearType'>, h) => {
@@ -150,6 +268,9 @@ export const essentialHandlers = {
 				});
 			let next = cur!;
 			for (const [k, v] of entries) next = tryValue(() => setEssentialValue(next, k, v), h, c.id);
+			// a Ducking amount set here is the user's own (a delivery preset leaves it alone)
+			if (Object.hasOwn(cmd.values, 'ducking.reduceDb') || Object.hasOwn(cmd.values, 'ducking'))
+				next = { ...next, ducking: { ...next.ducking, depthBy: 'user' } } as EssentialSound;
 			update(c, next, timeIn(seq, c, cmd.at, h), h);
 		}
 		return { clips: clips.map((c) => c.id) };
@@ -164,12 +285,13 @@ export const essentialHandlers = {
 			const cur = readEssentialSound(c.essential);
 			let preset: { name: string; settings: EssentialSound };
 			if (cmd.settings) {
-				const s = readEssentialSound({ ...cmd.settings, ...(cmd.audioType ? { type: cmd.audioType } : {}) });
-				if (!s) h.fail('E_INVALID_PARAM', 'settings need a valid "type" (dialogue, music, sfx, ambience)');
+				const { residual: _r, ...given } = cmd.settings;
+				const s = parseEssentialSound({ ...given, ...(cmd.audioType ? { type: cmd.audioType } : {}) });
+				if (typeof s === 'string') return h.fail('E_INVALID_PARAM', s);
 				preset = {
 					name:
 						typeof cmd.settings.preset === 'string' && cmd.settings.preset ? cmd.settings.preset : 'Custom',
-					settings: s!,
+					settings: s,
 				};
 			} else {
 				const type = cmd.audioType ?? cur?.type;
@@ -198,15 +320,19 @@ export const essentialHandlers = {
 		if (ids.length === 0) h.fail('E_INVALID_PARAM', 'measuredLufs is empty');
 		const { seq, clips } = audioClips(doc, ids, h);
 		const out: Record<string, { gainDb: number } | { skipped: string }> = {};
+		const measuredOf = remixMeasured(clips, cmd.measuredLufs);
 		for (const c of clips) {
 			const cur = readEssentialSound(c.essential);
 			if (!cur) {
 				out[c.id] = { skipped: 'no audio type' };
 				continue;
 			}
-			const measured = cmd.measuredLufs[c.id];
+			const measured = measuredOf(c);
 			if (measured === null || measured === undefined || !Number.isFinite(measured)) {
-				out[c.id] = { skipped: 'silent' };
+				// No integrated loudness: silence, or a clip shorter than one 400 ms BS.1770 gating block.
+				const rate = seq.settings.frameRate as Rational;
+				const short = (c.duration * rate.den) / rate.num < 0.4;
+				out[c.id] = { skipped: short ? 'shorter than 400 ms (integrated loudness is undefined)' : 'silent' };
 				continue;
 			}
 			const target = cmd.targetLufs ?? cur.loudness.targetLufs ?? DEFAULT_LOUDNESS_TARGET;
@@ -241,6 +367,13 @@ export const essentialHandlers = {
 		if (previous) clip = revertRemix(seq, clip, h);
 		const original = { start: clip.start, duration: clip.duration, sourceIn: clip.sourceIn };
 		const target = cmd.targetFrames;
+		// P6-E11: what the plan landed must lie inside the remix
+		for (const an of cmd.anchors ?? [])
+			if (an.frame < original.start || an.frame >= original.start + target)
+				h.fail(
+					'E_INVALID_PARAM',
+					`An anchor lands at frame ${an.frame}, outside the remix (frames ${original.start}–${original.start + target - 1})`,
+				);
 		// Room on the track: [start, start + target) must be free except for this clip.
 		for (const o of trackClips(seq, clip.trackId))
 			if (o.id !== clip.id && o.start < clip.start + target && end(o) > clip.start)
@@ -253,13 +386,14 @@ export const essentialHandlers = {
 				);
 		const maxContent = original.duration * F; // flicks of source the clip may use (its in…out range)
 		// Output cut points in frames; each piece's source start is shifted by the cut's rounding so the jump offsets
-		// (whole beats) stay exact.
+		// (whole beats) stay exact. Cuts round DOWN (P6-E11): the shift then moves both sides of a joint earlier in the
+		// source, away from the next beat's attack the plan put the joint before.
 		const pieces = cmd.pieces;
 		let outSec = 0;
 		const cuts: number[] = [0];
 		for (const p of pieces) {
 			outSec += p.lenSeconds;
-			cuts.push(Math.round(outSec / frameSec));
+			cuts.push(Math.floor(outSec / frameSec + 1e-6));
 		}
 		cuts[cuts.length - 1] = target;
 		const made: DAudio[] = [];
@@ -297,6 +431,7 @@ export const essentialHandlers = {
 			segments: cmd.segments ?? previous?.segments ?? 50,
 			variations: cmd.variations ?? previous?.variations ?? 50,
 			bpm: cmd.bpm,
+			...(cmd.anchors?.length ? { anchors: cmd.anchors.map((a) => ({ ...a })) } : {}),
 		});
 		const baseName = base.name.replace(/ \(Remix \d+\/\d+\)$/, '');
 		made.forEach((c, i) => {
@@ -323,8 +458,10 @@ export const essentialHandlers = {
 		for (const t of Object.values(seq.transitions))
 			if (t.outgoingClipId === clip.id && !t.incomingClipId && lastPiece.id !== clip.id)
 				t.outgoingClipId = lastPiece.id;
-		// Constant-power crossfades centred on the joints (shortened to the media handles when needed).
-		const xf = cmd.crossfadeFrames ?? 1;
+		// Constant-power crossfades ENDING at the joints (P6-E11: a joint sits just before a beat's attack, so the fade
+		// is over before it on both sides; the incoming piece's head handle feeds it, shortened when needed). At least
+		// 30 ms: a shorter fade-out is a chopped decay (Sound Check EDGE).
+		const xf = cmd.crossfadeFrames ?? Math.max(1, Math.ceil(REMIX_MIN_CROSSFADE_S / frameSec - 1e-9));
 		const addTransition = transitionHandlers['transition.add']!;
 		for (let i = 1; i < made.length; i++)
 			addTransition(
@@ -335,11 +472,30 @@ export const essentialHandlers = {
 					trackId: clip.trackId,
 					at: made[i]!.start,
 					effectId: 'jasper.constant-power',
-					duration: xf,
-					alignment: 'center',
+					duration: cmd.jointCrossfadeFrames?.[i - 1] ?? xf,
+					alignment: 'end-at-cut',
 				},
 				h,
 			);
+		// P6-E11: a fade-in over an intro the plan trimmed (removed again by Revert Remix)
+		if (
+			cmd.fadeInFrames &&
+			!Object.values(seq.transitions).some((t) => t.incomingClipId === made[0]!.id && !t.outgoingClipId)
+		) {
+			const r = addTransition(
+				doc,
+				{
+					type: 'transition.add',
+					sequenceId: seq.id,
+					clipId: made[0]!.id,
+					edge: 'in',
+					effectId: 'jasper.constant-power',
+					duration: Math.min(cmd.fadeInFrames, Math.max(1, made[0]!.duration - 1)),
+				},
+				h,
+			) as { transitionId?: string } | undefined;
+			if (r?.transitionId) for (const c of made) (c.remix as { fadeInId?: string }).fadeInId = r.transitionId;
+		}
 		return { clipIds: made.map((c) => c.id), pieces: made.length, targetFrames: target, remixId };
 	},
 

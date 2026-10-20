@@ -1,3 +1,4 @@
+import { Fft } from '../src/core/fft.ts';
 import { Prng } from '../src/core/util.ts';
 
 export const SR = 48000;
@@ -48,4 +49,38 @@ export function toneAmplitude(
 		im += x[i]! * Math.sin(w);
 	}
 	return (2 * Math.sqrt(re * re + im * im)) / (end - start);
+}
+
+/**
+ * Noise with an exact power-law spectrum (random-phase bins with power ∝ f^slope between lo and hi Hz; slope −1 =
+ * pink), peak-normalised to `peakAmp`. `n` must be a power of two.
+ */
+export function powerLawNoise(
+	seed: number,
+	n: number,
+	sr: number,
+	lo: number,
+	hi: number,
+	slope: number,
+	peakAmp = 0.5,
+): Float32Array {
+	const re = new Float64Array(n);
+	const im = new Float64Array(n);
+	const r = new Prng(seed);
+	for (let k = 1; k < n / 2; k++) {
+		const f = (k * sr) / n;
+		if (f < lo || f > hi) continue;
+		const a = Math.sqrt(f ** slope);
+		const ph = r.unit() * 2 * Math.PI;
+		re[k] = a * Math.cos(ph);
+		im[k] = a * Math.sin(ph);
+		re[n - k] = re[k]!;
+		im[n - k] = -im[k]!;
+	}
+	new Fft(n).inverse(re, im);
+	let p = 0;
+	for (let i = 0; i < n; i++) p = Math.max(p, Math.abs(re[i]!));
+	const out = new Float32Array(n);
+	for (let i = 0; i < n; i++) out[i] = (peakAmp * re[i]!) / p;
+	return out;
 }

@@ -288,11 +288,18 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 					<button
 						key={it.label}
 						type="button"
-						onMouseEnter={() => setOpenSub(null)}
+						onMouseEnter={() => {
+							setOpenSub(null);
+							it.onHighlight?.();
+						}}
+						onMouseLeave={() => it.onUnhighlight?.()}
+						onFocus={() => it.onHighlight?.()}
+						onBlur={() => it.onUnhighlight?.()}
 						role="menuitem"
 						disabled={it.disabled}
 						className="flex h-[22px] w-full items-center gap-2 px-3 text-left hover:bg-pr-hover disabled:text-pr-dim"
 						onClick={() => {
+							it.onUnhighlight?.();
 							props.onClose();
 							it.run();
 						}}
@@ -321,9 +328,30 @@ function SubmenuRow(props: {
 				<span className="flex-1">{props.item.label}</span>
 				<span className="text-pr-muted">▸</span>
 			</div>
-			{props.open ? <Submenu row={rowRef} items={props.item.items} onClose={props.onClose} /> : null}
+			{props.open ? <LoadedSubmenu row={rowRef} item={props.item} onClose={props.onClose} /> : null}
 		</div>
 	);
+}
+
+/** A submenu whose items may load when it opens (`load`); its placeholder `items` show meanwhile. */
+function LoadedSubmenu(props: {
+	row: React.RefObject<HTMLDivElement | null>;
+	item: Extract<ContextMenuItem, { kind: 'submenu' }>;
+	onClose(): void;
+}) {
+	const [items, setItems] = useState<ContextMenuItem[]>(props.item.items);
+	const load = props.item.load;
+	useEffect(() => {
+		if (!load) return;
+		let live = true;
+		load()
+			.then((loaded) => live && setItems(loaded))
+			.catch(() => undefined);
+		return () => {
+			live = false;
+		};
+	}, [load]);
+	return <Submenu row={props.row} items={items} onClose={props.onClose} />;
 }
 
 /** A submenu panel: `fixed` beside its row, flipped left / slid up / scrolling to stay inside the window. */

@@ -1,0 +1,27 @@
+// Sound design (spec 12): taxonomy, ranking, licences, library provenance, credits and peak-aligned placement.
+export * from './acknowledge.ts';
+export * from './ambience-bed.ts';
+export * from './check.ts';
+export * from './check-fixes.ts';
+export * from './copy-upgrade.ts';
+export * from './credits.ts';
+export * from './delivery.ts';
+export * from './grammar.ts';
+export * from './insert.ts';
+export * from './level.ts';
+export * from './license.ts';
+export * from './materials.ts';
+export * from './messages.ts';
+export * from './mix.ts';
+export * from './moment.ts';
+export * from './music-fit.ts';
+export * from './music-grid.ts';
+export * from './pitch.ts';
+export * from './place.ts';
+export * from './profile.ts';
+export * from './provenance.ts';
+export * from './rank.ts';
+export * from './sfx-clip.ts';
+export * from './taxonomy.ts';
+export { wordStartUnits } from './text-events.ts';
+export * from './tuning.ts';

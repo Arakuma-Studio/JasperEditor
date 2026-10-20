@@ -259,11 +259,15 @@ export class AudioService {
 				scope.type !== 'range'
 			)
 				range = { start: req.activity.startFrame, end: req.activity.endFrame };
+			// the whole sequence: also the export's converged delivery for the target (the preview plays its gain)
+			const deliveryTarget =
+				scope.type === 'sequence' && range === planned.range ? this.deliveryTarget(planned, req) : null;
 			mix = await renderMixdown({
 				...base,
 				range,
 				...(scope.type === 'tracks' ? { onlyTracks: new Set(this.trackIds(planned, scope.trackIds)) } : {}),
 				...(env ? { onBlock: (p: Float32Array[], n: number) => env.push(p, n) } : {}),
+				...(deliveryTarget ? { normalize: deliveryTarget } : {}),
 				onProgress: (f, stage) => ctx.progress(f * 0.95, { stage }),
 			});
 		}
@@ -286,14 +290,42 @@ export class AudioService {
 				]),
 			};
 		}
+		const n = mix.normalized;
+		const fin = (x: number) => Number.isFinite(x);
+		const r3 = (x: number) => Math.round(x * 1000) / 1000;
 		return {
 			sampleRate: sr,
 			range: { startFrame: range.start, endFrame: range.end },
-			loudness: measureOf(mix.loudness, mix.samples / sr),
+			// the mix as it plays, before the normalisation
+			loudness: measureOf(n?.before ?? mix.loudness, mix.samples / sr),
 			...(scope.type === 'clips' ? { clips } : {}),
 			...(activity ? { activity } : {}),
 			mixHash: mixFingerprint(planned.document, planned.sequenceId),
+			...(n && fin(n.delivery.params.gainDb)
+				? {
+						delivery: {
+							targetLufs: n.targetLufs,
+							truePeakDbtp: n.truePeakDb,
+							gainDb: r3(n.delivery.params.gainDb),
+							limiterCeilingDbtp: n.delivery.params.ceilingDb,
+							passes: n.delivery.passes,
+							ceilingLimited: n.delivery.ceilingLimited,
+							deliveredLufs: fin(n.delivery.pcm.integrated) ? r3(n.delivery.pcm.integrated) : null,
+						},
+					}
+				: {}),
 		};
+	}
+
+	/** The target of an analysis's delivery: the request's, else the sequence's Mix normalisation when it is on. */
+	private deliveryTarget(
+		planned: PlannedExport,
+		req: AudioAnalyzeRequest,
+	): { targetLufs: number; truePeakDb: number } | null {
+		if (req.delivery === null) return null;
+		if (req.delivery) return { targetLufs: req.delivery.targetLufs, truePeakDb: req.delivery.truePeakDb };
+		const l = planned.document.sequences[planned.sequenceId]?.master.loudness;
+		return l?.enabled ? { targetLufs: l.targetLufs, truePeakDb: l.truePeakDb } : null;
 	}
 
 	private trackIds(planned: PlannedExport, refs: string[]): string[] {
@@ -382,13 +414,29 @@ export class AudioService {
 			}
 			r.close();
 		}
+		m1.flush();
 		const before = m1.summary();
-		if (!Number.isFinite(before.integrated))
+		if (!Number.isFinite(before.integrated)) {
+			// BS.1770 integrated loudness needs at least one complete 400 ms gating block: shorter audio is not "silent".
+			if (total < Math.round(sr * 0.4)) {
+				// The job error keeps code and message only: the duration and the true peak go in the message.
+				const tp = Number.isFinite(before.truePeakDb) ? `${before.truePeakDb.toFixed(1)} dBTP` : '−∞ dBTP';
+				throw new JobError(
+					'TOO_SHORT',
+					`The audio is ${Math.round((total / sr) * 1000)} ms long: integrated loudness (BS.1770) needs at least 400 ms (true peak ${tp}; normalise short sounds by peak instead: Audio Gain ▸ Normalize Max Peak)`,
+					false,
+					{
+						durationSec: total / sr,
+						truePeakDbtp: Number.isFinite(before.truePeakDb) ? before.truePeakDb : null,
+					},
+				);
+			}
 			throw new JobError(
 				'SILENT',
 				'The audio is silent (below the −70 LUFS gate): nothing to normalise',
 				false,
 			);
+		}
 		const gainDb = req.targetLufs - before.integrated;
 		const g = 10 ** (gainDb / 20);
 		// pass 2: gain + true-peak limiter → 24-bit WAV (via ffmpeg from a float WAV)
@@ -438,6 +486,7 @@ export class AudioService {
 		} finally {
 			await fh.close();
 		}
+		m2.flush();
 		const after = m2.summary();
 		const outDir = join(
 			this.core.config.paths.root,

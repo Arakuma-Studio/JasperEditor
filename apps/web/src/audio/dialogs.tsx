@@ -14,6 +14,7 @@ import {
 	toast,
 } from '@jasper/ui';
 import { useId, useMemo, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import {
 	analyzeAudio,
@@ -22,6 +23,7 @@ import {
 	clipPeaks,
 	loudnessAnalysisStale,
 	normalizeMediaLoudness,
+	previewLoudnessGain,
 } from './engine-ops.ts';
 
 export const AUDIO_GAIN_DIALOG = 'audio.gain';
@@ -328,6 +330,12 @@ function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
 					lra: cur.analysis.lra,
 				}
 			: null);
+	// the gain the preview plays: the export's converged delivery for this target, else target − measured
+	const gain = previewLoudnessGain(
+		result ? { integratedLufs: result.loudness.integratedLufs, delivery: result.delivery } : cur?.analysis,
+		target,
+		tp,
+	);
 	const presetId = useId();
 	return (
 		<Dialog
@@ -361,7 +369,12 @@ function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
 						setBusy(true);
 						setError(null);
 						try {
-							setResult(await analyzeSequenceLoudness(session, need(engine), sequenceId));
+							setResult(
+								await analyzeSequenceLoudness(session, need(engine), sequenceId, {
+									targetLufs: target,
+									truePeakDb: tp,
+								}),
+							);
 						} catch (e) {
 							setError((e as Error).message);
 						} finally {
@@ -424,10 +437,23 @@ function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
 					<div>Integrated: {fmt(a?.integratedLufs, 'LUFS')}</div>
 					<div>True Peak: {fmt(a?.truePeakDbtp, 'dBTP')}</div>
 					<div>Loudness Range: {fmt(a?.lra, 'LU')}</div>
-					{a?.integratedLufs !== null && a?.integratedLufs !== undefined ? (
-						<div className="mt-1 text-pr-muted">
-							Gain to target: {(target - a.integratedLufs).toFixed(1)} dB (true peaks limited at{' '}
-							{tp.toFixed(1)} dBTP)
+					{gain ? (
+						<div className="mt-1 text-pr-muted" data-testid="loudness-gain">
+							{gain.converged
+								? t(
+										'Gain to target: {0} dB, as the export delivers it (true peaks limited at {1} dBTP; {2} limiter passes)',
+										gain.gainDb.toFixed(1),
+										tp.toFixed(1),
+										String(gain.passes ?? 1),
+									)
+								: t(
+										'Gain to target: {0} dB (true peaks limited at {1} dBTP); analyze to match the export exactly',
+										gain.gainDb.toFixed(1),
+										tp.toFixed(1),
+									)}
+							{gain.ceilingLimited
+								? ` ${t('The limiter cannot make the mix louder under this ceiling.')}`
+								: ''}
 						</div>
 					) : null}
 				</div>

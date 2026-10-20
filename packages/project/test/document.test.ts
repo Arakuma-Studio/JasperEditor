@@ -35,7 +35,7 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		expect(m.report).toEqual({
 			fromVersion: 1,
 			toVersion: CURRENT_SCHEMA_VERSION,
-			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5', 'v5→v6'],
+			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5', 'v5→v6', 'v6→v7'],
 		});
 		expect(m.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
 		const before = Object.values(env.document.sequences)[0]!;
@@ -65,7 +65,7 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		const env = fixtureV2();
 		const m = migrate(env);
 		expect(m.readOnly).toBe(false);
-		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4', 'v4→v5', 'v5→v6']);
+		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4', 'v4→v5', 'v5→v6', 'v6→v7']);
 		expect(m.document).toEqual({ ...env.document, schemaVersion: CURRENT_SCHEMA_VERSION });
 		const r2 = loadProject(env, { effects: defaultEffectRegistry });
 		expect(r2.repairs).toEqual([]);

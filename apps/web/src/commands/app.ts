@@ -63,6 +63,9 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	mediaBrowser: 'Media Browser',
 	easing: 'Easing',
 	strokeAnimation: 'Stroke Animation',
+	soundLibrary: 'Sound Library',
+	review: 'Review',
+	soundCheck: 'Sound Check',
 };
 
 const save: UiCommand = {

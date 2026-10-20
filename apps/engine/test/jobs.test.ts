@@ -199,10 +199,9 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 					'lavfi',
 					'-i',
 					'testsrc2=size=1280x720:rate=30:duration=600',
+					// a long real encode with an LGPL encoder (any FFmpeg build has mpeg4)
 					'-c:v',
-					'libx264',
-					'-preset',
-					'ultrafast',
+					'mpeg4',
 					'-f',
 					'mp4',
 					partial,

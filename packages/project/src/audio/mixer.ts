@@ -3,8 +3,8 @@
 // WebCodecs). Used by every export path (native, hybrid, Remotion: the deliverable's audio always comes from here),
 // the loudness / peak / activity analysis and scrubbing. Signal path and solo rules: see `plan.ts`.
 //
-// * Sample accurate: clip volume, fades, clip pan and every strip lane are evaluated per sample (5.1 panner matrices
-//   every 32 samples); the output does not depend on the block size.
+// * Sample accurate: clip volume, fades, clip pan and every strip lane (the 5.1 panner's puck included) are evaluated
+//   per sample; the output does not depend on the block size.
 // * Latency compensated: processors (clip effects, inserts) report latency; clips pre-roll their processors, and
 //   every route into a bus is delayed so all inputs of the bus line up; the whole graph is read ahead by its total
 //   latency, so the output is aligned with the timeline.
@@ -15,6 +15,7 @@ import {
 	layoutFromChannels,
 	type Mixdown,
 	pan51Matrix,
+	pan51MatrixInto,
 	panMonoGains,
 } from '@jasper/audio-dsp';
 import { evaluate, isAnimated } from '../keyframes.ts';
@@ -22,6 +23,7 @@ import { nestGainDbAt, type RenderAudioClip, type RenderSnapshot } from '../rend
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
 import { syntheticSamples } from '../structure/generators.ts';
+import { LEADER_BLIP_HZ } from '../structure/synthetic.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { audioFadeGain } from '../transitions.ts';
 import type { RenderStrip } from './plan.ts';
@@ -29,7 +31,6 @@ import { type AudioProcessor, audioProcessorFactory } from './processors.ts';
 import { formatWidth, holdValueAt } from './strip.ts';
 
 export const MIX_BLOCK = 1024;
-const PAN51_STEP = 32;
 
 /** Decoded audio of one clip span at the mix rate (planar). Reads past the end return fewer frames (silence). */
 export interface ClipReader {
@@ -65,6 +66,14 @@ export type MixerOptions = {
 	onlyTracks?: ReadonlySet<string>;
 	/** Skip strip processing after the track input (track-level analysis): output the sum of the track inputs. */
 	tap?: 'master' | 'track-inputs';
+	/**
+	 * Opt-in (analysis renders of a few clips: the sound-design solo and bed renders): only these clips play, and the
+	 * strips none of them reaches (through outputs and sends) are not processed. Exact: such a strip only ever gets
+	 * silence, and every audio effect maps silence to silence from its reset state (audio-fx
+	 * `silence-in-silence-out.test.ts`); latencies and route delays are those of the whole graph, so the output is
+	 * the full graph's with every other clip silent. Default: every clip, every strip.
+	 */
+	audibleClips?: ReadonlySet<string>;
 };
 
 export function dbToGain(db: number): number {
@@ -180,6 +189,8 @@ export class OfflineMixer {
 	private readonly scratch: Float64Array;
 	private readonly scratch2: Float64Array;
 	private readonly tmp: Float32Array[];
+	/** Per strip: whether it is processed (`audibleClips`: reached by an audible clip; the Mix always). */
+	private readonly live: boolean[];
 
 	constructor(private readonly o: MixerOptions) {
 		const snap = o.snapshot;
@@ -279,7 +290,25 @@ export class OfflineMixer {
 				};
 			})
 			.filter((v) => v.trackIndex >= 0 && v.s1 > o.startSample)
+			.filter((v) => !o.audibleClips || o.audibleClips.has(v.clip.clipId))
 			.sort((a, b) => a.s0 - b.s0);
+		this.live = this.strips.map(() => !o.audibleClips);
+		if (o.audibleClips) {
+			// strips feed later ones (processing order), so one pass closes the set; repeated until stable anyway
+			for (const v of this.voices) this.live[v.trackIndex] = true;
+			for (let changed = true, guard = 0; changed && guard <= this.strips.length; guard++) {
+				changed = false;
+				this.strips.forEach((st, i) => {
+					if (!this.live[i]) return;
+					for (const t of [st.out?.target, ...st.sends.map((x) => x.route.target)])
+						if (t !== undefined && !this.live[t]) {
+							this.live[t] = true;
+							changed = true;
+						}
+				});
+			}
+			this.live[this.strips.length - 1] = true;
+		}
 	}
 
 	/** Opens a clip: synthetic sounds (Bars and Tone, leader blips) are generated here; media goes to `openClip`. */
@@ -348,7 +377,7 @@ export class OfflineMixer {
 			this.pos = p1;
 			return;
 		}
-		for (const st of this.strips) this.stripBlock(st, p0, n);
+		for (let i = 0; i < this.strips.length; i++) if (this.live[i]) this.stripBlock(this.strips[i]!, p0, n);
 		this.writeOut(this.master.input, out, n);
 		this.pos = p1;
 	}
@@ -399,9 +428,7 @@ export class OfflineMixer {
 			const c = v.clip;
 			const frame = (at * this.fps.num) / (this.sampleRate * this.fps.den);
 			const local = frame - c.start;
-			const time = c.speed.reverse
-				? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
-				: c.sourceIn + local * F * c.speed.rate;
+			const time = contentAt(c, local, F);
 			const fps = this.flicksPerSample * c.speed.rate * (c.speed.reverse ? -1 : 1);
 			for (const p of v.procs)
 				p.process(v.buf, k, { sampleRate: this.sampleRate, time, flicksPerSample: fps });
@@ -425,9 +452,7 @@ export class OfflineMixer {
 			if (volAnimated) {
 				// Levels of the nearest clip frame inside the clip (handles keep the edge level), like the preview.
 				const local = Math.min(c.duration - 1e-9, Math.max(0, frame - c.start));
-				const content = c.speed.reverse
-					? c.sourceIn + (c.duration - local) * F * c.speed.rate
-					: c.sourceIn + local * F * c.speed.rate;
+				const content = contentAt(c, local, F);
 				db = c.gainDb + evaluate(c.volumeDb, content);
 			}
 			// edit-structure: a clip flattened out of a nested sequence carries the nested levels per frame.
@@ -448,9 +473,7 @@ export class OfflineMixer {
 				if (panAnimated) {
 					const frame = (a + i) / spf;
 					const local = Math.min(c.duration - 1e-9, Math.max(0, frame - c.start));
-					const content = c.speed.reverse
-						? c.sourceIn + (c.duration - local) * F * c.speed.rate
-						: c.sourceIn + local * F * c.speed.rate;
+					const content = contentAt(c, local, F);
 					p = evaluate(c.pan, content);
 				}
 				if (p !== 0) [pl, pr] = balanceGains(Math.max(-1, Math.min(1, p / 100)));
@@ -571,10 +594,8 @@ export class OfflineMixer {
 					center: evaluate(lanes.center, t) / 100,
 					lfeGain: dbToGain(evaluate(lanes.lfe, t)),
 				});
-			let mat = matAt(t0 * fps);
-			for (let i0 = 0; i0 < n; i0 += PAN51_STEP) {
-				if (animated && i0 > 0) mat = matAt((t0 + i0) * fps);
-				const i1 = Math.min(n, i0 + PAN51_STEP);
+			if (!animated) {
+				const mat = matAt(t0 * fps);
 				for (let o = 0; o < 6; o++) {
 					const row = mat[o]!;
 					const d = dest[o]!;
@@ -582,9 +603,30 @@ export class OfflineMixer {
 						const g = row[j]!;
 						if (g === 0) continue;
 						const x = src[j]!;
-						if (send) for (let i = i0; i < i1; i++) d[i]! += g * x[i]! * send.level[i]!;
-						else for (let i = i0; i < i1; i++) d[i]! += g * x[i]!;
+						if (send) for (let i = 0; i < n; i++) d[i]! += g * x[i]! * send.level[i]!;
+						else for (let i = 0; i < n; i++) d[i]! += g * x[i]!;
 					}
+				}
+				return;
+			}
+			// Animated (a puck sweep): the matrix of every sample, like the stereo pan below (sound-design Phase 6; it was
+			// held for 32 samples at a time, which stepped the gains and depended on where blocks began). The preview follows
+			// the same per-sample values.
+			const m = Array.from({ length: 6 }, () => new Array<number>(w).fill(0));
+			const p = { x: 0, y: 0, center: 0, lfeGain: 1 };
+			for (let i = 0; i < n; i++) {
+				const t = (t0 + i) * fps;
+				p.x = evaluate(lanes.x, t) / 100;
+				p.y = evaluate(lanes.y, t) / 100;
+				p.center = evaluate(lanes.center, t) / 100;
+				p.lfeGain = dbToGain(evaluate(lanes.lfe, t));
+				pan51MatrixInto(m, srcLayout, p);
+				const lv = send ? send.level[i]! : 1;
+				for (let o = 0; o < 6; o++) {
+					const row = m[o]!;
+					let acc = 0;
+					for (let j = 0; j < w; j++) acc += row[j]! * src[j]![i]!;
+					dest[o]![i]! += acc * lv;
 				}
 			}
 			return;
@@ -635,6 +677,17 @@ export class OfflineMixer {
 	}
 }
 
+/**
+ * Content time (flicks) of a clip at local frame `local` (fractional): `contentTimeAt`'s convention, which the preview
+ * and every keyframe writer (Clip Mixer, auto-duck) use; a reversed clip's frame `i` reads content frame
+ * `duration − 1 − i`.
+ */
+function contentAt(c: RenderAudioClip, local: number, F: number): number {
+	return c.speed.reverse
+		? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
+		: c.sourceIn + local * F * c.speed.rate;
+}
+
 function addInto(dst: Float32Array, src: Float32Array, n: number): void {
 	for (let i = 0; i < n; i++) dst[i]! += src[i]!;
 }
@@ -672,6 +725,10 @@ export function generatorReader(
 	const channels = Math.max(1, Math.min(6, clip.channels.map.length || 2));
 	const frameSeconds = fps.den / fps.num;
 	const rate = clip.speed.rate;
+	// A sound sped up past the Nyquist frequency is removed, as the band-limited resampling of media clips does
+	// (generating it at `sr / rate` would alias it down into the audible range).
+	const hz = sound.kind === 'tone' ? sound.hz : LEADER_BLIP_HZ;
+	const aliased = hz * rate >= sr / 2;
 	let pos = at.offset;
 	const end = at.offset + at.length;
 	return {
@@ -679,6 +736,11 @@ export function generatorReader(
 		read(out: Float32Array[], frames: number): number {
 			const n = Math.max(0, Math.min(frames, end - pos));
 			if (n === 0) return 0;
+			if (aliased) {
+				for (let c = 0; c < channels; c++) out[c]!.fill(0, 0, n);
+				pos += n;
+				return n;
+			}
 			const u0 = (s0 + pos) / spf - clip.start;
 			let block: Float32Array;
 			if (clip.speed.reverse) {

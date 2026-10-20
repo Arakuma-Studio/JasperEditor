@@ -30,10 +30,42 @@ export type TransitionGhost = {
 	refused: boolean;
 };
 
+/**
+ * sound-design (spec 12 §2.7): the ghost of a library sound dragged over the tracks — the clip it would make, on the
+ * track it would go on (null: a new "SFX n" track below the last audio track), with a tick at its peak.
+ */
+export type SoundGhost = {
+	trackId: string | null;
+	start: number;
+	frames: number;
+	/** The peak within the clip, frames from its start (fractional). */
+	peakOffset: number;
+	/** What the ghost shows: the sound's name and its destination. */
+	label: string;
+	/** `start` = Alt-drop (aligns the sound's start). */
+	align: 'peak' | 'start' | 'end';
+};
+
 export type ContextMenuItem =
-	| { kind: 'item'; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run(): void }
+	| {
+			kind: 'item';
+			label: string;
+			shortcut?: string;
+			disabled?: boolean;
+			checked?: boolean;
+			run(): void;
+			/** Pointer or keyboard focus rests on the item / leaves it (sound design: audition in context). */
+			onHighlight?(): void;
+			onUnhighlight?(): void;
+	  }
 	| { kind: 'separator' }
-	| { kind: 'submenu'; label: string; items: ContextMenuItem[] };
+	| {
+			kind: 'submenu';
+			label: string;
+			items: ContextMenuItem[];
+			/** Items computed when the submenu opens; `items` shows meanwhile. */
+			load?(): Promise<ContextMenuItem[]>;
+	  };
 
 export type TimelineUiState = {
 	/** Measured sizes. */
@@ -67,6 +99,8 @@ export type TimelineUiState = {
 	readoutFrames: boolean;
 	/** S10: transition drop / edge-drag ghost with handle availability. */
 	transitionGhost: TransitionGhost | null;
+	/** sound-design: library sound drag ghost. */
+	soundGhost: SoundGhost | null;
 };
 
 export type TimelineUiStore = StoreApi<TimelineUiState>;
@@ -91,6 +125,7 @@ export function createTimelineUiStore(): TimelineUiStore {
 		soloEyeMemory: null,
 		readoutFrames: false,
 		transitionGhost: null,
+		soundGhost: null,
 	}));
 }
 
@@ -105,5 +140,6 @@ export function clearOverlays(ui: TimelineUiStore): void {
 		frozenEnd: null,
 		drop: null,
 		transitionGhost: null,
+		soundGhost: null,
 	});
 }

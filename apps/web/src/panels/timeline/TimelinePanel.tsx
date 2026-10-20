@@ -32,7 +32,20 @@ import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
 import { labelName } from '../../gaps/app-prefs.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
+import { t as tr } from '../../i18n/runtime.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
+import { GhostTrackHeaders, ProposalGhostLayer } from '../../proposals/GhostLayer.tsx';
+import { ghostItemRow, ghostLaneExtent } from '../../proposals/ghosts.ts';
+import { REVIEW_BAR_PX, ReviewBar, useReviewBarShown } from '../../proposals/ReviewBar.tsx';
+import { proposalRange } from '../../proposals/review.ts';
+import { proposalsFor, useGhostModel, useProposals } from '../../proposals/state.ts';
+import { insertSoundWithFeedback } from '../../sound/controller.ts';
+import { CueSeam, CueSeamHeader } from '../../sound/cues/CueSeam.tsx';
+import { SEAM_PX } from '../../sound/cues/model.ts';
+import { useLibraryMediaTracking } from '../../sound/cues/peak.ts';
+import { useCueSeamShown } from '../../sound/cues/seam.ts';
+import { onInContextView } from '../../sound/in-context.ts';
+import { endSoundDrag, isSoundDrag, readSoundDrag, soundDragInfo } from '../../sound/insert.ts';
 import { createEditorEngineClient, useEngineOrNull } from '../../state/engine.tsx';
 import {
 	getImportService,
@@ -78,6 +91,9 @@ import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt, type TrackRow } from './model/layout.ts';
 import { revealRowScroll, revealScroll, type Span, visiblePart, visibleRowBand } from './model/locate.ts';
+import { thresholdFrames } from './model/snapping.ts';
+import { resolveSoundDrop } from './model/sound-drop.ts';
+import { soundDropDestination, soundDropTooltip } from './model/sound-drop-tooltip.ts';
 import {
 	type DropTarget,
 	dropCommand,
@@ -86,7 +102,14 @@ import {
 	type TransitionGeom,
 	transitionIndex,
 } from './model/transitions.ts';
-import { boundaryFrameAt, extentEnd, followPage, followSmooth, type Viewport } from './model/viewport.ts';
+import {
+	boundaryFrameAt,
+	extentEnd,
+	followPage,
+	followSmooth,
+	scrollAfterAudition,
+	type Viewport,
+} from './model/viewport.ts';
 import { type Geometry, type PointerInfo, TimelineController } from './state/controller.ts';
 import { timelineGesturePreview } from './state/gesture-preview.ts';
 import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.ts';
@@ -169,6 +192,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			drop: s.drop,
 			flash: s.flash,
 			transitionGhost: s.transitionGhost,
+			soundGhost: s.soundGhost,
 		}),
 		(a, b) =>
 			a.marquee === b.marquee &&
@@ -179,7 +203,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			a.editPoints === b.editPoints &&
 			a.drop === b.drop &&
 			a.flash === b.flash &&
-			a.transitionGhost === b.transitionGhost,
+			a.transitionGhost === b.transitionGhost &&
+			a.soundGhost === b.soundGhost,
 	);
 	const cursor = useStoreSelector(ui, (s) => s.cursor);
 	const tooltip = useStoreSelector(ui, (s) => s.tooltip);
@@ -209,6 +234,17 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		() => ({ scrollFrame: view.scrollFrame, pxPerFrame: view.pxPerFrame, width: size.w }),
 		[view.scrollFrame, view.pxPerFrame, size.w],
 	);
+	// sound-design (spec 12 §2.7): the Cue Seam widens the video/audio divider into an 18 px lane.
+	// spec 12 §2.7 Review: the proposal under review's ghosts (clips, washes, new tracks, cues).
+	const ghostModel = useGhostModel(session, seqId);
+	const ghostCues = useMemo(() => ghostModel?.cues.map((g) => g.cue), [ghostModel]);
+	const ghostCard = useRef<((itemId: string, x: number, y: number) => void) | null>(null);
+	const seamShown = useCueSeamShown(seqId, !!ghostCues?.length);
+	// spec 12 §2.7 Review: the review bar on top while a proposal of this sequence is under review
+	const reviewBar = useReviewBarShown(session, seqId);
+	useLibraryMediaTracking(session);
+	// spec 12 §2.7 Review: the ghost lanes of the proposal's new tracks are part of the regions' scroll range
+	const ghostLanes = useMemo(() => ghostLaneExtent(ghostModel), [ghostModel]);
 	const layout = useMemo(
 		() =>
 			computeLayout({
@@ -219,8 +255,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				heights: view.trackHeights,
 				scrollYVideo: view.scrollYVideo,
 				scrollYAudio: view.scrollYAudio,
+				...(seamShown ? { dividerPx: SEAM_PX } : {}),
+				extraVideoPx: ghostLanes.videoPx,
+				extraAudioPx: ghostLanes.audioPx,
 			}),
 		[
+			ghostLanes,
+			seamShown,
 			size,
 			view.dividerRatio,
 			seq.videoTracks,
@@ -276,6 +317,45 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			}),
 		[session, seqId, ui, toast, mac],
 	);
+
+	// Entering review zooms the Timeline to the proposal's range (once per proposal under review).
+	const zoomedFor = useRef<string | null>(null);
+	useEffect(() => {
+		const id = ghostModel?.proposalId ?? null;
+		if (!id) {
+			if (!proposalsFor(session).getState().activeId) zoomedFor.current = null;
+			return;
+		}
+		if (zoomedFor.current === id || !(size.w > 0)) return;
+		const r = proposalRange(ghostModel);
+		if (!r) return;
+		zoomedFor.current = id;
+		// at least 4 s (and the pre-roll before the first item) so a single cue is shown in context
+		const fr = committedSeq.settings.frameRate;
+		const fps = fr.num / fr.den;
+		const min = fps > 0 ? 4 * fps : 120;
+		const pad = Math.max(0, (min - (r.end - r.start)) / 2);
+		controller.zoomToRange(Math.max(0, r.start - pad), r.end + pad, 0.08);
+	}, [ghostModel, controller, session, size.w, committedSeq.settings.frameRate]);
+
+	// The current review item's ghost scrolls into view vertically (◀ ▶, a Review panel row, the keyboard): its track
+	// row or the ghost lane of the track it creates, which may sit below the visible audio tracks (or above the video).
+	// Only when the current item changes (not on every recomputed preview: the user may have scrolled away since).
+	const currentItem = useProposals(session, (s) => s.selection.at(-1) ?? null);
+	const ghostModelRef = useRef(ghostModel);
+	ghostModelRef.current = ghostModel;
+	useEffect(() => {
+		const model = ghostModelRef.current;
+		if (!currentItem || !model) return;
+		const { layout: lay } = geomRef.current;
+		const row = ghostItemRow(model, lay, currentItem);
+		if (!row) return;
+		const region = row.kind === 'video' ? lay.video : lay.audio;
+		const key = row.kind === 'video' ? 'scrollYVideo' : 'scrollYAudio';
+		const now = session.getState().views[seqId]?.[key] ?? 0;
+		const next = revealRowScroll(region, row, Math.min(region.maxScroll, Math.max(0, now)));
+		if (next !== null) controller.setView({ [key]: next });
+	}, [currentItem, controller, session, seqId]);
 
 	// A replaced or unmounted controller must not leave its session gesture open (every later
 	// beginGesture would throw and agent submits would queue forever).
@@ -570,6 +650,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[controller],
 	);
 
+	// WP6.5a: an In Context audition (or a listen window) scrolls the view with playback; when it returns the playhead,
+	// the view it had comes back (or the playhead is revealed).
+	useEffect(() => {
+		let before: number | null = null;
+		const mine = (s: EditorSession) => s === session && s.getState().activeSequenceId === seqId;
+		return onInContextView({
+			start: (s) => {
+				if (mine(s)) before = geomRef.current.viewport.scrollFrame;
+			},
+			end: (s, frame) => {
+				const saved = before;
+				before = null;
+				if (!mine(s) || frame === null) return;
+				const next = scrollAfterAudition(geomRef.current.viewport, saved, frame);
+				if (next !== null) controller.setScroll(next);
+			},
+		});
+	}, [session, controller, seqId]);
+
 	const selectedSet = useMemo(() => new Set(selectedClips), [selectedClips]);
 	// S10:TUI-004: per-track transition index of the drawn sequence (follows gestures, TUI-005).
 	const transitions = useMemo(() => transitionIndex(seq, media), [seq, media]);
@@ -829,6 +928,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				session,
 				clip: c,
 				selection: session.getState().selection.timeline.clips,
+				runCommand: (id: string, args?: unknown) => run(id, args),
 			}),
 		];
 	};
@@ -1200,10 +1300,91 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const label = `${region === 'video' ? 'V' : 'A'}${index + 1}`;
 		return { frame, region, index, label, insert: mac ? e.metaKey : e.ctrlKey };
 	};
+	/** sound-design: where a dragged library sound goes (peak under the pointer, Alt: its start). */
+	const soundDropAt = (e: React.DragEvent, info: ReturnType<typeof soundDragInfo>) => {
+		const p = local(e);
+		const g = geomRef.current;
+		const yh = hitY(g.layout, p.y);
+		const preferred = yh.kind === 'track' && yh.row.kind === 'audio' ? yh.row.trackId : null;
+		return resolveSoundDrop({
+			seq: committedSeq,
+			info,
+			pointerFrame: boundaryFrameAt(g.viewport, p.x),
+			preferredTrackId: preferred,
+			alt: e.altKey,
+			snapping,
+			playhead: session.transport.getState().frame,
+			thresholdFrames: thresholdFrames(g.viewport.pxPerFrame),
+			targeted: session.getState().views[committedSeq.id]?.targeting.audio ?? [],
+		});
+	};
+	const onSoundDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+		const info = soundDragInfo(e.dataTransfer);
+		const t = soundDropAt(e, info);
+		const rate = committedSeq.settings.frameRate;
+		const tc = formatTimecode(t.cue, rate, { dropFrame: committedSeq.settings.dropFrame });
+		const p = t.plan;
+		const where = soundDropDestination(committedSeq, t);
+		const lines = soundDropTooltip(committedSeq, t, info?.title || null, tc);
+		const ghost = p
+			? {
+					trackId: p.track.kind === 'existing' ? p.track.trackId : null,
+					start: p.start,
+					frames: p.frames,
+					peakOffset: p.alignOffsetFrames,
+					label: `${info?.title ?? ''} → ${where}`,
+					align: t.align,
+				}
+			: null;
+		const cur = ui.getState();
+		if (
+			JSON.stringify(cur.soundGhost) !== JSON.stringify(ghost) ||
+			cur.snapFrame !== t.snapFrame ||
+			JSON.stringify(cur.tooltip?.lines ?? null) !== JSON.stringify(lines)
+		) {
+			const lp = local(e);
+			ui.setState({
+				soundGhost: ghost,
+				snapFrame: t.snapFrame,
+				tooltip: { x: lp.x, y: lp.y, lines },
+				drop: null,
+			});
+		}
+	};
+	const onSoundDrop = (e: React.DragEvent<HTMLDivElement>, soundId: string) => {
+		const info = soundDragInfo(e.dataTransfer);
+		const t = soundDropAt(e, info && info.id === soundId ? info : null);
+		ui.setState({ soundGhost: null, snapFrame: null, tooltip: null, drop: null });
+		endSoundDrag();
+		if (!engine) {
+			toast('error', tr('The engine is not connected'));
+			return;
+		}
+		const at = t.cue;
+		void (async () => {
+			try {
+				const entry = await engine.getSound(soundId);
+				// `auto` lets the sound's type pick the aligned point (also for a drag from another window).
+				await insertSoundWithFeedback(session, engine, entry, envRef.current.toast, {
+					at,
+					align: t.request,
+					preferredTrackId: t.preferredTrackId,
+				});
+			} catch (err) {
+				toast('error', err instanceof Error ? err.message : String(err));
+			}
+		})();
+	};
 	const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
 		const types = Array.from(e.dataTransfer?.types ?? []);
 		if (isTransitionDrag(e.dataTransfer)) {
 			onTransitionDragOver(e);
+			return;
+		}
+		if (isSoundDrag(e.dataTransfer)) {
+			onSoundDragOver(e);
 			return;
 		}
 		// Effects (WP-2D) and text animations (M2, wp-m2-text-anim) drop onto the clip under the pointer; no
@@ -1230,6 +1411,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		e.preventDefault();
 		if (isTransitionDrag(e.dataTransfer)) {
 			onTransitionDrop(e);
+			return;
+		}
+		const sound = readSoundDrag(e.dataTransfer);
+		if (sound) {
+			onSoundDrop(e, sound.soundId);
 			return;
 		}
 		const t = dropTarget(e);
@@ -1414,6 +1600,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			onPointerDownCapture={() => touchTimelineInstance(props.instanceId)}
 		>
 			<SequenceTabs session={session} activeId={seqId} hideSingle />
+			{reviewBar ? <ReviewBar session={session} reveal={(f) => controller.reveal(f)} /> : null}
 			<div className="flex shrink-0" style={{ height: RULER_H }}>
 				<div
 					className="flex shrink-0 flex-col justify-between border-r border-pr-border px-2 pt-[2px]"
@@ -1479,7 +1666,27 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						ui={ui}
 						openMenu={openMenu}
 						toast={toast}
+						dividerLabel={seamShown ? <CueSeamHeader seq={seq} /> : undefined}
+						onDividerContextMenu={
+							seamShown
+								? (e) => {
+										e.preventDefault();
+										openMenu(e.clientX, e.clientY, [
+											{ kind: 'item', label: 'Suggest Cues…', run: () => run('sound.suggestCues') },
+											{
+												kind: 'item',
+												label: 'Add Sound Cue',
+												shortcut: 'Alt+Shift+C',
+												run: () => run('sound.addCue'),
+											},
+											{ kind: 'separator' },
+											{ kind: 'item', label: 'Hide Cue Seam', run: () => run('sound.toggleCueSeam') },
+										]);
+									}
+								: undefined
+						}
 					/>
+					{ghostModel ? <GhostTrackHeaders session={session} model={ghostModel} layout={layout} /> : null}
 					<div
 						className="absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize"
 						onPointerDown={(e) => {
@@ -1512,7 +1719,15 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					onPointerLeave={() => controller.leave()}
 					onContextMenu={onContextMenu}
 					onDragOver={onDragOver}
-					onDragLeave={() => ui.setState({ drop: null, transitionGhost: null, tooltip: null })}
+					onDragLeave={() =>
+						ui.setState({
+							drop: null,
+							transitionGhost: null,
+							soundGhost: null,
+							snapFrame: null,
+							tooltip: null,
+						})
+					}
 					onDoubleClick={onDoubleClick}
 					onDrop={onDrop}
 					data-testid="timeline-clip-area"
@@ -1535,6 +1750,44 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						showThroughEdits={showThroughEdits}
 						lanes={lanes}
 					/>
+					{ghostModel ? (
+						<ProposalGhostLayer
+							session={session}
+							seq={seq}
+							model={ghostModel}
+							layout={layout}
+							viewport={viewport}
+							instanceId={props.instanceId}
+							reveal={(f) => controller.reveal(f)}
+							toast={toast}
+							cardRef={ghostCard}
+						/>
+					) : null}
+					{seamShown ? (
+						<CueSeam
+							session={session}
+							seq={seq}
+							layout={layout}
+							viewport={viewport}
+							media={media}
+							ui={ui}
+							instanceId={props.instanceId}
+							snapping={snapping}
+							run={run}
+							openMenu={openMenu}
+							toast={toast}
+							reveal={(f) => controller.reveal(f)}
+							ghosts={ghostCues}
+							onGhost={(id, at) => {
+								const itemId = ghostModel?.cues.find((g) => g.cue.id === id)?.itemId;
+								if (itemId) ghostCard.current?.(itemId, at.x, at.y);
+							}}
+							onGhostFocus={(id) => {
+								const itemId = ghostModel?.cues.find((g) => g.cue.id === id)?.itemId;
+								if (itemId) proposalsFor(session).select([itemId]);
+							}}
+						/>
+					) : null}
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>
 			</div>
@@ -1550,6 +1803,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				viewportRef={viewportRef}
 				onFrame={onFrame}
 				tabsOffset={openTabs > 1}
+				extraTop={reviewBar ? REVIEW_BAR_PX : 0}
 				controller={controller}
 			/>
 			{menu ? (
@@ -1571,13 +1825,20 @@ function PlayheadOverlay(props: {
 	viewportRef: React.RefObject<Viewport>;
 	onFrame(frame: number, playing: boolean): void;
 	tabsOffset: boolean;
+	/** Height of what sits between the tabs and the ruler (the review bar), px. */
+	extraTop?: number;
 	controller: TimelineController;
 }) {
 	const scrub = useRef(false);
+	const extra = props.extraTop ?? 0;
 	return (
 		<div
 			className="pointer-events-none absolute right-0 overflow-hidden"
-			style={{ left: props.headerWidth, top: props.tabsOffset ? 'var(--pr-tab-h)' : 0, bottom: 14 }}
+			style={{
+				left: props.headerWidth,
+				top: props.tabsOffset ? `calc(var(--pr-tab-h) + ${extra}px)` : extra,
+				bottom: 14,
+			}}
 		>
 			<PlayheadLine
 				transport={props.transport}

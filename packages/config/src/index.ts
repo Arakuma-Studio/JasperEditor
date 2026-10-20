@@ -167,6 +167,21 @@ export function appdirPaths(appdir: string) {
 		/** User libraries shared by every project and by agents (S03:FX-030 effect presets). */
 		presetsDir: join(appdir, 'presets'),
 		effectPresetsFile: join(appdir, 'presets', 'effect-presets.json'),
+		/** Sound library (spec 12 §2.1), shared by every project. */
+		soundsDir: join(appdir, 'sounds'),
+		/** The library index `{version, snapshotHash, roots, packs, sounds, files}` (atomic writes). */
+		soundLibraryIndex: join(appdir, 'sounds', 'library.json'),
+		/** User folders indexed in place, each with its licence declaration (local mode only). */
+		soundRootsFile: join(appdir, 'sounds', 'roots.json'),
+		/** Installed sound packs: `packs/<packId>/` with its `pack.json`. */
+		soundPacksDir: join(appdir, 'sounds', 'packs'),
+		/** Jasper Synth renders (a cache: re-rendered on demand). */
+		soundSynthDir: join(appdir, 'sounds', 'synth'),
+		/** Visual data of library sounds: `cache/<fingerprintHex>/visual-v<n>.json`. */
+		soundCacheDir: join(appdir, 'sounds', 'cache'),
+		/** Sound-design proposals of a project (spec 12 §2.5; not part of the document). */
+		projectProposalsDir: (projectId: string) =>
+			join(appdir, 'projects', segment(projectId, 'project id'), 'proposals'),
 		tmpDir: join(appdir, 'tmp'),
 	};
 }

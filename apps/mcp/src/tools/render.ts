@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
-import { sequenceTimecode } from '@jasper/project';
+import { defaultCreditsSidecar, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
@@ -305,7 +305,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL.',
+				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -424,6 +424,19 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.describe(
 						'Use Proxies: render attached proxies instead of full-resolution media (a draft; never the default)',
 					),
+				credits: z
+					.union([
+						z.enum(['txt', 'md', 'csv']),
+						z.null(),
+						z.strictObject({
+							sidecar: z.enum(['txt', 'md', 'csv']).nullable(),
+							scope: z.enum(['all', 'attribution']).optional(),
+						}),
+					])
+					.optional()
+					.describe(
+						'Sound credits file written next to the output as <name>.credits.<txt|md|csv> (result.credits): the credit lines of the library sounds heard in the exported range (nested sequences included; muted tracks and disabled clips are not heard). "md" / "txt" / "csv", {sidecar, scope: "all" (default) | "attribution" (only sounds whose licence asks for a credit)}, or null = none. Default: the sequence\'s sound design credits setting, else "md" when a sound it uses needs a credit (CC BY…), else none',
+					),
 			},
 			annotations: EDIT,
 		},
@@ -445,6 +458,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				usePreviews,
 				smartRender,
 				draftUseProxies,
+				credits,
 				wait,
 				timeoutSeconds,
 			},
@@ -499,6 +513,19 @@ export function registerRenderTools(ctx: ToolContext): void {
 			if (usePreviews) settings.usePreviews = true;
 			if (smartRender !== undefined) settings.smartRender = smartRender;
 			if (draftUseProxies) settings.draftUseProxies = true;
+			// spec 12 §2.11: the sound credits sidecar (default: the sequence's setting / CC BY sounds used)
+			const creditsDefaulted = credits === undefined;
+			const sidecar =
+				credits === undefined
+					? defaultCreditsSidecar(doc, seq.id)
+					: credits === null || typeof credits === 'string'
+						? credits
+						: credits.sidecar;
+			if (sidecar)
+				settings.credits = {
+					sidecar,
+					...(credits && typeof credits === 'object' && credits.scope ? { scope: credits.scope } : {}),
+				};
 			const envelope = toolEnvelope(doc, revision);
 			// wp-m2-anime-templates (S11:ANA-005): plan/start failures and Remotion warnings carry actionable hints.
 			const plan = await ctx
@@ -529,6 +556,20 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(plan.encoder ? { encoder: plan.encoder.label } : {}),
 				...(plan.warnings.length ? { warnings: plan.warnings.slice(0, 5).map((w) => w.message) } : {}),
 				...(plan.smart ? { smartRender: plan.smart } : {}),
+				// loudness normalisation: the target and the limiter ceiling in front of the encoder (the codec's headroom)
+				...(plan.audio.normalize ? { loudness: plan.audio.normalize } : {}),
+			};
+			// spec 12 §2.11: W_SOUND_CREDITS / W_SOUND_CHECK_STALE (info) / W_SOUND_LICENSE_NC, with their codes
+			const soundWarnings = plan.warnings
+				.filter((w) => w.code.startsWith('W_SOUND_'))
+				.map((w) => ({ code: w.code, message: w.message, ...(w.level ? { level: w.level } : {}) }));
+			const creditsBody = {
+				credits: {
+					sidecar: settings.credits?.sidecar ?? null,
+					...(settings.credits?.scope ? { scope: settings.credits.scope } : {}),
+					defaulted: creditsDefaulted,
+				},
+				...(soundWarnings.length ? { soundWarnings } : {}),
 			};
 			if (wait) {
 				const { job: done, timedOut } = await waitJob(ctx, job.id, (timeoutSeconds ?? 900) * 1000, extra);
@@ -539,6 +580,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					...body,
 					preset: p.id,
 					plan: planBody,
+					...creditsBody,
 					...(hint ? { hint } : {}),
 					...(timedOut ? { timedOut: true, next: 'Call wait_for_job with this jobId.' } : {}),
 				});
@@ -548,6 +590,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				state: job.state,
 				preset: p.id,
 				plan: planBody,
+				...creditsBody,
 				...(hint ? { hint } : {}),
 				next: 'Call wait_for_job with this jobId.',
 			});
@@ -591,7 +634,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Wait for job',
 			description:
-				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration. Sends progress notifications (at most one every 100 ms) while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting. Cancelling this request (notifications/cancelled) cancels the job itself and the engine deletes its partial output.',
+				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration, the sound credits file (result.credits) and warnings (result.warnings: W_SOUND_CREDITS, W_SOUND_CHECK_STALE…). Sends progress notifications (at most one every 100 ms) while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting. Cancelling this request (notifications/cancelled) cancels the job itself and the engine deletes its partial output.',
 			input: {
 				jobId: JobIdArg,
 				timeoutSeconds: z

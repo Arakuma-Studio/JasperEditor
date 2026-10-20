@@ -39,12 +39,22 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
   management with log inputs, Rec. 2100 PQ / HLG working spaces, OCIO configs and HDR export.
 - **Audio.** Track and clip mixers with automation, submixes and sends, loudness metering and normalisation
   (BS.1770 / EBU R128), Essential Sound, ducking, remix; one DSP for preview and every export path.
+- **Sound design.** A licensed, offline Sound Library (a bundled Kenney CC0 starter kit, downloadable CC0 packs, your own
+  folders with a licence you declare) searched by measured descriptors, auditioned in context and inserted with its peak on
+  the frame to the sample; cues derived from the edit (cuts, transitions, keyframed motion, text animators, measured
+  picture motion, scene cuts, music beats) on a Cue Seam; Auto Sound Pass proposes a whole pass you review on the
+  timeline and apply as one undo step; sound-effect levels solved against the bed, stop-before dips, builds, a shared
+  room reverb, delivery presets (−14 / −16 / −23 / −24 LUFS); Sound Check measures the delivered mix (sync, loudness,
+  masking, clicks, edges, harshness, coverage, endings…) with safe fixes; ambience beds and room tone; music drops
+  landed on a frame; credits next to the export; an optional local describe-it search. Agents drive all of it and
+  cannot hear: they get descriptors, pictures and a written listening log ([`docs/specs/12-sound-design.md`](docs/specs/12-sound-design.md),
+  [`docs/wp-notes/sound-design.md`](docs/wp-notes/sound-design.md)).
 - **Captions and speech.** Caption tracks (SRT, VTT, SCC, MCC, STL, TTML), burn-in, local speech to text with
   word timings and diarization, text-based editing.
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 323 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 378 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -507,7 +517,66 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `set_audio_gain` `auto_duck` `set_loudness_normalization` `normalize_media_loudness` (`docs/wp-notes/audio-mix.md`).
 - Audio effects, Essential Sound and Remix: `list_audio_effects` `get_audio_effects` `add_audio_effect` `set_audio_effect`
   `remove_audio_effect` · `get_essential_sound` `set_essential_sound` `clear_essential_sound` `auto_match_loudness`
-  `generate_essential_ducking` · `remix_audio` `revert_remix` (`docs/wp-notes/audio-fx.md`).
+  `generate_essential_ducking` `auto_tag_audio` (Auto Tag: dialogue / music / sfx / ambience by listening, marked
+  "auto" until confirmed; `docs/wp-notes/sound-design.md` "WP6.3") · `remix_audio` `revert_remix`
+  (`docs/wp-notes/audio-fx.md`) · music to picture: `find_music_drops` (drops, key, tempo) `fit_music_to_picture`
+  (land the drop on a frame within 1 ms, end on a bar line; `docs/wp-notes/sound-design.md` "WP-E7").
+- Sound library (sound effects; agents judge them by descriptors and contact sheets): `sound_library_status`
+  `search_sounds` (takes: true lists the single takes of multi-hit recordings — typing runs, clocks — as sounds of
+  their own, ids snd_…~t&lt;n&gt;; a material filter; describe: ranks by what sounds sound like with the optional
+  Describe-it search model, else searches its words) `get_sound` (a recording's takes) `view_sounds` · Describe-it
+  search (LAION CLAP, Apache-2.0, ≈ 780 MB, user-installed, analysis only): `describe_search_status`
+  `install_describe_search_model` (tell the user the size and licence first) `remove_describe_search_model` (approval
+  card) `prepare_describe_search` (embeds the library, incremental) `match_sound` (one sound against a description and
+  alternatives) `find_sound_moment` (the best moments of a long recording for a description) `insert_sound_moment`
+  (places one, one undo step) · `import_sounds`
+  `insert_sound` (peak-aligned, never overwrites; take ids too) ·
+  `list_sound_credits` `export_sound_credits` (writes the credits file, md / txt / csv, never overwriting) ·
+  `add_sound_folder` `remove_sound_folder` `rescan_sound_library` · packs: `list_sound_packs`
+  `install_sound_pack` (downloads a catalogue pack from its upstream site, sha256-pinned; tell the user its size and
+  licence first) `remove_sound_pack` (approval card) · cues: `find_sound_cues`
+  (derived from the edit; the engine sources scene, beat and pixel measure footage and music when asked, and
+  snapToBeats; `timeSignature` "auto" detects 3 or 4 beats per bar for the downbeats, or give it)
+  `analyze_picture_motion` (the rendered picture's motion per frame: moves, landings and cuts in
+  footage, with a PNG strip) `set_sound_cues` `place_sound` (peak-exact, layers, alternates; proposes unless mode
+  "apply") `swap_sound` `align_peak` `detect_sound_peak` (the editor's Detect Peak for project audio: the engine measures the
+  clip's peak and writes it, one undo step) · `plan_sound_design` (a whole pass as one proposal, gains solved against the
+  bed; style options room glue, stop-before, build, delivery; `style.cueSources` picks where derived cues come from;
+  the cue grammar — one click voice at one level, keys as takes at speed 1, climbing runs, one key per word for fast
+  typing, music carries the cuts, palette materials — with `style.personality` / `style.runs` / `style.typing` /
+  `style.musicCarriesCuts` / `style.duckUnderTyping`, defaulting to the sequence's `soundDesign.setSettings {style}`; find_sound_cues
+  and place_sound picks follow it too; music to picture — chimes tuned to the music's key, stops on the bar line — with
+  `style.tuneToMusic` / `style.stopOnBar`, on by default) ·
+  `rebalance_sfx` (masking solver: each sound effect clears the bed by its target lift, with what limited it) ·
+  `lay_ambience_bed` (an ambience per scene — V1 cuts to other footage, scene markers, measured shot changes — looped
+  at the recording's measured clean window and loop points with 1.5 s crossfades, crossfaded between scenes, at the
+  ambience level, optionally ducked; proposes unless mode "apply") `fill_room_tone` (the holes between dialogue clips
+  filled with the room tone closest to the dialogue's measured noise floor, or its own quietest stretch, at the floor's
+  level) ·
+  `apply_delivery` (web / podcast / R128 / A/85: Mix loudness, Auto-Match by type, ducking, measured) `set_room_glue` (a
+  shared "SFX Room" reverb) · `sound_check` (the delivered mix measured: findings with safe fixes judged together, in the
+  order to apply them — sync, loudness, the mix, cues, licences (ShareAlike warned), and clicks at edits, cut edges,
+  harshness, inaudible layers, partial coverage, endings and the loudness arc — five listen-here timecodes, a verdict, a
+  PNG of the worst moments; a custom delivery target; delivered through the export encoding it is checked for —
+  `exportPreset` / `exportAudio`, by default the delivery preset's typical one (Web AAC 256, Podcast AAC 128, broadcast
+  PCM) — and the stored summary records which; humanVerdicts: what the user said after
+  listening in the editor's Sound Check panel, each bound to the moment it judged and marked stale when that moment
+  changed; `proposalId` checks a proposal before review — what it fixes and introduces, per item, on its preview,
+  nothing applied) `get_sound_check` (the last full report the engine keeps per sequence, across restarts: current or
+  stale) `acknowledge_sound_issue` (a deliberate exception with a reason: left out of the verdict until what it is about
+  changes; warnings and infos only for an agent, errors are the user's)
+  `view_sound_timeline` (the annotated sound sheet of ≤ 120 s: frames at the cuts and cues, loudness of the mix and its
+  stems, spectrogram, sections, every cut / cue marked by whether a sound answers it, motion, findings)
+  `listen_to_sequence` (a written log of the mix, ≤ 10 min: every sound named by the clip that plays it and the cue it
+  fills, sections, silences, which cuts and cues have a sound — each share next to its chance level — and the cuts with
+  none; the sound sheet with images; tags: what each sound sounds like, with the Describe-it search model) · reference profiles (the measured style of the user's own reference media or
+  sequences, numbers only, no bundled profile): `list_sound_profiles` `get_sound_profile` `build_sound_profile` (a job)
+  `rename_sound_profile` `delete_sound_profile` (approval card) `export_sound_profile` `import_sound_profile`
+  `set_sound_profile` (the sequence's; `sound_check {profileId}` adds the Reference rows)
+  (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
+- Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
+  ghost table and its last Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal`
+  (policy-gated for agents) `reject_proposal`.
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
@@ -637,6 +706,81 @@ curl -s -X POST http://127.0.0.1:47900/api/agent/tx -H "authorization: Bearer $T
 }'
 # → {"result":{"ok":true,"revision":1,"created":["mrk_…"],…},"appliedBy":"headless"}
 ```
+
+**Proposals** (spec 12 §2.5) are reviewable sets of edits stored next to a project, outside its undo history:
+`POST /api/projects/<id>/proposals` with `{feature, title, sequenceId, items: [{id, label, commands, requires?,
+alternatives?, meta?}]}` validates every item by a dry run (failing ones are stored `invalid` with the reason);
+`GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
+the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
+and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
+allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`; it may withdraw items
+(`reject`) or delete a proposal, while `reopen`, `note` and `select` are the reviewer's (editor key only). An accepted
+item is reopened only once its accept is undone (`409 PROPOSAL_STILL_APPLIED` while what it created is in the
+document). Every accept is journalled (an intent file next to the proposal, with the ids its transaction creates its
+entities with): an engine that stopped between the transaction and recording it (or lost the editor's answer) settles
+it when the proposal is next read — recorded accepted when the document has it, rolled back when it does not; while the
+editor window that received it is away with its lease alive, accepting that proposal again answers `409 NO_SESSION`
+(retryable). A stale item's `reason` names what changed with timecodes ("The cut cue at 00:00:03:00 moved to
+00:00:03:10"); the accept's `stale[].problem` carries the same, structured. Reading a proposal again and
+again without `?revalidate=1` (what `wait_for_proposal` does) marks the agent as waiting for the review: the list's
+`waiting: {agent, since}` and the event `proposal.changed` with `change: "waiting"` tell the editor, which shows "<agent>
+is waiting for your review" on the proposal card and the review bar. `POST …/<proposalId>/applied
+{itemIds, revision, refs, created?}` is the editor window's own: a Redo of an undone accept records the items accepted
+again (agents get `403 APPROVAL_REQUIRED`; `409 PROPOSAL_NOT_APPLIED` when the document does not have what the accept
+created).
+`POST /api/sound-design/plan {projectId, sequenceId?, range?, cues?: "auto" | [cueIds], style?: {density, palette,
+sources, cueSources, respectDialogue, seed, alternatives, roomGlue, stopBefore, build, delivery}, maxCues?, label?}`
+(`cueSources`: where derived cues come from, the Suggest Cues… sources; default all) starts a `sound-design` job (202);
+its result names the proposal it stored (`proposalId`) with a per-cue report (sound, score parts, role, alignment,
+alternates, skipped cues, each sound's gain solved against the bed with what limited it, and the room glue / delivery /
+stop-before / build items the style asked for).
+`POST /api/sound-design/rebalance {projectId, sequenceId?, clipIds?, range?, delivery?, mode?: "propose" | "apply",
+userGains?: "keep" | "replace", label?, autoGain?: true}` starts a `sound-design` job (202) that measures every sound effect against the
+bed (rendered per cue cluster) and solves its gain with the masking solver; the result reports per clip the gain, target
+and achieved lift, `limitedBy` and the reason, and either names the proposal it stored (`propose`, the default) or applies
+the gains as one undoable transaction "Rebalance SFX Levels" (`apply`). `autoGain: true` (with `mode: "apply"` and
+`clipIds`; Essential Sound ▸ Auto gain on) also hands the named clips back to Auto gain in that same transaction
+(`soundDesign.setAutoGain` first, then the solved gains), also the ones the solve leaves unchanged or cannot measure;
+the result's `autoGain.clipIds` lists them.
+`POST /api/sound-design/delivery {projectId, sequenceId?, delivery: "web" | "podcast" | "broadcast-r128" | "atsc-a85",
+mode?: "propose" | "apply", loudness?, autoMatch?, ducking?, rebalance?, label?}` starts a `sound-design` job (202) that
+measures the clips, the speech and the resulting mix and applies (one transaction "Apply Delivery Preset") or proposes the
+preset's Mix loudness normalisation, Auto-Match by type, ducking and re-solved sound-effect gains; the report gives the
+expected loudness and true peak and how far under the voice the music and ambience sit during speech.
+`POST /api/sound-design/check {projectId, sequenceId?, preset?, target?: {integratedLufs, truePeakDb}, range?, store?}`
+starts a `sound-check` job (202) against the preset (or a custom `target`): the mix
+as the export delivers it and its stems (sound effects, dialogue, music, ambience, bed) are rendered in one pass and
+measured; the result (`SoundCheckResult`) has a verdict (pass / warn / fail), every finding with its code, severity,
+timecode, translatable message and fix (commands, an engine job or a sound swap; `safe` when it resolves the finding by
+itself), the per-event table, five listen-here moments and loudness curves; `store: true` also writes the summary into
+the sequence (`soundDesign.setCheck`, one undo step).
+`POST /api/sound-design/visual {projectId, sequenceId?, range, checkJobId?, spectrogram?}` answers at once with 10 ms
+loudness curves of the mix and each stem, the mix waveform, cue ticks, sound-effect clips, speech, the picture's motion
+curve, a check job's findings and (asked) the mix's log-frequency spectrogram over a range of at most 120 s.
+`POST /api/sound-design/listen {projectId, sequenceId?, range?, detail?: low | normal | high}` starts a `sound-listen`
+job (202) over at most 10 minutes: the mix and every clip rendered once; the result (`SoundListenResult`) is the
+listening transcript — its lines and text, the events of the mix (attack, peak, band, prominence over the bed, accent)
+each with the clip that plays it and the cue it fills, sections by audio type, silences, every cut / transition / cue /
+measured motion with the sound that answers it and the chance level of each sync share, the placed sounds heard or not,
+loudness. Nothing is written.
+Reference sound profiles (the per-user library under `<appdir>/sounds/profiles`, numbers only):
+`GET /api/sound-design/profiles` lists them; `POST /api/sound-design/profiles {name, projectId?, mediaIds?,
+sequenceIds?, paths? (local engine)}` starts a `sound-profile` job (202) that measures 1–20 references and stores the
+profile (`SoundProfileBuildResult`, with the skipped ones and why); `GET /api/sound-design/profiles/:profileId` is the
+profile file (what Export saves); `PUT …/:profileId/name {name}` renames; `DELETE …/:profileId` deletes (an agent waits
+for the user's approval); `POST /api/sound-design/profiles/import {profile, name?}` validates a file and stores it under a
+new id. `POST /api/sound-design/check {…, profileId?}` (default the sequence's `referenceProfile`, null: none) adds
+`report.reference` (one row per metric) and REFERENCE findings.
+`POST /api/audio/classify {projectId | envelope, sequenceId?, clipIds} | {mediaKeys, streamIndex?}` (`?wait=1` to answer
+when done) starts an `audio-classify` job: Essential Sound Auto Tag classifies each clip (the media range it plays) or
+media as dialogue, music, sfx or ambience with a confidence, per-type scores, reasons and the measured features; cached
+per file and range. Apply the results with the `essentialSound.autoTag` command. The cue route
+(`/api/sound-design/cues`) also answers `voiceActivity` (voiced media seconds of Essential Sound dialogue clips without a
+transcript) and `dialogue` spans with their sources (`words`, `vad`, `clip`).
+`POST /api/sound-design/peak {projectId, sequenceId?, clipId}` answers at once with the peak of an audio clip's sound
+(the centre of its loudest 2 ms, within the part of its media the clip uses, ≤ 120 s: `peakFlicks` from the media start,
+`peakSec`, `onsetSec`, `truncated`); MCP `detect_sound_peak` writes it with `soundDesign.setPeak`, as the editor's Detect Peak
+(which measures in the browser) does.
 
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.
@@ -852,12 +996,18 @@ REMOTION_E2E=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
 
 `pnpm e2e` starts `e2e/serve.mjs`: the built engine (`apps/engine/dist/engine.mjs`) serving the built web app
 on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` reuses existing builds,
-`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. The pre-step also fetches the LGPL FFmpeg directory
+`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. Playwright waits up to 180 s for that server to answer `/health`;
+`E2E_SERVER_TIMEOUT_MS=<ms>` (1 000 … 3 600 000) changes it for one run, e.g. `E2E_SERVER_TIMEOUT_MS=600000` on a
+heavily loaded shared host. The pre-step also fetches the LGPL FFmpeg directory
 where a pinned prebuilt exists (`E2E_SKIP_LGPL=1` skips it), so the exports in the specs are made by the
-shipped build (H.264 by OpenH264).
+shipped build (H.264 by OpenH264). The specs run in the system Chrome; `JASPER_BROWSER_EXECUTABLE=<chrome>` gives
+the pages, the engine's renders and the GL unit tests one other Chrome instead (specs that need flags take them from
+`browserLaunch` in `e2e/support.ts`, which keeps it). HTML-in-Canvas specs (GL blend modes, adjustment layers with GPU
+effects, the HDR display transform, 3D) need Chrome 148+: the build server's gate runs with Chrome for Testing
+150.0.7871.124 that way (its system Chrome is 142).
 
 `pnpm test` includes the MCP integration suite (`apps/mcp/test/integration.test.ts`): it boots a real engine
-in token mode on `127.0.0.1:${MCP_TEST_PORT:-48551}` (and `--start-engine` on the next port) with a temp
+in token mode on a free loopback port (`MCP_TEST_PORT` pins one; `--start-engine` on another) with a temp
 appdir, connects an MCP SDK client to `jasper-mcp` over stdio, and goes from create project → import fixture
 media → edit → `render_frame` (PNG) → `start_export` + `wait_for_job` → ffprobe of the output. Run it alone
 with `pnpm exec vitest run --project @jasper/mcp`.

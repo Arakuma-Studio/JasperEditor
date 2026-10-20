@@ -33,10 +33,23 @@ const infoFile = join(root, 'test-results', 'e2e-server.json');
 mkdirSync(dirname(infoFile), { recursive: true });
 writeFileSync(infoFile, JSON.stringify({ port: Number(port), appdir }));
 
+// Sound packs (spec 12 P6-R1): E2E never downloads. The engine's pack catalogue is a file in the throwaway appdir
+// (empty here); a spec writes its own catalogue there, with file:// URLs, and the engine reads it on every request.
+const soundCatalog = process.env.JASPER_SOUND_CATALOG ?? join(appdir, 'e2e-sound-catalog.json');
+if (!process.env.JASPER_SOUND_CATALOG) writeFileSync(soundCatalog, JSON.stringify({ version: 1, packs: [] }));
+
 const child = spawn(process.execPath, [engineBundle, '--port', port, '--appdir', appdir], {
 	cwd: root,
 	stdio: 'inherit',
-	env: { ...process.env, JASPER_APPDIR: appdir, JASPER_WEB_DIR: webDir },
+	env: {
+		...process.env,
+		JASPER_APPDIR: appdir,
+		JASPER_WEB_DIR: webDir,
+		// sound-design: one Jasper Synth variant per type (19 sounds) keeps the first index of the throwaway appdir short;
+		// the bundled starter kit is indexed in full.
+		JASPER_SOUND_SYNTH_VARIANTS: process.env.JASPER_SOUND_SYNTH_VARIANTS ?? '1',
+		JASPER_SOUND_CATALOG: soundCatalog,
+	},
 });
 
 let stopping = false;

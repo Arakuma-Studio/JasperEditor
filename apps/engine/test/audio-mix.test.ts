@@ -15,6 +15,7 @@ beforeAll(async () => {
 	for (const [name, expr] of [
 		['tone-1k.wav', 'sine=frequency=1000:sample_rate=48000:duration=4'],
 		['tone-500.wav', 'sine=frequency=500:sample_rate=44100:duration=4'],
+		['blip-300ms.wav', 'sine=frequency=1000:sample_rate=48000:duration=0.3'],
 	] as const) {
 		const r = spawnSync('ffmpeg', [
 			'-v',
@@ -208,6 +209,23 @@ describe('audio analysis and loudness normalisation jobs', () => {
 		const act = await run({ type: 'tracks', trackIds: ['A1'] }, { activity: { sensitivity: 6 } });
 		expect(act.activity.regions.length).toBe(1);
 		expect(act.activity.regions[0][0]).toBeLessThan(705_600_000 * 0.1);
+	}, 300_000);
+
+	it('refuses to normalise audio shorter than one 400 ms gating block as too short, not as silent', async () => {
+		const d = await toneDoc('blip-300ms.wav');
+		const asset = Object.values(d.doc.media)[0]!;
+		const key = asset.locators.find((l) => l.type === 'engine-store')!.key as string;
+		const r = await app.inject({
+			method: 'POST',
+			url: `/api/media/${key}/loudness-normalize?wait=1`,
+			headers: JSON_H,
+			payload: { targetLufs: -20, truePeakDb: -1 },
+		});
+		expect(r.body).toContain('TOO_SHORT');
+		expect(r.body).not.toContain('silent');
+		// the job error carries code and message only: the duration and the true peak are in the message
+		expect(r.body).toMatch(/The audio is \d+ ms long/);
+		expect(r.body).toMatch(/true peak -?\d+\.\d dBTP/);
 	}, 300_000);
 
 	it('normalises a media into a WAV version and audio clips switch to it in one step', async () => {

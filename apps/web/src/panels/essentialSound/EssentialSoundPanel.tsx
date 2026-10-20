@@ -12,6 +12,7 @@ import {
 	EQ_PRESETS,
 	type EssentialSection,
 	type EssentialSound,
+	essentialAutoTag,
 	REVERB_PRESETS,
 	readEssentialSound,
 	SECTION_LABELS,
@@ -31,16 +32,27 @@ const notify = {
 
 import { type ReactNode, useState } from 'react';
 import {
+	audioTypeClips,
 	autoMatchLoudness,
+	autoMatchMessage,
+	autoTagClips,
+	autoTagMessage,
 	deleteUserSoundPreset,
 	generateDucking,
 	remixClip,
 	saveUserSoundPreset,
+	selectAudioType,
+	singleMusicClip,
 	userSoundPresets,
 } from '../../audio-fx/ops.ts';
+import { runCommand } from '../../commands/registry.ts';
+import { t } from '../../i18n/runtime.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { EssentialSfxSection } from '../../sound/EssentialSfx.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
+import { MusicFit } from './MusicFit.tsx';
 
 type Selected = { seq: Sequence | null; clips: AudioClip[] };
 
@@ -64,15 +76,63 @@ export function EssentialSoundPanel(_props: PanelProps) {
 	);
 	if (!session)
 		return <EmptyState icon="panel.essentialSound" message="Open a project to use Essential Sound" />;
-	if (!sel.seq || sel.clips.length === 0)
-		return (
-			<EmptyState
-				icon="panel.essentialSound"
-				message="Select audio clips"
-				detail="Then choose an audio type: Dialogue, Music, SFX or Ambience."
-			/>
-		);
-	return <Body session={session} seq={sel.seq} clips={sel.clips} />;
+	return (
+		<div className="flex h-full min-h-0 flex-col">
+			<TagsInSequence session={session} />
+			<div className="min-h-0 flex-1">
+				{!sel.seq || sel.clips.length === 0 ? (
+					<EmptyState
+						icon="panel.essentialSound"
+						message="Select audio clips"
+						detail="Then choose an audio type: Dialogue, Music, SFX or Ambience."
+					/>
+				) : (
+					<Body session={session} seq={sel.seq} clips={sel.clips} />
+				)}
+			</div>
+		</div>
+	);
+}
+
+/** Counts of the active sequence's audio clips per type, as a stable key for the store selector ("3,1,0,2"). */
+function typeCountsKey(s: SessionState | null): string {
+	const seq = s?.activeSequenceId
+		? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+		: undefined;
+	if (!seq) return '';
+	const by = audioTypeClips(seq);
+	return AUDIO_TYPES.map((ty) => by[ty].length).join(',');
+}
+
+/**
+ * The tags found in the active sequence (Premiere: Essential Sound shows the audio types in use; clicking one selects
+ * all clips of that category). One button per type in use with its count; clicking selects those audio clips only.
+ */
+function TagsInSequence({ session }: { session: EditorSession }) {
+	const key = useStoreSelector(session.store, typeCountsKey);
+	const counts = key ? key.split(',').map(Number) : [];
+	if (!counts.some((n) => n > 0)) return null;
+	return (
+		<div
+			className="flex flex-wrap items-center gap-1 border-b border-pr-border-subtle px-2 py-1 text-pr-small"
+			data-testid="essential-tags"
+		>
+			<span className="text-pr-muted">{t('In this sequence:')}</span>
+			{AUDIO_TYPES.map((ty, i) =>
+				counts[i] ? (
+					<Button
+						key={ty}
+						variant="quiet"
+						aria-label={t('Select all {0} clips ({1})', t(AUDIO_TYPE_LABELS[ty]), counts[i])}
+						data-testid={`essential-tag-${ty}`}
+						onClick={() => selectAudioType(session, ty)}
+					>
+						{`${t(AUDIO_TYPE_LABELS[ty])} ${counts[i]}`}
+					</Button>
+				) : null,
+			)}
+		</div>
+	);
 }
 
 function Body({ session, seq, clips }: { session: EditorSession; seq: Sequence; clips: AudioClip[] }) {
@@ -87,6 +147,8 @@ function Body({ session, seq, clips }: { session: EditorSession; seq: Sequence; 
 		return (
 			<div className="flex flex-col gap-2 p-3 text-pr-small" data-testid="essential-sound">
 				<p className="text-pr-muted">The selected clips have different audio types.</p>
+				<AutoTagButton session={session} seq={seq} clips={clips} />
+				<AutoTagBanner clips={clips} apply={apply} />
 				<Button
 					onClick={() => apply('Clear Audio Type', [{ type: 'essentialSound.clearType', clipIds: ids }])}
 				>
@@ -98,7 +160,8 @@ function Body({ session, seq, clips }: { session: EditorSession; seq: Sequence; 
 	if (!s)
 		return (
 			<div className="flex flex-col gap-2 p-3" data-testid="essential-sound">
-				<p className="text-pr-small text-pr-muted">Assign an audio type to the selection:</p>
+				<AutoTagButton session={session} seq={seq} clips={clips} primary />
+				<p className="text-pr-small text-pr-muted">Or assign an audio type to the selection:</p>
 				{AUDIO_TYPES.map((t) => (
 					<Button
 						key={t}
@@ -129,6 +192,7 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 	const ids = clips.map((c) => c.id);
 	const ops = useInspectorOps(session);
 	const engine = useEngineOrNull();
+	const runtime = useShellRuntimeOrNull();
 	const [busy, setBusy] = useState<string | null>(null);
 	const [closed, setClosed] = useState<Record<string, boolean>>({});
 	const [, bump] = useState(0);
@@ -210,7 +274,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 	);
 	const target = s.loudness.targetLufs ?? DEFAULT_LOUDNESS_TARGET;
 	const remixed = clips.find((c) => c.remix);
-	const music = clips[0]!;
+	// one music clip: a clip, or the pieces of one remix (selecting a piece selects its group)
+	const single = singleMusicClip(clips);
+	const music = single ?? clips[0]!;
 	const durSec =
 		(remixed?.remix?.targetFrames ?? music.duration) *
 		(seq.settings.frameRate.den / seq.settings.frameRate.num);
@@ -226,8 +292,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 							onClick={() =>
 								run('match', async () => {
 									const m = await autoMatchLoudness(session, engine!.client, seq.id, ids, target);
-									const v = Object.values(m).find((x) => x !== null);
-									return v === undefined || v === null ? 'The clips are silent' : `Matched to ${target} LUFS`;
+									const message = autoMatchMessage(m, target);
+									if (!Object.values(m).some((r) => 'gainDb' in r)) throw new Error(message);
+									return message;
 								})
 							}
 						>
@@ -360,7 +427,7 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 					<div className="flex gap-2">
 						<Button
 							data-testid="essential-duration-apply"
-							disabled={clips.length !== 1}
+							disabled={!single}
 							disabledReason="Select one music clip"
 							busy={busy === 'remix'}
 							onClick={() =>
@@ -400,6 +467,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 							</Button>
 						) : null}
 					</div>
+					{s.type === 'music' && s.duration.method === 'remix' && single ? (
+						<MusicFit session={session} seq={seq} clip={music} />
+					) : null}
 				</>,
 			),
 		ducking: () =>
@@ -472,6 +542,17 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 						{clips.length} clip{clips.length === 1 ? '' : 's'}
 					</span>
 					<span className="flex-1" />
+					{/* sound design (spec 12 §2.7): browse the library for this clip */}
+					<Button
+						variant="quiet"
+						data-testid="essential-browse-sounds"
+						onClick={() => {
+							const ctx = runtime?.getCtx();
+							if (ctx) void runCommand('sound.browse', ctx);
+						}}
+					>
+						Browse sounds…
+					</Button>
 					<Button
 						variant="quiet"
 						data-testid="essential-clear"
@@ -531,6 +612,8 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 					) : null}
 				</div>
 			</div>
+			<AutoTagBanner clips={clips} apply={apply} />
+			{s.type === 'sfx' ? <EssentialSfxSection session={session} seq={seq} clips={clips} /> : null}
 			{TYPE_SECTIONS[s.type].map((id) => sections[id]())}
 			<div className="flex flex-col gap-1.5 p-2" data-testid="essential-footer">
 				<Checkbox
@@ -549,3 +632,158 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 		</div>
 	);
 }
+
+/**
+ * Essential Sound ▸ Auto Tag (Premiere's "Auto Tag Audio Types", spec 12 P6-R3): the engine listens to the selected
+ * clips and gives the untyped ones (all of them with Shift: replacing the types you set) a type, marked auto.
+ */
+function AutoTagButton({
+	session,
+	seq,
+	clips,
+	primary,
+}: {
+	session: EditorSession;
+	seq: Sequence;
+	clips: AudioClip[];
+	primary?: boolean;
+}) {
+	const engine = useEngineOrNull();
+	const [busy, setBusy] = useState(false);
+	const untyped = clips.filter((c) => !readEssentialSound(c.essential));
+	const targets = untyped.length ? untyped : clips;
+	return (
+		<Button
+			variant={primary ? 'primary' : 'secondary'}
+			data-testid="essential-auto-tag"
+			busy={busy}
+			disabled={!engine || session.getState().readOnly}
+			disabledReason={!engine ? 'The engine is not connected' : 'The project is read-only'}
+			title="Listen to the clips and choose Dialogue, Music, SFX or Ambience (Shift: also re-tag the types you set)"
+			onClick={async (e) => {
+				if (!engine) return;
+				setBusy(true);
+				try {
+					const out = await autoTagClips(
+						session,
+						engine.client,
+						seq.id,
+						(e.shiftKey ? clips : targets).map((c) => c.id),
+						{ force: e.shiftKey },
+					);
+					const message = autoTagMessage(out);
+					if (out.tagged.length) notify.success(message);
+					else notify.error(message);
+				} catch (err) {
+					notify.error((err as Error).message);
+				} finally {
+					setBusy(false);
+				}
+			}}
+		>
+			{busy ? 'Listening…' : untyped.length === clips.length ? 'Auto Tag' : 'Auto Tag untyped clips'}
+		</Button>
+	);
+}
+
+/** Clips Auto Tag typed and the user has not confirmed: Confirm (keeps the type) or Change (another type). */
+function AutoTagBanner({
+	clips,
+	apply,
+}: {
+	clips: AudioClip[];
+	apply(label: string, commands: Command[]): void;
+}) {
+	const [changing, setChanging] = useState(false);
+	const auto = clips.map((c) => ({
+		c,
+		tag: essentialAutoTag(c.essential),
+		es: readEssentialSound(c.essential),
+	}));
+	const tagged = auto.filter((x) => x.tag && x.es);
+	if (!tagged.length) return null;
+	const first = tagged[0]!;
+	const sameType = tagged.every((x) => x.es!.type === first.es!.type);
+	const low = Math.min(...tagged.map((x) => x.tag!.confidence));
+	const pct = (x: number) => `${Math.round(x * 100)} %`;
+	const why = (first.tag!.reasons ?? []).join('; ');
+	const typeName = t(AUDIO_TYPE_LABELS[first.es!.type]);
+	const text =
+		tagged.length === 1
+			? t('Auto-tagged as {0} · {1} confident', typeName, pct(first.tag!.confidence))
+			: sameType
+				? t('{0} clips auto-tagged as {1} · from {2} confident', tagged.length, typeName, pct(low))
+				: t('{0} clips auto-tagged · from {1} confident', tagged.length, pct(low));
+	const confirm = () => {
+		const byType = new Map<string, string[]>();
+		for (const x of tagged) byType.set(x.es!.type, [...(byType.get(x.es!.type) ?? []), x.c.id]);
+		apply(
+			'Confirm Audio Type',
+			[...byType].map(([audioType, clipIds]) => ({
+				type: 'essentialSound.setType',
+				clipIds,
+				audioType: audioType as (typeof AUDIO_TYPES)[number],
+			})),
+		);
+	};
+	return (
+		<div
+			className="flex flex-col gap-1.5 border-b border-pr-border-subtle bg-pr-panel-alt p-2"
+			data-testid="essential-auto-tag-banner"
+			role="status"
+		>
+			<div className="flex items-center gap-2">
+				<span
+					className="rounded-[2px] border border-dashed border-pr-strong px-1 text-[10px] leading-[14px] text-pr-strong"
+					aria-hidden="true"
+				>
+					AUTO
+				</span>
+				<span className="min-w-0 flex-1 truncate text-pr-small text-pr-text" title={why || undefined}>
+					{text}
+				</span>
+				{low < LOW_CONFIDENCE ? (
+					<span className="text-pr-small text-pr-warning" data-testid="essential-auto-tag-low">
+						Low confidence
+					</span>
+				) : null}
+			</div>
+			{why ? <p className="text-pr-small text-pr-muted">{why}</p> : null}
+			<div className="flex items-center gap-1">
+				<Button data-testid="essential-auto-tag-confirm" onClick={confirm}>
+					Confirm
+				</Button>
+				<Button
+					variant="quiet"
+					data-testid="essential-auto-tag-change"
+					aria-expanded={changing}
+					onClick={() => setChanging((v) => !v)}
+				>
+					Change…
+				</Button>
+			</div>
+			{changing ? (
+				<fieldset className="m-0 flex flex-wrap gap-1 border-0 p-0" aria-label="Audio type">
+					{AUDIO_TYPES.map((ty) => (
+						<Button
+							key={ty}
+							variant={sameType && first.es!.type === ty ? 'primary' : 'secondary'}
+							data-testid={`essential-auto-tag-change-${ty}`}
+							onClick={() => {
+								setChanging(false);
+								apply(`Set Audio Type to ${AUDIO_TYPE_LABELS[ty]}`, [
+									{ type: 'essentialSound.setType', clipIds: tagged.map((x) => x.c.id), audioType: ty },
+								]);
+							}}
+						>
+							{AUDIO_TYPE_LABELS[ty]}
+						</Button>
+					))}
+				</fieldset>
+			) : null}
+		</div>
+	);
+}
+
+/** The classifier's "low confidence" line (`LOW_CATEGORY_CONFIDENCE` of @jasper/audio-fx). */
+const LOW_CONFIDENCE = 0.6;

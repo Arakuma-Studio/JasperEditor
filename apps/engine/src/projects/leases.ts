@@ -17,8 +17,32 @@ class LeaseError extends Error {
 	}
 }
 
+/** A session started editing a project (a new lease, not a renewal), or stopped (released, expired, forgotten). */
+export type LeaseChange = { projectId: string; kind: 'acquired' | 'released' };
+
 export class LeaseManager {
 	private readonly leases = new Map<string, Lease>();
+	private readonly listeners = new Set<(c: LeaseChange) => void>();
+
+	/**
+	 * Calls `fn` when a project gets a new editing session or loses its session (released, found expired, forgotten).
+	 * A throwing listener is ignored. Returns the unsubscribe function. The History of a session that is gone cannot
+	 * bring anything back: per-sequence caches of deleted sequences can go then (the kept Sound Check reports).
+	 */
+	onChange(fn: (c: LeaseChange) => void): () => void {
+		this.listeners.add(fn);
+		return () => this.listeners.delete(fn);
+	}
+
+	private emit(c: LeaseChange): void {
+		for (const fn of this.listeners) {
+			try {
+				fn(c);
+			} catch {
+				// a listener never breaks a lease
+			}
+		}
+	}
 
 	constructor(
 		private readonly now: () => number = () => Date.now(),
@@ -30,6 +54,7 @@ export class LeaseManager {
 		if (!l) return null;
 		if (Date.parse(l.expiresAt) <= this.now()) {
 			this.leases.delete(projectId);
+			this.emit({ projectId, kind: 'released' });
 			return null;
 		}
 		return l;
@@ -70,6 +95,7 @@ export class LeaseManager {
 					heartbeatMs: LEASE_HEARTBEAT_MS,
 				};
 		this.leases.set(projectId, lease);
+		if (!cur) this.emit({ projectId, kind: 'acquired' });
 		return { ...lease };
 	}
 
@@ -86,10 +112,11 @@ export class LeaseManager {
 		if (!cur || cur.leaseId !== leaseId)
 			throw new LeaseError('LEASE_NOT_FOUND', 'Lease not found or expired');
 		this.leases.delete(projectId);
+		this.emit({ projectId, kind: 'released' });
 	}
 
 	/** Drops any lease on a deleted project. */
 	forget(projectId: string): void {
-		this.leases.delete(projectId);
+		if (this.leases.delete(projectId)) this.emit({ projectId, kind: 'released' });
 	}
 }

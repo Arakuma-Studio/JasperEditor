@@ -149,6 +149,11 @@ export function PreviewLayers(props: {
 	offset: number;
 	premount: number;
 	options: RenderOptions;
+	/**
+	 * The mix graph's schedule epoch: the rendered audio bypasses the graph but follows Remotion's anchor, which a primed
+	 * start moves while paused; a new epoch re-creates its players so they reschedule with it.
+	 */
+	epoch?: number;
 }) {
 	// compositor: when the display stage does not capture (a flat stack), preview files get the display transform here.
 	const display = useContext(FlatDisplayContext);
@@ -170,7 +175,7 @@ export function PreviewLayers(props: {
 			))}
 			{props.audio.map((p) => (
 				<Sequence
-					key={`a:${p.url}:${p.start}`}
+					key={`a:${p.url}:${p.start}:${props.epoch ?? 0}`}
 					from={p.start - props.offset}
 					durationInFrames={p.frames}
 					name="Render preview (audio)"

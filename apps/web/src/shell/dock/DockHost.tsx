@@ -181,6 +181,7 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 				)}
 			>
 				<span className={narrow ? 'sr-only' : 'truncate'}>{title}</span>
+				{def?.badge && !narrow ? <def.badge /> : null}
 				{active && props.tabLocation === 'header' ? (
 					<DropdownMenu
 						items={menu}

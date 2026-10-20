@@ -8,10 +8,12 @@
 // * `jasper-capture`: voice-over recording tap: posts the input (planar copies, ~85 ms batches) with the frame
 //   index of the first sample (`currentFrame`), plus per-channel input peaks for the record meter.
 import { LevelMeter, LoudnessMeter, TruePeakLimiter } from '@jasper/audio-dsp';
+import type { EffectInstance } from '@jasper/project/audio';
 import { FX_PROCESSOR_NAME, FxSlotCore, type FxSlotMessage } from './fx-processor.ts';
 import type { MeterReading } from './graph.ts';
 
 declare const sampleRate: number;
+declare const currentTime: number;
 declare function registerProcessor(name: string, ctor: new (options: Options) => AudioWorkletProcessor): void;
 declare class AudioWorkletProcessor {
 	readonly port: MessagePort;
@@ -19,7 +21,13 @@ declare class AudioWorkletProcessor {
 }
 
 type Options = {
-	processorOptions?: { channels?: number; loudness?: boolean; ceilingDb?: number; enabled?: boolean };
+	processorOptions?: {
+		channels?: number;
+		loudness?: boolean;
+		ceilingDb?: number;
+		enabled?: boolean;
+		lookaheadMs?: number;
+	};
 };
 
 const POST_EVERY = Math.max(1, Math.round((sampleRate * 0.033) / 128));
@@ -89,8 +97,11 @@ class MeterProcessor extends AudioWorkletProcessor {
 	}
 }
 
+// The mix graph counts the limiter's latency in its read-ahead only while it is enabled (disabled = no delay), and a
+// re-enabled limiter starts from a clean state (no stale look-ahead audio from before it was bypassed).
 class LimiterProcessor extends AudioWorkletProcessor {
 	private readonly channels: number;
+	private readonly lookaheadMs: number;
 	private limiter: TruePeakLimiter;
 	private enabled: boolean;
 	private readonly buf: Float32Array[];
@@ -100,20 +111,25 @@ class LimiterProcessor extends AudioWorkletProcessor {
 		const o = options.processorOptions ?? {};
 		this.channels = Math.max(1, o.channels ?? 2);
 		this.enabled = o.enabled ?? true;
-		this.limiter = new TruePeakLimiter(sampleRate, this.channels, {
-			ceilingDb: o.ceilingDb ?? -1,
-			lookaheadMs: 5,
-		});
+		this.lookaheadMs = o.lookaheadMs ?? 5;
+		this.limiter = this.make(o.ceilingDb ?? -1);
 		this.buf = Array.from({ length: this.channels }, () => new Float32Array(128));
 		this.port.onmessage = (e: MessageEvent) => {
 			const m = e.data as { ceilingDb?: number; enabled?: boolean };
-			if (m.ceilingDb !== undefined && Math.abs(m.ceilingDb - 20 * Math.log10(this.limiter.ceiling)) > 1e-6)
-				this.limiter = new TruePeakLimiter(sampleRate, this.channels, {
-					ceilingDb: m.ceilingDb,
-					lookaheadMs: 5,
-				});
+			const ceiling = m.ceilingDb ?? 20 * Math.log10(this.limiter.ceiling);
+			const enabling = m.enabled === true && !this.enabled;
+			if (
+				enabling ||
+				(m.ceilingDb !== undefined && Math.abs(m.ceilingDb - 20 * Math.log10(this.limiter.ceiling)) > 1e-6)
+			)
+				this.limiter = this.make(ceiling);
 			if (m.enabled !== undefined) this.enabled = m.enabled;
 		};
+	}
+
+	private make(ceilingDb: number): TruePeakLimiter {
+		const c = Number.isFinite(ceilingDb) ? ceilingDb : -1;
+		return new TruePeakLimiter(sampleRate, this.channels, { ceilingDb: c, lookaheadMs: this.lookaheadMs });
 	}
 
 	process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -209,16 +225,23 @@ registerProcessor('jasper-limiter', LimiterProcessor);
 /** audio-fx: one audio effect slot (clip effect or strip insert), see fx-processor.ts. */
 class FxProcessor extends AudioWorkletProcessor {
 	private readonly core: FxSlotCore;
-	constructor(options: { processorOptions?: { channels?: number } }) {
+	constructor(options: {
+		processorOptions?: { channels?: number; effect?: EffectInstance; time?: number };
+	}) {
 		super(options);
-		const channels = Math.max(1, options.processorOptions?.channels ?? 2);
+		const o = options.processorOptions ?? {};
+		const channels = Math.max(1, o.channels ?? 2);
 		this.core = new FxSlotCore(sampleRate, channels, this.port);
+		// The instance comes with the node: the first quantum is already processed (a message would arrive later).
+		if (o.effect)
+			this.core.message({ type: 'effect', effect: o.effect, time: Number.isFinite(o.time) ? o.time! : 0 });
 		this.port.onmessage = (e: MessageEvent) => this.core.message(e.data as FxSlotMessage);
 	}
 	process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
 		if (!this.core.alive) return false;
 		const out = outputs[0];
-		if (out) this.core.render(inputs[0], out);
+		// `currentTime`: the context time of this quantum (absent where a host stubs the worklet scope)
+		if (out) this.core.render(inputs[0], out, typeof currentTime === 'number' ? currentTime : undefined);
 		return true;
 	}
 }

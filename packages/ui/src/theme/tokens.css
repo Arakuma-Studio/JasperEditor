@@ -84,6 +84,10 @@
 	--pr-ghost-stroke: var(--pr-accent);
 	--pr-ghost-fill: color-mix(in srgb, var(--pr-accent) 30%, transparent);
 	--pr-ghost-remove: color-mix(in srgb, var(--pr-danger) 35%, transparent);
+	/* sound cues on the timeline's Cue Seam (spec 12 §2.7): placed cues, hero fills, unfilled outlines */
+	--pr-cue: #6fd3b8;
+	--pr-cue-hero: #9ff0d6;
+	--pr-cue-unfilled: var(--pr-text-secondary);
 	--pr-engine-remotion: #e056b8;
 	--pr-engine-fframes: #b07cff;
 	--pr-engine-native: #58b6a6;
@@ -204,6 +208,9 @@
 	--pr-border: #5a5a5a;
 	--pr-text-secondary: #b0b0b0;
 	--pr-text-tertiary: #8d8d8d;
+	--pr-cue: #8ff5d9;
+	--pr-cue-hero: #d6fff3;
+	--pr-cue-unfilled: #d8d8d8;
 	--pr-gutter: 4px;
 }
 

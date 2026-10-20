@@ -18,11 +18,16 @@ export const CONTROL_BLOCK = 32;
 export class EffectSlot implements MixProcessor {
 	readonly chain: EffectChain;
 	private n = 0;
+	/** Whether the parameters have been snapped to their values at the first control point (after a reset). */
+	private primed = false;
 	readonly latency: number;
 
 	constructor(effect: EffectInstance, sampleRate: number, channels: number) {
 		this.chain = new EffectChain(sampleRate, Math.max(1, channels));
 		this.chain.setEffects([{ ...effect, enabled: true }]);
+		// The processors were built with the spec defaults; their smoothers must not glide from there to the
+		// instance's values over the first milliseconds of every clip and export (nothing was processed yet).
+		this.chain.reset();
 		this.latency = this.chain.latency();
 	}
 
@@ -36,7 +41,13 @@ export class EffectSlot implements MixProcessor {
 		let i = 0;
 		while (i < frames) {
 			const phase = this.n % CONTROL_BLOCK;
-			if (animated && phase === 0) this.chain.automate(ctx.time + i * ctx.flicksPerSample);
+			if (animated && phase === 0) {
+				this.chain.automate(ctx.time + i * ctx.flicksPerSample);
+				// First control point since construction / reset: keyframed values apply at once, not by a ramp from
+				// the static value (the state is still empty, so resetting only snaps the smoothers).
+				if (!this.primed) this.chain.reset();
+			}
+			this.primed = true;
 			const k = Math.min(frames - i, CONTROL_BLOCK - phase);
 			this.chain.process(channels, i, i + k);
 			i += k;
@@ -47,6 +58,7 @@ export class EffectSlot implements MixProcessor {
 	reset(): void {
 		this.chain.reset();
 		this.n = 0;
+		this.primed = false;
 	}
 }
 

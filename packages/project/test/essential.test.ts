@@ -177,6 +177,190 @@ describe('Essential Sound commands', () => {
 		expect(clip().pan.value).toBe(0);
 	});
 
+	it('Auto-Match skips an unmeasurable clip shorter than 400 ms as too short, not as silent', () => {
+		const { h, clip } = setup(0.3);
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		const r = h.ok([{ type: 'essentialSound.autoMatch', measuredLufs: { [id]: null } }]);
+		const skipped = (r.results[0] as { clips: Record<string, { skipped?: string }> }).clips[id]!.skipped;
+		expect(skipped).toMatch(/400 ms/);
+		expect(clip().gainDb).toBe(0);
+	});
+
+	it("the SFX type keeps the clip's own pan; Pan on/off and Clear Audio Type restore it", () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: -50 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		expect(clip().pan.value).toBe(-50);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: 30 } } }]);
+		expect(clip().pan.value).toBe(-20);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(-50);
+		// a pan clamped at −100 while on comes back exactly when switched off
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: -80 } } }]);
+		expect(clip().pan.value).toBe(-100);
+		h.ok([{ type: 'essentialSound.clearType', clipIds: [id] }]);
+		expect(clip().pan.value).toBe(-50);
+	});
+
+	it('Clip Volume on/off restores levels the fader range clamped while it was on', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'dialogue' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		expect(clip().volumeDb.value).toBe(15);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(clip().volumeDb.value).toBe(10);
+		// a fade from silence (−96 = −∞) stays silent through a −6 dB on/off
+		h.ok([
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: -96 },
+			{ type: 'param.setAnimated', target: ['clip', id, 'volumeDb'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 0, at: { frames: 10 } },
+		]);
+		const before = clip().volumeDb.keyframes.map((k) => k.value);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: -6 } } }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(clip().volumeDb.keyframes.map((k) => k.value)).toEqual(before);
+		expect(before[0]).toBe(-96);
+	});
+
+	it('a split keeps the clamp residual of keyframes on both halves (phase 0 verification)', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([
+			{ type: 'param.setAnimated', target: ['clip', id, 'volumeDb'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 8, at: { frames: 300 } },
+		]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'dialogue' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		expect(clip().volumeDb.keyframes.map((k) => k.value)).toEqual([15, 15]);
+		h.ok([{ type: 'clip.split', at: 100, clipIds: [id] }]);
+		const halves = h.clips('A1').map((c) => c.id);
+		expect(halves).toHaveLength(2);
+		h.ok([{ type: 'essentialSound.set', clipIds: halves, values: { 'volume.on': false } }]);
+		for (const c of h.clips('A1') as unknown as { volumeDb: { keyframes: { value: number }[] } }[])
+			expect(c.volumeDb.keyframes.map((k) => k.value)).toEqual([10, 8]);
+	});
+
+	it('a level the user moved after the clamp does not get the stale residual back (phase 0 verification)', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		expect(clip().volumeDb.value).toBe(15);
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 0 }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(clip().volumeDb.value).toBe(-15);
+		// pan: −50 with SFX Pan −80 shows −100; the user sets 0; Pan off gives +80 (plain offset removal)
+		h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: -50 }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: -80 } } }]);
+		expect(clip().pan.value).toBe(-100);
+		h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: 0 }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(80);
+	});
+
+	it('residual is not a setting: refused by key and not listed (phase 0 verification)', () => {
+		const s = newEssentialSound('sfx');
+		expect(() => setEssentialValue(s, 'residual.pan.value', 5)).toThrow(/not a setting/);
+		expect(() => setEssentialValue(s, 'residual', { volume: {}, pan: {} })).toThrow(/not a setting/);
+		expect(
+			essentialKeys({ ...s, residual: { volume: { value: 3 }, pan: {} } }).some((k) =>
+				k.startsWith('residual'),
+			),
+		).toBe(false);
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		const r = h.tx([{ type: 'essentialSound.set', clipIds: [id], values: { 'residual.pan.value': 5 } }]);
+		expect(r.ok ? null : r.errors[0]?.code).toBe('E_INVALID_PARAM');
+	});
+
+	it('a hostile stored residual is bounded by the range width (phase 0 verification)', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'param.set', target: ['clip', id, 'volumeDb'], value: 10 }]);
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'dialogue' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { volume: { on: true, levelDb: 15 } } }]);
+		h.doc = structuredClone(h.doc);
+		const c = h.seq.clips[id] as unknown as { essential: { residual: { volume: Record<string, number> } } };
+		c.essential.residual.volume.value = 1e300;
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'volume.on': false } }]);
+		expect(Number.isFinite(clip().volumeDb.value)).toBe(true);
+		expect(clip().volumeDb.value).toBeLessThanOrEqual(15);
+	});
+
+	it('one out-of-range stored field does not reset the other Essential Sound settings', () => {
+		const s = newEssentialSound('dialogue');
+		s.loudness = { enabled: true, measuredLufs: -30, targetLufs: -23, gainDb: 7 };
+		s.volume = { on: true, levelDb: -4 };
+		s.repair.noise = { on: true, amount: 8 };
+		const raw = JSON.parse(JSON.stringify(s));
+		raw.ducking.sensitivity = 11;
+		raw.ducking.reduceDb = -41;
+		const r = readEssentialSound(raw)!;
+		expect(r.loudness.gainDb).toBe(7);
+		expect(r.volume).toEqual({ on: true, levelDb: -4 });
+		expect(r.repair.noise).toEqual({ on: true, amount: 8 });
+		expect(r.ducking.sensitivity).toBe(10);
+		expect(r.ducking.reduceDb).toBe(-40);
+		// a field of the wrong type falls back for its section only
+		const raw2 = JSON.parse(JSON.stringify(s));
+		raw2.clarity.enhanceTone = 'purple';
+		const r2 = readEssentialSound(raw2)!;
+		expect(r2.loudness.gainDb).toBe(7);
+		expect(r2.repair.noise.on).toBe(true);
+		expect(r2.clarity.enhanceTone).toBe('low');
+	});
+
+	it('applyPreset refuses invalid explicit settings instead of applying the defaults', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		const bad = h.tx([
+			{
+				type: 'essentialSound.applyPreset',
+				clipIds: [id],
+				settings: { type: 'dialogue', repair: { noise: { on: 'yes', amount: 8 } } },
+			},
+		]);
+		expect(bad.ok).toBe(false);
+		// out-of-range numbers are clamped like every other setting
+		h.ok([
+			{
+				type: 'essentialSound.applyPreset',
+				clipIds: [id],
+				settings: {
+					type: 'dialogue',
+					repair: { noise: { on: true, amount: 8 } },
+					ducking: { reduceDb: -41 },
+				},
+			},
+		]);
+		expect(clip().effects.map((e) => e.essential)).toContain('noise');
+		expect(readEssentialSound(clip().essential)!.ducking.reduceDb).toBe(-40);
+	});
+
+	it('the loudness target is limited to −60…0 LUFS (Auto-Match cannot jump to +96 dB)', () => {
+		expect(setEssentialValue(newEssentialSound('sfx'), 'loudness.targetLufs', 500).loudness.targetLufs).toBe(
+			0,
+		);
+		const raw = {
+			...newEssentialSound('sfx'),
+			loudness: { enabled: true, measuredLufs: null, targetLufs: 500, gainDb: 0 },
+		};
+		expect(readEssentialSound(raw)!.loudness.targetLufs).toBe(0);
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'loudness.targetLufs': 500 } }]);
+		h.ok([{ type: 'essentialSound.autoMatch', measuredLufs: { [id]: -30 } }]);
+		expect(clip().gainDb).toBe(30);
+	});
+
 	it('presets: built-ins by name, user settings, keeping loudness/volume/mute; mute is a Mute effect', () => {
 		const { h, clip } = setup();
 		const id = clip().id;
@@ -219,6 +403,32 @@ describe('Remix', () => {
 		{ srcSeconds: 10.1, lenSeconds: 3.9 },
 		{ srcSeconds: 16, lenSeconds: 4 },
 	];
+
+	it('Auto-Match gives the pieces of one remix ONE gain (their joints do not jump); other clips match on their own', () => {
+		// final verification B: matched one by one, the quiet intro piece and the loud drop piece got gains 9 dB apart
+		const { h, clip } = setup(20);
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'music' }]);
+		h.ok([{ type: 'clip.remix', clipId: id, targetFrames: 360, pieces, bpm: 120 }]);
+		const m = h.registerVideo({ kind: 'audio', seconds: 5 });
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 400, tracks: { audio: 'A1' } }]);
+		const list = h.clips('A1');
+		expect(list.length).toBe(4);
+		const other = list[3]!.id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [other], audioType: 'music' }]);
+		const measuredLufs = { [list[0]!.id]: -30, [list[1]!.id]: -20, [list[2]!.id]: null, [other]: -26 };
+		const r = h.ok([{ type: 'essentialSound.autoMatch', measuredLufs, targetLufs: -23 }]);
+		const out = (r.results[0] as { clips: Record<string, { gainDb?: number; skipped?: string }> }).clips;
+		// the duration-weighted power mean of the measured pieces (123 and 117 frames)
+		const mean = 10 * Math.log10((123 * 10 ** -3 + 117 * 10 ** -2) / 240);
+		const gains = h.clips('A1').map((c) => (c as unknown as { gainDb: number }).gainDb);
+		expect(gains[0]).toBeCloseTo(-23 - mean, 9);
+		expect(gains[1]).toBeCloseTo(gains[0]!, 9);
+		// the silent piece is left alone (as any unmeasured clip), the other music clip matches its own −26
+		expect(out[list[2]!.id]!.skipped).toBe('silent');
+		expect(gains[3]).toBeCloseTo(3, 9);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
 
 	it('replaces the clip by grouped pieces with crossfades, exact jump offsets; revert restores', () => {
 		const { h, clip } = setup(20);
@@ -318,6 +528,136 @@ describe('Essential Sound invariants and repair', () => {
 		expect(fixed.essential).toBeUndefined();
 		expect(fixed.effects.every((e) => e.essential === undefined)).toBe(true);
 		expect(checkInvariants(r2.document)).toEqual([]);
+	});
+});
+
+/**
+ * Sound design Phase 0 close-out: builds before the SFX Pan became an offset wrote its value into the clip's pan (the
+ * static value, or one keyframe at the playhead) and saved settings without the `panOffset` marker. Such a project is
+ * stored here as the old build left it; it is then loaded (or edited directly) with this build.
+ */
+function legacySfxPan(opts: { keyframed: boolean; panValue: number; own?: number }) {
+	const { h, clip } = setup();
+	const id = clip().id;
+	if (opts.keyframed)
+		h.ok([
+			{ type: 'param.setAnimated', target: ['clip', id, 'pan'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'pan'], value: -50, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', id, 'pan'], value: 50, at: { frames: 300 } },
+			// the old build's write when Pan was switched on with the playhead at frame 100
+			{ type: 'param.set', target: ['clip', id, 'pan'], value: opts.panValue, at: { frames: 100 } },
+		]);
+	else h.ok([{ type: 'param.set', target: ['clip', id, 'pan'], value: opts.own ?? opts.panValue }]);
+	const doc = JSON.parse(JSON.stringify(h.doc));
+	const settings = JSON.parse(JSON.stringify(newEssentialSound('sfx'))) as Record<string, unknown>;
+	delete settings.panOffset;
+	settings.pan = { enabled: true, value: opts.panValue };
+	doc.sequences[h.seqId].clips[id].essential = settings;
+	return { h, clip, id, doc };
+}
+
+describe('Essential Sound Pan saved by builds where it was not an offset', () => {
+	const keys = (c: { pan: { keyframes: unknown[] } }) =>
+		(c.pan.keyframes as { value: number }[]).map((k) => k.value);
+
+	it('loading keeps keyframed pan as saved; switching Pan off afterwards does not shift every keyframe', async () => {
+		const { loadProject } = await import('../src/index.ts');
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: true, panValue: 20 });
+		const loaded = loadProject(doc);
+		h.doc = loaded.document;
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		expect(loaded.repairs.some((r) => r.action === 'migrate-essential-pan' && r.entity === id)).toBe(true);
+		expect(loaded.issues).toEqual([]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		// the old reading of the offset turned these into [−70, 0, 30]
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		// switched on again it is a plain offset, and off restores the keyframes
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: 10 } } }]);
+		expect(keys(clip())).toEqual([-40, 30, 60]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('a command on such a clip before any load reads it the same way', () => {
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: true, panValue: 20 });
+		h.doc = doc;
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(keys(clip())).toEqual([-50, 20, 50]);
+		const s = clip().essential as { pan: { enabled: boolean; value: number }; panOffset?: boolean };
+		expect(s.panOffset).toBe(true);
+		expect(s.pan.enabled).toBe(false);
+	});
+
+	it('a static pan the old build set to the Pan value reads as that offset (off gives 0, as the old build did)', async () => {
+		const { loadProject } = await import('../src/index.ts');
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: false, panValue: 40 });
+		const loaded = loadProject(doc);
+		h.doc = loaded.document;
+		expect(loaded.repairs).toEqual([]);
+		expect(clip().pan.value).toBe(40);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.value': 25 } }]);
+		expect(clip().pan.value).toBe(25);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(0);
+	});
+
+	it('a static pan moved after the old build wrote it stays where the user put it', async () => {
+		const { loadProject } = await import('../src/index.ts');
+		const { h, clip, id, doc } = legacySfxPan({ keyframed: false, panValue: 40, own: -30 });
+		const loaded = loadProject(doc);
+		h.doc = loaded.document;
+		expect(loaded.repairs.map((r) => r.action)).toEqual(['migrate-essential-pan']);
+		expect(clip().pan.value).toBe(-30);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+		expect(clip().pan.value).toBe(-30);
+	});
+
+	it('settings with the marker are never migrated; the marker is not a setting', () => {
+		const { h, clip } = setup();
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'sfx' }]);
+		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { pan: { enabled: true, value: 30 } } }]);
+		expect((clip().essential as { panOffset?: boolean }).panOffset).toBe(true);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		expect(essentialKeys()).not.toContain('panOffset');
+		expect(h.tx([{ type: 'essentialSound.set', clipIds: [id], values: { panOffset: false } }]).ok).toBe(
+			false,
+		);
+	});
+
+	it('property: loading any old SFX Pan state changes nothing audible and leaves no issue', async () => {
+		const fc = (await import('fast-check')).default;
+		const { loadProject } = await import('../src/index.ts');
+		const pans = fc.integer({ min: -100, max: 100 });
+		fc.assert(
+			fc.property(
+				fc.boolean(),
+				pans,
+				pans,
+				fc.boolean(),
+				fc.constantFrom(...AUDIO_TYPES),
+				(keyframed, value, own, enabled, type) => {
+					const { h, clip, id, doc } = legacySfxPan({ keyframed, panValue: value, own });
+					const raw = doc.sequences[h.seqId].clips[id].essential;
+					raw.type = type;
+					raw.pan.enabled = enabled;
+					const before = JSON.stringify(doc.sequences[h.seqId].clips[id].pan);
+					const loaded = loadProject(doc);
+					h.doc = loaded.document;
+					expect(JSON.stringify(clip().pan)).toBe(before);
+					expect(loaded.issues).toEqual([]);
+					// Pan off now: the saved pan, or (an untouched static Pan value) 0 as the old build gave
+					const s = readEssentialSound(clip().essential)!;
+					h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { 'pan.enabled': false } }]);
+					const after = clip().pan;
+					const offsetOn = type === 'sfx' && s.pan.enabled && s.pan.value !== 0;
+					if (offsetOn) expect(after.value).toBe(Math.min(100, Math.max(-100, own - value)));
+					else expect(JSON.stringify(after)).toBe(before);
+				},
+			),
+			{ numRuns: 60 },
+		);
 	});
 });
 

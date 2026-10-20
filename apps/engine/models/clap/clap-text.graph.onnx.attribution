@@ -1,0 +1,8 @@
+asset:        clap-text.graph.onnx
+title:        CLAP larger_clap_general text encoder + projection, ONNX graph without weights (Describe-it search)
+author:       LAION (model, laion/larger_clap_general; Wu, Chen, Zhang, Hui, Berg-Kirkpatrick, Dubnov 2022); graph traced from the Hugging Face transformers ClapModel implementation (Apache-2.0); exported by JasperEditor
+source:       https://huggingface.co/laion/larger_clap_general/tree/ada0c23a36c4e8582805bb38fec3905903f18b41
+license:      Apache-2.0
+license-file: apps/engine/models/clap/LICENSE-Apache-2.0.txt
+added:        2026-10-18 by WP-E9 (sound design)
+notes:        Made by scripts/models/export-clap.py (torch.onnx TorchScript exporter, opset 17, no constant folding) from the pinned checkpoint pytorch_model.bin (sha256 314eb00c…). Holds NO weights: each of its initializers is an ONNX external-data reference (offset, length) into the unmodified pytorch_model.bin, which the app downloads from LAION's repository on request (pinned revision and sha256) and places next to this file. Parity with PyTorch: cosine >= 0.9999998 on 68 sounds and 34 texts (apps/engine/models/clap/clap.provenance.json). Not loaded unless the user installs the Describe-it search model.

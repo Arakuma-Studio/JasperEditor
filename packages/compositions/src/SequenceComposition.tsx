@@ -45,6 +45,7 @@ import {
 } from '@jasper/project';
 import {
 	type ComponentType,
+	type CSSProperties,
 	Fragment,
 	memo,
 	type ReactNode,
@@ -55,7 +56,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Freeze, Internals, Sequence, useBufferState, useCurrentFrame } from 'remotion';
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { installSerialAudioContext } from './audio/serial-audio-context.ts';
@@ -110,7 +111,7 @@ import {
 	transitionRunMode,
 } from './fx/transition.tsx';
 import { AdjustmentScope, cssExactAdjustment, FlatAdjustment } from './layers/AdjustmentScope.tsx';
-import { AudioLayer, layerComponentFor } from './layers/index.ts';
+import { AudioLayer, layerComponentFor, useGraphEpoch, useGraphLatency } from './layers/index.ts';
 import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
@@ -196,6 +197,12 @@ function isFrameDependent(
 	}
 	return false;
 }
+
+/**
+ * Audio clips' Sequences: Remotion premounts only Sequences with a layout (an empty AbsoluteFill here, which must
+ * never take the pointer).
+ */
+const AUDIO_SEQUENCE_STYLE: CSSProperties = { pointerEvents: 'none' };
 
 /** Media kinds get a 2 s premount so decoders warm up before the cut (S03:RND-020). */
 const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image']);
@@ -1175,11 +1182,62 @@ function MixGraphDriver({
 	offset: number;
 }) {
 	const frame = useCurrentFrame();
+	// sound-design Phase 0 close-out: the graph follows the transport (seeks flush it, a Play after a paused seek is
+	// primed, the read-ahead is held while playing).
+	const sharedAudio = useContext(Internals.SharedAudioContext);
+	const [playing] = Internals.Timeline.usePlayingState();
+	useEffect(() => {
+		if (!sharedAudio) return;
+		const emitter = sharedAudio.audioSyncAnchorEmitter;
+		graph.attachSync({
+			anchor: sharedAudio.audioSyncAnchor,
+			subscribe: (cb) => {
+				const s = emitter.subscribe(cb);
+				return () => s.remove();
+			},
+			emitter,
+		});
+	}, [graph, sharedAudio]);
+	// sound-design Phase 6: playback is held while the sources start again after a schedule epoch
+	const buffer = useBufferState();
+	const buffering = useContext(Internals.BufferingContextReact);
+	useEffect(() => {
+		graph.setBufferGate(() => buffer.delayPlayback(), buffering?.buffering);
+		return () => graph.setBufferGate(null);
+	}, [graph, buffer, buffering]);
+	// A picture that fell behind the audio catches up (the anchor guard): Remotion's frame state, as its playback loop
+	// advances it.
+	const setTimelineFrame = Internals.Timeline.useTimelineSetFrame();
+	const config = Internals.useUnsafeVideoConfig();
+	const compositionId = config?.id ?? null;
+	const compositionFps = config?.fps ?? 30;
+	const lastFrame = (config?.durationInFrames ?? 1) - 1;
+	useEffect(() => {
+		if (!compositionId) return;
+		graph.setPictureAdvance((n) => {
+			setTimelineFrame((c) => {
+				const cur = c[compositionId] ?? 0;
+				return { ...c, [compositionId]: Math.min(lastFrame, cur + n) };
+			});
+			return true;
+		}, compositionFps);
+		return () => graph.setPictureAdvance(null, compositionFps);
+	}, [graph, setTimelineFrame, compositionId, compositionFps, lastFrame]);
+	// The playback rate (J / L shuttle): with Remotion's sync anchor the graph reads the audio clock's time from it.
+	const playbackRate = useContext(Internals.PlaybackRateContext)?.playbackRate ?? 1;
+	// (before the playing state below: a Play that comes with a seek is checked against the new picture position)
 	useEffect(() => {
 		if (!doc.audioMix) return;
-		const t = (frame + offset) * flicksPerFrame(doc.settings.fps);
-		graph.update(doc.audioMix, doc.audioClips, t, doc.settings.fps);
-	}, [graph, doc, frame, offset]);
+		const F = flicksPerFrame(doc.settings.fps);
+		const t = (frame + offset) * F;
+		graph.update(doc.audioMix, doc.audioClips, t, doc.settings.fps, {
+			compositionFlicks: frame * F,
+			rate: playbackRate,
+		});
+	}, [graph, doc, frame, offset, playbackRate]);
+	useEffect(() => {
+		graph.setPlaying(playing);
+	}, [graph, playing]);
 	return null;
 }
 
@@ -1223,13 +1281,27 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 		[doc, options.isPreview, options.previews],
 	);
 	const live = previewed.doc;
-	// ui-perf: audio clips are windowed like the video layers (FrameWindow).
+	// Audio clips are premounted like media (decoder warm-up) and at least by their lead: the graph's read-ahead plus
+	// their own effect latency (`MixGraph.clipLead`). The source of a clip mounted only when the picture reaches it
+	// cannot start early, so it lost its first `lead` seconds at every cut; premounted, its first buffers are
+	// scheduled ahead of the cut (S03:RND-020, spec 12 Phase 0).
+	const graphLatency = useGraphLatency(graph);
+	const graphEpoch = useGraphEpoch(graph);
+	const audioPremount = useCallback(
+		(clip: RenderDoc['audioClips'][number]): number =>
+			Math.max(premountFrames(fps), Math.ceil(Math.max(graphLatency, graph?.clipLead(clip) ?? 0) * fps) + 1),
+		[graph, graphLatency, fps],
+	);
+	// ui-perf: audio clips are windowed like the video layers (FrameWindow), premount included.
 	const audioSpan = useCallback(
 		(clip: RenderDoc['audioClips'][number]): FrameSpan => {
 			const from = clip.start - (clip.headHandle ?? 0) - offset;
-			return [from, from + clip.duration + (clip.headHandle ?? 0) + (clip.tailHandle ?? 0)];
+			return [
+				from - audioPremount(clip),
+				from + clip.duration + (clip.headHandle ?? 0) + (clip.tailHandle ?? 0),
+			];
 		},
-		[offset],
+		[offset, audioPremount],
 	);
 	// compositor: the display transform cannot capture a stack that draws through HTML-in-Canvas (DisplayStage).
 	const displayFlat = useMemo(
@@ -1269,6 +1341,7 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 										offset={offset}
 										premount={premountFrames(fps)}
 										options={options}
+										epoch={graphEpoch}
 									/>
 								</DisplayStage>
 								{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}
@@ -1286,8 +1359,9 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 													key={clip.clipId}
 													from={from}
 													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+													premountFor={audioPremount(clip)}
 													name={clip.clipId}
-													layout="none"
+													style={AUDIO_SEQUENCE_STYLE}
 												>
 													<AudioLayer
 														clip={clip}

@@ -1,5 +1,5 @@
-import { Button, IconButton, Z } from '@jasper/ui';
-import { useEffect, useSyncExternalStore } from 'react';
+import { Button, cx, IconButton, useToastPlacement, Z } from '@jasper/ui';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { ToastRequest } from '../commands/types.ts';
 
 type Notice = {
@@ -97,14 +97,30 @@ function NoticeView({ n }: { n: Notice }) {
 	);
 }
 
-/** Sits above the bottom action bars (Export mode footer: Cancel / Export) so sticky notices never hide them. */
+/**
+ * Sits above the bottom action bars (Export mode footer: Cancel / Export) so sticky notices never hide them, and keeps
+ * clear of an open modal dialog's title bar and footer like the toasts (`useToastPlacement`).
+ */
 export function NoticeHost() {
 	const list = useSyncExternalStore(notices.subscribe, notices.getAll, notices.getAll);
+	const ref = useRef<HTMLDivElement>(null);
+	const place = useToastPlacement(ref, 48, list.map((n) => n.id).join(','), 12);
 	if (!list.length) return null;
 	return (
 		<div
-			className="pointer-events-auto fixed right-3 bottom-12 flex flex-col gap-2"
-			style={{ zIndex: Z.toast }}
+			ref={ref}
+			className={cx(
+				'pointer-events-auto fixed right-3 flex flex-col justify-end gap-2',
+				place.maxHeight !== null && 'overflow-hidden',
+			)}
+			style={{
+				zIndex: Z.toast,
+				bottom: place.bottom,
+				...(place.maxHeight !== null ? { maxHeight: place.maxHeight } : {}),
+			}}
+			data-testid="notice-host"
+			data-avoiding={place.avoided}
+			data-toast-host=""
 		>
 			{list.map((n) => (
 				<NoticeView key={n.id} n={n} />

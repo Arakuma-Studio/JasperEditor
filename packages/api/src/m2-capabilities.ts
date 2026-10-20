@@ -1,5 +1,6 @@
 // Missing capability blocks mean the feature is not available in this engine.
 import { z } from 'zod';
+import { SoundCapabilitiesSchema } from './sounds.ts';
 
 export const M2FeaturesSchema = z.object({
 	/** Colour grading on the native path. */
@@ -116,5 +117,7 @@ export const M2FeaturesSchema = z.object({
 			audioEssence: z.enum(['ready', 'unavailable']),
 		})
 		.optional(),
+	/** The sound library (spec 12 §2.8): indexed sounds and installed packs; Jasper Synth fallback. */
+	sound: SoundCapabilitiesSchema.optional(),
 });
 export type M2Features = z.infer<typeof M2FeaturesSchema>;

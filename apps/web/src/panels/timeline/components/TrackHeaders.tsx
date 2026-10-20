@@ -35,6 +35,9 @@ type TrackHeadersProps = {
 	ui: TimelineUiStore;
 	openMenu(x: number, y: number, items: ContextMenuItem[]): void;
 	toast(kind: 'info' | 'warning' | 'error', msg: string): void;
+	/** What the divider shows when it is the Cue Seam (spec 12 §2.7), and its context menu. */
+	dividerLabel?: React.ReactNode;
+	onDividerContextMenu?(e: React.MouseEvent): void;
 };
 
 type Kind = 'video' | 'audio';
@@ -452,9 +455,16 @@ export function TrackHeaders(props: TrackHeadersProps) {
 					</div>
 				</div>
 			))}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: the divider is a pointer handle; its menu entries are also Sequence ▸ Sound Design commands */}
 			<div
-				className="absolute right-0 left-0"
-				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)', cursor: 'row-resize' }}
+				className="absolute right-0 left-0 flex items-center overflow-hidden"
+				style={{
+					top: layout.dividerTop,
+					height: layout.dividerHeight,
+					background: 'var(--pr-bg-app)',
+					cursor: 'row-resize',
+				}}
+				onContextMenu={props.onDividerContextMenu}
 				data-testid="timeline-region-divider"
 				onPointerDown={(e) => {
 					const el = e.currentTarget;
@@ -472,7 +482,9 @@ export function TrackHeaders(props: TrackHeadersProps) {
 					el.addEventListener('pointerup', up);
 				}}
 				data-divider-handle
-			/>
+			>
+				{props.dividerLabel}
+			</div>
 		</div>
 	);
 }

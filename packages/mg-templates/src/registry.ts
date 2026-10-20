@@ -1,5 +1,12 @@
-import type { MgTemplateInfo, MgTemplateRegistry, MgTemplateUpgrade } from '@jasper/project';
+import type {
+	MgTemplateInfo,
+	MgTemplateMotionTiming,
+	MgTemplateRegistry,
+	MgTemplateUpgrade,
+} from '@jasper/project';
 import { z } from 'zod';
+import { svgTemplateSpeed } from './motion.ts';
+import { animeTemplateSpeed, hasAnimeMotionModel } from './templates/anime/motion.ts';
 import { type AnyMgTemplate, isAnimeTemplate } from './types.ts';
 
 export type MgRegistry = MgTemplateRegistry & {
@@ -32,7 +39,31 @@ export type MgCatalogEntryJson = {
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
-function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
+
+/** Measured picture speeds kept per registry (sound design derives and resolves anchors repeatedly). */
+const MOTION_CACHE_SIZE = 32;
+
+/** A small least-recently-used cache of `motionSpeed` results (Map iteration order = insertion order). */
+function motionCache() {
+	const entries = new Map<string, number[] | null>();
+	return (k: string | null, compute: () => number[] | null): number[] | null => {
+		if (k === null) return compute();
+		if (entries.has(k)) {
+			const hit = entries.get(k)!;
+			entries.delete(k);
+			entries.set(k, hit);
+			return hit;
+		}
+		const value = compute();
+		entries.set(k, value);
+		if (entries.size > MOTION_CACHE_SIZE) entries.delete(entries.keys().next().value!);
+		return value;
+	};
+}
+
+type MotionCache = ReturnType<typeof motionCache>;
+
+function toTemplateInfo(def: AnyMgTemplate, cache: MotionCache): MgTemplateInfo {
 	return {
 		id: def.id,
 		version: def.version,
@@ -47,6 +78,27 @@ function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
 		...(isAnimeTemplate(def) ? { renderer: 'anime' as const } : {}),
 		...(def.description ? { description: def.description } : {}),
 		defaultDurationSeconds: def.defaultDurationSeconds,
+		// fframes templates: measured on their SVG twins. Anime templates are drawn by @jasper/motion (anime.js),
+		// which this layer may not import (ARCHITECTURE §3.1): they are measured on their motion model (the phases
+		// and eases the implementations share with it, `anime/motion.ts`); a template without a model falls back to
+		// the declared intro / outro.
+		...(isAnimeTemplate(def) && !hasAnimeMotionModel(def)
+			? {}
+			: {
+					motionSpeed: (params: Record<string, unknown>, timing: MgTemplateMotionTiming) => {
+						let k: string | null = null;
+						try {
+							k = `${key(def.id, def.version)}|${timing.fps}|${timing.totalFrames}|${JSON.stringify(params)}`;
+						} catch {
+							k = null; // unserialisable params: measured, not cached
+						}
+						const measure = () =>
+							isAnimeTemplate(def)
+								? animeTemplateSpeed(def, params, timing)
+								: svgTemplateSpeed(def, params, timing);
+						return cache(k, measure)?.slice() ?? null;
+					},
+				}),
 	};
 }
 
@@ -113,12 +165,13 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 		if (!check.success) throw new Error(`Defaults of ${k} do not match its params schema`);
 		map.set(k, d);
 	}
+	const cache = motionCache();
 	return {
 		get: (id, version) => {
 			const d = map.get(key(id, version));
-			return d ? toTemplateInfo(d) : undefined;
+			return d ? toTemplateInfo(d, cache) : undefined;
 		},
-		list: () => [...map.values()].map(toTemplateInfo),
+		list: () => [...map.values()].map((d) => toTemplateInfo(d, cache)),
 		upgrade: (id, fromVersion, params, toVersion) =>
 			upgradeParams([...map.values()], id, fromVersion, params, toVersion),
 		definitions: () => [...map.values()],

@@ -1,6 +1,7 @@
 // Built-in workspaces as data (S05 §4.2, WS-001/003, R-PUI §5.4). Sizes are proportions of the parent
 // split applied to the real window size when a layout is created; fixed-size panels (Tools 40 px, Audio
 // Meters 52 px) keep their pixel size and `fill` absorbs the remainder. Splits alternate row/column.
+import { t } from '../../i18n/runtime.ts';
 import type { PanelKind } from '../../panels/types.ts';
 
 export type LayoutSize = number | { px: number } | 'fill';
@@ -139,7 +140,8 @@ const color: WorkspaceDefinition = {
 
 /**
  * Audio (audio-mix; Premiere's Audio workspace): Audio Track Mixer and Audio Clip Mixer next to a large Program,
- * the Timeline strip with the meters below, Properties on the right.
+ * the Timeline strip with the meters below, Properties on the right. The Sound Library (spec 12) is a tab next to
+ * Essential Sound.
  */
 const audio: WorkspaceDefinition = {
 	id: 'audio',
@@ -154,7 +156,14 @@ const audio: WorkspaceDefinition = {
 						[
 							0.45,
 							g(
-								['essentialSound', 'audioTrackMixer', 'audioClipMixer', 'source', 'effectControls'],
+								[
+									'essentialSound',
+									'soundLibrary',
+									'audioTrackMixer',
+									'audioClipMixer',
+									'source',
+									'effectControls',
+								],
 								'essentialSound',
 							),
 						],
@@ -188,6 +197,33 @@ const captions: WorkspaceDefinition = {
 	),
 };
 
+/**
+ * Sound Design (spec 12 §2.7; the 9th built-in, Alt+Shift+9): the Sound Library with Project and Media Browser on the
+ * left, Review and Sound Check with Markers, History and Jobs below it; Program and the Timeline strip in the centre;
+ * Essential Sound, Properties and the mixers on the right.
+ */
+const soundDesign: WorkspaceDefinition = {
+	id: 'sound-design',
+	name: 'Sound Design',
+	layout: row(
+		[
+			0.24,
+			col(
+				[0.5, g(['soundLibrary', 'project', 'mediaBrowser'], 'soundLibrary')],
+				['fill', g(['review', 'soundCheck', 'markers', 'history', 'jobs'], 'review')],
+			),
+		],
+		['fill', col([0.55, g(['program'])], ['fill', TIMELINE_STRIP()])],
+		[
+			0.24,
+			g(
+				['essentialSound', 'properties', 'audioTrackMixer', 'audioClipMixer', 'effectControls'],
+				'essentialSound',
+			),
+		],
+	),
+};
+
 /** Built-ins in default order (Alt+Shift+1…9 follow the visible order, WS-010). */
 export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	editing,
@@ -198,6 +234,7 @@ export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	color,
 	audio,
 	captions,
+	soundDesign,
 ];
 
 /**
@@ -251,4 +288,42 @@ export const DEFAULT_WORKSPACE_ID = 'editing';
 
 export function builtinWorkspace(id: string): WorkspaceDefinition | undefined {
 	return LAYOUT_PRESETS.find((w) => w.id === id) ?? BUILTIN_WORKSPACES.find((w) => w.id === id);
+}
+
+/**
+ * A built-in workspace's name in the UI language, by id (WP6.5a); null for other ids. Stored records keep the English
+ * name (name clashes, export) and ids never change.
+ */
+function builtinWorkspaceName(id: string): string | null {
+	switch (id) {
+		case 'editing':
+			return t('Editing');
+		case 'assembly':
+			return t('Assembly');
+		case 'effects':
+			return t('Effects');
+		case 'motion':
+			return t('Motion');
+		case 'essentials':
+			return t('Essentials');
+		case 'color':
+			return t('Color');
+		case 'audio':
+			return t('Audio');
+		case 'captions':
+			return t('Captions');
+		case 'sound-design':
+			return t('Sound Design');
+		case 'compact':
+			return t('Compact');
+		case 'phone':
+			return t('Phone');
+		default:
+			return null;
+	}
+}
+
+/** The name a workspace is shown with: a built-in's in the UI language, a custom one's as the user wrote it. */
+export function workspaceName(w: { id: string; name: string; builtIn?: boolean }): string {
+	return (w.builtIn === false ? null : builtinWorkspaceName(w.id)) ?? w.name;
 }

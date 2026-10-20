@@ -13,7 +13,13 @@ import {
 	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
-import { RemixPlanRequestSchema, RemixPlanResultSchema } from './audio-fx.ts';
+import {
+	AudioClassifyRequestSchema,
+	BeatsRequestSchema,
+	BeatsResultSchema,
+	RemixPlanRequestSchema,
+	RemixPlanResultSchema,
+} from './audio-fx.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -156,6 +162,22 @@ import {
 	VersionRestoreResponseSchema,
 } from './projects.ts';
 import {
+	ProposalAcceptRequestSchema,
+	ProposalAcceptResponseSchema,
+	ProposalCreateRequestSchema,
+	ProposalCreateResponseSchema,
+	ProposalDecisionResponseSchema,
+	ProposalDeleteResponseSchema,
+	ProposalGetQuerySchema,
+	ProposalListResponseSchema,
+	ProposalMarkAppliedRequestSchema,
+	ProposalNoteRequestSchema,
+	ProposalRejectRequestSchema,
+	ProposalReopenRequestSchema,
+	ProposalResponseSchema,
+	ProposalSelectRequestSchema,
+} from './proposals.ts';
+import {
 	RotoSegmentRequestSchema,
 	RotoStoreInfoSchema,
 	RotoTraceRequestSchema,
@@ -163,6 +185,63 @@ import {
 	VisionModelsResponseSchema,
 } from './roto.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
+import {
+	SoundBedsPlanSchema,
+	SoundBedsRequestSchema,
+	SoundRoomTonePlanSchema,
+	SoundRoomToneRequestSchema,
+} from './sound-beds.ts';
+import {
+	SoundCheckLastRequestSchema,
+	SoundCheckLastResponseSchema,
+	SoundCheckRequestSchema,
+	SoundVisualRequestSchema,
+	SoundVisualResponseSchema,
+} from './sound-check.ts';
+import {
+	MotionAnalysisRequestSchema,
+	SfxRebalanceRequestSchema,
+	SoundCuesRequestSchema,
+	SoundCuesResponseSchema,
+	SoundDeliveryRequestSchema,
+	SoundDesignPlanRequestSchema,
+	SoundListenRequestSchema,
+	SoundPeakRequestSchema,
+	SoundPeakResponseSchema,
+} from './sound-design.ts';
+import {
+	SoundProfileBuildRequestSchema,
+	SoundProfileDeleteResponseSchema,
+	SoundProfileImportRequestSchema,
+	SoundProfileRenameRequestSchema,
+	SoundProfileSchema,
+	SoundProfileSummarySchema,
+	SoundProfilesResponseSchema,
+} from './sound-profile.ts';
+import {
+	SoundEmbedRequestSchema,
+	SoundMatchRequestSchema,
+	SoundMatchResponseSchema,
+	SoundMomentRequestSchema,
+	SoundSemanticModelDeleteResponseSchema,
+	SoundSemanticModelsResponseSchema,
+	SoundSemanticStatusSchema,
+} from './sound-semantic.ts';
+import {
+	RegisterSoundRequestSchema,
+	RegisterSoundResponseSchema,
+	SoundEntrySchema,
+	SoundIndexRequestSchema,
+	SoundLibraryStatusSchema,
+	SoundPackRemoveResponseSchema,
+	SoundPacksResponseSchema,
+	SoundRootsPutRequestSchema,
+	SoundRootsPutResponseSchema,
+	SoundRootsResponseSchema,
+	SoundSearchQuerySchema,
+	SoundSearchResponseSchema,
+	SoundVisualSchema,
+} from './sounds.ts';
 import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
@@ -401,6 +480,12 @@ export const ROUTES = {
 	renderCaptionFile: {
 		method: 'GET',
 		path: '/renders/:jobId/captions/:name',
+		response: 'binary',
+	},
+	/** The sound credits sidecar of a finished export (`result.credits.name`, spec 12 §2.11). */
+	renderCreditsFile: {
+		method: 'GET',
+		path: '/renders/:jobId/credits/:name',
 		response: 'binary',
 	},
 	stills: {
@@ -691,6 +776,25 @@ export const ROUTES = {
 		path: '/api/audio/remix-plan',
 		body: RemixPlanRequestSchema,
 		response: RemixPlanResultSchema,
+	},
+	/** Tempo, beats and downbeats of a media's audio range (Sound Design beat cues; cached per file and range). */
+	audioBeats: {
+		method: 'POST',
+		path: '/api/audio/beats',
+		body: BeatsRequestSchema,
+		response: BeatsResultSchema,
+	},
+	/**
+	 * Essential Sound Auto Tag (spec 12 P6-R3): an `audio-classify` job classifying clips (over the media range each
+	 * plays) or media as dialogue, music, SFX or ambience; cached per file and range. Result `AudioClassifyResult`.
+	 */
+	audioClassify: {
+		method: 'POST',
+		path: '/api/audio/classify',
+		body: AudioClassifyRequestSchema,
+		/** `wait=1`: answer when the job ends (the finished job; a failed job is a 422 with its code). */
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
 	},
 
 	speechModels: {
@@ -1022,6 +1126,340 @@ export const ROUTES = {
 		path: '/api/reframe',
 		body: ReframeRequestSchema,
 		response: EngineJobSchema,
+	},
+
+	/** Sound library (spec 12 §2.1, §2.8): search with facets, one sound, its bytes and visual data. */
+	soundsSearch: {
+		method: 'GET',
+		path: '/api/sounds',
+		query: SoundSearchQuerySchema,
+		response: SoundSearchResponseSchema,
+	},
+	soundsStatus: { method: 'GET', path: '/api/sounds/status', response: SoundLibraryStatusSchema },
+	soundGet: { method: 'GET', path: '/api/sounds/:soundId', response: SoundEntrySchema },
+	/** The sound's audio file (audio MIME types only, `nosniff`, Range). */
+	soundAudio: { method: 'GET', path: '/api/sounds/:soundId/audio', response: 'binary', headers: ['range'] },
+	soundVisual: { method: 'GET', path: '/api/sounds/:soundId/visual', response: SoundVisualSchema },
+	/** Registers the sound's file as media for a project; the client commits `media.register` with `library`. */
+	soundRegister: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/register',
+		body: RegisterSoundRequestSchema,
+		response: RegisterSoundResponseSchema,
+	},
+	/** (Re)index the library: a `sound-index` job (incremental unless `full`). */
+	soundIndex: {
+		method: 'POST',
+		path: '/api/sounds/index',
+		body: SoundIndexRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Downloadable sound packs (spec 12 §2.8, P6-R1): the catalogue with what is installed, a `sound-pack-install` job
+	 * (202; download, sha256 check, extraction of the listed files, then a `sound-index` job), and removal (an agent's
+	 * removal asks the user first).
+	 */
+	soundPacks: { method: 'GET', path: '/api/sounds/packs', response: SoundPacksResponseSchema },
+	soundPackInstall: {
+		method: 'POST',
+		path: '/api/sounds/packs/:packId/install',
+		response: EngineJobSchema,
+	},
+	soundPackRemove: {
+		method: 'DELETE',
+		path: '/api/sounds/packs/:packId',
+		response: SoundPackRemoveResponseSchema,
+	},
+	/**
+	 * Describe-it search (spec 12 P6-E14, WP-E9): status, the optional audio-text model (install: the processing
+	 * catalogue's `model-download` job, open to agents like other model installs; removal asks an agent's user first),
+	 * the `sound-embed` job (embeddings of every sound and take, incremental, cancellable) and Find Moment (a
+	 * `sound-moment` job: the best windows of a recording for a description).
+	 */
+	soundSemanticStatus: { method: 'GET', path: '/api/sounds/semantic', response: SoundSemanticStatusSchema },
+	soundSemanticModels: {
+		method: 'GET',
+		path: '/api/sounds/semantic/models',
+		response: SoundSemanticModelsResponseSchema,
+	},
+	soundSemanticModelInstall: {
+		method: 'POST',
+		path: '/api/sounds/semantic/models/:modelId/install',
+		response: EngineJobSchema,
+	},
+	soundSemanticModelDelete: {
+		method: 'DELETE',
+		path: '/api/sounds/semantic/models/:modelId',
+		response: SoundSemanticModelDeleteResponseSchema,
+	},
+	soundEmbed: {
+		method: 'POST',
+		path: '/api/sounds/semantic/embed',
+		body: SoundEmbedRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** How well a sound matches a description and realistic alternatives (z, verdict, softmax share). */
+	soundMatch: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/match',
+		body: SoundMatchRequestSchema,
+		response: SoundMatchResponseSchema,
+	},
+	soundMoments: {
+		method: 'POST',
+		path: '/api/sounds/:soundId/moments',
+		body: SoundMomentRequestSchema,
+		/** `wait=1`: answer when the job ends (the finished job; a failed job is a 422 with its code). */
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** User sound folders (local mode only). Adding, removing or relicensing one asks an agent's user first. */
+	soundRootsGet: { method: 'GET', path: '/api/sounds/roots', response: SoundRootsResponseSchema },
+	soundRootsPut: {
+		method: 'PUT',
+		path: '/api/sounds/roots',
+		body: SoundRootsPutRequestSchema,
+		response: SoundRootsPutResponseSchema,
+	},
+	/**
+	 * Sound design (spec 12 §2.8): cue suggestions derived from the edit (`deriveCues` with the engine's template
+	 * registry), for an inline envelope or a project's live document. Nothing is stored.
+	 */
+	soundDesignCues: {
+		method: 'POST',
+		path: '/api/sound-design/cues',
+		body: SoundCuesRequestSchema,
+		response: SoundCuesResponseSchema,
+	},
+	/**
+	 * Detect Peak (spec 12 §2.7, the clip menu's action for project audio): the peak of an audio clip's sound within the
+	 * part of its media it uses (≤ 120 s), measured on the live document. Nothing is stored.
+	 */
+	soundDesignPeak: {
+		method: 'POST',
+		path: '/api/sound-design/peak',
+		body: SoundPeakRequestSchema,
+		response: SoundPeakResponseSchema,
+	},
+	/**
+	 * Sound design plan (spec 12 §2.8, P3-R3): a `sound-design` job (202) whose result (`SoundDesignPlanResult`) names the
+	 * proposal it stored: cues → rank → register → place, deterministic by seed. Nothing is applied.
+	 */
+	soundDesignPlan: {
+		method: 'POST',
+		path: '/api/sound-design/plan',
+		body: SoundDesignPlanRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Rebalance SFX levels (spec 12 §2.4, §2.10; P4-R2): a `sound-design` job (202) that renders the bed per cue cluster,
+	 * measures each sound effect alone and solves their gains with the masking solver; the result reports per clip the
+	 * gain, target and achieved lift, what limited it and why, and either applies them as one undoable transaction
+	 * ("Rebalance SFX Levels", `mode: 'apply'`) or stores a proposal (`mode: 'propose'`, the default).
+	 */
+	soundDesignRebalance: {
+		method: 'POST',
+		path: '/api/sound-design/rebalance',
+		body: SfxRebalanceRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Delivery preset (spec 12 §2.4, P4-R4): a `sound-design` job (202) that measures the clips, the ducking triggers and
+	 * the resulting mix and applies (`mode: 'apply'`, ONE transaction "Apply Delivery Preset") or proposes (the default)
+	 * Mix loudness normalisation, Auto-Match by type, ducking and solved sound-effect gains.
+	 */
+	soundDesignDelivery: {
+		method: 'POST',
+		path: '/api/sound-design/delivery',
+		body: SoundDeliveryRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Sound Check (spec 12 §2.6, P5-R1): a `sound-check` job (202) that renders the delivered mix and its stems, measures
+	 * them and returns `SoundCheckResult` (findings with fixes, listen-here moments, per-event table, verdict);
+	 * `store: true` also writes the summary into the sequence (`soundDesign.setCheck`). With `proposalId` (spec 12 §4
+	 * P6-E5) it checks the proposal's preview document instead and adds `proposal` (what it fixes and introduces, per
+	 * item); nothing is committed and the summary is kept on the proposal (`report.check`). 404 `PROPOSAL_NOT_FOUND`,
+	 * 404 `NOT_FOUND` (an unknown item).
+	 */
+	soundDesignCheck: {
+		method: 'POST',
+		path: '/api/sound-design/check',
+		body: SoundCheckRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * The last full Sound Check report of a sequence (kept per sequence across engine restarts, bounded), with whether
+	 * it is stale against the live document (Phase 5 verification). 404 `SOUND_CHECK_NOT_FOUND` when there is none.
+	 */
+	soundDesignCheckLast: {
+		method: 'POST',
+		path: '/api/sound-design/check/last',
+		body: SoundCheckLastRequestSchema,
+		response: SoundCheckLastResponseSchema,
+	},
+	/**
+	 * Pixel motion analysis (spec 12 §2.8, P6-R2): a `motion-analysis` job (202) rendering the sequence's picture small
+	 * through the export planner and measuring its motion per frame; result `MotionAnalysisResult` (curve + events),
+	 * cached by the picture's fingerprint.
+	 */
+	soundDesignMotion: {
+		method: 'POST',
+		path: '/api/sound-design/motion',
+		body: MotionAnalysisRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Sound Check visual data (spec 12 §2.6, P5-R2): 10 ms loudness curves of the mix and its stems, the mix waveform,
+	 * cue ticks, the motion curve and a check job's findings over a range of at most 120 s.
+	 */
+	soundDesignVisual: {
+		method: 'POST',
+		path: '/api/sound-design/visual',
+		body: SoundVisualRequestSchema,
+		response: SoundVisualResponseSchema,
+	},
+	/**
+	 * Listening transcript (spec 12 §4 P6-E6): a `sound-listen` job (202) that renders the mix and every clip of a range
+	 * (≤ 10 min) and returns `SoundListenResult` — events attributed to their clips and cues, sections, silences, the
+	 * picture events with the sound that answers them and the chance level of each sync share, and the text lines.
+	 */
+	soundDesignListen: {
+		method: 'POST',
+		path: '/api/sound-design/listen',
+		body: SoundListenRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Ambience beds (spec 12 §4 P6-E12): the plan of a bed per scene — the scenes, each recording's measured clean window
+	 * and loop points, the ONE transaction that lays it (`soundDesign.layBed`) — without changing anything.
+	 */
+	soundDesignBedsPlan: {
+		method: 'POST',
+		path: '/api/sound-design/beds/plan',
+		body: SoundBedsRequestSchema,
+		response: SoundBedsPlanSchema,
+	},
+	/** Ambience beds: a `sound-design` job (202) whose result (`SoundBedsResult`) is a proposal or one applied edit. */
+	soundDesignBeds: {
+		method: 'POST',
+		path: '/api/sound-design/beds',
+		body: SoundBedsRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Room tone (spec 12 §4 P6-E12): the plan of a fill of the holes between dialogue clips — the gaps, the dialogue's
+	 * noise floor, the room tones ranked by spectral distance to it, the transaction — without changing anything.
+	 */
+	soundDesignRoomTonePlan: {
+		method: 'POST',
+		path: '/api/sound-design/room-tone/plan',
+		body: SoundRoomToneRequestSchema,
+		response: SoundRoomTonePlanSchema,
+	},
+	/** Room tone: a `sound-design` job (202) whose result (`SoundRoomToneResult`) is a proposal or one applied edit. */
+	soundDesignRoomTone: {
+		method: 'POST',
+		path: '/api/sound-design/room-tone',
+		body: SoundRoomToneRequestSchema,
+		response: EngineJobSchema,
+	},
+	/**
+	 * Reference sound profiles (spec 12 §4 P6-E8): the per-user library (`<appdir>/sounds/profiles`), a `sound-profile`
+	 * job (202) that measures 1–20 references and stores the profile, rename, delete (an agent's request asks the user)
+	 * and import of a profile file (`soundProfileGet`'s body is the file Export saves).
+	 */
+	soundProfiles: { method: 'GET', path: '/api/sound-design/profiles', response: SoundProfilesResponseSchema },
+	soundProfileGet: {
+		method: 'GET',
+		path: '/api/sound-design/profiles/:profileId',
+		response: SoundProfileSchema,
+	},
+	soundProfileBuild: {
+		method: 'POST',
+		path: '/api/sound-design/profiles',
+		body: SoundProfileBuildRequestSchema,
+		response: EngineJobSchema,
+	},
+	soundProfileRename: {
+		method: 'PUT',
+		path: '/api/sound-design/profiles/:profileId/name',
+		body: SoundProfileRenameRequestSchema,
+		response: SoundProfileSummarySchema,
+	},
+	soundProfileDelete: {
+		method: 'DELETE',
+		path: '/api/sound-design/profiles/:profileId',
+		response: SoundProfileDeleteResponseSchema,
+	},
+	soundProfileImport: {
+		method: 'POST',
+		path: '/api/sound-design/profiles/import',
+		body: SoundProfileImportRequestSchema,
+		response: SoundProfileSummarySchema,
+	},
+	/**
+	 * Proposals (spec 12 §2.5, §2.8): reviewable sets of edits stored per project. Accept composes ONE transaction
+	 * (live to the open editor or headless); an agent may accept only where the feature's policy allows it
+	 * (sound design: the sequence's `agentsMayApply`), otherwise `403 APPROVAL_REQUIRED`.
+	 */
+	proposalsList: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposals',
+		response: ProposalListResponseSchema,
+	},
+	proposalCreate: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals',
+		body: ProposalCreateRequestSchema,
+		response: ProposalCreateResponseSchema,
+	},
+	proposalGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposals/:proposalId',
+		query: ProposalGetQuerySchema,
+		response: ProposalResponseSchema,
+	},
+	proposalAccept: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/accept',
+		body: ProposalAcceptRequestSchema,
+		response: ProposalAcceptResponseSchema,
+	},
+	proposalReject: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/reject',
+		body: ProposalRejectRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalReopen: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/reopen',
+		body: ProposalReopenRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalNote: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/note',
+		body: ProposalNoteRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalSelect: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/select',
+		body: ProposalSelectRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalMarkApplied: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/applied',
+		body: ProposalMarkAppliedRequestSchema,
+		response: ProposalDecisionResponseSchema,
+	},
+	proposalDelete: {
+		method: 'DELETE',
+		path: '/api/projects/:projectId/proposals/:proposalId',
+		response: ProposalDeleteResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 

@@ -6,7 +6,8 @@
 // a Single-band Compressor, EQ a Simple 3-band EQ, Enhance Speech the Enhance Speech chain, Stereo Width the Stereo
 // Width effect, Reverb a Studio Reverb and Mute the Mute effect. These instances carry `EffectInstance.essential` (the
 // slot), appear in Effect Controls (keyframable) and render through the normal clip-effect path. Loudness Auto-Match
-// writes clip gain, Clip Volume the clip's Volume level, Pan the clip's pan; Ducking writes Volume keyframes
+// writes clip gain, Clip Volume and Pan offset the clip's own Volume and pan (every keyframe; switched off they give
+// the clip's levels back, `residual`); Ducking writes Volume keyframes
 // (`audio.autoDuck`); Duration remixes the clip (`clip.remix`).
 import { z } from 'zod';
 
@@ -51,6 +52,24 @@ export const TYPE_SECTIONS: Record<AudioType, readonly EssentialSection[]> = {
 export const DEFAULT_LOUDNESS_TARGET = -23;
 
 const SlotSchema = z.looseObject({ on: z.boolean(), amount: z.number().min(0).max(10) });
+
+/** How an audio type was assigned by Auto Tag: the classifier's confidence (0…1), its scores and why. */
+export const AutoTagSchema = z.looseObject({
+	by: z.literal('auto'),
+	confidence: z.number().min(0).max(1),
+	scores: z.partialRecord(z.enum(AUDIO_TYPES), z.number().min(0).max(1)).optional(),
+	reasons: z.array(z.string().max(300)).max(6).optional(),
+});
+export type AutoTag = z.infer<typeof AutoTagSchema>;
+
+/** The Auto Tag marker of a clip's stored settings (null: no type, or a type the user set or confirmed). Never throws. */
+export function essentialAutoTag(raw: unknown): AutoTag | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const t = (raw as { type?: unknown }).type;
+	if (typeof t !== 'string' || !(AUDIO_TYPES as readonly string[]).includes(t)) return null;
+	const r = AutoTagSchema.safeParse((raw as { tagged?: unknown }).tagged);
+	return r.success ? r.data : null;
+}
 export type Slot = { on: boolean; amount: number };
 
 export const EssentialSoundSchema = z.looseObject({
@@ -61,7 +80,7 @@ export const EssentialSoundSchema = z.looseObject({
 		enabled: z.boolean(),
 		/** Integrated loudness of the clip's own signal measured by the last Auto-Match (LUFS), null = never. */
 		measuredLufs: z.number().nullable(),
-		targetLufs: z.number().nullable(),
+		targetLufs: z.number().min(-60).max(0).nullable(),
 		/** Gain the match applied (dB); part of the clip gain while the section is on. */
 		gainDb: z.number(),
 	}),
@@ -107,11 +126,37 @@ export const EssentialSoundSchema = z.looseObject({
 		reduceDb: z.number().min(-40).max(0),
 		/** Fade length (s). */
 		fadeSeconds: z.number().min(0).max(5),
+		/**
+		 * Who set `reduceDb` (Phase 4 verification): `user` (the panel or `essentialSound.set`), `delivery`
+		 * (`soundDesign.applyDelivery` chose it). Absent: the type default unless it differs from it (`duckingDepthBy`).
+		 * An unreadable value reads as absent.
+		 */
+		depthBy: z.enum(['delivery', 'user']).optional().catch(undefined),
 	}),
 	pan: z.looseObject({ enabled: z.boolean(), value: z.number().min(-100).max(100) }),
 	/** Clip Volume (panel footer): an offset in dB on the clip's Volume while on. */
 	volume: z.looseObject({ on: z.boolean(), levelDb: z.number().min(-96).max(15) }),
 	mute: z.boolean(),
+	/**
+	 * Level the fader ranges clamped away while Clip Volume / Pan offsets were applied (dB / pan units), per value
+	 * (`value` or a keyframe id): given back when the offset changes, so switching an offset off restores the clip's
+	 * own levels exactly. Managed by the commands, not a setting.
+	 */
+	residual: z
+		.object({ volume: z.record(z.string(), z.number()), pan: z.record(z.string(), z.number()) })
+		.optional(),
+	/**
+	 * The Pan section is an offset on the clip's own pan (sound-design Phase 0). Settings saved without it come from
+	 * builds where switching Pan on or changing it wrote the value into the clip's pan (the static value, or one
+	 * keyframe at the playhead): `migrateLegacyPan` converts them on load. Bookkeeping, not a setting.
+	 */
+	panOffset: z.literal(true).optional(),
+	/**
+	 * Auto Tag (sound design P6-R3): present while the type was chosen by `essentialSound.autoTag` and the user has not
+	 * confirmed it (the clip badge is drawn "auto"); `essentialSound.setType` with the same type confirms it (removes
+	 * this), another type replaces it. An unreadable value is dropped by `readEssentialSound` / `repairDocument`.
+	 */
+	tagged: AutoTagSchema.optional(),
 });
 export type EssentialSound = z.infer<typeof EssentialSoundSchema>;
 
@@ -191,7 +236,48 @@ export function newEssentialSound(type: AudioType): EssentialSound {
 		pan: { enabled: false, value: 0 },
 		volume: { on: false, levelDb: 0 },
 		mute: false,
+		panOffset: true,
 	};
+}
+
+/**
+ * Settings saved before the Pan section became an offset (no `panOffset` marker) whose Pan the old build wrote into
+ * the clip's pan in a way the offset reading would misread: the section is on with a non-zero value for a type that
+ * has it, and the clip's pan is not simply that value (it has keyframes, or the user moved it afterwards). Only then
+ * does switching Pan off differ: the old build wrote 0 at the playhead, the offset reading would shift every
+ * keyframe (and the static value) by the Pan value.
+ */
+export function legacyPanApplied(
+	raw: unknown,
+	pan: { value: number; keyframes: readonly unknown[] },
+): boolean {
+	if (!raw || typeof raw !== 'object' || (raw as { panOffset?: unknown }).panOffset === true) return false;
+	const s = readEssentialSound(raw);
+	if (!s || !TYPE_SECTIONS[s.type].includes('pan') || !s.pan.enabled || s.pan.value === 0) return false;
+	return pan.keyframes.length > 0 || Math.abs(pan.value - s.pan.value) > 1e-9;
+}
+
+/**
+ * Converts the Essential Sound settings of a clip saved before the Pan section became an offset (read-time
+ * migration; optional marker, no schema bump). Nothing audible changes: where the old build's absolute writes cannot
+ * be told apart from the user's own pan (`legacyPanApplied`), the Pan section is switched off with its value kept, so
+ * the pan stays as saved and switching the section later applies a plain offset. Otherwise the settings already read
+ * the same as an offset and only get the marker. Returns a note when the section was switched off.
+ */
+export function migrateLegacyPan(clip: {
+	id: string;
+	pan: { value: number; keyframes: readonly unknown[] };
+	essential?: unknown;
+}): string | null {
+	const raw = clip.essential;
+	if (!raw || typeof raw !== 'object' || (raw as { panOffset?: unknown }).panOffset === true) return null;
+	const applied = legacyPanApplied(raw, clip.pan);
+	const r = raw as Record<string, unknown> & { pan?: unknown };
+	const pan = r.pan && typeof r.pan === 'object' ? (r.pan as Record<string, unknown>) : null;
+	clip.essential = { ...r, ...(applied && pan ? { pan: { ...pan, enabled: false } } : {}), panOffset: true };
+	return applied
+		? `clip ${clip.id}: Essential Sound Pan (${String(pan?.value)}) was saved by a build that wrote it into the clip's pan; the Pan section is now an offset and is switched off (value kept) so the pan stays as saved`
+		: null;
 }
 
 /** Reads a stored value with defaults for anything missing or invalid (documents from other versions / agents). */
@@ -199,9 +285,48 @@ export function readEssentialSound(raw: unknown): EssentialSound | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const t = (raw as { type?: unknown }).type;
 	if (typeof t !== 'string' || !(AUDIO_TYPES as readonly string[]).includes(t)) return null;
+	const defaults = newEssentialSound(t as AudioType) as Record<string, unknown>;
+	const merged = deepMerge(defaults, raw) as Record<string, unknown>;
+	clampAll(merged as EssentialSound);
+	let r = EssentialSoundSchema.safeParse(merged);
+	if (!r.success) {
+		// Fall back per section: one bad field must not reset the clip's other settings (the gain, Volume and
+		// effects they already applied would then be reconciled from the wrong state).
+		for (const issue of r.error.issues) {
+			const k = String(issue.path[0]);
+			if (k in defaults) merged[k] = defaults[k];
+			else delete merged[k];
+		}
+		r = EssentialSoundSchema.safeParse(merged);
+	}
+	return r.success ? (r.data as EssentialSound) : (defaults as EssentialSound);
+}
+
+/**
+ * Who owns a clip's Ducking amount: `user` when the user set it (or it differs from the type's default on settings of
+ * older builds), `delivery` when a delivery preset chose it, `default` when it is the type's default. Never throws.
+ */
+export function duckingDepthBy(es: EssentialSound): 'default' | 'delivery' | 'user' {
+	const by = (es.ducking as { depthBy?: unknown }).depthBy;
+	if (by === 'user' || by === 'delivery') return by;
+	return es.ducking.reduceDb === newEssentialSound(es.type).ducking.reduceDb ? 'default' : 'user';
+}
+
+/**
+ * Strict read of explicit settings (a user preset from an agent or a file): missing fields take the type's defaults
+ * and numbers are clamped into range like every other setting, but a field of the wrong type is an error message.
+ */
+export function parseEssentialSound(raw: unknown): EssentialSound | string {
+	if (!raw || typeof raw !== 'object') return 'settings must be an object';
+	const t = (raw as { type?: unknown }).type;
+	if (typeof t !== 'string' || !(AUDIO_TYPES as readonly string[]).includes(t))
+		return 'settings need a valid "type" (dialogue, music, sfx, ambience)';
 	const merged = deepMerge(newEssentialSound(t as AudioType), raw) as EssentialSound;
+	clampAll(merged);
 	const r = EssentialSoundSchema.safeParse(merged);
-	return r.success ? (r.data as EssentialSound) : newEssentialSound(t as AudioType);
+	if (r.success) return r.data as EssentialSound;
+	const i = r.error.issues[0];
+	return `settings.${i?.path.join('.') ?? ''}: ${i?.message ?? 'invalid value'}`;
 }
 
 function deepMerge(base: unknown, over: unknown): unknown {
@@ -231,7 +356,9 @@ export function essentialKeys(s: EssentialSound = newEssentialSound('dialogue'))
 		} else out.push(p);
 	};
 	walk(s, '');
-	return out.filter((k) => k !== 'type');
+	return out.filter(
+		(k) => k !== 'type' && k !== 'residual' && !k.startsWith('residual.') && k !== 'panOffset',
+	);
 }
 
 /**
@@ -244,6 +371,14 @@ export function setEssentialValue(s: EssentialSound, key: string, value: unknown
 	if (parts.length === 0) throw new EssentialSoundError('empty setting key');
 	if (parts[0] === 'type')
 		throw new EssentialSoundError('the audio type is changed with essentialSound.setType');
+	if (parts[0] === 'residual')
+		throw new EssentialSoundError(
+			'"residual" is kept by the commands (clamped Clip Volume / Pan), not a setting',
+		);
+	if (parts[0] === 'panOffset')
+		throw new EssentialSoundError(
+			'"panOffset" marks how Pan is applied (kept by the commands), not a setting',
+		);
 	const next = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
 	let cur: Record<string, unknown> = next;
 	for (const p of parts.slice(0, -1)) {
@@ -311,6 +446,8 @@ function clampAll(s: EssentialSound): void {
 	}
 	if (s.pan && typeof s.pan.value === 'number') s.pan.value = c(s.pan.value, -100, 100, 0);
 	if (s.volume && typeof s.volume.levelDb === 'number') s.volume.levelDb = c(s.volume.levelDb, -96, 15, 0);
+	if (s.loudness && typeof s.loudness.targetLufs === 'number')
+		s.loudness.targetLufs = c(s.loudness.targetLufs, -60, 0, DEFAULT_LOUDNESS_TARGET);
 	if (s.loudness && typeof s.loudness.gainDb === 'number')
 		s.loudness.gainDb = c(s.loudness.gainDb, -96, 96, 0);
 	if (s.duration) {
@@ -324,9 +461,9 @@ function clampAll(s: EssentialSound): void {
 export const loudnessGainDb = (s: EssentialSound | null) => (s?.loudness.enabled ? s.loudness.gainDb : 0);
 /** Offset this state adds to the Volume level. */
 export const volumeOffsetDb = (s: EssentialSound | null) => (s?.volume.on ? s.volume.levelDb : 0);
-/** Clip pan this state sets (null when the type has no Pan section). */
-export const panValue = (s: EssentialSound | null) =>
-	s && TYPE_SECTIONS[s.type].includes('pan') ? (s.pan.enabled ? s.pan.value : 0) : null;
+/** Offset this state adds to the clip pan (Pan section on, for the types that have one). */
+export const panOffset = (s: EssentialSound | null) =>
+	s && TYPE_SECTIONS[s.type].includes('pan') && s.pan.enabled ? s.pan.value : 0;
 
 /** Reduce Rumble amount (0…10) → Highpass cutoff (30…150 Hz). */
 export const rumbleCutoff = (amount: number) => 30 + amount * 12;
@@ -538,6 +675,9 @@ export function withPreset(
 ): EssentialSound {
 	const s = JSON.parse(JSON.stringify(preset.settings)) as EssentialSound;
 	s.preset = preset.name;
+	// a preset never carries an Auto Tag marker; the clip keeps its own while the type stays
+	delete s.tagged;
+	if (current && current.type === s.type && current.tagged) s.tagged = { ...current.tagged };
 	if (current && current.type === s.type) {
 		s.loudness = {
 			...s.loudness,

@@ -10,7 +10,14 @@ import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
-import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
+import {
+	ESSENTIAL_SLOTS,
+	EssentialSoundSchema,
+	legacyPanApplied,
+	migrateLegacyPan,
+	readEssentialSound,
+} from './essential/model.ts';
+import { readRemixAnchors, remixAnchorsValid } from './essential/ops.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createFontRef, createTrack, DEFAULT_FONT_FAMILY } from './factories.ts';
 import { gapsIssues, repairGaps } from './gaps/index.ts';
@@ -40,6 +47,14 @@ import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from 
 import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
+import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
+import {
+	clipBedProblem,
+	clipSfxProblem,
+	markerVerdictProblem,
+	repairSoundDesign,
+	sequenceSoundDesignIssue,
+} from './sound/repair.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
@@ -852,6 +867,16 @@ export function invariantCheckers(
 					issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
 			}
 		}
+		// sound-design (spec 12 §2.2): sound-design metadata must be readable, on audio clips only (INV-SFX).
+		if (r.sfx !== undefined) {
+			const bad = clipSfxProblem(c as Clip & { sfx?: unknown });
+			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'sfx']));
+		}
+		// sound-design (spec 12 §4 P6-E12): bed metadata must be readable, on audio clips only (INV-SFX).
+		if (r.bed !== undefined) {
+			const bad = clipBedProblem(c as Clip & { bed?: unknown });
+			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'bed']));
+		}
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
 		if (r.threeD !== undefined && !canBe3d(c.kind))
 			issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
@@ -1260,6 +1285,14 @@ export function runInvariants(
 				issues.push(
 					inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']),
 				);
+		// sound-design (spec 12 §2.1): library provenance must be readable (it is stored leniently).
+		if ((m as { library?: unknown }).library !== undefined) {
+			const bad = libraryProvenanceIssue((m as { library?: unknown }).library);
+			if (bad)
+				issues.push(
+					inv('INV-LIBRARY', `Media ${m.id} library provenance: ${bad}`, ['media', m.id, 'library']),
+				);
+		}
 	}
 	for (const t of Object.values(doc.transcripts)) {
 		if (t.mediaId && !doc.media[t.mediaId])
@@ -1372,7 +1405,20 @@ export function runInvariants(
 		for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])])
 			for (const x of t.mixer?.sends ?? []) claim(x.id, 'snd', [...where, 'tracks', t.id, 'sends', x.id]);
 		for (const m of audioMixIssues(seq as Sequence, where)) issues.push(inv('INV-MIX', m.message, m.path));
-		for (const m of seq.markers) claim(m.id, 'mrk', [...where, 'markers', m.id]);
+		for (const m of seq.markers) {
+			claim(m.id, 'mrk', [...where, 'markers', m.id]);
+			const verdictBad = markerVerdictProblem(m as { soundCheck?: unknown });
+			if (verdictBad)
+				issues.push(
+					inv('INV-SOUND', `Marker ${m.id}: ${verdictBad}`, [...where, 'markers', m.id, 'soundCheck']),
+				);
+		}
+		// sound-design (spec 12 §2.2): cues and settings must be readable, cue ids well-formed (INV-SOUND).
+		const soundBad = sequenceSoundDesignIssue(seq as { soundDesign?: unknown });
+		if (soundBad)
+			issues.push(
+				inv('INV-SOUND', `Sequence ${seq.id} sound design: ${soundBad}`, [...where, 'soundDesign']),
+			);
 		// wp-multicam: a multi-camera source's angles reference its own tracks.
 		const mcSource = (seq as Sequence).multicam;
 		if (mcSource)
@@ -1470,6 +1516,11 @@ export function essentialIssues(
 					message: `clip ${c.id}: unreadable Essential Sound settings`,
 					path: [seq.id, c.id, 'essential'],
 				});
+			else if (legacyPanApplied(raw, (c as AudioClip).pan))
+				out.push({
+					message: `clip ${c.id}: Essential Sound Pan saved by a build that wrote it into the clip's pan`,
+					path: [seq.id, c.id, 'essential', 'pan'],
+				});
 			for (const fx of c.effects)
 				if (
 					fx.essential !== undefined &&
@@ -1480,6 +1531,11 @@ export function essentialIssues(
 						path: [seq.id, c.id, fx.id],
 					});
 			if (c.remix) remixes.set(c.remix.id, [...(remixes.get(c.remix.id) ?? []), c.remix.count]);
+			if (c.remix && !remixAnchorsValid(c.remix))
+				out.push({
+					message: `clip ${c.id}: unreadable remix anchors`,
+					path: [seq.id, c.id, 'remix', 'anchors'],
+				});
 		}
 		for (const [id, counts] of remixes)
 			if (counts.some((n) => n !== counts.length))
@@ -1651,6 +1707,23 @@ export function repairDocument(
 			}
 		}
 	}
+	// sound-design: unreadable library provenance is repaired field by field, or dropped without a sound id.
+	for (const m of Object.values(doc.media)) {
+		const r = m as { library?: unknown };
+		if (r.library === undefined || libraryProvenanceIssue(r.library) === null) continue;
+		const fixed = readLibraryProvenance(r.library);
+		if (fixed) {
+			r.library = fixed;
+			note(
+				'repair-library',
+				m.id,
+				'library provenance repaired (unreadable fields reset; check its licence)',
+			);
+		} else {
+			delete r.library;
+			note('drop-library', m.id, 'unreadable library provenance removed (no sound id)');
+		}
+	}
 	// Invalid interpretation sections revert to the file's own values.
 	for (const m of Object.values(doc.media)) {
 		const it = m.interpretation as Record<string, unknown> | undefined;
@@ -1725,6 +1798,11 @@ export function repairDocument(
 						: 'unreadable Essential Sound settings removed',
 				);
 			}
+			// sound-design Phase 0 close-out: Pan saved before it became an offset (`migrateLegacyPan`).
+			if (legacyPanApplied(a.essential, a.pan)) {
+				const n = migrateLegacyPan(a);
+				if (n) note('migrate-essential-pan', c.id, n);
+			}
 			for (const fx of a.effects)
 				if (
 					fx.essential !== undefined &&
@@ -1734,6 +1812,13 @@ export function repairDocument(
 					note('drop-essential-mark', fx.id, 'essential marker without settings removed (the effect stays)');
 				}
 			if (a.remix) remixes.set(a.remix.id, [...(remixes.get(a.remix.id) ?? []), a]);
+			// P6-E11: unreadable remix anchors dropped (the readable ones kept)
+			if (a.remix && !remixAnchorsValid(a.remix)) {
+				const kept = readRemixAnchors(a.remix);
+				const { anchors: _drop, ...rest } = a.remix as typeof a.remix & { anchors?: unknown };
+				a.remix = (kept.length ? { ...rest, anchors: kept } : rest) as never;
+				note('repair-remix-anchors', c.id, `remix anchors: ${kept.length} readable kept`);
+			}
 		}
 		for (const [id, list] of remixes) {
 			if (list.every((c) => c.remix!.count === list.length)) continue;
@@ -2156,6 +2241,9 @@ export function repairDocument(
 	// gaps: unreadable project settings, dangling proxies, channel maps, analyses, graphic layers.
 	repairGaps(doc, note);
 	for (const seq of Object.values(doc.sequences) as Sequence[]) repairTransitionsFinal(seq, note);
+	// sound-design: unreadable cues / clip metadata, dangling anchors, placed clips and cue links, duplicate cue ids.
+	// Last: its soft references must see every clip, transition and marker the passes above removed (idempotence).
+	repairSoundDesign(doc, ids, note);
 	return { document: doc, report };
 }
 

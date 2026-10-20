@@ -24,6 +24,7 @@ import type { CommandScope } from '../commands/types.ts';
 import { formatChord } from './keymap/format.ts';
 import { ThirdPartyLicenses } from './licenses.tsx';
 import { prefsStore, useUiPrefs } from './prefs.ts';
+import { workspaceName } from './workspaces/definitions.ts';
 import type { WorkspaceStore } from './workspaces/store.ts';
 
 export const DIALOGS = {
@@ -149,13 +150,15 @@ function EditWorkspacesDialog(
 										aria-label="Workspace name"
 									/>
 								) : (
-									<span className="min-w-0 flex-1 truncate">{w.name}</span>
+									<span className="min-w-0 flex-1 truncate" data-no-i18n>
+										{workspaceName(w)}
+									</span>
 								)}
 								<Kbd className="w-[72px] text-right">{n ? `Alt+Shift+${n}` : ''}</Kbd>
 								<Checkbox
 									checked={w.showInBar}
 									onCheckedChange={(c) => store.setShowInBar(w.id, c)}
-									aria-label={`Show ${w.name} in bar`}
+									aria-label={`Show ${workspaceName(w)} in bar`}
 								/>
 								{w.builtIn ? (
 									<Button variant="quiet" onClick={() => props.onRestoreFactory?.(w.id)}>

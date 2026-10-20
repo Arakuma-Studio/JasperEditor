@@ -3,6 +3,7 @@
 // `atempo` when "Maintain Audio Pitch" is on, a rate change — like the preview — when it is off; reversed clips are
 // decoded forwards and reversed) and resamples with SoX (VHQ) when the build has it, else swr with a long filter.
 import type { ChildProcess } from 'node:child_process';
+import { endianness } from 'node:os';
 import type { AudioStream, ClipReader, Rational, RenderAudioClip } from '@jasper/project';
 import { FLICKS_PER_SECOND, fileTimeOf, flicksPerFrame, frameToSample } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -100,7 +101,16 @@ export function clipDecodeArgs(o: {
 		);
 		chain.push(`pan=${layout}|${picks.join('|')}`);
 	} else if (!PAN_LAYOUT[o.stream.channels]) chain.push('aformat=channel_layouts=stereo');
-	if (clip.speed.reverse) chain.push('areverse');
+	if (clip.speed.reverse) {
+		// Reverse exactly the decoded span [max(0, c0), c1): without the trim, the 0.25 s read past c1 (`-t` below)
+		// would come first and shift the whole clip by 250 ms; content past the media end is silence that must come
+		// first too. Content before 0 (lead) is silence at the end, which the final apad supplies.
+		// In input samples: `atrim=duration=0` / `apad=whole_dur=0` mean "no limit", so an empty span (all of it before
+		// the media start) is cut to nothing and the final apad makes it silence.
+		const n = Math.round(durSec * o.stream.sampleRate);
+		if (n > 0) chain.push(`atrim=end_sample=${n}`, `apad=whole_len=${n}`, 'areverse');
+		else chain.push('atrim=end_sample=0');
+	}
 	// The interpretation's scale is a rate change (pitch follows); the clip's own speed honours Maintain Pitch.
 	if (Math.abs(scale - 1) > 1e-9) chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale)}`);
 	if (Math.abs(rate - 1) > 1e-9) {
@@ -109,7 +119,7 @@ export function clipDecodeArgs(o: {
 		else chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale * rate)}`);
 	}
 	chain.push(`aresample=${sampleRate}:${resamplerArgs(o.soxr)}`);
-	if (lead > 0) {
+	if (lead > 0 && !clip.speed.reverse) {
 		const leadSamples = Math.round((lead / FLICKS_PER_SECOND / rate) * sampleRate);
 		chain.push(`adelay=delays=${leadSamples}S:all=1`);
 	}
@@ -136,6 +146,8 @@ export function clipDecodeArgs(o: {
 }
 
 /** Streams interleaved f32le from a child's stdout into planar blocks. */
+const LITTLE_ENDIAN = endianness() === 'LE';
+
 export class PcmStreamReader implements ClipReader {
 	private readonly iter: AsyncIterator<Buffer>;
 	private pending: Buffer = Buffer.alloc(0);
@@ -172,9 +184,19 @@ export class PcmStreamReader implements ClipReader {
 		}
 		const all = chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks, have);
 		const got = Math.min(frames, Math.floor(all.length / bytesPerFrame));
-		const dv = new DataView(all.buffer, all.byteOffset, got * bytesPerFrame);
-		for (let i = 0; i < got; i++)
-			for (let c = 0; c < this.channels; c++) out[c]![i] = dv.getFloat32((i * this.channels + c) * 4, true);
+		const ch = this.channels;
+		if (LITTLE_ENDIAN && all.byteOffset % 4 === 0) {
+			// the samples through a typed view (ffmpeg writes f32le): the same values as DataView, several times faster
+			const f = new Float32Array(all.buffer, all.byteOffset, got * ch);
+			for (let c = 0; c < ch; c++) {
+				const o = out[c]!;
+				for (let i = 0; i < got; i++) o[i] = f[i * ch + c]!;
+			}
+		} else {
+			const dv = new DataView(all.buffer, all.byteOffset, got * bytesPerFrame);
+			for (let i = 0; i < got; i++)
+				for (let c = 0; c < ch; c++) out[c]![i] = dv.getFloat32((i * ch + c) * 4, true);
+		}
 		this.pending = Buffer.from(all.subarray(got * bytesPerFrame));
 		return got;
 	}

@@ -32,9 +32,16 @@ import { previewCommands } from './previews.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { projectFileCommands } from './project-files.ts';
+import { proposalCommands } from './proposals.ts';
 import { registerCommands } from './registry.ts';
 import { rotoCommands } from './roto.ts';
 import { shapeCommands } from './shapes.ts';
+import { soundCommands } from './sound.ts';
+import { soundBedCommands } from './sound-beds.ts';
+import { soundCheckCommands } from './sound-check.ts';
+import { soundCueCommands } from './sound-cues.ts';
+import { soundDesignCommands } from './sound-design.ts';
+import { soundMixCommands } from './sound-mix.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
@@ -94,6 +101,15 @@ const COMMAND_MODULES: UiCommand[][] = [
 	gapsCommands,
 	polishCommands,
 	easingCommands,
+	// sound-design (spec 12): Sound Library, Cue Seam
+	soundCommands,
+	soundCueCommands,
+	soundDesignCommands,
+	soundMixCommands,
+	soundBedCommands,
+	soundCheckCommands,
+	// proposals (spec 12 §2.5): review in the Timeline, Hear proposal
+	proposalCommands,
 ];
 
 let registered = false;

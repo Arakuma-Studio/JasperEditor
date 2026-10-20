@@ -1,3 +1,4 @@
+import { t } from '../i18n/runtime.ts';
 import { addTextAt } from '../panels/program/edits.ts';
 import { getCommand, runCommand } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -9,7 +10,10 @@ export const HOME_NEW_PROJECT_FLAG = 'jasper:home-new-project';
 function delegate(id: string, label: string, target: string): UiCommand {
 	return {
 		id,
-		label,
+		// in the UI language when read (the menu shows the command's label: "Select All" stayed English in Spanish)
+		get label() {
+			return t(label);
+		},
 		scope: 'global',
 		when: (ctx) => {
 			const cmd = getCommand(target);

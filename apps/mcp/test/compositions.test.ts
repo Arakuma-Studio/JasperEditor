@@ -1,4 +1,4 @@
-// MG_E2E=1 enables the real engine flow on MCP_MG_TEST_PORT (default 48145).
+// MG_E2E=1 enables the real engine flow (on a free port, or MCP_MG_TEST_PORT).
 import { type ChildProcess, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,12 +8,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv } from './helpers.ts';
+import { cleanEnv, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
-const PORT = Number(process.env.MCP_MG_TEST_PORT ?? 48145);
+const PORT = await testPort(process.env.MCP_MG_TEST_PORT);
 const E2E = process.env.MG_E2E === '1';
 
 describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=1)', () => {

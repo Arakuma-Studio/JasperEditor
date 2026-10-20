@@ -73,7 +73,10 @@ export type RenderAudioMix = {
 	masterFormat: AudioChannelFormat;
 	/** Processing order: audio tracks, submixes (a submix only feeds a later one), the Mix last. */
 	strips: RenderStrip[];
-	/** Loudness normalisation of the Mix (`target − measured`) and its true-peak ceiling, when enabled + analysed. */
+	/**
+	 * Loudness normalisation of the Mix and its true-peak limiter ceiling, when enabled + analysed: the analysis's
+	 * converged delivery for the current target (`loudnessGainOf`), else `target − measured` at the target ceiling.
+	 */
 	loudness: { gainDb: number; truePeakDb: number } | null;
 };
 
@@ -96,14 +99,20 @@ export function soloAudible(strips: readonly StripView[]): Set<string> {
 	for (const [src, ts] of out) for (const t of ts) into.set(t, [...(into.get(t) ?? []), src]);
 	const keep = new Set<string>([MASTER_STRIP_ID]);
 	const seeds = strips.filter((s) => s.kind !== 'master' && (s.solo || s.soloSafe)).map((s) => s.id);
-	// downstream of a soloed/safe strip (it must reach the Mix) and upstream (what feeds it)
+	// downstream of a soloed/safe strip (it must reach the Mix) and upstream (what feeds it). Each walk has its own
+	// visited set: a strip already kept by another seed's walk must still be walked through (A1 → S1 → soloed S2
+	// keeps everything else that feeds S1).
 	const walk = (start: string, edges: Map<string, string[]>) => {
+		const seen = new Set<string>([start]);
 		const stack = [start];
 		while (stack.length) {
 			const id = stack.pop()!;
-			if (keep.has(id) && id !== start) continue;
 			keep.add(id);
-			for (const n of edges.get(id) ?? []) if (!keep.has(n)) stack.push(n);
+			for (const n of edges.get(id) ?? [])
+				if (!seen.has(n)) {
+					seen.add(n);
+					stack.push(n);
+				}
 		}
 	};
 	for (const s of seeds) {
@@ -161,11 +170,13 @@ export function buildAudioMix(seq: Sequence): RenderAudioMix {
 		};
 	});
 	// A submix that nothing audible feeds is inaudible too (no need to run its inserts on silence).
+	// the preview's normalisation: the analysis's converged delivery gain and limiter ceiling (= the export's PCM path)
+	const loud = loudnessGainOf(seq.master.loudness);
 	return {
 		sampleRate: (seq.settings.audioSampleRate as number | undefined) ?? 48000,
 		masterFormat: (seq.settings.masterLayout as AudioChannelFormat | undefined) ?? 'stereo',
 		strips,
-		loudness: loudnessGainOf(seq.master.loudness),
+		loudness: loud ? { gainDb: loud.gainDb, truePeakDb: loud.truePeakDb } : null,
 	};
 }
 

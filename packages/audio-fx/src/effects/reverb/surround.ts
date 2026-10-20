@@ -17,6 +17,8 @@ export class SurroundReverb extends EffectBase {
 	private readonly lc = [new OnePole(), new OnePole()];
 	private readonly hc = [new OnePole(), new OnePole()];
 	private readonly scratch = [new Float32Array(CHUNK), new Float32Array(CHUNK)] as const;
+	/** Dry level per sample of the current chunk (applied to the channels beyond L/R). */
+	private readonly dryAt = new Float64Array(CHUNK);
 	private readonly dry: Smoothed;
 	private readonly wet: Smoothed;
 	private readonly early: Smoothed;
@@ -69,21 +71,27 @@ export class SurroundReverb extends EffectBase {
 	}
 
 	process(ch: readonly Float32Array[], start: number, end: number): void {
-		const nch = Math.min(ch.length, this.channels, 2);
+		// Channels beyond the configured count are left alone (another processor's).
+		const all = Math.min(ch.length, this.channels);
+		const nch = Math.min(all, 2);
 		if (nch === 0) return;
 		const alc = OnePole.alpha(this.pv.v('lowCut'), this.sampleRate);
 		const ahc = OnePole.alpha(this.pv.v('highCut'), this.sampleRate);
 		const ms = this.sampleRate * 0.001;
 		const L = ch[0]!;
 		const R = nch === 2 ? ch[1]! : ch[0]!;
+		// 5.1 (L R C LFE Ls Rs): the centre channel feeds the reverb with the L/R mid (Center Input); every channel
+		// beyond L/R gets the Dry level, so Dry and Wet act on the whole signal.
+		const C = all >= 3 ? ch[2]! : null;
 		const [s0, s1] = this.scratch;
+		const dryAt = this.dryAt;
 		for (let a = start; a < end; a += CHUNK) {
 			const len = Math.min(CHUNK, end - a);
 			for (let i = 0; i < len; i++) {
 				const l = L[a + i]!;
 				const r = R[a + i]!;
 				const c = this.centre.tick();
-				const mid = 0.5 * (l + r);
+				const mid = 0.5 * (l + r) + (C ? Math.SQRT1_2 * C[a + i]! : 0);
 				const side = 0.5 * (l - r);
 				s0[i] = c * mid + side;
 				s1[i] = c * mid - side;
@@ -102,6 +110,7 @@ export class SurroundReverb extends EffectBase {
 				}
 				const early = this.early.tick();
 				const dry = this.dry.tick();
+				dryAt[i] = dry;
 				const wet = this.wet.tick();
 				const width = this.width.tick();
 				const w0 = this.hc[0]!.lp(ahc, this.lc[0]!.hp(alc, s0[i]! + early * el));
@@ -111,6 +120,10 @@ export class SurroundReverb extends EffectBase {
 					L[a + i] = dry * L[a + i]! + wet * (m + width * (w0 - m));
 					R[a + i] = dry * R[a + i]! + wet * (m + width * (w1 - m));
 				} else L[a + i] = dry * L[a + i]! + wet * m;
+			}
+			for (let k = 2; k < all; k++) {
+				const x = ch[k]!;
+				for (let i = 0; i < len; i++) x[a + i] = dryAt[i]! * x[a + i]!;
 			}
 		}
 	}

@@ -422,7 +422,9 @@ Every state-changing engine route and what an agent may do with it:
 | `DELETE /api/effect-presets/:id`, `…/folders/:id` (`delete_effect_preset`) | **Gated** | The user's library, shared by all projects, no undo |
 | `POST /api/effect-presets`, `PUT …/:id`, `POST …/import`, `POST/PUT …/folders` (`save_effect_preset`) | Open | Add, rename, move: nothing is lost; import never overwrites |
 | `DELETE /api/roto/models/:id`, `DELETE /api/speech/models/:id` (`remove_roto_model`, `remove_speech_model`) | **Gated** | Gigabytes to download again; features stop working meanwhile |
-| `POST …/models/:id/install` (`install_*_model`) | Open | Catalogue-pinned downloads, size-bounded (ENG-2) |
+| `DELETE /api/sounds/semantic/models/:id` (`remove_describe_search_model`; WP-E9) | **Gated** | 780 MB to download again; its cached embeddings go with it; Describe-it search and Find Moment stop working meanwhile (nothing installed: nothing asked) |
+| `POST …/models/:id/install` (`install_*_model`, `install_describe_search_model`) | Open | Catalogue-pinned downloads, size-bounded (ENG-2) |
+| `POST /api/sounds/semantic/embed`, `POST /api/sounds/:id/moments` (`prepare_describe_search`, `find_sound_moment`) | Open | Derived data in the engine's cache only (embeddings of library sounds); nothing of the user's changes |
 | `POST /api/cache/clean` mode `all` (`clean_cache`) | **Gated** | Removes what saved projects reference: hours of proxies, previews, prerenders |
 | `POST /api/cache/clean` mode `unused` / `auto` | Open | Only files no saved or open project references; the engine's own automatic pass does the same |
 | `POST /api/cache/location` (`set_cache_location`) | **Gated** | Writes to a folder of the caller's choice; `fresh` deletes the cache |
@@ -441,6 +443,31 @@ Every state-changing engine route and what an agent may do with it:
 | `DELETE /api/media/:key` | **Gated** for engine-managed uploads | An upload imported into an unsaved project exists nowhere else |
 | `PUT /api/settings/gaps` lowering `keepVersions` | **Gated** | Prunes older versions of every project at its next save |
 | `PUT /api/settings/gaps` otherwise | Open | Interval, render optimisation: nothing is deleted |
+| `PUT /api/sounds/roots` adding, removing, relicensing or re-crediting (author, credit template) a folder (`add_sound_folder`, `remove_sound_folder`) | **Gated** | Adding reads a folder of the user's disk into a library every project and agent shares, under the licence it declares; removing takes the user's sounds out; a licence declaration decides what counts as safe for commercial use; the credit line is what projects print as attribution. Refused with `409 SOUND_ROOTS_CHANGED` when the list changed while the card waited |
+| `PUT /api/sounds/roots` renaming or enabling / disabling a folder | Open | Nothing is read that was not, nothing lost: a disabled folder's sounds come back when it is enabled |
+| `DELETE /api/sounds/packs/:id` (`remove_sound_pack`) | **Gated** (card "Remove a sound pack" with the pack's name, sound count and size; nothing installed → nothing asked, `removed: false`; `409 SOUND_PACK_BUSY` while it installs) | A download to repeat; the pack's sounds leave the library every project and agent shares (projects keep their managed copies) |
+| `DELETE /api/sound-design/profiles/:profileId` (`delete_sound_profile`, Preferences ▸ Sound Library ▸ Reference profiles ▸ Delete…) | **Gated** (card "Delete a reference profile" with its name and reference count; the editor's own Delete… asks in a confirmation) | The user's data: numbers measured from their own reference media, which building again needs; sequences comparing with it lose their Reference rows |
+| `POST /api/sounds/packs/:id/install` (`install_sound_pack`) | Open (like model installs) | Only ids of the engine's catalogue: upstream URL, archive sha256 and size, every file's sha256 and size are pinned in `apps/engine/src/sounds/packs.json` (https only; `JASPER_SOUND_CATALOG` is the operator's override, for tests); the download stops past the pinned size, after 60 s without data and after 30 min; only listed members are extracted, each checked by size before inflating and by sha256 after, to paths taken from the validated catalogue (never from the archive) and checked again to stay inside the pack; nothing is executed or converted. The tool tells agents to state size and licence to the user first |
+| `POST /api/sounds/index`, `POST /api/sounds/:id/register` (`rescan_sound_library`, `import_sounds`) | Open | The index is derived data rebuilt from files; registering copies a kit, pack or synth file under an engine-chosen name, or registers a folder file in place like `/api/media/register` |
+| `POST /api/projects/:id/proposals/:proposalId/accept` (`accept_proposal`) | **Gated** for agents by the feature's policy: sound design only where the proposal's sequence has `soundDesign.settings.agentsMayApply` (default off), every other feature refused → `403 APPROVAL_REQUIRED` (`E_APPROVAL_REQUIRED`); destructive commands inside the items then still need the approval card (`APPROVAL_DENIED` / `APPROVAL_TIMEOUT`). The editor window's own accept needs nothing more (the Review UI requires a trusted gesture) and is applied as the user's edit; before it, the Review's confirmation names what an agent could not run unasked among the items (destructive commands, `force`, the `agentsMayApply` grant: `approvalNeeds`, Phase 3 verification) | Applies edits nobody reviewed; spec 12 §0 "agents propose, the user applies" |
+| `soundDesign.setSettings` with `agentsMayApply: true` in an agent transaction | **Gated** (approval card, `approvalReasons`) | An agent may not grant itself the right to apply its own proposals |
+| `POST /api/projects/:id/proposals/:proposalId/applied` (WP3.3a: the editor's Redo of an undone accept) | **Editor only**: without the editor key (or with `x-jasper-agent-input`) `403 APPROVAL_REQUIRED`; nothing in the project changes, refs must be id-shaped | An agent could otherwise mark items applied without applying them and hide them from review |
+| `POST …/:proposalId/reopen`, `/note`, `/select` (Phase 3 verification) | **Editor only**: an agent gets `403 APPROVAL_REQUIRED` (they are the reviewer's actions: an agent could otherwise overturn the user's rejection, overwrite their note or swap the alternative they chose just before Apply). Reopening an **accepted** item is refused even for the editor while what its accept created is still in the document (`409 PROPOSAL_STILL_APPLIED`, `reopenRefusals`): accepting it again would apply it twice. `applied` (the Redo record) likewise checks the document has what the accept created (`409 PROPOSAL_NOT_APPLIED`) | Overturned decisions; a duplicate placement after a stray reopen |
+| "Allow agents to apply sound proposals" checkbox (Preferences ▸ Sound Library) clicked by an agent's live-UI input (`ui_click`) | **Refused** by the session's agent-UI guard (`agentUiTxGuard`: a user-origin transaction that would need approval while agent input runs) | An agent granting itself the right through the UI |
+| `POST /api/projects/:id/proposals`, `…/:proposalId/reject`, `DELETE …/:proposalId` | Open | Nothing in the project changes (proposals live outside the document and its history); an agent is always recorded as the author (`{agent}`), only the editor may name the author; an agent may withdraw (reject, delete) items; deleting one loses review notes only |
+| `GET /api/projects/:id/proposals/:proposalId` without `?revalidate` by an agent (WP3.3b: `wait_for_proposal` polling) | Open | Read-only; two such reads within 2.5 s mark the agent "waiting for your review" (list `waiting`, event `proposal.changed` `waiting`, the card's line) until 3.5 s pass without one. The name shown is the `x-jasper-agent` header after `agentNameOf` (control characters removed, ≤ 64 characters), rendered as text; ≤ 1 000 proposals followed, nothing stored |
+| `POST /api/sound-design/plan` (`plan_sound_design`), `place_sound` mode "propose" | Open | Stores a proposal (nothing in the document changes); registers the planned library sounds like `POST /api/sounds/:id/register` (copies into managed media, folder files in place only on a local engine); applying it is the gated accept above |
+| `POST /api/sound-design/rebalance` (`rebalance_sfx`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyGains` (clip gains of sound effects within −30…+12 dB, nothing deleted), classified like any agent transaction (labelled "Agent: Rebalance SFX Levels"); renders are measure-only (no file is written) |
+| `POST /api/sound-design/delivery` (`apply_delivery`) | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.applyDelivery` (settings, the Mix's loudness normalisation, Essential Sound Auto-Match gains, ducking Volume keyframes) and `soundDesign.applyGains`, classified like any agent transaction ("Agent: Apply Delivery Preset"); nothing is deleted; renders are measure-only (no file is written) |
+| `POST /api/sound-design/beds`, `/room-tone` (`lay_ambience_bed`, `fill_room_tone`, Sequence ▸ Sound Design ▸ Lay Ambience Bed… / Fill Room Tone) and their `/plan` routes | Open | Mode `propose` (the default) stores a proposal (nothing changes); mode `apply` is one ordinary, undoable transaction of `soundDesign.layBed` (clips, crossfade transitions, fades, Volume dips on a new or free audio track; with `replace` it lifts only earlier bed pieces — clips carrying `bed` metadata of the same purpose — over the scenes, on unlocked tracks) and the `media.register` of the library sounds it uses, classified like any agent transaction ("Agent: Lay Ambience Bed" / "Agent: Fill Room Tone"); the plan routes and the jobs register those sounds like `POST /api/sounds/:id/register` (copies into managed media); decodes are measure-only |
+| `POST /api/sound-design/check` (`sound_check`) | Open | Measure-only renders (the first normalisation pass is a scratch file of the job, removed when it ends); with `store: true` one ordinary, undoable transaction of `soundDesign.setCheck` (metadata only, "Agent: Sound Check Result"); fixes are returned, never applied. With `proposalId` (P6-E5) the preview of a proposal of the same project is checked — nothing is applied, `store` is refused, the summary is written on the proposal (`report.check`, no decision, `updatedAt` kept) |
+| `POST /api/sound-design/visual` (`view_sound_timeline`) | Open | Read-only: measure-only renders of ≤ 120 s, nothing stored |
+| `POST /api/sound-design/listen` (`listen_to_sequence`, `view_sound_timeline`'s sections and answer marks, Sound Check ▸ Log) | Open | Read-only: measure-only renders of ≤ 10 min (the mix and ≤ 24 clip lanes through the export mixer, nothing written), cached beats and picture motion read but never analysed; the result is the job's (nothing stored in the project or the appdir) |
+| `POST /api/sound-design/profiles` (`build_sound_profile`), `PUT …/profiles/:profileId/name`, `POST …/profiles/import`, `GET …/profiles[/:profileId]` (P6-E8) | Open | Nothing in a project changes: the job measures project media, sequences or (local engines only, `403 PATHS_NOT_ALLOWED` otherwise) absolute paths read-only — audio streamed, the picture decoded small, sequences rendered through the export mixer — and writes one JSON file of numbers under `<appdir>/sounds/profiles/` (≤ 200); rename and import add or change only those files; import validates strictly and recomputes the statistics; the selection is the ordinary, undoable `soundDesign.setSettings {referenceProfile}` |
+| `POST /api/audio/classify` (`auto_tag_audio`, Essential Sound ▸ Auto Tag), the voice activity of `POST /api/sound-design/cues` (dialogue clips) | Open | Read-only for the project: ffmpeg decodes of registered media (≤ 500 items, ≤ 4 × 15 s windows or 60 s each; voice activity streamed into 10 ms levels, ≤ 4 h per clip, 8 h and 64 clips per call); only small JSON results are cached (`<appdir>/sounds/analysis/{classify,voice}/`); tagging is the ordinary, undoable `essentialSound.autoTag` transaction the caller sends |
+| `POST /api/sound-design/check/last` (`get_sound_check`) | Open | Read-only: the sequence's last kept report (`<appdir>/projects/<pid>/sound-check/<sequenceId>.json`, written by finished `sound-check` jobs; file names only from document ids, ≤ 32 per project, ≤ 16 MB each, damaged files moved aside) with its staleness against the live document |
+| `POST /api/audio/remix-plan` (`remix_audio`, `find_music_drops`, `fit_music_to_picture`, the Remix dialog), `POST /api/sounds/:id/match` (`match_sound`), `POST /api/sound-design/peak` (`detect_sound_peak`: ≤ 120 s of one clip's media decoded and measured; the peak is written by an ordinary transaction), `GET /api/sounds`, `/status`, `/:id`, `/:id/audio`, `/:id/visual` (search, status, audition, contact sheets) | Open | Read or compute only: plans, drops, matches and library rows go into the response (a remix is then an ordinary, undoable transaction of the caller's); sounds are served as described in §5 "Sound library" |
+| `POST /api/sound-design/motion` (`analyze_picture_motion`), engine cue sources of `POST /api/sound-design/cues` (`find_sound_cues` sources scene / beat / pixel), `POST /api/audio/beats` | Open | Read-only for the project: a picture render of ≤ 10 min into the job's scratch directory (deleted when it ends), Scene Edit Detection and beat analyses of registered media; only small JSON results are cached (`<appdir>/sounds/analysis/`). `POST /api/audio/beats {cachedOnly: true}` reads the cache only (404 `BEATS_NOT_ANALYSED`, nothing started); in-request analyses stop when the client closes its connection (`clientGoneSignal`) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
 | `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
@@ -455,7 +482,8 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/agent/ui` | AGT-1 and the `x-jasper-agent-input` mark | — |
 | analysis routes (`/api/audio/analyze`, `/api/grading/*`, `/api/masks/trace`, `/api/roto/*`, `/api/tracking/track`, `/api/camtrack/solve`, `/api/sync/audio`, `/api/scenes/detect`, `/api/captions/read`, `/api/exports/plan`, …) | Open | Read or compute; results go into the cache or the response |
 
-MCP tools that write files themselves: `export_captions` writes under a free name; the `jasper` CLI's `--out` is the
+MCP tools that write files themselves: `export_captions` and `export_sound_credits` write under a free name (never
+overwriting); `export_sound_profile` replaces an existing file only with `overwrite: true`; the `jasper` CLI's `--out` is the
 shell user naming a file. Tool descriptions and the server guide say which tools ask.
 
 Tests: `security-hardening.test.ts` (AGT-3: preset and bin deletion end to end, the editor's own request, the
@@ -648,6 +676,193 @@ them, but it was reviewed by its author, not by this review.
   `agentInputActive`); the desktop app does not offer it.
 - **`/editor-boot.js`** starts `GET /api/projects/<id>` for the id in the page URL before the bundle loads
   (same origin, same credentials); the id is URL-encoded and reaches the engine through the validated route.
+- **Sound library** (spec 12 WP1.2, `apps/engine/src/routes/sounds.ts`; `GET /api/sounds`, `/status`, `/:id`,
+  `/:id/audio`, `/:id/visual`, `/roots`; `POST /api/sounds/index`, `/:id/register`; `PUT /api/sounds/roots`):
+  sound ids are matched against `snd_` + 16 hex digits before any lookup; files are found through the index only
+  (kit and pack files by their manifest's relative path, folder files by root id and relative path), resolved
+  through links and refused unless they stay inside their kit, pack or folder and have an audio extension; bytes are
+  served with an audio content type only, `nosniff`, `CSP: sandbox` and Range. Folder paths (`PUT /api/sounds/roots`)
+  are taken in local mode only, absolute, without NUL, normalised and resolved, must be existing folders and not a
+  file-system root; scans skip hidden names and symlinks and stop at depth 12 and 20 000 files per folder; folder
+  sounds are served and registered in local mode only. FFmpeg reads library files with `-protocol_whitelist
+  file,crypto,data`. Agents adding, removing, relicensing or re-crediting (author, credit template) a folder are
+  asked (AGT-3 table); the card counts every kind of change and cuts each path to 120 characters, and a change
+  approved after the folder list moved is refused (`409 SOUND_ROOTS_CHANGED`). A remote engine lists no folder paths,
+  does not index folders and keeps folder sounds out of search and visual data; only regular files are served. Manifests are
+  validated per entry and capped at 16 MB; a damaged index is moved aside and rebuilt. Tests:
+  `apps/engine/test/sounds-routes.test.ts`, `sounds-unit.test.ts`, and the generic route fuzzing of
+  `fuzz-http.test.ts`. *Residual:* like the Media Browser, an authenticated client of a local engine can have any
+  readable folder indexed (the editor itself, or an agent the user approved).
+- **Sound packs** (spec 12 WP6.1, `apps/engine/src/sounds/packs.ts`, routes in `routes/sounds.ts`; `GET /api/sounds/packs`,
+  `POST /api/sounds/packs/:id/install`, `DELETE /api/sounds/packs/:id`): the only network the sound library uses, and
+  only on an explicit install. The catalogue is validated entry by entry (zod: id pattern, allowlisted licence with
+  evidence, pinned sha256 and sizes ≤ 256 MB per archive and 1 GB per pack, ≤ 5 000 files, relative audio paths without
+  `..`, backslashes, NUL, hidden segments or case-insensitive duplicates; built-in entries https only); invalid entries are
+  skipped and listed, never thrown. A download goes to `<packsDir>/.downloads/<id>-<sha16>.partial` (resumed by a Range
+  request only when it is the same pinned file; deleted on cancel, on a checksum mismatch or an oversize body; stale ones
+  deleted at engine start), is stopped past its pinned size, after 60 s without data and after 30 min, and must match
+  its sha256; the ZIP reader (`imports/zip.ts`) refuses ZIP64, encryption and spanned archives and bounds every entry;
+  only catalogue-listed members are read, each refused if its declared size differs from the pinned one (before
+  inflating) and if its sha256 differs (after); output paths come from the catalogue and are checked again with
+  `safeJoin` (property-tested: never outside the folder); files are written with `wx` into a staging folder that
+  replaces the pack folder in one rename after its `pack.json` validated; free disk space is checked first (`DISK_FULL`).
+  Removing renames the folder aside before deleting it. Tests: `apps/engine/test/sound-packs.test.ts` (sha256 and size
+  mismatches, a hostile archive with `../escape.wav`, catalogue zip-slip paths, size caps, cancel and partial cleanup,
+  resume over file:// and HTTP Range, a stalled server, the approval gate, a project exporting a pack sound after the
+  pack is removed), `apps/mcp/test/sound-packs.test.ts`, `fuzz-http.test.ts` (route fuzzing).
+  `files` packs (BigSoundBank, wp-note "Phase 6 → BigSoundBank packs") download each listed file from its own pinned
+  https URL, one at a time and at most one request per second (`PACK_FILE_INTERVAL_MS`), with a descriptive
+  User-Agent (`PACK_USER_AGENT`); the same size, sha256, staging and `safeJoin` rules apply per file, and the built-in
+  catalogue refuses any non-https URL including a file's own licence evidence.
+  *Residual:* a catalogue override file is trusted like the engine's own configuration; BigSoundBank's robots.txt and
+  ai.txt disallow `/UPLOAD/` for crawlers and AI training — the human decision of 2026-10-17 accepts fetching the
+  curated files at the user's request (no crawling, no training, no hosting by us).
+- **Sound design cues** (spec 12 WP2.3, `apps/engine/src/routes/sound-design.ts`; `POST /api/sound-design/cues`):
+  read-only (Open in the AGT-3 sense: nothing is written). The body is a strict zod object: an inline envelope
+  (loaded with `loadProject`, a failure is `400 VALIDATION_FAILED`) xor a project id matched against
+  `[A-Za-z0-9_-]{1,128}` and read through the agent service like `doc.get`; option ranges, counts (`maxCues` ≤
+  10 000) and the returned curves (≤ 20 000 frames per clip) are bounded; `deriveCues` never throws (each source in
+  its own try/catch, sampling capped). Tests: `apps/engine/test/sound-design-cues.test.ts` and `fuzz-http.test.ts`.
+- **Sound design plan** (spec 12 WP3.2, `apps/engine/src/sound-design/plan.ts`; `POST /api/sound-design/plan`): a
+  strict zod body (project id `[A-Za-z0-9_-]{1,128}`, ≤ 2 000 cue ids, palette ≤ 500 sound ids `snd_` + 16 hex,
+  `maxCues` ≤ 200, alternatives ≤ 3); the project, sequence and cue ids are checked before a job starts (typed 404s);
+  the job reads the live document through the agent service, ranks only commercial-safe sounds of the allowed sources
+  (folder sounds only on a local engine, D-47), registers through the sound service and creates the proposal through
+  the proposal service (its validation and limits); its input is re-validated when read back from the journal; a
+  cancelled job deletes a proposal it had just stored. Tests: `apps/engine/test/sound-design-plan.test.ts` (typed
+  refusals, a fuzz target over mutated bodies: no 5xx, every started job ends succeeded with a result of the schema or
+  failed with a code) and `fuzz-http.test.ts`.
+- **Rebalance SFX levels** (spec 12 WP4.1b, `apps/engine/src/sound-design/{rebalance,bed,levels}.ts`; `POST
+  /api/sound-design/rebalance`): a strict zod body (project id `[A-Za-z0-9_-]{1,128}`, ≤ 2 000 clip ids, a frame range,
+  a delivery enum, `mode` / `userGains` enums); the project, sequence and explicit clips are checked before a job
+  starts (typed `404 CLIP_NOT_FOUND`, `400 NOT_SFX`); the job reads the live document through the agent service,
+  renders only through the export mixer with `measureOnly` (bounded: windows ≤ 20 s, ≤ 2 000 clips, bed PCM cache ≤ 96
+  MB), media resolved through the registry (engine-store keys only, like exports); apply mode goes through the agent
+  service's transaction path with `expectedRevision` (a concurrent edit fails the job `CONFLICT`, retryable). Tests:
+  `apps/engine/test/sound-design-rebalance.test.ts` (refusals and a fuzz target: no 5xx, every started job ends
+  succeeded with a result of the schema or failed with a code).
+- **Delivery presets** (spec 12 WP4.2a, `apps/engine/src/sound-design/delivery.ts`; `POST /api/sound-design/delivery`): a
+  strict zod body (project id `[A-Za-z0-9_-]{1,128}`, a delivery enum, `mode` enum, four booleans, a ≤ 200-character
+  label); the project and sequence are checked before a job starts (typed `404`); the job reads the live document
+  through the agent service, simulates the commands on a copy (`applyTransaction`, so a refused command fails the job
+  with its code before anything is applied), renders only through the export mixer with `measureOnly` (per clip, the
+  ducking triggers, the sound effects' clusters as WP4.1b, and the whole sequence three times: mix, voice, music /
+  ambience), media resolved through the registry; apply mode goes through the agent service's transaction path with
+  `expectedRevision` (a concurrent edit fails the job `CONFLICT`, retryable). The commands it builds are bounded by
+  their schemas (≤ 5 000 measured clips, ≤ 256 ducking groups of ≤ 20 000 regions). Tests:
+  `apps/engine/test/sound-design-delivery.test.ts` (typed refusals: bad preset, unknown key, unknown or malformed
+  project, unknown sequence).
+- **Sound Check** (spec 12 WP5.1, `apps/engine/src/sound-design/{check,stems,visual}.ts`; `POST /api/sound-design/check`,
+  `POST /api/sound-design/visual`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, a frame range, a preset enum,
+  `store` boolean, a ≤ 128-character job id); the project, sequence and range are checked before a job starts (typed `404`,
+  `400 RANGE_EMPTY` / `RANGE_TOO_LONG`: ≤ 4 h per check, ≤ 120 s per visual request); the check job reads the live
+  document through the agent service and renders only through the export mixer (one `OfflineMixer` per stem, shared
+  ffmpeg decoders of engine-registry media, `measureOnly` except the normalisation pass's float scratch file in the job's
+  scratch directory, deleted in a `finally`); reference decodes of sound files are bounded (≤ 0.25 s each, 4 at once,
+  local protocols only); curves are bounded (≤ 6 h of 10 ms hops; report curves ≤ 1 200 points, ≤ 2 000 findings and
+  event rows); fixes are only described (commands dry-run on a copy, never applied by the check); `checkJobId` must name
+  a `sound-check` job of the same project (`404 JOB_NOT_FOUND`). `store` goes through the agent service's transaction
+  path. Tests: `apps/engine/test/sound-check.test.ts` (typed refusals), `sound-check-stems.test.ts`. A proposal check
+  (`proposalId`, `itemIds` ≤ 2 000, spec 12 §4 P6-E5; `sound-design/check-proposal.ts`) reads the proposal through the
+  proposal service (`404 PROPOSAL_NOT_FOUND`, an unknown item `404 NOT_FOUND`, another sequence `400`), previews it on a
+  copy of the live document (never committed, the revision unchanged), never replaces the kept report, and stores only
+  its summary on the proposal under the proposal's lock; `store` with `proposalId` is `400 VALIDATION_FAILED`. Agents may
+  acknowledge Sound Check warnings and infos only (`soundDesign.acknowledgeIssue`: an error from an agent origin is
+  `E_APPROVAL_REQUIRED`, and the check ignores an agent's acknowledgement of an error whatever severity it claimed). The last full report
+  per sequence (Phase 5 verification; `POST /api/sound-design/check/last`, `sound-design/report-store.ts`) is written
+  by the finished job inside the project's folder: the file name is the sequence id only when it is a document id
+  (`[A-Za-z0-9_-]{1,128}`, never a path), atomic writes, ≤ 32 reports per project (the least recently written evicted),
+  ≤ 16 MB per report (larger ones are not kept), a file that does not parse or names another sequence is moved aside
+  with a warning; the route is read-only (strict body, typed `404 SOUND_CHECK_NOT_FOUND`). A report goes with its
+  sequence (WP6.5b): the reports of sequences the saved project no longer has are deleted when no editing session could
+  undo the delete (a save or version restore with no editor lease, the lease released or expired, a new lease), and a
+  check finishing after its project or sequence is gone keeps nothing (a late write never re-creates a deleted
+  project's folder). Tests: `apps/engine/test/sound-check-kept.test.ts`, `sound-check-kept-lifecycle.test.ts`.
+- **Ambience beds and room tone** (spec 12 WP-E8, `apps/engine/src/sound-design/beds.ts`,
+  `packages/audio-fx/src/analysis/loop-window.ts`; `POST /api/sound-design/beds[/plan]`, `/room-tone[/plan]`): strict
+  zod bodies (project id `[A-Za-z0-9_-]{1,128}`, sound ids by `SOUND_REF_RE`, ≤ 500 scenes / gaps as frame ranges,
+  bounded seconds and decibels); the project and sequence are checked before a job starts (typed `404`); library sounds
+  are only those of the engine's index (`SoundService.get` / `register`: the same checks as the register route, folder
+  sounds only on a local engine), project media only through the engine registry; recordings are decoded by ffmpeg into
+  memory capped at the requested duration + 1 s (≤ 10 min per bed, ≤ 120 s per dialogue clip, ≤ 8 dialogue clips, ≤ 8
+  candidate room tones), a cancelled request or job kills its decodes; measurements are cached in memory only (≤ 64);
+  the plan routes answer JSON only. Sound Check's room-tone fix (a SILENCE inside dialogue) is returned as commands,
+  never applied (not safe). Tests: `apps/engine/test/sound-beds.test.ts` (refusals),
+  `packages/audio-fx/test/loop-window.test.ts` (hostile input never throws), `packages/project/test/ambience-bed.test.ts`
+  (hostile command arguments: a refusal or a valid document).
+- **Listening transcript** (spec 12 WP-E3, `apps/engine/src/sound-design/listen.ts`, `packages/audio-fx/src/analysis/events.ts`;
+  `POST /api/sound-design/listen`, the visual route's `spectrogram`): a strict zod body (project id `[A-Za-z0-9_-]{1,128}`,
+  a frame range, a detail enum); the project, sequence and range are checked before a job starts (typed `404`,
+  `400 RANGE_EMPTY` / `RANGE_TOO_LONG`: ≤ 10 min per listen); the job reads the live document through the agent service
+  and renders only through the export mixer (`renderStems`: the mix and ≤ 24 lanes of clips that never overlap, shared
+  ffmpeg decoders of engine-registry media, nothing written); the analysis streams in 30 s chunks with bounded memory
+  (≤ 2 h of input per meter; ≤ 3 000 lines, ≤ 5 000 events, ≤ 400 sections returned); beats and picture motion are read
+  from their caches only (`mode: 'cached'`). The spectrogram of the visual route is ≤ 120 s × 96 bytes per 10 ms.
+  Tests: `apps/engine/test/sound-listen.test.ts` (typed refusals), `packages/audio-fx/test/events.test.ts` (hostile input
+  never throws).
+- **Reference profiles** (spec 12 WP-E4, `apps/engine/src/sound-design/profile.ts`, `packages/project/src/sound/profile.ts`,
+  `packages/audio-fx/src/analysis/profile-metrics.ts`; `…/sound-design/profiles*`, `POST /api/sound-design/check
+  {profileId}`): strict zod bodies (a name of 1–120 characters, 1–20 references, ids ≤ 128 characters, paths ≤ 4 096
+  characters, profile ids `sprf_` + 16 hex digits — the only file names the store uses, so a request can never name a
+  path); unknown project media or sequences are refused before a job starts (`404`); paths only on a local engine (the
+  route refuses them with `403 PATHS_NOT_ALLOWED`, and the job re-checks the flag), resolved through `realpath`, regular
+  non-empty files only, read by ffmpeg with the local-protocol whitelist (no network). Each reference is measured for at
+  most 60 minutes with bounded memory (≈ 10 MB per hour of stereo; the picture's scene signatures kept in a ring of six,
+  not per frame); ffmpeg children are tracked by the job (cancel kills them). Profile files (store and import) are
+  untrusted: ≤ 1 MB, parsed with a strict schema (unknown keys, non-finite or out-of-range numbers, more than 20
+  references, duplicate reference ids are refused with `400 SOUND_PROFILE_INVALID`), the aggregate is recomputed from the
+  references, a damaged file in the store is moved aside and listed (`unreadable`), never served; writes are atomic and
+  serialised. Profiles hold numbers, titles (bin names or file names) and fingerprints (content hashes; a sequence's
+  `<projectId>/<sequenceId>@<mixHash>`), never audio or paths. Tests: `apps/engine/test/sound-profile.test.ts` (hostile
+  imports, a damaged library file, path traversal ids, the agent's delete refused without an editor),
+  `packages/project/test/sound-profile.test.ts` (300 fuzzed files never throw), `packages/audio-fx/test/profile-metrics.test.ts`
+  (hostile audio never throws).
+- **Engine cue sources and picture motion** (spec 12 WP6.2, `apps/engine/src/sound-design/{motion,engine-cues,analysis-cache}.ts`,
+  `audio/beats.ts`, `time/scenes.ts`; `POST /api/sound-design/motion`, `POST /api/audio/beats`, the cue route's
+  `opts.sources` scene / beat / pixel and `snapToBeats`): strict zod bodies (project id `[A-Za-z0-9_-]{1,128}`, frame
+  ranges, media keys matched by `MEDIA_KEY_RE` and looked up in the registry, beat ranges ≤ 30 min, seconds ≤ 240 h); the
+  project, sequence and range are checked before a job starts (`404`, `400 RANGE_EMPTY` / `RANGE_TOO_LONG`: ≤ 10 min of
+  picture per analysis; the cue route analyses longer sequences in 10-minute windows); the picture is rendered only
+  through the export service (`renderToFile`: the export planner, its paths and blockers — what an export would render)
+  into the job's scratch directory, decoded by ffmpeg at 128 px (a child process of the job: cancel kills it); beat
+  decodes are capped at the requested duration + 1 s of samples, two at once; scene detection of registered media only.
+  Results are cached as JSON under engine-made names (sha256 keys: `[0-9a-z]` only, read back through their zod schema,
+  a damaged file is a miss), at most 300 motion / 2 000 beat / 2 000 scene results (oldest pruned). Engine-source
+  cues are validated again by `deriveCues` (`W_EXTRA_CUE_INVALID`) and by the response schema. A failed analysis is
+  reported (`W_ANALYSIS_FAILED`, state `failed`) and not restarted for 5 minutes. Tests:
+  `apps/engine/test/sound-design-motion.test.ts` (typed refusals, cancellation), `fuzz-http.test.ts` (both new routes,
+  discovered from the server).
+- **Auto Tag and dialogue voice activity** (spec 12 WP6.3, `apps/engine/src/audio/classify.ts`,
+  `sound-design/voice.ts`, `routes/audio-fx.ts`; `POST /api/audio/classify`, the cue route's `voiceActivity`): a strict zod
+  body (exactly one of `clipIds` / `mediaKeys`, ≤ 500 each; ids ≤ 200 characters, media keys matched by `MEDIA_KEY_RE` and
+  looked up in the registry; a project id `[A-Za-z0-9_-]{1,128}` or an inline envelope validated by `loadProject`);
+  `404 PROJECT_NOT_FOUND` / `SEQUENCE_NOT_FOUND` / `CLIP_NOT_FOUND` / `ASSET_NOT_FOUND` before the job starts, per-item
+  errors (not audio, no audio stream, offline, not in the store) in the result. Decodes are ffmpeg child processes of
+  registered media only (2 at once; capped at the requested duration + 1 s; voice activity folds samples into 10 ms
+  levels as they stream, so memory does not grow with the clip). Results are JSON under engine-made sha256 names, read
+  back through their zod schema (≤ 5 000 classifications, ≤ 2 000 voice entries). The route never edits the project: the
+  editor and `auto_tag_audio` apply `essentialSound.autoTag` as an ordinary transaction. Tests:
+  `apps/engine/test/audio-classify.test.ts` (refusals, item errors), `fuzz-http.test.ts` (discovers the route).
+- **Proposals** (spec 12 WP3.1, `apps/engine/src/routes/proposals.ts`, `proposals/{store,service}.ts`; `GET/POST
+  /api/projects/:id/proposals`, `GET/DELETE …/:proposalId`, `POST …/:proposalId/accept|reject|reopen|note|select|applied`):
+  project ids are matched against `prj_` + 16 Crockford characters and proposal ids against `prp_` + 16 before any path
+  is built; bodies are strict zod objects (drafts: ≤ 2 000 items, ≤ 5 000 commands, ≤ 16 alternatives per item, meta ≤
+  64 KB, report ≤ 1 MB, ≤ 20 MB in all; every command is checked for unknown keys and against its schema, temp refs
+  must be unique); validation and accept are dry runs of ordinary transactions (never throw: typed issues or item
+  states). Files are written atomically, at most 50 per project (undecided proposals are never evicted:
+  `409 PROPOSAL_LIMIT`), expire 30 days after their last change, are read with a 21 MB cap, and a file that does not
+  parse or names another id or project is moved aside (`*.corrupt-<time>`) with a warning. Accept gate: AGT-3 table.
+  The relay flag `asUser` (the editor's accept is the user's History entry) is set by the engine only for requests
+  carrying the editor key and honoured by the bridge only together with `approved`. The relay field `ids` (an accept's
+  journalled id bodies, so a crash between its transaction and its recorded states can be settled from the document)
+  is set by the engine only (agents' transactions are nested in `transaction`; the field sits beside it), and the bridge
+  takes at most 50 000 well-formed bodies and nothing else. The accept journal's intent files are parsed with a strict
+  schema and an 8 MB cap; one that does not parse is moved aside with a warning, never acted on. The editor's Apply (WP3.3a session
+  slice) needs a trusted user gesture (`event.isTrusted`; an agent's `ui_click` is synthetic and its live-UI requests
+  carry `x-jasper-agent-input`, so the engine treats them as an agent's anyway). Tests:
+  `apps/engine/test/proposals{,-store,-fuzz}.test.ts`, `fuzz-http.test.ts`, `apps/web/test/agent-bridge.test.ts`.
+  *Residual:* an agent-owned project (created by the agent, AGT-3) can be rewritten with `agentsMayApply` already on;
+  the policy reads the live document, so a user who turned it on lets every agent apply in that sequence.
 - **Editing leases**: a reloaded tab takes over the lease its previous page held (`takeOver`, which any
   authenticated client could already send); nothing changed on the engine.
 

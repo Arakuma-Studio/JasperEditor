@@ -1,5 +1,21 @@
+import {
+	AUTOMATION_HORIZON,
+	type CurvePrecision,
+	followCurve,
+	holdParam,
+	isFollowing,
+	noteParamSet,
+	paramTarget,
+} from './automation.ts';
+
 // A channel matrix in Web Audio: `in` (N channels, discrete) → splitter → one GainNode per non-zero coefficient →
 // merger (M channels) → `out`. Coefficients are set with short ramps so automation and fader moves never click.
+
+/**
+ * How closely a followed matrix coefficient is cut (`MatrixNode.follow`): one-sample pieces where needed, and a finer
+ * tolerance than a gain's, since several panned paths add up at the Mix.
+ */
+const PAN_PRECISION: CurvePrecision = { minSamples: 1, tolerance: 2e-5 };
 
 /** Smoothing time constant of every parameter change (s). */
 export const PARAM_TC = 0.008;
@@ -17,13 +33,19 @@ export function discreteGain(ctx: BaseAudioContext, channels: number, value = 1)
 export function setParam(p: AudioParam, v: number, ctx: BaseAudioContext, instant = false): void {
 	if (!Number.isFinite(v)) v = 0;
 	const t = ctx.currentTime;
+	// A param that was following an automation curve (`followCurve`): stop the curve where it is.
+	const wasFollowing = isFollowing(p);
 	if (instant) {
+		if (wasFollowing) holdParam(p, t);
 		p.cancelScheduledValues(t);
 		p.setValueAtTime(v, t);
+		noteParamSet(p, t, v);
 		return;
 	}
-	if (Math.abs(p.value - v) < 1e-7) return;
-	p.cancelScheduledValues(t);
+	if (wasFollowing) holdParam(p, t);
+	else if (Math.abs((paramTarget(p) ?? p.value) - v) < 1e-7) return;
+	else p.cancelScheduledValues(t);
+	noteParamSet(p, t, v, PARAM_TC);
 	p.setTargetAtTime(v, t, PARAM_TC);
 }
 
@@ -65,6 +87,59 @@ export class MatrixNode {
 					this.gains[o]![i] = g;
 				}
 				setParam(g.gain, v, this.ctx, now);
+			}
+		this.primed = true;
+	}
+
+	/**
+	 * While playing: every coefficient follows `at(dt)` (the matrix `dt` seconds of context time after now) sample by
+	 * sample until the next call (`followCurve`; sound-design Phase 6: pan, the 5.1 puck and send pans move between
+	 * picture frames as the export's pan stage does, instead of one step per frame with the 8 ms glide). `breaks`:
+	 * seconds after now where the curve may bend (the lanes' keyframes).
+	 */
+	follow(at: (dt: number) => readonly (readonly number[])[], breaks: readonly number[] = []): void {
+		const memo = new Map<number, readonly (readonly number[])[]>();
+		const m = (dt: number) => {
+			let v = memo.get(dt);
+			if (!v) {
+				v = at(dt);
+				memo.set(dt, v);
+			}
+			return v;
+		};
+		// a coefficient that becomes non-zero within the horizon needs its node now
+		const probe = [
+			0,
+			AUTOMATION_HORIZON / 4,
+			AUTOMATION_HORIZON / 2,
+			(3 * AUTOMATION_HORIZON) / 4,
+			AUTOMATION_HORIZON,
+		];
+		for (const b of breaks) if (b > 0 && b < AUTOMATION_HORIZON) probe.push(b);
+		for (let o = 0; o < this.outChannels; o++)
+			for (let i = 0; i < this.inChannels; i++) {
+				let g = this.gains[o]![i]!;
+				if (!g) {
+					if (probe.every((dt) => (m(dt)[o]?.[i] ?? 0) === 0)) continue;
+					g = this.ctx.createGain();
+					// the curve starts from the value the param holds: a new coefficient starts at the matrix's
+					g.gain.value = m(0)[o]?.[i] ?? 0;
+					noteParamSet(g.gain, this.ctx.currentTime, g.gain.value);
+					this.splitter.connect(g, i);
+					g.connect(this.merger, 0, o);
+					this.gains[o]![i] = g;
+				}
+				// down to one-sample pieces at a corner: the 5.1 panner's clamps and square roots bend its gains where no
+				// keyframe is
+				followCurve(
+					g.gain,
+					this.ctx,
+					(dt) => m(dt)[o]?.[i] ?? 0,
+					undefined,
+					undefined,
+					breaks,
+					PAN_PRECISION,
+				);
 			}
 		this.primed = true;
 	}

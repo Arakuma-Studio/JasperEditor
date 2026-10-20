@@ -1,6 +1,8 @@
 // Scientific Filter (port of filmcraft `effects/filters.rs` ScientificFilter): classical IIR designs
 // (`core/design.ts`: Bessel / Butterworth / Chebyshev I / elliptic) as a cascade of biquads. Cutoff changes glide
-// (redesigned every 32 samples while moving, counted per sample); type/order/ripple changes switch immediately.
+// (redesigned every 32 samples while moving, counted per sample) and the coefficients are interpolated sample by sample
+// from one design to the next (sound-design Phase 4 WP4.2a: a keyframed build swept 2 kHz → 20 Hz in one frame clicked
+// at ≈ −38 dB when the coefficients jumped every 32 samples); type/order/ripple changes switch immediately.
 import {
 	type Band,
 	type Family,
@@ -31,6 +33,12 @@ export class ScientificFilter extends EffectBase {
 	private readonly gain: Smoothed;
 	private readonly sections = new Sections();
 	private readonly target = new Sections();
+	/** The coefficient ramp (gliding): from the design in use to the next one over `REDESIGN_INTERVAL` samples. */
+	private readonly rampFrom = new Sections();
+	private readonly rampTo = new Sections();
+	private ramp = 0;
+	/** What the sections in use (or ramped to) were designed for. */
+	private designed = { key: '', f1: Number.NaN, f2: Number.NaN, band: '' };
 	/** `[s1 s2]` per section per channel. */
 	private readonly state: Float64Array;
 	private readonly nch: number;
@@ -72,6 +80,9 @@ export class ScientificFilter extends EffectBase {
 	}
 
 	private redesign(): void {
+		const before = this.sections.n;
+		this.ramp = 0;
+		this.designed = { key: this.protoKey, f1: this.f1.value(), f2: this.f2.value(), band: this.band };
 		realize(
 			this.proto,
 			this.band,
@@ -80,7 +91,52 @@ export class ScientificFilter extends EffectBase {
 			this.sampleRate,
 			this.sections,
 		);
+		// Sections that come (back) into use after an order change start from silence, not from the state they
+		// had when they were last used.
+		for (let ch = 0; ch < this.nch; ch++)
+			for (let k = before; k < this.sections.n; k++) {
+				const so = 2 * MAX_SECTIONS * ch + 2 * k;
+				this.state[so] = 0;
+				this.state[so + 1] = 0;
+			}
 		this.dirty = this.f1.isSmoothing() || this.f2.isSmoothing();
+	}
+
+	/**
+	 * The next design while gliding: the same prototype and band with as many sections → a coefficient ramp to it over
+	 * the next `REDESIGN_INTERVAL` samples; anything else switches at once (`redesign`).
+	 */
+	private nextDesign(): void {
+		if (this.protoKey !== this.designed.key || this.band !== this.designed.band) {
+			this.redesign();
+			this.dirty = true; // settle again at the glide's end
+			return;
+		}
+		const f1 = this.f1.value();
+		const f2 = this.f2.value();
+		realize(this.proto, this.band, 2 ** f1, 2 ** f2, this.sampleRate, this.rampTo);
+		if (this.rampTo.n !== this.sections.n) {
+			this.redesign();
+			return;
+		}
+		this.designed = { key: this.protoKey, f1, f2, band: this.band };
+		this.rampFrom.copyFrom(this.sections);
+		this.ramp = REDESIGN_INTERVAL;
+	}
+
+	/** Advances the coefficient ramp by one sample. */
+	private stepRamp(): void {
+		this.ramp--;
+		const c = this.sections.c;
+		const a = this.rampFrom.c;
+		const b = this.rampTo.c;
+		const m = 5 * this.sections.n;
+		if (this.ramp <= 0) {
+			for (let k = 0; k < m; k++) c[k] = b[k]!;
+			return;
+		}
+		const u = 1 - this.ramp / REDESIGN_INTERVAL;
+		for (let k = 0; k < m; k++) c[k] = a[k]! + (b[k]! - a[k]!) * u;
 	}
 
 	/** The designed cascade at the target settings. */
@@ -115,7 +171,13 @@ export class ScientificFilter extends EffectBase {
 	process(channels: readonly Float32Array[], start: number, end: number): void {
 		let i = start;
 		while (i < end) {
-			if (!this.dirty && !this.f1.isSmoothing() && !this.f2.isSmoothing() && !this.gain.isSmoothing()) {
+			if (
+				!this.dirty &&
+				this.ramp === 0 &&
+				!this.f1.isSmoothing() &&
+				!this.f2.isSmoothing() &&
+				!this.gain.isSmoothing()
+			) {
 				const len = Math.min(end - i, CHUNK);
 				this.processSettled(channels, i, i + len);
 				this.counter = (this.counter + len) % REDESIGN_INTERVAL;
@@ -170,8 +232,19 @@ export class ScientificFilter extends EffectBase {
 		const st = this.state;
 		const c = this.sections.c;
 		for (let i = start; i < end; i++) {
-			if (this.counter === 0 && this.dirty) this.redesign();
+			if (this.counter === 0 && this.dirty) {
+				// a ramp to the design at the current cutoffs, unless the sections in use already are it
+				const moving = this.f1.isSmoothing() || this.f2.isSmoothing();
+				const stale =
+					this.f1.value() !== this.designed.f1 ||
+					this.f2.value() !== this.designed.f2 ||
+					this.protoKey !== this.designed.key ||
+					this.band !== this.designed.band;
+				if (stale) this.nextDesign();
+				this.dirty = moving || stale;
+			}
 			this.counter = (this.counter + 1) % REDESIGN_INTERVAL;
+			if (this.ramp > 0) this.stepRamp();
 			this.f1.tick();
 			this.f2.tick();
 			if (this.f1.isSmoothing() || this.f2.isSmoothing()) this.dirty = true;

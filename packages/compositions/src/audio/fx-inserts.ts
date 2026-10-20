@@ -2,8 +2,9 @@
 // and track / submix / Mix inserts, `registerPreviewInsert`). A slot is one AudioWorkletNode running `FxSlotCore`
 // (fx-processor.ts) — the same EffectChain code the export's offline mixer runs. Live meters (gain reduction,
 // loudness) of a slot are posted while someone listens (`audioFxMeters`, Effect Controls).
+import { effectLatency } from '@jasper/audio-fx';
 import { AUDIO_EFFECTS, type EffectInstance } from '@jasper/project/audio';
-import { FX_PROCESSOR_NAME, type FxSlotMessage, type FxSlotReading } from './fx-processor.ts';
+import { FX_PROCESSOR_NAME, type FxSlotMessage, type FxSlotReading, type SlotClock } from './fx-processor.ts';
 import { mixWorkletReady, type PreviewInsert, registerPreviewInsert } from './graph.ts';
 import { discreteGain } from './matrix-node.ts';
 
@@ -59,7 +60,7 @@ class FxInsert implements PreviewInsert {
 				channelCount: channels,
 				channelCountMode: 'explicit',
 				channelInterpretation: 'discrete',
-				processorOptions: { channels },
+				processorOptions: { channels, effect: this.effect, time: this.time },
 			});
 			node.port.onmessage = (e: MessageEvent<FxSlotReading>) => {
 				for (const fn of meterListeners.get(this.effect.id) ?? []) fn(e.data.values);
@@ -67,7 +68,7 @@ class FxInsert implements PreviewInsert {
 			this.node = node;
 			this.input.connect(node);
 			node.connect(this.output);
-			this.post({ type: 'effect', effect: this.effect, time: this.time });
+			this.sentKey = JSON.stringify(this.effect.params);
 			if (meterListeners.has(this.effect.id)) this.meters(true);
 		});
 	}
@@ -80,18 +81,19 @@ class FxInsert implements PreviewInsert {
 		this.post({ type: 'meters', on });
 	}
 
-	update(effect: EffectInstance, timeFlicks: number): void {
+	update(effect: EffectInstance, timeFlicks: number, clock?: SlotClock): void {
 		this.time = timeFlicks;
+		const c = clock ? { clock } : {};
 		if (effect !== this.effect) {
 			this.effect = effect;
 			const key = JSON.stringify(effect.params);
 			if (key !== this.sentKey) {
 				this.sentKey = key;
-				this.post({ type: 'effect', effect, time: timeFlicks });
+				this.post({ type: 'effect', effect, time: timeFlicks, ...c });
 				return;
 			}
 		}
-		this.post({ type: 'time', time: timeFlicks });
+		this.post({ type: 'time', time: timeFlicks, ...c });
 	}
 
 	dispose(): void {
@@ -113,6 +115,8 @@ let installed = false;
 export function installAudioFxPreview(): void {
 	if (installed) return;
 	installed = true;
+	// The slot's latency is the processor's (the same code in the worklet): the graph compensates it like the export.
+	const latency = (effect: EffectInstance, sampleRate: number) => effectLatency(effect, sampleRate);
 	for (const spec of AUDIO_EFFECTS)
-		registerPreviewInsert(spec.id, (ctx, effect, channels) => new FxInsert(ctx, effect, channels));
+		registerPreviewInsert(spec.id, (ctx, effect, channels) => new FxInsert(ctx, effect, channels), latency);
 }

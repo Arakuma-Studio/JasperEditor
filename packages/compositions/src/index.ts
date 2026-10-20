@@ -14,6 +14,8 @@ export {
 	panStageMatrix,
 	registerPreviewInsert,
 	setMixWorkletUrl,
+	type TransportLogEntry,
+	VISIBLE_START_WAIT,
 } from './audio/graph.ts';
 export * from './color/index.ts';
 export * from './fonts.ts';

@@ -97,7 +97,23 @@ function fakeClock(): { t: number; step(ms: number): void; pending: number } {
 	return c;
 }
 
-function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }) {
+/** An audio graph whose `whenPaused` / `afterSeek` the test resolves. */
+function fakeAudio() {
+	const pending: { kind: 'paused' | 'seek'; resolve: () => void }[] = [];
+	const wait = (kind: 'paused' | 'seek') => new Promise<void>((resolve) => pending.push({ kind, resolve }));
+	return {
+		pending,
+		api: { whenPaused: () => wait('paused'), afterSeek: () => wait('seek') },
+		async resolve(kind: 'paused' | 'seek') {
+			const i = pending.findIndex((p) => p.kind === kind);
+			expect(i, `a pending ${kind}`).toBeGreaterThanOrEqual(0);
+			pending.splice(i, 1)[0]!.resolve();
+			for (let k = 0; k < 5; k++) await Promise.resolve();
+		},
+	};
+}
+
+function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }, audio?: ReturnType<typeof fakeAudio>) {
 	const transport = new TransportStore();
 	const player = new FakePlayer();
 	const clock = fakeClock();
@@ -107,6 +123,7 @@ function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }) {
 		getFps: () => 30,
 		getRange: () => range,
 		setPlayerRate: (r) => rates.push(r),
+		...(audio ? { audio: () => audio.api } : {}),
 	});
 	transport.attachPlayer(driver);
 	driver.setPlayer(player);
@@ -381,6 +398,83 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		player.advance(3);
 		transport.reportFrame(80); // e.g. the timeline scrubbed
 		expect(player.frame).toBe(80);
+	});
+
+	it('with an audio graph a seek while playing restarts: pause, seek once the graph is ready, play (sound-design Phase 6)', async () => {
+		const audio = fakeAudio();
+		const { transport, player, driver } = setup(undefined, audio);
+		transport.play(1);
+		player.advance(3);
+		transport.reportFrame(80);
+		// paused first; the Player's own pause event does not stop the transport
+		expect(player.playing).toBe(false);
+		player.emit('pause');
+		await Promise.resolve();
+		expect(transport.getState().playing).toBe(true);
+		expect(player.frame).toBe(3);
+		// the graph has prepared the start: the seek, then (once it saw the new position) Play
+		await audio.resolve('paused');
+		expect(player.frame).toBe(80);
+		expect(player.playing).toBe(false);
+		await audio.resolve('seek');
+		expect(player.playing).toBe(true);
+		expect(transport.getState()).toMatchObject({ playing: true });
+		// a restart without a target (a latency added while playing) plays from where it paused, no seek
+		const seeks = player.seeks.length;
+		player.advance(2);
+		driver.restart();
+		expect(player.playing).toBe(false);
+		await audio.resolve('paused');
+		expect(player.playing).toBe(true);
+		expect(player.seeks.length).toBe(seeks);
+		expect(audio.pending).toEqual([]);
+	});
+
+	it('the stall watchdog leaves a Player alone while the audio holds the picture for a primed start', () => {
+		vi.useFakeTimers();
+		try {
+			const audio = fakeAudio();
+			let waiting = true;
+			Object.defineProperty(audio.api, 'startWaiting', { get: () => waiting });
+			const { transport, player } = setup(undefined, audio);
+			let plays = 0;
+			const orig = player.play.bind(player);
+			player.play = () => {
+				plays++;
+				orig();
+			};
+			transport.play(1);
+			expect(plays).toBe(1);
+			// a long read-ahead: no frame for 2 s, and no kick (pause, seek, play) while the start waits
+			vi.advanceTimersByTime(2000);
+			expect(plays).toBe(1);
+			// a real stall is still kicked
+			waiting = false;
+			vi.advanceTimersByTime(1000);
+			expect(plays).toBeGreaterThan(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('a seek during a restart plays from the latest target; a pause during it abandons it', async () => {
+		const audio = fakeAudio();
+		const { transport, player } = setup(undefined, audio);
+		transport.play(1);
+		player.advance(3);
+		transport.reportFrame(80);
+		transport.reportFrame(120);
+		await audio.resolve('paused');
+		expect(player.frame).toBe(120);
+		await audio.resolve('seek');
+		expect(player.playing).toBe(true);
+		player.advance(1);
+		transport.reportFrame(200);
+		transport.pause();
+		await audio.resolve('paused');
+		expect(player.playing).toBe(false);
+		expect(player.frame).toBe(121);
+		expect(transport.getState().playing).toBe(false);
 	});
 });
 

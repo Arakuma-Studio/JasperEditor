@@ -4,7 +4,9 @@
 
 import type { FontCatalog } from '@jasper/api';
 import {
+	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
+	type MixGraph,
 	type RenderDoc,
 	type RenderOptions,
 	SequenceComposition,
@@ -18,9 +20,19 @@ import {
 	useStoreSelector,
 } from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+	type CSSProperties,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
+import { useAudioStartWait, useMixGraph } from '../../audio/runtime.ts';
 import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
@@ -34,6 +46,7 @@ import { installMulticamRecorder } from '../../multicam/recorder.ts';
 import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { registerProgramPerf } from '../../previews/perf.ts';
+import { useHeardDocument } from '../../proposals/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
@@ -134,7 +147,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	// gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
-	const drawn = useGestureFrameDocument();
+	const gestureDrawn = useGestureFrameDocument();
+	// spec 12 §2.5: while "Hear proposal" is on, picture AND sound come from the proposal's preview document (never
+	// committed; the session's document and History are untouched). Toggling swaps the Player's document in place:
+	// unchanged clips keep their players, so playback goes on.
+	const heard = useHeardDocument(session);
+	const drawn = heard ?? gestureDrawn;
 	const media = useSessionState((s) => s.media);
 	const autoProxies = useSessionState((s) => s.toggles.useProxies);
 	// gaps (PRJ-8): Toggle Proxies plays attached proxies.
@@ -252,7 +270,14 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		}),
 		[useProxies, transparent, colorBypass, fxPreviewScale, view3d, mcView, playPreviews],
 	);
-	const inputProps = useMemo(() => (doc ? { doc, options } : null), [doc, options]);
+	// The Player gets the same props object for the life of the monitor and the composition reads the document from
+	// `live`: Remotion's video config includes the props, and its playback loop restarts its clock from the current frame
+	// whenever the config changes — every edit made while playing (an agent's, Hear proposal) dropped the time since the
+	// last frame plus the edit's render from the picture, which then lagged the audio (and Remotion re-anchored every
+	// player to it: the audio jumped ≈ 185 ms back; sound-design Phase 6).
+	const [playerDoc] = useState(() => liveProps(doc ? { doc, options } : null));
+	useLayoutEffect(() => playerDoc.set(doc ? { doc, options } : null), [playerDoc, doc, options]);
+	const inputProps = useMemo(() => ({ live: playerDoc }), [playerDoc]);
 	const duration = seqId ? playerDurationFrames(drawn, seqId) : 1;
 	const end = seq ? Math.max(0, duration - 1) : 0;
 	const fps = seq ? seq.settings.frameRate.num / seq.settings.frameRate.den : 30;
@@ -293,8 +318,28 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				setPlayerRate,
 				onBuffering: setBuffering,
 				onDroppedFrames: setDropped,
+				// sound-design Phase 6: seeks while playing restart primed (sample-exact audio after the seek)
+				audio: () => {
+					const g = activeMixGraph();
+					return g
+						? {
+								whenPaused: () => g.whenPaused(),
+								afterSeek: () => g.afterSeek(),
+								get startWaiting() {
+									return g.startWaiting;
+								},
+							}
+						: null;
+				},
 			}),
 		[transport],
+	);
+	// A latency added while playing (an insert, normalisation) restarts playback primed, so the Mix is not late by it
+	// until the stop; a primed start that waits long for the program shows as buffering.
+	const mixGraph = useMixGraph();
+	useEffect(
+		() => (mixGraph ? mixGraph.onRestartRequest(() => driver.restart()) : undefined),
+		[mixGraph, driver],
 	);
 	useEffect(() => {
 		const detach = transport.attachPlayer(driver);
@@ -456,7 +501,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		[frameSize.width, frameSize.height],
 	);
 
-	if (!seq || !doc || !inputProps) {
+	if (!seq || !doc) {
 		return (
 			<div
 				className="flex h-full items-center justify-center text-pr-small text-pr-muted"
@@ -507,7 +552,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					<MgRenderStateProvider>
 						<Player
 							ref={playerRef}
-							component={SequenceComposition}
+							component={LiveSequenceComposition}
 							inputProps={inputProps}
 							durationInFrames={duration}
 							compositionWidth={frameSize.width}
@@ -594,13 +639,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						PROXY
 					</span>
 				) : null}
-				{buffering && playing ? (
-					<span
-						className="pointer-events-none absolute top-2 left-2 size-2 rounded-full bg-pr-warning"
-						title="Buffering"
-						data-testid="program-buffering"
-					/>
-				) : null}
+				<BufferingDot graph={mixGraph} buffering={buffering} playing={playing} />
 			</div>
 			<div className="flex h-[28px] shrink-0 items-center gap-2 px-2">
 				<TimecodeDisplay transport={transport} format={format} onSeek={seek} testId="program-timecode" />
@@ -770,4 +809,54 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				: null}
 		</div>
 	);
+}
+
+type LiveValue = { doc: RenderDoc; options: RenderOptions } | null;
+type LiveProps = { get(): LiveValue; set(v: LiveValue): void; subscribe(cb: () => void): () => void };
+
+/** The Program monitor's document and render options, for the Player's composition (`LiveSequenceComposition`). */
+function liveProps(initial: LiveValue): LiveProps {
+	let value = initial;
+	const listeners = new Set<() => void>();
+	return {
+		get: () => value,
+		set: (v) => {
+			if (v === value || (v && value && v.doc === value.doc && v.options === value.options)) return;
+			value = v;
+			for (const cb of [...listeners]) cb();
+		},
+		subscribe: (cb) => {
+			listeners.add(cb);
+			return () => listeners.delete(cb);
+		},
+	};
+}
+
+/** The Program monitor's composition: SequenceComposition with the document of `live` (stable Player props). */
+function LiveSequenceComposition({ live }: { live: LiveProps }) {
+	const v = useSyncExternalStore(live.subscribe, live.get, live.get);
+	return v ? <SequenceComposition doc={v.doc} options={v.options} /> : null;
+}
+
+/**
+ * The buffering indicator: the Player buffering, or the audio holding the picture at a primed start (`useAudioStartWait`).
+ * Its own component: a monitor re-render while the Player starts (the wait ending) disturbed Remotion's start.
+ */
+function BufferingDot({
+	graph,
+	buffering,
+	playing,
+}: {
+	graph: MixGraph | null;
+	buffering: boolean;
+	playing: boolean;
+}) {
+	const audioWait = useAudioStartWait(graph);
+	return (buffering || audioWait) && playing ? (
+		<span
+			className="pointer-events-none absolute top-2 left-2 size-2 rounded-full bg-pr-warning"
+			title="Buffering"
+			data-testid="program-buffering"
+		/>
+	) : null;
 }

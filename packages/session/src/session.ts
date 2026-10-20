@@ -5,6 +5,7 @@ import {
 	applyTransaction,
 	type CommandContext,
 	diffDocuments,
+	type IdSource,
 	type Issue,
 	invariantMode,
 	type Origin,
@@ -44,9 +45,21 @@ export type SessionContext = Omit<CommandContext, 'revision' | 'selection' | 'en
  */
 export type SessionTxInput = TxInput & {
 	coalesceKey?: string;
+	/**
+	 * With `coalesceKey`: the merge window for this commit (default the session's 750 ms; `Infinity` = until another
+	 * entry is pushed or the key changes) and whether a changed label still merges (the entry takes the new label).
+	 * Variation cycling uses both: repeated presses make ONE entry "Swap Sound ×4" (spec 12 §2.7).
+	 */
+	coalesceWindowMs?: number;
+	coalesceRelabel?: boolean;
 	selectAfter?: (
 		result: Extract<TransactionResult, { ok: true }>,
 	) => { timeline?: readonly string[]; project?: readonly string[] } | null;
+	/**
+	 * The ids this transaction creates its entities with (default the session's). The engine's proposal accept passes
+	 * ids it journalled beforehand (`createPresetIdSource`), so it can tell after a crash whether the accept applied.
+	 */
+	ids?: IdSource;
 };
 
 export type EditorSessionOptions = {
@@ -294,7 +307,7 @@ export class EditorSession {
 				errors: [{ commandIndex: -1, code: 'E_QUEUED', message: 'A gesture is in progress; use submit()' }],
 			};
 		}
-		return this.commit(tx, this.commandContext());
+		return this.commit(tx, this.commandContext(tx.ids ? { ids: tx.ids } : {}));
 	}
 
 	/**
@@ -317,7 +330,7 @@ export class EditorSession {
 
 	private commit(tx: SessionTxInput, ctx: CommandContext): TransactionResult {
 		const before = this.store.getState();
-		const { coalesceKey, selectAfter, ...rest } = tx;
+		const { coalesceKey, coalesceWindowMs, coalesceRelabel, selectAfter, ids: _ids, ...rest } = tx;
 		const { document, result } = applyTransaction(before.document, { protocol: TX_PROTOCOL, ...rest }, ctx);
 		if (!result.ok || tx.dryRun || document === before.document) return result;
 		const origin = tx.origin as Origin;
@@ -359,6 +372,10 @@ export class EditorSession {
 				},
 				this.clock(),
 				this.coalesceWindowMs,
+				{
+					...(coalesceWindowMs !== undefined ? { windowMs: coalesceWindowMs } : {}),
+					...(coalesceRelabel ? { relabel: true } : {}),
+				},
 			);
 		}
 		this.store.setState({
@@ -647,6 +664,9 @@ export class EditorSession {
 				break;
 			case 'tracks':
 				next = { ...sel, tracks: combine(sel.tracks, ids, mode) };
+				break;
+			case 'cues':
+				next = { ...sel, cues: combine(sel.cues ?? [], ids, mode) };
 				break;
 			default:
 				return;

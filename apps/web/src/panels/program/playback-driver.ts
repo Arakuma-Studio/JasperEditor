@@ -74,6 +74,12 @@ type DriverOptions = {
 	 * `frameupdate` that jumps past the next frame counts the frames in between).
 	 */
 	onDroppedFrames?(count: number): void;
+	/**
+	 * The Program monitor's audio graph (sound-design Phase 6), when it has one: a seek while playing pauses, seeks and
+	 * plays again once the graph has prepared a primed start (`whenPaused`, `afterSeek`), so the audio after the seek
+	 * starts on its first sample (the picture holds that long, as on Play).
+	 */
+	audio?(): { whenPaused(): Promise<void>; afterSeek(): Promise<void>; startWaiting?: boolean } | null;
 };
 
 type DriverMode = 'idle' | 'native' | 'stepping';
@@ -118,6 +124,8 @@ export class PlaybackDriver implements PlayerController {
 	private current: { at: number; frames: number; dropped: number; rate: number } | null = null;
 	private lastPlay: PlaybackStats['lastPlay'] = null;
 	private bufferingSince: number | null = null;
+	/** A restart (pause, seek, play) is under way: the frame it plays from (null: where the Player paused). */
+	private restarting: { frame: number | null } | null = null;
 
 	constructor(private readonly opts: DriverOptions) {
 		this.unsubscribe = opts.transport.subscribe((s, prev) => this.onTransport(s, prev));
@@ -146,7 +154,60 @@ export class PlaybackDriver implements PlayerController {
 
 	seekTo(frame: number): void {
 		this.lastReported = frame;
+		if (this.mode === 'native' && this.opts.transport.getState().playing) {
+			this.restart(frame);
+			return;
+		}
 		this.player?.seekTo(frame);
+	}
+
+	/**
+	 * Restarts native playback at `frame` (default: where it is): pauses the Player, waits until the audio graph has
+	 * prepared a primed start, seeks and plays again (sound-design Phase 6). A seek while playing then starts its audio
+	 * on the first sample after the target, and a latency added while playing is taken up (the graph asks for it,
+	 * `MixGraph.onRestartRequest`). The transport store stays playing; the picture holds for the primed wait as on Play.
+	 * Without an audio graph it is a plain seek.
+	 */
+	restart(frame?: number): void {
+		const p = this.player;
+		if (!p || this.mode !== 'native') {
+			if (frame !== undefined) p?.seekTo(frame);
+			return;
+		}
+		const audio = this.opts.audio?.() ?? null;
+		if (!audio) {
+			if (frame !== undefined) p.seekTo(frame);
+			return;
+		}
+		if (this.restarting) {
+			// one restart at a time: the latest target wins
+			if (frame !== undefined) this.restarting.frame = frame;
+			return;
+		}
+		this.restarting = { frame: frame ?? null };
+		this.clearWatchdog();
+		p.pause();
+		const live = () =>
+			this.restarting !== null &&
+			this.player === p &&
+			this.mode === 'native' &&
+			this.opts.transport.getState().playing;
+		void (async () => {
+			await audio.whenPaused();
+			if (!live()) return;
+			const target = this.restarting!.frame;
+			if (target !== null && target !== p.getCurrentFrame()) {
+				p.seekTo(target);
+				await audio.afterSeek();
+				if (!live()) return;
+			}
+			this.restarting = null;
+			p.play();
+			this.armWatchdog(PLAY_WATCHDOG_RETRIES);
+		})().finally(() => {
+			// abandoned (paused, the Player replaced): nothing is restarting any more
+			if (this.restarting && !live()) this.restarting = null;
+		});
 	}
 
 	play(): void {
@@ -194,6 +255,7 @@ export class PlaybackDriver implements PlayerController {
 	}
 
 	pause(): void {
+		this.restarting = null;
 		this.endPlay();
 		this.stopAt = null;
 		this.returnTo = null;
@@ -283,6 +345,9 @@ export class PlaybackDriver implements PlayerController {
 			if (!p || this.mode !== 'native' || !this.opts.transport.getState().playing) return;
 			if (this.frameEvents !== seen) return this.armWatchdog(PLAY_WATCHDOG_RETRIES); // progressing
 			if (this.buffering) return this.armWatchdog(retries); // legitimately buffering: keep watching
+			// the picture is held for the audio of a primed start (a long read-ahead): not a stall (sound-design
+			// Phase 6: a kick there paused and played the Player, an audible blip and the picture early)
+			if (this.opts.audio?.()?.startWaiting) return this.armWatchdog(retries);
 			this.counters.stallsRecovered++;
 			p.pause();
 			p.seekTo(this.opts.transport.getState().frame);
@@ -343,7 +408,7 @@ export class PlaybackDriver implements PlayerController {
 		// External seek while playing (ruler click, timecode entry, K+tap): move the clock.
 		if (s.playing && prev.playing && s.frame !== prev.frame && s.frame !== this.lastReported) {
 			this.lastReported = s.frame;
-			if (this.mode === 'native') this.player?.seekTo(s.frame);
+			if (this.mode === 'native') this.restart(s.frame);
 			else if (this.mode === 'stepping') this.stepOrigin = { t: performance.now(), frame: s.frame };
 		}
 	}
@@ -369,7 +434,7 @@ export class PlaybackDriver implements PlayerController {
 		if (t.getState().loop && frame >= range.loopEnd && range.loopEnd > range.loopStart) {
 			this.lastReported = range.loopStart;
 			t.reportFrame(range.loopStart);
-			this.player?.seekTo(range.loopStart);
+			this.restart(range.loopStart);
 			return;
 		}
 		// Dropped frames (native forward playback): a jump past the next frame skipped the frames in between.
@@ -398,6 +463,8 @@ export class PlaybackDriver implements PlayerController {
 	};
 
 	private readonly onPause: Listener = () => {
+		// A restart pauses on purpose.
+		if (this.restarting) return;
 		// The Player stopped by itself (end reached) while the store still says playing.
 		if (this.mode === 'native' && this.opts.transport.getState().playing && !this.player?.isPlaying()) {
 			queueMicrotask(() => {

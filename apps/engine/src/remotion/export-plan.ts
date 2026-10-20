@@ -89,10 +89,13 @@ export function planRemotionExport(input: {
 			reason: 'No usable video encoder for the Remotion export (the LGPL build has no H.264/AV1/VP9 encoder)',
 		};
 	}
-	// Dev with GPL builds on both sides and libx264 selected: unchanged behaviour (one pass in Remotion).
+	// Dev with GPL builds on both sides and libx264 selected: unchanged behaviour (one pass in Remotion), for the MP4 +
+	// AAC it writes; another container or audio codec (H.264 + PCM in MOV) goes through the intermediate (WP6.5a).
 	if (
 		plain &&
 		encoder.encoder === 'libx264' &&
+		encoder.container === 'mp4' &&
+		encoder.audioEncoder === 'aac' &&
 		!remotion.lgpl &&
 		!input.lgplOnly &&
 		has(remotion.encoders, 'libx264')

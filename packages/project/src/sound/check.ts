@@ -1,0 +1,878 @@
+// Sound Check (spec 12 §2.6, P5-R1; wp-note "Phase 5 → WP5.1"): the codes, severities, thresholds and verdict of the
+// engine's `sound-check` job, the translatable message templates of its findings, and whether a stored summary
+// (`soundDesign.lastCheck`, written by `soundDesign.setCheck`) is still current. Pure.
+//
+// Message templates follow the model-string convention (`messages.ts`): English text with `{0}`… placeholders for
+// numbers, timecodes and names (never translated); the editor translates a template it lists in its model strings.
+// Every finding carries `{key: template, params, text}` so an agent reads `text` and the UI translates `key`.
+import { mixFingerprint } from '../audio/fingerprint.ts';
+import type { ProjectDocument } from '../schema/document.ts';
+import type { Sequence } from '../schema/sequence.ts';
+import {
+	type CueKind,
+	DEFAULT_SOUND_DESIGN_SETTINGS,
+	readSoundDesign,
+	type SoundCheckSummary,
+	type SoundDelivery,
+	soundDesignSettingsOf,
+} from '../schema/sound.ts';
+import { fnv1a64 } from '../structure/nest.ts';
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+	typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Codes in the order the "worst finding" prefers among equal severities. Phase 6 (spec 12 §4, earshot-inspired; wp-note
+ * "Phase 6 → WP-E1") added CLICK, EDGE (P6-E1), HARSH, LAYER_INAUDIBLE (P6-E2), COVERAGE, ENDING, HEAD and ARC (P6-E3).
+ */
+export const SOUND_CHECK_CODES = [
+	'LOUDNESS',
+	'TRUE_PEAK',
+	'OUT_OF_SYNC',
+	'TRUNCATED',
+	'INEXACT',
+	'CLICK',
+	'EDGE',
+	'ENDING',
+	'HEAD',
+	'MASKED',
+	'LAYER_INAUDIBLE',
+	'HARSH',
+	'OVERLOAD',
+	'MUSIC_OVER_VOICE',
+	'SILENCE',
+	'DIP',
+	'ARC',
+	'STALE_CUE',
+	'NO_PICTURE_EVENT',
+	'COVERAGE',
+	'DENSITY',
+	'REPEAT',
+	'LICENSE',
+	'CREDITS',
+	'REFERENCE',
+] as const;
+export type SoundCheckCode = (typeof SOUND_CHECK_CODES)[number];
+export const SOUND_CHECK_SEVERITIES = ['error', 'warning', 'info'] as const;
+export type SoundCheckSeverity = (typeof SOUND_CHECK_SEVERITIES)[number];
+export const SOUND_CHECK_VERDICTS = ['pass', 'warn', 'fail'] as const;
+export type SoundCheckVerdict = (typeof SOUND_CHECK_VERDICTS)[number];
+/**
+ * Groups of the Sound Check panel (spec 12 §2.7 "issues grouped by category"). `edges` (clicks, cut edges, the mix's
+ * own start and end) and `tonal` (harshness) are the P6-E review lenses of the same names (spec 12 §4 P6-E5);
+ * `reference` holds the rows of a reference-profile comparison (P6-E8, code REFERENCE: warnings and infos only).
+ */
+export const SOUND_CHECK_CATEGORIES = [
+	'loudness',
+	'sync',
+	'edges',
+	'mix',
+	'tonal',
+	'cues',
+	'licence',
+	'reference',
+] as const;
+export type SoundCheckCategory = (typeof SOUND_CHECK_CATEGORIES)[number];
+export const SOUND_CHECK_CATEGORY: Readonly<Record<SoundCheckCode, SoundCheckCategory>> = {
+	LOUDNESS: 'loudness',
+	TRUE_PEAK: 'loudness',
+	ARC: 'loudness',
+	OUT_OF_SYNC: 'sync',
+	TRUNCATED: 'sync',
+	INEXACT: 'sync',
+	CLICK: 'edges',
+	EDGE: 'edges',
+	ENDING: 'edges',
+	HEAD: 'edges',
+	MASKED: 'mix',
+	LAYER_INAUDIBLE: 'mix',
+	OVERLOAD: 'mix',
+	MUSIC_OVER_VOICE: 'mix',
+	SILENCE: 'mix',
+	DIP: 'mix',
+	HARSH: 'tonal',
+	STALE_CUE: 'cues',
+	NO_PICTURE_EVENT: 'cues',
+	COVERAGE: 'cues',
+	DENSITY: 'cues',
+	REPEAT: 'cues',
+	LICENSE: 'licence',
+	CREDITS: 'licence',
+	REFERENCE: 'reference',
+};
+
+/**
+ * Sync tolerance by cue kind (frames either side): spec 12 §2.6 gives cut ±1, land ±2, move ±3, appear (start) ±1; the
+ * others are decisions (wp-note): transitions, emphasis and reveals ride a visual span like a land (±2), exits, beats
+ * and manual cues are points like a cut (±1). Silence cues have no sound.
+ */
+export const SYNC_TOLERANCE_FRAMES: Readonly<Record<CueKind, number>> = {
+	cut: 1,
+	land: 2,
+	move: 3,
+	appear: 1,
+	transition: 2,
+	exit: 1,
+	emphasis: 2,
+	reveal: 2,
+	beat: 1,
+	manual: 1,
+	silence: 0,
+};
+/** The SFX stem is searched this far either side of the cue (spec 12 §2.6: "around the cue ±3 frames"). */
+export const SYNC_SEARCH_FRAMES = 3;
+/**
+ * End-aligned sounds (risers, reverses: `placement.align: 'end'`) are judged by a window, not by frames (spec 12 §4
+ * P6-E3): their end may play from 250 ms before to 30 ms after the cue. A riser ending just before its hit leaves "a
+ * beat of air", which is deliberate (earshot norm: its `qa.py` sync rule, measured on n = 7–8 launch films).
+ */
+export const SYNC_END_WINDOW_MS = { early: 250, late: 30 } as const;
+/** Least normalised correlation that counts as "found" (the sound is in the stem there). */
+export const SYNC_MIN_CORRELATION = 0.3;
+/** MASKED: the dominant-band lift (solver definition) a placed sound needs (spec 12 §2.6). Ambient beds are not checked. */
+export const MASKED_MIN_LIFT_DB = { hero: 3, support: 1.5 } as const;
+
+export const SOUND_CHECK_THRESHOLDS = {
+	/** LOUDNESS: integrated loudness within the preset's target ±1 LU (spec 12 §2.6; `DELIVERY_TOLERANCE_LU`). */
+	loudnessToleranceLu: 1,
+	/** TRUE_PEAK: over the preset's ceiling by more than this (dB; the limiter's guarantee is +0.05). */
+	truePeakToleranceDb: 0.1,
+	/** Integrated loudness needs at least one 400 ms gating block of audible audio (BS.1770-4). */
+	minMeasurableSec: 0.4,
+	/** SILENCE: under −60 dBFS (10 ms RMS, loudest channel) for ≥ 0.5 s outside silence cues. */
+	silenceDbfs: -60,
+	silenceMinSec: 0.5,
+	/** DIP: the short-term loudness falls more than 10 LU and comes back (at least 6 LU) within 6 s. */
+	dipLu: 10,
+	dipRecoverLu: 6,
+	dipRecoverSec: 6,
+	/** MUSIC_OVER_VOICE: music at least 8 LU under the voice during speech (spec 12 §2.4 relative target). */
+	musicUnderVoiceLu: 8,
+	/** Speech segments shorter than this are not judged (s). */
+	minSpeechSec: 0.5,
+	/** OVERLOAD: the export's true-peak limiter reducing more than 3 dB. */
+	limiterMaxGrDb: 3,
+	/** OVERLOAD: without loudness normalisation, a sample peak at or over full scale clips the fixed-point export. */
+	clipDbfs: 0,
+	/** NO_PICTURE_EVENT: a picture event within ±2 frames of a derived cue (the cue merge distance). */
+	pictureEventFrames: 2,
+	/** NO_PICTURE_EVENT: a motion speed change of at least this (screen diagonals / s) counts as an event. */
+	motionEventSpeed: 0.05,
+	/** Longest range one check renders (s): 4 h. */
+	maxRangeSec: 4 * 3600,
+} as const;
+
+/**
+ * The Phase 6 checks (spec 12 §4 P6-E1…E3; wp-note "Phase 6 → WP-E1"). Numbers adapted from earshot's `qa.py`
+ * (MIT, licenses/ported/earshot.md) are marked "earshot"; they are defaults, not truths.
+ */
+export const SOUND_CHECK_EDGE_THRESHOLDS = {
+	/** CLICK: a burst this close to a clip edge, a remix joint or a transition edge (ms) is "a click at an edit". */
+	clickEdgeMs: 2,
+	/** CLICK: the burst (high-passed at 14 kHz) must reach this level on the delivered scale (dBFS; earshot 0.01). */
+	clickMinDbfs: -40,
+	/** EDGE abrupt entry: the source in the 20 ms before the In point within this of the clip's peak (dB; earshot). */
+	entryPreDb: -20,
+	/** …with no fade-in of at least this (ms)… */
+	entryFadeMs: 5,
+	/** …and no attack within this of the In point covering it (ms), unless the source before is over `entryExposedDb`. */
+	entryAttackMs: 10,
+	entryExposedDb: -10,
+	/** EDGE chopped decay: the clip's last ms over this re its peak (dB), the source after it too, a fade-out under 30 ms. */
+	decayTailDb: -35,
+	decayPostDb: -35,
+	decayFadeMs: 30,
+	/** EDGE chopped music: the source after the out point within 6 dB of the piece's last 50 ms, over 6 dB above what
+	 * enters, with a crossfade under 100 ms (earshot `check_splices`). */
+	musicSustainDb: 6,
+	musicOverNextDb: 6,
+	musicCrossfadeMs: 100,
+	/** Windows: the source outside an edge (ms), the levels of music pieces (ms). */
+	edgeWindowMs: 20,
+	musicWindowMs: 50,
+	/** The clip's peak is measured over at most this much of it nearest the edge (s): a local peak (decision). */
+	peakWindowSec: 10,
+	/** At most this many clip edges are decoded per check (the rest are reported in `warnings`). */
+	maxEdges: 400,
+	/** HARSH: a sound's 2–6 kHz 5 ms-RMS peak more than this over the music's (or dialogue's) loudest (dB; earshot). */
+	harshOverDb: 6,
+	harshBandHz: [2000, 6000] as const,
+	harshRmsMs: 5,
+	/** HARSH info: a sound whose spectral centroid is over this (Hz; earshot). */
+	brightCentroidHz: 6500,
+	/** LAYER_INAUDIBLE: a layer adding less than this in every 1/3-octave band (dB), over its loudest 60 ms. */
+	layerAddDb: 1,
+	/** …its fix: the gain that makes it add this much in its dominant band (dB). */
+	layerTargetAddDb: 3,
+	layerWindowMs: 60,
+	/** At most this many layers are measured per check. */
+	maxLayers: 64,
+	/** ENDING: the last 50 ms RMS over −45 dBFS or the last 10 ms peak over −60 dBFS (earshot). */
+	endRmsDbfs: -45,
+	endPeakDbfs: -60,
+	/** ENDING fix: a fade on the Mix volume lane (s). */
+	endFadeSec: 0.5,
+	/**
+	 * ENDING is not reported for a mix that fades out to silence: its last 50 ms RMS at least `endFadeDropDb` under the
+	 * 50 ms that began `endFadeLookSec` before the end, and still falling (its last 10 ms peak `endFadeFallDb` or more
+	 * under that last-50 ms RMS: a fade reaching zero, not one that stops at a level). Decision, final verification B: a
+	 * one-beat fade into a bar line ends at gain 0 but its last 10 ms read ≈ 30 dB under the music (−51.1 dBFS peak).
+	 */
+	endFadeLookSec: 0.5,
+	endFadeDropDb: 18,
+	endFadeFallDb: 3,
+	/** HEAD: the first 5 ms peak over −40 dBFS (earshot); its fix a 3 ms fade (ms). */
+	headPeakDbfs: -40,
+	headFadeMs: 3,
+	/** ARC: the loudest short-term (3 s) window; "late" = the last 15 % of the sequence (earshot). */
+	arcWindowSec: 3,
+	arcLateShare: 0.15,
+} as const;
+
+/** Verdict of a set of findings: fail with an error, warn with a warning, else pass (info never fails). */
+export function soundCheckVerdict(issues: readonly { severity: SoundCheckSeverity }[]): SoundCheckVerdict {
+	let warn = false;
+	for (const i of issues) {
+		if (i.severity === 'error') return 'fail';
+		if (i.severity === 'warning') warn = true;
+	}
+	return warn ? 'warn' : 'pass';
+}
+
+/** Counts per code and per severity (`{OUT_OF_SYNC: 2, error: 2, …}`; zero counts left out). */
+export function soundCheckCounts(
+	issues: readonly { code: SoundCheckCode; severity: SoundCheckSeverity }[],
+): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const i of issues) {
+		out[i.code] = (out[i.code] ?? 0) + 1;
+		out[i.severity] = (out[i.severity] ?? 0) + 1;
+	}
+	return out;
+}
+
+function stable(v: unknown): string {
+	if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+	if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
+	const keys = Object.keys(v as object).sort();
+	return `{${keys.map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}`;
+}
+
+/**
+ * Hash of what a Sound Check depends on besides the mix (`mixFingerprint`): the sequence's cues, the Mix's loudness
+ * normalisation settings (not its analysis), the delivery preset checked, the credits setting and the cue density (when
+ * not the default). Picture edits, the licences of the media and transcripts are not in it (a moved anchor makes a cue
+ * stale: the next check reports it). Never throws ('' for an unknown sequence).
+ */
+export function soundCheckInputsHash(
+	doc: ProjectDocument,
+	sequenceId: string,
+	preset: SoundDelivery,
+	target?: SoundCheckTarget | null,
+	/** The reference profile the check compared with (P6-E8); default the sequence's (`settings.referenceProfile`). */
+	referenceProfile?: string | null,
+	/** The export encoding the check delivered through (absent / the PCM master: hashes stored before stay valid). */
+	exportAudio?: unknown,
+): string {
+	try {
+		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
+		if (!seq) return '';
+		const sd = readSoundDesign((seq as { soundDesign?: unknown }).soundDesign);
+		const loud = (seq.master as { loudness?: unknown } | undefined)?.loudness;
+		const { analysis: _a, ...loudness } = (isRecord(loud) ? loud : {}) as Record<string, unknown>;
+		const settings = soundDesignSettingsOf(seq);
+		const profile = referenceProfile === undefined ? (settings.referenceProfile ?? null) : referenceProfile;
+		return fnv1a64(
+			stable({
+				cues: sd ? Object.values(sd.cues).sort((a, b) => (a.id < b.id ? -1 : 1)) : [],
+				loudness,
+				preset,
+				credits: settings.credits ?? null,
+				// DENSITY judges the hero spacing and the cue rate by the density (absent at the default: hashes stored
+				// before it was hashed stay valid)
+				...(settings.density !== DEFAULT_SOUND_DESIGN_SETTINGS.density ? { density: settings.density } : {}),
+				// a custom target is part of what was checked (absent for a preset: hashes stored before stay valid)
+				...(target ? { target: { lufs: target.integratedLufs, tp: target.truePeakDb } } : {}),
+				// the reference profile compared with (absent without one: hashes stored before stay valid)
+				...(profile ? { referenceProfile: profile } : {}),
+				// the export encoding checked for (absent for the PCM master: hashes stored before stay valid)
+				...(soundCheckAudioKey(exportAudio) ? { exportAudio: soundCheckAudioKey(exportAudio) } : {}),
+			}),
+		);
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * The export audio encoding a Sound Check delivers the mix through before judging LOUDNESS / TRUE_PEAK (wp-note "Fix:
+ * preview loudness parity, codec-aware Sound Check, delivery speed"; the request's `exportAudio`, the summary's
+ * `exportAudio`): AAC or Opus at a bit rate, or PCM at another rate. Absent = the PCM master (the mix as it is).
+ */
+export type SoundCheckAudio = {
+	codec: 'aac' | 'opus' | 'pcm';
+	bitrateKbps?: number;
+	sampleRate?: 44100 | 48000 | 96000;
+};
+
+/** A Sound Check encoding read from untrusted data, or null (absent, unreadable, or the PCM master). Never throws. */
+export function readSoundCheckAudio(v: unknown): SoundCheckAudio | null {
+	if (!isRecord(v)) return null;
+	const { codec, bitrateKbps: b, sampleRate: r } = v;
+	if (codec !== 'aac' && codec !== 'opus' && codec !== 'pcm') return null;
+	const rate = r === 44100 || r === 48000 || r === 96000 ? r : undefined;
+	if (codec === 'pcm') return rate ? { codec, sampleRate: rate } : null;
+	const kbps = typeof b === 'number' && Number.isInteger(b) && b >= 16 && b <= 1536 ? b : undefined;
+	return {
+		codec,
+		...(kbps !== undefined ? { bitrateKbps: kbps } : {}),
+		...(rate && codec !== 'opus' ? { sampleRate: rate } : {}),
+	};
+}
+
+/** A stable key of a Sound Check encoding ('' for the PCM master): `aac/256`, `opus/160`, `pcm@44100`. */
+export function soundCheckAudioKey(v: unknown): string {
+	const a = readSoundCheckAudio(v);
+	if (!a) return '';
+	if (a.codec === 'pcm') return `pcm@${a.sampleRate}`;
+	return `${a.codec}/${a.bitrateKbps ?? 'default'}${a.sampleRate ? `@${a.sampleRate}` : ''}`;
+}
+
+/** The English label of a Sound Check encoding (the editor translates it): "AAC 256 kb/s", "PCM / master". */
+export function soundCheckAudioLabel(v: unknown): string {
+	const a = readSoundCheckAudio(v);
+	if (!a) return 'PCM / master';
+	if (a.codec === 'pcm') return `PCM ${a.sampleRate! / 1000} kHz`;
+	return `${a.codec === 'aac' ? 'AAC' : 'Opus'}${a.bitrateKbps ? ` ${a.bitrateKbps} kb/s` : ''}`;
+}
+
+/**
+ * A custom delivery target a check can be run against instead of a preset's numbers (the Sound Check panel's
+ * "Custom…", MCP `sound_check {target}`; wp-note "Phase 5 → WP5.2"): integrated loudness and true-peak ceiling.
+ */
+export type SoundCheckTarget = { integratedLufs: number; truePeakDb: number };
+/** Bounds of a custom target (LUFS / dBTP): the range `mixer.setLoudness` takes, minus the inaudible extremes. */
+export const SOUND_CHECK_TARGET_LIMITS = {
+	integratedLufs: { min: -40, max: -5 },
+	truePeakDb: { min: -12, max: 0 },
+} as const;
+/** The preset label a check against a custom target reports (a model string). */
+export const SOUND_CHECK_CUSTOM_LABEL = 'Custom target';
+
+/** A custom target read from untrusted data (numbers in range, rounded to 0.1), else null. Never throws. */
+export function readSoundCheckTarget(v: unknown): SoundCheckTarget | null {
+	if (!isRecord(v)) return null;
+	const { integratedLufs: l, truePeakDb: p } = v;
+	const L = SOUND_CHECK_TARGET_LIMITS;
+	if (typeof l !== 'number' || !Number.isFinite(l) || l < L.integratedLufs.min || l > L.integratedLufs.max)
+		return null;
+	if (typeof p !== 'number' || !Number.isFinite(p) || p < L.truePeakDb.min || p > L.truePeakDb.max)
+		return null;
+	return { integratedLufs: Math.round(l * 10) / 10, truePeakDb: Math.round(p * 10) / 10 };
+}
+
+/**
+ * Listen-here verdicts (spec 12 §2.7 "Listen-here list: Sounds right / Flag + note, stored as `comment` markers"): the
+ * Sound Check panel writes a user-authored `comment` sequence marker at the listened frame with one of these names
+ * (fixed English: they are data an agent reads back, like History labels) and the user's note as its comment. MCP
+ * `sound_check` returns them as `humanVerdicts`.
+ *
+ * Phase 5 verification: a verdict attaches to the moment it judged, not just to a frame. `soundDesign.setVerdict` writes
+ * the marker with a structured `soundCheck` field (`SoundCheckVerdictMeta`): the listen slot, the clip or cue listened
+ * to (and where it was), the `mixFingerprint` of the whole mix and `soundCheckMomentHash` of what plays in the listened
+ * window (±2 s). A verdict is stale when that window sounds different now (a clip in it edited, moved in or out), or
+ * its clip / cue moved or is gone; two moments on the same frame about different clips keep separate verdicts. Markers
+ * written before (name only) read as unbound verdicts whose staleness is unknown.
+ */
+export const SOUND_CHECK_VERDICT_MARKER = {
+	ok: 'Sound Check: sounds right',
+	flag: 'Sound Check: flagged',
+} as const;
+/** Seconds either side of a listen-here moment the panel plays (4 s in all): the window a verdict judged. */
+export const SOUND_CHECK_LISTEN_HALF_SEC = 2;
+/** Listen-here slots (spec 12 §2.6 listen[5]). */
+export const SOUND_CHECK_LISTEN_SLOT_IDS = ['worst', 'hero', 'loudest', 'densest', 'passing'] as const;
+export type SoundCheckListenSlot = (typeof SOUND_CHECK_LISTEN_SLOT_IDS)[number];
+
+/** What a verdict listened to: a clip (at its start frame then) or a cue (at its frame then). */
+export type SoundCheckVerdictSubject =
+	| { kind: 'clip'; id: string; start: number }
+	| { kind: 'cue'; id: string; frame: number };
+
+/** The structured part of a verdict marker (`marker.soundCheck`), written by `soundDesign.setVerdict`. */
+export type SoundCheckVerdictMeta = {
+	v: 1;
+	verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER;
+	slot: SoundCheckListenSlot | null;
+	subject: SoundCheckVerdictSubject | null;
+	/** `mixFingerprint` of the sequence when the verdict was given. */
+	mixHash: string;
+	/** `soundCheckMomentHash` of the listened window when the verdict was given. */
+	momentHash: string;
+	/** The `mixHash` of the Sound Check report the moment came from, when known. */
+	reportMixHash: string | null;
+};
+
+const shortStr = (v: unknown, max = 256): v is string =>
+	typeof v === 'string' && v.length > 0 && v.length <= max;
+const frameNum = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** A verdict marker's `soundCheck` field read from untrusted data, else null. Never throws. */
+export function readSoundCheckVerdictMeta(v: unknown): SoundCheckVerdictMeta | null {
+	if (!isRecord(v) || v.v !== 1) return null;
+	if (v.verdict !== 'ok' && v.verdict !== 'flag') return null;
+	if (!shortStr(v.mixHash) || !shortStr(v.momentHash)) return null;
+	const slot =
+		v.slot === undefined || v.slot === null
+			? null
+			: (SOUND_CHECK_LISTEN_SLOT_IDS as readonly unknown[]).includes(v.slot)
+				? (v.slot as SoundCheckListenSlot)
+				: undefined;
+	if (slot === undefined) return null;
+	let subject: SoundCheckVerdictSubject | null = null;
+	if (v.subject !== undefined && v.subject !== null) {
+		const sj = v.subject;
+		if (!isRecord(sj) || !shortStr(sj.id, 128)) return null;
+		if (sj.kind === 'clip' && frameNum(sj.start)) subject = { kind: 'clip', id: sj.id, start: sj.start };
+		else if (sj.kind === 'cue' && frameNum(sj.frame)) subject = { kind: 'cue', id: sj.id, frame: sj.frame };
+		else return null;
+	}
+	const reportMixHash =
+		v.reportMixHash === undefined || v.reportMixHash === null
+			? null
+			: shortStr(v.reportMixHash)
+				? v.reportMixHash
+				: undefined;
+	if (reportMixHash === undefined) return null;
+	return {
+		v: 1,
+		verdict: v.verdict,
+		slot,
+		subject,
+		mixHash: v.mixHash,
+		momentHash: v.momentHash,
+		reportMixHash,
+	};
+}
+
+/**
+ * Hash of what plays in a listen-here window (`frame` ± `SOUND_CHECK_LISTEN_HALF_SEC`): the mix fingerprint of the
+ * sequence with only the audio clips that overlap the window (so an edit elsewhere leaves it alone, while an edit of a
+ * clip in it, a clip moved in or out, a track, submix or Mix change does not), plus the window. Never throws ('' for an
+ * unknown sequence).
+ */
+export function soundCheckMomentHash(doc: ProjectDocument, sequenceId: string, frame: number): string {
+	try {
+		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
+		if (!seq) return '';
+		const r = seq.settings.frameRate;
+		const fps = r && r.num > 0 && r.den > 0 ? r.num / r.den : 30;
+		const half = Math.max(1, Math.ceil(SOUND_CHECK_LISTEN_HALF_SEC * fps));
+		const f = Number.isFinite(frame) ? Math.max(0, Math.round(frame)) : 0;
+		const a = f - half;
+		const b = f + half + 1;
+		const clips: Record<string, (typeof seq.clips)[string]> = {};
+		for (const [id, c] of Object.entries(seq.clips ?? {}))
+			if (c && c.start < b && c.start + c.duration > a) clips[id] = c;
+		const pruned = { ...seq, clips } as Sequence;
+		const window = { ...doc, sequences: { ...doc.sequences, [sequenceId]: pruned } } as ProjectDocument;
+		return fnv1a64(`${mixFingerprint(window, sequenceId)}|${a}|${b}`);
+	} catch {
+		return '';
+	}
+}
+
+export type SoundCheckHumanVerdict = {
+	markerId: string;
+	frame: number;
+	verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER;
+	/** The user's note (the marker's comment), null when empty. */
+	note: string | null;
+	/** The listen slot and the clip / cue the verdict judged (null: an unbound verdict, written before they were kept). */
+	slot: SoundCheckListenSlot | null;
+	clipId: string | null;
+	cueId: string | null;
+	/** Whether the marker carries the structured verdict (`soundDesign.setVerdict`). */
+	bound: boolean;
+	/**
+	 * With a document (`soundCheckHumanVerdicts(seq, {doc})`): whether the verdict still describes what plays there now —
+	 * null when it cannot be told (an unbound verdict) — and why not: `moment` (what plays in the listened window changed),
+	 * `moved` (its clip / cue is somewhere else now), `gone` (its clip / cue no longer exists).
+	 */
+	stale?: boolean | null;
+	staleReasons?: ('moment' | 'moved' | 'gone')[];
+	/** With a document: whether the mix changed anywhere since the verdict (null: unbound). */
+	mixChanged?: boolean | null;
+};
+
+/** The marker name of a verdict. */
+export function soundCheckVerdictMarkerName(verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER): string {
+	return SOUND_CHECK_VERDICT_MARKER[verdict];
+}
+
+/** Whether a verdict's subject is where it was (`moved`) or gone, in `seq`. */
+function subjectState(seq: Sequence, s: SoundCheckVerdictSubject): 'here' | 'moved' | 'gone' {
+	if (s.kind === 'clip') {
+		const c = (seq.clips as Record<string, { start: number } | undefined>)[s.id];
+		if (!c || !Object.hasOwn(seq.clips, s.id)) return 'gone';
+		return c.start === s.start ? 'here' : 'moved';
+	}
+	const sd = readSoundDesign((seq as { soundDesign?: unknown }).soundDesign);
+	const cue = sd && Object.hasOwn(sd.cues, s.id) ? sd.cues[s.id] : undefined;
+	if (!cue) return 'gone';
+	return cue.frame === s.frame ? 'here' : 'moved';
+}
+
+/**
+ * The listen-here verdicts stored in a sequence's markers (user-authored `comment` markers named as
+ * `SOUND_CHECK_VERDICT_MARKER`), in frame order. With `doc` (the document `seq` belongs to) each says whether it is
+ * stale (see `SoundCheckHumanVerdict`). Never throws; anything malformed is skipped (a malformed `soundCheck` field reads
+ * as an unbound verdict).
+ */
+export function soundCheckHumanVerdicts(
+	seq: unknown,
+	opts: { doc?: ProjectDocument } = {},
+): SoundCheckHumanVerdict[] {
+	const markers = isRecord(seq) ? (seq as { markers?: unknown }).markers : undefined;
+	// sequence markers are a list (a record is read too: hostile or older data never throws)
+	const list = Array.isArray(markers) ? markers : isRecord(markers) ? Object.values(markers) : [];
+	const out: SoundCheckHumanVerdict[] = [];
+	const doc = opts.doc;
+	const seqId = isRecord(seq) && typeof seq.id === 'string' ? seq.id : null;
+	let mixNow: string | null = null;
+	const moments = new Map<number, string>();
+	for (const m of list.slice(0, 100_000)) {
+		if (!isRecord(m) || m.type !== 'comment' || m.author !== 'user') continue;
+		const verdict =
+			m.name === SOUND_CHECK_VERDICT_MARKER.ok
+				? 'ok'
+				: m.name === SOUND_CHECK_VERDICT_MARKER.flag
+					? 'flag'
+					: null;
+		if (!verdict || typeof m.id !== 'string') continue;
+		if (typeof m.frame !== 'number' || !Number.isInteger(m.frame) || m.frame < 0) continue;
+		const note = typeof m.comment === 'string' && m.comment.trim() ? m.comment.trim().slice(0, 2000) : null;
+		const meta = readSoundCheckVerdictMeta(m.soundCheck);
+		const v: SoundCheckHumanVerdict = {
+			markerId: m.id,
+			frame: m.frame,
+			verdict,
+			note,
+			slot: meta?.slot ?? null,
+			clipId: meta?.subject?.kind === 'clip' ? meta.subject.id : null,
+			cueId: meta?.subject?.kind === 'cue' ? meta.subject.id : null,
+			bound: !!meta,
+		};
+		if (doc && seqId) {
+			if (!meta) {
+				v.stale = null;
+				v.staleReasons = [];
+				v.mixChanged = null;
+			} else {
+				try {
+					mixNow ??= mixFingerprint(doc, seqId);
+					let moment = moments.get(m.frame);
+					if (moment === undefined) {
+						moment = soundCheckMomentHash(doc, seqId, m.frame);
+						moments.set(m.frame, moment);
+					}
+					const reasons: ('moment' | 'moved' | 'gone')[] = [];
+					if (moment !== meta.momentHash) reasons.push('moment');
+					const where = meta.subject ? subjectState(seq as Sequence, meta.subject) : 'here';
+					if (where !== 'here') reasons.push(where);
+					v.stale = reasons.length > 0;
+					v.staleReasons = reasons;
+					v.mixChanged = mixNow !== meta.mixHash;
+				} catch {
+					v.stale = null;
+					v.staleReasons = [];
+					v.mixChanged = null;
+				}
+			}
+		}
+		out.push(v);
+	}
+	return out.sort((a, b) => a.frame - b.frame || (a.markerId < b.markerId ? -1 : 1));
+}
+
+/**
+ * The verdict a listen-here moment shows: the last one at its frame about the same clip / cue (an unbound verdict, or
+ * one about no clip / cue in particular, counts for any moment at the frame). `null` when there is none.
+ */
+export function soundCheckVerdictFor<
+	V extends Pick<SoundCheckHumanVerdict, 'frame' | 'clipId' | 'cueId' | 'bound'>,
+>(
+	verdicts: readonly V[],
+	moment: { frame: number; clipId?: string | null; cueId?: string | null },
+): V | null {
+	const clipId = moment.clipId ?? null;
+	const cueId = clipId ? null : (moment.cueId ?? null);
+	// an unbound verdict, or one about no clip / cue in particular, covers every moment at its frame
+	const at = verdicts.filter(
+		(v) =>
+			v.frame === moment.frame &&
+			(!v.bound || (v.clipId === null && v.cueId === null) || (v.clipId === clipId && v.cueId === cueId)),
+	);
+	return at.at(-1) ?? null;
+}
+
+export type SoundCheckStatus = {
+	/** `none`: never checked; `current`: the summary describes this mix; `stale`: something it measured changed. */
+	state: 'none' | 'current' | 'stale';
+	summary: SoundCheckSummary | null;
+	/**
+	 * What changed since: the mix (`mixFingerprint`), the cues / loudness settings / credits, the delivery preset, the
+	 * export encoding to check for (`codec`: only with `soundCheckStatus(…, {checkFor})`).
+	 */
+	reasons: ('mix' | 'inputs' | 'preset' | 'codec')[];
+	/** The sequence's current mix fingerprint. */
+	mixHash: string;
+};
+
+/**
+ * Whether the stored Sound Check summary of a sequence still describes it (spec 12 §2.6 staleness): stale when the mix
+ * fingerprint, the other inputs (`soundCheckInputsHash` at the summary's preset) or the sequence's delivery preset
+ * differ. Never throws.
+ */
+export function soundCheckStatus(
+	doc: ProjectDocument,
+	sequenceId: string,
+	/**
+	 * `checkFor`: the export encoding the next export will have (the Sound Check panel's "Check for"); a summary checked
+	 * for another one (or for the PCM master when this is a codec) is stale with reason `codec`.
+	 */
+	opts: { checkFor?: SoundCheckAudio | null } = {},
+): SoundCheckStatus {
+	const seq = doc?.sequences?.[sequenceId] as Sequence | undefined;
+	if (!seq) return { state: 'none', summary: null, reasons: [], mixHash: '' };
+	const mixHash = mixFingerprint(doc, sequenceId);
+	const sd = readSoundDesign((seq as { soundDesign?: unknown }).soundDesign);
+	const summary = sd?.lastCheck ?? null;
+	if (!summary) return { state: 'none', summary: null, reasons: [], mixHash };
+	const reasons: SoundCheckStatus['reasons'] = [];
+	if (summary.mixHash !== mixHash) reasons.push('mix');
+	const preset = (summary.preset ?? soundDesignSettingsOf(seq).delivery) as SoundDelivery;
+	if (
+		summary.inputsHash !== undefined &&
+		summary.inputsHash !==
+			soundCheckInputsHash(
+				doc,
+				sequenceId,
+				preset,
+				readSoundCheckTarget(summary.target),
+				undefined,
+				(summary as { exportAudio?: unknown }).exportAudio,
+			)
+	)
+		reasons.push('inputs');
+	if (summary.preset !== undefined && summary.preset !== soundDesignSettingsOf(seq).delivery)
+		reasons.push('preset');
+	if (
+		opts.checkFor !== undefined &&
+		soundCheckAudioKey(opts.checkFor) !==
+			soundCheckAudioKey((summary as { exportAudio?: unknown }).exportAudio)
+	)
+		reasons.push('codec');
+	return { state: reasons.length ? 'stale' : 'current', summary, reasons, mixHash };
+}
+
+/**
+ * Message templates of Sound Check findings, fixes and listen-here reasons (`{n}` = numbers, timecodes, names). The
+ * engine fills them (`soundCheckMessage`); the editor translates by the template.
+ */
+export const SOUND_CHECK_MESSAGES = {
+	loudnessOff: 'Integrated loudness {0} LUFS is {1} LU off the {2} target ({3} LUFS ±1 LU)',
+	loudnessShort: 'Integrated loudness cannot be measured: less than 400 ms of audible audio ({0} s checked)',
+	loudnessSilent: 'The mix is silent: there is no loudness to measure',
+	loudnessRange: 'Loudness of the checked range only ({0} to {1}), not of the whole sequence',
+	truePeak: 'True peak {0} dBTP is over the {1} ceiling of {2} dBTP',
+	syncEarly: '{0} plays {1} ms early on its {2} cue at {3} (tolerance ±{4} frames)',
+	syncLate: '{0} plays {1} ms late on its {2} cue at {3} (tolerance ±{4} frames)',
+	syncNotFound: '{0} was not found in the sound-effects mix within ±{1} frames of its cue at {2}',
+	syncMetadataOnly:
+		'{0} plays {1} ms off its cue at {2} though it is placed on it (the mix renders it there)',
+	syncUnmeasurable: '{0}: its timing cannot be measured ({1})',
+	syncCut:
+		'{0} is cut {1} ms after its aligned point by the end of its clip at {2}: the sound it is placed for does not play',
+	truncated: '{0} is cut by the end of its clip at {1}, {2} ms before the sound has faded (−60 dB)',
+	// INEXACT (information): a library sound registered as it is (`LibraryProvenance.inexact`)
+	inexactTooLong:
+		'{0} at {1} is not sample-exact: sounds over {2} min are used as they are (placement exact to a frame)',
+	inexactTooLarge:
+		'{0} at {1} is not sample-exact: its sample-exact copy would have been too large (placement exact to a frame)',
+	inexactDiskSpace:
+		'{0} at {1} is not sample-exact: there was not enough free disk space for its copy when it was added (placement exact to a frame; add it again to copy it)',
+	maskedHero:
+		'Hero sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
+	maskedSupport:
+		'Support sound {0} at {1} clears the bed by only {2} dB in its dominant band ({3} Hz; at least {4} dB)',
+	overloadBed: '{0} at {1} peaks {2} LU over the bed (at most {3} LU)',
+	overloadLimiter:
+		'The export limiter pulls the mix down by {0} dB at {1} (more than {2} dB flattens the hits)',
+	overloadClip: 'The mix reaches {0} dBFS at {1} and loudness normalisation is off: the export clips',
+	musicOverVoice:
+		'From {0} to {1} the music is only {2} LU under the voice (at least {3} LU); its ducking is off',
+	musicOverVoiceDucked:
+		'From {0} to {1} the music is only {2} LU under the voice (at least {3} LU) although it is ducked',
+	silence: 'Silence under −60 dBFS for {0} s from {1} to {2}',
+	dip: 'The mix drops {0} LU at {1} (short-term loudness) with no stop-before, cut or silence cue to explain it',
+	staleCue: 'Cue {0} at {1} is out of date: what it follows is now at {2}',
+	staleCueLost: 'Cue {0} at {1} follows something that no longer exists',
+	noPictureEvent:
+		'Cue {0} at {1}: no picture event within ±{2} frames (no cut, transition, motion, text or graphic)',
+	densityHeroes:
+		'Two heroes {0} s apart at {1} and {2} (at most one per {3} s at {4} density, never within 0.5 s)',
+	densityRate: '{0} sound cues within one second at {1} (at most {2} per second at {3} density)',
+	repeat: 'The same sound "{0}" plays twice in a row, at {1} and at {2}',
+	licenseNc: '"{0}" is licensed {1}: non-commercial use only',
+	licenseNd: '"{0}" is licensed {1}: no derivatives (it may not be edited or mixed)',
+	licenseUnknown: '"{0}" has no known licence ({1})',
+	licenseUser: '"{0}" comes from a sound folder whose licence was not declared',
+	credits: '{0} sounds need a credit ({1}) and the exports of this sequence carry no credits file',
+	// Phase 6 (spec 12 §4 P6-E1…E3, P6-E13)
+	clickStart: 'Click at an edit: the start of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickEnd: 'Click at an edit: the end of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickJoint: 'Click at an edit: the remix joint of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickTransition:
+		'Click at an edit: the edge of a transition of {0} at {1} ({2} dB over its surroundings above 14 kHz)',
+	clickBody: 'A click inside {0} at {1}: a transient in the recording, not an edit',
+	clickMix: 'A click in the mix at {0}: no clip edge explains it',
+	edgeEntry:
+		'{0} starts mid-sound at {1}: its source 20 ms before the In point is only {2} dB under its peak and it has no fade-in',
+	edgeDecay:
+		'{0} is chopped at {1}: it ends {2} dB under its peak while its source goes on at {3} dB re that peak, with a {4} ms fade-out',
+	edgeMusic:
+		'The music {0} is chopped at {1}: it keeps sounding ({2} dBFS) over what enters ({3} dBFS) with a {4} ms crossfade',
+	harshMusic:
+		'{0} at {1} peaks {2} dB over the loudest 2–6 kHz of the music (at most {3} dB): harsh on phones and laptops',
+	harshDialogue:
+		'{0} at {1} peaks {2} dB over the loudest 2–6 kHz of the dialogue (at most {3} dB): harsh on phones and laptops',
+	bright: '{0} at {1} is bright: its spectral centroid is {2} Hz (over {3} Hz)',
+	layerInaudible:
+		'Layer {0} of cue {1} at {2} adds at most {3} dB in any band over the bed and the other layers (less than {4} dB): it is not heard',
+	coverage: '{0} of {1} {2} cues like these have a sound; {3} do not: {4}',
+	ending:
+		'The mix ends mid-sound at {0}: its last 50 ms are at {1} dBFS (RMS) and its last 10 ms peak at {2} dBFS',
+	head: 'The mix starts mid-sound at {0}: its first 5 ms peak at {1} dBFS (a click on the first sample)',
+	arcNoHero:
+		'The loudest moment of the mix ({0}, {1} LUFS short-term) holds no hero sound; the biggest hero is {2}',
+	arcLate:
+		'The loudest moment of the mix ({0}, {1} LUFS short-term) is in the last 15 % of the sequence with no hero there',
+	syncEndEarly:
+		'{0} ends {1} ms early on its {2} cue at {3} (an end-aligned sound may end 250 ms before to 30 ms after it)',
+	syncEndLate:
+		'{0} ends {1} ms late on its {2} cue at {3} (an end-aligned sound may end 250 ms before to 30 ms after it)',
+	licenseShareAlike:
+		'"{0}" is licensed {1} (ShareAlike): a video synced with it must be shared under CC BY-SA or a compatible licence',
+	listenWorst: 'Worst finding: {0}',
+	listenHero: 'Biggest hero: {0} ({1} LUFS momentary)',
+	listenLoudest: 'Loudest moment of the mix: {0} LUFS momentary',
+	listenDensest: 'Busiest moment: {0} sound effects within one second',
+	listenPassing: 'A cue that passes every check: {0}',
+	fixAlign: 'Align its peak to the cue',
+	fixUncut: 'Lengthen the clip by {0} frames so the whole sound plays',
+	fixRepad: 'Register "{0}" again (its copy ends in silence now) and swap it in, so the whole sound plays',
+	fixRunOut: 'Let the clip play to the end of its sound (past the end of its media)',
+	fixGain: 'Set its gain to {0} dB (masking solver)',
+	fixRebalance: 'Rebalance the sound effects against the bed (masking solver)',
+	fixLoudness: 'Normalise the mix to {0} LUFS / {1} dBTP',
+	fixDuck: 'Duck the music under the voice',
+	fixDelivery: 'Apply the {0} delivery (Auto-Match and ducking)',
+	fixSilenceCue: 'Mark it as intended silence (a silence cue)',
+	fixRoomTone: 'Fill it with room tone ("{0}", {1} dB, looped)',
+	fixResync: 'Move the cue and its sounds to what it follows',
+	fixRemoveCue: 'Remove the cue and its sounds',
+	fixDemote: 'Make the later hero a support sound',
+	fixSwap: 'Swap to "{0}" ({1})',
+	fixCredits: 'Export the credits with the sequence ({0} file)',
+	fixFadeIn: 'Fade it in with a {0}-frame constant-power transition',
+	fixFadeOut: 'Fade it out with a {0}-frame constant-power transition',
+	fixLengthenTransition: 'Lengthen its transition to {0} frames',
+	fixCrossfade: 'Crossfade the joint over {0} frames (constant power)',
+	fixExtendDecay: 'Lengthen the clip by {0} frames to where its sound has decayed',
+	fixHarshGain: 'Lower it by {0} dB',
+	fixHarshEq: 'Dip {0} Hz by {1} dB with the Parametric EQ',
+	fixLayerGain: 'Raise the layer by {0} dB so it adds 3 dB at {1} Hz',
+	fixRemoveLayer: 'Remove the layer',
+	fixFillCoverage: 'Fill them with "{0}", the sound the others use',
+	fixMuteCoverage: 'Mute these cues (the silence is deliberate)',
+	fixEndingFade: 'Fade the Mix out over its last {0} s',
+	fixHeadFade: 'Fade the Mix in over its first {0} ms',
+	// why a fix needs the user's judgement (`fix.whyMessage`; Phase 5 verification: translated like the rest)
+	whyNormalise: 'The export then normalises to the target',
+	whyLimiterCeiling: 'The export limiter then holds the ceiling',
+	whyLimiterUnder: 'The export limiter then keeps the mix under its ceiling',
+	whyRebalance:
+		'Solving the sound effects against the bed and the true-peak ceiling lowers the loudest hits; listen to the result',
+	whyUserGain: 'Its gain was set by hand',
+	whySolverGain: "The solver's gain does not resolve it: {0}",
+	whyDucked:
+		'The music is ducked already: Auto-Match levels the dialogue and music clips by type (it changes their gains)',
+	whyDuckDepth: 'Ducking by {0} dB leaves the music {1} LU under the voice',
+	whySilence: 'Only if the silence is intended',
+	whyRoomTone:
+		'It adds room tone under the gap in the dialogue: "{0}", {1} dB from the dialogue’s noise floor in spectral shape; listen that it blends in',
+	whyKeepCue: 'Or keep it where it is: it no longer follows the picture',
+	whyNoPicture: 'Only if nothing on screen calls for it',
+	whySimilar: 'A different sound found by similarity: listen before keeping it',
+	whyExtendDecay: 'It changes the edit: the clip plays on until its sound has decayed',
+	whyHarshMasked:
+		'Lowering it by {0} dB would leave it masked (under {1} dB over the bed in its dominant band)',
+	whyHarshEq: 'An EQ dip changes its tone: listen to it',
+	whyLayer: 'Only if the layer should be heard: listen to the cue first',
+	whyCoverage: 'Only if these moments should sound like the others; mute them instead to keep them silent',
+	whyEnding: 'It changes how the mix ends: listen to it',
+	// why a fix that is safe on its own is not safe applied with the safe fixes before it, or would raise the true peak
+	// (`planSoundCheckFixes`, check-fixes.ts)
+	whyFixOverCap: 'It would leave {0} {1} LU over the bed (at most {2} LU for its role)',
+	whyFixMasked:
+		'It would leave {0} only {1} dB over the bed in its dominant band (at least {2} dB for its role)',
+	whyFixEventPeak: 'It would make {0} peak at {1} dBTP on its own (ceiling {2} dBTP)',
+	whyFixMixPeak:
+		'With loudness normalisation off, the mix where {0} plays could reach {1} dBTP (ceiling {2} dBTP)',
+	whyFixRefused: 'It no longer applies after the safe fixes before it: {0}',
+	whyFixUnresolved: 'After the safe fixes before it, it no longer resolves its finding',
+	whyFixSoundChanged:
+		'Another safe fix changes the sound or the position of {0}: its level is judged again on the next check',
+	whyFixBedChanged:
+		'The safe fixes before it change sound-effect levels over the speech: run the check again before ducking',
+	// a mono Mix is checked in mono (its own layout); a stereo export of it measures louder before normalisation
+	monoMix:
+		'The Mix is mono and was checked in mono: an export with 2 channels plays it in both and measures {0} LU louder while loudness normalisation is off',
+} as const;
+export type SoundCheckMessageKey = keyof typeof SOUND_CHECK_MESSAGES;
+
+/**
+ * Why a placed sound's timing cannot be measured (the second parameter of `syncUnmeasurable`): fixed English fragments,
+ * translated by the editor (model strings).
+ */
+export const SOUND_CHECK_UNMEASURED = {
+	notInMix: 'it is not in the mix (disabled, muted track or offline media)',
+	reversed: 'it plays reversed',
+	offline: 'its media is offline',
+	short: 'its sound is too short around its aligned point',
+	edge: 'its cue is at the edge of the checked range',
+	undecodable: 'its file could not be decoded',
+	covered: 'other sounds cover it in the sound-effects mix',
+} as const;
+
+/** Every Sound Check template (the editor's model strings). */
+export const SOUND_CHECK_MODEL_STRINGS: readonly string[] = [
+	...Object.values(SOUND_CHECK_MESSAGES),
+	...Object.values(SOUND_CHECK_UNMEASURED),
+	SOUND_CHECK_CUSTOM_LABEL,
+];
+
+export type SoundCheckMessage = { key: string; params: (string | number)[]; text: string };
+
+/** A finding's message: the template (the translation key), its parameters and the English text. */
+export function soundCheckMessage(
+	key: SoundCheckMessageKey,
+	...params: readonly (string | number)[]
+): SoundCheckMessage {
+	const template: string = SOUND_CHECK_MESSAGES[key];
+	const text = template.replace(/\{(\d+)\}/g, (m, i: string) =>
+		Number(i) < params.length ? String(params[Number(i)]) : m,
+	);
+	return { key: template, params: [...params], text };
+}

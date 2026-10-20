@@ -130,6 +130,20 @@ export class Interpolator {
 	}
 
 	/**
+	 * End of stream: pushes the {@link PolyphaseBank.delay} silent samples that bring the points between the last
+	 * input samples out of the interpolator; returns their maximum absolute value (silence follows the stream, as
+	 * when the file ends).
+	 */
+	flushPeak(bank: PolyphaseBank, floor = 0): number {
+		let m = 0;
+		for (let i = 0; i < bank.delay; i++) {
+			const v = this.pushPeak(bank, 0, Math.max(floor, m));
+			if (v > m) m = v;
+		}
+		return m;
+	}
+
+	/**
 	 * Push one input sample; returns the maximum absolute value of the `factor − 1` interpolated points between
 	 * `x[n − TAPS/2]` and `x[n − TAPS/2 + 1]` (callers add the sample peaks themselves). With factor 1 this is
 	 * `|x|`.
@@ -263,9 +277,30 @@ export class TruePeakDetector {
 		return 20 * Math.log10(this.truePeak());
 	}
 
+	/**
+	 * The maximum true peak (linear, all channels) since the last call, then starts a new span: the interpolators keep
+	 * their history, so a peak between two spans' samples is found in the later span (per-hop true-peak curves).
+	 */
+	takePeak(): number {
+		const m = this.truePeak();
+		this.peaks.fill(0);
+		return m;
+	}
+
 	/** Per-channel true peak (linear). Returns the internal array (do not mutate). */
 	truePeakPerChannel(): Float64Array {
 		return this.peaks;
+	}
+
+	/**
+	 * End of stream: measures the interpolated points between the last input samples (silence follows). Call once,
+	 * after the last `process`, for a whole-programme measurement; live meters don't (the stream goes on).
+	 */
+	flush(): void {
+		for (let c = 0; c < this.channels; c++) {
+			const t = this.interp[c].flushPeak(this.bank, this.peaks[c]);
+			if (t > this.peaks[c]) this.peaks[c] = t;
+		}
 	}
 
 	reset(): void {

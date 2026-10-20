@@ -42,13 +42,78 @@ await build({
 	});
 	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
 	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
+	// Sound design (spec 12 §2.1): the bundled starter kit (`manifest.json`, the audio files and their
+	// `.attribution` sidecars) next to engine.mjs, where `src/sounds/starter.ts` looks for `sounds/starter`.
+	const { existsSync, rmSync } = await import('node:fs');
+	// WP-E9 (spec 12 P6-E14): the weight-free CLAP graphs of Describe-it search (src/sounds/semantic/models.ts copies
+	// them next to the downloaded weights when the model is installed).
+	rmSync(join(root, 'dist', 'models', 'clap'), { recursive: true, force: true });
+	if (existsSync(join(root, 'models', 'clap')))
+		cpSync(join(root, 'models', 'clap'), join(root, 'dist', 'models', 'clap'), { recursive: true });
+	rmSync(join(root, 'dist', 'sounds'), { recursive: true, force: true });
+	if (existsSync(join(root, 'sounds')))
+		cpSync(join(root, 'sounds'), join(root, 'dist', 'sounds'), { recursive: true });
 }
+
+// Sound design (spec 12 WP1.2): the sound-analysis worker thread (`analyzeSound` + visual data off the engine's main
+// thread), loaded by src/sounds/analysis.ts from `sound-worker.mjs` next to engine.mjs.
+await build({
+	entryPoints: [join(root, 'src/sounds/analysis-worker.ts')],
+	outfile: join(root, 'dist/sound-worker.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
+// Sound design (WP6.5b): the measurement worker threads (solo / bed renders through the offline mixer and their band
+// analysis off the engine's main thread), loaded by src/sound-design/measure-pool.ts from `sd-measure-worker.mjs` next
+// to engine.mjs.
+await build({
+	entryPoints: [join(root, 'src/sound-design/measure-worker.ts')],
+	outfile: join(root, 'dist/sd-measure-worker.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
 
 // wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
 // engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.
 await build({
 	entryPoints: [join(root, 'src/speech/worker/cli.ts')],
 	outfile: join(root, 'dist/jasper-speech.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['onnxruntime-node', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
+// WP-E9 (spec 12 P6-E14): jasper-clap.mjs (the Describe-it search model, a long-lived child process of the sound
+// library) next to engine.mjs. onnxruntime-node (native binding) stays external.
+await build({
+	entryPoints: [join(root, 'src/sounds/semantic/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-clap.mjs'),
 	bundle: true,
 	platform: 'node',
 	format: 'esm',

@@ -100,6 +100,11 @@ class Histogram {
 export type LoudnessMeterOptions = {
 	/** Per-channel weights (missing entries are 1, extra ignored). Default {@link defaultChannelWeights}. */
 	weights?: number[];
+	/**
+	 * Measure the true peak (default true). `false`: the 4× oversampling is skipped (about a third of the meter's
+	 * time), `truePeak()` / `truePeakDb()` / the summary's `truePeakDb` are NaN; loudness and sample peak are the same.
+	 */
+	truePeak?: boolean;
 };
 
 /** Streaming BS.1770-4 / EBU R128 loudness meter for planar float audio. `process` never allocates. */
@@ -127,6 +132,7 @@ export class LoudnessMeter {
 	private readonly tPeak: Float64Array;
 	private readonly bank: PolyphaseBank;
 	private readonly interp: Interpolator[];
+	private readonly withTruePeak: boolean;
 
 	constructor(sampleRate: number, channels: number, opts: LoudnessMeterOptions = {}) {
 		this.sampleRate = sampleRate;
@@ -145,6 +151,7 @@ export class LoudnessMeter {
 		this.tPeak = new Float64Array(n);
 		this.bank = new PolyphaseBank(truePeakFactor(sampleRate));
 		this.interp = Array.from({ length: n }, () => new Interpolator());
+		this.withTruePeak = opts.truePeak !== false;
 	}
 
 	/** Override the per-channel weights (missing entries are 1, extra ignored). */
@@ -180,6 +187,18 @@ export class LoudnessMeter {
 		let acc = this.acc[ch];
 		let sp = this.sPeak[ch];
 		let tp = this.tPeak[ch];
+		if (!this.withTruePeak) {
+			for (let i = 0; i < count; i++) {
+				const x = data === null ? 0 : data[start + i];
+				const y = rlb.processSample(pre.processSample(x));
+				acc += y * y;
+				const a = x < 0 ? -x : x;
+				if (a > sp) sp = a;
+			}
+			this.acc[ch] = acc;
+			this.sPeak[ch] = sp;
+			return;
+		}
 		for (let i = 0; i < count; i++) {
 			const x = data === null ? 0 : data[start + i];
 			const y = rlb.processSample(pre.processSample(x));
@@ -242,6 +261,19 @@ export class LoudnessMeter {
 		if (this.subblocksSeen >= ST_SUBBLOCKS) {
 			this.lraHist.add(es);
 			if (this.st > this.maxSt) this.maxSt = this.st;
+		}
+	}
+
+	/**
+	 * End of stream: measures the true peak of the points between the last input samples (silence follows; the
+	 * interpolator lags by {@link PolyphaseBank.delay} samples). Call once after the last `process` for a
+	 * whole-programme summary; live meters don't. Loudness values are unaffected.
+	 */
+	flush(): void {
+		if (!this.withTruePeak) return;
+		for (let c = 0; c < this.channels; c++) {
+			const t = this.interp[c].flushPeak(this.bank, this.tPeak[c]);
+			if (t > this.tPeak[c]) this.tPeak[c] = t;
 		}
 	}
 
@@ -311,6 +343,7 @@ export class LoudnessMeter {
 
 	/** Maximum true peak over all channels (linear). */
 	truePeak(): number {
+		if (!this.withTruePeak) return Number.NaN;
 		let m = 0;
 		for (let c = 0; c < this.channels; c++) if (this.tPeak[c] > m) m = this.tPeak[c];
 		return m;
@@ -323,6 +356,7 @@ export class LoudnessMeter {
 
 	/** Per-channel true peak (linear). */
 	truePeakChannel(ch: number): number {
+		if (!this.withTruePeak) return Number.NaN;
 		return this.tPeak[ch] ?? 0;
 	}
 
@@ -367,6 +401,7 @@ export function measureLoudness(
 ): LoudnessSummary {
 	const m = new LoudnessMeter(sampleRate, Math.max(1, planar.length), weights ? { weights } : {});
 	m.process(planar);
+	m.flush();
 	return m.summary();
 }
 

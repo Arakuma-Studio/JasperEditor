@@ -7,6 +7,7 @@ import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
+import { soundDesignNeedsRepair } from './sound/repair.ts';
 
 export type MigrationStep = {
 	from: number;
@@ -95,6 +96,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// and the other optional schema-v6 fields. Existing data needs no changes; the bump makes
 	// v5 builds open v6 files read-only instead of silently dropping the new fields on their next save.
 	{ from: 5, to: 6, migrate: (doc) => doc },
+	// v7 (sound design, spec 12 Phases 0–1): Essential Sound SFX Pan is an offset on the clip's own pan
+	// (`panOffset`, `residual`), and media carry library provenance (`MediaAsset.library`, lead-silence copies).
+	// Existing data needs no changes here (SFX Pan settings of older builds are read by `migrate-essential-pan` in
+	// repair and by the Essential Sound commands); the bump makes v6 builds open v7 files read-only, because a v6
+	// build editing Essential Sound Pan would write an absolute pan under the offset marker, which v7 then misreads.
+	{ from: 6, to: 7, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */
@@ -191,7 +198,8 @@ export function loadProject(
 	let repairs: RepairEntry[] = [];
 	const invOpts = { effects: opts.effects, mgTemplates: opts.mgTemplates };
 	let issues = checkInvariants(document, invOpts);
-	if (issues.length > 0) {
+	// sound-design: soft references (a cue's anchor or clips, a clip's cue) are tidied on load too (spec 12 §2.2).
+	if (issues.length > 0 || soundDesignNeedsRepair(document)) {
 		const r = repairDocument(document, opts.ids ?? createRandomIdSource(), { mgTemplates: opts.mgTemplates });
 		document = r.document;
 		repairs = r.report;

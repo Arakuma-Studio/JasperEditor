@@ -45,6 +45,7 @@ export {
 	mixdownFromId,
 	type Pan51,
 	pan51Matrix,
+	pan51MatrixInto,
 	panMonoGains,
 	pointGains51,
 } from './channels.ts';

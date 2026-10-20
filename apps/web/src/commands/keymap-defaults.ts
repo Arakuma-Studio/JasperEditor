@@ -329,6 +329,54 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('ease.easyEaseOut', 'Ctrl+Shift+F9', G),
 	b('ease.copy', 'Ctrl+KeyC', 'easing'),
 	b('ease.paste', 'Ctrl+KeyV', 'easing'),
+	// sound-design (spec 12 §2.7): Sound Library scope (Space audition, Enter insert, F favourite, L loop, Ctrl+F search)
+	b('soundLibrary.audition', 'Space', 'soundLibrary'),
+	b('soundLibrary.insert', 'Enter', 'soundLibrary'),
+	b('soundLibrary.insert', 'NumpadEnter', 'soundLibrary'),
+	b('soundLibrary.toggleFavourite', 'KeyF', 'soundLibrary'),
+	b('soundLibrary.toggleLoop', 'KeyL', 'soundLibrary'),
+	b('soundLibrary.focusSearch', 'Ctrl+KeyF', 'soundLibrary'),
+	// WP2.4b: Esc leaves Fill / Replace mode (enabled only then; it stops a playing audition first)
+	b('soundLibrary.cancelMode', 'Escape', 'soundLibrary', { contextual: true }),
+	b('soundLibrary.stopAudition', 'Escape', 'soundLibrary'),
+	// WP2.4b: In Context audition
+	b('soundLibrary.auditionInContext', 'Shift+Space', 'soundLibrary'),
+	// sound-design (spec 12 §2.7): Markers ▸ Add Sound Cue
+	b('sound.addCue', 'Alt+Shift+KeyC', E, { mac: 'Opt+Shift+KeyC' }),
+	// WP2.4b (spec 12 §2.7 Shortcuts): Swap Sound…, Next / Previous Variation (explicit Opt+Cmd on mac), Align Peak
+	b('sound.swap', 'Alt+Shift+KeyS', E, { mac: 'Opt+Shift+KeyS' }),
+	b('sound.nextVariation', 'Ctrl+Alt+Period', E, { mac: 'Opt+Cmd+Period', repeat: true }),
+	b('sound.prevVariation', 'Ctrl+Alt+Comma', E, { mac: 'Opt+Cmd+Comma', repeat: true }),
+	b('sound.alignPeakToPlayhead', 'Ctrl+Alt+KeyP', E, { mac: 'Opt+Cmd+KeyP' }),
+	// WP3.3b (spec 12 §2.7 Shortcuts, Review scope: the Review panel): Enter accept, Backspace / Delete reject, U clear,
+	// A A/B, Space ▶ the item in context, Shift+Space the range, Ctrl+Enter (mac Cmd+Enter) Apply, Esc exit, Up / Down
+	// move between the rows
+	b('proposals.acceptItem', 'Enter', 'review'),
+	b('proposals.acceptItem', 'NumpadEnter', 'review'),
+	b('proposals.rejectItem', 'Backspace', 'review'),
+	b('proposals.rejectItem', 'Delete', 'review'),
+	b('proposals.clearItem', 'KeyU', 'review'),
+	b('proposals.toggleHear', 'KeyA', 'review'),
+	b('proposals.playItem', 'Space', 'review'),
+	b('proposals.playRange', 'Shift+Space', 'review'),
+	b('proposals.apply', 'Ctrl+Enter', 'review'),
+	b('proposals.apply', 'Ctrl+NumpadEnter', 'review'),
+	b('proposals.exitReview', 'Escape', 'review'),
+	b('proposals.prevItem', 'ArrowUp', 'review', { repeat: true, args: { order: 'list' } }),
+	b('proposals.nextItem', 'ArrowDown', 'review', { repeat: true, args: { order: 'list' } }),
+	// Phase 5 verification (spec 12 §2.7 Sound Check panel; follow-up (f)): the findings list — ↑ ↓ Home End move, Enter
+	// jumps to the finding, F applies its fix, → / ← open / close the sync strip, Space plays 4 s around it
+	b('soundCheck.prevFinding', 'ArrowUp', 'soundCheck', R),
+	b('soundCheck.nextFinding', 'ArrowDown', 'soundCheck', R),
+	b('soundCheck.firstFinding', 'Home', 'soundCheck'),
+	b('soundCheck.lastFinding', 'End', 'soundCheck'),
+	b('soundCheck.goToFinding', 'Enter', 'soundCheck'),
+	b('soundCheck.goToFinding', 'NumpadEnter', 'soundCheck'),
+	b('soundCheck.fixFinding', 'KeyF', 'soundCheck'),
+	b('soundCheck.acknowledgeFinding', 'KeyA', 'soundCheck'),
+	b('soundCheck.openSyncStrip', 'ArrowRight', 'soundCheck'),
+	b('soundCheck.closeSyncStrip', 'ArrowLeft', 'soundCheck'),
+	b('soundCheck.playFinding', 'Space', 'soundCheck'),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

@@ -32,6 +32,9 @@ import { shapeTracerHandlers } from './handlers/shape-tracer.ts';
 import { shapeTrimHandlers } from './handlers/shape-trim.ts';
 import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
+import { SOUND_DESIGN_OWNER, soundHandlers } from './handlers/sound.ts';
+import { soundBedHandlers } from './handlers/sound-beds.ts';
+import { soundMixHandlers } from './handlers/sound-mix.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
@@ -76,7 +79,8 @@ export type CommandOwner =
 	| 'imports'
 	| 'previews'
 	| 'gaps'
-	| 'keyframe-ease';
+	| 'keyframe-ease'
+	| 'sound-design';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -288,6 +292,7 @@ const LABELS: Record<CommandType, string> = {
 	'expression.setEnabled': 'Enable Expression',
 	'effect.rename': 'Rename Effect',
 	'essentialSound.setType': 'Set Audio Type',
+	'essentialSound.autoTag': 'Auto Tag Audio Types',
 	'essentialSound.clearType': 'Clear Audio Type',
 	'essentialSound.set': 'Essential Sound',
 	'essentialSound.applyPreset': 'Apply Sound Preset',
@@ -355,6 +360,32 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.setVelocity': 'Keyframe Velocity',
 	'keyframe.createPathController': 'Create Path Controller',
 	'keyframes.cleanupPath': 'Clean Up Motion Path',
+	'media.setLibraryInfo': 'Set Sound Library Info',
+	'media.upgradeLibraryCopy': 'Update Sound Copy',
+	'soundCue.add': 'Add Sound Cues',
+	'soundCue.update': 'Edit Sound Cue',
+	'soundCue.remove': 'Delete Sound Cues',
+	'soundCue.resync': 'Resync Sound Cues',
+	'soundDesign.place': 'Place Sound',
+	'soundDesign.swap': 'Swap Sound',
+	'soundDesign.setRole': 'Sound Role',
+	'soundDesign.setPalette': 'Sound Palette',
+	'soundDesign.setSettings': 'Sound Design Settings',
+	'soundDesign.setPeak': 'Set Peak',
+	'soundDesign.applyGains': 'Rebalance SFX Levels',
+	'soundDesign.setAutoGain': 'Auto Gain',
+	'soundDesign.setCheck': 'Sound Check Result',
+	'soundDesign.setVerdict': 'Sound Check Verdict',
+	'soundDesign.expectMix': 'Check Mix Unchanged',
+	'soundDesign.acknowledgeIssue': 'Acknowledge Sound Check Finding',
+	'soundDesign.unacknowledgeIssue': 'Unacknowledge Sound Check Finding',
+	'audio.volumeDip': 'Volume Dip',
+	'soundDesign.applyStopBefore': 'Stop Before Cue',
+	'soundDesign.applyBuild': 'Build Into Cue',
+	'soundDesign.ensureBus': 'SFX Room Glue',
+	'soundDesign.removeBus': 'Remove SFX Room Glue',
+	'soundDesign.applyDelivery': 'Apply Delivery Preset',
+	'soundDesign.layBed': 'Lay Ambience Bed',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -398,6 +429,9 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[previewsHandlers, PREVIEWS_OWNER],
 	[gapsHandlers, GAPS_OWNER],
 	[easeHandlers, EASE_OWNER],
+	[soundHandlers, SOUND_DESIGN_OWNER],
+	[soundMixHandlers, SOUND_DESIGN_OWNER],
+	[soundBedHandlers, SOUND_DESIGN_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -433,7 +467,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === INTERPRET_OWNER ||
 				owner === PREVIEWS_OWNER ||
 				owner === GAPS_OWNER ||
-				owner === EASE_OWNER
+				owner === EASE_OWNER ||
+				owner === SOUND_DESIGN_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

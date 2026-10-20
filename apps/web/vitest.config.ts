@@ -28,6 +28,7 @@ const testTimeout = webTestTimeoutMs();
 
 export default defineProject({
 	test: {
+		setupFiles: ['../../packages/testkit/src/fast-check-setup.ts'],
 		include: ['test/**/*.test.{ts,tsx}'],
 		environment: 'happy-dom',
 		testTimeout,

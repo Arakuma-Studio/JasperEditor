@@ -7,7 +7,10 @@ import {
 	API_VERSION,
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
+	type AudioClassifyRequest,
 	type AutoToneRequest,
+	type BeatsRequest,
+	type BeatsResult,
 	buildPath,
 	type CaptionFileReadRequest,
 	type ColorMatchRequest,
@@ -28,6 +31,7 @@ import {
 	type MediaRegisterRequest,
 	type MediaVariantRequest,
 	type MgRenderRequest,
+	type MotionAnalysisRequest,
 	type PreviewDeleteRequest,
 	type PreviewDeleteResult,
 	type PreviewRenderRequest,
@@ -35,6 +39,13 @@ import {
 	type PreviewStatusRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
+	type ProposalAcceptRequest,
+	type ProposalCreateRequest,
+	type ProposalMarkAppliedRequest,
+	type ProposalNoteRequest,
+	type ProposalRejectRequest,
+	type ProposalReopenRequest,
+	type ProposalSelectRequest,
 	type RecoveryPutRequest,
 	type RegisteredMedia,
 	type RelinkScanRequest,
@@ -44,7 +55,27 @@ import {
 	type RouteName,
 	type RouteResponse,
 	type SceneDetectRequest,
+	type SfxRebalanceRequest,
+	type SoundBedsRequest,
+	type SoundCheckLastRequest,
+	type SoundCheckRequest,
+	type SoundCuesRequest,
+	type SoundDeliveryRequest,
+	type SoundDesignPlanRequest,
+	type SoundEmbedRequest,
+	type SoundIndexRequest,
+	type SoundListenRequest,
+	type SoundMatchRequest,
+	type SoundMomentRequest,
+	type SoundPeakRequest,
+	type SoundProfileBuildRequest,
+	type SoundProfileImportRequest,
+	type SoundRoomToneRequest,
+	type SoundRootsPutRequest,
+	type SoundSearchRequest,
+	type SoundVisualRequest,
 	type StillRequest,
+	soundSearchParams,
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
@@ -326,6 +357,230 @@ export class EngineClient {
 	relinkScan(projectId: string, req: RelinkScanRequest) {
 		return this.call('relinkScan', { params: { projectId }, body: req });
 	}
+	/** Sound library status: counts, starter kit, indexing (spec 12 §2.8). */
+	soundLibraryStatus() {
+		return this.call('soundsStatus');
+	}
+	/** Ranked library search with facets (`rankSounds`; commercial-safe licences unless `license: 'any'`). */
+	searchSounds(req: SoundSearchRequest = {}, signal?: AbortSignal) {
+		return this.call('soundsSearch', { query: soundSearchParams(req), ...(signal ? { signal } : {}) });
+	}
+	getSound(soundId: string) {
+		return this.call('soundGet', { params: { soundId } });
+	}
+	/** URL of a library sound's audio (for `<audio src>` / Web Audio auditioning). */
+	soundAudioUrl(soundId: string): string {
+		return this.url(buildPath(ROUTES.soundAudio.path, { soundId }));
+	}
+	/** Waveform peaks and spectrogram of a library sound (u8, base64). */
+	getSoundVisual(soundId: string) {
+		return this.call('soundVisual', { params: { soundId } });
+	}
+	/** Registers a library sound's file for a project; commit `media.register` with the returned `library`. */
+	registerSound(soundId: string, projectId: string) {
+		return this.call('soundRegister', { params: { soundId }, body: { projectId } });
+	}
+	/** Starts (or joins) a `sound-index` job. */
+	indexSounds(req: SoundIndexRequest = {}) {
+		return this.call('soundIndex', { body: req });
+	}
+	getSoundRoots() {
+		return this.call('soundRootsGet');
+	}
+	/** The downloadable sound-pack catalogue with what is installed (spec 12 P6-R1). */
+	listSoundPacks() {
+		return this.call('soundPacks');
+	}
+	/** Starts (or joins) a `sound-pack-install` job: download, sha256 check, extraction, then a `sound-index` job. */
+	installSoundPack(packId: string) {
+		return this.call('soundPackInstall', { params: { packId } });
+	}
+	/** Removes an installed pack (an agent's request waits for the user's approval in an editor window). */
+	removeSoundPack(packId: string) {
+		return this.call('soundPackRemove', { params: { packId } });
+	}
+	/** Describe-it search (spec 12 P6-E14): whether it works here, the model and how much of the library is embedded. */
+	soundSemanticStatus(signal?: AbortSignal) {
+		return this.call('soundSemanticStatus', { ...(signal ? { signal } : {}) });
+	}
+	/** The Describe-it search model catalogue (licence, sizes, installed, available, its download job). */
+	soundSemanticModels() {
+		return this.call('soundSemanticModels');
+	}
+	/** Starts (or joins) the `model-download` job of a Describe-it search model (show its licence first). */
+	installSoundSemanticModel(modelId: string) {
+		return this.call('soundSemanticModelInstall', { params: { modelId } });
+	}
+	/** Removes the model and its cached embeddings (an agent's request waits for the user's approval). */
+	removeSoundSemanticModel(modelId: string) {
+		return this.call('soundSemanticModelDelete', { params: { modelId } });
+	}
+	/** Starts (or joins) a `sound-embed` job (embeddings of the sounds that lack one; `full`: all again). */
+	embedSounds(req: SoundEmbedRequest = {}) {
+		return this.call('soundEmbed', { body: req });
+	}
+	/** How well a library sound matches a description and its alternatives (Describe-it search model). */
+	matchSound(soundId: string, req: SoundMatchRequest, signal?: AbortSignal) {
+		return this.call('soundMatch', { params: { soundId }, body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Find Moment: a `sound-moment` job for the best windows of a sound for a description (`wait`: its end). */
+	findSoundMoments(
+		soundId: string,
+		req: SoundMomentRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	) {
+		return this.call('soundMoments', {
+			params: { soundId },
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
+			...(opts.signal ? { signal: opts.signal } : {}),
+		});
+	}
+	/** Replaces the user sound folders (local engines); an agent adding, removing or relicensing one is asked about. */
+	putSoundRoots(req: SoundRootsPutRequest) {
+		return this.call('soundRootsPut', { body: req });
+	}
+	/** Cue suggestions derived from the edit (spec 12 §2.8; `deriveCues` with the engine's template registry). */
+	soundDesignCues(req: SoundCuesRequest, signal?: AbortSignal) {
+		return this.call('soundDesignCues', { body: req, ...(signal ? { signal } : {}) });
+	}
+	soundDesignPeak(req: SoundPeakRequest, signal?: AbortSignal) {
+		return this.call('soundDesignPeak', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Starts a `sound-design` plan job (spec 12 §2.8, P3-R3); its result (`SoundDesignPlanResult`) names the proposal it
+	 * stored. Nothing is applied: the user reviews the proposal.
+	 */
+	planSoundDesign(req: SoundDesignPlanRequest, signal?: AbortSignal) {
+		return this.call('soundDesignPlan', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Rebalance SFX levels (spec 12 §2.4, §2.10): a `sound-design` job (202) solving the sound effects' gains against the
+	 * bed; its result (`SfxRebalanceResult`) is a report per clip and either one applied transaction ("Rebalance SFX
+	 * Levels", `mode: 'apply'`) or a proposal (`mode: 'propose'`, the default).
+	 */
+	rebalanceSfx(req: SfxRebalanceRequest, signal?: AbortSignal) {
+		return this.call('soundDesignRebalance', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Ambience beds (spec 12 §4 P6-E12; `POST /api/sound-design/beds/plan`): the scenes, each recording's clean window and
+	 * loop points and the transaction that lays a bed per scene (`SoundBedsPlan`). Read-only.
+	 */
+	planAmbienceBeds(req: SoundBedsRequest, signal?: AbortSignal) {
+		return this.call('soundDesignBedsPlan', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Ambience beds: a `sound-design` job (202) that proposes (default) or applies them (`SoundBedsResult`). */
+	layAmbienceBeds(req: SoundBedsRequest, signal?: AbortSignal) {
+		return this.call('soundDesignBeds', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Room tone (`POST /api/sound-design/room-tone/plan`): the gaps, the floor, the ranked tones, the transaction. */
+	planRoomTone(req: SoundRoomToneRequest, signal?: AbortSignal) {
+		return this.call('soundDesignRoomTonePlan', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Room tone: a `sound-design` job (202) that proposes (default) or applies the fill (`SoundRoomToneResult`). */
+	fillRoomTone(req: SoundRoomToneRequest, signal?: AbortSignal) {
+		return this.call('soundDesignRoomTone', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Delivery preset (spec 12 §2.4, P4-R4; `POST /api/sound-design/delivery`): a `sound-design` job that measures the
+	 * sequence and applies (`mode: 'apply'`, one transaction "Apply Delivery Preset") or proposes (the default) the
+	 * preset's loudness normalisation, Auto-Match by type, ducking and re-solved sound-effect gains (`SoundDeliveryResult`).
+	 */
+	applyDelivery(req: SoundDeliveryRequest, signal?: AbortSignal) {
+		return this.call('soundDesignDelivery', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Sound Check (spec 12 §2.6, P5-R1; `POST /api/sound-design/check`): a `sound-check` job whose result
+	 * (`SoundCheckResult`) is the report — findings with fixes, listen-here moments, the per-event table, the verdict.
+	 * `store: true` also stores its summary in the sequence (`soundDesign.setCheck`).
+	 */
+	soundCheck(req: SoundCheckRequest, signal?: AbortSignal) {
+		return this.call('soundDesignCheck', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** The last full Sound Check report of a sequence, kept across engine restarts, and whether it is stale. */
+	lastSoundCheck(req: SoundCheckLastRequest, signal?: AbortSignal) {
+		return this.call('soundDesignCheckLast', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Sound Check visual data over a range of at most 120 s (`POST /api/sound-design/visual`, P5-R2). */
+	soundVisual(req: SoundVisualRequest, signal?: AbortSignal) {
+		return this.call('soundDesignVisual', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/**
+	 * Starts a `sound-listen` job (`POST /api/sound-design/listen`, spec 12 §4 P6-E6): the listening transcript of a range
+	 * (≤ 10 min) — events attributed to their clips, sections, sync with chance levels, text lines (`SoundListenResult`).
+	 */
+	soundListen(req: SoundListenRequest, signal?: AbortSignal) {
+		return this.call('soundDesignListen', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** The reference sound profiles of this engine's library (spec 12 §4 P6-E8). */
+	listSoundProfiles() {
+		return this.call('soundProfiles');
+	}
+	/** One reference profile: the whole file (what Export saves). */
+	getSoundProfile(profileId: string) {
+		return this.call('soundProfileGet', { params: { profileId } });
+	}
+	/** Starts a `sound-profile` job measuring 1–20 references; result `SoundProfileBuildResult`. */
+	buildSoundProfile(req: SoundProfileBuildRequest) {
+		return this.call('soundProfileBuild', { body: req });
+	}
+	renameSoundProfile(profileId: string, name: string) {
+		return this.call('soundProfileRename', { params: { profileId }, body: { name } });
+	}
+	/** Deletes a reference profile (an agent's request waits for the user's approval in an editor window). */
+	deleteSoundProfile(profileId: string) {
+		return this.call('soundProfileDelete', { params: { profileId } });
+	}
+	/** Imports a profile file (validated; stored under a new id). */
+	importSoundProfile(req: SoundProfileImportRequest) {
+		return this.call('soundProfileImport', { body: req });
+	}
+	/**
+	 * Starts a `motion-analysis` job (`POST /api/sound-design/motion`, P6-R2): the sequence's picture rendered small and
+	 * measured per frame; result `MotionAnalysisResult` (curve + events), cached by the picture's fingerprint.
+	 */
+	analyzeMotion(req: MotionAnalysisRequest, signal?: AbortSignal) {
+		return this.call('soundDesignMotion', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Proposals of a project (spec 12 §2.5): summaries, newest first. */
+	listProposals(projectId: string) {
+		return this.call('proposalsList', { params: { projectId } });
+	}
+	/** A proposal with its items; `revalidate` checks the undecided items on the live document first. */
+	getProposal(projectId: string, proposalId: string, opts: { revalidate?: boolean } = {}) {
+		return this.call('proposalGet', {
+			params: { projectId, proposalId },
+			query: opts.revalidate ? { revalidate: '1' } : {},
+		});
+	}
+	/** Stores a proposal after validating it by dry runs (failing items become `invalid`). */
+	createProposal(projectId: string, req: ProposalCreateRequest) {
+		return this.call('proposalCreate', { params: { projectId }, body: req });
+	}
+	/** Applies items as ONE transaction (all-or-nothing unless `partial`). */
+	acceptProposal(projectId: string, proposalId: string, req: ProposalAcceptRequest) {
+		return this.call('proposalAccept', { params: { projectId, proposalId }, body: req });
+	}
+	rejectProposal(projectId: string, proposalId: string, req: ProposalRejectRequest) {
+		return this.call('proposalReject', { params: { projectId, proposalId }, body: req });
+	}
+	/** Decided items back to review (after their accept was undone in History). */
+	reopenProposal(projectId: string, proposalId: string, req: ProposalReopenRequest) {
+		return this.call('proposalReopen', { params: { projectId, proposalId }, body: req });
+	}
+	noteProposalItem(projectId: string, proposalId: string, req: ProposalNoteRequest) {
+		return this.call('proposalNote', { params: { projectId, proposalId }, body: req });
+	}
+	selectProposalAlternative(projectId: string, proposalId: string, req: ProposalSelectRequest) {
+		return this.call('proposalSelect', { params: { projectId, proposalId }, body: req });
+	}
+	/** Editor only: records items whose undone accept the user redid in History as accepted again (nothing applies). */
+	markProposalApplied(projectId: string, proposalId: string, req: ProposalMarkAppliedRequest) {
+		return this.call('proposalMarkApplied', { params: { projectId, proposalId }, body: req });
+	}
+	deleteProposal(projectId: string, proposalId: string) {
+		return this.call('proposalDelete', { params: { projectId, proposalId } });
+	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
 	}
@@ -381,6 +636,24 @@ export class EngineClient {
 	/** A music remix plan for a clip's content range (synchronous). */
 	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
 		return this.call('audioRemixPlan', { body: req });
+	}
+	/**
+	 * Essential Sound Auto Tag: starts an `audio-classify` job (`POST /api/audio/classify`, spec 12 P6-R3) classifying
+	 * clips or media as dialogue / music / SFX / ambience; result `AudioClassifyResult`. `wait` answers when it ends.
+	 */
+	classifyAudio(
+		req: AudioClassifyRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	): Promise<EngineJob> {
+		return this.call('audioClassify', {
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
+			...(opts.signal ? { signal: opts.signal } : {}),
+		});
+	}
+	/** Tempo, beats and downbeats of a media's audio range (`POST /api/audio/beats`; cached per file and range). */
+	audioBeats(req: BeatsRequest, signal?: AbortSignal): Promise<BeatsResult> {
+		return this.call('audioBeats', { body: req, ...(signal ? { signal } : {}) });
 	}
 	/** A loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
 	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {
@@ -561,6 +834,10 @@ export class EngineClient {
 	/** Download URL of an export's sidecar caption file. */
 	renderCaptionFileUrl(jobId: string, name: string): string {
 		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
+	}
+	/** Download URL of an export's sound credits sidecar (`result.credits.name`). */
+	renderCreditsFileUrl(jobId: string, name: string): string {
+		return this.url(buildPath(ROUTES.renderCreditsFile.path, { jobId, name }));
 	}
 	mgFileUrl(key: string, file: string): string {
 		return this.url(buildPath(ROUTES.mgFile.path, { key, file }));

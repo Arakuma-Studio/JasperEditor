@@ -35,6 +35,12 @@ export function cancelledResult(): CallToolResult {
 export const TX_ERROR_HINTS: Record<string, string> = {
 	E_APPROVAL_DENIED:
 		'The user denied this, or no editor window was open to ask in. Destructive commands (track.remove, item.delete, force: true…) and destructive operations (deleting presets, models, all render files or referenced cache, restoring a version over a project, changing settings) need the user to approve them in an open JasperEditor window. Do not retry without asking the user.',
+	E_APPROVAL_REQUIRED:
+		'Only the user can do this. A proposal: ask them to review and apply it in the editor (Review panel), or to turn on "Allow agents to apply sound proposals" for the sequence; wait_for_proposal tells you their decisions. A Sound Check error you wanted to acknowledge: fix it, or ask the user to acknowledge it in the Sound Check panel. Do not retry.',
+	E_PROPOSAL_STALE:
+		'Some proposal items no longer fit the edit. Nothing was applied: accept again with partial: true to apply the rest, or make a new proposal.',
+	E_PROPOSAL_LIMIT:
+		'The project already holds 50 proposals still under review. Ask the user to finish or discard some (or reject_proposal your own) before proposing again.',
 	E_APPROVAL_TIMEOUT:
 		'Nobody answered the approval prompt in the editor within 60 s. Ask the user to look at the JasperEditor window, then retry.',
 	E_NO_SESSION:

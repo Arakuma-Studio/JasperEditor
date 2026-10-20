@@ -2,6 +2,7 @@
 // `pnpm e2e` prepares fixtures, binaries, and builds before Playwright starts.
 import { randomBytes } from 'node:crypto';
 import { defineConfig } from '@playwright/test';
+import { e2eServerTimeoutMs } from './e2e/server-timeout';
 
 const port = Number(process.env.E2E_PORT ?? 48110);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -14,6 +15,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 process.env.E2E_TOKEN ??= randomBytes(24).toString('base64url');
 process.env.E2E_EDITOR_KEY ??= randomBytes(24).toString('base64url');
 const token = process.env.E2E_TOKEN;
+const browserExecutable = process.env.JASPER_BROWSER_EXECUTABLE || undefined;
 const editorKey = process.env.E2E_EDITOR_KEY;
 const cookie = (name: string, value: string) => ({
 	name: `${name}_${port}`,
@@ -42,7 +44,11 @@ export default defineConfig({
 			cookies: [cookie('jasper_session', token), cookie('jasper_editor', editorKey)],
 			origins: [],
 		},
-		channel: 'chrome',
+		// The system Chrome (ARCHITECTURE D-16), or JASPER_BROWSER_EXECUTABLE: the same variable gives the engine's
+		// renders and the GL unit tests their browser, so one run uses one Chrome (e.g. a Chrome for Testing build where
+		// the system Chrome is older than what the specs exercise: HTML-in-Canvas needs Chrome 148+). Specs that need
+		// flags take theirs from `browserLaunch` (e2e/support.ts), which keeps this executable.
+		...(browserExecutable ? { launchOptions: { executablePath: browserExecutable } } : { channel: 'chrome' }),
 		headless: true,
 		viewport: { width: 1600, height: 1000 },
 		acceptDownloads: true,
@@ -54,7 +60,8 @@ export default defineConfig({
 		command: 'node e2e/serve.mjs',
 		url: `${baseURL}/health`,
 		reuseExistingServer: false,
-		timeout: 60_000,
+		// Start-up of the built engine + web app; `E2E_SERVER_TIMEOUT_MS` overrides the 180 s default on a loaded host.
+		timeout: e2eServerTimeoutMs(),
 		stdout: 'pipe',
 		stderr: 'pipe',
 		env: { E2E_PORT: String(port), JASPER_LOCAL_TOKEN: token, JASPER_EDITOR_KEY: editorKey },

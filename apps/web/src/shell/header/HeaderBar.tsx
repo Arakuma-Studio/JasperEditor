@@ -22,6 +22,7 @@ import { useEngine, useJobs } from '../../state/engine.tsx';
 import { type ShellMode, useCommandCtx, useShellRuntime } from '../context.tsx';
 import type { ShellMenuItem } from '../menus/resolve.ts';
 import { commandState, type MenuEnv, resolveMenu } from '../menus/resolve.ts';
+import { workspaceName } from '../workspaces/definitions.ts';
 import type { WorkspaceRecord, WorkspaceStore } from '../workspaces/store.ts';
 
 let registryVersion = 0;
@@ -149,7 +150,7 @@ function WorkspaceTabs(props: {
 								aria-selected={active}
 								draggable
 								data-testid={`workspace-tab-${ws.id}`}
-								title={n ? `${ws.name} (Alt+Shift+${n})` : ws.name}
+								title={n ? `${workspaceName(ws)} (Alt+Shift+${n})` : workspaceName(ws)}
 								onDragStart={(e) => {
 									setDragId(ws.id);
 									e.dataTransfer.setData('application/x-jasper-workspace', ws.id);
@@ -169,7 +170,7 @@ function WorkspaceTabs(props: {
 									dragId === ws.id && 'opacity-50',
 								)}
 							>
-								{ws.name}
+								<span data-no-i18n>{workspaceName(ws)}</span>
 							</button>
 						</ContextMenu>
 					);
@@ -183,7 +184,7 @@ function WorkspaceTabs(props: {
 					items={props.list.map((ws) => ({
 						type: 'item' as const,
 						id: `ws-over-${ws.id}`,
-						label: ws.name,
+						label: workspaceName(ws),
 						checked: ws.id === props.activeId,
 						onSelect: () => props.onSwitch(ws.id),
 					}))}

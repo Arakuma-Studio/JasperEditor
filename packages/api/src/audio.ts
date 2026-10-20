@@ -45,6 +45,16 @@ export const AudioAnalyzeRequestSchema = z.looseObject({
 			endFrame: z.number().int().min(1).optional(),
 		})
 		.optional(),
+	/**
+	 * `sequence` scope: also solve the export's loudness delivery of the mix for this target (the two-pass normalisation
+	 * converged under the true-peak limiter, PCM path) — the result's `delivery`, stored with the analysis so the
+	 * Program monitor plays the export's gain. Default: the sequence's Mix normalisation target when it is enabled;
+	 * `null`: none.
+	 */
+	delivery: z
+		.object({ targetLufs: z.number().min(-60).max(0), truePeakDb: z.number().min(-20).max(0) })
+		.nullable()
+		.optional(),
 });
 export type AudioAnalyzeRequest = z.infer<typeof AudioAnalyzeRequestSchema>;
 
@@ -74,6 +84,22 @@ export const AudioAnalyzeResultSchema = z.object({
 		.optional(),
 	/** `mixFingerprint` of the analysed document (sequence scopes): stored with `mixer.setLoudness {analysis}`. */
 	mixHash: z.string(),
+	/**
+	 * The converged delivery for `request.delivery` (store it as the analysis's `delivery`): the gain the export's
+	 * normalisation lands the target with, the PCM limiter ceiling, the passes, whether the ceiling took the push and
+	 * the delivered loudness.
+	 */
+	delivery: z
+		.object({
+			targetLufs: z.number(),
+			truePeakDbtp: z.number(),
+			gainDb: z.number(),
+			limiterCeilingDbtp: z.number(),
+			passes: z.number().int(),
+			ceilingLimited: z.boolean(),
+			deliveredLufs: z.number().nullable(),
+		})
+		.optional(),
 });
 export type AudioAnalyzeResult = z.infer<typeof AudioAnalyzeResultSchema>;
 

@@ -4,6 +4,7 @@
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useTransportFrame } from '@jasper/session/react';
 import { sequenceItemNames } from '../../shell/header/TitleBar.tsx';
+import { CueProperties } from '../../sound/SoundSection.tsx';
 import { TransitionSection } from '../effectControls/TransitionSection.tsx';
 import type { PanelProps } from '../types.ts';
 import { ClipProperties } from './ClipProperties.tsx';
@@ -37,6 +38,8 @@ function PropertiesBody({ session }: { session: EditorSession }) {
 	const ops = useInspectorOps(session);
 	const notices = useNotices();
 	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
+	// sound design (spec 12 §2.7): a selected cue shows its "Cue" section
+	const selectedCues = useSessionState((s) => s.selection.cues?.length ?? 0);
 	const seqName = useSessionState((s) =>
 		s.activeSequenceId
 			? (sequenceItemNames(s.document.items).get(s.activeSequenceId) ?? 'Sequence')
@@ -45,6 +48,8 @@ function PropertiesBody({ session }: { session: EditorSession }) {
 	if (!data.selection) return <Empty text="Open a sequence to see its properties." />;
 	if (data.selection.clips.length === 0 && selectedTransitions > 0)
 		return <TransitionSection session={session} host="properties" />;
+	if (data.selection.clips.length === 0 && selectedCues > 0)
+		return <CueProperties session={session} sequenceId={data.selection.seq.id} />;
 	const { seq, clips } = data.selection;
 	const ctx: RowContext = {
 		doc: data.doc,

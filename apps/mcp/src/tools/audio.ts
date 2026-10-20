@@ -40,12 +40,21 @@ Loudness: measure_loudness gives ITU-R BS.1770-4 / EBU R128 integrated loudness 
 
 const StripArg = z.string().min(1).describe('Strip: "A1"…, "S1"…, "Mix", a track id or a track name');
 
+/** What to do about a failed analysis / normalisation job, by its code. */
+function jobHint(code: string | undefined): string {
+	if (code === 'TOO_SHORT')
+		return 'Integrated loudness needs at least 400 ms of audio (one BS.1770 gating block): normalise a short sound by peak instead (set_audio_gain mode normalizeMax).';
+	if (code === 'SILENT')
+		return 'The audio is silent (below the −70 LUFS gate): there is nothing to normalise.';
+	return 'Check that the media is online (get_media_info).';
+}
+
 function resultOf<T>(job: EngineJob): T {
 	if (job.state !== 'succeeded')
 		throw new ToolError(
 			job.error?.code ?? 'E_ANALYSIS_FAILED',
 			job.error?.message ?? `The job ${job.state}`,
-			'Check that the media is online (get_media_info).',
+			jobHint(job.error?.code),
 		);
 	return job.result as T;
 }
@@ -53,7 +62,7 @@ function resultOf<T>(job: EngineJob): T {
 export async function analyze(
 	ctx: ToolContext,
 	projectId: string,
-	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity'>,
+	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity' | 'delivery'>,
 ): Promise<AudioAnalyzeResult> {
 	const { doc, revision } = await loadDoc(ctx, projectId);
 	const job = await ctx.engine((c) =>
@@ -187,6 +196,8 @@ export function registerAudioTools(ctx: ToolContext): void {
 				sequenceId: seq.id,
 				scope: s,
 				...(levels ? { levels } : {}),
+				// a measurement: the export's converged delivery is solved by set_loudness_normalization
+				delivery: null,
 			});
 			return jsonResult({ ...r, stale: false });
 		},
@@ -540,7 +551,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 		{
 			title: 'Set loudness normalization',
 			description:
-				'Normalises the Mix of a sequence to a target loudness with a true-peak limit: heard in the preview (gain target − measured + a look-ahead true-peak limiter) and applied two-pass on every export. analyze: true (default) measures the current mix now and stores it for the preview.',
+				"Normalises the Mix of a sequence to a target loudness with a true-peak limit: applied two-pass on every export (the gain converged under the look-ahead true-peak limiter) and heard in the preview with the same gain and limiter ceiling. analyze: true (default) measures the current mix now and stores it for the preview with the export's converged delivery for this target (analysis.delivery {gainDb, limiterCeilingDbtp, passes, ceilingLimited, deliveredLufs}); without it (or after changing the target) the preview plays the one-pass gain target − measured, up to ≈ 1 dB under the export on a heavily limited mix.",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -556,7 +567,16 @@ export function registerAudioTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, sequenceId);
 			let analysis: Record<string, unknown> | undefined;
 			if (doAnalyze !== false) {
-				const r = await analyze(ctx, projectId, { sequenceId: seq.id, scope: { type: 'sequence' } });
+				// the export's converged delivery for the target being set (the preview plays its gain)
+				const cur = seq.master.loudness;
+				const r = await analyze(ctx, projectId, {
+					sequenceId: seq.id,
+					scope: { type: 'sequence' },
+					delivery: {
+						targetLufs: targetLufs ?? cur?.targetLufs ?? -23,
+						truePeakDb: truePeakDb ?? cur?.truePeakDb ?? -1,
+					},
+				});
 				analysis = {
 					integratedLufs: r.loudness.integratedLufs,
 					truePeakDbtp: r.loudness.truePeakDbtp,
@@ -565,6 +585,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 					maxShortTermLufs: r.loudness.maxShortTermLufs,
 					mixHash: r.mixHash,
 					analyzedAt: new Date().toISOString(),
+					...(r.delivery ? { delivery: r.delivery } : {}),
 				};
 			}
 			const body = await apply(
@@ -594,7 +615,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 		{
 			title: 'Normalize media loudness',
 			description:
-				'Makes a loudness-normalised version of a media\'s audio (two-pass: measure, gain to targetLufs, look-ahead true-peak limiter at truePeakDb; 24-bit WAV), adds it to the project (bin "Processed") and, with replaceInClips, switches those audio clips to it — one undo step. Waits for the job (timeoutSeconds, default 600).',
+				'Makes a loudness-normalised version of a media\'s audio (two-pass: measure, gain to targetLufs, look-ahead true-peak limiter at truePeakDb; 24-bit WAV), adds it to the project (bin "Processed") and, with replaceInClips, switches those audio clips to it — one undo step. Waits for the job (timeoutSeconds, default 600). Refused with TOO_SHORT for audio shorter than 400 ms (integrated loudness needs one BS.1770 gating block; the message gives the length and true peak — use set_audio_gain normalizeMax) and with SILENT for silence.',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1),

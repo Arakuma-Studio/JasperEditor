@@ -2,7 +2,7 @@
 // `essential::apply`): missing effects are inserted in canonical order, effects of slots that were switched off are
 // removed, and only parameters whose derived value changed are written — at `time` (content flicks) as a keyframe when
 // the parameter is animated, else as the static value — so keyframes the user added in Effect Controls survive
-// unrelated slider moves. Gain, Volume and pan change by deltas (the user's own levels are kept).
+// unrelated slider moves. Gain, Volume and pan change by deltas (the user's own levels are kept, see `offsetLevel`).
 import { audioEffectSpec } from '../registry/audio/index.ts';
 import type { Animatable, Keyframe, ParamValue } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
@@ -12,7 +12,7 @@ import {
 	type EssentialSound,
 	essentialEffects,
 	loudnessGainDb,
-	panValue,
+	panOffset,
 	volumeOffsetDb,
 } from './model.ts';
 
@@ -51,11 +51,36 @@ function setAt(
 	}
 }
 
-/** Adds `db` to a level: the static value and every keyframe (keeps ducking shapes). */
-export function offsetLevel(a: Animatable<number>, db: number): void {
-	const add = (v: number) => Math.min(Math.max(v + db, -96), 15);
-	a.value = add(a.value);
-	for (const k of a.keyframes) k.value = add(k.value);
+/**
+ * Adds `d` to a level: the static value and every keyframe (keeps ducking shapes), clamped to `[lo, hi]`. What the
+ * clamp takes away is kept in `residual` (per `value` / keyframe id) and given back by the next offset, so an
+ * offset switched on and off again restores the level exactly. A residual only applies while its value still sits
+ * on the bound it was clamped to: once the user moved that value (Effect Controls, Clip Mixer, keyframe edits) it is
+ * stale and dropped. Residuals are limited to the range width (a hostile file cannot store more).
+ */
+export function offsetLevel(
+	a: Animatable<number>,
+	d: number,
+	lo = -96,
+	hi = 15,
+	residual: Record<string, number> = {},
+): void {
+	const left: Record<string, number> = {};
+	const add = (key: string, v: number) => {
+		const r = residual[key] ?? 0;
+		const live =
+			Number.isFinite(r) && ((r > 0 && v >= hi - 1e-9) || (r < 0 && v <= lo + 1e-9))
+				? Math.sign(r) * Math.min(Math.abs(r), hi - lo)
+				: 0;
+		const want = v + d + live;
+		const got = Math.min(Math.max(want, lo), hi) + 0;
+		if (Math.abs(want - got) > 1e-9) left[key] = want - got;
+		return got;
+	};
+	a.value = add('value', a.value);
+	for (const k of a.keyframes) k.value = add(k.id, k.value);
+	for (const k of Object.keys(residual)) delete residual[k];
+	Object.assign(residual, left);
 }
 
 export type ReconcileContext = {
@@ -63,6 +88,8 @@ export type ReconcileContext = {
 	time: number;
 	newEffectId(): string;
 	newKey: NewKey;
+	/** Clamp residuals of the Clip Volume and Pan offsets (see `offsetLevel`); updated in place. */
+	residual?: { volume: Record<string, number>; pan: Record<string, number> };
 };
 
 /** Reconciles `clip` from the settings `old` (null = none applied yet) to `next` (null = type cleared). */
@@ -121,9 +148,9 @@ export function reconcileEssential(
 	// Clip gain (Auto-Match), Volume offset (Clip Volume), Pan.
 	const dg = loudnessGainDb(next) - loudnessGainDb(old);
 	if (Math.abs(dg) > 1e-12) clip.gainDb = Math.min(Math.max(clip.gainDb + dg, -96), 96);
+	const res = ctx.residual ?? { volume: {}, pan: {} };
 	const dv = volumeOffsetDb(next) - volumeOffsetDb(old);
-	if (Math.abs(dv) > 1e-12) offsetLevel(clip.volumeDb, dv);
-	const pOld = panValue(old);
-	const pNew = panValue(next);
-	if (pNew !== pOld) setAt(clip.pan as Animatable<ParamValue>, pNew ?? 0, ctx.time, ctx.newKey, false);
+	if (Math.abs(dv) > 1e-12) offsetLevel(clip.volumeDb, dv, -96, 15, res.volume);
+	const dp = panOffset(next) - panOffset(old);
+	if (Math.abs(dp) > 1e-12) offsetLevel(clip.pan, dp, -100, 100, res.pan);
 }

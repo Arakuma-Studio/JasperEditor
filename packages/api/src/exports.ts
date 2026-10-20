@@ -23,6 +23,20 @@ export const ExportCaptionsSchema = z.object({
 });
 export type ExportCaptions = z.infer<typeof ExportCaptionsSchema>;
 
+/** Sound credits sidecar formats of an export (spec 12 §2.11). */
+export const CREDITS_SIDECAR_FORMATS = ['txt', 'md', 'csv'] as const;
+/**
+ * The sound credits written next to the output (spec 12 §2.11): `<output>.credits.<ext>` with the credit lines of the
+ * library sounds audible in the exported range (nested sequences included; muted tracks and disabled clips are not
+ * heard, so not credited). `sidecar: null` = none. `scope`: `all` sounds (default) or only those whose licence asks for
+ * a credit (`attribution`: CC BY, CC BY-SA…).
+ */
+export const ExportCreditsSchema = z.object({
+	sidecar: z.enum(CREDITS_SIDECAR_FORMATS).nullable(),
+	scope: z.enum(['all', 'attribution']).optional(),
+});
+export type ExportCredits = z.infer<typeof ExportCreditsSchema>;
+
 /** If H.264 is unavailable, the render plan names the codec and container the engine will use. */
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
@@ -131,6 +145,8 @@ export const ExportSettingsSchema = z.object({
 		.default({ type: 'download' }),
 	/** Burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
 	captions: ExportCaptionsSchema.optional(),
+	/** Sound credits sidecar (spec 12 §2.11); absent = none. */
+	credits: ExportCreditsSchema.optional(),
 	/** Picture only — no audio stream and no mixdown (render previews of the picture). */
 	videoOnly: z.boolean().optional(),
 	/**
@@ -149,6 +165,27 @@ export const ExportSettingsSchema = z.object({
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 
 /** Render plan (S04:RP-010) plus the plan id and document revision it was computed for (RP-011). */
+/**
+ * The structured part of an engine-composed export warning: what the message says, as values, so an editor can say it
+ * in its own language (final carry-over cleanup, item 6; the pattern for every engine-composed message: a stable
+ * `code`, `params` with the values, `message` in English for agents, logs and older clients). Codes with params:
+ * - `W_SOUND_CREDITS`: `count`, `licences` (", "-joined SPDX ids), `titles` (the first three, quoted, ", "-joined),
+ *   `more` (more than three);
+ * - `W_SOUND_LICENSE_NC`: `count`, `licences`;
+ * - `W_SOUND_SHARE_ALIKE`: `count`, `licences`, `titles`, `more`;
+ * - `W_SOUND_CHECK_STALE`: `state` (`stale`: `reason` `mix` | `preset` | `settings`; `failed`: `errors`, a count, absent
+ *   when unknown);
+ * - `OUTPUT_CONTAINER_CHANGED`: `requested`, `written` (container names, upper case), `why` (`codec`: `codec` is not
+ *   carried, `accepts` lists what is; `opus`: WebM needs Opus; `muxer`: the codec is written as `written` here);
+ * - `AUDIO_CODEC_CHANGED`: `requested`, `written` (AAC | Opus | PCM), `container`, `why` (`prores` | `container` |
+ *   `no-opus`).
+ */
+export const ExportWarningParamsSchema = z.record(
+	z.string().max(64),
+	z.union([z.string().max(2000), z.number(), z.boolean()]),
+);
+export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
+
 export const RenderPlanSchema = z.object({
 	planId: z.string().optional(),
 	documentRevision: z.number().int().optional(),
@@ -165,7 +202,19 @@ export const RenderPlanSchema = z.object({
 	),
 	audio: z.object({
 		mode: z.enum(['native-mix', 'remotion', 'browser']),
-		normalize: z.object({ targetLufs: z.number(), truePeakDb: z.number().optional() }).optional(),
+		/**
+		 * The loudness target, and the true-peak limiter's ceiling in front of the encoder: the target less the codec's
+		 * headroom (`codecHeadroomDb`: 0 for PCM; lossy codecs by bit rate). The export then checks the decoded audio and
+		 * corrects where the codec still overshoots (result `audioLoudness`).
+		 */
+		normalize: z
+			.object({
+				targetLufs: z.number(),
+				truePeakDb: z.number().optional(),
+				limiterCeilingDb: z.number().optional(),
+				codecHeadroomDb: z.number().optional(),
+			})
+			.optional(),
 		/** What the delivered audio is: rate, channels and codec. */
 		sampleRate: z.number().int().optional(),
 		channels: z.number().int().optional(),
@@ -179,7 +228,15 @@ export const RenderPlanSchema = z.object({
 		}),
 	),
 	warnings: z.array(
-		z.object({ code: z.string(), message: z.string(), itemIds: z.array(z.string()).optional() }),
+		z.object({
+			code: z.string(),
+			/** English, for agents and logs; editors show `code` + `params` in their language (`EXPORT_WARNING_PARAMS`). */
+			message: z.string(),
+			itemIds: z.array(z.string()).optional(),
+			/** `info` = for the user's information (W_SOUND_CHECK_STALE); absent = a warning. */
+			level: z.enum(['warning', 'info']).optional(),
+			params: ExportWarningParamsSchema.optional(),
+		}),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
 	/** Whether stream copy is used, how many frames are copied, and why not. */
@@ -209,6 +266,8 @@ export const ExportResultSchema = z.object({
 	/** FFmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
 	container: z.enum(['mp4', 'webm', 'mov']).optional(),
+	/** FFmpeg audio encoder actually used (`aac`, `libopus`, `pcm_s16le`, `pcm_s24le`); absent without audio. */
+	audioCodec: z.string().optional(),
 	/**
 	 * Remotion path only (D-13): `intermediate` = Remotion rendered ProRes and the engine encoded the
 	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).
@@ -218,16 +277,67 @@ export const ExportResultSchema = z.object({
 	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion']).optional(),
 	/**
 	 * run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
-	 * and an `auto` export was rendered on the Remotion path instead.
+	 * and an `auto` export was rendered on the Remotion path instead; also the plan's sound warnings
+	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`) and, when the file is not in the requested
+	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4).
 	 */
-	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
-	/** Loudness of the delivered audio (BS.1770-4), and the normalisation gain when it was normalised. */
+	warnings: z
+		.array(
+			z.object({
+				code: z.string(),
+				message: z.string(),
+				level: z.enum(['warning', 'info']).optional(),
+				params: ExportWarningParamsSchema.optional(),
+			}),
+		)
+		.optional(),
+	/**
+	 * The sound credits sidecar (spec 12 §2.11): its format and scope, how many sounds it credits (0 = no file: no
+	 * library sound is heard in the range), and the file (`/renders/:jobId/credits/:name`; `path` with a destination).
+	 */
+	credits: z
+		.object({
+			format: z.enum(CREDITS_SIDECAR_FORMATS),
+			scope: z.enum(['all', 'attribution']),
+			count: z.number().int(),
+			name: z.string().optional(),
+			url: z.string().optional(),
+			path: z.string().optional(),
+		})
+		.optional(),
+	/**
+	 * Loudness of the delivered audio (BS.1770-4): of a normalised lossy (or resampled) export the file's own audio,
+	 * decoded (`measuredOn: 'decoded-file'`, the PCM it was encoded from in `pcm`); else the PCM mix. With normalisation:
+	 * the gain, the target, the limiter ceiling in front of the encoder (target − the codec's headroom), how many
+	 * loudness passes and encodes it took, the local corrections where the codec still overshot, and whether the target
+	 * was met (`AUDIO_TRUE_PEAK_OVER` / `AUDIO_LOUDNESS_CEILING` warnings when not).
+	 */
 	audioLoudness: z
 		.object({
 			integratedLufs: z.number().nullable(),
 			truePeakDbtp: z.number().nullable(),
 			lra: z.number().nullable(),
+			measuredOn: z.enum(['pcm', 'decoded-file']).optional(),
+			pcm: z
+				.object({ integratedLufs: z.number().nullable(), truePeakDbtp: z.number().nullable() })
+				.optional(),
 			normalizedGainDb: z.number().optional(),
+			targetLufs: z.number().optional(),
+			truePeakTargetDbtp: z.number().optional(),
+			limiterCeilingDbtp: z.number().optional(),
+			codecHeadroomDb: z.number().optional(),
+			loudnessPasses: z.number().int().optional(),
+			encodePasses: z.number().int().optional(),
+			localCorrections: z.object({ count: z.number().int(), maxDb: z.number() }).optional(),
+			ceilingLimited: z.boolean().optional(),
+			truePeakMet: z.boolean().optional(),
+			/**
+			 * The delivery started from the parameters of an earlier delivery of the same mix to the same target and codec
+			 * (a Sound Check with this export's encoding, an earlier export): one pass and one encode, still checked.
+			 */
+			deliveryReused: z.boolean().optional(),
+			/** The file's audio stream is the checked encode itself (muxed by stream copy, not encoded again). */
+			streamCopied: z.boolean().optional(),
 		})
 		.optional(),
 	/** Caption streams embedded in the file and sidecar files written. */

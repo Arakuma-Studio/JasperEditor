@@ -9,6 +9,7 @@ import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, TrackKind } from '../schema/sequence.ts';
+import { followMixSplit, followSfxSplit, mixNamesClip, nestedEntityIds } from '../sound/repair.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
 import { isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
@@ -204,9 +205,34 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 			visit(x);
 		}
 	};
+	// Essential Sound clamp residuals are keyed by Volume / Pan keyframe id: they follow the keyframes' new ids.
+	const a = clip as {
+		volumeDb?: { keyframes?: { id: string }[] };
+		pan?: { keyframes?: { id: string }[] };
+		essential?: { residual?: Record<string, unknown> };
+	};
+	const lanes = ['volume', 'pan'] as const;
+	const oldIds = {
+		volume: (a.volumeDb?.keyframes ?? []).map((k) => k.id),
+		pan: (a.pan?.keyframes ?? []).map((k) => k.id),
+	};
 	visit(clip);
 	if (fxIndex >= 0 && c.trackedBy && c.effects?.[fxIndex])
 		c.trackedBy.effectInstanceId = c.effects[fxIndex].id;
+	const residual = a.essential?.residual;
+	if (residual && typeof residual === 'object')
+		for (const lane of lanes) {
+			const r = residual[lane];
+			if (!r || typeof r !== 'object' || Array.isArray(r)) continue;
+			const keys = (lane === 'volume' ? a.volumeDb : a.pan)?.keyframes ?? [];
+			const next: Record<string, unknown> = {};
+			for (const [k, v] of Object.entries(r as Record<string, unknown>)) {
+				const i = k === 'value' ? -1 : oldIds[lane].indexOf(k);
+				if (k === 'value') next.value = v;
+				else if (i >= 0 && keys[i]) next[keys[i]!.id] = v;
+			}
+			residual[lane] = next;
+		}
 }
 
 /**
@@ -220,6 +246,9 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	const r = seq.settings.frameRate;
 	const right = snapshot(clip) as Clip;
 	right.id = h.ids.next('clp');
+	// sound design: a music clip the mix records write into keeps both parts in them (old → new child ids)
+	const followMix = mixNamesClip(seq as Sequence, clip.id);
+	const childIds = followMix ? nestedEntityIds(right) : [];
 	reidentifyClipChildren(right, h);
 	right.linkId = null;
 	const oldEnd = end(clip);
@@ -239,7 +268,39 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	for (const t of valuesOf(seq.transitions)) {
 		if (t.outgoingClipId === clip.id) seq.transitions[t.id]!.outgoingClipId = right.id;
 	}
+	fitTransitionsAfterSplit(seq, clip.id, right.id, h);
+	// sound-design: both parts of a filled SFX clip keep filling its cue.
+	followSfxSplit(seq as Sequence, clip.id, right.id);
+	if (followMix) {
+		const now = nestedEntityIds(right);
+		const idMap = new Map<string, string>();
+		if (now.length === childIds.length) for (const [k, old] of childIds.entries()) idMap.set(old, now[k]!);
+		followMixSplit(seq as Sequence, clip.id, right.id, idMap, () => h.ids.next('kf'));
+	}
 	return seq.clips[right.id]!;
+}
+
+/**
+ * A split inside a transition's span (Razor, Add Edit, an insert edit) leaves the part that keeps the transition
+ * shorter than it (INV-010). As Premiere does when a transition has fewer frames than its duration (helpx
+ * "Transitions overview": it "adjusts the duration to match the frames"), the transition stays on its edit with its
+ * alignment and is shortened to the shorter of its clips. Same cut and alignment with a shorter span needs no more
+ * media handles than before, so it still fits (TRN-003).
+ */
+function fitTransitionsAfterSplit(seq: DSeq, leftId: string, rightId: string, h: HandlerContext): void {
+	for (const t of valuesOf(seq.transitions)) {
+		if (t.incomingClipId !== leftId && t.outgoingClipId !== rightId) continue;
+		const lengths = [t.outgoingClipId, t.incomingClipId]
+			.map((id) => (id ? peekIn(seq.clips, id)?.duration : undefined))
+			.filter((d): d is number => typeof d === 'number');
+		const fits = Math.max(1, Math.min(...lengths));
+		if (lengths.length === 0 || t.duration <= fits) continue;
+		h.warn(
+			'W_TRANSITION_SHORTENED',
+			`Transition ${t.id} shortened from ${t.duration} to ${fits} frames: the edit was added inside it`,
+		);
+		seq.transitions[t.id]!.duration = fits;
+	}
 }
 
 /** Deletes a clip and its memberships; transitions that reference it are removed with a warning. */
@@ -546,6 +607,21 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
 		if (missing || separated || moved) {
 			delete seq.transitions[t.id];
 			h.warn('W_TRANSITION_REMOVED', `Transition ${t.id} removed because its clips were separated`);
+			continue;
+		}
+		// WP6.5a: an edit that left a clip shorter than its transition (a trim, an overwrite) shortens the transition to
+		// it, as a split does (fitTransitionsAfterSplit; INV-010) — same cut and alignment, so its handles still fit.
+		const fits = Math.min(
+			out?.duration ?? Number.POSITIVE_INFINITY,
+			inc?.duration ?? Number.POSITIVE_INFINITY,
+		);
+		if (Number.isFinite(fits) && t.duration > fits) {
+			const d = Math.max(1, fits);
+			h.warn(
+				'W_TRANSITION_SHORTENED',
+				`Transition ${t.id} shortened from ${t.duration} to ${d} frames to fit its clips`,
+			);
+			seq.transitions[t.id]!.duration = d;
 		}
 	}
 }

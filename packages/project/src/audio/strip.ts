@@ -21,7 +21,14 @@ import type {
 	LoudnessNormalize,
 	TrackSend,
 } from '../schema/audio.ts';
-import { LANE_MUTE, LANE_PAN51_CENTER, LANE_PAN51_LFE, LANE_PAN51_X, LANE_PAN51_Y } from '../schema/audio.ts';
+import {
+	LANE_MUTE,
+	LANE_PAN51_CENTER,
+	LANE_PAN51_LFE,
+	LANE_PAN51_X,
+	LANE_PAN51_Y,
+	readLoudnessDelivery,
+} from '../schema/audio.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { EffectInstance, Sequence, Track } from '../schema/sequence.ts';
 
@@ -376,12 +383,20 @@ export function writeLaneKeyframes(
 	return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-/** The loudness normalisation gain of the Mix (dB) and ceiling, when enabled and analysed. */
+/**
+ * The loudness normalisation gain of the Mix (dB) and the true-peak limiter ceiling, when enabled and analysed: the
+ * analysis's converged delivery (`analysis.delivery`, the gain the export's two-pass normalisation lands the target
+ * with under the limiter) while it was solved for the Mix's current target and ceiling, else the one-pass gain
+ * `target − measured` at the target ceiling (analyses stored before, or for another target).
+ */
 export function loudnessGainOf(
 	l: LoudnessNormalize | undefined,
-): { gainDb: number; truePeakDb: number; stale?: boolean } | null {
+): { gainDb: number; truePeakDb: number; converged?: boolean } | null {
 	if (!l?.enabled) return null;
 	const i = l.analysis?.integratedLufs;
 	if (i === null || i === undefined || !Number.isFinite(i)) return null;
+	const d = readLoudnessDelivery(l.analysis?.delivery);
+	if (d && Math.abs(d.targetLufs - l.targetLufs) < 1e-6 && Math.abs(d.truePeakDbtp - l.truePeakDb) < 1e-6)
+		return { gainDb: d.gainDb, truePeakDb: Math.min(l.truePeakDb, d.limiterCeilingDbtp), converged: true };
 	return { gainDb: l.targetLufs - i, truePeakDb: l.truePeakDb };
 }

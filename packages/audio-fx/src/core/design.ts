@@ -549,7 +549,22 @@ function pushSection(out: Sections, b0: number, b1: number, b2: number, a1: numb
 	out.n++;
 }
 
-function intoSections(f: Zpk, out: Sections, s: Scratch): void {
+/** |H(e^{jw})| of one section `b0 + b1 z⁻¹ + b2 z⁻² / 1 + a1 z⁻¹ + a2 z⁻²` of `out`. */
+function sectionMagnitude(out: Sections, i: number, w: number): number {
+	const c = out.c;
+	const o = 5 * i;
+	const c1 = Math.cos(w);
+	const s1 = Math.sin(w);
+	const c2 = Math.cos(2 * w);
+	const s2 = Math.sin(2 * w);
+	const nr = c[o]! + c[o + 1]! * c1 + c[o + 2]! * c2;
+	const ni = -(c[o + 1]! * s1 + c[o + 2]! * s2);
+	const dr = 1 + c[o + 3]! * c1 + c[o + 4]! * c2;
+	const di = -(c[o + 3]! * s1 + c[o + 4]! * s2);
+	return Math.sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+function intoSections(f: Zpk, out: Sections, s: Scratch, wRef: number): void {
 	const { pp, pr, zp, zr } = s;
 	split(f.p, pp, pr);
 	split(f.z, zp, zr);
@@ -621,11 +636,23 @@ function intoSections(f: Zpk, out: Sections, s: Scratch): void {
 			pushSection(out, 1, -z1, 0, a1, a2);
 		} else pushSection(out, 1, 0, 0, a1, a2);
 	}
-	// Overall gain on the first section.
+	// Gain staging: every section is normalised to unit gain at the reference frequency (in the pass band) and the
+	// rest of the overall gain goes on the first section. Putting all of `k` on the first section made it ≈ 1e-35
+	// for steep or narrow designs, so the signal fell under the state flush (1e-30) and the filter went silent.
+	let k = f.k;
+	for (let i = 0; i < out.n; i++) {
+		const m = sectionMagnitude(out, i, wRef);
+		if (!(m > 1e-300 && Number.isFinite(m))) continue;
+		const o = 5 * i;
+		out.c[o] = out.c[o]! / m;
+		out.c[o + 1] = out.c[o + 1]! / m;
+		out.c[o + 2] = out.c[o + 2]! / m;
+		k *= m;
+	}
 	if (out.n > 0) {
-		out.c[0] = out.c[0]! * f.k;
-		out.c[1] = out.c[1]! * f.k;
-		out.c[2] = out.c[2]! * f.k;
+		out.c[0] = out.c[0]! * k;
+		out.c[1] = out.c[1]! * k;
+		out.c[2] = out.c[2]! * k;
 	}
 }
 
@@ -672,19 +699,25 @@ export function realize(
 	const s = SCRATCH;
 	const f = s.f;
 	f.copyFrom(proto.zpk);
+	// Pass-band reference frequency (digital rad/sample) for the gain staging of the sections.
+	let wRef = 0;
 	if (band === 'lowPass') lpToLp(f, warp(f1, sampleRate));
-	else if (band === 'highPass') lpToHp(f, warp(f1, sampleRate));
-	else {
+	else if (band === 'highPass') {
+		lpToHp(f, warp(f1, sampleRate));
+		wRef = Math.PI;
+	} else {
 		const lo = Math.min(f1, f2);
 		const hi = Math.max(Math.max(f1, f2), lo * 1.001);
 		const w1 = warp(lo, sampleRate);
 		const w2 = warp(hi, sampleRate);
 		const w0 = Math.sqrt(w1 * w2);
 		const bw = Math.max(w2 - w1, 1e-6);
-		if (band === 'bandPass') lpToBp(f, s.tmp, w0, bw);
-		else lpToBs(f, s.tmp, w0, bw);
+		if (band === 'bandPass') {
+			lpToBp(f, s.tmp, w0, bw);
+			wRef = 2 * Math.atan(w0 / (2 * sampleRate));
+		} else lpToBs(f, s.tmp, w0, bw);
 	}
 	bilinear(f, sampleRate);
-	intoSections(f, out, s);
+	intoSections(f, out, s, wRef);
 	return out;
 }

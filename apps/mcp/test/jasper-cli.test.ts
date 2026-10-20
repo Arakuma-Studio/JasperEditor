@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runCli } from '../src/jasper-cli.ts';
 import { decodePng } from '../src/png.ts';
-import { cleanEnv, waitFor } from './helpers.ts';
+import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const PORT = Number(process.env.JASPER_CLI_TEST_PORT ?? 49026);
+const PORT = await testPort(process.env.JASPER_CLI_TEST_PORT);
 const fixture = join(ROOT, 'fixtures', 'media', 'clip-a.mp4');
 
 describe('argument parsing', () => {

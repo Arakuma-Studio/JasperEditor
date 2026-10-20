@@ -2,7 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type APIRequestContext, expect, type Locator, type Page } from '@playwright/test';
+import {
+	type APIRequestContext,
+	expect,
+	type LaunchOptions,
+	type Locator,
+	type Page,
+} from '@playwright/test';
 import type { JasperAgentApi } from '../apps/web/src/agent-bridge/types.ts';
 import { type ExportResult, ExportResultSchema } from '../packages/api/src/exports.ts';
 import {
@@ -19,6 +25,14 @@ declare global {
 	}
 }
 
+/**
+ * `launchOptions` for a spec that needs browser flags: the flags with the run's browser. A spec's `launchOptions`
+ * replaces the config's whole object, so this keeps JASPER_BROWSER_EXECUTABLE (playwright.config.ts) when it is set.
+ */
+export function browserLaunch(args: string[]): LaunchOptions {
+	const executablePath = process.env.JASPER_BROWSER_EXECUTABLE || undefined;
+	return { ...(executablePath ? { executablePath } : {}), args };
+}
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
 
@@ -241,8 +255,19 @@ export async function waitForJob(
 	timeoutMs = 240_000,
 ): Promise<EngineJob> {
 	const t0 = Date.now();
+	let resets = 0;
 	for (;;) {
-		const res = await request.get(`/api/jobs/${jobId}`);
+		let res: Awaited<ReturnType<APIRequestContext['get']>>;
+		try {
+			res = await request.get(`/api/jobs/${jobId}`);
+		} catch (e) {
+			// a kept-alive socket the loaded engine closed under the poll: ask again (a few times), never hide a failure
+			if (resets++ < 5 && /ECONNRESET|socket hang up/i.test(String((e as Error).message))) {
+				await new Promise((r) => setTimeout(r, 500));
+				continue;
+			}
+			throw e;
+		}
 		expect(res.ok()).toBe(true);
 		const job = EngineJobSchema.parse(await res.json());
 		if (TERMINAL_JOB_STATES.has(job.state)) return job;
@@ -256,6 +281,29 @@ type ExportOutcome = {
 	job: EngineJob & { result: ExportResult };
 };
 
+/** No visible toast or notice overlaps `target` (a dialog's or Export mode's action). */
+export async function expectNotCoveredByToasts(page: Page, target: Locator): Promise<void> {
+	const box = await target.boundingBox();
+	expect(box).not.toBeNull();
+	// One snapshot of every toast and notice: one that expires between two reads must not leave a read waiting for
+	// it (a per-toast `innerText()` after its `boundingBox()` waited for a dismissed toast until the test timed out).
+	const shown = await page.locator('[data-testid="toast"], [data-testid="notice"]').evaluateAll((els) =>
+		els.map((e) => {
+			const r = e.getBoundingClientRect();
+			return { x: r.x, y: r.y, width: r.width, height: r.height, text: (e as HTMLElement).innerText };
+		}),
+	);
+	for (const r of shown) {
+		if (r.width <= 0 || r.height <= 0) continue;
+		const overlaps =
+			r.x < box!.x + box!.width &&
+			r.x + r.width > box!.x &&
+			r.y < box!.y + box!.height &&
+			r.y + r.height > box!.y;
+		expect(overlaps, `${r.text} covers the action`).toBe(false);
+	}
+}
+
 export async function exportViaUi(
 	page: Page,
 	request: APIRequestContext,
@@ -265,6 +313,8 @@ export async function exportViaUi(
 		expectPath: RegExp;
 		outDir: string;
 		jobTimeoutMs?: number;
+		/** Screenshot of Export mode just before Export is clicked (with whatever toasts are showing). */
+		screenshot?: string;
 	},
 ): Promise<ExportOutcome> {
 	await focusTimeline(page);
@@ -277,9 +327,12 @@ export async function exportViaUi(
 	const before = new Set(
 		JobListResponseSchema.parse(await (await request.get('/api/jobs')).json()).jobs.map((j) => j.id),
 	);
-	// A sticky notice from the previous export ("Export finished · Download") must not cover the footer.
-	await expect(page.getByTestId('export-start')).toBeEnabled();
-	await page.getByTestId('export-start').click({ timeout: 10_000 });
+	// Toasts and sticky notices (a previous "Export finished · Download") never cover the footer's actions.
+	const start = page.getByTestId('export-start');
+	await expect(start).toBeEnabled();
+	await expectNotCoveredByToasts(page, start);
+	if (opts.screenshot) await page.screenshot({ path: opts.screenshot });
+	await start.click({ timeout: 10_000 });
 	await expect(page.getByTestId('export-mode')).toBeHidden();
 	let jobId = '';
 	await expect

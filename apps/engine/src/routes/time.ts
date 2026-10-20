@@ -22,7 +22,12 @@ export default async function timeRoutes(app: FastifyInstance): Promise<void> {
 	);
 	app.addHook('onClose', async () => unregister());
 
-	const scenes = new SceneService(core, cacheDir);
+	// Finished detections are kept for Sound Design's scene cue source (sounds/analysis/scenes).
+	const scenes = new SceneService(
+		core,
+		cacheDir,
+		join(app.jasper.config.paths.soundsDir, 'analysis', 'scenes'),
+	);
 	scenes.registerRunner();
 	app.jasper.services.scenes = scenes;
 

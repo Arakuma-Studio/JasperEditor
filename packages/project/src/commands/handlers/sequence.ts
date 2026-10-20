@@ -28,6 +28,7 @@ import {
 import { placeSource } from './clip-core.ts';
 import { applyColorSettings, hdrWorkingSpaceOf } from './color-mgmt.ts';
 import { assertBin, insertItem } from './project-items.ts';
+import { settleMixOrphans } from './sound-mix.ts';
 import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -488,7 +489,10 @@ export const sequenceHandlers = {
 			if (track.kind !== kind) h.fail('E_INVALID_PARAM', `${field} applies to ${kind} tracks only`);
 		};
 		if (p.name !== undefined) track.name = p.name;
+		const unlocking = p.locked === false && !!track.locked;
 		if (p.locked !== undefined) track.locked = p.locked;
+		// sound design: realisations of deleted cues kept on this locked track come out now (exactly)
+		if (unlocking && track.kind === 'audio') settleMixOrphans(doc, seq, h);
 		if (p.syncLock !== undefined) track.syncLock = p.syncLock;
 		if (p.output !== undefined) {
 			only('video', 'output');

@@ -32,8 +32,17 @@ Signal order (both runtimes): decode → clip effects (stack order) → clip gai
 FilmCraft; this is why Loudness Auto-Match measures with `levels: 'source'` (effects, no gain).
 
 Latency: processors report `latency()` (look-ahead limiter, STFT effects, convolution, pitch, FFT filter). The export
-mixer compensates clip and track latency (audio-mix's mixer); the preview compensates clip effect latency by starting
-the clip's media earlier (`compensate()` in `AudioLayer.tsx`).
+mixer compensates clip and track latency (audio-mix's mixer). The preview applies the same plan (spec 12 WP0.1,
+`planMixLatency` in `packages/compositions/src/audio/graph.ts`): every preview slot reports its latency
+(`registerPreviewInsert(…, latency)`, the processor's own `latency()`), each route into a bus gets a DelayNode so all of
+the bus's inputs arrive together, and every clip's media starts early by the graph's read-ahead (the Mix's latency, plus
+the loudness limiter's while it runs) plus its own clip effects' latency (`compensate()` in `AudioLayer.tsx`). Lanes,
+send levels, pucks and insert automation are evaluated at the time of the samples each stage is processing
+(`stripStageTimes`), as the export does. The graph follows Remotion's transport (spec 12 Phase 0 close-out,
+[sound-design.md](sound-design.md) §Phase 0 close-out): a seek flushes its delay lines and effect processors, a Play
+after a paused seek is primed (the sources start at the play position and the picture waits for the program), and the
+read-ahead is held while playing, so latency changes during playback keep the audio in flight instead of re-creating
+the media players.
 
 ### 1.2 Model (optional fields, read-time defaults, no schema bump)
 
@@ -41,8 +50,11 @@ the clip's media earlier (`compensate()` in `AudioLayer.tsx`).
 - `AudioClip.essential?: unknown` — Essential Sound settings, read through `readEssentialSound` (zod, loose).
 - `AudioClip.remix?: ClipRemix` — a remix piece: group id, index/count, the original `{start, duration, sourceIn}`,
   target, segments, variations, BPM.
-- Invariants `INV-ESSENTIAL` (unreadable settings, stray slot markers, wrong remix counts) with `repairDocument`
-  actions `normalize-essential`, `drop-essential-mark`, `recount-remix`.
+- `EssentialSound.panOffset?: true` — the Pan section is an offset (written by every command; settings saved without
+  it come from builds that wrote Pan into the clip's pan, `migrateLegacyPan`).
+- Invariants `INV-ESSENTIAL` (unreadable settings, stray slot markers, wrong remix counts, a Pan saved by a build that
+  wrote it into the pan) with `repairDocument` actions `normalize-essential`, `drop-essential-mark`, `recount-remix`,
+  `migrate-essential-pan`.
 
 ### 1.3 Commands (`schemas/essential.ts`, owner `audio-fx`, milestone M3)
 
@@ -68,7 +80,10 @@ The panel never processes audio. Each option reconciles into an ordinary, keyfra
 | Stereo Width (Ambience) | Stereo Width |
 | Mute | Mute |
 
-Loudness ▸ Auto-Match writes clip gain; Clip Volume offsets the Volume; Pan writes the clip pan; Ducking writes Volume
+Loudness ▸ Auto-Match writes clip gain; Clip Volume offsets the Volume; Pan (SFX) offsets the clip's own pan (since
+spec 12 Phase 0; before, it overwrote it: projects saved then open with the section switched off, value kept, so the
+pan stays as saved, `migrateLegacyPan`), and what the ±100 / −∞…+15 dB ranges clamp away is given back when the
+offset is switched off (`EssentialSound.residual`); Ducking writes Volume
 keyframes through `audio.autoDuck` (triggers = clips of the "Duck against" types); Duration ▸ Remix runs `clip.remix`,
 Duration ▸ Stretch `clip.setSpeed`. Reconciliation is by delta: only parameters whose derived value changed are
 written (user keyframes and edits on other parameters survive), switched-off slots remove their effect, Clear Audio
@@ -204,8 +219,23 @@ Decisions (undocumented behaviour or our choice):
 
 ## 6. Limits
 
-- Preview latency of track (strip) inserts is not compensated (clip effects are); the export compensates both.
-- 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels.
+- Preview latency compensation (spec 12 WP0.1) starts the media early by the read-ahead. Every Play is primed (spec 12
+  Phase 0 close-out for Plays after a paused seek; since sound-design Phase 6 → preview transport carry-overs after a
+  plain pause too): nothing at the play position is lost, the picture waits the read-ahead plus clip-effect latency plus
+  1 024 frames (≈ 21 ms; up to 3 s, else unprimed; the Program monitor shows buffering from 0.2 s) and both start together
+  (`e2e/sound-p0-transport.spec.ts`, `e2e/sound-p6-transport.spec.ts`). A seek *during* playback restarts playback
+  (pause, seek, play: the picture holds as on Play) and its audio starts on its first sample. Frame-based (STFT) inserts start
+  their frames where processing started, so the first ≈ 0.2 s after an onset can differ from an export started
+  elsewhere by ≈ −40 dB (the same holds between two exports with different range starts); steady state is
+  sample-identical. Clips that start later are premounted by their lead (≥ 2 s), so a cut is heard from its first
+  sample (`e2e/sound-p0-preview.spec.ts`). A latency change during playback (normalisation on/off, an insert added or
+  removed) keeps the audio in flight; when the latency grew, the Program monitor restarts playback primed with the new
+  read-ahead (a brief picture hold) instead of leaving the Mix late until the stop; the media players are not re-created.
+- 5.1 clips: processors run per channel; stereo-image effects act on L/R only and pass the other channels. Surround
+  Reverb, Mastering, Loudness Meter and Loudness Auto Gain handle all six channels (Dry / output / maximiser on every
+  channel, BS.1770 weights; sound-design Phase 0, `packages/audio-fx/test/regressions-p0.test.ts`).
+- Remix analyses at most 30 min of music (`MAX_REMIX_SOURCE_SECONDS`: the beat similarity matrix grows with the square
+  of the length).
 - The Remix tool needs the engine (analysis on ffmpeg-decoded audio); offline browser-only sessions get a toast.
 - No spectral display / noise-print capture UI beyond the keyframed Noise Model; no Audition-style multitrack effects.
 - `ui_locate` (mcp-cli) centres timeline clip targets on the whole clip rectangle even when it is scrolled partly out

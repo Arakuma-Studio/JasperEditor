@@ -10,7 +10,9 @@ import {
 	PanelErrorBoundary,
 	type ResolvedMenuItem,
 	ScrubbyNumber,
+	SegmentedControl,
 	Select,
+	segmentedKeyTarget,
 	TimecodeField,
 	ToastStore,
 	TreeList,
@@ -468,5 +470,93 @@ describe('Dialog is modal for assistive tech and keyboard dispatchers (S05)', ()
 		);
 		const el = screen.getByRole('dialog');
 		expect(el.getAttribute('aria-modal')).toBe('true');
+	});
+});
+
+describe('SegmentedControl (WAI-ARIA radio group, WP6.5a)', () => {
+	it('segmentedKeyTarget: arrows move with wrap and skip disabled options; Home / End; other keys null', () => {
+		const all = [true, true, true];
+		expect(segmentedKeyTarget('ArrowRight', 0, all)).toBe(1);
+		expect(segmentedKeyTarget('ArrowRight', 2, all)).toBe(0);
+		expect(segmentedKeyTarget('ArrowLeft', 0, all)).toBe(2);
+		expect(segmentedKeyTarget('ArrowDown', 1, all)).toBe(2);
+		expect(segmentedKeyTarget('ArrowUp', 1, all)).toBe(0);
+		expect(segmentedKeyTarget('Home', 2, all)).toBe(0);
+		expect(segmentedKeyTarget('End', 0, all)).toBe(2);
+		expect(segmentedKeyTarget('ArrowRight', 0, [true, false, true])).toBe(2);
+		expect(segmentedKeyTarget('Home', 2, [false, true, true])).toBe(1);
+		expect(segmentedKeyTarget('ArrowRight', 0, all, 'rtl')).toBe(2);
+		expect(segmentedKeyTarget('ArrowRight', -1, all)).toBe(0);
+		expect(segmentedKeyTarget('Enter', 0, all)).toBeNull();
+		expect(segmentedKeyTarget('ArrowRight', 0, [false, false])).toBeNull();
+	});
+
+	function Harness(props: { disabledB?: boolean; onChange?: (v: string) => void }) {
+		const [v, setV] = useState<'a' | 'b' | 'c' | null>('b');
+		return (
+			<SegmentedControl
+				label="Mode"
+				value={v}
+				options={[
+					{ value: 'a', label: 'A' },
+					{ value: 'b', label: 'B', disabled: props.disabledB },
+					{ value: 'c', label: 'C' },
+				]}
+				onChange={(x) => {
+					setV(x);
+					props.onChange?.(x);
+				}}
+			/>
+		);
+	}
+
+	it('one Tab stop (the checked option), arrows move focus and choose, keys are consumed', () => {
+		const changes: string[] = [];
+		render(<Harness onChange={(x) => changes.push(x)} />);
+		const group = screen.getByRole('radiogroup', { name: 'Mode' });
+		expect(group.hasAttribute('data-keymap-local')).toBe(true);
+		const radios = screen.getAllByRole('radio');
+		expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0, -1]);
+		expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+		act(() => radios[1]!.focus());
+		const right = fireEvent.keyDown(radios[1]!, { key: 'ArrowRight' });
+		expect(right).toBe(false); // preventDefault: the editor's shortcut for → does not run
+		expect(changes).toEqual(['c']);
+		expect(document.activeElement).toBe(radios[2]);
+		expect(screen.getAllByRole('radio').map((r) => r.tabIndex)).toEqual([-1, -1, 0]);
+		fireEvent.keyDown(radios[2]!, { key: 'ArrowRight' });
+		expect(changes).toEqual(['c', 'a']);
+		expect(document.activeElement).toBe(radios[0]);
+		expect(fireEvent.keyDown(radios[0]!, { key: 'x' })).toBe(true);
+		expect(fireEvent.keyDown(radios[0]!, { key: 'ArrowRight', ctrlKey: true })).toBe(true);
+		expect(changes).toEqual(['c', 'a']);
+	});
+
+	it('disabled options are skipped and never a Tab stop; a disabled group takes no keys', () => {
+		const changes: string[] = [];
+		const { unmount } = render(<Harness disabledB onChange={(x) => changes.push(x)} />);
+		const radios = screen.getAllByRole('radio');
+		// the checked option is disabled: the first enabled one is the Tab stop
+		expect(radios.map((r) => r.tabIndex)).toEqual([0, -1, -1]);
+		act(() => radios[0]!.focus());
+		fireEvent.keyDown(radios[0]!, { key: 'ArrowRight' });
+		expect(changes).toEqual(['c']);
+		unmount();
+		render(
+			<SegmentedControl
+				label="Off"
+				disabled
+				value="a"
+				options={[
+					{ value: 'a', label: 'A' },
+					{ value: 'b', label: 'B' },
+				]}
+				onChange={(x) => changes.push(x)}
+			/>,
+		);
+		const off = screen.getAllByRole('radio');
+		expect(off.every((r) => (r as HTMLButtonElement).disabled)).toBe(true);
+		expect(fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'ArrowRight' })).toBe(true);
+		expect(changes).toEqual(['c']);
 	});
 });

@@ -131,7 +131,138 @@ export type EncoderRequest = {
 	codec?: VideoCodec;
 	/** Explicit encoder; ignored (with a message) when it is not usable. */
 	encoder?: string;
+	/**
+	 * The container an export asked for (`ExportSettings.container`): written when the codec fits it
+	 * (`CONTAINER_VIDEO_CODECS`), else the codec's own container — the planner reports the change (AGENTS §4).
+	 */
+	container?: EncoderChoice['container'];
+	/** The audio codec an export asked for: written when the container carries it (`CONTAINER_AUDIO_CODECS`). */
+	audio?: ExportAudioCodec;
 };
+
+export type ExportAudioCodec = 'aac' | 'opus' | 'pcm';
+
+/**
+ * Video codecs each export container carries here (ffmpeg's mp4 / mov / webm muxers; WP6.5a). ProRes is MOV only, WebM
+ * is VP9 / AV1 only.
+ */
+export const CONTAINER_VIDEO_CODECS: Record<EncoderChoice['container'], readonly VideoCodec[]> = {
+	mp4: ['h264', 'hevc', 'av1', 'vp9'],
+	mov: ['h264', 'hevc', 'prores'],
+	webm: ['vp9', 'av1'],
+};
+
+/** Audio codecs each container carries here: PCM needs MOV, Opus WebM (MP4 / MOV take AAC). */
+export const CONTAINER_AUDIO_CODECS: Record<EncoderChoice['container'], readonly ExportAudioCodec[]> = {
+	mp4: ['aac'],
+	mov: ['pcm', 'aac'],
+	webm: ['opus'],
+};
+
+/** The audio codec an ffmpeg audio encoder name stands for. */
+export function audioCodecFamily(encoder: string): ExportAudioCodec {
+	return encoder === 'libopus' ? 'opus' : encoder.startsWith('pcm_') ? 'pcm' : 'aac';
+}
+
+/**
+ * The container and audio encoder of an export: the codec's own (ProRes → MOV + PCM, VP9 → WebM + Opus when this
+ * ffmpeg has Opus, else MP4 + AAC) unless the request asks for another container the codec fits, and the requested
+ * audio codec when that container carries it. ProRes masters always carry PCM (Premiere's QuickTime ProRes presets
+ * use uncompressed audio); what the request did not get is reported by the planner, never silently.
+ */
+export function fitOutputFormat(
+	codec: VideoCodec,
+	purpose: EncoderPurpose,
+	opus: boolean,
+	want: { container?: EncoderChoice['container']; audio?: ExportAudioCodec } = {},
+): { container: EncoderChoice['container']; audioEncoder: string } {
+	// Proxies stay MP4 whatever the codec (Chrome plays VP9/AV1 in MP4; one proxy URL/content type).
+	let container: EncoderChoice['container'] =
+		codec === 'prores' ? 'mov' : purpose === 'export' && codec === 'vp9' && opus ? 'webm' : 'mp4';
+	if (
+		purpose === 'export' &&
+		want.container &&
+		CONTAINER_VIDEO_CODECS[want.container].includes(codec) &&
+		(want.container !== 'webm' || opus)
+	)
+		container = want.container;
+	let audioEncoder = container === 'webm' ? 'libopus' : container === 'mov' ? 'pcm_s16le' : 'aac';
+	const a = want.audio;
+	if (
+		purpose === 'export' &&
+		a &&
+		CONTAINER_AUDIO_CODECS[container].includes(a) &&
+		(a !== 'opus' || opus) &&
+		(codec !== 'prores' || a === 'pcm')
+	)
+		audioEncoder = a === 'aac' ? 'aac' : a === 'opus' ? 'libopus' : 'pcm_s16le';
+	return { container, audioEncoder };
+}
+
+/**
+ * Why an export is not written as asked (null: it is): the container and / or the audio codec the request named and
+ * what the file gets instead, in words (plan warnings OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED, AGENTS §4).
+ */
+export function outputFormatChanges(
+	choice: Pick<EncoderChoice, 'codec' | 'container' | 'audioEncoder'>,
+	want: { container?: EncoderChoice['container']; audio?: ExportAudioCodec },
+): {
+	code: 'OUTPUT_CONTAINER_CHANGED' | 'AUDIO_CODEC_CHANGED';
+	message: string;
+	/** The values for editors that say it in their language (`ExportWarningParamsSchema`). */
+	params: Record<string, string>;
+}[] {
+	const out: ReturnType<typeof outputFormatChanges> = [];
+	const name = codecName(choice.codec);
+	const C = (c: string) => c.toUpperCase();
+	if (want.container && want.container !== choice.container) {
+		const reason = !CONTAINER_VIDEO_CODECS[want.container].includes(choice.codec)
+			? 'codec'
+			: want.container === 'webm'
+				? 'opus'
+				: 'muxer';
+		const accepts = CONTAINER_VIDEO_CODECS[want.container].map(codecName).join(', ');
+		const why =
+			reason === 'codec'
+				? `${C(want.container)} does not carry ${name} (${C(want.container)} takes ${accepts})`
+				: reason === 'opus'
+					? 'WebM needs Opus audio, which this ffmpeg build lacks'
+					: `${name} is written as ${C(choice.container)} here`;
+		out.push({
+			code: 'OUTPUT_CONTAINER_CHANGED',
+			message: `${C(want.container)} was requested but ${why}: the file is ${C(choice.container)}`,
+			params: {
+				requested: C(want.container),
+				written: C(choice.container),
+				why: reason,
+				codec: name,
+				...(reason === 'codec' ? { accepts } : {}),
+			},
+		});
+	}
+	const got = audioCodecFamily(choice.audioEncoder);
+	if (want.audio && want.audio !== got) {
+		const A = { aac: 'AAC', opus: 'Opus', pcm: 'PCM' } as const;
+		const reason =
+			choice.codec === 'prores' && CONTAINER_AUDIO_CODECS[choice.container].includes(want.audio)
+				? 'prores'
+				: !CONTAINER_AUDIO_CODECS[choice.container].includes(want.audio)
+					? 'container'
+					: 'no-opus';
+		const why =
+			reason === 'prores'
+				? 'ProRes masters carry PCM audio'
+				: reason === 'container'
+					? `${C(choice.container)} does not carry ${A[want.audio]} audio${want.audio === 'pcm' ? ' (PCM needs MOV)' : want.audio === 'opus' ? ' (Opus needs WebM)' : ''}`
+					: 'this ffmpeg build has no Opus encoder';
+		out.push({
+			code: 'AUDIO_CODEC_CHANGED',
+			message: `${A[want.audio]} audio was requested but ${why}: the audio is ${A[got]}`,
+			params: { requested: A[want.audio], written: A[got], container: C(choice.container), why: reason },
+		});
+	}
+	return out;
+}
 
 /** The pre-D-13 behaviour (libx264 + AAC in MP4) for callers without an EncoderService (unit tests). */
 export const LEGACY_X264_CHOICE: EncoderChoice = {
@@ -251,19 +382,18 @@ function makeChoice(
 	encoder: string,
 	purpose: EncoderPurpose,
 	message?: string,
+	want: Pick<EncoderRequest, 'container' | 'audio'> = {},
 ): EncoderChoice {
 	const opus = effectiveEncoders(inv).includes('libopus');
-	// Proxies stay MP4 whatever the codec (Chrome plays VP9/AV1 in MP4; one proxy URL/content type).
-	// ProRes masters are MOV with 16-bit PCM audio.
-	const container: EncoderChoice['container'] =
-		codec === 'prores' ? 'mov' : purpose === 'export' && codec === 'vp9' && opus ? 'webm' : 'mp4';
+	// ProRes masters are MOV with PCM audio; a requested container / audio codec is honoured where it fits.
+	const { container, audioEncoder } = fitOutputFormat(codec, purpose, opus, want);
 	return {
 		codec,
 		encoder,
 		label: encoderLabel(codec, encoder),
 		hardware: HW_ALL.some((h) => h.encoder === encoder),
 		container,
-		audioEncoder: container === 'webm' ? 'libopus' : container === 'mov' ? 'pcm_s16le' : 'aac',
+		audioEncoder,
 		rateControl: rateControlOf(encoder),
 		gpl: GPL_ENCODERS.has(encoder),
 		...(message ? { message } : {}),
@@ -282,16 +412,16 @@ export function selectVideoEncoder(inv: EncoderInventory, req: EncoderRequest): 
 	let note: string | undefined;
 	if (req.encoder) {
 		const codec = (Object.keys(byCodec) as VideoCodec[]).find((c) => byCodec[c].includes(req.encoder!));
-		if (codec) return makeChoice(inv, codec, req.encoder, req.purpose);
+		if (codec) return makeChoice(inv, codec, req.encoder, req.purpose, undefined, req);
 		note = `Encoder ${req.encoder} is not available${inv.lgplOnly && GPL_ENCODERS.has(req.encoder) ? ' (LGPL-only mode)' : ''}`;
 	}
 	const first = byCodec[want][0];
-	if (first) return makeChoice(inv, want, first, req.purpose, note);
+	if (first) return makeChoice(inv, want, first, req.purpose, note, req);
 	if (want === 'prores') return null; // a master must be ProRes: no silent substitution
 	const order = req.purpose === 'proxy' ? PROXY_FALLBACK : EXPORT_FALLBACK;
 	for (const [codec, enc] of order) {
 		if (byCodec[codec].includes(enc)) {
-			const choice = makeChoice(inv, codec, enc, req.purpose);
+			const choice = makeChoice(inv, codec, enc, req.purpose, undefined, req);
 			const why =
 				want === 'h264'
 					? `H.264 is unavailable (no usable hardware encoder, no OpenH264${inv.lgplOnly ? ', libx264 ignored in LGPL-only mode' : ''})`

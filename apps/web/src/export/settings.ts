@@ -6,6 +6,7 @@ import type {
 	EncodingCapabilities,
 	ExportSettings,
 	RenderPlan,
+	SoundCheckExportAudio,
 	VideoCodec,
 } from '@jasper/api';
 import {
@@ -67,6 +68,10 @@ export function buildExportSettings(
 		smartRender?: boolean;
 		/** gaps (PRJ-8): Use Proxies — render attached proxies (a draft; never the default). */
 		useProxies?: boolean;
+		/** spec 12 §2.11: the sound credits sidecar (absent / 'off' = none). */
+		credits?: CreditsChoice;
+		/** The engine's ffmpeg has an Opus encoder (VP9 goes into WebM with Opus; default true). */
+		opus?: boolean;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -75,11 +80,12 @@ export function buildExportSettings(
 	const channels = a.channels && a.channels !== 'auto' ? a.channels : s.masterLayout === '5.1' ? 6 : 2;
 	const rate =
 		a.sampleRate && a.sampleRate !== 'sequence' ? a.sampleRate : (s.audioSampleRate as 44100 | 48000 | 96000);
+	const format = exportFormatOf(choice.codec ?? 'h264', choice.opus ?? true);
 	return {
 		sequenceId: seq.id,
 		range: choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' },
 		presetId: MATCH_SEQUENCE_PRESET.id,
-		container: 'mp4',
+		container: format.container,
 		video: {
 			codec: choice.codec ?? 'h264',
 			...(choice.encoder ? { encoder: choice.encoder } : {}),
@@ -103,7 +109,7 @@ export function buildExportSettings(
 				: {}),
 		},
 		audio: {
-			codec: 'aac',
+			codec: format.audio,
 			sampleRate: rate ?? 48000,
 			channels,
 			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
@@ -119,8 +125,34 @@ export function buildExportSettings(
 		...(choice.usePreviews ? { usePreviews: true } : {}),
 		...(choice.smartRender ? { smartRender: true } : {}),
 		...(choice.useProxies ? { draftUseProxies: true } : {}),
+		...(choice.credits && choice.credits !== 'off' ? { credits: { sidecar: choice.credits } } : {}),
 	};
 }
+
+/**
+ * The container and audio codec the dialog asks for with a codec: its own format (ProRes masters: MOV with 24-bit PCM;
+ * VP9: WebM with Opus when the engine has Opus; the others MP4 with AAC). The engine writes what it is asked where the
+ * codec fits and names any change in the plan's warnings (OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED, WP6.5a).
+ */
+export function exportFormatOf(
+	codec: VideoCodec,
+	opus: boolean,
+): { container: ExportSettings['container']; audio: 'aac' | 'opus' | 'pcm' } {
+	if (codec === 'prores') return { container: 'mov', audio: 'pcm' };
+	if (codec === 'vp9' && opus) return { container: 'webm', audio: 'opus' };
+	return { container: 'mp4', audio: 'aac' };
+}
+
+/** The Export dialog's sound credits choice (spec 12 §2.11): no file, or `<name>.credits.<txt|md|csv>`. */
+export type CreditsChoice = 'off' | 'txt' | 'md' | 'csv';
+export const CREDITS_OPTIONS: { value: CreditsChoice; label: string }[] = [
+	{ value: 'off', label: 'Off' },
+	{ value: 'txt', label: 'Text (.txt)' },
+	{ value: 'md', label: 'Markdown (.md)' },
+	{ value: 'csv', label: 'CSV (.csv)' },
+];
+const isCreditsChoice = (v: unknown): v is CreditsChoice =>
+	v === 'off' || v === 'txt' || v === 'md' || v === 'csv';
 
 export type CaptionExportChoice = {
 	/** Burn the visible caption tracks into the picture. */
@@ -394,8 +426,40 @@ type Remembered = {
 	smartRender?: boolean;
 	/** gaps: Use Proxies (draft exports) */
 	useProxies?: boolean;
+	/** spec 12 §2.11: the sound credits choice last exported with */
+	credits?: CreditsChoice;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
+
+/**
+ * The audio encoding the sequence's last export settings write (the Export dialog's remembered choice: its codec's
+ * audio — ProRes PCM, VP9 Opus, else AAC — at the dialog's bit rate and the chosen rate), as Sound Check's "Check for"
+ * names it: `audio` null for PCM at the sequence rate (the master). Null when the sequence was never exported here.
+ */
+export function lastExportAudio(
+	projectId: string,
+	seq: Sequence,
+	opus = true,
+): { audio: SoundCheckExportAudio | null } | null {
+	const r = loadExportChoice(projectId, seq.id);
+	if (!r) return null;
+	const format = exportFormatOf(r.codec ?? 'h264', opus);
+	const a = r.audio ?? {};
+	const channels =
+		a.channels && a.channels !== 'auto' ? a.channels : seq.settings.masterLayout === '5.1' ? 6 : 2;
+	const rate = typeof a.sampleRate === 'number' ? a.sampleRate : undefined;
+	if (format.audio === 'pcm')
+		return {
+			audio: rate && rate !== seq.settings.audioSampleRate ? { codec: 'pcm', sampleRate: rate } : null,
+		};
+	return {
+		audio: {
+			codec: format.audio,
+			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
+			...(rate && format.audio === 'aac' ? { sampleRate: rate } : {}),
+		},
+	};
+}
 
 export function loadExportChoice(projectId: string, sequenceId: string): Remembered | null {
 	try {
@@ -437,6 +501,7 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(v.usePreviews === true ? { usePreviews: true } : {}),
 			...(v.smartRender === true ? { smartRender: true } : {}),
 			...(v.useProxies === true ? { useProxies: true } : {}),
+			...(isCreditsChoice(v.credits) ? { credits: v.credits } : {}),
 		};
 	} catch {
 		return null;

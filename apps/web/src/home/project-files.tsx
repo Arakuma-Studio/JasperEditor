@@ -4,6 +4,7 @@ import { type EditorSession, hasRecovery, persistenceFor, reopenSession } from '
 import { Button, confirmDialog, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useEffect, useId, useState } from 'react';
 import { saveBeforeLeaving } from '../runtime/save.ts';
+import { recoveryChangeLabel } from '../shell/history-labels.ts';
 
 export const PROJECT_FILE_DIALOGS = {
 	saveAs: 'project.file.saveAs',
@@ -341,7 +342,7 @@ function RecoveryDialog(
 						<p className="text-pr-muted" data-testid="recovery-changes">
 							{c.changeCount} unsaved {c.changeCount === 1 ? 'change' : 'changes'}
 							{c.changes.length
-								? `: ${c.changes.slice(-8).join(', ')}${c.changes.length > 8 || c.changeCount > c.changes.length ? '…' : ''}`
+								? `: ${c.changes.slice(-8).map(recoveryChangeLabel).join(', ')}${c.changes.length > 8 || c.changeCount > c.changes.length ? '…' : ''}`
 								: ''}
 						</p>
 						{c.projectRevision > c.baseRevision ? (

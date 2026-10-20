@@ -8,6 +8,7 @@ export function emptySelection(): Selection {
 		markers: [],
 		project: { items: [], primary: null },
 		tracks: [],
+		cues: [],
 	};
 }
 
@@ -107,6 +108,19 @@ export function filterSelection(sel: Selection, doc: ProjectDocument): Selection
 		}
 		return false;
 	});
+	let cueIds: Set<string> | undefined;
+	const hasCue = (id: string) => {
+		if (!cueIds) {
+			cueIds = new Set();
+			for (const seq of sequences) {
+				const cues = (seq as { soundDesign?: { cues?: unknown } }).soundDesign?.cues;
+				if (cues && typeof cues === 'object') for (const k of Object.keys(cues)) cueIds.add(k);
+			}
+		}
+		return cueIds.has(id);
+	};
+	const selCues = sel.cues ?? [];
+	const cues = selCues.length ? keep(selCues, hasCue) : sel.cues;
 	const kf =
 		sel.keyframes && (hasClip(sel.keyframes.clipOrTrackId) || hasTrack(sel.keyframes.clipOrTrackId))
 			? sel.keyframes
@@ -122,6 +136,7 @@ export function filterSelection(sel: Selection, doc: ProjectDocument): Selection
 		markers: keep(sel.markers, hasMarker),
 		project: { items, primary: pPrimary },
 		tracks: keep(sel.tracks, hasTrack),
+		...(cues !== undefined ? { cues } : {}),
 	};
 	const same =
 		next.timeline.clips === sel.timeline.clips &&
@@ -132,6 +147,7 @@ export function filterSelection(sel: Selection, doc: ProjectDocument): Selection
 		next.markers === sel.markers &&
 		next.project.items === sel.project.items &&
 		next.project.primary === sel.project.primary &&
-		next.tracks === sel.tracks;
+		next.tracks === sel.tracks &&
+		next.cues === sel.cues;
 	return same ? sel : next;
 }

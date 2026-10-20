@@ -342,6 +342,240 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		binId: null,
 	},
+	// sound-design (spec 12 §2.1): provenance of a Sound Library sound (import_sounds writes it; this sets it by hand).
+	'media.setLibraryInfo': {
+		type: 'media.setLibraryInfo',
+		mediaId: { mediaByName: 'clip-a.mp4' },
+		library: {
+			soundId: 'snd_0123456789abcdef',
+			title: 'Impact Metal 03',
+			types: ['hit'],
+			source: { type: 'starter' },
+			license: 'CC0-1.0',
+			licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+			author: 'Kenney',
+			attribution: null,
+			descriptors: {
+				peakSec: 0.0123,
+				onsetSec: 0.011,
+				headQuietSec: 0.0105,
+				durationSec: 0.9,
+				octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+				centroidHz: 1820,
+				maxMomentaryLufs: -14.2,
+			},
+		},
+	},
+	// WP6.5b: the project's older copy of a library sound (here registered without lead silence) gets the engine's new
+	// copy in place; its clips move by the 50 ms lead and play the same samples (import_sounds / insert_sound do this).
+	'media.upgradeLibraryCopy': {
+		type: 'media.upgradeLibraryCopy',
+		mediaId: { mediaByName: 'impact-old.ogg' },
+		asset: {
+			kind: 'audio',
+			fingerprint: 'q1:00000000000000000000000000000000000000000000000000000000000e0001',
+			originalName: 'Impact Metal 03.wav',
+			sizeBytes: 182_444,
+			container: 'wav',
+			probe: {
+				durationFlicks: 670_320_000,
+				startTimecode: null,
+				streams: [
+					{
+						index: 0,
+						type: 'audio',
+						codec: 'pcm_f32le',
+						sampleRate: 48_000,
+						channels: 1,
+						channelLayout: 'mono',
+					},
+				],
+				rotationDegrees: 0,
+				hasAlpha: false,
+				variableFrameRate: false,
+			},
+			locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_00000000000000000000e001' }],
+			library: {
+				soundId: 'snd_0123456789abcdef',
+				title: 'Impact Metal 03',
+				types: ['hit'],
+				source: { type: 'starter' },
+				license: 'CC0-1.0',
+				author: 'Kenney',
+				attribution: null,
+				descriptors: {
+					peakSec: 0.0623,
+					onsetSec: 0.061,
+					headQuietSec: 0.0605,
+					durationSec: 0.95,
+					octaveBandsDb: [-30, -25, -20, -18, -19, -24, -33],
+					centroidHz: 1820,
+					maxMomentaryLufs: -14.2,
+				},
+				leadSilenceSec: 0.05,
+			},
+		},
+		ifPossible: true,
+		ref: '$sound',
+	},
+	// sound-design (spec 12 §2.2, §2.9): cues (what find_sound_cues / deriveCues output) and peak-aligned placement.
+	'soundCue.add': {
+		type: 'soundCue.add',
+		cues: [
+			{
+				frame: 30,
+				kind: 'cut',
+				weight: 'support',
+				types: ['hit', 'thump'],
+				align: 'peak',
+				reason: 'Cut on V1',
+				source: 'agent',
+				ref: '$cue',
+			},
+		],
+	},
+	'soundCue.update': { type: 'soundCue.update', cueId: 'cue_00000000000000EX', frame: 45, weight: 'hero' },
+	'soundCue.remove': { type: 'soundCue.remove', cueIds: ['cue_00000000000000EX'], withClips: true },
+	'soundCue.resync': { type: 'soundCue.resync' },
+	'soundDesign.place': {
+		type: 'soundDesign.place',
+		frame: 30,
+		layers: [{ mediaId: { mediaByName: 'clip-a.mp4' }, align: 'start', track: 'auto', gainDb: -3 }],
+	},
+	'soundDesign.swap': {
+		type: 'soundDesign.swap',
+		clipId: { clipAt: { track: 'A1', at: 30 } },
+		mediaId: { mediaByName: 'clip-a.mp4' },
+		align: 'start',
+		frame: 45,
+	},
+	// Essential Sound ▸ Role (hero / support / layer) of placed sounds.
+	'soundDesign.setRole': {
+		type: 'soundDesign.setRole',
+		clipIds: [{ clipAt: { track: 'A1', at: 30 } }],
+		role: 'hero',
+	},
+	'soundDesign.setPalette': {
+		type: 'soundDesign.setPalette',
+		soundIds: ['snd_0123456789abcdef'],
+		mode: 'add',
+	},
+	'soundDesign.setSettings': {
+		type: 'soundDesign.setSettings',
+		density: 'sparse',
+		delivery: 'web',
+		seed: 7,
+		style: { personality: 'calm', typing: 'auto', musicCarriesCuts: true },
+	},
+	// The peak 0.25 s into the media (flicks): the Timeline's peak handle Shift-drag.
+	'soundDesign.setPeak': {
+		type: 'soundDesign.setPeak',
+		clipId: { clipAt: { track: 'A1', at: 30 } },
+		peakFlicks: 176_400_000,
+	},
+	// Solved gains (MCP rebalance_sfx, the plan job): clip ids, or a $ref a placement layer bound earlier in the
+	// same transaction; the report is stored as the clip's sfx.level {by: 'solver'}.
+	'soundDesign.applyGains': {
+		type: 'soundDesign.applyGains',
+		gains: { $sfx: -6.5 },
+		report: {
+			$sfx: {
+				targetLiftDb: 3.5,
+				achievedLiftDb: 1.2,
+				limitedBy: ['dialogue'],
+				reason: '−6.5 dB, limited by dialogue A1',
+			},
+		},
+	},
+	// Auto gain off (Essential Sound ▸ Sound Design ▸ Auto gain): the current gain becomes the user's own, so a
+	// rebalance or a delivery preset leaves it alone; auto: true hands it back (the gain becomes the default / solver level).
+	'soundDesign.setAutoGain': {
+		type: 'soundDesign.setAutoGain',
+		clipIds: [{ clipAt: { track: 'A1', at: 30 } }],
+		auto: false,
+	},
+	// Phase 5: the summary of a Sound Check (sound_check store: true writes it; the full report is the job's result).
+	// mixHash / inputsHash are the hashes the check measured (`mixFingerprint`, `soundCheckInputsHash`).
+	'soundDesign.setCheck': {
+		type: 'soundDesign.setCheck',
+		summary: {
+			mixHash: '7f3a9c0e5b2d4a11',
+			verdict: 'warn',
+			counts: { MASKED: 1, warning: 1 },
+			at: '2026-10-16T12:00:00.000Z',
+			preset: 'web',
+		},
+	},
+	// Phase 5 verification: the listener's verdict on a listen-here moment, bound to it (the editor's Sound Check panel
+	// writes these for the user; an agent's verdict is not a human verdict — sound_check reports only the user's).
+	'soundDesign.setVerdict': {
+		type: 'soundDesign.setVerdict',
+		frame: 15,
+		verdict: 'flag',
+		note: 'The music drowns the voice here',
+		slot: 'worst',
+		clipId: { clipAt: { track: 'A1', at: 15 } },
+	},
+	// P6-E4: a Sound Check finding acknowledged as deliberate (its key, code, severity, target and text are the report
+	// issue's: id, code, severity, clipIds / cueId / frame, message.text). Agents: warnings and infos only (an error is
+	// E_APPROVAL_REQUIRED, the user's call). MCP acknowledge_sound_issue looks the finding up for you.
+	'soundDesign.acknowledgeIssue': {
+		type: 'soundDesign.acknowledgeIssue',
+		key: 'ENDING:end',
+		code: 'ENDING',
+		severity: 'warning',
+		reason: 'The cut to black on the last hit is the punchline',
+		target: { frame: 15 },
+		message: 'The mix ends mid-sound at 00:00:00:15',
+	},
+	// …and taken back: the finding counts again on the next check.
+	'soundDesign.unacknowledgeIssue': { type: 'soundDesign.unacknowledgeIssue', key: 'ENDING:end' },
+	// WP6.5b: a precondition for changes computed from a measurement of the mix (the `mixHash` of a loudness analysis,
+	// a Sound Check or a job report): the transaction is refused (E_REVISION_MISMATCH, nothing applied) if the mix
+	// changed since; put it first.
+	'soundDesign.expectMix': {
+		type: 'soundDesign.expectMix',
+		mixHash: '7f3a9c0e5b2d4a11',
+		delivery: 'web',
+	},
+	// Phase 4 mixing (spec 12 §2.4): a music dip on clips (minimum with their Volume; times in sequence flicks)…
+	'audio.volumeDip': {
+		type: 'audio.volumeDip',
+		clipIds: [{ clipAt: { track: 'A1', at: 0 } }],
+		dips: [{ start: 352_800_000, end: 529_200_000, depthDb: -18, fadeMs: 30 }],
+	},
+	// …the cue's stopBefore / build written into the mix (re-running replaces; a cleared field removes)…
+	'soundDesign.applyStopBefore': { type: 'soundDesign.applyStopBefore', cueId: 'cue_00000000000000EX' },
+	'soundDesign.applyBuild': { type: 'soundDesign.applyBuild', cueId: 'cue_00000000000000EX' },
+	// …the shared "SFX Room" reverb with post-fader sends from the sound-effect tracks, and its removal…
+	'soundDesign.ensureBus': { type: 'soundDesign.ensureBus', roomGlue: { sendDb: -16, decay: 0.6 } },
+	'soundDesign.removeBus': { type: 'soundDesign.removeBus' },
+	// …and a delivery preset (the engine's POST /api/sound-design/delivery measures `measuredLufs` and the ducking
+	// regions; with neither it sets the delivery, the Mix loudness and the default SFX levels).
+	'soundDesign.applyDelivery': {
+		type: 'soundDesign.applyDelivery',
+		delivery: 'broadcast-r128',
+		ducking: [{ clipIds: [{ clipAt: { track: 'A1', at: 0 } }], regions: [[176_400_000, 529_200_000]] }],
+	},
+	// …and an ambience bed: a loop of a media laid over a range (lay_ambience_bed measures the clean window and loop
+	// points of a recording and passes them as `loop`; `shots` lays one bed per scene).
+	'soundDesign.layBed': {
+		type: 'soundDesign.layBed',
+		range: { start: 0, end: 90 },
+		mediaId: { mediaByName: 'clip-a.mp4' },
+		loop: { inSec: 0.1, outSec: 0.9 },
+		crossfadeSec: 0.2,
+		gainDb: -12,
+	},
+	// Spec 12 P6-R3 (Auto Tag): the classified type per clip id, marked "auto" until the user confirms it (auto_tag_audio
+	// measures the clips with POST /api/audio/classify and applies this command; a type the user set is kept unless force).
+	'essentialSound.autoTag': {
+		type: 'essentialSound.autoTag',
+		results: {
+			clp_0123456789abcdef: { category: 'music', confidence: 0.92, reasons: ['tonal, with a steady beat'] },
+		},
+		minConfidence: 0.5,
+	},
 };
 
 /** A multi-command transaction showing temp refs. */

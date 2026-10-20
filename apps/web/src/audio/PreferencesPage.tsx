@@ -105,6 +105,18 @@ export function AudioPreferencesPage() {
 					/>
 				</div>
 			</PrefGroup>
+			<PrefGroup title="Essential Sound">
+				<Checkbox
+					checked={p.autoTagInTimeline}
+					onCheckedChange={(v) => audioPrefs.set({ autoTagInTimeline: v })}
+					label="Auto-tag audio types in the timeline"
+				/>
+				<p className="text-pr-small text-pr-dim">
+					Audio clips you add to a sequence are listened to on the engine and tagged Dialogue, Music, SFX or
+					Ambience, marked auto until you confirm them in Essential Sound. Types you set are kept; each
+					tagging is its own undo step.
+				</p>
+			</PrefGroup>
 			<PrefGroup title="Voice-Over Record">
 				<PrefRow label="Source">
 					<Select
@@ -187,6 +199,23 @@ export function AudioPreferencesPage() {
 						onScrubEnd={(v) => audioPrefs.set({ voiceOver: { postrollSeconds: v } })}
 					/>
 				</PrefRow>
+				<PrefRow label="Latency Offset">
+					<ScrubbyNumber
+						label="Voice-over latency offset"
+						value={p.voiceOver.latencyOffsetMs}
+						min={-500}
+						max={500}
+						step={1}
+						precision={0}
+						unit="ms"
+						onCommit={(v) => audioPrefs.set({ voiceOver: { latencyOffsetMs: v } })}
+						onScrubEnd={(v) => audioPrefs.set({ voiceOver: { latencyOffsetMs: v } })}
+					/>
+				</PrefRow>
+				<div className="text-pr-small text-pr-muted">
+					Takes are placed compensating the measured output and input latency; the offset corrects devices the
+					browser does not report.
+				</div>
 			</PrefGroup>
 		</div>
 	);

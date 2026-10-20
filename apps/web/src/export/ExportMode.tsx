@@ -4,21 +4,25 @@
 // view returns to Edit and the Jobs panel shows progress (completion toast with Download: ProjectLifecycle).
 import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import type { Sequence } from '@jasper/project';
+import { defaultCreditsSidecar, type Sequence, soundCredits } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
-import { Button, IconButton, TimecodeText } from '@jasper/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { Button, IconButton, registerModal, TimecodeText } from '@jasper/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatTimecode } from '../gaps/time-display.ts';
 import { notices } from '../home/notices.tsx';
 import { runIfRegistered, useLocalCommandCtx } from '../home/ui-bridge.ts';
 import { mediaKeyOf } from '../import/assets.ts';
+import type { CheckEngine } from '../sound/check-run.ts';
 import { useEngine } from '../state/engine.tsx';
 import { exportMode, trackExportJob } from './mode.ts';
-import { blockingForEngine, type PlanState, PlanSummary } from './PlanSummary.tsx';
+import { blockingForEngine, type PlanState, PlanSummary, soundWarningsOf } from './PlanSummary.tsx';
+import { exportAudioOf, useExportSoundCheck } from './SoundCheckGate.tsx';
 import {
 	buildExportSettings,
 	type CaptionExportChoice,
 	CODEC_LABELS,
+	CREDITS_OPTIONS,
+	type CreditsChoice,
 	codecOptions,
 	DEFAULT_CAPTION_CHOICE,
 	DEFAULT_COLOR_CHOICE,
@@ -42,6 +46,7 @@ import {
 	saveExportChoice,
 	validateExport,
 } from './settings.ts';
+import { exportWarningText } from './warning-text.ts';
 
 const PLAN_DEBOUNCE_MS = 300;
 
@@ -108,9 +113,33 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [smartRender, setSmartRender] = useState(remembered?.smartRender === true);
 	// gaps (PRJ-8): Use Proxies (Premiere's Export Settings option; drafts only, off by default).
 	const [useProxies, setUseProxies] = useState(remembered?.useProxies === true);
+	// spec 12 §2.11: the sound credits sidecar — the last choice for this sequence, else the sequence's sound design
+	// setting, else Markdown when a sound it uses needs a credit (CC BY…), else Off.
+	const creditsDefault = (id: string | null): CreditsChoice => {
+		const r = id ? loadExportChoice(session.projectId, id) : null;
+		return r?.credits ?? ((id ? defaultCreditsSidecar(session.getCommitted(), id) : null) || 'off');
+	};
+	const [creditsChoice, setCreditsChoice] = useState<CreditsChoice>(() => creditsDefault(sequenceId));
+	const usesLibrarySounds = useMemo(
+		() => (seq ? soundCredits(doc, seq.id).rows.length > 0 : false),
+		[doc, seq],
+	);
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
+	// spec 12 §2.7: "Run Sound Check before export" (sequences with sound effects)
+	const soundCheck = useExportSoundCheck({
+		session,
+		engine: engine.status === 'connected' ? (engine.client as unknown as CheckEngine) : null,
+		seq,
+		onReview: () => {
+			close();
+			// the panel shows the active sequence's report
+			if (seq && session.getState().activeSequenceId !== seq.id) session.openSequence(seq.id);
+			void runIfRegistered('panel.open.soundCheck', ctx);
+		},
+		notify: (message) => notices.push({ kind: 'info', message }),
+	});
 
 	useEffect(() => {
 		if (!sequenceId) return;
@@ -125,6 +154,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setUsePreviews(r?.usePreviews === true);
 		setSmartRender(r?.smartRender === true);
 		setUseProxies(r?.useProxies === true);
+		setCreditsChoice(r?.credits ?? (defaultCreditsSidecar(session.getCommitted(), sequenceId) || 'off'));
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -140,6 +170,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		: (encoding?.export?.codec ?? 'h264');
 	const encoders = encoderOptions(encoding, buildEncoders, effectiveCodec);
 	const effectiveEncoder = encoders.find((e) => e.value === encoderChoice)?.available ? encoderChoice : '';
+	const opus = encoding?.audio.opus ?? true;
 	const settings = useMemo(
 		() =>
 			seq
@@ -154,10 +185,13 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						usePreviews,
 						smartRender,
 						useProxies,
+						credits: creditsChoice,
+						opus,
 					})
 				: null,
 		[
 			seq,
+			creditsChoice,
 			effectiveRange,
 			engineChoice,
 			effectiveCodec,
@@ -168,6 +202,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 			usePreviews,
 			smartRender,
 			useProxies,
+			opus,
 		],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
@@ -217,6 +252,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	}, [engine.client, session, seq, settings, validation.length, revision]);
 
 	const poster = usePreviewPoster(seq, frames.start);
+	const soundWarnings = soundWarningsOf(plan);
 	const blocking =
 		plan.status === 'ok'
 			? blockingForEngine(plan.plan, engineChoice)
@@ -230,10 +266,12 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		plan.status === 'ok' &&
 		!blocking.length &&
 		engine.status === 'connected' &&
-		!starting;
+		!starting &&
+		!soundCheck.busy;
 
 	const startExport = async () => {
 		if (!seq || !settings || plan.status !== 'ok') return;
+		if (!(await soundCheck.gate(exportAudioOf(plan.plan.audio.codec, settings.audio)))) return;
 		setStarting(true);
 		const name = sanitizeFileName(fileName);
 		const ext = exportExtension(plan.plan.encoder);
@@ -259,6 +297,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				...(usePreviews ? { usePreviews } : {}),
 				...(smartRender ? { smartRender } : {}),
 				...(useProxies ? { useProxies } : {}),
+				credits: creditsChoice,
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -280,17 +319,25 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 
 	const rate = seq?.settings.frameRate ?? { num: 30, den: 1 };
 	const tc = (f: number) => formatTimecode(f, rate, { dropFrame: seq?.settings.dropFrame });
+	// Export mode fills the window and has its actions bottom-right, where toasts stack: they keep clear of its title
+	// bar and footer (`placeToasts`), as of a modal dialog's
+	const root = useRef<HTMLDivElement>(null);
+	useEffect(() => (root.current ? registerModal(root.current) : undefined), []);
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: Esc leaves Export mode from anywhere inside it
 		<div
+			ref={root}
 			className="flex h-full min-h-0 flex-col bg-pr-app text-pr-text"
 			data-testid="export-mode"
 			onKeyDown={(e) => {
 				if (e.key === 'Escape') close();
 			}}
 		>
-			<header className="flex h-[var(--pr-tab-h)] shrink-0 items-center gap-2 border-b border-pr-border-subtle bg-pr-header px-3">
+			<header
+				data-dialog-header=""
+				className="flex h-[var(--pr-tab-h)] shrink-0 items-center gap-2 border-b border-pr-border-subtle bg-pr-header px-3"
+			>
 				<h2 className="text-pr-ui text-pr-strong">Export</h2>
 				<span className="text-pr-small text-pr-muted">{seq ? sequenceName(doc, seq.id) : ''}</span>
 				<IconButton className="ml-auto" icon="app.close" label="Back to Edit" onClick={close} />
@@ -719,16 +766,60 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							</Field>
 						</div>
 					) : null}
+					{soundCheck.section || usesLibrarySounds || soundWarnings.length ? (
+						<div
+							className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2"
+							data-testid="export-sound"
+						>
+							<h3 className="text-pr-small text-pr-muted">SOUND</h3>
+							{soundCheck.section}
+							{usesLibrarySounds || creditsChoice !== 'off' ? (
+								<Field label="Credits">
+									<select
+										data-testid="export-credits"
+										aria-label="Sound credits file"
+										title="Credit lines of the library sounds heard in the export, written next to the file"
+										className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+										value={creditsChoice}
+										onChange={(e) => setCreditsChoice(e.target.value as CreditsChoice)}
+									>
+										{CREDITS_OPTIONS.map((o) => (
+											<option key={o.value} value={o.value}>
+												{o.label}
+											</option>
+										))}
+									</select>
+								</Field>
+							) : null}
+							{soundWarnings.length ? (
+								<ul className="flex flex-col gap-1 text-pr-small" data-testid="export-sound-warnings">
+									{soundWarnings.map((w) => (
+										<li
+											key={`${w.code}|${w.message}`}
+											data-code={w.code}
+											className={w.level === 'info' ? 'text-pr-muted' : 'text-pr-warning'}
+										>
+											{w.level === 'info' ? 'ⓘ' : '⚠'} {exportWarningText(w)}
+										</li>
+									))}
+								</ul>
+							) : null}
+						</div>
+					) : null}
 					<div className="border-t border-pr-border-subtle pt-2">
 						<h3 className="mb-1 text-pr-small text-pr-muted">SUMMARY</h3>
 						<p className="mb-2 text-pr-small">
 							{seq ? outputDescription(seq, frames.end - frames.start, chosenEncoder) : ''}
 						</p>
-						<PlanSummary state={plan} engine={engineChoice} sequence={seq} />
+						<PlanSummary state={plan} engine={engineChoice} sequence={seq} hideSoundWarnings />
 					</div>
 				</section>
 			</div>
-			<footer className="flex shrink-0 items-center gap-2 border-t border-pr-border-subtle bg-pr-header px-3 py-2">
+			{soundCheck.prompt}
+			<footer
+				data-dialog-actions=""
+				className="flex shrink-0 items-center gap-2 border-t border-pr-border-subtle bg-pr-header px-3 py-2"
+			>
 				<div className="min-w-0 flex-1 text-pr-small text-pr-danger" data-testid="export-errors">
 					{validation.join(' ')}
 					{engine.status !== 'connected' ? ' The engine is not connected.' : ''}

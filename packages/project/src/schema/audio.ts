@@ -87,6 +87,28 @@ export const MasterMixerSchema = z.looseObject({
 });
 export type MasterMixer = DeepStrip<z.infer<typeof MasterMixerSchema>>;
 
+/**
+ * The converged delivery of an analysed mix (wp-note sound-design "Fix: preview loudness parity, codec-aware Sound
+ * Check, delivery speed"): what the engine's two-pass normalisation gives this mix for `targetLufs` / `truePeakDbtp` on
+ * the PCM path (the Program monitor's) — the gain after the loudness convergence under the true-peak limiter, the
+ * limiter ceiling, the passes it took. The preview applies it while the Mix's target and ceiling are these.
+ */
+export const LoudnessDeliverySchema = z.looseObject({
+	targetLufs: z.number().min(-60).max(0),
+	truePeakDbtp: z.number().min(-20).max(0),
+	/** Normalisation gain (dB) after convergence (the one-pass gain is `targetLufs − integratedLufs`). */
+	gainDb: z.number().min(-96).max(96),
+	/** True-peak limiter ceiling of the PCM path (dBTP; = `truePeakDbtp`, no codec headroom). */
+	limiterCeilingDbtp: z.number().min(-30).max(0),
+	/** Limiter passes the convergence took. */
+	passes: z.number().int().min(0).max(1000),
+	/** The limiter takes any more gain: the target cannot be reached under the ceiling. */
+	ceilingLimited: z.boolean().optional(),
+	/** Integrated loudness of the delivered PCM (LUFS). */
+	deliveredLufs: z.number().nullable().optional(),
+});
+export type LoudnessDelivery = DeepStrip<z.infer<typeof LoudnessDeliverySchema>>;
+
 /** Result of a loudness analysis (ITU-R BS.1770-4 / EBU R128). */
 export const LoudnessAnalysisSchema = z.looseObject({
 	integratedLufs: z.number().nullable(),
@@ -97,8 +119,26 @@ export const LoudnessAnalysisSchema = z.looseObject({
 	/** Hash of everything the mix depends on (`mixFingerprint`): a different hash means the analysis is stale. */
 	mixHash: z.string(),
 	analyzedAt: z.string(),
+	/**
+	 * The converged delivery for a target (`LoudnessDeliverySchema`). Read leniently (`readLoudnessDelivery`): a damaged
+	 * value never fails a load; the preview then uses the one-pass gain, `repairDocument` drops it.
+	 */
+	delivery: z.custom<LoudnessDelivery | null>(() => true).optional(),
 });
 export type LoudnessAnalysis = DeepStrip<z.infer<typeof LoudnessAnalysisSchema>>;
+
+/** A loudness analysis as commands take it (`mixer.setLoudness`, `soundDesign.applyDelivery`): `delivery` validated. */
+export const LoudnessAnalysisCommandSchema = LoudnessAnalysisSchema.extend({
+	delivery: LoudnessDeliverySchema.nullable().optional(),
+});
+
+/** The stored converged delivery of an analysis, or null when absent or unreadable. Never throws. */
+export function readLoudnessDelivery(v: unknown): LoudnessDelivery | null {
+	const r = LoudnessDeliverySchema.safeParse(v);
+	if (!r.success) return null;
+	const d = r.data;
+	return Number.isFinite(d.gainDb) && Number.isFinite(d.limiterCeilingDbtp) ? (d as LoudnessDelivery) : null;
+}
 
 /**
  * Sequence loudness normalisation (the Mix): when enabled, preview and export apply `target − integrated` (from the

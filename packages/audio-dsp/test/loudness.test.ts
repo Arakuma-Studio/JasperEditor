@@ -38,6 +38,36 @@ describe('LoudnessMeter (BS.1770-4 / EBU R128)', () => {
 		expect(Math.abs(custom.integrated() - front.integrated())).toBeLessThan(1e-9);
 	});
 
+	it('truePeak: false measures the same loudness and sample peak, without a true peak', () => {
+		const sr = 48000;
+		const rng = new Rng(11);
+		const n = sr * 5;
+		const l = new Float32Array(n);
+		const r = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			l[i] = 0.3 * rng.uniform() * Math.sin((2 * Math.PI * 3 * i) / sr);
+			r[i] = 0.2 * rng.uniform();
+		}
+		const full = new LoudnessMeter(sr, 2);
+		const fast = new LoudnessMeter(sr, 2, { truePeak: false });
+		for (let pos = 0; pos < n; pos += 4801) {
+			const k = Math.min(4801, n - pos);
+			full.process([l, r], pos, k);
+			fast.process([l, r], pos, k);
+		}
+		full.flush();
+		fast.flush();
+		const a = full.summary();
+		const b = fast.summary();
+		expect(b.integrated).toBe(a.integrated);
+		expect(b.lra).toBe(a.lra);
+		expect(b.samplePeakDb).toBe(a.samplePeakDb);
+		expect(b.maxMomentary).toBe(a.maxMomentary);
+		expect(Number.isNaN(b.truePeakDb)).toBe(true);
+		expect(Number.isNaN(fast.truePeakChannel(0))).toBe(true);
+		expect(Number.isFinite(a.truePeakDb)).toBe(true);
+	});
+
 	it('reset clears everything', () => {
 		const sr = 48000;
 		const m = stereoMeasure(segments(1000, sr, [[5, -20]]), sr);
