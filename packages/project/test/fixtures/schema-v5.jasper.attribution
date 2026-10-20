@@ -1,8 +1,0 @@
-asset:        schema-v5.jasper
-title:        Schema history fixture, v5
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-07 by the process workstream
-notes:        Hand-made project envelope reconstructed from packages/project/src/migrations.ts for packages/project/test/schema-history.test.ts: v5 (M3): the processed version records its source range; adds a sidecar-declared range. References no media bytes.

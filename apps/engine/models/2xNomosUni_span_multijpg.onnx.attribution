@@ -1,8 +1,0 @@
-asset:        2xNomosUni_span_multijpg.onnx
-title:        2xNomosUni_span_multijpg: SPAN 2x super-resolution weights, converted to ONNX
-author:       Philip Hofmann (weights); SPAN architecture by Hongyuan Yu et al. (Apache-2.0)
-source:       https://github.com/Phhofm/models/releases/tag/2xNomosUni_span_multijpg
-license:      CC-BY-4.0
-license-file: apps/engine/models/LICENSE-CC-BY-4.0.txt
-added:        2026-10-01 by JasperDev (sidecar 2026-10-07 by the process workstream)
-notes:        Converted from the released .pth (sha256 1a981d0a…) to ONNX opset 17 fp32 with spandrel and torch by scripts/models/export-span-onnx.py; outputs verified against PyTorch (max abs diff 6.9e-6). Provenance: apps/engine/models/2xNomosUni_span_multijpg.provenance.json. Attribution is shown in Help > About and the processing model catalogue.

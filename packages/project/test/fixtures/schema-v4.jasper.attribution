@@ -1,8 +1,0 @@
-asset:        schema-v4.jasper
-title:        Schema history fixture, v4
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-07 by the process workstream
-notes:        Hand-made project envelope reconstructed from packages/project/src/migrations.ts for packages/project/test/schema-history.test.ts: v4 (M2): adds a text clip with text animators, a shape clip and a processed media version without a source range. References no media bytes.

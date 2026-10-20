@@ -65,8 +65,7 @@ expectGolden(join(here, 'goldens', 'scenes', `${name}.png`), frame /* Rgba8 */, 
   `test-results/`). The message has the metrics and the tolerance.
 - **Blessing.** `JASPER_BLESS=1` writes the references instead of comparing (only when the pixels changed), refuses
   a PNG above `MAX_GOLDEN_BYTES` (50 KB; render a smaller or simpler scene — the motion-blur perspective warps are a
-  documented 128 KB exception), and writes the asset's `.attribution` sidecar plus its `ATTRIBUTION.md` row
-  ("Golden frames"), so `scripts/check-assets.mjs` passes. **Look at every re-blessed PNG before committing it**
+  documented 128 KB exception). **Look at every re-blessed PNG before committing it**
   (`git diff --stat`, then open the files).
 - **Fingerprints** (`expectFingerprints(file, record, ±levels)`; the records under `goldens/` are excluded from Biome so each case stays on one line) are FilmCraft's compact form for large matrices: the
   4×4 mean-RGB grid of a frame (`fingerprint`, 48 numbers) per case in a JSON record, one case per line. **Pins**

@@ -1,10 +1,8 @@
 # Attribution
 
-Every non-code asset in JasperEditor, with its author, source and licence. Each file listed here also has a
-`<file>.attribution` sidecar with the full details. The rules are in [AGENTS.md](AGENTS.md) §3: no Adobe or other
-product artwork; open licences only; every asset attributed. `node scripts/check-assets.mjs` (part of `pnpm lint`)
-checks that the sidecars and this index cover every asset in the repository, and prints the sidecar and row to
-write when one is missing.
+Non-code assets in JasperEditor, with their author, source and licence (kept for the third-party assets whose
+licences ask for credit). The asset rules are in [AGENTS.md](AGENTS.md) §3: no Adobe or other product artwork; open
+licences only.
 
 `LicenseRef-JasperEditor` marks original work made for this project, under the project's own licence (the
 repository has no public licence yet). Third-party JavaScript packages are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md);

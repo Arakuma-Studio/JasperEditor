@@ -79,8 +79,7 @@ Rules:
    step is fine): older builds then open the file read-only ("Created with a newer JasperEditor", MIG-003)
    instead of failing or silently dropping the new data on their next save.
 3. To bump: add the step to `MIGRATIONS` in `packages/project/src/migrations.ts`, bump
-   `CURRENT_SCHEMA_VERSION`, add `fixtures/schema-v<N+1>.jasper` (with its `.attribution` sidecar and an
-   `ATTRIBUTION.md` row) showing the new shape, add the step's expected changes to `STEP_CHANGES`, and add a
+   `CURRENT_SCHEMA_VERSION`, add `fixtures/schema-v<N+1>.jasper` showing the new shape, add the step's expected changes to `STEP_CHANGES`, and add a
    row to the table above.
 4. Coordinate concurrent schema changes under [AGENTS.md](../AGENTS.md) §0; the integrated result must
    include any required schema bump and compatibility tests before merge.

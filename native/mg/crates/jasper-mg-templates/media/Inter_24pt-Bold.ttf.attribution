@@ -1,8 +1,0 @@
-asset:        Inter_24pt-Bold.ttf
-title:        Inter 24pt Bold font
-author:       The Inter Project Authors
-source:       https://github.com/rsms/inter
-license:      OFL-1.1
-license-file: native/mg/crates/jasper-mg-templates/FONTS-OFL.txt
-added:        2026-09-30 by JasperDev (sidecar 2026-10-07 by the process workstream)
-notes:        Unmodified Inter (static 24pt optical size). Embedded in jasper-mg for the lower-third@1 and title-card@1 templates.

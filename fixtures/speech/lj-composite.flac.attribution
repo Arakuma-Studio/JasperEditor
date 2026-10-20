@@ -1,8 +1,0 @@
-asset:        lj-composite.flac
-title:        Speech fixture: twelve LJ Speech sentences joined with known pauses (16 kHz mono, 71.6 s)
-author:       Linda Johnson (reader, LibriVox); Keith Ito (LJ Speech Dataset); texts from public-domain books
-source:       https://keithito.com/LJ-Speech-Dataset/ (clips fetched from https://huggingface.co/datasets/MikhailT/lj-speech)
-license:      LicenseRef-PublicDomain
-license-file: none
-added:        2026-10-07 by the speech workstream
-notes:        The LJ Speech Dataset is in the public domain ("This dataset is in the public domain in the USA (and likely other countries as well). There are no restrictions on its use."); its readings are LibriVox public-domain recordings of public-domain books. scripts/speech/make-fixture.mjs fetched clips LJ001-0004, LJ004-0133, LJ020-0068, LJ001-0009, LJ004-0138, LJ011-0100, LJ020-0072, LJ034-0043, LJ046-0208, LJ004-0132, LJ020-0075 and LJ011-0103, resampled them to 16 kHz mono, trimmed each to its speech, joined them with 0.6–1.5 s gaps over a deterministic −74 dBFS noise floor and encoded FLAC. Ground truth (texts, measured onsets/offsets): lj-composite.json.

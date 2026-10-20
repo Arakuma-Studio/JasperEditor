@@ -1,8 +1,0 @@
-asset:        schema-v1.jasper
-title:        Schema history fixture, v1
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-07 by the process workstream
-notes:        Hand-made project envelope reconstructed from packages/project/src/migrations.ts for packages/project/test/schema-history.test.ts: v1 (M1): a video asset with linked video/audio clips (the audio half still carries the v1 Movie label) and an unlinked audio clip with a user label. References no media bytes.

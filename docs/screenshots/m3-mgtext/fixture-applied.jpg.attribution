@@ -1,8 +1,0 @@
-asset:        fixture-applied.jpg
-title:        An on-canvas text edit applied to a Remotion composition clip
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-08 by JasperDev (fixups workstream)
-notes:        Screenshot of the JasperEditor web app (headless Chrome via Playwright, e2e/mg-texts.spec.ts with DOCS_SCREENSHOTS=1) showing only JasperEditor UI and the repository fixture fixtures/mg-project (original work; sample copy). Replaces trailer-mg07-applied.jpg, removed on 2026-10-07 (third-party footage).
