@@ -10745,3 +10745,30 @@ retry fixes, the sample-grid property).
 - The transport specs measure real time: under load 20–30 from other runs `sound-p6-transport` passed in round 1; the
   long read-ahead test's retries for an audio clock that slipped (an underrun of the 30 limiters) can run out under heavier load
   (`E2E_P6_PLAYS=40` at load 13–25: 16 and 13 of 20 plays measured).
+
+### Merge into `main` with `origin/main`'s test cleanup audit
+
+Branch `merge/remote-main` (worktree `merge-remote`) from local `main` ccf0eb57 (= `feat/sound-design`), `git merge
+origin/main` (180ba549: 122 commits on top of 3900acc8). The remote brought the repository-wide test cleanup audit
+([docs/test-cleanup/](../test-cleanup/README.md)): implementation-coupled, duplicate and production-derived tests deleted or
+rewritten against independent contracts (28 e2e specs among them), test-only exports and seams removed from `src`, the
+product fixes the audit exposed (processors keep channels beyond their configured count, rsync uploads of symlinked
+sources, typed Remotion setup errors, screenshot PNG dimensions, MCP `ui_state` window measurements), the AGENTS.md /
+CLAUDE.md consolidation and `vitest.config.ts` `maxWorkers: 4`. It changed no schema (still v7), command, route, job kind or
+MCP tool.
+
+Decisions (the conflicts are listed in the merge commit a7699132):
+
+- Where the audit deleted a test that this branch had only touched for infrastructure (timeouts, `browserLaunch`, LGPL
+  fixture encoders), the deletion stands; where this branch had added coverage to a file the audit rewrote, the audit's
+  version is kept with the sound-design test added back (`audio-mix.test.ts` reversed-clip Clip Mixer,
+  `loudness.test.ts` `truePeak: false`, `util.ts` `powerLawNoise`).
+- The README tool-list check (`readme-tools.test.ts`) is gone with the audit: the README points at `listTools`; the
+  378-tool count in gaps / parity is historical (counted at this merge).
+- Test seams: the eight sound / export i18n tests use the real lifecycle (`setLanguage` with the shipped `es.json`, as
+  the audit did) instead of the removed `__setCatalogForTests`; `blockTruePeak` stays removed (the end-of-programme test
+  measures through `TruePeakDetector.flush`); `resetAgentInputForTests` is back beside `markUserInputForTests`
+  (`review-ui.test.tsx`: jsdom cannot dispatch trusted input); `isVerifiedDocument` is exported again (production caller
+  `proposals/ghost.ts`); `@jasper/testkit` is an MCP devDependency again (`sound-motion`, `sound-semantic`).
+- Semantic conflict found by the gate: the audit's registry contract failed for Surround Reverb, whose 5.1 handling
+  (c0eb6ca6) touched every channel of the block; it now stays within its configured channels (641436cd).
