@@ -550,7 +550,11 @@ function EasingBody(props: {
 					{t(
 						'Copied: {0} ({1})',
 						clip.label,
-						clip.ease.kind === 'key' ? t('one key') : t('{0} segments', clip.ease.segments.length),
+						clip.ease.kind === 'key'
+							? t('one key')
+							: clip.ease.segments.length === 1
+								? t('1 segment')
+								: t('{0} segments', clip.ease.segments.length),
 					)}
 				</div>
 			) : null}

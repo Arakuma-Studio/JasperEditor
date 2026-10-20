@@ -512,6 +512,16 @@ path (`reversedKeyTiming`, `reversedSpatial`), so each segment's ease is mirrore
   at run time); otherwise it is disabled with "This build has no … command yet".
 - The built-in groups and curves are the catalogue of "Built-in presets" above (`builtinEasePresets()`, shown with
   `t(name)`); the highlighted tile is `matchEasePreset` of the editor's curve against built-in and user curves.
+- Effect Controls ▸ key menu ▸ Apply Ease ▸ lists the recent curves (named after the matching preset) and the
+  favourites; its submenu is placed `fixed` beside its row because the key menu scrolls. The menu's older Spatial
+  Interpolation ▸ submenu is positioned inside the scrolling menu and is clipped by it (seen in the running app;
+  not changed here).
+- Verified in the running app (dev stack, demo project, a colour matte with Opacity and Position keys): library
+  preset apply (Cubic Out; Bounce Out: 4 Bounces creating keys, the tile matched afterwards), the Effect Controls
+  value / velocity graphs matching the editor's curve, Keyframe Velocity edits, Copy → Paste Ease onto Position,
+  Paste Values, Drive Along Path, Clean Up Motion Path, Mirror Keys at Playhead, Add Overshoot Expression, a refusal
+  toast (flat span), Auto-apply drag (live gesture, one "Apply Ease" history entry), F9 Easy Ease, Apply Ease ▸
+  recent curve from the key menu.
 - Tests: `apps/web/test/easing-curve-edit.test.ts`, `easing-library.test.ts`, `easing-commands.test.ts` (the real
   commands: apply cubic and multi, undo, refusal, copy / paste ease and values, velocity, path controller, clean-up,
   duplicate / mirror, expressions, shortcuts), `easing-panel.test.tsx` (editor, targeting, velocity editor, library).

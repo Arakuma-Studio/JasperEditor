@@ -2,6 +2,7 @@ import { EngineClient } from '@jasper/engine-client';
 import {
 	builtinEasePresets,
 	type Command,
+	type CubicEase,
 	describeKeyframeEases,
 	easesToCubic,
 	incomingEase,
@@ -9,7 +10,7 @@ import {
 	outgoingEase,
 } from '@jasper/project';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { easeEnv } from '../src/commands/easing.ts';
+import { easeEnv, warningText } from '../src/commands/easing.ts';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -81,12 +82,12 @@ function setup() {
 }
 
 /** Segment i → i+1 as the evaluator plays it. */
-const seg = (kfs: K[], i: number) =>
+const seg = (kfs: K[], i: number): CubicEase =>
 	kfs[i]!.interpolation === 'linear'
 		? { kind: 'cubic', x1: 1 / 3, y1: 1 / 3, x2: 2 / 3, y2: 2 / 3 }
 		: easesToCubic(outgoingEase(kfs, i), incomingEase(kfs, i + 1));
-const near = (a: Record<string, unknown>, b: Record<string, unknown>) => {
-	for (const k of ['x1', 'y1', 'x2', 'y2']) expect(a[k] as number).toBeCloseTo(b[k] as number, 6);
+const near = (a: CubicEase, b: CubicEase) => {
+	for (const k of ['x1', 'y1', 'x2', 'y2'] as const) expect(a[k]).toBeCloseTo(b[k], 6);
 };
 
 describe('the keyframe selection as the easing commands read it', () => {
@@ -276,12 +277,12 @@ describe('easing commands', () => {
 		expect((await runCommand('ease.mirrorAtPlayhead', h.ctx)).ran).toBe(true);
 		const keys = h.opacity();
 		expect(keys.slice(3).map((k) => k.value)).toEqual([100, 0]);
-		const original = seg(keys, 0) as Record<string, number>;
-		const mirrored = seg(keys, 3) as Record<string, number>;
-		expect(mirrored.x1).toBeCloseTo(1 - original.x2!, 9);
-		expect(mirrored.y1).toBeCloseTo(1 - original.y2!, 9);
-		expect(mirrored.x2).toBeCloseTo(1 - original.x1!, 9);
-		expect(mirrored.y2).toBeCloseTo(1 - original.y1!, 9);
+		const original = seg(keys, 0);
+		const mirrored = seg(keys, 3);
+		expect(mirrored.x1).toBeCloseTo(1 - original.x2, 9);
+		expect(mirrored.y1).toBeCloseTo(1 - original.y2, 9);
+		expect(mirrored.x2).toBeCloseTo(1 - original.x1, 9);
+		expect(mirrored.y2).toBeCloseTo(1 - original.y1, 9);
 		expect(keys[4]!.time - keys[3]!.time).toBe(b!.time - a!.time);
 	});
 
@@ -329,6 +330,20 @@ describe('easing commands', () => {
 		h.select(h.position().map((k) => k.id));
 		expect((await runCommand('ease.cleanupPath', h.ctx)).ran).toBe(true);
 		expect(h.toasts.filter((t) => t.message.includes('not possible'))).toEqual([]);
+	});
+
+	it('lists every warning of a result once', () => {
+		const r = {
+			ok: true,
+			results: [],
+			created: [],
+			warnings: [
+				{ code: 'W_EASE_FLAT_SEGMENT', message: 'Opacity: flat' },
+				{ code: 'W_EASE_CLAMPED', message: 'Scale: clamped' },
+				{ code: 'W_EASE_FLAT_SEGMENT', message: 'Opacity: flat' },
+			],
+		} as unknown as Parameters<typeof warningText>[0];
+		expect(warningText(r)).toBe('Opacity: flat\nScale: clamped');
 	});
 
 	it('the gated commands say what is missing', () => {
