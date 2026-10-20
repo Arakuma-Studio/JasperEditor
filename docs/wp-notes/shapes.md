@@ -277,7 +277,7 @@ text, names or icons.
 ### `shape.animateTrim`
 
 `{clipIds (1…1000), style, reverse?, animateOffset?, durationFrames? (1…100000, default 10, sequence frames),
-offsetDegrees? (|x| ≤ 36000, default 180), copies? (2…64, default 4, divide styles only), inOutLag? (0…1, default
+offsetDegrees? (|x| ≤ 36000, default 180), copies? (2…64, default 4, divide styles only), inOutLag? (0 < x ≤ 1, default
 0.5, inOut only), at? (sequence time, default each clip's start), curve? (CubicEase)}` →
 `{clips: [{clipId, converted, trimIds (master first), groupIds (groups this run created), partIds (divide: every part,
 part 1 first)}], skipped: clipId[]}`.
@@ -296,8 +296,8 @@ N = `copies`, s = 100 / N. Visible parts and keys (Start / End in %):
 | `divideIn` | ∪ᵢ [(i−1)/N, (i−1)/N + p/N] | master Start 0, End 0→s | ∪ᵢ [i/N − p/N, i/N] | End s, Start s→0 |
 | `divideOut` | ∪ᵢ [(i−1)/N + p/N, i/N] | master End s, Start 0→s | ∪ᵢ [(i−1)/N, i/N − p/N] | Start 0, End s→0 |
 
-- **inOut** is two segments of length D each, the tail starting L after the head (total D + L). With `inOutLag` 0
-  head and tail move together and nothing is visible — a valid, documented edge.
+- **inOut** is two segments of length D each, the tail starting L after the head (total D + L). `inOutLag` 0 is refused
+  (`E_SCHEMA`): head and tail would move together and nothing would ever be visible.
 - **Linked Offset** (reverse middle styles): the trim keeps [0, End] and its Offset carries the expression
   `value + -1.8 * content("<trimId>").end` (by item id): −1.8 · End degrees = minus half of the visible length
   (360° = one length, §5), so the visible piece is centred on the path start; on closed paths it stays one piece

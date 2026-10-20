@@ -43,8 +43,18 @@ export const ShapeAnimateTrimCmd = cmd('shape.animateTrim', {
 		.min(TRIM_ANIMATION_LIMITS.minCopies)
 		.max(TRIM_ANIMATION_LIMITS.maxCopies)
 		.optional(),
-	/** inOut: delay of the tail as a fraction of `durationFrames` (default 0.5). */
-	inOutLag: z.number().min(0).max(1).optional(),
+	/**
+	 * inOut: delay of the tail as a fraction of `durationFrames`, in (0, 1] (default 0.5). 0 is refused: head and tail
+	 * would move together and nothing would ever be visible.
+	 */
+	inOutLag: z
+		.number()
+		.gt(
+			0,
+			'inOutLag must be greater than 0: with no lag the tail moves with the head and nothing is ever visible',
+		)
+		.max(1, 'inOutLag must be at most 1 (the tail starts at the latest when the head has finished)')
+		.optional(),
 	/** Sequence time of the first key (default: each clip's start). */
 	at: TimeInputSchema.optional(),
 	curve: CubicEaseSchema.optional(),
