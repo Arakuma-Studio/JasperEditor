@@ -100,4 +100,6 @@ export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegis
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
 export * from './ease/curve.ts';
+export * from './ease/fit.ts';
+export * from './ease/presets.ts';
 export * from './vector/index.ts';
