@@ -562,7 +562,7 @@ export function Library(props: {
 											data-testid={`ease-pick-${p.id}`}
 										>
 											<CurveThumb curve={p.curve} size={thumb} />
-											<span className="w-full truncate text-center text-pr-small text-pr-text">
+											<span className="line-clamp-2 w-full break-words text-center text-pr-small text-pr-text leading-tight">
 												{user ? p.name : t(p.name)}
 											</span>
 										</button>

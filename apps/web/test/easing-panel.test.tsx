@@ -1,30 +1,15 @@
-import type { EasePreset, Keyframe, TransactionResult } from '@jasper/project';
+import { builtinEasePresets, type EasePreset, type Keyframe, type TransactionResult } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type EaseCatalog, matchPreset } from '../src/panels/easing/catalog.ts';
 import { type EaseDispatch, EaseDispatchProvider } from '../src/panels/easing/dispatch.tsx';
 import { EasingPanel } from '../src/panels/easing/EasingPanel.tsx';
 import { easeLibrary } from '../src/panels/easing/library.ts';
 import { addSolids, clipOf, makeSession } from './inspector-helpers.tsx';
 
-const gentle: EasePreset = {
-	id: 'b-gentle',
-	name: 'Gentle',
-	group: 'basic',
-	curve: { kind: 'cubic', x1: 0.4, y1: 0, x2: 0.6, y2: 1 },
-};
-const snap: EasePreset = {
-	id: 'b-snap',
-	name: 'Snap',
-	group: 'basic',
-	curve: { kind: 'cubic', x1: 0.1, y1: 0.9, x2: 0.2, y2: 1 },
-};
-const catalog: EaseCatalog = {
-	groups: [{ id: 'basic', name: 'Basic' }],
-	presets: [gentle, snap],
-	match: matchPreset,
-};
+// The real built-in catalogue (packages/project/src/ease/presets.ts).
+const builtin = (id: string): EasePreset => builtinEasePresets().find((p) => p.id === id)!;
+const gentle = builtin('basic.easy-ease');
 
 function stub(reasons: Record<string, string | undefined> = {}) {
 	const run = vi.fn(async (_id: string, _args?: unknown) => true);
@@ -39,7 +24,7 @@ function show(
 	const s = stub(opts.reasons);
 	const ui = (
 		<EaseDispatchProvider value={s.d}>
-			<EasingPanel instanceId="ease" visible catalog={catalog} />
+			<EasingPanel instanceId="ease" visible />
 		</EaseDispatchProvider>
 	);
 	render(opts.session ? <SessionProvider session={opts.session}>{ui}</SessionProvider> : ui);
@@ -332,26 +317,28 @@ describe('Easing panel ▸ library', () => {
 	it('built-in tiles apply and load; the matching tile is highlighted; hover shows its values', () => {
 		const { run } = show();
 		fireEvent.click(screen.getByTestId('ease-tab-builtin:basic'));
-		fireEvent.pointerEnter(screen.getByTestId('ease-tile-b-snap'));
-		expect(screen.getByTestId('ease-info').textContent).toBe('Snap · cubic-bezier(0.1, 0.9, 0.2, 1)');
-		fireEvent.click(screen.getByTestId('ease-pick-b-gentle'), { shiftKey: true });
+		fireEvent.pointerEnter(screen.getByTestId('ease-tile-basic.easy-ease-out'));
+		expect(screen.getByTestId('ease-info').textContent).toBe(
+			'Easy Ease Out · cubic-bezier(0.333, 0, 0.667, 0.667)',
+		);
+		fireEvent.click(screen.getByTestId('ease-pick-basic.easy-ease'), { shiftKey: true });
 		expect(run).toHaveBeenLastCalledWith('ease.apply', {
 			curve: gentle.curve,
 			sections: ['in'],
-			name: 'Gentle',
+			name: 'Easy Ease',
 		});
-		expect(text().value).toBe('cubic-bezier(0.4, 0, 0.6, 1)');
-		expect(screen.getByTestId('ease-tile-b-gentle').dataset.matched).toBe('true');
+		expect(text().value).toBe('cubic-bezier(0.333, 0, 0.667, 1)');
+		expect(screen.getByTestId('ease-tile-basic.easy-ease').dataset.matched).toBe('true');
 	});
 
 	it('built-ins are read-only: Duplicate copies one into My Curves', () => {
 		show();
 		fireEvent.click(screen.getByTestId('ease-tab-builtin:basic'));
-		fireEvent.contextMenu(screen.getByTestId('ease-tile-b-snap'));
+		fireEvent.contextMenu(screen.getByTestId('ease-tile-basic.easy-ease-out'));
 		const menu = screen.getByTestId('ease-library-menu');
 		expect(within(menu).queryByText('Rename…')).toBeNull();
 		fireEvent.click(within(menu).getByText('Duplicate to My Curves'));
-		expect(easeLibrary.get().presets.map((p) => p.name)).toEqual(['Snap copy']);
+		expect(easeLibrary.get().presets.map((p) => p.name)).toEqual(['Easy Ease Out copy']);
 	});
 
 	it('save, rename, reorder from the keyboard, delete with undo', () => {

@@ -263,9 +263,13 @@ function EasingBody(props: {
 
 	const sections = resolveSections(settings.sections, mods);
 	const info = hover
-		? `${hover.name} · ${curveSummary(hover.curve)}`
+		? `${t(hover.name)} · ${curveSummary(hover.curve)}`
 		: describeTargets(selection, sections, curve);
-	const matched = catalog.match(curve, [...catalog.presets, ...lib.presets]);
+	// Matching samples every preset: once per curve / library change, not on every render.
+	const matched = useMemo(
+		() => catalog.match(curve, [...catalog.presets, ...lib.presets]),
+		[catalog, curve, lib.presets],
+	);
 	const view = settings.view;
 
 	const action = (

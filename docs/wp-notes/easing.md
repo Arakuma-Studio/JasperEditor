@@ -353,10 +353,11 @@ of `gravity` lasting 2·s/g, each next bounce keeps `elasticity` of the speed, a
 ### Status and limits
 
 - The keyframe-ease document commands (`keyframe.applyEase`, `keyframe.pasteEase`, `keyframe.pasteValues`,
-  `keyframe.createPathController`, `keyframes.cleanupPath`) and the built-in curve catalogue come from separate work
-  packages. Until they are in the build, the actions that need them are disabled with "This build has no … command
-  yet" (`docCommandSupport` checks the model's command catalogue at run time) and the Library shows the user's
-  groups only.
+  `keyframe.createPathController`, `keyframes.cleanupPath`) come from a separate work package. Until they are in the
+  build, the actions that need them are disabled with "This build has no … command yet" (`docCommandSupport` checks
+  the model's command catalogue at run time).
+- The built-in groups and curves are the catalogue of "Built-in presets" above (`builtinEasePresets()`, shown with
+  `t(name)`); the highlighted tile is `matchEasePreset` of the editor's curve against built-in and user curves.
 - The velocity editor (`keyframe.setVelocity`) is not part of the panel.
 - Tests: `apps/web/test/easing-curve-edit.test.ts`, `easing-library.test.ts`, `easing-commands.test.ts`,
   `easing-panel.test.tsx`; `packages/expressions/test/engine.test.ts` (Bounce back preset).

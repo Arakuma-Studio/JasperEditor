@@ -21,7 +21,10 @@ export function EaseKeyMenuItems(props: { onDone(): void; catalog?: EaseCatalog 
 	const [open, setOpen] = useState(false);
 	const all = new Map([...catalog.presets, ...lib.presets].map((p) => [p.id, p]));
 	const favourites = lib.favourites.map((id) => all.get(id)).filter((p) => !!p);
-	const named = (c: EaseCurve) => catalog.match(c, [...all.values()])?.name ?? curveSummary(c);
+	const named = (c: EaseCurve) => {
+		const p = catalog.match(c, [...all.values()]);
+		return p ? t(p.name) : curveSummary(c);
+	};
 	const applyReason = dispatch.reason('ease.apply');
 	const entry = (id: string, label: string, args?: unknown, testId?: string) => {
 		const reason = dispatch.reason(id);
