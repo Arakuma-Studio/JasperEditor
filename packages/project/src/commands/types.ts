@@ -62,6 +62,8 @@ export const WARNING_CODES = [
 	'W_TRACK_MATTE_CLEARED',
 	/** shape.animateTrim / shape.reversePathDirection: clips that cannot hold paths (or a trim) were left alone. */
 	'W_TRIM_SKIPPED',
+	/** path-trace: shape.addTrimTracer replaced an expression the follower already had. */
+	'W_EXPRESSION_REPLACED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

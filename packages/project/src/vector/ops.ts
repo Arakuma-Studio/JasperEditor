@@ -36,8 +36,11 @@ const ACC = 1e-3;
 /** Reverses every subpath (the Path Direction toggle). */
 export const reverse = (paths: BezPath[]): BezPath[] => paths.map(reversePath);
 
-/** A path measured for trimming: its walked segments (closing lines included) laid end to end. */
-class Measured {
+/**
+ * A path measured for trimming: its walked segments (closing lines included) laid end to end. Shared with the
+ * expression path methods (`vector/trace.ts`), so `pointOnPath` lands exactly where Trim Paths cuts.
+ */
+export class Measured {
 	segs: Cubic[];
 	lens: number[];
 	total: number;
@@ -46,6 +49,29 @@ class Measured {
 		for (const sp of p) this.segs.push(...walkSegments(sp));
 		this.lens = this.segs.map((c) => cArclen(c, 0, 1, ACC / 10));
 		this.total = this.lens.reduce((a, b) => a + b, 0);
+	}
+	/**
+	 * The segment and curve parameter at absolute length `s` (clamped to 0…total): the first segment reaching `s`,
+	 * so a length on a joint belongs to the segment that ends there (where a trimmed piece ending at `s` ends). Null
+	 * when the path has no length.
+	 */
+	locate(s: number): { seg: Cubic; t: number } | null {
+		if (!(this.total > 0)) return null;
+		const target = Math.min(this.total, Math.max(0, s));
+		let acc = 0;
+		let last = -1;
+		for (let i = 0; i < this.segs.length; i++) {
+			const len = this.lens[i]!;
+			if (!(len > 0)) continue;
+			last = i;
+			if (acc + len >= target) {
+				const seg = this.segs[i]!;
+				return { seg, t: cInvArclen(seg, target - acc, len, ACC / 10) };
+			}
+			acc += len;
+		}
+		// rounding: the summed lengths fell just short of `total`.
+		return last >= 0 ? { seg: this.segs[last]!, t: 1 } : null;
 	}
 	/**
 	 * Appends the part between absolute lengths sa..sb, continuing the current subpath when the piece starts where
