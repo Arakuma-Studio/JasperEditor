@@ -19,6 +19,7 @@ import { PROJECT_COMMANDS } from './project.ts';
 import { ROTO_COMMANDS } from './roto.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SHAPE_COMMANDS } from './shape.ts';
+import { SHAPE_TRIM_COMMANDS } from './shape-trim.ts';
 import { SIM_WARP_COMMANDS } from './sim-warp.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
@@ -49,6 +50,7 @@ export * from './project.ts';
 export * from './roto.ts';
 export * from './sequence.ts';
 export * from './shape.ts';
+export * from './shape-trim.ts';
 export * from './sim-warp.ts';
 export * from './simplify.ts';
 export * from './speech.ts';
@@ -69,6 +71,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	...PRESET_COMMANDS,
 	...SHAPE_COMMANDS,
+	...SHAPE_TRIM_COMMANDS,
 	...TEXT_ANIMATOR_COMMANDS,
 	...INTERCHANGE_COMMANDS,
 	...MULTICAM_COMMANDS,

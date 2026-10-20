@@ -54,8 +54,8 @@ function setParam(
 	);
 }
 
-/** The video track a new camera / light goes on: `track`, else the top track when free over the range, else a new top track. */
-function rigTrack(seq: DSeq, h: HandlerContext, at: number, duration: number, track?: string): string {
+/** The video track a new camera / light / line goes on: `track`, else the top track when free over the range, else a new top track. */
+export function rigTrack(seq: DSeq, h: HandlerContext, at: number, duration: number, track?: string): string {
 	if (track) return track;
 	const top = seq.videoTracks[seq.videoTracks.length - 1];
 	const free =
