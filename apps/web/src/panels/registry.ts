@@ -19,6 +19,7 @@ import project from './project/index.ts';
 import properties from './properties/index.ts';
 import scopes from './scopes/index.ts';
 import source from './source/index.ts';
+import strokeAnimation from './strokeAnimation/index.ts';
 import text from './text/index.ts';
 import timeline from './timeline/index.ts';
 import tools from './tools/index.ts';
@@ -47,6 +48,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	essentialSound,
 	essentialGraphics,
 	mediaBrowser,
+	strokeAnimation,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

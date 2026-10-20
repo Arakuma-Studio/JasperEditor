@@ -61,6 +61,7 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	essentialSound: 'Essential Sound',
 	essentialGraphics: 'Essential Graphics',
 	mediaBrowser: 'Media Browser',
+	strokeAnimation: 'Stroke Animation',
 };
 
 const save: UiCommand = {

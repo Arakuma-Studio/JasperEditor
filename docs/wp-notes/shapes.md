@@ -183,6 +183,66 @@ paint, Wiggle's noise, Offset Paths on open paths), the choice above is EffectCr
 - **Paste**: SVG markup or SVG path data on the system clipboard pastes as a vector shape (into the selected vector
   shape at the playhead, else a new shape clip on the lowest targeted track), warnings in a notice.
 
+## Stroke Animation panel
+
+One-click Trim Paths animations for the selected shape clips (Window ▸ Stroke Animation, docked with Essential
+Graphics when the layout has no place for it). Code: `apps/web/src/panels/strokeAnimation/StrokeAnimationPanel.tsx`
+(panel), `apps/web/src/stroke-animation/` (`model.ts` pure button → payload logic, `commands.ts` UI commands,
+`prefs.ts` preferences, `adapter.ts` the single dispatch point to the `shape.*` commands). The workflow — buttons
+that set up a draw-on / draw-off / from-the-middle / divided Trim Paths animation in one click, modifier clicks for
+reverse and offset, a tracer that follows the tip — follows public descriptions of After Effects stroke-animation
+scripts; names, glyphs and layout are our own.
+
+Status on `feat/trim-ui`: the UI, preferences, menus, palette and picking fix are done and tested against the
+command contract with a stubbed adapter; the `shape.animateTrim` / `reversePathDirection` / `addLine` /
+`addTrimTracer` commands are not on this branch yet, so in the app the buttons are refused by the session (error
+notification, nothing changes) until they are merged.
+
+- **Buttons** (a responsive grid; below 240 px the labels collapse to the glyphs, the tooltip always names the
+  action and gives its description or the reason it is disabled):
+  Draw — In, Out, In & Out (`shape.animateTrim` styles `in`, `out`, `inOut`); Middle — Grow from Middle, Shrink to
+  Middle (`middleIn`, `middleOut`); Divide — Divide In, Divide Out (`divideIn`, `divideOut`, Copies parts);
+  Utilities — Reverse Path Direction (`shape.reversePathDirection`), Horizontal Line / Vertical Line
+  (`shape.addLine` at the playhead, 5 s, on the targeted video track when it is free there, else the first free
+  one; the new clip becomes the selection); Trace — Tracer on Next (toggle) and Add Tracer (`shape.addTrimTracer`).
+  The glyphs (`stroke.*`, `panel.strokeAnimation` in `packages/ui/src/icons/registry.ts`) are original line drawings
+  on the 24-unit icon grid: dots mark the moving tip / tail, chevrons the direction, ticks the borders of the parts.
+- **Modifiers**: Alt-click reverses, Shift-click animates the offset, Alt+Shift-click does both. They toggle the
+  Reverse / Animate offset checkboxes for that click only (a checked Reverse + Alt-click = not reversed); while Alt or
+  Shift is held the checkboxes show the state the click would use. Menus and the palette use the checkboxes.
+- **Targets**: every selected clip of kind `shape` in the active sequence (rectangles / ellipses are converted to
+  vector shapes by the command; clips it cannot animate come back as `W_TRIM_SKIPPED` warnings, shown in one
+  notification). Disabled with a reason without a project, a sequence, a shape selection or write access
+  (read-only project). Add Tracer needs exactly one selected vector shape with Trim Paths — the trim item selected in
+  Properties ▸ Shape Contents, else the shape's first trim — and accepts one more selected clip with a Motion
+  transform as the follower (Settings ▸ "Follower turns with the path" sets `orient`).
+- **Start**: "Playhead (inside the clip)" (default) starts each clip's animation at the playhead when the playhead is
+  inside that clip, else at the clip start; "Clip start" always uses the clip start. Clips with different starts get
+  one `shape.animateTrim` each, in one transaction.
+- **One undo step per click**: the animation is one transaction; with Tracer on Next its tracers (one per animated
+  clip, on the master trim the command reports) are a second transaction with the same label and coalesce key, merged
+  into the same History entry. Refusals are an error notification and change nothing.
+- **Settings** (collapsible; per-user, `localStorage` key `jasper:stroke-animation-prefs`, zod schema version 1,
+  validated field by field so a corrupt or newer value keeps every valid field): Duration (frames, shown also as
+  sequence timecode; 1–3600, default 10), Offset (degrees, used with Animate offset; default 180), Copies (Divide,
+  2–64, default 4), In-out lag (In & Out, 0–100 %, default 50 %), Start at, Curve (Default = the command's ease; a
+  preset; Custom cubic typed as `x1, y1, x2, y2` or `cubic-bezier(…)`, validated by `CubicEaseSchema`, with a small
+  graph), Tracer follows (Moving tip / Start / End), and a checkbox per button to hide it. Only the settings a style
+  uses are sent (copies for Divide, lag for In & Out, offset degrees with Animate offset).
+- **Menus and palette**: Graphics ▸ Stroke Animation ▸ (every action, the Tracer on Next toggle with a check mark,
+  and the panel); palette entries "Stroke Animation: …". No default shortcuts (they can be bound in Keyboard
+  Shortcuts); `apps/web/test/keymap.test.ts` stays conflict-free.
+- **Thin lines in the Program monitor**: clicking picks shapes by their drawn geometry. The tolerance used to be 3
+  layer px, i.e. under one screen pixel for a 2 px line at 25–50 % zoom, and the pick also required the point to lie
+  in the shape's edit box (stroke half-width + 1 px around a zero-height / zero-width path). `pickLayerAt`
+  (`apps/web/src/shapes/geometry.ts`) now uses at least `SHAPE_HIT_SCREEN_PX` = 5 screen pixels (converted through
+  the monitor zoom and the layer's scale, never below the old 3 layer px) for the geometry and grows the edit box by
+  the same distance; `apps/web/test/thin-line-hit.test.ts` picks horizontal and vertical lines 4 screen px off at
+  25 / 50 / 100 / 200 % (it failed at 25 % and 50 % before).
+- Tests: `apps/web/test/stroke-animation.test.tsx` (style × modifier payloads through the pure builder and the panel
+  buttons, start rules, settings persistence and validation with fast-check, curve text, disabled states, warnings /
+  refusals, tracer targeting, lines, menu ↔ command coverage).
+
 ## 7. SVG → shapes (for paste, import and agents)
 
 `packages/project/src/vector/svg-import.ts`, exported from `@jasper/project`:
