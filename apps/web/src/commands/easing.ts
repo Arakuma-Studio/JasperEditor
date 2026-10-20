@@ -1,10 +1,12 @@
 // Easing commands (Easing panel, Effect Controls key menu, Clip ▸ Keyframe Easing, palette, F9 shortcuts): every
 // action on the keyframe selection is one transaction (one undo step). Refusals and warnings of the document
 // commands are shown as toasts; a command that cannot run says why (`disabledReason`): no keyframe selection,
-// keys on a track, a locked track, a read-only project, or a document command this build does not have.
+// a locked track, a read-only project, a selection the action does not apply to, or a missing document command.
 import { EXPRESSION_PRESETS } from '@jasper/expressions';
 import {
 	type Command,
+	copyEase,
+	copyValues,
 	type EaseCurve,
 	EaseCurveSchema,
 	EaseSectionSchema,
@@ -19,7 +21,6 @@ import {
 	applyEaseCommand,
 	cleanupPathCommand,
 	continuousCommand,
-	copyFromSelection,
 	createPathControllerCommand,
 	type EaseDocCommand,
 	easyEaseCommand,
@@ -28,6 +29,7 @@ import {
 	missingDocCommand,
 	pasteEaseCommand,
 	pasteValuesCommand,
+	setVelocityCommand,
 	spatialLinearCommand,
 } from '../panels/easing/doc-commands.ts';
 import { easeLibrary, pushRecent } from '../panels/easing/library.ts';
@@ -49,7 +51,6 @@ export function easeEnv(ctx: CommandCtx): EaseEnv | null {
 	if (!seq) return null;
 	const st = session.getState();
 	const sel = readEaseSelection(session.getCommitted(), seq, st.selection.keyframes, {
-		frame: ctx.transport.getState().frame,
 		registries: session.ctx.registries,
 		readOnly: st.readOnly,
 	});
@@ -67,7 +68,16 @@ function selectionReason(ctx: CommandCtx): string | undefined {
 
 const keyIds = (sel: EaseSelection) => sel.properties.flatMap((p) => p.keys.map((k) => k.id));
 
-/** Applies document commands as one undo step; refusals and the first warning become toasts. */
+/** Every warning of a result, once each (W_EASE_SKIPPED, W_EASE_FLAT_SEGMENT, W_EASE_CLAMPED, …). */
+export function warningText(r: TransactionResult): string | null {
+	if (!r.ok || !r.warnings.length) return null;
+	const lines = [...new Set(r.warnings.map((w) => w.message))];
+	return lines.length > 4
+		? `${lines.slice(0, 4).join('\n')}\n${t('… and {0} more', lines.length - 4)}`
+		: lines.join('\n');
+}
+
+/** Applies document commands as one undo step; refusals and warnings become toasts. */
 export function runEaseTransaction(
 	ctx: CommandCtx,
 	label: string,
@@ -80,9 +90,24 @@ export function runEaseTransaction(
 		ctx.ui.toast({ kind: 'warning', message: t('{0}: not possible', label), detail: r.errors[0]?.message });
 		return r;
 	}
-	const w = r.warnings[0];
-	if (w) ctx.ui.toast({ kind: 'info', message: label, detail: w.message });
+	const w = warningText(r);
+	if (w) ctx.ui.toast({ kind: 'warning', message: label, detail: w });
 	return r;
+}
+
+/**
+ * After an ease command the selection follows its result (`{affected, created, removed}`): the eased keys and the
+ * keys a multi-point curve created, so a second apply reaches the same span.
+ */
+function selectResult(e: EaseEnv, r: TransactionResult | null): void {
+	if (!r?.ok) return;
+	const res = r.results[0] as { affected?: string[]; created?: string[]; removed?: string[] } | undefined;
+	if (!res?.affected && !res?.created) return;
+	const removed = new Set(res.removed ?? []);
+	const ids = [...new Set([...e.sel.keyframeIds, ...(res.created ?? [])])].filter((id) => !removed.has(id));
+	const keySel = e.session.getState().selection.keyframes;
+	if (keySel && ids.length)
+		e.session.selectKeyframes({ clipOrTrackId: keySel.clipOrTrackId, keyframeIds: ids });
 }
 
 /** A command on the keyframe selection, enabled when it can be eased (and its document command exists). */
@@ -114,6 +139,7 @@ function selectionCommand(
 		},
 		...(def.argsSchema ? { argsSchema: def.argsSchema } : {}),
 		...(def.agentExposed ? { agentExposed: true } : {}),
+		...(def.hidden ? { hidden: true } : {}),
 		scope: 'global',
 		when: (ctx) => reason(ctx) === undefined,
 		disabledReason: reason,
@@ -153,6 +179,13 @@ const ApplyArgs = z
 	})
 	.optional();
 
+const VelocityArgs = z.strictObject({
+	keyframeId: z.string().min(1).max(200),
+	side: z.enum(['in', 'out', 'both']),
+	speed: z.number().min(-1e9).max(1e9).optional(),
+	influence: z.number().min(0.1).max(100).optional(),
+});
+
 const PasteArgs = z
 	.strictObject({
 		sections: z.array(EaseSectionSchema).max(3).optional(),
@@ -163,8 +196,8 @@ const PasteArgs = z
 const spatialRequired = (e: EaseEnv) =>
 	spatialKeyIds(e.sel).length ? undefined : t('Select keys of a point property (Position, Anchor Point…)');
 
-const overshoot = EXPRESSION_PRESETS.find((p) => p.id === 'inertial-bounce');
-const bounce = EXPRESSION_PRESETS.find((p) => p.id === 'bounce');
+const overshoot = EXPRESSION_PRESETS.find((p) => p.id === 'overshoot');
+const bounce = EXPRESSION_PRESETS.find((p) => p.id === 'bounce-back');
 
 function expressionCommand(text: Text, preset: typeof overshoot): UiCommand {
 	return selectionCommand({
@@ -278,8 +311,9 @@ export const easingCommands: UiCommand[] = [
 				return;
 			}
 			const sections = a?.sections ?? easeLibrary.get().settings.sections;
-			const label = a?.name ? t('Apply Ease: {0}', a.name) : t('Apply Ease');
+			const label = a?.name ? t('Apply Ease: {0}', t(a.name)) : t('Apply Ease');
 			const r = runEaseTransaction(ctx, label, [applyEaseCommand(keyIds(e.sel), curve, sections)], e.seq.id);
+			selectResult(e, r);
 			if (r?.ok) easeLibrary.update((s) => pushRecent(s, curve));
 		},
 	}),
@@ -288,15 +322,18 @@ export const easingCommands: UiCommand[] = [
 		label: 'Copy Ease',
 		description: 'Copies the ease (and the values) of the selected keys for Paste Ease / Paste Values.',
 		agentExposed: true,
-		require: (e) => {
-			const c = copyFromSelection(e.sel);
-			return c.ok ? undefined : c.reason;
-		},
 		run: (e, ctx) => {
-			const c = copyFromSelection(e.sel);
-			if (!c.ok) return;
-			easeClipboard.set({ ease: c.ease, values: c.values, label: c.label });
-			ctx.ui.toast({ kind: 'info', message: t('Copied the ease of {0}', c.label), durationMs: 2000 });
+			const doc = e.session.getCommitted();
+			const ids = keyIds(e.sel);
+			const c = copyEase(doc, ids, e.session.ctx.registries);
+			if (!c.ok) {
+				ctx.ui.toast({ kind: 'info', message: t('Copy Ease: not possible'), detail: c.message });
+				return;
+			}
+			const v = copyValues(doc, ids, e.session.ctx.registries);
+			const label = e.sel.properties.map((p) => t(p.label)).join(', ');
+			easeClipboard.set({ ease: c.clip, values: v.ok ? v.values : [], label });
+			ctx.ui.toast({ kind: 'info', message: t('Copied the ease of {0}', label), durationMs: 2000 });
 		},
 	}),
 	selectionCommand({
@@ -312,12 +349,13 @@ export const easingCommands: UiCommand[] = [
 			if (!clip) return;
 			const a = args as z.infer<typeof PasteArgs>;
 			const sections = a?.sections ?? easeLibrary.get().settings.sections;
-			runEaseTransaction(
+			const r = runEaseTransaction(
 				ctx,
 				t('Paste Ease'),
 				[pasteEaseCommand(keyIds(e.sel), clip.ease, { sections, mode: a?.mode })],
 				e.seq.id,
 			);
+			selectResult(e, r);
 		},
 	}),
 	selectionCommand({
@@ -325,11 +363,39 @@ export const easingCommands: UiCommand[] = [
 		label: 'Paste Values',
 		description: 'Gives the selected keys the copied values in order, keeping their times and eases.',
 		needs: 'keyframe.pasteValues',
-		require: () => (easeClipboard.get() ? undefined : t('Copy keys first')),
+		require: () => (easeClipboard.get()?.values.length ? undefined : t('Copy keys first')),
 		run: (e, ctx) => {
 			const clip = easeClipboard.get();
 			if (!clip) return;
-			runEaseTransaction(ctx, t('Paste Values'), [pasteValuesCommand(keyIds(e.sel), clip.values)], e.seq.id);
+			runEaseTransaction(
+				ctx,
+				t('Paste Keyframe Values'),
+				[pasteValuesCommand(keyIds(e.sel), clip.values)],
+				e.seq.id,
+			);
+		},
+	}),
+	selectionCommand({
+		id: 'ease.setVelocity',
+		label: 'Keyframe Velocity',
+		description:
+			'Sets the incoming / outgoing speed (property units per second) and influence (%) of one selected key.',
+		argsSchema: VelocityArgs,
+		agentExposed: true,
+		hidden: true,
+		needs: 'keyframe.setVelocity',
+		run: (e, ctx, args) => {
+			const a = args as z.infer<typeof VelocityArgs>;
+			if (!e.sel.keyframeIds.includes(a.keyframeId)) {
+				ctx.ui.toast({ kind: 'info', message: t('Select the keyframe first') });
+				return;
+			}
+			runEaseTransaction(
+				ctx,
+				t('Keyframe Velocity'),
+				[setVelocityCommand(a.keyframeId, a.side, { speed: a.speed, influence: a.influence })],
+				e.seq.id,
+			);
 		},
 	}),
 	selectionCommand({
@@ -337,7 +403,12 @@ export const easingCommands: UiCommand[] = [
 		label: 'Drive Along Path',
 		description: 'Makes the selected point keys follow their motion path driven by one progress control.',
 		needs: 'keyframe.createPathController',
-		require: spatialRequired,
+		require: (e) => {
+			const points = e.sel.properties.filter((p) => p.spatial);
+			if (points.length !== 1 || e.sel.properties.length !== 1)
+				return t('Select keys of one point property (Position, Anchor Point…)');
+			return points[0]!.keys.length >= 2 ? undefined : t('Select two or more keys of the property');
+		},
 		run: (e, ctx) => {
 			runEaseTransaction(
 				ctx,
@@ -354,12 +425,13 @@ export const easingCommands: UiCommand[] = [
 		needs: 'keyframes.cleanupPath',
 		require: spatialRequired,
 		run: (e, ctx) => {
-			runEaseTransaction(
+			const r = runEaseTransaction(
 				ctx,
 				t('Clean Up Motion Path'),
 				[cleanupPathCommand(spatialKeyIds(e.sel))],
 				e.seq.id,
 			);
+			selectResult(e, r);
 		},
 	}),
 	selectionCommand({

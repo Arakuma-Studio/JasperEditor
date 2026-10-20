@@ -1,17 +1,16 @@
-// Easing panel ▸ the document commands its actions send (one transaction each, so one undo step). The
-// keyframe-ease commands (`keyframe.applyEase`, `keyframe.pasteEase`, `keyframe.pasteValues`,
-// `keyframe.createPathController`, `keyframes.cleanupPath`) live in packages/project; an action whose command the
-// document model does not have is disabled with a reason (`missingDocCommand`), never sent. Duplicate / Mirror keys at
+// Easing panel ▸ the document commands its actions send (one transaction each, so one undo step): the keyframe-ease
+// commands of packages/project (`keyframe.applyEase`, `keyframe.pasteEase`, `keyframe.pasteValues`,
+// `keyframe.setVelocity`, `keyframe.createPathController`, `keyframes.cleanupPath`; schemas in
+// commands/schemas/ease.ts). An action whose command the document model lacks is disabled with a reason
+// (`missingDocCommand`), never sent. Duplicate / Mirror keys at
 // the playhead reuse the keyframe paste (a mirrored paste reverses timing and eases, `reversedKeyTiming`).
 import {
 	buildKeyframesPayload,
 	type Command,
-	type CubicEase,
-	type Ease,
+	type EaseClip,
 	type EaseCurve,
 	type EaseSection,
 	isCommandType,
-	type MultiEase,
 	type ParamPath,
 	type ProjectDocument,
 } from '@jasper/project';
@@ -19,15 +18,11 @@ import { t } from '../../i18n/runtime.ts';
 import { type InterpolationPreset, interpolationCommand } from '../effectControls/lib.ts';
 import type { EaseSelection } from './selection.ts';
 
-/** A copied ease: the two sides of one key, or the segments between keys (with the span as one curve). */
-export type EaseClip =
-	| { kind: 'key'; easeIn: Ease; easeOut: Ease }
-	| { kind: 'segments'; segments: CubicEase[]; curve?: MultiEase };
-
 export type EaseDocCommand =
 	| 'keyframe.applyEase'
 	| 'keyframe.pasteEase'
 	| 'keyframe.pasteValues'
+	| 'keyframe.setVelocity'
 	| 'keyframe.createPathController'
 	| 'keyframes.cleanupPath';
 
@@ -51,7 +46,7 @@ export function applyEaseCommand(
 		keyframeIds: ids(keyframeIds),
 		curve,
 		...(sections?.length ? { sections: [...sections] } : {}),
-	} as unknown as Command;
+	} as Command;
 }
 
 export function pasteEaseCommand(
@@ -65,7 +60,7 @@ export function pasteEaseCommand(
 		clip,
 		...(opts.sections?.length ? { sections: [...opts.sections] } : {}),
 		...(opts.mode ? { mode: opts.mode } : {}),
-	} as unknown as Command;
+	} as Command;
 }
 
 export function pasteValuesCommand(keyframeIds: readonly string[], values: readonly unknown[]): Command {
@@ -73,11 +68,28 @@ export function pasteValuesCommand(keyframeIds: readonly string[], values: reado
 		type: 'keyframe.pasteValues',
 		keyframeIds: ids(keyframeIds),
 		values: [...values],
-	} as unknown as Command;
+	} as Command;
+}
+
+/** The Keyframe Velocity editor: one key's in / out / both speed (property units per second) and influence (%). */
+export function setVelocityCommand(
+	keyframeId: string,
+	side: 'in' | 'out' | 'both',
+	values: { speed?: number; influence?: number },
+): Command {
+	return {
+		type: 'keyframe.setVelocity',
+		keyframeId,
+		side,
+		...(values.speed !== undefined && Number.isFinite(values.speed) ? { speed: values.speed } : {}),
+		...(values.influence !== undefined && Number.isFinite(values.influence)
+			? { influence: Math.min(100, Math.max(0.1, values.influence)) }
+			: {}),
+	} as Command;
 }
 
 export function createPathControllerCommand(keyframeIds: readonly string[]): Command {
-	return { type: 'keyframe.createPathController', keyframeIds: ids(keyframeIds) } as unknown as Command;
+	return { type: 'keyframe.createPathController', keyframeIds: ids(keyframeIds) } as Command;
 }
 
 export function cleanupPathCommand(keyframeIds: readonly string[], tolerance?: number): Command {
@@ -85,7 +97,7 @@ export function cleanupPathCommand(keyframeIds: readonly string[], tolerance?: n
 		type: 'keyframes.cleanupPath',
 		keyframeIds: ids(keyframeIds),
 		...(tolerance !== undefined && Number.isFinite(tolerance) ? { tolerance } : {}),
-	} as unknown as Command;
+	} as Command;
 }
 
 /** Easy Ease (both sides), Easy Ease In (arriving), Easy Ease Out (leaving): {⅓ influence, 0 speed}. */
@@ -144,36 +156,4 @@ export function expressionCommands(
 	return sel.properties
 		.filter((p): p is typeof p & { path: ParamPath } => !!p.path && (!kinds.length || kinds.includes(p.kind)))
 		.map((p) => ({ type: 'expression.set', target: p.path, text, sequenceId }) as Command);
-}
-
-/** What Copy takes from the selection: the ease (one key's sides, or the segments between keys) and the values. */
-export function copyFromSelection(
-	sel: EaseSelection,
-): { ok: true; ease: EaseClip; values: unknown[]; label: string } | { ok: false; reason: string } {
-	if (sel.blocked && sel.properties.length === 0) return { ok: false, reason: sel.blocked };
-	const keys = sel.properties.flatMap((p) => p.keys);
-	if (keys.length === 0) return { ok: false, reason: t('Select keyframes in Effect Controls') };
-	if (keys.length === 1) {
-		const p = sel.properties.find((x) => x.keys.length === 1)!;
-		const k = p.keys[0]!;
-		return {
-			ok: true,
-			ease: { kind: 'key', easeIn: { ...k.easeIn }, easeOut: { ...k.easeOut } },
-			values: [k.value],
-			label: p.label,
-		};
-	}
-	const p = sel.properties.find((x) => x.keys.length >= 2);
-	if (!p) return { ok: false, reason: t('Select two or more keys of one property, or a single key') };
-	const inner = p.segments.filter((s) => s.inner);
-	if (inner.length === 0)
-		return { ok: false, reason: t('Select neighbouring keys to copy the segments between them') };
-	if (inner.some((s) => !s.curve)) return { ok: false, reason: t('Hold segments have no ease to copy') };
-	const segments = inner.map((s) => s.curve!);
-	return {
-		ok: true,
-		ease: { kind: 'segments', segments, ...(p.curve?.kind === 'multi' ? { curve: p.curve } : {}) },
-		values: p.keys.map((k) => k.value),
-		label: p.label,
-	};
 }

@@ -53,6 +53,7 @@ import { applyEaseCommand } from './doc-commands.ts';
 import { curveSummary } from './geometry.ts';
 import { Library } from './Library.tsx';
 import { DEFAULT_GROUP_ID, type EasingView, easeLibrary, savePreset, useEaseLibrary } from './library.ts';
+import { NumberCell } from './NumberCell.tsx';
 import { type EaseSelection, noEaseSelection, readEaseSelection } from './selection.ts';
 import {
 	describeTargets,
@@ -61,6 +62,7 @@ import {
 	sectionMods,
 	toggleSection,
 } from './targeting.ts';
+import { VelocityEditor } from './Velocity.tsx';
 
 export function EasingPanel(props: PanelProps & { catalog?: EaseCatalog }) {
 	const session = useSessionOrNull();
@@ -96,7 +98,6 @@ function WithSession(props: { session: EditorSession; visible: boolean; catalog:
 	const selection = useMemo(() => {
 		try {
 			return readEaseSelection(doc, seqId ? (doc.sequences[seqId] ?? null) : null, keySel, {
-				frame: 0,
 				registries: session.ctx.registries,
 				readOnly,
 			});
@@ -382,6 +383,7 @@ function EasingBody(props: {
 				<CurvePreview curve={hover?.curve ?? curve} playing={props.visible} />
 				<CurveFields curve={curve} onCommit={commit} />
 				<CubicText curve={curve} onCommit={commit} onError={setError} />
+				<VelocityEditor prop={prop} dispatch={dispatch} />
 				{error ? (
 					<p role="alert" className="text-pr-small text-pr-warning" data-testid="ease-error">
 						{error}
@@ -547,7 +549,7 @@ function EasingBody(props: {
 				<div className="shrink-0 truncate px-2 pt-1 text-pr-small text-pr-dim" data-testid="ease-clipboard">
 					{t(
 						'Copied: {0} ({1})',
-						t(clip.label),
+						clip.label,
 						clip.ease.kind === 'key' ? t('one key') : t('{0} segments', clip.ease.segments.length),
 					)}
 				</div>
@@ -642,53 +644,6 @@ function SaveName(props: { onDone(name: string | null): void }) {
 			onBlur={() => props.onDone(v.trim() || null)}
 			data-testid="ease-save-name"
 		/>
-	);
-}
-
-/** One number that commits on Enter / blur; text that is not a number is refused (red, original value kept). */
-function NumberCell(props: { label: string; value: number; onCommit(v: number): void; testId: string }) {
-	const shown = Number(props.value.toFixed(3)).toString();
-	const [text, setText] = useState(shown);
-	const [bad, setBad] = useState(false);
-	useEffect(() => {
-		setText(shown);
-		setBad(false);
-	}, [shown]);
-	const commit = () => {
-		const s = text.trim().replace(',', '.');
-		const v = s === '' ? Number.NaN : Number(s);
-		if (!Number.isFinite(v)) {
-			setBad(true);
-			return;
-		}
-		setBad(false);
-		if (v !== props.value) props.onCommit(v);
-		else setText(shown);
-	};
-	return (
-		<label className="flex min-w-0 items-center gap-[2px] text-pr-small text-pr-muted">
-			{props.label}
-			<input
-				className={cx(
-					'pr-tabular h-[20px] w-[52px] min-w-0 rounded-pr-control border bg-pr-field px-1 text-pr-ui text-pr-text outline-none focus:border-pr-focus',
-					bad ? 'border-pr-danger' : 'border-transparent',
-				)}
-				aria-invalid={bad || undefined}
-				aria-label={props.label}
-				value={text}
-				inputMode="decimal"
-				onChange={(e) => setText(e.target.value)}
-				onBlur={commit}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter') commit();
-					if (e.key === 'Escape') {
-						setText(shown);
-						setBad(false);
-					}
-				}}
-				data-testid={props.testId}
-			/>
-		</label>
 	);
 }
 

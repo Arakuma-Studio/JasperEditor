@@ -1,11 +1,12 @@
 // Easing panel ▸ the ease clipboard: what Copy took from the keyframe selection (the ease, and the keys' values for
 // Paste Values). Kept for this window's session, apart from the system clipboard (which holds keyframes, clips…).
+
+import type { EaseClip } from '@jasper/project';
 import { useSyncExternalStore } from 'react';
-import type { EaseClip } from './doc-commands.ts';
 
 export type EaseClipboardEntry = {
 	ease: EaseClip;
-	/** The copied keys' values in time order (one property). */
+	/** The copied keys' values in order (property, then time), for Paste Values. */
 	values: unknown[];
 	/** Property the ease came from, for the info line. */
 	label: string;

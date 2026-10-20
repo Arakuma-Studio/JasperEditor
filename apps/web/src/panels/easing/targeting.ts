@@ -58,12 +58,7 @@ export function countTargets(
 		const wanted = sections ?? autoSections(p.keys.length, curve);
 		// Multi-point curves only span keys (middle); they never go to the outer segments.
 		const use = curve.kind === 'multi' ? wanted.filter((s) => s === 'middle') : wanted;
-		const first = p.keys[0]!.index;
-		const last = p.keys[p.keys.length - 1]!.index;
-		let n = 0;
-		if (use.includes('in') && first > 0) n++;
-		if (use.includes('middle')) n += p.keys.length - 1;
-		if (use.includes('out') && last < p.total - 1) n++;
+		const n = p.segments.filter((s) => !s.hold && use.includes(s.section)).length;
 		if (n > 0) properties++;
 		segments += n;
 	}

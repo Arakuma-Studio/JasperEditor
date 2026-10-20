@@ -406,21 +406,18 @@ The Easing panel (`apps/web/src/panels/easing/`, Window ▸ Easing, docked with 
 and applies it to the selected keyframes, keeps curves in a library, and copies / pastes eases and values between
 keys. Its controls run the easing UI commands (`apps/web/src/commands/easing.ts`), which are also in the command
 palette, Clip ▸ Keyframe Easing, the panel menu, the Effect Controls key menu and the keymap, so every disabled
-control shows the same reason (no keyframe selection, keys on a track, a locked track, a read-only project, or a
-document command this build lacks).
+control shows the same reason (no keyframe selection, a locked track, a read-only project, a selection the action
+does not apply to, or a document command this build lacks).
 
-### Curve model and the keyframe mapping
+### Curve model and the selection
 
 A curve is `EaseCurve` (`packages/project/src/ease/curve.ts`): `cubic` = CSS `cubic-bezier(x1, y1, x2, y2)` over one
-segment, `multi` = points from (0, 0) to (1, 1) with optional in / out handles over several segments. x is the
-fraction of the span's time, y the fraction of its value change; y may leave 0…1 (overshoot) within
-`EASE_Y_LIMIT`. A segment from key A to key B reads as `easesToCubic(outgoingEase(A), incomingEase(B))` — the
-evaluator's own effective eases (`packages/project/src/keyframes.ts`, so auto-bezier keys show their computed
-slope); a linear key's segment is the straight line, a hold segment has no curve. Three or more keys of a numeric
-property become one multi curve: point i at (time fraction, value fraction), each segment's handles scaled from
-its own cubic into the span (`selection.ts`, `spanCurve`). Numeric vectors use the cumulative straight-line
-distance between key values as the value fraction (an assumption: it is not the arc length of a curved motion
-path).
+segment, `multi` = points from (0, 0) to (1, 1) with optional in / out handles over several segments; y may leave
+0…1 (overshoot) within `EASE_Y_LIMIT`. The panel reads the selection with `describeKeyframeEases` (per property: the
+selected keys with their effective eases and the in / middle / out segments as cubics, see "Easing commands"). The
+editor shows, per property: the one middle segment; for two or more middle segments the span's multi-point curve
+from `copyEase` (first segment's cubic when the span cannot be one curve); for a single key its leaving, else
+arriving, segment. Several properties get a switcher.
 
 ### Editor
 
@@ -477,38 +474,44 @@ curve). Import refuses files over 1 MB, non-JSON, other formats and newer versio
 `EasePresetSchema` (plus the optional colour), invalid ones are skipped and listed (first five reasons), clashing ids
 get new ones, groups are matched by id or name or created; the library limits (1000 curves, 100 groups) hold.
 
+### Keyframe Velocity
+
+Under the curve fields: for one selected key of the shown property (a key picker when several are selected), its In
+and Out speed (property units per second; px/s along the path for point properties) and influence (%) as
+`describeKeyframeEases` reports them. Editing a field runs `keyframe.setVelocity` (one undo step, history label
+"Keyframe Velocity"); influence is clamped to 0.1…100 %. Link sets both sides at once (`side: "both"`). A side without
+a segment, a hold segment or a roving key is disabled with that reason; on a flat segment (both keys equal, average
+speed 0) only the speed is disabled — influence still applies.
+
 ### Commands, menus and shortcuts
 
 | Command | Default key | Document command |
 | --- | --- | --- |
 | Easy Ease / Easy Ease In / Easy Ease Out | F9 / Shift+F9 / Ctrl(Cmd)+Shift+F9 | `keyframe.setInterpolation` (bezier, {⅓, 0} on the side) |
 | Apply Ease | — | `keyframe.applyEase` |
-| Copy Ease / Paste Ease | Ctrl(Cmd)+C / Ctrl(Cmd)+V in the Easing panel | — / `keyframe.pasteEase` |
-| Paste Values | — | `keyframe.pasteValues` |
+| Copy Ease / Paste Ease | Ctrl(Cmd)+C / Ctrl(Cmd)+V in the Easing panel | `copyEase` + `copyValues` / `keyframe.pasteEase` |
+| Paste Values | — | `keyframe.pasteValues` (history: "Paste Keyframe Values") |
+| Keyframe Velocity (panel fields; agents) | — | `keyframe.setVelocity` |
 | Duplicate / Mirror Keys at Playhead | — | `keyframe.paste` (mirror: reversed payload, latest key at the playhead) |
 | Spatial ▸ Linear, Temporal ▸ Continuous | — | `keyframe.setSpatialInterpolation`, `keyframe.setInterpolation` |
 | Drive Along Path, Clean Up Motion Path | — | `keyframe.createPathController`, `keyframes.cleanupPath` |
-| Add Overshoot / Bounce Expression | — | `expression.set` with the `inertial-bounce` / `bounce` presets |
+| Add Overshoot / Bounce Expression | — | `expression.set` with the `overshoot` / `bounce-back` presets |
 
 F9 is free in the default layout; in the Final Cut Pro 7 layout F9 stays Insert in the editing panels (their scope
-comes first) and is Easy Ease elsewhere. Copy Ease reads the selection itself: one key gives its two sides, two or
-more neighbouring keys of one property the cubic of each segment between them (and the span's multi curve); hold
-segments cannot be copied. Mirror Keys at Playhead reuses the keyframe paste's reversed path (`reversedKeyTiming`,
-`reversedSpatial`), so each segment's ease is mirrored: cubic (x1, y1, x2, y2) becomes (1 − x2, 1 − y2, 1 − x1,
-1 − y1) — tested.
-
-The Bounce back expression preset (`packages/expressions/src/presets.ts`, original) bounces the value back off its
-last key like a ball off a wall: the first bounce leaves at `elasticity` × the arrival speed, each arc is a parabola
-of `gravity` lasting 2·s/g, each next bounce keeps `elasticity` of the speed, at most `maxBounces`.
+comes first) and is Easy Ease elsewhere. Apply, Paste Ease and Clean Up keep the result selected (the eased keys plus
+the keys a multi-point curve created, minus removed ones), so a second apply reaches the same span. Every warning of
+a result (W_EASE_SKIPPED, W_EASE_FLAT_SEGMENT, W_EASE_CLAMPED, W_EASE_COUNT_MISMATCH, W_EASE_ROVING_CLEARED,
+W_VALUE_CLAMPED) is listed in one toast; a refusal shows "<action>: not possible" with the model's message. Drive
+Along Path needs two or more keys of one point property. Mirror Keys at Playhead reuses the keyframe paste's reversed
+path (`reversedKeyTiming`, `reversedSpatial`), so each segment's ease is mirrored: cubic (x1, y1, x2, y2) becomes
+(1 − x2, 1 − y2, 1 − x1, 1 − y1) — tested.
 
 ### Status and limits
 
-- The keyframe-ease document commands (`keyframe.applyEase`, `keyframe.pasteEase`, `keyframe.pasteValues`,
-  `keyframe.createPathController`, `keyframes.cleanupPath`) come from a separate work package. Until they are in the
-  build, the actions that need them are disabled with "This build has no … command yet" (`docCommandSupport` checks
-  the model's command catalogue at run time).
+- Every action is enabled when its document command is in the model's command catalogue (`docCommandSupport`, checked
+  at run time); otherwise it is disabled with "This build has no … command yet".
 - The built-in groups and curves are the catalogue of "Built-in presets" above (`builtinEasePresets()`, shown with
   `t(name)`); the highlighted tile is `matchEasePreset` of the editor's curve against built-in and user curves.
-- The velocity editor (`keyframe.setVelocity`) is not part of the panel.
-- Tests: `apps/web/test/easing-curve-edit.test.ts`, `easing-library.test.ts`, `easing-commands.test.ts`,
-  `easing-panel.test.tsx`; `packages/expressions/test/engine.test.ts` (Bounce back preset).
+- Tests: `apps/web/test/easing-curve-edit.test.ts`, `easing-library.test.ts`, `easing-commands.test.ts` (the real
+  commands: apply cubic and multi, undo, refusal, copy / paste ease and values, velocity, path controller, clean-up,
+  duplicate / mirror, expressions, shortcuts), `easing-panel.test.tsx` (editor, targeting, velocity editor, library).

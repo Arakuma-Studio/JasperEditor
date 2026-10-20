@@ -1,6 +1,14 @@
 import { EngineClient } from '@jasper/engine-client';
-import { type Command, easesToCubic, type Keyframe, type TransactionResult } from '@jasper/project';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	builtinEasePresets,
+	type Command,
+	describeKeyframeEases,
+	easesToCubic,
+	incomingEase,
+	type Keyframe,
+	outgoingEase,
+} from '@jasper/project';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { easeEnv } from '../src/commands/easing.ts';
 import {
 	type CommandCtx,
@@ -17,7 +25,6 @@ import {
 import { easeClipboard } from '../src/panels/easing/clipboard.ts';
 import { docCommandSupport } from '../src/panels/easing/doc-commands.ts';
 import { easeLibrary } from '../src/panels/easing/library.ts';
-import { segmentCurve } from '../src/panels/easing/selection.ts';
 import { addSolids, clipOf, makeSession } from './inspector-helpers.tsx';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
@@ -30,7 +37,6 @@ beforeEach(() => {
 });
 afterEach(() => {
 	docCommandSupport.has = realHas;
-	vi.restoreAllMocks();
 });
 
 type K = Keyframe<unknown>;
@@ -74,8 +80,14 @@ function setup() {
 	return { session, clipId, opacity, position, ctx, toasts, select, reason };
 }
 
-const ok = (): TransactionResult =>
-	({ ok: true, results: [], warnings: [], created: [] }) as unknown as TransactionResult;
+/** Segment i → i+1 as the evaluator plays it. */
+const seg = (kfs: K[], i: number) =>
+	kfs[i]!.interpolation === 'linear'
+		? { kind: 'cubic', x1: 1 / 3, y1: 1 / 3, x2: 2 / 3, y2: 2 / 3 }
+		: easesToCubic(outgoingEase(kfs, i), incomingEase(kfs, i + 1));
+const near = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+	for (const k of ['x1', 'y1', 'x2', 'y2']) expect(a[k] as number).toBeCloseTo(b[k] as number, 6);
+};
 
 describe('the keyframe selection as the easing commands read it', () => {
 	it('two neighbouring keys: one cubic segment, exactly the stored eases', () => {
@@ -87,7 +99,7 @@ describe('the keyframe selection as the easing commands read it', () => {
 		expect(sel.properties).toHaveLength(1);
 		const p = sel.properties[0]!;
 		expect(p.curve).toEqual(easesToCubic(a!.easeOut, b!.easeIn));
-		expect(p.segments.map((s) => s.inner)).toEqual([true, false]);
+		expect(p.segments.map((x) => x.section)).toEqual(['middle', 'out']);
 	});
 
 	it('three keys of a number: one multi-point curve through the middle key', () => {
@@ -107,10 +119,9 @@ describe('the keyframe selection as the easing commands read it', () => {
 		const h = setup();
 		h.select([h.opacity()[0]!.id, h.position()[0]!.id]);
 		const sel = easeEnv(h.ctx)!.sel;
-		expect(sel.properties.map((p) => [p.label, p.spatial])).toEqual([
-			['Position', true],
-			['Opacity', false],
-		]);
+		expect(new Set(sel.properties.map((p) => `${p.label}:${p.spatial}`))).toEqual(
+			new Set(['Position:true', 'Opacity:false']),
+		);
 	});
 
 	it('says why nothing can be eased', () => {
@@ -143,86 +154,105 @@ describe('easing commands', () => {
 		expect(h.session.getState().history.entries.length).toBe(before + 2);
 	});
 
-	it('Apply Ease is disabled with a reason while the model has no keyframe.applyEase command', () => {
+	it('Apply Ease is disabled with a reason when the model has no keyframe.applyEase command', () => {
 		const h = setup();
 		h.select([h.opacity()[0]!.id, h.opacity()[1]!.id]);
 		docCommandSupport.has = (t) => t !== 'keyframe.applyEase';
 		expect(h.reason('ease.apply')).toBe('This build has no keyframe.applyEase command yet');
 	});
 
-	it('Apply Ease sends keyframe.applyEase with the curve and the sections (stubbed model)', async () => {
+	it('Apply Ease shapes the segment exactly, as one undo step, and remembers the curve', async () => {
 		const h = setup();
-		docCommandSupport.has = () => true;
-		const ids = [h.opacity()[0]!.id, h.opacity()[1]!.id];
-		h.select(ids);
-		const apply = vi.spyOn(h.session, 'apply').mockReturnValue(ok());
+		const [a, b] = h.opacity();
+		h.select([a!.id, b!.id]);
 		const curve = { kind: 'cubic' as const, x1: 0.2, y1: 0, x2: 0.1, y2: 1 };
-		expect(
-			(await runCommand('ease.apply', h.ctx, { curve, sections: ['out', 'in'], name: 'Snappy' })).ran,
-		).toBe(true);
-		expect(apply).toHaveBeenCalledWith(
-			expect.objectContaining({
-				label: 'Apply Ease: Snappy',
-				origin: 'user',
-				commands: [{ type: 'keyframe.applyEase', keyframeIds: ids, curve, sections: ['out', 'in'] }],
-			}),
-		);
+		const before = h.session.getState().history.entries.length;
+		expect((await runCommand('ease.apply', h.ctx, { curve, name: 'Snappy' })).ran).toBe(true);
+		near(seg(h.opacity(), 0), curve);
+		expect(h.session.getState().history.entries.at(-1)!.label).toBe('Apply Ease: Snappy');
+		expect(h.session.getState().history.entries.length).toBe(before + 1);
 		expect(easeLibrary.get().recent[0]).toEqual(curve);
-		// Without arguments the panel's curve and targeting are used; no sections = the command's automatic choice.
-		easeLibrary.settings({ curve, sections: [] });
-		await runCommand('ease.apply', h.ctx);
-		expect(apply.mock.calls[1]![0].commands).toEqual([
-			{ type: 'keyframe.applyEase', keyframeIds: ids, curve },
-		]);
+		h.session.undo();
+		near(seg(h.opacity(), 0), easesToCubic(a!.easeOut, b!.easeIn));
+		// Without arguments: the panel's curve; sections pick the outer segment of a single key.
+		easeLibrary.settings({ curve, sections: ['out'] });
+		h.select([b!.id]);
+		expect((await runCommand('ease.apply', h.ctx)).ran).toBe(true);
+		near(seg(h.opacity(), 1), curve);
 		expect((await runCommand('ease.apply', h.ctx, { curve: { kind: 'cubic', x1: 3 } })).reason).toBe(
 			'invalid-args',
 		);
 	});
 
-	it('a refusal of the model is shown as a toast', async () => {
-		const h = setup();
-		docCommandSupport.has = () => true;
-		h.select([h.opacity()[0]!.id, h.opacity()[1]!.id]);
-		vi.spyOn(h.session, 'apply').mockReturnValue({
-			ok: false,
-			errors: [{ code: 'E_INVALID_PARAM', message: 'Hold keys cannot be eased' }],
-		} as unknown as TransactionResult);
-		await runCommand('ease.apply', h.ctx, { curve: { kind: 'cubic', x1: 0.3, y1: 0, x2: 0.6, y2: 1 } });
-		expect(h.toasts.at(-1)).toMatchObject({
-			kind: 'warning',
-			message: 'Apply Ease: not possible',
-			detail: 'Hold keys cannot be eased',
-		});
-	});
-
-	it('Copy Ease takes one key’s sides or the segments; Paste Ease sends them (stubbed model)', async () => {
+	it('a multi-point curve creates keys; the selection follows the result', async () => {
 		const h = setup();
 		const [a, b] = h.opacity();
 		h.select([a!.id, b!.id]);
-		expect(h.reason('ease.paste')).toBeDefined();
+		const bounce = builtinEasePresets().find((p) => p.curve.kind === 'multi' && p.group === 'bounce')!;
+		expect((await runCommand('ease.apply', h.ctx, { curve: bounce.curve, name: bounce.name })).ran).toBe(
+			true,
+		);
+		expect(h.opacity().length).toBeGreaterThan(3);
+		const sel = h.session.getState().selection.keyframes!.keyframeIds;
+		expect(sel.length).toBe(h.opacity().length - 1);
+	});
+
+	it('a refusal of the model is shown as a toast', async () => {
+		const h = setup();
+		h.select([h.opacity()[0]!.id]);
+		await runCommand('ease.apply', h.ctx, {
+			curve: { kind: 'cubic', x1: 0.3, y1: 0, x2: 0.6, y2: 1 },
+			sections: ['in'],
+		});
+		expect(h.toasts.at(-1)).toMatchObject({ kind: 'warning', message: 'Apply Ease: not possible' });
+	});
+
+	it('Copy Ease → Paste Ease onto another property; Paste Values', async () => {
+		const h = setup();
+		const [a, b, c] = h.opacity();
+		h.select([a!.id, b!.id]);
+		expect(h.reason('ease.paste')).toBe('Copy an ease first');
 		expect((await runCommand('ease.copy', h.ctx)).ran).toBe(true);
 		const copied = easeClipboard.get()!;
 		expect(copied.ease).toEqual({ kind: 'segments', segments: [easesToCubic(a!.easeOut, b!.easeIn)] });
 		expect(copied.values).toEqual([0, 100]);
+		h.select(h.position().map((k) => k.id));
+		expect((await runCommand('ease.paste', h.ctx)).ran).toBe(true);
+		near(seg(h.position(), 0), easesToCubic(a!.easeOut, b!.easeIn));
+		expect(h.session.getState().history.entries.at(-1)!.label).toBe('Paste Ease');
+		h.select([b!.id, c!.id]);
+		expect((await runCommand('ease.pasteValues', h.ctx)).ran).toBe(true);
+		expect(h.opacity().map((k) => k.value)).toEqual([0, 0, 100]);
+		expect(h.session.getState().history.entries.at(-1)!.label).toBe('Paste Keyframe Values');
+		// One key: its two sides.
 		h.select([a!.id]);
 		await runCommand('ease.copy', h.ctx);
-		expect(easeClipboard.get()!.ease).toEqual({ kind: 'key', easeIn: a!.easeIn, easeOut: a!.easeOut });
-		docCommandSupport.has = () => true;
-		const apply = vi.spyOn(h.session, 'apply').mockReturnValue(ok());
-		h.select([b!.id]);
-		await runCommand('ease.paste', h.ctx, { sections: ['in'] });
-		expect(apply.mock.calls[0]![0].commands).toEqual([
-			{
-				type: 'keyframe.pasteEase',
-				keyframeIds: [b!.id],
-				clip: { kind: 'key', easeIn: a!.easeIn, easeOut: a!.easeOut },
-				sections: ['in'],
-			},
-		]);
-		await runCommand('ease.pasteValues', h.ctx);
-		expect(apply.mock.calls[1]![0].commands).toEqual([
-			{ type: 'keyframe.pasteValues', keyframeIds: [b!.id], values: [0] },
-		]);
+		expect(easeClipboard.get()!.ease.kind).toBe('key');
+	});
+
+	it('Keyframe Velocity sets a side’s speed and influence', async () => {
+		const h = setup();
+		const [a, b] = h.opacity();
+		h.select([a!.id, b!.id]);
+		expect(
+			(
+				await runCommand('ease.setVelocity', h.ctx, {
+					keyframeId: a!.id,
+					side: 'out',
+					speed: 50,
+					influence: 40,
+				})
+			).ran,
+		).toBe(true);
+		const d = describeKeyframeEases(h.session.getCommitted(), [a!.id]);
+		if (!d.ok) throw new Error(d.message);
+		const out = d.properties[0]!.keys[0]!.easeOut!;
+		expect(out.speed).toBeCloseTo(50, 6);
+		expect(out.influencePercent).toBeCloseTo(40, 6);
+		expect(h.session.getState().history.entries.at(-1)!.label).toBe('Keyframe Velocity');
+		// A key outside the selection is refused.
+		await runCommand('ease.setVelocity', h.ctx, { keyframeId: h.position()[0]!.id, side: 'in', speed: 1 });
+		expect(h.toasts.at(-1)!.message).toBe('Select the keyframe first');
 	});
 
 	it('Duplicate Keys at Playhead pastes them with the earliest at the playhead', async () => {
@@ -234,8 +264,7 @@ describe('easing commands', () => {
 		const keys = h.opacity();
 		expect(keys).toHaveLength(5);
 		expect(keys.slice(3).map((k) => k.value)).toEqual([0, 100]);
-		expect(segmentCurve(keys, 3)).toEqual(segmentCurve(keys, 0));
-		// The pasted keys become the selection.
+		expect(seg(keys, 3)).toEqual(seg(keys, 0));
 		expect(h.session.getState().selection.keyframes?.keyframeIds).toEqual(keys.slice(3).map((k) => k.id));
 	});
 
@@ -247,12 +276,12 @@ describe('easing commands', () => {
 		expect((await runCommand('ease.mirrorAtPlayhead', h.ctx)).ran).toBe(true);
 		const keys = h.opacity();
 		expect(keys.slice(3).map((k) => k.value)).toEqual([100, 0]);
-		const original = segmentCurve(keys, 0)!;
-		const mirrored = segmentCurve(keys, 3)!;
-		expect(mirrored.x1).toBeCloseTo(1 - original.x2, 9);
-		expect(mirrored.y1).toBeCloseTo(1 - original.y2, 9);
-		expect(mirrored.x2).toBeCloseTo(1 - original.x1, 9);
-		expect(mirrored.y2).toBeCloseTo(1 - original.y1, 9);
+		const original = seg(keys, 0) as Record<string, number>;
+		const mirrored = seg(keys, 3) as Record<string, number>;
+		expect(mirrored.x1).toBeCloseTo(1 - original.x2!, 9);
+		expect(mirrored.y1).toBeCloseTo(1 - original.y2!, 9);
+		expect(mirrored.x2).toBeCloseTo(1 - original.x1!, 9);
+		expect(mirrored.y2).toBeCloseTo(1 - original.y1!, 9);
 		expect(keys[4]!.time - keys[3]!.time).toBe(b!.time - a!.time);
 	});
 
@@ -277,10 +306,32 @@ describe('easing commands', () => {
 		expect(clip.opacity.expression?.text).toMatch(/elasticity/);
 		expect(clip.transform.position.expression?.text).toMatch(/elasticity/);
 		expect((await runCommand('ease.addOvershoot', h.ctx)).ran).toBe(true);
-		expect((clipOf(h.session, h.clipId) as unknown as typeof clip).opacity.expression?.text).toMatch(/decay/);
+		expect((clipOf(h.session, h.clipId) as unknown as typeof clip).opacity.expression?.text).toMatch(
+			/amount/,
+		);
 	});
 
-	it('the gated path / clean-up commands say what is missing', () => {
+	it('Drive Along Path makes the point keys slider-driven; Clean Up Motion Path runs on point keys', async () => {
+		const h = setup();
+		h.select([h.opacity()[0]!.id, h.opacity()[1]!.id]);
+		expect(h.reason('ease.drivePath')).toMatch(/one point property/);
+		h.select([h.position()[0]!.id]);
+		expect(h.reason('ease.drivePath')).toBe('Select two or more keys of the property');
+		h.select(h.position().map((k) => k.id));
+		expect((await runCommand('ease.drivePath', h.ctx)).ran).toBe(true);
+		const clip = clipOf(h.session, h.clipId) as unknown as {
+			transform: { position: { expression?: { text: string } } };
+			effects: { effectId: string }[];
+		};
+		expect(clip.transform.position.expression?.text).toBeTruthy();
+		expect(h.toasts.filter((t) => t.message.includes('not possible'))).toEqual([]);
+		h.session.undo();
+		h.select(h.position().map((k) => k.id));
+		expect((await runCommand('ease.cleanupPath', h.ctx)).ran).toBe(true);
+		expect(h.toasts.filter((t) => t.message.includes('not possible'))).toEqual([]);
+	});
+
+	it('the gated commands say what is missing', () => {
 		const h = setup();
 		h.select(h.position().map((k) => k.id));
 		docCommandSupport.has = () => false;

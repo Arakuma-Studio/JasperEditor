@@ -292,6 +292,64 @@ describe('Easing panel ▸ applying and targeting', () => {
 	});
 });
 
+describe('Easing panel ▸ keyframe velocity', () => {
+	function keyed(values: [number, number]) {
+		const session = makeSession();
+		const [id] = addSolids(session, [0], 60);
+		session.apply({
+			label: 'keys',
+			origin: 'user',
+			commands: values.map((value, i) => ({
+				type: 'keyframe.add',
+				target: ['clip', id, 'opacity'],
+				at: { frames: i * 30 },
+				value,
+				interpolation: 'bezier',
+			})) as never,
+		});
+		const keys = (clipOf(session, id!) as unknown as { opacity: { keyframes: Keyframe<unknown>[] } }).opacity
+			.keyframes;
+		act(() => session.selectKeyframes({ clipOrTrackId: id!, keyframeIds: keys.map((k) => k.id) }));
+		return { session, keys };
+	}
+
+	it('edits the speed and influence of a side, or both with Link', () => {
+		const { session, keys } = keyed([0, 100]);
+		const { run } = show({ session });
+		expect(screen.getByTestId('ease-velocity-key')).toBeTruthy();
+		// The first key: no segment before it.
+		const inSpeed = screen.getByTestId('ease-velocity-in-speed') as HTMLInputElement;
+		expect(inSpeed.disabled).toBe(true);
+		expect(inSpeed.closest('label')!.title).toBe('No keyframe before it');
+		const outSpeed = screen.getByTestId('ease-velocity-out-speed') as HTMLInputElement;
+		fireEvent.change(outSpeed, { target: { value: '120' } });
+		fireEvent.keyDown(outSpeed, { key: 'Enter' });
+		expect(run).toHaveBeenLastCalledWith('ease.setVelocity', {
+			keyframeId: keys[0]!.id,
+			side: 'out',
+			speed: 120,
+		});
+		fireEvent.click(screen.getByTestId('ease-velocity-link'));
+		const infl = screen.getByTestId('ease-velocity-out-influence') as HTMLInputElement;
+		fireEvent.change(infl, { target: { value: '250' } });
+		fireEvent.blur(infl);
+		expect(run).toHaveBeenLastCalledWith('ease.setVelocity', {
+			keyframeId: keys[0]!.id,
+			side: 'both',
+			influence: 100,
+		});
+	});
+
+	it('a flat segment has no speed to set', () => {
+		const { session } = keyed([50, 50]);
+		show({ session });
+		const outSpeed = screen.getByTestId('ease-velocity-out-speed') as HTMLInputElement;
+		expect(outSpeed.disabled).toBe(true);
+		expect(outSpeed.closest('label')!.title).toMatch(/Both keys of this segment are equal/);
+		expect((screen.getByTestId('ease-velocity-out-influence') as HTMLInputElement).disabled).toBe(false);
+	});
+});
+
 describe('Easing panel ▸ preview', () => {
 	it('plays the curve, or shows still frames with reduced motion', () => {
 		show();
