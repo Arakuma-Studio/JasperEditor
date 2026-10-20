@@ -36,6 +36,7 @@ import {
 	getPropertySpec,
 	hasActiveExpression,
 	invertMat3,
+	isShapeOutlineItem,
 	type Keyframe,
 	kindCapabilities,
 	type Layer3D,
@@ -47,6 +48,7 @@ import {
 	type ParamSpec,
 	type PropertySpec,
 	PUPPET_PIN_LABELS,
+	PathQuery,
 	PUPPET_PIN_PROPS,
 	planeHomography,
 	propertyEvaluateOptions,
@@ -59,6 +61,9 @@ import {
 	type Sequence,
 	type ShapeItem,
 	sequenceDuration,
+	shapeGeom,
+	shapeItemMatrix,
+	shapeItemPath,
 	shapeItemSpecs,
 	type TextAnimatorGroup,
 	type TextContent,
@@ -66,6 +71,8 @@ import {
 	textAnimatorPropertySpecs,
 	transitionSpec,
 	transitionStartFrame,
+	trimPathAt,
+	type VectorShapeData,
 } from '@jasper/project';
 import { OP } from './ops.ts';
 import { type HostHandler, type RunState, runExpression } from './runtime.ts';
@@ -172,6 +179,8 @@ export class World {
 	private readonly layerCache = new Map<string, string[]>();
 	private readonly propCache = new Map<string, ResolvedProp | null>();
 	private readonly valueCache = new Map<string, Map<string, EvalStatus>>();
+	/** Measured paths of the path methods per (layer, locator, time); bounded. */
+	private readonly pathCache = new Map<string, PathQuery>();
 
 	constructor(data: ExpressionWorldData) {
 		this.data = data;
@@ -978,10 +987,76 @@ export class World {
 				if (info?.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
 				return this.sample(info.seq, info.clip, args.slice(2) as never);
 			}
+			case OP.PATH: {
+				const v = this.pathQuery(String(args[0]), String(args[1]), String(args[2]), Number(args[3])).vertices();
+				return [v.closed, v.points, v.inTangents, v.outTangents];
+			}
+			case OP.PATHAT: {
+				const q = this.pathQuery(String(args[0]), String(args[1]), String(args[2]), Number(args[3]));
+				const r = q.at(Number(args[4]));
+				return [r.point[0], r.point[1], r.tangent[0], r.tangent[1]];
+			}
+			case OP.SPACE:
+				return this.itemSpace(String(args[0]), String(args[1]), String(args[2]), Number(args[3]));
 			default:
 				throw new Error(`unknown host request ${op}`);
 		}
 	};
+
+	/** A vector shape clip's contents as rendered (expressions bound) and its content time at sequence seconds `s`. */
+	private vectorAt(
+		seqId: string,
+		owner: string,
+		s: number,
+	): { contents: readonly ShapeItem[]; t: number; box: { width: number; height: number } } {
+		const info = this.owner(seqId, owner);
+		if (info?.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
+		if (!Number.isFinite(s)) throw new Error('time must be a finite number');
+		const c = (this.bound?.[seqId]?.clips[info.clip.id] ?? info.clip) as { shape?: VectorShapeData };
+		if (c.shape?.type !== 'vector') throw new Error(`Layer "${info.clip.name}" is not a vector shape`);
+		return {
+			contents: c.shape.contents,
+			t: this.clipTime(info.seq, info.clip).toStored(s),
+			box: this.box(info.seq, info.clip),
+		};
+	}
+
+	/**
+	 * The measured path behind a Path object: `i:<itemId>` = a path item's outline, `t:<trimId>:<item>` = what a Trim
+	 * Paths measures (one path by id or name; empty = all its paths laid end to end).
+	 */
+	private pathQuery(seqId: string, owner: string, loc: string, s: number): PathQuery {
+		const key = `${seqId}\u0000${owner}\u0000${loc}\u0000${s}`;
+		const hit = this.pathCache.get(key);
+		if (hit) return hit;
+		const { contents, t } = this.vectorAt(seqId, owner, s);
+		let q: PathQuery;
+		if (loc.startsWith('i:')) q = new PathQuery(shapeItemPath(contents, loc.slice(2), t));
+		else if (loc.startsWith('t:')) {
+			const rest = loc.slice(2);
+			const sep = rest.indexOf(':');
+			const item = rest.slice(sep + 1);
+			q = new PathQuery(trimPathAt(contents, rest.slice(0, sep), item === '' ? null : item, t).path);
+		} else throw new Error(`unknown path locator ${loc}`);
+		if (this.pathCache.size >= 64) this.pathCache.clear();
+		this.pathCache.set(key, q);
+		return q;
+	}
+
+	/**
+	 * `[item space → layer, layer → item space | null]` 3×3 row-major at sequence seconds `s`: the space a shape
+	 * item's own values live in (its enclosing groups' transforms) mapped to layer pixels (box origin top-left; shape
+	 * contents are centred on the box).
+	 */
+	private itemSpace(seqId: string, owner: string, itemId: string, s: number): (number[] | null)[] {
+		const { contents, t, box } = this.vectorAt(seqId, owner, s);
+		const m = shapeItemMatrix(contents, itemId, t);
+		if (!m) throw new Error('Shape item no longer exists');
+		const g = shapeGeom.compose(shapeGeom.translate(box.width / 2, box.height / 2), m);
+		const inv = shapeGeom.invert(g);
+		const rows = (a: readonly number[]) => [a[0]!, a[2]!, a[4]!, a[1]!, a[3]!, a[5]!, 0, 0, 1];
+		return [rows(g), inv ? rows(inv) : null];
+	}
 
 	/**
 	 * `[layer → sequence, sequence → layer]` 3×3 row-major at sequence seconds `s`; for a 3D layer also
@@ -1140,7 +1215,7 @@ export class World {
 		const walk = (group: string) => {
 			for (const n of this.children(info, group)) {
 				if (n.group) walk(n.path);
-				else {
+				else if (n.matchName !== PATH_MATCH) {
 					const p = this.prop({ seq: seqId, owner, path: n.path });
 					if (p) out.push(p);
 				}
@@ -1199,6 +1274,9 @@ const MATCH: Record<string, string> = {
 	mergePaths: 'ADBE Vector Filter - Merge',
 };
 
+/** Match name of a path item's Path property (the prelude builds a Path object for it, not a value property). */
+const PATH_MATCH = 'ADBE Vector Shape';
+
 /** Sub-groups of an item's fields (the first path segment of nested fields). */
 const SUBGROUP_NAMES: Record<string, string> = {
 	transform: 'Transform',
@@ -1248,6 +1326,9 @@ function vectorShapeChildren(
 			out.push({ path: `${group}.${k}`, group: true, name: label, matchName: k, aliases: [k, camel(label)] });
 		}
 	}
+	// AE's "Path" property of path items; rectangles, ellipses and polystars expose their outline (path methods).
+	if (sub.length === 0 && isShapeOutlineItem(it))
+		out.push({ path: `${prefix}path`, group: false, name: 'Path', matchName: PATH_MATCH, aliases: ['path'] });
 	if (sub.length === 0 && it.type === 'group')
 		out.unshift({
 			path: `${group}.contents`,
