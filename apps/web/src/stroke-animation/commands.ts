@@ -143,8 +143,11 @@ function addLine(ctx: CommandCtx, orientation: 'horizontal' | 'vertical'): void 
 	);
 }
 
-function addTracer(ctx: CommandCtx): void {
-	const t = tracerTarget(ctx.session?.getState(), vectorUi.get().selected);
+/** Add Tracer: which trim to follow when the shape has several (the panel's choice). */
+const TracerArgsSchema = z.strictObject({ trimItemId: z.string().min(1).max(200).optional() }).optional();
+
+function addTracer(ctx: CommandCtx, args: z.infer<typeof TracerArgsSchema>): void {
+	const t = tracerTarget(ctx.session?.getState(), vectorUi.get().selected, args?.trimItemId ?? null);
 	if (!t.ok) return;
 	apply(ctx, STROKE_MENU_LABELS.addTracer, t.sequence.id, [
 		tracerCommand(t.clipId, t.trimItemId, strokePrefs.get(), t.followerId),
@@ -199,7 +202,12 @@ function behaviour(action: StrokeAction): Omit<UiCommand, 'id' | 'label' | 'scop
 			};
 		}
 		case 'addTracer':
-			return { when: (ctx) => !tracerReason(ctx), disabledReason: tracerReason, run: addTracer };
+			return {
+				argsSchema: TracerArgsSchema,
+				when: (ctx) => !tracerReason(ctx),
+				disabledReason: tracerReason,
+				run: (ctx, args) => addTracer(ctx, args as z.infer<typeof TracerArgsSchema>),
+			};
 		default:
 			// tracerNext: a preference toggle, always available.
 			return {

@@ -54,6 +54,7 @@ import {
 	type StrokeCurvePreset,
 	shapeTargets,
 	strokeCurvePresets,
+	type TrimChoice,
 	tracerTarget,
 } from '../../stroke-animation/model.ts';
 import {
@@ -142,10 +143,14 @@ export function StrokeAnimationBody({
 		return t.ok ? { reason: null, count: t.clips.length, first: t.clips[0] ?? null } : { reason: t.reason };
 	}, sameTargets);
 	const lineReason = useSessionState((s) => lineTarget(s));
-	const tracer = useSessionState((s) => {
-		const t = tracerTarget(s, selectedItem);
-		return t.ok ? null : t.reason;
-	});
+	const [tracerTrim, setTracerTrim] = useState<string | null>(null);
+	const tracerInfo = useSessionState((s) => {
+		const t = tracerTarget(s, selectedItem, tracerTrim);
+		return t.ok
+			? { reason: null, clipId: t.clipId, trimItemId: t.trimItemId, trims: t.trims }
+			: { reason: t.reason, clipId: '', trimItemId: '', trims: [] };
+	}, sameTracer);
+	const tracer = tracerInfo.reason;
 	const seqSettings = useSessionState((s) => {
 		const id = s.activeSequenceId;
 		return id ? ((s.transient ?? s.document).sequences[id]?.settings ?? null) : null;
@@ -176,6 +181,7 @@ export function StrokeAnimationBody({
 	const onAction = (a: StrokeAction, e: MouseEvent) => {
 		if (reasonOf(a)) return;
 		if (a.style) run(a.command, effectiveFlags(prefs, { alt: e.altKey, shift: e.shiftKey }));
+		else if (a.id === 'addTracer') run(a.command, { trimItemId: tracerInfo.trimItemId });
 		else run(a.command);
 	};
 
@@ -215,6 +221,18 @@ export function StrokeAnimationBody({
 								/>
 							))}
 						</div>
+						{g === 'trace' && tracerInfo.trims.length > 1 && !prefs.hidden.includes('addTracer') ? (
+							<div className="mt-1 flex items-center gap-2">
+								<span className="shrink-0 text-pr-muted">Follow</span>
+								<Select
+									label="Trim Paths to follow"
+									value={tracerInfo.trimItemId}
+									onValueChange={setTracerTrim}
+									options={tracerInfo.trims.map((t) => ({ value: t.id, label: t.name }))}
+									className="min-w-0 flex-1"
+								/>
+							</div>
+						) : null}
 					</section>
 				);
 			})}
@@ -254,6 +272,17 @@ export function StrokeAnimationBody({
 	);
 }
 
+type TracerInfo = { reason: string | null; clipId: string; trimItemId: string; trims: TrimChoice[] };
+function sameTracer(a: TracerInfo, b: TracerInfo): boolean {
+	return (
+		a.reason === b.reason &&
+		a.clipId === b.clipId &&
+		a.trimItemId === b.trimItemId &&
+		a.trims.length === b.trims.length &&
+		a.trims.every((t, i) => t.id === b.trims[i]?.id && t.name === b.trims[i]?.name)
+	);
+}
+
 function sameTargets(
 	a: { reason: string | null; count?: number; first?: unknown },
 	b: { reason: string | null; count?: number; first?: unknown },
@@ -289,9 +318,9 @@ function ActionButton({
 				aria-pressed={pressed}
 				data-testid={`stroke-btn-${action.id}`}
 				className={cx(
-					'flex min-w-0 items-center justify-center gap-1 rounded-pr-control border border-pr-border-subtle text-pr-text',
+					'flex min-w-0 items-center justify-center gap-1 rounded-pr-control border border-pr-border-subtle',
 					narrow ? 'h-8 px-0' : 'h-12 flex-col px-1',
-					pressed ? 'bg-pr-selected' : 'bg-pr-field hover:bg-pr-hover',
+					pressed ? 'bg-pr-accent-fill text-pr-on-accent' : 'bg-pr-field text-pr-text hover:bg-pr-hover',
 					reason ? 'cursor-default opacity-40 hover:bg-pr-field' : undefined,
 				)}
 				onClick={(e) => {
@@ -385,7 +414,7 @@ function Settings({
 						<ScrubbyNumber
 							label="In-out lag"
 							value={Math.round(prefs.inOutLag * 100)}
-							min={0}
+							min={1}
 							max={100}
 							unit="%"
 							onScrub={(v) => strokePrefs.set({ inOutLag: v / 100 })}

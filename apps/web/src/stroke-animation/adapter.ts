@@ -1,59 +1,24 @@
-// The Stroke Animation UI dispatches its document edits through this adapter (one transaction per click, one undo
-// step), so tests can stub the commands and check the payloads. The payload types mirror the `shape.*` Trim Paths
-// commands of packages/project.
-import type { Command, CubicEase, TransactionResult } from '@jasper/project';
+// The Stroke Animation UI dispatches its document edits through this adapter, so tests can stub the commands and check
+// the payloads. The payloads are the `shape.*` Trim Paths commands of packages/project
+// (commands/schemas/shape-trim.ts, shape-tracer.ts).
+import { type CommandInput, TRIM_ANIMATION_STYLES, type TransactionResult } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 
-export const ANIMATE_TRIM_STYLES = [
-	'in',
-	'out',
-	'inOut',
-	'middleIn',
-	'middleOut',
-	'divideIn',
-	'divideOut',
-] as const;
-export type AnimateTrimStyle = (typeof ANIMATE_TRIM_STYLES)[number];
+type InputOf<T extends string> = Extract<CommandInput, { type: T }>;
 
-export type AnimateTrimCommand = {
-	type: 'shape.animateTrim';
-	clipIds: string[];
-	style: AnimateTrimStyle;
-	reverse?: boolean;
-	animateOffset?: boolean;
-	durationFrames?: number;
-	offsetDegrees?: number;
-	copies?: number;
-	inOutLag?: number;
-	/** Sequence frame of the first key (default: the clip start). */
-	at?: number;
-	curve?: CubicEase;
-};
-export type ReversePathDirectionCommand = { type: 'shape.reversePathDirection'; clipIds: string[] };
-export type AddLineCommand = {
-	type: 'shape.addLine';
-	orientation: 'horizontal' | 'vertical';
-	length?: number;
-	strokeWidth?: number;
-	at?: number;
-	durationFrames?: number;
-	trackId?: string;
-};
-export type AddTrimTracerCommand = {
-	type: 'shape.addTrimTracer';
-	clipId: string;
-	trimItemId: string;
-	pathItemId?: string;
-	tip?: 'start' | 'end' | 'auto';
-	follower?: { clipId: string };
-	orient?: boolean;
-	name?: string;
-};
+export type AnimateTrimCommand = InputOf<'shape.animateTrim'>;
+export type AnimateTrimStyle = AnimateTrimCommand['style'];
+export type ReversePathDirectionCommand = InputOf<'shape.reversePathDirection'>;
+export type AddLineCommand = InputOf<'shape.addLine'>;
+export type AddTrimTracerCommand = InputOf<'shape.addTrimTracer'>;
 export type StrokeCommand =
 	| AnimateTrimCommand
 	| ReversePathDirectionCommand
 	| AddLineCommand
 	| AddTrimTracerCommand;
+
+/** The styles in panel order (`TRIM_ANIMATION_STYLES` of packages/project). */
+export const ANIMATE_TRIM_STYLES: readonly AnimateTrimStyle[] = TRIM_ANIMATION_STYLES;
 
 export type StrokeTx = {
 	label: string;
@@ -75,7 +40,7 @@ const sessionAdapter: StrokeAnimationAdapter = {
 			label: tx.label,
 			origin: 'user',
 			sequenceId: tx.sequenceId,
-			commands: tx.commands as unknown as Command[],
+			commands: tx.commands,
 			...(tx.coalesceKey ? { coalesceKey: tx.coalesceKey } : {}),
 			// The session keeps only the created ids that are clips.
 			...(tx.selectCreated

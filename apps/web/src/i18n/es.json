@@ -8753,7 +8753,6 @@
   "Playhead (inside the clip)": "Cabezal de reproducción (dentro del clip)",
   "Reverse (Alt)": "Invertir (Alt)",
   "Reverse Path": "Invertir trazado",
-  "Reverse Path Direction": "Invertir dirección del trazado",
   "Reverses the direction of the paths of the selected shapes, so animations run the other way.": "Invierte la dirección de los trazados de las formas seleccionadas, de modo que las animaciones van en sentido contrario.",
   "Select a shape clip that has Trim Paths (animate it first)": "Seleccione un clip de forma que tenga Recortar trazados (anímelo primero)",
   "Select at most one other clip to follow the tip": "Seleccione como máximo otro clip para que siga la punta",
@@ -8777,5 +8776,7 @@
   "Vertical Line": "Línea vertical",
   "When on, every Stroke Animation also adds a tracer: a marker that follows the moving tip of the stroke.": "Si está activado, cada animación de trazo añade también un rastreador: un marcador que sigue la punta en movimiento del trazo.",
   "with Animate offset": "con Animar desplazamiento",
-  "x1, y1, x2, y2": "x1, y1, x2, y2"
+  "x1, y1, x2, y2": "x1, y1, x2, y2",
+  "Follow": "Seguir",
+  "Trim Paths to follow": "Recortar trazados que se sigue"
 }

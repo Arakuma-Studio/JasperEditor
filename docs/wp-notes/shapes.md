@@ -194,11 +194,6 @@ that set up a draw-on / draw-off / from-the-middle / divided Trim Paths animatio
 reverse and offset, a tracer that follows the tip — follows public descriptions of After Effects stroke-animation
 scripts; names, glyphs and layout are our own.
 
-Status on `feat/trim-ui`: the UI, preferences, menus, palette and picking fix are done and tested against the
-command contract with a stubbed adapter; the `shape.animateTrim` / `reversePathDirection` / `addLine` /
-`addTrimTracer` commands are not on this branch yet, so in the app the buttons are refused by the session (error
-notification, nothing changes) until they are merged.
-
 - **Buttons** (a responsive grid; below 240 px the labels collapse to the glyphs, the tooltip always names the
   action and gives its description or the reason it is disabled):
   Draw — In, Out, In & Out (`shape.animateTrim` styles `in`, `out`, `inOut`); Middle — Grow from Middle, Shrink to
@@ -214,19 +209,26 @@ notification, nothing changes) until they are merged.
 - **Targets**: every selected clip of kind `shape` in the active sequence (rectangles / ellipses are converted to
   vector shapes by the command; clips it cannot animate come back as `W_TRIM_SKIPPED` warnings, shown in one
   notification). Disabled with a reason without a project, a sequence, a shape selection or write access
-  (read-only project). Add Tracer needs exactly one selected vector shape with Trim Paths — the trim item selected in
-  Properties ▸ Shape Contents, else the shape's first trim — and accepts one more selected clip with a Motion
-  transform as the follower (Settings ▸ "Follower turns with the path" sets `orient`).
+  (read-only project). Add Tracer needs exactly one selected vector shape with Trim Paths and accepts one more
+  selected clip with a Motion transform as the follower (Settings ▸ "Follower turns with the path" sets `orient`).
+  The trim it follows: the one chosen in the panel's Follow list (shown when the shape has several trims, named with
+  their groups, e.g. "Part 1 › Trim Paths 1"), else the trim item selected in Properties ▸ Shape Contents, else the
+  last top-level trim (the one the one-click animations keep and reuse), else the first trim whose Start / End are not
+  expressions (the master of a Divide animation, in Part 1).
 - **Start**: "Playhead (inside the clip)" (default) starts each clip's animation at the playhead when the playhead is
   inside that clip, else at the clip start; "Clip start" always uses the clip start. Clips with different starts get
   one `shape.animateTrim` each, in one transaction.
-- **One undo step per click**: the animation is one transaction; with Tracer on Next its tracers (one per animated
-  clip, on the master trim the command reports) are a second transaction with the same label and coalesce key, merged
-  into the same History entry. Refusals are an error notification and change nothing.
+- **One undo step per click**: the animation is one transaction. With Tracer on Next the tracers need the master trim
+  ids that `shape.animateTrim` returns (`clips[].trimIds[0]`); a later command of the same transaction cannot use them
+  (`trimItemId` is a plain id, not a `$ref`), so they are a second transaction issued synchronously with the same label
+  and a per-click coalesce key: the session merges it into the animation's History entry (S01:UND-006), so one Undo
+  removes the tracers and the animation together (tested with the real commands and the app's coalescing window).
+  Refusals are an error notification and change nothing; if the tracer transaction is refused the animation stays and
+  the refusal is shown.
 - **Settings** (collapsible; per-user, `localStorage` key `jasper:stroke-animation-prefs`, zod schema version 1,
   validated field by field so a corrupt or newer value keeps every valid field): Duration (frames, shown also as
   sequence timecode; 1–3600, default 10), Offset (degrees, used with Animate offset; default 180), Copies (Divide,
-  2–64, default 4), In-out lag (In & Out, 0–100 %, default 50 %), Start at, Curve (Default = the command's ease; one
+  2–64, default 4), In-out lag (In & Out, 1–100 %, default 50 %; the command refuses 0), Start at, Curve (Default = the command's ease; one
   of the cubic presets of the built-in ease catalogue — `strokeCurvePresets()`, shown as "Group · Name"; multi-segment
   presets are not offered because `shape.animateTrim` takes one cubic; Custom cubic typed as `x1, y1, x2, y2` or
   `cubic-bezier(…)`, validated by `CubicEaseSchema`; a typed curve equal to a preset shows as that preset; a small
@@ -235,6 +237,12 @@ notification, nothing changes) until they are merged.
 - **Menus and palette**: Graphics ▸ Stroke Animation ▸ (every action, the Tracer on Next toggle with a check mark,
   and the panel); palette entries "Stroke Animation: …". No default shortcuts (they can be bound in Keyboard
   Shortcuts); `apps/web/test/keymap.test.ts` stays conflict-free.
+- **Checked in the running app** (engine 47932 / Vite 5192, 1080p 29.97, Duration 30 frames): Horizontal Line +
+  Draw In with Tracer on Next (one History entry, the dot rides the tip), a rectangle (fill only, converted) + Grow
+  from Middle, Vertical Line + Divide In (4 parts), Add Tracer on the divided line (follows Part 1's master); scrubbed
+  to frames 8, 12 and 20 and inspected the Program monitor: the parts and tips are where the keys put them. Clicking
+  3.5 screen px beside the 8 px vertical line at 25 % zoom selects it. A shape whose stroke is fully trimmed (e.g. at
+  the first frame of Draw In) has nothing drawn to click; select it in the timeline.
 - **Thin lines in the Program monitor**: clicking picks shapes by their drawn geometry. The tolerance used to be 3
   layer px, i.e. under one screen pixel for a 2 px line at 25–50 % zoom, and the pick also required the point to lie
   in the shape's edit box (stroke half-width + 1 px around a zero-height / zero-width path). `pickLayerAt`
@@ -242,9 +250,12 @@ notification, nothing changes) until they are merged.
   the monitor zoom and the layer's scale, never below the old 3 layer px) for the geometry and grows the edit box by
   the same distance; `apps/web/test/thin-line-hit.test.ts` picks horizontal and vertical lines 4 screen px off at
   25 / 50 / 100 / 200 % (it failed at 25 % and 50 % before).
-- Tests: `apps/web/test/stroke-animation.test.tsx` (style × modifier payloads through the pure builder and the panel
-  buttons, start rules, settings persistence and validation with fast-check, curve text, disabled states, warnings /
-  refusals, tracer targeting, lines, menu ↔ command coverage).
+- Tests: `apps/web/test/stroke-animation.test.tsx` — style × modifier payloads through the pure builder and the panel
+  buttons, start rules, settings persistence and validation with fast-check, curve text and presets, disabled states,
+  tracer targeting, menu ↔ command coverage (stubbed adapter); and end to end with the real commands: keys at the
+  playhead, re-run replaces, undo; every style on a vector shape and a converted rectangle; skipped-clip warning and
+  refusal (document unchanged); Tracer on Next in one History entry; Add Tracer with a follower (Position and
+  Rotation expressions); Reverse Path Direction; Add Horizontal Line at the playhead, selected.
 
 ## 7. SVG → shapes (for paste, import and agents)
 

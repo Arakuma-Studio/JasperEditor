@@ -32,7 +32,7 @@ export const STROKE_LIMITS = {
 	durationFrames: { min: 1, max: 3600 },
 	offsetDegrees: { min: -3600, max: 3600 },
 	copies: { min: 2, max: 64 },
-	inOutLag: { min: 0, max: 1 },
+	inOutLag: { min: 0.01, max: 1 },
 } as const;
 
 const L = STROKE_LIMITS;
@@ -44,7 +44,7 @@ const FIELDS = {
 	offsetDegrees: z.number().finite().min(L.offsetDegrees.min).max(L.offsetDegrees.max),
 	/** Parts of the Divide styles (contract 2…64, default 4). */
 	copies: z.number().int().min(L.copies.min).max(L.copies.max),
-	/** In & Out: when the tail starts, as a fraction of the duration (contract default 0.5). */
+	/** In & Out: when the tail starts, as a fraction of the duration (default 0.5; 0 would never show the stroke). */
 	inOutLag: z.number().finite().min(L.inOutLag.min).max(L.inOutLag.max),
 	/** `playhead`: at the playhead when it is inside the clip, else the clip start; `clipStart`: always the start. */
 	startAt: z.enum(['playhead', 'clipStart']),

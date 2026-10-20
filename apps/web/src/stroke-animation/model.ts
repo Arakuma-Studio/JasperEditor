@@ -200,13 +200,25 @@ export function lineTarget(s: SessionState | null | undefined): string | null {
 	return null;
 }
 
-/** Trim Paths items of a vector shape, depth first in list order. */
-export function trimItemIds(contents: readonly ShapeItem[] | undefined, depth = 0): string[] {
+/**
+ * A Trim Paths item of a vector shape: `root` = in the top-level contents (where the one-click animations put it);
+ * `driven` = its Start or End is an expression (a divided part following the master trim).
+ */
+export type TrimChoice = { id: string; name: string; root: boolean; driven: boolean };
+
+/** The Trim Paths items of a vector shape, depth first in list order; names carry their groups ("Part 1 › Trim 1"). */
+export function trimItems(contents: readonly ShapeItem[] | undefined, depth = 0, prefix = ''): TrimChoice[] {
 	if (!contents || depth > 64) return [];
-	const out: string[] = [];
+	const out: TrimChoice[] = [];
 	for (const it of contents) {
-		if (it.type === 'trim') out.push(it.id);
-		else if (it.type === 'group') out.push(...trimItemIds(it.contents, depth + 1));
+		if (it.type === 'trim')
+			out.push({
+				id: it.id,
+				name: `${prefix}${it.name}`,
+				root: depth === 0,
+				driven: !!(it.start.expression || it.end.expression),
+			});
+		else if (it.type === 'group') out.push(...trimItems(it.contents, depth + 1, `${prefix}${it.name} › `));
 	}
 	return out;
 }
@@ -215,34 +227,49 @@ const vectorContents = (c: Clip | undefined): readonly ShapeItem[] | undefined =
 	c?.kind === 'shape' && c.shape.type === 'vector' ? c.shape.contents : undefined;
 
 export type TracerTarget =
-	| { ok: true; sequence: Sequence; clipId: string; trimItemId: string; followerId: string | null }
+	| {
+			ok: true;
+			sequence: Sequence;
+			clipId: string;
+			trimItemId: string;
+			/** Every trim of the shape (the panel lets the user choose when there are several). */
+			trims: TrimChoice[];
+			followerId: string | null;
+	  }
 	| { ok: false; reason: string };
 
 /**
- * "Add Tracer": one selected vector shape with Trim Paths (the trim item selected in Shape Contents, else its first
- * trim) and at most one other selected clip with a Motion transform, which becomes the follower.
+ * "Add Tracer": one selected vector shape with Trim Paths and at most one other selected clip with a Motion transform,
+ * which becomes the follower. The trim followed: `requested` (the panel's choice) when it is one of the shape's, else
+ * the trim item selected in Shape Contents, else the last top-level trim (the one the one-click animations keep), else
+ * the first trim not driven by another (the master of a divided animation), else the last trim.
  */
 export function tracerTarget(
 	s: SessionState | null | undefined,
 	selectedItem: { clipId: string; itemId: string } | null,
+	requested: string | null = null,
 ): TracerTarget {
 	const base = shapeTargets(s);
 	if (!s || !base.sequence) return { ok: false, reason: base.ok ? reason('noSequence') : base.reason };
 	if (s.readOnly) return { ok: false, reason: reason('readOnly') };
 	const seq = base.sequence;
 	const selected = s.selection.timeline.clips.map((id) => seq.clips[id]).filter((c): c is Clip => !!c);
-	const withTrim = selected.filter((c) => trimItemIds(vectorContents(c)).length > 0);
+	const withTrim = selected.filter((c) => trimItems(vectorContents(c)).length > 0);
 	if (!withTrim.length) return { ok: false, reason: reason('noTrim') };
 	if (withTrim.length > 1) return { ok: false, reason: reason('manyTrims') };
 	const shape = withTrim[0] as Clip;
 	const others = selected.filter((c) => c.id !== shape.id && 'transform' in c);
 	if (others.length > 1) return { ok: false, reason: reason('manyFollowers') };
-	const trims = trimItemIds(vectorContents(shape));
-	const trimItemId =
-		selectedItem?.clipId === shape.id && trims.includes(selectedItem.itemId)
+	const trims = trimItems(vectorContents(shape));
+	const has = (id: string | null | undefined): id is string => !!id && trims.some((t) => t.id === id);
+	const roots = trims.filter((t) => t.root);
+	const trimItemId = has(requested)
+		? requested
+		: selectedItem?.clipId === shape.id && has(selectedItem.itemId)
 			? selectedItem.itemId
-			: (trims[0] as string);
-	return { ok: true, sequence: seq, clipId: shape.id, trimItemId, followerId: others[0]?.id ?? null };
+			: ((roots[roots.length - 1] ?? trims.find((t) => !t.driven) ?? trims[trims.length - 1]) as TrimChoice)
+					.id;
+	return { ok: true, sequence: seq, clipId: shape.id, trimItemId, trims, followerId: others[0]?.id ?? null };
 }
 
 export type Modifiers = { alt: boolean; shift: boolean };
@@ -301,8 +328,9 @@ export function buildAnimateCommands(
 	}));
 }
 
+/** `shape.animateTrim`'s result: per animated clip its trims, master first. */
 const AnimateTrimResultSchema = z.object({
-	clips: z.array(z.object({ clipId: z.string(), trimItemIds: z.array(z.string()).min(1) })),
+	clips: z.array(z.object({ clipId: z.string(), trimIds: z.array(z.string()).min(1) })),
 });
 
 /** The master trim item of each animated clip, from the transaction's per-command results. */
@@ -311,7 +339,7 @@ export function masterTrims(results: readonly unknown[]): { clipId: string; trim
 	for (const r of results) {
 		const parsed = AnimateTrimResultSchema.safeParse(r);
 		if (!parsed.success) continue;
-		for (const c of parsed.data.clips) out.push({ clipId: c.clipId, trimItemId: c.trimItemIds[0] as string });
+		for (const c of parsed.data.clips) out.push({ clipId: c.clipId, trimItemId: c.trimIds[0] as string });
 	}
 	return out;
 }
