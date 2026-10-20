@@ -60,6 +60,8 @@ export const WARNING_CODES = [
 	'W_TRACKING_UNLINKED',
 	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
 	'W_TRACK_MATTE_CLEARED',
+	/** path-trace: shape.addTrimTracer replaced an expression the follower already had. */
+	'W_EXPRESSION_REPLACED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

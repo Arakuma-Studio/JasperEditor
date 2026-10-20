@@ -21,13 +21,17 @@ const N = 4000;
 
 /** Point and unit tangent at fraction `u` (clamped) of the arc length of the segments laid end to end. */
 export function measure(segs: readonly Cub[]): ((u: number) => { p: Pt; tan: Pt }) & { total: number } {
+	// Separate subpaths (a segment not starting where the previous one ends) are joined by a zero-length step.
 	const pts: Pt[] = [];
-	segs.forEach((c, k) => {
-		for (let i = k === 0 ? 0 : 1; i <= N; i++) pts.push(bez(c, i / N));
+	const cum: number[] = [];
+	segs.forEach((c) => {
+		for (let i = 0; i <= N; i++) {
+			const p = bez(c, i / N);
+			const q = pts[pts.length - 1];
+			pts.push(p);
+			cum.push(q === undefined ? 0 : cum[cum.length - 1]! + (i === 0 ? 0 : Math.hypot(p[0] - q[0], p[1] - q[1])));
+		}
 	});
-	const cum = [0];
-	for (let i = 1; i < pts.length; i++)
-		cum.push(cum[i - 1]! + Math.hypot(pts[i]![0] - pts[i - 1]![0], pts[i]![1] - pts[i - 1]![1]));
 	const total = cum[cum.length - 1]!;
 	const at = (u: number) => {
 		const s = Math.min(1, Math.max(0, u)) * total;
