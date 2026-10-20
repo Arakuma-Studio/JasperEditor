@@ -44,9 +44,15 @@ export function labelFloatingGroup(p: IDockviewPanel, title: string): void {
 }
 
 /** Groups (by panel kind) of a layout definition, used to find a closed panel's home group. */
-function homeGroups(node: LayoutNode): PanelKind[][] {
+export function homeGroups(node: LayoutNode): PanelKind[][] {
 	if ('group' in node) return [node.group];
 	return node.children.flatMap((c) => homeGroups(c.node));
+}
+
+/** The panels a definition prefers to dock next to, in order. */
+export function dockNeighbours(def: Pick<PanelDefinition, 'dockWith'>): readonly PanelKind[] {
+	const d = def.dockWith;
+	return d === undefined ? [] : typeof d === 'string' ? [d] : d;
 }
 
 export class DockController {
@@ -242,8 +248,10 @@ export class DockController {
 		const peers = homeGroups(this.definitionFor(this.workspaceId).layout).find((g) => g.includes(kind)) ?? [];
 		const peer = peers.map((k) => this.panelOf(k)).find(Boolean);
 		if (peer) return api.addPanel({ ...base, position: { referencePanel: peer.id, direction: 'within' } });
-		// polish: a panel the workspace has no place for docks next to its preferred neighbour when that one is open.
-		const neighbour = def.dockWith ? this.panelOf(def.dockWith) : undefined;
+		// polish: a panel the workspace has no place for docks next to its first preferred neighbour that is open.
+		const neighbour = dockNeighbours(def)
+			.map((k) => this.panelOf(k))
+			.find(Boolean);
 		if (neighbour)
 			return api.addPanel({ ...base, position: { referencePanel: neighbour.id, direction: 'within' } });
 		if (api.panels.length === 0) return api.addPanel(base);

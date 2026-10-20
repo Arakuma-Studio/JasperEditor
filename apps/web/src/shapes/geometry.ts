@@ -18,7 +18,7 @@ import {
 	vectorShapeContainsPoint,
 	visibleRect,
 } from '@jasper/project';
-import type { HandleId } from '../panels/program/transform-math.ts';
+import { type HandleId, hitTest, type Quad } from '../panels/program/transform-math.ts';
 
 /** Evaluated size of a shape layer at its frame, or null for other layers. */
 export function shapeLayerSize(l: ResolvedLayer): Vec2 | null {
@@ -30,9 +30,10 @@ export function shapeLayerSize(l: ResolvedLayer): Vec2 | null {
 
 /**
  * Program monitor hit-test (S03:XF-001): shapes are hit by their drawn geometry (ellipse interior, rounded
- * corners, stroke band), other layers by their quad. Corner-pinned shapes keep the quad test.
+ * corners, stroke band), other layers by their quad. Corner-pinned shapes keep the quad test. `slop`: extra
+ * distance around vector strokes and fills, layer px.
  */
-export function hitsLayerGeometry(l: ResolvedLayer, p: Vec2): boolean {
+export function hitsLayerGeometry(l: ResolvedLayer, p: Vec2, slop = 3): boolean {
 	const src = l.clip.source;
 	if (!('shape' in src) || l.props.projective) return true;
 	const inv = invertMatrix(l.props.matrix);
@@ -43,7 +44,7 @@ export function hitsLayerGeometry(l: ResolvedLayer, p: Vec2): boolean {
 		return vectorShapeContainsPoint(
 			evaluateVectorShape(src.shape.contents, l.contentTime),
 			[q[0] - l.props.box.width / 2, q[1] - l.props.box.height / 2],
-			3,
+			slop,
 		);
 	return shapeContainsPoint(evaluateShape(src.shape, l.contentTime, l.props.box), q);
 }
@@ -175,12 +176,17 @@ export function layerEditRect(l: ResolvedLayer): { x: number; y: number; width: 
 	return visibleRect(l.props.box, l.props.crop ?? undefined);
 }
 
-/** The sequence-px quad of `layerEditRect` (TL, TR, BR, BL); the layer's quad for other layers. */
-export function layerEditQuad(l: ResolvedLayer): [Vec2, Vec2, Vec2, Vec2] {
+/**
+ * The sequence-px quad of `layerEditRect` (TL, TR, BR, BL), grown by `grow` layer px on every side (picking); the
+ * layer's quad for other layers.
+ */
+export function layerEditQuad(l: ResolvedLayer, grow = 0): [Vec2, Vec2, Vec2, Vec2] {
 	const src = l.clip.source;
 	if (!('shape' in src) || src.shape.type !== 'vector' || l.props.projective)
 		return l.props.quad as [Vec2, Vec2, Vec2, Vec2];
-	const r = layerEditRect(l);
+	const e = layerEditRect(l);
+	const g = Number.isFinite(grow) && grow > 0 ? grow : 0;
+	const r = { x: e.x - g, y: e.y - g, width: e.width + 2 * g, height: e.height + 2 * g };
 	const m = l.props.matrix;
 	return [
 		applyMatrix(m, [r.x, r.y]),
@@ -188,4 +194,47 @@ export function layerEditQuad(l: ResolvedLayer): [Vec2, Vec2, Vec2, Vec2] {
 		applyMatrix(m, [r.x + r.width, r.y + r.height]),
 		applyMatrix(m, [r.x, r.y + r.height]),
 	] as [Vec2, Vec2, Vec2, Vec2];
+}
+
+/**
+ * Minimum pick distance around vector strokes and fills, in screen pixels: a 1–2 px line (a perfectly horizontal or
+ * vertical path has a zero-height / zero-width box) stays clickable when the monitor is zoomed out.
+ */
+export const SHAPE_HIT_SCREEN_PX = 5;
+/** The layer-px slop used at 100 % and above (the previous fixed tolerance). */
+const MIN_LAYER_SLOP = 3;
+const MAX_LAYER_SLOP = 10_000;
+
+/** Layer px that cover `screenPx` screen pixels for layer `l` at monitor scale `viewScale`. */
+export function layerHitSlop(l: ResolvedLayer, viewScale: number, screenPx = SHAPE_HIT_SCREEN_PX): number {
+	const m = l.props.matrix;
+	const o = applyMatrix(m, [0, 0]);
+	const ax = applyMatrix(m, [1, 0]);
+	const ay = applyMatrix(m, [0, 1]);
+	const det = (ax[0] - o[0]) * (ay[1] - o[1]) - (ax[1] - o[1]) * (ay[0] - o[0]);
+	const k = viewScale * Math.sqrt(Math.abs(det));
+	if (!Number.isFinite(k) || k < 1e-6) return MIN_LAYER_SLOP;
+	return Math.min(MAX_LAYER_SLOP, Math.max(MIN_LAYER_SLOP, screenPx / k));
+}
+
+/**
+ * Program monitor click (S03:XF-001): the topmost layer with a Motion transform under the sequence-px point `p` —
+ * shapes by their drawn geometry within `SHAPE_HIT_SCREEN_PX` screen pixels, every layer by its edit quad (grown by
+ * the same distance for vector shapes) — skipping locked tracks. `viewScale` = monitor zoom (screen px per
+ * sequence px).
+ */
+export function pickLayerAt(
+	scene: readonly ResolvedLayer[],
+	p: Vec2,
+	viewScale: number,
+	locked: ReadonlySet<string> = new Set(),
+): string | null {
+	const hits: { clipId: string; trackId: string; quad: Quad }[] = [];
+	for (const l of scene) {
+		if (!l.props.transform) continue;
+		const slop = layerHitSlop(l, viewScale);
+		if (!hitsLayerGeometry(l, p, slop)) continue;
+		hits.push({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: layerEditQuad(l, slop) as Quad });
+	}
+	return hitTest(hits, p, locked);
 }

@@ -3,6 +3,7 @@ import '../fx/register.ts';
 import '../simwarp/register.ts';
 import '../audio-fx/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
+import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
@@ -72,6 +73,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	transitionCommands,
 	textAnimationCommands,
 	shapeCommands,
+	strokeAnimationCommands,
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,

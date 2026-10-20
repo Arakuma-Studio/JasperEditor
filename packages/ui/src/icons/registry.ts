@@ -202,6 +202,26 @@ export const ICONS = {
 
 	'agent.sparkle': Sparkles,
 
+	// Stroke Animation (one-click Trim Paths): a stroke drawn on 24-unit grid; dots mark the moving tip / tail,
+	// chevrons the direction the stroke moves, ticks the borders of divided parts.
+	'stroke.drawIn': g('M3 19c2-8 6-12 10-9', 'M15 10a2 2 0 11-4 0 2 2 0 014 0z', 'M17 6l4 4-4 4'),
+	'stroke.drawOut': g('M11 13c3 3 7 0 10-8', 'M13 13a2 2 0 11-4 0 2 2 0 014 0z', 'M3 9l4 4-4 4'),
+	'stroke.drawInOut': g('M7 17c2-4 6-7 10-6', 'M8.5 17a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z', 'M18 7l4 4-4 4'),
+	'stroke.middleIn': g('M8 12h8', 'M6 7l-4 5 4 5', 'M18 7l4 5-4 5'),
+	'stroke.middleOut': g('M2 12h4', 'M18 12h4', 'M8 7l4 5-4 5', 'M16 7l-4 5 4 5'),
+	'stroke.divideIn': g('M2 7v10', 'M9 7v10', 'M16 7v10', 'M2 12h4', 'M9 12h4', 'M16 12h4'),
+	'stroke.divideOut': g('M8 7v10', 'M15 7v10', 'M22 7v10', 'M4 12h4', 'M11 12h4', 'M18 12h4'),
+	'stroke.reverse': g('M4 8h14', 'M15 5l3 3-3 3', 'M20 16H6', 'M9 13l-3 3 3 3'),
+	'stroke.lineH': g('M5 12h14', 'M5 9v6', 'M19 9v6'),
+	'stroke.lineV': g('M12 5v14', 'M9 5h6', 'M9 19h6'),
+	'stroke.tracer': g('M3 19c5 0 7-11 11-11', 'M16.5 8a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z'),
+	'stroke.tracerNext': g(
+		'M3 19c4 0 6-9 9-9',
+		'M14.5 10a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z',
+		'M19 4v6',
+		'M16 7h6',
+	),
+
 	'fx.badge': g('M9 18V8.5A2.5 2.5 0 0111.5 6H12', 'M7 11h4', 'M13 11l5 7', 'M18 11l-5 7'),
 
 	'panel.project': Folder,
@@ -228,6 +248,7 @@ export const ICONS = {
 	'panel.mediaBrowser': FolderSearch,
 	// An ease-in-out curve between two key dots (our own drawing).
 	'panel.easing': g('M4 19C11 19 13 5 20 5', 'M4 19h.01', 'M20 5h.01', 'M4 19h4', 'M20 5h-4'),
+	'panel.strokeAnimation': g('M4 19c2-8 7-13 15-14', 'M15 3l4 2-2 4', 'M4 19h4'),
 
 	'media.video': Film,
 	'media.image': Image,
