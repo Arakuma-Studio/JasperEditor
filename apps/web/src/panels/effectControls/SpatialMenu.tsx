@@ -3,8 +3,8 @@
 // on such a property; the command touches only those keys. A check marks the mode they all share.
 import type { Command, SpatialInterpolation } from '@jasper/project';
 import { spatialModeOf } from '@jasper/project';
-import { cx } from '@jasper/ui';
-import { useState } from 'react';
+import { cx, placeBeside, useMenuFit, Z } from '@jasper/ui';
+import { type ReactNode, type RefObject, useRef, useState } from 'react';
 import type { buildGroups } from './items.ts';
 
 type EcGroup = ReturnType<typeof buildGroups>[number];
@@ -47,11 +47,13 @@ export function SpatialInterpolationSubmenu(props: {
 	onApply(label: string, commands: Command[]): void;
 }) {
 	const [open, setOpen] = useState(false);
+	const row = useRef<HTMLDivElement | null>(null);
 	const { ids, modes } = spatialKeys(props.groups, props.ids);
 	if (ids.length === 0) return null;
 	const only = modes.size === 1 ? [...modes][0] : null;
 	return (
 		<div
+			ref={row}
 			className="relative mt-1 border-t border-pr-border-subtle pt-1"
 			onPointerEnter={() => setOpen(true)}
 			onPointerLeave={() => setOpen(false)}
@@ -69,11 +71,7 @@ export function SpatialInterpolationSubmenu(props: {
 				<span aria-hidden>▸</span>
 			</button>
 			{open ? (
-				<div
-					role="menu"
-					className="absolute top-0 left-full min-w-[150px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
-					data-testid="ec-kf-spatial-menu"
-				>
+				<SpatialSubmenuPanel row={row}>
 					{SPATIAL_MENU.map((m) => (
 						<button
 							key={m.mode}
@@ -94,8 +92,36 @@ export function SpatialInterpolationSubmenu(props: {
 							{m.label}
 						</button>
 					))}
-				</div>
+				</SpatialSubmenuPanel>
 			) : null}
+		</div>
+	);
+}
+
+/**
+ * The submenu panel: `fixed` beside its row (the key menu scrolls, so an `absolute` panel inside it was clipped),
+ * flipped left / slid up / scrolling to stay inside the window, like the timeline's submenus.
+ */
+function SpatialSubmenuPanel(props: { row: RefObject<HTMLDivElement | null>; children: ReactNode }) {
+	const { ref, fit } = useMenuFit<HTMLDivElement>((size, viewport) => {
+		const r = props.row.current?.getBoundingClientRect();
+		return placeBeside(r ?? { left: 0, top: 0, right: 0, bottom: 0 }, size, viewport);
+	});
+	const r0 = props.row.current?.getBoundingClientRect();
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			className="fixed min-w-[150px] overflow-y-auto rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
+			style={{
+				left: fit?.left ?? r0?.right ?? 0,
+				top: fit?.top ?? r0?.top ?? 0,
+				maxHeight: fit?.maxHeight,
+				zIndex: Z.popover,
+			}}
+			data-testid="ec-kf-spatial-menu"
+		>
+			{props.children}
 		</div>
 	);
 }

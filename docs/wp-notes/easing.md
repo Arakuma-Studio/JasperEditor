@@ -513,9 +513,9 @@ path (`reversedKeyTiming`, `reversedSpatial`), so each segment's ease is mirrore
 - The built-in groups and curves are the catalogue of "Built-in presets" above (`builtinEasePresets()`, shown with
   `t(name)`); the highlighted tile is `matchEasePreset` of the editor's curve against built-in and user curves.
 - Effect Controls ▸ key menu ▸ Apply Ease ▸ lists the recent curves (named after the matching preset) and the
-  favourites; its submenu is placed `fixed` beside its row because the key menu scrolls. The menu's older Spatial
-  Interpolation ▸ submenu is positioned inside the scrolling menu and is clipped by it (seen in the running app;
-  not changed here).
+  favourites; its submenu is placed `fixed` beside its row because the key menu scrolls. Spatial Interpolation ▸
+  in the same menu does the same through `placeBeside` / `useMenuFit` (`@jasper/ui`), flipping left at the window
+  edge (`apps/web/test/motion-path.test.tsx`).
 - Verified in the running app (dev stack, demo project, a colour matte with Opacity and Position keys): library
   preset apply (Cubic Out; Bounce Out: 4 Bounces creating keys, the tile matched afterwards), the Effect Controls
   value / velocity graphs matching the editor's curve, Keyframe Velocity edits, Copy → Paste Ease onto Position,
