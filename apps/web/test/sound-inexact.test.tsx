@@ -7,7 +7,7 @@ import { SessionProvider } from '@jasper/session/react';
 import { toasts } from '@jasper/ui';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { inexactDetail, inexactReasonText } from '../src/sound/inexact.ts';
 import { insertLibrarySound } from '../src/sound/insert.ts';
 import { registerLibrarySounds } from '../src/sound/library-media.ts';
@@ -32,9 +32,9 @@ const bigCopy = (e: ReturnType<typeof soundEntry>): RegisterSoundResponse => {
 const titles = () => toasts.getState().toasts.map((x) => [x.kind, x.title, x.detail]);
 
 beforeEach(() => toasts.dismissAll());
-afterEach(() => {
+afterEach(async () => {
 	cleanup();
-	__setCatalogForTests('en', null);
+	await setLanguage('en');
 	toasts.dismissAll();
 });
 
@@ -72,7 +72,7 @@ describe('a sound registered as it is', () => {
 		expect(titles()[0]![2]).toMatch(/^“A”, “B”: A sample-exact copy would take 2500 MB/);
 	});
 
-	it('every reason has words, with its numbers; Spanish too', () => {
+	it('every reason has words, with its numbers; Spanish too', async () => {
 		expect(inexactDetail({ reason: 'too-long', message: '', limitSeconds: 3600 })).toBe(
 			'Sounds over 60 min are used as they are: placement is exact to a frame, not to the sample',
 		);
@@ -81,11 +81,7 @@ describe('a sound registered as it is', () => {
 		);
 		// without numbers (an older engine): the reason alone
 		expect(inexactDetail({ reason: 'too-large', message: '' })).toBe(inexactReasonText('too-large'));
-		__setCatalogForTests('es', {
-			'“{0}” is not sample-exact': '«{0}» no es exacto a la muestra',
-			'Not sample-exact: sounds over {0} min are used as they are (placement exact to a frame)':
-				'No es exacto a la muestra: los sonidos de más de {0} min se usan tal cual (colocación exacta al fotograma)',
-		});
+		await setLanguage('es');
 		expect(inexactReasonText('too-long')).toBe(
 			'No es exacto a la muestra: los sonidos de más de 60 min se usan tal cual (colocación exacta al fotograma)',
 		);

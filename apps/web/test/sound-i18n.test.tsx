@@ -8,7 +8,7 @@ import { planSoundInsert, SOUND_LABELS, soundText } from '@jasper/project';
 import { act, cleanup, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { transformI18n } from '../i18n/transform.mjs';
-import { __setCatalogForTests, __t, translateName } from '../src/i18n/runtime.ts';
+import { __t, setLanguage, translateName } from '../src/i18n/runtime.ts';
 import { HistoryPanel } from '../src/panels/history/HistoryPanel.tsx';
 import { addSolids, makeSession, renderWithSession } from './inspector-helpers.tsx';
 
@@ -17,19 +17,16 @@ const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf
 	string,
 	string
 >;
-const NAMES = JSON.parse(
-	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
-) as string[];
-const spanish = () => __setCatalogForTests('es', ES, NAMES);
+const spanish = () => setLanguage('es');
 
-afterEach(() => {
+afterEach(async () => {
 	cleanup();
-	__setCatalogForTests('en', null);
+	await setLanguage('en');
 	document.body.innerHTML = '';
 });
 
 describe('sound design labels and refusals in Spanish', () => {
-	it('agent History labels of the MCP sound tools', () => {
+	it('agent History labels of the MCP sound tools', async () => {
 		const cues = `${SOUND_LABELS.soundCues} (${[
 			soundText(SOUND_LABELS.cuesAdd, 2),
 			soundText(SOUND_LABELS.cuesEdit, 1),
@@ -37,7 +34,7 @@ describe('sound design labels and refusals in Spanish', () => {
 			SOUND_LABELS.cuesResync,
 		].join(', ')})`;
 		expect(translateName(`Agent: ${cues}`)).toBeNull(); // English: nothing to do
-		spanish();
+		await spanish();
 		expect(translateName(`Agent: ${cues}`)).toBe(
 			'Agente: Señales de sonido (añadir 2, editar 1, eliminar 1, resincronizar)',
 		);
@@ -72,7 +69,7 @@ describe('sound design labels and refusals in Spanish', () => {
 					commands: [{ type: 'param.set', target: ['clip', id, 'opacity'], value: 50 + i }] as never,
 				});
 		});
-		spanish();
+		await spanish();
 		renderWithSession(session, <HistoryPanel instanceId="h1" visible />);
 		await act(async () => {
 			await new Promise((r) => setTimeout(r, 0));
@@ -86,7 +83,7 @@ describe('sound design labels and refusals in Spanish', () => {
 	});
 
 	it('refusals of the sound commands and planners shown in a notice', async () => {
-		spanish();
+		await spanish();
 		const session = makeSession();
 		const r = session.apply({
 			label: 'x',
@@ -135,8 +132,8 @@ describe('sound design labels and refusals in Spanish', () => {
 		expect(translateName('The new sound does not fit')).toBeNull();
 	});
 
-	it("the web's own sound labels are translated when committed (t() and the build transform)", () => {
-		spanish();
+	it("the web's own sound labels are translated when committed (t() and the build transform)", async () => {
+		await spanish();
 		expect(__t('Fill Cue {0}', 'Crunchy impact')).toBe('Rellenar señal Crunchy impact');
 		expect(__t('Swap Sound ×{0}', 4)).toBe(ES['Swap Sound ×{0}']!.replace('{0}', '4'));
 		expect(__t('Suggest Cues ({0})', 12)).toBe('Sugerir señales (12)');

@@ -1,8 +1,6 @@
 // Why a review item is stale, said with timecodes and the cue kind — never an entity id — in English and Spanish
 // (Phase 3 verification; WP3.3b limit "the stale reason names a cue by id"). The model's structured problem comes from
 // `revalidate` on a real document: a stored cut cue moved from 90 to 100 (30 fps).
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -14,19 +12,10 @@ import {
 	type StaleProblem,
 } from '@jasper/project';
 import { afterEach, describe, expect, it } from 'vitest';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { describeProblem, problemText } from '../src/proposals/stale-text.ts';
 
-const root = join(__dirname, '../../..');
-const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
-	string,
-	string
->;
-const NAMES = JSON.parse(
-	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
-) as string[];
-
-afterEach(() => __setCatalogForTests('en', null));
+afterEach(() => setLanguage('en'));
 
 const REG = defaultRegistries();
 const ctx = { registries: REG, now: () => '2026-10-16T10:00:00.000Z' };
@@ -100,7 +89,7 @@ const problems = (f: ReturnType<typeof fixture>) => {
 };
 
 describe('stale reasons', () => {
-	it('a moved cue: kind and timecodes, in English for agents and in the editor, in Spanish too', () => {
+	it('a moved cue: kind and timecodes, in English for agents and in the editor, in Spanish too', async () => {
 		const f = fixture();
 		f.tx([{ type: 'soundCue.update', cueId: f.cueId, frame: 100 }]);
 		const s = problems(f);
@@ -122,14 +111,14 @@ describe('stale reasons', () => {
 		expect(describeProblem(s.after!.problem!, f.seq())).toBe(
 			'Needs “Hit on the cut”, which changed since it was proposed',
 		);
-		__setCatalogForTests('es', ES, NAMES);
+		await setLanguage('es');
 		expect(problemText(item, f.seq())).toBe('La señal Corte en 00:00:03:00 se movió a 00:00:03:10');
 		expect(describeProblem(s.after!.problem!, f.seq())).toBe(
 			'Necesita «Hit on the cut», que ha cambiado desde que se propuso',
 		);
 	});
 
-	it('a deleted cue keeps its kind (from the item) and where it was; markers and clips by name', () => {
+	it('a deleted cue keeps its kind (from the item) and where it was; markers and clips by name', async () => {
 		const f = fixture();
 		f.tx([
 			{ type: 'soundCue.remove', cueIds: [f.cueId] },
@@ -149,7 +138,7 @@ describe('stale reasons', () => {
 			expect(x.reason).not.toMatch(/(clp|cue|mrk)_[0-9A-Z]{16}/);
 			expect(describeProblem(x.problem!, f.seq())).not.toMatch(/(clp|cue|mrk)_[0-9A-Z]{16}/);
 		}
-		__setCatalogForTests('es', ES, NAMES);
+		await setLanguage('es');
 		expect(describeProblem(s.logo!.problem!, f.seq())).toBe(
 			'El marcador «Logo» en 00:00:04:00 se movió a 00:00:05:00',
 		);

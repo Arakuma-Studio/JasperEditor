@@ -120,7 +120,7 @@ function markVerified(doc: ProjectDocument, seen: ReadonlySet<string>, opts: Inv
 }
 
 /** Whether `doc` is known to be valid (it passed a check under these options). */
-function isVerifiedDocument(doc: ProjectDocument, opts: InvariantOptions = {}): boolean {
+export function isVerifiedDocument(doc: ProjectDocument, opts: InvariantOptions = {}): boolean {
 	const v = verified.get(doc);
 	return !!v && sameOpts(v.opts, opts);
 }

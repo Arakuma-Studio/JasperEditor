@@ -1,17 +1,13 @@
 // Engine-composed export warnings in the UI language (final carry-over cleanup, item 6; WP6.5a 7l): the engine sends
 // `code` + `params` with its English `message`; the editor says the known codes in its language — in English exactly
 // the engine's words — and falls back to the message for anything it cannot read.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ExportWarningParams } from '@jasper/api';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PlanSummary } from '../src/export/PlanSummary.tsx';
 import { exportWarningText } from '../src/export/warning-text.ts';
 import { exportResultDetail } from '../src/home/ProjectLifecycle.tsx';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
-
-const es = JSON.parse(readFileSync(join(__dirname, '../src/i18n/es.json'), 'utf8')) as Record<string, string>;
+import { setLanguage } from '../src/i18n/runtime.ts';
 
 /** What the engine sends (its messages verbatim from apps/engine/test/{sound-export-credits,export-container}). */
 const ENGINE: { code: string; message: string; params: ExportWarningParams }[] = [
@@ -96,9 +92,9 @@ const ENGINE: { code: string; message: string; params: ExportWarningParams }[] =
 	},
 ];
 
-afterEach(() => {
+afterEach(async () => {
 	cleanup();
-	__setCatalogForTests('en', null);
+	await setLanguage('en');
 });
 
 describe('export warnings in the UI language', () => {
@@ -106,8 +102,8 @@ describe('export warnings in the UI language', () => {
 		for (const w of ENGINE) expect(exportWarningText(w), w.code).toBe(w.message);
 	});
 
-	it('in Spanish: every code with params is translated, its values kept', () => {
-		__setCatalogForTests('es', es);
+	it('in Spanish: every code with params is translated, its values kept', async () => {
+		await setLanguage('es');
 		for (const w of ENGINE) {
 			const text = exportWarningText(w);
 			expect(text, w.message).not.toBe(w.message);
@@ -119,8 +115,8 @@ describe('export warnings in the UI language', () => {
 		expect(exportWarningText(ENGINE[0]!)).toContain('2 sonidos');
 	});
 
-	it('falls back to the engine’s message: an unknown code, no params, malformed params', () => {
-		__setCatalogForTests('es', es);
+	it('falls back to the engine’s message: an unknown code, no params, malformed params', async () => {
+		await setLanguage('es');
 		expect(exportWarningText({ code: 'W_SOMETHING_NEW', message: 'New thing', params: { a: 1 } })).toBe(
 			'New thing',
 		);
@@ -140,8 +136,8 @@ describe('export warnings in the UI language', () => {
 		);
 	});
 
-	it('the Export dialog’s plan summary and the finished-export notice say them in Spanish', () => {
-		__setCatalogForTests('es', es);
+	it('the Export dialog’s plan summary and the finished-export notice say them in Spanish', async () => {
+		await setLanguage('es');
 		const w = ENGINE[9]!;
 		render(
 			<PlanSummary
@@ -174,11 +170,11 @@ describe('export warnings in the UI language', () => {
 });
 
 describe('delivered audio that misses its target', () => {
-	it('the finished-export notice repeats AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING in the UI language', () => {
+	it('the finished-export notice repeats AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING in the UI language', async () => {
 		const over = ENGINE.find((w) => w.code === 'AUDIO_TRUE_PEAK_OVER')!;
 		const ceiling = ENGINE.find((w) => w.code === 'AUDIO_LOUDNESS_CEILING')!;
 		expect(exportResultDetail({ warnings: [over, ceiling] })).toBe(`${over.message} ${ceiling.message}`);
-		__setCatalogForTests('es', es);
+		await setLanguage('es');
 		const detail = exportResultDetail({ warnings: [over] })!;
 		expect(detail).toContain('El audio entregado alcanza -0.7 dBTP');
 		expect(

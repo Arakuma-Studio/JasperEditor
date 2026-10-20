@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { SoundCheckIssue } from '@jasper/api';
 import { SOUND_CHECK_CATEGORY, SOUND_CHECK_MESSAGES, soundCheckMessage } from '@jasper/project';
 import { afterEach, describe, expect, it } from 'vitest';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { CATEGORY_LABELS, CATEGORY_ORDER, groupIssues, messageText } from '../src/sound/check-model.ts';
 
 const root = join(__dirname, '../../..');
@@ -17,7 +17,7 @@ const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf
 const NAMES = JSON.parse(
 	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
 ) as string[];
-afterEach(() => __setCatalogForTests('en', null));
+afterEach(() => setLanguage('en'));
 
 const issue = (
 	code: SoundCheckIssue['code'],
@@ -65,8 +65,8 @@ describe('Phase 6 findings in the Sound Check panel', () => {
 		]);
 	});
 
-	it('the new findings and fixes read in Spanish; cue kinds become labels', () => {
-		__setCatalogForTests('es', ES, NAMES);
+	it('the new findings and fixes read in Spanish; cue kinds become labels', async () => {
+		await setLanguage('es');
 		expect(messageText(soundCheckMessage('clickStart', 'Tono', '00:00:04:00', '24.0'))).toBe(
 			'Clic en un corte: el inicio de Tono en 00:00:04:00 (24.0 dB por encima de su entorno por encima de 14 kHz)',
 		);

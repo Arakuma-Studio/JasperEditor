@@ -4,12 +4,12 @@
 // Sound <title>" / "Import n Sounds"), no sequence needed, nothing placed, sounds already in the project reused.
 import { SOUND_EFFECTS_BIN } from '@jasper/api';
 import { afterEach, describe, expect, it } from 'vitest';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { InsertSoundError, importLibrarySounds } from '../src/sound/insert.ts';
 import { registered, soundEntry } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
-afterEach(() => __setCatalogForTests('en', null));
+afterEach(() => setLanguage('en'));
 
 describe('Import to Project', () => {
 	it('adds the sound to the "Sound Effects" bin in one undo step, places nothing, and reuses it the second time', async () => {

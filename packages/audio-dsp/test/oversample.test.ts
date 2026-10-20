@@ -55,6 +55,14 @@ describe('true peak at the end of a programme (sound-design P0)', () => {
 		return x;
 	};
 
+	/** A whole programme: measured from silence, flushed at its end (silence follows). */
+	const blockTruePeak = (planar: Float32Array[], sampleRate: number) => {
+		const d = new TruePeakDetector(sampleRate, planar.length);
+		d.process(planar);
+		d.flush();
+		return d.truePeak();
+	};
+
 	it('a burst in the last samples reads the same true peak as one in the middle', () => {
 		const mid = blockTruePeak([burst(4000, 2000, 12)], 48000);
 		const end = blockTruePeak([burst(4000, 3988, 12)], 48000);

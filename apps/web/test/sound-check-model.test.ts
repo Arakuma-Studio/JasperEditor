@@ -24,7 +24,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { videoAsset } from '../../../packages/project/test/helpers.ts';
 import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { exportAudioOf } from '../src/export/SoundCheckGate.tsx';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import {
 	CHECK_FOR_ENCODINGS,
 	checkForAudio,
@@ -58,7 +58,7 @@ const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf
 const NAMES = JSON.parse(
 	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
 ) as string[];
-afterEach(() => __setCatalogForTests('en', null));
+afterEach(() => setLanguage('en'));
 
 function doc() {
 	const ids = createCounterIdSource(3);
@@ -79,8 +79,8 @@ function doc() {
 const report = () => reportFixture({ projectId: 'prj_x', sequenceId: 'seq_x' });
 
 describe('listen-here reasons in the UI language', () => {
-	it('the worst moment says its finding translated, not the English text it quotes', () => {
-		__setCatalogForTests('es', ES, NAMES);
+	it('the worst moment says its finding translated, not the English text it quotes', async () => {
+		await setLanguage('es');
 		const rows = listenRows(report(), undefined);
 		const worst = rows.find((r) => r.slot === 'worst')!;
 		expect(worst.text).toContain('corte');
@@ -90,8 +90,8 @@ describe('listen-here reasons in the UI language', () => {
 });
 
 describe('why a fix needs judgement, and unmeasured reasons, in the UI language', () => {
-	it('fixWhyText translates the engine message (else its English text); unmeasured reasons are translated', () => {
-		__setCatalogForTests('es', ES, NAMES);
+	it('fixWhyText translates the engine message (else its English text); unmeasured reasons are translated', async () => {
+		await setLanguage('es');
 		const fix = {
 			kind: 'commands' as const,
 			label: soundCheckMessage('fixSilenceCue'),
@@ -162,12 +162,12 @@ describe('every Sound Check message key is translated', () => {
 });
 
 describe('finding texts', () => {
-	it('fills the template; cue kinds and densities become labels; Spanish translates the template', () => {
+	it('fills the template; cue kinds and densities become labels; Spanish translates the template', async () => {
 		const m = soundCheckMessage('syncLate', 'Impact', 66.7, 'cut', '00:00:03:00', 1);
 		expect(messageText(m)).toBe(
 			'Impact plays 66.7 ms late on its cut cue at 00:00:03:00 (tolerance ±1 frames)',
 		);
-		__setCatalogForTests('es', ES, NAMES);
+		await setLanguage('es');
 		const es = messageText(m);
 		expect(es).toContain('Impact');
 		expect(es).toContain('66.7');

@@ -16,7 +16,7 @@ import {
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
-import { __setCatalogForTests } from '../src/i18n/runtime.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { installKeyboardDispatcher } from '../src/shell/keymap/dispatcher.ts';
 import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
 import {
@@ -382,10 +382,7 @@ describe('Fill With ▸ hover auditions on the cue whose menu it is', () => {
 describe('Sound Library row menu in Spanish', () => {
 	it('the Enter entry names its action in the language of the UI ("Insert at Playhead" too)', async () => {
 		const h = harness();
-		__setCatalogForTests('es', {
-			'Insert at Playhead': 'Insertar en el cabezal',
-			'Fill Cue': 'Rellenar señal',
-		});
+		await setLanguage('es');
 		try {
 			render(
 				<SessionProvider session={h.session}>
@@ -399,7 +396,7 @@ describe('Sound Library row menu in Spanish', () => {
 			});
 			expect(screen.getByRole('menuitem', { name: /Insertar en el cabezal/ })).toBeTruthy();
 		} finally {
-			__setCatalogForTests('en', null);
+			await setLanguage('en');
 		}
 	});
 });

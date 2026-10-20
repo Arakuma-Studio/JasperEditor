@@ -51,8 +51,7 @@ export async function runAgentInput<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** True while an agent's live-UI input (or its asynchronous aftermath) is being handled. */
-export function agentInputActive(): boolean {
-	const at = now();
+export function agentInputActive(at = now()): boolean {
 	if (depth > 0) return true;
 	return at - lastAgentInputAt < AGENT_INPUT_GRACE_MS && lastUserInputAt < lastAgentInputAt;
 }
@@ -76,9 +75,16 @@ export function userGestureActive(at = now()): boolean {
 	return at - lastUserInputAt < USER_GESTURE_MS;
 }
 
-/** Tests: as if the user just pressed a key. */
+/** Tests: as if the user just pressed a key (jsdom cannot dispatch trusted input). */
 export function markUserInputForTests(): void {
 	lastUserInputAt = now();
+}
+
+/** Tests: forget all input. */
+export function resetAgentInputForTests(): void {
+	depth = 0;
+	lastAgentInputAt = Number.NEGATIVE_INFINITY;
+	lastUserInputAt = Number.NEGATIVE_INFINITY;
 }
 
 /** The session guard: transactions that need approval are refused while agent input is active. */
