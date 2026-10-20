@@ -77,6 +77,7 @@ describe('keyframe.createPathController', () => {
 		const tEnd = before.keyframes[3]!.time;
 		const polyline = Array.from({ length: 1501 }, (_, k) => evaluate(before, tA + ((tB - tA) * k) / 1500));
 		const r = d.tx([{ type: 'keyframe.createPathController', keyframeIds: [ids[0]!, ids[2]!] }]);
+		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		const res = r.results[0] as { effectInstanceId: string; effectName: string; rovingKeyframeIds: string[] };
 		expect(res.effectName).toBe('Path Progress');
 		expect(res.rovingKeyframeIds).toEqual([ids[1]]);

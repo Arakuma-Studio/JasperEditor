@@ -2,6 +2,7 @@
 // redo the exact result (docs/wp-notes/easing.md).
 import {
 	type Animatable,
+	type CommandInput,
 	copyEase,
 	createCounterIdSource,
 	createEmptyProject,
@@ -43,7 +44,12 @@ async function open() {
 					[20, [500, 150]],
 					[30, [800, 500]],
 				] as const
-			).map(([f, value]) => ({ type: 'param.set', target: pos, value, at: { sequenceFrame: f } })),
+			).map(([f, value]) => ({
+				type: 'param.set' as const,
+				target: pos,
+				value,
+				at: { sequenceFrame: f },
+			})),
 		],
 	});
 	const keys = (doc: ProjectDocument) =>
@@ -84,7 +90,7 @@ describe('ease commands in the session history', () => {
 		for (const cmd of commands) {
 			const before = s.getCommitted();
 			const snapshot = structuredClone(before);
-			const r = s.apply({ label: 'Ease', origin: 'user', commands: [cmd] });
+			const r = s.apply({ label: 'Ease', origin: 'user', commands: [cmd as CommandInput] });
 			expect(r.ok, JSON.stringify(r)).toBe(true);
 			const after = s.getCommitted();
 			const afterSnapshot = structuredClone(after);

@@ -5,9 +5,12 @@ import {
 	type Animatable,
 	type CubicEase,
 	cubicToEases,
+	defaultRegistries,
 	evaluate,
+	exportAgentSchema,
 	type Interpolation,
 	type Keyframe,
+	unknownCommandKeyIssues,
 	writeSpan,
 } from '../src/index.ts';
 import { cssCubic, expectValid, SEC, sample, setup } from './ease-helpers.ts';
@@ -296,5 +299,26 @@ describe('keyframe.applyEase refusals and skips', () => {
 		const r2 = h.ok([{ type: 'keyframe.applyEase', keyframeIds: ids, curve: SWIFT }]);
 		expect(r2.warnings.map((w) => w.code)).not.toContain('W_EASE_CLAMPED');
 		expectValid(h);
+	});
+
+	it('schemas export to JSON Schema and strict key checks reach inside curves', () => {
+		const s = exportAgentSchema(defaultRegistries());
+		for (const t of [
+			'keyframe.applyEase',
+			'keyframe.pasteEase',
+			'keyframe.pasteValues',
+			'keyframe.setVelocity',
+			'keyframe.createPathController',
+			'keyframes.cleanupPath',
+		] as const)
+			expect(s.commands[t].implemented).toBe(true);
+		const issues = unknownCommandKeyIssues([
+			{
+				type: 'keyframe.applyEase',
+				keyframeIds: ['kf_1'],
+				curve: { kind: 'cubic', x1: 0.4, y1: 0, x2: 0.6, y2: 1, bogus: 1 },
+			},
+		]);
+		expect(issues.length).toBe(1);
 	});
 });
