@@ -4,6 +4,7 @@ import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
 import { COLOR_MGMT_COMMANDS } from './color-mgmt.ts';
+import { EASE_COMMANDS } from './ease.ts';
 import { EDIT_UX_COMMANDS } from './edit-ux.ts';
 import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
@@ -36,6 +37,7 @@ export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './color-mgmt.ts';
 export * from './common.ts';
+export * from './ease.ts';
 export * from './edit-ux.ts';
 export * from './essential.ts';
 export * from './expression.ts';
@@ -94,6 +96,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...INTERPRET_COMMANDS,
 	...PREVIEWS_COMMANDS,
 	...GAPS_COMMANDS,
+	...EASE_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

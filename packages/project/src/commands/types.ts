@@ -64,6 +64,16 @@ export const WARNING_CODES = [
 	'W_TRIM_SKIPPED',
 	/** path-trace: shape.addTrimTracer replaced an expression the follower already had. */
 	'W_EXPRESSION_REPLACED',
+	/** keyframe assistant: properties an ease command could not apply to (named in the message). */
+	'W_EASE_SKIPPED',
+	/** keyframe assistant: a curve piece with equal end values cannot hold a shaped ease (made linear). */
+	'W_EASE_FLAT_SEGMENT',
+	/** keyframe assistant: 3D Orientation clamps progress to [0, 1], so a curve's overshoot is not shown. */
+	'W_EASE_CLAMPED',
+	/** keyframe assistant: pasted eases / values and target keys differ in number (the first min(n, m) pasted). */
+	'W_EASE_COUNT_MISMATCH',
+	/** keyframe assistant: keys in an eased / cleaned span stopped roving. */
+	'W_EASE_ROVING_CLEARED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

@@ -10,10 +10,19 @@ import { cmd, IdRefSchema, RefDeclSchema } from './common.ts';
  * the shape clip's Motion. Without `follower` a small dot shape clip ("Tracer") is created on the track above the shape
  * clip (a new track when that one is locked or busy) over the same time span. An existing expression on the follower's
  * Position / Rotation is replaced (warning W_EXPRESSION_REPLACED). The expressions address the clip and items by id.
+ * Without `trimItemId` the clip's master trim is followed, so `shape.animateTrim` + `shape.addTrimTracer` can run in
+ * one transaction (the trim's id is only known after the animation is placed).
  */
 export const ShapeAddTrimTracerCmd = cmd('shape.addTrimTracer', {
 	clipId: IdRefSchema.describe('Vector shape clip holding the Trim Paths'),
-	trimItemId: z.string().min(1).describe('Trim Paths item to follow'),
+	trimItemId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"Trim Paths item to follow (default: the clip's master trim — the one shape.animateTrim animates: Part 1's " +
+				'last trim after a divide, else the last top-level item when it is a Trim Paths)',
+		),
 	pathItemId: IdRefSchema.optional().describe(
 		'Path the tracer follows: one of the paths the trim affects (default: the first, in stacking order). ' +
 			'An Individually trim measures all its paths laid end to end, so its tracer follows all of them.',
