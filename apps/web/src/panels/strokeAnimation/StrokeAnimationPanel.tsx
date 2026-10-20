@@ -32,6 +32,7 @@ import {
 } from 'react';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
+import { t } from '../../i18n/runtime.ts';
 import { useVectorUi } from '../../shapes/vector.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import {
@@ -40,6 +41,8 @@ import {
 	formatCubic,
 	lineTarget,
 	parseCubic,
+	presetForCurve,
+	presetLabel,
 	STROKE_ACTIONS,
 	STROKE_BUTTON_LABELS,
 	STROKE_DESCRIPTIONS,
@@ -48,7 +51,9 @@ import {
 	STROKE_HINTS,
 	STROKE_MENU_LABELS,
 	type StrokeAction,
+	type StrokeCurvePreset,
 	shapeTargets,
+	strokeCurvePresets,
 	tracerTarget,
 } from '../../stroke-animation/model.ts';
 import {
@@ -59,9 +64,6 @@ import {
 	useStrokePrefs,
 } from '../../stroke-animation/prefs.ts';
 import type { PanelProps } from '../types.ts';
-
-/** A named cubic curve offered by the curve picker. */
-export type StrokeCurvePreset = { id: string; name: string; curve: CubicEase };
 
 /** Below this width the buttons show their glyph only (the tooltip keeps the name). */
 const NARROW_PX = 240;
@@ -82,7 +84,7 @@ export function StrokeAnimationPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
 	if (!session)
 		return <EmptyState icon="panel.strokeAnimation" message="Open a project to animate strokes" />;
-	return <StrokeAnimationBody session={session} curvePresets={[]} />;
+	return <StrokeAnimationBody session={session} curvePresets={strokeCurvePresets()} />;
 }
 
 /** Alt / Shift held right now (they preview the click's Reverse / Animate offset). */
@@ -445,7 +447,7 @@ const TIP_OPTIONS = () =>
 	(['auto', 'start', 'end'] as const).map((v) => ({ value: v, label: TIP_LABELS[v] }));
 
 function CurveField({ prefs, presets }: { prefs: StrokePrefs; presets: readonly StrokeCurvePreset[] }) {
-	const preset = prefs.curvePresetId ? presets.find((p) => p.id === prefs.curvePresetId) : undefined;
+	const preset = presetForCurve(prefs.curve, prefs.curvePresetId, presets);
 	const choice = !prefs.curve ? CURVE_DEFAULT : preset ? preset.id : CURVE_CUSTOM;
 	const [text, setText] = useState(prefs.curve ? formatCubic(prefs.curve) : '');
 	const [invalid, setInvalid] = useState(false);
@@ -456,7 +458,7 @@ function CurveField({ prefs, presets }: { prefs: StrokePrefs; presets: readonly 
 	const options = useMemo(
 		() => [
 			{ value: CURVE_DEFAULT, label: CURVE_LABELS.default },
-			...presets.map((p) => ({ value: p.id, label: p.name })),
+			...presets.map((p) => ({ value: p.id, label: presetLabel(p, t) })),
 			{ value: CURVE_CUSTOM, label: CURVE_LABELS.custom },
 		],
 		[presets],

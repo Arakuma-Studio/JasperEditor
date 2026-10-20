@@ -225,9 +225,11 @@ notification, nothing changes) until they are merged.
 - **Settings** (collapsible; per-user, `localStorage` key `jasper:stroke-animation-prefs`, zod schema version 1,
   validated field by field so a corrupt or newer value keeps every valid field): Duration (frames, shown also as
   sequence timecode; 1–3600, default 10), Offset (degrees, used with Animate offset; default 180), Copies (Divide,
-  2–64, default 4), In-out lag (In & Out, 0–100 %, default 50 %), Start at, Curve (Default = the command's ease; a
-  preset; Custom cubic typed as `x1, y1, x2, y2` or `cubic-bezier(…)`, validated by `CubicEaseSchema`, with a small
-  graph), Tracer follows (Moving tip / Start / End), and a checkbox per button to hide it. Only the settings a style
+  2–64, default 4), In-out lag (In & Out, 0–100 %, default 50 %), Start at, Curve (Default = the command's ease; one
+  of the cubic presets of the built-in ease catalogue — `strokeCurvePresets()`, shown as "Group · Name"; multi-segment
+  presets are not offered because `shape.animateTrim` takes one cubic; Custom cubic typed as `x1, y1, x2, y2` or
+  `cubic-bezier(…)`, validated by `CubicEaseSchema`; a typed curve equal to a preset shows as that preset; a small
+  graph of the curve), Tracer follows (Moving tip / Start / End), and a checkbox per button to hide it. Only the settings a style
   uses are sent (copies for Divide, lag for In & Out, offset degrees with Animate offset).
 - **Menus and palette**: Graphics ▸ Stroke Animation ▸ (every action, the Tracer on Next toggle with a check mark,
   and the panel); palette entries "Stroke Animation: …". No default shortcuts (they can be bound in Keyboard

@@ -1,4 +1,6 @@
 import {
+	BUILTIN_EASE_GROUPS,
+	builtinEasePresets,
 	CubicEaseSchema,
 	createCounterIdSource,
 	createEmptyProject,
@@ -12,10 +14,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import type { CommandCtx, ToastRequest } from '../src/commands/types.ts';
-import {
-	StrokeAnimationBody,
-	type StrokeCurvePreset,
-} from '../src/panels/strokeAnimation/StrokeAnimationPanel.tsx';
+import { StrokeAnimationBody } from '../src/panels/strokeAnimation/StrokeAnimationPanel.tsx';
 import { vectorUi } from '../src/shapes/vector.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import type { ShellMenuItem } from '../src/shell/menus/resolve.ts';
@@ -33,8 +32,12 @@ import {
 	formatCubic,
 	masterTrims,
 	parseCubic,
+	presetForCurve,
+	presetLabel,
 	STROKE_ACTIONS,
 	STROKE_REASONS,
+	type StrokeCurvePreset,
+	strokeCurvePresets,
 	tracerTarget,
 } from '../src/stroke-animation/model.ts';
 import {
@@ -45,11 +48,12 @@ import {
 	strokePrefs,
 } from '../src/stroke-animation/prefs.ts';
 
-/** Curves of these tests only (the panel's real catalogue comes from the ease presets). */
-const TEST_CURVES: StrokeCurvePreset[] = [
-	{ id: 'test.easeOut', name: 'Test Ease Out', curve: { kind: 'cubic', x1: 0, y1: 0, x2: 0.58, y2: 1 } },
-	{ id: 'test.snap', name: 'Test Snap', curve: { kind: 'cubic', x1: 0.7, y1: -0.4, x2: 0.3, y2: 1.4 } },
-];
+const CURVES = strokeCurvePresets();
+const preset = (id: string) => {
+	const p = CURVES.find((x) => x.id === id);
+	if (!p) throw new Error(`no cubic preset ${id}`);
+	return p;
+};
 
 function makeSession() {
 	const ids = createCounterIdSource(1);
@@ -187,7 +191,7 @@ describe('payloads', () => {
 	});
 
 	it('sends the settings and the curve', () => {
-		const curve = TEST_CURVES[1]!.curve;
+		const curve = preset('basic.ease').curve;
 		const prefs = { ...DEFAULT_STROKE_PREFS, durationFrames: 24, copies: 7, inOutLag: 0.25, curve };
 		const [divide] = buildAnimateCommands(
 			'divideOut',
@@ -216,6 +220,34 @@ describe('payloads', () => {
 			{ clipId: 'a', trimItemId: 't1' },
 			{ clipId: 'c', trimItemId: 't9' },
 		]);
+	});
+});
+
+describe('curve presets', () => {
+	it('offers the cubic presets of the built-in catalogue only', () => {
+		expect(CURVES.length).toBeGreaterThan(10);
+		expect(CURVES.every((p) => p.curve.kind === 'cubic' && CubicEaseSchema.safeParse(p.curve).success)).toBe(
+			true,
+		);
+		expect(builtinEasePresets().some((p) => p.curve.kind === 'multi')).toBe(true);
+		expect(CURVES.some((p) => p.curve.kind !== 'cubic')).toBe(false);
+	});
+
+	it('shows a stored curve as its preset, or the preset with the same shape', () => {
+		const ease = preset('basic.easy-ease');
+		expect(presetForCurve(ease.curve, ease.id, CURVES)?.id).toBe('basic.easy-ease');
+		expect(presetForCurve({ ...ease.curve }, null, CURVES)?.id).toBe('basic.easy-ease');
+		expect(presetForCurve({ kind: 'cubic', x1: 0.9, y1: -2, x2: 0.1, y2: 3 }, null, CURVES)).toBeNull();
+		expect(presetForCurve(null, 'basic.easy-ease', CURVES)).toBeNull();
+	});
+
+	it('labels presets with their group outside Basic', () => {
+		const id = (s: string) => s;
+		expect(presetLabel(preset('basic.ease'), id)).toBe('Ease (CSS)');
+		const other = CURVES.find((p) => p.group !== 'basic')!;
+		expect(presetLabel(other, id)).toBe(
+			`${BUILTIN_EASE_GROUPS.find((g) => g.id === other.group)!.name} · ${other.name}`,
+		);
 	});
 });
 
@@ -294,13 +326,17 @@ describe('preferences', () => {
 	});
 
 	it('round-trips through storage and ignores invalid updates', () => {
-		strokePrefs.set({ durationFrames: 15, curve: TEST_CURVES[0]!.curve, curvePresetId: 'test.easeOut' });
+		strokePrefs.set({
+			durationFrames: 15,
+			curve: preset('basic.ease-out').curve,
+			curvePresetId: 'basic.ease-out',
+		});
 		strokePrefs.set({ durationFrames: -4, copies: 1000, startAt: 'nowhere' as never });
 		expect(strokePrefs.get()).toMatchObject({ durationFrames: 15, copies: 4, startAt: 'playhead' });
 		const stored = JSON.parse(localStorage.getItem(strokePrefs.key)!);
 		expect(stored.version).toBe(1);
 		strokePrefs.reload();
-		expect(strokePrefs.get()).toMatchObject({ durationFrames: 15, curvePresetId: 'test.easeOut' });
+		expect(strokePrefs.get()).toMatchObject({ durationFrames: 15, curvePresetId: 'basic.ease-out' });
 		localStorage.setItem(strokePrefs.key, '{not json');
 		strokePrefs.reload();
 		expect(strokePrefs.get()).toEqual(DEFAULT_STROKE_PREFS);
@@ -489,7 +525,7 @@ describe('UI commands', () => {
 });
 
 describe('Stroke Animation panel', () => {
-	const mount = (session: EditorSession, presets: StrokeCurvePreset[] = []) =>
+	const mount = (session: EditorSession, presets: readonly StrokeCurvePreset[] = []) =>
 		render(
 			<SessionProvider session={session}>
 				<StrokeAnimationBody session={session} curvePresets={presets} />
@@ -545,21 +581,21 @@ describe('Stroke Animation panel', () => {
 
 	it('edits and persists the settings; hides buttons', () => {
 		const { session } = makeSession();
-		mount(session, TEST_CURVES);
+		mount(session, [...CURVES]);
 		expect(screen.getByTestId('stroke-duration-tc').textContent).toBe('00:00:00:10');
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Animate offset' }));
 		expect(strokePrefs.get().animateOffset).toBe(true);
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Divide Out' }));
 		expect(strokePrefs.get().hidden).toEqual(['divideOut']);
 		expect(screen.queryByTestId('stroke-btn-divideOut')).toBeNull();
-		act(() => strokePrefs.set({ curve: TEST_CURVES[0]!.curve, curvePresetId: 'test.easeOut' }));
-		expect(screen.getByText('Test Ease Out')).toBeTruthy();
+		act(() => strokePrefs.set({ curve: preset('basic.ease-out').curve, curvePresetId: 'basic.ease-out' }));
+		expect(screen.getByText('Ease Out (CSS)')).toBeTruthy();
 		const text = screen.getByTestId('stroke-curve-text') as HTMLInputElement;
 		expect(text.value).toBe('0, 0, 0.58, 1');
 		fireEvent.change(text, { target: { value: '2, 0, 1, 1' } });
 		fireEvent.keyDown(text, { key: 'Enter' });
 		expect(screen.getByRole('alert')).toBeTruthy();
-		expect(strokePrefs.get().curvePresetId).toBe('test.easeOut');
+		expect(strokePrefs.get().curvePresetId).toBe('basic.ease-out');
 		fireEvent.change(text, { target: { value: 'cubic-bezier(0.3, -0.2, 0.7, 1.2)' } });
 		fireEvent.keyDown(text, { key: 'Enter' });
 		expect(strokePrefs.get()).toMatchObject({

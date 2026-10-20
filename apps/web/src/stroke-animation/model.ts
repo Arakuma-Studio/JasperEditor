@@ -2,7 +2,17 @@
 // tools — the buttons and their commands, which selected clips they apply to (and why not), the start time, the
 // modifier rules and the `shape.*` payloads. The panel, the menus and the palette all go through the UI commands in
 // commands.ts, which use these functions.
-import { type Clip, type CubicEase, CubicEaseSchema, type Sequence, type ShapeItem } from '@jasper/project';
+import {
+	BUILTIN_EASE_GROUPS,
+	builtinEasePresets,
+	type Clip,
+	type CubicEase,
+	CubicEaseSchema,
+	type EasePreset,
+	matchEasePreset,
+	type Sequence,
+	type ShapeItem,
+} from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import type { IconId } from '@jasper/ui';
 import { z } from 'zod';
@@ -342,4 +352,35 @@ export function parseCubic(text: string): CubicEase | null {
 	if (nums.some((n) => !Number.isFinite(n))) return null;
 	const r = CubicEaseSchema.safeParse({ kind: 'cubic', x1: nums[0], y1: nums[1], x2: nums[2], y2: nums[3] });
 	return r.success ? r.data : null;
+}
+
+/** A built-in ease preset `shape.animateTrim` can use (its `curve` is one cubic segment). */
+export type StrokeCurvePreset = EasePreset & { curve: CubicEase };
+
+let cubicPresets: readonly StrokeCurvePreset[] | null = null;
+
+/** The cubic presets of the built-in ease catalogue, in catalogue order (multi-segment curves are left out). */
+export function strokeCurvePresets(): readonly StrokeCurvePreset[] {
+	cubicPresets ??= Object.freeze(
+		builtinEasePresets().filter((p): p is StrokeCurvePreset => p.curve.kind === 'cubic'),
+	);
+	return cubicPresets;
+}
+
+/** The preset a stored curve shows as: its recorded preset, else the preset with the same shape, else none. */
+export function presetForCurve(
+	curve: CubicEase | null,
+	presetId: string | null,
+	presets: readonly StrokeCurvePreset[],
+): StrokeCurvePreset | null {
+	if (!curve) return null;
+	const byId = presetId ? presets.find((p) => p.id === presetId) : undefined;
+	if (byId) return byId;
+	return (matchEasePreset(curve, presets) as StrokeCurvePreset | null) ?? null;
+}
+
+/** "Group · Name" in the UI language (the Basic group shows the name only). */
+export function presetLabel(p: Pick<EasePreset, 'group' | 'name'>, translate: (s: string) => string): string {
+	const g = BUILTIN_EASE_GROUPS.find((x) => x.id === p.group);
+	return g && g.id !== 'basic' ? [translate(g.name), translate(p.name)].join(' · ') : translate(p.name);
 }

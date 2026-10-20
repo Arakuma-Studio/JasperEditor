@@ -64,7 +64,7 @@ function apply(
 	sequenceId: string,
 	commands: StrokeCommand[],
 	extra: { coalesceKey?: string; selectCreated?: boolean } = {},
-): TransactionResult | null {
+): Extract<TransactionResult, { ok: true }> | null {
 	if (!ctx.session || !commands.length) return null;
 	const r = strokeAdapter().apply(ctx.session, { label, sequenceId, commands, ...extra });
 	return report(ctx, label, r) ? r : null;
