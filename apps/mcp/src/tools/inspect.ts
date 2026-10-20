@@ -6,7 +6,7 @@ import { ProjectIdArg, timeArg } from '../arguments.ts';
 import { defineTool, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult } from '../errors.ts';
 
-export const INSPECT_GUIDE = `Reading properties: get_clip_properties {clipId, at?, keys?} lists every property of a clip — Motion, opacity, audio, text style, shape, template / composition params, and each effect's params — with value (the keyframed value at that time, as Effect Controls shows it), evaluated (what the renderer draws then; rendered: false + why when it draws nothing: outside the clip, bypassed effect, disabled clip, track output off), its keyframes in sequence frames + timecode, and the param.set target to change it. get_param {target, at?} reads one parameter by that target (clips, effects on tracks or the master, transitions, track volume/pan).`;
+export const INSPECT_GUIDE = `Reading properties: get_clip_properties {clipId, at?, keys?} lists every property of a clip — Motion, opacity, audio, text style, shape, template / composition params, and each effect's params — with value (the keyframed value at that time, as Effect Controls shows it), evaluated (what the renderer draws then; rendered: false + why when it draws nothing: outside the clip, bypassed effect, disabled clip, track output off), its keyframes in sequence frames + timecode (each with the ease of the segment leaving it: "hold", "linear" or "cubic-bezier(…)" plus easePreset when it matches a built-in preset; get_keyframe_eases has speeds and influences), and the param.set target to change it. get_param {target, at?} reads one parameter by that target (clips, effects on tracks or the master, transitions, track volume/pan).`;
 
 export function registerInspectTools(ctx: ToolContext): void {
 	defineTool(
@@ -15,7 +15,7 @@ export function registerInspectTools(ctx: ToolContext): void {
 		{
 			title: 'Get clip properties',
 			description:
-				"Every property of a clip at a time: key, label, group, kind, unit, animatable, value (the keyframed value at that time, as Effect Controls shows it), evaluated (the value the renderer draws at that frame), animated, keyframes [{id, frame, timecode, value, interpolation}] in sequence frames, and the param.set `target` path. rendered: false with why when that frame draws nothing (outside the clip, bypassed effect, disabled clip, track output off). Also lists the clip's effects (id, effectId, enabled).",
+				"Every property of a clip at a time: key, label, group, kind, unit, animatable, value (the keyframed value at that time, as Effect Controls shows it), evaluated (the value the renderer draws at that frame), animated, keyframes [{id, frame, timecode, value, interpolation, ease (the segment leaving the key: hold | linear | cubic-bezier(…); absent on the last key), easePreset?, roving?}] in sequence frames, and the param.set `target` path. rendered: false with why when that frame draws nothing (outside the clip, bypassed effect, disabled clip, track output off). Also lists the clip's effects (id, effectId, enabled).",
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('Clip id (get_timeline)'),

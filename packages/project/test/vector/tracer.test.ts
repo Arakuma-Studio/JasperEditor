@@ -219,4 +219,30 @@ describe('shape.addTrimTracer', () => {
 		expect(codeOf(h, { clipId: id, trimItemId: items[0]!.id })).toBe('E_INVALID_PARAM');
 		expect(codeOf(h, { clipId: id, trimItemId: inner })).toBe('E_INVALID_PARAM');
 	});
+
+	it('without trimItemId follows the master trim, also in the same transaction as shape.animateTrim', () => {
+		const { h, shapeId, trimId } = setup();
+		// The last top-level item is a Trim Paths: it is the master.
+		expect(tracer(h, { clipId: shapeId }).trimItemId).toBe(trimId);
+		// One transaction: animate (divide wraps the contents into parts) then trace part 1's master trim.
+		const r = h.ok([
+			{ type: 'shape.animateTrim', clipIds: [shapeId], style: 'divideIn', copies: 3 },
+			{ type: 'shape.addTrimTracer', clipId: shapeId },
+		]);
+		const animated = r.results[0] as { clips: { trimIds: string[] }[] };
+		expect((r.results[1] as Tracer).trimItemId).toBe(animated.clips[0]!.trimIds[0]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		// No master: the trim is not last in the top-level contents.
+		const g = new Harness();
+		const id = g.ok([
+			{
+				type: 'clip.addShape',
+				at: 0,
+				track: 'V1',
+				shape: { type: 'vector', contents: [{ type: 'path', path: 'M0 0 L9 9' }, { type: 'stroke' }] },
+				ref: '$s',
+			},
+		]).refs.$s!;
+		expect(codeOf(g, { clipId: id })).toBe('E_INVALID_PARAM');
+	});
 });

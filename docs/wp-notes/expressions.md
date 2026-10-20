@@ -214,7 +214,10 @@ the shape clip, else a new track inserted there; same start and duration. Refusa
 disabled group, followers in another sequence or without Motion (`E_INVALID_PARAM`), the shape clip as its own
 follower (`E_CYCLE`), a follower on a locked track (`E_TRACK_LOCKED`; the shape clip is only read, so its own
 track may be locked). Replacing an expression the follower had
-warns `W_EXPRESSION_REPLACED`. One undo step.
+warns `W_EXPRESSION_REPLACED`. One undo step. Without `trimItemId` the clip's master trim is followed (Part 1's
+last trim after a divide, else the last top-level item when it is a Trim Paths; none → `E_INVALID_PARAM`), so
+`shape.animateTrim` + `shape.addTrimTracer` fit in one transaction (MCP `animate_trim_paths {tracer}`,
+`docs/wp-notes/mcp-cli.md` § 7).
 
 Limits: at the joint between two paths of an Individually trim the End tip belongs to the earlier path (the
 renderer's piece ends there too; the Start tip is drawn from the next one — they differ only at that instant, by the
@@ -222,7 +225,8 @@ gap between the paths). When Start and End cover the whole length the renderer d
 tracer keeps the computed position; a disabled trim trims nothing but the tracer still follows its values. The
 follower is placed with a 2D `[x, y]` Position (3D followers keep their own z only through their pre-expression
 value: not handled). Rotation from `atan2` wraps at ±180°. No Effect Controls / menu entry yet: the command is
-available through `apply_commands` and MCP (the trim UI belongs to the `trim-ui` workstream).
+available through `apply_commands` and the MCP tools `add_trim_tracer` / `animate_trim_paths` (the trim UI belongs to
+the `trim-ui` workstream).
 
 ## 2. Verified behaviour (measured)
 

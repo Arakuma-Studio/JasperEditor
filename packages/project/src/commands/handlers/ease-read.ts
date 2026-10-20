@@ -179,6 +179,9 @@ export type EaseSegmentInfo = {
 export type EasePropertyInfo = {
 	path: ParamPath;
 	label: string;
+	/** The sequence holding the property, and its clip (null for track, master and transition parameters). */
+	sequenceId: string;
+	clipId: string | null;
 	/** Point property (speeds along the drawn path). */
 	spatial: boolean;
 	keys: EaseKeyInfo[];
@@ -238,6 +241,8 @@ export function describeEaseGroup(g: EaseGroup): EasePropertyInfo {
 	return {
 		path: [...g.loc.path],
 		label: g.target.label,
+		sequenceId: g.loc.seq.id,
+		clipId: g.loc.clip?.id ?? null,
 		spatial: isPointGroup(g),
 		keys,
 		segments,
