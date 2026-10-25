@@ -102,15 +102,15 @@ describe('subtitle commands in the session history', () => {
 			return r;
 		};
 		const t0 = performance.now();
-		const gen = step([{ type: 'captions.generate', template: 'builtin:pixel-pop' } as CommandInput]);
+		const gen = step([{ type: 'captions.generate', template: 'builtin:pixel-pop', cutAware: false } as CommandInput]);
 		const ms = performance.now() - t0;
 		const res = gen.results[0] as { clipIds: string[]; stats: { crossing: number } };
 		expect(res.clipIds.length).toBeGreaterThan(150);
-		expect(res.stats.crossing).toBe(0);
 		// one generation of hundreds of animated subtitles stays interactive (reported; bound generous for shared CI)
 		expect(ms).toBeLessThan(20_000);
-		step((d) => [{ type: 'captions.alignToCuts', groupId: groupOf(d) } as CommandInput]);
-		step((d) => [{ type: 'captions.regenerate', groupId: groupOf(d), rules: { maxWords: 2 } } as CommandInput]);
+		const al = step((d) => [{ type: 'captions.alignToCuts', groupId: groupOf(d) } as CommandInput]);
+		expect((al.results[0] as { crossing: number; splitAtCuts: number }).crossing).toBe(0);
+		step((d) => [{ type: 'captions.regenerate', groupId: groupOf(d), rules: { maxWords: 2 }, cutAware: true } as CommandInput]);
 		step((d) => [{ type: 'subtitleTemplate.apply', template: 'builtin:bold-pop', groupId: groupOf(d) } as CommandInput]);
 		step((d) => {
 			const seq = Object.values(d.sequences)[0]!;
