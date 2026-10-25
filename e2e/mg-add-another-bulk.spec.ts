@@ -132,6 +132,19 @@ test('social comments: Add Another gives a new identity and stats, keeps look an
 		expect(copy[k]).toEqual(src[k]);
 	expect(copy.displayName).not.toEqual(src.displayName);
 	expect(copy.likes).not.toEqual(src.likes);
+	// clips are named from their content (App QA N5)
+	expect(first!.name).toBe(`TikTok comment · ${src.displayName}`);
+	expect(second.name).toBe(`TikTok comment · ${copy.displayName}`);
+	// Add Another again from the SAME first clip: after the last copy, not stacked at the same time (App QA N2)
+	await clipEl(first!.id).click({ button: 'right', position: { x: 12, y: 10 } });
+	await page.getByRole('menuitem', { name: 'Add Another' }).click();
+	await expect.poll(async () => (await clips(page)).length).toBe(3);
+	const third = (await clips(page)).find((c) => c.id !== first!.id && c.id !== second.id)!;
+	expect([third.track, third.start]).toEqual([first!.track, second.end]);
+	await page.getByTestId('timeline-track-area').screenshot({ path: join(OUT, 'social-add-another-x2.png') });
+	await focusTimeline(page);
+	await page.keyboard.press('Control+KeyZ');
+	await expect.poll(async () => (await clips(page)).length).toBe(2);
 	await query(page, 'playhead.set', { frame: second.start + 60 });
 	await page.waitForTimeout(1500);
 	await page
@@ -146,10 +159,10 @@ test('social comments: Add Another gives a new identity and stats, keeps look an
 	await expect(dialog.getByTestId('mg-bulk-template')).toHaveValue('social-comment@1');
 	await dialog.getByTestId('mg-bulk-template').selectOption('social-comment@1:tiktok-comment');
 	const tsv = [
-		'User\tComment\tLikes\tVerified\tImage URL',
-		'Luna Park\tThis is ==so good== 🔥\t1.2K\tyes\thttps://example.com/a.png',
-		'\tWho else is here in 2026?\t\t\t',
-		'Jake\t||spoiler|| ending\tmany\t\t',
+		'User\tComment\tLikes\tVerified\tImage URL\tTime',
+		'Luna Park\tThis is ==so good== 🔥\t1.2K\tyes\thttps://example.com/a.png\t3h',
+		'\tWho else is here in 2026?\t\t\t\t2 weeks',
+		'Jake\t||spoiler|| ending\tmany\t\t\t',
 	].join('\n');
 	await dialog.getByTestId('mg-bulk-text').fill(tsv);
 	const rows = dialog.getByTestId('mg-bulk-preview').locator('tbody tr');
@@ -169,9 +182,18 @@ test('social comments: Add Another gives a new identity and stats, keeps look an
 		text: 'This is ==so good== 🔥',
 		likes: 1200,
 		verified: true,
+		// an age in one Time cell (App QA N4)
+		timeValue: 3,
+		timeUnit: 'hour',
 	});
+	expect(added[0]!.name).toBe('TikTok comment · Luna Park');
 	const p1 = await paramsOf(added[1]!.id);
-	expect(p1).toMatchObject({ variant: 'tiktok-comment', text: 'Who else is here in 2026?' });
+	expect(p1).toMatchObject({
+		variant: 'tiktok-comment',
+		text: 'Who else is here in 2026?',
+		timeValue: 2,
+		timeUnit: 'week',
+	});
 	expect(p1.displayName).not.toBe(p0.displayName);
 	await page.getByTestId('timeline-track-area').screenshot({ path: join(OUT, 'social-bulk-timeline.png') });
 	await focusTimeline(page);
