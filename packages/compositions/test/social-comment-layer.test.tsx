@@ -1,7 +1,7 @@
 // social-comment@1 through the real layer path (S11:ATP-005; social-comment design §7.7): clip params → render
 // snapshot → SequenceComposition → MotionGraphicLayer → the TikTok card, its avatar URL resolved from the project medium
 // (AnimeTemplateProps.mediaUrls → TemplateImage); an offline avatar draws the visible placeholder.
-import { mgRegistry } from '@jasper/mg-templates';
+import { mgRegistry, REMOTE_IMAGE_IDS, templateAssetOptions } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -84,10 +84,18 @@ const handle = (url: string): MediaHandle => ({
 	rotation: 0,
 });
 
-function frame(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | null, at = 100) {
+function frame(
+	doc: ProjectDocument,
+	resolve: (a: MediaAsset) => MediaHandle | null,
+	at = 100,
+	image?: (id: string) => string | null,
+) {
 	const snap: RenderSnapshot = buildRenderSnapshot(doc, Object.keys(doc.sequences)[0]!, {
 		resolveMedia: resolve,
 		resolveFont: () => null,
+		...(image
+			? { templateAssets: templateAssetOptions(mgRegistry, { font: () => null, emoji: () => null, image }) }
+			: {}),
 	});
 	return render(
 		<Thumbnail
@@ -123,7 +131,7 @@ describe('social-comment@1 in the sequence composition', () => {
 		expect(none.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
 		none.unmount();
 	});
-	it('draws the YouTube cards through the layer: comment with the uploaded avatar, Shorts card with the YouTube default', () => {
+	it('draws the YouTube cards through the layer: comment with the uploaded avatar, Shorts card with the default avatar slot', () => {
 		const { doc, mediaId } = project({ variant: 'youtube-comment', handle: 'luna.makes', replies: 3 }, true);
 		const view = frame(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
 		expect(view.container.querySelector('[data-social-variant="youtube-comment"]')).not.toBeNull();
@@ -137,7 +145,22 @@ describe('social-comment@1 in the sequence composition', () => {
 			handle(`/m/${a.id}`),
 		);
 		expect(shorts.container.querySelector('[data-social-variant="youtube-shorts-reply"]')).not.toBeNull();
-		expect(shorts.container.querySelector('[data-social-avatar="default"] rect')).not.toBeNull();
+		// the YouTube default picture is a remote image (none resolved here): the visible placeholder in its circle
+		expect(
+			shorts.container.querySelector('[data-social-avatar="default"] [data-template-image="placeholder"]'),
+		).not.toBeNull();
 		shorts.unmount();
+		// the snapshot resolves the declared remote image (engine route) → imageUrls → the card's default avatar
+		const served = frame(
+			project({ variant: 'youtube-comment' }, false).doc,
+			(a) => handle(`/m/${a.id}`),
+			100,
+			(id) =>
+				id === REMOTE_IMAGE_IDS.youtubeDefaultAvatar ? `https://engine.test/remote/images/${id}` : null,
+		);
+		expect(served.container.querySelector('[data-social-avatar="default"] img')!.getAttribute('src')).toBe(
+			`https://engine.test/remote/images/${REMOTE_IMAGE_IDS.youtubeDefaultAvatar}`,
+		);
+		served.unmount();
 	});
 });

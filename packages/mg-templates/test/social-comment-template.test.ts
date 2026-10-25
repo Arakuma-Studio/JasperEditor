@@ -14,6 +14,7 @@ import {
 	animeTemplateTiming,
 	easeFunction,
 	mgRegistry,
+	REMOTE_IMAGE_IDS,
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
@@ -280,6 +281,14 @@ describe('social-comment@1 presets and fill hook', () => {
 		});
 		expect(socialCommentUnavailableVariant({ variant: 'youtube-comment' })).toBeNull();
 		expect(socialCommentUnavailableVariant({ variant: 'youtube-shorts-reply' })).toBeNull();
+		// the YouTube default avatar is a remote image the clip declares (snapshot, planner) only while it is drawn
+		const req = (p: Record<string, unknown>) =>
+			socialComment.requiredAssets!(socialComment.paramsSchema.parse({ ...socialComment.defaults, ...p }));
+		expect(req({ variant: 'youtube-comment' }).images).toEqual([REMOTE_IMAGE_IDS.youtubeDefaultAvatar]);
+		expect(req({ variant: 'youtube-shorts-reply' }).images).toEqual([REMOTE_IMAGE_IDS.youtubeDefaultAvatar]);
+		expect(req({ variant: 'youtube-comment', showProfile: false }).images).toEqual([]);
+		expect(req({ variant: 'youtube-comment', avatar: { generated: 4 } }).images).toEqual([]);
+		expect(req({ variant: 'tiktok-comment' }).images).toEqual([]);
 		expect(SOCIAL_VARIANT_FONTS['youtube-comment']).toEqual({ family: 'Roboto', weights: [400, 500] });
 		expect(SOCIAL_VARIANT_FONTS['youtube-shorts-reply']).toEqual({ family: 'Roboto', weights: [400, 500] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))

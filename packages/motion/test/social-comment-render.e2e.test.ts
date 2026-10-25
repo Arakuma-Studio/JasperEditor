@@ -6,7 +6,8 @@
 // - with SOCIAL_CALIBRATION_DIR set, writes the calibration stills (hold frame, card at 2× tokcomment's CSS px).
 // Fonts: TikTok Sans from @fontsource/tiktok-sans (SOCIAL_FONT_DIR overrides its `files/` dir), Roboto from
 // @fontsource/roboto; emoji: images from SOCIAL_EMOJI_DIR (`<codepoints>.png` = Apple; subdirectories `apple/`,
-// `twemoji/`, `noto/` = that pack), else the emoji draw as text.
+// `twemoji/`, `noto/` = that pack), else the emoji draw as text; remote images (default avatars) from SOCIAL_IMAGE_DIR
+// (`<manifest id>.<ext>`), else the avatar draws the visible placeholder.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -346,6 +347,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 	const work = enabled ? mkdtempSync(join(tmpdir(), 'jasper-social-')) : '';
 	const fonts: CardProps['fonts'] = [];
 	const emojiFiles: Record<string, string> = {};
+	const imageFiles: Record<string, string> = {};
 
 	beforeAll(async () => {
 		r = await import('@remotion/renderer');
@@ -389,6 +391,15 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			for (const pack of ['apple', 'twemoji', 'noto'])
 				if (existsSync(join(emojiDir, pack))) addEmoji(join(emojiDir, pack), pack);
 		}
+		// remote images (platform default avatars) from SOCIAL_IMAGE_DIR, named `<manifest id>.<ext>`
+		const imageDir = process.env.SOCIAL_IMAGE_DIR;
+		if (imageDir && existsSync(imageDir)) {
+			mkdirSync(join(pub, 'images'), { recursive: true });
+			for (const f of readdirSync(imageDir).filter((n) => /\.(png|jpe?g)$/.test(n))) {
+				copyFileSync(join(imageDir, f), join(pub, 'images', f));
+				imageFiles[f.replace(/\.[^.]+$/, '')] = `images/${f}`;
+			}
+		}
 		// a 256 px gradient picture as the uploaded avatar (no personal data)
 		spawnSync(ffmpeg, [
 			'-v',
@@ -417,6 +428,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		fonts,
 		mediaFiles: c.media ? { med_avatar: 'avatar.png' } : {},
 		emojiFiles,
+		imageFiles,
 	});
 	const still = async (c: Case, frame: number, scale = 1) => {
 		const composition = await r.selectComposition({

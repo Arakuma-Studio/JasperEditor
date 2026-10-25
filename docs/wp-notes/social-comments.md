@@ -858,9 +858,13 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   31–32 px boxes as tokcomment's Noto glyphs, tops within 1 px (comment) and 2 px (Shorts).
 - **Avatars:** the generated avatar takes its initials from the handle (YouTube does not show the display name). The
   Properties `social-avatar` preview uses `displayName`, so its initials can differ on YouTube clips. The default
-  avatar is YouTube's `default-user` picture (`PLATFORM_DEFAULT_AVATARS.youtube`); until the engine delivers the
-  raster (`imageUrls`), the card draws it as vectors measured on the 240 px file: a #A0C2FF field, a #4474E0 head
-  (r 44.5 at 120, 92) and shoulders.
+  avatar is YouTube's `default-user` picture, the remote image `REMOTE_IMAGE_IDS.youtubeDefaultAvatar`:
+  - the definition's `requiredAssets` (`socialCommentRequiredAssets`) declares it in `images` only while it is drawn
+    (a YouTube variant, `showProfile`, `avatar: null`; table `SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE` for the other
+    variant packages), so the snapshot resolves it for preview and bake and the planner blocks an export without it;
+  - the card reads `imageUrls[id]` and draws it with `TemplateImage`; not delivered: `TemplateImage`'s visible
+    placeholder in the circle (the layer reports the missing image).
+  - `requiredAssets` returns no fonts or emoji yet: the framework's asset wiring (WP6a) adds them.
 - **Grow from tail:** neither card has a tail; both grow from the avatar corner (`0% 0%`).
 - **Fit:** the handle truncates (comment) or ends in an ellipsis (Shorts); counts stay short (`formatCount`: "987B",
   "4.8M replies"), the actions and the time never shrink.
@@ -868,7 +872,8 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   repo): every tokcomment capture side by side with our `renderStill` at 2× and a difference overlay, plus long
   names, huge counts, no replies, one reply, liked, no profile, mentions, generated avatar and entrance filmstrips. To
   rerun: Noto PNGs (`<cp>.png`) under `<dir>/noto/`, then `REMOTION_E2E=1 SOCIAL_EMOJI_DIR=<dir>
-  SOCIAL_CALIBRATION_DIR=<out> SOCIAL_CALIBRATION_FILTER='^(youtube-|anim_youtube)' pnpm exec vitest run
+  SOCIAL_IMAGE_DIR=<dir with youtube-default-avatar.jpg> SOCIAL_CALIBRATION_DIR=<out>
+  SOCIAL_CALIBRATION_FILTER='^(youtube-|anim_youtube)' pnpm exec vitest run
   packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools in that directory's `tools/`
   (`filmstrips.sh` added).
 - **Measured matches (2×):** comment card 297 × 840 px (tokcomment 299; the 0.5 px edge rows of a 149.5 px card fall

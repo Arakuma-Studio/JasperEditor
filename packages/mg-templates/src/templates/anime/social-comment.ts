@@ -12,6 +12,7 @@
 // eased in) is the declared outro, anchored at the content end. Outside these windows the card is at rest and shows
 // its hold state (S11:ANM-009): every word shown, the final count, the heart filled when it ticked.
 
+import { REMOTE_IMAGE_IDS, type RemoteImageId } from '../../assets.ts';
 import { CANVASES } from '../../core.ts';
 import {
 	type CommentSpan,
@@ -34,6 +35,7 @@ import type {
 	MgTemplateFillResult,
 	MgTemplateParamUi,
 	MgTemplatePreset,
+	TemplateRequiredAssets,
 } from '../../types.ts';
 import { ANIME_REFERENCE_FPS } from './common.ts';
 import type { AnimeTween, TemplateTiming } from './motion.ts';
@@ -353,6 +355,37 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	'x-post': null,
 };
 
+/**
+ * The platform default avatar a variant draws as a remote raster image (the remote-asset manifest's `images`, read
+ * from `AnimeTemplateProps.imageUrls` by this id) when the clip shows the default avatar; null: none (TikTok draws its
+ * own vector, the others are built by the follow-up variant packages).
+ */
+export const SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE: Readonly<Record<SocialVariant, RemoteImageId | null>> = {
+	'tiktok-reply': null,
+	'tiktok-comment': null,
+	'youtube-comment': REMOTE_IMAGE_IDS.youtubeDefaultAvatar,
+	'youtube-shorts-reply': REMOTE_IMAGE_IDS.youtubeDefaultAvatar,
+	'instagram-post': null,
+	'instagram-reel-reply': null,
+	'x-post': null,
+};
+
+/** The remote images a clip draws: its variant's default avatar when the avatar is shown and is the default (`null`). */
+export function socialCommentImages(
+	p: Pick<SocialCommentParams, 'variant' | 'avatar' | 'showProfile'>,
+): RemoteImageId[] {
+	const id = SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE[p.variant] ?? null;
+	return id && p.showProfile && p.avatar === null ? [id] : [];
+}
+
+/**
+ * `requiredAssets` of social-comment@1 (design §7.8, contract C2): the remote images the card draws, so the snapshot
+ * resolves them for preview and bake and the export planner blocks when one is unavailable.
+ */
+export function socialCommentRequiredAssets(p: SocialCommentParams): TemplateRequiredAssets {
+	return { fonts: [], images: socialCommentImages(p) };
+}
+
 // -------------------------------------------------------------------------------------------- definition
 
 /**
@@ -453,6 +486,7 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	canvases: [...CANVASES],
 	presets: socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS),
 	fill: fillSocialCommentParams,
+	requiredAssets: socialCommentRequiredAssets,
 	// grouped like tokcomment's control panel (design §7.9); custom controls are registered by the web app (until then
 	// Properties falls back to the standard editors)
 	ui: {

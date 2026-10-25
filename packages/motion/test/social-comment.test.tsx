@@ -4,6 +4,7 @@
 import {
 	animeTemplateTiming,
 	generatedAvatar,
+	REMOTE_IMAGE_IDS,
 	SOCIAL_VARIANTS,
 	socialComment,
 	socialCommentParamsSchema,
@@ -14,11 +15,7 @@ import { act, render } from '@testing-library/react';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
-import {
-	PLATFORM_DEFAULT_AVATARS,
-	TIKTOK_DEFAULT_AVATAR,
-	YOUTUBE_GLYPHS,
-} from '../src/templates/social/glyphs.ts';
+import { TIKTOK_DEFAULT_AVATAR, YOUTUBE_GLYPHS } from '../src/templates/social/glyphs.ts';
 import { splitEmojiPieces } from '../src/templates/social-comment/assets.tsx';
 import type { SocialCardAssets } from '../src/templates/social-comment/contract.ts';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
@@ -40,6 +37,8 @@ function at(params: Record<string, unknown>, frame: number, extra: Record<string
 			seed={7}
 			isPreview={false}
 			mediaUrls={{}}
+			emojiUrls={{}}
+			imageUrls={{}}
 			{...extra}
 		/>
 	);
@@ -125,6 +124,8 @@ describe('social-comment@1 cards', () => {
 				seed={1}
 				isPreview
 				mediaUrls={{}}
+				emojiUrls={{}}
+				imageUrls={{}}
 			/>,
 		);
 		expect(r.container.querySelector('[data-social-variant="tiktok-reply"]')).not.toBeNull();
@@ -192,19 +193,18 @@ describe('social-comment@1 YouTube cards', () => {
 		r.unmount();
 	});
 
-	it('avatars: YouTube default as vectors, its raster once resolved, a picture, generated initials from the handle', () => {
-		const def = PLATFORM_DEFAULT_AVATARS.youtube;
-		if (def.kind !== 'remote') throw new Error('YouTube default avatar is a remote image');
+	it('avatars: YouTube default picture by its manifest id (placeholder until delivered), a picture, generated initials from the handle', () => {
+		const id = REMOTE_IMAGE_IDS.youtubeDefaultAvatar;
 		for (const variant of ['youtube-comment', 'youtube-shorts-reply'] as const) {
 			const base = socialDefaults(variant);
-			const vec = render(at(base, 100));
-			const el = vec.container.querySelector('[data-social-avatar="default"]')!;
-			expect(el.querySelector('rect')!.getAttribute('fill')).toBe('#A0C2FF');
-			vec.unmount();
-			const raster = render(
-				at(base, 100, { imageUrls: { [def.image.url]: 'http://engine/yt-default.jpg' } }),
+			const missing = render(at(base, 100));
+			const el = missing.container.querySelector('[data-social-avatar="default"]')!;
+			expect(el.querySelector('[data-template-image="placeholder"]')).not.toBeNull();
+			missing.unmount();
+			const raster = render(at(base, 100, { imageUrls: { [id]: 'http://engine/yt-default.jpg' } }));
+			expect(raster.container.querySelector('[data-social-avatar="default"] img')!.getAttribute('src')).toBe(
+				'http://engine/yt-default.jpg',
 			);
-			expect(raster.container.innerHTML).toContain('src="http://engine/yt-default.jpg"');
 			raster.unmount();
 			const pic = render(
 				at({ ...base, avatar: { mediaId: 'med_a' } }, 100, { mediaUrls: { med_a: 'http://x/a.png' } }),

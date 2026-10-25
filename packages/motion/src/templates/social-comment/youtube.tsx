@@ -3,9 +3,17 @@
 // (YouTube's comment font, bundled) and the live youtube.com measurements of 2026 where they differ from tokcomment
 // (avatar size, the colours of the handle, counts, icons, thread line and "N replies"). Deliberate differences from
 // tokcomment and the tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "YouTube cards".
-import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
+import {
+	formatCount,
+	formatRepliesLabel,
+	formatTime,
+	SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE,
+	SOCIAL_VARIANT_FONTS,
+} from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
-import { PLATFORM_DEFAULT_AVATARS, YOUTUBE_GLYPHS } from '../social/glyphs.ts';
+import { editableParamProps } from '../editable.ts';
+import { YOUTUBE_GLYPHS } from '../social/glyphs.ts';
+import { AvatarPicture } from './assets.tsx';
 import type { SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
 import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
@@ -28,33 +36,13 @@ const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
 
 // ------------------------------------------------------------------------------------------- default avatar
 
-/** YouTube's default ("no photo") avatar: `yt3.ggpht.com/a/default-user` (240 px JPEG, recorded in glyphs.ts). */
-const DEFAULT_AVATAR = PLATFORM_DEFAULT_AVATARS.youtube;
-const DEFAULT_AVATAR_URL = DEFAULT_AVATAR.kind === 'remote' ? DEFAULT_AVATAR.image.url : null;
+/** YouTube's default ("no photo") avatar: `yt3.ggpht.com/a/default-user`, a remote image of the asset manifest. */
+const DEFAULT_AVATAR_ID = SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE['youtube-comment']!;
 
 /**
- * The same picture as vectors, used while the raster is not resolved (`assets.imageUrls`): a #A0C2FF field with a
- * #4474E0 head (circle r 44.5 at 120, 92) and shoulders (150 wide, elliptical top from y 152), measured on the
- * 240 px file (sha256 9929d44d…).
- */
-function YouTubeDefaultAvatar({ size, style }: { size: number; style?: CSSProperties }) {
-	return (
-		<div
-			data-social-avatar="default"
-			style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, ...style }}
-		>
-			<svg viewBox="0 0 240 240" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-				<rect width="240" height="240" fill="#A0C2FF" />
-				<circle cx="120" cy="92" r="44.5" fill="#4474E0" />
-				<path d="M45 240V186A75 34 0 0 1 195 186V240Z" fill="#4474E0" />
-			</svg>
-		</div>
-	);
-}
-
-/**
- * The author's avatar: the picture, a generated one (initials from the handle the card shows) or YouTube's default
- * (the resolved raster when the engine delivers it, else its vector twin above).
+ * The author's avatar: the picture, a generated one (initials from the handle the card shows: YouTube does not show
+ * the display name) or YouTube's default picture (`imageUrls`, declared by `requiredAssets`; not delivered: the
+ * visible placeholder of `TemplateImage`, and exports are blocked by the planner).
  */
 function YouTubeAvatar(p: {
 	params: SocialCardProps['params'];
@@ -62,8 +50,15 @@ function YouTubeAvatar(p: {
 	assets: SocialCardAssets;
 	style?: CSSProperties;
 }) {
-	if (p.params.avatar === null && !(DEFAULT_AVATAR_URL && p.assets.imageUrls[DEFAULT_AVATAR_URL]))
-		return <YouTubeDefaultAvatar size={p.size} {...(p.style ? { style: p.style } : {})} />;
+	if (p.params.avatar === null)
+		return (
+			<span data-social-avatar="default" style={{ display: 'block', flexShrink: 0, ...p.style }}>
+				<AvatarPicture
+					src={p.assets.imageUrls[DEFAULT_AVATAR_ID]}
+					style={{ display: 'block', width: p.size, height: p.size, borderRadius: '50%', overflow: 'hidden' }}
+				/>
+			</span>
+		);
 	return (
 		<SocialAvatar
 			avatar={p.params.avatar}
@@ -90,7 +85,7 @@ function Handle({
 	return (
 		<>
 			{'@'}
-			<span data-template-param="handle">
+			<span {...editableParamProps('handle')}>
 				<TextWithEmoji text={handle} fontSize={fontSize} emoji={EMOJI} assets={assets} />
 			</span>
 		</>
