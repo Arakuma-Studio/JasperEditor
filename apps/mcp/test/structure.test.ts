@@ -154,4 +154,62 @@ describe('edit-structure MCP tools', () => {
 		const kinds = Object.values(engine.doc().sequences[engine.seqId]!.clips).map((c) => c.kind);
 		expect(kinds).not.toContain('nest-video');
 	});
+	it('list_cuts lists picture cuts with timecodes, pages and refuses bad tracks', async () => {
+		const { engine, call } = await connect();
+		const mediaId = Object.keys(engine.doc().media)[0]!;
+		const placed = await call('apply_commands', {
+			label: 'jump',
+			commands: [
+				{
+					type: 'clip.place',
+					source: { mediaId },
+					at: 130,
+					sourceRange: { in: { seconds: 6 }, out: { seconds: 8 } },
+				},
+			],
+		});
+		expect(placed.isError, JSON.stringify(placed.body)).toBe(false);
+		const all = await call('list_cuts', {});
+		expect(all.isError, JSON.stringify(all.body)).toBe(false);
+		expect(all.body).toMatchObject({
+			frameRate: '30/1',
+			duration: { frames: 190 },
+			tracks: ['V3', 'V2', 'V1'],
+			total: 2,
+			counts: { cut: 1, jump: 1, overlay: 0 },
+		});
+		expect(
+			all.body.cuts.map((c: { frame: number; timecode: string; kind: string; track: string }) => [
+				c.frame,
+				c.timecode,
+				c.kind,
+				c.track,
+			]),
+		).toEqual([
+			[10, '00:00:00:10', 'cut', 'V1'],
+			[130, '00:00:04:10', 'jump', 'V1'],
+		]);
+		const page = await call('list_cuts', { limit: 1 });
+		expect(page.body.cuts).toHaveLength(1);
+		expect(page.body.nextOffset).toBe(1);
+		const rest = await call('list_cuts', { offset: 1 });
+		expect(rest.body.cuts[0].frame).toBe(130);
+		expect(rest.body.nextOffset).toBeUndefined();
+		const noJumps = await call('list_cuts', {
+			includeJumpCuts: false,
+			range: { start: 0, end: '00:00:05:00' },
+		});
+		expect(noJumps.body.total).toBe(1);
+		const below = await call('list_cuts', { outputTrackId: 'V1' });
+		expect(below.body.total).toBe(0);
+		expect(below.body.tracks).toEqual([]);
+		const audio = await call('list_cuts', { outputTrackId: 'A1' });
+		expect(audio.isError).toBe(true);
+		expect(JSON.stringify(audio.body)).toContain('E_INVALID_PARAM');
+		const missing = await call('list_cuts', { trackIds: ['V9'] });
+		expect(missing.isError).toBe(true);
+		expect(JSON.stringify(missing.body)).toContain('E_NOT_FOUND');
+		const unknown = await call('list_cuts', { bogus: 1 });
+		expect(unknown.isError).toBe(true);
+	});
 });

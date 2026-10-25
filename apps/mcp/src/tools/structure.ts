@@ -1,7 +1,12 @@
 import {
+	analyzePictureCuts,
+	CutMapError,
+	type CutMapOptions,
 	isNestClip,
 	nestContentKey,
 	nestReferences,
+	type Rational,
+	resolveTrackRef,
 	SYNTHETIC_INFO,
 	SYNTHETIC_KINDS,
 	sequenceGaps,
@@ -18,11 +23,12 @@ import {
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	frameOf,
 	loadDoc,
 	READ_ONLY,
 	type ToolContext,
 } from '../context.ts';
-import { jsonResult } from '../errors.ts';
+import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 
 export const STRUCTURE_GUIDE = `Nests, adjustment layers, groups, synthetics, through edits, frame holds:
@@ -31,7 +37,7 @@ export const STRUCTURE_GUIDE = `Nests, adjustment layers, groups, synthetics, th
 - group_clips / ungroup_clips: grouped clips select, move and delete together; trimming the group's outer edge trims every member there.
 - create_synthetic makes a Project item: bars-and-tone (SMPTE HD bars + 1 kHz at −20 dBFS, 1 s), black-video, color-matte (params.color RGBA 0..1), transparent, adjustment, counting-leader (11 s countdown; params wipeColor, backgroundColor, lineColor, targetColor, numeralColor, cueBlipOnOut, cueBlipOnTwo, cueBlipAllSeconds). Place it with add_clip-style apply_commands clip.place {source: {syntheticId}}; update_synthetic changes it everywhere it is used.
 - duplicate_sequence copies a sequence; delete_sequence and remove_unused_media need the user's approval in an open editor.
-- list_through_edits / join_through_edits: cuts between pieces that continue the same source (left by split_at / Add Edit). find_gaps lists empty time in the sequence or on tracks. make_subsequence copies clips (or In–Out on tracks) into a new sequence.
+- list_through_edits / join_through_edits: cuts between pieces that continue the same source (left by split_at / Add Edit). list_cuts is the picture cut map: every frame where the picture the viewer sees changes — kind 'cut' (another source, or to / from black), 'jump' (same source, discontinuous) or 'overlay' (a picture covering ≥ overlayCoverage, default 50 %, of the frame comes or goes) — looking inside nests (speed, reverse, remap, 8 levels), ignoring through edits, hidden tracks, disabled clips, text / shape / caption / adjustment / graphic clips and fades to / from black; a two-sided transition adds transitionId and its span as zone. outputTrackId (e.g. the subtitles' track) keeps only the tracks below it. find_gaps lists empty time in the sequence or on tracks. make_subsequence copies clips (or In–Out on tracks) into a new sequence.
 - add_frame_hold (Premiere Add Frame Hold: split at a time, the right part holds that frame), insert_frame_hold_segment (a held segment pushed in, 2 s by default), frame_hold_options (hold on in / out / sequence-time / source-time / playhead, holdFilters freezes effects and keyframes too; enabled: false removes it).`;
 
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
@@ -417,6 +423,120 @@ export function registerStructureTools(ctx: ToolContext): void {
 					leftClipId: t.leftId,
 					rightClipId: t.rightId,
 				})),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'list_cuts',
+		{
+			title: 'List picture cuts',
+			description:
+				"The sequence's picture cut map (spec 13 SH-001): every frame where the picture changes, as frame + timecode, kind ('cut': another source or to/from black; 'jump': same source, discontinuous; 'overlay': a picture covering ≥ overlayCoverage of the frame comes or goes), track, outgoing/incoming clip ids of this sequence (nested: the nest clip, with nested.outgoing/incoming naming the clips inside), and for two-sided transitions transitionId + zone (the transition's span). Nests are followed (speed, reverse, time remap, multi-camera angle, ≤ 8 levels); through edits, hidden tracks, disabled clips, text, shape, caption, adjustment and graphic clips and fades to/from black are not cuts. Coverage comes from Motion, Crop and corner pin. Read-only; paged with offset/limit (total = every cut).",
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				outputTrackId: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Only tracks below this one count (e.g. the subtitles\' track): label "V3" / "C1" or id; a caption track = every video track',
+					),
+				trackIds: z
+					.array(z.string().min(1))
+					.min(1)
+					.max(100)
+					.optional()
+					.describe('Only these video tracks: labels ("V1") or ids'),
+				overlayCoverage: z
+					.number()
+					.min(0.01)
+					.max(1)
+					.optional()
+					.describe('Fraction of the frame an overlay must cover (default 0.5)'),
+				includeJumpCuts: z.boolean().optional().describe('Report jump cuts (default true)'),
+				includeOverlays: z.boolean().optional().describe('Report overlays (default true)'),
+				range: z
+					.strictObject({ start: timeArg('First frame'), end: timeArg('End (exclusive)') })
+					.optional()
+					.describe('Only cuts in [start, end)'),
+				offset: z.number().int().min(0).optional().describe('First cut to return (default 0)'),
+				limit: z.number().int().min(1).max(2000).optional().describe('Cuts to return (default 500)'),
+			},
+			annotations: READ_ONLY,
+		},
+		async (a) => {
+			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
+			const track = (ref: string) => {
+				const id = resolveTrackRef(seq, ref);
+				if (!id)
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`Track not found: ${ref}`,
+						'Tracks are labels ("V1", "C1") or track ids from get_timeline.',
+					);
+				return id;
+			};
+			const opts: CutMapOptions = {
+				...(a.outputTrackId ? { outputTrackId: track(a.outputTrackId) } : {}),
+				...(a.trackIds ? { trackIds: a.trackIds.map(track) } : {}),
+				...(a.overlayCoverage !== undefined ? { overlayCoverage: a.overlayCoverage } : {}),
+				...(a.includeJumpCuts !== undefined ? { includeJumpCuts: a.includeJumpCuts } : {}),
+				...(a.includeOverlays !== undefined ? { includeOverlays: a.includeOverlays } : {}),
+				...(a.range ? { range: { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) } } : {}),
+			};
+			let r: ReturnType<typeof analyzePictureCuts>;
+			try {
+				r = analyzePictureCuts(doc, seq.id, opts);
+			} catch (e) {
+				if (e instanceof CutMapError)
+					throw new ToolError(
+						e.code,
+						e.message,
+						'outputTrackId / trackIds name video (or caption, for outputTrackId) tracks; range.start ≤ range.end, both ≥ 0.',
+					);
+				throw e;
+			}
+			const tc = (f: number) => sequenceTimecode(seq, f);
+			const offset = a.offset ?? 0;
+			const page = r.cuts.slice(offset, offset + (a.limit ?? 500));
+			const counts = { cut: 0, jump: 0, overlay: 0 };
+			for (const c of r.cuts) counts[c.kind]++;
+			const rate = seq.settings.frameRate as Rational;
+			return jsonResult({
+				sequenceId: seq.id,
+				frameRate: `${rate.num}/${rate.den}`,
+				duration: { frames: r.duration, timecode: tc(r.duration) },
+				range: { start: r.range.start, end: r.range.end },
+				tracks: r.trackIds.map((id) => trackLabel(seq, id) ?? id),
+				total: r.cuts.length,
+				counts,
+				offset,
+				cuts: page.map((c) => ({
+					frame: c.frame,
+					timecode: tc(c.frame),
+					kind: c.kind,
+					track: trackLabel(seq, c.trackId) ?? c.trackId,
+					trackId: c.trackId,
+					...(c.outgoingClipId ? { outgoingClipId: c.outgoingClipId } : {}),
+					...(c.incomingClipId ? { incomingClipId: c.incomingClipId } : {}),
+					...(c.transitionId ? { transitionId: c.transitionId } : {}),
+					...(c.zone
+						? {
+								zone: {
+									start: c.zone.start,
+									end: c.zone.end,
+									startTimecode: tc(c.zone.start),
+									endTimecode: tc(c.zone.end),
+								},
+							}
+						: {}),
+					...(c.nested ? { nested: c.nested } : {}),
+				})),
+				...(offset + page.length < r.cuts.length ? { nextOffset: offset + page.length } : {}),
+				...(r.warnings.length ? { warnings: r.warnings } : {}),
 			});
 		},
 	);
