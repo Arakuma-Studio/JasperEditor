@@ -776,6 +776,18 @@ export const TEXT_LOOK_SPECS: readonly PropertySpec[] = [
 	),
 ];
 
+/**
+ * Display templates of the dynamic stroke rows and of the stroke list's History steps (UI-6 model strings: the editor
+ * translates "Stroke 2 Width" through "Stroke {0} Width").
+ */
+export const TEXT_STROKE_MODEL_STRINGS = [
+	'Stroke {0} Width',
+	'Stroke {0} Color',
+	'Stroke {0} Position',
+	'Add Stroke',
+	'Remove Stroke {0}',
+] as const;
+
 /** Stroke list rows: `text.stroke.<i>.width | color | position` (spec 13 AS-030; every stroke, not only the first). */
 export const TEXT_STROKE_KEY = /^text\.stroke\.(\d{1,2})\.(width|color|position)$/;
 const strokeSpecCache = new Map<string, PropertySpec>();
