@@ -247,7 +247,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 								onMouseDown={(e) => e.preventDefault()}
 								onClick={() => runMark(a.action)}
 								className={cx(
-									'inline-flex h-[20px] items-center gap-1 rounded-pr-control px-[5px] text-pr-small',
+									'inline-flex h-[20px] items-center gap-1 whitespace-nowrap rounded-pr-control px-[5px] text-pr-small',
 									'disabled:pointer-events-none disabled:text-pr-dim',
 									pressed
 										? 'bg-pr-selected text-pr-strong'
@@ -256,7 +256,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 								data-testid={`social-text-${a.action}`}
 							>
 								<Icon id={a.icon} size={13} />
-								<span>{markLabel(a.action)}</span>
+								{a.action === 'clear' ? null : <span>{markLabel(a.action)}</span>}
 							</button>
 						);
 					})}
@@ -264,6 +264,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 				<button
 					type="button"
 					aria-pressed={showMarkup}
+					aria-label={t('Show markup')}
 					title={t('Show the stored text with its mark syntax')}
 					onClick={() => setShowMarkup(!showMarkup)}
 					className={cx(
@@ -275,7 +276,6 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 					data-testid="social-text-show-markup"
 				>
 					<Icon id="text.markup" size={13} />
-					<span>{t('Show markup')}</span>
 				</button>
 			</div>
 			<div className="max-h-[240px] min-h-[62px] overflow-y-auto rounded-pr-control bg-pr-field">
