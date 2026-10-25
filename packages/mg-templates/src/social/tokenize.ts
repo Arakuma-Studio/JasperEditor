@@ -17,6 +17,19 @@ const NAME_RULES: Readonly<Record<SocialPlatform, { chars: RegExp; max: number }
 	instagram: { chars: /[A-Za-z0-9_.]/u, max: 30 },
 	youtube: { chars: /[\p{L}\p{M}\p{N}_.-]/u, max: 30 },
 	x: { chars: /[A-Za-z0-9_]/u, max: 15 },
+	// the stores print reviews as plain text: no mention or hashtag runs (see LINKED)
+	'play-store': { chars: /[A-Za-z0-9_.]/u, max: 30 },
+	'app-store': { chars: /[A-Za-z0-9_.]/u, max: 30 },
+};
+
+/** Platforms that style @mentions and #hashtags (Google Play and the App Store show review text as plain text). */
+const LINKED: Readonly<Record<SocialPlatform, boolean>> = {
+	tiktok: true,
+	instagram: true,
+	youtube: true,
+	x: true,
+	'play-store': false,
+	'app-store': false,
 };
 
 /** A mention or hashtag starts at the text start or after a character that cannot be part of a word or e-mail. */
@@ -38,6 +51,7 @@ function codePoints(s: string): { cp: string; at: number }[] {
 /** Per-code-unit roles of `visible` under `platform`'s mention and hashtag rules. */
 function roles(visible: string, platform: SocialPlatform): CommentRole[] {
 	const out: CommentRole[] = new Array(visible.length).fill('plain');
+	if (!LINKED[platform]) return out;
 	const cps = codePoints(visible);
 	const rule = NAME_RULES[platform];
 	let i = 0;

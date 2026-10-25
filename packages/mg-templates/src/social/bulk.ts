@@ -11,9 +11,10 @@ import {
 
 /**
  * What "Add another" re-randomizes (through `fillSocialParams`): a different person (name, handle, avatar) and new
- * stats (age, likes, replies, reposts, views). Kept from the source card: the look (variant, theme, emoji style),
- * the profile and verified toggles, the X count toggles, the animation (entrance, word reveal, like tick) and the
- * text — the user edits the text of the new card, which keeps its marks' style.
+ * stats (age, likes, replies, reposts, views; a store review's rating and date). Kept from the source card: the look
+ * (variant, theme, emoji style), the profile and verified toggles, the X count toggles, the animation (entrance, word
+ * reveal, like tick), the review's edited flag and line clamp, and the content (text and review title) — the user
+ * edits the text of the new card, which keeps its marks' style.
  */
 export const SOCIAL_REROLL_PARAMS: readonly SocialParamName[] = [
 	'displayName',
@@ -25,6 +26,8 @@ export const SOCIAL_REROLL_PARAMS: readonly SocialParamName[] = [
 	'replies',
 	'reposts',
 	'views',
+	'rating',
+	'date',
 ];
 
 /** Kept by "Add another" (every param that is not re-randomized). */
@@ -48,8 +51,8 @@ const REMOTE_IMAGES =
 	'Pictures from web addresses are not imported: import the picture into the project, then choose it in Properties ▸ Author ▸ Avatar (or give an avatar column with {"mediaId": "…"}).';
 
 /**
- * `ui.import` of `social-comment`: tokcomment's `User` / `Username` / `Comment` / `Verified` and other common
- * spreadsheet headers. Param names and Properties labels (`Display Name`, `Comment`, `Style`, …) match without
+ * `ui.import` of `social-comment`: tokcomment's `User` / `Username` / `Comment` / `Verified`, store-review exports'
+ * `Stars` / `Review title` / `Review date` / `Review`, and other common spreadsheet headers. Param names and Properties labels (`Display Name`, `Comment`, `Style`, …) match without
  * aliases; `Verified` is the param itself (yes / true / 1 / ✓ read as true).
  */
 export const SOCIAL_IMPORT_HINTS: MgTemplateImportUi = {
@@ -75,6 +78,18 @@ export const SOCIAL_IMPORT_HINTS: MgTemplateImportUi = {
 		'Time unit': 'timeUnit',
 		'Blue check': 'verified',
 		Badge: 'verified',
+		// store reviews (`Rating`, `Title`, `Date` and `Edited` are the param names themselves)
+		Stars: 'rating',
+		'Star rating': 'rating',
+		Score: 'rating',
+		'Review title': 'title',
+		Headline: 'title',
+		'Review date': 'date',
+		'Date posted': 'date',
+		'Posted on': 'date',
+		Review: 'text',
+		'Review text': 'text',
+		'Was edited': 'edited',
 	},
 	ignored: {
 		'Image URL': REMOTE_IMAGES,

@@ -225,6 +225,21 @@ function checkString(v: string, s: JsonSchema): MgImportMessage | null {
 	return null;
 }
 
+/**
+ * A date cell → `YYYY-MM-DD`: year first with `-`, `/` or `.` and one- or two-digit month and day ("2025-9-4",
+ * "2025/09/04"), optionally followed by a time ("2025-09-04 10:30", "2025-09-04T10:30:00Z": spreadsheets and exports
+ * add one; it is dropped). Day-first and month-first forms ("4/9/2025") are ambiguous and refused. Null when the text is
+ * not such a date (the param's pattern then checks that the day exists).
+ */
+export function cellIsoDate(raw: string): string | null {
+	const m =
+		/^(\d{4})([-/.])(\d{1,2})\2(\d{1,2})(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/u.exec(
+			raw.trim(),
+		);
+	if (!m) return null;
+	return `${m[1]}-${m[3]!.padStart(2, '0')}-${m[4]!.padStart(2, '0')}`;
+}
+
 /** A cell's text → the param value its JSON Schema describes (empty cells never reach here). */
 export function coerceCell(raw: string, prop: unknown): Coerced {
 	const { kind, schema } = paramShape(prop);
@@ -252,6 +267,13 @@ export function coerceCell(raw: string, prop: unknown): Coerced {
 			return bad ? { ok: false, message: bad } : { ok: true, value: n };
 		}
 		case 'string': {
+			if (schema.format === 'date') {
+				// a calendar date param (JSON Schema `format: "date"`): ISO, also as spreadsheets write it
+				const iso = cellIsoDate(text);
+				if (iso === null || checkString(iso, schema))
+					return { ok: false, message: msg('not-date', short(text)) };
+				return { ok: true, value: iso };
+			}
 			// keep inner spacing and line breaks; only the cell's outer whitespace goes
 			const bad = checkString(text, schema);
 			return bad ? { ok: false, message: bad } : { ok: true, value: text };

@@ -35,6 +35,7 @@ export const MG_IMPORT_TEXT = {
 	'text-too-long': 'Longer than {0} characters ({1})',
 	'bad-characters': '"{0}" has characters this field does not take',
 	'not-json': '"{0}" is not JSON (this field takes a value like {1})',
+	'not-date': '"{0}" is not a date (year-month-day, e.g. 2025-09-24)',
 	'alias-no-target': 'No parameter takes this column for this row',
 	'alias-overridden': 'Ignored: the row already sets {0}',
 	'not-time': '"{0}" is not a time (3, 1.5s, 0:03, 90f)',

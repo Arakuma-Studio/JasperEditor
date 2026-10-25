@@ -6,6 +6,13 @@ import { TEMPLATE_MEDIA_KIND, TEMPLATE_MEDIA_KINDS_KEY, TEMPLATE_PARAM_KIND_KEY 
 import { z } from 'zod';
 import { stripMarks } from './marks.ts';
 import {
+	parseReviewDate,
+	SOCIAL_DATE_MAX_YEAR,
+	SOCIAL_DATE_MIN_YEAR,
+	SOCIAL_RATING_MAX,
+	SOCIAL_RATING_MIN,
+} from './review.ts';
+import {
 	SOCIAL_EMOJI_STYLES,
 	SOCIAL_ENTRANCES,
 	SOCIAL_THEMES,
@@ -27,9 +34,13 @@ export const SOCIAL_TEXT_MAX = 2000;
 /** Stored markup length: the visible cap plus room for mark delimiters and escapes. */
 export const SOCIAL_TEXT_MARKUP_MAX = 4000;
 export const SOCIAL_MEDIA_ID_MAX = 256;
+/** Review title length (App Store titles are one short line; the card cuts a longer one with an ellipsis). */
+export const SOCIAL_TITLE_MAX = 120;
 
 /** tokcomment's default comment text, used by every variant. */
 export const SOCIAL_DEFAULT_TEXT = 'Write any comment and see what happens 😊';
+/** The default body of the store review cards. */
+export const SOCIAL_DEFAULT_REVIEW_TEXT = 'Write any review and see what happens 😊';
 
 /** Control characters and line/paragraph separators: names and handles are single-line. */
 const SINGLE_LINE = /^[^\p{Cc}\u2028\u2029]*$/u;
@@ -80,7 +91,10 @@ const FIELDS = {
 			"Which platform card to draw: 'tiktok-reply' (TikTok \"Reply to name's comment\" bubble shown on a video reply), " +
 				"'tiktok-comment' (TikTok comment row), 'instagram-post' (Instagram post comment), 'instagram-reel-reply' " +
 				'(Instagram "Replying to username" Reels card), \'youtube-comment\' (YouTube video comment), ' +
-				"'youtube-shorts-reply' (YouTube \"Comment from @handle\" Shorts card), 'x-post' (X post). Switching variant keeps " +
+				"'youtube-shorts-reply' (YouTube \"Comment from @handle\" Shorts card), 'x-post' (X post), 'play-store-review' (Google Play " +
+				'review: avatar, name, stars, date), \'app-store-review\' (App Store review in its web / Mac style: stars, "name, date", ' +
+				"bold title, body with \"more\") or 'app-store-review-ios' (App Store review in the iPhone app's Ratings & Reviews list: " +
+				'title and age, stars and name). Switching variant keeps ' +
 				'every other value; fields a variant does not draw are kept and ignored.',
 		),
 	theme: z
@@ -90,7 +104,7 @@ const FIELDS = {
 		.enum(SOCIAL_EMOJI_STYLES)
 		.describe(
 			"Emoji image set: 'auto' (the platform's own: Apple for TikTok, Instagram and X, Noto for YouTube; 'twemoji' gives the older X / Windows look), " +
-				"'apple', 'twemoji' or 'noto'. Emoji are drawn as images so preview and export match. All variants.",
+				"'apple', 'twemoji' or 'noto'. Emoji are drawn as images so preview and export match. 'auto' is Noto on Google Play reviews and Apple on App Store reviews. All variants.",
 		),
 	displayName: z
 		.string()
@@ -98,7 +112,7 @@ const FIELDS = {
 		.max(SOCIAL_NAME_MAX)
 		.regex(SINGLE_LINE, 'must be a single line without control characters')
 		.describe(
-			`Name shown on the card, single line, up to ${SOCIAL_NAME_MAX} characters, emoji allowed (e.g. "Luna Park"). TikTok shows the nickname here; X shows it in bold before the @handle. ${uses('displayName')}`,
+			`Name shown on the card, single line, up to ${SOCIAL_NAME_MAX} characters, emoji allowed (e.g. "Luna Park"). TikTok shows the nickname here; X shows it in bold before the @handle; store reviews show the reviewer's name (Google account name on Play, the App Store nickname). ${uses('displayName')}`,
 		),
 	handle: z
 		.string()
@@ -114,14 +128,14 @@ const FIELDS = {
 	avatar: socialAvatarSchema.meta({
 		description:
 			'Profile picture: {"mediaId": "<project image media id>"} for an imported image, {"generated": <seed>} for a ' +
-			"generated gradient avatar, or null for the platform's default grey silhouette. All variants.",
+			`generated gradient avatar, or null for the platform's default grey silhouette. ${uses('avatar')}`,
 		[TEMPLATE_PARAM_KIND_KEY]: TEMPLATE_MEDIA_KIND,
 		[TEMPLATE_MEDIA_KINDS_KEY]: ['image'],
 	}),
 	showProfile: z
 		.boolean()
 		.describe(
-			'Show the avatar (false hides it and the text moves left, like tokcomment\'s "profile" toggle). All variants.',
+			`Show the avatar (false hides it and the text moves left, like tokcomment's "profile" toggle). ${uses('showProfile')}`,
 		),
 	verified: z.boolean().describe(`Show the platform's verified badge after the name. ${uses('verified')}`),
 	timeValue: z
@@ -130,7 +144,7 @@ const FIELDS = {
 		.min(0)
 		.max(SOCIAL_TIME_VALUE_MAX)
 		.describe(
-			`How long ago the comment was posted, in \`timeUnit\`s (0…${SOCIAL_TIME_VALUE_MAX}; 0 shows "now"/"Just now"). Shown as "3h" on TikTok/Instagram/X and "3 hours ago" on YouTube. ${uses('timeValue')}`,
+			`How long ago the comment was posted, in \`timeUnit\`s (0…${SOCIAL_TIME_VALUE_MAX}; 0 shows "now"/"Just now"). Shown as "3h" on TikTok/Instagram/X, "3 hours ago" on YouTube and as the iPhone App Store's review age ("3h ago", "1y ago"). ${uses('timeValue')}`,
 		),
 	timeUnit: z
 		.enum(SOCIAL_TIME_UNITS)
@@ -151,12 +165,46 @@ const FIELDS = {
 	views: count('View count shown next to the views icon', 'views', '"12K", "1.5M"'),
 	showReposts: z.boolean().describe(`Show the repost count (the icon stays). ${uses('showReposts')}`),
 	showViews: z.boolean().describe(`Show the view count (the icon stays). ${uses('showViews')}`),
+	rating: z
+		.number()
+		.int()
+		.min(SOCIAL_RATING_MIN)
+		.max(SOCIAL_RATING_MAX)
+		.describe(
+			`Star rating of a store review: a whole number of stars, ${SOCIAL_RATING_MIN}–${SOCIAL_RATING_MAX} (Google Play draws green stars, the App Store orange ones). ${uses('rating')}`,
+		),
+	date: z.iso
+		.date('must be an ISO date YYYY-MM-DD (a real calendar date)')
+		.refine(
+			(d) => parseReviewDate(d) !== null,
+			`must be a real calendar date between ${SOCIAL_DATE_MIN_YEAR} and ${SOCIAL_DATE_MAX_YEAR}`,
+		)
+		.describe(
+			`Date of a store review as an ISO date "YYYY-MM-DD" (a real calendar date, ${SOCIAL_DATE_MIN_YEAR}–${SOCIAL_DATE_MAX_YEAR}), printed the way the store does: Google Play "11/6/18" (M/D/YY), App Store web "09/24/2021" (MM/DD/YYYY). The iPhone App Store card shows a relative age instead (timeValue + timeUnit). ${uses('date')}`,
+		),
+	edited: z
+		.boolean()
+		.describe(
+			`The review was edited: the iPhone App Store card prefixes its age with "edited" ("edited 1y ago"). ${uses('edited')}`,
+		),
+	title: z
+		.string()
+		.max(SOCIAL_TITLE_MAX)
+		.regex(SINGLE_LINE, 'must be a single line without control characters')
+		.describe(
+			`Bold title of an App Store review, one line, up to ${SOCIAL_TITLE_MAX} characters, emoji allowed (e.g. "Great so far"); a title longer than the card ends with "…"; empty hides the title line. ${uses('title')}`,
+		),
 	text: z
 		.string()
 		.max(SOCIAL_TEXT_MARKUP_MAX)
 		.refine((t) => stripMarks(t).length <= SOCIAL_TEXT_MAX, `at most ${SOCIAL_TEXT_MAX} visible characters`)
 		.describe(
-			`The comment, up to ${SOCIAL_TEXT_MAX} visible characters; line breaks and emoji allowed; @mentions and #hashtags are coloured like the platform. Word marks are inline markup: ==highlighted words== (yellow pill), ||blurred words||, ~~removed words~~ (invisible, gap kept); escape a literal =, |, ~ or \\ with a backslash (e.g. "a \\=\\= b"); unbalanced markers show literally; marks do not nest. Example: "This is ==so good== ||spoiler|| 🔥". All variants.`,
+			`The comment (or the review body on store reviews), up to ${SOCIAL_TEXT_MAX} visible characters; line breaks and emoji allowed; @mentions and #hashtags are coloured like the platform (store reviews leave them plain). Word marks are inline markup: ==highlighted words== (yellow pill), ||blurred words||, ~~removed words~~ (invisible, gap kept); escape a literal =, |, ~ or \\ with a backslash (e.g. "a \\=\\= b"); unbalanced markers show literally; marks do not nest. Example: "This is ==so good== ||spoiler|| 🔥". All variants.`,
+		),
+	truncate: z
+		.boolean()
+		.describe(
+			`Clamp a long review the way the store does: Google Play fades out the last of its lines, the App Store web card stops after 4 lines with a blue "more", the iPhone App Store card after its lines with "more". false shows the whole text. ${uses('truncate')}`,
 		),
 	entrance: z
 		.enum(SOCIAL_ENTRANCES)
@@ -171,7 +219,7 @@ const FIELDS = {
 	likeTick: z
 		.boolean()
 		.describe(
-			`After the entrance, count the likes up from 0 (≈900 ms) and thump the heart. ${uses('likeTick')}`,
+			`After the entrance, count the likes up from 0 (≈900 ms) and thump the heart; on store reviews the stars fill one by one instead and pulse at the end. ${uses('likeTick')}`,
 		),
 } as const;
 
@@ -189,7 +237,12 @@ const COMMON_DEFAULTS = {
 	views: 12_000,
 	showReposts: true,
 	showViews: true,
+	rating: 4,
+	date: '2025-09-24',
+	edited: false,
+	title: 'Review title',
 	text: SOCIAL_DEFAULT_TEXT,
+	truncate: true,
 	entrance: 'soft-spring',
 	wordReveal: false,
 	likeTick: false,
@@ -199,7 +252,7 @@ type PlatformDefaults = Pick<
 	SocialCommentParams,
 	'displayName' | 'handle' | 'timeValue' | 'timeUnit' | 'likes' | 'replies'
 > &
-	Partial<Pick<SocialCommentParams, 'reposts' | 'views'>>;
+	Partial<Pick<SocialCommentParams, 'reposts' | 'views' | 'text'>>;
 
 // tokcomment's defaults (ref/index.md; styles_*.json texts). Variants without stats keep their platform's stats so a
 // variant switch within the platform shows tokcomment's numbers. The field a variant does not show gets a neutral
@@ -238,6 +291,18 @@ const X: PlatformDefaults = {
 	reposts: 12,
 	views: 12_000,
 };
+// Store reviews (design §11): neutral placeholders like tokcomment's ("Display Name", "Review title"), 4 stars as the
+// requester's Play screenshot; the iPhone card's age is "1y ago" like the first card of its screenshot.
+const REVIEW: PlatformDefaults = {
+	displayName: 'Display Name',
+	handle: 'username',
+	timeValue: 1,
+	timeUnit: 'year',
+	// not drawn: tokcomment's TikTok numbers, so a switch to a comment card shows plausible counts
+	likes: 1393,
+	replies: 2,
+	text: SOCIAL_DEFAULT_REVIEW_TEXT,
+};
 const VARIANT_DEFAULTS: Readonly<Record<SocialVariant, PlatformDefaults>> = {
 	'tiktok-reply': TIKTOK,
 	'tiktok-comment': TIKTOK,
@@ -246,6 +311,9 @@ const VARIANT_DEFAULTS: Readonly<Record<SocialVariant, PlatformDefaults>> = {
 	'youtube-comment': YOUTUBE,
 	'youtube-shorts-reply': YOUTUBE,
 	'x-post': X,
+	'play-store-review': REVIEW,
+	'app-store-review': REVIEW,
+	'app-store-review-ios': REVIEW,
 };
 
 /** tokcomment's defaults for `variant` (a fresh object every call). */

@@ -263,7 +263,20 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
 			['tiktok-reply', 'TikTok · Comment reply'],
 			['tiktok-comment', 'TikTok · Comment'],
+			['play-store-review', 'Play Store · Review'],
+			['app-store-review', 'App Store · Review'],
+			['app-store-review-ios', 'App Store · Review (iPhone app)'],
 		]);
+		// the store presets carry what differs from the schema defaults: the variant, its neutral name and review text
+		const play = socialComment.presets!.find((p) => p.id === 'play-store-review')!;
+		expect(play.params).toEqual({
+			variant: 'play-store-review',
+			displayName: 'Display Name',
+			timeUnit: 'year',
+			text: 'Write any review and see what happens 😊',
+		});
+		for (const p of socialComment.presets!)
+			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(true);
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,

@@ -4,6 +4,15 @@
 // account is coincidental. Distributions: docs/wp-notes/social-comments.md "Social comment core".
 import type { z } from 'zod';
 import {
+	type CalendarDate,
+	dateOfDayNumber,
+	dayNumber,
+	isoDate,
+	parseReviewDate,
+	SOCIAL_RATING_MAX,
+	SOCIAL_RATING_MIN,
+} from './review.ts';
+import {
 	SOCIAL_COUNT_MAX,
 	type SocialAvatar,
 	type SocialCommentParams,
@@ -17,6 +26,7 @@ import {
 	type SocialPlatform,
 	type SocialTimeUnit,
 	type SocialVariant,
+	VARIANT_CAPABILITIES,
 	VARIANT_PLATFORM,
 } from './variants.ts';
 
@@ -85,6 +95,7 @@ const SALT_IDENTITY = 0x1d3a;
 const SALT_AVATAR = 0xa7a7;
 const SALT_STATS = 0x57a7;
 const SALT_FILL = 0xf111;
+const SALT_REVIEW = 0x5eb1;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Identity
@@ -533,7 +544,7 @@ export function generatedAvatar(seed: number, name?: string): GeneratedAvatar {
 
 export type SocialStats = Pick<
 	SocialCommentParams,
-	'timeValue' | 'timeUnit' | 'likes' | 'replies' | 'reposts' | 'views'
+	'timeValue' | 'timeUnit' | 'likes' | 'replies' | 'reposts' | 'views' | 'rating' | 'date'
 >;
 
 /** How old comments tend to look per platform (relative weights) — an estimate, see the work note. */
@@ -542,6 +553,9 @@ const TIME_WEIGHTS: Readonly<Record<SocialPlatform, Readonly<Record<SocialTimeUn
 	instagram: { minute: 10, hour: 25, day: 30, week: 35, month: 0, year: 0 },
 	youtube: { minute: 5, hour: 15, day: 20, week: 20, month: 25, year: 15 },
 	x: { minute: 20, hour: 50, day: 20, week: 5, month: 3, year: 2 },
+	// store reviews take their age from the drawn review date (`reviewAge`); these weights are not used for them
+	'play-store': { minute: 0, hour: 5, day: 25, week: 25, month: 30, year: 15 },
+	'app-store': { minute: 0, hour: 5, day: 25, week: 25, month: 30, year: 15 },
 };
 /** Value range per unit (Instagram counts weeks past a month: "56w"). */
 const TIME_RANGE: Readonly<Record<SocialTimeUnit, readonly [number, number]>> = {
@@ -556,10 +570,149 @@ const TIME_RANGE: Readonly<Record<SocialTimeUnit, readonly [number, number]>> = 
 /**
  * Believable stats with tokcomment's distribution: likes 40 % in 1–500, 30 % in 500–10k, 20 % in 10k–100k, 10 % in
  * 100k–5M (uniform within the band); replies 1–5 % of likes; reposts 10–30 % and views 10–50× likes (used by X;
- * filled for every variant so a switch to X stays plausible); a plausible posting age for the platform.
+ * filled for every variant so a switch to X stays plausible); a plausible posting age for the platform. Store
+ * reviews also get a star rating (J-shaped like real stores, `randomRating`) and a review date within two years
+ * before `SOCIAL_REVIEW_DATE_ANCHOR` (`randomReviewDate`); their age (`timeValue` / `timeUnit`, the iPhone card's
+ * "2d ago") is the date's age. Every variant gets a rating and a date (a switch to a review card stays plausible).
  */
 export function randomStats(variant: SocialVariant, seed: number): SocialStats {
 	return statsFor(variant, seed);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Store reviews
+
+/**
+ * The fixed "today" review dates are drawn back from (no wall clock: the same seed gives the same date on every
+ * machine and day). The date this feature was built.
+ */
+export const SOCIAL_REVIEW_DATE_ANCHOR = '2026-10-25';
+/** Reviews are drawn at most this many days before the anchor (about two years). */
+export const SOCIAL_REVIEW_MAX_AGE_DAYS = 730;
+
+/**
+ * Star shares of drawn ratings, 1★…5★ [E]: the J-shaped distribution of online and app-store ratings (many 5★, some
+ * 1★, few in between; Hu, Pavlou & Zhang, "Overcoming the J-shaped distribution of product reviews", CACM 52(10),
+ * 2009), with the high average of popular apps (≈ 4.1 here).
+ */
+export const SOCIAL_RATING_WEIGHTS: Readonly<Record<'1' | '2' | '3' | '4' | '5', number>> = {
+	'1': 13,
+	'2': 5,
+	'3': 8,
+	'4': 18,
+	'5': 56,
+};
+
+/** A believable star rating 1–5 for `seed` (`SOCIAL_RATING_WEIGHTS`). */
+export function randomRating(seed: number): number {
+	return Number(rng(seed, SALT_REVIEW).weighted(SOCIAL_RATING_WEIGHTS));
+}
+
+const ANCHOR_DAY = dayNumber(parseReviewDate(SOCIAL_REVIEW_DATE_ANCHOR) as CalendarDate);
+
+/**
+ * Days before the anchor of a drawn review: recent reviews are likelier (stores list the newest first and a video
+ * usually shows recent ones), so the age is `730 · u²` days for a uniform `u` (half of them within the last six months).
+ */
+function reviewDaysAgo(r: Rng): number {
+	const u = r.next();
+	return Math.min(SOCIAL_REVIEW_MAX_AGE_DAYS, Math.floor(SOCIAL_REVIEW_MAX_AGE_DAYS * u * u));
+}
+
+/** A review date (ISO `YYYY-MM-DD`) within two years before `SOCIAL_REVIEW_DATE_ANCHOR`, for `seed`. */
+export function randomReviewDate(seed: number): string {
+	const r = rng(seed, SALT_REVIEW);
+	r.next(); // the rating's draw: the same seed gives the rating and the date of one review
+	return isoDate(dateOfDayNumber(ANCHOR_DAY - reviewDaysAgo(r)));
+}
+
+/**
+ * The relative age of a review written `daysAgo` days before the anchor, as `timeValue` + `timeUnit` (the iPhone
+ * App Store card's "3h ago", "2d ago", "3w ago", "5mo ago", "1y ago"): hours on the day itself (`hour` drawn by the
+ * caller), then days below a week, weeks below a month (30 days), months below a year (365 days), then whole years.
+ */
+export function reviewAge(daysAgo: number, hours = 1): Pick<SocialCommentParams, 'timeValue' | 'timeUnit'> {
+	const d = Math.max(0, Math.floor(Number.isFinite(daysAgo) ? daysAgo : 0));
+	if (d === 0) return { timeValue: Math.min(23, Math.max(1, Math.floor(hours))), timeUnit: 'hour' };
+	if (d < 7) return { timeValue: d, timeUnit: 'day' };
+	if (d < 30) return { timeValue: Math.floor(d / 7), timeUnit: 'week' };
+	if (d < 365) return { timeValue: Math.floor(d / 30), timeUnit: 'month' };
+	return { timeValue: Math.floor(d / 365), timeUnit: 'year' };
+}
+
+/** Days a relative age spans (the inverse of `reviewAge`, at the start of its unit). */
+function ageDays(value: number, unit: SocialTimeUnit): number {
+	const v = Math.max(0, Math.floor(value));
+	switch (unit) {
+		case 'minute':
+		case 'hour':
+			return 0;
+		case 'day':
+			return v;
+		case 'week':
+			return v * 7;
+		case 'month':
+			return v * 30;
+		case 'year':
+			return v * 365;
+	}
+}
+
+/** Days between a review date and the anchor (0 for a date on or after it, or an invalid one). */
+function daysBeforeAnchor(iso: string): number {
+	const d = parseReviewDate(iso);
+	return d ? Math.max(0, ANCHOR_DAY - dayNumber(d)) : 0;
+}
+
+/** The ISO date `days` before the anchor (never before the schema's earliest year). */
+function dateDaysBeforeAnchor(days: number): string {
+	const d = dateOfDayNumber(ANCHOR_DAY - Math.max(0, Math.floor(days)));
+	return d.year < 1970 ? '1970-01-01' : isoDate(d);
+}
+
+// Made-up review titles by rating (short, generic, as on the stores); any match with a real review is coincidental.
+const REVIEW_TITLES: Readonly<Record<number, readonly string[]>> = {
+	5: [
+		'Love it!',
+		'Best app I’ve tried',
+		'Five stars',
+		'Game changer',
+		'Exactly what I needed',
+		'So easy to use',
+		'Highly recommend',
+		'Worth every penny',
+		'Use it every day',
+		'Just works',
+		'Amazing update',
+		'Perfect 👌',
+	],
+	4: [
+		'Really good',
+		'Great so far',
+		'Almost perfect',
+		'Solid app',
+		'Very useful',
+		'Good, a few bugs',
+		'Does the job',
+		'Nice update',
+		'Pretty great',
+	],
+	3: ['It’s okay', 'Decent, but…', 'Needs work', 'Mixed feelings', 'Good idea, buggy app', 'Fine for now'],
+	2: ['Disappointed', 'Not what I expected', 'Too many ads', 'Getting worse', 'Keeps logging me out'],
+	1: [
+		'Keeps crashing',
+		'Don’t bother',
+		'Worst update yet',
+		'Broken after the update',
+		'Unusable',
+		'Waste of money',
+	],
+};
+
+/** A plausible review title for a rating (1–5) and seed. */
+export function randomReviewTitle(rating: number, seed: number): string {
+	const stars = Math.min(SOCIAL_RATING_MAX, Math.max(SOCIAL_RATING_MIN, Math.round(Number(rating) || 5)));
+	return rng(seed, SALT_REVIEW ^ 0x7171).pick(REVIEW_TITLES[stars]!);
 }
 
 /** `randomStats`, optionally around given likes (replies, reposts and views then scale with them). */
@@ -577,7 +730,17 @@ function statsFor(variant: SocialVariant, seed: number, givenLikes?: number): So
 	const platform = VARIANT_PLATFORM[variant] ?? 'tiktok';
 	const timeUnit = r.weighted(TIME_WEIGHTS[platform]);
 	const [tmin, tmax] = platform === 'instagram' && timeUnit === 'week' ? [1, 60] : TIME_RANGE[timeUnit];
-	return { timeValue: r.int(tmin, tmax), timeUnit, likes, replies, reposts, views };
+	const timeValue = r.int(tmin, tmax);
+	// the review stream (separate, so the comment stats above stay what they were before store reviews existed)
+	const rv = rng(seed, SALT_REVIEW);
+	const rating = Number(rv.weighted(SOCIAL_RATING_WEIGHTS));
+	const daysAgo = reviewDaysAgo(rv);
+	const date = isoDate(dateOfDayNumber(ANCHOR_DAY - daysAgo));
+	// a review card's age is its date's age (the iPhone card shows it)
+	const age = VARIANT_CAPABILITIES[variant]?.rating
+		? reviewAge(daysAgo, rv.int(1, 23))
+		: { timeValue, timeUnit };
+	return { ...age, likes, replies, reposts, views, rating, date };
 }
 
 const LIKE_BANDS = {
@@ -603,8 +766,10 @@ export type SocialFillResult =
 /**
  * Validates partial params (an agent call, a CSV row) and fills ONLY the omitted fields: identity (display name,
  * handle, generated avatar) and stats from the seed, everything else from `socialDefaults(variant)` (variant itself
- * defaults to `tiktok-reply`). A given display name gets a matching handle and vice versa. Provided values are kept
- * as they are. Invalid input returns `{ ok: false }` with zod issues; never throws.
+ * defaults to `tiktok-reply`). A given display name gets a matching handle and vice versa. Store reviews also get a
+ * rating, a date (agreeing with a given age, and the age with a given date) and, on the App Store cards, a title
+ * that suits the rating. Provided values are kept as they are. Invalid input returns `{ ok: false }` with zod
+ * issues; never throws.
  */
 export function fillSocialParams(partial: unknown, seed: number): SocialFillResult {
 	const parsed = socialCommentPartialSchema.safeParse(partial ?? {});
@@ -620,7 +785,20 @@ export function fillSocialParams(partial: unknown, seed: number): SocialFillResu
 	const base = socialDefaults(variant);
 	const s = rng(seed, SALT_FILL).int(0, 0xffff_ffff);
 	const identity = randomIdentity(s);
-	const stats = statsFor(variant, s, given.likes);
+	const stats: { -readonly [K in keyof SocialStats]: SocialStats[K] } = { ...statsFor(variant, s, given.likes) };
+	// store reviews: a given date gives the age and a given age the date, so the two agree; the title suits the rating
+	if (VARIANT_CAPABILITIES[variant]?.rating) {
+		const timeGiven = given.timeValue !== undefined || given.timeUnit !== undefined;
+		if (given.date !== undefined && !timeGiven)
+			Object.assign(stats, reviewAge(daysBeforeAnchor(given.date), stats.timeValue));
+		if (given.date === undefined && timeGiven)
+			stats.date = dateDaysBeforeAnchor(
+				ageDays(given.timeValue ?? stats.timeValue, given.timeUnit ?? stats.timeUnit),
+			);
+	}
+	const rating = given.rating ?? stats.rating;
+	// filled for every variant (like reposts and views) so a switch to an App Store card stays plausible
+	const title = randomReviewTitle(rating, s);
 	const displayName =
 		given.displayName ?? (given.handle !== undefined ? nameForHandle(given.handle, s) : identity.displayName);
 	const handle =
@@ -629,6 +807,7 @@ export function fillSocialParams(partial: unknown, seed: number): SocialFillResu
 	const candidate: SocialCommentParams = {
 		...base,
 		...stats,
+		title,
 		displayName,
 		handle,
 		avatar,

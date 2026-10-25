@@ -16,6 +16,7 @@ import { CANVASES } from '../../core.ts';
 import {
 	type CommentSpan,
 	fillSocialParams,
+	formatCount,
 	SOCIAL_ADD_ANOTHER,
 	SOCIAL_IMPORT_HINTS,
 	SOCIAL_PARAM_NAMES,
@@ -251,7 +252,43 @@ export function socialTickCount(likes: number, p: number): number {
 	return Math.min(n, Math.max(0, Math.round(n * p)));
 }
 
-/** Whether a clip's likes tick: the variant draws likes and `likeTick` is on. */
+/** Stars of a store review card (whole stars filled up to the rating, the rest drawn empty). */
+export const SOCIAL_STAR_COUNT = 5;
+
+/**
+ * Star fill of a store review card at tick progress `p` (0…1; 1 at rest and without the extra): one value per star
+ * (0 empty … 1 filled). The stars up to `rating` fill one after the other as the progress runs (star i fills while
+ * `p · rating` goes from i to i + 1), so the "likes tick up" extra fills them one by one on review cards; the stars
+ * after the rating stay empty.
+ */
+export function socialStarFill(rating: number, p: number): number[] {
+	const stars = Number.isFinite(rating) ? Math.min(SOCIAL_STAR_COUNT, Math.max(0, Math.round(rating))) : 0;
+	const q = p >= 1 ? 1 : p > 0 ? p : 0;
+	const filled = q * stars;
+	return Array.from({ length: SOCIAL_STAR_COUNT }, (_, i) =>
+		i >= stars ? 0 : Math.min(1, Math.max(0, filled - i)),
+	);
+}
+
+/**
+ * What the tick shows at progress `p` as text (the motion model's `textAt`, compared with the card frame by frame):
+ * the like count as the variant prints it, or on store reviews how many stars are filled ("2.63/4 stars").
+ */
+export function socialTickText(
+	params: Pick<SocialCommentParams, 'variant' | 'likes' | 'rating'>,
+	p: number,
+): string {
+	if (VARIANT_CAPABILITIES[params.variant]?.rating) {
+		const filled = socialStarFill(params.rating, p).reduce((a, b) => a + b, 0);
+		return `${(Math.round(filled * 100) / 100).toFixed(2)}/${Math.round(params.rating)} stars`;
+	}
+	return formatCount(params.variant, socialTickCount(params.likes, p), 'likes');
+}
+
+/**
+ * Whether a clip's likes tick: the variant draws likes (or, on store reviews, stars that fill one by one) and
+ * `likeTick` is on.
+ */
 export function socialLikesTick(p: Pick<SocialCommentParams, 'variant' | 'likeTick'>): boolean {
 	return p.likeTick === true && VARIANT_CAPABILITIES[p.variant]?.likeTick === true;
 }
@@ -351,6 +388,11 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	'youtube-comment': null,
 	'youtube-shorts-reply': null,
 	'x-post': null,
+	// store reviews (design §11): Play web's review font (Roboto, bundled: name 500, date and body 400); the App Store
+	// cards in SF Pro Text (remote manifest; Apple's Text cut below 20 pt): title 600, body, name and date 400
+	'play-store-review': { family: 'Roboto', weights: [400, 500] },
+	'app-store-review': { family: 'SF Pro Text', weights: [400, 600] },
+	'app-store-review-ios': { family: 'SF Pro Text', weights: [400, 600] },
 };
 
 // -------------------------------------------------------------------------------------------- definition
@@ -377,7 +419,13 @@ export function fillSocialCommentParams(
 const DEFAULTS = socialCommentParamsSchema.parse({});
 
 /** The variants with a card of their own (the others draw a "not available yet" card and get no preset). */
-export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = ['tiktok-reply', 'tiktok-comment'];
+export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
+	'tiktok-reply',
+	'tiktok-comment',
+	'play-store-review',
+	'app-store-review',
+	'app-store-review-ios',
+];
 
 /**
  * The variant of social-comment params whose card this build does not draw yet (the clip shows a "not available" card
@@ -404,6 +452,18 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 	'youtube-comment': { name: 'YouTube · Comment', description: 'A YouTube video comment.' },
 	'youtube-shorts-reply': { name: 'YouTube · Shorts reply', description: 'The YouTube Shorts comment card.' },
 	'x-post': { name: 'X · Post', description: 'An X post card.' },
+	'play-store-review': {
+		name: 'Play Store · Review',
+		description: 'A Google Play review: avatar, name, green stars, date and the text fading out when long.',
+	},
+	'app-store-review': {
+		name: 'App Store · Review',
+		description: 'An App Store review card in its web / Mac style: orange stars, name and date, title, text and "more".',
+	},
+	'app-store-review-ios': {
+		name: 'App Store · Review (iPhone app)',
+		description: 'An App Store review from the iPhone app\'s Ratings & Reviews list: title and age, stars and name, text.',
+	},
 };
 
 /** One preset per variant with a card: tokcomment's defaults of that variant (what differs from the schema's). */
@@ -430,7 +490,7 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	name: 'Social comment',
 	category: 'Social comments',
 	description:
-		'A TikTok, Instagram, YouTube or X comment card that looks like a screenshot and pops onto the screen; optional word-by-word reveal and like count tick.',
+		'A TikTok, Instagram, YouTube or X comment card, or a Google Play / App Store review, that looks like a screenshot and pops onto the screen; optional word-by-word reveal and like count tick (stars filling on reviews).',
 	renderer: 'anime',
 	renderVersion: 1,
 	posterAt: 2.5,
@@ -455,9 +515,21 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			{
 				id: 'stats',
 				label: 'Stats',
-				params: ['timeValue', 'timeUnit', 'likes', 'replies', 'reposts', 'views', 'showReposts', 'showViews'],
+				params: [
+					'rating',
+					'date',
+					'timeValue',
+					'timeUnit',
+					'edited',
+					'likes',
+					'replies',
+					'reposts',
+					'views',
+					'showReposts',
+					'showViews',
+				],
 			},
-			{ id: 'text', label: 'Text', params: ['text'] },
+			{ id: 'text', label: 'Text', params: ['title', 'text', 'truncate'] },
 			{ id: 'animation', label: 'Animation', params: ['entrance', 'wordReveal', 'likeTick'] },
 		],
 		params: {
@@ -465,8 +537,8 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			emojiStyle: { label: 'Emoji' },
 			displayName: { label: 'Display Name', ...byVariant('displayName') },
 			handle: { label: 'Handle', ...byVariant('handle') },
-			avatar: { label: 'Avatar', control: 'social-avatar' },
-			showProfile: { label: 'Show Avatar' },
+			avatar: { label: 'Avatar', control: 'social-avatar', ...byVariant('avatar') },
+			showProfile: { label: 'Show Avatar', ...byVariant('showProfile') },
 			verified: { label: 'Verified', ...byVariant('verified') },
 			// value and unit are one row of the `social-time` control (it edits timeUnit too and hides its row)
 			timeValue: { label: 'Posted', control: 'social-time', ...byVariant('timeValue') },
@@ -477,10 +549,22 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			views: { label: 'Views', control: 'social-count', ...byVariant('views') },
 			showReposts: { label: 'Show Reposts', ...byVariant('showReposts') },
 			showViews: { label: 'Show Views', ...byVariant('showViews') },
+			// store reviews: a star picker and a date picker with the store's printed form (web app controls)
+			rating: { label: 'Rating', control: 'social-rating', ...byVariant('rating') },
+			date: { label: 'Date', control: 'social-date', ...byVariant('date') },
+			edited: { label: 'Edited', ...byVariant('edited') },
+			title: { label: 'Title', ...byVariant('title') },
 			text: { label: 'Comment', multiline: true, control: 'social-comment-text' },
+			truncate: { label: 'Truncate Long Text', ...byVariant('truncate') },
 			entrance: { label: 'Entrance' },
 			wordReveal: { label: 'Words One by One' },
-			likeTick: { label: 'Likes Tick Up', ...byVariant('likeTick') },
+			// one extra, two looks: the like count ticks up on comments, the stars fill one by one on store reviews
+			likeTick: {
+				label: 'Likes Tick Up / Stars Fill',
+				description:
+					'After the entrance the like count ticks up and the heart thumps; on store reviews the stars fill one by one and pulse.',
+				...byVariant('likeTick'),
+			},
 		},
 		// "Add another" re-randomizes identity and stats (keeps look, text and animation); bulk-import column aliases
 		// (docs/wp-notes/social-comments.md "Add another & bulk import")

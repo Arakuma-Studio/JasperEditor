@@ -70,6 +70,10 @@ export function formatCount(variant: SocialVariant, n: number, _field: SocialCou
 			return c < 1000 ? String(c) : abbreviated(c, 10);
 		case 'x':
 			return c < 1000 ? String(c) : abbreviated(c, 1000);
+		// store reviews draw no counts (Play's "N people found this review helpful" is left out); grouped like Play
+		case 'play-store':
+		case 'app-store':
+			return grouped(c);
 	}
 }
 
@@ -88,6 +92,8 @@ const NOW: Readonly<Record<SocialPlatform, string>> = {
 	instagram: 'now',
 	youtube: 'Just now',
 	x: 'now',
+	'play-store': 'now',
+	'app-store': 'now',
 };
 
 /**
@@ -101,6 +107,7 @@ export function formatTime(variant: SocialVariant, value: number, unit: SocialTi
 	const platform = platformOf(variant);
 	if (v === 0) return NOW[platform];
 	if (platform === 'youtube') return `${v} ${u}${v === 1 ? '' : 's'} ago`;
+	if (platform === 'app-store') return `${v}${COMPACT[u]} ago`;
 	return `${v}${COMPACT[u]}`;
 }
 
@@ -123,6 +130,8 @@ export function formatRepliesLabel(variant: SocialVariant, n: number): string {
 		case 'youtube':
 			return `${num} ${word}`;
 		case 'x':
+		case 'play-store':
+		case 'app-store':
 			return '';
 	}
 }

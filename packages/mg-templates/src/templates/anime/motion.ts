@@ -18,7 +18,7 @@
 import { K_SCALE, MAX_SAMPLES_PER_CLIP, type MgTemplateMotionTiming } from '@jasper/project';
 import { CANVASES, estimateTextWidth, fitCanvas } from '../../core.ts';
 import { K_OPACITY } from '../../motion.ts';
-import { formatCount, socialCommentParamsSchema } from '../../social/index.ts';
+import { socialCommentParamsSchema } from '../../social/index.ts';
 import { needsShaping, segmentText } from '../../text-units.ts';
 import type { AnyAnimeMgTemplate } from '../../types.ts';
 import { calloutParams } from './callout.ts';
@@ -31,7 +31,7 @@ import {
 	socialCommentSchedule,
 	socialCommentSegments,
 	socialLikesTick,
-	socialTickCount,
+	socialTickText,
 } from './social-comment.ts';
 import { animeTemplateTiming } from './timing.ts';
 import { titleRevealParams } from './title-reveal.ts';
@@ -493,7 +493,8 @@ function counterModel(
  * social-comment@1: the schedule the implementation builds its timeline from (`socialCommentSchedule`). The card's
  * scale and opacity show as such, its drop in design px, its tilt as the arc its far corner travels (a nominal card of
  * 420 × 160 reference px at the 16:9 card scale); a word's or the heart's scale as px of a nominal word / heart size.
- * The like tick is the displayed count (`textAt`), formatted the way the variant shows it.
+ * The like tick is the displayed count (`textAt`), formatted the way the variant shows it; on store reviews it is the
+ * stars filled so far (`socialTickText`).
  */
 function socialCommentModel(
 	params: unknown,
@@ -519,7 +520,7 @@ function socialCommentModel(
 		textAt = (ms: number) => {
 			const raw = ms <= tick.start ? 0 : ms >= tick.start + tick.dur ? 1 : fn((ms - tick.start) / tick.dur);
 			const r = round6(raw);
-			return formatCount(p.variant, socialTickCount(p.likes, r === 0 || r === 1 ? r : raw), 'likes');
+			return socialTickText(p, r === 0 || r === 1 ? r : raw);
 		};
 	}
 	return { tracks, textAt };
