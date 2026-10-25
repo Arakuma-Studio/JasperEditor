@@ -168,7 +168,7 @@ export function agentProposalsAllowed(
 	feature: string,
 ): boolean | null {
 	const f = BY_ID.get(feature);
-	if (!f || f.agentAccept.setting !== 'project') return null;
+	if (f?.agentAccept.setting !== 'project') return null;
 	const stored = readAgentProposals(doc.settings);
 	if (stored === null) return false;
 	return Object.hasOwn(stored, feature) ? stored[feature] === true : f.agentAccept.default;

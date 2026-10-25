@@ -115,6 +115,7 @@ async function connect(opts: { refreshable: boolean }) {
 	open.push(client);
 	const call = async (name: string, args: Record<string, unknown>) => {
 		const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
+		// biome-ignore lint/suspicious/noExplicitAny: tool results are JSON read loosely by the assertions
 		return { r, json: JSON.parse((r.content[0] as { text: string }).text) as Record<string, any> };
 	};
 	return { engine, client, call };
