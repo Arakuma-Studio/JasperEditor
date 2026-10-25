@@ -207,6 +207,8 @@ export type RenderVisualSource =
 			moreOptions?: TextMoreOptions;
 			perCharacter3d?: boolean;
 			sourceTextKeyframes?: Keyframe<TextContent>[];
+			/** spec 13 SH-004: the box is an estimate (not measured yet); renderers and bakes leave room around it. */
+			layoutPending?: true;
 	  }
 	| { color: RGBA }
 	| {
@@ -880,7 +882,7 @@ export function buildRenderSnapshot(
 					break;
 				}
 				case 'text': {
-					source = { text: c.content, box: c.box };
+					source = { text: c.content, box: c.box, ...(c.layoutPending ? { layoutPending: true as const } : {}) };
 					if (c.textAnimation && (c.textAnimation.in || c.textAnimation.out)) {
 						const w = resolveTextAnimationWindows(c);
 						source.animation = {

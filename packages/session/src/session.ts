@@ -97,6 +97,13 @@ const READ_ONLY_RESULT = (revision: number): TransactionResult => ({
 	errors: [{ commandIndex: -1, code: 'E_NOT_OWNER', message: 'This session is read-only' }],
 });
 
+/** True when some text clip of the document still has an estimated box (`layoutPending`). */
+function hasPendingText(doc: ProjectDocument): boolean {
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips)) if (c.kind === 'text' && c.layoutPending) return true;
+	return false;
+}
+
 export class EditorSession {
 	readonly store: StoreApi<SessionState>;
 	readonly transport = new TransportStore();
@@ -160,6 +167,38 @@ export class EditorSession {
 			openIssues: opts.openIssues ?? [],
 		}));
 		this.verifyWhenIdle();
+		// spec 13 SH-004: text the measurer could not size yet is measured as soon as it can.
+		const tm = opts.ctx.textMeasurer as { onSettled?(cb: () => void): () => void } | undefined;
+		if (tm) {
+			if (typeof tm.onSettled === 'function')
+				this.unsubscribeMeasurer = tm.onSettled(() => this.scheduleTextRelayout());
+			this.on('doc.changed', () => this.scheduleTextRelayout());
+			this.scheduleTextRelayout();
+		}
+	}
+
+	private relayoutScheduled = false;
+	private unsubscribeMeasurer: (() => void) | null = null;
+
+	private scheduleTextRelayout(): void {
+		if (this.relayoutScheduled || this.closed) return;
+		this.relayoutScheduled = true;
+		setTimeout(() => {
+			this.relayoutScheduled = false;
+			this.relayoutPendingText();
+		}, 0);
+	}
+
+	/**
+	 * spec 13 SH-004: measures every text clip still marked `layoutPending` (made headless, or while its fonts were
+	 * loading) with the session's text measurer — one system transaction (no History entry; undoing an earlier edit
+	 * that brings back an estimate measures it again). Null when there is nothing to measure or no measurer.
+	 */
+	relayoutPendingText(): TransactionResult | null {
+		const s = this.store.getState();
+		if (this.closed || s.readOnly || !this.ctx.textMeasurer || this.gestureState) return null;
+		if (!hasPendingText(s.document)) return null;
+		return this.apply({ label: 'Measure Text', origin: 'system', commands: [{ type: 'text.relayout' }] });
 	}
 
 	private verifyScheduled = false;
@@ -743,6 +782,8 @@ export class EditorSession {
 		if (this.closed) return;
 		if (this.gestureState) this.endGesture();
 		this.closed = true;
+		this.unsubscribeMeasurer?.();
+		this.unsubscribeMeasurer = null;
 		for (const q of this.queue.splice(0))
 			q.resolve({
 				ok: false,

@@ -219,6 +219,7 @@ const LABELS: Record<CommandType, string> = {
 	'textAnimator.convertLegacy': 'Convert Text Animation to Animators',
 	'text.setPathOptions': 'Text Path Options',
 	'text.setPerCharacter3d': 'Per-character 3D',
+	'text.relayout': 'Measure Text',
 	'project.importTimeline': 'Import Timeline',
 	'clip.synchronize': 'Synchronize',
 	'item.mergeClips': 'Merge Clips',

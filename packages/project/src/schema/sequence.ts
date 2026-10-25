@@ -95,6 +95,10 @@ export const TextOpenTypeSchema = z.looseObject({
 });
 export type TextOpenType = DeepStrip<z.infer<typeof TextOpenTypeSchema>>;
 
+/**
+ * One stroke of a text style (spec 13 SH-004, `text-style.ts`): `outside` paints `widthPx` outward from the glyph
+ * outline, `center` straddles it, `inside` paints inward. Every entry of `strokes[]` is drawn, the first on top.
+ */
 export const TextStrokeSchema = z.looseObject({
 	color: RGBASchema,
 	widthPx: z.number().min(0),
@@ -120,6 +124,11 @@ export const TextStyleSchema = z.looseObject({
 			angleDeg: z.number(),
 			distancePx: z.number(),
 			blurPx: z.number().min(0),
+			/**
+			 * schema v9 (spec 13 SH-004): the text silhouette (glyphs + strokes) grows by this many pixels before
+			 * the blur (Premiere's shadow Size; absent = 0). Read leniently: invariants want 0…MAX_SHADOW_SPREAD_PX.
+			 */
+			spreadPx: z.number().optional(),
 		})
 		.nullable(),
 	allCaps: z.boolean(),

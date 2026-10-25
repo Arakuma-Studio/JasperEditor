@@ -91,6 +91,8 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		textAnimation: { in: { preset: 'slide-up' }, out: { preset: 'fade' } },
 		ref: '$title',
 	},
+	// spec 13 SH-004: measures every text box still marked layoutPending (or clipIds).
+	'text.relayout': { type: 'text.relayout' },
 	'clip.addMotionGraphic': {
 		type: 'clip.addMotionGraphic',
 		at: 0,

@@ -126,6 +126,15 @@ export const TextSetPerCharacter3dCmd = cmd('text.setPerCharacter3d', {
 });
 
 /**
+ * spec 13 SH-004: measures auto-size text boxes again with the text measurer (the editor's page, the engine's
+ * headless browser) — the listed text clips, or every clip still marked `layoutPending` when `clipIds` is absent.
+ * The editor runs it by itself once the fonts of pending clips have loaded; without a measurer nothing changes.
+ */
+export const TextRelayoutCmd = cmd('text.relayout', {
+	clipIds: IdListSchema.optional(),
+});
+
+/**
  * Registers a bundled font family in the project (Character panel font menu; returns the existing font when the
  * family is already registered). Use the id as a text style's `fontId`.
  */
@@ -149,4 +158,5 @@ export const TEXT_ANIMATOR_COMMANDS = [
 	TextAnimatorConvertLegacyCmd,
 	TextSetPathOptionsCmd,
 	TextSetPerCharacter3dCmd,
+	TextRelayoutCmd,
 ] as const;

@@ -5,12 +5,13 @@
 // Active-word highlight (`highlight.mode`): `word` colours the word being spoken, `karaoke` every word spoken so
 // far. The same component draws the preview, the Remotion export and the layer-bake intermediates of the native
 // and hybrid paths (S01:KND-008: preview, export and sidecar agree).
-import type { CaptionPage, CaptionPageWord, RenderCaptionSource } from '@jasper/project';
+import type { CaptionPage, CaptionPageWord, RenderCaptionSource, TextStyle } from '@jasper/project';
 import type { CSSProperties, ReactNode } from 'react';
 import { FALLBACK_FONT_STACK, fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { PaintedText, type PaintMode, paintCss, planTextPaint } from './text/paint.tsx';
 
 /** Title-safe margin: 10 % of the frame on each side (Premiere's default safe margins). */
 const CAPTION_TITLE_SAFE = 0.1;
@@ -83,23 +84,6 @@ function fontFamily(layer: LayerProps, style: Style, mono: boolean): string {
 	return mono ? MONO_STACK : FALLBACK_FONT_STACK;
 }
 
-function strokeCss(style: Style): CSSProperties {
-	const s = style.strokes[0];
-	if (!s || s.widthPx <= 0) return {};
-	const outside = s.position === 'outside';
-	return {
-		WebkitTextStroke: `${outside ? s.widthPx * 2 : s.widthPx}px ${rgbaCss(s.color)}`,
-		...(outside ? { paintOrder: 'stroke fill' } : {}),
-	};
-}
-
-function shadowCss(style: Style): string | undefined {
-	const sh = style.shadow;
-	if (!sh) return undefined;
-	const rad = (sh.angleDeg * Math.PI) / 180;
-	return `${Math.cos(rad) * sh.distancePx}px ${Math.sin(rad) * sh.distancePx}px ${sh.blurPx}px ${rgbaCss(sh.color)}`;
-}
-
 /** Placement of the caption block inside the frame (title-safe, VTT overrides). */
 function captionBlockPlacement(
 	style: Pick<Style, 'placement' | 'marginPct' | 'linePct' | 'positionPct' | 'boxWidthPct' | 'align'>,
@@ -136,9 +120,11 @@ function lineNodes(
 	style: Style,
 	fmt: Fmt,
 	keyBase: string,
+	mode: PaintMode,
 ): ReactNode[] {
 	const hl = style.highlight;
 	const out: ReactNode[] = [];
+	const primary = mode.kind === 'fill';
 	line.forEach((w, k) => {
 		const active =
 			hl.mode === 'word'
@@ -153,10 +139,15 @@ function lineNodes(
 			if (p.fmt.i) css.fontStyle = style.italic ? 'normal' : 'italic';
 			if (p.fmt.b) css.fontWeight = Math.max(style.weight, 700);
 			if (p.fmt.u) css.textDecoration = 'underline';
-			if (active) css.color = rgbaCss(hl.color);
+			// The active word's fill is the highlight colour (its strokes and shadow are the style's).
+			if (active) Object.assign(css, paintCss({ ...style, fill: hl.color }, mode));
 			out.push(
-				// biome-ignore lint/suspicious/noArrayIndexKey: words of a page are identified by their position
-				<span key={`${keyBase}-${k}-${j}`} data-caption-word={active ? 'active' : ''} style={css}>
+				<span
+					// biome-ignore lint/suspicious/noArrayIndexKey: words of a page are identified by their position
+					key={`${keyBase}-${k}-${j}`}
+					{...(primary ? { 'data-caption-word': active ? 'active' : '' } : {})}
+					style={css}
+				>
 					{p.text}
 				</span>,
 			);
@@ -180,7 +171,6 @@ export function CaptionsLayer(layer: LayerProps) {
 	if (!page) return <LayerBox layer={layer} />;
 	const box = layer.props.box;
 	const bg = style.background;
-	const fmt: Fmt = { i: false, b: false, u: false };
 	const textCss: CSSProperties = {
 		fontFamily: fontFamily(layer, style, standard === 'cea-608' && !face),
 		fontWeight: style.weight,
@@ -192,39 +182,60 @@ export function CaptionsLayer(layer: LayerProps) {
 		direction: style.direction === 'auto' ? undefined : style.direction,
 		unicodeBidi: style.direction === 'auto' ? 'plaintext' : undefined,
 		textTransform: style.allCaps ? 'uppercase' : undefined,
-		color: rgbaCss(style.fill),
 		whiteSpace: 'pre-wrap',
 		overflowWrap: 'break-word',
 		fontKerning: 'normal',
-		textShadow: shadowCss(style),
-		...strokeCss(style),
 	};
-	const lineBox: CSSProperties = bg
-		? {
-				background: rgbaCss(bg.color),
-				padding: `${bg.paddingPx * 0.35}px ${bg.paddingPx}px`,
-				borderRadius: bg.radiusPx,
-				boxDecorationBreak: 'clone',
-				WebkitBoxDecorationBreak: 'clone',
-			}
-		: {};
-	return (
-		<LayerBox layer={layer}>
+	const lineBox = (mode: PaintMode): CSSProperties =>
+		bg
+			? {
+					background: mode.kind === 'background' ? rgbaCss(bg.color) : 'transparent',
+					padding: `${bg.paddingPx * 0.35}px ${bg.paddingPx}px`,
+					borderRadius: bg.radiusPx,
+					boxDecorationBreak: 'clone',
+					WebkitBoxDecorationBreak: 'clone',
+				}
+			: {};
+	// spec 13 SH-004: the same paint passes as text clips (every stroke, shadow with spread), `text/paint.tsx`.
+	const styles = [style as unknown as TextStyle];
+	if (style.highlight.mode !== 'none') styles.push({ ...style, fill: style.highlight.color } as unknown as TextStyle);
+	const plan = planTextPaint(styles);
+	const render = (mode: PaintMode) => {
+		const fmt: Fmt = { i: false, b: false, u: false };
+		return (
 			<div
-				data-caption-page={`${page.start}-${page.end}`}
+				{...(mode.kind === 'fill'
+					? { 'data-caption-page': `${page.start}-${page.end}` }
+					: { 'data-caption-copy': mode.kind, 'aria-hidden': true })}
 				style={{ ...captionBlockPlacement(style, box), visibility: ready ? 'visible' : 'hidden' }}
 			>
 				{page.lines.map((line, li) => (
 					<div
 						// biome-ignore lint/suspicious/noArrayIndexKey: lines of one page have no identity beyond their order
 						key={li}
-						data-caption-line={li}
-						style={{ ...textCss, maxWidth: '100%' }}
+						{...(mode.kind === 'fill' ? { 'data-caption-line': li } : {})}
+						style={{ ...textCss, ...paintCss(style as unknown as TextStyle, mode), maxWidth: '100%' }}
 					>
-						<span style={lineBox}>{lineNodes(line, frame, style, fmt, `l${li}`)}</span>
+						<span style={lineBox(mode)}>{lineNodes(line, frame, style, fmt, `l${li}`, mode)}</span>
 					</div>
 				))}
 			</div>
+		);
+	};
+	return (
+		<LayerBox layer={layer}>
+			{ready ? (
+				<PaintedText
+					plan={plan}
+					render={render}
+					width={box.width}
+					height={box.height}
+					maxSizePx={style.sizePx}
+					background={!!bg}
+				/>
+			) : (
+				render({ kind: 'fill' })
+			)}
 		</LayerBox>
 	);
 }

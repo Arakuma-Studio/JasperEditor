@@ -5,7 +5,7 @@ import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
-import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
+import type { FontRef, MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { newLayer3D } from '../../three-d/model.ts';
@@ -442,16 +442,37 @@ function estimateTextBox(content: TextContent, frameW: number): { width: number;
 	return { width, height: Math.ceil(lines.length * s.sizePx * s.lineHeight) };
 }
 
-/** Applies measurement (browser) or marks layout pending (headless) (S01:KND-006). */
-function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerContext, frameW: number): void {
+/** Largest measured box side kept (px); a measurer reporting more (or a non-finite size) counts as unmeasured. */
+const MAX_MEASURED_SIDE = 65_536;
+
+/**
+ * Sizes an auto-size text box from the measurer (S01:KND-006, spec 13 SH-004): point text (`autoSize: 'width'`)
+ * takes the measured width and height, paragraph text (`'height'`) the measured height; a fixed box (`'none'`) is
+ * left alone. Without a measurer, or when it cannot measure now (fonts loading, no browser), the box keeps an
+ * estimate and the clip is marked `layoutPending` (`text.relayout` measures it later). An anchor at the old box
+ * centre (the default anchor, not keyframed) moves to the new centre, so the text stays centred on it.
+ */
+export function layoutText(
+	doc: Pick<DDoc, 'fonts'>,
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	h: HandlerContext,
+	frameW: number,
+): void {
 	const content = clip.content as TextContent;
 	const box = clip.box as TextBox;
 	if (box.autoSize === 'none') {
 		delete clip.layoutPending;
 		return;
 	}
-	if (h.ctx.textMeasurer) {
-		const m = h.ctx.textMeasurer.measure(content, box);
+	const before = { width: box.width, height: box.height };
+	let m: { width: number; height: number } | null = null;
+	try {
+		m = h.ctx.textMeasurer?.measure(content, box, doc.fonts as Readonly<Record<string, FontRef>>) ?? null;
+	} catch {
+		m = null;
+	}
+	const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_MEASURED_SIDE;
+	if (m && ok(m.width) && ok(m.height)) {
 		if (box.autoSize === 'width') {
 			clip.box.width = m.width;
 			clip.box.height = m.height;
@@ -465,6 +486,20 @@ function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerCont
 		}
 		clip.layoutPending = true;
 	}
+	followBoxCentre(clip, before);
+}
+
+/** The default anchor (the box centre, not keyframed) follows the box when its size changes. */
+function followBoxCentre(
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	before: { width: number; height: number },
+): void {
+	const a = clip.transform?.anchor;
+	if (!a || a.keyframes.length || (a as { expression?: unknown }).expression) return;
+	const [x, y] = a.value as [number, number];
+	if (Math.abs(x - before.width / 2) > 0.5 || Math.abs(y - before.height / 2) > 0.5) return;
+	if (before.width === clip.box.width && before.height === clip.box.height) return;
+	a.value = [clip.box.width / 2, clip.box.height / 2];
 }
 
 function validateMgParams(
@@ -604,7 +639,7 @@ export const clipCoreHandlers = {
 			...visualFields(transform),
 		} as DClip;
 		const clip = seq.clips[id] as Draft<Extract<Clip, { kind: 'text' }>>;
-		layoutText(clip, h, seq.settings.width);
+		layoutText(doc, clip, h, seq.settings.width);
 		if (!cmd.transform?.anchor) clip.transform.anchor.value = [clip.box.width / 2, clip.box.height / 2];
 
 		applyInitialTextAnimation(seq, clip as DClip, cmd.textAnimation, h);
@@ -788,6 +823,34 @@ export const clipCoreHandlers = {
 		cleanupSequence(seq, h);
 		return { removed: clips.map((c) => c.id), ranges: spans.map((r) => ({ start: r.start, end: r.end })) };
 	},
+	'text.relayout': (doc, cmd: CommandOf<'text.relayout'>, h: HandlerContext) => {
+		// spec 13 SH-004: the listed text clips (one sequence), or every pending text clip of the document.
+		const targets: { seq: DSeq; clip: Draft<Extract<Clip, { kind: 'text' }>> }[] = [];
+		if (cmd.clipIds !== undefined) {
+			const ids = idList(cmd.clipIds);
+			if (ids.length === 0) h.fail('E_INVALID_PARAM', 'text.relayout needs at least one clip', { path: ['clipIds'] });
+			for (const id of ids) {
+				const { seq, clip } = h.clip(doc, id);
+				if (clip.kind !== 'text') h.fail('E_INVALID_PARAM', `${id} is not a text clip`, { path: ['clipIds'] });
+				// Measuring derives the box from the content: it is not an edit, locked tracks included.
+				targets.push({ seq, clip: clip as Draft<Extract<Clip, { kind: 'text' }>> });
+			}
+		} else
+			for (const seq of Object.values(doc.sequences))
+				for (const clip of Object.values(seq.clips))
+					if (clip.kind === 'text' && clip.layoutPending) targets.push({ seq, clip });
+		if (!h.ctx.textMeasurer && targets.length)
+			h.warn('W_LAYOUT_PENDING', 'No text measurer here: the boxes stay estimated until the editor measures them');
+		const pending: string[] = [];
+		for (const { seq, clip } of targets) {
+			if (!h.ctx.textMeasurer) continue;
+			layoutText(doc, clip, h, seq.settings.width);
+			if (clip.layoutPending) pending.push(clip.id);
+		}
+		if (pending.length && h.ctx.textMeasurer)
+			h.warn('W_LAYOUT_PENDING', `Not measured yet (fonts loading): ${pending.slice(0, 10).join(', ')}`);
+		return { measured: targets.length - pending.length, pending };
+	},
 	'clip.update': (doc, cmd, h: HandlerContext) => {
 		const ids = cmd.clipId ? [cmd.clipId] : idList(cmd.clipIds);
 		if (ids.length === 0) h.fail('E_INVALID_PARAM', 'clip.update needs clipId or clipIds');
@@ -827,7 +890,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		if (!doc.fonts[clip.content.style.fontId])
 			h.fail('E_NOT_FOUND', `Font not found: ${clip.content.style.fontId}`);
 		if (p.box) Object.assign(clip.box, p.box);
-		layoutText(clip, h, seq.settings.width);
+		layoutText(doc, clip, h, seq.settings.width);
 	}
 	// Params in the same patch must target the upgraded template version.
 	applyTemplatePatch(seq, clip, p, h);

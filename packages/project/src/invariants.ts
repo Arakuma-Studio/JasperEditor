@@ -65,6 +65,7 @@ import {
 } from './sound/repair.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
+import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
@@ -888,6 +889,9 @@ export function invariantCheckers(
 		if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
 			issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
 		}
+		// spec 13 SH-004: stroke lists and shadow spreads of the clip's text styles.
+		for (const st of clipTextStyles(c, cw))
+			for (const m of textStyleIssues(st.style)) issues.push(inv('INV-012', `Clip ${c.id} text style ${m}`, st.path));
 		// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
 		// presets are preserved and skipped by the renderers).
 		const ta = r.textAnimation as Record<string, { durationFrames?: unknown } | null | undefined> | undefined;
@@ -1335,6 +1339,13 @@ export function runInvariants(
 		if (seqItems.get(s) !== 1)
 			issues.push(inv('INV-008', `Sequence ${s} must have exactly one project item`, ['sequences', s]));
 	}
+	// spec 13 SH-004: caption style presets keep valid stroke lists and shadow spreads.
+	(doc.settings.captionStylePresets ?? []).forEach((p, i) => {
+		for (const m of textStyleIssues(p.style))
+			issues.push(
+				inv('INV-012', `Caption style preset ${p.id} ${m}`, ['settings', 'captionStylePresets', String(i), 'style']),
+			);
+	});
 	for (const f of Object.values(doc.fonts)) {
 		if (f.source.type === 'asset' && !doc.media[f.source.mediaId])
 			issues.push(inv('INV-006', `Font ${f.id} references missing media`, ['fonts', f.id]));
@@ -1449,6 +1460,10 @@ export function runInvariants(
 							'tracks',
 							t.id,
 						]),
+					);
+				for (const m of textStyleIssues(t.styleDefaults))
+					issues.push(
+						inv('INV-012', `Track ${t.id} caption style ${m}`, [...where, 'tracks', t.id, 'styleDefaults']),
 					);
 				effects(t.effects, [...where, 'tracks', t.id, 'effects']);
 				anims(t, [...where, 'tracks', t.id]);
@@ -1839,6 +1854,9 @@ export function repairDocument(
 			});
 		}
 	}
+	// spec 13 SH-004: stroke lists beyond the limit are cut, shadow spreads clamped to 0…MAX_SHADOW_SPREAD_PX.
+	for (const st of storedTextStyles(doc))
+		for (const n of repairTextStyle(st.style)) note('repair-text-style', st.entity, `${st.path.join('.')}: ${n}`);
 	// malformed animator data is dropped, out-of-range values clamped.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		for (const c of Object.values(seq.clips))

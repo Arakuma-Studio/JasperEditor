@@ -95,6 +95,7 @@ export * from './speech/index.ts';
 export * from './structure/index.ts';
 export * from './text-animations.ts';
 export * from './text-animators/index.ts';
+export * from './text-style.ts';
 export * from './three-d/index.ts';
 export * from './time.ts';
 export * from './time-remap/index.ts';
