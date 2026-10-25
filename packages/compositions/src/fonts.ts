@@ -254,3 +254,12 @@ export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadySt
  * template layers (`AnimeTemplateProps.emojiUrls`).
  */
 export const EmojiTableContext = createContext<Readonly<Record<string, string>> | undefined>(undefined);
+
+// For the editor (the Program monitor's panel warning and its Retry): what template layers could not draw.
+export {
+	type MissingAssetReporter,
+	MissingAssetReporterContext,
+	type MissingTemplateAsset,
+	missingAssetLabel,
+	retryTemplateAssets,
+} from '@jasper/motion/templates';

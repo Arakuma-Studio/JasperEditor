@@ -284,7 +284,10 @@ function useFontOptions(session: EditorSession, docFonts: Record<string, { id: s
 		let cancelled = false;
 		session.engine
 			?.listFonts()
-			.then((r) => !cancelled && setCatalog(r.fonts.map((f) => f.family)))
+			// remote platform fonts (social-comment templates) are not offered for text clips
+			.then(
+				(r) => !cancelled && setCatalog(r.fonts.filter((f) => f.source !== 'remote').map((f) => f.family)),
+			)
 			.catch(() => undefined);
 		return () => {
 			cancelled = true;

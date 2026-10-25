@@ -57,7 +57,16 @@ export function emojiImagePath(pack: string, version: string, key: string, forma
  * template face is never replaced by another family, weight or style (AGENTS §4).
  */
 export function catalogFaceUrl(
-	catalog: Pick<FontCatalog, 'fonts'> | null | undefined,
+	catalog:
+		| {
+				fonts: readonly {
+					family: string;
+					source?: string;
+					files: readonly { weight: number; style: string; url: string; subset?: string }[];
+				}[];
+		  }
+		| null
+		| undefined,
 	face: { family: string; weight: number; style: 'normal' | 'italic' },
 ): string | null {
 	const name = face.family.trim().toLowerCase();
