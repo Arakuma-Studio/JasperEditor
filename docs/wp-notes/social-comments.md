@@ -89,3 +89,5 @@ comments; every motion-graphic template (and the other generator clips) gets it.
   unknown templates, shape validation and the 200 cap, dry run, preview, friendly times, the advertised schema.
 - `apps/mcp/test/time-args.test.ts`: fast-check — never throws, finite or null, round trips, timecode/friendly
   disjointness.
+- `e2e/mg-insert-placement.spec.ts` (`pnpm e2e e2e/mg-insert-placement.spec.ts`): two gallery double-clicks at one
+  playhead land on V1 and V2 in the built app; Ctrl+Z removes the second.
