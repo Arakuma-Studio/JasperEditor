@@ -25,7 +25,6 @@ import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
 import { Section } from './controls/Section.tsx';
-import { SHADOW_KEYS, StrokeList } from './TextLookRows.tsx';
 import {
 	bindCrop,
 	bindProperty,
@@ -37,6 +36,7 @@ import {
 	rowValue,
 	templateOf,
 } from './lib/model.ts';
+import { SHADOW_KEYS, StrokeList } from './TextLookRows.tsx';
 
 const CROP_PARAMS = ['left', 'top', 'right', 'bottom', 'feather'] as const;
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
@@ -292,7 +292,15 @@ function TextSections(props: {
 	const fontRow = get('text.fontId');
 	const weightRow = get('text.weight');
 	const rest = rows(
-		['text.italic', 'text.sizePx', 'text.align', 'text.fill', 'text.trackingEm', 'text.lineHeight', 'text.allCaps'],
+		[
+			'text.italic',
+			'text.sizePx',
+			'text.align',
+			'text.fill',
+			'text.trackingEm',
+			'text.lineHeight',
+			'text.allCaps',
+		],
 		visual,
 	);
 	const textClips = visual.filter((c): c is Extract<Clip, { kind: 'text' }> => c.kind === 'text');

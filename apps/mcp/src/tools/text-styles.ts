@@ -35,7 +35,9 @@ const GroupIdArg = z.string().min(1).describe('A subtitle group id (every text c
 const StyleArg = TextStylePatchSchema.describe(
 	'Text style fields to change: fontId, weight, italic, sizePx, lineHeight, trackingEm, align, direction, fill, strokes, background, shadow, allCaps and the Character / Paragraph fields',
 );
-const Anchor = z.enum(['in', 'out']).describe('Key offsets count from each clip\'s In (default) or back from its last frame');
+const Anchor = z
+	.enum(['in', 'out'])
+	.describe("Key offsets count from each clip's In (default) or back from its last frame");
 const Keys = z.array(RelativeKeySchema).min(1).max(1000);
 const Occurrence = z
 	.number()
@@ -71,7 +73,11 @@ const EffectOp = z.discriminatedUnion('op', [
 
 function targetOf(a: { clipIds?: string[] | '$selection'; groupId?: string }) {
 	if ((a.clipIds === undefined) === (a.groupId === undefined))
-		throw new ToolError('E_INVALID_PARAM', 'Give clipIds or groupId', 'clipIds: ids or "$selection"; groupId: a subtitle group.');
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			'Give clipIds or groupId',
+			'clipIds: ids or "$selection"; groupId: a subtitle group.',
+		);
 	return a.clipIds !== undefined ? { clipIds: a.clipIds } : { groupId: a.groupId };
 }
 
@@ -97,7 +103,7 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 		{
 			title: 'Style text clips',
 			description:
-				'Changes the text style and/or effects of many text clips in one undo step (deep per-field style patch; effects added, set or removed on every clip with keys relative to each clip\'s In).',
+				"Changes the text style and/or effects of many text clips in one undo step (deep per-field style patch; effects added, set or removed on every clip with keys relative to each clip's In).",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -116,10 +122,19 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 			const target = targetOf(a);
 			const commands: unknown[] = [];
 			if (a.style)
-				commands.push({ type: 'text.setStyle', ...target, patch: a.style, ...(a.runs ? { runs: a.runs } : {}) });
+				commands.push({
+					type: 'text.setStyle',
+					...target,
+					patch: a.style,
+					...(a.runs ? { runs: a.runs } : {}),
+				});
 			if (a.effects) {
 				if (!('clipIds' in target))
-					throw new ToolError('E_INVALID_PARAM', 'effects need clipIds', 'Pass the clip ids (or "$selection").');
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'effects need clipIds',
+						'Pass the clip ids (or "$selection").',
+					);
 				for (const e of a.effects) {
 					if (e.op === 'add') {
 						const { op: _op, ...rest } = e;
@@ -147,7 +162,8 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 		'list_text_styles',
 		{
 			title: 'List text styles',
-			description: 'Lists the project text styles with their ids, names, number of linked clips and (full) style.',
+			description:
+				'Lists the project text styles with their ids, names, number of linked clips and (full) style.',
 			input: {
 				projectId: ProjectIdArg,
 				full: z.boolean().optional().describe('Include every style field (default: a summary)'),
@@ -237,7 +253,13 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 			const target = targetOf(a);
 			const action = a.action ?? 'apply';
 			if (action === 'detach')
-				return applyCommands(ctx, a.projectId, 'Detach From Text Style', [{ type: 'textStyle.detach', ...target }], extra);
+				return applyCommands(
+					ctx,
+					a.projectId,
+					'Detach From Text Style',
+					[{ type: 'textStyle.detach', ...target }],
+					extra,
+				);
 			if (action === 'reset')
 				return applyCommands(
 					ctx,
@@ -250,7 +272,13 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 				throw new ToolError('E_INVALID_PARAM', 'Give styleId or name', 'list_text_styles shows them.');
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const styleId = styleIdOf(doc, a);
-			return applyCommands(ctx, a.projectId, 'Apply Text Style', [{ type: 'textStyle.apply', styleId, ...target }], extra);
+			return applyCommands(
+				ctx,
+				a.projectId,
+				'Apply Text Style',
+				[{ type: 'textStyle.apply', styleId, ...target }],
+				extra,
+			);
 		},
 	);
 
@@ -260,7 +288,7 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 		{
 			title: 'Update a text style',
 			description:
-				'Changes a project text style (style fields, or fromClipId = take that clip\'s look) and/or renames it; every linked clip follows in one step, keeping its own deviations.',
+				"Changes a project text style (style fields, or fromClipId = take that clip's look) and/or renames it; every linked clip follows in one step, keeping its own deviations.",
 			input: {
 				projectId: ProjectIdArg,
 				styleId: z.string().min(1).optional(),
@@ -294,7 +322,8 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 		'delete_text_style',
 		{
 			title: 'Delete a text style',
-			description: 'Deletes a project text style; its linked clips keep their look and are unlinked (undoable).',
+			description:
+				'Deletes a project text style; its linked clips keep their look and are unlinked (undoable).',
 			input: {
 				projectId: ProjectIdArg,
 				styleId: z.string().min(1).optional(),
@@ -305,7 +334,13 @@ export function registerTextStyleTools(ctx: ToolContext): void {
 		async (a, extra) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const styleId = styleIdOf(doc, a);
-			return applyCommands(ctx, a.projectId, 'Delete Text Style', [{ type: 'textStyle.delete', styleId }], extra);
+			return applyCommands(
+				ctx,
+				a.projectId,
+				'Delete Text Style',
+				[{ type: 'textStyle.delete', styleId }],
+				extra,
+			);
 		},
 	);
 }

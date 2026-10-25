@@ -584,6 +584,10 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
   `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
   (`docs/wp-notes/captions.md`).
+- Many text clips at once and linked text styles: `style_text` (a deep style patch and effects with keys timed from
+  each clip's In, on clip ids, `"$selection"` or a subtitle group, one undo step) `list_text_styles`
+  `create_text_style` `apply_text_style` (apply / detach / reset) `update_text_style` `delete_text_style`
+  (`docs/wp-notes/text-styles.md`).
 - Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
   `get_transcript` (`docs/wp-notes/speech.md`).
 - Timeline interchange (Final Cut Pro 7 XML, FCPXML, OpenTimelineIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media:

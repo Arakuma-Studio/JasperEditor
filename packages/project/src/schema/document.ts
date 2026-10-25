@@ -1,5 +1,6 @@
 // Project document root, project items and the persistence envelope (S01 §4, §5, PER-002).
 import { z } from 'zod';
+import type { ProjectTextStyle } from '../text-styles/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, LabelColorSchema, nonNegInt } from './common.ts';
 import {
@@ -12,7 +13,6 @@ import {
 	type Transcript,
 	TranscriptSchema,
 } from './media.ts';
-import type { ProjectTextStyle } from '../text-styles/model.ts';
 import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } from './sequence.ts';
 
 /** v3 (M2): additive fields only — media kind `mg-bundle`, `lut`/`mgBundle` headers, `process` recipes, trackers,

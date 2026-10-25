@@ -129,12 +129,20 @@ describe('style_text (AS-033)', () => {
 		const before = t.engine.labels.length;
 		await t.ok('style_text', {
 			clipIds: ids,
-			style: { strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }], shadow: { blurPx: 9 } },
+			style: {
+				strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
+				shadow: { blurPx: 9 },
+			},
 			effects: [
 				{
 					op: 'add',
 					effectId: 'jasper.gaussian-blur',
-					keyframes: { radius: [{ offset: { frames: 0 }, value: 20 }, { offset: { frames: 5 }, value: 0 }] },
+					keyframes: {
+						radius: [
+							{ offset: { frames: 0 }, value: 20 },
+							{ offset: { frames: 5 }, value: 0 },
+						],
+					},
 				},
 			],
 		});
@@ -148,7 +156,9 @@ describe('style_text (AS-033)', () => {
 		}
 		await t.ok('style_text', {
 			clipIds: ids,
-			effects: [{ op: 'set', effectId: 'jasper.gaussian-blur', param: 'radius', value: 3, at: { frames: 5 } }],
+			effects: [
+				{ op: 'set', effectId: 'jasper.gaussian-blur', param: 'radius', value: 3, at: { frames: 5 } },
+			],
 		});
 		expect(ids.map((id) => t.clip(id).effects[0]!.params.radius!.keyframes[1]!.value)).toEqual([3, 3, 3, 3]);
 		await t.ok('style_text', { clipIds: ids, effects: [{ op: 'remove', effectId: 'jasper.gaussian-blur' }] });
@@ -180,7 +190,12 @@ describe('linked text style tools (AS-033)', () => {
 		expect(styleId).toMatch(/^tsy_/);
 		let list = await t.ok('list_text_styles');
 		expect(list.styles).toEqual([
-			expect.objectContaining({ styleId, name: 'Pixel Pop', linkedClips: 2, summary: expect.objectContaining({ sizePx: 98 }) }),
+			expect.objectContaining({
+				styleId,
+				name: 'Pixel Pop',
+				linkedClips: 2,
+				summary: expect.objectContaining({ sizePx: 98 }),
+			}),
 		]);
 		await t.ok('style_text', { clipIds: [ids[1]], style: { italic: true } });
 		await t.ok('update_text_style', { name: 'pixel pop', style: { sizePx: 120 }, rename: 'Pop' });
@@ -223,7 +238,12 @@ describe('describe_commands examples of the batch styling commands', () => {
 		for (const type of order) expect(COMMAND_EXAMPLES[type], type).toBeTruthy();
 		const r = applyTransaction(
 			doc,
-			{ protocol: 'jasper.tx/1', label: 'examples', origin: 'user', commands: order.map((x) => COMMAND_EXAMPLES[x]) } as never,
+			{
+				protocol: 'jasper.tx/1',
+				label: 'examples',
+				origin: 'user',
+				commands: order.map((x) => COMMAND_EXAMPLES[x]),
+			} as never,
 			{ ids, now: () => '', revision: 0, registries },
 		);
 		expect(r.result.ok, JSON.stringify(r.result.ok ? null : r.result.errors)).toBe(true);

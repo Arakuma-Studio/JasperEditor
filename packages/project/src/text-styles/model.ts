@@ -53,7 +53,8 @@ export function textStylesOf(doc: Pick<ProjectDocument, 'textStyles'>): ProjectT
 	const rec = (doc as { textStyles?: unknown }).textStyles;
 	if (!isPlain(rec)) return [];
 	const out: ProjectTextStyle[] = [];
-	for (const [k, v] of Object.entries(rec)) if (!projectTextStyleProblem(k, v)) out.push(v as ProjectTextStyle);
+	for (const [k, v] of Object.entries(rec))
+		if (!projectTextStyleProblem(k, v)) out.push(v as ProjectTextStyle);
 	return out;
 }
 
@@ -70,7 +71,10 @@ export function textStyleById(
 }
 
 /** The project style a clip is linked to (null: not a text clip, not linked, or the style is gone). */
-export function linkedTextStyle(doc: Pick<ProjectDocument, 'textStyles'>, clip: Clip): ProjectTextStyle | null {
+export function linkedTextStyle(
+	doc: Pick<ProjectDocument, 'textStyles'>,
+	clip: Clip,
+): ProjectTextStyle | null {
 	if (clip.kind !== 'text') return null;
 	const id = (clip as StyleLinkFields).styleId;
 	return typeof id === 'string' ? textStyleById(doc, id) : null;
@@ -123,7 +127,8 @@ export function textStylesRecordIssues(doc: ProjectDocument): [string, string[]]
 			continue;
 		}
 		const fontId = (rec[k] as ProjectTextStyle).style.fontId;
-		if (!doc.fonts[fontId]) out.push([`Text style ${k} references missing font ${fontId}`, ['textStyles', k]]);
+		if (!doc.fonts[fontId])
+			out.push([`Text style ${k} references missing font ${fontId}`, ['textStyles', k]]);
 	}
 	return out;
 }
@@ -184,7 +189,12 @@ export function repairTextStyles(
 				v.name = v.name.slice(0, MAX_TEXT_STYLE_NAME);
 				note('fix-text-style', k, `name shortened to ${MAX_TEXT_STYLE_NAME} characters`);
 			}
-			if (isPlain(v) && isPlain(v.style) && typeof v.style.fontId === 'string' && !doc.fonts[v.style.fontId]) {
+			if (
+				isPlain(v) &&
+				isPlain(v.style) &&
+				typeof v.style.fontId === 'string' &&
+				!doc.fonts[v.style.fontId]
+			) {
 				const font = ids.defaultFontId();
 				note('reset-font', k, `missing font ${v.style.fontId} of the text style replaced`);
 				v.style.fontId = font;
@@ -212,7 +222,9 @@ export function repairTextStyles(
 				note(
 					'unlink-text-style',
 					c.id,
-					c.kind !== 'text' ? `a ${c.kind} clip cannot be linked to a text style` : 'the linked text style is missing',
+					c.kind !== 'text'
+						? `a ${c.kind} clip cannot be linked to a text style`
+						: 'the linked text style is missing',
 				);
 				continue;
 			}

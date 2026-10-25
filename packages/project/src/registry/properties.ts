@@ -45,6 +45,12 @@ import {
 	TEXT_ANIMATION_SIDES,
 	type TextAnimationSide,
 } from '../text-animations.ts';
+import {
+	DEFAULT_TEXT_BACKGROUND,
+	DEFAULT_TEXT_SHADOW,
+	DEFAULT_TEXT_STROKE,
+	MAX_TEXT_STROKES,
+} from '../text-styles/patch.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
@@ -56,12 +62,6 @@ import {
 	SOURCE_TEXT_SPEC,
 	textAnimatorPropertySpecs,
 } from './text-animator-properties.ts';
-import {
-	DEFAULT_TEXT_BACKGROUND,
-	DEFAULT_TEXT_SHADOW,
-	DEFAULT_TEXT_STROKE,
-	MAX_TEXT_STROKES,
-} from '../text-styles/patch.ts';
 import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 
 /** `json` properties carry their schema in `valueSchema` (arrays and free-form composition props). */
@@ -646,10 +646,12 @@ export const TYPOGRAPHY_SPECS: readonly PropertySpec[] = [
 // spec 13 AS-030: shadow (incl. spread), background opacity and the stroke list of text clips. Each write patches the
 // clip's own object (other fields and the other strokes stay); editing a shadow row turns the shadow on.
 type Shadow = { color: RGBA; angleDeg: number; distancePx: number; blurPx: number; spreadPx?: number };
-const shadowOf = (s: TypoStyle): Shadow => (s.shadow as Shadow | null | undefined) ?? (DEFAULT_TEXT_SHADOW as Shadow);
+const shadowOf = (s: TypoStyle): Shadow =>
+	(s.shadow as Shadow | null | undefined) ?? (DEFAULT_TEXT_SHADOW as Shadow);
 const shadowPatch = (s: TypoStyle, fields: Partial<Shadow>) => ({ shadow: { ...shadowOf(s), ...fields } });
 const backgroundOf = (s: TypoStyle) =>
-	(s.background as { color: RGBA; paddingPx: number; radiusPx: number } | null | undefined) ?? DEFAULT_TEXT_BACKGROUND;
+	(s.background as { color: RGBA; paddingPx: number; radiusPx: number } | null | undefined) ??
+	DEFAULT_TEXT_BACKGROUND;
 const look = (extra: Partial<PropertySpec> & { defaultValue: unknown; description: string }) => extra;
 export const TEXT_LOOK_SPECS: readonly PropertySpec[] = [
 	typo(
@@ -658,7 +660,11 @@ export const TEXT_LOOK_SPECS: readonly PropertySpec[] = [
 		'boolean',
 		(s) => !!s.shadow,
 		(v, s) => ({ shadow: v ? shadowOf(s) : null }),
-		look({ group: 'text', defaultValue: false, description: 'Drop shadow behind the text (Essential Graphics ▸ Shadow).' }),
+		look({
+			group: 'text',
+			defaultValue: false,
+			description: 'Drop shadow behind the text (Essential Graphics ▸ Shadow).',
+		}),
 	),
 	typo(
 		'shadowColor',
@@ -794,20 +800,34 @@ export function textStrokePropertySpec(key: string): PropertySpec | undefined {
 	const short = `stroke.${index}.${field}`;
 	const spec =
 		field === 'width'
-			? typo(short, `Stroke ${n} Width`, 'number', (s) => at(s).widthPx, (v, s) => write(s, { widthPx: Number(v) }), {
-					group: 'text',
-					unit: 'px',
-					range: { min: 0, max: 1000, softMax: 100, step: 0.5 },
-					defaultValue: DEFAULT_TEXT_STROKE.widthPx,
-					description: `Width of stroke ${n}, pixels.`,
-				})
-			: field === 'color'
-				? typo(short, `Stroke ${n} Color`, 'color', (s) => at(s).color, (v, s) => write(s, { color: v as RGBA }), {
+			? typo(
+					short,
+					`Stroke ${n} Width`,
+					'number',
+					(s) => at(s).widthPx,
+					(v, s) => write(s, { widthPx: Number(v) }),
+					{
 						group: 'text',
-						ui: { control: 'color' },
-						defaultValue: DEFAULT_TEXT_STROKE.color,
-						description: `Colour of stroke ${n}.`,
-					})
+						unit: 'px',
+						range: { min: 0, max: 1000, softMax: 100, step: 0.5 },
+						defaultValue: DEFAULT_TEXT_STROKE.widthPx,
+						description: `Width of stroke ${n}, pixels.`,
+					},
+				)
+			: field === 'color'
+				? typo(
+						short,
+						`Stroke ${n} Color`,
+						'color',
+						(s) => at(s).color,
+						(v, s) => write(s, { color: v as RGBA }),
+						{
+							group: 'text',
+							ui: { control: 'color' },
+							defaultValue: DEFAULT_TEXT_STROKE.color,
+							description: `Colour of stroke ${n}.`,
+						},
+					)
 				: typo(
 						short,
 						`Stroke ${n} Position`,

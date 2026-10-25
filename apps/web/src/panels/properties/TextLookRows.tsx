@@ -31,10 +31,13 @@ export function StrokeList(props: {
 			{Array.from({ length: max }, (_, i) => {
 				const have = counts.filter((n) => n > i).length;
 				return (
+					// biome-ignore lint/suspicious/noArrayIndexKey: a stroke is identified by its position in every clip's list
 					<div key={i} data-testid={`text-stroke-${i}`}>
 						<div className="flex h-[var(--pr-row-h)] items-center gap-1 pr-1 pl-2">
 							<span className="flex-1 truncate text-pr-ui text-pr-text">
-								{have === clips.length ? t('Stroke {0}', i + 1) : t('Stroke {0} (on {1} of {2})', i + 1, have, clips.length)}
+								{have === clips.length
+									? t('Stroke {0}', i + 1)
+									: t('Stroke {0} (on {1} of {2})', i + 1, have, clips.length)}
 							</span>
 							<MiniButton
 								label={t('Remove stroke {0}', i + 1)}
@@ -44,7 +47,9 @@ export function StrokeList(props: {
 								<TrashGlyph size={12} />
 							</MiniButton>
 						</div>
-						{(['color', 'width', 'position'] as const).map((f) => render(rowFor(`text.stroke.${i}.${f}`), { indent: true }))}
+						{(['color', 'width', 'position'] as const).map((f) =>
+							render(rowFor(`text.stroke.${i}.${f}`), { indent: true }),
+						)}
 					</div>
 				);
 			})}

@@ -105,7 +105,9 @@ export function MultiClipEffects(props: {
 		s.spec
 			? makeRow(
 					`effects.${s.key}.${param.name}`,
-					s.instances.map(({ clip, fx }) => bindEffectParam(doc, seq, clip, fx, s.spec!, param, clip.start + offset)),
+					s.instances.map(({ clip, fx }) =>
+						bindEffectParam(doc, seq, clip, fx, s.spec!, param, clip.start + offset),
+					),
 				)
 			: null;
 
@@ -120,12 +122,18 @@ export function MultiClipEffects(props: {
 			clips.map((c) => c.id),
 		);
 		if (!r?.ok)
-			ctx.hint(r?.ok === false ? (r.errors[0]?.message ?? '') : t('This effect cannot be applied to these clips.'));
+			ctx.hint(
+				r?.ok === false ? (r.errors[0]?.message ?? '') : t('This effect cannot be applied to these clips.'),
+			);
 	};
 	const rate = seq.settings.frameRate;
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: effects dropped from the Effects panel (Apply Effect to Selected Clips is the keyboard path)
 		<div
-			className={cx('min-h-0 flex-1 overflow-y-auto', dropping && 'outline outline-1 -outline-offset-1 outline-pr-focus')}
+			className={cx(
+				'min-h-0 flex-1 overflow-y-auto',
+				dropping && 'outline outline-1 -outline-offset-1 outline-pr-focus',
+			)}
 			data-testid="ec-multi"
 			onDragOver={(e) => {
 				if (!isEffectDrag(e.dataTransfer)) return;
@@ -147,12 +155,16 @@ export function MultiClipEffects(props: {
 					title="Keys are set at this offset from each clip's In"
 					data-testid="ec-multi-offset"
 				>
-					{t('Keys at In + {0}', formatTimecode(Math.max(0, offset), rate, { dropFrame: seq.settings.dropFrame }))}
+					{t(
+						'Keys at In + {0}',
+						formatTimecode(Math.max(0, offset), rate, { dropFrame: seq.settings.dropFrame }),
+					)}
 				</span>
 			</div>
 			{offset < 0 || offset >= anchor.duration ? (
 				<p className="px-2 py-1 text-pr-small text-pr-muted">
-					Move the playhead over the primary clip: its offset from the clip's In is the key time in every clip.
+					Move the playhead over the primary clip: its offset from the clip's In is the key time in every
+					clip.
 				</p>
 			) : null}
 			{(audio ? AUDIO_INTRINSICS : VISUAL_INTRINSICS).map(([title, keys]) => {
@@ -176,7 +188,10 @@ export function MultiClipEffects(props: {
 						id={`ec.multi.fx.${s.effectId}`}
 						variant="group"
 						title={
-							<span className={cx('flex items-center gap-1', !enabled && 'text-pr-dim')} data-testid={`ec-multi-fx-${s.key}`}>
+							<span
+								className={cx('flex items-center gap-1', !enabled && 'text-pr-dim')}
+								data-testid={`ec-multi-fx-${s.key}`}
+							>
 								{s.spec ? title : t('Missing effect: {0}', s.effectId)}
 							</span>
 						}
@@ -190,7 +205,11 @@ export function MultiClipEffects(props: {
 											enabled ? `Bypass ${name}` : `Enable ${name}`,
 											s.instances.map(
 												({ fx }) =>
-													({ type: 'effect.setEnabled', effectInstanceId: fx.id, enabled: !enabled }) as Command,
+													({
+														type: 'effect.setEnabled',
+														effectInstanceId: fx.id,
+														enabled: !enabled,
+													}) as Command,
 											),
 										)
 									}
@@ -232,7 +251,9 @@ export function MultiClipEffects(props: {
 					No applied effect is on every selected clip. Drop an effect here to add it to all of them.
 				</p>
 			) : (
-				<p className="px-2 py-2 text-pr-small text-pr-dim">Drop an effect here to add it to all selected clips.</p>
+				<p className="px-2 py-2 text-pr-small text-pr-dim">
+					Drop an effect here to add it to all selected clips.
+				</p>
 			)}
 		</div>
 	);

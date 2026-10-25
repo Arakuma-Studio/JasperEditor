@@ -24,8 +24,8 @@ import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import type { RelativeKey } from '../schemas/text-style.ts';
-import { applyClipPatch } from './clip-core.ts';
 import { ensureDefaultFont } from './clip-common.ts';
+import { applyClipPatch } from './clip-core.ts';
 import { buildParams } from './effect.ts';
 import { effectOwnerBox, newKeyframe, ruleFromParam, upsertKeyframe, validateValue } from './param.ts';
 import { type HandlerMap, idList, peek, peekKeys } from './util.ts';
@@ -60,7 +60,11 @@ function groupClipIds(doc: DDoc, groupId: string): string[] {
 }
 
 /** The ids a `{clipIds | groupId}` command names (exactly one of the two). */
-function targetIds(doc: DDoc, cmd: { clipIds?: readonly string[] | '$selection'; groupId?: string }, h: HandlerContext) {
+function targetIds(
+	doc: DDoc,
+	cmd: { clipIds?: readonly string[] | '$selection'; groupId?: string },
+	h: HandlerContext,
+) {
 	if ((cmd.clipIds === undefined) === (cmd.groupId === undefined))
 		h.fail('E_INVALID_PARAM', 'Give clipIds or groupId (one of them)');
 	if (cmd.groupId !== undefined) {
@@ -74,7 +78,12 @@ function targetIds(doc: DDoc, cmd: { clipIds?: readonly string[] | '$selection';
 }
 
 /** Every named clip, which must exist, be a text clip (the others are named) and sit on an unlocked track. */
-function textClips(doc: DDoc, ids: readonly string[], h: HandlerContext, what: string): { seq: DSeq; clip: DText }[] {
+function textClips(
+	doc: DDoc,
+	ids: readonly string[],
+	h: HandlerContext,
+	what: string,
+): { seq: DSeq; clip: DText }[] {
 	const found = ids.map((id) => h.clip(doc, id));
 	const notText = found.filter((f) => f.clip.kind !== 'text').map((f) => f.clip);
 	if (notText.length)
@@ -96,7 +105,10 @@ function checkedStyle(next: TextStyle, doc: DDoc, h: HandlerContext, who: string
 }
 
 /** Fields removed from styled runs and paragraph settings (`runs: "clear-overridden"`). */
-function clearFields<T extends { style: Record<string, unknown> }>(list: readonly T[] | undefined, fields: string[]) {
+function clearFields<T extends { style: Record<string, unknown> }>(
+	list: readonly T[] | undefined,
+	fields: string[],
+) {
 	if (!list) return undefined;
 	const out: T[] = [];
 	for (const r of list) {
@@ -120,7 +132,13 @@ function writeStyle(
 		doc,
 		seq,
 		clip,
-		{ content: { style, ...(extra.runs ? { runs: extra.runs } : {}), ...(extra.paragraphs ? { paragraphs: extra.paragraphs } : {}) } } as never,
+		{
+			content: {
+				style,
+				...(extra.runs ? { runs: extra.runs } : {}),
+				...(extra.paragraphs ? { paragraphs: extra.paragraphs } : {}),
+			},
+		} as never,
 		h,
 		'whole',
 	);
@@ -136,7 +154,8 @@ function stylesOf(doc: DDoc): Draft<Record<string, ProjectTextStyle>> {
 
 function mustStyle(doc: DDoc, id: string, h: HandlerContext): Draft<ProjectTextStyle> {
 	const rec = peek<Record<string, ProjectTextStyle>>(doc, 'textStyles');
-	if (!rec || typeof rec !== 'object' || !peek(rec, id)) return h.fail('E_NOT_FOUND', `Text style not found: ${id}`);
+	if (!rec || typeof rec !== 'object' || !peek(rec, id))
+		return h.fail('E_NOT_FOUND', `Text style not found: ${id}`);
 	return (doc as { textStyles: Record<string, ProjectTextStyle> }).textStyles[id] as Draft<ProjectTextStyle>;
 }
 
@@ -192,13 +211,21 @@ function effectTargets(doc: DDoc, cmd: Selector, h: HandlerContext): FxTarget[] 
 			h.fail('E_INVALID_PARAM', 'effectId / occurrence go with clipIds, not with targets');
 		const seen = new Set<string>();
 		for (const t of cmd.targets!) {
-			if (seen.has(t.effectInstanceId)) h.fail('E_INVALID_PARAM', `Effect ${t.effectInstanceId} is listed twice`);
+			if (seen.has(t.effectInstanceId))
+				h.fail('E_INVALID_PARAM', `Effect ${t.effectInstanceId} is listed twice`);
 			seen.add(t.effectInstanceId);
 			const { seq, clip } = h.clip(doc, t.clipId);
 			const list = ((clip as { effects?: Draft<EffectInstance>[] }).effects ?? []) as Draft<EffectInstance>[];
 			const index = list.findIndex((e) => e.id === t.effectInstanceId);
 			if (index < 0) missing.push({ id: `${t.effectInstanceId} on ${t.clipId}` });
-			else out.push({ seq, clip, fx: list[index]!, index, ...(t.value !== undefined ? { value: t.value } : {}) });
+			else
+				out.push({
+					seq,
+					clip,
+					fx: list[index]!,
+					index,
+					...(t.value !== undefined ? { value: t.value } : {}),
+				});
 		}
 	} else {
 		if (!cmd.effectId) h.fail('E_INVALID_PARAM', 'clipIds needs effectId (and optionally occurrence)');
@@ -231,7 +258,13 @@ function relativeFrame(clip: DClip, frames: number, anchor: 'in' | 'out' | undef
 }
 
 /** Relative keys → stored keys in the clip's content time (flicks); keys landing on one time keep the last. */
-function keysFor(seq: DSeq, clip: DClip, keys: readonly RelativeKey[], anchor: 'in' | 'out' | undefined, h: HandlerContext) {
+function keysFor(
+	seq: DSeq,
+	clip: DClip,
+	keys: readonly RelativeKey[],
+	anchor: 'in' | 'out' | undefined,
+	h: HandlerContext,
+) {
 	const byTime = new Map<number, Record<string, unknown>>();
 	for (const k of keys) {
 		const frames = 'frames' in k.offset ? k.offset.frames : h.frame(seq, { seconds: k.offset.seconds });
@@ -258,7 +291,8 @@ function specOf(fx: Draft<EffectInstance>, h: HandlerContext): EffectSpec {
 
 function addDelta(base: unknown, delta: number | number[], label: string, h: HandlerContext): unknown {
 	if (typeof delta === 'number') {
-		if (typeof base !== 'number') return h.fail('E_INVALID_PARAM', `${label} is not a number; delta needs one`);
+		if (typeof base !== 'number')
+			return h.fail('E_INVALID_PARAM', `${label} is not a number; delta needs one`);
 		return base + delta;
 	}
 	if (!Array.isArray(base) || base.length !== delta.length || !base.every((x) => typeof x === 'number'))
@@ -273,7 +307,10 @@ export const textStyleHandlers = {
 		const fields = cmd.runs === 'clear-overridden' ? patchedFields(patch) : [];
 		for (const { seq, clip } of clips) {
 			const next = checkedStyle(applyStylePatch(clip.content.style as TextStyle, patch), doc, h, clip.id);
-			const content = clip.content as { runs?: { style: Record<string, unknown> }[]; paragraphs?: { style: Record<string, unknown> }[] };
+			const content = clip.content as {
+				runs?: { style: Record<string, unknown> }[];
+				paragraphs?: { style: Record<string, unknown> }[];
+			};
 			writeStyle(
 				doc,
 				seq,
@@ -281,19 +318,31 @@ export const textStyleHandlers = {
 				next,
 				h,
 				fields.length
-					? { runs: clearFields(content.runs, fields) ?? [], paragraphs: clearFields(content.paragraphs, fields) ?? [] }
+					? {
+							runs: clearFields(content.runs, fields) ?? [],
+							paragraphs: clearFields(content.paragraphs, fields) ?? [],
+						}
 					: {},
 			);
-			if (fields.length && content.runs && !content.runs.length) delete (clip.content as { runs?: unknown }).runs;
+			if (fields.length && content.runs && !content.runs.length)
+				delete (clip.content as { runs?: unknown }).runs;
 		}
 		return { clipIds: clips.map((c) => c.clip.id), count: clips.length };
 	},
 
 	'effect.setParamMany': (doc, cmd: CommandOf<'effect.setParamMany'>, h: HandlerContext) => {
-		const modes = [cmd.value !== undefined, cmd.delta !== undefined, cmd.keyframes !== undefined, cmd.animated !== undefined];
+		const modes = [
+			cmd.value !== undefined,
+			cmd.delta !== undefined,
+			cmd.keyframes !== undefined,
+			cmd.animated !== undefined,
+		];
 		const perTarget = cmd.targets?.some((t) => t.value !== undefined) ?? false;
 		if (modes.filter(Boolean).length + (perTarget && !modes[0] ? 1 : 0) !== 1)
-			h.fail('E_INVALID_PARAM', 'Give exactly one of value (or per-target values), delta, keyframes, animated');
+			h.fail(
+				'E_INVALID_PARAM',
+				'Give exactly one of value (or per-target values), delta, keyframes, animated',
+			);
 		const targets = effectTargets(doc, cmd, h);
 		const keyed: string[] = [];
 		const skipped: string[] = [];
@@ -330,9 +379,14 @@ export const textStyleHandlers = {
 				if (!p.animatable) h.fail('E_INVALID_PARAM', `${label} is not animatable`);
 				if (cmd.animated && anim.keyframes.length === 0) {
 					const v = clone(anim.value);
-					anim.keyframes.push(newKeyframe(h, time, v, rule.holdOnly || isHoldOnlyValue(v), rule.spatial) as never);
+					anim.keyframes.push(
+						newKeyframe(h, time, v, rule.holdOnly || isHoldOnlyValue(v), rule.spatial) as never,
+					);
 				} else if (!cmd.animated && anim.keyframes.length > 0) {
-					const v = evaluate(anim as Animatable<unknown>, time, { holdOnly: rule.holdOnly, ...(metric ? { metric } : {}) });
+					const v = evaluate(anim as Animatable<unknown>, time, {
+						holdOnly: rule.holdOnly,
+						...(metric ? { metric } : {}),
+					});
 					anim.value = clone(v) as never;
 					anim.keyframes = [];
 				}
@@ -344,9 +398,17 @@ export const textStyleHandlers = {
 				continue;
 			}
 			const current = animated
-				? evaluate(anim as Animatable<unknown>, time, { holdOnly: rule.holdOnly, ...(metric ? { metric } : {}) })
+				? evaluate(anim as Animatable<unknown>, time, {
+						holdOnly: rule.holdOnly,
+						...(metric ? { metric } : {}),
+					})
 				: anim.value;
-			const raw = t.value !== undefined ? t.value : cmd.value !== undefined ? cmd.value : addDelta(current, cmd.delta!, label, h);
+			const raw =
+				t.value !== undefined
+					? t.value
+					: cmd.value !== undefined
+						? cmd.value
+						: addDelta(current, cmd.delta!, label, h);
 			const { value, clamped } = validateValue(raw, rule, h, label);
 			if (clamped) h.warn('W_VALUE_CLAMPED', `${label} on ${t.clip.id} clamped to ${JSON.stringify(value)}`);
 			if (animated) {
@@ -365,7 +427,10 @@ export const textStyleHandlers = {
 				{ blocking: keyed },
 			);
 		if (skipped.length)
-			h.warn('W_CLIP_SKIPPED', `${skipped.length} clip(s) are shorter than the key time; no key added: ${nameClips(skipped.map((id) => ({ id })))}`);
+			h.warn(
+				'W_CLIP_SKIPPED',
+				`${skipped.length} clip(s) are shorter than the key time; no key added: ${nameClips(skipped.map((id) => ({ id })))}`,
+			);
 		return { effectInstanceIds: targets.map((t) => t.fx.id), count: targets.length, skipped };
 	},
 
@@ -388,9 +453,13 @@ export const textStyleHandlers = {
 				return !caps?.supportsEffects || (spec.appliesTo === 'video' ? !caps.visual : !caps.audio);
 			});
 		if (refused.length)
-			h.fail('E_INVALID_PARAM', `${spec.label} (a ${spec.appliesTo} effect) cannot go on: ${nameClips(refused)}`, {
-				blocking: refused.map((c) => c.id),
-			});
+			h.fail(
+				'E_INVALID_PARAM',
+				`${spec.label} (a ${spec.appliesTo} effect) cannot go on: ${nameClips(refused)}`,
+				{
+					blocking: refused.map((c) => c.id),
+				},
+			);
 		for (const f of found) assertUnlocked(findTrackIn(f.seq, f.clip.trackId)!.track, h);
 		const effectInstanceIds: string[] = [];
 		for (const { seq, clip } of found) {
@@ -480,7 +549,10 @@ export const textStyleHandlers = {
 			updated++;
 		}
 		if (locked.length)
-			h.warn('W_CLIP_SKIPPED', `${locked.length} linked clip(s) on locked tracks keep their look: ${nameClips(locked.map((id) => ({ id })))}`);
+			h.warn(
+				'W_CLIP_SKIPPED',
+				`${locked.length} linked clip(s) on locked tracks keep their look: ${nameClips(locked.map((id) => ({ id })))}`,
+			);
 		return { styleId: cmd.styleId, updated, skipped: locked };
 	},
 

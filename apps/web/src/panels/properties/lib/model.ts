@@ -459,7 +459,13 @@ export function relativePlanner(anchor: Clip): RowPlanner {
 				if (!targets.length) return { commands: [], skipped: [] };
 				return {
 					commands: [
-						{ type: 'effect.setParamMany', targets, param, animated: on, at: { frames: Math.max(0, offset) } } as Command,
+						{
+							type: 'effect.setParamMany',
+							targets,
+							param,
+							animated: on,
+							at: { frames: Math.max(0, offset) },
+						} as Command,
 					],
 					skipped: [],
 				};
@@ -476,7 +482,10 @@ export function relativePlanner(anchor: Clip): RowPlanner {
 			const offset = offsetOf(frame);
 			const keys = row.bindings.map((b) => keyAt(b, seq, offset));
 			if (keys.every((k) => k !== null))
-				return { commands: [{ type: 'keyframe.remove', keyframeIds: keys as string[] } as Command], skipped: [] };
+				return {
+					commands: [{ type: 'keyframe.remove', keyframeIds: keys as string[] } as Command],
+					skipped: [],
+				};
 			const commands: Command[] = [];
 			const skipped: string[] = [];
 			row.bindings.forEach((b, i) => {
@@ -497,12 +506,15 @@ export function relativePlanner(anchor: Clip): RowPlanner {
 		reset(row, doc, seq, frame) {
 			const existing = row.bindings.filter((b) => b.path !== null && b.spec.defaultValue !== undefined);
 			if (!existing.length) return { commands: [], skipped: [] };
-			return set({ ...row, bindings: existing }, frame, (_base, b) => propertyDefault({ doc, seq, clip: b.clip }, b.spec));
+			return set({ ...row, bindings: existing }, frame, (_base, b) =>
+				propertyDefault({ doc, seq, clip: b.clip }, b.spec),
+			);
 		},
 		navigate(row, seq, frame, dir) {
 			const frames = row.bindings.flatMap((b) =>
 				(b.resolved.anim?.keyframes ?? []).map(
-					(k) => anchor.start + sequenceFrameOfContentTime(b.clip, k.time, seq.settings.frameRate) - b.clip.start,
+					(k) =>
+						anchor.start + sequenceFrameOfContentTime(b.clip, k.time, seq.settings.frameRate) - b.clip.start,
 				),
 			);
 			const cands = frames.filter((f) => (dir > 0 ? f > frame : f < frame));

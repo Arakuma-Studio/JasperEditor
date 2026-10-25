@@ -622,7 +622,11 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 	},
 	'textStyle.create': { type: 'textStyle.create', name: 'Pixel Pop', fromClipId: '$title', ref: '$style' },
 	'textStyle.apply': { type: 'textStyle.apply', styleId: '$style', clipIds: ['$title'] },
-	'textStyle.update': { type: 'textStyle.update', styleId: '$style', patch: { sizePx: 110, fill: [1, 1, 1, 1] } },
+	'textStyle.update': {
+		type: 'textStyle.update',
+		styleId: '$style',
+		patch: { sizePx: 110, fill: [1, 1, 1, 1] },
+	},
 	'textStyle.rename': { type: 'textStyle.rename', styleId: '$style', name: 'Pixel Pop 2025' },
 	'textStyle.reset': { type: 'textStyle.reset', clipIds: ['$title'], fields: ['sizePx'] },
 	'textStyle.detach': { type: 'textStyle.detach', clipIds: ['$title'] },

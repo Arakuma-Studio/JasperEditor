@@ -144,14 +144,16 @@ export const renameCommands = (styleId: string, name: string): Command[] => [
 	{ type: 'textStyle.rename', styleId, name } as Command,
 ];
 
-export const deleteCommands = (styleId: string): Command[] => [{ type: 'textStyle.delete', styleId } as Command];
+export const deleteCommands = (styleId: string): Command[] => [
+	{ type: 'textStyle.delete', styleId } as Command,
+];
 
 /**
  * Select ▸ Same Style: the text clips of the sequence linked to the primary clip's style, or — when it is not linked —
  * every text clip whose effective style equals its style. Clips on locked tracks are left out (like Select All).
  */
 export function sameStyleClipIds(doc: ProjectDocument, seq: Sequence, primary: Clip | null): string[] {
-	if (!primary || primary.kind !== 'text') return [];
+	if (primary?.kind !== 'text') return [];
 	const locked = new Set(
 		[...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].filter((t) => t.locked).map((t) => t.id),
 	);

@@ -33,7 +33,12 @@ export const DEFAULT_TEXT_STROKE: TextStroke = { color: [0, 0, 0, 1], widthPx: 4
  * The shadow a partial shadow patch starts from when the style has none (Premiere's Shadow defaults). Only the
  * required fields: merging a complete shadow over it gives that shadow exactly (`spreadPx` absent = 0).
  */
-export const DEFAULT_TEXT_SHADOW: TextShadow = { color: [0, 0, 0, 0.75], angleDeg: 135, distancePx: 7, blurPx: 10 };
+export const DEFAULT_TEXT_SHADOW: TextShadow = {
+	color: [0, 0, 0, 0.75],
+	angleDeg: 135,
+	distancePx: 7,
+	blurPx: 10,
+};
 /** The box a partial background patch starts from (the Properties Box defaults). */
 export const DEFAULT_TEXT_BACKGROUND: TextBackground = { color: [0, 0, 0, 0.6], paddingPx: 16, radiusPx: 0 };
 
@@ -82,7 +87,11 @@ export const TextShadowPatchSchema = z
 	.nullable();
 
 export const TextBackgroundPatchSchema = z
-	.strictObject({ color: ColorArg.optional(), paddingPx: px(10_000).optional(), radiusPx: px(10_000).optional() })
+	.strictObject({
+		color: ColorArg.optional(),
+		paddingPx: px(10_000).optional(),
+		radiusPx: px(10_000).optional(),
+	})
 	.nullable();
 
 const nb = <T extends z.ZodType>(s: T) => s.nullable().optional();
@@ -302,11 +311,12 @@ export function textStyleProblem(style: unknown): string | null {
 	const s = r.data as TextStyle;
 	if (s.strokes.length > MAX_TEXT_STROKES) return `at most ${MAX_TEXT_STROKES} strokes`;
 	const colors: [string, RGBA][] = [['fill', s.fill as RGBA]];
-	s.strokes.forEach((st, i) => colors.push([`strokes.${i}.color`, st.color as RGBA]));
+	for (const [i, st] of s.strokes.entries()) colors.push([`strokes.${i}.color`, st.color as RGBA]);
 	if (s.shadow) colors.push(['shadow.color', s.shadow.color as RGBA]);
 	if (s.background) colors.push(['background.color', s.background.color as RGBA]);
 	for (const [where, c] of colors)
-		if (!c.every((x) => Number.isFinite(x) && x >= 0 && x <= 1)) return `${where}: colour components must be 0..1`;
+		if (!c.every((x) => Number.isFinite(x) && x >= 0 && x <= 1))
+			return `${where}: colour components must be 0..1`;
 	const spread = (s.shadow as { spreadPx?: unknown } | null)?.spreadPx;
 	if (spread !== undefined && !(typeof spread === 'number' && Number.isFinite(spread) && spread >= 0))
 		return 'shadow.spreadPx: must be a number ≥ 0';

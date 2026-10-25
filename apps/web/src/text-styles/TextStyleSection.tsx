@@ -105,7 +105,9 @@ export function TextStyleSection(props: {
 					<Button
 						variant="quiet"
 						disabled={disabled || !primaryDeviates}
-						disabledReason={primaryDeviates ? undefined : 'Change this clip first; the style then takes its look.'}
+						disabledReason={
+							primaryDeviates ? undefined : 'Change this clip first; the style then takes its look.'
+						}
 						onClick={() => redefineStyle(session, link.style!.id, primary)}
 						data-testid="text-style-redefine"
 					>

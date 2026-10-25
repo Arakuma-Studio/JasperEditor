@@ -15,7 +15,11 @@ const F = 705_600_000 / 30;
 beforeEach(() => {
 	globalThis.localStorage?.setItem(
 		'jasper.inspector.sections',
-		JSON.stringify({ 'properties.textShadow': true, 'properties.textStrokes': true, 'properties.textStyle': true }),
+		JSON.stringify({
+			'properties.textShadow': true,
+			'properties.textStrokes': true,
+			'properties.textStyle': true,
+		}),
 	);
 });
 afterEach(() => cleanup());
@@ -49,7 +53,17 @@ describe('Properties: many text clips (AS-030)', () => {
 				type: 'text.setStyle',
 				clipIds: [id],
 				patch: {
-					strokes: [{ color: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]][i], widthPx: 4 + i, position: 'outside' }],
+					strokes: [
+						{
+							color: [
+								[1, 0, 0, 1],
+								[0, 1, 0, 1],
+								[0, 0, 1, 1],
+							][i],
+							widthPx: 4 + i,
+							position: 'outside',
+						},
+					],
 					shadow: { blurPx: [2, 4, 6][i] },
 					align: i === 0 ? 'left' : 'center',
 				},
@@ -202,6 +216,10 @@ describe('Effect Controls "N clips" mode (AS-031)', () => {
 		act(() => {
 			fireEvent.click(screen.getByTestId('ec-multi-remove-jasper.gaussian-blur#0'));
 		});
-		expect(ids.every((id) => (clipOf(session, id) as unknown as { effects: EffectInstance[] }).effects.length === 0)).toBe(true);
+		expect(
+			ids.every(
+				(id) => (clipOf(session, id) as unknown as { effects: EffectInstance[] }).effects.length === 0,
+			),
+		).toBe(true);
 	});
 });

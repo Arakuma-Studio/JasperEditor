@@ -38,7 +38,12 @@ export function currentSelection(session: EditorSession): TextSelection | null {
 function run(session: EditorSession, label: string, commands: Command[]): TransactionResult | null {
 	if (!commands.length) return null;
 	const r = session.apply({ label, origin: 'user', commands });
-	if (!r.ok) toast({ kind: 'error', title: t('{0} refused', label), detail: r.errors.map((e) => e.message).join('; ') });
+	if (!r.ok)
+		toast({
+			kind: 'error',
+			title: t('{0} refused', label),
+			detail: r.errors.map((e) => e.message).join('; '),
+		});
 	return r;
 }
 
@@ -154,6 +159,9 @@ export function runSelectionHelper(session: EditorSession, helperId: string): nu
 		return null;
 	}
 	const ids = helper.select(input);
-	session.select('timeline', ids, 'replace', { linked: false, ...(sel.primary && ids.includes(sel.primary.id) ? { primary: sel.primary.id } : {}) });
+	session.select('timeline', ids, 'replace', {
+		linked: false,
+		...(sel.primary && ids.includes(sel.primary.id) ? { primary: sel.primary.id } : {}),
+	});
 	return ids.length;
 }

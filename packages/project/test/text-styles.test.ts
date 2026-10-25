@@ -21,7 +21,10 @@ import {
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
-type TextClip = Extract<Clip, { kind: 'text' }> & { styleId?: string; styleOverrides?: Record<string, unknown> };
+type TextClip = Extract<Clip, { kind: 'text' }> & {
+	styleId?: string;
+	styleOverrides?: Record<string, unknown>;
+};
 const F30 = 23_520_000; // flicks per frame at 30 fps
 
 function project(n = 3) {
@@ -43,7 +46,8 @@ function project(n = 3) {
 }
 const text = (h: Harness, id: string) => h.seq.clips[id] as TextClip;
 const ok = (h: Harness) => expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
-const err = (r: { ok: boolean; errors?: { code: string; message: string }[] }) => (r.ok ? null : r.errors![0]!);
+const err = (r: { ok: boolean; errors?: { code: string; message: string }[] }) =>
+	r.ok ? null : r.errors![0]!;
 
 describe('text.setStyle (SH-003)', () => {
 	it('patches only the named fields of every clip, deep for shadow / background, in one transaction', () => {
@@ -63,10 +67,18 @@ describe('text.setStyle (SH-003)', () => {
 			},
 		]);
 		const before = h.revision;
-		h.ok([{ type: 'text.setStyle', clipIds: ids, patch: { shadow: { blurPx: 4, spreadPx: 3 }, sizePx: 98 } }]);
+		h.ok([
+			{ type: 'text.setStyle', clipIds: ids, patch: { shadow: { blurPx: 4, spreadPx: 3 }, sizePx: 98 } },
+		]);
 		expect(h.revision).toBe(before + 1);
 		const a = text(h, ids[0]!).content.style;
-		expect(a.shadow).toEqual({ color: [0.1, 0.1, 0.3, 0.8], angleDeg: 90, distancePx: 0, blurPx: 4, spreadPx: 3 });
+		expect(a.shadow).toEqual({
+			color: [0.1, 0.1, 0.3, 0.8],
+			angleDeg: 90,
+			distancePx: 0,
+			blurPx: 4,
+			spreadPx: 3,
+		});
 		expect(a.fill).toEqual([1, 0, 0, 1]);
 		expect(a.sizePx).toBe(98);
 		// A clip without a shadow starts from the defaults.
@@ -76,7 +88,11 @@ describe('text.setStyle (SH-003)', () => {
 		ok(h);
 		h.ok([{ type: 'text.setStyle', clipIds: ids, patch: { shadow: null, background: { paddingPx: 8 } } }]);
 		expect(text(h, ids[2]!).content.style.shadow).toBeNull();
-		expect(text(h, ids[2]!).content.style.background).toEqual({ color: [0, 0, 0, 0.6], paddingPx: 8, radiusPx: 0 });
+		expect(text(h, ids[2]!).content.style.background).toEqual({
+			color: [0, 0, 0, 0.6],
+			paddingPx: 8,
+			radiusPx: 0,
+		});
 		ok(h);
 	});
 
@@ -129,12 +145,12 @@ describe('text.setStyle (SH-003)', () => {
 		expect(err(h.tx([{ type: 'text.setStyle', clipIds: ids, patch: { sizze: 3 } }]))?.code).toBe('E_SCHEMA');
 		const many = Array.from({ length: 10 }, () => ({ color: [0, 0, 0, 1], widthPx: 1, position: 'outside' }));
 		h.ok([{ type: 'text.setStyle', clipIds: ids, patch: { strokes: many } }]);
-		expect(err(h.tx([{ type: 'text.setStyle', clipIds: ids, patch: { strokes: { add: many } } }]))?.code).toBe(
-			'E_LIMIT',
-		);
-		expect(err(h.tx([{ type: 'text.setStyle', clipIds: ids, patch: { fontId: 'fnt_0000000000000NOPE' } }]))?.code).toBe(
-			'E_NOT_FOUND',
-		);
+		expect(
+			err(h.tx([{ type: 'text.setStyle', clipIds: ids, patch: { strokes: { add: many } } }]))?.code,
+		).toBe('E_LIMIT');
+		expect(
+			err(h.tx([{ type: 'text.setStyle', clipIds: ids, patch: { fontId: 'fnt_0000000000000NOPE' } }]))?.code,
+		).toBe('E_NOT_FOUND');
 	});
 
 	it('runs: clear-overridden removes the patched fields from styled runs', () => {
@@ -177,7 +193,9 @@ describe('clip.update style merge (existing callers)', () => {
 			{
 				type: 'clip.update',
 				clipId: ids[0],
-				patch: { content: { style: { shadow: { color: [0, 0, 0, 1], angleDeg: 0, distancePx: 2, blurPx: 1 } } } },
+				patch: {
+					content: { style: { shadow: { color: [0, 0, 0, 1], angleDeg: 0, distancePx: 2, blurPx: 1 } } },
+				},
 			},
 		]);
 		expect(text(h, ids[0]!).content.style.shadow).toEqual({
@@ -224,7 +242,11 @@ describe('style patch semantics (property tests)', () => {
 				{ nil: null },
 			),
 			background: fc.option(
-				fc.record({ color: rgba, paddingPx: fc.integer({ min: 0, max: 50 }), radiusPx: fc.integer({ min: 0, max: 50 }) }),
+				fc.record({
+					color: rgba,
+					paddingPx: fc.integer({ min: 0, max: 50 }),
+					radiusPx: fc.integer({ min: 0, max: 50 }),
+				}),
 				{ nil: null },
 			),
 			kerning: fc.option(fc.constantFrom('metrics', 'optical'), { nil: undefined }),
@@ -304,7 +326,17 @@ describe('linked project text styles (SH-002, AS-032)', () => {
 		h.ok([{ type: 'text.setStyle', clipIds: [ids[1]], patch: { fill: [1, 0, 0, 1] } }]);
 		expect(text(h, ids[1]!).styleOverrides).toEqual({ fill: [1, 0, 0, 1] });
 		const before = h.revision;
-		h.ok([{ type: 'textStyle.update', styleId, patch: { sizePx: 120, fill: [0, 1, 0, 1], strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }] } }]);
+		h.ok([
+			{
+				type: 'textStyle.update',
+				styleId,
+				patch: {
+					sizePx: 120,
+					fill: [0, 1, 0, 1],
+					strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
+				},
+			},
+		]);
 		expect(h.revision).toBe(before + 1);
 		expect(ids.map((id) => text(h, id).content.style.sizePx)).toEqual([120, 120, 120]);
 		expect(text(h, ids[0]!).content.style.fill).toEqual([0, 1, 0, 1]);
@@ -357,12 +389,16 @@ describe('linked project text styles (SH-002, AS-032)', () => {
 	it('refuses apply to non-text clips, reset of unlinked clips and a missing style', () => {
 		const { h, ids, solid, styleId } = linked();
 		h.ok([{ type: 'textStyle.detach', clipIds: [ids[0]] }]);
-		expect(err(h.tx([{ type: 'textStyle.apply', styleId, clipIds: [solid] }]))?.message).toContain(`${solid} (solid)`);
-		expect(err(h.tx([{ type: 'textStyle.reset', clipIds: [ids[0]] }]))?.message).toContain(ids[0]);
-		expect(err(h.tx([{ type: 'textStyle.apply', styleId: 'tsy_0000000000000000', clipIds: ids }]))?.code).toBe(
-			'E_NOT_FOUND',
+		expect(err(h.tx([{ type: 'textStyle.apply', styleId, clipIds: [solid] }]))?.message).toContain(
+			`${solid} (solid)`,
 		);
-		expect(err(h.tx([{ type: 'textStyle.apply', styleId, clipIds: ids, groupId: 'g' }]))?.code).toBe('E_INVALID_PARAM');
+		expect(err(h.tx([{ type: 'textStyle.reset', clipIds: [ids[0]] }]))?.message).toContain(ids[0]);
+		expect(
+			err(h.tx([{ type: 'textStyle.apply', styleId: 'tsy_0000000000000000', clipIds: ids }]))?.code,
+		).toBe('E_NOT_FOUND');
+		expect(err(h.tx([{ type: 'textStyle.apply', styleId, clipIds: ids, groupId: 'g' }]))?.code).toBe(
+			'E_INVALID_PARAM',
+		);
 	});
 
 	it('linked clips on a locked track keep their look (warning) and record the deviation later', () => {
@@ -376,11 +412,15 @@ describe('linked project text styles (SH-002, AS-032)', () => {
 
 	it('creates from a partial style over the defaults and redefines from a clip', () => {
 		const { h, ids, styleId } = linked();
-		const r = h.ok([{ type: 'textStyle.create', name: 'Big', style: { sizePx: 300, shadow: { blurPx: 2 } }, ref: '$b' }]);
+		const r = h.ok([
+			{ type: 'textStyle.create', name: 'Big', style: { sizePx: 300, shadow: { blurPx: 2 } }, ref: '$b' },
+		]);
 		const big = h.doc.textStyles![r.refs.$b!]!;
 		expect(big.style.sizePx).toBe(300);
 		expect(big.style.shadow).toEqual({ ...DEFAULT_TEXT_SHADOW, blurPx: 2 });
-		h.ok([{ type: 'clip.update', clipId: ids[2], patch: { content: { style: { allCaps: true, sizePx: 55 } } } }]);
+		h.ok([
+			{ type: 'clip.update', clipId: ids[2], patch: { content: { style: { allCaps: true, sizePx: 55 } } } },
+		]);
 		h.ok([{ type: 'textStyle.update', styleId, fromClipId: ids[2] }]);
 		expect(ids.map((id) => text(h, id).content.style.sizePx)).toEqual([55, 55, 55]);
 		expect(ids.every((id) => text(h, id).content.style.allCaps)).toBe(true);
@@ -390,10 +430,13 @@ describe('linked project text styles (SH-002, AS-032)', () => {
 
 describe('load: lenient reading, invariants and repair of text styles', () => {
 	const roundTrip = (doc: unknown) =>
-		loadProject(JSON.parse(JSON.stringify(makeEnvelope(doc as never, { revision: 1, savedAt: 'x', platform: 'test' }))), {
-			ids: createCounterIdSource(900),
-			effects: defaultEffectRegistry,
-		});
+		loadProject(
+			JSON.parse(JSON.stringify(makeEnvelope(doc as never, { revision: 1, savedAt: 'x', platform: 'test' }))),
+			{
+				ids: createCounterIdSource(900),
+				effects: defaultEffectRegistry,
+			},
+		);
 
 	it('a linked project round-trips unchanged', () => {
 		const { h, ids } = project(2);
@@ -406,7 +449,9 @@ describe('load: lenient reading, invariants and repair of text styles', () => {
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		expect(r.document.textStyles).toEqual(h.doc.textStyles);
-		expect((r.document.sequences[h.seqId]!.clips[ids[1]!] as TextClip).styleOverrides).toEqual({ sizePx: 12 });
+		expect((r.document.sequences[h.seqId]!.clips[ids[1]!] as TextClip).styleOverrides).toEqual({
+			sizePx: 12,
+		});
 	});
 
 	it('repairs unreadable styles, malformed keys, dangling links and bad overrides; idempotent', () => {
@@ -424,7 +469,9 @@ describe('load: lenient reading, invariants and repair of text styles', () => {
 		seq.clips[ids[1]!].styleId = 'tsy_0000000000000DEAD';
 		seq.clips[solid].styleId = sid;
 		seq.clips[ids[2]!].styleId = 'broken';
-		expect(checkInvariants(doc, { effects: defaultEffectRegistry }).map((i) => i.invariant)).toContain('INV-TEXTSTYLE');
+		expect(checkInvariants(doc, { effects: defaultEffectRegistry }).map((i) => i.invariant)).toContain(
+			'INV-TEXTSTYLE',
+		);
 		const r = roundTrip(doc);
 		expect(r.issues).toEqual([]);
 		const actions = r.repairs.map((x) => x.action);
@@ -460,7 +507,9 @@ describe('batch effects (SH-003)', () => {
 		return p;
 	}
 	const fxOf = (h: Harness, id: string, n = 0) =>
-		((h.seq.clips[id] as { effects: EffectInstance[] }).effects.filter((e) => e.effectId === 'jasper.gaussian-blur'))[n]!;
+		(h.seq.clips[id] as { effects: EffectInstance[] }).effects.filter(
+			(e) => e.effectId === 'jasper.gaussian-blur',
+		)[n]!;
 
 	it('addMany adds one instance per clip with keys timed from each clip In (and Out)', () => {
 		const { h, ids } = project(3);
@@ -470,7 +519,12 @@ describe('batch effects (SH-003)', () => {
 				type: 'effect.addMany',
 				clipIds: ids,
 				effectId: 'jasper.gaussian-blur',
-				keyframes: { radius: [{ offset: { frames: 0 }, value: 40 }, { offset: { frames: 6 }, value: 0 }] },
+				keyframes: {
+					radius: [
+						{ offset: { frames: 0 }, value: 40 },
+						{ offset: { frames: 6 }, value: 0 },
+					],
+				},
 			},
 		]);
 		expect(h.revision).toBe(before + 1);
@@ -497,8 +551,12 @@ describe('batch effects (SH-003)', () => {
 	it('addMany refuses clips that do not take the effect, naming them', () => {
 		const { h, ids } = project(1);
 		const m = h.registerVideo({ seconds: 4 });
-		const placed = h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 300, tracks: { video: 'V1', audio: 'A1' } }]);
-		const audio = (placed.results[0] as { clipIds: string[] }).clipIds.find((id) => h.seq.clips[id]!.kind === 'audio')!;
+		const placed = h.ok([
+			{ type: 'clip.place', source: { mediaId: m }, at: 300, tracks: { video: 'V1', audio: 'A1' } },
+		]);
+		const audio = (placed.results[0] as { clipIds: string[] }).clipIds.find(
+			(id) => h.seq.clips[id]!.kind === 'audio',
+		)!;
 		const r = h.tx([{ type: 'effect.addMany', clipIds: [...ids, audio], effectId: 'jasper.gaussian-blur' }]);
 		expect(err(r)?.code).toBe('E_INVALID_PARAM');
 		expect(err(r)?.message).toContain(`${audio} (audio)`);
@@ -506,9 +564,25 @@ describe('batch effects (SH-003)', () => {
 
 	it('setParamMany: value, delta, per-target values, keys relative to each In, stopwatch, keyframes', () => {
 		const { h, ids } = withBlur();
-		h.ok([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', value: 12 }]);
+		h.ok([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				param: 'radius',
+				value: 12,
+			},
+		]);
 		expect(ids.map((id) => fxOf(h, id).params.radius!.value)).toEqual([12, 12, 12]);
-		h.ok([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', delta: -2 }]);
+		h.ok([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				param: 'radius',
+				delta: -2,
+			},
+		]);
 		expect(ids.map((id) => fxOf(h, id).params.radius!.value)).toEqual([10, 10, 10]);
 		h.ok([
 			{
@@ -519,10 +593,36 @@ describe('batch effects (SH-003)', () => {
 		]);
 		expect(ids.map((id) => fxOf(h, id).params.radius!.value)).toEqual([0, 3, 6]);
 		// Stopwatch on at frame 4 of each clip, then a key at frame 10 of each clip.
-		h.ok([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', animated: true, at: { frames: 4 } }]);
-		const keyed = h.tx([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', value: 1 }]);
+		h.ok([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				param: 'radius',
+				animated: true,
+				at: { frames: 4 },
+			},
+		]);
+		const keyed = h.tx([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				param: 'radius',
+				value: 1,
+			},
+		]);
 		expect(err(keyed)?.message).toContain('keyframed');
-		h.ok([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', value: 30, at: { frames: 10 } }]);
+		h.ok([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				param: 'radius',
+				value: 30,
+				at: { frames: 10 },
+			},
+		]);
 		for (const id of ids)
 			expect(fxOf(h, id).params.radius!.keyframes.map((k) => k.time / F30)).toEqual([4, 10]);
 		h.ok([
@@ -534,24 +634,69 @@ describe('batch effects (SH-003)', () => {
 				keyframes: [{ offset: { seconds: 0.1 }, value: 7 }],
 			},
 		]);
-		for (const id of ids) expect(fxOf(h, id).params.radius!.keyframes.map((k) => [k.time / F30, k.value])).toEqual([[3, 7]]);
-		h.ok([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', animated: false }]);
+		for (const id of ids)
+			expect(fxOf(h, id).params.radius!.keyframes.map((k) => [k.time / F30, k.value])).toEqual([[3, 7]]);
+		h.ok([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				param: 'radius',
+				animated: false,
+			},
+		]);
 		expect(ids.map((id) => fxOf(h, id).params.radius!.keyframes.length)).toEqual([0, 0, 0]);
 		ok(h);
 	});
 
 	it('setParamMany refuses a missing occurrence naming the clips, and a bad param', () => {
 		const { h, ids } = withBlur();
-		const r = h.tx([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', occurrence: 1, param: 'radius', value: 1 }]);
+		const r = h.tx([
+			{
+				type: 'effect.setParamMany',
+				clipIds: ids,
+				effectId: 'jasper.gaussian-blur',
+				occurrence: 1,
+				param: 'radius',
+				value: 1,
+			},
+		]);
 		expect(err(r)?.code).toBe('E_NOT_FOUND');
 		expect(err(r)?.message).toContain(ids[0]);
-		expect(err(h.tx([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'nope', value: 1 }]))?.code).toBe('E_INVALID_PARAM');
-		expect(err(h.tx([{ type: 'effect.setParamMany', clipIds: ids, effectId: 'jasper.gaussian-blur', param: 'radius', value: 1, delta: 1 }]))?.code).toBe('E_INVALID_PARAM');
+		expect(
+			err(
+				h.tx([
+					{
+						type: 'effect.setParamMany',
+						clipIds: ids,
+						effectId: 'jasper.gaussian-blur',
+						param: 'nope',
+						value: 1,
+					},
+				]),
+			)?.code,
+		).toBe('E_INVALID_PARAM');
+		expect(
+			err(
+				h.tx([
+					{
+						type: 'effect.setParamMany',
+						clipIds: ids,
+						effectId: 'jasper.gaussian-blur',
+						param: 'radius',
+						value: 1,
+						delta: 1,
+					},
+				]),
+			)?.code,
+		).toBe('E_INVALID_PARAM');
 	});
 
 	it('removeMany removes the matched instance on every clip; undo by the base document', () => {
 		const { h, ids } = withBlur();
-		h.ok([{ type: 'effect.addMany', clipIds: ids, effectId: 'jasper.gaussian-blur', params: { radius: 99 } }]);
+		h.ok([
+			{ type: 'effect.addMany', clipIds: ids, effectId: 'jasper.gaussian-blur', params: { radius: 99 } },
+		]);
 		const base = h.doc;
 		h.ok([{ type: 'effect.removeMany', clipIds: ids, effectId: 'jasper.gaussian-blur', occurrence: 0 }]);
 		expect(ids.map((id) => fxOf(h, id).params.radius!.value)).toEqual([99, 99, 99]);

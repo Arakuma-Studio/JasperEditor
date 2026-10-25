@@ -42,7 +42,8 @@ export const textStyleCommands: UiCommand[] = [
 	{
 		id: 'select.byHelper',
 		label: 'Select',
-		description: 'Runs a Select ▸ helper (Same Style, and helpers other features add) on the current selection.',
+		description:
+			'Runs a Select ▸ helper (Same Style, and helpers other features add) on the current selection.',
 		scope: 'editing',
 		hidden: true,
 		argsSchema: z.object({ helper: z.string().min(1) }),
@@ -60,7 +61,8 @@ export const textStyleCommands: UiCommand[] = [
 	{
 		id: 'textStyles.newFromSelection',
 		label: 'New Text Style from Selection…',
-		description: 'Saves the primary text clip’s style as a project text style and links the selected text clips to it.',
+		description:
+			'Saves the primary text clip’s style as a project text style and links the selected text clips to it.',
 		scope: 'editing',
 		when: (ctx) => canEdit(ctx) && textSelected(ctx),
 		disabledReason: (ctx) => (textSelected(ctx) ? undefined : 'Select a text clip first.'),
@@ -75,7 +77,8 @@ export const textStyleCommands: UiCommand[] = [
 		hidden: true,
 		argsSchema: z.object({ styleId: z.string().min(1) }),
 		when: (ctx) => canEdit(ctx) && textSelected(ctx),
-		run: (ctx, args) => applyStyle(ctx.session!, z.object({ styleId: z.string().min(1) }).parse(args).styleId),
+		run: (ctx, args) =>
+			applyStyle(ctx.session!, z.object({ styleId: z.string().min(1) }).parse(args).styleId),
 	},
 	{
 		id: 'textStyles.detach',
@@ -84,7 +87,8 @@ export const textStyleCommands: UiCommand[] = [
 		scope: 'editing',
 		agentExposed: true,
 		when: (ctx) => canEdit(ctx) && linkedSelected(ctx),
-		disabledReason: (ctx) => (linkedSelected(ctx) ? undefined : 'No selected clip is linked to a text style.'),
+		disabledReason: (ctx) =>
+			linkedSelected(ctx) ? undefined : 'No selected clip is linked to a text style.',
 		run: (ctx) => detachSelection(ctx.session!),
 	},
 	{
@@ -94,7 +98,8 @@ export const textStyleCommands: UiCommand[] = [
 		scope: 'editing',
 		agentExposed: true,
 		when: (ctx) => canEdit(ctx) && linkedSelected(ctx),
-		disabledReason: (ctx) => (linkedSelected(ctx) ? undefined : 'No selected clip is linked to a text style.'),
+		disabledReason: (ctx) =>
+			linkedSelected(ctx) ? undefined : 'No selected clip is linked to a text style.',
 		run: (ctx) => resetSelection(ctx.session!),
 	},
 ];

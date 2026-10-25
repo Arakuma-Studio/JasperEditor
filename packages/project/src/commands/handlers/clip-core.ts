@@ -816,7 +816,12 @@ function writeTextStyle(
 	const st = clip.content.style as unknown as Record<string, unknown>;
 	for (const [k, v] of Object.entries(fields as Record<string, unknown>)) {
 		if (v === undefined) continue;
-		if (mode === 'merge' && (k === 'shadow' || k === 'background') && isPlainObject(v) && isPlainObject(st[k]))
+		if (
+			mode === 'merge' &&
+			(k === 'shadow' || k === 'background') &&
+			isPlainObject(v) &&
+			isPlainObject(st[k])
+		)
 			Object.assign(st[k] as object, v);
 		else st[k] = v;
 	}

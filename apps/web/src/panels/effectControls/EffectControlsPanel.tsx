@@ -71,7 +71,6 @@ import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
 import { GRAPH_HEIGHT, type GraphView, PropertyGraphs } from './GraphEditor.tsx';
 import { graphKindOf } from './graph.ts';
-import { MultiClipEffects } from './MultiClipEffects.tsx';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
 	clipRange,
@@ -83,6 +82,7 @@ import {
 	snapDelta,
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
+import { MultiClipEffects } from './MultiClipEffects.tsx';
 import { presetSelection } from './presets.ts';
 import { RoveAcrossTimeItem } from './RovingMenu.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
@@ -268,7 +268,9 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	};
 	// spec 13 AS-031: several clips of the primary's medium selected → "N clips" mode (shared effects, keys relative
 	// to each clip's In, no mini-timeline). A clip and its linked partner of the other medium stay single-clip.
-	const sameMedium = sel.clips.filter((c) => isAudioClip(c) === isAudioClip(primary) && (isAudioClip(c) || isVisualClip(c)));
+	const sameMedium = sel.clips.filter(
+		(c) => isAudioClip(c) === isAudioClip(primary) && (isAudioClip(c) || isVisualClip(c)),
+	);
 	if (sameMedium.length > 1)
 		return (
 			<>

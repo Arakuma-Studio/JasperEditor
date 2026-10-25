@@ -46,14 +46,47 @@ describe('text style commands in the session history', () => {
 	it('each batch command over 100 clips is one undo step, exact both ways', async () => {
 		const { s, clipIds } = await open();
 		const steps: CommandInput[][] = [
-			[{ type: 'text.setStyle', clipIds, patch: { strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }] } }],
-			[{ type: 'text.setStyle', clipIds, patch: { strokes: { set: [{ index: 0, widthPx: 14 }] }, shadow: { blurPx: 6 } } }],
+			[
+				{
+					type: 'text.setStyle',
+					clipIds,
+					patch: { strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }] },
+				},
+			],
+			[
+				{
+					type: 'text.setStyle',
+					clipIds,
+					patch: { strokes: { set: [{ index: 0, widthPx: 14 }] }, shadow: { blurPx: 6 } },
+				},
+			],
 			[
 				{ type: 'textStyle.create', name: 'Pixel Pop', fromClipId: clipIds[0]!, ref: '$s' },
 				{ type: 'textStyle.apply', styleId: '$s', clipIds },
 			],
-			[{ type: 'effect.addMany', clipIds, effectId: 'jasper.gaussian-blur', keyframes: { radius: [{ offset: { frames: 0 }, value: 20 }, { offset: { frames: 3 }, value: 0 }] } }],
-			[{ type: 'effect.setParamMany', clipIds, effectId: 'jasper.gaussian-blur', param: 'radius', value: 9, at: { frames: 1 } }],
+			[
+				{
+					type: 'effect.addMany',
+					clipIds,
+					effectId: 'jasper.gaussian-blur',
+					keyframes: {
+						radius: [
+							{ offset: { frames: 0 }, value: 20 },
+							{ offset: { frames: 3 }, value: 0 },
+						],
+					},
+				},
+			],
+			[
+				{
+					type: 'effect.setParamMany',
+					clipIds,
+					effectId: 'jasper.gaussian-blur',
+					param: 'radius',
+					value: 9,
+					at: { frames: 1 },
+				},
+			],
 			[{ type: 'effect.removeMany', clipIds, effectId: 'jasper.gaussian-blur' }],
 		];
 		for (const commands of steps) {
@@ -73,9 +106,19 @@ describe('text style commands in the session history', () => {
 		const doc = s.getCommitted();
 		const styleId = Object.keys(doc.textStyles ?? {})[0]!;
 		const before = structuredClone(doc);
-		expect(s.apply({ label: 'Edit Style', origin: 'user', commands: [{ type: 'textStyle.update', styleId, patch: { sizePx: 98 } }] }).ok).toBe(true);
+		expect(
+			s.apply({
+				label: 'Edit Style',
+				origin: 'user',
+				commands: [{ type: 'textStyle.update', styleId, patch: { sizePx: 98 } }],
+			}).ok,
+		).toBe(true);
 		const seq = Object.values(s.getCommitted().sequences)[0]!;
-		expect(clipIds.every((id) => (seq.clips[id] as { content: { style: { sizePx: number } } }).content.style.sizePx === 98)).toBe(true);
+		expect(
+			clipIds.every(
+				(id) => (seq.clips[id] as { content: { style: { sizePx: number } } }).content.style.sizePx === 98,
+			),
+		).toBe(true);
 		expect(s.undo().ok).toBe(true);
 		expect(s.getCommitted()).toEqual(before);
 	});

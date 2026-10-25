@@ -22,7 +22,15 @@ import {
 } from '../../../expressions/row.ts';
 import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
-import { animState, editLabel, PLAYHEAD_PLANNER, type Row, type RowPlanner, rowValue, vecComponent } from '../lib/model.ts';
+import {
+	animState,
+	editLabel,
+	PLAYHEAD_PLANNER,
+	type Row,
+	type RowPlanner,
+	rowValue,
+	vecComponent,
+} from '../lib/model.ts';
 import type { InspectorOps } from '../lib/ops.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from './fields.tsx';
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
