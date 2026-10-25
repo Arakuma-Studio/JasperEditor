@@ -170,7 +170,7 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 		// keyframe-sides: read leniently (any value loads); INV-011 reports a bad one and `repairDocument` fixes it.
 		// `z.unknown()` (typed as the valid data) rather than `z.custom`: MCP tool input schemas embed keyframes and
 		// must convert to JSON Schema (`z.custom` cannot, which broke the MCP `tools/list`).
-		inInterpolation: (z.unknown() as z.ZodType<InInterpolation>).optional(),
+		inInterpolation: (z.unknown() as z.ZodType<InInterpolation, InInterpolation>).optional(),
 		easeIn: EaseSchema,
 		easeOut: EaseSchema,
 		spatial: SpatialSchema.optional(),
