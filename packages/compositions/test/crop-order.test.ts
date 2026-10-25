@@ -15,6 +15,7 @@ import {
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { CROP_FEATHER_GPU, cropChainSpec, cropNeedsChain } from '../src/fx/builtins.ts';
+import { clipDrawsThroughCanvas } from '../src/fx/flat-plan.ts';
 import { type FxStep, planLayerFx } from '../src/fx/plan.ts';
 import { adjustmentChainEffects, adjustmentCropRegion } from '../src/layers/AdjustmentScope.tsx';
 import { effectStages } from '../src/pipeline.ts';
@@ -145,6 +146,30 @@ describe('fx chain (planLayerFx) keeps the crop at its stack position', () => {
 			{ width: 640, height: 360, pxScale: 0.5, fps: 30, frame: 0, duration: 1, seed: 0, progress: 0 },
 		);
 		expect(u).toEqual({ u_cfInsets: [0.1, 0.2, 0.3, 0.05], u_cfFeather: 6 });
+	});
+});
+
+describe('flat compositor', () => {
+	it('a DOM layer with a feathered crop draws through its own canvas (the feather runs in the chain)', () => {
+		const anim = (value: unknown, keyframes: unknown[] = []) => ({ value, keyframes });
+		const text = (feather: ReturnType<typeof anim>) =>
+			({
+				kind: 'text',
+				source: { text: {} },
+				masks: [],
+				effects: [
+					{
+						id: 'c',
+						effectId: 'jasper.crop',
+						effectVersion: 1,
+						enabled: true,
+						params: { left: anim(10), feather },
+					},
+				],
+			}) as unknown as Parameters<typeof clipDrawsThroughCanvas>[0];
+		expect(clipDrawsThroughCanvas(text(anim(0)), null)).toBe(false);
+		expect(clipDrawsThroughCanvas(text(anim(5)), null)).toBe(true);
+		expect(clipDrawsThroughCanvas(text(anim(0, [{ value: 0 }, { value: 9 }])), null)).toBe(true);
 	});
 });
 
