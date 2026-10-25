@@ -1,6 +1,7 @@
 // UI strings of the social-comment controls that are looked up by key (the i18n transform makes `*_LABELS` / `*_TEXTS`
 // map values lazy translations, so these answer in the current UI language).
 import type { SocialCountField, SocialMark, SocialTimeUnit } from '@jasper/mg-templates';
+import { withoutContext } from '../i18n/runtime.ts';
 import type { CountInputError } from './count-input.ts';
 
 export const COUNT_FIELD_LABELS: Readonly<Record<SocialCountField, string>> = {
@@ -28,12 +29,17 @@ export const TIME_UNIT_SINGULAR_LABELS: Readonly<Record<SocialTimeUnit, string>>
 	year: 'Year',
 };
 
-export const MARK_LABELS: Readonly<Record<SocialMark | 'clear', string>> = {
-	highlight: 'Highlight',
-	blur: 'Blur',
-	remove: 'Remove',
+// "[word mark]" tells these apart from homonyms in the catalogue (Lumetri's "Highlight"); shown through
+// `markLabel`, which drops it.
+const MARK_LABELS: Readonly<Record<SocialMark | 'clear', string>> = {
+	highlight: 'Highlight [word mark]',
+	blur: 'Blur [word mark]',
+	remove: 'Remove [word mark]',
 	clear: 'Clear Marks',
 };
+
+/** The button / History label of a word-mark action, in the UI language. */
+export const markLabel = (action: SocialMark | 'clear'): string => withoutContext(MARK_LABELS[action]);
 
 export const MARK_HINT_TEXTS: Readonly<Record<SocialMark | 'clear', string>> = {
 	highlight: 'Highlight the selected words',

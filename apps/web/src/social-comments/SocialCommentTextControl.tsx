@@ -30,7 +30,7 @@ import type { TemplateParamControlProps } from '../extensions/index.ts';
 import { t } from '../i18n/runtime.ts';
 import { detectPlatform, detectRuntime } from '../runtime/platform.ts';
 import { formatChord } from '../shell/keymap/format.ts';
-import { MARK_HINT_TEXTS, MARK_LABELS } from './labels.ts';
+import { MARK_HINT_TEXTS, markLabel } from './labels.ts';
 import { countGraphemes, replaceVisible, selectionHas, selectionMarks } from './marks-edit.ts';
 import { variantOf } from './params.ts';
 
@@ -178,7 +178,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 		setProblem(null);
 		setMarkup(next);
 		markupRef.current = next;
-		commit(next, mark ? MARK_LABELS[mark] : MARK_LABELS.clear);
+		commit(next, markLabel(mark ?? 'clear'));
 	};
 
 	const trackSelection = () => {
@@ -239,7 +239,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 							<button
 								key={a.action}
 								type="button"
-								aria-label={MARK_LABELS[a.action]}
+								aria-label={markLabel(a.action)}
 								title={tooltip(a)}
 								aria-pressed={a.action === 'clear' ? undefined : pressed}
 								disabled={!enabled}
@@ -256,7 +256,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 								data-testid={`social-text-${a.action}`}
 							>
 								<Icon id={a.icon} size={13} />
-								<span>{MARK_LABELS[a.action]}</span>
+								<span>{markLabel(a.action)}</span>
 							</button>
 						);
 					})}
