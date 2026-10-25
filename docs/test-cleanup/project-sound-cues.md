@@ -319,8 +319,40 @@ Independent contract: Spec 12 §2.1; WP1.1a taxonomy/inference decisions. Stable
 
 `sound-grammar.test.ts`’s rewritten personality owner expands to six cases (`calm`, `energetic`, `bright`, `precise`, `mechanical`, `warm`). Their good/bad descriptor/material vectors come from WP-E6’s independent policy table rather than SOUND_PERSONALITY_PROFILES.
 
+The **KEEP** soft-reference edit matrix in `sound-p2v-model.test.ts` expands to these eleven names: `delete the clips of the cut`, `delete the transition`, `delete the marker`, `delete a filled sound`, `delete the SFX track`, `ripple delete`, `razor through every track`, `duplicate the filled sounds`, `duplicate the sequence`, `nest the picture and a filled sound`, `trim and speed the anchored clips`. Each runs the corresponding real edit, resync and load/repair through stable command/file boundaries. Their independent contract is that dangling cue metadata never blocks an ordinary edit or leaves a loaded project invalid; each exercises a different entity/reference rewrite that the other operations do not perform.
+
 ## Counts and validation
 
 Original-declaration dispositions: CONSOLIDATE 7, DELETE 12, KEEP 139, OPTIMIZE 4, REWRITE 45. There is one rewritten consolidation owner added to replace two removed declarations, and one personality declaration now runs six documented policy cases. Final declaration/executed-case counts are verified by the targeted runner, not inferred from coverage percentages.
 
-Checks and comparable timing evidence are recorded after the root baseline finishes. Optimized oracle equivalence and representative mutation checks must pass before this branch is delivered. The 400000-sample cap scenario, 200-clip derivation budget and 5000-sound CPU budget intentionally remain: they cover bounded memory/latency or credible historical scale regressions that small fixtures cannot detect.
+Final count: **189 declarations / 204 executed cases**, compared with 207 / 217 on the unmodified baseline. Net test LOC **−562** (including the fixture); production LOC **−2** (one internal re-export statement). No whole test, fixture, snapshot, mock, dependency or configuration file was removed.
+
+### Executed validation
+
+Environment: Linux x86-64 shared host, 8 AMD EPYC-Genoa vCPUs, 15 GiB RAM; Node **20.19.0**, pnpm **10.34.5**, Vitest **4.1.11**, maximum **2** workers. All 217 original cases in this slice passed the coordinator’s baseline. That workspace baseline had two failures outside this slice; their investigation belongs to the integrated report.
+
+With `PATH=/tmp/jasper-test-cleanup/toolchain/node-v20.19.0-linux-x64/bin:/root/.local/share/mise/installs/node/24.22.1/bin:$PATH`, these commands passed:
+
+```sh
+/usr/bin/time -p -o /tmp/jasper-test-cleanup/project-cues/targeted.time env JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run packages/project/test/sound-{anchor,cue-commands,cues-engine,cues-property,cues,grammar,mg-phases,moment,p2v-model,profile,rank-describe,rank-scale,rank,taxonomy}.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/project-cues/targeted.json
+/usr/bin/time -p -o /tmp/jasper-test-cleanup/project-cues/owners.time env JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run packages/project/test/sound-anchor.test.ts packages/project/test/sound-cues.test.ts packages/project/test/sound-design-place.test.ts packages/project/test/sound-swap-role.test.ts packages/project/test/sound-pitch-exact.test.ts packages/project/test/sound-place.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/project-cues/owners.json
+```
+
+The first run passed **204/204 tests in 14 files**, **23.40 s** runner duration / **24.53 s** shell wall time. After every mutation was restored, the second passed **78/78 tests in six files**, **11.39 s** / **12.35 s**, including indispensable actual placement, swap and pitch owners. No failure occurred on unmodified final source. Targeted Biome checks and `git diff --check` passed. The coordinator deferred a repeated package-wide typecheck to the integrated gate because project-core had already checked the shared source; this slice does not claim that integrated gate, builds, E2E or rendering suites passed.
+
+Four restoring mutations were run sequentially with `pnpm exec vitest run <file> --maxWorkers=2 -t <title> --reporter=verbose` and the same Node/oracle/browser environment. Each source file was restored in `finally`; the complete worktree was clean afterward. Every failure was inspected for its intended assertion:
+
+| Temporary mutation | File / title filter | Observed intended failure |
+|---|---|---|
+| Shared `typewriterOffsets` Out result +1 frame, affecting both deriver and resolver | `sound-anchor.test.ts`, `typewriter Out units` | Actual `[89,94,99,105,110,115]` versus independently expected `[88,93,98,104,109,114]`; the old shared-oracle equality would miss this. |
+| Resolve keyframes only from the named property, bypassing combined-motion derivation | `sound-anchor.test.ts`, `combined position and rotation` | Resolver returned **30**, expected independent **35**. |
+| Balanced density limit 2 → 3 | `sound-cues.test.ts`, `caps cues per second` | **3** cues violated the independent **≤2** limit; the smaller fixture still detects the regression. |
+| Sampling budget 400000 → 800000 | `sound-cues.test.ts`, `many long animated clips` | **420000** returned samples violated the documented **≤400000** cap. |
+
+The optimized density oracle was also checked against the former exhaustive integer-window scan on **2000** independently generated interval sets, Python PRNG seed **1215**, widths 1–60, 0–8 intervals, starts 0–40 and lengths 0–40: their exact maximum overlap counts agreed in every case. This was a one-off verification, not new permanent test infrastructure. The mathematical reason is that a window’s overlap count can increase only when an interval enters it.
+
+### Timing limits and retained expensive protection
+
+The observed slowest final cases were the 300-case hostile two-sequence repair/idempotence property (**5.962 s**) and real 400000-sample allocation-cap case (**1.679 s**). They uniquely protect saved-project repair and bounded analysis memory/output. The 200-clip derivation budget and 5000-sound CPU budget also remain because small fixtures cannot detect those credible scale regressions. The latter’s four query classes measured minimum main-thread CPU times **3/1/2/3 ms**, all within the documented 50 ms budget.
+
+The workspace baseline and this isolated validation run have different invocation scope and host contention, so **no suite speedup, percentage improvement or CI saving is claimed here**. Baseline case costs motivating consolidation included the removed duplicate loader property (**0.977 s**) and shared-oracle mg property (**0.118 s**). The integrated coordinator owns comparable whole-suite before/after measurements. All 60 generated-document and 300 hostile repair samples remain unchanged; faster setup/oracle logic did not reduce their input coverage.
