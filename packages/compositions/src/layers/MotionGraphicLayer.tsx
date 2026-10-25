@@ -25,6 +25,7 @@ import {
 	type MissingTemplateAsset,
 	missingAssetLabel,
 	TemplateAssetScopeContext,
+	TemplateMediaIdsContext,
 } from '@jasper/motion/templates';
 import {
 	collectParamMediaIds,
@@ -182,7 +183,7 @@ function FontMarkers({ missing, height }: { missing: readonly MissingTemplateAss
 			{fonts.map((a) => (
 				<MissingAssetMarker
 					key={missingAssetLabel(a)}
-					kind={a.kind === 'image' ? 'image' : 'font'}
+					kind={a.kind === 'image' || a.kind === 'media' ? 'image' : 'font'}
 					label={`${missingAssetLabel(a)} is not available`}
 					size={size}
 				/>
@@ -259,29 +260,45 @@ function SvgTwin({ markup }: { markup: string }) {
 }
 
 const NO_MEDIA: Readonly<Record<string, string>> = Object.freeze({});
+const NO_MEDIA_MISSING: readonly TemplateMediaMissing[] = Object.freeze([]);
+
+/** A medium template params reference that the template cannot draw: offline, or not decodable by the browser. */
+type TemplateMediaMissing = { mediaId: string; reason: 'offline' | 'undecodable' };
 
 /**
  * `AnimeTemplateProps.mediaUrls`: the URL of every medium the template params reference (avatars), from the
  * document's media handles exactly like effect media (engine URLs, signed in renders; the proxy or display picture
- * where the original is not browser-decodable). Missing or offline media are left out.
+ * where the original is not browser-decodable), the inverse map (URL → media id, for `TemplateImage`'s reports) and
+ * the media left out: offline, or not browser-decodable without a proxy / display picture.
  */
 function useTemplateMediaUrls(
 	params: Record<string, unknown>,
 	options: Pick<RenderOptions, 'useProxies'>,
-): Readonly<Record<string, string>> {
+): {
+	urls: Readonly<Record<string, string>>;
+	ids: Readonly<Record<string, string>>;
+	missing: readonly TemplateMediaMissing[];
+} {
 	const media = useContext(ColorDocContext).media;
 	const ids = collectParamMediaIds(params);
 	const key = ids.join('\n');
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the referenced ids
 	return useMemo(() => {
-		if (ids.length === 0) return NO_MEDIA;
-		const out: Record<string, string> = {};
+		if (ids.length === 0) return { urls: NO_MEDIA, ids: NO_MEDIA, missing: NO_MEDIA_MISSING };
+		const urls: Record<string, string> = {};
+		const byUrl: Record<string, string> = {};
+		const missing: TemplateMediaMissing[] = [];
 		for (const id of ids) {
 			const h = media[id];
-			if (!h || (h.browserDecodable === false && !h.proxyUrl)) continue;
-			out[id] = mediaSrc(h, options);
+			if (!h) missing.push({ mediaId: id, reason: 'offline' });
+			else if (h.browserDecodable === false && !h.proxyUrl)
+				missing.push({ mediaId: id, reason: 'undecodable' });
+			else {
+				urls[id] = mediaSrc(h, options);
+				byUrl[urls[id]] = id;
+			}
 		}
-		return out;
+		return { urls, ids: byUrl, missing };
 	}, [key, media, options.useProxies]);
 }
 
@@ -344,7 +361,16 @@ function AnimeTemplate(p: {
 			fontsReady ? missingTemplateAssets(assets, p.fonts, emojiTable, imageTable, fontsState.isFailed) : [],
 		[fontsReady, assets, p.fonts, emojiTable, imageTable, fontsState],
 	);
-	const mediaUrls = useTemplateMediaUrls(params, { useProxies: p.useProxies ?? false });
+	const media = useTemplateMediaUrls(params, { useProxies: p.useProxies ?? false });
+	// Pictures the template cannot draw are reported and marked like its other assets (the Player draws its
+	// placeholder there); offline ones are reported by the export planner (OFFLINE_TEMPLATE_MEDIA).
+	const shown = useMemo(
+		() => [
+			...missing,
+			...media.missing.map((m): MissingTemplateAsset => ({ kind: 'media', mediaId: m.mediaId })),
+		],
+		[missing, media.missing],
+	);
 	const scope = useClipAssetScope(p.clipId);
 	if (!Impl)
 		return (
@@ -353,9 +379,17 @@ function AnimeTemplate(p: {
 	if (!fontsReady) return null;
 	// A render never draws a template without its declared assets (the planner blocks such exports; this catches a
 	// file that broke after planning): the render fails with the reason instead of substituting.
-	if (missing.length > 0 && (!p.isPreview || getRemotionEnvironment().isRendering))
+	const rendering = !p.isPreview || getRemotionEnvironment().isRendering;
+	if (missing.length > 0 && rendering)
 		throw new Error(
 			`Template ${key} cannot be drawn: ${missing.map(missingAssetLabel).join(', ')} not available`,
+		);
+	// A picture the browser cannot decode and that has no display picture never renders as the placeholder (the
+	// export prepares display pictures for every template picture; this catches anything that slipped through).
+	const undecodable = media.missing.filter((m) => m.reason === 'undecodable');
+	if (undecodable.length > 0 && rendering)
+		throw new Error(
+			`Template ${key} cannot be drawn: ${undecodable.map((m) => `picture ${m.mediaId}`).join(', ')} cannot be decoded by the browser and has no display picture`,
 		);
 	const t = animeTemplateTiming(p.def, {
 		fps: p.fps,
@@ -365,22 +399,25 @@ function AnimeTemplate(p: {
 	});
 	return (
 		<TemplateAssetScopeContext.Provider value={scope}>
-			<Impl
-				params={params}
-				timeMs={p.held ? animeTemplateRestMs(t) : t.timeMs}
-				totalMs={t.totalMs}
-				introMs={t.introMs}
-				outroMs={t.outroMs}
-				fps={p.fps}
-				canvas={p.mg.canvas}
-				seed={hash32(p.clipId, 'template')}
-				isPreview={p.isPreview}
-				emojiUrls={emojiUrls}
-				imageUrls={imageUrls}
-				mediaUrls={mediaUrls}
-			/>
-			<LayerMissingReport missing={missing} />
-			<FontMarkers missing={missing} height={p.mg.canvas.height} />
+			<TemplateMediaIdsContext.Provider value={media.ids}>
+				<Impl
+					params={params}
+					timeMs={p.held ? animeTemplateRestMs(t) : t.timeMs}
+					totalMs={t.totalMs}
+					introMs={t.introMs}
+					outroMs={t.outroMs}
+					fps={p.fps}
+					canvas={p.mg.canvas}
+					seed={hash32(p.clipId, 'template')}
+					isPreview={p.isPreview}
+					emojiUrls={emojiUrls}
+					imageUrls={imageUrls}
+					mediaUrls={media.urls}
+				/>
+			</TemplateMediaIdsContext.Provider>
+			<LayerMissingReport missing={shown} />
+			{/* renders: an offline picture is the planner's OFFLINE_TEMPLATE_MEDIA warning, never a banner */}
+			<FontMarkers missing={rendering ? missing : shown} height={p.mg.canvas.height} />
 		</TemplateAssetScopeContext.Provider>
 	);
 }

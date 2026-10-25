@@ -523,14 +523,26 @@ Media a template param references are counted wherever a clip's own `mediaId` is
 - **Layer.** `MotionGraphicLayer` builds `AnimeTemplateProps.mediaUrls` (`Readonly<Record<mediaId, url>>`) from the
   document's media handles (`ColorDocContext`, as effect media): `mediaSrc` picks the proxy / display picture when
   the original is not browser-decodable; offline or missing media are absent; `{}` when the params reference none.
+  The media left out are never silent: in the Player each one is reported as `{kind: 'media', mediaId}` (a
+  `MissingTemplateAsset`, listed by the Program monitor's template-asset chip as "Picture med_…") and marked with the
+  striped banner; in a render a medium that is online but not browser-decodable without a display picture fails the
+  render by name ("picture med_… cannot be decoded by the browser and has no display picture"). An offline medium
+  renders as the template's fallback with the planner's `OFFLINE_TEMPLATE_MEDIA` warning (the `OFFLINE_MEDIA` policy).
+  The layer also provides `TemplateMediaIdsContext` (URL → media id) so `TemplateImage` names what failed.
 - **Drawing.** `TemplateImage` (`@jasper/motion/templates`, `packages/motion/src/templates/image.tsx`) is an `<img>`
   (`crossOrigin="anonymous"`) that holds the render with `delayRender` from its first frame until the picture is
-  loaded and decoded (`img.decode()`), like `useFxImages`. A load error releases the render and draws
-  `TemplateImagePlaceholder` (a neutral dashed box) or the template's `fallback`; it never cancels the render.
+  loaded and decoded (`img.decode()`), like `useFxImages`. A load error in a render (`getRemotionEnvironment()
+  .isRendering`) fails it with `cancelRender(new TemplateImageError(url, mediaId))` ("Template picture med_… could not
+  be loaded from <url without its signature>"); in the Player it releases the render, draws
+  `TemplateImagePlaceholder` (a neutral dashed box) or the template's `fallback`, and reports the medium (above).
 - **Exports.** Remotion exports sign every snapshot handle (`remotionProps`); layer bakes sign the media
   `referencedMediaIds` finds in the clip source (template params included) and key the bake on each medium's
-  fingerprint, size and mtime (`keyMedia`), so a relinked avatar re-bakes. The planner warns
-  `OFFLINE_TEMPLATE_MEDIA` when a template shows offline media (those pictures render as placeholders).
+  fingerprint, size and mtime (`keyMedia`), so a relinked avatar re-bakes. The `imports` extension counts template
+  pictures as browser-drawn media, so a still the browser cannot decode (HEIF, EXR, interpreted pixels) gets its
+  `display` picture in bakes and Remotion renders like any image clip. The planner warns `OFFLINE_TEMPLATE_MEDIA`
+  when a template shows offline media (those pictures render as the template's fallback) and refuses media no
+  `<img>` can show — a video, a Lottie animation, a PDF page — with `TEMPLATE_MEDIA_UNDRAWABLE` (409, per-clip
+  blockers naming the medium; `templatePictureProblem`, `apps/engine/src/export/planner.ts`).
 
 ### UI and agents
 
@@ -564,7 +576,8 @@ The test-only template lives in `packages/mg-templates/test/fixtures/avatar-test
 ### Limitations
 
 - `TemplateImage` draws still pictures. A `kinds: ['video']` param resolves to the medium's URL, but no
-  seek-driven template video component exists yet, so templates should declare images (the default).
+  seek-driven template video component exists yet, so templates should declare images (the default); exports of a
+  template showing a video are refused (`TEMPLATE_MEDIA_UNDRAWABLE`).
 - Animated images (GIF / animated WebP) are not offered: an `<img>` animates on the wall clock, which renders could
   not reproduce.
 - `media.derive {replaceInClips}` (processed versions) rewrites clips' own media only; template params keep the
