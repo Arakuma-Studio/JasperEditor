@@ -155,13 +155,13 @@ describe('levels shared with the speech VAD (TC-002)', () => {
 
 describe('frame features', () => {
 	it('match the prototype formulas computed directly (no FFT)', () => {
-		const x = new Float32Array(SR / 2);
+		const x = new Float32Array(12_000);
 		x.set(voiced(4000, 140, -22), 0);
 		x.set(noise(4000, -35, 3), 4000);
 		x.set(noise(4000, -50, 4, 2500), 8000);
 		const f = voiceFeatures(x);
 		expect(f.level.length).toBe(voiceFrameCount(x.length));
-		for (const k of [0, 1, 7, 12, 24, 25, 26, 40, 49]) {
+		for (const k of [0, 1, 7, 12, 24, 25, 26, 40, 49, 50, 60, 74]) {
 			const r = reference(x, k);
 			expect(Math.abs(f.level[k]! - quantiseVoiceLevel(r.level)), `level ${k}`).toBeLessThanOrEqual(1);
 			expect(Math.abs(f.voicing[k]! - quantiseUnit(r.voicing)), `voicing ${k}`).toBeLessThanOrEqual(1);
