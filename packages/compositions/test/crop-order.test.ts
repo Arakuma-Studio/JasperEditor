@@ -67,8 +67,10 @@ describe('CSS stages (effectStages) follow the stack', () => {
 
 describe('fx chain (planLayerFx) keeps the crop at its stack position', () => {
 	it('Mirror → Crop and Crop → Mirror give the steps in that order', () => {
+		// After the last shader effect the crop is the CSS stage drawn on the chain's output: still after the Mirror.
 		const a = plan([mirror, crop({ left: 30 })]);
-		expect(a?.steps.map(describeStep)).toEqual(['gpu:jasper.mirror', 'crop:jasper.crop']);
+		expect(a?.steps.map(describeStep)).toEqual(['gpu:jasper.mirror']);
+		expect(a?.cssEffects.map((e) => e.effectId)).toEqual(['jasper.crop']);
 		const b = plan([crop({ left: 30 }), mirror]);
 		expect(b?.steps.map(describeStep)).toEqual(['crop:jasper.crop', 'gpu:jasper.mirror']);
 		expect(b?.cssEffects).toEqual([]);
@@ -178,16 +180,16 @@ describe('a v7 project with Crop listed after another effect', () => {
 		const clipId = 'clp_00000000000VC001';
 		const anim = (value: unknown) => ({ value, keyframes: [] });
 		file.document.sequences[seqId]!.clips[clipId]!.effects = [
-			{ id: 'fx_flip', effectId: 'jasper.flip-horizontal', effectVersion: 1, enabled: true, params: {} },
+			{ id: 'fx_0000000000000001', effectId: 'jasper.flip-horizontal', effectVersion: 1, enabled: true, params: {} },
 			{
-				id: 'fx_blur',
+				id: 'fx_0000000000000002',
 				effectId: 'jasper.gaussian-blur',
 				effectVersion: 1,
 				enabled: true,
 				params: { radius: anim(4), dimensions: anim('both'), repeatEdge: anim(false) },
 			},
 			{
-				id: 'fx_crop',
+				id: 'fx_0000000000000003',
 				effectId: 'jasper.crop',
 				effectVersion: 1,
 				enabled: true,
@@ -196,6 +198,10 @@ describe('a v7 project with Crop listed after another effect', () => {
 		];
 		const loaded = loadProject(file);
 		expect(loaded.readOnly).toBe(false);
+		expect(loaded.repairs).toEqual([]);
+		expect(loaded.document.sequences[seqId]!.clips[clipId]).toMatchObject({
+			effects: [{ id: 'fx_0000000000000003' }, { id: 'fx_0000000000000001' }, { id: 'fx_0000000000000002' }],
+		});
 		expect(loaded.document.schemaVersion).toBe(8);
 		const snap = buildRenderSnapshot(loaded.document, seqId, {
 			resolveMedia: () => null,
@@ -203,7 +209,11 @@ describe('a v7 project with Crop listed after another effect', () => {
 		});
 		const clip = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clipId)!;
 		const props = resolveLayerProps(clip, clipContentTime(clip, clip.start, snap.settings.fps));
-		expect(props.effects.map((e) => e.id)).toEqual(['fx_crop', 'fx_flip', 'fx_blur']);
+		expect(props.effects.map((e) => e.effectId)).toEqual([
+			'jasper.crop',
+			'jasper.flip-horizontal',
+			'jasper.gaussian-blur',
+		]);
 		// v7 drew the crop first, so the flip mirrors its window: the same picture after load.
 		expect(effectStages(props.effects, 'v7').map((s) => s.effectId)).toEqual([
 			'jasper.crop',
