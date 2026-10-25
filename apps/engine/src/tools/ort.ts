@@ -48,7 +48,9 @@ export function ortVersion(env: Record<string, string | undefined> = process.env
 	const dir = ortPackageDir(env);
 	if (!dir) return null;
 	try {
-		return (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
+		return (
+			(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: string }).version ?? null
+		);
 	} catch {
 		return null;
 	}
@@ -74,12 +76,15 @@ export function cudaProviderLibraryPresent(env: Record<string, string | undefine
 	const d = ortBinDir(ortPackageDir(env));
 	return (
 		!!d &&
-		(existsSync(join(d, 'libonnxruntime_providers_cuda.so')) || existsSync(join(d, 'onnxruntime_providers_cuda.dll')))
+		(existsSync(join(d, 'libonnxruntime_providers_cuda.so')) ||
+			existsSync(join(d, 'onnxruntime_providers_cuda.dll')))
 	);
 }
 
 /** The session option entry of a provider. */
-export function providerOption(id: ProviderId): import('onnxruntime-node').InferenceSession.ExecutionProviderConfig {
+export function providerOption(
+	id: ProviderId,
+): import('onnxruntime-node').InferenceSession.ExecutionProviderConfig {
 	switch (id) {
 		case 'cuda':
 			return { name: 'cuda', deviceId: 0 } as never;

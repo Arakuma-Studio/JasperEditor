@@ -169,7 +169,9 @@ export const SpeechGuardReportSchema = z.object({
 	/** Words dropped because they lay in silence (< 20 % voiced frames, or in a pause with no voice nearby). */
 	droppedWords: z.number().int().min(0),
 	/** Known hallucination phrases removed over non-speech, and runs of ≥ 4 identical tokens. */
-	removed: z.array(z.object({ text: z.string(), start: z.number(), end: z.number(), reason: z.string() })).max(200),
+	removed: z
+		.array(z.object({ text: z.string(), start: z.number(), end: z.number(), reason: z.string() }))
+		.max(200),
 	/** Speech frames the word bounds were refined against (spec 14 TC-004): the voice analysis, or the energy VAD. */
 	frames: z.enum(['voice-analysis', 'energy']).optional(),
 });
@@ -286,7 +288,9 @@ export const SpeechProbeSchema = z.object({
 	/** Threads per session (capped by the performance cores and 8, SG-005). */
 	threads: z.number().int().min(1),
 	/** The best GPU, when one is usable. */
-	gpu: z.object({ name: z.string(), provider: SpeechProviderIdSchema, vramMb: z.number().nullable() }).nullable(),
+	gpu: z
+		.object({ name: z.string(), provider: SpeechProviderIdSchema, vramMb: z.number().nullable() })
+		.nullable(),
 	ramBytes: z.number().min(0),
 	cores: z.number().int().min(1),
 	calibrations: z.array(SpeechCalibrationSchema),

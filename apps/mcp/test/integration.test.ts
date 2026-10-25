@@ -96,9 +96,10 @@ afterAll(async () => {
 
 describe('MCP over stdio with a token-protected engine', () => {
 	it('discovers the engine, edits media, renders a frame, and exports a playable video', async () => {
-		const status = await ok<{ engine: { url: string; foundBy: string }; speech?: { status: string; threads: number } }>(
-			'engine_status',
-		);
+		const status = await ok<{
+			engine: { url: string; foundBy: string };
+			speech?: { status: string; threads: number };
+		}>('engine_status');
 		expect(status.engine).toMatchObject({
 			url: `http://127.0.0.1:${PORT}`,
 			foundBy: 'runtime-file',

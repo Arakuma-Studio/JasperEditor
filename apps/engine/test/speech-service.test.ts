@@ -84,7 +84,12 @@ const specs = () =>
 		.trim()
 		.split('\n')
 		.filter(Boolean)
-		.map((l) => JSON.parse(l) as Record<string, unknown> & { device: { encoder: string; decoder: string; calibrate: string | null } });
+		.map(
+			(l) =>
+				JSON.parse(l) as Record<string, unknown> & {
+					device: { encoder: string; decoder: string; calibrate: string | null };
+				},
+		);
 
 beforeAll(async () => {
 	dir = mkdtempSync(join(tmpdir(), 'jasper-speech-svc-'));
@@ -116,7 +121,10 @@ beforeAll(async () => {
 	};
 	writeFileSync(
 		join(dir, 'catalog.json'),
-		JSON.stringify({ models: [], speech: [entry, { ...entry, id: 'test-small', recommend: 'small', parameters: 244 }] }),
+		JSON.stringify({
+			models: [],
+			speech: [entry, { ...entry, id: 'test-small', recommend: 'small', parameters: 244 }],
+		}),
 	);
 	process.env.JASPER_MODEL_CATALOG = join(dir, 'catalog.json');
 	process.env.JASPER_SPEECH = worker;
@@ -136,7 +144,9 @@ afterAll(async () => {
 
 describe('speech on the GPU (spec 16) with a fake worker', () => {
 	it('probes once (cached), reports providers in the probe, capabilities and the model list', async () => {
-		const p = (await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })).json() as SpeechProbe;
+		const p = (
+			await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })
+		).json() as SpeechProbe;
 		expect(p.providers.find((x) => x.id === 'webgpu')).toMatchObject({ available: true });
 		expect(p.providers.find((x) => x.id === 'cpu')).toMatchObject({ available: true });
 		expect(p.chosen).toEqual({ encoder: 'webgpu', decoder: 'cpu' });
@@ -145,36 +155,63 @@ describe('speech on the GPU (spec 16) with a fake worker', () => {
 		expect(p.gpu).toMatchObject({ provider: 'webgpu' });
 		if (process.platform === 'linux' && process.arch === 'x64')
 			expect(p.providers.find((x) => x.id === 'cuda')?.reason).toMatch(/NVIDIA GPU support is off/);
-		const again = (await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })).json() as SpeechProbe;
+		const again = (
+			await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })
+		).json() as SpeechProbe;
 		expect(again.probedAt).toBe(p.probedAt);
 		const caps = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json() as {
-			features: { speech: { providers?: unknown[]; chosen?: unknown; recommendedModel?: string; cuda?: string } };
+			features: {
+				speech: { providers?: unknown[]; chosen?: unknown; recommendedModel?: string; cuda?: string };
+			};
 		};
 		expect(caps.features.speech.chosen).toEqual({ encoder: 'webgpu', decoder: 'cpu' });
 		expect(caps.features.speech.recommendedModel).toBe('test-turbo');
 		const models = (
-			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as { models: SpeechModel[] }
+			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as {
+				models: SpeechModel[];
+			}
 		).models;
 		const turbo = models.find((m) => m.id === 'test-turbo')!;
 		expect(turbo).toMatchObject({ recommended: true, default: true, installed: true });
 		expect(turbo.runsOn).toMatchObject({ encoder: 'webgpu', decoder: 'cpu' });
 		expect(turbo.speed).toMatchObject({ basis: 'estimated', accuracy: 'standard' });
-		const re = (await app.inject({ method: 'POST', url: '/api/speech/probe', headers: H })).json() as SpeechProbe;
+		const re = (
+			await app.inject({ method: 'POST', url: '/api/speech/probe', headers: H })
+		).json() as SpeechProbe;
 		expect(re.probedAt >= p.probedAt).toBe(true);
 	});
 
 	it('settings: Processor and Accuracy are validated and change the plan', async () => {
-		const bad = await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { processor: 'tpu' } });
+		const bad = await app.inject({
+			method: 'PUT',
+			url: '/api/speech/settings',
+			headers: JSON_H,
+			payload: { processor: 'tpu' },
+		});
 		expect(bad.statusCode).toBe(400);
-		const s = await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { processor: 'cpu', accuracy: 'best' } });
+		const s = await app.inject({
+			method: 'PUT',
+			url: '/api/speech/settings',
+			headers: JSON_H,
+			payload: { processor: 'cpu', accuracy: 'best' },
+		});
 		expect(s.json()).toEqual({ processor: 'cpu', accuracy: 'best', nvidiaGpu: false });
 		const models = (
-			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as { models: SpeechModel[] }
+			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as {
+				models: SpeechModel[];
+			}
 		).models;
 		expect(models[0]!.runsOn).toMatchObject({ encoder: 'cpu', decoder: 'cpu', device: 'CPU' });
 		expect(models[0]!.speed?.accuracy).toBe('best');
-		await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { processor: 'auto', accuracy: 'standard' } });
-		expect((await app.inject({ method: 'GET', url: '/api/speech/settings', headers: H })).json()).toMatchObject({
+		await app.inject({
+			method: 'PUT',
+			url: '/api/speech/settings',
+			headers: JSON_H,
+			payload: { processor: 'auto', accuracy: 'standard' },
+		});
+		expect(
+			(await app.inject({ method: 'GET', url: '/api/speech/settings', headers: H })).json(),
+		).toMatchObject({
 			processor: 'auto',
 		});
 	});
@@ -210,12 +247,27 @@ describe('speech on the GPU (spec 16) with a fake worker', () => {
 		expect(runs[0]).toMatchObject({ beamSize: 1, verbatim: true, initialPrompt: 'JasperEditor' });
 		expect((runs[0] as { voiceAnalysis?: { path: string } }).voiceAnalysis?.path).toMatch(/voice-analysis-/);
 		// the measured speed shows for the device that ran
-		await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { processor: 'cpu' } });
+		await app.inject({
+			method: 'PUT',
+			url: '/api/speech/settings',
+			headers: JSON_H,
+			payload: { processor: 'cpu' },
+		});
 		const models = (
-			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as { models: SpeechModel[] }
+			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as {
+				models: SpeechModel[];
+			}
 		).models;
-		expect(models.find((x) => x.id === 'test-turbo')!.speed).toMatchObject({ basis: 'measured', minutesPer10Min: 2 });
-		await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { processor: 'auto' } });
+		expect(models.find((x) => x.id === 'test-turbo')!.speed).toMatchObject({
+			basis: 'measured',
+			minutesPer10Min: 2,
+		});
+		await app.inject({
+			method: 'PUT',
+			url: '/api/speech/settings',
+			headers: JSON_H,
+			payload: { processor: 'auto' },
+		});
 	}, 120_000);
 
 	it('job options: accuracy best = beam 5 without decoder calibration; device cpu; Processor GPU without one says why', async () => {
@@ -231,7 +283,10 @@ describe('speech on the GPU (spec 16) with a fake worker', () => {
 		expect(done.state).toBe('succeeded');
 		const runs = specs();
 		expect(runs).toHaveLength(1);
-		expect(runs[0]).toMatchObject({ beamSize: 5, device: { encoder: 'cpu', decoder: 'cpu', calibrate: null } });
+		expect(runs[0]).toMatchObject({
+			beamSize: 5,
+			device: { encoder: 'cpu', decoder: 'cpu', calibrate: null },
+		});
 		expect((done.result as TranscriptionResult).device?.fallbacks).toEqual([]);
 	}, 120_000);
 

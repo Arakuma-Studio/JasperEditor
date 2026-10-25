@@ -71,7 +71,11 @@ function transientStatus(s: number): boolean {
  * Downloads `spec` to `dest` (verified). Resumes a `<dest>.partial` left by an earlier, interrupted or cancelled
  * attempt. Throws `DownloadError` (CHECKSUM: the partial file is deleted; DOWNLOAD_FAILED: kept for resuming).
  */
-export async function downloadVerified(spec: DownloadSpec, dest: string, opts: DownloadOptions = {}): Promise<void> {
+export async function downloadVerified(
+	spec: DownloadSpec,
+	dest: string,
+	opts: DownloadOptions = {},
+): Promise<void> {
 	await mkdir(dirname(dest), { recursive: true });
 	const partial = `${dest}.partial`;
 	if (!/^https?:/.test(spec.url)) return copyLocal(spec, dest, partial, opts);
@@ -141,7 +145,11 @@ async function fetchRange(
 		return;
 	}
 	if (!res.ok || !res.body)
-		throw new DownloadError('DOWNLOAD_FAILED', `Download failed (HTTP ${res.status})`, transientStatus(res.status));
+		throw new DownloadError(
+			'DOWNLOAD_FAILED',
+			`Download failed (HTTP ${res.status})`,
+			transientStatus(res.status),
+		);
 	let append = from > 0;
 	if (from > 0 && res.status !== 206) {
 		// the server ignored Range: start over (the only case that restarts from zero)
@@ -182,7 +190,12 @@ async function fetchRange(
 	}
 }
 
-async function copyLocal(spec: DownloadSpec, dest: string, partial: string, opts: DownloadOptions): Promise<void> {
+async function copyLocal(
+	spec: DownloadSpec,
+	dest: string,
+	partial: string,
+	opts: DownloadOptions,
+): Promise<void> {
 	const src = spec.url.startsWith('file:') ? fileURLToPath(spec.url) : resolve(spec.url);
 	const hash = createHash('sha256');
 	let got = 0;
@@ -191,13 +204,20 @@ async function copyLocal(spec: DownloadSpec, dest: string, partial: string, opts
 			hash.update(chunk);
 			got += chunk.length;
 			if (got > spec.sizeBytes)
-				return cb(new DownloadError('CHECKSUM', `the file is larger than the expected ${spec.sizeBytes} bytes`));
+				return cb(
+					new DownloadError('CHECKSUM', `the file is larger than the expected ${spec.sizeBytes} bytes`),
+				);
 			opts.onProgress?.(got);
 			cb(null, chunk);
 		},
 	});
 	try {
-		await pipeline(createReadStream(src), meter, createWriteStream(partial), ...(opts.signal ? [{ signal: opts.signal }] : []));
+		await pipeline(
+			createReadStream(src),
+			meter,
+			createWriteStream(partial),
+			...(opts.signal ? [{ signal: opts.signal }] : []),
+		);
 	} catch (e) {
 		await rm(partial, { force: true });
 		if (e instanceof DownloadError || opts.signal?.aborted) throw e;

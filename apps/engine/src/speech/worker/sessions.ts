@@ -8,7 +8,14 @@
 //   stays on the GPU between steps. onnxruntime-node 1.30.0 keeps such outputs bound to the session, which breaks
 //   its next call with other fetches, so the cached steps (fixed fetches) run on a second session of the same
 //   model and the first one only does the uncached passes. Stale cache tensors are disposed by the caller.
-import { type Ort, type OrtSession, type OrtTensor, type ProviderId, providerOption, shortReason } from '../../tools/ort.ts';
+import {
+	type Ort,
+	type OrtSession,
+	type OrtTensor,
+	type ProviderId,
+	providerOption,
+	shortReason,
+} from '../../tools/ort.ts';
 
 export type SessionFallback = { from: ProviderId; reason: string };
 
@@ -77,7 +84,14 @@ for (let h = 0; h < 65536; h++) {
 	const s = h & 0x8000 ? -1 : 1;
 	const e = (h >> 10) & 0x1f;
 	const m = h & 0x3ff;
-	halfTable[h] = e === 0 ? s * m * 2 ** -24 : e === 31 ? (m ? Number.NaN : s * Number.POSITIVE_INFINITY) : s * (1 + m / 1024) * 2 ** (e - 15);
+	halfTable[h] =
+		e === 0
+			? s * m * 2 ** -24
+			: e === 31
+				? m
+					? Number.NaN
+					: s * Number.POSITIVE_INFINITY
+				: s * (1 + m / 1024) * 2 ** (e - 15);
 }
 export function fromHalf(h: number): number {
 	return halfTable[h & 0xffff];
@@ -92,7 +106,10 @@ function halfNames(meta: unknown): Set<string> {
 /** Wraps a session so float32 feeds become float16 where the model wants them, and float16 outputs float32. */
 function withHalf(ort: Pick<Ort, 'Tensor'>, s: OrtSession): OrtSession['run'] {
 	const inHalf = halfNames((s as unknown as { inputMetadata?: unknown }).inputMetadata);
-	const run = s.run.bind(s) as (f: Record<string, OrtTensor>, o?: unknown) => Promise<Record<string, OrtTensor>>;
+	const run = s.run.bind(s) as (
+		f: Record<string, OrtTensor>,
+		o?: unknown,
+	) => Promise<Record<string, OrtTensor>>;
 	if (!inHalf.size) return run as OrtSession['run'];
 	return (async (feeds: Record<string, OrtTensor>, fetches?: unknown) => {
 		const f2: Record<string, OrtTensor> = {};

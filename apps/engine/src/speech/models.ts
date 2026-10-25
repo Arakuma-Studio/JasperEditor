@@ -27,7 +27,11 @@ export const SpeechModelFileSchema = z.strictObject({
 	path: FileName,
 	url: z.string().min(1).max(2000),
 	sha256: Sha256,
-	sizeBytes: z.number().int().positive().max(64 * 1024 ** 3),
+	sizeBytes: z
+		.number()
+		.int()
+		.positive()
+		.max(64 * 1024 ** 3),
 });
 
 /** SG-021 tiers the recommendation picks from. */
@@ -63,8 +67,13 @@ export const SpeechCatalogEntrySchema = z
 	})
 	.superRefine((e, ctx) => {
 		const names = e.files.map((f) => f.path);
-		if (new Set(names).size !== names.length) ctx.addIssue({ code: 'custom', message: 'duplicate file paths' });
-		for (const f of [e.encoderFile ?? 'encoder_model.onnx', e.decoderFile ?? 'decoder_model_merged.onnx', 'config.json'])
+		if (new Set(names).size !== names.length)
+			ctx.addIssue({ code: 'custom', message: 'duplicate file paths' });
+		for (const f of [
+			e.encoderFile ?? 'encoder_model.onnx',
+			e.decoderFile ?? 'decoder_model_merged.onnx',
+			'config.json',
+		])
 			if (!names.includes(f)) ctx.addIssue({ code: 'custom', message: `missing file ${f}` });
 	});
 
@@ -103,7 +112,9 @@ export function validateSpeechCatalog(raw: unknown): { entries: SpeechCatalogEnt
 		const label = typeof id === 'string' ? id : `entry ${i + 1}`;
 		if (!r.success) {
 			const issue = r.error.issues[0];
-			errors.push(`${label}: ${issue?.path.length ? `${issue.path.join('.')}: ` : ''}${issue?.message ?? 'invalid'}`);
+			errors.push(
+				`${label}: ${issue?.path.length ? `${issue.path.join('.')}: ` : ''}${issue?.message ?? 'invalid'}`,
+			);
 			return;
 		}
 		if (seen.has(r.data.id)) {
@@ -129,10 +140,7 @@ const InstallRecordSchema = z.object({
 	id: z.string(),
 	revision: z.string(),
 	installedAt: z.string(),
-	files: z.record(
-		z.string(),
-		z.object({ sha256: z.string(), sizeBytes: z.number(), mtimeMs: z.number() }),
-	),
+	files: z.record(z.string(), z.object({ sha256: z.string(), sizeBytes: z.number(), mtimeMs: z.number() })),
 });
 type InstallRecord = z.infer<typeof InstallRecordSchema>;
 

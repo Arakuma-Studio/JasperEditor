@@ -322,7 +322,9 @@ function JobRow(props: {
 				{job.speed ? <span>{job.speed.toFixed(1)}×</span> : null}
 				{device ? (
 					<span data-testid="job-device" title={device.fallback ?? undefined}>
-						{device.fallback ? `Ran on: ${device.label} (fell back: ${device.fallback})` : `Ran on: ${device.label}`}
+						{device.fallback
+							? `Ran on: ${device.label} (fell back: ${device.fallback})`
+							: `Ran on: ${device.label}`}
 					</span>
 				) : null}
 			</div>

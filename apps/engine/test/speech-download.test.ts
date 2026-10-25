@@ -7,11 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { writeStoredZip } from '../src/imports/zip.ts';
 import { loadCatalog } from '../src/processing/models.ts';
 import { listZipEntries } from '../src/speech/cuda.ts';
 import { SpeechModelStore, validateSpeechCatalog } from '../src/speech/models.ts';
 import { DownloadError, downloadVerified } from '../src/tools/download.ts';
-import { writeStoredZip } from '../src/imports/zip.ts';
 
 const PAYLOAD = randomBytes(3 * 1024 * 1024 + 123);
 const SHA = createHash('sha256').update(PAYLOAD).digest('hex');
@@ -22,7 +22,9 @@ type Req = { range: string | null; sent: number };
  * Serves PAYLOAD with Range support. `cutAfter(n)`: the n-th request (1-based) is cut after that many bytes
  * (socket destroyed mid-body); `ignoreRange`: answers 200 with the whole body; `status`: a fixed error status.
  */
-async function server(opts: { cutAfter?: (n: number) => number | null; ignoreRange?: boolean; status?: number } = {}) {
+async function server(
+	opts: { cutAfter?: (n: number) => number | null; ignoreRange?: boolean; status?: number } = {},
+) {
 	const reqs: Req[] = [];
 	const srv: Server = createServer((req, res) => {
 		const n = reqs.length + 1;
@@ -44,7 +46,9 @@ async function server(opts: { cutAfter?: (n: number) => number | null; ignoreRan
 		const body = PAYLOAD.subarray(start);
 		res.writeHead(m && !opts.ignoreRange ? 206 : 200, {
 			'content-length': String(body.length),
-			...(m && !opts.ignoreRange ? { 'content-range': `bytes ${start}-${PAYLOAD.length - 1}/${PAYLOAD.length}` } : {}),
+			...(m && !opts.ignoreRange
+				? { 'content-range': `bytes ${start}-${PAYLOAD.length - 1}/${PAYLOAD.length}` }
+				: {}),
 		});
 		const cut = opts.cutAfter?.(n) ?? null;
 		if (cut !== null) {
@@ -79,7 +83,10 @@ describe('resumable downloads (SG-022)', () => {
 		try {
 			const dest = join(dir, 'a.onnx');
 			const retries: number[] = [];
-			await downloadVerified(spec(s.url), dest, { backoffMs: 5, onRetry: (_n, _e, from) => retries.push(from) });
+			await downloadVerified(spec(s.url), dest, {
+				backoffMs: 5,
+				onRetry: (_n, _e, from) => retries.push(from),
+			});
 			expect(readFileSync(dest).equals(PAYLOAD)).toBe(true);
 			expect(existsSync(`${dest}.partial`)).toBe(false);
 			// each retry resumes from the bytes on disk (what arrived before the connection dropped)
@@ -123,9 +130,9 @@ describe('resumable downloads (SG-022)', () => {
 			await downloadVerified(spec(s.url), dest, { backoffMs: 5 });
 			expect(readFileSync(dest).equals(PAYLOAD)).toBe(true);
 			const bad = join(dir, 'd.onnx');
-			const err = await downloadVerified({ ...spec(s.url), sha256: '0'.repeat(64) }, bad, { backoffMs: 5 }).catch(
-				(e) => e,
-			);
+			const err = await downloadVerified({ ...spec(s.url), sha256: '0'.repeat(64) }, bad, {
+				backoffMs: 5,
+			}).catch((e) => e);
 			expect(err).toBeInstanceOf(DownloadError);
 			expect(err.code).toBe('CHECKSUM');
 			expect(existsSync(`${bad}.partial`)).toBe(false);
@@ -138,9 +145,10 @@ describe('resumable downloads (SG-022)', () => {
 	it('server errors are retried with backoff, then reported; 404 is not retried', async () => {
 		const s = await server({ status: 503 });
 		try {
-			const err = await downloadVerified(spec(s.url), join(dir, 'e.onnx'), { backoffMs: 1, retries: 2 }).catch(
-				(e) => e,
-			);
+			const err = await downloadVerified(spec(s.url), join(dir, 'e.onnx'), {
+				backoffMs: 1,
+				retries: 2,
+			}).catch((e) => e);
 			expect(err).toMatchObject({ code: 'DOWNLOAD_FAILED' });
 			expect(s.reqs).toHaveLength(3);
 		} finally {
@@ -148,7 +156,9 @@ describe('resumable downloads (SG-022)', () => {
 		}
 		const s404 = await server({ status: 404 });
 		try {
-			await expect(downloadVerified(spec(s404.url), join(dir, 'f.onnx'), { backoffMs: 1 })).rejects.toMatchObject({
+			await expect(
+				downloadVerified(spec(s404.url), join(dir, 'f.onnx'), { backoffMs: 1 }),
+			).rejects.toMatchObject({
 				code: 'DOWNLOAD_FAILED',
 			});
 			expect(s404.reqs).toHaveLength(1);
@@ -177,7 +187,12 @@ describe('resumable downloads (SG-022)', () => {
 					upstreamUrl: '',
 					revision: 'r',
 					files: [
-						{ path: 'config.json', url: join(dir, 'config.json'), sha256: sha(small), sizeBytes: small.length },
+						{
+							path: 'config.json',
+							url: join(dir, 'config.json'),
+							sha256: sha(small),
+							sizeBytes: small.length,
+						},
 						{ path: 'encoder_model.onnx', url: s.url, sha256: SHA, sizeBytes: PAYLOAD.length },
 					],
 				},

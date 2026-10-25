@@ -76,7 +76,12 @@ export class CudaProvider {
 	}
 
 	private get downloadPath(): string {
-		return join(this.appRoot, 'runtimes', 'downloads', `onnxruntime-gpu-linux-${ORT_CUDA_PACKAGE.ortVersion}.nupkg`);
+		return join(
+			this.appRoot,
+			'runtimes',
+			'downloads',
+			`onnxruntime-gpu-linux-${ORT_CUDA_PACKAGE.ortVersion}.nupkg`,
+		);
 	}
 
 	private get binDir(): string | null {
@@ -86,7 +91,9 @@ export class CudaProvider {
 	async state(): Promise<SpeechCudaStatus['state']> {
 		if (!this.supported) return 'unsupported';
 		if (!existsSync(this.dir)) return 'not-installed';
-		const rec = InstallSchema.safeParse(await readJsonOrNull(join(this.dir, 'install.json')).catch(() => null));
+		const rec = InstallSchema.safeParse(
+			await readJsonOrNull(join(this.dir, 'install.json')).catch(() => null),
+		);
 		if (!rec.success || rec.data.ortVersion !== ORT_CUDA_PACKAGE.ortVersion) return 'damaged';
 		const bin = this.binDir;
 		if (!bin) return 'damaged';
@@ -126,7 +133,8 @@ export class CudaProvider {
 			// no NVIDIA driver / no nvidia-smi
 		}
 		const driverOk = driverVersion !== null && Number(driverVersion.split('.')[0]) >= MIN_DRIVER_MAJOR;
-		if (driverVersion && !driverOk) missing.push(`NVIDIA driver ≥ ${MIN_DRIVER_MAJOR} (found ${driverVersion})`);
+		if (driverVersion && !driverOk)
+			missing.push(`NVIDIA driver ≥ ${MIN_DRIVER_MAJOR} (found ${driverVersion})`);
 		if (!gpu && !missing.includes('libcuda.so.1')) missing.push('an NVIDIA GPU (nvidia-smi found none)');
 		return {
 			ok: missing.length === 0,
@@ -175,7 +183,13 @@ export class CudaProvider {
 			state,
 			ortVersion: ORT_CUDA_PACKAGE.ortVersion,
 			downloadBytes: ORT_CUDA_PACKAGE.sizeBytes,
-			runtime: { ok: rt.ok, missing: rt.missing, driverVersion: rt.driverVersion, gpu: rt.gpu, vramMb: rt.vramMb },
+			runtime: {
+				ok: rt.ok,
+				missing: rt.missing,
+				driverVersion: rt.driverVersion,
+				gpu: rt.gpu,
+				vramMb: rt.vramMb,
+			},
 			...(this.supported && !rt.ok ? { guidance: CUDA_GUIDANCE } : {}),
 			license: ORT_CUDA_PACKAGE.license,
 		};
@@ -191,8 +205,11 @@ export class CudaProvider {
 	 * Downloads (resumably) and installs the provider. Refuses when the installed onnxruntime-node is not the pinned
 	 * version (the provider must match the runtime exactly).
 	 */
-	async install(opts: { signal?: AbortSignal; onProgress?(done: number, total: number, stage: string): void } = {}): Promise<void> {
-		if (!this.supported) throw new CudaError('UNSUPPORTED_PLATFORM', 'The CUDA provider is available for Linux x64 only');
+	async install(
+		opts: { signal?: AbortSignal; onProgress?(done: number, total: number, stage: string): void } = {},
+	): Promise<void> {
+		if (!this.supported)
+			throw new CudaError('UNSUPPORTED_PLATFORM', 'The CUDA provider is available for Linux x64 only');
 		const pkgDir = ortPackageDir({});
 		const version = ortVersion({});
 		if (!pkgDir || version !== ORT_CUDA_PACKAGE.ortVersion)
@@ -223,7 +240,9 @@ export class CudaProvider {
 				},
 			});
 			const commonDir = dirname(
-				(await import('node:module')).createRequire(join(pkgDir, 'package.json')).resolve('onnxruntime-common/package.json'),
+				(await import('node:module'))
+					.createRequire(join(pkgDir, 'package.json'))
+					.resolve('onnxruntime-common/package.json'),
 			);
 			await cp(commonDir, join(nm, 'onnxruntime-common'), { recursive: true, dereference: true });
 			await writeFile(join(staging, 'package.json'), '{"private":true,"name":"jasper-onnxruntime-cuda"}\n');
@@ -311,14 +330,17 @@ export async function listZipEntries(path: string): Promise<Map<string, Entry>> 
 		const count = tail.readUInt16LE(eocd + 10);
 		const cdSize = tail.readUInt32LE(eocd + 12);
 		const cdOffset = tail.readUInt32LE(eocd + 16);
-		if (count === 0xffff || cdOffset === 0xffffffff) throw new CudaError('INSTALL_FAILED', 'ZIP64 is not supported');
-		if (cdOffset + cdSize > size || cdSize > 16 * 1024 * 1024) throw new CudaError('INSTALL_FAILED', 'corrupt ZIP');
+		if (count === 0xffff || cdOffset === 0xffffffff)
+			throw new CudaError('INSTALL_FAILED', 'ZIP64 is not supported');
+		if (cdOffset + cdSize > size || cdSize > 16 * 1024 * 1024)
+			throw new CudaError('INSTALL_FAILED', 'corrupt ZIP');
 		const cd = Buffer.alloc(cdSize);
 		await fh.read(cd, 0, cdSize, cdOffset);
 		const out = new Map<string, Entry>();
 		let p = 0;
 		for (let n = 0; n < count; n++) {
-			if (p + 46 > cd.length || cd.readUInt32LE(p) !== 0x02014b50) throw new CudaError('INSTALL_FAILED', 'corrupt ZIP');
+			if (p + 46 > cd.length || cd.readUInt32LE(p) !== 0x02014b50)
+				throw new CudaError('INSTALL_FAILED', 'corrupt ZIP');
 			const method = cd.readUInt16LE(p + 10);
 			const compressedSize = cd.readUInt32LE(p + 20);
 			const usize = cd.readUInt32LE(p + 24);
@@ -348,7 +370,8 @@ async function extractEntry(zip: string, e: Entry, dest: string): Promise<void> 
 	} finally {
 		await fh.close();
 	}
-	if (e.method !== 0 && e.method !== 8) throw new CudaError('INSTALL_FAILED', `unsupported ZIP method ${e.method}`);
+	if (e.method !== 0 && e.method !== 8)
+		throw new CudaError('INSTALL_FAILED', `unsupported ZIP method ${e.method}`);
 	await mkdir(dirname(dest), { recursive: true });
 	const src = createReadStream(zip, { start: dataStart, end: dataStart + e.compressedSize - 1 });
 	const out = createWriteStream(dest);

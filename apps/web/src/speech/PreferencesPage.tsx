@@ -10,7 +10,12 @@ import { errorText, followJob, formatBytes } from '../processing/engine-jobs.ts'
 import { PrefGroup } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 import { type AutoTranscribe, loadAuto, saveAuto } from './auto.tsx';
-import { downloadModel, ModelLicence, useSpeechModels, useSpeechSettings } from './GenerateTranscriptDialog.tsx';
+import {
+	downloadModel,
+	ModelLicence,
+	useSpeechModels,
+	useSpeechSettings,
+} from './GenerateTranscriptDialog.tsx';
 import { runsOnText, speedText, WHISPER_LANGUAGES } from './model.ts';
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -22,7 +27,12 @@ const PROVIDER_NAMES: Record<string, string> = {
 };
 
 /** The provider probe (`GET`; `reprobe` = `POST`, probing again). */
-function useSpeechProbe(): { probe: SpeechProbe | null; error: string | null; reprobe(): Promise<void>; busy: boolean } {
+function useSpeechProbe(): {
+	probe: SpeechProbe | null;
+	error: string | null;
+	reprobe(): Promise<void>;
+	busy: boolean;
+} {
 	const { client } = useEngine();
 	const [probe, setProbe] = useState<SpeechProbe | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -265,7 +275,10 @@ export function SpeechPreferencesPage() {
 						onCheckedChange={(v) => void enableNvidia(v)}
 						label="Enable NVIDIA GPU"
 					/>
-					<div className="flex flex-col gap-0.5 pl-6 text-pr-small text-pr-muted" data-testid="speech-cuda-status">
+					<div
+						className="flex flex-col gap-0.5 pl-6 text-pr-small text-pr-muted"
+						data-testid="speech-cuda-status"
+					>
 						<p>
 							CUDA provider (ONNX Runtime {cuda.ortVersion}):{' '}
 							{cudaBusy

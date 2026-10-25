@@ -33,8 +33,7 @@ function byteTables(): { toByte: Map<string, number>; toChar: string[] } {
 }
 
 /** GPT-2's pre-tokenizer pattern (byte-level BPE `use_regex`). */
-const PRETOKENIZE =
-	/'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+/gu;
+const PRETOKENIZE = /'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+/gu;
 /** Longest text encoded (the prompt is at most half the decoder context anyway). */
 const MAX_ENCODE_CHARS = 4000;
 

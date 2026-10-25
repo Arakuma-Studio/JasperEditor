@@ -1,7 +1,12 @@
 // A media asset has one attached transcript shared by all its clips.
 import { normalizeWords } from '../../captions/words.ts';
 import type { Transcript } from '../../schema/media.ts';
-import { mergeTranscriptSegments, mergeTranscriptWords, normalizeTranscriptSegments, transcriptSegments } from '../../speech/index.ts';
+import {
+	mergeTranscriptSegments,
+	mergeTranscriptWords,
+	normalizeTranscriptSegments,
+	transcriptSegments,
+} from '../../speech/index.ts';
 import type { HandlerMap } from './util.ts';
 
 export const SPEECH_OWNER = 'speech';

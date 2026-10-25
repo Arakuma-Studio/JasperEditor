@@ -310,7 +310,11 @@ describe('segment scores in transcripts (spec 14 TC-003, v9)', () => {
 
 	it('refuses malformed segments in the command', () => {
 		const { H, mediaId } = setup();
-		for (const bad of [{ start: -1, end: 5 }, { start: 1.5, end: 2 }, { start: 0, end: 1, noSpeechProb: 2 }]) {
+		for (const bad of [
+			{ start: -1, end: 5 },
+			{ start: 1.5, end: 2 },
+			{ start: 0, end: 1, noSpeechProb: 2 },
+		]) {
 			const r = H.tx([{ type: 'transcript.attach', mediaId, language: 'en', words: [], segments: [bad] }]);
 			expect(r.ok).toBe(false);
 		}
@@ -318,12 +322,28 @@ describe('segment scores in transcripts (spec 14 TC-003, v9)', () => {
 
 	it('malformed stored segments break INV-012 and repair drops them (lenient read)', () => {
 		const { H, mediaId } = setup();
-		H.ok([{ type: 'transcript.attach', mediaId, language: 'en', words: [w('a', 0, 1)], segments: [seg(0, 1, -0.1)] }]);
+		H.ok([
+			{
+				type: 'transcript.attach',
+				mediaId,
+				language: 'en',
+				words: [w('a', 0, 1)],
+				segments: [seg(0, 1, -0.1)],
+			},
+		]);
 		const doc = structuredClone(H.doc);
 		const t = Object.values(doc.transcripts)[0] as Transcript;
-		t.segments = [seg(3, 4, -0.5), 'junk', { start: 2, end: 1 }, seg(0, 1, -0.1), { start: 0, end: 1, avgLogprob: 'x' }];
+		t.segments = [
+			seg(3, 4, -0.5),
+			'junk',
+			{ start: 2, end: 1 },
+			seg(0, 1, -0.1),
+			{ start: 0, end: 1, avgLogprob: 'x' },
+		];
 		expect(transcriptSegmentsProblem(t.segments)).toBeTruthy();
-		expect(checkInvariants(doc).some((i) => (i as { invariant?: string }).invariant === 'INV-012')).toBe(true);
+		expect(checkInvariants(doc).some((i) => (i as { invariant?: string }).invariant === 'INV-012')).toBe(
+			true,
+		);
 		const fixed = repairDocument(doc, H.ids);
 		expect((Object.values(fixed.document.transcripts)[0] as Transcript).segments).toEqual([
 			seg(0, 1, -0.1),
@@ -360,7 +380,12 @@ describe('segment scores in transcripts (spec 14 TC-003, v9)', () => {
 		const mix = transcriptAttachPlan(
 			H.doc,
 			{
-				target: { type: 'sequence', sequenceId: H.seqId, range: { startFrame: 0, endFrame: 750 }, mixHash: 'h' },
+				target: {
+					type: 'sequence',
+					sequenceId: H.seqId,
+					range: { startFrame: 0, endFrame: 750 },
+					mixHash: 'h',
+				},
 				model: 'm',
 				language: 'es',
 				task: 'transcribe',

@@ -92,7 +92,12 @@ export type SpeechJobOutput = {
 	segments: WhisperSegment[];
 	timings: { decodeMs: number; loadMs: number; transcribeMs: number };
 	device: { encoder: ProviderId; decoder: ProviderId; threads: number; fallbacks: SpeechFallbackOut[] };
-	calibration: { provider: ProviderId; cpuMsPerToken: number; gpuMsPerToken: number; decoder: ProviderId } | null;
+	calibration: {
+		provider: ProviderId;
+		cpuMsPerToken: number;
+		gpuMsPerToken: number;
+		decoder: ProviderId;
+	} | null;
 	guard: {
 		skippedWindows: number;
 		droppedWords: number;
@@ -177,7 +182,11 @@ type RefinableWord = { start: number; end: number; text?: string };
 export function refineWords<W extends RefinableWord>(
 	src: FrameSource,
 	words: W[],
-): { words: W[]; dropped: number; removed: Array<{ text: string; start: number; end: number; reason: string }> } {
+): {
+	words: W[];
+	dropped: number;
+	removed: Array<{ text: string; start: number; end: number; reason: string }>;
+} {
 	const { samples, db, mask } = src;
 	const len = { length: samples };
 	const orphans = new Set(splitAtPauses(len, words, db, mask));
@@ -217,9 +226,15 @@ export function refineWords<W extends RefinableWord>(
 }
 
 /** Word-bound refinement of an in-memory clip, in place (the benchmark harness and older callers). */
-export function refineWordBounds(audio: Float32Array, words: Array<{ start: number; end: number; text?: string }>): void {
+export function refineWordBounds(
+	audio: Float32Array,
+	words: Array<{ start: number; end: number; text?: string }>,
+): void {
 	const db = frameDb(audio);
-	const kept = refineWords({ samples: audio.length, db, mask: voicedMask(db, vadThreshold(db)) }, words).words;
+	const kept = refineWords(
+		{ samples: audio.length, db, mask: voicedMask(db, vadThreshold(db)) },
+		words,
+	).words;
 	words.splice(0, words.length, ...kept);
 }
 
@@ -309,7 +324,14 @@ async function recognise(
 					return true;
 				},
 			});
-			return { r, model: { providers: model.providers, multilingual: model.multilingual, calibration: model.calibration } };
+			return {
+				r,
+				model: {
+					providers: model.providers,
+					multilingual: model.multilingual,
+					calibration: model.calibration,
+				},
+			};
 		} finally {
 			await model.release();
 		}
@@ -380,4 +402,3 @@ async function recognise(
 		profile: r.profile,
 	};
 }
-

@@ -2,7 +2,14 @@
 // probe implementation of tools/ort.ts (the upscaler uses it too, SG-008). Runs in the worker so a GPU driver that
 // crashes or hangs takes down a child process, not the engine (the engine kills it after a timeout).
 import { tinySrModel } from '../../processing/proc/tiny-onnx.ts';
-import { loadOrt, ortVersion, type ProviderId, type ProviderProbe, probeOrtProviders, shortReason } from '../../tools/ort.ts';
+import {
+	loadOrt,
+	ortVersion,
+	type ProviderId,
+	type ProviderProbe,
+	probeOrtProviders,
+	shortReason,
+} from '../../tools/ort.ts';
 
 export type ProbeRequest = {
 	/** GPU providers to try, best first (the engine's per-platform order). */

@@ -9,9 +9,9 @@ import {
 	deviceLabel,
 	estimateRtf,
 	gpuCandidates,
+	type ProviderStatus,
 	planDevices,
 	policyExcluded,
-	type ProviderStatus,
 	recommendModel,
 	threadCap,
 } from '../src/speech/providers.ts';
@@ -61,14 +61,22 @@ describe('provider policy (SG-001, SG-002, SG-005, SG-021)', () => {
 		});
 		const calibrated = [{ modelId: 'm', provider: 'cuda' as const, decoder: 'cuda' as const }];
 		expect(
-			planDevices({ ...base, order: [...base.order], request: 'auto', beamSize: 1, calibrations: calibrated }),
+			planDevices({
+				...base,
+				order: [...base.order],
+				request: 'auto',
+				beamSize: 1,
+				calibrations: calibrated,
+			}),
 		).toMatchObject({ encoder: 'cuda', decoder: 'cuda', calibrate: null });
 		expect(planDevices({ ...base, order: [...base.order], request: 'cpu', beamSize: 1 })).toMatchObject({
 			encoder: 'cpu',
 			decoder: 'cpu',
 		});
 		// CUDA gone: WebGPU
-		const noCuda = providers.map((p) => (p.id === 'cuda' ? { ...p, available: false, reason: 'no libs' } : p));
+		const noCuda = providers.map((p) =>
+			p.id === 'cuda' ? { ...p, available: false, reason: 'no libs' } : p,
+		);
 		expect(
 			planDevices({ ...base, providers: noCuda, order: [...base.order], request: 'gpu', beamSize: 5 }),
 		).toMatchObject({ encoder: 'webgpu', decoder: 'cpu' });
@@ -79,12 +87,25 @@ describe('provider policy (SG-001, SG-002, SG-005, SG-021)', () => {
 			{ id: 'webgpu', available: false, reason: 'Failed to get a WebGPU adapter' },
 			cpu,
 		];
-		const p = planDevices({ providers, order: ['webgpu'], request: 'gpu', beamSize: 1, modelId: 'm', calibrations: [] });
+		const p = planDevices({
+			providers,
+			order: ['webgpu'],
+			request: 'gpu',
+			beamSize: 1,
+			modelId: 'm',
+			calibrations: [],
+		});
 		expect(p).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 		expect(p.unavailableReason).toContain('WebGPU: Failed to get a WebGPU adapter');
 		expect(
-			planDevices({ providers, order: ['webgpu'], request: 'auto', beamSize: 1, modelId: 'm', calibrations: [] })
-				.unavailableReason,
+			planDevices({
+				providers,
+				order: ['webgpu'],
+				request: 'auto',
+				beamSize: 1,
+				modelId: 'm',
+				calibrations: [],
+			}).unavailableReason,
 		).toBeNull();
 		expect(bestGpu(providers, ['webgpu'])).toBeNull();
 	});
@@ -118,18 +139,34 @@ describe('provider policy (SG-001, SG-002, SG-005, SG-021)', () => {
 		expect(r(null, 8 * GB, 16)).toBe('small');
 		expect(r(null, 32 * GB, 4)).toBe('small');
 		// a catalogue without tiers: its default
-		expect(recommendModel({ entries: [{ id: 'a' }, { id: 'b', default: true }], gpu: null, ramBytes: 0, cores: 1 })).toBe('b');
+		expect(
+			recommendModel({
+				entries: [{ id: 'a' }, { id: 'b', default: true }],
+				gpu: null,
+				ramBytes: 0,
+				cores: 1,
+			}),
+		).toBe('b');
 	});
 
 	it('speed estimates: GPU and greedy are faster, fewer threads slower; labels name the device', () => {
 		const e = (o: Partial<Parameters<typeof estimateRtf>[0]>) =>
-			estimateRtf({ modelId: 'whisper-large-v3-turbo', parameters: 809, encoder: 'cpu', accuracy: 'best', threads: 8, ...o });
+			estimateRtf({
+				modelId: 'whisper-large-v3-turbo',
+				parameters: 809,
+				encoder: 'cpu',
+				accuracy: 'best',
+				threads: 8,
+				...o,
+			});
 		expect(e({})).toBeCloseTo(0.454, 3);
 		expect(e({ accuracy: 'standard' })).toBeLessThan(e({}));
 		expect(e({ encoder: 'cuda' })).toBeLessThan(e({ encoder: 'webgpu' }));
 		expect(e({ threads: 4 })).toBeGreaterThan(e({}));
 		expect(e({ precision: 'fp16' })).toBeGreaterThan(e({}));
-		expect(deviceLabel({ encoder: 'cuda', decoder: 'cpu' }, 'RTX 3060')).toBe('RTX 3060 (CUDA) encoder · CPU decoder');
+		expect(deviceLabel({ encoder: 'cuda', decoder: 'cpu' }, 'RTX 3060')).toBe(
+			'RTX 3060 (CUDA) encoder · CPU decoder',
+		);
 		expect(deviceLabel({ encoder: 'cuda', decoder: 'cuda' }, 'RTX 3060')).toBe('RTX 3060 (CUDA)');
 		expect(deviceLabel({ encoder: 'cpu', decoder: 'cpu' }, null)).toBe('CPU');
 	});
@@ -138,7 +175,9 @@ describe('provider policy (SG-001, SG-002, SG-005, SG-021)', () => {
 		expect(chooseCalibratedDecoder({ cpuMsPerToken: 24, gpuMsPerToken: 15 }, 'cuda')).toBe('cuda');
 		expect(chooseCalibratedDecoder({ cpuMsPerToken: 7.5, gpuMsPerToken: 10.6 }, 'webgpu')).toBe('cpu');
 		expect(chooseCalibratedDecoder({ cpuMsPerToken: 10, gpuMsPerToken: 9.5 }, 'cuda')).toBe('cpu');
-		expect(chooseCalibratedDecoder({ cpuMsPerToken: 10, gpuMsPerToken: Number.POSITIVE_INFINITY }, 'cuda')).toBe('cpu');
+		expect(
+			chooseCalibratedDecoder({ cpuMsPerToken: 10, gpuMsPerToken: Number.POSITIVE_INFINITY }, 'cuda'),
+		).toBe('cpu');
 	});
 
 	it('short reasons drop ONNX Runtime source locations', () => {
@@ -155,7 +194,9 @@ describe('provider policy (SG-001, SG-002, SG-005, SG-021)', () => {
 
 describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 	it('a GPU session that cannot be created runs on the CPU with the reason', async () => {
-		const f = fakeOrt({ createError: (_part, p) => (p === 'cuda' ? 'libcudnn.so.9: cannot open shared object file' : null) });
+		const f = fakeOrt({
+			createError: (_part, p) => (p === 'cuda' ? 'libcudnn.so.9: cannot open shared object file' : null),
+		});
 		const s = await createPartSession(f.ort, '/m/encoder_model.onnx', { provider: 'cuda', threads: 4 });
 		expect(s.provider).toBe('cpu');
 		expect(s.fallback).toEqual({ from: 'cuda', reason: 'libcudnn.so.9: cannot open shared object file' });
@@ -164,7 +205,10 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 
 	it('WebGPU device-resident decoding: cache outputs stay on the GPU, cached steps on a second session, other passes on the CPU', async () => {
 		const f = fakeOrt();
-		const plain = await createPartSession(f.ort, '/m/decoder_model_merged.onnx', { provider: 'cpu', threads: 2 });
+		const plain = await createPartSession(f.ort, '/m/decoder_model_merged.onnx', {
+			provider: 'cpu',
+			threads: 2,
+		});
 		const s = await createPartSession(f.ort, '/m/decoder_model_merged.onnx', {
 			provider: 'webgpu',
 			threads: 2,
@@ -198,7 +242,10 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 		const f = fakeOrt();
 		const m = await WhisperModel.load(dir, { ort: f.ort, encoder: 'webgpu', decoder: 'webgpu', threads: 2 });
 		expect(m.providers).toEqual({ encoder: 'webgpu', decoder: 'webgpu' });
-		await m.transcribe(noiseAudio(3, (t) => t % 1 < 0.6), { language: 'en', beamSize: 1, temperatureFallback: false });
+		await m.transcribe(
+			noiseAudio(3, (t) => t % 1 < 0.6),
+			{ language: 'en', beamSize: 1, temperatureFallback: false },
+		);
 		await m.release();
 		const steps = f.sessions.filter((x) => x.provider === 'webgpu' && x.location).at(-1)!;
 		expect(steps.runs.every((r) => r.cached)).toBe(true);
@@ -206,9 +253,17 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 		expect(f.disposed.length).toBeGreaterThan(0);
 		await expect(
 			(async () => {
-				const m2 = await WhisperModel.load(dir, { ort: f.ort, encoder: 'cpu', decoder: 'webgpu', threads: 2 });
+				const m2 = await WhisperModel.load(dir, {
+					ort: f.ort,
+					encoder: 'cpu',
+					decoder: 'webgpu',
+					threads: 2,
+				});
 				try {
-					await m2.transcribe(noiseAudio(3, (t) => t % 1 < 0.6), { language: 'en', beamSize: 5 });
+					await m2.transcribe(
+						noiseAudio(3, (t) => t % 1 < 0.6),
+						{ language: 'en', beamSize: 5 },
+					);
 				} finally {
 					await m2.release();
 				}
@@ -233,9 +288,17 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 	it('a session that fails on the GPU is recorded and the job runs', async () => {
 		const dir = fakeModelDir();
-		const f = fakeOrt({ createError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'no adapter' : null) });
+		const f = fakeOrt({
+			createError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'no adapter' : null),
+		});
 		const out = await runSpeechJob(
-			{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
+			{
+				modelDir: dir,
+				modelId: 'fake',
+				input: { f32: '' },
+				language: 'en',
+				device: { encoder: 'webgpu', decoder: 'cpu' },
+			},
 			{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 		);
 		expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
@@ -246,11 +309,23 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 
 	it('a GPU error mid-job runs the job once more on the CPU and the result says so', async () => {
 		const dir = fakeModelDir();
-		const f = fakeOrt({ runError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'device lost' : null) });
+		const f = fakeOrt({
+			runError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'device lost' : null),
+		});
 		const devices: string[] = [];
 		const out = await runSpeechJob(
-			{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
-			{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6), onDevice: (d) => devices.push(`${d.encoder}/${d.decoder}#${d.attempt}`) },
+			{
+				modelDir: dir,
+				modelId: 'fake',
+				input: { f32: '' },
+				language: 'en',
+				device: { encoder: 'webgpu', decoder: 'cpu' },
+			},
+			{
+				ort: f.ort,
+				audio: noiseAudio(3, (t) => t % 1 < 0.6),
+				onDevice: (d) => devices.push(`${d.encoder}/${d.decoder}#${d.attempt}`),
+			},
 		);
 		expect(devices).toEqual(['webgpu/cpu#1', 'cpu/cpu#2']);
 		expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
@@ -271,7 +346,13 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		});
 		await expect(
 			runSpeechJob(
-				{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
+				{
+					modelDir: dir,
+					modelId: 'fake',
+					input: { f32: '' },
+					language: 'en',
+					device: { encoder: 'webgpu', decoder: 'cpu' },
+				},
 				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 			),
 		).rejects.toThrow('device lost');
@@ -282,7 +363,10 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		let runs = 0;
 		const f = fakeOrt({ runError: (part) => (part === 'encoder' && ++runs > 0 ? 'broken model' : null) });
 		await expect(
-			runSpeechJob({ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en' }, { ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) }),
+			runSpeechJob(
+				{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en' },
+				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
+			),
 		).rejects.toThrow('broken model');
 		expect(runs).toBe(1);
 	});
@@ -318,7 +402,10 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		const dir = fakeModelDir();
 		const f = fakeOrt();
 		const audio = new Float32Array(16_000 * 65); // digital silence: three windows
-		const out = await runSpeechJob({ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en' }, { ort: f.ort, audio });
+		const out = await runSpeechJob(
+			{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en' },
+			{ ort: f.ort, audio },
+		);
 		expect(out.guard.skippedWindows).toBeGreaterThanOrEqual(2);
 		expect(out.words).toEqual([]);
 		const enc = f.sessions.find((s) => s.path.includes('encoder'))!;

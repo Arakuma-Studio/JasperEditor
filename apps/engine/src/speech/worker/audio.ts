@@ -82,7 +82,14 @@ export class MelFrames {
 
 	/** Whisper's normalised window (nMels × nFrames, band-major) of `count` frames from `seek`. */
 	window(seek: number, count: number, out: Float32Array, nFrames: number): void {
-		windowFromRaw(this.read(seek, count), Math.min(count, this.frames - seek), this.nMels, this.max, out, nFrames);
+		windowFromRaw(
+			this.read(seek, count),
+			Math.min(count, this.frames - seek),
+			this.nMels,
+			this.max,
+			out,
+			nFrames,
+		);
 	}
 
 	get onDisk(): boolean {
@@ -216,7 +223,11 @@ export class InputBuilder {
 }
 
 /** The input of an in-memory clip (tests, the benchmark harness). */
-export function inputFromSamples(audio: Float32Array, nMels: number, opts: { memoryBytes?: number } = {}): SpeechInput {
+export function inputFromSamples(
+	audio: Float32Array,
+	nMels: number,
+	opts: { memoryBytes?: number } = {},
+): SpeechInput {
 	const b = new InputBuilder(nMels, opts);
 	const CHUNK = 1 << 16;
 	for (let i = 0; i < audio.length; i += CHUNK) b.push(audio.subarray(i, Math.min(audio.length, i + CHUNK)));
@@ -275,7 +286,8 @@ export async function decodeToInput(
 			opts.signal?.removeEventListener('abort', onAbort);
 			if (opts.signal?.aborted) return reject(new CancelledError());
 			if (failed) return reject(failed);
-			if (code !== 0) return reject(new Error(`ffmpeg could not decode the audio: ${err.trim() || `exit ${code}`}`));
+			if (code !== 0)
+				return reject(new Error(`ffmpeg could not decode the audio: ${err.trim() || `exit ${code}`}`));
 			resolve();
 		});
 	});

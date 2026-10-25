@@ -45,7 +45,12 @@ const frames = (a: Float32Array) => {
 describe('hallucination guard over a silence gap (SG-011 regression: "Gracias por ver el vídeo")', () => {
 	// speech 0–3 s, digital-quiet 3–13 s, speech 13–16 s
 	const a = audio(16, (t) => t < 3 || t >= 13);
-	const word = (text: string, t0: number, t1: number) => ({ text, start: s(t0), end: s(t1), probability: 0.9 });
+	const word = (text: string, t0: number, t1: number) => ({
+		text,
+		start: s(t0),
+		end: s(t1),
+		probability: 0.9,
+	});
 	const words = () => [
 		word('Hola', 0.1, 0.5),
 		word('a', 0.6, 0.9),
@@ -96,9 +101,15 @@ describe('hallucination guard over a silence gap (SG-011 regression: "Gracias po
 	it('property: a word lying entirely inside a silence of ≥ 2 s is never kept', () => {
 		fc.assert(
 			fc.property(
-				fc.array(fc.record({ t: fc.double({ min: 0, max: 15.5, noNaN: true }), d: fc.double({ min: 0.02, max: 0.5, noNaN: true }) }), {
-					maxLength: 25,
-				}),
+				fc.array(
+					fc.record({
+						t: fc.double({ min: 0, max: 15.5, noNaN: true }),
+						d: fc.double({ min: 0.02, max: 0.5, noNaN: true }),
+					}),
+					{
+						maxLength: 25,
+					},
+				),
 				(ws) => {
 					const list = ws
 						.map((w) => ({ text: 'x', start: s(w.t), end: s(Math.min(16, w.t + w.d)), probability: 0.5 }))
@@ -117,7 +128,16 @@ describe('hallucination guard over a silence gap (SG-011 regression: "Gracias po
 		const mask = new Uint8Array(100);
 		mask.fill(1, 0, 10);
 		expect(voicedFraction({ start: 0, end: s(0.5) }, mask)).toBeCloseTo(0.2, 6);
-		expect(unvoicedWords([{ start: 0, end: s(0.5) }, { start: s(0.5), end: s(1) }, { start: 0, end: s(0.1) }], mask)).toEqual([1]);
+		expect(
+			unvoicedWords(
+				[
+					{ start: 0, end: s(0.5) },
+					{ start: s(0.5), end: s(1) },
+					{ start: 0, end: s(0.1) },
+				],
+				mask,
+			),
+		).toEqual([1]);
 		// TC-004: a breath/speech mask from the voice analysis drives the same refinement
 		const b = audio(4, () => true);
 		const db = frameDb(b);
@@ -153,15 +173,37 @@ describe('decoder-level guards (TC-003, OpenAI hallucination_silence_threshold)'
 		expect(wordAnomalyScore({ word: 'a', start: 0, end: 0.5, probability: 0.1 })).toBe(1);
 		expect(wordAnomalyScore({ word: 'a', start: 0, end: 3, probability: 0.9 })).toBeCloseTo(1, 6);
 		expect(wordAnomalyScore({ word: 'a', start: 0, end: 0.033, probability: 0.9 })).toBeCloseTo(1.5, 6);
-		const bad = { start: 10, end: 11, words: [{ word: ' Gracias', start: 10, end: 10.05, probability: 0.1 }] };
+		const bad = {
+			start: 10,
+			end: 11,
+			words: [{ word: ' Gracias', start: 10, end: 10.05, probability: 0.1 }],
+		};
 		expect(isSegmentAnomaly(bad)).toBe(true);
-		expect(isSegmentAnomaly({ start: 0, end: 1, words: [{ word: ' Hola', start: 0, end: 0.5, probability: 0.9 }] })).toBe(false);
+		expect(
+			isSegmentAnomaly({
+				start: 0,
+				end: 1,
+				words: [{ word: ' Hola', start: 0, end: 0.5, probability: 0.9 }],
+			}),
+		).toBe(false);
 	});
 
 	it('cuts an anomalous segment surrounded by silence and resumes at it; skips a long leading silence', () => {
 		const good = { start: 0.2, end: 2, words: [{ word: ' Hola', start: 0.2, end: 2, probability: 0.9 }] };
-		const hal = { start: 12, end: 12.3, words: [{ word: ' Gracias', start: 12, end: 12.05, probability: 0.05 }] };
-		const base = { threshold: 2, windowStart: 0, windowEnd: 30, contentEnd: 60, lastSpeech: 0, singleTimestampEnding: false, seek: 12.3 };
+		const hal = {
+			start: 12,
+			end: 12.3,
+			words: [{ word: ' Gracias', start: 12, end: 12.05, probability: 0.05 }],
+		};
+		const base = {
+			threshold: 2,
+			windowStart: 0,
+			windowEnd: 30,
+			contentEnd: 60,
+			lastSpeech: 0,
+			singleTimestampEnding: false,
+			seek: 12.3,
+		};
 		const cut = silenceThresholdCut([good, hal], base);
 		expect(cut.keep).toBe(1);
 		expect(cut.seek).toBe(12);
@@ -178,7 +220,9 @@ describe('decoder-level guards (TC-003, OpenAI hallucination_silence_threshold)'
 		expect(
 			knownPhraseRuns(['Subtítulos', 'realizados', 'por', 'la', 'comunidad', 'de', 'Amara.org'].map(w)),
 		).toEqual([[0, 7]]);
-		expect(knownPhraseRuns(['Bien.', 'Gracias', 'por', 'ver', 'el', 'video.', 'Fin'].map(w))).toEqual([[1, 6]]);
+		expect(knownPhraseRuns(['Bien.', 'Gracias', 'por', 'ver', 'el', 'video.', 'Fin'].map(w))).toEqual([
+			[1, 6],
+		]);
 		// not a sentence of its own
 		expect(knownPhraseRuns(['y', 'Gracias', 'por', 'ver', 'el', 'video.'].map(w))).toEqual([]);
 		expect(knownPhraseRuns(['Gracias', 'a', 'todos'].map(w))).toEqual([]);
@@ -209,7 +253,13 @@ describe('BPE encoding of initial prompts (SG-012, TC-003)', () => {
 	});
 	const merges = ['Ġ h', 'o l', 'Ġh ol', 'Ġhol a', 'e h', '. .', '.. .'];
 	for (const m of merges) vocab[m.replace(' ', '')] = Object.keys(vocab).length;
-	const specials = ['<|endoftext|>', '<|startoftranscript|>', '<|transcribe|>', '<|notimestamps|>', '<|0.00|>'];
+	const specials = [
+		'<|endoftext|>',
+		'<|startoftranscript|>',
+		'<|transcribe|>',
+		'<|notimestamps|>',
+		'<|0.00|>',
+	];
 	const json = {
 		model: { vocab, merges },
 		added_tokens: specials.map((content, i) => ({ id: 1000 + i, content })),
@@ -218,7 +268,7 @@ describe('BPE encoding of initial prompts (SG-012, TC-003)', () => {
 
 	it('applies merges by rank and round-trips', () => {
 		expect(tok.canEncode).toBe(true);
-		expect(tok.encode(' hola')).toEqual([vocab['Ġhola']]);
+		expect(tok.encode(' hola')).toEqual([vocab.Ġhola]);
 		expect(tok.encode('eh...')).toEqual([vocab.eh, vocab['...']]);
 		expect(tok.decode(tok.encode(' hola eh... ¿vale?'))).toBe(' hola eh... ¿vale?');
 		expect(tok.decode(tok.encode('año'))).toBe('año');
@@ -226,7 +276,10 @@ describe('BPE encoding of initial prompts (SG-012, TC-003)', () => {
 
 	it('round-trips any text of its alphabet (property)', () => {
 		fc.assert(
-			fc.property(fc.stringMatching(/^[ hola.,em¿?vñ]{0,40}$/), (text) => tok.decode(tok.encode(text)) === text),
+			fc.property(
+				fc.stringMatching(/^[ hola.,em¿?vñ]{0,40}$/),
+				(text) => tok.decode(tok.encode(text)) === text,
+			),
 			{ numRuns: 300 },
 		);
 	});
@@ -251,7 +304,8 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 				const x = Float32Array.from(xs);
 				const ref = logSoftmax(x);
 				const into = logSoftmaxInto(x, new Float32Array(x.length));
-				for (let i = 0; i < x.length; i++) if (!(ref[i] === into[i] || Math.abs(ref[i]! - into[i]!) < 1e-6)) return false;
+				for (let i = 0; i < x.length; i++)
+					if (!(ref[i] === into[i] || Math.abs(ref[i]! - into[i]!) < 1e-6)) return false;
 				const lse = logSumExp(x);
 				const m = Math.max(...xs);
 				const naive = Number.isFinite(m) ? m + Math.log(xs.reduce((a, v) => a + Math.exp(v - m), 0)) : NEG;
@@ -321,7 +375,9 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 			const ts = logSumExp(l, tb, l.length);
 			let maxText = NEG;
 			for (let i = 0; i < tb; i++) if (l[i]! > maxText) maxText = l[i]!;
-			return Number.isFinite(ts) && Number.isFinite(maxText) ? Math.abs(ts - maxText) : Number.POSITIVE_INFINITY;
+			return Number.isFinite(ts) && Number.isFinite(maxText)
+				? Math.abs(ts - maxText)
+				: Number.POSITIVE_INFINITY;
 		};
 		fc.assert(
 			fc.property(
@@ -351,7 +407,10 @@ describe('streaming log-mel equals the batch front end (SG-014)', () => {
 				// Whisper always pads 30 s; any total of at least one 400-sample window reflects the same way
 				fc.integer({ min: 401, max: 1200 }),
 				(n, chunks, pad) => {
-					const a = Float32Array.from({ length: n }, (_, i) => Math.sin(i * 0.37) * 0.3 + ((i * 7919) % 13) / 100);
+					const a = Float32Array.from(
+						{ length: n },
+						(_, i) => Math.sin(i * 0.37) * 0.3 + ((i * 7919) % 13) / 100,
+					);
 					const padded = new Float32Array(n + pad);
 					padded.set(a);
 					const batch = logMel(padded, 80);
@@ -368,12 +427,13 @@ describe('streaming log-mel equals the batch front end (SG-014)', () => {
 					const end = st.end(pad);
 					if (end.frames !== batch.frames || rows.length !== batch.frames) return false;
 					const raw = new Float32Array(end.frames * 80);
-					rows.forEach((r, f) => raw.set(r, f * 80));
+					for (let f = 0; f < rows.length; f++) raw.set(rows[f]!, f * 80);
 					const win = new Float32Array(80 * Math.max(1, end.frames));
 					windowFromRaw(raw, end.frames, 80, end.max, win, Math.max(1, end.frames));
 					for (let m = 0; m < 80; m++)
 						for (let f = 0; f < end.frames; f++)
-							if (Math.abs(win[m * Math.max(1, end.frames) + f]! - batch.data[m * batch.frames + f]!) > 1e-6) return false;
+							if (Math.abs(win[m * Math.max(1, end.frames) + f]! - batch.data[m * batch.frames + f]!) > 1e-6)
+								return false;
 					return true;
 				},
 			),
@@ -382,7 +442,10 @@ describe('streaming log-mel equals the batch front end (SG-014)', () => {
 	});
 
 	it('a spectrogram over the memory budget moves to a scratch file and reads back the same windows', () => {
-		const a = Float32Array.from({ length: s(40) }, (_, i) => Math.sin(i * 0.05) * (i % 16000 < 8000 ? 0.3 : 0.001));
+		const a = Float32Array.from(
+			{ length: s(40) },
+			(_, i) => Math.sin(i * 0.05) * (i % 16000 < 8000 ? 0.3 : 0.001),
+		);
 		const mem = inputFromSamples(a, 80);
 		const scratch = mkdtempSync(join(tmpdir(), 'jasper-mel-'));
 		const b = new InputBuilder(80, { scratch, memoryBytes: 80 * 4 * 500 });

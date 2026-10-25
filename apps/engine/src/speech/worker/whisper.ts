@@ -32,7 +32,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { type Ort, type OrtTensor as Tensor, type ProviderId, loadOrt as loadSharedOrt } from '../../tools/ort.ts';
+import {
+	loadOrt as loadSharedOrt,
+	type Ort,
+	type ProviderId,
+	type OrtTensor as Tensor,
+} from '../../tools/ort.ts';
 import { addWordTimestamps, alignTokens, type SegmentWords, wordTimings } from '../core/align.ts';
 import {
 	applyFilters,
@@ -142,11 +147,21 @@ export type WhisperResult = {
 	profile: { encoderMs: number; decoderMs: number; jsMs: number; decoderRuns: number; windows: number };
 };
 
-export type DecoderCalibration = { provider: ProviderId; cpuMsPerToken: number; gpuMsPerToken: number; decoder: ProviderId };
+export type DecoderCalibration = {
+	provider: ProviderId;
+	cpuMsPerToken: number;
+	gpuMsPerToken: number;
+	decoder: ProviderId;
+};
 
 /** SG-002: the GPU decoder is kept only when it is clearly (10 %) faster per token than the CPU decoder. */
-export function chooseCalibratedDecoder(c: { cpuMsPerToken: number; gpuMsPerToken: number }, gpu: ProviderId): ProviderId {
-	return Number.isFinite(c.gpuMsPerToken) && c.gpuMsPerToken > 0 && c.gpuMsPerToken < c.cpuMsPerToken * 0.9 ? gpu : 'cpu';
+export function chooseCalibratedDecoder(
+	c: { cpuMsPerToken: number; gpuMsPerToken: number },
+	gpu: ProviderId,
+): ProviderId {
+	return Number.isFinite(c.gpuMsPerToken) && c.gpuMsPerToken > 0 && c.gpuMsPerToken < c.cpuMsPerToken * 0.9
+		? gpu
+		: 'cpu';
 }
 
 export type LoadOptions = {
@@ -489,14 +504,17 @@ export class WhisperModel {
 		} catch (e) {
 			gpuError = e instanceof Error ? e.message : String(e);
 		}
-		const decoder = gpuError ? 'cpu' : chooseCalibratedDecoder({ cpuMsPerToken: cpuMs, gpuMsPerToken: gpuMs }, gpu.provider);
+		const decoder = gpuError
+			? 'cpu'
+			: chooseCalibratedDecoder({ cpuMsPerToken: cpuMs, gpuMsPerToken: gpuMs }, gpu.provider);
 		this.calibration = {
 			provider: gpu.provider,
 			cpuMsPerToken: Math.round(cpuMs * 100) / 100,
 			gpuMsPerToken: Number.isFinite(gpuMs) ? Math.round(gpuMs * 100) / 100 : -1,
 			decoder,
 		};
-		if (gpuError) this.fallbacks.push({ part: 'decoder', from: gpu.provider, reason: `calibration failed: ${gpuError}` });
+		if (gpuError)
+			this.fallbacks.push({ part: 'decoder', from: gpu.provider, reason: `calibration failed: ${gpuError}` });
 		if (decoder !== 'cpu') {
 			// the CPU decoder stays for the uncached passes of a device-resident decoder
 			if (!gpu.deviceResident) await this.decoder.release();
@@ -770,7 +788,8 @@ export class WhisperModel {
 		const t0 = performance.now();
 		this.profile = { encoderMs: 0, decoderMs: 0, decoderRuns: 0 };
 		const nMels = this.cfg.num_mel_bins;
-		if (input.mel.nMels !== nMels) throw new Error(`the input has ${input.mel.nMels} mel bands, the model ${nMels}`);
+		if (input.mel.nMels !== nMels)
+			throw new Error(`the input has ${input.mel.nMels} mel bands, the model ${nMels}`);
 		const task = opts.task === 'translate' && this.tok.multilingual ? 'translate' : 'transcribe';
 		const condition = opts.conditionOnPreviousText ?? true;
 		const fallback = opts.temperatureFallback ?? true;
@@ -856,7 +875,12 @@ export class WhisperModel {
 					});
 				const textTokens = cleaned.tokens.filter((t) => t < this.tok.eot);
 				if (s.start === s.end || !this.tok.decode(textTokens).trim()) continue;
-				const seg: SegmentWords = { start: timeOffset + s.start, end: timeOffset + s.end, textTokens, words: [] };
+				const seg: SegmentWords = {
+					start: timeOffset + s.start,
+					end: timeOffset + s.end,
+					textTokens,
+					words: [],
+				};
 				segs.push(seg);
 				segTokens.set(seg, cleaned.tokens);
 			}
@@ -909,7 +933,9 @@ export class WhisperModel {
 					kept = segs.slice(0, cut.keep);
 					if (cut.keep < segs.length) nextSeek = Math.round(cut.seek * 100);
 					// with the custom seek of a cut, the last speech is the last kept segment
-					lastSpeech = kept.length ? (kept[kept.length - 1].words.at(-1)?.end ?? kept[kept.length - 1].end) : lastBefore;
+					lastSpeech = kept.length
+						? (kept[kept.length - 1].words.at(-1)?.end ?? kept[kept.length - 1].end)
+						: lastBefore;
 				}
 				for (const s of kept) {
 					segmentsOut.push({
@@ -926,7 +952,8 @@ export class WhisperModel {
 						const a = Math.max(prevEnd, Math.round(Math.min(w.start, windowEnd) * SAMPLE_RATE));
 						const b = Math.max(a, Math.round(Math.min(w.end, windowEnd) * SAMPLE_RATE));
 						const t = w.word.trim();
-						if (t) words.push({ text: t, start: a, end: Math.min(b, input.samples), probability: w.probability });
+						if (t)
+							words.push({ text: t, start: a, end: Math.min(b, input.samples), probability: w.probability });
 					}
 					allTokens.push(...(segTokens.get(s) ?? s.textTokens));
 				}

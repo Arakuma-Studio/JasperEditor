@@ -20,7 +20,11 @@ export const StoredProbeSchema = z.object({
 	key: z.string(),
 	providers: z.array(SpeechProviderStatusSchema),
 	gpu: z
-		.object({ name: z.string(), provider: SpeechProviderStatusSchema.shape.id, vramMb: z.number().nullable() })
+		.object({
+			name: z.string(),
+			provider: SpeechProviderStatusSchema.shape.id,
+			vramMb: z.number().nullable(),
+		})
 		.nullable(),
 	probedAt: z.string(),
 	error: z.string().optional(),
@@ -101,7 +105,9 @@ export class SpeechStateStore {
 	async addCalibration(c: SpeechCalibration): Promise<void> {
 		await this.update((all) => {
 			const cur = z.array(SpeechCalibrationSchema).safeParse(all.calibrations ?? []);
-			const list = (cur.success ? cur.data : []).filter((x) => !(x.modelId === c.modelId && x.provider === c.provider));
+			const list = (cur.success ? cur.data : []).filter(
+				(x) => !(x.modelId === c.modelId && x.provider === c.provider),
+			);
 			all.calibrations = [...list, SpeechCalibrationSchema.parse(c)].slice(-MAX_CALIBRATIONS);
 		});
 	}

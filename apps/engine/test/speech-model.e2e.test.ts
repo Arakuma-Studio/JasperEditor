@@ -236,12 +236,20 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		expect(r.statusCode, r.body).toBe(200);
 		const res = (r.json() as EngineJob).result as TranscriptionResult;
 		const sec = (f: number) => f / FLICKS_PER_SECOND;
-		const inGap = res.words.filter((w) => (sec(w.start) + sec(w.end)) / 2 > 22.6 && (sec(w.start) + sec(w.end)) / 2 < 52.4);
+		const inGap = res.words.filter(
+			(w) => (sec(w.start) + sec(w.end)) / 2 > 22.6 && (sec(w.start) + sec(w.end)) / 2 < 52.4,
+		);
 		const before = truth.utterances.filter((u) => u.end <= 22.5);
 		const after = truth.utterances.filter((u) => u.start >= 22.5);
-		const hypAfter = res.words.filter((w) => sec(w.start) >= 52.4).map((w) => w.text).join(' ');
+		const hypAfter = res.words
+			.filter((w) => sec(w.start) >= 52.4)
+			.map((w) => w.text)
+			.join(' ');
 		const werAfter = wordErrorRate(after.map((u) => u.text).join(' '), hypAfter);
-		const hypBefore = res.words.filter((w) => sec(w.end) <= 22.6).map((w) => w.text).join(' ');
+		const hypBefore = res.words
+			.filter((w) => sec(w.end) <= 22.6)
+			.map((w) => w.text)
+			.join(' ');
 		const werBefore = wordErrorRate(before.map((u) => u.text).join(' '), hypBefore);
 		console.log(
 			`silence gap: ${inGap.length} words in the gap, WER before ${(werBefore * 100).toFixed(2)} %, after ${(werAfter * 100).toFixed(2)} %, guard ${JSON.stringify(res.guard)}`,
@@ -275,9 +283,9 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
 		console.log(`tiny.en verbatim, no previous text: WER ${(wer * 100).toFixed(2)} %`);
 		expect(wer).toBeLessThanOrEqual(0.06);
-		expect(res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number')).toBe(
-			true,
-		);
+		expect(
+			res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number'),
+		).toBe(true);
 		expect(res.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 	}, 600_000);
 
@@ -302,36 +310,39 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 	}, 300_000);
 });
 
-describe.skipIf(!enabled || !TURBO_DIR)('large-v3-turbo from a local model directory (spec 16 SG-020)', () => {
-	beforeAll(async () => {
-		app = await makeApp({ totalSlots: 8 });
-		const dir = join(app.appdir, 'models', 'speech');
-		mkdirSync(dir, { recursive: true });
-		symlinkSync(TURBO_DIR as string, join(dir, 'whisper-large-v3-turbo'), 'dir');
-	}, 120_000);
-	afterAll(async () => {
-		await closeApps();
-	});
+describe.skipIf(!enabled || !TURBO_DIR)(
+	'large-v3-turbo from a local model directory (spec 16 SG-020)',
+	() => {
+		beforeAll(async () => {
+			app = await makeApp({ totalSlots: 8 });
+			const dir = join(app.appdir, 'models', 'speech');
+			mkdirSync(dir, { recursive: true });
+			symlinkSync(TURBO_DIR as string, join(dir, 'whisper-large-v3-turbo'), 'dir');
+		}, 120_000);
+		afterAll(async () => {
+			await closeApps();
+		});
 
-	it('the pinned files verify and transcribe the fixture (greedy and beam 5): WER ≤ 4 %', async () => {
-		const m = await register(app, FIXTURE);
-		for (const accuracy of ['standard', 'best'] as const) {
-			const r = await app.inject({
-				method: 'POST',
-				url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
-				headers: JSON_H,
-				payload: { model: 'whisper-large-v3-turbo', language: 'en', accuracy },
-			});
-			expect(r.statusCode, r.body).toBe(200);
-			const res = (r.json() as EngineJob).result as TranscriptionResult;
-			const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
-			const t = timing(res.words);
-			console.log(
-				`turbo ${accuracy}: WER ${(wer * 100).toFixed(2)} %, boundary mean ${(t.mean * 1000).toFixed(0)} ms, rtf ${res.timings.rtf}, device ${res.device?.label}`,
-			);
-			expect(wer).toBeLessThanOrEqual(0.04);
-			expect(t.outside).toBe(0);
-			expect(res.beamSize).toBe(accuracy === 'best' ? 5 : 1);
-		}
-	}, 1_800_000);
-});
+		it('the pinned files verify and transcribe the fixture (greedy and beam 5): WER ≤ 4 %', async () => {
+			const m = await register(app, FIXTURE);
+			for (const accuracy of ['standard', 'best'] as const) {
+				const r = await app.inject({
+					method: 'POST',
+					url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
+					headers: JSON_H,
+					payload: { model: 'whisper-large-v3-turbo', language: 'en', accuracy },
+				});
+				expect(r.statusCode, r.body).toBe(200);
+				const res = (r.json() as EngineJob).result as TranscriptionResult;
+				const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
+				const t = timing(res.words);
+				console.log(
+					`turbo ${accuracy}: WER ${(wer * 100).toFixed(2)} %, boundary mean ${(t.mean * 1000).toFixed(0)} ms, rtf ${res.timings.rtf}, device ${res.device?.label}`,
+				);
+				expect(wer).toBeLessThanOrEqual(0.04);
+				expect(t.outside).toBe(0);
+				expect(res.beamSize).toBe(accuracy === 'best' ? 5 : 1);
+			}
+		}, 1_800_000);
+	},
+);

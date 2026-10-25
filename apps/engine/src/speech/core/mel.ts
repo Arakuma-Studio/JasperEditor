@@ -359,7 +359,11 @@ export class LogMelStream {
 	private frame(f: number, total: number): void {
 		const base = f * HOP - N_FFT / 2;
 		const x = this.x;
-		if (base >= this.bufStart && base + N_FFT <= this.bufStart + this.bufLen && (total < 0 || base + N_FFT <= total)) {
+		if (
+			base >= this.bufStart &&
+			base + N_FFT <= this.bufStart + this.bufLen &&
+			(total < 0 || base + N_FFT <= total)
+		) {
 			const o = base - this.bufStart;
 			for (let i = 0; i < N_FFT; i++) x[i] = this.buf[o + i] * hann[i];
 		} else for (let i = 0; i < N_FFT; i++) x[i] = this.sample(base + i, total) * hann[i];

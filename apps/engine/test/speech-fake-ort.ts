@@ -37,7 +37,10 @@ export function fakeModelDir(): string {
 	writeFileSync(join(dir, 'generation_config.json'), JSON.stringify({ alignment_heads: [[1, 0]] }));
 	writeFileSync(
 		join(dir, 'tokenizer.json'),
-		JSON.stringify({ model: { vocab, merges: [] }, added_tokens: added.map(([content, id]) => ({ id, content })) }),
+		JSON.stringify({
+			model: { vocab, merges: [] },
+			added_tokens: added.map(([content, id]) => ({ id, content })),
+		}),
 	);
 	writeFileSync(join(dir, 'encoder_model.onnx'), 'fake');
 	writeFileSync(join(dir, 'decoder_model_merged.onnx'), 'fake');
@@ -81,7 +84,12 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 	const H = FAKE_CFG.decoder_attention_heads;
 	const DH = FAKE_CFG.d_model / H;
 	const L = FAKE_CFG.decoder_layers;
-	const tensor = (type: string, data: ArrayLike<unknown> & { length: number }, dims: number[], gpu = false) => {
+	const tensor = (
+		type: string,
+		data: ArrayLike<unknown> & { length: number },
+		dims: number[],
+		gpu = false,
+	) => {
 		const t = new FakeTensor(type, data, dims);
 		if (gpu) {
 			t.location = 'gpu-buffer';
@@ -117,7 +125,9 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 						: [
 								'logits',
 								...Array.from({ length: L }, (_, l) =>
-									['decoder', 'encoder'].flatMap((k) => ['key', 'value'].map((v) => `present.${l}.${k}.${v}`)),
+									['decoder', 'encoder'].flatMap((k) =>
+										['key', 'value'].map((v) => `present.${l}.${k}.${v}`),
+									),
 								).flat(),
 								...Array.from({ length: L }, (_, l) => `cross_attentions.${l}`),
 							];
@@ -135,7 +145,13 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 						const rerr = opts.runError?.(part, provider, rec.runs.length);
 						if (rerr) throw new Error(rerr);
 						if (part === 'encoder') {
-							return { last_hidden_state: tensor('float32', new Float32Array(1500 * FAKE_CFG.d_model), [1, 1500, FAKE_CFG.d_model]) };
+							return {
+								last_hidden_state: tensor('float32', new Float32Array(1500 * FAKE_CFG.d_model), [
+									1,
+									1500,
+									FAKE_CFG.d_model,
+								]),
+							};
 						}
 						const delay = opts.decoderDelayMs?.(provider) ?? 0;
 						if (delay) await new Promise((r) => setTimeout(r, delay));
@@ -162,7 +178,12 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 								);
 								out[`present.${l}.encoder.${kv}`] = cached
 									? (feeds[`past_key_values.${l}.encoder.${kv}`] as FakeTensor)
-									: tensor('float32', new Float32Array(B * H * 1500 * DH), [B, H, 1500, DH], gpuOut(`present.${l}.encoder.${kv}`));
+									: tensor(
+											'float32',
+											new Float32Array(B * H * 1500 * DH),
+											[B, H, 1500, DH],
+											gpuOut(`present.${l}.encoder.${kv}`),
+										);
 								out[`cross_attentions.${l}`] = tensor(
 									'float32',
 									new Float32Array(B * H * T * 1500).fill(1 / 1500),
@@ -178,11 +199,19 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 			},
 		},
 	};
-	return { ort: ort as unknown as Pick<typeof import('onnxruntime-node'), 'InferenceSession' | 'Tensor'>, sessions, disposed };
+	return {
+		ort: ort as unknown as Pick<typeof import('onnxruntime-node'), 'InferenceSession' | 'Tensor'>,
+		sessions,
+		disposed,
+	};
 }
 
 /** Noise bursts (voiced by the energy VAD) between quiet stretches: 16 kHz mono. */
-export function noiseAudio(seconds: number, voiced: (t: number) => boolean = () => true, seed = 1): Float32Array {
+export function noiseAudio(
+	seconds: number,
+	voiced: (t: number) => boolean = () => true,
+	seed = 1,
+): Float32Array {
 	const n = Math.round(seconds * 16_000);
 	const out = new Float32Array(n);
 	let s = seed >>> 0;

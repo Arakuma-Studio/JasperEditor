@@ -87,7 +87,9 @@ export function engineBadge(job: AnyJob): string {
  * spec 16 SG-003: where a transcription ran ("NVIDIA GeForce RTX 3060 (CUDA) encoder · CPU decoder") and why it
  * fell back to the CPU, from the job result.
  */
-export function transcriptionDevice(job: Pick<EngineJob, 'kind' | 'result'>): { label: string; fallback: string | null } | null {
+export function transcriptionDevice(
+	job: Pick<EngineJob, 'kind' | 'result'>,
+): { label: string; fallback: string | null } | null {
 	if (job.kind !== 'transcription') return null;
 	const d = (job.result as { device?: { label?: unknown; fallbacks?: unknown } } | undefined)?.device;
 	if (!d || typeof d.label !== 'string') return null;

@@ -233,7 +233,11 @@ export function voicedFraction(w: TimedWord, mask: SpeechMask): number {
 export const MIN_VOICED_FRACTION = 0.2;
 
 /** Indices (ascending) of words whose frames are less than `minFraction` speech — words lying in silence. */
-export function unvoicedWords(words: readonly TimedWord[], mask: SpeechMask, minFraction = MIN_VOICED_FRACTION): number[] {
+export function unvoicedWords(
+	words: readonly TimedWord[],
+	mask: SpeechMask,
+	minFraction = MIN_VOICED_FRACTION,
+): number[] {
 	const out: number[] = [];
 	for (let i = 0; i < words.length; i++) if (voicedFraction(words[i], mask) < minFraction) out.push(i);
 	return out;

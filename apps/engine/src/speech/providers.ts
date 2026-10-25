@@ -41,12 +41,19 @@ export function policyExcluded(platform: string, arch: string): ProviderStatus[]
 	if (platform === 'darwin') out.push({ id: 'coreml', available: false, reason: COREML_REASON });
 	if (platform === 'win32') out.push({ id: 'dml', available: false, reason: DML_REASON });
 	if (!(platform === 'linux' && arch === 'x64'))
-		out.push({ id: 'cuda', available: false, reason: 'the CUDA provider of ONNX Runtime ships for Linux x64 only' });
+		out.push({
+			id: 'cuda',
+			available: false,
+			reason: 'the CUDA provider of ONNX Runtime ships for Linux x64 only',
+		});
 	return out;
 }
 
 /** The best usable GPU provider in probe order, or null. */
-export function bestGpu(providers: readonly ProviderStatus[], order: readonly ProviderId[]): ProviderStatus | null {
+export function bestGpu(
+	providers: readonly ProviderStatus[],
+	order: readonly ProviderId[],
+): ProviderStatus | null {
 	for (const id of order) {
 		const p = providers.find((x) => x.id === id);
 		if (p?.available) return p;
@@ -83,7 +90,8 @@ export function planDevices(opts: {
 	modelId: string;
 	calibrations: readonly StoredCalibration[];
 }): DevicePlan {
-	if (opts.request === 'cpu') return { encoder: 'cpu', decoder: 'cpu', calibrate: null, unavailableReason: null };
+	if (opts.request === 'cpu')
+		return { encoder: 'cpu', decoder: 'cpu', calibrate: null, unavailableReason: null };
 	const gpu = bestGpu(opts.providers, opts.order);
 	if (!gpu) {
 		const reasons = opts.order
@@ -94,7 +102,8 @@ export function planDevices(opts: {
 			encoder: 'cpu',
 			decoder: 'cpu',
 			calibrate: null,
-			unavailableReason: opts.request === 'gpu' ? `no usable GPU (${reasons.join('; ') || 'none found'})` : null,
+			unavailableReason:
+				opts.request === 'gpu' ? `no usable GPU (${reasons.join('; ') || 'none found'})` : null,
 		};
 	}
 	let decoder: ProviderId = 'cpu';
@@ -112,7 +121,9 @@ export function deviceLabel(p: { encoder: ProviderId; decoder: ProviderId }, gpu
 	const gpu = (id: ProviderId) => `${gpuName ?? 'GPU'} (${PROVIDER_LABEL[id]})`;
 	if (p.encoder === 'cpu' && p.decoder === 'cpu') return 'CPU';
 	if (p.encoder !== 'cpu' && p.decoder !== 'cpu') return gpu(p.encoder);
-	return p.encoder !== 'cpu' ? `${gpu(p.encoder)} encoder · CPU decoder` : `CPU encoder · ${gpu(p.decoder)} decoder`;
+	return p.encoder !== 'cpu'
+		? `${gpu(p.encoder)} encoder · CPU decoder`
+		: `CPU encoder · ${gpu(p.decoder)} decoder`;
 }
 
 export type RecommendInput = {

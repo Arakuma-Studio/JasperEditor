@@ -1,4 +1,8 @@
-import { SpeechSettingsPatchSchema, TranscribeMediaRequestSchema, TranscribeSequenceRequestSchema } from '@jasper/api';
+import {
+	SpeechSettingsPatchSchema,
+	TranscribeMediaRequestSchema,
+	TranscribeSequenceRequestSchema,
+} from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { requireUserApproval } from '../agent/user-approval.ts';
 import { replyWithJob } from '../jobs/reply.ts';
@@ -6,9 +10,9 @@ import { JobError } from '../jobs/types.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import { SpeechService } from '../speech/service.ts';
-import type { VoiceAnalysisService } from '../voice/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
+import type { VoiceAnalysisService } from '../voice/service.ts';
 
 type Wait = { Querystring: { wait?: string } };
 type ModelParams = { Params: { modelId: string } };
@@ -44,7 +48,10 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 	await svc.init();
 	// spec 16 SG-008: the upscaler reads the same provider probe
 	processing.setOrtProviderSource((probe) => svc.upscalerProviders(probe));
-	processing.cudaRuntimeInfo = async () => ({ dir: svc.cuda.dir, installed: (await svc.cuda.state()) === 'installed' });
+	processing.cudaRuntimeInfo = async () => ({
+		dir: svc.cuda.dir,
+		installed: (await svc.cuda.state()) === 'installed',
+	});
 	core.registerCapabilityProvider(async () => ({ features: { speech: await svc.features() } }));
 
 	app.get(
@@ -93,7 +100,11 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 		guarded(async (req) => {
 			const active = core.queue.list({ active: true }).some((j) => j.kind === 'runtime-download');
 			if (active)
-				throw new HttpError(409, 'SPEECH_CUDA_BUSY', 'The CUDA provider is being downloaded; cancel the job first');
+				throw new HttpError(
+					409,
+					'SPEECH_CUDA_BUSY',
+					'The CUDA provider is being downloaded; cancel the job first',
+				);
 			await requireUserApproval(app, req, {
 				label: 'Remove the NVIDIA GPU provider',
 				summary: 'remove the downloaded ONNX Runtime CUDA provider from this computer',

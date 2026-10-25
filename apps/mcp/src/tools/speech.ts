@@ -58,8 +58,13 @@ const OptionsShape = {
 	device: z
 		.enum(['auto', 'cpu', 'gpu'])
 		.optional()
-		.describe('Processor: "auto" (the Transcription preference), "cpu", or "gpu" (falls back to the CPU and says why)'),
-	verbatim: z.boolean().optional().describe('Keep filler words (um, eh, o sea…): a verbatim prompt in the language'),
+		.describe(
+			'Processor: "auto" (the Transcription preference), "cpu", or "gpu" (falls back to the CPU and says why)',
+		),
+	verbatim: z
+		.boolean()
+		.optional()
+		.describe('Keep filler words (um, eh, o sea…): a verbatim prompt in the language'),
 	initialPrompt: z
 		.string()
 		.max(1000)
@@ -68,7 +73,9 @@ const OptionsShape = {
 	conditionOnPreviousText: z
 		.boolean()
 		.optional()
-		.describe('Condition each 30 s window on the previous text (default true; false resists repetition loops)'),
+		.describe(
+			'Condition each 30 s window on the previous text (default true; false resists repetition loops)',
+		),
 };
 
 type Opts = {

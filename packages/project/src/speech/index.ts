@@ -274,9 +274,7 @@ export function transcriptAttachPlan(
 	if (res.target.type === 'media') {
 		const mediaId = opts.mediaId;
 		if (!mediaId || !doc.media[mediaId]) return { error: 'The media is no longer in the project' };
-		const segments = (res.segments ?? [])
-			.map((s) => segmentOf(s))
-			.filter((s): s is TranscriptSegment => !!s);
+		const segments = (res.segments ?? []).map((s) => segmentOf(s)).filter((s): s is TranscriptSegment => !!s);
 		return {
 			commands: [
 				{

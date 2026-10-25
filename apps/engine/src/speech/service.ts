@@ -12,7 +12,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { arch as osArch, availableParallelism, cpus, platform as osPlatform, totalmem } from 'node:os';
+import { availableParallelism, cpus, arch as osArch, platform as osPlatform, totalmem } from 'node:os';
 import { join } from 'node:path';
 import type {
 	EngineJob,
@@ -53,9 +53,9 @@ import {
 	estimateRtf,
 	gpuCandidates,
 	PROVIDER_LABEL,
+	type ProviderStatus,
 	planDevices,
 	policyExcluded,
-	type ProviderStatus,
 	recommendModel,
 	threadCap,
 } from './providers.ts';
@@ -158,7 +158,10 @@ export class SpeechService {
 		} catch {
 			performanceCores = null;
 		}
-		const cores = Math.max(1, typeof availableParallelism === 'function' ? availableParallelism() : cpus().length);
+		const cores = Math.max(
+			1,
+			typeof availableParallelism === 'function' ? availableParallelism() : cpus().length,
+		);
 		this.machineInfo = { ramBytes: totalmem(), cores, performanceCores };
 		return this.machineInfo;
 	}
@@ -194,10 +197,16 @@ export class SpeechService {
 	}
 
 	/** Whether the CUDA provider may be used, and the worker environment for it. */
-	private async cudaUse(s: SpeechSettings): Promise<{ env: Record<string, string> | null; blocked: string | null }> {
-		if (!this.cuda.supported) return { env: null, blocked: 'the CUDA provider of ONNX Runtime ships for Linux x64 only' };
+	private async cudaUse(
+		s: SpeechSettings,
+	): Promise<{ env: Record<string, string> | null; blocked: string | null }> {
+		if (!this.cuda.supported)
+			return { env: null, blocked: 'the CUDA provider of ONNX Runtime ships for Linux x64 only' };
 		if (!s.nvidiaGpu)
-			return { env: null, blocked: 'NVIDIA GPU support is off (Preferences ▸ Transcription ▸ Enable NVIDIA GPU)' };
+			return {
+				env: null,
+				blocked: 'NVIDIA GPU support is off (Preferences ▸ Transcription ▸ Enable NVIDIA GPU)',
+			};
 		const st = await this.cuda.state();
 		if (st !== 'installed')
 			return {
@@ -355,7 +364,9 @@ export class SpeechService {
 				});
 			});
 			if (code !== 0)
-				throw new Error(stderr.trim().split('\n').pop() || `the worker exited with ${code === -1 ? 'a signal' : code}`);
+				throw new Error(
+					stderr.trim().split('\n').pop() || `the worker exited with ${code === -1 ? 'a signal' : code}`,
+				);
 			const parsed = JSON.parse(await readFile(outPath, 'utf8')) as ProbeResponse;
 			if (!parsed || !Array.isArray(parsed.providers)) throw new Error('the worker wrote no probe result');
 			return parsed;
@@ -542,7 +553,11 @@ export class SpeechService {
 		} catch (e) {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (e instanceof DownloadError)
-				throw new JobError(e.code === 'CHECKSUM' ? 'DOWNLOAD_CHECKSUM' : 'DOWNLOAD_FAILED', e.message, e.code !== 'CHECKSUM');
+				throw new JobError(
+					e.code === 'CHECKSUM' ? 'DOWNLOAD_CHECKSUM' : 'DOWNLOAD_FAILED',
+					e.message,
+					e.code !== 'CHECKSUM',
+				);
 			if (e instanceof CudaError) throw new JobError(e.code, e.message, false);
 			throw e;
 		}
@@ -771,7 +786,10 @@ export class SpeechService {
 			if (!mix.path) throw new JobError('MIX_FAILED', 'The sequence mix produced no audio', false);
 			const fps = snap.settings.fps;
 			offsetFlicks = planned.range.start * flicksPerFrame(fps);
-			durationSec = Math.max(0, ((planned.range.end - planned.range.start) * flicksPerFrame(fps)) / FLICKS_PER_SECOND);
+			durationSec = Math.max(
+				0,
+				((planned.range.end - planned.range.start) * flicksPerFrame(fps)) / FLICKS_PER_SECOND,
+			);
 			span = [0.15, 1];
 			source = { path: mix.path, ffmpeg };
 			target = {
@@ -804,7 +822,13 @@ export class SpeechService {
 		};
 		const fallbacks: SpeechDeviceReport['fallbacks'] = [];
 		if (plan.unavailableReason)
-			fallbacks.push({ stage: 'unavailable', part: 'both', from: 'cpu', to: 'cpu', reason: plan.unavailableReason });
+			fallbacks.push({
+				stage: 'unavailable',
+				part: 'both',
+				from: 'cpu',
+				to: 'cpu',
+				reason: plan.unavailableReason,
+			});
 		let run = await this.runWorker(ctx, spec, scratch, span, env, gpuName);
 		if (!run.out) {
 			// SG-003: a GPU failure the worker could not handle itself (it crashed, or failed before its own CPU
@@ -812,14 +836,15 @@ export class SpeechService {
 			const gpuUsed = run.device
 				? run.device.attempt === 1 && (run.device.encoder !== 'cpu' || run.device.decoder !== 'cpu')
 				: [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].some((p) => p !== 'cpu');
-			const original = new JobError(
-				'TRANSCRIPTION_FAILED',
-				run.error ?? 'jasper-speech failed',
-				false,
-			);
+			const original = new JobError('TRANSCRIPTION_FAILED', run.error ?? 'jasper-speech failed', false);
 			if (!gpuUsed || ctx.signal.aborted) throw original;
 			ctx.log(`GPU attempt failed (${run.error}); running again on the CPU`);
-			const from = run.device && run.device.encoder !== 'cpu' ? run.device.encoder : plan.encoder !== 'cpu' ? plan.encoder : (plan.calibrate ?? plan.decoder);
+			const from =
+				run.device && run.device.encoder !== 'cpu'
+					? run.device.encoder
+					: plan.encoder !== 'cpu'
+						? plan.encoder
+						: (plan.calibrate ?? plan.decoder);
 			const cpuSpec: SpeechJobSpec = { ...spec, device: { encoder: 'cpu', decoder: 'cpu', calibrate: null } };
 			run = await this.runWorker(ctx, cpuSpec, scratch, span, {}, gpuName);
 			if (!run.out) throw original;
@@ -881,13 +906,17 @@ export class SpeechService {
 			})),
 			timings: {
 				...out.timings,
-				...(audioSec > 0 ? { rtf: Math.round((out.timings.transcribeMs / 1000 / audioSec) * 1000) / 1000 } : {}),
+				...(audioSec > 0
+					? { rtf: Math.round((out.timings.transcribeMs / 1000 / audioSec) * 1000) / 1000 }
+					: {}),
 			},
 			device,
 			guard: {
 				skippedWindows: out.guard.skippedWindows,
 				droppedWords: out.guard.droppedWords,
-				removed: out.guard.removed.slice(0, 200).map((r) => ({ ...r, start: r.start + offsetSec, end: r.end + offsetSec })),
+				removed: out.guard.removed
+					.slice(0, 200)
+					.map((r) => ({ ...r, start: r.start + offsetSec, end: r.end + offsetSec })),
 				frames: out.guard.frames,
 			},
 			accuracy,
@@ -910,7 +939,8 @@ export class SpeechService {
 		if (!voice) return undefined;
 		try {
 			const stream = streamIndex ?? voice.target(mediaKey).streamIndex;
-			if (!(await voice.readBytes(record, stream))) voice.submit(mediaKey, { streamIndex: stream }, ctx.job.origin);
+			if (!(await voice.readBytes(record, stream)))
+				voice.submit(mediaKey, { streamIndex: stream }, ctx.job.origin);
 			return { path: voice.path(record, stream), fingerprint: record.fingerprint, stream };
 		} catch (e) {
 			ctx.log(`voice analysis unavailable: ${e instanceof Error ? e.message : String(e)}`);
@@ -965,7 +995,9 @@ export class SpeechService {
 					else if (ev.type === 'device' && ev.encoder && ev.decoder) {
 						device = { encoder: ev.encoder, decoder: ev.decoder, attempt: ev.attempt ?? 1 };
 						deviceText = ` · ${deviceLabel(device, gpuName)}`;
-						ctx.log(`device: encoder ${PROVIDER_LABEL[ev.encoder]}, decoder ${PROVIDER_LABEL[ev.decoder]} (attempt ${device.attempt})`);
+						ctx.log(
+							`device: encoder ${PROVIDER_LABEL[ev.encoder]}, decoder ${PROVIDER_LABEL[ev.decoder]} (attempt ${device.attempt})`,
+						);
 					} else if (ev.type === 'error') failure = ev.message ?? 'failed';
 				} catch {
 					ctx.log(line);
@@ -1016,7 +1048,10 @@ function pickOptions(o: TranscribeOptions): TranscribeOptions {
 
 function specOptions(
 	o: TranscribeOptions,
-): Pick<SpeechJobSpec, 'language' | 'task' | 'speakers' | 'verbatim' | 'initialPrompt' | 'conditionOnPreviousText'> {
+): Pick<
+	SpeechJobSpec,
+	'language' | 'task' | 'speakers' | 'verbatim' | 'initialPrompt' | 'conditionOnPreviousText'
+> {
 	return {
 		language: o.language && o.language !== 'auto' ? o.language : null,
 		task: o.task ?? 'transcribe',

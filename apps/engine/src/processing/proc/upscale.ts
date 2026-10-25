@@ -8,8 +8,8 @@ import {
 	cudaProviderLibraryPresent,
 	loadOrt as loadSharedOrt,
 	type Ort,
-	type OrtSession as Session,
 	probeOrtProviders,
+	type OrtSession as Session,
 } from '../../tools/ort.ts';
 import { resampleRgb } from './resample.ts';
 import type { FrameStep, RgbFrame, StepContext } from './types.ts';
@@ -38,7 +38,8 @@ export async function ortProviders(): Promise<string[]> {
 		['cuda'],
 		tinySrModel(),
 		() => ({ input: new ort.Tensor('float32', new Float32Array(48), [1, 3, 4, 4]) }),
-		(id) => (id === 'cuda' && !cudaProviderLibraryPresent() ? 'the CUDA provider library is not installed' : null),
+		(id) =>
+			id === 'cuda' && !cudaProviderLibraryPresent() ? 'the CUDA provider library is not installed' : null,
 	);
 	return probe.filter((p) => p.available).map((p) => p.id);
 }

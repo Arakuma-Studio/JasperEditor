@@ -21,9 +21,9 @@ import type { MediaRecord } from '../media/registry.ts';
 import { VisionModelStore, visionModelsDir } from '../roto/models.ts';
 import { SoundModelStore, soundModelsDir } from '../sounds/semantic/models.ts';
 import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
-import { ortPackageDir } from '../tools/ort.ts';
 import { safeFileName, sha256File } from '../tools/fs.ts';
 import { nodeExecPath } from '../tools/node-runtime.ts';
+import { ortPackageDir } from '../tools/ort.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
 import { loadCatalog, ModelError, ModelStore } from './models.ts';
@@ -158,10 +158,13 @@ export class ProcessingService {
 	/** Spec 16 SG-006: the downloaded CUDA provider (for Help ▸ About ▸ Licenses), set by the speech routes. */
 	cudaRuntimeInfo: (() => Promise<{ dir: string; installed: boolean }>) | null = null;
 
-	private ortSource: ((probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>) | null =
-		null;
+	private ortSource:
+		| ((probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>)
+		| null = null;
 
-	setOrtProviderSource(fn: (probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>): void {
+	setOrtProviderSource(
+		fn: (probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>,
+	): void {
 		this.ortSource = fn;
 	}
 
