@@ -18,8 +18,13 @@ export function combine(current: readonly string[], ids: readonly string[], mode
 			return [...new Set(ids)];
 		case 'add':
 			return [...new Set([...current, ...ids])];
-		case 'remove':
-			return current.filter((x) => !ids.includes(x));
+		case 'remove': {
+			// Small removals avoid building an index; bulk deselection must not scan
+			// the entire removal list again for every currently selected entity.
+			if (current.length <= 16 || ids.length <= 16) return current.filter((x) => !ids.includes(x));
+			const removed = new Set(ids);
+			return current.filter((x) => !removed.has(x));
+		}
 		case 'toggle': {
 			const set = new Set(current);
 			for (const id of ids) {
@@ -42,9 +47,10 @@ export function expandClipSelection(
 	groups = true,
 ): string[] {
 	const out = new Set<string>();
+	const sequences = Object.values(doc.sequences);
 	for (const id of clipIds) {
 		out.add(id);
-		for (const seq of Object.values(doc.sequences)) {
+		for (const seq of sequences) {
 			const c = seq.clips[id];
 			if (!c) continue;
 			if (linked && c.linkId) for (const m of seq.links[c.linkId]?.members ?? []) out.add(m);

@@ -1,6 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
-	copyFileSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -169,7 +168,8 @@ describe.runIf(
 )('rewriteElfRpath (requires readelf and vendored FFmpeg)', () => {
 	it('rewrites the RPATH of the vendored ffmpeg in place', () => {
 		const copy = join(tempDir('rpath-'), 'ffmpeg');
-		copyFileSync(vendorFfmpeg, copy);
+		// Keep fixture ownership and permissions independent of the vendored executable.
+		writeFileSync(copy, readFileSync(vendorFfmpeg), { mode: 0o600 });
 		rewriteElfRpath(copy, 'lib');
 		// An independent ELF reader must see the changed artifact, not just a return value.
 		expect(execFileSync('readelf', ['-d', copy], { encoding: 'utf8' })).toMatch(

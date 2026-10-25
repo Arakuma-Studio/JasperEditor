@@ -46,6 +46,41 @@ function groupMembers(pgid: number): number[] {
 }
 
 describe('scheduling (S04:JB-011/012/014)', () => {
+	it('filters dedupe keys before returning detached jobs, including external sources and equal timestamps', () => {
+		const q = makeQueue({ journal: null });
+		q.registerRunner('analysis', hang);
+		const a = q.submit({
+			kind: 'analysis',
+			title: 'a',
+			priority: 'user',
+			cpuSlots: 1,
+			dedupeKey: 'wanted',
+		});
+		q.submit({ kind: 'analysis', title: 'b', priority: 'user', cpuSlots: 1, dedupeKey: 'other' });
+		q.submit({ kind: 'analysis', title: 'no key', priority: 'user', cpuSlots: 1 });
+		const external: EngineJob[] = [
+			{ ...a, id: 'external-a', state: 'running', createdAt: a.createdAt, progress: 0.5 },
+			{ ...a, id: 'external-b', state: 'succeeded', finishedAt: a.createdAt },
+			{ ...a, id: 'external-c', dedupeKey: 'other', createdAt: '2099-01-01T00:00:00.000Z' },
+		];
+		q.registerExternalSource({
+			owns: (id) => id.startsWith('external-'),
+			list: () => external,
+			get: () => null,
+			cancel: () => null,
+		});
+		for (const keys of [new Set(['wanted']), new Set(['other', 'unknown']), new Set<string>()]) {
+			for (const active of [true, false]) {
+				const expected = q.list({ active }).filter((j) => !!j.dedupeKey && keys.has(j.dedupeKey));
+				const found = q.list({ active, dedupeKeys: keys });
+				expect(found).toEqual(expected);
+				if (found[0]) found[0].title = 'changed by caller';
+				expect(q.get(a.id)?.title).toBe('a');
+				expect(external[0]?.title).toBe('a');
+			}
+		}
+	});
+
 	it('runs lanes in priority order within the CPU slots and dedupes by key', async () => {
 		const q = makeQueue({ slots: 2 });
 		const order: string[] = [];

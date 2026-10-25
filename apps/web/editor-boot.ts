@@ -153,29 +153,46 @@ export type BundleChunk = {
 	imports?: string[];
 };
 
+function staticClosure(start: BundleChunk[], byFile: Map<string, BundleChunk>): Set<string> {
+	const seen = new Set<string>();
+	const walk = (c: BundleChunk | undefined) => {
+		if (!c || seen.has(c.fileName)) return;
+		seen.add(c.fileName);
+		for (const f of c.imports ?? []) walk(byFile.get(f));
+	};
+	for (const c of start) walk(c);
+	return seen;
+}
+
+/** On-demand runtimes and their static imports, warmed by the service worker after the page has loaded. */
+export function optionalEditorChunks(bundle: Record<string, BundleChunk>): string[] {
+	const chunks = Object.values(bundle).filter((c) => c.type === 'chunk');
+	const byFile = new Map(chunks.map((c) => [c.fileName, c]));
+	const optional = chunks.filter((c) =>
+		/\/vendor-(pdf|quickjs|lottie|screenshot)-[^/]+\.js$/.test(c.fileName),
+	);
+	return [...staticClosure(optional, byFile)]
+		.filter((f) => f.endsWith('.js'))
+		.sort()
+		.map((f) => `/${f}`);
+}
+
 /** The chunks an editor URL needs beyond the entry's own: the shell, the panel bodies and what they import. */
 export function editorChunks(bundle: Record<string, BundleChunk>): string[] {
 	const chunks = Object.values(bundle).filter((c) => c.type === 'chunk');
 	const byFile = new Map(chunks.map((c) => [c.fileName, c]));
-	const closure = (start: BundleChunk[]) => {
-		const seen = new Set<string>();
-		const walk = (c: BundleChunk | undefined) => {
-			if (!c || seen.has(c.fileName)) return;
-			seen.add(c.fileName);
-			for (const f of c.imports ?? []) walk(byFile.get(f));
-		};
-		for (const c of start) walk(c);
-		return seen;
-	};
 	const norm = (id: string | null | undefined) => (id ?? '').replace(/\\/g, '/');
-	const loaded = closure(chunks.filter((c) => c.isEntry));
+	const loaded = staticClosure(
+		chunks.filter((c) => c.isEntry),
+		byFile,
+	);
 	const editor = chunks.filter(
 		(c) =>
 			c.isDynamicEntry &&
 			(/\/src\/shell\/EditorShell\.tsx$/.test(norm(c.facadeModuleId)) ||
 				/\/src\/panels\/[^/]+\/[^/]+\.tsx$/.test(norm(c.facadeModuleId))),
 	);
-	return [...closure(editor)]
+	return [...staticClosure(editor, byFile)]
 		.filter((f) => !loaded.has(f) && f.endsWith('.js'))
 		.sort()
 		.map((f) => `/${f}`);

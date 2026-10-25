@@ -1,0 +1,130 @@
+{
+  "baseline": "8b4c8936",
+  "machine": {
+    "cpu": "AMD EPYC-Genoa Processor",
+    "cores": 8,
+    "node": "v22.23.4"
+  },
+  "loadavgAfterBrowserRuns": [13.17, 9.29, 4.23],
+  "method": "Production Vite builds with frozen lockfile; initial HTML scripts plus recursive modulepreload links; all includes emitted JavaScript assets and root scripts. Source maps, CSS, fonts excluded. gzip Node defaults; Brotli quality5. Compression uses Node22 for both saved builds. Browser AB alternates fresh Chromium153 contexts with serviceWorkers block, viewport1600x1000, authenticated harness, Home then demo editor. Timings include fixed settling waits and are not used to claim latency gains.",
+  "before": {
+    "initial": {
+      "files": 11,
+      "bytes": 10809198,
+      "gzipBytes": 3379494,
+      "brotliBytes": 3065776
+    },
+    "all": {
+      "files": 58,
+      "bytes": 21946017,
+      "gzipBytes": 6851716,
+      "brotliBytes": 6211666
+    }
+  },
+  "after": {
+    "initial": {
+      "files": 11,
+      "bytes": 7981668,
+      "gzipBytes": 2511084,
+      "brotliBytes": 2263254
+    },
+    "all": {
+      "files": 63,
+      "bytes": 21743953,
+      "gzipBytes": 6825231,
+      "brotliBytes": 6192127
+    }
+  },
+  "browser": [
+    {
+      "round": 1,
+      "build": "before",
+      "homeBytes": 10809198,
+      "homeScripts": 11,
+      "plainEditorBytes": 14779202,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 1,
+      "build": "after",
+      "homeBytes": 7981668,
+      "homeScripts": 11,
+      "plainEditorBytes": 11951678,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 2,
+      "build": "before",
+      "homeBytes": 10809198,
+      "homeScripts": 11,
+      "plainEditorBytes": 14779202,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 2,
+      "build": "after",
+      "homeBytes": 7981668,
+      "homeScripts": 11,
+      "plainEditorBytes": 11951678,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 3,
+      "build": "before",
+      "homeBytes": 10809198,
+      "homeScripts": 11,
+      "plainEditorBytes": 14779202,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 3,
+      "build": "after",
+      "homeBytes": 7981668,
+      "homeScripts": 11,
+      "plainEditorBytes": 11951678,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 4,
+      "build": "before",
+      "homeBytes": 10809198,
+      "homeScripts": 11,
+      "plainEditorBytes": 14779202,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    },
+    {
+      "round": 4,
+      "build": "after",
+      "homeBytes": 7981668,
+      "homeScripts": 11,
+      "plainEditorBytes": 11951678,
+      "plainEditorScripts": 39,
+      "pageErrors": []
+    }
+  ],
+  "optionalRuntimeChecks": {
+    "expression": 90.09,
+    "screenshot": {
+      "status": 200,
+      "width": 800,
+      "height": 500,
+      "via": "dom"
+    },
+    "lottie": "svg rendered",
+    "pdf": "painted",
+    "optionalChunks": [
+      "/assets/vendor-quickjs-C3LEfuC1.js",
+      "/assets/vendor-screenshot-CY1xBomT.js",
+      "/assets/vendor-lottie-D3Y_aF5z.js",
+      "/assets/vendor-pdf-DCiESgme.js"
+    ],
+    "errors": []
+  }
+}

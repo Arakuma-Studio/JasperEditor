@@ -268,12 +268,23 @@ function matchesFilter(row: ProjectRow, filter: ProjectFilter): boolean {
 	}
 }
 
+// Keep the default locale and the column's existing collation options, but build their
+// ICU comparators once instead of once per comparison in a large bin's sort.
+let nameCollator: Intl.Collator | undefined;
+let rateCollator: Intl.Collator | undefined;
+
 function compare(a: ProjectRow, b: ProjectRow, key: SortKey): number {
 	switch (key) {
 		case 'name':
-			return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+			return (nameCollator ??= new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })).compare(
+				a.name,
+				b.name,
+			);
 		case 'frameRate':
-			return a.frameRate.localeCompare(b.frameRate, undefined, { numeric: true });
+			return (rateCollator ??= new Intl.Collator(undefined, { numeric: true })).compare(
+				a.frameRate,
+				b.frameRate,
+			);
 		case 'duration':
 			return (a.durationFrames ?? -1) - (b.durationFrames ?? -1);
 		case 'usage':
