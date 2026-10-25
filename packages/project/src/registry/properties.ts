@@ -56,6 +56,12 @@ import {
 	SOURCE_TEXT_SPEC,
 	textAnimatorPropertySpecs,
 } from './text-animator-properties.ts';
+import {
+	DEFAULT_TEXT_BACKGROUND,
+	DEFAULT_TEXT_SHADOW,
+	DEFAULT_TEXT_STROKE,
+	MAX_TEXT_STROKES,
+} from '../text-styles/patch.ts';
 import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 
 /** `json` properties carry their schema in `valueSchema` (arrays and free-form composition props). */
@@ -637,6 +643,189 @@ export const TYPOGRAPHY_SPECS: readonly PropertySpec[] = [
 	}),
 ];
 
+// spec 13 AS-030: shadow (incl. spread), background opacity and the stroke list of text clips. Each write patches the
+// clip's own object (other fields and the other strokes stay); editing a shadow row turns the shadow on.
+type Shadow = { color: RGBA; angleDeg: number; distancePx: number; blurPx: number; spreadPx?: number };
+const shadowOf = (s: TypoStyle): Shadow => (s.shadow as Shadow | null | undefined) ?? (DEFAULT_TEXT_SHADOW as Shadow);
+const shadowPatch = (s: TypoStyle, fields: Partial<Shadow>) => ({ shadow: { ...shadowOf(s), ...fields } });
+const backgroundOf = (s: TypoStyle) =>
+	(s.background as { color: RGBA; paddingPx: number; radiusPx: number } | null | undefined) ?? DEFAULT_TEXT_BACKGROUND;
+const look = (extra: Partial<PropertySpec> & { defaultValue: unknown; description: string }) => extra;
+export const TEXT_LOOK_SPECS: readonly PropertySpec[] = [
+	typo(
+		'shadow',
+		'Shadow',
+		'boolean',
+		(s) => !!s.shadow,
+		(v, s) => ({ shadow: v ? shadowOf(s) : null }),
+		look({ group: 'text', defaultValue: false, description: 'Drop shadow behind the text (Essential Graphics ▸ Shadow).' }),
+	),
+	typo(
+		'shadowColor',
+		'Shadow Color',
+		'color',
+		(s) => shadowOf(s).color,
+		(v, s) => shadowPatch(s, { color: [...(v as RGBA)] as RGBA }),
+		look({
+			group: 'text',
+			ui: { control: 'color' },
+			defaultValue: DEFAULT_TEXT_SHADOW.color,
+			description: 'Shadow colour; its alpha is the Shadow Opacity.',
+		}),
+	),
+	typo(
+		'shadowOpacity',
+		'Shadow Opacity',
+		'number',
+		(s) => Math.round(shadowOf(s).color[3] * 1000) / 10,
+		(v, s) => shadowPatch(s, { color: [...shadowOf(s).color.slice(0, 3), Number(v) / 100] as RGBA }),
+		look({
+			group: 'text',
+			unit: '%',
+			range: { min: 0, max: 100, step: 1 },
+			defaultValue: 75,
+			description: 'Shadow opacity in percent.',
+		}),
+	),
+	typo(
+		'shadowAngle',
+		'Shadow Angle',
+		'number',
+		(s) => shadowOf(s).angleDeg,
+		(v, s) => shadowPatch(s, { angleDeg: Number(v) }),
+		look({
+			group: 'text',
+			unit: 'deg',
+			range: { min: -36000, max: 36000, step: 1 },
+			defaultValue: 135,
+			description: 'Direction the shadow falls in, degrees.',
+		}),
+	),
+	typo(
+		'shadowDistance',
+		'Shadow Distance',
+		'number',
+		(s) => shadowOf(s).distancePx,
+		(v, s) => shadowPatch(s, { distancePx: Number(v) }),
+		look({
+			group: 'text',
+			unit: 'px',
+			range: { min: 0, max: 10000, softMax: 200, step: 0.5 },
+			defaultValue: 7,
+			description: 'How far the shadow is offset, pixels.',
+		}),
+	),
+	typo(
+		'shadowBlur',
+		'Shadow Blur',
+		'number',
+		(s) => shadowOf(s).blurPx,
+		(v, s) => shadowPatch(s, { blurPx: Number(v) }),
+		look({
+			group: 'text',
+			unit: 'px',
+			range: { min: 0, max: 1000, softMax: 200, step: 0.5 },
+			defaultValue: 10,
+			description: 'Softness of the shadow edge, pixels.',
+		}),
+	),
+	typo(
+		'shadowSpread',
+		'Shadow Spread',
+		'number',
+		(s) => shadowOf(s).spreadPx ?? 0,
+		(v, s) => shadowPatch(s, { spreadPx: Number(v) }),
+		look({
+			group: 'text',
+			unit: 'px',
+			range: { min: 0, max: 1000, softMax: 100, step: 0.5 },
+			defaultValue: 0,
+			description: 'How far the shadow grows beyond the glyphs before it is blurred, pixels.',
+		}),
+	),
+	typo(
+		'background',
+		'Background',
+		'boolean',
+		(s) => !!s.background,
+		(v, s) => ({ background: v ? backgroundOf(s) : null }),
+		look({ group: 'box', defaultValue: false, description: 'Box behind the text.' }),
+	),
+	typo(
+		'backgroundOpacity',
+		'Background Opacity',
+		'number',
+		(s) => Math.round(backgroundOf(s).color[3] * 1000) / 10,
+		(v, s) => {
+			const bg = backgroundOf(s);
+			return { background: { ...bg, color: [...bg.color.slice(0, 3), Number(v) / 100] } };
+		},
+		look({
+			group: 'box',
+			unit: '%',
+			range: { min: 0, max: 100, step: 1 },
+			defaultValue: 60,
+			description: 'Opacity of the box behind the text, percent.',
+		}),
+	),
+];
+
+/** Stroke list rows: `text.stroke.<i>.width | color | position` (spec 13 AS-030; every stroke, not only the first). */
+export const TEXT_STROKE_KEY = /^text\.stroke\.(\d{1,2})\.(width|color|position)$/;
+const strokeSpecCache = new Map<string, PropertySpec>();
+export function textStrokePropertySpec(key: string): PropertySpec | undefined {
+	const m = TEXT_STROKE_KEY.exec(key);
+	if (!m) return undefined;
+	const index = Number(m[1]);
+	if (index >= MAX_TEXT_STROKES) return undefined;
+	const hit = strokeSpecCache.get(key);
+	if (hit) return hit;
+	const field = m[2] as 'width' | 'color' | 'position';
+	type Stroke = { color: RGBA; widthPx: number; position: 'outside' | 'center' | 'inside' };
+	const list = (s: TypoStyle) => (Array.isArray(s.strokes) ? (s.strokes as Stroke[]) : []);
+	const at = (s: TypoStyle): Stroke => list(s)[index] ?? (DEFAULT_TEXT_STROKE as Stroke);
+	const write = (s: TypoStyle, fields: Partial<Stroke>) => {
+		const next = [...list(s)];
+		if (index < next.length) next[index] = { ...next[index]!, ...fields };
+		else next.push({ ...(DEFAULT_TEXT_STROKE as Stroke), ...fields });
+		return { strokes: next };
+	};
+	const n = index + 1;
+	const short = `stroke.${index}.${field}`;
+	const spec =
+		field === 'width'
+			? typo(short, `Stroke ${n} Width`, 'number', (s) => at(s).widthPx, (v, s) => write(s, { widthPx: Number(v) }), {
+					group: 'text',
+					unit: 'px',
+					range: { min: 0, max: 1000, softMax: 100, step: 0.5 },
+					defaultValue: DEFAULT_TEXT_STROKE.widthPx,
+					description: `Width of stroke ${n}, pixels.`,
+				})
+			: field === 'color'
+				? typo(short, `Stroke ${n} Color`, 'color', (s) => at(s).color, (v, s) => write(s, { color: v as RGBA }), {
+						group: 'text',
+						ui: { control: 'color' },
+						defaultValue: DEFAULT_TEXT_STROKE.color,
+						description: `Colour of stroke ${n}.`,
+					})
+				: typo(
+						short,
+						`Stroke ${n} Position`,
+						'enum',
+						(s) => at(s).position,
+						(v, s) => write(s, { position: v as Stroke['position'] }),
+						{
+							group: 'text',
+							options: ['outside', 'center', 'inside'],
+							optionLabels: ['Outside', 'Center', 'Inside'],
+							defaultValue: 'outside',
+							description: `Where stroke ${n} sits on the glyph outline.`,
+						},
+					);
+	strokeSpecCache.set(key, spec);
+	return spec;
+}
+
 export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	{
 		key: 'transform.position',
@@ -1100,6 +1289,7 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	},
 	// Character and Paragraph settings (AE Character / Paragraph panels).
 	...TYPOGRAPHY_SPECS,
+	...TEXT_LOOK_SPECS,
 	{
 		key: 'solid.color',
 		label: 'Color',
@@ -1524,6 +1714,7 @@ export function resolvePropertySpec(
 		return clip ? textAnimationParamSpecs(clip).find((s) => s.key === key) : undefined;
 	if (key.startsWith('params.'))
 		return template ? paramsPropertySpecs(template).find((s) => s.key === key) : undefined;
+	if (key.startsWith('text.stroke.')) return textStrokePropertySpec(key);
 	if (key.startsWith('props.') && key.length > 'props.'.length) {
 		if (composition === undefined) return undefined;
 		if (composition === null) return genericPropsPropertySpec(key);
