@@ -134,8 +134,8 @@ Independent source: spec12 §2.5/§2.7 P3-R6; D-51; AGT-1 authorization. Stable 
 | Discard asks first, then deletes the proposal (nothing in the sequence changes) | REWRITE | Discard requires confirmation then removes proposal without session edit. Distinct proposal deletion workflow. |
 | an agent’s proposal under no review gets a card with counts and the waiting line; Review opens it; Dismiss hides it; the user’s own get none | REWRITE | Only agent proposals create cards; Review activates, Dismiss hides but preserves proposal, active review hides card. Distinct navigation state. |
 | binds Enter, Backspace / Delete, U, A, Space, Shift+Space, Ctrl+Enter, Esc, Up / Down in the review scope only | KEEP | Explicit review chords resolve on three platforms; Timeline Space remains transport. Public scoped shortcut configuration is independently specified. |
-| "Allow agents to apply sound proposals" writes the sequence setting as the user’s undoable edit | REWRITE | User checkbox writes agents May Apply with user origin, updates checked state and undoes. Protects authorized preference edit. |
-| an agent clicking the checkbox through the live UI (ui_click) cannot grant itself the right | KEEP | Agent checkbox through live UI cannot change agents May Apply/history/checked state. Protects GUI privilege escalation. |
+| "Allow agents to apply sound proposals" writes the sequence setting as the user’s undoable edit | REWRITE | User checkbox writes agentsMayApply with user origin, updates checked state and undoes. Protects authorized preference edit. |
+| an agent clicking the checkbox through the live UI (ui_click) cannot grant itself the right | KEEP | Agent checkbox through live UI cannot change agentsMayApply/history/checked state. Protects GUI privilege escalation. |
 
 ## `apps/web/test/shell-render.test.tsx`
 
@@ -229,9 +229,9 @@ Independent source: S02 TL-549/680…766/900 and cited AC-8/11/13/15/16 cases. S
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
 | AC-13a: with V1 and A1 targeted, Ctrl+K at 240 splits only V1/A1 clips crossing 240 | KEEP | Targeted V1/A1 split at 240; V2 untouched. Protects targeting policy. |
-| with a selection only the selected clips crossing the playhead split; Ctrl+Shift+K splits all | KEEP | Selected V2 only split at 100; all Tracks splits V1/V2 at 200. Protects selection override/all tracks variant. |
+| with a selection only the selected clips crossing the playhead split; Ctrl+Shift+K splits all | KEEP | Selected V2 only split at 100; all-tracks splits V1/V2 at 200. Protects selection override/all tracks variant. |
 | AC-13b: ripple delete with content on a sync-locked track is refused with a message naming the track | KEEP | Sync-locked V2 refuses ripple delete with track identified; unlock allows it. Protects refusal routing. |
-| AC-16b: ripple-deleting a 30-frame clip before a marker moves it 30 frames left | KEEP | Delete 30 frames shifts marker 90→60; disabling ripple Markers preserves 60. Protects marker toggle forwarding. |
+| AC-16b: ripple-deleting a 30-frame clip before a marker moves it 30 frames left | KEEP | Delete 30 frames shifts marker 90→60; disabling rippleMarkers preserves 60. Protects marker toggle forwarding. |
 | Delete with a gap selected closes the gap; Delete with clips leaves gaps | KEEP | Gap clear closes 50-frame gap; clip clear leaves gap. Protects contextual Delete selection. |
 | edit.clear (global Delete / Edit ▸ Clear) routes to the focused panel | KEEP | Global edit.clear routes Timeline; info focused refuses. Protects shared Edit command focus routing. |
 | AC-11d: Q removes the head, closes the gap, moves the playhead to the old start; undo restores exactly | KEEP | Q trims 130→100, shifts clip end 170 and playhead 100; undo exact. Protects playhead interval/undo integration. |
@@ -276,7 +276,7 @@ Independent source: S02 TL-400…406/480…491/530…549/605…632/740 and cited
 | rolling tool (N) moves the edit point | KEEP | Rolling tool joint 100→110 preserves end 150 and one entry. Distinct two-sided edit gesture. |
 | slip (Y) changes source time in one history entry | KEEP | Slip 10 frames changes only source In to 50 frames in one entry. Protects source-time gesture. |
 | razor (C) click splits once; Shift splits all unlocked tracks; Alt ignores links | KEEP | Razor click splits linked A/V; Shift all tracks; Alt breaks links. Distinct tool/modifiers. |
-| razor snaps to the playhead even with snapping off (TL-620) | KEEP | Razor within playhead band snaps 50 even global Snap off. Protects razor-specific override. |
+| razor snaps to the playhead even with snapping off (TL-620) | KEEP | Razor within playhead band snaps 50 even global snapping off. Protects razor-specific override. |
 | rate stretch doubles the duration and halves the speed (AC-12d through the tool) | KEEP | Rate Stretch 120→240 frames changes rate 1→0.5. Protects time-stretch tool. |
 | Escape cancels a trim with no entry | KEEP | Cancel trim restores 0–100 and history unchanged. Distinct trim transaction abort. |
 | AC-3c: \\ then \\ returns to the exact prior zoom and scroll | KEEP | Two zoom-to-sequence toggles restore exact 7.3/123.4 saved view. Protects user viewport restoration. |
@@ -294,7 +294,7 @@ Independent source: S02 TL-100…113/1053/A.3/328/331/333; S04 TH-003/WF-001/003
 | nearest target within the threshold wins, then priority | KEEP | Nearest target wins, ties prefer playhead priority; out-of-threshold null. Protects exact snap selection. |
 | uses the nearest tile at or before the requested time | KEEP | At 5.9 seconds select the four-second tile; at six seconds select six, out-of-range clamps 0/58. Protects sprite sampling protocol. |
 | takes the max over the peaks covered by each column | KEEP | Known peak maxima over half-second columns yield 49/99/49/99. Protects alias-free waveform reduction. |
-| AC-7b: -6 dB halves the drawn amplitude; clipping is flagged | KEEP | −6 d Bgain≈0.501,0.8 peak draws 40 px,positive gain flags/clamps clip. Explicit waveform amplitude requirement. |
+| AC-7b: -6 dB halves the drawn amplitude; clipping is flagged | KEEP | −6 d Bgain≈0.501,0.8 peak draws 40 px, positive gain flags/clamps clip. Explicit waveform amplitude requirement. |
 
 ## `apps/web/test/timeline-panel.test.tsx`
 
@@ -310,7 +310,7 @@ Independent source: S04 waveform container-stream-index protocol; historical mov
 
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
-| requests the peaks stream with the clip's container stream index (movie audio = stream 1) | KEEP | Movie audio container stream 1 requests 1.bin and decodes[0.5,0.25],not or din al 0. Public path/bytes independent oracle. |
+| requests the peaks stream with the clip's container stream index (movie audio = stream 1) | KEEP | Movie audio container stream 1 requests 1.bin and decodes[0.5,0.25], not or din al 0. Public path/bytes independent oracle. |
 
 ## `apps/web/test/timeline-transition-index.test.ts`
 
@@ -336,13 +336,13 @@ Independent source: S02 TL-872…877, AC-18a/b/c; S03 ARC-010/PGM-003/XF-023; WP
 | re-issues play() when the Player does not start or stalls while playing (no frameupdate, not buffering) — WP-3I | OPTIMIZE | No-frame-start/stall restarts from last frame; progressing/buffering/paused players are not kicked. Historical watchdog regression. |
 | does not kick a Player that renders slowly; a real stall after slow frames is still kicked | OPTIMIZE | 700 ms frames are allowed but a real five-second stall recovers. Distinct adaptive watchdog policy. |
 | a slow machine: the next play's slow first frame is not a stall; a real stall is still kicked | OPTIMIZE | Second play 900 ms first frame is allowed and later stall recovers. Distinct between-play history regression. |
-| mutes audio below 1× (TL-874) | OPTIMIZE | 0.25× playback mutes audio. Explicit TL874 contract. |
+| mutes audio below 1× (TL-874) | OPTIMIZE | 0.25× playback mutes audio. Explicit TL-874 contract. |
 | uses seek-stepping at 8×: timecode advances 8× real time, seeks ≤ 30/s (AC-18b) | OPTIMIZE | One virtual second at 8× advances about 240 frames with at most 31 seeks; pausing cancels rAF. Explicit AC-18b resource bound. |
 | plays reverse by stepping and stops at 0 | OPTIMIZE | Reverse from 30 reaches zero and stops. Distinct stepping direction/end bound. |
 | stops at the sequence end, or loops In→Out when loop is on (TL-875) | OPTIMIZE | Native end stops; loop[10,20)returns 10. Distinct end/loop behavior. |
 | Play In to Out stops on the last marked frame (TL-877) | OPTIMIZE | Play Range 10–20 stops on 19. Protects exclusive end. |
 | follows external seeks while playing | OPTIMIZE | External seek 80 while playing updates the Player. Protects bidirectional transport clock. |
-| with an audio graph a seek while playing restarts: pause, seek once the graph is ready, play (sound-design Phase 6) | OPTIMIZE | Audio seek pauses until graph ready,seeks to 80 then plays; restart without target preserves frame. Explicit primed-start synchronization. |
+| with an audio graph a seek while playing restarts: pause, seek once the graph is ready, play (sound-design Phase 6) | OPTIMIZE | Audio seek pauses until graph ready, seeks to 80 then plays; restart without target preserves frame. Explicit primed-start synchronization. |
 | the stall watchdog leaves a Player alone while the audio holds the picture for a primed start | OPTIMIZE | While audio waits to start, two seconds without a frame is not a stall; after ready genuine stall recovers. Distinct false watchdog audio regression. |
 | a seek during a restart plays from the latest target; a pause during it abandons it | OPTIMIZE | New seek 120 supersedes 80 during restart; pause abandons later 200 restart. Protects async latest-wins/cancellation. |
 | steps, jumps to start/end and edit points | KEEP | Registered step/navigation commands reach 6/5/end 120/edits 60/90/zero. Protects command routing. |
@@ -354,7 +354,7 @@ Independent source: S11 ANM-023 explicitly requires animejs manualChunks → ven
 
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
-| puts anime.js subpath modules in vendor-anime | KEEP | Literal animejs timeline/svg subpath IDs resolve vendor-anime via actual Vite config. Public ANM023 configuration name is independent. |
+| puts anime.js subpath modules in vendor-anime | KEEP | Literal animejs timeline/svg subpath IDs resolve vendor-anime via actual Vite config. Public ANM-023 configuration name is independent. |
 
 ## `apps/web/test/voiceover-latency.test.ts`
 
@@ -363,11 +363,11 @@ Independent source: spec12 Phase0 WP0.1 input/output latency compensation; prefe
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
 | without jitter the clap lands on the record point (±1 sample) | KEEP | Zero clock jitter and one-sample buffer clap lands within one sample with a 0.065-second round trip. Property excludes raf 0 so this retains unique exact case. |
-| simulated input latency: aligned within one capture buffer; uncompensated it is not | CONSOLIDATE (remove) | CONSOLIDATE: general 300-case simulation property already owns nonzero latency/jitter within-buffer. Omitted input Latency negative control is not required correct behavior. |
+| simulated input latency: aligned within one capture buffer; uncompensated it is not | CONSOLIDATE (remove) | CONSOLIDATE: general 300-case simulation property already owns nonzero latency/jitter within-buffer. Omitted inputLatency negative control is not required correct behavior. |
 | any latency, buffer and report jitter: within one buffer (property) | KEEP | Physical simulator varies capture buffers/jitter/input/output latency; clap must land within one buffer. Oracle wall time independent of production lower-envelope estimator. |
 | a late frame report (stall) does not shift the take (lower envelope of the pairs around the frame) | KEEP | Single 500 ms frame-report stall cannot shift take. Distinct adversarial capture-clock regression. |
 | the user offset and the capture-context fallback; hostile values count as 0 | KEEP | A −5 ms offset with 20 ms output latency gives 15 ms; capture fallback gives 25 ms; hostile latency values are bounded. Distinct fallback/config inputs. |
-| the Latency Offset preference parses tolerantly (−500 … 500 ms, default 0) | KEEP | Persisted latency offset default 0,12.4→12,−9999→−500,invalid→0. Independent preference bounds. |
+| the Latency Offset preference parses tolerantly (−500 … 500 ms, default 0) | KEEP | Persisted latency offset default 0,12.4→12,−9999→−500, invalid→0. Independent preference bounds. |
 
 ## `apps/web/test/workspace-migration.test.ts`
 
@@ -375,14 +375,14 @@ Independent source: S05 SH-020/021, spec12 §2.7 WP3.3b/WP5.2; AGENTS immutable 
 
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
-| adds Review as a background tab before Markers in the stored current and saved layouts; nothing else changes | REWRITE | v 1 stored current/saved gain Review and Sound Check at correct peer group while active/custom/other data unchanged; reload version 3. Remove panel State-derived expectations. |
+| adds Review as a background tab before Markers in the stored current and saved layouts; nothing else changes | REWRITE | v1 stored current/saved gain Review and Sound Check at correct peer group while active/custom/other data unchanged; reload version 3. Remove panelState-derived expectations. |
 | is idempotent and never duplicates the panel (Review already open, docked or floating) | REWRITE | Existing docked/floating/alternate ID Review must not duplicate; repeat migration deep content unchanged. Remove object identity constraint. |
-| leaves factory (null) layouts and layouts without a host group alone | REWRITE | Null factory/no host layouts unchanged;library host gets background Review without input mutation. Replace identity with content assertions. |
-| corrupt, unknown and newer stored data are still reset (SH-021) | REWRITE | Corrupt/unknown/future stored versions reset safely;an invalid v1 payload still refuses. Replace derived newer version setup with fixed future literal where possible. |
-| never throws on hostile stored data, and adds at most one Review panel (property) | REWRITE | Hostile stored layouts must not throw/duplicate new Review. Remove weak data-defined probe;keep actual no-throw/count guarantees. |
-| adds Sound Check right after Review in the stored layouts; nothing else changes | REWRITE | v 2 stored layouts insert Sound Check beside Review preserving active/custom data and reload. Remove panel State oracle/object identity. |
-| without Review it goes where Review went (before Markers); the factory layout has it already | REWRITE | Without Review,new Sound Check joins Markers;missing host and factory already containing it remain content-equal. Remove identity only. |
-| never throws on hostile stored data and adds at most one Sound Check panel (property) | REWRITE | Host il ev 2 input must not throw/duplicate new Sound Check. Independent robustness property at the persisted migration boundary. |
+| leaves factory (null) layouts and layouts without a host group alone | REWRITE | Null factory/no host layouts unchanged; library host gets background Review without input mutation. Replace identity with content assertions. |
+| corrupt, unknown and newer stored data are still reset (SH-021) | REWRITE | Corrupt/unknown/future stored versions reset safely; an invalid v1 payload still refuses. Replace derived newer version setup with fixed future literal where possible. |
+| never throws on hostile stored data, and adds at most one Review panel (property) | REWRITE | Hostile stored layouts must not throw/duplicate new Review. Remove weak data-defined probe; keep actual no-throw/count guarantees. |
+| adds Sound Check right after Review in the stored layouts; nothing else changes | REWRITE | v2 stored layouts insert Sound Check beside Review preserving active/custom data and reload. Remove panelState oracle/object identity. |
+| without Review it goes where Review went (before Markers); the factory layout has it already | REWRITE | Without Review, new Sound Check joins Markers; missing host and factory already containing it remain content-equal. Remove identity only. |
+| never throws on hostile stored data and adds at most one Sound Check panel (property) | REWRITE | Hostile v2 input must not throw/duplicate new Sound Check. Independent robustness property at the persisted migration boundary. |
 
 ## `apps/web/test/wp2e/import.test.ts`
 
@@ -393,14 +393,14 @@ Independent source: S01 LIFE-010; S04 §5.3 AC2 and IN-007/013; S07 PRC-019. Sta
 | timeline drop imports two files in order in one undo step | KEEP | Two files of two and three seconds drop at frame 30 as A/V clips with start/duration pairs [30,60] and [90,90] in one undo step. Protects ordered batch timeline placement. |
 | web: uploads files in client jobs and commits ONE transaction with engine-store locators | KEEP | Two Uploads produce chosen engine-store keys/success jobs in one undo. Protects web acquisition/commit protocol. |
 | web: a source-range sidecar picked with a render makes it a version of its source (M3, S07:PRC-019) | KEEP | Render-before-source batch sidecar first 174/130 frames links to real source without uploading JSON. Distinct cross file association. |
-| lists per-file failures and commits the rest (S04 §5.3 AC 2) | KEEP | Good file commits;corrupt file yields UNSUPPORTED_MEDIA/per-file failure without losing good result. Partial failure policy. |
-| dedupes by fingerprint with one prompt per batch (S04:IN-007) | KEEP | Same fingerprint reuses old asset with one prompt,leaves new asset. Distinct dedupe use-existing. |
+| lists per-file failures and commits the rest (S04 §5.3 AC 2) | KEEP | Good file commits; corrupt file yields UNSUPPORTED_MEDIA/per-file failure without losing good result. Partial failure policy. |
+| dedupes by fingerprint with one prompt per batch (S04:IN-007) | KEEP | Same fingerprint reuses old asset with one prompt, leaves new asset. Distinct dedupe use-existing. |
 | "Import again" adds another project item referencing the same asset | KEEP | Import again reuses asset but adds second item. Distinct duplicate-choice branch. |
-| timeline drop into an empty sequence asks about the clip mismatch and updates the settings | KEEP | Empty sequence accepts mismatch 1280×720/25 fps and 250-frame clip;later import does not prompt again. Distinct mismatch policy. |
-| desktop: registers picked paths in place and adds a path locator | KEEP | Desktop registers paths in place,adds engine/path locators and reports broken name. Distinct no-upload desktop acquisition. |
-| guards beforeunload while uploads run (S04:IN-013) | KEEP | During upload beforeunload prevents default;after completion allows it. Actual browser-event guard boundary. |
-| placeItems: Project items dragged to the timeline become one Overwrite transaction | KEEP | Project item drop duplicates item at 10/40 in one additional undo. Distinct already-import edit emplacement. |
-| reads DataTransfer payloads: in-app items first, then OS files | KEEP | Jasper mime wins over OS files;OS files fallback;plain external text null. Public drag payload precedence. |
+| timeline drop into an empty sequence asks about the clip mismatch and updates the settings | KEEP | Empty sequence accepts mismatch 1280×720/25 fps and 250-frame clip; later import does not prompt again. Distinct mismatch policy. |
+| desktop: registers picked paths in place and adds a path locator | KEEP | Desktop registers paths in place, adds engine/path locators and reports broken name. Distinct no-upload desktop acquisition. |
+| guards beforeunload while uploads run (S04:IN-013) | KEEP | During upload beforeunload prevents default; after completion allows it. Actual browser-event guard boundary. |
+| placeItems: Project items dragged to the timeline become one Overwrite transaction | KEEP | Project item drop duplicates item at 10/40 in one additional undo. Distinct already imported item placement. |
+| reads DataTransfer payloads: in-app items first, then OS files | KEEP | Jasper mime wins over OS files; OS files fallback; plain external text null. Public drag payload precedence. |
 
 ## `apps/web/test/wp2e/ui.test.tsx`
 
@@ -409,16 +409,16 @@ Independent source: S05 HD-020/PRJ-001…010/JOB-003/005/EX-013/014/022; S04 RP-
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
 | requires confirmation before deleting a project | KEEP | Home Delete emits no DELETE until confirm then requests right project. Protects destructive action consent. |
-| moves media into a bin and finds it from the project root | KEEP | New bin rename/drop moves actual item;root search finds nested item. Protects UI bin routing/navigation. |
-| warns before deleting media that is used in a sequence and deletes with force on confirm | KEEP | Used media removal warns/preserves before confirm;confirm removes item and dependent clips. Protects force approval. |
+| moves media into a bin and finds it from the project root | KEEP | New bin rename/drop moves actual item; root search finds nested item. Protects UI bin routing/navigation. |
+| warns before deleting media that is used in a sequence and deletes with force on confirm | KEEP | Used media removal warns/preserves before confirm; confirm removes item and dependent clips. Protects force approval. |
 | creates a sequence from the selected preset | KEEP | Selected vertical preset creates 1080×1920 active sequence. Protects UI preset choice. |
 | keeps a ready 720 proxy when the 540 tier was never made (LIFE-050) | KEEP | Media updated 720 ready/540 none retains 720 proxy URL. Historical fallback event merge. |
 | cancels a running export job through the engine (JOB-003) | KEEP | Jobs Cancel button POSTs to correct running export job. Protects UI job routing. |
-| keeps client uploads running when the engine is disconnected (JOB-005) | KEEP | Engine 503 does not delete/client fail upload;row stays Running. Protects independent client job state. |
-| sends the committed project envelope when requesting an export plan | KEEP | Plan request contains jasper-project envelope,current project/sequence and auto entire range. Public wire contract. |
+| keeps client uploads running when the engine is disconnected (JOB-005) | KEEP | Engine 503 does not delete/client fail upload; row stays Running. Protects independent client job state. |
+| sends the committed project envelope when requesting an export plan | KEEP | Plan request contains jasper-project envelope, current project/sequence and auto entire range. Public wire contract. |
 | forcing Native with native blockers disables Export (S04:RP-012, S05:EX-022) | KEEP | Forcing Native with blockers disables Export. Protects prevention of unsupported export. |
-| starts export without a stale plan ID and remembers settings (EX-013/014, RP-011) | KEEP | Export request omits stale plan Id and persisted auto engine choice. Protects revision-aware plan use. |
-| uses an available codec when H.264 is unavailable (ARCHITECTURE D-13) | KEEP | No H264 available forces AV1,disables H264 and plans AV1. Protects capability UI fallback. |
+| starts export without a stale plan ID and remembers settings (EX-013/014, RP-011) | KEEP | Export request omits stale plan ID and persisted auto engine choice. Protects revision-aware plan use. |
+| uses an available codec when H.264 is unavailable (ARCHITECTURE D-13) | KEEP | No H264 available forces AV1, disables H264 and plans AV1. Protects capability UI fallback. |
 | disables unusable hardware and GPL encoders in LGPL-only mode (ARCHITECTURE D-13) | KEEP | LGPL-only mode disables x264 and broken NVENC but allows OpenH264. Public licence/capability selection policy. |
 
 ## `apps/web/test/wp3i-integration.test.ts`
@@ -427,7 +427,7 @@ Independent source: export filename suffix and path safety contract. Stable seam
 
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
-| drops a typed .mp4 extension (the export adds it) and keeps other names | KEEP | MP4 suffix removed case-in sensitively;slashes/co lons sanitized;empty stems Export;MOV retained. Literal filename byte contract. |
+| drops a typed .mp4 extension (the export adds it) and keeps other names | KEEP | MP4 suffix removed case-insensitively; slashes/colons sanitized; empty stems Export; MOV retained. Literal filename byte contract. |
 
 ## `apps/web/test/wp65a-audition-view.test.ts`
 
