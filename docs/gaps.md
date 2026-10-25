@@ -754,7 +754,7 @@ shows; the desktop smoke and packaged-app checks were not run (no xvfb on the se
 
 ### social-comment
 Animated platform comment cards (`social-comment@1`, design `docs/superpowers/specs/2026-10-25-social-comment-templates-design.md`).
-**Done when:** all seven variants are drawn faithfully in light and dark, with presets, Properties controls, canvas
+**Done when:** all seven comment variants and the three store review cards are drawn faithfully in light and dark, with presets, Properties controls, canvas
 editing, randomize, bulk import and agent batches.
 **Status (in progress):** the template, its animation framework, the two TikTok cards and the X post card are built —
 see [wp-notes/social-comments.md](wp-notes/social-comments.md) "Template implementation" and "X card". The Instagram
@@ -762,6 +762,12 @@ and YouTube cards are not built yet: a clip set to one of them shows a striped "
 no gallery preset, and every export path refuses it (`TEMPLATE_NOT_INSTALLED`, e.g. "social-comment@1 (Instagram post
 comment card)"). X card limits: only the blue verified badge (gold / grey need a schema field); the Grok mark is always
 drawn; Chirp is the latin subset, so other scripts fall back to the next font of the stack.
+Store reviews (design §11: `play-store-review`, `app-store-review`, `app-store-review-ios`) are built — "Store
+reviews". Their limits: the iPhone card prints today's iOS ages ("2d ago"), not the weekday ("Sun") of the requester's
+iOS ≤ 14 screenshot (no source for those rules); the App Store web card's dark theme and the Play card's dark theme
+use the platforms' current dark tokens (the screenshots have no dark mode); Play has no default-avatar image (a grey
+silhouette is drawn); date cells in bulk import must be year first (`2025-09-24`, `2025/9/24`), as month-first and
+day-first dates are ambiguous.
 Add another and bulk import (CSV / pasted TSV, MCP `import_motion_graphics_csv`) are built — "Add another & bulk
 import". Their gaps: an `Image URL` column is reported as ignored (no remote picture import), XLSX is not read, and
 Add another has no keyboard shortcut (the free chord collides with macOS's Dock toggle).

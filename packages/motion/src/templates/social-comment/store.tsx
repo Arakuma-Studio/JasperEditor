@@ -34,9 +34,9 @@ const plain = (color: string) => ({ mention: color, hashtag: color });
 
 // ------------------------------------------------------------------------------------------------- stars
 
-/** Scale of the stars while the thump runs: a third of the heart's (1 → 1.1 → 1). */
+/** Scale of the stars while the thump runs: a quarter of the heart's (1 → 1.075 → 1), from the row's centre. */
 function starPulse(heart: SocialCardProps['anim']['heart']): number {
-	return heart ? r4(1 + (heart.s - 1) / 3) : 1;
+	return heart ? r4(1 + (heart.s - 1) / 4) : 1;
 }
 
 /**
@@ -115,7 +115,7 @@ function StarRow(p: {
 				display: 'flex',
 				gap: p.gap,
 				flexShrink: 0,
-				transformOrigin: '0% 50%',
+				transformOrigin: '50% 50%',
 				// always set (a style key that comes and goes would reorder the inline style between frames)
 				transform: s === 1 ? 'none' : `scale(${s})`,
 				...(animated ? { boxShadow: INK_RING } : {}),
