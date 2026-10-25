@@ -3,8 +3,8 @@
 
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
-import { dropUnreadableKeySides } from './keyframes.ts';
 import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
+import { dropUnreadableKeySides } from './keyframes.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
@@ -220,7 +220,8 @@ export function loadProject(
 	const sideRepairs: RepairEntry[] = dropUnreadableKeySides(m.document).map((id) => ({
 		action: 'repair-key-sides',
 		entity: id,
-		detail: 'unreadable incoming interpolation removed (the key is read with its interpolation on both sides)',
+		detail:
+			'unreadable incoming interpolation removed (the key is read with its interpolation on both sides)',
 	}));
 	const parsed = ProjectDocumentSchema.safeParse(m.document);
 	if (!parsed.success) {
