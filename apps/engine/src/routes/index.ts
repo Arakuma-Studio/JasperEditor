@@ -3,6 +3,7 @@ import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
 import audioFxRoutes from './audio-fx.ts';
+import automationRoutes from './automation.ts';
 import browseRoutes from './browse.ts';
 import cacheRoutes from './cache.ts';
 import camtrackRoutes from './camtrack.ts';
@@ -88,6 +89,8 @@ const ROUTE_PLUGINS = [
 	soundDesignRoutes,
 	// Proposals validate against and apply to the live document through the agent service.
 	proposalRoutes,
+	// Editing automation (spec 15) registers its refresher on the proposals service and places sounds from the library.
+	automationRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

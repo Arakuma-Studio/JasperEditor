@@ -13,6 +13,7 @@ import {
 	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
+import { AutomationPassRequestSchema } from './automation.ts';
 import {
 	AudioClassifyRequestSchema,
 	BeatsRequestSchema,
@@ -1524,6 +1525,16 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/proposals/:proposalId/refresh',
 		body: ProposalRefreshRequestSchema,
 		response: ProposalRefreshResponseSchema,
+	},
+	/**
+	 * Spec 15 EA-020…EA-022: an editing-automation pass (`:pass` = decorate-cuts | punch-ins | ken-burns). `mode:
+	 * 'dryRun'` answers 200 with an `AutomationPassResult` (nothing stored); `propose` (default) answers 202 with an
+	 * `edit-automation` job whose result is an `AutomationPassResult` naming the stored proposal.
+	 */
+	automationPass: {
+		method: 'POST',
+		path: '/api/projects/:projectId/automation/:pass',
+		body: AutomationPassRequestSchema,
 	},
 	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
 	proposalFeatures: {

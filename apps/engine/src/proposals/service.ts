@@ -89,6 +89,8 @@ export type ProposalRefresher = (input: {
 	itemIds: string[];
 	doc: ProjectDocument;
 	revision: number;
+	/** Reroll (spec 15 EA-032): plan each item with its next seed. */
+	reroll?: boolean;
 }) =>
 	| Promise<{ items: ProposalItemInput[]; dropped?: { itemId: string; reason: string }[]; report?: unknown }>
 	| { items: ProposalItemInput[]; dropped?: { itemId: string; reason: string }[]; report?: unknown };
@@ -762,7 +764,7 @@ export class ProposalService {
 	async refresh(
 		projectId: string,
 		proposalId: string,
-		req: { itemIds: string[] | 'stale' },
+		req: { itemIds: string[] | 'stale'; reroll?: boolean },
 		_who: Requester,
 	) {
 		await this.ensureProject(projectId);
@@ -815,7 +817,14 @@ export class ProposalService {
 			}
 			let planned: Awaited<ReturnType<ProposalRefresher>>;
 			try {
-				planned = await refresher({ projectId, proposal: p, itemIds: ids, doc, revision });
+				planned = await refresher({
+					projectId,
+					proposal: p,
+					itemIds: ids,
+					doc,
+					revision,
+					...(req.reroll ? { reroll: true } : {}),
+				});
 			} catch (e) {
 				if (e instanceof HttpError) throw e;
 				throw new HttpError(

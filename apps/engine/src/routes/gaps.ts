@@ -246,6 +246,8 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 
 	const reframe = new ReframeService(core, () => app.jasper.services.roto as RotoService | undefined);
 	reframe.registerRunner();
+	// spec 15 EA-021: punch-ins toward the subject run the analysis inline in the edit-automation job
+	app.jasper.services.reframe = reframe;
 	app.post(
 		'/api/reframe',
 		guarded(async (req, reply) =>
