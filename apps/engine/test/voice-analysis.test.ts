@@ -47,9 +47,9 @@ function programme(seconds: number, seed = 1): Float32Array {
 	return x;
 }
 
-function writeWav(name: string, x: Float32Array, sr = SR): string {
+function writeWav(name: string, x: Float32Array): string {
 	const f = join(dir, name);
-	writeFileSync(f, encodeWav([x], sr, 'f32'));
+	writeFileSync(f, encodeWav([x], SR, 'f32'));
 	return f;
 }
 
@@ -162,11 +162,11 @@ describe.skipIf(!HAVE_FFMPEG)('voice-analysis job and routes', () => {
 	});
 
 	it('analyses the chosen stream of a multi-stream file (48 kHz stereo FLAC in Matroska)', async () => {
-		const voice = writeWav('voice48.wav', programme(6, 3), 48_000);
+		const voice = writeWav('voice16.wav', programme(6, 3));
 		const out = join(dir, 'two.mkv');
 		ff([
 			...['-i', voice, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo:d=6'],
-			...['-map', '0:a', '-map', '1:a', '-c:a', 'flac', '-ac', '2', out],
+			...['-map', '0:a', '-map', '1:a', '-c:a', 'flac', '-ac', '2', '-ar', '48000', out],
 		]);
 		const m = await register(app, out);
 		const audio = m.probe.streams.filter((s) => s.type === 'audio').map((s) => s.index);
