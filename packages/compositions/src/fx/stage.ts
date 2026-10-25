@@ -10,6 +10,7 @@
 import {
 	activeRemap,
 	colorRunKey,
+	cropMayFeather,
 	type EffectSpec,
 	FX_MAX_CANVAS,
 	type FxClipInfo,
@@ -112,8 +113,13 @@ export type FxPreparedStep =
 			/** keyframes-blend: the adjustment clip's blend mode (BLEND_MODES id) and its Dissolve seed of the frame. */
 			blend: string;
 			seed: number;
-			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
+			/**
+			 * Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. crop-order: the
+			 * intersection of the hard crops' windows (each mirrored by the flips after it).
+			 */
 			insets: readonly [number, number, number, number] | null;
+			/** crop-order: feathered crops' windows (fractions, mirrored like `insets`) and Edge Feather (layer px). */
+			feather?: readonly { insets: readonly [number, number, number, number]; feather: number }[];
 			/** Active Opacity masks limit the adjustment layer's coverage. */
 			opacityMasks?: readonly ResolvedMask[];
 	  };
@@ -260,6 +266,12 @@ export function useLayerFx(
 		};
 	}, [clip, fps]);
 	const mediaKind = useMemo(() => (id: string) => doc.media[id]?.kind, [doc.media]);
+	// crop-order: crops whose Edge Feather is above 0 anywhere in the clip keep the feathered path on every frame.
+	const featheredCrops = useMemo(
+		() =>
+			new Set(clip.effects.filter((e) => e.effectId === 'jasper.crop' && cropMayFeather(e.params)).map((e) => e.id)),
+		[clip],
+	);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
@@ -276,6 +288,7 @@ export function useLayerFx(
 						clip: clipInfo,
 						capture,
 						masks: props.masks,
+						featheredCrops,
 					}),
 		[
 			enabled,
@@ -293,6 +306,7 @@ export function useLayerFx(
 			mediaKind,
 			clipInfo,
 			props.masks,
+			featheredCrops,
 		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))

@@ -9,6 +9,7 @@ import {
 	type Clip,
 	type Crop,
 	contentTimeAt,
+	cropWindow,
 	evaluate,
 	intrinsicBoxOf,
 	type LayerTransformValues,
@@ -46,18 +47,23 @@ export function layerStateAt(
 	const values = transformAt(seq, clip, f);
 	const box = intrinsicBoxOf({ doc, seq, clip });
 	const t = contentTimeAt(clip, f, seq.settings.frameRate);
-	const fx = (
-		(clip as { effects?: { effectId: string; enabled: boolean; params: Record<string, never> }[] }).effects ??
-		[]
-	).find((e) => e.effectId === 'jasper.crop' && e.enabled);
-	const side = (name: string) => {
-		const a = fx?.params[name] as Parameters<typeof evaluate>[0] | undefined;
-		return a ? Number(evaluate(a, t)) || 0 : 0;
-	};
-	const crop = fx
-		? { left: side('left'), top: side('top'), right: side('right'), bottom: side('bottom') }
-		: null;
-	return { values, box, crop, frame: f };
+	// crop-order: the window the crops leave visible where they sit in the stack (flips after a crop mirror it).
+	const stack = (
+		(clip as { effects?: { effectId: string; enabled: boolean; params: Record<string, never> }[] }).effects ?? []
+	).map((e) => ({
+		effectId: e.effectId,
+		enabled: e.enabled,
+		params:
+			e.effectId === 'jasper.crop'
+				? Object.fromEntries(
+						Object.entries(e.params).map(([k, a]) => [
+							k,
+							Number(evaluate(a as Parameters<typeof evaluate>[0], t)) || 0,
+						]),
+					)
+				: {},
+	}));
+	return { values, box, crop: cropWindow(stack), frame: f };
 }
 
 export type FitMode = 'fit' | 'fill' | 'native';

@@ -4,6 +4,7 @@
 import type { ClipTiming } from '../color/retime.ts';
 import { CROP_EFFECT } from '../registry/effects.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
+import { pinnedCropOf } from '../render/crop.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Transform } from '../schema/sequence.ts';
@@ -25,7 +26,7 @@ export type PresetSections = {
 	motion?: boolean;
 	/** Opacity and Blend Mode. */
 	opacity?: boolean;
-	/** The pinned Crop (the clip's first `jasper.crop`). */
+	/** The pinned Crop (the stack's first effect when it is a `jasper.crop`; a later crop is an ordinary effect). */
 	crop?: boolean;
 	volume?: boolean;
 	panner?: boolean;
@@ -114,7 +115,9 @@ export function buildEffectPreset(
 		if (typeof r.blendMode === 'string') intrinsic.blendMode = r.blendMode as PresetIntrinsic['blendMode'];
 	}
 	const stack = (r.effects as EffectInstance[] | undefined) ?? [];
-	const pinned = stack.find((fx) => fx.effectId === CROP_EFFECT.id) ?? null;
+	// crop-order: only a crop at the top of the stack is the intrinsic Crop (applied first, as the preset re-applies it);
+	// a crop after other effects is saved as an ordinary effect so its place in the stack is kept.
+	const pinned = pinnedCropOf(stack);
 	const wantCrop = s.crop || (!!pinned && !!s.effectIds?.includes(pinned.id));
 	if (wantCrop && r.transform) {
 		// No crop effect yet = registry defaults (nothing cropped); saved explicitly so applying resets a crop.

@@ -1,4 +1,4 @@
-// Pure helpers for the per-layer pipeline (S03 §4.2): source → effects (crop first) → transform →
+// Pure helpers for the per-layer pipeline (S01:FX-002): source → effects in stack order (Crop included) → transform →
 // opacity → blend. No React here so the math is unit-testable and shared by the layers.
 import {
 	audioFadeGain,
@@ -40,21 +40,20 @@ export type EffectStage = {
 };
 
 /**
- * Effect chain for a layer, in application order. Crop is always first (S03 §4.2 step 2,
- * ARCHITECTURE §8), then the remaining enabled effects in stack order. Disabled effects and ids the
- * registry does not know are bypassed (S01:FX-022).
+ * Effect chain for a layer, in application order: the enabled effects in stack order, Crop where it sits (schema v8,
+ * S01:FX-002 — v7 stacks are migrated so their Crop comes first). Nesting the wrappers innermost → outermost makes a
+ * crop's `clip-path` cut exactly the picture the effects before it produced, and effects after it see the cut
+ * picture (a blur after a crop softens the crop edge). Disabled effects and ids the registry does not know are
+ * bypassed (S01:FX-022). A crop with Edge Feather draws its hard `clip-path` here: the feather runs in the canvas chain
+ * (fx/plan.ts), which takes such layers whenever it can run.
  */
 export function effectStages(
 	effects: readonly ResolvedEffect[],
 	uidPrefix: string,
 	registry: EffectRegistry = defaultEffectRegistry,
 ): EffectStage[] {
-	const ordered = [
-		...effects.filter((e) => e.effectId === CROP_EFFECT_ID),
-		...effects.filter((e) => e.effectId !== CROP_EFFECT_ID),
-	];
 	const out: EffectStage[] = [];
-	for (const fx of ordered) {
+	for (const fx of effects) {
 		if (!fx.enabled) continue;
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		if (spec?.appliesTo !== 'video') continue;

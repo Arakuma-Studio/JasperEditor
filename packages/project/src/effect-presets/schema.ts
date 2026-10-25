@@ -125,7 +125,10 @@ export const PresetIntrinsicSchema = z.looseObject({
 	motion: PresetMotionSchema.optional(),
 	opacity: PresetAnimNumber.optional(),
 	blendMode: BlendModeSchema.optional(),
-	/** The pinned Crop (the clip's first `jasper.crop`): applying overwrites it (or creates it at index 0). */
+	/**
+	 * The pinned Crop (the source stack's first effect when it is a `jasper.crop`): applying overwrites the target's
+	 * pinned crop (or inserts one at index 0) — it applies first, before the other effects (crop-order).
+	 */
 	crop: z
 		.looseObject({ enabled: z.boolean().optional(), params: z.record(z.string(), PresetAnimParam) })
 		.optional(),

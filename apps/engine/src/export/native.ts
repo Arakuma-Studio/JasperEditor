@@ -1,5 +1,5 @@
 // Native export builder (S03:ENG-030, S04:RN-021/022, ARCHITECTURE §9.5): one input per clip with input
-// seeking; per layer setpts (speed) → fps → scale to the box → format=rgba → effects (crop…) → Motion: flips →
+// seeking; per layer setpts (speed) → fps → scale to the box → format=rgba → effects in stack order (crop where it sits, crop.ts) → Motion: flips →
 // scale → rotate (premultiplied, transparent, grown bounds) → alpha multiply → overlay at the offset derived from
 // the @jasper/project layer matrix; bottom → top over a `color` background; audio = the offline mixer's mixdown
 // (audio-mix, `audio/mixdown.ts`) as one more input, resampled with SoX when the delivered rate differs;
@@ -37,7 +37,8 @@ import { variantHasAlpha } from '../imports/variants.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
-import { CROP_EDGES, cropMaskFilter, mergeResize, motionFilters, motionStage } from './keyframed.ts';
+import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
+import { CROP_EDGES, mergeResize, motionFilters, motionStage } from './keyframed.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
@@ -300,7 +301,7 @@ type LayerSourceOptions = {
 	addInput(args: string[]): number;
 	/** Label prefix for sub-graphs of the chain (unique in the filtergraph; default `src`). */
 	label?: string;
-	/** Leave the crop out: the sub-pixel layer kernel clips to it with anti-aliased edges (stream/plan.ts). */
+	/** Leave the hard crops out: the sub-pixel layer kernel clips to them with anti-aliased edges (stream/plan.ts). */
 	skipCrop?: boolean;
 	/** edit-structure: the source is the composite stream `label` (adjustment layers), frame 0 = sequence `R0`. */
 	composite?: { label: string; R0: number };
@@ -553,8 +554,7 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		);
 	}
 
-	const cropTail: string[] = [];
-	// Effects in stack order (crop first by convention, S01:FX-003); only native-capable ones reach here.
+	// Effects in stack order (schema v8: Crop where it sits, crop.ts); only native-capable ones reach here.
 	// Effects the builder does not know are asked to the M2 extensions (§19.6), e.g. fused colour LUTs.
 	for (const [index, fx] of props.effects.entries()) {
 		if (!fx.enabled) continue;
@@ -576,33 +576,51 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			}
 			continue;
 		}
-		if (fx.effectId === 'jasper.crop' && o.skipCrop) continue;
 		if (fx.effectId === 'jasper.crop') {
-			// edit-structure: an adjustment layer's crop limits its region: applied after the effects (cropTail).
-			const into = o.composite ? cropTail : f;
+			// edit-structure: an adjustment layer's crops limit its region: applied after the effects (below).
+			if (o.composite) continue;
 			const applied = c.effects[index];
-			if (applied && n > 1 && CROP_EDGES.some((e) => isAnimated(applied.params[e]))) {
-				// Keyframed edges: the alpha is multiplied with a per-frame rectangle mask (keyframed.ts).
-				into.push(
-					cropMaskFilter({ clip: c, effect: applied, f0, f1, fps, bw, bh, label: `${label}cr${index}` }),
-				);
+			if (!applied) continue;
+			// Edge Feather: the alpha × the shared feather profile, at its place on every path (crop.ts).
+			if (isFeatheredCrop(applied)) {
+				f.push(cropFeatherFilter({ clip: c, effect: applied, f0, f1, fps, bw, bh, label: `${label}cf${index}` }));
 				continue;
 			}
-			const l = Math.round((Number(fx.params.left ?? 0) / 100) * bw);
-			const r = Math.round((Number(fx.params.right ?? 0) / 100) * bw);
-			const t = Math.round((Number(fx.params.top ?? 0) / 100) * bh);
-			const b = Math.round((Number(fx.params.bottom ?? 0) / 100) * bh);
-			const cw = Math.max(1, bw - l - r);
-			const ch = Math.max(1, bh - t - b);
-			if (l || r || t || b)
-				into.push(`crop=${cw}:${ch}:${l}:${t}`, `pad=${bw}:${bh}:${l}:${t}:color=black@0`);
+			// Hard crops of a sub-pixel layer are the kernel's anti-aliased clip (stream/plan.ts `cropAt`).
+			if (o.skipCrop) continue;
+			const cut = hardCropFilter({
+				clip: c,
+				effect: applied,
+				params: fx.params,
+				f0,
+				f1: n > 1 ? f1 : f0 + 1,
+				fps,
+				bw,
+				bh,
+				label: `${label}cr${index}`,
+			});
+			if (cut) f.push(cut);
 		} else if (fx.effectId === 'jasper.flip-horizontal') f.push('hflip');
 		else if (fx.effectId === 'jasper.flip-vertical') f.push('vflip');
 	}
 	if (o.composite) {
 		// edit-structure (KND-012): the adjusted composite replaces the original (premultiplied, alpha 1: a blur darkens
-		// the frame edges as in Premiere), then the crop limits the region; opacity and fades then mix it in (overlay).
-		f.push('premultiply=inplace=1', 'lutrgb=a=maxval', ...cropTail);
+		// the frame edges as in Premiere), then the crops limit the region (each window mirrored by the flips after its
+		// crop; feathered ones fade it in); opacity and fades then mix it in (overlay).
+		f.push(
+			'premultiply=inplace=1',
+			'lutrgb=a=maxval',
+			...adjustmentCropFilters({
+				clip: c,
+				f0,
+				f1: n > 1 ? f1 : f0 + 1,
+				fps,
+				bw,
+				bh,
+				label,
+				paramsAt: (i) => props.effects[i]?.params ?? {},
+			}),
+		);
 	}
 	if (padHead > 0 || padTail > 0) {
 		f.push(
@@ -616,11 +634,12 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 	for (const fx of props.effects) {
 		if (!fx.enabled || fx.effectId === 'jasper.flip-horizontal' || fx.effectId === 'jasper.flip-vertical')
 			continue;
-		if (
-			fx.effectId === 'jasper.crop' &&
-			!CROP_EDGES.some((e) => isAnimated(c.effects.find((x) => x.id === fx.id)?.params[e]))
-		)
-			continue;
+		if (fx.effectId === 'jasper.crop') {
+			// A static hard crop cuts to transparent black; keyframed edges and Edge Feather leave partial alpha.
+			const applied = c.effects.find((x) => x.id === fx.id);
+			if (applied && !isFeatheredCrop(applied) && !CROP_EDGES.some((e) => isAnimated(applied.params[e])))
+				continue;
+		}
 		if (defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color) continue;
 		opaque = false;
 	}

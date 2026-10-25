@@ -127,6 +127,9 @@ export function EffectControlsPanel(props: PanelProps) {
 	);
 }
 
+/** The pinned Crop section backed by a crop at the top of the stack (crop-order). */
+const isPinnedCrop = (s: FxSection) => s.intrinsic && !!s.fx && s.id.endsWith(':crop');
+
 function Empty({ text }: { text: string }) {
 	return (
 		<p className="p-3 text-pr-small text-pr-muted" data-testid="ec-empty">
@@ -450,7 +453,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	};
 
 	const onHeaderDragStart = (e: DragEvent, s: FxSection) => {
-		if (!s.fx || s.intrinsic) return;
+		if (!s.fx || (s.intrinsic && !isPinnedCrop(s))) return;
 		e.dataTransfer.setData(JASPER_EFFECT_INSTANCE_MIME, s.fx.id);
 		e.dataTransfer.effectAllowed = 'move';
 	};
@@ -582,7 +585,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 				disabled: !!s.missing || !s.rows.some((r) => r.bindings.some((b) => b.path)),
 				run: () => resetSection(s),
 			},
-			...(s.fx && (!s.intrinsic || s.id.endsWith(':crop'))
+			...(s.fx && (!s.intrinsic || isPinnedCrop(s))
 				? [
 						{
 							kind: 'item' as const,
@@ -765,7 +768,10 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 										!(s.fx && hidden.has(r.spec.key.slice(`effects.${s.fx.id}.`.length))),
 								);
 								if (filter !== 'all' && rows.length === 0) return null;
-								const fxIndex = !s.intrinsic && s.stackIndex !== undefined ? s.stackIndex : undefined;
+								// crop-order: the pinned Crop (stack index 0) is an effect header too: drag it down the stack,
+								// or drop an effect on it to place that effect before the crop.
+								const fxIndex =
+									(!s.intrinsic || isPinnedCrop(s)) && s.stackIndex !== undefined ? s.stackIndex : undefined;
 								return (
 									<div key={s.id} data-ec-section={s.id}>
 										{/* biome-ignore lint/a11y/noStaticElementInteractions: effect headers are drag handles for reordering (S03:EC-030) */}
@@ -887,7 +893,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 														<ResetGlyph size={12} />
 													</MiniButton>
 												) : null}
-												{s.fx && (!s.intrinsic || s.id.endsWith(':crop')) ? (
+												{s.fx && (!s.intrinsic || isPinnedCrop(s)) ? (
 													<MiniButton
 														label={`Remove ${s.title}`}
 														onClick={() =>

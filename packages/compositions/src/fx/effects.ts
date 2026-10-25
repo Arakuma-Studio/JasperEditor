@@ -3,7 +3,7 @@
 // passes run on the page's shared GPU host (fx/host.ts) and are copied into the chain's 2D canvases. The same
 // descriptors run in `Internals.runEffectChain` (FxPicture, Player and renders) and in `<HtmlInCanvas effects>`
 // (DOM layers). Crop and flips are 2D passes here because inside the chain they must happen in stack order.
-import type { FxEffectPlan, Lut } from '@jasper/project';
+import { cropEdgeCoverage, type FxEffectPlan, type Lut } from '@jasper/project';
 import { createEffect } from 'remotion';
 import type { LayerTap } from '../types.ts';
 import { planComposite } from './composite-plan.ts';
@@ -226,11 +226,63 @@ export type FxMixParams = {
 	noise?: { x: number; y: number; scale: number };
 	region: { x: number; y: number; w: number; h: number } | null;
 	/**
+	 * crop-order: feathered crops of the adjustment layer (edges and feather in canvas px): the region's coverage is
+	 * multiplied by their Edge Feather profile (render/crop.ts), so the adjustment fades in from each crop edge.
+	 */
+	feather?: readonly FxFeatherRect[] | null;
+	/**
 	 * wp masks × edit-structure: the adjustment layer's Opacity masks limit where it applies — the result is
 	 * mix(original, adjusted mix, coverage), i.e. the opacity is multiplied by the masks' coverage.
 	 */
 	masks?: FxMaskGeometry | null;
 };
+
+/** A feathered crop window in canvas pixels: edges x0 < x1, y0 < y1 and the Edge Feather `f`. */
+export type FxFeatherRect = { x0: number; y0: number; x1: number; y1: number; f: number };
+
+type FeatherHolder = { featherCanvas?: HTMLCanvasElement; featherKey?: string; featherScratch?: HTMLCanvasElement };
+
+/**
+ * The coverage of feathered crop windows as a canvas whose alpha is Π `cropEdgeCoverage` (separable per window:
+ * x and y profiles multiply), cached by geometry in the holder.
+ */
+function featherCoverage(
+	holder: FeatherHolder,
+	rects: readonly FxFeatherRect[],
+	width: number,
+	height: number,
+): HTMLCanvasElement {
+	const key = `${width}x${height}:${rects.map((r) => `${r.x0},${r.y0},${r.x1},${r.y1},${r.f}`).join(';')}`;
+	if (holder.featherCanvas && holder.featherKey === key) return holder.featherCanvas;
+	const c = holder.featherCanvas ?? document.createElement('canvas');
+	holder.featherCanvas = c;
+	holder.featherKey = key;
+	c.width = width;
+	c.height = height;
+	const cx = new Float64Array(width).fill(1);
+	const cy = new Float64Array(height).fill(1);
+	for (const r of rects) {
+		for (let x = 0; x < width; x++)
+			cx[x] = (cx[x] ?? 1) * cropEdgeCoverage(x + 0.5 - r.x0, r.f) * cropEdgeCoverage(r.x1 - x - 0.5, r.f);
+		for (let y = 0; y < height; y++)
+			cy[y] = (cy[y] ?? 1) * cropEdgeCoverage(y + 0.5 - r.y0, r.f) * cropEdgeCoverage(r.y1 - y - 0.5, r.f);
+	}
+	const img = new ImageData(width, height);
+	const d = img.data;
+	for (let y = 0; y < height; y++) {
+		const row = y * width * 4;
+		const ky = cy[y]!;
+		for (let x = 0; x < width; x++) {
+			const i = row + x * 4;
+			d[i] = 255;
+			d[i + 1] = 255;
+			d[i + 2] = 255;
+			d[i + 3] = Math.round(255 * cx[x]! * ky);
+		}
+	}
+	ctx2d(c).putImageData(img, 0, 0);
+	return c;
+}
 
 /** Upload counter of the adjusted picture (every mix re-uploads it: it changes with every draw). */
 let adjustedUploads = 0;
@@ -321,6 +373,29 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 		out.restore();
 		out.globalAlpha = 1;
 		out.globalCompositeOperation = 'source-over';
+		if (params.feather?.length) {
+			// crop-order: result = original · (1 − coverage) + mixed · coverage (premultiplied canvas ops).
+			const cover = featherCoverage(holder as FeatherHolder, params.feather, width, height);
+			const t = (holder as FeatherHolder).featherScratch ?? document.createElement('canvas');
+			(holder as FeatherHolder).featherScratch = t;
+			if (t.width !== width) t.width = width;
+			if (t.height !== height) t.height = height;
+			const tc = ctx2d(t);
+			tc.globalCompositeOperation = 'copy';
+			tc.drawImage(maskCanvas ?? target, 0, 0, width, height);
+			tc.globalCompositeOperation = 'destination-in';
+			tc.drawImage(cover, 0, 0, width, height);
+			tc.globalCompositeOperation = 'source-over';
+			out.globalCompositeOperation = 'copy';
+			if (orig) {
+				out.drawImage(orig, 0, 0, width, height);
+				out.globalCompositeOperation = 'destination-out';
+				out.drawImage(cover, 0, 0, width, height);
+				out.globalCompositeOperation = 'lighter';
+			}
+			out.drawImage(t, 0, 0, width, height);
+			out.globalCompositeOperation = 'source-over';
+		}
 		if (maskCanvas && orig && params.masks) {
 			const h = fxHost();
 			if (!h) throw new Error('WEBGL_UNAVAILABLE: masks need WebGL2');

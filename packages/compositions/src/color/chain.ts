@@ -4,7 +4,9 @@
 // - Colour runs are exactly the engine's (`effectRuns` over the stack order): one baked-LUT pass each.
 // - Non-colour effects BEFORE the last colour run must be applied before it: a CSS-`filter` effect (blur…) becomes
 //   a 2D canvas pass in the chain; crop, flips and the corner pin commute with pointwise colour and stay CSS/
-//   matrix stages; anything else stays a CSS stage (order approximation).
+//   matrix stages; anything else stays a CSS stage (order approximation). A crop placed before such a chain pass (or
+//   with Edge Feather) would then cut after it: those layers take the fx chain instead (fx/plan.ts `cropNeedsChain`),
+//   where every step runs in stack order.
 // - Effects after the last colour run stay CSS/SVG stages as in M1.
 // - Without WebGL2 (preview only) the M1 colour effects fall back to their CSS/SVG preview and Lumetri is skipped
 //   ("Grade unavailable"); before/after bypass drops every colour effect of the clip.

@@ -10,8 +10,13 @@
 //   the original) → the effects (shader passes, colour runs, CSS filters, flips) → `mix` (adjusted over original with
 //   opacity, blend and the crop region). Renders always have HTML-in-Canvas; a Player without it shows the composite
 //   unadjusted with a chip, and a render that cannot run it fails (FX_LAYER_UNSUPPORTED), never a different picture.
+// crop-order (schema v8, docs/wp-notes/crop-order.md §4): a crop limits the region the adjustment replaces — its window
+// mirrored by the flips after it, several crops intersecting, Edge Feather fading the region in from the edges; a crop
+// placed before an effect that mixes pixels (blur, glow…) also clears the picture outside its window at its stack
+// position (a hard cut), so that effect sees transparency beyond the crop edge as it does beyond the frame edge.
 import {
 	activeMasks,
+	type CropInsets,
 	clipContentTime,
 	clipHasMasks,
 	defaultEffectRegistry,
@@ -20,6 +25,7 @@ import {
 	type RenderVisualClip,
 	type ResolvedEffect,
 	resolveCachedLayerProps,
+	stackCrops,
 } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo, useRef } from 'react';
 import { type EffectDescriptor, useCurrentFrame } from 'remotion';
@@ -52,6 +58,51 @@ export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 		if (!probe && !spec.preview.svgFilter) return false;
 	}
 	return true;
+}
+
+/** Effects that commute with a crop on an adjustment layer (pointwise colour, flips, other crops, the layer map). */
+function commutesWithCrop(fx: ResolvedEffect): boolean {
+	if (fx.effectId === CROP || fx.effectId === 'jasper.flip-horizontal' || fx.effectId === 'jasper.flip-vertical')
+		return true;
+	if (fx.effectId === 'jasper.corner-pin') return true;
+	const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
+	return !spec || spec.appliesTo !== 'video' || (!!spec.color && !spec.gpu);
+}
+
+/**
+ * crop-order: the effects an adjustment layer's canvas chain runs: its stack without crops (the `mix` region applies
+ * them), except that a crop placed before an effect that mixes pixels stays at its place as a hard cut (feather 0,
+ * id suffixed so it never takes the feathered path: the feather is the region's).
+ */
+export function adjustmentChainEffects(effects: readonly ResolvedEffect[]): ResolvedEffect[] {
+	const out: ResolvedEffect[] = [];
+	effects.forEach((fx, i) => {
+		if (fx.effectId !== CROP) {
+			out.push(fx);
+			return;
+		}
+		if (!fx.enabled) return;
+		if (effects.slice(i + 1).some((e) => e.enabled && !commutesWithCrop(e)))
+			out.push({ ...fx, id: `${fx.id}:cut`, params: { ...fx.params, feather: 0 } });
+	});
+	return out;
+}
+
+/**
+ * crop-order: the region an adjustment layer replaces — the intersection of its hard crops' windows and the
+ * feathered crops' windows with their Edge Feather (each window mirrored by the flips after its crop).
+ */
+export function adjustmentCropRegion(effects: readonly ResolvedEffect[]): {
+	insets: CropInsets | null;
+	feather: { insets: CropInsets; feather: number }[];
+} {
+	let insets: CropInsets | null = null;
+	const feather: { insets: CropInsets; feather: number }[] = [];
+	for (const c of stackCrops(effects)) {
+		if (c.feather > 0) feather.push({ insets: c.insets, feather: c.feather });
+		else insets = insets ? (insets.map((v, i) => Math.max(v, c.insets[i]!)) as CropInsets) : c.insets;
+	}
+	return { insets, feather };
 }
 
 /** The clips of `clips` covering sequence frame `frame` (adjustment clips have no transition handles). */
@@ -148,8 +199,8 @@ export function useAdjustmentChain(
 	const holder = useRef<AdjustmentHolder>({ canvas: null }).current;
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const clip = active ?? clips[0]!;
-	const effects = useMemo(() => (props?.effects ?? []).filter((e) => e.effectId !== CROP), [props]);
-	const crop = props?.effects.find((e) => e.enabled && e.effectId === CROP) ?? null;
+	const effects = useMemo(() => adjustmentChainEffects(props?.effects ?? []), [props]);
+	const region = useMemo(() => adjustmentCropRegion(props?.effects ?? []), [props]);
 	const opacity = active && props ? (props.opacity / 100) * fadeFactor(active.fades, frame) : 0;
 	// wp masks: the Opacity masks limit where the adjustment applies (the mix step's coverage), they do not cut the
 	// composite below; effect masks stay on their effects (fxMasked: mix(input, effected, coverage)).
@@ -176,12 +227,9 @@ export function useAdjustmentChain(
 	// keyframes-blend: every clip blend mode, composited on the GPU with the formulas of the native kernel.
 	const blend = active ? clip.blendMode : 'normal';
 	const seed = active ? dissolveSeed(active.clipId, frame - active.start) : 0;
-	const insets = crop
-		? ([crop.params.left, crop.params.top, crop.params.right, crop.params.bottom].map(
-				(v) => Math.min(100, Math.max(0, Number(v ?? 0))) / 100,
-			) as [number, number, number, number])
-		: null;
-	const key = `${opacity}:${blend}:${seed}:${insets?.join(',') ?? ''}:${opacityMasks.length ? JSON.stringify(opacityMasks) : ''}`;
+	const insets = region.insets;
+	const feather = region.feather;
+	const key = `${opacity}:${blend}:${seed}:${insets?.join(',') ?? ''}:${feather.map((f) => `${f.insets.join(',')}/${f.feather}`).join(';')}:${opacityMasks.length ? JSON.stringify(opacityMasks) : ''}`;
 	const extraSteps = useMemo((): { first: FxPreparedStep[]; last: FxPreparedStep[] } => {
 		return {
 			first: [{ kind: 'stash', key: 'stash', holder }],
@@ -194,11 +242,12 @@ export function useAdjustmentChain(
 					blend,
 					seed,
 					insets,
+					...(feather.length ? { feather } : {}),
 					...(opacityMasks.length ? { opacityMasks } : {}),
 				},
 			],
 		};
-	}, [key, holder, opacity, blend, seed, insets, opacityMasks]);
+	}, [key, holder, opacity, blend, seed, insets, feather, opacityMasks]);
 	const fx = useLayerFx(layer, {
 		enabled: !!active,
 		canRun,

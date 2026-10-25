@@ -9,6 +9,7 @@ import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
 import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
+import { cropWindow } from './crop.ts';
 import {
 	applyMat3,
 	boxToQuad,
@@ -182,15 +183,8 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
 		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
 	}));
-	const cropFx = effects.find((e) => e.effectId === 'jasper.crop' && e.enabled);
-	const crop: Crop | null = cropFx
-		? {
-				left: Number(cropFx.params.left ?? 0),
-				top: Number(cropFx.params.top ?? 0),
-				right: Number(cropFx.params.right ?? 0),
-				bottom: Number(cropFx.params.bottom ?? 0),
-			}
-		: null;
+	// crop-order: the window the stack's crops leave visible (flips after a crop mirror it; several intersect).
+	const crop: Crop | null = cropWindow(effects);
 	const matrix = transform ? layerMatrix(transform) : IDENTITY;
 	const rect = visibleRect(c.intrinsicBox, crop ?? undefined);
 	const pin = cornerPinQuad(effects, c.intrinsicBox);
