@@ -116,7 +116,8 @@ function StarRow(p: {
 				gap: p.gap,
 				flexShrink: 0,
 				transformOrigin: '0% 50%',
-				transform: s === 1 ? undefined : `scale(${s})`,
+				// always set (a style key that comes and goes would reorder the inline style between frames)
+				transform: s === 1 ? 'none' : `scale(${s})`,
 				...(animated ? { boxShadow: INK_RING } : {}),
 				...p.style,
 			}}

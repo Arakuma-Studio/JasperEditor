@@ -21,7 +21,6 @@ import {
 	CALLOUT_PHASES,
 	calloutParams,
 	counterParams,
-	formatCount,
 	formatCounterValue,
 	K_OPACITY,
 	lowerThirdAnimParams,
@@ -33,7 +32,7 @@ import {
 	socialCommentSchedule,
 	socialCommentSegments,
 	socialLikesTick,
-	socialTickCount,
+	socialTickText,
 	TEXT_CHANGE_SPEED,
 	titleRevealParams,
 	trackValueAt,
@@ -135,7 +134,8 @@ function realTimeline(id: string, params: Record<string, unknown>, totalFrames: 
 		const count = schedule.tick ? buildSocialTick(schedule.tick) : null;
 		if (count)
 			text = (ms) =>
-				formatCount(p.variant, socialTickCount(p.likes, socialTickProgressAt(count, ms)), 'likes');
+				// the like count, or on store reviews the stars filled so far
+				socialTickText(p, socialTickProgressAt(count, ms));
 	} else {
 		const p = counterParams.parse(params);
 		const countMs = Math.max(1, Math.min(p.countSeconds * 1000, timing.totalMs - timing.outroMs));
@@ -504,6 +504,31 @@ VARIANTS.push(
 		rate: '29.97',
 		seconds: 1.5,
 		params: { variant: 'x-post', entrance: 'grow-from-tail', wordReveal: true },
+	},
+);
+
+// Store reviews: the like tick fills the stars one by one (`socialTickText` is the stars filled so far) — every
+// entrance with both extras on the three cards, a 1-star review on a short clip, another rate
+for (const variant of ['play-store-review', 'app-store-review', 'app-store-review-ios'])
+	for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
+		VARIANTS.push({
+			template: 'social-comment',
+			rate: '30',
+			seconds: 5,
+			params: { variant, entrance, wordReveal: true, likeTick: true, rating: 4 },
+		});
+VARIANTS.push(
+	{
+		template: 'social-comment',
+		rate: '25',
+		seconds: 1.5,
+		params: { variant: 'play-store-review', entrance: 'drop-bounce', likeTick: true, rating: 1 },
+	},
+	{
+		template: 'social-comment',
+		rate: '59.94',
+		seconds: 4,
+		params: { variant: 'app-store-review-ios', entrance: 'soft-spring', likeTick: true, rating: 5 },
 	},
 );
 

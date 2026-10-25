@@ -3,6 +3,7 @@
 // the fit zoom. Real-Chrome layout (fit on every canvas, renderStill = renderFrames) is social-comment-render.e2e.
 import {
 	animeTemplateTiming,
+	isReviewVariant,
 	REMOTE_IMAGE_IDS,
 	SOCIAL_VARIANTS,
 	socialComment,
@@ -75,7 +76,7 @@ describe('social-comment@1 cards', () => {
 				const r = render(at({ ...socialDefaults(variant), theme }, 100));
 				const card = r.container.querySelector('[data-social-variant]')!;
 				expect(card.getAttribute('data-social-variant')).toBe(variant);
-				if (variant.startsWith('tiktok') || variant === 'x-post') {
+				if (variant.startsWith('tiktok') || variant === 'x-post' || isReviewVariant(variant)) {
 					expect(socialVariantAvailable(variant)).toBe(true);
 					expect(card.hasAttribute('data-social-unavailable')).toBe(false);
 				} else {
