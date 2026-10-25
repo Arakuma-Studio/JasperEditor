@@ -79,6 +79,57 @@ export function animeEase(name: string): EaseFn {
 	return fn;
 }
 
+// ------------------------------------------------------------------------------- closed-form template eases
+
+/** Damping ratio and natural frequency (per unit of normalised time) of `jasper.spring`. */
+const SPRING_ZETA = 0.65;
+const SPRING_OMEGA = 10;
+const SPRING_OMEGA_D = SPRING_OMEGA * sqrt(1 - SPRING_ZETA * SPRING_ZETA);
+const springRaw = (t: number) =>
+	1 -
+	Math.exp(-SPRING_ZETA * SPRING_OMEGA * t) *
+		(cos(SPRING_OMEGA_D * t) + ((SPRING_ZETA * SPRING_OMEGA) / SPRING_OMEGA_D) * sin(SPRING_OMEGA_D * t));
+const SPRING_RESIDUAL = 1 - springRaw(1);
+
+/**
+ * `jasper.spring`: the step response of an underdamped spring (damping ratio 0.65, ω 10 per unit time: one soft
+ * overshoot of ≈ 6.8 % at t ≈ 0.41, settled to 0.2 % by t = 1), plus the tiny linear correction that makes it end
+ * exactly at 1. Closed form, so a seek anywhere gives the same value (no simulation, no settling-duration override as
+ * anime.js springs have).
+ */
+const softSpring: EaseFn = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : springRaw(t) + SPRING_RESIDUAL * t);
+
+/** `jasper.dropBounce`: share of the time spent falling, and the bounce height (fraction of the fall). */
+const DROP_BOUNCE_HEIGHT = 0.14;
+const DROP_FALL = 1 / (1 + 2 * sqrt(DROP_BOUNCE_HEIGHT));
+
+/**
+ * `jasper.dropBounce`: a fall under constant gravity (progress (t/a)², landing at a ≈ 0.57) and one bounce of 14 % of
+ * the fall height on the same gravity (a parabola over the rest of the time), landing again exactly at t = 1.
+ */
+const dropBounce: EaseFn = (t) => {
+	if (t <= 0) return 0;
+	if (t >= 1) return 1;
+	if (t < DROP_FALL) return (t / DROP_FALL) ** 2;
+	const u = (t - DROP_FALL) / (1 - DROP_FALL);
+	return 1 - DROP_BOUNCE_HEIGHT * 4 * u * (1 - u);
+};
+
+/**
+ * Closed-form eases of the anime templates that anime.js has no string for. The renderer hands the FUNCTION to
+ * anime.js (`ease: fn`, supported by its parser) and the motion model evaluates the same function (`easeFunction`).
+ * The names carry a `jasper.` prefix so they never collide with anime.js ease strings.
+ */
+export const TEMPLATE_EASE_FUNCTIONS: Readonly<Record<string, EaseFn>> = Object.freeze({
+	'jasper.spring': softSpring,
+	'jasper.dropBounce': dropBounce,
+});
+
+/** The function of a template ease name: a closed-form template ease, else the anime.js ease (`animeEase`). */
+export function easeFunction(name: string): EaseFn {
+	return Object.hasOwn(TEMPLATE_EASE_FUNCTIONS, name) ? TEMPLATE_EASE_FUNCTIONS[name]! : animeEase(name);
+}
+
 /**
  * The ease string a template's `ease` param resolves to (`@jasper/motion` `easeOf`): the names of `EASES` except
  * `steps` (its function has no string form: templates fall back to `out`), anything else `out`.

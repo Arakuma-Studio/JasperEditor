@@ -21,6 +21,7 @@ import {
 	CALLOUT_PHASES,
 	calloutParams,
 	counterParams,
+	formatCount,
 	formatCounterValue,
 	K_OPACITY,
 	lowerThirdAnimParams,
@@ -28,6 +29,11 @@ import {
 	needsShaping,
 	phaseTimes,
 	segmentText,
+	socialCommentParamsSchema,
+	socialCommentSchedule,
+	socialCommentSegments,
+	socialLikesTick,
+	socialTickCount,
 	TEXT_CHANGE_SPEED,
 	titleRevealParams,
 	trackValueAt,
@@ -50,6 +56,11 @@ import { buildCallout } from '../src/templates/callout.tsx';
 import { easeOf } from '../src/templates/common.tsx';
 import { buildCounter, buildCounterCount, counterProgressAt } from '../src/templates/counter.tsx';
 import { buildLowerThirdAnim } from '../src/templates/lower-third-anim.tsx';
+import {
+	buildSocialComment,
+	buildSocialTick,
+	socialTickProgressAt,
+} from '../src/templates/social-comment/build.ts';
 import { buildTitleReveal } from '../src/templates/title-reveal.tsx';
 
 const SEED = 7;
@@ -110,6 +121,21 @@ function realTimeline(id: string, params: Record<string, unknown>, totalFrames: 
 		if (pt.outroStart !== null)
 			tl.add(target, { d: [1, 0], duration: pt.outroDur, ease: 'inOut' }, pt.outroStart);
 		line = { timeline: tl, target };
+	} else if (id === 'social-comment') {
+		// the implementation's own input (SocialComment): the schedule, its anime.js timeline and the count tick
+		const p = socialCommentParamsSchema.parse(params);
+		const tick = socialLikesTick(p);
+		const schedule = socialCommentSchedule({
+			...timing,
+			entrance: p.entrance,
+			units: p.wordReveal ? socialCommentSegments(p.text, p.variant).units : 0,
+			tick,
+		});
+		built = buildSocialComment(schedule);
+		const count = schedule.tick ? buildSocialTick(schedule.tick) : null;
+		if (count)
+			text = (ms) =>
+				formatCount(p.variant, socialTickCount(p.likes, socialTickProgressAt(count, ms)), 'likes');
 	} else {
 		const p = counterParams.parse(params);
 		const countMs = Math.max(1, Math.min(p.countSeconds * 1000, timing.totalMs - timing.outroMs));
@@ -393,6 +419,61 @@ VARIANTS.push(
 		rate: '59.94',
 		seconds: 5,
 		params: { ease: 'inOutExpo', from: 1000, to: 0, decimals: 1 },
+	},
+);
+// social-comment: every entrance × the extras (none, word reveal, like tick, both) on the TikTok variants (the
+// schedule does not depend on the card, only on the likes being drawn: the reply bubble has none, so its tick is off),
+// a long comment (the reveal compresses to its 2.4 s span), short clips (the extras squeezed before the exit; intro and
+// outro compressed), other rates and a head trim.
+for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
+	for (const [wordReveal, likeTick] of [
+		[false, false],
+		[true, false],
+		[false, true],
+		[true, true],
+	] as const)
+		VARIANTS.push({
+			template: 'social-comment',
+			rate: '30',
+			seconds: 5,
+			params: { variant: 'tiktok-comment', entrance, wordReveal, likeTick },
+		});
+VARIANTS.push(
+	{
+		template: 'social-comment',
+		rate: '25',
+		seconds: 5,
+		params: { entrance: 'drop-bounce', wordReveal: true },
+	},
+	{
+		template: 'social-comment',
+		rate: '59.94',
+		seconds: 4,
+		params: { variant: 'tiktok-comment', entrance: 'classic-pop', likeTick: true, likes: 4_812_345 },
+	},
+	{
+		template: 'social-comment',
+		rate: '23.976',
+		seconds: 6,
+		params: {
+			entrance: 'grow-from-tail',
+			wordReveal: true,
+			text: 'Okay this is ==honestly the best== tutorial I have seen all week 😂 I tried it on my own videos and the engagement doubled overnight, can you please make a part two about ||editing||? 🔥🙏 ~~Thanks~~ so much!',
+		},
+	},
+	{
+		template: 'social-comment',
+		rate: '30',
+		seconds: 1.5,
+		params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true },
+	},
+	{ template: 'social-comment', rate: '30', seconds: 0.6, params: { entrance: 'drop-bounce' } },
+	{
+		template: 'social-comment',
+		rate: '30',
+		seconds: 4,
+		sourceIn: 5,
+		params: { variant: 'tiktok-comment', entrance: 'soft-spring', likeTick: true },
 	},
 );
 

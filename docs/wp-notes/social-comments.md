@@ -566,6 +566,295 @@ The test-only template lives in `packages/mg-templates/test/fixtures/avatar-test
 - Pre-existing, outside this scope: media that only effect params use (e.g. the image of a displacement map) are
   still not counted by Project Manager "Exclude Unused", `item.delete` or `collectOrphans`.
 
+## Template implementation
+
+Work package WP6a (`sc/template`): the `social-comment@1` anime template, the framework every variant card is
+built on, and the two TikTok cards. Labels as above: **[tok]** tokcomment reference set, **[M]** platform
+measurements (WP5), **[E]** estimate or choice.
+
+### Where it lives
+
+| Piece | File |
+|---|---|
+| Definition, schedule (all timing), text units, layout constants, presets, UI hints | `packages/mg-templates/src/templates/anime/social-comment.ts` |
+| Closed-form eases (`jasper.spring`, `jasper.dropBounce`), `easeFunction` | `packages/mg-templates/src/templates/anime/eases.ts` |
+| Motion model (`social-comment@1` in `MODELS`) | `packages/mg-templates/src/templates/anime/motion.ts` |
+| Implementation (`ANIME_TEMPLATE_IMPLS['social-comment@1']`) | `packages/motion/src/templates/social-comment/` |
+| Export blocker for cards not built yet | `apps/engine/src/mg/templates.ts` (`missingTemplates`) |
+
+`packages/motion/src/templates/social-comment/`:
+- `index.tsx`: `SocialComment` — parses the params (invalid params fall back to the defaults), builds the schedule's
+  timelines, hands the extras' values to the card.
+- `build.ts`: `buildSocialComment(schedule)`, `buildSocialTick(tick)`, `socialTickProgressAt` (also used by the
+  cue test).
+- `stage.tsx`: `SocialStage` (centring, zoom, fit, entrance transform), `socialFitZoom`.
+- `contract.ts`: the variant contract. `parts.tsx`: shared parts. `assets.tsx`: picture and emoji touch points.
+- `tiktok.tsx`: the TikTok cards. `unavailable.tsx`: stand-in card. `variants.ts`: `SOCIAL_VARIANT_IMPLS`.
+
+### Adding a variant (WP6b–d)
+
+**The contract** (`packages/motion/src/templates/social-comment/contract.ts`):
+- A variant is a `SocialVariantImpl = { Card, growOrigin, bleed?, unavailable? }`.
+- `Card(props: SocialCardProps)` draws ONE card at **reference px**: the tokcomment CSS px of its blueprint (copy the
+  numbers from `ref/<variant>/styles_*.json`). The card sets its own width: 420, or `width: fit-content` with
+  `maxWidth: 305` for the Reels and Shorts cards. Never zoom, centre or position the card; the frame does that.
+- `props`:
+  - `params`: parsed `SocialCommentParams`;
+  - `text`: `{ spans, segments, units }` from `socialCommentSegments`;
+  - `anim`: `{ words, likes, heart }`;
+  - `assets`: `{ mediaUrls, imageUrls, emojiUrls, emojiPack, idScope }`.
+- `growOrigin`: the CSS `transform-origin` of the "grow from tail" entrance, in % of the card box. Use the bubble tail's
+  corner on bubble cards (TikTok reply `0% 100%`) and the avatar's corner elsewhere (`0% 0%`).
+- `bleed`: reference px the card paints outside its box per side (a `box-shadow`), so the fit keeps it on screen.
+  The TikTok comment row's `0 25px 50px -12px` shadow gives `{ top: 13, right: 38, bottom: 63, left: 38 }`.
+
+**Entrances and extras need no code in a card.** The frame applies every entrance and the exit to the whole card,
+and passes the extras through `anim`:
+- `words`: draw the comment with `CommentText`, which applies them;
+- `likes`: show `formatCount(variant, anim.likes, 'likes')`; it ticks;
+- `heart`: when set, scale the like icon by `heart.s` and cross-fade outline → filled by `heart.f`. See `LikeHeart`
+  in `tiktok.tsx`.
+
+Never add timelines, timers or animation inside a card. The output must be a pure function of the props.
+
+**Wiring a variant:**
+1. Create `instagram.tsx` / `youtube.tsx` / `x.tsx` next to `tiktok.tsx`, exporting one `SocialVariantImpl` per
+   variant.
+2. Replace the `unavailableVariant(...)` entry in `variants.ts` with it.
+3. In `packages/mg-templates/src/templates/anime/social-comment.ts`:
+   - add the variant to `SOCIAL_COMMENT_READY_VARIANTS` (this adds its gallery preset and lifts the export blocker);
+   - fill its `SOCIAL_VARIANT_FONTS` entry (family and weights; the font must exist in the bundled catalogue or the
+     remote manifest);
+   - check its `PRESET_NAMES` entry.
+4. Update the preset expectations in `packages/mg-templates/test/social-comment-template.test.ts` and the "not
+   available" loop in `packages/motion/test/social-comment.test.tsx`.
+
+**Theme tokens:** one `const <VARIANT>_THEME = { light: {…}, dark: {…} }` per card in its own file, with hex colours
+copied from the reference dumps (`styles_light*.json` / `styles_dark*.json`). Colours that come from the platform
+measurements carry an [M] / [M-css] comment.
+- Glyph colours: pass `color` to `Glyph`. `glyphColor(glyph, theme)` gives the platform's own when the reference has
+  none.
+- Mentions and hashtags go in `CommentText`'s `colors`.
+- These are platform colours, not editor UI, so `scripts/check-tokens.mjs` does not apply to the template's inline
+  styles.
+
+**Shared parts** (`parts.tsx`, `assets.tsx`). Use them; don't fork them:
+- `SocialAvatar({ avatar, platform, size, name, fontFamily, assets, style })`.
+  - Pass the name the card shows as `name`; the generated avatar's initials come from it.
+  - The Properties `social-avatar` preview uses `displayName`. Tell the integrator if a handle-only card passes
+    `handle`.
+- `Glyph({ glyph, size, color, scope: assets.idScope, style })`. `size` is a number or `[w, h]`.
+- `CommentText(...)`: highlight, blur, remove, mentions, emoji, word reveal.
+  - It carries `data-template-param="text"` and `data-template-marks="true"` (C5).
+- `TextWithEmoji({ text, fontSize, emoji, assets })` for names. Wrap a name in an element with
+  `data-template-param="displayName"` (or `"handle"`) that holds exactly that text (C5; switch to
+  `editableParamProps` when WP7b lands).
+- `EmojiMetrics`: `{ size: 1.2, shift: -0.22 }` (em) matched TikTok. Re-measure per platform with `tools/yellow.mjs`.
+- Formatters from `@jasper/mg-templates`: `formatCount`, `formatTime`, `formatRepliesLabel` (an empty string means
+  no replies row), `VARIANT_CAPABILITIES`.
+
+**Tests a variant must pass:**
+- `packages/motion/test/mg-cue-timing.test.ts`:
+  - The schedule depends only on the entrance, the word units and whether the variant draws likes, so a new variant
+    needs no new model code.
+  - Add VARIANTS rows for it: at least one entrance × {word reveal, like tick} when it draws likes. The test checks
+    the model against anime.js frame by frame and the cues within ±1 frame.
+- `packages/motion/test/social-comment.test.tsx`: add the card's own checks, as for TikTok: header and name
+  rules, counts, replies, `showProfile`, verified.
+- `packages/motion/test/social-comment-render.e2e.test.ts` (`REMOTION_E2E=1`):
+  - add the variant to the parity cases and the fit loop (long text, huge counts, 64-character names, every canvas);
+  - add its calibration cases to `CALIBRATION`, named `<variant>_<theme>_<state>` after the tokcomment captures they
+    pair with.
+
+**Calibration workflow.** Everything sits outside the repo: the captures are third-party screenshots.
+1. Inputs:
+   - fonts: `SOCIAL_FONT_DIR` (a directory of woff2 files);
+   - emoji: `SOCIAL_EMOJI_DIR` (Apple PNGs named `<codepoints>.png`, e.g. `1f60a.png`).
+2. Render the stills: `REMOTION_E2E=1 SOCIAL_FONT_DIR=… SOCIAL_EMOJI_DIR=… SOCIAL_CALIBRATION_DIR=<dir>/stills
+   pnpm exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`.
+   - These are hold-frame `renderStill`s at 9:16, scaled 2/1.8 so a 420 px card is 840 px, the scale of the
+     tokcomment captures.
+   - `entry.tsx` loads the faces in `fonts` from the public dir. Extend the font list in the test's `beforeAll` for
+     other families.
+3. Crop and compare with the tools in `/var/lib/orquester/workspaces/jaspersito/research/calibration/tiktok/tools/`;
+   copy them to `calibration/<platform>/tools/`:
+   - `crop.mjs <stills> <cards>`: crops to the opaque card box, over tokcomment's grey #8a8a8a;
+   - `cmp.sh <ref> <ours> <out> [h]`: ref | ours | difference strip;
+   - `inkbox.mjs` and `yellow.mjs`: ink and emoji bounding boxes, for cap height, line width and emoji size;
+   - `page.mjs <dir>`: the side-by-side page (edit its `PAIRS` table).
+4. Iterate until layout, spacing and colour match. List the deliberate differences in this note: real font and
+   glyphs, bug fixes. If the real font's cap height differs from the capture's font, scale the font size to keep the
+   reference's cap height (see the TikTok reply).
+
+**Don't touch** (shared; changes go through WP6a or the integrator):
+- `index.tsx`, `stage.tsx`, `build.ts`, `contract.ts`, `parts.tsx`, `assets.tsx`;
+- the schedule and its constants in `social-comment.ts`;
+- `eases.ts` and the `social-comment@1` model in `motion.ts`;
+- `tiktok.tsx`.
+
+If a shared part lacks something, add an optional prop instead of changing its behaviour.
+
+### Timing (design §7.6)
+
+One pure schedule, `socialCommentSchedule({ totalMs, introMs, outroMs, entrance, units, tick })`, is built into
+anime.js timelines by the implementation and evaluated by the motion model, so the cue test compares them frame by
+frame.
+
+| Phase | Tweens (ms at the declared intro) |
+|---|---|
+| Classic pop | scale 0 → 1.3 (150, `outQuad`) → 1 (120, `inOutQuad`); opacity 0 → 1 (60) |
+| Soft spring | scale 0.6 → 1.035 (260, `outCubic`) → 1 (190, `inOutQuad`); opacity (150, `out`) |
+| Grow from tail | scale 0 → 1 (420, `outBack`) from `growOrigin`; tilt −8° → 0 (500, `jasper.spring`); opacity (100) |
+| Drop & bounce | 60 design px fall with one 14 % bounce (550, `jasper.dropBounce`); opacity (165) |
+| Word reveal | each word unit: scale 0.5 → 1 (220, `outBack`), opacity (110); one every 90 ms (at most 2.4 s for all) |
+| Like tick | count 0 → likes (900, `outCubic`, formatted every frame); heart scale 1 → 1.3 → 1 and fill (300) |
+| Exit | scale 1 → 0.82 and opacity 1 → 0, eased in, over the outro |
+
+- **Declared windows:** the intro is 17 frames at 30 fps (566.7 ms, the longest entrance); the outro is 6 frames
+  (200 ms). `animeTemplateTiming` compresses both on short clips, and the entrance tweens scale with the intro.
+- **Extras:** they start when the entrance ends and must finish before the exit. When they do not fit, they compress
+  proportionally into the time left. A tween is never shorter than 1 ms, and a value's tweens never overlap
+  (fast-check). The extras run in the hold after the declared intro; the cues come from the model, so the land cue
+  falls where the last word or the heart settles.
+- **Rest state = hold state (ANM-009):** every word shown, the final count, the heart filled when it ticked.
+- **Soft spring:** it was first a closed-form spring, but its slow tail kept the card moving below the cue threshold,
+  and the frame and continuous cue measures disagreed by up to 7 frames. It is now two eased segments with zero speed
+  at the turn and at the end. `jasper.spring` remains for the tilt settle.
+- **Like tick on variants without likes:** the tick needs a variant that shows likes (`socialLikesTick`). On the
+  TikTok reply bubble it is ignored.
+
+### Presets, Properties hints, avatar and fill
+
+- **Presets:** `socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS)` gives one preset per variant with a card, id =
+  variant, named "TikTok · Comment reply" and "TikTok · Comment". Its params are the variant's tokcomment defaults
+  (`socialDefaults`) that differ from the schema's. Agents use `"social-comment:tiktok-reply"`.
+- **Groups:** Look (variant, theme, emojiStyle), Author (displayName, handle, avatar, showProfile, verified), Stats
+  (timeValue, timeUnit, likes, replies, reposts, views, showReposts, showViews), Text (text) and Animation (entrance,
+  wordReveal, likeTick).
+- **Visibility:** every param a variant may not draw has `visibleWhen: { param: 'variant', in: variantsWithParam(p) }`.
+- **Custom controls (WP7):**
+  - `text`: multiline, control `social-comment-text`;
+  - likes, replies, reposts and views: `social-count`;
+  - `timeValue`: `social-time` (the control draws value and unit in one row and hides the `timeUnit` row);
+  - `avatar`: `social-avatar`.
+
+  Until they are registered, Properties shows the standard editors.
+- **Avatar:** it keeps the `{ mediaId } | { generated } | null` union. The union carries `mediaParam()`'s metadata
+  (`x-jasper-kind: "media"`, kinds `["image"]`), so `paramsPropertySpecs` offers the media picker (verified), commands
+  check that a `{ mediaId }` names an image, and every integrity path counts it. The picker shows "None" for a
+  generated avatar; `social-avatar` adds the generated choice.
+- **Fill hook:** `fill = fillSocialCommentParams`, which wraps `fillSocialParams`. It returns the given params plus the
+  filled ones and the filled names, never throws, and returns `{ ok: false }` on bad input. The MCP `TEMPLATES_GUIDE`
+  has a social-comments paragraph and a three-comment batch example.
+
+### Text, marks and emoji
+
+- **Units:** `socialCommentSegments(text, variant)` gives the `tokenizeComment` spans and the Intl.Segmenter word
+  segments.
+  - A highlighted run across words (`==any comment==`) is one unit with one pill, as tokcomment merges adjacent
+    highlighted words. Separate highlights stay separate units.
+  - The model and the renderer count the same units.
+- **Highlight:** tokcomment's `#FFE500` pill, black text, 6 px radius, padding `.05em .35em`, `box-decoration-break:
+  clone`.
+- **Blur:** `blur(4px)` at reference size on an inline-block word. The card's zoom scales the radius with the card:
+  7.2 design px on 9:16.
+- **Remove:** `opacity: 0`, so the gap is kept.
+- **Mentions and hashtags:** TikTok's info colour, tux `--ui-text-info`: #2B5DB9 light, #60B3FF dark [M-css]. They
+  are coloured on both TikTok cards [E]; a highlight's text stays black.
+- **Emoji:** images of the clip's pack (`resolveEmojiStyle`).
+  - Size 1.2 em, centred on the text's middle (shift −0.22 em), with a 0.03 em side bearing so adjacent emoji keep a
+    hairline gap.
+  - Calibrated against the tokcomment captures: 30 vs 29 px ink at 2×, centre within 0.5 px.
+- **Word reveal:** units become inline-block so they can scale; whitespace stays text, so lines break as without the
+  reveal.
+
+### Placement and fit
+
+- **Zoom:** the card is drawn at reference px and zoomed with CSS `zoom` by `socialCardScale`. That is 1.8 on 9:16
+  (a 420 px card is 756 px, 70 % of the width), 1.7 on 1:1 and 1.6 on 16:9. It is centred on the design stage.
+- **Why `zoom`:** the zoomed box is the drawn size, so the entrance wrapper's `transform-origin` lands on the real
+  corner (the tail tip) and flex centring sees the real size.
+- **Fit:** a long comment shrinks the whole card to ≤ 88 % of the design height and ≤ 96 % of its width, the shadow
+  bleed included.
+  - It is measured in a layout effect with layout boxes (`offsetWidth` / `offsetHeight`), after fonts load; at most
+    three passes per layout.
+  - The fit is applied before paint, so the Player, `renderStill` and exports agree (checked below).
+- **Counts:** they never overflow. The formatters keep them short ("987.6B", "View 4.8M replies"), the stats group
+  never shrinks, and the left group clips.
+
+### TikTok cards: calibration
+
+- **Blueprint:** tokcomment's computed-style dumps (`ref/tiktok-reply`, `ref/tiktok-video`), copied in CSS px.
+  - Reply bubble: 420 wide, padding 18/18/22, radius 10 10 10 0, avatar 50 at +20, gap 14, header 600, comment 700
+    at −0.025 em, line height 1.2, bubble #FFF / #1E1E1E, header #5A5A5A / #C0C0C0.
+  - Comment row: 420 wide, padding 12/10/5, radius 2, 1 px black/5 % border, 0 25 50 −12 black/25 % shadow, avatar 38,
+    name 13/500, text 14/500 at 1.25, meta 11–12 px, icons #A2A2A2, rule 23 × 1, plus its dark colours.
+- **Bubble tail:** tokcomment draws it with three skewed CSS squares. It was traced from the 2× captures into one
+  path, 25.5 wide and 21 tall, with a 4 px rounded tip.
+- **Evidence:** a side-by-side page per variant and theme, with long text, huge counts, marks, emoji, uploaded vs
+  generated avatar and animation filmstrips, is at
+  `/var/lib/orquester/workspaces/jaspersito/research/calibration/tiktok/index.html`. It sits outside the repository:
+  the tokcomment captures are third-party screenshots. Its stills come from Remotion `renderStill` at 2× reference
+  px.
+- **Rerunning:** `REMOTION_E2E=1 SOCIAL_FONT_DIR=<tiktok-sans files> SOCIAL_EMOJI_DIR=<cp>.png dir
+  SOCIAL_CALIBRATION_DIR=<out> pnpm exec vitest run packages/motion/test/social-comment-render.e2e.test.ts`. The
+  crop, compare and page tools are in that directory's `tools/`.
+- **Measured matches:**
+  - comment card height 228 px against tokcomment's 229 (2×);
+  - the comment row's text line within 2 %;
+  - the highlight pill's position and size within 2 px.
+
+**Deliberate differences from tokcomment:**
+- **Font:** TikTok Sans (TikTok's current UI font, OFL) instead of Proxima Nova (reply) or the capture host's
+  Liberation Sans fallback (comment).
+  - TikTok Sans has a 5–7 % taller cap height, so the reply sizes are scaled to keep the reference's cap heights:
+    header 18.5 px instead of 20, comment 29.5 px instead of 31.
+  - It is also ≈ 9 % wider, so lines hold fewer characters: the default comment wraps onto 3 lines on the reply and a
+    long comment takes one more line on the comment row.
+- **Glyphs:** TikTok's real glyphs (`TIKTOK_GLYPHS`) replace lucide and react-icons: verified badge, heart outline
+  and liked heart, dislike (derived), chevron. The heart's stroke is thinner and the chevron filled, as on TikTok.
+  - Sizes are set to the reference's visual sizes: heart box 20 (lucide 15.55 at 83 % fill vs TikTok 65 %), dislike
+    17, chevron 12, badges 18 and 10.
+- **Default avatar:** TikTok's own (`TIKTOK_DEFAULT_AVATAR`) instead of the hot-linked Twitter default.
+- **Emoji:** Apple images instead of the capture host's Noto font.
+- **tokcomment bugs fixed:**
+  - "Reply to␣username␣'s": flex gaps put the space before the apostrophe; the header is now one sentence that wraps
+    naturally for long names.
+  - Counts render verbatim ("1234567"); they are now formatted per platform.
+  - "View 0 replies": 0 replies now hides the row.
+  - Huge counts overflow the card; they now stay short.
+- **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
+
+### Verification
+
+- **Commands run** (`--maxWorkers=2`):
+  - `pnpm exec vitest run packages/mg-templates` (12 files): the schedule (entrance shapes, rest and exit values,
+    reveal stagger and cap, tick, compression, no overlapping tweens by fast-check), text units (fast-check coverage),
+    eases.
+  - `packages/motion/test/mg-cue-timing.test.ts`: the anime.js values equal the model at every frame and half frame.
+    The land and exit cues sit within ±1 frame of the real animation for every entrance × {none, word reveal, like
+    tick, both}, at 6 rates, on short clips (1.5 s, 0.6 s), with sourceIn and a long marked comment: 71 tests.
+  - `packages/motion/test/social-comment.test.tsx`: cards per variant × theme, header, counts and replies rules,
+    showProfile, invalid params, entrance rest and exit, word reveal and like tick values per frame, seek-order
+    independence (fast-check), avatars, glyphs, marks, mentions, emoji, emoji split, fit zoom.
+  - `packages/compositions/test/social-comment-layer.test.tsx`: the real layer path, with the avatar from a project
+    medium through `mediaUrls` → `TemplateImage`, an offline avatar placeholder and the default avatar.
+  - `apps/engine/test/anime-templates.test.ts`: a card style not built yet blocks the plan.
+- **`REMOTION_E2E=1 packages/motion/test/social-comment-render.e2e.test.ts`** (Chrome 156):
+  - `renderStill` equals `renderFrames` (concurrency 2), byte for byte, at frames during the entrance and extras;
+  - the painted card stays inside every canvas for a 1,400-character marked comment, 1e12 counts and a 64-character
+    name;
+  - it writes the calibration stills.
+- **`REMOTION_E2E=1 determinism-render.e2e.test.ts`:** passes with `social-comment@1` in the parity document (6/6).
+
+### Limits
+
+- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Unverified:**
+  - The reply sticker's mention colour [E].
+  - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
+    cut, so display text is slightly looser than the app's.
+
 ## Placement & agent API
 
 Design §7.9 ("insertion never overwrites") and §7.10 (agent UX). Generic: nothing here is specific to social

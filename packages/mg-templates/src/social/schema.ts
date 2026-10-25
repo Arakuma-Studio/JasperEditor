@@ -2,6 +2,7 @@
 // panel (through its JSON Schema), the MCP tools and the randomizer. Every field carries a `.describe()` written for
 // AI agents. Per-variant defaults (tokcomment's, ref/index.md) come from `socialDefaults(variant)`; the schema's own
 // `.default()`s are the `tiktok-reply` ones so `parse({})` stays valid.
+import { TEMPLATE_MEDIA_KIND, TEMPLATE_MEDIA_KINDS_KEY, TEMPLATE_PARAM_KIND_KEY } from '@jasper/project';
 import { z } from 'zod';
 import { stripMarks } from './marks.ts';
 import {
@@ -47,8 +48,8 @@ const count = (what: string, param: SocialParamName, example: string) =>
 		);
 
 /**
- * Avatar reference to a project media item. Kept as its own schema so it can be replaced by the shared template
- * media param (`mediaParam()`, contract C1) without changing the stored shape `{ mediaId }`.
+ * Avatar reference to a project media item: the object of the shared template media param (`mediaParam()`, contract
+ * C1), stored as `{ mediaId }`. The `avatar` field carries `mediaParam()`'s media metadata on the whole union.
  */
 export const socialAvatarMediaSchema = z.strictObject({
 	mediaId: z
@@ -107,10 +108,16 @@ const FIELDS = {
 		.describe(
 			`Account handle WITHOUT the leading @: letters, digits, ".", "_" and "-", up to ${SOCIAL_HANDLE_MAX} characters (e.g. "luna.makes", "jake_rides22"). Instagram shows it bare, YouTube and X as "@handle". ${uses('handle')}`,
 		),
-	avatar: socialAvatarSchema.describe(
-		'Profile picture: {"mediaId": "<project image media id>"} for an imported image, {"generated": <seed>} for a ' +
+	// The template media param metadata of `mediaParam()` (contract C1) on the whole union: Properties offers the media
+	// picker (the `social-avatar` control adds the generated choice), commands check that a `{ mediaId }` names an
+	// image of the project, and every reference-integrity path counts it.
+	avatar: socialAvatarSchema.meta({
+		description:
+			'Profile picture: {"mediaId": "<project image media id>"} for an imported image, {"generated": <seed>} for a ' +
 			"generated gradient avatar, or null for the platform's default grey silhouette. All variants.",
-	),
+		[TEMPLATE_PARAM_KIND_KEY]: TEMPLATE_MEDIA_KIND,
+		[TEMPLATE_MEDIA_KINDS_KEY]: ['image'],
+	}),
 	showProfile: z
 		.boolean()
 		.describe(

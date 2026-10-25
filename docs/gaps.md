@@ -752,6 +752,15 @@ shows; the desktop smoke and packaged-app checks were not run (no xvfb on the se
 - **Reach**: user documentation; localisation beyond English and Spanish; a screen-reader pass with real assistive
   technology (the axe audit in `e2e/gaps.spec.ts` checks markup, not the spoken experience).
 
+### social-comment
+Animated platform comment cards (`social-comment@1`, design `docs/superpowers/specs/2026-10-25-social-comment-templates-design.md`).
+**Done when:** all seven variants are drawn faithfully in light and dark, with presets, Properties controls, canvas
+editing, randomize, bulk import and agent batches.
+**Status (in progress):** the template, its animation framework and the two TikTok cards are built — see
+[wp-notes/social-comments.md](wp-notes/social-comments.md) "Template implementation". The Instagram, YouTube and X
+cards are not built yet: a clip set to one of them shows a striped "not available yet" card in preview, has no
+gallery preset, and every export path refuses it (`TEMPLATE_NOT_INSTALLED`, "social-comment@1 (X post card)").
+
 ## For agents choosing work
 
 1. Read [CLAUDE.md](../CLAUDE.md), then this file. Prefer a gap in a feature parity.md marks as done over a new
