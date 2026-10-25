@@ -363,6 +363,16 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
   labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
   Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
+- **Add Another:** on a motion-graphic clip (timeline clip menu, Properties ▸ Template, Motion Templates, Graphics
+  menu, palette `mg.addAnother`) adds a copy right after it, same length, on the first free video track, one undo
+  step. The params the template re-randomizes (`ui.addAnother.reroll`; social comments: name, handle, avatar and
+  stats) get fresh values; look, text and animation are kept.
+- **Import from a spreadsheet:** Motion Templates ▸ Import Spreadsheet… (also File / Graphics menus, a card's
+  context menu, Properties ▸ Template) takes rows pasted from a spreadsheet (TSV) or a `.csv` / `.tsv` file (header
+  row = param names or labels, template aliases such as `User` / `Comment` / `Verified`, optional `start` /
+  `duration`; at most 500 rows and 2 MB). The preview shows each row as it will be inserted (random values marked,
+  rows with errors left out); Insert adds the rows one after another from the playhead as one undo step. Details:
+  `docs/wp-notes/social-comments.md` § Add another & bulk import.
 
 ## PWA (installable web app)
 
@@ -664,6 +674,10 @@ once before enabling a project-scoped server; start it from the repository root 
   `dryRun: true` resolves the same without changing the project; `preview: true` adds a still per item (up to 10).
   Raw commands get the same placement with `placement: "first-free"` on `clip.addText` / `addSolid` / `addShape` /
   `addMotionGraphic` (`docs/wp-notes/social-comments.md` "Placement & agent API").
+- **Add another / bulk import.** `duplicate_motion_graphic {clipId, count?}` copies a graphic right after itself
+  (`count` copies in a row, one undo step; re-randomized params from `seed`); `import_motion_graphics_csv
+  {template, csv}` adds one graphic per CSV / TSV row through the same parser and column mapping as the editor's
+  import dialog (row errors refuse the call unless `skipInvalid: true`). Raw command: `clip.duplicateMotionGraphic`.
 
 ### Live UI: look at and operate the editor window
 

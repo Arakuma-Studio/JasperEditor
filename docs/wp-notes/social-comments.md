@@ -1117,3 +1117,201 @@ The group wand fills every stat the clip's variant draws — `timeValue`, `timeU
   name (e.g. the handle on Instagram), the small preview can differ from the card.
 - The avatar resolution warning of design §7.11 (below 2× the drawn size) is not part of these controls.
 - In the markup view the mark buttons are disabled (the markup is edited as text there).
+
+## Add another & bulk import
+
+WP7c (`sc/bulk`), design §7.9 ("Add another", "Bulk import") and §7.10. Generic over motion-graphic templates;
+social comments are the main user.
+
+### Template hints (`MgTemplateUi`, `@jasper/project` `registry/mg.ts`)
+
+```ts
+ui.addAnother?: { reroll: readonly string[] }      // params "Add another" re-randomizes through the fill hook
+ui.import?: {
+  aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
+  ignored?: Record<string, string>;                 // column name → reason shown in the preview
+  trimPrefix?: Record<string, string>;              // param → prefix removed from its cells ("@")
+}
+```
+
+- `createMgRegistry` validates both: param names must exist; `addAnother` needs a `fill` hook; alias targets,
+  `byParam`, `map` values and `trimPrefix` keys must be params; reasons non-empty. Both travel in the catalogue JSON
+  (`@jasper/api` `MgTemplateUiSchema`) to MCP.
+- `social-comment@1` sets `addAnother: SOCIAL_ADD_ANOTHER` and `import: SOCIAL_IMPORT_HINTS`
+  (`packages/mg-templates/src/social/bulk.ts`).
+  - **Re-randomized** (`SOCIAL_REROLL_PARAMS`): `displayName`, `handle`, `avatar`, `timeValue`, `timeUnit`, `likes`,
+    `replies`, `reposts`, `views`. That is a different person and new stats.
+  - **Kept** (`SOCIAL_KEEP_PARAMS`): `variant`, `theme`, `emojiStyle`, `showProfile`, `verified`, `showReposts`,
+    `showViews`, `text`, `entrance`, `wordReveal`, `likeTick`.
+  - **Choice:** the text is kept, not cleared. The user edits the new card's text in place, and an empty card would
+    show the placeholder. `verified` is kept as a look toggle, as on tokcomment's panel.
+  - **Aliases:**
+    - `User` is the name the variant shows: `displayName` on TikTok and X, `handle` on Instagram and YouTube.
+    - `Username` / `User name` is the handle where the card draws one; on TikTok it is the nickname.
+    - Fixed aliases: `Name`, `Nickname`, `Author` → `displayName`; `Account` → `handle`; `Message`, `Body`,
+      `Content`, `Comment text` → `text`; `Like count`, `Hearts` → `likes`; `Reply count` → `replies`; `Retweets` →
+      `reposts`; `View count` → `views`; `Type` → `variant`; `Ago` → `timeValue`; `Time unit` → `timeUnit`;
+      `Blue check`, `Badge` → `verified`.
+    - Param names and Properties labels (`Comment`, `Display Name`, `Style`, `Verified`…) match without aliases.
+  - **Image columns** (`Image URL`, `Avatar URL`, `Profile picture`, `Photo`, …) are ignored with a visible reason:
+    remote images are not imported in v1. No existing import path takes a URL. An `avatar` column takes JSON
+    (`{"mediaId": "…"}` or `{"generated": 7}`).
+
+### Add another — `clip.duplicateMotionGraphic {clipId, seed, at?, track?, params?, ref?}`
+
+- **Copy:** the whole clip (transform, effects, masks, keyframes, name, label, canvas). Children get new ids; links
+  and groups are not copied.
+- **Placement:** the copy starts at `at` (default: the source's end) with the same duration. It goes on the first
+  free unlocked video track from `track` (default: the source's track) up, or on a new top track. It never
+  overwrites (`firstFreeTrack`).
+- **Params:** the source's params minus `reroll`, then `params` on top. The fill hook fills the omitted ones from
+  `seed`. A rerolled param the hook does not fill takes the template default.
+- **Validation:** the params schema and the template media checks run on the result (`validateTemplateParams`).
+- **Keyframes:** those of rerolled and given params are dropped (keys would override the new value). The others
+  are kept.
+- **Templates without the hint or a fill hook:** a plain copy after the clip.
+- **Refusals:**
+  - unknown clip: `E_NOT_FOUND`;
+  - not a motion graphic, template not installed, params the schema rejects, a refused fill, start < 0:
+    `E_INVALID_PARAM`;
+  - an audio `track`: `E_TRACK_KIND`;
+  - a seed outside uint32: `E_SCHEMA`.
+- **Result:** `{clipId, sourceClipId, sequenceId, trackId, track, createdTrack?, start, duration, params, rerolled,
+  seed}`. Refs chain copies in one transaction (`$a` → `$b`).
+- **UI** (`apps/web/src/panels/motionTemplates/add-another.ts`, one transaction, label "Add Another"):
+  - the UI command `mg.addAnother` (palette; agent-exposed with `{clipIds?, seed?}`);
+  - the timeline clip menu of motion-graphic clips;
+  - Properties ▸ Template;
+  - the Motion Templates panel button;
+  - Graphics ▸ Add Another.
+
+  Several selected motion graphics each get one copy (seeds `mgItemSeed(seed, i)`). The copies are selected
+  afterwards.
+- **No shortcut:** the free chord Ctrl+Alt+D is Cmd+Opt+D on macOS, which toggles the Dock.
+
+### Bulk import
+
+**Parser** (`packages/project/src/bulk/table.ts`, `parseTable`, `detectDelimiter`, `formatTable`):
+- RFC 4180 plus what spreadsheets write: quotes, `""`, CRLF / LF / CR, a BOM, line breaks inside quoted cells
+  (normalised to LF), ragged rows, a quote inside an unquoted cell kept literally.
+- Text after a closing quote is kept and reported. An unclosed quote takes the rest of the text and is reported on
+  its line.
+- Blank records are skipped.
+- **Delimiter:**
+  - tab when the first record has a tab outside quotes (pasted cells);
+  - else `;` when it has more semicolons than commas;
+  - else `,`.
+- **Caps** (AGENTS §0):
+  - 2 MiB of text (`TABLE_MAX_CHARS`; the dialog refuses larger files before reading them);
+  - 500 data rows (more refuses the table and stops parsing early);
+  - 64 columns (the rest are dropped, with an issue);
+  - 10 000 characters per cell (cut; that row is then an error).
+- **Speed:** 500 rows of 4 KB (≈ 2 MB) parse in well under a second (test).
+
+**Planner** (`packages/project/src/bulk/mg-import.ts`): `planMgImport(table, template, {preset?, rate})`.
+- **Column matching:** header names are compared ignoring case, spaces, `_ - . :` and a leading `@`/`#`, in this
+  order:
+  1. param name;
+  2. Properties label (`ui.params[name].label`);
+  3. template alias;
+  4. timing columns: `start` / `at` / `start time` / `in` / `clip start`, and `duration` / `length` / `dur` /
+     `clip duration`;
+  5. template-ignored column;
+  6. anything else: ignored, "Not a parameter of …".
+
+  A second column for the same param is ignored. A direct column wins over an alias on a row (with a warning).
+- **Cell coercion** follows the param's JSON Schema:
+  - Numbers: `1,234`, `1.2K`, `3.5M`, `2B`; integers must be whole; min / max are checked.
+  - Booleans: yes / no / true / false / 1 / 0 / y / n / on / off / ✓ / ✗ / sí.
+  - Enums: case and punctuation ignored (`TikTok Comment` → `tiktok-comment`).
+  - Strings: outer whitespace trimmed; length and pattern checked.
+  - Object / array params: JSON.
+- **Empty cells** are "not given": the preset, then the fill hook, then the defaults decide. A row cannot set an
+  empty text; the preview shows what the row gets.
+- **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
+  `H:MM:SS` and timecode. Starts are capped at 100 h, lengths at 1 h; a length must be ≥ 1 frame.
+- **Presets:** every row starts from the preset's params except the ones the template re-randomizes
+  (`ui.addAnother.reroll`). Rows are new instances: with the TikTok comment preset each row still gets its own
+  identity and stats (the preset's are tokcomment's placeholders). `add_motion_graphic` keeps WP3b's layering, where
+  the preset wins over the fill.
+- **Messages** are codes with values (`MG_IMPORT_TEXT`, `mgImportText` for English). The web app translates the
+  templates; `pnpm i18n` lists them in the model strings, with the template-ignored reasons.
+- **Placement:** `scheduleMgImport` places included rows one after another from the start (a row's `start` resets
+  the cursor). `mgImportCommand` builds `clip.addMotionGraphic {placement: 'first-free', fill: {seed:
+  mgItemSeed(seed, rowIndex)}}`. The seed is per data row, so leaving a row out does not change the others.
+- **Preview = insert:** `resolveMgTemplateParams(info, given, {seed, media})`
+  (`packages/project/src/registry/mg-params.ts`) is the one resolution `clip.addMotionGraphic` uses too. The dialog
+  shows exactly what will be stored and catches schema and fill errors per row.
+
+**Dialog** (`BulkImportDialog.tsx` / `bulk-import.ts`, `mg.bulkImport`):
+- **Entry points:**
+  - File ▸ Import Motion Graphics from Spreadsheet…;
+  - Graphics ▸ the same;
+  - the Motion Templates panel button;
+  - a gallery card's context menu ▸ Import Spreadsheet as This… (template + preset);
+  - Properties ▸ Template ▸ Import Spreadsheet…;
+  - the palette.
+- **Inputs:** template / preset select (default: the given one, else the selected clip's, else the first with
+  presets), delimiter (Detect / Tab / Comma / Semicolon), a paste area, and Choose CSV File….
+- **Preview:**
+  - column chips: param, timing, per-row alias, or ignored with its reason;
+  - the table: row, start, length, and the imported and filled params in the template's order, with Properties
+    labels;
+  - values the template filled are dim, italic and titled "Random value";
+  - rows with errors are shaded and list their errors ("Left out: …"); they are excluded, never blocking;
+  - row warnings are listed under the table.
+- **New Random Values** picks another seed.
+- **Insert N:** one transaction labelled "Import N Motion Graphics" (one undo step) from the playhead at dialog
+  open. The first-free floor is the targeted video track. The new clips are selected.
+- Props are zod-validated and the body is inside a `PanelErrorBoundary`.
+
+### Agents (MCP, `apps/mcp/src/tools/bulk-motion-graphics.ts`)
+
+- **`duplicate_motion_graphic`** `{projectId, clipId, count? 1–50, seed?, at?, track?, params?, dryRun?,
+  sequenceId?}`:
+  - `count` chained `clip.duplicateMotionGraphic` commands in one transaction;
+  - copy i uses `mgItemSeed(seed, i)`;
+  - the result lists each copy's clip, track, times, resolved params, `rerolled` and seed.
+- **`import_motion_graphics_csv`** `{projectId, csv, template ("id", "id:preset", …), delimiter?, startAt?
+  (default 0: MCP has no playhead), track? (default V2), seed?, skipInvalid?, dryRun?, sequenceId?}`:
+  - runs the same parser, planner and command builder against the engine catalogue entry;
+  - row errors refuse the call with every bad row in `details.rows`, or are skipped with `skipInvalid`;
+  - a refused transaction names its CSV row and line.
+  - MCP has no zod schemas, so only the JSON Schema checks run before the transaction; fill and schema refusals
+    come back from the transaction (first failing row).
+- `TEMPLATES_GUIDE` and the server instructions mention both tools.
+
+### Tests
+
+- `packages/project/test/bulk-table.test.ts`: parser rules, caps, a 2 MB timing. fast-check: no throw on arbitrary
+  strings, `parse(format(records))` round trip for CSV / TSV / `;`, increasing record lines.
+- `packages/project/test/mg-import.test.ts`: mapping, aliases per variant, coercion errors, times, preset reroll
+  exclusion, schedule, preview = inserted params. fast-check: coercion and the planner never throw.
+- `packages/project/test/mg-duplicate.test.ts`: placement, reroll / keep, determinism, copy fidelity, first-free and
+  locked tracks, given params, keyframes, ref chains, refusals, dry run. fast-check: no overlap, invariants.
+- `packages/mg-templates/test/social-bulk.test.ts`: registry validation of the hints, catalogue JSON, social alias
+  mapping per variant, import and Add another through a social-shaped fixture
+  (`test/fixtures/social-bulk-template.ts`), and the real `social-comment@1` hints.
+- `apps/web/test/mg-add-another-bulk.test.tsx` (happy-dom):
+  - `mg.addAnother`: undo / redo, labels;
+  - clip menu, Properties, panel button, card context menu;
+  - dialog: preview marks, left-out rows, insert as one undo step, preview = stored, reroll, CSV file, size cap,
+    parse error, counter presets, read-only, hostile text.
+- `apps/mcp/test/bulk-motion-graphics.test.ts`: both tools, refusals, `skipInvalid`, row mapping of a refused
+  transaction, caps, advertised schemas.
+- `e2e/mg-add-another-bulk.spec.ts` (`pnpm e2e`, built app, Chrome), with screenshots in
+  `test-results/e2e-mg-add-another-bulk/`:
+  - Add Another from the clip menu and the panel (counter);
+  - bulk import of counter rows with a bad row;
+  - the real `social-comment` TikTok comment preset: Add Another keeps look and text and changes the identity and
+    likes (Program still checked by eye); a TSV with User / Comment / Likes / Verified / Image URL becomes 2 cards
+    plus 1 left-out row; one undo removes them.
+
+### Limitations
+
+- Remote image URLs are not imported (the column is reported as ignored).
+- XLSX is not read (design non-goal); the user copies cells or exports CSV.
+- MCP checks rows before the transaction only against the JSON Schema; template-level refusals (e.g. a handle the
+  fill rejects) fail the transaction at the first such row.
+- Empty cells cannot express "empty string"; they mean "not given".
+- Add another has no keyboard shortcut (see above).
