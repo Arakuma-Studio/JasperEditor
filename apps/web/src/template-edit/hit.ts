@@ -7,7 +7,9 @@
 // - any other layer under the point blocks the layers below (its drawn content covers them);
 // - 3D template layers are not edited in place (their DOM is not where the camera draws them).
 // The topmost hit wins, except that a hit on a selected clip wins over hits on unselected clips (select a card in the
-// Timeline to reach it under another one). Locked tracks are not skipped: the caller refuses them with feedback.
+// Timeline to reach it under another one). Locked tracks are not skipped: when the topmost hit is on a locked track it
+// is returned whatever is selected (the first click of a double-click selects the unlocked layer under a locked one),
+// and the caller refuses it with feedback.
 import type { ResolvedLayer, Vec2 } from '@jasper/project';
 import { applyMat3, applyMatrix, invertMat3, invertMatrix } from '@jasper/project';
 import { pointInQuad } from '../panels/program/transform-math.ts';
@@ -58,6 +60,8 @@ export function pickTemplateParam(
 	opts: {
 		viewScale: number;
 		selected: ReadonlySet<string>;
+		/** Locked track ids. */
+		locked?: ReadonlySet<string>;
 		isTemplate(l: ResolvedLayer): boolean;
 		measure(l: ResolvedLayer): LayerMeasurement | null;
 	},
@@ -97,5 +101,9 @@ export function pickTemplateParam(
 		}
 		if (m.opaque.some((r) => inside(r, local, 0))) break;
 	}
-	return hits.find((h) => opts.selected.has(h.layer.clip.clipId)) ?? hits[0] ?? null;
+	const top = hits[0];
+	if (!top) return null;
+	const locked = (h: TemplateParamHit) => !!opts.locked?.has(h.layer.clip.trackId);
+	if (locked(top)) return top;
+	return hits.find((h) => opts.selected.has(h.layer.clip.clipId) && !locked(h)) ?? top;
 }

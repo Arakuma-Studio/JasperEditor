@@ -235,7 +235,14 @@ function TemplateTextEditor({
 			if (root && l && rootIsHeld(root)) heldFrames++;
 			// Two frames after the hold reached the DOM: the template's layout effects (fit passes) have settled.
 			if (root && l && heldFrames >= 2) {
-				const m = measureTemplateLayer(root, l.props.box);
+				let m: ReturnType<typeof measureTemplateLayer>;
+				try {
+					m = measureTemplateLayer(root, l.props.box);
+				} catch (e) {
+					console.warn('[program] measuring the template text failed', e);
+					setFailed(t('This text is not drawn on the monitor here — edit it in Properties.'));
+					return;
+				}
 				const boxes = m?.params.filter((b) => b.param === param) ?? [];
 				const box = boxes[Math.min(edit.ordinal, boxes.length - 1)] ?? null;
 				if (box) {

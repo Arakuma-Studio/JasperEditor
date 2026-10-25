@@ -42,13 +42,21 @@ export function templateTextDoubleClick(ctx: LayerDoubleClickContext): boolean {
 		const id = l.clip.clipId;
 		if (!measured.has(id)) {
 			const root = templateLayerRoot(scope, id);
-			measured.set(id, root ? measureTemplateLayer(root, l.props.box) : null);
+			let m: LayerMeasurement | null = null;
+			try {
+				m = root ? measureTemplateLayer(root, l.props.box) : null;
+			} catch (e) {
+				// A template DOM that cannot be measured is treated as transparent: the double-click goes on.
+				console.warn('[program] measuring a template layer failed', e);
+			}
+			measured.set(id, m);
 		}
 		return measured.get(id) ?? null;
 	};
 	const hit = pickTemplateParam(scene, point, {
 		viewScale: ctx.viewScale ?? 1,
 		selected: new Set(st.selection.timeline.clips),
+		locked: new Set(seq.videoTracks.filter((tr) => tr.locked).map((tr) => tr.id)),
 		isTemplate: isAnimeTemplateLayer,
 		measure,
 	});
