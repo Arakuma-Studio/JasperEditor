@@ -139,7 +139,9 @@ export function FontPicker(props: FontPickerProps) {
 					{current ? (
 						<FamilyName family={current.family} url={currentUrl} missing={currentMissing} />
 					) : (
-						<span className="min-w-0 flex-1 truncate text-pr-muted">–</span>
+						<span className="min-w-0 flex-1 truncate text-pr-muted">
+							{props.value === null ? 'Mixed' : '–'}
+						</span>
 					)}
 					<ChevronDown size={12} className="shrink-0 text-pr-muted" aria-hidden />
 				</button>

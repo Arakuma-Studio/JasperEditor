@@ -206,7 +206,7 @@ const insideClip = (clip: Clip, frame: number) => frame >= clip.start && frame <
 const clampIntoClip = (clip: Clip, frame: number) =>
 	Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
 
-type EditPlan = {
+export type EditPlan = {
 	commands: Command[];
 	/** Animated clips skipped because the playhead is outside them (S03:PRP-020 `playhead-outside-clip`). */
 	skipped: string[];
@@ -365,4 +365,165 @@ export function rowForKey(
 		key,
 		clips.map((c) => bindProperty(doc, seq, c, key, frame, registries.mg)),
 	);
+}
+
+/**
+ * How a property row turns edits into commands. The default writes at the playhead (keys only where it is inside the
+ * clip); Effect Controls' N-clips mode (spec 13 AS-031) times keys relative to each clip's In instead.
+ */
+export type RowPlanner = {
+	set(row: Row, frame: number, compute: (base: unknown, b: Binding) => unknown): EditPlan;
+	stopwatch(row: Row, frame: number, on: boolean): EditPlan;
+	toggleKey(row: Row, seq: Sequence, frame: number): EditPlan;
+	reset(row: Row, doc: ProjectDocument, seq: Sequence, frame: number): EditPlan;
+	navigate(row: Row, seq: Sequence, frame: number, dir: -1 | 1): number | null;
+	/** Whether every binding has a key at the playhead. */
+	keyHere(row: Row, seq: Sequence, frame: number): boolean;
+};
+
+export const PLAYHEAD_PLANNER: RowPlanner = {
+	set: planSet,
+	stopwatch: planStopwatch,
+	toggleKey: planToggleKey,
+	reset: planReset,
+	navigate: navigateKey,
+	keyHere: (row, seq, frame) => row.bindings.every((b) => keyAtFrame(b, seq, frame) !== null),
+};
+
+/**
+ * spec 13 AS-031: rows over many clips with keys "relative to each clip's In". The playhead's offset from the
+ * anchor clip's In (`anchor`) is the key time in every clip (clip.start + offset). Effect params go out as ONE
+ * `effect.setParamMany` (each instance its own value: relative scrubs keep per-clip differences); intrinsic params
+ * as `param.set` per clip with `at: {frames: offset}`. Clips shorter than the offset get no key (skipped).
+ */
+export function relativePlanner(anchor: Clip): RowPlanner {
+	const offsetOf = (frame: number) => frame - anchor.start;
+	const frameIn = (b: Binding, offset: number) => b.clip.start + offset;
+	const inside = (b: Binding, offset: number) => offset >= 0 && offset < b.clip.duration;
+	const keyAt = (b: Binding, seq: Sequence, offset: number) => keyAtFrame(b, seq, frameIn(b, offset));
+	const effectParam = (row: Row) => {
+		const first = row.bindings[0];
+		return first?.path?.[0] === 'effect' && row.bindings.every((b) => b.path?.[0] === 'effect')
+			? (first.param ?? first.path[2]!)
+			: null;
+	};
+	const set: RowPlanner['set'] = (row, frame, compute) => {
+		const offset = offsetOf(frame);
+		const param = effectParam(row);
+		const skipped: string[] = [];
+		const animated = row.bindings.some((b) => b.resolved.animated);
+		if (param) {
+			const targets = row.bindings.map((b) => {
+				if (b.resolved.animated && !inside(b, offset)) skipped.push(b.clip.id);
+				return {
+					clipId: b.clip.id,
+					effectInstanceId: b.path![1]!,
+					value: clampValue(b.spec, compute(b.resolved.value, b)),
+				};
+			});
+			const cmd = {
+				type: 'effect.setParamMany',
+				targets,
+				param,
+				...(animated ? { at: { frames: Math.max(0, offset) } } : {}),
+			} as Command;
+			return { commands: [cmd], skipped };
+		}
+		const commands: Command[] = [];
+		row.bindings.forEach((b, i) => {
+			const value = clampValue(b.spec, compute(b.resolved.value, b));
+			if (b.spec.write?.via === 'clip.update' || !b.path) {
+				const cmds = writeBinding(b, value, frameIn(b, offset), i);
+				if (cmds) commands.push(...cmds);
+				return;
+			}
+			if (b.resolved.animated) {
+				if (!inside(b, offset)) {
+					skipped.push(b.clip.id);
+					return;
+				}
+				commands.push({ type: 'param.set', target: b.path, value, at: { frames: offset } } as Command);
+			} else commands.push({ type: 'param.set', target: b.path, value } as Command);
+		});
+		return { commands, skipped };
+	};
+	return {
+		set,
+		stopwatch(row, frame, on) {
+			const offset = offsetOf(frame);
+			const param = effectParam(row);
+			if (param) {
+				const targets = row.bindings
+					.filter((b) => b.spec.animatable !== 'no' && b.resolved.animated !== on)
+					.map((b) => ({ clipId: b.clip.id, effectInstanceId: b.path![1]! }));
+				if (!targets.length) return { commands: [], skipped: [] };
+				return {
+					commands: [
+						{
+							type: 'effect.setParamMany',
+							targets,
+							param,
+							animated: on,
+							at: { frames: Math.max(0, offset) },
+						} as Command,
+					],
+					skipped: [],
+				};
+			}
+			const commands: Command[] = [];
+			for (const b of row.bindings) {
+				if (b.spec.animatable === 'no' || b.resolved.animated === on || !b.path) continue;
+				const at = { frames: Math.min(b.clip.duration - 1, Math.max(0, offset)) };
+				commands.push({ type: 'param.setAnimated', target: b.path, animated: on, at } as Command);
+			}
+			return { commands, skipped: [] };
+		},
+		toggleKey(row, seq, frame) {
+			const offset = offsetOf(frame);
+			const keys = row.bindings.map((b) => keyAt(b, seq, offset));
+			if (keys.every((k) => k !== null))
+				return {
+					commands: [{ type: 'keyframe.remove', keyframeIds: keys as string[] } as Command],
+					skipped: [],
+				};
+			const commands: Command[] = [];
+			const skipped: string[] = [];
+			row.bindings.forEach((b, i) => {
+				if (keys[i] !== null || b.spec.animatable === 'no' || !b.path) return;
+				if (!inside(b, offset)) {
+					skipped.push(b.clip.id);
+					return;
+				}
+				const at = { frames: offset };
+				commands.push(
+					(b.resolved.animated
+						? { type: 'keyframe.add', target: b.path, at }
+						: { type: 'param.setAnimated', target: b.path, animated: true, at }) as Command,
+				);
+			});
+			return { commands, skipped };
+		},
+		reset(row, doc, seq, frame) {
+			const existing = row.bindings.filter((b) => b.path !== null && b.spec.defaultValue !== undefined);
+			if (!existing.length) return { commands: [], skipped: [] };
+			return set({ ...row, bindings: existing }, frame, (_base, b) =>
+				propertyDefault({ doc, seq, clip: b.clip }, b.spec),
+			);
+		},
+		navigate(row, seq, frame, dir) {
+			const frames = row.bindings.flatMap((b) =>
+				(b.resolved.anim?.keyframes ?? []).map(
+					(k) =>
+						anchor.start + sequenceFrameOfContentTime(b.clip, k.time, seq.settings.frameRate) - b.clip.start,
+				),
+			);
+			const cands = frames.filter((f) => (dir > 0 ? f > frame : f < frame));
+			if (!cands.length) return null;
+			return dir > 0 ? Math.min(...cands) : Math.max(...cands);
+		},
+		keyHere(row, seq, frame) {
+			const offset = offsetOf(frame);
+			return row.bindings.every((b) => keyAt(b, seq, offset) !== null);
+		},
+	};
 }
