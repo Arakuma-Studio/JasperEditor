@@ -71,8 +71,11 @@ export function matchesOperator(text: string, op: FindOperator, value: string, m
 }
 
 /** Combines criteria over the candidate texts of each field. `notContains` holds when no text of the field contains it. */
-function evaluate<F extends string>(query: FindQuery<F>, textsOf: (field: F) => string[]): boolean {
-	const active = query.criteria.filter((c) => typeof c.value === 'string' && c.value.length > 0);
+function evaluate<F extends string>(
+	query: FindQuery<F>,
+	active: readonly FindCriterion<F>[],
+	textsOf: (field: F) => string[],
+): boolean {
 	if (!active.length) return false;
 	const test = (c: FindCriterion<F>) => {
 		const texts = textsOf(c.field).filter((t) => typeof t === 'string');
@@ -112,6 +115,7 @@ function itemTexts(doc: ProjectDocument, it: ProjectItem, field: ProjectFindFiel
 export function findProjectItems(doc: ProjectDocument, query: FindQuery<ProjectFindField>): string[] {
 	const out: string[] = [];
 	const seen = new Set<string>();
+	const active = query.criteria.filter((c) => typeof c.value === 'string' && c.value.length > 0);
 	const walk = (ids: readonly string[], depth: number) => {
 		if (depth > 64) return;
 		for (const id of ids) {
@@ -119,7 +123,7 @@ export function findProjectItems(doc: ProjectDocument, query: FindQuery<ProjectF
 			seen.add(id);
 			const it = doc.items[id];
 			if (!it) continue;
-			if (evaluate(query, (f) => itemTexts(doc, it, f))) out.push(id);
+			if (evaluate(query, active, (f) => itemTexts(doc, it, f))) out.push(id);
 			if (it.kind === 'bin') walk(it.children, depth + 1);
 		}
 	};
@@ -133,32 +137,47 @@ export type TimelineFindHit =
 	| { kind: 'clip'; clipId: string; trackId: string; frame: number }
 	| { kind: 'marker'; markerId: string; frame: number; clipId?: string };
 
-function sourceNameOf(doc: ProjectDocument, clip: Clip): string[] {
+type SourceItems = { media: Map<string, string>; sequences: Map<string, string> };
+
+/** The first project item naming each source, matching Object.values(items).find's order. */
+function indexSourceItems(items: ProjectDocument['items']): SourceItems {
+	const media = new Map<string, string>();
+	const sequences = new Map<string, string>();
+	for (const item of Object.values(items)) {
+		if (item.kind === 'media' && !media.has(item.mediaId)) media.set(item.mediaId, item.name);
+		else if (item.kind === 'sequence' && !sequences.has(item.sequenceId))
+			sequences.set(item.sequenceId, item.name);
+	}
+	return { media, sequences };
+}
+
+function sourceNameOf(doc: ProjectDocument, clip: Clip, items: () => SourceItems): string[] {
 	const c = clip as Clip & { mediaId?: string; sequenceId?: string };
 	if (typeof c.mediaId === 'string') {
 		const m = doc.media[c.mediaId];
-		const item = Object.values(doc.items).find((i) => i.kind === 'media' && i.mediaId === c.mediaId);
-		return [item?.name, m?.originalName].filter((x): x is string => typeof x === 'string');
+		return [items().media.get(c.mediaId), m?.originalName].filter((x): x is string => typeof x === 'string');
 	}
 	if (typeof c.sequenceId === 'string') {
-		const item = Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === c.sequenceId);
-		return item ? [item.name] : [];
+		const name = items().sequences.get(c.sequenceId);
+		return name === undefined ? [] : [name];
 	}
 	return [];
 }
 
-function clipTexts(doc: ProjectDocument, clip: Clip, field: TimelineFindField): string[] {
+function clipTexts(clip: Clip, field: TimelineFindField, sourceNames: (clip: Clip) => string[]): string[] {
 	switch (field) {
 		case 'clipName':
 			return [clip.name];
 		case 'sourceName':
-			return sourceNameOf(doc, clip);
+			return sourceNames(clip);
 		case 'text':
 			return clip.kind === 'text' ? [(clip as { content: { text: string } }).content.text] : [];
 		case 'marker':
 			return (clip.markers ?? []).flatMap((m) => [m.name, m.comment]);
 		default:
-			return (['clipName', 'sourceName', 'text', 'marker'] as const).flatMap((f) => clipTexts(doc, clip, f));
+			return (['clipName', 'sourceName', 'text', 'marker'] as const).flatMap((f) =>
+				clipTexts(clip, f, sourceNames),
+			);
 	}
 }
 
@@ -185,8 +204,14 @@ export function findTimelineHits(
 	const trackOrder = [...seq.videoTracks].reverse().concat(seq.audioTracks, seq.captionTracks);
 	const rank = new Map(trackOrder.map((t, i) => [t.id, i]));
 	const hits: (TimelineFindHit & { rank: number })[] = [];
+	const active = query.criteria.filter((c) => typeof c.value === 'string' && c.value.length > 0);
+	// One local index per search: input documents can be mutable, so an identity cache could retain old names.
+	// Build lazily so name/text/marker-only queries never scan unrelated project items.
+	let sourceItems: SourceItems | undefined;
+	const getSourceItems = () => (sourceItems ??= indexSourceItems(doc.items));
+	const sourceNames = (clip: Clip) => sourceNameOf(doc, clip, getSourceItems);
 	for (const clip of Object.values(seq.clips)) {
-		if (evaluate(query, (f) => clipTexts(doc, clip, f)))
+		if (evaluate(query, active, (f) => clipTexts(clip, f, sourceNames)))
 			hits.push({
 				kind: 'clip',
 				clipId: clip.id,
@@ -197,7 +222,7 @@ export function findTimelineHits(
 		const markerOnly = query.criteria.every((c) => c.field === 'marker' || !c.value);
 		if (markerOnly)
 			for (const m of clip.markers ?? [])
-				if (evaluate(query, () => [m.name, m.comment]))
+				if (evaluate(query, active, () => [m.name, m.comment]))
 					hits.push({
 						kind: 'marker',
 						markerId: m.id,
@@ -209,7 +234,7 @@ export function findTimelineHits(
 	const markerFields = query.criteria.every((c) => !c.value || c.field === 'marker' || c.field === 'any');
 	if (markerFields)
 		for (const m of seq.markers)
-			if (evaluate(query, () => [m.name, m.comment]))
+			if (evaluate(query, active, () => [m.name, m.comment]))
 				hits.push({ kind: 'marker', markerId: m.id, frame: m.frame, rank: -1 });
 	hits.sort((a, b) => a.frame - b.frame || a.rank - b.rank);
 	return hits.map(({ rank: _r, ...h }) => h as TimelineFindHit);
