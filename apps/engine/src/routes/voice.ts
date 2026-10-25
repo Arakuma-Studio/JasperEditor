@@ -20,7 +20,7 @@ export default async function voiceRoutes(app: FastifyInstance): Promise<void> {
 		log: (m) => app.log.warn(m),
 	});
 	svc.registerRunner();
-	app.jasper.services.voice = svc;
+	app.jasper.services.voiceAnalysis = svc;
 
 	const mediaKey = (key: string) => {
 		if (!MEDIA_KEY_RE.test(key) || !core.registry.get(key))
