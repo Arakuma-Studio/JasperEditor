@@ -1,7 +1,6 @@
 // Easing panel ▸ how the panel runs its actions: through the UI command registry (the same commands as the
-// palette, menus and shortcuts), so a disabled action shows the command's reason and a refusal its toast. Tests
-// provide a stub with <EaseDispatchProvider>.
-import { createContext, type ReactNode, useContext, useMemo } from 'react';
+// palette, menus and shortcuts), so a disabled action shows the command's reason and a refusal its toast.
+import { useMemo } from 'react';
 import type { Platform } from '../../commands/keymap-defaults.ts';
 import { getCommand, isCommandEnabled } from '../../commands/registry.ts';
 import type { ToastRequest } from '../../commands/types.ts';
@@ -18,20 +17,12 @@ export type EaseDispatch = {
 	platform: Platform;
 };
 
-const Ctx = createContext<EaseDispatch | null>(null);
-
-export function EaseDispatchProvider(props: { value: EaseDispatch; children?: ReactNode }) {
-	return <Ctx.Provider value={props.value}>{props.children}</Ctx.Provider>;
-}
-
 const noShell = () => t('The editor is still starting');
 
-/** The dispatch of the surrounding provider, else the shell's command runtime. */
+/** Dispatch through the shell's command runtime. */
 export function useEaseDispatch(): EaseDispatch {
-	const given = useContext(Ctx);
 	const shell = useShellRuntimeOrNull();
 	return useMemo((): EaseDispatch => {
-		if (given) return given;
 		const platform = shell?.platform ?? detectPlatform();
 		if (!shell) return { run: async () => false, reason: () => noShell(), toast: () => {}, platform };
 		return {
@@ -50,5 +41,5 @@ export function useEaseDispatch(): EaseDispatch {
 			toast: (r) => shell.getCtx().ui.toast(r),
 			platform,
 		};
-	}, [given, shell]);
+	}, [shell]);
 }

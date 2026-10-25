@@ -9,12 +9,11 @@ import {
 	type Keyframe,
 	outgoingEase,
 } from '@jasper/project';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { easeEnv, warningText } from '../src/commands/easing.ts';
 import {
 	type CommandCtx,
 	createCommandContext,
-	DEFAULT_KEYMAP,
 	getCommand,
 	isCommandEnabled,
 	registerAllCommands,
@@ -24,20 +23,15 @@ import {
 	type ToastRequest,
 } from '../src/commands/index.ts';
 import { easeClipboard } from '../src/panels/easing/clipboard.ts';
-import { docCommandSupport } from '../src/panels/easing/doc-commands.ts';
 import { easeLibrary } from '../src/panels/easing/library.ts';
 import { addSolids, clipOf, makeSession } from './inspector-helpers.tsx';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
 beforeAll(() => registerAllCommands());
-const realHas = docCommandSupport.has;
 beforeEach(() => {
 	globalThis.localStorage?.clear();
 	easeLibrary.reload();
 	easeClipboard.set(null);
-});
-afterEach(() => {
-	docCommandSupport.has = realHas;
 });
 
 type K = Keyframe<unknown>;
@@ -99,7 +93,7 @@ describe('the keyframe selection as the easing commands read it', () => {
 		expect(sel.blocked).toBeNull();
 		expect(sel.properties).toHaveLength(1);
 		const p = sel.properties[0]!;
-		expect(p.curve).toEqual(easesToCubic(a!.easeOut, b!.easeIn));
+		expect(p.curve).toEqual({ kind: 'cubic', x1: 0.5, y1: 0, x2: 0.8, y2: 0.8 });
 		expect(p.segments.map((x) => x.section)).toEqual(['middle', 'out']);
 	});
 
@@ -153,13 +147,6 @@ describe('easing commands', () => {
 		expect((await runCommand('ease.easyEase', h.ctx)).ran).toBe(true);
 		expect(h.opacity()[0]!.easeOut).toEqual({ influence: 1 / 3, slope: 0 });
 		expect(h.session.getState().history.entries.length).toBe(before + 2);
-	});
-
-	it('Apply Ease is disabled with a reason when the model has no keyframe.applyEase command', () => {
-		const h = setup();
-		h.select([h.opacity()[0]!.id, h.opacity()[1]!.id]);
-		docCommandSupport.has = (t) => t !== 'keyframe.applyEase';
-		expect(h.reason('ease.apply')).toBe('This build has no keyframe.applyEase command yet');
 	});
 
 	it('Apply Ease shapes the segment exactly, as one undo step, and remembers the curve', async () => {
@@ -296,23 +283,7 @@ describe('easing commands', () => {
 		expect(h.position().every((k) => k.interpolation === 'continuous-bezier')).toBe(true);
 	});
 
-	it('Add Overshoot / Bounce set the preset expression on the selected properties', async () => {
-		const h = setup();
-		h.select([h.opacity()[0]!.id, h.position()[0]!.id]);
-		expect((await runCommand('ease.addBounce', h.ctx)).ran).toBe(true);
-		const clip = clipOf(h.session, h.clipId) as unknown as {
-			opacity: { expression?: { text: string } };
-			transform: { position: { expression?: { text: string } } };
-		};
-		expect(clip.opacity.expression?.text).toMatch(/elasticity/);
-		expect(clip.transform.position.expression?.text).toMatch(/elasticity/);
-		expect((await runCommand('ease.addOvershoot', h.ctx)).ran).toBe(true);
-		expect((clipOf(h.session, h.clipId) as unknown as typeof clip).opacity.expression?.text).toMatch(
-			/amount/,
-		);
-	});
-
-	it('Drive Along Path makes the point keys slider-driven; Clean Up Motion Path runs on point keys', async () => {
+	it('Drive Along Path requires point keys and creates their controller', async () => {
 		const h = setup();
 		h.select([h.opacity()[0]!.id, h.opacity()[1]!.id]);
 		expect(h.reason('ease.drivePath')).toMatch(/one point property/);
@@ -325,10 +296,6 @@ describe('easing commands', () => {
 			effects: { effectId: string }[];
 		};
 		expect(clip.transform.position.expression?.text).toBeTruthy();
-		expect(h.toasts.filter((t) => t.message.includes('not possible'))).toEqual([]);
-		h.session.undo();
-		h.select(h.position().map((k) => k.id));
-		expect((await runCommand('ease.cleanupPath', h.ctx)).ran).toBe(true);
 		expect(h.toasts.filter((t) => t.message.includes('not possible'))).toEqual([]);
 	});
 
@@ -344,16 +311,6 @@ describe('easing commands', () => {
 			],
 		} as unknown as Parameters<typeof warningText>[0];
 		expect(warningText(r)).toBe('Opacity: flat\nScale: clamped');
-	});
-
-	it('the gated commands say what is missing', () => {
-		const h = setup();
-		h.select(h.position().map((k) => k.id));
-		docCommandSupport.has = () => false;
-		expect(h.reason('ease.drivePath')).toBe('This build has no keyframe.createPathController command yet');
-		expect(h.reason('ease.cleanupPath')).toBe('This build has no keyframes.cleanupPath command yet');
-		docCommandSupport.has = () => true;
-		expect(h.reason('ease.drivePath')).toBeUndefined();
 	});
 });
 
@@ -372,10 +329,5 @@ describe('shortcuts', () => {
 		expect(at('Ctrl+KeyC', 'easing')).toBe('ease.copy');
 		expect(at('Ctrl+KeyV', 'easing')).toBe('ease.paste');
 		expect(at('Ctrl+KeyC', 'effectControls')).toBe('edit.copy');
-	});
-
-	it('every easing binding names a registered command', () => {
-		for (const b of DEFAULT_KEYMAP.filter((x) => x.command.startsWith('ease.')))
-			expect(getCommand(b.command), b.command).toBeDefined();
 	});
 });

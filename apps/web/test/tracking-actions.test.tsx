@@ -1,7 +1,7 @@
 import { buildRenderSnapshot, type ClipTracker, type Quad } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import {
 	addTracker,
@@ -28,7 +28,10 @@ const trackerOf = (session: ReturnType<typeof trackingSession>['session'], plate
 const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 
 beforeEach(() => trackingStore.setState(trackingStore.getInitialState(), true));
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 describe('tracking actions', () => {
 	it('runs Track Forward: request body, live progress, one "Track" entry with the samples', async () => {
@@ -171,12 +174,13 @@ describe('tracking actions', () => {
 	});
 
 	it('finishes by polling when no event arrives', async () => {
+		vi.useFakeTimers();
 		const { session, plate } = trackingSession();
 		const engine = fakeEngine();
 		const id = addTracker(session, plate, 'planar');
 		const jobId = await startTrack(session, engine, id, 'forward');
 		engine.finish(jobId!, planarResult(0, 60, REF));
-		await act(async () => void (await new Promise((r) => setTimeout(r, 900))));
+		await act(async () => vi.advanceTimersByTimeAsync(900));
 		expect(labels(session)).toEqual(['Add Planar Tracker', 'Track']);
 	});
 });

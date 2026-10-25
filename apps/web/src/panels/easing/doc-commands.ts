@@ -26,12 +26,9 @@ export type EaseDocCommand =
 	| 'keyframe.createPathController'
 	| 'keyframes.cleanupPath';
 
-/** Which document commands exist (the model's command catalogue; tests can substitute it). */
-export const docCommandSupport = { has: (type: string): boolean => isCommandType(type) };
-
 /** Why an action cannot run in this build (its document command is missing), else undefined. */
 export function missingDocCommand(type: EaseDocCommand): string | undefined {
-	return docCommandSupport.has(type) ? undefined : t('This build has no {0} command yet', type);
+	return isCommandType(type) ? undefined : t('This build has no {0} command yet', type);
 }
 
 const ids = (keyframeIds: readonly string[]) => [...new Set(keyframeIds)];

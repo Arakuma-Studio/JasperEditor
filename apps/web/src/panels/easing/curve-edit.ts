@@ -93,12 +93,12 @@ export const sameRef = (a: HandleRef | null, b: HandleRef | null): boolean =>
 	(a.kind === 'cubic' ? a.handle === (b as typeof a).handle : a.index === (b as { index: number }).index);
 
 /** Shift: keep whichever axis moved further since the drag began. */
-export function constrainToAxis(start: Vec, pos: Vec): [number, number] {
+function constrainToAxis(start: Vec, pos: Vec): [number, number] {
 	return Math.abs(pos[0] - start[0]) >= Math.abs(pos[1] - start[1]) ? [pos[0], start[1]] : [start[0], pos[1]];
 }
 
 /** Point-symmetric about (½, ½): the second handle mirrors the first. */
-export function isSymmetric(c: CubicEase, tol = 1e-6): boolean {
+function isSymmetric(c: CubicEase, tol = 1e-6): boolean {
 	return Math.abs(c.x2 - (1 - c.x1)) <= tol && Math.abs(c.y2 - (1 - c.y1)) <= tol;
 }
 

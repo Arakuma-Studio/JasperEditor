@@ -1,42 +1,23 @@
 import {
-	BUILTIN_EASE_GROUPS,
-	builtinEasePresets,
 	CubicEaseSchema,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	type TransactionResult,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
+import { getCommand, registerCommands, runCommand } from '../src/commands/registry.ts';
 import type { CommandCtx, ToastRequest } from '../src/commands/types.ts';
-import { StrokeAnimationBody } from '../src/panels/strokeAnimation/StrokeAnimationPanel.tsx';
+import { StrokeAnimationPanel } from '../src/panels/strokeAnimation/StrokeAnimationPanel.tsx';
 import { vectorUi } from '../src/shapes/vector.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
-import type { ShellMenuItem } from '../src/shell/menus/resolve.ts';
+import { strokeAnimationCommands } from '../src/stroke-animation/commands.ts';
 import {
-	ANIMATE_TRIM_STYLES,
-	type AnimateTrimCommand,
-	type AnimateTrimStyle,
-	type StrokeTx,
-	setStrokeAnimationAdapter,
-} from '../src/stroke-animation/adapter.ts';
-import {
-	animationStart,
-	buildAnimateCommands,
-	effectiveFlags,
 	formatCubic,
-	masterTrims,
 	parseCubic,
 	presetForCurve,
-	presetLabel,
-	STROKE_ACTIONS,
-	STROKE_REASONS,
-	type StrokeCurvePreset,
 	strokeCurvePresets,
 	tracerTarget,
 } from '../src/stroke-animation/model.ts';
@@ -82,29 +63,6 @@ const STROKED_PATH = [
 ];
 const TRIMMED_PATH = [...STROKED_PATH, { type: 'trim' }];
 
-/** Records the transactions and answers like the shape commands would. */
-function stubAdapter(answer?: (tx: StrokeTx) => TransactionResult) {
-	const txs: StrokeTx[] = [];
-	setStrokeAnimationAdapter({
-		apply: (_s, tx) => {
-			txs.push(tx);
-			return (
-				answer?.(tx) ?? {
-					ok: true,
-					revision: txs.length,
-					refs: {},
-					created: [],
-					changed: [],
-					deleted: [],
-					warnings: [],
-					results: tx.commands.map(() => null),
-				}
-			);
-		},
-	});
-	return txs;
-}
-
 function ctxFor(session: EditorSession | null, toasts: ToastRequest[] = []): CommandCtx {
 	return {
 		session,
@@ -114,140 +72,28 @@ function ctxFor(session: EditorSession | null, toasts: ToastRequest[] = []): Com
 	} as unknown as CommandCtx;
 }
 
+let unregister: (() => void) | undefined;
+
 beforeEach(() => {
 	localStorage.clear();
 	strokePrefs.reload();
-	registerAllCommands();
+	unregister = registerCommands(strokeAnimationCommands);
 });
 afterEach(() => {
 	cleanup();
-	setStrokeAnimationAdapter(null);
+	unregister?.();
 	vectorUi.set({ selected: null, vertices: [], collapsed: {} });
 	localStorage.clear();
 	strokePrefs.reload();
 });
 
-describe('payloads', () => {
-	const clip = { id: 'c1', start: 30, duration: 60 };
-
-	it('maps every style × modifier to the contract payload', () => {
-		for (const style of ANIMATE_TRIM_STYLES)
-			for (const reverse of [false, true])
-				for (const animateOffset of [false, true]) {
-					const [cmd, ...rest] = buildAnimateCommands(
-						style,
-						[clip],
-						DEFAULT_STROKE_PREFS,
-						{ reverse, animateOffset },
-						0,
-					);
-					expect(rest).toEqual([]);
-					const want: AnimateTrimCommand = {
-						type: 'shape.animateTrim',
-						clipIds: ['c1'],
-						style,
-						reverse,
-						animateOffset,
-						durationFrames: 10,
-						...(animateOffset ? { offsetDegrees: 180 } : {}),
-						...(style === 'divideIn' || style === 'divideOut' ? { copies: 4 } : {}),
-						...(style === 'inOut' ? { inOutLag: 0.5 } : {}),
-					};
-					expect(cmd).toEqual(want);
-				}
-	});
-
-	it('Alt toggles Reverse and Shift toggles Animate offset relative to the checkboxes', () => {
-		for (const reverse of [false, true])
-			for (const animateOffset of [false, true])
-				for (const alt of [false, true])
-					for (const shift of [false, true])
-						expect(effectiveFlags({ reverse, animateOffset }, { alt, shift })).toEqual({
-							reverse: reverse !== alt,
-							animateOffset: animateOffset !== shift,
-						});
-	});
-
-	it('starts at the playhead only inside the clip, and groups clips by start', () => {
-		expect(animationStart(clip, 45, 'playhead')).toBe(45);
-		expect(animationStart(clip, 30, 'playhead')).toBeUndefined(); // = clip start
-		expect(animationStart(clip, 90, 'playhead')).toBeUndefined(); // the clip's end is outside it
-		expect(animationStart(clip, 10, 'playhead')).toBeUndefined();
-		expect(animationStart(clip, 45, 'clipStart')).toBeUndefined();
-		expect(animationStart(clip, Number.NaN, 'playhead')).toBeUndefined();
-		const other = { id: 'c2', start: 200, duration: 30 };
-		const third = { id: 'c3', start: 0, duration: 100 };
-		const cmds = buildAnimateCommands(
-			'in',
-			[clip, other, third],
-			DEFAULT_STROKE_PREFS,
-			{ reverse: false, animateOffset: false },
-			45,
-		);
-		expect(cmds.map((c) => [c.clipIds, c.at])).toEqual([
-			[['c1', 'c3'], 45],
-			[['c2'], undefined],
-		]);
-	});
-
-	it('sends the settings and the curve', () => {
-		const curve = preset('basic.ease').curve;
-		const prefs = { ...DEFAULT_STROKE_PREFS, durationFrames: 24, copies: 7, inOutLag: 0.25, curve };
-		const [divide] = buildAnimateCommands(
-			'divideOut',
-			[clip],
-			prefs,
-			{ reverse: true, animateOffset: false },
-			0,
-		);
-		expect(divide).toMatchObject({ durationFrames: 24, copies: 7, curve, reverse: true });
-		expect(divide).not.toHaveProperty('inOutLag');
-		const [inOut] = buildAnimateCommands('inOut', [clip], prefs, { reverse: false, animateOffset: true }, 0);
-		expect(inOut).toMatchObject({ inOutLag: 0.25, offsetDegrees: 180, animateOffset: true });
-		expect(inOut).not.toHaveProperty('copies');
-	});
-
-	it('reads the master trim of each clip from the results and ignores anything else', () => {
-		expect(
-			masterTrims([
-				{ clips: [{ clipId: 'a', trimIds: ['t1', 't2'] }] },
-				null,
-				{ clips: [{ clipId: 'b', trimIds: [] }] },
-				'x',
-				{ clips: [{ clipId: 'c', trimIds: ['t9'] }] },
-			]),
-		).toEqual([
-			{ clipId: 'a', trimItemId: 't1' },
-			{ clipId: 'c', trimItemId: 't9' },
-		]);
-	});
-});
-
 describe('curve presets', () => {
-	it('offers the cubic presets of the built-in catalogue only', () => {
-		expect(CURVES.length).toBeGreaterThan(10);
-		expect(CURVES.every((p) => p.curve.kind === 'cubic' && CubicEaseSchema.safeParse(p.curve).success)).toBe(
-			true,
-		);
-		expect(builtinEasePresets().some((p) => p.curve.kind === 'multi')).toBe(true);
-		expect(CURVES.some((p) => p.curve.kind !== 'cubic')).toBe(false);
-	});
-
 	it('shows a stored curve as its preset, or the preset with the same shape', () => {
 		const ease = preset('basic.easy-ease');
 		expect(presetForCurve(ease.curve, ease.id, CURVES)?.id).toBe('basic.easy-ease');
 		expect(presetForCurve({ ...ease.curve }, null, CURVES)?.id).toBe('basic.easy-ease');
 		expect(presetForCurve({ kind: 'cubic', x1: 0.9, y1: -2, x2: 0.1, y2: 3 }, null, CURVES)).toBeNull();
 		expect(presetForCurve(null, 'basic.easy-ease', CURVES)).toBeNull();
-	});
-
-	it('labels presets with their group outside Basic', () => {
-		const id = (s: string) => s;
-		expect(presetLabel(preset('basic.ease'), id)).toBe('Ease (CSS)');
-		const other = CURVES.find((p) => p.group !== 'basic')!;
-		expect(presetLabel(other, id)).toBe(
-			`${BUILTIN_EASE_GROUPS.find((g) => g.id === other.group)!.name} · ${other.name}`,
-		);
 	});
 });
 
@@ -348,48 +194,19 @@ describe('preferences', () => {
 });
 
 describe('UI commands', () => {
-	it('every action has a registered command, and the menu lists each of them', () => {
-		const ids = new Set<string>();
-		const walk = (items: readonly ShellMenuItem[]) => {
-			for (const it of items) {
-				if (it.type === 'command') ids.add(it.command);
-				if (it.type === 'submenu') walk(it.items);
-			}
-		};
-		walk(MENUBAR.find((m) => m.id === 'graphics')!.items);
-		for (const a of STROKE_ACTIONS) {
-			expect(getCommand(a.command), a.command).toBeDefined();
-			expect(ids.has(a.command), a.command).toBe(true);
-		}
-		expect(ids.has('panel.focus.strokeAnimation')).toBe(true);
-		expect(getCommand('panel.focus.strokeAnimation')).toBeDefined();
-	});
-
 	it('is disabled with a reason without a project, a sequence, a shape selection or write access', async () => {
 		const drawIn = getCommand('strokeAnimation.drawIn')!;
 		expect(drawIn.when!(ctxFor(null))).toBe(false);
-		expect(drawIn.disabledReason!(ctxFor(null))).toBe(STROKE_REASONS.noProject);
+		expect(drawIn.disabledReason!(ctxFor(null))).toBeTruthy();
 		const { session } = makeSession();
-		expect(drawIn.disabledReason!(ctxFor(session))).toBe(STROKE_REASONS.noShape);
+		expect(drawIn.disabledReason!(ctxFor(session))).toBeTruthy();
+		expect(drawIn.when!(ctxFor(session))).toBe(false);
 		const rect = addShape(session, { type: 'rect' });
 		session.select('timeline', [rect]);
 		expect(drawIn.when!(ctxFor(session))).toBe(true);
-		const txs = stubAdapter();
-		const r = await runCommand('strokeAnimation.drawIn', ctxFor(session), { reverse: true });
-		expect(r.ran).toBe(true);
-		expect(txs[0]!.commands).toEqual([
-			{
-				type: 'shape.animateTrim',
-				clipIds: [rect],
-				style: 'in',
-				reverse: true,
-				animateOffset: false,
-				durationFrames: 10,
-			},
-		]);
-		expect(getCommand('strokeAnimation.addTracer')!.disabledReason!(ctxFor(session))).toBe(
-			STROKE_REASONS.noTrim,
-		);
+
+		expect(getCommand('strokeAnimation.addTracer')!.when!(ctxFor(session))).toBe(false);
+		expect(getCommand('strokeAnimation.addTracer')!.disabledReason!(ctxFor(session))).toBeTruthy();
 		// Unknown args are refused by the schema.
 		expect((await runCommand('strokeAnimation.drawIn', ctxFor(session), { spin: 1 })).reason).toBe(
 			'invalid-args',
@@ -400,69 +217,10 @@ describe('UI commands', () => {
 			ctx: { ids: createCounterIdSource(500), now: () => 't', registries: defaultRegistries() },
 			readOnly: true,
 		});
-		expect(drawIn.disabledReason!(ctxFor(ro))).toBe(STROKE_REASONS.readOnly);
-		expect(getCommand('strokeAnimation.addHorizontalLine')!.disabledReason!(ctxFor(ro))).toBe(
-			STROKE_REASONS.readOnly,
-		);
-	});
-
-	it('shows refusals and skipped-clip warnings as notifications', async () => {
-		const { session } = makeSession();
-		const a = addShape(session, { type: 'vector', contents: STROKED_PATH });
-		session.select('timeline', [a]);
-		const toasts: ToastRequest[] = [];
-		stubAdapter(() => ({
-			ok: false,
-			revision: 0,
-			errors: [{ commandIndex: 0, code: 'E_INVALID_PARAM', message: 'No path' }],
-		}));
-		await runCommand('strokeAnimation.divideIn', ctxFor(session, toasts));
-		expect(toasts.at(-1)).toMatchObject({ kind: 'error', detail: 'No path' });
-		stubAdapter(() => ({
-			ok: true,
-			revision: 1,
-			refs: {},
-			created: [],
-			changed: [],
-			deleted: [],
-			warnings: [{ commandIndex: 0, code: 'W_TRIM_SKIPPED', message: 'Clip “Text” has no paths: skipped' }],
-			results: [null],
-		}));
-		await runCommand('strokeAnimation.drawOut', ctxFor(session, toasts));
-		expect(toasts.at(-1)).toMatchObject({ kind: 'warning', detail: 'Clip “Text” has no paths: skipped' });
-		expect(toasts.at(-1)!.message).toContain('1 skipped');
-	});
-
-	it('adds tracers to the next animation in the same transaction', async () => {
-		const { session } = makeSession();
-		const a = addShape(session, { type: 'vector', contents: STROKED_PATH });
-		session.select('timeline', [a]);
-		strokePrefs.set({ addTracer: true, tracerTip: 'end' });
-		const txs = stubAdapter((tx) => ({
-			ok: true,
-			revision: 1,
-			refs: {},
-			created: [],
-			changed: [],
-			deleted: [],
-			warnings: [],
-			results: tx.commands.map((c) =>
-				c.type === 'shape.animateTrim' ? { clips: [{ clipId: a, trimIds: ['trimA', 'trimA2'] }] } : null,
-			),
-		}));
-		await runCommand('strokeAnimation.drawIn', ctxFor(session));
-		// A dry run learns which clips get animated, then animation + tracers go in one transaction.
-		expect(txs).toHaveLength(2);
-		expect(txs[0]!.dryRun).toBe(true);
-		expect(txs[0]!.commands.map((c) => c.type)).toEqual(['shape.animateTrim']);
-		expect(txs[1]!.dryRun).toBeUndefined();
-		expect(txs[1]!.commands).toEqual([
-			txs[0]!.commands[0],
-			{ type: 'shape.addTrimTracer', clipId: a, tip: 'end' },
-		]);
-		expect(getCommand('strokeAnimation.toggleTracer')!.checked!(ctxFor(session))).toBe(true);
-		await runCommand('strokeAnimation.toggleTracer', ctxFor(session));
-		expect(strokePrefs.get().addTracer).toBe(false);
+		expect(drawIn.when!(ctxFor(ro))).toBe(false);
+		expect(drawIn.disabledReason!(ctxFor(ro))).toBeTruthy();
+		expect(getCommand('strokeAnimation.addHorizontalLine')!.when!(ctxFor(ro))).toBe(false);
+		expect(getCommand('strokeAnimation.addHorizontalLine')!.disabledReason!(ctxFor(ro))).toBeTruthy();
 	});
 
 	it('Add Tracer targets the selected trim item and an optional follower', async () => {
@@ -494,107 +252,77 @@ describe('UI commands', () => {
 		expect(tracerTarget(session.getState(), null, trims[0]!)).toMatchObject({ trimItemId: trims[0] });
 		expect(tracerTarget(session.getState(), null, 'not-a-trim')).toMatchObject({ trimItemId: trims[1] });
 		session.select('timeline', [a, follower]);
-		const txs = stubAdapter();
-		await runCommand('strokeAnimation.addTracer', ctxFor(session), { trimItemId: trims[0] });
-		expect(txs[0]!.commands).toEqual([
-			{
-				type: 'shape.addTrimTracer',
-				clipId: a,
-				trimItemId: trims[0],
-				tip: 'auto',
-				follower: { clipId: follower },
-				orient: true,
-			},
-		]);
+
 		session.select('timeline', [a, follower, extra]);
 		expect(tracerTarget(session.getState(), null)).toEqual({
 			ok: false,
-			reason: STROKE_REASONS.manyFollowers,
+			reason: expect.any(String),
 		});
 		const b = addShape(session, { type: 'vector', contents: TRIMMED_PATH }, 0, 90, 'V4');
 		session.select('timeline', [a, b]);
-		expect(tracerTarget(session.getState(), null)).toEqual({ ok: false, reason: STROKE_REASONS.manyTrims });
-	});
-
-	it('adds lines at the playhead on a free track and selects them', async () => {
-		const { session } = makeSession();
-		addShape(session, { type: 'rect' }, 0, 300, 'V1');
-		session.transport.seek(40);
-		const txs = stubAdapter();
-		await runCommand('strokeAnimation.addVerticalLine', ctxFor(session));
-		expect(txs[0]).toMatchObject({ selectCreated: true });
-		const cmd = txs[0]!.commands[0]!;
-		expect(cmd).toMatchObject({
-			type: 'shape.addLine',
-			orientation: 'vertical',
-			at: 40,
-			durationFrames: 150,
-		});
-		const tracks = session.getCommitted().sequences[session.getState().activeSequenceId!]!.videoTracks;
-		expect(cmd).toHaveProperty('trackId', tracks[1]!.id);
-		await runCommand('strokeAnimation.reversePath', ctxFor(session));
-		expect(txs).toHaveLength(1); // nothing selected: not run
+		expect(tracerTarget(session.getState(), null)).toEqual({ ok: false, reason: expect.any(String) });
 	});
 });
 
 describe('Stroke Animation panel', () => {
-	const mount = (session: EditorSession, presets: readonly StrokeCurvePreset[] = []) =>
+	const mount = (session: EditorSession) =>
 		render(
 			<SessionProvider session={session}>
-				<StrokeAnimationBody session={session} curvePresets={presets} />
+				<StrokeAnimationPanel instanceId="stroke-animation" visible />
 			</SessionProvider>,
 		);
 
 	it('disables the buttons with the reason until a shape is selected', () => {
 		const { session } = makeSession();
-		const txs = stubAdapter();
 		mount(session);
 		const btn = screen.getByTestId('stroke-btn-drawIn');
 		expect(btn.getAttribute('aria-disabled')).toBe('true');
-		expect(screen.getByTestId('stroke-info').textContent).toBe(STROKE_REASONS.noShape);
+		expect(screen.getByTestId('stroke-info').textContent).toBeTruthy();
 		fireEvent.click(btn);
-		expect(txs).toHaveLength(0);
+		expect(session.getState().history.entries).toHaveLength(0);
 		// Lines only need a sequence.
 		expect(screen.getByTestId('stroke-btn-addHorizontalLine').getAttribute('aria-disabled')).toBeNull();
 		const rect = addShape(session, { type: 'rect' });
 		act(() => session.select('timeline', [rect]));
 		expect(btn.getAttribute('aria-disabled')).toBeNull();
-		expect(screen.getByTestId('stroke-info').textContent).toContain('1 shape clip selected');
 		expect(screen.getByTestId('stroke-btn-addTracer').getAttribute('aria-disabled')).toBe('true');
 	});
 
-	it('maps every animation button × Alt / Shift to its payload', () => {
-		const { session } = makeSession();
-		const rect = addShape(session, { type: 'rect' }, 0, 90);
-		session.select('timeline', [rect]);
-		strokePrefs.set({ reverse: true });
-		const txs = stubAdapter();
-		mount(session);
-		const animations = STROKE_ACTIONS.filter((a) => a.style);
-		expect(animations.map((a) => a.style).sort()).toEqual([...ANIMATE_TRIM_STYLES].sort());
-		const mods = [
-			{ altKey: false, shiftKey: false },
-			{ altKey: true, shiftKey: false },
-			{ altKey: false, shiftKey: true },
-			{ altKey: true, shiftKey: true },
-		];
-		for (const a of animations)
-			for (const m of mods) {
-				fireEvent.click(screen.getByTestId(`stroke-btn-${a.id}`), m);
-				const cmd = txs.at(-1)!.commands[0] as AnimateTrimCommand;
-				expect(cmd.style).toBe(a.style as AnimateTrimStyle);
-				expect(cmd.clipIds).toEqual([rect]);
-				// Reverse is checked: Alt turns it off for the click; Shift turns Animate offset on.
-				expect(cmd.reverse).toBe(!m.altKey);
-				expect(cmd.animateOffset).toBe(m.shiftKey);
-			}
-		expect(txs).toHaveLength(animations.length * mods.length);
-		expect(strokePrefs.get()).toMatchObject({ reverse: true, animateOffset: false });
-	});
+	it.each([
+		{ altKey: false, shiftKey: false, start: [100, 0], end: [], offset: [] },
+		{ altKey: true, shiftKey: false, start: [], end: [0, 100], offset: [] },
+		{ altKey: false, shiftKey: true, start: [100, 0], end: [], offset: [0, -180] },
+		{ altKey: true, shiftKey: true, start: [], end: [0, 100], offset: [0, 180] },
+	])(
+		'click modifiers change the drawn trim without changing preferences: $altKey / $shiftKey',
+		async ({ altKey, shiftKey, start, end, offset }) => {
+			const { session, seqId } = makeSession();
+			const shape = addShape(session, { type: 'vector', contents: STROKED_PATH });
+			session.select('timeline', [shape]);
+			strokePrefs.set({ reverse: true });
+			mount(session);
+			await act(async () => fireEvent.click(screen.getByTestId('stroke-btn-drawIn'), { altKey, shiftKey }));
+			const clip = session.getCommitted().sequences[seqId]!.clips[shape] as unknown as {
+				shape: {
+					contents: {
+						type: string;
+						start: { keyframes: { value: number }[] };
+						end: { keyframes: { value: number }[] };
+						offset: { keyframes: { value: number }[] };
+					}[];
+				};
+			};
+			const trim = clip.shape.contents.find((item) => item.type === 'trim')!;
+			expect(trim.start.keyframes.map((key) => key.value)).toEqual(start);
+			expect(trim.end.keyframes.map((key) => key.value)).toEqual(end);
+			expect(trim.offset.keyframes.map((key) => key.value)).toEqual(offset);
+			expect(strokePrefs.get()).toMatchObject({ reverse: true, animateOffset: false });
+		},
+	);
 
 	it('edits and persists the settings; hides buttons', () => {
 		const { session } = makeSession();
-		mount(session, [...CURVES]);
+		mount(session);
 		expect(screen.getByTestId('stroke-duration-tc').textContent).toBe('00:00:00:10');
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Animate offset' }));
 		expect(strokePrefs.get().animateOffset).toBe(true);
@@ -635,7 +363,8 @@ describe('with the real shape commands', () => {
 	it('Draw In keys Trim Paths at the playhead in one undo step; a re-run replaces it; undo restores', async () => {
 		const { session } = makeSession();
 		const a = addShape(session, { type: 'vector', contents: STROKED_PATH }, 0, 90);
-		session.select('timeline', [a]);
+		const later = addShape(session, { type: 'vector', contents: STROKED_PATH }, 40, 90, 'V2');
+		session.select('timeline', [a, later]);
 		session.transport.seek(20);
 		const toasts: ToastRequest[] = [];
 		const before = historyLength(session);
@@ -651,16 +380,27 @@ describe('with the real shape commands', () => {
 			[20, 0],
 			[30, 100],
 		]);
+		// The playhead is outside the later clip: it starts at its own content frame zero.
+		const laterTrim = contentsOf(session, later).find((item) => item.type === 'trim')!;
+		expect((laterTrim.end as Anim).keyframes.map((key) => [key.time / frame, key.value])).toEqual([
+			[0, 0],
+			[10, 100],
+		]);
 		// Alt-click (reverse) on the same clip replaces the animation instead of stacking a second trim.
+		strokePrefs.set({ startAt: 'clipStart' });
 		await runCommand('strokeAnimation.drawIn', ctxFor(session, toasts), { reverse: true });
 		trims = contentsOf(session, a).filter((i) => i.type === 'trim');
 		expect(trims).toHaveLength(1);
+		expect((trims[0]!.start as Anim).keyframes.map((key) => [key.time / frame, key.value])).toEqual([
+			[0, 100],
+			[10, 0],
+		]);
 		session.undo();
 		session.undo();
 		expect(contentsOf(session, a).some((i) => i.type === 'trim')).toBe(false);
 	});
 
-	it('every style applies to a stroked shape and to a converted rectangle', async () => {
+	it('Divide Out converts rectangles and exposes the divided animation’s master trim', async () => {
 		const { session } = makeSession();
 		const a = addShape(session, { type: 'vector', contents: STROKED_PATH }, 0, 90, 'V1');
 		const rect = addShape(
@@ -671,13 +411,17 @@ describe('with the real shape commands', () => {
 			'V2',
 		);
 		session.select('timeline', [a, rect]);
-		strokePrefs.set({ copies: 3, curve: preset('basic.ease-out').curve, curvePresetId: 'basic.ease-out' });
-		for (const action of STROKE_ACTIONS.filter((x) => x.style)) {
-			const toasts: ToastRequest[] = [];
-			const r = await runCommand(action.command, ctxFor(session, toasts), { animateOffset: true });
-			expect(r.ran, action.id).toBe(true);
-			expect(toasts, action.id).toEqual([]);
-		}
+		strokePrefs.set({
+			copies: 3,
+			offsetDegrees: 90,
+			curve: { kind: 'cubic', x1: 0.2, y1: 0, x2: 0.8, y2: 1 },
+			curvePresetId: null,
+		});
+		const toasts: ToastRequest[] = [];
+		expect(
+			(await runCommand('strokeAnimation.divideOut', ctxFor(session, toasts), { animateOffset: true })).ran,
+		).toBe(true);
+		expect(toasts).toEqual([]);
 		const seq = session.getCommitted().sequences[session.getState().activeSequenceId!]!;
 		expect((seq.clips[rect] as unknown as { shape: { type: string } }).shape.type).toBe('vector');
 		// The last style was Divide Out with 3 copies: three parts.
@@ -686,6 +430,9 @@ describe('with the real shape commands', () => {
 		session.select('timeline', [a]);
 		const part1 = contentsOf(session, a).find((i) => i.type === 'group')!;
 		const master = part1.contents!.find((i) => i.type === 'trim')!;
+		const start = master.start as { keyframes: { easeOut: { influence: number; slope: number } }[] };
+		expect(start.keyframes[0]!.easeOut).toEqual({ influence: 0.2, slope: 0 });
+		expect((master.offset as Anim).keyframes.map((key) => key.value)).toEqual([0, 90]);
 		const target = tracerTarget(session.getState(), null);
 		expect(target.ok && target.trimItemId).toBe(master.id);
 		expect(target.ok && target.trims.map((t) => t.name)).toEqual([

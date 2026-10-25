@@ -8,7 +8,7 @@ import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { assignLazy } from '../i18n/lazy.ts';
 import { freeVideoTrack } from '../panels/program/edits.ts';
 import { vectorUi } from '../shapes/vector.ts';
-import { type StrokeCommand, strokeAdapter } from './adapter.ts';
+import { applyStrokeTransaction, type StrokeCommand } from './adapter.ts';
 import {
 	activeSequenceOf,
 	buildAnimateCommands,
@@ -65,7 +65,7 @@ function apply(
 	extra: { selectCreated?: boolean } = {},
 ): Extract<TransactionResult, { ok: true }> | null {
 	if (!ctx.session || !commands.length) return null;
-	const r = strokeAdapter().apply(ctx.session, { label, sequenceId, commands, ...extra });
+	const r = applyStrokeTransaction(ctx.session, { label, sequenceId, commands, ...extra });
 	return report(ctx, label, r) ? r : null;
 }
 
@@ -90,7 +90,7 @@ function animate(ctx: CommandCtx, action: StrokeAction, args: z.infer<typeof Ani
 	if (prefs.addTracer) {
 		// Which clips get animated is the command's decision (skipped clips warn): a dry run tells, then one tracer per
 		// animated clip goes into the same transaction (without a trim id it follows the clip's master trim).
-		const probe = strokeAdapter().apply(session, {
+		const probe = applyStrokeTransaction(session, {
 			label,
 			sequenceId: t.sequence.id,
 			commands,

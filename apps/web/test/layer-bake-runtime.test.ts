@@ -94,23 +94,30 @@ function clipOf(session: EditorSession, id: string): RenderVisualClip {
 
 describe('LayerBakeRuntime (S11:LBK-010)', () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		vi.stubGlobal('fetch', async () => ({ arrayBuffer: async () => new ArrayBuffer(0) }));
 	});
-	afterEach(() => vi.unstubAllGlobals());
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
 
 	it('asks for the graded preview of graded DOM layers only, after they stop changing', async () => {
 		const { session, graded } = makeSession();
 		const engine = fakeEngine();
 		const rt = new LayerBakeRuntime(session, engine.link);
 		try {
-			await vi.waitFor(() => expect(engine.calls).toHaveLength(1), { timeout: 3000 });
+			await vi.advanceTimersByTimeAsync(1999);
+			expect(engine.calls).toHaveLength(0);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(engine.calls).toHaveLength(1);
 			const { name, body } = engine.calls[0]!;
 			expect(name).toBe('layerBakePreview');
 			expect(body).toMatchObject({ clipId: graded, sequenceId: session.store.getState().activeSequenceId });
 			expect((body.envelope as { document: unknown }).document).toBeTruthy();
 			expect(rt.previewFor(clipOf(session, graded))).toBeNull();
 			engine.finish('job_0000000000000001', 'k'.repeat(40));
-			await vi.waitFor(() => expect(rt.previewFor(clipOf(session, graded))).not.toBeNull());
+			await vi.advanceTimersByTimeAsync(0);
 			expect(rt.previewFor(clipOf(session, graded))).toEqual({
 				url: `/mg/layers/${'k'.repeat(40)}/preview.webm`,
 				rect: { x: 10, y: 20, w: 300, h: 100 },
@@ -121,7 +128,7 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 				commands: [{ type: 'clip.move', clipIds: [graded], deltaFrames: 30 } as Command],
 			});
 			expect(move.ok).toBe(true);
-			await new Promise((r) => setTimeout(r, 200));
+			await vi.advanceTimersByTimeAsync(200);
 			expect(rt.previewFor(clipOf(session, graded))).not.toBeNull();
 			expect(engine.calls).toHaveLength(1);
 			const edit = session.apply({
@@ -133,14 +140,14 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			});
 			expect(edit.ok).toBe(true);
 			expect(rt.previewFor(clipOf(session, graded))).toBeNull();
-			await vi.waitFor(() => expect(engine.calls).toHaveLength(2), { timeout: 3000 });
+			await vi.advanceTimersByTimeAsync(2150);
+			expect(engine.calls).toHaveLength(2);
 		} finally {
 			rt.dispose();
 		}
 	}, 10_000);
 
 	it('a layer edited just before its request fires is not stored under its old identity', async () => {
-		vi.useFakeTimers();
 		const { session, graded } = makeSession();
 		const engine = fakeEngine();
 		const rt = new LayerBakeRuntime(session, engine.link);
@@ -169,7 +176,6 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			expect(rt.previewFor(clipOf(session, graded))?.url).toBe(`/mg/layers/${'e'.repeat(40)}/preview.webm`);
 		} finally {
 			rt.dispose();
-			vi.useRealTimers();
 		}
 	});
 });

@@ -9,9 +9,6 @@ import { clipHasDenseKeys, openSimplifyClips } from '../src/tracking/simplify-ac
 import { trackingStore } from '../src/tracking/store.ts';
 import { labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
-// The dialog debounces its preview; the host may be loaded.
-vi.setConfig({ testTimeout: 60_000 });
-
 const REF = [
 	[700, 300],
 	[1300, 320],
@@ -19,13 +16,17 @@ const REF = [
 	[690, 680],
 ] as [number, number][] as never;
 
-const wait = (ms = 200) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+const flushPreview = () => act(async () => vi.advanceTimersByTimeAsync(120));
 
 beforeEach(() => {
+	vi.useFakeTimers();
 	trackingStore.setState(trackingStore.getInitialState(), true);
 	globalThis.localStorage?.clear();
 });
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 type Fx = { effectId: string; params: Record<string, { keyframes: unknown[] }> };
 const pinKeys = (clip: Clip) =>
@@ -62,13 +63,12 @@ describe('Simplify Keyframes dialog', () => {
 				/>
 			</SessionProvider>,
 		);
-		await wait();
+		await flushPreview();
 		expect(session.getState().transient).not.toBeNull();
 		expect(pinKeys(session.getState().transient!.sequences[seqOf(session).id]!.clips[target]!)).toBe(2);
 		expect(pinKeys(seqOf(session).clips[target]!)).toBe(30);
 		expect(labels(session)).toEqual(before);
-		fireEvent.click(screen.getByText('Apply'));
-		await wait(20);
+		await act(async () => fireEvent.click(screen.getByText('Apply')));
 		expect(labels(session)).toEqual([...before, 'Simplify Keyframes']);
 		expect(pinKeys(seqOf(session).clips[target]!)).toBe(2);
 		expect(session.getState().transient).toBeNull();
@@ -95,11 +95,10 @@ describe('Simplify Keyframes dialog', () => {
 				/>
 			</SessionProvider>,
 		);
-		await wait();
+		await flushPreview();
 		fireEvent.click(screen.getByTestId('simplify-preset-1'));
-		await wait();
-		fireEvent.click(screen.getByText('Cancel'));
-		await wait(20);
+		await flushPreview();
+		await act(async () => fireEvent.click(screen.getByText('Cancel')));
 		view.unmount();
 		expect(session.getState().transient).toBeNull();
 		expect(session.getState().document).toBe(doc);
@@ -117,7 +116,7 @@ describe('Simplify Keyframes dialog', () => {
 				/>
 			</SessionProvider>,
 		);
-		await wait();
+		await flushPreview();
 		expect((screen.getByText('Apply').closest('button') as HTMLButtonElement).disabled).toBe(true);
 	});
 });
@@ -203,8 +202,7 @@ describe('entry points', () => {
 			</SessionProvider>,
 		);
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Simplify keyframes' }));
-		fireEvent.click(screen.getByText('Apply'));
-		await wait(20);
+		await act(async () => fireEvent.click(screen.getByText('Apply')));
 		expect(labels(t.session).at(-1)).toBe('Apply Tracking');
 		expect(pinKeys(seqOf(t.session).clips[t.target]!)).toBe(2);
 		expect(globalThis.localStorage?.getItem('jasper.tracking.applySimplify')).toBe('1');
