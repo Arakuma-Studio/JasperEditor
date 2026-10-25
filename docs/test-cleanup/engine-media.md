@@ -1444,7 +1444,7 @@ Production owners inspected: `../src/export/worker-pool.ts`.
 
 ## Validation and performance
 
-The completed root baseline (`pnpm test --maxWorkers=2`) reported 2109.71 s wall time: 793 files, 7911 cases, 7661 passed, 248 skipped and 2 failed. This owner's 66 files contributed 698 expanded cases: 661 passed, 36 skipped and one failed. The owned failure is the permission-based cache rename setup described above; the other baseline failure is the separate composition canvas suite.
+The completed Node 20.19.0 root baseline (`pnpm test --maxWorkers=2`) measured 2111.47 s command wall time (`/usr/bin/time`) and 2109.71 s Vitest duration: 793 files, 7911 cases, 7661 passed, 248 skipped and 2 failed. This owner's 66 files contributed 698 expanded cases: 661 passed, 36 skipped and one failed. The owned failure is the permission-based cache rename setup described above; the other baseline failure is the separate composition canvas suite.
 
 Slowest owned baseline cases, measured inside that shared full run:
 

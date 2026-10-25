@@ -10592,7 +10592,7 @@ The guarantee is unchanged: the delivered stream is an encode whose decoded true
   choosing Opus 160 kb/s: "Stale: the export encoding to check for changed since this check"
   (`03-sound-check-stale-opus.png`). `e2e/sound-design.spec.ts` (the user walkthrough with its measured AAC export)
   passes on this branch: the file −14.0 LUFS / −1.4 dBTP by ffmpeg.
-- **Export time** (historical reporting benchmark, retained in commit `6cdc304d`: 10 s mixes exported with the native path at 320×180, H.264 + AAC / VP9 + Opus / ProRes + PCM,
+- **Export time** (historical reporting benchmark, retained in commit `25f0934a`: 10 s mixes exported with the native path at 320×180, H.264 + AAC / VP9 + Opus / ProRes + PCM,
   normalised to Web −14 LUFS / −1 dBTP; each run a mix of its own so nothing is reused, median of 3; `warm` = the same
   mix exported a second time). The same bench file run on three detached checkouts on the build server one after the
   other: **pre-fix** = ea77ae2c (one-pass normalisation, before the lossy fix), **before** = 6cdc304d (the lossy fix),
@@ -10615,7 +10615,7 @@ The guarantee is unchanged: the delivered stream is an encode whose decoded true
 | warm typical, AAC 256 (same mix again) | 2.14 s | 4.18 s | **1.78 s** | 0.83× |
 | warm loud, AAC 256 | 2.30 s | 7.33 s | **2.22 s** | 0.97× |
 
-  The historical typical mix (`typicalMix` in commit `6cdc304d`: a voice-like part, a bed, two hits) meets the
+  The historical typical mix (`typicalMix` in commit `25f0934a`: a voice-like part, a bed, two hits) meets the
   ≤ 1.5× target on every codec; the loud stress fixture does on AAC 256 and Opus, not on AAC 128 kb/s (two encode
   rounds: its first round's three ceilings all overshoot after the encoder; the second meets at −4 dBTP). A typical
   delivery's job log: `audio: mixed (240 ms) and delivered in 2163 ms — 5 passes (953 ms), 3 encodes (2000 ms summed),
