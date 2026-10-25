@@ -3,6 +3,7 @@ import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
 import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
+import { CLEANUP_OWNER, cleanupHandlers } from './handlers/cleanup.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
@@ -80,7 +81,8 @@ export type CommandOwner =
 	| 'previews'
 	| 'gaps'
 	| 'keyframe-ease'
-	| 'sound-design';
+	| 'sound-design'
+	| 'transcript-cleanup';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -386,6 +388,8 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.removeBus': 'Remove SFX Room Glue',
 	'soundDesign.applyDelivery': 'Apply Delivery Preset',
 	'soundDesign.layBed': 'Lay Ambience Bed',
+	'cleanup.apply': 'Clean Up Voice',
+	'cleanup.configure': 'Clean Up Settings',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -432,6 +436,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundHandlers, SOUND_DESIGN_OWNER],
 	[soundMixHandlers, SOUND_DESIGN_OWNER],
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
+	[cleanupHandlers, CLEANUP_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -468,7 +473,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === PREVIEWS_OWNER ||
 				owner === GAPS_OWNER ||
 				owner === EASE_OWNER ||
-				owner === SOUND_DESIGN_OWNER
+				owner === SOUND_DESIGN_OWNER ||
+				owner === CLEANUP_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

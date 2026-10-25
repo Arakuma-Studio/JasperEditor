@@ -274,7 +274,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			mediaId: run.mediaId,
 			stream: run.stream,
 			words: t.words,
-			segments: transcriptSegments(t),
+			segments: transcriptSegments(t as unknown as { segments?: unknown }),
 			voice,
 			script,
 			language,
@@ -400,27 +400,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				}
 				if (any) kept = planOnce();
 			}
-			// media seconds → sequence frames (snapped), clamped to the clip's extent in the scope
-			const toFrameX = (t: number) => clip.start + (t * FLICKS_PER_SECOND - clip.sourceIn) / F;
-			const boundaryAt = (f: number) => (clip.sourceIn + (f - clip.start) * F) / FLICKS_PER_SECOND;
-			const cands = (t: number) => {
-				const x = Math.floor(toFrameX(t));
-				const out: number[] = [];
-				for (let f = x - 1; f <= x + 2; f++) out.push(boundaryAt(f));
-				return out;
-			};
-			const keptFrames: Array<[number, number]> = [];
-			for (const [a, b] of kept) {
-				const fa = Math.round(toFrameX(snapEdge(run.voice, a, 'in', settings.edges.snapWindowS, cands(a))));
-				const fb = Math.round(toFrameX(snapEdge(run.voice, b, 'out', settings.edges.snapWindowS, cands(b))));
-				const s = Math.max(extent[0], fa);
-				const e = Math.min(extent[1], fb);
-				if (e > s) {
-					const l = keptFrames[keptFrames.length - 1];
-					if (l && s <= l[1]) l[1] = Math.max(l[1], e);
-					else keptFrames.push([s, e]);
-				}
-			}
+			const keptFrames = keptToFrames(clip, rate, run.voice, kept, settings.edges.snapWindowS, extent);
 			// frame guards: no cut shorter than minCutFrames, no kept sliver shorter than minSliverFrames
 			const g = settings.guards;
 			const joined: Array<[number, number]> = [];
@@ -588,6 +568,42 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 }
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+/**
+ * Kept pieces of a clip's media (seconds) as sequence frames: each edge snapped to a frame boundary of the clip's
+ * placement (`snapEdge`: the quietest boundary within `snapWindowS`, else in points down and out points up),
+ * clamped to `extent`, overlaps merged. The clip plays forward at 100 % speed.
+ */
+export function keptToFrames(
+	clip: Pick<Clip, 'start' | 'sourceIn'>,
+	rate: Rational,
+	voice: CleanupVoice | null,
+	kept: readonly Span[],
+	snapWindowS: number,
+	extent: readonly [number, number],
+): Array<[number, number]> {
+	const F = flicksPerFrame(rate);
+	const toFrameX = (t: number) => clip.start + (t * FLICKS_PER_SECOND - clip.sourceIn) / F;
+	const boundaryAt = (f: number) => (clip.sourceIn + (f - clip.start) * F) / FLICKS_PER_SECOND;
+	const cands = (t: number) => {
+		const x = Math.floor(toFrameX(t));
+		const out: number[] = [];
+		for (let f = x - 1; f <= x + 2; f++) out.push(boundaryAt(f));
+		return out;
+	};
+	const out: Array<[number, number]> = [];
+	for (const [a, b] of kept) {
+		const fa = Math.round(toFrameX(snapEdge(voice, a, 'in', snapWindowS, cands(a))));
+		const fb = Math.round(toFrameX(snapEdge(voice, b, 'out', snapWindowS, cands(b))));
+		const s = Math.max(extent[0], fa);
+		const e = Math.min(extent[1], fb);
+		if (e <= s) continue;
+		const l = out[out.length - 1];
+		if (l && s <= l[1]) l[1] = Math.max(l[1], e);
+		else out.push([s, e]);
+	}
+	return out;
+}
 
 function decisionTouches(f: CleanupFinding, d: CleanupDecisions): boolean {
 	return !!d.reject?.includes(f.id) || !!d.reject?.includes(f.fingerprint) || !!d.rejectKinds?.includes(f.kind);

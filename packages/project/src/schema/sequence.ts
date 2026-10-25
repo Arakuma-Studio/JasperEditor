@@ -30,6 +30,8 @@ import {
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
+import type { SequenceCleanup } from '../cleanup/schema.ts';
+import type { AudioEdgeFades } from '../audio-fade.ts';
 import type { ClipBed, ClipSfx, SoundDesign } from './sound.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 import {
@@ -622,6 +624,12 @@ export const AudioClipSchema = z.looseObject({
 	 * Accepted as any value here; INV-SFX checks it and `repairDocument` drops a malformed one (the clip stays).
 	 */
 	bed: z.custom<ClipBed>(() => true).optional(),
+	/**
+	 * spec 14 TC-024 (v9): equal-power micro-fades at the clip's edges (ms, 0 < x ≤ 30) — the declick of a cleanup
+	 * join, rendered as audio fades by every path (`resolveAudioTransitions`). Accepted as any value; INV-CLEANUP checks it
+	 * (`edgeFadesProblem`) and `repairDocument` drops an unreadable one.
+	 */
+	edgeFades: z.custom<AudioEdgeFades>(() => true).optional(),
 });
 export const StillClipSchema = z.looseObject({
 	...commonShape,
@@ -1084,6 +1092,12 @@ export const SequenceSchema = z.looseObject({
 	 * malformed one never fails a load; INV-SOUND checks it and `repairDocument` repairs it (`readSoundDesign`).
 	 */
 	soundDesign: z.custom<SoundDesign>(() => true).optional(),
+	/**
+	 * spec 14 TC-030 (v9): transcript cleanup settings (preset + overrides), the attached script, rejected finding
+	 * fingerprints and edited word lists. Accepted as any value so a malformed one never fails a load; INV-CLEANUP
+	 * checks it (`sequenceCleanupIssue`) and `repairDocument` keeps its readable parts (`repairSequenceCleanup`).
+	 */
+	cleanup: z.custom<SequenceCleanup>(() => true).optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

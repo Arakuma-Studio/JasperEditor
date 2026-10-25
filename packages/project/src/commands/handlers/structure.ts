@@ -21,6 +21,7 @@ import {
 	cleanupSequence,
 	end,
 	ensureTrackAt,
+	joinEdgeFades,
 	findTrackIn,
 	insertShift,
 	reidentifyClipChildren,
@@ -891,6 +892,8 @@ function joinThroughEdits(doc: DDoc, cmd: CommandOf<'sequence.joinThroughEdits'>
 			const markers = plain(b.markers);
 			a.duration += b.duration;
 			if (reverse) a.sourceIn = bIn;
+			// spec 14 TC-024: the joined clip keeps the left piece's fade in and the right piece's fade out
+			joinEdgeFades(a, b);
 			for (const m of markers) if (!a.markers.some((x) => x.id === m.id)) a.markers.push(m);
 			a.markers.sort((x, y) => x.flicks - y.flicks);
 			removeClip(seq, b.id, h);

@@ -30,6 +30,11 @@ export type RenderAudioFade = {
 	curve: 'linear' | 'equal-power' | 'exponential' | 'shape';
 	/** The fade shape of a `shape` curve (absent: linear). */
 	shape?: FadeShape;
+	/**
+	 * spec 14 TC-024: an edge micro-fade (`AudioClip.edgeFades`): `start` / `frames` are fractional (a 4 ms fade is
+	 * ≈ 0.24 frames at 60 fps), so a nested sequence carries it as a fade of the flattened piece, not per frame.
+	 */
+	edge?: true;
 };
 
 /** Gain factor (0…1) of audio fades at a (fractional) sequence frame. */
@@ -84,4 +89,37 @@ export function fadeShapeGain(shape: FadeShape, x: number): number {
 	if (b <= 0) return 0;
 	if (b >= 1) return 1;
 	return b ** fadeShapeExponent(shape.value);
+}
+
+/** Longest edge micro-fade (spec 14 TC-024): 30 ms. */
+export const EDGE_FADE_MAX_MS = 30;
+
+/**
+ * Equal-power micro-fades at an audio clip's edges (spec 14 TC-024, `AudioClip.edgeFades`): `inMs` fades the clip in
+ * from its first sample, `outMs` out to its last, both inside the clip (no handles needed). A cleanup join gets one on
+ * each side. An edge that has an audio transition plays the transition's fade instead.
+ */
+export type AudioEdgeFades = { inMs?: number; outMs?: number };
+
+const fadeMsOk = (v: unknown) => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= EDGE_FADE_MAX_MS);
+
+/** INV-CLEANUP: what is wrong with a clip's `edgeFades`, or null (absent is fine). */
+export function edgeFadesProblem(v: unknown): string | null {
+	if (v === undefined) return null;
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return 'edge fades are not an object';
+	const r = v as Record<string, unknown>;
+	for (const k of Object.keys(r)) if (k !== 'inMs' && k !== 'outMs') return `unknown edge fade field ${k}`;
+	if (!fadeMsOk(r.inMs) || !fadeMsOk(r.outMs)) return `edge fades must be 0 < ms <= ${EDGE_FADE_MAX_MS}`;
+	if (r.inMs === undefined && r.outMs === undefined) return 'edge fades are empty';
+	return null;
+}
+
+/** A clip's readable edge fades (unreadable parts read as absent). */
+export function readEdgeFades(v: unknown): AudioEdgeFades {
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+	const r = v as Record<string, unknown>;
+	const out: AudioEdgeFades = {};
+	if (r.inMs !== undefined && fadeMsOk(r.inMs)) out.inMs = r.inMs as number;
+	if (r.outMs !== undefined && fadeMsOk(r.outMs)) out.outMs = r.outMs as number;
+	return out;
 }

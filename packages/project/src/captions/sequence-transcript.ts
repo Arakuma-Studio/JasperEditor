@@ -200,14 +200,15 @@ export function mediaWordRange(t: Transcript, a: number, b: number, rate: Ration
 
 /**
  * Pauses between consecutive words of at least `min` flicks, as frame ranges to remove: each keeps `keep` flicks
- * of silence next to both words and is snapped inward to frames (pauses shorter than a frame after that are
- * skipped).
+ * of silence after the previous word and `keepBefore` (default `keep`) before the next one, and is snapped inward to
+ * frames (pauses shorter than a frame after that are skipped).
  */
 export function findPauses(
 	words: readonly { start: number; end: number }[],
 	min: number,
 	keep: number,
 	rate: Rational,
+	keepBefore: number = keep,
 ): Array<[number, number]> {
 	const out: Array<[number, number]> = [];
 	for (let i = 0; i + 1 < words.length; i++) {
@@ -215,7 +216,7 @@ export function findPauses(
 		const b = words[i + 1]!.start;
 		if (b - a < min || b <= a) continue;
 		const s = a + keep;
-		const e = b - keep;
+		const e = b - keepBefore;
 		let s2 = frameAt(s, rate);
 		if (tickOf(s2, rate) < s) s2 += 1;
 		const e2 = frameAt(e, rate);

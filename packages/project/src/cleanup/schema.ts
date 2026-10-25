@@ -346,7 +346,28 @@ export const CLEANUP_MAX_LIST_ENTRIES = 500;
 /** Languages with edited lists per sequence. */
 export const CLEANUP_MAX_LIST_LANGUAGES = 32;
 
-const utf8Bytes = (s: string) => new TextEncoder().encode(s).length;
+/** UTF-8 byte length of a string (lone surrogates count 3 bytes, as an encoder writes U+FFFD). */
+export function utf8Bytes(s: string): number {
+	let n = 0;
+	for (const ch of s) {
+		const cp = ch.codePointAt(0)!;
+		n += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+	}
+	return n;
+}
+
+/** The longest prefix of `s` (whole code points) of at most `max` UTF-8 bytes. */
+function utf8Prefix(s: string, max: number): string {
+	let n = 0;
+	let end = 0;
+	for (const ch of s) {
+		const cp = ch.codePointAt(0)!;
+		n += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+		if (n > max) break;
+		end += ch.length;
+	}
+	return s.slice(0, end);
+}
 
 export const CleanupScriptSchema = z
 	.object({
@@ -452,12 +473,7 @@ export function repairSequenceCleanup(value: unknown): SequenceCleanup | null {
 	}
 	if (isObj(value.script) && typeof value.script.text === 'string') {
 		let text = value.script.text;
-		if (utf8Bytes(text) > CLEANUP_SCRIPT_MAX_BYTES) {
-			// cut on a code point boundary
-			const bytes = new TextEncoder().encode(text).slice(0, CLEANUP_SCRIPT_MAX_BYTES);
-			text = new TextDecoder('utf-8', { fatal: false }).decode(bytes).replace(/�+$/u, '');
-			while (utf8Bytes(text) > CLEANUP_SCRIPT_MAX_BYTES) text = text.slice(0, -1);
-		}
+		if (utf8Bytes(text) > CLEANUP_SCRIPT_MAX_BYTES) text = utf8Prefix(text, CLEANUP_SCRIPT_MAX_BYTES);
 		const name = typeof value.script.name === 'string' ? value.script.name.slice(0, 500) : 'Script';
 		out.script = { name, text };
 	}
