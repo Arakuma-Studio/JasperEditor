@@ -3,6 +3,9 @@ export type WorkerEvent =
 	| { type: 'done' }
 	| { type: 'error'; message: string };
 
+/** jasper-speech: the execution providers really used by an attempt (spec 16 SG-003). */
+export type SpeechWorkerEvent = WorkerEvent | { type: 'device'; encoder: string; decoder: string; attempt: number };
+
 export type RotoWorkerEvent =
 	| WorkerEvent
 	| {

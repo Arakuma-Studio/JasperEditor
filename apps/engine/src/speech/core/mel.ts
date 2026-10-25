@@ -57,7 +57,14 @@ export function melFilters(nMels: number): Float32Array {
 	return w;
 }
 
-type FftPlan = { n: number; factors: number[]; cos: Float64Array; sin: Float64Array };
+type FftPlan = {
+	n: number;
+	factors: number[];
+	cos: Float64Array;
+	sin: Float64Array;
+	/** Per recursion depth: the r×r table of the r-point DFT twiddles (cos, sin) of that level. */
+	dft: Array<{ cos: Float64Array; sin: Float64Array }>;
+};
 
 function factorize(n: number): number[] {
 	const out: number[] = [];
@@ -79,12 +86,35 @@ function plan(n: number): FftPlan {
 		cos[i] = Math.cos(a);
 		sin[i] = Math.sin(a);
 	}
-	return { n, factors: factorize(n), cos, sin };
+	const factors = factorize(n);
+	const dft: FftPlan['dft'] = [];
+	let len = n;
+	for (const r of factors) {
+		const m = len / r;
+		const step = n / len;
+		const c = new Float64Array(r * r);
+		const s = new Float64Array(r * r);
+		for (let q = 0; q < r; q++)
+			for (let j = 0; j < r; j++) {
+				const idx = (j * q * m * step) % n;
+				c[q * r + j] = cos[idx];
+				s[q * r + j] = sin[idx];
+			}
+		dft.push({ cos: c, sin: s });
+		len = m;
+	}
+	return { n, factors, cos, sin, dft };
 }
 
+/** Largest radix (twiddled inputs of one butterfly). */
+const MAX_RADIX = 8;
+const tr = new Float64Array(MAX_RADIX);
+const ti = new Float64Array(MAX_RADIX);
+
 /**
- * In-place-free recursive decimation-in-time DFT of `n` points read from (re, im) at `off` with `stride`,
- * written contiguously to (outRe, outIm) at `o`. `tw` = n_total / n (twiddle step).
+ * Recursive decimation-in-time DFT of `n` points read from (re, im) at `off` with `stride`, written contiguously to
+ * (outRe, outIm) at `o`. SG-013: the twiddles of each level's r-point DFT are precomputed and no buffer is
+ * allocated per call (the butterfly scratch is shared: a level uses it only after its sub-transforms returned).
  */
 function fftRec(
 	p: FftPlan,
@@ -109,12 +139,12 @@ function fftRec(
 	for (let j = 0; j < r; j++)
 		fftRec(p, re, im, off + j * stride, stride * r, m, fi + 1, outRe, outIm, o + j * m);
 	const step = p.n / n;
-	const tr = new Float64Array(r);
-	const ti = new Float64Array(r);
+	const dc = p.dft[fi].cos;
+	const ds = p.dft[fi].sin;
 	for (let k = 0; k < m; k++) {
-		// twiddled inputs
+		// twiddled inputs (j·k·step < n·step = p.n: no wrap-around)
 		for (let j = 0; j < r; j++) {
-			const idx = (j * k * step) % p.n;
+			const idx = j * k * step;
 			const c = p.cos[idx];
 			const s = p.sin[idx];
 			const a = outRe[o + j * m + k];
@@ -126,10 +156,10 @@ function fftRec(
 		for (let q = 0; q < r; q++) {
 			let sr = 0;
 			let si = 0;
+			const row = q * r;
 			for (let j = 0; j < r; j++) {
-				const idx = ((j * q * m * step) % p.n) as number;
-				const c = p.cos[idx];
-				const s = p.sin[idx];
+				const c = dc[row + j];
+				const s = ds[row + j];
 				sr += tr[j] * c - ti[j] * s;
 				si += tr[j] * s + ti[j] * c;
 			}
@@ -146,14 +176,16 @@ function fftRec(
 const scratchRe = new Float64Array(N_FFT);
 const scratchIm = new Float64Array(N_FFT);
 const fftPlan = plan(N_FFT);
+const frameIm = new Float64Array(N_FFT);
+const frameOutRe = new Float64Array(N_FFT);
+const frameOutIm = new Float64Array(N_FFT);
 
 /** DFT of `x` (real, length N_FFT); returns |X[k]|² for k = 0..N_BINS-1 into `out`. */
 export function powerSpectrumFrame(x: Float64Array, out: Float32Array | Float64Array, outOff = 0): void {
-	const im = new Float64Array(N_FFT);
-	const oRe = new Float64Array(N_FFT);
-	const oIm = new Float64Array(N_FFT);
-	fftRec(fftPlan, x, im, 0, 1, N_FFT, 0, oRe, oIm, 0);
-	for (let k = 0; k < N_BINS; k++) out[outOff + k] = oRe[k] * oRe[k] + oIm[k] * oIm[k];
+	frameIm.fill(0);
+	fftRec(fftPlan, x, frameIm, 0, 1, N_FFT, 0, frameOutRe, frameOutIm, 0);
+	for (let k = 0; k < N_BINS; k++)
+		out[outOff + k] = frameOutRe[k] * frameOutRe[k] + frameOutIm[k] * frameOutIm[k];
 }
 
 const hann = (() => {
@@ -224,4 +256,149 @@ export function logMel(audio: Float32Array, nMels: number): { frames: number; da
 	}
 	for (let i = 0; i < data.length; i++) data[i] = (Math.max(data[i], max - 8) + 4) / 4;
 	return { frames, data };
+}
+
+/**
+ * Streaming log-mel front end (spec 16 SG-014): the same frames as `logMel(audio ++ zeros(pad))`, computed while
+ * the audio arrives, so a long file never needs its whole spectrogram (or its samples) in memory. Each frame's
+ * raw `log10(max(e, 1e-10))` mel values (before Whisper's `max − 8` floor and scaling, which need the global
+ * maximum) go to `onFrame` (a reused buffer: copy it); `end()` returns the frame count and that maximum.
+ */
+export class LogMelStream {
+	private buf = new Float32Array(1 << 16);
+	/** Absolute sample index of buf[0]. */
+	private bufStart = 0;
+	private bufLen = 0;
+	private readonly head = new Float32Array(N_FFT / 2 + 1);
+	private pushed = 0;
+	private next = 0;
+	private max = Number.NEGATIVE_INFINITY;
+	private readonly x = new Float64Array(N_FFT);
+	/** float32 like the batch path's power spectrum, so both give the same values. */
+	private readonly pow = new Float32Array(N_BINS);
+	private readonly row: Float32Array;
+	private readonly filters: Float32Array;
+	private readonly ranges: Array<[number, number]> = [];
+	private ended = false;
+
+	constructor(
+		private readonly nMels: number,
+		private readonly onFrame: (raw: Float32Array, frame: number) => void,
+	) {
+		this.row = new Float32Array(nMels);
+		this.filters = melFilters(nMels);
+		for (let m = 0; m < nMels; m++) {
+			let a = 0;
+			while (a < N_BINS && this.filters[m * N_BINS + a] === 0) a++;
+			let b = N_BINS;
+			while (b > a && this.filters[m * N_BINS + b - 1] === 0) b--;
+			this.ranges.push([a, b]);
+		}
+	}
+
+	get samples(): number {
+		return this.pushed;
+	}
+
+	push(chunk: Float32Array): void {
+		if (this.ended) throw new Error('LogMelStream: push after end');
+		if (!chunk.length) return;
+		for (let i = 0; i < chunk.length && this.pushed + i < this.head.length; i++)
+			this.head[this.pushed + i] = chunk[i];
+		this.append(chunk);
+		this.pushed += chunk.length;
+		while (this.pushed >= this.next * HOP + N_FFT / 2 + 1) this.frame(this.next++, -1);
+		this.compact();
+	}
+
+	/** Appends `pad` zero samples (Whisper pads 30 s) and computes the remaining frames. */
+	end(pad = 0): { frames: number; max: number } {
+		const zeros = new Float32Array(Math.min(pad, 1 << 16));
+		let left = pad;
+		while (left > 0) {
+			const n = Math.min(left, zeros.length);
+			this.push(n === zeros.length ? zeros : zeros.subarray(0, n));
+			left -= n;
+		}
+		this.ended = true;
+		const total = this.pushed;
+		const frames = Math.floor(total / HOP);
+		while (this.next < frames) this.frame(this.next++, total);
+		return { frames, max: this.max };
+	}
+
+	private append(chunk: Float32Array): void {
+		const need = this.bufLen + chunk.length;
+		if (need > this.buf.length) {
+			const grown = new Float32Array(Math.max(need, this.buf.length * 2));
+			grown.set(this.buf.subarray(0, this.bufLen));
+			this.buf = grown;
+		}
+		this.buf.set(chunk, this.bufLen);
+		this.bufLen = need;
+	}
+
+	/** Drops samples no later frame reads. */
+	private compact(): void {
+		const keepFrom = Math.max(0, this.next * HOP - N_FFT / 2);
+		const drop = keepFrom - this.bufStart;
+		if (drop <= 0 || drop < this.buf.length / 2) return;
+		this.buf.copyWithin(0, drop, this.bufLen);
+		this.bufLen -= drop;
+		this.bufStart = keepFrom;
+	}
+
+	private sample(i: number, total: number): number {
+		if (i < 0) return this.head[-i] ?? 0;
+		if (total >= 0 && i >= total) i = 2 * (total - 1) - i;
+		if (i < 0) return this.head[-i] ?? 0;
+		const j = i - this.bufStart;
+		return j >= 0 && j < this.bufLen ? this.buf[j] : 0;
+	}
+
+	private frame(f: number, total: number): void {
+		const base = f * HOP - N_FFT / 2;
+		const x = this.x;
+		if (base >= this.bufStart && base + N_FFT <= this.bufStart + this.bufLen && (total < 0 || base + N_FFT <= total)) {
+			const o = base - this.bufStart;
+			for (let i = 0; i < N_FFT; i++) x[i] = this.buf[o + i] * hann[i];
+		} else for (let i = 0; i < N_FFT; i++) x[i] = this.sample(base + i, total) * hann[i];
+		powerSpectrumFrame(x, this.pow);
+		const pow = this.pow;
+		for (let m = 0; m < this.nMels; m++) {
+			const [a, b] = this.ranges[m];
+			const fo = m * N_BINS;
+			let s = 0;
+			for (let k = a; k < b; k++) s += this.filters[fo + k] * pow[k];
+			// the batch path accumulates in float32 (melEnergies' Float32Array): round the same way
+			const v = Math.log10(Math.max(Math.fround(s), 1e-10));
+			this.row[m] = v;
+			if (v > this.max) this.max = v;
+		}
+		this.onFrame(this.row, f);
+	}
+}
+
+/**
+ * Whisper's window input from raw frame-major log-mel frames (`LogMelStream`): `count` frames starting at frame 0
+ * of `raw`, floored at `max − 8`, scaled `(x + 4) / 4`, written band-major into `out` (nMels × N_FRAMES, the rest
+ * zero — OpenAI's `pad_or_trim`).
+ */
+export function windowFromRaw(
+	raw: Float32Array,
+	count: number,
+	nMels: number,
+	max: number,
+	out: Float32Array,
+	nFrames: number,
+): void {
+	out.fill(0);
+	const floor = max - 8;
+	for (let f = 0; f < count; f++) {
+		const o = f * nMels;
+		for (let m = 0; m < nMels; m++) {
+			const v = raw[o + m];
+			out[m * nFrames + f] = ((v > floor ? v : floor) + 4) / 4;
+		}
+	}
 }

@@ -3,30 +3,27 @@
 // overlap, run in small batches and blended with feathered weights (memory bound for any input size, no
 // seams). After the model: optional resize to `size` (bicubic, antialiased) and optional `mix` with a Lanczos
 // upscale of the input (hybrid).
-import { existsSync, readdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
+import {
+	cudaProviderLibraryPresent,
+	loadOrt as loadSharedOrt,
+	type Ort,
+	type OrtSession as Session,
+	probeOrtProviders,
+} from '../../tools/ort.ts';
 import { resampleRgb } from './resample.ts';
 import type { FrameStep, RgbFrame, StepContext } from './types.ts';
 
-type Ort = typeof import('onnxruntime-node');
-type Session = import('onnxruntime-node').InferenceSession;
-
-let ortModule: Ort | null = null;
 /** Loads onnxruntime-node lazily (native binding; not needed by the other steps). */
 function loadOrt(): Ort {
-	if (!ortModule) {
-		const req = createRequire(import.meta.url);
-		ortModule = req('onnxruntime-node') as Ort;
-	}
-	return ortModule;
+	return loadSharedOrt();
 }
 
 /**
  * Execution providers this runtime can really use (for `jasper-proc --version`, the remote probe and
  * capabilities): `cpu` when ONNX Runtime loads; `cuda` only when a session with the CUDA provider can be created
- * (onnxruntime-node lists CUDA as a backend even without the CUDA provider libraries / a GPU).
+ * (onnxruntime-node lists CUDA as a backend even without the CUDA provider libraries / a GPU). Spec 16 SG-008:
+ * the same probe as speech-to-text (`tools/ort.ts` `probeOrtProviders`).
  */
 export async function ortProviders(): Promise<string[]> {
 	let ort: Ort;
@@ -35,40 +32,15 @@ export async function ortProviders(): Promise<string[]> {
 	} catch {
 		return [];
 	}
-	const out = ['cpu'];
-	if (!cudaLibraryPresent()) return out;
-	try {
-		const { tinySrModel } = await import('./tiny-onnx.ts');
-		const s = await ort.InferenceSession.create(tinySrModel(), {
-			executionProviders: ['cuda'],
-			logSeverityLevel: 4,
-		});
-		await s.release();
-		out.unshift('cuda');
-	} catch {
-		// no CUDA provider / no GPU
-	}
-	return out;
-}
-
-/** The CUDA provider ships as a separate library (installed by onnxruntime-node's CUDA install step). */
-function cudaLibraryPresent(): boolean {
-	try {
-		const req = createRequire(import.meta.url);
-		const dir = dirname(req.resolve('onnxruntime-node/package.json'));
-		const bin = join(dir, 'bin');
-		for (const napi of readdirSync(bin)) {
-			const d = join(bin, napi, process.platform, process.arch);
-			if (
-				existsSync(join(d, 'libonnxruntime_providers_cuda.so')) ||
-				existsSync(join(d, 'onnxruntime_providers_cuda.dll'))
-			)
-				return true;
-		}
-	} catch {
-		// not installed
-	}
-	return false;
+	const { tinySrModel } = await import('./tiny-onnx.ts');
+	const probe = await probeOrtProviders(
+		ort,
+		['cuda'],
+		tinySrModel(),
+		() => ({ input: new ort.Tensor('float32', new Float32Array(48), [1, 3, 4, 4]) }),
+		(id) => (id === 'cuda' && !cudaProviderLibraryPresent() ? 'the CUDA provider library is not installed' : null),
+	);
+	return probe.filter((p) => p.available).map((p) => p.id);
 }
 
 const TILE = 256;

@@ -14,6 +14,22 @@ export const MIN_WORD_FRAMES = 6;
 
 export type TimedWord = { start: number; end: number };
 
+/** What word-bound functions need of the audio: its length in samples (a Float32Array works). */
+export type AudioLength = { readonly length: number };
+
+/**
+ * Speech evidence per 10 ms frame (spec 14 TC-004): `speech[f]` = 1 when the frame is speech or breath. From the
+ * voice-analysis job's frame classes (TC-001) when available, else from the energy threshold (`voicedMask`).
+ */
+export type SpeechMask = ArrayLike<number>;
+
+/** The energy-threshold mask: frames at or above `vadThreshold`. */
+export function voicedMask(db: ArrayLike<number>, threshold = vadThreshold(db)): Uint8Array {
+	const m = new Uint8Array(db.length);
+	for (let f = 0; f < db.length; f++) m[f] = db[f] >= threshold ? 1 : 0;
+	return m;
+}
+
 /** Frame levels in dBFS (10 ms RMS). */
 export function frameDb(audio: Float32Array): Float32Array {
 	const n = Math.ceil(audio.length / VAD_FRAME);
@@ -43,21 +59,26 @@ export function vadThreshold(db: ArrayLike<number>): number {
 }
 
 /** Moves word bounds (16 kHz samples) inward past silent frames (see the module docs). In place. */
-export function tightenWords(audio: Float32Array, words: TimedWord[], db = frameDb(audio)): void {
+export function tightenWords(
+	audio: AudioLength,
+	words: TimedWord[],
+	db = frameDb(audio as Float32Array),
+	mask: SpeechMask = voicedMask(db),
+): void {
 	if (!db.length) return;
-	const th = vadThreshold(db);
+	const on = (f: number) => mask[f] > 0;
 	for (const w of words) {
 		const a = Math.max(0, Math.floor(w.start / VAD_FRAME));
 		const b = Math.min(db.length, Math.max(0, Math.ceil(w.end / VAD_FRAME)));
 		if (b <= a + MIN_WORD_FRAMES) continue;
 		let s = a;
-		while (s + MIN_WORD_FRAMES < b && db[s] < th) s++;
+		while (s + MIN_WORD_FRAMES < b && !on(s)) s++;
 		let e = b;
-		while (e > s + MIN_WORD_FRAMES && db[e - 1] < th) e--;
+		while (e > s + MIN_WORD_FRAMES && !on(e - 1)) e--;
 		// nothing voiced at all: leave the word alone
 		let voiced = false;
 		for (let f = s; f < e; f++)
-			if (db[f] >= th) {
+			if (on(f)) {
 				voiced = true;
 				break;
 			}
@@ -74,13 +95,14 @@ export function tightenWords(audio: Float32Array, words: TimedWord[], db = frame
  * and only through frames above the speech threshold. In place; run before `tightenWords`.
  */
 export function extendWordsIntoSpeech(
-	audio: Float32Array,
+	audio: AudioLength,
 	words: TimedWord[],
-	db = frameDb(audio),
+	db = frameDb(audio as Float32Array),
 	maxFrames = 25,
+	mask: SpeechMask = voicedMask(db),
 ): void {
 	if (!db.length) return;
-	const th = vadThreshold(db);
+	const on = (f: number) => mask[f] > 0;
 	for (let i = 0; i < words.length; i++) {
 		const w = words[i];
 		const prevEnd = i > 0 ? words[i - 1].end : 0;
@@ -88,12 +110,12 @@ export function extendWordsIntoSpeech(
 		// end: frames from the word's end onward
 		let e = Math.ceil(w.end / VAD_FRAME);
 		const eLimit = Math.min(db.length, Math.floor(nextStart / VAD_FRAME), e + maxFrames);
-		if (e > 0 && db[e - 1] >= th) while (e < eLimit && db[e] >= th) e++;
+		if (e > 0 && on(e - 1)) while (e < eLimit && on(e)) e++;
 		if (e * VAD_FRAME > w.end) w.end = Math.min(nextStart, e * VAD_FRAME);
 		// start: frames before the word's start
 		let s = Math.floor(w.start / VAD_FRAME);
 		const sLimit = Math.max(0, Math.ceil(prevEnd / VAD_FRAME), s - maxFrames);
-		if (s < db.length && db[s] >= th) while (s > sLimit && db[s - 1] >= th) s--;
+		if (s < db.length && on(s)) while (s > sLimit && on(s - 1)) s--;
 		if (s * VAD_FRAME < w.start) w.start = Math.max(prevEnd, s * VAD_FRAME);
 	}
 }
@@ -119,14 +141,20 @@ export const SPLIT_PAUSE_FRAMES = 20;
  * frames; the other side is handed to the adjacent neighbour when there is one. In place; run before
  * `tightenWords`.
  *
- * A word with no voiced frame at all (placed inside a pause) moves onto the nearest voiced run that no word
- * covers, between it and its neighbours (within 1.5 s): typically the tail of a sentence the alignment left
- * unassigned.
+ * A word with no voiced frame at all (placed inside a pause) moves onto a voiced run that no word covers only when
+ * that run is closer than a pause (`SPLIT_PAUSE_FRAMES`) — alignment jitter. It never moves across a silence into
+ * speech (spec 16 SG-011: hallucinated text in silence was moved onto real speech that way); such words are
+ * returned (indices, ascending) for the caller to drop.
  */
-export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = frameDb(audio)): void {
-	if (!db.length) return;
-	const th = vadThreshold(db);
-	const voiced = (f: number) => f >= 0 && f < db.length && db[f] >= th;
+export function splitAtPauses(
+	audio: AudioLength,
+	words: TimedWord[],
+	db = frameDb(audio as Float32Array),
+	mask: SpeechMask = voicedMask(db),
+): number[] {
+	const orphans: number[] = [];
+	if (!db.length) return orphans;
+	const voiced = (f: number) => f >= 0 && f < db.length && mask[f] > 0;
 	for (let i = 0; i < words.length; i++) {
 		const w = words[i];
 		const a0 = Math.max(0, Math.floor(w.start / VAD_FRAME));
@@ -134,12 +162,12 @@ export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = fram
 		let any = false;
 		for (let f = a0; f < b0 && !any; f++) any = voiced(f);
 		if (!any) {
-			const lo = Math.max(i > 0 ? Math.ceil(words[i - 1].end / VAD_FRAME) : 0, a0 - 150);
+			const lo = Math.max(i > 0 ? Math.ceil(words[i - 1].end / VAD_FRAME) : 0, a0 - SPLIT_PAUSE_FRAMES);
 			const hi = Math.min(
 				i + 1 < words.length ? Math.floor(words[i + 1].start / VAD_FRAME) : db.length,
-				b0 + 150,
+				b0 + SPLIT_PAUSE_FRAMES,
 			);
-			// nearest unassigned voiced run: backwards first (alignment drifts late), then forwards
+			// nearest unassigned voiced run closer than a pause: backwards first (alignment drifts late), then forwards
 			let run: [number, number] | null = null;
 			for (let f = a0 - 1; f >= lo; f--)
 				if (voiced(f)) {
@@ -159,7 +187,7 @@ export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = fram
 			if (run) {
 				w.start = run[0] * VAD_FRAME;
 				w.end = run[1] * VAD_FRAME;
-			}
+			} else orphans.push(i);
 			continue;
 		}
 		const a = Math.max(0, Math.floor(w.start / VAD_FRAME));
@@ -168,7 +196,7 @@ export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = fram
 		let best = { s: -1, e: -1 };
 		let runStart = -1;
 		for (let f = a; f <= b; f++) {
-			const silent = f < b && db[f] < th;
+			const silent = f < b && !voiced(f);
 			if (silent && runStart < 0) runStart = f;
 			if (!silent && runStart >= 0) {
 				if (f - runStart > best.e - best.s) best = { s: runStart, e: f };
@@ -178,8 +206,8 @@ export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = fram
 		if (best.e - best.s < SPLIT_PAUSE_FRAMES || best.s <= a || best.e >= b) continue;
 		let before = 0;
 		let after = 0;
-		for (let f = a; f < best.s; f++) if (db[f] >= th) before++;
-		for (let f = best.e; f < b; f++) if (db[f] >= th) after++;
+		for (let f = a; f < best.s; f++) if (voiced(f)) before++;
+		for (let f = best.e; f < b; f++) if (voiced(f)) after++;
 		if (before < after) {
 			const prev = words[i - 1];
 			if (prev && prev.end >= w.start - VAD_FRAME) prev.end = Math.max(prev.end, best.s * VAD_FRAME);
@@ -190,4 +218,33 @@ export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = fram
 			w.end = best.s * VAD_FRAME;
 		}
 	}
+	return orphans;
+}
+
+/** Share of a word's 10 ms frames that are speech (or breath) in `mask`; a zero-length word reads its one frame. */
+export function voicedFraction(w: TimedWord, mask: SpeechMask): number {
+	const n = mask.length;
+	if (!n) return 0;
+	const a = Math.min(n - 1, Math.max(0, Math.floor(w.start / VAD_FRAME)));
+	const b = Math.min(n, Math.max(a + 1, Math.ceil(w.end / VAD_FRAME)));
+	let v = 0;
+	for (let f = a; f < b; f++) if (mask[f] > 0) v++;
+	return v / (b - a);
+}
+
+/** Spec 14 TC-003: minimum share of speech/breath frames a word keeps (below it the word lies in silence). */
+export const MIN_VOICED_FRACTION = 0.2;
+
+/** Indices (ascending) of words whose frames are less than `minFraction` speech — words lying in silence. */
+export function unvoicedWords(words: readonly TimedWord[], mask: SpeechMask, minFraction = MIN_VOICED_FRACTION): number[] {
+	const out: number[] = [];
+	for (let i = 0; i < words.length; i++) if (voicedFraction(words[i], mask) < minFraction) out.push(i);
+	return out;
+}
+
+/** Voiced frames of `mask` in [from, to) (10 ms frames). */
+export function countVoiced(mask: SpeechMask, from: number, to: number): number {
+	let v = 0;
+	for (let f = Math.max(0, from); f < Math.min(mask.length, to); f++) if (mask[f] > 0) v++;
+	return v;
 }

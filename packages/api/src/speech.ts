@@ -2,6 +2,31 @@
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 
+/** ONNX Runtime execution providers the speech worker can use (spec 16 SG-001). */
+export const SpeechProviderIdSchema = z.enum(['cpu', 'cuda', 'webgpu', 'dml', 'coreml']);
+export type SpeechProviderId = z.infer<typeof SpeechProviderIdSchema>;
+
+/** Where a model part runs (SG-030 "Runs on: <device> (<provider>) · N threads"). */
+export const SpeechRunsOnSchema = z.object({
+	encoder: SpeechProviderIdSchema,
+	decoder: SpeechProviderIdSchema,
+	/** Human label of the device, e.g. "NVIDIA GeForce RTX 3060 (CUDA)" or "CPU". */
+	device: z.string(),
+	threads: z.number().int().min(1),
+});
+export type SpeechRunsOn = z.infer<typeof SpeechRunsOnSchema>;
+
+/** Speed of a model on this computer: minutes of processing per 10 minutes of audio. */
+export const SpeechSpeedSchema = z.object({
+	minutesPer10Min: z.number().min(0),
+	/** `measured` = the last job with this model and device; `estimated` = from the reference table (wp-note). */
+	basis: z.enum(['measured', 'estimated']),
+	/** Measured: when (ISO 8601). */
+	at: z.string().optional(),
+	accuracy: z.enum(['standard', 'best']),
+});
+export type SpeechSpeed = z.infer<typeof SpeechSpeedSchema>;
+
 /** A speech model of the catalogue (`GET /api/speech/models`). */
 export const SpeechModelSchema = z.object({
 	id: z.string(),
@@ -10,6 +35,7 @@ export const SpeechModelSchema = z.object({
 	parameters: z.number(),
 	/** Recognises 99 languages (detects the language, translates to English); `.en` models are English only. */
 	multilingual: z.boolean(),
+	/** The engine's default model (follows the recommendation for this computer, SG-021). */
 	default: z.boolean(),
 	description: z.string(),
 	license: z.string(),
@@ -22,6 +48,15 @@ export const SpeechModelSchema = z.object({
 	installed: z.boolean(),
 	/** Bytes still to download (files already present are kept). */
 	missingBytes: z.number().int().min(0),
+	/** Weight precision; fp16 models are meant for GPUs (2–4× slower on a CPU). */
+	precision: z.enum(['fp32', 'fp16']).optional(),
+	/** Number of languages (1 for English-only models). */
+	languages: z.number().int().min(1).optional(),
+	/** "Recommended for this computer" (SG-021). */
+	recommended: z.boolean().optional(),
+	/** Where it would run with the current Processor setting (SG-030). */
+	runsOn: SpeechRunsOnSchema.optional(),
+	speed: SpeechSpeedSchema.optional(),
 });
 export type SpeechModel = z.infer<typeof SpeechModelSchema>;
 export const SpeechModelsResponseSchema = z.object({ models: z.array(SpeechModelSchema) });
@@ -44,8 +79,24 @@ export const TranscribeOptionsSchema = z.object({
 	speakerCount: z.number().int().min(1).max(32).optional(),
 	/** At most this many speakers (default 6). */
 	maxSpeakers: z.number().int().min(1).max(32).optional(),
-	/** Beam search width (default 5; 1 = greedy, about twice as fast, slightly less accurate). */
+	/**
+	 * Beam search width; overrides `accuracy` (1 = greedy). Default from `accuracy`: standard = greedy with
+	 * temperature fallback, best = beam 5.
+	 */
 	beamSize: z.number().int().min(1).max(10).optional(),
+	/** `standard` (greedy, default) or `best` (beam 5, slower) — SG-010. Default: the Transcription preference. */
+	accuracy: z.enum(['standard', 'best']).optional(),
+	/** Processor: `auto` (default: the Transcription preference), `cpu` or `gpu` (falls back to the CPU with a reason). */
+	device: z.enum(['auto', 'cpu', 'gpu']).optional(),
+	/**
+	 * Verbatim transcription (spec 14 TC-003): prompt the model with the language's filler words so it keeps
+	 * "eh", "em", "um"… instead of cleaning them up.
+	 */
+	verbatim: z.boolean().optional(),
+	/** A custom initial prompt (vocabulary, names, style); with `verbatim` it follows the filler prompt. */
+	initialPrompt: z.string().max(1000).optional(),
+	/** Condition each 30 s window on the previous window's text (default true; OpenAI `condition_on_previous_text`). */
+	conditionOnPreviousText: z.boolean().optional(),
 });
 export type TranscribeOptions = z.infer<typeof TranscribeOptionsSchema>;
 
@@ -78,6 +129,50 @@ export const TranscriptResultWordSchema = z.object({
 });
 export type TranscriptResultWord = z.infer<typeof TranscriptResultWordSchema>;
 
+export const TranscriptResultSegmentSchema = z.object({
+	start: z.number(),
+	end: z.number(),
+	text: z.string(),
+	/** Mean log-probability of the window's tokens. */
+	avgLogprob: z.number().optional(),
+	/** Probability of `<|nospeech|>` for the window. */
+	noSpeechProb: z.number().optional(),
+	/** gzip compression ratio of the window's text (> 2.4 = a loop). */
+	compressionRatio: z.number().optional(),
+	/** Temperature of the decode that was kept. */
+	temperature: z.number().optional(),
+});
+
+export const SpeechFallbackSchema = z.object({
+	/** `session`: a model part could not be created on the GPU; `job`: the GPU failed mid-job and the job ran again on the CPU; `unavailable`: no usable GPU. */
+	stage: z.enum(['session', 'job', 'unavailable']),
+	part: z.enum(['encoder', 'decoder', 'both']),
+	from: SpeechProviderIdSchema,
+	to: SpeechProviderIdSchema,
+	reason: z.string(),
+});
+export type SpeechFallback = z.infer<typeof SpeechFallbackSchema>;
+
+export const SpeechDeviceReportSchema = z.object({
+	encoder: SpeechProviderIdSchema,
+	decoder: SpeechProviderIdSchema,
+	/** e.g. "NVIDIA GeForce RTX 3060 (CUDA) encoder · CPU decoder". */
+	label: z.string(),
+	threads: z.number().int().min(1),
+	fallbacks: z.array(SpeechFallbackSchema),
+});
+export type SpeechDeviceReport = z.infer<typeof SpeechDeviceReportSchema>;
+
+export const SpeechGuardReportSchema = z.object({
+	/** 30 s windows skipped because no frame was voiced. */
+	skippedWindows: z.number().int().min(0),
+	/** Words dropped because they lay in silence (< 20 % voiced frames, or in a pause with no voice nearby). */
+	droppedWords: z.number().int().min(0),
+	/** Known hallucination phrases removed over non-speech, and runs of ≥ 4 identical tokens. */
+	removed: z.array(z.object({ text: z.string(), start: z.number(), end: z.number(), reason: z.string() })).max(200),
+});
+export type SpeechGuardReport = z.infer<typeof SpeechGuardReportSchema>;
+
 /** `EngineJob.result` of a `transcription` job. */
 export const TranscriptionResultSchema = z.object({
 	target: z.discriminatedUnion('type', [
@@ -100,8 +195,102 @@ export const TranscriptionResultSchema = z.object({
 	duration: z.number().int().min(0),
 	words: z.array(TranscriptResultWordSchema),
 	speakers: z.record(z.string(), z.object({ name: z.string() })),
-	segments: z.array(z.object({ start: z.number(), end: z.number(), text: z.string() })),
-	/** Seconds of processing (decode, model load, recognition). */
-	timings: z.object({ decodeMs: z.number(), loadMs: z.number(), transcribeMs: z.number() }),
+	/** Seconds (media/sequence time) and the decoder's scores per segment (spec 14 TC-003). */
+	segments: z.array(TranscriptResultSegmentSchema),
+	/** Milliseconds of processing (decode, model load, recognition). */
+	timings: z.object({
+		decodeMs: z.number(),
+		loadMs: z.number(),
+		transcribeMs: z.number(),
+		/** Recognition time / audio duration. */
+		rtf: z.number().optional(),
+	}),
+	/** Where the model ran and any fallback (SG-003). */
+	device: SpeechDeviceReportSchema.optional(),
+	/** What the hallucination guard removed (SG-011). */
+	guard: SpeechGuardReportSchema.optional(),
+	accuracy: z.enum(['standard', 'best']).optional(),
+	beamSize: z.number().int().optional(),
 });
 export type TranscriptionResult = z.infer<typeof TranscriptionResultSchema>;
+
+/** Engine-side Transcription preferences (`GET/PUT /api/speech/settings`, SG-030). */
+export const SpeechSettingsSchema = z.object({
+	/** Processor: automatic (GPU when it helps), CPU only, or GPU (falls back to the CPU with the reason). */
+	processor: z.enum(['auto', 'cpu', 'gpu']).default('auto'),
+	/** Standard = greedy with temperature fallback; Best = beam search 5 (slower). */
+	accuracy: z.enum(['standard', 'best']).default('standard'),
+	/** Linux: use the downloaded ONNX Runtime CUDA provider (Enable NVIDIA GPU). */
+	nvidiaGpu: z.boolean().default(false),
+});
+export type SpeechSettings = z.infer<typeof SpeechSettingsSchema>;
+export const SpeechSettingsPatchSchema = z.strictObject({
+	processor: z.enum(['auto', 'cpu', 'gpu']).optional(),
+	accuracy: z.enum(['standard', 'best']).optional(),
+	nvidiaGpu: z.boolean().optional(),
+});
+
+export const SpeechProviderStatusSchema = z.object({
+	id: SpeechProviderIdSchema,
+	available: z.boolean(),
+	/** Why it is not available (or not used). */
+	reason: z.string().optional(),
+	/** Device name when known (GPU model). */
+	device: z.string().optional(),
+});
+export type SpeechProviderStatus = z.infer<typeof SpeechProviderStatusSchema>;
+
+/** The NVIDIA CUDA provider on Linux x64 (SG-006): downloaded on request, the NVIDIA runtime detected. */
+export const SpeechCudaStatusSchema = z.object({
+	/** `unsupported`: not Linux x64. */
+	state: z.enum(['unsupported', 'not-installed', 'installed', 'damaged']),
+	ortVersion: z.string(),
+	/** Download size of the provider package. */
+	downloadBytes: z.number().int().min(0),
+	/** The NVIDIA runtime found on this computer. */
+	runtime: z.object({
+		ok: z.boolean(),
+		/** Missing libraries, e.g. `libcudnn.so.9`. */
+		missing: z.array(z.string()),
+		driverVersion: z.string().nullable(),
+		gpu: z.string().nullable(),
+		vramMb: z.number().nullable(),
+	}),
+	/** What to install when the runtime is missing. */
+	guidance: z.string().optional(),
+	license: z.string(),
+});
+export type SpeechCudaStatus = z.infer<typeof SpeechCudaStatusSchema>;
+
+/** Decoder calibration on CUDA + greedy (SG-002): milliseconds per token of each decoder. */
+export const SpeechCalibrationSchema = z.object({
+	modelId: z.string(),
+	provider: SpeechProviderIdSchema,
+	cpuMsPerToken: z.number(),
+	gpuMsPerToken: z.number(),
+	decoder: SpeechProviderIdSchema,
+	at: z.string(),
+});
+export type SpeechCalibration = z.infer<typeof SpeechCalibrationSchema>;
+
+/** The cached provider probe (`GET /api/speech/probe`, `POST` = probe again). */
+export const SpeechProbeSchema = z.object({
+	platform: z.string(),
+	arch: z.string(),
+	ortVersion: z.string(),
+	providers: z.array(SpeechProviderStatusSchema),
+	/** The best providers for each part with the current settings. */
+	chosen: z.object({ encoder: SpeechProviderIdSchema, decoder: SpeechProviderIdSchema }),
+	/** Threads per session (capped by the performance cores and 8, SG-005). */
+	threads: z.number().int().min(1),
+	/** The best GPU, when one is usable. */
+	gpu: z.object({ name: z.string(), provider: SpeechProviderIdSchema, vramMb: z.number().nullable() }).nullable(),
+	ramBytes: z.number().min(0),
+	cores: z.number().int().min(1),
+	calibrations: z.array(SpeechCalibrationSchema),
+	probedAt: z.string(),
+	cuda: SpeechCudaStatusSchema,
+	/** The probe could not run (the worker failed); the CPU is assumed. */
+	error: z.string().optional(),
+});
+export type SpeechProbe = z.infer<typeof SpeechProbeSchema>;
