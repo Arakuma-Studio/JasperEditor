@@ -61,7 +61,7 @@ function tone(out: Float32Array, at: number, dur: number, f0: number, amp: numbe
 		if (i < attack) env = i / attack;
 		else if (i < n) env = 1;
 		else env = Math.exp(-(i - n) / decay);
-		if (env < 1e-4) break;
+		if (i >= n && env < 1e-4) break;
 		const f = f0 * (1 + 0.02 * Math.sin(2 * Math.PI * 5 * t));
 		let x = 0;
 		for (let k = 1; k <= 8; k++) x += Math.sin(2 * Math.PI * f * k * t) / k;
