@@ -358,7 +358,7 @@ export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Pro
 	const verify = async (
 		a: MediaAsset,
 		path: string,
-	): Promise<(VerifiedCandidate & { reg: RegisteredMedia }) | null> => {
+	): Promise<(VerifiedCandidate & { reg: RegisteredMedia; confirm: boolean }) | null> => {
 		const name = path.split(/[/\\]/).pop() ?? path;
 		if (nameFails(a, name, criteria).length) return null;
 		const s = await statFile(path);
@@ -368,7 +368,16 @@ export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Pro
 		const reg = await registered(path);
 		if (!reg) return null;
 		const failed = failedCriteria(a, reg, name, criteria);
-		return { path, ok: failed.length === 0, sameContent: reg.fingerprint === a.fingerprint, reg };
+		// A placeholder's kind and streams are often guesses of the document (an EDL reel used for picture and
+		// sound): a file that differs there is found, but linked only when the user confirms.
+		const soft = isPlaceholder(a) && failed.length === 1 && failed[0] === 'streams';
+		return {
+			path,
+			ok: failed.length === 0 || soft,
+			sameContent: reg.fingerprint === a.fingerprint,
+			reg,
+			confirm: soft,
+		};
 	};
 
 	const found: RelinkScanResult['found'] = [];
@@ -398,7 +407,7 @@ export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Pro
 				}
 			} else paths = s.paths.filter((p) => isHostAbsolute(p, deps.host));
 			if (!paths.length) continue;
-			const verified: (VerifiedCandidate & { reg: RegisteredMedia })[] = [];
+			const verified: (VerifiedCandidate & { reg: RegisteredMedia; confirm: boolean })[] = [];
 			for (const p of [...new Set(paths)]) {
 				const v = await verify(a, p);
 				if (v) verified.push(v);
@@ -409,7 +418,8 @@ export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Pro
 				return;
 			}
 			if (d.kind === 'link') {
-				push(a, verified.find((v) => v.path === d.path)!.reg, d.path, s.step);
+				const v = verified.find((x) => x.path === d.path)!;
+				push(a, v.reg, d.path, s.step, v.confirm);
 				return;
 			}
 		}
@@ -429,7 +439,7 @@ export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Pro
 		notFound.push(a.id);
 	};
 
-	const push = (a: MediaAsset, reg: RegisteredMedia, path: string, step: RelinkStep) => {
+	const push = (a: MediaAsset, reg: RegisteredMedia, path: string, step: RelinkStep, confirm = false) => {
 		const match = relinkMatch(a, reg);
 		const diff = relinkDiff(a, reg);
 		found.push({
@@ -440,7 +450,7 @@ export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Pro
 			match,
 			diff,
 			step,
-			needsConfirm: relinkNeedsConfirm(match, diff),
+			needsConfirm: confirm || relinkNeedsConfirm(match, diff),
 		});
 	};
 

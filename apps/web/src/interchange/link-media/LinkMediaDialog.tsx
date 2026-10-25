@@ -56,7 +56,7 @@ type RowStatus =
 	| { kind: 'ambiguous'; candidates: string[] };
 
 const ROW_H = 24;
-const LIST_H = 264;
+const LIST_H = 192;
 /** Media that is offline: an imported placeholder (no file yet) or a file the engine cannot find. */
 export function offlineMedia(session: EditorSession): MediaAsset[] {
 	const st = session.getState();

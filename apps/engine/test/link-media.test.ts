@@ -217,8 +217,9 @@ describe('Relink others automatically (engine search)', () => {
 			placeholder('tone', 'D:\\M\\tone.mov', { kind: 'audio', seconds: 1 }),
 		];
 		const strict = (await scan({ anchors, assets, match: ['name', 'duration', 'streams'] })).r;
-		expect(strict.found).toEqual([]);
-		expect(strict.notFound).toEqual(['short', 'clip', 'tone']);
+		// a placeholder whose only difference is its (guessed) streams is found, but waits for confirmation
+		expect(strict.found.map((f) => [f.assetId, f.needsConfirm])).toEqual([['tone', true]]);
+		expect(strict.notFound).toEqual(['short', 'clip']);
 		const noExt = (await scan({ anchors, assets, match: ['name', 'duration'], ignoreExtension: true })).r;
 		// without Streams the video file named like the audio asset is found too, but only with confirmation
 		expect(noExt.found.map((f) => [f.assetId, basename(f.path), f.needsConfirm])).toEqual([
@@ -335,7 +336,7 @@ describe('Link Media routes', () => {
 	}, 120_000);
 	afterAll(closeApps);
 
-	const post = (url: string, payload: unknown) =>
+	const post = (url: string, payload: object) =>
 		app.inject({ method: 'POST', url, headers: JSON_H, payload });
 
 	it('relinking to a path of another computer is refused with a named error', async () => {

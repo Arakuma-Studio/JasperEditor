@@ -87,21 +87,12 @@ from the list (each source's hour) and rebased on the real file's start timecode
 
 ### 1.7 Link Media (S04:AS-011)
 
-`POST /api/assets/:aid/relink {projectId, path, asset}` registers the file and compares it with the asset:
-`match` = `fingerprint` (same bytes), `placeholder` (an imported placeholder: no fingerprint to compare) or
-`different`, plus the differences a user would notice (kind, duration beyond one frame — for a placeholder only a
-file *shorter* than the length the document gives, since documents often know only the used range —, resolution,
-frame rate, audio layout, name, size). A different file, or a placeholder whose kind differs or whose file is shorter than its clips
-need, is relinked only after confirmation (`force`); a placeholder's resolution and frame rate are often guesses
-(EDL, ALE), so their differences are shown but do not block. `POST /api/projects/:pid/relink-scan {folder, assets, match, ignoreExtension}` is a
-`relink-scan` job: it walks the folder (≤ 200 000 files, depth 32, hidden entries skipped), matches by file name
-(optionally without the extension), then size and duration as asked, and — for assets with a real fingerprint — by
-fingerprint among files of the same size (moved and renamed copies). The client applies one `media.relink` per
-found file in one transaction ("Link Media (n)"). `media.relink` accepts a new fingerprint without `force` for
-placeholders (there is nothing to compare). The Link Media dialog (File ▸ Link Media…, Project panel ▸ Link Media…)
-shows each offline item with its last known path, a folder search with match options after Premiere's "Match File
-Properties" (File Name; Ignore Extension = Premiere's File Extension unchecked; Media Start = start timecode; plus
-File Size and Media Duration), per-item Locate, the differences, and a checkbox per found file.
+Link Media has its own note: [link-media.md](link-media.md). It covers paths of another operating system,
+project-relative references, Relink others automatically from a located file (folder mappings, relative paths, same
+folder, bounded search), Match File Properties verification, ambiguity, the dialog and the agent tools.
+`POST /api/assets/:aid/relink` verifies one file. `POST /api/projects/:pid/relink-scan` is the search job, whose full
+result is at `GET /api/projects/:pid/relink-scan/:jobId`. Files that verify are linked with `media.relink` in one
+transaction ("Link Media (n)").
 
 ## 2. Formats
 
@@ -181,15 +172,17 @@ sequence rate), zero-padding past the end of the media.
   breakout, 512-byte sectors, ALE scope, pre-render mode with the number of clips and reasons, destination: download
   or a file path on local engines), then progress, then the report with download links. Side files go to
   `<name> Media/` next to the document.
-- **File ▸ Link Media…** / Project panel ▸ **Link Media…** on offline items.
+- **File ▸ Link Media…** / Project panel ▸ **Link Media…** on offline items; also when a project opens with offline
+  media ([link-media.md](link-media.md)).
 - **MCP**: `import_timeline {path | content | contentBase64, format?, rate?, dropFrame?, binId?}`,
   `export_timeline {format, sequenceId?, outputPath?, prerender?, xmemlVersion?, fcpxmlVersion?, edl?, audio?,
-  aafSmallSectors?, aleScope?, wait?}`, `list_offline_media`, `link_media {mediaId+path | folder, match?,
-  ignoreExtension?, force?, dryRun?}`; every edit is also an `apply_commands` command (`project.importTimeline`,
+  aafSmallSectors?, aleScope?, wait?}`, `list_offline_media {offset?, limit?}`, `link_media {mediaId+path
+  [relinkOthers] | folder, match?, ignoreExtension?, alignTimecode?, preserveInterpretation?, timeLimitSec?, force?,
+  dryRun?}`; every edit is also an `apply_commands` command (`project.importTimeline`,
   `media.relink`).
 - **HTTP**: `POST /api/interchange/import`, `/api/interchange/prerender-plan`, `/api/interchange/export` (job),
   `GET /renders/:jobId/interchange/:name`, `POST /api/assets/:assetId/relink`,
-  `POST /api/projects/:projectId/relink-scan` (job). Capability block `features.interchange`.
+  `POST /api/projects/:projectId/relink-scan` (job), `GET /api/projects/:projectId/relink-scan/:jobId`. Capability block `features.interchange`.
 
 ## 4. Verified behaviour (measured; commands below)
 
@@ -294,8 +287,7 @@ the report. `apps/mcp/test/interchange.test.ts` (3) — the four tools against a
 - OMF: audio only; markers and captions are reported; no external validator was available.
 - Pre-renders need the Remotion path (a browser); without it the job reports each failed render and exports the
   clips as the format carries them. Pre-renders are full frames of the sequence size.
-- Link Media: Premiere's Tape Name match (and its other metadata matches) is not implemented; folder search is
-  capped at 200 000 files; the folder and Locate paths are typed (the desktop bridge has no folder picker).
+- Link Media: limits are in [link-media.md](link-media.md) §7 (no Tape Name / metadata matches, bounded search).
 - Merged clips' `merged` flag is not carried by any format (the sequence comes back as an ordinary sequence).
 - OTIO `metadata.jasper` keeps engine-store keys: importing an OTIO written by this engine on the same machine links
   the media without probing again.
