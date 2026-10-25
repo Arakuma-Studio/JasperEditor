@@ -18,6 +18,7 @@ import {
 	type Dip,
 	evaluate,
 	FLICKS_PER_SECOND,
+	type InInterpolation,
 	type Keyframe,
 	type LibraryProvenance,
 	repairDocument,
@@ -348,6 +349,7 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 		t: fc.integer({ min: 0, max: 40 }),
 		v: fc.double({ min: -40, max: 10, noNaN: true }),
 		interp: fc.constantFrom('linear', 'hold', 'bezier', 'auto-bezier', 'continuous-bezier'),
+		side: fc.constantFrom<InInterpolation | undefined>(undefined, 'linear', 'bezier'),
 		inf: fc.double({ min: 0.05, max: 0.95, noNaN: true }),
 		slope: fc.double({ min: 0, max: 2, noNaN: true }),
 	});
@@ -376,6 +378,13 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 							slope: k.slope,
 						})),
 					);
+					// Same original curve contract for legacy keys and explicit incoming sides. Auto/Continuous
+					// shape both sides; leave those paired rather than generating invalid documents.
+					kfs.forEach((k) => {
+						if (k.interpolation === 'auto-bezier' || k.interpolation === 'continuous-bezier') return;
+						const source = keys.find((x) => x.t * 100 * MS * (li === 1 ? 2 : 1) === k.time)!;
+						if (source.side) k.inInterpolation = source.side;
+					});
 					maxCurved = Math.max(maxCurved, checkCurvedDips(kfs, dips, li as 0 | 1));
 				},
 			),
@@ -386,8 +395,8 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 				examples: [
 					[
 						[
-							{ t: 0, v: 0.00003403141361112716, interp: 'linear', inf: 0.05, slope: 0 },
-							{ t: 13, v: 0, interp: 'linear', inf: 0.05, slope: 0 },
+							{ t: 0, v: 0.00003403141361112716, interp: 'linear', side: undefined, inf: 0.05, slope: 0 },
+							{ t: 13, v: 0, interp: 'linear', side: undefined, inf: 0.05, slope: 0 },
 						],
 						[
 							{ start: 924336000, end: 924336000, depthDb: -4.832902467924639, fadeMs: 393 },

@@ -1,12 +1,6 @@
 // keyframe.applyEase — cubic sections, neighbour preservation, roving, refusals (docs/wp-notes/easing.md).
 import { describe, expect, it } from 'vitest';
-import {
-	type Animatable,
-	type CubicEase,
-	cubicToEases,
-	evaluate,
-	unknownCommandKeyIssues,
-} from '../src/index.ts';
+import { type Animatable, type CubicEase, evaluate, unknownCommandKeyIssues } from '../src/index.ts';
 import { cssCubic, expectValid, sample, setup } from './ease-helpers.ts';
 
 const SWIFT: CubicEase = { kind: 'cubic', x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
@@ -45,12 +39,13 @@ describe('keyframe.applyEase (cubic)', () => {
 			[30, 60],
 		]);
 		h.ok([{ type: 'keyframe.applyEase', keyframeIds: [ids[1]!], curve: SWIFT }]);
-		const { easeOut, easeIn } = cubicToEases(SWIFT);
 		let k = anim<number>('transform.rotation').keyframes;
-		expect(k[0]!.easeOut).toEqual(easeOut);
-		expect(k[1]!.easeIn).toEqual(easeIn);
-		expect(k[1]!.easeOut).toEqual(easeOut);
-		expect(k[2]!.easeIn).toEqual(easeIn);
+		const initial = anim<number>('transform.rotation');
+		for (const s of [0, 1]) {
+			const at = k[s]!.time + (k[s + 1]!.time - k[s]!.time) / 4;
+			const want = s === 0 ? 10 * cssCubic(SWIFT, 0.25) : 10 + 20 * cssCubic(SWIFT, 0.25);
+			expect(evaluate(initial, at)).toBeCloseTo(want, 9);
+		}
 		// keyframe-sides: key 2 arrives Bezier and still leaves Linear.
 		expect(k[2]!.inInterpolation).toBe('bezier');
 		expect(k[2]!.interpolation).toBe('linear');
@@ -62,10 +57,11 @@ describe('keyframe.applyEase (cubic)', () => {
 		// sections: ['out'] of keys 1 and 2 → only segment 2 → 3.
 		h.ok([{ type: 'keyframe.applyEase', keyframeIds: [ids[1]!, ids[2]!], curve: BACK, sections: ['out'] }]);
 		k = anim<number>('transform.rotation').keyframes;
-		const back = cubicToEases(BACK);
-		expect(k[2]!.easeOut).toEqual(back.easeOut);
-		expect(k[3]!.easeIn).toEqual(back.easeIn);
-		expect(k[1]!.easeOut).toEqual(easeOut); // middle untouched
+		const after = anim<number>('transform.rotation');
+		const chosen = k[2]!.time + (k[3]!.time - k[2]!.time) / 4;
+		expect(evaluate(after, chosen)).toBeCloseTo(30 + 30 * cssCubic(BACK, 0.25), 9);
+		const unchanged = k[1]!.time + (k[2]!.time - k[1]!.time) / 4;
+		expect(evaluate(after, unchanged)).toBeCloseTo(10 + 20 * cssCubic(SWIFT, 0.25), 9);
 		// sections: ['in', 'middle'] with non-adjacent keys 0 and 2: only the in segment (none before key 0) → refused.
 		const bad = h.tx([
 			{
@@ -149,9 +145,6 @@ describe('keyframe.applyEase (cubic)', () => {
 		// Selecting only the roving key: in + out are the same run → one span.
 		h.ok([{ type: 'keyframe.applyEase', keyframeIds: [ids[1]!], curve: SWIFT }]);
 		const a = anim<number>('transform.rotation');
-		const { easeOut, easeIn } = cubicToEases(SWIFT);
-		expect(a.keyframes[0]!.easeOut).toEqual(easeOut);
-		expect(a.keyframes[2]!.easeIn).toEqual(easeIn);
 		expect(a.keyframes[1]!.roving).toBe(true);
 		const [t0, t2] = [a.keyframes[0]!.time, a.keyframes[2]!.time];
 		for (let k = 0; k <= 40; k++) {

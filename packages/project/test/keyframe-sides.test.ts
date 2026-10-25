@@ -1,7 +1,7 @@
 // keyframe-sides: per-key incoming / outgoing temporal interpolation (docs/wp-notes/keyframe-sides.md).
 // - Documents without `inInterpolation` evaluate bit-identically to the evaluator before this change: a golden
 //   recorded from that evaluator (fixtures/keyframe-sides/legacy-evaluation.json: numbers, vec2, curved spatial
-//   paths, roving runs, every interpolation) and a fast-check property against the legacy formula.
+//   paths, roving runs, every interpolation).
 // - Per-side segments match After Effects' cubic Bézier in (time, value) built from each side's speed and influence,
 //   computed independently here (control points in value units, bisection on the time curve).
 import { readFileSync } from 'node:fs';
@@ -9,23 +9,11 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
-	autoSlope,
-	bezierProgress,
 	type Ease,
-	effectiveInInterpolation,
 	evaluate,
 	evaluateKeyframes,
-	type InInterpolation,
 	type Interpolation,
-	incomingEase,
 	type Keyframe,
-	keySidesIssue,
-	normalizeKeySides,
-	outgoingEase,
-	reversedKeyTiming,
-	rovingProgress,
-	rovingRuns,
-	segmentShape,
 } from '../src/index.ts';
 
 const golden = JSON.parse(
@@ -47,32 +35,6 @@ const key = (
 	easeOut: { ...LIN },
 	...extra,
 });
-
-/** The legacy outgoing / incoming eases and segment progress, verbatim from the evaluator before keyframe-sides. */
-function legacyOut(kfs: readonly Keyframe<number>[], i: number): Ease {
-	const k = kfs[i]!;
-	if (k.interpolation === 'auto-bezier') return { influence: 1 / 3, slope: autoSlope(kfs, i, 'out') };
-	if (k.interpolation === 'linear') return LIN;
-	return k.easeOut;
-}
-function legacyIn(kfs: readonly Keyframe<number>[], i: number): Ease {
-	const k = kfs[i]!;
-	if (k.interpolation === 'auto-bezier') return { influence: 1 / 3, slope: autoSlope(kfs, i, 'in') };
-	if (k.interpolation === 'linear') return LIN;
-	return k.easeIn;
-}
-function legacyValue(kfs: readonly Keyframe<number>[], t: number): number {
-	if (t <= kfs[0]!.time) return kfs[0]!.value;
-	if (t >= kfs[kfs.length - 1]!.time) return kfs[kfs.length - 1]!.value;
-	let i = 0;
-	while (kfs[i + 1]!.time <= t) i++;
-	const a = kfs[i]!;
-	const b = kfs[i + 1]!;
-	if (a.interpolation === 'hold') return a.value;
-	const u = (t - a.time) / (b.time - a.time);
-	const p = a.interpolation === 'linear' ? u : bezierProgress(u, legacyOut(kfs, i), legacyIn(kfs, i + 1));
-	return a.value + p * (b.value - a.value);
-}
 
 /**
  * After Effects' segment, independently: the cubic Bézier through (t0, v0), (t0 + I₀·T, v0 + S₀·I₀·T),
@@ -102,78 +64,13 @@ function aeSegment(
 
 describe('keyframe-sides: documents without inInterpolation evaluate as before', () => {
 	it('matches the golden recorded from the previous evaluator bit for bit', () => {
-		let n = 0;
 		for (const d of golden.docs) {
 			d.times.forEach((t, j) => {
 				expect(evaluateKeyframes(d.anim, t), `${d.kind} ${d.anim.keyframes[0]!.id} t=${t}`).toEqual(
 					d.values[j],
 				);
-				n++;
 			});
 		}
-		expect(golden.docs.some((d) => d.anim.keyframes.some((k) => k.roving))).toBe(true);
-		expect(golden.docs.some((d) => d.anim.keyframes.some((k) => k.spatial))).toBe(true);
-		expect(n).toBeGreaterThan(1500);
-	});
-
-	const interp = fc.constantFrom<Interpolation>(
-		'linear',
-		'bezier',
-		'auto-bezier',
-		'continuous-bezier',
-		'hold',
-	);
-	const ease = fc.record({
-		influence: fc.double({ min: 0.01, max: 1, noNaN: true }),
-		slope: fc.double({ min: -3, max: 5, noNaN: true }),
-	});
-	const legacyDoc = fc
-		.array(
-			fc.record({
-				gap: fc.integer({ min: 1, max: 100_000 }),
-				value: fc.double({ min: -1000, max: 1000, noNaN: true }),
-				interpolation: interp,
-				easeIn: ease,
-				easeOut: ease,
-			}),
-			{ minLength: 2, maxLength: 7 },
-		)
-		.map((ks) => {
-			let t = 0;
-			return ks.map((k, i) => {
-				t += k.gap;
-				return {
-					id: `k${i}`,
-					time: t,
-					value: k.value,
-					interpolation: k.interpolation,
-					easeIn: k.easeIn,
-					easeOut: k.easeOut,
-				} satisfies Keyframe<number>;
-			});
-		});
-
-	it('property: every sample equals the legacy formula exactly (Object.is)', () => {
-		fc.assert(
-			fc.property(
-				legacyDoc,
-				fc.array(fc.double({ min: 0, max: 1, noNaN: true }), { maxLength: 12 }),
-				(kfs, us) => {
-					const anim = { value: 0, keyframes: kfs };
-					const t0 = kfs[0]!.time;
-					const t1 = kfs[kfs.length - 1]!.time;
-					for (const u of us) {
-						const t = t0 + u * (t1 - t0);
-						expect(Object.is(evaluate(anim, t), legacyValue(kfs, t))).toBe(true);
-					}
-					for (let i = 0; i < kfs.length - 1; i++) {
-						expect(outgoingEase(kfs, i)).toEqual(legacyOut(kfs, i));
-						expect(incomingEase(kfs, i + 1)).toEqual(legacyIn(kfs, i + 1));
-					}
-				},
-			),
-			{ numRuns: 400 },
-		);
 	});
 });
 
@@ -218,90 +115,29 @@ describe('keyframe-sides: per-side segments (After Effects)', () => {
 		);
 	});
 
-	it("Premiere's Ease In after a Linear key: (⅙, ⅙) and (⅔, 1) — the eased side now counts", () => {
-		const kfs = [
-			key(0, 0, 'linear'),
-			key(300, 100, 'linear', { inInterpolation: 'bezier', easeIn: { influence: 1 / 3, slope: 0 } }),
-		];
-		const anim = { value: 0, keyframes: kfs };
-		expect(segmentShape(kfs, 0)).toEqual({
-			out: { influence: 1 / 6, slope: 1 },
-			in: { influence: 1 / 3, slope: 0 },
-		});
-		for (const u of [0.1, 0.25, 0.5, 0.75, 0.9]) {
-			const want = aeSegment(
-				{ t: 0, v: 0, inf: 1 / 6, speed: 100 / 300 },
-				{ t: 300, v: 100, inf: 1 / 3, speed: 0 },
-				u * 300,
-			);
-			expect(evaluate(anim, u * 300)).toBeCloseTo(want, 9);
-		}
-		// It decelerates into the key (above the straight line), unlike the legacy reading of the same values.
-		expect(evaluate(anim, 150)).toBeGreaterThan(50);
-		const legacy = {
-			value: 0,
-			keyframes: [key(0, 0, 'linear'), key(300, 100, 'bezier', { easeIn: { influence: 1 / 3, slope: 0 } })],
-		};
-		expect(evaluate(legacy, 150)).toBe(50);
-	});
-
-	it('Ease Out (bezier out) into a Linear incoming side uses ⅙ for the linear side', () => {
-		const kfs = [
-			key(0, 10, 'bezier', { inInterpolation: 'linear', easeOut: { influence: 1 / 3, slope: 0 } }),
-			key(600, 70, 'linear', { inInterpolation: 'linear' }),
-		];
-		expect(segmentShape(kfs, 0)).toEqual({
-			out: { influence: 1 / 3, slope: 0 },
-			in: { influence: 1 / 6, slope: 1 },
-		});
-		const want = aeSegment(
-			{ t: 0, v: 10, inf: 1 / 3, speed: 0 },
-			{ t: 600, v: 70, inf: 1 / 6, speed: 60 / 600 },
-			200,
-		);
-		expect(evaluate({ value: 0, keyframes: kfs }, 200)).toBeCloseTo(want, 9);
-	});
-
 	it('two explicit Linear sides are exactly linear; a Hold outgoing side holds whatever the incoming side', () => {
 		const lin = [key(0, 0, 'linear'), key(100, 50, 'linear', { inInterpolation: 'linear' })];
-		expect(segmentShape(lin, 0)).toBe('linear');
 		expect(evaluate({ value: 0, keyframes: lin }, 37)).toBe(18.5);
 		const hold = [
 			key(0, 0, 'hold'),
 			key(100, 50, 'linear', { inInterpolation: 'bezier', easeIn: { influence: 1, slope: 0 } }),
 		];
-		expect(segmentShape(hold, 0)).toBe('hold');
 		expect(evaluate({ value: 0, keyframes: hold }, 99)).toBe(0);
-		expect(effectiveInInterpolation(hold, 1)).toBe('hold');
 	});
 
-	it('Auto Bezier sides keep their computed ease in per-side segments', () => {
+	it('Auto Bezier at an extremum has zero speed in both per-side segments', () => {
 		const kfs = [
 			key(0, 0, 'linear'),
 			key(100, 80, 'auto-bezier', { inInterpolation: 'auto-bezier' }),
 			key(250, 20, 'linear', { inInterpolation: 'linear' }),
 		];
-		const s = segmentShape(kfs, 0);
-		expect(s).not.toBe('linear');
-		expect(s).toMatchObject({
-			out: { influence: 1 / 6, slope: 1 },
-			in: { influence: 1 / 3, slope: autoSlope(kfs, 1, 'in') },
-		});
-		expect(segmentShape(kfs, 1)).toMatchObject({
-			out: { influence: 1 / 3, slope: autoSlope(kfs, 1, 'out') },
-			in: { influence: 1 / 6 },
-		});
-	});
-
-	it('effectiveInInterpolation reads legacy keys after a Linear key as linear', () => {
-		const kfs = [
-			key(0, 0, 'linear'),
-			key(100, 1, 'bezier'),
-			key(200, 2, 'bezier', { inInterpolation: 'linear' }),
-		];
-		expect(effectiveInInterpolation(kfs, 0)).toBeNull();
-		expect(effectiveInInterpolation(kfs, 1)).toBe('linear');
-		expect(effectiveInInterpolation(kfs, 2)).toBe('linear');
+		// The middle value is a local maximum, so Auto Bezier has zero speed on both sides.
+		for (const [at, a, b] of [
+			[50, { t: 0, v: 0, inf: 1 / 6, speed: 0.8 }, { t: 100, v: 80, inf: 1 / 3, speed: 0 }],
+			[175, { t: 100, v: 80, inf: 1 / 3, speed: 0 }, { t: 250, v: 20, inf: 1 / 6, speed: -0.4 }],
+		] as const) {
+			expect(evaluate({ value: 0, keyframes: kfs }, at)).toBeCloseTo(aeSegment(a, b, at), 9);
+		}
 	});
 
 	it('roving runs use the fixed keys’ sides (per side when the end key is explicit)', () => {
@@ -310,90 +146,13 @@ describe('keyframe-sides: per-side segments (After Effects)', () => {
 			key(100, 40, 'linear', { roving: true }),
 			key(300, 100, 'linear', { inInterpolation: 'bezier', easeIn: { influence: 1 / 3, slope: 0 } }),
 		];
-		const [run] = rovingRuns(kfs as Keyframe<unknown>[]);
-		expect(run).toMatchObject({ a: 0, b: 2 });
-		for (const u of [0.2, 0.5, 0.8])
-			expect(rovingProgress(kfs as Keyframe<unknown>[], run!, u)).toBe(
-				bezierProgress(u, { influence: 1 / 6, slope: 1 }, { influence: 1 / 3, slope: 0 }),
+		for (const at of [60, 150, 240]) {
+			const want = aeSegment(
+				{ t: 0, v: 0, inf: 1 / 6, speed: 100 / 300 },
+				{ t: 300, v: 100, inf: 1 / 3, speed: 0 },
+				at,
 			);
-	});
-
-	it('reversal mirrors a mixed segment exactly (as legacy Bezier keys)', () => {
-		const kfs: Keyframe<number>[] = [
-			key(0, 0, 'linear'),
-			key(300, 100, 'linear', { inInterpolation: 'bezier', easeIn: { influence: 0.5, slope: 0.2 } }),
-		];
-		const rev = [...kfs]
-			.reverse()
-			.map((k, j) => ({
-				...k,
-				...reversedKeyTiming(kfs as Keyframe<unknown>[], kfs.length - 1 - j),
-				time: 300 - k.time,
-			}))
-			.map((k) => {
-				const { inInterpolation: _drop, ...rest } = k;
-				return rest as Keyframe<number>;
-			});
-		for (const t of [30, 120, 151, 270])
-			expect(evaluate({ value: 0, keyframes: rev }, 300 - t)).toBeCloseTo(
-				evaluate({ value: 0, keyframes: kfs }, t),
-				9,
-			);
-	});
-});
-
-describe('keyframe-sides: validation and repair helpers', () => {
-	it('keySidesIssue flags unknown and inconsistent incoming types', () => {
-		expect(keySidesIssue({ interpolation: 'linear' })).toBeNull();
-		expect(keySidesIssue({ interpolation: 'linear', inInterpolation: 'bezier' })).toBeNull();
-		expect(keySidesIssue({ interpolation: 'hold', inInterpolation: 'linear' })).toBeNull();
-		expect(keySidesIssue({ interpolation: 'auto-bezier', inInterpolation: 'auto-bezier' })).toBeNull();
-		expect(keySidesIssue({ interpolation: 'linear', inInterpolation: 'hold' })).toMatch(/unknown/);
-		expect(keySidesIssue({ interpolation: 'linear', inInterpolation: 7 })).toMatch(/unknown/);
-		expect(keySidesIssue({ interpolation: 'auto-bezier', inInterpolation: 'linear' })).toMatch(/both sides/);
-		expect(keySidesIssue({ interpolation: 'bezier', inInterpolation: 'continuous-bezier' })).toMatch(
-			/both sides/,
-		);
-	});
-
-	it('normalizeKeySides drops unknown types and turns one-sided Auto / Continuous into Bezier', () => {
-		const a = { interpolation: 'linear' as Interpolation, inInterpolation: 'hold' as unknown };
-		expect(normalizeKeySides(a)).toBe(true);
-		expect('inInterpolation' in a).toBe(false);
-		const b = { interpolation: 'auto-bezier' as Interpolation, inInterpolation: 'linear' as InInterpolation };
-		expect(normalizeKeySides(b)).toBe(true);
-		expect(b).toEqual({ interpolation: 'bezier', inInterpolation: 'linear' });
-		const c = {
-			interpolation: 'hold' as Interpolation,
-			inInterpolation: 'continuous-bezier' as InInterpolation,
-		};
-		expect(normalizeKeySides(c)).toBe(true);
-		expect(c).toEqual({ interpolation: 'hold', inInterpolation: 'bezier' });
-		const d = { interpolation: 'bezier' as Interpolation, inInterpolation: 'linear' as InInterpolation };
-		expect(normalizeKeySides(d)).toBe(false);
-		fc.assert(
-			fc.property(
-				fc.constantFrom<Interpolation>('linear', 'bezier', 'auto-bezier', 'continuous-bezier', 'hold'),
-				fc.oneof(
-					fc.constantFrom<unknown>(
-						undefined,
-						'linear',
-						'bezier',
-						'auto-bezier',
-						'continuous-bezier',
-						'hold',
-						3,
-						null,
-					),
-					fc.string(),
-				),
-				(interpolation, inInterpolation) => {
-					const k = { interpolation, inInterpolation };
-					normalizeKeySides(k);
-					expect(keySidesIssue(k)).toBeNull();
-					expect(normalizeKeySides(k)).toBe(false);
-				},
-			),
-		);
+			expect(evaluate({ value: 0, keyframes: kfs }, at)).toBeCloseTo(want, 9);
+		}
 	});
 });

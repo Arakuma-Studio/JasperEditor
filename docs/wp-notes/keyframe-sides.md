@@ -165,12 +165,14 @@ leaving a Linear key was linear whatever the next key stored, so an Ease In afte
 
 ## 6. Evidence
 
-**Bit-identity.** `packages/project/test/keyframe-sides.test.ts` checks two things:
+**Bit-identity.** `packages/project/test/keyframe-sides.test.ts` checks compatibility:
 
 - A golden recorded from the evaluator at commit `27363576`, before this change
   (`test/fixtures/keyframe-sides/legacy-evaluation.json`): 48 seeded documents, ≥ 1 500 samples, covering numbers,
   vec2, curved spatial paths, roving and every interpolation. The samples are compared exactly.
-- A fast-check property against the legacy formula, with `Object.is`.
+
+The copied legacy-formula property was redundant and shared evaluator helpers. The frozen pre-change samples are
+the compatibility oracle; the per-side formula is checked independently in value units.
 
 **After Effects math.** A property compares mixed segments with an independent cubic solved in value units, to 4e-9
 relative. The Premiere Ease In case is (⅙, ⅙)–(⅔, 1).

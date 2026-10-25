@@ -295,11 +295,12 @@ while every other segment evaluates bit-identically:
 - Already linear spans written with linear eases are left alone.
 
 Multi-point rebuilds measure the effective eases (and the explicit incoming side, `explicitInSide`) on the key list
-**before** inner keys are removed (auto-bezier eases depend on neighbours). Property tests (`ease-sides.test.ts`,
-fast-check): random keys mixing legacy and per-side ones (numbers, and vec2 effect points with a layer-box metric,
-straight and curved) — after `writeSpan` the span follows the cubic to 1e-6, every other segment and key evaluates
-`Object.is`-identically, every key passes INV-011, and `spanEases` reads back exactly the eases written; the same
-through `keyframe.applyEase` with `finish`, invariants and undo / redo.
+**before** inner keys are removed (auto-bezier eases depend on neighbours). Tests (`ease-sides.test.ts`) observe
+`keyframe.applyEase`: a generated scalar span follows an independently solved CSS cubic to 1e-6, other segments
+retain their values, invariants hold, and immutable reapplication is deterministic. A real Transform effect-point
+command checks that the outside Auto Bezier segments retain their pixel-metric values. Multi-point rebuilds and
+path cleanup check the curve/path in the layer box's pixels. Private `writeSpan` / `spanEases` output-shape probes
+are unnecessary: these command results and the public ease-description/clipboard results own their contracts.
 
 ### `keyframe.applyEase { keyframeIds, curve, sections? }`
 
