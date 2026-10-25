@@ -68,6 +68,11 @@ export type MgTemplateBase<P extends Record<string, unknown> = Record<string, un
 	 * `{ok: false}` instead of throwing. Templates without a hook just merge their defaults.
 	 */
 	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
+	/**
+	 * Optional content name of a new clip ("X post · Luna Park"; `MgTemplateInfo.clipName` of @jasper/project): tells
+	 * clips of this template apart in the timeline and export messages. Absent or empty = the template name. Pure.
+	 */
+	clipName?(params: Readonly<Record<string, unknown>>): string | undefined;
 };
 
 /** Result of `MgTemplateBase.fill` (the same shape as `MgTemplateFillResult` of @jasper/project). */

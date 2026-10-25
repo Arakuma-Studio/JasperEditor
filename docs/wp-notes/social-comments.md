@@ -2117,10 +2117,42 @@ was found. A 2160×3840 sequence renders the card sharp at 4K; a 1080×1920 sequ
 
 - A gallery drop onto an occupied timeline track overwrites the clip there (documented placement rule), which cuts
   footage when a comment is dropped on V1.
-- Comments that overlap in time are drawn at the same centred place, so the top one hides the others; Add Another
-  twice from the same source stacks the second copy at the same time on the next track.
-- Bulk import does not read compound ages ("3h", "2 weeks") from one column; use `Ago` + `Time unit`.
-- Every comment clip is named "Social comment", so the Program asset list and the export blocker cannot tell cards
-  apart.
+- Comments that overlap in time are drawn at the same centred place, so the top one hides the others. (Add Another
+  twice from the same source stacking the second copy: fixed in sc/polish.)
+- (Fixed in sc/polish: compound ages in one column; clip names.)
 - X: a six-character repost count touches the like icon.
 - Remotion-path ProRes 4444: opaque pixels decode with alpha 1020/1023 (also for text clips; README § Export).
+
+## Polish (sc/polish)
+
+Fixes of the App QA findings above (`research/app-qa/index.md` N2, N4–N8). Screenshots of the running app are
+outside the repository (`research/polish/`).
+
+### Add another builds a sequence (N2)
+
+See § Add another & bulk import ▸ Chain: without `at`, a copy goes after the last consecutive copy of the source's
+chain, so the clip menu's Add Another on the same clip twice gives three cards one after another on one track.
+
+### Ages in one cell (N4)
+
+See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
+
+### Clip names (N5)
+
+- Templates may name their clips from the content: `clipName?(params)` on the template definition
+  (`@jasper/mg-templates` `types.ts`) and on `MgTemplateInfo` (`@jasper/project`). `mgClipName(info, params)`
+  (`registry/mg-params.ts`) calls it without letting it throw, collapses whitespace and control characters, cuts
+  to 80 characters with "…" and falls back to the template name.
+- `social-comment@1`: `socialClipName` (`packages/mg-templates/src/social/clip-name.ts`) = `VARIANT_LABELS[variant]
+  · <the name the card shows>` (`shownNameParam`: display name on TikTok and X, `@handle` on Instagram and YouTube;
+  32 characters at most), e.g. "X post · Luna Park", "Instagram post comment · @luna.makes"; the label alone when
+  the name is empty.
+- Applied by `clip.addMotionGraphic` (gallery insert and drop, `add_motion_graphic`, bulk import rows; an explicit
+  `name` wins) and `clip.duplicateMotionGraphic` (Add another: the copy is named after its new identity).
+- **Follows the content while automatic.** A clip whose name is automatic — the template name (clips made before
+  content names) or `mgClipName` of its current params (`isMgAutoClipName`) — is renamed by a `clip.update` that
+  changes its params (Properties, the Program text editor, `set_motion_graphic_params`), and Add another names its
+  copy anew. A name the user typed is never replaced (a patch that sets `name` and `params` keeps the given name).
+  Why: names are what the asset chip and the export blockers list; a name left at "X post · Display Name" after the
+  user typed the real name would identify the wrong card. Keyframed params do not rename (the static value counts).
+

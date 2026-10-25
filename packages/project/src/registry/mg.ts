@@ -138,6 +138,11 @@ export type MgTemplateInfo = {
 	 * `params` = `partial` plus the filled values (the defaults are merged after); `filled` = the filled names.
 	 */
 	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
+	/**
+	 * Optional content name of a clip (`mgClipName`): what tells clips of this template apart in the timeline, the
+	 * asset chip and export messages ("X post · Luna Park"); absent or empty = the template name. Pure.
+	 */
+	clipName?(params: Readonly<Record<string, unknown>>): string | undefined;
 };
 
 /** Result of a template fill hook (MgTemplateInfo.fill). */

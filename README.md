@@ -374,6 +374,9 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
   labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
   Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
+- **Clip names:** social comments are named from their content ("X post · Luna Park", "Instagram post comment ·
+  @luna.makes"), so the timeline, the asset chip and export messages tell the cards apart; the name follows edits of
+  the variant and the name until you rename the clip yourself.
 - **Add Another:** on a motion-graphic clip (timeline clip menu, Properties ▸ Template, Motion Templates, Graphics
   menu, palette `mg.addAnother`) adds a copy right after it — after the last consecutive copy already there, so
   pressing it again on the same clip builds a sequence — same length, on the first free video track, one undo

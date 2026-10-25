@@ -3,7 +3,13 @@
 // re-randomizes (`ui.addAnother.reroll`, through the template's fill hook) — one command, so one undo step from the
 // timeline, Properties, the gallery, the palette and MCP alike.
 
-import { fillTemplateParams, mgInstanceParams, validateTemplateParams } from '../../registry/mg-params.ts';
+import {
+	fillTemplateParams,
+	isMgAutoClipName,
+	mgClipName,
+	mgInstanceParams,
+	validateTemplateParams,
+} from '../../registry/mg-params.ts';
 import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { latest } from '../draft-read.ts';
@@ -86,6 +92,10 @@ function duplicateMotionGraphic(doc: DDoc, cmd: CommandOf<'clip.duplicateMotionG
 		linkId: null,
 		groupId: null,
 		params: valid.params,
+		// an automatic name follows the copy's content (its new identity); a name the user gave is kept
+		name: isMgAutoClipName(info, source.name, source.params as Record<string, unknown>)
+			? mgClipName(info, valid.params)
+			: source.name,
 	} as MgClip;
 	// A keyframed param shows its keys, not the static value: re-randomized and given params drop theirs.
 	if (copy.paramKeyframes) {

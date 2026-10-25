@@ -173,3 +173,45 @@ export function mgInstanceParams(
 	for (const n of reroll) delete params[n];
 	return { params: { ...params, ...own }, reroll };
 }
+
+/** Longest content name of a motion-graphic clip (`mgClipName`). */
+export const MG_CLIP_NAME_MAX = 80;
+
+/**
+ * The name a new clip of `info` with `params` gets: the template's `clipName` hook (whitespace and control
+ * characters collapsed, cut to `MG_CLIP_NAME_MAX` with "…"), else the template name. Never throws.
+ */
+export function mgClipName(
+	info: Pick<MgTemplateInfo, 'name' | 'clipName'>,
+	params: Record<string, unknown>,
+): string {
+	let raw: unknown;
+	try {
+		raw = info.clipName?.(params);
+	} catch {
+		raw = undefined;
+	}
+	if (typeof raw !== 'string') return info.name;
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this removes
+	const name = raw.replace(/[\u0000-\u001f\u007f\s]+/gu, ' ').trim();
+	if (!name) return info.name;
+	const chars = [...name];
+	return chars.length <= MG_CLIP_NAME_MAX
+		? name
+		: `${chars
+				.slice(0, MG_CLIP_NAME_MAX - 1)
+				.join('')
+				.trimEnd()}…`;
+}
+
+/**
+ * Whether `name` is an automatic name of a clip of `info` with `params` (the template name — what clips were named
+ * before content names — or `mgClipName`), so it may follow the params; false once the user renamed the clip.
+ */
+export function isMgAutoClipName(
+	info: Pick<MgTemplateInfo, 'name' | 'clipName'>,
+	name: string,
+	params: Record<string, unknown>,
+): boolean {
+	return name === info.name || name === mgClipName(info, params);
+}
