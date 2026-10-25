@@ -99,14 +99,16 @@ function missingTemplateAssets(
  */
 function useClipAssetScope(clipId: string) {
 	const reporter = useContext(MissingAssetReporterContext);
-	const state = useRef<{ entries: Map<string, MissingTemplateAsset>; sent: string; timer: number | null }>({
+	// Reports of one commit are batched into one call (a microtask after the commit's effects; no timers: S11:ANM-006).
+	const state = useRef<{ entries: Map<string, MissingTemplateAsset>; sent: string; queued: number }>({
 		entries: new Map(),
 		sent: '[]',
-		timer: null,
+		queued: 0,
 	});
 	const scope = useMemo(() => {
-		const flush = () => {
-			state.current.timer = null;
+		const flush = (ticket: number) => {
+			if (ticket !== state.current.queued) return; // superseded or unmounted
+			state.current.queued = 0;
 			const seen = new Map<string, MissingTemplateAsset>();
 			for (const a of state.current.entries.values()) seen.set(JSON.stringify(a), a);
 			const key = JSON.stringify([...seen.keys()].sort());
@@ -114,18 +116,21 @@ function useClipAssetScope(clipId: string) {
 			state.current.sent = key;
 			reporter?.(clipId, [...seen.values()]);
 		};
+		let tickets = 0;
 		return {
 			report(id: string, asset: MissingTemplateAsset | null) {
 				if (asset) state.current.entries.set(id, asset);
 				else state.current.entries.delete(id);
-				if (reporter && state.current.timer === null) state.current.timer = window.setTimeout(flush, 0);
+				if (!reporter || state.current.queued !== 0) return;
+				const ticket = ++tickets;
+				state.current.queued = ticket;
+				queueMicrotask(() => flush(ticket));
 			},
 		};
 	}, [reporter, clipId]);
 	useEffect(
 		() => () => {
-			if (state.current.timer !== null) window.clearTimeout(state.current.timer);
-			state.current.timer = null;
+			state.current.queued = 0;
 			if (state.current.sent !== '[]') reporter?.(clipId, []);
 			state.current.sent = '[]';
 		},
