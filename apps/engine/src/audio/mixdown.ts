@@ -26,7 +26,7 @@ import {
 	type RenderSnapshot,
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { clipDecodeArgs, hasSoxr, PcmStreamReader } from './decode.ts';
+import { clipDecodeArgs, hasSoxr, needsSampleExactDecode, PcmStreamReader } from './decode.ts';
 import {
 	type DeliveryCodec,
 	type DeliveryOutcome,
@@ -39,7 +39,11 @@ import {
 // audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
 installAudioFxProcessors();
 
-export type MixSource = { path: string; streams: readonly AudioStream[] };
+/**
+ * An online clip source. `container` (ffprobe `format_name`) makes streams the browser cannot decode decode
+ * sample-exactly, on the timeline of the playback audio previews play (`needsSampleExactDecode`); absent = seek.
+ */
+export type MixSource = { path: string; streams: readonly AudioStream[]; container?: string };
 
 export type MixdownOptions = {
 	ff: Ffmpeg;
@@ -198,6 +202,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			offset: at.offset,
 			length: at.length,
 			soxr,
+			sampleExact: needsSampleExactDecode(m, stream),
 		});
 		const child = o.ff.spawnRaw(args, {
 			...(o.signal ? { signal: o.signal } : {}),

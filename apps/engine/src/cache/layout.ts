@@ -6,6 +6,7 @@
 //   kind         location (appdir-relative)                                   entry key
 //   media-cache  cache/<fp64>/{keyframes,poster,sprite,peaks}-<hash>[.ext|/]  <fp64>/<name>-<hash>
 //   proxies      cache/<fp64>/proxy-{720,540}-<hash>.{mp4,webm}              <fp64>/proxy-<tier>-<hash>
+//                cache/<fp64>/playback-audio-<hash>[.json|/]  (WAV per stream) <fp64>/playback-audio-<hash>
 //   luts         cache/luts/<sha256>.cube                                    <sha256>
 //   warp         cache/warp/<key40>.mov                                      <key40>
 //   retime       cache/retime/<key40>.mkv | frametimes-<hash32>.json         <key40> | frametimes-<hash32>
@@ -37,7 +38,12 @@ export const KIND_DEFS: readonly KindDef[] = [
 		label: 'Media cache files',
 		description: 'Waveform peaks, poster frames, filmstrips and keyframe indexes of imported media',
 	},
-	{ kind: 'proxies', label: 'Proxies', description: 'Playback proxies (720p / 540p) of imported media' },
+	{
+		kind: 'proxies',
+		label: 'Proxies',
+		description:
+			'Playback proxies (720p / 540p) of imported media, and playback audio of audio the browser cannot decode',
+	},
 	{
 		kind: 'luts',
 		label: 'Colour LUTs',
@@ -123,7 +129,10 @@ export type Orphan = { path: string; bytes: number; mtimeMs: number };
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const KEY40 = /^[0-9a-f]{40}$/;
-const DERIVATIVE = /^(keyframes|poster|sprite|peaks|proxy-720|proxy-540)-([0-9a-f]{6,64})(\.[a-z0-9]+)?$/;
+const DERIVATIVE =
+	/^(keyframes|poster|sprite|peaks|proxy-720|proxy-540|playback-audio)-([0-9a-f]{6,64})(\.[a-z0-9]+)?$/;
+/** Derivatives counted as playback copies (`proxies`) rather than media cache files. */
+const isPlaybackCopy = (name: string) => name.startsWith('proxy-') || name === 'playback-audio';
 const JOB_ID = /^job_[0-9a-f]{16}$/;
 const ROTO_KEY = /^[0-9a-f]{32}$/;
 const PREVIEW_FORMAT = /^[0-9a-f]{16}$/;
@@ -215,7 +224,7 @@ export function entryOfPath(appdir: string, abs: string, stillHint?: boolean): E
 		if (b && HEX64.test(b) && c) {
 			const m = DERIVATIVE.exec(c);
 			if (!m) return null;
-			const kind: CacheKind = m[1]!.startsWith('proxy-') ? 'proxies' : 'media-cache';
+			const kind: CacheKind = isPlaybackCopy(m[1]!) ? 'proxies' : 'media-cache';
 			return entryRef(kind, `${b}/${m[1]}-${m[2]}`);
 		}
 		return null;
@@ -345,7 +354,7 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 				const m = DERIVATIVE.exec(f.name);
 				if (!m) continue;
 				const key = `${d.name}/${m[1]}-${m[2]}`;
-				const kind: CacheKind = m[1]!.startsWith('proxy-') ? 'proxies' : 'media-cache';
+				const kind: CacheKind = isPlaybackCopy(m[1]!) ? 'proxies' : 'media-cache';
 				const g = groups.get(key) ?? { kind, paths: [] };
 				g.paths.push(fp);
 				groups.set(key, g);

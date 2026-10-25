@@ -161,6 +161,34 @@ export function mediaSrc(
 		: media.url;
 }
 
+/**
+ * pp-wma-preview: the audio URL a preview plays for stream `streamIndex` (container index, `channels.streamIndex`) of a
+ * media: its playback audio when the browser cannot decode the original's audio (null while it is not ready: silent,
+ * never the undecodable original), else `mediaSrc`.
+ */
+export function audioSrc(
+	media: Pick<MediaHandle, 'url' | 'proxyUrl' | 'browserDecodable' | 'playbackAudio'>,
+	streamIndex: number,
+	options: Pick<RenderOptions, 'useProxies'>,
+): string | null {
+	if (media.playbackAudio === undefined) return mediaSrc(media, options);
+	const urls = media.playbackAudio;
+	if (!urls) return null;
+	return urls[String(streamIndex)] ?? Object.values(urls)[0] ?? null;
+}
+
+/**
+ * pp-wma-preview: `<Video>` props for media whose audio the browser cannot decode: no audio track (an index past every
+ * track), so the picture plays instead of the whole element failing on the undecodable track. The sound plays from
+ * the playback audio (`audioSrc`).
+ */
+export function videoAudioTrackProps(media: Pick<MediaHandle, 'playbackAudio'>): {
+	audioStreamIndex?: number;
+} {
+	return media.playbackAudio === undefined ? {} : { audioStreamIndex: NO_AUDIO_TRACK };
+}
+const NO_AUDIO_TRACK = 1_000_000;
+
 /** Where a video layer gets its picture from (S03:KND-010). */
 export type VideoSource =
 	/** `@remotion/media` `<Video>` (WebCodecs): everything a browser decodes, VP8/VP9 alpha included. */

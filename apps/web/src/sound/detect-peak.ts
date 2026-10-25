@@ -13,7 +13,7 @@ import {
 	type Rational,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { decodeMediaRange } from '../audio/browser-decode.ts';
+import { browserAudioSource, decodeMediaRange } from '../audio/browser-decode.ts';
 import { t } from '../i18n/runtime.ts';
 import { resolveMediaHandle } from '../panels/program/render-doc.ts';
 import type { AnalyzeRequest, AnalyzeResponse } from './analyze.worker.ts';
@@ -109,10 +109,12 @@ export async function detectClipPeak(
 	const truncated = span > DETECT_MAX_SEC * F;
 	const c1 = c0 + Math.min(span, DETECT_MAX_SEC * F);
 	if (!(c1 > c0)) throw new DetectPeakError(t('The clip is empty'));
-	const url = h.proxyUrl && h.browserDecodable === false ? h.proxyUrl : h.url;
+	// pp-wma-preview: audio the browser cannot decode is read from the engine's playback audio.
+	const src = browserAudioSource(h, clip.channels.streamIndex);
+	if (!src) throw new DetectPeakError(t('The clip’s audio is still being prepared for playback'));
 	let dec: Awaited<ReturnType<DetectDeps['decode']>>;
 	try {
-		dec = await deps.decode(url, clip.channels.streamIndex, c0, c1, mediaTimeMap(asset) ?? undefined);
+		dec = await deps.decode(src.url, src.streamIndex, c0, c1, mediaTimeMap(asset) ?? undefined);
 	} catch (e) {
 		throw new DetectPeakError(
 			t('The audio could not be decoded: {0}', e instanceof Error ? e.message : String(e)),

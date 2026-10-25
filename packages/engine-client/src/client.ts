@@ -125,6 +125,7 @@ export type MediaVariant =
 	| 'poster'
 	| 'sprite.json'
 	| 'peaks.json'
+	| 'playback-audio.json'
 	| { proxy: '720' | '540' }
 	| { sprite: number }
 	| { peaks: number };
@@ -845,6 +846,7 @@ export class EngineClient {
 		if (variant === 'poster') return this.url(`/media/${k}/poster.jpg`);
 		if (variant === 'sprite.json') return this.url(`/media/${k}/sprite.json`);
 		if (variant === 'peaks.json') return this.url(`/media/${k}/peaks.json`);
+		if (variant === 'playback-audio.json') return this.url(`/media/${k}/playback-audio.json`);
 		if ('proxy' in variant) return this.url(`/media/${k}/proxy/${variant.proxy}`);
 		if ('sprite' in variant) return this.url(`/media/${k}/sprite/${variant.sprite}.jpg`);
 		return this.url(`/media/${k}/peaks/${variant.peaks}.bin`);

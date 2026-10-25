@@ -102,6 +102,12 @@ export type MediaHandle = {
 	 */
 	browserDecodable?: boolean;
 	/**
+	 * pp-wma-preview: the browser cannot decode the media's audio (`needsPlaybackAudio`: WMA, AC-3, ALAC…). Previews
+	 * play the engine's playback audio instead — container stream index → WAV URL — and are silent while it is `null`
+	 * (being made, failed). Absent = the original's audio plays. Exports never use it: they decode the original.
+	 */
+	playbackAudio?: Record<string, string> | null;
+	/**
 	 * Interpret Footage ▸ field order / alpha: what decoders apply to the pixels (deinterlace, unpremultiply, drop or
 	 * invert the alpha). The browser cannot, so previews and Remotion renders show the variant picture the engine made
 	 * with exactly these filters (`pixelVariant`: proxy / display derivative); the native export applies them itself.

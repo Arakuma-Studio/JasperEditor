@@ -29,7 +29,7 @@ export const EVENT_PAYLOADS = {
 	'media.updated': z.object({
 		mediaKey: z.string(),
 		status: z.enum(['online', 'missing', 'processing', 'error']),
-		derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema).optional(),
+		derivatives: z.partialRecord(DerivativeKindSchema, DerivativeStatusSchema).optional(),
 	}),
 	'derivative.ready': z.object({ mediaKey: z.string(), kind: DerivativeKindSchema, url: z.string() }),
 	/** An interpreted picture (display / proxy / master of a pixel variant) is ready. */

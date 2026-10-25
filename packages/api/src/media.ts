@@ -89,7 +89,19 @@ export const MediaRegisterResponseSchema = z.object({
 });
 export type MediaRegisterResponse = z.infer<typeof MediaRegisterResponseSchema>;
 
-export const DERIVATIVE_KINDS = ['keyframes', 'poster', 'sprite', 'peaks', 'proxy-720', 'proxy-540'] as const;
+/**
+ * `playback-audio` (pp-wma-preview): a lossless 32-bit float WAV of every audio stream of a file whose audio the browser
+ * cannot decode (`needsPlaybackAudio`, @jasper/project), played by previews instead of the original's audio.
+ */
+export const DERIVATIVE_KINDS = [
+	'keyframes',
+	'poster',
+	'sprite',
+	'peaks',
+	'proxy-720',
+	'proxy-540',
+	'playback-audio',
+] as const;
 export const DerivativeKindSchema = z.enum(DERIVATIVE_KINDS);
 export type DerivativeKind = z.infer<typeof DerivativeKindSchema>;
 
@@ -106,7 +118,11 @@ export type DerivativeStatus = z.infer<typeof DerivativeStatusSchema>;
 export const MediaStatusSchema = z.object({
 	mediaKey: z.string(),
 	status: z.enum(['online', 'missing', 'processing', 'error']),
-	derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema),
+	/**
+	 * Every kind this engine knows; partial so a client accepts an engine from before a kind existed (pp-wma-preview:
+	 * `playback-audio`) instead of failing the whole status.
+	 */
+	derivatives: z.partialRecord(DerivativeKindSchema, DerivativeStatusSchema),
 });
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 
@@ -153,6 +169,26 @@ export const PeaksHeaderSchema = z.object({
 		.optional(),
 });
 export type PeaksHeader = z.infer<typeof PeaksHeaderSchema>;
+
+/**
+ * `GET /media/:key/playback-audio.json` (pp-wma-preview): the playback audio's streams, one WAV each
+ * (`/media/:key/playback-audio/<index>.wav`, `index` = the container stream index clips store in
+ * `channels.streamIndex`), same sample rate and channel count as the original stream, `frames` samples per channel.
+ */
+export const PlaybackAudioHeaderSchema = z.object({
+	version: z.literal(1),
+	codec: z.literal('pcm_f32le'),
+	streams: z.array(
+		z.object({
+			index: z.number().int().min(0),
+			sampleRate: z.number().int().positive(),
+			channels: z.number().int().positive(),
+			frames: z.number().int().min(0),
+			url: z.string(),
+		}),
+	),
+});
+export type PlaybackAudioHeader = z.infer<typeof PlaybackAudioHeaderSchema>;
 
 export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 
