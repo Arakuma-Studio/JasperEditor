@@ -426,7 +426,7 @@ describe('load repair (schema v9 fields)', () => {
 		const audio = Object.values(seq.clips).find((c) => c.kind === 'audio')!;
 		(audio as { caption?: unknown }).caption = { groupId: r.groupId, words: [] };
 		(seq.captionGroups[r.groupId] as { rules: unknown }).rules = 'bad';
-		(doc as { subtitleTemplates: Record<string, unknown> }).subtitleTemplates['junk'] = { format: 'nope' };
+		(doc as { subtitleTemplates: Record<string, unknown> }).subtitleTemplates.junk = { format: 'nope' };
 		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-SUBTITLE' || i.code)).toBe(true);
 		const ids = createCounterIdSource(900);
 		const a = repairDocument(doc, ids);

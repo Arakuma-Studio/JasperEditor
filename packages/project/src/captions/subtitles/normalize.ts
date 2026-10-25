@@ -87,7 +87,7 @@ export function normalizeSubtitleClips(doc: Draft<ProjectDocument>, newKeyId: ()
 	const delta = txDelta(doc as ProjectDocument);
 	if (delta) {
 		for (const { sid, before, after } of delta.clips) {
-			if (!after || after.kind !== 'text') continue;
+			if (after?.kind !== 'text') continue;
 			if ((after as { caption?: unknown }).caption === undefined) continue;
 			upkeep(doc, sid, before, after, newKeyId);
 		}

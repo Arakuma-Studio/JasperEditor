@@ -148,7 +148,7 @@ export function clipCaptionProblem(clip: Clip): string | null {
 
 /** The readable subtitle data of a clip, or null (not a subtitle, or unreadable). */
 export function captionOf(clip: Clip | undefined | null): TextClipCaption | null {
-	if (!clip || clip.kind !== 'text') return null;
+	if (clip?.kind !== 'text') return null;
 	const v = (clip as { caption?: unknown }).caption;
 	if (v === undefined) return null;
 	return clipCaptionProblem(clip) ? null : (v as TextClipCaption);
