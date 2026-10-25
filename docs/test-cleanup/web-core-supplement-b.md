@@ -78,7 +78,7 @@ Independent source: spec12 §2.5 P3-R4, ARCHITECTURE D-51. Stable seam/non-test 
 | Named case | Outcome | Concrete oracle / failure protection |
 |---|---|---|
 | the Program monitor plays the preview document while it is on; the session document is untouched | REWRITE | Proposal toggles duration 4 s↔17:10, transient supersedes preview, committed doc/history unchanged. Remove exact chip/history copy assertions. |
-| the render document carries proposal audio across A/B and rebuilds with stable proposed ids | REWRITE | A/B render documents contain bed alone or bed+hit+boom and revert correctly; preview IDs survive unrelated edit. Remove private solid-object identity. |
+| the render document carries the proposal audio, and A/B switching keeps the unchanged clips | REWRITE | A/B render documents contain bed alone or bed+hit+boom and revert correctly; preview IDs survive unrelated edit. Remove private solid-object identity. |
 
 ## `apps/web/test/pwa.test.ts`
 
@@ -279,7 +279,7 @@ Independent source: S02 TL-400…406/480…491/530…549/605…632/740 and cited
 | razor snaps to the playhead even with snapping off (TL-620) | KEEP | Razor within playhead band snaps 50 even global snapping off. Protects razor-specific override. |
 | rate stretch doubles the duration and halves the speed (AC-12d through the tool) | KEEP | Rate Stretch 120→240 frames changes rate 1→0.5. Protects time-stretch tool. |
 | Escape cancels a trim with no entry | KEEP | Cancel trim restores 0–100 and history unchanged. Distinct trim transaction abort. |
-| AC-3c: \\ then \\ returns to the exact prior zoom and scroll | KEEP | Two zoom-to-sequence toggles restore exact 7.3/123.4 saved view. Protects user viewport restoration. |
+| AC-3c: \ then \ returns to the exact prior zoom and scroll | KEEP | Two zoom-to-sequence toggles restore exact 7.3/123.4 saved view. Protects user viewport restoration. |
 | Alt+wheel zooms around the pointer | KEEP | Wheel zoom retains known anchor frame at 500 px after mixed scrolls. Protects anchor stability in controller. |
 | ruler scrubbing seeks with the floor rule and Shift snaps to markers (AC-9b) | KEEP | Ruler floor 100.975→100; Shift near 101 snaps marker 103 and seeks 103. Distinct seek rounding. |
 
@@ -441,7 +441,7 @@ Independent source: WP6.5a item7 audition view restoration; S02 TL-120. Stable s
 
 ## Concrete follow-through and limits
 
-The coordinator reports implementing proposal-program copy/identity pruning, deleting the redundant direct save-before-leaving case, and replacing Review UI production mark/reset trust-test hooks with production input tracking driven through the event boundary. Speech fixed waits, driver lifecycle disposal and workspace assertion changes were sent as actionable findings; verify the final coordinator diff for their disposition.
+The coordinator reports implementing proposal-program copy/identity pruning, deleting the redundant direct save-before-leaving case, and replacing Review UI production mark/reset trust-test hooks with production input tracking driven through the event boundary. The coordinator also reports implementing speech wait synchronization, PlaybackDriver disposal, migration oracle/identity pruning, and removal of the fixed nonzero-latency voice-over duplicate. Verify the integrated diff and test results before claiming validation.
 
 PlaybackDriver setup currently constructs real watchdog timers/listeners without calling `dispose()`. Cases ending in native play or a pending audio restart can leave owned handles; dispose each created driver before restoring globals. This is resource cleanup, with no measured duration claim. Speech auto-import's two 50 ms sleeps should become EngineProvider readiness/controlled scheduler synchronization while preserving the no-second-request assertion after undo/redo.
 
