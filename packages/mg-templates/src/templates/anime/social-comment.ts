@@ -15,6 +15,7 @@
 import { CANVASES } from '../../core.ts';
 import {
 	type CommentSpan,
+	fillSocialParams,
 	SOCIAL_PARAM_NAMES,
 	SOCIAL_VARIANTS,
 	type SocialCommentParams,
@@ -28,7 +29,12 @@ import {
 	variantsWithParam,
 } from '../../social/index.ts';
 import { segmentText } from '../../text-units.ts';
-import type { MgAnimeTemplateDefinition, MgTemplateParamUi, MgTemplatePreset } from '../../types.ts';
+import type {
+	MgAnimeTemplateDefinition,
+	MgTemplateFillResult,
+	MgTemplateParamUi,
+	MgTemplatePreset,
+} from '../../types.ts';
 import { ANIME_REFERENCE_FPS } from './common.ts';
 import type { AnimeTween, TemplateTiming } from './motion.ts';
 
@@ -347,6 +353,25 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 
 // -------------------------------------------------------------------------------------------- definition
 
+/**
+ * The template's fill hook (design §7.10, `clip.addMotionGraphic {fill}`): `fillSocialParams` — the params the caller
+ * and the preset left out get believable values for `seed` (identity, stats, the variant's look); given ones are kept.
+ * Returns the given params plus the filled ones and the filled names; never throws.
+ */
+export function fillSocialCommentParams(
+	partial: Record<string, unknown>,
+	seed: number,
+): MgTemplateFillResult {
+	try {
+		const r = fillSocialParams(partial, seed);
+		return r.ok
+			? { ok: true, params: { ...r.params }, filled: [...r.filled] }
+			: { ok: false, error: r.error, issues: r.issues };
+	} catch (e) {
+		return { ok: false, error: e instanceof Error ? e.message : String(e) };
+	}
+}
+
 const DEFAULTS = socialCommentParamsSchema.parse({});
 
 /** The variants with a card of their own (the others draw a "not available yet" card and get no preset). */
@@ -414,6 +439,7 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	defaultDurationSeconds: 5,
 	canvases: [...CANVASES],
 	presets: socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS),
+	fill: fillSocialCommentParams,
 	// grouped like tokcomment's control panel (design §7.9); custom controls are registered by the web app (until then
 	// Properties falls back to the standard editors)
 	ui: {

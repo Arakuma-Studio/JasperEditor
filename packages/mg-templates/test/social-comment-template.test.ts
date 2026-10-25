@@ -1,6 +1,12 @@
 // social-comment@1 (design 2026-10-25 §7.6): definition, the shared schedule (entrances, extras, exit), the text units
 // of the word reveal, the like tick count and the closed-form eases. The real anime.js timelines are compared with the
 // schedule frame by frame in @jasper/motion `test/mg-cue-timing.test.ts`.
+import {
+	applyTransaction,
+	createCounterIdSource,
+	createEmptyProject,
+	defaultRegistries,
+} from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -15,6 +21,7 @@ import {
 	type SocialScheduleInput,
 	socialCardScale,
 	socialComment,
+	socialCommentPresets,
 	socialCommentSchedule,
 	socialCommentSegments,
 	socialLikesTick,
@@ -248,5 +255,61 @@ describe('closed-form template eases', () => {
 		for (let t = 0; t <= 1; t += 0.001) peak = Math.max(peak, easeFunction('jasper.spring')(t));
 		expect(peak).toBeGreaterThan(1.05);
 		expect(peak).toBeLessThan(1.09);
+	});
+});
+
+describe('social-comment@1 presets and fill hook', () => {
+	it('one preset per variant with a card, named "<platform> · <card>"', () => {
+		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
+			['tiktok-reply', 'TikTok · Comment reply'],
+			['tiktok-comment', 'TikTok · Comment'],
+		]);
+		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
+			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
+				true,
+			);
+	});
+
+	it('fills only what the caller and the preset left out, deterministically; bad input is an error, not a throw', () => {
+		const a = socialComment.fill!({ variant: 'tiktok-comment', text: 'hi ==there==', likes: 5000 }, 7);
+		const b = socialComment.fill!({ variant: 'tiktok-comment', text: 'hi ==there==', likes: 5000 }, 7);
+		expect(a).toEqual(b);
+		if (!a.ok) throw new Error(a.error);
+		expect(a.params).toMatchObject({ variant: 'tiktok-comment', text: 'hi ==there==', likes: 5000 });
+		expect(a.filled).not.toContain('text');
+		expect(a.filled).toContain('displayName');
+		expect(socialComment.paramsSchema.safeParse(a.params).success).toBe(true);
+		expect(socialComment.fill!({ bogus: 1 }, 7)).toMatchObject({ ok: false });
+		expect(socialComment.fill!({ likes: -3 }, 7)).toMatchObject({ ok: false });
+	});
+
+	it('clip.addMotionGraphic {fill} with the real registry returns resolved params and the filled names', () => {
+		const ids = createCounterIdSource(1);
+		const doc = createEmptyProject({ ids, name: 'F', preset: 'hd-1080p-30' });
+		const { result } = applyTransaction(
+			doc,
+			{
+				label: 'fill',
+				origin: 'user',
+				commands: [
+					{
+						type: 'clip.addMotionGraphic',
+						at: 0,
+						duration: 150,
+						track: 'V1',
+						placement: 'first-free',
+						template: { id: 'social-comment', version: 1 },
+						params: { variant: 'tiktok-reply', text: 'Part two please' },
+						fill: { seed: 3 },
+					},
+				],
+			},
+			{ ids, now: () => 't', revision: 0, registries: defaultRegistries(mgRegistry) },
+		);
+		expect(result.ok).toBe(true);
+		const r = (result as { results: { params: Record<string, unknown>; filled: string[] }[] }).results[0]!;
+		expect(r.params).toMatchObject({ variant: 'tiktok-reply', text: 'Part two please' });
+		expect(r.params.avatar).toMatchObject({ generated: expect.any(Number) });
+		expect(r.filled).toEqual(expect.arrayContaining(['displayName', 'handle', 'avatar']));
 	});
 });

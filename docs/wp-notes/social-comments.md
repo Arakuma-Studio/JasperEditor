@@ -644,6 +644,30 @@ frame.
 - **Like tick on variants without likes:** the tick needs a variant that shows likes (`socialLikesTick`). On the
   TikTok reply bubble it is ignored.
 
+### Presets, Properties hints, avatar and fill
+
+- **Presets:** `socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS)` gives one preset per variant with a card, id =
+  variant, named "TikTok · Comment reply" and "TikTok · Comment". Its params are the variant's tokcomment defaults
+  (`socialDefaults`) that differ from the schema's. Agents use `"social-comment:tiktok-reply"`.
+- **Groups:** Look (variant, theme, emojiStyle), Author (displayName, handle, avatar, showProfile, verified), Stats
+  (timeValue, timeUnit, likes, replies, reposts, views, showReposts, showViews), Text (text) and Animation (entrance,
+  wordReveal, likeTick).
+- **Visibility:** every param a variant may not draw has `visibleWhen: { param: 'variant', in: variantsWithParam(p) }`.
+- **Custom controls (WP7):**
+  - `text`: multiline, control `social-comment-text`;
+  - likes, replies, reposts and views: `social-count`;
+  - `timeValue` AND `timeUnit`: `social-time` (the control draws value and unit in one row on `timeValue`);
+  - `avatar`: `social-avatar`.
+
+  Until they are registered, Properties shows the standard editors.
+- **Avatar:** it keeps the `{ mediaId } | { generated } | null` union. The union carries `mediaParam()`'s metadata
+  (`x-jasper-kind: "media"`, kinds `["image"]`), so `paramsPropertySpecs` offers the media picker (verified), commands
+  check that a `{ mediaId }` names an image, and every integrity path counts it. The picker shows "None" for a
+  generated avatar; `social-avatar` adds the generated choice.
+- **Fill hook:** `fill = fillSocialCommentParams`, which wraps `fillSocialParams`. It returns the given params plus the
+  filled ones and the filled names, never throws, and returns `{ ok: false }` on bad input. The MCP `TEMPLATES_GUIDE`
+  has a social-comments paragraph and a three-comment batch example.
+
 ### Text, marks and emoji
 
 - **Units:** `socialCommentSegments(text, variant)` gives the `tokenizeComment` spans and the Intl.Segmenter word
