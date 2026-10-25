@@ -37,6 +37,7 @@ import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
+import voiceRoutes from './voice.ts';
 
 const ROUTE_PLUGINS = [
 	capabilitiesRoutes,
@@ -71,6 +72,8 @@ const ROUTE_PLUGINS = [
 	captionRoutes,
 	// Speech and roto require the processing model catalogue.
 	speechRoutes,
+	// Spec 14 TC-001: voice analysis (levels, voicing, frame classes) of media audio streams.
+	voiceRoutes,
 	rotoRoutes,
 	camtrackRoutes,
 	interchangeRoutes,
