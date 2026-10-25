@@ -119,8 +119,8 @@ function save(
 
 describe('Save Preset (buildEffectPreset)', () => {
 	it('stores offsets from the first frame, the chosen intrinsics and effects in stack order', () => {
-		const { h, a, blur } = project();
-		const p = save(h, a, 'anchor-in', { opacity: true, crop: true, effectIds: [blur] });
+		const { h, a, blur, crop } = project();
+		const p = save(h, a, 'anchor-in', { opacity: true, crop: true, effectIds: [crop, blur] });
 		expect(p.source).toMatchObject({ duration: 30, frameRate: { num: 30, den: 1 }, frame: { width: 1920 } });
 		expect(p.intrinsic?.opacity?.keyframes?.map((k) => k.time / F30)).toEqual([5, 25]);
 		expect(p.intrinsic?.blendMode).toBe('screen');
