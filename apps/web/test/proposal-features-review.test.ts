@@ -233,7 +233,8 @@ describe('ghosts of the workflow features', () => {
 		// keys added to an existing clip: where they are
 		const zoom = m.keys.find((k) => k.itemId === 'zoom')!;
 		expect(zoom).toMatchObject({ clipId: f.a, start: 30, end: 37, frames: [30, 37], count: 2 });
-		expect(m.byItem.zoom).toMatchObject({ start: 30, end: 38, keys: 1 });
+		// the keyed clip is also drawn as changed (wash + ghost, like any changed clip); the key band is extra
+		expect(m.byItem.zoom).toMatchObject({ keys: 1, clips: 1, removals: 1 });
 		const tr = m.transitions.find((x) => x.itemId === 'dissolve')!;
 		expect(tr).toMatchObject({ start: 55, duration: 10, change: 'created', name: 'Cross Dissolve' });
 		expect(m.byItem.dissolve!.transitions).toBe(1);
