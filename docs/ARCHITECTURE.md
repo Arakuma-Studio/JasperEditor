@@ -614,7 +614,7 @@ apps/engine/src/
   projects/              # ProjectStore over the filesystem (envelope, atomic writes, versions, view, leases)
   export/                # planner (native | remotion), native filtergraph builder, output verification
   remotion/              # bundle cache, selectComposition/renderMedia/renderStill, license key
-  fonts/                 # curated catalog from @fontsource packages, /api/fonts, /fonts/*
+  fonts/                 # curated catalog from @fontsource packages + the user font library (<appdir>/fonts), /api/fonts, /fonts/*
   mg/                    # (WP-2G) jasper-mg resolution, capability, render jobs, cache, /api/motion-graphics/*
   agent/                 # (WP-2H) /api/agent/*, WS /agent relay, headless apply, approvals
   routes/                # one plugin file per area; routes/index.ts registers all (WP-00)
@@ -647,7 +647,8 @@ All JSON bodies validated with zod; errors `{code, message, detail?, retryable}`
 | `POST /api/exports` | `{envelope, sequenceId, settings, planId?}` → `EngineJob` | 2F |
 | `GET /renders/:jobId/output` | download (Range) | 2F |
 | `POST /api/stills` | `{envelope, sequenceId, frame, width?}` → job; result `{url}` (PNG) | 2F |
-| `GET /api/fonts`, `GET /fonts/*` | curated catalog + files | 2F |
+| `GET /api/fonts`, `GET /fonts/*` | curated catalog + files (bundled families, then the user font library) | 2F |
+| `GET/POST /api/fonts/library`, `POST /api/fonts/library/install-path`, `DELETE /api/fonts/library/:fontId`, `GET …/:fontId/usage` | user font library: list, install (octet-stream body or local path), remove (agent: user approval), saved projects using a face (`docs/wp-notes/fonts.md`) | wp fonts |
 | `GET /api/motion-graphics/templates` | → catalog with JSON Schemas | 2G |
 | `POST /api/motion-graphics/render` | `{spec: MgRenderSpec, quality: 'preview' \| 'master'}` → job; result `{key, url}` | 2G |
 | `GET /mg/:key/:file` | master/preview files | 2G |

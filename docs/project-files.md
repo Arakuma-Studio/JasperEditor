@@ -118,6 +118,15 @@ fields of later phases are added to v7 until `feat/sound-design` merges to `main
 | `Sequence.master.loudness.analysis.delivery` (`targetLufs`, `truePeakDbtp`, `gainDb`, `limiterCeilingDbtp`, `passes`, `ceilingLimited?`, `deliveredLufs?`) | sound design (fix "preview loudness parity, codec-aware Sound Check, delivery speed"; still v7) | any value accepted in the document (`z.custom`), read with `readLoudnessDelivery` (`LoudnessDeliverySchema`); `mixer.setLoudness` / `soundDesign.applyDelivery` validate it strictly (`E_SCHEMA`). Absent (analyses stored before) or solved for another target / ceiling than the Mix's: the preview plays the one-pass gain `target − integrated` at the target ceiling, as before. Older builds keep it (the analysis is a loose object). Not part of `mixFingerprint` | INV-MIX reports an unreadable one; `drop-loudness-delivery` removes it (the analysis stays). Idempotent |
 | `Sequence.soundDesign.lastCheck.exportAudio` (`codec` aac / opus / pcm, `bitrateKbps?`, `sampleRate?`) | sound design (same fix; still v7) | inside the `z.custom<SoundDesign>` value, read with `readSoundCheckAudio`; absent = checked for the PCM master (summaries stored before). Part of `inputsHash` only when present (older hashes stay valid); `soundCheckStatus(…, {checkFor})` adds the stale reason `codec` | as the other summary fields (`readSoundDesign`) |
 
+### Fonts named by family (wp fonts, still v8)
+
+Text and caption styles reference `doc.fonts[id]` (`FontRef {id, family, source}`); renders resolve `family` at render
+time against the bundled families and the user font library (`<appdir>/fonts`, `docs/wp-notes/fonts.md`): family,
+then a face's PostScript / full / legacy family name. No field was added: a project made with an installed font opens
+in older builds and on machines without the font with the default family (`FONT_FALLBACK` names it), and renders with
+the font as soon as it is installed. The library index (`library.json`, version 1) is app state, not project state:
+it is repaired on open, and a newer index is read-only.
+
 ## Saving
 
 - **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp
