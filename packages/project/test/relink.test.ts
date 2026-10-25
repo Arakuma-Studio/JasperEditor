@@ -141,9 +141,7 @@ describe('path mapping from a located file', () => {
 		expect(formatPath(m.from)).toBe('D:\\');
 		expect(formatPath(m.to)).toBe('/Volumes/Mac');
 		expect(m.commonSuffix).toBe(2);
-		expect(applyMapping(m, 'D:\\Assets\\avatar\\Happy.png')).toBe(
-			'/Volumes/Mac/Assets/avatar/Happy.png',
-		);
+		expect(applyMapping(m, 'D:\\Assets\\avatar\\Happy.png')).toBe('/Volumes/Mac/Assets/avatar/Happy.png');
 		// another drive is not under the mapping
 		expect(applyMapping(m, 'E:\\Cosas\\a.png')).toBeNull();
 	});

@@ -175,10 +175,7 @@ describe('Relink others automatically (engine search)', () => {
 			{
 				assetId: 'dup',
 				step: 'search',
-				candidates: [
-					join(mac, 'Videos/Short A/a/dup.mov'),
-					join(mac, 'Videos/Short A/b/dup.mov'),
-				],
+				candidates: [join(mac, 'Videos/Short A/a/dup.mov'), join(mac, 'Videos/Short A/b/dup.mov')],
 			},
 		]);
 		expect(r.notFound).toEqual(['gone']);
