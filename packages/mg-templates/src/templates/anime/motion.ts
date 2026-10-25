@@ -18,12 +18,21 @@
 import { K_SCALE, MAX_SAMPLES_PER_CLIP, type MgTemplateMotionTiming } from '@jasper/project';
 import { CANVASES, estimateTextWidth, fitCanvas } from '../../core.ts';
 import { K_OPACITY } from '../../motion.ts';
+import { formatCount, socialCommentParamsSchema } from '../../social/index.ts';
 import { needsShaping, segmentText } from '../../text-units.ts';
 import type { AnyAnimeMgTemplate } from '../../types.ts';
 import { calloutParams } from './callout.ts';
 import { counterParams, formatCounterValue } from './counter.ts';
-import { animeEase, animeTemplateEaseName } from './eases.ts';
+import { animeEase, animeTemplateEaseName, easeFunction } from './eases.ts';
 import { lowerThirdAnimParams } from './lower-third-anim.ts';
+import {
+	SOCIAL_CARD_REF_WIDTH,
+	socialCardScale,
+	socialCommentSchedule,
+	socialCommentSegments,
+	socialLikesTick,
+	socialTickCount,
+} from './social-comment.ts';
 import { animeTemplateTiming } from './timing.ts';
 import { titleRevealParams } from './title-reveal.ts';
 
@@ -205,7 +214,7 @@ export function trackValueAt(track: Pick<AnimeTrack, 'initial' | 'tweens'>, ms: 
 	for (const tw of track.tweens) {
 		if (ms < tw.start) break;
 		const p = tw.dur > 0 ? (ms - tw.start) / tw.dur : 1;
-		v = p >= 1 ? tw.to : tw.from + (tw.to - tw.from) * animeEase(tw.ease)(Math.max(0, p));
+		v = p >= 1 ? tw.to : tw.from + (tw.to - tw.from) * easeFunction(tw.ease)(Math.max(0, p));
 	}
 	return round6(v);
 }
@@ -480,6 +489,45 @@ function counterModel(
 	return { tracks, textAt };
 }
 
+/**
+ * social-comment@1: the schedule the implementation builds its timeline from (`socialCommentSchedule`). The card's
+ * scale and opacity show as such, its drop in design px, its tilt as the arc its far corner travels (a nominal card of
+ * 420 × 160 reference px at the 16:9 card scale); a word's or the heart's scale as px of a nominal word / heart size.
+ * The like tick is the displayed count (`textAt`), formatted the way the variant shows it.
+ */
+function socialCommentModel(
+	params: unknown,
+	t: TemplateTiming,
+): Omit<AnimeMotionModel, 'scale' | 'canvas' | 'timing'> {
+	const p = socialCommentParamsSchema.parse(params);
+	const units = p.wordReveal ? socialCommentSegments(p.text, p.variant).units : 0;
+	const s = socialCommentSchedule({ ...t, entrance: p.entrance, units, tick: socialLikesTick(p) });
+	const k = socialCardScale(CANVASES[0]!);
+	const cornerArc = (Math.hypot(SOCIAL_CARD_REF_WIDTH, 160) * k * Math.PI) / 180;
+	const tracks: AnimeTrack[] = s.tracks.map((tr) => {
+		let show: AnimeTrack['show'];
+		if (tr.prop === 'o' || tr.prop === 'f') show = { kind: 'opacity' };
+		else if (tr.target === 0)
+			show =
+				tr.prop === 's'
+					? { kind: 'scale' }
+					: { kind: 'px', perUnit: tr.prop === 'r' ? cornerArc : 1 };
+		else show = { kind: 'px', perUnit: (tr.target === s.heartTarget ? 20 : 24) * k };
+		return { ...tr, show };
+	});
+	const tick = s.tick;
+	let textAt: AnimeMotionModel['textAt'] = null;
+	if (tick) {
+		const fn = easeFunction(tick.ease);
+		textAt = (ms: number) => {
+			const raw = ms <= tick.start ? 0 : ms >= tick.start + tick.dur ? 1 : fn((ms - tick.start) / tick.dur);
+			const r = round6(raw);
+			return formatCount(p.variant, socialTickCount(p.likes, r === 0 || r === 1 ? r : raw), 'likes');
+		};
+	}
+	return { tracks, textAt };
+}
+
 const MODELS: Record<
 	string,
 	(params: unknown, t: TemplateTiming) => Omit<AnimeMotionModel, 'scale' | 'canvas' | 'timing'>
@@ -488,6 +536,7 @@ const MODELS: Record<
 	'lower-third-anim@1': lowerThirdAnimModel,
 	'callout@1': calloutModel,
 	'counter@1': counterModel,
+	'social-comment@1': socialCommentModel,
 };
 
 /** Whether a model exists for an anime template (every shipped one). */
