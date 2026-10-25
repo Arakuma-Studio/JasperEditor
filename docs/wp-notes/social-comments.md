@@ -868,7 +868,7 @@ These fixes are in the shared framework:
     remove it.
 - **Rare capture glitch (Remotion):** once in ≈ 1,100 compared frames, a capture showed a partly re-rastered frame.
   Remotion's own code notes a ≈ 0.1 % frame drop of `captureBeyondViewport` screenshots; it is not template output.
-- **Tolerance policy** (the test): frames at rest — from the end of the entrance and every extra to the start of the
+- **Tolerance policy** (`packages/motion/test/social-parity.ts`, shared by `social-comment-render` and `social-review-render`): frames at rest — from the end of the entrance and every extra to the start of the
   exit — must be byte-identical. Frames while the card animates (entrance, word reveal, like tick, thump, exit) must
   meet the project's parity standard for Chrome-painted layers: ≥ 99 % of the pixels within 3/255, as in the
   layer-bake and determinism tests.
