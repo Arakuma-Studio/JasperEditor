@@ -683,6 +683,26 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 	'textStyle.reset': { type: 'textStyle.reset', clipIds: ['$title'], fields: ['sizePx'] },
 	'textStyle.detach': { type: 'textStyle.detach', clipIds: ['$title'] },
 	'textStyle.delete': { type: 'textStyle.delete', styleId: '$style' },
+	// spec 13 AS-001…AS-020: automatic subtitles as text clips ("$subs" = the new subtitle group).
+	'captions.generate': {
+		type: 'captions.generate',
+		template: 'builtin:pixel-pop',
+		rules: { maxWords: 3, holdSeconds: 0.5 },
+		cutAware: { lookBackSeconds: 0.5 },
+		ref: '$subs',
+	},
+	'captions.alignToCuts': { type: 'captions.alignToCuts', groupId: '$subs' },
+	'captions.regenerate': { type: 'captions.regenerate', groupId: '$subs', rules: { maxWords: 2 } },
+	'subtitleTemplate.apply': {
+		type: 'subtitleTemplate.apply',
+		template: 'builtin:bold-pop',
+		groupId: '$subs',
+		parts: { style: true, animation: true },
+	},
+	'captions.updateGroup': { type: 'captions.updateGroup', groupId: '$subs', name: 'Spanish subtitles' },
+	'captions.convert': { type: 'captions.convert', groupId: '$subs', to: 'caption-track', keepSource: true },
+	'captions.deleteGroup': { type: 'captions.deleteGroup', groupId: '$subs', clips: 'keep' },
+	'subtitleTemplate.save': { type: 'subtitleTemplate.save', clipId: '$title', name: 'My subtitles' },
 };
 
 /** A multi-command transaction showing temp refs. */

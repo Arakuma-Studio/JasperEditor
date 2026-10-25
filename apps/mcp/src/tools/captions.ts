@@ -11,8 +11,10 @@ import {
 	captionClipSpeaker,
 	captionClipsOf,
 	captionClipText,
+	captionCuesForGroup,
 	captionCuesForTrack,
 	captionFormatFromName,
+	captionGroupsOf,
 	DEFAULT_FILLERS,
 	fillerRanges,
 	findFillers,
@@ -27,6 +29,8 @@ import {
 	searchWords,
 	sequenceTimecode,
 	sequenceWords,
+	SubtitleRulesSchema,
+	SubtitleTextSchema,
 	supportsDropFrame,
 	trackLabel,
 	writeCaptionFileBytes,
@@ -50,6 +54,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
+import { CutAwareArg, RangeArg, runOne, templateForCommand, withTimecodes } from './subtitles.ts';
 
 export const CAPTIONS_GUIDE = `Captions and transcripts:
 - Caption tracks ("C1", "C2"… one per language) sit above the video tracks; each caption is a clip on its track, so move_clip / trim_clip / delete_clips (ripple) and sync lock work on captions too. The eye (visible) burns a track into preview and export; the active track is the one new captions go to and that exports embed first.
@@ -58,10 +63,13 @@ export const CAPTIONS_GUIDE = `Captions and transcripts:
 - Caption text: lines separated by "\\n", a blank line starts a new page within one caption; <i>, <b>, <u> are kept and drawn. Word timings (for the karaoke highlight) follow the text; unchanged words keep their times.
 - Transcripts: import_transcript attaches a transcript to a media item (JSON: our {words:[{text,start,end}]} in flicks, Whisper / whisper.cpp JSON, @remotion/captions Caption[] or {text,start,end} in seconds; or any caption file), so text-based editing works without speech recognition. transcript_inspect lists the sequence transcript (words heard through the audio clips, top track first, with indices, times and speakers, and paragraphs); transcript_search finds phrases (case and punctuation ignored, last word may be a prefix).
 - Text-based edits take sequence word indices (inclusive): transcript_select marks In/Out around words (snapped outward to frames), transcript_extract (ripple) / transcript_lift (gap) remove them from every unlocked track, insert_transcript_selection copies them into another sequence. remove_fillers (default um, uh, umm, uhm, erm, er, ah, hmm, mm, mhm; phrases like "you know" win over single words) and remove_pauses (pauses ≥ minSeconds, keepSeconds of air on each side) ripple-delete in one undo step; dryRun lists what would go. rename_speaker renames across transcripts.
-- captions_from_transcript lays the sequence transcript out as captions on a new track (Premiere defaults: 42 characters × 2 lines, 1–7 s, a new caption at a 1 s pause, a speaker change or sentence end once half full; frame-snapped, never overlapping).
+- captions_from_transcript lays the sequence transcript out as captions on a new track (Premiere defaults: 42 characters × 2 lines, 1–7 s, a new caption at a 1 s pause, a speaker change or sentence end once half full; frame-snapped, never overlapping). With output / template / rules / cutAware … it creates subtitles as editable text clips instead (see the automatic subtitles guide).
 - start_export captions: {burnIn, embed (mov_text in MP4/MOV, WebVTT in WebM), sidecar: ["srt", "vtt", …], sidecarTracks}.`;
 
 const TrackArg = z.string().describe('Caption track: "C1", "C2"… or a track id');
+const SubtitleTemplateArg = z
+	.union([z.string().min(1).max(80), z.record(z.string(), z.unknown())])
+	.describe('A subtitle template id ("builtin:pixel-pop", a project or library template id) or a template object');
 const FormatArg = z.enum(CAPTION_FILE_FORMATS);
 const ClipIdsArg = z
 	.array(z.string().min(1))
@@ -253,11 +261,12 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		{
 			title: 'Export captions',
 			description:
-				'Writes a caption track as SRT, WebVTT, SCC, MCC, EBU STL, TTML (IMSC1, exact frame times) or DFXP, in output time of the chosen range (exactly the captions the preview and burn-in show). With path the file is written there (never overwrites: " (2)" is appended); else text formats are returned inline.',
+				'Writes a caption track — or a subtitle group of text clips (groupId, from list_caption_groups) — as SRT, WebVTT, SCC, MCC, EBU STL, TTML (IMSC1, exact frame times) or DFXP, in output time of the chosen range (exactly the captions the preview and burn-in show; a group: its enabled clips on shown tracks). With path the file is written there (never overwrites: " (2)" is appended); else text formats are returned inline.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				track: TrackArg.optional().describe('Caption track (default: the active one)'),
+				groupId: z.string().min(1).optional().describe('Instead of a track: a subtitle group of text clips'),
 				format: FormatArg.optional().describe('Default: from the path extension, else srt'),
 				path: z.string().optional().describe('Absolute output path'),
 				range: z.strictObject({ from: timeArg('Start'), to: timeArg('End (exclusive)') }).optional(),
@@ -267,7 +276,12 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		},
 		async (a) => {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
-			const t = captionTrackOf(seq, a.track);
+			if (a.groupId !== undefined && a.track !== undefined)
+				throw new ToolError('E_INVALID_PARAM', 'Give track or groupId, not both');
+			const group = a.groupId !== undefined ? captionGroupsOf(seq)[a.groupId] : undefined;
+			if (a.groupId !== undefined && !group)
+				throw new ToolError('E_NOT_FOUND', `Subtitle group not found: ${a.groupId}`, 'See list_caption_groups.');
+			const t = group ? null : captionTrackOf(seq, a.track);
 			const fromPath = a.path ? captionFormatFromName(extname(a.path)) : null;
 			const format: CaptionFileFormat = a.format ?? fromPath ?? 'srt';
 			const range = a.range
@@ -275,11 +289,12 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				: undefined;
 			if (range && range.end <= range.start)
 				throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
-			const cues = captionCuesForTrack(doc, seq, t.id, range);
-			const bytes = writeCaptionFileBytes({ cues, blocks: [...(t.vttBlocks ?? [])], warnings: [] }, format, {
+			const cues = group ? captionCuesForGroup(seq, group.id, range) : captionCuesForTrack(doc, seq, t!.id, range);
+			const language = group ? group.language : (t!.language ?? 'en');
+			const bytes = writeCaptionFileBytes({ cues, blocks: [...(t?.vttBlocks ?? [])], warnings: [] }, format, {
 				rate: seq.settings.frameRate,
 				dropFrame: a.dropFrame ?? (supportsDropFrame(seq.settings.frameRate) ? seq.settings.dropFrame : true),
-				language: t.language ?? 'en',
+				language: language === 'und' ? 'en' : language,
 			});
 			if (a.path) {
 				let dest = absolutePath(a.path);
@@ -945,13 +960,16 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		ctx,
 		'captions_from_transcript',
 		{
-			title: 'Create captions from the transcript',
+			title: 'Create subtitles / captions from the transcript',
 			description:
-				'Lays the sequence transcript (or words fromWord..toWord) out as captions on a new caption track (or `track`): maxChars per line (42), lines (2), minSeconds (1), maxSeconds (7), gapFrames (0), breakPauseSeconds (1). Frame-snapped and never overlapping; short captions extend into the following silence.',
+				'Lays the transcript out as subtitles in ONE undo step. With any of output, template, rules, text, cutAware, dryRun, source, range, trackName or nest it runs Create Subtitles (spec 13): subtitles as editable text clips on a new top video track "Subtitles" (output "text-clips", the default) in a subtitle group, or a caption track (output "caption-track"); a template ("builtin:pixel-pop", "builtin:bold-pop", "builtin:subtitles"… or a project / library template, see list_subtitle_templates) brings the style, animation and default rules; cut-aware timing (default on) never runs a subtitle across a picture cut; dryRun returns the statistics and the first subtitles. Otherwise (only the original arguments) it makes a caption track with the Premiere rules as before: maxChars per line (42), lines (2), minSeconds (1), maxSeconds (7), gapFrames (0), breakPauseSeconds (1), fromWord..toWord, preset.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
-				track: z.string().optional().describe('"new" (default) or a caption track'),
+				track: z
+					.string()
+					.optional()
+					.describe('"new" (default) or a caption track (caption-track output) / video track (text clips)'),
 				maxChars: z.number().int().min(1).max(200).optional(),
 				lines: z.number().int().min(1).max(4).optional(),
 				minSeconds: z.number().min(0).optional(),
@@ -960,39 +978,107 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				breakPauseSeconds: z.number().min(0).optional(),
 				fromWord: z.number().int().min(0).optional(),
 				toWord: z.number().int().min(0).optional(),
-				name: z.string().optional(),
+				name: z.string().optional().describe('Track name (captions) / subtitle group name'),
 				language: z.string().optional(),
-				preset: z.string().optional().describe('Style preset for the new track'),
+				preset: z.string().optional().describe('Caption style preset for the new caption track (original path)'),
+				output: z.enum(['text-clips', 'caption-track']).optional(),
+				template: SubtitleTemplateArg.optional(),
+				rules: SubtitleRulesSchema.optional().describe(
+					'maxChars 7–72, lines 1–3, maxWords 1–20|null, minSeconds, maxSeconds, gapFrames 0–30, breakPauseSeconds, holdSeconds|null, punctuation never|half|always',
+				),
+				text: SubtitleTextSchema.optional(),
+				cutAware: CutAwareArg.optional(),
+				source: z
+					.union([
+						z.literal('sequence-transcript'),
+						z.strictObject({ mediaId: z.string().min(1) }),
+						z.strictObject({ clipIds: z.array(z.string().min(1)).min(1).max(20_000) }),
+					])
+					.optional()
+					.describe('Whose words: the sequence transcript (default), one media, or some clips'),
+				range: RangeArg.optional().describe('Only words in this sequence range'),
+				trackName: z.string().min(1).max(120).optional(),
+				nest: z.boolean().optional().describe('Put the subtitles in a nested sequence (they then do not follow ripple edits)'),
+				dryRun: z.boolean().optional(),
 			},
 			annotations: EDIT,
 		},
 		async (a, extra) => {
-			const rules = Object.fromEntries(
-				(['maxChars', 'lines', 'minSeconds', 'maxSeconds', 'gapFrames', 'breakPauseSeconds'] as const)
-					.filter((k) => a[k] !== undefined)
-					.map((k) => [k, a[k]]),
+			const legacy = (['maxChars', 'lines', 'minSeconds', 'maxSeconds', 'gapFrames', 'breakPauseSeconds'] as const)
+				.filter((k) => a[k] !== undefined)
+				.map((k) => [k, a[k]]);
+			const generate = (
+				['output', 'template', 'rules', 'text', 'cutAware', 'source', 'range', 'trackName', 'nest', 'dryRun'] as const
+			).some((k) => a[k] !== undefined);
+			if (!generate) {
+				const rules = Object.fromEntries(legacy);
+				const commands: unknown[] = [
+					{
+						type: 'transcript.createCaptions',
+						...(a.track ? { track: a.track } : {}),
+						...(Object.keys(rules).length ? { rules } : {}),
+						...(a.fromWord !== undefined ? { fromWord: a.fromWord } : {}),
+						...(a.toWord !== undefined ? { toWord: a.toWord } : {}),
+						...(a.name ? { name: a.name } : {}),
+						...(a.language ? { language: a.language } : {}),
+						ref: '$captions',
+					},
+				];
+				if (a.preset) commands.push({ type: 'caption.applyPreset', presetId: a.preset, trackId: '$captions' });
+				const res = await transact(
+					ctx,
+					a.projectId,
+					{ label: 'Create Captions', commands, ...(a.sequenceId ? { sequenceId: a.sequenceId } : {}) },
+					extra,
+				);
+				const ok = requireOk(res);
+				return jsonResult(txBody(res, ok));
+			}
+			if (a.fromWord !== undefined || a.toWord !== undefined)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'fromWord / toWord apply to the original caption path only',
+					'With Create Subtitles arguments use range {from, to} (sequence times).',
+				);
+			if (a.preset)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'preset applies to the original caption path only',
+					'Use template (list_subtitle_templates), or style_captions after creating a caption track.',
+				);
+			const { doc } = await loadDoc(ctx, a.projectId);
+			const seq = pickSequence(doc, a.sequenceId);
+			const template = await templateForCommand(ctx, doc, a.template);
+			const rules = { ...Object.fromEntries(legacy), ...(a.rules ?? {}) };
+			const command = Object.fromEntries(
+				Object.entries({
+					type: 'captions.generate',
+					sequenceId: seq.id,
+					source: a.source,
+					range: a.range ? { start: a.range.from, end: a.range.to } : undefined,
+					output: a.output,
+					trackId: a.track,
+					trackName: a.trackName,
+					template,
+					rules: Object.keys(rules).length ? rules : undefined,
+					text: a.text,
+					cutAware: a.cutAware,
+					language: a.language,
+					name: a.name,
+					nest: a.nest,
+					dryRun: a.dryRun,
+				}).filter(([, v]) => v !== undefined),
 			);
-			const commands: unknown[] = [
-				{
-					type: 'transcript.createCaptions',
-					...(a.track ? { track: a.track } : {}),
-					...(Object.keys(rules).length ? { rules } : {}),
-					...(a.fromWord !== undefined ? { fromWord: a.fromWord } : {}),
-					...(a.toWord !== undefined ? { toWord: a.toWord } : {}),
-					...(a.name ? { name: a.name } : {}),
-					...(a.language ? { language: a.language } : {}),
-					ref: '$captions',
-				},
-			];
-			if (a.preset) commands.push({ type: 'caption.applyPreset', presetId: a.preset, trackId: '$captions' });
-			const res = await transact(
+			const { body, result } = await runOne(
 				ctx,
 				a.projectId,
-				{ label: 'Create Captions', commands, ...(a.sequenceId ? { sequenceId: a.sequenceId } : {}) },
+				a.output === 'caption-track' ? 'Create Captions' : 'Create Subtitles',
+				command,
 				extra,
+				seq.id,
 			);
-			const ok = requireOk(res);
-			return jsonResult(txBody(res, ok));
+			if (a.dryRun) return jsonResult({ ...result, captions: withTimecodes(seq, result.captions) });
+			return jsonResult({ ...body, subtitles: result });
 		},
 	);
 }
