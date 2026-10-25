@@ -44,7 +44,14 @@ const RATIO_NEUTRAL = 1 / 3;
 const MAX_KEYS = 10_000;
 const MAX_DEPTH = 8;
 
-export type PremierePitchField = 'bypass' | 'ratio' | 'precision' | 'splicing' | 'overlapping' | 'useDefaults' | 'positiveCents';
+export type PremierePitchField =
+	| 'bypass'
+	| 'ratio'
+	| 'precision'
+	| 'splicing'
+	| 'overlapping'
+	| 'useDefaults'
+	| 'positiveCents';
 /** Premiere's parameter order (`.prproj` Param Index 0…6; ExtendScript "ADBE Pitch Shifter-000i"). */
 const PARAM_ORDER: readonly PremierePitchField[] = [
 	'bypass',
@@ -206,7 +213,8 @@ export function isPremierePitchShifter(
 ): boolean {
 	const id = fold(effectId ?? '');
 	if (id === PITCH_SHIFTER_EFFECT_ID) return false;
-	if (id === PREMIERE_PITCH_SHIFTER_MATCH_NAME || id === fold(PREMIERE_PITCH_SHIFTER_SCRIPT_NAME)) return true;
+	if (id === PREMIERE_PITCH_SHIFTER_MATCH_NAME || id === fold(PREMIERE_PITCH_SHIFTER_SCRIPT_NAME))
+		return true;
 	if (fold(name ?? '') === 'desfasador de tono') return true;
 	return paramNames.slice(0, 256).some((n) => typeof n === 'string' && PREMIERE_ONLY.has(fold(n)));
 }
@@ -286,7 +294,11 @@ export function premierePitchShifterToJasper(
 			const interpolation: Interpolation = (INTERPOLATIONS as readonly unknown[]).includes(k.interpolation)
 				? (k.interpolation as Interpolation)
 				: 'linear';
-			keys.push({ time: Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.round(k.time))), value: v, interpolation });
+			keys.push({
+				time: Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.round(k.time))),
+				value: v,
+				interpolation,
+			});
 		}
 		const value = toNumber(p.value);
 		if (value === null && p.value !== null && p.value !== undefined)
@@ -333,7 +345,7 @@ export function premierePitchShifterToJasper(
 	const positiveCents = switchOf(staticOf('positiveCents', SWITCH_ON));
 	if (raw.get('positiveCents')?.keys.length)
 		report.info(
-			"the keyframes of Premiere's Pitch Shifter \"Use Positive Cents\" were ignored: it only changes how the ratio is displayed",
+			'the keyframes of Premiere\'s Pitch Shifter "Use Positive Cents" were ignored: it only changes how the ratio is displayed',
 			extra,
 		);
 	const cents = (n: number) => centsOfRatio(premiereRatioOf(n));
@@ -358,7 +370,16 @@ export function premierePitchShifterToJasper(
 			}
 			push(a.time, cents(a.value), 'linear');
 			const extraKeys: number[] = [];
-			subdivide(a.time, b.time, g, (t0, t1) => (g(t0) + g(t1)) / 2, snap, extraKeys, 0, MAX_KEYS - nKeys.length);
+			subdivide(
+				a.time,
+				b.time,
+				g,
+				(t0, t1) => (g(t0) + g(t1)) / 2,
+				snap,
+				extraKeys,
+				0,
+				MAX_KEYS - nKeys.length,
+			);
 			for (const t of extraKeys) push(t, g(t), 'linear');
 			added += extraKeys.length;
 		}
@@ -379,9 +400,10 @@ export function premierePitchShifterToJasper(
 
 	// Adobe's splicing settings: automatic (derived from the ratio) unless "Use Appropriate Default Settings" is off.
 	const useDefaultsRaw = raw.get('useDefaults');
-	const useDefaults = [staticOf('useDefaults', SWITCH_ON), ...(useDefaultsRaw?.keys ?? []).map((k) => k.value)].every(
-		switchOf,
-	);
+	const useDefaults = [
+		staticOf('useDefaults', SWITCH_ON),
+		...(useDefaultsRaw?.keys ?? []).map((k) => k.value),
+	].every(switchOf);
 	const splicing = raw.get('splicing') ? staticOf('splicing', Number.NaN) : null;
 	const overlapping = raw.get('overlapping') ? staticOf('overlapping', Number.NaN) : null;
 	if (!useDefaults)
@@ -390,7 +412,9 @@ export function premierePitchShifterToJasper(
 			{ ...extra, instead: 'the same transposition with phase-vocoder processing' },
 		);
 	const precisionRaw = raw.get('precision');
-	const precisions = [staticOf('precision', 1), ...(precisionRaw?.keys ?? []).map((k) => k.value)].map(precisionOf);
+	const precisions = [staticOf('precision', 1), ...(precisionRaw?.keys ?? []).map((k) => k.value)].map(
+		precisionOf,
+	);
 	const precision = precisions[0]!;
 	if (precisions.some((p) => p !== 'high'))
 		report.warn(
@@ -400,7 +424,10 @@ export function premierePitchShifterToJasper(
 
 	const bypassed = input?.bypass === true || switchOf(staticOf('bypass', 0));
 	if (raw.get('bypass')?.keys.length)
-		report.info("the keyframes of Premiere's Pitch Shifter Bypass were ignored; its first state is used", extra);
+		report.info(
+			"the keyframes of Premiere's Pitch Shifter Bypass were ignored; its first state is used",
+			extra,
+		);
 	const instance = typeof input?.instanceName === 'string' ? input.instanceName.trim().slice(0, 256) : '';
 	const spec = defaultEffectRegistry.get(PITCH_SHIFTER_EFFECT_ID);
 	const totalCents = cents(nKeys[0]?.value ?? nValue);
@@ -467,7 +494,8 @@ export function jasperPitchToPremiere(
 				return !k || k.interpolation === 'hold' || k === a.keyframes[a.keyframes.length - 1];
 			});
 		// Premiere's curve between two written keys: linear in the normalised ratio.
-		const premiereMid = (t0: number, t1: number) => centsOfRatio(premiereRatioOf((nOf(total(t0)) + nOf(total(t1))) / 2));
+		const premiereMid = (t0: number, t1: number) =>
+			centsOfRatio(premiereRatioOf((nOf(total(t0)) + nOf(total(t1))) / 2));
 		const out: Keyframe<number>[] = [];
 		for (let i = 0; i < times.length; i++) {
 			const a = times[i]!;
@@ -484,10 +512,13 @@ export function jasperPitchToPremiere(
 		ratio.value = out[0]!.value;
 	}
 	if (clamped)
-		report.warn('the Pitch Shifter shift beyond ±12 semitones was clamped: Premiere\'s Pitch Shifter reaches one octave', {
-			subject,
-			instead: 'a shift of one octave',
-		});
+		report.warn(
+			"the Pitch Shifter shift beyond ±12 semitones was clamped: Premiere's Pitch Shifter reaches one octave",
+			{
+				subject,
+				instead: 'a shift of one octave',
+			},
+		);
 	return { ratio, positiveCents };
 }
 
@@ -529,7 +560,9 @@ function key(time: number, value: number, interpolation: Interpolation): Keyfram
 }
 
 /** Sorted keys with unique times (the later wins). */
-function finishKeys(list: { time: number; value: number; interpolation: Interpolation }[]): Keyframe<number>[] {
+function finishKeys(
+	list: { time: number; value: number; interpolation: Interpolation }[],
+): Keyframe<number>[] {
 	const sorted = [...list].sort((a, b) => a.time - b.time);
 	const out: Keyframe<number>[] = [];
 	for (const k of sorted) {

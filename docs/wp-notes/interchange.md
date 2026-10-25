@@ -106,7 +106,9 @@ Universal Counting Leader), `transitionitem` (alignment, Premiere names, start/e
 matched by their MatchName `effectid` with converted `parameter`s — `premiere-transitions.ts`, the eased slide
 plug-in → Smooth Slide, [smooth-slide.md](smooth-slide.md)), and the filters Basic
 Motion (scale, rotation, center, anchor — uniform scale), Opacity, Crop, Time Remap (constant speed, reverse,
-freeze), Audio Levels and Audio Pan with keyframes; `compositemode` blend modes. Values are written with the
+freeze), Audio Levels and Audio Pan with keyframes, Premiere's audio Pitch Shifter (normalised Transpose Ratio ↔ the
+Pitch Shifter's semitones + cents, read and written in Premiere's representation — `premiere-pitch-shifter.ts`,
+[premiere-pitch-shifter.md](premiere-pitch-shifter.md)); `compositemode` blend modes. Values are written with the
 shortest exact decimal (`exactNum`) and read with 9-digit rounding so property round trips are exact.
 
 ### 2.2 FCPXML 1.9–1.11

@@ -59,7 +59,10 @@ const pluginState = (values: number[], version = 2) =>
 		.join(
 			'',
 		)}</array>\n</prop.pair>\n<prop.pair>\n<key>Type</key>\n<int type='signed' size='32'>0</int>\n</prop.pair>\n<prop.pair>\n<key>Version</key>\n<float>${version}</float>\n</prop.pair>\n</prop.list>\n</prop.map>\n`;
-const spanish = (ratio: number, extra: Partial<Record<string, PremierePitchParam>> = {}): PremierePitchParam[] => {
+const spanish = (
+	ratio: number,
+	extra: Partial<Record<string, PremierePitchParam>> = {},
+): PremierePitchParam[] => {
 	const base: Record<string, PremierePitchParam> = {
 		Derivar: { name: 'Derivar', value: null },
 		'Transponer proporción': { name: 'Transponer proporción', value: ratio },
@@ -120,20 +123,25 @@ describe('Premiere Pitch Shifter: Transpose Ratio', () => {
 
 	it('is monotonic, stays in the Pitch Shifter ranges and round-trips (property)', () => {
 		fc.assert(
-			fc.property(fc.double({ min: 0, max: 1, noNaN: true }), fc.double({ min: 0, max: 1, noNaN: true }), fc.boolean(), (a, b, pos) => {
-				const ma = fromRatio(a, [{ name: 'Use Positive Cents', value: pos }]);
-				const mb = fromRatio(b, [{ name: 'Use Positive Cents', value: pos }]);
-				for (const m of [ma, mb]) {
-					expect(m.params.semitones.value).toBeGreaterThanOrEqual(-12);
-					expect(m.params.semitones.value).toBeLessThanOrEqual(12);
-					expect(Math.abs(m.params.cents.value)).toBeLessThanOrEqual(100);
-				}
-				if (b - a > 1e-6) expect(total(mb)).toBeGreaterThan(total(ma));
-				// Premiere → JasperEditor → Premiere
-				const back = jasperPitchToPremiere(ma.params, new Report());
-				expect(Math.abs(back.ratio.value - a)).toBeLessThan(1e-6);
-				expect(back.positiveCents).toBe(ma.params.cents.value >= 0);
-			}),
+			fc.property(
+				fc.double({ min: 0, max: 1, noNaN: true }),
+				fc.double({ min: 0, max: 1, noNaN: true }),
+				fc.boolean(),
+				(a, b, pos) => {
+					const ma = fromRatio(a, [{ name: 'Use Positive Cents', value: pos }]);
+					const mb = fromRatio(b, [{ name: 'Use Positive Cents', value: pos }]);
+					for (const m of [ma, mb]) {
+						expect(m.params.semitones.value).toBeGreaterThanOrEqual(-12);
+						expect(m.params.semitones.value).toBeLessThanOrEqual(12);
+						expect(Math.abs(m.params.cents.value)).toBeLessThanOrEqual(100);
+					}
+					if (b - a > 1e-6) expect(total(mb)).toBeGreaterThan(total(ma));
+					// Premiere → JasperEditor → Premiere
+					const back = jasperPitchToPremiere(ma.params, new Report());
+					expect(Math.abs(back.ratio.value - a)).toBeLessThan(1e-6);
+					expect(back.positiveCents).toBe(ma.params.cents.value >= 0);
+				},
+			),
 		);
 	});
 
@@ -185,8 +193,10 @@ describe('Premiere Pitch Shifter: Transpose Ratio', () => {
 
 	it('reads a displayed ratio (0.5…2) when asked, or when a value is above 1', () => {
 		expect(
-			premierePitchShifterToJasper({ params: [{ name: 'Transpose Ratio', value: 0.75 }], ratioScale: 'ratio' }, new Report())
-				.decoded.totalCents,
+			premierePitchShifterToJasper(
+				{ params: [{ name: 'Transpose Ratio', value: 0.75 }], ratioScale: 'ratio' },
+				new Report(),
+			).decoded.totalCents,
 		).toBe(centsOfRatio(0.75));
 		expect(fromRatio(1.5).decoded.ratio).toBe(1.5);
 	});
@@ -205,21 +215,31 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 			report,
 		);
 		expect(m).toMatchObject({ effectId: 'jasper.audio.pitch-shifter', enabled: true, name: 'VOZ UWU' });
-		expect(m.decoded).toMatchObject({ precision: 'high', useDefaults: true, positiveCents: true, totalCents: -90.04 });
+		expect(m.decoded).toMatchObject({
+			precision: 'high',
+			useDefaults: true,
+			positiveCents: true,
+			totalCents: -90.04,
+		});
 		expect(m.decoded.splicing).toBeCloseTo(0.088465765119, 12);
 		expect([m.params.semitones.value, m.params.cents.value]).toEqual([-1, 9.96]);
 		expect(report.entries).toEqual([]);
 		// The effect's display name is not an instance name.
 		expect(
-			premierePitchShifterToJasper({ params: spanish(0.3), instanceName: 'Desfasador de tono' }, new Report()).name,
+			premierePitchShifterToJasper({ params: spanish(0.3), instanceName: 'Desfasador de tono' }, new Report())
+				.name,
 		).toBeUndefined();
 	});
 
 	it('bypass (the component flag or the Bypass parameter) disables the effect', () => {
-		expect(premierePitchShifterToJasper({ params: spanish(0.3), bypass: true }, new Report()).enabled).toBe(false);
+		expect(premierePitchShifterToJasper({ params: spanish(0.3), bypass: true }, new Report()).enabled).toBe(
+			false,
+		);
 		expect(
-			premierePitchShifterToJasper({ params: spanish(0.3, { Derivar: { name: 'Derivar', value: true } }) }, new Report())
-				.enabled,
+			premierePitchShifterToJasper(
+				{ params: spanish(0.3, { Derivar: { name: 'Derivar', value: true } }) },
+				new Report(),
+			).enabled,
 		).toBe(false);
 	});
 
@@ -277,7 +297,10 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 		]);
 		expect(premierePluginParamList('<prop.map>')).toEqual([]);
 		expect(premierePluginParamList(null)).toEqual([]);
-		const m = premierePitchShifterToJasper({ params: [], pluginState: pluginState([0.41497469, 1, 0.085, 0.56, 0.75, 0.75]) }, new Report());
+		const m = premierePitchShifterToJasper(
+			{ params: [], pluginState: pluginState([0.41497469, 1, 0.085, 0.56, 0.75, 0.75]) },
+			new Report(),
+		);
 		expect(m.decoded.totalCents).toBe(200);
 	});
 
@@ -286,7 +309,9 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 		expect(isPremierePitchShifter('ADBE Pitch Shifter', null)).toBe(true);
 		expect(isPremierePitchShifter('x', 'Desfasador de tono')).toBe(true);
 		expect(isPremierePitchShifter('Pitch Shifter', 'Pitch Shifter', ['Transpose Ratio'])).toBe(true);
-		expect(isPremierePitchShifter('jasper.audio.pitch-shifter', 'Pitch Shifter', ['Transpose Ratio'])).toBe(false);
+		expect(isPremierePitchShifter('jasper.audio.pitch-shifter', 'Pitch Shifter', ['Transpose Ratio'])).toBe(
+			false,
+		);
 		expect(isPremierePitchShifter('Pitch Shifter', 'Pitch Shifter', ['semitones', 'cents'])).toBe(false);
 	});
 
@@ -347,7 +372,10 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 		expect(() => premierePitchShifterToJasper(null as never, new Report())).not.toThrow();
 		expect(() => jasperPitchToPremiere(null as never, new Report())).not.toThrow();
 		expect(() =>
-			jasperPitchToPremiere({ semitones: { value: Number.NaN, keyframes: [null] }, cents: 'x' }, new Report()),
+			jasperPitchToPremiere(
+				{ semitones: { value: Number.NaN, keyframes: [null] }, cents: 'x' },
+				new Report(),
+			),
 		).not.toThrow();
 	});
 });
@@ -394,7 +422,9 @@ describe('Premiere Pitch Shifter: keyframes', () => {
 					for (const [t] of keys) expect(kt).toContain(t);
 					expect(m.params.cents.keyframes.map((k) => k.time)).toEqual(kt);
 					const t = Math.round(keys[0]![0] + u * (keys[keys.length - 1]![0] - keys[0]![0]));
-					expect(Math.abs(total(m, t) - premiereCents(keys, t))).toBeLessThanOrEqual(PITCH_TOLERANCE_CENTS + 0.01);
+					expect(Math.abs(total(m, t) - premiereCents(keys, t))).toBeLessThanOrEqual(
+						PITCH_TOLERANCE_CENTS + 0.01,
+					);
 				},
 			),
 			{ numRuns: 60 },
@@ -533,7 +563,7 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 		expect([clip.effects[0]!.params.semitones!.value, clip.effects[0]!.params.cents!.value]).toEqual([3, 25]);
 	});
 
-	it('exports in Premiere\'s representation and reads back the same shift, keyframes and bypass', () => {
+	it("exports in Premiere's representation and reads back the same shift, keyframes and bypass", () => {
 		const first = audioClip(
 			xml(
 				pitchFilter(
@@ -561,21 +591,35 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 			evaluateKeyframes(fx.params.cents as Animatable<number>, t);
 		for (let f = 0; f <= 150; f += 5) {
 			const t = framesToFlicks(f, { num: 30, den: 1 });
-			expect(Math.abs(cents(b, t) - cents(a, t)), String(f)).toBeLessThanOrEqual(2 * PITCH_TOLERANCE_CENTS + 0.01);
+			expect(Math.abs(cents(b, t) - cents(a, t)), String(f)).toBeLessThanOrEqual(
+				2 * PITCH_TOLERANCE_CENTS + 0.01,
+			);
 		}
 		expect(cents(b, framesToFlicks(100, { num: 30, den: 1 }))).toBe(500);
 	});
 
 	it('into a document: a valid Pitch Shifter effect (invariants)', () => {
-		const text = xml(pitchFilter(p('Transpose Ratio', 0.303227752447) + p('Use Positive Cents', 0.25), { name: 'VOZ UWU' }));
-		const imp = importTimeline(new TextEncoder().encode(text), { format: 'fcp7', now: '2026-10-25T00:00:00.000Z' });
+		const text = xml(
+			pitchFilter(p('Transpose Ratio', 0.303227752447) + p('Use Positive Cents', 0.25), { name: 'VOZ UWU' }),
+		);
+		const imp = importTimeline(new TextEncoder().encode(text), {
+			format: 'fcp7',
+			now: '2026-10-25T00:00:00.000Z',
+		});
 		const target = new Harness({ preset: 'hd-1080p-30', seed: 91 });
 		const r = target.ok([{ type: 'project.importTimeline', fragment: imp }]);
 		const seqId = (r.results[0] as { topSequenceIds: string[] }).topSequenceIds[0]!;
 		expect(checkInvariants(target.doc, { effects: defaultRegistries().effects })).toEqual([]);
 		const seq = target.doc.sequences[seqId] as Sequence;
 		const fx = Object.values(seq.clips)
-			.flatMap((c) => (c as { effects?: { effectId: string; name?: string; params: Record<string, { value: unknown }> }[] }).effects ?? [])
+			.flatMap(
+				(c) =>
+					(
+						c as {
+							effects?: { effectId: string; name?: string; params: Record<string, { value: unknown }> }[];
+						}
+					).effects ?? [],
+			)
 			.find((e) => e.effectId === 'jasper.audio.pitch-shifter')!;
 		expect(fx.name).toBe('VOZ UWU');
 		expect([fx.params.semitones!.value, fx.params.cents!.value]).toEqual([0, -80]);

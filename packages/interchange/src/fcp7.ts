@@ -2114,7 +2114,14 @@ class Fcp7Exporter {
 				`the instance name "${e.name}" of the Pitch Shifter on clip "${c.name}" is not carried by Final Cut Pro XML`,
 				{ subject, instead: 'the effect name "Pitch Shifter"' },
 			);
-		this.openEffect('Pitch Shifter', PREMIERE_PITCH_SHIFTER_MATCH_NAME, 'Time and Pitch', 'filter', 'audio', e.enabled);
+		this.openEffect(
+			'Pitch Shifter',
+			PREMIERE_PITCH_SHIFTER_MATCH_NAME,
+			'Time and Pitch',
+			'filter',
+			'audio',
+			e.enabled,
+		);
 		this.numParam('ADBE Pitch Shifter-0001', 'Transpose Ratio', 0, 1, p.ratio, rate, (v) => v);
 		this.simpleParam('ADBE Pitch Shifter-0002', 'Precision', '1');
 		this.simpleParam('ADBE Pitch Shifter-0005', 'Use Appropriate Default Settings', '0.75');
