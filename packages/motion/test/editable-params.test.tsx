@@ -49,7 +49,9 @@ describe('shipped anime templates', () => {
 				<Impl params={def.defaults} {...t} fps={fps} canvas={canvas} seed={1} isPreview mediaUrls={{}} />,
 			);
 			const marked = [...view.container.querySelectorAll(`[${TEMPLATE_PARAM_ATTR}]`)];
-			expect(marked.map((el) => readEditableParam(el)!.param).sort(), key).toEqual([...expected[key]!].sort());
+			expect(marked.map((el) => readEditableParam(el)!.param).sort(), key).toEqual(
+				[...expected[key]!].sort(),
+			);
 			for (const el of marked) {
 				const { param, marks } = readEditableParam(el)!;
 				expect(marks).toBe(false);

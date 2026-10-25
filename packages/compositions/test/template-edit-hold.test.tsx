@@ -23,7 +23,10 @@ vi.mock('@jasper/mg-templates', async (importOriginal) => {
 vi.mock('@jasper/motion/templates', async (importOriginal) => {
 	const m = await importOriginal<typeof import('@jasper/motion/templates')>();
 	const { HoldTest } = await import('./fixtures/hold-test-impl.tsx');
-	return { ...m, ANIME_TEMPLATE_IMPLS: Object.freeze({ ...m.ANIME_TEMPLATE_IMPLS, 'hold-test@1': HoldTest }) };
+	return {
+		...m,
+		ANIME_TEMPLATE_IMPLS: Object.freeze({ ...m.ANIME_TEMPLATE_IMPLS, 'hold-test@1': HoldTest }),
+	};
 });
 
 const { mgRegistry } = await import('@jasper/mg-templates');
@@ -91,10 +94,16 @@ afterEach(() => {
 
 describe('animeTemplateRestMs', () => {
 	it('is the last frame before the outro, or the end of a compressed intro', () => {
-		const t = animeTemplateTiming({ introFrames: 15, outroFrames: 6 }, { fps: 30, localFrame: 3, durationFrames: 90 });
+		const t = animeTemplateTiming(
+			{ introFrames: 15, outroFrames: 6 },
+			{ fps: 30, localFrame: 3, durationFrames: 90 },
+		);
 		expect(animeTemplateRestMs(t)).toBeCloseTo((83 * 1000) / 30);
 		// Intro and outro fill the clip: the end of the intro (= the start of the outro).
-		const c = animeTemplateTiming({ introFrames: 15, outroFrames: 6 }, { fps: 30, localFrame: 0, durationFrames: 14 });
+		const c = animeTemplateTiming(
+			{ introFrames: 15, outroFrames: 6 },
+			{ fps: 30, localFrame: 0, durationFrames: 14 },
+		);
 		expect(animeTemplateRestMs(c)).toBeCloseTo(c.introMs);
 		expect(animeTemplateRestMs(c)).toBeLessThanOrEqual(c.totalMs - c.outroMs + 1e-9);
 	});
@@ -153,7 +162,9 @@ describe('template edit hold', () => {
 	});
 
 	it('a held clip with a graded preview is drawn live (the editor measures its DOM)', () => {
-		const { snap, clipId } = project([{ type: 'effect.add', target: { clipId: '$t' }, effectId: LUMETRI_EFFECT_ID }]);
+		const { snap, clipId } = project([
+			{ type: 'effect.add', target: { clipId: '$t' }, effectId: LUMETRI_EFFECT_ID },
+		]);
 		setBakedLayerRuntime({
 			previewFor: () => ({ url: 'https://engine.test/preview.webm', rect: null }),
 			subscribe: () => () => {},

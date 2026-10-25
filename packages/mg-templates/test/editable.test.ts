@@ -17,7 +17,9 @@ describe('readEditableParam', () => {
 			param: 'displayName',
 			marks: false,
 		});
-		expect(readEditableParam(el({ 'data-template-param': 'text', 'data-template-marks': 'yes' }))!.marks).toBe(false);
+		expect(
+			readEditableParam(el({ 'data-template-param': 'text', 'data-template-marks': 'yes' }))!.marks,
+		).toBe(false);
 	});
 
 	it('ignores missing and malformed names', () => {
@@ -28,14 +30,18 @@ describe('readEditableParam', () => {
 
 	it('never throws and only returns identifiers (fast-check)', () => {
 		fc.assert(
-			fc.property(fc.string({ unit: 'binary', maxLength: 100 }), fc.string({ maxLength: 8 }), (name, marks) => {
-				const r = readEditableParam(el({ 'data-template-param': name, 'data-template-marks': marks }));
-				if (r) {
-					expect(r.param).toBe(name);
-					expect(/^[A-Za-z_$][\w$]*$/.test(r.param)).toBe(true);
-					expect(r.marks).toBe(marks === 'true');
-				}
-			}),
+			fc.property(
+				fc.string({ unit: 'binary', maxLength: 100 }),
+				fc.string({ maxLength: 8 }),
+				(name, marks) => {
+					const r = readEditableParam(el({ 'data-template-param': name, 'data-template-marks': marks }));
+					if (r) {
+						expect(r.param).toBe(name);
+						expect(/^[A-Za-z_$][\w$]*$/.test(r.param)).toBe(true);
+						expect(r.marks).toBe(marks === 'true');
+					}
+				},
+			),
 		);
 	});
 });

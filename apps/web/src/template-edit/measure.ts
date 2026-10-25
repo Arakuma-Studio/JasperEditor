@@ -60,7 +60,7 @@ const num = (s: string | null | undefined, d = 0): number => {
 	return Number.isFinite(v) ? v : d;
 };
 
-/** Alpha of a computed colour (`rgb(…)`, `rgba(…)`, `color(srgb … / a)`, `transparent`). */
+/** Alpha of a computed colour (the rgb, rgba and color() functions with an alpha, or `transparent`). */
 function colorAlpha(c: string): number {
 	const s = c.trim().toLowerCase();
 	if (!s || s === 'transparent' || s === 'none') return 0;
