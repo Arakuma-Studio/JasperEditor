@@ -1469,4 +1469,55 @@ The earlier Node24.22.1 experiment failed five pinned synth byte cases. A focuse
 
 Observed baseline file execution windows (imports/startup excluded; not a scope wall-clock estimate): registry21.681s, synth17.736s, EBU loudness oracle10.730s, music-picture10.336s, reverb/pitch9.200s, tempo7.226s and sync7.170s. Registry extrema/long tails, EBU programmes, explicit152 synth quality variants, raw acoustic sync and genuine musical analysis retain their independently specified contracts. The pitch DFT, duplicate synth renders, generated classifier replay, matcher dispatch and flat-band fixture are the measured optimization targets.
 
-Passed before runtime scheduling: `pnpm exec biome check` for 28 changed TypeScript files (68ms, no fixes), followed by the DSP reused-buffer rewrite (28ms, no fixes) and `git diff --check`. Controlled paired profiling, remaining changed-file tests, mutation checks and the two affected production package typechecks are queued for a bounded resource slot. No runtime improvement is claimed until those measurements run. The coordinator's integrated full gate remains authoritative; optional native/Remotion rendering is not claimed as validated here.
+### Completed cleanup and validation
+
+The declaration census is 564 original → 552 current across the same 72 declaration-bearing files; the additional expression fuzz file generates its two cases through testkit. Original dispositions are 497 KEEP, 27 REWRITE, 23 OPTIMIZE, 5 CONSOLIDATE and 12 DELETE. Expanded executions decrease by 51: the original complete baseline had 930 passed and 8 opt-in skipped cases in 73 files; replacing only the 24 changed files' original executions with the validated final executions yields 879 ordinary cases and the same 8 opt-in cases. That is an execution inventory, not a claim to have rerun the 49 unchanged files. The changed test/helper diff is 357 added / 780 removed lines (net −423); internal production export/metadata cleanup is net −35 lines. No fixture, snapshot, dependency or configuration became unused in this scope; generated classifier fixtures remain consumed by the stronger engine corpus owner.
+
+All 24 changed test files passed 458 cases with Node 20.19.0, pnpm 10.34.5, Vitest 4.1.11, `JASPER_REQUIRE_ORACLES=1`, `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome` and two workers. Twelve non-profile files passed 294 cases in 45.54 s runner time. The 12-file profile group passed 164 final cases on each of its two executions. The restored mutation targets then passed 13 selected cases; the other 185 cases in that narrowly filtered rerun were deliberately unselected, having passed their complete changed-file runs already. All five affected package typechecks passed. No owned runtime failure required changing production behavior.
+
+The exact non-profile command was:
+
+```sh
+pnpm exec vitest run packages/audio-dsp/test/channels.test.ts packages/audio-fx/test/masking-overlap.test.ts packages/audio-fx/test/masking.test.ts packages/audio-fx/test/music-picture.test.ts packages/audio-fx/test/registry.test.ts packages/audio-fx/test/sound-judge.test.ts packages/audio-fx/test/sound-quality-flags.test.ts packages/audio-fx/test/sound-taxonomy-profiles.test.ts packages/expressions/test/engine.test.ts packages/expressions/test/sandbox.test.ts packages/mg-templates/test/motion-cues.test.ts packages/motion/test/mg-cue-timing.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/audio-other.json
+```
+
+The four paired profile commands used the following 12 targets with the same environment and worker limit, adding `--reporter=json --outputFile=/tmp/jasper-test-cleanup/audio-{before|after}-{1|2}.json`:
+
+```sh
+pnpm exec vitest run packages/audio-fx/test/core.test.ts packages/audio-fx/test/special.test.ts packages/audio-fx/test/filter-eq.test.ts packages/audio-fx/test/delay-modulation.test.ts packages/audio-fx/test/reverb-pitch.test.ts packages/audio-fx/test/restoration.test.ts packages/audio-fx/test/stereo-channel.test.ts packages/audio-fx/test/dynamics.test.ts packages/audio-fx/test/sound-oracle.test.ts packages/audio-fx/test/sound-descriptors.test.ts packages/audio-fx/test/audio-category.test.ts packages/audio-fx/test/sound-synth.test.ts --maxWorkers=2
+```
+
+Each typecheck was run as `pnpm --filter @jasper/<name> typecheck` for `audio-dsp`, `audio-fx`, `expressions`, `motion` and `mg-templates`. Biome checked every changed TypeScript file without fixes, and `git diff --check` passed. The coordinator's integrated full gate remains authoritative; optional native/Remotion rendering is not claimed as validated here.
+
+### Measured performance
+
+Measurements used this 8-vCPU AMD EPYC-Genoa Linux host with 15 GiB RAM, no swap, system FFmpeg 6.1.1 and Chrome 156.0.8078.47. Two fresh-process runs of each state were interleaved **before / after / before / after**, using the original `8b4c8936` test contents for the before state and unchanged production processing code. The script restored all final source bytes in a `finally` block. One other scheduled Sound Check validator shared the host; the starting one-minute loads were 3.96, 3.89, 3.87 and 3.71. These are scoped shared-host measurements, not a full-suite or CI improvement claim. The original group had 169 cases, the final group 164; the removed executions failed the behavioral bar or duplicated the engine corpus / versioned hash owner described above.
+
+| Twelve-file group | Before | After | Observed saving |
+|---|---:|---:|---:|
+| First process wall time |36.024s|24.640s|11.385s|
+| Second process wall time |38.773s|22.152s|16.622s|
+| Median process wall time |37.399s|23.396s|14.003s (37.44%)|
+| Median user + system CPU |80.705s|53.055s|27.650s (34.26%)|
+
+Median summed individual-case durations, excluding import/setup, identify the work removed: synth 18.070→12.005s, reverb/pitch 9.161→1.813s, generated classifier 6.817→1.557s, primitive matcher loops 2.302→0.025s and sound oracle 2.156→0.928s. The synth suite still hashes every channel of all eight seeds for each recipe and judges all 152 variants. The pitch estimator retains the same input, Hann window, frequency grid and 0.5% acceptance through an independent Goertzel recurrence. The flat-band fixture still synthesizes all 751 tones over 48,000 samples; direct-sine versus recurrence comparison measured a maximum sample difference of 1.862645149230957e−9 and RMS 9.054858723952626e−12 after the same Float32 rounding/normalization.
+
+The slowest changed owners after cleanup remain the 124-case effect registry (20.825 s complete-file test duration in the non-profile run), synth (11.855–12.156 s summed case time), and music-picture (10.265 s complete-file test duration). The registry uniquely checks every processor's streaming, finite extremes, denormal tails and reset; reducing its 12-second tail would remove the stated failure window. Synth's full variant promise and musical/drop analysis's independently arranged attack/bar positions justify their remaining data. Startup/import cost remains material; no package runner, mandatory gate or opt-in switch was weakened to hide it.
+
+### Regression-detection checks
+
+Nine temporary production mutants failed their intended assertions, and all original source bytes were restored. Each used `pnpm exec vitest run <owning-file> --maxWorkers=1 -t <named-contract>` with the same required-oracle/browser environment.
+
+| Mutant | Intended failing observation |
+|---|---|
+| Descriptor analysis cap 120→125 seconds | Loud late tone changes the independently expected 200 Hz centroid; duration remains 125 s. |
+| Title component discards supplied stagger | Last glyph starts moving at frame 1, violating forward stagger's later onset; the surviving test observes its rendered text. |
+| Fragmented amplifier blocks emit NaN | Streaming owner rejects nonfinite fragmented output. The original test falsely passed this exact mutant. |
+| Amplifier reset corrupts only the right gain | Reset owner detects right-channel sample mismatch. The original test falsely passed this exact mutant. |
+| PRNG bipolar output becomes NaN | Aggregated range assertion still rejects the first sample. |
+| Pitch processor ignores the requested shift | All five independently expected pitch rows fail their 0.5% frequency tolerance. |
+| Clipped true-peak boundary 0.3→0.2 dB | Literal 0.3 dB boundary sound is incorrectly rejected. |
+| Major scale second degree 2→1 | Independent literal musical interval vector disagrees. |
+| Callout render time advances 500 ms | Painted label settling and cue differ by 30 frames. |
+
+After restoration, all 13 selected contract cases passed across seven files. The browser artifacts in `test-results/motion-cues/*.json` contain actual samples and measured speeds: callout last-moving frame 59, counter first exit 286, lower-third last-moving frame 51 and forward-staggered title's last glyph first-moving 23 / last-moving 54. Thus the historical pins and the title onset guard exercise painted behavior through public components, without depending on private target ordering or internal exports. No golden output or synth byte pin was re-blessed.
