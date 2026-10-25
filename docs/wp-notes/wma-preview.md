@@ -112,3 +112,15 @@ encoder; the LGPL build has it) and `legacy-ac3.mkv` (H.264 + 5.1 AC-3, native `
   audio in the preview.
 - The sample-exact export decode reads such files from their start for every clip: long files with a late In point
   decode more (audio decoders run at hundreds × real time; not benchmarked).
+
+## Checked in the running app (VM dev stack, Chromium via agent-browser, 2026-10-25)
+
+- Imported `legacy-wma.wma` and `legacy-ac3.mkv` from the Media Browser (which says the WMA cannot play in the browser
+  until imported). The WMA clip on A1 shows its waveform; playing it the Program fetches
+  `/media/<key>/playback-audio/0.wav?v=…` (never the original), the Audio Meters move (M −15 LUFS, TP −2.1 dBTP).
+- The AC-3 MKV plays its picture (muted `<Video>` without audio track) and its sound from the playback copy.
+- The Source monitor plays the WMA from the playback copy.
+- A WMA with a valid header and garbage packets (FFmpeg exits 0 with no samples) shows the red "No playback audio"
+  badge with the error in its tooltip; the editor stays usable.
+- A 2-hour stereo WMA's playback copy (2.6 GB) took about 10 s on the VM (16 vCPU, shared with other agents; measured
+  once, informally).
