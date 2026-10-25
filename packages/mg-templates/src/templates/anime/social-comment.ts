@@ -486,6 +486,19 @@ export function socialCommentPresets(variants: readonly SocialVariant[]): MgTemp
 	});
 }
 
+/** Menu labels of the enum params in Properties (the stored values stay the ids agents use). */
+const VARIANT_OPTION_LABELS: Readonly<Record<string, string>> = Object.fromEntries(
+	SOCIAL_VARIANTS.map((v) => [v, PRESET_NAMES[v].name]),
+);
+const THEME_OPTION_LABELS = { light: 'Light', dark: 'Dark' } as const;
+const EMOJI_OPTION_LABELS = { auto: 'Platform', apple: 'Apple', twemoji: 'Twemoji', noto: 'Noto' } as const;
+const ENTRANCE_OPTION_LABELS = {
+	'classic-pop': 'Classic pop',
+	'soft-spring': 'Soft spring',
+	'grow-from-tail': 'Grow from tail',
+	'drop-bounce': 'Drop & bounce',
+} as const;
+
 /** Params a variant may not draw are shown only for the variants that draw them (`variantsWithParam`). */
 const byVariant = (param: SocialParamName): Pick<MgTemplateParamUi, 'visibleWhen'> => {
 	const variants = variantsWithParam(param);
@@ -530,8 +543,9 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			{ id: 'animation', label: 'Animation', params: ['entrance', 'wordReveal', 'likeTick'] },
 		],
 		params: {
-			variant: { label: 'Style' },
-			emojiStyle: { label: 'Emoji' },
+			variant: { label: 'Style', options: VARIANT_OPTION_LABELS },
+			theme: { options: THEME_OPTION_LABELS },
+			emojiStyle: { label: 'Emoji', options: EMOJI_OPTION_LABELS },
 			displayName: { label: 'Display Name', ...byVariant('displayName') },
 			handle: { label: 'Handle', ...byVariant('handle') },
 			avatar: { label: 'Avatar', control: 'social-avatar' },
@@ -547,7 +561,7 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			showReposts: { label: 'Show Reposts', ...byVariant('showReposts') },
 			showViews: { label: 'Show Views', ...byVariant('showViews') },
 			text: { label: 'Comment', multiline: true, control: 'social-comment-text' },
-			entrance: { label: 'Entrance' },
+			entrance: { label: 'Entrance', options: ENTRANCE_OPTION_LABELS },
 			wordReveal: { label: 'Words One by One' },
 			likeTick: { label: 'Likes Tick Up', ...byVariant('likeTick') },
 		},

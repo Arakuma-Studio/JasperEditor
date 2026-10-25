@@ -215,6 +215,17 @@ describe('presets and UI hints (C3)', () => {
 			/must be \{param/,
 		],
 		['an empty control name', { ui: { params: { title: { control: '' } } } }, /non-empty string/],
+		[
+			'an option label for a value the param does not take',
+			{ ui: { params: { variant: { options: { z: 'Zed' } } } } },
+			/not a valid value/,
+		],
+		['an empty option label', { ui: { params: { variant: { options: { a: '' } } } } }, /non-empty string/],
+		[
+			'option labels that are not an object',
+			{ ui: { params: { variant: { options: ['A'] } } } },
+			/must be an object/,
+		],
 	])('rejects %s', (_name, patch, message) => {
 		const def = {
 			...withExtras,

@@ -99,6 +99,7 @@ for (const def of mgRegistry.definitions()) {
 	for (const s of info ? project.paramsPropertySpecs(info) : []) {
 		add(s.label);
 		add(s.description);
+		for (const o of s.optionLabels ?? []) add(o);
 	}
 	// bulk import: the reasons a template gives for the columns it ignores
 	for (const reason of Object.values(def.ui?.import?.ignored ?? {})) add(reason);
