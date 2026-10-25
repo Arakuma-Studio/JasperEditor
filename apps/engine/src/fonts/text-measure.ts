@@ -98,10 +98,13 @@ export class HeadlessTextMeasurer {
 	private request(content: TextContent, box: TextBox, fonts: Readonly<Record<string, FontRef>>): Request {
 		const faces = this.facesOf(content, fonts);
 		const b = { width: box.autoSize === 'width' ? 0 : box.width, autoSize: box.autoSize };
+		// Font ids are not part of the key: a transaction that creates its font gets a new id every round.
+		const family = (id: unknown) => (typeof id === 'string' ? (fonts[id]?.family ?? id) : id);
+		const unId = (st: Record<string, unknown>) => ('fontId' in st ? { ...st, fontId: family(st.fontId) } : st);
 		const key = JSON.stringify([
 			content.text,
-			content.style,
-			content.runs ?? [],
+			unId(content.style as unknown as Record<string, unknown>),
+			(content.runs ?? []).map((r) => ({ ...r, style: unId(r.style as Record<string, unknown>) })),
 			content.paragraphs ?? [],
 			b,
 			faces.map((f) => [f.family, f.weight, f.style, f.path]),
@@ -176,7 +179,7 @@ export class HeadlessTextMeasurer {
 	private async measureNow(reqs: (Request & { paths: Map<string, string> })[]): Promise<boolean> {
 		const fonts = new Map<string, string>();
 		for (const r of reqs) for (const [u, p] of r.paths) fonts.set(u, p);
-		let live = await this.page();
+		let live = await this.page(fonts);
 		// A face the open page's server does not know yet: reopen with every face so far.
 		if ([...fonts.keys()].some((u) => !live.fonts.has(u))) {
 			const all = new Map([...live.fonts, ...fonts]);

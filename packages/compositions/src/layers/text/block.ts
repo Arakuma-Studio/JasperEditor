@@ -7,7 +7,7 @@ import type { CSSProperties } from 'react';
 import { FALLBACK_FONT_STACK, fontFaceFor } from '../../fonts.ts';
 import type { LayerProps } from '../../types.ts';
 
-type Fonts = LayerProps['fonts'];
+type Fonts = Readonly<LayerProps['fonts']>;
 export type TextRun = NonNullable<TextContent['runs']>[number];
 export type RunStyle = TextRun['style'];
 

@@ -12,7 +12,7 @@ import type { FontRef, TextBox, TextContent, TextMeasurer, TextStyle } from '@ja
 import { fontFaceFor, isFontFaceSettled, loadFontFace } from '../../fonts.ts';
 import type { RenderDoc } from '../../types.ts';
 import { blockStyles, runLayoutCss, styledSpans, textBlockStyle, textFontFamily } from './block.ts';
-import { applyCss, measureHost, measureTypeset } from './measure.ts';
+import { applyCss, measureTypeset, textMeasureHost } from './measure.ts';
 import { needsTypeset } from './typography.ts';
 
 export type MeasureFace = RenderDoc['fonts'][number];
@@ -86,7 +86,7 @@ export function measureTextBox(
 				p.append(span);
 			}
 		}
-	measureHost().append(p);
+	textMeasureHost().append(p);
 	const r = p.getBoundingClientRect();
 	p.remove();
 	return { width: up(pointText ? r.width : width), height: up(r.height) };
