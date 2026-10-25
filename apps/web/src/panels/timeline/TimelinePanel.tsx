@@ -60,6 +60,7 @@ import {
 	isTextAnimationDrag,
 	readTextAnimationDrag,
 } from '../../text-animation/actions.ts';
+import { commonPreset, INTERPOLATION_MENU, interpolationCommand } from '../effectControls/lib.ts';
 import {
 	applyEffectToClips,
 	endTransitionDrag,
@@ -89,6 +90,7 @@ import {
 import { mediaCacheVersion } from './media/media-cache.ts';
 import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
+import { clipKeysById } from './model/keyframe-lane.ts';
 import { computeLayout, hitY, regionIndexAt, type TrackRow } from './model/layout.ts';
 import { revealRowScroll, revealScroll, type Span, visiblePart, visibleRowBand } from './model/locate.ts';
 import { thresholdFrames } from './model/snapping.ts';
@@ -736,6 +738,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[session, seqId, toast],
 	);
 
+	/** keyframe-sides: a lane key's menu — Temporal Interpolation (Ease In / Ease Out set one side), checked. */
+	const keyframeMenu = (clipId: string, ids: string[]): ContextMenuItem[] => {
+		const readOnly = session.getState().readOnly;
+		const checked = commonPreset(clipKeysById(seq.clips[clipId]!, new Set(ids)));
+		return [
+			{
+				kind: 'submenu',
+				label: 'Temporal Interpolation',
+				items: INTERPOLATION_MENU.map((m) => ({
+					kind: 'item' as const,
+					label: m.label,
+					checked: checked === m.preset,
+					disabled: readOnly,
+					run: () => apply(`Keyframe Interpolation: ${m.label}`, [interpolationCommand(ids, m.preset)]),
+				})),
+			},
+		];
+	};
+
 	const clipMenu = (c: Clip): ContextMenuItem[] => {
 		const linked = !!c.linkId;
 		const readOnly = session.getState().readOnly;
@@ -1239,6 +1260,19 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	};
 	const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
 		e.preventDefault();
+		// keyframe-sides: right-clicking a keyframe on a lane opens Premiere's Temporal Interpolation menu.
+		const kfEl = (e.target as Element | null)?.closest?.('[data-kf-id]');
+		const laneClip = kfEl?.closest('[data-keyframe-lane]')?.getAttribute('data-keyframe-lane');
+		const kfId = kfEl?.getAttribute('data-kf-id');
+		if (kfId && laneClip && seq.clips[laneClip]) {
+			const ids =
+				keyframeSel?.clipOrTrackId === laneClip && keyframeSel.keyframeIds.includes(kfId)
+					? keyframeSel.keyframeIds
+					: [kfId];
+			session.selectKeyframes({ clipOrTrackId: laneClip, keyframeIds: ids });
+			openMenu(e.clientX, e.clientY, keyframeMenu(laneClip, ids));
+			return;
+		}
 		const p = local(e);
 		const g = geomRef.current;
 		const yh = hitY(g.layout, p.y);

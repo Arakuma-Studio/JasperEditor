@@ -20,6 +20,7 @@
 import type {
 	Animatable,
 	EffectInstance,
+	InInterpolation,
 	Interpolation,
 	Keyframe,
 	LabelColor,
@@ -1803,14 +1804,22 @@ class Fcp7Exporter {
 		this.w.open('parameter').text('parameterid', id).text('name', name).text('value', value).close();
 	}
 
-	interp(i: Interpolation): void {
-		if (i === 'linear') return;
+	/**
+	 * FCP 7 has one interpolation per keyframe (FCPCurve: its own 40-segment power curve, not After Effects' Bézier).
+	 * keyframe-sides: a key with its own incoming side is a curve when either side curves (Hold stays a hold).
+	 */
+	interp(i: Interpolation, inSide?: InInterpolation): void {
+		if (i === 'linear' && (inSide === undefined || inSide === 'linear')) return;
 		this.w
 			.open('interpolation')
 			.text('name', i === 'hold' ? 'hold' : 'FCPCurve')
 			.close();
 		if (i !== 'hold')
 			this.report.info('Bezier keyframe easing is written as FCP curve keyframes (handles not kept)');
+		if (inSide !== undefined && i !== 'hold' && inSide !== i)
+			this.report.info(
+				'Separate incoming / outgoing keyframe interpolation is written as one FCP interpolation',
+			);
 	}
 
 	numParam(
@@ -1834,7 +1843,7 @@ class Fcp7Exporter {
 			w.open('keyframe')
 				.text('when', flicksToFrames(k.time, rate))
 				.text('value', exactNum(map(k.value)));
-			this.interp(k.interpolation);
+			this.interp(k.interpolation, k.inInterpolation);
 			w.close();
 		}
 		w.close();
@@ -1855,7 +1864,7 @@ class Fcp7Exporter {
 			const [kx, ky] = map(k.value);
 			w.open('keyframe').text('when', flicksToFrames(k.time, rate));
 			w.open('value').text('horiz', exactNum(kx)).text('vert', exactNum(ky)).close();
-			this.interp(k.interpolation);
+			this.interp(k.interpolation, k.inInterpolation);
 			w.close();
 		}
 		w.close();

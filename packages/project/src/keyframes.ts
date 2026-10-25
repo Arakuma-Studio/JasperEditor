@@ -4,10 +4,24 @@
 import { isVec2Value, pathPointAt, spatialSegment, spatialSegmentLength } from './keyframes-spatial.ts';
 import { lerpPathValues, pathValueDistance } from './path/interp.ts';
 import { type BezierPath, isBezierPath } from './path/model.ts';
-import type { Animatable, Ease, Keyframe } from './schema/common.ts';
+import {
+	type Animatable,
+	type Ease,
+	IN_INTERPOLATIONS,
+	type InInterpolation,
+	type Interpolation,
+	type Keyframe,
+} from './schema/common.ts';
 import { isShapeValue, lerpShapeValue } from './vector/values.ts';
 
 const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
+/**
+ * keyframe-sides: the ease a Linear side contributes to a per-side segment whose other side curves — After Effects'
+ * linear temporal ease, influence ⅙ (16.67 %) at the segment's average speed (slope 1). After Effects reports it for
+ * linear keys (`keyInTemporalEase` / `keyOutTemporalEase`, consumed as such by Lottie's exporter) and Premiere stores
+ * exactly these numbers on linear sides (docs/wp-notes/keyframe-sides.md).
+ */
+const AE_LINEAR_SIDE: Ease = { influence: 1 / 6, slope: 1 };
 const AUTO_INFLUENCE = 1 / 3;
 /** Newton stops when its step in the curve parameter is below this (a parameter criterion, not an x residual). */
 const STEP_TOLERANCE = 1e-15;
@@ -137,8 +151,83 @@ export function autoSlope<T>(kfs: readonly Keyframe<T>[], i: number, side: 'in' 
 	return Math.min(3, Math.max(0, across / seg));
 }
 
-/** Effective ease leaving key i as the evaluator uses it (linear → 1/3·1, auto-bezier → computed). */
+/**
+ * keyframe-sides: the incoming temporal type of key `k` — its `inInterpolation`, else (documents written before) its
+ * `interpolation`. Note that without `inInterpolation` a segment leaving a Linear key is linear whatever this says
+ * (`segmentShape`); `effectiveInInterpolation` gives the type that actually shapes the arriving segment.
+ */
+export function inInterpolationOf<T>(k: Keyframe<T>): Interpolation {
+	return k.inInterpolation ?? k.interpolation;
+}
+
+/** True when the segment arriving at key `i` is evaluated per side (the key has an explicit incoming type). */
+export function isPerSideSegmentEnd<T>(kfs: readonly Keyframe<T>[], i: number): boolean {
+	return kfs[i]?.inInterpolation !== undefined;
+}
+
+/** The ease of one side of key `i`, given its temporal type, in a per-side segment (After Effects' rules). */
+function perSideEase<T>(
+	kfs: readonly Keyframe<T>[],
+	i: number,
+	side: 'in' | 'out',
+	type: Interpolation,
+): Ease {
+	const k = kfs[i]!;
+	if (type === 'auto-bezier') return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, side) };
+	if (type === 'linear') return AE_LINEAR_SIDE;
+	return side === 'in' ? k.easeIn : k.easeOut;
+}
+
+/**
+ * Effective ease leaving key i as the evaluator uses it (auto-bezier → computed). Linear: ⅓·1 when the next key is
+ * read the legacy way (the segment is then linear anyway), After Effects' ⅙·1 when it is per side (keyframe-sides).
+ */
 export function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+	const k = kfs[i]!;
+	if (isPerSideSegmentEnd(kfs, i + 1)) return perSideEase(kfs, i, 'out', k.interpolation);
+	if (k.interpolation === 'auto-bezier')
+		return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') };
+	if (k.interpolation === 'linear') return LINEAR_EASE;
+	return k.easeOut;
+}
+
+/** Effective ease arriving at key i as the evaluator uses it (per side when the key has `inInterpolation`). */
+export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+	const k = kfs[i]!;
+	if (k.inInterpolation !== undefined) return perSideEase(kfs, i, 'in', k.inInterpolation);
+	if (k.interpolation === 'auto-bezier') return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'in') };
+	if (k.interpolation === 'linear') return LINEAR_EASE;
+	return k.easeIn;
+}
+
+/**
+ * How a span from key `ia` to key `ib` (adjacent keys, or the fixed ends of a roving run) interpolates
+ * (keyframe-sides; S01:KF-003):
+ * - `hold`: key `ia` leaves with Hold (After Effects: Hold is decided by the key the segment leaves);
+ * - `linear`: progress = u. Legacy rule (key `ib` has no `inInterpolation`): whenever key `ia` leaves Linear.
+ *   Per-side rule: when both sides are Linear;
+ * - otherwise the cubic Bézier of `ia`'s outgoing ease and `ib`'s incoming ease (`bezierProgress`), where a Linear side
+ *   of a per-side segment is After Effects' linear ease (influence ⅙ at the average speed).
+ * Hold-only values and `holdOnly` parameters are the caller's business (they step whatever the keys say).
+ */
+export type SegmentShape = 'hold' | 'linear' | { out: Ease; in: Ease };
+export function segmentShape<T>(kfs: readonly Keyframe<T>[], ia: number, ib = ia + 1): SegmentShape {
+	const a = kfs[ia]!;
+	const b = kfs[ib]!;
+	if (a.interpolation === 'hold') return 'hold';
+	if (b.inInterpolation === undefined) {
+		if (a.interpolation === 'linear') return 'linear';
+		return { out: legacyOutgoingEase(kfs, ia), in: incomingEase(kfs, ib) };
+	}
+	if (a.interpolation === 'linear' && b.inInterpolation === 'linear') return 'linear';
+	return {
+		out: perSideEase(kfs, ia, 'out', a.interpolation),
+		in: perSideEase(kfs, ib, 'in', b.inInterpolation),
+	};
+}
+
+/** The legacy outgoing ease of key i (its next key read without `inInterpolation`). */
+function legacyOutgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	const k = kfs[i]!;
 	if (k.interpolation === 'auto-bezier')
 		return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') };
@@ -146,12 +235,72 @@ export function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	return k.easeOut;
 }
 
-/** Effective ease arriving at key i as the evaluator uses it. */
-export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+/** Progress (0 … 1, may overshoot) of a span's shape at normalised time u (hold → 0 before the end). */
+export function shapeProgress(shape: SegmentShape, u: number): number {
+	if (shape === 'hold') return u >= 1 ? 1 : 0;
+	if (shape === 'linear') return u;
+	return bezierProgress(u, shape.out, shape.in);
+}
+
+/** Progress of the segment leaving key i at normalised time u (`segmentShape` + `shapeProgress`). */
+export function segmentProgress<T>(kfs: readonly Keyframe<T>[], i: number, u: number): number {
+	return shapeProgress(segmentShape(kfs, i), u);
+}
+
+/**
+ * The incoming type that actually shapes the segment arriving at key `i` — what the UI shows on the key's left
+ * half: `hold` after a Hold key (After Effects draws it overridden), `linear` after a Linear key when the key is read
+ * the legacy way, else `inInterpolationOf`. Null for the first key.
+ */
+export function effectiveInInterpolation<T>(kfs: readonly Keyframe<T>[], i: number): Interpolation | null {
+	const prev = kfs[i - 1];
+	if (!prev) return null;
+	if (prev.interpolation === 'hold') return 'hold';
 	const k = kfs[i]!;
-	if (k.interpolation === 'auto-bezier') return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'in') };
-	if (k.interpolation === 'linear') return LINEAR_EASE;
-	return k.easeIn;
+	if (k.inInterpolation === undefined && prev.interpolation === 'linear') return 'linear';
+	return inInterpolationOf(k);
+}
+
+/** True for the interpolations that shape both sides of a key (After Effects: only when both sides are Bezier). */
+export function isBothSided(t: Interpolation | InInterpolation | undefined): boolean {
+	return t === 'auto-bezier' || t === 'continuous-bezier';
+}
+
+/**
+ * Why key `k`'s incoming side is unreadable (INV-011), or null: `inInterpolation` must be one of
+ * `IN_INTERPOLATIONS`, and a key whose two sides differ cannot use Auto / Continuous Bezier on either.
+ */
+export function keySidesIssue(k: { interpolation?: unknown; inInterpolation?: unknown }): string | null {
+	const t = k.inInterpolation;
+	if (t === undefined) return null;
+	if (!(IN_INTERPOLATIONS as readonly unknown[]).includes(t)) return 'unknown incoming interpolation';
+	if (
+		t !== k.interpolation &&
+		(isBothSided(t as InInterpolation) || isBothSided(k.interpolation as Interpolation))
+	)
+		return 'Auto Bezier and Continuous Bezier shape both sides of a key';
+	return null;
+}
+
+/**
+ * Makes key `k`'s sides readable in place (repairDocument, pastes, presets): an unknown incoming type is dropped (the
+ * key is read the legacy way), and Auto / Continuous Bezier on a key whose sides differ becomes Bezier with the
+ * stored ease of that side. Returns true when something changed.
+ */
+export function normalizeKeySides(k: { interpolation: Interpolation; inInterpolation?: unknown }): boolean {
+	if (k.inInterpolation === undefined) {
+		if ('inInterpolation' in k) delete k.inInterpolation;
+		return false;
+	}
+	if (!(IN_INTERPOLATIONS as readonly unknown[]).includes(k.inInterpolation)) {
+		delete k.inInterpolation;
+		return true;
+	}
+	const t = k.inInterpolation as InInterpolation;
+	if (t === k.interpolation || (!isBothSided(t) && !isBothSided(k.interpolation))) return false;
+	if (isBothSided(t)) k.inInterpolation = 'bezier';
+	if (isBothSided(k.interpolation)) k.interpolation = 'bezier';
+	return true;
 }
 
 /** True for value types that only step (booleans, strings, enums, font ids, media refs; S01:KF-007). */
@@ -267,8 +416,8 @@ export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: Eval
 		return clampValue(a.value, opts?.clamp);
 	}
 	const u = (t - a.time) / (b.time - a.time);
-	const p =
-		a.interpolation === 'linear' ? u : bezierProgress(u, outgoingEase(kfs, i), incomingEase(kfs, i + 1));
+	// keyframe-sides: a's outgoing side and b's incoming side (legacy rule when b has no `inInterpolation`).
+	const p = segmentProgress(kfs, i, u);
 	// S03:KF-031: along a curved spatial path the progress is an arc-length fraction.
 	const path = spatialSegment(kfs as readonly Keyframe<unknown>[], i);
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
@@ -336,10 +485,9 @@ export function rovingRunAt(kfs: readonly Keyframe<unknown>[], i: number): Rovin
 
 /** Progress (0 … 1, may overshoot) of a run at normalised time u: the fixed keys' eases, as for one segment. */
 export function rovingProgress(kfs: readonly Keyframe<unknown>[], run: RovingRun, u: number): number {
-	const a = kfs[run.a]!;
-	return a.interpolation === 'linear'
-		? u
-		: bezierProgress(u, outgoingEase(kfs, run.a), incomingEase(kfs, run.b));
+	// keyframe-sides: the fixed keys' sides, as for one segment (`segmentShape` over the run). The fixed start key
+	// never holds (isRovingKey).
+	return shapeProgress(segmentShape(kfs, run.a, run.b), u);
 }
 
 /** Value of a run at time t: the point at the run's progress along its cumulative distance. */
@@ -459,6 +607,8 @@ export function stopRoving(kfs: Keyframe<unknown>[], i: number): void {
 	const vin = avg(i - 1);
 	const vout = avg(i);
 	k.interpolation = 'continuous-bezier';
+	// keyframe-sides: a key with an explicit incoming type keeps it consistent (Continuous shapes both sides).
+	if (k.inInterpolation !== undefined) k.inInterpolation = 'continuous-bezier';
 	k.easeIn = { influence: AUTO_INFLUENCE, slope: vin > 0 ? v / vin : 1 };
 	k.easeOut = { influence: AUTO_INFLUENCE, slope: vout > 0 ? v / vout : 1 };
 }
@@ -479,10 +629,17 @@ export function reversedKeyTiming(
 	if (isHoldOnlyValue(k.value)) return { interpolation: 'hold', easeIn: k.easeIn, easeOut: k.easeOut };
 	const prev = kfs[i - 1];
 	const next = kfs[i + 1];
-	// Arriving side of the old segment (prev, k) → leaving side now.
-	const arriving = !prev || prev.interpolation === 'linear' ? LINEAR_EASE : incomingEase(kfs, i);
+	// keyframe-sides: each old segment's actual shape (per side or legacy): a linear segment mirrors to a
+	// linear-equivalent one, a curved one swaps its two eases. The result keys are read the legacy way (the callers
+	// drop `inInterpolation`), where Bezier keys use exactly their stored eases.
+	const inShape = prev ? segmentShape(kfs, i - 1) : 'linear';
+	const outShape = next ? segmentShape(kfs, i) : 'linear';
+	// Arriving side of the old segment (prev, k) → leaving side now (a Hold segment keeps the stored arriving ease).
+	const arriving =
+		inShape === 'linear' ? LINEAR_EASE : inShape === 'hold' ? incomingEase(kfs, i) : inShape.in;
 	// Leaving side of the old segment (k, next) → arriving side now.
-	const leaving = !next || k.interpolation === 'linear' ? LINEAR_EASE : outgoingEase(kfs, i);
+	const leaving =
+		outShape === 'linear' ? LINEAR_EASE : outShape === 'hold' ? outgoingEase(kfs, i) : outShape.out;
 	const interpolation = prev?.interpolation === 'hold' ? 'hold' : 'bezier';
 	return {
 		interpolation,

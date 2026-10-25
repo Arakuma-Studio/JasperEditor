@@ -22,7 +22,7 @@
 //  - The result is verified with the real evaluator (`keyframes.ts`) at every sample; a sub-group that would exceed
 //    the tolerance there (numerical corner cases) keeps its original keys, so the guarantee is unconditional.
 //  - Keys outside the span and the segments leaving it are untouched (boundary eases are made explicit).
-import { evaluate, incomingEase, isHoldOnlyValue, outgoingEase } from '../keyframes.ts';
+import { evaluate, incomingEase, isHoldOnlyValue, segmentShape } from '../keyframes.ts';
 import type { Animatable, Ease, Keyframe } from '../schema/common.ts';
 
 export type SimplifyValue = number | number[];
@@ -113,9 +113,12 @@ type Shape =
 /** The evaluator's effective shape of the segment leaving original key `i` (S01:KF-003). */
 function originalSegment(keys: readonly Key[], i: number): Exclude<Shape, { kind: 'original' }> {
 	const a = keys[i]!;
-	if (a.interpolation === 'hold' || isHoldOnlyValue(a.value)) return { kind: 'hold' };
-	if (a.interpolation === 'linear') return { kind: 'linear' };
-	return { kind: 'ease', out: { ...outgoingEase(keys, i) }, in: { ...incomingEase(keys, i + 1) } };
+	if (isHoldOnlyValue(a.value)) return { kind: 'hold' };
+	// keyframe-sides: the segment's actual shape (per side or legacy).
+	const shape = segmentShape(keys, i);
+	if (shape === 'hold') return { kind: 'hold' };
+	if (shape === 'linear') return { kind: 'linear' };
+	return { kind: 'ease', out: { ...shape.out }, in: { ...shape.in } };
 }
 
 type ChannelState = {
@@ -509,7 +512,13 @@ function solveSubGroup(
 				inEase = s === 'none' ? 'none' : s.kind === 'ease' ? s.in : 'linear';
 			}
 			const out = segOf(pos);
-			return composeKey(orig, inEase, out, pos === kept.length - 1 && fixIn[j]!);
+			const key = composeKey(orig, inEase, out, pos === kept.length - 1 && fixIn[j]!);
+			// keyframe-sides: the segment arriving at the span (from a key outside it) keeps its per-side reading.
+			if (pos === 0 && i0 > 0 && orig.inInterpolation !== undefined) {
+				key.inInterpolation = orig.inInterpolation === 'linear' ? 'linear' : 'bezier';
+				if (inEase !== 'none' && inEase !== 'linear') key.easeIn = { ...inEase };
+			}
+			return key;
 		});
 		return [...before, ...middle, ...after];
 	});

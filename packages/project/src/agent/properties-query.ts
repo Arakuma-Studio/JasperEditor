@@ -68,7 +68,15 @@ function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: 
 	throw new PropertyQueryError('E_NOT_FOUND', `Clip not found: ${clipId}. get_timeline lists clip ids.`);
 }
 
-type KeyOut = { id: string; frame: number; timecode: string; value: unknown; interpolation: string };
+type KeyOut = {
+	id: string;
+	frame: number;
+	timecode: string;
+	value: unknown;
+	interpolation: string;
+	/** keyframe-sides: the incoming side when the key has one of its own. */
+	inInterpolation?: string;
+};
 
 function keysOf(seq: Sequence, clip: Clip, anim: Animatable<unknown> | null): KeyOut[] {
 	if (!anim) return [];
@@ -80,6 +88,7 @@ function keysOf(seq: Sequence, clip: Clip, anim: Animatable<unknown> | null): Ke
 			timecode: tc(seq, frame),
 			value: round(k.value),
 			interpolation: k.interpolation,
+			...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 		};
 	});
 }
@@ -317,6 +326,7 @@ export function paramGetQuery(env: PropertyQueryEnv, args: { target: string[]; f
 								timecode: tc(seq, start + Math.round(k.time / F)),
 								value: round(k.value),
 								interpolation: k.interpolation,
+								...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 							})),
 						}
 					: {}),
@@ -367,6 +377,7 @@ function seqParam(
 						timecode: tc(seq, Math.round(k.time / F)),
 						value: round(k.value),
 						interpolation: k.interpolation,
+						...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 					})),
 				}
 			: {}),

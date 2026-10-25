@@ -74,6 +74,8 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 					timecode: sequenceTimecode(seq, frame),
 					value: r2(k.value),
 					temporal: k.interpolation,
+					// keyframe-sides: the incoming temporal side when the key has one of its own.
+					...(k.inInterpolation !== undefined ? { temporalIn: k.inInterpolation } : {}),
 					spatial: spatialModeOf(k),
 					inTangent: r2(t.inTangent),
 					outTangent: r2(t.outTangent),

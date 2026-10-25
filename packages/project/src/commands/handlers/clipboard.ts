@@ -20,7 +20,7 @@ import {
 } from '../../clipboard/payload.ts';
 import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
-import { isHoldOnlyValue, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
+import { isHoldOnlyValue, normalizeKeySides, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
@@ -306,6 +306,8 @@ function retimeKeys<T>(
 		const copy: Keyframe<T> = { ...clone(key), id: h.ids.next('kf'), time };
 		if (flip) {
 			Object.assign(copy, clone(reversedKeyTiming(keys as readonly Keyframe<unknown>[], i)));
+			// keyframe-sides: the mirrored keys carry each segment's shape in their eases (read the legacy way).
+			delete copy.inInterpolation;
 			if (copy.spatial) copy.spatial = reversedSpatial(copy.spatial);
 			// A roving key stays roving (its run reverses with it).
 		}
@@ -860,11 +862,17 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 				interpolation: hold ? 'hold' : timing.interpolation,
 				easeIn: { influence: timing.easeIn.influence, slope: timing.easeIn.slope },
 				easeOut: { influence: timing.easeOut.influence, slope: timing.easeOut.slope },
+				// keyframe-sides: the incoming side travels with the key (mirrored pastes carry it in their eases).
+				...(!hold && dir >= 0 && k.inInterpolation !== undefined
+					? { inInterpolation: k.inInterpolation }
+					: {}),
 				...(spatial ? { spatial } : {}),
 				...(k.roving ? { roving: true } : {}),
 			});
 		}
 		if (incoming.size === 0) continue;
+		// keyframe-sides: pasted incoming types come from an untrusted payload.
+		for (const key of incoming.values()) normalizeKeySides(key);
 		// A pasted key replaces a key at the same time (S01:KF-002).
 		const merged = [
 			...(target.anim.keyframes as Keyframe<unknown>[]).filter((k) => !incoming.has(k.time)).map(clone),

@@ -64,6 +64,7 @@ function toPresetAnim<T>(a: Animatable<T>, timing: ClipTiming, seq: Sequence): P
 						time: presetOffsetOf(k.time, timing, rate),
 						value: clone(k.value),
 						interpolation: k.interpolation,
+						...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 						easeIn: { ...k.easeIn },
 						easeOut: { ...k.easeOut },
 					})),

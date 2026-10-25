@@ -17,7 +17,15 @@
 //
 // Port of FilmCraft `crates/interchange/src/fcpxml.rs` (MIT OR Apache-2.0), extended (non-uniform scale, anchor,
 // blend modes, pan, crop, roles, captions, keyframe easing, effects with their params, generators reported).
-import type { Animatable, EffectInstance, Interpolation, Keyframe, Transform, Vec2 } from '@jasper/project';
+import type {
+	Animatable,
+	EffectInstance,
+	InInterpolation,
+	Interpolation,
+	Keyframe,
+	Transform,
+	Vec2,
+} from '@jasper/project';
 import { blendFromFcpxml, fcpxmlBlend } from './blend.ts';
 import {
 	anim,
@@ -824,12 +832,26 @@ class FcpxmlImporter {
 			const t = at(k, 'time');
 			if (t === null || k.attrs.value === undefined) continue;
 			const ip = (k.attrs.interp ?? 'linear').toLowerCase();
+			// keyframe-sides: `easeIn` / `easeOut` ease one side of the point (the DTD's "interpolation type for point").
+			if (ip === 'easein' || ip === 'easeout') {
+				const key = kf(kt(t), map(k.attrs.value), ip === 'easein' ? 'linear' : 'bezier');
+				key.inInterpolation = ip === 'easein' ? 'bezier' : 'linear';
+				key.easeIn = { influence: 1 / 3, slope: ip === 'easein' ? 0 : 1 };
+				out.keyframes.push(key);
+				continue;
+			}
 			out.keyframes.push(
 				kf(kt(t), map(k.attrs.value), ip === 'hold' ? 'hold' : ip === 'linear' ? 'linear' : 'bezier'),
 			);
 		}
 		out.keyframes.sort((x, y) => x.time - y.time);
 		out.keyframes = out.keyframes.filter((k, i, l) => i === l.length - 1 || l[i + 1]!.time !== k.time);
+		// keyframe-sides: the point after a one-sided ease is read per side too (After Effects' segment rule).
+		out.keyframes.forEach((k, i) => {
+			const prev = out.keyframes[i - 1];
+			if (prev?.inInterpolation !== undefined && k.inInterpolation === undefined)
+				k.inInterpolation = k.interpolation === 'hold' ? 'bezier' : (k.interpolation as 'linear' | 'bezier');
+		});
 		for (const k of out.keyframes) k.id = `kf${k.time}`;
 		if (out.keyframes[0]) out.value = out.keyframes[0].value;
 		return out;
@@ -1809,7 +1831,7 @@ class FcpxmlExporter {
 				el('keyframe', [
 					['time', fmtTime(toLocal(k.time), rate)],
 					['value', f(k.value)],
-					...interpAttrs(k.interpolation),
+					...interpAttrs(k.interpolation, k.inInterpolation),
 				]),
 			);
 			// A hold key: FCPXML has no hold interpolation; the value is repeated on the frame before the next key, which
@@ -1852,16 +1874,18 @@ class FcpxmlExporter {
 	}
 }
 
-function interpAttrs(i: Interpolation): [string, string][] {
-	return i === 'linear' || i === 'hold'
-		? [
-				['interp', 'linear'],
-				['curve', 'linear'],
-			]
-		: [
-				['interp', 'ease'],
-				['curve', 'smooth'],
-			];
+/**
+ * FCPXML `interp` of a point (linear | ease | easeIn | easeOut, "interpolation type for point"). keyframe-sides: a key
+ * with its own incoming side maps each side: eased in only → `easeIn`, out only → `easeOut`, both → `ease`.
+ */
+function interpAttrs(i: Interpolation, inSide?: InInterpolation): [string, string][] {
+	const outCurved = i !== 'linear' && i !== 'hold';
+	const inCurved = inSide === undefined ? outCurved : inSide !== 'linear';
+	const interp = outCurved && inCurved ? 'ease' : inCurved ? 'easeIn' : outCurved ? 'easeOut' : 'linear';
+	return [
+		['interp', interp],
+		['curve', interp === 'linear' ? 'linear' : 'smooth'],
+	];
 }
 
 function a_used(merged: Map<string, IClip>, c: IClip): boolean {

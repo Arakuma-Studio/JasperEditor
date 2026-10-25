@@ -63,6 +63,22 @@ export const InterpolationSchema = z.enum(INTERPOLATIONS);
 export type Interpolation = DeepStrip<z.infer<typeof InterpolationSchema>>;
 
 /**
+ * keyframe-sides: the incoming temporal interpolation of a key (After Effects / Premiere keep an incoming and an
+ * outgoing type per key; docs/wp-notes/keyframe-sides.md). Hold is not an incoming type here: a Hold segment is
+ * decided by the key it leaves (After Effects' incoming Hold only mirrors the previous key's outgoing Hold). Auto
+ * Bezier and Continuous Bezier shape both sides of a key, so a key whose two sides differ never uses them.
+ */
+export const IN_INTERPOLATIONS = ['linear', 'bezier', 'auto-bezier', 'continuous-bezier'] as const;
+export const InInterpolationSchema = z.enum(IN_INTERPOLATIONS);
+export type InInterpolation = (typeof IN_INTERPOLATIONS)[number];
+/** Interpolations that shape both sides of a key (a key whose sides differ cannot use them). */
+export const BOTH_SIDED_INTERPOLATIONS = ['auto-bezier', 'continuous-bezier'] as const;
+/** The side(s) of a key a temporal interpolation edit applies to. */
+export const INTERPOLATION_SIDES = ['both', 'in', 'out'] as const;
+export const InterpolationSideSchema = z.enum(INTERPOLATION_SIDES);
+export type InterpolationSide = (typeof INTERPOLATION_SIDES)[number];
+
+/**
  * A temporal ease: influence (0, 1] of the segment and the speed as a slope normalised by the segment's average speed
  * (1 = linear). keyframes-blend: the slope is any finite number — negative = the value first moves away from the
  * next key (anticipation), steep = it passes it (overshoot), as Premiere's graph handles allow.
@@ -112,7 +128,18 @@ export type Keyframe<T> = {
 	id: string;
 	time: number;
 	value: T;
+	/**
+	 * The key's temporal interpolation: its outgoing side, and also its incoming side when `inInterpolation` is
+	 * absent (documents written before keyframe-sides).
+	 */
 	interpolation: Interpolation;
+	/**
+	 * keyframe-sides: the incoming side. Present = the segment arriving at this key is evaluated per side, After
+	 * Effects-style (the previous key's outgoing side and this incoming side; a Linear side contributes influence ⅙
+	 * at the segment's average speed). Absent = the rule documents were written with: the segment follows the previous
+	 * key's `interpolation` (Linear → linear whatever this key stores), so existing projects evaluate as before.
+	 */
+	inInterpolation?: InInterpolation;
 	easeIn: Ease;
 	easeOut: Ease;
 	/** vec2 point properties only (S03:KF-030); absent = linear spatial. */
@@ -140,6 +167,8 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 		time: int(),
 		value,
 		interpolation: InterpolationSchema,
+		// keyframe-sides: read leniently (any value loads); INV-011 reports a bad one and `repairDocument` fixes it.
+		inInterpolation: z.custom<InInterpolation>(() => true).optional(),
 		easeIn: EaseSchema,
 		easeOut: EaseSchema,
 		spatial: SpatialSchema.optional(),

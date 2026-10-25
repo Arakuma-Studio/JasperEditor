@@ -44,6 +44,7 @@ import {
 	samplePostVelocityCurve,
 	sampleValueCurves,
 	sampleVelocityCurve,
+	sideHasHandle,
 	timeMapOf,
 	type ValueHandle,
 	type Vec2ValueHandle,
@@ -448,18 +449,15 @@ export function PropertyGraphs(
 	const valueHandleList: ValueHandle[] =
 		kind === 'number'
 			? selectedIdx.flatMap((i) =>
-					kfs[i]!.interpolation === 'bezier' || kfs[i]!.interpolation === 'continuous-bezier'
-						? valueHandles(anim as Animatable<number>, i, map)
-						: [],
+					// keyframe-sides: a handle on each Bezier side (an Ease In key has one on its incoming side only).
+					valueHandles(anim as Animatable<number>, i, map).filter((h) => sideHasHandle(kfs[i]!, h.side)),
 				)
 			: [];
 
 	const vec2HandleList: Vec2ValueHandle[] =
 		kind === 'vec2'
 			? selectedIdx.flatMap((i) =>
-					kfs[i]!.interpolation === 'bezier' || kfs[i]!.interpolation === 'continuous-bezier'
-						? vec2ValueHandles(anim, i, map)
-						: [],
+					vec2ValueHandles(anim, i, map).filter((h) => sideHasHandle(kfs[i]!, h.side)),
 				)
 			: [];
 
