@@ -227,7 +227,7 @@ export const YOUTUBE_GLYPHS = {
 			},
 		],
 		defaultColor: { light: '#0F0F0F', dark: '#F1F1F1' },
-		origin: 'live-cdn',
+		origin: 'live-dom',
 	},
 	/** Comment like (18 px design), liked. */
 	thumbUpFilled: {
@@ -249,7 +249,7 @@ export const YOUTUBE_GLYPHS = {
 			},
 		],
 		defaultColor: { light: '#0F0F0F', dark: '#F1F1F1' },
-		origin: 'live-cdn',
+		origin: 'live-dom',
 	},
 	/** Comment dislike (18 px design), disliked. */
 	thumbDownFilled: {

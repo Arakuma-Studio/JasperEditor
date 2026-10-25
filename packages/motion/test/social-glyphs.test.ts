@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -176,6 +179,44 @@ describe('platform glyphs', () => {
 			expect(a.image.width).toBeGreaterThan(0);
 		}
 		expect(PLATFORM_DEFAULT_AVATARS.instagram.kind).toBe('none');
+	});
+});
+
+describe('provenance record (licenses/platform-assets.md, AGENTS.md §3 item 5)', () => {
+	const record = readFileSync(
+		join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'licenses', 'platform-assets.md'),
+		'utf8',
+	);
+	const section = (heading: string): string => {
+		const start = record.indexOf(`## ${heading}`);
+		expect(start).toBeGreaterThanOrEqual(0);
+		const end = record.indexOf('\n## ', start + 3);
+		return record.slice(start, end < 0 ? undefined : end);
+	};
+	const sets: Array<[string, Record<string, PlatformGlyph>]> = [
+		['TikTok', TIKTOK_GLYPHS],
+		['Instagram', INSTAGRAM_GLYPHS],
+		['YouTube', YOUTUBE_GLYPHS],
+		['X', X_GLYPHS],
+	];
+
+	it.each(sets)('lists every %s glyph with the method the module records', (heading, set) => {
+		const text = section(heading);
+		for (const [name, g] of Object.entries(set)) {
+			const row = text.split('\n').find((l) => l.startsWith(`| \`${name}\` |`));
+			expect(row, `${heading} ${name}`).toBeDefined();
+			expect(row?.trim().endsWith(`| ${g.origin} |`), `${heading} ${name}: ${g.origin}`).toBe(true);
+		}
+	});
+
+	it('lists the TikTok default avatar and the raster avatars by URL and hash', () => {
+		expect(section('TikTok')).toContain(`| \`TIKTOK_DEFAULT_AVATAR\` |`);
+		for (const p of ['x', 'youtube'] as const) {
+			const a = PLATFORM_DEFAULT_AVATARS[p];
+			if (a.kind !== 'remote') throw new Error(`${p} avatar is not remote`);
+			expect(record).toContain(a.image.url);
+			expect(record).toContain(a.image.sha256);
+		}
 	});
 });
 
