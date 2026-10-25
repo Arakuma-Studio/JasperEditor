@@ -907,6 +907,7 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
     replies line 600; comment, time and count 400.
 - **Glyphs:** `INSTAGRAM_GLYPHS` heart outline / filled and verified badge. The heart is drawn 15.5 px in the 16 px
   slot and the column moves 1.5 px down, so its ink box and centre match tokcomment's lucide heart (30 × 26 px at 2×).
+  While the like tick thumps it, the heart carries `INK_RING`.
 - **Colours added:** mentions and hashtags in `--ig-link` #00376B / #E0F1FF [M-css]; liked heart `--ig-badge` #FF3040
   [M-css].
 - **Default avatar** (`avatar: null`): Instagram has no stable public source (WP5), and the only unsigned image of its
@@ -933,8 +934,10 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
   - every case starts from its variant's `socialDefaults`, as the captures do (unchanged for TikTok, whose defaults
     are the schema's);
   - `SOCIAL_SF_PRO_DIR` loads SF Pro Text 400/600; without it the Instagram cases render in the host's fallback font;
-  - `SOCIAL_CALIBRATION_FILTER` (comma-separated name parts) renders only matching calibration cases;
-  - a parity failure leaves the differing still / frames PNG pair in the run's artifact directory.
+  - each case's page loads only its variant's font family (as `requiredAssets` does). With every family on every page,
+    the TikTok `comment-light-spring` parity case failed 2 of 2 runs (an icon edge 2/255 off at frames 6 and 146) and
+    passed without SF Pro; with per-variant fonts the whole parity test passes;
+  - `SOCIAL_CALIBRATION_FILTER=instagram` (a regular expression of case names) renders only the Instagram cases.
 - **Measured matches (2× px):** post card 235 px high against 238, Reel card 191 against 192 (dark, with its border:
   193 against 196); the rest is the 1 px border, which Chrome snaps to whole device pixels under the card's zoom; comment and "Reply" baselines within
   1 px; "View 5 more replies" within 1 px; heart ink box 30 × 26 at the same place; Reel card 509 px wide against 510.
@@ -964,8 +967,8 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
   the like tick ending on the red filled heart, the Reel card (no stats or badge, ≤ 255 px), the grow corner.
 - `packages/motion/test/mg-cue-timing.test.ts`: Instagram rows (classic pop and grow from tail × word reveal + like
   tick on both cards, a short 1.5 s clip at 25 fps): the model equals anime.js frame by frame, cues within ±1 frame.
-- `packages/mg-templates/test/social-comment-template.test.ts`: the four presets, the Instagram preset params, the
-  export blocker lifted, the font entry.
+- `packages/mg-templates/test/social-comment-template.test.ts`: the Instagram presets and their params, the export
+  blocker lifted, the font entries, and `requiredAssets` (SF Pro Text faces, the comment's emoji, no image).
 - `REMOTION_E2E=1 social-comment-render.e2e.test.ts` (Chrome 156, SF Pro and Apple emoji loaded): `renderStill` =
   `renderFrames` byte for byte for an Instagram post (1:1, dark, verified, classic pop, word reveal, like tick) and a
   Reel card (9:16, word reveal); the fit loop keeps both cards inside every canvas with a 1,400-character marked

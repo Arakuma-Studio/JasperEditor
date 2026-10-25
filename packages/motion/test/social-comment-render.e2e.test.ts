@@ -23,6 +23,7 @@ import {
 	emojiGraphemes,
 	isSocialVariant,
 	SOCIAL_DEFAULT_TEXT,
+	SOCIAL_VARIANT_FONTS,
 	socialComment,
 	socialCommentParamsSchema,
 	socialCommentSchedule,
@@ -526,13 +527,12 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		await browser?.close({ silent: true });
 	});
 
-	// a case's params over its variant's tokcomment defaults (the captures show each variant's own defaults)
+	// a case's params over its variant's tokcomment defaults (the captures show each variant's own defaults); the page
+	// loads only the variant's own font family, as `requiredAssets` does in the editor and the engine
+	const variantOf = (c: Case) => (isSocialVariant(c.params.variant) ? c.params.variant : 'tiktok-reply');
 	const propsOf = (c: Case): CardProps => ({
-		params: {
-			...socialDefaults(isSocialVariant(c.params.variant) ? c.params.variant : 'tiktok-reply'),
-			...c.params,
-		},
-		fonts,
+		params: { ...socialDefaults(variantOf(c)), ...c.params },
+		fonts: fonts.filter((f) => f.family === SOCIAL_VARIANT_FONTS[variantOf(c)]?.family),
 		mediaFiles: c.media ? { med_avatar: 'avatar.png' } : {},
 		emojiFiles,
 		imageFiles,
