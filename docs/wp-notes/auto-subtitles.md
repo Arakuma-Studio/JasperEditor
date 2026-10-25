@@ -404,6 +404,37 @@ The template → project text style link is one function (`linkTemplateStyle`). 
 through `caption.groupId` (`text.setStyle {groupId}`, `textStyle.apply / detach / reset {groupId}`); the highlight
 upkeep rebuilds its Source Text keys after any style change so they never hold a stale style.
 
+## 8. Editor (AS-040, AS-022, AS-032)
+
+`apps/web/src/subtitles/` (+ `apps/web/src/commands/subtitles.ts`):
+
+- **Create Subtitles…** (Sequence ▸ Captions, the Text panel menu, a button in the Transcript tab; History "Create
+  Subtitles"; Spanish "Generar subtítulos", since "Crear subtítulos" already names Create Captions): source
+  (sequence transcript / one media / the selected clips), template (built-ins, the project's templates and the user
+  library, refreshed on `subtitleTemplates.changed`), output, language; every AS-002 rule in three columns (generic
+  default, template default, value — a blank value keeps the template's default, "off" for the rules that allow it);
+  text transforms; the AS-011 cut options; Nest with its warning. Live counts (subtitles, snapped, split, below
+  minimum, merged) and a rendered frame of the first subtitle come from the same `captions.generate` applied to a copy
+  of the document (dry run), drawn by the Player inside its own session provider and an error boundary. A template
+  whose font family is not in the font library shows an install notice with **Install Font…**. Create sends one
+  `captions.generate`.
+- **Text ▸ Subtitles** tab: the sequence's groups (name, template, language, count) with Align to Cuts, Regenerate,
+  Select, Apply Template…, Export (SRT, VTT, TTML, SCC, STL from `captionCuesForGroup`), To Caption Track, Captions to
+  Text Clips, Save as Template… (also on text clips' timeline context menu; "Save to library" option), Rename, Delete;
+  a virtualised list of a group's clips (a 2,000-clip group draws < 60 rows), click to seek, inline text edits (one
+  undo step; words re-time).
+- Selection helpers **Subtitle Group** and **Same Template** in the Select menu registry (styling's
+  `selectionHelpers`); no new default shortcuts (keymap test).
+- Export dialog: the captions section also appears for sequences with subtitle groups only; a group can be the sidecar
+  / embedded source.
+- Tests: `apps/web/test/subtitles.test.tsx`; Playwright `e2e/subtitles.spec.ts` (two generated full-frame shots with a
+  cut, an imported transcript, Pixel Pop through the dialog: no subtitle crosses the cut, "el juego" starts on frame
+  90; the exported frames before / after the cut show the expected subtitles; 3 / 3 passed with a full build).
+- UI check on the build VM's dev stack (1080×1920 60 fps project, Pixel12x10 installed in that app dir only): the
+  dialog previewed 11 subtitles with 1 split at the cut and no font notice; Create gave one History entry; "horas"
+  ended on the cut frame 240 and "y" started on it; the Program monitor drew the pixel-font subtitles and the tab
+  showed "11 subtitles · Pixel Pop · es".
+
 ## 9. Agents (AS-041)
 
 MCP (`apps/mcp/src/tools/captions.ts`, `apps/mcp/src/tools/subtitles.ts`; strict arguments; times as frames, seconds
@@ -499,3 +530,10 @@ minimum duration), allowed by the spec's zone rule. Layout time for all 26 proje
 - Highlight (word / karaoke) uses Source Text keys, so it does not combine with legacy in / out text animations on
   the same clip (the typeset renderer draws keyed text); none of the built-ins combines them.
 - Export speed with many animated subtitles is the subtitle-export work (AS-050 / AS-070…076), not changed here.
+- **Rendering defect seen (not in this work's code)**: with the template's GPU effects (Transform, S_Shake) the
+  outside stroke of a subtitle is clipped to the glyph box — flat stroke edges at the top / left / bottom of the text
+  in the e2e export frames and a thin bar next to the text in the Program monitor. The effect layer is rasterised to
+  bounds that do not include the stroke (and shadow) overflow; it belongs to the text-rendering / subtitle-export
+  work (SH-004, AS-070) and is reported there.
+- Cut map: pictures covering less than the overlay threshold (e.g. a 720p clip unscaled in a 1080p sequence) are not
+  base pictures, so a cut from such a shot to black gives no cut to align to.
