@@ -92,7 +92,7 @@ describe("clip.addMotionGraphic placement: 'first-free'", () => {
 	it('uses the target track when it is free and the next free one above when it is busy', () => {
 		const h = harness();
 		const r1 = h.ok([mg(0, 60)]).results[0] as MgResult;
-		expect(r1).toMatchObject({ track: 'V1', start: 0, duration: 60 });
+		expect(r1).toMatchObject({ sequenceId: h.seqId, track: 'V1', start: 0, duration: 60 });
 		expect(label(h.doc, r1.trackId)).toBe('V1');
 		// overlapping V1's clip → V2; touching it (starting where it ends) is free → V1 again
 		const r2 = h.ok([mg(30, 60)]).results[0] as MgResult;

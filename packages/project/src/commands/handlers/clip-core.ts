@@ -696,6 +696,7 @@ export const clipCoreHandlers = {
 		// The placement and the resolved params, so agents need no second read (dry runs included).
 		return {
 			clipId: id,
+			sequenceId: seq.id,
 			trackId: track.id,
 			track: `${track.kind === 'video' ? 'V' : track.kind === 'audio' ? 'A' : 'C'}${trackIndex + 1}`,
 			...(createdTrack ? { createdTrack: true } : {}),
