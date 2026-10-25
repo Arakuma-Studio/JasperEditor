@@ -45,6 +45,7 @@ const CARD: MgTemplateCatalogEntry = {
 	canvases: ['1920x1080'],
 	native: false,
 	renderer: 'anime',
+	presets: [{ id: 'pro', name: 'Pro', params: { handle: 'brand', text: 'From the preset' } }],
 };
 const LOWER: MgTemplateCatalogEntry = {
 	id: 'lower-third',
@@ -183,6 +184,7 @@ type Item = {
 	index: number;
 	clipId: string;
 	template: string;
+	preset?: string;
 	track: string;
 	trackId: string;
 	createdTrack?: boolean;
@@ -388,6 +390,60 @@ describe('add_motion_graphic: items[] in one transaction', () => {
 				.sort((a, b) => a[0] - b[0]);
 			for (let i = 1; i < spans.length; i++) expect(spans[i]![0]).toBeGreaterThanOrEqual(spans[i - 1]![1]);
 		}
+	});
+});
+
+describe('add_motion_graphic: presets (WP3a refs) with batches, placement and the fill', () => {
+	it('layers defaults → preset → fill → item params, and reports the preset', async () => {
+		const engine = fakeEngine();
+		const { call } = await connect(engine);
+		const body = ok(
+			await call({
+				seed: 5,
+				items: [
+					{ template: 'card:pro', at: 0 },
+					{ template: 'card@1:pro', at: 0, params: { text: 'Mine' } },
+					{ template: 'card', at: 0 },
+				],
+			}),
+		);
+		expect(body.items[0]).toMatchObject({
+			template: 'card@1',
+			preset: 'pro',
+			track: 'V2',
+			params: { handle: 'brand', text: 'From the preset', likes: 5 },
+			filled: ['likes'],
+		});
+		expect(body.items[1]).toMatchObject({
+			preset: 'pro',
+			track: 'V3',
+			params: { handle: 'brand', text: 'Mine' },
+		});
+		expect(body.items[1]!.filled).toEqual(['likes']);
+		expect(body.items[2]!.preset).toBeUndefined();
+		expect(body.items[2]!.filled).toEqual(['handle', 'likes']);
+	});
+
+	it('reports unknown presets and malformed refs per item before applying anything', async () => {
+		const engine = fakeEngine();
+		const { call } = await connect(engine);
+		const e = err(
+			await call({
+				items: [
+					{ template: 'card:nope', at: 0 },
+					{ template: 'card', at: 0 },
+					{ template: 'card@x', at: 0 },
+				],
+			}),
+		);
+		expect(e.code).toBe('E_NOT_FOUND');
+		expect(e.details).toMatchObject({
+			items: [
+				{ index: 0, code: 'E_NOT_FOUND' },
+				{ index: 2, code: 'E_INVALID_PARAM' },
+			],
+		});
+		expect(engine.txs).toHaveLength(0);
 	});
 });
 

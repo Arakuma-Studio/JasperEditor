@@ -11,6 +11,7 @@ import {
 	blendModeInfo,
 	buildRenderSnapshot,
 	clipContentTime,
+	collectParamMediaIds,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	hasAudioProcessor,
@@ -517,6 +518,18 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			itemIds: [...offlineUsed],
 		});
 	}
+	// Template media params (avatars) that are offline: the template draws its placeholder there, so the export says so.
+	const templateOffline = new Set<string>();
+	for (const c of visual)
+		if ('mg' in c.source)
+			for (const id of collectParamMediaIds(c.source.mg.params))
+				if (!snapshot.media[id]) templateOffline.add(c.clipId);
+	if (templateOffline.size > 0)
+		warnings.push({
+			code: 'OFFLINE_TEMPLATE_MEDIA',
+			message: `${templateOffline.size} motion graphic(s) show offline media; those pictures render as placeholders`,
+			itemIds: [...templateOffline],
+		});
 	// LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
 	// offline: those steps are skipped (the clips render ungraded / uninterpreted there), so the export says so.
 	const lutOffline = new Set<string>();

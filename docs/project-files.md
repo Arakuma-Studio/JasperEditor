@@ -11,11 +11,11 @@ crash recovery).
 ```json
 {
   "format": "jasper-project",
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "savedAt": "2026-10-07T10:12:00.000Z",
   "savedBy": { "app": "JasperEditor", "version": "0.1.0", "platform": "web" },
   "revision": 412,
-  "document": { "schemaVersion": 7, "projectId": "prj_…", "name": "…", "settings": {…}, "rootItems": […],
+  "document": { "schemaVersion": 8, "projectId": "prj_…", "name": "…", "settings": {…}, "rootItems": […],
                 "items": {…}, "media": {…}, "synthetics": {…}, "transcripts": {…}, "fonts": {…},
                 "sequences": {…}, "extensions": {…} }
 }
@@ -51,6 +51,7 @@ crash recovery).
 | 5 | M3 (D-33) | `MediaAsset.sourceRange` (which source frames a processed or rendered version holds) | `v4→v5`: processed versions made from the whole source get the explicit full-source range |
 | 6 | parity program (D-36…D-48) | masks and track mattes, nests and adjustment layers, groups, captions and transcripts, time remapping, vector shapes, text animators, expressions, 3D layers / cameras / lights, multicam, roto mattes, audio effects / buses / Essential Sound, working colour spaces, interpreted footage, and the other optional fields the parity workstreams added | `v5→v6`: version bump only, so v5 builds open v6 files read-only instead of dropping the new fields on save |
 | 7 | sound design (spec 12, Phases 0–1) | Essential Sound SFX Pan is an offset on the clip's own pan (`essential.panOffset`, with `essential.residual` for what the fader range clamped); `MediaAsset.library` (provenance of Sound Library sounds, including `leadSilenceSec` for copies registered with lead silence) | `v6→v7`: version bump only, so v6 builds open v7 files read-only. Why: a v6 build editing Essential Sound Pan on a v7 file writes an absolute pan while keeping the `panOffset` marker, which v7 then reads as an offset (the clip's keyframes would shift). Older SFX Pan settings (no marker) keep being read by `migrate-essential-pan` (repair) and the Essential Sound commands |
+| 8 | social comments (design §7.7, template media params) | motion-graphic template params may reference media: `{mediaId} \| null` values (`mediaParam()` of `@jasper/mg-templates`, e.g. a comment's avatar), anywhere inside `params` | `v7→v8`: version bump only, so v7 builds open v8 files read-only. Why: a v7 build counts only a clip's own `mediaId` as a use, so its orphan collection, item delete, Project Manager "Exclude Unused" and paste would drop (or leave dangling) media referenced only from template params on its next save. v8 counts them everywhere (`collectParamMediaIds`): INV-006 reports a missing one, INV-014 counts it as a use, and repair sets a dangling one to `null` (`clear-template-media`) |
 
 Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
 forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:

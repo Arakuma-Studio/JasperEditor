@@ -1,6 +1,7 @@
 // Derived data (S01:SES-010): computed from the document, memoized by reference, never stored.
 import { isDraft } from 'immer';
 import { keyDiff } from '../commands/draft-read.ts';
+import { clipParamMediaIds } from '../param-media.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame, type Rational } from '../time.ts';
@@ -375,11 +376,15 @@ export function mediaUsage(doc: ProjectDocument): Record<string, MediaUsage> {
 	const out: Record<string, MediaUsage> = {};
 	for (const seq of Object.values(doc.sequences)) {
 		for (const c of Object.values(seq.clips)) {
-			const m = (c as { mediaId?: string }).mediaId;
-			if (!m) continue;
-			const u = (out[m] ??= { clips: 0, sequences: [] });
-			u.clips++;
-			if (!u.sequences.includes(seq.id)) u.sequences.push(seq.id);
+			const own = (c as { mediaId?: string }).mediaId;
+			// template media params (avatars) count as uses of their media, once per clip.
+			const ids = new Set(clipParamMediaIds(c));
+			if (own) ids.add(own);
+			for (const m of ids) {
+				const u = (out[m] ??= { clips: 0, sequences: [] });
+				u.clips++;
+				if (!u.sequences.includes(seq.id)) u.sequences.push(seq.id);
+			}
 		}
 	}
 	return out;

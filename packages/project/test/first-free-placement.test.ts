@@ -11,7 +11,8 @@ import {
 	type MgTemplateInfo,
 	type ProjectDocument,
 } from '../src/index.ts';
-import { Harness } from './helpers.ts';
+import { Harness, videoAsset } from './helpers.ts';
+import { avatarCard } from './template-media-fixture.ts';
 
 const cardParams = z.strictObject({
 	handle: z.string().min(1).max(40),
@@ -307,5 +308,87 @@ describe('clip.addMotionGraphic {fill} (template fill hook)', () => {
 		expect(h.tx([mg(0, 30, { fill: { seed: -1 } })])).toMatchObject({ ok: false });
 		expect(h.tx([mg(0, 30, { fill: { seed: 2 ** 32 } })])).toMatchObject({ ok: false });
 		expect(h.doc).toBe(before);
+	});
+});
+
+describe('fill hook × template media params (WP1 checks apply to filled params)', () => {
+	const filling: MgTemplateInfo = {
+		...avatarCard,
+		id: 'avatar-fill',
+		fill(partial, seed) {
+			if (partial.avatar !== undefined) return { ok: true, params: partial, filled: [] };
+			return { ok: true, params: { ...partial, avatar: { mediaId: `med_${seed}` } }, filled: ['avatar'] };
+		},
+	};
+	const regs = defaultRegistries(createStaticMgRegistry([filling]));
+	const add = (extra: Record<string, unknown>) => ({
+		type: 'clip.addMotionGraphic',
+		at: 0,
+		duration: 30,
+		track: 'V1',
+		placement: 'first-free',
+		template: { id: 'avatar-fill', version: 1 },
+		...extra,
+	});
+
+	it('refuses a filled reference to a missing medium (E_NOT_FOUND) and one of the wrong kind (E_INVALID_PARAM)', () => {
+		const h = new Harness({ ctx: { registries: regs } });
+		const before = h.doc;
+		expect(h.tx([add({ fill: { seed: 1 } })])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_NOT_FOUND' }],
+		});
+		const audio = (
+			h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio' }) }]).results[0] as {
+				mediaId: string;
+			}
+		).mediaId;
+		const image = (
+			h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image' }) }]).results[0] as {
+				mediaId: string;
+			}
+		).mediaId;
+		const afterRegister = h.doc;
+		// the given (caller or preset) value wins over the fill and is checked the same way
+		expect(h.tx([add({ params: { avatar: { mediaId: audio } }, fill: { seed: 1 } })])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
+		expect(h.doc).toBe(afterRegister);
+		const r = h.ok([add({ params: { avatar: { mediaId: image } }, fill: { seed: 1 } })])
+			.results[0] as MgResult;
+		expect(r.params.avatar).toEqual({ mediaId: image });
+		expect(r.filled).toEqual([]);
+		expect(before).not.toBe(h.doc);
+	});
+
+	it('a batch is refused as a whole when one filled item references a missing medium', () => {
+		const h = new Harness({ ctx: { registries: regs } });
+		const image = (
+			h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image' }) }]).results[0] as {
+				mediaId: string;
+			}
+		).mediaId;
+		const before = h.doc;
+		const r = h.tx([
+			add({ params: { avatar: { mediaId: image } }, fill: { seed: 2 } }),
+			add({ fill: { seed: 3 } }),
+		]);
+		expect(r).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_FOUND', commandIndex: 1 }] });
+		expect(h.doc).toBe(before);
+	});
+});
+
+describe('layering defaults → preset → fill → caller (presets travel as given params)', () => {
+	it('the fill never overrides what the preset or the caller set', () => {
+		const h = harness();
+		const preset = { handle: 'brand', text: 'From the preset' };
+		const r = h.ok([mg(0, 30, { params: { ...preset }, fill: { seed: 5 } })]).results[0] as MgResult;
+		expect(r.params).toEqual({ handle: 'brand', text: 'From the preset', likes: 39_595 });
+		expect(r.filled).toEqual(['likes']);
+		const caller = h.ok([mg(0, 30, { params: { ...preset, text: 'Mine', likes: 1 }, fill: { seed: 5 } })])
+			.results[0] as MgResult;
+		expect(caller.params).toEqual({ handle: 'brand', text: 'Mine', likes: 1 });
+		expect(caller.filled).toEqual([]);
 	});
 });

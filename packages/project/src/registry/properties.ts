@@ -24,6 +24,7 @@ import {
 	MASK_PROP_LABELS,
 	type MaskProp,
 } from '../masks/model.ts';
+import { TEMPLATE_MEDIA_KIND, TEMPLATE_MEDIA_KINDS_KEY, TEMPLATE_PARAM_KIND_KEY } from '../param-media.ts';
 import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
@@ -48,7 +49,7 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
-import type { MgTemplateInfo } from './mg.ts';
+import type { MgTemplateInfo, MgTemplateUi } from './mg.ts';
 import {
 	isTextAnimatorKey,
 	resolveTextAnimatorSpec,
@@ -148,7 +149,19 @@ export type PropertySpec = {
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
 		multiline?: boolean;
+		/**
+		 * Template params (`ui.params.<name>.control`): a custom control registered by the web app under this name
+		 * (`registerTemplateParamControl`); an unregistered name falls back to the `control` editor.
+		 */
+		customControl?: string;
 	};
+	/** Template params (`ui.groups`): the sub-section of the template's Parameters the row belongs to. */
+	section?: { id: string; label: string };
+	/**
+	 * Template params (`ui.params.<name>.visibleWhen`): the row is shown only while the sibling param `param` holds
+	 * one of `in` (`templateParamVisible`). The value stays settable (agents, set_motion_graphic_params).
+	 */
+	visibleWhen?: { param: string; in: readonly unknown[] };
 	/** Reset value (S03:PRP-002 `defaultValue`), a constant or computed from the clip. */
 	defaultValue?: unknown | ((ctx: PropertyContext) => unknown);
 	/** How the UI writes the value: `param` (default) = `param.set`; `clip.update` = the returned patch. */
@@ -160,6 +173,11 @@ export type PropertySpec = {
 	valueSchema?: JsonSchemaObject;
 	/** `media` values (fx framework): the asset kinds the picker offers (absent = LUTs, the M2 colour pickers). */
 	mediaKinds?: readonly string[];
+	/**
+	 * `media` values of template params (`mediaParam()`, social comments): "None" is `null` (effect media params
+	 * write `{mediaId: ''}`).
+	 */
+	mediaNullable?: boolean;
 	/** wp shapes: structural check of a written value (`json` paths and gradients); false = E_INVALID_PARAM. */
 	validate?: (value: unknown) => boolean;
 };
@@ -1217,6 +1235,31 @@ export function jsonSchemaPropertySpecs(
 	const leaf = (name: string, path: string[], s0: JsonSchema, dflt: unknown) => {
 		const s = unwrapNullable(root, s0);
 		const hint = o.ui?.[path.join('.')];
+		// Template media params (`mediaParam()`: `{mediaId} | null` with `x-jasper-kind: "media"`): the media picker.
+		const mediaKinds = templateMediaKindsOf(s0) ?? templateMediaKindsOf(s);
+		if (mediaKinds) {
+			out.push({
+				key: [o.keyPrefix, ...path].join('.'),
+				label:
+					typeof hint?.label === 'string'
+						? hint.label
+						: typeof s.title === 'string'
+							? s.title
+							: humanize(name),
+				group: o.group,
+				kind: 'media',
+				animatable: 'no',
+				storagePath: [...o.storageRoot, ...path],
+				appliesTo: o.appliesTo,
+				ui: { control: 'media' },
+				defaultValue: dflt !== undefined ? dflt : (s0.default ?? s.default ?? null),
+				description: typeof s.description === 'string' ? s.description : undefined,
+				valueSchema: s0,
+				mediaKinds,
+				mediaNullable: true,
+			});
+			return;
+		}
 		let kind: ValueKind = 'string';
 		let options: readonly string[] | undefined;
 		const enumOpts = literalOptions(root, s);
@@ -1295,6 +1338,64 @@ export function jsonSchemaPropertySpecs(
 	return out;
 }
 
+/** The media kinds of a template media param schema node (`x-jasper-kind: "media"`), else null. */
+function templateMediaKindsOf(s: JsonSchema | undefined): string[] | null {
+	if (!isRecord(s) || s[TEMPLATE_PARAM_KIND_KEY] !== TEMPLATE_MEDIA_KIND) return null;
+	const kinds = s[TEMPLATE_MEDIA_KINDS_KEY];
+	return Array.isArray(kinds) ? kinds.filter((k): k is string => typeof k === 'string') : [];
+}
+
+const templateJsonCache = new WeakMap<object, JsonSchema | null>();
+function templateJson(template: Pick<MgTemplateInfo, 'paramsSchema'>): JsonSchema | null {
+	const key = template.paramsSchema as object;
+	if (templateJsonCache.has(key)) return templateJsonCache.get(key)!;
+	let json: JsonSchema | null = null;
+	try {
+		json = z.toJSONSchema(template.paramsSchema, { unrepresentable: 'any', io: 'input' }) as JsonSchema;
+	} catch {
+		json = null;
+	}
+	templateJsonCache.set(key, json);
+	return json;
+}
+
+/**
+ * The media kinds the template param at `path` (inside `params`, e.g. `['avatar']` or `['gallery', '0']`) takes,
+ * when the schema declares it a media param (`mediaParam()`); null when it does not (or the path is not in the
+ * schema). An empty list means "any kind".
+ */
+export function templateMediaKindsAt(
+	template: Pick<MgTemplateInfo, 'paramsSchema'>,
+	path: readonly string[],
+): string[] | null {
+	const root = templateJson(template);
+	if (!root) return null;
+	let cur: JsonSchema | undefined = root;
+	for (const key of path) {
+		const s = derefSchema(root, cur);
+		if (!isRecord(s)) return null;
+		const branches = [
+			s,
+			...(['anyOf', 'oneOf', 'allOf'] as const).flatMap((k) => (Array.isArray(s[k]) ? s[k] : [])),
+		]
+			.map((b) => derefSchema(root, b as JsonSchema))
+			.filter(isRecord);
+		let next: JsonSchema | undefined;
+		for (const b of branches) {
+			if (/^\d+$/.test(key) && isRecord(b.items)) next = b.items as JsonSchema;
+			else if (/^\d+$/.test(key) && Array.isArray(b.prefixItems))
+				next = b.prefixItems[Number(key)] as JsonSchema;
+			else if (isRecord(b.properties) && isRecord(b.properties[key])) next = b.properties[key] as JsonSchema;
+			else if (isRecord(b.additionalProperties)) next = b.additionalProperties as JsonSchema;
+			if (next) break;
+		}
+		if (!next) return null;
+		cur = next;
+	}
+	const node = derefSchema(root, cur);
+	return isRecord(node) ? templateMediaKindsOf(node) : null;
+}
+
 /** Specs for a motion-graphic clip's `params.<name>` from the template's params schema. */
 export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
 	let json: JsonSchemaObject;
@@ -1303,7 +1404,7 @@ export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
 	} catch {
 		return [];
 	}
-	return jsonSchemaPropertySpecs(json, {
+	const specs = jsonSchemaPropertySpecs(json, {
 		keyPrefix: 'params',
 		storageRoot: ['params'],
 		group: 'params',
@@ -1315,6 +1416,82 @@ export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
 		// wp-m2-anime-templates (S11:ATP-006): numeric/colour params of anime templates are keyframable.
 		isKeyframableTemplateParam(template, s) ? { ...s, animatable: 'continuous' as const } : s,
 	);
+	return applyTemplateUi(template.ui, specs);
+}
+
+const paramNameOf = (s: Pick<PropertySpec, 'key'>) => s.key.slice('params.'.length);
+
+/**
+ * A template's `ui` hints on its param specs: labels, tooltips, multi-line text, visibility and custom controls per
+ * param, then the order of `ui.groups` (params in no group first, in schema order; then each group's params in the
+ * group's order, tagged with `section`). Names the template does not have are ignored (the registry rejects them).
+ */
+function applyTemplateUi(ui: MgTemplateUi | undefined, specs: PropertySpec[]): PropertySpec[] {
+	if (!ui) return specs;
+	const hinted = specs.map((s): PropertySpec => {
+		const h = ui.params?.[paramNameOf(s)];
+		if (!h) return s;
+		return {
+			...s,
+			...(h.label ? { label: h.label } : {}),
+			...(h.description ? { description: h.description } : {}),
+			...(h.visibleWhen ? { visibleWhen: { param: h.visibleWhen.param, in: [...h.visibleWhen.in] } } : {}),
+			ui: {
+				...s.ui,
+				...(h.multiline !== undefined && s.kind === 'string' ? { multiline: h.multiline } : {}),
+				...(h.control ? { customControl: h.control } : {}),
+			},
+		};
+	});
+	if (!ui.groups?.length) return hinted;
+	const byName = new Map(hinted.map((s) => [paramNameOf(s), s]));
+	const grouped: PropertySpec[] = [];
+	const taken = new Set<string>();
+	for (const g of ui.groups) {
+		for (const name of g.params) {
+			const s = byName.get(name);
+			if (!s || taken.has(name)) continue;
+			taken.add(name);
+			grouped.push({ ...s, section: { id: g.id, label: g.label } });
+		}
+	}
+	return [...hinted.filter((s) => !taken.has(paramNameOf(s))), ...grouped];
+}
+
+function sameParamValue(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true;
+	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+	try {
+		return JSON.stringify(a) === JSON.stringify(b);
+	} catch {
+		return false;
+	}
+}
+
+/** Whether a template param row is shown for a clip's `params` (its `visibleWhen`; true without one). */
+export function templateParamVisible(
+	spec: Pick<PropertySpec, 'visibleWhen'>,
+	params: Readonly<Record<string, unknown>> | undefined,
+): boolean {
+	const w = spec.visibleWhen;
+	if (!w) return true;
+	const v = params?.[w.param];
+	return w.in.some((x) => sameParamValue(x, v));
+}
+
+/** A run of template param specs sharing a `section` (null = the params in no group). */
+export type TemplateParamSection = { section: { id: string; label: string } | null; specs: PropertySpec[] };
+
+/** Splits template param specs (as `paramsPropertySpecs` orders them) into their sections, in order. */
+export function templateParamSections(specs: readonly PropertySpec[]): TemplateParamSection[] {
+	const out: TemplateParamSection[] = [];
+	for (const s of specs) {
+		const last = out.at(-1);
+		const id = s.section?.id ?? null;
+		if (last && (last.section?.id ?? null) === id) last.specs.push(s);
+		else out.push({ section: s.section ?? null, specs: [s] });
+	}
+	return out;
 }
 
 // Storage: the static value stays in `clip.params[name]` (validated by the template schema, read by every M1

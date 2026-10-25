@@ -4,6 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mgRegistry } from '@jasper/mg-templates';
 import * as project from '@jasper/project';
 import { COMMAND_CATALOG, defaultRegistries, PROPERTY_SPECS, TRANSITION_SPECS } from '@jasper/project';
 
@@ -81,6 +82,25 @@ for (const t of project.SOUND_MODEL_STRINGS) add(t);
 for (const t of project.PROPOSAL_MODEL_STRINGS) add(t);
 // The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
 add('Agent');
+// Motion-graphic templates (C3): every template of the catalogue — its name, category and description, its presets'
+// names and descriptions, its param groups and every param label and tooltip as Properties / Effect Controls show
+// them (`paramsPropertySpecs`: `ui` hints, schema titles and `.describe()` texts, humanized names). A template added
+// to @jasper/mg-templates is covered by running `pnpm i18n` and translating the new keys in es.json.
+for (const def of mgRegistry.definitions()) {
+	add(def.name);
+	add(def.category);
+	add(def.description);
+	for (const p of def.presets ?? []) {
+		add(p.name);
+		add(p.description);
+	}
+	for (const g of def.ui?.groups ?? []) add(g.label);
+	const info = mgRegistry.get(def.id, def.version);
+	for (const s of info ? project.paramsPropertySpecs(info) : []) {
+		add(s.label);
+		add(s.description);
+	}
+}
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
 writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);

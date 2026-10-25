@@ -1,4 +1,9 @@
-import type { EngineJob, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
+import type {
+	EngineJob,
+	MgTemplateCatalogEntry,
+	MgTemplatePresetEntry,
+	MgTemplatesResponse,
+} from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -11,7 +16,11 @@ import {
 	type MotionGraphicClip,
 	makeSequenceSettings,
 	type ProjectDocument,
+	parseMgTemplateRef,
 	type Sequence,
+	TEMPLATE_MEDIA_KIND,
+	TEMPLATE_MEDIA_KINDS_KEY,
+	TEMPLATE_PARAM_KIND_KEY,
 	validateJsonSchema,
 } from '@jasper/project';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -34,10 +43,12 @@ import { jsonResult, type RenderCapsHint, renderHint, ToolError } from '../error
 
 export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - list_motion_templates shows every template with renderer ("fframes" = native jasper-mg renderer, "anime" = drawn by Remotion), its params (type, range, default, keyframable) and the full paramsSchema.
+- Templates may declare presets (named param sets, e.g. one per look): list_motion_templates lists them with a ready-made ref. Pass "<id>:<preset>" (or "<id>@<version>:<preset>") as template to add_motion_graphic or render_motion_graphic_preview: the preset's params apply over the defaults and your params over the preset.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
 - set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.
+- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays).
 - add_motion_graphic adds one graphic (template, params, at, duration, track) or many with items: [...] (up to 200) in ONE transaction — one undo step, all or nothing. Placement never overwrites: without track each clip goes on the first free unlocked video track from V2 up for its time range (a new top track when all are busy), and the items of one call never collide. track: "V3" keeps the old behaviour (overwrite on exactly that track); add placement: "first-free" to start the search there instead.
-- Every param is optional: templates with a fill hook fill the omitted ones with believable values from seed (deterministic; a random seed is used and returned when you give none), the others take their defaults. The result lists per item clipId, track, start/end (frames + timecode), the fully resolved params and which ones were filled.
+- Every param is optional. Params layer as defaults → preset ("<id>:<preset>") → the template's fill hook → your params: templates with a fill hook fill what you and the preset leave out with believable values from seed (deterministic; a random seed is used and returned when you give none), the others take their defaults. The result lists per item clipId, track, start/end (frames + timecode), the fully resolved params and which ones were filled.
 - dryRun: true returns that result without changing the project; add preview: true for a still of each item at the middle of its hold (up to 10 items). Errors name the failing item (details.items[].index).
 - Times also accept "3s", "1.5s", "250ms", "00:03" (M:SS) and "1:02:03" (H:MM:SS); four fields stay timecode HH:MM:SS:FF.
 - Example: add_motion_graphic {projectId, seed: 7, items: [{template: "lower-third-anim", at: "2s", params: {name: "Ana Ruiz"}}, {template: "lower-third-anim", at: "00:04", duration: "3s"}]}.`;
@@ -66,10 +77,17 @@ function range(min: number | undefined, max: number | undefined): string {
 	return '';
 }
 
-type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json';
+type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json' | 'media';
 
 /** Kind of one params-schema property (mirrors the property specs of @jasper/project `paramsPropertySpecs`). */
 function paramKind(s0: JsonSchemaNode): { kind: ParamKind; type: string } {
+	// Template media params (`mediaParam()`): `{mediaId} | null` of the listed media kinds.
+	if (s0[TEMPLATE_PARAM_KIND_KEY] === TEMPLATE_MEDIA_KIND) {
+		const kinds = Array.isArray(s0[TEMPLATE_MEDIA_KINDS_KEY])
+			? (s0[TEMPLATE_MEDIA_KINDS_KEY] as unknown[])
+			: [];
+		return { kind: 'media', type: `media ${kinds.map(String).join('|') || 'any'}` };
+	}
 	const s = unwrapNullable(s0);
 	const t = Array.isArray(s.type) ? (s.type as string[]).find((x) => x !== 'null') : s.type;
 	const options = Array.isArray(s.enum)
@@ -97,9 +115,13 @@ type ParamSummary = {
 	default: unknown;
 	keyframable: boolean;
 	description?: string;
+	/** UI hints: the label the editor shows, its group and when the editor shows the param. */
+	label?: string;
+	group?: string;
+	visibleWhen?: { param: string; in: unknown[] };
 };
 
-type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | 'renderer'>;
+type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | 'renderer' | 'ui'>;
 
 /**
  * Compact params of a template. keyframable = anime template and a non-integer number or an RGBA colour
@@ -108,14 +130,21 @@ type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | '
 function paramsSummary(t: TemplateLike): ParamSummary[] {
 	const props = ((t.paramsSchema as JsonSchemaNode).properties ?? {}) as Record<string, JsonSchemaNode>;
 	const anime = t.renderer === 'anime';
+	const groupOf = new Map<string, string>();
+	for (const g of t.ui?.groups ?? []) for (const p of g.params) if (!groupOf.has(p)) groupOf.set(p, g.label);
 	return Object.entries(props).map(([name, s]) => {
 		const { kind, type } = paramKind(s ?? {});
+		const hint = t.ui?.params?.[name];
+		const description = hint?.description ?? s?.description;
 		return {
 			name,
 			type,
 			default: t.defaults[name] !== undefined ? t.defaults[name] : s?.default,
 			keyframable: anime && (kind === 'number' || kind === 'rgba'),
-			...(typeof s?.description === 'string' ? { description: s.description } : {}),
+			...(typeof description === 'string' ? { description } : {}),
+			...(hint?.label ? { label: hint.label } : {}),
+			...(groupOf.has(name) ? { group: groupOf.get(name) } : {}),
+			...(hint?.visibleWhen ? { visibleWhen: hint.visibleWhen } : {}),
 		};
 	});
 }
@@ -131,17 +160,42 @@ export function templateSummary(t: MgTemplateCatalogEntry) {
 		native: t.native ?? false,
 		...(t.description ? { description: t.description } : {}),
 		...(t.defaultDurationSeconds ? { defaultDurationSeconds: t.defaultDurationSeconds } : {}),
+		...(t.presets?.length
+			? {
+					presets: t.presets.map((p) => ({
+						ref: `${t.id}:${p.id}`,
+						id: p.id,
+						name: p.name,
+						...(p.description ? { description: p.description } : {}),
+						params: p.params,
+					})),
+				}
+			: {}),
 		params: paramsSummary(t),
 		defaults: t.defaults,
 		paramsSchema: t.paramsSchema,
 	};
 }
 
-/** The newest catalogue entry for "id" or "id@version" (E_NOT_FOUND listing what exists). */
-export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''): MgTemplateCatalogEntry {
-	const [id, v] = spec.split('@');
+/**
+ * The catalogue entry and preset a template ref names: `"<id>"`, `"<id>@<version>"`, `"<id>:<preset>"` or
+ * `"<id>@<version>:<preset>"` (the newest version without `@`). E_INVALID_PARAM for a malformed ref, E_NOT_FOUND
+ * (listing what exists) for an unknown template, version or preset.
+ */
+export function resolveTemplateRef(
+	cat: MgTemplatesResponse,
+	spec: string,
+	hint = '',
+): { template: MgTemplateCatalogEntry; preset: MgTemplatePresetEntry | null } {
+	const ref = parseMgTemplateRef(spec);
+	if (!ref)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`Malformed template reference "${spec}"`,
+			'Use "<id>", "<id>@<version>", "<id>:<preset>" or "<id>@<version>:<preset>" (list_motion_templates).',
+		);
 	const t = cat.templates
-		.filter((x) => x.id === id && (v === undefined || x.version === Number(v)))
+		.filter((x) => x.id === ref.id && (ref.version === undefined || x.version === ref.version))
 		.sort((x, y) => y.version - x.version)[0];
 	if (!t)
 		throw new ToolError(
@@ -149,7 +203,17 @@ export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''):
 			`Unknown motion template "${spec}"`,
 			`Available: ${cat.templates.map((x) => `${x.id}@${x.version}`).join(', ')}${hint}.`,
 		);
-	return t;
+	if (ref.preset === undefined) return { template: t, preset: null };
+	const preset = t.presets?.find((p) => p.id === ref.preset);
+	if (!preset)
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`Template ${t.id}@${t.version} has no preset "${ref.preset}"`,
+			t.presets?.length
+				? `Presets: ${t.presets.map((p) => `${t.id}:${p.id}`).join(', ')}.`
+				: `${t.id} has no presets; pass "${t.id}" and set params instead.`,
+		);
+	return { template: t, preset };
 }
 
 /** Engine errors that are not render failures (their own hints in errors.ts apply). */

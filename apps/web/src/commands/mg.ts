@@ -13,6 +13,8 @@ import type { CommandCtx, UiCommand } from './types.ts';
 const InsertArgs = z.object({
 	templateId: z.string().min(1),
 	version: z.number().int().positive().default(1),
+	/** C3: a preset id of the template (its params over the defaults). */
+	preset: z.string().min(1).max(64).optional(),
 	/** Sequence frame; default the playhead. */
 	at: z.number().int().min(0).optional(),
 	/** Track id or label to overwrite on; default: the first free video track from the targeted one up. */
@@ -75,7 +77,7 @@ export const mgCommands: UiCommand[] = [
 		id: 'mg.insert',
 		label: 'Insert Motion Template',
 		description:
-			'Adds a motion-graphic template at the playhead (default duration and params) without overwriting: on the first free video track from the targeted one up (a new track on top when all are busy); with trackId, on that track (overwriting its range).',
+			'Adds a motion-graphic template at the playhead (default duration and params; with preset, that preset of the template) without overwriting: on the first free video track from the targeted one up (a new track on top when all are busy); with trackId, on that track (overwriting its range).',
 		icon: 'panel.motionTemplates',
 		scope: 'editing',
 		argsSchema: InsertArgs,
@@ -86,7 +88,7 @@ export const mgCommands: UiCommand[] = [
 			if (!ctx.session) throw new Error('No project is open');
 			insertMotionTemplate(
 				ctx.session,
-				{ id: a.templateId, version: a.version },
+				{ id: a.templateId, version: a.version, ...(a.preset ? { preset: a.preset } : {}) },
 				{ at: a.at, trackId: a.trackId },
 			);
 		},

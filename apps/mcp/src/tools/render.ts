@@ -30,9 +30,9 @@ import { pickSequence, timelineTable } from '../format.ts';
 
 import {
 	failedJobError,
-	findTemplate,
 	renderErrorHint,
 	renderToolError,
+	resolveTemplateRef,
 	templatePreview,
 	templateSummary,
 } from './templates.ts';
@@ -162,7 +162,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'List motion-graphic templates',
 			description:
-				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, renderer ("fframes" = the native jasper-mg renderer; "anime" = drawn by Remotion, previewable and exportable without the fframes renderer), native (rendered by jasper-mg), a compact params list (type with range or options, default, keyframable = numeric/colour params of anime templates, animatable with set_motion_graphic_params), the defaults and the full JSON Schema of the params. Also reports whether the native fframes renderer is ready.',
+				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, renderer ("fframes" = the native jasper-mg renderer; "anime" = drawn by Remotion, previewable and exportable without the fframes renderer), native (rendered by jasper-mg), a compact params list (type with range or options, default, keyframable = numeric/colour params of anime templates, animatable with set_motion_graphic_params; label, group and visibleWhen = how the editor shows it), presets (named param sets; pass their ref, e.g. "counter:percentage", as template to add_motion_graphic), the defaults and the full JSON Schema of the params. Also reports whether the native fframes renderer is ready.',
 			input: {},
 			annotations: READ_ONLY,
 		},
@@ -181,7 +181,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 			description:
 				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle of the hold (the settled design); frames: 2 adds the middle of the intro, frames: 3 the middle of the outro, more frames go to the intro and outro; renderedBy tells which still path drew them (native, hybrid or remotion). Invalid params fail with E_INVALID_PARAM listing the issues.',
 			input: {
-				template: z.string().min(1).describe('Template id, optionally "@version" ("lower-third@1")'),
+				template: z
+					.string()
+					.min(1)
+					.describe(
+						'Template id, optionally "@version" and ":preset" ("lower-third@1", "counter:percentage"; presets in list_motion_templates)',
+					),
 				params: z
 					.record(z.string(), z.unknown())
 					.optional()
@@ -211,7 +216,10 @@ export function registerRenderTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const cat = await ctx.engine((c) => c.mgTemplates());
-			return templatePreview(ctx, cat, findTemplate(cat, a.template), a, extra);
+			const { template: t, preset } = resolveTemplateRef(cat, a.template);
+			// A preset's params apply over the defaults, the given params over the preset.
+			const given = preset || a.params ? { ...(preset?.params ?? {}), ...(a.params ?? {}) } : undefined;
+			return templatePreview(ctx, cat, t, { ...a, params: given }, extra);
 		},
 	);
 

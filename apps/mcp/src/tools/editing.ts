@@ -27,7 +27,6 @@ import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
 import { registerAddMotionGraphic } from './add-motion-graphic.ts';
 import { AnimateArg, textAnimationOf } from './animation.ts';
-
 import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
@@ -605,6 +604,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		},
 	);
 
-	// add_motion_graphic: single item or items[], first-free placement, fill, dry run + preview (its own module).
+	// add_motion_graphic: single item or items[], presets, first-free placement, fill, dry run + preview (its own
+	// module, add-motion-graphic.ts).
 	registerAddMotionGraphic(ctx);
 }

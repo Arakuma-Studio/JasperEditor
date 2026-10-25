@@ -4,14 +4,14 @@
 // `preview` stills) without touching the document. Every path goes through `clip.addMotionGraphic`, the command
 // the editor, HTTP (`/api/agent/tx`) and the CLI (`jasper call add_motion_graphic`) use too.
 import { randomInt } from 'node:crypto';
-import type { MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
+import type { MgTemplateCatalogEntry, MgTemplatePresetEntry, MgTemplatesResponse } from '@jasper/api';
 import { type ProjectDocument, type Sequence, sequenceTimecode, TrackRefSchema } from '@jasper/project';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import { defineTool, EDIT, type Extra, loadDoc, type ToolContext, transact, txBody } from '../context.ts';
 import { jsonResult, ToolError, TX_ERROR_HINTS } from '../errors.ts';
-import { findTemplate, templatePreview } from './templates.ts';
+import { resolveTemplateRef, templatePreview } from './templates.ts';
 
 /** Most items one call adds (zod-validated). */
 export const MAX_MG_ITEMS = 200;
@@ -23,11 +23,13 @@ export const DEFAULT_MG_FLOOR = 'V2';
 const TemplateRefArg = z
 	.string()
 	.min(1)
-	.describe('Template id, optionally with version: "lower-third" or "lower-third@1" (list_motion_templates)');
+	.describe(
+		'Template id, optionally with version and preset: "lower-third", "lower-third@1", "counter:percentage" or "counter@1:percentage" (list_motion_templates lists ids and presets)',
+	);
 const ParamsArg = z
 	.record(z.string(), z.unknown())
 	.describe(
-		'Template params (list_motion_templates shows each one). Omitted params are filled by the template’s fill hook when it has one (believable values from the seed), else take the template defaults',
+		'Template params (list_motion_templates shows each one); they win over everything. Omitted params come from the preset ("<id>:<preset>"), then the template’s fill hook when it has one (believable values from the seed), then the template defaults',
 	);
 const TrackArg = TrackRefSchema.describe(
 	'A video track label ("V3") or id. Given: the clip goes on exactly that track and overwrites what is there in its time range (the behaviour before first-free placement), unless placement is "first-free" (then it is the lowest track tried). Omitted: first-free from V2 up',
@@ -52,18 +54,8 @@ const ItemSchema = z.object({
 });
 type Item = z.infer<typeof ItemSchema>;
 
-type Resolved = { item: Item; template: MgTemplateCatalogEntry; params: Record<string, unknown> };
-
-/**
- * The catalogue entry an add_motion_graphic template reference names, and the params the reference itself
- * implies (none for "id" / "id@version"). Every reference form is parsed here only.
- */
-export function resolveTemplateRef(
-	cat: MgTemplatesResponse,
-	ref: string,
-): { template: MgTemplateCatalogEntry; params: Record<string, unknown> } {
-	return { template: findTemplate(cat, ref, ' (list_motion_templates)'), params: {} };
-}
+/** One item with its catalogue entry and preset (the one template-ref parser: `resolveTemplateRef`, templates.ts). */
+type Resolved = { item: Item; template: MgTemplateCatalogEntry; preset: MgTemplatePresetEntry | null };
 
 /** Item `i`'s fill seed: its own, else the call seed for item 0 and a golden-ratio step from it for the others. */
 export function itemSeed(base: number, index: number, own?: number): number {
@@ -74,7 +66,9 @@ export function itemSeed(base: number, index: number, own?: number): number {
 function itemCommand(r: Resolved, seed: number, sequenceId: string | undefined): Record<string, unknown> {
 	const { item, template: t } = r;
 	const placement = item.placement ?? (item.track ? 'overwrite' : 'first-free');
-	const params = { ...r.params, ...(item.params ?? {}) };
+	// Layering (the command merges defaults under and runs the fill hook): defaults → preset → fill → item params.
+	// The preset's params travel as given params, so the fill only fills what both leave out.
+	const params = { ...(r.preset?.params ?? {}), ...(item.params ?? {}) };
 	return {
 		type: 'clip.addMotionGraphic',
 		at: item.at,
@@ -186,6 +180,7 @@ function itemBody(doc: ProjectDocument, r: Resolved, x: AddResult, index: number
 		index,
 		clipId: x.clipId,
 		template: `${r.template.id}@${r.template.version}`,
+		...(r.preset ? { preset: r.preset.id } : {}),
 		sequenceId: x.sequenceId,
 		track: x.track,
 		trackId: x.trackId,
@@ -297,27 +292,38 @@ export function registerAddMotionGraphic(ctx: ToolContext): void {
 				);
 			const cat = await ctx.engine((c) => c.mgTemplates());
 			const resolved: Resolved[] = [];
-			const unknown: { index: number; template: string; message: string }[] = [];
+			const bad: { index: number; template: string; code: string; message: string; hint?: string }[] = [];
 			for (const [index, item] of items.entries()) {
 				try {
-					resolved.push({ item, ...resolveTemplateRef(cat, item.template) });
+					resolved.push({ item, ...resolveTemplateRef(cat, item.template, ' (list_motion_templates)') });
 				} catch (e) {
 					if (!(e instanceof ToolError)) throw e;
-					unknown.push({ index, template: item.template, message: e.message });
+					bad.push({
+						index,
+						template: item.template,
+						code: e.code,
+						message: e.message,
+						...(e.hint ? { hint: e.hint } : {}),
+					});
 				}
 			}
-			if (unknown.length)
+			if (bad.length)
 				throw new ToolError(
-					'E_NOT_FOUND',
+					bad[0]!.code,
 					single
-						? unknown[0]!.message
-						: `Unknown motion template in ${unknown.map((u) => `items[${u.index}] ("${u.template}")`).join(', ')}. Nothing was added.`,
-					`Available: ${cat.templates.map((x) => `${x.id}@${x.version}`).join(', ')} (list_motion_templates).`,
-					{ items: unknown.map((u) => ({ ...u, code: 'E_NOT_FOUND' })) },
+						? bad[0]!.message
+						: `Bad template reference in ${bad.map((u) => `items[${u.index}] ("${u.template}")`).join(', ')}. Nothing was added.`,
+					bad[0]!.hint,
+					{ items: bad },
 				);
 			const seed = a.seed ?? randomInt(0, 2 ** 32);
 			const commands = resolved.map((r, i) => itemCommand(r, itemSeed(seed, i, r.item.seed), a.sequenceId));
-			const label = single ? resolved[0]!.template.name : `${resolved.length} motion graphics`;
+			const first = resolved[0]!;
+			const label = single
+				? first.preset
+					? `${first.template.name} (${first.preset.name})`
+					: first.template.name
+				: `${resolved.length} motion graphics`;
 			const res = await transact(
 				ctx,
 				a.projectId,
