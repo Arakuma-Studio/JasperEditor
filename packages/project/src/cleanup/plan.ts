@@ -215,7 +215,10 @@ export function speechExtent(voice: CleanupVoice, w: { s: number; e: number }, p
 	return first < 0 ? null : [first * FR, (last + 1) * FR];
 }
 
-/** The spans of removed words (their own speech frames, or word times in word mode), minus kept words' sound. */
+/**
+ * The spans of removed words (their own speech frames, or word times in word mode), minus the kept words' sound
+ * (their speech frames within ± 50 ms, as the planner keeps them).
+ */
 export function removedSpans(
 	input: Pick<MediaPlanInput, 'words' | 'removed'>,
 	keepIdx: readonly number[],
@@ -225,7 +228,8 @@ export function removedSpans(
 	const keptExt: Span[] = [];
 	for (const k of keepIdx) {
 		const w = input.words[k]!;
-		const e = voice && speechMode ? speechExtent(voice, w, 0) : ([w.s, w.e] as Span);
+		// the kept words' extents as step 1 takes them (± 50 ms): kept sound wins where the timestamps disagree
+		const e = voice && speechMode ? speechExtent(voice, w, 5) : ([w.s, w.e] as Span);
 		if (e) keptExt.push(e);
 	}
 	keptExt.sort((x, y) => x[0] - y[0]);
