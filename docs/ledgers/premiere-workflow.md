@@ -118,7 +118,22 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 ### Phase 3 — implementation (queue ≤ 6 agents, worktrees `.claude/worktrees/<name>`, VM-only testing)
 - ✅ Foundation (coordinator): integration branch `feat/workflow`, schema v9 bump (13d0a095; 2,287 project tests
   pass on the VM).
-- ⏳ Work packages: defined when the specs land (listed here with branch, owner, status).
+Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids):
+| WP | Scope | Depends on | State |
+|---|---|---|---|
+| cutmap | SH-001 `pictureCuts` + MCP `list_cuts` | — | 🔄 |
+| styling | SH-003 batch styling commands, linked text styles (SH-002 textStyles/styleId), AS-030…033 multi-clip Properties + Effect Controls N-clips mode + selection helpers + MCP | — | 🔄 |
+| textrender | SH-004 all strokes, shadow spread, real text measurer, tighter bake crop | — | 🔄 |
+| speech | spec 16 (providers, catalogue, downloads, decoding, guards, UI, MCP) + TC-003/TC-004 | — | 🔄 |
+| voice | TC-001/002 voice-analysis job + derivative + `VoiceAnalysis` contract + MCP `get_voice_analysis` | — | 🔄 |
+| proposals | EA-001…004 proposals for new features (policies, review vocabulary, ghosts, anchors) + EA-031 batch commands | — | 🔄 |
+| subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | ⏳ |
+| subexport | AS-050, AS-070…076 still + native motion, batched stills, bounded composite, native shake, preflight, preview windowing | textrender | ⏳ |
+| cleanup | TC-010…033 detector, script alignment, plan + edges, presets, `cleanup.apply` | voice | ⏳ |
+| cleanupui | TC-040…051, TC-060, TC-070/071 review UI, derived preview, MCP, calibration on the Mac | cleanup, speech | ⏳ |
+| kits | EA-020…022, EA-030, EA-032, EA-033 Decorate Cuts, punch-ins, Ken Burns | cutmap, proposals | ⏳ |
+| overlays | EA-023…026 reactions, overlay slides, music bed, stingers | cutmap, proposals | ⏳ |
+| recipes | EA-010…013, EA-040…042, EA-050/051 style recipes, apply_style, Style Check, Automate menu, MCP, accuracy harness | kits, overlays, subtitles, cleanup | ⏳ |
 
 ### Phase 4 — integration
 - ⏳ Merge branches, fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`, ask the
@@ -149,5 +164,6 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 ## 8. Log
 - 2026-10-25 — ff main; VM provisioned; Mac workspace; scripts exported; research agents launched (codemap, subs,
   auto, whisper, edits, textperf, cutsurvey); NVIDIA box rented; codemap, auto, subs, cutsurvey finished; lock
-  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 13–16 written (13 §4 from textperf); research phase complete; schema v9 foundation on feat/workflow; VM lock switched to a want-file queue
+  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 13–16 written (13 §4 from textperf); research phase complete; schema v9 foundation on feat/workflow; first six work packages launched (cutmap, styling, textrender, speech,
+  voice, proposals); VM lock switched to a want-file queue
   after starvation in both directions.
