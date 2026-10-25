@@ -584,6 +584,53 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		minConfidence: 0.5,
 	},
+	// spec 13 SH-003 / AS-032: many text clips at once ("$title" from the clip.addText example; "$selection" in the
+	// open editor): a deep style patch, effects with keys timed from each clip's In, and linked project text styles.
+	'text.setStyle': {
+		type: 'text.setStyle',
+		clipIds: ['$title'],
+		patch: {
+			sizePx: 98,
+			strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
+			shadow: { color: [0.13, 0.11, 0.35, 0.8], angleDeg: 90, distancePx: 0, blurPx: 12 },
+		},
+	},
+	'effect.addMany': {
+		type: 'effect.addMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		keyframes: {
+			radius: [
+				{ offset: { frames: 0 }, value: 30 },
+				{ offset: { seconds: 0.1 }, value: 0 },
+			],
+		},
+	},
+	'effect.setParamMany': {
+		type: 'effect.setParamMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		param: 'radius',
+		value: 12,
+		at: { frames: 1 },
+	},
+	'effect.removeMany': {
+		type: 'effect.removeMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		occurrence: 0,
+	},
+	'textStyle.create': { type: 'textStyle.create', name: 'Pixel Pop', fromClipId: '$title', ref: '$style' },
+	'textStyle.apply': { type: 'textStyle.apply', styleId: '$style', clipIds: ['$title'] },
+	'textStyle.update': {
+		type: 'textStyle.update',
+		styleId: '$style',
+		patch: { sizePx: 110, fill: [1, 1, 1, 1] },
+	},
+	'textStyle.rename': { type: 'textStyle.rename', styleId: '$style', name: 'Pixel Pop 2025' },
+	'textStyle.reset': { type: 'textStyle.reset', clipIds: ['$title'], fields: ['sizePx'] },
+	'textStyle.detach': { type: 'textStyle.detach', clipIds: ['$title'] },
+	'textStyle.delete': { type: 'textStyle.delete', styleId: '$style' },
 };
 
 /** A multi-command transaction showing temp refs. */

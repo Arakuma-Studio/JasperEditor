@@ -1,5 +1,6 @@
 // Project document root, project items and the persistence envelope (S01 §4, §5, PER-002).
 import { z } from 'zod';
+import type { ProjectTextStyle } from '../text-styles/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, LabelColorSchema, nonNegInt } from './common.ts';
 import {
@@ -209,6 +210,11 @@ export const ProjectDocumentSchema = z.looseObject({
 	fonts: z.record(z.string(), FontRefSchema),
 	sequences: z.record(z.string(), SequenceSchema),
 	extensions: z.record(z.string(), z.unknown()),
+	/**
+	 * spec 13 SH-002 (schema v9): named project text styles by id (`tsy_…`) that text clips link to (`styleId`).
+	 * Read leniently (any value loads; INV-TEXTSTYLE checks it, `repairTextStyles` fixes it on load); absent = none.
+	 */
+	textStyles: z.custom<Record<string, ProjectTextStyle>>(() => true).optional(),
 });
 
 export type ProjectDocument = {
@@ -224,6 +230,8 @@ export type ProjectDocument = {
 	fonts: Record<string, FontRef>;
 	sequences: Record<string, Sequence>;
 	extensions: Record<string, unknown>;
+	/** spec 13 SH-002: named project text styles by id (absent = none; see `text-styles/model.ts`). */
+	textStyles?: Record<string, ProjectTextStyle>;
 };
 
 export type ProjectEnvelope = {

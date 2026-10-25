@@ -66,6 +66,7 @@ import {
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
+import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
 	contentSpanFlicks,
@@ -888,6 +889,9 @@ export function invariantCheckers(
 		if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
 			issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
 		}
+		// spec 13 SH-002: link fields to a project text style (a link to a missing style is soft).
+		const styleLink = clipTextStyleIssue(c);
+		if (styleLink) issues.push(inv('INV-TEXTSTYLE', `Clip ${c.id}: ${styleLink}`, [...cw, 'styleId']));
 		// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
 		// presets are preserved and skipped by the renderers).
 		const ta = r.textAnimation as Record<string, { durationFrames?: unknown } | null | undefined> | undefined;
@@ -1339,6 +1343,8 @@ export function runInvariants(
 		if (f.source.type === 'asset' && !doc.media[f.source.mediaId])
 			issues.push(inv('INV-006', `Font ${f.id} references missing media`, ['fonts', f.id]));
 	}
+	// spec 13 SH-002: project text styles (readable, keyed by id, fonts present).
+	for (const [message, path] of textStylesRecordIssues(doc)) issues.push(inv('INV-TEXTSTYLE', message, path));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1703,6 +1709,22 @@ export function repairDocument(
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
+	// spec 13 SH-002: project text styles and the clips' links to them.
+	repairTextStyles(
+		doc,
+		{
+			defaultFontId: () => {
+				let font = Object.values(doc.fonts).find((f) => f.family === DEFAULT_FONT_FAMILY);
+				if (!font) {
+					font = createFontRef(ids);
+					doc.fonts[font.id] = font;
+				}
+				return font.id;
+			},
+			newStyleId: () => ids.next('tsy'),
+		},
+		note,
+	);
 
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		const r = seq as { previews?: unknown };
