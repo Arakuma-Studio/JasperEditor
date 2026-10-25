@@ -6,16 +6,8 @@
     "node": "v24.22.1"
   },
   "invariants": "incremental (production default)",
-  "loadAtStart": [
-    12.34,
-    16.94,
-    17.12
-  ],
-  "loadAtEnd": [
-    11.51,
-    16.69,
-    17.04
-  ],
+  "loadAtStart": [12.34, 16.94, 17.12],
+  "loadAtEnd": [11.51, 16.69, 17.04],
   "results": [
     {
       "case": "detectCleanup, 1 h of speech (Fast)",
@@ -24,15 +16,7 @@
       "findings": 1277,
       "targetMs": 200,
       "medianMs": 42.41349699999955,
-      "samplesMs": [
-        58.9,
-        47.2,
-        72,
-        42.4,
-        35.1,
-        32.7,
-        31.5
-      ]
+      "samplesMs": [58.9, 47.2, 72, 42.4, 35.1, 32.7, 31.5]
     },
     {
       "case": "analyzeSequenceCleanup, 1 h sequence (detect + plan + frames + stats)",
@@ -40,15 +24,7 @@
       "outputSeconds": 1840.567,
       "cutsPerMinute": 28.687,
       "medianMs": 142.38666399999966,
-      "samplesMs": [
-        137.7,
-        135.5,
-        150.5,
-        153.2,
-        164.1,
-        138.2,
-        142.4
-      ]
+      "samplesMs": [137.7, 135.5, 150.5, 153.2, 164.1, 138.2, 142.4]
     },
     {
       "case": "cleanup.apply, 1 500 ranges on 1 h (V1 + A1 linked, sync-locked music on A2, 4 ms fades), one transaction",
@@ -57,15 +33,7 @@
       "revisions": 1,
       "targetMs": 2000,
       "medianMs": 453.2870150000008,
-      "samplesMs": [
-        540.5,
-        620.4,
-        453.3,
-        472.8,
-        434.7,
-        427.9,
-        450
-      ]
+      "samplesMs": [540.5, 620.4, 453.3, 472.8, 434.7, 427.9, 450]
     }
   ]
 }
