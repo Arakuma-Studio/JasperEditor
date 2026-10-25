@@ -7,11 +7,13 @@ import { CHROME } from './gl-browser.ts';
 
 const run = !!CHROME && process.env.FX_GL !== '0';
 
+// A transform keeps the control's visual box at x=100 without the experimental capture path's
+// unrelated clipping of a descendant canvas positioned with a nonzero CSS left inset.
 const PAGE = `<!doctype html><html><body style="margin:0">
 <canvas id="host" width="200" height="100" layoutsubtree style="width:200px;height:100px;display:block">
   <div id="root" style="position:relative;width:200px;height:100px">
     <canvas id="low" width="100" height="100" style="position:absolute;left:0;top:0"></canvas>
-    <canvas id="plain" width="100" height="100" style="position:absolute;left:100px;top:0"></canvas>
+    <canvas id="plain" width="100" height="100" style="position:absolute;left:0;top:0;transform:translateX(100px)"></canvas>
   </div>
 </canvas></body></html>`;
 
@@ -47,7 +49,11 @@ const probe = async () => {
 	await sleep(300);
 	host.requestPaint();
 	await sleep(300);
-	return last;
+	return {
+		pixels: last,
+		lowDesynchronized: low.getContextAttributes().desynchronized,
+		plainDesynchronized: plain.getContextAttributes().desynchronized,
+	};
 };
 
 /** HTML-in-Canvas (`requestPaint`, `drawElementImage`): Chrome 148+ with CanvasDrawElement, as Remotion checks it. */
@@ -81,7 +87,9 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 		);
 		await fixed.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
 		const after = await fixed.evaluate(probe);
-		expect(after[0]).toEqual([0, 255, 0, 255]);
-		expect(after[1]).toEqual([255, 0, 255, 255]);
+		expect(after.lowDesynchronized).toBe(false);
+		expect(after.plainDesynchronized).toBe(false);
+		expect(after.pixels[0]).toEqual([0, 255, 0, 255]);
+		expect(after.pixels[1]).toEqual([255, 0, 255, 255]);
 	}, 60_000);
 });
