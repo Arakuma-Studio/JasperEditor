@@ -12,11 +12,14 @@
 // eased in) is the declared outro, anchored at the content end. Outside these windows the card is at rest and shows
 // its hold state (S11:ANM-009): every word shown, the final count, the heart filled when it ticked.
 
+import { REMOTE_IMAGE_IDS, type RemoteImageId } from '../../assets.ts';
 import { CANVASES } from '../../core.ts';
+import { emojiGraphemes } from '../../emoji.ts';
 import {
 	type CommentSpan,
 	fillSocialParams,
 	formatCount,
+	resolveEmojiStyle,
 	SOCIAL_ADD_ANOTHER,
 	SOCIAL_IMPORT_HINTS,
 	SOCIAL_PARAM_NAMES,
@@ -24,11 +27,14 @@ import {
 	type SocialCommentParams,
 	type SocialEntrance,
 	type SocialParamName,
+	type SocialPlatform,
 	type SocialVariant,
 	socialCommentParamsSchema,
 	socialDefaults,
+	stripMarks,
 	tokenizeComment,
 	VARIANT_CAPABILITIES,
+	VARIANT_PLATFORM,
 	variantsWithParam,
 } from '../../social/index.ts';
 import { segmentText } from '../../text-units.ts';
@@ -37,6 +43,7 @@ import type {
 	MgTemplateFillResult,
 	MgTemplateParamUi,
 	MgTemplatePreset,
+	TemplateRequiredAssets,
 } from '../../types.ts';
 import { ANIME_REFERENCE_FPS } from './common.ts';
 import type { AnimeTween, TemplateTiming } from './motion.ts';
@@ -387,13 +394,55 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	'instagram-reel-reply': null,
 	'youtube-comment': null,
 	'youtube-shorts-reply': null,
-	'x-post': null,
+	// Chirp (X's UI font, remote manifest `chirp-*`): name 700; handle, time, post text and counts 400 (x.com 2026)
+	'x-post': { family: 'Chirp', weights: [400, 700] },
 	// store reviews (design §11): Play web's review font (Roboto, bundled: name 500, date and body 400); the App Store
 	// cards in SF Pro Text (remote manifest; Apple's Text cut below 20 pt): title 600, body, name and date 400
 	'play-store-review': { family: 'Roboto', weights: [400, 500] },
 	'app-store-review': { family: 'SF Pro Text', weights: [400, 600] },
 	'app-store-review-ios': { family: 'SF Pro Text', weights: [400, 600] },
 };
+
+// ------------------------------------------------------------------------------------------------ assets
+
+/**
+ * The platform default avatars that are raster images of the remote-asset manifest (X, YouTube), by platform. A card
+ * draws `AnimeTemplateProps.imageUrls[id]`; TikTok's default is a glyph and Instagram has none (glyphs.ts).
+ */
+export const SOCIAL_DEFAULT_AVATAR_IMAGES: Readonly<Partial<Record<SocialPlatform, RemoteImageId>>> = {
+	x: REMOTE_IMAGE_IDS.xDefaultAvatar,
+	youtube: REMOTE_IMAGE_IDS.youtubeDefaultAvatar,
+};
+
+/**
+ * What a clip draws (social-comment design §7.8, `requiredAssets`): the variant's font faces
+ * (`SOCIAL_VARIANT_FONTS`), the emoji of the comment and of the names the variant shows, in the clip's emoji pack,
+ * and the platform's default-avatar image when the avatar is shown and is the default. A variant whose card is not
+ * built yet declares nothing. Pure; never throws.
+ */
+export function socialCommentRequiredAssets(params: SocialCommentParams): TemplateRequiredAssets {
+	const p = socialCommentParamsSchema.safeParse(params).data ?? DEFAULTS;
+	// a card style not built yet draws only its "not available" stand-in: nothing to load
+	if (!SOCIAL_COMMENT_READY_VARIANTS.includes(p.variant)) return { fonts: [] };
+	const font = SOCIAL_VARIANT_FONTS[p.variant];
+	const caps = VARIANT_CAPABILITIES[p.variant];
+	const out: TemplateRequiredAssets = {
+		fonts: font
+			? font.weights.map((weight) => ({ family: font.family, weight, style: 'normal' as const }))
+			: [],
+	};
+	const shown = [
+		stripMarks(p.text),
+		caps.displayName ? p.displayName : '',
+		caps.handle ? p.handle : '',
+		caps.title ? p.title : '',
+	];
+	const graphemes = emojiGraphemes(shown.join('\n'));
+	if (graphemes.length) out.emoji = { pack: resolveEmojiStyle(p.variant, p.emojiStyle), graphemes };
+	const image = SOCIAL_DEFAULT_AVATAR_IMAGES[VARIANT_PLATFORM[p.variant]];
+	if (image && p.showProfile && p.avatar === null) out.images = [image];
+	return out;
+}
 
 // -------------------------------------------------------------------------------------------- definition
 
@@ -422,6 +471,7 @@ const DEFAULTS = socialCommentParamsSchema.parse({});
 export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
 	'tiktok-reply',
 	'tiktok-comment',
+	'x-post',
 	'play-store-review',
 	'app-store-review',
 	'app-store-review-ios',
@@ -451,7 +501,10 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 	},
 	'youtube-comment': { name: 'YouTube · Comment', description: 'A YouTube video comment.' },
 	'youtube-shorts-reply': { name: 'YouTube · Shorts reply', description: 'The YouTube Shorts comment card.' },
-	'x-post': { name: 'X · Post', description: 'An X post card.' },
+	'x-post': {
+		name: 'X · Post',
+		description: 'An X post with replies, reposts, likes and views.',
+	},
 	'play-store-review': {
 		name: 'Play Store · Review',
 		description: 'A Google Play review: avatar, name, green stars, date and the text fading out when long.',
@@ -504,6 +557,7 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	canvases: [...CANVASES],
 	presets: socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS),
 	fill: fillSocialCommentParams,
+	requiredAssets: socialCommentRequiredAssets,
 	// grouped like tokcomment's control panel (design §7.9); custom controls are registered by the web app (until then
 	// Properties falls back to the standard editors)
 	ui: {

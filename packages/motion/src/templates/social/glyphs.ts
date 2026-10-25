@@ -536,7 +536,9 @@ export const PLAY_STORE_GLYPHS = {
 	/** Review rating star (inline SVG of the review card); filled and empty stars are the same path in two colours. */
 	star: {
 		viewBox: '0 0 24 24',
-		paths: [{ d: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z' }],
+		paths: [
+			{ d: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z' },
+		],
 		defaultColor: { light: '#01875F', dark: '#00A173' },
 		origin: 'live-dom',
 	},
@@ -584,14 +586,22 @@ export const APP_STORE_GLYPHS = {
 	 */
 	legacyStar: {
 		viewBox: '0 0 13 14',
-		paths: [{ d: 'M6.496.173L4.521 5.251H.007l3.738 2.751-1.481 5.149 4.232-3.386 4.232 3.386-1.482-5.149 3.739-2.751H8.471z' }],
+		paths: [
+			{
+				d: 'M6.496.173L4.521 5.251H.007l3.738 2.751-1.481 5.149 4.232-3.386 4.232 3.386-1.482-5.149 3.739-2.751H8.471z',
+			},
+		],
 		defaultColor: { light: '#FF9500', dark: '#FF9F0A' },
 		origin: 'archived',
 	},
 	/** Legacy empty star (the sprite's bottom half, moved up by its 14.15 offset into the same 13 × 14 box). */
 	legacyStarEmpty: {
 		viewBox: '0 0 13 14',
-		paths: [{ d: 'M6.5.2l-1.978 5.087H0l3.745 2.755-1.484 5.158L6.5 9.809l4.239 3.391-1.484-5.158L13 5.287H8.478z' }],
+		paths: [
+			{
+				d: 'M6.5.2l-1.978 5.087H0l3.745 2.755-1.484 5.158L6.5 9.809l4.239 3.391-1.484-5.158L13 5.287H8.478z',
+			},
+		],
 		defaultColor: { light: '#BFBFBF', dark: '#5A5A5E' },
 		origin: 'archived',
 	},
@@ -657,7 +667,7 @@ export const PLATFORM_DEFAULT_AVATARS: Readonly<Record<SocialPlatform, PlatformD
 	'play-store': {
 		kind: 'none',
 		reason:
-			'Google Play shows each reviewer\'s Google account picture (googleusercontent URLs per account); there is no single public default image.',
+			"Google Play shows each reviewer's Google account picture (googleusercontent URLs per account); there is no single public default image.",
 	},
 	'app-store': {
 		kind: 'none',

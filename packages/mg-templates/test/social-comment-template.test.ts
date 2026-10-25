@@ -17,13 +17,17 @@ import {
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
+	SOCIAL_VARIANT_FONTS,
 	SOCIAL_WORD_STAGGER_MS,
 	type SocialScheduleInput,
 	socialCardScale,
 	socialComment,
 	socialCommentPresets,
+	socialCommentRequiredAssets,
 	socialCommentSchedule,
 	socialCommentSegments,
+	socialCommentUnavailableVariant,
+	socialDefaults,
 	socialLikesTick,
 	socialTickCount,
 	stripMarks,
@@ -263,10 +267,26 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
 			['tiktok-reply', 'TikTok · Comment reply'],
 			['tiktok-comment', 'TikTok · Comment'],
+			['x-post', 'X · Post'],
 			['play-store-review', 'Play Store · Review'],
 			['app-store-review', 'App Store · Review'],
 			['app-store-review-ios', 'App Store · Review (iPhone app)'],
 		]);
+		// the X preset carries tokcomment's X defaults (2h, 45 replies, 12 reposts, 1.2K likes, 12K views)
+		const x = socialComment.presets!.find((p) => p.id === 'x-post')!;
+		expect({ ...socialComment.defaults, ...x.params }).toMatchObject({
+			variant: 'x-post',
+			displayName: 'Display Name',
+			handle: 'username',
+			timeValue: 2,
+			timeUnit: 'hour',
+			replies: 45,
+			reposts: 12,
+			likes: 1200,
+			views: 12_000,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'x-post' })).toBeNull();
+		expect(SOCIAL_VARIANT_FONTS['x-post']).toEqual({ family: 'Chirp', weights: [400, 700] });
 		// the store presets carry what differs from the schema defaults: the variant, its neutral name and review text
 		const play = socialComment.presets!.find((p) => p.id === 'play-store-review')!;
 		expect(play.params).toEqual({
@@ -276,7 +296,9 @@ describe('social-comment@1 presets and fill hook', () => {
 			text: 'Write any review and see what happens 😊',
 		});
 		for (const p of socialComment.presets!)
-			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(true);
+			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
+				true,
+			);
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,
@@ -324,5 +346,45 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(r.params).toMatchObject({ variant: 'tiktok-reply', text: 'Part two please' });
 		expect(r.params.avatar).toMatchObject({ generated: expect.any(Number) });
 		expect(r.filled).toEqual(expect.arrayContaining(['displayName', 'handle', 'avatar']));
+	});
+});
+
+describe('social-comment@1 required assets', () => {
+	it('TikTok: TikTok Sans faces, the emoji of the comment and the shown name in the clip pack, no image', () => {
+		const a = socialCommentRequiredAssets({
+			...socialDefaults('tiktok-reply'),
+			displayName: 'Luna ✨',
+			handle: 'luna',
+			text: 'so ==good 😊== 🔥🔥',
+			emojiStyle: 'twemoji',
+		});
+		expect(a.fonts).toEqual([
+			{ family: 'TikTok Sans', weight: 600, style: 'normal' },
+			{ family: 'TikTok Sans', weight: 700, style: 'normal' },
+		]);
+		expect(a.emoji).toEqual({ pack: 'twemoji', graphemes: ['😊', '🔥', '✨'] });
+		expect(a.images).toBeUndefined();
+		const plain = socialCommentRequiredAssets({ ...socialDefaults('tiktok-comment'), text: 'no emoji' });
+		expect(plain.emoji).toBeUndefined();
+		expect(plain.fonts.map((f) => f.weight)).toEqual([500, 600]);
+	});
+
+	it('a variant whose card is not built yet declares nothing; the declaration passes the asset schema', () => {
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('instagram-post'), handle: 'a', text: 'A 😀' }),
+		).toEqual({ fonts: [] });
+		// X: Chirp faces, the emoji of the text, the name and the handle, and the raster default avatar
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('x-post'), displayName: 'A 😀', text: 'hi' }),
+		).toEqual({
+			fonts: [
+				{ family: 'Chirp', weight: 400, style: 'normal' },
+				{ family: 'Chirp', weight: 700, style: 'normal' },
+			],
+			emoji: { pack: 'apple', graphemes: ['😀'] },
+			images: ['x-default-avatar'],
+		});
+		const info = mgRegistry.getDefinition('social-comment', 1)!;
+		expect((info as { requiredAssets?: unknown }).requiredAssets).toBe(socialCommentRequiredAssets);
 	});
 });

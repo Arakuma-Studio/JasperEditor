@@ -686,6 +686,21 @@ measurements carry an [M] / [M-css] comment.
    glyphs, bug fixes. If the real font's cap height differs from the capture's font, scale the font size to keep the
    reference's cap height (see the TikTok reply).
 
+**Assets and determinism rules** (added with the WP2 wiring):
+- **Fonts and images:** don't declare them yourself. `requiredAssets` derives them from `SOCIAL_VARIANT_FONTS`,
+  `SOCIAL_COMMENT_READY_VARIANTS`, `SOCIAL_DEFAULT_AVATAR_IMAGES` and `VARIANT_CAPABILITIES`. A raster default avatar
+  is `assets.imageUrls[SOCIAL_DEFAULT_AVATAR_IMAGES[platform]]`.
+- **Emoji:** draw every emoji through `CommentText`, `TextWithEmoji` or `EmojiGlyph`, which use `EmojiImage`. Never
+  render an emoji grapheme as text: it would be a host-font glyph.
+- **Animated elements:** give every element you transform per frame (a thumping icon…) `boxShadow: INK_RING` (from
+  `parts.tsx`).
+- **No paint traps:** no `overflow: hidden` + `border-radius` clips (round pictures by their own radius), and no CSS
+  `filter` on text (see "Paint determinism").
+- **Unit tests that render emoji:** stub `NODE_ENV=development` and `HTMLImageElement.complete` like
+  `social-comment.test.tsx`. Remotion treats `NODE_ENV=test` as a render, and a missing emoji then cancels it.
+- **Render e2e:** emoji without `SOCIAL_EMOJI_DIR` get flat stand-in images automatically. Before the entrance ends,
+  the parity check allows 1/255 on ≤ 64 pixels.
+
 **Don't touch** (shared; changes go through WP6a or the integrator):
 - `index.tsx`, `stage.tsx`, `build.ts`, `contract.ts`, `parts.tsx`, `assets.tsx`;
 - the schedule and its constants in `social-comment.ts`;
@@ -756,17 +771,57 @@ frame.
   - The model and the renderer count the same units.
 - **Highlight:** tokcomment's `#FFE500` pill, black text, 6 px radius, padding `.05em .35em`, `box-decoration-break:
   clone`.
-- **Blur:** `blur(4px)` at reference size on an inline-block word. The card's zoom scales the radius with the card:
-  7.2 design px on 9:16.
+- **Blur:** the look of tokcomment's `blur(4px)` at reference size, drawn as a text shadow of the same Gaussian
+  (`0 0 8px currentColor`; a shadow's blur radius is twice the standard deviation) under transparent glyphs
+  (`-webkit-text-fill-color: transparent`). The card's zoom scales it with the card: 7.2 design px on 9:16.
+  - Why not `filter`: a CSS `filter` on the words made Chrome composite them, and a frame painted after an entrance
+    then differed from the same frame painted alone by up to 10/255 (renderFrames ≠ renderStill).
+  - The calibration page matches tokcomment's blur captures.
+  - An emoji inside a blurred word keeps `filter: blur(4px)` (an image has no text shadow).
 - **Remove:** `opacity: 0`, so the gap is kept.
 - **Mentions and hashtags:** TikTok's info colour, tux `--ui-text-info`: #2B5DB9 light, #60B3FF dark [M-css]. They
   are coloured on both TikTok cards [E]; a highlight's text stays black.
-- **Emoji:** images of the clip's pack (`resolveEmojiStyle`).
+- **Emoji:** images of the clip's pack (`resolveEmojiStyle`), drawn by `EmojiImage` (contract C2).
+  - The render waits for each image's decode. A grapheme the pack does not deliver is a visible `MissingAssetMarker`
+    in preview, reported to the editor; in a render it fails the render, and the export planner blocks such exports
+    before they start.
+  - Emoji detection is the shared `splitEmoji` / `emojiGraphemes` / `isEmojiGrapheme` of @jasper/mg-templates
+    everywhere: in `requiredAssets` and in the cards. Text-presentation characters without VS16 (`❤`, `☺`, `✔`)
+    stay text, as UTS #51 says.
   - Size 1.2 em, centred on the text's middle (shift −0.22 em), with a 0.03 em side bearing so adjacent emoji keep a
     hairline gap.
   - Calibrated against the tokcomment captures: 30 vs 29 px ink at 2×, centre within 0.5 px.
 - **Word reveal:** units become inline-block so they can scale; whitespace stays text, so lines break as without the
   reveal.
+
+### Declared assets (`requiredAssets`)
+
+`socialCommentRequiredAssets(params)` declares what a clip draws, for the render snapshot (preview and bake), the
+export planner and the bake key:
+- **Fonts:** the variant's faces from `SOCIAL_VARIANT_FONTS`: TikTok Sans 600 and 700 (reply), 500 and 600 (comment),
+  from the bundled catalogue; Chirp 400 and 700 (X), from the remote manifest.
+- **Emoji:** the graphemes of the visible comment (marks stripped) and of the names the variant shows
+  (`VARIANT_CAPABILITIES`), in the clip's pack.
+- **Images:** the platform's raster default avatar (`SOCIAL_DEFAULT_AVATAR_IMAGES`: X, YouTube) when the avatar is
+  shown and is the default. `SocialAvatar` draws `assets.imageUrls[id]`, else a silhouette.
+- **Unbuilt variants:** a variant not in `SOCIAL_COMMENT_READY_VARIANTS` declares nothing; it draws only its "not
+  available" card, and exports refuse it.
+
+### Paint determinism
+
+A frame must be the same bytes whether Chrome paints it alone (`renderStill`) or after other frames (`renderFrames`,
+the Player). Three things in the cards broke that while the entrance moved the card. Each is fixed and checked by
+`social-comment-render.e2e.test.ts` (5 cases, 13 frames each):
+- **Ink ring (`INK_RING`).** Chrome repaints a transformed element within its ink rect; anti-aliased edges just
+  outside kept the previous frame's pixels (rotated card edges, scaled words). Every element a card transforms per
+  frame (the card wrapper, word units, like hearts) carries `box-shadow: 0 0 0 3px transparent`, which widens its ink
+  rect.
+- **No rounded `overflow: hidden` clips** on avatars. Every avatar is round by itself: a picture by its own
+  `border-radius`, the glyphs are discs.
+- **Text-shadow blur** instead of `filter`, as above.
+- **Remaining difference:** while the entrance scales the card, Chrome's path cache may anti-alias an SVG icon edge
+  1/255 differently after other frames. That affects at most 5 pixels and only before the card rests. The test allows
+  exactly that: 1/255 on ≤ 64 pixels before the entrance ends, byte-identical afterwards.
 
 ### Placement and fit
 
@@ -825,6 +880,78 @@ frame.
   - Huge counts overflow the card; they now stay short.
 - **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
 
+### X card
+
+WP6d (`sc/v-x`): `x-post` in `packages/motion/src/templates/social-comment/x.tsx` (`X_POST`). Font: Chirp 400/700
+from the remote manifest (`SOCIAL_VARIANT_FONTS['x-post']`; the card draws no 500 or 800). Glyphs: `X_GLYPHS`. Emoji:
+Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
+
+- **Blueprint [tok]:** `ref/x-post`, copied in CSS px. 420 wide, padding 10/16/8, radius 1, 1 px border black/white
+  5 %, the comment row's `0 25px 50px -12px` shadow (same `bleed` as the TikTok comment), bg #FFF / #000. Avatar 52,
+  gap 12. Header row 21 px high, gap 4, 2 px below: name 14/700, badge, `@handle` 14/400, a 2 px dot with 2 px margins,
+  time 14/400, then (pushed right) the Grok mark and "More", 8 px apart. Post 16/20, 3 px above the action row. Action
+  row 30 px high: icon, count 8 px after it; bookmark and share 12 px apart at the right.
+- **x.com 2026 over tokcomment [M]** (`research/platform-measurements`, X):
+  - name and post #000 / #FFF (tokcomment #0F0F0F, dark name #DADADA);
+  - handle, time, dot, icons and counts rgba(0,0,0,.6) / rgba(255,255,255,.6) (`--x-fg-secondary`; tokcomment
+    #737479 / #71767B / #767779);
+  - counts 13 px / 400 with tabular figures (tokcomment 12.96 / 500);
+  - Grok and More in the primary colour (dark: white; tokcomment's dark ellipsis #71767B);
+  - mentions and hashtags #1D9BF0 in both themes;
+  - **action bar: four equal columns** (x.com's `flex-1` engagement columns) for replies, reposts, likes and views,
+    then bookmark and share. Each column clips its count, so no count can push bookmark and share out of the card
+    (tokcomment's space-between row overflows with raw counts, `07_…_BUG-share-icon-overflows`). Icons keep their
+    places whatever the counts; with tokcomment's default counts they sit up to 7 px from its space-between positions.
+  - **a 0 count is not shown** (x.com shows the icon alone) [E: x.com behaviour; the measured post had no zero count].
+- **`showReposts` / `showViews`** hide the count and keep the icon (the params' contract, "the icon stays"), so the
+  columns never move.
+- **Grok mark:** included. x.com puts the Grok "Explain this post" ghost button (`icon-logo-grok`) left of "More" for
+  signed-in viewers when the post allows Grok analysis (bundle code; not rendered logged out [M]); the reference layout
+  shows it, and a screenshot of a post is usually taken signed in. It is X's real mark (`X_GLYPHS.grok`), not
+  tokcomment's imitation. There is no param to hide it (the schema is shared; not added in WP6d).
+- **Verified badge:** X's blue badge with the cut-out tick (`X_GLYPHS.verifiedBlue`), 14 px = 1 em of the name as on
+  x.com. Gold (organisations) and grey (government) exist in `X_GLYPHS` but `verified` is a boolean, so only blue is
+  drawn; a colour choice would need a schema field (proposed, not added).
+- **Sizes against the captures' ink (2×):** action icons 15 px (X's 24-unit glyphs: 24–26 px ink, as tokcomment's 14 px
+  lucide icons with their strokes), Grok 15, More 15, badge 14 (24 px ink, same as tokcomment's).
+- **Text:** Chirp keeps the captures' cap heights at tokcomment's sizes (2×: name "D" 20 vs 19 px, post "W" 22 vs 22 px),
+  so no size was scaled. It sits about 1 px higher in its line box, so the header text moves 1 px down
+  (`HEADER_SHIFT`). Chirp is ≈ 3 % wider than the captures' Liberation Sans (post line 622 vs 605 px), so a long
+  post can wrap one word earlier.
+- **Emoji:** Apple images at 1.2 em, shift −0.22 em: 34 × 34 px box against the capture's 34 × 32 glyph, top within 1 px.
+- **Like tick:** the outline heart cross-fades to X's filled heart in #F91880 (`--x-magenta-500` [M-css]) and thumps;
+  the count's colour moves from the secondary colour to #F91880 with the fill, as x.com colours a liked count. The count
+  starts hidden (0) and appears as it ticks up.
+- **Avatars:** a picture (`mediaUrls`), a generated one (initials from `displayName`, as the Properties preview), or
+  X's default profile picture (`null`): the manifest image `REMOTE_IMAGE_IDS.xDefaultAvatar` from
+  `assets.imageUrls` when the engine resolved it, else its vector twin (a #CCD6DD field, a #657786 head and shoulders,
+  measured on the 400 px file sha256 6d34bedb…), so the card never shows a wrong platform's silhouette.
+- **Fit:** the name and the handle truncate with an ellipsis; the badge, dot, time, Grok and More never shrink; counts
+  stay short ("999.9B", "1,000B" at the 1e12 cap) and clip inside their columns.
+- **Grow from tail:** no tail; the card grows from the avatar corner (`0% 0%`).
+- **Inline editing (C5):** `displayName` (the name span), `handle` (a span inside `@…`, without the "@") and `text`
+  (marks) carry `editableParamProps`.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/x/index.html` (outside the repo): all 18
+  tokcomment captures side by side with our `renderStill` at 2× and a difference overlay, plus generated avatar, huge
+  and zero counts, hidden reposts / views, liked (light, dark), no profile, long names, mentions and entrance / extras
+  filmstrips. To rerun: the manifest's Chirp files (`Chirp-*.latin.woff2`) in a directory, Apple PNGs (`<cp>.png`),
+  X's default avatar as `x-default-avatar.png`, then `REMOTION_E2E=1 SOCIAL_CHIRP_DIR=<chirp> SOCIAL_EMOJI_DIR=<emoji>
+  SOCIAL_IMAGE_DIR=<images> SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER='^(x-post_|anim_x-)' pnpm
+  exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools (`crop.mjs`, `cmp.sh`,
+  `filmstrips.sh`, `page.mjs`) in that directory's `tools/`. The e2e entry takes remote images as `imageFiles`
+  (`imageUrls`).
+- **Measured matches (2×):** card 840 × 230 opaque px for the 840 × 232 capture (the half-covered edge rows fall
+  outside the opaque crop); header, post and action rows within 1 px vertically; name width 183 vs 181 px; badge,
+  time and More within 2 px horizontally.
+
+**Deliberate differences from tokcomment:**
+- **Font:** Chirp instead of the capture host's Liberation Sans (tokcomment asks for Roboto, which never loaded).
+- **Glyphs:** X's own reply, repost, like / liked, views, bookmark, share, More, blue badge and Grok mark instead of
+  lucide and a Grok imitation.
+- **The [M] values above,** the equal-column action bar and hidden zero counts.
+- **Emoji:** Apple images (x.com shows the viewer's OS emoji since 2026; tokcomment's capture host drew Noto).
+- **tokcomment bugs fixed:** raw counts ("1234567" → "1.2M") and the share icon pushed out of the card.
+
 ### Verification
 
 - **Commands run** (`--maxWorkers=2`):
@@ -837,19 +964,31 @@ frame.
   - `packages/motion/test/social-comment.test.tsx`: cards per variant × theme, header, counts and replies rules,
     showProfile, invalid params, entrance rest and exit, word reveal and like tick values per frame, seek-order
     independence (fast-check), avatars, glyphs, marks, mentions, emoji, emoji split, fit zoom.
-  - `packages/compositions/test/social-comment-layer.test.tsx`: the real layer path, with the avatar from a project
-    medium through `mediaUrls` → `TemplateImage`, an offline avatar placeholder and the default avatar.
+  - `packages/compositions/test/social-comment-layer.test.tsx`: the real layer path through the render snapshot with
+    the template assets resolved (`templateAssetOptions`). It checks the declared TikTok Sans faces, the emoji images
+    from `emojiUrls`, the avatar from a project medium (`mediaUrls` → `TemplateImage`), the offline-avatar placeholder,
+    the default avatar and the X card.
   - `apps/engine/test/anime-templates.test.ts`: a card style not built yet blocks the plan.
 - **`REMOTION_E2E=1 packages/motion/test/social-comment-render.e2e.test.ts`** (Chrome 156):
-  - `renderStill` equals `renderFrames` (concurrency 2), byte for byte, at frames during the entrance and extras;
+  - `renderStill` equals `renderFrames` (concurrency 2) at 13 frames for 5 cases: every entrance, the extras, marks,
+    emoji, a generated avatar, the X card. Byte for byte at rest; see "Paint determinism" for the entrance;
   - the painted card stays inside every canvas for a 1,400-character marked comment, 1e12 counts and a 64-character
     name;
   - it writes the calibration stills.
 - **`REMOTION_E2E=1 determinism-render.e2e.test.ts`:** passes with `social-comment@1` in the parity document (6/6).
+  The parity scene now resolves the declared template assets: TikTok Sans as data URLs of the bundled files, and the
+  emoji as a generated image.
+- **`REMOTION_E2E=1 apps/engine/test/social-comment-bake.e2e.test.ts`:** the real template through the engine.
+  - Setup: TikTok comment, drop & bounce, word reveal, like tick, highlight, blur and 😊.
+  - Assets: TikTok Sans from the bundled catalogue (not a fallback); the emoji downloaded by the remote-asset service
+    from a local fixture pack (`JASPER_REMOTE_MANIFEST`, never the real CDNs).
+  - Result: the hybrid export (layer baked) and the full Remotion export agree within 3/255 on 99.7–100 % of the
+    pixels at 7 frames. They draw the pack's image, and a still equals its export frame.
 
 ### Limits
 
-- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Variants:** the Instagram and YouTube cards are not built (WP6b–c); the X card is ("X card" above). See
+  `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14

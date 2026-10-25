@@ -1,7 +1,8 @@
-// social-comment@1 through the real layer path (S11:ATP-005; social-comment design §7.7): clip params → render
-// snapshot → SequenceComposition → MotionGraphicLayer → the TikTok card, its avatar URL resolved from the project medium
-// (AnimeTemplateProps.mediaUrls → TemplateImage); an offline avatar draws the visible placeholder.
-import { mgRegistry } from '@jasper/mg-templates';
+// social-comment@1 through the real layer path (S11:ATP-005; social-comment design §7.7–7.8): clip params → render
+// snapshot (template assets declared by `requiredAssets`, resolved like the engine does) → MotionGraphicLayer → the
+// TikTok card: avatar from the project medium (mediaUrls → TemplateImage), emoji images of the pack (emojiUrls →
+// EmojiImage); an offline avatar draws the visible placeholder.
+import { mgRegistry, templateAssetOptions } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -12,11 +13,18 @@ import {
 	type MediaHandle,
 	type ProjectDocument,
 	type RenderSnapshot,
+	resolveSceneAt,
 } from '@jasper/project';
-import { Thumbnail } from '@remotion/player';
 import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_RENDER_OPTIONS, SequenceComposition } from '../src/index.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ColorDocContext } from '../src/color/chain.ts';
+import {
+	DEFAULT_RENDER_OPTIONS,
+	EmojiTableContext,
+	FontsReadyContext,
+	type LayerProps,
+	MotionGraphicLayer,
+} from '../src/index.ts';
 
 const PNG: Omit<MediaAsset, 'id'> = {
 	kind: 'image',
@@ -84,42 +92,103 @@ const handle = (url: string): MediaHandle => ({
 	rotation: 0,
 });
 
-function frame(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | null, at = 100) {
+// Remotion counts NODE_ENV=test as a render (getRemotionEnvironment); the Player behaviour needs another value.
+// happy-dom reports every image as complete at once (a browser does so only once it loaded or broke).
+const completeDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'complete');
+beforeEach(() => {
+	vi.stubEnv('NODE_ENV', 'development');
+	Object.defineProperty(HTMLImageElement.prototype, 'complete', { configurable: true, get: () => false });
+});
+afterEach(() => {
+	vi.unstubAllEnvs();
+	if (completeDesc) Object.defineProperty(HTMLImageElement.prototype, 'complete', completeDesc);
+});
+
+const EMOJI = (pack: string, g: string) =>
+	`https://engine.test/fonts/emoji/${pack}/${[...g].map((c) => c.codePointAt(0)!.toString(16)).join('-')}.png`;
+
+/** The clip's layer at `at` through the render snapshot with the template assets resolved (WP2's path). */
+function layer(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | null, at = 100) {
+	const fonts: string[] = [];
 	const snap: RenderSnapshot = buildRenderSnapshot(doc, Object.keys(doc.sequences)[0]!, {
 		resolveMedia: resolve,
 		resolveFont: () => null,
+		templateAssets: templateAssetOptions(mgRegistry, {
+			font: (f) => {
+				fonts.push(`${f.family} ${f.weight}`);
+				return `/fonts/tiktok-sans/${f.weight}.woff2`;
+			},
+			emoji: EMOJI,
+		}),
 	});
-	return render(
-		<Thumbnail
-			component={SequenceComposition}
-			inputProps={{ doc: snap, options: DEFAULT_RENDER_OPTIONS }}
-			compositionWidth={snap.settings.width}
-			compositionHeight={snap.settings.height}
-			durationInFrames={Math.max(1, snap.durationFrames)}
-			fps={30}
-			frameToDisplay={at}
-		/>,
+	// the sequence composition provides these tables (SequenceComposition: Emoji/Image tables, ColorDocContext)
+	const l = resolveSceneAt(snap, at)[0]!;
+	const props: LayerProps = {
+		clip: l.clip,
+		props: l.props,
+		localFrame: l.localFrame,
+		contentTime: l.contentTime,
+		fps: 30,
+		media: null,
+		options: { ...DEFAULT_RENDER_OPTIONS, isPreview: true },
+		fonts: snap.fonts,
+	};
+	const view = render(
+		<FontsReadyContext.Provider value={{ allLoaded: true }}>
+			<EmojiTableContext.Provider value={snap.emoji}>
+				<ColorDocContext.Provider value={{ media: snap.media, bypass: new Set(), isPreview: true }}>
+					<MotionGraphicLayer {...props} />
+				</ColorDocContext.Provider>
+			</EmojiTableContext.Provider>
+		</FontsReadyContext.Provider>,
 	);
+	return { view, fonts, snap };
 }
 
-describe('social-comment@1 in the sequence composition', () => {
-	it('draws the TikTok comment card with the uploaded avatar the snapshot resolved', () => {
-		const { doc, mediaId } = project({ variant: 'tiktok-comment', displayName: 'Luna' }, true);
-		const view = frame(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+describe('social-comment@1 in the motion-graphic layer', () => {
+	it('draws the TikTok comment card: uploaded avatar, its declared TikTok Sans faces and Apple emoji images', () => {
+		const { doc, mediaId } = project({ variant: 'tiktok-comment', displayName: 'Luna ✨' }, true);
+		const { view, fonts } = layer(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+		expect(new Set(fonts)).toEqual(new Set(['TikTok Sans 500', 'TikTok Sans 600']));
 		expect(view.container.querySelector('[data-mg-template="social-comment@1"]')).not.toBeNull();
 		expect(view.container.querySelector('[data-social-variant="tiktok-comment"]')).not.toBeNull();
 		expect(view.getByTestId('social-avatar-media').getAttribute('src')).toBe(
 			`https://engine.test/media/${mediaId}?sig=1`,
 		);
-		expect(view.container.querySelector('[data-template-param="displayName"]')!.textContent).toBe('Luna');
+		expect(view.container.querySelector('[data-template-param="displayName"]')!.textContent).toBe('Luna ');
+		expect(view.container.querySelector('[data-template-param="displayName"] img')!.getAttribute('alt')).toBe(
+			'✨',
+		);
+		const emoji = [...view.container.querySelectorAll('img[data-emoji]')].map((i) => i.getAttribute('src'));
+		expect(emoji).toEqual([EMOJI('apple', '✨'), EMOJI('apple', '😊')]);
+		expect(view.container.querySelector('[data-missing-asset]')).toBeNull();
 		view.unmount();
 	});
 
 	it('an offline avatar draws the visible placeholder; no avatar draws the TikTok default', () => {
-		const offline = frame(project({}, true).doc, () => null);
-		expect(offline.container.querySelector('[data-template-image="placeholder"]')).not.toBeNull();
-		offline.unmount();
-		const none = frame(project({}, false).doc, (a) => handle(`/m/${a.id}`));
+		const offline = layer(project({}, true).doc, () => null);
+		expect(offline.view.container.querySelector('[data-template-image="placeholder"]')).not.toBeNull();
+		offline.view.unmount();
+		const none = layer(project({}, false).doc, (a) => handle(`/m/${a.id}`));
+		expect(none.view.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
+		none.view.unmount();
+	});
+
+	it('draws the X post card through the layer: uploaded avatar, @handle, counts; no avatar draws the X default', () => {
+		const { doc, mediaId } = project(
+			{ variant: 'x-post', handle: 'luna', likes: 1234, verified: true },
+			true,
+		);
+		const { view } = layer(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+		expect(view.container.querySelector('[data-social-variant="x-post"]')).not.toBeNull();
+		expect(view.getByTestId('social-avatar-media').getAttribute('src')).toBe(
+			`https://engine.test/media/${mediaId}?sig=1`,
+		);
+		expect(view.container.querySelector('[data-part="handle"]')!.textContent).toBe('@luna');
+		expect(view.container.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna');
+		expect(view.container.querySelector('[data-part="likes"]')!.textContent).toBe('1.2K');
+		view.unmount();
+		const none = layer(project({ variant: 'x-post' }, false).doc, (a) => handle(`/m/${a.id}`)).view;
 		expect(none.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
 		none.unmount();
 	});

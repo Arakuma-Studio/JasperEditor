@@ -252,7 +252,7 @@ type PlatformDefaults = Pick<
 	SocialCommentParams,
 	'displayName' | 'handle' | 'timeValue' | 'timeUnit' | 'likes' | 'replies'
 > &
-	Partial<Pick<SocialCommentParams, 'reposts' | 'views' | 'text'>>;
+	Partial<Pick<SocialCommentParams, 'reposts' | 'views' | 'text' | 'truncate'>>;
 
 // tokcomment's defaults (ref/index.md; styles_*.json texts). Variants without stats keep their platform's stats so a
 // variant switch within the platform shows tokcomment's numbers. The field a variant does not show gets a neutral
@@ -313,7 +313,9 @@ const VARIANT_DEFAULTS: Readonly<Record<SocialVariant, PlatformDefaults>> = {
 	'x-post': X,
 	'play-store-review': REVIEW,
 	'app-store-review': REVIEW,
-	'app-store-review-ios': REVIEW,
+	// the iPhone app's Ratings & Reviews list (the requester's screenshot) shows whole reviews; `truncate` gives the
+	// product page's clamped card
+	'app-store-review-ios': { ...REVIEW, truncate: false },
 };
 
 /** tokcomment's defaults for `variant` (a fresh object every call). */

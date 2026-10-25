@@ -363,9 +363,8 @@ describe('bulk import of store reviews', () => {
 		expect(cellIsoDate('24.09.2025')).toBeNull();
 	});
 
-	it('Add another on a review gives a new reviewer, rating and date, and keeps the title and text', () => {
-		expect(SOCIAL_REROLL_PARAMS).toEqual(expect.arrayContaining(['rating', 'date']));
-		expect(SOCIAL_REROLL_PARAMS).not.toContain('title');
+	it('Add another on a review gives a new reviewer, rating, date and title, and keeps the text', () => {
+		expect(SOCIAL_REROLL_PARAMS).toEqual(expect.arrayContaining(['rating', 'date', 'title']));
 		const ids = createCounterIdSource(1);
 		const ctx = {
 			ids,
@@ -406,8 +405,8 @@ describe('bulk import of store reviews', () => {
 		);
 		if (!dup.result.ok) throw new Error(JSON.stringify(dup.result));
 		const r = dup.result.results[0] as { params: Record<string, unknown>; rerolled: string[] };
-		expect(r.params).toMatchObject({ variant: 'app-store-review', title: 'Great so far', text: 'Love it' });
-		expect(r.rerolled).toEqual(expect.arrayContaining(['rating', 'date', 'displayName']));
+		expect(r.params).toMatchObject({ variant: 'app-store-review', text: 'Love it' });
+		expect(r.rerolled).toEqual(expect.arrayContaining(['rating', 'date', 'title', 'displayName']));
 		expect(socialCommentParamsSchema.safeParse(r.params).success).toBe(true);
 	});
 });

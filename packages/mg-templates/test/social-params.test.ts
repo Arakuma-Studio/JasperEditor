@@ -109,7 +109,14 @@ describe('variants and capabilities', () => {
 			'likeTick',
 		]);
 		// App Store web: no avatar; stars, "name, date", title, body
-		expect(caps('app-store-review')).toEqual(['displayName', 'rating', 'date', 'title', 'truncate', 'likeTick']);
+		expect(caps('app-store-review')).toEqual([
+			'displayName',
+			'rating',
+			'date',
+			'title',
+			'truncate',
+			'likeTick',
+		]);
 		// iPhone app: title + relative age (edited), stars + name, body
 		expect(caps('app-store-review-ios')).toEqual([
 			'displayName',
@@ -187,7 +194,11 @@ describe('socialCommentParamsSchema', () => {
 			},
 			// store reviews: neutral placeholders, 4 stars (the requester's Play screenshot), "1y ago" on the iPhone card
 			'play-store-review': { displayName: 'Display Name', text: SOCIAL_DEFAULT_REVIEW_TEXT },
-			'app-store-review': { displayName: 'Display Name', title: 'Review title', text: SOCIAL_DEFAULT_REVIEW_TEXT },
+			'app-store-review': {
+				displayName: 'Display Name',
+				title: 'Review title',
+				text: SOCIAL_DEFAULT_REVIEW_TEXT,
+			},
 			'app-store-review-ios': {
 				displayName: 'Display Name',
 				title: 'Review title',
@@ -195,6 +206,7 @@ describe('socialCommentParamsSchema', () => {
 				timeUnit: 'year',
 				edited: false,
 				text: SOCIAL_DEFAULT_REVIEW_TEXT,
+				truncate: false,
 			},
 		};
 		for (const v of SOCIAL_VARIANTS) {
@@ -266,7 +278,15 @@ describe('socialCommentParamsSchema', () => {
 		expect(ok({ date: '1900-02-28' })).toBe(false); // before 1970
 		expect(ok({ date: '2023-02-29' })).toBe(false);
 		expect(ok({ date: '2100-02-28' })).toBe(false); // after 2099
-		for (const d of ['2025-04-31', '2025-13-01', '2025-00-10', '2025-9-24', '09/24/2021', '2025-09-24T10:00', ''])
+		for (const d of [
+			'2025-04-31',
+			'2025-13-01',
+			'2025-00-10',
+			'2025-9-24',
+			'09/24/2021',
+			'2025-09-24T10:00',
+			'',
+		])
 			expect(ok({ date: d }), d).toBe(false);
 		expect(ok({ title: '' })).toBe(true);
 		expect(ok({ title: 'Great so far 🎉' })).toBe(true);
@@ -287,7 +307,11 @@ describe('socialCommentParamsSchema', () => {
 					const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 					const t = new Date(Date.UTC(y, m - 1, d));
 					const real =
-						m >= 1 && m <= 12 && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+						m >= 1 &&
+						m <= 12 &&
+						t.getUTCFullYear() === y &&
+						t.getUTCMonth() === m - 1 &&
+						t.getUTCDate() === d;
 					const inRange = y >= 1970 && y <= 2099;
 					expect(socialCommentParamsSchema.shape.date.safeParse(iso).success).toBe(real && inRange);
 					expect(parseReviewDate(iso) !== null).toBe(real && inRange);
