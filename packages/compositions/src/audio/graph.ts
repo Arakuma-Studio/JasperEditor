@@ -35,10 +35,13 @@ import {
 	type RenderStrip,
 } from '@jasper/project';
 import { audioGainAt, MAX_PREVIEW_GAIN, dbToGain as pipelineDbToGain } from '../pipeline.ts';
-import { followCurve } from './automation.ts';
+import { type CurvePrecision, followCurve } from './automation.ts';
 import type { SlotClock } from './fx-processor.ts';
 import { discreteGain, MatrixNode, setParam } from './matrix-node.ts';
 import { PrimedStartClock } from './primed-clock.ts';
+
+/** Level automation of clips whose fades have a cusp (Custom Fade, fade value > 0): down to one-sample pieces. */
+const CUSP_PRECISION: CurvePrecision = { minSamples: 1, tolerance: 2e-5 };
 
 export type LoudnessReading = {
 	momentary: number;
@@ -910,7 +913,18 @@ class ClipNodes {
 			};
 			const cut = ((clip.start + end) * F - t) / FLICKS_PER_SECOND / followRate;
 			const breaks = clipLevelBreaks(clip, t, rate).map((b) => b / followRate);
-			followCurve(this.level.gain, this.ctx, level, undefined, cut, breaks);
+			// A Custom Fade whose exponent is under 1 starts with an infinite slope (base^e near 0): one-sample pieces
+			// where the curve needs them, as the 5.1 panner's square-root centre gain (matrix-node.ts).
+			const cusp = clip.fades?.some((f) => f.curve === 'shape' && (f.shape?.value ?? 0) > 0);
+			followCurve(
+				this.level.gain,
+				this.ctx,
+				level,
+				undefined,
+				cut,
+				breaks,
+				cusp ? CUSP_PRECISION : undefined,
+			);
 		} else {
 			const f = t / F - clip.start;
 			setParam(
