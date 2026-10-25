@@ -150,7 +150,7 @@ programOverlays.register({
 layerDoubleClickHandlers.register({
 	id: 'mg-text',
 	run: ({ session, clip, point }) => {
-		if (clip.kind !== 'composition' || session.getState().readOnly) return false;
+		if (clip?.kind !== 'composition' || session.getState().readOnly) return false;
 		startCanvasTextEdit(session, clip.id, { point });
 		return true;
 	},
