@@ -24,6 +24,7 @@ import {
 	MASK_PROP_LABELS,
 	type MaskProp,
 } from '../masks/model.ts';
+import { TEMPLATE_MEDIA_KIND, TEMPLATE_MEDIA_KINDS_KEY, TEMPLATE_PARAM_KIND_KEY } from '../param-media.ts';
 import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
@@ -160,6 +161,11 @@ export type PropertySpec = {
 	valueSchema?: JsonSchemaObject;
 	/** `media` values (fx framework): the asset kinds the picker offers (absent = LUTs, the M2 colour pickers). */
 	mediaKinds?: readonly string[];
+	/**
+	 * `media` values of template params (`mediaParam()`, social comments): "None" is `null` (effect media params
+	 * write `{mediaId: ''}`).
+	 */
+	mediaNullable?: boolean;
 	/** wp shapes: structural check of a written value (`json` paths and gradients); false = E_INVALID_PARAM. */
 	validate?: (value: unknown) => boolean;
 };
@@ -1217,6 +1223,31 @@ export function jsonSchemaPropertySpecs(
 	const leaf = (name: string, path: string[], s0: JsonSchema, dflt: unknown) => {
 		const s = unwrapNullable(root, s0);
 		const hint = o.ui?.[path.join('.')];
+		// Template media params (`mediaParam()`: `{mediaId} | null` with `x-jasper-kind: "media"`): the media picker.
+		const mediaKinds = templateMediaKindsOf(s0) ?? templateMediaKindsOf(s);
+		if (mediaKinds) {
+			out.push({
+				key: [o.keyPrefix, ...path].join('.'),
+				label:
+					typeof hint?.label === 'string'
+						? hint.label
+						: typeof s.title === 'string'
+							? s.title
+							: humanize(name),
+				group: o.group,
+				kind: 'media',
+				animatable: 'no',
+				storagePath: [...o.storageRoot, ...path],
+				appliesTo: o.appliesTo,
+				ui: { control: 'media' },
+				defaultValue: dflt !== undefined ? dflt : (s0.default ?? s.default ?? null),
+				description: typeof s.description === 'string' ? s.description : undefined,
+				valueSchema: s0,
+				mediaKinds,
+				mediaNullable: true,
+			});
+			return;
+		}
 		let kind: ValueKind = 'string';
 		let options: readonly string[] | undefined;
 		const enumOpts = literalOptions(root, s);
@@ -1293,6 +1324,64 @@ export function jsonSchemaPropertySpecs(
 	};
 	walk(root, [], o.defaults, 0);
 	return out;
+}
+
+/** The media kinds of a template media param schema node (`x-jasper-kind: "media"`), else null. */
+function templateMediaKindsOf(s: JsonSchema | undefined): string[] | null {
+	if (!isRecord(s) || s[TEMPLATE_PARAM_KIND_KEY] !== TEMPLATE_MEDIA_KIND) return null;
+	const kinds = s[TEMPLATE_MEDIA_KINDS_KEY];
+	return Array.isArray(kinds) ? kinds.filter((k): k is string => typeof k === 'string') : [];
+}
+
+const templateJsonCache = new WeakMap<object, JsonSchema | null>();
+function templateJson(template: Pick<MgTemplateInfo, 'paramsSchema'>): JsonSchema | null {
+	const key = template.paramsSchema as object;
+	if (templateJsonCache.has(key)) return templateJsonCache.get(key)!;
+	let json: JsonSchema | null = null;
+	try {
+		json = z.toJSONSchema(template.paramsSchema, { unrepresentable: 'any', io: 'input' }) as JsonSchema;
+	} catch {
+		json = null;
+	}
+	templateJsonCache.set(key, json);
+	return json;
+}
+
+/**
+ * The media kinds the template param at `path` (inside `params`, e.g. `['avatar']` or `['gallery', '0']`) takes,
+ * when the schema declares it a media param (`mediaParam()`); null when it does not (or the path is not in the
+ * schema). An empty list means "any kind".
+ */
+export function templateMediaKindsAt(
+	template: Pick<MgTemplateInfo, 'paramsSchema'>,
+	path: readonly string[],
+): string[] | null {
+	const root = templateJson(template);
+	if (!root) return null;
+	let cur: JsonSchema | undefined = root;
+	for (const key of path) {
+		const s = derefSchema(root, cur);
+		if (!isRecord(s)) return null;
+		const branches = [
+			s,
+			...(['anyOf', 'oneOf', 'allOf'] as const).flatMap((k) => (Array.isArray(s[k]) ? s[k] : [])),
+		]
+			.map((b) => derefSchema(root, b as JsonSchema))
+			.filter(isRecord);
+		let next: JsonSchema | undefined;
+		for (const b of branches) {
+			if (/^\d+$/.test(key) && isRecord(b.items)) next = b.items as JsonSchema;
+			else if (/^\d+$/.test(key) && Array.isArray(b.prefixItems))
+				next = b.prefixItems[Number(key)] as JsonSchema;
+			else if (isRecord(b.properties) && isRecord(b.properties[key])) next = b.properties[key] as JsonSchema;
+			else if (isRecord(b.additionalProperties)) next = b.additionalProperties as JsonSchema;
+			if (next) break;
+		}
+		if (!next) return null;
+		cur = next;
+	}
+	const node = derefSchema(root, cur);
+	return isRecord(node) ? templateMediaKindsOf(node) : null;
 }
 
 /** Specs for a motion-graphic clip's `params.<name>` from the template's params schema. */

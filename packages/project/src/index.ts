@@ -62,6 +62,7 @@ export * from './lottie/index.ts';
 export * from './masks/index.ts';
 export * from './migrations.ts';
 export * from './multicam/index.ts';
+export * from './param-media.ts';
 export * from './path/index.ts';
 export * from './presets.ts';
 export * from './process/index.ts';

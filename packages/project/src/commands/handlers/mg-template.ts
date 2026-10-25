@@ -1,9 +1,11 @@
 // Template upgrades migrate and validate params, update the renderer, and drop keys for deleted params.
 // Animated template params split their static values and keys between params[name] and paramKeyframes[name].
 import type { Draft } from 'immer';
+import { templateMediaRefs } from '../../param-media.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
-import { paramsPropertySpecs } from '../../registry/properties.ts';
+import { paramsPropertySpecs, templateMediaKindsAt } from '../../registry/properties.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
+import type { MediaAsset } from '../../schema/media.ts';
 import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
@@ -80,6 +82,30 @@ export function templateParamsValidator(
 		if (!template.paramsSchema.safeParse(next).success)
 			h.fail('E_INVALID_PARAM', `Invalid value for ${label}`);
 	};
+}
+
+/**
+ * Template media params (avatars, `mediaParam()`): every `{mediaId}` in `params` names a medium of the project
+ * (else E_NOT_FOUND) of a kind its param takes (else E_INVALID_PARAM).
+ */
+export function assertTemplateMedia(
+	media: Readonly<Record<string, Pick<MediaAsset, 'kind'> | undefined>>,
+	template: MgTemplateInfo,
+	params: Record<string, unknown>,
+	h: HandlerContext,
+): void {
+	for (const ref of templateMediaRefs(params)) {
+		const path = ['params', ...ref.path.split('.')];
+		const asset = media[ref.mediaId];
+		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${ref.mediaId} (params.${ref.path})`, { path });
+		const kinds = templateMediaKindsAt(template, ref.path.split('.'));
+		if (kinds && kinds.length > 0 && !kinds.includes(asset.kind))
+			h.fail(
+				'E_INVALID_PARAM',
+				`params.${ref.path} takes ${kinds.join(' or ')} media, not ${asset.kind} (${ref.mediaId})`,
+				{ path },
+			);
+	}
 }
 
 /** Keyframes of params that stay keyframable (same value shape) in `info`; the others are dropped. */
