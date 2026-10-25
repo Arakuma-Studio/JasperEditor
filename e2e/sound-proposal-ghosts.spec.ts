@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
-import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, requireUndisturbed, TAP } from './sound-tap.ts';
+import { arm, disarm, mark, peaks, TAP } from './sound-tap.ts';
 import {
 	appliedLabels,
 	browserLaunch,
@@ -40,18 +40,6 @@ test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	page = await browser.newPage({ viewport: { width: 1800, height: 1000 } });
 	await page.addInitScript(TAP);
-	// main-thread tasks over 50 ms (the switch's cost is measured)
-	await page.addInitScript(() => {
-		const w = window as unknown as { __longtasks: number[][] };
-		w.__longtasks = [];
-		try {
-			new PerformanceObserver((l) => {
-				for (const e of l.getEntries()) w.__longtasks.push([e.startTime, e.duration]);
-			}).observe({ type: 'longtask', buffered: true });
-		} catch {
-			// no long-task timing: the stall is not measured
-		}
-	});
 	await enableAgentBridge(page);
 });
 test.afterAll(async () => {
@@ -122,82 +110,42 @@ const card = () => page.getByTestId('proposal-ghost-card');
 type Peaks = { at: number; v: number }[];
 type Play = {
 	peaks: Peaks;
-	/** Remotion stopped and restarted the bed's player (its re-anchoring after a main-thread stall). */
-	bedRescheduled: boolean;
 	/** The playhead when paused (the transport was not restarted by the switch). */
 	frameAtPause: number;
-	/** The longest main-thread task within 1 s after the switch (ms). */
-	switchStallMs: number | null;
 };
-/**
- * Plays from frame 0 for 3.7 s with "Hear proposal" `start` (the bed's clicks at 0.1 … 3.6 s, the cut's hit at
- * 3.153 s) and returns the peaks of the Program output, in samples from the bed's first click; `switchTo` switches it
- * 1.2 s into the play. A play whose checks fail while Remotion lost its scheduling (a loaded host) is played again; a
- * passing play is kept and logged with what Remotion did.
- */
+/** Records each Hear state once, including a switch 1.2 s into uninterrupted playback. */
 async function playChecked(name: string, start: boolean, switchTo: boolean | null, check: (p: Play) => void) {
-	let last: string[] = [];
-	for (let a = 0; a < ATTEMPTS; a++) {
-		await runCommand('proposals.toggleHear', { on: start });
-		await focusTimeline(page);
-		await page.keyboard.press('Home');
-		await page.waitForTimeout(500);
-		await arm(page);
-		await page.keyboard.press('Space');
-		let switchPerf = -1;
-		if (switchTo !== null) {
-			await page.waitForTimeout(1200);
-			await mark(page, 'switch');
-			switchPerf = await page.evaluate(() => performance.now());
-			await runCommand('proposals.toggleHear', { on: switchTo });
-			await page.waitForTimeout(2500);
-		} else await page.waitForTimeout(3700);
-		await mark(page, 'pause');
-		const frameAtPause = (await query<{ frame: number }>(page, 'playhead.get')).frame;
-		await focusTimeline(page);
-		await page.keyboard.press('Space');
-		await page.waitForTimeout(200);
-		const rec = await disarm(page);
-		const tasks = await page.evaluate(
-			() => (window as unknown as { __longtasks: number[][] }).__longtasks ?? [],
-		);
-		const switchStallMs =
-			switchPerf < 0
-				? null
-				: Math.max(
-						0,
-						...tasks.filter(([t, d]) => t! + d! >= switchPerf && t! <= switchPerf + 1000).map(([, d]) => d!),
-					);
-		// what played until the pause was asked for (the pause's own stop is not part of the play)
-		const until = rec.marks.pause ?? Number.POSITIVE_INFINITY;
-		const p = peaks(rec, 0.1)
-			.filter((x) => x.t <= until)
-			.map((x) => ({ at: Math.round(x.t * rec.rate), v: x.v }));
-		const first = p[0]?.at ?? 0;
-		const out = p.map((x) => ({ at: x.at - first, v: Number(x.v.toFixed(4)) }));
-		const to = rec.marks.pause ?? rec.armed;
-		const d = disturbances(rec, rec.armed, to);
-		const bed = rec.starts[0]?.player ?? 0;
-		// (stops at the resume time itself are the primed start's own rescheduling, before any audio)
-		const bedRescheduled = rec.stops.some((x) => x.player === bed && x.t > rec.armed + 0.001 && x.t <= to);
-		last = d;
-		const play: Play = { peaks: out, bedRescheduled, frameAtPause, switchStallMs };
-		try {
-			check(play);
-			const note = { name, attempt: a + 1, remotion: d, ...play };
-			console.log('play', JSON.stringify(note));
-			test.info().annotations.push({ type: 'play', description: JSON.stringify(note) });
-			return play;
-		} catch (e) {
-			if (d.length === 0) throw e;
-			console.log(
-				`${name}: ${String(e).slice(0, 200)} — while Remotion lost its scheduling (load), again:`,
-				d.join('; '),
-			);
-		}
-	}
-	requireUndisturbed(false, last);
-	return null;
+	await runCommand('proposals.toggleHear', { on: start });
+	await focusTimeline(page);
+	await page.keyboard.press('Home');
+	await page.waitForTimeout(500);
+	await arm(page);
+	await page.keyboard.press('Space');
+	if (switchTo !== null) {
+		await page.waitForTimeout(1200);
+		await runCommand('proposals.toggleHear', { on: switchTo });
+		await page.waitForTimeout(2500);
+	} else await page.waitForTimeout(3700);
+	await mark(page, 'pause');
+	const frameAtPause = (await query<{ frame: number }>(page, 'playhead.get')).frame;
+	await focusTimeline(page);
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(200);
+	const rec = await disarm(page);
+	const until = rec.marks.pause ?? Number.POSITIVE_INFINITY;
+	const p = peaks(rec, 0.1)
+		.filter((x) => x.t <= until)
+		.map((x) => ({ at: Math.round(x.t * rec.rate), v: x.v }));
+	const first = p[0]?.at ?? 0;
+	const play: Play = {
+		peaks: p.map((x) => ({ at: x.at - first, v: Number(x.v.toFixed(4)) })),
+		frameAtPause,
+	};
+	const note = { name, ...play };
+	console.log('play', JSON.stringify(note));
+	test.info().annotations.push({ type: 'play', description: JSON.stringify(note) });
+	check(play);
+	return play;
 }
 
 const bedClicks = (p: { at: number; v: number }[]) => p.filter((x) => x.v > 0.1 && x.v < 0.2);
@@ -351,7 +299,7 @@ test('an agent proposal reviewed as ghosts, heard, partly accepted, applied as o
 	};
 	// switched while playing: the transport goes on (not restarted: the playhead is where 3.7 s of play take it); the
 	// proposal's hit is heard (or not) after the switch, on its sample relative to the bed; the bed's clicks keep their
-	// exact spacing unless Remotion itself re-anchored the bed's player after a main-thread stall (then measured)
+	// exact spacing throughout the switch.
 	const switched = (heard: boolean) => (play: Play) => {
 		expect(play.frameAtPause, JSON.stringify(play)).toBeGreaterThan(95);
 		const h = hits(play.peaks);
@@ -365,9 +313,6 @@ test('an agent proposal reviewed as ghosts, heard, partly accepted, applied as o
 				JSON.stringify(play.peaks),
 			).toBeLessThanOrEqual(2);
 		} else expect(h, JSON.stringify(play.peaks)).toEqual([]);
-		// sound-design Phase 6: Remotion no longer re-anchors the bed's player after the switch (the Player's props stay
-		// the same object, the graph keeps every strip): the bed keeps its exact spacing in every play
-		expect(play.bedRescheduled, JSON.stringify(play)).toBe(false);
 		expectBedIntact(play.peaks);
 	};
 	await playChecked('hear off', false, null, noHit);

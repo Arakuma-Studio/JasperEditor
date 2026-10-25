@@ -109,7 +109,7 @@ async function seekPaused(p: Page, frame: number): Promise<void> {
 async function startSampler(p: Page): Promise<void> {
 	await p.evaluate(() => {
 		const w = window as unknown as {
-			__p6frames: [number, number, number][];
+			__p6frames: [number, number][];
 			__p6on: boolean;
 			__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
 			jasper: { query(n: string): Promise<{ frame: number; playing: boolean }> };
@@ -128,7 +128,7 @@ async function startSampler(p: Page): Promise<void> {
 					const now = performance.now();
 					const o = ctx.getOutputTimestamp();
 					if (playing && o.performanceTime)
-						w.__p6frames.push([(o.contextTime ?? 0) + (now - o.performanceTime) / 1000, frame, now]);
+						w.__p6frames.push([(o.contextTime ?? 0) + (now - o.performanceTime) / 1000, frame]);
 				}
 			} catch {
 				// the bridge between projects: no sample
@@ -171,21 +171,6 @@ function clicks(rec: Recording, min = 0.3): { t: number; v: number; marker: bool
 	});
 }
 
-/**
- * How far (s) the audio clock slipped against the wall clock over a play (`__p6frames`: medians of the first and last
- * five samples of wall − audio time; NaN with fewer than ten).
- */
-async function clockSlip(p: Page, after = Number.NEGATIVE_INFINITY): Promise<number> {
-	const f = await p.evaluate(
-		() => (window as unknown as { __p6frames?: [number, number, number][] }).__p6frames ?? [],
-	);
-	// (not during a primed wait: the graph then reports the output timestamp shifted, for Remotion's start)
-	const d = f.filter(([t]) => t > after).map(([t, , w]) => w / 1000 - t);
-	if (d.length < 10) return Number.NaN;
-	const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
-	return med(d.slice(-5)) - med(d.slice(0, 5));
-}
-
 /** Content times of the probe's clicks (main clicks, whole-second markers, the third click at 4.05 s). */
 const PROBE_EVENTS = [
 	...Array.from({ length: 32 }, (_, k) => 0.03 + 0.25 * k),
@@ -205,31 +190,21 @@ function brokenSpacing(cs: { t: number; marker: boolean }[], from: number): stri
 	return out;
 }
 
-/** Buffers Remotion started after their time (a starved main thread), inside [from, to]. */
-function lateStarts(rec: Recording, from: number, to: number): string[] {
-	return rec.late
-		.filter((l) => l.t >= from && l.t <= to)
-		.map((l) => `buffer started ${(l.by * 1000).toFixed(1)} ms late at ${(l.t - from).toFixed(3)} s`);
-}
-
 test('a big edit while playing (an agent adds tracks) keeps the audio going on its samples', async () => {
 	test.setTimeout(900_000);
 	await setup();
-	let measured = 0;
-	let replays = 0;
 	const failures: string[] = [];
 	const audioTracks = async () =>
 		(await query<{ tracks?: { kind: string }[] }>(page, 'sequence.summary')).tracks?.filter(
 			(t) => t.kind === 'audio',
 		).length;
 	const tracksBefore = await audioTracks();
-	for (let a = 0; a < PLAYS * 3 && measured < PLAYS; a++) {
+	for (let a = 0; a < PLAYS; a++) {
 		await seekPaused(page, frameAt(1));
 		await seekPaused(page, 0);
 		const rec = await playFor(page, 3400, async (p) => {
-			for (const [i, wait] of [700, 800, 800].entries()) {
+			for (const wait of [700, 800, 800]) {
 				await p.waitForTimeout(wait);
-				await mark(p, `edit${i}`);
 				const r = await transact(
 					p,
 					Array.from({ length: 4 }, () => ({ type: 'track.add', kind: 'audio' })),
@@ -242,27 +217,18 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 		for (let u = 0; u < 3; u++) await page.keyboard.press('Control+KeyZ');
 		await expect.poll(audioTracks).toBe(tracksBefore);
 		const from = rec.armed;
-		const to = (rec.marks.pause ?? 1e9) - 0.001;
 		const cs = clicks(rec);
 		const broken = brokenSpacing(cs, from);
-		const late = lateStarts(rec, from, to);
-		if (broken.length > 0 && late.length > 0) {
-			replays++;
-			console.log('host starved the page (buffers started late), again:', late.join('; '));
-			continue;
-		}
-		measured++;
-		const note = { play: measured, clicks: cs.length, broken };
+		const note = { play: a + 1, clicks: cs.length, broken };
 		console.log('big edit play', JSON.stringify(note));
-		if (cs.filter((c) => !c.marker).length < 10) failures.push(`play ${measured}: ${cs.length} clicks`);
-		if (broken.length > 0) failures.push(`play ${measured}: ${broken.join(', ')}`);
+		if (cs.filter((c) => !c.marker).length < 10) failures.push(`play ${a + 1}: ${cs.length} clicks`);
+		if (broken.length > 0) failures.push(`play ${a + 1}: ${broken.join(', ')}`);
 	}
-	console.log('big edit: measured', measured, 'replayed', replays, 'load', loadavg()[0]);
+	console.log('big edit:', PLAYS, 'plays, load', loadavg()[0]);
 	test.info().annotations.push({
 		type: 'big-edit',
-		description: JSON.stringify({ measured, replays, failures }),
+		description: JSON.stringify({ plays: PLAYS, failures }),
 	});
-	expect(measured).toBe(PLAYS);
 	expect(failures).toEqual([]);
 });
 
@@ -379,11 +345,7 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 	try {
 		const wait = (30 * HL20 + MARGIN) / SR;
 		const plays = Math.max(2, Math.ceil(PLAYS / 2));
-		let measured = 0;
-		// up to 8 tries per measured play: a play whose audio clock slipped is played again (below), and on a shared host
-		// most can slip — 7 of 9 in one run at load ≈ 10 (Final verification A, round 8), with 3 tries per play the test
-		// ran out of plays without one measurement failing
-		for (let i = 0; i < plays * 8 && measured < plays; i++) {
+		for (let i = 0; i < plays; i++) {
 			await seekPaused(page, frameAt(1));
 			await seekPaused(page, 0);
 			let sawBuffering = false;
@@ -398,14 +360,6 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 					);
 			});
 			const cs = clicks(rec);
-			// 30 limiters load the audio thread: a play whose audio clock slipped against the wall clock (an underrun)
-			// measures the host, not the graph, and is played again (as the Phase 0 specs do)
-			const slip = await clockSlip(page, rec.armed + wait + 0.1);
-			if (!(Math.abs(slip) < 0.01)) {
-				console.log('long read-ahead: the audio clock slipped', (slip * 1000).toFixed(1), 'ms, again');
-				continue;
-			}
-			measured++;
 			console.log(
 				'long read-ahead play',
 				i + 1,
@@ -429,7 +383,6 @@ test('Play with a long read-ahead (0.62 s): the first click is heard, the pictur
 			// one wait, not two
 			expect(picture).toBeLessThan(wait);
 		}
-		expect(measured).toBe(plays);
 	} finally {
 		await transact(
 			page,
@@ -496,8 +449,6 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 	await setup();
 	const n = Number(process.env.E2E_P6_STRESS ?? PLAYS * 4);
 	const anomalies: string[] = [];
-	let measured = 0;
-	let replays = 0;
 	const W = (2 * HL20 + MARGIN) / SR;
 	// a fixed pseudo-random walk of positions inside the clicks (0.3 … 7.0 s), after a play somewhere else
 	let x = 12345;
@@ -505,7 +456,7 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 		x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
 		return x / 2 ** 32;
 	};
-	for (let i = 0; i < n * 2 && measured < n; i++) {
+	for (let i = 0; i < n; i++) {
 		const pre = frameAt(0.5 + rnd() * 6);
 		const frame = frameAt(0.3 + rnd() * 6.5);
 		await seekPaused(page, pre);
@@ -523,17 +474,11 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 		// heard that much softer (0.707 at full level)
 		const level = Math.SQRT1_2 * Math.min(1, Math.max(0, (next - pos) / 0.03));
 		const cs = clicks(rec, 0.02);
-		const late = lateStarts(rec, rec.armed, expected + 0.3);
 		const first = cs[0];
 		const early = cs.filter((c) => c.t < expected - 2 / SR);
 		const off = first ? (first.t - expected) * SR : Number.NaN;
 		// (a click between two samples — a sub-sample start — splits over them: at least half of it on one)
 		const soft = !!first && level > 0.05 && (first.v < 0.5 * level - 0.02 || first.v > level + 0.02);
-		if ((early.length > 0 || !(Math.abs(off) < 2) || soft) && late.length > 0) {
-			replays++;
-			continue;
-		}
-		measured++;
 		if (level < 0.05) {
 			// the next click is in the first 2 ms of the fade: inaudible by design; the one after it must be on time
 			const after = PROBE_EVENTS.find((e) => e > next + 1e-9)!;
@@ -543,33 +488,23 @@ test('many paused seeks + Play: every play starts on its first sample, nothing f
 		if (early.length > 0 || !(Math.abs(off) < 2) || soft) {
 			anomalies.push(
 				JSON.stringify({
-					play: measured,
+					play: i + 1,
 					pre,
 					paused: at,
 					frame: target,
 					offSamples: off,
 					level: [first?.v, level],
 					early: early.map((c) => [((c.t - rec.armed) * 1000).toFixed(2), c.v.toFixed(3)]),
-					stops: rec.stops.length,
 				}),
 			);
 		}
 	}
-	console.log(
-		'paused seek + Play stress:',
-		measured,
-		'plays,',
-		anomalies.length,
-		'anomalies,',
-		replays,
-		'replayed',
-	);
+	console.log('paused seek + Play stress:', n, 'plays,', anomalies.length, 'anomalies');
 	for (const a of anomalies) console.log('anomaly', a);
 	test.info().annotations.push({
 		type: 'stress',
-		description: JSON.stringify({ measured, replays, anomalies, load: loadavg() }),
+		description: JSON.stringify({ plays: n, anomalies, load: loadavg() }),
 	});
-	expect(measured).toBe(n);
 	expect(anomalies).toEqual([]);
 });
 

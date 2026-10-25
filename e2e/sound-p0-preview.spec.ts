@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, requireUndisturbed, TAP } from './sound-tap.ts';
+import { arm, disarm, peaks, TAP } from './sound-tap.ts';
 import {
 	browserLaunch,
 	createProject,
@@ -37,43 +37,22 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-/**
- * Plays the sequence from frame 0 for 2.6 s and returns the click peaks the monitor tap heard (channel 0; `at` in
- * samples from the first recorded one, exact context frames). A play whose scheduling Remotion lost (it rescheduled,
- * or started a buffer late: a starved main thread on a loaded host) is played again; it measures Remotion, not the
- * graph.
- */
+/** Plays once from frame 0 and returns the monitor's recorded click peaks, in samples. */
 async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: number; v: number }[] }> {
-	let out = { rate: 0, peaks: [] as { at: number; v: number }[] };
-	let clean = false;
-	let last: string[] = [];
-	for (let a = 0; a < ATTEMPTS; a++) {
-		await focusTimeline(page);
-		await page.keyboard.press('Home');
-		await page.waitForTimeout(500);
-		await arm(page);
-		await page.keyboard.press('Space');
-		await page.waitForTimeout(2600);
-		// the stop's own `stop()` calls are not a disturbance: the window ends here
-		await mark(page, 'pause');
-		await page.keyboard.press('Space');
-		await page.waitForTimeout(200);
-		const rec = await disarm(page);
-		const first = rec.frames[0] ?? 0;
-		out = {
-			rate: rec.rate,
-			peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
-		};
-		const d = disturbances(rec, rec.armed, rec.marks.pause ?? rec.armed);
-		last = d;
-		if (d.length === 0) {
-			clean = true;
-			break;
-		}
-		console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
-	}
-	requireUndisturbed(clean, last);
-	return out;
+	await focusTimeline(page);
+	await page.keyboard.press('Home');
+	await page.waitForTimeout(500);
+	await arm(page);
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(2600);
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(200);
+	const rec = await disarm(page);
+	const first = rec.frames[0] ?? 0;
+	return {
+		rate: rec.rate,
+		peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
+	};
 }
 
 test('track insert latency is compensated in the Program monitor', async () => {

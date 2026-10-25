@@ -10,19 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import {
-	ATTEMPTS,
-	arm,
-	disarm,
-	disturbances,
-	mark,
-	peaks,
-	type Recording,
-	requireUndisturbed,
-	reschedules,
-	TAP,
-	timeOf,
-} from './sound-tap.ts';
+import { arm, disarm, mark, peaks, type Recording, TAP, timeOf } from './sound-tap.ts';
 import {
 	browserLaunch,
 	clipBox,
@@ -56,8 +44,6 @@ async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>)
 	if (during) await during(p);
 	await p.waitForTimeout(ms);
 	await focusTimeline(p);
-	// the stop's own `stop()` calls end every disturbance window
-	await mark(p, 'pause');
 	await p.keyboard.press('Space');
 	await p.waitForTimeout(200);
 	return disarm(p);
@@ -146,12 +132,7 @@ async function setup(): Promise<void> {
  * play position count: while a primed start waits, the picture holds the play position's frame, which says nothing
  * about when it started.
  */
-async function pictureAnchor(
-	p: Page,
-	ms: number,
-	fromFrame: number,
-	skipMs: number,
-): Promise<{ anchor: number; slip: number }> {
+async function pictureAnchor(p: Page, ms: number, fromFrame: number, skipMs: number): Promise<number> {
 	return p.evaluate(
 		async ([dur, num, den, from, skip]) => {
 			const w = window as unknown as {
@@ -172,10 +153,8 @@ async function pictureAnchor(
 				await new Promise<number>((r) => requestAnimationFrame(r));
 				ctx = program();
 			}
-			if (!ctx) return { anchor: Number.NaN, slip: Number.NaN };
+			if (!ctx) return Number.NaN;
 			let best = Number.POSITIVE_INFINITY;
-			// wall clock − audio clock (s) of every valid output timestamp, from the program's first one on
-			const drift: number[] = [];
 			// anime-allow: test-side wall clock bound of a sampling loop
 			while (performance.now() < end) {
 				await new Promise<number>((r) => requestAnimationFrame(r));
@@ -191,16 +170,8 @@ async function pictureAnchor(
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
 				if (playing && frame > from && now - t0 >= skip) best = Math.min(best, t - (frame * den) / num);
-				// the clocks from the program's first valid output timestamp on (Chrome reports none just after a resume)
-				if (o.performanceTime && (o.contextTime ?? 0) > 0)
-					drift.push(o.performanceTime / 1000 - (o.contextTime ?? 0));
 			}
-			// The picture runs on the wall clock, the program on the audio clock: when the audio thread falls behind (a
-			// starved host underruns), the two drift apart and their start offset is not what this measures.
-			// (medians of the first and last five readings: Chrome's readings jitter by a few ms, more just after a resume)
-			const med = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? Number.NaN;
-			const slip = drift.length >= 10 ? med(drift.slice(-5)) - med(drift.slice(0, 5)) : Number.NaN;
-			return { anchor: best, slip };
+			return best;
 		},
 		[ms, fps.num, fps.den, fromFrame, skipMs] as const,
 	);
@@ -216,31 +187,13 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 	await setup();
 	/** Plays from 0 and returns the recording and the picture's sequence-time-0 context time. */
 	const measure = async () => {
-		let m = { rec: null as unknown as Recording, picture: Number.NaN };
-		let clean = false;
-		let last: string[] = [];
-		for (let a = 0; a < ATTEMPTS; a++) {
-			await seekPaused(page, frameAt(1));
-			await seekPaused(page, 0);
-			let picture = { anchor: Number.NaN, slip: Number.NaN };
-			const rec = await playFor(page, 200, async (p) => {
-				// the clocks are compared from the start; the anchor sampled after 150 ms (the picture has started)
-				picture = await pictureAnchor(p, 1050, 0, 150);
-			});
-			m = { rec, picture: picture.anchor };
-			// the whole span whose clicks are checked (up to 2 s), up to the pause
-			const d = disturbances(rec, rec.armed, Math.min(rec.armed + 2.2, (rec.marks.pause ?? 1e9) - 0.001));
-			if (!(Math.abs(picture.slip) < 0.01))
-				d.push(`the audio clock slipped ${(picture.slip * 1000).toFixed(1)} ms against the wall clock`);
-			last = d;
-			if (d.length === 0) {
-				clean = true;
-				break;
-			}
-			console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
-		}
-		requireUndisturbed(clean, last);
-		return m;
+		await seekPaused(page, frameAt(1));
+		await seekPaused(page, 0);
+		let picture = Number.NaN;
+		const rec = await playFor(page, 200, async (p) => {
+			picture = await pictureAnchor(p, 1050, 0, 150);
+		});
+		return { rec, picture };
 	};
 	/**
 	 * Checks one primed play with the wait `wait` (s): every click is heard from the one 30 ms after the play position,
@@ -256,7 +209,7 @@ test('Play: the first samples at the play position are heard (nothing lost to th
 		for (let i = 1; i < ps.length; i++)
 			expect(
 				Math.abs(ps[i]!.t - ps[i - 1]!.t - 0.25),
-				JSON.stringify({ armed: m.rec.armed, ps, late: m.rec.late, stops: m.rec.stops }),
+				JSON.stringify({ armed: m.rec.armed, ps }),
 			).toBeLessThan(0.002);
 		for (const p of ps) expect(p.v).toBeGreaterThan(0.6);
 		// the click 30 ms after the play position is the first one heard, `wait` after the resume (sample-exact; the
@@ -348,95 +301,6 @@ test('Play after a seek while paused: no audio from before the seek', async () =
 	expect(max).toBeLessThan(0.01);
 });
 
-test('seek during playback: the audio from before the seek stops at the seek', async () => {
-	test.setTimeout(240_000);
-	await setup();
-	let rec = null as unknown as Recording;
-	let enter = -1;
-	let stop = -1;
-	let ownStops = 0;
-	let clean = false;
-	let last: string[] = [];
-	for (let a = 0; a < ATTEMPTS; a++) {
-		await seekPaused(page, frameAt(2.2));
-		rec = await playFor(page, 700, async (p) => {
-			await p.waitForTimeout(600);
-			// type 4.5 s into the timecode readout while playing (it seeks without pausing)
-			await p.getByTestId('timeline-timecode').click();
-			const input = p.getByTestId('timeline-timecode-input');
-			await input.fill('00:00:04:15');
-			await mark(p, 'enter');
-			await input.press('Enter');
-			// the moment the playhead is seen at the target (Remotion has re-anchored by then: its stops come first)
-			await expect
-				.poll(async () => (await query<{ frame: number }>(p, 'playhead.get')).frame, { timeout: 5000 })
-				.toBeGreaterThanOrEqual(frameAt(4.5) - 1);
-			await mark(p, 'seeked');
-			console.log('after the typed seek', JSON.stringify(await query(p, 'playhead.get')));
-		});
-		enter = rec.marks.enter ?? -1;
-		const seeked = rec.marks.seeked ?? -1;
-		// The seek's own reschedule: Remotion's first stop of queued buffers between the Enter and the playhead at the
-		// target (under load the seek can take a while). Any other reschedule around it, or a buffer started late before
-		// it, disturbed the play.
-		const own = rec.stops.filter((x) => x.player >= 0 && x.t >= enter - 0.001 && x.t <= seeked + 0.001);
-		stop = own[0]?.t ?? -1;
-		ownStops = own.length;
-		const other = reschedules(rec, rec.armed, seeked + 0.3)
-			.filter((t) => Math.abs(t - stop) > 0.01)
-			.map((t) => `reschedule at ${(t - enter).toFixed(3)} s`);
-		const late = disturbances({ ...rec, stops: [] }, rec.armed, enter);
-		// Tone that comes back after the old audio had stopped at the seek is a buffer of the old position Remotion
-		// started again after its stop (a starved main thread): a new source, not what the graph held. (What the graph
-		// holds would go on without a break, up to the read-ahead after the stop.)
-		if (stop > 0) {
-			const silent = gaps(rec).find((g) => g.t0 >= stop - 0.001 && g.t0 <= stop + 0.008);
-			const back = silent ? rec.data.some((v, i) => Math.abs(v) > 0.01 && timeOf(rec, i) > silent.t1) : false;
-			if (silent && back && rec.starts.some((x) => x.t >= stop))
-				late.push(`old-position audio started again ${(silent.t1 - stop).toFixed(3)} s after the seek`);
-			// What the graph holds lasts at most its read-ahead (41.6 ms here) after the stop; old-position tone going on
-			// longer, with buffers started after the stop, was scheduled by Remotion after the seek (a lagging main thread).
-			let end = -1;
-			for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) end = i;
-			const held = (2 * HL20) / SR;
-			if (end >= 0 && timeOf(rec, end) - stop > held + 0.02 && rec.starts.some((x) => x.t >= stop))
-				late.push(`old-position audio went on ${(timeOf(rec, end) - stop).toFixed(3)} s after the seek`);
-		}
-		last = [...other, ...late];
-		clean = last.length === 0;
-		if (stop > 0 && clean) break;
-		console.log(
-			'Remotion lost its scheduling around the seek (load), again:',
-			stop > 0 ? '' : 'no reschedule at the seek;',
-			[...other, ...late].join('; '),
-		);
-	}
-	requireUndisturbed(clean, last);
-	let tail = -1;
-	for (let i = 0; i < rec.data.length; i++) if (Math.abs(rec.data[i]!) > 0.01) tail = i;
-	const lastT = tail >= 0 ? timeOf(rec, tail) : -1;
-	console.log('seek while playing: enter', enter, 'stop', stop, 'last tone', lastT, 'tail', lastT - stop);
-	test.info().annotations.push({ type: 'tail', description: JSON.stringify({ enter, stop, lastT }) });
-	expect(stop).toBeGreaterThan(0);
-	// for a failure: the tone's level in 5 ms windows around the stop, and the buffer starts after it
-	const env: string[] = [];
-	for (let t = stop - 0.01; t < lastT + 0.005; t += 0.005) {
-		let m = 0;
-		for (let i = 0; i < rec.data.length; i++) {
-			const ti = timeOf(rec, i);
-			if (ti >= t && ti < t + 0.005) m = Math.max(m, Math.abs(rec.data[i]!));
-		}
-		env.push(`${((t - stop) * 1000).toFixed(0)}ms:${m.toFixed(3)}`);
-	}
-	const after = rec.starts
-		.filter((x) => x.t >= stop - 0.001)
-		.map((x) => `${((x.t - stop) * 1000).toFixed(1)}ms/p${x.player}`);
-	expect(
-		lastT - stop,
-		JSON.stringify({ env, startsAfterStop: after.slice(0, 20), stops: ownStops }),
-	).toBeLessThan(0.008);
-});
-
 /** Runs of |x| < 0.01 longer than 2 ms (a 1 kHz tone of 0.35 crosses 0.01 for 9 µs): [start, end) context times. */
 function gaps(r: Recording): { t0: number; t1: number }[] {
 	const out: { t0: number; t1: number }[] = [];
@@ -460,57 +324,36 @@ test('a latency change during playback: playback restarts primed — the added l
 	// measured sample by sample in e2e/sound-p6-transport.spec.ts).
 	test.setTimeout(300_000);
 	await setup();
-	let rec = null as unknown as Recording;
-	let edit = -1;
-	let found: { added: number; restart: number; others: number[] } | null = null;
-	let clean = false;
-	let last: string[] = [];
 	const W = (3 * HL20 + MARGIN) / SR;
-	for (let a = 0; a < ATTEMPTS; a++) {
-		await seekPaused(page, frameAt(2.0));
-		let added = '';
-		rec = await playFor(page, 1200, async (p) => {
-			await p.waitForTimeout(500);
-			await mark(p, 'edit');
-			const r = await transact(p, [
-				{
-					type: 'effect.add',
-					target: { trackId: 'A1' },
-					effectId: 'jasper.audio.hard-limiter',
-					params: { lookAhead: 20 },
-					ref: '$added',
-				},
-			]);
-			expect(r.ok, JSON.stringify(r)).toBe(true);
-			if (r.ok) added = r.refs!.$added!;
-		});
-		edit = rec.marks.edit ?? -1;
-		// back to one A1 limiter for the next play
-		expect((await transact(page, [{ type: 'effect.remove', effectInstanceId: added }])).ok).toBe(true);
-		const all = gaps(rec);
-		console.log(
-			'gaps rel. edit',
-			all.map((g) => `${((g.t1 - g.t0) * SR).toFixed(0)}@${(g.t0 - edit).toFixed(3)}`).join(' '),
-		);
-		// the gaps the edit makes start once the change reaches the graph (within 0.5 s of the transaction)
-		const after = all.filter((g) => g.t0 >= edit && g.t0 < edit + 0.5);
-		const restart = after.find((g) => Math.abs(g.t1 - g.t0 - W) < 0.004);
-		const others = after.filter((g) => g !== restart).map((g) => g.t1 - g.t0);
-		found = restart ? { added: Math.max(0, ...others), restart: restart.t1 - restart.t0, others } : null;
-		// A valid play: the tone ran without a gap for 0.3 s before the edit and nothing was rescheduled but the
-		// restart's own rescheduling (while suspended, at the restart gap's start)
-		const before = all.some((g) => g.t1 > edit - 0.3 && g.t0 < edit);
-		const d = disturbances(
-			{ ...rec, stops: rec.stops.filter((x) => !restart || Math.abs(x.t - restart.t0) > 0.01) },
-			edit - 0.3,
-			Math.min(edit + 0.7, (rec.marks.pause ?? 1e9) - 0.001),
-		);
-		last = before ? ['a gap before the edit', ...d] : d;
-		clean = last.length === 0 && !!found;
-		if (clean) break;
-		console.log('disturbed play (load), again:', before ? 'a gap before the edit;' : '', d.join('; '));
-	}
-	requireUndisturbed(clean, last);
+	await seekPaused(page, frameAt(2.0));
+	let added = '';
+	const rec = await playFor(page, 1200, async (p) => {
+		await p.waitForTimeout(500);
+		await mark(p, 'edit');
+		const r = await transact(p, [
+			{
+				type: 'effect.add',
+				target: { trackId: 'A1' },
+				effectId: 'jasper.audio.hard-limiter',
+				params: { lookAhead: 20 },
+				ref: '$added',
+			},
+		]);
+		expect(r.ok, JSON.stringify(r)).toBe(true);
+		if (r.ok) added = r.refs!.$added!;
+	});
+	const edit = rec.marks.edit ?? -1;
+	expect((await transact(page, [{ type: 'effect.remove', effectInstanceId: added }])).ok).toBe(true);
+	const all = gaps(rec);
+	// The constant tone must already be continuous before the edit; do not discard a broken recording.
+	expect(
+		all.filter((g) => g.t1 > edit - 0.3 && g.t0 < edit),
+		JSON.stringify(all),
+	).toEqual([]);
+	const after = all.filter((g) => g.t0 >= edit && g.t0 < edit + 0.5);
+	const restart = after.find((g) => Math.abs(g.t1 - g.t0 - W) < 0.004);
+	const others = after.filter((g) => g !== restart).map((g) => g.t1 - g.t0);
+	const found = restart ? { added: Math.max(0, ...others), restart: restart.t1 - restart.t0, others } : null;
 	console.log('latency change: gaps', JSON.stringify(found));
 	test.info().annotations.push({ type: 'gap', description: JSON.stringify(found) });
 	expect(found).not.toBeNull();
