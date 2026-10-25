@@ -304,6 +304,16 @@ describe.runIf(enabled)('subtitle templates: native vs the composition (REMOTION
 				const a = decodeRegion(out, f);
 				const b = decodeRegion(ref, null);
 				const q = { ssim: ssim(a, b), share: within(a, b, 3) };
+				// SUBTITLE_PARITY_OUT=<dir>: both regions side by side as PNGs, for looking at them.
+				const keep = process.env.SUBTITLE_PARITY_OUT;
+				if (keep) {
+					const raw = join(tempAppdir('jasper-sub-keep-'), 'pair.rgb');
+					writeFileSync(raw, Buffer.concat([a, b]));
+					spawnSync(TEST_FFMPEG, [
+						...['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', `${REGION.w}x${REGION.h * 2}`],
+						...['-i', raw, join(keep, `${s.template.replace(/ /g, '-')}-${s.f0}-${k}.png`)],
+					]);
+				}
 				report(`[subtitle parity] ${s.template} frame +${k}: SSIM ${q.ssim.toFixed(4)}, within 3/255 ${q.share.toFixed(4)}`);
 				const w = worst.get(s.template);
 				worst.set(s.template, {
