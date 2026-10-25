@@ -107,6 +107,17 @@ import {
 import { type Size, toScreen, toSequence, type View } from './viewport.ts';
 
 const SAFE_MARGINS = { action: 5, title: 10 } as const;
+
+/**
+ * spatial-points: the effect whose point paths the monitor draws — the one selected in Effect Controls, or the effect
+ * of the focused param row (`effects.<fxId>.<param>`).
+ */
+function focusedEffectId(): string | null {
+	const f = inspectorFocus.get();
+	if (f.effectInstanceId) return f.effectInstanceId;
+	const m = f.rowId ? /^effects\.([^.]+)\./.exec(f.rowId) : null;
+	return m ? m[1]! : null;
+}
 const DRAG_THRESHOLD = 3;
 const AXIS_LOCK_PX = 6;
 
@@ -304,11 +315,7 @@ export function TransformOverlay({
 	// spatial-points: the motion paths of the point params (≥ 2 keys) of the effect focused in Effect Controls, drawn
 	// through the layer map at the playhead (Transform's Position / Anchor Point, Offset's Shift Center To, Corner Pin
 	// corners, …), evaluated with the layer box's metric like the renderers.
-	const focusedFx = useSyncExternalStore(
-		inspectorFocus.subscribe,
-		() => inspectorFocus.get().effectInstanceId,
-		() => inspectorFocus.get().effectInstanceId,
-	);
+	const focusedFx = useSyncExternalStore(inspectorFocus.subscribe, focusedEffectId, focusedEffectId);
 	const fxClip = useMemo(() => {
 		if (selected.length !== 1 || !focusedFx) return null;
 		for (const t of doc.videoTracks)

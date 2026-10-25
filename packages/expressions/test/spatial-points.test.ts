@@ -31,8 +31,9 @@ function rig(text: string) {
 		{ type: 'expression.set', target, text },
 	]);
 	const raw = () =>
-		((d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip & { effects: EffectInstance[] }).effects[0]!
-			.params.position as Animatable<Vec2>);
+		((d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip & { effects: EffectInstance[] }).effects.find(
+			(e) => e.id === d.refs.$fx,
+		)!.params.position as Animatable<Vec2>);
 	const ref = { seq: d.seqId, owner: d.refs.$a!, path: `effects.${d.refs.$fx!}.position` };
 	return { d, raw, ref };
 }
@@ -41,8 +42,9 @@ describe('expressions on effect points', () => {
 	it('value and valueAtTime are the metric-evaluated (rendered) path', () => {
 		const { d, raw, ref } = rig('valueAtTime(time - 0.25)');
 		const bound = bindDocumentExpressions(d.doc);
-		const fx = (bound.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip & { effects: EffectInstance[] })
-			.effects[0]!;
+		const fx = (bound.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip & { effects: EffectInstance[] }).effects.find(
+			(e) => e.id === d.refs.$fx,
+		)!;
 		for (const frame of [45, 60, 75, 100]) {
 			const t = storedTimeAtFrame(d.doc, ref, frame);
 			const want = evaluate(raw(), t - 0.25 * FLICKS_PER_SECOND, M);
@@ -59,7 +61,7 @@ describe('expressions on effect points', () => {
 		const layer = resolveSceneAt(snap, 75).find((l) => l.clip.clipId === d.refs.$a)!;
 		const t75 = storedTimeAtFrame(d.doc, ref, 75);
 		const want = evaluate(raw(), t75 - 0.25 * FLICKS_PER_SECOND, M);
-		const got = layer.props.effects[0]!.params.position as number[];
+		const got = layer.props.effects.find((e) => e.id === d.refs.$fx)!.params.position as number[];
 		expect(got[0]).toBeCloseTo(want[0], 9);
 		expect(got[1]).toBeCloseTo(want[1], 9);
 	});
@@ -67,8 +69,9 @@ describe('expressions on effect points', () => {
 	it('velocity is the derivative of the metric-evaluated path (normalised units per second)', () => {
 		const { d, raw, ref } = rig('velocity');
 		const bound = bindDocumentExpressions(d.doc);
-		const fx = (bound.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip & { effects: EffectInstance[] })
-			.effects[0]!;
+		const fx = (bound.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip & { effects: EffectInstance[] }).effects.find(
+			(e) => e.id === d.refs.$fx,
+		)!;
 		const t = storedTimeAtFrame(d.doc, ref, 50);
 		const v = evaluate(fx.params.position as Animatable<Vec2>, t) as Vec2;
 		const h = 1e-3 * FLICKS_PER_SECOND;
