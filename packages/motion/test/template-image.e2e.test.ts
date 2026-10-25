@@ -1,7 +1,7 @@
 // @vitest-environment node
 // TemplateImage in a real headless Chrome render (REMOTION_E2E=1; C1, docs/wp-notes/social-comments.md "Template
 // media params"): the still waits for a slow, cross-origin (CORS) picture and shows it; a picture that fails to load
-// renders the visible placeholder instead of failing the render.
+// fails the render by name (`TemplateImageError`), never a silent placeholder in an export (AGENTS §4).
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -90,11 +90,8 @@ describe.runIf(enabled)('TemplateImage render (REMOTION_E2E=1)', { timeout: 600_
 		expect(pixel(png, 32, 32, 64)).toEqual([255, 0, 0, 255]);
 	});
 
-	it('a missing picture renders the placeholder (not black, not a failed render)', async () => {
-		const png = await still(`${origin}/missing.png`);
-		const [rr, g, b] = pixel(png, 32, 32, 64);
-		expect(rr).toBeGreaterThan(40);
-		expect(Math.abs(rr! - g!)).toBeLessThan(8);
-		expect(Math.abs(rr! - b!)).toBeLessThan(8);
+	it('a missing picture fails the render, naming the picture (never a silent placeholder)', async () => {
+		const url = `${origin}/missing.png`;
+		await expect(still(url)).rejects.toThrow(`Template picture could not be loaded from ${url}`);
 	});
 });
