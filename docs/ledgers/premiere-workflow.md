@@ -96,9 +96,10 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 - ✅ edits — how the user cuts voice (ground truth = Premiere picture edit in 17 projects + export↔raw alignment);
   detector + level-referenced auto-cut prototype reproduces the user's cuts (precision 0.90, recall 0.78, 72 % of
   edit points within 50 ms).
-- 🔄 whisper (CUDA part done: RTX 3060 large-v3-turbo greedy RTF 0.155, WER 3.3 % on the user's Spanish; no CUDA IO
-  binding in onnxruntime-node makes beam decoding on GPU slower than CPU) — GPU providers per platform, medium/large exports, benchmarks (Mac CPU/CoreML, VM CPU, RTX 3060 CUDA),
-  Spanish WER vs the user's captions/scripts.
+- ✅ whisper — decision: default **large-v3-turbo** (Spanish WER 3.4 % vs medium 4.7 %, small 6.8 %; faster than small
+  on the M4 Max CPU); don't add medium or int8; GPU for the encoder (CUDA Linux, WebGPU Mac/Windows/Linux), decoder on
+  CPU except CUDA + greedy (RTX 3060 RTF 0.155, WER 3.3 %); greedy default, beam 5 "Best"; fix hallucinations in
+  silence and non-resumable downloads.
 - 🔄 textperf — export/preview cost of 100 and ~1,000 animated text clips; architecture for fast subtitle export.
 
 ### Phase 2 — specs (to write in `docs/specs/`)
@@ -110,7 +111,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
   script alignment, configurable auto-cut (padding, gaps, crossfades, guidance tracks, presets), review UI, agents.
 - 🔄 15 — Editing-pattern automation (draft written: `docs/specs/15-edit-automation.md`): shared `pictureCuts`, Decorate Cuts kits, punch-ins, Ken Burns, overlays,
   overlay slides, music beds, style recipes and Style Check, proposals for new features + agent accept policies.
-- ⏳ 16 — Speech on GPU and model catalogue: provider selection (CUDA/CoreML/DirectML/CPU), packaging, catalogue
+- 🔄 16 — Speech on GPU and model catalogue (draft written: `docs/specs/16-speech-gpu-models.md`): provider selection (CUDA/CoreML/DirectML/CPU), packaging, catalogue
   (medium/turbo/quantised), defaults per device class, measured evaluation table.
 
 ### Phase 3 — implementation (queue ≤ 6 agents, worktrees `.claude/worktrees/<name>`, VM-only testing)
@@ -137,7 +138,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 | RTX 3060 (vast.ai) | $0.084/h | 2026-10-25 18:23 UTC | destroyed after the CUDA eval (≈ $0.17 total) |
 
 ## 7. Open questions / risks
-- Whether onnxruntime-node 1.30 ships CoreML / DirectML providers (whisper research).
+- DirectML DLL licence terms (Windows GPU path); CoreML unusable until the Node binding can cache compiled models.
 - Export cost of ~900–1,200 animated text clips per long video (textperf research) — decides the subtitle export
   architecture.
 - S_Shake unit conversion from Premiere values (calibration needed).
@@ -146,5 +147,5 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 ## 8. Log
 - 2026-10-25 — ff main; VM provisioned; Mac workspace; scripts exported; research agents launched (codemap, subs,
   auto, whisper, edits, textperf, cutsurvey); NVIDIA box rented; codemap, auto, subs, cutsurvey finished; lock
-  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 14 and 15 drafted; VM lock switched to a want-file queue
+  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 13–16 drafted (13 §4 pending textperf); VM lock switched to a want-file queue
   after starvation in both directions.
