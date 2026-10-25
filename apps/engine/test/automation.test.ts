@@ -85,7 +85,7 @@ let projects = 0;
 function seed(lengths: number[], preset = 'hd-1080p-30') {
 	const ids = createCounterIdSource(5);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Automation', preset });
-	doc = { ...doc, projectId: `prj_auto${(++projects).toString().padStart(12, '0')}` };
+	doc = { ...doc, projectId: `prj_A${(++projects).toString().padStart(15, '0')}` };
 	const seqId = Object.keys(doc.sequences)[0]!;
 	const F = flicksPerFrame(doc.sequences[seqId]!.settings.frameRate);
 	let at = 0;
@@ -199,7 +199,7 @@ async function exportPath(doc: ProjectDocument, seqId: string) {
 		},
 		{ registry: core.registry, fonts: core.fonts, capabilities: CAPS, extensions: core.exports.nativeExtensions.all() },
 	);
-	return plan;
+	return plan.plan;
 }
 
 describe('editing automation passes (real engine, indexed kit)', { timeout: 600_000 }, () => {
@@ -339,7 +339,7 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 	});
 
 	it('punch-ins and Ken Burns are Motion keys on the clips and export natively', async () => {
-		const { projectId, seqId } = seed([90, 120, 150, 180, 60]);
+		const { projectId, seqId } = seed([90, 120, 150, 180, 40]);
 		const punch = await propose(projectId, 'punch-ins', {
 			sequenceId: seqId,
 			params: { density: 1, sfx: { enabled: false } },
