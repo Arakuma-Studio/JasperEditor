@@ -106,17 +106,17 @@ type ApplyResult = { ok: true } | { ok: false; errors: readonly { commandIndex: 
  * not cover at the aligned time) is linked without alignment instead of failing every relink; each such fallback is
  * reported. Bounded: at most one retry per aligned command.
  */
-export function applyRelinkTransaction<
+export async function applyRelinkTransaction<
 	C extends { keepSourceTiming?: true; mediaId?: string },
 	R extends ApplyResult,
 >(
 	commands: readonly C[],
-	apply: (commands: C[]) => R,
-): { result: R; unaligned: { mediaId: string; reason: string }[] } {
+	apply: (commands: C[]) => R | Promise<R>,
+): Promise<{ result: R; unaligned: { mediaId: string; reason: string }[] }> {
 	let cmds = [...commands];
 	const unaligned: { mediaId: string; reason: string }[] = [];
 	for (let attempt = 0; ; attempt++) {
-		const result = apply(cmds);
+		const result = await apply(cmds);
 		if (result.ok || attempt >= commands.length) return { result, unaligned };
 		const err = result.errors.find((e) => e.commandIndex >= 0 && cmds[e.commandIndex]?.keepSourceTiming);
 		if (!err) return { result, unaligned };

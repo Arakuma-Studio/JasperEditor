@@ -9,10 +9,20 @@ import {
 	INTERCHANGE_FORMATS,
 	type InterchangeExportResult,
 	type InterchangeImportResponse,
+	MEDIA_STATUS_BATCH_MAX,
+	RELINK_CRITERIA,
+	RELINK_MAX_ASSETS,
 	type RegisteredMedia,
 	type RelinkScanResult,
 } from '@jasper/api';
-import type { MediaAsset } from '@jasper/project';
+import {
+	applyRelinkTransaction,
+	classifyPath,
+	displayPath,
+	type MediaAsset,
+	relinkMediaCommand,
+	resetInterpretationCommand,
+} from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
 import {
@@ -69,26 +79,43 @@ const summarizeReport = (warnings: InterchangeImportResponse['warnings']) => ({
 		: {}),
 });
 
-function isOffline(m: MediaAsset): boolean {
-	return (
-		m.fingerprint.startsWith('pending:interchange:') || !m.locators.some((l) => l.type === 'engine-store')
-	);
+const LINKABLE = new Set<MediaAsset['kind']>(['video', 'audio', 'image', 'animated-image']);
+/** Default Match File Properties of a search (Premiere's File Name + File Extension, plus length and streams). */
+const DEFAULT_MATCH = ['name', 'extension', 'duration', 'streams'] as const;
+/** Entries listed per category in a link_media result (counts are always complete). */
+const LIST_CAP = 100;
+
+/**
+ * Offline media: imported placeholders, media without an engine-store locator, and media whose file the engine does
+ * not find (unknown key or missing file — a project moved from another computer).
+ */
+async function offlineMediaOf(
+	ctx: ToolContext,
+	doc: { media: Record<string, unknown> },
+): Promise<MediaAsset[]> {
+	const media = (Object.values(doc.media) as MediaAsset[]).filter((m) => LINKABLE.has(m.kind));
+	const keyOf = (m: MediaAsset) => {
+		const l = m.locators.find((x) => x.type === 'engine-store');
+		return l && l.type === 'engine-store' ? l.key : null;
+	};
+	const keys = [...new Set(media.map(keyOf).filter((k): k is string => !!k))];
+	const missing = new Set<string>();
+	for (let i = 0; i < keys.length; i += MEDIA_STATUS_BATCH_MAX) {
+		const r = await ctx.engine((c) => c.mediaStatusBatch(keys.slice(i, i + MEDIA_STATUS_BATCH_MAX)));
+		for (const k of r.unknown) missing.add(k);
+		for (const st of r.statuses) if (st.status === 'missing') missing.add(st.mediaKey);
+	}
+	return media.filter((m) => {
+		if (m.fingerprint.startsWith('pending:interchange:')) return true;
+		const k = keyOf(m);
+		return !k || missing.has(k);
+	});
 }
 
-function relinkCommand(mediaId: string, reg: RegisteredMedia, force: boolean) {
-	const store = { type: 'engine-store' as const, engineId: LOCAL_ENGINE_ID, key: reg.mediaKey };
-	return {
-		type: 'media.relink',
-		mediaId,
-		locator: store,
-		locators: [store, ...reg.locators.filter((l) => l.type === 'path')],
-		probe: reg.probe,
-		fingerprint: reg.fingerprint,
-		sizeBytes: reg.sizeBytes,
-		originalName: reg.originalName,
-		container: reg.container,
-		...(force ? { force: true } : {}),
-	};
+function lastPaths(m: MediaAsset): { path: string | null; relativePath: string | null } {
+	for (const l of m.locators)
+		if (l.type === 'path') return { path: l.path, relativePath: l.relativeToProject ?? null };
+	return { path: null, relativePath: null };
 }
 
 const needsConfirm = (match: AssetRelinkResponse['match'], diff: AssetRelinkResponse['diff']) =>
@@ -315,24 +342,36 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 		{
 			title: 'List offline media',
 			description:
-				'Media of the project without a linked file: placeholders of imported timelines and files the engine cannot find. Ids, names, last known paths, kinds and durations (for link_media).',
-			input: { projectId: ProjectIdArg },
+				'Media of the project without a linked file: placeholders of imported timelines and files the engine cannot find (moved, or on another computer). Ids, names, last known paths (a Windows path such as D:\\Media\\a.mov stays as written; pathStyle says which system it belongs to), project-relative paths, kinds and durations (for link_media). Paged: offset/limit; total is the full count.',
+			input: {
+				projectId: ProjectIdArg,
+				offset: z.number().int().min(0).optional().describe('First entry (default 0)'),
+				limit: z.number().int().min(1).max(1000).optional().describe('Entries to return (default 200)'),
+			},
 			annotations: READ_ONLY,
 		},
 		async (a) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
-			const offline = (Object.values(doc.media) as MediaAsset[]).filter(
-				(m) => (m.kind === 'video' || m.kind === 'audio' || m.kind === 'image') && isOffline(m),
-			);
+			const offline = await offlineMediaOf(ctx, doc);
+			const offset = a.offset ?? 0;
+			const page = offline.slice(offset, offset + (a.limit ?? 200));
 			return jsonResult({
-				offline: offline.map((m) => ({
-					mediaId: m.id,
-					name: m.originalName,
-					kind: m.kind,
-					path: m.locators.find((l) => l.type === 'path')?.path ?? null,
-					durationSeconds: m.probe.durationFlicks === null ? null : m.probe.durationFlicks / 705_600_000,
-					placeholder: m.fingerprint.startsWith('pending:interchange:'),
-				})),
+				total: offline.length,
+				offset,
+				offline: page.map((m) => {
+					const { path, relativePath } = lastPaths(m);
+					return {
+						mediaId: m.id,
+						name: m.originalName,
+						kind: m.kind,
+						path: path === null ? null : displayPath(path),
+						...(path !== null ? { pathStyle: classifyPath(path) } : {}),
+						...(relativePath ? { relativePath } : {}),
+						durationSeconds: m.probe.durationFlicks === null ? null : m.probe.durationFlicks / 705_600_000,
+						placeholder: m.fingerprint.startsWith('pending:interchange:'),
+					};
+				}),
+				...(offset + page.length < offline.length ? { nextOffset: offset + page.length } : {}),
 			});
 		},
 	);
@@ -343,27 +382,52 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 		{
 			title: 'Link media',
 			description:
-				'Relinks offline media (S04:AS-011): one asset to a file (mediaId + path), or every offline asset (or mediaIds) found in a folder, matched by file name (always), size and duration (match), then by fingerprint for renamed copies. A file whose content, length, frame rate or kind differs needs force: true (the result lists the differences). dryRun reports what would be linked. One undo step.',
+				"Relinks offline media like Premiere's Link Media (S04:AS-011). mediaId + path: the located file (absolute path on the engine's computer) is verified against match (selected Match File Properties) and linked; with relinkOthers (default true) the engine then finds the other offline media from it — its old → new folder mapping (D:\\Media\\… → /Volumes/Mac/Media/…), project-relative paths, the same folder, then a bounded search under that folder — and links every verified file in the same transaction. folder: searches a folder for every offline asset (or mediaIds). Without either: tries each asset's last known path. Ambiguous matches (several files fit) are listed, never guessed. A file whose content, length or kind differs, or that fails a match property, needs force: true. dryRun reports what would be linked. One undo step.",
 			input: {
 				projectId: ProjectIdArg,
-				mediaId: z.string().optional().describe('With path: the asset to relink ("med_…")'),
-				path: z.string().optional().describe('With mediaId: the replacement file (absolute)'),
-				folder: z.string().optional().describe('Folder to search (absolute, recursive)'),
+				mediaId: z.string().optional().describe('With path: the asset the file belongs to ("med_…")'),
+				path: z.string().optional().describe('With mediaId: where the file is now (absolute)'),
+				relinkOthers: z
+					.boolean()
+					.optional()
+					.describe('With mediaId + path: also find and link the other offline media from it (default true)'),
+				folder: z.string().optional().describe('Folder to search (absolute, recursive, bounded)'),
 				mediaIds: z
 					.array(z.string())
 					.optional()
-					.describe('With folder: only these assets (default: every offline one)'),
+					.describe('Only these offline assets (default: every offline one)'),
 				match: z
-					.array(z.enum(['name', 'size', 'duration', 'mediaStart']))
+					.array(z.enum(RELINK_CRITERIA))
 					.min(1)
 					.optional()
 					.describe(
-						'With folder: what must match — name, size, duration, mediaStart (start timecode); default ["name", "duration"]',
+						'Match File Properties every found file must satisfy: name, extension, size, duration, mediaStart (start timecode), streams; default ["name", "extension", "duration", "streams"]. With mediaId + path they are checked on the located file too.',
 					),
 				ignoreExtension: z
 					.boolean()
 					.optional()
-					.describe('Name match ignores the extension (transcoded files)'),
+					.describe(
+						'Compare names without the extension (transcoded files); same as leaving out "extension"',
+					),
+				alignTimecode: z
+					.boolean()
+					.optional()
+					.describe(
+						'Align Timecode (default true): clips keep their source timecode when the file starts at another',
+					),
+				preserveInterpretation: z
+					.boolean()
+					.optional()
+					.describe(
+						'Preserve Interpret Footage (default true); false resets the interpretation of linked media',
+					),
+				timeLimitSec: z
+					.number()
+					.int()
+					.min(1)
+					.max(3600)
+					.optional()
+					.describe('Search time budget (default 120 s)'),
 				force: z.boolean().optional().describe('Link files that differ (see the differences in the result)'),
 				dryRun: z.boolean().optional().describe('Only report what would be linked'),
 			},
@@ -372,6 +436,8 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 		async (a, extra) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const media = doc.media as Record<string, MediaAsset>;
+			const match = [...(a.match ?? DEFAULT_MATCH)].filter((m) => !(a.ignoreExtension && m === 'extension'));
+			const ignoreExtension = a.ignoreExtension ?? !match.includes('extension');
 			type Hit = {
 				mediaId: string;
 				path: string;
@@ -379,15 +445,26 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 				match: string;
 				diff: AssetRelinkResponse['diff'];
 				confirm: boolean;
+				step?: string;
+				failed?: string[];
 			};
 			const hits: Hit[] = [];
 			let notFound: string[] = [];
+			let ambiguous: RelinkScanResult['ambiguous'] = [];
+			let search: Pick<RelinkScanResult, 'scannedFiles' | 'truncated' | 'timedOut' | 'mappings'> | null =
+				null;
+			let anchors: { from: string; to: string; relativePath: string | null }[] = [];
 			if (a.path || a.mediaId) {
 				if (!a.path || !a.mediaId) throw new ToolError('E_INVALID_PARAM', 'Give mediaId and path together');
 				const asset = media[a.mediaId];
 				if (!asset) throw new ToolError('E_NOT_FOUND', `No media ${a.mediaId}`, 'Call list_offline_media.');
 				const r = await ctx.engine((c) =>
-					c.relinkAsset(asset.id, { projectId: a.projectId, path: absolute(a.path!), asset: asset as never }),
+					c.relinkAsset(asset.id, {
+						projectId: a.projectId,
+						path: absolute(a.path!),
+						asset: asset as never,
+						...(a.match ? { match, ignoreExtension } : {}),
+					}),
 				);
 				hits.push({
 					mediaId: asset.id,
@@ -396,67 +473,130 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 					match: r.match,
 					diff: r.diff,
 					confirm: r.needsConfirm,
+					step: 'located',
+					...(r.failed?.length ? { failed: r.failed } : {}),
 				});
-			} else if (a.folder) {
-				const offline = Object.values(media).filter(
-					(m) => isOffline(m) && (!a.mediaIds?.length || a.mediaIds.includes(m.id)),
+				const old = lastPaths(asset);
+				if (old.path && (a.relinkOthers ?? true))
+					anchors = [{ from: old.path, to: a.path, relativePath: old.relativePath }];
+			}
+			const wantScan = anchors.length > 0 || !!a.folder || (!a.path && !a.mediaId);
+			if (wantScan) {
+				const offline = (await offlineMediaOf(ctx, doc)).filter(
+					(m) => m.id !== a.mediaId && (!a.mediaIds?.length || a.mediaIds.includes(m.id)),
 				);
-				if (!offline.length) return jsonResult({ linked: 0, message: 'No offline media to link' });
-				const job = await ctx.engine((c) =>
-					c.relinkScan(a.projectId, {
-						folder: absolute(a.folder!),
-						assets: offline as never,
-						match: a.match ?? ['name', 'duration'],
-						ignoreExtension: a.ignoreExtension ?? false,
-					}),
-				);
-				await cancelIfAborted(ctx, extra, job.id);
-				const { job: done } = await waitJob(ctx, job.id, 600_000, extra);
-				if (done.state !== 'succeeded') throw await failedJobError(ctx, done, 'Check the folder path.');
-				const r = done.result as RelinkScanResult;
-				for (const f of r.found)
-					hits.push({
-						mediaId: f.assetId,
-						path: f.path,
-						media: f.media,
-						match: f.match,
-						diff: f.diff,
-						confirm: needsConfirm(f.match, f.diff),
-					});
-				notFound = r.notFound.map((id) => media[id]?.originalName ?? id);
-			} else throw new ToolError('E_INVALID_PARAM', 'Give mediaId + path, or folder');
+				if (offline.length > RELINK_MAX_ASSETS)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`${offline.length} offline media: one run checks at most ${RELINK_MAX_ASSETS}`,
+						'Pass mediaIds in batches.',
+					);
+				if (offline.length) {
+					const job = await ctx.engine((c) =>
+						c.relinkScan(a.projectId, {
+							...(a.folder ? { folder: absolute(a.folder) } : {}),
+							...(anchors.length ? { anchors } : {}),
+							assets: offline as never,
+							match,
+							ignoreExtension,
+							...(a.timeLimitSec ? { timeLimitSec: a.timeLimitSec } : {}),
+						}),
+					);
+					await cancelIfAborted(ctx, extra, job.id);
+					const { job: done } = await waitJob(ctx, job.id, 3_600_000, extra);
+					if (done.state !== 'succeeded') throw await failedJobError(ctx, done, 'Check the paths.');
+					const r = await ctx.engine((c) => c.relinkScanResult(a.projectId, job.id));
+					for (const f of r.found)
+						hits.push({
+							mediaId: f.assetId,
+							path: f.path,
+							media: f.media,
+							match: f.match,
+							diff: f.diff,
+							confirm: f.needsConfirm ?? needsConfirm(f.match, f.diff),
+							...(f.step ? { step: f.step } : {}),
+						});
+					notFound = r.notFound;
+					ambiguous = r.ambiguous ?? [];
+					search = {
+						scannedFiles: r.scannedFiles,
+						truncated: r.truncated,
+						timedOut: r.timedOut ?? false,
+						mappings: r.mappings ?? [],
+					};
+				} else if (!hits.length) return jsonResult({ linked: 0, message: 'No offline media to link' });
+			}
 			const link = hits.filter((h) => !h.confirm || a.force);
 			const held = hits.filter((h) => h.confirm && !a.force);
+			const nameOf = (id: string) => media[id]?.originalName ?? id;
 			const describe = (h: Hit) => ({
 				mediaId: h.mediaId,
-				name: media[h.mediaId]?.originalName,
+				name: nameOf(h.mediaId),
 				path: h.path,
 				match: h.match,
+				...(h.step ? { how: h.step } : {}),
+				...(h.failed ? { failedMatch: h.failed } : {}),
 				...(h.diff.length ? { differences: h.diff.map((d) => `${d.field}: ${d.was} → ${d.now}`) } : {}),
 			});
+			const capped = <T>(xs: T[]) => xs.slice(0, LIST_CAP);
+			const report = {
+				...(held.length ? { needsForce: capped(held.map(describe)), needsForceCount: held.length } : {}),
+				...(ambiguous.length
+					? {
+							ambiguous: capped(ambiguous).map((x) => ({
+								mediaId: x.assetId,
+								name: nameOf(x.assetId),
+								candidates: x.candidates,
+							})),
+							ambiguousCount: ambiguous.length,
+						}
+					: {}),
+				...(notFound.length
+					? { stillMissing: capped(notFound.map(nameOf)), stillMissingCount: notFound.length }
+					: {}),
+				...(search
+					? {
+							search: {
+								scannedFiles: search.scannedFiles,
+								...(search.truncated ? { truncated: true } : {}),
+								...(search.timedOut ? { timedOut: true } : {}),
+								...(search.mappings.length ? { mappings: search.mappings } : {}),
+							},
+						}
+					: {}),
+			};
 			if (a.dryRun || !link.length)
 				return jsonResult({
 					linked: 0,
-					wouldLink: link.map(describe),
-					...(held.length ? { needsForce: held.map(describe) } : {}),
-					...(notFound.length ? { notFound } : {}),
+					wouldLink: capped(link.map(describe)),
+					wouldLinkCount: link.length,
+					...report,
 				});
-			const tx = await transact(
-				ctx,
-				a.projectId,
-				{
-					label: link.length === 1 ? 'Link Media' : `Link Media (${link.length})`,
-					commands: link.map((h) => relinkCommand(h.mediaId, h.media, h.confirm)),
-				},
-				extra,
+			const commands: Record<string, unknown>[] = link.map((h) =>
+				relinkMediaCommand(media[h.mediaId]!, h.media, {
+					force: h.confirm,
+					alignTimecode: a.alignTimecode ?? true,
+					engineId: LOCAL_ENGINE_ID,
+				}),
 			);
-			const ok = requireOk(tx);
+			if (a.preserveInterpretation === false) {
+				const reset = resetInterpretationCommand(link.map((h) => media[h.mediaId]!));
+				if (reset) commands.push(reset);
+			}
+			const label = link.length === 1 ? 'Link Media' : `Link Media (${link.length})`;
+			const { result: tx, unaligned } = await applyRelinkTransaction(commands, async (cmds) => {
+				const res = await transact(ctx, a.projectId, { label, commands: cmds }, extra);
+				return Object.assign(res.result, { response: res });
+			});
+			const ok = requireOk(tx.response);
 			return jsonResult({
-				...txBody(tx, ok),
+				...txBody(tx.response, ok),
 				linked: link.length,
-				media: link.map(describe),
-				...(held.length ? { needsForce: held.map(describe) } : {}),
-				...(notFound.length ? { notFound } : {}),
+				media: capped(link.map(describe)),
+				...(unaligned.length
+					? { timecodeNotAligned: unaligned.map((u) => ({ name: nameOf(u.mediaId), reason: u.reason })) }
+					: {}),
+				...report,
 			});
 		},
 	);

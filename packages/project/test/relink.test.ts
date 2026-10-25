@@ -394,14 +394,14 @@ describe('Link Media commands', () => {
 		expect(relinkMediaCommand(asset, reg('k', '/a.mov', '01:00:00:10')).keepSourceTiming).toBeUndefined();
 	});
 
-	it('a refused timecode alignment falls back to a plain relink instead of failing the others', () => {
+	it('a refused timecode alignment falls back to a plain relink instead of failing the others', async () => {
 		const calls: number[] = [];
 		const cmds = [
 			{ mediaId: 'a', keepSourceTiming: true as const },
 			{ mediaId: 'b' },
 			{ mediaId: 'c', keepSourceTiming: true as const },
 		];
-		const { result, unaligned } = applyRelinkTransaction(cmds, (c) => {
+		const { result, unaligned } = await applyRelinkTransaction(cmds, (c) => {
 			calls.push(c.filter((x) => x.keepSourceTiming).length);
 			const bad = c.findIndex((x) => x.keepSourceTiming && x.mediaId === 'c');
 			return bad >= 0
@@ -412,7 +412,7 @@ describe('Link Media commands', () => {
 		expect(unaligned).toEqual([{ mediaId: 'c', reason: 'out of media' }]);
 		expect(calls).toEqual([2, 1]);
 		// other refusals are returned as they are
-		const r = applyRelinkTransaction([{ mediaId: 'a' }], () => ({
+		const r = await applyRelinkTransaction([{ mediaId: 'a' }], () => ({
 			ok: false as const,
 			errors: [{ commandIndex: 0, message: 'nope' }],
 		}));
