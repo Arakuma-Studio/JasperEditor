@@ -95,11 +95,13 @@ describe('font library store (persistence, idempotence, caps)', () => {
 	it('refuses PostScript clashes and the real 1,000-face / 2 GiB library bounds', async () => {
 		const dir = join(tempAppdir(), 'fonts');
 		const lib = await FontLibrary.open(dir);
-		await lib.install(pixel(), 'a.ttf');
+		const first = (await lib.install(pixel(), 'a.ttf')).installed[0]!;
 		// same PostScript name, different bytes
 		await expect(
 			lib.install(makeTestTtf({ family: 'Pixel12x10', postscriptName: 'Pixel12x10', seed: 99 }), 'b.ttf'),
 		).rejects.toMatchObject({ status: 409, code: 'FONT_EXISTS' });
+		expect(lib.fonts().map((f) => f.id)).toEqual([first.id]);
+		expect(readdirSync(join(dir, 'files'))).toEqual([`${first.id}.ttf`]);
 		for (const [count, size] of [
 			[1000, 0],
 			[32, 64 * 1024 * 1024],

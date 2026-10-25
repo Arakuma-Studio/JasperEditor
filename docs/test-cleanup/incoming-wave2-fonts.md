@@ -55,7 +55,7 @@ Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 11**, **OPTIMIZE 3**
 | Baseline test name | Disposition | Contract, oracle, unique failure and surviving owner |
 | --- | --- | --- |
 | installs, lists, persists across reopen; same bytes again are "existing"; collections split into faces | REWRITE | wp-fonts store contract: actual bytes install once, TTC faces persist across reopen, remove survives reopen, revisions advance. Literal full names replace comparing one implementation result to another. Remove duplicate notification and fixed-clock assertions; HTTP owner verifies actual fonts.changed. Unique lowest storage/reopen boundary; route restart uses one face, not split collections. |
-| refuses bad bytes, oversized files, a full library and a different face with an installed PostScript name | REWRITE | wp-fonts refuses a different file with an existing PostScript name, more than 1,000 faces, and more than 2 GiB. Exercise actual limits using real, SHA256-consistent persisted font files; sparse valid sfnt padding avoids writing/allocating 2 GiB. Separate 1,000-small-face and 32 × 64 MiB states isolate the guards. Refusal must be 409/FONT_LIBRARY_FULL and leave index/files unchanged. Remove test-only clock/limit injection and duplicate parser/HTTP invalid-input assertions. Both actual guards have independent failing mutants. |
+| refuses bad bytes, oversized files, a full library and a different face with an installed PostScript name | REWRITE | wp-fonts refuses a different file with an existing PostScript name, more than 1,000 faces, and more than 2 GiB. Exercise actual limits using real, SHA256-consistent persisted font files; sparse valid sfnt padding avoids writing/allocating 2 GiB. Separate 1,000-small-face and 32 × 64 MiB states isolate the guards. Refusal must be 409/FONT_LIBRARY_FULL and leave index/files unchanged. Remove test-only clock/limit injection and duplicate parser/HTTP invalid-input assertions. Both actual guards have independent failing mutants. The distinct-name/different-glyph file with the same PostScript name still refuses FONT_EXISTS; explicit pre-existing face-ID and sole-file assertions preserve its all-or-nothing protection. |
 | accepts WOFF and WOFF2 and keeps them as they are | REWRITE | WOFF and WOFF2 installs retain literal format and exact authored on-disk bytes. Replace extension/getter/path-shape checks with artifact equality. Parser cannot establish persistence; HTTP bytes currently own the TrueType path only. Public store output survives helper/layout refactors that preserve the storage contract. |
 | an unreadable index is kept aside and rebuilt from the font files | REWRITE | Unreadable-index recovery must preserve the exact damaged original in the documented corrupt backup and recover both literal face names with visible repair reporting, then reopen cleanly. Drop English sentence pins. This uniquely protects corruption recovery; stray-file and missing-entry tests start with readable indexes. |
 | an entry whose file is missing is dropped; a stray face file is adopted; temp files are removed | OPTIMIZE | Crash-mid-remove/install recovery drops the missing face, adopts the independently SHA256-named real stray file, removes owned temp files and preserves unrelated notes. Construct the stray artifact directly instead of creating a second library/install transaction. Literal families and affected-font repair data own this crash state; ordinary install/reopen never simulates interruption. |
@@ -95,7 +95,7 @@ in `tools/services.ts` supplies only `onChange` and `log`; remove unused `now` a
 `limits` injection options, their limits type and the clock-forwarding method.
 The production default date and 64 MiB/1,000/2 GiB behavior remain the same.
 Remove the unused fixture `padBytes` option/table; `glyphRects` now creates cheap,
-valid blank fonts for real capacity states. No dependency/configuration changes. Net test/support change: +9 lines; production source: −9 lines. The extra real-cap fixture replaces unsafe test-only limit overrides; the repository-wide cleanup remains strongly net-negative.
+valid blank fonts for real capacity states. No dependency/configuration changes. Net test/support change: +11 lines; production source: −9 lines. The extra real-cap fixture replaces unsafe test-only limit overrides; the repository-wide cleanup remains strongly net-negative.
 
 The actual-cap fixtures have consistent font bytes, SHA256 IDs, sizes and names.
 The 1,000-face fixture stays far below 2 GiB; the 32-file byte fixture stays below 1,000
@@ -259,3 +259,11 @@ Evidence: `/tmp/jasper-test-cleanup/wave2-fonts/optin/` includes source/alias pr
 per-run logs/JSON/GNU time, copied actual movies/PNGs, source-map hashes,
 `comparison.json`, `performance.json`, and external runner/analyzer scripts in the
 parent directory. Generated media remain ignored and are not committed.
+
+Final review retained explicit all-or-nothing postconditions for the existing
+PostScript-clash case: a different file (`b.ttf`, glyph seed 99) with the installed
+Pixel12x10 PostScript name must fail 409/`FONT_EXISTS` and preserve both the sole
+pre-existing face ID and sole stored file. These assertions carry forward meaningful
+original protection after removing the injected-limit setup; no new declaration or
+production hook is added. Root runs the focused case and final actual engine
+TypeScript after integrating this two-assertion followup, before the quiet full gate.
