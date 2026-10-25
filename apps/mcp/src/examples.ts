@@ -221,6 +221,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		value: 0.5,
 	},
 	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	// spec 15 EA-031: a cut kit (adjustment clip 10 + 10 frames around the cut at 00:00:02:00 with a blur and a
+	// Transform zoom keyed relative to the item's start) — one command per decoration; on V3 (created when missing).
+	'clip.addAdjustmentBatch': {
+		type: 'clip.addAdjustmentBatch',
+		trackId: 'V3',
+		items: [
+			{
+				start: 50,
+				length: 20,
+				name: 'Zoom-blur',
+				effects: [
+					{
+						effectId: 'jasper.gaussian-blur',
+						keyframes: {
+							radius: [
+								{ frame: 0, value: 0, interpolation: 'bezier', easeOut: { influence: 0.75, slope: 0 } },
+								{ frame: 10, value: 40 },
+								{ frame: 20, value: 0 },
+							],
+						},
+					},
+					{
+						effectId: 'jasper.transform',
+						params: { shutterAngle: 360 },
+						keyframes: {
+							scaleHeight: [
+								{ frame: 0, value: 100 },
+								{ frame: 10, value: 170 },
+								{ frame: 20, value: 100 },
+							],
+						},
+					},
+				],
+				ref: '$kit',
+			},
+		],
+	},
+	// spec 15 EA-031: punch-in keys on clips (Motion scale 100 → 180 % over 7 frames from the clip's midpoint), here
+	// on the clip of the clip.place example ("$clip").
+	'keyframe.addBatch': {
+		type: 'keyframe.addBatch',
+		targets: [
+			{
+				clipId: '$clip',
+				path: ['transform', 'scale'],
+				keys: [
+					{ at: { frames: 30 }, value: 100 },
+					{ at: { frames: 37 }, value: 180 },
+				],
+			},
+		],
+	},
 	'keyframe.add': {
 		type: 'keyframe.add',
 		target: ['clip', '$clip', 'transform', 'position'],

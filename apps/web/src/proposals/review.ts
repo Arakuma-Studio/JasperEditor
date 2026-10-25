@@ -1,10 +1,12 @@
-// The Review panel's and review bar's model (spec 12 §2.7 "Review", P3-R6; WP3.3b). Pure: the rows of the proposal
-// under review grouped by role (Hero / Support / Bed / Layers / … / Tracks) in time order, the setup items (a bin, a
+// The Review panel's and review bar's model (spec 12 §2.7 "Review", P3-R6; WP3.3b; spec 15 EA-002). Pure: the rows of
+// the proposal under review grouped by the feature's vocabulary (`vocabulary.ts`: the producer's declared groups in
+// their order — sound design: Hero / Support / Bed / Layers by role; then other groups, Other, Tracks) in time order, the setup items (a bin, a
 // sound's media, a new cue: WP3.2 `meta.setup`) folded under the row that needs them, the counts the bar, the tab
 // badge and the Apply button show, the navigation order, the frame range Review zooms to, what an Apply would remove
 // from the user's sequence (named in the confirmation) and the proposal card's sentence counts.
 import {
 	APPROVAL_COMMANDS,
+	agentProposalGrants,
 	COMMAND_CATALOG,
 	type CueKind,
 	createSeededIdSource,
@@ -14,12 +16,16 @@ import {
 	type ProposalContext,
 	previewProposalSteps,
 	type Sequence,
+	SOUND_DESIGN_FEATURE,
 	selectedCommands,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
 import { KIND_GLYPH, kindLabel } from '../sound/cues/model.ts';
 import { type GhostModel, setupOwners } from './ghosts.ts';
+import { type CardCounts, featureGroups, reviewVocabulary } from './vocabulary.ts';
+
+export type { CardCounts } from './vocabulary.ts';
 
 export type ReviewRow = {
 	item: ReviewItem;
@@ -72,28 +78,14 @@ function text(v: unknown, max = 200): string | null {
 	return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
 }
 
-/** Group key of a row: its role (sound design) or the item's group. */
-function groupKey(item: ReviewItem): string {
-	const m = metaOf(item.meta);
-	const g = (text(m.role, 64) ?? item.group ?? '').toLowerCase();
-	if (g === 'ambient' || g === 'ambience' || g === 'bed') return 'bed';
-	if (g === 'track' || g === 'tracks') return 'tracks';
-	return g || 'other';
-}
-
-const GROUP_ORDER = ['hero', 'support', 'bed', 'layer'];
-
-/** "Hero", "Support", "Bed", "Layers", "Tracks", or the group itself. */
-export function groupLabel(key: string): string {
+/**
+ * A group's label: the feature's declared one (sound design: "Hero", "Support", "Bed", "Layers"), the review's own
+ * ("Tracks", "Setup", "Other"), else the group itself capitalised.
+ */
+export function groupLabel(key: string, feature: string = SOUND_DESIGN_FEATURE): string {
+	const declared = featureGroups(feature).label(key);
+	if (declared) return declared;
 	switch (key) {
-		case 'hero':
-			return t('Hero');
-		case 'support':
-			return t('Support');
-		case 'bed':
-			return t('Bed');
-		case 'layer':
-			return t('Layers');
 		case 'tracks':
 			return t('Tracks');
 		case 'setup':
@@ -140,8 +132,24 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 	};
 }
 
-/** The rows of the proposal under review. `ghost`: its ghosts in the drawn sequence (frames and gains), if any. */
-export function buildReviewModel(items: readonly ReviewItem[], ghost: GhostModel | null): ReviewModel {
+/**
+ * The rows of the proposal under review. `ghost`: its ghosts in the drawn sequence (frames and gains), if any;
+ * `feature`: the proposal's feature, whose vocabulary groups the rows (default sound design, the first producer).
+ */
+export function buildReviewModel(
+	items: readonly ReviewItem[],
+	ghost: GhostModel | null,
+	feature: string = SOUND_DESIGN_FEATURE,
+): ReviewModel {
+	const vocab = reviewVocabulary(feature);
+	const declared = featureGroups(feature).order;
+	const groupKey = (it: ReviewItem) => {
+		try {
+			return vocab.groupOf(it);
+		} catch {
+			return 'other';
+		}
+	};
 	const order = new Map(items.map((it, i) => [it.id, i]));
 	// An item's gain is the gain of what its own chosen command set places (the first clip it creates, else the first it
 	// changes), never a setup item's ghost folded under it (the delivery preset re-levels the music clips).
@@ -174,14 +182,14 @@ export function buildReviewModel(items: readonly ReviewItem[], ghost: GhostModel
 		(order.get(a.item.id) ?? 0) - (order.get(b.item.id) ?? 0);
 	const keys = [...groups.keys()].sort((a, b) => {
 		const rank = (k: string) => {
-			const i = GROUP_ORDER.indexOf(k);
+			const i = declared.indexOf(k);
 			return i >= 0 ? i : k === 'tracks' ? 1000 : k === 'other' ? 999 : 100;
 		};
 		return rank(a) - rank(b) || a.localeCompare(b);
 	});
 	const out: ReviewGroup[] = keys.map((k) => ({
 		id: k,
-		label: groupLabel(k),
+		label: groupLabel(k, feature),
 		rows: [...(groups.get(k) ?? [])].sort(byTime),
 	}));
 	const listOrder = out.flatMap((g) => g.rows.map((r) => r.item.id));
@@ -264,7 +272,9 @@ export function removalsOf(
 export type ApprovalNeed =
 	| { kind: 'command'; type: string; label: string }
 	| { kind: 'force'; type: string; label: string }
-	| { kind: 'agentsMayApply' };
+	| { kind: 'agentsMayApply' }
+	/** spec 15 EA-001: turns on "Allow agents to apply <feature> proposals" (Project Settings). */
+	| { kind: 'agentProposals'; features: string[] };
 
 function forced(v: unknown, depth = 0): boolean {
 	if (depth > 8 || !v || typeof v !== 'object') return false;
@@ -277,7 +287,7 @@ function forced(v: unknown, depth = 0): boolean {
 /**
  * The commands among the items an Apply brings (their accept closure, the chosen command sets) that would need the
  * user's approval if an agent ran them (the agent guard's rule, S01:AGT-011): destructive commands, `force`, and an
- * agent's grant of "Allow agents to apply sound proposals". Applying in the editor is the user's own edit, so the
+ * agent's grant of "Allow agents to apply sound proposals" (or of a workflow feature's, spec 15). Applying in the editor is the user's own edit, so the
  * Review names them in its confirmation instead of applying them unseen. Never throws.
  */
 export function approvalNeeds(proposal: Proposal | null, itemIds: readonly string[]): ApprovalNeed[] {
@@ -309,15 +319,16 @@ export function approvalNeeds(proposal: Proposal | null, itemIds: readonly strin
 					(c as { agentsMayApply?: unknown }).agentsMayApply === true
 				)
 					add('agentsMayApply', { kind: 'agentsMayApply' });
+				else if (type === 'project.updateSettings') {
+					const features = agentProposalGrants(c);
+					if (features.length) add(`ap:${features.join(',')}`, { kind: 'agentProposals', features });
+				}
 			}
 		return out;
 	} catch {
 		return [];
 	}
 }
-
-/** The proposal card's counts: sounds it places, tracks it creates, items to decide on. */
-export type CardCounts = { sounds: number; newTracks: number; items: number };
 
 /**
  * Counts for "<agent> proposes <title>: <n> sounds on <k> new tracks", from a preview of every undecided item on the
@@ -372,7 +383,10 @@ export function* proposalCardCountsSteps(
 	}
 }
 
-/** "claude-code proposes Sound design: Main: 12 sounds on 2 new tracks". */
+/**
+ * "claude-code proposes Sound design: Main: 12 sounds on 2 new tracks", "… proposes Decorate Cuts: 214 edits": the
+ * feature's sentence (`vocabulary.ts`), else the generic one with its item noun.
+ */
 export function cardSentence(
 	agent: string,
 	title: string,
@@ -380,18 +394,17 @@ export function cardSentence(
 	counts: CardCounts | null,
 ): string {
 	if (!counts) return t('{0} proposes {1}', agent, title);
-	if (feature === 'sound-design' && counts.sounds > 0) {
-		const sounds = counts.sounds === 1 ? t('1 sound') : t('{0} sounds', counts.sounds);
-		if (counts.newTracks <= 0) return t('{0} proposes {1}: {2}', agent, title, sounds);
-		const tracks = counts.newTracks === 1 ? t('1 new track') : t('{0} new tracks', counts.newTracks);
-		return t('{0} proposes {1}: {2} on {3}', agent, title, sounds, tracks);
-	}
-	return t(
-		'{0} proposes {1}: {2}',
-		agent,
-		title,
-		counts.items === 1 ? t('1 item') : t('{0} items', counts.items),
-	);
+	const vocab = reviewVocabulary(feature);
+	const own = vocab.cardSentence?.(agent, title, counts);
+	if (own) return own;
+	// sound design's sentence counts sounds; with none placed it names its items like any feature ("items")
+	const items =
+		feature === SOUND_DESIGN_FEATURE
+			? counts.items === 1
+				? t('1 item')
+				: t('{0} items', counts.items)
+			: vocab.itemsText(counts.items);
+	return t('{0} proposes {1}: {2}', agent, title, items);
 }
 
 /** Who wrote a proposal, for sentences ("you" for the user's own). */

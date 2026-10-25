@@ -47,6 +47,13 @@ export function describeProblem(p: StaleProblem, seq: Pick<Sequence, 'settings'>
 				: t('Cue at {0} moved to {1}', tc(p.at), tc(p.to));
 		return kind && at ? t('{0} cue at {1} changed', kind, tc(p.at)) : t('Its cue changed');
 	}
+	if (p.entity === 'cut') {
+		// spec 15 EA-003: a decoration anchored on a cut (its two clips no longer meet where they did)
+		if (p.change === 'frame' && p.to !== undefined && at)
+			return t('Cut at {0} moved to {1}', tc(p.at), tc(p.to));
+		if (p.change === 'deleted') return at ? t('Cut at {0} is gone', tc(p.at)) : t('Its cut is gone');
+		return at ? t('Cut at {0} is between other clips now', tc(p.at)) : t('Its cut changed');
+	}
 	if (p.entity === 'marker') {
 		if (p.change === 'deleted')
 			return p.name && at

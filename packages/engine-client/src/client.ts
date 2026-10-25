@@ -44,6 +44,7 @@ import {
 	type ProposalCreateRequest,
 	type ProposalMarkAppliedRequest,
 	type ProposalNoteRequest,
+	type ProposalRefreshRequest,
 	type ProposalRejectRequest,
 	type ProposalReopenRequest,
 	type ProposalSelectRequest,
@@ -589,6 +590,14 @@ export class EngineClient {
 	}
 	deleteProposal(projectId: string, proposalId: string) {
 		return this.call('proposalDelete', { params: { projectId, proposalId } });
+	}
+	/** "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans stale items; nothing is applied. */
+	refreshProposal(projectId: string, proposalId: string, req: ProposalRefreshRequest) {
+		return this.call('proposalRefresh', { params: { projectId, proposalId }, body: req });
+	}
+	/** Proposal features of a project: Review groups, producers, whether agents may accept (spec 15 EA-001). */
+	proposalFeatures(projectId: string) {
+		return this.call('proposalFeatures', { params: { projectId } });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
