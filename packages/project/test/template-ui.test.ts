@@ -109,9 +109,9 @@ describe('paramsPropertySpecs with ui hints', () => {
 		expect(templateParamVisible(views, undefined)).toBe(false);
 		expect(templateParamVisible({}, { variant: 'tiktok' })).toBe(true);
 		// structured values compare by value
-		expect(templateParamVisible({ visibleWhen: { param: 'c', in: [[1, 0, 0, 1]] } }, { c: [1, 0, 0, 1] })).toBe(
-			true,
-		);
+		expect(
+			templateParamVisible({ visibleWhen: { param: 'c', in: [[1, 0, 0, 1]] } }, { c: [1, 0, 0, 1] }),
+		).toBe(true);
 	});
 });
 

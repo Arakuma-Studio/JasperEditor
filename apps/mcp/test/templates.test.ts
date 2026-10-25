@@ -48,6 +48,22 @@ const ANIME: MgTemplateCatalogEntry = {
 	canvases: ['1920x1080'],
 	native: false,
 	renderer: 'anime',
+	presets: [
+		{ id: 'plain', name: 'Plain', params: {} },
+		{
+			id: 'big-left',
+			name: 'Big left',
+			description: 'Large, left aligned',
+			params: { titleSize: 200, alignment: 'left' },
+		},
+	],
+	ui: {
+		groups: [{ id: 'layout', label: 'Layout', params: ['alignment', 'lines'] }],
+		params: {
+			title: { label: 'Headline', description: 'The words that rise in' },
+			underline: { visibleWhen: { param: 'alignment', in: ['center'] } },
+		},
+	},
 };
 const FFRAMES: MgTemplateCatalogEntry = {
 	id: 'lower-third',
@@ -447,5 +463,102 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const c = errOf(await call('wait_for_job', { jobId: 'job_cancel', timeoutSeconds: 1 }));
 		expect(c.code).toBe('JOB_CANCELLED');
 		expect(c.hint).toBeUndefined();
+	});
+});
+
+describe('template presets (C3)', () => {
+	it('list_motion_templates lists presets with refs and the params ui hints', async () => {
+		const { call } = await connect(fakeEngine());
+		const body = bodyOf<{
+			templates: {
+				id: string;
+				presets?: { ref: string; id: string; name: string; params: Record<string, unknown> }[];
+				params: {
+					name: string;
+					label?: string;
+					group?: string;
+					description?: string;
+					visibleWhen?: unknown;
+				}[];
+			}[];
+		}>(await call('list_motion_templates'));
+		const anime = body.templates.find((t) => t.id === 'title-reveal')!;
+		expect(anime.presets).toEqual([
+			{ ref: 'title-reveal:plain', id: 'plain', name: 'Plain', params: {} },
+			{
+				ref: 'title-reveal:big-left',
+				id: 'big-left',
+				name: 'Big left',
+				description: 'Large, left aligned',
+				params: { titleSize: 200, alignment: 'left' },
+			},
+		]);
+		expect(anime.params.find((p) => p.name === 'title')).toMatchObject({
+			label: 'Headline',
+			description: 'The words that rise in',
+		});
+		expect(anime.params.find((p) => p.name === 'alignment')).toMatchObject({ group: 'Layout' });
+		expect(anime.params.find((p) => p.name === 'underline')).toMatchObject({
+			visibleWhen: { param: 'alignment', in: ['center'] },
+		});
+		expect('presets' in body.templates.find((t) => t.id === 'lower-third')!).toBe(false);
+	});
+
+	it('add_motion_graphic accepts "<id>:<preset>" and "<id>@<v>:<preset>" (params over the preset)', async () => {
+		const engine = fakeEngine();
+		const { call } = await connect(engine);
+		const projectId = engine.doc().projectId;
+		const mgClips = () =>
+			Object.values(Object.values(engine.doc().sequences)[0]!.clips).filter(
+				(c): c is MotionGraphicClip => c.kind === 'motion-graphic',
+			);
+		const before = mgClips().length;
+		const r = await call('add_motion_graphic', { projectId, template: 'title-reveal:big-left', at: 300 });
+		expect(r.isError, textOf(r)).toBeFalsy();
+		const r2 = await call('add_motion_graphic', {
+			projectId,
+			template: 'title-reveal@1:big-left',
+			params: { titleSize: 90, title: 'Override' },
+			at: 600,
+		});
+		expect(r2.isError, textOf(r2)).toBeFalsy();
+		const added = mgClips().slice(before);
+		expect(added).toHaveLength(2);
+		const at300 = added.find((c) => c.start === 300)!;
+		const at600 = added.find((c) => c.start === 600)!;
+		expect(at300.params).toEqual({ ...ANIME.defaults, titleSize: 200, alignment: 'left' });
+		expect(at600.params).toMatchObject({ titleSize: 90, alignment: 'left', title: 'Override' });
+		expect(at300.template).toMatchObject({ id: 'title-reveal', version: 1 });
+	});
+
+	it('refuses unknown presets, presets of templates without any and malformed refs', async () => {
+		const engine = fakeEngine();
+		const { call } = await connect(engine);
+		const projectId = engine.doc().projectId;
+		const unknown = errOf(
+			await call('add_motion_graphic', { projectId, template: 'title-reveal:nope', at: 0 }),
+		);
+		expect(unknown.code).toBe('E_NOT_FOUND');
+		expect(unknown.hint).toContain('title-reveal:big-left');
+		const none = errOf(await call('add_motion_graphic', { projectId, template: 'lower-third:x', at: 0 }));
+		expect(none).toMatchObject({ code: 'E_NOT_FOUND' });
+		expect(none.hint).toContain('no presets');
+		expect(
+			errOf(await call('add_motion_graphic', { projectId, template: 'title-reveal@x', at: 0 })).code,
+		).toBe('E_INVALID_PARAM');
+		expect(errOf(await call('add_motion_graphic', { projectId, template: 'nope:x', at: 0 })).code).toBe(
+			'E_NOT_FOUND',
+		);
+		// previews take the same refs: the preset's params are validated with the given ones
+		const bad = errOf(
+			await call('render_motion_graphic_preview', {
+				template: 'title-reveal:big-left',
+				params: { lines: 99 },
+			}),
+		);
+		expect(bad.code).toBe('E_INVALID_PARAM');
+		expect(errOf(await call('render_motion_graphic_preview', { template: 'title-reveal:nope' })).code).toBe(
+			'E_NOT_FOUND',
+		);
 	});
 });

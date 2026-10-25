@@ -245,7 +245,9 @@ function checkPresets(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): 
 		if (!isPlainObject(p)) throw new Error(`A preset of ${k} is not an object`);
 		const id = p.id;
 		if (typeof id !== 'string' || id.length > MAX_ID_LENGTH || !MG_PRESET_ID.test(id))
-			throw new Error(`Preset id ${JSON.stringify(id)} of ${k} must match [a-z0-9][a-z0-9-]* (≤ ${MAX_ID_LENGTH})`);
+			throw new Error(
+				`Preset id ${JSON.stringify(id)} of ${k} must match [a-z0-9][a-z0-9-]* (≤ ${MAX_ID_LENGTH})`,
+			);
 		if (ids.has(id)) throw new Error(`Duplicate preset ${k}:${id}`);
 		ids.add(id);
 		if (!nonEmpty(p.name)) throw new Error(`Preset ${k}:${id} needs a name`);

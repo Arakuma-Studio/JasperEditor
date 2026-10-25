@@ -103,7 +103,11 @@ describe('presets and UI hints (C3)', () => {
 	});
 
 	it.each([
-		['an invalid preset value', { presets: [{ id: 'x', name: 'X', params: { variant: 'z' } }] }, /does not match/],
+		[
+			'an invalid preset value',
+			{ presets: [{ id: 'x', name: 'X', params: { variant: 'z' } }] },
+			/does not match/,
+		],
 		['an unknown preset param', { presets: [{ id: 'x', name: 'X', params: { nope: 1 } }] }, /unknown param/],
 		[
 			'a duplicate preset id',
@@ -117,8 +121,16 @@ describe('presets and UI hints (C3)', () => {
 		],
 		['a malformed preset id', { presets: [{ id: 'X:1', name: 'X', params: {} }] }, /must match/],
 		['a preset without a name', { presets: [{ id: 'x', name: ' ', params: {} }] }, /needs a name/],
-		['preset params that are no object', { presets: [{ id: 'x', name: 'X', params: [] }] }, /must be an object/],
-		['a group naming an unknown param', { ui: { groups: [{ id: 'g', label: 'G', params: ['nope'] }] } }, /unknown param/],
+		[
+			'preset params that are no object',
+			{ presets: [{ id: 'x', name: 'X', params: [] }] },
+			/must be an object/,
+		],
+		[
+			'a group naming an unknown param',
+			{ ui: { groups: [{ id: 'g', label: 'G', params: ['nope'] }] } },
+			/unknown param/,
+		],
 		[
 			'a param in two groups',
 			{
@@ -155,7 +167,12 @@ describe('presets and UI hints (C3)', () => {
 		],
 		['an empty control name', { ui: { params: { title: { control: '' } } } }, /non-empty string/],
 	])('rejects %s', (_name, patch, message) => {
-		const def = { ...withExtras, presets: undefined, ui: undefined, ...patch } as unknown as MgTemplateDefinition;
+		const def = {
+			...withExtras,
+			presets: undefined,
+			ui: undefined,
+			...patch,
+		} as unknown as MgTemplateDefinition;
 		expect(() => createMgRegistry([def])).toThrow(message);
 	});
 
