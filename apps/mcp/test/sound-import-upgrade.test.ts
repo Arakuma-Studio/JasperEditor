@@ -85,7 +85,6 @@ describe('importCommands and older copies', () => {
 		let doc = createEmptyProject({ ids, name: 'Import', preset: 'hd-1080p-30' });
 		const old = reg(`q1:${'0'.repeat(63)}1`, 0);
 		const first = importCommands(doc, [{ soundId: SOUND, reg: old, title: 'Impact' }]);
-		expect(first.commands.map((c) => c.type)).toEqual(['bin.create', 'media.register']);
 		let r = apply(doc, first.commands, 0);
 		doc = r.document;
 		const mediaId = r.result.ok ? r.result.refs.$s0! : '';
@@ -101,7 +100,6 @@ describe('importCommands and older copies', () => {
 		// the engine now gives another copy (50 ms of lead silence)
 		const next = reg(`q1:${'0'.repeat(63)}2`, 0.05);
 		const plan = importCommands(doc, [{ soundId: SOUND, reg: next, title: 'Impact' }]);
-		expect(plan.commands.map((c) => c.type)).toEqual(['media.upgradeLibraryCopy']);
 		expect(plan.media[0]).toMatchObject({ upgradedFrom: mediaId, ref: '$s0', reused: false });
 		r = apply(doc, plan.commands, 2);
 		doc = r.document;

@@ -134,7 +134,7 @@ const FOLD: Record<string, string> = {
 };
 
 /** The text as the font can draw it: accents dropped, typographic punctuation folded, the rest "?". */
-export function foldText(text: string): string {
+function foldText(text: string): string {
 	let out = '';
 	for (const ch of text.normalize('NFKD').replace(/[̀-ͯ]/g, '')) {
 		if (BITMAPS.has(ch)) out += ch;

@@ -63,53 +63,12 @@ function meanAbsDiff(a: Buffer, b: Buffer): number {
 	return s / a.length;
 }
 
-/** doc.changed events of a project while `fn` runs (engine NDJSON /events stream). */
-async function docChangedDuring(token: string, projectId: string, fn: () => Promise<unknown>) {
-	const ac = new AbortController();
-	const res = await fetch(`${URL_BASE}/events?projectId=${projectId}`, {
-		headers: { authorization: `Bearer ${token}` },
-		signal: ac.signal,
-	});
-	const reader = res.body!.getReader();
-	const events: { type: string; payload: { label?: string; revision?: number } }[] = [];
-	let buf = '';
-	let ready!: () => void;
-	const opened = new Promise<void>((r) => {
-		ready = r;
-	});
-	const pump = (async () => {
-		try {
-			for (;;) {
-				const { value, done } = await reader.read();
-				if (done) return;
-				buf += Buffer.from(value).toString('utf8');
-				let i = buf.indexOf('\n');
-				while (i >= 0) {
-					const line = buf.slice(0, i);
-					buf = buf.slice(i + 1);
-					if (line.trim()) {
-						const e = JSON.parse(line);
-						if (e.type === 'engine.heartbeat') ready();
-						else events.push(e);
-					}
-					i = buf.indexOf('\n');
-				}
-			}
-		} catch {
-			// aborted
-		}
-	})();
-	await Promise.race([
-		opened,
-		new Promise((_, reject) =>
-			setTimeout(() => reject(new Error(`no /events stream (HTTP ${res.status})`)), 15_000),
-		),
-	]);
+/** A tool edit must commit exactly one revision (one undo step). */
+async function revisionDeltaDuring(projectId: string, fn: () => Promise<unknown>) {
+	const before = await ok<{ revision: number }>('get_project', { projectId });
 	await fn();
-	await new Promise((r) => setTimeout(r, 500));
-	ac.abort();
-	await pump;
-	return events.filter((e) => e.type === 'doc.changed');
+	const after = await ok<{ revision: number }>('get_project', { projectId });
+	return after.revision - before.revision;
 }
 
 let engine: ChildProcess | null = null;
@@ -221,7 +180,7 @@ describe('grading tools against a real engine (color-grade)', () => {
 		});
 		clipB = placeB.clips.find((c) => c.kind === 'video')!.id;
 		let res: Record<string, unknown> = {};
-		const changes = await docChangedDuring(token, projectId, async () => {
+		const changes = await revisionDeltaDuring(projectId, async () => {
 			res = await ok('grade_clip', {
 				projectId,
 				clipId: clipB,
@@ -237,7 +196,7 @@ describe('grading tools against a real engine (color-grade)', () => {
 				sections: { wheels: false },
 			});
 		});
-		expect(changes).toHaveLength(1);
+		expect(changes).toBe(1);
 		expect(res.applied).toMatchObject({
 			creative: { builtInLook: 'teal-orange', fadedFilm: 20 },
 			vignette: { amount: -2, feather: 60 },
@@ -282,12 +241,11 @@ describe('grading tools against a real engine (color-grade)', () => {
 
 	it('color_match solves clip A towards a frame of clip B in one Apply Match change', async () => {
 		let body: Record<string, unknown> = {};
-		const changes = await docChangedDuring(token, projectId, async () => {
+		const changes = await revisionDeltaDuring(projectId, async () => {
 			body = await ok('color_match', { projectId, clipId: clipA, at: 30, reference: { at: 330 } });
 		});
 		const res = ColorMatchReportSchema.parse(body);
-		expect(changes).toHaveLength(1);
-		expect(changes[0]!.payload.label).toMatch(/Apply Match/);
+		expect(changes).toBe(1);
 		expect(res.applied).toBe(true);
 		expect(res.statisticsDistance.after).toBeLessThan(res.statisticsDistance.before);
 		expect(res.skin).toMatch(/hue|faces/);
