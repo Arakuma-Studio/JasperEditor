@@ -1,6 +1,7 @@
 // ffprobe → the S01 MediaProbe shape (S01:AST-001) plus kind, container and browserPlayable (S04:PB-001…006).
 // Rotation comes from the display matrix; VFR when average and nominal rates differ by more than 0.1 %.
 import {
+	browserDecodesAudio,
 	type ColorConfigInfo,
 	type ImageSequenceInfo,
 	type LayeredInfo,
@@ -131,7 +132,6 @@ const IMAGE_CODECS = new Set([
 /** Still codecs Chromium shows in an `<img>` (everything else gets a PNG display picture from the engine). */
 const BROWSER_IMAGE_CODECS = new Set(['png', 'mjpeg', 'webp', 'bmp', 'avif', 'gif', 'apng', 'svg']);
 const IMAGE_FORMAT = /(^|,)(image2|[a-z0-9]+_pipe|png|apng|webp)(,|$)/;
-const BROWSER_AUDIO = /^(aac|mp3|opus|vorbis|flac|pcm_(s16le|s24le|s32le|f32le|u8|s16be))$/;
 const BROWSER_CONTAINERS = /(mov|mp4|m4a|webm|matroska|ogg|wav|mp3|flac|aac|image2|_pipe|gif|png|webp)/;
 
 function parseRational(s: string | undefined): { num: number; den: number } | null {
@@ -468,7 +468,9 @@ export function mapProbe(input: unknown): ProbeResult {
 
 	const interlaced = v0 ? isInterlaced(v0) : false;
 	let browserPlayable: BrowserPlayable;
-	const audioOk = audios.every((a) => BROWSER_AUDIO.test(a.codec_name ?? ''));
+	// pp-wma-preview: one table decides (`browserDecodesAudio`, @jasper/project); audio the page cannot decode plays from
+	// the engine's playback audio, so an audio file with such a stream is not playable in the browser as it is.
+	const audioOk = audios.every((a) => browserDecodesAudio(container, a.codec_name ?? 'unknown'));
 	if (v0) {
 		const vd = browserDecodable(v0, interlaced);
 		if (
@@ -480,7 +482,7 @@ export function mapProbe(input: unknown): ProbeResult {
 			browserPlayable = 'no';
 		else if (vd === null || !audioOk) browserPlayable = 'unknown';
 		else browserPlayable = 'yes';
-	} else browserPlayable = audioOk ? 'yes' : 'unknown';
+	} else browserPlayable = audioOk ? 'yes' : 'no';
 
 	let display: ProbeResult['display'] = null;
 	if (v0?.width && v0.height) {

@@ -1,7 +1,8 @@
 // Clip audio decoded in the browser for the offline mixer (audio scrubbing): mediabunny (WebCodecs) reads the media
 // URL, the content range of the clip span is decoded, mapped to the clip's channels, rate-changed by its speed and
 // resampled to the mix rate with @jasper/audio-dsp's windowed-sinc resampler — the same clip chain the engine builds
-// with ffmpeg for exports.
+// with ffmpeg for exports. pp-wma-preview: media whose audio the browser cannot decode are read from the engine's
+// playback audio (one WAV per stream, `MediaHandle.playbackAudio`), silent while it is being made.
 import { resample } from '@jasper/audio-dsp';
 import {
 	type ClipReader,
@@ -113,6 +114,23 @@ async function decodeMapped(
 }
 
 /**
+ * Where the browser reads stream `streamIndex` of a media from: the playback audio's WAV of that stream (its only
+ * track), else the original (or the mandatory proxy) and the stream's track; null while the playback audio is not
+ * ready (nothing the browser could decode).
+ */
+export function browserAudioSource(
+	h: Pick<MediaHandle, 'url' | 'proxyUrl' | 'browserDecodable' | 'playbackAudio'>,
+	streamIndex: number,
+): { url: string; streamIndex: number } | null {
+	if (h.playbackAudio === null) return null;
+	if (h.playbackAudio) {
+		const url = h.playbackAudio[String(streamIndex)] ?? Object.values(h.playbackAudio)[0];
+		return url ? { url, streamIndex: 0 } : null;
+	}
+	return { url: h.proxyUrl && h.browserDecodable === false ? h.proxyUrl : h.url, streamIndex };
+}
+
+/**
  * An `OpenClip` for the offline mixer reading media from the browser. `media(mediaId)` returns the clip's media
  * handle (the Program doc's URL).
  */
@@ -123,9 +141,11 @@ export function browserOpenClip(media: (mediaId: string) => MediaHandle | null, 
 	): Promise<ClipReader | null> => {
 		const h = media(clip.mediaId);
 		if (!h) return null;
-		const o = await opened(h.proxyUrl && h.browserDecodable === false ? h.proxyUrl : h.url);
+		const at0 = browserAudioSource(h, clip.channels.streamIndex);
+		if (!at0) return null;
+		const o = await opened(at0.url);
 		if (!o) return null;
-		const track = o.byIndex.get(clip.channels.streamIndex) ?? o.tracks[0]!;
+		const track = o.byIndex.get(at0.streamIndex) ?? o.tracks[0]!;
 		const sr = at.sampleRate;
 		const F = flicksPerFrame(fps);
 		const spf = (sr * fps.den) / fps.num;

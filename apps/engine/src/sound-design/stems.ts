@@ -21,7 +21,7 @@ import {
 	readEssentialSound,
 	type Sequence,
 } from '@jasper/project';
-import { clipDecodeArgs, hasSoxr, PcmStreamReader } from '../audio/decode.ts';
+import { clipDecodeArgs, hasSoxr, needsSampleExactDecode, PcmStreamReader } from '../audio/decode.ts';
 import type { MixSource } from '../audio/mixdown.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 
@@ -199,6 +199,7 @@ class SharedDecoders {
 			offset: at.offset,
 			length: at.length,
 			soxr: this.soxr,
+			sampleExact: needsSampleExactDecode(m, stream),
 		});
 		const child = this.o.ff.spawnRaw(args, {
 			...(this.o.signal ? { signal: this.o.signal } : {}),

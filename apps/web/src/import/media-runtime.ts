@@ -17,7 +17,7 @@ import { mediaKeyOf } from './assets.ts';
 
 type Subscribe = (listener: (e: TypedEvent | null) => void) => () => void;
 
-type Slot = 'proxy' | 'thumbs' | 'peaks' | 'poster';
+type Slot = 'proxy' | 'thumbs' | 'peaks' | 'poster' | 'playback-audio';
 
 const SLOT_OF_KIND: Partial<Record<DerivativeKind, Slot>> = {
 	poster: 'poster',
@@ -25,12 +25,14 @@ const SLOT_OF_KIND: Partial<Record<DerivativeKind, Slot>> = {
 	peaks: 'peaks',
 	'proxy-720': 'proxy',
 	'proxy-540': 'proxy',
+	'playback-audio': 'playback-audio',
 };
 const SLOT_OF_JOB: Partial<Record<EngineJob['kind'], Slot>> = {
 	poster: 'poster',
 	sprite: 'thumbs',
 	peaks: 'peaks',
 	proxy: 'proxy',
+	'playback-audio': 'playback-audio',
 };
 
 type ProxyKind = 'proxy-720' | 'proxy-540';
@@ -127,6 +129,13 @@ export function createMediaRuntimeSync(
 				patchKey(key, {
 					peaks: status,
 					...(ready ? { peaksUrl: url ?? engine.mediaUrl(key, 'peaks.json') } : {}),
+				});
+				break;
+			case 'playback-audio':
+				// pp-wma-preview: the engine reports "none" for media that need no playback audio; only a needed one shows.
+				patchKey(key, {
+					playbackAudio: status,
+					playbackAudioUrl: ready ? (url ?? engine.mediaUrl(key, 'playback-audio.json')) : null,
 				});
 				break;
 			case 'proxy': {
@@ -389,7 +398,14 @@ export function createMediaRuntimeSync(
 								? 'failed'
 								: 'running';
 				if (state === 'ready') break; // derivative.ready carries the URL
-				const kind: DerivativeKind = slot === 'thumbs' ? 'sprite' : slot === 'peaks' ? 'peaks' : 'proxy-720';
+				const kind: DerivativeKind =
+					slot === 'thumbs'
+						? 'sprite'
+						: slot === 'peaks'
+							? 'peaks'
+							: slot === 'playback-audio'
+								? 'playback-audio'
+								: 'proxy-720';
 				for (const key of jobTargets(job))
 					applyDerivative(key, kind, {
 						state,

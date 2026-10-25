@@ -28,6 +28,7 @@ import { useClipBadge, useRegistry } from '../../../extensions/react.ts';
 import { TextAnimationWedges } from '../../../text-animation/TextAnimationWedges.tsx';
 import { peaksFor, reducePeaks, sheetImage, spriteFor } from '../media/media-cache.ts';
 import { filmstripSlots, mappedFilmstripSlots, nearestTile, tileRect } from '../model/filmstrip.ts';
+import { playbackAudioBadge } from '../model/playback-audio.ts';
 import { snapPx } from '../model/viewport.ts';
 import { drawGain, waveBars } from '../model/waveform.ts';
 import type { ThumbnailStyle } from '../state/prefs.ts';
@@ -272,6 +273,8 @@ function ClipViewImpl(p: ClipViewProps) {
 	}
 	const showName = p.w >= 12 && (isAudio ? p.display.audioNames : p.display.videoNames);
 	const showBadges = p.w >= 40;
+	// pp-wma-preview: audio the browser cannot decode is silent in the preview until its playback copy exists.
+	const playback = isAudio && hasMedia && !p.offline ? playbackAudioBadge(p.asset, p.runtime) : null;
 	const decoBadges = showBadges ? decorations.filter((d) => d.badge) : [];
 	const decoOverlays = decorations.filter((d) => d.overlay);
 	const decoProps: ClipDecorationProps | null = decorations.length
@@ -355,6 +358,16 @@ function ClipViewImpl(p: ClipViewProps) {
 								return <Badge key={d.id} {...decoProps} />;
 							})
 						: null}
+					{showName && showBadges && playback ? (
+						<span
+							className="shrink-0 rounded-[2px] px-[3px] text-[10px] leading-[12px] text-pr-strong"
+							style={playback.tone === 'failed' ? { background: 'var(--pr-danger)' } : undefined}
+							title={playback.title}
+							data-playback-audio={playback.tone}
+						>
+							{playback.label}
+						</span>
+					) : null}
 					{showName && showBadges && p.syncOffset ? (
 						<span
 							className="shrink-0 rounded-[2px] px-[3px] text-[10px] leading-[12px] text-pr-strong"

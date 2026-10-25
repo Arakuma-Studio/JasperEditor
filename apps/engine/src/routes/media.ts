@@ -174,6 +174,7 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		['keyframes.json', 'keyframes', 'application/json'],
 		['sprite.json', 'sprite', 'application/json'],
 		['peaks.json', 'peaks', 'application/json'],
+		['playback-audio.json', 'playback-audio', 'application/json'],
 	] as const) {
 		app.get<K>(
 			`/media/:mediaKey/${file}`,
@@ -217,6 +218,23 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 				reply,
 				(await derivatives.isReady(r, 'peaks')) ? join(p.dir!, `${Number(m[1])}.bin`) : null,
 				'application/octet-stream',
+			);
+		}),
+	);
+
+	// pp-wma-preview: one stream of the playback audio (32-bit float WAV), by container stream index.
+	app.get<{ Params: { mediaKey: string; stream: string } }>(
+		'/media/:mediaKey/playback-audio/:stream',
+		guarded<{ Params: { mediaKey: string; stream: string } }>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			const m = /^(\d{1,3})(\.wav)?$/.exec(req.params.stream);
+			if (!m) return fail(reply, 404, 'NOT_FOUND', 'Unknown playback audio stream');
+			const p = derivatives.paths(r.fingerprint, 'playback-audio');
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'playback-audio')) ? join(p.dir!, `${Number(m[1])}.wav`) : null,
+				'audio/wav',
 			);
 		}),
 	);

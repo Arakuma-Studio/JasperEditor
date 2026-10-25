@@ -7,8 +7,10 @@ import {
 	DEFAULT_PRESET_ID,
 	mediaUsage,
 	mediaVersionsOf,
+	needsPlaybackAudio,
 	rootFrameSpan,
 	sourceRangeFromSidecar,
+	undecodableAudioStreams,
 } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg } from '../arguments.ts';
@@ -304,7 +306,18 @@ export function registerProjectTools(ctx: ToolContext): void {
 						itemId: out?.itemId ?? r.refs[`$i${i}`],
 						...(out?.deduped ? { deduped: true } : {}),
 						...(range ? { sourceRange: range, sidecar: item.sourceHint?.sidecar } : {}),
-						...(item.browserPlayable === 'no' ? { note: 'needs a proxy for preview (queued)' } : {}),
+						...((note) => (note ? { note } : {}))(
+							[
+								item.browserPlayable === 'no' && item.kind !== 'audio'
+									? 'needs a proxy for preview (queued)'
+									: null,
+								asset && needsPlaybackAudio(asset)
+									? 'previews play a playback copy of its audio (queued); exports read the file'
+									: null,
+							]
+								.filter(Boolean)
+								.join('; '),
+						),
 					});
 				});
 			}
@@ -343,7 +356,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Get media info',
 			description:
-				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy), its derivation (for processed versions: the original and the recipe), its sourceRange (which source frames the file holds) and every version of the same original with the source frames [start, end) each holds (for use_media_version).',
+				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy, playback-audio), playbackAudio (needed: the browser cannot decode the audio — WMA, AC-3, ALAC… — so previews play the engine\'s lossless playback copy, silent until its status is ready; exports always decode the original), its derivation (for processed versions: the original and the recipe), its sourceRange (which source frames the file holds) and every version of the same original with the source frames [start, end) each holds (for use_media_version).',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1).describe('Media id ("med_…") from list_media or import_media'),
@@ -373,6 +386,17 @@ export function registerProjectTools(ctx: ToolContext): void {
 				probe: asset.probe,
 				locators: asset.locators,
 				engine,
+				// pp-wma-preview: audio the browser cannot decode plays from the engine's playback copy in previews.
+				playbackAudio: needsPlaybackAudio(asset)
+					? {
+							needed: true,
+							codecs: [...new Set(undecodableAudioStreams(asset).map((s) => s.codec))],
+							status:
+								(engine as { derivatives?: Record<string, unknown> } | null)?.derivatives?.[
+									'playback-audio'
+								] ?? null,
+						}
+					: { needed: false },
 				// S07:PRA-002: processed versions (wp-m2-process).
 				derivation: asset.derivation ?? null,
 				// M3 (S07:PRC-015…019): the source frames the file holds, and per version.

@@ -93,6 +93,12 @@ export type MediaRuntime = {
 	 * display PNG, a video's interpreted proxy). Absent = none needed.
 	 */
 	variant?: { key: string; state: 'queued' | 'running' | 'ready' | 'failed'; url?: string; error?: string };
+	/**
+	 * pp-wma-preview: the engine's playback audio of media whose audio the browser cannot decode (absent = not
+	 * reported: none needed or not asked yet), and its URL (`…/playback-audio.json?v=…`) once ready.
+	 */
+	playbackAudio?: DerivativeStatus;
+	playbackAudioUrl?: string | null;
 };
 
 export type LeaseState = {

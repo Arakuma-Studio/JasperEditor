@@ -11,7 +11,9 @@ import {
 	type MediaHandle,
 	mediaDecodeHints,
 	mediaLoaderPath,
+	needsPlaybackAudio,
 	type ProjectDocument,
+	playbackAudioStreamUrl,
 	proxyKeyOf,
 	sequenceDuration,
 } from '@jasper/project';
@@ -26,6 +28,24 @@ const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
 	const k = encodeURIComponent(key);
 	return variant === 'original' ? `/media/${k}` : `/media/${k}/proxy/${variant.proxy}`;
 };
+
+/**
+ * pp-wma-preview: the playback audio a preview plays for an asset whose audio the browser cannot decode — stream index →
+ * WAV URL once the engine made it, null until then (the preview is silent rather than failing on the original) —
+ * or undefined when the original's audio plays.
+ */
+export function playbackAudioUrls(
+	asset: MediaAsset,
+	runtime: Pick<MediaRuntime, 'playbackAudio' | 'playbackAudioUrl'> | undefined,
+): Record<string, string> | null | undefined {
+	if (!needsPlaybackAudio(asset)) return undefined;
+	const url = runtime?.playbackAudio?.state === 'ready' ? runtime.playbackAudioUrl : null;
+	if (!url) return null;
+	const out: Record<string, string> = {};
+	for (const s of asset.probe.streams)
+		if (s.type === 'audio') out[String(s.index)] = playbackAudioStreamUrl(url, s.index);
+	return out;
+}
 
 /**
  * Runtime media handle for an asset, or null when offline (S03:RND-032). Uses the runtime playback
@@ -89,6 +109,7 @@ export function resolveMediaHandle(
 		hasAudio: asset.probe.streams.some((s) => s.type === 'audio'),
 		rotation,
 		...mediaDecodeHints(asset.probe),
+		...((p) => (p === undefined ? {} : { playbackAudio: p }))(playbackAudioUrls(asset, runtime)),
 	};
 }
 

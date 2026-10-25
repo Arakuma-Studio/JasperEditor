@@ -185,6 +185,7 @@ export class AudioService {
 			return {
 				path: m.path,
 				streams: m.record.probe.streams.filter((x) => x.type === 'audio') as AudioStream[],
+				container: m.record.container,
 			};
 		};
 	}

@@ -1,3 +1,4 @@
+export * from './browser-codecs.ts';
 export * from './ducking.ts';
 export * from './fingerprint.ts';
 export * from './invariants.ts';

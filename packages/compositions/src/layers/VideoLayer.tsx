@@ -18,7 +18,7 @@ import { useColorStage } from '../color/chain.ts';
 import { FxPicture } from '../fx/FxPicture.tsx';
 import { FxVideoSources, RetimedFxSources } from '../fx/sources.tsx';
 import { useLayerFx } from '../fx/stage.ts';
-import { videoSource, videoTrimBefore } from '../pipeline.ts';
+import { videoAudioTrackProps, videoSource, videoTrimBefore } from '../pipeline.ts';
 import { RetimedFeed } from '../retime/RetimedVideo.tsx';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
@@ -90,6 +90,7 @@ export function VideoLayer(layer: LayerProps) {
 					style={MEDIA_STYLE}
 					showInTimeline={false}
 					effects={color.effects}
+					{...videoAudioTrackProps(media)}
 				/>
 			)}
 		</LayerBox>
