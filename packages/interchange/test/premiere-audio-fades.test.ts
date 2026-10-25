@@ -14,92 +14,9 @@ import { exportAaf } from '../src/aaf/index.ts';
 import { exportEdl } from '../src/edl.ts';
 import { exportFcp7, importFcp7 } from '../src/fcp7.ts';
 import { toJasper } from '../src/jasper-import.ts';
-import { premiereAudioTransition, premiereFadeShapeOf } from '../src/premiere-audio-fades.ts';
 import { Report } from '../src/report.ts';
 
 const anim = (value: string | number) => ({ value, keyframes: [] as never[] });
-const where = { name: 'x' };
-
-describe('premiereAudioTransition (the fade shape fields seen in Premiere 2025 projects)', () => {
-	it('Constant Power with its own shape (Cosine @ 19, symmetrical) stays Constant Power', () => {
-		const r = new Report();
-		expect(
-			premiereAudioTransition(CONSTANT_POWER, { type: '1', value: '19', symmetry: '0' }, r, where),
-		).toEqual({
-			effectId: CONSTANT_POWER,
-			params: {},
-		});
-		expect(premiereAudioTransition(CONSTANT_GAIN, { type: 0, value: 0 }, r, where).effectId).toBe(
-			CONSTANT_GAIN,
-		);
-		expect(r.entries).toEqual([]);
-	});
-	it('Custom Fade Cosine @ 12 / 13 / 30, symmetrical', () => {
-		for (const v of ['12', '13', '30']) {
-			const r = new Report();
-			expect(premiereAudioTransition(CUSTOM_FADE, { type: '1', value: v, symmetry: '0' }, r, where)).toEqual({
-				effectId: CUSTOM_FADE,
-				params: { fadeShape: anim('cosine'), fadeValue: anim(Number(v)), symmetry: anim('symmetric') },
-			});
-			expect(r.entries).toEqual([]);
-		}
-	});
-	it('a fixed transition with another shape becomes a Custom Fade; Exponential Fade keeps its curve; bad data is reported', () => {
-		const r = new Report();
-		expect(premiereAudioTransition(CONSTANT_POWER, { type: '1', value: '30' }, r, where)).toEqual({
-			effectId: CUSTOM_FADE,
-			params: { fadeShape: anim('cosine'), fadeValue: anim(30) },
-		});
-		expect(premiereAudioTransition(EXPONENTIAL_FADE, { type: '1', value: '30' }, r, where)).toEqual({
-			effectId: EXPONENTIAL_FADE,
-			params: {},
-		});
-		expect(r.entries.map((e) => e.level)).toEqual(['info', 'info']);
-		const bad = new Report();
-		expect(
-			premiereAudioTransition(CUSTOM_FADE, { type: '7', value: 'abc', symmetry: '9' }, bad, where),
-		).toEqual({
-			effectId: CUSTOM_FADE,
-			params: {},
-		});
-		expect(bad.entries.filter((e) => e.level === 'warning')).toHaveLength(3);
-		const clamped = new Report();
-		expect(premiereAudioTransition(CUSTOM_FADE, { value: 400 }, clamped, where).params.fadeValue).toEqual(
-			anim(100),
-		);
-	});
-	it('never throws and only produces readable Custom Fade params (fuzz)', () => {
-		const any = fc.oneof(fc.string(), fc.double(), fc.integer({ min: -3, max: 3 }), fc.constant(undefined));
-		fc.assert(
-			fc.property(
-				fc.constantFrom(CONSTANT_POWER, CONSTANT_GAIN, EXPONENTIAL_FADE, CUSTOM_FADE),
-				any,
-				any,
-				any,
-				(id, type, value, symmetry) => {
-					const r = premiereAudioTransition(id, { type, value, symmetry }, new Report(), where);
-					const p = r.params as Record<string, { value: unknown }>;
-					if (p.fadeShape) expect(['linear', 'cosine']).toContain(p.fadeShape.value);
-					if (p.fadeValue) {
-						expect(Number.isFinite(p.fadeValue.value)).toBe(true);
-						expect(Math.abs(p.fadeValue.value as number)).toBeLessThanOrEqual(100);
-					}
-					if (p.symmetry) expect(['symmetric', 'asymmetric']).toContain(p.symmetry.value);
-				},
-			),
-		);
-	});
-	it('premiereFadeShapeOf writes the fields back', () => {
-		expect(
-			premiereFadeShapeOf({ fadeShape: anim('linear'), fadeValue: anim(-7), symmetry: anim('asymmetric') }),
-		).toEqual({
-			FadeShapeType: 0,
-			FadeShapeValue: -7,
-			CrossfadeSymmetry: 1,
-		});
-		expect(premiereFadeShapeOf({})).toEqual({ FadeShapeType: 1, FadeShapeValue: 19, CrossfadeSymmetry: 0 });
-	});
-});
 
 /** A 30 fps FCP7 document: two audio clips cut at frame 60 with one transition item [start, end). */
 function xml(effect: string, start: number, end: number, extra = ''): string {
@@ -128,6 +45,57 @@ const param = (id: string, v: string | number) =>
 	`<parameter><parameterid>${id}</parameterid><value>${v}</value></parameter>`;
 
 describe('FCP7 XML (Premiere dialect) audio transitions', () => {
+	it('fixed fades keep their own shape, custom shapes replace them, and invalid shape fields are reported', () => {
+		const shape = (type: string | number, value: string | number, symmetry: string | number = 0) =>
+			param('FadeShapeType', type) + param('FadeShapeValue', value) + param('CrossfadeSymmetry', symmetry);
+		for (const [name, type, value, id] of [
+			['Constant Power', 1, 19, CONSTANT_POWER],
+			['Constant Gain', 0, 0, CONSTANT_GAIN],
+			['Exponential Fade', 1, 30, EXPONENTIAL_FADE],
+		] as const) {
+			const { t, report } = imported(xml(`<name>${name}</name>`, 50, 70, shape(type, value)));
+			expect(t.effectId).toBe(id);
+			expect(t.params).toEqual({});
+			expect(report.warnings).toEqual([]);
+		}
+		const custom = imported(xml('<name>Constant Power</name>', 50, 70, shape(1, 30)));
+		expect(custom.t.effectId).toBe(CUSTOM_FADE);
+		expect(custom.t.params).toMatchObject({ fadeShape: anim('cosine'), fadeValue: anim(30) });
+		const bad = imported(xml('<name>Custom Fade</name>', 50, 70, shape(7, 'abc', 9)));
+		expect(bad.t.params).toEqual({});
+		expect(bad.report.warnings.map((w) => w.instead).sort()).toEqual(['19', 'Cosine', 'Symmetrical']);
+		expect(
+			imported(xml('<name>Custom Fade</name>', 50, 70, param('FadeShapeValue', 400))).t.params.fadeValue,
+		).toEqual(anim(100));
+	});
+
+	it('untrusted fade fields only produce readable Custom Fade params (parser fuzz)', () => {
+		const scalar = fc.oneof(fc.string({ maxLength: 32 }), fc.double(), fc.integer({ min: -3, max: 3 }));
+		const escaped = (v: string | number) =>
+			String(v).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+		fc.assert(
+			fc.property(scalar, scalar, scalar, (type, value, symmetry) => {
+				const { t } = imported(
+					xml(
+						'<name>Custom Fade</name>',
+						50,
+						70,
+						param('FadeShapeType', escaped(type)) +
+							param('FadeShapeValue', escaped(value)) +
+							param('CrossfadeSymmetry', escaped(symmetry)),
+					),
+				);
+				const p = t.params as Record<string, { value: unknown }>;
+				if (p.fadeShape) expect(['linear', 'cosine']).toContain(p.fadeShape.value);
+				if (p.fadeValue) {
+					expect(Number.isFinite(p.fadeValue.value)).toBe(true);
+					expect(Math.abs(p.fadeValue.value as number)).toBeLessThanOrEqual(100);
+				}
+				if (p.symmetry) expect(['symmetric', 'asymmetric']).toContain(p.symmetry.value);
+			}),
+		);
+	});
+
 	it('maps the names, the effect ids and the Spanish display names', () => {
 		const cases: [string, string][] = [
 			['<name>Constant Power</name><effectid>KGAudioTransCrossFade3dB</effectid>', CONSTANT_POWER],
@@ -196,7 +164,13 @@ describe('FCP7 XML (Premiere dialect) audio transitions', () => {
 		expect(text).toContain('<parameterid>FadeShapeValue</parameterid>');
 		const again = imported(text);
 		expect(again.t.effectId).toBe(CUSTOM_FADE);
-		expect(again.t.params).toEqual(first.t.params);
+		expect(again.t.params).toEqual({
+			fadeShape: anim('linear'),
+			fadeValue: anim(-12.5),
+			symmetry: anim('asymmetric'),
+			outFadeShape: anim('cosine'),
+			outFadeValue: anim(40),
+		});
 		expect(again.t.cutPosition).toBe(0.4);
 	});
 

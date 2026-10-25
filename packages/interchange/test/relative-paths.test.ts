@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import { readDocument, toJasper } from '../src/index.ts';
 import { fileUrlToPath, isAbsolutePath, relativeReference, resolvePath } from '../src/paths.ts';
-import { Report } from '../src/report.ts';
 
 const edl = (files: string[]) =>
 	[
@@ -66,6 +65,5 @@ describe('media references from other computers', () => {
 		expect(relativeReference('file:///D:/a.mov')).toBeNull();
 		expect(relativeReference('https://example.com/a.mov')).toBeNull();
 		expect(relativeReference('')).toBeNull();
-		expect(new Report().entries).toEqual([]);
 	});
 });

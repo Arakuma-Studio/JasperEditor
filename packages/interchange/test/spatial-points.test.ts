@@ -3,7 +3,7 @@
 // handle data; FCP 7 XML carries the key values only; OTIO keeps the JasperEditor keys whole. Every loss is reported.
 import type { Animatable, Keyframe, Spatial, Transform, Vec2 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { exportFcp7 } from '../src/fcp7.ts';
+import { exportFcp7, importFcp7 } from '../src/fcp7.ts';
 import { exportFcpxml, importFcpxml } from '../src/fcpxml.ts';
 import { exportOtio, importOtio } from '../src/otio.ts';
 import { Report } from '../src/report.ts';
@@ -109,10 +109,19 @@ describe('spatial-points interchange', () => {
 	it('FCP 7 XML writes point key values only and reports the curved paths', () => {
 		const { p, sid } = withPaths();
 		const report = new Report();
-		exportFcp7(p, sid, {}, report);
+		const text = exportFcp7(p, sid, {}, report);
 		const msgs = JSON.stringify(report.entries);
 		expect(msgs).toContain('curved motion path of Center is not carried by FCP 7 XML');
 		expect(msgs).toContain('curved motion path of Position is not carried by FCP 7 XML');
+		const back = importFcp7(text, {}, new Report());
+		const fx = back.sequences[back.top[0]!]!.video[0]!.clips[0]!.effects.find(
+			(e) => e.effectId === 'jasper.transform',
+		)!;
+		expect(fx.params.position!.keyframes.map((k) => k.value)).toEqual([
+			[0.2, 0.5],
+			[0.5, 0.2],
+			[0.8, 0.5],
+		]);
 	});
 
 	it('OTIO keeps every key’s spatial data exactly', () => {
