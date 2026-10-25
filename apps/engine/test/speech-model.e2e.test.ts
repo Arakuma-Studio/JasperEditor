@@ -67,7 +67,7 @@ async function waitJob(id: string, timeoutMs = 300_000): Promise<EngineJob> {
 }
 
 /** Boundary error of every utterance's first word start / last word end, and words outside the speech. */
-function timing(words: Array<{ start: number; end: number }>, offsetSec = 0) {
+function timing(words: Array<{ start: number; end: number; text: string }>, offsetSec = 0) {
 	const errs: number[] = [];
 	for (const u of truth.utterances) {
 		const mine = words.filter((w) => {
