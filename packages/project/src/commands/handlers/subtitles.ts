@@ -665,7 +665,7 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 				? h.track(seq, cmd.trackId)
 				: addCaptionTrack(doc, seq, h, { name, language: src.language });
 		const cstyle = captionStyleOfTemplate(template, style, seq, rules, highlight);
-		track.styleDefaults = { ...(clone(track.styleDefaults) ?? {}), ...cstyle } as never;
+		track.styleDefaults = { ...(track.styleDefaults ? clone(track.styleDefaults) : {}), ...cstyle } as never;
 		const clipIds = placeCaptionClips(doc, seq, track, placedBlocks(layout.captions), h, {
 			language: src.language,
 			origin: 'manual',
@@ -1069,7 +1069,7 @@ function convertToCaptionTrack(doc: DDoc, cmd: CommandOf<'captions.convert'>, h:
 	const topY = pos[1] - anchor[1];
 	const hl = group?.highlight;
 	track.styleDefaults = {
-		...(clone(track.styleDefaults) ?? {}),
+		...(track.styleDefaults ? clone(track.styleDefaults) : {}),
 		...clone(first.content.style),
 		boxWidthPct: Math.min(100, Math.max(1, (box.width / W) * 100)),
 		...(group ? { maxCharsPerLine: group.rules.maxChars, maxLines: group.rules.lines } : {}),
