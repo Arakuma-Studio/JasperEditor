@@ -767,7 +767,7 @@ export type SocialFillResult =
  * Validates partial params (an agent call, a CSV row) and fills ONLY the omitted fields: identity (display name,
  * handle, generated avatar) and stats from the seed, everything else from `socialDefaults(variant)` (variant itself
  * defaults to `tiktok-reply`). A given display name gets a matching handle and vice versa. Store reviews also get a
- * rating, a date (agreeing with a given age, and the age with a given date) and, on the App Store cards, a title
+ * rating, a date (agreeing with a given age, and the age with a given date), an "edited" flag (≈ 12 %) and a title
  * that suits the rating. Provided values are kept as they are. Invalid input returns `{ ok: false }` with zod
  * issues; never throws.
  */
@@ -801,6 +801,8 @@ export function fillSocialParams(partial: unknown, seed: number): SocialFillResu
 	const rating = given.rating ?? stats.rating;
 	// filled for every variant (like reposts and views) so a switch to an App Store card stays plausible
 	const title = randomReviewTitle(rating, s);
+	// about one review in eight shows "edited" on the iPhone card [E]
+	const edited = rng(s, SALT_REVIEW ^ 0xed17).chance(0.12);
 	const displayName =
 		given.displayName ?? (given.handle !== undefined ? nameForHandle(given.handle, s) : identity.displayName);
 	const handle =
@@ -810,6 +812,7 @@ export function fillSocialParams(partial: unknown, seed: number): SocialFillResu
 		...base,
 		...stats,
 		title,
+		edited,
 		displayName,
 		handle,
 		avatar,

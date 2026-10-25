@@ -22,11 +22,17 @@ import { getRemotionEnvironment, useDelayRender } from 'remotion';
 export type MissingTemplateAsset =
 	| { kind: 'font'; family: string; weight: number; style: 'normal' | 'italic' }
 	| { kind: 'emoji'; pack: string; grapheme: string }
-	| { kind: 'image'; id: string };
+	| { kind: 'image'; id: string }
+	/** A project medium a template param shows (an avatar) that is offline, undecodable or failed to load. */
+	| { kind: 'media'; mediaId: string };
 
-/** Human label of a missing asset (`Font "Chirp" 700`, `Emoji 😀 (apple)`, `Image "x-default-avatar"`). */
+/**
+ * Human label of a missing asset (`Font "Chirp" 700`, `Emoji 😀 (apple)`, `Image "x-default-avatar"`,
+ * `Picture med_…`).
+ */
 export function missingAssetLabel(a: MissingTemplateAsset): string {
 	if (a.kind === 'font') return `Font "${a.family}" ${a.weight}${a.style === 'italic' ? ' italic' : ''}`;
+	if (a.kind === 'media') return `Picture ${a.mediaId}`;
 	return a.kind === 'emoji' ? `Emoji ${a.grapheme} (${a.pack})` : `Image "${a.id}"`;
 }
 
@@ -152,7 +158,7 @@ export function MissingAssetMarker(p: {
 let reportIds = 0;
 
 /** Reports `asset` to the clip's scope while it is non-null. */
-function useReportMissing(asset: MissingTemplateAsset | null): void {
+export function useReportMissing(asset: MissingTemplateAsset | null): void {
 	const scope = useContext(TemplateAssetScopeContext);
 	const [id] = useState(() => `a${++reportIds}`);
 	const key = asset ? JSON.stringify(asset) : '';

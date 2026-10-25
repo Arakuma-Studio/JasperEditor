@@ -10,6 +10,7 @@
 // decoder does not reproduce).
 import {
 	browserPictureNeed,
+	collectParamMediaIds,
 	type MediaAsset,
 	type MediaHandle,
 	mediaLoaderPath,
@@ -51,15 +52,21 @@ export function withImportsUrls(
 	return out;
 }
 
-/** Media ids drawn by the browser in this export: all of them on the Remotion path, baked layers' on the native one. */
+/**
+ * Media ids drawn by the browser in this export: all of them on the Remotion path, baked layers' on the native one
+ * (their own media and the pictures their template params reference).
+ */
 function browserDrawnMedia(snapshot: RenderSnapshot, purpose: 'native' | 'remotion'): Set<string> {
 	const out = new Set<string>();
 	const visit = (snap: RenderSnapshot) => {
 		for (const t of [...snap.videoTracks, ...(snap.matteTracks ?? [])])
 			for (const c of t.clips) {
 				if ('nest' in c.source) visit(c.source.nest.snapshot);
-				if (!('mediaId' in c.source)) continue;
-				if (purpose === 'remotion' || needsBake(c)) out.add(c.source.mediaId);
+				if (purpose !== 'remotion' && !needsBake(c)) continue;
+				if ('mediaId' in c.source) out.add(c.source.mediaId);
+				// Template pictures (avatars) are drawn by the browser with their template: a still it cannot decode gets
+				// its display picture like any other (never the template's placeholder).
+				if ('mg' in c.source) for (const id of collectParamMediaIds(c.source.mg.params)) out.add(id);
 			}
 	};
 	visit(snapshot);

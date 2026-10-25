@@ -15,6 +15,7 @@ import type {
 	MgTemplateInfo,
 	MgTemplatePreset,
 } from '../registry/mg.ts';
+import { mgInstanceParams } from '../registry/mg-params.ts';
 import { type Rational, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
 import { type MgImportMessage, type MgImportTextCode, shortValue as short } from './messages.ts';
@@ -410,11 +411,9 @@ export function planMgImport(
 	if (opts.preset !== undefined) {
 		const p = template.presets?.find((x) => x.id === opts.preset);
 		if (!p) return { ok: false, message: msg('no-preset', template.name, opts.preset) };
-		presetParams = { ...p.params };
-		// Every row is a new instance: the params the template varies per instance (a comment's identity and stats)
-		// come from the row or the fill hook, not from the preset (whose values are placeholders such as "username").
-		const reroll = template.ui?.addAnother?.reroll;
-		if (Array.isArray(reroll)) for (const name of reroll) delete presetParams[name];
+		// Every row is a new instance (`mgInstanceParams`): the params the template varies per instance (a comment's
+		// identity and stats) come from the row or the fill hook, not from the preset, which sets the look.
+		presetParams = mgInstanceParams(template, p.params, {}).params;
 	}
 	const [header, ...data] = table.records;
 	if (!header) return { ok: false, message: msg('empty') };

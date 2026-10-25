@@ -365,3 +365,43 @@ test('social comment (TikTok reply preset): the name inside "Reply to …", High
 	await expect(input()).toHaveCount(0);
 	expect((await clipParams(id)).text).toBe('Hello ==big== world and ==more==');
 });
+
+test('social comment (Instagram presets): the post and Reel cards draw; their handle and text edit in place', async () => {
+	for (const preset of ['instagram-post', 'instagram-reel-reply']) {
+		const id = await socialPreset(`E2E Canvas Edit ${preset}`, preset);
+		expectTransaction(
+			await transact(page, [
+				{ type: 'clip.update', clipId: id, patch: { params: { handle: 'luna.park' } } } as never,
+			]),
+		);
+		const card = program().locator(`[data-clip-id="${id}"] [data-social-variant="${preset}"]`);
+		await expect(card).toBeAttached();
+		await expect(program().locator('[data-social-unavailable]')).toHaveCount(0);
+		// The handle ("username" on the post, "Replying to …" on the Reel card).
+		const handle = paramEl(id, 'handle');
+		await expect(handle).toHaveText('luna.park');
+		const hp = await pointOf(handle, 'park');
+		await page.mouse.dblclick(hp.x, hp.y);
+		await expect(input()).toHaveAttribute('data-value', 'luna.park');
+		const hRest = (await handle.boundingBox())!;
+		const hEd = (await input().boundingBox())!;
+		expect(Math.abs(hEd.x - hRest.x)).toBeLessThan(2);
+		expect(Math.abs(hEd.y - hRest.y)).toBeLessThan(3);
+		writeFileSync(join(OUT, `${preset}-handle.png`), await page.getByTestId('program-viewport').screenshot());
+		await page.keyboard.press('End');
+		await page.keyboard.type('_2');
+		await page.keyboard.press('Enter');
+		await expect.poll(async () => (await clipParams(id)).handle).toBe('luna.park_2');
+		// The comment with its marks.
+		const text = paramEl(id, 'text');
+		const p = await pointOf(text, 'world');
+		await page.mouse.dblclick(p.x, p.y);
+		await expect(input()).toHaveAttribute('data-value', 'Hello ==big== world and more');
+		await page.getByTestId('template-marks-toolbar').locator('[data-mark-action="highlight"]').click();
+		await expect.poll(async () => (await clipParams(id)).text).toBe('Hello ==big world== and more');
+		await page.keyboard.press('Escape');
+		await expect(input()).toHaveCount(0);
+		await page.waitForTimeout(300);
+		writeFileSync(join(OUT, `${preset}-after.png`), await page.getByTestId('program-viewport').screenshot());
+	}
+});

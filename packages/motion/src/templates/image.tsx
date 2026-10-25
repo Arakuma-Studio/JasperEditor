@@ -1,10 +1,19 @@
 // Pictures inside anime templates (avatars, docs/wp-notes/social-comments.md "Template media params"). A template
 // media param resolves to `AnimeTemplateProps.mediaUrls[mediaId]` (the render snapshot's media handle: an engine URL,
 // signed in renders); `TemplateImage` draws it and holds the Remotion render until the picture is decoded, like
-// Remotion's `<Img>` and the fx images of @jasper/compositions (`fx/images.ts`). A failed load never cancels the
-// render: the template shows a visible placeholder instead (or its own `fallback`).
-import { type CSSProperties, type ReactNode, useLayoutEffect, useState } from 'react';
-import { continueRender, delayRender } from 'remotion';
+// Remotion's `<Img>` and the fx images of @jasper/compositions (`fx/images.ts`). A failed load is never silent
+// (AGENTS §4): a render (export, bake, still) fails with a `TemplateImageError` naming the picture; the Player draws a
+// visible placeholder (or the template's own `fallback`) and reports the medium to the editor's template-asset warning.
+import {
+	type CSSProperties,
+	createContext,
+	type ReactNode,
+	useContext,
+	useLayoutEffect,
+	useState,
+} from 'react';
+import { cancelRender, continueRender, delayRender, getRemotionEnvironment } from 'remotion';
+import { useReportMissing } from './assets.tsx';
 
 export type TemplateImageProps = {
 	/** The picture's URL (`mediaUrls[mediaId]`); empty / absent = no picture (the fallback is drawn). */
@@ -18,6 +27,26 @@ export type TemplateImageProps = {
 };
 
 type Status = 'loading' | 'ready' | 'error';
+
+/** What a render fails with when a template picture cannot be loaded (renders never draw the placeholder). */
+export class TemplateImageError extends Error {
+	override name = 'TemplateImageError';
+	constructor(
+		readonly url: string,
+		readonly mediaId: string | null,
+	) {
+		// signed URLs: the query (the signature) stays out of the message
+		super(
+			`Template picture ${mediaId ?? ''}${mediaId ? ' ' : ''}could not be loaded from ${url.split('?')[0]}`,
+		);
+	}
+}
+
+/**
+ * URL → media id of the pictures a template clip shows (`mediaUrls` inverted; provided by the motion-graphic layer):
+ * a failed picture is reported and named by its medium.
+ */
+export const TemplateMediaIdsContext = createContext<Readonly<Record<string, string>> | null>(null);
 
 /** The visible stand-in of a missing / unreadable picture (a neutral dashed box, never transparent). */
 export function TemplateImagePlaceholder({ style }: { style?: CSSProperties }) {
@@ -36,8 +65,9 @@ export function TemplateImagePlaceholder({ style }: { style?: CSSProperties }) {
 }
 
 /**
- * An `<img>` that holds the render (delayRender) from its first frame until the picture is loaded and decoded;
- * on a load error it releases the render and draws the placeholder (or `fallback`).
+ * An `<img>` that holds the render (delayRender) from its first frame until the picture is loaded and decoded.
+ * On a load error a render fails (`cancelRender` with a `TemplateImageError`); the Player releases its hold, draws
+ * the placeholder (or `fallback`) and reports the medium (`{kind: 'media'}`) to the clip's asset scope.
  */
 export function TemplateImage(props: TemplateImageProps) {
 	const url = typeof props.src === 'string' && props.src !== '' ? props.src : null;
@@ -47,6 +77,14 @@ export function TemplateImage(props: TemplateImageProps) {
 	}));
 	// A new URL starts loading again (the element is keyed by it).
 	const status: Status = state.url === url ? state.status : url ? 'loading' : 'error';
+	const mediaIds = useContext(TemplateMediaIdsContext);
+	const mediaId = (url && mediaIds?.[url]) || null;
+	const failed = !!url && status === 'error';
+	useReportMissing(failed && mediaId ? { kind: 'media', mediaId } : null);
+	useLayoutEffect(() => {
+		if (failed && url && getRemotionEnvironment().isRendering)
+			cancelRender(new TemplateImageError(url, mediaId));
+	}, [failed, url, mediaId]);
 	// Hold the render while the picture loads: the handle is taken at the first render of this URL (like
 	// `useFxImages`) and released once the result is on screen (the effect's cleanup runs after that commit).
 	const [initial] = useState(() =>

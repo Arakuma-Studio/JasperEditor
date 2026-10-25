@@ -1,8 +1,15 @@
 // TemplateImage (C1, docs/wp-notes/social-comments.md "Template media params"): holds the Remotion render until the
-// picture is loaded and decoded; a failed load releases the render and draws a visible placeholder (never a crash).
+// picture is loaded and decoded; a failed load fails a render by name, and in the Player releases the render, draws a
+// visible placeholder and reports the medium (never a crash, never silent).
 import { act, fireEvent, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
-import { TemplateImage } from '../src/templates/index.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+	type MissingTemplateAsset,
+	TemplateAssetScopeContext,
+	TemplateImage,
+	TemplateImageError,
+	TemplateMediaIdsContext,
+} from '../src/templates/index.ts';
 
 type RemotionWindow = Window & { remotion_renderReady?: boolean; remotion_delayRenderHandles?: number[] };
 const w = window as RemotionWindow;
@@ -10,6 +17,7 @@ const held = () => (w.remotion_delayRenderHandles ?? []).length;
 const flush = () => act(async () => await new Promise((r) => setTimeout(r, 0)));
 
 afterEach(() => {
+	vi.unstubAllEnvs();
 	w.remotion_delayRenderHandles = [];
 	w.remotion_renderReady = true;
 });
@@ -32,9 +40,22 @@ describe('TemplateImage', () => {
 		view.unmount();
 	});
 
-	it('a failed load releases the render and draws a visible placeholder', async () => {
+	it('Player: a failed load releases the render, draws a visible placeholder and reports the medium', async () => {
+		// Remotion counts NODE_ENV=test as a render (getRemotionEnvironment); the Player needs another value.
+		vi.stubEnv('NODE_ENV', 'development');
 		const before = held();
-		const view = render(<TemplateImage src="https://engine.test/media/broken.png" style={{ width: 80 }} />);
+		const live = new Map<string, MissingTemplateAsset>();
+		const scope = {
+			report: (id: string, a: MissingTemplateAsset | null) => (a ? live.set(id, a) : live.delete(id)),
+		};
+		const url = 'https://engine.test/media/broken.png?sig=1';
+		const view = render(
+			<TemplateAssetScopeContext.Provider value={scope}>
+				<TemplateMediaIdsContext.Provider value={{ [url]: 'med_avatar' }}>
+					<TemplateImage src={url} style={{ width: 80 }} />
+				</TemplateMediaIdsContext.Provider>
+			</TemplateAssetScopeContext.Provider>,
+		);
 		fireEvent.error(view.container.querySelector('img')!);
 		await flush();
 		expect(view.container.querySelector('img')).toBeNull();
@@ -43,6 +64,32 @@ describe('TemplateImage', () => {
 		expect(ph.style.width).toBe('80px');
 		expect(ph.style.background).not.toBe('');
 		expect(held()).toBe(before);
+		expect([...live.values()]).toEqual([{ kind: 'media', mediaId: 'med_avatar' }]);
+		view.unmount();
+		expect(live.size).toBe(0);
+	});
+
+	it('render: a failed load fails the render with a TemplateImageError naming the picture (no placeholder)', async () => {
+		vi.stubEnv('NODE_ENV', 'test');
+		const url = 'https://engine.test/media/broken.png?sig=secret';
+		const view = render(
+			<TemplateMediaIdsContext.Provider value={{ [url]: 'med_avatar' }}>
+				<TemplateImage src={url} style={{ width: 80 }} />
+			</TemplateMediaIdsContext.Provider>,
+		);
+		let error: unknown;
+		try {
+			await act(async () => {
+				fireEvent.error(view.container.querySelector('img')!);
+			});
+		} catch (e) {
+			error = e;
+		}
+		expect(error).toBeInstanceOf(TemplateImageError);
+		expect((error as Error).message).toBe(
+			'Template picture med_avatar could not be loaded from https://engine.test/media/broken.png',
+		);
+		expect((error as Error).name).toBe('TemplateImageError');
 		view.unmount();
 	});
 

@@ -134,11 +134,42 @@ export function resolveMgTemplateParams(
 }
 
 /**
- * The params "Add another" re-randomizes for `info` (`ui.addAnother.reroll`, only with a fill hook); every other
- * param of the copy is the source clip's.
+ * What the per-instance rule reads of a template: a registry template (`MgTemplateInfo`) or its JSON view (the
+ * engine catalogue entry, `MgImportTemplate`). JSON views carry no hook: the registry accepts `ui.addAnother` only on a
+ * template with a fill hook, so their list stands; a registry template whose `fill` is absent re-randomizes nothing.
  */
-export function mgRerollParams(info: Pick<MgTemplateInfo, 'ui' | 'fill'>): string[] {
-	if (!info.fill) return [];
+export type MgInstanceTemplate = {
+	ui?: { addAnother?: { reroll: readonly string[] } | undefined } | undefined;
+	fill?: unknown;
+};
+
+/**
+ * The per-instance params of a template (`ui.addAnother.reroll`: a comment's identity and stats): every new instance
+ * gets its own from the fill hook. Empty for a registry template without a fill hook.
+ */
+export function mgRerollParams(info: MgInstanceTemplate): string[] {
+	if (Object.hasOwn(info, 'fill') && typeof info.fill !== 'function') return [];
 	const list = info.ui?.addAnother?.reroll;
 	return Array.isArray(list) ? [...new Set(list.filter((n): n is string => typeof n === 'string'))] : [];
+}
+
+/**
+ * The one layering rule of a new instance of a template (social-comments design §7.9–7.10, "presets set the look"):
+ * `base` — a preset's params, or the params of the clip "Add another" copies — without the per-instance params
+ * (`mgRerollParams`) the caller does not give, then `given` over it. The template's fill hook (deterministic for the
+ * instance's seed) fills the dropped ones, so every instance gets its own identity and stats while the look (variant,
+ * theme, text, toggles, animation) comes from `base`. `reroll` lists the dropped params. Used by MCP
+ * `add_motion_graphic` (presets), the bulk import (`planMgImport`: web dialog and MCP) and `clip.duplicateMotionGraphic`
+ * (Add another). Never throws.
+ */
+export function mgInstanceParams(
+	template: MgInstanceTemplate,
+	base: Readonly<Record<string, unknown>> | undefined,
+	given: Readonly<Record<string, unknown>> | undefined,
+): { params: Record<string, unknown>; reroll: string[] } {
+	const own = given ?? {};
+	const reroll = mgRerollParams(template).filter((n) => !Object.hasOwn(own, n));
+	const params: Record<string, unknown> = { ...(base ?? {}) };
+	for (const n of reroll) delete params[n];
+	return { params: { ...params, ...own }, reroll };
 }

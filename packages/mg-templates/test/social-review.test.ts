@@ -199,7 +199,19 @@ describe('review randomizer', () => {
 	it('fills a store review: rating, date, a title for the rating; a given date gives the age and vice versa', () => {
 		const r = fillSocialParams({ variant: 'app-store-review-ios' }, 11);
 		if (!r.ok) throw new Error(r.error);
-		expect(r.filled).toEqual(expect.arrayContaining(['rating', 'date', 'title', 'timeValue', 'timeUnit']));
+		expect(r.filled).toEqual(
+			expect.arrayContaining(['rating', 'date', 'title', 'edited', 'timeValue', 'timeUnit']),
+		);
+		// about one review in eight is "edited"; a given flag is kept
+		let edited = 0;
+		for (let s = 0; s < 2000; s++) {
+			const f = fillSocialParams({ variant: 'app-store-review-ios' }, s);
+			if (f.ok && f.params.edited) edited++;
+		}
+		expect(edited / 2000).toBeGreaterThan(0.08);
+		expect(edited / 2000).toBeLessThan(0.16);
+		const kept = fillSocialParams({ variant: 'app-store-review-ios', edited: false }, 1);
+		expect(kept.ok && kept.params.edited).toBe(false);
 		const byDate = fillSocialParams({ variant: 'app-store-review-ios', date: '2026-10-20' }, 3);
 		if (!byDate.ok) throw new Error(byDate.error);
 		expect(byDate.params).toMatchObject({ date: '2026-10-20', timeValue: 5, timeUnit: 'day' });
@@ -364,7 +376,7 @@ describe('bulk import of store reviews', () => {
 	});
 
 	it('Add another on a review gives a new reviewer, rating, date and title, and keeps the text', () => {
-		expect(SOCIAL_REROLL_PARAMS).toEqual(expect.arrayContaining(['rating', 'date', 'title']));
+		expect(SOCIAL_REROLL_PARAMS).toEqual(expect.arrayContaining(['rating', 'date', 'title', 'edited']));
 		const ids = createCounterIdSource(1);
 		const ctx = {
 			ids,

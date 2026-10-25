@@ -207,9 +207,66 @@ export function checkFont(f: Fetched, format: 'woff2' | 'woff' | 'ttf' | 'otf'):
 	} else if (magic.toString('latin1') !== MAGIC[format]) throw bad('bad magic number');
 }
 
-/** SVG markup that could run code or load other resources is refused (the engine serves these files). */
+/**
+ * SVG markup that could run code or load other resources (the engine serves these files from its own origin; they
+ * are also served with `REMOTE_IMAGE_CSP`): script / foreignObject / handler / iframe / embed / object elements (any
+ * namespace prefix), event-handler attributes (also after `/`: `<svg/onload=…>`), `href` / `xlink:href` / `src`
+ * that are not same-document (`#id`), `url(…)` that is not `url(#id)`, `@import`, external stylesheets
+ * (`<?xml-stylesheet`) and entity declarations. Matched on the markup with character references decoded.
+ */
 const SVG_ACTIVE =
-	/<script|<foreignobject|\son[a-z]+\s*=|javascript:|<iframe|<embed|<object|xlink:href\s*=\s*["']\s*(?!#)|\shref\s*=\s*["']\s*(?!#)/i;
+	/<([a-z][\w.-]*:)?(script|foreignobject|handler|listener|iframe|embed|object)\b|[\s/"']on[a-z]+\s*=|(^|[\s/"'])((xlink:)?href|src)\s*=(?!\s*["']?\s*#)|url\((?!\s*["']?\s*#)|@import|<\?xml-stylesheet|<!entity/i;
+/** Script URL schemes, matched with whitespace and control characters removed (`java&#9;script:`). */
+const SVG_SCRIPT_SCHEME = /(java|vb|live)script:/i;
+
+/** XML / HTML named character references an attacker could use to spell `javascript:` or an attribute. */
+const NAMED_REFS: Readonly<Record<string, string>> = {
+	amp: '&',
+	lt: '<',
+	gt: '>',
+	quot: '"',
+	apos: "'",
+	colon: ':',
+	sol: '/',
+	lpar: '(',
+	rpar: ')',
+	tab: '\t',
+	newline: '\n',
+	nbsp: ' ',
+	period: '.',
+	equals: '=',
+	num: '#',
+	bsol: '\\',
+};
+
+/** `text` with character references decoded: numeric (with or without `;`) and the named ones above, twice (`&amp;#106;`). */
+function decodeCharRefs(text: string): string {
+	let out = text;
+	for (let i = 0; i < 2; i++)
+		out = out.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);?/gi, (m, ref: string) => {
+			const r = ref.toLowerCase();
+			if (!r.startsWith('#')) return NAMED_REFS[r] ?? m;
+			const cp = r[1] === 'x' ? Number.parseInt(r.slice(2), 16) : Number.parseInt(r.slice(1), 10);
+			return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+		});
+	return out;
+}
+
+/** True when SVG markup holds active content or external references (see `SVG_ACTIVE`). Never throws. */
+export function svgHasActiveContent(text: string): boolean {
+	const decoded = decodeCharRefs(text);
+	if (SVG_ACTIVE.test(decoded)) return true;
+	// a browser ignores whitespace and control characters inside a URL scheme
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
+	const compact = decoded.replace(/[\s\u0000-\u001f\u007f-\u009f\u200b-\u200d\ufeff]+/g, '');
+	return SVG_SCRIPT_SCHEME.test(compact);
+}
+
+/**
+ * Content-Security-Policy of every remote image / emoji file the engine serves (SVG ones especially): no scripts
+ * (sandbox), nothing loaded but inline styles and `data:` pictures.
+ */
+export const REMOTE_IMAGE_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
 /** Refuses a body that is not an image of `format` (magic number / root element; active SVG content). */
 export function checkImage(f: Fetched, format: 'png' | 'jpeg' | 'webp' | 'svg'): void {
@@ -242,5 +299,5 @@ export function checkImage(f: Fetched, format: 'png' | 'jpeg' | 'webp' | 'svg'):
 		.replace(/^﻿/, '')
 		.replace(/^\s*(<\?xml[^>]*\?>\s*)?(<!--[\s\S]*?-->\s*)*(<!doctype[^>]*>\s*)?/i, '');
 	if (!/^<svg[\s>]/i.test(body)) throw bad('no <svg> root');
-	if (SVG_ACTIVE.test(text)) throw bad('scripts or external references');
+	if (svgHasActiveContent(text)) throw bad('scripts or external references');
 }

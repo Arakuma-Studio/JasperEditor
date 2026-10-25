@@ -6,14 +6,15 @@ import {
 	SOCIAL_PARAM_NAMES,
 	SOCIAL_VARIANTS,
 	type SocialParamName,
+	shownNameParam,
 	VARIANT_CAPABILITIES,
 } from './variants.ts';
 
 /**
  * What "Add another" re-randomizes (through `fillSocialParams`): a different person (name, handle, avatar) and new
- * stats (age, likes, replies, reposts, views; a store review's rating, date and the title that suits the new rating).
- * Kept from the source card: the look (variant, theme, emoji style), the profile and verified toggles, the X count
- * toggles, the animation (entrance, word reveal, like tick), the review's edited flag and line clamp, and the text —
+ * stats (age, likes, replies, reposts, views; a store review's rating, date, edited flag and the title that suits the
+ * new rating). Kept from the source card: the look (variant, theme, emoji style), the profile and verified toggles,
+ * the X count toggles, the animation (entrance, word reveal, like tick), the review's line clamp, and the text —
  * the user edits the text of the new card, which keeps its marks' style.
  */
 export const SOCIAL_REROLL_PARAMS: readonly SocialParamName[] = [
@@ -29,6 +30,7 @@ export const SOCIAL_REROLL_PARAMS: readonly SocialParamName[] = [
 	'rating',
 	'date',
 	'title',
+	'edited',
 ];
 
 /** Kept by "Add another" (every param that is not re-randomized). */
@@ -40,9 +42,10 @@ export const SOCIAL_KEEP_PARAMS: readonly SocialParamName[] = SOCIAL_PARAM_NAMES
 export const SOCIAL_ADD_ANOTHER = { reroll: SOCIAL_REROLL_PARAMS } as const;
 
 /** The name a variant shows first: TikTok and X the display name, Instagram and YouTube the handle. */
-const shownName = Object.fromEntries(
-	SOCIAL_VARIANTS.map((v) => [v, VARIANT_CAPABILITIES[v].displayName ? 'displayName' : 'handle']),
-) as Record<string, string>;
+const shownName = Object.fromEntries(SOCIAL_VARIANTS.map((v) => [v, shownNameParam(v)])) as Record<
+	string,
+	string
+>;
 /** What a "Username" means per variant: the handle where the card draws one, else (TikTok) the nickname. */
 const userName = Object.fromEntries(
 	SOCIAL_VARIANTS.map((v) => [v, VARIANT_CAPABILITIES[v].handle ? 'handle' : 'displayName']),

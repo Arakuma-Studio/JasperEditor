@@ -756,12 +756,14 @@ shows; the desktop smoke and packaged-app checks were not run (no xvfb on the se
 Animated platform comment cards (`social-comment@1`, design `docs/superpowers/specs/2026-10-25-social-comment-templates-design.md`).
 **Done when:** all seven comment variants and the three store review cards are drawn faithfully in light and dark, with presets, Properties controls, canvas
 editing, randomize, bulk import and agent batches.
-**Status (in progress):** the template, its animation framework, the two TikTok cards and the X post card are built —
-see [wp-notes/social-comments.md](wp-notes/social-comments.md) "Template implementation" and "X card". The Instagram
-and YouTube cards are not built yet: a clip set to one of them shows a striped "not available yet" card in preview, has
-no gallery preset, and every export path refuses it (`TEMPLATE_NOT_INSTALLED`, e.g. "social-comment@1 (Instagram post
-comment card)"). X card limits: only the blue verified badge (gold / grey need a schema field); the Grok mark is always
-drawn; Chirp is the latin subset, so other scripts fall back to the next font of the stack.
+**Status (in progress):** the template, its animation framework, the two TikTok cards, the two Instagram cards (post
+comment, Reel reply) and the X post card are built — see [wp-notes/social-comments.md](wp-notes/social-comments.md)
+"Template implementation", "Instagram cards: calibration" and "X card". The YouTube cards are not built yet: a clip set
+to one of them shows a striped "not available yet" card in preview, has no gallery preset, and every export path
+refuses it (`TEMPLATE_NOT_INSTALLED`, e.g. "social-comment@1 (YouTube video comment card)"). X card limits: only the
+blue verified badge (gold / grey need a schema field); the Grok mark is always drawn; Chirp is the latin subset, so
+other scripts fall back to the next font of the stack. Instagram card limit: the default avatar is drawn in Instagram's
+style, not from Instagram's own image (no stable public source).
 Store reviews (design §11: `play-store-review`, `app-store-review`, `app-store-review-ios`) are built — "Store
 reviews". Their limits: the iPhone card prints today's iOS ages ("2d ago"), not the weekday ("Sun") of the requester's
 iOS ≤ 14 screenshot (no source for those rules); the App Store web card's dark theme and the Play card's dark theme

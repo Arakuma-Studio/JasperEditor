@@ -2,6 +2,7 @@
 // the desktop, Import…), a generated gradient avatar (with Reshuffle) or the platform's default silhouette — plus
 // "Randomize identity", which writes a made-up display name, matching handle and generated avatar in ONE undo step
 // (a different identity per selected clip).
+import { avatarNameFor } from '@jasper/mg-templates';
 import { cx, Icon, SegmentedControl } from '@jasper/ui';
 import { type DragEvent, useState } from 'react';
 import type { TemplateParamControlProps } from '../extensions/index.ts';
@@ -36,7 +37,8 @@ export function SocialAvatarControl(p: TemplateParamControlProps) {
 	const media = doc?.media ?? {};
 	const mediaId = choice?.kind === 'media' ? choice.mediaId : null;
 	const missing = mediaId !== null && !media[mediaId];
-	const name = typeof p.params.displayName === 'string' ? p.params.displayName : '';
+	// the name the card shows (Instagram / YouTube: the handle), so the preview's initials match the card's
+	const name = avatarNameFor(p.params.variant, p.params);
 
 	const write = (value: unknown): boolean => {
 		const ok = p.onChange(value);

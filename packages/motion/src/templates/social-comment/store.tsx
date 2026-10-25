@@ -10,6 +10,7 @@
 // The like-tick extra fills the stars one by one (`socialStarFill`) and pulses them with the thump (`anim.heart.s`).
 // The long-review clamp (`truncate`) is measured from the laid-out text (like the stage's fit), before paint.
 import {
+	avatarNameFor,
 	formatReviewAge,
 	formatReviewDate,
 	SOCIAL_STAR_COUNT,
@@ -268,7 +269,7 @@ function PlayStoreCard({ params: p, text, anim, assets }: SocialCardProps) {
 						avatar={p.avatar}
 						platform="play-store"
 						size={32}
-						name={p.displayName}
+						name={avatarNameFor(p.variant, p)}
 						fontFamily={PLAY_FONT}
 						assets={assets}
 						style={{ marginRight: 16 }}

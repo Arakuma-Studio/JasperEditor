@@ -523,14 +523,26 @@ Media a template param references are counted wherever a clip's own `mediaId` is
 - **Layer.** `MotionGraphicLayer` builds `AnimeTemplateProps.mediaUrls` (`Readonly<Record<mediaId, url>>`) from the
   document's media handles (`ColorDocContext`, as effect media): `mediaSrc` picks the proxy / display picture when
   the original is not browser-decodable; offline or missing media are absent; `{}` when the params reference none.
+  The media left out are never silent: in the Player each one is reported as `{kind: 'media', mediaId}` (a
+  `MissingTemplateAsset`, listed by the Program monitor's template-asset chip as "Picture med_…") and marked with the
+  striped banner; in a render a medium that is online but not browser-decodable without a display picture fails the
+  render by name ("picture med_… cannot be decoded by the browser and has no display picture"). An offline medium
+  renders as the template's fallback with the planner's `OFFLINE_TEMPLATE_MEDIA` warning (the `OFFLINE_MEDIA` policy).
+  The layer also provides `TemplateMediaIdsContext` (URL → media id) so `TemplateImage` names what failed.
 - **Drawing.** `TemplateImage` (`@jasper/motion/templates`, `packages/motion/src/templates/image.tsx`) is an `<img>`
   (`crossOrigin="anonymous"`) that holds the render with `delayRender` from its first frame until the picture is
-  loaded and decoded (`img.decode()`), like `useFxImages`. A load error releases the render and draws
-  `TemplateImagePlaceholder` (a neutral dashed box) or the template's `fallback`; it never cancels the render.
+  loaded and decoded (`img.decode()`), like `useFxImages`. A load error in a render (`getRemotionEnvironment()
+  .isRendering`) fails it with `cancelRender(new TemplateImageError(url, mediaId))` ("Template picture med_… could not
+  be loaded from <url without its signature>"); in the Player it releases the render, draws
+  `TemplateImagePlaceholder` (a neutral dashed box) or the template's `fallback`, and reports the medium (above).
 - **Exports.** Remotion exports sign every snapshot handle (`remotionProps`); layer bakes sign the media
   `referencedMediaIds` finds in the clip source (template params included) and key the bake on each medium's
-  fingerprint, size and mtime (`keyMedia`), so a relinked avatar re-bakes. The planner warns
-  `OFFLINE_TEMPLATE_MEDIA` when a template shows offline media (those pictures render as placeholders).
+  fingerprint, size and mtime (`keyMedia`), so a relinked avatar re-bakes. The `imports` extension counts template
+  pictures as browser-drawn media, so a still the browser cannot decode (HEIF, EXR, interpreted pixels) gets its
+  `display` picture in bakes and Remotion renders like any image clip. The planner warns `OFFLINE_TEMPLATE_MEDIA`
+  when a template shows offline media (those pictures render as the template's fallback) and refuses media no
+  `<img>` can show — a video, a Lottie animation, a PDF page — with `TEMPLATE_MEDIA_UNDRAWABLE` (409, per-clip
+  blockers naming the medium; `templatePictureProblem`, `apps/engine/src/export/planner.ts`).
 
 ### UI and agents
 
@@ -540,6 +552,12 @@ Media a template param references are counted wherever a clip's own `mediaId` is
   keyframable.
 - MCP `list_motion_templates` lists a media param as `media image` (or `media image|video`); the templates guide says
   what it takes and how it is refused.
+- Preview stills draw the project's media: the one-clip preview document of `render_motion_graphic_preview` (anime
+  templates) and of `add_motion_graphic {dryRun, preview}` gets a `media.register` copy (same id, its bin name, the
+  media it derives from first) of every medium the params reference (`previewMediaCommands`,
+  `apps/mcp/src/tools/templates.ts`), so the engine resolves the same stored file. `render_motion_graphic_preview`
+  takes an optional `projectId` for this; params with a `{mediaId}` and no `projectId` are refused by name
+  (E_INVALID_PARAM), a medium the project lacks with E_NOT_FOUND (`apps/mcp/test/add-motion-graphic.test.ts`).
 
 ### Tests
 
@@ -558,7 +576,8 @@ The test-only template lives in `packages/mg-templates/test/fixtures/avatar-test
 ### Limitations
 
 - `TemplateImage` draws still pictures. A `kinds: ['video']` param resolves to the medium's URL, but no
-  seek-driven template video component exists yet, so templates should declare images (the default).
+  seek-driven template video component exists yet, so templates should declare images (the default); exports of a
+  template showing a video are refused (`TEMPLATE_MEDIA_UNDRAWABLE`).
 - Animated images (GIF / animated WebP) are not offered: an `<img>` animates on the wall clock, which renders could
   not reproduce.
 - `media.derive {replaceInClips}` (processed versions) rewrites clips' own media only; template params keep the
@@ -880,6 +899,100 @@ the Player). Three things in the cards broke that while the entrance moved the c
   - Huge counts overflow the card; they now stay short.
 - **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
 
+### Instagram cards: calibration
+
+Work package WP6b (`sc/v-instagram`): `instagram-post` and `instagram-reel-reply` in
+`packages/motion/src/templates/social-comment/instagram.tsx`. Labels as above, plus **[M-css]** Instagram's own CSS
+variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guidelines.
+
+- **Blueprint:** tokcomment's computed-style dumps (`ref/instagram-post`, `ref/instagram-reels`), copied in CSS px.
+  - Post comment: 420 wide, padding 16/14/6, radius 2, 1 px black/5 % (dark white/5 %) border, no shadow; avatar 36,
+    gap 13; header 12/18 with the badge 10.5 and the time 3 px after it; comment 14 px at 1.3, margins 3 / 5.25; "Reply"
+    row 12/18 3 px below; replies row 10 px below with a 25 × 1 rule (#B5B5B5 / #383838) and 5 + 6 px before the label;
+    like column 25.6 wide (8 px left padding), heart 16 px slot, count 11.04/16.56 6 px under it. Card #FFF / #222328,
+    comment #0F0F0F / #FFF, secondary #888 / #A3A9AF.
+  - Reel reply: `width: fit-content`, at most **255** px (the size tokcomment draws it at on a desktop viewport; its
+    mobile layout is wider with 18 px text, the guide's 305 does not appear in the dumps), padding 16, radius 6,
+    `0 1px 2px` black/5 % shadow (`bleed` 1/2/3/2), a 1 px white/5 % border only in dark; avatar 36, gap 11; comment
+    15 px at 1.375, 3 px above "Replying to username" 13/19.5 (truncated with an ellipsis). Card #FFF / #222328,
+    comment #000 / #FFF, "Replying to" #888 / #A8A8A8.
+- **Font:** SF Pro Text (remote manifest `sf-pro-text-400/600`; `SOCIAL_VARIANT_FONTS`: 400 + 600 on the post, 400 on
+  the Reel card). The iPhone app's system font [M-web, S-3p], the Text cut because every size is below 20 pt.
+  - tokcomment's sizes are kept: SF Pro's cap height is within 1 px of the capture's (2×: "W" 20 vs 19 px, "u" 13 vs
+    13), so no size scaling was needed.
+  - Tracking per size from Apple's SF Pro table [HIG]: 11 px +0.06, 12 px 0, 13 px −0.08, 14 px −0.15, 15 px −0.23
+    (iOS applies it to the system font).
+  - Weights are Instagram's [M], not tokcomment's 500 (which its fallback font drew as 400): username, "Reply" and the
+    replies line 600; comment, time and count 400.
+- **Glyphs:** `INSTAGRAM_GLYPHS` heart outline / filled and verified badge. The heart is drawn 15.5 px in the 16 px
+  slot and the column moves 1.5 px down, so its ink box and centre match tokcomment's lucide heart (30 × 26 px at 2×).
+  While the like tick thumps it, the heart carries `INK_RING`.
+- **Colours added:** mentions and hashtags in `--ig-link` #00376B / #E0F1FF [M-css]; liked heart `--ig-badge` #FF3040
+  [M-css].
+- **Default avatar** (`avatar: null`): Instagram has no stable public source (WP5), and the only unsigned image of its
+  web bundle (`/images/instagram/xig/anonymousUser.jpg`) is the pre-2018 blue-grey bust. The card draws the current
+  look as a vector: a #C7C7C7 disc with a white head (r 8.4 at 24/18.6 in a 48 box) and shoulders (a radius-17 dome
+  whose foot follows the disc) [E: Instagram's grey `#C7C7C7` and the figure's proportions are chosen to match the
+  platform's default, not measured from it]. `INSTAGRAM_DEFAULT_AVATAR` exports the colours and paths.
+  - The disc is SVG geometry, not a CSS `border-radius` clip over a background: that first version made `renderStill`
+    and `renderFrames` differ on a few edge pixels in 3 of 6 runs (Chrome rasterised the clipped edge differently); the
+    SVG version was identical in 12 of 12.
+  - Generated avatars take their initials from the handle (the name the card shows); pictures and generated avatars
+    go through the shared `SocialAvatar`.
+- **Editing on the Program monitor:** the handle (name on the post, "Replying to" on the Reel card) carries
+  `editableParamProps('handle')`; the comment is `CommentText`'s (`text`, marks).
+- **Emoji:** Apple images at 1.2 em, shift −0.22 em (TikTok's metrics): 31 px tall at 2× against the capture's 29 px
+  Noto glyph, centre within 2 px of it on the post, 0.5 px on the Reel card.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/instagram/index.html` (outside the
+  repository), one row per tokcomment capture of both cards, light and dark, plus long names, 0 likes and replies,
+  huge counts, the liked heart, mentions, generated avatar, no profile, and filmstrips of grow-from-tail with word
+  reveal and like tick. Rerun with `REMOTION_E2E=1 SOCIAL_SF_PRO_DIR=<SF-Pro-Text-{Regular,Semibold}.otf>
+  SOCIAL_EMOJI_DIR=<cp>.png dir SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER=instagram pnpm exec
+  vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`, then that directory's
+  `tools/crop.mjs` and `tools/page.mjs`. Additions to the e2e test:
+  - every case starts from its variant's `socialDefaults`, as the captures do (unchanged for TikTok, whose defaults
+    are the schema's);
+  - `SOCIAL_SF_PRO_DIR` loads SF Pro Text 400/600; without it the Instagram cases render in the host's fallback font;
+  - each case's page loads only its variant's font family (as `requiredAssets` does). With every family on every page,
+    the TikTok `comment-light-spring` parity case failed 2 of 2 runs (an icon edge 2/255 off at frames 6 and 146) and
+    passed without SF Pro; with per-variant fonts the whole parity test passes;
+  - `SOCIAL_CALIBRATION_FILTER=instagram` (a regular expression of case names) renders only the Instagram cases.
+- **Measured matches (2× px):** post card 235 px high against 238, Reel card 191 against 192 (dark, with its border:
+  193 against 196); the rest is the 1 px border, which Chrome snaps to whole device pixels under the card's zoom; comment and "Reply" baselines within
+  1 px; "View 5 more replies" within 1 px; heart ink box 30 × 26 at the same place; Reel card 509 px wide against 510.
+
+**Deliberate differences from tokcomment:**
+- **Font:** SF Pro Text instead of Liberation Sans. SF Pro is ≈ 3 % wider: the default comment ends 17 px (2×) further
+  right, and a comment that only just fits on tokcomment wraps one word earlier (the highlighted default text wraps
+  its emoji).
+- **Weights, tracking, glyphs, link and liked colours:** Instagram's, as listed above.
+- **Default avatar:** Instagram's grey silhouette look instead of the hot-linked Twitter default; emoji are Apple
+  images instead of the host's Noto font.
+- **tokcomment bugs fixed:**
+  - the dark-mode username is white (tokcomment's `text-black` overrides its `text-[#ffffff]`, drawing it black);
+  - counts are formatted per Instagram ("1,234", "12.3K", "987.6B"; tokcomment prints "1234567" verbatim);
+  - 0 replies hides the replies row, 1 reply reads "View 1 more reply";
+  - 0 likes shows no number under the heart, as on Instagram;
+  - the like column keeps its width: a long count stays centred under the heart (spilling into the gap and the card's
+    padding) instead of squeezing the comment or pushing the heart.
+- **Like tick:** the count ticks up, then the heart thumps and fills in #FF3040; the Reel card has no likes, so its
+  like tick is ignored (`socialLikesTick`).
+- **Grow from tail:** both cards grow from the avatar corner (`0% 0%`).
+
+**Verification (WP6b, `--maxWorkers=2`):**
+- `packages/motion/test/social-comment.test.tsx`: both cards in both themes; handle, time per unit ("now" … "56w"),
+  badge only when verified, counts and the singular / hidden replies row, no count at 0 likes, huge counts with a fixed
+  like column, the dark username and `--ig-link` mentions, the default / generated / uploaded avatar, `showProfile`,
+  the like tick ending on the red filled heart, the Reel card (no stats or badge, ≤ 255 px), the grow corner.
+- `packages/motion/test/mg-cue-timing.test.ts`: Instagram rows (classic pop and grow from tail × word reveal + like
+  tick on both cards, a short 1.5 s clip at 25 fps): the model equals anime.js frame by frame, cues within ±1 frame.
+- `packages/mg-templates/test/social-comment-template.test.ts`: the Instagram presets and their params, the export
+  blocker lifted, the font entries, and `requiredAssets` (SF Pro Text faces, the comment's emoji, no image).
+- `REMOTION_E2E=1 social-comment-render.e2e.test.ts` (Chrome 156, SF Pro and Apple emoji loaded): `renderStill` =
+  `renderFrames` byte for byte for an Instagram post (1:1, dark, verified, classic pop, word reveal, like tick) and a
+  Reel card (9:16, word reveal); the fit loop keeps both cards inside every canvas with a 1,400-character marked
+  comment, 1e12 counts and 64-character handles.
+
 ### X card
 
 WP6d (`sc/v-x`): `x-post` in `packages/motion/src/templates/social-comment/x.tsx` (`X_POST`). Font: Chirp 400/700
@@ -987,8 +1100,8 @@ Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
 
 ### Limits
 
-- **Variants:** the Instagram and YouTube cards are not built (WP6b–c); the X card is ("X card" above). See
-  `docs/gaps.md` "social-comment".
+- **Variants:** the YouTube cards are not built (WP6c); the Instagram and X cards are ("Instagram cards: calibration",
+  "X card" above). See `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
@@ -1027,9 +1140,14 @@ comments; every motion-graphic template (and the other generator clips) gets it.
 - `clip.addMotionGraphic {fill: {seed}}` runs it on the given params; the given values always win over what it
   returns, then the template defaults are merged under and the params schema (and the template media-param checks:
   missing medium `E_NOT_FOUND`, wrong kind `E_INVALID_PARAM`) validates the result.
-- Layering with presets: defaults → preset → fill → caller params. Callers (MCP, gallery) resolve a preset ref and
-  send `{...preset.params, ...params}` as the given params, so the fill only fills what both leave out and never
-  overrides the preset. The gallery / `mg.insert` never asks for a fill (humans get the preset or the defaults). A refusal, a throw or a
+- Layering with presets: defaults → preset → fill → caller params, with one rule for every new instance —
+  `mgInstanceParams(template, base, given)` (`packages/project/src/registry/mg-params.ts`): presets set the look, so
+  the per-instance params the template re-randomizes (`ui.addAnother.reroll`: social-comment's identity and stats)
+  never come from the preset; the caller gives them or the fill hook picks them. MCP `add_motion_graphic` sends
+  `mgInstanceParams(entry, preset.params, params).params` as the given params; the bulk import (web dialog and MCP,
+  `planMgImport`) starts every row from the same; `clip.duplicateMotionGraphic` applies it to the copied clip's
+  params. The gallery / `mg.insert` never asks for a fill (humans get the preset as shown on its card, or the
+  defaults). A refusal, a throw or a
   non-object result → `E_INVALID_PARAM` (the issues' messages joined into the message). Templates without a hook:
   defaults only, `filled: []`.
 - The command result is `{clipId, sequenceId, trackId, track ("V3"), createdTrack?, start, duration, params,
@@ -1200,8 +1318,11 @@ type TemplateGroupActionProps = { clipIds; params; paramNames; onChangeParams; d
 ### `social-avatar`
 
 - Three sources as a segmented control: **Image** (a project image), **Generated** (`{ generated: seed }`, drawn with
-  `generatedAvatar(seed, displayName)` like the template; **Reshuffle** draws a new seed) and **Default** (`null`, the
-  platform silhouette). A value the control does not understand is shown as the default and replaced by the next pick.
+  `generatedAvatar(seed, avatarNameFor(variant, params))`; **Reshuffle** draws a new seed) and **Default** (`null`, the
+  platform silhouette). `avatarNameFor` (`@jasper/mg-templates` social core, `variants.ts`, with `shownNameParam`) is
+  the name the card shows first — TikTok and X the display name, Instagram and YouTube the handle — so the initials
+  match the card's; the cards should take their generated-avatar name from it too (TikTok and X pass `displayName`
+  today, which is the same). A value the control does not understand is shown as the default and replaced by the next pick.
 - Image: WP1's `MediaParamPicker` (still images only, "None" = default, drops on the field) plus a drop zone over the
   whole control for Project panel items (`droppedMediaId`) and desktop image files, and **Import an image…** (the
   tokcomment upload button), which imports the file into the project root bin through the import service and then
@@ -1370,9 +1491,9 @@ ui.import?: {
 - **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
   `H:MM:SS` and timecode. Starts are capped at 100 h, lengths at 1 h; a length must be ≥ 1 frame.
 - **Presets:** every row starts from the preset's params except the ones the template re-randomizes
-  (`ui.addAnother.reroll`). Rows are new instances: with the TikTok comment preset each row still gets its own
-  identity and stats (the preset's are tokcomment's placeholders). `add_motion_graphic` keeps WP3b's layering, where
-  the preset wins over the fill.
+  (`ui.addAnother.reroll`), through `mgInstanceParams` — the rule `add_motion_graphic` and Add another follow too.
+  Rows are new instances: with the TikTok comment preset each row still gets its own identity and stats (the
+  preset's are tokcomment's placeholders).
 - **Messages** are codes with values (`MG_IMPORT_TEXT`, `mgImportText` for English). The web app translates the
   templates; `pnpm i18n` lists them in the model strings, with the template-ignored reasons.
 - **Placement:** `scheduleMgImport` places included rows one after another from the start (a row's `start` resets
@@ -1414,10 +1535,16 @@ ui.import?: {
 - **`import_motion_graphics_csv`** `{projectId, csv, template ("id", "id:preset", …), delimiter?, startAt?
   (default 0: MCP has no playhead), track? (default V2), seed?, skipInvalid?, dryRun?, sequenceId?}`:
   - runs the same parser, planner and command builder against the engine catalogue entry;
-  - row errors refuse the call with every bad row in `details.rows`, or are skipped with `skipInvalid`;
-  - a refused transaction names its CSV row and line.
-  - MCP has no zod schemas, so only the JSON Schema checks run before the transaction; fill and schema refusals
-    come back from the transaction (first failing row).
+  - row errors refuse the call with every bad row in `details.rows`, or are skipped (and listed in `skipped`) with
+    `skipInvalid`;
+  - MCP has no zod schemas or fill hooks (it does not depend on `@jasper/mg-templates`), so the JSON Schema checks run
+    first and the engine's `clip.addMotionGraphic` — the same `resolveMgTemplateParams` checks the dialog previews
+    with: zod refinements, the fill hook, template media that is not in the project — checks the rest. A command
+    refusal of a row (`E_INVALID_PARAM`, or `E_NOT_FOUND` / `E_SCHEMA` on `params…`) is that row's error: the call
+    runs one transaction on the happy path; after a refusal, dry runs of the rows after the refused one find the
+    next (k refused rows: k + 1 runs, each shorter). Without `skipInvalid` the valid rows are only dry-run so every
+    bad row — coercion and command refusals — is reported together and nothing is imported;
+  - any other refusal (a locked track, a stale revision…) names its CSV row and line and imports nothing.
 - `TEMPLATES_GUIDE` and the server instructions mention both tools.
 
 ### Tests
@@ -1535,15 +1662,27 @@ missing one is a striped "Image … is not available" banner in preview and an e
   text-default emoji character, UTS #51), each with or without U+FE0F per the pack rule — a ZWJ sequence typed without
   VS16 (`🏳‍🌈`) still finds Twemoji's `1f3f3-fe0f-200d-1f308.svg`.
 - Emoji cannot be pinned in advance: the first verified fetch (PNG magic / SVG root, no HTML pages, no active SVG
-  content, size cap) records its SHA-256 in the index; later downloads (cache deleted) must match, else
+  content, size cap) records its SHA-256 in the index. The SVG check (`svgHasActiveContent`, `fetcher.ts`) reads the
+  markup with character references decoded (numeric with or without `;`, the named ones that spell schemes, twice
+  for `&amp;#…`) and refuses script / foreignObject / handler / iframe / embed / object elements under any prefix,
+  event-handler attributes (also `<svg/onload=…>`), `javascript:` / `vbscript:` with whitespace or control characters
+  inside, `href` / `xlink:href` / `src` that are not `#id`, `url(…)` that is not `url(#id)`, `@import`,
+  `<?xml-stylesheet` and `<!ENTITY`. Later downloads (cache deleted) must match, else
   `ASSET_HASH_MISMATCH` — a changed upstream needs a pack version bump in the override, which starts a new
   directory and a new bake key. `fe0f: try-both` tries the full sequence, then the one without U+FE0F (only a 404
   moves on).
 - Limits: per-host concurrency 4, per attempt timeout 30 s (fonts) / 15 s (emoji), size caps 16 MB / 1 MB (declared
   `content-length` and while streaming), 2 retries with 300 ms doubling backoff for network errors, timeouts, 5xx,
   408 and 429 only. Concurrent requests for one file share one download. Prefetch runs ≤ 8 emoji at a time.
+- Prefetch fetches at most `REMOTE_PREFETCH_MAX_EMOJI` (4,096, `@jasper/api`) different emoji per pack per call — a
+  render's whole document (the planner calls the service directly) or the editor's check (the HTTP route's schema
+  takes the same number). Unicode's fully-qualified emoji with every skin-tone and ZWJ form number ≈3,800 (basis:
+  `emoji-test.txt` of Unicode 15.1–16.0), so a real project never reaches it; any emoji over it is reported missing
+  by name (`PREFETCH_LIMIT`, not retryable), which blocks the export through `TEMPLATE_ASSETS_UNAVAILABLE`. Before,
+  the 513th and later emoji of a pack were neither fetched nor reported.
 - Errors are `{code, message, detail?, retryable}`: `REMOTE_ASSET_UNKNOWN` (404), `REMOTE_ASSETS_OFF` (409),
   `DOWNLOAD_NOT_FOUND` (404), `DOWNLOAD_FAILED` / `DOWNLOAD_TIMEOUT` (502 / 504, retryable), `DOWNLOAD_TOO_LARGE`,
+  `PREFETCH_LIMIT` (a prefetch's emoji cap, above),
   `ASSET_HASH_MISMATCH`, `ASSET_BAD_CONTENT` (502), `ASSET_CACHE_WRITE` (500, retryable). Failures are never cached
   (`no-store`).
 - `JASPER_REMOTE_MANIFEST=<file>` replaces the shipped base manifest (tests use an empty one so they never reach the
@@ -1551,6 +1690,10 @@ missing one is a striped "Image … is not available" banner in preview and an e
   log line. The override still applies on top.
 - The manifest override is re-read when its size or mtime changes; an invalid or oversized (> 4 MB) override is
   ignored and reported (`GET /api/remote-assets` → `manifest.override`), never fatal.
+- Every emoji and remote image file is served with `Content-Security-Policy: sandbox; default-src 'none';
+  style-src 'unsafe-inline'; img-src data:` (`REMOTE_IMAGE_CSP`) and `X-Content-Type-Options: nosniff`, so an SVG
+  opened from the engine origin can neither run scripts nor load anything, even one cached before the check above
+  was hardened.
 - Serving: the routes are under `/fonts/`, so session auth, signed URLs for the headless browser (`UrlSigner`
   `SIGNABLE`), the dev proxy and the service worker apply unchanged; emoji keys are validated
   (`graphemeOfEmojiKey`: canonical lower-hex, one emoji grapheme) before anything is fetched, and only the manifest's
@@ -1847,7 +1990,10 @@ Measurements, scripts and screenshots: `/var/lib/orquester/workspaces/jaspersito
   | `truncate` | boolean | true (iPhone: false) | all three |
 
   The iPhone card shows `timeValue` / `timeUnit` as its age. Store cards draw `displayName` (the Google account name /
-  App Store nickname, free text); Play also `avatar` / `showProfile`; the App Store cards have no avatar. Existing
+  App Store nickname, free text); Play also `avatar` / `showProfile`; the App Store cards have no avatar.
+  `shownNameParam` / `avatarNameFor` give `displayName` for all three: the App Store "username" is a free-text
+  nickname ("Laura buck", "Xyz123abc789!*" in the screenshots), which the `handle` schema refuses, so it lives in
+  `displayName`; the Play avatar's initials come from `avatarNameFor`. Existing
   variants' capabilities are unchanged (tested). `likeTick` is offered on the store cards (it fills the stars).
 - **Defaults:** neutral placeholders like tokcomment's ("Display Name", "Review title", "Write any review and see what
   happens 😊"), 4 stars as the Play screenshot, the iPhone age "1y ago" as its first card. The iPhone default is
@@ -1871,7 +2017,8 @@ Measurements, scripts and screenshots: `/var/lib/orquester/workspaces/jaspersito
   weeks < 30, months < 365, years); `randomReviewTitle(rating, seed)` from made-up short titles per star count.
   `randomStats` adds `rating` and `date` for every variant and gives store cards the age of their date.
   `fillSocialParams`: a given date sets the age and a given age the date (they agree), the title suits the rating.
-- **Add another / bulk import** (`bulk.ts`): `rating`, `date` and `title` are re-randomized (a new review);
+- **Add another / bulk import / presets** (`bulk.ts`): `rating`, `date`, `title` and `edited` are in
+  `SOCIAL_REROLL_PARAMS` (re-randomized: a new review; the fill draws `edited` for ≈ 12 % of reviews [E]);
   aliases `Stars`, `Star rating`, `Score` → rating; `Review title`, `Headline` → title; `Review date`, `Date posted`,
   `Posted on` → date; `Review`, `Review text` → text; `Was edited` → edited (`Rating`, `Title`, `Date`, `Edited`,
   `Truncate` match as param names). Date cells (generic, any param with `format: "date"`, `cellIsoDate` in

@@ -548,6 +548,30 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			message: `${templateOffline.size} motion graphic(s) show offline media; those pictures render as placeholders`,
 			itemIds: [...templateOffline],
 		});
+	// Template pictures are drawn as browser images (`TemplateImage`): stills the browser cannot decode get their display
+	// picture (imports extension); media no <img> can show (video, Lottie, PDF pages) block every path by name.
+	const undrawable: { clipId: string; name: string; mediaId: string; what: string }[] = [];
+	for (const c of visual)
+		if ('mg' in c.source)
+			for (const id of collectParamMediaIds(c.source.mg.params)) {
+				const asset = document.media[id];
+				const what = asset && snapshot.media[id] ? templatePictureProblem(asset) : null;
+				if (what) undrawable.push({ clipId: c.clipId, name: c.name, mediaId: id, what });
+			}
+	if (undrawable.length > 0)
+		throw new PlanError(
+			TEMPLATE_MEDIA_UNDRAWABLE,
+			409,
+			`Motion graphics show media templates cannot draw: ${[...new Set(undrawable.map((u) => `${u.mediaId} (${u.what})`))].join(', ')}`,
+			{
+				blockers: undrawable.map((u) => ({
+					itemId: u.clipId,
+					path: 'native' as const,
+					reason: `template picture ${u.mediaId} of clip "${u.name}" is ${u.what}; templates draw still pictures only`,
+				})),
+				hint: 'Pick a still picture (PNG, JPEG, WebP…) for the template param, or None.',
+			},
+		);
 	// LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
 	// offline: those steps are skipped (the clips render ungraded / uninterpreted there), so the export says so.
 	const lutOffline = new Set<string>();
@@ -904,6 +928,22 @@ export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 		rotation: r.probe.rotationDegrees,
 		...mediaDecodeHints(r.probe),
 	};
+}
+
+/** Plan error code for template media params holding media a template cannot draw as a picture. */
+export const TEMPLATE_MEDIA_UNDRAWABLE = 'TEMPLATE_MEDIA_UNDRAWABLE';
+
+/**
+ * Why a medium cannot be a template picture (`TemplateImage` draws still images: an <img>, or its display picture when
+ * the browser cannot decode the original), else null.
+ */
+export function templatePictureProblem(
+	asset: Pick<MediaAsset, 'kind'> & { lottie?: unknown; vector?: { format?: string } | null },
+): string | null {
+	if (asset.kind !== 'image') return `a ${asset.kind} medium`;
+	if (asset.lottie) return 'a Lottie animation';
+	if (asset.vector && asset.vector.format !== 'svg') return `a ${asset.vector.format ?? 'vector'} page`;
+	return null;
 }
 
 /** A motion-graphic clip rendered by Remotion (`renderer: 'anime'`, S11:ATP-002), not by fframes. */
