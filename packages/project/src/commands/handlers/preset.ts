@@ -1,7 +1,8 @@
 // effect.applyPreset (S03:FX-030, FX-010 "applying to N clips is one undo entry", AGT-002 `presets.apply`).
 // The preset is validated first (parseEffectPreset). Per target clip:
 // - intrinsic properties overwrite: Motion (only the properties the preset has), Opacity + Blend Mode, the pinned
-//   Crop (the clip's first `jasper.crop`, created at index 0 when missing), Volume, Panner;
+//   Crop (the stack's first effect when it is a `jasper.crop`, else a new crop inserted at index 0: a preset's Crop
+//   applies first, crop-order), Volume, Panner;
 // - applied effects are appended (or inserted at `index`) as new instances with new ids; every param goes through
 //   `buildParams`, so values are validated and clamped like `effect.add`, and keyframes get new ids;
 // - key times map by the preset type (Scale / Anchor to In / Anchor to Out, effect-presets/time.ts) onto the clip's
@@ -11,12 +12,14 @@
 import type { Draft } from 'immer';
 import { type PresetAnim, parseEffectPreset } from '../../effect-presets/schema.ts';
 import { presetKeyTime } from '../../effect-presets/time.ts';
-import { EASE_PRESETS } from '../../keyframes.ts';
+import { EASE_PRESETS, normalizeKeySides } from '../../keyframes.ts';
+import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { CROP_EFFECT, type EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { intrinsicBoxOf, resolvePropertySpec } from '../../registry/properties.ts';
+import { pinnedCropOf } from '../../render/crop.ts';
 import { dropForeignRotoRefs } from '../../roto/index.ts';
-import type { Animatable, Keyframe, Vec2 } from '../../schema/common.ts';
+import type { Animatable, Keyframe, Spatial, Vec2 } from '../../schema/common.ts';
 import { type Clip, type EffectInstance, isKnownClipKind } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
@@ -35,7 +38,34 @@ type DRec = Draft<Record<string, unknown>>;
 
 function propertyRule(key: string): Rule {
 	const s = resolvePropertySpec(key)!;
-	return { kind: s.kind, range: s.range, options: s.options, holdOnly: s.animatable !== 'continuous' };
+	return {
+		kind: s.kind,
+		range: s.range,
+		options: s.options,
+		holdOnly: s.animatable !== 'continuous',
+		...(s.kind === 'vec2' && s.animatable === 'continuous' && s.spatial ? { spatial: s.spatial } : {}),
+	};
+}
+
+/**
+ * spatial-points: a preset key's spatial path on the target: tangents through the linear part of the value map
+ * (relative Motion scales them like the values), in / out swapped on a reversed clip (content time runs the other way,
+ * so the path is traversed backwards — as pastes do).
+ */
+function presetSpatial(
+	s: Spatial | undefined,
+	reversed: boolean,
+	map?: (v: Vec2) => Vec2,
+): Spatial | undefined {
+	if (!s || !isVec2Value(s.inTangent) || !isVec2Value(s.outTangent)) return undefined;
+	const m = map ?? ((v: Vec2) => v);
+	const out: Spatial = {
+		mode: s.mode,
+		inTangent: m([s.inTangent[0], s.inTangent[1]]),
+		outTangent: m([s.outTangent[0], s.outTangent[1]]),
+		...(s.auto ? { auto: s.auto } : {}),
+	};
+	return reversed ? reversedSpatial(out) : out;
 }
 
 const fit = (box: Box, frame: Box) => Math.min(frame.width / box.width, frame.height / box.height);
@@ -72,6 +102,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			speed: { rate: t.speed.rate, reverse: t.speed.reverse },
 		};
 		const keyTime = (o: number) => presetKeyTime(preset.type, o, source, { timing, rate });
+		const reversed = !!t.speed.reverse;
 
 		/** A preset anim on this clip: mapped key times (deduplicated, later wins), validated values, new ids. */
 		const toAnim = <T>(a: PresetAnim<T>, rule: Rule, label: string, map?: (v: T) => T): Animatable<T> => {
@@ -83,18 +114,30 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			const byTime = new Map<number, Keyframe<T>>();
 			for (const k of [...(a.keyframes ?? [])].sort((x, y) => x.time - y.time)) {
 				const time = keyTime(k.time);
-				byTime.set(time, {
+				const key: Keyframe<T> = {
 					id: h.ids.next('kf'),
 					time,
 					value: val(k.value),
 					interpolation: rule.holdOnly ? 'hold' : (k.interpolation ?? 'linear'),
+					// keyframe-sides: the incoming side travels with the preset (made consistent below).
+					...(k.inInterpolation !== undefined && !rule.holdOnly
+						? { inInterpolation: k.inInterpolation }
+						: {}),
 					easeIn: k.easeIn
 						? { influence: k.easeIn.influence, slope: k.easeIn.slope }
 						: { ...EASE_PRESETS.linear },
 					easeOut: k.easeOut
 						? { influence: k.easeOut.influence, slope: k.easeOut.slope }
 						: { ...EASE_PRESETS.linear },
-				});
+				};
+				// spatial-points: point keys keep their path (map = the linear relative-Motion map: no offset).
+				const spatial =
+					rule.spatial && !rule.holdOnly && isVec2Value(key.value)
+						? presetSpatial(k.spatial, reversed, map as ((v: Vec2) => Vec2) | undefined)
+						: undefined;
+				if (spatial) key.spatial = spatial;
+				normalizeKeySides(key);
+				byTime.set(time, key);
 			}
 			const expression = validExpression(a.expression, label, h);
 			const anim: Animatable<T> = {
@@ -103,6 +146,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 				// Wave expressions: presets carry expressions (AE animation presets do).
 				...(expression ? { expression } : {}),
 			};
+			refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
 			refreshAutoBezier(anim as never);
 			return anim;
 		};
@@ -142,15 +186,23 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 							time: keyTime(k.time),
 							value: clone(k.value),
 							interpolation: k.interpolation ?? 'linear',
+							...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 							easeIn: k.easeIn ?? { ...EASE_PRESETS.linear },
 							easeOut: k.easeOut ?? { ...EASE_PRESETS.linear },
+							// spatial-points: effect points keep their path (`buildParams` keeps it on point params only).
+							...(p.spatial && k.spatial ? { spatial: presetSpatial(k.spatial, reversed) } : {}),
 						}))
 						// Keys mapped onto the same frame: the later one wins (as pastes do).
 						.filter((k, i, arr) => arr[i + 1]?.time !== k.time),
 					...(a.expression ? { expression: clone(a.expression) } : {}),
 				};
 			}
-			return buildParams(spec, out, h);
+			return buildParams(
+				spec,
+				out,
+				h,
+				intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: t as Clip }),
+			);
 		};
 
 		const done: string[] = [];
@@ -201,7 +253,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			const spec = h.registries.effects.get(CROP_EFFECT.id) ?? CROP_EFFECT;
 			const params = paramsFor(spec, intrinsic.crop.params as Record<string, PresetAnim<unknown>>);
 			const list = effects();
-			const existing = list.find((fx) => fx.effectId === CROP_EFFECT.id);
+			const existing = pinnedCropOf(list);
 			if (existing) {
 				existing.params = params as never;
 				existing.enabled = intrinsic.crop.enabled ?? true;

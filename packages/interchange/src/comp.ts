@@ -8,13 +8,13 @@
 // serialisers convert to and from edit units (frames for picture, samples for sound, so audio edits are exact).
 //
 // Port of FilmCraft `crates/interchange/src/comp.rs` (MIT OR Apache-2.0).
-import { type Animatable, type Keyframe, transitionSpec } from '@jasper/project';
+import { type Animatable, type Keyframe, segmentShape, transitionSpec } from '@jasper/project';
 import { Builder, dbToGain, describeClip, frameOf, gainToDb, newClip, reportVisualLoss } from './build.ts';
-import { transitionFromName } from './effects.ts';
+import { transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import { FLICKS } from './model.ts';
 import type { EssenceKey, ImportOptions, MediaOptions } from './options.ts';
-import { fileName, fileStem, resolvePath } from './paths.ts';
+import { fileName, fileStem, relativeReference, resolvePath } from './paths.ts';
 import type { Report } from './report.ts';
 import { bigDivRound } from './time.ts';
 import { wavFile } from './wav.ts';
@@ -271,7 +271,12 @@ export function fromProject(
 		const v = c.volumeDb;
 		if (v?.keyframes.length) {
 			const linear = !v.keyframes.every((k) => k.interpolation === 'hold');
-			if (v.keyframes.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold'))
+			// keyframe-sides: any curved segment (also a Linear key into an eased incoming side).
+			if (
+				v.keyframes.some(
+					(_, i) => i < v.keyframes.length - 1 && typeof segmentShape(v.keyframes, i) === 'object',
+				)
+			)
 				report.info('Bezier volume keyframes were exported as linear');
 			const sp = Math.abs(c.speed) > 1e-9 ? Math.abs(c.speed) : 1;
 			return {
@@ -297,6 +302,21 @@ export function fromProject(
 			const a = tr.from ? idx.get(tr.from) : undefined;
 			const b = tr.to ? idx.get(tr.to) : undefined;
 			const end = tr.start + tr.duration;
+			// Only the transition's type (a JasperEditor comment) and its span travel: its params (a Custom Fade's
+			// fade shape, a GPU transition's options) do not.
+			if ((sub === null || sub === 0) && Object.keys(tr.params ?? {}).length > 0)
+				report.warn(
+					`the parameters of transition "${transitionLabel(tr.effectId)}" (${Object.keys(tr.params).join(', ')}) are not carried by ${formatName}`,
+					{
+						subject: {
+							kind: 'transition',
+							id: tr.id,
+							name: transitionLabel(tr.effectId),
+							frame: frameOf(tr.start, rate),
+						},
+						instead: 'the transition with its default parameters',
+					},
+				);
 			if (
 				a !== undefined &&
 				b !== undefined &&
@@ -582,6 +602,7 @@ export function toProject(doc: CDocument, opts: ImportOptions, report: Report): 
 				name: display || 'Media',
 				kind: pic ? (isStill(pic) ? 'image' : 'video') : 'audio',
 				path,
+				relativePath: path && first.path ? relativeReference(first.path) : null,
 				duration: Math.max(0, ...srcs.map((s) => s.length)) || null,
 				...(pic
 					? { video: { width: Math.max(1, pic.width), height: Math.max(1, pic.height), rate: pic.frameRate } }

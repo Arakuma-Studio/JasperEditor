@@ -1,11 +1,13 @@
 // Media paths and file URLs (POSIX, Windows drive and UNC paths), without any file-system access.
+import { classifyPath, isAbsoluteAnywhere } from '@jasper/project';
 
 function isWindowsAbs(p: string): boolean {
-	return /^[A-Za-z]:[/\\]/.test(p);
+	return classifyPath(p) === 'windows';
 }
 
+/** Absolute on some operating system (POSIX, Windows drive or UNC; see `classifyPath`). */
 export function isAbsolutePath(p: string): boolean {
-	return p.startsWith('/') || p.startsWith('\\\\') || isWindowsAbs(p);
+	return isAbsoluteAnywhere(p);
 }
 
 function percentDecode(s: string): string {
@@ -131,6 +133,17 @@ function join(base: string, rel: string): string {
 		} else parts.push(seg);
 	}
 	return parts.join(sep);
+}
+
+/**
+ * The relative path a document wrote for a media reference (`Footage/a.mov`, `..\\Media\\a.mov`, or a relative
+ * file URL), kept as the media's project-relative path; null for absolute paths and non-file URLs.
+ */
+export function relativeReference(reference: string): string | null {
+	const r = reference.trim();
+	if (!r || (/^[a-z][a-z0-9+.-]*:\/\//i.test(r) && !/^file:/i.test(r))) return null;
+	const p = fileUrlToPath(r);
+	return isAbsolutePath(p) || /^file:/i.test(p) ? null : p;
 }
 
 /** A media reference from a document: file URLs become paths; relative paths are joined to `baseDir`. */

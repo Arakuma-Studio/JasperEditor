@@ -12,6 +12,7 @@ import {
 	buildRenderSnapshot,
 	type Clip,
 	type ClipboardPayload,
+	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	collectParamMediaIds,
 	loadProject,
@@ -327,11 +328,15 @@ describe('validation of template media params (validateMgParams, param.set)', ()
 	});
 });
 
-describe('schema v8 (template media params)', () => {
-	it('the v8 fixture keeps its template media references through the load pipeline', () => {
-		const raw = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'schema-v8.jasper'), 'utf8'));
-		const r = loadProject(raw, { mgTemplates: avatarRegistries().mgTemplates });
+describe('schema v9 (template media params)', () => {
+	const fixture = (v: number) =>
+		JSON.parse(readFileSync(join(__dirname, 'fixtures', `schema-v${v}.jasper`), 'utf8'));
+
+	it('the v9 fixture keeps its template media references through the load pipeline', () => {
+		const r = loadProject(fixture(9), { mgTemplates: avatarRegistries().mgTemplates });
+		expect(CURRENT_SCHEMA_VERSION).toBe(9);
 		expect(r.readOnly).toBe(false);
+		expect(r.migration.steps).toEqual([]);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		const clip = r.document.sequences.seq_000000000000SEQ1!.clips.clp_00000000000MG001 as Mg;
@@ -341,6 +346,23 @@ describe('schema v8 (template media params)', () => {
 			clips: 1,
 			sequences: ['seq_000000000000SEQ1'],
 		});
+	});
+
+	it('v7 and v8 (Premiere port) projects migrate to v9 through both steps, the v8 Crop order kept', () => {
+		const v7 = loadProject(fixture(7));
+		expect(v7.readOnly).toBe(false);
+		expect(v7.migration.steps).toEqual(['v7→v8', 'v8→v9']);
+		expect(v7.document.schemaVersion).toBe(9);
+		const v8 = loadProject(fixture(8));
+		expect(v8.readOnly).toBe(false);
+		expect(v8.migration.steps).toEqual(['v8→v9']);
+		expect(v8.document.schemaVersion).toBe(9);
+		expect(v8.repairs).toEqual([]);
+		const effects = Object.values(v8.document.sequences.seq_000000000000SEQ1!.clips).flatMap((c) =>
+			'effects' in c ? c.effects.map((e) => e.effectId) : [],
+		);
+		// v8 renders Crop where it sits; the v8 → v9 step must not move it back to the front.
+		expect(effects).toEqual(['jasper.mirror', 'jasper.crop']);
 	});
 });
 

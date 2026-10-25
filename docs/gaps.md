@@ -86,7 +86,7 @@ Premiere's full keyframe and blend-mode behaviour. **Done when:** all 27 Premier
 preview and native export (oracle-tested against the published formulas), keyframe interpolation covers linear,
 Bezier, auto Bezier, continuous Bezier, hold, ease in/out with temporal and spatial variants, and every one is
 editable in Effect Controls and through MCP.
-**Status (merged):** done — see [wp-notes/keyframes-blend.md](wp-notes/keyframes-blend.md): Premiere's 27 blend modes native and in preview (native pixels in `apps/engine/test/blend-export.test.ts`, WebGL contracts in `packages/compositions/test/blend-gl.test.ts`, mixed-stack native/Remotion parity in `apps/engine/test/compositor-export.e2e.test.ts`), auto / continuous Bezier and the temporal / spatial variants. Limits: blend modes inside nests export through Remotion; GL modes need HTML-in-Canvas (scope nesting lifted by `compositor`).
+**Status (merged):** done — see [wp-notes/keyframes-blend.md](wp-notes/keyframes-blend.md): Premiere's 27 blend modes native and in preview (native pixels in `apps/engine/test/blend-export.test.ts`, WebGL contracts in `packages/compositions/test/blend-gl.test.ts`, mixed-stack native/Remotion parity in `apps/engine/test/compositor-export.e2e.test.ts`), auto / continuous Bezier and the temporal / spatial variants; separate incoming / outgoing temporal interpolation per key (Premiere's Ease In / Ease Out set one side) since keyframe-sides ([wp-notes/keyframe-sides.md](wp-notes/keyframe-sides.md)). Spatial (curved) paths on effect point params — Transform Position / Anchor Point, Offset Shift Center To and every effect point, timed by arc length in layer pixels, with a Program-monitor path and FCPXML Linear / Smooth mapping — since spatial-points ([wp-notes/spatial-points.md](wp-notes/spatial-points.md)). Limits: blend modes inside nests export through Remotion; GL modes need HTML-in-Canvas (scope nesting lifted by `compositor`).
 
 ### golden-fuzz
 Evidence that features stay correct. **Done when:** golden-frame tests pin preview and export output for every effect
@@ -126,7 +126,7 @@ the timeline) works as one undoable step.
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,
 markers and basic effects, with round-trip tests through the reference implementations' fixtures.
-**Status (merged):** done — see [wp-notes/interchange.md](wp-notes/interchange.md): FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in process (D-40), round trips tested (`packages/interchange/test/*`), pre-renders of what a format cannot carry, Link Media. Per-format losses in its §7; never tried on files exported by Premiere.
+**Status (merged):** done — see [wp-notes/interchange.md](wp-notes/interchange.md): FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in process (D-40), round trips tested (`packages/interchange/test/*`), pre-renders of what a format cannot carry, Link Media (relink one file and the others are found from its folder mapping, Windows/UNC paths kept on macOS/Linux: [wp-notes/link-media.md](wp-notes/link-media.md); Tape Name / Description / Clip ID matching unavailable — documents do not record them — and shown disabled). Per-format losses in its §7; never tried on files exported by Premiere.
 
 ### edit-structure
 **Done when:** nested sequences (Nest…, sequences as clips, open in timeline), group / ungroup, adjustment layers,

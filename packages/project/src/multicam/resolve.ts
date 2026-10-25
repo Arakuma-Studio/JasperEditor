@@ -12,7 +12,7 @@
 // Motion is animated, or the composition would need a skew (inner rotation with a non-uniform outer scale), the
 // composed Motion/Opacity are sampled per frame.
 import { contentTimeAt } from '../derive/index.ts';
-import { evaluate } from '../keyframes.ts';
+import { evaluate, reversedKeyTiming } from '../keyframes.ts';
 import { layerMatrix, type Mat2D, multiplyMatrix } from '../render/transform.ts';
 import type { Animatable, Keyframe, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -139,6 +139,17 @@ export function retimeAnim<T>(a: Animatable<T>, m: Affine): Animatable<T> {
 	if (a.keyframes.length === 0) return a;
 	const keys = a.keyframes.map((k) => ({ ...k, time: Math.round(apply(m, k.time)) }));
 	if (m.b < 0) {
+		// keyframe-sides: keys with an explicit incoming side are mirrored exactly (`reversedKeyTiming`); the others
+		// swap their eases as before.
+		const sided = a.keyframes.some((k) => k.inInterpolation !== undefined);
+		if (sided)
+			keys.forEach((k, i) => {
+				const t = reversedKeyTiming(a.keyframes as readonly Keyframe<unknown>[], i);
+				k.interpolation = t.interpolation;
+				k.easeIn = { ...t.easeOut };
+				k.easeOut = { ...t.easeIn };
+				delete k.inInterpolation;
+			});
 		keys.reverse();
 		for (const k of keys) {
 			const e = k.easeIn;

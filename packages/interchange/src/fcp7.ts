@@ -8,8 +8,10 @@
 // id), `generatoritem`s (Slug/Black Video, Color, Bars and Tone, Transparent Video, Counting Leader),
 // `transitionitem`s (alignment, Premiere transition names), and the filters Basic Motion (scale, rotation,
 // center, anchor point), Opacity, Crop, Time Remap (constant speed, reverse, freeze), Audio Levels and Audio Pan,
-// all with keyframes; `compositemode` blend modes. Other effects are written with their JasperEditor id and read
-// back by id or by display name; anything unknown is reported.
+// all with keyframes; `compositemode` blend modes. Premiere's Pitch Shifter (match name / "Transpose Ratio") is
+// read into, and the Pitch Shifter written as, Premiere's normalised representation (premiere-pitch-shifter.ts).
+// Other effects are written with their JasperEditor id and read back by id or by display name; anything unknown is
+// reported.
 //
 // Coordinates (FilmCraft's reading of the xmeml description): Basic Motion `center` is relative to the frame
 // centre as a fraction of the frame width/height (0,0 = centred); `centerOffset` (anchor) likewise relative to
@@ -17,14 +19,18 @@
 //
 // Port of FilmCraft `crates/interchange/src/fcp7.rs` (MIT OR Apache-2.0), extended (bins and master clips on
 // export, crop, ticks above 2^53, blend modes, generators, channel mapping, hold filters).
-import type {
-	Animatable,
-	EffectInstance,
-	Interpolation,
-	Keyframe,
-	LabelColor,
-	Transform,
-	Vec2,
+import {
+	type Animatable,
+	CUSTOM_FADE,
+	clampFadeValue,
+	type EffectInstance,
+	type InInterpolation,
+	type Interpolation,
+	type Keyframe,
+	type LabelColor,
+	PITCH_SHIFTER_EFFECT_ID,
+	type Transform,
+	type Vec2,
 } from '@jasper/project';
 import { blendFromFcp7, fcp7BlendName } from './blend.ts';
 import {
@@ -44,7 +50,7 @@ import {
 	sourceOut,
 	unscaled,
 } from './build.ts';
-import { effectSpecOf, transitionFromName, transitionLabel } from './effects.ts';
+import { effectSpecOf, knownTransition, transitionFromName, transitionLabel } from './effects.ts';
 import type {
 	IBinEntry,
 	IClip,
@@ -59,7 +65,27 @@ import type {
 	Rate,
 } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
-import { fileName, isAbsolutePath, kindFromExtension, pathToFileUrl, resolvePath } from './paths.ts';
+import {
+	fileName,
+	isAbsolutePath,
+	kindFromExtension,
+	pathToFileUrl,
+	relativeReference,
+	resolvePath,
+} from './paths.ts';
+import { premiereAudioTransition, premiereFadeShapeOf, premiereShapeType } from './premiere-audio-fades.ts';
+import {
+	isPremierePitchShifter,
+	jasperPitchToPremiere,
+	PREMIERE_PITCH_SHIFTER_MATCH_NAME,
+	premierePitchField,
+	premierePitchShifterToJasper,
+} from './premiere-pitch-shifter.ts';
+import {
+	type PremiereParam,
+	premiereTransitionForMatchName,
+	premiereTransitionParams,
+} from './premiere-transitions.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
 	flicksPerFrame,
@@ -364,7 +390,17 @@ class Fcp7Importer {
 		if (pathUrl) {
 			const isUrl = /^(https?|s3|gs):/i.test(pathUrl);
 			const path = isUrl ? null : resolvePath(pathUrl, this.opts.baseDir);
-			id = this.b.media(`file:${path ?? pathUrl}`, { ...init, kind, path, url: isUrl ? pathUrl : null }, bin);
+			id = this.b.media(
+				`file:${path ?? pathUrl}`,
+				{
+					...init,
+					kind,
+					path,
+					url: isUrl ? pathUrl : null,
+					relativePath: isUrl ? null : relativeReference(pathUrl),
+				},
+				bin,
+			);
 		} else {
 			this.report.warn(`file "${name}" has no pathurl; imported offline`, {
 				subject: { kind: 'media', name },
@@ -926,6 +962,45 @@ class Fcp7Importer {
 				return;
 			}
 		}
+		// Premiere's Pitch Shifter (normalised Transpose Ratio, …) → JasperEditor's Pitch Shifter (semitones + cents).
+		if (
+			kind === 'audio' &&
+			isPremierePitchShifter(
+				id,
+				name,
+				params.flatMap((p) => [childText(p, 'name'), childText(p, 'parameterid')]),
+			)
+		) {
+			const ratioParam = params.find(
+				(p) =>
+					premierePitchField(childText(p, 'name')) === 'ratio' ||
+					premierePitchField(childText(p, 'parameterid')) === 'ratio',
+			);
+			const max = ratioParam ? childNum(ratioParam, 'valuemax') : null;
+			const m = premierePitchShifterToJasper(
+				{
+					params: params.map((p) => ({
+						...premiereParamOf(p, rate),
+						id: childText(p, 'parameterid') ?? undefined,
+					})),
+					bypass: !enabled,
+					instanceName: name,
+					...(max !== null && max > 1.5 ? { ratioScale: 'ratio' as const } : {}),
+					snap: (t) => framesToFlicks(flicksToFrames(t, rate), rate),
+				},
+				this.report,
+				{ kind: 'effect', name: 'Pitch Shifter' },
+			);
+			clip.effects.push({
+				id: this.b.id('fx'),
+				effectId: m.effectId,
+				effectVersion: m.effectVersion,
+				enabled: m.enabled,
+				params: m.params,
+				...(m.name ? { name: m.name } : {}),
+			});
+			return;
+		}
 		const spec = effectSpecOf(id, kind) ?? effectSpecOf(name, kind);
 		if (!spec) {
 			this.report.warn(`effect "${name}" on clip "${clip.name}" is not supported and was skipped`, {
@@ -978,7 +1053,54 @@ class Fcp7Importer {
 		if (e <= s) return;
 		const eff = child(c, 'effect');
 		const name = childText(eff, 'name') || childText(eff, 'effectid') || 'Cross Dissolve';
-		const effectId = transitionFromName(name, kind === 'audio', this.report);
+		const audio = kind === 'audio';
+		// The name, else the effect id (a localised Premiere writes its display name, e.g. "Potencia constante").
+		const eid = childText(eff, 'effectid');
+		// Third-party Premiere transitions are recognised by their MatchName (`effectid`), whose display name may
+		// collide with a built-in one (Universe "Slide"), with their parameters converted (premiere-transitions.ts).
+		const matchName = eid ?? '';
+		const mapped = audio ? null : premiereTransitionForMatchName(matchName);
+		let effectId =
+			mapped ??
+			knownTransition(name, audio) ??
+			(eid ? knownTransition(eid, audio) : null) ??
+			transitionFromName(name, audio, this.report);
+		let params: ITransition['params'] = mapped
+			? premiereTransitionParams(
+					matchName,
+					children(eff, 'parameter').map((p) => premiereParamOf(p, rate)),
+					this.report,
+					{ kind: 'transition', name, frame: start },
+				)
+			: {};
+		if (audio) {
+			// Premiere's fade shape (FadeShapeType / FadeShapeValue / CrossfadeSymmetry) as transition parameters.
+			const param = (...ids: string[]): string | undefined => {
+				for (const x of children(eff, 'parameter'))
+					if (ids.includes((childText(x, 'parameterid') ?? '').toLowerCase()))
+						return childText(x, 'value') ?? undefined;
+				return undefined;
+			};
+			const r = premiereAudioTransition(
+				effectId,
+				{
+					type: param('fadeshapetype', 'fadeshape'),
+					value: param('fadeshapevalue', 'fadevalue'),
+					symmetry: param('crossfadesymmetry', 'symmetry'),
+				},
+				this.report,
+				{ name, frame: start },
+			);
+			effectId = r.effectId;
+			params = r.params;
+			if (effectId === CUSTOM_FADE) {
+				const outType = premiereShapeType(param('outfadeshape'));
+				const outValue = Number(param('outfadevalue'));
+				if (outType) params.outFadeShape = { value: outType, keyframes: [] };
+				if (param('outfadevalue') !== undefined && Number.isFinite(outValue))
+					params.outFadeValue = { value: clampFadeValue(outValue), keyframes: [] };
+			}
+		}
 		const align = (childText(c, 'alignment') ?? '').toLowerCase();
 		let from: IClip | undefined;
 		let to: IClip | undefined;
@@ -1019,7 +1141,7 @@ class Fcp7Importer {
 			start: s,
 			duration: e - s,
 			alignment,
-			params: {},
+			params,
 		});
 		t.transitions.sort((a, b) => a.start - b.start);
 	}
@@ -1069,6 +1191,25 @@ function readParam(p: XNode, map: (v: number) => number, rate: Rate): Animatable
 	}
 	finishKeys(out);
 	return out;
+}
+
+/** A transition `<parameter>` as a Premiere parameter (name, value, keyframes in flicks from the span start). */
+function premiereParamOf(p: XNode, rate: Rate): PremiereParam {
+	const scalar = (n: XNode | null): number | string | null => {
+		const t = childText(n, 'value');
+		if (t === null) return null;
+		const x = Number(t);
+		return t.trim() !== '' && Number.isFinite(x) ? x : t;
+	};
+	return {
+		name: childText(p, 'name') ?? childText(p, 'parameterid') ?? '',
+		value: scalar(p),
+		keyframes: children(p, 'keyframe').map((k) => ({
+			time: keyTime(k, rate),
+			value: scalar(k) ?? 0,
+			interpolation: interpOf(k),
+		})),
+	};
 }
 
 function readXY(v: XNode | null): [number, number] {
@@ -1525,6 +1666,23 @@ class Fcp7Exporter {
 		w.text('effectcategory', kind === 'audio' ? 'Crossfade' : 'Dissolve')
 			.text('effecttype', 'transition')
 			.text('mediatype', kind);
+		if (x.effectId === CUSTOM_FADE) {
+			// Premiere's fade shape fields; an asymmetrical crossfade's fade out as JasperEditor parameters.
+			const shape = premiereFadeShapeOf(x.params);
+			const out = premiereFadeShapeOf({
+				fadeShape: x.params.outFadeShape ?? { value: 'cosine', keyframes: [] },
+				fadeValue: x.params.outFadeValue ?? { value: 19, keyframes: [] },
+			});
+			const param = (id: string, label: string, value: number | string) =>
+				w.open('parameter').text('parameterid', id).text('name', label).text('value', value).close();
+			param('FadeShapeType', 'Fade Shape', shape.FadeShapeType);
+			param('FadeShapeValue', 'Fade Value', shape.FadeShapeValue);
+			param('CrossfadeSymmetry', 'Crossfade Symmetry', shape.CrossfadeSymmetry);
+			if (shape.CrossfadeSymmetry === 1) {
+				param('outFadeShape', 'Fade Out Shape', out.FadeShapeType === 1 ? 'cosine' : 'linear');
+				param('outFadeValue', 'Fade Out Value', out.FadeShapeValue);
+			}
+		}
 		w.close().close();
 	}
 
@@ -1803,14 +1961,22 @@ class Fcp7Exporter {
 		this.w.open('parameter').text('parameterid', id).text('name', name).text('value', value).close();
 	}
 
-	interp(i: Interpolation): void {
-		if (i === 'linear') return;
+	/**
+	 * FCP 7 has one interpolation per keyframe (FCPCurve: its own 40-segment power curve, not After Effects' Bézier).
+	 * keyframe-sides: a key with its own incoming side is a curve when either side curves (Hold stays a hold).
+	 */
+	interp(i: Interpolation, inSide?: InInterpolation): void {
+		if (i === 'linear' && (inSide === undefined || inSide === 'linear')) return;
 		this.w
 			.open('interpolation')
 			.text('name', i === 'hold' ? 'hold' : 'FCPCurve')
 			.close();
 		if (i !== 'hold')
 			this.report.info('Bezier keyframe easing is written as FCP curve keyframes (handles not kept)');
+		if (inSide !== undefined && i !== 'hold' && inSide !== i)
+			this.report.info(
+				'Separate incoming / outgoing keyframe interpolation is written as one FCP interpolation',
+			);
 	}
 
 	numParam(
@@ -1834,7 +2000,7 @@ class Fcp7Exporter {
 			w.open('keyframe')
 				.text('when', flicksToFrames(k.time, rate))
 				.text('value', exactNum(map(k.value)));
-			this.interp(k.interpolation);
+			this.interp(k.interpolation, k.inInterpolation);
 			w.close();
 		}
 		w.close();
@@ -1847,6 +2013,12 @@ class Fcp7Exporter {
 		rate: Rate,
 		map: (v: Vec2) => [number, number],
 	): void {
+		// spatial-points: FCP 7 XML point keyframes are written as values with one temporal interpolation; the spatial
+		// path (Linear / Bezier / Auto Bezier tangents) is not mapped, so the receiving application decides the curve.
+		if (a.keyframes.some((k) => (k.spatial?.mode ?? 'linear') !== 'linear'))
+			this.report.warn(`the curved motion path of ${name} is not carried by FCP 7 XML (key values only)`, {
+				instead: 'the key values, with the receiving application’s own path between them',
+			});
 		const w = this.w;
 		w.open('parameter').text('parameterid', id).text('name', name);
 		const [x, y] = map(a.value);
@@ -1855,7 +2027,7 @@ class Fcp7Exporter {
 			const [kx, ky] = map(k.value);
 			w.open('keyframe').text('when', flicksToFrames(k.time, rate));
 			w.open('value').text('horiz', exactNum(kx)).text('vert', exactNum(ky)).close();
-			this.interp(k.interpolation);
+			this.interp(k.interpolation, k.inInterpolation);
 			w.close();
 		}
 		w.close();
@@ -1872,6 +2044,10 @@ class Fcp7Exporter {
 			const fe = e.params.feather as Animatable<number> | undefined;
 			if (fe) this.numParam('edgefeather', 'Edge Feather', 0, 1000, fe, rate, (v) => v);
 			this.closeEffect();
+			return;
+		}
+		if (e.effectId === PITCH_SHIFTER_EFFECT_ID && kind === 'audio') {
+			this.premierePitchShifter(c, e, rate, where);
 			return;
 		}
 		const spec = effectSpecOf(e.effectId);
@@ -1921,6 +2097,41 @@ class Fcp7Exporter {
 					},
 				);
 		}
+		this.closeEffect();
+	}
+
+	/**
+	 * JasperEditor's Pitch Shifter in Premiere's representation (premiere-pitch-shifter.ts): Premiere's match name as
+	 * the effect id, the normalised Transpose Ratio (keyframes kept, intermediate keys where the curves would differ),
+	 * Precision High, Use Appropriate Default Settings on and Use Positive Cents from the sign of the cents.
+	 */
+	premierePitchShifter(
+		c: IClip,
+		e: IClip['effects'][number],
+		rate: Rate,
+		where: { kind: 'effect'; id: string; name: string; frame: number },
+	): void {
+		const subject = { ...where, name: 'Pitch Shifter' };
+		const p = jasperPitchToPremiere(e.params, this.report, subject, (t) =>
+			framesToFlicks(flicksToFrames(t, rate), rate),
+		);
+		if (e.name)
+			this.report.info(
+				`the instance name "${e.name}" of the Pitch Shifter on clip "${c.name}" is not carried by Final Cut Pro XML`,
+				{ subject, instead: 'the effect name "Pitch Shifter"' },
+			);
+		this.openEffect(
+			'Pitch Shifter',
+			PREMIERE_PITCH_SHIFTER_MATCH_NAME,
+			'Time and Pitch',
+			'filter',
+			'audio',
+			e.enabled,
+		);
+		this.numParam('ADBE Pitch Shifter-0001', 'Transpose Ratio', 0, 1, p.ratio, rate, (v) => v);
+		this.simpleParam('ADBE Pitch Shifter-0002', 'Precision', '1');
+		this.simpleParam('ADBE Pitch Shifter-0005', 'Use Appropriate Default Settings', '0.75');
+		this.simpleParam('ADBE Pitch Shifter-0006', 'Use Positive Cents', p.positiveCents ? '0.75' : '0.25');
 		this.closeEffect();
 	}
 }

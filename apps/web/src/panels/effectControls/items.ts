@@ -1,6 +1,9 @@
 // Effect Controls content model (S03:EC-003, S05:ECP-003/008): Video and Audio groups with the
 // intrinsic effects (Motion, Opacity, pinned Crop, Template parameters; Volume, Panner) followed by the
 // applied effects in stack order. Unknown effects show as "Missing effect: <id>" (S01:FX-022).
+// crop-order (schema v8): Crop renders where it sits in the stack. The pinned Crop section shows a crop at the top of
+// the stack (stack index 0, draggable like an effect header) or, when the clip has no crop, registry defaults whose
+// first edit adds one at index 0; a crop placed after other effects is listed with them at its stack position.
 import {
 	type Clip,
 	CORNER_PIN_EFFECT_ID,
@@ -16,6 +19,7 @@ import {
 	type PuppetMesh,
 	type PuppetPin,
 	paramsPropertySpecs,
+	pinnedCropOf,
 	propertyDefault,
 	puppetPinPropertySpec,
 	puppetPinPropsOf,
@@ -36,7 +40,6 @@ import {
 	bindCrop,
 	bindEffectParam,
 	bindProperty,
-	cropEffectOf,
 	isAudioClip,
 	isVisualClip,
 	makeRow,
@@ -290,7 +293,9 @@ export function buildGroups(
 			keys.map((k) => makeRow(k, [prop(k)])).filter((r): r is Row => r !== null);
 		const sections: FxSection[] = [];
 		const effects = (clip as { effects?: EffectInstance[] }).effects ?? [];
-		const pinned = isVisualClip(clip) ? cropEffectOf(clip) : null;
+		const pinned = isVisualClip(clip) ? pinnedCropOf(effects) : null;
+		// The pinned section (defaults that create a crop at index 0) only while the clip has no crop elsewhere.
+		const showPinnedCrop = !!pinned || !effects.some((e) => e.effectId === CROP_EFFECT.id);
 		// cameras and lights (After Effects' Transform / Camera Options / Light Options groups).
 		if (clip.kind === 'camera' || clip.kind === 'light') {
 			const k = clip.kind;
@@ -431,19 +436,20 @@ export function buildGroups(
 					intrinsic: true,
 					rows: [],
 				});
-			sections.push({
-				id: `${clip.id}:crop`,
-				title: 'Crop',
-				clip,
-				intrinsic: true,
-				fx: pinned ?? undefined,
-				effect: CROP_EFFECT,
-				stackIndex: pinned ? effects.indexOf(pinned) : undefined,
-				rows: CROP_EFFECT.params
-					.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
-					.filter((r): r is Row => r !== null),
-				...(pinned ? { masks: maskList(doc, seq, clip, pinned.masks, pinned.id, frame) } : {}),
-			});
+			if (showPinnedCrop)
+				sections.push({
+					id: `${clip.id}:crop`,
+					title: 'Crop',
+					clip,
+					intrinsic: true,
+					fx: pinned ?? undefined,
+					effect: CROP_EFFECT,
+					stackIndex: pinned ? 0 : undefined,
+					rows: CROP_EFFECT.params
+						.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
+						.filter((r): r is Row => r !== null),
+					...(pinned ? { masks: maskList(doc, seq, clip, pinned.masks, pinned.id, frame) } : {}),
+				});
 			if (clip.kind === 'shape' && clip.shape.type !== 'vector')
 				sections.push({
 					id: `${clip.id}:shape`,

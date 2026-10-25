@@ -12,6 +12,7 @@ import type { NativeExtension } from '../export/native-ext.ts';
 import type { PlanCapabilities } from '../export/planner.ts';
 import { ExportService, type MgMasterProvider } from '../export/service.ts';
 import { FontCatalogService } from '../fonts/catalog.ts';
+import { FontLibrary } from '../fonts/library.ts';
 import { JobQueue } from '../jobs/queue.ts';
 import { MediaRegistry } from '../media/registry.ts';
 import { MediaService } from '../media/service.ts';
@@ -45,6 +46,8 @@ export type CoreServices = {
 	/** Per-session crash-recovery journals (S01:PER-021, AC-18, D-39). */
 	recovery: RecoveryJournal;
 	fonts: FontCatalogService;
+	/** wp fonts: the user font library (`<appdir>/fonts`), part of `fonts`' catalog. */
+	fontLibrary: FontLibrary;
 	/** social-comment §7.8: remote platform fonts / emoji (download, cache, network policy). */
 	remoteAssets: RemoteAssetService;
 	remotion: RemotionService;
@@ -149,6 +152,10 @@ export async function createCoreServices(
 			return g ? { revision: g.revision, document: g.envelope.document } : null;
 		},
 	});
+	const fontLibrary = await FontLibrary.open(paths.fontsDir, {
+		onChange: (revision) => broadcaster.publish('fonts.changed', { revision }),
+		log: opts.log,
+	});
 	const remoteBase = baseManifest(env);
 	if (remoteBase.error) opts.log?.(`[remote-assets] base manifest ignored: ${remoteBase.error}`);
 	const remoteAssets = new RemoteAssetService({
@@ -158,7 +165,7 @@ export async function createCoreServices(
 		settingsPath: paths.networkSettings,
 		onChanged: (e) => broadcaster.publish('remoteAssets.changed', e),
 	});
-	const fonts = new FontCatalogService(env, remoteAssets);
+	const fonts = new FontCatalogService(env, fontLibrary, remoteAssets);
 	const remotion = new RemotionService({
 		bundleCacheDir: paths.remotionBundleDir,
 		usageLog: join(paths.logsDir, 'remotion-usage.jsonl'),
@@ -235,6 +242,7 @@ export async function createCoreServices(
 		projects,
 		recovery,
 		fonts,
+		fontLibrary,
 		remoteAssets,
 		remotion,
 		exports: exportsSvc,

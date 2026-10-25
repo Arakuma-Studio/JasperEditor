@@ -16,13 +16,20 @@
 // monotone. Every piece then lies on one original path segment (or on a straight extension) and the evaluator's
 // arc-length progress along it, which stays in [0, 1], is the curve's y. Arc lengths use the evaluator's 64-sample tables
 // (`keyframes-spatial.ts`), so positions match `pathPointAt` of the original segments exactly and the timing to the
-// table's accuracy.
+// table's accuracy. spatial-points: an effect point (values normalised to the layer box) is laid out with the
+// evaluator's metric — the path's arc lengths, corners and splits are measured on the keys in the box's pixels
+// (`keysInMetric`), the points and handles mapped back to value units (the same Béziers) — so the rebuilt keys
+// follow the curve in the pixels that render.
 import {
+	activeMetric,
 	arcLengthTable,
 	type BezierSegment,
 	bezierPoint,
 	effectiveTangents,
+	fromMetric,
 	isVec2Value,
+	keysInMetric,
+	type SpatialMetric,
 	spatialSegment,
 } from '../keyframes-spatial.ts';
 import type { Ease, Keyframe, Spatial, SpatialInterpolation, Vec2 } from '../schema/common.ts';
@@ -50,6 +57,8 @@ export type MultiEaseInput = {
 	curve: MultiEase;
 	/** True for point properties: keep the drawn motion path (arc-length placement). */
 	spatial: boolean;
+	/** spatial-points: the evaluator's metric of the point values (effect points: [box width, box height]). */
+	metric?: SpatialMetric | null;
 	newId: () => string;
 	/** Validates and clamps a new key value to the property's range. */
 	validate: (v: unknown) => { value: unknown; clamped: boolean };
@@ -329,7 +338,10 @@ export function applyMultiEase(input: MultiEaseInput): MultiEaseResult {
 	if (!isNumeric(vA) || !isNumeric(vB) || (Array.isArray(vA) && (vB as number[]).length !== vA.length))
 		throw new MultiEaseError('its values cannot be scaled along a multi-point curve');
 	const spatial = input.spatial && isVec2Value(vA) && isVec2Value(vB);
-	const path = spatial ? spanPath(kfs, a, b) : null;
+	const metric = spatial ? activeMetric(input.metric) : null;
+	// Lengths in the evaluator's units: the keys in the metric's pixels (points mapped back with `toValue`).
+	const toValue = (p: Pt): Vec2 => (metric ? fromMetric([p[0], p[1]], metric) : [p[0], p[1]]);
+	const path = spatial ? spanPath(metric ? keysInMetric(kfs, metric) : kfs, a, b) : null;
 	if (path ? !(path.total > 0) : JSON.stringify(vA) === JSON.stringify(vB))
 		throw new MultiEaseError('its first and last values are equal, so the curve cannot be scaled to them');
 
@@ -372,7 +384,7 @@ export function applyMultiEase(input: MultiEaseInput): MultiEaseResult {
 	const values: unknown[] = ys.map((y, m) => {
 		if (m === 0) return vA;
 		if (m === ys.length - 1) return vB;
-		const raw = located ? located[m]!.point : lerpValue(vA, vB as number | number[], y);
+		const raw = located ? toValue(located[m]!.point) : lerpValue(vA, vB as number | number[], y);
 		const v = input.validate(raw);
 		if (v.clamped) clamped = true;
 		return v.value;
@@ -413,14 +425,14 @@ export function applyMultiEase(input: MultiEaseInput): MultiEaseResult {
 			const sc = subCubic(cell.seg, at(y0, located[m]!), at(y1, located[m + 1]!));
 			const p0 = values[m] as Vec2;
 			const p3 = values[m + 1] as Vec2;
-			tangents[m] = { out: sub(sc[1], p0), in: sub(sc[2], p3) };
+			tangents[m] = { out: sub(toValue(sc[1]), p0), in: sub(toValue(sc[2]), p3) };
 		});
 	}
 
 	// Effective eases / tangents of the span ends, measured before the inner keys go.
-	const captured = captureEases(kfs, a, b);
-	const aTan = spatial ? effectiveTangents(kfs, a) : null;
-	const bTan = spatial ? effectiveTangents(kfs, b) : null;
+	const captured = captureEases(kfs, a, b, metric);
+	const aTan = spatial ? effectiveTangents(kfs, a, metric) : null;
+	const bTan = spatial ? effectiveTangents(kfs, b, metric) : null;
 	const removed = kfs.slice(a + 1, b).map((k) => k.id);
 	const created: string[] = [];
 	const inner: Keys = [];
@@ -448,12 +460,18 @@ export function applyMultiEase(input: MultiEaseInput): MultiEaseResult {
 		eases[0]!.out,
 		inner.length ? eases[0]!.in : eases[eases.length - 1]!.in,
 		captured,
+		metric,
 	);
 	if (inner.length)
-		writeSpan(keys, ib - 1, ib, eases[eases.length - 1]!.out, eases[eases.length - 1]!.in, {
-			...captured,
-			aIn: eases[eases.length - 2]!.in,
-		});
+		writeSpan(
+			keys,
+			ib - 1,
+			ib,
+			eases[eases.length - 1]!.out,
+			eases[eases.length - 1]!.in,
+			{ ...captured, aIn: eases[eases.length - 2]!.in },
+			metric,
+		);
 	if (spatial && aTan && bTan) {
 		keys[ia]!.spatial = spatialFor(aTan.inTangent, tangents[0]!.out);
 		keys[ib]!.spatial = spatialFor(tangents[tangents.length - 1]!.in, bTan.outTangent);

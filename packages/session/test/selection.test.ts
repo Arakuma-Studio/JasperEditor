@@ -1,6 +1,7 @@
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { emptySelection, filterSelection } from '../src/selection.ts';
+import { combine, emptySelection, expandClipSelection, filterSelection } from '../src/selection.ts';
 import { EditorSession } from '../src/session.ts';
 
 function fixture() {
@@ -36,6 +37,43 @@ function fixture() {
 	};
 	return { doc, seq, clip };
 }
+
+describe('bulk selection', () => {
+	it('removes matching IDs while preserving surviving order and duplicates', () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.integer({ min: 0, max: 30 }), { maxLength: 100, size: 'max' }),
+				fc.array(fc.integer({ min: 0, max: 30 }), { maxLength: 100, size: 'max' }),
+				(currentNumbers, removedNumbers) => {
+					const current = currentNumbers.map(String);
+					const removed = removedNumbers.map(String);
+					const before = [...current];
+					const removalBefore = [...removed];
+					expect(combine(current, removed, 'remove')).toEqual(current.filter((id) => !removed.includes(id)));
+					expect(current).toEqual(before);
+					expect(removed).toEqual(removalBefore);
+				},
+			),
+		);
+	});
+
+	it('keeps selection and link/group expansion in input order across sequences', () => {
+		const { doc, seq, clip } = fixture();
+		const other = { ...structuredClone(seq), id: 'seq_other' };
+		other.clips = { clp_other: { ...clip, id: 'clp_other', linkId: 'lnk_other', groupId: 'grp_other' } };
+		other.links = { lnk_other: { id: 'lnk_other', members: ['clp_other', 'clp_linked'] } };
+		other.groups = { grp_other: { id: 'grp_other', members: ['clp_grouped', 'clp_other'] } };
+		doc.sequences[other.id] = other;
+		expect(expandClipSelection(doc, ['clp_other', 'missing', clip.id, 'clp_other'], true)).toEqual([
+			'clp_other',
+			'clp_linked',
+			'clp_grouped',
+			'missing',
+			clip.id,
+		]);
+		expect(expandClipSelection(doc, ['clp_other', clip.id], false, false)).toEqual(['clp_other', clip.id]);
+	});
+});
 
 describe('selection pruning', () => {
 	it('prunes missing entities, occupied gaps and stale primary ids without changing surviving order', () => {

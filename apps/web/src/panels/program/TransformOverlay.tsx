@@ -7,9 +7,16 @@
 // hit-tested before the transform handles and dragged as one gesture each.
 import type { RenderDoc } from '@jasper/compositions';
 import {
+	applyMat3,
 	applyMatrix,
+	effectParamMetric,
+	invertMat3,
 	type LayerTransformValues,
+	layerMapOf,
 	layerMatrix,
+	type Mat3,
+	mat3FromMat2D,
+	type Vec2 as PVec2,
 	quadBounds,
 	type Rect,
 	type ResolvedLayer,
@@ -23,6 +30,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from 'react';
 import { layerDoubleClickHandlers } from '../../extensions/index.ts';
 // wp-m2-shapes: geometry hit-test (XF-001) and "Resize shapes by size" handles (S11:SHP-007).
@@ -50,12 +58,14 @@ import {
 import { threeDViews } from '../../three-d/view-store.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
+import { inspectorFocus } from '../properties/lib/focus.ts';
 import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
 import { MotionPathLayer } from './MotionPathLayer.tsx';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
 import { guidesOf, monitorExtras } from './monitor-view.ts';
 import {
+	buildEffectPointPath,
 	buildMotionPath,
 	convertVertexCommand,
 	hitMotionPath,
@@ -96,6 +106,17 @@ import {
 import { type Size, toScreen, toSequence, type View } from './viewport.ts';
 
 const SAFE_MARGINS = { action: 5, title: 10 } as const;
+
+/**
+ * spatial-points: the effect whose point paths the monitor draws — the one selected in Effect Controls, or the effect
+ * of the focused param row (`effects.<fxId>.<param>`).
+ */
+function focusedEffectId(): string | null {
+	const f = inspectorFocus.get();
+	if (f.effectInstanceId) return f.effectInstanceId;
+	const m = f.rowId ? /^effects\.([^.]+)\./.exec(f.rowId) : null;
+	return m ? m[1]! : null;
+}
 const DRAG_THRESHOLD = 3;
 const AXIS_LOCK_PX = 6;
 
@@ -290,15 +311,73 @@ export function TransformOverlay({
 				: null,
 		[pathKey, anchorAnim, layerMapKey],
 	);
+	// spatial-points: the motion paths of the point params (≥ 2 keys) of the effect focused in Effect Controls, drawn
+	// through the layer map at the playhead (Transform's Position / Anchor Point, Offset's Shift Center To, Corner Pin
+	// corners, …), evaluated with the layer box's metric like the renderers.
+	const focusedFx = useSyncExternalStore(inspectorFocus.subscribe, focusedEffectId, focusedEffectId);
+	const fxClip = useMemo(() => {
+		if (selected.length !== 1 || !focusedFx) return null;
+		for (const t of doc.videoTracks)
+			for (const c of t.clips) if (c.clipId === selected[0] && !c.threeD) return c;
+		return null;
+	}, [doc, selected, focusedFx]);
+	const fxInst = fxClip?.effects.find((e) => e.id === focusedFx && e.enabled);
+	const fxSpec = fxInst
+		? session.ctx.registries.effects.get(fxInst.effectId, fxInst.effectVersion)
+		: undefined;
+	const fxLayer = fxClip ? scene.find((l) => l.clip.clipId === fxClip.clipId) : undefined;
+	const fxMaps = fxLayer
+		? { full: layerMapOf(fxLayer.props), motion: mat3FromMat2D(fxLayer.props.matrix) }
+		: null;
+	const fxMapKey = fxMaps ? `${fxMaps.full.join(',')}|${fxMaps.motion.join(',')}` : '';
+	const fxTiming = fxClip
+		? [
+				fxClip.clipId,
+				fxClip.start,
+				fxClip.duration,
+				fxClip.sourceIn,
+				fxClip.speed.rate,
+				fxClip.speed.reverse,
+			].join('|')
+		: '';
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the instance, its timing and the layer maps
+	const fxPaths = useMemo((): MotionPath[] => {
+		if (!fxClip || !fxInst || !fxSpec || !fxMaps) return [];
+		const box = fxClip.intrinsicBox;
+		// Corner Pin corners are where the box corners go before the pin's own homography (Motion only); every other
+		// point param maps through the full layer map, as its on-canvas handle does.
+		const map = (m: Mat3) => {
+			const inv = invertMat3(m);
+			const r = (v: number) => Math.round(v * 1e6) / 1e6 || 0;
+			return {
+				toSeq: (n: PVec2): PVec2 => applyMat3(m, [n[0] * box.width, n[1] * box.height]),
+				fromSeq: (q: PVec2): PVec2 | null => {
+					if (!inv) return null;
+					const v = applyMat3(inv, q);
+					return [r(v[0] / box.width), r(v[1] / box.height)];
+				},
+			};
+		};
+		const pin = fxSpec.id === 'jasper.corner-pin';
+		const out: MotionPath[] = [];
+		for (const p of fxSpec.params) {
+			if (p.type !== 'vec2' || !p.spatial || (fxInst.params[p.name]?.keyframes.length ?? 0) < 2) continue;
+			const path = buildEffectPointPath(
+				fxClip,
+				doc.settings.fps,
+				{ fxId: fxInst.id, param: p.name, label: `${fxSpec.label}: ${p.label}` },
+				map(pin ? fxMaps.motion : fxMaps.full),
+				effectParamMetric(fxInst, p.name, box),
+			);
+			if (path) out.push(path);
+		}
+		return out;
+	}, [fxTiming, fxInst, fxSpec, fxMapKey, doc.settings.fps.num, doc.settings.fps.den]);
 	const keySel = useStoreSelector(session.store, (s) => s.selection.keyframes);
+	const anyPath = motionPath ?? anchorPath ?? fxPaths[0] ?? null;
 	const selectedKeys = useMemo(
-		() =>
-			new Set(
-				(motionPath || anchorPath) && keySel?.clipOrTrackId === (motionPath ?? anchorPath)!.clipId
-					? keySel.keyframeIds
-					: [],
-			),
-		[motionPath, anchorPath, keySel],
+		() => new Set(anyPath && keySel?.clipOrTrackId === anyPath.clipId ? keySel.keyframeIds : []),
+		[anyPath, keySel],
 	);
 	const [hover, setHover] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<Rect | null>(null);
@@ -309,8 +388,8 @@ export function TransformOverlay({
 	const pendingRef = useRef<{ cmds: Parameters<Gesture['update']>[0] } | null>(null);
 	const rafRef = useRef<number | null>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
-	const live = useRef({ scene, view, selLayers, frame, monitor, motionPath, anchorPath });
-	live.current = { scene, view, selLayers, frame, monitor, motionPath, anchorPath };
+	const live = useRef({ scene, view, selLayers, frame, monitor, motionPath, anchorPath, fxPaths });
+	live.current = { scene, view, selLayers, frame, monitor, motionPath, anchorPath, fxPaths };
 
 	const toSeq = (e: { clientX: number; clientY: number }): { seq: Vec2; screen: Vec2 } => {
 		const r = svgRef.current!.getBoundingClientRect();
@@ -611,7 +690,7 @@ export function TransformOverlay({
 	const pathHitAt = (
 		screen: Vec2,
 	): { path: MotionPath; hit: NonNullable<ReturnType<typeof hitMotionPath>> } | null => {
-		for (const mp of [live.current.motionPath, live.current.anchorPath]) {
+		for (const mp of [live.current.motionPath, live.current.anchorPath, ...live.current.fxPaths]) {
 			if (!mp || locked.has(mp.trackId)) continue;
 			const hit = hitMotionPath(mp, live.current.view, screen);
 			if (!hit) continue;
@@ -1020,6 +1099,9 @@ export function TransformOverlay({
 			)}
 			{motionPath ? <MotionPathLayer path={motionPath} view={view} selected={selectedKeys} /> : null}
 			{anchorPath ? <MotionPathLayer path={anchorPath} view={view} selected={selectedKeys} /> : null}
+			{fxPaths.map((p) => (
+				<MotionPathLayer key={p.effect!.param} path={p} view={view} selected={selectedKeys} />
+			))}
 			{marquee ? (
 				<rect
 					x={toScreen(view, [marquee.x, marquee.y])[0]}

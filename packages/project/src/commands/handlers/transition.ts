@@ -14,6 +14,8 @@ import {
 	CROSS_DISSOLVE,
 	clipHandles,
 	clipsAtEditPoint,
+	cutOffsetOf,
+	cutPositionFor,
 	defaultTransitionFrames,
 	fitTransitionDuration,
 	isLayer3D,
@@ -95,12 +97,14 @@ function fit(
 	outgoing: Clip | null,
 	incoming: Clip | null,
 	freeze = false,
+	cutPosition?: number,
 ): number {
 	const inf = Number.POSITIVE_INFINITY;
 	return fitTransitionDuration({
 		effectId,
 		wanted,
 		alignment,
+		cutPosition,
 		outgoing: outgoing
 			? {
 					duration: outgoing.duration,
@@ -129,18 +133,25 @@ function fitWithHandles(
 	outgoing: Clip | null,
 	incoming: Clip | null,
 	freezeWanted: boolean,
+	cutPosition?: number,
 ): { duration: number; freeze: boolean } {
-	const media = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming);
+	const media = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming, false, cutPosition);
 	if (!freezeWanted || !outgoing || !incoming) return { duration: media, freeze: false };
-	const frozen = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming, true);
+	const frozen = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming, true, cutPosition);
 	return frozen > media ? { duration: frozen, freeze: true } : { duration: media, freeze: false };
 }
 
-function noRoomMessage(alignment: Transition['alignment'], wanted: number, two: boolean): string {
+function noRoomMessage(
+	alignment: Transition['alignment'],
+	wanted: number,
+	two: boolean,
+	cutPosition?: number,
+): string {
 	if (!two) return 'The clip is too short for this transition';
-	const { start, end: e } = transitionSpan(0, wanted, alignment);
+	const { start, end: e } = transitionSpan(0, wanted, alignment, cutPosition);
+	const where = cutPosition === undefined ? alignment : `custom-start (${-start} frames before the cut)`;
 	return (
-		`No media handles for a ${wanted}-frame ${alignment} transition: the outgoing clip needs ${Math.max(0, e)} ` +
+		`No media handles for a ${wanted}-frame ${where} transition: the outgoing clip needs ${Math.max(0, e)} ` +
 		`frame(s) of media after its out-point and the incoming clip ${Math.max(0, -start)} before its in-point. ` +
 		'Trim the clips so the media extends past the cut, or use another alignment ' +
 		'("start-at-cut" only needs the outgoing clip\'s handle, "end-at-cut" only the incoming one\'s).'
@@ -155,10 +166,48 @@ type AddArgs = {
 	effectId: string;
 	duration?: number;
 	alignment?: Transition['alignment'];
+	cutOffset?: number;
 	handles?: 'shorten' | 'freeze';
 	params?: Record<string, unknown>;
 	ref?: string;
 };
+
+/**
+ * A Custom Start request (`cutOffset` frames of a `wanted`-frame span before the cut) → the alignment and cut position
+ * to store; refused on fades, past the span, or together with a different alignment.
+ */
+function customStart(
+	cutOffset: number,
+	wanted: number,
+	alignment: Transition['alignment'] | undefined,
+	two: boolean,
+	h: HandlerContext,
+): { alignment: Transition['alignment']; cutPosition?: number } {
+	if (!two)
+		return h.fail('E_INVALID_PARAM', 'A fade at a single clip edge has a fixed alignment (no cutOffset)');
+	if (cutOffset > wanted)
+		h.fail(
+			'E_INVALID_PARAM',
+			`cutOffset ${cutOffset} is past the end of the ${wanted}-frame span (0…${wanted})`,
+		);
+	const r = cutPositionFor(cutOffset, wanted);
+	if (alignment !== undefined && alignment !== r.alignment)
+		h.fail(
+			'E_INVALID_PARAM',
+			`Give alignment or cutOffset, not both (cutOffset ${cutOffset} is not ${alignment})`,
+		);
+	return r;
+}
+
+/** The result fields of a transition's position: alignment and, for a Custom Start, the cut offset in frames. */
+function positionResult(t: Pick<Transition, 'alignment' | 'cutPosition' | 'duration'>) {
+	return {
+		alignment: t.alignment,
+		...(t.cutPosition !== undefined
+			? { cutOffset: cutOffsetOf(t.duration, t.alignment, t.cutPosition) }
+			: {}),
+	};
+}
 
 function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 	const { seq, outgoing, incoming } = a;
@@ -181,12 +230,16 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 				},
 			);
 	const two = !!outgoing && !!incoming;
-	const alignment: Transition['alignment'] = two
-		? (a.alignment ?? 'center')
-		: incoming
-			? 'start-at-cut'
-			: 'end-at-cut';
 	const wanted = a.duration ?? defaultTransitionFrames(doc.settings, spec.appliesTo);
+	const custom = a.cutOffset !== undefined ? customStart(a.cutOffset, wanted, a.alignment, two, h) : null;
+	const alignment: Transition['alignment'] = custom
+		? custom.alignment
+		: two
+			? (a.alignment ?? 'center')
+			: incoming
+				? 'start-at-cut'
+				: 'end-at-cut';
+	const cutPosition = custom?.cutPosition;
 	const { duration, freeze } = fitWithHandles(
 		doc,
 		seq,
@@ -196,8 +249,9 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		outgoing,
 		incoming,
 		a.handles === 'freeze' && spec.appliesTo === 'video',
+		cutPosition,
 	);
-	if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
+	if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two, cutPosition));
 	if (duration < wanted)
 		h.warn(
 			'W_TRANSITION_SHORTENED',
@@ -226,12 +280,13 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		alignment,
 		params: {},
 		...(freeze ? { freezeHandles: true } : {}),
+		...(cutPosition !== undefined ? { cutPosition } : {}),
 	};
 	if (a.params) writeParams(seq.transitions[id]!, spec, a.params, h);
 	return {
 		transitionId: id,
 		duration,
-		alignment,
+		...positionResult(seq.transitions[id]!),
 		outgoingClipId: outgoing?.id ?? null,
 		incomingClipId: incoming?.id ?? null,
 		...(freeze ? { freezeHandles: true } : {}),
@@ -251,6 +306,8 @@ export const transitionHandlers = {
 			cut = cmd.edge === 'in' ? r.clip.start : end(r.clip);
 			// An audio clip edge is always a fade of that clip, also when another clip touches it.
 			if (trackOf(seq, trackId, h).kind === 'audio') {
+				if (cmd.cutOffset !== undefined)
+					h.fail('E_INVALID_PARAM', 'A fade at a single clip edge has a fixed alignment (no cutOffset)');
 				return addTransition(
 					doc,
 					{
@@ -287,6 +344,7 @@ export const transitionHandlers = {
 				effectId: cmd.effectId,
 				duration: cmd.duration,
 				alignment: cmd.alignment,
+				cutOffset: cmd.cutOffset,
 				handles: cmd.handles,
 				params: cmd.params,
 				ref: cmd.ref,
@@ -315,8 +373,16 @@ export const transitionHandlers = {
 		const two = !!outgoing && !!incoming;
 		if (cmd.alignment && !two && cmd.alignment !== t.alignment)
 			h.fail('E_INVALID_PARAM', 'A fade at a single clip edge has a fixed alignment');
-		const alignment = cmd.alignment ?? t.alignment;
 		const wanted = cmd.duration ?? t.duration;
+		// Custom Start: a new cutOffset sets it, a new alignment drops it, otherwise the stored fraction stays.
+		const custom =
+			cmd.cutOffset !== undefined ? customStart(cmd.cutOffset, wanted, cmd.alignment, two, h) : null;
+		const alignment = custom ? custom.alignment : (cmd.alignment ?? t.alignment);
+		const cutPosition = custom
+			? custom.cutPosition
+			: cmd.alignment !== undefined || !two
+				? undefined
+				: (t.cutPosition as number | undefined);
 		const freezeWanted =
 			track.kind === 'video' && (cmd.handles ? cmd.handles === 'freeze' : t.freezeHandles === true);
 		const { duration, freeze } = fitWithHandles(
@@ -328,8 +394,9 @@ export const transitionHandlers = {
 			outgoing,
 			incoming,
 			freezeWanted,
+			cutPosition,
 		);
-		if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
+		if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two, cutPosition));
 		if (duration < wanted)
 			h.warn(
 				'W_TRANSITION_SHORTENED',
@@ -349,8 +416,16 @@ export const transitionHandlers = {
 		}
 		t.alignment = alignment;
 		t.duration = duration;
+		if (cutPosition !== undefined) t.cutPosition = cutPosition;
+		else delete t.cutPosition;
 		if (cmd.params && Object.keys(cmd.params).length > 0) writeParams(t, specOf(effectId, h), cmd.params, h);
-		return { transitionId: t.id, effectId, duration, alignment, ...(freeze ? { freezeHandles: true } : {}) };
+		return {
+			transitionId: t.id,
+			effectId,
+			duration,
+			...positionResult(t),
+			...(freeze ? { freezeHandles: true } : {}),
+		};
 	},
 
 	'transition.remove': (doc, cmd, h) => {

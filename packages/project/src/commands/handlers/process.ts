@@ -88,6 +88,7 @@ function transitionFits(doc: DDoc, seq: DSeq): Map<string, number> {
 				effectId: t.effectId,
 				wanted: t.duration,
 				alignment: t.alignment,
+				cutPosition: t.cutPosition,
 				outgoing: a ? { duration: a.duration, tail: clipHandles(doc, seq, a).tail } : null,
 				incoming: b ? { duration: b.duration, head: clipHandles(doc, seq, b).head } : null,
 			}),

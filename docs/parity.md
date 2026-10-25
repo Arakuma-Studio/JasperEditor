@@ -21,7 +21,7 @@ the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction); no row's grade 
 | **Breadth, weighted by tier** (P0 ×3, P1 ×2, P2 ×1) | **≈ 98%** using the fractions below; ≈ 98% counting every partial feature as half (was ≈ 91% before `gaps`, ≈ 59% at `main` 051cf53) |
 | P0 / P1 / P2 | 97% / 99% / 100% (fractions) |
 | Features done / partial / missing | 89 / 3 / 0 of 92 (partial: CL-4, EX-2, PL-2) |
-| Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
+| Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 4 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
 | Menu entries | 291 menu entries and 280 default key bindings at the polish assessment (historical inventory); current dispatch behavior: `apps/web/test/registry.test.tsx`; shortcut conflicts: `apps/web/test/keymap.test.ts` |
 | Panels | 22 (`listPanels()`), the Media Browser among them |
 | Document commands | 256 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
@@ -66,7 +66,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 |---|---|---|---|---|---|
 | PRJ-1 | Project panel: bins, list and icon views, search, labels, drag to timeline | P0 | done | WP-2E; windowed project lists (ui-perf); project-open budget: `scripts/perf/ui-run.ts` via `pnpm perf --sections ui --ui open`; Set / Clear Poster Frame and Get Properties for Selection (`item.setPoster`, wp-notes/polish.md; `packages/project/test/polish-poster.test.ts`, `apps/web/test/polish-keybindings.test.tsx`) | — |
 | PRJ-2 | Import media (upload / register path), probe, posters, filmstrips, waveforms | P0 | done | WP-2E, WP-2F; Media Browser panel: browse the engine host, preview, import in place, drag to the Project panel or Timeline (wp-notes/polish.md; `apps/engine/test/browse.test.ts`, `apps/web/test/polish-media-browser.test.tsx`, `e2e/polish.spec.ts`) | polish |
-| PRJ-3 | Relink and Replace Footage | P1 | done | Link Media dialog (Project panel and File menu, folder search, relink by name / path), `media.relink`, MCP `link_media` / `replace_footage` (wp-notes/interchange.md §Link Media; `e2e/interchange.spec.ts`, `apps/engine/test/interchange.test.ts`); no Tape Name match | interchange |
+| PRJ-3 | Relink and Replace Footage | P1 | done | Link Media dialog (Project panel, File menu, on project open; Locate browser, Relink others automatically from the located file's folder mapping / relative path / folder search, Match File Properties, Align Timecode, Preserve Interpret Footage), `media.relink`, MCP `link_media` / `replace_footage` (wp-notes/link-media.md; `e2e/interchange.spec.ts`, `apps/engine/test/link-media.test.ts`, `apps/web/test/link-media.test.tsx`); no Tape Name / Description / Clip ID match | interchange |
 | PRJ-4 | Project Settings dialog | P1 | done | File ▸ Project Settings…: display formats (timecode / frames / feet+frames, samples / ms), Scratch Disks, Ingest Settings (wp-notes/gaps.md; `apps/web/test/gaps-settings-dialogs.test.tsx`, `packages/project/test/gaps-display-format.test.ts`) | gaps |
 | PRJ-5 | Color mattes and other synthetic items | P1 | done | `synthetic.create/update` (Bars and Tone, Black Video, Color Matte, Transparent Video, Universal Counting Leader, Adjustment Layer), New Item menu, preview and native/Remotion export (edit-structure tests) | edit-structure |
 | PRJ-6 | Remove unused media, Project Manager (collect / consolidate) | P2 | done | Remove Unused (edit-structure); File ▸ Project Manager: collect / consolidate with handles (ProRes 422 HQ / WAV), exclude unused, previews, proxies, disk estimate, report (wp-notes/gaps.md; `apps/engine/test/gaps-project-manager.test.ts`: the copy shows the same frame codes) | gaps |
@@ -124,7 +124,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 |---|---|---|---|---|---|
 | KF-1 | Keyframes on Motion, Opacity, crop, volume and effect parameters; linear, Bezier, hold | P0 | done | S01 KF, wave1 native export | — |
 | KF-2 | Value and velocity graphs with Bezier handles | P1 | done | graph-editor.md | — |
-| KF-3 | Spatial motion paths in the Program monitor | P1 | done | spatial-motion-path.md | — |
+| KF-3 | Spatial motion paths in the Program monitor | P1 | done | spatial-motion-path.md; effect point params (Transform, Offset, …): spatial-points.md | — |
 | KF-4 | Blend modes (Premiere has 27) | P1 | done | `BLEND_MODES` holds Premiere's 27 in menu order, native in the sequence's own stack (wp-notes/keyframes-blend.md §7; `apps/web/test/keyframes-blend-ui.test.tsx`, `apps/engine/test/blend-export.test.ts`, `packages/compositions/test/blend-gl.test.ts`); inside nests through Remotion | keyframes-blend |
 | KF-5 | Effect presets | P2 | done | effect-presets.md | — |
 | KF-6 | Expressions (After Effects overlap) | P2 | done | QuickJS-wasm sandbox (D-41), AE object model, Expression Controls (wp-notes/expressions.md; `packages/expressions/test/*`, `e2e/expressions.spec.ts`); `sampleImage` exact on solids only | expressions |
@@ -145,7 +145,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | TR-1 | Video transitions: 172 (Premiere standard plus Sapphire-style) | P0 | done | `TRANSITION_SPECS` | — |
-| TR-2 | Audio crossfades: constant gain, constant power, exponential fade | P0 | done | 3 audio transitions in `TRANSITION_SPECS` (wp-notes/audio-fx.md; transition-audio tests, `apps/engine/test/audio-fx.test.ts`) | audio-fx |
+| TR-2 | Audio crossfades: constant gain, constant power, exponential fade, Custom Fade (fade shape, fade value, crossfade symmetry), Custom Start (off-centre) crossfades | P0 | done | 4 audio transitions in `TRANSITION_SPECS` (wp-notes/audio-fx.md, wp-notes/audio-crossfades.md; transition-audio tests, `packages/project/test/audio-crossfade-shapes.test.ts`, `apps/engine/test/audio-fx.test.ts`, measured envelope `apps/engine/test/audio-crossfade.test.ts`, preview = export `packages/compositions/test/audio-preview-mix-oracle.test.ts`); Premiere's exact fade-value curve is an evidence-anchored assumption (work note) | audio-fx, pp-audio-crossfades |
 | TR-3 | Default transitions, apply to selection, timeline handles | P1 | done | wp-m3-transdefaults | — |
 
 ### Tracking & roto

@@ -498,9 +498,11 @@ Design §7.7 (WP1 `sc/media`, contract C1). Anime templates can take pictures (a
   `params.<name>` go through `assertTemplateMedia` (`commands/handlers/mg-template.ts`): a medium that is not in the
   project is refused with `E_NOT_FOUND`, one of a kind the param does not take with `E_INVALID_PARAM`
   (`templateMediaKindsAt` reads the kinds from the schema, nested paths included). `null` is "none".
-- **Schema v8.** `v7→v8` is a version bump only: v7 builds count a clip's own `mediaId` alone, so their orphan
+- **Schema v9.** `v8→v9` is a version bump only: v8 builds count a clip's own `mediaId` alone, so their orphan
   collection, item delete, Project Manager and paste would drop media referenced only from template params; they
-  open v8 files read-only ([project files](../project-files.md)). Fixture `packages/project/test/fixtures/schema-v8.jasper`.
+  open v9 files read-only ([project files](../project-files.md)). Fixture `packages/project/test/fixtures/schema-v9.jasper`.
+  (This feature first bumped to v8; the Premiere port shipped its own v8 on `main` meanwhile, so the merge kept that
+  v8 step unchanged and moved this bump to v9.)
 
 ### Reference integrity
 
@@ -565,7 +567,7 @@ Media a template param references are counted wherever a clip's own `mediaId` is
 ### Tests
 
 `packages/project/test/template-media.test.ts` (regressions: each integrity path failed before the fix; validation;
-snapshot; v8 fixture; fast-check property of the walk), `packages/session/test/template-media-history.test.ts`
+snapshot; v9 fixture, v7 / v8 → v9 migration; fast-check property of the walk), `packages/session/test/template-media-history.test.ts`
 (undo / redo), `packages/interchange/test/template-media.test.ts`, `packages/mg-templates/test/media-param.test.ts`,
 `packages/motion/test/template-image.test.tsx`, `packages/motion/test/template-image.e2e.test.ts` (`REMOTION_E2E=1`:
 a real Chrome still waits for a slow CORS picture; a 404 draws the placeholder),

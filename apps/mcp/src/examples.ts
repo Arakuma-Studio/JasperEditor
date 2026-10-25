@@ -239,6 +239,14 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		keyframeId: '$key',
 		outTangent: [200, -120],
 	},
+	// keyframe-sides: Premiere's Ease In — only the key's incoming side becomes Bezier (speed 0, influence ⅓).
+	'keyframe.setInterpolation': {
+		type: 'keyframe.setInterpolation',
+		keyframeIds: ['$key'],
+		interpolation: 'bezier',
+		easeIn: { influence: 1 / 3, slope: 0 },
+		side: 'in',
+	},
 	// keyframes-blend: Rove Across Time on the middle keys of a path (the first and last keys stay fixed).
 	'keyframe.setRoving': { type: 'keyframe.setRoving', keyframeIds: ['$key'], roving: true },
 	'transition.add': {

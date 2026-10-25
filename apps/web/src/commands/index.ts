@@ -18,6 +18,7 @@ import { easingCommands } from './easing.ts';
 import { editCommands } from './edit.ts';
 import { editUxCommands } from './edit-ux.ts';
 import { exportCommands } from './export.ts';
+import { fontCommands } from './fonts.ts';
 import { gapsCommands } from './gaps.ts';
 import { helpCommands } from './help.ts';
 import { importsCommands } from './imports.ts';
@@ -112,6 +113,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCheckCommands,
 	// proposals (spec 12 §2.5): review in the Timeline, Hear proposal
 	proposalCommands,
+	// wp fonts: the user font library (Preferences ▸ Fonts, Resolve Fonts)
+	fontCommands,
 ];
 
 let registered = false;

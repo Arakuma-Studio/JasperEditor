@@ -11,18 +11,21 @@ afterEach(() => {
 
 const ORIGIN = 'http://127.0.0.1:47900';
 
-function worker() {
+function worker(optional: string[] = []) {
 	const handlers = new Map<string, (event: unknown) => void>();
 	const fetch = vi.fn().mockRejectedValue(new Error('Offline'));
 	const caches = {
 		match: vi.fn().mockResolvedValue(undefined),
-		open: vi.fn().mockResolvedValue({ put: vi.fn() }),
+		open: vi.fn().mockResolvedValue({ put: vi.fn(), keys: vi.fn().mockResolvedValue([]) }),
+	};
+	const self = {
+		addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
+		location: { origin: ORIGIN },
+		jasperEditorAssets: optional,
 	};
 	runInNewContext(readFileSync(join(__dirname, '../public/sw.js'), 'utf8'), {
-		self: {
-			addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
-			location: { origin: ORIGIN },
-		},
+		self,
+		importScripts: () => undefined,
 		URL,
 		caches,
 		fetch,
@@ -32,6 +35,21 @@ function worker() {
 }
 
 describe('service worker fetch contract (S05:PWA-004)', () => {
+	it('warms optional runtimes for offline use and still installs if one cannot be downloaded', async () => {
+		const sw = worker(['/assets/vendor-pdf-a.js', '/assets/vendor-quickjs-b.js']);
+		sw.fetch.mockImplementation(async (url: string) => {
+			if (url.endsWith('vendor-pdf-a.js')) throw new Error('Unavailable');
+			return new Response('source');
+		});
+		const waitUntil = vi.fn();
+		sw.handlers.get('install')!({ waitUntil });
+		await waitUntil.mock.calls[0]![0];
+		const assets = await sw.caches.open('jasper-assets-v2');
+		expect(assets.put).toHaveBeenCalledWith('/assets/vendor-quickjs-b.js', expect.any(Response));
+		expect(assets.put).not.toHaveBeenCalledWith('/assets/vendor-pdf-a.js', expect.anything());
+		expect(assets.put).toHaveBeenCalledWith('/index.html', expect.any(Response));
+	});
+
 	it.each([
 		['Range seek', `${ORIGIN}/assets/index.js`, 'GET', { Range: 'bytes=0-99' }],
 		['media proxy', `${ORIGIN}/media/mk_1/proxy/720`, 'GET', {}],

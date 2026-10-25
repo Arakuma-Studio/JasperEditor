@@ -6,8 +6,8 @@
 // pipe and overlaid at a whole-pixel offset: the fraction is in the warped pixels, so the motion is exact.
 //
 // Per layer:
-// - a decoder ffmpeg runs the layer's source chain (`layerSourceChain`: seek, speed, box scale, effects incl.
-//   keyframed crop masks), pre-scaled where the layer is drawn smaller than its box, to the next ⅛-octave level at
+// - a decoder ffmpeg runs the layer's source chain (`layerSourceChain`: seek, speed, box scale, effects in stack order
+//   incl. feathered crops; hard crops are left to the kernel's anti-aliased clip, `cropAt`), pre-scaled where the layer is drawn smaller than its box, to the next ⅛-octave level at
 //   or above the drawn size (the kernel then minifies by < 9 %: no aliasing; levels change rarely during a zoom, so
 //   the scaler is rarely re-created);
 // - every frame: `resolveLayerProps` (shared evaluator, KF-010) → layer map → the inverse map from the output frame
@@ -20,9 +20,11 @@ import {
 	activeMasks,
 	clipContentTime,
 	evaluate,
+	intersectCropInsets,
 	invertMat3,
 	isAnimated,
 	type Mat3,
+	mirrorCropInsets,
 	multiplyMat3,
 	type Rational,
 	type RenderVisualClip,
@@ -30,6 +32,7 @@ import {
 	type ResolvedMask,
 	resolveLayerProps,
 } from '@jasper/project';
+import { flipsAfter, isFeatheredCrop } from '../crop.ts';
 import {
 	CROP_EDGES,
 	FIT_TOLERANCE,
@@ -78,19 +81,34 @@ export type StreamFrame = {
 
 const CROP = 'jasper.crop';
 
-/** The crop as fractions of the box at content time `t` (`[l, t, r, b]`), or null without an enabled crop. */
+/** Enabled hard crops (Edge Feather 0 on every frame) of a clip: the kernel clips to them (feathered ones are filters). */
+function hardCrops(c: RenderVisualClip): number[] {
+	const out: number[] = [];
+	c.effects.forEach((e, i) => {
+		if (e.enabled && e.effectId === CROP && !isFeatheredCrop(e)) out.push(i);
+	});
+	return out;
+}
+
+/**
+ * The visible window of the clip's hard crops at content time `t` as fractions of the box (`[l, t, r, b]`), or null
+ * without one. The kernel clips after the source chain, so each crop's window is mirrored by the flips after it in the
+ * stack (schema v8: a flip before the crop does not mirror it) and several crops intersect — exact, since the effects
+ * the native path draws after a crop (colour LUTs, flips) commute with it.
+ */
 function cropAt(c: RenderVisualClip, t: number): [number, number, number, number] | null {
-	const fx = c.effects.find((e) => e.enabled && e.effectId === CROP);
-	if (!fx) return null;
-	const v = CROP_EDGES.map((e) => {
-		const a = fx.params[e] as Animatable<number> | undefined;
-		return Math.min(100, Math.max(0, a ? Number(evaluate(a, t)) : 0)) / 100;
-	}) as [number, number, number, number];
-	// The composition crops first, then flips (S03:RND-010 stage order): an odd number of flips mirrors the crop.
-	const flips = (id: string) => c.effects.filter((e) => e.enabled && e.effectId === id).length % 2 === 1;
-	if (flips('jasper.flip-horizontal')) [v[0], v[2]] = [v[2], v[0]];
-	if (flips('jasper.flip-vertical')) [v[1], v[3]] = [v[3], v[1]];
-	return v;
+	const list = hardCrops(c);
+	if (list.length === 0) return null;
+	const windows = list.map((i) => {
+		const fx = c.effects[i]!;
+		const v = CROP_EDGES.map((e) => {
+			const a = fx.params[e] as Animatable<number> | undefined;
+			return Math.min(100, Math.max(0, a ? Number(evaluate(a, t)) : 0)) / 100;
+		}) as [number, number, number, number];
+		const m = flipsAfter(c.effects, i);
+		return mirrorCropInsets(v, m.h, m.v);
+	});
+	return intersectCropInsets(windows);
 }
 
 /**
@@ -121,9 +139,10 @@ export function needsSubpixel(
 		isAnimated(t.rotation)
 	)
 		return true;
-	// A crop with keyframes, or with edges between pixels (the filter path rounds them).
-	const crop = c.effects.find((e) => e.enabled && e.effectId === CROP);
-	if (crop) {
+	// A hard crop with keyframes, or with edges between pixels (the filter path rounds them). Feathered crops are exact
+	// filters at any edge position (crop.ts).
+	for (const i of hardCrops(c)) {
+		const crop = c.effects[i]!;
 		const anims = CROP_EDGES.map((e) => crop.params[e] as Animatable<number> | undefined);
 		if (anims.some((a) => isAnimated(a))) return true;
 		const [l, tp, r, b] = anims.map((a) => (a ? Number(a.value) : 0) / 100);

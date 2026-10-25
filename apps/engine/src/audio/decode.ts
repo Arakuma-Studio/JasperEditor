@@ -2,10 +2,20 @@
 // mix rate over stdout. The chain maps the clip's channels (`channels.map`), applies its speed (tempo-preserving
 // `atempo` when "Maintain Audio Pitch" is on, a rate change — like the preview — when it is off; reversed clips are
 // decoded forwards and reversed) and resamples with SoX (VHQ) when the build has it, else swr with a long filter.
+// pp-wma-preview: audio the browser cannot decode (previews play the engine's playback audio, a WAV of FFmpeg's decode
+// from the file start) is read on that same timeline: decoded from the start and cut by sample count (`sampleExact`)
+// instead of an input seek, whose landing point follows container timestamps (ASF / WMA, AC-3 in MPEG-TS…) and can be
+// tens of milliseconds away from the decoded sample count.
 import type { ChildProcess } from 'node:child_process';
 import { endianness } from 'node:os';
 import type { AudioStream, ClipReader, Rational, RenderAudioClip } from '@jasper/project';
-import { FLICKS_PER_SECOND, fileTimeOf, flicksPerFrame, frameToSample } from '@jasper/project';
+import {
+	browserDecodesAudio,
+	FLICKS_PER_SECOND,
+	fileTimeOf,
+	flicksPerFrame,
+	frameToSample,
+} from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 
@@ -48,6 +58,17 @@ function clipChannels(
 }
 
 /**
+ * True when a clip of `stream` must be decoded sample-exactly (`clipDecodeArgs` `sampleExact`): its container is known
+ * and the browser cannot decode the stream there, so previews play the playback audio (FFmpeg's decode from sample 0).
+ */
+export function needsSampleExactDecode(
+	source: { container?: string | undefined },
+	stream: Pick<AudioStream, 'codec'>,
+): boolean {
+	return typeof source.container === 'string' && !browserDecodesAudio(source.container, stream.codec);
+}
+
+/**
  * ffmpeg arguments that decode `length` samples of a clip's span from span sample `offset` at `sampleRate`, as
  * interleaved f32le on stdout.
  */
@@ -60,6 +81,11 @@ export function clipDecodeArgs(o: {
 	offset: number;
 	length: number;
 	soxr: boolean;
+	/**
+	 * Decode from the file start and drop `startSec × rate` samples by count instead of seeking with `-ss`: the timeline
+	 * of the playback audio previews play (`needsSampleExactDecode`).
+	 */
+	sampleExact?: boolean;
 }): { args: string[]; channels: number } {
 	const { clip, fps, sampleRate } = o;
 	const F = flicksPerFrame(fps);
@@ -92,6 +118,10 @@ export function clipDecodeArgs(o: {
 	const channels = clipChannels(clip, o.stream);
 	const map = clip.channels.map;
 	const chain: string[] = [];
+	if (o.sampleExact) {
+		const skip = Math.round(startSec * o.stream.sampleRate);
+		if (skip > 0) chain.push(`atrim=start_sample=${skip}`, 'asetpts=PTS-STARTPTS');
+	}
 	if (map.length > 0) {
 		const layout = PAN_LAYOUT[channels] ?? 'stereo';
 		// gaps (Modify ▸ Audio Channels): a muted clip channel is silence.
@@ -126,10 +156,10 @@ export function clipDecodeArgs(o: {
 	chain.push(`apad=whole_len=${o.length}`, `atrim=end_sample=${o.length}`);
 	const args = [
 		...(loops ? ['-stream_loop', '-1'] : []),
-		'-ss',
-		sec(startSec),
-		'-t',
-		sec(durSec + 0.25),
+		// sample-exact: read from the start up to the span's end, with room for timestamps that run ahead of the samples
+		...(o.sampleExact
+			? ['-t', sec(startSec + durSec + 0.5)]
+			: ['-ss', sec(startSec), '-t', sec(durSec + 0.25)]),
 		'-i',
 		o.path,
 		'-map',

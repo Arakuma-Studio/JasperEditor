@@ -11,6 +11,7 @@ import { clipPictureTime, type MediaHandle, nearestAllowedRate } from '@jasper/p
 import { Video } from '@remotion/media';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { continueRender, delayRender, Freeze, getRemotionEnvironment, OffthreadVideo } from 'remotion';
+import { videoAudioTrackProps } from '../pipeline.ts';
 import { RetimedFeed } from '../retime/RetimedVideo.tsx';
 import type { LayerProps } from '../types.ts';
 import { useFxFeed } from './FxPicture.tsx';
@@ -28,6 +29,8 @@ export function FxVideoFeed(props: {
 	frame: number;
 	offthread?: { transparent: boolean };
 	loop?: boolean;
+	/** pp-wma-preview: `videoAudioTrackProps` of the media (no audio track when the browser cannot decode it). */
+	audioStreamIndex?: number;
 }) {
 	const fx = useFxFeed();
 	const rendering = getRemotionEnvironment().isRendering;
@@ -60,6 +63,7 @@ export function FxVideoFeed(props: {
 			muted
 			showInTimeline={false}
 			onVideoFrame={onFrame}
+			{...(props.audioStreamIndex === undefined ? {} : { audioStreamIndex: props.audioStreamIndex })}
 		/>
 	);
 }
@@ -139,6 +143,7 @@ export function FxVideoSources(props: {
 	// (time samples are absolute frames, `f` is the layer's own source frame)
 	const rate = props.playbackRate ?? layer.clip.speed.rate;
 	const base = props.freezeBase ?? 0;
+	const audio = layer.media ? videoAudioTrackProps(layer.media) : {};
 	return (
 		<>
 			<FxVideoFeed
@@ -148,6 +153,7 @@ export function FxVideoSources(props: {
 				playbackRate={rate}
 				frame={f}
 				offthread={props.offthread}
+				{...audio}
 			/>
 			{stage.samples.map((at) => {
 				// Absolute source frames (fxStackTime: composed with the stack's remaps, inside the drawn span).
@@ -161,6 +167,7 @@ export function FxVideoSources(props: {
 							playbackRate={rate}
 							frame={at}
 							offthread={props.offthread}
+							{...audio}
 						/>
 					</Freeze>
 				);

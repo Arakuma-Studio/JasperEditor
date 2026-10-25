@@ -718,6 +718,7 @@ type Keyframe<T> = {
   time: number;                      // flicks, content time of the owning clip (TIME-002)
   value: T;
   interpolation: 'linear' | 'bezier' | 'auto-bezier' | 'continuous-bezier' | 'hold'; // the segment leaving this keyframe
+  inInterpolation?: 'linear' | 'bezier' | 'auto-bezier' | 'continuous-bezier'; // keyframe-sides: the incoming side
   easeIn: Ease;                      // shape of the curve arriving here
   easeOut: Ease;                     // shape of the curve leaving here
 };
@@ -730,11 +731,15 @@ type Ease = { influence: number; slope: number }; // influence in (0, 1]; slope 
   2. `t` before the first keyframe → the first keyframe's value. After the last → the last one's value.
   3. Otherwise find the segment `[K_i, K_{i+1}]` with `K_i.time ≤ t < K_{i+1}.time` (binary search).
   4. If `K_i.interpolation` is `'hold'`, or the type is hold-only → `K_i.value`.
+     *keyframe-sides (Premiere port):* when `K_{i+1}.inInterpolation` is set, the segment is read per side
+     (After Effects): linear only when `K_i.interpolation` and `K_{i+1}.inInterpolation` are both `linear`; otherwise
+     step 5, where a Linear side contributes `a = 1/6, s = 1`. Without it, steps 5–6 as written (a Linear `K_i`
+     gives `p = u`). See `docs/wp-notes/keyframe-sides.md`.
   5. Otherwise let `u = (t - K_i.time) / (K_{i+1}.time - K_i.time)`. Build the cubic Bézier through `(0,0)`, `P1 = (a₁, a₁ × s₁)`, `P2 = (1 - a₂, 1 - a₂ × s₂)`, `(1,1)` with `a₁, s₁` from `K_i.easeOut` and `a₂, s₂` from `K_{i+1}.easeIn`. Solve `x(τ) = u` for `τ` (Newton iterations with bisection fallback, tolerance 1e-6), and take `p = y(τ)`.
   6. Result = `K_i.value + p × (K_{i+1}.value - K_i.value)`, per component for `Vec2` and `RGBA`. Colors interpolate in straight (non-premultiplied) sRGB in v1. `p` may leave `[0, 1]` (overshoot). The result is then clamped to the parameter's range (for example opacity 0..100).
 - **KF-004 (P0)** **Interpolation presets:**
   - `linear`: ignores eases and uses `a = 1/3, s = 1` on both sides, which gives `p = u`.
-  - `bezier`: uses the stored eases. "Ease In" in the UI sets `easeIn = {influence: 1/3, slope: 0}`. "Ease Out" sets `easeOut` the same way. "Easy Ease" does both.
+  - `bezier`: uses the stored eases. "Ease In" in the UI sets `easeIn = {influence: 1/3, slope: 0}`. "Ease Out" sets `easeOut` the same way. "Easy Ease" does both. *keyframe-sides:* Ease In sets only the incoming side (`side: 'in'`, `inInterpolation = 'bezier'`), Ease Out only the outgoing side, as in Premiere.
   - `auto-bezier`: the slope on both sides of an interior keyframe is computed from its neighbors, `s = (|v_{i+1} - v_{i-1}| / (t_{i+1} - t_{i-1})) / (|v_{i+1} - v_i| / (t_{i+1} - t_i))` for the outgoing side (and the matching formula for the incoming side), clamped to `[0, 3]`. It is 0 at a local minimum or maximum, which prevents overshoot. The first and last keyframes get slope 0 on their inner side. Influence is 1/3. `|·|` is the absolute value for numbers and the Euclidean distance for vectors.
   - `continuous-bezier`: like `bezier`, but editing one side's slope sets the other side to the same velocity, so the curve has no corner.
   - `hold`: step.
@@ -969,7 +974,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `param.set` | `target: ParamPath`, `value`, [`at`: content time or sequence frame] | Stopwatch semantics (KF-005): sets or creates a keyframe when animated, otherwise sets `value`. |
 | `param.setAnimated` | `target`, `animated: boolean`, [`at`] | KF-005 |
 | `keyframe.add` / `keyframe.update` / `keyframe.remove` / `keyframe.move` | `target`, keyframe fields | KF-001, KF-005 |
-| `keyframe.setInterpolation` | `keyframeIds`, `interpolation`, [`easeIn`], [`easeOut`] | KF-004 |
+| `keyframe.setInterpolation` | `keyframeIds`, `interpolation`, [`easeIn`], [`easeOut`], [`side`: both / in / out] | KF-004 |
 | `keyframes.prune` | `clipId` | KF-006 |
 | `keyframes.simplify` | `tolerance`, one of `keyframeIds` / `targets` / `clipIds` (+ `trackedOnly`), [`details`] | KF-010 |
 | `transition.add` | `trackId`, `at` (edit point frame) \| `{clipId, edge}`, `effectId`, [`duration`], [`alignment`], [`handles`] | TRN-001–TRN-004 |

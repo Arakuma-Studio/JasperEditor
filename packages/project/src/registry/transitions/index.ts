@@ -13,6 +13,8 @@ import { SAPPHIRE_WIPES_OTHER_TRANSITIONS } from './sapphire-wipes-other.ts';
 
 export * from './define.ts';
 export * from './glsl.ts';
+// Smooth Slide's pure maths (easing curves, poses, CPU reference) for the interchange mapping and the tests.
+export * from './premiere/smooth-slide.ts';
 export * from './shader.ts';
 
 /** The families, with the id prefix every entry of a family uses (checked by the catalogue test). */

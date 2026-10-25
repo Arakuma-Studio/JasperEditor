@@ -127,6 +127,7 @@ export type MediaInit = {
 	kind?: IMediaKind;
 	path?: string | null;
 	url?: string | null;
+	relativePath?: string | null;
 	duration?: number | null;
 	video?: IMedia['video'];
 	audio?: IMedia['audio'];
@@ -173,6 +174,7 @@ export class Builder {
 			duration: init.duration ?? null,
 			markers: [],
 			...(init.url ? { url: init.url } : {}),
+			...(init.relativePath ? { relativePath: init.relativePath } : {}),
 			...(init.video ? { video: init.video } : {}),
 			...(init.audio ? { audio: init.audio } : {}),
 			...(init.timecode ? { timecode: init.timecode } : {}),

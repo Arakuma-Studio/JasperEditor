@@ -7,6 +7,7 @@
 import {
 	type EffectParams,
 	type EffectRegistry,
+	effectParamMetric,
 	FLICKS_PER_SECOND,
 	type FxClipInfo,
 	type FxTimeStep,
@@ -30,6 +31,7 @@ type TimeClip = Pick<
 	| 'speed'
 	| 'name'
 	| 'sourceInfo'
+	| 'intrinsicBox'
 >;
 
 /** The clip context of fx hooks (`FxClipInfo`). */
@@ -79,6 +81,8 @@ export function fxRemapFrame(
 							{ duration: clip.duration, sourceIn: clip.sourceIn, speed: clip.speed },
 							fps,
 							{ frame: localFrame, params: fx.params },
+							// spatial-points: effect points sampled with the layer box's metric (as `resolveLayerProps`).
+							(name) => effectParamMetric(inst, name, clip.intrinsicBox),
 						),
 					}
 				: {}),

@@ -74,7 +74,14 @@ const JournalRecordSchema = z.object({
 });
 type JournalRecord = z.infer<typeof JournalRecordSchema>;
 
-type JobListFilter = { active?: boolean; projectId?: string; since?: string; kind?: JobKind };
+type JobListFilter = {
+	active?: boolean;
+	projectId?: string;
+	since?: string;
+	kind?: JobKind;
+	/** Restricts internal lookups before cloning and sorting unrelated jobs. */
+	dedupeKeys?: ReadonlySet<string>;
+};
 
 /**
  * Jobs scheduled outside this queue that must still appear in `/api/jobs` and be cancellable/retryable over
@@ -257,6 +264,7 @@ export class JobQueue {
 			if (filter.active && TERMINAL_JOB_STATES.has(j.state)) continue;
 			if (filter.projectId && j.projectId !== filter.projectId) continue;
 			if (filter.kind && j.kind !== filter.kind) continue;
+			if (filter.dedupeKeys && (!j.dedupeKey || !filter.dedupeKeys.has(j.dedupeKey))) continue;
 			if (filter.since) {
 				const t = Date.parse(filter.since);
 				const touched = Date.parse(j.finishedAt ?? j.startedAt ?? j.createdAt);

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -155,7 +155,8 @@ describe.runIf(
 )('rewriteElfRpath (requires readelf and vendored FFmpeg)', () => {
 	it('rewrites the RPATH of the vendored ffmpeg in place', () => {
 		const copy = join(mkdtempSync(join(tmpdir(), 'rpath-')), 'ffmpeg');
-		copyFileSync(vendorFfmpeg, copy);
+		// Create a writable fixture owned by this test, independent of the vendor file's metadata.
+		writeFileSync(copy, readFileSync(vendorFfmpeg), { mode: 0o600 });
 		rewriteElfRpath(copy, 'lib');
 		// An independent ELF reader must see the changed artifact, not just a return value.
 		expect(execFileSync('readelf', ['-d', copy], { encoding: 'utf8' })).toMatch(

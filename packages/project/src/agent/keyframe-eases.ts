@@ -8,6 +8,7 @@ import { type CubicEase, type EaseCurve, easesToCubic } from '../ease/curve.ts';
 import { matchEasePreset } from '../ease/presets.ts';
 import { spanEases, spanLeaving } from '../ease/segments.ts';
 import { rovingRuns } from '../keyframes.ts';
+import type { SpatialMetric } from '../keyframes-spatial.ts';
 import { sequenceFrameOfContentTime } from '../registry/properties.ts';
 import type { Keyframe } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -62,12 +63,14 @@ export type KeyEaseSummary = {
 };
 
 /**
- * Per key (in the given order) the segment leaving it as the evaluator draws it: auto-bezier eases derived, a
- * roving run reported once on its first key. Preset matching only runs for shaped segments.
+ * Per key (in the given order) the segment leaving it exactly as the evaluator draws it (`segmentShape`: per-side
+ * segments included, auto-bezier eases derived — in the metric's pixels for effect points), a roving run reported
+ * once on its first key. Preset matching only runs for shaped segments.
  */
 export function keyEaseSummaries(
 	keys: readonly Keyframe<unknown>[],
 	match: (curve: EaseCurve) => string | undefined = presetMatcher(),
+	metric?: SpatialMetric | null,
 ): KeyEaseSummary[] {
 	const sorted = [...keys].sort((a, b) => a.time - b.time);
 	const runs = rovingRuns(sorted);
@@ -82,13 +85,13 @@ export function keyEaseSummaries(
 			byId.set(k.id, {});
 			return;
 		}
-		const e = spanEases(sorted, sp.a, sp.b);
+		const e = spanEases(sorted, sp.a, sp.b, metric);
 		if (e.hold) {
 			byId.set(k.id, { ease: 'hold' });
 			return;
 		}
 		const c = easesToCubic(e.out, e.in);
-		if (isLinearCubic(c)) {
+		if (e.linear || isLinearCubic(c)) {
 			byId.set(k.id, { ease: 'linear' });
 			return;
 		}
@@ -98,10 +101,17 @@ export function keyEaseSummaries(
 	return keys.map((k) => byId.get(k.id) ?? {});
 }
 
-type SideOut = { influence: number; speed: number; slope: number };
+type SideOut = { interpolation: string; influence: number; speed: number; slope: number };
 
 const side = (s: EaseSideInfo | null): SideOut | null =>
-	s ? { influence: r4(s.influencePercent), speed: r4(s.speed), slope: r4(s.slope) } : null;
+	s
+		? {
+				interpolation: s.interpolation,
+				influence: r4(s.influencePercent),
+				speed: r4(s.speed),
+				slope: r4(s.slope),
+			}
+		: null;
 
 /** Converts a property's key times (flicks) to sequence frames. */
 function frameConverter(
@@ -153,19 +163,22 @@ export function keyframeEasesView(
 				timecode: tc(frame),
 				value: roundValue(k.value),
 				interpolation: k.interpolation,
+				...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 				...(k.roving ? { roving: true } : {}),
 				in: side(k.easeIn),
 				out: side(k.easeOut),
 			};
 		});
 		const segments = p.segments.map((s) => {
-			const linear = !s.hold && isLinearCubic(s.curve);
+			const linear = !s.hold && (s.linear || isLinearCubic(s.curve));
 			const preset = s.hold ? undefined : match(s.curve);
 			return {
 				fromId: s.fromId,
 				toId: s.toId,
 				section: s.section,
 				ease: s.hold ? 'hold' : linear ? 'linear' : formatCubicBezier(s.curve),
+				outInterpolation: s.outInterpolation,
+				inInterpolation: s.inInterpolation,
 				...(preset ? { preset } : {}),
 				...(s.roving ? { roving: true } : {}),
 				averageSpeed: r4(s.averageSpeed),

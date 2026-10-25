@@ -1,6 +1,7 @@
 // Builds the Player's inputProps from the session (ARCHITECTURE §8): the drawn document (committed or
 // gesture transient) → buildRenderSnapshot with media URLs from MediaRuntime (`/media/<key>`, or the
 // proxy when proxies are on and ready, S04:PX-004) → structural sharing with the previous doc.
+import { resolveCatalogFont } from '@jasper/api';
 import { type RenderDoc, type RenderOptions, stabilizeRenderDoc } from '@jasper/compositions';
 import {
 	browserPictureNeed,
@@ -10,7 +11,9 @@ import {
 	type MediaHandle,
 	mediaDecodeHints,
 	mediaLoaderPath,
+	needsPlaybackAudio,
 	type ProjectDocument,
+	playbackAudioStreamUrl,
 	proxyKeyOf,
 	sequenceDuration,
 } from '@jasper/project';
@@ -26,6 +29,24 @@ const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
 	const k = encodeURIComponent(key);
 	return variant === 'original' ? `/media/${k}` : `/media/${k}/proxy/${variant.proxy}`;
 };
+
+/**
+ * pp-wma-preview: the playback audio a preview plays for an asset whose audio the browser cannot decode — stream index →
+ * WAV URL once the engine made it, null until then (the preview is silent rather than failing on the original) —
+ * or undefined when the original's audio plays.
+ */
+export function playbackAudioUrls(
+	asset: MediaAsset,
+	runtime: Pick<MediaRuntime, 'playbackAudio' | 'playbackAudioUrl'> | undefined,
+): Record<string, string> | null | undefined {
+	if (!needsPlaybackAudio(asset)) return undefined;
+	const url = runtime?.playbackAudio?.state === 'ready' ? runtime.playbackAudioUrl : null;
+	if (!url) return null;
+	const out: Record<string, string> = {};
+	for (const s of asset.probe.streams)
+		if (s.type === 'audio') out[String(s.index)] = playbackAudioStreamUrl(url, s.index);
+	return out;
+}
 
 /**
  * Runtime media handle for an asset, or null when offline (S03:RND-032). Uses the runtime playback
@@ -89,26 +110,17 @@ export function resolveMediaHandle(
 		hasAudio: asset.probe.streams.some((s) => s.type === 'audio'),
 		rotation,
 		...mediaDecodeHints(asset.probe),
+		...((p) => (p === undefined ? {} : { playbackAudio: p }))(playbackAudioUrls(asset, runtime)),
 	};
 }
 
-type FontCatalogLike = CatalogForAssets & {
-	fonts: {
-		family: string;
-		source?: string;
-		files: {
-			weight: number;
-			style: 'normal' | 'italic';
-			url: string;
-			subset?: string;
-			unicodeRange?: string;
-		}[];
-	}[];
-};
+/** The engine catalogue as text clips (`resolveCatalogFont`) and template assets (`catalogTemplateAssets`) read it. */
+type FontCatalogLike = CatalogForAssets & NonNullable<Parameters<typeof resolveCatalogFont>[0]>;
 
 /**
- * Font file URL from the engine catalog (`GET /api/fonts`, S04 §18): exact weight/style, else the
- * nearest weight of the same style, else null (the text layer falls back to the default sans).
+ * Font file URL from the engine catalog (`GET /api/fonts`, S04 §18): the same choice the engine's exports make
+ * (`resolveCatalogFont`: family, then a library face's PostScript / full / legacy family name; latin subset, italic
+ * when there is one, nearest weight), else null (the text layer falls back to the default sans).
  */
 function fontUrlFromCatalog(
 	catalog: FontCatalogLike | null,
@@ -116,18 +128,9 @@ function fontUrlFromCatalog(
 	weight: number,
 	italic: boolean,
 ): string | null {
-	// social-comment §7.8: remote platform families are for the templates that declare them; text clips resolve like
-	// the engine's export (unknown → the default sans), so preview and export agree.
-	const fam = catalog?.fonts.find(
-		(f) => f.source !== 'remote' && f.family.toLowerCase() === font.family.toLowerCase(),
-	);
-	if (!fam || fam.files.length === 0) return null;
-	const style = italic ? 'italic' : 'normal';
-	const same = fam.files.filter((f) => f.style === style);
-	const pool = same.length ? same : fam.files;
-	let best = pool[0]!;
-	for (const f of pool) if (Math.abs(f.weight - weight) < Math.abs(best.weight - weight)) best = f;
-	return best.url;
+	// social-comment §7.8: remote platform families are for the templates that declare them; `resolveCatalogFont`
+	// skips them, like the engine's export (unknown → the default sans), so preview and export agree.
+	return resolveCatalogFont(catalog, font.family, weight, italic)?.file.url ?? null;
 }
 
 type RenderDocInput = {

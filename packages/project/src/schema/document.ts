@@ -24,10 +24,12 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * v6 (parity program, D-36…D-48): additive; version bump only.
  * v7 (sound design, spec 12): Essential Sound SFX Pan is an offset (`panOffset`, `residual`) and media carry library
  * provenance (`MediaAsset.library`); version bump only, so v6 builds open v7 files read-only (docs/project-files.md).
- * v8 (social comments): motion-graphic template params may reference media (`{mediaId}`, e.g. avatars); version bump
- * only, so v7 builds — whose orphan collection, Project Manager and item delete ignore those references and would
- * drop the media — open v8 files read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 8;
+ * v8 (Premiere port): Crop in stack order, user font library references, per-side keyframe interpolation, curved
+ * effect-point paths, Premiere crossfade shapes, Smooth Slide and relink metadata; `v7→v8` reorders v7 Crop stacks.
+ * v9 (social comments): motion-graphic template params may reference media (`{mediaId}`, e.g. avatars); version bump
+ * only, so v8 builds — whose orphan collection, Project Manager and item delete ignore those references and would
+ * drop the media — open v9 files read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 9;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

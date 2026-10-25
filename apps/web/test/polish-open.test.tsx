@@ -2,7 +2,7 @@ import { DERIVATIVE_KINDS } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { editorBootScript } from '../editor-boot.ts';
+import { editorBootScript, optionalEditorChunks } from '../editor-boot.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import { fetchWithEarly } from '../src/state/engine.tsx';
@@ -132,6 +132,18 @@ describe('media resolution at project open', () => {
 });
 
 describe('editor boot script (preload + early project fetch)', () => {
+	it('offline warm-up includes the optional runtimes and their static dependencies, with cycles bounded', () => {
+		expect(
+			optionalEditorChunks({
+				pdf: { type: 'chunk', fileName: 'assets/vendor-pdf-a.js', imports: ['assets/shared.js'] },
+				shared: { type: 'chunk', fileName: 'assets/shared.js', imports: ['assets/vendor-pdf-a.js'] },
+				lottie: { type: 'chunk', fileName: 'assets/vendor-lottie-b.js' },
+				panel: { type: 'chunk', fileName: 'assets/panel.js' },
+				asset: { type: 'asset', fileName: 'assets/vendor-screenshot-c.js' },
+			}),
+		).toEqual(['/assets/shared.js', '/assets/vendor-lottie-b.js', '/assets/vendor-pdf-a.js']);
+	});
+
 	function boot(pathname: string, fetchImpl: (url: string) => Promise<unknown>) {
 		const links: { rel: string; href: string }[] = [];
 		const win: Record<string, unknown> = { addEventListener: () => undefined };

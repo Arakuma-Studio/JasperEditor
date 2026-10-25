@@ -9,7 +9,8 @@ import { compositionOfClip } from '../composition/props.ts';
 import { findTrack, trackLabel } from '../derive/index.ts';
 import { expressionInfoAt } from '../expressions.ts';
 import { evaluate, evaluateKeyframes } from '../keyframes.ts';
-import type { EffectRegistry } from '../registry/effects.ts';
+import type { SpatialMetric } from '../keyframes-spatial.ts';
+import { type EffectRegistry, paramSpatialMetric } from '../registry/effects.ts';
 import type { MgTemplateRegistry } from '../registry/mg.ts';
 import {
 	effectPropertySpecs,
@@ -75,30 +76,46 @@ type KeyOut = {
 	timecode: string;
 	value: unknown;
 	interpolation: string;
+	/** keyframe-sides: the incoming side when the key has one of its own. */
+	inInterpolation?: string;
 } & KeyEaseSummary;
 
-/** Maps keys to their listing entries, each with the compact ease of the segment leaving it. */
+/**
+ * Maps keys to their listing entries, each with the compact ease of the segment leaving it (`metric`: the spatial
+ * metric the property evaluates with — effect points — so auto-bezier eases match what renders).
+ */
 function withEases<T extends object>(
 	keys: readonly Keyframe<unknown>[],
 	entry: (k: Keyframe<unknown>) => T,
+	metric?: SpatialMetric,
 ): (T & KeyEaseSummary)[] {
-	const eases = keyEaseSummaries(keys);
+	const eases = keyEaseSummaries(keys, undefined, metric);
 	return keys.map((k, i) => ({ ...entry(k), ...eases[i] }));
 }
 
 /** A property's keys in sequence frames, each with the compact ease of the segment leaving it. */
-function keysOf(seq: Sequence, clip: Clip, anim: Animatable<unknown> | null): KeyOut[] {
+function keysOf(
+	seq: Sequence,
+	clip: Clip,
+	anim: Animatable<unknown> | null,
+	metric?: SpatialMetric,
+): KeyOut[] {
 	if (!anim) return [];
-	return withEases(anim.keyframes as readonly Keyframe<unknown>[], (k) => {
-		const frame = sequenceFrameOfContentTime(clip, k.time, seq.settings.frameRate as Rational);
-		return {
-			id: k.id,
-			frame,
-			timecode: tc(seq, frame),
-			value: round(k.value),
-			interpolation: k.interpolation,
-		};
-	});
+	return withEases(
+		anim.keyframes as readonly Keyframe<unknown>[],
+		(k) => {
+			const frame = sequenceFrameOfContentTime(clip, k.time, seq.settings.frameRate as Rational);
+			return {
+				id: k.id,
+				frame,
+				timecode: tc(seq, frame),
+				value: round(k.value),
+				interpolation: k.interpolation,
+				...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
+			};
+		},
+		metric,
+	);
 }
 
 /** Why a clip draws nothing at `frame` (null = it is rendered). */
@@ -223,7 +240,7 @@ export function clipKeyframesQuery(
 		.filter((s) => keyMatches(s.key, filter))
 		.flatMap((s) => {
 			const r = resolvePropertyAt(ctx, s, clip.start);
-			const keyframes = keysOf(seq, clip, r.anim).filter((k) => k.frame >= lo && k.frame <= hi);
+			const keyframes = keysOf(seq, clip, r.anim, r.metric).filter((k) => k.frame >= lo && k.frame <= hi);
 			if (!keyframes.length) return [];
 			return [
 				{ key: s.key, label: s.label, target: propertyKeyToParamPath({ clipId: clip.id }, s.key), keyframes },
@@ -257,7 +274,7 @@ export function clipPropertiesQuery(
 		.map((s) => {
 			const r = resolvePropertyAt(ctx, s, at);
 			const rv = renderedValue(view, s.key, r.value);
-			const keys = keysOf(seq, clip, r.anim);
+			const keys = keysOf(seq, clip, r.anim, r.metric);
 			const target = propertyKeyToParamPath({ clipId: clip.id }, s.key);
 			// Wave expressions: the stored expression, its error, and its value where the scene view does not hold the
 			// property (shape, text, masks…).
@@ -334,6 +351,8 @@ export function paramGetQuery(env: PropertyQueryEnv, args: { target: string[]; f
 					args.frame,
 					anim ?? { value: spec!.default, keyframes: [] },
 					fx.enabled ? null : 'the effect is bypassed',
+					// spatial-points: track / master effect points measure their paths in the sequence frame's pixels.
+					paramSpatialMetric(spec, { width: seq.settings.width, height: seq.settings.height }),
 				);
 			}
 		}
@@ -373,6 +392,7 @@ export function paramGetQuery(env: PropertyQueryEnv, args: { target: string[]; f
 								timecode: tc(seq, start + Math.round(k.time / F)),
 								value: round(k.value),
 								interpolation: k.interpolation,
+								...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 							})),
 						}
 					: {}),
@@ -404,10 +424,11 @@ function seqParam(
 	frameArg: number | undefined,
 	anim: Animatable<unknown>,
 	notRendered: string | null,
+	metric?: SpatialMetric,
 ) {
 	const F = flicksPerFrame(seq.settings.frameRate as Rational);
 	const frame = frameArg ?? 0;
-	const value = evaluate(anim, frame * F);
+	const value = evaluate(anim, frame * F, metric ? { metric } : undefined);
 	return {
 		sequenceId: seq.id,
 		frame,
@@ -417,13 +438,18 @@ function seqParam(
 		animated: anim.keyframes.length > 0,
 		...(anim.keyframes.length
 			? {
-					keyframes: withEases(anim.keyframes, (k) => ({
-						id: k.id,
-						frame: Math.round(k.time / F),
-						timecode: tc(seq, Math.round(k.time / F)),
-						value: round(k.value),
-						interpolation: k.interpolation,
-					})),
+					keyframes: withEases(
+						anim.keyframes,
+						(k) => ({
+							id: k.id,
+							frame: Math.round(k.time / F),
+							timecode: tc(seq, Math.round(k.time / F)),
+							value: round(k.value),
+							interpolation: k.interpolation,
+							...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
+						}),
+						metric,
+					),
 				}
 			: {}),
 		...(notRendered ? { rendered: false, why: notRendered } : {}),

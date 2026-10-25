@@ -39,6 +39,8 @@ import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
 import { useExpressionsFor } from '../../expressions/engine.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
+import { useFonts } from '../../fonts/hooks.ts';
+import { useMissingFontsNotice } from '../../fonts/notice.ts';
 import { buildMulticamViewDoc, multicamClipAt, multicamTrack } from '../../multicam/logic.ts';
 import { MulticamOverlay } from '../../multicam/MulticamOverlay.tsx';
 import { installMulticamRecorder } from '../../multicam/recorder.ts';
@@ -46,7 +48,7 @@ import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { registerProgramPerf } from '../../previews/perf.ts';
 import { useHeardDocument } from '../../proposals/state.ts';
-import { useFontCatalog } from '../../remote-assets/font-catalog.ts';
+import { useRemoteAssetsEpoch } from '../../remote-assets/font-catalog.ts';
 import {
 	TemplateAssetWarning,
 	useLayerAssetReports,
@@ -148,7 +150,11 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const attachedProxies = useSessionState((s) => !!s.toggles.attachedProxies);
 	const useProxies = autoProxies || attachedProxies;
 	const monitor = useStoreSelector(monitorStores.program, (s) => s);
-	const { catalog: fontCatalog, epoch: assetEpoch } = useFontCatalog(engine);
+	// wp fonts: the catalog follows `fonts.changed`, so installing a font redraws text set in it; social-comment §7.8:
+	// it also follows `remoteAssets.changed` (platform fonts, emoji and images of the templates), counted by the epoch.
+	const fontCatalog = useFonts().catalog;
+	useMissingFontsNotice(session, fontCatalog);
+	const assetEpoch = useRemoteAssetsEpoch();
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;

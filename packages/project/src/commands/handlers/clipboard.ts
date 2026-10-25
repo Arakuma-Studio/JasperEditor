@@ -20,7 +20,7 @@ import {
 } from '../../clipboard/payload.ts';
 import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
-import { isHoldOnlyValue, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
+import { isHoldOnlyValue, normalizeKeySides, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { rewriteParamMedia } from '../../param-media.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
@@ -312,6 +312,8 @@ function retimeKeys<T>(
 		const copy: Keyframe<T> = { ...clone(key), id: h.ids.next('kf'), time };
 		if (flip) {
 			Object.assign(copy, clone(reversedKeyTiming(keys as readonly Keyframe<unknown>[], i)));
+			// keyframe-sides: the mirrored keys carry each segment's shape in their eases (read the legacy way).
+			delete copy.inInterpolation;
 			if (copy.spatial) copy.spatial = reversedSpatial(copy.spatial);
 			// A roving key stays roving (its run reverses with it).
 		}
@@ -644,7 +646,13 @@ function applyAttributes(
 							effectId: spec.id,
 							effectVersion: spec.version,
 							enabled: copy.enabled,
-							params: buildParams(spec, copy.params, h),
+							// spatial-points: the target's layer box is the metric of its point paths.
+							params: buildParams(
+								spec,
+								copy.params,
+								h,
+								intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: t as Clip }),
+							),
 						}
 					: { ...copy, id: h.ids.next('fx') };
 				dropForeignRotoRefs(c as { rotos?: { id: string }[] }, instance as never);
@@ -866,21 +874,28 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 				interpolation: hold ? 'hold' : timing.interpolation,
 				easeIn: { influence: timing.easeIn.influence, slope: timing.easeIn.slope },
 				easeOut: { influence: timing.easeOut.influence, slope: timing.easeOut.slope },
+				// keyframe-sides: the incoming side travels with the key (mirrored pastes carry it in their eases).
+				...(!hold && dir >= 0 && k.inInterpolation !== undefined
+					? { inInterpolation: k.inInterpolation }
+					: {}),
 				...(spatial ? { spatial } : {}),
 				...(k.roving ? { roving: true } : {}),
 			});
 		}
 		if (incoming.size === 0) continue;
+		// keyframe-sides: pasted incoming types come from an untrusted payload.
+		for (const key of incoming.values()) normalizeKeySides(key);
 		// A pasted key replaces a key at the same time (S01:KF-002).
 		const merged = [
 			...(target.anim.keyframes as Keyframe<unknown>[]).filter((k) => !incoming.has(k.time)).map(clone),
 			...incoming.values(),
 		].sort((a, b) => a.time - b.time);
 		target.anim.keyframes = merged as never;
-		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[]);
+		// spatial-points: effect points measure their paths in the target layer box's pixels.
+		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[], target.metric);
 		// keyframes-blend: roving keys sit where the motion passes them.
-		retimeRoving(target.anim.keyframes as Keyframe<unknown>[]);
-		refreshAutoBezier(target.anim);
+		retimeRoving(target.anim.keyframes as Keyframe<unknown>[], target.metric);
+		refreshAutoBezier(target.anim, target.metric);
 		(target.anim as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
 		pasted.push(...[...incoming.values()].map((k) => k.id));
 		paths.push(path);

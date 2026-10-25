@@ -1,12 +1,14 @@
 // Preserve stack order across the canvas effect chain and LayerBox's CSS/SVG wrappers:
-// - crop first (S03 §4.2 step 2, as `effectStages` does), then the stack in order;
-// - the chain covers the stack up to the LAST effect that needs pixels (a shader effect or a colour run); in it:
+// - the stack runs in order, Crop included (schema v8: Crop applies where it sits, docs/wp-notes/crop-order.md);
+// - the chain covers the stack up to the LAST effect that needs pixels (a shader effect, a colour run, a crop with
+//   Edge Feather, or a crop the colour stage could not keep in place — see `cropNeedsChain`); in it:
 //   shader effects → `gpu` steps, consecutive colour effects → one baked-LUT `lut` step (S06 runs), CSS-filter
-//   effects → 2D `css` steps, crop → `crop`, flips → `flip`; the corner pin stays the layer matrix (it commutes);
+//   effects → 2D `css` steps, a hard crop → `crop`, a feathered crop → its GPU stand-in (fx/builtins.ts), flips →
+//   `flip`; the corner pin stays the layer matrix (D-27: always last);
 //   built-ins whose preview needs an SVG filter at their params (one-direction Gaussian Blur, Repeat Edge Pixels)
 //   run as GPU stand-ins (fx/builtins.ts) in stack order; anything else there (other style fragments) cannot run on
 //   a canvas and is drawn after the chain as a CSS/SVG stage — listed in `reordered` (an order approximation);
-// - effects after the chain stay CSS/SVG stages, in order.
+// - effects after the chain stay CSS/SVG stages, in order (a hard crop there is a `clip-path` wrapper at its place).
 // Layers without an enabled, known shader effect keep their regular layer renderers.
 import {
 	activeMasks,
@@ -26,7 +28,7 @@ import {
 	type ResolvedMask,
 	ZERO_PADDING,
 } from '@jasper/project';
-import { chainGpuStandIn } from './builtins.ts';
+import { chainGpuStandIn, cropChainSpec, cropNeedsChain } from './builtins.ts';
 
 const CROP = 'jasper.crop';
 const FLIP_H = 'jasper.flip-horizontal';
@@ -100,6 +102,11 @@ export type PlanLayerFxOptions = {
 	 * with their input by coverage, and a final `mask` step multiplies the picture by the Opacity masks.
 	 */
 	masks?: readonly ResolvedMask[];
+	/**
+	 * crop-order: ids of the layer's crops whose Edge Feather is keyframed or expressed above 0 somewhere in the clip
+	 * (`cropMayFeather` on the Animatable): they take the feathered path on every frame, also where it evaluates to 0.
+	 */
+	featheredCrops?: ReadonlySet<string>;
 };
 
 export function effectMasks(fx: Pick<ResolvedEffect, 'masks'>): ResolvedMask[] {
@@ -117,18 +124,21 @@ export function planLayerFx(
 		const s = registry.get(fx.effectId, fx.effectVersion);
 		return s?.appliesTo === 'video' ? s : undefined;
 	};
-	const ordered = [
-		...effects.filter((e) => e.effectId === CROP),
-		...effects.filter((e) => e.effectId !== CROP),
-	].filter((fx) => fx.enabled && !!specOf(fx));
+	// Stack order, Crop included (schema v8).
+	const ordered = effects.filter((fx) => fx.enabled && !!specOf(fx));
 	const opacityMasks = opts.masks?.length ? activeMasks(opts.masks) : [];
 	const masked = opacityMasks.length > 0 || ordered.some((fx) => effectMasks(fx).length > 0);
 	const whole = !!opts.capture || masked;
-	if (!whole && !ordered.some((fx) => !!specOf(fx)!.gpu)) return null;
+	// Crops the CSS/colour-stage paths cannot draw exactly (Edge Feather; a crop before a pixel-mixing effect that the
+	// colour stage would move into its chain) need the chain like shader effects do.
+	const chainCrops = cropNeedsChain(ordered, (fx) => specOf(fx), opts.featheredCrops);
+	const needsChain = (fx: ResolvedEffect) => !!specOf(fx)!.gpu || chainCrops.has(fx.id);
+	if (!whole && !ordered.some(needsChain)) return null;
 	const bypassed: FxBypass[] = [];
 	if (opts.gpu !== 'ok') {
+		// A crop drawn by the chain falls back to its hard `clip-path` (cssEffects) with the chip.
 		for (const fx of ordered)
-			if (specOf(fx)!.gpu) bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'gpu-unavailable' });
+			if (needsChain(fx)) bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'gpu-unavailable' });
 		// GPU mask processing is unavailable too; preview Opacity masks use a CPU mask image.
 		if (masked)
 			bypassed.push({ fxId: MASKS_BYPASS_ID, effectId: MASKS_BYPASS_ID, reason: 'gpu-unavailable' });
@@ -154,10 +164,10 @@ export function planLayerFx(
 	let last = -1;
 	runnable.forEach((fx, i) => {
 		const spec = specOf(fx)!;
-		if (spec.gpu || spec.color) last = i;
+		if (spec.gpu || spec.color || chainCrops.has(fx.id)) last = i;
 	});
 	if (whole) last = runnable.length - 1;
-	else if (last < 0 || !runnable.slice(0, last + 1).some((fx) => specOf(fx)!.gpu))
+	else if (last < 0 || !runnable.slice(0, last + 1).some(needsChain))
 		// Without a working shader effect, the ordinary layer renderer and colour stage handle the remaining effects.
 		return {
 			active: false,
@@ -219,6 +229,20 @@ export function planLayerFx(
 		if (fx.effectId === CORNER_PIN_EFFECT_ID) return; // the layer matrix (projective), after every effect
 		if (fx.effectId === CROP) {
 			const p = fx.params;
+			// Edge Feather: the GPU stand-in (the shared profile of render/crop.ts); a hard crop is the 2D clip.
+			const feathered = cropChainSpec(spec, p as EffectParams, !!opts.featheredCrops?.has(fx.id));
+			if (feathered && opts.failed?.(fx.effectId)) {
+				// The stand-in's shader failed: the hard crop as a CSS stage, with the failure chip.
+				bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'shader-failed' });
+				cssEffects.push(fx);
+				reordered.push(fx.id);
+				return;
+			}
+			if (feathered) {
+				steps.push(withMasks({ kind: 'gpu', fx, spec: feathered, padding: ZERO_PADDING }));
+				timeDependent ||= gpuIsTimeDependent(feathered, fx.params, opts.mediaKind);
+				return;
+			}
 			steps.push(
 				withMasks({
 					kind: 'crop',

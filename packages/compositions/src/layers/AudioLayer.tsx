@@ -27,7 +27,7 @@ import { cancelRender, continueRender, delayRender, getRemotionEnvironment, Inte
 import { MixGraphContext } from '../audio/context.ts';
 import { clipEffectsLatency, graphAppliesLevels, type MixGraph } from '../audio/graph.ts';
 import { mappedAudioUrl, reversedAudioUrl } from '../audio/reversed.ts';
-import { audioGainAt, dbToGain, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
+import { audioGainAt, audioSrc, dbToGain, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
 
 /**
@@ -143,8 +143,11 @@ export function AudioLayer({
 		[clip, num, den, master, sequenceFrom, routed, fx, leadFrames],
 	);
 	const generated = useGeneratedAudio(clip, { num, den });
+	// pp-wma-preview: audio the browser cannot decode plays from the engine's playback audio (the clip's stream).
 	const mediaUrl =
-		!generated && media && (media.hasAudio || media.kind === 'audio') ? mediaSrc(media, options) : null;
+		!generated && media && (media.hasAudio || media.kind === 'audio')
+			? audioSrc(media, clip.channels.streamIndex, options)
+			: null;
 	// Remotion's Audio plays forwards only; reversed and interpreted ranges use a WAV prepared in the page.
 	const mapped = !!clip.mediaTime;
 	const reversed = useReversedAudio(clip, clip.speed.reverse && !mapped ? mediaUrl : null, { num, den });

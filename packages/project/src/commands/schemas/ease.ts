@@ -2,6 +2,7 @@
 // grouped by property and processed in document order (property, then time).
 import { z } from 'zod';
 import { CubicEaseSchema, EaseCurveSchema, EaseSectionSchema, MultiEaseSchema } from '../../ease/curve.ts';
+import { InInterpolationSchema, InterpolationSchema } from '../../schema/common.ts';
 import { cmd, IdRefSchema } from './common.ts';
 
 const KeyIds = z.array(IdRefSchema).min(1).max(100_000);
@@ -18,11 +19,22 @@ const ClipEaseSchema = z.strictObject({
 });
 
 /**
- * An ease clipboard entry (`copyEase`): one key's two eases, or segment curves (with the whole span as a multi-point
- * curve when it was copied from three or more keys of one property).
+ * An ease clipboard entry (`copyEase`): one key's two sides — eases and (keyframe-sides) temporal types, incoming
+ * `inInterpolation` and outgoing `interpolation`, Bezier when absent — or segment curves (with the whole span as a
+ * multi-point curve when it was copied from three or more keys of one property).
  */
 export const EaseClipSchema = z.union([
-	z.strictObject({ kind: z.literal('key'), easeIn: ClipEaseSchema, easeOut: ClipEaseSchema }),
+	z.strictObject({
+		kind: z.literal('key'),
+		easeIn: ClipEaseSchema,
+		easeOut: ClipEaseSchema,
+		inInterpolation: InInterpolationSchema.optional().describe(
+			'Incoming temporal type of the copied key (default bezier)',
+		),
+		interpolation: InterpolationSchema.optional().describe(
+			'Outgoing temporal type of the copied key (default bezier)',
+		),
+	}),
 	z.strictObject({
 		kind: z.literal('segments'),
 		segments: z.array(CubicEaseSchema).min(1).max(256),
@@ -43,9 +55,10 @@ export const KeyframeApplyEaseCmd = cmd('keyframe.applyEase', {
 });
 
 /**
- * Pastes an ease clipboard entry: `key` sets both eases of every target key; `segments` goes onto the target
- * segments (one curve → every segment; n curves → in order, property then time); a copied multi-point `curve` is
- * applied like `keyframe.applyEase` unless `mode: "segments"`.
+ * Pastes an ease clipboard entry: `key` sets both sides (types and eases) of every target key, as
+ * `keyframe.setInterpolation` would; `segments` goes onto the target segments (one curve → every segment; n curves →
+ * in order, property then time); a copied multi-point `curve` is applied like `keyframe.applyEase` unless
+ * `mode: "segments"`.
  */
 export const KeyframePasteEaseCmd = cmd('keyframe.pasteEase', {
 	keyframeIds: KeyIds,

@@ -10,13 +10,24 @@
 // are kept verbatim and only flagged (`presetIssues`), so presets made with a newer build stay intact.
 import { z } from 'zod';
 import { utf8Length } from '../clipboard/payload.ts';
-import type { Ease, Expression, Interpolation, ParamValue, RationalT, Vec2 } from '../schema/common.ts';
+import type {
+	Ease,
+	Expression,
+	InInterpolation,
+	Interpolation,
+	ParamValue,
+	RationalT,
+	Spatial,
+	Vec2,
+} from '../schema/common.ts';
 import {
 	EaseSchema,
 	ExpressionSchema,
+	InInterpolationSchema,
 	InterpolationSchema,
 	ParamValueSchema,
 	RationalSchema,
+	SpatialSchema,
 	Vec2Schema,
 } from '../schema/common.ts';
 import { type BlendMode, BlendModeSchema } from '../schema/sequence.ts';
@@ -48,16 +59,25 @@ export const PresetKeyframeSchema = z.looseObject({
 	time: z.number().int(),
 	value: z.unknown(),
 	interpolation: InterpolationSchema.optional(),
+	/** keyframe-sides: the key's incoming side (absent = read the legacy way). */
+	inInterpolation: InInterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
+	/**
+	 * spatial-points: the spatial path of a point key (Motion Position / Anchor Point, effect points); kept only on
+	 * point properties when applied. Absent = linear spatial.
+	 */
+	spatial: SpatialSchema.optional(),
 });
 export type PresetKeyframe<T = unknown> = {
 	id?: string;
 	time: number;
 	value: T;
 	interpolation?: Interpolation;
+	inInterpolation?: InInterpolation;
 	easeIn?: Ease;
 	easeOut?: Ease;
+	spatial?: Spatial;
 };
 
 function presetAnim<T extends z.ZodType>(value: T) {
@@ -113,7 +133,10 @@ export const PresetIntrinsicSchema = z.looseObject({
 	motion: PresetMotionSchema.optional(),
 	opacity: PresetAnimNumber.optional(),
 	blendMode: BlendModeSchema.optional(),
-	/** The pinned Crop (the clip's first `jasper.crop`): applying overwrites it (or creates it at index 0). */
+	/**
+	 * The pinned Crop (the source stack's first effect when it is a `jasper.crop`): applying overwrites the target's
+	 * pinned crop (or inserts one at index 0) — it applies first, before the other effects (crop-order).
+	 */
 	crop: z
 		.looseObject({ enabled: z.boolean().optional(), params: z.record(z.string(), PresetAnimParam) })
 		.optional(),

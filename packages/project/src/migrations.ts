@@ -4,6 +4,7 @@
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
 import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
+import { dropUnreadableKeySides } from './keyframes.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
@@ -81,6 +82,30 @@ function migrateV4ToV5(doc: Rec): Rec {
 	return doc;
 }
 
+/**
+ * v7 → v8: Crop is applied where it sits in the effect stack (Premiere's order). v7 builds always applied a clip's
+ * Crop effects before its other effects wherever they were listed, so every stack that lists a Crop after another
+ * effect is reordered to put its Crop effects first (in their order; the other effects keep theirs): v7 projects
+ * render as before. Effect stacks are clip `effects` arrays inside `sequences`.
+ */
+function migrateV7ToV8(doc: Rec): Rec {
+	const sequences = isRec(doc.sequences) ? doc.sequences : {};
+	for (const seq of Object.values(sequences)) {
+		if (!isRec(seq) || !isRec(seq.clips)) continue;
+		for (const clip of Object.values(seq.clips)) {
+			if (!isRec(clip) || !Array.isArray(clip.effects)) continue;
+			const isCrop = (e: unknown) => isRec(e) && e.effectId === 'jasper.crop';
+			const crops = clip.effects.filter(isCrop);
+			if (crops.length === 0) continue;
+			const firstOther = clip.effects.findIndex((e) => !isCrop(e));
+			const lastCrop = clip.effects.length - 1 - [...clip.effects].reverse().findIndex(isCrop);
+			if (firstOther === -1 || lastCrop < firstOther) continue;
+			clip.effects = [...crops, ...clip.effects.filter((e) => !isCrop(e))];
+		}
+	}
+	return doc;
+}
+
 /** Migrations run in order; every supported version keeps a loadable fixture (S01:MIG-002). */
 export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 1, to: 2, migrate: migrateV1ToV2 },
@@ -102,10 +127,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// repair and by the Essential Sound commands); the bump makes v6 builds open v7 files read-only, because a v6
 	// build editing Essential Sound Pan would write an absolute pan under the offset marker, which v7 then misreads.
 	{ from: 6, to: 7, migrate: (doc) => doc },
-	// v8 (social comments): motion-graphic template params may hold media references (`{mediaId}`: avatars). Existing
-	// data needs no changes; the bump makes v7 builds open v8 files read-only, because their orphan collection, item
+	// v8 (Premiere port): Crop applies in stack order, user font library references, per-side keyframe
+	// interpolation, curved paths on effect points, Premiere crossfade shapes, the Universe-style Slide transition
+	// and relink metadata. v7 stacks listing a Crop after another effect are reordered so they render as before;
+	// the bump makes v7 builds open v8 files read-only (they would apply Crop first and misread the new fields).
+	{ from: 7, to: 8, migrate: migrateV7ToV8 },
+	// v9 (social comments): motion-graphic template params may hold media references (`{mediaId}`: avatars). Existing
+	// data needs no changes; the bump makes v8 builds open v9 files read-only, because their orphan collection, item
 	// delete and Project Manager ignore such references and would drop the media (data loss) on their next save.
-	{ from: 7, to: 8, migrate: (doc) => doc },
+	{ from: 8, to: 9, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */
@@ -190,6 +220,13 @@ export function loadProject(
 			issues: [],
 		};
 	}
+	// keyframe-sides: an unreadable incoming interpolation is dropped before validation (lenient reading, reported).
+	const sideRepairs: RepairEntry[] = dropUnreadableKeySides(m.document).map((id) => ({
+		action: 'repair-key-sides',
+		entity: id,
+		detail:
+			'unreadable incoming interpolation removed (the key is read with its interpolation on both sides)',
+	}));
 	const parsed = ProjectDocumentSchema.safeParse(m.document);
 	if (!parsed.success) {
 		const msg = parsed.error.issues
@@ -209,5 +246,5 @@ export function loadProject(
 		repairs = r.report;
 		issues = checkInvariants(document, invOpts);
 	}
-	return { document, readOnly: false, migration: m.report, repairs, issues };
+	return { document, readOnly: false, migration: m.report, repairs: [...sideRepairs, ...repairs], issues };
 }

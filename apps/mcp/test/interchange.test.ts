@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
-const placeholder = (name: string, seconds: number): Omit<MediaAsset, 'id'> =>
+const placeholder = (name: string, seconds: number, path = `/old/${name}`): Omit<MediaAsset, 'id'> =>
 	({
 		kind: 'video',
 		fingerprint: `pending:interchange:${name}`,
@@ -45,7 +45,7 @@ const placeholder = (name: string, seconds: number): Omit<MediaAsset, 'id'> =>
 			hasAlpha: false,
 			variableFrameRate: false,
 		},
-		locators: [{ type: 'path', path: `/old/${name}`, relativeToProject: null }],
+		locators: [{ type: 'path', path, relativeToProject: null }],
 		derivation: null,
 		importedAt: '2026-10-07T00:00:00.000Z',
 	}) as Omit<MediaAsset, 'id'>;
@@ -87,6 +87,11 @@ function fakeEngine() {
 		commands: [
 			{ type: 'media.register', asset: placeholder('A001.mov', 10), ref: '$a' },
 			{ type: 'media.register', asset: placeholder('B002.mov', 10), ref: '$b' },
+			{
+				type: 'media.register',
+				asset: placeholder('C003.mov', 10, 'D:\\Shoot\\Day 1\\C003.mov'),
+				ref: '$c',
+			},
 		],
 	});
 	if (!setup.ok) throw new Error(JSON.stringify(setup.errors));
@@ -120,9 +125,12 @@ function fakeEngine() {
 				diff: [{ field: 'duration', was: '10.00 s', now: '4.00 s' }],
 			},
 		],
+		ambiguous: [],
 		notFound: [],
 		scannedFiles: 9,
 		truncated: false,
+		timedOut: false,
+		mappings: [],
 	};
 	let scanned = new Set<string>();
 	const client = {
@@ -188,9 +196,26 @@ function fakeEngine() {
 			scanned = new Set(body.assets.map((x) => x.id));
 			return job('job_scan', 'running');
 		},
+		relinkScanResult: async (pid: string, jobId: string) => {
+			calls.push({ name: 'relinkScanResult', body: { pid, jobId } });
+			return {
+				...scan,
+				found: scan.found.filter((f) => scanned.has(f.assetId)),
+				notFound: [...scanned].filter((id) => !scan.found.some((f) => f.assetId === id)),
+			};
+		},
+		relinkAsset: async (assetId: string, body: { path: string; match?: string[] }) => {
+			calls.push({ name: 'relinkAsset', body: { assetId, ...body } });
+			const name = body.path.split('/').pop()!;
+			return { media: reg(name, 10), match: 'placeholder', diff: [], failed: [], needsConfirm: false };
+		},
+		mediaStatusBatch: async (keys: string[]) => ({
+			statuses: keys.map((k) => ({ mediaKey: k, status: 'online', derivatives: {} })),
+			unknown: [],
+		}),
 		getJob: async (id: string) =>
 			id === 'job_scan'
-				? job(id, 'succeeded', { ...scan, found: scan.found.filter((f) => scanned.has(f.assetId)) })
+				? job(id, 'succeeded', { found: scanned.size, needsConfirm: 0, ambiguous: 0, notFound: 0 })
 				: job(id, 'succeeded', {
 						format: 'aaf',
 						files: [
@@ -296,7 +321,17 @@ describe('interchange MCP tools', () => {
 	it('list_offline_media and link_media (folder search; differences need force)', async () => {
 		const { engine, call } = await connect();
 		const list = await call('list_offline_media', {});
-		expect(list.body.offline.map((m: { name: string }) => m.name).sort()).toEqual(['A001.mov', 'B002.mov']);
+		expect(list.body.offline.map((m: { name: string }) => m.name).sort()).toEqual([
+			'A001.mov',
+			'B002.mov',
+			'C003.mov',
+		]);
+		expect(list.body.total).toBe(3);
+		const win = list.body.offline.find((m: { name: string }) => m.name === 'C003.mov');
+		expect(win).toMatchObject({ path: 'D:\\Shoot\\Day 1\\C003.mov', pathStyle: 'windows' });
+		const page = await call('list_offline_media', { offset: 1, limit: 1 });
+		expect(page.body).toMatchObject({ total: 3, offset: 1, nextOffset: 2 });
+		expect(page.body.offline.length).toBe(1);
 		const dry = await call('link_media', { folder: '/new', dryRun: true });
 		expect(dry.body.wouldLink.map((m: { name: string }) => m.name)).toEqual(['A001.mov']);
 		expect(dry.body.needsForce[0].differences).toEqual(['duration: 10.00 s → 4.00 s']);
@@ -310,5 +345,34 @@ describe('interchange MCP tools', () => {
 		const forced = await call('link_media', { folder: '/new', force: true });
 		expect(forced.body.linked).toBe(1);
 		expect(engine.doc().media[engine.refs.$b!]!.fingerprint).toBe('q1:B002.mov');
+	});
+
+	it('link_media with a located file relinks the others automatically in one transaction', async () => {
+		const { engine, call } = await connect();
+		const r = await call('link_media', {
+			mediaId: engine.refs.$c,
+			path: '/Volumes/Mac/Shoot/Day 1/C003.mov',
+			alignTimecode: false,
+		});
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		const scanCall = engine.calls.find((c) => c.name === 'relinkScan')!.body as {
+			anchors: unknown[];
+			assets: { id: string }[];
+			match: string[];
+		};
+		expect(scanCall.anchors).toEqual([
+			{ from: 'D:\\Shoot\\Day 1\\C003.mov', to: '/Volumes/Mac/Shoot/Day 1/C003.mov', relativePath: null },
+		]);
+		expect(scanCall.assets.map((x) => x.id).sort()).toEqual([engine.refs.$a, engine.refs.$b].sort());
+		expect(scanCall.match).toEqual(['name', 'extension', 'duration', 'streams']);
+		// the located file and the verified A001 in one transaction; B002 needs force (shorter than its clips)
+		expect(r.body.linked).toBe(2);
+		expect(r.body.needsForceCount).toBe(1);
+		expect(engine.doc().media[engine.refs.$c!]!.fingerprint).toBe('q1:C003.mov');
+		expect(engine.doc().media[engine.refs.$a!]!.fingerprint).toBe('q1:A001.mov');
+		// a relative path is refused before reaching the engine
+		const bad = await call('link_media', { mediaId: engine.refs.$b, path: 'B002.mov' });
+		expect(bad.isError).toBe(true);
+		expect(bad.body.error.code).toBe('E_INVALID_PARAM');
 	});
 });

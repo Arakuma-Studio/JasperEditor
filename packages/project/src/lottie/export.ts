@@ -18,7 +18,7 @@
 // frame (exact at every frame). Keyframes are in layer frames: content time / sequence frame duration.
 
 import { bindExpressions } from '../expressions.ts';
-import { evaluate, incomingEase, isHoldOnlyValue, outgoingEase, rovingRunAt } from '../keyframes.ts';
+import { evaluate, isHoldOnlyValue, rovingRunAt, segmentShape } from '../keyframes.ts';
 import { effectiveTangents, isVec2Value } from '../keyframes-spatial.ts';
 import type { BezierPath } from '../path/model.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
@@ -170,8 +170,11 @@ function prop<T>(
 			out.push(o);
 			return;
 		}
-		const eo = k.interpolation === 'linear' ? { influence: 1 / 3, slope: 1 } : outgoingEase(kfs, i);
-		const ei = k.interpolation === 'linear' ? { influence: 1 / 3, slope: 1 } : incomingEase(kfs, i + 1);
+		// keyframe-sides: the segment's actual shape (per side, or the legacy rule); Lottie stores both sides per segment.
+		const shape = segmentShape(kfs, i);
+		const lin = { influence: 1 / 3, slope: 1 };
+		const eo = typeof shape === 'object' ? shape.out : lin;
+		const ei = typeof shape === 'object' ? shape.in : lin;
 		const ox = r6(Math.min(1, Math.max(0, eo.influence)));
 		const ix = r6(1 - Math.min(1, Math.max(0, ei.influence)));
 		o.o = { x: ox, y: r6(ox * eo.slope) };

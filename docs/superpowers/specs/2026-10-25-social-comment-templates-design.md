@@ -300,7 +300,7 @@ This is a new **media parameter kind for MG templates**. The value is `{mediaId}
   - INV-006 missing-media reporting.
 
   `repairDocument` sets a dangling avatar to `null` and reports it.
-- **Schema bump to v8**, a no-op migration with fixture, compatibility test and `docs/project-files.md`
+- **Schema bump to v9** (after the Premiere port's v8), a no-op migration with fixture, compatibility test and `docs/project-files.md`
   row. Older builds would misread these references (their Project Manager drops the avatar), so
   AGENTS.md §0 requires it.
 - Generated avatars (`{generated: seed}`) are drawn by the template itself and need no media.
@@ -437,7 +437,7 @@ Follow AGENTS.md §7. Feature-specific checks:
   - batch MCP;
   - time parsing.
 - **Regression tests that fail before the avatar-reference fixes**, one per integrity path in §7.7.
-  Schema v8 migration fixture and compatibility test.
+  Schema v9 migration fixture and compatibility test.
 - **Anime template suites:**
   - catalogue/schema tests;
   - motion-model cue timing, with VARIANTS for every variant × entrance × extras combination that

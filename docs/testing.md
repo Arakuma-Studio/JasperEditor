@@ -86,8 +86,11 @@ assistant's eases — a cubic overshoot preset, multi-point bounces, a rebuilt s
 native corners ≤ 0.1 px from the shared evaluator on every frame without Remotion; SSIM ≥ 0.98 against Remotion with
 `REMOTION_E2E=1`), `apps/engine/test/trim-paths-export.e2e.test.ts` (`REMOTION_E2E=1`: Trim Paths animations and
 trim tracers exported on the hybrid layer-bake and Remotion paths, compared frame by frame and with the evaluated
-tips and trims) and `apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and
-by Remotion, compared with each other and with goldens). `apps/engine/test/blend-export.test.ts` checks a native
+tips and trims), `apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and
+by Remotion, compared with each other and with goldens), `apps/engine/test/crop-order-parity.e2e.test.ts` (Crop in
+stack order and Edge Feather, export vs Remotion and vs the shared feather profile; `REMOTION_E2E=1`) and
+`apps/engine/test/crop-order-native.test.ts` (the same on the native path against computed pixels, no Chrome).
+`apps/engine/test/blend-export.test.ts` checks a native
 Multiply / half-opacity Normal / Difference stack against independently calculated pixels, plus literal kernel
 vectors for transparent layer pixels, stencil clearing and inactive-frame passthrough.
 

@@ -87,7 +87,7 @@ function anchorIndex(doc: ProjectDocument): Map<string, string> {
 			const t = rec(tRaw);
 			m.set(
 				id,
-				`transition:${String(t.trackId)}:${String(t.outgoingClipId)}:${String(t.incomingClipId)}:${num(t.duration)}:${String(t.alignment)}`,
+				`transition:${String(t.trackId)}:${String(t.outgoingClipId)}:${String(t.incomingClipId)}:${num(t.duration)}:${String(t.alignment)}${t.cutPosition !== undefined ? `:${num(t.cutPosition)}` : ''}`,
 			);
 		}
 		for (const key of ['links', 'groups']) for (const id of Object.keys(rec(seq[key]))) m.set(id, key);

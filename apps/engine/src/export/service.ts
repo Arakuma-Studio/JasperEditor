@@ -1312,6 +1312,7 @@ export class ExportService {
 				return {
 					path: m.path,
 					streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
+					container: m.record.container,
 				};
 			},
 			range: planned.range,

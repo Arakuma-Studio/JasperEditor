@@ -280,6 +280,7 @@ export async function audioWorld(
 		local.set(asset.id, {
 			path,
 			streams: record.probe.streams.filter((s) => s.type === 'audio') as AudioStream[],
+			container: record.container,
 			handle: localHandle(asset, { path, record }),
 			fingerprint: asset.fingerprint,
 		});
@@ -293,14 +294,14 @@ export async function audioWorld(
 	for (const c of snapshot.audioClips) {
 		const m = local.get(c.mediaId);
 		if (m && !Object.hasOwn(mediaFiles, c.mediaId))
-			mediaFiles[c.mediaId] = { path: m.path, streams: m.streams };
+			mediaFiles[c.mediaId] = { path: m.path, streams: m.streams, container: m.container };
 	}
 	return {
 		snapshot,
 		mediaFiles,
 		media: (id) => {
 			const m = local.get(id);
-			return m ? { path: m.path, streams: m.streams } : null;
+			return m ? { path: m.path, streams: m.streams, container: m.container } : null;
 		},
 		fingerprint: (id) => local.get(id)?.fingerprint ?? null,
 	};

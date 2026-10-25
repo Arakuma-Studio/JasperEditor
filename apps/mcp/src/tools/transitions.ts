@@ -36,7 +36,10 @@ export const TRANSITION_GUIDE = `Transitions:
 - set_transition_defaults changes the project's default lengths (video and audio transitions, stills); the default types and alignment are the user's preferences in the editor and can only be overridden per call.
 - list_transitions shows each transition's id, type, track, cut, span and the media handles of its clips; get_timeline lists them per track too. update_transition changes the length, alignment or type (within video or within audio); remove_transitions deletes them.
 - A transition between two clips needs media beyond the cut ("handles"): center needs both, start-at-cut only the outgoing clip's tail handle, end-at-cut only the incoming clip's head handle. Durations are shortened to what fits (warning W_TRANSITION_SHORTENED); E_OUT_OF_MEDIA means nothing fits: try another alignment or trim the clips.
-- list_transition_types is the catalogue: the built-ins (cross-dissolve, dip-to-black, constant-gain, constant-power; native export) and the GPU transitions (Premiere bins 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom and "Sapphire Transitions"; Remotion export) with their params. add_transition / update_transition take a type (short name, effect id or label) and params ({name: value}, e.g. {"direction": "eastToWest", "borderWidth": 4}); keyframes: apply_commands with param.set {target: ["transition", id, name], at}.`;
+- Audio transitions follow Premiere: constant-gain (linear: amplitudes sum to 1, a dip at the middle), constant-power (quarter sine: powers sum to 1), exponential-fade (dB-linear over 60 dB) and custom-fade (Premiere's Custom Fade, what dragging a fade handle makes): fadeShape "linear" | "cosine" bent by fadeValue −100…100 (gain = base^(2^(−value/19)); Cosine at 19 is exactly constant power, Linear at 0 constant gain, positive values rise earlier), symmetry "symmetric" (the outgoing clip fades out on the mirror of the fade in) or "asymmetric" (outFadeShape / outFadeValue for the outgoing clip). Preview and every export play the same curves.
+- Custom Start: cutOffset (add_transition / update_transition) puts the cut off-centre, as frames of the span before it (0…duration); it scales when the length is shortened; an alignment drops it. list_transitions shows it as alignment "custom-start" with cutOffset.
+- list_transition_types is the catalogue: the built-ins (cross-dissolve, dip-to-black, constant-gain, constant-power, exponential-fade, custom-fade; native export) and the GPU transitions (Premiere bins 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom and "Sapphire Transitions"; Remotion export) with their params. add_transition / update_transition take a type (short name, effect id or label) and params ({name: value}, e.g. {"direction": "eastToWest", "borderWidth": 4}); keyframes: apply_commands with param.set {target: ["transition", id, name], at}.
+- smooth-slide (Slide bin) pushes both clips together: direction right/left/up/down; animation linear or ease{In,Out,InOut}{Sine,Quad,Cubic,Quart,Quint,Expo,Circ} (default easeInOutQuad); dolly 0…1.2 (camera pull-back mid-move); reflection + blurriness 0…100, falloff 0…1, aspect 0.01…20 (a floor reflection, visible once dolly shrinks the pictures); motionBlur off/low/medium/high (1/4/8/16 poses) over shutterAngle 90…720°; edgeSmoothing none/low/medium/high. Premiere XML transitions of the third-party slide plug-in it approximates import as smooth-slide with their settings.`;
 
 /** Short type names (as in add_transition's `type`) → effect ids. */
 const shortType = (id: string) => id.replace(/^jasper\./, '');
@@ -114,7 +117,9 @@ type TransitionSummary = {
 	cutTimecode?: string;
 	span?: { start: number; end: number; startTimecode: string; endTimecode: string };
 	duration: number;
-	alignment: Transition['alignment'];
+	/** `custom-start` for an off-centre span (Premiere's Custom Start; `cutOffset` frames before the cut). */
+	alignment: Transition['alignment'] | 'custom-start';
+	cutOffset?: number;
 	oneSided: boolean;
 	outgoingClipId: string | null;
 	incomingClipId: string | null;
@@ -161,7 +166,9 @@ function transitionSummary(
 				}
 			: {}),
 		duration: t.duration,
-		alignment: t.alignment,
+		...(t.cutPosition !== undefined && !oneSided && p
+			? { alignment: 'custom-start' as const, cutOffset: p.cut - p.start }
+			: { alignment: t.alignment }),
 		oneSided,
 		outgoingClipId: t.outgoingClipId,
 		incomingClipId: t.incomingClipId,
@@ -281,9 +288,9 @@ async function editorTransitionDefaults(
 
 /** Transition-specific hints for the codes whose generic hint is about something else. */
 const HINTS: Record<string, string> = {
-	E_UNKNOWN_EFFECT: `Transition types: ${TYPE_LIST} (video: cross-dissolve, dip-to-black; audio: constant-gain, constant-power). list_transition_types lists every type with its params.`,
+	E_UNKNOWN_EFFECT: `Transition types: ${TYPE_LIST} (video: cross-dissolve, dip-to-black; audio: constant-gain, constant-power, exponential-fade, custom-fade). list_transition_types lists every type with its params.`,
 	E_TRACK_KIND:
-		'Video transitions (cross-dissolve, dip-to-black) go on V tracks, audio ones (constant-gain, constant-power) on A tracks; a type change stays within the same medium.',
+		'Video transitions (cross-dissolve, dip-to-black) go on V tracks, audio ones (constant-gain, constant-power, exponential-fade, custom-fade) on A tracks; a type change stays within the same medium.',
 	E_OUT_OF_MEDIA:
 		"No room for the transition: trim the clips so their media extends past the cut, shorten it, or use start-at-cut (needs only the outgoing clip's tail handle) / end-at-cut (only the incoming clip's head handle). list_transitions shows the handles.",
 	E_NOT_FOUND: 'Look transition ids up with list_transitions (or get_timeline), clip ids with get_timeline.',
@@ -391,7 +398,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		'update_transition',
 		{
 			title: 'Update transition',
-			description: `Changes an existing transition (transition.update): its length (duration, in frames), alignment, or type (effectId, within the same medium: ${TYPE_LIST}). The length is shortened to what the clips and their media handles allow (warning W_TRANSITION_SHORTENED). Returns the updated transition as list_transitions shows it.`,
+			description: `Changes an existing transition (transition.update): its length (duration, in frames), alignment or Custom Start (cutOffset: frames of the span before the cut), type (effectId, within the same medium: ${TYPE_LIST}) or params (a custom-fade's fadeShape / fadeValue / symmetry / outFadeShape / outFadeValue). The length is shortened to what the clips and their media handles allow (warning W_TRANSITION_SHORTENED). Returns the updated transition as list_transitions shows it.`,
 			input: {
 				projectId: ProjectIdArg,
 				transitionId: z
@@ -400,6 +407,15 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.describe('Transition id ("trn_…") from list_transitions or get_timeline'),
 				duration: z.number().int().min(1).max(600).optional().describe('New length in frames'),
 				alignment: AlignmentArg.optional(),
+				cutOffset: z
+					.number()
+					.int()
+					.min(0)
+					.max(600)
+					.optional()
+					.describe(
+						'Custom Start (transitions between two clips): frames of the (new) span before the cut, 0…duration, instead of alignment',
+					),
 				effectId: z
 					.string()
 					.min(1)
@@ -414,12 +430,18 @@ export function registerTransitionTools(ctx: ToolContext): void {
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
-		async ({ projectId, transitionId, duration, alignment, effectId, params }, extra) => {
-			if (duration === undefined && alignment === undefined && effectId === undefined && !params)
+		async ({ projectId, transitionId, duration, alignment, cutOffset, effectId, params }, extra) => {
+			if (
+				duration === undefined &&
+				alignment === undefined &&
+				cutOffset === undefined &&
+				effectId === undefined &&
+				!params
+			)
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					'Nothing to change',
-					'Pass duration, alignment, effectId and/or params.',
+					'Pass duration, alignment, cutOffset, effectId and/or params.',
 				);
 			const id = effectId !== undefined ? transitionEffectId(effectId) : undefined;
 			const spec = id ? transitionSpec(id) : null;
@@ -434,6 +456,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 						...(id ? { effectId: id } : {}),
 						...(duration !== undefined ? { duration } : {}),
 						...(alignment ? { alignment } : {}),
+						...(cutOffset !== undefined ? { cutOffset } : {}),
 						...(params ? { params } : {}),
 					},
 				],
@@ -502,7 +525,9 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.string()
 					.min(1)
 					.optional()
-					.describe('Audio transition: constant-power (default) or constant-gain (or the effect id)'),
+					.describe(
+						'Audio transition: constant-power (default), constant-gain, exponential-fade or custom-fade (or the effect id)',
+					),
 				durationFrames: z
 					.number()
 					.int()

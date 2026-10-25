@@ -10,6 +10,11 @@
 //   points, so the temporal ease controls the speed along the path: Linear temporal = constant speed.
 // - Segments whose control points lie on the chord (all-linear keys, two auto keys) are straight: the evaluator
 //   then uses the plain component lerp, bit-identical to documents written before spatial interpolation existed.
+// - spatial-points: values whose units are not isotropic (effect points normalised to the layer box) carry a
+//   `SpatialMetric`, the size of one value unit along x and y in pixels. Lengths (arc length, the proportional Auto
+//   Bezier handles, Continuous handle lengths, temporal auto-bezier speeds, roving distances) are measured in pixels;
+//   the curve itself is the same Bézier (an affine map of a Bézier is the Bézier of the mapped control points), so
+//   tangents stay in value units (docs/wp-notes/spatial-points.md).
 import type { Keyframe, Spatial, SpatialInterpolation, Vec2 } from './schema/common.ts';
 
 /** Arc-length samples per segment (S03:KF-031). */
@@ -22,6 +27,82 @@ export type Tangents = { inTangent: Vec2; outTangent: Vec2 };
 
 export function isVec2Value(v: unknown): v is Vec2 {
 	return Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number';
+}
+
+/**
+ * spatial-points: pixels per value unit along x and y (an effect point normalised to a W × H layer box: [W, H]).
+ * Absent = the value units are isotropic (Motion position in sequence px, Point Control in layer px).
+ */
+export type SpatialMetric = readonly [number, number];
+
+/**
+ * The metric when it changes anything, else null: absent, invalid (non-finite or ≤ 0 — a degenerate box) and
+ * isotropic metrics ([s, s]: every length scales alike, so arc-length fractions, handle ratios and speed ratios are
+ * unchanged) evaluate in value units, bit-identical to documents without a metric.
+ */
+export function activeMetric(m: SpatialMetric | null | undefined): SpatialMetric | null {
+	if (!m) return null;
+	const [sx, sy] = m;
+	if (!(sx > 0 && sy > 0 && Number.isFinite(sx) && Number.isFinite(sy))) return null;
+	return sx === sy ? null : m;
+}
+
+const scaleVec = (v: Vec2, sx: number, sy: number): Vec2 => [v[0] * sx, v[1] * sy];
+
+function keyInMetric(k: Keyframe<unknown>, sx: number, sy: number): Keyframe<unknown> {
+	if (!isVec2Value(k.value)) return { ...k };
+	const s = k.spatial;
+	return {
+		...k,
+		value: scaleVec(k.value, sx, sy),
+		...(s
+			? {
+					spatial: {
+						...s,
+						inTangent: isVec2Value(s.inTangent) ? scaleVec(s.inTangent, sx, sy) : [0, 0],
+						outTangent: isVec2Value(s.outTangent) ? scaleVec(s.outTangent, sx, sy) : [0, 0],
+					},
+				}
+			: {}),
+	};
+}
+
+/**
+ * Copies of keys `lo … hi − 1` in metric units (values and tangents × metric): every evaluator rule run on them measures
+ * in pixels. Fresh objects, so editing helpers may mutate them.
+ */
+export function keysInMetric(
+	kfs: readonly Keyframe<unknown>[],
+	m: SpatialMetric,
+	lo = 0,
+	hi = kfs.length,
+): Keyframe<unknown>[] {
+	const out: Keyframe<unknown>[] = [];
+	for (let i = Math.max(0, lo); i < Math.min(kfs.length, hi); i++) out.push(keyInMetric(kfs[i]!, m[0], m[1]));
+	return out;
+}
+
+/** A metric-unit point or vector back in value units. */
+export function fromMetric(v: Vec2, m: SpatialMetric): Vec2 {
+	return [v[0] / m[0], v[1] / m[1]];
+}
+
+function spatialFromMetric(s: Spatial, m: SpatialMetric): Spatial {
+	return { ...s, inTangent: fromMetric(s.inTangent, m), outTangent: fromMetric(s.outTangent, m) };
+}
+
+/**
+ * The keys whose values and tangents decide the segments around key `i` (`i − 2 … i + 3`: the tangents of keys
+ * i − 1 … i + 2 and their neighbours, and whether each of them is first / last), in metric units, with key `i` at
+ * index `j`.
+ */
+export function metricWindow(
+	kfs: readonly Keyframe<unknown>[],
+	i: number,
+	m: SpatialMetric,
+): { keys: Keyframe<unknown>[]; j: number } {
+	const lo = Math.max(0, i - 2);
+	return { keys: keysInMetric(kfs, m, lo, i + 4), j: i - lo };
 }
 
 /** Spatial mode of a key; keys without `spatial` are linear. */
@@ -65,8 +146,21 @@ function proportionalTangents(kfs: readonly Keyframe<unknown>[], i: number): Tan
 	return { inTangent: [0 - nx * lin, 0 - ny * lin], outTangent: [nx * lout, ny * lout] };
 }
 
-/** Tangents of key `i` as the evaluator uses them (zero for linear, derived for auto, stored otherwise). */
-export function effectiveTangents(kfs: readonly Keyframe<unknown>[], i: number): Tangents {
+/**
+ * Tangents of key `i` as the evaluator uses them (zero for linear, derived for auto, stored otherwise), in value
+ * units. spatial-points: `metric` = the value units' metric (Auto Bezier handle lengths are measured in it).
+ */
+export function effectiveTangents(
+	kfs: readonly Keyframe<unknown>[],
+	i: number,
+	metric?: SpatialMetric | null,
+): Tangents {
+	const m = activeMetric(metric);
+	if (m && kfs[i]?.spatial?.mode === 'auto-bezier') {
+		const w = metricWindow(kfs, i, m);
+		const t = effectiveTangents(w.keys, w.j);
+		return { inTangent: fromMetric(t.inTangent, m), outTangent: fromMetric(t.outTangent, m) };
+	}
 	const k = kfs[i];
 	if (!k?.spatial || !isVec2Value(k.value)) return { inTangent: [0, 0], outTangent: [0, 0] };
 	switch (k.spatial.mode) {
@@ -185,8 +279,20 @@ export function pathPointAt(seg: BezierSegment, s: number): Vec2 {
 	return bezierPoint(seg, (lo + f) / ARC_LENGTH_SAMPLES);
 }
 
-/** Value distance of the segment leaving key `i`: the path length when curved, else the chord. */
-export function spatialSegmentLength(kfs: readonly Keyframe<unknown>[], i: number): number {
+/**
+ * Value distance of the segment leaving key `i`: the path length when curved, else the chord. spatial-points: with a
+ * `metric` the length is in its units (pixels).
+ */
+export function spatialSegmentLength(
+	kfs: readonly Keyframe<unknown>[],
+	i: number,
+	metric?: SpatialMetric | null,
+): number {
+	const m = activeMetric(metric);
+	if (m) {
+		const w = metricWindow(kfs, i, m);
+		return spatialSegmentLength(w.keys, w.j);
+	}
 	const seg = spatialSegment(kfs, i);
 	if (seg) return arcLengthTable(seg)[ARC_LENGTH_SAMPLES]!;
 	const a = kfs[i]?.value;
@@ -231,7 +337,24 @@ export function newKeySpatial(mode: SpatialInterpolation | undefined, value: unk
  * tangents, Auto Bezier derives them, Bezier / Continuous Bezier keep the current ones (a Linear key starts from
  * its Auto Bezier tangents) and Continuous turns the in tangent opposite the out tangent.
  */
-export function setSpatialMode(kfs: Keyframe<unknown>[], i: number, input: SpatialInput): void {
+export function setSpatialMode(
+	kfs: Keyframe<unknown>[],
+	i: number,
+	input: SpatialInput,
+	metric?: SpatialMetric | null,
+): void {
+	const m = activeMetric(metric);
+	if (m) {
+		// spatial-points: the rule runs in pixels (handle lengths), the result is stored in value units.
+		const keys = keysInMetric(kfs, m);
+		setSpatialMode(keys, i, {
+			mode: input.mode,
+			...(input.inTangent ? { inTangent: scaleVec(input.inTangent, m[0], m[1]) } : {}),
+			...(input.outTangent ? { outTangent: scaleVec(input.outTangent, m[0], m[1]) } : {}),
+		});
+		kfs[i]!.spatial = spatialFromMetric(keys[i]!.spatial!, m);
+		return;
+	}
 	const k = kfs[i]!;
 	const mode = input.mode;
 	if (mode === 'linear') {
@@ -263,7 +386,20 @@ export function setTangents(
 	kfs: Keyframe<unknown>[],
 	i: number,
 	edit: { inTangent?: Vec2; outTangent?: Vec2; breakContinuity?: boolean },
+	metric?: SpatialMetric | null,
 ): void {
+	const m = activeMetric(metric);
+	if (m) {
+		// spatial-points: Continuous keeps the other handle's length in pixels.
+		const keys = keysInMetric(kfs, m);
+		setTangents(keys, i, {
+			...(edit.inTangent ? { inTangent: scaleVec(edit.inTangent, m[0], m[1]) } : {}),
+			...(edit.outTangent ? { outTangent: scaleVec(edit.outTangent, m[0], m[1]) } : {}),
+			...(edit.breakContinuity ? { breakContinuity: true } : {}),
+		});
+		kfs[i]!.spatial = spatialFromMetric(keys[i]!.spatial!, m);
+		return;
+	}
 	const k = kfs[i]!;
 	const cur = effectiveTangents(kfs, i);
 	let inTangent: Vec2 = edit.inTangent ? [edit.inTangent[0], edit.inTangent[1]] : cur.inTangent;
@@ -280,11 +416,17 @@ export function setTangents(
 	k.spatial = { mode, inTangent, outTangent };
 }
 
-/** Stores the derived tangents of every Auto Bezier key (a cache for the UI and agents; evaluation derives them). */
-export function refreshAutoTangents(kfs: Keyframe<unknown>[]): void {
+/**
+ * Stores the derived tangents of every Auto Bezier key (a cache for the UI and agents; evaluation derives them).
+ * spatial-points: `metric` = the value units' metric.
+ */
+export function refreshAutoTangents(kfs: Keyframe<unknown>[], metric?: SpatialMetric | null): void {
+	const m = activeMetric(metric);
+	const keys = m ? keysInMetric(kfs, m) : kfs;
 	kfs.forEach((k, i) => {
 		if (k.spatial?.mode !== 'auto-bezier') return;
-		const t = autoTangents(kfs, i);
+		const a = autoTangents(keys, i);
+		const t = m ? { inTangent: fromMetric(a.inTangent, m), outTangent: fromMetric(a.outTangent, m) } : a;
 		k.spatial.inTangent = t.inTangent;
 		k.spatial.outTangent = t.outTangent;
 	});
