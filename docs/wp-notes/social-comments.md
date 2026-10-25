@@ -686,6 +686,21 @@ measurements carry an [M] / [M-css] comment.
    glyphs, bug fixes. If the real font's cap height differs from the capture's font, scale the font size to keep the
    reference's cap height (see the TikTok reply).
 
+**Assets and determinism rules** (added with the WP2 wiring):
+- **Fonts and images:** don't declare them yourself. `requiredAssets` derives them from `SOCIAL_VARIANT_FONTS`,
+  `SOCIAL_COMMENT_READY_VARIANTS`, `SOCIAL_DEFAULT_AVATAR_IMAGES` and `VARIANT_CAPABILITIES`. A raster default avatar
+  is `assets.imageUrls[SOCIAL_DEFAULT_AVATAR_IMAGES[platform]]`.
+- **Emoji:** draw every emoji through `CommentText`, `TextWithEmoji` or `EmojiGlyph`, which use `EmojiImage`. Never
+  render an emoji grapheme as text: it would be a host-font glyph.
+- **Animated elements:** give every element you transform per frame (a thumping icon…) `boxShadow: INK_RING` (from
+  `parts.tsx`).
+- **No paint traps:** no `overflow: hidden` + `border-radius` clips (round pictures by their own radius), and no CSS
+  `filter` on text (see "Paint determinism").
+- **Unit tests that render emoji:** stub `NODE_ENV=development` and `HTMLImageElement.complete` like
+  `social-comment.test.tsx`. Remotion treats `NODE_ENV=test` as a render, and a missing emoji then cancels it.
+- **Render e2e:** emoji without `SOCIAL_EMOJI_DIR` get flat stand-in images automatically. Before the entrance ends,
+  the parity check allows 1/255 on ≤ 64 pixels.
+
 **Don't touch** (shared; changes go through WP6a or the integrator):
 - `index.tsx`, `stage.tsx`, `build.ts`, `contract.ts`, `parts.tsx`, `assets.tsx`;
 - the schedule and its constants in `social-comment.ts`;
@@ -756,17 +771,57 @@ frame.
   - The model and the renderer count the same units.
 - **Highlight:** tokcomment's `#FFE500` pill, black text, 6 px radius, padding `.05em .35em`, `box-decoration-break:
   clone`.
-- **Blur:** `blur(4px)` at reference size on an inline-block word. The card's zoom scales the radius with the card:
-  7.2 design px on 9:16.
+- **Blur:** the look of tokcomment's `blur(4px)` at reference size, drawn as a text shadow of the same Gaussian
+  (`0 0 8px currentColor`; a shadow's blur radius is twice the standard deviation) under transparent glyphs
+  (`-webkit-text-fill-color: transparent`). The card's zoom scales it with the card: 7.2 design px on 9:16.
+  - Why not `filter`: a CSS `filter` on the words made Chrome composite them, and a frame painted after an entrance
+    then differed from the same frame painted alone by up to 10/255 (renderFrames ≠ renderStill).
+  - The calibration page matches tokcomment's blur captures.
+  - An emoji inside a blurred word keeps `filter: blur(4px)` (an image has no text shadow).
 - **Remove:** `opacity: 0`, so the gap is kept.
 - **Mentions and hashtags:** TikTok's info colour, tux `--ui-text-info`: #2B5DB9 light, #60B3FF dark [M-css]. They
   are coloured on both TikTok cards [E]; a highlight's text stays black.
-- **Emoji:** images of the clip's pack (`resolveEmojiStyle`).
+- **Emoji:** images of the clip's pack (`resolveEmojiStyle`), drawn by `EmojiImage` (contract C2).
+  - The render waits for each image's decode. A grapheme the pack does not deliver is a visible `MissingAssetMarker`
+    in preview, reported to the editor; in a render it fails the render, and the export planner blocks such exports
+    before they start.
+  - Emoji detection is the shared `splitEmoji` / `emojiGraphemes` / `isEmojiGrapheme` of @jasper/mg-templates
+    everywhere: in `requiredAssets` and in the cards. Text-presentation characters without VS16 (`❤`, `☺`, `✔`)
+    stay text, as UTS #51 says.
   - Size 1.2 em, centred on the text's middle (shift −0.22 em), with a 0.03 em side bearing so adjacent emoji keep a
     hairline gap.
   - Calibrated against the tokcomment captures: 30 vs 29 px ink at 2×, centre within 0.5 px.
 - **Word reveal:** units become inline-block so they can scale; whitespace stays text, so lines break as without the
   reveal.
+
+### Declared assets (`requiredAssets`)
+
+`socialCommentRequiredAssets(params)` declares what a clip draws, for the render snapshot (preview and bake), the
+export planner and the bake key:
+- **Fonts:** the variant's faces from `SOCIAL_VARIANT_FONTS`: TikTok Sans 600 and 700 (reply), 500 and 600 (comment),
+  from the bundled catalogue; Chirp 400 and 700 (X), from the remote manifest.
+- **Emoji:** the graphemes of the visible comment (marks stripped) and of the names the variant shows
+  (`VARIANT_CAPABILITIES`), in the clip's pack.
+- **Images:** the platform's raster default avatar (`SOCIAL_DEFAULT_AVATAR_IMAGES`: X, YouTube) when the avatar is
+  shown and is the default. `SocialAvatar` draws `assets.imageUrls[id]`, else a silhouette.
+- **Unbuilt variants:** a variant not in `SOCIAL_COMMENT_READY_VARIANTS` declares nothing; it draws only its "not
+  available" card, and exports refuse it.
+
+### Paint determinism
+
+A frame must be the same bytes whether Chrome paints it alone (`renderStill`) or after other frames (`renderFrames`,
+the Player). Three things in the cards broke that while the entrance moved the card. Each is fixed and checked by
+`social-comment-render.e2e.test.ts` (5 cases, 13 frames each):
+- **Ink ring (`INK_RING`).** Chrome repaints a transformed element within its ink rect; anti-aliased edges just
+  outside kept the previous frame's pixels (rotated card edges, scaled words). Every element a card transforms per
+  frame (the card wrapper, word units, like hearts) carries `box-shadow: 0 0 0 3px transparent`, which widens its ink
+  rect.
+- **No rounded `overflow: hidden` clips** on avatars. Every avatar is round by itself: a picture by its own
+  `border-radius`, the glyphs are discs.
+- **Text-shadow blur** instead of `filter`, as above.
+- **Remaining difference:** while the entrance scales the card, Chrome's path cache may anti-alias an SVG icon edge
+  1/255 differently after other frames. That affects at most 5 pixels and only before the card rests. The test allows
+  exactly that: 1/255 on ≤ 64 pixels before the entrance ends, byte-identical afterwards.
 
 ### Placement and fit
 
@@ -856,23 +911,22 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   `--yt-spec-call-to-action`; no comment with a mention was captured.
 - **Emoji:** Noto images at 1.2 em, shifted −0.29 em (comment) and −0.25 em (Shorts). Measured on the 2× captures:
   31–32 px boxes as tokcomment's Noto glyphs, tops within 1 px (comment) and 2 px (Shorts).
-- **Avatars:** the generated avatar takes its initials from the handle (YouTube does not show the display name). The
-  Properties `social-avatar` preview uses `displayName`, so its initials can differ on YouTube clips. The default
-  avatar is YouTube's `default-user` picture, the remote image `REMOTE_IMAGE_IDS.youtubeDefaultAvatar`:
-  - the definition's `requiredAssets` (`socialCommentRequiredAssets`) declares it in `images` only while it is drawn
-    (a YouTube variant, `showProfile`, `avatar: null`; table `SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE` for the other
-    variant packages), so the snapshot resolves it for preview and bake and the planner blocks an export without it;
-  - the card reads `imageUrls[id]` and draws it with `TemplateImage`; not delivered: `TemplateImage`'s visible
-    placeholder in the circle (the layer reports the missing image).
-  - `requiredAssets` also declares the variant's faces (`SOCIAL_VARIANT_FONTS`: Roboto 400/500 here, TikTok Sans for
-    TikTok), so the bundled font loads with the clip; emoji images join with the framework's emoji wiring (WP6a).
+- **Avatars (`SocialAvatar`):** the generated avatar takes its initials from the handle (YouTube does not show the
+  display name). The Properties `social-avatar` preview uses `displayName`, so its initials can differ on YouTube
+  clips. The default avatar is YouTube's `default-user` picture, the manifest image
+  `SOCIAL_DEFAULT_AVATAR_IMAGES.youtube` (`youtube-default-avatar`), declared by the template's `requiredAssets` and
+  read from `assets.imageUrls`; until it is delivered the card shows the neutral silhouette, the layer reports it and
+  the planner blocks exports.
+- **Paint rules:** the thumping like thumb carries `INK_RING`; no rounded `overflow: hidden` clip (the Shorts card's
+  16 px corners are its background's own radius); the blur mark is `CommentText`'s text shadow.
 - **Grow from tail:** neither card has a tail; both grow from the avatar corner (`0% 0%`).
 - **Fit:** the handle truncates (comment) or ends in an ellipsis (Shorts); counts stay short (`formatCount`: "987B",
   "4.8M replies"), the actions and the time never shrink.
 - **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/youtube/index.html` (outside the
   repo): every tokcomment capture side by side with our `renderStill` at 2× and a difference overlay, plus long
   names, huge counts, no replies, one reply, liked, no profile, mentions, generated avatar and entrance filmstrips. To
-  rerun: Noto PNGs (`<cp>.png`) under `<dir>/noto/`, then `REMOTION_E2E=1 SOCIAL_EMOJI_DIR=<dir>
+  rerun: Noto PNGs (`<cp>.png`) under `<dir>/noto/` (the render e2e reads `apple/`, `twemoji/` and `noto/`
+  subdirectories), then `REMOTION_E2E=1 SOCIAL_EMOJI_DIR=<dir>
   SOCIAL_IMAGE_DIR=<dir with youtube-default-avatar.jpg> SOCIAL_CALIBRATION_DIR=<out>
   SOCIAL_CALIBRATION_FILTER='^(youtube-|anim_youtube)' pnpm exec vitest run
   packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools in that directory's `tools/`
@@ -885,17 +939,10 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   thread line rules, months stay months, 0 replies, huge counts, showProfile, default / raster / picture / generated
   avatars, link colours, Noto emoji, like tick, Shorts card); `mg-cue-timing.test.ts` VARIANTS rows (each entrance
   with both extras, the tick alone at 25 fps, the Shorts card with reveal and an ignored tick);
-  `social-comment-template.test.ts` (presets, fonts, required images); `social-comment-layer.test.tsx` (layer path,
-  snapshot image table); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
+  `social-comment-template.test.ts` (presets, fonts, required images); `social-comment-layer.test.tsx` (layer path:
+  Roboto faces, Noto emoji image, the default avatar image resolved or missing); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
   `e2e/social-youtube.spec.ts` (`pnpm e2e`: gallery insert of both presets, the card in the Program in Roboto with the
   downloaded default avatar, in-place edit of the handle and a highlight, variant switch).
-- **Known flakiness (framework, not the cards):** the render e2e's byte-identical `renderStill` = `renderFrames` check
-  sometimes differs by a few edge pixels (alpha 2–7, one column) on frames where the card is scaled or tilted. It
-  happens on the TikTok reply case at the integration base too (1 of 5 runs at `30a4b1b7`); the YouTube cases add more
-  frames, so the check fails more often (about half the runs). The differences are anti-aliasing of the card's
-  transformed edge, consistent with Chrome keeping a layer's raster scale while its transform changes from frame to
-  frame [E]; the fix belongs to the stage (`stage.tsx`, WP6a).
-
 **Deliberate differences from tokcomment:**
 - **Font:** Roboto, as tokcomment specifies but its capture host never loaded (Liberation Sans in the captures).
   Widths are within 1 % at the same sizes, so no size was scaled. The Shorts comment is 500 as specified; the capture
@@ -905,6 +952,78 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
 - **Default avatar:** YouTube's own instead of the hot-linked Twitter default. **Emoji:** Noto images.
 - **tokcomment bugs fixed:** months printed as hours; raw counts ("1234567"); "View 0 replies" (0 hides the row and the
   thread line); huge counts overflowing.
+
+### X card
+
+WP6d (`sc/v-x`): `x-post` in `packages/motion/src/templates/social-comment/x.tsx` (`X_POST`). Font: Chirp 400/700
+from the remote manifest (`SOCIAL_VARIANT_FONTS['x-post']`; the card draws no 500 or 800). Glyphs: `X_GLYPHS`. Emoji:
+Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
+
+- **Blueprint [tok]:** `ref/x-post`, copied in CSS px. 420 wide, padding 10/16/8, radius 1, 1 px border black/white
+  5 %, the comment row's `0 25px 50px -12px` shadow (same `bleed` as the TikTok comment), bg #FFF / #000. Avatar 52,
+  gap 12. Header row 21 px high, gap 4, 2 px below: name 14/700, badge, `@handle` 14/400, a 2 px dot with 2 px margins,
+  time 14/400, then (pushed right) the Grok mark and "More", 8 px apart. Post 16/20, 3 px above the action row. Action
+  row 30 px high: icon, count 8 px after it; bookmark and share 12 px apart at the right.
+- **x.com 2026 over tokcomment [M]** (`research/platform-measurements`, X):
+  - name and post #000 / #FFF (tokcomment #0F0F0F, dark name #DADADA);
+  - handle, time, dot, icons and counts rgba(0,0,0,.6) / rgba(255,255,255,.6) (`--x-fg-secondary`; tokcomment
+    #737479 / #71767B / #767779);
+  - counts 13 px / 400 with tabular figures (tokcomment 12.96 / 500);
+  - Grok and More in the primary colour (dark: white; tokcomment's dark ellipsis #71767B);
+  - mentions and hashtags #1D9BF0 in both themes;
+  - **action bar: four equal columns** (x.com's `flex-1` engagement columns) for replies, reposts, likes and views,
+    then bookmark and share. Each column clips its count, so no count can push bookmark and share out of the card
+    (tokcomment's space-between row overflows with raw counts, `07_…_BUG-share-icon-overflows`). Icons keep their
+    places whatever the counts; with tokcomment's default counts they sit up to 7 px from its space-between positions.
+  - **a 0 count is not shown** (x.com shows the icon alone) [E: x.com behaviour; the measured post had no zero count].
+- **`showReposts` / `showViews`** hide the count and keep the icon (the params' contract, "the icon stays"), so the
+  columns never move.
+- **Grok mark:** included. x.com puts the Grok "Explain this post" ghost button (`icon-logo-grok`) left of "More" for
+  signed-in viewers when the post allows Grok analysis (bundle code; not rendered logged out [M]); the reference layout
+  shows it, and a screenshot of a post is usually taken signed in. It is X's real mark (`X_GLYPHS.grok`), not
+  tokcomment's imitation. There is no param to hide it (the schema is shared; not added in WP6d).
+- **Verified badge:** X's blue badge with the cut-out tick (`X_GLYPHS.verifiedBlue`), 14 px = 1 em of the name as on
+  x.com. Gold (organisations) and grey (government) exist in `X_GLYPHS` but `verified` is a boolean, so only blue is
+  drawn; a colour choice would need a schema field (proposed, not added).
+- **Sizes against the captures' ink (2×):** action icons 15 px (X's 24-unit glyphs: 24–26 px ink, as tokcomment's 14 px
+  lucide icons with their strokes), Grok 15, More 15, badge 14 (24 px ink, same as tokcomment's).
+- **Text:** Chirp keeps the captures' cap heights at tokcomment's sizes (2×: name "D" 20 vs 19 px, post "W" 22 vs 22 px),
+  so no size was scaled. It sits about 1 px higher in its line box, so the header text moves 1 px down
+  (`HEADER_SHIFT`). Chirp is ≈ 3 % wider than the captures' Liberation Sans (post line 622 vs 605 px), so a long
+  post can wrap one word earlier.
+- **Emoji:** Apple images at 1.2 em, shift −0.22 em: 34 × 34 px box against the capture's 34 × 32 glyph, top within 1 px.
+- **Like tick:** the outline heart cross-fades to X's filled heart in #F91880 (`--x-magenta-500` [M-css]) and thumps;
+  the count's colour moves from the secondary colour to #F91880 with the fill, as x.com colours a liked count. The count
+  starts hidden (0) and appears as it ticks up.
+- **Avatars:** a picture (`mediaUrls`), a generated one (initials from `displayName`, as the Properties preview), or
+  X's default profile picture (`null`): the manifest image `REMOTE_IMAGE_IDS.xDefaultAvatar` from
+  `assets.imageUrls` when the engine resolved it, else its vector twin (a #CCD6DD field, a #657786 head and shoulders,
+  measured on the 400 px file sha256 6d34bedb…), so the card never shows a wrong platform's silhouette.
+- **Fit:** the name and the handle truncate with an ellipsis; the badge, dot, time, Grok and More never shrink; counts
+  stay short ("999.9B", "1,000B" at the 1e12 cap) and clip inside their columns.
+- **Grow from tail:** no tail; the card grows from the avatar corner (`0% 0%`).
+- **Inline editing (C5):** `displayName` (the name span), `handle` (a span inside `@…`, without the "@") and `text`
+  (marks) carry `editableParamProps`.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/x/index.html` (outside the repo): all 18
+  tokcomment captures side by side with our `renderStill` at 2× and a difference overlay, plus generated avatar, huge
+  and zero counts, hidden reposts / views, liked (light, dark), no profile, long names, mentions and entrance / extras
+  filmstrips. To rerun: the manifest's Chirp files (`Chirp-*.latin.woff2`) in a directory, Apple PNGs (`<cp>.png`),
+  X's default avatar as `x-default-avatar.png`, then `REMOTION_E2E=1 SOCIAL_CHIRP_DIR=<chirp> SOCIAL_EMOJI_DIR=<emoji>
+  SOCIAL_IMAGE_DIR=<images> SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER='^(x-post_|anim_x-)' pnpm
+  exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools (`crop.mjs`, `cmp.sh`,
+  `filmstrips.sh`, `page.mjs`) in that directory's `tools/`. The e2e entry takes remote images as `imageFiles`
+  (`imageUrls`).
+- **Measured matches (2×):** card 840 × 230 opaque px for the 840 × 232 capture (the half-covered edge rows fall
+  outside the opaque crop); header, post and action rows within 1 px vertically; name width 183 vs 181 px; badge,
+  time and More within 2 px horizontally.
+
+**Deliberate differences from tokcomment:**
+- **Font:** Chirp instead of the capture host's Liberation Sans (tokcomment asks for Roboto, which never loaded).
+- **Glyphs:** X's own reply, repost, like / liked, views, bookmark, share, More, blue badge and Grok mark instead of
+  lucide and a Grok imitation.
+- **The [M] values above,** the equal-column action bar and hidden zero counts.
+- **Emoji:** Apple images (x.com shows the viewer's OS emoji since 2026; tokcomment's capture host drew Noto).
+- **tokcomment bugs fixed:** raw counts ("1234567" → "1.2M") and the share icon pushed out of the card.
 
 ### Verification
 
@@ -918,19 +1037,31 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   - `packages/motion/test/social-comment.test.tsx`: cards per variant × theme, header, counts and replies rules,
     showProfile, invalid params, entrance rest and exit, word reveal and like tick values per frame, seek-order
     independence (fast-check), avatars, glyphs, marks, mentions, emoji, emoji split, fit zoom.
-  - `packages/compositions/test/social-comment-layer.test.tsx`: the real layer path, with the avatar from a project
-    medium through `mediaUrls` → `TemplateImage`, an offline avatar placeholder and the default avatar.
+  - `packages/compositions/test/social-comment-layer.test.tsx`: the real layer path through the render snapshot with
+    the template assets resolved (`templateAssetOptions`). It checks the declared TikTok Sans faces, the emoji images
+    from `emojiUrls`, the avatar from a project medium (`mediaUrls` → `TemplateImage`), the offline-avatar placeholder,
+    the default avatar and the X card.
   - `apps/engine/test/anime-templates.test.ts`: a card style not built yet blocks the plan.
 - **`REMOTION_E2E=1 packages/motion/test/social-comment-render.e2e.test.ts`** (Chrome 156):
-  - `renderStill` equals `renderFrames` (concurrency 2), byte for byte, at frames during the entrance and extras;
+  - `renderStill` equals `renderFrames` (concurrency 2) at 13 frames for 5 cases: every entrance, the extras, marks,
+    emoji, a generated avatar, the X card. Byte for byte at rest; see "Paint determinism" for the entrance;
   - the painted card stays inside every canvas for a 1,400-character marked comment, 1e12 counts and a 64-character
     name;
   - it writes the calibration stills.
 - **`REMOTION_E2E=1 determinism-render.e2e.test.ts`:** passes with `social-comment@1` in the parity document (6/6).
+  The parity scene now resolves the declared template assets: TikTok Sans as data URLs of the bundled files, and the
+  emoji as a generated image.
+- **`REMOTION_E2E=1 apps/engine/test/social-comment-bake.e2e.test.ts`:** the real template through the engine.
+  - Setup: TikTok comment, drop & bounce, word reveal, like tick, highlight, blur and 😊.
+  - Assets: TikTok Sans from the bundled catalogue (not a fallback); the emoji downloaded by the remote-asset service
+    from a local fixture pack (`JASPER_REMOTE_MANIFEST`, never the real CDNs).
+  - Result: the hybrid export (layer baked) and the full Remotion export agree within 3/255 on 99.7–100 % of the
+    pixels at 7 frames. They draw the pack's image, and a still equals its export frame.
 
 ### Limits
 
-- **Variants:** the Instagram and X cards are not built (WP6b, WP6d). See `docs/gaps.md` "social-comment".
+- **Variants:** the Instagram cards are not built (WP6b); the YouTube and X cards are ("YouTube cards", "X card"
+  above). See `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
@@ -1198,6 +1329,204 @@ The group wand fills every stat the clip's variant draws — `timeValue`, `timeU
   name (e.g. the handle on Instagram), the small preview can differ from the card.
 - The avatar resolution warning of design §7.11 (below 2× the drawn size) is not part of these controls.
 - In the markup view the mark buttons are disabled (the markup is edited as text there).
+
+## Add another & bulk import
+
+WP7c (`sc/bulk`), design §7.9 ("Add another", "Bulk import") and §7.10. Generic over motion-graphic templates;
+social comments are the main user.
+
+### Template hints (`MgTemplateUi`, `@jasper/project` `registry/mg.ts`)
+
+```ts
+ui.addAnother?: { reroll: readonly string[] }      // params "Add another" re-randomizes through the fill hook
+ui.import?: {
+  aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
+  ignored?: Record<string, string>;                 // column name → reason shown in the preview
+  trimPrefix?: Record<string, string>;              // param → prefix removed from its cells ("@")
+}
+```
+
+- `createMgRegistry` validates both: param names must exist; `addAnother` needs a `fill` hook; alias targets,
+  `byParam`, `map` values and `trimPrefix` keys must be params; reasons non-empty. Both travel in the catalogue JSON
+  (`@jasper/api` `MgTemplateUiSchema`) to MCP.
+- `social-comment@1` sets `addAnother: SOCIAL_ADD_ANOTHER` and `import: SOCIAL_IMPORT_HINTS`
+  (`packages/mg-templates/src/social/bulk.ts`).
+  - **Re-randomized** (`SOCIAL_REROLL_PARAMS`): `displayName`, `handle`, `avatar`, `timeValue`, `timeUnit`, `likes`,
+    `replies`, `reposts`, `views`. That is a different person and new stats.
+  - **Kept** (`SOCIAL_KEEP_PARAMS`): `variant`, `theme`, `emojiStyle`, `showProfile`, `verified`, `showReposts`,
+    `showViews`, `text`, `entrance`, `wordReveal`, `likeTick`.
+  - **Choice:** the text is kept, not cleared. The user edits the new card's text in place, and an empty card would
+    show the placeholder. `verified` is kept as a look toggle, as on tokcomment's panel.
+  - **Aliases:**
+    - `User` is the name the variant shows: `displayName` on TikTok and X, `handle` on Instagram and YouTube.
+    - `Username` / `User name` is the handle where the card draws one; on TikTok it is the nickname.
+    - Fixed aliases: `Name`, `Nickname`, `Author` → `displayName`; `Account` → `handle`; `Message`, `Body`,
+      `Content`, `Comment text` → `text`; `Like count`, `Hearts` → `likes`; `Reply count` → `replies`; `Retweets` →
+      `reposts`; `View count` → `views`; `Type` → `variant`; `Ago` → `timeValue`; `Time unit` → `timeUnit`;
+      `Blue check`, `Badge` → `verified`.
+    - Param names and Properties labels (`Comment`, `Display Name`, `Style`, `Verified`…) match without aliases.
+  - **Image columns** (`Image URL`, `Avatar URL`, `Profile picture`, `Photo`, …) are ignored with a visible reason:
+    remote images are not imported in v1. No existing import path takes a URL. An `avatar` column takes JSON
+    (`{"mediaId": "…"}` or `{"generated": 7}`).
+
+### Add another — `clip.duplicateMotionGraphic {clipId, seed, at?, track?, params?, ref?}`
+
+- **Copy:** the whole clip (transform, effects, masks, keyframes, name, label, canvas). Children get new ids; links
+  and groups are not copied.
+- **Placement:** the copy starts at `at` (default: the source's end) with the same duration. It goes on the first
+  free unlocked video track from `track` (default: the source's track) up, or on a new top track. It never
+  overwrites (`firstFreeTrack`).
+- **Params:** the source's params minus `reroll`, then `params` on top. The fill hook fills the omitted ones from
+  `seed`. A rerolled param the hook does not fill takes the template default.
+- **Validation:** the params schema and the template media checks run on the result (`validateTemplateParams`).
+- **Keyframes:** those of rerolled and given params are dropped (keys would override the new value). The others
+  are kept.
+- **Templates without the hint or a fill hook:** a plain copy after the clip.
+- **Refusals:**
+  - unknown clip: `E_NOT_FOUND`;
+  - not a motion graphic, template not installed, params the schema rejects, a refused fill, start < 0:
+    `E_INVALID_PARAM`;
+  - an audio `track`: `E_TRACK_KIND`;
+  - a seed outside uint32: `E_SCHEMA`.
+- **Result:** `{clipId, sourceClipId, sequenceId, trackId, track, createdTrack?, start, duration, params, rerolled,
+  seed}`. Refs chain copies in one transaction (`$a` → `$b`).
+- **UI** (`apps/web/src/panels/motionTemplates/add-another.ts`, one transaction, label "Add Another"):
+  - the UI command `mg.addAnother` (palette; agent-exposed with `{clipIds?, seed?}`);
+  - the timeline clip menu of motion-graphic clips;
+  - Properties ▸ Template;
+  - the Motion Templates panel button;
+  - Graphics ▸ Add Another.
+
+  Several selected motion graphics each get one copy (seeds `mgItemSeed(seed, i)`). The copies are selected
+  afterwards.
+- **No shortcut:** the free chord Ctrl+Alt+D is Cmd+Opt+D on macOS, which toggles the Dock.
+
+### Bulk import
+
+**Parser** (`packages/project/src/bulk/table.ts`, `parseTable`, `detectDelimiter`, `formatTable`):
+- RFC 4180 plus what spreadsheets write: quotes, `""`, CRLF / LF / CR, a BOM, line breaks inside quoted cells
+  (normalised to LF), ragged rows, a quote inside an unquoted cell kept literally.
+- Text after a closing quote is kept and reported. An unclosed quote takes the rest of the text and is reported on
+  its line.
+- Blank records are skipped.
+- **Delimiter:**
+  - tab when the first record has a tab outside quotes (pasted cells);
+  - else `;` when it has more semicolons than commas;
+  - else `,`.
+- **Caps** (AGENTS §0):
+  - 2 MiB of text (`TABLE_MAX_CHARS`; the dialog refuses larger files before reading them);
+  - 500 data rows (more refuses the table and stops parsing early);
+  - 64 columns (the rest are dropped, with an issue);
+  - 10 000 characters per cell (cut; that row is then an error).
+- **Speed:** 500 rows of 4 KB (≈ 2 MB) parse in well under a second (test).
+
+**Planner** (`packages/project/src/bulk/mg-import.ts`): `planMgImport(table, template, {preset?, rate})`.
+- **Column matching:** header names are compared ignoring case, spaces, `_ - . :` and a leading `@`/`#`, in this
+  order:
+  1. param name;
+  2. Properties label (`ui.params[name].label`);
+  3. template alias;
+  4. timing columns: `start` / `at` / `start time` / `in` / `clip start`, and `duration` / `length` / `dur` /
+     `clip duration`;
+  5. template-ignored column;
+  6. anything else: ignored, "Not a parameter of …".
+
+  A second column for the same param is ignored. A direct column wins over an alias on a row (with a warning).
+- **Cell coercion** follows the param's JSON Schema:
+  - Numbers: `1,234`, `1.2K`, `3.5M`, `2B`; integers must be whole; min / max are checked.
+  - Booleans: yes / no / true / false / 1 / 0 / y / n / on / off / ✓ / ✗ / sí.
+  - Enums: case and punctuation ignored (`TikTok Comment` → `tiktok-comment`).
+  - Strings: outer whitespace trimmed; length and pattern checked.
+  - Object / array params: JSON.
+- **Empty cells** are "not given": the preset, then the fill hook, then the defaults decide. A row cannot set an
+  empty text; the preview shows what the row gets.
+- **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
+  `H:MM:SS` and timecode. Starts are capped at 100 h, lengths at 1 h; a length must be ≥ 1 frame.
+- **Presets:** every row starts from the preset's params except the ones the template re-randomizes
+  (`ui.addAnother.reroll`). Rows are new instances: with the TikTok comment preset each row still gets its own
+  identity and stats (the preset's are tokcomment's placeholders). `add_motion_graphic` keeps WP3b's layering, where
+  the preset wins over the fill.
+- **Messages** are codes with values (`MG_IMPORT_TEXT`, `mgImportText` for English). The web app translates the
+  templates; `pnpm i18n` lists them in the model strings, with the template-ignored reasons.
+- **Placement:** `scheduleMgImport` places included rows one after another from the start (a row's `start` resets
+  the cursor). `mgImportCommand` builds `clip.addMotionGraphic {placement: 'first-free', fill: {seed:
+  mgItemSeed(seed, rowIndex)}}`. The seed is per data row, so leaving a row out does not change the others.
+- **Preview = insert:** `resolveMgTemplateParams(info, given, {seed, media})`
+  (`packages/project/src/registry/mg-params.ts`) is the one resolution `clip.addMotionGraphic` uses too. The dialog
+  shows exactly what will be stored and catches schema and fill errors per row.
+
+**Dialog** (`BulkImportDialog.tsx` / `bulk-import.ts`, `mg.bulkImport`):
+- **Entry points:**
+  - File ▸ Import Motion Graphics from Spreadsheet…;
+  - Graphics ▸ the same;
+  - the Motion Templates panel button;
+  - a gallery card's context menu ▸ Import Spreadsheet as This… (template + preset);
+  - Properties ▸ Template ▸ Import Spreadsheet…;
+  - the palette.
+- **Inputs:** template / preset select (default: the given one, else the selected clip's, else the first with
+  presets), delimiter (Detect / Tab / Comma / Semicolon), a paste area, and Choose CSV File….
+- **Preview:**
+  - column chips: param, timing, per-row alias, or ignored with its reason;
+  - the table: row, start, length, and the imported and filled params in the template's order, with Properties
+    labels;
+  - values the template filled are dim, italic and titled "Random value";
+  - rows with errors are shaded and list their errors ("Left out: …"); they are excluded, never blocking;
+  - row warnings are listed under the table.
+- **New Random Values** picks another seed.
+- **Insert N:** one transaction labelled "Import N Motion Graphics" (one undo step) from the playhead at dialog
+  open. The first-free floor is the targeted video track. The new clips are selected.
+- Props are zod-validated and the body is inside a `PanelErrorBoundary`.
+
+### Agents (MCP, `apps/mcp/src/tools/bulk-motion-graphics.ts`)
+
+- **`duplicate_motion_graphic`** `{projectId, clipId, count? 1–50, seed?, at?, track?, params?, dryRun?,
+  sequenceId?}`:
+  - `count` chained `clip.duplicateMotionGraphic` commands in one transaction;
+  - copy i uses `mgItemSeed(seed, i)`;
+  - the result lists each copy's clip, track, times, resolved params, `rerolled` and seed.
+- **`import_motion_graphics_csv`** `{projectId, csv, template ("id", "id:preset", …), delimiter?, startAt?
+  (default 0: MCP has no playhead), track? (default V2), seed?, skipInvalid?, dryRun?, sequenceId?}`:
+  - runs the same parser, planner and command builder against the engine catalogue entry;
+  - row errors refuse the call with every bad row in `details.rows`, or are skipped with `skipInvalid`;
+  - a refused transaction names its CSV row and line.
+  - MCP has no zod schemas, so only the JSON Schema checks run before the transaction; fill and schema refusals
+    come back from the transaction (first failing row).
+- `TEMPLATES_GUIDE` and the server instructions mention both tools.
+
+### Tests
+
+- `packages/project/test/bulk-table.test.ts`: parser rules, caps, a 2 MB timing. fast-check: no throw on arbitrary
+  strings, `parse(format(records))` round trip for CSV / TSV / `;`, increasing record lines.
+- `packages/project/test/mg-import.test.ts`: mapping, aliases per variant, coercion errors, times, preset reroll
+  exclusion, schedule, preview = inserted params. fast-check: coercion and the planner never throw.
+- `packages/project/test/mg-duplicate.test.ts`: placement, reroll / keep, determinism, copy fidelity, first-free and
+  locked tracks, given params, keyframes, ref chains, refusals, dry run. fast-check: no overlap, invariants.
+- `packages/mg-templates/test/social-bulk.test.ts`: registry validation of the hints, catalogue JSON, social alias
+  mapping per variant, import and Add another through a social-shaped fixture
+  (`test/fixtures/social-bulk-template.ts`), and the real `social-comment@1` hints.
+- `apps/web/test/mg-add-another-bulk.test.tsx` (happy-dom):
+  - `mg.addAnother`: undo / redo, labels;
+  - clip menu, Properties, panel button, card context menu;
+  - dialog: preview marks, left-out rows, insert as one undo step, preview = stored, reroll, CSV file, size cap,
+    parse error, counter presets, read-only, hostile text.
+- `apps/mcp/test/bulk-motion-graphics.test.ts`: both tools, refusals, `skipInvalid`, row mapping of a refused
+  transaction, caps, advertised schemas.
+- `e2e/mg-add-another-bulk.spec.ts` (`pnpm e2e`, built app, Chrome), with screenshots in
+  `test-results/e2e-mg-add-another-bulk/`:
+  - Add Another from the clip menu and the panel (counter);
+  - bulk import of counter rows with a bad row;
+  - the real `social-comment` TikTok comment preset: Add Another keeps look and text and changes the identity and
+    likes (Program still checked by eye); a TSV with User / Comment / Likes / Verified / Image URL becomes 2 cards
+    plus 1 left-out row; one undo removes them.
+
+### Limitations
+
+- Remote image URLs are not imported (the column is reported as ignored).
+- XLSX is not read (design non-goal); the user copies cells or exports CSV.
+- MCP checks rows before the transaction only against the JSON Schema; template-level refusals (e.g. a handle the
+  fill rejects) fail the transaction at the first such row.
+- Empty cells cannot express "empty string"; they mean "not given".
+- Add another has no keyboard shortcut (see above).
 
 ## Remote fonts & emoji (WP2 `sc/assets`, design §7.8, §7.11)
 

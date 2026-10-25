@@ -136,6 +136,15 @@ describe("clip.addMotionGraphic placement: 'first-free'", () => {
 		expect(r3.track).toBe('V5');
 	});
 
+	it('skips tracks whose output is off (a graphic there would be invisible in Program and export)', () => {
+		const h = harness();
+		h.ok([solid(0, 100, 'V1')]);
+		h.ok([{ type: 'track.update', trackId: 'V2', patch: { output: false } }]);
+		const r = h.ok([mg(10, 20)]).results[0] as MgResult;
+		expect(r.track).toBe('V3');
+		expect(h.spans('V2')).toEqual([]);
+	});
+
 	it('starts at the given floor track (lower free tracks are not used)', () => {
 		const h = harness();
 		const r = h.ok([{ ...mg(0, 30), track: 'V2' }]).results[0] as MgResult;

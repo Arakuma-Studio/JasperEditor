@@ -3,19 +3,12 @@
 // (YouTube's comment font, bundled) and the live youtube.com measurements of 2026 where they differ from tokcomment
 // (avatar size, the colours of the handle, counts, icons, thread line and "N replies"). Deliberate differences from
 // tokcomment and the tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "YouTube cards".
-import {
-	formatCount,
-	formatRepliesLabel,
-	formatTime,
-	SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE,
-	SOCIAL_VARIANT_FONTS,
-} from '@jasper/mg-templates';
+import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { YOUTUBE_GLYPHS } from '../social/glyphs.ts';
-import { AvatarPicture } from './assets.tsx';
 import type { SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['youtube-comment']!.family}", sans-serif`;
 
@@ -34,15 +27,12 @@ const LINK = { light: '#065FD4', dark: '#3EA6FF' } as const;
 
 const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
 
-// ------------------------------------------------------------------------------------------- default avatar
-
-/** YouTube's default ("no photo") avatar: `yt3.ggpht.com/a/default-user`, a remote image of the asset manifest. */
-const DEFAULT_AVATAR_ID = SOCIAL_VARIANT_DEFAULT_AVATAR_IMAGE['youtube-comment']!;
+// ------------------------------------------------------------------------------------------------ avatar
 
 /**
- * The author's avatar: the picture, a generated one (initials from the handle the card shows: YouTube does not show
- * the display name) or YouTube's default picture (`imageUrls`, declared by `requiredAssets`; not delivered: the
- * visible placeholder of `TemplateImage`, and exports are blocked by the planner).
+ * The author's avatar (`SocialAvatar`): the picture, a generated one (initials from the handle the card shows: YouTube
+ * does not show the display name) or YouTube's default picture (the manifest image `SOCIAL_DEFAULT_AVATAR_IMAGES.youtube`
+ * from `assets.imageUrls`, declared by the template's `requiredAssets`).
  */
 function YouTubeAvatar(p: {
 	params: SocialCardProps['params'];
@@ -50,15 +40,6 @@ function YouTubeAvatar(p: {
 	assets: SocialCardAssets;
 	style?: CSSProperties;
 }) {
-	if (p.params.avatar === null)
-		return (
-			<span data-social-avatar="default" style={{ display: 'block', flexShrink: 0, ...p.style }}>
-				<AvatarPicture
-					src={p.assets.imageUrls[DEFAULT_AVATAR_ID]}
-					style={{ display: 'block', width: p.size, height: p.size, borderRadius: '50%', overflow: 'hidden' }}
-				/>
-			</span>
-		);
 	return (
 		<SocialAvatar
 			avatar={p.params.avatar}
@@ -170,6 +151,8 @@ function LikeThumb({
 				margin: `0 ${THUMB_MARGIN}px`,
 				flexShrink: 0,
 				transform: `scale(${r4(heart.s)})`,
+				// transformed per frame: widen its ink rect (preview / export parity, see INK_RING)
+				boxShadow: INK_RING,
 			}}
 		>
 			<Glyph
@@ -407,7 +390,6 @@ function YouTubeShortsReplyCard({ params: p, text, anim, assets }: SocialCardPro
 				gap: 12,
 				padding: '8px 20px 12px',
 				borderRadius: 16,
-				overflow: 'hidden',
 				background: theme.bg,
 				color: theme.text,
 				fontFamily: FONT,

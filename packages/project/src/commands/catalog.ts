@@ -18,6 +18,7 @@ import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.t
 import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
+import { mgAnotherHandlers } from './handlers/mg-another.ts';
 import { multicamHandlers } from './handlers/multicam.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
@@ -128,6 +129,7 @@ const LABELS: Record<CommandType, string> = {
 	'clip.addText': 'New Text',
 	'clip.addSolid': 'New Color Matte',
 	'clip.addMotionGraphic': 'New Motion Graphic',
+	'clip.duplicateMotionGraphic': 'Add Another',
 	'clip.addComposition': 'New Composition',
 	'clip.addShape': 'New Shape',
 	'clip.addCaptions': 'Add Captions',
@@ -401,6 +403,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[transitionHandlers, 'WP-TR'],
 	[processHandlers, 'wp-m2-process'],
 	[compositionHandlers, 'wp-m2-mg'],
+	[mgAnotherHandlers, 'wp-m2-mg'],
 	[trackerHandlers, 'wp-m2-track'],
 	[simplifyHandlers, 'wp-m3-trackui'],
 	[shapeHandlers, SHAPE_OWNER],

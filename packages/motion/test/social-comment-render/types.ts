@@ -6,7 +6,7 @@ export type CardProps = {
 	/** `mediaUrls` / `emojiUrls` of the template, as public-dir files. */
 	mediaFiles: Record<string, string>;
 	emojiFiles: Record<string, string>;
-	/** `imageUrls` of the template (remote images by manifest id), as public-dir files; absent = none. */
+	/** `imageUrls` (remote manifest images by id, e.g. X's default avatar), as public-dir files. */
 	imageFiles?: Record<string, string>;
 	background?: string;
 };

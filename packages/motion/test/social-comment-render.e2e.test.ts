@@ -4,17 +4,28 @@
 //   extras running (S11:ANM-014: seek order never changes a frame);
 // - the card fits every canvas (long comment, huge counts, marks): its painted box stays inside the frame;
 // - with SOCIAL_CALIBRATION_DIR set, writes the calibration stills (hold frame, card at 2× tokcomment's CSS px).
-// Fonts: TikTok Sans from @fontsource/tiktok-sans (SOCIAL_FONT_DIR overrides its `files/` dir), Roboto from
-// @fontsource/roboto; emoji: images from SOCIAL_EMOJI_DIR (`<codepoints>.png` = Apple; subdirectories `apple/`,
-// `twemoji/`, `noto/` = that pack), else the emoji draw as text; remote images (default avatars) from SOCIAL_IMAGE_DIR
-// (`<manifest id>.<ext>`), else the avatar draws the visible placeholder.
+// Fonts: TikTok Sans from @fontsource/tiktok-sans, bundled for the engine (SOCIAL_FONT_DIR overrides its `files/` dir);
+// Roboto (the YouTube cards) from @fontsource/roboto; emoji: Apple images from SOCIAL_EMOJI_DIR (`<codepoints>.png`;
+// subdirectories `apple/`, `twemoji/`, `noto/` = that pack), else flat stand-in squares (EmojiImage fails a render
+// without an image). X: Chirp from SOCIAL_CHIRP_DIR (the manifest's `Chirp-{Regular,Medium,Bold,Heavy}.<hash>.latin.woff2`
+// files; it is not redistributed, so without it the X card draws in a fallback face), remote images from
+// SOCIAL_IMAGE_DIR (`<manifest image id>.png`, e.g. `x-default-avatar.png`; without it the X default avatar is its
+// vector twin).
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { socialDefaults } from '@jasper/mg-templates';
+import {
+	animeTemplateTiming,
+	emojiGraphemes,
+	SOCIAL_DEFAULT_TEXT,
+	socialComment,
+	socialCommentParamsSchema,
+	socialCommentSchedule,
+	socialDefaults,
+} from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CardProps } from './social-comment-render/types.ts';
@@ -39,7 +50,12 @@ function fontsourceDir(pkg: string): string | null {
 /** The TikTok Sans files: SOCIAL_FONT_DIR, else @fontsource/tiktok-sans as installed for the engine. */
 function fontDir(): string | null {
 	if (process.env.SOCIAL_FONT_DIR) return process.env.SOCIAL_FONT_DIR;
-	return fontsourceDir('@fontsource/tiktok-sans');
+	try {
+		const req = createRequire(join(here, '../../../apps/engine/package.json'));
+		return join(dirname(req.resolve('@fontsource/tiktok-sans/package.json')), 'files');
+	} catch {
+		return null;
+	}
 }
 
 function rgba(png: Buffer): { data: Buffer; width: number; height: number } {
@@ -73,6 +89,13 @@ function paintedBox(png: Buffer) {
 				y1 = Math.max(y1, y);
 			}
 	return { x0, y0, x1, y1, width, height };
+}
+
+/** The clip's schedule (to know when its entrance ends), as the implementation builds it. */
+function schedule(c: { params: Record<string, unknown> }) {
+	const p = socialCommentParamsSchema.parse(c.params);
+	const t = animeTemplateTiming(socialComment, { fps: 30, localFrame: 0, durationFrames: 150 });
+	return socialCommentSchedule({ ...t, entrance: p.entrance, units: 0, tick: false });
 }
 
 const LONG =
@@ -161,6 +184,129 @@ CALIBRATION.push(
 		},
 	},
 );
+
+// X: the post card (tokcomment `x-post` captures, named after them), from X's tokcomment defaults ("Display Name",
+// @username, 2h, 45 / 12 / 1.2K / 12K)
+const X_CASES: Case[] = [];
+for (const theme of ['light', 'dark'])
+	for (const verified of [false, true])
+		X_CASES.push({
+			name: `x-post_${theme}_verified-${verified ? 'on' : 'off'}`,
+			canvas: '1080x1920',
+			params: { theme, verified },
+		});
+for (const [unit, label] of [
+	['minute', 'mins'],
+	['hour', 'hrs'],
+	['day', 'days'],
+	['week', 'wks'],
+	['month', 'mth'],
+	['year', 'yrs'],
+] as const)
+	X_CASES.push({
+		name: `x-post_light_time-3-${label}`,
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: unit },
+	});
+X_CASES.push(
+	{ name: 'x-post_light_text-short', canvas: '1080x1920', params: { text: 'Love this! 🔥' } },
+	{ name: 'x-post_light_text-long', canvas: '1080x1920', params: { text: LONG } },
+	{
+		name: 'x-post_light_counts-raw',
+		canvas: '1080x1920',
+		params: { likes: 1_234_567, replies: 1_234_567, reposts: 1_234_567, views: 1_234_567 },
+	},
+	{
+		name: 'x-post_light_counts-KM',
+		canvas: '1080x1920',
+		params: { replies: 12_300, reposts: 45_600, likes: 1_200_000, views: 9_800_000 },
+	},
+	{
+		name: 'x-post_light_counts-huge',
+		canvas: '1080x1920',
+		params: { replies: 999_999_999_999, reposts: 1e12, likes: 987_654_321_000, views: 1e12, verified: true },
+	},
+	{
+		name: 'x-post_light_counts-zero',
+		canvas: '1080x1920',
+		params: { replies: 0, reposts: 0, likes: 0, views: 0 },
+	},
+	{
+		name: 'x-post_light_highlight',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', text: 'Write any ==comment== and see what happens 😊' },
+	},
+	{
+		name: 'x-post_light_blur',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', text: 'Write any ||comment|| and see what happens 😊' },
+	},
+	{
+		name: 'x-post_light_remove',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', text: 'Write any ~~comment~~ and see what happens 😊' },
+	},
+	{
+		name: 'x-post_light_avatar-uploaded',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', avatar: { mediaId: 'med_avatar' } },
+		media: true,
+	},
+	{
+		name: 'x-post_light_avatar-generated',
+		canvas: '1080x1920',
+		params: { avatar: { generated: 42 }, displayName: 'Luna Park', handle: 'lunapark' },
+	},
+	{
+		name: 'x-post_light_mentions',
+		canvas: '1080x1920',
+		params: { text: 'Write any comment @friend and see what happens #fyp 😊' },
+	},
+	{
+		name: 'x-post_dark_mentions',
+		canvas: '1080x1920',
+		params: { theme: 'dark', text: 'Write any comment @friend and see what happens #fyp 😊' },
+	},
+	{ name: 'x-post_light_no-profile', canvas: '1080x1920', params: { showProfile: false } },
+	{
+		name: 'x-post_light_no-reposts-views',
+		canvas: '1080x1920',
+		params: { showReposts: false, showViews: false },
+	},
+	{
+		name: 'x-post_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			displayName: 'A very very long display name that goes on ✨',
+			handle: 'averyveryverylonghandle_123456',
+			verified: true,
+		},
+	},
+	{ name: 'x-post_light_liked', canvas: '1080x1920', params: { likeTick: true } },
+	{ name: 'x-post_dark_liked', canvas: '1080x1920', params: { theme: 'dark', likeTick: true } },
+);
+for (const [entrance, frames] of [
+	['classic-pop', [2, 4, 6, 8]],
+	['soft-spring', [2, 5, 8, 12]],
+	['grow-from-tail', [3, 6, 9, 13]],
+	['drop-bounce', [4, 8, 12, 16]],
+] as const)
+	for (const frame of frames)
+		X_CASES.push({
+			name: `anim_x-${entrance}_f${String(frame).padStart(3, '0')}`,
+			canvas: '1080x1920',
+			params: { entrance },
+			frame,
+		});
+for (const frame of [16, 22, 30, 40, 48, 146, 148])
+	X_CASES.push({
+		name: `anim_x-extras_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { wordReveal: true, likeTick: true },
+		frame,
+	});
+for (const c of X_CASES) c.params = { ...socialDefaults('x-post'), ...c.params };
+CALIBRATION.push(...X_CASES);
 
 // YouTube: the comment (tokcomment `youtube-video` captures) and the Shorts card (`youtube-shorts`; no verified, time
 // or counts); Noto emoji (YouTube's default pack)
@@ -372,7 +518,31 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				copyFileSync(join(roboto, file), join(pub, 'fonts', file));
 				fonts.push({ family: 'Roboto', weight, file: `fonts/${file}` });
 			}
+		// Chirp (the X card): the manifest's latin subset files, when SOCIAL_CHIRP_DIR holds them
+		const chirp = process.env.SOCIAL_CHIRP_DIR;
+		if (chirp && existsSync(chirp))
+			for (const [name, weight] of [
+				['Regular', 400],
+				['Medium', 500],
+				['Bold', 700],
+				['Heavy', 800],
+			] as const) {
+				const file = readdirSync(chirp).find(
+					(f) => f.startsWith(`Chirp-${name}.`) && f.endsWith('.latin.woff2'),
+				);
+				if (!file) continue;
+				copyFileSync(join(chirp, file), join(pub, 'fonts', file));
+				fonts.push({ family: 'Chirp', weight, file: `fonts/${file}` });
+			}
+		// remote manifest images by id (X's default avatar)
+		const imageDir = process.env.SOCIAL_IMAGE_DIR;
+		if (imageDir && existsSync(imageDir))
+			for (const f of readdirSync(imageDir).filter((n) => /\.(png|jpe?g)$/.test(n))) {
+				copyFileSync(join(imageDir, f), join(pub, f));
+				imageFiles[f.replace(/\.[a-z]+$/, '')] = f;
+			}
 		const emojiDir = process.env.SOCIAL_EMOJI_DIR;
+		const PACKS = ['apple', 'twemoji', 'noto'] as const;
 		const addEmoji = (dir: string, pack: string) => {
 			mkdirSync(join(pub, 'emoji', pack), { recursive: true });
 			for (const f of readdirSync(dir).filter((n) => n.endsWith('.png'))) {
@@ -388,18 +558,32 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		};
 		if (emojiDir && existsSync(emojiDir)) {
 			addEmoji(emojiDir, 'apple');
-			for (const pack of ['apple', 'twemoji', 'noto'])
-				if (existsSync(join(emojiDir, pack))) addEmoji(join(emojiDir, pack), pack);
+			for (const pack of PACKS) if (existsSync(join(emojiDir, pack))) addEmoji(join(emojiDir, pack), pack);
 		}
-		// remote images (platform default avatars) from SOCIAL_IMAGE_DIR, named `<manifest id>.<ext>`
-		const imageDir = process.env.SOCIAL_IMAGE_DIR;
-		if (imageDir && existsSync(imageDir)) {
-			mkdirSync(join(pub, 'images'), { recursive: true });
-			for (const f of readdirSync(imageDir).filter((n) => /\.(png|jpe?g)$/.test(n))) {
-				copyFileSync(join(imageDir, f), join(pub, 'images', f));
-				imageFiles[f.replace(/\.[^.]+$/, '')] = `images/${f}`;
+		// Every emoji the cases draw needs an image (EmojiImage fails a render without one, like an export the planner
+		// would block): without SOCIAL_EMOJI_DIR, flat stand-in squares keep the parity and fit checks self-contained.
+		const texts = [SOCIAL_DEFAULT_TEXT, LONG, 'averyveryveryverylongusername_with_many_characters_123456 ✨'];
+		for (const c of CALIBRATION) texts.push(String(c.params.text ?? ''), String(c.params.displayName ?? ''));
+		for (const g of emojiGraphemes(texts.join('\n')))
+			for (const pack of PACKS) {
+				if (emojiFiles[`${pack}:${g}`]) continue;
+				const name = `${[...g].map((ch) => ch.codePointAt(0)!.toString(16)).join('-')}.png`;
+				mkdirSync(join(pub, 'emoji', 'stand-in'), { recursive: true });
+				if (!existsSync(join(pub, 'emoji', 'stand-in', name)))
+					spawnSync(ffmpeg, [
+						'-v',
+						'error',
+						'-y',
+						'-f',
+						'lavfi',
+						'-i',
+						'color=c=0xffcc33:s=160x160',
+						'-frames:v',
+						'1',
+						join(pub, 'emoji', 'stand-in', name),
+					]);
+				emojiFiles[`${pack}:${g}`] = `emoji/stand-in/${name}`;
 			}
-		}
 		// a 256 px gradient picture as the uploaded avatar (no personal data)
 		spawnSync(ffmpeg, [
 			'-v',
@@ -414,7 +598,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			join(pub, 'avatar.png'),
 		]);
 		console.log(
-			`[social-comment] fonts: ${fonts.length} faces, emoji: ${Object.keys(emojiFiles).length}; artifacts ${work}`,
+			`[social-comment] fonts: ${fonts.length} faces, emoji: ${Object.keys(emojiFiles).length}, images: ${Object.keys(imageFiles).length}; artifacts ${work}`,
 		);
 		serveUrl = await bundle({ entryPoint: join(here, 'social-comment-render', 'entry.tsx'), publicDir: pub });
 		browser = await r.openBrowser('chrome', { ...browserOpts });
@@ -467,10 +651,37 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				},
 			},
 			{
+				name: 'reply-dark-pop',
+				canvas: '1080x1080',
+				params: { theme: 'dark', entrance: 'classic-pop', verified: true, text: 'so ==good== 😊 ||wow||' },
+			},
+			{
+				name: 'comment-light-spring',
+				canvas: '1080x1920',
+				params: {
+					variant: 'tiktok-comment',
+					entrance: 'soft-spring',
+					likeTick: true,
+					avatar: { generated: 5 },
+				},
+			},
+			{
+				name: 'x-post-dark',
+				canvas: '1080x1080',
+				params: {
+					...socialDefaults('x-post'),
+					theme: 'dark',
+					verified: true,
+					likeTick: true,
+					wordReveal: true,
+					entrance: 'grow-from-tail',
+				},
+			},
+			{
 				name: 'youtube-comment-dark',
 				canvas: '1080x1080',
 				params: {
-					variant: 'youtube-comment',
+					...socialDefaults('youtube-comment'),
 					theme: 'dark',
 					likeTick: true,
 					wordReveal: true,
@@ -481,11 +692,12 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			{
 				name: 'youtube-shorts-light',
 				canvas: '1080x1920',
-				params: { variant: 'youtube-shorts-reply', wordReveal: true, entrance: 'classic-pop' },
+				params: { ...socialDefaults('youtube-shorts-reply'), wordReveal: true, entrance: 'classic-pop' },
 			},
 		];
-		for (const c of cases) {
-			const frames = [0, 6, 14, 22, 30, 45, 146];
+		// SC_CASE=<name> runs one case (debugging)
+		for (const c of cases.filter((x) => !process.env.SC_CASE || x.name === process.env.SC_CASE)) {
+			const frames = [0, 2, 4, 6, 8, 10, 12, 14, 17, 22, 30, 45, 146];
 			const stills = new Map<number, Buffer>();
 			for (const f of frames) stills.set(f, await still(c, f));
 			const composition = await r.selectComposition({
@@ -513,7 +725,31 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				...browserOpts,
 			});
 			const differing = frames.filter((f) => !stills.get(f)!.equals(out.get(f)!));
-			expect(differing, c.name).toEqual([]);
+			for (const f of differing) {
+				writeFileSync(join(work, `${c.name}-still-${f}.png`), stills.get(f)!);
+				writeFileSync(join(work, `${c.name}-frames-${f}.png`), out.get(f)!);
+			}
+			// At rest (after the entrance) a frame is the same bytes however it is reached. While the entrance scales
+			// the card, Chrome's path cache may anti-alias an SVG icon edge 1/255 differently after other frames (a
+			// handful of pixels, measured: ≤ 5); anything more is a failure.
+			const rest = schedule(c).entranceEnd;
+			for (const f of differing) {
+				const a = rgba(stills.get(f)!).data;
+				const b = rgba(out.get(f)!).data;
+				let n = 0;
+				let max = 0;
+				for (let i = 0; i < a.length; i++)
+					if (a[i] !== b[i]) {
+						n++;
+						max = Math.max(max, Math.abs(a[i]! - b[i]!));
+					}
+				expect((f * 1000) / 30, `${c.name} frame ${f} differs at rest`).toBeLessThan(rest);
+				expect({ frame: f, max: Math.min(max, 2), few: n <= 64 }, c.name).toEqual({
+					frame: f,
+					max: 1,
+					few: true,
+				});
+			}
 			expect(stills.get(0)!.equals(stills.get(45)!)).toBe(false);
 		}
 	});
@@ -525,6 +761,27 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				{ text: longest },
 				{ variant: 'tiktok-comment', text: longest, likes: 1e12, replies: 1e12 },
 				{ variant: 'tiktok-comment', likes: 999_999_999_999, replies: 999_999, displayName: 'x'.repeat(64) },
+				{
+					variant: 'x-post',
+					text: longest,
+					likes: 1e12,
+					replies: 1e12,
+					reposts: 1e12,
+					views: 1e12,
+					verified: true,
+				},
+				{
+					variant: 'x-post',
+					likes: 999_999_999_999,
+					replies: 999_999_999_999,
+					reposts: 999_999_999_999,
+					views: 999_999_999_999,
+					timeValue: 10000,
+					timeUnit: 'month',
+					displayName: 'W'.repeat(64),
+					handle: 'w'.repeat(64),
+					verified: true,
+				},
 				{ variant: 'youtube-comment', text: longest, likes: 1e12, replies: 1e12, verified: true },
 				{
 					variant: 'youtube-comment',
@@ -554,7 +811,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		const out = process.env.SOCIAL_CALIBRATION_DIR!;
 		mkdirSync(out, { recursive: true });
 		const manifest: Record<string, ReturnType<typeof paintedBox>> = {};
-		// SOCIAL_CALIBRATION_FILTER: a regular expression of the case names to render (e.g. "^youtube-")
+		// SOCIAL_CALIBRATION_FILTER: a regular expression of the case names to render (e.g. "^(x-post|anim_x-)")
 		const only = process.env.SOCIAL_CALIBRATION_FILTER
 			? new RegExp(process.env.SOCIAL_CALIBRATION_FILTER)
 			: null;

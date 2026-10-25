@@ -62,6 +62,33 @@ export type MgTemplateParamUi = {
 export type MgTemplateUi = {
 	groups?: ReadonlyArray<{ id: string; label: string; params: readonly string[] }>;
 	params?: Readonly<Record<string, MgTemplateParamUi>>;
+	/**
+	 * "Add another" (`clip.duplicateMotionGraphic`, social-comments design §7.9): `reroll` names the params the copy
+	 * gets fresh values for from the template's `fill` hook (e.g. a comment's identity and stats); every other param is
+	 * copied from the source clip. Needs a `fill` hook. Absent = the copy keeps every param.
+	 */
+	addAnother?: { reroll: readonly string[] };
+	/** Spreadsheet / CSV bulk import (`planMgImport`): extra column names, ignored columns, value prefixes. */
+	import?: MgTemplateImportUi;
+};
+
+/**
+ * Where an import column goes: a param name, or a param chosen per row by the value of another param (`byParam`,
+ * e.g. the variant: a "User" column fills `displayName` on TikTok and `handle` on Instagram). `otherwise` applies
+ * to values `map` does not list.
+ */
+export type MgTemplateImportTarget =
+	| string
+	| { byParam: string; map: Readonly<Record<string, string>>; otherwise: string };
+
+/** Bulk-import hints of a template (all names compared ignoring case, spaces, `_`, `-`, `.` and `:`). */
+export type MgTemplateImportUi = {
+	/** Column names besides the param names and labels (`"Comment"` → `text`). */
+	aliases?: Readonly<Record<string, MgTemplateImportTarget>>;
+	/** Columns recognised but not imported → the reason the import preview shows (e.g. remote image URLs). */
+	ignored?: Readonly<Record<string, string>>;
+	/** Prefixes removed from a param's cells before validation (`{handle: '@'}`: "@luna" → "luna"). */
+	trimPrefix?: Readonly<Record<string, string>>;
 };
 
 export type MgTemplateInfo = {

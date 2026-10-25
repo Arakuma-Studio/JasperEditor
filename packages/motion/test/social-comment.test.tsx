@@ -13,16 +13,28 @@ import {
 } from '@jasper/mg-templates';
 import { act, render } from '@testing-library/react';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
-import { TIKTOK_DEFAULT_AVATAR, YOUTUBE_GLYPHS } from '../src/templates/social/glyphs.ts';
-import { splitEmojiPieces } from '../src/templates/social-comment/assets.tsx';
+import { TIKTOK_DEFAULT_AVATAR, X_GLYPHS, YOUTUBE_GLYPHS } from '../src/templates/social/glyphs.ts';
 import type { SocialCardAssets } from '../src/templates/social-comment/contract.ts';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
 import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
 import { socialVariantAvailable } from '../src/templates/social-comment/variants.ts';
 
 const Impl = ANIME_TEMPLATE_IMPLS['social-comment@1']!;
+
+// Remotion counts NODE_ENV=test as a render (a missing emoji would cancel it): these tests are the Player's
+// behaviour. happy-dom reports every image as complete at once; a browser does so only once it loaded or broke.
+const completeDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'complete');
+beforeEach(() => {
+	vi.stubEnv('NODE_ENV', 'development');
+	Object.defineProperty(HTMLImageElement.prototype, 'complete', { configurable: true, get: () => false });
+});
+afterEach(() => {
+	vi.unstubAllEnvs();
+	if (completeDesc) Object.defineProperty(HTMLImageElement.prototype, 'complete', completeDesc);
+});
+const EMOJI_URLS = { 'apple:😊': '/fonts/emoji/apple/419/1f60a.png' };
 const fps = 30;
 const FRAMES = 150;
 
@@ -37,7 +49,7 @@ function at(params: Record<string, unknown>, frame: number, extra: Record<string
 			seed={7}
 			isPreview={false}
 			mediaUrls={{}}
-			emojiUrls={{}}
+			emojiUrls={EMOJI_URLS}
 			imageUrls={{}}
 			{...extra}
 		/>
@@ -58,13 +70,13 @@ const ASSETS: SocialCardAssets = {
 };
 
 describe('social-comment@1 cards', () => {
-	it('draws the TikTok and YouTube cards in both themes and a visible "not available" card for the variants still to come', () => {
+	it('draws the TikTok, YouTube and X cards in both themes and a visible "not available" card for the variants still to come', () => {
 		for (const variant of SOCIAL_VARIANTS)
 			for (const theme of ['light', 'dark']) {
 				const r = render(at({ ...socialDefaults(variant), theme }, 100));
 				const card = r.container.querySelector('[data-social-variant]')!;
 				expect(card.getAttribute('data-social-variant')).toBe(variant);
-				if (variant.startsWith('tiktok') || variant.startsWith('youtube')) {
+				if (variant.startsWith('tiktok') || variant.startsWith('youtube') || variant === 'x-post') {
 					expect(socialVariantAvailable(variant)).toBe(true);
 					expect(card.hasAttribute('data-social-unavailable')).toBe(false);
 				} else {
@@ -193,18 +205,19 @@ describe('social-comment@1 YouTube cards', () => {
 		r.unmount();
 	});
 
-	it('avatars: YouTube default picture by its manifest id (placeholder until delivered), a picture, generated initials from the handle', () => {
+	it('avatars: YouTube default picture by its manifest id (silhouette until delivered), a picture, generated initials from the handle', () => {
 		const id = REMOTE_IMAGE_IDS.youtubeDefaultAvatar;
 		for (const variant of ['youtube-comment', 'youtube-shorts-reply'] as const) {
 			const base = socialDefaults(variant);
 			const missing = render(at(base, 100));
 			const el = missing.container.querySelector('[data-social-avatar="default"]')!;
-			expect(el.querySelector('[data-template-image="placeholder"]')).not.toBeNull();
+			expect(el.querySelector('img')).toBeNull();
+			expect(el.querySelector('svg')).not.toBeNull();
 			missing.unmount();
 			const raster = render(at(base, 100, { imageUrls: { [id]: 'http://engine/yt-default.jpg' } }));
-			expect(raster.container.querySelector('[data-social-avatar="default"] img')!.getAttribute('src')).toBe(
-				'http://engine/yt-default.jpg',
-			);
+			expect(
+				raster.container.querySelector('img[data-testid="social-avatar-media"]')!.getAttribute('src'),
+			).toBe('http://engine/yt-default.jpg');
 			raster.unmount();
 			const pic = render(
 				at({ ...base, avatar: { mediaId: 'med_a' } }, 100, { mediaUrls: { med_a: 'http://x/a.png' } }),
@@ -285,6 +298,183 @@ describe('social-comment@1 YouTube cards', () => {
 		const card = r.container.querySelector<HTMLElement>('[data-social-variant="youtube-shorts-reply"]')!;
 		expect(card.style.maxWidth).toBe('305px');
 		r.unmount();
+	});
+});
+
+describe('social-comment@1 X post card', () => {
+	const X = socialDefaults('x-post');
+	const view = (params: Record<string, unknown>, extra?: Record<string, unknown>, frame = 100) =>
+		render(at({ ...X, ...params }, frame, extra));
+	const part = (c: HTMLElement, name: string) => c.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+	it('header: bold name, @handle, "·", compact time, the blue badge only when verified, Grok and More', () => {
+		const r = view({ displayName: 'Luna Park', handle: 'lunapark', verified: true });
+		const c = r.container;
+		expect(c.querySelector('[data-social-variant="x-post"]')).not.toBeNull();
+		expect(part(c, 'name')!.textContent).toBe('Luna Park');
+		expect(part(c, 'name')!.style.fontWeight).toBe('700');
+		expect(part(c, 'handle')!.textContent).toBe('@lunapark');
+		expect(part(c, 'time')!.textContent).toBe('2h');
+		const d = (g: { paths: readonly { d: string }[] }) => g.paths[0]!.d;
+		const header = part(c, 'header')!;
+		expect(header.querySelector(`path[d="${d(X_GLYPHS.verifiedBlue)}"]`)).not.toBeNull();
+		expect(header.querySelector(`path[d="${d(X_GLYPHS.grok)}"]`)).not.toBeNull();
+		expect(header.querySelector(`path[d="${d(X_GLYPHS.more)}"]`)).not.toBeNull();
+		r.unmount();
+		const plain = view({});
+		expect(plain.container.querySelector(`path[d="${d(X_GLYPHS.verifiedBlue)}"]`)).toBeNull();
+		plain.unmount();
+	});
+
+	it('inline editing: displayName, handle (without the "@") and the marked text are editable elements', () => {
+		const r = view({ displayName: 'Luna 🌙', handle: 'luna' });
+		const c = r.container;
+		// the emoji is an image of the pack (here not delivered: the visible "?" marker)
+		expect(c.querySelector('[data-template-param="displayName"]')!.textContent).toBe('Luna ?');
+		expect(c.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna');
+		expect(c.querySelector('[data-template-param="text"][data-template-marks="true"]')).not.toBeNull();
+		r.unmount();
+	});
+
+	it("action bar: X's glyphs and formatted counts (45 · 12 · 1.2K · 12K), bookmark and share", () => {
+		const r = view({});
+		const c = r.container;
+		expect(['replies', 'reposts', 'likes', 'views'].map((n) => part(c, n)!.textContent)).toEqual([
+			'45',
+			'12',
+			'1.2K',
+			'12K',
+		]);
+		const actions = part(c, 'actions')!;
+		for (const g of ['reply', 'repost', 'like', 'views', 'bookmark', 'share'] as const)
+			expect(actions.querySelector(`path[d="${X_GLYPHS[g].paths[0]!.d}"]`), g).not.toBeNull();
+		// the secondary colour of x.com 2026 (rgba(0, 0, 0, .6)), not tokcomment's greys
+		expect(part(c, 'likes')!.style.color).toBe('rgba(0, 0, 0, 0.6)');
+		r.unmount();
+	});
+
+	it('showReposts / showViews hide their counts (the icons stay); zero counts show the icon alone', () => {
+		const r = view({ showReposts: false, showViews: false });
+		// the count goes, the icon stays (and the columns keep their places)
+		for (const n of ['reposts', 'views']) {
+			expect(part(r.container, n), n).toBeNull();
+			expect(part(r.container, `${n}-action`)!.querySelector('svg'), n).not.toBeNull();
+		}
+		expect(part(r.container, 'replies')!.textContent).toBe('45');
+		r.unmount();
+		const zero = view({ replies: 0, reposts: 0, likes: 0, views: 0 });
+		for (const n of ['replies', 'reposts', 'likes', 'views']) {
+			expect(part(zero.container, n), n).toBeNull();
+			expect(part(zero.container, `${n}-action`)!.querySelector('svg'), n).not.toBeNull();
+		}
+		zero.unmount();
+	});
+
+	it('huge counts stay short, and every column clips its count so bookmark and share never leave the card', () => {
+		const r = view({ replies: 1_234_567, reposts: 999_999_999_999, likes: 1e12, views: 987_654_321_000 });
+		const c = r.container;
+		expect(['replies', 'reposts', 'likes', 'views'].map((n) => part(c, n)!.textContent)).toEqual([
+			'1.2M',
+			'999.9B',
+			'1,000B',
+			'987.6B',
+		]);
+		for (const n of ['replies', 'reposts', 'likes', 'views']) {
+			const col = part(c, `${n}-action`)!;
+			expect(col.style.flex).toBe('1 1 0px');
+			expect(col.style.minWidth).toMatch(/^0(px)?$/);
+			expect(col.style.overflow).toBe('hidden');
+		}
+		r.unmount();
+	});
+
+	it('like tick: the count ticks up, then the heart fills and the count turns magenta (#F91880)', () => {
+		const p = { ...X, likeTick: true, likes: 12_345 };
+		const v = render(at(p, 0));
+		const likes = () => v.container.querySelector<HTMLElement>('[data-part="likes"]');
+		expect(likes()).toBeNull(); // 0 is not shown on X
+		act(() => v.rerender(at(p, 25)));
+		expect(Number(likes()!.textContent!.replace(/[^0-9.]/g, ''))).toBeGreaterThan(0);
+		act(() => v.rerender(at(p, 100)));
+		expect(likes()!.textContent).toBe('12.3K');
+		expect(likes()!.style.color).toMatch(/^(#F91880|rgb\(249, 24, 128\))$/i);
+		const icon = v.container.querySelector('[data-part="like-icon"]')!;
+		const [outline, filled] = [...icon.querySelectorAll<SVGElement>('svg')];
+		expect(outline!.style.opacity).toBe('0');
+		expect(filled!.style.opacity).toBe('1');
+		expect(filled!.querySelector('path')!.getAttribute('d')).toBe(X_GLYPHS.likeFilled.paths[0]!.d);
+		v.unmount();
+	});
+
+	it('dark theme: black card, white name and text, white-60 secondary', () => {
+		const r = view({ theme: 'dark' });
+		const card = r.container.querySelector<HTMLElement>('[data-social-variant="x-post"]')!;
+		expect(card.style.background).toMatch(/#000000|rgb\(0, 0, 0\)/i);
+		expect(part(r.container, 'name')!.style.color).toMatch(/#FFFFFF|rgb\(255, 255, 255\)/i);
+		expect(part(r.container, 'handle')!.style.color).toBe('rgba(255, 255, 255, 0.6)');
+		r.unmount();
+	});
+
+	it('mentions and hashtags in X blue; emoji as Apple images (emojiStyle auto)', () => {
+		const r = view(
+			{ text: 'hi @friend #fyp 😊' },
+			{ emojiUrls: { 'apple:😊': 'http://x/apple-1f60a.png', 'twemoji:😊': 'http://x/tw.svg' } },
+		);
+		const c = r.container;
+		const colored = [...c.querySelectorAll<HTMLElement>('[data-template-param="text"] span')].filter(
+			(s) => s.style.color && !s.hasAttribute('data-unit'),
+		);
+		const blue = (c: string) => (c.toUpperCase() === '#1D9BF0' ? 'rgb(29, 155, 240)' : c);
+		expect(colored.map((s) => [s.textContent, blue(s.style.color)])).toEqual([
+			['@friend', 'rgb(29, 155, 240)'],
+			['#fyp', 'rgb(29, 155, 240)'],
+		]);
+		expect(c.querySelector('img[data-emoji="😊"]')!.getAttribute('src')).toBe('http://x/apple-1f60a.png');
+		r.unmount();
+	});
+
+	it("avatars: X's default (manifest image when resolved, else its vector twin), picture, generated; showProfile", () => {
+		const id = REMOTE_IMAGE_IDS.xDefaultAvatar;
+		const resolved = view({}, { imageUrls: { [id]: 'http://engine/x-default.png' } });
+		const def = resolved.container.querySelector('[data-social-avatar="default"]')!;
+		expect(def.querySelector('img')!.getAttribute('src')).toBe('http://engine/x-default.png');
+		resolved.unmount();
+		const twin = view({});
+		expect(
+			twin.container.querySelector('[data-social-avatar="default"] svg rect')!.getAttribute('fill'),
+		).toBe('#CCD6DD');
+		twin.unmount();
+		const pic = view({ avatar: { mediaId: 'med_a' } }, { mediaUrls: { med_a: 'http://x/a.png' } });
+		expect(pic.getByTestId('social-avatar-media').getAttribute('src')).toBe('http://x/a.png');
+		pic.unmount();
+		const gen = view({ avatar: { generated: 42 }, displayName: 'Luna Park' });
+		expect(gen.container.querySelector('[data-social-avatar="generated"]')).not.toBeNull();
+		gen.unmount();
+		const none = view({ showProfile: false });
+		expect(none.container.querySelector('[data-social-avatar]')).toBeNull();
+		expect(part(none.container, 'name')!.textContent).toBe('Display Name');
+		none.unmount();
+	});
+
+	it('long names truncate (ellipsis) while the time and the header buttons never shrink', () => {
+		const r = view({ displayName: 'W'.repeat(64), handle: 'w'.repeat(64), verified: true });
+		const c = r.container;
+		expect(part(c, 'name')!.style.textOverflow).toBe('ellipsis');
+		expect(part(c, 'handle')!.style.textOverflow).toBe('ellipsis');
+		expect(part(c, 'time')!.style.flexShrink).toBe('0');
+		r.unmount();
+	});
+
+	it('every frame of the X card is a pure function of params and time (any visiting order)', () => {
+		const p = { ...X, wordReveal: true, likeTick: true, entrance: 'drop-bounce', verified: true };
+		const frames = [0, 5, 16, 24, 40, 100, 148];
+		const fresh = new Map(frames.map((f) => [f, html(p, f)]));
+		const v = render(at(p, frames[3]!));
+		for (const f of [...frames].reverse()) {
+			act(() => v.rerender(at(p, f)));
+			expect(v.container.innerHTML).toBe(fresh.get(f));
+		}
+		v.unmount();
 	});
 });
 
@@ -431,36 +621,26 @@ describe('social-comment@1 shared parts', () => {
 			/>,
 		);
 		const c = r.container;
-		expect(c.textContent!.replace(/😊/, '')).toBe('hi big deal secret gone @bob #fyp  🤔');
+		// the emoji are images (the missing one a "?" marker), the rest is text
+		expect(c.textContent).toBe('hi big deal secret gone @bob #fyp  ?');
 		const pill = [...c.querySelectorAll<HTMLElement>('[data-unit]')].find(
 			(u) => u.textContent === 'big deal',
 		)!;
 		expect(pill.style.background).toMatch(/#FFE500|rgb\(255, 229, 0\)/i);
-		expect(c.querySelector<HTMLElement>('[data-mark="blur"]')!.style.filter).toBe('blur(4px)');
+		const blurred = c.querySelector<HTMLElement>('[data-mark="blur"]')!;
+		expect(blurred.style.textShadow).toBe('0 0 8px currentColor');
 		expect(c.querySelector<HTMLElement>('[data-mark="remove"]')!.style.opacity).toBe('0');
-		const colored = [...c.querySelectorAll<HTMLElement>('span:not([data-unit])')].filter(
-			(s) => s.style.color,
-		);
+		const colored = [
+			...c.querySelectorAll<HTMLElement>('span:not([data-unit]):not([data-missing-asset])'),
+		].filter((s) => s.style.color);
 		expect(colored.map((s) => [s.textContent, s.style.color])).toEqual([
 			['@bob', 'rgb(1, 2, 3)'],
 			['#fyp', 'rgb(4, 5, 6)'],
 		]);
 		expect(c.querySelector('img[data-emoji="😊"]')!.getAttribute('src')).toBe('http://x/1f60a.png');
-		// an emoji without an image of the pack is drawn as text (the emoji pack delivery marks it, contract C2)
-		expect(c.querySelector('[data-emoji-text="🤔"]')).not.toBeNull();
+		// an emoji the pack does not deliver is a visible marker (EmojiImage → MissingAssetMarker), never a host glyph
+		expect(c.querySelector('[data-missing-asset="emoji"]')!.getAttribute('aria-label')).toMatch(/🤔/);
 		r.unmount();
-	});
-
-	it('emoji split: text runs and whole emoji graphemes (flags, ZWJ, keycaps, skin tones)', () => {
-		expect(splitEmojiPieces('a👍🏽b🇵🇦👨‍👩‍👧1️⃣ c')).toEqual([
-			{ kind: 'text', text: 'a' },
-			{ kind: 'emoji', grapheme: '👍🏽' },
-			{ kind: 'text', text: 'b' },
-			{ kind: 'emoji', grapheme: '🇵🇦' },
-			{ kind: 'emoji', grapheme: '👨‍👩‍👧' },
-			{ kind: 'emoji', grapheme: '1️⃣' },
-			{ kind: 'text', text: ' c' },
-		]);
 	});
 
 	it('fit zoom: the canvas scale unless the card is too tall or wide; a measured card at any zoom gives one answer', () => {

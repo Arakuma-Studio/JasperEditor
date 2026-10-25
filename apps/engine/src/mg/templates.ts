@@ -35,19 +35,29 @@ export function missingTemplates(
 	registry: MgRegistry = mgRegistry,
 ): MissingTemplate[] {
 	const out: MissingTemplate[] = [];
-	for (const t of snapshot.videoTracks)
+	for (const c of visualClipsDeep(snapshot)) {
+		const mg = mgOf(c);
+		if (!mg) continue;
+		const key = `${mg.template.id}@${mg.template.version}`;
+		if (!registry.getDefinition(mg.template.id, mg.template.version))
+			out.push({ clipId: c.clipId, name: c.name, template: key });
+		else if (key === 'social-comment@1') {
+			// a social-comment card style this build does not draw yet (its preview is a "not available" card)
+			const variant = socialCommentUnavailableVariant(mg.params);
+			if (variant)
+				out.push({ clipId: c.clipId, name: c.name, template: `${key} (${VARIANT_LABELS[variant]} card)` });
+		}
+	}
+	return out;
+}
+
+/** Visual clips of a snapshot and of every nested snapshot drawn in it (bounded by the snapshot's own nest depth). */
+function visualClipsDeep(snap: RenderSnapshot): RenderVisualClip[] {
+	const out: RenderVisualClip[] = [];
+	for (const t of snap.videoTracks)
 		for (const c of t.clips) {
-			const mg = mgOf(c);
-			if (!mg) continue;
-			const key = `${mg.template.id}@${mg.template.version}`;
-			if (!registry.getDefinition(mg.template.id, mg.template.version))
-				out.push({ clipId: c.clipId, name: c.name, template: key });
-			else if (key === 'social-comment@1') {
-				// a social-comment card style this build does not draw yet (its preview is a "not available" card)
-				const variant = socialCommentUnavailableVariant(mg.params);
-				if (variant)
-					out.push({ clipId: c.clipId, name: c.name, template: `${key} (${VARIANT_LABELS[variant]} card)` });
-			}
+			out.push(c);
+			if ('nest' in c.source) out.push(...visualClipsDeep(c.source.nest.snapshot));
 		}
 	return out;
 }
