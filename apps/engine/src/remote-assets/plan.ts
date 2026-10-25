@@ -24,13 +24,17 @@ export function engineTemplateAssets(
 			const url = fonts.remote?.emojiUrl(pack, grapheme) ?? null;
 			return url ? sign(url) : null;
 		},
+		image: (id) => {
+			const url = fonts.remote?.imageUrl(id) ?? null;
+			return url ? sign(url) : null;
+		},
 	});
 }
 
 /** One unavailable asset of a plan, by clip. */
 export type TemplateAssetIssue = {
 	clipIds: string[];
-	kind: 'font' | 'emoji';
+	kind: 'font' | 'emoji' | 'image';
 	/** `font "Chirp" 700`, `emoji 😀 of the apple pack`. */
 	label: string;
 	reason: string;
@@ -46,11 +50,11 @@ const faceLabel = (f: { family: string; weight: number; style: string }) =>
 	`font "${f.family}" ${f.weight}${f.style === 'italic' ? ' italic' : ''}`;
 
 /**
- * Checks (and downloads) every template font and emoji the clips draw. Unresolvable ones (not bundled, not in the
+ * Checks (and downloads) every template font, emoji and remote image the clips draw. Unresolvable ones (not bundled, not in the
  * manifest) and failed downloads are returned as issues; an empty list means every asset is cached or bundled.
  */
 export async function checkTemplateAssets(
-	snapshot: Pick<RenderSnapshot, 'fonts' | 'emoji'>,
+	snapshot: Pick<RenderSnapshot, 'fonts' | 'emoji' | 'images'>,
 	clips: readonly Clip[],
 	fonts: FontCatalogService,
 ): Promise<TemplateAssetIssue[]> {
@@ -63,9 +67,11 @@ export async function checkTemplateAssets(
 	};
 	const resolvedFaces = new Set(snapshot.fonts.filter((f) => f.fontId.startsWith('template:')).map(faceKey));
 	const emojiTable = snapshot.emoji ?? {};
+	const imageTable = snapshot.images ?? {};
 	const req: Required<Pick<RemoteAssetPrefetchRequest, 'fonts'>> & {
 		emoji: { pack: string; graphemes: string[] }[];
-	} = { fonts: [], emoji: [] };
+		images: string[];
+	} = { fonts: [], emoji: [], images: [] };
 	const users = new Map<string, string[]>();
 	const use = (key: string, clipId: string) => {
 		const list = users.get(key) ?? [];
@@ -112,11 +118,31 @@ export async function checkTemplateAssets(
 				entry.graphemes.push(g);
 			}
 		}
+		for (const id of assets.images ?? []) {
+			const key = `image:${id}`;
+			if (!(id in imageTable)) {
+				add(key, c.clipId, {
+					kind: 'image',
+					label: `image "${id}"`,
+					reason: 'it is not in the remote-asset manifest',
+					code: 'REMOTE_ASSET_UNKNOWN',
+					retryable: false,
+				});
+				continue;
+			}
+			if (use(key, c.clipId)) req.images.push(id);
+		}
 	}
-	if ((req.fonts.length || req.emoji.length) && fonts.remote) {
+	const wanted = req.fonts.length + req.emoji.length + req.images.length;
+	if (wanted && fonts.remote) {
 		const r = await fonts.remote.prefetch(req, (face) => fonts.isBundledFace(face));
 		for (const m of r.missing) {
-			const key = m.kind === 'font' ? `font:${faceKey(m)}` : `emoji:${m.pack}:${m.grapheme}`;
+			const key =
+				m.kind === 'font'
+					? `font:${faceKey(m)}`
+					: m.kind === 'emoji'
+						? `emoji:${m.pack}:${m.grapheme}`
+						: `image:${m.id}`;
 			for (const clipId of users.get(key) ?? [])
 				add(key, clipId, {
 					kind: m.kind,
@@ -126,11 +152,11 @@ export async function checkTemplateAssets(
 					retryable: m.error.retryable,
 				});
 		}
-	} else if (req.fonts.length || req.emoji.length) {
+	} else if (wanted) {
 		for (const [key, clipIds] of users)
 			for (const clipId of clipIds)
 				add(key, clipId, {
-					kind: key.startsWith('font:') ? 'font' : 'emoji',
+					kind: key.startsWith('font:') ? 'font' : key.startsWith('image:') ? 'image' : 'emoji',
 					label: key,
 					reason: 'this engine has no remote-asset service',
 					code: 'REMOTE_ASSET_UNKNOWN',
@@ -141,7 +167,8 @@ export async function checkTemplateAssets(
 }
 
 function missingLabel(m: RemoteAssetMissing): string {
-	return m.kind === 'font' ? faceLabel(m) : `emoji ${m.grapheme} of the ${m.pack} pack`;
+	if (m.kind === 'font') return faceLabel(m);
+	return m.kind === 'emoji' ? `emoji ${m.grapheme} of the ${m.pack} pack` : `image "${m.id}"`;
 }
 
 /** One sentence naming every unavailable asset and the clips that draw it, with what the user can do. */
@@ -155,5 +182,5 @@ export function templateAssetsMessage(issues: readonly TemplateAssetIssue[], cli
 		return `${i.label} (clip ${who}${i.clipIds.length > 3 ? ` +${i.clipIds.length - 3}` : ''}): ${i.reason}`;
 	});
 	const more = issues.length > 6 ? `; and ${issues.length - 6} more` : '';
-	return `Template assets are not available — ${parts.join('; ')}${more}. Retry the download, switch the emoji style, or remove the emoji.`;
+	return `Template assets are not available — ${parts.join('; ')}${more}. Retry the download, switch the emoji style, or remove the emoji or image.`;
 }

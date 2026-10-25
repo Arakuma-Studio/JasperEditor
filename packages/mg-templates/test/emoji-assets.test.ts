@@ -8,6 +8,7 @@ import {
 	emojiCodepointKey,
 	emojiGraphemes,
 	emojiKey,
+	fullyQualifiedEmoji,
 	graphemeOfEmojiKey,
 	isEmojiGrapheme,
 	resolveTemplateParams,
@@ -91,6 +92,20 @@ describe('codepoint keys (pack URL {cp})', () => {
 		expect(emojiCodepointCandidates(SAMPLES.redHeart, 'strip')).toEqual(['2764']);
 		expect(emojiCodepointCandidates(SAMPLES.redHeart, 'try-both')).toEqual(['2764-fe0f', '2764']);
 		expect(emojiCodepointCandidates(SAMPLES.grin, 'try-both')).toEqual(['1f600']);
+		// a sequence typed without VS16 is looked up in its fully-qualified form too
+		expect(emojiCodepointCandidates('\u{1F3F3}\u200D\u{1F308}', 'keep')).toEqual([
+			'1f3f3-200d-1f308',
+			'1f3f3-fe0f-200d-1f308',
+		]);
+		expect(emojiCodepointCandidates('\u{1F3F3}\u200D\u{1F308}', 'try-both')).toEqual([
+			'1f3f3-200d-1f308',
+			'1f3f3-fe0f-200d-1f308',
+		]);
+		expect(emojiCodepointCandidates('1\u20E3', 'keep')).toEqual(['31-20e3', '31-fe0f-20e3']);
+		expect(fullyQualifiedEmoji(SAMPLES.womanTechTone)).toBe(SAMPLES.womanTechTone);
+		expect(fullyQualifiedEmoji(SAMPLES.rainbowFlag)).toBe(SAMPLES.rainbowFlag);
+		expect(fullyQualifiedEmoji('\u{1F44D}\u{1F3FD}')).toBe('\u{1F44D}\u{1F3FD}');
+		expect(fullyQualifiedEmoji(SAMPLES.flagUs)).toBe(SAMPLES.flagUs);
 		expect(emojiCodepointKey(SAMPLES.flagUs, { join: '_', minDigits: 4 })).toBe('1f1fa_1f1f8');
 		expect(emojiCodepointKey(SAMPLES.keycapOne, { join: '_', minDigits: 4, stripFe0f: true })).toBe(
 			'0031_20e3',
@@ -182,6 +197,20 @@ describe('templateRequiredAssets', () => {
 				{ pack: 'twemoji', graphemes: [SAMPLES.grin] },
 			],
 		});
+	});
+
+	it('collects remote image ids (bounded, validated)', () => {
+		const r = templateRequiredAssets(
+			fakeTemplate(() => ({ fonts: [], images: ['x-default-avatar', 'x-default-avatar'] })),
+			{},
+		);
+		expect(r).toEqual({ fonts: [], emoji: [], images: ['x-default-avatar'] });
+		expect(
+			templateRequiredAssets(
+				fakeTemplate(() => ({ fonts: [], images: ['Bad Id'] })),
+				{},
+			),
+		).toBeNull();
 	});
 
 	it('is null for templates without the hook, that throw, or that return invalid data', () => {

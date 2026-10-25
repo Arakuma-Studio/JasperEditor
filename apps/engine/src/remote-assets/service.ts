@@ -16,12 +16,14 @@ import {
 	type FontFamily,
 	type NetworkSettings,
 	REMOTE_FONT_PREFIX,
+	REMOTE_IMAGE_PREFIX,
 	type RemoteAssetFetch,
 	type RemoteAssetMissing,
 	type RemoteAssetPrefetchRequest,
 	type RemoteAssetPrefetchResponse,
 	type RemoteAssetsChangedEvent,
 	type RemoteAssetsStatus,
+	type RemoteImageInfo,
 } from '@jasper/api';
 import {
 	emojiCodepointCandidates,
@@ -43,7 +45,7 @@ import {
 	RemoteAssetError,
 } from './fetcher.ts';
 import { type LoadedManifest, loadManifest, overrideStamp, shippedManifest } from './manifest.ts';
-import type { RemoteEmojiPack, RemoteFontEntry, RemoteManifest } from './schema.ts';
+import type { RemoteEmojiPack, RemoteFontEntry, RemoteImageEntry, RemoteManifest } from './schema.ts';
 import { NetworkSettingsStore } from './settings.ts';
 
 export { RemoteAssetError } from './fetcher.ts';
@@ -62,6 +64,14 @@ export const DEFAULT_EMOJI_LIMITS: FetchLimits = {
 	retries: 2,
 	backoffMs: 300,
 };
+/** Remote images are small (avatars); a larger download is refused. */
+const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+const IMAGE_TYPES = {
+	png: 'image/png',
+	jpeg: 'image/jpeg',
+	webp: 'image/webp',
+	svg: 'image/svg+xml',
+} as const;
 /** Simultaneous downloads per host. */
 export const DEFAULT_PER_HOST = 4;
 /** Emoji downloads one prefetch runs at a time (they also queue per host). */
@@ -153,27 +163,37 @@ export class RemoteAssetService {
 		return this.current().manifest.fonts.find((f) => RemoteAssetService.fontFileName(f) === name) ?? null;
 	}
 
-	/** The manifest entry of a face (exact family — case-insensitive — weight and style; override entries win). */
-	fontFor(face: Face): RemoteFontEntry | null {
+	/**
+	 * The manifest entries of a face (exact family — case-insensitive — weight and style): every entry when all of them
+	 * are subsets with a unicode range, else the last one (override entries come last, so they win).
+	 */
+	fontsFor(face: Face): RemoteFontEntry[] {
 		const name = face.family.trim().toLowerCase();
-		const all = this.current().manifest.fonts;
-		for (let i = all.length - 1; i >= 0; i--) {
-			const f = all[i]!;
-			if (f.family.toLowerCase() === name && f.weight === face.weight && f.style === face.style) return f;
-		}
-		return null;
+		const all = this.current().manifest.fonts.filter(
+			(f) => f.family.toLowerCase() === name && f.weight === face.weight && f.style === face.style,
+		);
+		if (all.length > 1 && all.every((f) => f.unicodeRange)) return all;
+		return all.length ? [all[all.length - 1]!] : [];
 	}
 
-	/** Engine-relative URL of a face's file, or null when the manifest has no such face. */
-	fontUrl(face: Face): string | null {
-		const f = this.fontFor(face);
-		return f ? `${REMOTE_FONT_PREFIX}${RemoteAssetService.fontFileName(f)}` : null;
+	/** Engine-relative files of a face (with their unicode ranges when it is split), or null when it is not listed. */
+	fontFiles(face: Face): { url: string; unicodeRange?: string }[] | null {
+		const entries = this.fontsFor(face);
+		if (entries.length === 0) return null;
+		return entries.map((f) => ({
+			url: `${REMOTE_FONT_PREFIX}${RemoteAssetService.fontFileName(f)}`,
+			...(entries.length > 1 && f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
+		}));
 	}
 
 	/** Remote families for the font catalogue (`source: 'remote'`). */
 	catalogFamilies(): FontFamily[] {
 		const byFamily = new Map<string, FontFamily>();
+		const seen = new Set<string>();
 		for (const f of this.current().manifest.fonts) {
+			const faceKey = `${f.family.toLowerCase()}|${f.weight}|${f.style}`;
+			if (seen.has(faceKey)) continue;
+			seen.add(faceKey);
 			let fam = byFamily.get(f.family);
 			if (!fam) {
 				fam = { family: f.family, source: 'remote', weights: [], styles: [], files: [] };
@@ -181,12 +201,8 @@ export class RemoteAssetService {
 			}
 			if (!fam.weights.includes(f.weight)) fam.weights.push(f.weight);
 			if (!fam.styles.includes(f.style)) fam.styles.push(f.style);
-			fam.files = fam.files.filter((x) => !(x.weight === f.weight && x.style === f.style));
-			fam.files.push({
-				weight: f.weight,
-				style: f.style,
-				url: `${REMOTE_FONT_PREFIX}${RemoteAssetService.fontFileName(f)}`,
-			});
+			for (const file of this.fontFiles(f) ?? [])
+				fam.files.push({ weight: f.weight, style: f.style, ...file });
 		}
 		for (const fam of byFamily.values()) fam.weights.sort((a, b) => a - b);
 		return [...byFamily.values()];
@@ -217,19 +233,17 @@ export class RemoteAssetService {
 		return this.ensureFont(f);
 	}
 
-	/** Path of the verified file of a face, downloading it when needed (policy on). */
-	ensureFace(face: Face): Promise<string> {
-		const f = this.fontFor(face);
-		if (!f)
-			return Promise.reject(
-				new RemoteAssetError(
-					'REMOTE_ASSET_UNKNOWN',
-					`Font "${faceLabel(face)}" is not bundled and not in the remote-asset manifest`,
-					false,
-					face,
-				),
+	/** Paths of the verified files of a face, downloading them when needed (policy on). */
+	async ensureFace(face: Face): Promise<string[]> {
+		const entries = this.fontsFor(face);
+		if (entries.length === 0)
+			throw new RemoteAssetError(
+				'REMOTE_ASSET_UNKNOWN',
+				`Font "${faceLabel(face)}" is not bundled and not in the remote-asset manifest`,
+				false,
+				face,
 			);
-		return this.ensureFont(f);
+		return Promise.all(entries.map((f) => this.ensureFont(f)));
 	}
 
 	private ensureFont(f: RemoteFontEntry): Promise<string> {
@@ -257,6 +271,104 @@ export class RemoteAssetService {
 			await this.write(path, got.bytes);
 			this.verified.set(path, hash);
 			this.fetched({ kind: 'font', label: faceLabel(f), host: hostOf(f.url), licence: f.licence });
+			return path;
+		});
+	}
+
+	// ── images ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+	image(id: string): RemoteImageEntry | null {
+		return this.current().manifest.images.find((i) => i.id === id) ?? null;
+	}
+
+	/** File name an image is served and cached under (immutable: the hash prefix changes with the file). */
+	static imageFileName(i: RemoteImageEntry): string {
+		return `${i.id}-${i.sha256.slice(0, 16)}.${i.format}`;
+	}
+
+	/** Engine-relative URL of a remote image by id (null: not in the manifest). */
+	imageUrl(id: string): string | null {
+		const i = this.image(id);
+		return i ? `${REMOTE_IMAGE_PREFIX}${RemoteAssetService.imageFileName(i)}` : null;
+	}
+
+	/** Remote images for the font catalogue. */
+	catalogImages(): RemoteImageInfo[] {
+		return this.current().manifest.images.map((i) => ({
+			id: i.id,
+			url: `${REMOTE_IMAGE_PREFIX}${RemoteAssetService.imageFileName(i)}`,
+			format: i.format,
+			licence: i.licence,
+		}));
+	}
+
+	private imagePath(i: RemoteImageEntry): string {
+		return join(this.o.dir, 'images', RemoteAssetService.imageFileName(i));
+	}
+
+	/** Path of a cached, verified image by served name, or null when not cached (layer-bake keys). */
+	cachedImagePath(name: string): string | null {
+		const i = this.current().manifest.images.find((x) => RemoteAssetService.imageFileName(x) === name);
+		if (!i) return null;
+		const p = this.imagePath(i);
+		return existsSync(p) ? p : null;
+	}
+
+	/** The verified image served as `name` (`<id>-<hash>.<format>`), downloading it when needed. */
+	async ensureImageFile(name: string): Promise<{ path: string; contentType: string; sha256: string }> {
+		const i = this.current().manifest.images.find((x) => RemoteAssetService.imageFileName(x) === name);
+		if (!i)
+			throw new RemoteAssetError('REMOTE_ASSET_UNKNOWN', `No remote image is served as ${name}`, false, {
+				name,
+			});
+		return { path: await this.ensureImageEntry(i), contentType: IMAGE_TYPES[i.format], sha256: i.sha256 };
+	}
+
+	/** Path of a remote image by id, downloading it when needed (policy on). */
+	ensureImage(id: string): Promise<string> {
+		const i = this.image(id);
+		if (!i)
+			return Promise.reject(
+				new RemoteAssetError(
+					'REMOTE_ASSET_UNKNOWN',
+					`Image "${id}" is not in the remote-asset manifest`,
+					false,
+					{
+						id,
+					},
+				),
+			);
+		return this.ensureImageEntry(i);
+	}
+
+	private ensureImageEntry(i: RemoteImageEntry): Promise<string> {
+		const path = this.imagePath(i);
+		return this.once(`image:${path}`, async () => {
+			if (existsSync(path)) {
+				await this.verifyFile(path, i.sha256, `Cached image ${i.id}`);
+				return path;
+			}
+			await this.requireNetwork(`image "${i.id}"`);
+			const got = await fetchCapped(i.url, {
+				limits:
+					this.emojiLimits.maxBytes >= IMAGE_MAX_BYTES
+						? this.emojiLimits
+						: { ...this.emojiLimits, maxBytes: IMAGE_MAX_BYTES },
+				hosts: this.hosts,
+				fetchImpl: this.o.fetchImpl,
+			});
+			const hash = sha256(got.bytes);
+			if (hash !== i.sha256)
+				throw new RemoteAssetError(
+					'ASSET_HASH_MISMATCH',
+					`The download of image "${i.id}" does not match its pinned SHA-256 (the source changed: fix the URL in the remote-asset manifest override)`,
+					false,
+					{ url: i.url, expected: i.sha256, actual: hash },
+				);
+			checkImage(got, i.format);
+			await this.write(path, got.bytes);
+			this.verified.set(path, hash);
+			this.fetched({ kind: 'image', label: i.id, host: hostOf(i.url), licence: i.licence });
 			return path;
 		});
 	}
@@ -293,9 +405,9 @@ export class RemoteAssetService {
 			...(p.cpMinDigits !== undefined ? { minDigits: p.cpMinDigits } : {}),
 		});
 		const needsName = p.urlTemplate.includes('{name}');
-		const canonical = emojiKey(grapheme);
-		const stripped = emojiCodepointCandidates(grapheme, 'strip')[0]!;
-		const name = p.names?.[canonical] ?? p.names?.[stripped];
+		// names are keyed by a code point sequence: as typed, without U+FE0F, or fully qualified
+		const keys = [emojiKey(grapheme), ...emojiCodepointCandidates(grapheme, 'try-both')];
+		const name = keys.map((k) => p.names?.[k]).find((n) => !!n);
 		if (needsName && !name) return [];
 		const out: string[] = [];
 		for (const cp of cps) {
@@ -518,6 +630,14 @@ export class RemoteAssetService {
 			}
 		};
 		await Promise.all(Array.from({ length: Math.min(PREFETCH_PARALLEL, jobs.length) }, worker));
+		for (const id of [...new Set(req.images ?? [])]) {
+			try {
+				await this.ensureImage(id);
+				available++;
+			} catch (e) {
+				missing.push({ kind: 'image', id, error: asRemoteAssetError(e).toJSON() });
+			}
+		}
 		return { available, missing };
 	}
 
@@ -543,6 +663,7 @@ export class RemoteAssetService {
 				version: manifest.version,
 				fonts: manifest.fonts.length,
 				emojiPacks: manifest.emojiPacks.length,
+				images: manifest.images.length,
 				override,
 			},
 			fonts: manifest.fonts.map((f) => ({
@@ -555,6 +676,12 @@ export class RemoteAssetService {
 				licence: f.licence,
 			})),
 			emojiPacks,
+			images: manifest.images.map((i) => ({
+				id: i.id,
+				cached: existsSync(this.imagePath(i)),
+				host: hostOf(i.url),
+				licence: i.licence,
+			})),
 			notice: {
 				pending: !!notice && !notice.acknowledged,
 				firstFetchAt: notice?.firstFetchAt ?? null,

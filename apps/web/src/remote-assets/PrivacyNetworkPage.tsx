@@ -48,10 +48,12 @@ export function PrivacyNetworkPage() {
 
 	const cachedFonts = status?.fonts.filter((f) => f.cached).length ?? 0;
 	const cachedEmoji = status?.emojiPacks.reduce((n, p) => n + p.cached, 0) ?? 0;
+	const cachedImages = status?.images.filter((i) => i.cached).length ?? 0;
 	const hosts = [
 		...new Set([
 			...(status?.fonts ?? []).map((f) => f.host),
 			...(status?.emojiPacks ?? []).map((p) => p.host),
+			...(status?.images ?? []).map((i) => i.host),
 		]),
 	]
 		.filter(Boolean)
@@ -99,7 +101,7 @@ export function PrivacyNetworkPage() {
 						data-testid="prefs-platform-assets-status"
 					>
 						<dt className="text-pr-muted">Downloaded</dt>
-						<dd>{`${cachedFonts} of ${status.fonts.length} fonts, ${cachedEmoji} emoji images`}</dd>
+						<dd>{`${cachedFonts} of ${status.fonts.length} fonts, ${cachedEmoji} emoji images, ${cachedImages} of ${status.images.length} images`}</dd>
 						<dt className="text-pr-muted">Sources</dt>
 						<dd>{hosts.length ? hosts.join(', ') : 'None listed'}</dd>
 						<dt className="text-pr-muted">Manifest override</dt>

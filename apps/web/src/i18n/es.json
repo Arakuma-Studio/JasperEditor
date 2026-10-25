@@ -10890,7 +10890,7 @@
   "The limiter cannot make the mix louder under this ceiling.": "El limitador no puede hacer la mezcla más fuerte bajo este techo.",
   "AAC {0} kb/s": "AAC {0} kb/s",
   "Opus {0} kb/s": "Opus {0} kb/s",
-  "{0} of {1} fonts, {2} emoji images": "{0} de {1} fuentes, {2} imágenes de emoji",
+  "{0} of {1} fonts, {2} emoji images, {3} of {4} images": "{0} de {1} fuentes, {2} imágenes de emoji, {3} de {4} imágenes",
   "{0} template assets not available": "{0} recursos de plantilla no disponibles",
   "1 template asset not available": "1 recurso de plantilla no disponible",
   "Dismiss the download notice": "Descartar el aviso de descarga",

@@ -31,6 +31,18 @@ export const RemoteFontEntrySchema = z.object({
 	licence: z.string().min(1).max(500),
 	/** Where the file was found (provenance note). */
 	source: z.string().min(1).max(500),
+	/**
+	 * CSS unicode-range of the file when it is one subset of the face: entries of one face that all carry a range are
+	 * loaded together (absent: the file is the whole face).
+	 */
+	unicodeRange: z
+		.string()
+		.regex(
+			/^U\+[0-9A-Fa-f?]{1,6}(-[0-9A-Fa-f]{1,6})?(\s*,\s*U\+[0-9A-Fa-f?]{1,6}(-[0-9A-Fa-f]{1,6})?)*$/,
+			'a CSS unicode-range',
+		)
+		.max(4000)
+		.optional(),
 });
 export type RemoteFontEntry = z.infer<typeof RemoteFontEntrySchema>;
 
@@ -80,11 +92,27 @@ export const RemoteEmojiPackSchema = z
 	});
 export type RemoteEmojiPack = z.infer<typeof RemoteEmojiPackSchema>;
 
+/** A remote image templates may declare by id (platform default avatars…), pinned by SHA-256 like the fonts. */
+export const RemoteImageEntrySchema = z.object({
+	id: IdSchema,
+	url: z.string().max(2048).refine(httpUrl, 'an http(s) URL without credentials'),
+	sha256: Sha256Schema,
+	format: z.enum(['png', 'jpeg', 'webp', 'svg']),
+	licence: z.string().min(1).max(500),
+	/** Where the file was found (provenance note). */
+	source: z.string().min(1).max(500).optional(),
+	width: z.number().int().min(1).max(8192).optional(),
+	height: z.number().int().min(1).max(8192).optional(),
+});
+export type RemoteImageEntry = z.infer<typeof RemoteImageEntrySchema>;
+
 export const RemoteManifestSchema = z
 	.object({
 		version: z.literal(1),
 		fonts: z.array(RemoteFontEntrySchema).max(256),
 		emojiPacks: z.array(RemoteEmojiPackSchema).max(16),
+		/** Remote images (optional section; absent = none). */
+		images: z.array(RemoteImageEntrySchema).max(64).default([]),
 	})
 	.superRefine((m, ctx) => {
 		const dup = (ids: string[], path: string) => {
@@ -102,6 +130,10 @@ export const RemoteManifestSchema = z
 		dup(
 			m.emojiPacks.map((p) => p.id),
 			'emojiPacks',
+		);
+		dup(
+			m.images.map((p) => p.id),
+			'images',
 		);
 	});
 export type RemoteManifest = z.infer<typeof RemoteManifestSchema>;

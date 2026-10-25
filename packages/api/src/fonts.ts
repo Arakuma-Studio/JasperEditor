@@ -36,15 +36,28 @@ export const EmojiPackInfoSchema = z.object({
 });
 export type EmojiPackInfo = z.infer<typeof EmojiPackInfoSchema>;
 
+/** social-comment §7.8: a remote image of the remote-asset manifest (served under `/fonts/images/`). */
+export const RemoteImageInfoSchema = z.object({
+	id: z.string(),
+	url: z.string(),
+	format: z.enum(['png', 'jpeg', 'webp', 'svg']),
+	licence: z.string(),
+});
+export type RemoteImageInfo = z.infer<typeof RemoteImageInfoSchema>;
+
 export const FontCatalogSchema = z.object({
 	fonts: z.array(FontFamilySchema),
 	/** social-comment §7.8: emoji packs (absent on engines without the remote-asset service). */
 	emojiPacks: z.array(EmojiPackInfoSchema).optional(),
+	/** social-comment §7.8: remote images templates may declare (platform default avatars…). */
+	images: z.array(RemoteImageInfoSchema).optional(),
 });
 export type FontCatalog = z.infer<typeof FontCatalogSchema>;
 
 /** Route prefix of remote fonts (`/fonts/remote/<id>-<sha256 prefix>.<format>`). */
 export const REMOTE_FONT_PREFIX = '/fonts/remote/';
+/** Route prefix of remote images (`/fonts/images/<id>-<sha256 prefix>.<format>`). */
+export const REMOTE_IMAGE_PREFIX = '/fonts/images/';
 /** Route prefix of emoji images (`/fonts/emoji/<pack>/<version>/<codepoint key>.<format>`). */
 export const EMOJI_ROUTE_PREFIX = '/fonts/emoji/';
 

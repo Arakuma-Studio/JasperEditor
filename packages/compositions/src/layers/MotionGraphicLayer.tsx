@@ -46,7 +46,7 @@ import {
 	useRef,
 } from 'react';
 import { AbsoluteFill, getRemotionEnvironment, useCurrentFrame, useVideoConfig } from 'remotion';
-import { EmojiTableContext, FontsReadyContext, useFontsReadyState } from '../fonts.ts';
+import { EmojiTableContext, FontsReadyContext, ImageTableContext, useFontsReadyState } from '../fonts.ts';
 import type { LayerProps, RenderDoc } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
@@ -75,6 +75,7 @@ function missingTemplateAssets(
 	assets: RenderTemplateAssets | undefined,
 	fonts: RenderDoc['fonts'] | undefined,
 	emoji: Readonly<Record<string, string>> | undefined,
+	images: Readonly<Record<string, string>> | undefined,
 	isFailed: ((family: string, weight: number, style: 'normal' | 'italic') => boolean) | undefined,
 ): MissingTemplateAsset[] {
 	const out: MissingTemplateAsset[] = [];
@@ -88,6 +89,7 @@ function missingTemplateAssets(
 	for (const { pack, graphemes } of assets?.emoji ?? [])
 		for (const g of graphemes)
 			if (!emoji?.[emojiTableKey(pack, g)]) out.push({ kind: 'emoji', pack, grapheme: g });
+	for (const id of assets?.images ?? []) if (!images?.[id]) out.push({ kind: 'image', id });
 	return out;
 }
 
@@ -149,9 +151,9 @@ function LayerMissingReport({ missing }: { missing: readonly MissingTemplateAsse
 	return null;
 }
 
-/** The striped "font not available" banners over a template card (preview only). */
+/** The striped "font / image not available" banners over a template card (preview only). */
 function FontMarkers({ missing, height }: { missing: readonly MissingTemplateAsset[]; height: number }) {
-	const fonts = missing.filter((a) => a.kind === 'font');
+	const fonts = missing.filter((a) => a.kind !== 'emoji');
 	if (fonts.length === 0) return null;
 	const size = Math.max(12, Math.round(height / 40));
 	return (
@@ -171,7 +173,7 @@ function FontMarkers({ missing, height }: { missing: readonly MissingTemplateAss
 			{fonts.map((a) => (
 				<MissingAssetMarker
 					key={missingAssetLabel(a)}
-					kind="font"
+					kind={a.kind === 'image' ? 'image' : 'font'}
 					label={`${missingAssetLabel(a)} is not available`}
 					size={size}
 				/>
@@ -271,6 +273,7 @@ function AnimeTemplate(p: {
 	const fontsState = useContext(FontsReadyContext);
 	const fontsReady = fontsState.allLoaded;
 	const emojiTable = useContext(EmojiTableContext);
+	const imageTable = useContext(ImageTableContext);
 	const key = `${p.def.id}@${p.def.version}`;
 	const Impl = ANIME_TEMPLATE_IMPLS[key];
 	const info = useMemo(() => mgRegistry.get(p.def.id, p.def.version), [p.def]);
@@ -288,9 +291,18 @@ function AnimeTemplate(p: {
 			}
 		return out;
 	}, [assets, emojiTable]);
+	const imageUrls = useMemo(() => {
+		const out: Record<string, string> = {};
+		for (const id of assets?.images ?? []) {
+			const url = imageTable?.[id];
+			if (url) out[id] = url;
+		}
+		return out;
+	}, [assets, imageTable]);
 	const missing = useMemo(
-		() => (fontsReady ? missingTemplateAssets(assets, p.fonts, emojiTable, fontsState.isFailed) : []),
-		[fontsReady, assets, p.fonts, emojiTable, fontsState],
+		() =>
+			fontsReady ? missingTemplateAssets(assets, p.fonts, emojiTable, imageTable, fontsState.isFailed) : [],
+		[fontsReady, assets, p.fonts, emojiTable, imageTable, fontsState],
 	);
 	const scope = useClipAssetScope(p.clipId);
 	if (!Impl)
@@ -323,6 +335,7 @@ function AnimeTemplate(p: {
 				seed={hash32(p.clipId, 'template')}
 				isPreview={p.isPreview}
 				emojiUrls={emojiUrls}
+				imageUrls={imageUrls}
 			/>
 			<LayerMissingReport missing={missing} />
 			<FontMarkers missing={missing} height={p.mg.canvas.height} />
@@ -411,6 +424,7 @@ export type MgTemplatePreviewProps = {
 	assets?: {
 		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
 		emoji(pack: string, grapheme: string): string | null;
+		image?(id: string): string | null;
 	};
 };
 
@@ -450,7 +464,12 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 				const url = resolver?.emoji(pack, g);
 				if (url) emoji[emojiTableKey(pack, g)] = url;
 			}
-		return { assets: assets ?? undefined, fonts, emoji };
+		const images: Record<string, string> = {};
+		for (const id of assets?.images ?? []) {
+			const url = resolver?.image?.(id);
+			if (url) images[id] = url;
+		}
+		return { assets: assets ?? undefined, fonts, emoji, images };
 	}, [def, params, resolver]);
 	const fontsReady = useFontsReadyState(declared.fonts);
 	let content: ReactNode = null;
@@ -465,23 +484,25 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 		content = (
 			<FontsReadyContext.Provider value={fontsReady}>
 				<EmojiTableContext.Provider value={declared.emoji}>
-					<AnimeTemplate
-						def={def}
-						mg={{
-							template: { id: def.id, version: def.version },
-							params,
-							canvas,
-							...(declared.assets ? { assets: declared.assets } : {}),
-						}}
-						clipId={`preview:${def.id}@${def.version}`}
-						localFrame={frame}
-						contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
-						durationFrames={durationInFrames}
-						sourceInFrames={0}
-						fps={fps}
-						isPreview
-						fonts={declared.fonts}
-					/>
+					<ImageTableContext.Provider value={declared.images}>
+						<AnimeTemplate
+							def={def}
+							mg={{
+								template: { id: def.id, version: def.version },
+								params,
+								canvas,
+								...(declared.assets ? { assets: declared.assets } : {}),
+							}}
+							clipId={`preview:${def.id}@${def.version}`}
+							localFrame={frame}
+							contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
+							durationFrames={durationInFrames}
+							sourceInFrames={0}
+							fps={fps}
+							isPreview
+							fonts={declared.fonts}
+						/>
+					</ImageTableContext.Provider>
 				</EmojiTableContext.Provider>
 			</FontsReadyContext.Provider>
 		);

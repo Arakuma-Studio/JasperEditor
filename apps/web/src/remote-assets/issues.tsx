@@ -29,11 +29,13 @@ const PREFETCH_DEBOUNCE_MS = 400;
 export function declaredAssets(doc: RenderDoc | null): {
 	fonts: RenderTemplateAssets['fonts'];
 	emoji: { pack: string; graphemes: string[] }[];
+	images: string[];
 	clips: Map<string, Set<string>>;
 	names: Map<string, string>;
 } {
 	const fonts = new Map<string, RenderTemplateAssets['fonts'][number]>();
 	const emoji = new Map<string, Set<string>>();
+	const images = new Set<string>();
 	const clips = new Map<string, Set<string>>();
 	const names = new Map<string, string>();
 	const use = (key: string, clipId: string) => {
@@ -62,12 +64,17 @@ export function declaredAssets(doc: RenderDoc | null): {
 					}
 					emoji.set(pack, set);
 				}
+				for (const id of assets.images ?? []) {
+					images.add(id);
+					use(assetKey({ kind: 'image', id }), c.clipId);
+				}
 			}
 	};
 	if (doc) walk(doc, 0);
 	return {
 		fonts: [...fonts.values()],
 		emoji: [...emoji].map(([pack, set]) => ({ pack, graphemes: [...set] })),
+		images: [...images],
 		clips,
 		names,
 	};
@@ -75,15 +82,15 @@ export function declaredAssets(doc: RenderDoc | null): {
 
 /** Identity of an asset (JSON of its normalised fields; `parseKey` reads it back). */
 export function assetKey(a: MissingTemplateAsset): string {
-	return a.kind === 'font'
-		? JSON.stringify(['font', a.family, a.weight, a.style])
-		: JSON.stringify(['emoji', a.pack, a.grapheme]);
+	if (a.kind === 'font') return JSON.stringify(['font', a.family, a.weight, a.style]);
+	return a.kind === 'emoji' ? JSON.stringify(['emoji', a.pack, a.grapheme]) : JSON.stringify(['image', a.id]);
 }
 
 function fromMissing(m: RemoteAssetMissing): MissingTemplateAsset {
-	return m.kind === 'font'
-		? { kind: 'font', family: m.family, weight: m.weight, style: m.style }
-		: { kind: 'emoji', pack: m.pack, grapheme: m.grapheme };
+	if (m.kind === 'font') return { kind: 'font', family: m.family, weight: m.weight, style: m.style };
+	return m.kind === 'emoji'
+		? { kind: 'emoji', pack: m.pack, grapheme: m.grapheme }
+		: { kind: 'image', id: m.id };
 }
 
 /** What template layers in the Player could not draw, by clip (the reporter is stable). */
@@ -121,6 +128,7 @@ export function useTemplateAssetPrefetch(
 		() => ({
 			fonts: declared.fonts.slice(0, 64),
 			emoji: declared.emoji.slice(0, 8).map((e) => ({ ...e, graphemes: e.graphemes.slice(0, 512) })),
+			images: declared.images.slice(0, 32),
 		}),
 		[declared],
 	);
@@ -129,7 +137,7 @@ export function useTemplateAssetPrefetch(
 	const latest = useRef(0);
 	const run = useCallback(async (): Promise<RemoteAssetPrefetchResponse | null> => {
 		const req = JSON.parse(key) as typeof request;
-		if (!client || (req.fonts.length === 0 && req.emoji.length === 0)) {
+		if (!client || (req.fonts.length === 0 && req.emoji.length === 0 && req.images.length === 0)) {
 			setIssues([]);
 			return null;
 		}
@@ -178,7 +186,11 @@ export function TemplateAssetWarning(props: {
 		for (const i of props.engine.issues) add(i.asset, i.reason, declared.clips.get(assetKey(i.asset)) ?? []);
 		for (const [clipId, assets] of props.reported) for (const a of assets) add(a, null, [clipId]);
 		for (const w of props.doc?.warnings ?? [])
-			if (w.code === 'TEMPLATE_FONT_UNAVAILABLE' || w.code === 'TEMPLATE_EMOJI_UNAVAILABLE')
+			if (
+				w.code === 'TEMPLATE_FONT_UNAVAILABLE' ||
+				w.code === 'TEMPLATE_EMOJI_UNAVAILABLE' ||
+				w.code === 'TEMPLATE_IMAGE_UNAVAILABLE'
+			)
 				for (const [key, ids] of declared.clips)
 					if (ids.has(w.clipId) && !out.has(key) && unresolved(props.doc, key))
 						add(parseKey(key), ASSET_REASONS.unresolved, [w.clipId]);
@@ -268,6 +280,7 @@ export function TemplateAssetWarning(props: {
 function unresolved(doc: RenderDoc | null, key: string): boolean {
 	const a = parseKey(key);
 	if (a.kind === 'emoji') return !doc?.emoji?.[`${a.pack}:${a.grapheme}`];
+	if (a.kind === 'image') return !doc?.images?.[a.id];
 	return !doc?.fonts.some(
 		(f) => f.fontId === `template:${a.family}` && f.weight === a.weight && f.style === a.style,
 	);
@@ -275,7 +288,7 @@ function unresolved(doc: RenderDoc | null, key: string): boolean {
 
 function parseKey(key: string): MissingTemplateAsset {
 	const [kind, a, b, c] = JSON.parse(key) as [string, string, string | number, string?];
-	return kind === 'font'
-		? { kind: 'font', family: a, weight: Number(b), style: c === 'italic' ? 'italic' : 'normal' }
-		: { kind: 'emoji', pack: a, grapheme: String(b) };
+	if (kind === 'font')
+		return { kind: 'font', family: a, weight: Number(b), style: c === 'italic' ? 'italic' : 'normal' };
+	return kind === 'emoji' ? { kind: 'emoji', pack: a, grapheme: String(b) } : { kind: 'image', id: a };
 }

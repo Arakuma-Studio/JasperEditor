@@ -260,6 +260,9 @@ export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadySt
  */
 export const EmojiTableContext = createContext<Readonly<Record<string, string>> | undefined>(undefined);
 
+/** social-comment §7.8: the snapshot's remote image table (`RenderSnapshot.images`, `AnimeTemplateProps.imageUrls`). */
+export const ImageTableContext = createContext<Readonly<Record<string, string>> | undefined>(undefined);
+
 // For the editor (the Program monitor's panel warning and its Retry): what template layers could not draw.
 export {
 	type MissingAssetReporter,

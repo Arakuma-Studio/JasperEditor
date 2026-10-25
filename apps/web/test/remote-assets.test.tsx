@@ -210,7 +210,7 @@ describe('Program monitor warning', () => {
 function status(o: Partial<RemoteAssetsStatus> = {}): RemoteAssetsStatus {
 	return {
 		settings: { platformAssets: true },
-		manifest: { version: 1, fonts: 1, emojiPacks: 1, override: { status: 'absent' } },
+		manifest: { version: 1, fonts: 1, emojiPacks: 1, images: 1, override: { status: 'absent' } },
 		fonts: [
 			{
 				id: 'chirp-700',
@@ -233,6 +233,7 @@ function status(o: Partial<RemoteAssetsStatus> = {}): RemoteAssetsStatus {
 				cached: 3,
 			},
 		],
+		images: [{ id: 'x-default-avatar', cached: false, host: 'img.example', licence: 'x' }],
 		notice: { pending: false, firstFetchAt: null, items: [] },
 		...o,
 	};

@@ -24,4 +24,9 @@ export type AnimeTemplateProps = {
 	 * `MissingAssetMarker` for it. Empty when the template declares none.
 	 */
 	emojiUrls: Readonly<Record<string, string>>;
+	/**
+	 * social-comment §7.8: URL of every remote image the template declared (`requiredAssets().images`, manifest ids:
+	 * platform default avatars…) that is available, keyed by id; a missing one is absent (the layer marks it).
+	 */
+	imageUrls: Readonly<Record<string, string>>;
 };

@@ -64,6 +64,7 @@ import {
 	bakeDoc,
 	clipEmoji,
 	clipFonts,
+	clipImages,
 	cropRect,
 	drawnSpan,
 	hasColorEffects,
@@ -547,13 +548,22 @@ export class LayerBakeService {
 		);
 	}
 
-	/** Signed absolute URLs of an emoji table (headless renders cannot send the session cookie). */
+	/** Signed absolute URLs of an emoji or image table (headless renders cannot send the session cookie). */
 	private signedEmoji(emoji: Record<string, string> | undefined): Record<string, string> | undefined {
 		if (!emoji) return undefined;
 		const out: Record<string, string> = {};
 		for (const [k, url] of Object.entries(emoji))
 			out[k] = url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), url) : url;
 		return out;
+	}
+
+	/** social-comment §7.8: key part of the remote images the clips draw (manifest id + pinned hash). */
+	private keyImages(clips: readonly RenderVisualClip[]): { id: string; sha256: string | null }[] | undefined {
+		const ids = new Set<string>();
+		for (const c of clips)
+			for (const id of ('mg' in c.source ? c.source.mg.assets?.images : undefined) ?? []) ids.add(id);
+		if (ids.size === 0) return undefined;
+		return [...ids].sort().map((id) => ({ id, sha256: this.core.remoteAssets.image(id)?.sha256 ?? null }));
 	}
 
 	/** social-comment §7.8: key part of the template emoji the clips draw (pack id + version, image hashes). */
@@ -622,7 +632,9 @@ export class LayerBakeService {
 			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
 		}));
 		const emoji = this.signedEmoji(clipEmoji(unshifted, snap.emoji));
+		const images = this.signedEmoji(clipImages(unshifted, snap.images));
 		const keyEmoji = await this.keyEmoji([unshifted]);
+		const keyImages = this.keyImages([unshifted]);
 		const material: KeyMaterial = {
 			v: LAYER_BAKE_VERSION,
 			recipe: variant.recipe,
@@ -635,6 +647,7 @@ export class LayerBakeService {
 			fonts: await this.keyFonts(fonts),
 			media: this.keyMedia(planned, mediaIds),
 			...(keyEmoji ? { emoji: keyEmoji } : {}),
+			...(keyImages ? { images: keyImages } : {}),
 			bundleId: env.bundleId,
 			animejs: env.animejs,
 			remotion: env.remotion,
@@ -657,6 +670,7 @@ export class LayerBakeService {
 				media,
 				fonts: signedFonts,
 				...(emoji ? { emoji } : {}),
+				...(images ? { images } : {}),
 			});
 		return {
 			clipId: clip.clipId,
@@ -726,6 +740,13 @@ export class LayerBakeService {
 			}, undefined),
 		);
 		const spanKeyEmoji = await this.keyEmoji(sides);
+		const spanImages = this.signedEmoji(
+			sides.reduce<Record<string, string> | undefined>((acc, c) => {
+				const e = clipImages(c, snap.images);
+				return e ? { ...(acc ?? {}), ...e } : acc;
+			}, undefined),
+		);
+		const spanKeyImages = this.keyImages(sides);
 		const material: KeyMaterial = {
 			v: LAYER_BAKE_VERSION,
 			recipe: variant.recipe,
@@ -738,6 +759,7 @@ export class LayerBakeService {
 			fonts: await this.keyFonts(uniqueFonts),
 			media: this.keyMedia(planned, mediaIds),
 			...(spanKeyEmoji ? { emoji: spanKeyEmoji } : {}),
+			...(spanKeyImages ? { images: spanKeyImages } : {}),
 			bundleId: o.env.bundleId,
 			animejs: o.env.animejs,
 			remotion: o.env.remotion,
@@ -758,6 +780,7 @@ export class LayerBakeService {
 			media,
 			fonts: signedFonts,
 			...(spanEmoji ? { emoji: spanEmoji } : {}),
+			...(spanImages ? { images: spanImages } : {}),
 			master: { volumeDb: { value: 0, keyframes: [] } },
 			warnings: [],
 		};

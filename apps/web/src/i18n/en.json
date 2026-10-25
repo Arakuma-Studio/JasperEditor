@@ -279,7 +279,7 @@
   "{0} new cues found; unfilled cues in the range are included.",
   "{0} new tracks",
   "{0} of {1} {2} cues like these have a sound; {3} do not: {4}",
-  "{0} of {1} fonts, {2} emoji images",
+  "{0} of {1} fonts, {2} emoji images, {3} of {4} images",
   "{0} of {1} picture events have no onset within 100 ms (chance {2}); no sound at all at {3}: add a whoosh into the cut, a hit or a click there.",
   "{0} of {1} picture events have no onset within 100 ms (chance {2}): sound plays through them but nothing starts; add an accent on the ones that matter.",
   "{0} of {1} selected",

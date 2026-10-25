@@ -128,7 +128,13 @@ export class FixtureServer {
 	}
 }
 
-/** A manifest with one font (TikTok-Sans bytes served as "Chirp" 700) and one emoji pack on `base`. */
+/** A tiny JPEG header + payload (the magic number is all the content check reads). */
+export const AVATAR_BYTES = Buffer.concat([
+	Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+	Buffer.from('avatar-fixture'),
+]);
+
+/** A manifest with one font (TikTok-Sans bytes served as "Chirp" 700), one emoji pack and one image on `base`. */
 export function fixtureManifest(
 	base: string,
 	o: { fe0f?: 'keep' | 'strip' | 'try-both'; version?: string } = {},
@@ -159,6 +165,17 @@ export function fixtureManifest(
 				pixelSize: 16,
 				licence: 'test fixture',
 				attribution: null,
+			},
+		],
+		images: [
+			{
+				id: 'x-default-avatar',
+				url: `${base}/images/default_profile.jpg`,
+				sha256: sha256(AVATAR_BYTES),
+				format: 'jpeg' as const,
+				licence: 'test fixture',
+				width: 400,
+				height: 400,
 			},
 		],
 	};

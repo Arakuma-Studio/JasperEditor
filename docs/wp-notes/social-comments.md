@@ -16,21 +16,26 @@ missing asset is a visible marker in the Player and a named export blocker.
 | Piece | Where |
 |---|---|
 | `EmojiPackId = 'apple' \| 'twemoji' \| 'noto'`, `EMOJI_PACK_IDS`, `splitEmoji(text)`, `emojiGraphemes(text, limit?)`, `isEmojiGrapheme(g)`, `emojiKey(g)`, `emojiCodepointKey(g, {stripFe0f?, join?, minDigits?})`, `emojiCodepointCandidates(g, rule)`, `graphemeOfEmojiKey(key)` | `packages/mg-templates/src/emoji.ts` |
-| `MgAnimeTemplateDefinition.requiredAssets?(params): TemplateRequiredAssets` (`{ fonts: {family, weight, style}[]; emoji?: { pack, graphemes } }`) | `packages/mg-templates/src/types.ts` |
+| `MgAnimeTemplateDefinition.requiredAssets?(params): TemplateRequiredAssets` (`{ fonts: {family, weight, style}[]; emoji?: { pack, graphemes }; images?: string[] }` — `images`: manifest image ids) | `packages/mg-templates/src/types.ts` |
 | `templateRequiredAssets(def, params, paramKeyframes?)`, `templateAssetOptions(registry, {font, emoji})`, `resolveTemplateParams(def, params)`, `TemplateRequiredAssetsSchema` | `packages/mg-templates/src/assets.ts` |
-| `SnapshotOptions.templateAssets`, `RenderTemplateAssets`, `mg.assets` on anime clips, `RenderSnapshot.emoji`, `fonts[].unicodeRange`, `templateFontId(family)` (`template:<family>`), `emojiTableKey(pack, g)`, `TemplateFaceFile` | `packages/project/src/render/snapshot.ts` |
-| `AnimeTemplateProps.emojiUrls` (keyed `${pack}:${grapheme}`; `emojiUrlOf(urls, pack, g)`) | `packages/motion/src/templates/types.ts`, `index.ts` |
+| `SnapshotOptions.templateAssets` (`required`, `font`, `emoji`, `image?`), `RenderTemplateAssets`, `mg.assets` on anime clips, `RenderSnapshot.emoji`, `RenderSnapshot.images`, `fonts[].unicodeRange`, `templateFontId(family)` (`template:<family>`), `emojiTableKey(pack, g)`, `TemplateFaceFile` | `packages/project/src/render/snapshot.ts` |
+| `AnimeTemplateProps.emojiUrls` (keyed `${pack}:${grapheme}`; `emojiUrlOf(urls, pack, g)`), `AnimeTemplateProps.imageUrls` (keyed by manifest image id) | `packages/motion/src/templates/types.ts`, `index.ts` |
 | `EmojiImage({url, size, alt, pack?, style?})`, `MissingAssetMarker({kind, label, size?, style?})`, `MissingAssetReporterContext`, `TemplateAssetScopeContext`, `retryTemplateAssets()`, `useTemplateAssetEpoch()`, `missingAssetLabel()` | `packages/motion/src/templates/assets.tsx` |
 | `MgTemplatePreview` prop `assets?: {font, emoji}` (gallery posters load declared fonts / emoji) | `packages/compositions/src/layers/MotionGraphicLayer.tsx` |
 | Manifest `apps/engine/src/remote-assets/manifest.json` (schema `schema.ts`; filled by WP5), override `<appdir>/assets/remote-manifest.override.json` | `apps/engine/src/remote-assets/` |
-| Routes: `GET /fonts/remote/<id>-<sha16>.<fmt>`, `GET /fonts/emoji/<pack>/<version>/<key>.<png\|svg>`, `GET/PUT /api/settings/network`, `GET /api/remote-assets`, `POST /api/remote-assets/prefetch`, `POST /api/remote-assets/notice/ack`; event `remoteAssets.changed` | `apps/engine/src/routes/fonts.ts`, `remote-assets.ts`; `packages/api/src/remote-assets.ts` |
+| Routes: `GET /fonts/remote/<id>-<sha16>.<fmt>`, `GET /fonts/emoji/<pack>/<version>/<key>.<png\|svg>`, `GET /fonts/images/<id>-<sha16>.<png\|jpeg\|webp\|svg>`, `GET/PUT /api/settings/network`, `GET /api/remote-assets`, `POST /api/remote-assets/prefetch`, `POST /api/remote-assets/notice/ack`; event `remoteAssets.changed` | `apps/engine/src/routes/fonts.ts`, `remote-assets.ts`; `packages/api/src/remote-assets.ts` |
 | Export blocker `TEMPLATE_ASSETS_UNAVAILABLE` (409; `detail.assets[]` with `kind`, `label`, `reason`, `code`, `retryable`, `clipIds`) | `apps/engine/src/remote-assets/plan.ts`, `export/planner.ts` |
 
 Manifest schema additions beyond the contract (all optional, for packs whose file names need them): `cpJoin` (code
 point separator in `{cp}`, default `-`), `cpMinDigits` (zero padding, default none — Noto's `emoji_u0023_20e3` is
 `{cp}` with `cpJoin: "_"`, `cpMinDigits: 4`), and `{name}` in `urlTemplate` with a `names` map (canonical key → slug)
-for CDNs whose paths carry an emoji name (Emojipedia's `grinning-face_1f600.png`). Font `format` may be `woff2`, `woff`,
-`ttf` or `otf`.
+for CDNs whose paths carry an emoji name (Emojipedia's `grinning-face_1f600.png`; looked up by the sequence as typed,
+without U+FE0F and fully qualified). Font `format` may be `woff2`, `woff`, `ttf` or `otf`; a font entry may carry a CSS
+`unicodeRange` — when every entry of one face has one, they are its subset files and load together. An optional
+`images` section (`id`, `url`, `sha256`, `format` png / jpeg / webp / svg, `licence`, optional `source`, `width`,
+`height`) lists remote images templates declare by id (X's and YouTube's default avatars); they are pinned by SHA-256
+like the fonts, served at `/fonts/images/…`, handed to templates as `imageUrls`, follow the same network policy, and a
+missing one is a striped "Image … is not available" banner in preview and an export blocker naming it.
 
 ### How it flows
 
@@ -73,6 +78,9 @@ for CDNs whose paths carry an emoji name (Emojipedia's `grinning-face_1f600.png`
 - Fonts are pinned by the manifest's SHA-256: a different download is `ASSET_HASH_MISMATCH` and nothing is cached; a
   cached file is re-hashed once per process (a damaged file is reported with its path, not served). The hash prefix in
   the file name makes the URL immutable (`cache-control: immutable` and the service worker's cache-first `/fonts/`).
+- Emoji lookups try the sequence as typed and its fully-qualified form (`fullyQualifiedEmoji`: U+FE0F after every
+  text-default emoji character, UTS #51), each with or without U+FE0F per the pack rule — a ZWJ sequence typed without
+  VS16 (`🏳‍🌈`) still finds Twemoji's `1f3f3-fe0f-200d-1f308.svg`.
 - Emoji cannot be pinned in advance: the first verified fetch (PNG magic / SVG root, no HTML pages, no active SVG
   content, size cap) records its SHA-256 in the index; later downloads (cache deleted) must match, else
   `ASSET_HASH_MISMATCH` — a changed upstream needs a pack version bump in the override, which starts a new

@@ -111,3 +111,26 @@ describe('template assets in the render snapshot', () => {
 		expect(snap.warnings[0]!.message).toMatch(/^In nested sequence: /);
 	});
 });
+
+describe('remote images in the render snapshot', () => {
+	it('lists declared image URLs by id and warns about the unavailable ones', () => {
+		const { h, id } = setup();
+		const snap = buildRenderSnapshot(h.doc, h.seqId, {
+			resolveMedia: () => null,
+			resolveFont: () => null,
+			templateAssets: {
+				required: () => ({ fonts: [], emoji: [], images: ['x-default-avatar', 'gone'] }),
+				font: () => null,
+				emoji: () => null,
+				image: (img) => (img === 'x-default-avatar' ? '/fonts/images/x-default-avatar-0123.jpeg' : null),
+			},
+		});
+		expect(snap.images).toEqual({ 'x-default-avatar': '/fonts/images/x-default-avatar-0123.jpeg' });
+		expect(snap.warnings).toEqual([
+			{ clipId: id, code: 'TEMPLATE_IMAGE_UNAVAILABLE', message: 'Image "gone" is not available' },
+		]);
+		expect(snap.videoTracks[0]!.clips[0]!.source).toMatchObject({
+			mg: { assets: { images: ['x-default-avatar', 'gone'] } },
+		});
+	});
+});

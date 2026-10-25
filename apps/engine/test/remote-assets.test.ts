@@ -16,7 +16,14 @@ import {
 } from '../src/remote-assets/manifest.ts';
 import { RemoteManifestSchema } from '../src/remote-assets/schema.ts';
 import { RemoteAssetService } from '../src/remote-assets/service.ts';
-import { FixtureServer, FONT_BYTES, fixtureManifest, pngBytes, sha256 } from './remote-assets-fixture.ts';
+import {
+	AVATAR_BYTES,
+	FixtureServer,
+	FONT_BYTES,
+	fixtureManifest,
+	pngBytes,
+	sha256,
+} from './remote-assets-fixture.ts';
 import { tempAppdir } from './temp.ts';
 
 const GRIN = '\u{1F600}';
@@ -24,7 +31,7 @@ const HEART = '❤️';
 const RED = pngBytes(4, 4, [255, 0, 0, 255]);
 const BLUE = pngBytes(4, 4, [0, 0, 255, 255]);
 
-const EMPTY = { version: 1 as const, fonts: [], emojiPacks: [] };
+const EMPTY = { version: 1 as const, fonts: [], emojiPacks: [], images: [] };
 const fast = { timeoutMs: 400, retries: 1, backoffMs: 10 };
 
 let server: FixtureServer;
@@ -58,6 +65,7 @@ beforeEach(async () => {
 	server.routes.set('/fonts/chirp-700.woff2', { body: FONT_BYTES, contentType: 'font/woff2' });
 	server.routes.set('/emoji/1f600.png', { body: RED, contentType: 'image/png' });
 	server.routes.set('/emoji/2764.png', { body: BLUE, contentType: 'image/png' });
+	server.routes.set('/images/default_profile.jpg', { body: AVATAR_BYTES, contentType: 'image/jpeg' });
 });
 afterEach(async () => {
 	await server.close();
@@ -174,17 +182,17 @@ describe('manifest', () => {
 describe('fonts', () => {
 	it('downloads on first need, verifies the pinned hash, writes atomically and reuses the cache', async () => {
 		const s = service();
-		const path = await s.ensureFace({ family: 'chirp', weight: 700, style: 'normal' });
-		expect(readFileSync(path).equals(FONT_BYTES)).toBe(true);
+		const [path] = await s.ensureFace({ family: 'chirp', weight: 700, style: 'normal' });
+		expect(readFileSync(path!).equals(FONT_BYTES)).toBe(true);
 		expect(readdirSync(join(dir, 'assets', 'remote', 'fonts')).filter((f) => f.endsWith('.tmp'))).toEqual([]);
 		await s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' });
 		// a new process verifies the cached file instead of downloading
 		await service().ensureFace({ family: 'Chirp', weight: 700, style: 'normal' });
 		expect(server.hits.get('/fonts/chirp-700.woff2')).toBe(1);
-		expect(s.fontUrl({ family: 'Chirp', weight: 700, style: 'normal' })).toBe(
-			`/fonts/remote/chirp-700-${sha256(FONT_BYTES).slice(0, 16)}.woff2`,
-		);
-		expect(s.fontUrl({ family: 'Chirp', weight: 400, style: 'normal' })).toBeNull();
+		expect(s.fontFiles({ family: 'Chirp', weight: 700, style: 'normal' })).toEqual([
+			{ url: `/fonts/remote/chirp-700-${sha256(FONT_BYTES).slice(0, 16)}.woff2` },
+		]);
+		expect(s.fontFiles({ family: 'Chirp', weight: 400, style: 'normal' })).toBeNull();
 		expect(s.cachedFontPath(`chirp-700-${sha256(FONT_BYTES).slice(0, 16)}.woff2`)).toBe(path);
 	});
 
@@ -199,8 +207,8 @@ describe('fonts', () => {
 
 	it('detects a damaged cached file', async () => {
 		const s = service();
-		const path = await s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' });
-		writeFileSync(path, 'garbage');
+		const [path] = await s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' });
+		writeFileSync(path!, 'garbage');
 		const e = await rejects(service().ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }));
 		expect(e.code).toBe('ASSET_HASH_MISMATCH');
 	});
@@ -303,7 +311,7 @@ describe('download failures', () => {
 			s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }),
 		);
 		const paths = await Promise.all(faces);
-		expect(new Set(paths).size).toBe(1);
+		expect(new Set(paths.map((p) => p[0])).size).toBe(1);
 		expect(server.hits.get('/fonts/chirp-700.woff2')).toBe(1);
 		const many = Array.from({ length: 8 }, (_, i) => String.fromCodePoint(0x1f601 + i));
 		for (const g of many)
@@ -456,5 +464,159 @@ describe('override manifest, prefetch and notice', () => {
 		await s.ensureEmojiImage('apple', HEART);
 		await s.flush();
 		expect((await service().status()).notice.pending).toBe(false);
+	});
+});
+
+describe('remote images (platform default avatars)', () => {
+	it('downloads by id against the pinned hash, serves by file name, refuses changed bytes', async () => {
+		const s = service();
+		expect(s.imageUrl('x-default-avatar')).toBe(
+			`/fonts/images/x-default-avatar-${sha256(AVATAR_BYTES).slice(0, 16)}.jpeg`,
+		);
+		expect(s.imageUrl('nope')).toBeNull();
+		const path = await s.ensureImage('x-default-avatar');
+		expect(readFileSync(path).equals(AVATAR_BYTES)).toBe(true);
+		const served = await s.ensureImageFile(`x-default-avatar-${sha256(AVATAR_BYTES).slice(0, 16)}.jpeg`);
+		expect(served).toMatchObject({ path, contentType: 'image/jpeg' });
+		expect(server.hits.get('/images/default_profile.jpg')).toBe(1);
+		expect((await rejects(s.ensureImage('nope'))).code).toBe('REMOTE_ASSET_UNKNOWN');
+		expect(s.catalogImages()).toEqual([
+			{
+				id: 'x-default-avatar',
+				url: s.imageUrl('x-default-avatar'),
+				format: 'jpeg',
+				licence: 'test fixture',
+			},
+		]);
+		const st = await s.status();
+		expect(st.images).toEqual([
+			{ id: 'x-default-avatar', cached: true, host: server.host, licence: 'test fixture' },
+		]);
+		server.routes.set('/images/default_profile.jpg', {
+			body: Buffer.concat([AVATAR_BYTES, Buffer.from('!')]),
+		});
+		rmSync(path);
+		expect((await rejects(service().ensureImage('x-default-avatar'))).code).toBe('ASSET_HASH_MISMATCH');
+	});
+
+	it('follows the network policy and reports missing images in prefetch', async () => {
+		const s = service();
+		await s.putSettings({ platformAssets: false });
+		const r = await s.prefetch({ images: ['x-default-avatar', 'nope'] });
+		expect(r.missing.map((m) => [m.kind, m.kind === 'image' ? m.id : '', m.error.code])).toEqual([
+			['image', 'x-default-avatar', 'REMOTE_ASSETS_OFF'],
+			['image', 'nope', 'REMOTE_ASSET_UNKNOWN'],
+		]);
+		expect(server.hits.size).toBe(0);
+	});
+
+	it('checks the image magic number of each format', () => {
+		const f = (bytes: Buffer | string, contentType = '') => ({
+			bytes: Buffer.from(bytes),
+			contentType,
+			url: 'x',
+		});
+		expect(() => checkImage(f(AVATAR_BYTES, 'image/jpeg'), 'jpeg')).not.toThrow();
+		expect(() => checkImage(f(RED), 'jpeg')).toThrow(/magic/);
+		expect(() => checkImage(f(Buffer.concat([Buffer.from('RIFF\0\0\0\0WEBPVP8 ')])), 'webp')).not.toThrow();
+		expect(() => checkImage(f(AVATAR_BYTES, 'text/plain'), 'jpeg')).toThrow(/content type/);
+	});
+});
+
+describe('subset font entries and WP5-shaped packs', () => {
+	it('loads every subset entry of a face (all with a unicode range); otherwise the last entry wins', async () => {
+		const m = fixtureManifest(server.url);
+		const latin = { ...m.fonts[0]!, id: 'chirp-700-latin', unicodeRange: 'U+0000-00FF' };
+		const ext = { ...m.fonts[0]!, id: 'chirp-700-ext', unicodeRange: 'U+0100-024F, U+1E00-1EFF' };
+		const s = service({ manifest: RemoteManifestSchema.parse({ ...m, fonts: [latin, ext] }) });
+		expect(s.fontFiles({ family: 'Chirp', weight: 700, style: 'normal' })).toEqual([
+			{ url: expect.stringContaining('/fonts/remote/chirp-700-latin-'), unicodeRange: 'U+0000-00FF' },
+			{
+				url: expect.stringContaining('/fonts/remote/chirp-700-ext-'),
+				unicodeRange: 'U+0100-024F, U+1E00-1EFF',
+			},
+		]);
+		expect(await s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' })).toHaveLength(2);
+		const fam = s.catalogFamilies().find((f) => f.family === 'Chirp')!;
+		expect(fam.files.map((f) => f.unicodeRange)).toEqual(['U+0000-00FF', 'U+0100-024F, U+1E00-1EFF']);
+		const mixed = service({
+			manifest: RemoteManifestSchema.parse({
+				...m,
+				fonts: [latin, { ...m.fonts[0]!, id: 'chirp-700-full' }],
+			}),
+		});
+		expect(mixed.fontFiles({ family: 'Chirp', weight: 700, style: 'normal' })).toEqual([
+			{ url: expect.stringContaining('/fonts/remote/chirp-700-full-') },
+		]);
+		expect(
+			RemoteManifestSchema.safeParse({ ...m, fonts: [{ ...latin, unicodeRange: 'latin' }] }).success,
+		).toBe(false);
+	});
+
+	it('accepts packs shaped like the platform-glyphs manifest ({name} map, cpJoin / cpMinDigits, svg) and no images section', () => {
+		const parsed = RemoteManifestSchema.parse({
+			version: 1,
+			fonts: [],
+			emojiPacks: [
+				{
+					id: 'apple',
+					name: 'Apple',
+					version: 'emojipedia-419',
+					urlTemplate: 'https://em-content.example/source/apple/419/{name}',
+					fe0f: 'keep',
+					format: 'png',
+					pixelSize: 160,
+					licence: 'proprietary',
+					attribution: null,
+					names: {
+						'1f600': 'grinning-face_1f600.png',
+						'1f170': 'a-button-blood-type_1f170-fe0f.png',
+						'1f3f3-fe0f-200d-1f308': 'rainbow-flag_1f3f3-fe0f-200d-1f308.png',
+					},
+				},
+				{
+					id: 'twemoji',
+					name: 'Twemoji',
+					version: '17.0.3',
+					urlTemplate: 'https://cdn.example/gh/jdecked/twemoji@v17.0.3/assets/svg/{cp}.svg',
+					fe0f: 'try-both',
+					format: 'svg',
+					pixelSize: null,
+					licence: 'CC-BY-4.0',
+					attribution: 'Twemoji graphics …',
+				},
+				{
+					id: 'noto',
+					name: 'Noto Color Emoji',
+					version: '17.0',
+					urlTemplate: 'https://fonts.example/s/e/notoemoji/17.0/{cp}/512.png',
+					fe0f: 'try-both',
+					cpJoin: '_',
+					cpMinDigits: 4,
+					format: 'png',
+					pixelSize: 512,
+					licence: 'Apache-2.0',
+					attribution: 'Noto Emoji images Copyright Google LLC',
+				},
+			],
+		});
+		expect(parsed.images).toEqual([]);
+		const [apple, twemoji, noto] = parsed.emojiPacks;
+		// names are found as typed, without U+FE0F and fully qualified
+		expect(RemoteAssetService.emojiSourceUrls(apple!, '\u{1F170}️')).toEqual([
+			'https://em-content.example/source/apple/419/a-button-blood-type_1f170-fe0f.png',
+		]);
+		expect(RemoteAssetService.emojiSourceUrls(apple!, '\u{1F3F3}‍\u{1F308}')).toEqual([
+			'https://em-content.example/source/apple/419/rainbow-flag_1f3f3-fe0f-200d-1f308.png',
+		]);
+		// a sequence typed without VS16 is also tried fully qualified (Twemoji keeps FE0F in ZWJ sequences)
+		expect(RemoteAssetService.emojiSourceUrls(twemoji!, '\u{1F3F3}‍\u{1F308}')).toEqual([
+			'https://cdn.example/gh/jdecked/twemoji@v17.0.3/assets/svg/1f3f3-200d-1f308.svg',
+			'https://cdn.example/gh/jdecked/twemoji@v17.0.3/assets/svg/1f3f3-fe0f-200d-1f308.svg',
+		]);
+		expect(RemoteAssetService.emojiSourceUrls(noto!, '1️⃣')).toEqual([
+			'https://fonts.example/s/e/notoemoji/17.0/0031_fe0f_20e3/512.png',
+			'https://fonts.example/s/e/notoemoji/17.0/0031_20e3/512.png',
+		]);
 	});
 });

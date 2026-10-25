@@ -124,6 +124,8 @@ export type KeyMaterial = {
 	media: KeyMedia[];
 	/** social-comment §7.8: template emoji (absent when the layer draws none). */
 	emoji?: KeyEmoji[];
+	/** social-comment §7.8: remote images by id with their pinned SHA-256 (absent when the layer draws none). */
+	images?: { id: string; sha256: string | null }[];
 	bundleId: string;
 	animejs: string;
 	remotion: string;

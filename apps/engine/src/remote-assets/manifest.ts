@@ -18,17 +18,19 @@ function issuesText(e: { issues: { path: PropertyKey[]; message: string }[] }): 
 /** The shipped manifest, validated (a broken one is a build error caught by the tests; here: empty, reported). */
 export function shippedManifest(raw: unknown = shipped): LoadedManifest['manifest'] {
 	const r = RemoteManifestSchema.safeParse(raw);
-	return r.success ? r.data : { version: 1, fonts: [], emojiPacks: [] };
+	return r.success ? r.data : { version: 1, fonts: [], emojiPacks: [], images: [] };
 }
 
 /** `base` with `override`'s entries replacing those of the same id (new ids are added after the base entries). */
 export function mergeManifests(base: RemoteManifest, override: RemoteManifest): RemoteManifest {
 	const fontIds = new Set(override.fonts.map((f) => f.id));
 	const packIds = new Set(override.emojiPacks.map((p) => p.id));
+	const imageIds = new Set(override.images.map((p) => p.id));
 	return {
 		version: 1,
 		fonts: [...base.fonts.filter((f) => !fontIds.has(f.id)), ...override.fonts],
 		emojiPacks: [...base.emojiPacks.filter((p) => !packIds.has(p.id)), ...override.emojiPacks],
+		images: [...base.images.filter((p) => !imageIds.has(p.id)), ...override.images],
 	};
 }
 

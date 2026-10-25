@@ -101,17 +101,52 @@ export function emojiCodepointKey(grapheme: string, o: CodepointKeyOptions = {})
 	return cps.join(join);
 }
 
-/** The `{cp}` values to try for a grapheme under a pack's U+FE0F rule (distinct, in order). */
+const EMOJI_CHAR = /^\p{Emoji}$/u;
+const PRESENTATION = /^\p{Emoji_Presentation}$/u;
+const MODIFIER_CHAR = /^\p{Emoji_Modifier}$/u;
+
+/**
+ * The fully-qualified form of an emoji grapheme (UTS #51): U+FE0F after every emoji character that defaults to text
+ * presentation and is not already followed by U+FE0F or a skin-tone modifier (`🏳‍🌈` → `🏳️‍🌈`, `1⃣` → `1️⃣`).
+ * Pack files are named after fully-qualified sequences, so a sequence typed without VS16 is looked up this way too.
+ */
+export function fullyQualifiedEmoji(grapheme: string): string {
+	const cps = [...grapheme];
+	let out = '';
+	for (let i = 0; i < cps.length; i++) {
+		const c = cps[i]!;
+		out += c;
+		const next = cps[i + 1];
+		if (
+			EMOJI_CHAR.test(c) &&
+			!PRESENTATION.test(c) &&
+			!MODIFIER_CHAR.test(c) &&
+			next !== VS16 &&
+			next !== VS15 &&
+			!(next && MODIFIER_CHAR.test(next))
+		)
+			out += VS16;
+	}
+	return out;
+}
+
+/**
+ * The `{cp}` values to try for a grapheme under a pack's U+FE0F rule (distinct, in order): the sequence as typed, then
+ * its fully-qualified form — with U+FE0F (`keep`), without (`strip`), or both (`try-both`).
+ */
 export function emojiCodepointCandidates(
 	grapheme: string,
 	rule: EmojiFe0fRule,
 	o: Omit<CodepointKeyOptions, 'stripFe0f'> = {},
 ): string[] {
-	const keep = emojiCodepointKey(grapheme, o);
-	const strip = emojiCodepointKey(grapheme, { ...o, stripFe0f: true });
-	if (rule === 'keep') return [keep];
-	if (rule === 'strip') return [strip];
-	return keep === strip ? [keep] : [keep, strip];
+	const out: string[] = [];
+	for (const g of [grapheme, fullyQualifiedEmoji(grapheme)]) {
+		const keep = emojiCodepointKey(g, o);
+		const strip = emojiCodepointKey(g, { ...o, stripFe0f: true });
+		for (const k of rule === 'keep' ? [keep] : rule === 'strip' ? [strip] : [keep, strip])
+			if (!out.includes(k)) out.push(k);
+	}
+	return out;
 }
 
 /** Canonical key of a grapheme (every code point, "-" joined): the cache and route name of its image. */

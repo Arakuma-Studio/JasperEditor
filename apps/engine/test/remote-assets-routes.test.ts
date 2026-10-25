@@ -21,7 +21,14 @@ import type { BakeEnvironment } from '../src/layer-bake/key.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, makeApp, type TestApp, tempAppdir } from './helpers.ts';
-import { FixtureServer, FONT_BYTES, fixtureManifest, pngBytes, sha256 } from './remote-assets-fixture.ts';
+import {
+	AVATAR_BYTES,
+	FixtureServer,
+	FONT_BYTES,
+	fixtureManifest,
+	pngBytes,
+	sha256,
+} from './remote-assets-fixture.ts';
 
 const GRIN = '\u{1F600}';
 const TOKEN = 'tok-remote-assets';
@@ -54,6 +61,7 @@ beforeAll(async () => {
 	server.routes.set('/fonts/chirp-700.woff2', { body: FONT_BYTES, contentType: 'font/woff2' });
 	server.routes.set('/emoji/1f600.png', { body: pngBytes(4, 4, [255, 0, 0, 255]), contentType: 'image/png' });
 	server.routes.set('/emoji/1f680.png', { body: pngBytes(4, 4, [0, 255, 0, 255]), contentType: 'image/png' });
+	server.routes.set('/images/default_profile.jpg', { body: AVATAR_BYTES, contentType: 'image/jpeg' });
 });
 afterAll(async () => {
 	await closeApps();
@@ -85,6 +93,14 @@ describe('catalogue and routes', () => {
 			source: 'remote',
 			files: [{ weight: 700, style: 'normal', url: `/fonts/remote/${FONT_FILE}` }],
 		});
+		expect(cat.images).toEqual([
+			{
+				id: 'x-default-avatar',
+				url: `/fonts/images/x-default-avatar-${sha256(AVATAR_BYTES).slice(0, 16)}.jpeg`,
+				format: 'jpeg',
+				licence: 'test fixture',
+			},
+		]);
 		expect(cat.emojiPacks).toEqual([
 			{ id: 'apple', name: 'Apple', version: '1', format: 'png', licence: 'test fixture', attribution: null },
 		]);
@@ -94,7 +110,8 @@ describe('catalogue and routes', () => {
 
 	it('serves remote fonts and emoji with the session token or a signed URL, never anonymously', async () => {
 		const core = coreServices(app);
-		for (const path of [`/fonts/remote/${FONT_FILE}`, '/fonts/emoji/apple/1/1f600.png']) {
+		const IMAGE_FILE = `/fonts/images/x-default-avatar-${sha256(AVATAR_BYTES).slice(0, 16)}.jpeg`;
+		for (const path of [`/fonts/remote/${FONT_FILE}`, '/fonts/emoji/apple/1/1f600.png', IMAGE_FILE]) {
 			const anon = await app.inject({ method: 'GET', url: path, headers: H });
 			expect(anon.statusCode, path).toBe(401);
 			const signed = core.signer.signUrl('', path);
@@ -354,6 +371,11 @@ describe('export planner and layer-bake keys', () => {
 		const e3 = await planError(unknown.doc, unknown.seqId);
 		expect(e3.message).toContain('the pack is not in the remote-asset manifest');
 
+		def.requiredAssets = () => ({ fonts: [], images: ['instagram-default-avatar'] });
+		const e5 = await planError(unknown.doc, unknown.seqId);
+		expect(e5.message).toContain('image "instagram-default-avatar"');
+		expect(e5.detail).toMatchObject({ assets: [{ kind: 'image', code: 'REMOTE_ASSET_UNKNOWN' }] });
+
 		def.requiredAssets = () => ({ fonts: [], emoji: { pack: 'apple', graphemes: ['\u{1F680}'] } });
 		await coreServices(app).remoteAssets.putSettings({ platformAssets: false });
 		const e4 = await planError(unknown.doc, unknown.seqId);
@@ -367,6 +389,7 @@ describe('export planner and layer-bake keys', () => {
 		def.requiredAssets = (p: Record<string, unknown>) => ({
 			fonts: [{ family: 'Chirp', weight: 700, style: 'normal' }],
 			emoji: { pack: 'apple', graphemes: emojiGraphemes(String(p.title ?? '')) },
+			images: ['x-default-avatar'],
 		});
 		const svc = app.jasper.services.layerBake as LayerBakeService;
 		const b = build(`Hey ${GRIN}`);
@@ -389,6 +412,8 @@ describe('export planner and layer-bake keys', () => {
 		// the bake document carries signed URLs of the clip's font and emoji
 		expect(k0.doc.fonts[0]!.url).toMatch(/\/fonts\/remote\/.*\?sig=/);
 		expect(k0.doc.emoji?.[`apple:${GRIN}`]).toMatch(/\/fonts\/emoji\/apple\/1\/1f600\.png\?sig=/);
+		expect(k0.material.images).toEqual([{ id: 'x-default-avatar', sha256: sha256(AVATAR_BYTES) }]);
+		expect(k0.doc.images?.['x-default-avatar']).toMatch(/\/fonts\/images\/x-default-avatar-.*\.jpeg\?sig=/);
 		expect((await keyOf()).key).toBe(k0.key);
 		// a new pack version (override manifest) gives a new key
 		writeOverride(app.appdir, fixtureManifest(server.url, { version: '2' }));

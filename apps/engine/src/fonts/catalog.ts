@@ -181,7 +181,11 @@ export class FontCatalogService {
 	catalog(): FontCatalog {
 		const bundled = this.families.map(({ id: _id, dir: _dir, ...f }) => f);
 		if (!this.remote) return { fonts: bundled };
-		return { fonts: [...bundled, ...this.remote.catalogFamilies()], emojiPacks: this.remote.emojiPacks() };
+		return {
+			fonts: [...bundled, ...this.remote.catalogFamilies()],
+			emojiPacks: this.remote.emojiPacks(),
+			images: this.remote.catalogImages(),
+		};
 	}
 
 	/** The bundled files of exactly this face (latin and latin-ext with their unicode ranges), or null. */
@@ -202,7 +206,7 @@ export class FontCatalogService {
 
 	/**
 	 * social-comment §7.8: engine-relative URLs of a template face — the bundled catalogue first (every subset file with
-	 * its unicode range), then the remote manifest (one file) — or null. Exact family, weight and style: never a
+	 * its unicode range), then the remote manifest (one file, or its subset entries with their ranges) — or null. Exact family, weight and style: never a
 	 * fallback (AGENTS §4). Remote files may still need downloading (`remote.prefetch`).
 	 */
 	templateFaceFiles(face: {
@@ -212,8 +216,7 @@ export class FontCatalogService {
 	}): { url: string; unicodeRange?: string }[] | null {
 		const bundled = this.bundledFace(face);
 		if (bundled) return bundled;
-		const url = this.remote?.fontUrl(face);
-		return url ? [{ url }] : null;
+		return this.remote?.fontFiles(face) ?? null;
 	}
 
 	byFamily(family: string): ResolvedFamily | null {

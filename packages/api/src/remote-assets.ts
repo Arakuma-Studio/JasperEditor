@@ -40,6 +40,8 @@ export const RemoteAssetPrefetchRequestSchema = z.object({
 		)
 		.max(8)
 		.default([]),
+	/** Remote image ids of the manifest. */
+	images: z.array(z.string().min(1).max(64)).max(32).default([]),
 });
 export type RemoteAssetPrefetchRequest = z.input<typeof RemoteAssetPrefetchRequestSchema>;
 
@@ -52,6 +54,7 @@ export const RemoteAssetMissingSchema = z.discriminatedUnion('kind', [
 		grapheme: z.string(),
 		error: RemoteAssetErrorSchema,
 	}),
+	z.object({ kind: z.literal('image'), id: z.string(), error: RemoteAssetErrorSchema }),
 ]);
 export type RemoteAssetMissing = z.infer<typeof RemoteAssetMissingSchema>;
 
@@ -64,7 +67,7 @@ export type RemoteAssetPrefetchResponse = z.infer<typeof RemoteAssetPrefetchResp
 
 /** One download, as named in the first-fetch notice. */
 export const RemoteAssetFetchSchema = z.object({
-	kind: z.enum(['font', 'emoji']),
+	kind: z.enum(['font', 'emoji', 'image']),
 	/** `Chirp 700`, `😀 (Apple)`. */
 	label: z.string(),
 	/** Host the file came from. */
@@ -79,6 +82,7 @@ export const RemoteAssetsStatusSchema = z.object({
 		version: z.number().int(),
 		fonts: z.number().int().min(0),
 		emojiPacks: z.number().int().min(0),
+		images: z.number().int().min(0),
 		/** The appdir override file: absent, merged, or ignored because it is invalid (with why). */
 		override: z.object({
 			status: z.enum(['absent', 'loaded', 'invalid']),
@@ -99,6 +103,7 @@ export const RemoteAssetsStatusSchema = z.object({
 			cached: z.number().int().min(0),
 		}),
 	),
+	images: z.array(z.object({ id: z.string(), cached: z.boolean(), host: z.string(), licence: z.string() })),
 	/**
 	 * The one-time notice after the first successful download (what, from where, the licence caveat): `pending` until an
 	 * editor acknowledges it (`POST /api/remote-assets/notice/ack`).

@@ -273,6 +273,8 @@ export function bakeDoc(
 		fonts: RenderSnapshot['fonts'];
 		/** social-comment §7.8: the clip's emoji images (`clipEmoji`, signed). */
 		emoji?: RenderSnapshot['emoji'];
+		/** social-comment §7.8: the clip's remote images (`clipImages`, signed). */
+		images?: RenderSnapshot['images'];
 	},
 ): RenderSnapshot {
 	const frames = variantFrames(clip, o.variant);
@@ -292,6 +294,7 @@ export function bakeDoc(
 		media: o.media,
 		fonts: o.fonts,
 		...(o.emoji ? { emoji: o.emoji } : {}),
+		...(o.images ? { images: o.images } : {}),
 		master: { volumeDb: { value: 0, keyframes: [] } },
 		warnings: [],
 		// Wave expressions: the renderer binds the clip's expressions against the whole project.
@@ -386,6 +389,18 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 			} else if (named.has(f.fontId) || named.has(f.family)) used.add(f);
 	}
 	return fonts.filter((f) => used.has(f));
+}
+
+/** social-comment §7.8: the entries of the snapshot's image table an anime template clip draws, or undefined. */
+export function clipImages(
+	clip: RenderVisualClip,
+	table: RenderSnapshot['images'],
+): Record<string, string> | undefined {
+	const ids = 'mg' in clip.source ? clip.source.mg.assets?.images : undefined;
+	if (!ids?.length || !table) return undefined;
+	const out: Record<string, string> = {};
+	for (const id of ids) if (table[id]) out[id] = table[id];
+	return Object.keys(out).length ? out : undefined;
 }
 
 /**

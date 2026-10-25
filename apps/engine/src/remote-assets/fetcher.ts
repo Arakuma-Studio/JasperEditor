@@ -212,16 +212,28 @@ const SVG_ACTIVE =
 	/<script|<foreignobject|\son[a-z]+\s*=|javascript:|<iframe|<embed|<object|xlink:href\s*=\s*["']\s*(?!#)|\shref\s*=\s*["']\s*(?!#)/i;
 
 /** Refuses a body that is not an image of `format` (magic number / root element; active SVG content). */
-export function checkImage(f: Fetched, format: 'png' | 'svg'): void {
+export function checkImage(f: Fetched, format: 'png' | 'jpeg' | 'webp' | 'svg'): void {
 	const bad = (why: string) =>
 		new RemoteAssetError('ASSET_BAD_CONTENT', `${f.url} is not a ${format} image (${why})`, false, {
 			url: f.url,
 			contentType: f.contentType,
 		});
 	if (looksLikeHtml(f)) throw bad('HTML page');
-	if (format === 'png') {
-		if (!f.bytes.subarray(0, 8).equals(PNG)) throw bad('bad magic number');
-		if (f.contentType && !/^(image\/png|application\/octet-stream|binary\/octet-stream)$/.test(f.contentType))
+	if (format !== 'svg') {
+		const b = f.bytes;
+		const ok =
+			format === 'png'
+				? b.subarray(0, 8).equals(PNG)
+				: format === 'jpeg'
+					? b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff
+					: b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP';
+		if (!ok) throw bad('bad magic number');
+		if (
+			f.contentType &&
+			!new RegExp(
+				`^(image/${format === 'jpeg' ? 'p?jpe?g' : format}|application/octet-stream|binary/octet-stream)$`,
+			).test(f.contentType)
+		)
 			throw bad(`content type ${f.contentType}`);
 		return;
 	}

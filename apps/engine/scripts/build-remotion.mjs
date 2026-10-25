@@ -106,7 +106,8 @@ for (const id of FONT_IDS) {
 	mkdirSync(join(dest, 'files'), { recursive: true });
 	cpSync(join(pkgDir, 'metadata.json'), join(dest, 'metadata.json'));
 	// unicode ranges of the subset files (template faces load latin + latin-ext together)
-	if (existsSync(join(pkgDir, 'unicode.json'))) cpSync(join(pkgDir, 'unicode.json'), join(dest, 'unicode.json'));
+	if (existsSync(join(pkgDir, 'unicode.json')))
+		cpSync(join(pkgDir, 'unicode.json'), join(dest, 'unicode.json'));
 	if (existsSync(join(pkgDir, 'LICENSE'))) cpSync(join(pkgDir, 'LICENSE'), join(dest, 'LICENSE'));
 	cpSync(join(pkgDir, 'files'), join(dest, 'files'), {
 		recursive: true,

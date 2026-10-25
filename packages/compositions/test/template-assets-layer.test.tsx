@@ -22,6 +22,7 @@ import {
 	EmojiTableContext,
 	FontsReadyContext,
 	type FontsReadyState,
+	ImageTableContext,
 	type LayerProps,
 	MotionGraphicLayer,
 	useFontsReadyState,
@@ -146,6 +147,50 @@ describe('template assets in the motion-graphic layer', () => {
 		const l = layer();
 		const r = mount(l, { fonts: { allLoaded: true, isFailed: (family) => family === 'Chirp' } });
 		expect(r.container.querySelector('[data-missing-asset="font"]')).not.toBeNull();
+	});
+
+	it('preview: a missing remote image gets a banner and is reported; an available one reaches imageUrls', async () => {
+		def.requiredAssets = () => ({ fonts: [], images: ['x-default-avatar', 'gone'] });
+		try {
+			const { doc, clipId } = setup();
+			const snap = buildRenderSnapshot(doc, Object.keys(doc.sequences)[0]!, {
+				resolveMedia: () => null,
+				resolveFont: () => null,
+				templateAssets: templateAssetOptions(mgRegistry, {
+					font: () => null,
+					emoji: () => null,
+					image: (id) => (id === 'x-default-avatar' ? '/fonts/images/x.jpeg' : null),
+				}),
+			});
+			expect(snap.images).toEqual({ 'x-default-avatar': '/fonts/images/x.jpeg' });
+			const l = resolveSceneAt(snap, 60).find((x) => x.clip.clipId === clipId)!;
+			const reports = new Map<string, readonly MissingTemplateAsset[]>();
+			const r = render(
+				<MissingAssetReporterContext.Provider value={(id, assets) => reports.set(id, assets)}>
+					<ImageTableContext.Provider value={snap.images}>
+						<MotionGraphicLayer
+							clip={l.clip}
+							props={l.props}
+							localFrame={l.localFrame}
+							contentTime={l.contentTime}
+							fps={30}
+							media={null}
+							options={DEFAULT_RENDER_OPTIONS}
+							fonts={snap.fonts}
+						/>
+					</ImageTableContext.Provider>
+				</MissingAssetReporterContext.Provider>,
+			);
+			expect(r.container.querySelector('[data-missing-asset="image"]')?.textContent).toBe(
+				'Image "gone" is not available',
+			);
+			await waitFor(() => expect(reports.get(clipId)).toEqual([{ kind: 'image', id: 'gone' }]));
+		} finally {
+			def.requiredAssets = (p: Record<string, unknown>) => ({
+				fonts: [{ family: 'Chirp', weight: 700, style: 'normal' }],
+				emoji: { pack: 'apple', graphemes: emojiGraphemes(String(p.title ?? '')) },
+			});
+		}
 	});
 
 	it('export: a template never renders without its declared assets', () => {

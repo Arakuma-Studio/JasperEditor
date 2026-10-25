@@ -335,6 +335,7 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   assets/remote-manifest.override.json       # user override of the remote-asset manifest (entries replace by id)
   assets/remote/fonts/<id>-<sha16>.<fmt>     # downloaded platform fonts (pinned SHA-256; atomic writes; social-comment §7.8)
   assets/remote/emoji/<pack>/<version>/      # downloaded emoji images (<codepoints>.<png|svg>) + index.json (first-fetch hash pins)
+  assets/remote/images/<id>-<sha16>.<fmt>    # downloaded remote images of the manifest (default avatars; pinned SHA-256)
   tmp/                                       # wiped on start
 ```
 

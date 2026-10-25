@@ -470,6 +470,8 @@ export type RenderTemplateAssets = {
 	fonts: { family: string; weight: number; style: 'normal' | 'italic' }[];
 	/** Emoji graphemes per image pack (one entry per pack). */
 	emoji: { pack: string; graphemes: string[] }[];
+	/** Remote images of the remote-asset manifest by id (absent = none). */
+	images?: string[];
 };
 
 /** A file of a template face: one URL, or one subset file per unicode range. */
@@ -547,6 +549,8 @@ export type RenderSnapshot = {
 	 * grapheme)`; an unavailable image is absent. Absent = no template draws emoji.
 	 */
 	emoji?: Record<string, string>;
+	/** social-comment §7.8: remote image URLs of the anime templates' required images by id (unavailable ones absent). */
+	images?: Record<string, string>;
 	master: { volumeDb: Animatable<number> };
 	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
 	warnings: { clipId: string; code: string; message: string }[];
@@ -585,6 +589,8 @@ export type SnapshotOptions = {
 		}): RenderTemplateAssets | null;
 		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
 		emoji(pack: string, grapheme: string): string | null;
+		/** URL of a remote image by manifest id (absent or null = unavailable). */
+		image?(id: string): string | null;
 	};
 	/** Pre-render URLs known to the consumer. */
 	resolveComposition?(clip: {
@@ -780,11 +786,17 @@ export function buildRenderSnapshot(
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
 	const emojiTable: Record<string, string> = {};
+	const imageTable: Record<string, string> = {};
 	// social-comment §7.8: a template's declared faces join the document's fonts; its emoji join the emoji table.
 	const useTemplateAssets = (clipId: string, mg: Extract<RenderVisualSource, { mg: unknown }>['mg']) => {
 		const resolver = opts.templateAssets;
 		const assets = resolver?.required(mg);
-		if (!resolver || !assets || (assets.fonts.length === 0 && assets.emoji.length === 0)) return;
+		if (
+			!resolver ||
+			!assets ||
+			(assets.fonts.length === 0 && assets.emoji.length === 0 && !assets.images?.length)
+		)
+			return;
 		mg.assets = assets;
 		for (const face of assets.fonts) {
 			const fontId = templateFontId(face.family);
@@ -826,6 +838,17 @@ export function buildRenderSnapshot(
 					clipId,
 					code: 'TEMPLATE_EMOJI_UNAVAILABLE',
 					message: `Emoji ${missing.slice(0, 8).join(' ')}${missing.length > 8 ? ` (+${missing.length - 8})` : ''} of the ${pack} pack ${missing.length === 1 ? 'is' : 'are'} not available`,
+				});
+		}
+		for (const id of assets.images ?? []) {
+			if (id in imageTable) continue;
+			const url = resolver.image?.(id) ?? null;
+			if (url) imageTable[id] = url;
+			else
+				warnings.push({
+					clipId,
+					code: 'TEMPLATE_IMAGE_UNAVAILABLE',
+					message: `Image "${id}" is not available`,
 				});
 		}
 	};
@@ -887,6 +910,7 @@ export function buildRenderSnapshot(
 			if (!fontKeys.has(key)) fontKeys.set(key, f);
 		}
 		for (const [k, url] of Object.entries(sub.emoji ?? {})) if (!(k in emojiTable)) emojiTable[k] = url;
+		for (const [k, url] of Object.entries(sub.images ?? {})) if (!(k in imageTable)) imageTable[k] = url;
 		for (const w of sub.warnings) warnings.push({ ...w, message: `In nested sequence: ${w.message}` });
 		return { snap: sub, nestedFps };
 	};
@@ -1396,6 +1420,7 @@ export function buildRenderSnapshot(
 		media,
 		fonts: [...fontKeys.values()],
 		...(Object.keys(emojiTable).length ? { emoji: emojiTable } : {}),
+		...(Object.keys(imageTable).length ? { images: imageTable } : {}),
 		master: { volumeDb: seq.master.volumeDb },
 		audioMix,
 		warnings,

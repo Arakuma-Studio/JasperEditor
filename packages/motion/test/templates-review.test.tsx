@@ -20,6 +20,7 @@ function renderTemplate(id: string, frame: number, params?: Record<string, unkno
 				seed={7}
 				isPreview={false}
 				emojiUrls={{}}
+				imageUrls={{}}
 			/>
 		);
 	};

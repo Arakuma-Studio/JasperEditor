@@ -11,6 +11,8 @@ import { type AnyMgTemplate, isAnimeTemplate, type TemplateRequiredAssets } from
 export const MAX_TEMPLATE_FONTS = 32;
 /** Distinct emoji graphemes one clip may declare per pack. */
 export const MAX_TEMPLATE_EMOJI = 512;
+/** Remote images one clip may declare. */
+export const MAX_TEMPLATE_IMAGES = 16;
 /** Keyframed param values `requiredAssets` is evaluated for, per clip. */
 const MAX_VARIANTS = 64;
 
@@ -35,6 +37,10 @@ export const TemplateRequiredAssetsSchema = z.object({
 				)
 				.max(MAX_TEMPLATE_EMOJI * 4),
 		})
+		.optional(),
+	images: z
+		.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/))
+		.max(MAX_TEMPLATE_IMAGES * 4)
 		.optional(),
 });
 
@@ -86,6 +92,7 @@ export function templateRequiredAssets(
 		}
 	const fonts = new Map<string, RenderTemplateAssets['fonts'][number]>();
 	const emoji = new Map<string, Set<string>>();
+	const images = new Set<string>();
 	for (const v of variants) {
 		const r = callRequired(def, v);
 		if (!r) continue;
@@ -102,12 +109,14 @@ export function templateRequiredAssets(
 				if (isEmojiGrapheme(g)) set.add(g);
 			}
 		}
+		for (const id of r.images ?? []) if (images.size < MAX_TEMPLATE_IMAGES) images.add(id);
 	}
 	const out: RenderTemplateAssets = {
 		fonts: [...fonts.values()],
 		emoji: [...emoji].filter(([, set]) => set.size > 0).map(([pack, set]) => ({ pack, graphemes: [...set] })),
+		...(images.size ? { images: [...images] } : {}),
 	};
-	return out.fonts.length || out.emoji.length ? out : null;
+	return out.fonts.length || out.emoji.length || out.images?.length ? out : null;
 }
 
 /**
@@ -120,6 +129,7 @@ export function templateAssetOptions(
 	resolve: {
 		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
 		emoji(pack: string, grapheme: string): string | null;
+		image?(id: string): string | null;
 	},
 ): NonNullable<SnapshotOptions['templateAssets']> {
 	return {
@@ -129,5 +139,6 @@ export function templateAssetOptions(
 		},
 		font: resolve.font,
 		emoji: resolve.emoji,
+		...(resolve.image ? { image: resolve.image } : {}),
 	};
 }

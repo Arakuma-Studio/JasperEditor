@@ -75,7 +75,7 @@ export type MgAnimeTemplateDefinition<P extends Record<string, unknown> = Record
 		/** Poster time in seconds of content time (gallery poster; default: middle of the default duration). */
 		posterAt?: number;
 		/**
-		 * Fonts and emoji the implementation draws for `params` (social-comment design §7.8). Fonts resolve against the
+		 * Fonts, emoji and remote images the implementation draws for `params` (social-comment design §7.8). Fonts resolve against the
 		 * bundled catalogue first, then the remote-asset manifest; the render snapshot loads exactly these faces for
 		 * preview and bake (a template never relies on a host font stack), the export planner blocks when one is
 		 * unavailable, and the bake key covers their files. Must be pure and must not throw.
@@ -86,10 +86,14 @@ export type MgAnimeTemplateDefinition<P extends Record<string, unknown> = Record
 /** A font face a template draws with. */
 export type TemplateFontFace = { family: string; weight: number; style: 'normal' | 'italic' };
 
-/** What `requiredAssets` returns: font faces, and the emoji graphemes drawn as images of one pack. */
+/**
+ * What `requiredAssets` returns: font faces, the emoji graphemes drawn as images of one pack, and remote images of the
+ * remote-asset manifest by id (platform default avatars…; resolved URLs in `AnimeTemplateProps.imageUrls`).
+ */
 export type TemplateRequiredAssets = {
 	fonts: TemplateFontFace[];
 	emoji?: { pack: EmojiPackId; graphemes: string[] };
+	images?: string[];
 };
 
 export type MgTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =

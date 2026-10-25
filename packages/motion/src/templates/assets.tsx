@@ -21,13 +21,13 @@ import { getRemotionEnvironment, useDelayRender } from 'remotion';
 /** An asset a template could not draw. */
 export type MissingTemplateAsset =
 	| { kind: 'font'; family: string; weight: number; style: 'normal' | 'italic' }
-	| { kind: 'emoji'; pack: string; grapheme: string };
+	| { kind: 'emoji'; pack: string; grapheme: string }
+	| { kind: 'image'; id: string };
 
-/** Human label of a missing asset (`Font "Chirp" 700`, `Emoji 😀 (apple)`). */
+/** Human label of a missing asset (`Font "Chirp" 700`, `Emoji 😀 (apple)`, `Image "x-default-avatar"`). */
 export function missingAssetLabel(a: MissingTemplateAsset): string {
-	return a.kind === 'font'
-		? `Font "${a.family}" ${a.weight}${a.style === 'italic' ? ' italic' : ''}`
-		: `Emoji ${a.grapheme} (${a.pack})`;
+	if (a.kind === 'font') return `Font "${a.family}" ${a.weight}${a.style === 'italic' ? ' italic' : ''}`;
+	return a.kind === 'emoji' ? `Emoji ${a.grapheme} (${a.pack})` : `Image "${a.id}"`;
 }
 
 /**
@@ -78,10 +78,10 @@ const STRIPES = 'repeating-linear-gradient(135deg, #ffd400 0 6px, #1a1a1a 6px 12
 
 /**
  * A visible "not available" mark. `emoji`: a dashed square of the emoji's size with a "?" (inline, keeps the text
- * layout); `font`: a striped banner naming the font, placed by its parent (the layer draws it over the card).
+ * layout); `font` / `image`: a striped banner naming the asset, placed by its parent (the layer draws it over the card).
  */
 export function MissingAssetMarker(p: {
-	kind: 'font' | 'emoji';
+	kind: 'font' | 'emoji' | 'image';
 	label: string;
 	/** Emoji: the square's side in pixels; font: the banner's text size. */
 	size?: number;
@@ -121,7 +121,7 @@ export function MissingAssetMarker(p: {
 	const fs = Math.max(10, p.size ?? 16);
 	return (
 		<div
-			data-missing-asset="font"
+			data-missing-asset={p.kind}
 			role="alert"
 			style={{
 				display: 'inline-flex',
