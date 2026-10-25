@@ -10,7 +10,7 @@ import {
 	type TextMeasurer,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { EditorSession } from '../src/index.ts';
+import { createAutosaver, EditorSession, MemoryProjectStore } from '../src/index.ts';
 
 type TextClip = Extract<Clip, { kind: 'text' }>;
 const NOW = () => '2026-10-25T10:00:00.000Z';
@@ -165,5 +165,29 @@ describe('pending text relayout (spec 13 SH-004)', () => {
 		expect(plain.relayoutPendingText()).toBeNull();
 		await ro.close();
 		await plain.close();
+	});
+
+	it('measured boxes are saved even when the session measured them before autosave attached (regression)', async () => {
+		const { doc, clipId } = headlessDoc();
+		const store = new MemoryProjectStore({ ids: createCounterIdSource(500), now: NOW });
+		store.put(doc);
+		const { m, ready } = loadingMeasurer();
+		ready();
+		const s = await EditorSession.open({
+			store,
+			projectId: doc.projectId,
+			ctx: { ids: createCounterIdSource(100), now: NOW, registries: defaultRegistries(), textMeasurer: m },
+		});
+		await tick();
+		expect(clipOf(s, clipId).layoutPending).toBeUndefined();
+		// autosave attaches after the session measured: the measured document is still unsaved
+		const a = createAutosaver(s, store);
+		await new Promise((r) => setTimeout(r, 1700));
+		const saved = (await store.open(doc.projectId, { readOnly: true })).document;
+		const c = Object.values(saved.sequences)[0]!.clips[clipId] as TextClip;
+		expect(c.layoutPending).toBeUndefined();
+		expect(c.box.width).toBe(250);
+		a.dispose();
+		await s.close();
 	});
 });

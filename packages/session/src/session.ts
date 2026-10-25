@@ -108,6 +108,11 @@ export class EditorSession {
 	readonly store: StoreApi<SessionState>;
 	readonly transport = new TransportStore();
 	readonly projectId: string;
+	/**
+	 * The revision the document was opened at (what the store holds). The session may change the document before the
+	 * persistence layer attaches (spec 13 SH-004: pending text measured at once); autosave saves from here.
+	 */
+	readonly openedRevision: number;
 	readonly sessionId: string;
 	readonly ctx: SessionContext;
 	readonly engine?: EngineClient;
@@ -131,6 +136,7 @@ export class EditorSession {
 
 	constructor(opts: EditorSessionOptions) {
 		this.projectId = opts.projectId;
+		this.openedRevision = opts.revision ?? 0;
 		this.sessionId = opts.sessionId ?? createSessionId();
 		this.ctx = opts.ctx;
 		this.engine = opts.engine;
