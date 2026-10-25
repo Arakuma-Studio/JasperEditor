@@ -41,6 +41,15 @@ export type CompositeEstimate = {
 
 type Kind = 'master' | 'still' | 'stream' | 'member' | 'media' | 'none';
 
+/**
+ * The bake recipe the layer bake picks for a layer it bakes: one still (static layers, lowered layers' layer stills,
+ * rendered in sheets, AS-071) or a master of the drawn span.
+ */
+export function bakeRecipeOf(c: RenderVisualClip): 'still' | 'master' {
+	if (!c.threeD && layerStill(c)) return 'still';
+	return isStaticLayer(bakeClip(c, { variant: { recipe: 'master' }, stripColor: true })) ? 'still' : 'master';
+}
+
 /** How the native builder draws a layer (mirrors native.ts `memberOf` / the layer bake's recipes). */
 function kindOf(c: RenderVisualClip, fps: RenderSnapshot['settings']['fps']): Kind {
 	const memberBase =

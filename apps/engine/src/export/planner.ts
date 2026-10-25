@@ -58,7 +58,7 @@ import {
 	outputFormatChanges,
 } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
-import { compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
+import { bakeRecipeOf, compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
@@ -450,7 +450,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const mgClips: string[] = [];
 	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
 	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
-	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
+	const baked: { clipId: string; engine: 'remotion'; frames: number; still?: boolean }[] = [];
 	for (const reason of nestBlockers(snapshot))
 		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
 	// color-mgmt: linear-light compositing (Blend using 1.0 gamma / Linearize Working Space) is drawn by the GPU
@@ -469,6 +469,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				clipId: c.clipId,
 				engine: bakeEngine,
 				frames: c.duration + (c.headHandle ?? 0) + (c.tailHandle ?? 0),
+				...(bakeRecipeOf(c) === 'still' ? { still: true } : {}),
 			});
 		else if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) mgClips.push(c.clipId);
 		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
@@ -764,8 +765,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const frames = range.end - range.start;
 	const pixels = output.width * output.height;
 	const pixelFactor = Math.max(0.25, pixels / (1920 * 1080));
-	// Baked layers (uncached): Remotion at ~8 fps over each layer's drawn span (S04:RP-009 seed).
-	const bakeSeconds = path === 'hybrid' ? baked.reduce((s, b) => s + b.frames / 8, 0) * pixelFactor : 0;
+	// Baked layers (uncached): masters at ~8 fps over each layer's drawn span (S04:RP-009 seed); stills in sheet
+	// renders of up to 64 (spec 13 AS-071, textperf: ≈ 3.4 s fixed per render, ≈ 0.1 s per still).
+	const stillBakes = baked.filter((b) => b.still).length;
+	const bakeSeconds =
+		path === 'hybrid'
+			? (baked.reduce((s, b) => s + (b.still ? 0 : b.frames / 8), 0) +
+					Math.ceil(stillBakes / 64) * 3.4 +
+					stillBakes * 0.1) *
+				pixelFactor
+			: 0;
 	const estimateSeconds =
 		path !== 'remotion' ? (durationSec / 1.5) * pixelFactor + bakeSeconds : (frames / 8) * pixelFactor;
 	const bpp = 0.1 * 2 ** ((18 - output.crf) / 6);
