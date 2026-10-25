@@ -69,6 +69,9 @@ Later instructions:
   edges); waveform tools use −30…−45 dBFS thresholds, 0.3–0.75 s minimum silence, asymmetric padding (≈0.01–0.06 s
   before speech, ≥0.15 s after); keep-last-take is the universal retake default; no tool ships Spanish fillers; Whisper
   drops fillers by design (Spanish verbatim prompting raises filled-pause F1 to 0.88 in one study).
+- Voice cutting (measured, 17 frame-exact projects): 17–22 cuts/min, no pause > ≈100 ms survives, joins 0 ms,
+  out point ≈ floor + 21–25 dB inside the decay, in point at onset, breaths never kept, no crossfades; removed
+  words mostly retakes (keep last 79–97 %); current tools leave 7 s/min of dead air and 200 ms per join.
 - Voice workflow discovery: the user records in OBS, cuts and processes the voice in FL Studio, and Premiere plays the
   export nearly unedited; ground truth for cuts comes from aligning exports to raw recordings and from Premiere
   sequences that keep the original voice cuts.
@@ -90,7 +93,9 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 - ✅ subs — the user's caption recipe, cut alignment, Premiere/competitor options, proposal.
 - ✅ auto — editing-pattern statistics and automation proposal.
 - ✅ cutsurvey — survey of auto-cut tools, Spanish fillers, papers, licences.
-- 🔄 edits — how the user cuts voice (raw OBS ↔ FL exports ↔ Premiere sequences), detector and auto-cut proposal.
+- ✅ edits — how the user cuts voice (ground truth = Premiere picture edit in 17 projects + export↔raw alignment);
+  detector + level-referenced auto-cut prototype reproduces the user's cuts (precision 0.90, recall 0.78, 72 % of
+  edit points within 50 ms).
 - 🔄 whisper — GPU providers per platform, medium/large exports, benchmarks (Mac CPU/CoreML, VM CPU, RTX 3060 CUDA),
   Spanish WER vs the user's captions/scripts.
 - 🔄 textperf — export/preview cost of 100 and ~1,000 animated text clips; architecture for fast subtitle export.
@@ -99,9 +104,9 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 - ⏳ 13 — Automatic subtitles: options, text-clip output, templates (user style + generic), cut-aware timing,
   multi-clip styling, text rendering upgrades (strokes, shadow spread, measurer), conversion to/from caption tracks,
   export performance architecture.
-- ⏳ 14 — Transcript cleanup: typed findings detector, audio-confirmed pauses, Spanish fillers, repeats/retakes,
+- 🔄 14 — Transcript cleanup (draft written: `docs/specs/14-transcript-cleanup.md`): typed findings detector, audio-confirmed pauses, Spanish fillers, repeats/retakes,
   script alignment, configurable auto-cut (padding, gaps, crossfades, guidance tracks, presets), review UI, agents.
-- ⏳ 15 — Editing-pattern automation: shared `pictureCuts`, Decorate Cuts kits, punch-ins, Ken Burns, overlays,
+- 🔄 15 — Editing-pattern automation (draft written: `docs/specs/15-edit-automation.md`): shared `pictureCuts`, Decorate Cuts kits, punch-ins, Ken Burns, overlays,
   overlay slides, music beds, style recipes and Style Check, proposals for new features + agent accept policies.
 - ⏳ 16 — Speech on GPU and model catalogue: provider selection (CUDA/CoreML/DirectML/CPU), packaging, catalogue
   (medium/turbo/quantised), defaults per device class, measured evaluation table.
@@ -139,5 +144,5 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 ## 8. Log
 - 2026-10-25 — ff main; VM provisioned; Mac workspace; scripts exported; research agents launched (codemap, subs,
   auto, whisper, edits, textperf, cutsurvey); NVIDIA box rented; codemap, auto, subs, cutsurvey finished; lock
-  fairness rules set on the Mac and the VM; ledgers created; VM lock switched to a want-file queue
+  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 14 and 15 drafted; VM lock switched to a want-file queue
   after starvation in both directions.
