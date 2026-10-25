@@ -22,6 +22,7 @@ import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
 import { isHoldOnlyValue, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
+import { rewriteParamMedia } from '../../param-media.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import { dropForeignRotoRefs } from '../../roto/index.ts';
@@ -271,6 +272,11 @@ class Resolver {
 		const style = c.style as { fontId?: string } | undefined;
 		if (c.kind === 'captions' && style?.fontId) style.fontId = this.fontId(style.fontId);
 		this.remapEffectMedia(c.effects as EffectInstance[] | undefined);
+		// template media params (avatars) follow their media like the clip's own source.
+		if (c.kind === 'motion-graphic' && c.params && typeof c.params === 'object') {
+			const next = rewriteParamMedia(c.params, (id) => this.mediaId(id));
+			if (next.changed.length) c.params = next.value;
+		}
 		return true;
 	}
 }

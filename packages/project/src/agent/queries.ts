@@ -8,6 +8,7 @@ import {
 	allTracks,
 	clipsInRange,
 	linkedPartners,
+	mediaUsage,
 	sequenceDuration,
 	sourceOut,
 	trackLabel,
@@ -424,16 +425,8 @@ function sequenceAt(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)[
 }
 
 function mediaList(env: AgentQueryEnv) {
-	const usage = new Map<string, { clips: number; sequences: Set<string> }>();
-	for (const seq of Object.values(env.doc.sequences))
-		for (const c of Object.values(seq.clips)) {
-			const id = (c as { mediaId?: unknown }).mediaId;
-			if (typeof id !== 'string') continue;
-			const u = usage.get(id) ?? { clips: 0, sequences: new Set<string>() };
-			u.clips++;
-			u.sequences.add(seq.id);
-			usage.set(id, u);
-		}
+	// clips using each medium, template media params (avatars) included.
+	const usage = mediaUsage(env.doc);
 	return {
 		media: Object.values(env.doc.media).map((m) => {
 			const vs = m.probe.streams.find((s) => s.type === 'video');
@@ -441,7 +434,7 @@ function mediaList(env: AgentQueryEnv) {
 			const names = Object.values(env.doc.items)
 				.filter((i) => i.kind === 'media' && i.mediaId === m.id)
 				.map((i) => ({ itemId: i.id, name: i.name }));
-			const u = usage.get(m.id);
+			const u = usage[m.id];
 			return {
 				mediaId: m.id,
 				kind: m.kind,

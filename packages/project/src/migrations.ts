@@ -102,6 +102,10 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// repair and by the Essential Sound commands); the bump makes v6 builds open v7 files read-only, because a v6
 	// build editing Essential Sound Pan would write an absolute pan under the offset marker, which v7 then misreads.
 	{ from: 6, to: 7, migrate: (doc) => doc },
+	// v8 (social comments): motion-graphic template params may hold media references (`{mediaId}`: avatars). Existing
+	// data needs no changes; the bump makes v7 builds open v8 files read-only, because their orphan collection, item
+	// delete and Project Manager ignore such references and would drop the media (data loss) on their next save.
+	{ from: 7, to: 8, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

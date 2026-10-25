@@ -48,7 +48,7 @@ import {
 } from './clip-common.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
-import { applyTemplatePatch } from './mg-template.ts';
+import { applyTemplatePatch, assertTemplateMedia } from './mg-template.ts';
 import { markMulticamClips } from './multicam-placement.ts';
 import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
@@ -468,6 +468,7 @@ function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerCont
 }
 
 function validateMgParams(
+	doc: DDoc,
 	info: MgTemplateInfo,
 	params: Record<string, unknown>,
 	h: HandlerContext,
@@ -477,6 +478,8 @@ function validateMgParams(
 		const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
 		h.fail('E_INVALID_PARAM', `Invalid params for ${info.id}@${info.version}: ${msg}`);
 	}
+	// Template media params (avatars) reference media of the project, of the kinds they take.
+	assertTemplateMedia(doc.media, info, parsed.data as Record<string, unknown>, h);
 	return parsed.data as Record<string, unknown>;
 }
 
@@ -630,7 +633,7 @@ export const clipCoreHandlers = {
 		const info = h.registries.mgTemplates.get(cmd.template.id, cmd.template.version);
 		if (!info)
 			h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${cmd.template.id}@${cmd.template.version}`);
-		const params = validateMgParams(info, { ...info.defaults, ...(cmd.params ?? {}) }, h);
+		const params = validateMgParams(doc, info, { ...info.defaults, ...(cmd.params ?? {}) }, h);
 		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'motion-graphic');
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
 		const box = canvas === 'sequence' ? frameBox(seq) : canvas;
@@ -841,7 +844,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 					'E_INVALID_PARAM',
 					`Unknown motion-graphic template ${clip.template.id}@${clip.template.version}`,
 				);
-			clip.params = validateMgParams(info, { ...clip.params, ...p.params }, h);
+			clip.params = validateMgParams(doc, info, { ...clip.params, ...p.params }, h);
 		}
 		if (p.canvas !== undefined) clip.canvas = p.canvas;
 	}
