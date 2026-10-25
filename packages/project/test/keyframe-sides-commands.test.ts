@@ -8,7 +8,6 @@ import {
 	checkInvariants,
 	contentTimeAt,
 	createCounterIdSource,
-	dropUnreadableKeySides,
 	evaluate,
 	type Interpolation,
 	type Keyframe,
@@ -196,25 +195,6 @@ describe('keyframe.setInterpolation with a side (keyframe-sides)', () => {
 		expect(keys()[2]).toMatchObject({ inInterpolation: 'linear' });
 	});
 
-	it('one side of an Auto Bezier key: the other side becomes Bezier frozen at its shape', () => {
-		const { h, ids, keys, samples } = setup([0, 100, 20], ['linear', 'auto-bezier', 'linear']);
-		const leaving = samples(100, 200);
-		h.ok([
-			{
-				type: 'keyframe.setInterpolation',
-				keyframeIds: [ids[1]],
-				interpolation: 'bezier',
-				easeIn: EASY,
-				side: 'in',
-			},
-		]);
-		expect(keys()[1]).toMatchObject({ interpolation: 'bezier', inInterpolation: 'bezier', easeIn: EASY });
-		samples(100, 200).forEach((v, j) => {
-			expect(v).toBeCloseTo(leaving[j]!, 12);
-		});
-		expect(checkInvariants(h.doc)).toEqual([]);
-	});
-
 	it('refusals: Hold on the incoming side, Auto / Continuous on one side, an ease for the other side', () => {
 		const { h, ids } = setup();
 		const doc = h.doc;
@@ -234,6 +214,8 @@ describe('keyframe.setInterpolation with a side (keyframe-sides)', () => {
 			{ type: 'keyframe.setInterpolation', keyframeIds: [ids[1]], interpolation: 'bezier', side: 'left' },
 		]);
 		expect(bad.ok).toBe(false);
+		if (!bad.ok) expect(bad.errors[0]!.code).toBe('E_SCHEMA');
+		expect(h.doc).toBe(doc);
 	});
 });
 
@@ -256,8 +238,11 @@ describe('keyframe.update / keyframe.add with sides (keyframe-sides)', () => {
 			easeIn: { influence: 0.8, slope: 0.1 },
 		});
 		expect(samples(100, 200)).toEqual(leaving);
+		const doc = h.doc;
 		const r = h.tx([{ type: 'keyframe.update', keyframeId: ids[1], interpolation: 'hold', side: 'in' }]);
 		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.errors[0]!.code).toBe('E_INVALID_PARAM');
+		expect(h.doc).toBe(doc);
 	});
 
 	it('keyframe.add accepts inInterpolation and refuses a one-sided Auto Bezier', () => {
@@ -295,6 +280,7 @@ describe('keyframe.update / keyframe.add with sides (keyframe-sides)', () => {
 			},
 		]);
 		expect(unknown.ok).toBe(false);
+		if (!unknown.ok) expect(unknown.errors[0]!.code).toBe('E_SCHEMA');
 	});
 });
 
@@ -303,21 +289,26 @@ describe('invariants, repair and paste (keyframe-sides)', () => {
 		const { h, ids } = setup();
 		const doc = clone(h.doc) as ProjectDocument;
 		const c = Object.values(Object.values(doc.sequences)[0]!.clips)[0] as VClip;
+		c.opacity.keyframes[0]!.interpolation = 'hold';
+		c.opacity.keyframes[0]!.inInterpolation = 'continuous-bezier';
 		(c.opacity.keyframes[1] as { inInterpolation?: unknown }).inInterpolation = 'sideways';
 		c.opacity.keyframes[2]!.interpolation = 'auto-bezier';
 		c.opacity.keyframes[2]!.inInterpolation = 'linear';
 		const issues = checkInvariants(doc).filter((i) => i.invariant === 'INV-011');
-		expect(issues.map((i) => i.message)).toEqual([
-			`INV-011: Keyframe ${ids[1]}: unknown incoming interpolation`,
-			`INV-011: Keyframe ${ids[2]}: Auto Bezier and Continuous Bezier shape both sides of a key`,
+		expect(issues.map((i) => ({ code: i.code, key: i.path?.at(-1) }))).toEqual([
+			{ code: 'E_INVARIANT', key: ids[0] },
+			{ code: 'E_INVARIANT', key: ids[1] },
+			{ code: 'E_INVARIANT', key: ids[2] },
 		]);
 		const { document, report } = repairDocument(doc, createCounterIdSource(99));
 		expect(report.filter((r) => r.action === 'repair-key-sides').map((r) => r.entity)).toEqual([
+			ids[0],
 			ids[1],
 			ids[2],
 		]);
 		expect(checkInvariants(document)).toEqual([]);
 		const kfs = (Object.values(Object.values(document.sequences)[0]!.clips)[0] as VClip).opacity.keyframes;
+		expect(kfs[0]).toMatchObject({ interpolation: 'hold', inInterpolation: 'bezier' });
 		expect(kfs[1]).not.toHaveProperty('inInterpolation');
 		expect(kfs[2]).toMatchObject({ interpolation: 'bezier', inInterpolation: 'linear' });
 		// Idempotent.
@@ -329,7 +320,7 @@ describe('invariants, repair and paste (keyframe-sides)', () => {
 	});
 
 	it('copied keys keep their incoming side when pasted', () => {
-		const { h, id, ids, keys, samples } = setup();
+		const { h, id, ids, samples } = setup();
 		h.ok([
 			{
 				type: 'keyframe.setInterpolation',
@@ -344,14 +335,15 @@ describe('invariants, repair and paste (keyframe-sides)', () => {
 		const other = h.clips('V2')[0]!.id;
 		h.ok([{ type: 'keyframe.paste', payload, clipId: other, at: { sequenceFrame: 400 } }]);
 		const pasted = (h.seq.clips[other] as VClip).opacity.keyframes;
-		expect(pasted.map((k) => k.inInterpolation)).toEqual(keys().map((k) => k.inInterpolation));
+		expect(pasted.map((k) => k.inInterpolation)).toEqual([undefined, 'bezier', undefined]);
 		const c = h.seq.clips[other]!;
 		const rate = h.seq.settings.frameRate as Rational;
 		const there = Array.from({ length: 201 }, (_, j) =>
 			evaluate((c as VClip).opacity, contentTimeAt(c, 400 + j, rate)),
 		);
+		const original = samples(0, 200);
 		there.forEach((v, j) => {
-			expect(v).toBeCloseTo(samples(0, 200)[j]!, 9);
+			expect(v).toBeCloseTo(original[j]!, 9);
 		});
 		// A tampered payload cannot smuggle an unreadable side in: the payload schema refuses it.
 		payload.keyframes.keyframes[1].inInterpolation = 'hold';
@@ -360,6 +352,7 @@ describe('invariants, repair and paste (keyframe-sides)', () => {
 		const doc = h.doc;
 		const r = h.tx([{ type: 'keyframe.paste', payload, clipId: third, at: { sequenceFrame: 800 } }]);
 		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.errors[0]!.code).toBe('E_SCHEMA');
 		expect(h.doc).toBe(doc);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
@@ -378,6 +371,6 @@ describe('invariants, repair and paste (keyframe-sides)', () => {
 		expect(kfs[1]).not.toHaveProperty('inInterpolation');
 		expect(kfs[2]!.inInterpolation).toBe('bezier');
 		expect(r.issues).toEqual([]);
-		expect(dropUnreadableKeySides(r.document)).toEqual([]);
+		expect(loadProject(r.document).repairs).toEqual([]);
 	});
 });

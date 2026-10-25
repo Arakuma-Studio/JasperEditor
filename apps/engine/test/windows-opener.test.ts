@@ -11,7 +11,7 @@ import { delimiter, join } from 'node:path';
 import fc from 'fast-check';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openerFor } from '../src/routes/gaps.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 /**
  * libuv `quote_cmd_arg` (src/win/process.c), the rule Node applies to every argument of a non-verbatim spawn:

@@ -200,7 +200,6 @@ export async function runSoundCheck(
 		 * plan's). Absent: the sequence's "Check for" (`checkForOf`); null: the PCM master.
 		 */
 		exportAudio?: SoundCheckExportAudio | null;
-		sleep?(ms: number): Promise<void>;
 	} = {},
 ): Promise<RunOutcome> {
 	const store = soundCheckStore(session);
@@ -256,7 +255,6 @@ export async function runSoundCheck(
 								}
 							: {},
 					),
-				...(opts.sleep ? { sleep: opts.sleep } : {}),
 			},
 		);
 		if (aborts.get(session) === ac) aborts.delete(session);
@@ -428,11 +426,8 @@ function markFixed(session: EditorSession, ids: readonly string[]) {
 	soundCheckStore(session).setState((s) => ({ fixed: [...new Set([...s.fixed, ...ids])] }));
 }
 
-/** Asks the user to confirm a fix that needs their judgement (the app's confirmation dialog by default). */
-export type ConfirmFix = (opts: { title: string; body: string; confirmLabel: string }) => Promise<boolean>;
-
 /** The confirmation of a fix that is not safe: what it will change, why it needs the user's judgement, one undo step. */
-export function fixConfirmation(
+function fixConfirmation(
 	issue: SoundCheckIssue,
 	seq: Sequence | undefined,
 ): { title: string; body: string; confirmLabel: string } {
@@ -452,14 +447,13 @@ export function fixConfirmation(
 }
 
 /**
- * Applies one finding's fix (the user's edit; one undo step). A fix that is not safe asks first (`confirm`, the app's
- * confirmation dialog by default) naming what it will change; declining applies nothing. Never rejects.
+ * Applies one finding's fix (the user's edit; one undo step). A fix that is not safe asks first in the app's
+ * confirmation dialog, naming what it will change; declining applies nothing. Never rejects.
  */
 export async function applyCheckFix(
 	session: EditorSession,
 	engine: CheckEngine,
 	issue: SoundCheckIssue,
-	opts: { confirm?: ConfirmFix } = {},
 ): Promise<FixOutcome & { declined?: boolean }> {
 	const store = soundCheckStore(session);
 	const result = store.getState().result;
@@ -492,7 +486,7 @@ export async function applyCheckFix(
 		store.setState({ fixing: issue.id });
 		let yes = false;
 		try {
-			yes = await (opts.confirm ?? confirmDialog)(fixConfirmation(judged, seqOf(session, result.sequenceId)));
+			yes = await confirmDialog(fixConfirmation(judged, seqOf(session, result.sequenceId)));
 		} catch {
 			yes = false;
 		} finally {
@@ -527,12 +521,11 @@ export async function applyCheckFix(
 /**
  * Fix all safe: every safe command fix and sound swap in ONE transaction ("Fix n Sound Check Findings"; when that is
  * refused — two fixes that cannot go together — each fix on its own, the refused ones reported), then the safe engine
- * jobs one after another, then the check again (`rerun`, default on). Never rejects.
+ * jobs one after another, then the check again when a fix was applied. Never rejects.
  */
 export async function fixAllSafe(
 	session: EditorSession,
 	engine: CheckEngine,
-	opts: { rerun?: boolean } = {},
 ): Promise<FixOutcome & { rerun: RunOutcome | null }> {
 	const store = soundCheckStore(session);
 	const result = store.getState().result;
@@ -652,10 +645,7 @@ export async function fixAllSafe(
 	];
 	const message = parts.join('. ');
 	announce(session, message);
-	const rerun =
-		opts.rerun === false || !applied.length
-			? null
-			: await runSoundCheck(session, engine, { sequenceId: seqId });
+	const rerun = applied.length ? await runSoundCheck(session, engine, { sequenceId: seqId }) : null;
 	return { ok: failed.length === 0 && applied.length > 0, message, applied, failed, skipped, rerun };
 }
 

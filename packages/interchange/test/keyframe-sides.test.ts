@@ -69,7 +69,12 @@ describe('keyframe-sides interchange', () => {
 		const back = importOtio(exportOtio(p, sid, {}, new Report()), {}, new Report());
 		const kfs = back.sequences[back.top[0]!]!.video[0]!.clips[0]!.opacity!.keyframes;
 		expect(kfs.map((k) => k.inInterpolation)).toEqual([undefined, 'bezier', 'linear', 'linear']);
-		expect(kfs.map((k) => k.easeIn)).toEqual(sided().map((k) => k.easeIn));
+		expect(kfs.map((k) => k.easeIn)).toEqual([
+			{ influence: 1 / 3, slope: 1 },
+			{ influence: 1 / 3, slope: 0 },
+			{ influence: 1 / 3, slope: 1 },
+			{ influence: 1 / 3, slope: 1 },
+		]);
 	});
 
 	it('FCP 7: an Ease In key is still written as a curve and the lost sides are reported', () => {

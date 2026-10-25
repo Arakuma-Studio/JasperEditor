@@ -1,59 +1,74 @@
-// spatial-points: a Transform effect whose Position travels a curved (Auto Bezier) path. The export (hybrid: the
-// GPU effect span is rendered by the compositions) must match the Program composition (Remotion stills, no codec
-// noise) and put the layer exactly where the shared evaluator puts it — arc length measured in layer-box pixels
-// (docs/wp-notes/spatial-points.md). REMOTION_E2E=1.
+// Effect points travel by arc length in layer pixels (docs/wp-notes/spatial-points.md). An independently known
+// quarter-circle midpoint detects a missing non-square layer metric even if preview and export share that defect.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EngineJob } from '@jasper/api';
-import {
-	type Animatable,
-	buildRenderSnapshot,
-	contentTimeAt,
-	type EffectInstance,
-	evaluate,
-	type Rational,
-	type Vec2,
-} from '@jasper/project';
+import { testResultsDir } from '@jasper/testkit/env';
+import { decodePng } from '@jasper/testkit/png';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type RunningEngine, startEngine } from '../src/index.ts';
-import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, ensureFixtures, JSON_H, tempAppdir, until } from './helpers.ts';
+import type { RunningEngine } from '../src/index.ts';
+import { tempAppdir } from './temp.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
-const PORT = Number(process.env.JASPER_E2E_PORT ?? 0);
+let engineApi: typeof import('../src/index.ts');
+let services: typeof import('../src/tools/services.ts');
+let helpers: typeof import('./helpers.ts');
+let project: typeof import('@jasper/project');
+if (enabled)
+	[engineApi, services, helpers, project] = await Promise.all([
+		import('../src/index.ts'),
+		import('../src/tools/services.ts'),
+		import('./helpers.ts'),
+		import('@jasper/project'),
+	]);
+
 const W = 1280;
 const H = 720;
+// Radius240 around(640,360). At half the pixel arc a symmetric quarter-circle Bézier is at45°.
+const SAMPLES = [
+	[0, [400, 360]],
+	[15, [470.294372515, 190.294372515]],
+	[30, [640, 120]],
+] as const;
 
-function report(line: string): void {
-	console.info(line);
-	appendFileSync(join(tmpdir(), 'spatial-points.txt'), `${new Date().toISOString()} ${line}\n`);
-}
-
-function decode(file: string, frame?: number): Buffer {
+function decodeFrames(file: string): Buffer[] {
 	const r = spawnSync(
 		'ffmpeg',
 		[
-			...['-v', 'error', '-i', file],
-			...(frame !== undefined ? ['-vf', `select=eq(n\\,${frame})`] : []),
-			...['-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'],
+			'-v',
+			'error',
+			'-i',
+			file,
+			'-vf',
+			`select=${SAMPLES.map(([f]) => `eq(n\\,${f})`).join('+')}`,
+			'-fps_mode',
+			'passthrough',
+			'-frames:v',
+			String(SAMPLES.length),
+			'-pix_fmt',
+			'rgb24',
+			'-f',
+			'rawvideo',
+			'pipe:1',
 		],
 		{ maxBuffer: 1 << 28 },
 	);
-	if (r.status !== 0) throw new Error(`decode failed: ${r.stderr}`);
-	return r.stdout;
+	expect(r.status, r.stderr.toString()).toBe(0);
+	const stride = W * H * 3;
+	expect(r.stdout.length).toBe(stride * SAMPLES.length);
+	return SAMPLES.map((_, i) => r.stdout.subarray(i * stride, (i + 1) * stride));
 }
 
-function within(a: Uint8Array, b: Uint8Array, tol: number): number {
-	expect(a.length).toBe(b.length);
+function within(rgb: Uint8Array, rgba: Uint8Array, tol: number): number {
+	expect(rgb.length * 4).toBe(rgba.length * 3);
 	let n = 0;
-	for (let i = 0; i < a.length; i++) if (Math.abs(a[i]! - b[i]!) <= tol) n++;
-	return n / a.length;
+	for (let i = 0; i < rgb.length; i++)
+		if (Math.abs(rgb[i]! - rgba[Math.floor(i / 3) * 4 + (i % 3)]!) <= tol) n++;
+	return n / rgb.length;
 }
 
-/** Centroid (px) of the bright orange square on black. */
-function centroid(rgb: Uint8Array): Vec2 {
+/** Centroid, in pixel centres, of the orange square on black. */
+function centroid(rgb: Uint8Array): [number, number] {
 	let sx = 0;
 	let sy = 0;
 	let n = 0;
@@ -69,16 +84,14 @@ function centroid(rgb: Uint8Array): Vec2 {
 	return n ? [sx / n, sy / n] : [Number.NaN, Number.NaN];
 }
 
-describe.runIf(enabled)('effect point motion paths: preview vs export (REMOTION_E2E=1)', () => {
+describe.runIf(enabled)('effect point motion paths: real preview/export positions (REMOTION_E2E=1)', () => {
 	let engine: RunningEngine;
-	const hostH = () => ({ host: `127.0.0.1:${engine.port}` });
-
+	let browser: import('../src/remotion/service.ts').SharedRenderBrowser;
 	beforeAll(async () => {
-		ensureFixtures();
-		engine = await startEngine({
+		engine = await engineApi.startEngine({
 			appdir: tempAppdir('jasper-spatial-points-'),
-			port: PORT,
-			// These tests drive the engine itself, not its authentication (server.test.ts covers it).
+			port: Number(process.env.JASPER_E2E_PORT ?? 0),
+			// Socket-rendering harness; authentication is owned by server/security suites.
 			insecure: true,
 			dev: true,
 			env: {
@@ -90,106 +103,97 @@ describe.runIf(enabled)('effect point motion paths: preview vs export (REMOTION_
 		});
 	}, 600_000);
 	afterAll(async () => {
-		await engine?.stop();
+		try {
+			await browser?.close();
+		} finally {
+			await engine?.stop();
+		}
 	});
 
-	const queue = () => coreServices(engine.app).queue;
-	const wait = async (id: string): Promise<EngineJob> => {
-		await until(
-			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-			3_600_000,
-			250,
-		);
-		return queue().get(id)!;
-	};
-
-	it('a Transform with a curved Position path: export = composition = the evaluator (layer-box arc length)', async () => {
-		const d = new DocBuilder('hd-720p-30');
-		const s = d.tx([
-			{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0.55, 0, 1], ref: '$s' },
-		]).refs.$s!;
-		const fxId = d.tx([
-			{ type: 'effect.add', target: { clipId: s }, effectId: 'jasper.transform', ref: '$fx' },
-		]).refs.$fx!;
-		const pos = ['effect', fxId, 'position'];
+	it('a curved Transform exports at independently known pixel-distance positions and matches the Program composition', async () => {
+		const d = new helpers.DocBuilder('hd-720p-30');
 		d.tx([
-			{ type: 'param.set', target: ['effect', fxId, 'scaleHeight'], value: 12 },
-			{ type: 'keyframe.add', target: pos, value: [0.15, 0.75], at: { sequenceFrame: 0 } },
-			{ type: 'keyframe.add', target: pos, value: [0.5, 0.2], at: { sequenceFrame: 30 } },
-			{ type: 'keyframe.add', target: pos, value: [0.85, 0.75], at: { sequenceFrame: 59 } },
-		]);
-		const settings = {
-			sequenceId: d.seqId,
-			range: { type: 'entire' },
-			container: 'mov',
-			engine: 'auto',
-			video: {
-				codec: 'prores',
-				proresProfile: '4444',
-				width: W,
-				height: H,
-				frameRate: { num: 30, den: 1 },
-				scaling: 'fit',
-				quality: { mode: 'crf', value: 10 },
-				encoderSpeed: 'fast',
+			{ type: 'clip.addSolid', at: 0, duration: 31, track: 'V1', color: [1, 0.55, 0, 1], ref: '$s' },
+			{ type: 'effect.add', target: { clipId: '$s' }, effectId: 'jasper.transform', ref: '$fx' },
+			{ type: 'param.set', target: ['effect', '$fx', 'scaleHeight'], value: 12 },
+			{
+				type: 'keyframe.add',
+				target: ['effect', '$fx', 'position'],
+				value: [0.3125, 0.5],
+				at: { sequenceFrame: 0 },
+				interpolation: 'linear',
+				spatial: { mode: 'bezier', inTangent: [0, 0], outTangent: [0, -0.1840949166102645] },
 			},
-		};
-		const plan = (
-			await engine.app.inject({
-				method: 'POST',
-				url: '/api/exports/plan',
-				headers: { ...JSON_H, ...hostH() },
-				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
-			})
-		).json() as { path: string; blockers: unknown[] };
-		expect(plan.blockers).toEqual([]);
+			{
+				type: 'keyframe.add',
+				target: ['effect', '$fx', 'position'],
+				value: [0.5, 1 / 6],
+				at: { sequenceFrame: 30 },
+				interpolation: 'linear',
+				spatial: { mode: 'bezier', inTangent: [-0.1035533905932738, 0], outTangent: [0, 0] },
+			},
+		]);
 		const r = await engine.app.inject({
 			method: 'POST',
 			url: '/api/exports',
-			headers: { ...JSON_H, ...hostH() },
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
-		});
-		expect(r.statusCode, r.body).toBeLessThan(300);
-		const done = await wait(r.json().id);
-		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
-		const out = (await coreServices(engine.app).exports.outputFile(done.id))!;
-
-		const svc = coreServices(engine.app);
-		const snap = buildRenderSnapshot(d.doc, d.seqId, { resolveFont: () => null, resolveMedia: () => null });
-		const seq = d.doc.sequences[d.seqId]!;
-		const clip = seq.clips[s]!;
-		const anim = (clip as unknown as { effects: EffectInstance[] }).effects[0]!.params
-			.position as Animatable<Vec2>;
-		const shares: number[] = [];
-		const errs: number[] = [];
-		const offs: number[] = [];
-		for (const f of [0, 8, 15, 22, 30, 38, 45, 52, 59]) {
-			const ref = join(tempAppdir('jasper-spatial-ref-'), 'ref.png');
-			await svc.remotion.renderStill({
-				inputProps: {
-					doc: snap,
-					options: { isPreview: false, useProxies: false, transparentBackground: false },
+			headers: { ...helpers.JSON_H, host: `127.0.0.1:${engine.port}` },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					sequenceId: d.seqId,
+					range: { type: 'entire' },
+					container: 'mov',
+					engine: 'auto',
+					video: {
+						codec: 'prores',
+						proresProfile: '4444',
+						width: W,
+						height: H,
+						frameRate: { num: 30, den: 1 },
+						scaling: 'fit',
+						quality: { mode: 'crf', value: 10 },
+						encoderSpeed: 'fast',
+					},
 				},
-				output: ref,
-				frame: f,
+			},
+		});
+		expect(r.statusCode, r.body).toBe(202);
+		const svc = services.coreServices(engine.app);
+		const done = await svc.queue.wait(r.json().id);
+		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+		expect(done.result).toMatchObject({ renderPath: 'hybrid' });
+		const out = (await svc.exports.outputFile(done.id))!;
+		const video = decodeFrames(out);
+		browser = await svc.remotion.openSharedBrowser();
+		const doc = project.buildRenderSnapshot(d.doc, d.seqId, {
+			resolveFont: () => null,
+			resolveMedia: () => null,
+		});
+		const dir = tempAppdir('jasper-spatial-ref-');
+		const artifacts = testResultsDir('spatial-points');
+		mkdirSync(artifacts, { recursive: true });
+		copyFileSync(out, join(artifacts, 'curve.mov'));
+		for (const [i, [frame, want]] of SAMPLES.entries()) {
+			const reference = join(dir, `${frame}.png`);
+			await svc.remotion.renderStill({
+				inputProps: { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } },
+				output: reference,
+				frame,
 				signal: new AbortController().signal,
+				browser,
 			});
-			const exported = decode(out, f);
-			shares.push(within(exported, decode(ref), 3));
-			// Where the evaluator (with the layer box metric) puts the square, and where a metric-free reading would.
-			const t = contentTimeAt(clip, f, seq.settings.frameRate as Rational);
-			const want = evaluate(anim, t, { metric: [W, H] });
-			const naive = evaluate(anim, t);
-			const got = centroid(exported);
-			errs.push(Math.hypot(got[0] - want[0] * W, got[1] - want[1] * H));
-			offs.push(Math.hypot(naive[0] * W - want[0] * W, naive[1] * H - want[1] * H));
+			copyFileSync(reference, join(artifacts, `${frame}.program.png`));
+			const image = decodePng(readFileSync(reference));
+			expect([image.width, image.height]).toEqual([W, H]);
+			const got = centroid(video[i]!);
+			const error = Math.hypot(got[0] - want[0], got[1] - want[1]);
+			const share = within(video[i]!, image.data, 3);
+			console.info(
+				`[spatial points] f${frame} centroid ${got.join(',')} error ${error.toFixed(3)}px; parity ${share.toFixed(6)}`,
+			);
+			expect(error, `frame ${frame} centroid ${got.join(',')}`).toBeLessThan(1);
+			expect(share, `frame ${frame}`).toBeGreaterThanOrEqual(0.99);
 		}
-		report(
-			`[spatial points] path ${plan.path}; export vs composition share within 3/255: ${shares.map((x) => x.toFixed(4)).join(' ')}; centroid error px: ${errs.map((x) => x.toFixed(2)).join(' ')}; metric-free offset px: ${offs.map((x) => x.toFixed(1)).join(' ')}`,
-		);
-		for (const x of shares) expect(x).toBeGreaterThanOrEqual(0.99);
-		for (const e of errs) expect(e).toBeLessThan(1);
-		// The metric matters on this path: a normalised-unit timing would be visibly elsewhere between the keys.
-		expect(Math.max(...offs)).toBeGreaterThan(5);
 	}, 1_800_000);
 });

@@ -158,7 +158,9 @@ describe('GPU transitions in the document and the render snapshot', () => {
 		expect(only(h).params.antiAliasing!.value).toBe('high');
 		expect(only(h).params.startPercent!.value).toBe(100);
 		const bad = fails(h, [{ type: 'transition.update', transitionId: t.id, params: { radius: 3 } }]);
-		expect(bad.errors[0]!.message).toMatch(/no parameter "radius".*borderWidth/);
+		expect(bad.errors[0]!.code).toBe('E_INVALID_PARAM');
+		expect(bad.errors[0]!.message).toContain('radius');
+		expect(bad.errors[0]!.message).toContain('borderWidth');
 		const builtin = fails(h, [
 			{ type: 'transition.update', transitionId: t.id, effectId: 'jasper.cross-dissolve', params: { x: 1 } },
 		]);

@@ -239,30 +239,8 @@ describe('GPU transitions through MCP (transition framework)', () => {
 		expect(up.transition.params).toEqual({ direction: 'eastToWest', borderWidth: 3 });
 	});
 
-	it('lists Smooth Slide with its controls and adds / updates it by short name', async () => {
+	it('adds and updates Smooth Slide by its public short name', async () => {
 		const { call } = await connect();
-		type Param = { name: string; type: string; default: unknown; options?: string[] };
-		type Type = { effectId: string; type: string; label: string; bin: string; params: Param[] };
-		const { types: all } = await call<{ count: number; types: Type[] }>('list_transition_types', {
-			search: 'dolly',
-		});
-		const slide = all.find((t) => t.effectId === 'jasper.smooth-slide')!;
-		expect(slide).toMatchObject({ label: 'Smooth Slide', type: 'smooth-slide', bin: 'Slide' });
-		const names = slide.params.map((p) => p.name);
-		for (const n of [
-			'direction',
-			'animation',
-			'dolly',
-			'reflection',
-			'blurriness',
-			'falloff',
-			'aspect',
-			'motionBlur',
-			'shutterAngle',
-			'edgeSmoothing',
-		])
-			expect(names).toContain(n);
-		expect(slide.params.find((p) => p.name === 'animation')!.options).toHaveLength(22);
 		await call('add_transition', {
 			projectId: 'prj_test',
 			type: 'smooth-slide',
@@ -368,7 +346,7 @@ describe('Premiere audio crossfades through MCP (Custom Fade, Custom Start)', ()
 	});
 
 	it('refuses a cutOffset on a fade and a bad fade shape as tool errors', async () => {
-		const { raw, call } = await connect();
+		const { raw } = await connect();
 		const fade = await raw('add_transition', {
 			projectId: 'prj_test',
 			type: 'custom-fade',
@@ -378,7 +356,7 @@ describe('Premiere audio crossfades through MCP (Custom Fade, Custom Start)', ()
 			cutOffset: 3,
 		});
 		expect(fade.r.isError).toBe(true);
-		expect(fade.text).toContain('E_INVALID_PARAM');
+		expect(JSON.parse(fade.text).error.code).toBe('E_INVALID_PARAM');
 		const bad = await raw('add_transition', {
 			projectId: 'prj_test',
 			type: 'custom-fade',
@@ -388,16 +366,6 @@ describe('Premiere audio crossfades through MCP (Custom Fade, Custom Start)', ()
 			params: { fadeShape: 'parabolic' },
 		});
 		expect(bad.r.isError).toBe(true);
-		const types = await call<{ types: { effectId: string; params: { name: string }[] }[] }>(
-			'list_transition_types',
-			{ medium: 'audio' },
-		);
-		expect(types.types.find((t) => t.effectId === 'jasper.custom-fade')?.params.map((p) => p.name)).toEqual([
-			'fadeShape',
-			'fadeValue',
-			'symmetry',
-			'outFadeShape',
-			'outFadeValue',
-		]);
+		expect(JSON.parse(bad.text).error.code).toBe('E_INVALID_PARAM');
 	});
 });

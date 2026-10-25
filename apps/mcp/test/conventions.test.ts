@@ -196,14 +196,14 @@ describe('strict arguments', () => {
 describe('progress and cancellation', () => {
 	afterEach(async () => client?.close());
 
-	function fakeExtra(token?: string) {
-		const sent: { progress: number; total?: number; message?: string; at: number }[] = [];
+	function fakeExtra(token?: string, latest?: () => number) {
+		const sent: { progress: number; total?: number; message?: string; at: number; expected?: number }[] = [];
 		const ac = new AbortController();
 		const extra = {
 			signal: ac.signal,
 			_meta: token ? { progressToken: token } : undefined,
 			sendNotification: async (n: { params: { progress: number; total?: number; message?: string } }) => {
-				sent.push({ ...n.params, at: Date.now() });
+				sent.push({ ...n.params, at: Date.now(), expected: latest?.() });
 			},
 		} as unknown as Extra;
 		return { extra, sent };
@@ -211,20 +211,27 @@ describe('progress and cancellation', () => {
 
 	it('throttles progress to one notification per 100 ms, increasing, latest value wins', async () => {
 		vi.useFakeTimers();
-		const { extra, sent } = fakeExtra('t1');
+		let latest = 0;
+		const { extra, sent } = fakeExtra('t1', () => latest);
 		const report = progressReporter(extra);
 		try {
 			for (let i = 1; i <= 50; i++) {
+				latest = i;
 				report(i, 100, `step ${i}`);
 				await vi.advanceTimersByTimeAsync(5);
 			}
 			report(40, 100, 'going back is ignored');
+			latest = 100;
 			report(100, 100, 'done');
 			const flushed = report.flush();
 			await vi.runAllTimersAsync();
 			await flushed;
-			expect(sent.map((s) => s.at - sent[0]!.at)).toEqual([0, 100, 200, 300]);
-			expect(sent.map((s) => s.progress)).toEqual([1, 20, 40, 100]);
+			expect(sent.length).toBeGreaterThan(1);
+			expect(sent.map((s) => s.progress)).toEqual(sent.map((s) => s.expected));
+			for (let i = 1; i < sent.length; i++) {
+				expect(sent[i]!.at - sent[i - 1]!.at).toBeGreaterThanOrEqual(100);
+				expect(sent[i]!.progress).toBeGreaterThan(sent[i - 1]!.progress);
+			}
 			expect(sent.at(-1)).toMatchObject({ progress: 100, message: 'done' });
 			expect(sent.some((s) => s.message === 'going back is ignored')).toBe(false);
 		} finally {
@@ -250,7 +257,7 @@ describe('progress and cancellation', () => {
 			signal: ac.signal,
 			onprogress: (p) => progress.push(p.progress),
 		});
-		await new Promise((r) => setTimeout(r, 400));
+		await expect.poll(() => progress.length, { timeout: 5000 }).toBeGreaterThan(0);
 		ac.abort('user stopped it');
 		await expect(call).rejects.toThrow();
 		await expect.poll(() => engine.cancelled, { timeout: 5000 }).toEqual(['job_2']);

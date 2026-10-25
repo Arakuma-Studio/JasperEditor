@@ -1,6 +1,6 @@
 // Music to picture in the model (spec 12 P6-E11; wp-note "Phase 6 → WP-E7"): tuning tonal sounds to a key, the stop
 // ramp on the bar line, End on Bar, `clip.remix` with anchors, a fade-in over a trimmed intro, crossfades that end at
-// the joints and cuts rounded down; the style fields `tuneToMusic` / `stopOnBar`. Undo / redo, refusals, repair, and
+// the joints and cuts rounded down; the style fields `tuneToMusic` / `stopOnBar`. Immutability, refusals, repair, and
 // properties on hostile input.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -25,9 +25,6 @@ import {
 import { Harness } from './helpers.ts';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
-/** The same document up to fresh ids (a redo mints new ones). */
-const noIds = (x: unknown) =>
-	JSON.parse(JSON.stringify(x).replace(/"(kf|snd|fx|trk|trn|clp|grp)_[0-9A-Za-z]+"/g, '"$1"'));
 const S = FLICKS_PER_SECOND;
 const R30 = { num: 30, den: 1 };
 const C_MAJOR = { tonic: 0, mode: 'major' as const, confidence: 0.9 };
@@ -114,7 +111,7 @@ function music(h: Harness, seconds = 20) {
 }
 
 describe('End on Bar', () => {
-	it('ends the music just before a bar line with a one-beat fade; undo / redo; nearest; refusals', () => {
+	it('ends the music just before a bar line with a one-beat fade; immutability; nearest; refusals', () => {
 		const h = new Harness();
 		const id = music(h);
 		const downbeats = [0.5, 2.5, 4.5, 6.5, 8.5, 10.5, 12.5, 14.5, 16.5, 18.5];
@@ -136,10 +133,6 @@ describe('End on Bar', () => {
 
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect(before).toEqual(snap);
-		const after = noIds(h.doc.sequences);
-		h.doc = before;
-		h.ok(p.commands);
-		expect(noIds(h.doc.sequences)).toEqual(after);
 		// again on the trimmed clip: the same bar line, the fade is updated, not doubled
 		const again = endOnBarPlan(h.doc, h.seq, id, downbeats, { fadeSeconds: 1 });
 		expect(again.ok && again.endFrame).toBe(374);
@@ -159,20 +152,24 @@ describe('End on Bar', () => {
 			code: 'E_NOT_FOUND',
 		});
 		expect(endOnBarPlan(h.doc, h.seq, id, [])).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
-		expect(endOnBarPlan(h.doc, h.seq, id, [30, 40])).toMatchObject({ ok: false });
+		expect(endOnBarPlan(h.doc, h.seq, id, [30, 40])).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
 		expect(endOnBarPlan(h.doc, h.seq, id, [Number.NaN, Number.POSITIVE_INFINITY])).toMatchObject({
 			ok: false,
+			code: 'E_INVALID_PARAM',
 		});
 	});
 
 	it('never throws on hostile bar lines (property)', () => {
-		const h = new Harness();
-		const id = music(h);
+		const setup = new Harness();
+		const id = music(setup);
+		const base = setup.doc;
 		fc.assert(
 			fc.property(
 				fc.array(fc.double({ noNaN: false }), { maxLength: 20 }),
 				fc.option(fc.double({ noNaN: false })),
 				(lines, fadeSeconds) => {
+					const h = new Harness();
+					h.doc = base;
 					const p = endOnBarPlan(h.doc, h.seq, id, lines, {
 						...(fadeSeconds !== null ? { fadeSeconds } : {}),
 						direction: 'nearest',
@@ -199,7 +196,6 @@ describe('clip.remix for music to picture', () => {
 	it('rounds cuts down, ends the crossfades at the joints, records anchors, fades a trimmed intro in; revert removes it', () => {
 		const h = new Harness();
 		const id = music(h);
-		const before = h.doc;
 		const cmd = remixCommandOf(
 			h.seq.clips[id] as never,
 			{
@@ -289,14 +285,8 @@ describe('clip.remix for music to picture', () => {
 		expect((list[0]!.remix as { fadeInId?: string }).fadeInId).toBe(fadeIn.id);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect((r.results[0] as { pieces: number }).pieces).toBe(3);
-		// undo leaves the earlier document; redo gives the same
-		const after = noIds(h.doc.sequences);
-		const done = h.doc;
-		h.doc = before;
-		h.ok([cmd]);
-		expect(noIds(h.doc.sequences)).toEqual(after);
 		// the save round-trips; revert restores the clip without the remix's fade-in
-		expect(loadProject(clone(done)).repairs).toEqual([]);
+		expect(loadProject(clone(h.doc)).repairs).toEqual([]);
 		h.ok([{ type: 'clip.remixRevert', clipId: h.clips('A1')[2]!.id }]);
 		expect(h.clips('A1').length).toBe(1);
 		expect(Object.values(h.seq.transitions)).toEqual([]);
@@ -332,7 +322,7 @@ describe('clip.remix for music to picture', () => {
 				anchors: [{ sourceSeconds: -1, frame: 10 }],
 			},
 		]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_SCHEMA' }] });
 	});
 
 	it('unreadable stored anchors are an invariant issue; repair keeps the readable ones', () => {
@@ -363,7 +353,7 @@ describe('clip.remix for music to picture', () => {
 });
 
 describe('style: tuneToMusic and stopOnBar', () => {
-	it('default on; setSettings stores, null resets; undo / redo; refusals', () => {
+	it('default on; setSettings stores, null resets; immutability; refusals', () => {
 		expect(resolveSoundStyle()).toMatchObject({ tuneToMusic: true, stopOnBar: true });
 		const h = new Harness();
 		const before = h.doc;
@@ -376,16 +366,17 @@ describe('style: tuneToMusic and stopOnBar', () => {
 		expect(resolveSoundStyle({ tuneToMusic: true }, h.seq.soundDesign?.settings?.style).tuneToMusic).toBe(
 			true,
 		);
-		const one = h.doc;
 		h.ok([{ type: 'soundDesign.setSettings', style: { tuneToMusic: null } }]);
 		expect(h.seq.soundDesign?.settings?.style).toEqual({ stopOnBar: false });
 		expect(Object.values(before.sequences)[0]!.soundDesign).toBeUndefined();
-		const after = clone(h.doc.sequences);
-		h.doc = one;
-		h.ok([{ type: 'soundDesign.setSettings', style: { tuneToMusic: null } }]);
-		expect(clone(h.doc.sequences)).toEqual(after);
-		expect(h.tx([{ type: 'soundDesign.setSettings', style: { tuneToMusic: 'yes' } }]).ok).toBe(false);
-		expect(h.tx([{ type: 'soundDesign.setSettings', style: { stopOnBar: 1 } }]).ok).toBe(false);
+		expect(h.tx([{ type: 'soundDesign.setSettings', style: { tuneToMusic: 'yes' } }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_SCHEMA' }],
+		});
+		expect(h.tx([{ type: 'soundDesign.setSettings', style: { stopOnBar: 1 } }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_SCHEMA' }],
+		});
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });

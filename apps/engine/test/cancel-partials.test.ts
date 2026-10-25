@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { copyNoOverwrite } from '../src/export/service.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
-import { tempAppdir, until } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 const queues: JobQueue[] = [];
 afterEach(async () => {
@@ -17,12 +17,6 @@ function makeQueue() {
 	const q = new JobQueue({ journalPath: null, tmpDir: join(dir, 'tmp'), logDir: null, totalSlots: 2 });
 	queues.push(q);
 	return { q, dir };
-}
-
-function bigFile(dir: string, mb: number): string {
-	const p = join(dir, 'render.mp4');
-	writeFileSync(p, Buffer.alloc(mb * 1024 * 1024, 7));
-	return p;
 }
 
 describe('copyNoOverwrite', () => {
@@ -42,7 +36,8 @@ describe('copyNoOverwrite', () => {
 
 	it('reports the claimed path before writing and removes it when the copy is aborted', async () => {
 		const dir = tempAppdir('jasper-copy-');
-		const src = bigFile(dir, 32);
+		const src = join(dir, 'render.mp4');
+		writeFileSync(src, 'video');
 		const ac = new AbortController();
 		const claimed: string[] = [];
 		const dest = join(dir, 'final.mp4');
@@ -54,7 +49,7 @@ describe('copyNoOverwrite', () => {
 					ac.abort();
 				},
 			}),
-		).rejects.toThrow();
+		).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' });
 		expect(claimed).toEqual([dest]);
 		expect(existsSync(dest)).toBe(false);
 	});
@@ -77,7 +72,7 @@ describe('cancelled export copy (job queue)', () => {
 		});
 		q.start();
 		jobId = q.submit({ kind: 'export', title: 'Export', priority: 'user', cpuSlots: 1 }).id;
-		await until(() => q.get(jobId)?.state === 'cancelled', 10_000);
+		expect((await q.wait(jobId)).state).toBe('cancelled');
 		expect(existsSync(dest)).toBe(false);
 	});
 });

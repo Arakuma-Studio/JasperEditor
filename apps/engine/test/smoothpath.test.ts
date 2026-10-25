@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runProc } from '../src/processing/proc/runner.ts';
 import type { SegmentPlan } from '../src/processing/proc/smoothpath/math.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
-import { fixture, ROOT } from './helpers.ts';
+import { fixture, ROOT } from './fixtures.ts';
 
 type SmoothPathStep = Extract<ProcessStep, { op: 'stabilize' }> & { method: 'smoothpath' };
 type SmoothPathInfo = {

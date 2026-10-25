@@ -368,6 +368,34 @@ export function socialCommentSegments(
 
 /** Width of every card in reference px (tokcomment's CSS px: its cards are at most 420 px wide). */
 export const SOCIAL_CARD_REF_WIDTH = 420;
+
+/**
+ * What the motion model (sound cues) needs of each card's drawing, in reference px: `bodyPx`, the comment's font size
+ * (a revealed word scales by its own width), and `likePx`, how far the like icon the card thumps after its like tick
+ * travels per unit of the thump's scale
+ * (the @jasper/motion cards: TikTok's `BODY_PX` and `LikeHeart` 20, Instagram's `HEART_PX`, X's `BODY_PX` and `ICON`,
+ * YouTube's `THUMB`; store
+ * reviews pulse their star row at a quarter of the thump (`starPulse`) about its centre, so its outer stars travel a
+ * quarter of half the row: five `Star`s and four gaps), and whether it fills (outline → filled). Store cards draw no
+ * fill: their stars fill with the tick itself. Read by the motion model, so the land follows what the card draws;
+ * checked against the rendered cards by `@jasper/motion` `test/mg-cue-timing.test.ts`.
+ */
+export const SOCIAL_MOTION_METRICS: Readonly<
+	Record<SocialVariant, { bodyPx: number; likePx: number; likeFills: boolean }>
+> = {
+	'tiktok-reply': { bodyPx: 29.5, likePx: 20, likeFills: true },
+	'tiktok-comment': { bodyPx: 14, likePx: 20, likeFills: true },
+	'instagram-post': { bodyPx: 14, likePx: 15.5, likeFills: true },
+	'instagram-reel-reply': { bodyPx: 15, likePx: 15.5, likeFills: true },
+	'youtube-comment': { bodyPx: 15, likePx: 17, likeFills: true },
+	'youtube-shorts-reply': { bodyPx: 17, likePx: 17, likeFills: true },
+	'x-post': { bodyPx: 16, likePx: 15, likeFills: true },
+	'play-store-review': { bodyPx: 14, likePx: (5 * 11.63 + 4 * 2.13) / 8, likeFills: false },
+	// the legacy web card's star row spans its content box (314 px card, 16 px padding): it pulses about that centre
+	'app-store-review': { bodyPx: 13, likePx: (314 - 2 * 16) / 8, likeFills: false },
+	'app-store-review-ios': { bodyPx: 15, likePx: (5 * 13 + 4 * 2) / 8, likeFills: false },
+};
+
 /** The card never takes more than this share of the design height (long comments shrink the whole card). */
 export const SOCIAL_CARD_MAX_HEIGHT = 0.88;
 

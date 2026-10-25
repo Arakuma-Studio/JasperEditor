@@ -1,6 +1,6 @@
 // Third-party Premiere transitions matched by MatchName (premiere-transitions.ts): Universe "Slide" lands on Smooth
 // Slide with its parameters converted, from FCP7 XML and from a decoded parameter list (the .prproj shape).
-import { checkInvariants, defaultRegistries, type Sequence, SMOOTH_SLIDE } from '@jasper/project';
+import { checkInvariants, defaultRegistries, type Sequence } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { importFcp7 } from '../src/fcp7.ts';
@@ -69,8 +69,8 @@ const param = (name: string, value: string, extra = '') =>
 
 describe('Premiere MatchName transitions', () => {
 	it('maps the Universe Slide MatchName to Smooth Slide (case-insensitive); others are not mapped', () => {
-		expect(premiereTransitionForMatchName(UNIVERSE_SLIDE_MATCH_NAME)).toBe(SMOOTH_SLIDE.id);
-		expect(premiereTransitionForMatchName('ae.universe_transitions_slide')).toBe(SMOOTH_SLIDE.id);
+		expect(premiereTransitionForMatchName(UNIVERSE_SLIDE_MATCH_NAME)).toBe('jasper.smooth-slide');
+		expect(premiereTransitionForMatchName('ae.universe_transitions_slide')).toBe('jasper.smooth-slide');
 		expect(premiereTransitionForMatchName('Slide')).toBeNull();
 		expect(premiereTransitionForMatchName(null)).toBeNull();
 	});
@@ -141,6 +141,25 @@ describe('Premiere MatchName transitions', () => {
 			fc.string({ maxLength: 6 }),
 			fc.constant(null),
 		);
+		// wp-note Smooth Slide §2: independently specified target domains.
+		const ranges: Record<string, [number, number]> = {
+			dolly: [0, 1.2],
+			blurriness: [0, 100],
+			falloff: [0, 1],
+			aspect: [0.01, 20],
+			shutterAngle: [90, 720],
+		};
+		const options: Record<string, readonly string[]> = {
+			direction: ['right', 'left', 'up', 'down'],
+			animation: [
+				'linear',
+				...['easeIn', 'easeOut', 'easeInOut'].flatMap((prefix) =>
+					['Sine', 'Quad', 'Cubic', 'Quart', 'Quint', 'Expo', 'Circ'].map((kind) => prefix + kind),
+				),
+			],
+			motionBlur: ['off', 'low', 'medium', 'high'],
+			edgeSmoothing: ['none', 'low', 'medium', 'high'],
+		};
 		const names = fc.constantFrom(...universeParams().map((p) => p.name), 'Blurriness', 'Unknown', '');
 		fc.assert(
 			fc.property(
@@ -164,16 +183,15 @@ describe('Premiere MatchName transitions', () => {
 						new Report(),
 					);
 					for (const [k, v] of Object.entries(p)) {
-						const ps = SMOOTH_SLIDE.params.find((x) => x.name === k)!;
-						expect(ps, k).toBeDefined();
-						if (ps.type === 'enum') expect(ps.options).toContain(v.value);
-						if (ps.type === 'number') {
+						if (k === 'reflection') expect(typeof v.value).toBe('boolean');
+						else if (options[k]) expect(options[k]).toContain(v.value);
+						else {
+							expect(ranges[k], k).toBeDefined();
 							expect(Number.isFinite(v.value)).toBe(true);
-							expect(v.value).toBeGreaterThanOrEqual(ps.range!.min!);
-							expect(v.value).toBeLessThanOrEqual(ps.range!.max!);
-							for (const kf of v.keyframes) expect(Number.isFinite(kf.time) && kf.time >= 0).toBe(true);
+							expect(v.value).toBeGreaterThanOrEqual(ranges[k]![0]);
+							expect(v.value).toBeLessThanOrEqual(ranges[k]![1]);
 						}
-						if (ps.type === 'boolean') expect(typeof v.value).toBe('boolean');
+						for (const kf of v.keyframes) expect(Number.isInteger(kf.time) && kf.time >= 0).toBe(true);
 					}
 				},
 			),
@@ -187,7 +205,7 @@ describe('Premiere MatchName transitions', () => {
 			${param('Reflection', 'TRUE')}${param('Motion Blur', '2')}${param('Motion Blur Shutter', '180')}${param('Input', '4294967293')}</effect>`;
 		const p = importFcp7(xml(universe), {}, report);
 		const t = Object.values(p.sequences)[0]!.video[0]!.transitions[0]!;
-		expect(t.effectId).toBe(SMOOTH_SLIDE.id);
+		expect(t.effectId).toBe('jasper.smooth-slide');
 		expect(t.from).toBeNull();
 		expect(t.params.direction!.value).toBe('up');
 		expect(t.params.animation!.value).toBe('easeInOutCubic');
@@ -209,7 +227,7 @@ describe('Premiere MatchName transitions', () => {
 		const seqId = (r.results[0] as { topSequenceIds: string[] }).topSequenceIds[0]!;
 		expect(checkInvariants(target.doc, { effects: defaultRegistries().effects })).toEqual([]);
 		const tr = Object.values((target.doc.sequences[seqId] as Sequence).transitions)[0]!;
-		expect(tr).toMatchObject({ effectId: SMOOTH_SLIDE.id, outgoingClipId: null, duration: 15 });
+		expect(tr).toMatchObject({ effectId: 'jasper.smooth-slide', outgoingClipId: null, duration: 15 });
 		expect(tr.params.direction!.value).toBe('up');
 		// Premiere's own Slide (no Universe MatchName) keeps its mapping.
 		const own = importFcp7(

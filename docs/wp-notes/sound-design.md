@@ -1071,14 +1071,14 @@ Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packa
    current are ignored; stopping one request (cancel, timeout) ends its worker and re-posts that worker's other
    requests to a new one (at most 3 posts each); visual analyses time out after `VISUAL_TIMEOUT_MS` = 120 s
    (`503 ANALYSIS_TIMEOUT`). Samples are copied to the worker instead of transferred (≤ 35 MB more, transiently).
-   Seam: `new SoundAnalyzer(url, log, {createWorker})`.
+   Worker lifecycle tests use the public worker URL with real protocol fixtures.
 6. **Cache growth.** After every committed index, `pruneSoundCache` deletes `cache/<fp>/` folders of fingerprints
    the index has neither as a sound nor as a file record, analysis/visual files of older versions in kept folders,
    and `synth/*-<seed>-v<n>.wav` renders the index does not list (older `SYNTH_VERSION`s included). Other files are
    left alone. (Cached analyses of a cancelled scan's files survive when the next successful scan still lists them.)
 7. **Library cap.** A running count replaces `Object.keys(sounds).length` per file; the cap applies while listing
    (`walkRoot({maxFiles})` stops a folder at the room left, `LIBRARY_FULL` reported) and room is reserved for every
-   synth item. Test seam: `IndexDeps.maxSounds`.
+   synth item. `sounds-index.test.ts` verifies the real limits with virtual filesystem/media I/O.
 8. **Credit changes.** A changed `author` or `attributionTemplate` (or `label` when the template uses `{folder}`) is
    `recredited` in the plan: it starts a rescan, and an agent doing it is asked (card "Change a sound folder’s credit
    line", naming the folder and the old → new value).
@@ -3115,9 +3115,10 @@ Review of the cue route, the MCP cue tools and model-string i18n. Each fix has a
 - **Arguments:** `set_sound_cues` refuses an inverted `window` (it was silently dropped), `storedCueId` ≤ 128;
   `find_sound_cues` refuses a range past `maxFrame` with the time hint (was the route's raw zod dump).
 - **i18n (model strings, the existing mechanism):** `@jasper/project` exports `SOUND_LABELS` (MCP builds its History
-  labels from them) and `SOUND_MESSAGES` (refusal templates; `test/sound-messages.test.ts` checks every refusal written
-  in the sound handlers and planners has one, except `peakAlignedStart`'s developer input checks). `model-strings.ts`
-  lists them plus "Agent"; `translateName` now also matches templated model names (whole text, or a part between
+  labels from them) and `SOUND_MESSAGES` (refusal templates). The mandatory lint i18n check validates extracted
+  sources, catalogue keys and placeholders; `apps/web/test/sound-i18n.test.tsx` owns runtime translation behavior.
+  `model-strings.ts` lists the templates plus "Agent"; `translateName` now also matches templated model names (whole
+  text, or a part between
   separators, so "Agent: Sound Cues (add 2, edit 1)" → "Agente: Señales de sonido (añadir 2, editar 1)"); the filled
   values (ids, titles, numbers) are kept. The web's own labels (Fill Cue, Add Layer, Swap Sound ×n, Suggest Cues (n),
   Fill Unfilled Cues (n), Add Sound) were already translated by `t()` / the build transform at commit.
@@ -5305,8 +5306,8 @@ Preview (lead, `packages/compositions`):
   (`audio-preview-mix-oracle.test.ts`, the graph with the anchor): **1.4·10⁻⁵** for both scenes; with the picture
   frame's time instead of the anchor (≤ one render quantum early in the harness) 2.6·10⁻² / 6.4·10⁻³, which is why the
   anchor matters. `audio-fx-slot-clock.test.ts`: a slot with frame-rate time messages equals the export's `EffectSlot`
-  to < 10⁻⁶ (without the clock > 10⁻³); `audio-automation.test.ts` (curve pieces within tolerance, corners on keys,
-  hostile values). The Phase 0 preview / transport e2e still pass (10 of 10, `e2e/sound-p0-preview.spec.ts`,
+  to < 10⁻⁶ (without the clock > 10⁻³). Automation and pan behavior are covered by the sample-level preview/export
+  comparisons in `audio-preview-mix-oracle.test.ts`. The Phase 0 preview / transport e2e still pass (10 of 10, `e2e/sound-p0-preview.spec.ts`,
   `sound-p0-transport.spec.ts`, load ≈ 45–55).
 
 Project model (`feat/sd-p4v-model`; regression tests in `packages/project/test/sound-p4v-mix.test.ts`, each failed
@@ -6925,7 +6926,7 @@ ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
   has `pixel:` cues; the analysis is cached for the route); Sound Check after analysis: a derived cue at the landing
   passes NO_PICTURE_EVENT, one at frame 100 (still) does not — and on a picture never analysed both are flagged;
   cancellation → `cancelled`; refusals 400 / 404 / RANGE_EMPTY / RANGE_TOO_LONG.
-- **Performance** (`SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts -t perf`):
+- **Performance** (historical benchmark at `8b4c8936`):
   one minute of 1080p30 footage (1 800 frames), native path: **46.8 s** (render 46.1 s, measure 0.52 s) at load 11–12 with
   2 slots, **41.0 s** (render 40.4 s, measure 0.42 s) at load 7–13 with half the slots (8). The render composites at the
   sequence's 1920×1080 before scaling to 128 px (the job log's filter graph) — that is the cost, not the measurement.
@@ -7513,7 +7514,7 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
 | 4 | The solver did not model SFX masking each other; per-event true-peak cap vs overlapping sum | fixed | spec 12 §2.4: a sound effect of a LOWER weight playing under an event is part of its bed (ambient → support → hero; peers and the layers of one cue do not mask each other, a hero does not mask its supports — constraint 3 keeps them under it on purpose), counted by its energy profile under the event's window; the solve repeats to a fixed point (≤ 10⁻⁴ dB, at most 32 more passes, `W_UNCONVERGED`); the summed true peak of overlapping measured sounds, moment by moment from their peak profiles, stays under the ceiling (`overlap-headroom`, "limited by the sounds overlapping it"); `maskedBy`, `sfxMaskingDb`, `overlapTruePeakDb` in the solver result, the plan / rebalance reports and Sound Check (`evaluateSfxGains`) | `packages/audio-fx/test/masking-overlap.test.ts` (hand-computed cases, a brute-force oracle of the masked bed, properties: determinism, summed ceiling at every moment, convergence), `apps/engine/test/sound-design-overlap.test.ts` (real mixer: two overlapping heroes over music + rain; BS.1770-4 true peak of the SFX sum under −1 dBTP; each hero clears bed + rain by its reported lift) — before: two heroes at −1 dBTP each summed over the ceiling | see Verified |
 | 5 | Rebalance / delivery race: an edit ms before the job's transaction could be fast-forwarded | fixed | `soundDesign.expectMix {mixHash, delivery}` (changes nothing; refuses with `E_REVISION_MISMATCH` when the mix changed) leads the jobs' transactions; the jobs fail with `CONFLICT` (retryable) and apply nothing; documented in MCP `rebalance_sfx` / `apply_delivery` and the SOUND guide | `packages/project/test/sound-expect-mix.test.ts` (refusals, undo, a property over JSON copies), `apps/engine/test/sound-design-rebalance.test.ts` / `sound-design-delivery.test.ts` (an edit injected between the last check and the transact: CONFLICT, nothing applied) — before: the edit was fast-forwarded over | — |
 | 6 | `mergeDips` property failed once, seed lost | fixed (seed capture repo-wide) + 8 bugs found and fixed | `packages/testkit/src/fast-check-setup.ts` is a setup file of every vitest project: each test gets its own fast-check seed (`FC_SEED` pins it, `FC_PATH` replays a path, `FC_NUM_RUNS` scales runs); a failure prints seed, path and the replay command and writes them to `test-results/fast-check-failures/`. A targeted hunt (`packages/project/test/sound-mix-dips-hunt.test.ts`: keys on one coarse grid with the dip edges, identical / overlapping / adjacent / touching / zero-length dips and fades, −0 and subnormal depths, levels at the clamp, steep Béziers) found and pinned: a 0 dB dip written as a dip; touching windows spiking to a key; a steep Bézier rebuilt 0.087 dB off; a window edge between two flicks; an edge key holding the dip instead of the curve; an edge rounding onto a hold step; a Bézier over the clamp cut at a window edge; (200 000-run hunt) a window's edge key taking a fade's value from half a flick inside | `packages/testkit/test/fast-check-setup.test.ts`, the hunt's counterexample tests (each failed before its fix) | see Verified (hunt runs) |
-| 7 | Plan job did ≈ 69 solo renders on the engine main thread | fixed | `apps/engine/src/sound-design/measure-{core,pool,worker}.ts`: solo / bed renders and their band analysis on worker threads (≤ 2, started on first use, stopped after 30 s idle; a crash → `MEASURE_FAILED` retryable, a timeout → `MEASURE_TIMEOUT`, cancel at once; no bundle / vitest → in-thread, same code); the engine build bundles `sd-measure-worker.mjs`, the desktop package ships it | `apps/engine/test/sound-design-measure-worker.test.ts` (bit-identical results worker vs thread; the pool's lifecycle with fake workers), `sound-design-measure-crash.test.ts` (a crashing worker fails the job, never hangs it) | see Verified (plan bench) |
+| 7 | Plan job did ≈ 69 solo renders on the engine main thread | fixed | `apps/engine/src/sound-design/measure-{core,pool,worker}.ts`: solo / bed renders and their band analysis on worker threads (≤ 2, started on first use, stopped after 30 s idle; a crash → `MEASURE_FAILED` retryable, a timeout → `MEASURE_TIMEOUT`, cancel at once; raw decoder failures propagate `TOOL_FAILED` / `BINARY_MISSING` rather than successful silence; no bundle / vitest → in-thread, same code); the engine build bundles `sd-measure-worker.mjs`, the desktop package ships it | `apps/engine/test/sound-design-measure-worker.test.ts` (bit-identical results worker vs thread; real Worker URL faults, receipt barriers and controlled default deadlines; actual decoder failure returns its typed error and the next render succeeds), `sound-design-measure-crash.test.ts` (a crashing worker fails the job, never hangs it) | see Verified (plan bench) |
 | 8 | Sound Check: joint safe fixes, TP headroom with normalisation off, mono Mix, kept report on sequence delete | fixed | `planSoundCheckFixes` (`packages/project/src/sound/check-fixes.ts`): the candidates applied in order on a dry-run document and re-validated after each with the report's level model (`levelGuard`: lift, peak over the bed and true peak per sound, linear in its gain — and, merged here, the overlapping sound effects in its bed, `masking` terms from `sfxOverlapTerms`, so a fix that raises, lowers, demotes or promotes ANOTHER sound moves this one's lift exactly as the solver would); used by the engine's `safe` flags, the editor's Fix all safe and Fix, MCP `safeFixes`; with normalisation off the bound on the mix's true peak where a raised sound plays (triangle inequality on the oversampled signal); a mono Mix is rendered and measured in mono; a kept report is deleted with its sequence once no editing session could undo the delete, and with its project | `apps/engine/test/sound-check-joint.test.ts`, `sound-check-kept-lifecycle.test.ts`, `packages/project/test/sound-check-fixes.test.ts` (incl. the cross-masking cases added in the merge), `apps/web/test/sound-check-joint-fix.test.ts`, `apps/mcp/test/sound-check-verdicts.test.ts` | — |
 | 9 | `clip.applySceneEdits` 1 flick vs 1 ms in cue mapping | fixed | one rule (`shotIndexAt`, `SHOT_TIME_EPS` = the renderers' `FRAME_TIME_EPS` 2 µs) for Scene Edit Detection and the scene cue source: a shot change is shown from the first frame whose media time reaches it within the renderers' own tolerance | `packages/project/test/scene-edit-frames.test.ts` (23.976, 29.97 DF / NDF, 30; speeds 100 / 50 / 150 / 37 / 3 %, reverse, a 40 % time remap; timestamps rounded to 1 µs both ways) — before: off-by-one cuts with 1 flick when a timestamp rounded up, and with 1 ms in slow motion | — |
 | 10 | Beat tracker half-tempo lock; downbeats assume 4/4 | fixed | tempo octave from the attacks (the autocorrelation of a non-integer period split over two lags lost to twice the period); 3/4 detected from the accent periodicity; `timeSignature` ('auto' \| 2…12) on `POST /api/audio/beats`, the cue route, the plan and MCP (`find_sound_cues`, `plan_sound_design`), cached per metre | `packages/audio-fx/test/beats-tempo.test.ts` (clicks 60–200 BPM, generated kick / snare / hat patterns straight and swung, a waltz: never half or double, every beat on its attack), `apps/engine/test/audio-beats-metre.test.ts` — before: 150 BPM read as 75 | — |
@@ -7591,14 +7592,14 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
   placement reads were the larger part. Longest task 18–23 ms → 65–79 ms: the one end-of-preview invariant check
   (84 ms measured alone), item 14's price; p95 15–17 ms both. In the session test: batched 180–205 ms CPU vs 285–311 ms
   one transaction per item (0.63–0.66, process CPU); on the main thread's CPU 142 vs 222 ms (0.64), the final budget.
-- **Item 7, plan job** — `SD_PLAN_BENCH=thread|worker SD_PLAN_BENCH_OUT=… pnpm vitest run
-  apps/engine/test/sound-design-plan-bench.test.ts` (the plan-mix fixture, the first plan with every style option, cold
-  caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s, event-loop
+- **Item 7, plan job** — historical benchmark at `8b4c8936` (the plan-mix fixture, the first plan with every style
+  option, cold caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s,
+  event-loop
   delay p90 125 ms, p99 418 / 390 ms, mean 47 / 44 ms, levels stage 9.3 / 8.4 s** → workers **wall 12.3 / 12.0 s, p90
   16 ms, p99 98 / 122 ms, mean 16 ms, levels 6.3 / 6.2 s**; the same placements and levels. The maximum delay stays
   ≈ 1 s in both modes (935–1 141 ms → 979–1 013 ms): a stall outside the measurements (not identified in this pass).
-- **Item 12, motion analysis** — `SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts
-  -t perf` (one minute of generated 1080p30 footage, untouched), before / after alternating, load 1–4: **31.7 s and
+- **Item 12, motion analysis** — historical benchmark at `8b4c8936` (one minute of generated 1080p30 footage, untouched),
+  before / after alternating, load 1–4: **31.7 s and
   24.9 s (render 31.1 / 24.1 s, native path) → 3.6 s and 3.8 s (decode 3.1 / 3.2 s, source path)**; the same 2 events.
   The equivalence test: the 4 s box at 1080p, source decode 553–695 ms vs render 2 405–3 240 ms, every frame on the
   same side of MOVE_ON / MOVE_OFF, per-frame speeds within 10.3 % (the rendered reference's own H.264 noise), the same
@@ -8454,7 +8455,8 @@ strings, es.json complete); README (356 tools, the HTTP list), security review (
   **6 dB under the music:** ten hits whose loudest momentary sits 6 dB under the music's (gain −15.3 dB; music −26.2 LUFS,
   hit −16.8 LUFS max momentary, measured with `LoudnessMeter`) → **10/10 heard** (8 by the onset curve, 2 at their own
   onset, `guided`), each attributed to its clip.
-- **Time for a 10-minute sequence** (`JASPER_LISTEN_BENCH=1`, 60 × 10 s of pink-noise music and 196 clicks, 3 lanes):
+- **Time for a 10-minute sequence** (historical benchmark at `8b4c8936`, 60 × 10 s of pink-noise music and 196 clicks,
+  3 lanes):
   **102.2 s** (renders and detection 101.5 s, attribution and transcript 0.5 s; 2 775 events; 199/199 placed heard).
   Before the stem curves came from the lanes: 117.5 s. A `ListenMeter` alone costs 1.74 s per minute of stereo noise
   (0.39 s of silence; `CurveMeter` 0.18 s) — measured with a scratch script, not committed; the mixers are the rest.
@@ -10013,9 +10015,6 @@ a copy of the integration tip this branch started from (1fcdbcf6), built and run
   earlier anchor (picture ahead of the audio clock) is taken; (c) a new strip no longer rebuilds every strip
   (`rebuild` keeps strips of the same shape with their inserts, delay lines and routes: adding a track while playing lost
   up to the read-ahead of audio in flight).
-- `globalThis.__jasperTransportLog` (an array set by a test) receives the graph's transport events (anchors as kept,
-  refusals, catch-ups, primed starts, restarts, the buffering gate, context states): the e2e measures every click
-  against the anchor from it.
 
 #### The rare transport cases (item 5)
 
@@ -10044,7 +10043,6 @@ Failing first: each row's "before" is the same test against base (or, for unit t
 | Item | Test | Before | After |
 |---|---|---|---|
 | 1 pan | `audio-preview-mix-oracle.test.ts` "pan sweeps" (strip pan of a mono track, clip pan, the 5.1 puck of a track and of a send, a 5.1 submix's pan; bezier and linear keys, whooshes) | max \|preview − export\| 0.34 | 1.8 · 10⁻⁵ (three runs); the Phase 4 scenes stay 1.4 · 10⁻⁵ |
-| 1 pan | `audio-automation.test.ts` "pieces end on sample frames…"; `channels.test.ts` `pan51MatrixInto` | — | pass |
 | 6 rebuild | `audio-preview-transport.test.ts` "a track added during playback" | a 748-sample gap (both limiters' audio in flight lost) | no gap, = the export (< 10⁻⁴) |
 | 6 guard | `audio-anchor-guard.test.ts` (4: a late commit refused; a picture behind for real caught up by 6 frames after 0.3 s, the audio unmoved; refused only while frames come late; an earlier anchor taken) | — (base dispatches every re-anchor) | pass |
 | 6 edits while playing | `sound-p6-transport` "a big edit…": 3 transactions of four `track.add` 0.7 / 1.5 / 2.3 s into a play, every click 0.25 s apart ± 2 samples | 6 of 6 plays broken (jumps of 9 000–22 900 samples, lost clicks) | 6 of 6 clean, no re-anchor asked for; 30 of 30 in the campaign |
@@ -10500,8 +10498,8 @@ export).
 #### 2. Codec-aware Sound Check
 
 - **Model** (`packages/project/src/sound/check.ts`): `SoundCheckAudio {codec: aac | opus | pcm, bitrateKbps?,
-  sampleRate?}`, `readSoundCheckAudio` (PCM without a rate = the master → null), `soundCheckAudioKey`,
-  `soundCheckAudioLabel`; `SoundCheckSummary.exportAudio` (optional; `soundDesign.setCheck` validates it);
+  sampleRate?}`, `readSoundCheckAudio` (PCM without a rate = the master → null), `soundCheckAudioKey`;
+  `SoundCheckSummary.exportAudio` (optional; `soundDesign.setCheck` validates it);
   `soundCheckInputsHash(…, exportAudio)` includes it only when present (older hashes stay valid);
   `soundCheckStatus(doc, seq, {checkFor})` adds the stale reason `codec` when the summary was checked for another
   encoding. `DELIVERY_PRESETS[…].typicalAudio`: Web AAC 256 kb/s (the editor's export default), Podcast AAC 128 kb/s
@@ -10594,8 +10592,7 @@ The guarantee is unchanged: the delivered stream is an encode whose decoded true
   choosing Opus 160 kb/s: "Stale: the export encoding to check for changed since this check"
   (`03-sound-check-stale-opus.png`). `e2e/sound-design.spec.ts` (the user walkthrough with its measured AAC export)
   passes on this branch: the file −14.0 LUFS / −1.4 dBTP by ffmpeg.
-- **Export time** (`JASPER_DELIVERY_BENCH=1 pnpm vitest run apps/engine/test/delivery-speed.bench.test.ts
-  --maxWorkers=1`: 10 s mixes exported with the native path at 320×180, H.264 + AAC / VP9 + Opus / ProRes + PCM,
+- **Export time** (historical reporting benchmark, retained in commit `25f0934a`: 10 s mixes exported with the native path at 320×180, H.264 + AAC / VP9 + Opus / ProRes + PCM,
   normalised to Web −14 LUFS / −1 dBTP; each run a mix of its own so nothing is reused, median of 3; `warm` = the same
   mix exported a second time). The same bench file run on three detached checkouts on the build server one after the
   other: **pre-fix** = ea77ae2c (one-pass normalisation, before the lossy fix), **before** = 6cdc304d (the lossy fix),
@@ -10618,7 +10615,7 @@ The guarantee is unchanged: the delivered stream is an encode whose decoded true
 | warm typical, AAC 256 (same mix again) | 2.14 s | 4.18 s | **1.78 s** | 0.83× |
 | warm loud, AAC 256 | 2.30 s | 7.33 s | **2.22 s** | 0.97× |
 
-  The typical mix (`typicalMix` in `apps/engine/test/loud-fixture.ts`: a voice-like part, a bed, two hits) meets the
+  The historical typical mix (`typicalMix` in commit `25f0934a`: a voice-like part, a bed, two hits) meets the
   ≤ 1.5× target on every codec; the loud stress fixture does on AAC 256 and Opus, not on AAC 128 kb/s (two encode
   rounds: its first round's three ceilings all overshoot after the encoder; the second meets at −4 dBTP). A typical
   delivery's job log: `audio: mixed (240 ms) and delivered in 2163 ms — 5 passes (953 ms), 3 encodes (2000 ms summed),
@@ -10783,3 +10780,76 @@ the Final verification A scripts (`gate.sh`, `final.sh`):
   44.5 min; `e2e/mg-fallback-check.mjs` PASS.
 - Gate at 7c2150f5 (the fix and this note): lint 52 s, typecheck 350 s, **7 366 passed, 241 skipped, 0 failed** (771
   files, 22.0 min), build 102 s, `notices --check`, `i18n:check`, `e2e:typecheck` ok.
+
+
+## Sound Check finding actions: selection must follow pointer activation
+
+Contract: [Spec12’s Sound Check panel](../specs/12-sound-design.md) exposes a Fix action for each finding and confirms a
+fix that needs the user’s judgement before applying it. The existing real-browser workflow `e2e/sound-check.spec.ts`
+owns physical pointer activation, actual confirmation, one undo entry and rechecked output;
+`apps/web/test/sound-check-panel.test.tsx` separately owns confirmation contents and cancellation without a mutation.
+A direct `fireEvent.click` cannot exercise movement between a real pointer press and release.
+
+At source checkpoint `76af3b2d`, the strict browser run reached the silence finding’s enabled Fix… button but never
+opened its confirmation. The saved trace’s `call@298` hit-tests at x402.23 with y709.5/872.5/1034.5, including repeated
+interception by other finding text and sticky group headings. Its final physical click begins at579974.722ms with
+the button at y1022.5 and the scroll container at215. Immediately after the click returns, the silence finding is
+selected and the container is at258: selection moved the content43px during the gesture. `Findings.onPointerDown`
+changes the cursor; its cursor effect calls `scrollIntoView`, so the button moves before release and its click handler
+can be missed. `applyCheckFix` still requires confirmation for this unsafe finding, and the document/finding remained
+unchanged. The failure is meaningful product behavior, rather than a missing wait for job completion.
+
+Actual-app reproduction used a copy of the saved failed project, Chrome at1800×1050, normal port-scoped Playwright
+harness authentication, Node20.19.0/pnpm10.34.5, required oracles and the verified LGPL7.1 FFmpeg binaries with
+`JASPER_FFMPEG_LGPL_ONLY=1`. The baseline source/current copied build failed the same15s dialog expectation after one
+physical Fix click (36.26s process wall). The proposed minimal `onClick`-only selection still failed (26.32s): when no
+finding was current, the nested button’s native focus bubbled to the list initializer, selected its first
+OUT_OF_SYNC finding and scrolled from602 to160 before mouseup. This second measured failure justified restricting
+initial selection to direct focus on the list (`event.target === event.currentTarget`). Direct list focus and its
+keyboard commands retain their behavior.
+
+Final change: select the pointer-activated finding on `click`, after its nested button receives activation, and ignore
+nested control focus when initializing the list’s keyboard cursor. Keep current-row scrolling and the existing
+confirmation/cancellation/editing logic. The identical actual-app probe then passed in both the floating panel and the
+original Sound Design workspace layout (2/2,15.7s runner/17.26s process wall). Each trace contains exactly one physical
+Fix input; each showed the unsafe-change confirmation, and Cancel left the sequence document unchanged. Confirmation
+screenshots were visually inspected. The earlier hover-only Acknowledge action may explain hit-test oscillation, but
+neither final layout needed another actionability attempt; no speculative hover/layout change was made.
+
+Every built component variant was checked against its generated source map. The final
+`SoundCheckPanel-Ddlz54AL.js.map` contains the exact changed component, SHA-256
+`f62028684cd089502f8b1da90488f934818ae5d087f3304dceefa390133e6658`. Engine/MCP, fixtures and LGPL artifacts were copied only
+while their production inputs matched root76af; each changed web variant was built from the isolated worktree’s own
+workspace-linked source. No generated output was edited or committed.
+
+The existing permanent browser scenario and all confirmation assertions remain unchanged. A temporary diagnostic
+probe reused the saved project through the normal authenticated harness and public editor/agent UI interfaces, then
+was removed; its source, JSON, traces and screenshots remain under `/tmp/jasper-test-cleanup/sound-check-pointer/`.
+That directory also preserves the original full-run trace/error/screenshot, sanitized `baseline-click-summary.json`,
+`{baseline,click,final}-provenance.json`, `{baseline,click,final}-repro.{log,json,time}` and build logs/timings. No retry,
+synthetic click, sleep, geometry assertion, private event-shape test, production hook or confirmation shortcut was
+added. Root integrated the patch without rewriting history; the completed full gate and unchanged workflow are recorded below.
+
+Targeted checks passed: all18existing panel tests (36.82s process wall), actual web TypeScript (41.21s), the changed component’s Biome check and `git diff --check`. The final own-source web build passed (55.42s); the only build warnings were existing bundle-size/annotation notices. These are verification timings, not a claimed suite/CI speedup. The completed source-current integrated rerun is recorded below.
+
+Validation commands (each browser variant’s complete environment, JSON and logs are preserved in the evidence directory; baseline used the runner’s existing retain-on-failure trace default):
+
+```sh
+pnpm install --frozen-lockfile --offline --ignore-scripts
+NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web build
+# Browser variants: Node preload removed; pinned JASPER_FFMPEG/JASPER_FFPROBE point to this tree’s verified vendor binaries.
+# Each variant used its own copied appdir and port49650/49651/49652; E2E_SKIP_BUILD=1 followed verified source-current builds.
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome JASPER_FFMPEG_LGPL_ONLY=1 pnpm e2e e2e/sound-check-pointer-probe.spec.ts --workers=1 --reporter=line,json --trace=on
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/web/test/sound-check-panel.test.tsx --maxWorkers=2
+NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web typecheck
+pnpm exec biome check apps/web/src/panels/soundCheck/SoundCheckPanel.tsx
+git diff --check
+```
+
+
+Integrated validation at `797e53fc` passed the unchanged complete Sound Check
+workflow (55.701 s), the full 53-spec browser suite (113 passed, two documented
+skips), and a separate 14/14 transport repeat with no retries. Root lint, actual
+TypeScript, the complete required default suite and fresh production/Remotion
+builds also passed. See the [final test-cleanup report](../test-cleanup/README.md#validation-and-limitations)
+for commands, retained failure evidence, timings and unavailable native/model coverage.

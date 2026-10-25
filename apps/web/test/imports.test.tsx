@@ -2,7 +2,7 @@ import type { LayeredExtractResult, LottieExportResult, RegisteredMedia } from '
 import { EngineClient } from '@jasper/engine-client';
 import { DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
@@ -297,18 +297,19 @@ describe('interpreted pictures without events', () => {
 					? { body: { mediaKey: 'mk_EXR0000001', status: 'online', derivatives: {} } }
 					: undefined,
 		);
+		vi.useFakeTimers();
 		const sync = createMediaRuntimeSync(session, engine.client(), null);
-		const reg = registered('still.exr', { kind: 'image', key: 'mk_EXR0000001' });
-		(reg.probe.streams[0] as { browserDecodable: boolean; codec: string }).browserDecodable = false;
-		const id = addMedia(session, reg);
-		await waitFor(
-			() => expect(session.getState().media[id]?.variant).toMatchObject({ key: 'display:', state: 'ready' }),
-			{
-				timeout: 5000,
-			},
-		);
-		expect(session.getState().media[id]!.posterUrl).toContain('/variant/display');
-		sync.dispose();
+		try {
+			const reg = registered('still.exr', { kind: 'image', key: 'mk_EXR0000001' });
+			(reg.probe.streams[0] as { browserDecodable: boolean; codec: string }).browserDecodable = false;
+			const id = addMedia(session, reg);
+			await vi.runAllTimersAsync();
+			expect(session.getState().media[id]?.variant).toMatchObject({ key: 'display:', state: 'ready' });
+			expect(session.getState().media[id]!.posterUrl).toContain('/variant/display');
+		} finally {
+			sync.dispose();
+			vi.useRealTimers();
+		}
 	});
 });
 

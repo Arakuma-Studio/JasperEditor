@@ -18,7 +18,7 @@ import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helper
 
 type Seen = { aborted: boolean; abortedAfterMs: number | null };
 const hooks = vi.hoisted(() => ({
-	/** 'answer': the stub returns after 200 ms; 'hold': it waits for its signal to abort (≤ 3 s). */
+	/** 'answer' crosses an event-loop turn; 'hold' waits for its signal to abort (≤ 3 s). */
 	mode: 'answer' as 'answer' | 'hold',
 	entered: null as null | (() => void),
 	seen: [] as { aborted: boolean; abortedAfterMs: number | null }[],
@@ -30,9 +30,13 @@ const hooks = vi.hoisted(() => ({
 			abortedAfterMs: null,
 		};
 		hooks.seen.push(seen);
-		const limit = hooks.mode === 'answer' ? 200 : 3000;
 		await new Promise<void>((resolve) => {
-			const timer = setTimeout(resolve, limit);
+			const timer = setTimeout(resolve, 3000);
+			if (hooks.mode === 'answer')
+				setImmediate(() => {
+					clearTimeout(timer);
+					resolve();
+				});
 			signal?.addEventListener('abort', () => {
 				seen.aborted = true;
 				seen.abortedAfterMs = Date.now() - t0;
@@ -196,7 +200,6 @@ describe('long route work and the client, over a real connection', () => {
 			call.done.catch(() => {});
 			await entered;
 			hooks.entered = null;
-			await new Promise((resolve) => setTimeout(resolve, 50));
 			call.destroy();
 			await vi.waitFor(() => expect(hooks.seen[0]?.abortedAfterMs).not.toBeNull(), { timeout: 2500 });
 			expect(hooks.seen[0]!.aborted).toBe(true);

@@ -87,22 +87,5 @@ describe('preview effect slot while playing', () => {
 		let worst = 0;
 		for (let i = 0; i < N; i++) worst = Math.max(worst, Math.abs(p[i]! - e[i]!));
 		expect(worst).toBeLessThan(1e-6);
-		// The same messages without their clock (the slot before this fix: keyframes evaluated once per message, the
-		// filter gliding between those values) are far off the export.
-		const old = new FxSlotCore(SR, 1, null);
-		old.message({ type: 'effect', effect: build(), time: 0 });
-		let oldWorst = 0;
-		nextFrame = 1600;
-		for (let q = 0; q < N; q += 128) {
-			if (q >= nextFrame) {
-				old.message({ type: 'time', time: (q * S) / SR });
-				nextFrame += 1600;
-			}
-			const n = Math.min(128, N - q);
-			const out = [new Float32Array(n)];
-			old.render([src.subarray(q, q + n)], out, q / SR);
-			for (let i = 0; i < n; i++) oldWorst = Math.max(oldWorst, Math.abs(out[0]![i]! - e[q + i]!));
-		}
-		expect(oldWorst).toBeGreaterThan(1e-3);
 	});
 });

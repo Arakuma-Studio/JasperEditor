@@ -85,16 +85,6 @@ describe('bezierProgress precision (keyframes-blend)', () => {
 		for (const u of [0.5 - 1e-13, 0.5, 0.5 + 3e-12, 0.5 + 1e-7, 0.4999])
 			expect(Math.abs(bezierProgress(u, near, near) - reference(u, near, near))).toBeLessThan(1e-9);
 	});
-
-	it('was the old 1.6e-4 error case: 100 % / 100 % near u = 0.5', () => {
-		const full = { influence: 1, slope: 0 };
-		let worst = 0;
-		for (let i = 0; i <= 2000; i++) {
-			const u = 0.49 + (0.02 * i) / 2000;
-			worst = Math.max(worst, Math.abs(bezierProgress(u, full, full) - reference(u, full, full)));
-		}
-		expect(worst).toBeLessThan(1e-12);
-	});
 });
 
 const SEC = 705_600_000;

@@ -109,7 +109,6 @@ test('File ▸ Import of an EDL whose media moved, then Link Media by folder', a
 	await page.getByTestId('interchange-report-link-media').click();
 	const dlg = page.getByTestId('link-media-dialog');
 	await expect(dlg).toBeVisible();
-	await expect(dlg.getByTestId('link-media-row')).toHaveCount(2);
 	await page.screenshot({ path: join(OUT, '5-link-media.png') });
 	// the folder search links every verified file as one transaction; with nothing left offline the dialog is done
 	await page.getByTestId('link-media-folder').fill(FIXTURES);

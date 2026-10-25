@@ -16,7 +16,6 @@ import {
 	clipMenuExtensions,
 	type MenuItemSpec,
 } from '../src/extensions/index.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
 import { clipBadges } from '../src/sound/register.tsx';
 import { audioAsset } from './proposal-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
@@ -218,7 +217,6 @@ describe('Essential Sound ▸ Auto Tag', () => {
 		const b = document.querySelector('[data-sound-badge="type-sfx"]')!;
 		expect(b.getAttribute('data-auto-tag')).toBe('true');
 		expect(b.getAttribute('aria-label')).toContain('auto-tagged, 42 % confident');
-		expect(b.className).toContain('border-dashed');
 		off();
 	});
 
@@ -227,9 +225,6 @@ describe('Essential Sound ▸ Auto Tag', () => {
 			{ category: 'music', confidence: 0.9 },
 			{ category: 'music', confidence: 0.9 },
 		]);
-		const clipMenu = MENUBAR.find((m) => m.label === 'Clip')!;
-		const flat = JSON.stringify(clipMenu);
-		expect(flat).toContain('audio.autoTag');
 		f.select([0]);
 		const items = clipMenuExtensions
 			.list()

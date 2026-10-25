@@ -119,8 +119,8 @@ function save(
 
 describe('Save Preset (buildEffectPreset)', () => {
 	it('stores offsets from the first frame, the chosen intrinsics and effects in stack order', () => {
-		const { h, a, blur } = project();
-		const p = save(h, a, 'anchor-in', { opacity: true, crop: true, effectIds: [blur] });
+		const { h, a, blur, crop } = project();
+		const p = save(h, a, 'anchor-in', { opacity: true, crop: true, effectIds: [crop, blur] });
 		expect(p.source).toMatchObject({ duration: 30, frameRate: { num: 30, den: 1 }, frame: { width: 1920 } });
 		expect(p.intrinsic?.opacity?.keyframes?.map((k) => k.time / F30)).toEqual([5, 25]);
 		expect(p.intrinsic?.blendMode).toBe('screen');
@@ -214,9 +214,12 @@ describe('effect.applyPreset', () => {
 		for (const k of [...C.opacity.keyframes, ...C.effects[2]!.params.radius!.keyframes])
 			expect(ids.has(k.id)).toBe(false);
 		// Applying again overwrites the pinned crop instead of adding a second one, and appends another blur.
+		h.ok([{ type: 'param.set', target: ['effect', C.effects[0]!.id, 'left'], value: 27 }]);
+		expect((h.seq.clips[c] as Solid).effects[0]!.params.left!.value).toBe(27);
 		h.ok([{ type: 'effect.applyPreset', preset, clipIds: [c] }]);
 		const C2 = h.seq.clips[c] as Solid;
 		expect(C2.effects.filter((e) => e.effectId === 'jasper.crop')).toHaveLength(1);
+		expect(C2.effects[0]!.params.left!.value).toBe(10);
 		expect(C2.effects.filter((e) => e.effectId === 'jasper.gaussian-blur')).toHaveLength(2);
 		ok(h);
 	});
@@ -257,14 +260,14 @@ describe('effect.applyPreset', () => {
 
 	it('rejects invalid presets', () => {
 		const { h, c } = project();
-		for (const preset of [
-			{ format: 'nope' },
-			{ ...builtinEffectPreset('builtin.fade-in')!, version: 2 },
-			{ ...builtinEffectPreset('builtin.fade-in')!, type: 'sideways' },
-			{ ...builtinEffectPreset('builtin.fade-in')!, intrinsic: undefined },
-		]) {
+		for (const [preset, code] of [
+			[{ format: 'nope' }, 'E_SCHEMA'],
+			[{ ...builtinEffectPreset('builtin.fade-in')!, version: 2 }, 'E_SCHEMA'],
+			[{ ...builtinEffectPreset('builtin.fade-in')!, type: 'sideways' }, 'E_SCHEMA'],
+			[{ ...builtinEffectPreset('builtin.fade-in')!, intrinsic: undefined }, 'E_INVALID_PARAM'],
+		] as const) {
 			const r = h.tx([{ type: 'effect.applyPreset', preset: roundTrip(preset), clipIds: [c] }]);
-			expect(r.ok).toBe(false);
+			expect(r).toMatchObject({ ok: false, errors: [{ code }] });
 		}
 	});
 });

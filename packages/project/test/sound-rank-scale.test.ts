@@ -1,15 +1,13 @@
 // Sound ranking at library scale and against hostile names (spec 12 §2.1; wp-note "WP1.2 engine library" ▸ "Review
 // fixes", findings 10 and 11): prototype keys name no type, query words are deduplicated and capped, `soundFilterOf`
-// agrees with `rankSounds`, and ranking 5 000 sounds takes < 50 ms of main-thread CPU time (not wall time).
+// returns literal expected pages/filter results, and ranking 5 000 sounds takes < 50 ms of main-thread CPU time.
 import { readFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { isMainThread } from 'node:worker_threads';
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	inferTypesFromName,
-	MAX_QUERY_TOKENS,
 	type RankableSound,
 	rankSounds,
 	rankSoundsPage,
@@ -63,97 +61,47 @@ describe('query words (finding 10)', () => {
 		expect(rankSounds(lib, { query: 'slam slam heavy slam heavy' })).toEqual(once);
 	});
 
-	it(`only the first ${MAX_QUERY_TOKENS} distinct words are matched`, () => {
-		const filler = Array.from({ length: MAX_QUERY_TOKENS }, (_, i) => `word${String.fromCharCode(97 + i)}`);
+	it('only the first 16 distinct words are matched', () => {
+		const filler = Array.from({ length: 16 }, (_, i) => `word${String.fromCharCode(97 + i)}`);
 		const lib = [snd('snd_a', 'Punch')];
 		expect(rankSounds(lib, { query: `punch ${filler.join(' ')}` })).toHaveLength(1);
 		expect(rankSounds(lib, { query: `${filler.join(' ')} punch` })).toEqual([]);
 	});
 });
 
-const WORDS = [
-	'heavy',
-	'light',
-	'metal',
-	'door',
-	'slam',
-	'punch',
-	'whoosh',
-	'swoosh',
-	'riser',
-	'click',
-	'room',
-	'tone',
-];
-const entryArb = fc.record({
-	id: fc.stringMatching(/^snd_[0-9a-f]{6}$/),
-	title: fc.array(fc.constantFrom(...WORDS), { maxLength: 4 }).map((a) => a.join(' ')),
-	tags: fc.array(fc.constantFrom(...WORDS), { maxLength: 4 }),
-	types: fc.array(fc.constantFrom('hit', 'whoosh', 'riser', 'click', 'roomtone', 'nope', 'constructor'), {
-		maxLength: 3,
-	}),
-	source: fc.record({ type: fc.constantFrom('starter', 'pack', 'folder', 'synth') }),
-	license: fc.constantFrom('CC0-1.0', 'CC-BY-4.0', 'LicenseRef-UserProvided', 'CC-BY-NC-4.0'),
-	descriptors: fc.record({
-		durationSec: fc.double({ min: 0.01, max: 20, noNaN: true }),
-		centroidHz: fc.double({ min: 100, max: 8000, noNaN: true }),
-		riseMs: fc.double({ min: 0, max: 100, noNaN: true }),
-	}),
-});
-const requestArb: fc.Arbitrary<SoundRankRequest> = fc.record(
-	{
-		query: fc.array(fc.constantFrom(...WORDS, 'constructor', 'zz'), { maxLength: 3 }).map((a) => a.join(' ')),
-		types: fc.array(fc.constantFrom('hit', 'swoosh', 'roomtone', 'nope', '__proto__'), { maxLength: 2 }),
-		license: fc.constantFrom('any' as const, 'commercial-safe' as const),
-		length: fc.constantFrom('short' as const, 'medium' as const, 'long' as const),
-		tone: fc.constantFrom('dark' as const, 'bright' as const),
-	},
-	{ requiredKeys: [] },
-);
-
-describe('soundFilterOf and rankSoundsPage agree with rankSounds', () => {
-	it('rankSoundsPage gives rankSounds’ order, total and parts, page by page (property)', () => {
-		fc.assert(
-			fc.property(
-				fc.array(entryArb, { maxLength: 40 }),
-				requestArb,
-				fc.option(fc.integer({ min: 1, max: 30 }), { nil: undefined }),
-				fc.integer({ min: 0, max: 20 }),
-				fc.integer({ min: 0, max: 20 }),
-				(raw, req0, limit, offset, size) => {
-					// In id order (the engine's list: the packed fast path) half of the time.
-					const entries =
-						offset % 2 ? raw : [...raw].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-					const req = limit === undefined ? req0 : { ...req0, limit };
-					const keep = (e: RankableSound) => e.source.type !== 'pack';
-					const all = rankSounds(entries.filter(keep), req, {
-						usedNearby: entries.slice(0, 2).map((e) => e.id),
-					});
-					const seen: [RankableSound, number][] = [];
-					const page = rankSoundsPage(
-						entries,
-						req,
-						{ usedNearby: entries.slice(0, 2).map((e) => e.id) },
-						{ inRanking: keep, onFilter: (e, bits) => seen.push([e, bits]), offset, limit: size },
-					);
-					expect(page.total).toBe(all.length);
-					expect(page.results).toEqual(all.slice(offset, offset + size));
-					expect(seen.map(([e]) => e)).toEqual(entries);
+describe('rankSoundsPage', () => {
+	it('pages eligible sounds in id order and counts matches independently of the page', () => {
+		const entries = [
+			snd('snd_a', 'Punch'),
+			snd('snd_b', 'Punch'),
+			snd('snd_c', 'Punch'),
+			snd('snd_nc', 'Punch', { license: 'CC-BY-NC-4.0' }),
+			snd('snd_pack', 'Punch', { source: { type: 'pack' } }),
+			snd('snd_whoosh', 'Air', { types: ['whoosh'] }),
+		];
+		for (const library of [entries, [...entries].reverse()]) {
+			const req = { types: ['hit'] };
+			const page = rankSoundsPage(
+				library,
+				req,
+				{},
+				{
+					inRanking: (e) => e.source.type !== 'pack',
+					offset: 1,
+					limit: 2,
 				},
-			),
-			{ numRuns: 400 },
-		);
-	});
-
-	it('an entry passes every filter exactly when rankSounds keeps it (property)', () => {
-		fc.assert(
-			fc.property(fc.array(entryArb, { maxLength: 40 }), requestArb, (entries, req) => {
-				const kept = new Set(rankSounds(entries, req).map((r) => r.entry));
-				const f = soundFilterOf(req);
-				for (const e of entries) expect(f(e) === SOUND_FILTER_ALL, JSON.stringify(e)).toBe(kept.has(e));
-			}),
-			{ numRuns: 400 },
-		);
+			);
+			expect(page.total).toBe(3);
+			expect(page.results.map((r) => r.entry.id)).toEqual(['snd_b', 'snd_c']);
+			expect(rankSoundsPage(library, req, {}, { offset: 10, limit: 2 }).results).toEqual([]);
+			const filter = soundFilterOf(req);
+			expect(
+				library
+					.filter((e) => filter(e) === SOUND_FILTER_ALL)
+					.map((e) => e.id)
+					.sort(),
+			).toEqual(['snd_a', 'snd_b', 'snd_c', 'snd_pack']);
+		}
 	});
 });
 
@@ -258,17 +206,12 @@ function cpuTimed(fn: () => void): { cpu: number; wall: number } {
 	return { cpu: threadCpuMs() - c0, wall };
 }
 
-/** Min CPU (and the median wall time) of 7 runs (`run(1)` … `run(7)`); up to 3 batches until the min fits the budget. */
+/** Minimum CPU time and median wall time of seven queries after the warm-up. */
 function measure(run: (i: number) => { cpu: number; wall: number }): { min: number; wallMedian: number } {
-	let best = { min: Number.POSITIVE_INFINITY, wallMedian: Number.POSITIVE_INFINITY };
-	for (let batch = 0; batch < 3 && best.min >= BUDGET_CPU_MS; batch++) {
-		const runs: { cpu: number; wall: number }[] = [];
-		for (let i = 1; i <= 7; i++) runs.push(run(batch * 7 + i));
-		const cpu = runs.map((r) => r.cpu).sort((a, b) => a - b);
-		const wall = runs.map((r) => r.wall).sort((a, b) => a - b);
-		if (cpu[0]! < best.min) best = { min: cpu[0]!, wallMedian: wall[3]! };
-	}
-	return best;
+	const runs = Array.from({ length: 7 }, (_, i) => run(i + 1));
+	const cpu = runs.map((r) => r.cpu).sort((a, b) => a - b);
+	const wall = runs.map((r) => r.wall).sort((a, b) => a - b);
+	return { min: cpu[0]!, wallMedian: wall[3]! };
 }
 
 describe('ranking 5 000 sounds (finding 10)', () => {

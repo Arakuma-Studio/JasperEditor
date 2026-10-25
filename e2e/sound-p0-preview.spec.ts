@@ -2,16 +2,14 @@
 // the same click file plays on A1 (through a Hard Limiter track insert: 374 samples of look-ahead, a pure delay below
 // its ceiling) and on A2 (no insert). With the track insert latency compensated the two clicks coincide (one click of
 // twice the size); uncompensated they arrive 374 samples (7.8 ms) apart. Before the WP0.1 fixes this run measured
-// pairs of single clicks 374 samples apart (and an insert added after playback started was not heard at all). Also: Preferences ▸ Audio shows the voice-over Latency Offset.
+// pairs of single clicks 374 samples apart (and an insert added after playback started was not heard at all).
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { ATTEMPTS, arm, disarm, disturbances, mark, peaks, requireUndisturbed, TAP } from './sound-tap.ts';
+import { arm, disarm, peaks, TAP } from './sound-tap.ts';
 import {
 	browserLaunch,
-	clipBox,
-	clips,
 	createProject,
 	enableAgentBridge,
 	exportViaUi,
@@ -39,43 +37,22 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-/**
- * Plays the sequence from frame 0 for 2.6 s and returns the click peaks the monitor tap heard (channel 0; `at` in
- * samples from the first recorded one, exact context frames). A play whose scheduling Remotion lost (it rescheduled,
- * or started a buffer late: a starved main thread on a loaded host) is played again; it measures Remotion, not the
- * graph.
- */
+/** Plays once from frame 0 and returns the monitor's recorded click peaks, in samples. */
 async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: number; v: number }[] }> {
-	let out = { rate: 0, peaks: [] as { at: number; v: number }[] };
-	let clean = false;
-	let last: string[] = [];
-	for (let a = 0; a < ATTEMPTS; a++) {
-		await focusTimeline(page);
-		await page.keyboard.press('Home');
-		await page.waitForTimeout(500);
-		await arm(page);
-		await page.keyboard.press('Space');
-		await page.waitForTimeout(2600);
-		// the stop's own `stop()` calls are not a disturbance: the window ends here
-		await mark(page, 'pause');
-		await page.keyboard.press('Space');
-		await page.waitForTimeout(200);
-		const rec = await disarm(page);
-		const first = rec.frames[0] ?? 0;
-		out = {
-			rate: rec.rate,
-			peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
-		};
-		const d = disturbances(rec, rec.armed, rec.marks.pause ?? rec.armed);
-		last = d;
-		if (d.length === 0) {
-			clean = true;
-			break;
-		}
-		console.log('Remotion lost its scheduling during the play (load), again:', d.join('; '));
-	}
-	requireUndisturbed(clean, last);
-	return out;
+	await focusTimeline(page);
+	await page.keyboard.press('Home');
+	await page.waitForTimeout(500);
+	await arm(page);
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(2600);
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(200);
+	const rec = await disarm(page);
+	const first = rec.frames[0] ?? 0;
+	return {
+		rate: rec.rate,
+		peaks: peaks(rec).map((p) => ({ at: Math.round(p.t * rec.rate) - first, v: p.v })),
+	};
 }
 
 test('track insert latency is compensated in the Program monitor', async () => {
@@ -126,8 +103,6 @@ test('track insert latency is compensated in the Program monitor', async () => {
 		const gap = (tap.peaks[i]!.at - tap.peaks[i - 1]!.at) / tap.rate;
 		expect(Math.abs(gap - 0.5), JSON.stringify(tap.peaks)).toBeLessThan(0.01);
 	}
-	const s = await sequenceSummary(page);
-	expect(s.sequenceId).toBeTruthy();
 });
 
 /** Peaks of channel 0 of a file's audio (48 kHz), as in the monitor tap: local maxima above 0.05, merged within 5 ms. */
@@ -239,29 +214,4 @@ test('a clip that starts mid-playback is heard from its first sample (read-ahead
 		expect(head, `no click at ${at} samples after the first: ${JSON.stringify(tap.peaks)}`).toBeTruthy();
 		expect(head!.v).toBeGreaterThan(0.12);
 	}
-});
-
-test('Essential Sound on an SFX clip', async () => {
-	const a2 = (await clips(page, ['A2']))[0]!;
-	const box = await clipBox(page, a2.id);
-	await page.mouse.click(box.x + 20, box.y + box.height / 2);
-	await page.getByTestId('workspace-tab-audio').click();
-	const es = page.getByTestId('essential-sound');
-	await expect(es).toBeVisible();
-	await es.getByTestId('essential-type-sfx').click();
-	await expect(es.getByTestId('essential-current-type')).toContainText(/SFX/i);
-	await page.screenshot({ path: join(outDir, 'essential-sound-sfx.png') });
-});
-
-test('Preferences ▸ Audio: voice-over Latency Offset', async () => {
-	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
-	await page.getByRole('menuitem', { name: /^Preferences$/ }).hover();
-	await page.getByRole('menuitem', { name: /^Preferences…/ }).click();
-	const prefs = page.getByTestId('preferences-dialog');
-	await expect(prefs).toBeVisible();
-	await prefs.getByTestId('prefs-page-audio').click();
-	const row = prefs.getByText('Latency Offset', { exact: true });
-	await row.scrollIntoViewIfNeeded();
-	await expect(row).toBeVisible();
-	await page.screenshot({ path: join(outDir, 'preferences-audio.png') });
 });

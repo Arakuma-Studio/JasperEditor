@@ -547,7 +547,7 @@ function parseWoff2(bytes: Uint8Array): ParsedFont {
 }
 
 /** The container format from the first four bytes, or null. */
-export function sniffFontContainer(bytes: Uint8Array): FontContainer | null {
+function sniffFontContainer(bytes: Uint8Array): FontContainer | null {
 	if (bytes.length < 4) return null;
 	const sig = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
 	if (sig === SFNT_TRUETYPE || sig === TAG_TRUE) return 'ttf';

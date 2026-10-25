@@ -25,11 +25,9 @@ afterAll(closeApps);
 const truth = (n: number): [number, number] => [(40 + 7 * n + 72) / 848, (150 + 104) / 480];
 
 describe('Auto Reframe', () => {
-	let res: ReframeResult;
-	let mediaKey = '';
-	it('follows the moving subject (saliency)', async () => {
+	it('follows the moving subject and makes a 9:16 copy that keeps it in frame', async () => {
 		const m = await register(app, fixture('reframe.mp4'));
-		mediaKey = m.mediaKey;
+		const mediaKey = m.mediaKey;
 		const r = await app.inject({
 			method: 'POST',
 			url: '/api/reframe',
@@ -39,7 +37,7 @@ describe('Auto Reframe', () => {
 		expect(r.statusCode, r.body).toBe(202);
 		const done = await coreServices(app).queue.wait(r.json().id);
 		expect(done.error, JSON.stringify(done.error)).toBeUndefined();
-		res = done.result as ReframeResult;
+		const res = done.result as ReframeResult;
 		expect(res.frames).toBe(90);
 		expect(res.source).toBe('saliency');
 		const errs: number[] = [];
@@ -51,10 +49,8 @@ describe('Auto Reframe', () => {
 		expect(p90).toBeLessThan(0.15);
 		const sm = smoothSubjectPath(res.points, res.frameDuration, 'default');
 		expect(sm[80]![0]).toBeGreaterThan(sm[20]![0] + 0.3);
-	}, 300_000);
 
-	it('makes a 9:16 copy whose Position keeps the subject in frame', async () => {
-		const m = await register(app, fixture('reframe.mp4'));
+		// Apply this analysis to a copy through the document command.
 		const d = new DocBuilder();
 		const mediaId = d.addMedia(m);
 		d.tx([{ type: 'clip.place', source: { mediaId }, at: 0 }]);
@@ -70,12 +66,12 @@ describe('Auto Reframe', () => {
 				subjects: [{ clipId, start: res.start, frameDuration: res.frameDuration, points: res.points }],
 			},
 		]);
-		const r = out.results[0] as { sequenceId: string; reframed: string[]; skipped: unknown[] };
+		const reframed = out.results[0] as { sequenceId: string; reframed: string[]; skipped: unknown[] };
 		expect(Object.keys(d.doc.sequences).length).toBe(before + 1);
-		expect(r.reframed).toHaveLength(1);
-		const seq = d.doc.sequences[r.sequenceId]!;
+		expect(reframed.reframed).toHaveLength(1);
+		const seq = d.doc.sequences[reframed.sequenceId]!;
 		expect([seq.settings.width, seq.settings.height]).toEqual([608, 1080]);
-		const c = seq.clips[r.reframed[0]!]! as unknown as {
+		const c = seq.clips[reframed.reframed[0]!]! as unknown as {
 			start: number;
 			transform: {
 				position: { keyframes: unknown[] };

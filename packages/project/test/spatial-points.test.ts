@@ -4,25 +4,18 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
-	activeMetric,
-	bezierPoint,
 	buildEffectPreset,
 	buildKeyframesPayload,
 	checkInvariants,
-	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectInstance,
 	effectiveTangents,
 	evaluate,
-	evaluateEffectParam,
 	type Keyframe,
-	keysInMetric,
 	planSimplify,
-	type Rational,
 	resolveLayerProps,
 	type Spatial,
 	type SpatialMetric,
-	TRANSITION_SPECS,
 	type Vec2,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -50,21 +43,32 @@ const anim = (keyframes: Keyframe<Vec2>[]): Animatable<Vec2> => ({ value: [0, 0]
 const px = (v: Vec2): Vec2 => [v[0] * W, v[1] * H];
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
-/** Independent reference: the point at arc-length fraction s of a normalised cubic, lengths in px (10⁵ steps). */
-function referenceAt(seg: [Vec2, Vec2, Vec2, Vec2], s: number): Vec2 {
+/** De Casteljau subdivision, independent of the production polynomial evaluator. */
+function cubic(seg: [Vec2, Vec2, Vec2, Vec2], t: number): Vec2 {
+	const p = seg.map((v) => [...v]);
+	for (let n = 3; n > 0; n--)
+		for (let i = 0; i < n; i++)
+			for (let axis = 0; axis < 2; axis++) p[i]![axis] = (1 - t) * p[i]![axis]! + t * p[i + 1]![axis]!;
+	return p[0] as Vec2;
+}
+
+/** Numerical arc-length oracle in pixels: construct one immutable 100,000-step table per authored segment. */
+function reference(seg: [Vec2, Vec2, Vec2, Vec2]): (s: number) => Vec2 {
 	const N = 100_000;
 	const cum = new Float64Array(N + 1);
 	let prev = px(seg[0]);
 	for (let j = 1; j <= N; j++) {
-		const p = px(bezierPoint(seg, j / N));
+		const p = px(cubic(seg, j / N));
 		cum[j] = cum[j - 1]! + dist(p, prev);
 		prev = p;
 	}
-	const target = s * cum[N]!;
-	let j = 0;
-	while (j < N && cum[j + 1]! < target) j++;
-	const f = cum[j + 1]! > cum[j]! ? (target - cum[j]!) / (cum[j + 1]! - cum[j]!) : 0;
-	return bezierPoint(seg, (j + f) / N);
+	return (s) => {
+		const target = s * cum[N]!;
+		let j = 0;
+		while (j < N && cum[j + 1]! < target) j++;
+		const f = cum[j + 1]! > cum[j]! ? (target - cum[j]!) / (cum[j + 1]! - cum[j]!) : 0;
+		return cubic(seg, (j + f) / N);
+	};
 }
 
 describe('evaluation with a layer-box metric', () => {
@@ -74,12 +78,15 @@ describe('evaluation with a layer-box metric', () => {
 	const seg: [Vec2, Vec2, Vec2, Vec2] = [A, [0.3, 0.8], [0.8, 1.0], B];
 
 	it('a curved effect point lies on the Bézier of its normalised control points, timed by arc length in px', () => {
+		const at = reference(seg);
+		const before = structuredClone(a);
 		for (let f = 0; f <= 60; f += 3) {
 			const got = evaluate(a, f * F, { metric: M });
-			const want = referenceAt(seg, f / 60);
+			const want = at(f / 60);
 			// The evaluator's 64-sample arc-length table: ≲ 1e-4 of the path length (S03:KF-031).
 			expect(dist(px(got), px(want))).toBeLessThan(0.25);
 		}
+		expect(a).toEqual(before);
 	});
 
 	it('Linear temporal = constant speed in layer pixels (not in normalised units)', () => {
@@ -197,55 +204,6 @@ describe('evaluation with a layer-box metric', () => {
 			),
 			{ numRuns: 80 },
 		);
-		expect(activeMetric([0, 5])).toBeNull();
-		expect(activeMetric([Number.NaN, 5])).toBeNull();
-		expect(activeMetric([7, 7])).toBeNull();
-	});
-
-	it('keysInMetric scales values and tangents and leaves the stored keys untouched', () => {
-		const kfs = [key(0, [0.5, 0.5], bez([0.1, 0.2], [0.3, 0.4]))];
-		const copy = keysInMetric(kfs, M);
-		expect(copy[0]!.value).toEqual([960, 540]);
-		expect(copy[0]!.spatial).toMatchObject({ inTangent: [192, 216], outTangent: [576, 432] });
-		expect(kfs[0]!.value).toEqual([0.5, 0.5]);
-	});
-});
-
-describe('which effect params are positions', () => {
-	const specs = defaultEffectRegistry.list();
-	const params = specs.flatMap((s) => s.params.map((p) => ({ s, p })));
-
-	it('every effect point (on-canvas handle) is spatial, Auto Bezier for new keys, measured in the layer box', () => {
-		const points = params.filter(({ p }) => p.ui?.control === 'point');
-		expect(points.length).toBeGreaterThan(50);
-		for (const { p } of points) {
-			expect(p.spatial).toBe('auto-bezier');
-			expect(p.spatialMetric).toBe('layer-box');
-		}
-		const pick = (id: string, name: string) =>
-			defaultEffectRegistry.get(id)!.params.find((p) => p.name === name)!;
-		for (const [id, name] of [
-			['jasper.transform', 'position'],
-			['jasper.transform', 'anchorPoint'],
-			['jasper.offset', 'shiftCenterTo'],
-			['jasper.mirror', 'reflectionCenter'],
-			['jasper.spherize', 'centerOfSphere'],
-		] as const)
-			expect(pick(id, name).spatial).toBe('auto-bezier');
-		// Corner Pin corners stay Linear for new keys (tracker output), but measure in the layer box too.
-		expect(pick('jasper.corner-pin', 'topLeft')).toMatchObject({
-			spatial: 'linear',
-			spatialMetric: 'layer-box',
-		});
-	});
-
-	it('non-position vectors (colour wheels) and every transition param are not spatial', () => {
-		expect(params.filter(({ p }) => p.ui?.control === 'wheel').every(({ p }) => !p.spatial)).toBe(true);
-		for (const t of TRANSITION_SPECS)
-			for (const p of t.params) {
-				expect(p.spatial, `${t.id}.${p.name}`).toBeUndefined();
-				expect(p.spatialMetric, `${t.id}.${p.name}`).toBeUndefined();
-			}
 	});
 });
 
@@ -272,7 +230,7 @@ function withTransform(duration = 90) {
 
 describe('commands on effect points', () => {
 	it('new keys are Auto Bezier spatial; three keys make a curve the resolver evaluates in layer pixels', () => {
-		const { h, clip, fx, target, keys } = withTransform();
+		const { h, clip, target, keys } = withTransform();
 		h.ok([
 			{ type: 'param.setAnimated', target: target(), animated: true, at: { sequenceFrame: 0 } },
 			{ type: 'param.set', target: target(), value: [0.2, 0.5], at: { sequenceFrame: 0 } },
@@ -280,15 +238,24 @@ describe('commands on effect points', () => {
 			{ type: 'keyframe.add', target: target(), value: [0.8, 0.5], at: { sequenceFrame: 60 } },
 		]);
 		expect(keys().map((k) => k.spatial?.mode)).toEqual(['auto-bezier', 'auto-bezier', 'auto-bezier']);
-		// The stored Auto Bezier cache equals what the evaluator derives with the layer box metric.
-		const t = effectiveTangents(keys(), 1, M);
-		expect(keys()[1]!.spatial!.outTangent[0]).toBeCloseTo(t.outTangent[0], 12);
-		expect(keys()[1]!.spatial!.outTangent[1]).toBeCloseTo(t.outTangent[1], 12);
-		// resolveLayerProps (preview, Remotion, native sampling) and evaluateEffectParam agree with evaluate + metric.
+		// The middle handle is horizontal, one third of the 576×324 px chord.
+		const handle = Math.hypot(576, 324) / (3 * W);
+		expect(keys()[1]!.spatial!.outTangent[0]).toBeCloseTo(handle, 12);
+		expect(keys()[1]!.spatial!.outTangent[1]).toBe(0);
+		const left = reference([
+			[0.2, 0.5],
+			[0.2, 0.5],
+			[0.5 - handle, 0.2],
+			[0.5, 0.2],
+		]);
+		const right = reference([
+			[0.5, 0.2],
+			[0.5 + handle, 0.2],
+			[0.8, 0.5],
+			[0.8, 0.5],
+		]);
 		const c = clip();
-		const rate = h.seq.settings.frameRate as Rational;
 		for (const f of [5, 15, 45]) {
-			const ct = contentTimeAt(c as never, f, rate);
 			const props = resolveLayerProps(
 				{
 					transform: null,
@@ -296,21 +263,15 @@ describe('commands on effect points', () => {
 					intrinsicBox: { width: W, height: H },
 					effects: c.effects,
 				},
-				ct,
+				f * F,
 			);
-			const want = evaluate(fx().params.position as Animatable<Vec2>, ct, { metric: M });
-			expect(props.effects[0]!.params.position).toEqual(want);
-			expect(
-				evaluateEffectParam(fx(), 'position', fx().params.position!, ct, { width: W, height: H }),
-			).toEqual(want);
-			// …and it is off the straight chord (a curve).
-			const plain = evaluate(fx().params.position as Animatable<Vec2>, ct);
-			expect(plain).not.toEqual(want);
+			const want = f <= 30 ? left(f / 30) : right((f - 30) / 30);
+			expect(dist(px(props.effects[0]!.params.position as Vec2), px(want))).toBeLessThan(0.25);
 		}
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
-	it('keyframe.add / update / setSpatialInterpolation / setTangents accept spatial data, undo / redo', () => {
+	it('keyframe commands store pixel-scaled spatial tangents without mutating the previous document', () => {
 		const { h, target, keys } = withTransform();
 		h.ok([
 			{ type: 'keyframe.add', target: target(), value: [0.2, 0.5], at: { sequenceFrame: 0 } },
@@ -324,7 +285,7 @@ describe('commands on effect points', () => {
 		]);
 		expect(keys()[1]!.spatial).toEqual({ mode: 'bezier', inTangent: [0, -0.3], outTangent: [0, 0] });
 		const before = h.doc;
-		const snapshot = JSON.stringify(before);
+		const snapshot = structuredClone(before);
 		const k0 = keys()[0]!.id;
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, outTangent: [0.1, 0] }]);
 		// Continuous: the other side opposite, its length kept in PIXELS (it had none: mirrored).
@@ -346,17 +307,7 @@ describe('commands on effect points', () => {
 		]);
 		expect(keys().every((k) => k.spatial?.mode === 'auto-bezier')).toBe(true);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// Undo = the document before (immutable); redo = re-applying gives the same document.
-		expect(JSON.stringify(before)).toBe(snapshot);
-		const done = JSON.stringify(h.doc.sequences);
-		h.doc = before;
-		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, outTangent: [0.1, 0] }]);
-		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, inTangent: [0, 0.1] }]);
-		h.ok([{ type: 'keyframe.update', keyframeId: k0, spatial: { mode: 'linear' } }]);
-		h.ok([
-			{ type: 'keyframe.setSpatialInterpolation', keyframeIds: keys().map((k) => k.id), mode: 'auto-bezier' },
-		]);
-		expect(JSON.stringify(h.doc.sequences)).toBe(done);
+		expect(before).toEqual(snapshot);
 	});
 
 	it('refuses spatial data on params that are not points (numbers, colour wheels, transitions)', () => {
@@ -425,7 +376,6 @@ describe('commands on effect points', () => {
 				breakContinuity: true,
 			},
 		]);
-		const src = keys().map((k) => k.spatial);
 		// Keyframe paste onto another Transform's Position keeps the spatial data.
 		h.ok([{ type: 'clip.addSolid', at: 100, duration: 90, track: 'V1', color: [0, 1, 0, 1] }]);
 		const other = h.clips('V1')[1]!.id;
@@ -446,7 +396,7 @@ describe('commands on effect points', () => {
 			},
 		]);
 		const pasted = (h.seq.clips[other] as unknown as VClip).effects[0]!.params.position!.keyframes;
-		expect(pasted.map((k) => k.spatial?.mode)).toEqual(src.map((s) => s?.mode));
+		expect(pasted.map((k) => k.spatial?.mode)).toEqual(['auto-bezier', 'bezier', 'auto-bezier']);
 		expect(pasted[1]!.spatial!.outTangent).toEqual([0.1, 0.05]);
 		// Effect presets carry the path.
 		const preset = buildEffectPreset(h.doc, id, {
@@ -504,8 +454,7 @@ describe('Corner Pin corners (native warp stage input)', () => {
 			},
 		]);
 		const c = h.seq.clips[id] as unknown as VClip & { transform: never; opacity: never };
-		const rate = h.seq.settings.frameRate as Rational;
-		const t = contentTimeAt(c as never, 25, rate);
+		const t = 25 * F;
 		const props = resolveLayerProps(
 			{
 				transform: null,
@@ -515,8 +464,12 @@ describe('Corner Pin corners (native warp stage input)', () => {
 			},
 			t,
 		);
-		const want = evaluate(c.effects[0]!.params.topLeft as Animatable<Vec2>, t, { metric: M });
-		expect(props.quad[0][0]).toBeCloseTo(want[0] * W, 6);
-		expect(props.quad[0][1]).toBeCloseTo(want[1] * H, 6);
+		const want = reference([
+			[0, 0],
+			[0.2, 0],
+			[0.1, 0.1],
+			[0.1, 0.3],
+		])(25 / 60);
+		expect(dist(props.quad[0], px(want))).toBeLessThan(0.25);
 	});
 });

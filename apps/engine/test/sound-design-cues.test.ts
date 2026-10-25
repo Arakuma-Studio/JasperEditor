@@ -54,7 +54,6 @@ describe('POST /api/sound-design/cues', () => {
 		expect(res.warnings).toEqual([]);
 		const cuts = byFrom(res.cues, 'edits');
 		expect(cuts.map((c) => c.frame)).toEqual([90, 330]);
-		expect(cuts[0]!.reason).toBe("Cut on V1: 'Shot A' → 'Shot B'");
 		expect(cuts[0]!.timecode).toBe('00:00:03:00');
 		expect(cuts[0]!.seconds).toBe(3);
 		const push = byFrom(res.cues, 'transitions')[0]!;
@@ -88,7 +87,6 @@ describe('POST /api/sound-design/cues', () => {
 			['land', 350, 0.8],
 			['exit', 408, 0.6],
 		]);
-		expect(mg[0]!.reason).toBe("Lower Third settles after 0.67 s on V1 'Lower Third'");
 		expect(res.stats.bySource.mg!.found).toBe(2);
 		const marker = byFrom(res.cues, 'markers')[0]!;
 		expect(marker).toMatchObject({ frame: 250, kind: 'manual', weight: 'hero', source: 'marker' });

@@ -5,29 +5,23 @@ import { fuzzScale, fuzzSeed, mutateJson, Rng } from '@jasper/testkit/fuzz';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	ABRUPT_STOP,
 	applyTransaction,
 	beatCues,
 	checkInvariants,
-	clipMediaTimeFn,
 	createCounterIdSource,
 	cueAnchorFrame,
 	cueInputFromDerived,
 	deriveCues,
 	type ExtraCue,
-	FLICKS_PER_SECOND,
 	footageClips,
-	MOVE_ON,
 	measureFrameMotion,
 	musicClips,
-	PIXEL_MAX_CONFIDENCE,
 	type PixelMotionCurve,
 	pixelAnalysisSize,
 	pixelMotionCues,
 	pixelMotionEvents,
 	readSoundDesign,
 	resolveCueAnchor,
-	type SceneCutData,
 	sceneAnchorAt,
 	sceneCutCues,
 	snapCuesToBeats,
@@ -292,7 +286,7 @@ describe('pixelMotionEvents (shared thresholds with the keyframe source)', () =>
 		const ev = pixelMotionEvents(ease);
 		expect(ev.filter((e) => e.kind === 'move')).toHaveLength(1);
 		expect(ev.some((e) => e.kind === 'land')).toBe(false);
-		const drift = curve(80, (i) => (i > 5 ? { speed: MOVE_ON * 0.8 } : {}));
+		const drift = curve(80, (i) => (i > 5 ? { speed: 0.096 } : {}));
 		expect(pixelMotionEvents(drift)).toEqual([]);
 	});
 
@@ -347,9 +341,8 @@ describe('pixelMotionEvents (shared thresholds with the keyframe source)', () =>
 			types: ['whoosh', 'swish', 'transition'],
 		});
 		const all = pixelMotionCues(c, ev, () => ({ anchor, where: 'x' })).cues;
-		for (const q of all) expect(q.confidence).toBeLessThanOrEqual(PIXEL_MAX_CONFIDENCE);
+		for (const q of all) expect(q.confidence).toBeLessThanOrEqual(0.5);
 		expect(all.find((q) => q.kind === 'land')?.types[0]).toBe('hit');
-		expect(ABRUPT_STOP).toBeGreaterThan(0);
 	});
 
 	it('never throws and is deterministic on hostile curves', () => {
@@ -408,8 +401,6 @@ function sequence() {
 	return { h, media, videoClip: v.clipIds[0]!, music: music.mediaId, musicClip };
 }
 
-const cutsAt = (): ReadonlyMap<string, SceneCutData> => new Map();
-
 describe('scene cuts mapped through the clip', () => {
 	it('lists the footage and the music it analyses', () => {
 		const { h, media, music, videoClip, musicClip } = sequence();
@@ -424,13 +415,9 @@ describe('scene cuts mapped through the clip', () => {
 		// a range clips it
 		expect(footageClips(h.doc, h.seq, { start: 30, end: 60 })[0]).toMatchObject({ start: 30, end: 60 });
 		expect(musicClips(h.doc, h.seq, { start: 1000, end: 1001 })).toEqual([]);
-		expect(cutsAt().size).toBe(0);
 	});
 
 	const scene = (media: string, cuts: number[]) => new Map([[media, { cuts }]]);
-	const roundTrip = (h: Harness, cues: ExtraCue[]) => {
-		for (const c of cues) expect(resolveCueAnchor(h.doc, h.seq, c.anchor)).toBe(c.frame);
-	};
 
 	it('100 %: a change at 2 s is a cut at frame 60, anchored to the media time it shows', () => {
 		const { h, media, videoClip } = sequence();
@@ -440,8 +427,6 @@ describe('scene cuts mapped through the clip', () => {
 			[135, 'cut'],
 		]);
 		expect(cues[0]!.anchor).toEqual({ type: 'scene', mediaId: media, mediaSec: 2, clipId: videoClip });
-		expect(cues[0]!.reason).toContain('Shot change');
-		roundTrip(h, cues);
 		// the clip moves: the anchor follows it
 		h.ok([{ type: 'clip.move', clipIds: [videoClip], deltaFrames: 15 }]);
 		expect(resolveCueAnchor(h.doc, h.seq, cues[0]!.anchor)).toBe(75);
@@ -452,29 +437,18 @@ describe('scene cuts mapped through the clip', () => {
 		h.ok([{ type: 'clip.setSpeed', clipIds: [videoClip], rate: 2, ripple: false }]);
 		let cues = sceneCutCues(h.doc, h.seq, scene(media, [2, 4.5]));
 		expect(cues.map((c) => c.frame)).toEqual([30, 68]);
-		roundTrip(h, cues);
 		h.ok([{ type: 'clip.setSpeed', clipIds: [videoClip], rate: 1, reverse: true, ripple: false }]);
-		const c = h.seq.clips[videoClip]!;
 		cues = sceneCutCues(h.doc, h.seq, scene(media, [2]));
-		// reversed, the picture crosses 2 s where it first shows the old shot's last frame (59/30 s)
-		const at = clipMediaTimeFn(c as never, h.seq.settings.frameRate);
-		expect(cues).toHaveLength(1);
-		expect(at(cues[0]!.frame) / FLICKS_PER_SECOND).toBeLessThan(2);
-		expect(at(cues[0]!.frame - 1) / FLICKS_PER_SECOND).toBeGreaterThanOrEqual(2 - 1e-9);
-		roundTrip(h, cues);
-		// time remap: 50 % from frame 30 (slow motion: several frames within half a frame of each media time)
+		// At frame 119 the reversed clip still shows 2 s; frame 120 first shows the preceding shot.
+		expect(cues.map((c) => c.frame)).toEqual([120]);
+		// time remap: 40 % from frame 30 (slow motion: several frames within half a frame of each media time)
 		h.ok([{ type: 'clip.setSpeed', clipIds: [videoClip], rate: 1, reverse: false, ripple: false }]);
 		h.ok([{ type: 'timeRemap.enable', clipIds: [videoClip], enabled: true }]);
 		h.ok([{ type: 'timeRemap.addKeyframe', clipId: videoClip, at: 30 }]);
 		h.ok([{ type: 'timeRemap.setSpeed', clipId: videoClip, at: 40, speedPercent: 40 }]);
-		const cr = h.seq.clips[videoClip]!;
-		const atR = clipMediaTimeFn(cr as never, h.seq.settings.frameRate);
 		cues = sceneCutCues(h.doc, h.seq, scene(media, [2]));
-		expect(cues).toHaveLength(1);
-		const f = cues[0]!.frame;
-		expect(atR(f) / FLICKS_PER_SECOND).toBeGreaterThanOrEqual(2 - 0.001);
-		expect(atR(f - 1) / FLICKS_PER_SECOND).toBeLessThan(2 - 0.001);
-		roundTrip(h, cues);
+		// One second at 100 %, then 1 / 0.4 seconds to reach source time 2 s: 3.5 s × 30 fps.
+		expect(cues.map((c) => c.frame)).toEqual([105]);
 	});
 
 	it('a soft change (the scores stay high around it) is a move; the first frame of a clip is never a scene cut', () => {
@@ -579,7 +553,6 @@ describe('beats', () => {
 			['f', 120, undefined],
 		]);
 		expect(r.snapped).toBe(1);
-		expect(r.cues[0]!.reason).toContain('on the beat (+2 frames)');
 		// the stored cue keeps following its anchor at that offset
 		const input = cueInputFromDerived(r.cues[0]!);
 		expect(input.anchorOffset).toBe(2);

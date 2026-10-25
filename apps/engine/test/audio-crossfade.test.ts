@@ -1,17 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fadeShapeGain } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp, tempAppdir } from './helpers.ts';
 
 let app: TestApp;
 let dir: string;
 beforeAll(async () => {
 	app = await makeApp();
-	dir = mkdtempSync(join(tmpdir(), 'jasper-xfade-'));
+	dir = tempAppdir('jasper-xfade-');
 	// Two steady tones of the same level and different pitch (uncorrelated over a 20 ms window).
 	for (const [name, hz] of [
 		['tone-1000.wav', 1000],
@@ -189,11 +186,17 @@ describe('audio crossfades on the native path (S10:TUI-052)', () => {
 		expect(full).toBeGreaterThan(0);
 		expect(at(35, 1500)).toBeLessThan(full * 0.02); // before the span: only A
 		expect(at(65, 1000)).toBeLessThan(full * 0.02); // after it: only B
-		// the 20 ms window of frame f is centred on its first sample (f·1600 − 480 … f·1600 + 480)
-		for (const f of [42, 45, 50, 55, 58]) {
-			const p = (f - 40) / 20;
-			expect(at(f, 1500) / full).toBeCloseTo(fadeShapeGain({ type: 'cosine', value: 30 }, p), 1);
-			expect(at(f, 1000) / full).toBeCloseTo(fadeShapeGain({ type: 'linear', value: -10 }, 1 - p), 1);
+		// Independent values from the documented Custom Fade family (wp-notes/audio-crossfades.md),
+		// evaluated at progress .1, .25, .5, .75 and .9. The 20 ms window is centred on frame f.
+		for (const [f, incoming, outgoing] of [
+			[42, 0.288831, 0.859207],
+			[45, 0.525692, 0.660781],
+			[50, 0.792935, 0.368504],
+			[55, 0.948377, 0.135795],
+			[58, 0.991741, 0.036287],
+		] as const) {
+			expect(at(f, 1500) / full).toBeCloseTo(incoming, 1);
+			expect(at(f, 1000) / full).toBeCloseTo(outgoing, 1);
 		}
 	}, 180_000);
 });

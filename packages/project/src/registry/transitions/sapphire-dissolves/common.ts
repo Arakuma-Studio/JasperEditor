@@ -147,7 +147,7 @@ export function timingParams(o: TimingOptions): ParamSpec[] {
 }
 
 /** Slow In / Slow Out: cubic Hermite from 0 to 1 with end slopes 1 − slowIn and 1 − slowOut (monotone). */
-export function slowCurve(p: number, slowIn: number, slowOut: number): number {
+function slowCurve(p: number, slowIn: number, slowOut: number): number {
 	const t = clamp(p, 0, 1);
 	const m0 = 1 - clamp(slowIn, 0, 1);
 	const m1 = 1 - clamp(slowOut, 0, 1);
@@ -157,17 +157,17 @@ export function slowCurve(p: number, slowIn: number, slowOut: number): number {
 }
 
 /** Re-times q so the peak (0.5 + Shift Peak) lands on 0.5 (piecewise linear, 0 → 0 and 1 → 1). */
-export function peakTime(q: number, shiftPeak: number): number {
+function peakTime(q: number, shiftPeak: number): number {
 	const c = clamp(0.5 + shiftPeak, 0.05, 0.95);
 	const x = clamp(q, 0, 1);
 	return x <= c ? (0.5 * x) / c : 0.5 + (0.5 * (x - c)) / (1 - c);
 }
 
 /** The effect envelope: 0 at t = 0 and 1, 1 at the peak t = 0.5 (raised cosine). */
-export const envelope = (t: number): number => 0.5 - 0.5 * Math.cos(2 * Math.PI * clamp(t, 0, 1));
+const envelope = (t: number): number => 0.5 - 0.5 * Math.cos(2 * Math.PI * clamp(t, 0, 1));
 
 /** The A → B ratio: a ramp of width 1 / speed centred on the peak (speed ≤ 1: the whole span, = t). */
-export const dissolveMix = (t: number, speed: number): number =>
+const dissolveMix = (t: number, speed: number): number =>
 	clamp((clamp(t, 0, 1) - 0.5) * Math.max(1, speed) + 0.5, 0, 1);
 
 export type DissolveTiming = { q: number; t: number; env: number; mix: number };

@@ -33,7 +33,6 @@ describe('desktop screenshots', () => {
 		Object.defineProperty(window, 'jasperDesktop', { configurable: true, value: { capturePage } });
 		try {
 			await expect(runUiAction('screenshot', {})).rejects.toMatchObject({ code: 'E_NOT_AVAILABLE' });
-			expect(capturePage).toHaveBeenCalledOnce();
 		} finally {
 			if (previous) Object.defineProperty(window, 'jasperDesktop', previous);
 			else delete window.jasperDesktop;

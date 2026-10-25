@@ -113,6 +113,8 @@ function fakeAudio() {
 	};
 }
 
+const drivers: PlaybackDriver[] = [];
+
 function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }, audio?: ReturnType<typeof fakeAudio>) {
 	const transport = new TransportStore();
 	const player = new FakePlayer();
@@ -125,6 +127,7 @@ function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }, audio?: ReturnT
 		setPlayerRate: (r) => rates.push(r),
 		...(audio ? { audio: () => audio.api } : {}),
 	});
+	drivers.push(driver);
 	transport.attachPlayer(driver);
 	driver.setPlayer(player);
 	return { transport, player, clock, driver, rates };
@@ -218,7 +221,10 @@ describe('JKL shuttle', () => {
 });
 
 describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
-	afterEach(() => vi.unstubAllGlobals());
+	afterEach(() => {
+		for (const driver of drivers.splice(0)) driver.dispose();
+		vi.unstubAllGlobals();
+	});
 	it('plays natively at 1×: the Player is the clock and frames are reported', () => {
 		const { transport, player, rates } = setup();
 		transport.play(1);

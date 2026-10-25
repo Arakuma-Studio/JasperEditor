@@ -3,7 +3,6 @@
 // placement, swap and cue commands that the editor shows in its notices. Templates with `{0}`… placeholders (ids,
 // titles, numbers: never translated). The editor lists them in its model strings (apps/web/i18n/model-strings.ts) and
 // its runtime translates a label or message that matches one (`translateName`, apps/web/src/i18n/runtime.ts).
-// `test/sound-messages.test.ts` checks that every refusal written in the sound handlers has its template here.
 import { SOUND_CHECK_MODEL_STRINGS } from './check.ts';
 import { REFERENCE_MODEL_STRINGS } from './profile.ts';
 

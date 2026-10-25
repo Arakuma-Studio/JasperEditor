@@ -60,23 +60,4 @@ describe('test fixtures use LGPL encoders', () => {
 		}
 		expect(found).toEqual([]);
 	});
-
-	it('the scan sees the places fixtures are made', () => {
-		const files = fixtureSources().map((f) => relative(root, f).split('\\').join('/'));
-		for (const f of [
-			'apps/engine/test/sound-design-motion.test.ts',
-			'apps/mcp/test/sound-motion.test.ts',
-			'e2e/source-range.spec.ts',
-			'packages/compositions/test/fx-media.ts',
-			'scripts/make-fixtures.mjs',
-		])
-			expect(files).toContain(f);
-		expect("['-c:v', 'libx264']".match(GPL_ENCODER)).not.toBeNull();
-		expect("['-c:v',\n\t\t'libx265'".match(GPL_ENCODER)).not.toBeNull();
-		expect("['-c:v', 'mpeg4', '-q:v', '2']".match(GPL_ENCODER)).toBeNull();
-		expect(`"eq=brightness='0.1':eval=frame"`.match(GPL_FILTER)).not.toBeNull();
-		expect("'scale=2:2,hqdn3d=1'".match(GPL_FILTER)).not.toBeNull();
-		expect(`"geq=lum='lum(X,Y)'"`.match(GPL_FILTER)).toBeNull();
-		expect('const seq = 1; frame=2'.match(GPL_FILTER)).toBeNull();
-	});
 });

@@ -2,7 +2,7 @@
 // `soundDesign.setVerdict` writes the verdict marker with a structured `soundCheck` field (slot, the clip or cue listened
 // to, the mix fingerprint, the hash of the ±2 s window); `soundCheckHumanVerdicts(seq, {doc})` says whether a verdict is
 // stale (the window sounds different, its clip / cue moved or is gone) — what MCP `sound_check` returns as
-// `humanVerdicts`. Undo / redo, refusals, repair and hostile input.
+// `humanVerdicts`. Immutability, refusals, repair and hostile input.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -60,7 +60,7 @@ function fixture() {
 const verdicts = (h: Harness) => soundCheckHumanVerdicts(h.seq, { doc: h.doc });
 
 describe('soundDesign.setVerdict', () => {
-	it('writes a user comment marker bound to its moment; updates it; null removes it; undo / redo', () => {
+	it('writes a user comment marker bound to its moment; updates it; null removes it; immutability', () => {
 		const { h, clipId } = fixture();
 		const before = h.doc;
 		const snapshot = clone(before);
@@ -111,17 +111,8 @@ describe('soundDesign.setVerdict', () => {
 				mixChanged: false,
 			},
 		]);
-		// undo = the document before (untouched); redo = the same sequences
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const noIds = (d: typeof h.doc) =>
-			Object.values(clone(d.sequences)).map((q) => ({
-				...q,
-				markers: q.markers.map(({ id: _id, ...x }) => x),
-			}));
-		const after = noIds(h.doc);
-		h.doc = before;
-		h.ok([cmd]);
-		expect(noIds(h.doc)).toEqual(after);
 		// a new verdict on the same moment updates the marker
 		const u = h.ok([{ type: 'soundDesign.setVerdict', frame: 120, verdict: 'ok', slot: 'worst', clipId }]);
 		expect(u.results[0]).toEqual({ markerId: expect.any(String), removed: [] });

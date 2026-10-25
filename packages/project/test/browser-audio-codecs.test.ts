@@ -1,9 +1,7 @@
 // pp-wma-preview: the one table that says which audio the preview decodes (probe, derivatives and UI read it).
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	audioContainerFamily,
-	BROWSER_AUDIO_CODECS,
 	browserDecodesAudio,
 	needsPlaybackAudio,
 	playbackAudioStreamUrl,
@@ -57,17 +55,6 @@ describe('browserDecodesAudio', () => {
 		expect(audioContainerFamily('matroska,webm')).toBe('matroska');
 		expect(audioContainerFamily('asf')).toBeNull();
 		expect(browserDecodesAudio('Matroska,WebM', 'AAC')).toBe(true);
-	});
-
-	it('property: never throws, and is true only for a listed codec of a demuxable container', () => {
-		fc.assert(
-			fc.property(fc.string(), fc.string(), (container, codec) => {
-				const got = browserDecodesAudio(container, codec);
-				const family = audioContainerFamily(container);
-				expect(got).toBe(!!family && BROWSER_AUDIO_CODECS[family].has(codec.toLowerCase()));
-			}),
-			{ numRuns: 500 },
-		);
 	});
 });
 

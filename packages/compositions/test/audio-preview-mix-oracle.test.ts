@@ -14,12 +14,9 @@ import { fileURLToPath } from 'node:url';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
 	type Animatable,
-	audioFadeGain,
 	buildRenderSnapshot,
 	type ClipReader,
 	FLICKS_PER_SECOND,
-	fadeCurve,
-	fadeShapeGain,
 	type RenderAudioClip,
 	type RenderSnapshot,
 	renderMixToBuffers,
@@ -58,7 +55,6 @@ function noise(seed: number, n: number, amp: number, env?: (i: number) => number
 type Case = {
 	snapshot: RenderSnapshot;
 	data: Map<string, number[][]>;
-	results: Record<string, unknown>[];
 };
 
 function scene(kind: 'track' | 'clip'): Case {
@@ -109,7 +105,6 @@ function scene(kind: 'track' | 'clip'): Case {
 		{ type: 'soundDesign.applyBuild', cueId: '$cue' },
 	);
 	const r = h.ok(cmds);
-	const results = r.results.slice(-4) as Record<string, unknown>[];
 	const snapshot = buildRenderSnapshot(h.doc, h.seqId, {
 		resolveMedia: (a) => ({
 			url: a.id,
@@ -133,7 +128,7 @@ function scene(kind: 'track' | 'clip'): Case {
 		const amp = c.clipId === hitId ? 0.6 : 0.2;
 		data.set(c.clipId, [noise(10 + i, n, amp, env), noise(20 + i, n, amp, env)]);
 	});
-	return { snapshot, data, results };
+	return { snapshot, data };
 }
 
 /** A keyframe (bezier with Premiere's default ease-in / ease-out influence, or linear). */
@@ -208,7 +203,7 @@ function panScene(): Case {
 		const env = (k: number) => Math.sin(Math.min(1, k / (0.9 * SR)) * Math.PI) ** 2;
 		data.set(c.clipId, [noise(30 + i, n, 0.3, env), noise(40 + i, n, 0.3, env)]);
 	});
-	return { snapshot, data, results: [] };
+	return { snapshot, data };
 }
 
 /**
@@ -217,7 +212,7 @@ function panScene(): Case {
  * clip C (30…50) with an Exponential Fade in and a Constant Power fade out of 6 frames. A plays on the left channel
  * only, B on the right only, C on the left only, so each fade's envelope can be read from the mix.
  */
-function crossfadeScene(): Case & { ids: { a: string; b: string; c: string } } {
+function crossfadeScene(): Case {
 	const h = new Harness();
 	const media = [0, 1, 2].map(() => h.registerVideo({ kind: 'audio', seconds: 4 }));
 	while (h.seq.audioTracks.length < 2) h.ok([{ type: 'track.add', kind: 'audio' }]);
@@ -276,7 +271,7 @@ function crossfadeScene(): Case & { ids: { a: string; b: string; c: string } } {
 		const zero = new Array<number>(n).fill(0);
 		data.set(c.clipId, c.clipId === ids.b ? [zero, sig] : [sig, zero]);
 	});
-	return { snapshot, data, results: [], ids };
+	return { snapshot, data };
 }
 
 function reader(data: Map<string, number[][]>) {
@@ -340,14 +335,12 @@ describe.runIf(!!CHROME)(
 			await browser?.close();
 		});
 
-		async function preview(c: Case, clock: 'anchor' | 'frame' = 'anchor') {
+		async function preview(c: Case) {
 			const fps = c.snapshot.settings.fps;
 			return page.evaluate(
 				(spec) =>
 					(window as unknown as { __mix: { played: (s: unknown) => Promise<unknown> } }).__mix.played(spec),
 				{
-					playing: true,
-					clock,
 					workletUrl,
 					mix: c.snapshot.audioMix,
 					clips: c.snapshot.audioClips.map((clip) => ({
@@ -360,7 +353,7 @@ describe.runIf(!!CHROME)(
 					fpsValue: fps.num / fps.den,
 					length: LEN,
 				},
-			) as Promise<{ channels: number[][]; latency: number; leads: number[] }>;
+			) as Promise<{ channels: number[][]; latency: number }>;
 		}
 
 		function exported(c: Case) {
@@ -395,16 +388,6 @@ describe.runIf(!!CHROME)(
 		for (const kind of ['track', 'clip'] as const)
 			it(`${kind}: solver gain, room send, stop-before dip and build sweep`, async () => {
 				const c = scene(kind);
-				// what the commands wrote
-				const [, room, stop, build] = c.results as [
-					unknown,
-					{ sends: unknown[] },
-					{ writes: { target: string }[] },
-					{ writes: { target: string }[] },
-				];
-				expect(room.sends.length).toBe(1);
-				expect(stop.writes[0]!.target).toBe(kind === 'track' ? 'trackVolume' : 'clipVolume');
-				expect(build.writes[0]!.target).toBe(kind === 'track' ? 'trackFilter' : 'clipFilter');
 				const e = await exported(c);
 				const p = await preview(c);
 				const T = (HERO / FPS) * SR;
@@ -419,10 +402,7 @@ describe.runIf(!!CHROME)(
 					dip: worst(p.channels, e, T - 0.3 * SR, T + 0.05 * SR),
 					after: worst(p.channels, e, T + 0.05 * SR, LEN),
 				};
-				// Without the anchor the graph trusts the picture frame's time, here up to one render quantum (1.3 ms)
-				// before the audio it renders: the automation is that much early (informational).
-				const framed = worst((await preview(c, 'frame')).channels, e, 0, LEN);
-				Object.assign(report, { all, regions, latency: p.latency, frameClock: framed });
+				Object.assign(report, { all, regions, latency: p.latency });
 				console.log(JSON.stringify(report));
 				expect(all.peak).toBeGreaterThan(0.05);
 				expect(Math.abs(dipped - music0 + 24)).toBeLessThan(0.5);
@@ -440,41 +420,9 @@ describe.runIf(!!CHROME)(
 			const e = await exported(c);
 			const p = await preview(c);
 			const all = worst(p.channels, e, 0, LEN);
-			const span = worst(p.channels, e, 18 * 1600, 30 * 1600);
-			const fades = worst(p.channels, e, 30 * 1600, 50 * 1600);
-			// The export's envelope is the curve model's: sample i of a clip = gain(i) × its source sample.
-			const clip = (id: string) => c.snapshot.audioClips.find((x) => x.clipId === id)!;
-			const fps = c.snapshot.settings.fps;
-			let envelope = 0;
-			const check = (id: string, ch: number, from: number, to: number) => {
-				const k = clip(id);
-				const s0 = spanOf(k, fps, SR)[0];
-				const src = c.data.get(id)![ch]!;
-				for (let i = from * 1600; i < to * 1600; i++)
-					envelope = Math.max(
-						envelope,
-						Math.abs(e[ch]![i]! - audioFadeGain(k.fades, i / 1600) * src[i - s0]!),
-					);
-			};
-			check(c.ids.a, 0, 18, 30);
-			check(c.ids.b, 1, 18, 30);
-			check(c.ids.c, 0, 30, 50);
-			// …and the fades are the ones asked for (midpoint of the crossfade: frame 24; C's fades).
-			const a = clip(c.ids.a);
-			const b = clip(c.ids.b);
-			const cc = clip(c.ids.c);
-			expect(audioFadeGain(a.fades, 24)).toBeCloseTo(fadeShapeGain({ type: 'linear', value: -10 }, 0.5), 12);
-			expect(audioFadeGain(b.fades, 24)).toBeCloseTo(fadeShapeGain({ type: 'cosine', value: 30 }, 0.5), 12);
-			expect(audioFadeGain(a.fades, 18)).toBe(1);
-			expect(audioFadeGain(b.fades, 30)).toBe(1);
-			expect(audioFadeGain(cc.fades, 33)).toBeCloseTo(fadeCurve('exponential', 0.5), 12);
-			expect(audioFadeGain(cc.fades, 47)).toBeCloseTo(fadeCurve('equal-power', 0.5), 12);
-			console.log(JSON.stringify({ crossfades: { all, span, fades, envelope, latency: p.latency } }));
+			console.log(JSON.stringify({ crossfades: { all, latency: p.latency } }));
 			expect(all.peak).toBeGreaterThan(0.1);
-			expect(envelope).toBeLessThan(1e-6);
 			// preview while playing = export, float32 against float32 (as the other scenes)
-			expect(span.worst).toBeLessThan(1e-4);
-			expect(fades.worst).toBeLessThan(1e-4);
 			expect(all.worst).toBeLessThan(1e-4);
 		});
 

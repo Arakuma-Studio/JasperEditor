@@ -1,15 +1,16 @@
 // pp-wma-preview: the editor follows the engine's playback audio of media whose audio the browser cannot decode (WMA,
 // AC-3…), hands its URLs to the preview (Program, Source, scrubbing, Detect Peak) and shows its state on the clip.
 import type { EngineJob, RegisteredMedia, TypedEvent } from '@jasper/api';
-import type { MediaAsset } from '@jasper/project';
+import type { Clip, MediaAsset } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
-import { cleanup, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { browserAudioSource } from '../src/audio/browser-decode.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
-import { playbackAudioUrls, resolveMediaHandle } from '../src/panels/program/render-doc.ts';
-import { playbackAudioBadge } from '../src/panels/timeline/model/playback-audio.ts';
+import { resolveMediaHandle } from '../src/panels/program/render-doc.ts';
+import { ClipView } from '../src/panels/timeline/components/ClipView.tsx';
+import { makeSession } from './timeline-helpers.ts';
 import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
 afterEach(cleanup);
@@ -49,26 +50,17 @@ const URL0 = '/media/mk_song00000001/playback-audio.json?v=abcdef012345';
 describe('media handles for previews', () => {
 	it('WMA: the stream WAVs once ready, null (silent) before, never the original', () => {
 		const a = asset(wma());
-		expect(
-			playbackAudioUrls(a, rt({ playbackAudio: { state: 'ready', progress: 1 }, playbackAudioUrl: URL0 })),
-		).toEqual({
-			'0': '/media/mk_song00000001/playback-audio/0.wav?v=abcdef012345',
-		});
-		expect(playbackAudioUrls(a, rt({ playbackAudio: { state: 'running', progress: 0.4 } }))).toBeNull();
-		expect(playbackAudioUrls(a, undefined)).toBeNull();
 		const h = resolveMediaHandle(
 			a,
 			rt({ playbackAudio: { state: 'ready', progress: 1 }, playbackAudioUrl: URL0 }),
 		);
 		expect(h?.url).toBe('/media/mk_song00000001');
 		expect(h?.playbackAudio).toEqual({ '0': '/media/mk_song00000001/playback-audio/0.wav?v=abcdef012345' });
-		expect(resolveMediaHandle(a, rt({}))?.playbackAudio).toBeNull();
-	});
-
-	it('AAC media keep playing the original (no playbackAudio key at all)', () => {
-		const a = asset(registered('clip.mp4'));
-		expect(playbackAudioUrls(a, rt({}))).toBeUndefined();
-		expect(resolveMediaHandle(a, rt({}))).not.toHaveProperty('playbackAudio');
+		expect(
+			resolveMediaHandle(a, rt({ playbackAudio: { state: 'running', progress: 0.4 } }))?.playbackAudio,
+		).toBeNull();
+		expect(resolveMediaHandle(a, undefined)?.playbackAudio).toBeNull();
+		expect(resolveMediaHandle(asset(registered('clip.mp4')), rt({}))).not.toHaveProperty('playbackAudio');
 	});
 
 	it('scrubbing / Detect Peak read the stream WAV (its only track), nothing while it is being made', () => {
@@ -155,33 +147,62 @@ describe('runtime sync with the engine', () => {
 	});
 });
 
-describe('timeline badge', () => {
-	const a = asset(wma());
-	it('shows progress while the playback audio is made, a visible failure, nothing once ready', () => {
-		expect(playbackAudioBadge(a, rt({ playbackAudio: { state: 'queued', progress: 0 } }))).toMatchObject({
-			label: 'Audio queued',
-			tone: 'busy',
+describe('timeline playback failure', () => {
+	it('shows a decoder failure on the actual clip and clears it when playback audio becomes ready', () => {
+		const { session, seqId } = makeSession();
+		const a = asset(wma(), session.ctx.ids.next('med'));
+		const added = session.apply({
+			label: 'audio',
+			origin: 'user',
+			commands: [
+				{ type: 'media.register', asset: a, ref: '$m' },
+				{ type: 'clip.place', source: { mediaId: '$m' }, at: 0 },
+			] as never,
 		});
-		expect(playbackAudioBadge(a, rt({ playbackAudio: { state: 'running', progress: 0.42 } }))).toMatchObject({
-			label: 'Audio 42%',
-			tone: 'busy',
-		});
-		const failed = playbackAudioBadge(
-			a,
-			rt({ playbackAudio: { state: 'failed', progress: 0, error: 'boom' } }),
+		if (!added.ok) throw new Error(JSON.stringify(added.errors));
+		const clip = Object.values(session.getCommitted().sequences[seqId]!.clips)[0] as Clip;
+		const view = (runtime: MediaRuntime) => (
+			<ClipView
+				clip={clip}
+				x={0}
+				w={120}
+				height={60}
+				viewportWidth={960}
+				scrollPx={0}
+				scrollFrame={0}
+				pxPerFrame={4}
+				rate={{ num: 30, den: 1 }}
+				selected={false}
+				trackLocked={false}
+				trackDimmed={false}
+				linked={false}
+				syncOffset={null}
+				offline={false}
+				flash={false}
+				asset={a}
+				runtime={runtime}
+				engine={null}
+				mediaVersion={0}
+				display={{
+					thumbnails: 'off',
+					videoNames: true,
+					audioNames: true,
+					waveforms: false,
+					rectified: false,
+					fxBadges: false,
+					engineBadges: false,
+					labelColors: false,
+					clipMarkers: false,
+				}}
+			/>
 		);
-		expect(failed?.tone).toBe('failed');
-		expect(failed?.title).toContain('boom');
-		expect(playbackAudioBadge(a, rt({ playbackAudio: { state: 'ready', progress: 1 } }))).toBeNull();
-		// offline media show "Media Offline" instead; AAC media never get a badge
-		expect(
-			playbackAudioBadge(a, rt({ availability: 'offline', playbackAudio: { state: 'queued', progress: 0 } })),
-		).toBeNull();
-		expect(
-			playbackAudioBadge(
-				asset(registered('clip.mp4')),
-				rt({ playbackAudio: { state: 'none', progress: 0 } }),
-			),
-		).toBeNull();
+		const r = render(view(rt({ playbackAudio: { state: 'running', progress: 0.42 } })));
+		expect(screen.getByText(/42%/)).toBeTruthy();
+		r.rerender(
+			view(rt({ playbackAudio: { state: 'failed', progress: 0, error: 'decoder fixture failure' } })),
+		);
+		expect(screen.getByTitle(/decoder fixture failure/).textContent).not.toBe('');
+		r.rerender(view(rt({ playbackAudio: { state: 'ready', progress: 1 } })));
+		expect(screen.queryByTitle(/decoder fixture failure/)).toBeNull();
 	});
 });

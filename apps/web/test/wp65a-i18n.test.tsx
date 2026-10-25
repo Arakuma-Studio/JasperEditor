@@ -16,7 +16,7 @@ import { DIALOGS, registerShellDialogs } from '../src/shell/dialogs.tsx';
 import { recoveryChangeLabel } from '../src/shell/history-labels.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { resolveMenu } from '../src/shell/menus/resolve.ts';
-import { BUILTIN_WORKSPACES, LAYOUT_PRESETS, workspaceName } from '../src/shell/workspaces/definitions.ts';
+import { workspaceName } from '../src/shell/workspaces/definitions.ts';
 import { WorkspaceStore } from '../src/shell/workspaces/store.ts';
 import { memoryStorage } from './shell-storage.ts';
 
@@ -111,26 +111,11 @@ describe('Undo / Redo labels (WP6.5a item 2)', () => {
 });
 
 describe('built-in workspace names (WP6.5a item 3)', () => {
-	it('are shown in the UI language; ids and stored names do not change', async () => {
+	it('switching language preserves workspace ids, stored names, and user-chosen names', async () => {
 		const store = new WorkspaceStore(memoryStorage());
 		const before = store.list().map((w) => [w.id, w.name]);
 		await setLanguage('es');
-		const shown = Object.fromEntries(store.list().map((w) => [w.id, workspaceName(w)]));
-		expect(shown).toMatchObject({
-			editing: 'Edición',
-			assembly: 'Ensamblaje',
-			effects: 'Efectos',
-			motion: 'Movimiento',
-			essentials: 'Esenciales',
-			captions: 'Subtítulos',
-			'sound-design': 'Diseño de sonido',
-		});
-		for (const w of LAYOUT_PRESETS) expect(workspaceName({ ...w, builtIn: true })).not.toBe('');
-		expect(workspaceName({ id: 'phone', name: 'Phone', builtIn: true })).toBe('Teléfono');
 		expect(store.list().map((w) => [w.id, w.name])).toEqual(before);
-		// every built-in has a translation
-		for (const w of BUILTIN_WORKSPACES)
-			if (!['audio', 'color'].includes(w.id)) expect(workspaceName({ ...w, builtIn: true })).not.toBe(w.name);
 		// a custom workspace keeps the user's name, even one that reads like a built-in
 		const r = store.saveAs('Effects 2', null);
 		expect(workspaceName(store.get(r.id!)!)).toBe('Effects 2');

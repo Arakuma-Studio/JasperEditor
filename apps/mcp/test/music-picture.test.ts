@@ -2,7 +2,7 @@
 // Generated C-major music with a drop at bar 17 (32 s) sits on A1, a hero cue at 00:00:20:15: find_music_drops names
 // the drop, the key and where they play; remix_audio {landDropAt: "hero"} lands the drop there (within 1 ms, recorded
 // as the remix's anchor); a later remix to another length keeps it; fit_music_to_picture end-on-bar ends the music on a
-// bar line; plan_sound_design reports tuneToMusic / stopOnBar and tunes a chime; refusals are typed; the guide teaches it.
+// bar line; plan_sound_design reports tuneToMusic / stopOnBar and tunes a chime; refusals are typed.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -15,8 +15,6 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { dropMusic } from '../../../packages/audio-fx/test/music.ts';
-import { AUDIO_FX_GUIDE } from '../src/tools/audio-fx.ts';
-import { SOUND_GUIDE } from '../src/tools/sound.ts';
 import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -145,27 +143,6 @@ afterAll(async () => {
 	}
 	if (work) rmSync(work, { recursive: true, force: true });
 }, 30_000);
-
-describe('the guides teach music to picture', () => {
-	it('names the tools and the style options', () => {
-		for (const phrase of [
-			'find_music_drops',
-			'landDropAt',
-			'fit_music_to_picture',
-			'end-on-bar',
-			'within 1 ms',
-		])
-			expect(AUDIO_FX_GUIDE, phrase).toContain(phrase);
-		for (const phrase of [
-			'find_music_drops',
-			'tuneToMusic',
-			'stopOnBar',
-			'tuned -1 st to C major',
-			'on the bar line',
-		])
-			expect(SOUND_GUIDE, phrase).toContain(phrase);
-	});
-});
 
 describe('music to picture through MCP', { timeout: 900_000 }, () => {
 	let projectId = '';

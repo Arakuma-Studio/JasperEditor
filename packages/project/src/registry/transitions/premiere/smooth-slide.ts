@@ -4,7 +4,7 @@
 // of a widely used third-party "Slide" transition; research, sources, parameter mapping and every assumption:
 // docs/wp-notes/smooth-slide.md. Part of the premiere-transitions family (bin Slide).
 //
-// Model (normative; the GLSL below mirrors `smoothSlideContributions`):
+// Model (normative):
 // - Progress p (u_progress: Start/End, Custom Completion, Reverse applied by the framework) → eased position
 //   e = ease(p) with the Animation curve (Linear, or Ease In / Out / In Out of Sine, Quad, Cubic, Quart, Quint, Expo,
 //   Circ). A sits at offset dir·e and B at dir·(e − 1) in frame units: at e = 0 the frame is A, at e = 1 it is B.
@@ -63,19 +63,19 @@ export const SMOOTH_SLIDE_EASING_LABELS: readonly string[] = [
 export const SMOOTH_SLIDE_MOTION_BLUR = ['off', 'low', 'medium', 'high'] as const;
 export const SMOOTH_SLIDE_MOTION_BLUR_LABELS = ['Off', 'Low', 'Medium', 'High'] as const;
 /** Poses averaged per frame for each Motion Blur level. */
-export const SMOOTH_SLIDE_SAMPLES: Record<(typeof SMOOTH_SLIDE_MOTION_BLUR)[number], number> = {
+const SMOOTH_SLIDE_SAMPLES: Record<(typeof SMOOTH_SLIDE_MOTION_BLUR)[number], number> = {
 	off: 1,
 	low: 4,
 	medium: 8,
 	high: 16,
 };
 /** The most poses (the size of the `u_slPoses` array). */
-export const SMOOTH_SLIDE_MAX_SAMPLES = 16;
+const SMOOTH_SLIDE_MAX_SAMPLES = 16;
 
 export const SMOOTH_SLIDE_EDGE_SMOOTHING = ['none', 'low', 'medium', 'high'] as const;
 export const SMOOTH_SLIDE_EDGE_SMOOTHING_LABELS = ['None', 'Low', 'Medium', 'High'] as const;
 /** Box-filter width (sequence px) of each Edge Smoothing level. */
-export const SMOOTH_SLIDE_EDGE_WIDTH: Record<(typeof SMOOTH_SLIDE_EDGE_SMOOTHING)[number], number> = {
+const SMOOTH_SLIDE_EDGE_WIDTH: Record<(typeof SMOOTH_SLIDE_EDGE_SMOOTHING)[number], number> = {
 	none: 0,
 	low: 1,
 	medium: 2,
@@ -83,11 +83,11 @@ export const SMOOTH_SLIDE_EDGE_WIDTH: Record<(typeof SMOOTH_SLIDE_EDGE_SMOOTHING
 };
 
 /** Opacity of the reflection at the picture's bottom edge (estimated from the reference images, see the note). */
-export const SMOOTH_SLIDE_REFLECTION_OPACITY = 0.6;
+const SMOOTH_SLIDE_REFLECTION_OPACITY = 0.6;
 /** Falloff 1 fades the reflection out over 1 / 8 picture heights; Falloff 0 keeps it even. */
-export const SMOOTH_SLIDE_FALLOFF_RATE = 8;
+const SMOOTH_SLIDE_FALLOFF_RATE = 8;
 /** Reflection blur σ in sequence px per Blurriness unit, at 1080 lines (scaled with the sequence height). */
-export const SMOOTH_SLIDE_BLUR_PX = 0.4;
+const SMOOTH_SLIDE_BLUR_PX = 0.4;
 
 const SMOOTH_SLIDE_DEFAULTS = {
 	direction: 'left',
@@ -158,7 +158,7 @@ export function smoothSlideScale(e: number, dolly: number): number {
 }
 
 /** One pose of the move: eased position e and dolly scale s. */
-export type SmoothSlidePose = { e: number; s: number };
+type SmoothSlidePose = { e: number; s: number };
 
 /**
  * Progress change per frame of the span (the shutter unit): the framework's linear step — 1 / (d + 1) two-sided,
@@ -210,72 +210,6 @@ export function smoothSlideEdgeWidth(v: ParamValue | undefined): number {
 export function smoothSlideReflectionSigma(blurriness: number, height: number): number {
 	const b = clamp(Number.isFinite(blurriness) ? blurriness : 0, 0, 100);
 	return b * SMOOTH_SLIDE_BLUR_PX * (Math.max(1, height) / 1080);
-}
-
-/** Box-filter coverage of [a, b) at x over a footprint w px wide clipped to [0, F] (w = 0: point sample). */
-export function smoothSlideCoverage(x: number, a: number, b: number, w: number, F: number): number {
-	if (w <= 0) return x >= a && x < b ? 1 : 0;
-	const lo = Math.max(x - 0.5 * w, 0);
-	const hi = Math.min(x + 0.5 * w, F);
-	const len = Math.max(hi - lo, 1e-6);
-	return clamp((Math.min(hi, b) - Math.max(lo, a)) / len, 0, 1);
-}
-
-/** What one pose shows at a sequence pixel: picture samples (side, picture uv 0…1, weight). */
-export type SmoothSlideContribution = {
-	side: 'from' | 'to';
-	uv: [number, number];
-	weight: number;
-	reflection: boolean;
-};
-
-/**
- * CPU reference of the shader for one pose at sequence pixel `px` (pixel centre, sequence px) of a W × H frame: the
- * pictures and reflections that cover it, with their sample positions and weights. The shader sums
- * `weight × side(uv)` over the contributions (reflections read the blurred sides) and averages the poses.
- */
-export function smoothSlideContributions(
-	px: [number, number],
-	pose: SmoothSlidePose,
-	p: EffectParams,
-	frame: { width: number; height: number },
-): SmoothSlideContribution[] {
-	const [W, H] = [frame.width, frame.height];
-	const dir = smoothSlideDirection(p.direction);
-	const aa = smoothSlideEdgeWidth(p.edgeSmoothing);
-	const s = Math.max(1e-3, pose.s);
-	const uv: [number, number] = [px[0] / W, px[1] / H];
-	const q: [number, number] = [(uv[0] - 0.5) / s + 0.5, (uv[1] - 0.5) / s + 0.5];
-	const rectCov = (o: [number, number], y0: number, y1: number) => {
-		const x0 = ((o[0] - 0.5) * s + 0.5) * W;
-		const x1 = ((o[0] + 0.5) * s + 0.5) * W;
-		const ya = ((o[1] + y0 - 0.5) * s + 0.5) * H;
-		const yb = ((o[1] + y1 - 0.5) * s + 0.5) * H;
-		return smoothSlideCoverage(px[0], x0, x1, aa, W) * smoothSlideCoverage(px[1], ya, yb, aa, H);
-	};
-	const c01 = (v: number) => clamp(v, 0, 1);
-	const out: SmoothSlideContribution[] = [];
-	const sides: ['from' | 'to', [number, number]][] = [
-		['from', [dir[0] * pose.e, dir[1] * pose.e]],
-		['to', [dir[0] * (pose.e - 1), dir[1] * (pose.e - 1)]],
-	];
-	const aspect = clamp(num(p.aspect, 1), 0.01, 20);
-	const falloff = clamp(num(p.falloff, 0.1), 0, 1);
-	for (const [side, o] of sides) {
-		const u: [number, number] = [q[0] - o[0], q[1] - o[1]];
-		const cov = rectCov(o, 0, 1);
-		if (cov > 0) out.push({ side, uv: [c01(u[0]), c01(u[1])], weight: cov, reflection: false });
-		// Vertical moves: only the lower picture reflects (down: A is below B; up: B is below A).
-		const reflects = dir[1] === 0 || (side === 'from' ? dir[1] > 0 : dir[1] < 0);
-		if (!bool(p.reflection) || !reflects) continue;
-		const rc = rectCov(o, 1, 1 + 1 / aspect);
-		if (rc <= 0) continue;
-		const dy = Math.max(u[1] - 1, 0);
-		const fade = SMOOTH_SLIDE_REFLECTION_OPACITY * clamp(1 - dy * falloff * SMOOTH_SLIDE_FALLOFF_RATE, 0, 1);
-		if (fade <= 0) continue;
-		out.push({ side, uv: [c01(u[0]), c01(1 - dy * aspect)], weight: rc * fade, reflection: true });
-	}
-	return out;
 }
 
 const n0 = (v: number) => v.toFixed(6);

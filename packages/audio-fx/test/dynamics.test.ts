@@ -148,7 +148,7 @@ describe('Hard Limiter', () => {
 			const z = s.slice();
 			lim.reset();
 			lim.process([z], 0, z.length);
-			for (let i = lat; i < 4800; i++) expect(Math.abs(z[i]! - s[i - lat]!)).toBeLessThan(1e-6);
+			expect(z.subarray(lat).every((v, i) => Math.abs(v - s[i]!) < 1e-6)).toBe(true);
 		}
 	});
 
@@ -194,7 +194,7 @@ describe('gate, rack, multiband, tube', () => {
 		const lim = fx('dynamics', { compOn: false, limOn: true, limThreshold: -6, softClip: true }, 1);
 		const s = sine(100, 1, SR, SR);
 		lim.process([s], 0, SR);
-		for (let i = 0; i < SR; i++) expect(Math.abs(s[i]!)).toBeLessThanOrEqual(0.5011872336272722 + 1e-6);
+		expect(s.every((v) => Math.abs(v) <= 0.5011872336272722 + 1e-6)).toBe(true);
 	});
 
 	it('Multiband crossovers sum flat (±0.1 dB) when no band compresses', () => {

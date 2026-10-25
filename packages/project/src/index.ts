@@ -133,5 +133,4 @@ export * from './ease/fit.ts';
 export { applyMultiEase, MultiEaseError, type MultiEaseInput, type MultiEaseResult } from './ease/multi.ts';
 export { type PathFitPlan, planPathCleanup } from './ease/path-fit.ts';
 export * from './ease/presets.ts';
-export * from './ease/segments.ts';
 export * from './vector/index.ts';

@@ -243,14 +243,20 @@ describe('proxies of sources with alpha', () => {
 		expect(res.statusCode).toBe(206);
 		expect(res.headers['content-type']).toBe('video/webm');
 		// Decoded with libvpx the proxy is transparent outside the boxes and half-transparent inside the green one.
-		const px = (x: number, y: number) =>
-			spawnSync('ffmpeg', [
+		const decoded = spawnSync(
+			'ffmpeg',
+			[
 				...['-v', 'error', '-c:v', 'libvpx-vp9', '-i', file],
-				...['-vf', `format=rgba,crop=1:1:${x}:${y}`, '-frames:v', '1', '-f', 'rawvideo', '-'],
-			]).stdout;
-		expect(px(1200, 650)[3]).toBeLessThan(8);
-		expect(Math.abs(px(640, 360)[3]! - 128)).toBeLessThan(12);
-		expect(px(133, 133)[3]).toBeGreaterThan(247);
+				...['-vf', 'format=rgba', '-frames:v', '1', '-f', 'rawvideo', '-'],
+			],
+			{ maxBuffer: 1280 * 720 * 4 + 1024 },
+		);
+		expect(decoded.status, decoded.stderr.toString()).toBe(0);
+		expect(decoded.stdout).toHaveLength(1280 * 720 * 4);
+		const alpha = (x: number, y: number) => decoded.stdout[(y * 1280 + x) * 4 + 3]!;
+		expect(alpha(1200, 650)).toBeLessThan(8);
+		expect(Math.abs(alpha(640, 360) - 128)).toBeLessThan(12);
+		expect(alpha(133, 133)).toBeGreaterThan(247);
 	}, 360_000);
 });
 

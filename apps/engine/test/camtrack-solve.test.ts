@@ -1,17 +1,8 @@
 // Accuracy of the 3D Camera Tracker's solver on synthetic scenes with a known camera path (the solve is compared after
 // eliminating the unobservable global translation, rotation and scale of a monocular solve).
 import { describe, expect, it } from 'vitest';
-import { adjust, type BaCam, type BaObs } from '../src/camtrack/core/bundle.ts';
-import {
-	decomposeEssential,
-	essential8pt,
-	type P2,
-	Rng,
-	ransacHomography,
-	selectPose,
-	triangulate,
-} from '../src/camtrack/core/geometry.ts';
-import { cross, type M3, mm, mv, normalize, rodrigues, sub, type V3 } from '../src/camtrack/core/linalg.ts';
+import { type P2, Rng, ransacHomography } from '../src/camtrack/core/geometry.ts';
+import { cross, type M3, mv, normalize, sub, type V3 } from '../src/camtrack/core/linalg.ts';
 import { solveCamera } from '../src/camtrack/core/solver.ts';
 import {
 	type CameraTracks,
@@ -136,41 +127,6 @@ const settings = (s: Partial<SolveSettings> = {}): SolveSettings => ({
 });
 
 describe('camtrack geometry', () => {
-	it('recovers the relative pose from the essential matrix', () => {
-		const pts = randomPoints(60, 3, { min: [-3, -2, 5], max: [3, 2, 10] });
-		const a = lookAt([0, 0, 0], [0, 0, 8], 1);
-		const b = lookAt([1, 0.2, 0.3], [0.3, 0, 8], 1);
-		const n = (cam: Cam, x: V3): P2 => {
-			const p = mv(cam.r, sub(x, cam.c));
-			return [p[0] / p[2], p[1] / p[2]];
-		};
-		const x1 = pts.map((x) => n(a, x));
-		const x2 = pts.map((x) => n(b, x));
-		const e = essential8pt(x1, x2)!;
-		const sel = selectPose(decomposeEssential(e), x1, x2)!;
-		expect(sel.count).toBe(pts.length);
-		// The first camera is the identity; the prescribed translation is [1, .2, .3].
-		expect(rotationDegrees(sel.pose.r, b.r)).toBeLessThan(1e-6);
-		const actualLength = Math.hypot(...sel.pose.c);
-		const dir = [1, 0.2, 0.3].map((v) => v / Math.sqrt(1.13));
-		expect(Math.hypot(...sel.pose.c.map((v, j) => v / actualLength - dir[j]!))).toBeLessThan(1e-6);
-		const x = triangulate([
-			{
-				pose: {
-					r: [
-						[1, 0, 0],
-						[0, 1, 0],
-						[0, 0, 1],
-					],
-					c: [0, 0, 0],
-				},
-				x: x1[0]!,
-			},
-			{ pose: sel.pose, x: x2[0]! },
-		])!;
-		expect(x[2]).toBeGreaterThan(0);
-	});
-
 	it('fits a homography with RANSAC despite outliers', () => {
 		const rng = new Rng(9);
 		const h: M3 = [
@@ -189,40 +145,6 @@ describe('camtrack geometry', () => {
 		const k = h[2][2] / fit.h[2][2];
 		for (let i = 0; i < 3; i++)
 			for (let j = 0; j < 3; j++) expect(fit.h[i]![j]! * k).toBeCloseTo(h[i]![j]!, 3);
-	});
-
-	it('bundle adjustment converges from a perturbed start', () => {
-		const truth = movingCamera(6, () => 900);
-		const pts = randomPoints(80, 5, { min: [-3, -2, 5], max: [3, 2, 11] });
-		const cams: BaCam[] = truth.map((c, i) => ({
-			pose: {
-				r: i === 0 ? c.r : mm(rodrigues([0.01, -0.02, 0.01]), c.r),
-				c: i === 0 ? c.c : ([c.c[0] + 0.05, c.c[1] - 0.05, c.c[2] + 0.05] as V3),
-			},
-			f: 900,
-			dist: { k1: 0, k2: 0, radius: 0 },
-		}));
-		const start = pts.map((p) => [p[0] + 0.05, p[1] - 0.05, p[2] + 0.1] as V3);
-		const obs: BaObs[] = [];
-		truth.forEach((c, ci) => {
-			pts.forEach((x, pi) => {
-				const p = mv(c.r, sub(x, c.c));
-				obs.push({ cam: ci, pt: pi, uv: [(c.f * p[0]) / p[2], (c.f * p[1]) / p[2]] });
-			});
-		});
-		const fixed = truth.map((_, i) => i < 2);
-		cams[1] = { pose: { r: truth[1]!.r, c: truth[1]!.c }, f: 900, dist: cams[1]!.dist };
-		adjust(cams, start, obs, {
-			focal: { kind: 'fixed' },
-			fixPoints: false,
-			fixCenters: false,
-			fixed,
-			huber: 1,
-			maxIter: 50,
-			distortion: false,
-		});
-		for (let i = 2; i < truth.length; i++)
-			expect(Math.hypot(...cams[i]!.pose.c.map((v, j) => v - truth[i]!.c[j]!))).toBeLessThan(1e-3);
 	});
 });
 

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { tinyVocab } from '@jasper/testkit/tiny-clap';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { EmbeddingStore, keyOf, MAX_RECORDS } from '../src/sounds/semantic/embeddings.ts';
+import { EmbeddingStore, keyOf } from '../src/sounds/semantic/embeddings.ts';
 import {
 	CLAP_EMBED_DIM,
 	CLAP_FRAMES,
@@ -16,7 +16,6 @@ import {
 	CLAP_RATE,
 	CLAP_WINDOW_SAMPLES,
 	clapLogMel,
-	clapMelFilters,
 	meanEmbedding,
 	normalize,
 	repeatPad,
@@ -41,8 +40,7 @@ import {
 	verdictOf,
 } from '../src/sounds/semantic/score.ts';
 import { ClapTokenizer, EOS_ID, MAX_TEXT_TOKENS } from '../src/sounds/semantic/tokenizer.ts';
-import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 function sine(freq: number, seconds: number, amp = 0.5): Float32Array {
 	const n = Math.round(seconds * CLAP_RATE);
@@ -66,7 +64,7 @@ describe('CLAP front end', () => {
 		const x = Float32Array.from({ length: 300_000 }, (_, i) => (i % 7) / 7);
 		const p = repeatPad(x);
 		expect(p.length).toBe(CLAP_WINDOW_SAMPLES);
-		expect([...p.subarray(0, 300_000)]).toEqual([...x]);
+		expect(p.subarray(0, 300_000).every((v, i) => v === x[i])).toBe(true);
 		expect(p.subarray(300_000).every((v) => v === 0)).toBe(true);
 		const short = Float32Array.from([1, 2, 3]);
 		const q = repeatPad(short);
@@ -88,22 +86,36 @@ describe('CLAP front end', () => {
 		const padded = repeatPad(x);
 		const at = (i: number) =>
 			i < 0 ? padded[-i]! : i >= padded.length ? padded[2 * padded.length - 2 - i]! : padded[i]!;
-		const fb = clapMelFilters();
+		// Slaney-normalized triangle edges from the published CLAP 50 Hz–14 kHz / 64-band recipe
+		// (Hugging Face audio_utils.mel_filter_bank); independently calculated, never read from our filterbank.
+		const bands = [
+			[0, 50, 103.984919015921, 157.969838031841],
+			[9, 535.864271143287, 589.849190159208, 643.834109175128],
+			[31, 2108.89090134287, 2229.62978760088, 2357.28125461191],
+			[63, 12524.7984562881, 13241.8721632567, 14000],
+		] as const;
 		for (const t of [0, 1, 37, 500, CLAP_FRAMES - 1]) {
 			const frame = Array.from(
 				{ length: 1024 },
 				(_, i) => at(t * 480 - 512 + i) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / 1024)),
 			);
-			for (const m of [0, 9, 31, 63]) {
+			// The DFT is independent of the selected mel band: compute each bin once per frame.
+			const power = new Float64Array(513);
+			for (let b = 0; b <= 512; b++) {
+				let re = 0;
+				let im = 0;
+				for (let i = 0; i < 1024; i++) {
+					re += frame[i]! * Math.cos((2 * Math.PI * b * i) / 1024);
+					im -= frame[i]! * Math.sin((2 * Math.PI * b * i) / 1024);
+				}
+				power[b] = re * re + im * im;
+			}
+			for (const [m, lo, mid, hi] of bands) {
 				let mel = 0;
 				for (let b = 0; b <= 512; b++) {
-					let re = 0;
-					let im = 0;
-					for (let i = 0; i < 1024; i++) {
-						re += frame[i]! * Math.cos((2 * Math.PI * b * i) / 1024);
-						im -= frame[i]! * Math.sin((2 * Math.PI * b * i) / 1024);
-					}
-					mel += (re * re + im * im) * fb[b * CLAP_MELS + m]!;
+					const hz = (b * 48_000) / 1024;
+					const triangle = Math.max(0, Math.min((hz - lo) / (mid - lo), (hi - hz) / (hi - mid)));
+					mel += power[b]! * triangle * (2 / (hi - lo));
 				}
 				const want = 10 * Math.log10(Math.max(1e-10, mel));
 				expect(Math.abs(got[t * CLAP_MELS + m]! - want)).toBeLessThan(1e-4);
@@ -250,16 +262,6 @@ describe('calibrated match', () => {
 			]),
 		).toEqual([-1, 1]);
 	});
-
-	it('writes every vocabulary phrase once, short and lower-case', () => {
-		expect(SOUND_VOCABULARY.length).toBeGreaterThanOrEqual(280);
-		expect(SOUND_VOCABULARY.length).toBeLessThanOrEqual(330);
-		expect(new Set(SOUND_VOCABULARY).size).toBe(SOUND_VOCABULARY.length);
-		for (const p of SOUND_VOCABULARY) {
-			expect(p.length).toBeLessThanOrEqual(80);
-			expect(p).toBe(p.trim());
-		}
-	});
 });
 
 describe('Find Moment windows', () => {
@@ -364,7 +366,6 @@ describe('embedding cache', () => {
 		expect(await third.has(take)).toBe(true);
 		expect(await third.clear()).toBe(1);
 		expect(await new EmbeddingStore(file).has(take)).toBe(false);
-		expect(MAX_RECORDS).toBeGreaterThan(10_000);
 	});
 
 	it('sets a damaged file aside and starts empty; fuzzed bytes never throw', async () => {

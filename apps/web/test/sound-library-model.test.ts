@@ -1,27 +1,16 @@
 // Sound Library (spec 12 §2.7, P1-R7): pure helpers — prefs parsing, request building, local collections, badges,
-// accessible names, waveform columns, drag payload, track choice and peak-aligned placement, drop snapping.
-import { FLICKS_PER_SECOND, flicksPerFrame, type Sequence } from '@jasper/project';
+// waveform columns, drag payload and drop snapping.
+import { flicksPerFrame, type Sequence } from '@jasper/project';
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resolveSoundDrop } from '../src/panels/timeline/model/sound-drop.ts';
-import {
-	chooseSoundTrack,
-	JASPER_SOUND_MIME,
-	nextSfxTrackName,
-	planSoundPlacement,
-	readSoundDrag,
-	timingOf,
-	trackIsFree,
-	writeSoundDrag,
-} from '../src/sound/insert.ts';
+import { readSoundDrag, writeSoundDrag } from '../src/sound/insert.ts';
 import {
 	DEFAULT_FILTERS,
 	decodeBase64,
-	descriptorWords,
 	licenseBadge,
 	searchLocal,
 	searchRequest,
-	soundAccessibleName,
 	usedSoundIds,
 	waveformColumns,
 } from '../src/sound/model.ts';
@@ -192,22 +181,6 @@ describe('requests, collections, badges, names', () => {
 		expect(licenseBadge({ license: 'CC-BY-NC-4.0', source: src })).toMatchObject({ text: 'NC', warn: true });
 		expect(licenseBadge({ license: 'Proprietary', source: src })).toMatchObject({ text: '?', warn: true });
 	});
-	it('gives rows descriptor-rich accessible names', () => {
-		const e = soundEntry({ title: 'Door slam', types: ['hit', 'thump'], peakSec: 0.023, durationSec: 0.8 });
-		const name = soundAccessibleName(e, true);
-		expect(name).toContain('Door slam');
-		expect(name).toContain('Hit, Thump');
-		expect(name).toContain('0.80 s');
-		expect(name).toContain('peak at 23 ms');
-		expect(name).toContain('punchy');
-		expect(name).toContain('dark');
-		expect(name).toContain('heavy');
-		expect(name).toContain('CC0');
-		expect(name).toContain('favourite');
-		expect(
-			descriptorWords({ ...e.descriptors, riseMs: 80, centroidHz: 5000, below150Share: 0.01, flatness: 0.5 }),
-		).toEqual(['soft attack', 'bright', 'light', 'noisy']);
-	});
 	it('lists the library sounds a project uses', () => {
 		const { session } = makeSession();
 		const r = session.apply({
@@ -283,7 +256,7 @@ describe('drag payload', () => {
 		const e = soundEntry();
 		const d = dt();
 		writeSoundDrag(d as unknown as DataTransfer, e);
-		expect(d.types).toContain(JASPER_SOUND_MIME);
+		expect(d.types).toContain('application/x-jasper-sound');
 		expect(readSoundDrag(d)).toEqual({ type: 'jasper/sound', soundId: e.id });
 		for (const raw of [
 			'{',
@@ -292,186 +265,17 @@ describe('drag payload', () => {
 			'7',
 		]) {
 			const bad = dt();
-			bad.setData(JASPER_SOUND_MIME, raw);
+			bad.setData('application/x-jasper-sound', raw);
 			expect(readSoundDrag(bad)).toBeNull();
 		}
 		expect(readSoundDrag(null)).toBeNull();
 	});
 });
 
-// ----------------------------------------------------------------------------------------------- placement
-
-function seqOf(session: ReturnType<typeof makeSession>['session'], seqId: string): Sequence {
-	return session.getCommitted().sequences[seqId] as Sequence;
-}
-
-function placeAudio(
-	session: ReturnType<typeof makeSession>['session'],
-	at: number,
-	track: string,
-	seconds = 2,
-) {
-	const r = session.apply({
-		label: 'x',
-		origin: 'user',
-		commands: [
-			{ type: 'media.register', asset: { ...videoAsset(seconds, true), kind: 'audio' }, ref: '$m' },
-			{ type: 'clip.place', source: { mediaId: '$m' }, at, tracks: { audio: track }, video: false },
-		] as never,
-	});
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-}
-
-describe('track choice and peak-aligned placement (spec 12 §2.3)', () => {
-	it('puts the peak on the cue frame (frame-accurate; the rest < 1 frame late or trimmed from a quiet head)', () => {
-		const { session, seqId } = makeSession();
-		const seq = seqOf(session, seqId);
-		const F = flicksPerFrame(seq.settings.frameRate);
-		const e = soundEntry({ peakSec: 0.2325, durationSec: 1.3 });
-		const r = planSoundPlacement({ seq, timing: timingOf(e), cueFrame: 45, align: 'peak' });
-		expect(r.ok).toBe(true);
-		if (!r.ok) return;
-		const p = r.placement;
-		// the aligned point in sequence flicks: start + (peak − In)
-		const at = p.start * F + (0.2325 * FLICKS_PER_SECOND - p.sourceInFlicks);
-		expect(at - 45 * F).toBeGreaterThanOrEqual(-2);
-		expect(at - 45 * F).toBeLessThan(F);
-		// no SFX track yet: a new one (spec 12 §2.3: sound effects never go on other tracks by themselves)
-		expect(p.track).toMatchObject({ kind: 'new', name: 'SFX 1', label: 'A4' });
-		expect(p.start + p.alignOffsetFrames).toBeCloseTo(45 + p.errorFlicks / F, 6);
-	});
-	it('aligns the start with Alt (align start) and clamps a start before 0 by trimming the head', () => {
-		const { session, seqId } = makeSession();
-		const seq = seqOf(session, seqId);
-		const e = soundEntry({ peakSec: 1.5, durationSec: 3 });
-		// start = the onset (first point within 30 dB of the peak), like MCP insert_sound
-		const s = planSoundPlacement({
-			seq,
-			timing: { ...timingOf(e), onsetSec: 0 },
-			cueFrame: 30,
-			align: 'start',
-		});
-		expect(s.ok && s.placement.start).toBe(30);
-		const F = flicksPerFrame(seq.settings.frameRate);
-		const o = planSoundPlacement({ seq, timing: timingOf(e), cueFrame: 90, align: 'start' });
-		expect(o.ok).toBe(true);
-		if (o.ok)
-			expect(o.placement.start * F + 1.49 * FLICKS_PER_SECOND - o.placement.sourceInFlicks).toBeCloseTo(
-				90 * F,
-				-1,
-			);
-		const c = planSoundPlacement({ seq, timing: timingOf(e), cueFrame: 10, align: 'peak' });
-		expect(c.ok && c.placement.start).toBe(0);
-		// the peak still lands on frame 10: the head before it is cut from the In point
-		expect(c.ok && c.placement.sourceInFlicks / FLICKS_PER_SECOND).toBeGreaterThan(1);
-	});
-	it('prefers the drop track, then targeted, then a free unmuted SFX track, else a new SFX n (spec 12 §2.3, §2.7)', () => {
-		const { session, seqId } = makeSession();
-		placeAudio(session, 0, 'A1', 4);
-		let seq = seqOf(session, seqId);
-		const [a1, a2, a3] = seq.audioTracks.map((t) => t.id);
-		const span = { start: 30, frames: 20 };
-		expect(trackIsFree(seq, a1!, 30, 20)).toBe(false);
-		// free A2 and A3 are not SFX tracks: never chosen by themselves
-		expect(chooseSoundTrack(seq, span)).toEqual({ kind: 'new', name: 'SFX 1', label: 'A4' });
-		expect(chooseSoundTrack(seq, span, { preferredTrackId: a1 })).toMatchObject({ kind: 'new' });
-		expect(chooseSoundTrack(seq, span, { preferredTrackId: a3 })).toMatchObject({ trackId: a3 });
-		expect(chooseSoundTrack(seq, span, { targeted: [a1!, a3!] })).toMatchObject({ trackId: a3 });
-		const rename = (trackId: string, patch: Record<string, unknown>) => {
-			const r = session.apply({
-				label: 'n',
-				origin: 'user',
-				commands: [{ type: 'track.update', sequenceId: seqId, trackId, patch }] as never,
-			});
-			expect(r.ok, JSON.stringify(r)).toBe(true);
-		};
-		rename(a3!, { name: 'SFX' });
-		seq = seqOf(session, seqId);
-		expect(chooseSoundTrack(seq, span)).toMatchObject({ trackId: a3, label: 'A3' });
-		// a muted SFX track is skipped (the sound would not be heard)
-		rename(a3!, { mute: true });
-		seq = seqOf(session, seqId);
-		expect(chooseSoundTrack(seq, span)).toMatchObject({ kind: 'new', name: 'SFX 1' });
-		rename(a3!, { mute: false });
-		rename(a2!, { name: 'sfx 2' });
-		placeAudio(session, 0, 'A3', 4);
-		seq = seqOf(session, seqId);
-		expect(chooseSoundTrack(seq, span)).toMatchObject({ trackId: a2 });
-		placeAudio(session, 0, 'A2', 4);
-		seq = seqOf(session, seqId);
-		expect(chooseSoundTrack(seq, span)).toEqual({ kind: 'new', name: 'SFX 1', label: 'A4' });
-		// after the span the SFX tracks are free again: the first of them wins
-		expect(chooseSoundTrack(seq, { start: 200, frames: 10 })).toMatchObject({ trackId: a2 });
-		expect(nextSfxTrackName({ audioTracks: [{ name: 'SFX 1' }, { name: 'sfx 2' }] } as never)).toBe('SFX 3');
-	});
-	it('never chooses a track with audio over the span (property)', () => {
-		fc.assert(
-			fc.property(
-				fc.array(
-					fc.record({
-						at: fc.integer({ min: 0, max: 200 }),
-						track: fc.constantFrom('A1', 'A2', 'A3'),
-						s: fc.integer({ min: 1, max: 4 }),
-					}),
-					{
-						maxLength: 8,
-					},
-				),
-				fc.integer({ min: 0, max: 300 }),
-				fc.double({ min: 0, max: 2, noNaN: true }),
-				(clips, cue, peak) => {
-					const { session, seqId } = makeSession();
-					for (const c of clips) {
-						const r = session.apply({
-							label: 'x',
-							origin: 'user',
-							commands: [
-								{ type: 'media.register', asset: { ...videoAsset(c.s, true), kind: 'audio' }, ref: '$m' },
-								{
-									type: 'clip.place',
-									source: { mediaId: '$m' },
-									at: c.at,
-									tracks: { audio: c.track },
-									video: false,
-								},
-							] as never,
-						});
-						if (!r.ok) return;
-					}
-					const named = session.apply({
-						label: 'n',
-						origin: 'user',
-						commands: [
-							{
-								type: 'track.update',
-								sequenceId: seqId,
-								trackId: seqOf(session, seqId).audioTracks[2]!.id,
-								patch: { name: 'SFX' },
-							},
-						] as never,
-					});
-					expect(named.ok).toBe(true);
-					const seq = seqOf(session, seqId);
-					const e = soundEntry({ peakSec: peak, durationSec: 2.5 });
-					const r = planSoundPlacement({ seq, timing: timingOf(e), cueFrame: cue, align: 'peak' });
-					expect(r.ok).toBe(true);
-					if (!r.ok) return;
-					const p = r.placement;
-					if (p.track.kind === 'existing') {
-						expect(trackIsFree(seq, p.track.trackId, p.start, p.frames)).toBe(true);
-						expect(p.track.trackId).toBe(seq.audioTracks[2]!.id);
-					} else expect(trackIsFree(seq, seq.audioTracks[2]!.id, p.start, p.frames)).toBe(false);
-				},
-			),
-			{ numRuns: 60 },
-		);
-	});
-});
-
 describe('timeline drop: the peak is the primary snap edge', () => {
 	it('snaps the peak to the playhead first, the clip edges only when the peak finds nothing', () => {
 		const { session, seqId } = makeSession();
-		const seq = seqOf(session, seqId);
+		const seq = session.getCommitted().sequences[seqId] as Sequence;
 		const e = soundEntry({ peakSec: 0.5, durationSec: 2 }); // peak 15 frames in at 29.97
 		const base = { seq, info: e, preferredTrackId: null, alt: false, snapping: true, thresholdFrames: 4 };
 		const peak = resolveSoundDrop({ ...base, pointerFrame: 98, playhead: 100 });

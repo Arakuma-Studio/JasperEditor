@@ -61,7 +61,7 @@ function Field(props: { label: string; value: string; children: ReactNode; testI
 }
 
 /** The scenes to lay after the user's edits: joined rows go into the scene before; a row's own bed when it differs. */
-export function editedScenes(
+function editedScenes(
 	plan: SoundBedsPlan,
 	edits: readonly SceneEdit[],
 	defaultSoundId: string,

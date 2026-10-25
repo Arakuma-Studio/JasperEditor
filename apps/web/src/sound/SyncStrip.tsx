@@ -72,7 +72,7 @@ async function stillUrl(
 }
 
 /** The waveform path (a filled envelope of the 10 ms peaks, mirrored) over `w` × `h`. */
-export function wavePath(peaksDb: readonly number[], w: number, h: number): string {
+function wavePath(peaksDb: readonly number[], w: number, h: number): string {
 	if (!peaksDb.length || w <= 0 || h <= 0) return '';
 	const mid = h / 2;
 	const n = peaksDb.length;
@@ -96,8 +96,8 @@ export type StripGeometry = {
 	frameX: number[];
 };
 
-/** Where things sit in the strip (pure; tested). */
-export function stripGeometry(
+/** Where things sit in the strip. */
+function stripGeometry(
 	seq: Pick<Sequence, 'settings'> & { clips?: unknown },
 	cueFrame: number,
 	offsetMs: number | null,

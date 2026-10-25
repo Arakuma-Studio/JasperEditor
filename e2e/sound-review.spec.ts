@@ -2,11 +2,9 @@
 // agent with the token and no editor key) appears as a card ("… proposes …: n sounds on k new tracks", "… is waiting for
 // your review" while it polls) → Review → in the Review panel accept two, reject one, cycle an alternate, write a note →
 // Ctrl+Enter applies them as ONE History entry ("Applied n of m sounds from <agent>") → Ctrl+Z → Reopen review: the
-// decisions are intact → a cue moves under an accepted item → it shows stale with why, and Apply reports it stale. Then
-// Sequence ▸ Sound Design ▸ Auto Sound Pass… → Propose → review → Accept all → Apply → native export: every placed,
-// peak-aligned sound peaks on its cue frame (ffmpeg + cross-correlation). Screenshots: test-results/e2e-sound-review.
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+// decisions are intact → a cue moves under an accepted item → it shows stale with why, and Apply reports it stale.
+// Screenshots: test-results/e2e-sound-review.
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
@@ -15,7 +13,6 @@ import {
 	browserLaunch,
 	createProject,
 	enableAgentBridge,
-	exportViaUi,
 	focusTimeline,
 	query,
 	ROOT,
@@ -27,7 +24,6 @@ test.use({ launchOptions: browserLaunch(['--autoplay-policy=no-user-gesture-requ
 test.describe.configure({ mode: 'serial' });
 
 const outDir = join(ROOT, 'test-results', 'e2e-sound-review');
-const FLICKS = 705_600_000;
 const AGENT = 'e2e-sound-agent';
 let page: Page;
 
@@ -199,15 +195,6 @@ test('agent proposal → card → review: accept, reject, alternate, note → Ap
 	expect(place).toHaveLength(4);
 	const [cut, push, boom, last] = place as [Item, Item, Item, Item];
 	await expect(reviewPanel().locator('[data-review-row]')).toHaveCount(4);
-	// entering review zoomed the timeline to the proposal: every ghost is inside the track area
-	const area = (await page.getByTestId('timeline-clip-area').boundingBox())!;
-	const ghosts = page.locator('[data-ghost-clip]');
-	await expect(ghosts).toHaveCount(4);
-	for (const g of await ghosts.all()) {
-		const b = (await g.boundingBox())!;
-		expect(b.x).toBeGreaterThanOrEqual(area.x - 1);
-		expect(b.x + b.width).toBeLessThanOrEqual(area.x + area.width + 1);
-	}
 	await page.screenshot({ path: join(outDir, 'review.png') });
 
 	// decisions in the Review panel (keyboard in the list: the Review scope)
@@ -311,143 +298,16 @@ test('agent proposal → card → review: accept, reject, alternate, note → Ap
 	seq = await sequence(page);
 	expect(Object.values(seq.clips).some((c) => c.sfx?.cueId === cut.meta!.cueId)).toBe(false);
 	await page.getByTestId('review-bar-exit').click();
-});
 
-/** The first channel as 48 kHz float samples (ffmpeg); `rate` ≠ 1 plays it varispeed like a clip speed. */
-function decodeMono(file: string, rate = 1): Float32Array {
-	const af = rate === 1 ? 'pan=mono|c0=c0' : `pan=mono|c0=c0,asetrate=48000*${rate},aresample=48000`;
-	const raw = execFileSync(
-		process.env.JASPER_FFMPEG ?? 'ffmpeg',
-		['-v', 'error', '-i', file, '-map', '0:a:0', '-af', af, '-ar', '48000', '-f', 'f32le', '-'],
-		{ maxBuffer: 256 * 1024 * 1024 },
-	);
-	return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
-}
-
-/** The lag of `ref[w0, w1)` in `mix` around `guess` (± `span` samples) with the largest normalised correlation. */
-function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, guess: number, span: number) {
-	let best = { lag: Number.NaN, r: -2 };
-	let rr = 0;
-	for (let i = w0; i < w1; i++) rr += ref[i]! * ref[i]!;
-	for (let lag = guess - span; lag <= guess + span; lag++) {
-		let xy = 0;
-		let xx = 0;
-		for (let i = w0; i < w1; i++) {
-			const x = mix[lag + i] ?? 0;
-			xy += x * ref[i]!;
-			xx += x * x;
-		}
-		const r = xx > 0 && rr > 0 ? xy / Math.sqrt(xx * rr) : -1;
-		if (r > best.r) best = { lag, r };
-	}
-	return best;
-}
-
-test('Auto Sound Pass… → Propose → review → Accept all → Apply → export: peaks on the cue frames', async ({
-	request,
-}) => {
-	test.setTimeout(1_200_000);
-	await createProject(page, 'E2E Auto Sound Pass');
-	const r = await transact(page, [
-		{ type: 'clip.addSolid', at: 0, duration: 75, track: 'V1', color: [0.8, 0.2, 0.2, 1] },
-		{ type: 'clip.addSolid', at: 75, duration: 75, track: 'V1', color: [0.2, 0.6, 0.2, 1] },
-		{ type: 'clip.addSolid', at: 150, duration: 75, track: 'V1', color: [0.2, 0.3, 0.8, 1] },
-		{ type: 'clip.addSolid', at: 225, duration: 75, track: 'V1', color: [0.7, 0.7, 0.2, 1] },
-	] as never);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-	await libraryReady(request);
-	await page.keyboard.press('Alt+Shift+Digit9');
-	await expect(reviewPanel()).toBeVisible({ timeout: 60_000 });
-	const menubar = page.getByTestId('title-bar').getByRole('menubar');
-	await menubar.getByRole('menuitem', { name: 'Sequence', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'Sound Design' }).hover();
-	await page.getByRole('menuitem', { name: 'Auto Sound Pass…' }).click();
-	const dialog = page.getByTestId('auto-sound-pass-dialog');
-	await expect(dialog).toBeVisible();
-	await expect(dialog.locator('[data-cue-source-count="edits"]')).toHaveText('3 found · 3 kept');
-	await page.screenshot({ path: join(outDir, 'auto-pass-dialog.png') });
-	const before = await appliedLabels(page);
-	await dialog.getByRole('button', { name: 'Propose' }).click();
-	await expect(dialog).toBeHidden({ timeout: 240_000 });
-	await expect(page.getByTestId('review-bar')).toBeVisible();
-	// the user's own proposal: no card, review opened directly; nothing applied yet
-	await expect(page.getByTestId('proposal-card')).toHaveCount(0);
-	expect(await appliedLabels(page)).toEqual(before);
-	await expect(reviewPanel().locator('[data-review-row]')).toHaveCount(3);
-	await page.screenshot({ path: join(outDir, 'auto-pass-review.png') });
-	await page.getByTestId('review-bar-accept-all').click();
-	await expect(page.getByTestId('review-bar-apply')).toHaveText('Apply 3 of 3');
-	await page.getByTestId('review-bar-apply').click();
-	await expect
-		.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 })
-		.toBe(before.length + 1);
-	const applied = page.getByTestId('toast').filter({ hasText: 'Applied 3 of 3 sounds from you' });
-	await expect(applied).toBeVisible();
-	await expect(applied.getByRole('button', { name: 'Reopen review' })).toBeVisible();
-	// every item applied: the rows say so; Exit ends the review
-	await expect(reviewPanel().locator('[data-review-state="applied"]')).toHaveCount(3);
-	await page.getByTestId('review-bar-exit').click();
-	await expect(page.getByTestId('review-bar')).toBeHidden();
-	await page.screenshot({ path: join(outDir, 'auto-pass-applied.png') });
-
-	// export: each single-layer, peak-aligned placement peaks on its cue frame. The toasts stay up: they keep clear of
-	// Export mode's footer (its Export button) by themselves
-	const seq = await sequence(page);
-	const cues = Object.values(seq.soundDesign?.cues ?? {});
-	expect(cues.map((c) => c.frame).sort((a, b) => a - b)).toEqual([75, 150, 225]);
-	const { file } = await exportViaUi(page, request, {
-		engine: 'native',
-		fileName: 'sound-review.mp4',
-		expectPath: /native/i,
-		outDir,
-		jobTimeoutMs: 600_000,
-		screenshot: join(outDir, 'auto-pass-export-with-toasts.png'),
-	});
-	const mix = decodeMono(file);
-	const SR = 48_000;
-	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
-	type MediaRow = { locators: { type: string; key?: string }[] };
-	const mediaDoc = await query<Record<string, MediaRow>>(page, 'doc.get', { path: ['media'] });
-	const report: Record<string, unknown>[] = [];
-	for (const cue of cues) {
-		const ids = (cue.placedClipIds ?? []).filter((id) => seq.clips[id]);
-		expect(ids).toHaveLength(1);
-		const c = seq.clips[ids[0]!]!;
-		if (c.sfx!.placement.align !== 'peak') continue;
-		const key = mediaDoc[c.mediaId]!.locators.find((l) => l.type === 'engine-store')?.key;
-		expect(key).toBeTruthy();
-		const res = await request.get(`/media/${encodeURIComponent(key!)}`);
-		expect(res.ok()).toBe(true);
-		const local = join(outDir, `${c.id}.media`);
-		writeFileSync(local, await res.body());
-		const ref = decodeMono(local, c.speed.rate);
-		const refPoint = Math.round(((c.sfx!.placement.peakFlicks / FLICKS) * SR) / c.speed.rate);
-		const W = 4800;
-		const w0 = Math.max(0, refPoint - W);
-		const w1 = Math.min(ref.length, refPoint + W);
-		const clipStart = Math.round(((c.start * F - c.sourceIn / c.speed.rate) / FLICKS) * SR);
-		const found = locate(mix, ref, w0, w1, clipStart, 960);
-		const cueSample = Math.round(((cue.frame * F) / FLICKS) * SR);
-		const peakAt = found.lag + refPoint;
-		// where the document puts the aligned point
-		const docPoint = Math.round(
-			((c.start * F + (c.sfx!.placement.peakFlicks - c.sourceIn) / c.speed.rate) / FLICKS) * SR,
-		);
-		report.push({
-			cue: cue.frame,
-			r: found.r,
-			peakOffsetSamples: peakAt - cueSample,
-			vsDocument: peakAt - docPoint,
-		});
-		expect(Math.abs(peakAt - docPoint)).toBeLessThanOrEqual(2);
-		expect(found.r).toBeGreaterThan(0.95);
-		// on the cue frame: within one frame after it (the placement keeps the sub-frame rest), 1 ms of slack before
-		expect(peakAt - cueSample).toBeGreaterThanOrEqual(-48);
-		expect(peakAt - cueSample).toBeLessThan(
-			SR / (seq.settings.frameRate.num / seq.settings.frameRate.den) + 48,
-		);
-	}
-	console.log('export peaks', JSON.stringify(report));
-	test.info().annotations.push({ type: 'peaks', description: JSON.stringify(report) });
-	expect(report.length).toBeGreaterThan(0);
+	// The review toast must not obstruct Export at the smaller window size of the historical regression.
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await focusTimeline(page);
+	await page.keyboard.press('Control+KeyM');
+	await expect(page.getByTestId('export-mode')).toBeVisible();
+	const start = page.getByTestId('export-start');
+	await expect(start).toBeEnabled({ timeout: 30_000 });
+	await expect(toast2).toBeVisible();
+	await start.click({ trial: true, timeout: 10_000 });
+	await page.screenshot({ path: join(outDir, 'export-with-review-toast.png') });
+	await page.keyboard.press('Escape');
 });

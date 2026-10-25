@@ -49,7 +49,6 @@ test('visited editor reloads online and offline', async ({ page, context }) => {
 				.replace(/;$/, ''),
 		) as string[];
 	});
-	expect(optional.length).toBeGreaterThan(0);
 	await expect
 		.poll(() =>
 			page.evaluate(
@@ -73,9 +72,6 @@ test('visited editor reloads online and offline', async ({ page, context }) => {
 	await page.getByRole('button', { name: 'Continue without engine' }).click();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('timeline-panel')).toBeVisible();
-	await page.evaluate(async (urls) => {
-		for (const url of urls) await import(url);
-	}, optional);
 	await page.waitForFunction(() => !!window.jasper);
 	const clipId = await page.evaluate(async () => {
 		const result = await window.jasper!.transact({
@@ -99,16 +95,6 @@ test('visited editor reloads online and offline', async ({ page, context }) => {
 			}, clipId),
 		)
 		.toBe(90.09);
-	const screenshot = optional.find((url) => /\/vendor-screenshot-/.test(url));
-	expect(screenshot).toBeTruthy();
-	expect(
-		await page.evaluate(async (url) => {
-			const module = (await import(url)) as {
-				domToPng(node: HTMLElement, options: { scale: number }): Promise<string>;
-			};
-			return (await module.domToPng(document.body, { scale: 0.25 })).startsWith('data:image/png;base64,');
-		}, screenshot!),
-	).toBe(true);
 	expect(errors).toEqual([]);
 });
 

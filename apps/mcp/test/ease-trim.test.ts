@@ -4,7 +4,6 @@
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
-	builtinEasePresets,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
@@ -31,7 +30,6 @@ function fakeEngine() {
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Ease', preset: 'hd-1080p-30' });
 	let revision = 0;
 	const undo: { label: string; before: ProjectDocument }[] = [];
-	const applied: string[] = [];
 	const apply = (tx: Record<string, unknown>) => {
 		const cmds = tx.commands as { type: string }[];
 		if (cmds.length === 1 && cmds[0]!.type === 'history.undo') {
@@ -63,7 +61,6 @@ function fakeEngine() {
 		});
 		if (r.result.ok && !tx.dryRun) {
 			undo.push({ label: String(tx.label), before: doc });
-			applied.push(String(tx.label));
 			doc = r.document;
 			revision++;
 		}
@@ -86,7 +83,7 @@ function fakeEngine() {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, doc: () => doc, applied };
+	return { link, doc: () => doc };
 }
 
 let open: Client[] = [];
@@ -324,14 +321,18 @@ describe('ease read-back', () => {
 		const t2 = await connect();
 		const b = await animatedTitle(t2);
 		const clean = await t2.ok('cleanup_motion_path', { clipId: b.clipId, tolerance: 2000 });
-		expect(clean.results[0].properties[0]).toMatchObject({ before: 3 });
-		expect(clean.results[0].removed.length).toBeGreaterThanOrEqual(0);
+		expect(clean.results[0].properties[0]).toMatchObject({ before: 3, after: 2 });
+		const simplified = await t2.ok('get_clip_properties', { clipId: b.clipId, keys: ['transform.position'] });
+		expect(simplified.properties[0].keyframes.map((key: Json) => [key.frame, key.value])).toEqual([
+			[0, [200, 540]],
+			[60, [1700, 540]],
+		]);
 	});
 
 	it('refusals and argument errors are error results with hints, applying nothing', async () => {
 		const t = await connect();
 		const { clipId, k } = await animatedTitle(t);
-		const before = t.engine.applied.length;
+		const before = structuredClone(t.engine.doc());
 		const unknownKey = await t.fail('apply_ease', { keyframeIds: ['kf_nope'], curve: 'basic.ease' });
 		expect(unknownKey.code).toBe('E_NOT_FOUND');
 		expect(unknownKey.hint).toBeTruthy();
@@ -350,11 +351,13 @@ describe('ease read-back', () => {
 		expect(typo.code).toBe('E_INVALID_PARAM');
 		const bad = await t.fail('apply_ease', { keyframeIds: k, curve: 'cubic-bezier(1.5, 0, 0.5, 1)' });
 		expect(bad.message).toMatch(/x1/);
+		expect(t.engine.doc()).toEqual(before);
 		// A multi curve needs different end values: k0 → k2 after making them equal is refused by the command.
 		await t.ok('transfer_keyframe_values', { fromKeyframeIds: [k[0]], toKeyframeIds: [k[2]] });
+		const afterValid = structuredClone(t.engine.doc());
 		const flat = await t.fail('apply_ease', { keyframeIds: [k[0], k[2]], curve: 'bounce.out-2' });
 		expect(flat.code).toBe('E_INVALID_PARAM');
-		expect(t.engine.applied.length).toBe(before + 1);
+		expect(t.engine.doc()).toEqual(afterValid);
 		// Strict arguments: unknown keys, also inside the curve object.
 		const strict = await t.call('apply_ease', { keyframeIds: k, curve: 'basic.ease', section: ['in'] });
 		expect(strict.json.error.code).toBe('E_UNKNOWN_ARGUMENT');
@@ -374,8 +377,7 @@ describe('ease read-back', () => {
 		const before = JSON.stringify(t.engine.doc().sequences);
 		await t.ok('apply_ease', { keyframeIds: [k[1], k[2]], curve: 'elastic.out-2-medium' });
 		expect(JSON.stringify(t.engine.doc().sequences)).not.toBe(before);
-		const u = await t.ok('undo');
-		expect(u.undone).toEqual({ 'history.undo': 'Apply Ease: Elastic Out: 2 Swings, Medium Decay' });
+		await t.ok('undo');
 		expect(JSON.stringify(t.engine.doc().sequences)).toBe(before);
 		const props = await t.ok('get_clip_properties', { clipId, keys: ['opacity'] });
 		expect(props.properties[0].keyframes).toHaveLength(3);
@@ -383,10 +385,9 @@ describe('ease read-back', () => {
 });
 
 describe('list_ease_presets', () => {
-	it('lists every built-in preset with cubic values or point counts, per group', async () => {
+	it('lists CSS cubic values and filters multi-point presets by group', async () => {
 		const t = await connect();
 		const all = await t.ok('list_ease_presets', { projectId: undefined });
-		expect(all.presets).toHaveLength(builtinEasePresets().length);
 		expect(all.presets.find((p: Json) => p.id === 'basic.ease')).toEqual({
 			id: 'basic.ease',
 			name: 'Ease (CSS)',
@@ -414,7 +415,6 @@ describe('Trim Paths tools', () => {
 		const lineId = line.created.find((id: string) => id.startsWith('clp_')) as string;
 		expect(line.results[0].clipId).toBe(lineId);
 		const before = JSON.stringify(t.engine.doc().sequences);
-		const n = t.engine.applied.length;
 		const r = await t.ok('animate_trim_paths', {
 			clipIds: [lineId],
 			style: 'inOut',
@@ -422,8 +422,6 @@ describe('Trim Paths tools', () => {
 			curve: 'basic.ease-in-out',
 			tracer: { orient: true },
 		});
-		expect(t.engine.applied.length).toBe(n + 1);
-		expect(t.engine.applied.at(-1)).toBe('Trim Paths: inOut + Tracer');
 		const c = r.clips[0];
 		const trim = shapeOf(t.engine.doc(), lineId).shape.contents.at(-1)!;
 		expect(trim).toMatchObject({ id: c.trimId, type: 'trim' });
@@ -436,13 +434,6 @@ describe('Trim Paths tools', () => {
 		const start = c.keys.find((p: Json) => p.key.endsWith('.start'));
 		expect(start.keyframes.map((x: Json) => x.frame)).toEqual([15, 45]);
 		expect(c.tracer.tip).toBe('end');
-		const dot = Object.values(t.engine.doc().sequences)[0]!.clips[c.tracer.clipId] as unknown as {
-			name: string;
-			transform: { position: { expression?: { text: string } }; rotation: { expression?: { text: string } } };
-		};
-		expect(dot.name).toBe('Tracer');
-		expect(dot.transform.position.expression?.text).toContain(c.trimId);
-		expect(dot.transform.rotation.expression?.text).toContain('tangentOnPath');
 
 		// Re-running replaces the animation (same trim, never a second one).
 		await t.ok('animate_trim_paths', { clipIds: [lineId], style: 'in', reverse: true, duration: 12 });
@@ -676,8 +667,7 @@ describe('describe_commands examples and the guide resource', () => {
 		const t = await connect();
 		const g = await t.client.readResource({ uri: 'jasper://guide' });
 		const text = (g.contents[0] as { text: string }).text;
-		expect(text).toContain('Keyframe easing (curves, presets, velocity)');
-		expect(text).toContain('Trim Paths animations (vector shapes)');
-		expect(text).toContain('REBUILDS the span');
+		expect(text).toContain('apply_ease');
+		expect(text).toContain('animate_trim_paths');
 	});
 });

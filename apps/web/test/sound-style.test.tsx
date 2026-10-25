@@ -8,8 +8,8 @@ import type { SoundDesignPlanRequest, SoundEntry } from '@jasper/api';
 import type { AudioClip, ClipSfx } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { AutoSoundPassDialog } from '../src/sound/AutoSoundPassDialog.tsx';
 import { cuesOf } from '../src/sound/cues/model.ts';
@@ -33,6 +33,19 @@ async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 	await act(async () => {
 		fireEvent.keyDown(option, { key: 'Enter' });
 	});
+}
+
+async function finishPlan(dialog: HTMLElement, closed: unknown[]) {
+	vi.useFakeTimers();
+	try {
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+		});
+		await act(async () => vi.runAllTimersAsync());
+		expect(closed).toHaveLength(1);
+	} finally {
+		vi.useRealTimers();
+	}
 }
 
 function edit(style?: Record<string, unknown>) {
@@ -81,23 +94,19 @@ describe('Auto Sound Pass… sound design style', () => {
 		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
 		await settle();
 		const style = within(dialog).getByTestId('auto-pass-style');
-		expect(within(style).getByTestId('sound-style-personality-description').textContent).toBe(
-			'Sounds are ranked by fit alone; the density is yours.',
-		);
+		const description = within(style).getByTestId('sound-style-personality-description');
+		const original = description.textContent;
+		expect(original?.trim()).toBeTruthy();
 		await chooseOption(within(style).getByRole('combobox', { name: 'Personality' }), 'Calm');
-		expect(within(style).getByTestId('sound-style-personality-description').textContent).toBe(
-			'Soft, dark and sparse: no booms or hits, gentle attacks, wood and paper.',
-		);
+		expect(description.textContent?.trim()).toBeTruthy();
+		expect(description.textContent).not.toBe(original);
 		// calm brings the sparse density
 		expect(within(dialog).getByRole('combobox', { name: 'Density' }).textContent).toMatch(/^Sparse/);
 		await chooseOption(within(style).getByRole('combobox', { name: 'Typing sounds' }), 'One key per word');
 		await chooseOption(within(style).getByRole('combobox', { name: 'Runs of staggered cues' }), /^Flat/);
 		fireEvent.click(within(style).getByRole('checkbox', { name: /Music carries the cuts/ }));
 		fireEvent.click(within(style).getByRole('checkbox', { name: /Duck the music 6 dB under typing/ }));
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		await waitFor(() => expect(t.plan.requests).toHaveLength(1), { timeout: 5000 });
+		await finishPlan(dialog, t.closed);
 		const req = t.plan.requests[0] as SoundDesignPlanRequest;
 		expect(req.style).toMatchObject({
 			density: 'sparse',
@@ -119,10 +128,7 @@ describe('Auto Sound Pass… sound design style', () => {
 			/^Flat/,
 		);
 		await chooseOption(within(style).getByRole('combobox', { name: 'Personality' }), 'No personality');
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		await waitFor(() => expect(t.plan.requests).toHaveLength(1), { timeout: 5000 });
+		await finishPlan(dialog, t.closed);
 		expect(t.plan.requests[0]!.style).toMatchObject({ personality: null, runs: 'flat', typing: 'auto' });
 	});
 });

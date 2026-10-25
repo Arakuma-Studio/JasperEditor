@@ -1,6 +1,6 @@
 // Frequent updates can starve Suspense retries because their render lane never expires.
 // State-based loading must still mount slow panels while other updates arrive.
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadable, useLoaded } from '../src/panels/lazy.ts';
@@ -36,7 +36,6 @@ function Ticker() {
 	}, []);
 	return <span data-n={n} />;
 }
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('panel loading under frequent updates', () => {
 	it('a panel loaded through state appears although updates keep arriving', async () => {
@@ -55,8 +54,8 @@ describe('panel loading under frequent updates', () => {
 		);
 		expect(screen.queryByTestId('fallback')).not.toBeNull();
 		resolve(Heavy);
-		await wait(1200);
-		expect(screen.queryByTestId('content')).not.toBeNull();
+		// Keep this outside React's act wrapper: forcing a synchronous render would hide scheduler starvation.
+		await waitFor(() => expect(screen.queryByTestId('content')).not.toBeNull(), { timeout: 1200 });
 		expect(screen.queryByTestId('fallback')).toBeNull();
 	});
 });
@@ -98,12 +97,10 @@ describe('loadable', () => {
 		}
 		const view = render(<Probe source={failing} />);
 		expect(screen.getByTestId('state').textContent).toBe('loading');
-		await wait(20);
-		expect(screen.getByTestId('state').textContent).toBe('failed: offline');
+		await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('failed: offline'));
 		const ready = loadable<object>(async () => Heavy);
 		await ready.load();
 		view.rerender(<Probe source={ready} />);
-		await wait(20);
 		expect(screen.getByTestId('state').textContent).toBe('ready');
 	});
 });

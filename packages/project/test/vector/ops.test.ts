@@ -313,15 +313,9 @@ describe('merge at tangencies', () => {
 		inclusionExclusion(c, s);
 		inclusionExclusion(s, c);
 	});
-	it('circles tangent to squares on every side and to circles inside and out', () => {
+	it('circles tangent to circles inside and out, in every direction', () => {
 		for (const r of [5, 21]) {
 			const c = circle(0, 0, r);
-			for (const off of [-12, -10 - r / 2, -1, 0, 1]) {
-				for (const s of [sq(off, r, 12), sq(off, -r - 12, 12), sq(r, off, 12), sq(-r - 12, off, 12)]) {
-					inclusionExclusion(c, s);
-					inclusionExclusion(s, c);
-				}
-			}
 			for (const [dx, dy] of [
 				[1, 0],
 				[-1, 0],

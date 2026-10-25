@@ -6,10 +6,8 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { Duplex } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { FLICKS_PER_SECOND, flicksPerFrame, type ProjectDocument } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -17,6 +15,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodePng } from '../src/png.ts';
+import { editorWindow } from './editor-window.ts';
 import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -121,89 +120,6 @@ function writeHitWav(path: string, seconds = 0.6) {
 		buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, v)) * 32000), 44 + i * 2);
 	}
 	writeFileSync(path, buf);
-}
-
-/**
- * A stand-in editor window: the engine's `/agent` WebSocket with the editor cookies (a minimal RFC 6455 client on
- * node:http, so the test needs no WebSocket package). It collects approval cards and answers them.
- */
-async function editorWindow(projectId: string) {
-	const socket = await new Promise<Duplex>((resolve, reject) => {
-		const req = request({
-			host: '127.0.0.1',
-			port: PORT,
-			path: '/agent',
-			headers: {
-				Connection: 'Upgrade',
-				Upgrade: 'websocket',
-				'Sec-WebSocket-Version': '13',
-				'Sec-WebSocket-Key': randomBytes(16).toString('base64'),
-				Origin: `http://127.0.0.1:${PORT}`,
-				Cookie: `jasper_session=${token}; jasper_editor=${editorKey}`,
-			},
-		});
-		req.on('upgrade', (_res, s) => resolve(s));
-		req.on('response', (res) => reject(new Error(`no upgrade: HTTP ${res.statusCode}`)));
-		req.on('error', reject);
-		req.end();
-	});
-	const cards: { approvalId: string; answerKey: string; label: string; summary: string }[] = [];
-	let pending = Buffer.alloc(0);
-	const send = (obj: unknown, opcode = 1) => {
-		const payload = Buffer.from(opcode === 1 ? JSON.stringify(obj) : '');
-		const head =
-			payload.length < 126
-				? Buffer.from([0x80 | opcode, 0x80 | payload.length])
-				: Buffer.from([0x80 | opcode, 0x80 | 126, payload.length >> 8, payload.length & 0xff]);
-		const mask = randomBytes(4);
-		const body = Buffer.from(payload.map((b, i) => b ^ mask[i % 4]!));
-		socket.write(Buffer.concat([head, mask, body]));
-	};
-	socket.on('data', (chunk: Buffer) => {
-		pending = Buffer.concat([pending, chunk]);
-		for (;;) {
-			if (pending.length < 2) return;
-			const opcode = pending[0]! & 0x0f;
-			let len = pending[1]! & 0x7f;
-			let off = 2;
-			if (len === 126) {
-				if (pending.length < 4) return;
-				len = pending.readUInt16BE(2);
-				off = 4;
-			} else if (len === 127) {
-				if (pending.length < 10) return;
-				len = Number(pending.readBigUInt64BE(2));
-				off = 10;
-			}
-			if (pending.length < off + len) return;
-			const payload = pending.subarray(off, off + len);
-			pending = pending.subarray(off + len);
-			if (opcode === 9) send(null, 10);
-			if (opcode !== 1) continue;
-			const m = JSON.parse(payload.toString('utf8')) as { type: string; event?: string; payload?: unknown };
-			if (m.type === 'event' && m.event === 'agent.approval.requested')
-				cards.push(m.payload as (typeof cards)[number]);
-		}
-	});
-	send({ type: 'hello', projectId, sessionId: 'ses_soundtest', leaseId: 'lease_soundtest' });
-	await new Promise((r) => setTimeout(r, 300));
-	return {
-		cards,
-		async card(n: number) {
-			await waitFor(() => cards.length >= n, 60_000, `approval card ${n}`);
-			return cards[n - 1]!;
-		},
-		answer(c: (typeof cards)[number], decision: 'approved' | 'denied') {
-			send({
-				type: 'event',
-				event: 'agent.approval.resolve',
-				payload: { approvalId: c.approvalId, decision, answerKey: c.answerKey },
-			});
-		},
-		close() {
-			socket.destroy();
-		},
-	};
 }
 
 beforeAll(async () => {
@@ -767,7 +683,7 @@ describe('sound library MCP tools', { timeout: 900_000 }, () => {
 		expect(refused.hint).toContain('Do not retry');
 		// A window that says no, then yes.
 		const other = (await ok<{ projectId: string }>('create_project', { name: 'Window' })).body.projectId;
-		const editor = await editorWindow(other);
+		const editor = await editorWindow({ port: PORT, token, editorKey, projectId: other });
 		try {
 			const denied = call('add_sound_folder', args);
 			const c1 = await editor.card(1);

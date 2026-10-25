@@ -13,7 +13,6 @@ import { bundleForBrowser, findChrome } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Harness } from '../../project/test/helpers.ts';
-import { ANCHOR_CONFIRM } from '../src/audio/graph.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CHROME = findChrome();
@@ -91,11 +90,11 @@ describe.runIf(!!CHROME)(
 			const r = await run(asks);
 			expect(r.changed).toEqual([]);
 			expect(new Set(r.anchors)).toEqual(new Set([0]));
-			// once, after ANCHOR_CONFIRM of asking: 0.2 s at 30 fps
+			// Confirmation is 0.3 seconds (docs/wp-notes/sound-design.md, anchor guard); catch up by 0.2 seconds.
 			expect(r.advanced).toHaveLength(1);
 			expect(r.advanced[0]!.frames).toBe(6);
-			expect(r.advanced[0]!.frame - 20).toBeGreaterThanOrEqual(Math.floor(ANCHOR_CONFIRM * FPS));
-			expect(r.advanced[0]!.frame - 20).toBeLessThanOrEqual(Math.ceil(ANCHOR_CONFIRM * FPS) + 1);
+			expect(r.advanced[0]!.frame - 20).toBeGreaterThanOrEqual(9);
+			expect(r.advanced[0]!.frame - 20).toBeLessThanOrEqual(10);
 		});
 
 		it('asked on every frame while the frames come late (a busy main thread): only refused', async () => {

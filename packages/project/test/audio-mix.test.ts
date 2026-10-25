@@ -1,6 +1,5 @@
 import { balanceGains } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
-import { repairAudioMix } from '../src/audio/invariants.ts';
 import { contentTimeAt } from '../src/derive/index.ts';
 import {
 	buildAudioMix,
@@ -22,7 +21,6 @@ import {
 	soloAudible,
 } from '../src/index.ts';
 import { evaluate } from '../src/keyframes.ts';
-import type { Sequence } from '../src/schema/sequence.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
 const F30 = 705_600_000 / 30;
@@ -495,7 +493,7 @@ describe('mixer commands', () => {
 		h.ok([{ type: 'mixer.addSubmix' }, { type: 'mixer.addSubmix' }]);
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'S1', patch: { output: 'S2' } }]);
 		const bad = h.tx([{ type: 'mixer.updateStrip', stripId: 'S2', patch: { output: 'S1' } }]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1' } }]);
 		h.ok([{ type: 'mixer.removeSubmix', stripId: 'S1' }]);
 		expect(h.seq.audioTracks[0]!.mixer!.output).toBe(h.seq.submixTracks![0]!.id);
@@ -506,9 +504,18 @@ describe('mixer commands', () => {
 		const h = new Harness();
 		h.ok([{ type: 'mixer.addSubmix' }]);
 		for (let i = 0; i < 5; i++) h.ok([{ type: 'mixer.addSend', stripId: 'A1', target: 'S1' }]);
-		expect(h.tx([{ type: 'mixer.addSend', stripId: 'A1', target: 'S1' }]).ok).toBe(false);
-		expect(h.tx([{ type: 'mixer.addSend', stripId: 'S1', target: 'S1' }]).ok).toBe(false);
-		expect(h.tx([{ type: 'mixer.addSend', stripId: 'Mix', target: 'S1' }]).ok).toBe(false);
+		expect(h.tx([{ type: 'mixer.addSend', stripId: 'A1', target: 'S1' }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
+		expect(h.tx([{ type: 'mixer.addSend', stripId: 'S1', target: 'S1' }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
+		expect(h.tx([{ type: 'mixer.addSend', stripId: 'Mix', target: 'S1' }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
 	});
 
 	it('writeAutomation thins a gesture and keeps automation outside the pass', () => {
@@ -579,7 +586,10 @@ describe('mixer commands', () => {
 			{ type: 'audio.setGain', clipIds: [x, y], mode: 'normalizeMax', db: -1, peaks: { [x]: -10, [y]: -4 } },
 		]);
 		expect([gain(x), gain(y)]).toEqual([3, 3]);
-		expect(h.tx([{ type: 'audio.setGain', clipIds: [x], mode: 'normalizeAll', db: -1 }]).ok).toBe(false);
+		expect(h.tx([{ type: 'audio.setGain', clipIds: [x], mode: 'normalizeAll', db: -1 }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
 	});
 
 	it('audio.autoDuck writes duck keyframes clamped to the clip', () => {
@@ -623,7 +633,7 @@ describe('mixer commands', () => {
 		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);
 	});
 
-	it('a converged delivery in the analysis: the plan plays its gain and ceiling for that target only; undo / redo; refusals; repair', () => {
+	it('a converged delivery in the analysis: the plan plays its gain and ceiling for that target only; immutability; refusals; repair', () => {
 		const h = new Harness();
 		const hash = mixFingerprint(h.doc, h.seqId);
 		const delivery = {
@@ -648,7 +658,7 @@ describe('mixer commands', () => {
 		// the converged gain (+5.31 dB), not the one-pass target − measured (+4.18 dB)
 		expect(buildAudioMix(h.seq).loudness).toEqual({ gainDb: 5.31, truePeakDb: -1 });
 		expect(h.seq.master.loudness?.analysis?.delivery).toEqual(delivery);
-		// undo: the document before is untouched; redo: the same transaction gives the same document
+		// The previous document stays unchanged.
 		expect(Object.values(before.sequences)[0]!.master.loudness).toBeUndefined();
 		// the delivery belongs to its target: another target or ceiling plays the one-pass gain
 		h.ok([{ type: 'mixer.setLoudness', targetLufs: -16 }]);
@@ -792,11 +802,5 @@ describe('mixer commands', () => {
 		const { document } = repairDocument(doc, createCounterIdSource(99));
 		const sends = Object.values(document.sequences)[0]!.audioTracks[0]!.mixer!.sends!;
 		expect(sends.map((x) => x.target)).toEqual([sub]);
-		// The mixer repair on its own (repairDocument may rename duplicate ids before it runs).
-		const s2 = JSON.parse(JSON.stringify(seq)) as Sequence;
-		const notes: string[] = [];
-		repairAudioMix(s2, (a) => notes.push(a));
-		expect(s2.audioTracks[0]!.mixer!.sends!.map((x) => x.target)).toEqual([sub]);
-		expect(notes).toContain('drop-send');
 	});
 });

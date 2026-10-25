@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { RegisteredMedia } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -81,17 +82,6 @@ function pixel(file: string, frame: number, x: number, y: number): [number, numb
 	return [r.stdout[0]!, r.stdout[1]!, r.stdout[2]!];
 }
 
-function frameCode(file: string, frame: number): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
-
 function maxVolume(file: string, from: number, to: number): number {
 	const r = spawnSync('ffmpeg', [
 		...['-v', 'info', '-ss', String(from), '-to', String(to), '-i', file],
@@ -136,11 +126,9 @@ describe('multi-camera clips (native export)', () => {
 		]);
 		const { file, path } = await exportDoc(d);
 		expect(path).toBe('native');
-		expect(frameCode(file, 5)).toBe(5);
-		expect(frameCode(file, 19)).toBe(19);
+		expect(frameCodes(file, [5, 19, 45])).toEqual([5, 19, 45]);
 		const p = pixel(file, 30, 960, 540);
 		expect(near(p[0], 255) && p[1] < 40 && p[2] < 40, `red at 30: ${p}`).toBe(true);
-		expect(frameCode(file, 45)).toBe(45);
 		// camera B's 1 kHz tone plays only while B is shown (frames 20–40 = 0.67–1.33 s)
 		expect(maxVolume(file, 0.8, 1.2)).toBeGreaterThan(-30);
 	}, 180_000);

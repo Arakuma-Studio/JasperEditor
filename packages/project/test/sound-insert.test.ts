@@ -8,8 +8,6 @@ import {
 	defaultAlignForTypes,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
-	LIBRARY_LEAD_SILENCE_SEC,
-	LIBRARY_PAD_MAX_SECONDS,
 	libraryLeadSilenceSamples,
 	planSoundInsert,
 	resolveSoundAlign,
@@ -43,17 +41,15 @@ describe('alignment by type', () => {
 
 describe('lead silence', () => {
 	it('pads short sounds whose head is not quiet, by whole samples (≥ one frame at 23.976 fps)', () => {
-		expect(LIBRARY_LEAD_SILENCE_SEC).toBeGreaterThanOrEqual(1001 / 24000);
 		expect(libraryLeadSilenceSamples({ headQuietSec: 0.001, durationSec: 0.5 }, 48000)).toBe(2400);
 		expect(libraryLeadSilenceSamples({ headQuietSec: 0, durationSec: 0.5 }, 44100)).toBe(2205);
 		// 22.05 kHz: 1102.5 → 1103 samples, the shift is then 1103 / 22050 s (≥ 50 ms)
 		expect(libraryLeadSilenceSamples({ headQuietSec: 0, durationSec: 0.5 }, 22050)).toBe(1103);
 		// a quiet head already absorbs any sub-frame rest: no padding
 		expect(libraryLeadSilenceSamples({ headQuietSec: 0.05, durationSec: 0.5 }, 48000)).toBe(0);
-		// long files (beds) are registered as they are
-		expect(
-			libraryLeadSilenceSamples({ headQuietSec: 0, durationSec: LIBRARY_PAD_MAX_SECONDS + 1 }, 48000),
-		).toBe(0);
+		expect(libraryLeadSilenceSamples({ headQuietSec: 0, durationSec: 3600 }, 48000)).toBe(2400);
+		// Files over the specified one-hour limit are registered as they are.
+		expect(libraryLeadSilenceSamples({ headQuietSec: 0, durationSec: 3601 }, 48000)).toBe(0);
 		for (const sr of [Number.NaN, 0, -1, 500, 1e7, Number.POSITIVE_INFINITY])
 			expect(libraryLeadSilenceSamples({ headQuietSec: 0, durationSec: 1 }, sr)).toBe(0);
 		for (const d of [
@@ -80,7 +76,6 @@ describe('lead silence', () => {
 			headQuietSec: 0.05,
 			durationSec: 0.55,
 		});
-		expect(shiftLibraryDescriptors(d, 0)).toBe(d);
 	});
 	it('uses the placed media’s provenance descriptors, else the library entry', () => {
 		const fallback = { peakSec: 0.02, onsetSec: 0.01, headQuietSec: 0, durationSec: 0.5 };

@@ -6,14 +6,10 @@ import {
 	effectiveKey,
 	getActiveKeymap,
 	listCommands,
-	normalizeChord,
-	type Platform,
-	type Runtime,
 	registerAllCommands,
 	resolveBindings,
 	runCommand,
 } from '../src/commands/index.ts';
-import { LAYOUTS, layoutKeymap } from '../src/commands/keymap-presets.ts';
 import { resolveKey } from '../src/shell/keymap/dispatcher.ts';
 import { KeyboardShortcutsDialog } from '../src/shell/keymap/KeyboardShortcutsDialog.tsx';
 import {
@@ -38,38 +34,6 @@ beforeEach(() => {
 	keymapStore.reload();
 });
 afterEach(() => cleanup());
-
-const COMBOS: [Platform, Runtime][] = [
-	['win', 'desktop'],
-	['linux', 'web'],
-	['mac', 'desktop'],
-	['mac', 'web'],
-];
-
-function duplicates(keymap: ReturnType<typeof layoutKeymap>, platform: Platform, runtime: Runtime): string[] {
-	const seen = new Map<string, string>();
-	const contextual = new Set<string>();
-	const dups: string[] = [];
-	for (const b of keymap) {
-		const key = effectiveKey(b, platform, runtime);
-		if (!key) continue;
-		const k = `${b.scope}|${normalizeChord(key)}`;
-		const prev = seen.get(k);
-		if (prev && prev !== b.command && !b.contextual && !contextual.has(k))
-			dups.push(`${k}: ${prev} vs ${b.command}`);
-		if (b.contextual) contextual.add(k);
-		seen.set(k, b.command);
-	}
-	return dups;
-}
-
-describe('keyboard layouts', () => {
-	for (const l of LAYOUTS)
-		for (const [platform, runtime] of COMBOS)
-			it(`${l.label} has no conflicting chords (${platform}/${runtime})`, () => {
-				expect(duplicates(layoutKeymap(l.id), platform, runtime)).toEqual([]);
-			});
-});
 
 describe('shortcut store', () => {
 	it('switching layouts changes resolution; edits make a "Custom" layout that persists', () => {

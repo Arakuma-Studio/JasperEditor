@@ -7,9 +7,7 @@ import {
 	analyzeSound,
 	DESCRIPTOR_CEILING_DB,
 	DESCRIPTOR_FLOOR_DB,
-	MAX_ANALYSIS_SECONDS,
 	OCTAVE_BAND_CENTRES_HZ,
-	SOUND_DESCRIPTORS_VERSION,
 	SoundAnalysisError,
 	type SoundDescriptors,
 } from '../src/index.ts';
@@ -86,8 +84,7 @@ function expectWellFormed(d: SoundDescriptors): void {
 }
 
 describe('analyzeSound: known answers', () => {
-	it('exports a version and the band centres', () => {
-		expect(SOUND_DESCRIPTORS_VERSION).toBeGreaterThanOrEqual(1);
+	it('publishes the descriptor octave-band centres', () => {
 		expect(OCTAVE_BAND_CENTRES_HZ).toEqual([125, 250, 500, 1000, 2000, 4000, 8000]);
 	});
 
@@ -397,13 +394,13 @@ describe('analyzeSound: edge input', () => {
 		expect(d.truePeakDb!).toBe(DESCRIPTOR_CEILING_DB);
 	});
 
-	it(`input longer than ${MAX_ANALYSIS_SECONDS} s reports its real duration and analyses the first ${MAX_ANALYSIS_SECONDS} s`, () => {
-		const sr = 8000;
-		const n = (MAX_ANALYSIS_SECONDS + 5) * sr;
-		const x = new Float32Array(n);
-		for (let i = 0; i < n; i++) x[i] = 0.3 * Math.sin((2 * Math.PI * 200 * i) / sr);
+	it('audio after 120 s is ignored while durationSec retains the full recording length', () => {
+		const sr = 1000;
+		const x = sine(200, 0.1, sr, 125 * sr);
+		x.set(sine(440, 0.9, sr, 5 * sr), 120 * sr);
 		const d = analyzeSound([x], sr);
-		expect(d.durationSec).toBe(MAX_ANALYSIS_SECONDS + 5);
+		expect(d.durationSec).toBe(125);
+		expect(Math.abs(d.centroidHz - 200)).toBeLessThan(2);
 		expect(d.pitchMidi).not.toBeNull();
 		expectWellFormed(d);
 	});

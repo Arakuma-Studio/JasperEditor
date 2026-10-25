@@ -397,7 +397,7 @@ export const DESCRIPTOR_WORD_LABELS: Record<string, string> = {
 };
 
 /** Words that describe a sound from its descriptors (the Refine pill thresholds), for names and tooltips. */
-export function descriptorWords(d: SoundEntry['descriptors']): string[] {
+function descriptorWords(d: SoundEntry['descriptors']): string[] {
 	const F = DESCRIPTOR_FILTERS;
 	const out: string[] = [];
 	if (fin(d.riseMs) && d.riseMs <= F.attack.punchyMaxMs) out.push('punchy');

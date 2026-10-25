@@ -1,21 +1,18 @@
 // The sound-design measurement worker threads (wp-note WP6.5b item 7; measure-pool.ts / measure-worker.ts): the solo and
 // bed renders and their band analysis give BIT-IDENTICAL results on a worker and in-thread (the worker is bundled with
-// esbuild, as the engine build does); the pool's lifecycle with fake workers: start failure → in-thread, a crash →
-// MEASURE_FAILED (retryable, never a hung request), a timeout → MEASURE_TIMEOUT with the other requests moved to a new
-// worker, cancel → JOB_CANCELLED at once and a worker that does not answer ended, idle workers stopped, at most `size`.
-import { mkdtempSync } from 'node:fs';
+// esbuild, as the engine build does). Small real Worker URL fixtures exercise failures and deadlines through the
+// same protocol, with file events synchronizing receipt and controlled clocks advancing the documented deadlines.
+import { existsSync, type FSWatcher, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MeasureCache, type MeasureDeps, measureSfxEvents } from '../src/sound-design/bed.ts';
 import type { MeasureOp } from '../src/sound-design/measure-core.ts';
 import {
-	type MeasureWorker,
-	type MeasureWorkerRequest,
-	type MeasureWorkerResponse,
-	resolveMeasureWorker,
+	closeSoundDesignMeasurer,
 	SoundDesignMeasurer,
+	soundDesignMeasurer,
 } from '../src/sound-design/measure-pool.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -24,24 +21,34 @@ import { provenance, writeBedFixture } from './sound-bed-fixture.ts';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 
-async function bundleWorker(): Promise<string> {
-	const { build } = await import('esbuild');
-	const out = join(mkdtempSync(join(tmpdir(), 'jasper-sd-worker-')), 'sd-measure-worker.mjs');
-	await build({
-		entryPoints: [join(HERE, '..', 'src', 'sound-design', 'measure-worker.ts')],
-		outfile: out,
-		bundle: true,
-		platform: 'node',
-		format: 'esm',
-		target: 'node20',
-		logLevel: 'silent',
-		external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', '*.node'],
-		banner: {
-			js: "import { createRequire as __r } from 'node:module'; const require = __r(import.meta.url);",
-		},
-	});
-	return out;
+let bundledWorker: Promise<string> | undefined;
+const artifactDirs: string[] = [];
+
+function bundleWorker(): Promise<string> {
+	return (bundledWorker ??= (async () => {
+		const { build } = await import('esbuild');
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-sd-worker-'));
+		artifactDirs.push(dir);
+		const out = join(dir, 'sd-measure-worker.mjs');
+		await build({
+			entryPoints: [join(HERE, '..', 'src', 'sound-design', 'measure-worker.ts')],
+			outfile: out,
+			bundle: true,
+			platform: 'node',
+			format: 'esm',
+			target: 'node20',
+			logLevel: 'silent',
+			external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', '*.node'],
+			banner: {
+				js: "import { createRequire as __r } from 'node:module'; const require = __r(import.meta.url);",
+			},
+		});
+		return out;
+	})());
 }
+afterAll(() => {
+	for (const dir of artifactDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 describe('measurement worker threads: same results as in-thread (real engine, bundled worker)', {
 	timeout: 600_000,
@@ -51,6 +58,7 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 	let doc: DocBuilder;
 	const ids: Record<string, string> = {};
 	let worker: SoundDesignMeasurer;
+	const warnings: string[] = [];
 
 	beforeAll(async () => {
 		app = await makeApp();
@@ -81,8 +89,14 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 		place(150, click, 'support', 'inSpeech');
 		place(270, click, 'support', 'clear', { gainDb: -6 });
 		doc = b;
-		worker = new SoundDesignMeasurer(pathToFileURL(await bundleWorker()));
+		worker = new SoundDesignMeasurer(pathToFileURL(await bundleWorker()), (message) =>
+			warnings.push(message),
+		);
 	}, 300_000);
+	afterEach(() => {
+		// A failed worker startup falls back successfully; parity alone must not hide a broken worker bundle.
+		expect(warnings).toEqual([]);
+	});
 	afterAll(async () => {
 		await worker?.close();
 		await closeApps();
@@ -97,9 +111,7 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 		const input = { bedDoc: doc.doc, sequenceId: doc.seqId, targets };
 		const thread = new SoundDesignMeasurer(null);
 		const a = await measureSfxEvents(input, { ...base, cache: new MeasureCache(), measurer: thread });
-		expect(thread.lastMode).toBe('thread');
 		const b = await measureSfxEvents(input, { ...base, cache: new MeasureCache(), measurer: worker });
-		expect(worker.lastMode).toBe('worker');
 		expect(a.sounds.size).toBe(4);
 		// Object.is on every number (toStrictEqual): bands, peaks, windows, true peaks
 		expect([...b.sounds.entries()]).toStrictEqual([...a.sounds.entries()]);
@@ -122,6 +134,9 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 			},
 		};
 		const a = await new SoundDesignMeasurer(null).run(op, { ff: base.ff });
+		// A real decoder failure must retain its error code, without poisoning the worker's next operation.
+		const brokenFfmpeg = new Ffmpeg({ ffmpeg: process.execPath, ffprobe: process.execPath });
+		await expect(worker.run(op, { ff: brokenFfmpeg })).rejects.toMatchObject({ code: 'TOOL_FAILED' });
 		const b = await worker.run(op, { ff: base.ff });
 		expect(a.pcm.channels.length).toBe(2);
 		expect(b.pcm.startSample).toBe(a.pcm.startSample);
@@ -131,210 +146,181 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 				true,
 			);
 	});
-
-	it('cancelling a render on the worker rejects at once and leaves the pool usable', async () => {
-		const { audioWorld } = await import('../src/sound-design/bed.ts');
-		const world = await audioWorld(doc.doc, doc.seqId, base.registry);
-		const ac = new AbortController();
-		const op: MeasureOp = {
-			kind: 'render',
-			req: {
-				snapshot: world.snapshot,
-				media: world.mediaFiles,
-				range: { start: 0, end: 300 },
-				clipIds: [ids.music!],
-			},
-		};
-		const p = worker.run(op, { ff: base.ff, signal: ac.signal });
-		setTimeout(() => ac.abort(), 5);
-		await expect(p).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
-		const again = await worker.run(
-			{ ...op, req: { ...op.req, range: { start: 0, end: 10 } } },
-			{ ff: base.ff },
-		);
-		expect(again.pcm.channels[0]!.length).toBeGreaterThan(0);
-	});
 });
 
-/** A scripted fake worker: answers `ready` (unless told not to) and each request per `behave`. */
-class FakeWorker implements MeasureWorker {
-	static made: FakeWorker[] = [];
-	terminated = false;
-	posted: MeasureWorkerRequest[] = [];
-	private handlers: Record<string, ((x: never) => void)[]> = {};
-	constructor(
-		private readonly behave: (w: FakeWorker, m: MeasureWorkerRequest) => void,
-		ready = true,
-	) {
-		FakeWorker.made.push(this);
-		if (ready) setTimeout(() => this.emit('message', { id: 0, ready: true }), 0);
-	}
-	postMessage(m: MeasureWorkerRequest): void {
-		this.posted.push(m);
-		this.behave(this, m);
-	}
-	terminate(): void {
-		this.terminated = true;
-	}
-	on(event: string, fn: (x: never) => void): unknown {
-		(this.handlers[event] ??= []).push(fn);
-		return this;
-	}
-	emit(event: 'message', m: MeasureWorkerResponse): void;
-	emit(event: 'error', e: Error): void;
-	emit(event: 'exit', code: number): void;
-	emit(event: string, x: unknown): void {
-		for (const fn of this.handlers[event] ?? []) (fn as (x: unknown) => void)(x);
-	}
+const FF = new Ffmpeg({ ffmpeg: null, ffprobe: null });
+const BANDS: MeasureOp = {
+	kind: 'bedBands',
+	req: {
+		channels: [new Float32Array(4_800)],
+		sampleRate: 48_000,
+		items: [{ rel: { start: 0, end: 0.1 }, window: { start: 0, end: 0.1 }, weight: 'support' }],
+	},
+};
+// Documented octave-band floor for actual silent PCM, independent of the worker's return transport.
+const SILENCE = [{ bedBandsDb: [-120, -120, -120, -120, -120, -120, -120], bedLocalPeakLu: null }];
+const pools: SoundDesignMeasurer[] = [];
+const fixtureDirs: string[] = [];
+const observers = new Set<FSWatcher>();
+
+/** A real Worker module; marker files expose only its receipt/start, without a production scheduling hook. */
+function protocolWorker(body: (dir: string) => string) {
+	const dir = mkdtempSync(join(tmpdir(), 'jasper-measure-protocol-'));
+	fixtureDirs.push(dir);
+	const trace = join(dir, 'trace');
+	const file = join(dir, 'worker.mjs');
+	writeFileSync(
+		file,
+		`
+		import { parentPort, threadId } from 'node:worker_threads';
+		import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+		const record = (kind) => appendFileSync(${JSON.stringify(trace)}, kind + ':' + threadId + '\\n');
+		record('boot');
+		parentPort.on('message', (m) => record('id' in m ? 'request' : 'cancel'));
+		${body(dir)}
+	`,
+	);
+	const pool = new SoundDesignMeasurer(pathToFileURL(file));
+	pools.push(pool);
+	const ids = (kind: string) =>
+		(existsSync(trace) ? readFileSync(trace, 'utf8').trim().split('\n') : [])
+			.filter((line) => line.startsWith(`${kind}:`))
+			.map((line) => Number(line.split(':')[1]));
+	const received = (kind = 'request', count = 1) =>
+		new Promise<void>((resolve) => {
+			const check = () => {
+				if (ids(kind).length < count) return;
+				observer.close();
+				observers.delete(observer);
+				resolve();
+			};
+			const observer = watch(dir, check);
+			observers.add(observer);
+			check();
+		});
+	return { pool, ids, received };
 }
 
-const FF = new Ffmpeg({ ffmpeg: null, ffprobe: null });
-const BANDS: MeasureOp = { kind: 'bedBands', req: { channels: [], sampleRate: 48_000, items: [] } };
-const URL_ = new URL('file:///fake/sd-measure-worker.mjs');
-const reply = (w: FakeWorker, m: MeasureWorkerRequest, result: unknown = []) => {
-	if ('id' in m) setTimeout(() => w.emit('message', { id: m.id, ok: true, result }), 0);
-};
+/** First process injects a real fault or stall; later processes run the actual bundled DSP worker. */
+async function faultyFirstWorker(onMessage = '') {
+	const actual = JSON.stringify(pathToFileURL(await bundleWorker()).href);
+	return protocolWorker(
+		(dir) => `
+		const first = ${JSON.stringify(join(dir, 'first'))};
+		if (!existsSync(first)) {
+			writeFileSync(first, '');
+			parentPort.on('message', () => { ${onMessage} });
+			parentPort.postMessage({ id: 0, ready: true });
+		} else {
+			await import(${actual});
+		}
+	`,
+	);
+}
 
-describe('measurement pool lifecycle (fake workers)', () => {
-	it('resolves the worker module: env, bundle, tsx source, or none', () => {
-		expect(resolveMeasureWorker({ JASPER_SD_MEASURE_WORKER: 'off' })).toBeNull();
-		expect(resolveMeasureWorker({ JASPER_SD_MEASURE_WORKER: '/x/w.mjs' })?.href).toBe('file:///x/w.mjs');
-		const src = pathToFileURL(join(HERE, '..', 'src', 'sound-design', 'measure-pool.ts')).href;
-		expect(resolveMeasureWorker({}, src, ['--import', 'file:///x/tsx/dist/loader.mjs'])?.pathname).toMatch(
-			/measure-worker\.ts$/,
-		);
-		expect(resolveMeasureWorker({}, src, [])).toBeNull();
+afterEach(async () => {
+	for (const observer of observers) observer.close();
+	observers.clear();
+	await Promise.all(pools.splice(0).map((pool) => pool.close()));
+	for (const dir of fixtureDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	vi.useRealTimers();
+});
+
+describe('measurement worker URL and lifecycle', () => {
+	it('explicit off, missing and never-ready workers use the real in-thread measurement', async () => {
+		const previous = process.env.JASPER_SD_MEASURE_WORKER;
+		await closeSoundDesignMeasurer();
+		try {
+			for (const disabled of ['off', '0']) {
+				process.env.JASPER_SD_MEASURE_WORKER = disabled;
+				const warnings: string[] = [];
+				expect(await soundDesignMeasurer((message) => warnings.push(message)).run(BANDS, { ff: FF })).toEqual(
+					SILENCE,
+				);
+				expect(warnings).toEqual([]);
+				await closeSoundDesignMeasurer();
+			}
+		} finally {
+			await closeSoundDesignMeasurer();
+			if (previous === undefined) delete process.env.JASPER_SD_MEASURE_WORKER;
+			else process.env.JASPER_SD_MEASURE_WORKER = previous;
+		}
+		const missingDir = mkdtempSync(join(tmpdir(), 'jasper-no-measure-worker-'));
+		fixtureDirs.push(missingDir);
+		const missing = new SoundDesignMeasurer(pathToFileURL(join(missingDir, 'missing.mjs')));
+		pools.push(missing);
+		expect(await missing.run(BANDS, { ff: FF })).toEqual(SILENCE);
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		const fixture = protocolWorker(() => '');
+		const pending = fixture.pool.run(BANDS, { ff: FF });
+		await fixture.received('boot');
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(await pending).toEqual(SILENCE);
 	});
 
-	it('no worker can start: measures in-thread', async () => {
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			createWorker: () => {
-				throw new Error('no threads here');
-			},
-		});
-		expect(await m.run(BANDS, { ff: FF })).toEqual([]);
-		expect(m.lastMode).toBe('thread');
-	});
-
-	it('a worker that crashes: its requests fail with MEASURE_FAILED (retryable), the next one gets a new worker', async () => {
-		FakeWorker.made = [];
-		let crash = true;
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			createWorker: () =>
-				new FakeWorker((w, msg) => {
-					if (crash) setTimeout(() => w.emit('exit', 1), 0);
-					else reply(w, msg);
-				}),
-		});
-		await expect(m.run(BANDS, { ff: FF })).rejects.toMatchObject({ code: 'MEASURE_FAILED', retryable: true });
-		crash = false;
-		expect(await m.run(BANDS, { ff: FF })).toEqual([]);
-		expect(FakeWorker.made.length).toBe(2);
-		await m.close();
-	});
-
-	it('an uncaught error in the worker: the same (never a hung request)', async () => {
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			createWorker: () => new FakeWorker((w) => setTimeout(() => w.emit('error', new Error('boom')), 0)),
-		});
-		await expect(m.run(BANDS, { ff: FF })).rejects.toMatchObject({
+	it('a real uncaught worker error rejects as retryable and the next request succeeds', async () => {
+		const fixture = await faultyFirstWorker("throw new Error('worker crashed');");
+		await expect(fixture.pool.run(BANDS, { ff: FF })).rejects.toMatchObject({
 			code: 'MEASURE_FAILED',
-			message: expect.stringMatching(/boom/),
+			retryable: true,
 		});
-		await m.close();
+		expect(await fixture.pool.run(BANDS, { ff: FF })).toEqual(SILENCE);
 	});
 
-	it('a failed op keeps its code (an ffmpeg failure is a TOOL_FAILED), the worker stays', async () => {
-		FakeWorker.made = [];
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			createWorker: () =>
-				new FakeWorker((w, msg) => {
-					if ('id' in msg)
-						setTimeout(
-							() =>
-								w.emit('message', {
-									id: msg.id,
-									ok: false,
-									message: 'ffmpeg exited 1',
-									aborted: false,
-									code: 'TOOL_FAILED',
-								}),
-							0,
-						);
-				}),
+	it('the ten-minute deadline rejects the stalled operation and recovers its pending sibling', async () => {
+		const fixture = await faultyFirstWorker();
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		const first = Promise.allSettled([fixture.pool.run(BANDS, { ff: FF })]);
+		await fixture.received();
+		// Later requests have a later deadline; one goes to the second worker, one shares the stalled worker.
+		await vi.advanceTimersByTimeAsync(1);
+		const other = fixture.pool.run(BANDS, { ff: FF });
+		const moved = Promise.allSettled([fixture.pool.run(BANDS, { ff: FF })]);
+		await fixture.received('request', 3);
+		expect(new Set(fixture.ids('request')).size).toBe(2);
+		expect(await other).toEqual(SILENCE);
+		await vi.advanceTimersByTimeAsync(599_999);
+		expect((await first)[0]).toMatchObject({
+			status: 'rejected',
+			reason: { code: 'MEASURE_TIMEOUT', retryable: true },
 		});
-		await expect(m.run(BANDS, { ff: FF })).rejects.toMatchObject({ code: 'TOOL_FAILED' });
-		expect(m.workers).toBe(1);
-		await m.close();
+		expect((await moved)[0]).toEqual({ status: 'fulfilled', value: SILENCE });
 	});
 
-	it('a timeout ends the worker; its other requests move to a new one and complete', async () => {
-		FakeWorker.made = [];
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			size: 1,
-			createWorker: () =>
-				new FakeWorker((w, msg) => {
-					// the first worker never answers; later ones do
-					if (FakeWorker.made.indexOf(w) > 0) reply(w, msg, ['ok']);
-				}),
-		});
-		const slow = m.run(BANDS, { ff: FF }, { timeoutMs: 50 });
-		const other = m.run(BANDS, { ff: FF }, { timeoutMs: 5_000 });
-		await expect(slow).rejects.toMatchObject({ code: 'MEASURE_TIMEOUT', retryable: true });
-		expect(await other).toEqual(['ok']);
-		expect(FakeWorker.made[0]!.terminated).toBe(true);
-		expect(FakeWorker.made.length).toBe(2);
-		await m.close();
-	});
-
-	it('cancel rejects at once; a worker that does not stop within the grace is ended', async () => {
-		FakeWorker.made = [];
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			cancelGraceMs: 30,
-			createWorker: () => new FakeWorker(() => {}),
-		});
+	it('cancel rejects immediately and replaces a worker that ignores it after the five-second grace', async () => {
+		const fixture = await faultyFirstWorker();
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const ac = new AbortController();
-		const p = m.run(BANDS, { ff: FF, signal: ac.signal });
-		await new Promise((r) => setTimeout(r, 10));
+		const cancelled = Promise.allSettled([fixture.pool.run(BANDS, { ff: FF, signal: ac.signal })]);
+		await fixture.received();
 		ac.abort();
-		await expect(p).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
-		const w = FakeWorker.made[0]!;
-		expect(w.posted.some((x) => 'cancel' in x)).toBe(true);
-		expect(w.terminated).toBe(false);
-		await new Promise((r) => setTimeout(r, 80));
-		expect(w.terminated).toBe(true);
-		await expect(m.run(BANDS, { ff: FF, signal: ac.signal })).rejects.toMatchObject({
+		expect((await cancelled)[0]).toMatchObject({ status: 'rejected', reason: { code: 'JOB_CANCELLED' } });
+		await fixture.received('cancel');
+		const next = fixture.pool.run(BANDS, { ff: FF });
+		await fixture.received('request', 2);
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(await next).toEqual(SILENCE);
+		await expect(fixture.pool.run(BANDS, { ff: FF, signal: ac.signal })).rejects.toMatchObject({
 			code: 'JOB_CANCELLED',
 		});
-		await m.close();
 	});
 
-	it('a worker that never starts: in-thread after the start timeout', async () => {
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			startTimeoutMs: 30,
-			createWorker: () => new FakeWorker(() => {}, false),
-		});
-		expect(await m.run(BANDS, { ff: FF })).toEqual([]);
-		expect(m.lastMode).toBe('thread');
-	});
-
-	it('at most `size` workers; idle ones are stopped; close interrupts what runs', async () => {
-		FakeWorker.made = [];
-		const m = new SoundDesignMeasurer(URL_, () => {}, {
-			size: 2,
-			idleMs: 30,
-			createWorker: () => new FakeWorker((w, msg) => setTimeout(() => reply(w, msg), 20)),
-		});
-		await Promise.all(Array.from({ length: 6 }, () => m.run(BANDS, { ff: FF })));
-		expect(FakeWorker.made.length).toBe(2);
-		expect(m.workers).toBe(2);
-		await new Promise((r) => setTimeout(r, 120));
-		expect(m.workers).toBe(0);
-		expect(FakeWorker.made.every((w) => w.terminated)).toBe(true);
-		const hung = new SoundDesignMeasurer(URL_, () => {}, { createWorker: () => new FakeWorker(() => {}) });
-		const p = hung.run(BANDS, { ff: FF });
-		await new Promise((r) => setTimeout(r, 10));
-		await hung.close();
-		await expect(p).rejects.toMatchObject({ code: 'INTERRUPTED' });
+	it('uses at most two workers, retires them after thirty seconds idle, and interrupts in-flight work on close', async () => {
+		const actual = JSON.stringify(pathToFileURL(await bundleWorker()).href);
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		const fixture = protocolWorker(() => `await import(${actual});`);
+		expect(await Promise.all(Array.from({ length: 6 }, () => fixture.pool.run(BANDS, { ff: FF })))).toEqual(
+			Array(6).fill(SILENCE),
+		);
+		const original = new Set(fixture.ids('request'));
+		expect(original.size).toBe(2);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(await fixture.pool.run(BANDS, { ff: FF })).toEqual(SILENCE);
+		expect(original.has(fixture.ids('request').at(-1)!)).toBe(false);
+		const stalled = protocolWorker(() => 'parentPort.postMessage({ id: 0, ready: true });');
+		const interrupted = Promise.allSettled([stalled.pool.run(BANDS, { ff: FF })]);
+		await stalled.received();
+		await stalled.pool.close();
+		expect((await interrupted)[0]).toMatchObject({ status: 'rejected', reason: { code: 'INTERRUPTED' } });
 	});
 });

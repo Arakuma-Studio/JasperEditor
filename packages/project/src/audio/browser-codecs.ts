@@ -44,7 +44,7 @@ const WEBCODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'] as const;
  * A-law). AC-3 / E-AC-3 are left out on purpose: mediabunny demuxes them but Chromium decodes them only on some
  * platforms (macOS / Windows / ChromeOS builds with platform decoders), and the engine decides before any client asks.
  */
-export const BROWSER_AUDIO_CODECS: Readonly<Record<AudioContainerFamily, ReadonlySet<string>>> = {
+const BROWSER_AUDIO_CODECS: Readonly<Record<AudioContainerFamily, ReadonlySet<string>>> = {
 	isobmff: new Set([
 		...WEBCODECS,
 		'pcm_s16le',

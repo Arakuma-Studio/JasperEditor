@@ -1,12 +1,13 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { checkRepo, fileViolations, LAYERS } from './check-layers.mjs';
+import { describe, expect, it, onTestFinished } from 'vitest';
+import { checkRepo } from './check-layers.mjs';
 
 /** A miniature workspace: `{ 'packages/project': {pkg, files: {'src/x.ts': text}} }`. */
 function workspace(spec) {
 	const root = mkdtempSync(join(tmpdir(), 'jasper-layers-'));
+	onTestFinished(() => rmSync(root, { recursive: true, force: true }));
 	for (const [dir, { pkg, files = {} }] of Object.entries(spec)) {
 		mkdirSync(join(root, dir, 'src'), { recursive: true });
 		writeFileSync(join(root, dir, 'package.json'), JSON.stringify(pkg));
@@ -87,14 +88,13 @@ describe('check-layers', () => {
 		]);
 	});
 
-	it('keeps Node built-ins, React, Remotion and anime.js out of the pure model', () => {
-		const ctx = {
-			dir: 'packages/project',
-			layer: LAYERS['packages/project'],
-			declared: new Set(),
-			exportsOf: () => null,
-		};
-		const found = (text) => fileViolations('packages/project/src/x.ts', text, ctx).map((v) => v.spec);
+	it('keeps platform, UI and rendering dependencies out of the pure model', () => {
+		const found = (text) =>
+			checkRepo(
+				workspace({
+					'packages/project': { ...PROJECT, files: { 'src/index.ts': text } },
+				}),
+			).map((v) => v.spec);
 		expect(
 			found(
 				[
@@ -103,28 +103,36 @@ describe('check-layers', () => {
 					"import type { FC } from 'react';",
 					"import { AbsoluteFill } from 'remotion';",
 					"import { stagger } from 'animejs/utils';",
+					'import "@radix-ui/react-dialog";',
+					'import "@fastify/cors";',
+					'import "@remotion/renderer";',
 					"import { produce } from 'immer';",
 				].join('\n'),
 			),
-		).toEqual(['node:fs', 'path', 'react', 'remotion', 'animejs/utils']);
+		).toEqual([
+			'node:fs',
+			'path',
+			'react',
+			'remotion',
+			'animejs/utils',
+			'@radix-ui/react-dialog',
+			'@fastify/cors',
+			'@remotion/renderer',
+		]);
 		expect(found("// layers-allow: types only, erased\nimport type { Stats } from 'node:fs';")).toEqual([]);
 	});
 
 	it('allows React in @jasper/session only under src/react', () => {
-		const ctx = {
-			dir: 'packages/session',
-			layer: LAYERS['packages/session'],
-			declared: new Set(),
-			exportsOf: () => null,
-		};
-		expect(
-			fileViolations('packages/session/src/react/hooks.ts', "import { useState } from 'react';", ctx),
-		).toEqual([]);
-		expect(
-			fileViolations('packages/session/src/session.ts', "import { useState } from 'react';", ctx).map(
-				(v) => v.rule,
-			),
-		).toEqual(['forbidden-external']);
+		const root = workspace({
+			'packages/session': {
+				pkg: { name: '@jasper/session' },
+				files: {
+					'src/react/hooks.ts': "import { useState } from 'react';",
+					'src/session.ts': "import { useState } from 'react';",
+				},
+			},
+		});
+		expect(rules(root)).toEqual(['packages/session/src/session.ts forbidden-external react']);
 	});
 
 	it('fails on an unknown workspace package', () => {
@@ -133,21 +141,6 @@ describe('check-layers', () => {
 			'packages/newthing': { pkg: { name: '@jasper/newthing' } },
 		});
 		expect(rules(root)).toEqual(['packages/newthing/package.json unknown-package newthing']);
-	});
-
-	it('rejects scoped UI and server packages in browser model layers', () => {
-		const ctx = {
-			dir: 'packages/project',
-			layer: LAYERS['packages/project'],
-			declared: new Set(),
-			exportsOf: () => null,
-		};
-		const text = 'import "@radix-ui/react-dialog";\nimport "@fastify/cors";\nimport "@remotion/renderer";';
-		expect(fileViolations('packages/project/src/x.ts', text, ctx).map(({ spec }) => spec)).toEqual([
-			'@radix-ui/react-dialog',
-			'@fastify/cors',
-			'@remotion/renderer',
-		]);
 	});
 
 	it('allows only type imports of the desktop API bridge contract', () => {
@@ -162,22 +155,5 @@ describe('check-layers', () => {
 			},
 		});
 		expect(rules(root)).toEqual(['apps/desktop/src/preload.ts forbidden-edge @jasper/api']);
-	});
-
-	it('inspects import types and ignores imports quoted inside source strings and comments', () => {
-		const ctx = {
-			dir: 'packages/project',
-			layer: LAYERS['packages/project'],
-			declared: new Set(),
-			exportsOf: () => null,
-		};
-		const text = [
-			'const example = "import value from \'node:fs\'";',
-			'// import "node:path";',
-			'type Remote = import("@jasper/api").Remote;',
-		].join('\n');
-		expect(fileViolations('packages/project/src/x.ts', text, ctx).map(({ spec }) => spec)).toEqual([
-			'@jasper/api',
-		]);
 	});
 });

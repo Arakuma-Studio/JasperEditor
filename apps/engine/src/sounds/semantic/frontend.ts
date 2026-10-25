@@ -22,12 +22,12 @@ const F_MAX = 14_000;
 const MEL_FLOOR = 1e-10;
 
 /** Slaney mel scale (linear below 1 kHz, logarithmic above), as librosa / Hugging Face define it. */
-export function hzToMelSlaney(f: number): number {
+function hzToMelSlaney(f: number): number {
 	if (f < 1000) return (3 * f) / 200;
 	return 15 + Math.log(f / 1000) * (27 / Math.log(6.4));
 }
 
-export function melToHzSlaney(m: number): number {
+function melToHzSlaney(m: number): number {
 	if (m < 15) return (200 * m) / 3;
 	return 1000 * Math.exp((Math.log(6.4) / 27) * (m - 15));
 }
@@ -35,7 +35,7 @@ export function melToHzSlaney(m: number): number {
 let filters: Float64Array | null = null;
 
 /** The filterbank, `N_BINS × CLAP_MELS` row-major (bin-major), Slaney-normalised. */
-export function clapMelFilters(): Float64Array {
+function clapMelFilters(): Float64Array {
 	if (filters) return filters;
 	const melMin = hzToMelSlaney(F_MIN);
 	const melMax = hzToMelSlaney(F_MAX);

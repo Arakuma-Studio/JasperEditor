@@ -27,6 +27,7 @@ import { animeEase, animeTemplateEaseName, easeFunction } from './eases.ts';
 import { lowerThirdAnimParams } from './lower-third-anim.ts';
 import {
 	SOCIAL_CARD_REF_WIDTH,
+	SOCIAL_MOTION_METRICS,
 	socialCardScale,
 	socialCommentSchedule,
 	socialCommentSegments,
@@ -178,12 +179,9 @@ export function calloutGeometry(
 export type AnimeTween = { start: number; dur: number; from: number; to: number; ease: string };
 
 /**
- * One animated value (a property of one target of the template's timeline: `target` / `prop` name the anime.js
- * target it mirrors), its tweens in time order (never overlapping), and how a unit of it shows on screen.
+ * One animated value, its tweens in time order (never overlapping), and how a unit of it shows on screen.
  */
-export type AnimeTrack = {
-	target: number;
-	prop: string;
+type AnimeTrack = {
 	initial: number;
 	tweens: AnimeTween[];
 	/** `px`: design px per unit (`perUnit`); `point`: a position along a path (`pointAt`); opacity; scale factor. */
@@ -194,7 +192,7 @@ export type AnimeTrack = {
 		| { kind: 'scale' };
 };
 
-export type AnimeMotionModel = {
+type AnimeMotionModel = {
 	/** The timeline the model follows (`anime/timing.ts`): content length and the intro / outro windows in ms. */
 	timing: TemplateTiming;
 	tracks: AnimeTrack[];
@@ -209,7 +207,7 @@ export type AnimeMotionModel = {
 const round6 = (v: number) => (Number.isFinite(v) ? Math.round(v * 1e6) / 1e6 + 0 : v);
 
 /** The value of a track at content time `ms` (anime.js seek semantics: before a tween its from-value holds). */
-export function trackValueAt(track: Pick<AnimeTrack, 'initial' | 'tweens'>, ms: number): number {
+function trackValueAt(track: Pick<AnimeTrack, 'initial' | 'tweens'>, ms: number): number {
 	let v = track.initial;
 	for (const tw of track.tweens) {
 		if (ms < tw.start) break;
@@ -268,13 +266,11 @@ function titleRevealModel(
 	const textW = fit.designW - fit.designW * 0.08 * 2;
 	const lineW = Math.min(textW, Math.max(size, estimateTextWidth(p.title, size, 700) * 0.6));
 	const tracks: AnimeTrack[] = [];
-	starts.forEach((at, i) => {
+	starts.forEach((at) => {
 		const phase: Phase = { at, dur, ease, outEase: 'in' };
 		tracks.push(
-			{ target: i, prop: 'o', initial: 0, tweens: inOut(t, phase, 0, 1), show: { kind: 'opacity' } },
+			{ initial: 0, tweens: inOut(t, phase, 0, 1), show: { kind: 'opacity' } },
 			{
-				target: i,
-				prop: 'y',
 				initial: 0.5,
 				tweens: inOut(t, phase, 0.5, 0),
 				show: { kind: 'px', perUnit: size },
@@ -284,10 +280,8 @@ function titleRevealModel(
 	const sub: Phase = { ...TITLE_REVEAL_PHASES.subtitle, ease };
 	if (p.subtitle)
 		tracks.push(
-			{ target: n, prop: 'o', initial: 0, tweens: inOut(t, sub, 0, 1), show: { kind: 'opacity' } },
+			{ initial: 0, tweens: inOut(t, sub, 0, 1), show: { kind: 'opacity' } },
 			{
-				target: n,
-				prop: 'y',
 				initial: 0.6,
 				tweens: inOut(t, sub, 0.6, 0),
 				show: { kind: 'px', perUnit: subSize },
@@ -295,8 +289,6 @@ function titleRevealModel(
 		);
 	if (p.underline)
 		tracks.push({
-			target: n + 1,
-			prop: 'd',
 			initial: 0,
 			tweens: inOut(t, TITLE_REVEAL_PHASES.underline, 0, 1),
 			show: { kind: 'px', perUnit: lineW },
@@ -322,30 +314,24 @@ function lowerThirdAnimModel(
 	const panelW = textW + padX * 2;
 	const P = LOWER_THIRD_ANIM_PHASES;
 	const tracks: AnimeTrack[] = [
-		{ target: 0, prop: 's', initial: 0, tweens: inOut(t, P.bar, 0, 1), show: { kind: 'scale' } },
+		{ initial: 0, tweens: inOut(t, P.bar, 0, 1), show: { kind: 'scale' } },
 		{
-			target: 1,
-			prop: 'w',
 			initial: 0,
 			tweens: inOut(t, { ...P.panel, ease }, 0, 1),
 			// the wipe is drawn clamped to 0…1 (an overshooting ease does not open it further)
 			show: { kind: 'px', perUnit: panelW, clamp01: true },
 		},
 	];
-	const words = (offset: number, n: number, from: number, to: number) => {
+	const words = (n: number, from: number, to: number) => {
 		for (let i = 0; i < n; i++) {
 			const phase: Phase = { ...lowerThirdWordPhase(i, n, from, to), ease, outEase: 'in' };
 			tracks.push(
 				{
-					target: offset + i,
-					prop: 'o',
 					initial: 0,
 					tweens: inOut(t, phase, 0, 1),
 					show: { kind: 'opacity' },
 				},
 				{
-					target: offset + i,
-					prop: 'x',
 					initial: -24,
 					tweens: inOut(t, phase, -24, 0),
 					show: { kind: 'px', perUnit: 1 },
@@ -353,9 +339,9 @@ function lowerThirdAnimModel(
 			);
 		}
 	};
-	words(2, names, P.names.from, P.names.to);
+	words(names, P.names.from, P.names.to);
 	// the role words are drawn only with a role (an empty role has no words)
-	words(2 + names, roles, P.roles.from, P.roles.to);
+	words(roles, P.roles.from, P.roles.to);
 	return { tracks, textAt: null };
 }
 
@@ -372,10 +358,8 @@ function calloutModel(
 	const pulse = phaseTimes(t, C.pulse);
 	const fadeIn = Math.max(1, pulse.introStart);
 	const tracks: AnimeTrack[] = [
-		{ target: 0, prop: 's', initial: 0, tweens: inOut(t, C.dot, 0, 1), show: { kind: 'px', perUnit: dotR } },
+		{ initial: 0, tweens: inOut(t, C.dot, 0, 1), show: { kind: 'px', perUnit: dotR } },
 		{
-			target: 1,
-			prop: 'o',
 			initial: 0,
 			tweens: [
 				{ start: 0, dur: fadeIn, from: 0, to: 0.8, ease: 'out' },
@@ -384,8 +368,6 @@ function calloutModel(
 			show: { kind: 'opacity' },
 		},
 		{
-			target: 1,
-			prop: 's',
 			initial: 1,
 			tweens: inOut(t, C.pulse, 1, 2.6, { outro: false }),
 			show: { kind: 'px', perUnit: dotR },
@@ -394,22 +376,16 @@ function calloutModel(
 	if (p.motionPath) {
 		tracks.push(
 			{
-				target: 2,
-				prop: 'm',
 				initial: 0,
 				tweens: inOut(t, { ...C.line, ease }, 0, 1, { outro: false }),
 				show: { kind: 'point', pointAt: geo.pointAt },
 			},
 			{
-				target: 2,
-				prop: 'o',
 				initial: 0,
 				tweens: inOut(t, C.labelWithPath, 0, 1),
 				show: { kind: 'opacity' },
 			},
 			{
-				target: 2,
-				prop: 's',
 				initial: 0.85,
 				tweens: inOut(t, C.labelWithPath, 0.85, 1),
 				show: { kind: 'scale' },
@@ -417,15 +393,13 @@ function calloutModel(
 		);
 	} else {
 		tracks.push(
-			{ target: 2, prop: 'o', initial: 0, tweens: inOut(t, C.label, 0, 1), show: { kind: 'opacity' } },
-			{ target: 2, prop: 's', initial: 0.85, tweens: inOut(t, C.label, 0.85, 1), show: { kind: 'scale' } },
+			{ initial: 0, tweens: inOut(t, C.label, 0, 1), show: { kind: 'opacity' } },
+			{ initial: 0.85, tweens: inOut(t, C.label, 0.85, 1), show: { kind: 'scale' } },
 		);
 	}
 	// the leader line: drawn on (its end 0 → 1), undrawn from its start in the outro (the drawn length shrinks)
 	const line = phaseTimes(t, C.line);
 	tracks.push({
-		target: 3,
-		prop: 'draw',
 		initial: 0,
 		tweens: [
 			{ start: line.introStart, dur: line.introDur, from: 0, to: 1, ease },
@@ -446,15 +420,11 @@ function counterModel(
 	const ease = animeTemplateEaseName(p.ease);
 	const tracks: AnimeTrack[] = [
 		{
-			target: 0,
-			prop: 'o',
 			initial: 0,
 			tweens: inOut(t, COUNTER_PHASES.number, 0, 1),
 			show: { kind: 'opacity' },
 		},
 		{
-			target: 0,
-			prop: 'y',
 			initial: 0.25,
 			tweens: inOut(t, COUNTER_PHASES.number, 0.25, 0),
 			show: { kind: 'px', perUnit: p.size },
@@ -463,15 +433,11 @@ function counterModel(
 	if (p.label)
 		tracks.push(
 			{
-				target: 1,
-				prop: 'o',
 				initial: 0,
 				tweens: inOut(t, COUNTER_PHASES.label, 0, 1),
 				show: { kind: 'opacity' },
 			},
 			{
-				target: 1,
-				prop: 'y',
 				initial: 0.4,
 				tweens: inOut(t, COUNTER_PHASES.label, 0.4, 0),
 				show: { kind: 'px', perUnit: p.size * 0.3 },
@@ -492,7 +458,8 @@ function counterModel(
 /**
  * social-comment@1: the schedule the implementation builds its timeline from (`socialCommentSchedule`). The card's
  * scale and opacity show as such, its drop in design px, its tilt as the arc its far corner travels (a nominal card of
- * 420 × 160 reference px at the 16:9 card scale); a word's or the heart's scale as px of a nominal word / heart size.
+ * 420 × 160 reference px at the 16:9 card scale); a word's scale as px of its estimated width in the variant's comment
+ * font, the heart's as px of the like icon the variant draws (`SOCIAL_MOTION_METRICS`; its fill only where it fills).
  * The like tick is the displayed count (`textAt`), formatted the way the variant shows it; on store reviews it is the
  * stars filled so far (`socialTickText`).
  */
@@ -501,17 +468,26 @@ function socialCommentModel(
 	t: TemplateTiming,
 ): Omit<AnimeMotionModel, 'scale' | 'canvas' | 'timing'> {
 	const p = socialCommentParamsSchema.parse(params);
-	const units = p.wordReveal ? socialCommentSegments(p.text, p.variant).units : 0;
+	const segments = socialCommentSegments(p.text, p.variant);
+	const units = p.wordReveal ? segments.units : 0;
 	const s = socialCommentSchedule({ ...t, entrance: p.entrance, units, tick: socialLikesTick(p) });
 	const k = socialCardScale(CANVASES[0]!);
 	const cornerArc = (Math.hypot(SOCIAL_CARD_REF_WIDTH, 160) * k * Math.PI) / 180;
-	const tracks: AnimeTrack[] = s.tracks.map((tr) => {
+	const metrics = SOCIAL_MOTION_METRICS[p.variant];
+	// a revealed word scales by its own width (target 1 + unit)
+	const wordPx = segments.segments
+		.filter((seg) => seg.unit >= 0)
+		.map((seg) => estimateTextWidth(seg.text, metrics.bodyPx, 400));
+	const tracks: AnimeTrack[] = s.tracks.flatMap((tr): AnimeTrack[] => {
+		const heart = tr.target === s.heartTarget;
+		// a card whose like icon does not fill draws nothing for the heart's fill
+		if (heart && tr.prop === 'f' && !metrics.likeFills) return [];
 		let show: AnimeTrack['show'];
 		if (tr.prop === 'o' || tr.prop === 'f') show = { kind: 'opacity' };
 		else if (tr.target === 0)
 			show = tr.prop === 's' ? { kind: 'scale' } : { kind: 'px', perUnit: tr.prop === 'r' ? cornerArc : 1 };
-		else show = { kind: 'px', perUnit: (tr.target === s.heartTarget ? 20 : 24) * k };
-		return { ...tr, show };
+		else show = { kind: 'px', perUnit: (heart ? metrics.likePx : (wordPx[tr.target - 1] ?? 24)) * k };
+		return [{ ...tr, show }];
 	});
 	const tick = s.tick;
 	let textAt: AnimeMotionModel['textAt'] = null;
@@ -546,7 +522,7 @@ export function hasAnimeMotionModel(def: Pick<AnyAnimeMgTemplate, 'id' | 'versio
  * The motion model of an anime template clip (content `timing.totalFrames` at `timing.fps`), on the default
  * 1920×1080 canvas; null for unknown templates or params its schema rejects.
  */
-export function animeMotionModel(
+function animeMotionModel(
 	def: Pick<AnyAnimeMgTemplate, 'id' | 'version' | 'introFrames' | 'outroFrames'>,
 	params: unknown,
 	timing: MgTemplateMotionTiming,

@@ -1,6 +1,6 @@
 // The plan's `style.cueSources` (WP3.3b, the Auto Sound Pass… dialog's "Sources for cues"): derived cues come only from
 // the chosen sources; stored cues are planned whatever their source; the request schema refuses unknown sources.
-import { type SoundDesignPlanRequest, SoundDesignPlanRequestSchema } from '@jasper/api';
+import type { SoundDesignPlanRequest } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import { describe, expect, it } from 'vitest';
 import { collectPlanCues, resolveStyle } from '../src/sound-design/plan.ts';
@@ -28,18 +28,5 @@ describe('sound-design plan: cue sources', () => {
 		// every cue of a subset is one of the full run's (same frames)
 		const frames = new Set(all.map((c) => `${c.kind}@${c.frame}`));
 		for (const c of [...edits, ...transitions]) expect(frames.has(`${c.kind}@${c.frame}`)).toBe(true);
-	});
-
-	it('the request schema takes known derivation sources only', () => {
-		const base = { projectId: 'prj_1' };
-		expect(
-			SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: ['edits'] } }).success,
-		).toBe(true);
-		expect(SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: [] } }).success).toBe(
-			false,
-		);
-		expect(SoundDesignPlanRequestSchema.safeParse({ ...base, style: { cueSources: ['nope'] } }).success).toBe(
-			false,
-		);
 	});
 });

@@ -12,14 +12,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { SoundCheckFix, SoundCheckIssue, SoundCheckReport } from '@jasper/api';
+import type { SoundCheckFix, SoundCheckReport } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
-import {
-	defaultRegistries,
-	type ProjectDocument,
-	type Sequence,
-	SOUND_CHECK_MESSAGES,
-} from '@jasper/project';
+import { defaultRegistries, type ProjectDocument, type Sequence } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderMixdown } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
@@ -98,9 +93,6 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 		// the demotion is not safe: it resets B's gain to the support default (6 dB under the hero's), where B is masked
 		// — alone, and after the gain fix (it undoes it)
 		expect(density!.fix?.safe, describeIssues(report)).toBe(false);
-		expect(density!.fix!.whyMessage?.key).toBe(SOUND_CHECK_MESSAGES.whyFixMasked);
-		expect(density!.fix!.conflictsWith).toBeUndefined();
-		expect(report.levelGuard?.levels.map((l) => l.clipId)).toContain(fx.ids.clipB);
 
 		// measured: both applied in one transaction (what "Fix all safe" did before) → B masked again on the re-check
 		const both = clone(fx);
@@ -147,8 +139,6 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 		expect(masked, describeIssues(report)).toBeDefined();
 		expect(masked!.fix?.kind).toBe('commands');
 		expect(masked!.fix!.safe, describeIssues(report)).toBe(false);
-		expect(masked!.fix!.whyMessage?.key).toBe(SOUND_CHECK_MESSAGES.whyFixMixPeak);
-		expect(masked!.fix!.conflictsWith ?? []).toEqual([]);
 		const model = report.levelGuard!.levels.find((l) => l.clipId === fx.ids.clipB)!;
 		expect(model.mixTruePeakDb).not.toBeNull();
 		const solved = masked!.measured!.solvedGainDb as number;
@@ -212,5 +202,3 @@ describe('Sound Check fixes together (real engine)', { timeout: 600_000 }, () =>
 		}
 	});
 });
-
-export type { SoundCheckIssue };

@@ -158,18 +158,10 @@ export type ProposalsOptions = {
 	debounceMs?: number;
 	setTimer?: (fn: () => void, ms: number) => unknown;
 	clearTimer?: (handle: unknown) => void;
-	/**
-	 * A preview of more than `syncItems` items (default 64) is rebuilt in slices of at most `sliceMs` of work (default
-	 * 8 ms), yielding to the event loop between them, so a large proposal never blocks the editor; the previous preview
-	 * stays shown until the new one is complete.
-	 */
-	sliceMs?: number;
-	syncItems?: number;
-	/** Clock of the slices (default `performance.now`). */
-	clock?: () => number;
 };
 
 const DEBOUNCE_MS = 150;
+// Larger previews yield between 8 ms slices; the previous preview stays visible until completion.
 const SLICE_MS = 8;
 const SYNC_ITEMS = 64;
 
@@ -230,8 +222,6 @@ export class ProposalsController {
 	private readonly setTimer: (fn: () => void, ms: number) => unknown;
 	private readonly clearTimer: (handle: unknown) => void;
 	private recomputeTimer: unknown = null;
-	private readonly sliceMs: number;
-	private readonly syncItems: number;
 	private readonly clock: () => number;
 	/** The preview being built in slices (null: none). */
 	private job: { run: Generator<unknown, void, void>; timer: unknown } | null = null;
@@ -261,9 +251,7 @@ export class ProposalsController {
 	) {
 		this.engine = opts.engine ?? (session.engine as ProposalsEngine | undefined) ?? null;
 		this.debounceMs = opts.debounceMs ?? DEBOUNCE_MS;
-		this.sliceMs = opts.sliceMs ?? SLICE_MS;
-		this.syncItems = opts.syncItems ?? SYNC_ITEMS;
-		this.clock = opts.clock ?? (() => globalThis.performance?.now?.() ?? Date.now());
+		this.clock = () => globalThis.performance?.now?.() ?? Date.now();
 		this.setTimer = opts.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
 		this.clearTimer = opts.clearTimer ?? ((h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>));
 		this.store = createStore<ProposalsState>(() => ({
@@ -487,7 +475,7 @@ export class ProposalsController {
 		if (!on) return;
 		// a small proposal's preview is made ready now; a large one's starts now and comes in slices
 		const n = this.store.getState().proposal?.items.length ?? 0;
-		if (n <= this.syncItems) this.flush();
+		if (n <= SYNC_ITEMS) this.flush();
 		else if (this.recomputeTimer !== null) {
 			this.clearTimer(this.recomputeTimer);
 			this.recomputeTimer = null;
@@ -882,7 +870,7 @@ export class ProposalsController {
 		this.job = null;
 	}
 
-	/** Runs the sliced preview job for at most `sliceMs`, then yields to the event loop (or to completion: `sync`). */
+	/** Runs the sliced preview job for at most `SLICE_MS`, then yields to the event loop (or to completion: `sync`). */
 	private step(job: NonNullable<ProposalsController['job']>, sync: boolean): void {
 		job.timer = null;
 		const start = this.clock();
@@ -893,7 +881,7 @@ export class ProposalsController {
 				if (this.job === job) this.job = null;
 				return;
 			}
-			if (!sync && this.clock() - start >= this.sliceMs) break;
+			if (!sync && this.clock() - start >= SLICE_MS) break;
 		}
 		job.timer = this.setTimer(() => this.step(job, false), 0);
 	}
@@ -972,7 +960,7 @@ export class ProposalsController {
 	 * reject starts from the ghosts' preview where the two go the same way). Items are applied in batches (one
 	 * transaction for several items, ghosts attributed per item) and the result is checked once as Apply checks it;
 	 * when it breaks an invariant, the first item after which it does is found (bisection over the batches) and shown
-	 * stale with the issue, whatever the proposal's size. A large proposal is built in slices (`sliceMs`, each batch
+	 * stale with the issue, whatever the proposal's size. A large proposal is built in slices (`SLICE_MS`, each batch
 	 * kept near one slice) unless `sync`.
 	 */
 	private recompute(sync: boolean): void {
@@ -1060,7 +1048,7 @@ export class ProposalsController {
 		const idsFor = (it: ProposalItem) =>
 			createSeededIdSource(`${p.id}:${it.id}:${it.selectedAlternative ?? 0}`);
 		const self = this;
-		const sliced = !sync && all.length > this.syncItems;
+		const sliced = !sync && all.length > SYNC_ITEMS;
 		// Every item applied in batches, and the result checked as Apply checks it (an item that breaks an invariant
 		// together with the ones before it fails with the issue; the rest is applied again without it), whatever the
 		// size of the proposal. What Hear plays starts from the ghosts' preview where the two go the same way.
@@ -1072,7 +1060,7 @@ export class ProposalsController {
 				idsFor,
 				reuse,
 				// a large proposal is built in slices: each batch of items stays near one slice of work
-				...(sliced ? { batchMs: self.sliceMs, clock: self.clock } : {}),
+				...(sliced ? { batchMs: SLICE_MS, clock: self.clock } : {}),
 			});
 		}
 		function* work(): Generator<unknown, void, void> {
@@ -1085,7 +1073,7 @@ export class ProposalsController {
 		}
 		const job = { run: work(), timer: null as unknown };
 		this.job = job;
-		this.step(job, sync || all.length <= this.syncItems);
+		this.step(job, sync || all.length <= SYNC_ITEMS);
 	}
 
 	dispose(): void {

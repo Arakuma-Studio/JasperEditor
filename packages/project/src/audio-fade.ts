@@ -63,7 +63,7 @@ export function clampFadeValue(value: unknown): number {
  * The exponent a fade value puts on the base curve: 2^(−value / 19). 0 → 1 (the base curve), 19 → 1/2 (equal power:
  * √base, so a symmetric crossfade's powers sum to 1), −19 → 2; the range ±100 spans exponents 1/38 … 38.
  */
-export function fadeShapeExponent(value: number): number {
+function fadeShapeExponent(value: number): number {
 	return 2 ** (-clampFadeValue(value) / FADE_VALUE_EQUAL_POWER);
 }
 

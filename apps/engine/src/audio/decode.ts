@@ -18,6 +18,7 @@ import {
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
+import { ToolError } from '../tools/process.ts';
 
 /** atempo chain for a constant speed (each instance limited to 0.5…100). */
 function atempoChain(speed: number): string[] {
@@ -182,7 +183,10 @@ export class PcmStreamReader implements ClipReader {
 	private readonly iter: AsyncIterator<Buffer>;
 	private pending: Buffer = Buffer.alloc(0);
 	private ended = false;
+	private closed = false;
 	private stderr = '';
+	private failure: ToolError | undefined;
+	private readonly completion: Promise<ToolError | undefined>;
 
 	constructor(
 		readonly channels: number,
@@ -192,6 +196,26 @@ export class PcmStreamReader implements ClipReader {
 		child.stderr?.setEncoding('utf8').on('data', (c: string) => {
 			this.stderr = (this.stderr + c).slice(-4000);
 		});
+		// Resolve rather than reject: a child can fail before the first read or after an intentional close.
+		this.completion = new Promise((resolve) => {
+			child.once('error', (error: NodeJS.ErrnoException) => {
+				this.failure = new ToolError(
+					error.code === 'ENOENT' ? 'BINARY_MISSING' : 'INTERNAL',
+					`Cannot start audio decoder: ${error.message}`,
+				);
+				resolve(this.failure);
+			});
+			child.once('close', (code, signal) => {
+				if (code !== 0 && !this.closed && !this.failure) {
+					this.failure = new ToolError(
+						'TOOL_FAILED',
+						`Audio decoder exited ${code ?? signal}: ${this.stderr.trim().slice(-800)}`,
+						{ exitCode: code, stderr: this.stderr },
+					);
+				}
+				resolve(this.failure);
+			});
+		});
 	}
 
 	get errors(): string {
@@ -199,6 +223,8 @@ export class PcmStreamReader implements ClipReader {
 	}
 
 	async read(out: Float32Array[], frames: number): Promise<number> {
+		if (this.closed) return 0;
+		if (this.failure) throw this.failure;
 		const bytesPerFrame = 4 * this.channels;
 		const need = frames * bytesPerFrame;
 		const chunks: Buffer[] = [this.pending];
@@ -207,6 +233,8 @@ export class PcmStreamReader implements ClipReader {
 			const r = await this.iter.next();
 			if (r.done) {
 				this.ended = true;
+				const failure = await this.completion;
+				if (failure && !this.closed) throw failure;
 				break;
 			}
 			chunks.push(r.value);
@@ -232,6 +260,7 @@ export class PcmStreamReader implements ClipReader {
 	}
 
 	close(): void {
+		this.closed = true;
 		this.ended = true;
 		if (this.child.exitCode === null) this.child.kill('SIGKILL');
 	}

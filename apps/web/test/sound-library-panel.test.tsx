@@ -7,10 +7,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerCommands } from '../src/commands/registry.ts';
 import { soundCommands } from '../src/commands/sound.ts';
-import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
+import { AuditionPlayer } from '../src/sound/audition.ts';
 import { SOUND_CREDITS_DIALOG } from '../src/sound/dialogs.tsx';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
-import { fakeSoundEngine, soundEntry } from './sound-helpers.ts';
+import { fakeSoundEngine, mockAuditionPlayer, soundEntry } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => ({ client: null as unknown, status: 'connected' }));
@@ -25,6 +25,7 @@ let played: string[] = [];
 beforeAll(() => {
 	registerCommands(soundCommands);
 });
+let restoreAudition = () => {};
 beforeEach(() => {
 	localStorage.clear();
 	soundLibraryPrefs.reload();
@@ -41,7 +42,7 @@ beforeEach(() => {
 		createChannelSplitter: () => ({ connect() {}, disconnect() {} }),
 		createAnalyser: () => ({ connect() {}, disconnect() {}, fftSize: 2048, getFloatTimeDomainData() {} }),
 	};
-	setAuditionPlayer(
+	restoreAudition = mockAuditionPlayer(
 		new AuditionPlayer({
 			createContext: () => audio as never,
 			fetchBytes: async (url) => {
@@ -56,7 +57,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	closeAllDialogs();
-	setAuditionPlayer(null);
+	restoreAudition();
 });
 
 function mount(

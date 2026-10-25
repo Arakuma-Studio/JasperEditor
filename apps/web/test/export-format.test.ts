@@ -3,34 +3,26 @@
 // without saying so — and the finished-export notice repeats a container / audio codec change the engine reports.
 import type { Sequence } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { buildExportSettings, exportFormatOf, outputDescription } from '../src/export/settings.ts';
+import { buildExportSettings, outputDescription } from '../src/export/settings.ts';
 import { exportResultDetail } from '../src/home/ProjectLifecycle.tsx';
 import { makeSession } from './timeline-helpers.ts';
 
 describe('Export dialog container and audio codec', () => {
-	it('exportFormatOf follows the codec', () => {
-		expect(exportFormatOf('h264', true)).toEqual({ container: 'mp4', audio: 'aac' });
-		expect(exportFormatOf('hevc', true)).toEqual({ container: 'mp4', audio: 'aac' });
-		expect(exportFormatOf('av1', true)).toEqual({ container: 'mp4', audio: 'aac' });
-		expect(exportFormatOf('prores', true)).toEqual({ container: 'mov', audio: 'pcm' });
-		expect(exportFormatOf('vp9', true)).toEqual({ container: 'webm', audio: 'opus' });
-		expect(exportFormatOf('vp9', false)).toEqual({ container: 'mp4', audio: 'aac' });
-	});
-
 	it('buildExportSettings asks for it', () => {
 		const { session, seqId } = makeSession();
 		const seq = session.getCommitted().sequences[seqId] as Sequence;
-		const s = (codec: 'h264' | 'prores' | 'vp9', opus?: boolean) =>
-			buildExportSettings(seq, {
-				range: 'entire',
-				engine: 'auto',
-				codec,
-				...(opus === undefined ? {} : { opus }),
-			});
-		expect([s('h264').container, s('h264').audio?.codec]).toEqual(['mp4', 'aac']);
-		expect([s('prores').container, s('prores').audio?.codec]).toEqual(['mov', 'pcm']);
-		expect([s('vp9').container, s('vp9').audio?.codec]).toEqual(['webm', 'opus']);
-		expect([s('vp9', false).container, s('vp9', false).audio?.codec]).toEqual(['mp4', 'aac']);
+		for (const [codec, opus, container, audio] of [
+			['h264', true, 'mp4', 'aac'],
+			['hevc', true, 'mp4', 'aac'],
+			['av1', true, 'mp4', 'aac'],
+			['prores', true, 'mov', 'pcm'],
+			['vp9', true, 'webm', 'opus'],
+			['vp9', false, 'mp4', 'aac'],
+		] as const) {
+			const settings = buildExportSettings(seq, { range: 'entire', engine: 'auto', codec, opus });
+			expect(settings.container).toBe(container);
+			expect(settings.audio?.codec).toBe(audio);
+		}
 	});
 
 	it('ProRes with a transparent background asks for straight-alpha 4444 in MOV without audio; other codecs ignore it', () => {

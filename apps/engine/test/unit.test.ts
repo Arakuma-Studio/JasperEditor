@@ -1,12 +1,13 @@
 import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { UrlSigner } from '../src/auth/signed-url.ts';
 import { createPeakReducer } from '../src/derivatives/peaks.ts';
 import { Broadcaster } from '../src/events/broadcaster.ts';
+import { engineConfig } from '../src/index.ts';
 import { fingerprintFile, mediaKeyFor } from '../src/media/fingerprint.ts';
 import { probeFile } from '../src/media/probe.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 const pattern = (n: number) => {
 	const b = Buffer.alloc(n);
@@ -206,8 +207,7 @@ describe('system errors → ENG-022 codes (WP-3I)', () => {
 });
 
 describe('dev web port (WP-3I)', () => {
-	it('the dev engine accepts the Vite host given by JASPER_DEV_WEB_PORT (default 5173)', async () => {
-		const { engineConfig } = await import('../src/index.ts');
+	it('the dev engine accepts the Vite host given by JASPER_DEV_WEB_PORT (default 5173)', () => {
 		const base = { appdir: '/tmp/jasper-x', port: 48121, dev: true } as const;
 		expect(engineConfig({ ...base, env: {} }).extraHosts).toContain('127.0.0.1:5173');
 		const custom = engineConfig({ ...base, env: { JASPER_DEV_WEB_PORT: '48130' } }).extraHosts;
@@ -217,9 +217,7 @@ describe('dev web port (WP-3I)', () => {
 		);
 	});
 
-	it('resolves a relative JASPER_WEB_DIR against the working directory (@fastify/static needs an absolute root)', async () => {
-		const { engineConfig } = await import('../src/index.ts');
-		const { resolve } = await import('node:path');
+	it('resolves a relative JASPER_WEB_DIR against the working directory (@fastify/static needs an absolute root)', () => {
 		const base = { appdir: '/tmp/jasper-x', port: 48121, dev: false } as const;
 		const rel = engineConfig({ ...base, env: { JASPER_WEB_DIR: 'apps/web/dist' } }).webDir;
 		expect(rel).toBe(resolve('apps/web/dist'));

@@ -29,10 +29,10 @@ import type { AnimeTemplateProps } from './types.ts';
 /** `o` opacity, `y` rise (em). */
 type Values = { o: number; y: number };
 
-export type CounterBuildInput = TemplateTiming & { countMs: number; ease: string };
+type CounterBuildInput = TemplateTiming & { countMs: number; ease: string };
 
 /** Targets `[number, label]` (their fades; the count has its own timeline, `buildCounterCount`). */
-export function buildCounter(input: CounterBuildInput): {
+function buildCounter(input: CounterBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
@@ -46,7 +46,7 @@ export function buildCounter(input: CounterBuildInput): {
 }
 
 /** The count: progress `p` 0 → 1 from content 0 over `countMs`. */
-export function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
+function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	target: { p: number };
 } {
@@ -61,7 +61,7 @@ export function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ea
  * `useAnimeValues`). Values that round to 0 or 1 (the rest states and float noise around them) are exactly 0 / 1,
  * so the first and last counts show `from` and `to` exactly.
  */
-export function counterProgressAt(count: ReturnType<typeof buildCounterCount>, ms: number): number {
+function counterProgressAt(count: ReturnType<typeof buildCounterCount>, ms: number): number {
 	seekCanonical(count.timeline, ms);
 	const p = count.target.p;
 	const r = roundValue(p);

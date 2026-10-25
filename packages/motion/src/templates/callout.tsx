@@ -34,10 +34,10 @@ type Values = { s: number; o: number; m: number };
 const CALLOUT_PULSE_PHASE: Phase = CALLOUT_PHASES.pulse;
 const CALLOUT_LINE_PHASE: Phase = CALLOUT_PHASES.line;
 
-export type CalloutBuildInput = TemplateTiming & { ease: string; motionPath: boolean };
+type CalloutBuildInput = TemplateTiming & { ease: string; motionPath: boolean };
 
 /** Value targets `[dot, ring, label]`. */
-export function buildCallout(input: CalloutBuildInput): {
+function buildCallout(input: CalloutBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {

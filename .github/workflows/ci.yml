@@ -53,12 +53,16 @@ jobs:
         run: pnpm lint
 
       - name: Typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm typecheck
 
       - name: Test
         run: pnpm test --maxWorkers=2
 
       - name: Build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm build
 
       - name: Upload golden / fuzz failure artefacts

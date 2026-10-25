@@ -313,7 +313,7 @@ describe('proposal MCP tools', { timeout: 900_000 }, () => {
 			since: before.updatedAt,
 			timeoutSeconds: 60,
 		});
-		await new Promise((r) => setTimeout(r, 1500));
+		// `since` identifies the prior version even if the note arrives before the wait starts.
 		await editor(`/api/projects/${projectId}/proposals/${plan.proposalId}/note`, {
 			itemId: noteItem,
 			note: 'Too loud for this moment, try something softer',

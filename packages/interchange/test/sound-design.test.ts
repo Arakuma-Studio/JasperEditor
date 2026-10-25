@@ -90,34 +90,27 @@ function reimport(bytes: Uint8Array, format: Format) {
 }
 
 describe('sound design in interchange exports (spec 12 §2.11)', () => {
-	it.each(ALL)('%s: the report says what of the sound design is carried', (format) => {
+	it.each(ALL)('%s: reports cue loss or preserves SFX markers at their cue frames', (format) => {
 		const h = soundProject();
 		const out = exportTimeline(h.doc, h.seqId, format);
 		const entry = out.report.entries.find((e) => e.message.includes('sound design cue'));
 		expect(entry, out.report.toString()).toBeDefined();
 		expect(entry!.level).toBe('info');
-		expect(entry!.message).toContain(
-			"proposals and the sound design's mix metadata (settings, mix records, the last Sound Check, the SFX placement data of clips) are not carried",
-		);
+		expect(entry!.subject).toMatchObject({ kind: 'sequence', id: h.seqId });
+		expect(entry!.message).toMatch(/proposals.*not carried/);
 		if (format === 'omf' || format === 'ale')
 			expect(entry!.message).toMatch(/the 2 sound design cue\(s\) of ".*" are not carried/);
 		else {
 			expect(entry!.message).toMatch(
 				/the 2 sound design cue\(s\) of ".*" are exported as "SFX: <type> \(<weight>\)" markers/,
 			);
-			expect(entry!.instead).toContain('Convert Markers to Cues');
+			const { seq } = reimport(out.files[0]!.bytes, format);
+			const sfx = seq.markers.filter((m) => m.name.startsWith('SFX:')).map((m) => [m.frame, m.name]);
+			expect(sfx).toEqual([
+				[30, 'SFX: whoosh+hit (hero)'],
+				[90, 'SFX: hit (support)'],
+			]);
 		}
-	});
-
-	it.each(MARKER_FORMATS)('%s: one SFX marker per cue, read back as markers at the cue frames', (format) => {
-		const h = soundProject();
-		const out = exportTimeline(h.doc, h.seqId, format);
-		const { seq } = reimport(out.files[0]!.bytes, format);
-		const sfx = seq.markers.filter((m) => m.name.startsWith('SFX:')).map((m) => [m.frame, m.name]);
-		expect(sfx).toEqual([
-			[30, 'SFX: whoosh+hit (hero)'],
-			[90, 'SFX: hit (support)'],
-		]);
 	});
 
 	it('the re-imported markers become cues again with their types and weight (marker cue source)', () => {

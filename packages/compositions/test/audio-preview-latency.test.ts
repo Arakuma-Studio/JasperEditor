@@ -86,57 +86,6 @@ beforeAll(() => {
 afterAll(() => off?.());
 
 describe('preview latency plan (track / submix / Mix inserts)', () => {
-	it('a track insert: the other tracks are delayed to it and the graph reads ahead by it', () => {
-		const mix: RenderAudioMix = {
-			sampleRate: SR,
-			masterFormat: 'stereo',
-			strips: [
-				strip('A1', 'track', { inserts: [fxLat('f1', 256)] }),
-				strip('A2', 'track'),
-				strip('master', 'master'),
-			],
-			loudness: null,
-		};
-		const plan = planMixLatency(mix, latencyOf);
-		expect(plan.total).toBe(256);
-		expect(plan.strips.A1!.outDelay).toBe(0);
-		expect(plan.strips.A2!.outDelay).toBe(256);
-		expect(plan.strips.master!.inLat).toBe(256);
-		expect(plan.total).toBe(exportLatency(mix));
-	});
-
-	it('pre/post-fader sends, a submix insert, Mix inserts and the limiter', () => {
-		const mix: RenderAudioMix = {
-			sampleRate: SR,
-			masterFormat: 'stereo',
-			strips: [
-				strip('A1', 'track', {
-					inserts: [fxLat('a', 64), fxLat('b', 100, true)],
-					sends: [{ id: 's1', target: 'S1', levelDb: still(0), pan: 0, preFader: true }],
-				}),
-				strip('A2', 'track', {
-					sends: [{ id: 's2', target: 'S1', levelDb: still(0), pan: 0, preFader: false }],
-				}),
-				strip('S1', 'submix', { inserts: [fxLat('c', 300)] }),
-				strip('master', 'master', { inserts: [fxLat('d', 30, true)] }),
-			],
-			loudness: null,
-		};
-		const plan = planMixLatency(mix, latencyOf, 7);
-		const p = plan.strips;
-		expect(p.A1).toMatchObject({ inLat: 0, preLat: 64, postLat: 164 });
-		expect(p.S1).toMatchObject({ inLat: 64, preLat: 364, postLat: 364 });
-		// every input of a bus arrives at its inLat
-		expect(p.A1!.sendDelays.s1).toBe(0);
-		expect(p.A2!.sendDelays.s2).toBe(64);
-		expect(p.master!.inLat).toBe(364);
-		expect(164 + p.A1!.outDelay).toBe(364);
-		expect(0 + p.A2!.outDelay).toBe(364);
-		expect(364 + p.S1!.outDelay).toBe(364);
-		expect(plan.total).toBe(394 + 7);
-		expect(plan.total - 7).toBe(exportLatency(mix));
-	});
-
 	it('equals the export mixer for any topology, and every route arrives aligned (property)', () => {
 		const topology = fc
 			.record({

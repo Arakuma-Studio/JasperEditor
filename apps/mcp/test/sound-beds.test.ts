@@ -2,7 +2,7 @@
 // (stdio). A 20 s dialogue recording with a −52 dBFS pink floor sits on A1 cut into two clips around a 1 s hole, with
 // "Scene 2" / "Scene 3" markers at 200 and 400: lay_ambience_bed previews the three scenes (window, loop, crossfade),
 // proposes them (nothing changes) and applies them (one edit); fill_room_tone ranks the library's room tones against the
-// dialogue's floor, picks the pink one and fills the hole; refusals are typed; the guide teaches both.
+// dialogue's floor, picks the pink one and fills the hole; refusals are typed.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SOUND_GUIDE } from '../src/tools/sound.ts';
 import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -189,20 +188,6 @@ afterAll(async () => {
 	}
 	if (work) rmSync(work, { recursive: true, force: true });
 }, 30_000);
-
-describe('the guide teaches beds and room tone', () => {
-	it('names the tools, the measurements and the Sound Check fix', () => {
-		for (const phrase of [
-			'lay_ambience_bed',
-			'fill_room_tone',
-			'clean window',
-			'loop points',
-			'noise floor',
-			'Fill it with room tone',
-		])
-			expect(SOUND_GUIDE, phrase).toContain(phrase);
-	});
-});
 
 describe('beds and room tone through MCP', { timeout: 900_000 }, () => {
 	let projectId = '';

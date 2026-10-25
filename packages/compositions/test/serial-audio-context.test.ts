@@ -1,10 +1,10 @@
 // @vitest-environment node
 // Chrome can leave resume() pending if suspend() follows before it settles.
 // The Player also needs the audio clock to move after resume before another suspend.
+import { fileURLToPath } from 'node:url';
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { installSerialAudioContext } from '../src/audio/serial-audio-context.ts';
-import { CHROME } from './gl-browser.ts';
+import { bundleGlEntry, CHROME } from './gl-browser.ts';
 
 const run = !!CHROME && process.env.FX_GL !== '0';
 
@@ -43,7 +43,11 @@ const probe = async () => {
 
 describe.runIf(run)('AudioContext resume/suspend races', () => {
 	let browser: Browser;
+	let installScript: string;
 	beforeAll(async () => {
+		installScript = await bundleGlEntry(
+			fileURLToPath(new URL('./serial-audio-context/entry.ts', import.meta.url)),
+		);
 		browser = await chromium.launch({
 			executablePath: CHROME!,
 			headless: true,
@@ -56,9 +60,12 @@ describe.runIf(run)('AudioContext resume/suspend races', () => {
 
 	it('overlapping resume and suspend settle and advance the audio clock', async () => {
 		const fixed = await browser.newPage();
+		const errors: string[] = [];
+		fixed.on('pageerror', (error) => errors.push(error.message));
 		await fixed.setContent('<!doctype html><html><body></body></html>');
-		await fixed.evaluate(`(${installSerialAudioContext.toString()})()`);
+		await fixed.addScriptTag({ content: installScript });
 		const after = await fixed.evaluate(probe);
+		expect(errors).toEqual([]);
 		expect(
 			after.every((x) => x.resume === 'ok'),
 			JSON.stringify(after),

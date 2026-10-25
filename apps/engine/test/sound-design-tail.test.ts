@@ -4,7 +4,7 @@
 // inserts; 0.5 s at least, 6 s at most. Pure.
 import type { Clip, Sequence } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { effectTailSec, MAX_TAIL_SEC, SOLO_TAIL_SEC, soloTailSec } from '../src/sound-design/bed.ts';
+import { effectTailSec, soloTailSec } from '../src/sound-design/bed.ts';
 
 const p = (value: number | string, keyframes: { value: number | string }[] = []) => ({ value, keyframes });
 const fx = (effectId: string, params: Record<string, ReturnType<typeof p>>, enabled = true) => ({
@@ -26,16 +26,13 @@ describe('effectTailSec', () => {
 		).toBeCloseTo(3.02, 9);
 		expect(
 			effectTailSec(fx('jasper.audio.convolution-reverb', { impulse: p('cathedral'), preDelay: p(100) })),
-		).toBeCloseTo(3.2 * 1.1 + 0.12 + 0.1, 9);
-		expect(effectTailSec(fx('jasper.audio.convolution-reverb', {}))).toBeCloseTo(0.8 * 1.1 + 0.045, 9);
+		).toBeCloseTo(3.74, 9);
+		expect(effectTailSec(fx('jasper.audio.convolution-reverb', {}))).toBeCloseTo(0.925, 9);
 	});
 
 	it('delays and echoes: the delay times the repeats their feedback takes to fall 60 dB', () => {
 		// 50 % feedback: 0.5^10 < 1e-3 → 10 repeats + the first echo
-		expect(effectTailSec(fx('jasper.audio.delay', { time: p(300), feedback: p(50) }))).toBeCloseTo(
-			0.3 * 11,
-			9,
-		);
+		expect(effectTailSec(fx('jasper.audio.delay', { time: p(300), feedback: p(50) }))).toBeCloseTo(3.3, 9);
 		expect(effectTailSec(fx('jasper.audio.delay', { time: p(300), feedback: p(0) }))).toBeCloseTo(0.3, 9);
 		// tempo-synced: a quarter note at 120 bpm
 		expect(
@@ -44,7 +41,7 @@ describe('effectTailSec', () => {
 			),
 		).toBeCloseTo(0.5, 9);
 		expect(effectTailSec(fx('jasper.audio.analog-delay', { delay: p(250), feedback: p(40) }))).toBeCloseTo(
-			0.25 * (Math.ceil(Math.log(1e-3) / Math.log(0.4)) + 1),
+			2.25,
 			9,
 		);
 		// saturating feedback (≥ 100 %) does not decay
@@ -62,7 +59,7 @@ describe('effectTailSec', () => {
 		expect(effectTailSec(taps)).toBeCloseTo(0.25, 9); // tap 2 is off (−96 dB)
 		expect(
 			effectTailSec(fx('jasper.audio.flanger', { initialDelay: p(1), finalDelay: p(20), feedback: p(-100) })),
-		).toBeCloseTo(0.02 * (Math.ceil(Math.log(1e-3) / Math.log(0.95)) + 1), 9);
+		).toBeCloseTo(2.72, 9);
 	});
 
 	it('disabled and tail-less effects add nothing', () => {
@@ -85,7 +82,7 @@ describe('soloTailSec', () => {
 		return soloTailSec(s, clip);
 	};
 	it('walks the clip, its track, the submixes it sends to and the Mix', () => {
-		expect(seq({})).toBe(SOLO_TAIL_SEC);
+		expect(seq({})).toBe(0.5);
 		expect(seq({ clipFx: [fx('jasper.audio.delay', { time: p(400), feedback: p(50) })] })).toBeCloseTo(
 			4.4,
 			9,
@@ -95,13 +92,8 @@ describe('soloTailSec', () => {
 			9,
 		);
 		// the Mix's own echo (before: cut at 0.5 s)
-		expect(seq({ mixFx: [fx('jasper.audio.delay', { time: p(500), feedback: p(20) })] })).toBeCloseTo(
-			0.5 * (Math.ceil(Math.log(1e-3) / Math.log(0.2)) + 1),
-			9,
-		);
+		expect(seq({ mixFx: [fx('jasper.audio.delay', { time: p(500), feedback: p(20) })] })).toBeCloseTo(3, 9);
 		// never more than 6 s, also for a saturating echo
-		expect(seq({ trackFx: [fx('jasper.audio.analog-delay', { delay: p(250), feedback: p(150) })] })).toBe(
-			MAX_TAIL_SEC,
-		);
+		expect(seq({ trackFx: [fx('jasper.audio.analog-delay', { delay: p(250), feedback: p(150) })] })).toBe(6);
 	});
 });

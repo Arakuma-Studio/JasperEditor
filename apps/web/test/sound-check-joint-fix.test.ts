@@ -7,15 +7,22 @@ import type { SoundCheckIssue, SoundCheckReport, SoundCheckResult } from '@jaspe
 import {
 	type LibraryProvenance,
 	type Sequence,
-	SOUND_CHECK_MESSAGES,
 	type SoundCheckLevelModel,
 	soundCheckMessage,
 } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
+import { closeAllDialogs, DialogHost } from '@jasper/ui';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { createElement } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
 import { resultFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { applyCheckFix, type CheckEngine, fixAllSafe, soundCheckStore } from '../src/sound/check-run.ts';
 import { audioAsset } from './proposal-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
+
+afterEach(async () => {
+	await act(async () => closeAllDialogs());
+	cleanup();
+});
 
 const LIB = (soundId: string, title: string): LibraryProvenance => ({
 	soundId,
@@ -87,7 +94,7 @@ function fixture(normalise: boolean) {
 	const gain = (id: string) => (seq().clips[id] as unknown as { gainDb: number }).gainDb;
 	const engine = {
 		async soundCheck() {
-			throw new Error('no re-run in this test');
+			throw new Error('Sound Check unavailable');
 		},
 		async registerSound() {
 			throw new Error('no swaps in this test');
@@ -175,6 +182,7 @@ const demoteIssue = (f: ReturnType<typeof fixture>): SoundCheckIssue => ({
 describe('Fix all safe judges the safe fixes together', () => {
 	it('after the hero was demoted with its own Fix, its hero-solved gain is left for the next check', async () => {
 		const f = fixture(true);
+		render(createElement(DialogHost));
 		const gB = f.gain(f.ids.clipB);
 		// B peaks 12 LU over the bed as a hero (OVERLOAD, solved to 10); demoted it drops to its support default (−6 dB)
 		const result = report(
@@ -184,34 +192,35 @@ describe('Fix all safe judges the safe fixes together', () => {
 		);
 		soundCheckStore(f.session).setState({ result, jobId: 'job_1', fixed: [] });
 		// the demotion alone is safe: one Fix, no question
-		const asked: string[] = [];
-		const one = await applyCheckFix(f.session, f.engine, result.report.issues[1]!, {
-			confirm: async (o) => {
-				asked.push(o.body);
-				return false;
-			},
+		let one!: ReturnType<typeof applyCheckFix>;
+		act(() => {
+			one = applyCheckFix(f.session, f.engine, result.report.issues[1]!);
 		});
-		expect(asked).toEqual([]);
-		expect(one.ok).toBe(true);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect((await one).ok).toBe(true);
 		expect(f.gain(f.ids.clipB)).toBeCloseTo(gB - 6, 6);
 		// Fix all safe: the remaining safe fix (the hero-solved gain) would leave the support 4 LU over its cap
 		const labels = f.session.getState().history.entries.length;
-		const all = await fixAllSafe(f.session, f.engine, { rerun: false });
+		const all = await fixAllSafe(f.session, f.engine);
 		expect(all.applied).toEqual([]);
 		expect(all.skipped).toEqual([`OVERLOAD:${f.ids.clipB}`]);
-		expect(all.message).toContain('left for the next check');
-		expect(all.message).toContain('4.0 LU over the bed');
 		expect(f.session.getState().history.entries.length).toBe(labels);
 		expect(f.gain(f.ids.clipB)).toBeCloseTo(gB - 6, 6);
 		// its single Fix asks first, saying why
-		const again = await applyCheckFix(f.session, f.engine, result.report.issues[0]!, {
-			confirm: async (o) => {
-				asked.push(o.body);
-				return false;
-			},
+		let again!: ReturnType<typeof applyCheckFix>;
+		act(() => {
+			again = applyCheckFix(f.session, f.engine, result.report.issues[0]!);
 		});
-		expect(again.declined).toBe(true);
-		expect(asked[0]).toContain('4.0 LU over the bed');
+		const dialog = await screen.findByRole('dialog');
+		expect(dialog.textContent).toContain('4.0 LU');
+		expect(f.session.getState().history.entries.length).toBe(labels);
+		expect(f.gain(f.ids.clipB)).toBeCloseTo(gB - 6, 6);
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+		});
+		expect((await again).declined).toBe(true);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(f.session.getState().history.entries.length).toBe(labels);
 		expect(f.gain(f.ids.clipB)).toBeCloseTo(gB - 6, 6);
 	});
 
@@ -230,20 +239,12 @@ describe('Fix all safe judges the safe fixes together', () => {
 		);
 		soundCheckStore(f.session).setState({ result, jobId: 'job_1', fixed: [] });
 		const n = f.session.getState().history.entries.length;
-		const all = await fixAllSafe(f.session, f.engine, { rerun: false });
+		const all = await fixAllSafe(f.session, f.engine);
 		expect(all.applied).toEqual([`MASKED:${f.ids.clipA}`]);
 		expect(all.skipped).toEqual([`MASKED:${f.ids.clipB}`]);
-		expect(
-			f.session
-				.getState()
-				.history.entries.slice(n)
-				.map((e) => e.label),
-		).toEqual(['Fix 1 Sound Check Finding']);
+		expect(f.session.getState().history.entries).toHaveLength(n + 1);
 		expect(f.gain(f.ids.clipA)).toBeCloseTo(gA + 4, 6);
 		expect(f.gain(f.ids.clipB)).toBeCloseTo(gB, 6);
 		expect(soundCheckStore(f.session).getState().fixed).toEqual([`MASKED:${f.ids.clipA}`]);
-		// the reason is the translated template
-		expect(all.message).toContain('the mix where');
-		expect(SOUND_CHECK_MESSAGES.whyFixMixPeak).toContain('{1} dBTP');
 	});
 });

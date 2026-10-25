@@ -679,10 +679,14 @@ measurements carry an [M] / [M-css] comment.
 
 **Tests a variant must pass:**
 - `packages/motion/test/mg-cue-timing.test.ts`:
-  - The schedule depends only on the entrance, the word units and whether the variant draws likes, so a new variant
-    needs no new model code.
-  - Add VARIANTS rows for it: at least one entrance × {word reveal, like tick} when it draws likes. The test checks
-    the model against anime.js frame by frame and the cues within ±1 frame.
+  - The schedule depends only on the entrance, the word units and whether the variant draws likes. The motion model
+    also reads the card's `SOCIAL_MOTION_METRICS` row (`@jasper/mg-templates`): its comment font size (a revealed
+    word scales by its estimated width), how far its like icon travels per unit of the thump, and whether that icon
+    fills. Add the row with the card's constants.
+  - Add `SOCIAL_ROWS` rows for it: at least one entrance × {word reveal, like tick} when it draws likes. The test
+    renders the card in Chrome through its public component and checks the land and exit cues within ±1 frame of
+    where the rendered card (its box, every word, every glyph, the like count and the stars' fill) comes to rest
+    and starts leaving.
 - `packages/motion/test/social-comment.test.tsx`: add the card's own checks, as for TikTok: header and name
   rules, counts, replies, `showProfile`, verified.
 - `packages/motion/test/social-comment-render.e2e.test.ts` (`REMOTION_E2E=1`):
@@ -738,8 +742,8 @@ If a shared part lacks something, add an optional prop instead of changing its b
 ### Timing (design §7.6)
 
 One pure schedule, `socialCommentSchedule({ totalMs, introMs, outroMs, entrance, units, tick })`, is built into
-anime.js timelines by the implementation and evaluated by the motion model, so the cue test compares them frame by
-frame.
+anime.js timelines by the implementation and evaluated by the motion model (sound cues). The cue test compares the
+cues with the rendered card, not with the model's own values.
 
 | Phase | Tweens (ms at the declared intro) |
 |---|---|
@@ -1086,7 +1090,7 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
 
 - **Tests:** `packages/motion/test/social-comment.test.tsx` "YouTube cards" (header, badge, time, counts, replies and
   thread line rules, months stay months, 0 replies, huge counts, showProfile, default / raster / picture / generated
-  avatars, link colours, Noto emoji, like tick, Shorts card); `mg-cue-timing.test.ts` VARIANTS rows (each entrance
+  avatars, link colours, Noto emoji, like tick, Shorts card); `mg-cue-timing.test.ts` rows (each entrance
   with both extras, the tick alone at 25 fps, the Shorts card with reveal and an ignored tick);
   `social-comment-template.test.ts` (presets, fonts, required images); `social-comment-layer.test.tsx` (layer path:
   Roboto faces, Noto emoji image, the default avatar image resolved or missing); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
@@ -1186,9 +1190,12 @@ Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
   - `pnpm exec vitest run packages/mg-templates` (12 files): the schedule (entrance shapes, rest and exit values,
     reveal stagger and cap, tick, compression, no overlapping tweens by fast-check), text units (fast-check coverage),
     eases.
-  - `packages/motion/test/mg-cue-timing.test.ts`: the anime.js values equal the model at every frame and half frame.
-    The land and exit cues sit within ±1 frame of the real animation for every entrance × {none, word reveal, like
-    tick, both}, at 6 rates, on short clips (1.5 s, 0.6 s), with sourceIn and a long marked comment: 71 tests.
+  - `packages/motion/test/mg-cue-timing.test.ts`: the land and exit cues sit within ±1 frame of the card rendered in
+    Chrome (public component, measured with the documented cue rule) for every entrance × {none, word reveal, like
+    tick, both}, every variant, at 6 rates, on short clips (1.5 s, 0.6 s), with sourceIn and a long marked comment:
+    54 rows. (Before the merge of upstream's test cleanup the test compared the model with anime.js values; the
+    rendered comparison found the model's nominal 20 px heart and 24 px word, and a heart fill on store cards that
+    draw none, which put store-review lands up to 7 frames late; `SOCIAL_MOTION_METRICS` fixed it.)
   - `packages/motion/test/social-comment.test.tsx`: cards per variant × theme, header, counts and replies rules,
     showProfile, invalid params, entrance rest and exit, word reveal and like tick values per frame, seek-order
     independence (fast-check), avatars, glyphs, marks, mentions, emoji, emoji split, fit zoom.

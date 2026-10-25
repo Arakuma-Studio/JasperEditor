@@ -221,10 +221,8 @@ describe('proposal routes (headless)', { timeout: TIMEOUT }, () => {
 				{ id: 'b', label: 'B', commands: [cue(5)], requires: ['a'] },
 			],
 		});
-		expect(p.items.map((i) => [i.state, i.reason?.slice(0, 11)])).toEqual([
-			['invalid', 'E_NOT_FOUND'],
-			['invalid', 'requires it'],
-		]);
+		expect(p.items.map((i) => i.state)).toEqual(['invalid', 'invalid']);
+		expect(p.items[0]!.reason).toMatch(/^E_NOT_FOUND/);
 		const bad = [
 			[{ title: 'x', items: [] }, 400],
 			[
@@ -308,7 +306,7 @@ describe('proposal routes (headless)', { timeout: TIMEOUT }, () => {
 				stale: [
 					{
 						itemId: 'mk',
-						reason: 'The marker “Hit” at 00:00:03:10 moved to 00:00:04:00',
+						reason: expect.any(String),
 						problem: { type: 'anchor', id: MARKER, entity: 'marker', change: 'frame', at: 100, to: 120 },
 					},
 				],

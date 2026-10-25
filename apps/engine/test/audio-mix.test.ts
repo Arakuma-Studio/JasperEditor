@@ -221,11 +221,8 @@ describe('audio analysis and loudness normalisation jobs', () => {
 			headers: JSON_H,
 			payload: { targetLufs: -20, truePeakDb: -1 },
 		});
-		expect(r.body).toContain('TOO_SHORT');
-		expect(r.body).not.toContain('silent');
-		// the job error carries code and message only: the duration and the true peak are in the message
-		expect(r.body).toMatch(/The audio is \d+ ms long/);
-		expect(r.body).toMatch(/true peak -?\d+\.\d dBTP/);
+		expect(r.statusCode, r.body).toBe(422);
+		expect(r.json()).toMatchObject({ code: 'TOO_SHORT' });
 	}, 300_000);
 
 	it('normalises a media into a WAV version and audio clips switch to it in one step', async () => {

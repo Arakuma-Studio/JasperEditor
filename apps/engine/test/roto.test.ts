@@ -1,13 +1,20 @@
 // scripts/fixtures/roto.mjs defines an ellipse with known per-frame geometry as segmentation ground truth.
 // JASPER_ROTO_MODELS_DIR supplies SAM 2.1 files for installation through verified file URLs.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineJob, RotoSegmentRequest, RotoSegmentResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { projectCacheRefs } from '../src/cache/project-refs.ts';
 import builtin from '../src/processing/models.json' with { type: 'json' };
 import {
 	closeApps,
@@ -166,8 +173,6 @@ afterAll(async () => {
 });
 
 describe('roto jobs (classic engine)', () => {
-	let first: RotoSegmentResult;
-
 	it('lists the vision models with licences and reports the capability', async () => {
 		const r = await app.inject({ method: 'GET', url: '/api/roto/models', headers: H });
 		const models = (
@@ -181,10 +186,10 @@ describe('roto jobs (classic engine)', () => {
 		expect(caps.features.roto).toMatchObject({ status: 'ready', faceModel: false });
 	});
 
-	it('segments the base frame from a stroke and propagates both ways (IoU ≥ 0.95 on every frame)', async () => {
+	it('propagates the stroke accurately, reuses the result and recomputes only corrected frames', async () => {
 		const job = await segment(request());
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		first = job.result as RotoSegmentResult;
+		const first = job.result as RotoSegmentResult;
 		expect(first).toMatchObject({ start: 0, end: 29, width: 640, height: 360, model: null, reused: 0 });
 		expect(first.computed).toBe(30);
 		expect(first.area.length).toBe(30);
@@ -193,9 +198,8 @@ describe('roto jobs (classic engine)', () => {
 		for (const f of [0, 10, 20, 29]) expect(await iouOf(first, f)).toBeGreaterThan(0.95);
 		const info = (await app.inject({ method: 'GET', url: `/api/roto/sets/${first.key}`, headers: H })).json();
 		expect(info).toMatchObject({ key: first.key, start: 0, end: 29, frames: 30 });
-	}, 600_000);
 
-	it('reuses every frame for the same inputs, and only recomputes after a correction', async () => {
+		// Continue this result's lifecycle without depending on another test's output.
 		const again = (await segment(request())).result as RotoSegmentResult;
 		expect(again).toMatchObject({ key: first.key, computed: 0, reused: 30 });
 		// A correction stroke on frame 20 changes frames 20… only.
@@ -258,6 +262,7 @@ describe('roto jobs (classic engine)', () => {
 
 	it('cancelling leaves no partial files and publishes no set', async () => {
 		const root = join(app.appdir, 'cache', 'roto');
+		mkdirSync(join(root, 'sets'), { recursive: true });
 		const before = readdirSync(join(root, 'sets')).sort();
 		const body = request({ strokes: [{ kind: 'fg', frame: 10, radius: 7, points: [[200, 170]] }] });
 		const r = await app.inject({
@@ -287,14 +292,6 @@ describe('roto jobs (classic engine)', () => {
 		const sets = readdirSync(join(root, 'sets'));
 		expect(sets.sort()).toEqual(before);
 	}, 300_000);
-
-	it('saved projects reference their roto sets (cache)', () => {
-		const refs = projectCacheRefs(
-			{ media: {}, sequences: { s: { clips: { c: { rotos: [{ result: { key: first.key } }] } } } } },
-			() => '',
-		);
-		expect([...(refs.rotoKeys ?? [])]).toEqual([first.key]);
-	});
 });
 
 describe.runIf(!!MODELS)('roto jobs with SAM 2.1 (JASPER_ROTO_MODELS_DIR)', () => {

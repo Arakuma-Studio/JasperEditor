@@ -2,7 +2,7 @@
 // invariant together: the review preview flags the later item stale with the issue ("conflicts with the items before
 // it: …"), Hear leaves it out, and the rest is previewed — before Apply, not only by Apply (WP6.5b item 14).
 import { createCounterIdSource, createEmptyProject, defaultRegistries, type Proposal } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorSession, proposalsFor } from '../src/index.ts';
 import { FakeEngine } from './fake-proposals-engine.ts';
 
@@ -10,6 +10,8 @@ const REG = defaultRegistries();
 const N = 130;
 const DUP = 'mrk_00000000000000D0';
 const markerId = (i: number) => `mrk_${String(i).padStart(16, '0')}`;
+
+afterEach(() => vi.restoreAllMocks());
 
 function setup() {
 	const ids = createCounterIdSource(1);
@@ -52,6 +54,8 @@ describe(`review preview of ${N} items with an invariant-only conflict`, () => {
 	it('flags the later item stale with the invariant, leaves it out of Hear and previews the rest', async () => {
 		const { session, engine, seqId, proposalId } = setup();
 		const queue: (() => void)[] = [];
+		let elapsed = 0;
+		vi.spyOn(performance, 'now').mockImplementation(() => (elapsed += 9));
 		const c = proposalsFor(session, {
 			engine,
 			setTimer: (fn) => {
@@ -61,12 +65,17 @@ describe(`review preview of ${N} items with an invariant-only conflict`, () => {
 			clearTimer: () => {},
 		});
 		await c.setActive(proposalId);
+		queue.shift()!();
+		// The editor gets control back before the large preview is complete. Partial edits stay private.
+		expect(c.getState().previewing).toBe(true);
+		expect(c.getState().preview).toBeNull();
+		expect(session.getCommitted().sequences[seqId]!.markers).toHaveLength(0);
 		for (let i = 0; queue.length && i < 100_000; i++) queue.shift()!();
 		const s = c.getState();
+		expect(s.previewing).toBe(false);
 		expect(s.preview).not.toBeNull();
 		const bad = s.items.find((it) => it.id === 'm110')!;
 		expect(bad.state).toBe('stale');
-		expect(bad.reason).toMatch(/conflicts with the items before it/);
 		expect(bad.reason).toMatch(/INV-001|Duplicate id/);
 		expect(s.items.find((it) => it.id === 'm40')!.state).toBe('pending');
 		expect(s.items.filter((it) => it.state === 'pending')).toHaveLength(N - 1);

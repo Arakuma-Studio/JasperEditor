@@ -7,6 +7,7 @@ import { probeFrames as oracleProbeFrames } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { previewFormatKey } from '../src/previews/service.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -27,18 +28,6 @@ afterAll(closeApps);
 
 const F30 = flicksPerFrame({ num: 30, den: 1 });
 const SETTINGS = { format: 'h264-iframe', size: 'full', quality: 'standard' } as const;
-
-/** The 6-bit frame number burnt into frame-code.mp4 (see export.test.ts). */
-function frameCode(file: string, frame: number): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
 
 function probeFrames(file: string): { pictTypes: string[]; codec: string; width: number; audio: boolean } {
 	const s = spawnSync('ffprobe', [
@@ -142,7 +131,7 @@ describe('render previews', () => {
 		expect(p.audio).toBe(false);
 		expect(p.pictTypes).toHaveLength(40);
 		expect(p.pictTypes.every((t) => t === 'I')).toBe(true);
-		for (const n of [0, 1, 17, 39]) expect(frameCode(first, n)).toBe(n);
+		expect(frameCodes(first, [0, 1, 17, 39])).toEqual([0, 1, 17, 39]);
 
 		const after = await status(segs.map((s) => s.hash));
 		expect(after.video.sort()).toEqual(segs.map((s) => s.hash).sort());
@@ -335,7 +324,7 @@ describe('Export ▸ Use Previews', () => {
 				.trim(),
 		);
 		expect(count).toBe(60);
-		for (const n of [0, 20, 39]) expect(frameCode(file, n)).toBe(n);
+		expect(frameCodes(file, [0, 20, 39])).toEqual([0, 20, 39]);
 		const halfDoc = structuredClone(d.doc) as ProjectDocument;
 		(halfDoc.sequences[d.seqId] as { previews?: unknown }).previews = {
 			format: 'h264-iframe',

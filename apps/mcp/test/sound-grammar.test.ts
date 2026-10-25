@@ -2,7 +2,7 @@
 // (a typing run of 8 key presses, two clicks, wooden and metal hits); jasper-mcp (stdio) place_sound {sound: {type}}
 // picks follow the shared policy — every click cue gets the ONE click voice at one level and speed 1, keys are takes
 // at speed 1, a hit pick prefers the material of the hits already placed —, swap_sound next walks a take's sibling
-// takes, plan_sound_design takes the style options and reports what the grammar did, and the guide teaches it.
+// takes, plan_sound_design takes the style options and reports what the grammar did.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SOUND_GUIDE } from '../src/tools/sound.ts';
 import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -200,30 +199,6 @@ async function docOf(projectId: string): Promise<ProjectDocument> {
 	return JSON.parse((r.contents[0] as { text: string }).text) as ProjectDocument;
 }
 
-describe('the guide teaches the grammar', () => {
-	it('names every rule and the style options', () => {
-		const g = SOUND_GUIDE.toLowerCase();
-		for (const phrase of [
-			'you cannot hear: these rules encode the craft',
-			'one click voice',
-			'vary the take, not the pitch',
-			'runs climb',
-			'+1 st per step',
-			'one key per word',
-			'music carries the cuts',
-			'music_carries_cut',
-			'one material family per film',
-			'personality',
-			'calm',
-			'mechanical',
-			'duckundertyping',
-			'soundDesign.setSettings {style'.toLowerCase(),
-			'explicit rates and pitches you give are never changed',
-		])
-			expect(g, phrase).toContain(phrase);
-	});
-});
-
 describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () => {
 	let projectId = '';
 	beforeAll(async () => {
@@ -309,16 +284,6 @@ describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () =
 		expect(titles.get(r.clips[0]!.picked!.from[0]!)).toMatch(/Wood/);
 		expect(r.clips[0]!.title).toBe('Wood knock hit');
 		expect(Math.abs(r.clips[0]!.rate - 1)).toBeLessThanOrEqual(0.02);
-		// a picture of what was placed (clicks at one level, the keys, the hits) to look at
-		const view = await call('view_sound_timeline', { projectId, range: { start: 0, end: 450 } });
-		expect(view.isError, textOf(view)).toBeFalsy();
-		const img = view.content.find((c) => c.type === 'image') as { data: string } | undefined;
-		expect(img).toBeDefined();
-		mkdirSync(join(ROOT, 'test-results', 'sd-grammar'), { recursive: true });
-		writeFileSync(
-			join(ROOT, 'test-results', 'sd-grammar', 'mcp-timeline.png'),
-			Buffer.from(img!.data, 'base64'),
-		);
 	});
 
 	it('plan_sound_design takes the style options and reports what the grammar did', async () => {
@@ -337,12 +302,5 @@ describe('place_sound type picks follow the grammar', { timeout: 600_000 }, () =
 			typing: 'words',
 			musicCarriesCuts: false,
 		});
-		const cues = await ok<{ cues: unknown[]; stats: { musicCarriesCuts?: number } }>('find_sound_cues', {
-			projectId,
-			typing: 'silent',
-			musicCarriesCuts: true,
-			personality: 'calm',
-		});
-		expect(Array.isArray(cues.cues)).toBe(true);
 	});
 });

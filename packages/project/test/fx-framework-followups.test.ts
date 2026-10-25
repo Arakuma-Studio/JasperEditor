@@ -275,7 +275,7 @@ describe('clip context: Clip Name and Timecode', () => {
 		expect(clipNameText({ ...defaults, display: 'custom', name: 'X' }, { clip: clipInfo })).toBe('X');
 		// Instances without Display keep Name; missing clip context also uses Name.
 		expect(clipNameText({ name: 'Old' }, { clip: clipInfo })).toBe('Old');
-		expect(clipNameText(defaults, {})).toBe('Clip Name');
+		expect(clipNameText({ ...defaults, name: 'Fallback name' }, {})).toBe('Fallback name');
 	});
 
 	it('Timecode Media source = source timecode', () => {

@@ -10,6 +10,20 @@ import {
 	withOfferedTakes,
 } from '@jasper/api';
 import { rankSounds } from '@jasper/project';
+import { vi } from 'vitest';
+import * as audition from '../src/sound/audition.ts';
+
+/** Substitute the audio-device boundary without a shipping test-only setter. */
+export function mockAuditionPlayer(player: audition.AuditionPlayer): () => void {
+	const spy = vi.spyOn(audition, 'auditionPlayer').mockReturnValue(player);
+	return () => {
+		try {
+			player.dispose();
+		} finally {
+			spy.mockRestore();
+		}
+	};
+}
 
 let n = 0;
 export function soundId(i: number): string {

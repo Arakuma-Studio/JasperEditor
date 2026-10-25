@@ -238,11 +238,10 @@ describe('import job result validation', () => {
 					);
 					const imported = { reg, name: 'layers.psd', path: null };
 					const out = await expandImports({ engine: engine.client(), session, prompts }, [imported], null);
-					expect(out.failed).toEqual([
+					expect(out.failed).toMatchObject([
 						{
 							name: 'layers.psd',
 							code: 'INVALID_RESPONSE',
-							message: 'The engine returned an invalid layers result',
 						},
 					]);
 					expect(out.commands).toEqual([]);

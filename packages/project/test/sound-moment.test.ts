@@ -1,7 +1,7 @@
 // Placing a Find Moment result (spec 12 P6-E14, WP-E9): `planMomentPlacement` gives ordinary commands that put the
 // moment's range of a registered sound at a frame — exact source range (lead silence of the registered copy counted),
-// a free SFX track or a new one, never over other audio — applied as one transaction, undone to the untouched document
-// and redone the same; impossible ranges are refused with typed errors, hostile numbers never throw (property).
+// a free SFX track or a new one, never over other audio — applied as one transaction with the source document
+// untouched; impossible ranges are refused with typed errors, hostile numbers never throw.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -35,7 +35,7 @@ function recording(h: Harness, seconds = 40, leadSilenceSec = 0.05): string {
 }
 
 describe('planMomentPlacement', () => {
-	it('places the range at the frame on a new SFX track, one undo step', () => {
+	it('places the exact source range on a free SFX track without overwriting other audio', () => {
 		const h = new Harness();
 		const m = recording(h);
 		const before = clone(h.doc);
@@ -55,14 +55,10 @@ describe('planMomentPlacement', () => {
 		const c = h.seq.clips[clipId] as AudioClip;
 		expect(c.start).toBe(60);
 		expect(c.sourceIn).toBe(Math.round(23.15 * FLICKS_PER_SECOND));
-		expect(c.duration).toBe(plan.placement.frames);
+		expect(c.duration).toBe(27);
 		expect(h.seq.audioTracks.find((t) => t.id === c.trackId)!.name).toBe('SFX 1');
 		expect(checkInvariants(h.doc)).toEqual([]);
-		const after = clone(h.doc);
-		h.doc = before;
-		expect(h.doc).toEqual(before);
-		h.ok(plan.placement.commands);
-		expect(Object.keys(h.seq.clips)).toHaveLength(Object.keys(after.sequences[h.seqId]!.clips).length);
+		expect(before.sequences[h.seqId]!.clips).toEqual({});
 		// a second moment at the same frame goes on another track, never over the first
 		const again = planMomentPlacement({ seq: h.seq, mediaRef: m, startSec: 3, endSec: 4, at: 60 });
 		expect(again.ok && again.placement.track.kind === 'new' && again.placement.track.name).toBe('SFX 2');
@@ -95,10 +91,10 @@ describe('planMomentPlacement', () => {
 				...o,
 			});
 		expect(bad({ startSec: 11, endSec: 12 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
-		expect(bad({ endSec: 1 })).toMatchObject({ ok: false });
-		expect(bad({ startSec: -1 })).toMatchObject({ ok: false });
-		expect(bad({ at: -3 })).toMatchObject({ ok: false });
-		expect(bad({ at: 1.5 })).toMatchObject({ ok: false });
+		expect(bad({ endSec: 1 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
+		expect(bad({ startSec: -1 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
+		expect(bad({ at: -3 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
+		expect(bad({ at: 1.5 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
 		fc.assert(
 			fc.property(
 				fc.double(),

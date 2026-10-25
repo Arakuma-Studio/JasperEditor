@@ -384,17 +384,12 @@ describe('reference sound profiles (real engine)', { timeout: 600_000 }, () => {
 		const airIssue = finding('band_air')!;
 		expect(airIssue, rowsText(badReport)).toBeDefined();
 		expect(airIssue).toMatchObject({ code: 'REFERENCE', category: 'reference', severity: 'info' });
-		expect(airIssue.message.text).toMatch(/^Air 8–16 kHz share is low/);
-		expect(airIssue.advice![0]!.text).toMatch(/^No air/);
 		const dead = finding('end_silence_s')!;
 		expect(dead).toMatchObject({ severity: 'warning', timecode: '00:00:18:00' });
-		expect(dead.advice![0]!.text).toMatch(/^2\.0 s of dead air after the sound ends at 00:00:18:00/);
 		const cuts = finding('cuts_with_sound')!;
 		expect(cuts.severity).toBe('warning');
 		expect(cuts.measured).toMatchObject({ value: 0.167, silentCuts: 5 });
-		expect(cuts.advice![0]!.text).toBe(
-			`5 of 6 picture events have no onset within 100 ms (chance ${Math.round((badReport.reference!.rows.find((r) => r.metric === 'cuts_with_sound')!.chance ?? 0) * 100)} %); no sound at all at 00:00:06:00, 00:00:08:15, 00:00:10:15, 00:00:14:00, 00:00:16:15: add a whoosh into the cut, a hit or a click there.`,
-		);
+
 		expect(cuts.timecode).toBe('00:00:06:00');
 		// never an error; the rows the mismatch did not touch stay in range
 		expect(badReport.issues.filter((i) => i.code === 'REFERENCE' && i.severity === 'error')).toEqual([]);

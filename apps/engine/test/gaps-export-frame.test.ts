@@ -141,6 +141,7 @@ describe('Export Frame formats', () => {
 			},
 		});
 		expect(rel.statusCode).toBe(400);
+		expect(rel.json().code).toBe('VALIDATION_FAILED');
 		const bad = await app.inject({
 			method: 'POST',
 			url: '/api/stills',
@@ -153,5 +154,9 @@ describe('Export Frame formats', () => {
 			},
 		});
 		expect(bad.statusCode).toBe(400);
+		expect(bad.json()).toMatchObject({
+			code: 'VALIDATION_FAILED',
+			detail: expect.arrayContaining([expect.objectContaining({ path: ['destination', 'name'] })]),
+		});
 	});
 });

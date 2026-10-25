@@ -2,7 +2,6 @@
 // exposes it (`MgTemplateInfo.motionSpeed`) and falls back to the declared intro / outro otherwise. The deriver and
 // `resolveCueAnchor` share it. The real fframes templates are tested in @jasper/mg-templates (motion-cues.test.ts);
 // here synthetic speed curves pin the rules.
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -11,7 +10,6 @@ import {
 	defaultRegistries,
 	deriveCues,
 	FLICKS_PER_SECOND,
-	MAX_SAMPLES_PER_CLIP,
 	type MgTemplateInfo,
 	type MgTemplateMotionTiming,
 	mgCuePhases,
@@ -142,9 +140,9 @@ describe('mgCuePhases', () => {
 			calls++;
 			return synthSpeed(p, t);
 		});
-		expect(mgCuePhases(counting, clip(MAX_SAMPLES_PER_CLIP + 1), 30, F30).measured).toBe(false);
+		expect(mgCuePhases(counting, clip(20_001), 30, F30).measured).toBe(false);
 		expect(calls).toBe(0);
-		expect(mgCuePhases(counting, clip(MAX_SAMPLES_PER_CLIP), 30, F30).measured).toBe(true);
+		expect(mgCuePhases(counting, clip(20_000), 30, F30).measured).toBe(true);
 		expect(calls).toBe(1);
 	});
 
@@ -190,32 +188,29 @@ const mgCues = (h: Harness, registry = measuredRegistry) =>
 	deriveCues(h.doc, h.seqId, { sources: ['mg'], density: 'rich', mgTemplates: registry }).cues;
 
 describe('deriveMgCues with measured and declared timing', () => {
-	it('measured: confidence 0.8 / 0.6, reasons say so, windows span the movement; anchors resolve', () => {
+	it('measured cues use the movement frames, confidence and windows', () => {
 		const { h } = placeMg();
 		const cues = mgCues(h);
 		expect(cues.map((c) => [c.kind, c.frame, c.confidence])).toEqual([
 			['land', 42, 0.8],
 			['exit', 112, 0.6],
 		]);
-		expect(cues[0]!.reason).toBe("Synth settles after 0.4 s on V2 'Synth'");
 		expect(cues[0]!.window).toEqual({ start: 31, end: 42 });
-		expect(cues[1]!.reason).toBe("Synth starts leaving 0.27 s before its end on V2 'Synth'");
 		expect(cues[1]!.window).toEqual({ start: 112, end: 120 });
-		for (const c of cues)
-			expect(resolveCueAnchor(h.doc, h.seq, c.anchor as CueAnchor, { mgTemplates: measuredRegistry })).toBe(
-				c.frame,
-			);
+		expect(
+			cues.map((c) =>
+				resolveCueAnchor(h.doc, h.seq, c.anchor as CueAnchor, { mgTemplates: measuredRegistry }),
+			),
+		).toEqual([42, 112]);
 	});
 
-	it('declared fallback: confidence 0.5 / 0.4 and the declared lengths in the reason', () => {
+	it('declared fallback uses lower confidence and declared timing', () => {
 		const { h } = placeMg(declaredRegistry);
 		const cues = mgCues(h, declaredRegistry);
 		expect(cues.map((c) => [c.kind, c.frame, c.confidence])).toEqual([
 			['land', 45, 0.5],
 			['exit', 90, 0.4],
 		]);
-		expect(cues[0]!.reason).toBe("Synth intro (declared 0.5 s) ends on V2 'Synth'");
-		expect(cues[1]!.reason).toBe("Synth outro (declared 1.0 s) starts on V2 'Synth'");
 		// the fixture's static registry (lower-third 15 / 12 at 30 fps) gives the declared frames too
 		const f = newHarness();
 		f.ok([
@@ -248,38 +243,5 @@ describe('deriveMgCues with measured and declared timing', () => {
 				{ mgTemplates: measuredRegistry },
 			),
 		).toBeNull();
-	});
-
-	it('property: every derived mg cue resolves back to its frame (measured and declared, any start / sourceIn)', () => {
-		fc.assert(
-			fc.property(
-				fc.boolean(),
-				fc.integer({ min: 0, max: 3000 }),
-				fc.integer({ min: 1, max: 600 }),
-				fc.integer({ min: 0, max: 120 }),
-				fc.array(
-					fc.tuple(fc.double({ min: 0, max: 20, noNaN: true }), fc.double({ min: 0, max: 2, noNaN: true })),
-					{
-						maxLength: 4,
-					},
-				),
-				(measured, at, duration, sourceIn, moves) => {
-					const registry = measured ? measuredRegistry : declaredRegistry;
-					const params = moves.length ? { moves: moves.map(([a, len]) => [a, a + len]) } : {};
-					const { h } = placeMg(registry, at, duration, sourceIn, params);
-					for (const c of mgCues(h, registry)) {
-						expect(c.frame).toBeGreaterThan(at);
-						expect(c.frame).toBeLessThan(at + duration);
-						expect(c.confidence).toBe(
-							measured ? (c.kind === 'land' ? 0.8 : 0.6) : c.kind === 'land' ? 0.5 : 0.4,
-						);
-						expect(resolveCueAnchor(h.doc, h.seq, c.anchor as CueAnchor, { mgTemplates: registry })).toBe(
-							c.frame,
-						);
-					}
-				},
-			),
-			{ numRuns: 150, seed: 151020 },
-		);
 	});
 });

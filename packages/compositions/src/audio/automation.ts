@@ -17,11 +17,11 @@ const HOLD_EPSILON = 1e-7;
 /** Seconds scheduled ahead at each update (several picture frames: a late update never freezes the curve). */
 export const AUTOMATION_HORIZON = 0.12;
 /** Spacing (s) of the seed points. */
-export const AUTOMATION_SEED = 0.008;
+const AUTOMATION_SEED = 0.008;
 /** Shortest piece (samples). */
-export const AUTOMATION_MIN_STEP = 8;
+const AUTOMATION_MIN_STEP = 8;
 /** Largest relative distance between the curve and its linear pieces at a piece's midpoint. */
-export const AUTOMATION_TOLERANCE = 1e-4;
+const AUTOMATION_TOLERANCE = 1e-4;
 
 /**
  * The curve each following param was given last (context times and values), to know the value it has reached when
@@ -106,9 +106,9 @@ export type CurvePrecision = { minSamples?: number; tolerance?: number };
 
 /**
  * The points (seconds after now, value) of a piecewise-linear approximation of `value` over `(0, horizon]`
- * (exported for tests). `value(0)` is where the curve starts; it is not among the points.
+ * `value(0)` is where the curve starts; it is not among the points.
  */
-export function curvePoints(
+function curvePoints(
 	value: (dt: number) => number,
 	sampleRate: number,
 	horizon = AUTOMATION_HORIZON,

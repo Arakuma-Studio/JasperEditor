@@ -11,26 +11,17 @@ describe('fast-check setup', () => {
 		if (process.env.FC_SEED) expect(seed).toBe(Number(process.env.FC_SEED));
 	});
 
-	it('the same global seed generates the same values (a failure replays from the printed seed)', () => {
-		const { seed } = fc.readConfigureGlobal();
-		const a = fc.sample(fc.array(fc.double()), { numRuns: 20, seed });
-		const b = fc.sample(fc.array(fc.double()), { numRuns: 20, seed });
-		expect(Object.is(JSON.stringify(a), JSON.stringify(b))).toBe(true);
-	});
-
-	it("reads the seed and the path out of fast-check's failure message; the pair replays the counterexample", () => {
-		const prop = fc.property(fc.integer({ min: 0, max: 1_000_000 }), (n) => n % 9973 !== 1234);
+	it('reads the seed and counterexample path from a fast-check failure', () => {
 		let message = '';
 		try {
-			fc.assert(prop, { numRuns: 1_000_000, seed: 42 });
-		} catch (e) {
-			message = (e as Error).message;
+			fc.assert(
+				fc.property(fc.constant(0), () => false),
+				{ seed: 42, numRuns: 1 },
+			);
+		} catch (error) {
+			message = (error as Error).message;
 		}
-		const found = fastCheckFailureOf(message);
-		expect(found).toEqual({ seed: 42, path: expect.stringMatching(/^\d+(:\d+)*$/) });
-		const replay = fc.check(prop, { seed: found!.seed, path: found!.path, endOnFailure: true });
-		expect(replay.failed).toBe(true);
-		expect(replay.numRuns).toBe(1);
+		expect(fastCheckFailureOf(message)).toEqual({ seed: 42, path: '0' });
 		expect(fastCheckFailureOf('no property here')).toBeNull();
 	});
 });

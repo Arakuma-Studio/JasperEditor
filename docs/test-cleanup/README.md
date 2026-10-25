@@ -1,4 +1,505 @@
-# Test cleanup audit
+# Test suite cleanup: current pass
+
+This pass starts at `8b4c8936` and integrates `origin/main` through `69c96e3b`
+(merges `ac94a7fc` and `b5303967`). The final implementation is `797e53fc`.
+`c3268212` is the earlier measured checkpoint before the second remote integration.
+Evidence below the historical divider belongs to an older cleanup and is not
+included in this pass's totals.
+
+Status: cleanup, full default tests, lint, TypeScript, notices, production/Remotion
+builds, LGPL verification and supplemental PowerShell checks passed.
+The complete 53-spec browser run and the separate 14-case transport repeat also
+passed, with only the two existing dependency/opt-in browser skips documented below.
+
+## Scope and dispositions
+
+All **6,063 original and incoming named JavaScript/TypeScript declarations** received
+one disposition. The latest follow-up intervention supersedes an earlier area row;
+an unchanged KEEP during a re-audit does not erase an earlier rewrite/optimization.
+
+| Audit input | DELETE | REWRITE | OPTIMIZE | CONSOLIDATE | KEEP | Total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Original declarations | 160 | 410 | 166 | 125 | 4,861 | 5,722 |
+| First incoming additions | 6 | 6 | 0 | 1 | 2 | 15 |
+| Second incoming additions | 52 | 112 | 16 | 32 | 114 | 326 |
+| **Unique audit inputs** | **218** | **528** | **182** | **158** | **4,977** | **6,063** |
+
+The second integration also re-audited 163 existing owners: 489 rows total,
+including 21 dip-property owners and three import owners outside the changed paths.
+These overlap
+the original audit and must not be added again. Fourteen original decisions were
+updated by that integration; two existing joint-fix owners were subsequently
+rewritten during the final caller review, bringing original follow-up updates to 16.
+Consolidation includes both removed scenarios and their
+surviving owners; disposition totals are not physical deletion counts.
+
+The final source contains **5,744 named declarations in 872 files**, versus 5,722
+in 843 files initially. This includes the incoming features and replacement owners.
+Parameterized/generated cases are not inflated into declarations. Native tests,
+standalone desktop harnesses and generated fuzz families are recorded separately
+in their area ledgers. No quality or coverage percentage is inferred from counts.
+
+| Diff basis | Test/support LOC | Production `src` LOC |
+| --- | ---: | ---: |
+| Initial `8b4c8936`, including incoming features | +7,612 | +10,728 |
+| Integrated upstream `69c96e3b` (**cleanup-only diff**) | **−10,195** | **−441** |
+
+Incoming work added substantial features, tests and compatibility fixtures; the
+cleanup itself removes over ten thousand test/support lines. Test/support includes
+`test`, `tests`, `e2e`, `.test.*`, `.spec.*`, testkit and fixture/performance helper
+directories. Standalone upstream `bench` directories are separate: their incoming
+1,684 lines are unchanged by this cleanup. Required per-test audit documentation is
+also separate. No dependency, lockfile or agent instruction changed. Schema v8,
+its migration/fixture and the golden changes came from upstream and are preserved;
+no shipped migration was edited by the cleanup.
+
+Each retained ledger row identifies its independent source, observable regression,
+independent oracle, stable boundary, refactor tolerance and distinct owner. DELETE
+rows identify the failed bar and surviving protection where applicable. Shared
+file/family facts apply to the explicitly named rows; historical counts must not
+be summed with this pass.
+
+| Area | Current test-by-test evidence |
+| --- | --- |
+| Project core, loaders, migration and commands | [Core](project-core.md), [complete core inventory](project-core-inventory.md) |
+| Project audio, sound checks and styles | [Sound](project-sound.md) |
+| Project cues, placement and mixing | [Cues](project-sound-cues.md) |
+| Project animation, easing and vector editing | [Animation](project-animation.md) |
+| Project effects and transitions | [Effects](project-fx.md) |
+| Engine media, jobs, cache, persistence and security | [Media](engine-media.md) |
+| Engine export and render fidelity | [Rendering](engine-render.md) |
+| Engine audio, planning and measurement workers | [Sound](engine-sound.md) |
+| Engine library, indexing, packs and semantic search | [Library](engine-sound-library.md) |
+| Engine Sound Check | [Sound Check](engine-sound-check.md) |
+| Shared render compositions and browser audio/GL | [Compositions](compositions.md) |
+| Audio DSP, effects, synthesis, expressions and motion | [Audio/motion](audio-motion.md) |
+| Web core | [Core](web-core.md), [supplement A](web-core-supplement-a.md), [supplement B](web-core-supplement-b.md) |
+| Web feature controls | [Features](web-features.md) |
+| Web sound workflows | [Sound UI](web-sound.md) |
+| Session, API, engine client, configuration, UI and testkit | [Shared](shared-followup.md) |
+| MCP/CLI | [MCP](mcp-followup.md) |
+| Browser workflows | [General](browser.md), [sound](browser-sound.md) |
+| Tooling, desktop and native | [Tooling](tooling-followup.md) |
+| Tests arriving during integration | [Incoming remote audit](incoming-remote.md) |
+| Second incoming keyframe/easing work | [Keyframes](incoming-wave2-keyframes.md) |
+| Second incoming model, persistence and history work | [Model](incoming-wave2-model.md) |
+| Second incoming interchange and expression work | [Interchange](incoming-wave2-interchange.md) |
+| Second incoming font parsing, storage and rendering work | [Fonts](incoming-wave2-fonts.md) |
+| Second incoming media, relinking and audio work | [Media](incoming-wave2-media.md) |
+| Second incoming render/export work | [Rendering](incoming-wave2-render.md) |
+| Second incoming composition and live-media work | [Compositions](incoming-wave2-compositions.md) |
+| Second incoming web/MCP work | [Web and MCP](incoming-wave2-web-mcp.md) |
+
+## Cleanup and regression protection
+
+Removed the unused v2 project fixture and its attribution entry, the orphan mask
+checksum snapshot, redundant non-gating benchmark tests, duplicate browser
+walkthroughs, private collaborator/call-count assertions, source/export inventories,
+unused fake-worker interfaces/factories, diagnostic globals/getters, reset hooks,
+providers/adapters and constructor clock/limit overrides without production callers.
+The area ledgers name the exact removed surfaces and remaining callers. Required
+catalogue validation now runs in `pnpm lint`; it was not moved outside the CI gate.
+No unused test dependency or runner configuration remained to remove.
+
+Retained important expensive owners include shipped migrations/read-only
+compatibility, atomic persistence and crash recovery, authentication/approvals,
+actual worker crash/cancel/recovery, documented 20,000-file/50,000-sound bounds,
+real model and shipped audio assets, 720p processing conservation, camera ground
+truth, all GPU reference vectors/fingerprints, export parity, and critical browser
+proposal/review/export/audio workflows. Lower tests cannot establish their wiring,
+wire/artifact bytes or process/storage failures. No cleanup golden was re-blessed and no independently justified pixel/sample
+tolerance was relaxed. Invalid expectations calculated by the implementation were
+replaced by documented physical bounds or stronger public owners. Upstream
+feathered-crop pixels and three added Slide fingerprints were inspected and tested.
+
+A stronger real-worker test exposed a production defect: a failed FFmpeg decoder
+could produce a successful silent measurement. Two real-child regressions failed
+before the fix. `PcmStreamReader` now observes process errors/nonzero exit and
+propagates `BINARY_MISSING`/`TOOL_FAILED`, while deliberate cancellation remains
+quiet. Completed audio/job tests and intended production mutations verify this
+failure path. Other production edits remove unused test seams or accurately narrow
+a static parameter type; upstream performance changes are preserved.
+
+The complete browser run also exposed a real Sound Check click defect. Selecting
+a finding on pointer-down scrolled its Fix button 43 px before release, losing the
+click. Changing row selection to click alone exposed a second path: bubbled button
+focus initialized another finding and scrolled again. Row selection now follows
+activation, and only direct list focus initializes keyboard selection. Both failed
+variants were reproduced against an isolated copy of the actual failed project;
+the final fix passed one physical click and Cancel in both original and floating
+layouts, with unchanged document bytes. All 18 existing panel cases and actual web
+TypeScript passed. The unchanged full workflow remains the regression owner;
+no retry, second-click workaround or relaxed assertion was added. See the
+[work note](../wp-notes/sound-design.md#sound-check-finding-actions-selection-must-follow-pointer-activation)
+for preserved traces and source-map proof.
+
+The final caller review removes two more internal test-only options: confirmation
+injection and rerun suppression, plus the unused confirmation-helper export. The
+existing joint-fix cases now use the real DialogHost/Cancel and default production
+flow. They retain the independent 4.0 LU safety risk, committed gains, skipped
+finding and one undo entry; self-template/wording assertions are gone. A real
+rejudgment-bypass mutation fails the required dialog, restored source passes,
+and cleanup settles outstanding dialogs before unmounting. Both ledger rows are
+REWRITE; no named declaration was added or removed.
+
+Three significant false-positive/reliability corrections were verified:
+
+- The cache rename-failure fixture uses a deterministic filesystem fault; chmod
+  does not reliably deny a root process. Entry integrity/orphan recovery remain.
+- A fresh-frame render fixture was blank because its keys were authored in the
+  wrong time coordinates. An independent literal PNG value now catches rendering
+  the wrong frame even when the job succeeds; repeated restored artifacts match.
+- Lazy engine loading caused a cold first test to exceed its five-second deadline.
+  Static app imports were restored and existing cheap fixture utilities separated.
+  Cold HTTP bodies passed twice at 624/660 ms; no timeout was raised.
+
+Chrome 156's experimental native inset-canvas clipping affected the original shim
+fixture independently of the shim. Event-driven, origin-aligned captures retain
+both literal colors and catch a wrong receiver. The actual translated multi-layer
+compositor also passed and its PNG was inspected. Shim removal does not reproduce
+the older Chrome defect here; that limitation is explicit rather than replaced by
+an implementation-option assertion.
+
+The final browser review removed all internal audio-recording retries/discards,
+private source-player traces and proposal scheduling assertions. Every intended
+stress play remains; failed output is no longer replayed. An actual flush mutant
+failed the retained lower waveform owner while obsolete C2b still passed, justifying
+its consolidation. The restored lower test passed.
+
+The second integration removed unused CPU shader/reference helpers, the test-only
+`cropCoverageAt` wrapper, fake font clock/limit controls and helper identity probes.
+Native crop uses the real preview edge-profile primitive as a differential oracle;
+that primitive separately has independent numerical/literal tests. Existing public
+preset save/overwrite owners now catch the detached-crop regression directly.
+
+The final import review removes an optional Python subprocess and same-code ZIP
+round-trip assertions. ZIP output is now checked against independent protocol/CRC
+observations; deflate and read limits use a separately generated valid archive.
+Private FFmpeg-argument probes are consolidated into a public variant job and its
+served PNG: known linear EXR greys must become sRGB and retain distinctions smaller
+than one 8-bit step, while TIFF output retains 16-bit depth. CRC corruption, ignored
+read limits, omitted transfer and 8-bit-then-upcast mutants each fail these owners.
+
+Two incoming font negatives were repaired rather than weakened: a malformed WOFF2
+fixture previously passed even without length checks, and all render paths could
+silently use a different fallback face. Genuine valid font payload plus a surplus
+byte now detects the wire violation. A public fallback-styled control makes failed
+library loading produce zero changed glyphs; the real loading mutant now fails.
+The documented 1,000-font/2 GiB bounds are tested at the actual limits, without
+production override hooks. Real Source/Program codec consumption now observes
+decoded pixels, output PCM frequency and pending silence instead of mocked media
+props. Ordinary transport timing remains with real-app P0/P6.
+
+## Performance
+
+At the final implementation `797e53fc`, the complete supported-binary run took
+**1,936.38 s (32:16.38)** command wall time; Vitest reported 1,934.77 s. It passed
+7,689 cases, with 239 explicit skips across 824 files (786 passed, 38 wholly
+skipped), and no failures or unhandled errors. Aggregate child CPU was
+**6,078.34 s**; maximum single-process RSS was **1,552,728 KiB**.
+
+This final workload includes the second incoming feature batch, the newly available
+HEIF fixture and verified pinned LGPL 7.1.5 engine binaries. The normal E2E
+preparation regenerated H.264 fixtures with OpenH264 before this final run;
+representative fixture SHA-256 values are recorded. Standalone PATH FFmpeg/ffprobe
+oracles remain system 6.1.1. Its Node, two-worker and Chrome settings match the
+earlier runs, but its feature/fixture/tool workload differs. Therefore **a direct
+baseline-to-final speedup percentage is not claimed**. The comparable earlier
+checkpoint and its limitations are reported separately below. No CI pipeline wall
+time or aggregate process-tree peak memory was measured.
+
+Final JSON file spans (end minus start, excluding process startup):
+
+| File | Final span | Distinct retained contract |
+| --- | ---: | --- |
+| `apps/engine/test/processing-steps.test.ts` | 128.484 s | Real processing preserves frame count/rate/audio and specified quality bounds |
+| `apps/engine/test/camtrack-solve.test.ts` | 78.093 s | Camera, zoom and lens solutions against independent synthetic truth |
+| `packages/compositions/test/fx-gl.test.ts` | 68.371 s | Every supported shader's reference pixels, including perturbed settings |
+| `apps/engine/test/processing-colour-range.test.ts` | 64.750 s | Actual processed black/white for both declared input ranges |
+| `apps/engine/test/sound-check.test.ts` | 48.841 s | Real findings, fixes and remeasurement of delivered audio |
+| `apps/mcp/test/roto.test.ts` | 45.723 s | Actual SDK-to-render/export object separation with IoU ≥0.93 and refusals |
+
+Slowest final individual cases were MCP roto (45.723 s), required upscale
+conservation (37.004 s), held-out Auto Tag accuracy (35.853 s), camera truth plus
+reused tracks (33.966 s), and radial lens recovery (30.458 s). Worker imports remain
+a large cost: 1,284.81 s cumulative, plus 247.20 s transformation. These overlap
+parallel work and must not be added to command wall time. Process isolation and
+real media/worker/browser ownership remain intentional. Exact timings, skips and
+provenance are recorded in `integrated-final.{json,log,time}`,
+`integrated-final-provenance.json` and `integrated-summary.json` under the local
+evidence directory.
+
+### Earlier comparable checkpoint
+
+At `c3268212`, before the second incoming feature batch, complete command wall time fell from **2,111.47 s (35:11.47)** to
+**1,929.07 s (32:09.07)**: **182.40 s saved, 8.64% observed improvement**.
+Vitest's own durations were 2,109.71 s and 1,927.48 s. The baseline had two
+fixture failures; that checkpoint command exited zero with no unhandled errors.
+
+| Metric | Baseline | Checkpoint | Observed change |
+| --- | ---: | ---: | ---: |
+| Command wall time | 2,111.47 s | 1,929.07 s | −182.40 s / −8.64% |
+| Aggregate child CPU, user + system | 6,730.80 s | 6,224.05 s | −506.75 s / −7.53% |
+| Maximum single-process RSS | 1,731,308 KiB | 1,904,152 KiB | **+172,844 KiB / +9.98%** |
+
+Memory did not improve by this measurement. GNU time reports the largest process,
+not simultaneous process-tree memory; aggregate peak memory was not measured.
+The first post-cleanup attempt took 1,941.89 s but failed on unfinished UI work;
+its small subsequent fixture/resolver changes mean the two post runs are not
+identical-source repetitions. Scoped alternate runs below provide additional
+variance observations. No confidence interval or universal speedup is inferred.
+
+Checkpoint file spans before/after (JSON end minus start, not whole process startup):
+
+| File | Before | After | Why the remaining cost stays |
+| --- | ---: | ---: | --- |
+| `apps/engine/test/processing-steps.test.ts` | 201.619 s | 151.132 s | S07 real 720p frame/rate/audio conservation and independent quality thresholds |
+| `apps/engine/test/camtrack-solve.test.ts` | 75.135 s | 75.574 s | Distinct camera/lens/motion regimes against synthetic ground truth |
+| `apps/engine/test/processing-colour-range.test.ts` | 67.775 s | 36.726 s | True black/white after processing, both declared input ranges |
+| `packages/compositions/test/fx-gl.test.ts` | 66.071 s | 65.916 s | Every supported shader's default/perturbed reference pixels |
+| `apps/engine/test/sound-check.test.ts` | 59.516 s | 55.086 s | Real finding, repair, remeasurement and delivered-audio contracts |
+| `apps/engine/test/sound-check-p6.test.ts` | 48.426 s | 47.267 s | Distinct real-audio Phase 6 findings and safe fixes |
+| `apps/engine/test/audio-classify.test.ts` | 46.825 s | 47.963 s | Required ≥90% tuning/held-out accuracy across labelled signals |
+| `apps/mcp/test/roto.test.ts` | 45.676 s | 45.869 s | Actual SDK create/propagate/render/export, IoU ≥0.93 and refusals |
+
+The slowest checkpoint individual cases were MCP roto (45.869 s), held-out Auto Tag
+(44.917 s), camera truth plus track reuse (38.940 s), and required 720p upscale
+(37.456 s). The former largest case, all-method flat-patch denoising, fell from
+69.966 to 22.260 s with the independently checked patch/margin and quality limits
+preserved. Case-body timings and file spans exclude different parts of runner
+startup; they must not be added to wall time. Cumulative worker import time remains
+1,216.17 s versus 1,302.25 s; file isolation and real application boundaries remain
+important costs. The relevant area ledgers justify each retained expensive owner.
+
+
+The before/after default commands use Node 20.19.0, pnpm 10.34.5, Vitest 4.1.11,
+two workers, required FFmpeg/ffprobe oracles, Chrome 156.0.8078.47 and system FFmpeg
+6.1.1, with generated fixtures already present and no vendored binary selected.
+Machine: Linux x64, eight AMD EPYC-Genoa vCPUs, 15 GiB RAM, no swap. Both complete
+measurements exclude concurrent agent suites. They are single whole-suite samples;
+filesystem/compiler caches were not forcibly flushed on this shared host.
+The host's later TypeScript interception is removed command-locally for final
+validation; its preload leaves non-`tsc` programs untouched by source inspection.
+
+The first incoming upstream performance changes include resampler coefficient reuse, Find,
+selection, sorting, derivative filtering and optional browser runtime loading.
+Therefore the overall observed delta includes remote production improvements and
+is not a cleanup-only causal estimate. The second batch adds schema v8 and
+326 new named tests plus functional changes; its final full-run workload differs
+again and must be identified separately. No unmeasured end-to-end CI saving is
+claimed. Scoped alternate runs provide narrower cleanup evidence; their shared-host
+load/variance and exact commands are recorded in the linked ledgers:
+
+| Scoped workload | Before | After | Measured result |
+| --- | ---: | ---: | --- |
+| Four export/render hotspots, ABBA mean | 93.264 s | 50.118 s | −46.26% |
+| Twelve audio/motion files, ABAB median | 37.399 s | 23.396 s | −37.44% |
+| Five web core files, median | 27.186 s | 21.109 s | −22.35% |
+| Shared UI/session subset, three-pair median | 14.797 s | 11.028 s | −25.47% |
+| Seven changed general browser specs | 163.93 s | 112.41 s | −31.43%; repeat 111.00 s |
+| Composition subset, two samples per version | 30.096 s | 30.413 s | **No wall-time improvement** |
+
+Second-batch scoped results (exact sources, commands and limitations in its ledgers):
+
+| Scoped workload | Before | After | Interpretation |
+| --- | ---: | ---: | --- |
+| Four real export/render files | 129.88 s | 89.27 / 85.41 s | Both final runs passed; all 22 crop artifacts match. Cache conditions differ. |
+| Three disabled opt-in file startups | 22.12 s | 1.57 s | Avoid eager engine loading; existing opt-in flags/skips retained, duplicate planner cases have default owners. |
+| Composition/media subset | 83.06 s | 50.98 / 52.49 s | Includes new real codec protection; predates only final literal High-smoothing seam assertion, separately verified twice. |
+| Controlled font oracle, static 30→1 frames | 44.81 s | 39.00 / 42.49 s | Final observed saving 2.32 s / 5.18%; variance substantial. Five pictures exactly match both times. |
+| Interchange ABBA mean | 18.507 s | 17.994 s | Difference smaller than run spread; no reliable speedup claimed. |
+| Engine media ABBA mean | 26.878 s | 27.801 s | Wall time worsened 3.43%; CPU fell 3.45%, setup/body 14.47%. Shared-load/import variance disclosed. |
+
+These overlapping subsets must not be added together or extrapolated to CI.
+Deleting a redundant lag search was justified by the retained full-sample bounds
+catching a real one-sample production delay; process variance hid any wall gain.
+Worklet capture uses a real flush acknowledgement instead of a 300 ms sleep:
+ten captures averaged 340.56→39.01 ms, repeat 31.38 ms, preserving block/sample data.
+Pure helper imports avoid repeated engine initialization, batched frame decoding
+avoids repeated processes, and smaller media retain the documented spatial/temporal
+window and unchanged oracle tolerance. Real worker/resource-limit coverage can cost
+more than its former fake; those important contracts remain.
+
+## Validation and limitations
+
+The final required default gate passed at `797e53fc`: 7,689 runtime cases passed,
+239 explicitly skipped, no failed cases or unhandled errors. Root lint, actual
+TypeScript, E2E TypeScript, notices and fresh production/Remotion builds passed.
+The full command's ten FFmpeg/ELF cases executed with the vendor available; the
+separate real PowerShell 7.6.8 command passed all 21 cases, including the 14 that
+are skipped without an installed interpreter.
+
+`pnpm mg:build` exited zero but explicitly skipped because Cargo was absent:
+**native compilation/execution did not pass**. LGPL verification checked all 21
+artifacts successfully. The production build's existing nonfatal script/chunk and
+third-party annotation warnings are retained in its log; none was suppressed.
+
+The final complete browser run passed **113 cases with two expected skips**
+across all 53 specs at `797e53fc`, with zero unexpected/flaky cases, infrastructure
+errors or retried test results. Runner time was 1,182.448 s; complete command wall
+time, including fixture/LGPL preparation, was **1,183.95 s (19:43.95)**. All 14
+strict audio/transport consumer cases passed in that run. A second run of those
+four specs in a fresh app directory passed all 14 cases,
+with zero skips, failures, flaky results, infrastructure errors or retries, in
+292.055 s runner time / **293.49 s (4:53.49)** command wall time. Both passes checked
+every intended play without a recording-discard or replay branch.
+
+The two named skips were native motion-graphics export (Cargo/jasper-mg absent)
+and the real CLAP model (requires its existing opt-in flag and local catalogue).
+Existing capability guards also omit native-graphic portions of mixed sound
+fixtures when that renderer is unavailable; those portions are not counted as
+validated. The keyword fallback and TypeScript/Remotion rendering paths did run.
+
+The first complete browser attempt at `76af3b2d` failed: 112 passed, two skipped,
+one Sound Check confirmation failed, 1,230.41 s command wall time. Its trace exposed
+the real pointer/focus defect described above. The baseline and intermediate
+onClick-only variants failed isolated first-click probes; the final event/focus
+fix passed both layouts and the unchanged whole workflow (55.701 s) in the final
+suite. No failure, confirmation assertion or recording was discarded/replayed.
+Raw failed evidence is `integrated-e2e-full-attempt1.{json,log,time}`; all 288 fresh
+outputs were preserved separately before the next run.
+
+A preparatory invocation also stopped before launching any browser case because
+LGPL-only fixture generation selected system FFmpeg without OpenH264. Selecting the
+already verified vendor executables through the documented `JASPER_FFMPEG` and
+`JASPER_FFPROBE` variables resolved it; no repository behavior or test was changed.
+That pre-test failure remains `integrated-e2e-full-prepare1.*`.
+
+The final browser run preserved and SHA-256 indexed 287 fresh artifacts
+(180,950,353 bytes), including output movies, PCM/data, screenshots and caption
+sidecars, in `/tmp/jasper-test-cleanup/artifacts/integrated-e2e-full/`. The current
+first-click confirmation was visually inspected, along with editor screenshots
+and an extracted burned-caption frame. The slowest retained browser cases were
+the assembled human sound workflow (105.977 s), all 24 paused-seek plays (93.783 s),
+Sound Check (55.701 s), the actual stdio-agent/editor handoff (51.159 s), and measured
+mix/delivery export (46.009 s). Their distinct obligations are in the browser
+ledgers. There is no comparable full-53-spec baseline: neither the failed attempt
+nor the earlier 23-spec run is used to claim a browser/CI speedup.
+
+Fresh root builds completed before `E2E_SKIP_BUILD=1`: the wrapper verified their
+source HEAD, clean application/package/script inputs and SHA-256 fingerprints of
+the engine, MCP, web entry and Remotion bundle stamp. The official `pnpm e2e`
+command still ran fixture preparation and the LGPL guard. Both browser invocations
+use the normal random, port-scoped authentication harness, a distinct unused port
+and a fresh app directory. No authentication or destructive-approval bypass was
+used. Exact argv, environment, hashes and results are in
+`integrated-e2e-{full,strict-repeat}-provenance.json` and their JSON/log/time files.
+Equivalent CLI commands from the repository root (Node 20.19.0 toolchain). These
+are the recorded per-run paths; future reruns need new empty app directories and
+unused ports. The subshell keeps browser overrides out of the default commands
+that follow:
+
+```sh
+(
+export JASPER_REQUIRE_ORACLES=1
+export JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome
+export JASPER_FFMPEG_LGPL_ONLY=1
+export JASPER_FFMPEG="$PWD/vendor/ffmpeg-lgpl/linux-x64/ffmpeg"
+export JASPER_FFPROBE="$PWD/vendor/ffmpeg-lgpl/linux-x64/ffprobe"
+export E2E_SKIP_BUILD=1
+E2E_PORT=49630 \
+  E2E_APPDIR=/tmp/jasper-test-cleanup/integrated-e2e-full-final-appdir \
+  JASPER_APPDIR=/tmp/jasper-test-cleanup/integrated-e2e-full-final-appdir \
+  PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/jasper-test-cleanup/integrated-e2e-full.json \
+  env -u NODE_OPTIONS pnpm e2e --workers=1 --reporter=list,json
+E2E_PORT=49620 \
+  E2E_APPDIR=/tmp/jasper-test-cleanup/integrated-e2e-strict-repeat-final-appdir \
+  JASPER_APPDIR=/tmp/jasper-test-cleanup/integrated-e2e-strict-repeat-final-appdir \
+  PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/jasper-test-cleanup/integrated-e2e-strict-repeat.json \
+  env -u NODE_OPTIONS pnpm e2e e2e/sound-p0-preview.spec.ts \
+    e2e/sound-p0-transport.spec.ts e2e/sound-p6-transport.spec.ts \
+    e2e/sound-proposal-ghosts.spec.ts --workers=1 --reporter=list,json
+)
+```
+
+Root commands (the full test command records default text, JSON and GNU time):
+
+```sh
+pnpm lint
+env NODE_OPTIONS=--max-old-space-size=4096 pnpm typecheck
+env -u NODE_OPTIONS pnpm e2e:typecheck
+pnpm notices --check
+env NODE_OPTIONS=--max-old-space-size=4096 pnpm build
+env NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/engine build:remotion
+env -u NODE_OPTIONS pnpm mg:build
+env -u NODE_OPTIONS pnpm ffmpeg:check
+env -u NODE_OPTIONS JASPER_PWSH=/tmp/jasper-test-cleanup/toolchain/powershell/v7.6.8/pwsh \
+  pnpm exec vitest run apps/engine/test/windows-opener.test.ts --maxWorkers=2
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 \
+  JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+  pnpm test --maxWorkers=2 --reporter=default --reporter=json \
+  --outputFile.json=/tmp/jasper-test-cleanup/integrated-final.json
+```
+
+Before the second batch, the integrated focused command ran eight changed files (62 cases), including
+all rewritten incoming unit contracts and real measurement-worker lifecycle tests.
+The workstream ledgers record every scoped command, opt-in render/browser suite,
+mutation failure, restoration, timing sample and earlier fixture/setup correction.
+Raw root evidence is under `/tmp/jasper-test-cleanup/`; test/generated artifacts
+remain ignored and are not committed as licensed media or golden replacements.
+
+Baseline: 7,661 passed, two failed, 248 skipped. The complete baseline did not stop
+on its failures. Both retained failures (root-permission fixture and native canvas
+placement) were investigated and corrected as described above. Baseline TS5115 in
+the MCP test helper was independently reproduced and resolved with standard JSON
+validation plus an explicit object-root guard. New helper self-tests that merely
+pinned its schema implementation were deleted after remote integration.
+
+The second-integration system-tool run completed all 824 files with 7,665 passed,
+one failed and 245 skipped cases in 2,003.80 s. This **failed** diagnostic run is
+not the final validation or a performance improvement claim. The one failure was
+HEIF: a valid fixture had been generated with the pinned LGPL tools after the
+earlier checkpoint; system ffprobe 6.1 cannot read its HEIF image items. A bounded
+comparison of the same SHA256-identified file proved system exit1 versus pinned
+7.1.5 exit0/HEVC320×240. The final run retains HEIF and the verified LGPL engine
+tools. It uses the same Node/worker/Chrome settings, but its engine binary and
+available fixture set differ from the original baseline. Raw failed evidence is
+`integrated-system6.{log,json,time}`; no test or assertion was disabled to pass.
+
+After the late test-only import changes, root's affected engine TypeScript and
+full lint checks passed again before the final run.
+
+The first complete integrated attempt ran every default file: 7,380 runtime cases
+passed and 232 cases skipped in 1,941.89 s command wall time, but an unhandled
+React rejection after `sound-style.test.tsx` teardown made the command fail. Its
+request-receipt wait did not await the outstanding plan/dialog operation. This is
+not reported as a passing gate or as the final performance sample. The async
+fixture correction and final rerun are recorded above; no unhandled-error filter,
+retry or disabled case was used.
+
+Root lint initially found a formatting conflict in the merged ELF fixture import;
+formatting only that changed import restored the gate. The earlier checkpoint had two lint warnings; the latest integrated lint passed
+with no warnings after upstream easing changes. The repository's actual TypeScript compiler exceeded Node 20's default
+heap in the engine check; the four-GiB command passed. The same command-local heap
+is used for the web build. CI pins Node 20.19, so its existing Typecheck and Build
+steps now carry this verified allowance; the Test step retains its two-worker/default-heap
+configuration. No compiler check was suppressed or dependency upgraded.
+
+Node 24 probing found five pre-existing synth byte-pin differences. The independent
+sound-design contract explicitly pins bytes for a given Node/V8 and treats runtime
+math changes as a release-version decision. Pins, synthesis output and version
+were preserved; Node 24 is not claimed green. Rust/cargo is absent from the host's
+standard installations, so native Rust execution is unverified. Extended fuzz,
+unchanged opt-in rendering and packaged desktop suites are not implicitly covered
+by the default gate. Exact supplemental results/skips are listed above when run.
+
+## Git delivery
+
+Delivery branch: `main`. The cleanup was developed on `test/contract-cleanup`, then
+fast-forwarded into `main` without rewriting history. Remote `origin/main` was
+fetched and integrated through `69c96e3b`; all 341 incoming declarations received
+the same audit and affected existing owners were re-audited. The final fetch
+confirmed no additional incoming changes. Delivered application, test and build
+inputs match validated source `797e53fc`; subsequent commits change only the report.
+The final delivery message records the commit pushed to `origin/main` and the
+verified remote result.
+
+No unrelated working-tree changes were present initially, no shared stash or
+force push was used, and only task files are committed.
+
+---
+
+# Historical audit starting at 6c2baa39
 
 This audit starts at `6c2baa39`. It covers the repository's unit, property, protocol,
 rendering, browser, desktop, native and tooling tests. Individual dispositions were

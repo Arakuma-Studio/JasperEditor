@@ -1,21 +1,23 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import {
 	collectNotices,
 	collectPlatformAssets,
 	collectPorted,
-	PLATFORM_ASSETS_END,
-	PLATFORM_ASSETS_START,
-	PORTED_END,
-	PORTED_START,
 	packagesInSourcemaps,
 	portedLicenseTexts,
 	renderNotices,
 } from './third-party-notices.mjs';
+
+const tempDir = (prefix) => {
+	const root = mkdtempSync(join(tmpdir(), prefix));
+	onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+	return root;
+};
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -34,7 +36,7 @@ describe('THIRD_PARTY_NOTICES.md (S11:FIX-010)', () => {
 
 describe('packagesInSourcemaps (pnpm notices --audit)', () => {
 	it('reads name@version of node_modules sources from Vite and webpack sourcemaps', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'jasper-maps-'));
+		const dir = tempDir('jasper-maps-');
 		mkdirSync(join(dir, 'assets'));
 		writeFileSync(
 			join(dir, 'assets', 'a.js.map'),
@@ -67,7 +69,7 @@ describe('packagesInSourcemaps (pnpm notices --audit)', () => {
 
 describe('collectNotices over a miniature workspace', () => {
 	function tree() {
-		const root = mkdtempSync(join(tmpdir(), 'jasper-notices-'));
+		const root = tempDir('jasper-notices-');
 		const pkg = (dir, json, files = {}) => {
 			mkdirSync(dir, { recursive: true });
 			writeFileSync(join(dir, 'package.json'), JSON.stringify(json));
@@ -163,7 +165,7 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		'| `crates/a.rs` | `packages/b.ts` | box blur |',
 	].join('\n');
 	function tree(records) {
-		const root = mkdtempSync(join(tmpdir(), 'jasper-ported-'));
+		const root = tempDir('jasper-ported-');
 		mkdirSync(join(root, 'licenses', 'ported'), { recursive: true });
 		mkdirSync(join(root, 'licenses', 'texts'), { recursive: true });
 		writeFileSync(
@@ -191,7 +193,10 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 			],
 		]);
 		const text = renderNotices([], records, portedLicenseTexts(root, records));
-		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
+		const section = text.slice(
+			text.indexOf('<!-- ported-source:start -->'),
+			text.indexOf('<!-- ported-source:end -->'),
+		);
 		for (const required of [
 			'https://github.com/storytold/effectcraft',
 			'crates/a.rs',
@@ -248,7 +253,10 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		const records = collectPorted(root);
 		expect(records.map((r) => [...r.copyrights].sort())).toEqual([[ec], [ec, fc], [ec, fc]]);
 		const text = renderNotices([], records, portedLicenseTexts(root, records));
-		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
+		const section = text.slice(
+			text.indexOf('<!-- ported-source:start -->'),
+			text.indexOf('<!-- ported-source:end -->'),
+		);
 		expect(section).toContain(ec);
 		expect(section).toContain(fc);
 		for (const license of portedLicenseTexts(root, records))
@@ -258,7 +266,7 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 
 describe('platform-asset record (licenses/platform-assets.md, AGENTS.md §3 items 1 and 5)', () => {
 	function tree(text) {
-		const root = mkdtempSync(join(tmpdir(), 'jasper-platform-assets-'));
+		const root = tempDir('jasper-platform-assets-');
 		mkdirSync(join(root, 'licenses'), { recursive: true });
 		if (text !== undefined) writeFileSync(join(root, 'licenses', 'platform-assets.md'), text);
 		return root;
@@ -276,19 +284,19 @@ describe('platform-asset record (licenses/platform-assets.md, AGENTS.md §3 item
 			body: '- Twemoji graphics, CC-BY 4.0\n\n| Export | Method |\n|---|---|\n| `like` | live-dom |',
 		});
 		const text = renderNotices([], [], [], record);
-		const start = text.indexOf(PLATFORM_ASSETS_START);
+		const start = text.indexOf('<!-- platform-assets:start -->');
 		expect(start).toBeGreaterThan(0);
-		const section = text.slice(start, text.indexOf(PLATFORM_ASSETS_END));
+		const section = text.slice(start, text.indexOf('<!-- platform-assets:end -->'));
 		expect(section).toContain('# Platform assets');
 		expect(section).toContain('Twemoji graphics, CC-BY 4.0');
 		expect(section).toContain('| `like` | live-dom |');
-		expect(text.trimEnd().endsWith(PLATFORM_ASSETS_END)).toBe(true);
+		expect(text.trimEnd().endsWith('<!-- platform-assets:end -->')).toBe(true);
 		expect(text.indexOf('licenses/platform-assets.md')).toBeLessThan(start);
 	});
 
 	it('is optional, and refuses a record without a title', () => {
 		expect(collectPlatformAssets(tree(undefined))).toBeNull();
-		expect(renderNotices([], [], [], null)).not.toContain(PLATFORM_ASSETS_START);
+		expect(renderNotices([], [], [], null)).not.toContain('<!-- platform-assets:start -->');
 		expect(() => collectPlatformAssets(tree('no title\n'))).toThrow(
 			/platform-assets\.md: missing its "# Title" line/,
 		);

@@ -1,7 +1,8 @@
 // wp fonts: the user font library — store persistence and repair (FontLibrary), the HTTP routes (auth, size caps,
 // bad bytes, approval of agent removals, usage), and resolution in the export planner (a library font is used on
 // every path, no FONT_FALLBACK; a missing one keeps the fallback and is named).
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, truncateSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	AGENT_NAME_HEADER,
@@ -16,7 +17,7 @@ import { createCounterIdSource, createEmptyProject, makeEnvelope } from '@jasper
 import type { FastifyInstance } from 'fastify';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
-import { FONT_LIBRARY_LIMITS, FontLibrary } from '../src/fonts/library.ts';
+import { FontLibrary } from '../src/fonts/library.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { makeTestTtc, makeTestTtf, toWoff, toWoff2 } from './font-fixtures.ts';
 import { closeApps, DocBuilder, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
@@ -53,11 +54,7 @@ async function upload(
 describe('font library store (persistence, idempotence, caps)', () => {
 	it('installs, lists, persists across reopen; same bytes again are "existing"; collections split into faces', async () => {
 		const dir = join(tempAppdir(), 'fonts');
-		const changes: number[] = [];
-		const lib = await FontLibrary.open(dir, {
-			onChange: (r) => changes.push(r),
-			now: () => '2026-10-25T00:00:00.000Z',
-		});
+		const lib = await FontLibrary.open(dir);
 		expect(lib.list()).toMatchObject({ revision: 0, fonts: [], repairs: [], readOnly: false });
 		const a = await lib.install(pixel(), 'Pixel12x10.ttf');
 		expect(a.installed).toHaveLength(1);
@@ -67,7 +64,6 @@ describe('font library store (persistence, idempotence, caps)', () => {
 			postscriptName: 'Pixel12x10',
 			format: 'ttf',
 			originalName: 'Pixel12x10.ttf',
-			addedAt: '2026-10-25T00:00:00.000Z',
 		});
 		expect(face.id).toMatch(/^f[0-9a-f]{24}$/);
 		expect(readFileSync(join(dir, 'files', `${face.id}.ttf`))).toEqual(Buffer.from(pixel()));
@@ -83,60 +79,89 @@ describe('font library store (persistence, idempotence, caps)', () => {
 			['Coll', 400, 0, 'ttf'],
 			['Coll', 700, 1, 'ttf'],
 		]);
-		expect(changes).toEqual([1, 2]);
-
 		const reopened = await FontLibrary.open(dir);
 		expect(reopened.list()).toMatchObject({ revision: 2, repairs: [] });
-		expect(reopened.fonts().map((f) => f.fullName)).toEqual(lib.fonts().map((f) => f.fullName));
+		expect(reopened.fonts().map((f) => f.fullName)).toEqual([
+			'Pixel12x10 Regular',
+			'Coll Regular',
+			'Coll Bold',
+		]);
 		const removed = await reopened.remove(face.id);
 		expect(removed).toEqual({ revision: 3, removed: [face.id] });
 		expect(existsSync(join(dir, 'files', `${face.id}.ttf`))).toBe(false);
 		expect((await FontLibrary.open(dir)).fonts().map((f) => f.family)).toEqual(['Coll', 'Coll']);
 	});
 
-	it('refuses bad bytes, oversized files, a full library and a different face with an installed PostScript name', async () => {
+	it('refuses PostScript clashes and the real 1,000-face / 2 GiB library bounds', async () => {
 		const dir = join(tempAppdir(), 'fonts');
-		const lib = await FontLibrary.open(dir, {
-			limits: { maxFonts: 2, maxTotalBytes: 60_000, maxFileBytes: 40_000 },
-		});
-		await expect(lib.install(new TextEncoder().encode('not a font at all'), 'x.ttf')).rejects.toMatchObject({
-			status: 400,
-			code: 'FONT_INVALID',
-		});
-		await expect(lib.install(new Uint8Array(40_001), 'big.ttf')).rejects.toMatchObject({
-			status: 413,
-			code: 'FONT_TOO_LARGE',
-		});
-		await lib.install(pixel(), 'a.ttf');
+		const lib = await FontLibrary.open(dir);
+		const first = (await lib.install(pixel(), 'a.ttf')).installed[0]!;
 		// same PostScript name, different bytes
 		await expect(
 			lib.install(makeTestTtf({ family: 'Pixel12x10', postscriptName: 'Pixel12x10', seed: 99 }), 'b.ttf'),
 		).rejects.toMatchObject({ status: 409, code: 'FONT_EXISTS' });
-		await lib.install(circular(), 'c.ttf');
-		await expect(lib.install(makeTestTtf({ family: 'Third' }), 'd.ttf')).rejects.toMatchObject({
-			status: 409,
-			code: 'FONT_LIBRARY_FULL',
-		});
-		const small = await FontLibrary.open(join(tempAppdir(), 'fonts'), { limits: { maxTotalBytes: 30_000 } });
-		await small.install(pixel(), 'a.ttf');
-		await expect(small.install(circular(), 'c.ttf')).rejects.toMatchObject({ code: 'FONT_LIBRARY_FULL' });
-		// nothing written for refused installs
-		expect(readdirSync(join(dir, 'files')).sort()).toEqual(
-			lib
-				.fonts()
-				.map((f) => `${f.id}.ttf`)
-				.sort(),
-		);
+		expect(lib.fonts().map((f) => f.id)).toEqual([first.id]);
+		expect(readdirSync(join(dir, 'files'))).toEqual([`${first.id}.ttf`]);
+		for (const [count, size] of [
+			[1000, 0],
+			[32, 64 * 1024 * 1024],
+		] as const) {
+			const fullDir = join(tempAppdir(), 'fonts');
+			const files = join(fullDir, 'files');
+			mkdirSync(files, { recursive: true });
+			const zeros = Buffer.alloc(1024 * 1024);
+			const fonts: LibraryFont[] = [];
+			for (let i = 0; i < count; i++) {
+				const family = `Capacity ${i}`;
+				const bytes = makeTestTtf({ family, glyphRects: () => [] });
+				const sizeBytes = size || bytes.length;
+				const hash = createHash('sha256').update(bytes);
+				for (let left = sizeBytes - bytes.length; left > 0; left -= zeros.length)
+					hash.update(zeros.subarray(0, Math.min(left, zeros.length)));
+				const sha256 = hash.digest('hex');
+				const id = `f${sha256.slice(0, 24)}`;
+				const file = join(files, `${id}.ttf`);
+				writeFileSync(file, bytes);
+				// Trailing zero padding is valid sfnt data. Sparse files avoid allocating or writing 2 GiB.
+				truncateSync(file, sizeBytes);
+				fonts.push({
+					id,
+					sha256,
+					family,
+					fullName: `${family} Regular`,
+					subfamily: 'Regular',
+					postscriptName: `Capacity${i}-Regular`,
+					weight: 400,
+					italic: false,
+					format: 'ttf',
+					sizeBytes,
+					originalName: `${i}.ttf`,
+					addedAt: '2026-10-25T00:00:00.000Z',
+				});
+			}
+			const index = JSON.stringify({ format: 'jasper-font-library', version: 1, revision: 1, fonts });
+			writeFileSync(join(fullDir, 'library.json'), index);
+			const full = await FontLibrary.open(fullDir);
+			expect(full.repairs).toEqual([]);
+			await expect(full.install(pixel(), 'p.ttf')).rejects.toMatchObject({
+				status: 409,
+				code: 'FONT_LIBRARY_FULL',
+			});
+			expect(readFileSync(join(fullDir, 'library.json'), 'utf8')).toBe(index);
+			expect(readdirSync(files)).toHaveLength(count);
+		}
 	});
 
 	it('accepts WOFF and WOFF2 and keeps them as they are', async () => {
 		const lib = await FontLibrary.open(join(tempAppdir(), 'fonts'));
-		const w1 = (await lib.install(toWoff(makeTestTtf({ family: 'W One' })), 'one.woff')).installed[0]!;
-		const w2 = (await lib.install(toWoff2(makeTestTtf({ family: 'W Two' })), 'two.woff2')).installed[0]!;
-		expect([w1.format, w2.format]).toEqual(['woff', 'woff2']);
-		expect(lib.filePath(`${w2.id}.woff2`)).toMatch(/\.woff2$/);
-		expect(lib.filePath(`${w2.id}.ttf`)).toBeNull();
-		expect(lib.filePath('../library.json')).toBeNull();
+		for (const [bytes, format] of [
+			[toWoff(makeTestTtf({ family: 'W One' })), 'woff'],
+			[toWoff2(makeTestTtf({ family: 'W Two' })), 'woff2'],
+		] as const) {
+			const face = (await lib.install(bytes, `font.${format}`)).installed[0]!;
+			expect(face.format).toBe(format);
+			expect(readFileSync(join(lib.filesDir, `${face.id}.${format}`))).toEqual(Buffer.from(bytes));
+		}
 	});
 });
 
@@ -151,7 +176,8 @@ describe('font library store: conservative repair on open', () => {
 
 	it('an unreadable index is kept aside and rebuilt from the font files', async () => {
 		const { dir, index } = await seeded();
-		writeFileSync(index, '{"format": "jasper-font-library", "fonts": [ {"trunc');
+		const broken = '{"format": "jasper-font-library", "fonts": [ {"trunc';
+		writeFileSync(index, broken);
 		const lib = await FontLibrary.open(dir);
 		expect(
 			lib
@@ -159,8 +185,9 @@ describe('font library store: conservative repair on open', () => {
 				.map((f) => f.postscriptName)
 				.sort(),
 		).toEqual(['CircularStd-Medium', 'Pixel12x10']);
-		expect(lib.repairs.join('\n')).toMatch(/unreadable.*rebuilt/);
-		expect(readdirSync(dir).some((n) => n.startsWith('library.json.corrupt-'))).toBe(true);
+		expect(lib.repairs.length).toBeGreaterThan(0);
+		const backup = readdirSync(dir).find((n) => n.startsWith('library.json.corrupt-'))!;
+		expect(readFileSync(join(dir, backup), 'utf8')).toBe(broken);
 		// the rebuilt index is valid and needs no repair next time
 		expect((await FontLibrary.open(dir)).repairs).toEqual([]);
 	});
@@ -172,13 +199,9 @@ describe('font library store: conservative repair on open', () => {
 		const { rmSync } = await import('node:fs');
 		rmSync(join(files, `${a.id}.ttf`));
 		// a crash mid-install: file written, index not
-		const stray = (await FontLibrary.open(join(tempAppdir(), 'fonts'))).install(
-			makeTestTtf({ family: 'Stray' }),
-			's.ttf',
-		);
-		const strayFace = (await stray).installed[0]!;
 		const strayBytes = makeTestTtf({ family: 'Stray' });
-		writeFileSync(join(files, `${strayFace.id}.ttf`), strayBytes);
+		const strayId = `f${createHash('sha256').update(strayBytes).digest('hex').slice(0, 24)}`;
+		writeFileSync(join(files, `${strayId}.ttf`), strayBytes);
 		writeFileSync(join(files, '.x.ttf.1234.tmp'), 'partial');
 		writeFileSync(join(files, 'notes.txt'), 'unrelated');
 		const lib = await FontLibrary.open(dir);
@@ -188,8 +211,9 @@ describe('font library store: conservative repair on open', () => {
 				.map((f) => f.family)
 				.sort(),
 		).toEqual(['Circular Std', 'Stray']);
-		expect(lib.repairs.some((r) => /Pixel12x10.*missing/.test(r))).toBe(true);
-		expect(lib.repairs.some((r) => /Stray.*added back/.test(r))).toBe(true);
+		expect(lib.repairs).toEqual(
+			expect.arrayContaining([expect.stringContaining('Pixel12x10'), expect.stringContaining('Stray')]),
+		);
 		expect(readdirSync(files).includes('.x.ttf.1234.tmp')).toBe(false);
 		expect(readdirSync(files).includes('notes.txt')).toBe(true); // not ours: left alone
 		expect(lib.get(b.id)).not.toBeNull();
@@ -206,7 +230,7 @@ describe('font library store: conservative repair on open', () => {
 		expect(lib.fonts().map((f) => f.id)).toEqual([a.id]);
 		const after = JSON.parse(readFileSync(index, 'utf8'));
 		expect(after.invalid).toEqual(expect.arrayContaining([{ id: 'nonsense', family: 7 }]));
-		expect(lib.repairs.some((r) => /Circular Std Medium.*damaged/.test(r))).toBe(true);
+		expect(lib.repairs).toEqual(expect.arrayContaining([expect.stringContaining('Circular Std Medium')]));
 	});
 
 	it('an index written by a newer build is listed but never rewritten (read-only)', async () => {
@@ -248,7 +272,7 @@ describe('font library routes', () => {
 			(await app.inject({ method: 'GET', url: '/api/fonts/library', headers: H })).json(),
 		);
 		expect(list.fonts.map((f) => f.id)).toEqual([face.id]);
-		expect(list.limits.maxFileBytes).toBe(FONT_LIBRARY_LIMITS.maxFileBytes);
+		expect(list.limits).toEqual({ maxFileBytes: 67_108_864, maxFonts: 1000, maxTotalBytes: 2_147_483_648 });
 		const cat = FontCatalogSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/fonts', headers: H })).json(),
 		);
@@ -292,9 +316,7 @@ describe('font library routes', () => {
 		expect(html.json()).toMatchObject({ code: 'FONT_INVALID' });
 		const t1 = await upload(app, new TextEncoder().encode('typ1 and some bytes after it'), 'x.pfb');
 		expect([t1.statusCode, t1.json().code]).toEqual([415, 'FONT_UNSUPPORTED']);
-		const big = Buffer.alloc(FONT_LIBRARY_LIMITS.maxFileBytes + 1);
-		Buffer.from(pixel()).copy(big);
-		const tooBig = await upload(app, big, 'big.ttf');
+		const tooBig = await upload(app, pixel(), 'big.ttf', { ...BIN_H, 'content-length': '67108865' });
 		expect([tooBig.statusCode, tooBig.json().code]).toEqual([413, 'FONT_TOO_LARGE']);
 		const json = await app.inject({
 			method: 'POST',
@@ -360,9 +382,14 @@ describe('font library routes', () => {
 			family: 'Circular Std',
 			originalName: 'CircularStd-Medium.otf.ttf',
 		});
-		expect((await post('relative/font.ttf')).statusCode).toBe(400);
-		expect((await post(join(dir, 'missing.ttf'))).statusCode).toBe(404);
-		expect((await post(dir)).statusCode).toBe(400);
+		for (const [path, status, code] of [
+			['relative/font.ttf', 400, 'VALIDATION_FAILED'],
+			[join(dir, 'missing.ttf'), 404, 'NOT_FOUND'],
+			[dir, 400, 'VALIDATION_FAILED'],
+		] as const) {
+			const result = await post(path);
+			expect([result.statusCode, result.json().code]).toEqual([status, code]);
+		}
 	});
 
 	it('usage lists the saved projects whose fonts resolve to the face', async () => {
@@ -392,7 +419,7 @@ describe('font library routes', () => {
 	});
 });
 
-describe('removing a library font', { timeout: 120_000 }, () => {
+describe('removing a library font', () => {
 	const TOKEN = 'tok_fonts_0123456789abcdef';
 	const KEY = 'key_fonts_0123456789abcdef';
 	const AGENT = { ...H, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'font-agent' };
@@ -428,17 +455,20 @@ describe('removing a library font', { timeout: 120_000 }, () => {
 			reasons?: string[];
 		}[] = [];
 		let wake: (() => void) | null = null;
-		ws.on('message', (d) => {
-			const m = JSON.parse(String(d)) as { type: string; event?: string; payload?: unknown };
-			if (m.type === 'event' && m.event === 'agent.approval.requested') {
-				cards.push(m.payload as (typeof cards)[number]);
-				wake?.();
-			}
-		});
+		const ready = new Promise<void>((resolve) =>
+			ws.on('message', (d) => {
+				const m = JSON.parse(String(d)) as { type: string; event?: string; payload?: unknown };
+				if (m.type === 'welcome') resolve();
+				if (m.type === 'event' && m.event === 'agent.approval.requested') {
+					cards.push(m.payload as (typeof cards)[number]);
+					wake?.();
+				}
+			}),
+		);
 		ws.send(
 			JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }),
 		);
-		await new Promise((r) => setTimeout(r, 100));
+		await ready;
 		return {
 			cards,
 			card: async (n: number) => {
@@ -470,7 +500,6 @@ describe('removing a library font', { timeout: 120_000 }, () => {
 		const editor = await editorWindow(app, 'Shorts 12', 'Pixel12x10');
 		const denied = del(AGENT);
 		const c1 = await editor.card(1);
-		expect(c1.label).toBe('Remove font');
 		expect(c1.summary).toContain('Pixel12x10');
 		expect(c1.summary).toContain('"Shorts 12"');
 		editor.answer(c1, 'denied');
@@ -539,15 +568,14 @@ describe('resolution in the export planner (wp fonts)', () => {
 		const d = textDoc(['Pixel12x10', 'CircularStd-Medium', 'Inter']);
 		const before = await plan(app, d);
 		const warn = before.warnings.find((w) => w.code === 'FONT_FALLBACK');
-		expect(warn?.message).toContain('CircularStd-Medium, Pixel12x10');
+		expect(warn?.message).toContain('CircularStd-Medium');
+		expect(warn?.message).toContain('Pixel12x10');
 		expect(warn?.itemIds).toHaveLength(2);
 		expect(before.snapshot.fonts.filter((f) => f.url.includes('source-sans-3'))).toHaveLength(2);
 
 		await upload(app, pixel(), 'Pixel12x10.ttf');
 		const one = await plan(app, d);
-		expect(one.warnings.find((w) => w.code === 'FONT_FALLBACK')?.message).toContain(
-			'not installed: CircularStd-Medium.',
-		);
+		expect(one.warnings.find((w) => w.code === 'FONT_FALLBACK')?.message).toContain('CircularStd-Medium');
 
 		const circ = (await upload(app, circular(), 'Circular.ttf')).json().installed[0] as LibraryFont;
 		const after = await plan(app, d);
@@ -558,17 +586,8 @@ describe('resolution in the export planner (wp fonts)', () => {
 		expect(byFamily['CircularStd-Medium']).toBe(`/fonts/library/${circ.id}.ttf`);
 		// bundled families are unaffected
 		expect(byFamily.Inter).toMatch(/^\/fonts\/inter\//);
-		// every path loads these URLs: the Remotion path signs them, the layer bake keys and loads them
-		expect(coreServices(app).fonts.filePath(byFamily.Pixel12x10!.slice('/fonts/'.length))).toMatch(/\.ttf$/);
-	});
-
-	it('removing the font brings the fallback back', async () => {
-		const app = await makeApp();
-		const face = (await upload(app, pixel(), 'Pixel12x10.ttf')).json().installed[0] as LibraryFont;
-		const d = textDoc(['Pixel12x10']);
-		expect((await plan(app, d)).warnings.some((w) => w.code === 'FONT_FALLBACK')).toBe(false);
-		await app.inject({ method: 'DELETE', url: `/api/fonts/library/${face.id}`, headers: H });
+		await app.inject({ method: 'DELETE', url: `/api/fonts/library/${circ.id}`, headers: H });
 		const gone = await plan(app, d);
-		expect(gone.warnings.find((w) => w.code === 'FONT_FALLBACK')?.message).toContain('Pixel12x10');
+		expect(gone.warnings.find((w) => w.code === 'FONT_FALLBACK')?.message).toContain('CircularStd-Medium');
 	});
 });

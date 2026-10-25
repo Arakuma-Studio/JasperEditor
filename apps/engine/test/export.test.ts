@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { RenderPlanSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -98,7 +99,29 @@ async function twoTrackDoc() {
 }
 
 describe('planner (S04:RP-001/008/010)', () => {
-	it('plans native for a media-only sequence and returns a valid RenderPlan', async () => {
+	it('warns when an export refers to offline media', async () => {
+		const d = new DocBuilder();
+		const clip = await register(app, fixture('clip-b.mp4'));
+		const offline = d.addMedia({
+			...clip,
+			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
+		});
+		d.tx([{ type: 'clip.place', source: { mediaId: offline }, at: 0 }]);
+		const response = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+		});
+		expect(response.statusCode).toBe(200);
+		expect(RenderPlanSchema.parse(response.json()).warnings.map((warning) => warning.code)).toContain(
+			'OFFLINE_MEDIA',
+		);
+	});
+});
+
+describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
+	it('plans and exports a 2-track sequence with exact frames, tracks and output metadata', async () => {
 		const { d } = await twoTrackDoc();
 		const r = await app.inject({
 			method: 'POST',
@@ -123,32 +146,6 @@ describe('planner (S04:RP-001/008/010)', () => {
 			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
 		});
 		expect(again.json().planId).toBe(plan.planId);
-	});
-
-	it('warns when an export refers to offline media', async () => {
-		const d = new DocBuilder();
-		const clip = await register(app, fixture('clip-b.mp4'));
-		const offline = d.addMedia({
-			...clip,
-			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
-		});
-		d.tx([{ type: 'clip.place', source: { mediaId: offline }, at: 0 }]);
-		const response = await app.inject({
-			method: 'POST',
-			url: '/api/exports/plan',
-			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
-		});
-		expect(response.statusCode).toBe(200);
-		expect(RenderPlanSchema.parse(response.json()).warnings.map((warning) => warning.code)).toContain(
-			'OFFLINE_MEDIA',
-		);
-	});
-});
-
-describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
-	it('exports a 2-track sequence to an mp4 whose frame count equals the range length', async () => {
-		const { d } = await twoTrackDoc();
 		const events: string[] = [];
 		const off = coreServices(app).broadcaster.subscribe((e) => events.push(e.type));
 		const start = await app.inject({
@@ -236,18 +233,6 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 	}, 60_000);
 });
 
-/** The burned-in 6-bit frame number of `fixtures/media/frame-code.mp4` at one frame of a file. */
-function frameCode(file: string, frame: number): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
-
 describe('frame accuracy of the native path', () => {
 	it('starts every clip on its exact frame, also when the start is not a round number of seconds', async () => {
 		const coded = await register(app, fixture('frame-code.mp4'));
@@ -288,7 +273,12 @@ describe('frame accuracy of the native path', () => {
 			[41, 6],
 			[59, 24],
 		];
-		expect(want.map(([frame]) => [frame, frameCode(file, frame)])).toEqual(want);
+		expect(
+			frameCodes(
+				file,
+				want.map(([frame]) => frame),
+			),
+		).toEqual(want.map(([, code]) => code));
 	}, 120_000);
 
 	it('plays a trimmed clip at twice its source rate', async () => {
@@ -316,7 +306,7 @@ describe('frame accuracy of the native path', () => {
 		expect(done.state).toBe('succeeded');
 		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
 		expect(Number(probe(file).find((stream) => stream.codec_type === 'video')?.nb_read_frames)).toBe(20);
-		expect([0, 10, 19].map((frame) => frameCode(file, frame))).toEqual([10, 30, 48]);
+		expect(frameCodes(file, [0, 10, 19])).toEqual([10, 30, 48]);
 	}, 120_000);
 
 	async function exportedTone(rate: number, sourceSeconds: number): Promise<Int16Array> {
@@ -475,8 +465,7 @@ describe('transitions on the native path (S01 §13)', () => {
 		expect(near(bit5(20), 255 * (5 / 11))).toBe(true);
 		expect(near(bit5(24), 255 * (1 / 11))).toBe(true);
 		expect(near(bit5(25), 0)).toBe(true);
-		expect(frameCode(file, 14)).toBe(46);
-		expect(frameCode(file, 25)).toBe(13);
+		expect(frameCodes(file, [14, 25])).toEqual([46, 13]);
 	}, 120_000);
 
 	it('dips to black: the outgoing clip ends on a black frame, the incoming one fades in', async () => {
@@ -490,7 +479,7 @@ describe('transitions on the native path (S01 §13)', () => {
 		expect(near(blue(20), 128 * (1 / 6))).toBe(true);
 		expect(near(blue(24), 128 * (5 / 6))).toBe(true);
 		expect(near(blue(25), 128)).toBe(true);
-		expect(frameCode(file, 25)).toBe(13);
+		expect(frameCodes(file, [25])[0]).toBe(13);
 	}, 120_000);
 });
 
@@ -531,7 +520,7 @@ describe('masters and bitrate', () => {
 		const [v, a] = probe(file);
 		expect(v).toMatchObject({ codec_name: 'prores', pix_fmt: 'yuv422p10le', color_space: 'bt709' });
 		expect(a).toMatchObject({ codec_name: 'pcm_s16le', sample_rate: '48000' });
-		expect(frameCode(file, 40)).toBe(40);
+		expect(frameCodes(file, [40])[0]).toBe(40);
 	}, 120_000);
 });
 

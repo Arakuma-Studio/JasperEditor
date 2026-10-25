@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -65,18 +66,6 @@ async function exportDoc(d: DocBuilder): Promise<string> {
 	return (await coreServices(app).exports.outputFile(start.json().id))!;
 }
 
-/** The 6-bit frame code of frame-code.mp4 / vfr-code.mp4 at an output frame (`offset` = where the picture sits). */
-function frameCode(file: string, frame: number, offset: [number, number] = [0, 0]): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:${40 + offset[0]}:${70 + offset[1]}`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
-
 function luma(file: string, frame: number): number {
 	const r = spawnSync('ffmpeg', [
 		...['-v', 'error', '-i', file],
@@ -110,7 +99,7 @@ describe('native retime', () => {
 		expect(p.path).toBe('native');
 		expect(p.blockers).toEqual([]);
 		const file = await exportDoc(d);
-		for (const f of [0, 1, 15, 29]) expect(frameCode(file, f)).toBe(39 - f);
+		expect(frameCodes(file, [0, 1, 15, 29])).toEqual([39, 38, 24, 10]);
 	}, 180_000);
 
 	it('a time remap preserves independently specified slow, freeze and reverse frame choices', async () => {
@@ -146,7 +135,12 @@ describe('native retime', () => {
 			[63, 31],
 			[69, 37],
 		] as const;
-		for (const [frame, source] of expected) expect(frameCode(file, frame), `frame ${frame}`).toBe(source);
+		expect(
+			frameCodes(
+				file,
+				expected.map(([frame]) => frame),
+			),
+		).toEqual(expected.map(([, source]) => source));
 	}, 240_000);
 
 	it('maps variable-frame-rate media by their timestamps (no VFR conform warning)', async () => {
@@ -168,11 +162,9 @@ describe('native retime', () => {
 		const file = await exportDoc(d);
 		// scripts/fixtures/time.mjs authors PTS n/30 + 0.01*(n mod 3).
 		// At output f/30, only multiples of three have arrived on their nominal frame.
-		for (let f = 0; f < 60; f++) {
-			const source = f % 3 === 0 ? f : f - 1;
-			// The 640×360 picture sits unscaled in the middle of the 1080p frame.
-			expect(frameCode(file, f, [640, 360]), `frame ${f}`).toBe(source);
-		}
+		const frames = Array.from({ length: 60 }, (_, f) => f);
+		// The 640×360 picture sits unscaled in the middle of the 1080p frame.
+		expect(frameCodes(file, frames, [640, 360])).toEqual(frames.map((f) => (f % 3 === 0 ? f : f - 1)));
 	}, 180_000);
 
 	it('Frame Blending mixes neighbouring frames at 50 %; Optical Flow renders natively', async () => {

@@ -132,7 +132,7 @@ const isEasy = (e: Ease) => Math.abs(e.influence - 1 / 3) < 1e-9 && e.slope === 
  * side; Ease In = an eased incoming side ({⅓, 0}) on a key leaving Linear, Ease Out the mirror; Easy Ease = both
  * sides eased; else the type both sides share.
  */
-export function presetOf(
+function presetOf(
 	k: Pick<Keyframe<unknown>, 'interpolation' | 'inInterpolation' | 'easeIn' | 'easeOut'>,
 ): InterpolationPreset | null {
 	if (k.interpolation === 'hold') return 'hold';

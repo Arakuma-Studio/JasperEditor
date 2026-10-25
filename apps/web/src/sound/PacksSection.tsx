@@ -20,7 +20,7 @@ export function requestPacksFocus(): void {
 }
 
 /** The host of a URL, for "from kenney.nl" (the URL itself when it does not parse). */
-export function hostOf(url: string | null): string {
+function hostOf(url: string | null): string {
 	if (!url) return '';
 	try {
 		return new URL(url).host || url;
@@ -30,7 +30,7 @@ export function hostOf(url: string | null): string {
 }
 
 /** What the confirmation says before anything is downloaded: size, origin, checks, licence, credit, evidence. */
-export function installConfirmBody(p: SoundPackInfo): string {
+function installConfirmBody(p: SoundPackInfo): string {
 	const parts = [
 		t(
 			'{0} download from {1}, checked against its pinned SHA-256; {2} sounds, {3} on disk.',

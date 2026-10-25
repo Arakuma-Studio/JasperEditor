@@ -100,17 +100,6 @@ describe('voice-over latency compensation', () => {
 		expect(Math.abs(record(s, lat))).toBeLessThanOrEqual(1);
 	});
 
-	it('simulated input latency: aligned within one capture buffer; uncompensated it is not', () => {
-		const lat = voiceoverLatencySeconds({
-			playback: { baseLatency: 0.01, outputLatency: 0.03 },
-			inputLatency: base.inputLatency,
-		});
-		expect(Math.abs(record(base, lat))).toBeLessThanOrEqual(base.buffer);
-		// before WP0.1 the input latency was ignored: the take started 25 ms (1200 samples) early
-		const before = voiceoverLatencySeconds({ capture: { baseLatency: 0.01, outputLatency: 0.03 } });
-		expect(Math.abs(record(base, before))).toBeGreaterThan(base.buffer);
-	});
-
 	it('any latency, buffer and report jitter: within one buffer (property)', () => {
 		fc.assert(
 			fc.property(

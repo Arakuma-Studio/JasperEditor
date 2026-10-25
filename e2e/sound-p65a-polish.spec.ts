@@ -3,8 +3,7 @@
 //      itself; Essential Sound lists the tags in the sequence and a click selects that tag's clips.
 //   2. The Razor inside a cross dissolve (video) and a crossfade (audio) cuts the clips and shortens the transitions
 //      (it used to be refused with E_INVARIANT).
-//   3. Essential Sound ▸ Role / Align: one Tab stop each, arrow keys choose.
-//   4. In Spanish: Edit ▸ "Deshacer <paso>" and the built-in workspace names.
+//   3. Essential Sound ▸ Role: one Tab stop, arrow keys choose.
 // Screenshots go to test-results/e2e-sound-p65a.
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -205,7 +204,7 @@ test('the Razor inside a video and an audio transition cuts and shortens them', 
 	await page.screenshot({ path: join(outDir, 'razor-after.png') });
 });
 
-test('Essential Sound Role / Align: arrow keys move and choose', async () => {
+test('Essential Sound Role: arrow keys move and choose', async () => {
 	test.setTimeout(240_000);
 	await importInto(page, [join(dir, 'hit.ogg')]);
 	await page.keyboard.press('Alt+Shift+Digit9'); // Sound Design (Essential Sound)
@@ -241,28 +240,4 @@ test('Essential Sound Role / Align: arrow keys move and choose', async () => {
 	await expect.poll(async () => (await sequence(page)).clips[sfx.id]!.sfx!.role).toBe('hero');
 	await expect(role.locator('[aria-checked="true"]')).toBeFocused();
 	await page.screenshot({ path: join(outDir, 'role-keyboard.png') });
-});
-
-test('in Spanish: Edit ▸ Deshacer <paso> and the built-in workspace names', async () => {
-	test.setTimeout(240_000);
-	await page.evaluate(() => {
-		const raw = window.localStorage.getItem('jasper:gaps-prefs');
-		const prefs = raw ? JSON.parse(raw) : {};
-		prefs.appearance = { ...(prefs.appearance ?? {}), language: 'es' };
-		window.localStorage.setItem('jasper:gaps-prefs', JSON.stringify(prefs));
-	});
-	await page.reload();
-	await expect(page.getByTestId('editor-shell')).toBeVisible({ timeout: 60_000 });
-	await expect.poll(() => page.evaluate(() => !!window.jasper)).toBe(true);
-	// an edit of the user's: a marker (M)
-	await focusTimeline(page);
-	await page.keyboard.press('KeyM');
-	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toMatch(/^(Add Marker|Añadir marcador)$/);
-	await expect(page.getByTestId('workspace-tab-editing')).toHaveText('Edición');
-	await expect(page.getByTestId('workspace-tab-sound-design')).toHaveText('Diseño de sonido');
-	const menubar = page.getByTestId('title-bar').getByRole('menubar');
-	await menubar.getByRole('menuitem', { name: 'Edición', exact: true }).click();
-	await expect(page.getByRole('menuitem', { name: /^Deshacer Añadir marcador/ })).toBeVisible();
-	await page.screenshot({ path: join(outDir, 'es-edit-menu.png') });
-	await page.keyboard.press('Escape');
 });

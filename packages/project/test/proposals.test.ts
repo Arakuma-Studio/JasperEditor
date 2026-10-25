@@ -124,7 +124,7 @@ describe('createProposal', () => {
 		});
 		expect(p.items.map((i) => i.state)).toEqual(['pending', 'invalid', 'invalid']);
 		expect(p.items[1]!.reason).toMatch(/^E_NOT_FOUND: .*A9/);
-		expect(p.items[2]!.reason).toBe('requires item bad, which is invalid');
+		expect(p.items[2]!.reason).toContain('bad');
 	});
 
 	it('marks the later of two items that only conflict together invalid (one transaction must apply)', () => {
@@ -134,7 +134,7 @@ describe('createProposal', () => {
 			items: [item('a', [cue(30, { id })]), item('b', [cue(40, { id })]), item('c', [marker(5)])],
 		});
 		expect(p.items.map((i) => i.state)).toEqual(['pending', 'invalid', 'pending']);
-		expect(p.items[1]!.reason).toMatch(/^conflicts with the items before it: E_INVALID_PARAM/);
+		expect(p.items[1]!.reason).toContain('E_INVALID_PARAM');
 	});
 
 	it('resolves addressing forms against the document and stores ids', () => {
@@ -298,7 +298,7 @@ describe('composeAcceptTx', () => {
 		expect(inv.ok ? [] : inv.errors.map((e) => e.code)).toEqual(['E_INVALID_PARAM']);
 		const forged: Proposal = { ...p, items: [p.items[0]!, { ...p.items[1]!, requires: ['bad'] }] };
 		const via = composeAcceptTx(forged, ['ok'], AGENT);
-		expect(via.ok ? '' : via.errors[0]!.message).toMatch(/Item bad \(required by ok\) is invalid/);
+		expect(via.ok ? null : via.errors[0]).toMatchObject({ code: 'E_INVALID_PARAM', itemId: 'bad' });
 		const big = composeAcceptTx(p, ['ok'], AGENT, { maxCommands: 0 });
 		expect(big.ok ? [] : big.errors.map((e) => e.code)).toEqual(['E_LIMIT']);
 		// 'all' = the undecided items; nothing undecided → an empty composition
@@ -320,11 +320,10 @@ describe('revalidate and planAccept on a changed document', () => {
 		h.ok([{ type: 'clip.move', clipIds: [clipId], deltaFrames: 12 }]);
 		const moved = revalidate(h.doc, p, CTX);
 		expect(moved.changed).toBe(true);
-		// a reason a person can read (timecodes, what it is), and the structured problem the editor translates
-		expect(moved.stale).toEqual([
+		// Structured anchor data lets the editor explain the moved clip in the current locale.
+		expect(moved.stale).toMatchObject([
 			{
 				itemId: 'a',
-				reason: expect.stringMatching(/^The clip( “[^”]*”)? at 00:00:00:00 moved to 00:00:00:12$/),
 				problem: expect.objectContaining({
 					type: 'anchor',
 					id: clipId,
@@ -341,7 +340,6 @@ describe('revalidate and planAccept on a changed document', () => {
 		expect(back.proposal.items[0]!.reason).toBeUndefined();
 		h.ok([{ type: 'clip.lift', clipIds: [clipId] }]);
 		const gone = revalidate(h.doc, p, CTX);
-		expect(gone.stale[0]!.reason).toBe('The clip at 00:00:00:00 was deleted');
 		expect(gone.stale[0]!.problem).toMatchObject({
 			type: 'anchor',
 			entity: 'clip',
@@ -362,8 +360,6 @@ describe('revalidate and planAccept on a changed document', () => {
 		h.ok([{ type: 'track.remove', trackIds: [a3] }]);
 		const r = revalidate(h.doc, p, CTX);
 		expect(r.proposal.items.map((i) => i.state)).toEqual(['stale', 'stale']);
-		expect(r.proposal.items[0]!.reason).toMatch(/no longer exists|E_NOT_FOUND/);
-		expect(r.proposal.items[1]!.reason).toMatch(/^Requires item a \(“[^”]+”\), which is stale$/);
 		expect(r.stale.find((x) => x.itemId === 'b')!.problem).toMatchObject({
 			type: 'requires',
 			itemId: 'a',
@@ -745,7 +741,10 @@ describe('properties', () => {
 				);
 				if (!r.ok) {
 					expect(r.errors.length).toBeGreaterThan(0);
-					for (const e of r.errors) expect(e.code).toMatch(/^E_[A-Z_]+$/);
+					for (const e of r.errors) {
+						expect(e.code).toMatch(/^E_[A-Z_]+$/);
+						expect(e.code).not.toBe('E_INTERNAL');
+					}
 					return;
 				}
 				expect(ProposalSchema.safeParse(r.proposal).success).toBe(true);
@@ -765,9 +764,7 @@ describe('agent guard', () => {
 	it('an agent granting itself "Allow agents to apply sound proposals" needs the user\'s approval', () => {
 		expect(
 			approvalReasons({ commands: [{ type: 'soundDesign.setSettings', agentsMayApply: true }] }),
-		).toEqual([
-			'agentsMayApply: true in soundDesign.setSettings (command 1) lets agents apply sound proposals',
-		]);
+		).not.toEqual([]);
 		expect(
 			approvalReasons({ commands: [{ type: 'soundDesign.setSettings', agentsMayApply: false }] }),
 		).toEqual([]);

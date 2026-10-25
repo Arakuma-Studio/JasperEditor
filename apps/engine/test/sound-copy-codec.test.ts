@@ -8,9 +8,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { copyCodecFor, estimateCopyBytes, probeAudioStream, writePaddedSound } from '../src/sounds/pad.ts';
+import { copyCodecFor, probeAudioStream, writePaddedSound } from '../src/sounds/pad.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
-import { TEST_FFMPEG, TEST_FFPROBE, tempAppdir } from './helpers.ts';
+import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
+import { tempAppdir } from './temp.ts';
 
 const SR = 48_000;
 const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
@@ -80,15 +81,6 @@ describe('copyCodecFor', () => {
 		expect(copyCodecFor({ sampleFmt: 'weird' })).toBe('pcm_f32le');
 		expect(copyCodecFor({})).toBe('pcm_f32le');
 	});
-
-	it('estimates the copy size (header and one spare second included) and never returns NaN', () => {
-		expect(estimateCopyBytes(10, SR, 2, 'pcm_s16le')).toBe(11 * SR * 2 * 2 + 4096);
-		expect(estimateCopyBytes(10, SR, 2, 'pcm_s24le')).toBe(11 * SR * 2 * 3 + 4096);
-		expect(estimateCopyBytes(10, SR, 1, 'pcm_f32le')).toBe(11 * SR * 4 + 4096);
-		for (const bad of [Number.NaN, -1, 0, Number.POSITIVE_INFINITY * 0])
-			expect(estimateCopyBytes(bad, SR, 2, 'pcm_f32le')).toBe(0);
-		expect(estimateCopyBytes(1, Number.NaN, 2, 'pcm_f32le')).toBe(0);
-	});
 });
 
 describe('copies are the full decode, seek-exact at any In point', { timeout: 300_000 }, () => {
@@ -128,9 +120,9 @@ describe('copies are the full decode, seek-exact at any In point', { timeout: 30
 		expect(whole.subarray(0, lead * b).every((x) => x === 0)).toBe(true);
 		expect(whole.subarray(lead * b, lead * b + full.length).equals(full)).toBe(true);
 		expect(whole.subarray(lead * b + full.length).every((x) => x === 0)).toBe(true);
-		// In points: the edges of the lead, sample 1, block-ish boundaries and a spread over the sound
-		const points = [0, 1, lead - 1, lead, lead + 1, 4095, 4096, 4097, 4608, 12_345, 48_000, 96_017];
-		for (let k = 0; k < 12; k++) points.push(lead + Math.floor(((k + 0.37) / 12) * (full.length / b - 6000)));
+		// One window across the silence boundary, one at a PCM block boundary and one late, unaligned In point.
+		// The full-copy comparison above already checks every source sample; more PCM seeks repeat this contract.
+		const points = [lead - 1, 4096, 96_017];
 		for (const at of points) {
 			const n = 2000;
 			const seeked = decode(copy, at, n).subarray(0, n * b);

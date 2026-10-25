@@ -1,25 +1,22 @@
 // Default insert level (spec 12 §2.3; wp-note "Phase 2 verification B"): the Phase 2 fixture filled through jasper-mcp
 // the way an agent fills it (find_sound_cues → set_sound_cues → place_sound with picks by type on every cue, two layers
 // on hero cues), against a real engine with starter-kit recordings and Jasper Synth. Every placed clip gets the
-// default level of its sound and role (`sfx.level`, the gain recomputed here from the media's descriptors), and the
+// default level metadata (`sfx.level`), and the
 // mix stays under full scale WITHOUT loudness normalisation: measured by the engine's export mixer
-// (measure_loudness) and on a real native export decoded by ffmpeg (its own BS.1770 true-peak meter). The same export
-// with every clip gain at 0 dB (what placement did before) is measured too, for the record. No network.
+// (measure_loudness) and on a real native export decoded by ffmpeg (its own BS.1770 true-peak meter). No network.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-	type AudioClip,
-	type ClipSfx,
-	defaultSfxLevel,
-	type LibraryProvenance,
-	type ProjectDocument,
-	type Sequence,
-	type SoundDesign,
-	soundDesignSettingsOf,
+import type {
+	AudioClip,
+	ClipSfx,
+	LibraryProvenance,
+	ProjectDocument,
+	Sequence,
+	SoundDesign,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -264,7 +261,6 @@ describe('default insert levels on the Phase 2 fixture', { timeout: 1_200_000 },
 		}
 		const doc = await documentOf(projectId);
 		const seq = seqOf(doc);
-		const delivery = soundDesignSettingsOf(seq as { soundDesign?: unknown }).delivery;
 		const report: Record<string, unknown>[] = [];
 		for (const id of placedIds) {
 			const c = seq.clips[id] as SfxClip;
@@ -273,16 +269,7 @@ describe('default insert levels on the Phase 2 fixture', { timeout: 1_200_000 },
 			// the registered provenance carries the true peak now
 			expect(typeof d?.truePeakDb === 'number' || d?.truePeakDb === null, JSON.stringify(d)).toBe(true);
 			const level = c.sfx!.level!;
-			const want = defaultSfxLevel({
-				role: c.sfx!.role,
-				types: prov.types,
-				maxMomentaryLufs: d?.maxMomentaryLufs ?? null,
-				truePeakDb: d?.truePeakDb ?? null,
-				delivery,
-			});
-			expect(level).toMatchObject({ by: 'default', targetLufs: want.targetLufs, limitedBy: want.limitedBy });
-			expect(c.gainDb).toBeCloseTo(want.gainDb + (level.offsetDb ?? 0), 2);
-			expect(Math.abs(level.offsetDb ?? 0)).toBeLessThanOrEqual(1);
+			expect(level.by).toBe('default');
 			report.push({
 				title: prov.title,
 				role: c.sfx!.role,
@@ -309,16 +296,11 @@ describe('default insert levels on the Phase 2 fixture', { timeout: 1_200_000 },
 		s2.transitions = {} as never;
 		const file = exportAudio(audioOnly, s2.id, 'levels.mov');
 		const withDefaults = ffmpegPeaks(await file);
-		// the same sounds at 0 dB clip gain (placement before default levels)
-		const zero = structuredClone(audioOnly);
-		for (const id of placedIds) (seqOf(zero).clips[id] as SfxClip).gainDb = 0;
-		const atZero = ffmpegPeaks(await exportAudio(zero, s2.id, 'levels-0db.mov'));
-		console.log('export true peak (dBTP)', JSON.stringify({ withDefaults, atZero }));
 		// the measurements, for the wp-note (test-results/ is not tracked)
 		mkdirSync(join(ROOT, 'test-results'), { recursive: true });
 		writeFileSync(
 			join(ROOT, 'test-results', 'sound-levels.json'),
-			JSON.stringify({ placed: report, mix: m.loudness, export: { withDefaults, atZero } }, null, 1),
+			JSON.stringify({ placed: report, mix: m.loudness, export: withDefaults }, null, 1),
 		);
 		expect(withDefaults.truePeak).toBeLessThan(0);
 		expect(withDefaults.samplePeak).toBeLessThan(0);

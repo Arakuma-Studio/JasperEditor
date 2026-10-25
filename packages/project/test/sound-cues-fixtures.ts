@@ -12,8 +12,8 @@ import {
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
-export const FPS = 30;
-export const FLICKS = 705_600_000;
+const FPS = 30;
+const FLICKS = 705_600_000;
 export const F = FLICKS / FPS;
 
 const LINEAR = { influence: 1 / 3, slope: 0 };

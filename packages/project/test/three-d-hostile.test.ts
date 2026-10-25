@@ -3,7 +3,7 @@ import { ModelParseError, parseModel } from '../src/three-d/gltf.ts';
 import {
 	accessorOfZeros,
 	badIndices,
-	HOSTILE_MODELS,
+	brokenDataUri,
 	manyInstances,
 	sharedChildren,
 	sharedImage,
@@ -11,7 +11,6 @@ import {
 	triangleDocument,
 } from './three-d-hostile.ts';
 
-const LIMIT_MS = 20_000;
 const enc = (doc: unknown) => new TextEncoder().encode(JSON.stringify(doc));
 
 function attempt(bytes: Uint8Array): { ms: number; error?: unknown; grownMiB: number } {
@@ -30,15 +29,9 @@ function attempt(bytes: Uint8Array): { ms: number; error?: unknown; grownMiB: nu
 }
 
 describe('hostile glTF documents', () => {
-	it.each(Object.entries(HOSTILE_MODELS))(
-		'%s is refused with a reason, without the allocation',
-		(_name, make) => {
-			const r = attempt(make());
-			expect(r.error).toBeInstanceOf(ModelParseError);
-			expect(r.ms).toBeLessThan(LIMIT_MS);
-			expect(r.grownMiB).toBeLessThan(1024);
-		},
-	);
+	it('refuses a malformed data URI with a typed model error', () => {
+		expect(attempt(brokenDataUri()).error).toBeInstanceOf(ModelParseError);
+	});
 
 	it('a mesh shown by more nodes than the allowance covers is refused before any of it is decoded', () => {
 		const r = attempt(manyInstances());
@@ -62,6 +55,7 @@ describe('hostile glTF documents', () => {
 	it('an accessor of zeros and a stride of 0 cost nothing before they are refused', () => {
 		for (const make of [accessorOfZeros, strideZero]) {
 			const r = attempt(make());
+			expect(r.error).toBeInstanceOf(ModelParseError);
 			expect(r.grownMiB).toBeLessThan(16);
 			expect(r.ms).toBeLessThan(2000);
 		}

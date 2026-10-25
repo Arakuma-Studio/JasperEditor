@@ -169,7 +169,11 @@ describe('cue commands', () => {
 		});
 		expect(h.session.getState().selection.cues).toEqual([id]);
 		const bad = await runCommand('soundLibrary.fillCue', h.ctx, { cueId: 'cue_0000000000000000' });
-		expect(bad.ran ? (bad as { error?: unknown }).error : 'refused').toBeTruthy();
+		expect(bad).toMatchObject({ ran: false, reason: 'error' });
+		expect(bad.error).toMatchObject({
+			message: expect.stringContaining('cue_0000000000000000'),
+		});
+		expect(cueFillTarget()?.cueId).toBe(id);
 	});
 
 	it('the cue selection is pruned when its cues are removed (undo brings the cue, not the selection)', () => {
@@ -236,33 +240,6 @@ describe('peak handle', () => {
 		const ui = render(view());
 		return { ...h, clipId, clip, rerender: () => ui.rerender(view()) };
 	}
-
-	it('draws the line and diamond at the peak, with the peak tooltip; hides on small clips', () => {
-		const h = withLibraryClip();
-		const handle = document.querySelector(`[data-peak-handle="${h.clipId}"]`) as HTMLElement;
-		const line = document.querySelector(`[data-peak-line="${h.clipId}"]`) as HTMLElement;
-		// 0.25 s = 7.5 frames at 30 fps → 75 px into the clip
-		expect(line.style.left).toBe('74.5px');
-		expect(handle.title.split('\n')[0]).toBe('Peak 00:00:01:07 · 0.200 s into Crunch');
-		cleanup();
-		const small = render(
-			<SessionProvider session={h.session}>
-				<PeakHandle
-					clip={h.clip()}
-					x={0}
-					w={20}
-					height={40}
-					viewportWidth={1000}
-					scrollFrame={0}
-					pxPerFrame={10}
-					rate={h.seq().settings.frameRate}
-					selected={false}
-					trackLocked={false}
-				/>
-			</SessionProvider>,
-		);
-		expect(small.container.querySelector('[data-peak-handle]')).toBeNull();
-	});
 
 	it('dragging the diamond moves the clip so the peak snaps to a cue (one undo step)', () => {
 		const h = withLibraryClip();

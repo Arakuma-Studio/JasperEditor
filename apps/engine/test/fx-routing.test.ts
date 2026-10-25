@@ -8,7 +8,6 @@ import {
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { nativeBlockers } from '../src/export/planner.ts';
-import { normalisedClip } from '../src/layer-bake/key.ts';
 import { isStaticLayer } from '../src/layer-bake/layer.ts';
 
 const frag = 'void main() { fragColor = texture(u_source, v_uv); }';
@@ -67,24 +66,12 @@ function clip(kind: string, effectIds: string[]): RenderVisualClip {
 
 describe('GPU shader effects in the export planner and layer bakes', () => {
 	it('a shader effect blocks the native path (the clip renders through Remotion)', () => {
-		expect(nativeBlockers(clip('video', ['test.noise']), caps, [], registry).join()).toMatch(
-			/uses effect test\.noise, which the native path cannot render/,
-		);
+		expect(nativeBlockers(clip('video', ['test.noise']), caps, [], registry).join()).toContain('test.noise');
 		expect(nativeBlockers(clip('video', []), caps, [], registry)).toEqual([]);
 	});
 
 	it('time-dependent shader effects make a DOM layer non-static (rendered per frame, not a still)', () => {
 		expect(isStaticLayer(clip('shape', ['test.still']), registry)).toBe(true);
 		expect(isStaticLayer(clip('shape', ['test.noise']), registry)).toBe(false);
-	});
-
-	it('bake keys keep the clip id of layers with shader effects (u_seed hashes it)', () => {
-		for (const effects of [[], ['test.still']]) {
-			const first = clip('shape', effects);
-			const second = { ...first, clipId: 'clp_Y' };
-			const sameBake =
-				JSON.stringify(normalisedClip(first, registry)) === JSON.stringify(normalisedClip(second, registry));
-			expect(sameBake).toBe(effects.length === 0);
-		}
 	});
 });

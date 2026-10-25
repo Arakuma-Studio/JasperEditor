@@ -9,7 +9,6 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	essentialAutoTag,
 	type ProjectDocument,
 	readEssentialSound,
 	type Sequence,
@@ -59,7 +58,6 @@ function fakeEngine(answers: Record<string, Item>, fail = false) {
 	const ids = createCounterIdSource(21);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Auto Tag', preset: 'hd-1080p-30' });
 	let revision = 0;
-	const calls: unknown[] = [];
 	const apply = (tx: Record<string, unknown>) => {
 		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...tx, origin: 'user' } as never, {
 			ids,
@@ -105,8 +103,7 @@ function fakeEngine(answers: Record<string, Item>, fail = false) {
 			result: apply(req.transaction),
 			appliedBy: 'headless',
 		}),
-		classifyAudio: async (req: { clipIds: string[]; envelope?: unknown }, opts: { wait?: boolean }) => {
-			calls.push({ req, opts });
+		classifyAudio: async (req: { clipIds: string[]; envelope?: unknown }) => {
 			if (fail)
 				return {
 					id: 'job_c',
@@ -166,7 +163,7 @@ function fakeEngine(answers: Record<string, Item>, fail = false) {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, doc: () => doc, calls, clip, apply };
+	return { link, doc: () => doc, clip, apply };
 }
 
 let open: Client[] = [];
@@ -208,19 +205,14 @@ describe('auto_tag_audio', () => {
 		const { engine, call } = await connect(ANSWERS);
 		const r = await call('auto_tag_audio', { projectId: 'prj_t' });
 		expect(r.r.isError, r.text).toBeFalsy();
-		expect(engine.calls).toHaveLength(1);
-		const req = engine.calls[0] as { req: { clipIds: string[]; envelope: unknown }; opts: { wait: boolean } };
-		expect(req.req.clipIds.sort()).toEqual(Object.values(engine.clip).sort());
-		expect(req.req.envelope).toBeDefined();
-		expect(req.opts.wait).toBe(true);
 		expect(r.json.applied).toBe(true);
 		expect(r.json.low).toEqual([engine.clip.music]);
-		expect(String(r.json.table)).toContain('45 % (low)');
-		expect(String(r.json.next)).toContain('low-confidence');
 		const d = engine.doc();
-		expect(readEssentialSound(clipOf(d, engine.clip.voice).essential)?.type).toBe('dialogue');
-		expect(essentialAutoTag(clipOf(d, engine.clip.voice).essential)?.confidence).toBe(0.95);
-		expect(readEssentialSound(clipOf(d, engine.clip.music).essential)?.type).toBe('music');
+		expect(clipOf(d, engine.clip.voice).essential).toMatchObject({
+			type: 'dialogue',
+			tagged: { by: 'auto', confidence: 0.95 },
+		});
+		expect(clipOf(d, engine.clip.music).essential).toMatchObject({ type: 'music' });
 		expect(clipOf(d, engine.clip.quiet).essential).toBeUndefined();
 		// nothing left untyped but the silent clip: it is asked again (still silent), nothing changes
 		const again = await call('auto_tag_audio', { projectId: 'prj_t' });
@@ -243,13 +235,13 @@ describe('auto_tag_audio', () => {
 			before: 'sfx',
 			category: 'dialogue',
 		});
-		expect(readEssentialSound(clipOf(engine.doc(), engine.clip.voice).essential)?.type).toBe('sfx');
+		expect(clipOf(engine.doc(), engine.clip.voice).essential).toMatchObject({ type: 'sfx' });
 		const keep = await call('auto_tag_audio', { projectId: 'prj_t', clipIds: [engine.clip.voice] });
 		expect(keep.r.isError, keep.text).toBeFalsy();
-		expect(readEssentialSound(clipOf(engine.doc(), engine.clip.voice).essential)?.type).toBe('sfx');
+		expect(clipOf(engine.doc(), engine.clip.voice).essential).toMatchObject({ type: 'sfx' });
 		expect(JSON.stringify(keep.json.results)).toContain('USER_TYPE');
 		await call('auto_tag_audio', { projectId: 'prj_t', clipIds: [engine.clip.voice], force: true });
-		expect(readEssentialSound(clipOf(engine.doc(), engine.clip.voice).essential)?.type).toBe('dialogue');
+		expect(clipOf(engine.doc(), engine.clip.voice).essential).toMatchObject({ type: 'dialogue' });
 		await call('auto_tag_audio', { projectId: 'prj_t', clipIds: [engine.clip.music], minConfidence: 0.6 });
 		expect(clipOf(engine.doc(), engine.clip.music).essential).toBeUndefined();
 	});
@@ -258,12 +250,15 @@ describe('auto_tag_audio', () => {
 		const { engine, call } = await connect(ANSWERS, true);
 		const f = await call('auto_tag_audio', { projectId: 'prj_t' });
 		expect(f.r.isError).toBe(true);
-		expect(f.text).toContain('DECODE_FAILED');
+		expect(f.json.error).toMatchObject({ code: 'DECODE_FAILED' });
 		const unknown = await call('auto_tag_audio', { projectId: 'prj_t', clipId: engine.clip.voice });
 		expect(unknown.r.isError).toBe(true);
+		expect(unknown.json.error).toMatchObject({ code: 'E_UNKNOWN_ARGUMENT' });
 		const notClip = await call('auto_tag_audio', { projectId: 'prj_t', clipIds: ['clp_nope'] });
 		expect(notClip.r.isError).toBe(true);
+		expect(notClip.json.error).toMatchObject({ code: 'E_NOT_FOUND' });
 		const badMode = await call('auto_tag_audio', { projectId: 'prj_t', mode: 'maybe' });
 		expect(badMode.r.isError).toBe(true);
+		expect(badMode.json.error).toMatchObject({ code: 'E_INVALID_ARGUMENT' });
 	});
 });

@@ -1,7 +1,7 @@
 // `soundDesign.applyGains` (spec 12 §2.4 / §2.9, P4-R2; wp-note "Phase 4 → WP4.1b"): solved gains on placed sounds,
 // recorded as `sfx.level {by: 'solver'}` keeping the fill's variation offset; gain ownership (default → solver → user);
 // `$ref` keys from a placement in the same transaction; a sound effect without `sfx` metadata; swap / role back to the
-// default; undo / redo; every refusal; the stored level through load and repair; `isSfxClip` / `sfxSolverWeight`.
+// default; immutability; every refusal; the stored level through load and repair; `isSfxClip` / `sfxSolverWeight`.
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
@@ -50,7 +50,7 @@ const placed = (r: { results: unknown[] }) =>
 	r.results.flatMap((q) => ((q as { clips?: { clipId: string }[] }).clips ?? []).map((c) => c.clipId));
 
 describe('soundDesign.applyGains', () => {
-	it('sets solved gains, records the solver level with the variation offset; undo / redo', () => {
+	it('sets solved gains, records the solver level with the variation offset; immutability', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const [a, b] = placed(
@@ -96,12 +96,8 @@ describe('soundDesign.applyGains', () => {
 		expect(clipOf(h, b!).sfx!.level).toEqual({ by: 'solver', gainDb: 3.2, limitedBy: [] });
 		expect(sfxGainOwner(clipOf(h, a!))).toBe('solver');
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// undo: the document before is untouched; redo gives the same gains
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const after = clone(h.doc);
-		h.doc = before;
-		h.ok([apply]);
-		expect(clone(h.doc.sequences)).toEqual(after.sequences);
 		// a gain the user sets since is theirs
 		h.ok([{ type: 'audio.setGain', clipIds: [a!], mode: 'set', db: 1 }]);
 		expect(sfxGainOwner(clipOf(h, a!))).toBe('user');

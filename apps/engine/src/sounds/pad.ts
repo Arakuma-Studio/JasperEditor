@@ -51,7 +51,7 @@ export function copyCodecFor(stream: {
 }
 
 /** Bytes per sample of a PCM copy codec. */
-export function pcmBytes(codec: string): number {
+function pcmBytes(codec: string): number {
 	return codec === 'pcm_s16le' ? 2 : codec === 'pcm_s24le' ? 3 : codec === 'pcm_f64le' ? 8 : 4;
 }
 

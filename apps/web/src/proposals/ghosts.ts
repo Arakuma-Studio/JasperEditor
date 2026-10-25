@@ -107,7 +107,7 @@ export type GhostModel = {
 
 const GHOST_CUE_SUFFIX = '~ghost';
 /** The id a changed cue's ghost is drawn under (the cue itself keeps its id on the seam). */
-export const ghostCueId = (cueId: string) => `${cueId}${GHOST_CUE_SUFFIX}`;
+const ghostCueId = (cueId: string) => `${cueId}${GHOST_CUE_SUFFIX}`;
 
 function region(seq: Sequence, trackId: string): 'video' | 'audio' | null {
 	const f = findTrack(seq, trackId);

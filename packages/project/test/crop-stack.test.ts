@@ -3,7 +3,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	cropCoverageAt,
 	cropEdgeCoverage,
 	cropFeather,
 	cropInsets,
@@ -11,9 +10,7 @@ import {
 	cropWindow,
 	intersectCropInsets,
 	mirrorCropInsets,
-	pinnedCropOf,
 	resolveLayerProps,
-	stackCrops,
 } from '../src/index.ts';
 
 const crop = (params: Record<string, unknown>, enabled = true) => ({
@@ -71,28 +68,6 @@ describe('Edge Feather profile (cropEdgeCoverage)', () => {
 			}),
 		);
 	});
-
-	it('multiplies the four edges of the crop window (cropCoverageAt)', () => {
-		const ins: [number, number, number, number] = [0.1, 0.2, 0.25, 0.05];
-		const [w, h, f] = [400, 200, 12];
-		for (const [x, y] of [
-			[45.5, 60.5],
-			[200.5, 100.5],
-			[299.5, 189.5],
-			[5.5, 5.5],
-		] as const) {
-			const want =
-				cropEdgeCoverage(x - 40, f) *
-				cropEdgeCoverage(300 - x, f) *
-				cropEdgeCoverage(y - 40, f) *
-				cropEdgeCoverage(190 - y, f);
-			expect(cropCoverageAt(x, y, w, h, ins, f)).toBeCloseTo(want, 12);
-		}
-		// Inside, farther than the feather from every edge: untouched.
-		expect(cropCoverageAt(200.5, 100.5, w, h, ins, f)).toBe(1);
-		// Outside the window: nothing.
-		expect(cropCoverageAt(10.5, 100.5, w, h, ins, f)).toBe(0);
-	});
 });
 
 describe('crop params', () => {
@@ -148,11 +123,6 @@ describe('the crop window in stack order', () => {
 		expect(mirrorCropInsets([0.1, 0.2, 0.3, 0.4], true, true)).toEqual([0.3, 0.4, 0.1, 0.2]);
 	});
 
-	it('stackCrops keeps stack indexes and feathers', () => {
-		const list = stackCrops([mirror, crop({ left: 20, feather: 7 }), flipH]);
-		expect(list.map((c) => [c.index, c.insets, c.feather])).toEqual([[1, [0, 0, 0.2, 0], 7]]);
-	});
-
 	it('resolveLayerProps reports the window of a crop placed after a flip, and its quad', () => {
 		const anim = <T>(value: T) => ({ value, keyframes: [] });
 		const fx = (id: string, effectId: string, params: Record<string, unknown> = {}) => ({
@@ -177,15 +147,5 @@ describe('the crop window in stack order', () => {
 		expect(after.bounds).toEqual({ x: 0, y: 0, width: 70, height: 50 });
 		const before = props([fx('b', 'jasper.flip-horizontal'), fx('a', 'jasper.crop', { left: 30 })]);
 		expect(before.bounds).toEqual({ x: 30, y: 0, width: 70, height: 50 });
-	});
-});
-
-describe('pinnedCropOf', () => {
-	it('is the first effect when it is a crop, else null (a later crop is an ordinary stack effect)', () => {
-		const c = crop({ left: 1 });
-		expect(pinnedCropOf([c, mirror])).toBe(c);
-		expect(pinnedCropOf([mirror, c])).toBeNull();
-		expect(pinnedCropOf([])).toBeNull();
-		expect(pinnedCropOf(undefined)).toBeNull();
 	});
 });

@@ -834,8 +834,7 @@ describe('source ranges in the UI (S07:PRU-005, PRC-015…018)', () => {
 				fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
 			});
 			expect(closed).toBe(true);
-			v2.unmount();
-			await new Promise((r) => setTimeout(r, 20));
+			await act(async () => v2.unmount());
 			expect(deletes()).toEqual([]);
 			expect(session.getCommitted().media[mediaId]?.originalName).toBe('c.mov');
 		} finally {

@@ -15,7 +15,7 @@ const MAGIC = 'JCLAPEM1';
 /** Bump when what an embedding is computed from changes (windows, front end): old files are no longer read. */
 export const EMBED_RECIPE = 1;
 /** Most records one file holds (a library of 100 000 sounds and takes ≈ 200 MB); past it, new records are not kept. */
-export const MAX_RECORDS = 100_000;
+const MAX_RECORDS = 100_000;
 const MAX_FILE_BYTES = MAX_RECORDS * (2 + 256 + CLAP_EMBED_DIM * 4) + 64;
 
 /** The cache key of a range of a sound's content (`whole`: the sound's whole-sound embedding). */

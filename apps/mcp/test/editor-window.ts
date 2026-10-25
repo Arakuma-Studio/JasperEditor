@@ -1,5 +1,4 @@
-// A stand-in editor window for MCP tests that need the user's answer on an approval card (shared copy of the helper in
-// sound.test.ts): the engine's `/agent` WebSocket with the editor cookies.
+// A stand-in editor window for MCP approval tests, using the engine's `/agent` WebSocket and editor cookies.
 import { randomBytes } from 'node:crypto';
 import { request } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -42,6 +41,7 @@ export async function editorWindow(o: { port: number; token: string; editorKey: 
 		const body = Buffer.from(payload.map((b, i) => b ^ mask[i % 4]!));
 		socket.write(Buffer.concat([head, mask, body]));
 	};
+	let ready = false;
 	socket.on('data', (chunk: Buffer) => {
 		pending = Buffer.concat([pending, chunk]);
 		for (;;) {
@@ -64,12 +64,13 @@ export async function editorWindow(o: { port: number; token: string; editorKey: 
 			if (opcode === 9) send(null, 10);
 			if (opcode !== 1) continue;
 			const m = JSON.parse(payload.toString('utf8')) as { type: string; event?: string; payload?: unknown };
+			if (m.type === 'welcome') ready = true;
 			if (m.type === 'event' && m.event === 'agent.approval.requested')
 				cards.push(m.payload as (typeof cards)[number]);
 		}
 	});
 	send({ type: 'hello', projectId, sessionId: 'ses_soundtest', leaseId: 'lease_soundtest' });
-	await new Promise((r) => setTimeout(r, 300));
+	await waitFor(() => ready, 10_000, 'editor welcome');
 	return {
 		cards,
 		async card(n: number) {

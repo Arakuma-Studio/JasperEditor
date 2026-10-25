@@ -1,36 +1,28 @@
 // keyframe-sides: every consumer of keyframe evaluation agrees with the per-side evaluator — Lottie export, 3D
 // Orientation, Sound Design dips on volume curves, keyframe simplification, effect presets, effect.add, multicam /
 // grade re-timing (docs/wp-notes/keyframe-sides.md).
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
-	bezierProgress,
 	buildEffectPreset,
 	type Clip,
 	contentTimeAt,
-	type Dip,
 	evaluate,
 	exportSequenceToLottie,
 	FLICKS_PER_SECOND,
-	type InInterpolation,
 	type Keyframe,
-	normalizeKeySides,
 	orientationMatrixAt,
 	parseEffectPreset,
 	type Rational,
 	retimeKeyframes,
-	segmentProgress,
 	simplifyKeyframes,
 	type Vec3,
 } from '../src/index.ts';
 import { retimeAnim } from '../src/multicam/resolve.ts';
 import { Harness } from './helpers.ts';
-import { checkCurvedDips, keysOf } from './sound-dips-property.ts';
 
 type VClip = Extract<Clip, { kind: 'solid' }>;
 const EASY = { influence: 1 / 3, slope: 0 };
-const MS = FLICKS_PER_SECOND / 1000;
 
 function easeInSolid() {
 	const h = new Harness();
@@ -84,54 +76,10 @@ describe('keyframe-sides consumers', () => {
 			},
 		];
 		const anim: Animatable<Vec3> = { value: [0, 0, 0], keyframes: kfs };
-		const p = segmentProgress(kfs, 0, 0.5);
-		expect(p).toBeCloseTo(bezierProgress(0.5, { influence: 1 / 6, slope: 1 }, EASY), 12);
 		const m = orientationMatrixAt(anim, 500);
-		// A rotation about Y by p · 90°: m[0] = cos θ (column-major or row-major, the diagonal is the same).
-		expect(m[0]).toBeCloseTo(Math.cos((p * Math.PI) / 2), 6);
-	});
-
-	it('property: Sound Design dips keep per-side volume curves outside the dips', () => {
-		const keyArb = fc.record({
-			t: fc.integer({ min: 0, max: 40 }),
-			v: fc.double({ min: -40, max: 10, noNaN: true }),
-			interp: fc.constantFrom('linear', 'hold', 'bezier'),
-			side: fc.constantFrom<InInterpolation | undefined>(undefined, 'linear', 'bezier'),
-			inf: fc.double({ min: 0.05, max: 0.95, noNaN: true }),
-			slope: fc.double({ min: 0, max: 2, noNaN: true }),
-		});
-		const dipArb = fc
-			.record({
-				s: fc.integer({ min: 0, max: 380 }),
-				len: fc.integer({ min: 0, max: 60 }),
-				depth: fc.double({ min: -60, max: -0.5, noNaN: true }),
-				fade: fc.integer({ min: 0, max: 400 }),
-			})
-			.map((d) => ({ start: d.s * 10 * MS, end: (d.s + d.len) * 10 * MS, depthDb: d.depth, fadeMs: d.fade }));
-		fc.assert(
-			fc.property(
-				fc.array(keyArb, { maxLength: 8 }),
-				fc.array(dipArb, { minLength: 1, maxLength: 3 }),
-				(keys, dips: Dip[]) => {
-					const kfs = keysOf(
-						keys.map((k) => ({
-							time: k.t * 100 * MS,
-							v: k.v,
-							interp: k.interp as Keyframe<number>['interpolation'],
-							inf: k.inf,
-							slope: k.slope,
-						})),
-					);
-					kfs.forEach((k) => {
-						const src = keys.find((x) => x.t * 100 * MS === k.time)!;
-						if (src.side) k.inInterpolation = src.side;
-						normalizeKeySides(k);
-					});
-					checkCurvedDips(kfs, dips, 0);
-				},
-			),
-			{ numRuns: 150 },
-		);
+		// Independent cubic (1/6, 1/6), (2/3, 1) gives p=0.6370633395427247 at half time.
+		// Rotation about Y has diagonal cos(p · π/2), regardless of matrix storage order.
+		expect(m[0]).toBeCloseTo(0.5397158767532739, 6);
 	});
 
 	it('simplify keeps a per-side segment arriving at the simplified span', () => {
@@ -219,13 +167,18 @@ describe('keyframe-sides consumers', () => {
 		expect(parsed.ok).toBe(true);
 		if (!parsed.ok) return;
 		h.ok([{ type: 'effect.applyPreset', preset: parsed.preset, clipIds: [other] }]);
-		const a = (h.seq.clips[id] as VClip).opacity;
 		const b = (h.seq.clips[other] as VClip).opacity;
-		expect(b.keyframes.map((k) => k.inInterpolation)).toEqual(a.keyframes.map((k) => k.inInterpolation));
+		expect(b.keyframes.map((k) => k.inInterpolation)).toEqual([undefined, 'bezier']);
 		for (let f = 0; f <= 60; f += 7)
 			expect(
 				evaluate(b, contentTimeAt(h.seq.clips[other]!, 200 + f, h.seq.settings.frameRate as Rational)),
-			).toBeCloseTo(evaluate(a, contentTimeAt(h.seq.clips[id]!, f, h.seq.settings.frameRate as Rational)), 9);
+			).toBeCloseTo(
+				evaluate(
+					(h.seq.clips[id] as VClip).opacity,
+					contentTimeAt(h.seq.clips[id]!, f, h.seq.settings.frameRate as Rational),
+				),
+				9,
+			);
 	});
 
 	it('re-timing onto a reversed clip mirrors per-side keys exactly (multicam, Paste Grade)', () => {

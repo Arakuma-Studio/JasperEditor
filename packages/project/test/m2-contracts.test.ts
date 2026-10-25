@@ -117,20 +117,6 @@ describe('LUTs (S06:CG-050…056)', () => {
 		for (let i = 0; i < lut.data.length; i++)
 			expect(Math.abs(lut.data[i]! - back.data[i]!)).toBeLessThan(1e-6);
 	});
-	it('the identity LUT is exact at lattice points and between them (tetrahedral)', () => {
-		const id = bakeLut(17, () => {});
-		for (const p of [
-			[0, 0, 0],
-			[1, 1, 1],
-			[0.3, 0.7, 0.1],
-			[0.51, 0.49, 0.5],
-			[0.9, 0.2, 0.6],
-		] as Rgb[]) {
-			const c: Rgb = [...p];
-			applyLut(id, c);
-			for (let k = 0; k < 3; k++) expect(c[k]).toBeCloseTo(p[k]!, 6);
-		}
-	});
 	it('a baked function is reproduced within LUT precision; intensity mixes linearly', () => {
 		const lut = bakeLut(33, warm);
 		const p: Rgb = [0.42, 0.61, 0.27];

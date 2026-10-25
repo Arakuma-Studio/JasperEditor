@@ -23,9 +23,9 @@ describe('migration v7 → v8 (Crop in stack order)', () => {
 	});
 	it('leaves stacks whose Crop effects are already first, or that have none, untouched', () => {
 		const first = [fx('b', 'jasper.crop'), fx('a', 'jasper.mirror')];
-		expect(run(first)).toBe(first);
+		expect(run(first)).toEqual(first);
 		const none = [fx('a', 'jasper.mirror')];
-		expect(run(none)).toBe(none);
+		expect(run(none)).toEqual(none);
 		expect(run([fx('b', 'jasper.crop')])).toHaveLength(1);
 	});
 	it('ignores malformed documents instead of throwing', () => {

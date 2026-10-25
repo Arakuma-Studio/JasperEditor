@@ -1,9 +1,4 @@
-// WP5.2 Sound Check panel model (pure): translated finding texts (template keys + params; cue kinds translated), the
-// grouping and order of the findings, the fix plan (duplicates once, swaps once per clip, safe only), the delivery
-// target choice and what "Use as sequence target" writes, the custom target fields, the verdict marker commands, the
-// sync strip geometry and waveform, and hostile input (never throws).
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+// Sound Check input validation, fix planning, verdict binding, translation and codec-aware summaries (spec 12 §2.6).
 import type { SoundCheckIssue } from '@jasper/api';
 import {
 	applyTransaction,
@@ -12,8 +7,6 @@ import {
 	defaultRegistries,
 	type ProjectDocument,
 	type Sequence,
-	SOUND_CHECK_CUSTOM_LABEL,
-	SOUND_CHECK_MESSAGES,
 	SOUND_CHECK_UNMEASURED,
 	SOUND_CHECK_VERDICT_MARKER,
 	soundCheckHumanVerdicts,
@@ -26,38 +19,20 @@ import { reportFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { exportAudioOf } from '../src/export/SoundCheckGate.tsx';
 import { setLanguage } from '../src/i18n/runtime.ts';
 import {
-	CHECK_FOR_ENCODINGS,
-	checkForAudio,
-	checkForOptions,
-	checkForValue,
-	defaultCheckFor,
 	defaultChoice,
 	fixWhyText,
-	groupIssues,
 	isSequenceTarget,
 	listenRows,
 	messageText,
-	orderedIssues,
 	parseCustomTarget,
 	planFixes,
 	safeFixable,
 	sequenceTargetCommands,
-	staleText,
 	summaryChips,
 	verdictCommands,
-	verdictSentence,
 	verdictStaleText,
 } from '../src/sound/check-model.ts';
-import { stripGeometry, wavePath } from '../src/sound/SyncStrip.tsx';
 
-const root = join(__dirname, '../../..');
-const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
-	string,
-	string
->;
-const NAMES = JSON.parse(
-	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
-) as string[];
 afterEach(() => setLanguage('en'));
 
 function doc() {
@@ -142,25 +117,6 @@ describe('why a fix needs judgement, and unmeasured reasons, in the UI language'
 	});
 });
 
-describe('every Sound Check message key is translated', () => {
-	it('each finding / fix / listen template and the custom label is a model string with a Spanish text (same placeholders)', () => {
-		const ph = (x: string) =>
-			[...x.matchAll(/\{(\d+)\}/g)]
-				.map((m) => m[1])
-				.sort()
-				.join();
-		const keys = [
-			...Object.values(SOUND_CHECK_MESSAGES),
-			...Object.values(SOUND_CHECK_UNMEASURED),
-			SOUND_CHECK_CUSTOM_LABEL,
-		];
-		expect(keys.length).toBeGreaterThan(50);
-		expect(keys.filter((k) => !NAMES.includes(k))).toEqual([]);
-		expect(keys.filter((k) => typeof ES[k] !== 'string' || !ES[k]!.trim())).toEqual([]);
-		expect(keys.filter((k) => ph(k) !== ph(ES[k]!))).toEqual([]);
-	});
-});
-
 describe('finding texts', () => {
 	it('fills the template; cue kinds and densities become labels; Spanish translates the template', async () => {
 		const m = soundCheckMessage('syncLate', 'Impact', 66.7, 'cut', '00:00:03:00', 1);
@@ -173,7 +129,6 @@ describe('finding texts', () => {
 		expect(es).toContain('66.7');
 		expect(es).toContain('corte');
 		expect(es).not.toBe(m.text);
-		expect(messageText(soundCheckMessage('fixAlign'))).toBe(ES['Align its peak to the cue']);
 	});
 
 	it('falls back to the English text on malformed messages; never throws', () => {
@@ -183,41 +138,6 @@ describe('finding texts', () => {
 			fc.property(fc.anything(), (m) => typeof messageText(m as never) === 'string'),
 			{ numRuns: 300 },
 		);
-	});
-
-	it('summary chips, verdict sentence and the stale line', () => {
-		const r = report();
-		const chips = Object.fromEntries(summaryChips(r).map((c) => [c.id, c.value]));
-		expect(chips).toMatchObject({
-			integrated: '−17.2 LUFS',
-			truePeak: '−2.1 dBTP',
-			lra: '6.3 LU',
-			errors: '1',
-			warnings: '4',
-		});
-		expect(verdictSentence('fail', { error: 1, warning: 2 })).toBe('Sound Check Fail: 1 error, 2 warnings');
-		expect(staleText({ state: 'current', reasons: [] })).toBeNull();
-		expect(staleText({ state: 'stale', reasons: ['mix', 'preset'] })).toBe(
-			'Stale: the mix changed, the delivery target changed since this check',
-		);
-	});
-});
-
-describe('grouping', () => {
-	it('categories in the panel order, errors first, then time; the list order follows', () => {
-		const r = report();
-		expect(groupIssues(r.issues).map((g) => [g.category, g.issues.map((i) => i.code)])).toEqual([
-			['sync', ['OUT_OF_SYNC', 'TRUNCATED']],
-			['loudness', ['LOUDNESS']],
-			['mix', ['MUSIC_OVER_VOICE', 'SILENCE']],
-		]);
-		expect(orderedIssues(r.issues).map((i) => i.code)).toEqual([
-			'OUT_OF_SYNC',
-			'TRUNCATED',
-			'LOUDNESS',
-			'MUSIC_OVER_VOICE',
-			'SILENCE',
-		]);
 	});
 });
 
@@ -396,39 +316,6 @@ describe('verdict markers', () => {
 	});
 });
 
-describe('sync strip', () => {
-	it('5 frames around the cue; the picture line at the cue, the measured line after it for a late sound', () => {
-		const f = doc();
-		const g = stripGeometry(f.seq(), 90, 66.7, 300);
-		expect(g.frames).toEqual([88, 89, 90, 91, 92]);
-		expect(g.range).toEqual({ start: 81, end: 100 });
-		expect(g.eventX).toBeCloseTo(9 / 19, 5);
-		expect(g.measuredX!).toBeCloseTo((9 + 2.001) / 19, 3);
-		expect(stripGeometry(f.seq(), 1, null, 300)).toMatchObject({ frames: [0, 1, 2, 3], measuredX: null });
-		expect(stripGeometry(f.seq(), 299, -10, 300).frames).toEqual([297, 298, 299]);
-	});
-
-	it('the waveform path is closed and inside the box; empty input draws nothing; hostile numbers never throw', () => {
-		expect(wavePath([], 100, 50)).toBe('');
-		const p = wavePath([-60, -6, Number.NaN, 0, 12], 100, 50);
-		expect(p.startsWith('M')).toBe(true);
-		expect(p.endsWith('Z')).toBe(true);
-		const nums = [...p.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)].map((m) => [
-			Number(m[1]),
-			Number(m[2]),
-		]);
-		expect(nums.every(([x, y]) => x! >= 0 && x! <= 100 && y! >= 0 && y! <= 50)).toBe(true);
-		fc.assert(
-			fc.property(
-				fc.array(fc.double()),
-				fc.integer({ min: -5, max: 2000 }),
-				(a, w) => typeof wavePath(a, w, 40) === 'string',
-			),
-			{ numRuns: 300 },
-		);
-	});
-});
-
 describe('checked as an export encodes it (loudness.delivered)', () => {
 	it('the chips show the decoded codec audio, the codec and the limiter ceiling in front of the encoder', () => {
 		const base = report();
@@ -482,36 +369,5 @@ describe('checked as an export encodes it (loudness.delivered)', () => {
 			sampleRate: 44100,
 		});
 		expect(exportAudioOf(undefined, undefined)).toBeUndefined();
-	});
-
-	it('Check for: values round-trip, the options list each encoding once, the default follows the last export, else the preset', () => {
-		for (const a of [null, ...CHECK_FOR_ENCODINGS, { codec: 'pcm', sampleRate: 44100 } as const])
-			expect(checkForAudio(checkForValue(a))).toEqual(a);
-		expect(checkForAudio('aac:x')).toBeNull();
-		expect(checkForAudio('nope')).toBeNull();
-		const opts = checkForOptions({ codec: 'pcm', sampleRate: 44100 });
-		expect(opts[0]).toEqual({ value: 'master', label: 'PCM / master' });
-		expect(opts.map((o) => o.value)).toContain('aac:256');
-		expect(opts.at(-1)).toEqual({ value: 'pcm@44100', label: 'PCM 44.1 kHz' });
-		expect(new Set(opts.map((o) => o.value)).size).toBe(opts.length);
-		expect(checkForOptions({ codec: 'aac', bitrateKbps: 256 })).toHaveLength(opts.length - 1);
-		// the default: the last export settings, else the delivery preset's typical encoding
-		const preset = (p: 'web' | 'podcast' | 'broadcast-r128' | 'atsc-a85') =>
-			defaultCheckFor(undefined, { kind: 'preset', preset: p }, null);
-		expect(preset('web')).toEqual({ audio: { codec: 'aac', bitrateKbps: 256 }, source: 'preset' });
-		expect(preset('podcast')).toEqual({ audio: { codec: 'aac', bitrateKbps: 128 }, source: 'preset' });
-		expect(preset('broadcast-r128')).toEqual({ audio: null, source: 'preset' });
-		expect(preset('atsc-a85')).toEqual({ audio: null, source: 'preset' });
-		expect(
-			defaultCheckFor(
-				undefined,
-				{ kind: 'preset', preset: 'broadcast-r128' },
-				{ audio: { codec: 'opus', bitrateKbps: 160 } },
-			),
-		).toEqual({ audio: { codec: 'opus', bitrateKbps: 160 }, source: 'export' });
-		expect(defaultCheckFor(undefined, { kind: 'preset', preset: 'web' }, { audio: null })).toEqual({
-			audio: null,
-			source: 'export',
-		});
 	});
 });

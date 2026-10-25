@@ -53,6 +53,20 @@ describe('resample (Kaiser windowed sinc)', () => {
 		expect(() => resample([x], 0, 48000)).toThrow();
 	});
 
+	it('reads current samples on repeated conversions and returns independent channels', () => {
+		const input = new Float32Array(256).fill(0.5);
+		const [first] = resample([input], 44100, 48000, 'fast');
+		expect(first[100]).toBeCloseTo(0.5, 4);
+		input.fill(0);
+		const silent = resample([input, input], 44100, 48000, 'fast');
+		expect(silent).toHaveLength(2);
+		expect(silent.every((channel) => channel.every((sample) => sample === 0))).toBe(true);
+		silent[0][0] = 1;
+		expect(silent[1][0]).toBe(0);
+		expect(input[0]).toBe(0);
+		expect(first[100]).toBeCloseTo(0.5, 4);
+	});
+
 	it('high: sine amplitude (< 0.01 dB), frequency and phase preserved up to 0.45·min(fs)', () => {
 		for (const [from, to] of PAIRS) {
 			const minFs = Math.min(from, to);

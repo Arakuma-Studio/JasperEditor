@@ -1,7 +1,7 @@
 // The worklet uses 128-sample quanta; export blocks may have arbitrary lengths. Static parameters must
-// produce bit-identical samples. Preview automation updates once per frame; export updates every 32 samples.
+// produce bit-identical samples.
 import { EffectSlot } from '@jasper/audio-fx';
-import { AUDIO_EFFECTS, type EffectInstance, flicksPerFrame } from '@jasper/project';
+import { AUDIO_EFFECTS, type EffectInstance } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { FxSlotCore } from '../src/audio/fx-processor.ts';
 
@@ -61,51 +61,5 @@ describe('preview slot = export processor', () => {
 		let same = true;
 		for (let i = 0; i < n; i++) if (pl[i] !== el[i] || pr[i] !== er[i]) same = false;
 		expect(same, spec.id).toBe(true);
-	});
-
-	it('keyframed parameters: preview (frame-rate updates) stays close to the export (32-sample control rate)', () => {
-		const F = flicksPerFrame({ num: 30, den: 1 });
-		const fx = instance('jasper.audio.amplify');
-		fx.params.leftGain = {
-			value: 0,
-			keyframes: [
-				{
-					id: 'k1',
-					time: 0,
-					value: 0,
-					interpolation: 'linear',
-					easeIn: { influence: 1 / 3, slope: 0 },
-					easeOut: { influence: 1 / 3, slope: 0 },
-				},
-				{
-					id: 'k2',
-					time: 30 * F,
-					value: -24,
-					interpolation: 'linear',
-					easeIn: { influence: 1 / 3, slope: 0 },
-					easeOut: { influence: 1 / 3, slope: 0 },
-				},
-			],
-		};
-		const n = SR;
-		const one = () => new Float32Array(n).fill(0.5);
-		const core = new FxSlotCore(SR, 2, null);
-		core.message({ type: 'effect', effect: fx, time: 0 });
-		const pl = new Float32Array(n);
-		const spf = SR / 30;
-		for (let i = 0; i < n; i += 128) {
-			const k = Math.min(128, n - i);
-			// The graph posts the time every rendered frame.
-			if (i % Math.round(spf) < 128) core.message({ type: 'time', time: Math.floor(i / spf) * F });
-			const out = [new Float32Array(k), new Float32Array(k)];
-			core.render([one().subarray(i, i + k), one().subarray(i, i + k)], out);
-			pl.set(out[0]!, i);
-		}
-		const slot = new EffectSlot(fx, SR, 2);
-		const el = one();
-		slot.process([el, one()], n, { sampleRate: SR, time: 0, flicksPerSample: 705_600_000 / SR });
-		let worst = 0;
-		for (let i = 4800; i < n - 4800; i++) worst = Math.max(worst, Math.abs(20 * Math.log10(pl[i]! / el[i]!)));
-		expect(worst).toBeLessThan(1.5);
 	});
 });

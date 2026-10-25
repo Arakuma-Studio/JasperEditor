@@ -10,7 +10,7 @@ import {
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { describe, expect, it } from 'vitest';
-import { pickLayerAt, SHAPE_HIT_SCREEN_PX } from '../src/shapes/geometry.ts';
+import { pickLayerAt } from '../src/shapes/geometry.ts';
 
 function sceneWith(paths: string[], strokeWidth = 2) {
 	const ids = createCounterIdSource(1);
@@ -61,9 +61,9 @@ const VERTICAL = 'M0 -200 L0 200';
 
 describe('thin line picking (Program monitor)', () => {
 	for (const scale of [0.25, 0.5, 1, 2]) {
-		it(`picks a horizontal and a vertical line within ${SHAPE_HIT_SCREEN_PX - 1} screen px at ${scale * 100}%`, () => {
+		it(`picks a horizontal and a vertical line within 4 screen px at ${scale * 100}%`, () => {
 			const { scene, clipIds } = sceneWith([HORIZONTAL, VERTICAL]);
-			const off = (SHAPE_HIT_SCREEN_PX - 1) / scale; // sequence px
+			const off = 4 / scale; // docs/wp-notes/shapes.md: a click 4 screen px from the stroke must pick it.
 			expect(pickLayerAt(scene, [1060, 540 + off], scale)).toBe(clipIds[0]);
 			expect(pickLayerAt(scene, [1060, 540 - off], scale)).toBe(clipIds[0]);
 			expect(pickLayerAt(scene, [960 + off, 640], scale)).toBe(clipIds[1]);

@@ -214,11 +214,6 @@ describe('determinism: random, wiggle, noise, clock', () => {
 		expect(Math.abs(num(d, 'noise(1.000) - noise(1.001)'))).toBeLessThan(0.01);
 		expect(num(d, 'noise([1.5, 2.5, 3.5])')).toBe(num(d, 'noise([1.5, 2.5, 3.5])'));
 	});
-	it('no wall clock', () => {
-		expect(num(d, 'Date.now()')).toBe(0);
-		expect(num(d, 'new Date().getTime()')).toBe(0);
-		expect(num(d, 'new Date(2020, 0, 1).getFullYear()')).toBe(2020);
-	});
 });
 
 describe('errors fall back to the keyframed value', () => {

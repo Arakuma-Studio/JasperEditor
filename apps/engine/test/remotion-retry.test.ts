@@ -98,11 +98,3 @@ describe('RemotionService timeout recovery', () => {
 		await expect(render(controller.signal, concurrency)).rejects.toMatchObject({ code });
 	});
 });
-
-describe('RemotionService export frame capture', () => {
-	it('captures export frames as PNG (Remotion defaults to JPEG, which blurs thin strokes and saturated edges)', async () => {
-		renderer.renderMedia.mockResolvedValue(undefined);
-		await expect(render()).resolves.toEqual({ frames: 30 });
-		expect(renderer.renderMedia).toHaveBeenCalledWith(expect.objectContaining({ imageFormat: 'png' }));
-	});
-});

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { describe, expect, it, vi } from 'vitest';
-import { ExportWorkerPool, framePoolSize } from '../src/export/worker-pool.ts';
+import { ExportWorkerPool } from '../src/export/worker-pool.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -78,20 +78,10 @@ describe('export worker scheduling', () => {
 		'refuses invalid worker counts before allocating workers: %s',
 		(count) => {
 			const createWorker = vi.fn<() => Worker>();
-			expect(() => new ExportWorkerPool('test', count, createWorker)).toThrow(/positive safe integer/);
+			expect(() => new ExportWorkerPool('test', count, createWorker)).toThrow(RangeError);
 			expect(createWorker).not.toHaveBeenCalled();
 		},
 	);
-
-	it('bounds worker and frame-slot allocation', () => {
-		const workers = availableParallelism();
-		expect(framePoolSize({ workers: Number.MAX_SAFE_INTEGER, slots: Number.MAX_SAFE_INTEGER })).toEqual({
-			workers,
-			slots: workers + 3,
-		});
-		for (const slots of [Number.NaN, Infinity, 0, -1, 1.5])
-			expect(() => framePoolSize({ workers: 1, slots })).toThrow(/frame slot count/);
-	});
 
 	it.skipIf(availableParallelism() < 2)('terminates already-created workers if startup fails', async () => {
 		const worker = new Worker(`require('node:worker_threads').parentPort.on('message', () => {});`, {
@@ -134,7 +124,9 @@ describe('export worker scheduling', () => {
 			() => new Worker(`require('node:worker_threads').parentPort.on('message', () => {});`, { eval: true }),
 		);
 		try {
-			expect((await settles(pool.run(() => 1))).ok).toBe(false);
+			const result = await settles(pool.run(() => 1));
+			expect(result.ok).toBe(false);
+			if (!result.ok) expect(result.error.name).toBe('DataCloneError');
 		} finally {
 			await pool.close();
 		}

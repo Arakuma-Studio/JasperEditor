@@ -3,19 +3,12 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	addPoint,
-	constrainToAxis,
 	curvesEqual,
 	dragHandle,
 	formatCubicBezier,
 	handleRefs,
-	historyInit,
-	historyPush,
-	historyRedo,
-	historyUndo,
-	isSymmetric,
 	LINEAR_EASE_CURVE,
 	mirrorCurve,
-	nudgeHandle,
 	parseCubicBezier,
 	removePoint,
 	setCubicField,
@@ -43,31 +36,6 @@ describe('curve editor: dragging handles', () => {
 		expect(dragHandle(c, { kind: 'cubic', handle: 1 }, [-1, Number.NaN], free, [0.3, 0])).toEqual(
 			cubic(0, -10, 0.6, 1),
 		);
-	});
-
-	it('Shift constrains the move to the axis that moved further', () => {
-		expect(constrainToAxis([0.3, 0], [0.6, 0.05])).toEqual([0.6, 0]);
-		expect(constrainToAxis([0.3, 0], [0.32, 0.5])).toEqual([0.3, 0.5]);
-		const c = cubic(0.3, 0, 0.6, 1);
-		expect(
-			dragHandle(c, { kind: 'cubic', handle: 1 }, [0.6, 0.05], { alt: false, shift: true }, [0.3, 0]),
-		).toEqual(cubic(0.6, 0, 0.6, 1));
-	});
-
-	it('a symmetric cubic stays symmetric; Alt moves one handle on its own', () => {
-		const s = cubic(0.42, 0, 0.58, 1);
-		expect(isSymmetric(s)).toBe(true);
-		const linked = dragHandle(s, { kind: 'cubic', handle: 1 }, [0.2, 0.1], free, [0.42, 0]) as CubicEase;
-		expect(linked.x2).toBeCloseTo(0.8, 12);
-		expect(linked.y2).toBeCloseTo(0.9, 12);
-		const broken = dragHandle(
-			s,
-			{ kind: 'cubic', handle: 1 },
-			[0.2, 0.1],
-			{ alt: true, shift: false },
-			[0.42, 0],
-		);
-		expect(broken).toEqual(cubic(0.2, 0.1, 0.58, 1));
 	});
 
 	it('keeps a smooth multi-curve point smooth unless Alt is held', () => {
@@ -104,12 +72,6 @@ describe('curve editor: dragging handles', () => {
 		// The end points never move.
 		expect(dragHandle(curve, { kind: 'point', index: 0 }, [0.3, 0.3], free, [0, 0])).toBe(curve);
 	});
-
-	it('arrow-key nudges move the handle by the step', () => {
-		expect(nudgeHandle(cubic(0.3, 0, 0.6, 1), { kind: 'cubic', handle: 2 }, 0.01, -0.1)).toEqual(
-			cubic(0.3, 0, 0.61, 0.9),
-		);
-	});
 });
 
 describe('curve editor: points', () => {
@@ -140,19 +102,9 @@ describe('curve editor: points', () => {
 		// End points cannot be removed.
 		expect(removePoint(two.curve, 0)).toBe(two.curve);
 	});
-
-	it('handles list in tab order', () => {
-		expect(handleRefs(cubic(0.3, 0, 0.6, 1))).toHaveLength(2);
-		const r = addPoint(cubic(0.3, 0, 0.6, 1), 0.5)!;
-		expect(handleRefs(r.curve).map((h) => h.kind)).toEqual(['out', 'in', 'point', 'out', 'in']);
-	});
 });
 
 describe('curve editor: mirror, fields, history', () => {
-	it('Mirror makes a cubic symmetric from its first handle', () => {
-		expect(mirrorCurve(cubic(0.3, 0.1, 0.9, 0.5))).toEqual(cubic(0.3, 0.1, 0.7, 0.9));
-	});
-
 	it('Mirror makes a multi curve point-symmetric from its first half', () => {
 		const r = addPoint(cubic(0.6, 0, 0.9, 1.4), 0.3)!;
 		const m = mirrorCurve(r.curve);
@@ -171,19 +123,6 @@ describe('curve editor: mirror, fields, history', () => {
 		expect(set.points[1]!.y).toBeCloseTo(1.2, 12);
 		expect(setPointField(m, 0, 'x', 0.5)).toBe(m);
 		expect(EaseCurveSchema.safeParse(setPointField(m, 1, 'outX', 5)).success).toBe(true);
-	});
-
-	it('local undo / redo', () => {
-		let h = historyInit(LINEAR_EASE_CURVE);
-		h = historyPush(h, cubic(0.3, 0, 0.6, 1));
-		h = historyPush(h, cubic(0.3, 0, 0.6, 1)); // no-op: same curve
-		h = historyPush(h, cubic(0.5, 0, 0.5, 1));
-		expect(h.past).toHaveLength(2);
-		h = historyUndo(h);
-		expect(h.present).toEqual(cubic(0.3, 0, 0.6, 1));
-		h = historyRedo(h);
-		expect(h.present).toEqual(cubic(0.5, 0, 0.5, 1));
-		expect(historyRedo(h)).toBe(h);
 	});
 });
 

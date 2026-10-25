@@ -44,13 +44,13 @@ export function labelFloatingGroup(p: IDockviewPanel, title: string): void {
 }
 
 /** Groups (by panel kind) of a layout definition, used to find a closed panel's home group. */
-export function homeGroups(node: LayoutNode): PanelKind[][] {
+function homeGroups(node: LayoutNode): PanelKind[][] {
 	if ('group' in node) return [node.group];
 	return node.children.flatMap((c) => homeGroups(c.node));
 }
 
 /** The panels a definition prefers to dock next to, in order. */
-export function dockNeighbours(def: Pick<PanelDefinition, 'dockWith'>): readonly PanelKind[] {
+function dockNeighbours(def: Pick<PanelDefinition, 'dockWith'>): readonly PanelKind[] {
 	const d = def.dockWith;
 	return d === undefined ? [] : typeof d === 'string' ? [d] : d;
 }

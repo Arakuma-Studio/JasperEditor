@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -63,18 +64,6 @@ function pixel(file: string, frame: number, x: number, y: number): [number, numb
 	return [r.stdout[0]!, r.stdout[1]!, r.stdout[2]!];
 }
 
-/** The 6-bit frame number burnt into frame-code.mp4 (see export.test.ts). */
-function frameCode(file: string, frame: number): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
-
 function maxVolume(file: string, from = 0, to = 100): number {
 	const r = spawnSync('ffmpeg', [
 		...['-v', 'info', '-ss', String(from), '-to', String(to), '-i', file],
@@ -128,12 +117,7 @@ describe('nested sequences (native)', () => {
 		]);
 		d.tx([{ type: 'clip.setSpeed', clipIds: [r2.refs.$n2!], rate: 2, ripple: false }]);
 		const file = await exportDoc(d);
-		expect(frameCode(file, 10)).toBe(5);
-		expect(frameCode(file, 20)).toBe(15);
-		expect(frameCode(file, 39)).toBe(34);
-		expect(frameCode(file, 50)).toBe(0);
-		expect(frameCode(file, 55)).toBe(10);
-		expect(frameCode(file, 60)).toBe(20);
+		expect(frameCodes(file, [10, 20, 39, 50, 55, 60])).toEqual([5, 15, 34, 0, 10, 20]);
 		// The nested audio plays only under nest 1 (frames 10–40); nest 2 has no audio clip.
 		expect(maxVolume(file, 0.4, 1.3)).toBeGreaterThan(-30);
 		expect(maxVolume(file, 1.4, 1.6)).toBeLessThan(-60);
@@ -208,9 +192,7 @@ describe('frame holds and freeze-frame handles (native)', () => {
 			},
 		]);
 		const held = await exportDoc(d);
-		expect(frameCode(held, 5)).toBe(5);
-		expect(frameCode(held, 10)).toBe(10);
-		expect(frameCode(held, 25)).toBe(10);
+		expect(frameCodes(held, [5, 10, 25])).toEqual([5, 10, 10]);
 		// Freeze-frame handles: A ends at the media's last frame (63), B starts at its first (0).
 		const e = new DocBuilder();
 		const m2 = e.addMedia(coded);
@@ -241,7 +223,7 @@ describe('frame holds and freeze-frame handles (native)', () => {
 			const p = pixel(file, f, 1000, 600);
 			expect(p[2], `frame ${f}`).toBeGreaterThan(90);
 		}
-		expect(frameCode(file, 36)).toBe(6);
+		expect(frameCodes(file, [36])[0]).toBe(6);
 	}, 180_000);
 });
 
@@ -304,6 +286,6 @@ describe('stills (render_frame) of nests and held frames', () => {
 		const png = await app.inject({ method: 'GET', url: `/renders/${r.json().id}/output`, headers: H });
 		const f = join(mkdtempSync(join(tmpdir(), 'jasper-es-')), 'f.png');
 		writeFileSync(f, png.rawPayload);
-		expect(frameCode(f, 0)).toBe(37);
+		expect(frameCodes(f, [0])[0]).toBe(37);
 	}, 120_000);
 });

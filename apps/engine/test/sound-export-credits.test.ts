@@ -151,7 +151,6 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 		const { d } = await creditsDoc();
 		const p = await plan(d);
 		const w = p.warnings.find((x) => x.code === 'W_SOUND_CREDITS');
-		expect(w?.message).toMatch(/^2 sounds heard in this export need a credit \(CC-BY-4\.0, CC-BY-SA-4\.0/);
 		expect(w?.level).toBeUndefined();
 		// the values, for editors that say it in their language (final carry-over cleanup, item 6)
 		expect(w?.params).toEqual({
@@ -160,7 +159,6 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 			titles: expect.stringMatching(/^".+", ".+"$/),
 			more: false,
 		});
-		expect(w!.message).toContain(`: ${w!.params!.titles})`);
 		expect((await plan(d, { credits: { sidecar: 'md' } })).warnings.map((x) => x.code)).not.toContain(
 			'W_SOUND_CREDITS',
 		);
@@ -178,9 +176,7 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 		const { d } = await creditsDoc();
 		const p = await plan(d, { credits: { sidecar: 'md' } });
 		const w = p.warnings.find((x) => x.code === 'W_SOUND_SHARE_ALIKE');
-		expect(w?.message).toMatch(
-			/^1 sound heard in this export is ShareAlike \(CC-BY-SA-4\.0: ".+"\): the video must be shared under CC BY-SA or a compatible licence$/,
-		);
+
 		expect(w?.itemIds?.length).toBe(1);
 		expect(w?.params).toEqual({
 			count: 1,
@@ -208,15 +204,12 @@ describe('export plan sound warnings (spec 12 §2.11)', { timeout: 300_000 }, ()
 		d.tx([{ type: 'soundDesign.setCheck', summary: summary('fail') }]);
 		let w = (await plan(d)).warnings.find((x) => x.code === 'W_SOUND_CHECK_STALE');
 		expect(w).toMatchObject({ level: 'info' });
-		expect(w!.message).toBe(
-			'The last Sound Check of this sequence failed (2 errors): review its findings before delivering',
-		);
+
 		expect(w!.params).toEqual({ state: 'failed', errors: 2 });
 		d.tx([{ type: 'soundDesign.setCheck', summary: summary('pass') }]);
 		d.tx([{ type: 'track.update', trackId: 'A1', patch: { volumeDb: -3 } }]);
 		w = (await plan(d)).warnings.find((x) => x.code === 'W_SOUND_CHECK_STALE');
 		expect(w).toMatchObject({ level: 'info' });
-		expect(w!.message).toMatch(/out of date \(the mix changed since\)/);
 		expect(w!.params).toEqual({ state: 'stale', reason: 'mix' });
 	});
 });

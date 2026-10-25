@@ -88,7 +88,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
-	await page?.close();
+	await page?.context().close();
 });
 
 const workspaces = ['editing', 'color', 'audio', 'effects', 'motion', 'captions'];
@@ -103,7 +103,7 @@ for (const theme of ['default', 'high-contrast']) {
 			}
 			await page.keyboard.press('Escape');
 			await runCommand('workspace.switch', { id: ws });
-			await page.waitForTimeout(800);
+			await expect(page.getByTestId('panel-loading').filter({ visible: true })).toHaveCount(0);
 			const violations = await audit(`[${theme}] ${ws}`);
 			await testInfo.attach(`axe-${theme}-${ws}`, {
 				body: JSON.stringify(violations, null, 2),

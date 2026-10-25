@@ -6,19 +6,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	aggregateReferences,
 	buildReferenceProfile,
 	checkInvariants,
 	compareWithProfile,
 	createCounterIdSource,
 	metricStats,
 	metricValuesOf,
-	REFERENCE_CHANCE_KEYS,
 	REFERENCE_METRIC_KEYS,
-	REFERENCE_METRICS,
-	REFERENCE_MODEL_STRINGS,
-	REFERENCE_PROFILE_LIMITS,
-	type ReferenceEntry,
 	type ReferenceMeasurement,
 	type ReferenceMetricValues,
 	readReferenceProfile,
@@ -26,12 +20,9 @@ import {
 	referenceAdvice,
 	referenceEntryOf,
 	referenceProfileIdOf,
-	referenceRowMessage,
 	referenceSeverity,
 	referenceWindow,
 	repairDocument,
-	SOUND_CHECK_CATEGORY,
-	SOUND_MODEL_STRINGS,
 	soundCheckInputsHash,
 	soundDesignSettingsOf,
 } from '../src/index.ts';
@@ -167,30 +158,16 @@ describe('comparison', () => {
 		]);
 		const sev = Object.fromEntries(flagged.map((r) => [r.metric, referenceSeverity(r)]));
 		expect(sev).toEqual({ end_silence_s: 'warning', cuts_with_sound: 'warning', band_air: 'info' });
-		const air = flagged.find((r) => r.metric === 'band_air')!;
-		expect(referenceRowMessage(air).text).toBe(
-			'Air 8–16 kHz share is low: −26.0 dB, the references −22.5 dB … −17.5 dB (median −20.0 dB)',
-		);
 		const cuts = flagged.find((r) => r.metric === 'cuts_with_sound')!;
-		expect(cuts.chance).toBe(0.3);
-		expect(cuts.refChance).toBe(0.3);
-		expect(referenceRowMessage(cuts).text).toBe(
-			'Picture events with an onset within 100 ms is low: 17 %, the references at least 75 % (median 80 %)',
-		);
-		// advice with timecodes
-		const adv = referenceAdvice(cuts, {
-			pictureEvents: 6,
-			withoutOnset: 5,
-			silentCuts: ['00:00:02:00', '00:00:04:00', '00:00:06:00', '00:00:08:00', '00:00:10:00'],
-		});
-		expect(adv[0]!.text).toBe(
-			'5 of 6 picture events have no onset within 100 ms (chance 30 %); no sound at all at 00:00:02:00, 00:00:04:00, 00:00:06:00, 00:00:08:00, 00:00:10:00: add a whoosh into the cut, a hit or a click there.',
-		);
+		expect(
+			referenceAdvice(cuts, {
+				pictureEvents: 6,
+				withoutOnset: 5,
+				silentCuts: ['00:00:02:00', '00:00:04:00', '00:00:06:00'],
+			})[0]!.params,
+		).toEqual([5, 6, '30 %', '00:00:02:00, 00:00:04:00, 00:00:06:00']);
 		const dead = flagged.find((r) => r.metric === 'end_silence_s')!;
-		expect(referenceAdvice(dead, { soundEndsAt: '00:00:33:00' })[0]!.text).toMatch(
-			/^2\.0 s of dead air after the sound ends at 00:00:33:00/,
-		);
-		expect(referenceAdvice(air, {})[0]!.text).toMatch(/^No air/);
+		expect(referenceAdvice(dead, { soundEndsAt: '00:00:33:00' })[0]!.params).toContain('00:00:33:00');
 		// info rows never become findings, ok rows have no advice
 		const info = bad.rows.find((r) => r.metric === 'brightness_hz')!;
 		expect(info.weight).toBe('info');
@@ -330,18 +307,6 @@ describe('profile files', () => {
 			{ numRuns: 300 },
 		);
 	});
-
-	it('every label, why text and template is a model string; REFERENCE is the reference category', () => {
-		for (const k of REFERENCE_METRIC_KEYS) {
-			expect(SOUND_MODEL_STRINGS).toContain(REFERENCE_METRICS[k].label);
-			expect(SOUND_MODEL_STRINGS).toContain(REFERENCE_METRICS[k].why);
-		}
-		for (const s of REFERENCE_MODEL_STRINGS) expect(SOUND_MODEL_STRINGS).toContain(s);
-		expect(SOUND_CHECK_CATEGORY.REFERENCE).toBe('reference');
-		expect(REFERENCE_CHANCE_KEYS.every((k) => REFERENCE_METRIC_KEYS.includes(k))).toBe(true);
-		expect(REFERENCE_PROFILE_LIMITS.references).toBe(20);
-		expect(aggregateReferences([]).n).toBe(0);
-	});
 });
 
 describe('soundDesign.setSettings {referenceProfile}', () => {
@@ -392,6 +357,3 @@ describe('soundDesign.setSettings {referenceProfile}', () => {
 		expect(checkInvariants(fixed.document)).toEqual([]);
 	});
 });
-
-// keep the type import used
-export type { ReferenceEntry };

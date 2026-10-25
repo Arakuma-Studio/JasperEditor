@@ -37,8 +37,6 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 export type SoundJobOptions = {
 	signal?: AbortSignal;
 	onJob?(job: EngineJob): void;
-	/** Test hook: how to wait between polls. */
-	sleep?(ms: number): Promise<void>;
 };
 
 const errOf = (e: unknown) => {
@@ -60,7 +58,6 @@ export async function runSoundJob<T>(
 		keep?(raw: unknown, parsed: T): T;
 	},
 ): Promise<T> {
-	const sleep = opts.sleep ?? defaultSleep;
 	let job: EngineJob;
 	try {
 		job = (await start(opts.signal)) as EngineJob;
@@ -78,7 +75,7 @@ export async function runSoundJob<T>(
 			}
 			throw new SoundJobError('E_CANCELLED', t('Cancelled'));
 		}
-		await sleep(POLL_MS);
+		await defaultSleep(POLL_MS);
 		try {
 			job = (await engine.getJob(job.id)) as EngineJob;
 		} catch (e) {

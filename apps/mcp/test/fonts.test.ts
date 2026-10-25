@@ -102,7 +102,6 @@ function fakeEngine() {
 			})),
 		],
 	});
-	const calls: string[] = [];
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
 		agentTx: async (req: { transaction: Record<string, unknown> }) => ({
@@ -112,23 +111,11 @@ function fakeEngine() {
 		listFonts: async () => catalog(),
 		fontLibrary: async () => structuredClone(library),
 		installFontPath: async (path: string) => {
-			calls.push(`install ${path}`);
 			if (path.endsWith('clash.otf'))
-				throw new EngineError('FONT_EXISTS', 'A different "Pixel 12x10 Regular" is installed', {
-					status: 409,
-				});
-			const face = {
-				...PIXEL,
-				id: 'f00000000000000000000000b',
-				family: 'Minion Pro',
-				postscriptName: 'MinionPro-Regular',
-				fullName: 'Minion Pro Regular',
-			};
-			library.fonts.push(face);
-			return { revision: 2, installed: [face], existing: [] };
+				throw new EngineError('FONT_EXISTS', 'Conflicting installed font', { status: 409 });
+			throw new Error(`Unexpected install path: ${path}`);
 		},
-		removeFont: async (id: string) => {
-			calls.push(`remove ${id}`);
+		removeFont: async () => {
 			throw new EngineError('APPROVAL_DENIED', 'Remove font needs the user', {
 				status: 403,
 				detail: { code: 'E_APPROVAL_DENIED' },
@@ -141,7 +128,7 @@ function fakeEngine() {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, calls, doc: () => doc, projectId: () => doc.projectId };
+	return { link, doc: () => doc, projectId: () => doc.projectId };
 }
 
 let open: Client[] = [];
@@ -189,29 +176,24 @@ describe('font MCP tools (wp fonts)', () => {
 		expect(q.json.projectFonts).toBeUndefined();
 	});
 
-	it('install_font: absolute paths only; the missing font becomes available; clashes are explained', async () => {
-		const { engine, call } = await connect();
+	it('install_font rejects relative paths and translates a face collision to E_FONT_EXISTS', async () => {
+		const { call } = await connect();
 		const rel = await call('install_font', { path: 'fonts/MinionPro-Regular.otf' });
 		expect(rel.r.isError).toBe(true);
-		const ok = await call('install_font', { path: '/home/u/fonts/MinionPro-Regular.otf' });
-		expect(ok.json.installed[0]).toMatchObject({ family: 'Minion Pro', postscriptName: 'MinionPro-Regular' });
-		expect(engine.calls).toEqual(['install /home/u/fonts/MinionPro-Regular.otf']);
-		const after = await call('list_fonts', { projectId: engine.projectId() });
-		expect(after.json.projectFonts.find((f: { family: string }) => f.family === 'Minion Pro').status).toBe(
-			'available',
-		);
+		expect(rel.json.error).toMatchObject({
+			code: 'E_INVALID_ARGUMENT',
+			details: { issues: [{ path: 'path' }] },
+		});
 		const clash = await call('install_font', { path: '/home/u/fonts/clash.otf' });
 		expect(clash.r.isError).toBe(true);
 		expect(clash.json.error.code).toBe('E_FONT_EXISTS');
 	});
 
 	it('remove_font goes through the engine approval and reports a denial', async () => {
-		const { engine, call } = await connect();
+		const { call } = await connect();
 		const r = await call('remove_font', { fontId: PIXEL.id });
 		expect(r.r.isError).toBe(true);
 		expect(r.json.error.code).toBe('E_APPROVAL_DENIED');
-		expect(engine.calls).toEqual([`remove ${PIXEL.id}`]);
-		expect((await call('remove_font', { fontId: 'nope' })).r.isError).toBe(true);
 	});
 
 	it('add_text {font} registers the family and sets it on the new text clip in one transaction', async () => {

@@ -30,7 +30,7 @@ describe('special effects', () => {
 		let mean = 0;
 		for (let i = n / 2; i < n; i++) mean += z[i]!;
 		expect(Math.abs(mean / (n / 2))).toBeLessThan(1e-3);
-		for (let i = 0; i < n; i++) expect(Math.abs(z[i]!)).toBeLessThan(2);
+		expect(z.every((v) => Math.abs(v) < 2)).toBe(true);
 	});
 
 	it('GuitarSuite with everything off is transparent at low level; defaults produce sound', () => {
@@ -44,7 +44,7 @@ describe('special effects', () => {
 	it('Mastering: transparent at its defaults; EQ follows responseDb; the maximizer raises level', () => {
 		const x = noise(1, 24000, 0.25);
 		const [y] = run(fx('mastering'), x);
-		for (let i = 0; i < x.length; i++) expect(Math.abs(y[i]! - x[i]!)).toBeLessThan(1e-4);
+		expect(y.every((v, i) => Math.abs(v - x[i]!) < 1e-4)).toBe(true);
 		const e = fx('mastering', { eqLow: 6 });
 		expect(Math.abs(e.responseDb!(20)! - 6)).toBeLessThan(0.3);
 		const [t] = run(e, sine(30, 0.1, SR, SR));
@@ -88,7 +88,7 @@ describe('special effects', () => {
 		const m = fx('mute', { mute: true });
 		const x = new Float32Array(SR).fill(0.5);
 		const [y] = run(m, x);
-		for (const v of y) expect(v).toBe(0);
+		expect(y.every((v) => Object.is(v, 0))).toBe(true);
 		const u = fx('mute');
 		const z = new Float32Array(1000).fill(0.5);
 		u.setParam('mute', true);

@@ -1,7 +1,6 @@
-// Essential Sound Auto Tag classifier (spec 12 P6-R3; wp-note "Phase 6 → WP6.3"): generated music, ambience and
-// sound effects (the synth kit and long effects) are classified right; determinism; every input size, rate and
-// layout gives a defined result; malformed arguments are refused with AudioCategoryError. The labelled accuracy table
-// with real speech (LJ Speech) and the starter kit is the engine test `audio-classify-accuracy.test.ts`.
+// Essential Sound Auto Tag public API boundaries (spec 12 P6-R3; wp-note "Phase 6 → WP6.3"): determinism; every
+// input size, rate and layout gives a defined result; malformed arguments are refused with AudioCategoryError.
+// The labelled corpus (real speech, starter codecs and generated material) belongs to engine/audio-classify.test.ts.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -12,47 +11,18 @@ import {
 	LOW_CATEGORY_CONFIDENCE,
 	MAX_CATEGORY_WINDOWS,
 } from '../src/analysis/audio-category.ts';
-import { renderSynth, SYNTH_RECIPES } from '../src/synth/render.ts';
-import { ambienceSet, longSfxSet, musicSet } from './category-fixtures.ts';
+import { renderSynth } from '../src/synth/render.ts';
+import { ambienceSet } from './category-fixtures.ts';
+import { testMusic } from './music.ts';
 
 const classify = (channels: Float32Array[], sr: number, dur?: number) =>
 	classifyAudio(audioCategoryFeatures({ channels, sampleRate: sr }, dur));
 
 describe('classifyAudio on generated material', () => {
-	it('music: band, pads, arpeggios, melody, drums, piano (12 s, 44.1 kHz)', { timeout: 300_000 }, () => {
-		for (const x of musicSet(44_100, 12)) {
-			const r = classify(x.channels, x.sr);
-			expect(r.category, `${x.name} ${JSON.stringify(r.scores)}`).toBe('music');
-			expect(r.confidence, x.name).toBeGreaterThan(0);
-		}
-	});
-
-	it('ambience: beds, traffic, rain, wind, room tone, AC, forest, office (12 s)', {
-		timeout: 300_000,
-	}, () => {
-		for (const x of ambienceSet(48_000, 12)) {
-			const r = classify(x.channels, x.sr);
-			expect(r.category, `${x.name} ${JSON.stringify(r.scores)}`).toBe('ambience');
-		}
-	});
-
-	it('sfx: every synth recipe (two seeds) and long effects (2–7 s)', { timeout: 300_000 }, () => {
-		for (const rec of SYNTH_RECIPES)
-			for (const seed of [2, 3]) {
-				const s = renderSynth(rec.id, seed);
-				const r = classify(s.channels, s.sampleRate);
-				expect(r.category, `${rec.id}#${seed} ${JSON.stringify(r.scores)}`).toBe('sfx');
-			}
-		for (const x of longSfxSet(48_000)) {
-			const r = classify(x.channels, x.sr);
-			expect(r.category, `${x.name} ${JSON.stringify(r.scores)}`).toBe('sfx');
-		}
-	});
-
 	it('is deterministic (same features and result twice)', () => {
-		const x = musicSet(22_050, 8)[1]!;
-		const a = audioCategoryFeatures({ channels: x.channels, sampleRate: x.sr });
-		const b = audioCategoryFeatures({ channels: x.channels.map((c) => c.slice()), sampleRate: x.sr });
+		const channels = testMusic(22_050, 120, 4, 2).audio;
+		const a = audioCategoryFeatures({ channels, sampleRate: 22_050 });
+		const b = audioCategoryFeatures({ channels: channels.map((c) => c.slice()), sampleRate: 22_050 });
 		expect(b).toEqual(a);
 		expect(classifyAudio(b)).toEqual(classifyAudio(a));
 	});
@@ -93,8 +63,8 @@ describe('edge inputs', () => {
 	});
 
 	it('8 kHz mono, 96 kHz stereo and 5.1 give the same kind of answer', () => {
-		const m8 = musicSet(8_000, 10)[0]!;
-		expect(classify([m8.channels[0]!], 8_000).category).toBe('music');
+		const m8 = testMusic(8_000, 90, 4, 1).audio;
+		expect(classify([m8[0]!], 8_000).category).toBe('music');
 		const a96 = ambienceSet(96_000, 6)[2]!;
 		expect(classify(a96.channels, 96_000).category).toBe('ambience');
 		const s = renderSynth('synth.hit', 1);

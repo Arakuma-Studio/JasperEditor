@@ -68,8 +68,8 @@ For an edge at position `e` and a pixel centred at distance `d` inside it (pixel
     coverage(d, f) = clamp(G(d + ½) − G(d − ½), 0, 1)
     alpha factor(x, y) = Π over the four edges of coverage(distance inside that edge, f)
 
-`cropEdgeCoverage` / `cropCoverageAt` are the reference; the preview shader (`CROP_FEATHER_GPU`,
-`packages/compositions/src/fx/builtins.ts`) and the native mask (`axisCoverageExpr`,
+`cropEdgeCoverage` is the shared reference for each edge; the four edges multiply as above. The preview shader
+(`CROP_FEATHER_GPU`, `packages/compositions/src/fx/builtins.ts`) and the native mask (`axisCoverageExpr`,
 `apps/engine/src/export/crop.ts`) evaluate the same expression. Property tests (fast-check) pin the laws: in [0, 1],
 monotone in the distance, non-increasing in the feather, 0 beyond half a pixel outside, 1 beyond `f + ½` inside,
 continuous at f → 0, and equal to a numerical box-filtered average of the ramp.
@@ -111,9 +111,9 @@ every effect (D-27), on every path alike, so a Crop listed after a Corner Pin cu
 
 ## 5. Migration interplay
 
-`packages/compositions/test/crop-order.test.ts` loads the v7 fixture with a clip listing Flip → Blur → Crop: after
-`loadProject` the stack is Crop → Flip → Blur (no repairs), the CSS stages and the chain plan put the crop first and
-the visible window is mirrored (as v7 drew it).
+`packages/project/test/migration-v8-crop.test.ts` owns the v7 → v8 stack-order migration. Rendered Crop → Flip /
+Flip → Crop, Mirror, Blur and feathered adjustment-layer witnesses live in the native and preview/export parity
+suites below; intermediate CSS stages and chain plans are free to change while those pixels stay correct.
 
 ## 6. Evidence (measured on the shared VM, 16 vCPU, load ≈ 9–13 from other agents)
 
@@ -134,7 +134,7 @@ the visible window is mirrored (as v7 drew it).
   is unchanged.
 - Regression suites rerun unchanged (REMOTION_E2E=1): all 61 `golden-scenes.e2e` scenes (only `crop-corner-pin`
   re-blessed, above), `golden-parity.e2e`, `edit-structure-render.e2e`.
-- Unit tests: `packages/project/test/crop-stack.test.ts`, `packages/compositions/test/crop-order.test.ts`,
+- Model and UI tests: `packages/project/test/crop-stack.test.ts`, `packages/project/test/migration-v8-crop.test.ts`,
   `apps/web/test/crop-order-ui.test.tsx`.
 
 ## 7. Limitations

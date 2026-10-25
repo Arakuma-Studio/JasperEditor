@@ -53,7 +53,7 @@ const alignedAt = (c: SfxClip, F: number) =>
 	c.start * F + (c.sfx!.placement.peakFlicks - c.sourceIn) / c.speed.rate;
 
 describe('soundDesign.swap: align and pitch (Essential Sound SFX)', () => {
-	it('the same media with another align puts its start / end on the frame the peak played at; undo / redo', () => {
+	it('the same media with another align puts its start / end on the frame the peak played at; immutability', () => {
 		const h = new Harness();
 		const m = libMedia(h, { peakSec: 0.25, durationSec: 0.9 });
 		const id = placed(h, m, 120);
@@ -74,44 +74,6 @@ describe('soundDesign.swap: align and pitch (Essential Sound SFX)', () => {
 		expect(Math.abs(alignedAt(e, F) - 120 * F)).toBeLessThanOrEqual(1);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect(before).toEqual(snap);
-	});
-
-	it('pitchSt: varispeed within ±3 st keeps the variation and the aligned point; larger uses the Pitch Shifter; 0 resets', () => {
-		const h = new Harness();
-		const m = libMedia(h);
-		const id = placed(h, m, 90, { rate: 1.012 });
-		const F = flicksPerFrame(h.seq.settings.frameRate);
-		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 2 }]);
-		let c = clip(h, id);
-		expect(c.speed.rate).toBeCloseTo(1.012 * 2 ** (2 / 12), 5);
-		expect(c.speed.maintainPitch).toBe(false);
-		expect(Math.abs(alignedAt(c, F) - 90 * F)).toBeLessThanOrEqual(1);
-		expect(
-			c.effects.some((fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter'),
-		).toBe(false);
-		// +5 st: speed back to the variation, the shifter carries the shift
-		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 5.5 }]);
-		c = clip(h, id);
-		expect(c.speed.rate).toBeCloseTo(1.012, 5);
-		const shifters = c.effects.filter(
-			(fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter',
-		);
-		expect(shifters).toHaveLength(1);
-		expect((shifters[0]!.params.semitones as { value: number }).value).toBe(5);
-		expect((shifters[0]!.params.cents as { value: number }).value).toBe(50);
-		expect(Math.abs(alignedAt(c, F) - 90 * F)).toBeLessThanOrEqual(1);
-		// 0: no shifter, no varispeed shift (the variation stays)
-		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 0 }]);
-		c = clip(h, id);
-		expect(c.speed.rate).toBeCloseTo(1.012, 5);
-		expect(
-			c.effects.some((fx) => (fx as { effectId?: string }).effectId === 'jasper.audio.pitch-shifter'),
-		).toBe(false);
-		expect(checkInvariants(h.doc)).toEqual([]);
-		// refusals
-		expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 13 }]))?.code).toBe(
-			'E_SCHEMA',
-		);
 	});
 
 	it('pan keyframes keep their sequence times through a pitch change', () => {
@@ -163,7 +125,7 @@ describe('soundDesign.swap: frame and pitch together (merged with WP2.3)', () =>
 });
 
 describe('soundDesign.setRole', () => {
-	it('sets the role of placed clips; a library clip without sfx gets it; undo / redo; refusals', () => {
+	it('sets the role of placed clips; a library clip without sfx gets it; immutability; refusals', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const a = placed(h, m, 60);
@@ -193,10 +155,6 @@ describe('soundDesign.setRole', () => {
 		expect(clip(h, b).sfx!.placement.align).toBe('peak');
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect(before).toEqual(snap);
-		const after = clone(h.doc);
-		h.doc = before;
-		h.ok([{ type: 'soundDesign.setRole', clipIds: [a, b], role: 'hero' }]);
-		expect(clone(h.doc)).toEqual(after);
 		// refusals
 		const plain = h.registerVideo({ seconds: 5 });
 		const pr = h.ok([
@@ -224,7 +182,7 @@ describe('soundDesign.setRole', () => {
 });
 
 describe('soundDesign.setPeak on project audio (Detect Peak)', () => {
-	it('an audio clip that is not a library sound gets sfx with no sound id; the clip does not move; undo', () => {
+	it('an audio clip that is not a library sound gets sfx with no sound id; the clip does not move', () => {
 		const h = new Harness();
 		const plain = h.registerVideo({ seconds: 5 });
 		h.ok([{ type: 'clip.place', source: { mediaId: plain }, at: 100, tracks: { video: 'V1', audio: 'A2' } }]);

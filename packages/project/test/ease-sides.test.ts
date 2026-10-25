@@ -7,27 +7,21 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
-	applyMultiEase,
 	type CubicEase,
 	copyEase,
-	cubicToEases,
 	describeKeyframeEases,
 	type Ease,
 	evaluate,
 	evaluateEaseCurve,
 	type InInterpolation,
 	type Interpolation,
-	isLinearEase,
 	type Keyframe,
-	keySidesIssue,
 	type MultiEase,
 	type SpatialMetric,
 	segmentShape,
-	spanEases,
 	type Vec2,
-	writeSpan,
 } from '../src/index.ts';
-import { cssCubic, distanceToPolyline, expectValid, SEC, setup } from './ease-helpers.ts';
+import { cssCubic, distanceToPolyline, expectValid, setup } from './ease-helpers.ts';
 import { Harness } from './helpers.ts';
 
 const INTERPS: Interpolation[] = ['linear', 'bezier', 'auto-bezier', 'continuous-bezier', 'hold'];
@@ -58,180 +52,6 @@ const cubicArb = fc.record({
 	y1: fc.double({ min: -2, max: 3, noNaN: true }),
 	x2: fc.double({ min: 0, max: 0.99, noNaN: true }),
 	y2: fc.double({ min: -2, max: 3, noNaN: true }),
-});
-
-type Spec<V> = { value: V; sides: { interpolation: Interpolation; inInterpolation?: InInterpolation } } & {
-	easeIn: Ease;
-	easeOut: Ease;
-};
-
-function keysOf<V>(spec: Spec<V>[]): Keyframe<V>[] {
-	return spec.map((s, i) => ({
-		id: `kf_${i}`,
-		time: i * SEC,
-		value: s.value,
-		...s.sides,
-		easeIn: s.easeIn,
-		easeOut: s.easeOut,
-	}));
-}
-
-/** Every time sample outside span a → a + 1 (whose start, key a's time, it evaluates): the other segments, the keys. */
-function outsideTimes(n: number, a: number): number[] {
-	const ts: number[] = [];
-	for (let s = 0; s < n - 1; s++) {
-		if (s === a) continue;
-		for (let k = 0; k < 20; k++) ts.push((s + k / 20) * SEC);
-	}
-	for (let i = 0; i < n; i++) if (i !== a) ts.push(i * SEC);
-	return ts;
-}
-
-/** The read-back of span a → a + 1 equals the eases written (or the span stayed exactly linear for linear eases). */
-function expectReadBack(kfs: Keyframe<unknown>[], a: number, out: Ease, inn: Ease, metric?: SpatialMetric) {
-	const e = spanEases(kfs, a, a + 1, metric);
-	expect(e.hold).toBe(false);
-	if (e.hold) return;
-	if (e.linear) {
-		expect(isLinearEase(out) && isLinearEase(inn)).toBe(true);
-		return;
-	}
-	expect(e.out).toEqual(out);
-	expect(e.in).toEqual(inn);
-	expect(e.outInterpolation).toBe('bezier');
-	expect(e.inInterpolation).toBe('bezier');
-}
-
-describe('writeSpan / spanEases follow the per-side evaluator', () => {
-	it('property: legacy and per-side keys — the span is the cubic, every other segment bit-identical, read-back exact', () => {
-		const keyArb = fc.record({
-			value: fc.double({ min: -100, max: 100, noNaN: true }),
-			sides: sidesArb,
-			easeIn: easeArb,
-			easeOut: easeArb,
-		});
-		fc.assert(
-			fc.property(
-				fc.array(keyArb, { minLength: 2, maxLength: 7 }),
-				fc.nat(),
-				cubicArb,
-				(spec, pick, curve) => {
-					const kfs = keysOf(spec) as Keyframe<unknown>[];
-					const a = pick % (kfs.length - 1);
-					const before: Animatable<number> = {
-						value: 0,
-						keyframes: structuredClone(kfs) as Keyframe<number>[],
-					};
-					const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
-					writeSpan(kfs, a, a + 1, easeOut, easeIn);
-					const after: Animatable<number> = { value: 0, keyframes: kfs as Keyframe<number>[] };
-					for (const k of kfs) expect(keySidesIssue(k)).toBeNull();
-					const v0 = spec[a]!.value;
-					const v1 = spec[a + 1]!.value;
-					for (let k = 0; k <= 20; k++) {
-						const u = k / 20;
-						const want = u === 1 ? v1 : v0 + cssCubic(curve as CubicEase, u) * (v1 - v0);
-						expect(Math.abs(evaluate(after, (a + u) * SEC) - want)).toBeLessThan(
-							1e-6 * (1 + Math.abs(v1 - v0)),
-						);
-					}
-					for (const t of outsideTimes(kfs.length, a))
-						expect(Object.is(evaluate(after, t), evaluate(before, t))).toBe(true);
-					expectReadBack(kfs, a, easeOut, easeIn);
-				},
-			),
-			{ numRuns: 600, seed: 11 },
-		);
-	});
-
-	it('property: effect points with a layer-box metric — auto-bezier speeds and captures in pixels', () => {
-		const metricArb = fc.constantFrom<SpatialMetric>([1920, 1080], [1080, 1920], [640, 480], [300, 1200]);
-		const keyArb = fc.record({
-			value: fc.tuple(fc.double({ min: 0, max: 1, noNaN: true }), fc.double({ min: 0, max: 1, noNaN: true })),
-			sides: sidesArb,
-			easeIn: easeArb,
-			easeOut: easeArb,
-		});
-		fc.assert(
-			fc.property(
-				fc.array(keyArb, { minLength: 2, maxLength: 7 }),
-				fc.nat(),
-				cubicArb,
-				metricArb,
-				fc.boolean(),
-				(spec, pick, curve, metric, curved) => {
-					const kfs = keysOf(spec as Spec<Vec2>[]) as Keyframe<unknown>[];
-					// Curved paths: Auto Bezier spatial keys (arc lengths and auto speeds in pixels).
-					if (curved)
-						for (const k of kfs) k.spatial = { mode: 'auto-bezier', inTangent: [0, 0], outTangent: [0, 0] };
-					const a = pick % (kfs.length - 1);
-					const before: Animatable<Vec2> = {
-						value: [0, 0],
-						keyframes: structuredClone(kfs) as Keyframe<Vec2>[],
-					};
-					const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
-					writeSpan(kfs, a, a + 1, easeOut, easeIn, undefined, metric);
-					const after: Animatable<Vec2> = { value: [0, 0], keyframes: kfs as Keyframe<Vec2>[] };
-					for (const k of kfs) expect(keySidesIssue(k)).toBeNull();
-					const opts = { metric };
-					for (const t of outsideTimes(kfs.length, a)) {
-						const x = evaluate(after, t, opts);
-						const y = evaluate(before, t, opts);
-						expect(Object.is(x[0], y[0]) && Object.is(x[1], y[1])).toBe(true);
-					}
-					if (!curved) {
-						const v0 = spec[a]!.value;
-						const v1 = spec[a + 1]!.value;
-						for (let k = 0; k < 20; k++) {
-							const u = k / 20;
-							const p = cssCubic(curve as CubicEase, u);
-							const got = evaluate(after, (a + u) * SEC, opts);
-							for (const c of [0, 1])
-								expect(Math.abs(got[c]! - (v0[c]! + p * (v1[c]! - v0[c]!)))).toBeLessThan(1e-6);
-						}
-					}
-					expectReadBack(kfs, a, easeOut, easeIn, metric);
-				},
-			),
-			{ numRuns: 400, seed: 23 },
-		);
-	});
-
-	it('reads a per-side segment as it renders: Linear out side + Bezier in side curve (⅙ on the Linear side)', () => {
-		const kfs: Keyframe<unknown>[] = [
-			{
-				id: 'a',
-				time: 0,
-				value: 0,
-				interpolation: 'linear',
-				easeIn: SIXTH,
-				easeOut: { influence: 1 / 3, slope: 1 },
-			},
-			{
-				id: 'b',
-				time: SEC,
-				value: 100,
-				interpolation: 'linear',
-				inInterpolation: 'bezier',
-				easeIn: { influence: 1 / 3, slope: 0 },
-				easeOut: { influence: 1 / 3, slope: 1 },
-			},
-		];
-		const e = spanEases(kfs, 0, 1);
-		expect(e).toEqual({
-			hold: false,
-			linear: false,
-			out: SIXTH,
-			in: { influence: 1 / 3, slope: 0 },
-			outInterpolation: 'linear',
-			inInterpolation: 'bezier',
-		});
-		expect(segmentShape(kfs, 0, 1)).toEqual({ out: SIXTH, in: { influence: 1 / 3, slope: 0 } });
-		// The same key read the legacy way is linear (A is Linear).
-		const legacy = structuredClone(kfs);
-		delete legacy[1]!.inInterpolation;
-		expect(spanEases(legacy, 0, 1)).toMatchObject({ hold: false, linear: true, inInterpolation: 'linear' });
-	});
 });
 
 /** Rotation keys at frames 0, 10, 20, … from keyframe.add with explicit sides. */
@@ -306,8 +126,6 @@ describe('keyframe.applyEase on mixed legacy / per-side keys (commands)', () => 
 							expect(Object.is(evaluate(after, at), evaluate(before, at))).toBe(true);
 						}
 					}
-					const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
-					expectReadBack(after.keyframes as Keyframe<unknown>[], a, easeOut, easeIn);
 					// Undo is a document swap (the previous document is untouched); redo is deterministic.
 					const result = structuredClone(after);
 					h.doc = docBefore;
@@ -317,6 +135,63 @@ describe('keyframe.applyEase on mixed legacy / per-side keys (commands)', () => 
 				},
 			),
 			{ numRuns: 60, seed: 5 },
+		);
+	});
+});
+
+describe('keyframe.applyEase on effect points', () => {
+	it('keeps outside Auto Bezier segments in layer pixels when the middle span changes', () => {
+		const h = new Harness();
+		h.ok([{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [1, 0, 0, 1] }]);
+		const id = h.clips('V1')[0]!.id;
+		h.ok([{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.transform', ref: '$fx' }]);
+		const fxId = (h.seq.clips[id] as { effects: { id: string }[] }).effects[0]!.id;
+		const target = ['effect', fxId, 'position'];
+		const r = h.ok(
+			[
+				[0.1, 0.2],
+				[0.2, 0.9],
+				[0.8, 0.4],
+				[0.9, 0.8],
+			].map((value, i) => ({
+				type: 'keyframe.add',
+				target,
+				at: { sequenceFrame: i * 30 },
+				value,
+				interpolation: 'auto-bezier',
+				inInterpolation: 'auto-bezier',
+				ref: `$k${i}`,
+			})),
+		);
+		const pos = () =>
+			(
+				h.seq.clips[id] as unknown as {
+					effects: { params: { position: Animatable<Vec2> } }[];
+				}
+			).effects[0]!.params.position;
+		const before = structuredClone(pos());
+		const times = before.keyframes.map((k) => k.time);
+		h.ok([
+			{
+				type: 'keyframe.applyEase',
+				keyframeIds: [r.refs.$k1, r.refs.$k2],
+				curve: { kind: 'cubic', x1: 0.2, y1: 0, x2: 0.8, y2: 1 },
+			},
+		]);
+		expectValid(h);
+		for (const span of [0, 2]) {
+			for (let k = 0; k <= 20; k++) {
+				const at = times[span]! + ((times[span + 1]! - times[span]!) * k) / 20;
+				const want = evaluate(before, at, { metric: [1920, 1080] });
+				const got = evaluate(pos(), at, { metric: [1920, 1080] });
+				got.forEach((v, c) => {
+					expect(v).toBeCloseTo(want[c]!, 12);
+				});
+			}
+		}
+		const at = times[1]! + (times[2]! - times[1]!) / 4;
+		expect(evaluate(pos(), at, { metric: [1920, 1080] })).not.toEqual(
+			evaluate(before, at, { metric: [1920, 1080] }),
 		);
 	});
 });
@@ -388,7 +263,6 @@ describe('ease clipboard with side types', () => {
 		]);
 		const kfs = structuredClone(anim<number>('transform.rotation').keyframes) as Keyframe<unknown>[];
 		kfs[1]!.interpolation = 'auto-bezier';
-		const autoOut = spanEases(kfs, 1, 2) as { out: Ease };
 		h.ok([{ type: 'keyframe.setInterpolation', keyframeIds: [ids[1]!], interpolation: 'auto-bezier' }]);
 		// keyframe.setInterpolation made key 1 per side (incoming Auto) and key 2's incoming explicit.
 		const c = copyEase(h.doc, [ids[1]!]);
@@ -413,7 +287,9 @@ describe('ease clipboard with side types', () => {
 		if (!c2.ok || c2.clip.kind !== 'key') throw new Error('no key clip');
 		expect(c2.clip.inInterpolation).toBe('linear');
 		expect(c2.clip.interpolation).toBe('bezier');
-		expect(c2.clip.easeOut.slope).toBeCloseTo(autoOut.out.slope, 12);
+		// Centred speed (100 − 0) / 20 divided by outgoing average (100 − 40) / 10 = 5/6.
+		expect(c2.clip.easeOut.influence).toBe(1 / 3);
+		expect(c2.clip.easeOut.slope).toBeCloseTo(5 / 6, 12);
 	});
 
 	it('a clip without types (older clipboard entries, agents) pastes Bezier sides', () => {
@@ -530,7 +406,7 @@ describe('effect points: rebuilds and clean-up in the layer box pixels', () => {
 		],
 	};
 
-	it('a multi-point rebuild follows the curve in layer px along the unchanged path (the metric-free one does not)', () => {
+	it('a multi-point rebuild follows the curve in layer px along the unchanged path', () => {
 		const { h, pos } = arch();
 		const before = structuredClone(pos());
 		const t0 = before.keyframes[0]!.time;
@@ -548,28 +424,6 @@ describe('effect points: rebuilds and clean-up in the layer box pixels', () => {
 			worst = Math.max(worst, Math.hypot(got[0] - want[0], got[1] - want[1]));
 		}
 		expect(worst).toBeLessThan(0.75);
-		// The same rebuild measured in normalised units (no metric) puts the motion elsewhere on a 16:9 box.
-		const kfs = structuredClone(before.keyframes) as Keyframe<unknown>[];
-		let n = 0;
-		const r = applyMultiEase({
-			kfs,
-			a: 0,
-			b: 2,
-			curve: CURVE,
-			spatial: true,
-			newId: () => `kf_new_${n++}`,
-			validate: (v) => ({ value: v, clamped: false }),
-		});
-		const plain: Animatable<Vec2> = { value: [0, 0], keyframes: r.keys as Keyframe<Vec2>[] };
-		let off = 0;
-		for (let k = 0; k <= 100; k++) {
-			const x = k / 100;
-			const want = ref(evaluateEaseCurve(CURVE, x));
-			const got = px(evaluate(plain, t0 + x * (t1 - t0), { metric: M }));
-			off = Math.max(off, Math.hypot(got[0] - want[0], got[1] - want[1]));
-		}
-		expect(off).toBeGreaterThan(10 * worst);
-		expect(off).toBeGreaterThan(3);
 	});
 
 	it('clean up path: tolerance in layer px, the timing linear in px, outside segments unchanged', () => {
@@ -615,6 +469,5 @@ describe('effect points: rebuilds and clean-up in the layer box pixels', () => {
 			const mean = speeds.reduce((sum, v) => sum + v, 0) / speeds.length;
 			for (const v of speeds) expect(Math.abs(v - mean) / mean).toBeLessThan(0.02);
 		}
-		for (const key of k) expect(keySidesIssue(key)).toBeNull();
 	});
 });

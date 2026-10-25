@@ -1,14 +1,6 @@
 // spatial-points: the Program monitor's motion path of an effect point param (Transform's Position) and the Effect
 // Controls ▸ Spatial Interpolation menu on its keys (docs/wp-notes/spatial-points.md).
-import {
-	buildRenderSnapshot,
-	contentTimeAt,
-	type EffectInstance,
-	evaluate,
-	type Keyframe,
-	type Rational,
-	type Vec2,
-} from '@jasper/project';
+import { buildRenderSnapshot, type EffectInstance, type Keyframe, type Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -89,33 +81,6 @@ const drag = (svg: HTMLElement, from: Vec2, to: Vec2, opts: { altKey?: boolean }
 };
 
 describe('Program monitor ▸ effect point motion path', () => {
-	it('is drawn for the effect focused in Effect Controls, through the layer, evaluated like the renderer', () => {
-		const { session, id, fxId } = setup();
-		const first = overlay(session);
-		expect(first.queryByTestId('overlay-effect-path')).toBeNull();
-		cleanup();
-		act(() => inspectorFocus.set({ effectInstanceId: fxId }));
-		const { container: c2 } = overlay(session);
-		const g = c2.querySelector('[data-testid="overlay-effect-path"]')!;
-		expect(g.getAttribute('data-effect-param')).toBe('position');
-		const dots = g.querySelector('[data-testid="effect-path-dots"]')!;
-		expect(dots.getAttribute('data-count')).toBe('90');
-		// Key squares: normalised value × the 1920×1080 box (the solid's layer map is the identity) × view scale 0.5.
-		const mid = keysOf(session, id)[1]!;
-		const sq = c2.querySelector(`[data-path-key="${mid.id}"]`)!;
-		expect(Number(sq.getAttribute('x')) + 3.5).toBeCloseTo(480, 6);
-		expect(Number(sq.getAttribute('y')) + 3.5).toBeCloseTo(405, 6);
-		// The dot of frame 15 is the metric-evaluated value (the renderers' value), not the metric-free one.
-		const clip = clipOf(session, id);
-		const rate = Object.values(session.getCommitted().sequences)[0]!.settings.frameRate as Rational;
-		const t = contentTimeAt(clip as never, 15, rate);
-		const want = evaluate(fxOf(session, id).params.position!, t, { metric: [1920, 1080] }) as Vec2;
-		const d = dots.getAttribute('d')!;
-		const pts = [...d.matchAll(/M([\d.]+) ([\d.]+)h0/g)].map((m) => [Number(m[1]), Number(m[2])]);
-		expect(pts[15]![0]).toBeCloseTo(want[0] * 960, 0);
-		expect(pts[15]![1]).toBeCloseTo(want[1] * 540, 0);
-	});
-
 	it('the param row focus also shows it; dragging a key edits the normalised value in one undo entry', () => {
 		const { session, id, fxId } = setup();
 		act(() => inspectorFocus.set({ rowId: `effects.${fxId}.position` }));

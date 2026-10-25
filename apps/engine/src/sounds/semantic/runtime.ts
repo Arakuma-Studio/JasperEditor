@@ -1,6 +1,6 @@
 // The `jasper-clap` child process as the engine sees it (spec 12 P6-E14, WP-E9): started on the first request for an
 // installed model, kept while requests come, ended after `idleMs` without one (the towers hold ≈ 0.8 GB). Requests
-// are answered one at a time in order. A worker that dies, writes garbage or takes longer than `requestTimeoutMs`
+// are answered one at a time in order. A worker that dies, writes garbage or takes longer than five minutes
 // fails its requests with a typed error and is started again for the next one (AGENTS.md §0.3: never a job left
 // running). Cancelling a request (its signal) drops it from the queue; one already running finishes in the worker
 // and its answer is discarded.
@@ -35,11 +35,10 @@ type Pending = {
 	signal?: AbortSignal;
 };
 
-export type ClapRuntimeOptions = {
+type ClapRuntimeOptions = {
 	command: () => { command: string; args: string[] };
 	threads?: number;
 	idleMs?: number;
-	requestTimeoutMs?: number;
 	log?: (m: string) => void;
 };
 
@@ -170,7 +169,7 @@ export class ClapRuntime {
 		const { dir: _d, ...wire } = p.body;
 		this.requestTimer = setTimeout(() => {
 			this.stop(new ClapError('CLAP_TIMEOUT', 'The Describe-it search model did not answer in time'));
-		}, this.opts.requestTimeoutMs ?? 300_000);
+		}, 300_000);
 		this.child!.stdin.write(`${JSON.stringify({ id: p.id, ...wire })}\n`);
 	}
 

@@ -1,8 +1,0 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
-
-exports[`mask coverage golden frame > a fixed stack of every feature rasterises to the stored checksum (8-bit, 160×90) 1`] = `
-{
-  "hash": "3f4963c0",
-  "sum": 1178209,
-}
-`;

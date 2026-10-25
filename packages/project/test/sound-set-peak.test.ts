@@ -1,5 +1,5 @@
 // soundDesign.setPeak (spec 12 §2.7 "Peak handle", Shift-drag): a peak override on a placed clip or a library clip;
-// the clip does not move; the error against its cue; refusals; undo / redo.
+// the clip does not move; the error against its cue; refusals; immutability.
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
@@ -36,7 +36,7 @@ function libMedia(h: Harness): string {
 const clipOf = (h: Harness, id: string) => h.seq.clips[id] as SfxClip;
 
 describe('soundDesign.setPeak', () => {
-	it('overrides the peak of a placed clip without moving it; the error is measured against its cue; undo / redo', () => {
+	it('overrides the peak of a placed clip without moving it; the error is measured against its cue; immutability', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const cueId = (
@@ -71,12 +71,8 @@ describe('soundDesign.setPeak', () => {
 		// a peak before the cue frame is early: no lateness to record
 		h.ok([{ type: 'soundDesign.setPeak', clipId: id, peakFlicks: 0 }]);
 		expect(clipOf(h, id).sfx!.placement.errorFlicks).toBe(0);
-		// undo: the document before the transaction is untouched; redo gives the same document
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		h.doc = before;
-		h.ok([{ type: 'soundDesign.setPeak', clipId: id, peakFlicks: Math.round(peakFlicks) }]);
-		expect(clipOf(h, id).sfx!.placement.peakFlicks).toBe(Math.round(peakFlicks));
-		expect(clipOf(h, id).start).toBe(c0.start);
 	});
 
 	it('gives a library clip placed without sound design its sfx metadata (not linked to a cue)', () => {

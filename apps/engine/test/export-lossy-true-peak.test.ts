@@ -1,6 +1,6 @@
 // Delivered loudness of real exports (wp-note sound-design "Fix: lossy-codec true-peak headroom and loudness
-// convergence"; AGENTS §4): a loud, bright mix exported to AAC 128 / 192 / 320 kb/s (MP4) and Opus 96 / 160 kb/s (WebM)
-// at the Web (−14 / −1), Podcast (−16 / −1) and EBU R 128 (−23 / −1) targets. The oracle is ffmpeg's own `ebur128`
+// convergence"; AGENTS §4): a loud, bright mix exported to AAC (MP4) and Opus (WebM), representing
+// the Web (−14 / −1), Podcast (−16 / −1) and EBU R 128 (−23 / −1) targets. The oracle is ffmpeg's own `ebur128`
 // (peak=true) on the FILE: its true peak never passes the target and its integrated loudness lands within ±0.5 LU (or
 // the result says the ceiling prevents it, with a warning). The result reports the limiter ceiling, the codec headroom,
 // the passes and the corrections, measured on the decoded file. PCM exports of a mix that needs no limiting are the
@@ -12,7 +12,6 @@ import { join } from 'node:path';
 import type { ExportResult } from '@jasper/api';
 import { limitBuffer, measureLoudness } from '@jasper/audio-dsp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { codecHeadroomDb } from '../src/audio/deliver.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
 import { loudMix, quietMix, writeMixWav } from './loud-fixture.ts';
@@ -108,72 +107,49 @@ async function docOf(file: string): Promise<DocBuilder> {
 	return d;
 }
 
-const PRESETS = [
-	['web', -14, -1],
-	['podcast', -16, -1],
-	['broadcast-r128', -23, -1],
-] as const;
-const CODECS = [
-	['aac', 128, 'mp4'],
-	['aac', 192, 'mp4'],
-	['aac', 320, 'mp4'],
-	['opus', 96, 'webm'],
-	['opus', 160, 'webm'],
+// Each delivery target and container has a real mux/decode check. Bit-rate/headroom boundaries are owned by
+// audio-deliver.test.ts; repeating every target × bit rate here exercises the same delivery path.
+// Headroom literals: sound-design wp-note's codec table (dB below the −1 dBTP delivery target).
+const DELIVERIES = [
+	['web', -14, -1, 'aac', 128, 'mp4', 1.5],
+	['podcast', -16, -1, 'opus', 160, 'webm', 0.5],
+	['broadcast-r128', -23, -1, 'aac', 320, 'mp4', 0.5],
 ] as const;
 
 describe('lossy exports meet the delivery target on the decoded file', { timeout: 1_800_000 }, () => {
-	const rows: Record<string, unknown>[] = [];
-	afterAll(() => {
-		for (const r of rows) console.log('delivered', JSON.stringify(r));
-	});
-	for (const [preset, lufs, tp] of PRESETS)
-		for (const [codec, kbps, container] of CODECS)
-			it(`${preset} (${lufs} LUFS / ${tp} dBTP) → ${codec} ${kbps} kb/s`, async () => {
-				const d = await docOf(loudWav);
-				const { file, result, plan } = await exportOf(
-					d,
-					{ codec, bitrateKbps: kbps, normalize: { targetLufs: lufs, truePeakDb: tp } },
-					container,
-				);
-				const ff = ebur128(file);
-				const a = result.audioLoudness as Audio;
-				const ffCodec = codec === 'opus' ? 'libopus' : 'aac';
-				const headroom = codecHeadroomDb({ codec: ffCodec, bitrateKbps: kbps, channels: 2 });
-				rows.push({
-					preset,
-					codec,
-					kbps,
-					file: ff,
-					reported: { I: a.integratedLufs, TP: a.truePeakDbtp },
-					pcm: a.pcm,
-					ceiling: a.limiterCeilingDbtp,
-					passes: a.loudnessPasses,
-					encodes: a.encodePasses,
-					corrections: a.localCorrections,
-					limited: a.ceilingLimited,
-				});
-				// the plan says the ceiling in front of the encoder
-				const pn = (plan.audio as { normalize?: { limiterCeilingDb?: number; codecHeadroomDb?: number } })
-					.normalize;
-				expect(pn?.codecHeadroomDb).toBe(headroom);
-				expect(pn?.limiterCeilingDb).toBe(tp - headroom);
-				// the file itself (ffmpeg's meter): never over the true-peak target …
-				expect(ff.TP, JSON.stringify({ ff, a })).toBeLessThanOrEqual(tp);
-				// … and on the loudness target, unless the result says the ceiling prevents it (with a warning)
-				if (a.ceilingLimited) expect(result.warnings?.map((w) => w.code)).toContain('AUDIO_LOUDNESS_CEILING');
-				else expect(Math.abs(ff.I - lufs), JSON.stringify({ ff, a })).toBeLessThanOrEqual(0.5);
-				// the result reports the decoded file, the ceiling and how it got there
-				expect(a.measuredOn).toBe('decoded-file');
-				expect(a.truePeakMet).toBe(true);
-				expect(a.targetLufs).toBe(lufs);
-				expect(a.truePeakTargetDbtp).toBe(tp);
-				expect(a.codecHeadroomDb).toBe(headroom);
-				expect(a.limiterCeilingDbtp).toBeLessThanOrEqual(tp - headroom);
-				expect(a.encodePasses).toBeGreaterThanOrEqual(1);
-				expect(Math.abs(a.truePeakDbtp! - ff.TP)).toBeLessThanOrEqual(0.15);
-				expect(Math.abs(a.integratedLufs! - ff.I)).toBeLessThanOrEqual(0.1);
-				expect(result.warnings?.map((w) => w.code) ?? []).not.toContain('AUDIO_TRUE_PEAK_OVER');
-			});
+	for (const [preset, lufs, tp, codec, kbps, container, headroom] of DELIVERIES)
+		it(`${preset} (${lufs} LUFS / ${tp} dBTP) → ${codec} ${kbps} kb/s`, async () => {
+			const d = await docOf(loudWav);
+			const { file, result, plan } = await exportOf(
+				d,
+				{ codec, bitrateKbps: kbps, normalize: { targetLufs: lufs, truePeakDb: tp } },
+				container,
+			);
+			const ff = ebur128(file);
+			const a = result.audioLoudness as Audio;
+
+			// the plan says the ceiling in front of the encoder
+			const pn = (plan.audio as { normalize?: { limiterCeilingDb?: number; codecHeadroomDb?: number } })
+				.normalize;
+			expect(pn?.codecHeadroomDb).toBe(headroom);
+			expect(pn?.limiterCeilingDb).toBe(tp - headroom);
+			// the file itself (ffmpeg's meter): never over the true-peak target …
+			expect(ff.TP, JSON.stringify({ ff, a })).toBeLessThanOrEqual(tp);
+			// … and on the loudness target, unless the result says the ceiling prevents it (with a warning)
+			if (a.ceilingLimited) expect(result.warnings?.map((w) => w.code)).toContain('AUDIO_LOUDNESS_CEILING');
+			else expect(Math.abs(ff.I - lufs), JSON.stringify({ ff, a })).toBeLessThanOrEqual(0.5);
+			// the result reports the decoded file, the ceiling and how it got there
+			expect(a.measuredOn).toBe('decoded-file');
+			expect(a.truePeakMet).toBe(true);
+			expect(a.targetLufs).toBe(lufs);
+			expect(a.truePeakTargetDbtp).toBe(tp);
+			expect(a.codecHeadroomDb).toBe(headroom);
+			expect(a.limiterCeilingDbtp).toBeLessThanOrEqual(tp - headroom);
+			expect(a.encodePasses).toBeGreaterThanOrEqual(1);
+			expect(Math.abs(a.truePeakDbtp! - ff.TP)).toBeLessThanOrEqual(0.15);
+			expect(Math.abs(a.integratedLufs! - ff.I)).toBeLessThanOrEqual(0.1);
+			expect(result.warnings?.map((w) => w.code) ?? []).not.toContain('AUDIO_TRUE_PEAK_OVER');
+		});
 });
 
 describe('PCM exports', { timeout: 600_000 }, () => {

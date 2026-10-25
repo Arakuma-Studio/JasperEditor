@@ -194,7 +194,7 @@ export function prepareIntent(
 }
 
 /** Entity ids in `doc` whose body is one of `bodies` (a scan of the document's JSON). */
-export function idsWithBodies(doc: ProjectDocument, bodies: readonly string[]): string[] {
+function idsWithBodies(doc: ProjectDocument, bodies: readonly string[]): string[] {
 	if (bodies.length === 0) return [];
 	const want = new Set(bodies);
 	let text: string;

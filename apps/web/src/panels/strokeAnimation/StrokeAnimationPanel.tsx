@@ -124,7 +124,7 @@ function useNarrow(ref: RefObject<HTMLElement | null>): boolean {
 	return narrow;
 }
 
-export function StrokeAnimationBody({
+function StrokeAnimationBody({
 	session,
 	curvePresets,
 }: {

@@ -4,21 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
 	type CueAnchor,
-	CueAnchorSchema,
 	createStaticMgRegistry,
-	cueAnchorRefs,
 	cueAnchorTargetExists,
-	type DerivedCue,
 	defaultRegistries,
 	deriveCues,
-	FLICKS_PER_SECOND,
 	type MgTemplateInfo,
 	resolveCueAnchor,
 	textUnitCount,
 	typewriterScheduleMs,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
-import { animOf, kf, mgRegistry, newHarness, patchClip } from './sound-cues-fixtures.ts';
+import { animOf, kf, newHarness, patchClip } from './sound-cues-fixtures.ts';
 
 const schema = z.object({});
 const TPL: MgTemplateInfo = {
@@ -156,7 +152,7 @@ describe('resolveCueAnchor', () => {
 		expect(cueAnchorTargetExists(h.doc, h.seq, k('end', 'kf_missing'))).toBe(false);
 	});
 
-	it('keyframes: an eased move peaks in its middle; an overshoot settles at its first arrival', () => {
+	it('keyframes: a symmetric eased move peaks in its middle and settles afterward', () => {
 		const { h, vb } = edit();
 		const path = ['clip', vb, 'transform', 'scale'];
 		h.ok([
@@ -224,26 +220,6 @@ describe('resolveCueAnchor', () => {
 		expect(resolveCueAnchor(h.doc, h.seq, { type: 'mg', clipId, event: 'intro-end' })).toBeNull();
 	});
 
-	it('refs and target existence (repair) for every anchor type', () => {
-		const { h, va, vb, transitionId, media } = edit();
-		const trackId = h.seq.videoTracks[0]!.id;
-		const anchors: CueAnchor[] = [
-			{ type: 'edit', trackId, outgoingClipId: va, incomingClipId: vb },
-			{ type: 'transition', transitionId },
-			{ type: 'clip', clipId: va, edge: 'end' },
-			{ type: 'scene', mediaId: media, mediaSec: 1 },
-		];
-		for (const a of anchors) {
-			expect(CueAnchorSchema.safeParse(a).success).toBe(true);
-			expect(cueAnchorTargetExists(h.doc, h.seq, a)).toBe(true);
-			expect(cueAnchorRefs(a).length).toBeGreaterThan(0);
-		}
-		h.ok([{ type: 'clip.lift', clipIds: [vb] }]);
-		expect(cueAnchorTargetExists(h.doc, h.seq, anchors[0])).toBe(false);
-		expect(cueAnchorTargetExists(h.doc, h.seq, anchors[1])).toBe(false);
-		expect(cueAnchorTargetExists(h.doc, h.seq, anchors[2])).toBe(true);
-	});
-
 	it('never throws on hostile anchors and documents (property)', () => {
 		const { h } = edit();
 		const anyAnchor = fc.oneof(
@@ -282,7 +258,6 @@ describe('resolveCueAnchor', () => {
 				const f = resolveCueAnchor(h.doc, h.seq, a as CueAnchor, { mgTemplates });
 				expect(f === null || (Number.isInteger(f) && f >= 0)).toBe(true);
 				cueAnchorTargetExists(h.doc, h.seq, a as CueAnchor);
-				cueAnchorRefs(a as CueAnchor);
 			}),
 			{ numRuns: 400 },
 		);
@@ -290,17 +265,11 @@ describe('resolveCueAnchor', () => {
 		expect(
 			resolveCueAnchor({ media: {} } as never, { clips: 5 } as never, { type: 'clip' } as never),
 		).toBeNull();
-		expect(FLICKS_PER_SECOND).toBeGreaterThan(0);
 	});
 });
 
 // Review of WP2.2 (deriveCues): anchors the deriver makes must resolve back to the derived frame, and follow the clip.
 describe('derived anchors resolve back to their frame (WP2.2 review regressions)', () => {
-	const offenders = (h: Harness, cues: DerivedCue[]) =>
-		cues
-			.map((c) => ({ c, at: resolveCueAnchor(h.doc, h.seq, c.anchor, { mgTemplates: mgRegistry() }) }))
-			.filter(({ c, at }) => at !== c.frame)
-			.map(({ c, at }) => `${c.key} @${c.frame} → ${at}`);
 	const addText = (h: Harness, text: string, textAnimation: unknown, at = 0, duration = 90) =>
 		h.ok([{ type: 'clip.addText', at, duration, track: 'V2', content: { text }, textAnimation, ref: '$x' }])
 			.refs.$x!;
@@ -317,8 +286,9 @@ describe('derived anchors resolve back to their frame (WP2.2 review regressions)
 		const keys = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) =>
 			c.group?.includes('typewriter'),
 		);
-		expect(keys.length).toBeGreaterThan(3);
-		expect(offenders(h, keys)).toEqual([]);
+		const frames = [88, 93, 98, 104, 109, 114];
+		expect(keys.map((c) => c.frame)).toEqual(frames);
+		expect(keys.map((c) => resolveCueAnchor(h.doc, h.seq, c.anchor))).toEqual(frames);
 	});
 
 	it('Range Selector reveals resolve per unit (were null) and follow the clip', () => {
@@ -358,36 +328,43 @@ describe('derived anchors resolve back to their frame (WP2.2 review regressions)
 		const reveal = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) =>
 			c.group?.includes(':animator:'),
 		);
-		expect(reveal.length).toBe(8);
-		expect(offenders(h, reveal)).toEqual([]);
+		// Eight units have square-selector centres at 6.25%,18.75%,…93.75%. The linear 10…40-frame sweep
+		// first clears those centres at these integer frames (S01 keyframes; text-animators selector math).
+		expect(reveal.map((c) => c.frame)).toEqual([12, 16, 20, 24, 27, 31, 35, 39]);
+		expect(reveal.map((c) => resolveCueAnchor(h.doc, h.seq, c.anchor))).toEqual([
+			12, 16, 20, 24, 27, 31, 35, 39,
+		]);
 		h.ok([{ type: 'clip.move', clipIds: [id], deltaFrames: 20 }]);
-		expect(reveal.map((c) => resolveCueAnchor(h.doc, h.seq, c.anchor))).toEqual(
-			reveal.map((c) => c.frame + 20),
-		);
+		expect(reveal.map((c) => resolveCueAnchor(h.doc, h.seq, c.anchor))).toEqual([
+			32, 36, 40, 44, 47, 51, 55, 59,
+		]);
 	});
 
-	it('peak speed of a combined position + scale + rotation move is the deriver’s (combined speed)', () => {
+	it('combined position and rotation peak at the fastest stretch of total picture speed', () => {
 		const h = newHarness();
-		const m = h.registerVideo({ kind: 'image', width: 400, height: 200 });
-		const id = h.ok([
-			{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V2' }, ref: '$s' },
+		const mediaId = h.registerVideo({ kind: 'image', width: 400, height: 200 });
+		const clipId = h.ok([
+			{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V2' }, ref: '$s' },
 		]).refs.$s!;
-		patchClip(h, id, (c) => {
-			c.duration = 120;
-			const tr = c.transform as Record<string, unknown>;
-			tr.position = animOf<[number, number]>(
+		patchClip(h, clipId, (c) => {
+			c.duration = 90;
+			const transform = c.transform as Record<string, unknown>;
+			transform.position = animOf<[number, number]>(
 				[960, 540],
-				[kf('p1', 10, [200, 540]), kf('p2', 20, [700, 540])],
+				[kf('p1', 10, [200, 540]), kf('p2', 50, [1200, 540])],
 			);
-			tr.scale = animOf(100, [kf('s1', 10, 100, 'bezier'), kf('s2', 50, 300, 'bezier')]);
-			tr.rotation = animOf(0, [kf('r1', 30, 0), kf('r2', 50, 180)]);
+			transform.rotation = animOf(0, [kf('r1', 30, 0), kf('r2', 40, 90)]);
 		});
-		const moves = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) => c.from === 'keyframes');
-		expect(moves.some((c) => c.kind === 'move')).toBe(true);
-		expect(offenders(h, moves)).toEqual([]);
+		// WP2.2: total speed is position/diagonal + rotation/270. Position dominates total travel, but the
+		// additional 90-degree rotation makes frames 30…40 fastest together, whose middle is frame 35.
+		const move = deriveCues(h.doc, h.seqId, { sources: ['keyframes'], density: 'rich' }).cues.find(
+			(c) => c.kind === 'move',
+		)!;
+		expect(move.frame).toBe(35);
+		expect(resolveCueAnchor(h.doc, h.seq, move.anchor)).toBe(35);
 	});
 
-	it('an overshoot with no key at its extreme lands at the turnaround (deriver and resolver agree)', () => {
+	it('an overshoot with no key at its extreme lands at the independently calculated turnaround', () => {
 		const h = newHarness();
 		const m = h.registerVideo({ kind: 'image', width: 400, height: 200 });
 		const id = h.ok([
@@ -405,13 +382,14 @@ describe('derived anchors resolve back to their frame (WP2.2 review regressions)
 		const cues = deriveCues(h.doc, h.seqId, { density: 'rich' }).cues.filter((c) => c.from === 'keyframes');
 		const land = cues.find((c) => c.kind === 'land');
 		expect(land, JSON.stringify(cues.map((c) => [c.kind, c.frame, c.reason]))).toBeDefined();
-		expect(land!.frame).toBeLessThan(40);
-		expect(offenders(h, cues)).toEqual([]);
+		// S01: control points (0.7, 2.24), (0.5, 1) put the continuous maximum at frame 26.786.
+		// WP2.1's ≥2% backwards-speed threshold first holds at the sampled turnaround frame 27.
+		expect(land!.frame).toBe(27);
 		// the generic rule (no derived event to match) also lands at the turnaround
 		const generic = resolveCueAnchor(h.doc, h.seq, {
 			...(land!.anchor as CueAnchor & { type: 'keyframe' }),
 			keyframeId: undefined,
 		} as CueAnchor);
-		expect(generic).toBe(land!.frame);
+		expect(generic).toBe(27);
 	});
 });

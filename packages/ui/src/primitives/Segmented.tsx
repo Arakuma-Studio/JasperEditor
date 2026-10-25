@@ -17,9 +17,9 @@ export type SegmentedOption<T extends string> = {
 
 /**
  * The option a radio-group key moves to, or null when the key is not a navigation key (or nothing is enabled).
- * `from` is the focused option's index (−1: none). Pure; exported for tests.
+ * `from` is the focused option's index (−1: none).
  */
-export function segmentedKeyTarget(
+function segmentedKeyTarget(
 	key: string,
 	from: number,
 	enabled: readonly boolean[],

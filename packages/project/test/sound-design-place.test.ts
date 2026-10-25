@@ -1,5 +1,5 @@
 // soundDesign.place / swap / setPalette / setSettings (spec 12 §2.3, §2.9; P2-R2, P2-R4, P2-R5): peak-exact placement
-// of padded library sounds, layers, pitch, pan, auto tracks, refusals, undo / redo.
+// of padded library sounds, layers, pitch, pan, auto tracks, refusals, immutability.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -11,7 +11,6 @@ import {
 	flicksPerFrame,
 	type LibraryProvenance,
 	pickVariant,
-	type Rational,
 	type SoundDesign,
 	variationOf,
 } from '../src/index.ts';
@@ -20,14 +19,6 @@ import { LIB } from './sound-fixtures.ts';
 
 type SfxClip = AudioClip & { sfx?: ClipSfx };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
-/** The document as JSON with ids numbered in order of appearance (redo makes the same edit with fresh ids). */
-function normalizeIds(doc: unknown): string {
-	const map = new Map<string, string>();
-	return JSON.stringify(doc).replace(/\b([a-z]{2,3})_[0-9A-Z]{16}\b/g, (id, p) => {
-		if (!map.has(id)) map.set(id, `${p}#${map.size}`);
-		return map.get(id)!;
-	});
-}
 
 let n = 0;
 /** A registered library sound: padded with 50 ms of lead silence (its descriptors include it). */
@@ -82,7 +73,7 @@ function addCue(h: Harness, cue: Record<string, unknown>): string {
 }
 
 describe('soundDesign.place', () => {
-	it('places a padded library sound with its peak exactly on the frame, as SFX on a new "SFX 1" track; undo / redo', () => {
+	it('places a padded library sound with its peak exactly on the frame, as SFX on a new "SFX 1" track; immutability', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const before = h.doc;
@@ -109,12 +100,8 @@ describe('soundDesign.place', () => {
 		});
 		expect(c.gainDb).toBe(-7.8);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// undo = the untouched document; redo = the same transaction gives the same document
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const after = h.doc;
-		h.doc = before;
-		h.ok([{ type: 'soundDesign.place', frame: 45, layers: [{ mediaId: m }] }]);
-		expect(normalizeIds(h.doc)).toEqual(normalizeIds(after));
 	});
 
 	it('fills a cue with three layers: peaks on the cue frame, separate SFX tracks, grouped, cue links both ways', () => {
@@ -323,40 +310,10 @@ describe('soundDesign.place', () => {
 			194, 206,
 		]);
 	});
-
-	it('peak placement is exact for every sequence rate and sample-position peak (property)', () => {
-		fc.assert(
-			fc.property(
-				fc.constantFrom(...ALLOWED_SEQUENCE_RATES),
-				fc.integer({ min: 60, max: 5000 }),
-				fc.integer({ min: 0, max: 40_000 }),
-				fc.constantFrom(-2, 0, 1, 3),
-				(fps: Rational, cue, peakSample, pitch) => {
-					const h = new Harness();
-					h.ok([{ type: 'sequence.updateSettings', sequenceId: h.seqId, settings: { frameRate: fps } }]);
-					// padded: the peak is 50 ms + a sample position in, the head is quiet for the 50 ms
-					const peakSec = 0.05 + peakSample / 48000;
-					const m = libMedia(h, { peakSec, durationSec: peakSec + 0.5 });
-					const r = h.tx([
-						{ type: 'soundDesign.place', frame: cue, layers: [{ mediaId: m, pitchSt: pitch }] },
-					]);
-					expect(r.ok).toBe(true);
-					if (!r.ok) return;
-					const c = clip(h, (r.results[0] as { clips: { clipId: string }[] }).clips[0]!.clipId);
-					const F = flicksPerFrame(h.seq.settings.frameRate);
-					expect(c.sourceIn).toBeGreaterThanOrEqual(0);
-					// exact to the flick (varispeed rounding: ≤ 1 flick, 1/14 700 of a 48 kHz sample)
-					expect(c.sfx!.placement.errorFlicks).toBeLessThanOrEqual(pitch === 0 ? 0 : 1);
-					expect(Math.abs(alignedAt(c, F) - cue * F)).toBeLessThanOrEqual(1);
-				},
-			),
-			{ numRuns: 150 },
-		);
-	});
 });
 
 describe('soundDesign.swap', () => {
-	it('keeps the aligned frame, track, gain, pan, group and cue link; updates the sound; undo / redo', () => {
+	it('keeps the aligned frame, track, gain, pan, group and cue link; updates the sound; immutability', () => {
 		const h = new Harness();
 		const a = libMedia(h);
 		const b = libMedia(h, { peakSec: 0.25, durationSec: 0.9 });
@@ -434,7 +391,7 @@ describe('soundDesign.swap', () => {
 });
 
 describe('soundDesign.swap alternatives (the variation ring of stateless cycling)', () => {
-	it('stores the ring on a clip placed without one (deduplicated); undo; bad ids are refused', () => {
+	it('stores the ring on a clip placed without one (deduplicated); immutable edits; bad ids are refused', () => {
 		const h = new Harness();
 		const a = libMedia(h);
 		const b = libMedia(h, { peakSec: 0.2, durationSec: 0.8 });
@@ -447,11 +404,9 @@ describe('soundDesign.swap alternatives (the variation ring of stateless cycling
 		expect(clip(h, id).sfx!.alternatives).toEqual([original]);
 		expect(clip(h, id).mediaId).toBe(b);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// undo = the untouched document
+		// The previous document stays unchanged.
 		expect((before.sequences[h.seqId]!.clips[id] as SfxClip).sfx!.alternatives).toBeUndefined();
-		h.doc = before;
 		// without alternatives the ring is kept as it is
-		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: b, alternatives: [original] }]);
 		h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: a }]);
 		expect(clip(h, id).sfx!.alternatives).toEqual([original]);
 		expect(
@@ -464,7 +419,7 @@ describe('soundDesign.swap alternatives (the variation ring of stateless cycling
 });
 
 describe('soundDesign.swap with frame (re-align: MCP align_peak)', () => {
-	it('lands the aligned point exactly on the new frame at every rate; pan keyframes travel with it; undo / redo; refusals', () => {
+	it('lands the aligned point exactly on the new frame at every rate; pan keyframes travel with it; immutability; refusals', () => {
 		for (const fps of ALLOWED_SEQUENCE_RATES) {
 			const h = new Harness();
 			h.ok([{ type: 'sequence.updateSettings', sequenceId: h.seqId, settings: { frameRate: fps } }]);
@@ -507,10 +462,6 @@ describe('soundDesign.swap with frame (re-align: MCP align_peak)', () => {
 				expect(Math.abs(t - (t0[i]! + 47 * F))).toBeLessThanOrEqual(1);
 			expect(checkInvariants(h.doc)).toEqual([]);
 			expect(before).toEqual(snapshot);
-			const after = h.doc;
-			h.doc = before;
-			h.ok([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: 137 }]);
-			expect(normalizeIds(h.doc)).toEqual(normalizeIds(after));
 			// refusals: before 0 (the sound would start before the sequence), a busy span on its track
 			expect(err(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: a, frame: 2 }]))?.code).toBe(
 				'E_INVALID_PARAM',

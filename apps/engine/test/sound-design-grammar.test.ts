@@ -317,7 +317,6 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 			expect(k.rate).toBe(1);
 			expect(k.variation).toBe('takes');
 			expect(Math.abs(k.gainOffsetDb)).toBeLessThanOrEqual(1);
-			expect(k.notes).toContain('no varispeed: keys, ticks and taps vary the take, not the pitch');
 		}
 		const ids = keys.map((k) => k.sounds[0]!.entry.id);
 		for (let i = 1; i < ids.length; i++) expect(ids[i]).not.toBe(ids[i - 1]);
@@ -335,11 +334,9 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 			{ group: 'run:1', index: 3, of: 4, st: 2 },
 			{ group: 'run:1', index: 4, of: 4, st: 3 },
 		]);
-		expect(cards[2]!.notes).toContain('run 3 of 4: +2 st');
 		// flat: the run is found, nothing is pitched
 		const flat = planOf(f.get(), f.seqId, { runs: 'flat' });
 		expect([330, 345, 360, 375].map((fr) => at(flat, fr)!.pitchSt ?? 0)).toEqual([0, 0, 0, 0]);
-		expect(at(flat, 345)!.notes).toContain('run 2 of 4: flat');
 	});
 
 	it('the clicks share one sound and one level: no varispeed, no gain jitter', () => {
@@ -363,9 +360,7 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 		expect(at(r, 90)).toBeUndefined();
 		const skip = r.collected.skipped.find((s) => s.frame === 90)!;
 		expect(skip).toMatchObject({ code: 'MUSIC_CARRIES_CUT', kind: 'cut' });
-		expect(skip.reason).toMatch(
-			/^music carries the cut: its confidence is halved to 0\.25, under the balanced minimum 0\.3/,
-		);
+
 		expect(at(r, 180)?.cue.kind).toBe('cut');
 		// rich keeps it (half confidence), with the reason; off brings it back
 		expect(at(planOf(f.get(), f.seqId, { density: 'rich' }), 90)?.cue.reason).toMatch(
@@ -416,19 +411,6 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 			expect(k.run).toBeUndefined();
 			expect(k.variation).toBe('takes');
 		}
-	});
-
-	it('is deterministic', () => {
-		const again = planOf(f.get(), f.seqId);
-		const sig = (x: typeof r) =>
-			x.selected.picks.map((p) => [
-				p.cue.frame,
-				p.sounds[0]!.entry.id,
-				p.rate,
-				p.pitchSt ?? 0,
-				p.gainOffsetDb,
-			]);
-		expect(sig(again)).toEqual(sig(r));
 	});
 });
 

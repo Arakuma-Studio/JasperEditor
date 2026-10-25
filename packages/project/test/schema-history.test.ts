@@ -52,7 +52,7 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v6 → v7 (sound design): version bump only; v6 builds open the files read-only.
 	'6→7': () => ({}),
 	// v7 → v8 (Premiere port): Crop effects listed after other effects move to the front (as v7 rendered them);
-	// the v7 fixture lists none, so its document is unchanged (migrations.test.ts covers the reorder).
+	// the v7 fixture lists none, so its document is unchanged (migration-v8-crop.test.ts covers the reorder).
 	'7→8': () => ({}),
 	// v8 → v9 (social comments: template media params): version bump only; v8 builds open the files read-only.
 	'8→9': () => ({}),
@@ -93,9 +93,11 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 		const env = fixture(CURRENT_SCHEMA_VERSION);
 		const future = CURRENT_SCHEMA_VERSION + 1;
 		(env.document as Rec).schemaVersion = future;
+		(env.document as Rec).futureField = { a: 1 };
 		env.schemaVersion = future;
 		const r = loadProject(env, { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(true);
 		expect(r.migration).toEqual({ fromVersion: future, toVersion: future, steps: [] });
+		expect((r.document as unknown as Rec).futureField).toEqual({ a: 1 });
 	});
 });

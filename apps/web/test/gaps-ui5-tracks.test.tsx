@@ -153,7 +153,7 @@ describe('Add / Delete Tracks', () => {
 describe('track height presets', () => {
 	it('saves, applies by position, survives bad storage', () => {
 		localStorage.removeItem('jasper:track-height-presets');
-		trackHeightPresets.reset();
+		trackHeightPresets.set([]);
 		const p = trackHeightPresets.save('Tall', [108, 72], [48]);
 		expect(trackHeightPresets.list()).toHaveLength(1);
 		const seq = { videoTracks: [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }], audioTracks: [{ id: 'a1' }] };

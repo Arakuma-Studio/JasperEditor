@@ -9,13 +9,8 @@ import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import {
-	agentUiTxGuard,
-	markUserInputForTests,
-	resetAgentInputForTests,
-	runAgentInput,
-} from '../src/agent-bridge/agent-input.ts';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { agentUiTxGuard, runAgentInput, trackUserInput } from '../src/agent-bridge/agent-input.ts';
 import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import { DEFAULT_KEYMAP, resolveBindings, scopeChain } from '../src/commands/keymap-defaults.ts';
 import { ReviewBadge } from '../src/panels/review/badge.tsx';
@@ -27,11 +22,24 @@ import { AgentApplyPreference } from '../src/sound/PreferencesPage.tsx';
 import { proposalFixture } from './proposal-helpers.ts';
 
 beforeAll(() => registerAllCommands());
+const realNow = performance.now.bind(performance);
+let inputClockOffset = 0;
+beforeEach(() => {
+	// Expire previous input through the production clock while preserving elapsed time for React scheduling.
+	inputClockOffset += 10_000;
+	vi.spyOn(performance, 'now').mockImplementation(() => realNow() + inputClockOffset);
+});
+function trustedUserInput() {
+	trackUserInput();
+	const event = new KeyboardEvent('keydown', { key: 'Control' });
+	Object.defineProperty(event, 'isTrusted', { value: true });
+	window.dispatchEvent(event);
+}
 afterEach(() => {
 	cleanup();
 	closeAllDialogs();
 	toasts.dismissAll();
-	resetAgentInputForTests();
+	vi.restoreAllMocks();
 	dismissedProposals.setState({ ids: {} });
 });
 
@@ -215,7 +223,7 @@ describe('Apply', () => {
 		await act(async () => {
 			t.list().focus();
 		});
-		markUserInputForTests();
+		trustedUserInput();
 		await t.key('Enter', { ctrlKey: true });
 		await waitFor(() => expect(t.labels()).toHaveLength(2));
 		expect(t.labels()[1]).toMatch(/^Accept Sound pass \(2 of 5\)$/);

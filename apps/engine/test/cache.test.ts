@@ -1,14 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import {
-	chmodSync,
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	utimesSync,
-	writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { CacheGcReport, CacheUsage } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
@@ -16,11 +8,13 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
+	type ClipRoto,
 	CORNER_PIN_EFFECT_ID,
 	defaultRegistries,
 	EMPTY_PROBE,
 	LUMETRI_EFFECT_ID,
 	makeEnvelope,
+	rotoInputsHash,
 } from '@jasper/project';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { logsUsage, maintainLogs, USAGE_LOG } from '../src/cache/logs.ts';
@@ -41,6 +35,11 @@ import {
 	type TestApp,
 	tempAppdir,
 } from './helpers.ts';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs/promises')>();
+	return { ...actual, rename: vi.fn(actual.rename) };
+});
 
 const DAY = 24 * 3600 * 1000;
 const FP = 'a'.repeat(64);
@@ -382,13 +381,18 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		put(join(dir, 'still.png'));
 		put(join(dir, 'meta.json'));
 		age(dir, 30 * DAY);
-		chmodSync(join(app.appdir, 'cache', 'layers'), 0o555); // rename out of the parent fails
+		// Permission bits do not make rename fail for a privileged test process.
+		const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+		vi.mocked(rename).mockImplementation(async (from, to) => {
+			if (from === dir) throw Object.assign(new Error('File busy'), { code: 'EBUSY' });
+			return actual.rename(from, to);
+		});
 		try {
 			const r = await clean('all', ['layers']);
 			expect(r.failed).toBe(1);
 			expect(readdirSync(dir).sort()).toEqual(['meta.json', 'still.png']);
 		} finally {
-			chmodSync(join(app.appdir, 'cache', 'layers'), 0o755);
+			vi.mocked(rename).mockRestore();
 		}
 		// A crash between rename and delete leaves `.trash-*`; an interrupted write leaves `*.partial`.
 		const trash = join(app.appdir, 'mg', `.trash-00ff-${'7'.repeat(40)}`);
@@ -836,6 +840,48 @@ describe('fframes motion-graphic renders are referenced by saved projects (CA-01
 		await cache.clean('unused');
 		expect(existsSync(dir)).toBe(false);
 		rmProject(app.appdir, pid);
+	});
+});
+
+describe('saved roto cache references (CA-012)', () => {
+	afterAll(closeApps);
+
+	it('keeps the matte set of a saved roto and removes it after its result is cleared', async () => {
+		const app = await makeApp();
+		const cache = coreServices(app).cache;
+		await cache.start();
+		const d = new DocBuilder();
+		const mediaId = d.addMedia(await register(app, fixture('clip-b.mp4')));
+		const clipId = d.tx([{ type: 'clip.place', source: { mediaId }, at: 0, audio: false, ref: '$c' }]).refs
+			.$c!;
+		const rotoId = d.tx([{ type: 'roto.add', clipId, points: [{ x: 100, y: 100 }], ref: '$r' }]).refs.$r!;
+		const roto = (d.doc.sequences[d.seqId]!.clips[clipId] as { rotos: ClipRoto[] }).rotos[0]!;
+		const key = '2'.repeat(32);
+		d.tx([
+			{
+				type: 'roto.setResult',
+				rotoId,
+				result: {
+					key,
+					start: 0,
+					end: 1,
+					width: 1280,
+					height: 720,
+					inputs: rotoInputsHash(roto),
+					model: null,
+				},
+			},
+		]);
+		saveProject(app.appdir, d);
+		const matte = put(join(app.appdir, 'cache', 'roto', 'sets', key, '0.png'));
+		const unused = put(join(app.appdir, 'cache', 'roto', 'sets', '3'.repeat(32), '0.png'));
+		await cache.clean('unused', ['roto']);
+		expect(existsSync(matte)).toBe(true);
+		expect(existsSync(unused)).toBe(false);
+		d.tx([{ type: 'roto.setResult', rotoId, result: null }]);
+		saveProject(app.appdir, d);
+		await cache.clean('unused', ['roto']);
+		expect(existsSync(matte)).toBe(false);
 	});
 });
 

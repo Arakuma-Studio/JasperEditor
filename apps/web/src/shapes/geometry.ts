@@ -200,7 +200,7 @@ export function layerEditQuad(l: ResolvedLayer, grow = 0): [Vec2, Vec2, Vec2, Ve
  * Minimum pick distance around vector strokes and fills, in screen pixels: a 1–2 px line (a perfectly horizontal or
  * vertical path has a zero-height / zero-width box) stays clickable when the monitor is zoomed out.
  */
-export const SHAPE_HIT_SCREEN_PX = 5;
+const SHAPE_HIT_SCREEN_PX = 5;
 /** The layer-px slop used at 100 % and above (the previous fixed tolerance). */
 const MIN_LAYER_SLOP = 3;
 const MAX_LAYER_SLOP = 10_000;

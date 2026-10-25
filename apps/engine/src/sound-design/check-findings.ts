@@ -1378,7 +1378,7 @@ function fadePoints(t0: number, t1: number, v0: number, out: boolean, steps = 16
  * falling: a fade reaching zero, not one that stops at a level) — ends; it is not "mid-sound" even when the fade's last
  * 10 ms are over −60 dBFS (End on Bar's one-beat fade into the bar line; final verification B). Pure.
  */
-export function endsWithFadeOut(tap: {
+function endsWithFadeOut(tap: {
 	tailRmsDb: number;
 	tailPeakDb: number;
 	fadeFromDb?: number | null;
@@ -1395,7 +1395,7 @@ export function endsWithFadeOut(tap: {
 
 /** ENDING and HEAD (P6-E3) from the delivered mix's first 5 ms and last 50 ms. */
 export function endingFindings(
-	ctx: FindCtx,
+	ctx: Pick<FindCtx, 'seq' | 'F' | 'range' | 'duration' | 'tc' | 'add' | 'dryRun' | 'commandFix'>,
 	tap: { headPeakDb: number; tailRmsDb: number; tailPeakDb: number; fadeFromDb?: number | null } | null,
 ): void {
 	if (!tap) return;

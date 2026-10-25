@@ -127,7 +127,7 @@ describe('Text Animations tab (S11:TXA-020)', () => {
 });
 
 describe('Properties ▸ Text Animation (S11:TXA-021)', () => {
-	it('picks presets, edits duration and params for all selected text clips', () => {
+	it('applies and clears presets for all selected text clips', () => {
 		const session = makeSession();
 		const ids = addTexts(session, 2);
 		act(() => session.select('timeline', ids));

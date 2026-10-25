@@ -218,9 +218,6 @@ describe('sound pack MCP tools', { timeout: 900_000 }, () => {
 			openWorldHint: true,
 		});
 		expect(ann('remove_sound_pack')).toMatchObject({ destructiveHint: true, idempotentHint: true });
-		expect(tools.find((t) => t.name === 'install_sound_pack')!.description).toMatch(
-			/tell the user the pack's name, download size and licence/,
-		);
 	});
 
 	it('lists, installs (waiting for the index), searches by pack and removes behind the approval card', async () => {

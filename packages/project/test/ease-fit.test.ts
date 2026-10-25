@@ -211,10 +211,11 @@ describe('fitCubicEase', () => {
 });
 
 describe('easeCurveMaxError', () => {
-	it('is 0 for the identical function and ∞ for a NaN one', () => {
-		const c: CubicEase = { kind: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 };
-		expect(easeCurveMaxError(c, cubicFn(c))).toBe(0);
+	it('measures the analytic maximum error and reports nonfinite sources', () => {
+		const c: CubicEase = { kind: 'cubic', x1: 1 / 3, y1: 1 / 3, x2: 2 / 3, y2: 2 / 3 };
+		// max |x - x²| = ¼, attained at x = ½.
+		expect(easeCurveMaxError(c, (x) => x * x, 1024)).toBeCloseTo(0.25, 12);
 		expect(easeCurveMaxError(c, () => Number.NaN)).toBe(Number.POSITIVE_INFINITY);
-		expect(easeCurveMaxError(c, cubicFn(c), Number.NaN)).toBe(0);
+		expect(easeCurveMaxError(c, (x) => x * x, Number.NaN)).toBeCloseTo(0.25, 12);
 	});
 });

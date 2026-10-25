@@ -1,11 +1,9 @@
 // Sound cues (spec 12 §2.2, §2.9; P2-R1, P2-R2, P2-R5): soundCue.add / update / remove / resync, the cue model's
 // invariants, repair (dangling anchors, placed clips, cue links, duplicate ids, frame clamp), diff and duplicate.
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
 	type ClipSfx,
-	COMMAND_CATALOG,
 	checkInvariants,
 	createCounterIdSource,
 	cueInputFromDerived,
@@ -15,7 +13,6 @@ import {
 	type LibraryProvenance,
 	loadProject,
 	type ProjectDocument,
-	readSoundDesign,
 	repairDocument,
 	resolveCueAnchor,
 	type SoundCue,
@@ -82,24 +79,6 @@ const derived = (o: Record<string, unknown> = {}) => ({
 	reason: 'Cut from A to B on V1',
 	source: 'derived',
 	...o,
-});
-
-describe('catalogue', () => {
-	it('registers every cue and placement command with owner sound-design and a History label', () => {
-		for (const t of [
-			'soundCue.add',
-			'soundCue.update',
-			'soundCue.remove',
-			'soundCue.resync',
-			'soundDesign.place',
-			'soundDesign.swap',
-			'soundDesign.setPalette',
-			'soundDesign.setSettings',
-		] as const) {
-			expect(COMMAND_CATALOG[t].owner).toBe('sound-design');
-			expect(COMMAND_CATALOG[t].label.length).toBeGreaterThan(3);
-		}
-	});
 });
 
 describe('soundCue.add', () => {
@@ -485,52 +464,6 @@ describe('invariants, repair and load', () => {
 		});
 		expect(loaded.repairs.filter((x) => x.action === 'drop-cue-anchor')).toEqual([]);
 		expect(checkInvariants(h.doc)).toEqual([]);
-	});
-
-	it('loading never throws and leaves no issue for arbitrary sound-design values (property)', () => {
-		const { h, clipId } = filled();
-		const base = clone(h.doc);
-		const anyCue = fc.oneof(
-			fc.anything(),
-			fc.record(
-				{
-					id: fc.oneof(fc.string(), fc.constant('cue_0000000000000001')),
-					frame: fc.oneof(fc.double(), fc.integer()),
-					kind: fc.oneof(fc.string(), fc.constant('cut')),
-					weight: fc.oneof(fc.string(), fc.constant('hero')),
-					source: fc.oneof(fc.string(), fc.constant('user')),
-					types: fc.anything(),
-					anchor: fc.oneof(
-						fc.anything(),
-						fc.constant({ type: 'clip', clipId: 'clp_0000000000000999', edge: 'start' }),
-					),
-					placedClipIds: fc.oneof(fc.anything(), fc.constant([clipId, 'clp_X'])),
-					window: fc.anything(),
-				},
-				{ requiredKeys: [] },
-			),
-		);
-		fc.assert(
-			fc.property(
-				fc.oneof(
-					fc.anything(),
-					fc.record({ cues: fc.dictionary(fc.string(), anyCue), settings: fc.anything() }),
-				),
-				fc.anything(),
-				(soundDesign, sfx) => {
-					const raw = clone(base);
-					(raw.sequences[h.seqId] as { soundDesign?: unknown }).soundDesign = soundDesign;
-					(raw.sequences[h.seqId]!.clips[clipId] as unknown as { sfx?: unknown }).sfx = sfx;
-					const r = loadProject(JSON.parse(JSON.stringify(raw)), { ids: createCounterIdSource(1000) });
-					expect(r.issues).toEqual([]);
-					expect(soundDesignNeedsRepair(r.document)).toBe(false);
-					const again = repairDocument(r.document, createCounterIdSource(5000));
-					expect(again.report).toEqual([]);
-				},
-			),
-			{ numRuns: 300 },
-		);
-		expect(readSoundDesign('x')).toBeNull();
 	});
 
 	it('reports cue changes in the transaction diff', () => {

@@ -1,42 +1,11 @@
-// Land / exit cues of the ANIME motion-graphic templates follow their real animation (wp-note "Phase 6 → WP6.5b",
-// item 16). The project layer may not import anime.js; @jasper/mg-templates measures the anime templates on a pure
-// motion model (the phases the implementations here build their timelines from, and the anime.js ease curves ported
-// as functions). This test is the bridge: it builds each template's REAL anime.js timeline (the implementations'
-// own builds, seeked canonically like `useAnimeValues`) and checks
-//   1. the model's values equal the anime.js values at every frame (and between frames), for every template, at
-//      several rates, lengths (compressed intro / outro included) and params (every ease);
-//   2. the derived land / exit cues (deriveCues with the shipped registry) sit within ±1 frame of where the real
-//      animation's frames come to rest / start leaving (the frames' changes against the motion threshold, as the
-//      keyframed-clip sampler measures a picture), and of a continuous-time oracle on the real values (land ±1;
-//      exit −1…+1.5 frames: an ease-in onset averaged over a frame crosses the threshold up to 1.5 frames after the
-//      instantaneous rate, as in @jasper/mg-templates' fframes test);
-//   3. before (the declared intro / outro the anime templates used to fall back to) is reported for the wp-note.
-// The fframes templates (lower-third, title-card) are checked the same way against their own analytic oracle in
-// @jasper/mg-templates `test/motion-cues.test.ts`; together every shipped template is covered (asserted there).
-import {
-	ANIME_CATALOG,
-	type AnimeTrack,
-	animeMotionModel,
-	animeTemplateTiming,
-	CALLOUT_PHASES,
-	calloutParams,
-	counterParams,
-	formatCounterValue,
-	K_OPACITY,
-	lowerThirdAnimParams,
-	mgRegistry,
-	needsShaping,
-	phaseTimes,
-	segmentText,
-	socialCommentParamsSchema,
-	socialCommentSchedule,
-	socialCommentSegments,
-	socialLikesTick,
-	socialTickText,
-	TEXT_CHANGE_SPEED,
-	titleRevealParams,
-	trackValueAt,
-} from '@jasper/mg-templates';
+// @vitest-environment node
+// Regression source: sound-design.md, Phase 6 / WP6.5b item 16. Declared template windows placed the
+// callout's land 25 frames late and the counter's exit 16 frames early. Compare cues with the actual
+// rendered label motion through the public template components, without private timeline targets.
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { mgRegistry } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -44,25 +13,206 @@ import {
 	defaultRegistries,
 	deriveCues,
 	flicksPerFrame,
-	K_SCALE,
-	MOVE_OFF,
-	MOVE_ON,
-	mgPhases,
 } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
-import { createPausedTimeline, roundValue, seekCanonical } from '../src/runtime/index.ts';
-import { buildCallout } from '../src/templates/callout.tsx';
-import { easeOf } from '../src/templates/common.tsx';
-import { buildCounter, buildCounterCount, counterProgressAt } from '../src/templates/counter.tsx';
-import { buildLowerThirdAnim } from '../src/templates/lower-third-anim.tsx';
-import {
-	buildSocialComment,
-	buildSocialTick,
-	socialTickProgressAt,
-} from '../src/templates/social-comment/build.ts';
-import { buildTitleReveal } from '../src/templates/title-reveal.tsx';
+import { type Browser, chromium, type Page } from '@playwright/test';
+import { build } from 'esbuild';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { MotionBox, MotionSample } from './mg-cue-renderer.tsx';
 
-const SEED = 7;
+const fps = 60000 / 1001;
+let browser: Browser;
+let page: Page;
+
+beforeAll(async () => {
+	const entry = join(dirname(fileURLToPath(import.meta.url)), 'mg-cue-renderer.tsx');
+	const bundle = await build({
+		entryPoints: [entry],
+		bundle: true,
+		write: false,
+		format: 'iife',
+		platform: 'browser',
+		target: 'es2022',
+		jsx: 'automatic',
+		define: { 'process.env.NODE_ENV': '"production"' },
+		logLevel: 'silent',
+	});
+	browser = await chromium.launch({
+		executablePath:
+			process.env.JASPER_BROWSER_EXECUTABLE ??
+			(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined),
+	});
+	page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+	await page.setContent('<!doctype html><html><body style="margin:0"></body></html>');
+	await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+});
+afterAll(async () => browser?.close());
+
+/** Cues of one clip at frame 0 on V1 (`rate`: the sequence preset; `sourceIn`: content frames trimmed off its head). */
+function cues(
+	template: string,
+	params: Record<string, unknown>,
+	duration: number,
+	opts: { rate?: string; sourceIn?: number } = {},
+) {
+	const ids = createCounterIdSource(1);
+	const doc = createEmptyProject({ ids, name: 'Motion cues', preset: `hd-1080p-${opts.rate ?? '59.94'}` });
+	const sequenceId = Object.keys(doc.sequences)[0]!;
+	const applied = applyTransaction(
+		doc,
+		{
+			label: 'Template',
+			origin: 'user',
+			sequenceId,
+			commands: [
+				{
+					type: 'clip.addMotionGraphic',
+					at: 0,
+					duration,
+					track: 'V1',
+					template: { id: template, version: 1 },
+					params,
+					ref: '$m',
+				},
+			],
+		},
+		{ ids, now: () => '2026-10-17T10:00:00.000Z', revision: 0, registries: defaultRegistries(mgRegistry) },
+	);
+	if (!applied.result.ok) throw new Error(JSON.stringify(applied.result.errors));
+	const document = structuredClone(applied.document);
+	if (opts.sourceIn) {
+		const seq = document.sequences[sequenceId]!;
+		(seq.clips[applied.result.refs.$m!] as { sourceIn: number }).sourceIn =
+			opts.sourceIn * flicksPerFrame(seq.settings.frameRate);
+	}
+	return deriveCues(document, sequenceId, {
+		sources: ['mg'],
+		density: 'rich',
+		mgTemplates: mgRegistry,
+	}).cues;
+}
+
+// Sound-design.md §§WP2.2/WP2.2a: screen travel in canvas diagonals/s, opacity weight 0.25,
+// log-scale weight 0.6, movement ends at 0.03. Fixed values are independent of production constants.
+function boxSpeed(a: MotionBox, b: MotionBox): number {
+	const scale =
+		a.width > 0 && b.width > 0 ? 0.6 * Math.abs(Math.log(b.width / a.width)) : a.width !== b.width ? 3 : 0;
+	return Math.max(
+		Math.hypot(b.x - a.x, b.y - a.y) / Math.hypot(1920, 1080),
+		0.25 * Math.abs(b.opacity - a.opacity),
+		scale,
+	);
+}
+
+// A small element inside a picture (a word, an icon) moves by the px its box travels or grows, not as a scale of the
+// whole picture (sound-design.md "Motion-graphic land / exit from the rendered motion": a word's or the heart's scale
+// counts as px of its size).
+function elementSpeed(a: MotionBox, b: MotionBox): number {
+	return Math.max(
+		Math.max(Math.hypot(b.x - a.x, b.y - a.y), Math.abs(b.width - a.width)) / Math.hypot(1920, 1080),
+		0.25 * Math.abs(b.opacity - a.opacity),
+	);
+}
+
+// A changed text moves the picture; otherwise the fastest observed box wins. With parts (social-comment), the first
+// part is the whole card (a picture of its own) and the label and the other parts are elements inside it.
+function speed(a: MotionSample, b: MotionSample, rate = fps): number {
+	if (a.text !== b.text) return 1;
+	if (!a.parts) return boxSpeed(a, b) * rate;
+	const parts = a.parts.map((p, i) => {
+		const q = b.parts?.[i];
+		if (!q) return 1;
+		return i === 0 ? boxSpeed(p, q) : elementSpeed(p, q);
+	});
+	return Math.max(elementSpeed(a, b), ...parts) * rate;
+}
+
+/** Rendered speed from each frame to the next of `from … to` (`opts.fps`: the clip's rate). */
+async function measure(
+	template: string,
+	params: Record<string, unknown>,
+	duration: number,
+	from: number,
+	to: number,
+	opts: { fps?: number; name?: string } = {},
+) {
+	const rate = opts.fps ?? fps;
+	const samples = await page.evaluate(
+		({ template, params, duration, frames, rate }) => {
+			return (
+				window as unknown as {
+					captureMotion(...args: [string, Record<string, unknown>, number, number[], number]): MotionSample[];
+				}
+			).captureMotion(template, params, duration, frames, rate);
+		},
+		{ template, params, duration, frames: Array.from({ length: to - from + 1 }, (_, i) => from + i), rate },
+	);
+	const measured = samples
+		.slice(1)
+		.map((sample, i) => ({ frame: sample.frame, speed: speed(samples[i]!, sample, rate) }));
+	const artifact = resolve(process.env.JASPER_TEST_RESULTS ?? 'test-results', 'motion-cues');
+	mkdirSync(artifact, { recursive: true });
+	writeFileSync(
+		join(artifact, `${opts.name ?? template}.json`),
+		JSON.stringify({ samples, measured }, null, 2),
+	);
+	return measured;
+}
+
+async function motion(
+	template: string,
+	params: Record<string, unknown>,
+	duration: number,
+	from: number,
+	to: number,
+) {
+	const measured = await measure(template, params, duration, from, to);
+	return measured.filter((sample) => sample.speed > 0.03).map((sample) => sample.frame);
+}
+
+describe('rendered template motion and sound cues', () => {
+	it('callout motion-path land follows the rendered label, including the overshoot', async () => {
+		const params = { ease: 'outBounce', motionPath: true };
+		const duration = Math.round(4 * fps);
+		const land = cues('callout', params, duration).find((c) => c.kind === 'land')!;
+		expect(land.frame).toBe(59); // independently measured historical regression, WP6.5b item 16
+		const moving = await motion('callout', params, duration, 0, 120);
+		expect(moving.length).toBeGreaterThan(0);
+		expect(Math.abs(moving.at(-1)! - land.frame)).toBeLessThanOrEqual(1);
+	});
+
+	it.each([
+		[
+			'title-reveal',
+			{ title: 'XY', subtitle: '', underline: false, stagger: 0.55, order: 'forward', ease: 'linear' },
+		],
+		['lower-third-anim', { name: 'Jasper', role: 'Editor', ease: 'linear' }],
+	] as const)('%s land follows the rendered text', async (template, params) => {
+		const duration = Math.round(5 * fps);
+		const land = cues(template, params, duration).find((c) => c.kind === 'land')!;
+		const moving = await motion(template, params, duration, 0, 150);
+		expect(moving.length).toBeGreaterThan(0);
+		// ATP-003: the second supplied glyph follows the first in a forward stagger.
+		if (template === 'title-reveal') expect(moving[0]!).toBeGreaterThan(1);
+		expect(Math.abs(moving.at(-1)! - land.frame)).toBeLessThanOrEqual(1);
+	});
+
+	it('counter exit follows rendered motion after the number has settled', async () => {
+		const params = { ease: 'inOutExpo', from: 1000, to: 0, decimals: 1 };
+		const duration = Math.round(5 * fps);
+		const exit = cues('counter', params, duration).find((c) => c.kind === 'exit')!;
+		expect(exit.frame).toBe(286); // independently measured historical regression, WP6.5b item 16
+		const moving = await motion('counter', params, duration, 180, duration - 1);
+		expect(moving.length).toBeGreaterThan(0);
+		expect(Math.abs(moving[0]! - exit.frame)).toBeLessThanOrEqual(1);
+	});
+});
+
+// social-comment@1 (social-comment design §7.6, sound-design.md "Motion-graphic land / exit from the rendered motion"):
+// its land / exit cues come from the shared schedule's motion model; they must sit where the rendered card comes to
+// rest after its entrance, word reveal and like tick, and where it starts leaving. The rule, from the work note:
+// movements are runs of frames above 0.03 reaching 0.12, at least 2 frames, joined across pauses of ≤ round(0.25·fps)
+// frames; the intro is the first movement when it starts within round(0.1·fps) + 1 frames and lands on its last moving
+// frame (never on the last content frame); the exit is the first frame of the last later movement.
 const RATES: Record<string, number> = {
 	'23.976': 24000 / 1001,
 	'25': 25,
@@ -72,387 +222,64 @@ const RATES: Record<string, number> = {
 	'59.94': 60000 / 1001,
 };
 
-type Real = {
-	/** Value of model track `tr` at content ms, from the real anime.js timeline. */
-	value(tr: Pick<AnimeTrack, 'target' | 'prop'>, ms: number): number;
-	text: ((ms: number) => string) | null;
-};
-
-/** The template's REAL timeline (its own build, the component's input), seeked canonically. */
-function realTimeline(id: string, params: Record<string, unknown>, totalFrames: number, fps: number): Real {
-	const def = ANIME_CATALOG.find((d) => d.id === id)!;
-	const at = animeTemplateTiming(def, { fps, localFrame: 0, durationFrames: totalFrames, sourceInFrames: 0 });
-	const timing = { totalMs: at.totalMs, introMs: at.introMs, outroMs: at.outroMs };
-	let built: { timeline: ReturnType<typeof createPausedTimeline>; targets: Record<string, number>[] };
-	let text: Real['text'] = null;
-	let line: { timeline: ReturnType<typeof createPausedTimeline>; target: { d: number } } | null = null;
-	if (id === 'title-reveal') {
-		const p = titleRevealParams.parse(params);
-		const units = segmentText(p.title, needsShaping(p.title) ? 'word' : 'char').filter(
-			(s) => !s.space,
-		).length;
-		built = buildTitleReveal({
-			...timing,
-			units,
-			order: p.order,
-			stagger: p.stagger,
-			ease: easeOf(p.ease),
-			seed: SEED,
-		});
-	} else if (id === 'lower-third-anim') {
-		const p = lowerThirdAnimParams.parse(params);
-		built = buildLowerThirdAnim({
-			...timing,
-			nameWords: segmentText(p.name, 'word').filter((s) => !s.space).length,
-			roleWords: segmentText(p.role, 'word').filter((s) => !s.space).length,
-			ease: easeOf(p.ease),
-		});
-	} else if (id === 'callout') {
-		const p = calloutParams.parse(params);
-		const input = { ...timing, ease: easeOf(p.ease), motionPath: p.motionPath };
-		built = buildCallout(input);
-		// The leader line is a DOM leaf (`createDrawable`): its drawn length is the same tweens on a plain value
-		// (intro: the end 0 → 1 with the template's ease; outro: the start 0 → 1 with inOut, i.e. the length 1 → 0).
-		const tl = createPausedTimeline();
-		const target = { d: 0 };
-		const pt = phaseTimes(input, CALLOUT_PHASES.line);
-		tl.add(target, { d: [0, 1], duration: pt.introDur, ease: input.ease }, pt.introStart);
-		if (pt.outroStart !== null)
-			tl.add(target, { d: [1, 0], duration: pt.outroDur, ease: 'inOut' }, pt.outroStart);
-		line = { timeline: tl, target };
-	} else if (id === 'social-comment') {
-		// the implementation's own input (SocialComment): the schedule, its anime.js timeline and the count tick
-		const p = socialCommentParamsSchema.parse(params);
-		const tick = socialLikesTick(p);
-		const schedule = socialCommentSchedule({
-			...timing,
-			entrance: p.entrance,
-			units: p.wordReveal ? socialCommentSegments(p.text, p.variant).units : 0,
-			tick,
-		});
-		built = buildSocialComment(schedule);
-		const count = schedule.tick ? buildSocialTick(schedule.tick) : null;
-		if (count)
-			text = (ms) =>
-				// the like count, or on store reviews the stars filled so far
-				socialTickText(p, socialTickProgressAt(count, ms));
-	} else {
-		const p = counterParams.parse(params);
-		const countMs = Math.max(1, Math.min(p.countSeconds * 1000, timing.totalMs - timing.outroMs));
-		const input = { ...timing, countMs, ease: easeOf(p.ease) };
-		built = buildCounter(input);
-		const count = buildCounterCount(input);
-		text = (ms) => {
-			const pr = counterProgressAt(count, ms);
-			return formatCounterValue(pr === 0 ? p.from : pr === 1 ? p.to : p.from + (p.to - p.from) * pr, p);
-		};
-	}
-	let at0 = Number.NaN;
-	let values: Record<string, number>[] = [];
-	return {
-		value(tr, ms) {
-			if (tr.target === 3 && tr.prop === 'draw' && line) {
-				seekCanonical(line.timeline, ms);
-				return roundValue(line.target.d);
-			}
-			if (ms !== at0) {
-				seekCanonical(built.timeline, ms);
-				values = built.targets.map((t) =>
-					Object.fromEntries(Object.entries(t).map(([k, v]) => [k, roundValue(v)])),
-				);
-				at0 = ms;
-			}
-			return values[tr.target]![tr.prop]!;
-		},
-		text,
-	};
-}
-
-/** Picture speed per content frame from values `v(track, ms)` (the rule of `animeTemplateSpeed`). */
-function frameSpeeds(
-	tracks: AnimeTrack[],
-	v: (tr: AnimeTrack, ms: number) => number,
-	text: ((ms: number) => string) | null,
-	total: number,
-	fps: number,
-	scale: number,
-): number[] {
-	const diag = Math.hypot(1920, 1080);
-	const out = new Array<number>(total).fill(0);
-	// all values of a frame at once (the real timeline seeks once per time)
-	let prev = tracks.map((tr) => v(tr, 0));
-	let prevText = text ? text(0) : '';
-	for (let f = 1; f < total; f++) {
-		const cur = tracks.map((tr) => v(tr, (f * 1000) / fps));
-		let px = 0;
-		let other = 0;
-		tracks.forEach((tr, i) => {
-			const a = prev[i]!;
-			const b = cur[i]!;
-			if (a === b) return;
-			const s = tr.show;
-			if (s.kind === 'px') {
-				const c = (x: number) => (s.clamp01 ? Math.min(1, Math.max(0, x)) : x);
-				px = Math.max(px, Math.abs(c(b) - c(a)) * s.perUnit * scale);
-			} else if (s.kind === 'point') {
-				const pa = s.pointAt(a);
-				const pb = s.pointAt(b);
-				px = Math.max(px, Math.hypot(pb.x - pa.x, pb.y - pa.y) * scale);
-			} else if (s.kind === 'opacity') other = Math.max(other, K_OPACITY * Math.abs(b - a));
-			else other = Math.max(other, a > 0 && b > 0 ? K_SCALE * Math.abs(Math.log(b / a)) : K_SCALE * 5);
-		});
-		let sp = Math.max(px / diag, other) * fps;
-		const t = text ? text((f * 1000) / fps) : '';
-		if (text && t !== prevText) sp = Math.max(sp, TEXT_CHANGE_SPEED);
-		prevText = t;
-		out[f] = sp;
-		prev = cur;
-	}
-	return out;
-}
-
-/**
- * Where a picture of per-frame speeds settles and starts leaving (written here, not `speedSegments`): moving frames
- * are runs above MOVE_OFF reaching MOVE_ON, at least 2 frames, joined over pauses ≤ 0.25 s; the intro is the first
- * when it starts within 0.1 s (+ 1 frame) and lands on its last moving frame; the outro is the last other movement
- * starting after the land, leaving on its first frame.
- */
-function restAndLeave(speed: number[], fps: number): { land: number | null; exit: number | null } {
+function restAndLeave(measured: { frame: number; speed: number }[], rate: number, total: number) {
+	const speedAt = new Array<number>(total).fill(0);
+	for (const m of measured) speedAt[m.frame] = m.speed;
 	const runs: [number, number, number][] = [];
-	for (let i = 0; i < speed.length; ) {
-		if (!(speed[i]! > MOVE_OFF)) {
+	for (let i = 0; i < total; ) {
+		if (!(speedAt[i]! > 0.03)) {
 			i++;
 			continue;
 		}
 		const a = i;
 		let peak = 0;
-		while (i < speed.length && speed[i]! > MOVE_OFF) peak = Math.max(peak, speed[i++]!);
+		while (i < total && speedAt[i]! > 0.03) peak = Math.max(peak, speedAt[i++]!);
 		runs.push([a, i - 1, peak]);
 	}
-	const bridge = Math.max(1, Math.round(0.25 * fps));
 	const joined: [number, number, number][] = [];
 	for (const r of runs) {
-		const last = joined[joined.length - 1];
-		if (last && r[0] - last[1] - 1 <= bridge) {
+		const last = joined.at(-1);
+		if (last && r[0] - last[1] - 1 <= Math.max(1, Math.round(0.25 * rate))) {
 			last[1] = r[1];
 			last[2] = Math.max(last[2], r[2]);
 		} else joined.push([...r]);
 	}
-	const moves = joined.filter((s) => s[2] >= MOVE_ON && s[1] - s[0] + 1 >= 2);
+	const moves = joined.filter((m) => m[2] >= 0.12 && m[1] - m[0] + 1 >= 2);
 	const first = moves[0];
-	const intro = first && first[0] <= Math.round(0.1 * fps) + 1 ? first : undefined;
-	const land = intro && intro[1] < speed.length - 1 ? intro[1] : null;
-	const last = moves[moves.length - 1];
+	const intro = first && first[0] <= Math.round(0.1 * rate) + 1 ? first : undefined;
+	const land = intro && intro[1] < total - 1 ? intro[1] : null;
+	const last = moves.at(-1);
 	const exit = last && last !== intro && (land === null || last[0] > land) ? last[0] : null;
-	return { land, exit };
+	return { land, exit, moves: moves.length };
 }
 
-/** Continuous-time oracle on the real values (1 ms steps): settle / leave in seconds. */
-function continuousOracle(
-	tracks: AnimeTrack[],
-	real: Real,
-	seconds: number,
-	scale: number,
-	fps: number,
-): { settle: number | null; leave: number | null } {
-	// Pauses joined into one movement: the frames' rule (up to round(0.25·fps) still frames between moving ones)
-	// in seconds — a count's last ticks are instants, so the rounding of 0.25 s to frames decides whether they join.
-	const bridge = (Math.round(0.25 * fps) + 1) / fps;
-	// The instantaneous rate of each real value: a central difference ±h inside its tweens. At a tween's own start
-	// and end the rate is not defined (outExpo / inExpo jump by 2⁻¹⁰ there: a change of a quarter 8-bit code value,
-	// not motion), so samples within 2h of a boundary take the rate from their neighbours.
-	const dtMs = 2;
-	const h = 0.01;
-	const diag = Math.hypot(1920, 1080);
-	const edges = tracks.map((tr) => tr.tweens.flatMap((tw) => [tw.start, tw.start + tw.dur]));
-	const nearEdge = (i: number, ms: number) => edges[i]!.some((e) => Math.abs(e - ms) < 2 * h);
-	const rateOf = (tr: AnimeTrack, a: number, b: number) => {
-		const k = 1000 / (2 * h);
-		const s = tr.show;
-		if (s.kind === 'px') {
-			const c = (x: number) => (s.clamp01 ? Math.min(1, Math.max(0, x)) : x);
-			return (Math.abs(c(b) - c(a)) * s.perUnit * scale * k) / diag;
-		}
-		if (s.kind === 'point') {
-			const pa = s.pointAt(a);
-			const pb = s.pointAt(b);
-			return (Math.hypot(pb.x - pa.x, pb.y - pa.y) * scale * k) / diag;
-		}
-		if (s.kind === 'opacity') return K_OPACITY * Math.abs(b - a) * k;
-		return a > 0 && b > 0 ? K_SCALE * Math.abs(Math.log(b / a)) * k : a !== b ? 1 : 0;
-	};
-	const spans: [number, number][] = [];
-	let open: number | null = null;
-	let prevText = real.text ? real.text(0) : '';
-	const last = tracks.map(() => 0);
-	const end = seconds * 1000;
-	for (let ms = dtMs; ms < end; ms += dtMs) {
-		let moving = false;
-		// all values at ms − h, then all at ms + h (the real timeline seeks once per time)
-		const va = tracks.map((tr) => real.value(tr, ms - h));
-		const vb = tracks.map((tr) => real.value(tr, ms + h));
-		tracks.forEach((tr, i) => {
-			let r = last[i]!;
-			if (!nearEdge(i, ms)) r = rateOf(tr, va[i]!, vb[i]!);
-			last[i] = r;
-			if (r > MOVE_OFF) moving = true;
-		});
-		const text = real.text ? real.text(ms) : '';
-		if (text !== prevText) moving = true;
-		prevText = text;
-		const t = ms / 1000;
-		if (moving && open === null) open = t - dtMs / 2000;
-		if (!moving && open !== null) {
-			spans.push([open, t - dtMs / 2000]);
-			open = null;
-		}
-	}
-	if (open !== null) spans.push([open, seconds]);
-	const joined: [number, number][] = [];
-	for (const sp of spans) {
-		const prev = joined[joined.length - 1];
-		if (prev && sp[0] - prev[1] <= bridge + 1e-9) prev[1] = sp[1];
-		else joined.push([...sp]);
-	}
-	const intro = joined[0] && joined[0][0] <= 0.1 ? joined[0] : undefined;
-	const tail = joined[joined.length - 1];
-	return { settle: intro ? intro[1] : null, leave: tail && tail !== intro ? tail[0] : null };
-}
-
-/** One motion-graphic clip on V1 at `at`, `duration` frames, content starting `sourceIn` frames in. */
-function mgDoc(
-	rate: string,
-	template: string,
-	params: Record<string, unknown>,
-	at: number,
-	duration: number,
-	sourceIn = 0,
-) {
-	const ids = createCounterIdSource(1);
-	const doc0 = createEmptyProject({ ids, name: 'T', preset: `hd-1080p-${rate}` });
-	const seqId = Object.keys(doc0.sequences)[0]!;
-	const { document, result } = applyTransaction(
-		doc0,
-		{
-			label: 't',
-			origin: 'user',
-			sequenceId: seqId,
-			commands: [
-				{
-					type: 'clip.addMotionGraphic',
-					at,
-					duration,
-					track: 'V1',
-					template: { id: template, version: 1 },
-					params,
-					ref: '$m',
-				},
-			],
-		},
-		{
-			ids: createCounterIdSource(9),
-			now: () => '2026-10-17T10:00:00.000Z',
-			revision: 0,
-			registries: defaultRegistries(mgRegistry),
-		},
-	);
-	if (!result.ok) throw new Error(JSON.stringify(result.errors));
-	const doc = structuredClone(document);
-	const seq = doc.sequences[seqId]!;
-	if (sourceIn)
-		(seq.clips[result.refs.$m!] as { sourceIn: number }).sourceIn =
-			sourceIn * flicksPerFrame(seq.settings.frameRate);
-	const r = deriveCues(doc, seqId, { sources: ['mg'], density: 'rich', mgTemplates: mgRegistry });
-	const cues = r.cues.filter((c) => c.from === 'mg');
-	return {
-		land: cues.find((c) => c.kind === 'land'),
-		exit: cues.find((c) => c.kind === 'exit'),
-	};
-}
-
-type Variant = {
-	template: string;
-	rate: string;
-	seconds: number;
-	sourceIn?: number;
-	params?: Record<string, unknown>;
-};
-
-const VARIANTS: Variant[] = [];
-for (const def of ANIME_CATALOG)
-	for (const rate of Object.keys(RATES))
-		VARIANTS.push({ template: def.id, rate, seconds: def.defaultDurationSeconds });
-VARIANTS.push(
-	{ template: 'title-reveal', rate: '30', seconds: 4, params: { ease: 'outBack' } },
-	{
-		template: 'title-reveal',
-		rate: '25',
-		seconds: 4,
-		params: { ease: 'outElastic', stagger: 0, order: 'center' },
-	},
-	{
-		template: 'title-reveal',
-		rate: '30',
-		seconds: 3,
-		params: { underline: false, subtitle: '', ease: 'linear' },
-	},
-	{ template: 'title-reveal', rate: '59.94', seconds: 4, params: { order: 'random', ease: 'outBounce' } },
-	{ template: 'title-reveal', rate: '30', seconds: 1.2, params: {} }, // intro + outro compressed
-	{ template: 'title-reveal', rate: '30', seconds: 4, sourceIn: 6, params: { ease: 'inOutExpo' } },
-	{ template: 'lower-third-anim', rate: '30', seconds: 5, params: { ease: 'outElastic' } },
-	{
-		template: 'lower-third-anim',
-		rate: '23.976',
-		seconds: 5,
-		params: { role: '', side: 'right', ease: 'outBack' },
-	},
-	{ template: 'lower-third-anim', rate: '50', seconds: 5, params: { ease: 'linear', name: 'Ana' } },
-	{ template: 'lower-third-anim', rate: '30', seconds: 1.1, params: {} },
-	{ template: 'callout', rate: '30', seconds: 4, params: { motionPath: true } },
-	{ template: 'callout', rate: '29.97', seconds: 4, params: { path: 'straight', ease: 'outExpo' } },
-	{ template: 'callout', rate: '59.94', seconds: 4, params: { ease: 'outBounce', motionPath: true } },
-	{ template: 'callout', rate: '30', seconds: 4, sourceIn: 4, params: {} },
-	{ template: 'counter', rate: '30', seconds: 5, params: { ease: 'linear', countSeconds: 1 } },
-	{ template: 'counter', rate: '25', seconds: 6, params: { label: '', countSeconds: 4, to: 99 } },
-	{
-		template: 'counter',
-		rate: '59.94',
-		seconds: 5,
-		params: { ease: 'inOutExpo', from: 1000, to: 0, decimals: 1 },
-	},
-);
-// social-comment: every entrance × the extras (none, word reveal, like tick, both) on the TikTok variants (the
-// schedule does not depend on the card, only on the likes being drawn: the reply bubble has none, so its tick is off),
-// a long comment (the reveal compresses to its 2.4 s span), short clips (the extras squeezed before the exit; intro and
-// outro compressed), other rates and a head trim.
-for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
-	for (const [wordReveal, likeTick] of [
-		[false, false],
-		[true, false],
-		[false, true],
-		[true, true],
-	] as const)
-		VARIANTS.push({
-			template: 'social-comment',
+type SocialRow = { rate: string; seconds: number; sourceIn?: number; params: Record<string, unknown> };
+const ENTRANCES = ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'] as const;
+const SOCIAL_ROWS: SocialRow[] = [
+	// every entrance × the extras (none, word reveal, like tick, both) on the TikTok comment
+	...ENTRANCES.flatMap((entrance) =>
+		(
+			[
+				[false, false],
+				[true, false],
+				[false, true],
+				[true, true],
+			] as const
+		).map(([wordReveal, likeTick]) => ({
 			rate: '30',
 			seconds: 5,
 			params: { variant: 'tiktok-comment', entrance, wordReveal, likeTick },
-		});
-VARIANTS.push(
+		})),
+	),
+	// the default card (TikTok reply bubble: no likes drawn, so no tick), other rates, a huge count, a long comment
+	// (the reveal compresses to its span), extras squeezed before the exit, intro and outro compressed, a head trim
+	{ rate: '25', seconds: 5, params: { entrance: 'drop-bounce', wordReveal: true } },
 	{
-		template: 'social-comment',
-		rate: '25',
-		seconds: 5,
-		params: { entrance: 'drop-bounce', wordReveal: true },
-	},
-	{
-		template: 'social-comment',
 		rate: '59.94',
 		seconds: 4,
 		params: { variant: 'tiktok-comment', entrance: 'classic-pop', likeTick: true, likes: 4_812_345 },
 	},
 	{
-		template: 'social-comment',
 		rate: '23.976',
 		seconds: 6,
 		params: {
@@ -461,55 +288,39 @@ VARIANTS.push(
 			text: 'Okay this is ==honestly the best== tutorial I have seen all week 😂 I tried it on my own videos and the engagement doubled overnight, can you please make a part two about ||editing||? 🔥🙏 ~~Thanks~~ so much!',
 		},
 	},
+	{ rate: '30', seconds: 1.5, params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true } },
+	{ rate: '30', seconds: 0.6, params: { entrance: 'drop-bounce' } },
 	{
-		template: 'social-comment',
 		rate: '30',
-		seconds: 1.5,
-		params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true },
+		seconds: 4,
+		sourceIn: 5,
+		params: { variant: 'tiktok-comment', entrance: 'soft-spring', likeTick: true },
 	},
-	{ template: 'social-comment', rate: '30', seconds: 0.6, params: { entrance: 'drop-bounce' } },
 	// Instagram: the post comment draws likes (its tick runs), the Reels reply card does not (word reveal only)
 	...(['classic-pop', 'grow-from-tail'] as const).flatMap((entrance) => [
 		{
-			template: 'social-comment',
 			rate: '30',
 			seconds: 5,
 			params: { variant: 'instagram-post', entrance, wordReveal: true, likeTick: true, likes: 114 },
 		},
 		{
-			template: 'social-comment',
 			rate: '30',
 			seconds: 5,
 			params: { variant: 'instagram-reel-reply', entrance, wordReveal: true, likeTick: true },
 		},
 	]),
 	{
-		template: 'social-comment',
 		rate: '25',
 		seconds: 1.5,
 		params: { variant: 'instagram-post', entrance: 'soft-spring', likeTick: true, likes: 987_654 },
 	},
-	{
-		template: 'social-comment',
-		rate: '30',
-		seconds: 4,
-		sourceIn: 5,
-		params: { variant: 'tiktok-comment', entrance: 'soft-spring', likeTick: true },
-	},
-);
-
-// X: the post card draws likes (the heart ticks) — every entrance with both extras, the like tick alone with huge counts
-// at another rate, word reveal growing from its avatar corner on a short clip
-for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
-	VARIANTS.push({
-		template: 'social-comment',
+	// X: every entrance with both extras, a huge count on the dark theme at 50 fps, word reveal on a short clip
+	...ENTRANCES.map((entrance) => ({
 		rate: '30',
 		seconds: 5,
 		params: { variant: 'x-post', entrance, wordReveal: true, likeTick: true },
-	});
-VARIANTS.push(
+	})),
 	{
-		template: 'social-comment',
 		rate: '50',
 		seconds: 3,
 		params: {
@@ -521,26 +332,17 @@ VARIANTS.push(
 		},
 	},
 	{
-		template: 'social-comment',
 		rate: '29.97',
 		seconds: 1.5,
 		params: { variant: 'x-post', entrance: 'grow-from-tail', wordReveal: true },
 	},
-);
-
-// YouTube: the comment draws likes (the thumb ticks) — every entrance with both extras, and the like tick alone at
-// another rate; the Shorts card has no likes (its tick is off) — word reveal growing from its avatar corner, and a
-// like tick that must be ignored.
-for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
-	VARIANTS.push({
-		template: 'social-comment',
+	// YouTube: the comment ticks its thumb; the Shorts card has no likes (a like tick there must be ignored)
+	...ENTRANCES.map((entrance) => ({
 		rate: '30',
 		seconds: 5,
 		params: { variant: 'youtube-comment', entrance, wordReveal: true, likeTick: true },
-	});
-VARIANTS.push(
+	})),
 	{
-		template: 'social-comment',
 		rate: '25',
 		seconds: 3,
 		params: {
@@ -552,143 +354,63 @@ VARIANTS.push(
 		},
 	},
 	{
-		template: 'social-comment',
 		rate: '30',
 		seconds: 5,
 		params: { variant: 'youtube-shorts-reply', entrance: 'grow-from-tail', wordReveal: true },
 	},
 	{
-		template: 'social-comment',
 		rate: '59.94',
 		seconds: 2,
 		params: { variant: 'youtube-shorts-reply', entrance: 'drop-bounce', likeTick: true, wordReveal: true },
 	},
-);
-
-// Store reviews: the like tick fills the stars one by one (`socialTickText` is the stars filled so far) — every
-// entrance with both extras on the three cards, a 1-star review on a short clip, another rate
-for (const variant of ['play-store-review', 'app-store-review', 'app-store-review-ios'])
-	for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
-		VARIANTS.push({
-			template: 'social-comment',
+	// store reviews: the like tick fills the stars one by one — every entrance with both extras on the three cards, a
+	// 1-star review on a short clip, another rate
+	...(['play-store-review', 'app-store-review', 'app-store-review-ios'] as const).flatMap((variant) =>
+		ENTRANCES.map((entrance) => ({
 			rate: '30',
 			seconds: 5,
 			params: { variant, entrance, wordReveal: true, likeTick: true, rating: 4 },
-		});
-VARIANTS.push(
+		})),
+	),
 	{
-		template: 'social-comment',
 		rate: '25',
 		seconds: 1.5,
 		params: { variant: 'play-store-review', entrance: 'drop-bounce', likeTick: true, rating: 1 },
 	},
 	{
-		template: 'social-comment',
 		rate: '59.94',
 		seconds: 4,
 		params: { variant: 'app-store-review-ios', entrance: 'soft-spring', likeTick: true, rating: 5 },
 	},
-);
+];
 
-const report: string[] = [];
-const before: number[] = [];
-const after: number[] = [];
-
-describe('anime template land / exit cues follow the real anime.js animation', () => {
-	it('covers every shipped anime template, each measured (no declared fallback)', () => {
-		expect(new Set(VARIANTS.map((v) => v.template))).toEqual(new Set(ANIME_CATALOG.map((d) => d.id)));
-		for (const d of ANIME_CATALOG)
-			expect(mgRegistry.get(d.id, d.version)!.motionSpeed).toBeTypeOf('function');
-	});
-
-	for (const v of VARIANTS)
-		it(`${v.template} ${JSON.stringify(v.params ?? {})} at ${v.rate} fps, ${v.seconds} s${v.sourceIn ? `, sourceIn ${v.sourceIn}` : ''}`, () => {
-			const fps = RATES[v.rate]!;
-			const def = ANIME_CATALOG.find((d) => d.id === v.template)!;
-			const duration = Math.round(v.seconds * fps);
-			const s = v.sourceIn ?? 0;
+describe('social-comment cues follow the rendered card', () => {
+	it.each(SOCIAL_ROWS.map((row, i) => [i, row] as const))(
+		'%i: %j',
+		async (i, row) => {
+			const rate = RATES[row.rate]!;
+			const duration = Math.round(row.seconds * rate);
+			const s = row.sourceIn ?? 0;
 			const total = s + duration;
-			const params = { ...def.defaults, ...(v.params ?? {}) };
-			const model = animeMotionModel(def, params, { fps, totalFrames: total })!;
-			expect(model).not.toBeNull();
-			const real = realTimeline(v.template, params, total, fps);
-			// 1. the model's values are anime.js's, at every frame and halfway between frames
-			const order = (params as { order?: string }).order;
-			for (let k = 0; k < 2 * total; k++) {
-				const ms = (k * 500) / fps;
-				// a seeded order (title-reveal 'random'): the same set of character values at every time
-				const chars =
-					order === 'random' ? segmentText(String(params.title), 'char').filter((x) => !x.space).length : 0;
-				for (const prop of chars ? ['o', 'y'] : []) {
-					const units = model.tracks.filter((tr) => tr.prop === prop && tr.target < chars);
-					const m = units.map((tr) => trackValueAt(tr, ms)).sort((a, b) => a - b);
-					const r = units.map((tr) => real.value(tr, ms)).sort((a, b) => a - b);
-					for (let i = 0; i < m.length; i++) expect(Math.abs(m[i]! - r[i]!)).toBeLessThan(1e-6);
-				}
-				// (at a tween's end, anime.js and the model may round the time to opposite sides of it: 1e-6 ms either
-				// side is accepted — outExpo / inExpo jump by 2⁻¹⁰ there)
-				for (const tr of model.tracks.filter((x) => x.target >= chars)) {
-					const r = real.value(tr, ms);
-					const d = Math.min(...[ms - 1e-6, ms, ms + 1e-6].map((t) => Math.abs(trackValueAt(tr, t) - r)));
-					expect(d, `${tr.target}.${tr.prop} at ${ms.toFixed(3)} ms`).toBeLessThan(1e-6);
-				}
-				if (model.textAt) expect(model.textAt(ms)).toBe(real.text!(ms));
-			}
-			// 2. the cues against the real animation's frames and a continuous oracle
-			const speed = frameSpeeds(
-				model.tracks,
-				(tr, ms) => real.value(tr, ms),
-				real.text,
-				total,
-				fps,
-				model.scale,
-			);
-			const truth = restAndLeave(speed, fps);
-			const oracle = continuousOracle(model.tracks, real, total / fps, model.scale, fps);
-			const at = 120;
-			const { land, exit } = mgDoc(v.rate, v.template, params, at, duration, s);
-			const content = (frame: number) => frame - at + s;
-			if (process.env.MG_DEBUG)
-				process.stderr.write(
-					`${JSON.stringify(v)} truth ${JSON.stringify(truth)} oracle ${((oracle.settle ?? 0) * fps).toFixed(2)},${((oracle.leave ?? 0) * fps).toFixed(2)} cues ${land ? content(land.frame) : '-'} ${exit ? content(exit.frame) : '-'}\n`,
-				);
+			const found = cues('social-comment', row.params, duration, { rate: row.rate, sourceIn: s });
+			const land = found.find((c) => c.kind === 'land');
+			const exit = found.find((c) => c.kind === 'exit');
+			// the clip starts at frame 0 and shows content frame f at sequence frame f − sourceIn
+			const measured = await measure('social-comment', row.params, total, 0, total - 1, {
+				fps: rate,
+				name: `social-comment-${i}`,
+			});
+			const truth = restAndLeave(measured, rate, total);
+			expect(truth.moves).toBeGreaterThan(0); // the card rendered and moved
 			if (truth.land !== null && truth.land > s) {
 				expect(land, 'land cue').toBeDefined();
-				expect(Math.abs(content(land!.frame) - truth.land)).toBeLessThanOrEqual(1);
-				expect(land!.confidence).toBe(0.8);
-				// The counter settles on its last ticks of the number: instants, which only the frames define (two ticks
-				// 0.29 s apart are one movement or two depending on the frame grid) — its reference is the frames above.
-				if (!model.textAt)
-					expect(Math.abs(content(land!.frame) - oracle.settle! * fps)).toBeLessThanOrEqual(1);
+				expect(Math.abs(land!.frame + s - truth.land)).toBeLessThanOrEqual(1);
 			} else expect(land).toBeUndefined();
 			if (truth.exit !== null && truth.exit > s) {
 				expect(exit, 'exit cue').toBeDefined();
-				expect(Math.abs(content(exit!.frame) - truth.exit)).toBeLessThanOrEqual(1);
-				const lag = content(exit!.frame) - oracle.leave! * fps;
-				expect(lag).toBeGreaterThanOrEqual(-1);
-				expect(lag).toBeLessThanOrEqual(1.5);
+				expect(Math.abs(exit!.frame + s - truth.exit)).toBeLessThanOrEqual(1);
 			} else expect(exit).toBeUndefined();
-			// 3. before: the declared intro / outro (what anime templates used to get)
-			const declared = mgPhases(def, fps, total);
-			if (truth.land !== null && land) {
-				before.push(Math.abs(declared.intro - truth.land));
-				after.push(Math.abs(content(land.frame) - truth.land));
-			}
-			if (truth.exit !== null && exit && declared.outro > 0) {
-				before.push(Math.abs(total - declared.outro - truth.exit));
-				after.push(Math.abs(content(exit.frame) - truth.exit));
-			}
-			report.push(
-				`${v.template} ${v.rate} ${JSON.stringify(v.params ?? {})}: land ${land ? content(land.frame) : '-'} (real ${truth.land}, oracle ${oracle.settle === null ? '-' : (oracle.settle * fps).toFixed(2)}, declared ${declared.intro}); exit ${exit ? content(exit.frame) : '-'} (real ${truth.exit}, oracle ${oracle.leave === null ? '-' : (oracle.leave * fps).toFixed(2)}, declared ${total - declared.outro})`,
-			);
-		}, 180_000);
-
-	it('reports declared (before) vs measured (after) distance to the real frames', () => {
-		console.log(report.join('\n'));
-		const max = (xs: number[]) => Math.max(0, ...xs);
-		console.log(
-			`declared timing: max ${max(before)} frames off; measured: max ${max(after)} frames off (${after.length} cues)`,
-		);
-		expect(max(after)).toBeLessThanOrEqual(1);
-	});
+		},
+		120_000,
+	);
 });

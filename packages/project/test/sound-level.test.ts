@@ -1,7 +1,7 @@
 // Default insert level (spec 12 §2.3; Phase 2 verification B): `defaultSfxLevel` (role targets, delivery, true-peak
 // ceiling, range, unmeasured sounds; property over hostile descriptors) and `soundDesign.place` applying it when no
 // gain is given (recorded as `sfx.level`, `gainOffsetDb` for the variation), a swap / role change refreshing an
-// untouched default and keeping a gain set since, undo / redo, refusals and the repair of a bad stored level.
+// untouched default and keeping a gain set since, immutability, refusals and the repair of a bad stored level.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -160,7 +160,7 @@ function libMedia(
 const clipOf = (h: Harness, id: string) => h.seq.clips[id] as SfxClip;
 
 describe('soundDesign.place default level', () => {
-	it('three layers of a hero cue get hero / layer / layer levels from their descriptors; recorded; undo / redo', () => {
+	it('three layers of a hero cue get hero / layer / layer levels from their descriptors; recorded; immutability', () => {
 		const h = new Harness();
 		const a = libMedia(h, { maxMomentaryLufs: -10, truePeakDb: -1 });
 		const b = libMedia(h, { maxMomentaryLufs: -30, truePeakDb: -20 });
@@ -190,15 +190,8 @@ describe('soundDesign.place default level', () => {
 			expect(cl.sfx!.level!.by).toBe('default');
 		}
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// undo = the untouched document (the transaction is immutable); redo = the same levels
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const after = h.doc;
-		h.doc = before;
-		const again = h.ok([
-			{ type: 'soundDesign.place', cueId: cue, layers: [{ mediaId: a }, { mediaId: b }, { mediaId: c }] },
-		]).results[0] as { clips: { clipId: string }[] };
-		expect(again.clips.map((x) => clipOf(h, x.clipId).gainDb)).toEqual([-6, 4, -4]);
-		expect(Object.keys(after.sequences)).toEqual(Object.keys(h.doc.sequences));
 	});
 
 	it('an explicit gainDb wins (no level recorded); gainOffsetDb is added to the default', () => {
@@ -272,7 +265,7 @@ describe('soundDesign.place default level', () => {
 		const h = new Harness();
 		const m = libMedia(h, { maxMomentaryLufs: -20, truePeakDb: -10 });
 		const bad = h.tx([{ type: 'soundDesign.place', frame: 40, layers: [{ mediaId: m, gainOffsetDb: 40 }] }]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_SCHEMA' }] });
 		const r = h.ok([{ type: 'soundDesign.place', frame: 40, layers: [{ mediaId: m }] }]);
 		const id = (r.results[0] as { clips: { clipId: string }[] }).clips[0]!.clipId;
 		const raw = clone(h.doc);

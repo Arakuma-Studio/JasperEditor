@@ -152,8 +152,7 @@ describe('soundProposalItems', () => {
 		// Accepting one place item brings exactly its setup (bin, its sounds, its cue): one transaction.
 		const closure = dependencyClosure(p, ['sfx:002']).map((i) => i.id);
 		expect(closure).toEqual(['bin', `sound:${a.soundId}`, `sound:${c.soundId}`, 'cue:sfx:002', 'sfx:002']);
-		const { doc, composed } = accept(h, p, ['sfx:002']);
-		expect(composed.tx.commands.length).toBe(5);
+		const { doc } = accept(h, p, ['sfx:002']);
 		const seq = Object.values(doc.sequences)[0]!;
 		const cues = soundCuesOf(seq);
 		const land = cues.find((x) => x.frame === 120)!;

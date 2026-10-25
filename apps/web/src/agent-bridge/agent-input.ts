@@ -75,18 +75,6 @@ export function userGestureActive(at = now()): boolean {
 	return at - lastUserInputAt < USER_GESTURE_MS;
 }
 
-/** Tests: as if the user just pressed a key (jsdom cannot dispatch trusted input). */
-export function markUserInputForTests(): void {
-	lastUserInputAt = now();
-}
-
-/** Tests: forget all input. */
-export function resetAgentInputForTests(): void {
-	depth = 0;
-	lastAgentInputAt = Number.NEGATIVE_INFINITY;
-	lastUserInputAt = Number.NEGATIVE_INFINITY;
-}
-
 /** The session guard: transactions that need approval are refused while agent input is active. */
 export function agentUiTxGuard(tx: SessionTxInput): Issue | null {
 	if (tx.origin !== 'user' || tx.dryRun || !agentInputActive()) return null;

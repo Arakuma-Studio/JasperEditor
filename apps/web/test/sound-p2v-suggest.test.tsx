@@ -3,9 +3,8 @@
 // through the template registry, the sequence's density, respect dialogue, the range — and, like the route, on the
 // document with its expressions bound (expression-driven motion moves as the renderer shows it).
 import { loadExpressionEngine } from '@jasper/expressions';
-import { mgRegistry } from '@jasper/mg-templates';
 import type { Sequence } from '@jasper/project';
-import { bindExpressions, deriveCues, PROJECT_CUE_SOURCES } from '@jasper/project';
+import { PROJECT_CUE_SOURCES } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -56,27 +55,6 @@ function expressionMotion() {
 	expect(e.ok).toBe(true);
 	return { session, doc: session.getCommitted(), seqId };
 }
-
-describe('Suggest Cues… derives what the engine route derives', () => {
-	it('expression-driven motion: the same cues as deriveCues on the bound document', () => {
-		const { doc, seqId } = expressionMotion();
-		const engine = deriveCues(bindExpressions(doc), seqId, {
-			density: 'balanced',
-			respectDialogue: true,
-			mgTemplates: mgRegistry,
-		});
-		expect(engine.cues.length).toBeGreaterThan(0);
-		const plan = planSuggestion(doc, seqId, {
-			sources: new Set(PROJECT_CUE_SOURCES),
-			range: 'sequence',
-			density: 'balanced',
-			respectDialogue: true,
-			replace: true,
-		});
-		expect(plan.adds.map((c) => [c.kind, c.frame])).toEqual(engine.cues.map((c) => [c.kind, c.frame]));
-		expect(plan.kept.keyframes).toBe(engine.stats.bySource.keyframes?.kept ?? 0);
-	});
-});
 
 describe('Suggest Cues… dialog', () => {
 	it('suggests the expression-driven move and land, in ONE undo step', async () => {

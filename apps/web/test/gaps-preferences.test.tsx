@@ -9,7 +9,7 @@ import { autoSavePolicy } from '../src/runtime/save.ts';
 import { PREFERENCES_DIALOG, registerPreferencesDialog } from '../src/shell/preferences/index.ts';
 
 beforeAll(() => registerAllCommands());
-beforeEach(() => gapsPrefs.reset());
+beforeEach(() => gapsPrefs.set(parseGapsPrefs({})));
 afterEach(() => cleanup());
 
 describe('preference pages', () => {

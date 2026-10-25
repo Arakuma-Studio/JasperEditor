@@ -34,7 +34,7 @@ describe('Convolution Reverb', () => {
 		const x = new Float32Array(n);
 		x[0] = 1;
 		r.process([x], 0, n);
-		for (let i = 0; i < latency; i++) expect(x[i]).toBe(0);
+		expect(x.subarray(0, latency).every((v) => Object.is(v, 0))).toBe(true);
 		expect(x.subarray(latency + 1).some((sample) => sample !== 0)).toBe(true);
 	});
 
@@ -44,7 +44,7 @@ describe('Convolution Reverb', () => {
 		const x = noise(2, 9600, 0.3);
 		const y = x.slice();
 		r.process([y], 0, y.length);
-		for (let i = latency; i < x.length; i++) expect(y[i]).toBeCloseTo(x[i - latency]!, 6);
+		expect(y.subarray(latency).every((v, i) => Math.abs(v - x[i]!) < 5e-7)).toBe(true);
 	});
 });
 
@@ -73,7 +73,7 @@ describe('Studio and Surround Reverb', () => {
 		const x = noise(3, 4800, 0.3);
 		const y = x.slice();
 		s.process([y, y.slice()], 0, y.length);
-		for (let i = 0; i < x.length; i++) expect(y[i]).toBeCloseTo(x[i]!, 6);
+		expect(y.every((v, i) => Math.abs(v - x[i]!) < 5e-7)).toBe(true);
 		const w = fx('surround-reverb', { dry: 0, wet: 100 });
 		const imp = new Float32Array(SR);
 		imp[0] = 1;
@@ -89,29 +89,35 @@ describe('Pitch Shifter', () => {
 		const l = sine(f, 0.5, SR, n);
 		const r = l.slice();
 		p.process([l, r], 0, n);
-		for (let i = 0; i < n; i++) expect(l[i]).toBe(r[i]);
+		expect(l.every((v, i) => Object.is(v, r[i]))).toBe(true);
 		return { y: l, lat: p.latency() };
 	}
 
-	/** Peak frequency by parabolic interpolation of a Hann-windowed DFT around the expected frequency. */
+	/** Peak on the same 0.05 Hz grid: Hann-windowed DFT magnitudes through the independent Goertzel recurrence. */
 	function peakHz(y: Float32Array, from: number, len: number, guess: number): number {
+		const windowed = Float64Array.from(
+			{ length: len },
+			(_, i) => y[from + i]! * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / len)),
+		);
 		let best = 0;
 		let bestF = guess;
 		for (let f = guess * 0.97; f <= guess * 1.03; f += 0.05) {
-			let re = 0;
-			let im = 0;
-			for (let i = 0; i < len; i++) {
-				const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / len);
-				const a = (2 * Math.PI * f * i) / SR;
-				re += y[from + i]! * w * Math.cos(a);
-				im += y[from + i]! * w * Math.sin(a);
+			const coefficient = 2 * Math.cos((2 * Math.PI * f) / SR);
+			let previous = 0;
+			let beforePrevious = 0;
+			for (const sample of windowed) {
+				const next = sample + coefficient * previous - beforePrevious;
+				beforePrevious = previous;
+				previous = next;
 			}
-			const m = re * re + im * im;
+			const m =
+				previous * previous + beforePrevious * beforePrevious - coefficient * previous * beforePrevious;
 			if (m > best) {
 				best = m;
 				bestF = f;
 			}
 		}
+		if (!(best > 0) || !Number.isFinite(best)) throw new Error('No finite spectral peak');
 		return bestF;
 	}
 
@@ -137,6 +143,6 @@ describe('Pitch Shifter', () => {
 	it('zero shift is the input delayed by exactly latency() samples', () => {
 		const { y, lat } = shifted({ semitones: 0 }, 440);
 		const x = sine(440, 0.5, SR, y.length);
-		for (let i = lat + 2048; i < y.length; i++) expect(Math.abs(y[i]! - x[i - lat]!)).toBeLessThan(2e-3);
+		expect(y.subarray(lat + 2048).every((v, i) => Math.abs(v - x[i + 2048]!) < 2e-3)).toBe(true);
 	});
 });

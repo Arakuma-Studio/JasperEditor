@@ -4,6 +4,7 @@
 // choices. After every step (once the follow-ups settled) the engine's stored states and the session's document agree:
 // an item is `accepted` exactly when what it adds is in the document, and nothing is ever in it twice. The fake engine
 // enforces the engine's guards (reopen refused while an accept is in the document, a redo record checked).
+import { setImmediate } from 'node:timers/promises';
 import { createCounterIdSource, createEmptyProject, defaultRegistries, type Sequence } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -100,11 +101,11 @@ const op: fc.Arbitrary<Op> = fc.oneof(
 );
 
 const settle = async (f: ReturnType<typeof setup>) => {
-	for (let i = 0; i < 6; i++) {
-		await f.c.settled();
-		await new Promise((r) => setTimeout(r, 0));
-		f.drain();
-	}
+	await f.c.settled();
+	// FakeEngine resolves requests without I/O: one event-loop turn drains its event/follow-up microtasks.
+	await setImmediate();
+	f.drain();
+	await f.c.settled();
 };
 
 function check(f: ReturnType<typeof setup>, trace: string[]) {

@@ -61,7 +61,7 @@ const cut = (text: string, max = CARD_ITEM_CHARS) =>
  * changes, then additions, each item cut to CARD_ITEM_CHARS (a long path cannot push a removal off the card); the label
  * names every kind.
  */
-export function rootsApprovalCard(plan: SoundRootsPlan): OperationApproval | null {
+function rootsApprovalCard(plan: SoundRootsPlan): OperationApproval | null {
 	const { added, removed, relicensed, recredited } = plan;
 	if (!added.length && !removed.length && !relicensed.length && !recredited.length) return null;
 	const lines: string[] = [

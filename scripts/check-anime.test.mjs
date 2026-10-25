@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { checkRepo, findViolations } from './check-anime.mjs';
 
 const rules = (rel, text) => findViolations(rel, text).map((v) => v.rule);
@@ -273,6 +273,7 @@ describe('check-anime determinism rules (S11:ANM-006)', () => {
 describe('check-anime over a tree', () => {
 	it('finds problems with file and line', () => {
 		const tree = mkdtempSync(join(tmpdir(), 'check-anime-'));
+		onTestFinished(() => rmSync(tree, { recursive: true, force: true }));
 		mkdirSync(join(tree, 'packages/motion/src/text'), { recursive: true });
 		mkdirSync(join(tree, 'apps/web/src'), { recursive: true });
 		writeFileSync(join(tree, 'packages/motion/src/text/x.ts'), 'const a = 1;\nconst r = Math.random();\n');

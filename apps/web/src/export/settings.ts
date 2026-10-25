@@ -142,7 +142,7 @@ export function buildExportSettings(
  * VP9: WebM with Opus when the engine has Opus; the others MP4 with AAC). The engine writes what it is asked where the
  * codec fits and names any change in the plan's warnings (OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED, WP6.5a).
  */
-export function exportFormatOf(
+function exportFormatOf(
 	codec: VideoCodec,
 	opus: boolean,
 ): { container: ExportSettings['container']; audio: 'aac' | 'opus' | 'pcm' } {

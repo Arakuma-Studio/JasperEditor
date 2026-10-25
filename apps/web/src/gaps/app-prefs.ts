@@ -146,27 +146,9 @@ export const gapsPrefs = {
 		}
 		for (const l of [...listeners]) l();
 	},
-	reset(): void {
-		state = structuredClone(DEFAULT_GAPS_PREFS);
-		try {
-			storage()?.removeItem(KEY);
-		} catch {
-			/* nothing */
-		}
-		for (const l of [...listeners]) l();
-	},
 	subscribe(l: () => void): () => void {
 		listeners.add(l);
 		return () => listeners.delete(l);
-	},
-	/** Tests: re-read storage. */
-	reload(): void {
-		try {
-			state = parseGapsPrefs(JSON.parse(storage()?.getItem(KEY) ?? '{}'));
-		} catch {
-			state = structuredClone(DEFAULT_GAPS_PREFS);
-		}
-		for (const l of [...listeners]) l();
 	},
 };
 

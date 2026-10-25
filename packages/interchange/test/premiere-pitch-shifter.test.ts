@@ -14,17 +14,11 @@ import { describe, expect, it } from 'vitest';
 import { exportFcp7, importFcp7 } from '../src/fcp7.ts';
 import { importTimeline } from '../src/index.ts';
 import {
-	centsOfRatio,
 	isPremierePitchShifter,
 	jasperPitchToPremiere,
-	PITCH_TOLERANCE_CENTS,
 	PREMIERE_PITCH_SHIFTER_MATCH_NAME,
 	type PremierePitchParam,
-	premiereNormalizedOf,
 	premierePitchShifterToJasper,
-	premierePluginParamList,
-	premiereRatioOf,
-	splitCents,
 } from '../src/premiere-pitch-shifter.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks } from '../src/time.ts';
@@ -76,17 +70,6 @@ const spanish = (
 };
 
 describe('Premiere Pitch Shifter: Transpose Ratio', () => {
-	it('is linear from 0.5 (0) through 1 (1/3) to 2 (1); garbage is no shift', () => {
-		expect(premiereRatioOf(0)).toBe(0.5);
-		expect(premiereRatioOf(1 / 3)).toBeCloseTo(1, 12);
-		expect(premiereRatioOf(1)).toBe(2);
-		expect(premiereRatioOf(-3)).toBe(0.5);
-		expect(premiereRatioOf(9)).toBe(2);
-		expect(premiereRatioOf(Number.NaN)).toBe(1);
-		expect(premiereNormalizedOf(1)).toBeCloseTo(1 / 3, 12);
-		expect(premiereNormalizedOf(Number.POSITIVE_INFINITY)).toBeCloseTo(1 / 3, 12);
-	});
-
 	it("reads the whole semitones of Premiere's measured table exactly", () => {
 		for (const [st, n] of SEMITONE_TABLE) {
 			const m = fromRatio(n);
@@ -112,40 +95,7 @@ describe('Premiere Pitch Shifter: Transpose Ratio', () => {
 		for (const [v, c] of cases) expect(fromRatio(v).decoded.totalCents, String(v)).toBe(c);
 	});
 
-	it('splits cents like Premiere displays them; the sum is exact', () => {
-		expect(splitCents(-90, true)).toEqual({ semitones: -1, cents: 10 });
-		expect(splitCents(-90, false)).toEqual({ semitones: 0, cents: -90 });
-		expect(splitCents(250, true)).toEqual({ semitones: 2, cents: 50 });
-		expect(splitCents(-1200, true)).toEqual({ semitones: -12, cents: 0 });
-		expect(splitCents(1300, false)).toEqual({ semitones: 12, cents: 0 });
-		expect(splitCents(Number.NaN, true)).toEqual({ semitones: 0, cents: 0 });
-	});
-
-	it('is monotonic, stays in the Pitch Shifter ranges and round-trips (property)', () => {
-		fc.assert(
-			fc.property(
-				fc.double({ min: 0, max: 1, noNaN: true }),
-				fc.double({ min: 0, max: 1, noNaN: true }),
-				fc.boolean(),
-				(a, b, pos) => {
-					const ma = fromRatio(a, [{ name: 'Use Positive Cents', value: pos }]);
-					const mb = fromRatio(b, [{ name: 'Use Positive Cents', value: pos }]);
-					for (const m of [ma, mb]) {
-						expect(m.params.semitones.value).toBeGreaterThanOrEqual(-12);
-						expect(m.params.semitones.value).toBeLessThanOrEqual(12);
-						expect(Math.abs(m.params.cents.value)).toBeLessThanOrEqual(100);
-					}
-					if (b - a > 1e-6) expect(total(mb)).toBeGreaterThan(total(ma));
-					// Premiere → JasperEditor → Premiere
-					const back = jasperPitchToPremiere(ma.params, new Report());
-					expect(Math.abs(back.ratio.value - a)).toBeLessThan(1e-6);
-					expect(back.positiveCents).toBe(ma.params.cents.value >= 0);
-				},
-			),
-		);
-	});
-
-	it('JasperEditor → Premiere → JasperEditor keeps the shift (and whole-semitone splits) for |shift| ≤ 1 octave', () => {
+	it('exports every shift within an octave using the documented ratio formula', () => {
 		fc.assert(
 			fc.property(fc.integer({ min: -12, max: 12 }), fc.integer({ min: -99, max: 99 }), (st, c) => {
 				fc.pre(Math.abs(st * 100 + c) <= 1200);
@@ -153,25 +103,11 @@ describe('Premiere Pitch Shifter: Transpose Ratio', () => {
 					{ semitones: { value: st, keyframes: [] }, cents: { value: c, keyframes: [] } },
 					new Report(),
 				);
-				const m = fromRatio(p.ratio.value, [{ name: 'Use Positive Cents', value: p.positiveCents }]);
-				expect(Math.abs(total(m) - (st * 100 + c))).toBeLessThan(0.002);
+				// wp-note §2: frequency ratio = 2^(cents/1200), normalized ratio = (ratio−0.5)/1.5.
+				expect(p.ratio.value).toBeCloseTo((2 ** ((st * 100 + c) / 1200) - 0.5) / 1.5, 12);
+				expect(p.positiveCents).toBe(c >= 0);
 			}),
 		);
-		// the split reads back as written when it is Premiere's own
-		for (const [st, c] of [
-			[-1, 10],
-			[0, -90],
-			[3, 0],
-			[-2, -30],
-			[5, 40],
-		] as const) {
-			const p = jasperPitchToPremiere(
-				{ semitones: { value: st, keyframes: [] }, cents: { value: c, keyframes: [] } },
-				new Report(),
-			);
-			const m = fromRatio(p.ratio.value, [{ name: 'Use Positive Cents', value: p.positiveCents }]);
-			expect([m.params.semitones.value, m.params.cents.value]).toEqual([st, c]);
-		}
 	});
 
 	it('clamps shifts beyond an octave on export, and a Transpose Ratio outside 0…1 on import (reported)', () => {
@@ -197,7 +133,7 @@ describe('Premiere Pitch Shifter: Transpose Ratio', () => {
 				{ params: [{ name: 'Transpose Ratio', value: 0.75 }], ratioScale: 'ratio' },
 				new Report(),
 			).decoded.totalCents,
-		).toBe(centsOfRatio(0.75));
+		).toBe(-498.045);
 		expect(fromRatio(1.5).decoded.ratio).toBe(1.5);
 	});
 });
@@ -291,17 +227,24 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 		expect(b.decoded.totalCents).toBe(1200);
 	});
 
-	it('the plug-in state ParamList: Version 1 (five values) and Version 2; garbage → []', () => {
-		expect(premierePluginParamList(pluginState([0.30322775, 1, 0.088287681, 0.58239919, 0.75], 1))).toEqual([
-			0.30322775, 1, 0.088287681, 0.58239919, 0.75,
-		]);
-		expect(premierePluginParamList('<prop.map>')).toEqual([]);
-		expect(premierePluginParamList(null)).toEqual([]);
-		const m = premierePitchShifterToJasper(
-			{ params: [], pluginState: pluginState([0.41497469, 1, 0.085, 0.56, 0.75, 0.75]) },
-			new Report(),
-		);
-		expect(m.decoded.totalCents).toBe(200);
+	it('state-only Version 1 and Version 2 instances retain pitch and missing state defaults safely', () => {
+		for (const version of [1, 2]) {
+			const report = new Report();
+			const m = premierePitchShifterToJasper(
+				{
+					params: [],
+					pluginState: pluginState(
+						[0.41497469, 1, 0.085, 0.56, 0.75, ...(version === 2 ? [0.75] : [])],
+						version,
+					),
+				},
+				report,
+			);
+			expect([m.params.semitones.value, m.params.cents.value]).toEqual([2, 0]);
+			expect(report.warnings).toEqual([]);
+		}
+		const m = premierePitchShifterToJasper({ params: [], pluginState: '<prop.map>' }, new Report());
+		expect([m.params.semitones.value, m.params.cents.value]).toEqual([0, 0]);
 	});
 
 	it('identifies the effect by match name, the Spanish name or a Premiere-only parameter, not by JasperEditor id', () => {
@@ -381,20 +324,13 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 });
 
 describe('Premiere Pitch Shifter: keyframes', () => {
-	/** Premiere's curve: the normalised ratio interpolated linearly between keys. */
+	/** Independent piecewise-linear normalized-ratio curve, wp-note §2 (no production mapping/evaluator). */
 	const premiereCents = (keys: [number, number][], t: number) => {
-		const a: Animatable<number> = {
-			value: keys[0]![1],
-			keyframes: keys.map(([time, value]) => ({
-				id: `k${time}`,
-				time,
-				value,
-				interpolation: 'linear',
-				easeIn: { influence: 1 / 3, slope: 1 },
-				easeOut: { influence: 1 / 3, slope: 1 },
-			})) as Keyframe<number>[],
-		};
-		return centsOfRatio(premiereRatioOf(evaluateKeyframes(a, t)));
+		const end = keys.findIndex(([time]) => time > t);
+		const [ta, a] = keys[end < 0 ? keys.length - 1 : Math.max(0, end - 1)]!;
+		const [tb, b] = keys[end < 0 ? keys.length - 1 : end]!;
+		const n = tb === ta ? a : a + ((t - ta) / (tb - ta)) * (b - a);
+		return 1200 * Math.log2(0.5 + 1.5 * n);
 	};
 
 	it('keeps every keyframe time and follows the linear-ratio curve within the tolerance (property)', () => {
@@ -422,12 +358,10 @@ describe('Premiere Pitch Shifter: keyframes', () => {
 					for (const [t] of keys) expect(kt).toContain(t);
 					expect(m.params.cents.keyframes.map((k) => k.time)).toEqual(kt);
 					const t = Math.round(keys[0]![0] + u * (keys[keys.length - 1]![0] - keys[0]![0]));
-					expect(Math.abs(total(m, t) - premiereCents(keys, t))).toBeLessThanOrEqual(
-						PITCH_TOLERANCE_CENTS + 0.01,
-					);
+					expect(Math.abs(total(m, t) - premiereCents(keys, t))).toBeLessThanOrEqual(0.11);
 				},
 			),
-			{ numRuns: 60 },
+			{ numRuns: 60, examples: [[[0, 2 * S], [0, 1, 0, 0, 0], 0.5]] },
 		);
 	});
 
@@ -471,13 +405,10 @@ describe('Premiere Pitch Shifter: keyframes', () => {
 		const p = jasperPitchToPremiere({ semitones: st, cents: ce }, new Report());
 		expect(p.ratio.keyframes[0]!.time).toBe(0);
 		expect(p.ratio.keyframes.at(-1)!.time).toBe(2 * S);
-		expect(p.ratio.keyframes.length).toBeGreaterThan(2);
 		for (let i = 0; i <= 50; i++) {
 			const t = Math.round((i / 50) * 2 * S);
-			const premiere = centsOfRatio(premiereRatioOf(evaluateKeyframes(p.ratio, t)));
-			expect(Math.abs(premiere - evaluateKeyframes(st, t) * 100), String(t)).toBeLessThanOrEqual(
-				PITCH_TOLERANCE_CENTS + 0.01,
-			);
+			const premiere = 1200 * Math.log2(0.5 + 1.5 * evaluateKeyframes(p.ratio, t));
+			expect(Math.abs(premiere - (-1200 + 2400 * (t / (2 * S)))), String(t)).toBeLessThanOrEqual(0.11);
 		}
 	});
 });
@@ -533,8 +464,8 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 		// intermediate keys on frames, Premiere's curve within the tolerance
 		for (const k of st.keyframes) expect(k.time % framesToFlicks(1, rate)).toBe(0);
 		const mid = framesToFlicks(75, rate);
-		const premiereMid = centsOfRatio(premiereRatioOf((0.29954681 + 0.414974689) / 2));
-		expect(Math.abs(at(mid) - premiereMid)).toBeLessThanOrEqual(PITCH_TOLERANCE_CENTS + 0.01);
+		const premiereMid = 1200 * Math.log2(0.5 + 1.5 * ((0.29954681 + 0.414974689) / 2));
+		expect(Math.abs(at(mid) - premiereMid)).toBeLessThanOrEqual(0.11);
 		expect(report.warnings).toEqual([]);
 	});
 
@@ -583,17 +514,26 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 		expect(text).not.toContain('<parameterid>semitones</parameterid>');
 		expect(report.warnings).toEqual([]);
 		const again = audioClip(text);
-		const a = first.clip.effects[0]!;
 		const b = again.clip.effects[0]!;
 		expect(b.enabled).toBe(false);
-		const cents = (fx: typeof a, t: number) =>
+		const cents = (fx: typeof b, t: number) =>
 			evaluateKeyframes(fx.params.semitones as Animatable<number>, t) * 100 +
 			evaluateKeyframes(fx.params.cents as Animatable<number>, t);
 		for (let f = 0; f <= 150; f += 5) {
 			const t = framesToFlicks(f, { num: 30, den: 1 });
-			expect(Math.abs(cents(b, t) - cents(a, t)), String(f)).toBeLessThanOrEqual(
-				2 * PITCH_TOLERANCE_CENTS + 0.01,
-			);
+			// Original XML: linear normalized ratio from frames30→90, then a hold to120.
+			const expected =
+				f < 30
+					? -300
+					: f < 90
+						? 1200 *
+							Math.log2(
+								0.5 + 1.5 * (0.22726428508759 + ((f - 30) / 60) * (0.55655986070633 - 0.22726428508759)),
+							)
+						: f < 120
+							? 500
+							: 0;
+			expect(Math.abs(cents(b, t) - expected), String(f)).toBeLessThanOrEqual(0.21);
 		}
 		expect(cents(b, framesToFlicks(100, { num: 30, den: 1 }))).toBe(500);
 	});

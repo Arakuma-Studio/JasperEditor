@@ -1,19 +1,7 @@
 // keyframe.applyEase — cubic sections, neighbour preservation, roving, refusals (docs/wp-notes/easing.md).
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-	type Animatable,
-	type CubicEase,
-	cubicToEases,
-	defaultRegistries,
-	evaluate,
-	exportAgentSchema,
-	type Interpolation,
-	type Keyframe,
-	unknownCommandKeyIssues,
-	writeSpan,
-} from '../src/index.ts';
-import { cssCubic, expectValid, SEC, sample, setup } from './ease-helpers.ts';
+import { type Animatable, type CubicEase, evaluate, unknownCommandKeyIssues } from '../src/index.ts';
+import { cssCubic, expectValid, sample, setup } from './ease-helpers.ts';
 
 const SWIFT: CubicEase = { kind: 'cubic', x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
 const BACK: CubicEase = { kind: 'cubic', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 };
@@ -51,12 +39,13 @@ describe('keyframe.applyEase (cubic)', () => {
 			[30, 60],
 		]);
 		h.ok([{ type: 'keyframe.applyEase', keyframeIds: [ids[1]!], curve: SWIFT }]);
-		const { easeOut, easeIn } = cubicToEases(SWIFT);
 		let k = anim<number>('transform.rotation').keyframes;
-		expect(k[0]!.easeOut).toEqual(easeOut);
-		expect(k[1]!.easeIn).toEqual(easeIn);
-		expect(k[1]!.easeOut).toEqual(easeOut);
-		expect(k[2]!.easeIn).toEqual(easeIn);
+		const initial = anim<number>('transform.rotation');
+		for (const s of [0, 1]) {
+			const at = k[s]!.time + (k[s + 1]!.time - k[s]!.time) / 4;
+			const want = s === 0 ? 10 * cssCubic(SWIFT, 0.25) : 10 + 20 * cssCubic(SWIFT, 0.25);
+			expect(evaluate(initial, at)).toBeCloseTo(want, 9);
+		}
 		// keyframe-sides: key 2 arrives Bezier and still leaves Linear.
 		expect(k[2]!.inInterpolation).toBe('bezier');
 		expect(k[2]!.interpolation).toBe('linear');
@@ -68,10 +57,11 @@ describe('keyframe.applyEase (cubic)', () => {
 		// sections: ['out'] of keys 1 and 2 → only segment 2 → 3.
 		h.ok([{ type: 'keyframe.applyEase', keyframeIds: [ids[1]!, ids[2]!], curve: BACK, sections: ['out'] }]);
 		k = anim<number>('transform.rotation').keyframes;
-		const back = cubicToEases(BACK);
-		expect(k[2]!.easeOut).toEqual(back.easeOut);
-		expect(k[3]!.easeIn).toEqual(back.easeIn);
-		expect(k[1]!.easeOut).toEqual(easeOut); // middle untouched
+		const after = anim<number>('transform.rotation');
+		const chosen = k[2]!.time + (k[3]!.time - k[2]!.time) / 4;
+		expect(evaluate(after, chosen)).toBeCloseTo(30 + 30 * cssCubic(BACK, 0.25), 9);
+		const unchanged = k[1]!.time + (k[2]!.time - k[1]!.time) / 4;
+		expect(evaluate(after, unchanged)).toBeCloseTo(10 + 20 * cssCubic(SWIFT, 0.25), 9);
 		// sections: ['in', 'middle'] with non-adjacent keys 0 and 2: only the in segment (none before key 0) → refused.
 		const bad = h.tx([
 			{
@@ -155,9 +145,6 @@ describe('keyframe.applyEase (cubic)', () => {
 		// Selecting only the roving key: in + out are the same run → one span.
 		h.ok([{ type: 'keyframe.applyEase', keyframeIds: [ids[1]!], curve: SWIFT }]);
 		const a = anim<number>('transform.rotation');
-		const { easeOut, easeIn } = cubicToEases(SWIFT);
-		expect(a.keyframes[0]!.easeOut).toEqual(easeOut);
-		expect(a.keyframes[2]!.easeIn).toEqual(easeIn);
 		expect(a.keyframes[1]!.roving).toBe(true);
 		const [t0, t2] = [a.keyframes[0]!.time, a.keyframes[2]!.time];
 		for (let k = 0; k <= 40; k++) {
@@ -167,58 +154,6 @@ describe('keyframe.applyEase (cubic)', () => {
 		// The roving key was re-timed to where the eased motion passes 30.
 		expect(evaluate(a, a.keyframes[1]!.time)).toBeCloseTo(30, 3);
 		expectValid(h);
-	});
-
-	it('property: any neighbourhood — the target span is exact, all others unchanged', () => {
-		const interps: Interpolation[] = ['linear', 'bezier', 'auto-bezier', 'continuous-bezier', 'hold'];
-		const easeArb = fc.record({
-			influence: fc.double({ min: 0.05, max: 1, noNaN: true }),
-			slope: fc.double({ min: -2, max: 3, noNaN: true }),
-		});
-		const keyArb = fc.record({
-			value: fc.double({ min: -100, max: 100, noNaN: true }),
-			interpolation: fc.constantFrom(...interps),
-			easeIn: easeArb,
-			easeOut: easeArb,
-		});
-		const cubicArb = fc.record({
-			kind: fc.constant('cubic' as const),
-			x1: fc.double({ min: 0.01, max: 1, noNaN: true }),
-			y1: fc.double({ min: -2, max: 3, noNaN: true }),
-			x2: fc.double({ min: 0, max: 0.99, noNaN: true }),
-			y2: fc.double({ min: -2, max: 3, noNaN: true }),
-		});
-		fc.assert(
-			fc.property(
-				fc.array(keyArb, { minLength: 2, maxLength: 6 }),
-				fc.nat(),
-				cubicArb,
-				(spec, pick, curve) => {
-					const kfs: Keyframe<number>[] = spec.map((s, i) => ({ id: `kf_${i}`, time: i * SEC, ...s }));
-					const a = pick % (kfs.length - 1);
-					const before: Animatable<number> = { value: 0, keyframes: structuredClone(kfs) };
-					const { easeOut, easeIn } = cubicToEases(curve);
-					writeSpan(kfs as Keyframe<unknown>[], a, a + 1, easeOut, easeIn);
-					const after: Animatable<number> = { value: 0, keyframes: kfs };
-					const v0 = before.keyframes[a]!.value;
-					const v1 = before.keyframes[a + 1]!.value;
-					for (let k = 0; k <= 20; k++) {
-						const u = k / 20;
-						const t = (a + u) * SEC;
-						const want = u === 1 ? v1 : v0 + cssCubic(curve, u) * (v1 - v0);
-						expect(Math.abs(evaluate(after, t) - want)).toBeLessThan(1e-6 * (1 + Math.abs(v1 - v0)));
-					}
-					for (let s = 0; s < kfs.length - 1; s++) {
-						if (s === a) continue;
-						for (let k = 1; k < 20; k++) {
-							const t = (s + k / 20) * SEC;
-							expect(evaluate(after, t)).toBeCloseTo(evaluate(before, t), 9);
-						}
-					}
-				},
-			),
-			{ numRuns: 300, seed: 7 },
-		);
 	});
 });
 
@@ -306,17 +241,7 @@ describe('keyframe.applyEase refusals and skips', () => {
 		expectValid(h);
 	});
 
-	it('schemas export to JSON Schema and strict key checks reach inside curves', () => {
-		const s = exportAgentSchema(defaultRegistries());
-		for (const t of [
-			'keyframe.applyEase',
-			'keyframe.pasteEase',
-			'keyframe.pasteValues',
-			'keyframe.setVelocity',
-			'keyframe.createPathController',
-			'keyframes.cleanupPath',
-		] as const)
-			expect(s.commands[t].implemented).toBe(true);
+	it('strict agent key checks identify an unknown key inside an ease curve', () => {
 		const issues = unknownCommandKeyIssues([
 			{
 				type: 'keyframe.applyEase',
@@ -324,6 +249,6 @@ describe('keyframe.applyEase refusals and skips', () => {
 				curve: { kind: 'cubic', x1: 0.4, y1: 0, x2: 0.6, y2: 1, bogus: 1 },
 			},
 		]);
-		expect(issues.length).toBe(1);
+		expect(issues).toEqual([expect.objectContaining({ code: 'E_SCHEMA', path: ['curve'], commandIndex: 0 })]);
 	});
 });

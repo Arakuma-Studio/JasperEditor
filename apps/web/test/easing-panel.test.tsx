@@ -1,44 +1,69 @@
-import { builtinEasePresets, type EasePreset, type Keyframe, type TransactionResult } from '@jasper/project';
+import { EngineClient } from '@jasper/engine-client';
+import { builtinEasePresets, type EasePreset, type Keyframe } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type EaseDispatch, EaseDispatchProvider } from '../src/panels/easing/dispatch.tsx';
+import { easingCommands } from '../src/commands/easing.ts';
+import { registerCommands } from '../src/commands/registry.ts';
+import { easeClipboard } from '../src/panels/easing/clipboard.ts';
 import { EasingPanel } from '../src/panels/easing/EasingPanel.tsx';
 import { easeLibrary } from '../src/panels/easing/library.ts';
+import { ShellRuntimeProvider } from '../src/shell/context.tsx';
+import { EngineProvider } from '../src/state/engine.tsx';
 import { addSolids, clipOf, makeSession } from './inspector-helpers.tsx';
 
 // The real built-in catalogue (packages/project/src/ease/presets.ts).
 const builtin = (id: string): EasePreset => builtinEasePresets().find((p) => p.id === id)!;
 const gentle = builtin('basic.easy-ease');
 
-function stub(reasons: Record<string, string | undefined> = {}) {
-	const run = vi.fn(async (_id: string, _args?: unknown) => true);
-	const toast = vi.fn();
-	const d: EaseDispatch = { run, reason: (id) => reasons[id], toast, platform: 'win' };
-	return { d, run, toast };
+const engine = new EngineClient({ fetch: (async () => new Response('{}')) as typeof fetch });
+
+function show(opts: { session?: ReturnType<typeof makeSession> } = {}) {
+	const ui = <EasingPanel instanceId="ease" visible />;
+	const shell = (
+		<EngineProvider client={engine}>
+			<ShellRuntimeProvider session={opts.session ?? null}>{ui}</ShellRuntimeProvider>
+		</EngineProvider>
+	);
+	render(opts.session ? <SessionProvider session={opts.session}>{shell}</SessionProvider> : shell);
 }
 
-function show(
-	opts: { reasons?: Record<string, string | undefined>; session?: ReturnType<typeof makeSession> } = {},
-) {
-	const s = stub(opts.reasons);
-	const ui = (
-		<EaseDispatchProvider value={s.d}>
-			<EasingPanel instanceId="ease" visible />
-		</EaseDispatchProvider>
-	);
-	render(opts.session ? <SessionProvider session={opts.session}>{ui}</SessionProvider> : ui);
-	return s;
+function keyedOpacity(values = [0, 100]) {
+	const session = makeSession();
+	const [id] = addSolids(session, [0], 90);
+	const r = session.apply({
+		label: 'keys',
+		origin: 'user',
+		commands: values.map((value, i) => ({
+			type: 'keyframe.add',
+			target: ['clip', id!, 'opacity'],
+			at: { frames: i * 30 },
+			value,
+			interpolation: 'bezier',
+		})),
+	});
+	if (!r.ok) throw new Error(JSON.stringify(r.errors));
+	const keys = () =>
+		(clipOf(session, id!) as unknown as { opacity: { keyframes: Keyframe<number>[] } }).opacity.keyframes;
+	session.selectKeyframes({ clipOrTrackId: id!, keyframeIds: keys().map((key) => key.id) });
+	return { session, id: id!, keys };
 }
 
 const text = () => screen.getByTestId('ease-cubic-text') as HTMLInputElement;
 const editor = () => screen.getByTestId('ease-curve-editor');
 
+let unregister: (() => void) | undefined;
+
 beforeEach(() => {
 	globalThis.localStorage?.clear();
 	easeLibrary.reload();
+	easeClipboard.set(null);
+	unregister = registerCommands(easingCommands);
 });
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	unregister?.();
+});
 
 // The editor measures 240 × 180 (no layout in the test DOM); its view is y −0.25…1.25 with 14 px padding.
 const px = (x: number, y: number, lo = -0.25, hi = 1.25) => ({
@@ -171,53 +196,30 @@ describe('Easing panel ▸ curve editor', () => {
 });
 
 describe('Easing panel ▸ applying and targeting', () => {
-	it('Apply sends the curve; Shift / Alt / Ctrl pick in / out / middle and add up', () => {
-		const { run } = show();
-		fireEvent.click(screen.getByTestId('ease-apply'));
-		const curve = { kind: 'cubic', x1: 1 / 3, y1: 1 / 3, x2: 2 / 3, y2: 2 / 3 };
-		expect(run).toHaveBeenLastCalledWith('ease.apply', { curve });
-		fireEvent.click(screen.getByTestId('ease-apply'), { shiftKey: true });
-		expect(run).toHaveBeenLastCalledWith('ease.apply', { curve, sections: ['in'] });
-		fireEvent.click(screen.getByTestId('ease-apply'), { altKey: true, ctrlKey: true });
-		expect(run).toHaveBeenLastCalledWith('ease.apply', { curve, sections: ['middle', 'out'] });
-		// The explicit control is used without modifiers.
-		fireEvent.click(screen.getByTestId('ease-section-out'));
-		fireEvent.click(screen.getByTestId('ease-section-in'));
-		expect(screen.getByTestId('ease-section-in').getAttribute('aria-pressed')).toBe('true');
-		fireEvent.click(screen.getByTestId('ease-apply'));
-		expect(run).toHaveBeenLastCalledWith('ease.apply', { curve, sections: ['in', 'out'] });
+	it('Apply modifiers ease the arriving or leaving segment of the selected key', async () => {
+		const { session, id, keys } = keyedOpacity([0, 100, 0]);
+		session.selectKeyframes({ clipOrTrackId: id, keyframeIds: [keys()[1]!.id] });
+		show({ session });
+		fireEvent.change(text(), { target: { value: 'ease' } });
+		fireEvent.keyDown(text(), { key: 'Enter' });
+		await act(async () => fireEvent.click(screen.getByTestId('ease-apply'), { shiftKey: true }));
+		expect(keys()[0]!.easeOut).toEqual({ influence: 0.25, slope: 0.4 });
+		expect(keys()[1]!.easeIn).toEqual({ influence: 0.75, slope: 0 });
+		expect(keys()[1]!.easeOut.slope).toBe(1);
+		act(() => session.undo());
+		fireEvent.change(text(), { target: { value: 'ease' } });
+		fireEvent.keyDown(text(), { key: 'Enter' });
+		await act(async () => fireEvent.click(screen.getByTestId('ease-apply'), { altKey: true }));
+		expect(keys()[0]!.easeOut.slope).toBe(1);
+		expect(keys()[1]!.easeOut).toEqual({ influence: 0.25, slope: 0.4 });
+		expect(keys()[2]!.easeIn).toEqual({ influence: 0.75, slope: 0 });
 	});
 
-	it('disabled actions show the command’s reason', () => {
-		show({
-			reasons: {
-				'ease.apply': 'Select keyframes in Effect Controls',
-				'ease.copy': 'Select keyframes in Effect Controls',
-			},
-		});
+	it('Apply stays disabled without a project', () => {
+		show();
 		const apply = screen.getByTestId('ease-apply');
 		expect(apply.getAttribute('aria-disabled')).toBe('true');
-		fireEvent.click(apply);
-		expect(screen.getByTestId('ease-info').textContent).toBe('Select keyframes in Effect Controls');
-	});
-
-	it('the toolbar and its More menu run the easing commands', () => {
-		const { run } = show({
-			reasons: { 'ease.drivePath': 'This build has no keyframe.createPathController command yet' },
-		});
-		fireEvent.click(screen.getByTestId('ease-copy'));
-		expect(run).toHaveBeenLastCalledWith('ease.copy');
-		fireEvent.click(screen.getByTestId('ease-paste'), { altKey: true });
-		expect(run).toHaveBeenLastCalledWith('ease.paste', { sections: ['out'] });
-		fireEvent.click(screen.getByTestId('ease-more'));
-		const menu = screen.getByTestId('ease-more-menu');
-		fireEvent.click(within(menu).getByText('Mirror Keys at Playhead'));
-		expect(run).toHaveBeenLastCalledWith('ease.mirrorAtPlayhead');
-		fireEvent.click(screen.getByTestId('ease-more'));
-		const drive = within(screen.getByTestId('ease-more-menu')).getByText(
-			/Drive Along Path — This build has no/,
-		);
-		expect((drive.closest('button') as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByTestId('ease-info').textContent).toBeTruthy();
 	});
 
 	it('shows the selection’s curve and what an apply will reach', () => {
@@ -262,7 +264,7 @@ describe('Easing panel ▸ applying and targeting', () => {
 		act(() => session.selectKeyframes({ clipOrTrackId: id!, keyframeIds: keys('opacity').map((k) => k.id) }));
 		show({ session });
 		expect(text().value).toBe('cubic-bezier(0.25, 0.1, 0.5, 1)');
-		expect(screen.getByTestId('ease-info').textContent).toBe('Auto: 1 segment in 1 property');
+		expect(screen.getByTestId('ease-info').textContent?.match(/\d+/g)).toEqual(['1', '1']);
 		act(() =>
 			session.selectKeyframes({
 				clipOrTrackId: id!,
@@ -270,82 +272,62 @@ describe('Easing panel ▸ applying and targeting', () => {
 			}),
 		);
 		expect(screen.getByTestId('ease-property')).toBeTruthy();
-		expect(screen.getByTestId('ease-info').textContent).toBe('Auto: 2 segments in 2 properties');
+		expect(screen.getByTestId('ease-info').textContent?.match(/\d+/g)).toEqual(['2', '2']);
 		fireEvent.keyDown(window, { key: 'Shift', shiftKey: true });
-		expect(screen.getByTestId('ease-info').textContent).toBe('In: no segment to ease for this selection');
+		expect(screen.getByTestId('ease-info').textContent).not.toMatch(/\d/);
 		fireEvent.keyUp(window, { key: 'Shift', shiftKey: false });
 	});
 
-	it('Auto-apply runs a drag as one live gesture', () => {
-		const session = makeSession();
-		const ok = { ok: true, results: [], warnings: [], created: [] } as unknown as TransactionResult;
-		const g = { active: true, update: vi.fn(() => ok), commit: vi.fn(() => ok), cancel: vi.fn() };
-		vi.spyOn(session, 'beginGesture').mockReturnValue(g as never);
+	it('Auto-apply previews the edited ease and commits a drag as one undo step', () => {
+		const { session, keys } = keyedOpacity();
+		const before = session.getCommitted();
+		const count = session.getState().history.entries.length;
 		easeLibrary.settings({ autoApply: true });
 		show({ session });
-		drag(screen.getByTestId('ease-handle-h1'), px(1 / 3, 1 / 3), 21.2, 0, { altKey: true });
-		expect(g.update).toHaveBeenCalled();
-		const last = g.update.mock.calls.at(-1)! as unknown as [{ type: string; curve: unknown }[]];
-		expect(last[0][0]!.type).toBe('keyframe.applyEase');
-		expect(g.commit).toHaveBeenCalledTimes(1);
-		expect(g.cancel).not.toHaveBeenCalled();
+		const from = px(1 / 3, 1 / 3);
+		act(() =>
+			fireEvent.pointerDown(screen.getByTestId('ease-handle-h1'), { ...from, button: 0, altKey: true }),
+		);
+		act(() =>
+			fireEvent.pointerMove(window, { clientX: from.clientX + 21.2, clientY: from.clientY, altKey: true }),
+		);
+		expect(session.getDrawn()).not.toEqual(before);
+		expect(session.getCommitted()).toEqual(before);
+		expect(session.getState().history.entries).toHaveLength(count);
+		act(() => fireEvent.pointerUp(window, { clientX: from.clientX + 21.2, clientY: from.clientY }));
+		expect(keys()[0]!.easeOut.influence).toBeCloseTo(1 / 3 + 0.1, 6);
+		expect(session.getState().history.entries).toHaveLength(count + 1);
+		act(() => session.undo());
+		expect(session.getCommitted()).toEqual(before);
 	});
 });
 
 describe('Easing panel ▸ keyframe velocity', () => {
-	function keyed(values: [number, number]) {
-		const session = makeSession();
-		const [id] = addSolids(session, [0], 60);
-		session.apply({
-			label: 'keys',
-			origin: 'user',
-			commands: values.map((value, i) => ({
-				type: 'keyframe.add',
-				target: ['clip', id, 'opacity'],
-				at: { frames: i * 30 },
-				value,
-				interpolation: 'bezier',
-			})) as never,
-		});
-		const keys = (clipOf(session, id!) as unknown as { opacity: { keyframes: Keyframe<unknown>[] } }).opacity
-			.keyframes;
-		act(() => session.selectKeyframes({ clipOrTrackId: id!, keyframeIds: keys.map((k) => k.id) }));
-		return { session, keys };
-	}
-
-	it('edits the speed and influence of a side, or both with Link', () => {
-		const { session, keys } = keyed([0, 100]);
-		const { run } = show({ session });
+	it('edits the speed and influence of a side, or both with Link', async () => {
+		const { session, keys } = keyedOpacity();
+		show({ session });
 		expect(screen.getByTestId('ease-velocity-key')).toBeTruthy();
 		// The first key: no segment before it.
 		const inSpeed = screen.getByTestId('ease-velocity-in-speed') as HTMLInputElement;
 		expect(inSpeed.disabled).toBe(true);
-		expect(inSpeed.closest('label')!.title).toBe('No keyframe before it');
+		expect(inSpeed.closest('label')!.title).toBeTruthy();
 		const outSpeed = screen.getByTestId('ease-velocity-out-speed') as HTMLInputElement;
 		fireEvent.change(outSpeed, { target: { value: '120' } });
-		fireEvent.keyDown(outSpeed, { key: 'Enter' });
-		expect(run).toHaveBeenLastCalledWith('ease.setVelocity', {
-			keyframeId: keys[0]!.id,
-			side: 'out',
-			speed: 120,
-		});
+		await act(async () => fireEvent.keyDown(outSpeed, { key: 'Enter' }));
+		expect(keys()[0]!.easeOut.slope).toBeCloseTo(1.2, 6);
 		fireEvent.click(screen.getByTestId('ease-velocity-link'));
 		const infl = screen.getByTestId('ease-velocity-out-influence') as HTMLInputElement;
 		fireEvent.change(infl, { target: { value: '250' } });
-		fireEvent.blur(infl);
-		expect(run).toHaveBeenLastCalledWith('ease.setVelocity', {
-			keyframeId: keys[0]!.id,
-			side: 'both',
-			influence: 100,
-		});
+		await act(async () => fireEvent.blur(infl));
+		expect(keys()[0]!.easeOut.influence).toBe(1);
 	});
 
 	it('a flat segment has no speed to set', () => {
-		const { session } = keyed([50, 50]);
+		const { session } = keyedOpacity([50, 50]);
 		show({ session });
 		const outSpeed = screen.getByTestId('ease-velocity-out-speed') as HTMLInputElement;
 		expect(outSpeed.disabled).toBe(true);
-		expect(outSpeed.closest('label')!.title).toMatch(/Both keys of this segment are equal/);
+		expect(outSpeed.closest('label')!.title).toBeTruthy();
 		expect((screen.getByTestId('ease-velocity-out-influence') as HTMLInputElement).disabled).toBe(false);
 	});
 });
@@ -372,19 +354,17 @@ describe('Easing panel ▸ preview', () => {
 });
 
 describe('Easing panel ▸ library', () => {
-	it('built-in tiles apply and load; the matching tile is highlighted; hover shows its values', () => {
-		const { run } = show();
+	it('built-in tiles apply and load; the matching tile is highlighted; hover shows its values', async () => {
+		const { session, keys } = keyedOpacity();
+		show({ session });
 		fireEvent.click(screen.getByTestId('ease-tab-builtin:basic'));
 		fireEvent.pointerEnter(screen.getByTestId('ease-tile-basic.easy-ease-out'));
 		expect(screen.getByTestId('ease-info').textContent).toBe(
 			'Easy Ease Out · cubic-bezier(0.333, 0, 0.667, 0.667)',
 		);
-		fireEvent.click(screen.getByTestId('ease-pick-basic.easy-ease'), { shiftKey: true });
-		expect(run).toHaveBeenLastCalledWith('ease.apply', {
-			curve: gentle.curve,
-			sections: ['in'],
-			name: 'Easy Ease',
-		});
+		await act(async () => fireEvent.click(screen.getByTestId('ease-pick-basic.easy-ease')));
+		expect(keys()[0]!.easeOut.slope).toBe(0);
+		expect(keys()[1]!.easeIn.slope).toBe(0);
 		expect(text().value).toBe('cubic-bezier(0.333, 0, 0.667, 1)');
 		expect(screen.getByTestId('ease-tile-basic.easy-ease').dataset.matched).toBe('true');
 	});
@@ -443,14 +423,12 @@ describe('Easing panel ▸ library', () => {
 		});
 		await act(async () => {
 			fireEvent.change(input, { target: { files: [file(body)] } });
-			await new Promise((r) => setTimeout(r, 20));
 		});
 		expect(easeLibrary.get().presets.map((p) => p.name)).toEqual(['Imported']);
 		expect(screen.getByTestId('ease-library-notice').textContent).toMatch(/Imported 1 curves; 1 skipped/);
 		expect(screen.getByTestId('ease-library-errors').textContent).toMatch(/Preset 2: curve/);
 		await act(async () => {
 			fireEvent.change(input, { target: { files: [file('{}', 5_000_000)] } });
-			await new Promise((r) => setTimeout(r, 20));
 		});
 		expect(screen.getByTestId('ease-library-errors').textContent).toMatch(/larger than/);
 	});

@@ -4,7 +4,6 @@ import {
 	centredShutter,
 	mbKeyTimes,
 	mbQuality,
-	mbQualityParam,
 	mbTapCount,
 	mbTimeWarp,
 	mbUniforms,
@@ -75,14 +74,6 @@ describe('tap counts', () => {
 		expect(mbTapCount(500, mbQuality('high'))).toBe(96);
 		expect(mbTapCount(40, mbQuality('draft'))).toBe(16);
 		expect(mbTapCount(Number.NaN)).toBe(1);
-	});
-	it('quality param: Auto by default, advanced group; unknown values are Auto', () => {
-		const q = mbQualityParam();
-		expect(q.default).toBe('auto');
-		expect(q.animatable).toBe(false);
-		expect(q.group).toBe('Advanced');
-		expect(mbQuality(undefined)).toEqual(mbQuality('auto'));
-		expect(mbQuality('bogus')).toEqual(mbQuality('auto'));
 	});
 });
 

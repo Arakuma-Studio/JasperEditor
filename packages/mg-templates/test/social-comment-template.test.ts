@@ -35,7 +35,6 @@ import {
 	stripMarks,
 	TEMPLATE_EASE_FUNCTIONS,
 	templatePresetParams,
-	trackValueAt,
 } from '../src/index.ts';
 
 const timingAt = (seconds: number, fps = 30) => {
@@ -53,9 +52,20 @@ const input = (o: Partial<SocialScheduleInput> = {}): SocialScheduleInput => ({
 	tick: false,
 	...o,
 });
+/**
+ * A schedule value at content time `ms`, with anime.js seek semantics (S11:ANM-002; the schedule is the timeline
+ * @jasper/motion builds): before a tween its start value holds, inside it eases, after it its end value holds.
+ */
 const value = (s: ReturnType<typeof socialCommentSchedule>, target: number, prop: string, ms: number) => {
 	const tr = s.tracks.find((t) => t.target === target && t.prop === prop);
-	return tr ? trackValueAt(tr, ms) : null;
+	if (!tr) return null;
+	let v = tr.initial;
+	for (const tw of tr.tweens) {
+		if (ms < tw.start) break;
+		const p = tw.dur > 0 ? (ms - tw.start) / tw.dur : 1;
+		v = p >= 1 ? tw.to : tw.from + (tw.to - tw.from) * easeFunction(tw.ease)(p);
+	}
+	return v;
 };
 
 describe('social-comment@1 definition', () => {

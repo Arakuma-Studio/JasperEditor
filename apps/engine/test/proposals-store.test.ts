@@ -6,7 +6,7 @@ import { appdirPaths } from '@jasper/config';
 import type { Proposal } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { ProposalStore } from '../src/proposals/store.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 const PID = 'prj_000000000000000P';
 let n = 0;
@@ -85,7 +85,9 @@ describe('ProposalStore', () => {
 		await expect(store.create(other, { ...proposal(), projectId: other })).rejects.toMatchObject({
 			code: 'PROJECT_NOT_FOUND',
 		});
-		expect(() => readdirSync(paths.projectDir(other))).toThrow();
+		expect(() => readdirSync(paths.projectDir(other))).toThrowError(
+			expect.objectContaining({ code: 'ENOENT' }),
+		);
 		expect((await store.list(other)).proposals).toEqual([]);
 	});
 

@@ -4,7 +4,6 @@ import {
 	type CubicEase,
 	copyEase,
 	copyValues,
-	cubicToEases,
 	describeKeyframeEases,
 	evaluate,
 	evaluateEaseCurve,
@@ -275,7 +274,6 @@ describe('describeKeyframeEases / keyframe.setVelocity', () => {
 		if (!d.ok) throw new Error(d.message);
 		const segs = d.properties[0]!.segments;
 		expect(segs.map((s) => s.section)).toEqual(['middle', 'out']);
-		const back = cubicToEases(segs[0]!.curve);
-		expect(back.easeOut.influence).toBeCloseTo(cubicToEases(SWIFT).easeOut.influence, 12);
+		expect(segs[0]!.curve).toEqual(SWIFT);
 	});
 });

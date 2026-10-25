@@ -8,7 +8,7 @@ import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, toasts } from '@jasper/ui';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_AUDIO_PREFS, parseAudioPrefs } from '../src/audio/prefs.ts';
+import { parseAudioPrefs } from '../src/audio/prefs.ts';
 import { addedClipsToTag, autoTaggable, watchAutoTagOnAdd } from '../src/audio-fx/auto-tag-on-add.tsx';
 import { audioTypeClips } from '../src/audio-fx/ops.ts';
 import { createCommandContext } from '../src/commands/context.ts';
@@ -123,7 +123,6 @@ const settle = () => new Promise((r) => setTimeout(r, 20));
 
 describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () => {
 	it('is off by default and read tolerantly', () => {
-		expect(DEFAULT_AUDIO_PREFS.autoTagInTimeline).toBe(false);
 		expect(parseAudioPrefs({}).autoTagInTimeline).toBe(false);
 		expect(parseAudioPrefs({ autoTagInTimeline: true }).autoTagInTimeline).toBe(true);
 		expect(parseAudioPrefs({ autoTagInTimeline: 'yes' }).autoTagInTimeline).toBe(false);

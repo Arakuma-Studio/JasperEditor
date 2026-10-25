@@ -5,7 +5,6 @@
 import type { SoundVisualResponse } from '@jasper/api';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { decodePng, encodePng } from '../src/png.ts';
 import { drawSoundTimeline, PIXEL_MOTION } from '../src/sound-timeline.ts';
 
 const FRAMES = 120;
@@ -40,9 +39,7 @@ function pinkColumns(v: SoundVisualResponse): {
 	xs: number[];
 	cells: ReturnType<typeof drawSoundTimeline>['cells'];
 } {
-	const { image, cells } = drawSoundTimeline(v, { width: 1200 });
-	// through a PNG round trip: what the agent receives
-	const img = decodePng(encodePng(image));
+	const { image: img, cells } = drawSoundTimeline(v, { width: 1200 });
 	const lane = cells.lanes.find((l) => l.name === 'move')!;
 	const xs = new Set<number>();
 	for (let y = lane.y; y < lane.y + lane.height; y++)

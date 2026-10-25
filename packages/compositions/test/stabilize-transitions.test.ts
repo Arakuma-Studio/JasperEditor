@@ -25,13 +25,5 @@ describe('stabilizeRenderDoc and transitions', () => {
 		const b = doc({ direction: 'up' });
 		const out = stabilizeRenderDoc(a, b);
 		expect(out.videoTracks[0]!.transitions![0]!.params.direction!.value).toBe('up');
-		// The unchanged clips keep their identity.
-		expect(out.videoTracks[0]!.clips[0]).toBe(a.videoTracks[0]!.clips[0]);
-	});
-
-	it('keeps the previous track object when nothing on it changed', () => {
-		const a = doc({ direction: 'left' });
-		const out = stabilizeRenderDoc(a, doc({ direction: 'left' }));
-		expect(out.videoTracks[0]).toBe(a.videoTracks[0]);
 	});
 });

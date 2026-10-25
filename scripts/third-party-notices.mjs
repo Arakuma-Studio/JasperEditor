@@ -30,11 +30,11 @@ const ROOTS = ['apps/web', 'packages/compositions'];
 const OUTPUT = 'THIRD_PARTY_NOTICES.md';
 const PORTED_DIR = 'licenses/ported';
 const LICENSE_TEXTS_DIR = 'licenses/texts';
-export const PORTED_START = '<!-- ported-source:start -->';
-export const PORTED_END = '<!-- ported-source:end -->';
+const PORTED_START = '<!-- ported-source:start -->';
+const PORTED_END = '<!-- ported-source:end -->';
 const PLATFORM_ASSETS_FILE = 'licenses/platform-assets.md';
-export const PLATFORM_ASSETS_START = '<!-- platform-assets:start -->';
-export const PLATFORM_ASSETS_END = '<!-- platform-assets:end -->';
+const PLATFORM_ASSETS_START = '<!-- platform-assets:start -->';
+const PLATFORM_ASSETS_END = '<!-- platform-assets:end -->';
 
 /**
  * Build-time packages (devDependencies of the roots, or the bundlers' own dependencies) whose output ships in the
