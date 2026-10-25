@@ -182,8 +182,9 @@ export function shiftProgram(prog: readonly number[], dx: number, dy: number): n
 		out[q + 5] = out[q + 3]! * dx + out[q + 4]! * dy + out[q + 5]!;
 	};
 	for (let t = 0; t < n; t++) {
+		// A tap: w, map (6), clip (4), nStages, then nStages × (map (6), rect (4)).
 		shift(p + 1);
-		p += 11;
+		p += 12;
 		const ns = out[p - 1]! | 0;
 		for (let s = 0; s < ns; s++) shift(p + s * 10);
 		p += ns * 10;

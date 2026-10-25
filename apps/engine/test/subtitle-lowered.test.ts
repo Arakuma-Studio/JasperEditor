@@ -224,6 +224,16 @@ describe('multi-tap kernel (AS-070)', () => {
 		const [u2, v2] = apply(shifted.slice(3, 9), 12.5 - 7, 9.5 + 3);
 		expect(u2).toBeCloseTo(u, 9);
 		expect(v2).toBeCloseTo(v, 9);
+		// Every tap and stage map moves; nothing else changes.
+		const tap = (m: number[]) => [1, ...m, 0, 0, 9, 9, 1, ...m, -1, -1, 4, 4];
+		const two = [2, 2, ...tap([1, 0, 0, 0, 1, 0]), ...tap([0.5, 0, 1, 0, 0.5, 2])];
+		const moved = shiftProgram(two, 3, 4);
+		expect(moved).toHaveLength(two.length);
+		const t1 = tapsOf(moved)[1]!;
+		expect(apply(t1.map, 1, 1)).toEqual(apply([0.5, 0, 1, 0, 0.5, 2], 4, 5));
+		expect(apply(t1.stages[0]!.map, 1, 1)).toEqual(apply([0.5, 0, 1, 0, 0.5, 2], 4, 5));
+		expect(t1.clip).toEqual([0, 0, 9, 9]);
+		expect(t1.stages[0]!.rect).toEqual([-1, -1, 4, 4]);
 	});
 });
 
