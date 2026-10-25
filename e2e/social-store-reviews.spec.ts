@@ -94,7 +94,8 @@ test('Play Store preset: Roboto card with green stars and M/D/YY date; stars and
 	await expect(cardEl(id, '[data-part="date"]')).toHaveText('11/6/18');
 	expect((await appliedLabels(page)).length).toBe(before + 2);
 	await page.getByTestId('properties-panel').screenshot({ path: join(OUT, 'play-properties.png') });
-	// undo restores the date, then the stars
+	// undo restores the date, then the stars (the History shortcut, focus out of the date field)
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 	await page.keyboard.press('ControlOrMeta+KeyZ');
 	await expect.poll(async () => (await clipParams(id)).date).toBe('2025-09-24');
 	await page.keyboard.press('ControlOrMeta+KeyZ');
