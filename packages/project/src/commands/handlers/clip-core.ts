@@ -436,7 +436,7 @@ export function placeSource(
 	return { clipIds, linkId };
 }
 
-function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
+export function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
 	const s = content.style;
 	const lines = content.text.split('\n');
 	const longest = Math.max(1, ...lines.map((l) => l.length));
@@ -445,7 +445,7 @@ function estimateTextBox(content: TextContent, frameW: number): { width: number;
 }
 
 /** Applies measurement (browser) or marks layout pending (headless) (S01:KND-006). */
-function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerContext, frameW: number): void {
+export function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerContext, frameW: number): void {
 	const content = clip.content as TextContent;
 	const box = clip.box as TextBox;
 	if (box.autoSize === 'none') {

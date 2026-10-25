@@ -39,6 +39,7 @@ import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
+import { SUBTITLES_OWNER, subtitleHandlers } from './handlers/subtitles.ts';
 import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { timeHandlers } from './handlers/time.ts';
@@ -82,7 +83,8 @@ export type CommandOwner =
 	| 'gaps'
 	| 'keyframe-ease'
 	| 'sound-design'
-	| 'text-styles';
+	| 'text-styles'
+	| 'subtitles';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -400,6 +402,17 @@ const LABELS: Record<CommandType, string> = {
 	'textStyle.apply': 'Apply Text Style',
 	'textStyle.detach': 'Detach From Text Style',
 	'textStyle.reset': 'Reset to Text Style',
+	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
+	'captions.generate': 'Create Subtitles',
+	'captions.regenerate': 'Regenerate Subtitles',
+	'captions.alignToCuts': 'Align Subtitles to Cuts',
+	'captions.convert': 'Convert Subtitles',
+	'captions.updateGroup': 'Subtitle Group Settings',
+	'captions.deleteGroup': 'Delete Subtitle Group',
+	'subtitleTemplate.save': 'Save as Template',
+	'subtitleTemplate.add': 'Add Subtitle Template',
+	'subtitleTemplate.delete': 'Delete Subtitle Template',
+	'subtitleTemplate.apply': 'Apply Subtitle Template',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -447,6 +460,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundMixHandlers, SOUND_DESIGN_OWNER],
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
 	[textStyleHandlers, TEXT_STYLE_OWNER],
+	[subtitleHandlers, SUBTITLES_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -484,7 +498,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === GAPS_OWNER ||
 				owner === EASE_OWNER ||
 				owner === SOUND_DESIGN_OWNER ||
-				owner === TEXT_STYLE_OWNER
+				owner === TEXT_STYLE_OWNER ||
+				owner === SUBTITLES_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

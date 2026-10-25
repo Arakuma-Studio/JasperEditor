@@ -9,6 +9,7 @@ import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
 import { soundDesignNeedsRepair } from './sound/repair.ts';
+import { subtitlesNeedRepair } from './captions/subtitles/model.ts';
 import { textStylesNeedRepair } from './text-styles/model.ts';
 
 export type MigrationStep = {
@@ -243,7 +244,7 @@ export function loadProject(
 	let issues = checkInvariants(document, invOpts);
 	// sound-design: soft references (a cue's anchor or clips, a clip's cue) are tidied on load too (spec 12 §2.2).
 	// spec 13 SH-002: so do links to a project text style that is gone (pasted from another project).
-	if (issues.length > 0 || soundDesignNeedsRepair(document) || textStylesNeedRepair(document)) {
+	if (issues.length > 0 || soundDesignNeedsRepair(document) || textStylesNeedRepair(document) || subtitlesNeedRepair(document)) {
 		const r = repairDocument(document, opts.ids ?? createRandomIdSource(), { mgTemplates: opts.mgTemplates });
 		document = r.document;
 		repairs = r.report;

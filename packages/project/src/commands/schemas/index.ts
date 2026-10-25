@@ -30,6 +30,7 @@ import { SOUND_MIX_COMMANDS } from './sound-mix.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
+import { SUBTITLE_COMMANDS } from './subtitles.ts';
 import { TEXT_STYLE_COMMANDS } from './text-style.ts';
 import { THREE_D_COMMANDS } from './three-d.ts';
 import { TIME_COMMANDS } from './time.ts';
@@ -67,6 +68,7 @@ export * from './sound-mix.ts';
 export * from './speech.ts';
 export * from './structure.ts';
 export * from './text-animators.ts';
+export * from './subtitles.ts';
 export * from './text-style.ts';
 export * from './three-d.ts';
 export * from './time.ts';
@@ -109,6 +111,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...SOUND_MIX_COMMANDS,
 	...SOUND_BED_COMMANDS,
 	...TEXT_STYLE_COMMANDS,
+	...SUBTITLE_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

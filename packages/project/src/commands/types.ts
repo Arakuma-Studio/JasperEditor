@@ -78,6 +78,12 @@ export const WARNING_CODES = [
 	'W_EASE_ROVING_CLEARED',
 	/** sound design: a cue's stop-before / build skipped a place (its track is locked, or its automation is too dense). */
 	'W_MIX_SKIPPED',
+	/** spec 13: a subtitle generation / alignment report line (skipped words, cut map warnings, nests). */
+	'W_SUBTITLES',
+	/** spec 13 AS-003: the subtitles were nested (nests do not follow later ripple edits of the parent). */
+	'W_SUBTITLES_NESTED',
+	/** spec 13 AS-005: what a conversion could not carry over (effects, animations… on a caption track). */
+	'W_SUBTITLES_CONVERT',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */
