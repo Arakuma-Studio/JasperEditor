@@ -90,13 +90,25 @@ documents the fixture correction, retained exact pixel checks, shim-removal
 control and older-browser limitation. The initial baseline test probe was stopped
 after identifying these blockers; it is not reported as a passing suite.
 
-The complete integrated gate and browser validation are recorded below when they
-finish. The final test command uses `JASPER_REQUIRE_ORACLES=1`, Chrome 153 and
+The complete integrated gate and browser validation are recorded below.
+The final test command used `JASPER_REQUIRE_ORACLES=1`, Chrome 153 and
 `setpriv --bounding-set=-dac_override,-dac_read_search pnpm test --maxWorkers=2`.
+
+The first complete run passed 7,709 tests and found one additional fixture
+permission failure: the RPATH test's copied vendor executable retained ownership
+that made it unwritable to the restricted test process. The fixture now writes
+the original bytes into a new test-owned file with mode 0600. Its independent
+`readelf` assertion and refused-longer-RPATH byte check are unchanged. All ten
+tests in that suite and `pnpm ffmpeg:check` passed after the correction; no
+shipping FFmpeg code changed. The complete suite was rerun after this correction.
 
 - `pnpm lint`: passed, with the same two existing optional-chain warnings as the
   baseline; token, animation and layer checks passed.
 - `pnpm typecheck`: passed for every workspace package.
+- Complete workspace tests: 761 files passed / 35 skipped; 7,710 tests passed /
+  242 skipped, zero failures (1,974.06 s). GL tests ran with Chrome available;
+  oracle validation required FFmpeg/ffprobe. The run emitted one nonfatal Node
+  `TimeoutOverflowWarning`; no timer code was changed in this work.
 - `pnpm build` and `pnpm --filter @jasper/engine build:remotion`: passed.
 - `pnpm perf --sections micro --label perf-hunt-integrated`: passed, including
   all eleven 200-sequence / 5,000-clip scale budgets (load factor 1).
