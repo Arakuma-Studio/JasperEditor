@@ -1,6 +1,6 @@
 # Web sound test cleanup
 
-Scope: all 38 `apps/web/test/{sound*,audio*}.test.*` files present at 8b4c8936; 315 test declarations (parameterized runtime cases may differ). REWRITE 8; KEEP 263; DELETE 37; CONSOLIDATE 2; OPTIMIZE 5. The report includes deleted tests by their original full names.
+Scope: all 38 `apps/web/test/{sound*,audio*}.test.*` files present at 8b4c8936; 315 test declarations (parameterized runtime cases may differ). REWRITE 10; KEEP 261; DELETE 37; CONSOLIDATE 2; OPTIMIZE 5. The report includes deleted tests by their original full names.
 
 The independent sources are repository specifications and historical failures in the sound-design work note, not the implementation under test. Below, each test row names its exact contract/failure; the source and seam paragraphs apply to every row in that file. The retained oracle column records literal/fixture output assertions. For CONSOLIDATE, one removed direct-filter declaration and its surviving timeline-playback owner are counted separately. Engine/device doubles supply external input and do not perform the UI action under test. Unique ownership distinguishes command/panel wiring from the shared project algorithm; duplicated direct placement/track algorithms were removed. Refactor resistance means internal calculations/helpers can change while these externally observed results remain.
 
@@ -732,8 +732,8 @@ Seam/refactor resistance: real rendered controls or registered UI commands, publ
 
 | Original test name | Disposition | Independent oracle / failed bar | Unique failure or surviving owner |
 | --- | --- | --- | --- |
-| Auto Sound Pass… sound design style > a personality shows its description and sets its density; the grammar choices go into the plan | KEEP | expect(within(style).getByTestId('sound-style-personality-description').textContent).toBe( 'Sounds are ranked by fit alone; the density is yours.', ); expect(within(style).getByTestId('sound-style-personality-description').textContent).toBe( 'Soft, dark and sparse: no booms or hits, gentle attacks, wood and paper.', ) | Distinct scenario: a personality shows its description and sets its density; the grammar choices go into the plan. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
-| Auto Sound Pass… sound design style > starts from the sequence’s style; "No personality" sends null (none, whatever the sequence says) | KEEP | expect(within(style).getByRole('combobox', { name: 'Personality' }).textContent).toBe('Warm'); expect(within(style).getByRole('combobox', { name: 'Runs of staggered cues' }).textContent).toMatch( /^Flat/, ) | Distinct scenario: starts from the sequence’s style; "No personality" sends null (none, whatever the sequence says). Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
+| Auto Sound Pass… sound design style > a personality shows its description and sets its density; the grammar choices go into the plan | REWRITE | Nonempty description changes after Calm; density becomes sparse; the completed request contains literal calm/sparse/flat/words/false/true choices. Complete polling under a controlled clock before cleanup; remove exact English sentences. | P6-E10 requires these actual controls to update and serialize the chosen grammar. A model-only test cannot detect stale description/density feedback or dropped request fields. Awaiting public dialog completion prevents an aborted asynchronous update escaping happy-dom teardown. |
+| Auto Sound Pass… sound design style > starts from the sequence’s style; "No personality" sends null (none, whatever the sequence says) | REWRITE | The stored warm/flat style is preselected; explicitly choosing None sends literal `{personality:null,runs:flat,typing:auto}` after the completed plan. Controlled polling settles before cleanup. | P6-E10 explicitly clearing personality must override the stored non-null value; default-style input cannot expose this failure. This rendered-control/request boundary is independent of internal dialog/polling implementation and no longer ends at request receipt. |
 | Suggest Cues… sound design style > a personality leaves its excluded types out of the suggestions; what changed is stored in the same step | KEEP | expect(within(style).queryByRole('combobox', { name: 'Runs of staggered cues' })).toBeNull(); expect(cuts.length).toBeGreaterThan(0) | Distinct scenario: a personality leaves its excluded types out of the suggestions; what changed is stored in the same step. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
 | Preferences ▸ Sound design style > edits the active sequence’s style, one undo step per change | KEEP | expect(style()).toEqual({ personality: 'mechanical' }); expect(style()).toEqual({ personality: 'mechanical', duckUnderTyping: true }) | Distinct scenario: edits the active sequence’s style, one undo step per change. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
 | Fill With keeps the variation policy > a click is the voice (speed 1, no gain offset); a key varies its level only; a hit varies both | KEEP | expect(click.speed.rate).toBe(1); expect((click.sfx.level as { offsetDb?: number } \| undefined)?.offsetDb ?? 0).toBe(0) | Distinct scenario: a click is the voice (speed 1, no gain offset); a key varies its level only; a hit varies both. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
@@ -797,3 +797,46 @@ JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm e
 The repeated library-review interval was 1.781 s. Both runs passed the controlled debounce and input-listener clocks; no new flakiness was observed in these two executions. This is diagnostic evidence, not a matched overall-suite speedup. The full baseline and focused final processes have different scopes, so no absolute or percentage suite improvement is calculated here. Full integrated lint/typecheck/test/build, total suite timings and remote delivery belong to the root integration gate; repeated unaffected scope and a separate full web typecheck were explicitly deferred by the coordinator. No opt-in browser, desktop, rendering or extended-fuzz suite was run by this workstream because no product rendering/UI behavior changed.
 
 `pnpm exec biome check` passed on every changed TS/TSX file; `git diff --check` passed. Final net test/helper LOC is **−885** and production cleanup is **−32 LOC**. All 315 original declarations have a disposition; the final owned suite has 277 declarations: 37 DELETE plus one removed CONSOLIDATE source, with the surviving consolidation owner counted separately. No new test declaration was added.
+
+## Integrated sound-style teardown correction
+
+The integrated default run at `3a923d7c` passed every assertion but failed Vitest's
+unhandled-error gate: a pending Auto Sound Pass handler updated React after the
+happy-dom `window` had been destroyed. Both style cases ended at request receipt,
+before the real plan runner's asynchronous polling and dialog completion. This was
+a fixture lifetime error; no production Dialog change or product failure is claimed.
+
+Both cases are now REWRITE. They retain P6-E10's live personality description and
+density feedback, stored-style preselection, explicit null override and literal
+outgoing grammar fields. The description must be nonempty and change when the
+personality changes; exact English sentences are not the contract. The actual UI
+click and real polling code run with controlled timers until the public close
+callback completes. React's asynchronous work settles before clock restoration
+and cleanup. Internal poll intervals or handler structure may change without
+changing the assertions; no production clock hook, extra timeout or retry is added.
+The generic Auto Sound Pass tests do not cover these personality/grammar choices.
+
+Evidence under `/tmp/jasper-test-cleanup/style-async/`:
+
+- Original isolated file: six assertions passed; the original whole-suite teardown
+  exception did not reproduce in isolation. Adding only a completion assertion at
+  the old exit points deterministically failed both cases (`closed=[]`), proving
+  unfinished work. This diagnostic is not committed.
+- Revised file: six cases passed on four recorded runs; a neighboring three-file
+  run passed 22 cases across style, Auto Sound Pass and Fill UI. Every completed
+  revised process exited zero without reported unhandled errors.
+- Dropping the real request's `personality` field failed the literal Calm request;
+  freezing the real description at None failed its change assertion. Both sources
+  were restored, and the final six-case run passed afterward.
+- `env NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web typecheck`
+  passed with the repository's TypeScript compiler (the host preload override was
+  replaced command-locally). Scoped Biome and `git diff --check` passed.
+
+Runtime commands used `env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest
+run <files> --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=<file>`.
+The single-file target was `apps/web/test/sound-style.test.tsx`; neighboring targets
+also included `auto-sound-pass.test.tsx` and `sound-fill-ui.test.tsx`. Intended mutant
+and diagnostic runs selected `-t 'a personality shows'` and `-t 'Auto Sound Pass'`
+respectively. JSON, logs and the restoration/mutation manifests preserve exact
+commands and results. No speedup is claimed against an original test that stopped
+before its asynchronous work completed. Root owns the subsequent full-suite gate.
