@@ -84,7 +84,9 @@ describe.skipIf(!enabled)('NVIDIA CUDA provider install (SG-006, real package)',
 		};
 		expect(probe.ortVersion).toBe('1.30.0');
 		const c = probe.providers.find((p) => p.id === 'cuda')!;
-		console.log(`CUDA probe: ${JSON.stringify(c)}; runtime ${JSON.stringify({ ok: rt.ok, missing: rt.missing, gpu: rt.gpu })}`);
+		console.log(
+			`CUDA probe: ${JSON.stringify(c)}; runtime ${JSON.stringify({ ok: rt.ok, missing: rt.missing, gpu: rt.gpu })}`,
+		);
 		if (rt.ok) expect(c.available).toBe(true);
 		else {
 			expect(c.available).toBe(false);

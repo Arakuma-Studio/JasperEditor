@@ -242,7 +242,9 @@ export class CudaProvider {
 				},
 			});
 			const commonDir = packageRoot(
-				(await import('node:module')).createRequire(join(pkgDir, 'package.json')).resolve('onnxruntime-common'),
+				(await import('node:module'))
+					.createRequire(join(pkgDir, 'package.json'))
+					.resolve('onnxruntime-common'),
 				'onnxruntime-common',
 			);
 			await cp(commonDir, join(nm, 'onnxruntime-common'), { recursive: true, dereference: true });

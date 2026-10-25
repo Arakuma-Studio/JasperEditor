@@ -293,9 +293,9 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
 		console.log(`tiny.en without previous text: WER ${(wer * 100).toFixed(2)} %`);
 		expect(wer).toBeLessThanOrEqual(0.06);
-		expect(res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number')).toBe(
-			true,
-		);
+		expect(
+			res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number'),
+		).toBe(true);
 		expect(res.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 	}, 600_000);
 
