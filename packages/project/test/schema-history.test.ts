@@ -54,6 +54,8 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v7 → v8 (Premiere port): Crop effects listed after other effects move to the front (as v7 rendered them);
 	// the v7 fixture lists none, so its document is unchanged (migration-v8-crop.test.ts covers the reorder).
 	'7→8': () => ({}),
+	// v8 → v9 (workflow automation): version bump only; v8 builds open the files read-only.
+	'8→9': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {
