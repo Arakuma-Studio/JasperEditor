@@ -8,6 +8,7 @@ import {
 	type SocialTextSegment,
 } from '@jasper/mg-templates';
 import type { CSSProperties, ReactNode } from 'react';
+import { editableParamProps } from '../editable.ts';
 import {
 	PLATFORM_DEFAULT_AVATARS,
 	type PlatformGlyph,
@@ -281,8 +282,7 @@ export function CommentText(p: {
 	return (
 		<div
 			// Program-monitor inline editing (WP7b): the element whose box is the visible comment, marks-aware
-			data-template-param="text"
-			data-template-marks="true"
+			{...editableParamProps('text', { marks: true })}
 			style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', ...p.style }}
 		>
 			{p.segments.map((seg) => {

@@ -374,6 +374,15 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
   labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
   Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
+- **Edit text on the Program monitor:** double-click a template's text (Title Reveal title and subtitle, Lower Third
+  name and role, Callout label, Counter label, social comment name and text) to edit it in place. The clip shows
+  its settled frame (entrance finished, exit not started) while you type; the playhead does not move. The double-
+  clicked word is selected. **Enter** (or a click elsewhere) applies one undo step, **Shift+Enter** starts a new line
+  in multi-line texts, **Esc** cancels. In texts with word marks (social comments) highlights, blurs and removals
+  stay on their words as you type, and selecting words shows a **Highlight / Blur / Remove / Clear** toolbar (one
+  undo step per button). Overlapping templates: the topmost text under the pointer is edited (a card selected in the
+  Timeline wins). Locked tracks and read-only projects say so instead of opening the editor. Template authors opt
+  in with `editableParamProps` (`docs/wp-notes/social-comments.md` § Program monitor editing).
 
 ## PWA (installable web app)
 

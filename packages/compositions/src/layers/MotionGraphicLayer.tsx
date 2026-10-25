@@ -52,6 +52,7 @@ import { EmojiTableContext, FontsReadyContext, ImageTableContext, useFontsReadyS
 import { mediaSrc } from '../pipeline.ts';
 import type { LayerProps, RenderDoc, RenderOptions } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { animeTemplateRestMs, useTemplateEditHold } from './template-edit-hold.ts';
 
 /** Engine render state of a motion-graphic clip (S03:KND-060 badge: none | rendering n% | ready). */
 export type MgRenderState =
@@ -306,6 +307,8 @@ function AnimeTemplate(p: {
 	fonts?: RenderDoc['fonts'];
 	/** Proxy choice of the media URLs (absent: originals). */
 	useProxies?: boolean;
+	/** Held at its rest frame for Program-monitor text editing (template-edit-hold.ts; previews only). */
+	held?: boolean;
 }) {
 	const fontsState = useContext(FontsReadyContext);
 	const fontsReady = fontsState.allLoaded;
@@ -364,7 +367,7 @@ function AnimeTemplate(p: {
 		<TemplateAssetScopeContext.Provider value={scope}>
 			<Impl
 				params={params}
-				timeMs={t.timeMs}
+				timeMs={p.held ? animeTemplateRestMs(t) : t.timeMs}
 				totalMs={t.totalMs}
 				introMs={t.introMs}
 				outroMs={t.outroMs}
@@ -391,6 +394,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 		[def, mg],
 	);
 	const renderState = useContext(MgRenderStateContext)(clip.clipId);
+	const held = useTemplateEditHold(clip.clipId) && options.isPreview;
 	const sourceInFrames = Math.max(0, Math.round((clip.sourceIn * fps) / FLICKS_PER_SECOND));
 	// The registry decides when the template is installed; the stamp only for unknown templates (S11:ATP-002).
 	const renderer = def ? (isAnimeTemplate(def) ? 'anime' : 'fframes') : (mg?.renderer ?? 'fframes');
@@ -417,6 +421,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				isPreview={options.isPreview}
 				fonts={layer.fonts}
 				useProxies={options.useProxies}
+				held={held}
 			/>
 		);
 	else {
@@ -437,6 +442,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				data-mg-template={mg ? `${mg.template.id}@${mg.template.version}` : undefined}
 				data-mg-renderer={renderer}
 				data-mg-installed={def ? 'true' : 'false'}
+				data-template-hold={held && renderer === 'anime' ? 'true' : undefined}
 				style={FILL}
 			>
 				{content}
