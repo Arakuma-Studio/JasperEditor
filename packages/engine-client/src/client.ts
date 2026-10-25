@@ -13,6 +13,8 @@ import {
 	type BeatsResult,
 	buildPath,
 	type CaptionFileReadRequest,
+	type CleanupAnalysisFile,
+	type CleanupAnalyzeRequest,
 	type ColorMatchRequest,
 	type DerivativeKind,
 	decodeVoiceAnalysis,
@@ -776,6 +778,17 @@ export class EngineClient {
 				status: res.status,
 			});
 		return r.analysis;
+	}
+	/**
+	 * Spec 14: a `cleanup-analysis` job — voice analyses of the sequence's speech media (cached or computed), the
+	 * detector and the planner (result `CleanupAnalysisJobResult`; the full analysis via `getCleanupAnalysis`).
+	 */
+	analyzeCleanup(req: CleanupAnalyzeRequest, wait = false): Promise<EngineJob> {
+		return this.call('cleanupAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** The analysis of a finished `cleanup-analysis` job (validated); EngineError `CLEANUP_ANALYSIS_NOT_FOUND` once evicted. */
+	getCleanupAnalysis(analysisId: string): Promise<CleanupAnalysisFile> {
+		return this.call('cleanupAnalysisGet', { params: { analysisId } });
 	}
 	/** Scene Edit Detection of a media range (job; result SceneDetectResult). */
 	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {
