@@ -20,7 +20,7 @@ import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState }
 import { editableParamProps } from '../editable.ts';
 import { APP_STORE_GLYPHS, PLAY_STORE_GLYPHS, type PlatformGlyph } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0);
 const r4 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 0);
@@ -53,6 +53,8 @@ function Star(p: {
 	width: number;
 	height: number;
 	stretch?: boolean;
+	/** The star changes per frame (the like tick runs): widen its ink rect (`INK_RING`, paint determinism). */
+	animated?: boolean;
 	style?: CSSProperties;
 }) {
 	const f = Math.min(1, Math.max(0, Number.isFinite(p.fill) ? p.fill : 0));
@@ -80,6 +82,7 @@ function Star(p: {
 				flexShrink: 0,
 				width: p.width,
 				height: p.height,
+				...(p.animated ? { boxShadow: INK_RING } : {}),
 				...p.style,
 			}}
 		>
@@ -95,12 +98,14 @@ function Star(p: {
 function StarRow(p: {
 	rating: number;
 	anim: SocialCardProps['anim'];
-	star: (fill: number, i: number) => ReactNode;
+	star: (fill: number, animated: boolean) => ReactNode;
 	gap: number;
 	style?: CSSProperties;
 }) {
 	const fill = socialStarFill(p.rating, p.anim.tick ?? 1);
 	const s = starPulse(p.anim.heart);
+	// the like tick fills and pulses the stars frame by frame
+	const animated = p.anim.heart !== null;
 	return (
 		<span
 			data-part="stars"
@@ -112,13 +117,14 @@ function StarRow(p: {
 				flexShrink: 0,
 				transformOrigin: '0% 50%',
 				transform: s === 1 ? undefined : `scale(${s})`,
+				...(animated ? { boxShadow: INK_RING } : {}),
 				...p.style,
 			}}
 		>
 			{fill.map((f, i) => (
 				// biome-ignore lint/suspicious/noArrayIndexKey: the five star slots are fixed
 				<span key={i} style={{ display: 'contents' }}>
-					{p.star(f, i)}
+					{p.star(f, animated)}
 				</span>
 			))}
 		</span>
@@ -177,28 +183,22 @@ function ClampBox(p: {
 			setM({ key, passes: current.passes + 1, over, lastEnd });
 	});
 	const clipped = p.truncate && current.over;
+	const mask: CSSProperties =
+		clipped && p.mask
+			? { WebkitMaskImage: p.mask, maskImage: p.mask, WebkitMaskSize: '100% 100%', maskSize: '100% 100%' }
+			: {};
+	// the clip box holds the text (and its mask: "the last line" is the clip box's bottom); what is drawn over the cut
+	// ("more", Play's fade) sits next to it, outside the mask
 	return (
-		<div
-			ref={box}
-			data-part="clamp"
-			data-clamped={clipped ? 'true' : undefined}
-			style={{
-				position: 'relative',
-				maxHeight: p.truncate ? p.lines * p.lineHeight : undefined,
-				overflow: p.truncate ? 'hidden' : undefined,
-			}}
-		>
+		<div data-part="clamp" data-clamped={clipped ? 'true' : undefined} style={{ position: 'relative' }}>
 			<div
-				style={
-					clipped && p.mask
-						? {
-								WebkitMaskImage: p.mask,
-								maskImage: p.mask,
-								WebkitMaskSize: '100% 100%',
-								maskSize: '100% 100%',
-							}
-						: undefined
-				}
+				ref={box}
+				style={{
+					position: 'relative',
+					maxHeight: p.truncate ? p.lines * p.lineHeight : undefined,
+					overflow: p.truncate ? 'hidden' : undefined,
+					...mask,
+				}}
 			>
 				{p.children}
 			</div>
@@ -277,6 +277,8 @@ function PlayStoreCard({ params: p, text, anim, assets }: SocialCardProps) {
 					data-part="name"
 					{...editableParamProps('displayName')}
 					style={{
+						position: 'relative',
+						top: 0.85,
 						flex: '0 1 auto',
 						minWidth: 0,
 						fontSize: 14,
@@ -300,19 +302,21 @@ function PlayStoreCard({ params: p, text, anim, assets }: SocialCardProps) {
 			</div>
 			<div
 				data-part="rating"
-				style={{ display: 'flex', alignItems: 'baseline', marginTop: 14.5, height: 20, lineHeight: '20px' }}
+				style={{ display: 'flex', alignItems: 'baseline', marginTop: 15.8, height: 20, lineHeight: '20px' }}
 			>
 				<StarRow
 					rating={p.rating}
 					anim={anim}
 					gap={2.13}
-					star={(f) => (
+					style={{ position: 'relative', top: 0.85 }}
+					star={(f, animated) => (
 						<Star
 							empty={star}
 							filled={star}
 							emptyColor={theme.starOff}
 							filledColor={theme.starOn}
 							fill={f}
+							animated={animated}
 							width={11.63}
 							height={11.06}
 						/>
@@ -321,13 +325,13 @@ function PlayStoreCard({ params: p, text, anim, assets }: SocialCardProps) {
 				{date ? (
 					<span
 						data-part="date"
-						style={{ marginLeft: 6.8, fontSize: 12, color: theme.meta, whiteSpace: 'nowrap' }}
+						style={{ marginLeft: 8.5, fontSize: 12, color: theme.meta, whiteSpace: 'nowrap' }}
 					>
 						{date}
 					</span>
 				) : null}
 			</div>
-			<div style={{ marginTop: 6.1 }}>
+			<div style={{ marginTop: 4.8 }}>
 				<ClampBox
 					truncate={p.truncate}
 					lines={PLAY_LINES}
@@ -418,13 +422,14 @@ function AppStoreWebCard({ params: p, text, anim, assets }: SocialCardProps) {
 					rating={p.rating}
 					anim={anim}
 					gap={0}
-					star={(f) => (
+					star={(f, animated) => (
 						<Star
 							empty={APP_STORE_GLYPHS.legacyStarEmpty}
 							filled={APP_STORE_GLYPHS.legacyStar}
 							emptyColor={theme.starOff}
 							filledColor={theme.starOn}
 							fill={f}
+							animated={animated}
 							width={24}
 							height={25}
 							stretch
@@ -543,8 +548,11 @@ const IOS_W = 350;
 const IOS_LINE = 20;
 /** A clamped review (the product page's card; the "See All" list of the screenshot shows the whole text). */
 const IOS_LINES = 5;
-/** The clamp mask of the current App Store card (the same layout): the last line under "more", fading over 32 px [M]. */
-const IOS_MASK = `linear-gradient(0deg, #0000 0, #0000 ${IOS_LINE}px, #000 ${IOS_LINE}px), linear-gradient(270deg, #0000 0, #0000 36px, #000 68px)`;
+/**
+ * The clamp mask of the current App Store card (the same layout; 32 px hidden under its 13 px "more", fading in over
+ * 32 px [M]), scaled to the 15 pt "more" of the app: 44 pt hidden, fading in over 36 pt.
+ */
+const IOS_MASK = `linear-gradient(0deg, #0000 0, #0000 ${IOS_LINE}px, #000 ${IOS_LINE}px), linear-gradient(270deg, #0000 0, #0000 44px, #000 80px)`;
 
 function AppStoreIosCard({ params: p, text, anim, assets }: SocialCardProps) {
 	const theme = IOS_THEME[p.theme];
@@ -563,7 +571,7 @@ function AppStoreIosCard({ params: p, text, anim, assets }: SocialCardProps) {
 				boxSizing: 'border-box',
 				background: theme.bg,
 				borderRadius: 8,
-				padding: '12.6px 20px 20px',
+				padding: '15.1px 22px 20px',
 				fontFamily: IOS_FONT,
 			}}
 		>
@@ -591,20 +599,21 @@ function AppStoreIosCard({ params: p, text, anim, assets }: SocialCardProps) {
 			</div>
 			<div
 				data-part="rating"
-				style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 3.4, height: IOS_LINE }}
+				style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 0.9, height: IOS_LINE }}
 			>
 				<StarRow
 					rating={p.rating}
 					anim={anim}
 					gap={2}
 					style={{ marginTop: 1.2 }}
-					star={(f) => (
+					star={(f, animated) => (
 						<Star
 							empty={APP_STORE_GLYPHS.starOutline}
 							filled={APP_STORE_GLYPHS.star}
 							emptyColor={theme.star}
 							filledColor={theme.star}
 							fill={f}
+							animated={animated}
 							width={13}
 							height={13}
 						/>

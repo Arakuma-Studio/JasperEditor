@@ -118,7 +118,12 @@ describe('platform glyphs', () => {
 
 	it('has the store review glyphs (stars, Play kebab)', () => {
 		expect(Object.keys(PLAY_STORE_GLYPHS).sort()).toEqual(['more', 'star']);
-		expect(Object.keys(APP_STORE_GLYPHS).sort()).toEqual(['legacyStar', 'legacyStarEmpty', 'star', 'starOutline']);
+		expect(Object.keys(APP_STORE_GLYPHS).sort()).toEqual([
+			'legacyStar',
+			'legacyStarEmpty',
+			'star',
+			'starOutline',
+		]);
 		// the legacy stars share their 13 × 14 sprite cell, the current ones Apple's 64-unit box
 		expect(APP_STORE_GLYPHS.legacyStar.viewBox).toBe(APP_STORE_GLYPHS.legacyStarEmpty.viewBox);
 		expect(APP_STORE_GLYPHS.star.viewBox).toBe(APP_STORE_GLYPHS.starOutline.viewBox);
