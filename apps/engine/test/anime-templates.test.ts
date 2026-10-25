@@ -149,6 +149,24 @@ describe('templates that are not installed block every export path (S11:ATP-010,
 		expect(missingTemplates(p.snapshot)).toEqual([]);
 	});
 
+	it('a social-comment card style this build does not draw yet blocks like a missing template', async () => {
+		const b = build();
+		const doc = JSON.parse(JSON.stringify(b.doc)) as ProjectDocument;
+		const clip = doc.sequences[b.seqId]!.clips[b.anime] as {
+			template: { id: string; version: number };
+			params: Record<string, unknown>;
+		};
+		clip.template.id = 'social-comment';
+		clip.params = { variant: 'tiktok-comment' };
+		const ok = await plan(doc, b.seqId, { still: true });
+		expect(missingTemplates(ok.snapshot)).toEqual([]);
+		clip.params = { variant: 'x-post' };
+		await expect(plan(doc, b.seqId, { still: true })).rejects.toMatchObject({
+			code: 'TEMPLATE_NOT_INSTALLED',
+			message: expect.stringContaining('social-comment@1 (X post card)'),
+		});
+	});
+
 	it('POST /api/exports and /api/exports/plan answer 409; a still job fails with the same code', async () => {
 		const b = build();
 		const doc = withMissing(b);

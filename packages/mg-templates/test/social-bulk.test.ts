@@ -206,3 +206,15 @@ describe('social hints', () => {
 		expect(r.rerolled.sort()).toEqual([...SOCIAL_REROLL_PARAMS].sort());
 	});
 });
+
+describe('the real social-comment@1 template', () => {
+	it('carries the Add another and import hints', async () => {
+		const { mgRegistry } = await import('../src/index.ts');
+		const real = mgRegistry.get('social-comment', 1)!;
+		expect(real.ui?.addAnother?.reroll).toEqual(SOCIAL_REROLL_PARAMS);
+		expect(real.ui?.import?.trimPrefix).toEqual({ handle: '@' });
+		const t = parseTable('User,Comment,Verified\n@luna,Hi,yes');
+		const p = t.ok ? planMgImport(t.table, mgImportTemplateOf(real)!, { rate, preset: 'tiktok-comment' }) : null;
+		expect(p?.ok && p.plan.rows[0]!.params).toEqual({ displayName: '@luna', text: 'Hi', verified: true });
+	});
+});
