@@ -6,6 +6,7 @@ import {
 	audioMixIssues,
 	type Clip,
 	createRandomIdSource,
+	cutPositionFor,
 	defaultLabelForMedia,
 	defaultTransform,
 	type FontRef,
@@ -659,19 +660,19 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 				}
 				let duration = Math.max(1, toFrames(x.start + x.duration) - toFrames(x.start));
 				let alignment = x.alignment;
+				let cutPosition: number | undefined;
 				if (outClip && incClip) {
 					if (outClip.start + outClip.duration !== incClip.start) {
 						drop('joins clips that are not adjacent');
 						continue;
 					}
-					// Derive the alignment from where the span sits around the cut.
+					// Derive the alignment from where the span sits around the cut; an off-centre span keeps its position
+					// (Premiere's Custom Start: `cutPosition`, the fraction of the span before the cut).
 					const cut = incClip.start;
 					const s0 = toFrames(x.start);
-					alignment = s0 >= cut ? 'start-at-cut' : s0 + duration <= cut ? 'end-at-cut' : 'center';
-					if (alignment === 'center' && cut - s0 !== duration >> 1)
-						report.info(
-							`transition "${name}" at frame ${s0} is off-centre on its cut; JasperEditor centres it (${duration >> 1} frames before the cut)`,
-						);
+					const pos = cutPositionFor(Math.min(duration, Math.max(0, cut - s0)), duration);
+					alignment = pos.alignment;
+					cutPosition = pos.cutPosition;
 					duration = Math.min(duration, outClip.duration, incClip.duration);
 				} else {
 					const c = (outClip ?? incClip)!;
@@ -697,6 +698,8 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 					alignment,
 					params: clone(x.params) as Transition['params'],
 				};
+				if (cutPosition !== undefined) tr.cutPosition = cutPosition;
+				else delete tr.cutPosition;
 				seq.transitions[tid] = tr;
 			}
 		}

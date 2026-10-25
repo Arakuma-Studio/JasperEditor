@@ -1021,6 +1021,14 @@ function edlTransition(t: ITransition, report: Report): { code: string; name: st
 	)
 		return { code: 'D', name };
 	if (t.effectId === 'jasper.wipe') return { code: 'W001', name };
+	if (Object.keys(t.params ?? {}).length > 0)
+		report.warn(
+			`the parameters of transition "${transitionLabel(t.effectId)}" (${Object.keys(t.params).join(', ')}) are not carried by an EDL`,
+			{
+				subject: { kind: 'transition', id: t.id, name: transitionLabel(t.effectId) },
+				instead: 'the transition with its default parameters',
+			},
+		);
 	report.info(
 		`transition "${transitionLabel(t.effectId)}" is written as a dissolve with an EFFECT NAME comment`,
 		{

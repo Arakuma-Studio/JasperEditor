@@ -5,15 +5,17 @@ import {
 	CONSTANT_GAIN,
 	CONSTANT_POWER,
 	CROSS_DISSOLVE,
+	CUSTOM_FADE,
 	DIP_TO_BLACK,
 	defaultEffectRegistry,
 	type EffectSpec,
+	EXPONENTIAL_FADE,
 	TRANSITION_SPECS,
 	transitionSpec,
 } from '@jasper/project';
 import type { Report } from './report.ts';
 
-export { CONSTANT_GAIN, CONSTANT_POWER, CROSS_DISSOLVE, DIP_TO_BLACK };
+export { CONSTANT_GAIN, CONSTANT_POWER, CROSS_DISSOLVE, CUSTOM_FADE, DIP_TO_BLACK, EXPONENTIAL_FADE };
 
 const norm = (s: string) =>
 	s
@@ -56,6 +58,17 @@ const AUDIO_ALIASES: Record<string, string> = {
 	'simple mono audio dissolve': CONSTANT_POWER,
 	'constant power': CONSTANT_POWER,
 	'constant gain': CONSTANT_GAIN,
+	// Premiere's match names and effect ids (FCP7 XML: <effectid>KGAudioTransCrossFade3dB</effectid>), and the Spanish
+	// display names a Spanish Premiere writes (Potencia constante, Ganancia constante, Fundido exponencial,
+	// Fundido personalizado).
+	kgaudiotranscrossfade3db: CONSTANT_POWER,
+	kgaudiotranscrossfade0db: CONSTANT_GAIN,
+	'exponential fade': EXPONENTIAL_FADE,
+	'custom fade': CUSTOM_FADE,
+	'potencia constante': CONSTANT_POWER,
+	'ganancia constante': CONSTANT_GAIN,
+	'fundido exponencial': EXPONENTIAL_FADE,
+	'fundido personalizado': CUSTOM_FADE,
 };
 
 /**
@@ -63,6 +76,18 @@ const AUDIO_ALIASES: Record<string, string> = {
  * (Constant Power on audio) with a warning naming the transition.
  */
 export function transitionFromName(name: string, audio: boolean, report: Report): string {
+	const known = knownTransition(name, audio);
+	if (known) return known;
+	const fallback = audio ? CONSTANT_POWER : CROSS_DISSOLVE;
+	report.warn(`transition "${name}" is not supported; imported as ${transitionLabel(fallback)}`, {
+		subject: { kind: 'transition', name },
+		instead: transitionLabel(fallback),
+	});
+	return fallback;
+}
+
+/** The JasperEditor transition of a document's transition name, id or label, or null when it is not known. */
+export function knownTransition(name: string, audio: boolean): string | null {
 	const n = norm(name);
 	const alias = (audio ? AUDIO_ALIASES : VIDEO_ALIASES)[n];
 	if (alias && transitionSpec(alias)) return alias;
@@ -70,13 +95,7 @@ export function transitionFromName(name: string, audio: boolean, report: Report)
 	const byId = TRANSITION_SPECS.find((s) => s.id === name.trim() && s.appliesTo === kind);
 	if (byId) return byId.id;
 	const byLabel = TRANSITION_SPECS.find((s) => s.appliesTo === kind && norm(s.label) === n);
-	if (byLabel) return byLabel.id;
-	const fallback = audio ? CONSTANT_POWER : CROSS_DISSOLVE;
-	report.warn(`transition "${name}" is not supported; imported as ${transitionLabel(fallback)}`, {
-		subject: { kind: 'transition', name },
-		instead: transitionLabel(fallback),
-	});
-	return fallback;
+	return byLabel?.id ?? null;
 }
 
 /** Display (Premiere) name of a transition id. */
