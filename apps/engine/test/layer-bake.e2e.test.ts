@@ -388,7 +388,7 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			expect(worst).toBeLessThanOrEqual(2);
 		}
 
-		// Stills reuse these masters; a fresh layer bakes only the requested frame (LBK-025).
+		// Stills reuse these masters (LBK-025). A fresh layer has an independent fixture below.
 		{
 			const { d } = main;
 			const s = await still(d, 30);
@@ -399,25 +399,34 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			expect(
 				within(decode(s.file, { pix: 'rgb24' }), decode(exp.out, { frame: 30, pix: 'rgb24' }), 3),
 			).toBeGreaterThanOrEqual(0.99);
-			const t = d.tx([
-				{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Fresh' }, ref: '$f' },
-			]).refs.$f!;
-			d.tx([
-				{
-					type: 'param.setAnimated',
-					target: ['clip', t, 'opacity'],
-					animated: true,
-					at: { sequenceFrame: 60 },
-				},
-			]);
-			d.tx([{ type: 'clip.move', clipIds: [t], deltaFrames: 60 }]);
-			d.tx([{ type: 'param.set', target: ['clip', t, 'opacity'], value: 0, at: { sequenceFrame: 89 } }]);
-			const s2 = await still(d, 70);
-			expect(s2.done.state, JSON.stringify(s2.done.error)).toBe('succeeded');
-			expect(s2.bakes).toHaveLength(1);
-			expect(s2.bakes[0]!.result).toMatchObject({ still: true, frames: 1 });
 		}
 	}, 1_800_000);
+
+	it('a fresh animated layer bakes the requested still frame (LBK-025)', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = d.tx([
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Fresh' }, ref: '$f' },
+		]).refs.$f!;
+		d.tx([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', t, 'opacity'],
+				animated: true,
+				at: { sequenceFrame: 0 },
+			},
+			{ type: 'clip.move', clipIds: [t], deltaFrames: 60 },
+			{ type: 'param.set', target: ['clip', t, 'opacity'], value: 0, at: { sequenceFrame: 89 } },
+		]);
+		const s = await still(d, 70);
+		expect(s.done.state, JSON.stringify(s.done.error)).toBe('succeeded');
+		expect(s.done.result).toMatchObject({ renderPath: 'hybrid' });
+		expect(s.bakes).toHaveLength(1);
+		expect(s.bakes[0]!.result).toMatchObject({ still: true, frames: 1 });
+		// The only layer is white over black, fading from 100 % at local frame 0 to 0 % at 29.
+		// Requested sequence frame 70 is local 10: 255 × (1 − 10/29) ≈ 167. A blank or frame-zero bake fails.
+		const peak = decode(s.file, { pix: 'rgb24' }).reduce((max, value) => Math.max(max, value), 0);
+		expect(Math.abs(peak - 167)).toBeLessThanOrEqual(3);
+	}, 600_000);
 
 	it('a Lumetri grade on a title shows in the native export, the Remotion export and the graded preview (FIX-002)', async () => {
 		const d = new DocBuilder('hd-720p-30');
