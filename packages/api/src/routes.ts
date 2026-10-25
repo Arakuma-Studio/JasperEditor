@@ -258,6 +258,7 @@ import {
 } from './speech.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
+import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -848,6 +849,21 @@ export const ROUTES = {
 		path: '/api/media/:key/transcribe',
 		body: TranscribeMediaRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** Spec 14 TC-001: a `voice-analysis` job for one audio stream of a media (result `VoiceAnalysisJobResult`). */
+	voiceAnalyze: {
+		method: 'POST',
+		path: '/api/media/:key/voice-analysis',
+		body: VoiceAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** The cached voice analysis file of a stream (`decodeVoiceAnalysis`); 404 `VOICE_ANALYSIS_NOT_FOUND` when none. */
+	voiceAnalysisGet: {
+		method: 'GET',
+		path: '/api/media/:key/voice-analysis',
+		query: VoiceAnalysisQuerySchema,
+		response: 'binary',
 	},
 	/** A `transcription` job for the mixed audio of a sequence (result in sequence time). */
 	speechTranscribeSequence: {

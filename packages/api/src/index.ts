@@ -39,3 +39,4 @@ export * from './sounds.ts';
 export * from './speech.ts';
 export * from './sync.ts';
 export * from './tracking.ts';
+export * from './voice.ts';

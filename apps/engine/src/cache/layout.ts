@@ -5,6 +5,7 @@
 //
 //   kind         location (appdir-relative)                                   entry key
 //   media-cache  cache/<fp64>/{keyframes,poster,sprite,peaks}-<hash>[.ext|/]  <fp64>/<name>-<hash>
+//                cache/<fp64>/voice-analysis-<hash>.bin (spec 14, per stream)    <fp64>/voice-analysis-<hash>
 //   proxies      cache/<fp64>/proxy-{720,540}-<hash>.{mp4,webm}              <fp64>/proxy-<tier>-<hash>
 //                cache/<fp64>/playback-audio-<hash>[.json|/]  (WAV per stream) <fp64>/playback-audio-<hash>
 //   luts         cache/luts/<sha256>.cube                                    <sha256>
@@ -130,7 +131,7 @@ export type Orphan = { path: string; bytes: number; mtimeMs: number };
 const HEX64 = /^[0-9a-f]{64}$/;
 const KEY40 = /^[0-9a-f]{40}$/;
 const DERIVATIVE =
-	/^(keyframes|poster|sprite|peaks|proxy-720|proxy-540|playback-audio)-([0-9a-f]{6,64})(\.[a-z0-9]+)?$/;
+	/^(keyframes|poster|sprite|peaks|proxy-720|proxy-540|playback-audio|voice-analysis)-([0-9a-f]{6,64})(\.[a-z0-9]+)?$/;
 /** Derivatives counted as playback copies (`proxies`) rather than media cache files. */
 const isPlaybackCopy = (name: string) => name.startsWith('proxy-') || name === 'playback-audio';
 const JOB_ID = /^job_[0-9a-f]{16}$/;

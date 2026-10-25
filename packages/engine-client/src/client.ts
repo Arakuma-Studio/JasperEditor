@@ -79,7 +79,11 @@ import {
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
+	VOICE_ANALYSIS_MAX_FILE_BYTES,
 	type VersionRestoreRequest,
+	type VoiceAnalysis,
+	type VoiceAnalyzeRequest,
+	decodeVoiceAnalysis,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
@@ -722,6 +726,56 @@ export class EngineClient {
 			throw error;
 		}
 		return session.uploadId;
+	}
+	/**
+	 * Spec 14 TC-001: a `voice-analysis` job for one audio stream of a media (default: its first audio stream; result
+	 * `VoiceAnalysisJobResult`). Finishes at once when the analysis is cached.
+	 */
+	analyzeVoice(mediaKey: string, req: VoiceAnalyzeRequest = {}, wait = false): Promise<EngineJob> {
+		return this.call('voiceAnalyze', {
+			params: { key: mediaKey },
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+	/**
+	 * The cached voice analysis of a stream, decoded and validated (`decodeVoiceAnalysis`). Throws EngineError
+	 * `VOICE_ANALYSIS_NOT_FOUND` (404) when there is none yet — run `analyzeVoice` — and `INVALID_RESPONSE` for a file
+	 * that does not validate.
+	 */
+	async getVoiceAnalysis(
+		mediaKey: string,
+		streamIndex?: number,
+		signal?: AbortSignal,
+	): Promise<VoiceAnalysis> {
+		const path = buildPath(ROUTES.voiceAnalysisGet.path, { key: mediaKey });
+		const res = await this.fetchResponse(
+			this.url(path, streamIndex === undefined ? undefined : { streamIndex }),
+			{ headers: this.authorizationHeaders(), signal, credentials: 'include' },
+		);
+		if (!res.ok) {
+			let json: unknown = null;
+			try {
+				json = JSON.parse(await res.text());
+			} catch {
+				json = null;
+			}
+			const shape = ErrorShapeSchema.safeParse(json);
+			if (shape.success) throw EngineError.fromShape(shape.data, res.status);
+			throw new EngineError(res.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR', `HTTP ${res.status}`, {
+				status: res.status,
+				retryable: res.status >= 500,
+			});
+		}
+		const len = Number(res.headers.get('content-length') ?? '0');
+		if (len > VOICE_ANALYSIS_MAX_FILE_BYTES)
+			throw new EngineError('INVALID_RESPONSE', 'Voice analysis file too large', { status: res.status });
+		const r = decodeVoiceAnalysis(new Uint8Array(await res.arrayBuffer()));
+		if (!r.ok)
+			throw new EngineError('INVALID_RESPONSE', `Invalid voice analysis from the engine: ${r.error}`, {
+				status: res.status,
+			});
+		return r.analysis;
 	}
 	/** Scene Edit Detection of a media range (job; result SceneDetectResult). */
 	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {
