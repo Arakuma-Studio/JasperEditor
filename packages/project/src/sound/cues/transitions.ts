@@ -64,7 +64,7 @@ export function transitionWindow(
 	const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 	const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 	const d = Math.max(1, Math.round(Number(t.duration) || 1));
-	if (inc && out) return transitionSpan(inc.start, d, t.alignment);
+	if (inc && out) return transitionSpan(inc.start, d, t.alignment, t.cutPosition);
 	if (inc) return { start: inc.start, end: inc.start + Math.min(d, inc.duration) };
 	if (out) return { start: clipEnd(out) - Math.min(d, out.duration), end: clipEnd(out) };
 	return null;

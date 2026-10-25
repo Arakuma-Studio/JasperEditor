@@ -130,6 +130,11 @@ export const TransitionAddCmd = cmd('transition.add', {
 	effectId: z.string().min(1),
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
+	/**
+	 * Premiere port (Custom Start): frames of the span before the cut of a transition between two clips (0…duration;
+	 * instead of `alignment`). Stored as `cutPosition`, so the offset scales when the duration is shortened.
+	 */
+	cutOffset: z.number().int().min(0).optional(),
 	handles: z.enum(['shorten', 'freeze']).optional(),
 	/** Wave-2 transition framework: initial param values (static; keyframes via param.set / keyframe.add). */
 	params: z.record(z.string(), z.unknown()).optional(),
@@ -140,7 +145,13 @@ export const TransitionUpdateCmd = cmd('transition.update', {
 	/** change the type; a video transition stays video, an audio one audio. */
 	effectId: z.string().min(1).optional(),
 	duration: z.number().int().min(1).optional(),
+	/** A new alignment (drops a Custom Start `cutPosition`). */
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
+	/**
+	 * Premiere port (Custom Start): frames of the (new) span before the cut, 0…duration, instead of `alignment`;
+	 * transitions between two clips only. Without it and without `alignment`, a Custom Start keeps its fraction.
+	 */
+	cutOffset: z.number().int().min(0).optional(),
 	/**
 	 * `freeze` lets a video transition keep its duration with too few media frames (the edge frames
 	 * repeat, `freezeHandles`); `shorten` fits it to the media. Default: what the transition has.

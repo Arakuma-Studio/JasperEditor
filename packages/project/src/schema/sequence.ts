@@ -920,6 +920,13 @@ export const TransitionSchema = z.looseObject({
 	 * handles, drawn with a warning stripe). Absent = handles come from the media only.
 	 */
 	freezeHandles: z.boolean().optional(),
+	/**
+	 * Premiere port (Custom Start alignment, v8): where the cut sits in a two-sided transition's span, as the fraction
+	 * of the span before it (0…1; frames before the cut = round(cutPosition × duration), `cutOffsetOf`). Absent = the
+	 * `alignment`'s position. Read leniently (any value; INV-010 reports one that is not a number in (0, 1) or sits on
+	 * a fade, `repairDocument` drops it).
+	 */
+	cutPosition: z.custom<number>().optional(),
 });
 export type Transition = DeepStrip<z.infer<typeof TransitionSchema>>;
 
