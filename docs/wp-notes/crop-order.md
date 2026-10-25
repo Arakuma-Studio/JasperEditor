@@ -68,8 +68,8 @@ For an edge at position `e` and a pixel centred at distance `d` inside it (pixel
     coverage(d, f) = clamp(G(d + ½) − G(d − ½), 0, 1)
     alpha factor(x, y) = Π over the four edges of coverage(distance inside that edge, f)
 
-`cropEdgeCoverage` / `cropCoverageAt` are the reference; the preview shader (`CROP_FEATHER_GPU`,
-`packages/compositions/src/fx/builtins.ts`) and the native mask (`axisCoverageExpr`,
+`cropEdgeCoverage` is the shared reference for each edge; the four edges multiply as above. The preview shader
+(`CROP_FEATHER_GPU`, `packages/compositions/src/fx/builtins.ts`) and the native mask (`axisCoverageExpr`,
 `apps/engine/src/export/crop.ts`) evaluate the same expression. Property tests (fast-check) pin the laws: in [0, 1],
 monotone in the distance, non-increasing in the feather, 0 beyond half a pixel outside, 1 beyond `f + ½` inside,
 continuous at f → 0, and equal to a numerical box-filtered average of the ramp.

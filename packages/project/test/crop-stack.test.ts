@@ -3,7 +3,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	cropCoverageAt,
 	cropEdgeCoverage,
 	cropFeather,
 	cropInsets,
@@ -69,19 +68,6 @@ describe('Edge Feather profile (cropEdgeCoverage)', () => {
 				expect(Math.abs(cropEdgeCoverage(d, 1e-9) - cropEdgeCoverage(d, 0))).toBeLessThan(1e-6);
 			}),
 		);
-	});
-
-	it('multiplies the four edges of the crop window (cropCoverageAt)', () => {
-		const ins: [number, number, number, number] = [0.1, 0.2, 0.25, 0.05];
-		const [w, h, f] = [400, 200, 12];
-		// At (45.5, 60.5), only the left ramp contributes: 5.5 / 12 = 11 / 24.
-		// At (299.5, 189.5), the right and bottom pixels each average a 0…1 ramp: (1 / 24)².
-		expect(cropCoverageAt(45.5, 60.5, w, h, ins, f)).toBeCloseTo(11 / 24, 12);
-		expect(cropCoverageAt(299.5, 189.5, w, h, ins, f)).toBeCloseTo(1 / 576, 12);
-		// Inside, farther than the feather from every edge: untouched.
-		expect(cropCoverageAt(200.5, 100.5, w, h, ins, f)).toBe(1);
-		// Outside the window: nothing.
-		expect(cropCoverageAt(10.5, 100.5, w, h, ins, f)).toBe(0);
 	});
 });
 

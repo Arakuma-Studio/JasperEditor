@@ -64,27 +64,6 @@ export function cropEdgeCoverage(d: number, f: number): number {
 	return Math.min(1, Math.max(0, rampIntegral(d + 0.5, ff) - rampIntegral(d - 0.5, ff)));
 }
 
-/**
- * Alpha factor of a crop for the pixel centred at `(x, y)` of a `w × h` box (any pixel unit; `feather` in the same
- * unit): the product of the four edge coverages.
- */
-export function cropCoverageAt(
-	x: number,
-	y: number,
-	w: number,
-	h: number,
-	insets: Readonly<CropInsets>,
-	feather: number,
-): number {
-	const [l, t, r, b] = insets;
-	return (
-		cropEdgeCoverage(x - l * w, feather) *
-		cropEdgeCoverage((1 - r) * w - x, feather) *
-		cropEdgeCoverage(y - t * h, feather) *
-		cropEdgeCoverage((1 - b) * h - y, feather)
-	);
-}
-
 /** Insets mirrored by a horizontal and/or vertical flip of the box (a flip after the crop mirrors its window). */
 export function mirrorCropInsets(
 	insets: Readonly<CropInsets>,
