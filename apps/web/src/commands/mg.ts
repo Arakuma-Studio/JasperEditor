@@ -15,6 +15,7 @@ const InsertArgs = z.object({
 	version: z.number().int().positive().default(1),
 	/** Sequence frame; default the playhead. */
 	at: z.number().int().min(0).optional(),
+	/** Track id or label to overwrite on; default: the first free video track from the targeted one up. */
 	trackId: z.string().optional(),
 });
 
@@ -74,7 +75,7 @@ export const mgCommands: UiCommand[] = [
 		id: 'mg.insert',
 		label: 'Insert Motion Template',
 		description:
-			'Adds a motion-graphic template at the playhead on the targeted video track (default duration and params).',
+			'Adds a motion-graphic template at the playhead (default duration and params) without overwriting: on the first free video track from the targeted one up (a new track on top when all are busy); with trackId, on that track (overwriting its range).',
 		icon: 'panel.motionTemplates',
 		scope: 'editing',
 		argsSchema: InsertArgs,

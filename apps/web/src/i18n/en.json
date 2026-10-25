@@ -820,7 +820,7 @@
   "Address",
   "Adds a composition of an imported Remotion bundle at the playhead on the targeted video track (default duration = the composition length).",
   "Adds a four-corner (planar) tracker to the selected video clip at the playhead.",
-  "Adds a motion-graphic template at the playhead on the targeted video track (default duration and params).",
+  "Adds a motion-graphic template at the playhead (default duration and params) without overwriting: on the first free video track from the targeted one up (a new track on top when all are busy); with trackId, on that track (overwriting its range).",
   "Adds a new shape clip with a horizontal stroked line at the playhead.",
   "Adds a new shape clip with a vertical stroked line at the playhead.",
   "Adds a point tracker to the selected video clip at the playhead.",
