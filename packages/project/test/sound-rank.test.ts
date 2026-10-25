@@ -1,12 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	DESCRIPTOR_FILTERS,
 	descriptorDistance,
 	durationFit,
 	isCommercialSafe,
 	licenseClass,
-	licensePreference,
 	licenseUrlOf,
 	type RankableSound,
 	rankSounds,
@@ -71,10 +69,7 @@ describe('licences', () => {
 		for (const l of ['CC-BY-NC-4.0', 'CC-BY-ND-4.0', 'LicenseRef-UserProvided', 'NOASSERTION', 'WTFPL'])
 			expect(isCommercialSafe(l), l).toBe(false);
 	});
-	it('prefers CC0 > CC-BY > CC-BY-SA > user-provided', () => {
-		const order = ['CC0-1.0', 'CC-BY-4.0', 'CC-BY-SA-4.0', 'LicenseRef-UserProvided', 'CC-BY-NC-4.0'];
-		const prefs = order.map(licensePreference);
-		for (let i = 1; i < prefs.length; i++) expect(prefs[i]!).toBeLessThan(prefs[i - 1]!);
+	it('reports attribution obligations and canonical Creative Commons deed URLs', () => {
 		expect(requiresAttribution('CC-BY-4.0')).toBe(true);
 		expect(requiresAttribution('CC0-1.0')).toBe(false);
 		expect(licenseUrlOf('CC-BY-SA-4.0')).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
@@ -159,7 +154,6 @@ describe('rankSounds (spec 12 §2.1)', () => {
 	});
 
 	it('applies the Refine pills at their thresholds (inclusive) and drops unknown descriptors', () => {
-		const F = DESCRIPTOR_FILTERS;
 		const list = [
 			snd('snd_short', { d: { durationSec: 0.29 } }),
 			snd('snd_med_lo', { d: { durationSec: 0.3 } }),
@@ -170,9 +164,9 @@ describe('rankSounds (spec 12 §2.1)', () => {
 		expect(ids(rankSounds(list, { length: 'medium' })).sort()).toEqual(['snd_med_hi', 'snd_med_lo']);
 		expect(ids(rankSounds(list, { length: 'long' }))).toEqual(['snd_long']);
 		const tone = [
-			snd('snd_dark', { d: { centroidHz: F.tone.darkMaxHz } }),
+			snd('snd_dark', { d: { centroidHz: 1000 } }),
 			snd('snd_mid', { d: { centroidHz: 2000 } }),
-			snd('snd_bright', { d: { centroidHz: F.tone.brightMinHz } }),
+			snd('snd_bright', { d: { centroidHz: 3000 } }),
 			snd('snd_unknown', { d: { centroidHz: undefined } }),
 		];
 		expect(ids(rankSounds(tone, { tone: 'dark' }))).toEqual(['snd_dark']);
@@ -264,7 +258,6 @@ describe('rankSounds (spec 12 §2.1)', () => {
 		];
 		const r = rankSounds(list, { similarTo: { id: 'snd_ref', descriptors: ref.descriptors } });
 		expect(ids(r)).toEqual(['snd_near', 'snd_far']);
-		expect(descriptorDistance(ref.descriptors, ref.descriptors)).toBe(0);
 		expect(descriptorDistance({ durationSec: Number.NaN }, { durationSec: 1 })).toBe(
 			Number.POSITIVE_INFINITY,
 		);

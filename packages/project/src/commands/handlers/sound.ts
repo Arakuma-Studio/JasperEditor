@@ -73,8 +73,6 @@ export const SOUND_DESIGN_OWNER = 'sound-design' as const;
 /** Media kinds that can be a library sound (it is audio, or a video file whose audio is the sound). */
 const SOUND_MEDIA_KINDS: ReadonlySet<string> = new Set(['audio', 'video']);
 
-export { PITCH_SHIFTER_EFFECT_ID, pitchPlan, VARISPEED_PITCH_MAX_ST } from '../../sound/pitch.ts';
-
 type DAudio = Draft<AudioClip> & { sfx?: ClipSfx };
 type DCue = Draft<SoundCue>;
 

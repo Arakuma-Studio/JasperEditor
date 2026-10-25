@@ -10,12 +10,10 @@ import {
 	CUE_DENSITIES,
 	CUE_DERIVE_SOURCES,
 	type CueDensity,
-	DENSITY_BUDGETS,
 	type DeriveCuesOptions,
 	type DeriveCuesResult,
 	type DerivedCue,
 	deriveCues,
-	HERO_MIN_SEC,
 	type Keyframe,
 	type ProjectDocument,
 	TRANSITION_SPECS,
@@ -235,7 +233,12 @@ function assertBudgets(
 	density: CueDensity,
 	opts: { maxCues?: number; minGap?: number },
 ) {
-	const b = DENSITY_BUDGETS[density];
+	// Spec 12 §2.2 and WP2.2's decision table, independent of the implementation's constants.
+	const b = {
+		sparse: { heroEverySec: 3, perSec: 1, minConfidence: 0.4 },
+		balanced: { heroEverySec: 2, perSec: 2, minConfidence: 0.3 },
+		rich: { heroEverySec: 1.5, perSec: 3, minConfidence: 0.15 },
+	}[density];
 	const W = Math.max(1, Math.round(fps));
 	const units = new Map<string, { a: number; b: number; explicit: boolean }>();
 	for (const c of r.cues) {
@@ -247,12 +250,15 @@ function assertBudgets(
 		} else units.set(k, { a: c.frame, b: c.frame, explicit: c.source === 'marker' });
 	}
 	const derived = [...units.values()].filter((u) => !u.explicit);
-	for (const u of derived)
-		for (let s = u.a - W + 1; s <= u.b; s++) {
-			const n = derived.filter((x) => x.a <= s + W - 1 && x.b >= s).length;
-			if (n > b.perSec) throw new Error(`${n} cues in the 1 s window at ${s} (${density}, ≤ ${b.perSec})`);
-		}
-	const heroGap = Math.max(Math.round(b.heroEverySec * fps), Math.round(HERO_MIN_SEC * fps));
+	// A unit intersects windows starting in [a - W + 1, b]. The overlap count can increase only at a unit's
+	// entry, so these starts prove the bound for every integer frame without scanning long empty stretches.
+	for (const u of derived) {
+		const start = u.a - W + 1;
+		const count = derived.filter((x) => x.a <= start + W - 1 && x.b >= start).length;
+		if (count > b.perSec)
+			throw new Error(`${count} cues in the 1 s window at ${start} (${density}, ≤ ${b.perSec})`);
+	}
+	const heroGap = Math.max(Math.round(b.heroEverySec * fps), Math.round(0.5 * fps));
 	const heroes = r.cues.filter((c) => c.weight === 'hero').map((c) => c.frame);
 	for (let i = 1; i < heroes.length; i++) expect(heroes[i]! - heroes[i - 1]!).toBeGreaterThanOrEqual(heroGap);
 	if (opts.maxCues !== undefined) expect(r.cues.length).toBeLessThanOrEqual(opts.maxCues);

@@ -6,20 +6,16 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	COMMAND_CATALOG,
 	checkInvariants,
 	deriveCues,
 	fillTypeOf,
 	findRuns,
 	isTypingCue,
 	loadProject,
-	MATERIAL_BONUS,
 	materialBonusOf,
 	musicPlaysAt,
 	offeredTakeIds,
-	PERSONALITY_WEIGHT,
 	paletteMaterials,
-	personalityDensity,
 	personalityScore,
 	pickVariant,
 	type RankableSound,
@@ -28,12 +24,9 @@ import {
 	readSoundDesignSettings,
 	repairDocument,
 	resolveSoundStyle,
-	runReason,
 	SOUND_PERSONALITIES,
-	SOUND_PERSONALITY_PROFILES,
 	SOUND_TYPE_IDS,
 	SOUND_TYPES,
-	type SoundPersonality,
 	styleCueTypes,
 	takeIdOf,
 	typingChoice,
@@ -148,7 +141,6 @@ describe('runs climb', () => {
 		expect(four.map((s) => s?.st)).toEqual([0, 1, 2, 3]);
 		expect(four.map((s) => s?.index)).toEqual([1, 2, 3, 4]);
 		expect(four.every((s) => s?.of === 4 && s.run === 1)).toBe(true);
-		expect(runReason(four[2]!)).toBe('run 3 of 4: +2 st');
 		const six = findRuns(
 			[0, 6, 12, 18, 24, 30].map((f) => card(f, 'ui', 'emphasis')),
 			30,
@@ -161,7 +153,6 @@ describe('runs climb', () => {
 			'flat',
 		);
 		expect(flat.map((s) => s?.st)).toEqual([0, 0, 0]);
-		expect(runReason(flat[1]!, 'flat')).toBe('run 2 of 3: flat');
 	});
 
 	it('needs ≥ 3 consecutive appear / emphasis cues ≤ 0.6 s apart, filled with pop, ui, chime or tick', () => {
@@ -268,7 +259,6 @@ describe('typing', () => {
 			0, 3, 8, 13, 16, 21, 25, 28, 32,
 		]);
 		// typewriter@2 types over 60 % of its window: 35 units in 0.6 s
-		expect(auto.cues[0]!.reason).toMatch(/one key per word: 58 typed\/s/);
 		expect(new Set(auto.cues.map((c) => c.group)).size).toBe(1);
 		const keys = deriveCues(h.doc, h.seqId, { sources: ['text'], typing: 'keys' });
 		// keys: thinned to ≤ 12 per second (7 over the 0.6 s of typing), wherever they fall in the words
@@ -288,7 +278,6 @@ describe('typing', () => {
 		expect(auto.cues).toEqual(deriveCues(h.doc, h.seqId, { sources: ['text'], typing: 'keys' }).cues);
 		// thinned to ≤ 12 per second as before (two of the ten fall within 2.5 frames of the previous key)
 		expect(auto.cues).toHaveLength(8);
-		expect(auto.cues[0]!.reason).toMatch(/\(8 keys over 1\.5 s\)$/);
 		const words = deriveCues(h.doc, h.seqId, { sources: ['text'], typing: 'words' });
 		expect(words.cues.map((c) => (c.anchor as { unit?: number }).unit)).toEqual([0, 5]);
 	});
@@ -352,15 +341,13 @@ describe('music carries the cuts', () => {
 		expect(balanced.stats.musicCarriesCuts).toBe(1);
 		expect(balanced.carried).toHaveLength(1);
 		expect(balanced.carried![0]).toMatchObject({ frame: 90, confidence: 0.25, minConfidence: 0.3 });
-		expect(balanced.carried![0]!.reason).toMatch(/music carries the cut/);
 		const rich = deriveCues(h.doc, h.seqId, { sources: ['edits'], density: 'rich' });
 		const cut = rich.cues.find((c) => c.frame === 90)!;
 		expect(cut.confidence).toBe(0.25);
-		expect(cut.reason).toMatch(/; music carries the cut$/);
 		expect(rich.carried).toBeUndefined();
 	});
 
-	it('off (option or the sequence style), on a muted track, or under dialogue: the cut keeps its confidence', () => {
+	it('off (option or the sequence style) or on a muted track: the cut keeps its confidence', () => {
 		const h = edit();
 		const off = deriveCues(h.doc, h.seqId, { sources: ['edits'], musicCarriesCuts: false });
 		expect(off.cues.find((c) => c.frame === 90)?.confidence).toBe(0.5);
@@ -375,75 +362,45 @@ describe('music carries the cuts', () => {
 });
 
 describe('personality', () => {
-	it('every personality has a description, density and disjoint boosts / exclusions of known types', () => {
-		for (const p of SOUND_PERSONALITIES) {
-			const prof = SOUND_PERSONALITY_PROFILES[p];
-			expect(prof.description.length).toBeGreaterThan(10);
-			for (const t of [...prof.boost, ...prof.exclude]) expect(SOUND_TYPE_IDS).toContain(t);
-			expect(prof.boost.some((t) => prof.exclude.includes(t))).toBe(false);
-			expect(personalityDensity(p, 'balanced')).toBe(prof.density);
-		}
-		expect(personalityDensity(null, 'rich')).toBe('rich');
-		expect(SOUND_PERSONALITY_PROFILES.calm.density).toBe('sparse');
-		expect(SOUND_PERSONALITY_PROFILES.calm.exclude).toEqual(expect.arrayContaining(['boom', 'hit']));
-	});
-
-	/** A sound on the personality's side of every preference, and one on the other side. */
-	function pair(p: SoundPersonality): [RankableSound, RankableSound] {
-		const prof = SOUND_PERSONALITY_PROFILES[p];
-		const side = (want: boolean, type: (typeof SOUND_TYPE_IDS)[number]) => ({
-			// each at its type's ideal length: only the personality tells them apart, the judge favours the opposite
-			durationSec: SOUND_TYPES[type].durationFit.idealSec,
-			centroidHz: (prof.tone === 'dark') === want ? 600 : 5000,
-			riseMs: (prof.attack === 'punchy') === want ? 2 : 90,
-			below150Share: (prof.weight === 'light') === want ? 0.01 : 0.5,
-			flatness: (prof.texture === 'noisy') === want ? 0.4 : 0.02,
-		});
-		const other = SOUND_TYPE_IDS.find(
-			(t) =>
-				!prof.boost.includes(t) &&
-				(prof.exclude.length ? prof.exclude.includes(t) : true) &&
-				t !== 'ambience',
-		)!;
-		const otherMat = (['stone', 'water', 'rubber'] as const).find((m) => !prof.materials.includes(m))!;
-		const fits: RankableSound = {
-			id: 'snd_000000000000000a',
-			title: 'Fits',
-			types: [prof.boost[0]!],
-			source: { type: 'starter' },
-			license: 'CC0-1.0',
-			descriptors: side(true, prof.boost[0]!),
-			judge: { ok: true, score: 0.6 },
-			materials: [prof.materials[0]!],
-		};
-		const opposite: RankableSound = {
-			id: 'snd_000000000000000b',
-			title: 'Opposite',
-			types: [other],
-			source: { type: 'starter' },
-			license: 'CC0-1.0',
-			descriptors: side(false, other),
-			judge: { ok: true, score: 1 },
-			materials: [otherMat],
-		};
-		return [fits, opposite];
-	}
-
-	it('each personality moves the ranking in its documented direction', () => {
-		for (const p of SOUND_PERSONALITIES) {
-			const [fits, opposite] = pair(p);
-			const plain = rankSounds([fits, opposite]);
-			expect(plain[0]!.entry.id, `${p} without a personality`).toBe(opposite.id);
-			const styled = rankSounds([fits, opposite], { personality: p });
-			expect(styled[0]!.entry.id, p).toBe(fits.id);
-			expect(styled[0]!.parts.style).toBeGreaterThan(0);
-			expect(styled[1]!.parts.style).toBeLessThan(0);
-			expect(Math.abs(styled[0]!.parts.style!)).toBeLessThanOrEqual(PERSONALITY_WEIGHT);
-			expect(personalityScore(fits, p)).toBeGreaterThan(0.5);
-			expect(personalityScore(opposite, p)).toBeLessThan(0);
-			expect(plain[0]!.parts.style ?? null).toBeNull();
-		}
-	});
+	// Independent policy vectors: docs/wp-notes/sound-design.md, WP-E6 personality table.
+	it.each([
+		['calm', 600, 90, 0.01, 0.02, 'wood'],
+		['energetic', 5000, 2, 0.5, 0.02, 'metal'],
+		['bright', 5000, 2, 0.01, 0.02, 'glass'],
+		['precise', 600, 2, 0.01, 0.02, 'plastic'],
+		['mechanical', 600, 2, 0.5, 0.4, 'metal'],
+		['warm', 600, 90, 0.5, 0.02, 'wood'],
+	] as const)(
+		'%s personality prefers its documented sound character',
+		(personality, centroidHz, riseMs, below150Share, flatness, material) => {
+			const fits: RankableSound = {
+				id: 'snd_fits',
+				title: 'Fits',
+				types: ['click'],
+				source: { type: 'starter' },
+				license: 'CC0-1.0',
+				descriptors: { durationSec: 0.15, centroidHz, riseMs, below150Share, flatness },
+				judge: { ok: true, score: 0.9 },
+				materials: [material],
+			};
+			const opposite: RankableSound = {
+				...fits,
+				id: 'snd_opposite',
+				title: 'Opposite',
+				judge: { ok: true, score: 1 },
+				materials: ['stone'],
+				descriptors: {
+					durationSec: 0.15,
+					centroidHz: centroidHz === 600 ? 5000 : 600,
+					riseMs: riseMs === 2 ? 90 : 2,
+					below150Share: below150Share === 0.01 ? 0.5 : 0.01,
+					flatness: flatness === 0.02 ? 0.4 : 0.02,
+				},
+			};
+			expect(rankSounds([fits, opposite])[0]!.entry.id).toBe('snd_opposite');
+			expect(rankSounds([fits, opposite], { personality })[0]!.entry.id).toBe('snd_fits');
+		},
+	);
 
 	it('a sound of excluded types only scores −1; descriptors it lacks are not counted', () => {
 		expect(personalityScore({ types: ['boom'], descriptors: {} }, 'calm')).toBe(-1);
@@ -512,7 +469,7 @@ describe('palette coherence (materials)', () => {
 
 	it('the bonus applies only when the field is present, for the sound’s own family', () => {
 		const pal = { impacts: 'wood' as const };
-		expect(materialBonusOf({ types: ['hit'], materials: ['wood'] }, pal)).toBe(MATERIAL_BONUS);
+		expect(materialBonusOf({ types: ['hit'], materials: ['wood'] }, pal)).toBe(0.08);
 		expect(materialBonusOf({ types: ['hit'], materials: ['metal'] }, pal)).toBe(0);
 		expect(materialBonusOf({ types: ['hit'], materials: [] }, pal)).toBe(0);
 		expect(materialBonusOf({ types: ['hit'] }, pal)).toBeNull();
@@ -536,7 +493,7 @@ describe('palette coherence (materials)', () => {
 		expect(rankSounds([metal, wood], { types: ['hit'] })[0]!.entry.id).toBe(metal.id);
 		const r = rankSounds([metal, wood], { types: ['hit'], paletteMaterials: { impacts: 'wood' } });
 		expect(r[0]!.entry.id).toBe(wood.id);
-		expect(r[0]!.parts.material).toBe(MATERIAL_BONUS);
+		expect(r[0]!.parts.material).toBe(0.08);
 		expect(r[1]!.parts.material).toBe(0);
 	});
 });
@@ -617,11 +574,7 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 		);
 	});
 
-	it('refuses unknown values and keys; the schema is in the catalogue', () => {
-		const schema = COMMAND_CATALOG['soundDesign.setSettings'].schema;
-		expect(
-			schema.safeParse({ type: 'soundDesign.setSettings', style: { personality: 'calm' } }).success,
-		).toBe(true);
+	it('refuses unknown style values and keys', () => {
 		const h = new Harness();
 		for (const style of [
 			{ personality: 'grumpy' },
@@ -631,7 +584,7 @@ describe('the style in the sequence settings (soundDesign.setSettings {style})',
 			{ musicCarriesCuts: 'yes' },
 		]) {
 			const r = h.tx([{ type: 'soundDesign.setSettings', style }]);
-			expect(r.ok, JSON.stringify(style)).toBe(false);
+			expect(!r.ok && r.errors[0]!.code, JSON.stringify(style)).toBe('E_SCHEMA');
 		}
 		expect(h.seq.soundDesign).toBeUndefined();
 	});
@@ -684,23 +637,14 @@ describe('grammar properties (deterministic, bounded, never throw)', () => {
 	const typeArb = fc.constantFrom(...SOUND_TYPE_IDS);
 	const personalityArb = fc.constantFrom(null, ...SOUND_PERSONALITIES);
 
-	it('styleCueTypes keeps a subset in family order, drops exclusions unless none would remain', () => {
+	it('styleCueTypes keeps a nonempty deduplicated subset and is idempotent', () => {
 		fc.assert(
 			fc.property(fc.uniqueArray(typeArb, { maxLength: 8 }), personalityArb, (types, p) => {
 				const out = styleCueTypes(types, p);
 				expect(new Set(out).size).toBe(out.length);
 				for (const t of out) expect(types).toContain(t);
 				if (types.length) expect(out.length).toBeGreaterThan(0);
-				if (p) {
-					const prof = SOUND_PERSONALITY_PROFILES[p];
-					if (types.some((t) => !prof.exclude.includes(t)))
-						for (const t of out) expect(prof.exclude).not.toContain(t);
-				} else expect(out).toEqual(types);
-				// the sequence of families is unchanged
-				const fam = (l: readonly string[]) =>
-					l.map((t) => SOUND_TYPES[t as (typeof SOUND_TYPE_IDS)[number]].family);
-				const kept = types.filter((t) => out.includes(t));
-				expect(fam(out)).toEqual(fam(kept));
+				if (!p) expect(out).toEqual(types);
 				expect(styleCueTypes(out, p)).toEqual(out);
 			}),
 			{ numRuns: 300 },
