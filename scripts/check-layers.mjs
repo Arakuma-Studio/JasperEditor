@@ -196,7 +196,8 @@ export const LAYERS = {
 			'@jasper/expressions',
 			'@jasper/project',
 		],
-		testDeps: ['@jasper/testkit'],
+		// tests may drive the tools against the real template catalogue (the engine serves it in production)
+		testDeps: ['@jasper/testkit', '@jasper/mg-templates'],
 		forbid: ['react', 'uiLibs', 'tailwind', 'remotion', 'anime', 'electron', 'server'],
 	},
 	'apps/desktop': {
