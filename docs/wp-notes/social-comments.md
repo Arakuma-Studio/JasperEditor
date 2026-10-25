@@ -251,7 +251,6 @@ fills only omitted keys. An explicit `undefined` counts as omitted.
 - **Surrogate pairs inside marks:** a mark boundary written between the two halves of a surrogate pair (only possible
   by hand-editing markup) splits the pair. Rendering shows replacement glyphs; nothing throws.
 - **Mention and hashtag colours** are not here (WP6).
-=======
 
 ## Platform assets & sources
 
@@ -348,4 +347,3 @@ screenshots of third-party sites are not committed, AGENTS.md §3 item 3).
 - Hashed X subset URLs (`Chirp-Regular.c88864db…`) change when X redeploys; old files have stayed online so far,
   and the appdir override file can repoint them without a release. The same applies to the Emojipedia set number.
 - The YouTube non-owner verified check colour (#606060/#AAAAAA) is inferred from the secondary text colour.
->>>>>>> sc/platform-glyphs
