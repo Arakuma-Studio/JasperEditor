@@ -47,7 +47,8 @@ async function stillsDoc(app: TestApp, n: number) {
 			type: 'clip.place',
 			source: { mediaId: media },
 			at: i * 8,
-			duration: 8,
+			// 8 frames at 30 fps (flicks: 705 600 000 per second).
+			sourceRange: { in: { flicks: 0 }, out: { flicks: 8 * 23_520_000 } },
 			tracks: { video: 'V2' },
 			ref: `$c${i}`,
 		});
