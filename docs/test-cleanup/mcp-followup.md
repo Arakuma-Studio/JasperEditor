@@ -19,6 +19,7 @@ A KEEP row does not claim unrelated incidental assertions are independently cont
 - Consolidated the duplicate authenticated editor WebSocket fixture into the existing shared helper, waiting for the server welcome instead of sleeping.
 - Replaced color/grading’s duplicated SSE collectors and five 500-ms sleeps with exact project revision deltas; `apps/engine/test/agent.test.ts` remains the owner of `doc.changed` publication/relay behavior.
 - Removed proposal/cancellation sleeps, the unasserted zero-gain native export, and an unrelated material-test timeline rendering pass. Kept actual native-export/FFmpeg peak verification.
+- Removed the redundant JSON-record response wrapper after a baseline compiler failure exposed circular Zod inference; retained recursive JSON validation plus explicit object-root rejection.
 - Removed the dead `foldText` export after its private-font test disappeared. Its function body and production callers stay internal; other PNG/font/sound helpers still have real callers. No dependency, snapshot, persisted schema or production behavior changed.
 - Left expensive generated sound, picture-motion, lossily encoded delivery, real-model-pipeline and opt-in rendering workflows when they protect distinct public orchestration. The tiny semantic model validates plumbing, not CLAP quality.
 - Identified 27 legacy teardown races with uncancelled 8-second fallback timers. They are not changed or claimed as a measured performance gain in this pass; broader process-lifecycle consolidation needs its own measured evidence.
@@ -754,10 +755,43 @@ Root holds the comparable full-suite baseline and final measurements. No isolate
 
 Static validation completed before runtime workers were released:
 
-- `pnpm exec biome check <17 changed TypeScript source/support files>` passed after formatting/import fixes limited to the changed files.
+- `pnpm exec biome check` passed for the initial 17 changed TypeScript source/support files after formatting/import fixes limited to those files; the final response-helper follow-up passed its own Biome check.
 - `git diff --check` passed.
 - Independent static cross-review by the browser-sound workstream found no lost unique contract in the peak-line or color/grading changes. The peak test observes a specified linear time-axis law without importing plot constants. Revision deltas prove one persisted transaction; the engine agent test independently owns event/label publication.
 
-The integration owner explicitly locked runtime tests, typechecks and builds throughout this isolated workstream to keep the full-suite baseline comparable. Those checks were not run here and are not claimed as passing. Required pending validation is `pnpm exec vitest run apps/mcp/test --maxWorkers=2` and `pnpm --filter @jasper/mcp typecheck` (or the equivalent integrated full gate); opt-in QA/composition suites remain separately gated as documented in testing.md. The root integration report owns the final execution results and before/after wall-clock measurements.
+The initial baseline lock and subsequent resource queue delayed runtime validation; these are now the local results on Node 20.19.0, pnpm 10.34.5, two Vitest workers, `JASPER_REQUIRE_ORACLES=1`, and `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome`:
 
-Targeted regression-sensitivity checks still pending: a fixed-position peak line must fail the narrowed time-axis case; dropping MCP cleanup tolerance must fail the authored endpoint simplification case; sending stale progress values must fail the latest-value assertion. No mutation result is claimed before execution.
+```sh
+pnpm exec vitest run apps/mcp/test/auto-tag.test.ts apps/mcp/test/color.test.ts apps/mcp/test/conventions.test.ts apps/mcp/test/ease-trim.test.ts apps/mcp/test/grading.test.ts apps/mcp/test/music-picture.test.ts apps/mcp/test/proposals.test.ts apps/mcp/test/sound-beds.test.ts apps/mcp/test/sound-grammar.test.ts apps/mcp/test/sound-import-upgrade.test.ts apps/mcp/test/sound-levels.test.ts apps/mcp/test/sound-packs.test.ts apps/mcp/test/sound-sheet.test.ts apps/mcp/test/sound-timeline-motion.test.ts apps/mcp/test/sound.test.ts apps/mcp/test/animation.test.ts apps/mcp/test/png-limits.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/mcp/changed.json
+```
+
+All 85 tests in 17 selected files passed, with zero skipped cases. Vitest reported 121.36 s; `/usr/bin/time -v` measured 122.54 s wall, 327.87 s user CPU, 61.38 s system CPU and 1,705,944 KiB maximum RSS. This run generated worktree-local fixtures and compiled/rendered with Chrome, so it is validation evidence rather than a comparable before/after benchmark. The slowest selected case was the real spatial-grading render (21.951 s). The independent default-level/export case passed in 8.649 s; its formerly unasserted second export is no longer executed. No CI or overall-suite percentage improvement is inferred from these isolated timings.
+
+Three restoring mutations were each rejected by exactly the intended single test, with all temporary production changes restored:
+
+| Mutation | Narrow target (`pnpm exec vitest run <file> -t '<name>' --maxWorkers=2`) | Observed failure |
+| --- | --- | --- |
+| Draw every peak at time zero | `sound-sheet.test.ts`: `the peak line follows sound time on the contact sheet` | Endpoint positions collapse (`2.5` is not greater than `2.5`). |
+| Omit the caller's cleanup tolerance | `ease-trim.test.ts`: `create_path_controller and cleanup_motion_path on position keys` | The path retains three keys instead of the independently expected two endpoints. |
+| Send stale progress values | `conventions.test.ts`: `throttles progress to one notification per 100 ms, increasing, latest value wins` | Sent `[0, 19, 39, 99]` disagrees with the latest authored inputs `[1, 20, 40, 100]`. |
+
+`mutations.json` in the same temporary evidence directory records the exact commands, exit codes and failure messages. `git diff --exit-code -- apps/mcp/src` confirmed restoration.
+
+The first `pnpm --filter @jasper/mcp typecheck` failed at unchanged `test/tool-response.ts:4` with TS5115: infinitely circular `IsOptionalIn`, `$ZodTypeInternals`, `$InferZodRecordInput`. The helper has identical blob `db7313f769dc49c9265bb5fe9aef5ee31dea1cb0` at baseline `8b4c8936` and cleanup commit `a6fdb24c`; `/tmp/jasper-test-cleanup/mcp/typecheck-baseline-evidence.json` records the bytes/hash check and original output. The locked Zod 4.6.5 record-input declaration checks optionality of its recursive JSON union. A standalone probe reproduced that diagnostic with the original schema; both a bounded annotation and a direct bounded assertion still recursed. The final fix removes the redundant outer `z.record` wrapper, retains the exact `z.json()` recursive validator, and rejects null/scalar/array roots with an explicit object guard. TypeScript then narrows the result naturally to a JSON object, with no casts or disabled checks. Invalid root values now produce the helper’s descriptive `Error` rather than a Zod-formatted test failure; no production API or accepted response shape changes.
+
+The isolated original/annotation/guard probes used this compiler command, with each individual file name recorded in `type-probes.json` (the direct-assertion diagnostic is preserved separately):
+
+```sh
+pnpm exec tsc --noEmit --skipLibCheck --strict --target ES2022 --module ESNext --moduleResolution Bundler /tmp/jasper-test-cleanup/mcp/type-probe/original.ts
+```
+
+The original and annotation probes failed with TS5115 as expected; `json-object-guard.ts` compiled successfully. `pnpm --filter @jasper/mcp typecheck` then passed. The two actual consumers were checked after the helper change:
+
+```sh
+pnpm exec vitest run apps/mcp/test/export-credits.test.ts apps/mcp/test/sound-check-verdicts.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/mcp/response-helper.json
+pnpm exec tsx /tmp/jasper-test-cleanup/mcp/type-probe/runtime.ts
+```
+
+Both consumer files passed all 10 cases, with zero skips (13.24 s total; 767 ms test bodies). The temporary runtime probe compared original/new acceptance against eight authored JSON strings: empty/nested objects succeed; null, scalar, string and array roots, an overflowed number and malformed JSON fail. This confirms recursive validation and object-root rejection remain active; no permanent helper self-test was added. The failed baseline gate, unsuccessful type-only approaches and successful final checks remain separate evidence rather than being relabelled as passes.
+
+Unchanged MCP suites and opt-in QA/composition suites were not repeated here. Root's integrated full gate and quiet suite measurement remain authoritative.
