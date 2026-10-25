@@ -352,6 +352,17 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
 - MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic` (one or many graphics per call,
   first-free placement, seeded fill, `dryRun` + `preview`), `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
+- **Platform fonts and emoji** (social-comment templates, `docs/wp-notes/social-comments.md` "Remote fonts &
+  emoji"): a template declares the faces and emoji it draws; bundled faces (TikTok Sans, Roboto, …) load from the
+  catalogue, the others (Chirp, SF Pro, Apple / Twemoji / Noto emoji images) are downloaded by the engine on first
+  need from the remote-asset manifest (`apps/engine/src/remote-assets/manifest.json`, fixed or overridden without a
+  release in `<appdir>/assets/remote-manifest.override.json`) into `<appdir>/assets/remote/`, verified and served at
+  `/fonts/remote/…` and `/fonts/emoji/…`; remote images of the manifest (X's and YouTube's default avatars) the same
+  way at `/fonts/images/…`. Downloads are a named network use, **Preferences ▸ Privacy & Network ▸
+  Platform fonts & emoji for social templates** (on by default; headless, MCP and CLI renders follow it too). A
+  missing font or emoji shows a striped marker on the card and a warning in the Program monitor (**Retry
+  download**), and blocks exports with `TEMPLATE_ASSETS_UNAVAILABLE`, naming the font, or the emoji and its pack —
+  never a substitute.
 - **Presets:** a template may declare named param presets (e.g. Counter ▸ Subscribers / Percentage / Money Raised).
   The gallery then shows one card per preset instead of one for the template (search matches preset names; insert,
   drag and the hover preview use the preset's params over the defaults). Agents pass `"<id>:<preset>"` or
@@ -363,6 +374,15 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
   labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
   Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
+- **Edit text on the Program monitor:** double-click a template's text (Title Reveal title and subtitle, Lower Third
+  name and role, Callout label, Counter label, social comment name and text) to edit it in place. The clip shows
+  its settled frame (entrance finished, exit not started) while you type; the playhead does not move. The double-
+  clicked word is selected. **Enter** (or a click elsewhere) applies one undo step, **Shift+Enter** starts a new line
+  in multi-line texts, **Esc** cancels. In texts with word marks (social comments) highlights, blurs and removals
+  stay on their words as you type, and selecting words shows a **Highlight / Blur / Remove / Clear** toolbar (one
+  undo step per button). Overlapping templates: the topmost text under the pointer is edited (a card selected in the
+  Timeline wins). Locked tracks and read-only projects say so instead of opening the editor. Template authors opt
+  in with `editableParamProps` (`docs/wp-notes/social-comments.md` § Program monitor editing).
 
 ## PWA (installable web app)
 

@@ -6,6 +6,7 @@ import type { FontCatalog } from '@jasper/api';
 import {
 	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
+	MissingAssetReporterContext,
 	type MixGraph,
 	type RenderDoc,
 	type RenderOptions,
@@ -47,6 +48,11 @@ import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { registerProgramPerf } from '../../previews/perf.ts';
 import { useHeardDocument } from '../../proposals/state.ts';
+import {
+	TemplateAssetWarning,
+	useLayerAssetReports,
+	useTemplateAssetPrefetch,
+} from '../../remote-assets/issues.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
@@ -115,8 +121,22 @@ export function ProgramMonitor(props: PanelProps) {
 	return <ProgramMonitorBody session={session} instanceId={props.instanceId} />;
 }
 
-function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
+/**
+ * The engine's font catalogue. social-comment §7.8: read again when the remote-asset settings or manifest change
+ * (`epoch` counts those changes, so template assets are prefetched again too).
+ */
+function useFontCatalog(engine: EngineClient | null): { catalog: FontCatalog | null; epoch: number } {
 	const [catalog, setCatalog] = useState<FontCatalog | null>(null);
+	const [epoch, setEpoch] = useState(0);
+	const subscribe = useEngineOrNull()?.subscribe;
+	useEffect(
+		() =>
+			subscribe?.((e) => {
+				if (e?.type === 'remoteAssets.changed' && e.payload.reason !== 'fetched') setEpoch((n) => n + 1);
+			}),
+		[subscribe],
+	);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `epoch` re-reads the catalogue
 	useEffect(() => {
 		if (!engine) return;
 		let cancelled = false;
@@ -127,8 +147,8 @@ function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
 		return () => {
 			cancelled = true;
 		};
-	}, [engine]);
-	return catalog;
+	}, [engine, epoch]);
+	return { catalog, epoch };
 }
 
 /** Resolution of GPU shader-effect canvases per playback resolution (RenderOptions.fxPreviewScale). */
@@ -159,7 +179,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const attachedProxies = useSessionState((s) => !!s.toggles.attachedProxies);
 	const useProxies = autoProxies || attachedProxies;
 	const monitor = useStoreSelector(monitorStores.program, (s) => s);
-	const fontCatalog = useFontCatalog(engine);
+	const { catalog: fontCatalog, epoch: assetEpoch } = useFontCatalog(engine);
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;
@@ -238,6 +258,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		prevDoc.current = d;
 		return d;
 	}, [drawn, seqId, seq, media, tier, fontCatalog, expressionsReady, mcView, attachedProxies, autoProxies]);
+	// social-comment §7.8: template fonts / emoji — downloaded ahead of drawing, failures reported by the layers.
+	const assetReports = useLayerAssetReports();
+	const assetPrefetch = useTemplateAssetPrefetch(engine, doc, assetEpoch);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();
@@ -550,30 +573,32 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					data-testid="program-player-wrapper"
 				>
 					<MgRenderStateProvider>
-						<Player
-							ref={playerRef}
-							component={LiveSequenceComposition}
-							inputProps={inputProps}
-							durationInFrames={duration}
-							compositionWidth={frameSize.width}
-							compositionHeight={frameSize.height}
-							fps={fps}
-							style={playerStyle}
-							controls={false}
-							clickToPlay={false}
-							doubleClickToFullscreen={false}
-							spaceKeyToPlayOrPause={false}
-							moveToBeginningWhenEnded={false}
-							loop={false}
-							playbackRate={playerRate}
-							numberOfSharedAudioTags={8}
-							acknowledgeRemotionLicense
-							errorFallback={({ error }: { error: Error }) => (
-								<div className="flex h-full items-center justify-center bg-pr-app p-8 text-center text-pr-ui text-pr-danger">
-									Preview error: {error.message}
-								</div>
-							)}
-						/>
+						<MissingAssetReporterContext.Provider value={assetReports.reporter}>
+							<Player
+								ref={playerRef}
+								component={LiveSequenceComposition}
+								inputProps={inputProps}
+								durationInFrames={duration}
+								compositionWidth={frameSize.width}
+								compositionHeight={frameSize.height}
+								fps={fps}
+								style={playerStyle}
+								controls={false}
+								clickToPlay={false}
+								doubleClickToFullscreen={false}
+								spaceKeyToPlayOrPause={false}
+								moveToBeginningWhenEnded={false}
+								loop={false}
+								playbackRate={playerRate}
+								numberOfSharedAudioTags={8}
+								acknowledgeRemotionLicense
+								errorFallback={({ error }: { error: Error }) => (
+									<div className="flex h-full items-center justify-center bg-pr-app p-8 text-center text-pr-ui text-pr-danger">
+										Preview error: {error.message}
+									</div>
+								)}
+							/>
+						</MissingAssetReporterContext.Provider>
 					</MgRenderStateProvider>
 				</div>
 				{mcView ? (
@@ -640,6 +665,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					</span>
 				) : null}
 				<BufferingDot graph={mixGraph} buffering={buffering} playing={playing} />
+				{/* social-comment §7.8: template fonts / emoji that are not available (panel warning, Retry). */}
+				<TemplateAssetWarning doc={doc} reported={assetReports.reported} engine={assetPrefetch} />
 			</div>
 			<div className="flex h-[28px] shrink-0 items-center gap-2 px-2">
 				<TimecodeDisplay transport={transport} format={format} onSeek={seek} testId="program-timecode" />

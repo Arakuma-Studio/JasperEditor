@@ -129,6 +129,8 @@ export function appdirPaths(appdir: string) {
 		root: appdir,
 		engineDir,
 		engineConfig: join(engineDir, 'engine.json'),
+		/** social-comment §7.8: network-use preferences (Settings ▸ Privacy & Network). */
+		networkSettings: join(engineDir, 'network.json'),
 		/** Written by a running engine (0600): origin, port, pid and token for local tools (jasper-mcp). */
 		runtimeFile: join(engineDir, 'runtime.json'),
 		/**
@@ -183,6 +185,10 @@ export function appdirPaths(appdir: string) {
 		projectProposalsDir: (projectId: string) =>
 			join(appdir, 'projects', segment(projectId, 'project id'), 'proposals'),
 		tmpDir: join(appdir, 'tmp'),
+		/** social-comment §7.8: downloaded platform fonts and emoji images (verified, atomic writes). */
+		remoteAssetsDir: join(appdir, 'assets', 'remote'),
+		/** The user's remote-asset manifest override (same schema as the shipped manifest; entries replace by id). */
+		remoteManifestOverride: join(appdir, 'assets', 'remote-manifest.override.json'),
 	};
 }
 export type AppdirPaths = ReturnType<typeof appdirPaths>;

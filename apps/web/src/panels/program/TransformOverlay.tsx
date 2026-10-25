@@ -952,11 +952,21 @@ export function TransformOverlay({
 				if (gestureRef.current || tool === 'hand' || tool === 'type') return;
 				const p = toSeq(e).seq;
 				const id = layerAt(p);
-				const clip = id ? activeSequence(session)?.clips[id] : undefined;
-				if (!clip) return;
+				const clip = (id ? activeSequence(session)?.clips[id] : undefined) ?? null;
+				const surface = e.currentTarget;
 				for (const h of layerDoubleClickHandlers.list()) {
+					if (!clip && !h.anyPoint) continue;
 					try {
-						if (h.run({ session, clip, point: [p[0], p[1]], frame: live.current.frame })) break;
+						const ctx = {
+							session,
+							clip,
+							point: [p[0], p[1]] as [number, number],
+							frame: live.current.frame,
+							scene: live.current.scene,
+							viewScale: live.current.view.scale,
+							surface,
+						};
+						if (h.run(ctx)) break;
 					} catch (err) {
 						console.warn('[program] double-click handler failed', err);
 					}

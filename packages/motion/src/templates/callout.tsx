@@ -24,6 +24,7 @@ import {
 	type TemplateTiming,
 	templateFit,
 } from './common.tsx';
+import { editableParamProps } from './editable.ts';
 import type { AnimeTemplateProps } from './types.ts';
 
 /** `s` scale, `o` opacity, `m` motion-path progress 0…1 (label). */
@@ -143,6 +144,7 @@ export function Callout(props: AnimeTemplateProps) {
 				/>
 			</svg>
 			<div
+				{...editableParamProps('label')}
 				style={{
 					position: 'absolute',
 					left: px(boxX),

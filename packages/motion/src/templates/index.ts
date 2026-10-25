@@ -8,8 +8,30 @@ import { SocialComment } from './social-comment/index.tsx';
 import { TitleReveal } from './title-reveal.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
+export {
+	EmojiImage,
+	MissingAssetMarker,
+	type MissingAssetReporter,
+	MissingAssetReporterContext,
+	type MissingTemplateAsset,
+	missingAssetLabel,
+	onTemplateAssetRetry,
+	retryTemplateAssets,
+	TemplateAssetScopeContext,
+	useTemplateAssetEpoch,
+} from './assets.tsx';
+export { type EditableParamProps, editableParamProps } from './editable.ts';
 export { TemplateImage, TemplateImagePlaceholder, type TemplateImageProps } from './image.tsx';
 export type { AnimeTemplateProps } from './types.ts';
+
+/** URL of an emoji of a pack in `AnimeTemplateProps.emojiUrls` (undefined when not available). */
+export function emojiUrlOf(
+	emojiUrls: Readonly<Record<string, string>>,
+	pack: string,
+	grapheme: string,
+): string | undefined {
+	return emojiUrls[`${pack}:${grapheme}`];
+}
 
 export const ANIME_TEMPLATE_IMPLS: Readonly<Record<string, ComponentType<AnimeTemplateProps>>> =
 	Object.freeze({

@@ -19,6 +19,8 @@ import { prerenderKey } from '../mg-bundles/service.ts';
 import { LeaseManager } from '../projects/leases.ts';
 import { RecoveryJournal } from '../projects/recovery.ts';
 import { ProjectStoreFs } from '../projects/store.ts';
+import { baseManifest } from '../remote-assets/manifest.ts';
+import { RemoteAssetService } from '../remote-assets/service.ts';
 import { RemotionService } from '../remotion/service.ts';
 import { UploadService } from '../uploads/service.ts';
 import { type CapabilityProvider, CapabilityService } from './capabilities.ts';
@@ -43,6 +45,8 @@ export type CoreServices = {
 	/** Per-session crash-recovery journals (S01:PER-021, AC-18, D-39). */
 	recovery: RecoveryJournal;
 	fonts: FontCatalogService;
+	/** social-comment §7.8: remote platform fonts / emoji (download, cache, network policy). */
+	remoteAssets: RemoteAssetService;
 	remotion: RemotionService;
 	exports: ExportService;
 	capabilities: CapabilityService;
@@ -145,7 +149,16 @@ export async function createCoreServices(
 			return g ? { revision: g.revision, document: g.envelope.document } : null;
 		},
 	});
-	const fonts = new FontCatalogService(env);
+	const remoteBase = baseManifest(env);
+	if (remoteBase.error) opts.log?.(`[remote-assets] base manifest ignored: ${remoteBase.error}`);
+	const remoteAssets = new RemoteAssetService({
+		manifest: remoteBase.manifest,
+		dir: paths.remoteAssetsDir,
+		overridePath: paths.remoteManifestOverride,
+		settingsPath: paths.networkSettings,
+		onChanged: (e) => broadcaster.publish('remoteAssets.changed', e),
+	});
+	const fonts = new FontCatalogService(env, remoteAssets);
 	const remotion = new RemotionService({
 		bundleCacheDir: paths.remotionBundleDir,
 		usageLog: join(paths.logsDir, 'remotion-usage.jsonl'),
@@ -222,6 +235,7 @@ export async function createCoreServices(
 		projects,
 		recovery,
 		fonts,
+		remoteAssets,
 		remotion,
 		exports: exportsSvc,
 		capabilities,
@@ -243,6 +257,7 @@ export async function createCoreServices(
 		},
 		async stop() {
 			uploads.stop();
+			await remoteAssets.flush().catch(() => undefined);
 			await queue.shutdown();
 			await cache.stop();
 		},
