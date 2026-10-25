@@ -154,7 +154,6 @@ export async function checkProposal(
 	session: EditorSession,
 	engine: ProposalCheckEngine,
 	req: { proposalId: string; sequenceId: string | null; itemIds: readonly string[] },
-	opts: { sleep?(ms: number): Promise<void> } = {},
 ): Promise<SoundCheckProposalSummary | null> {
 	const store = proposalCheckStore(session);
 	aborts.get(session)?.abort();
@@ -194,7 +193,6 @@ export async function checkProposal(
 								}
 							: {},
 					),
-				...(opts.sleep ? { sleep: opts.sleep } : {}),
 			},
 		);
 		if (aborts.get(session) === ac) aborts.delete(session);

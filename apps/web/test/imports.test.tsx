@@ -303,13 +303,8 @@ describe('interpreted pictures without events', () => {
 			const reg = registered('still.exr', { kind: 'image', key: 'mk_EXR0000001' });
 			(reg.probe.streams[0] as { browserDecodable: boolean; codec: string }).browserDecodable = false;
 			const id = addMedia(session, reg);
-			await vi.waitFor(
-				() =>
-					expect(session.getState().media[id]?.variant).toMatchObject({ key: 'display:', state: 'ready' }),
-				{
-					timeout: 5000,
-				},
-			);
+			await vi.runAllTimersAsync();
+			expect(session.getState().media[id]?.variant).toMatchObject({ key: 'display:', state: 'ready' });
 			expect(session.getState().media[id]!.posterUrl).toContain('/variant/display');
 		} finally {
 			sync.dispose();

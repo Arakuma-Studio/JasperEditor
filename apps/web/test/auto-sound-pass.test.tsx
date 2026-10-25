@@ -5,8 +5,8 @@
 import type { SoundDesignPlanRequest } from '@jasper/api';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { AutoSoundPassDialog, autoPassRequest, NO_MIX } from '../src/sound/AutoSoundPassDialog.tsx';
 import { fakePlanEngine, planResult, storeProposal } from './review-helpers.ts';
@@ -25,6 +25,18 @@ async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 	await act(async () => {
 		fireEvent.keyDown(option, { key: 'Enter' });
 	});
+}
+
+async function finishPlan(dialog: HTMLElement) {
+	vi.useFakeTimers();
+	try {
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+		});
+		await act(async () => vi.runAllTimersAsync());
+	} finally {
+		vi.useRealTimers();
+	}
 }
 
 function setup(
@@ -95,10 +107,8 @@ describe('Auto Sound Pass… dialog', () => {
 		fireEvent.click(within(dialog.querySelector('[data-sound-source="synth"]')!).getByRole('checkbox'));
 		await chooseOption(screen.getByRole('combobox', { name: 'Palette / kit' }), 'Prefer Starter kit');
 		const rev = t.session.revision;
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		await waitFor(() => expect(t.closed).toHaveLength(1), { timeout: 5000 });
+		await finishPlan(dialog);
+		expect(t.closed).toHaveLength(1);
 		const req = t.plan.requests[0]!;
 		expect(req).toMatchObject({
 			projectId: t.session.projectId,
@@ -134,15 +144,9 @@ describe('Auto Sound Pass… dialog', () => {
 			}),
 		);
 		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		await waitFor(
-			() =>
-				expect(screen.getByTestId('auto-pass-summary').textContent).toMatch(
-					/^Nothing to propose\. 1 cue skipped/,
-				),
-			{ timeout: 5000 },
+		await finishPlan(dialog);
+		expect(screen.getByTestId('auto-pass-summary').textContent).toMatch(
+			/^Nothing to propose\. 1 cue skipped/,
 		);
 		expect(t.closed).toEqual([]);
 		expect(t.c.getState().activeId).toBeNull();
@@ -176,10 +180,8 @@ describe('Auto Sound Pass… dialog', () => {
 			};
 		});
 		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		const notes = await screen.findByTestId('auto-pass-notes', undefined, { timeout: 5000 });
+		await finishPlan(dialog);
+		const notes = screen.getByTestId('auto-pass-notes');
 		expect(notes.textContent).toContain('Plan notes: 1 conflict · 1 warning');
 		const items = within(screen.getByTestId('auto-pass-notes-list')).getAllByRole('listitem');
 		expect(items).toHaveLength(2);
@@ -189,12 +191,12 @@ describe('Auto Sound Pass… dialog', () => {
 		expect(t.reviewed).toEqual([1]);
 		expect(t.closed).toEqual([]);
 		await act(async () => {
-			const primary = within(dialog).getByRole('button', { name: 'Close', exact: true });
+			const primary = within(dialog).getByText('Close', { selector: 'button' });
 			// WP6.5a: Close alone once the proposal is made
 			expect(within(dialog).queryByRole('button', { name: 'Cancel' })).toBeNull();
 			fireEvent.click(primary);
 		});
-		await waitFor(() => expect(t.closed).toHaveLength(1));
+		expect(t.closed).toHaveLength(1);
 		t.c.exit();
 	});
 
@@ -202,15 +204,21 @@ describe('Auto Sound Pass… dialog', () => {
 		// the job runs until it is cancelled (a loaded host must not let it finish before the click)
 		const t = setup(undefined, Number.POSITIVE_INFINITY);
 		const dialog = await screen.findByTestId('auto-sound-pass-dialog');
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		await waitFor(() => expect(t.plan.requests).toHaveLength(1));
-		expect(screen.getByTestId('auto-pass-progress')).toBeTruthy();
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-		});
-		await waitFor(() => expect(t.plan.cancelled).toEqual(['job_1']), { timeout: 5000 });
+		vi.useFakeTimers();
+		try {
+			await act(async () => {
+				fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+			});
+			expect(t.plan.requests).toHaveLength(1);
+			expect(screen.getByTestId('auto-pass-progress')).toBeTruthy();
+			await act(async () => {
+				fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+			});
+			await act(async () => vi.runAllTimersAsync());
+			expect(t.plan.cancelled).toEqual(['job_1']);
+		} finally {
+			vi.useRealTimers();
+		}
 		expect(t.c.getState().activeId).toBeNull();
 	});
 
@@ -285,10 +293,8 @@ describe('Auto Sound Pass… dialog', () => {
 			screen.getByRole('combobox', { name: 'Delivery' }),
 			'Web / streaming · −14 LUFS · −1 dBTP',
 		);
-		await act(async () => {
-			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-		});
-		await waitFor(() => expect(t.closed).toHaveLength(1), { timeout: 5000 });
+		await finishPlan(dialog);
+		expect(t.closed).toHaveLength(1);
 		expect(t.plan.requests[0]!.style).toMatchObject({
 			roomGlue: { sendDb: -15.5 },
 			stopBefore: true,

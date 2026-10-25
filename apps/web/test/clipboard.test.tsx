@@ -322,7 +322,8 @@ describe('keyboard: native paste (CLB-002) and text fields', () => {
 			const key = new KeyboardEvent('keydown', { code: 'KeyV', key: 'v', ctrlKey: true, cancelable: true });
 			document.body.dispatchEvent(key);
 			expect(key.defaultPrevented).toBe(false);
-			await vi.waitFor(() => expect(ran).toEqual(['timeline.paste']));
+			await vi.runAllTimersAsync();
+			expect(ran).toEqual(['timeline.paste']);
 			const input = document.createElement('input');
 			document.body.append(input);
 			const inField = new KeyboardEvent('keydown', {
@@ -333,7 +334,7 @@ describe('keyboard: native paste (CLB-002) and text fields', () => {
 				bubbles: true,
 			});
 			input.dispatchEvent(inField);
-			await vi.advanceTimersByTimeAsync(200);
+			await vi.runAllTimersAsync();
 			expect(ran).toEqual(['timeline.paste']);
 			const copy = new KeyboardEvent('keydown', { code: 'KeyC', key: 'c', ctrlKey: true, cancelable: true });
 			document.body.dispatchEvent(copy);

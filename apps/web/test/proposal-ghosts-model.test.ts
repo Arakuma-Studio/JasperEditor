@@ -8,7 +8,6 @@ import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import {
 	buildGhostModel,
 	type GhostModel,
-	ghostCueId,
 	ghostLaneExtent,
 	ghostTrackRows,
 	neighbourItem,
@@ -51,7 +50,7 @@ describe('buildGhostModel', () => {
 			expect.objectContaining({
 				itemId: 'cue',
 				change: 'changed',
-				cue: expect.objectContaining({ id: ghostCueId(f.cueId), frame: 70 }),
+				cue: expect.objectContaining({ id: `${f.cueId}~ghost`, frame: 70 }),
 			}),
 		]);
 		// by where each starts (the moved bed's wash starts at 0)

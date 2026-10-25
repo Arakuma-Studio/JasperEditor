@@ -160,7 +160,7 @@ describe('export warnings in the UI language', () => {
 			warnings: [w, ENGINE[4]],
 		})!;
 		expect(detail).toMatch(/PCM.*MP4.*AAC/);
-		expect(detail).toContain('Sound Check');
+		expect(detail).toMatch(/sonido.*desactualizada/);
 		expect(detail).not.toContain(ENGINE[4]!.message);
 		expect(detail).not.toContain('Sound credits file written');
 	});

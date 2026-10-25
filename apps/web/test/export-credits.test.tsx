@@ -5,10 +5,10 @@
 import type { EngineJob, ExportSettings, RenderPlan } from '@jasper/api';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExportMode } from '../src/export/ExportMode.tsx';
 import { exportMode } from '../src/export/mode.ts';
 import { notices } from '../src/home/notices.tsx';
@@ -20,6 +20,7 @@ import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
 afterEach(() => {
 	cleanup();
+	vi.useRealTimers();
 	for (const n of notices.getAll()) notices.dismiss(n.id);
 	exportMode.close();
 	localStorage.clear();
@@ -124,22 +125,26 @@ async function setup(opts: { license?: string; credits?: 'txt' | 'md' | 'csv' | 
 
 describe('Export mode ▸ Sound credits (spec 12 §2.11)', () => {
 	it('defaults to Markdown when a used sound needs a credit; Off brings the warning, CSV goes to the export', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const { planned, started } = await setup();
-		const select = (await screen.findByTestId('export-credits')) as HTMLSelectElement;
+		const expectPlan = async (credits: ExportSettings['credits']) => {
+			await act(async () => {});
+			await act(async () => vi.advanceTimersByTimeAsync(1000));
+			expect(planned.at(-1)?.settings.credits).toEqual(credits);
+		};
+		const select = screen.getByTestId('export-credits') as HTMLSelectElement;
 		expect(select.value).toBe('md');
-		await waitFor(() => expect(planned.at(-1)?.settings.credits).toEqual({ sidecar: 'md' }));
+		await expectPlan({ sidecar: 'md' });
 		// the stale Sound Check is information; no credits warning with a file chosen
-		const sound = await screen.findByTestId('export-sound-warnings');
-		await waitFor(() =>
-			expect(
-				within(sound)
-					.getAllByRole('listitem')
-					.map((li) => li.getAttribute('data-code')),
-			).toEqual(['W_SOUND_CHECK_STALE']),
-		);
+		const sound = screen.getByTestId('export-sound-warnings');
+		expect(
+			within(sound)
+				.getAllByRole('listitem')
+				.map((li) => li.getAttribute('data-code')),
+		).toEqual(['W_SOUND_CHECK_STALE']);
 		fireEvent.change(select, { target: { value: 'off' } });
-		await waitFor(() => expect(planned.at(-1)?.settings.credits).toBeUndefined());
-		await within(screen.getByTestId('export-sound-warnings')).findByText(/needs a credit/);
+		await expectPlan(undefined);
+		expect(within(screen.getByTestId('export-sound-warnings')).getByText(/needs a credit/)).toBeTruthy();
 		// shown once: not repeated in the summary's warning list
 		expect(
 			screen.queryByTestId('plan-warnings')
@@ -147,27 +152,28 @@ describe('Export mode ▸ Sound credits (spec 12 §2.11)', () => {
 				: null,
 		).toBeNull();
 		fireEvent.change(select, { target: { value: 'csv' } });
-		await waitFor(() => expect(planned.at(-1)?.settings.credits).toEqual({ sidecar: 'csv' }));
-		await waitFor(() =>
-			expect((screen.getByTestId('export-start') as HTMLButtonElement).disabled).toBe(false),
-		);
+		await expectPlan({ sidecar: 'csv' });
+		expect((screen.getByTestId('export-start') as HTMLButtonElement).disabled).toBe(false);
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('export-start'));
 		});
-		await waitFor(() => expect(started).toHaveLength(1));
+		expect(started).toHaveLength(1);
 		expect(started[0]!.settings.credits).toEqual({ sidecar: 'csv' });
 	});
 
 	it('follows the sequence setting (Text; null = Off) and is Off for CC0 sounds', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		await setup({ credits: 'txt' });
-		expect(((await screen.findByTestId('export-credits')) as HTMLSelectElement).value).toBe('txt');
+		expect((screen.getByTestId('export-credits') as HTMLSelectElement).value).toBe('txt');
 		cleanup();
 		await setup({ credits: null });
-		expect(((await screen.findByTestId('export-credits')) as HTMLSelectElement).value).toBe('off');
+		expect((screen.getByTestId('export-credits') as HTMLSelectElement).value).toBe('off');
 		cleanup();
 		const { planned } = await setup({ license: 'CC0-1.0' });
-		expect(((await screen.findByTestId('export-credits')) as HTMLSelectElement).value).toBe('off');
-		await waitFor(() => expect(planned.length).toBeGreaterThan(0));
+		expect((screen.getByTestId('export-credits') as HTMLSelectElement).value).toBe('off');
+		await act(async () => {});
+		await act(async () => vi.advanceTimersByTimeAsync(1000));
+		expect(planned.length).toBeGreaterThan(0);
 		expect(planned.at(-1)!.settings.credits).toBeUndefined();
 	});
 
