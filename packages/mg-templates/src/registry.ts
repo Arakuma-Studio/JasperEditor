@@ -60,6 +60,12 @@ export type MgTemplateUiJson = {
 			control?: string;
 		}
 	>;
+	addAnother?: { reroll: string[] };
+	import?: {
+		aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
+		ignored?: Record<string, string>;
+		trimPrefix?: Record<string, string>;
+	};
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
@@ -304,7 +310,14 @@ function checkUi(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void 
 	const ui = d.ui as unknown;
 	if (ui === undefined) return;
 	if (!isPlainObject(ui)) throw new Error(`The ui hints of ${k} must be an object`);
-	const { groups, params } = ui as { groups?: unknown; params?: unknown };
+	const { groups, params, addAnother, import: importHints } = ui as {
+		groups?: unknown;
+		params?: unknown;
+		addAnother?: unknown;
+		import?: unknown;
+	};
+	checkAddAnother(d, k, names, addAnother);
+	checkImportHints(k, names, importHints);
 	if (groups !== undefined) {
 		if (!Array.isArray(groups)) throw new Error(`ui.groups of ${k} must be an array`);
 		const ids = new Set<string>();
@@ -347,6 +360,58 @@ function checkUi(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void 
 				throw new Error(
 					`ui.params.${name}.visibleWhen of ${k}: ${JSON.stringify(v)} is not a valid value of "${w.param}"`,
 				);
+		}
+	}
+}
+
+/** `ui.addAnother`: `{reroll: [param…]}` naming params of the template; needs the fill hook that re-randomizes them. */
+function checkAddAnother(d: AnyMgTemplate, k: string, names: ReadonlySet<string>, v: unknown): void {
+	if (v === undefined) return;
+	if (!isPlainObject(v) || !Array.isArray(v.reroll))
+		throw new Error(`ui.addAnother of ${k} must be {reroll: [param names…]}`);
+	if (!d.fill) throw new Error(`ui.addAnother of ${k} needs a fill hook to re-randomize its params`);
+	for (const name of v.reroll as unknown[])
+		if (typeof name !== 'string' || !names.has(name))
+			throw new Error(`ui.addAnother.reroll of ${k} names an unknown param ${JSON.stringify(name)}`);
+}
+
+/** `ui.import`: aliases to params of the template (or per-row choices by another param), ignored columns, prefixes. */
+function checkImportHints(k: string, names: ReadonlySet<string>, v: unknown): void {
+	if (v === undefined) return;
+	if (!isPlainObject(v)) throw new Error(`ui.import of ${k} must be an object`);
+	const param = (name: unknown, where: string) => {
+		if (typeof name !== 'string' || !names.has(name))
+			throw new Error(`${where} of ${k} names an unknown param ${JSON.stringify(name)}`);
+	};
+	const { aliases, ignored, trimPrefix } = v as { aliases?: unknown; ignored?: unknown; trimPrefix?: unknown };
+	if (aliases !== undefined) {
+		if (!isPlainObject(aliases)) throw new Error(`ui.import.aliases of ${k} must be an object`);
+		for (const [column, target] of Object.entries(aliases)) {
+			if (!nonEmpty(column)) throw new Error(`ui.import.aliases of ${k} has an empty column name`);
+			const where = `ui.import.aliases.${column}`;
+			if (typeof target === 'string') {
+				param(target, where);
+				continue;
+			}
+			if (!isPlainObject(target) || !isPlainObject(target.map))
+				throw new Error(`${where} of ${k} must be a param name or {byParam, map, otherwise}`);
+			param(target.byParam, `${where}.byParam`);
+			param(target.otherwise, `${where}.otherwise`);
+			for (const to of Object.values(target.map)) param(to, `${where}.map`);
+		}
+	}
+	if (ignored !== undefined) {
+		if (!isPlainObject(ignored)) throw new Error(`ui.import.ignored of ${k} must be an object`);
+		for (const [column, reason] of Object.entries(ignored))
+			if (!nonEmpty(column) || !nonEmpty(reason))
+				throw new Error(`ui.import.ignored of ${k} needs column names and non-empty reasons`);
+	}
+	if (trimPrefix !== undefined) {
+		if (!isPlainObject(trimPrefix)) throw new Error(`ui.import.trimPrefix of ${k} must be an object`);
+		for (const [name, prefix] of Object.entries(trimPrefix)) {
+			param(name, 'ui.import.trimPrefix');
+			if (typeof prefix !== 'string' || prefix.length === 0)
+				throw new Error(`ui.import.trimPrefix.${name} of ${k} must be a non-empty string`);
 		}
 	}
 }
