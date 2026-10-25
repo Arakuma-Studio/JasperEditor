@@ -92,13 +92,13 @@ describe('Premiere Pitch Shifter: Transpose Ratio', () => {
 		}
 	});
 
-	it("the user's values: 0.2995 is −90 cents (−1 st +10 c with Use Positive Cents, else 0 st −90 c)", () => {
+	it("the user's values: 0.2995 is −90.04 cents (−1 st +9.96 c with Use Positive Cents, else 0 st −90.04 c)", () => {
 		const m = fromRatio(0.29954681, [{ name: 'Use Positive Cents', value: 0.75 }]);
-		expect(m.decoded.totalCents).toBe(-90);
+		expect(m.decoded.totalCents).toBe(-90.04);
 		expect(m.decoded.ratio).toBeCloseTo(0.94932, 5);
-		expect([m.params.semitones.value, m.params.cents.value]).toEqual([-1, 10]);
+		expect([m.params.semitones.value, m.params.cents.value]).toEqual([-1, 9.96]);
 		const n = fromRatio(0.29954681, [{ name: 'Use Positive Cents', value: 0.25 }]);
-		expect([n.params.semitones.value, n.params.cents.value]).toEqual([0, -90]);
+		expect([n.params.semitones.value, n.params.cents.value]).toEqual([0, -90.04]);
 		const cases: [number, number][] = [
 			[0.303227752447, -80],
 			[0.310624212027, -60],
@@ -205,9 +205,9 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 			report,
 		);
 		expect(m).toMatchObject({ effectId: 'jasper.audio.pitch-shifter', enabled: true, name: 'VOZ UWU' });
-		expect(m.decoded).toMatchObject({ precision: 'high', useDefaults: true, positiveCents: true, totalCents: -90 });
+		expect(m.decoded).toMatchObject({ precision: 'high', useDefaults: true, positiveCents: true, totalCents: -90.04 });
 		expect(m.decoded.splicing).toBeCloseTo(0.088465765119, 12);
-		expect([m.params.semitones.value, m.params.cents.value]).toEqual([-1, 10]);
+		expect([m.params.semitones.value, m.params.cents.value]).toEqual([-1, 9.96]);
 		expect(report.entries).toEqual([]);
 		// The effect's display name is not an instance name.
 		expect(
@@ -237,7 +237,7 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 			},
 			report,
 		);
-		expect(m.decoded.totalCents).toBe(-90);
+		expect(m.decoded.totalCents).toBe(-90.04);
 		expect(m.params.semitones.keyframes).toEqual([]);
 		expect(report.warnings).toEqual([]);
 		expect(report.mentions('Use Positive Cents')).toBe(true);
@@ -498,7 +498,7 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 		const st = fx.params.semitones as Animatable<number>;
 		const ce = fx.params.cents as Animatable<number>;
 		const at = (t: number) => evaluateKeyframes(st, t) * 100 + evaluateKeyframes(ce, t);
-		expect(at(0)).toBe(-90);
+		expect(at(0)).toBeCloseTo(-90.04, 9);
 		expect(at(framesToFlicks(150, rate))).toBe(200);
 		// intermediate keys on frames, Premiere's curve within the tolerance
 		for (const k of st.keyframes) expect(k.time % framesToFlicks(1, rate)).toBe(0);
