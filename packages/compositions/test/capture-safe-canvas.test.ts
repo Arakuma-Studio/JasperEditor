@@ -1,5 +1,5 @@
 // @vitest-environment node
-// HTML-in-Canvas misses draws from desynchronized 2D canvases after the host's first paint.
+// HTML-in-Canvas must capture late video draws, including contexts asking for low latency.
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installCaptureSafeCanvases } from '../src/fx/capture-safe-canvas.ts';
@@ -8,29 +8,32 @@ import { CHROME } from './gl-browser.ts';
 const run = !!CHROME && process.env.FX_GL !== '0';
 
 const PAGE = `<!doctype html><html><body style="margin:0">
-<canvas id="host" width="200" height="100" layoutsubtree style="width:200px;height:100px;display:block">
-  <div id="root" style="position:relative;width:200px;height:100px">
-    <canvas id="low" width="100" height="100" style="position:absolute;left:0;top:0"></canvas>
-    <canvas id="plain" width="100" height="100" style="position:absolute;left:100px;top:0"></canvas>
+<canvas id="host" width="100" height="100" layoutsubtree style="width:100px;height:100px;display:block">
+  <div id="root" style="position:relative;width:100px;height:100px">
+    <canvas id="video" width="100" height="100"></canvas>
   </div>
 </canvas></body></html>`;
 
-/** Captures the host after drawing both canvases (one asked for a low-latency context) once the host has painted. */
-const probe = async () => {
+/** Paint once before the video's context exists, then capture the late draw. */
+const probe = async ({ color, desynchronized }: { color: string; desynchronized?: true }) => {
 	const host = document.getElementById('host') as HTMLCanvasElement & {
 		requestPaint(): void;
-		captureElementImage?(e: Element): unknown;
+		captureElementImage?(e: Element): ElementImage;
 	};
 	const ctx = host.getContext('2d') as CanvasRenderingContext2D & {
 		drawElementImage(e: unknown, x: number, y: number): void;
 	};
 	const root = document.getElementById('root')!;
-	let last: number[][] = [];
+	let last: number[] = [];
 	host.addEventListener('paint', () => {
-		ctx.clearRect(0, 0, 200, 100);
-		// Remotion's HtmlInCanvas draws a captured ElementImage (newer Chrome draws nothing for the element itself)
-		ctx.drawElementImage(host.captureElementImage ? host.captureElementImage(root) : root, 0, 0);
-		last = [50, 150].map((x) => Array.from(ctx.getImageData(x, 50, 1, 1).data));
+		const image = host.captureElementImage?.(root);
+		try {
+			ctx.reset();
+			ctx.drawElementImage(image ?? root, 0, 0);
+			last = Array.from(ctx.getImageData(50, 50, 1, 1).data);
+		} finally {
+			image?.close();
+		}
 	});
 	const paint = () =>
 		new Promise<void>((resolve) => {
@@ -38,22 +41,17 @@ const probe = async () => {
 			host.requestPaint();
 		});
 	await paint();
-	const low = (document.getElementById('low') as HTMLCanvasElement).getContext('2d', {
-		alpha: true,
-		desynchronized: true,
-	} as CanvasRenderingContext2DSettings)!;
-	low.fillStyle = 'rgb(0,255,0)';
-	low.fillRect(0, 0, 100, 100);
-	const plain = (document.getElementById('plain') as HTMLCanvasElement).getContext('2d')!;
-	plain.fillStyle = 'rgb(255,0,255)';
-	plain.fillRect(0, 0, 100, 100);
-	// Let the child canvases reach a compositor frame before requesting the host's next capture.
+	const video = (document.getElementById('video') as HTMLCanvasElement).getContext(
+		'2d',
+		desynchronized ? { alpha: true, desynchronized } : undefined,
+	)!;
+	video.fillStyle = color;
+	video.fillRect(0, 0, 100, 100);
 	await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 	await paint();
 	return last;
 };
 
-/** HTML-in-Canvas (`requestPaint`, `drawElementImage`): Chrome 148+ with CanvasDrawElement, as Remotion checks it. */
 const htmlInCanvas = () => {
 	const c = document.createElement('canvas') as HTMLCanvasElement & { requestPaint?: unknown };
 	const d = c.getContext('2d') as unknown as { drawElementImage?: unknown } | null;
@@ -69,22 +67,29 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 			args: ['--enable-features=CanvasDrawElement'],
 		});
 	}, 60_000);
+
 	afterAll(async () => {
 		await browser?.close();
 	});
 
-	// The shim's guarantee: with it, a canvas that asked for a low-latency context is captured like any other. An older
-	// Chrome (the build server's 142) has no HTML-in-Canvas to capture with, so the Player never takes this path there.
 	it('captures late draws from low-latency and ordinary canvases', async (ctx) => {
-		const fixed = await browser.newPage();
-		await fixed.setContent(PAGE);
-		ctx.skip(
-			!(await fixed.evaluate(htmlInCanvas)),
-			`Chrome ${browser.version()} has no HTML-in-Canvas (148+)`,
-		);
-		await fixed.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
-		const after = await fixed.evaluate(probe);
-		expect(after[0]).toEqual([0, 255, 0, 255]);
-		expect(after[1]).toEqual([255, 0, 255, 255]);
+		// Use independent origin-aligned hosts so context capture does not depend on sibling placement.
+		for (const { color, desynchronized, expected } of [
+			{ color: 'rgb(0,255,0)', desynchronized: true as const, expected: [0, 255, 0, 255] },
+			{ color: 'rgb(255,0,255)', expected: [255, 0, 255, 255] },
+		]) {
+			const page = await browser.newPage();
+			try {
+				await page.setContent(PAGE);
+				ctx.skip(
+					!(await page.evaluate(htmlInCanvas)),
+					`Chrome ${browser.version()} has no HTML-in-Canvas (148+)`,
+				);
+				await page.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
+				expect(await page.evaluate(probe, { color, desynchronized })).toEqual(expected);
+			} finally {
+				await page.close();
+			}
+		}
 	}, 60_000);
 });
