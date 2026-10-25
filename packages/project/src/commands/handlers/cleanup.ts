@@ -2,14 +2,8 @@
 // undo step) and `cleanup.configure` edits the sequence's persisted cleanup state. docs/wp-notes/transcript-cleanup.md
 // "Commands".
 import type { Draft } from 'immer';
-import {
-	DEFAULT_FILLERS,
-	findFillers,
-	type SeqWord,
-	transcriptForMedia,
-} from '../../captions/sequence-transcript.ts';
+import { type SeqWord, transcriptForMedia } from '../../captions/sequence-transcript.ts';
 import type { CleanupVoice } from '../../cleanup/detector.ts';
-import { builtinLists, cleanupLanguageOf } from '../../cleanup/lists.ts';
 import { planMediaCuts } from '../../cleanup/plan.ts';
 import { keptToFrames } from '../../cleanup/sequence.ts';
 import { decodeVoiceAnalysis } from '../../cleanup/voice-analysis.ts';
@@ -296,7 +290,7 @@ export const cleanupHandlers = {
 } satisfies HandlerMap;
 
 // ---------------------------------------------------------------------------------------------------------------
-// transcript.removePauses `mode: 'level'` and language-aware transcript.removeFillers (spec 14 TC-032)
+// transcript.removePauses `mode: 'level'` (spec 14 TC-032)
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const B64_INDEX = new Map([...B64].map((c, i) => [c, i] as const));
@@ -398,38 +392,4 @@ export function levelPauseRanges(
 			`Level mode needs the voice analysis of ${[...missing].join(', ')} (pass voice: [{mediaId, analysis}])`,
 		);
 	return out;
-}
-
-/**
- * Filler hits with the default lists (TC-032): per word, the list of its transcript's language — the sequence's
- * edited list, else the built-in vocalic fillers of Spanish; English and unknown languages keep `DEFAULT_FILLERS`
- * (unchanged for old callers). `language` forces one language for every word.
- */
-export function languageFillerHits(
-	doc: DDoc,
-	seq: DSeq,
-	words: readonly SeqWord[],
-	language: string | undefined,
-): Array<[number, number]> {
-	const stored = readSequenceCleanup(seq as { cleanup?: unknown });
-	const langOf = (w: SeqWord) => cleanupLanguageOf(language ?? doc.transcripts[w.transcriptId]?.language);
-	const groups = new Map<string, number[]>();
-	words.forEach((w, i) => {
-		const l = langOf(w) ?? 'und';
-		const list = groups.get(l);
-		if (list) list.push(i);
-		else groups.set(l, [i]);
-	});
-	const hits: Array<[number, number]> = [];
-	for (const [l, idx] of groups) {
-		const edited = l !== 'und' ? stored.lists?.[l]?.fillers : undefined;
-		const list = edited ?? (l === 'es' ? builtinLists('es').fillers : DEFAULT_FILLERS);
-		const member = new Set(idx);
-		for (const [a, b] of findFillers(words, list)) {
-			let ok = true;
-			for (let i = a; i < b && ok; i++) ok = member.has(i);
-			if (ok) hits.push([a, b]);
-		}
-	}
-	return hits.sort((x, y) => x[0] - y[0]);
 }

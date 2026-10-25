@@ -59,7 +59,8 @@ import {
 } from '../placement.ts';
 import type { CaptionRulesInput, CommandOf, TimeInput } from '../schemas/index.ts';
 import { commonFields, ensureDefaultFont } from './clip-common.ts';
-import { languageFillerHits, levelPauseRanges, voiceArgument } from './cleanup.ts';
+import { languageFillerHits } from '../../cleanup/fillers.ts';
+import { levelPauseRanges, voiceArgument } from './cleanup.ts';
 import { clipEditHandlers } from './clip-edit.ts';
 import { clipboardHandlers } from './clipboard.ts';
 import { type HandlerMap, idList, clone as plain } from './util.ts';

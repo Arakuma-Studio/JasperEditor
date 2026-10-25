@@ -274,6 +274,47 @@ function crossfadeScene(): Case {
 	return { snapshot, data };
 }
 
+/**
+ * Spec 14 TC-024: a cleanup join — one audio clip (frames 3…43) with `cleanup.apply` removing [20, 26) and 4 ms
+ * equal-power edge micro-fades on both sides of the join (sub-frame fades: 192 samples at 48 kHz).
+ */
+function cleanupJoinScene(): Case {
+	const h = new Harness();
+	const m = h.registerVideo({ kind: 'audio', seconds: 4 });
+	const F = S / FPS;
+	const r = h.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId: m },
+			sourceRange: { in: { flicks: 0 }, out: { flicks: 40 * F } },
+			at: OFF,
+			tracks: { audio: 'A1' },
+			ref: '$a',
+		},
+	]);
+	h.ok([{ type: 'cleanup.apply', clipIds: [r.refs.$a!], ranges: [{ start: 20, end: 26 }], fadeMs: 4 }]);
+	const snapshot = buildRenderSnapshot(h.doc, h.seqId, {
+		resolveMedia: (a) => ({
+			url: a.id,
+			proxyUrl: null,
+			kind: a.kind,
+			width: null,
+			height: null,
+			durationFlicks: a.probe.durationFlicks,
+			hasAudio: true,
+			rotation: 0,
+		}),
+		resolveFont: () => null,
+	});
+	const data = new Map<string, number[][]>();
+	snapshot.audioClips.forEach((c, i) => {
+		const [s0, s1] = spanOf(c, snapshot.settings.fps, SR);
+		const n = Math.min(s1 - s0, LEN);
+		data.set(c.clipId, [noise(70 + i, n, 0.4), noise(80 + i, n, 0.4)]);
+	});
+	return { snapshot, data };
+}
+
 function reader(data: Map<string, number[][]>) {
 	return (clip: RenderAudioClip, at: { offset: number; length: number }): ClipReader => {
 		const d = data.get(clip.clipId)!;
@@ -423,6 +464,25 @@ describe.runIf(!!CHROME)(
 			console.log(JSON.stringify({ crossfades: { all, latency: p.latency } }));
 			expect(all.peak).toBeGreaterThan(0.1);
 			// preview while playing = export, float32 against float32 (as the other scenes)
+			expect(all.worst).toBeLessThan(1e-4);
+		});
+
+		it('cleanup joins: 4 ms equal-power edge micro-fades (spec 14 TC-024)', async () => {
+			const c = cleanupJoinScene();
+			expect(c.snapshot.audioClips.map((x) => x.fades?.map((f) => [f.type, f.frames, f.edge]))).toEqual([
+				[['out', 0.12, true]],
+				[['in', 0.12, true]],
+			]);
+			const e = await exported(c);
+			const p = await preview(c);
+			const all = worst(p.channels, e, 0, LEN);
+			const J = (20 / FPS) * SR;
+			const join = worst(p.channels, e, J - 400, J + 400);
+			console.log(JSON.stringify({ cleanupJoin: { all, join, latency: p.latency } }));
+			expect(all.peak).toBeGreaterThan(0.1);
+			// the export is silent at the join sample (the fade in starts at 0)
+			expect(Math.abs(e[0]![Math.round(J)]!)).toBeLessThan(1e-6);
+			expect(join.worst).toBeLessThan(1e-4);
 			expect(all.worst).toBeLessThan(1e-4);
 		});
 
