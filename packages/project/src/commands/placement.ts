@@ -73,6 +73,51 @@ export function resolveOrCreateTrack(seq: DSeq, ref: string, h: HandlerContext, 
 	return h.fail(parsed ? 'E_TRACK_KIND' : 'E_NOT_FOUND', `Track not found: ${ref}`);
 }
 
+/**
+ * First-free placement (social-comments design §7.9, "insertion never overwrites"): the lowest unlocked track of
+ * `kind` at or above `floorIndex` (0-based) that has no clip in `[at, at + n)`; when every such track is locked or
+ * busy, a new track of that kind is added on top (or the missing tracks up to `floorIndex` are added, as an
+ * overwrite to a missing `V5` label does). Deterministic: tracks are tried in order and only the track list grows.
+ * The caller places on an empty range, so no clip is trimmed, split or shifted and sync-locked tracks never move.
+ */
+export function firstFreeTrack(
+	seq: DSeq,
+	kind: TrackKind,
+	floorIndex: number,
+	at: number,
+	n: number,
+	h: HandlerContext,
+): { track: DTrack; index: number; created: boolean } {
+	const busy = new Set<string>();
+	const raw = latest(seq.clips) as Record<string, Clip>;
+	for (const key in raw) {
+		if (!Object.hasOwn(raw, key)) continue;
+		const c = latest(raw[key]!);
+		if (c.start < at + n && end(c) > at) busy.add(c.trackId);
+	}
+	const list = tracksOfKind(seq, kind);
+	const current = latest(list);
+	const floor = Math.max(0, Math.floor(floorIndex));
+	for (let i = floor; i < current.length; i++) {
+		const t = latest(current[i]!);
+		if (!t.locked && !busy.has(t.id)) return { track: list[i]!, index: i, created: false };
+	}
+	const index = Math.max(current.length, floor);
+	return { track: ensureTrackAt(seq, kind, index, h), index, created: true };
+}
+
+/** Kind and 0-based index of a track ref (id or label); a missing label resolves to where it would be created. */
+export function trackSlotOf(seq: DSeq, ref: string, h: HandlerContext): { kind: TrackKind; index: number } {
+	const id = resolveTrackIn(seq, ref);
+	if (id) {
+		const found = findTrackIn(seq, id)!;
+		return { kind: found.kind, index: found.index };
+	}
+	const parsed = parseTrackLabel(ref);
+	if (parsed) return parsed;
+	return h.fail('E_NOT_FOUND', `Track not found: ${ref}`);
+}
+
 export function assertUnlocked(track: { locked: boolean; id: string }, h: HandlerContext): void {
 	if (track.locked) h.fail('E_TRACK_LOCKED', `Track ${track.id} is locked`, { blocking: [track.id] });
 }

@@ -59,7 +59,20 @@ export type MgTemplateBase<P extends Record<string, unknown> = Record<string, un
 	presets?: readonly MgTemplatePreset[];
 	/** UI hints of the params: groups (ordered sub-sections), labels, tooltips, multi-line, visibility, controls. */
 	ui?: MgTemplateUi;
+	/**
+	 * Optional fill hook (social-comments design §7.10), used when an agent omits params
+	 * (`clip.addMotionGraphic {fill: {seed}}`, MCP `add_motion_graphic`): fills the params `partial` omits —
+	 * never the given ones — deterministically for `seed` (a uint32). `params` = `partial` plus the filled values
+	 * (the defaults are merged after, then the paramsSchema validates); `filled` = the names it filled. Return
+	 * `{ok: false}` instead of throwing. Templates without a hook just merge their defaults.
+	 */
+	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
 };
+
+/** Result of `MgTemplateBase.fill` (the same shape as `MgTemplateFillResult` of @jasper/project). */
+export type MgTemplateFillResult =
+	| { ok: true; params: Record<string, unknown>; filled: string[] }
+	| { ok: false; error: string; issues?: unknown };
 
 /** fframes template (D-12): rendered by `jasper-mg`, previewed by its TS SVG twin. */
 export type MgSvgTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =

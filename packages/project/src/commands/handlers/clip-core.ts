@@ -53,7 +53,7 @@ import { markMulticamClips } from './multicam-placement.ts';
 import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { clone, type HandlerMap, idList } from './util.ts';
 
 type PlaceOptions = {
 	source: { mediaId?: string; syntheticId?: string; sequenceId?: string; projectItemId?: string };
@@ -467,6 +467,43 @@ function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerCont
 	}
 }
 
+/** Runs the template's fill hook (MgTemplateInfo.fill) on the given params; none = the params unchanged. */
+function fillMgParams(
+	info: MgTemplateInfo,
+	given: Record<string, unknown>,
+	seed: number,
+	h: HandlerContext,
+): { params: Record<string, unknown>; filled: string[] } {
+	if (!info.fill) return { params: given, filled: [] };
+	const label = `${info.id}@${info.version}`;
+	let r: ReturnType<NonNullable<MgTemplateInfo['fill']>>;
+	try {
+		r = info.fill({ ...given }, seed);
+	} catch (e) {
+		return h.fail('E_INVALID_PARAM', `Could not fill the params of ${label}: ${(e as Error)?.message ?? e}`);
+	}
+	if (!r || typeof r !== 'object') return h.fail('E_INVALID_PARAM', `The fill of ${label} returned nothing`);
+	if (!r.ok) {
+		const issues = Array.isArray(r.issues)
+			? `: ${r.issues
+					.slice(0, 10)
+					.map((i) => (i && typeof i === 'object' && 'message' in i ? String(i.message) : JSON.stringify(i)))
+					.join('; ')}`
+			: '';
+		return h.fail('E_INVALID_PARAM', `Invalid params for ${label}: ${r.error}${issues}`);
+	}
+	const params = r.params;
+	if (!params || typeof params !== 'object' || Array.isArray(params))
+		return h.fail('E_INVALID_PARAM', `The fill of ${label} returned no params object`);
+	// The hook fills omitted params only: the given values win whatever it returned.
+	return {
+		params: { ...params, ...given },
+		filled: (Array.isArray(r.filled) ? r.filled : []).filter(
+			(n): n is string => typeof n === 'string' && !Object.hasOwn(given, n),
+		),
+	};
+}
+
 function validateMgParams(
 	doc: DDoc,
 	info: MgTemplateInfo,
@@ -633,8 +670,17 @@ export const clipCoreHandlers = {
 		const info = h.registries.mgTemplates.get(cmd.template.id, cmd.template.version);
 		if (!info)
 			h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${cmd.template.id}@${cmd.template.version}`);
-		const params = validateMgParams(doc, info, { ...info.defaults, ...(cmd.params ?? {}) }, h);
-		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'motion-graphic');
+		// Layering: defaults → (preset, already merged into cmd.params by the caller) → fill → given params; the
+		// fill only fills what the given params leave out, and WP1's media checks see the final params.
+		const given = cmd.params ?? {};
+		const fill = cmd.fill ? fillMgParams(info, given, cmd.fill.seed, h) : { params: given, filled: [] };
+		const params = validateMgParams(doc, info, { ...info.defaults, ...fill.params }, h);
+		const { seq, track, trackIndex, createdTrack, at, duration, id } = newGeneratorClip(
+			doc,
+			cmd,
+			h,
+			'motion-graphic',
+		);
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
 		const box = canvas === 'sequence' ? frameBox(seq) : canvas;
 		seq.clips[id] = {
@@ -652,7 +698,18 @@ export const clipCoreHandlers = {
 		} as DClip;
 		cleanupSequence(seq, h);
 		h.defineRef(cmd.ref, id);
-		return { clipId: id };
+		// The placement and the resolved params, so agents need no second read (dry runs included).
+		return {
+			clipId: id,
+			sequenceId: seq.id,
+			trackId: track.id,
+			track: `${track.kind === 'video' ? 'V' : track.kind === 'audio' ? 'A' : 'C'}${trackIndex + 1}`,
+			...(createdTrack ? { createdTrack: true } : {}),
+			start: at,
+			duration,
+			params: clone(params),
+			...(cmd.fill ? { filled: fill.filled, seed: cmd.fill.seed } : {}),
+		};
 	},
 	'clip.move': (doc, cmd, h: HandlerContext) => {
 		const ids = idList(cmd.clipIds);
