@@ -147,7 +147,11 @@ export function clipTextStyles(c: Clip, cw: string[]): StoredTextStyle[] {
 			const v = x[list];
 			if (!Array.isArray(v)) continue;
 			for (const [i, r] of v.entries())
-				out.push({ style: (r as { style?: unknown })?.style, entity: c.id, path: [...path, list, String(i), 'style'] });
+				out.push({
+					style: (r as { style?: unknown })?.style,
+					entity: c.id,
+					path: [...path, list, String(i), 'style'],
+				});
 		}
 	};
 	if (c.kind === 'text') {
