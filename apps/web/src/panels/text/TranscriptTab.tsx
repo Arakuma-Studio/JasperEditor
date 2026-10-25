@@ -25,6 +25,7 @@ import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import { Button, EmptyState, PointMenu, SearchField, Select, TextField, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GenerateTranscriptButton, TranscriptionStatus } from '../../speech/TextPanelHooks.tsx';
+import { openCreateSubtitles } from '../../subtitles/open.ts';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
 
 type Props = { session: EditorSession; seq: Sequence; request?: { tool?: TranscriptTool; seq: number } };
@@ -296,6 +297,14 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					data-testid="text.transcript.createCaptions"
 				>
 					Create Captions…
+				</Button>
+				<Button
+					variant="quiet"
+					onClick={() => openCreateSubtitles(session, seq.id)}
+					title="Subtitles as editable text clips with a template, more rules and cut-aware timing"
+					data-testid="text.transcript.createSubtitles"
+				>
+					Create Subtitles…
 				</Button>
 				<Button
 					variant={tool === 'import' ? 'secondary' : 'quiet'}

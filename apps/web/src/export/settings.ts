@@ -10,6 +10,7 @@ import type {
 	VideoCodec,
 } from '@jasper/api';
 import {
+	captionGroupsOf,
 	colorSpace,
 	fpsOf,
 	makeEnvelope,
@@ -121,7 +122,9 @@ export function buildExportSettings(
 		},
 		engine: choice.engine,
 		destination: { type: 'download' },
-		...(seq.captionTracks.length && choice.captions ? { captions: captionSettings(choice.captions) } : {}),
+		...((seq.captionTracks.length || Object.keys(captionGroupsOf(seq)).length) && choice.captions
+			? { captions: captionSettings(choice.captions, seq) }
+			: {}),
 		...(choice.usePreviews ? { usePreviews: true } : {}),
 		...(choice.smartRender ? { smartRender: true } : {}),
 		...(choice.useProxies ? { draftUseProxies: true } : {}),
@@ -161,7 +164,8 @@ export type CaptionExportChoice = {
 	embed: boolean;
 	/** Sidecar file format, or none. */
 	sidecar: 'none' | 'srt' | 'vtt' | 'scc' | 'mcc' | 'stl' | 'ttml' | 'dfxp';
-	sidecarTracks: 'active' | 'all';
+	/** `active` / `all` caption sources, or one subtitle group of text clips by id (spec 13 AS-005). */
+	sidecarTracks: 'active' | 'all' | `cgp_${string}`;
 };
 
 export const DEFAULT_CAPTION_CHOICE: CaptionExportChoice = {
@@ -171,11 +175,14 @@ export const DEFAULT_CAPTION_CHOICE: CaptionExportChoice = {
 	sidecarTracks: 'active',
 };
 
-export function captionSettings(c: CaptionExportChoice): NonNullable<ExportSettings['captions']> {
+export function captionSettings(c: CaptionExportChoice, seq?: Sequence): NonNullable<ExportSettings['captions']> {
+	// a remembered group that is not in this sequence falls back to the active caption source
+	const group = c.sidecarTracks.startsWith('cgp_') ? c.sidecarTracks : null;
+	const tracks = group ? (seq && captionGroupsOf(seq)[group] ? [group] : 'active') : c.sidecarTracks;
 	return {
 		burnIn: c.burnIn,
 		embed: c.embed,
-		...(c.sidecar !== 'none' ? { sidecar: [c.sidecar], sidecarTracks: c.sidecarTracks } : {}),
+		...(c.sidecar !== 'none' ? { sidecar: [c.sidecar], sidecarTracks: tracks as 'active' | 'all' | string[] } : {}),
 	};
 }
 
@@ -486,7 +493,12 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 						sidecar: sidecars.includes(c.sidecar as never)
 							? (c.sidecar as CaptionExportChoice['sidecar'])
 							: 'none',
-						sidecarTracks: c.sidecarTracks === 'all' ? 'all' : 'active',
+						sidecarTracks:
+							c.sidecarTracks === 'all'
+								? 'all'
+								: typeof c.sidecarTracks === 'string' && /^cgp_[0-9A-Z]{16}$/.test(c.sidecarTracks)
+									? c.sidecarTracks
+									: 'active',
 					}
 				: undefined;
 		return {
