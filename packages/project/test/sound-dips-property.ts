@@ -141,7 +141,13 @@ export function checkCurvedDips(
 	// keyframe-sides: a Linear key into an eased incoming side curves too.
 	const curved =
 		kfs.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold') ||
-		kfs.some((k) => k.inInterpolation !== undefined && k.inInterpolation !== 'linear');
+		kfs.some(
+			(k, j) =>
+				j > 0 &&
+				kfs[j - 1]!.interpolation !== 'hold' &&
+				k.inInterpolation !== undefined &&
+				k.inInterpolation !== 'linear',
+		);
 	// rebuilt curves: within sampling (1 ms samples at most 0.001 dB off; steeper bends a little more);
 	// straight ones: exact (to rounding)
 	const tolOut = curved ? 0.05 : 1e-6;
