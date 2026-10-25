@@ -864,7 +864,8 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
     variant packages), so the snapshot resolves it for preview and bake and the planner blocks an export without it;
   - the card reads `imageUrls[id]` and draws it with `TemplateImage`; not delivered: `TemplateImage`'s visible
     placeholder in the circle (the layer reports the missing image).
-  - `requiredAssets` returns no fonts or emoji yet: the framework's asset wiring (WP6a) adds them.
+  - `requiredAssets` also declares the variant's faces (`SOCIAL_VARIANT_FONTS`: Roboto 400/500 here, TikTok Sans for
+    TikTok), so the bundled font loads with the clip; emoji images join with the framework's emoji wiring (WP6a).
 - **Grow from tail:** neither card has a tail; both grow from the avatar corner (`0% 0%`).
 - **Fit:** the handle truncates (comment) or ends in an ellipsis (Shorts); counts stay short (`formatCount`: "987B",
   "4.8M replies"), the actions and the time never shrink.

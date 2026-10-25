@@ -379,11 +379,19 @@ export function socialCommentImages(
 }
 
 /**
- * `requiredAssets` of social-comment@1 (design §7.8, contract C2): the remote images the card draws, so the snapshot
- * resolves them for preview and bake and the export planner blocks when one is unavailable.
+ * `requiredAssets` of social-comment@1 (design §7.8, contract C2): the faces of the variant's font
+ * (`SOCIAL_VARIANT_FONTS`) and the remote images its card draws, so the snapshot loads / resolves them for preview
+ * and bake and the export planner blocks when one is unavailable. (Emoji images join with the framework's emoji
+ * wiring.)
  */
 export function socialCommentRequiredAssets(p: SocialCommentParams): TemplateRequiredAssets {
-	return { fonts: [], images: socialCommentImages(p) };
+	const font = SOCIAL_VARIANT_FONTS[p.variant] ?? null;
+	return {
+		fonts: font
+			? font.weights.map((weight) => ({ family: font.family, weight, style: 'normal' as const }))
+			: [],
+		images: socialCommentImages(p),
+	};
 }
 
 // -------------------------------------------------------------------------------------------- definition

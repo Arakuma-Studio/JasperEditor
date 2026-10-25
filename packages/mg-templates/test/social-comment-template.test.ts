@@ -289,6 +289,12 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(req({ variant: 'youtube-comment', showProfile: false }).images).toEqual([]);
 		expect(req({ variant: 'youtube-comment', avatar: { generated: 4 } }).images).toEqual([]);
 		expect(req({ variant: 'tiktok-comment' }).images).toEqual([]);
+		// the variant's font faces load with the clip (Roboto 400 / 500 for YouTube)
+		expect(req({ variant: 'youtube-comment' }).fonts).toEqual([
+			{ family: 'Roboto', weight: 400, style: 'normal' },
+			{ family: 'Roboto', weight: 500, style: 'normal' },
+		]);
+		expect(req({ variant: 'x-post' }).fonts).toEqual([]);
 		expect(SOCIAL_VARIANT_FONTS['youtube-comment']).toEqual({ family: 'Roboto', weights: [400, 500] });
 		expect(SOCIAL_VARIANT_FONTS['youtube-shorts-reply']).toEqual({ family: 'Roboto', weights: [400, 500] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))

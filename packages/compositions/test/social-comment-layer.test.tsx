@@ -84,18 +84,10 @@ const handle = (url: string): MediaHandle => ({
 	rotation: 0,
 });
 
-function frame(
-	doc: ProjectDocument,
-	resolve: (a: MediaAsset) => MediaHandle | null,
-	at = 100,
-	image?: (id: string) => string | null,
-) {
+function frame(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | null, at = 100) {
 	const snap: RenderSnapshot = buildRenderSnapshot(doc, Object.keys(doc.sequences)[0]!, {
 		resolveMedia: resolve,
 		resolveFont: () => null,
-		...(image
-			? { templateAssets: templateAssetOptions(mgRegistry, { font: () => null, emoji: () => null, image }) }
-			: {}),
 	});
 	return render(
 		<Thumbnail
@@ -150,17 +142,20 @@ describe('social-comment@1 in the sequence composition', () => {
 			shorts.container.querySelector('[data-social-avatar="default"] [data-template-image="placeholder"]'),
 		).not.toBeNull();
 		shorts.unmount();
-		// the snapshot resolves the declared remote image (engine route) → imageUrls → the card's default avatar
-		const served = frame(
-			project({ variant: 'youtube-comment' }, false).doc,
-			(a) => handle(`/m/${a.id}`),
-			100,
-			(id) =>
-				id === REMOTE_IMAGE_IDS.youtubeDefaultAvatar ? `https://engine.test/remote/images/${id}` : null,
-		);
-		expect(served.container.querySelector('[data-social-avatar="default"] img')!.getAttribute('src')).toBe(
-			`https://engine.test/remote/images/${REMOTE_IMAGE_IDS.youtubeDefaultAvatar}`,
-		);
-		served.unmount();
+		// the snapshot resolves the image the clip declares (engine route): the table the layer turns into imageUrls
+		// (layer → imageUrls: template-assets-layer.test; imageUrls → the card's picture: motion social-comment.test)
+		const plain = project({ variant: 'youtube-comment' }, false).doc;
+		const snap = buildRenderSnapshot(plain, Object.keys(plain.sequences)[0]!, {
+			resolveMedia: (a) => handle(`/m/${a.id}`),
+			resolveFont: () => null,
+			templateAssets: templateAssetOptions(mgRegistry, {
+				font: (f) => `https://engine.test/fonts/${f.family}-${f.weight}.woff2`,
+				emoji: () => null,
+				image: (id) => `https://engine.test/remote/images/${id}`,
+			}),
+		});
+		const id = REMOTE_IMAGE_IDS.youtubeDefaultAvatar;
+		expect(snap.images).toEqual({ [id]: `https://engine.test/remote/images/${id}` });
+		expect(snap.fonts?.filter((f) => f.family === 'Roboto').map((f) => f.weight)).toEqual([400, 500]);
 	});
 });
