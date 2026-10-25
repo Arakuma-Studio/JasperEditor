@@ -4,7 +4,12 @@ import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
-import { fillTemplateParams, validateTemplateParams } from '../../registry/mg-params.ts';
+import {
+	fillTemplateParams,
+	isMgAutoClipName,
+	mgClipName,
+	validateTemplateParams,
+} from '../../registry/mg-params.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
@@ -657,7 +662,7 @@ export const clipCoreHandlers = {
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
 		const box = canvas === 'sequence' ? frameBox(seq) : canvas;
 		seq.clips[id] = {
-			...commonFields(id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
+			...commonFields(id, track.id, at, duration, 0, cmd.name ?? mgClipName(info, params), 'purple'),
 			kind: 'motion-graphic',
 			// anime templates are stamped; absent = fframes.
 			template: {
@@ -874,7 +879,12 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 					'E_INVALID_PARAM',
 					`Unknown motion-graphic template ${clip.template.id}@${clip.template.version}`,
 				);
-			clip.params = validateMgParams(doc, info, { ...clip.params, ...p.params }, h);
+			const before = clip.params as Record<string, unknown>;
+			const autoName = p.name === undefined && isMgAutoClipName(info, clip.name, before);
+			clip.params = validateMgParams(doc, info, { ...before, ...p.params }, h);
+			// a clip that still has its automatic name follows its content ("X post · Luna Park"); a renamed one keeps
+			// the user's name
+			if (autoName) clip.name = mgClipName(info, clip.params as Record<string, unknown>);
 		}
 		if (p.canvas !== undefined) clip.canvas = p.canvas;
 	}

@@ -39,6 +39,9 @@ export const MG_IMPORT_TEXT = {
 	'alias-no-target': 'No parameter takes this column for this row',
 	'alias-overridden': 'Ignored: the row already sets {0}',
 	'not-time': '"{0}" is not a time (3, 1.5s, 0:03, 90f)',
+	'not-age': '"{0}" is not an age (3h, 2 weeks, 10 months, 1y, 5 min, just now)',
+	'age-unit-not-offered': '"{0}": the unit {1} is not offered (use {2})',
+	'age-unit-overridden': 'The unit of "{0}" is not used: the row already sets {1}',
 	'duration-too-short': 'The length must be at least 1 frame',
 	'time-too-long': '"{0}" is too long',
 } as const;

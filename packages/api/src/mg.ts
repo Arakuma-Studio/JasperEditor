@@ -43,7 +43,7 @@ export const MgTemplateUiSchema = z.object({
 		.optional(),
 	/** "Add another": the params the copy re-randomizes through the template's fill hook. */
 	addAnother: z.object({ reroll: z.array(z.string()) }).optional(),
-	/** Bulk import: column aliases (fixed, or chosen per row by another param), ignored columns, value prefixes. */
+	/** Bulk import: column aliases (fixed, or chosen per row by another param), ignored columns, value prefixes, ages. */
 	import: z
 		.object({
 			aliases: z
@@ -57,8 +57,14 @@ export const MgTemplateUiSchema = z.object({
 				.optional(),
 			ignored: z.record(z.string(), z.string()).optional(),
 			trimPrefix: z.record(z.string(), z.string()).optional(),
+			/** An age in one cell ("3h", "2 weeks") → a count param and a unit param. */
+			age: z
+				.object({ value: z.string(), unit: z.string(), columns: z.array(z.string()).optional() })
+				.optional(),
 		})
 		.optional(),
+	/** Gallery preview framing: the canvas the poster draws the template on (covering the thumbnail). */
+	preview: z.object({ canvas: z.object({ width: z.number(), height: z.number() }) }).optional(),
 });
 
 export const MgTemplateCatalogEntrySchema = z.object({

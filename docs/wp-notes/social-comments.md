@@ -1476,6 +1476,7 @@ ui.import?: {
   aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
   ignored?: Record<string, string>;                 // column name → reason shown in the preview
   trimPrefix?: Record<string, string>;              // param → prefix removed from its cells ("@")
+  age?: { value: string; unit: string; columns?: readonly string[] }; // "3h" in one cell → count + unit params
 }
 ```
 
@@ -1497,6 +1498,9 @@ ui.import?: {
       `Content`, `Comment text` → `text`; `Like count`, `Hearts` → `likes`; `Reply count` → `replies`; `Retweets` →
       `reposts`; `View count` → `views`; `Type` → `variant`; `Ago` → `timeValue`; `Time unit` → `timeUnit`;
       `Blue check`, `Badge` → `verified`.
+    - **Age in one cell** (`age: {value: 'timeValue', unit: 'timeUnit', columns: ['Time', 'Age', 'Time ago',
+      'Posted ago', 'When']}`): those columns, the `Posted` label and the `Ago` alias read "3h", "2 weeks", "10mo",
+      "1y", "5 min", "3 hours ago", "an hour ago", "yesterday", "just now" (see "Age cells" below).
     - Param names and Properties labels (`Comment`, `Display Name`, `Style`, `Verified`…) match without aliases.
   - **Image columns** (`Image URL`, `Avatar URL`, `Profile picture`, `Photo`, …) are ignored with a visible reason:
     remote images are not imported in v1. No existing import path takes a URL. An `avatar` column takes JSON
@@ -1506,9 +1510,16 @@ ui.import?: {
 
 - **Copy:** the whole clip (transform, effects, masks, keyframes, name, label, canvas). Children get new ids; links
   and groups are not copied.
-- **Placement:** the copy starts at `at` (default: the source's end) with the same duration. It goes on the first
-  free unlocked video track from `track` (default: the source's track) up, or on a new top track. It never
-  overwrites (`firstFreeTrack`).
+- **Placement:** the copy starts at `at` (default: the end of the source's chain, below) with the same duration. It
+  goes on the first free unlocked video track from `track` (default: the source's track) up, or on a new top track.
+  It never overwrites (`firstFreeTrack`).
+- **Chain (sc/polish, App QA N2):** without `at`, the start is the source's end moved past every motion graphic of
+  the same template that starts exactly there on the floor track or above, repeatedly (`chainEnd` in
+  `handlers/mg-another.ts`). So Add another twice from the same clip (the clip menu targets the clicked clip, not the
+  newest copy) puts the second copy after the first instead of at the same time on the track above, where it hid the
+  first. A gap, another template or another clip kind ends the chain. Copies that went up a track still extend it, so
+  the next copy can come back down to the source's track. MCP `count` copies chain through refs and give the same
+  layout as `count` separate calls on the source.
 - **Params:** the source's params minus `reroll`, then `params` on top. The fill hook fills the omitted ones from
   `seed`. A rerolled param the hook does not fill takes the template default.
 - **Validation:** the params schema and the template media checks run on the result (`validateTemplateParams`).
@@ -1571,6 +1582,21 @@ ui.import?: {
   - Enums: case and punctuation ignored (`TikTok Comment` → `tiktok-comment`).
   - Strings: outer whitespace trimmed; length and pattern checked.
   - Object / array params: JSON.
+- **Age cells** (`ui.import.age`, `parseAgeCell` in `packages/project/src/bulk/age.ts`; sc/polish, App QA N4 —
+  tokcomment-style sheets have one "Time" column):
+  - a count and a unit, any case, optional space, trailing "ago" and dot: `s/sec/second(s)`, `m/min(s)/minute(s)`,
+    `h/hr(s)/hour(s)`, `d/day(s)`, `w/wk(s)/week(s)`, `mo/mos/mon/mth(s)/month(s)`, `y/yr(s)/year(s)`; "a" / "an" /
+    "one" = 1; "yesterday", "last week / month / year"; "now", "just now", "moments ago" = count 0 (any unit, the
+    row's unit column or the fill decides). "m" is minutes (TikTok's "5m"); months are "mo".
+  - the count goes to `value` (its schema checks it: whole number, 0…9999 on social cards), the unit to the enum
+    value of `unit` named like it (`hour` / `hours`); a unit the template does not offer (seconds on social cards)
+    is a row error naming the units it offers.
+  - a bare number is the count alone, so the separate `Ago` + `Time unit` columns still work; when the row also sets
+    the unit param in its own column, that column wins and the row gets a warning.
+  - English unit words only (they are what the platforms print); "1.5h", "3h 20m" and dates are not ages.
+  - `createMgRegistry` checks both params exist and differ and the column names are non-empty; the catalogue JSON
+    (`@jasper/api` `MgTemplateUiSchema`) carries the hint to MCP, so the dialog and `import_motion_graphics_csv` read
+    the same cells the same way.
 - **Empty cells** are "not given": the preset, then the fill hook, then the defaults decide. A row cannot set an
   empty text; the preview shows what the row gets.
 - **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
@@ -1636,6 +1662,9 @@ ui.import?: {
 
 - `packages/project/test/bulk-table.test.ts`: parser rules, caps, a 2 MB timing. fast-check: no throw on arbitrary
   strings, `parse(format(records))` round trip for CSV / TSV / `;`, increasing record lines.
+- `packages/project/test/bulk-age.test.ts`: age spellings, non-ages, fast-check (never throws; every spelling round
+  trips), age columns in the plan (Time / Age / Ago / Posted / param name), the separate-columns form, unit column
+  precedence, errors, broken hints ignored, fast-check planner on arbitrary age cells.
 - `packages/project/test/mg-import.test.ts`: mapping, aliases per variant, coercion errors, times, preset reroll
   exclusion, schedule, preview = inserted params. fast-check: coercion and the planner never throw.
 - `packages/project/test/mg-duplicate.test.ts`: placement, reroll / keep, determinism, copy fidelity, first-free and
@@ -2088,12 +2117,10 @@ was found. A 2160×3840 sequence renders the card sharp at 4K; a 1080×1920 sequ
 
 - A gallery drop onto an occupied timeline track overwrites the clip there (documented placement rule), which cuts
   footage when a comment is dropped on V1.
-- Comments that overlap in time are drawn at the same centred place, so the top one hides the others; Add Another
-  twice from the same source stacks the second copy at the same time on the next track.
-- Bulk import does not read compound ages ("3h", "2 weeks") from one column; use `Ago` + `Time unit`.
-- Every comment clip is named "Social comment", so the Program asset list and the export blocker cannot tell cards
-  apart.
-- X: a six-character repost count touches the like icon.
+- Comments that overlap in time are drawn at the same centred place, so the top one hides the others. (Add Another
+  twice from the same source stacking the second copy: fixed in sc/polish.)
+- Fixed in sc/polish (§ Polish below): compound ages in one column, clip names, the X count spacing, small cards
+  in the gallery thumbnails, the missing-font banner at the canvas corner.
 - Remotion-path ProRes 4444: opaque pixels decode with alpha 1020/1023 (also for text clips; README § Export).
 
 ## Store reviews
@@ -2271,3 +2298,80 @@ presets, Roboto / SF Pro cards, stars and date edited in Properties with undo, A
 - The iPhone card geometry comes from a low-resolution marketing screenshot (0.77 px/pt): ±1 pt.
 - App Store web and Play dark themes are derived, not captured (neither screenshot nor the legacy site has one).
 - Bulk-import dates must be year first.
+## Polish (sc/polish)
+
+Fixes of the App QA findings above (`research/app-qa/index.md` N2, N4–N8). Screenshots of the running app are
+outside the repository (`research/polish/`).
+
+### Add another builds a sequence (N2)
+
+See § Add another & bulk import ▸ Chain: without `at`, a copy goes after the last consecutive copy of the source's
+chain, so the clip menu's Add Another on the same clip twice gives three cards one after another on one track.
+
+### Ages in one cell (N4)
+
+See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
+
+### Clip names (N5)
+
+- Templates may name their clips from the content: `clipName?(params)` on the template definition
+  (`@jasper/mg-templates` `types.ts`) and on `MgTemplateInfo` (`@jasper/project`). `mgClipName(info, params)`
+  (`registry/mg-params.ts`) calls it without letting it throw, collapses whitespace and control characters, cuts
+  to 80 characters with "…" and falls back to the template name.
+- `social-comment@1`: `socialClipName` (`packages/mg-templates/src/social/clip-name.ts`) = `VARIANT_LABELS[variant]
+  · <the name the card shows>` (`shownNameParam`: display name on TikTok and X, `@handle` on Instagram and YouTube;
+  32 characters at most), e.g. "X post · Luna Park", "Instagram post comment · @luna.makes"; the label alone when
+  the name is empty.
+- Applied by `clip.addMotionGraphic` (gallery insert and drop, `add_motion_graphic`, bulk import rows; an explicit
+  `name` wins) and `clip.duplicateMotionGraphic` (Add another: the copy is named after its new identity).
+- **Follows the content while automatic.** A clip whose name is automatic — the template name (clips made before
+  content names) or `mgClipName` of its current params (`isMgAutoClipName`) — is renamed by a `clip.update` that
+  changes its params (Properties, the Program text editor, `set_motion_graphic_params`), and Add another names its
+  copy anew. A name the user typed is never replaced (a patch that sets `name` and `params` keeps the given name).
+  Why: names are what the asset chip and the export blockers list; a name left at "X post · Display Name" after the
+  user typed the real name would identify the wrong card. Keyframed params do not rename (the static value counts).
+
+### X action bar spacing (N6)
+
+- The four engagement columns still share the bar equally (x.com's `flex-1`), but each has a minimum width
+  (`xActionLayout` in `x.tsx`): icon 15 + icon → count 8 + the count + `X_COUNT_GAP` (6 px) before the next icon.
+  The count's width is bounded by `xCountEm` (em advances measured in Chrome for Chirp 400: digits 0.62, "." 0.27,
+  "," 0.28, K / B 0.66, M 0.87; bounds 0.63 / 0.3 / 0.68 / 0.88; DejaVu Sans fallback within them).
+- The bar is 280 px with the avatar (420 − 2 border − 32 padding − 64 avatar column − 42 bookmark / share). One
+  six-character count ("321.3K", "999.9M") in any column keeps x.com's 13 px counts and 8 px inset; when all four are
+  long the inset tightens to 4 px, then the counts shrink uniformly (≥ 10 px; four "999.9M" → 12.2 px).
+- The likes column is sized for the widest count its tick passes ("999.9M" on the way to "1,000B"), so the bar does
+  not move while the count ticks; every frame stays a pure function of params and time.
+- Tests: `packages/motion/test/social-x-fit.test.tsx` — the budget for the longest counts per column, all four, and
+  fast-check over all counts; in Chrome (runs when a Chrome is found, like the GL tests) the em bounds of the face
+  drawn and the laid-out card: every count unclipped and ≥ 6 px before the next icon, with the fallback face and
+  with Chirp when `SOCIAL_CHIRP_DIR` holds its Regular woff2. The test fails on the previous layout (3.9 px
+  between "999.9M" replies and the repost icon in the fallback face).
+
+### Gallery previews frame the card (N7)
+
+- Generic template hint `ui.preview: {canvas: {width, height}}` (`MgTemplateUi`, validated by `createMgRegistry`:
+  whole pixels 1…8192; carried in the catalogue JSON). `MgTemplatePreview` (`@jasper/compositions`, the poster
+  `<Thumbnail>` and the hover `<Player>` of the Motion Templates panel) draws the template on that canvas and scales
+  it to cover the 16:9 thumbnail, centred (`mgPreviewFraming`); the overflow is clipped.
+- `social-comment@1`: `preview: {canvas: {width: 1080, height: 1920}}`, the 9:16 canvas the cards are designed for:
+  the card spans about 80 % of the thumbnail width instead of about 35 %, at the same layout as in a 9:16 project.
+- Only previews read the hint: clips, the Program monitor and exports draw on the clip's canvas as before.
+- Limitation: the 16:9 crop of a 9:16 canvas shows its middle 32 %; a preset whose card were taller than that would
+  be cut at the top and bottom of the thumbnail (no preset is).
+
+### Missing-asset banners on the card (N8)
+
+- The striped "Font … is not available" / "Image … is not available" banners of a template (Program monitor and
+  other previews; renders never draw them) are anchored inside the top-left corner of what the template drew,
+  not the canvas corner: `templateContentBox(host, skip)` (`@jasper/compositions`, `MotionGraphicLayer.tsx`) takes
+  the union of the outermost elements smaller than the layer (full-size wrappers — the template's `AbsoluteFill`,
+  the social stage — are looked through), in the layer's unscaled px. Measured in a layout effect after every
+  render, so the banners follow an animated card; the state only changes when the box moves.
+- Banner text size: `min(canvas height / 40, card width / 40)` (≥ 10 px) on a card; `canvas height / 40` at the
+  canvas corner when there is no layout or no smaller element (a template that fills the canvas).
+- Generic: no template contract change; any card-like template gets it.
+- So at Program zoom ≥ 100 % the banner is where the card is (before: off screen at the canvas corner).
+- Tests: `packages/compositions/test/template-marker-anchor.test.tsx` (box measurement with scale, no-layout
+  fallback, a social card with a missing font anchored and sized on the card).
+

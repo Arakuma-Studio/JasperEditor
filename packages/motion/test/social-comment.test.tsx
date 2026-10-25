@@ -27,6 +27,7 @@ import { INSTAGRAM_DEFAULT_AVATAR } from '../src/templates/social-comment/instag
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
 import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
 import { socialVariantAvailable } from '../src/templates/social-comment/variants.ts';
+import { xActionLayout, xActionsWidth } from '../src/templates/social-comment/x.tsx';
 
 const Impl = ANIME_TEMPLATE_IMPLS['social-comment@1']!;
 
@@ -546,7 +547,7 @@ describe('social-comment@1 X post card', () => {
 		zero.unmount();
 	});
 
-	it('huge counts stay short, and every column clips its count so bookmark and share never leave the card', () => {
+	it('huge counts stay short; columns get the room their counts need (no touching), and clip as a last guard', () => {
 		const r = view({ replies: 1_234_567, reposts: 999_999_999_999, likes: 1e12, views: 987_654_321_000 });
 		const c = r.container;
 		expect(['replies', 'reposts', 'likes', 'views'].map((n) => part(c, n)!.textContent)).toEqual([
@@ -555,12 +556,19 @@ describe('social-comment@1 X post card', () => {
 			'1,000B',
 			'987.6B',
 		]);
-		for (const n of ['replies', 'reposts', 'likes', 'views']) {
+		// App QA N6: the bar is laid out for these counts (xActionLayout, test/social-x-fit.test.tsx measures it)
+		// (the likes column for the widest count its tick passes: "999.9M" on the way to "1,000B")
+		const bar = xActionLayout(['1.2M', '999.9B', '999.9M', '987.6B'], true);
+		let total = 0;
+		for (const [i, n] of ['replies', 'reposts', 'likes', 'views'].entries()) {
 			const col = part(c, `${n}-action`)!;
 			expect(col.style.flex).toBe('1 1 0px');
-			expect(col.style.minWidth).toMatch(/^0(px)?$/);
+			expect(col.style.minWidth).toBe(`${bar.minWidths[i]}px`);
 			expect(col.style.overflow).toBe('hidden');
+			expect(part(c, n)!.style.fontSize).toBe(`${bar.countPx}px`);
+			total += bar.minWidths[i]!;
 		}
+		expect(total).toBeLessThanOrEqual(xActionsWidth(true));
 		r.unmount();
 	});
 

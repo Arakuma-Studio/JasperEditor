@@ -111,6 +111,7 @@ import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
+export * from './bulk/age.ts';
 export * from './bulk/messages.ts';
 export * from './bulk/mg-import.ts';
 export * from './bulk/table.ts';

@@ -44,8 +44,10 @@ import {
 	type ReactNode,
 	useContext,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
+	useState,
 } from 'react';
 import { AbsoluteFill, getRemotionEnvironment, useCurrentFrame, useVideoConfig } from 'remotion';
 import { ColorDocContext } from '../color/chain.ts';
@@ -161,17 +163,89 @@ function LayerMissingReport({ missing }: { missing: readonly MissingTemplateAsse
 	return null;
 }
 
-/** The striped "font / image not available" banners over a template card (preview only). */
+/** A box in the layer's own (unscaled) px. */
+type ContentBox = { left: number; top: number; width: number; height: number };
+
+/** Most elements `templateContentBox` looks at (a template's DOM is small; this bounds a pathological one). */
+const MAX_CONTENT_ELEMENTS = 2000;
+
+/**
+ * Where a template drew its content inside `host` (the layer element), in the host's unscaled px: the union of the
+ * outermost descendants smaller than the host — full-size wrappers (a template's `AbsoluteFill`, a stage) are looked
+ * through, the first element inside them that is not full size counts with its whole box. `skip` (the banners) is
+ * left out. Null without layout (zero size) or when nothing smaller than the host is drawn. Generic: any template
+ * whose content is a card gets its box; one that fills the canvas gets null.
+ */
+export function templateContentBox(host: Element, skip: Element | null): ContentBox | null {
+	const h = host.getBoundingClientRect();
+	if (!(h.width > 0) || !(h.height > 0)) return null;
+	const scale = host instanceof HTMLElement && host.offsetWidth > 0 ? h.width / host.offsetWidth : 1;
+	if (!(scale > 0) || !Number.isFinite(scale)) return null;
+	let left = Number.POSITIVE_INFINITY;
+	let top = Number.POSITIVE_INFINITY;
+	let right = Number.NEGATIVE_INFINITY;
+	let bottom = Number.NEGATIVE_INFINITY;
+	let seen = 0;
+	const stack: Element[] = [...host.children].reverse();
+	while (stack.length > 0 && seen < MAX_CONTENT_ELEMENTS) {
+		const el = stack.pop()!;
+		seen++;
+		if (el === skip) continue;
+		const r = el.getBoundingClientRect();
+		if (!(r.width > 0) || !(r.height > 0)) {
+			stack.push(...[...el.children].reverse());
+			continue;
+		}
+		if (r.width >= h.width * 0.98 && r.height >= h.height * 0.98) {
+			stack.push(...[...el.children].reverse());
+			continue;
+		}
+		left = Math.min(left, r.left);
+		top = Math.min(top, r.top);
+		right = Math.max(right, r.right);
+		bottom = Math.max(bottom, r.bottom);
+	}
+	if (!(right > left) || !(bottom > top)) return null;
+	const px = (n: number) => Math.round(n * 2) / 2;
+	return {
+		left: px((left - h.left) / scale),
+		top: px((top - h.top) / scale),
+		width: px((right - left) / scale),
+		height: px((bottom - top) / scale),
+	};
+}
+
+const sameBox = (a: ContentBox | null, b: ContentBox | null) =>
+	a === b ||
+	(!!a && !!b && a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height);
+
+/**
+ * The striped "font / image not available" banners of a template (preview only), anchored inside the top-left
+ * corner of what the template drew (`templateContentBox`, measured after each render, so they follow an animated
+ * card) and sized to it; at the canvas corner when there is no layout or no card.
+ */
 function FontMarkers({ missing, height }: { missing: readonly MissingTemplateAsset[]; height: number }) {
 	const fonts = missing.filter((a) => a.kind !== 'emoji');
+	const ref = useRef<HTMLDivElement>(null);
+	const [box, setBox] = useState<ContentBox | null>(null);
+	useLayoutEffect(() => {
+		const el = ref.current;
+		const next = el?.parentElement ? templateContentBox(el.parentElement, el) : null;
+		setBox((prev) => (sameBox(prev, next) ? prev : next));
+	});
 	if (fonts.length === 0) return null;
-	const size = Math.max(12, Math.round(height / 40));
+	const canvasSize = Math.max(12, Math.round(height / 40));
+	const size = box ? Math.max(10, Math.min(Math.round(height / 40), Math.round(box.width / 40))) : canvasSize;
 	return (
 		<div
+			ref={ref}
+			data-missing-asset-markers=""
+			data-anchor={box ? 'content' : 'canvas'}
 			style={{
 				position: 'absolute',
-				left: size / 2,
-				top: size / 2,
+				left: (box?.left ?? 0) + size / 2,
+				top: (box?.top ?? 0) + size / 2,
+				...(box ? { maxWidth: Math.max(size * 4, box.width - size) } : {}),
 				display: 'flex',
 				flexDirection: 'column',
 				alignItems: 'flex-start',
@@ -520,7 +594,8 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	const frame = useCurrentFrame();
 	const { fps, width, height, durationInFrames } = useVideoConfig();
 	const def = mgRegistry.getDefinition(props.templateId, props.version);
-	const canvas = { width, height };
+	const framing = mgPreviewFraming(def?.ui?.preview, { width, height });
+	const canvas = framing?.canvas ?? { width, height };
 	const params = useMemo(
 		() => (def ? resolveTemplateParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
 		[def, props.params],
@@ -599,10 +674,43 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	}
 	return (
 		<AbsoluteFill
-			style={{ background: props.background ?? 'transparent' }}
+			style={{ background: props.background ?? 'transparent', overflow: 'hidden' }}
 			data-mg-preview-template={props.templateId}
 		>
-			{content}
+			{framing ? (
+				<div
+					data-mg-preview-frame={`${canvas.width}x${canvas.height}`}
+					style={{
+						position: 'absolute',
+						left: (width - canvas.width) / 2,
+						top: (height - canvas.height) / 2,
+						width: canvas.width,
+						height: canvas.height,
+						transform: `scale(${framing.scale})`,
+						transformOrigin: '50% 50%',
+					}}
+				>
+					{content}
+				</div>
+			) : (
+				content
+			)}
 		</AbsoluteFill>
 	);
+}
+
+/**
+ * The framing of a template's gallery preview (`ui.preview`): drawn on `canvas` (e.g. the 1080×1920 a small card is
+ * designed for), scaled to cover the preview, centred. Null without the hint (the template is drawn on the preview's
+ * own canvas) or for an unusable one. Previews only: clips and exports never read it.
+ */
+export function mgPreviewFraming(
+	hint: { canvas?: { width?: unknown; height?: unknown } } | undefined,
+	preview: { width: number; height: number },
+): { canvas: { width: number; height: number }; scale: number } | null {
+	const c = hint?.canvas;
+	const ok = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 8192;
+	if (!c || !ok(c.width) || !ok(c.height) || !(preview.width > 0) || !(preview.height > 0)) return null;
+	const canvas = { width: Math.round(c.width), height: Math.round(c.height) };
+	return { canvas, scale: Math.max(preview.width / canvas.width, preview.height / canvas.height) };
 }

@@ -3,7 +3,11 @@
 // does) and serves a catalogue with a social-comment-shaped test template (re-roll and import hints, presets, fill
 // hook) — @jasper/mg-templates is not a dependency of this app, so the real social-comment template is covered by
 // packages/mg-templates/test/social-bulk.test.ts.
-import type { MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
+import {
+	type MgTemplateCatalogEntry,
+	type MgTemplatesResponse,
+	MgTemplatesResponseSchema,
+} from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -94,6 +98,30 @@ const LOWER: MgTemplateCatalogEntry = {
 	native: true,
 };
 
+/** A template with an age in one cell (`ui.import.age`, like social-comment's timeValue + timeUnit). */
+const agedParams = z.strictObject({
+	text: z.string().max(400).default('Hi'),
+	timeValue: z.number().int().min(0).max(9999).default(1),
+	timeUnit: z.enum(['minute', 'hour', 'day', 'week', 'month', 'year']).default('day'),
+});
+const AGED_UI: MgTemplateUi = {
+	params: { timeValue: { label: 'Posted' } },
+	import: { aliases: { Ago: 'timeValue' }, age: { value: 'timeValue', unit: 'timeUnit', columns: ['Time'] } },
+};
+const AGED: MgTemplateCatalogEntry = {
+	id: 'aged',
+	version: 1,
+	name: 'Aged',
+	category: 'Social comments',
+	paramsSchema: jsonSchema(agedParams),
+	defaults: agedParams.parse({}),
+	defaultDurationSeconds: 4,
+	canvases: ['1080x1920'],
+	native: false,
+	renderer: 'anime',
+	ui: JSON.parse(JSON.stringify(AGED_UI)),
+};
+
 const NAMES = ['Ana', 'Bo', 'Cy', 'Dee', 'Eli'];
 const commentFill: MgTemplateInfo['fill'] = (partial, seed) => {
 	if (partial.text === 'refuse') return { ok: false, error: 'this text cannot be filled' };
@@ -135,6 +163,7 @@ const registries = defaultRegistries(
 	createStaticMgRegistry([
 		infoOf(COMMENT, commentParams, { fill: commentFill, ui: COMMENT_UI, presets: COMMENT.presets }),
 		infoOf(LOWER, lowerParams),
+		infoOf(AGED, agedParams, { ui: AGED_UI }),
 	]),
 );
 
@@ -145,7 +174,7 @@ function fakeEngine() {
 	const txs: { label: string; commands: unknown[]; dryRun?: boolean }[] = [];
 	const client: Record<string, unknown> = {
 		mgTemplates: async (): Promise<MgTemplatesResponse> => ({
-			templates: [COMMENT, LOWER],
+			templates: [COMMENT, LOWER, AGED],
 			renderer: { status: 'unavailable', reason: 'not built' },
 		}),
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
@@ -303,6 +332,20 @@ describe('duplicate_motion_graphic', () => {
 		expect(new Set(b.items.map((i: Json) => i.seed)).size).toBe(3);
 	});
 
+	it('repeated calls on the same source continue the sequence after the last consecutive copy', async () => {
+		const engine = fakeEngine();
+		const src = addComment(engine);
+		const { call } = await connect(engine);
+		const a = ok(await call('duplicate_motion_graphic', { clipId: src, count: 2, seed: 4 }));
+		expect(a.items.map((i: Json) => [i.track, i.start])).toEqual([
+			['V2', 150],
+			['V2', 270],
+		]);
+		const b = ok(await call('duplicate_motion_graphic', { clipId: src, seed: 5 }));
+		expect(b.items.map((i: Json) => [i.track, i.start, i.end])).toEqual([['V2', 390, 510]]);
+		expect(b.items[0].sourceClipId).toBe(src);
+	});
+
 	it('takes at, track and params (which win and are not re-randomized); never overwrites', async () => {
 		const engine = fakeEngine();
 		const src = addComment(engine);
@@ -347,6 +390,42 @@ describe('duplicate_motion_graphic', () => {
 });
 
 describe('import_motion_graphics_csv', () => {
+	it('reads an age in one Time / Ago / Posted cell into the count and unit params (same planner as the editor)', async () => {
+		// the catalogue schema the engine client parses keeps the hint
+		const parsed = MgTemplatesResponseSchema.parse({
+			templates: [AGED],
+			renderer: { status: 'unavailable', reason: 'x' },
+		});
+		expect(parsed.templates[0]!.ui?.import?.age).toEqual({
+			value: 'timeValue',
+			unit: 'timeUnit',
+			columns: ['Time'],
+		});
+		const engine = fakeEngine();
+		const { call } = await connect(engine);
+		const body = ok(
+			await call('import_motion_graphics_csv', {
+				template: 'aged',
+				csv: 'text,Time\nA,3h\nB,2 weeks\nC,just now\nD,10 months ago',
+				seed: 1,
+			}),
+		);
+		expect(body.columns).toEqual([
+			{ column: 'text', param: 'text' },
+			{ column: 'Time', param: 'timeValue' },
+		]);
+		expect(body.rows.map((r: Json) => [r.params.timeValue, r.params.timeUnit])).toEqual([
+			[3, 'hour'],
+			[2, 'week'],
+			[0, 'day'],
+			[10, 'month'],
+		]);
+		const bad = err(
+			await call('import_motion_graphics_csv', { template: 'aged', csv: 'text,Posted\nA,soon', seed: 1 }),
+		);
+		expect(JSON.stringify(bad)).toContain('Posted: \\"soon\\" is not an age');
+	});
+
 	it('imports one graphic per row, sequentially from startAt, with aliases, labels and the preset', async () => {
 		const engine = fakeEngine();
 		const { call } = await connect(engine);

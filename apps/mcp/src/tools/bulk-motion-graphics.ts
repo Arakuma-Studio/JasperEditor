@@ -1,7 +1,8 @@
 // "Add another" and spreadsheet bulk import for agents (social-comments design §7.9–7.10,
 // docs/wp-notes/social-comments.md "Add another & bulk import"):
 // - duplicate_motion_graphic: `clip.duplicateMotionGraphic` (the command the editor's Add Another runs), `count`
-//   copies chained one after another through `$ref`s in ONE transaction;
+//   copies chained one after another through `$ref`s in ONE transaction (each after the last consecutive copy of the
+//   chain, so repeated calls on the same source continue the sequence);
 // - import_motion_graphics_csv: the @jasper/project table parser and import planner (the ones the editor's bulk
 //   import dialog uses) → one `clip.addMotionGraphic` per row in ONE transaction.
 import { randomInt } from 'node:crypto';
@@ -158,7 +159,7 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 		'duplicate_motion_graphic',
 		{
 			title: 'Add another motion graphic',
-			description: `"Add another" (clip.duplicateMotionGraphic, the editor's Add Another): copies a motion-graphic clip right after itself (start = the source's end unless at is given; same duration), with its transform, effects, keyframes, name and label, on the first free unlocked video track from the source's track (or track) up — it never overwrites. The params the template lists for re-randomizing (list_motion_templates: ui.addAnother.reroll; social-comment: the identity — displayName, handle, avatar — and the stats — time, likes, replies, reposts, views) get fresh values from the template's fill hook, deterministic for seed; every other param is copied (social-comment keeps variant, theme, emoji style, text, toggles and animation). params win over both (applied to every copy). count: N makes N copies one after another (each after the previous) — all in ONE transaction, one undo step. Returns per copy the clip id, track, start/end (frames and timecode), the resolved params and which were re-randomized.`,
+			description: `"Add another" (clip.duplicateMotionGraphic, the editor's Add Another): copies a motion-graphic clip after itself — after the last consecutive copy of its chain (from the source's end, past every graphic of the same template that starts exactly where the previous one ends, on its track or above), so calling it again on the same clip continues the sequence instead of stacking copies; at overrides the start; same duration — with its transform, effects, keyframes, name and label, on the first free unlocked video track from the source's track (or track) up — it never overwrites. The params the template lists for re-randomizing (list_motion_templates: ui.addAnother.reroll; social-comment: the identity — displayName, handle, avatar — and the stats — time, likes, replies, reposts, views) get fresh values from the template's fill hook, deterministic for seed; every other param is copied (social-comment keeps variant, theme, emoji style, text, toggles and animation). params win over both (applied to every copy). count: N makes N copies one after another (each after the previous; the same as N calls with count 1) — all in ONE transaction, one undo step. Returns per copy the clip id, track, start/end (frames and timecode), the resolved params and which were re-randomized.`,
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('The motion-graphic clip to copy (get_timeline lists clip ids)'),
@@ -172,7 +173,9 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 				seed: SeedArg.optional().describe(
 					'Seed of the re-randomized params: copy 0 uses it, copy i a value derived from it. Default: random, returned in the result',
 				),
-				at: timeArg('Start of the first copy (default: the end of the source clip)').optional(),
+				at: timeArg(
+					'Start of the first copy (default: the end of the source clip, or of the last consecutive copy after it)',
+				).optional(),
 				track: TrackRefSchema.optional().describe(
 					'Lowest video track tried, e.g. "V3" (default: the track of the clip each copy follows)',
 				),
@@ -249,7 +252,7 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 		'import_motion_graphics_csv',
 		{
 			title: 'Import motion graphics from CSV',
-			description: `Bulk import (the editor's spreadsheet import): one motion-graphic clip per row of CSV text or rows copied from a spreadsheet (TSV; semicolon CSV too), at most ${TABLE_MAX_ROWS} rows and ${TABLE_MAX_CHARS / 1024 / 1024} MB. The first row names the columns: param names or Properties labels (any case, spaces / "_" / "-" ignored), the template's aliases (social-comment: User → the name the variant shows, Username → the handle, Comment → text, Verified yes/true/1; "@" before a handle is dropped), plus optional start and duration (3, 1.5s, 0:03, 90f or timecode). Other columns are ignored and reported (social-comment: Image URL — remote images are not imported). Cells are read by the param type: "1,234", "1.2K", "3.5M"; yes/no; enum values ignoring case and punctuation; JSON for object params. An empty cell is not given: the preset, then the template's fill hook (deterministic for seed), then the defaults decide. Rows go one after another from startAt (default 0), each at the previous row's end (default length: the template's), on the first free video track from track (default V2) up — never overwriting — all in ONE transaction (one undo step). Rows with errors — cells that do not fit their param, and rows the template refuses (its params checks and fill, or a media param such as avatar {mediaId} naming a medium the project does not have) — refuse the whole call (details.rows lists every bad row's errors) unless skipInvalid: true skips them (listed in skipped). Returns the column mapping and per row the clip id, track, start/end, the resolved params and which were filled.`,
+			description: `Bulk import (the editor's spreadsheet import): one motion-graphic clip per row of CSV text or rows copied from a spreadsheet (TSV; semicolon CSV too), at most ${TABLE_MAX_ROWS} rows and ${TABLE_MAX_CHARS / 1024 / 1024} MB. The first row names the columns: param names or Properties labels (any case, spaces / "_" / "-" ignored), the template's aliases (social-comment: User → the name the variant shows, Username → the handle, Comment → text, Verified yes/true/1; "@" before a handle is dropped; an age in one Time / Age / Ago / Posted cell — "3h", "2 weeks", "10mo", "1y", "5 min", "3 hours ago", "just now" — sets timeValue and timeUnit, a bare number there is the count alone), plus optional start and duration (3, 1.5s, 0:03, 90f or timecode). Other columns are ignored and reported (social-comment: Image URL — remote images are not imported). Cells are read by the param type: "1,234", "1.2K", "3.5M"; yes/no; enum values ignoring case and punctuation; JSON for object params. An empty cell is not given: the preset, then the template's fill hook (deterministic for seed), then the defaults decide. Rows go one after another from startAt (default 0), each at the previous row's end (default length: the template's), on the first free video track from track (default V2) up — never overwriting — all in ONE transaction (one undo step). Rows with errors — cells that do not fit their param, and rows the template refuses (its params checks and fill, or a media param such as avatar {mediaId} naming a medium the project does not have) — refuse the whole call (details.rows lists every bad row's errors) unless skipInvalid: true skips them (listed in skipped). Returns the column mapping and per row the clip id, track, start/end, the resolved params and which were filled.`,
 			input: {
 				projectId: ProjectIdArg,
 				csv: z

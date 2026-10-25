@@ -56,7 +56,8 @@ const REMOTE_IMAGES =
 
 /**
  * `ui.import` of `social-comment`: tokcomment's `User` / `Username` / `Comment` / `Verified`, store-review exports'
- * `Stars` / `Review title` / `Review date` / `Review`, and other common spreadsheet headers. Param names and Properties labels (`Display Name`, `Comment`, `Style`, …) match without
+ * `Stars` / `Review title` / `Review date` / `Review`, other common spreadsheet headers, and an age column (`Time`,
+ * `Age`, `Ago`, `Posted`: "3h", "2 weeks", "just now"). Param names and Properties labels (`Display Name`, `Comment`, `Style`, …) match without
  * aliases; `Verified` is the param itself (yes / true / 1 / ✓ read as true).
  */
 export const SOCIAL_IMPORT_HINTS: MgTemplateImportUi = {
@@ -107,4 +108,7 @@ export const SOCIAL_IMPORT_HINTS: MgTemplateImportUi = {
 		Picture: REMOTE_IMAGES,
 	},
 	trimPrefix: { handle: '@' },
+	// "3h", "2 weeks", "10mo", "1y", "5 min", "3 hours ago", "just now" in one cell → timeValue + timeUnit; the
+	// `Posted` label and the `Ago` alias read ages too, and a bare number there stays the count (with `Time unit`).
+	age: { value: 'timeValue', unit: 'timeUnit', columns: ['Time', 'Age', 'Time ago', 'Posted ago', 'When'] },
 };

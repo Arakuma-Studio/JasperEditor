@@ -75,6 +75,13 @@ export type MgTemplateUi = {
 	addAnother?: { reroll: readonly string[] };
 	/** Spreadsheet / CSV bulk import (`planMgImport`): extra column names, ignored columns, value prefixes. */
 	import?: MgTemplateImportUi;
+	/**
+	 * Gallery poster and hover preview framing (`MgTemplatePreview`): the template is drawn on `canvas` (e.g. the
+	 * 1080×1920 a small card is designed for) and that canvas covers the thumbnail, centred, instead of the
+	 * template being drawn on the thumbnail's own 16:9 canvas where a small card is tiny. Previews only: clips and
+	 * exports are unchanged.
+	 */
+	preview?: { canvas: { width: number; height: number } };
 };
 
 /**
@@ -94,6 +101,12 @@ export type MgTemplateImportUi = {
 	ignored?: Readonly<Record<string, string>>;
 	/** Prefixes removed from a param's cells before validation (`{handle: '@'}`: "@luna" → "luna"). */
 	trimPrefix?: Readonly<Record<string, string>>;
+	/**
+	 * An age in one cell ("3h", "2 weeks", "just now"; `parseAgeCell`) → the count param `value` and the unit param
+	 * `unit` (an enum offering some of `AGE_UNITS`: 'minute', 'hour'…). Read from the columns of `value` (its name,
+	 * label and aliases) and from `columns` (more names, e.g. "Time", "Age"); a bare number stays the count alone.
+	 */
+	age?: { value: string; unit: string; columns?: readonly string[] };
 };
 
 export type MgTemplateInfo = {
@@ -132,6 +145,11 @@ export type MgTemplateInfo = {
 	 * `params` = `partial` plus the filled values (the defaults are merged after); `filled` = the filled names.
 	 */
 	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
+	/**
+	 * Optional content name of a clip (`mgClipName`): what tells clips of this template apart in the timeline, the
+	 * asset chip and export messages ("X post · Luna Park"); absent or empty = the template name. Pure.
+	 */
+	clipName?(params: Readonly<Record<string, unknown>>): string | undefined;
 };
 
 /** Result of a template fill hook (MgTemplateInfo.fill). */

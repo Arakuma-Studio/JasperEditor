@@ -155,6 +155,35 @@ describe('Add another', () => {
 		await s.close();
 	});
 
+	it('Add Another twice from the same clip menu builds a sequence (no stacked copies); one undo step each', async () => {
+		const s = await openSession();
+		const src = addComment(s);
+		const ext = clipMenuExtensions.list().find((e) => e.id === 'mg-add-another')!;
+		const clip = s.getCommitted().sequences[s.getState().activeSequenceId!]!.clips[src]!;
+		const runOnSource = () => {
+			const items = ext.items({ session: s, clip, selection: [src] });
+			act(() => (items[0] as { run(): void }).run());
+		};
+		runOnSource();
+		const afterFirst = s.getCommitted();
+		runOnSource();
+		const spans = mgClips(s).map((c) => [c.start, c.start + c.duration, trackLabel(s, c)]);
+		expect(spans).toEqual([
+			[30, 180, 'V2'],
+			[180, 330, 'V2'],
+			[330, 480, 'V2'],
+		]);
+		expect(
+			s
+				.getState()
+				.history.entries.map((e) => e.label)
+				.slice(-2),
+		).toEqual(['Add Another', 'Add Another']);
+		s.undo();
+		expect(s.getCommitted()).toBe(afterFirst);
+		await s.close();
+	});
+
 	it('Properties ▸ Template has Add Another and Import Spreadsheet…', async () => {
 		const s = await openSession();
 		const src = addComment(s);
@@ -279,6 +308,26 @@ describe('bulk import dialog', () => {
 		await waitFor(() => expect(mgClips(s)).toHaveLength(2));
 		// the filled handles shown in the preview are the ones stored
 		for (const [i, c] of mgClips(s).entries()) expect(shown[i]).toContain(String(c.params.handle));
+		await s.close();
+	});
+
+	it('reads an age in one Time cell ("3h", "2 weeks", "1y") into Posted + Unit (App QA N4)', async () => {
+		const s = await openImport();
+		fireEvent.change(screen.getByTestId('mg-bulk-text'), {
+			target: { value: 'Comment\tTime\nOne\t3h\nTwo\t2 weeks\nThree\t1y\nFour\tsoon' },
+		});
+		const columns = screen.getByTestId('mg-bulk-columns');
+		expect(within(columns).getByText(/^Time/).getAttribute('data-column-kind')).toBe('param');
+		const rows = within(screen.getByTestId('mg-bulk-preview')).getAllByRole('row').slice(1);
+		expect(rows.map((r) => r.getAttribute('data-included'))).toEqual(['true', 'true', 'true', 'false']);
+		expect(within(rows[3]!).getByTestId('mg-bulk-row-error').textContent).toContain('"soon" is not an age');
+		fireEvent.click(screen.getByTestId('mg-bulk-insert'));
+		await waitFor(() => expect(mgClips(s)).toHaveLength(3));
+		expect(mgClips(s).map((c) => [c.params.timeValue, c.params.timeUnit])).toEqual([
+			[3, 'hour'],
+			[2, 'week'],
+			[1, 'year'],
+		]);
 		await s.close();
 	});
 
