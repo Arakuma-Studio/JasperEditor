@@ -1,11 +1,15 @@
-// Curated bundled font catalog (S04:FT-001…003 subset, ARCHITECTURE §9.2): ten OFL/Apache families from
+// Curated bundled font catalog (S04:FT-001…003 subset, ARCHITECTURE §9.2): OFL/Apache families from
 // @fontsource packages, served at `/fonts/<id>/<file>.woff2` so the Player, headless Remotion renders and
 // stills load the same files. Unknown families fall back to the default family (FONT_FALLBACK).
+// social-comment §7.8: TikTok Sans (OFL) is bundled for the TikTok templates; the remote platform fonts of the
+// remote-asset manifest are listed with `source: 'remote'` (served at `/fonts/remote/…`) for the templates that declare
+// them — text clips never resolve them, and a template face never falls back to another family.
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FontCatalog, FontFamily } from '@jasper/api';
+import type { RemoteAssetService } from '../remote-assets/service.ts';
 
 const CATALOG_IDS = [
 	'inter',
@@ -18,6 +22,7 @@ const CATALOG_IDS = [
 	'oswald',
 	'playfair-display',
 	'jetbrains-mono',
+	'tiktok-sans',
 ] as const;
 
 /**
@@ -68,7 +73,11 @@ function packageDir(
 export class FontCatalogService {
 	private readonly families: ResolvedFamily[] = [];
 
-	constructor(env: Record<string, string | undefined> = process.env) {
+	constructor(
+		env: Record<string, string | undefined> = process.env,
+		/** social-comment §7.8: remote platform fonts and emoji packs (absent: bundled fonts only). */
+		readonly remote: RemoteAssetService | null = null,
+	) {
 		for (const id of CATALOG_IDS) {
 			const dir = packageDir(id, env);
 			if (!dir) continue;
@@ -149,7 +158,31 @@ export class FontCatalogService {
 	}
 
 	catalog(): FontCatalog {
-		return { fonts: this.families.map(({ id: _id, dir: _dir, ...f }) => f) };
+		const bundled = this.families.map(({ id: _id, dir: _dir, ...f }) => f);
+		if (!this.remote) return { fonts: bundled };
+		return { fonts: [...bundled, ...this.remote.catalogFamilies()], emojiPacks: this.remote.emojiPacks() };
+	}
+
+	/** The bundled file of exactly this face (`latin` subset), or null. */
+	private bundledFace(face: { family: string; weight: number; style: 'normal' | 'italic' }): string | null {
+		const fam = this.byFamily(face.family);
+		if (!fam || fam.family.toLowerCase() !== face.family.trim().toLowerCase()) return null;
+		const files = fam.files.filter((f) => f.weight === face.weight && f.style === face.style);
+		return (files.find((f) => f.subset === 'latin') ?? files[0])?.url ?? null;
+	}
+
+	/** Whether exactly this face is bundled (no download needed). */
+	isBundledFace(face: { family: string; weight: number; style: 'normal' | 'italic' }): boolean {
+		return this.bundledFace(face) !== null;
+	}
+
+	/**
+	 * social-comment §7.8: engine-relative URL of a template face — the bundled catalogue first, then the remote
+	 * manifest — or null. Exact family, weight and style: never a fallback (AGENTS §4). Remote files may still need
+	 * downloading (`remote.prefetch`).
+	 */
+	templateFaceUrl(face: { family: string; weight: number; style: 'normal' | 'italic' }): string | null {
+		return this.bundledFace(face) ?? this.remote?.fontUrl(face) ?? null;
 	}
 
 	byFamily(family: string): ResolvedFamily | null {
@@ -183,8 +216,12 @@ export class FontCatalogService {
 		return { url: best.url, family: fam.family, fallback };
 	}
 
-	/** Absolute path of `/fonts/<id>/<file>` or null (validated: catalog id + plain file name). */
+	/**
+	 * Absolute path of `/fonts/<id>/<file>` or null (validated: catalog id + plain file name). `remote/<file>`: the
+	 * cached, verified remote font (null when not downloaded yet).
+	 */
 	filePath(rest: string): string | null {
+		if (rest.startsWith('remote/')) return this.remote?.cachedFontPath(rest.slice('remote/'.length)) ?? null;
 		const m = /^([a-z0-9-]+)\/([a-z0-9-]+\.(woff2|woff))$/.exec(rest);
 		if (!m) return null;
 		const fam = this.families.find((f) => f.id === m[1]);

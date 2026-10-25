@@ -97,6 +97,7 @@ const FONT_IDS = [
 	'oswald',
 	'playfair-display',
 	'jetbrains-mono',
+	'tiktok-sans',
 ];
 const fontsOut = join(root, 'dist', 'fonts');
 for (const id of FONT_IDS) {

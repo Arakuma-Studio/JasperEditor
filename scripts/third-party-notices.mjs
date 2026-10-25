@@ -81,6 +81,7 @@ const SHIPPED_BUILD_OUTPUT = [
 	{ name: '@fontsource/oswald', from: 'apps/engine', ships: 'font files served at /fonts' },
 	{ name: '@fontsource/playfair-display', from: 'apps/engine', ships: 'font files served at /fonts' },
 	{ name: '@fontsource/jetbrains-mono', from: 'apps/engine', ships: 'font files served at /fonts' },
+	{ name: '@fontsource/tiktok-sans', from: 'apps/engine', ships: 'font files served at /fonts' },
 ];
 const LICENSE_FILE = /^(?:licen[cs]e|copying|notice)(?:[-_.][\w.-]*)?$/i;
 

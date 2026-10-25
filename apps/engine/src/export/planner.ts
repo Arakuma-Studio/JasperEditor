@@ -50,6 +50,13 @@ import {
 	missingTemplatesMessage,
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
+// social-comment §7.8: template fonts / emoji (bundled or remote), downloaded before rendering or blocking by name
+import {
+	checkTemplateAssets,
+	engineTemplateAssets,
+	TEMPLATE_ASSETS_UNAVAILABLE,
+	templateAssetsMessage,
+} from '../remote-assets/plan.ts';
 import {
 	type EncoderRequest,
 	fitOutputFormat,
@@ -324,6 +331,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			if (r?.fallback) fontFallbacks.add(font.id);
 			return r?.url ?? null;
 		},
+		templateAssets: engineTemplateAssets(deps.fonts),
 	});
 
 	// Frame buffers are sized by these numbers (`width × height × 4` per layer in the
@@ -351,6 +359,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			missingTemplatesMessage(missing),
 			missingTemplatesDetail(missing),
 		);
+	// Template fonts and emoji block every path too: the preview's marker card must never be exported, and a host
+	// font never stands in for a template's (downloads happen here, before anything renders).
+	{
+		const clips = allVisualClips(snapshot);
+		const issues = await checkTemplateAssets(snapshot, clips, deps.fonts);
+		if (issues.length > 0)
+			throw new PlanError(TEMPLATE_ASSETS_UNAVAILABLE, 409, templateAssetsMessage(issues, clips), {
+				assets: issues,
+			});
+	}
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
 	{
