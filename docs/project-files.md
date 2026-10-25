@@ -118,6 +118,16 @@ fields of later phases are added to v7 until `feat/sound-design` merges to `main
 | `Sequence.master.loudness.analysis.delivery` (`targetLufs`, `truePeakDbtp`, `gainDb`, `limiterCeilingDbtp`, `passes`, `ceilingLimited?`, `deliveredLufs?`) | sound design (fix "preview loudness parity, codec-aware Sound Check, delivery speed"; still v7) | any value accepted in the document (`z.custom`), read with `readLoudnessDelivery` (`LoudnessDeliverySchema`); `mixer.setLoudness` / `soundDesign.applyDelivery` validate it strictly (`E_SCHEMA`). Absent (analyses stored before) or solved for another target / ceiling than the Mix's: the preview plays the one-pass gain `target − integrated` at the target ceiling, as before. Older builds keep it (the analysis is a loose object). Not part of `mixFingerprint` | INV-MIX reports an unreadable one; `drop-loudness-delivery` removes it (the analysis stays). Idempotent |
 | `Sequence.soundDesign.lastCheck.exportAudio` (`codec` aac / opus / pcm, `bitrateKbps?`, `sampleRate?`) | sound design (same fix; still v7) | inside the `z.custom<SoundDesign>` value, read with `readSoundCheckAudio`; absent = checked for the PCM master (summaries stored before). Part of `inputsHash` only when present (older hashes stay valid); `soundCheckStatus(…, {checkFor})` adds the stale reason `codec` | as the other summary fields (`readSoundDesign`) |
 
+### Fields added in v8
+
+Optional fields of the Premiere port, read leniently with read-time defaults (MIG-005); v7 builds open v8 files
+read-only (the v8 bump above), so they never drop them.
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `Transition.cutPosition` | Premiere port (audio crossfades: Premiere's Custom Start alignment, wp-notes/audio-crossfades.md) | any value accepted (`z.custom<number>()`); absent = the `alignment`'s position. A number in (0, 1): the fraction of a two-sided span before its cut (frames before the cut = round(cutPosition × duration), `cutOffsetOf`), so a shortened transition keeps its proportions. INV-010 reports a value that is not a number in (0, 1) or sits on a one-sided fade. Commands take `cutOffset` frames (`transition.add` / `transition.update`; an `alignment` drops it) | `drop-cut-position` removes it (the transition keeps its `alignment`). Idempotent |
+| `Transition.params` of `jasper.custom-fade` (`fadeShape`, `fadeValue`, `symmetry`, `outFadeShape`, `outFadeValue`) | Premiere port (Custom Fade) | ordinary transition params (`AnimParamSchema`); absent = Cosine @ 19, symmetrical (`audioTransitionCurves` reads unknown shapes as Cosine and clamps values to −100…100). INV-010 reports an unknown option, a non-finite or out-of-range value, or keyframes | `reset-transition-param` deletes the unreadable param (its default applies). Idempotent |
+
 ## Saving
 
 - **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp
