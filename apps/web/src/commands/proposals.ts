@@ -15,8 +15,8 @@ import {
 	cycleAlternative,
 	decide,
 	discardReview,
-	isRerollable,
 	exitReview,
+	isRerollable,
 	openReview,
 	playReviewItem,
 	playReviewRange,
@@ -283,11 +283,14 @@ export const proposalCommands: UiCommand[] = [
 		when: (ctx) => {
 			if (!writableReview(ctx)) return false;
 			const id = (ctx.session && currentItemId(ctx.session)) ?? null;
-			return itemsOf(ctx).some((it) => it.id === id && isRerollable(it) && it.state !== 'accepted' && it.state !== 'applied');
+			return itemsOf(ctx).some(
+				(it) => it.id === id && isRerollable(it) && it.state !== 'accepted' && it.state !== 'applied',
+			);
 		},
 		disabledReason: (ctx) => (!reviewing(ctx) ? notReviewing() : t('The current item cannot be rerolled')),
 		run: async (ctx, args) => {
-			const id = (args as z.infer<typeof ItemArgs>)?.itemId ?? (ctx.session ? currentItemId(ctx.session) : null);
+			const id =
+				(args as z.infer<typeof ItemArgs>)?.itemId ?? (ctx.session ? currentItemId(ctx.session) : null);
 			if (ctx.session && id) await rerollReviewItem(ctx.session, id);
 		},
 	},

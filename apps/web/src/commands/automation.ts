@@ -29,7 +29,9 @@ function passCommand(pass: AutomationPassId): Omit<UiCommand, 'id' | 'label'> {
 			return !!e && !e.session.getState().readOnly;
 		},
 		disabledReason: (ctx: CommandCtx) =>
-			sequenceContext(ctx)?.session.getState().readOnly ? t('The project is read-only') : t('Open a sequence first'),
+			sequenceContext(ctx)?.session.getState().readOnly
+				? t('The project is read-only')
+				: t('Open a sequence first'),
 		run: (ctx, args) => {
 			const e = sequenceContext(ctx);
 			if (!e) return;

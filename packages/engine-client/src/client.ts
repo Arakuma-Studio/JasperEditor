@@ -602,7 +602,12 @@ export class EngineClient {
 	 * An editing-automation pass (spec 15 EA-020…EA-022): `dryRun` → the `AutomationPassResult` at once; `propose`
 	 * (default) → an `edit-automation` job (202) whose result is the `AutomationPassResult` naming the proposal.
 	 */
-	automationPass(projectId: string, pass: AutomationPassId, req: AutomationPassRequest, signal?: AbortSignal) {
+	automationPass(
+		projectId: string,
+		pass: AutomationPassId,
+		req: AutomationPassRequest,
+		signal?: AbortSignal,
+	) {
 		return this.call('automationPass', {
 			params: { projectId, pass },
 			body: req,

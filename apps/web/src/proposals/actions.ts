@@ -479,7 +479,9 @@ export async function rerollReviewItem(
 	const r = await c.refreshItems([itemId], { reroll: true });
 	if (!r.ok) {
 		const message =
-			r.code === 'E_NOT_REFRESHABLE' ? t('Its producer cannot re-plan items: ask for a new proposal instead') : r.message;
+			r.code === 'E_NOT_REFRESHABLE'
+				? t('Its producer cannot re-plan items: ask for a new proposal instead')
+				: r.message;
 		toast({ kind: 'warning', title: t('The item could not be rerolled'), detail: message });
 		announce(message);
 		return { ok: false, message };

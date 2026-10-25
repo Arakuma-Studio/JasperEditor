@@ -61,7 +61,10 @@ export type KenBurnsPlan = {
 	warnings: { code: string; message: string }[];
 };
 
-export function resolveKenBurnsParams(raw: unknown, geo: Pick<FrameGeometry, 'fps' | 'vertical'>): ResolvedKenBurnsParams {
+export function resolveKenBurnsParams(
+	raw: unknown,
+	geo: Pick<FrameGeometry, 'fps' | 'vertical'>,
+): ResolvedKenBurnsParams {
 	const parsed = KenBurnsParamsSchema.safeParse(raw ?? {});
 	if (!parsed.success)
 		throw new AutomationInputError(
@@ -202,6 +205,10 @@ export function replanKenBurns(
 					? `its clip is no longer a candidate: ${why.get(t.clipId)}`
 					: 'its clip is gone from the A-roll track',
 			};
-		return { itemId: t.itemId, ok: true as const, move: { ...placeOne(seq, c, params, t.seed), id: t.itemId } };
+		return {
+			itemId: t.itemId,
+			ok: true as const,
+			move: { ...placeOne(seq, c, params, t.seed), id: t.itemId },
+		};
 	});
 }

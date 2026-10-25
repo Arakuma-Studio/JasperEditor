@@ -33,7 +33,9 @@ export type AutomationSummary = {
 	warnings: { code: string; message: string }[];
 };
 
-function skips(list: readonly { frame: number; timecode: string; code: string; reason: string; clipId?: string }[]) {
+function skips(
+	list: readonly { frame: number; timecode: string; code: string; reason: string; clipId?: string }[],
+) {
 	const byCode: Record<string, number> = {};
 	for (const s of list) byCode[s.code] = (byCode[s.code] ?? 0) + 1;
 	return { count: list.length, byCode, first: list.slice(0, SUMMARY_SKIP_LIST) };
@@ -90,7 +92,8 @@ export function kenBurnsSummary(plan: KenBurnsPlan, cost: AutomationCost): Autom
 
 /** "214 cut kits on 225 cuts (95 %); 11 left out; export: Remotion path" — the proposal's summary line (English). */
 export function summaryLine(s: AutomationSummary): string {
-	const noun = s.pass === 'decorate-cuts' ? 'cut kits' : s.pass === 'punch-ins' ? 'punch-ins' : 'Ken Burns moves';
+	const noun =
+		s.pass === 'decorate-cuts' ? 'cut kits' : s.pass === 'punch-ins' ? 'punch-ins' : 'Ken Burns moves';
 	const of = s.pass === 'decorate-cuts' ? 'cuts' : 'candidate clips';
 	const pct = Math.round(s.coverage * 100);
 	const cost =

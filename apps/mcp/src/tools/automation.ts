@@ -61,10 +61,31 @@ const SfxArg = z
 			.max(4)
 			.optional()
 			.describe('Library sources allowed (default all; synth only when nothing else fits)'),
-		packId: z.string().min(1).max(64).optional().describe('Only sounds of this installed pack (list_sound_packs)'),
-		rootId: z.string().min(1).max(64).optional().describe('Only sounds of this sound folder (sound_library_status)'),
-		gainDb: z.number().min(-60).max(12).optional().describe('Clip gain in dB (default: sound design’s support level)'),
-		variety: z.number().int().min(1).max(16).optional().describe('Sounds the rotation cycles through (default 12)'),
+		packId: z
+			.string()
+			.min(1)
+			.max(64)
+			.optional()
+			.describe('Only sounds of this installed pack (list_sound_packs)'),
+		rootId: z
+			.string()
+			.min(1)
+			.max(64)
+			.optional()
+			.describe('Only sounds of this sound folder (sound_library_status)'),
+		gainDb: z
+			.number()
+			.min(-60)
+			.max(12)
+			.optional()
+			.describe('Clip gain in dB (default: sound design’s support level)'),
+		variety: z
+			.number()
+			.int()
+			.min(1)
+			.max(16)
+			.optional()
+			.describe('Sounds the rotation cycles through (default 12)'),
 	})
 	.optional();
 const TimeoutArg = z
@@ -101,7 +122,9 @@ function compact(r: AutomationPassResult) {
 		skipped: {
 			count: s.skipped.count,
 			byCode: s.skipped.byCode,
-			first: s.skipped.first.slice(0, 25).map((x) => ({ timecode: x.timecode, code: x.code, reason: x.reason })),
+			first: s.skipped.first
+				.slice(0, 25)
+				.map((x) => ({ timecode: x.timecode, code: x.code, reason: x.reason })),
 		},
 		export: {
 			cost: s.cost.class,
@@ -134,7 +157,10 @@ async function runPass(
 	if (a.range) {
 		const range = { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) };
 		if (range.end <= range.start)
-			throw new ToolError('E_INVALID_PARAM', `range.end (${range.end}) must be after range.start (${range.start})`);
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				`range.end (${range.end}) must be after range.start (${range.start})`,
+			);
 		params.range = range;
 	}
 	const body = { sequenceId: seq.id, mode: a.mode ?? 'propose', params };
@@ -202,13 +228,17 @@ export function registerAutomationTools(ctx: ToolContext): void {
 				families: z
 					.record(z.string(), z.number().min(0).max(1e6))
 					.optional()
-					.describe('Family weights over the pack’s (jolt, whip, zoom-blur, zoom-through, spin; 0 turns one off)'),
+					.describe(
+						'Family weights over the pack’s (jolt, whip, zoom-blur, zoom-through, spin; 0 turns one off)',
+					),
 				repeatPenalty: z
 					.number()
 					.min(0)
 					.max(1)
 					.optional()
-					.describe('Weight factor of the previous kit’s family (pack default 0.54: P(same) = 0.23; 1 = independent)'),
+					.describe(
+						'Weight factor of the previous kit’s family (pack default 0.54: P(same) = 0.23; 1 = independent)',
+					),
 				track: TrackArg('Only cuts on this video track (the A-roll, e.g. "V1"); default every picture cut'),
 				range: RangeArg,
 				includeInsertEdges: z
@@ -233,7 +263,9 @@ export function registerAutomationTools(ctx: ToolContext): void {
 					.boolean()
 					.optional()
 					.describe('Skip cuts an adjustment clip already covers (default true)'),
-				fxTrack: TrackArg('Video track for the kits (default: a free "FX" track above the picture, else a new one)'),
+				fxTrack: TrackArg(
+					'Video track for the kits (default: a free "FX" track above the picture, else a new one)',
+				),
 				sfx: SfxArg,
 				seed: SeedArg,
 				timeoutSeconds: TimeoutArg,
@@ -276,10 +308,21 @@ export function registerAutomationTools(ctx: ToolContext): void {
 				mode: ModeArg,
 				track: TrackArg('The A-roll video track (default: the track carrying most of the picture)'),
 				range: RangeArg,
-				minClipSeconds: z.number().min(0).max(3600).optional().describe('Shortest clip that gets one (default 1.5)'),
+				minClipSeconds: z
+					.number()
+					.min(0)
+					.max(3600)
+					.optional()
+					.describe('Shortest clip that gets one (default 1.5)'),
 				density: z.number().min(0).max(1).optional().describe('Share of the candidate clips (default 0.7)'),
 				scale: z.number().min(101).max(1000).optional().describe('Final scale in % (default 180)'),
-				rampFrames: z.number().int().min(1).max(600).optional().describe('Frames of the linear ramp (default 7)'),
+				rampFrames: z
+					.number()
+					.int()
+					.min(1)
+					.max(600)
+					.optional()
+					.describe('Frames of the linear ramp (default 7)'),
 				start: z
 					.enum(['midpoint', 'word'])
 					.optional()
@@ -295,7 +338,9 @@ export function registerAutomationTools(ctx: ToolContext): void {
 				method: z
 					.enum(['motion', 'adjustment'])
 					.optional()
-					.describe('"motion" (default: Motion keys, native export) or "adjustment" (Transform adjustment clip)'),
+					.describe(
+						'"motion" (default: Motion keys, native export) or "adjustment" (Transform adjustment clip)',
+					),
 				sfx: SfxArg,
 				excludeClipIds: ExcludeArg,
 				seed: SeedArg,
@@ -341,7 +386,12 @@ export function registerAutomationTools(ctx: ToolContext): void {
 				share: z.number().min(0).max(1).optional().describe('Share of the candidate clips (default 0.15)'),
 				scale: z.number().min(101).max(400).optional().describe('End scale in % (default by aspect)'),
 				inOutRatio: z.number().min(0).max(100).optional().describe('Zoom-ins per zoom-out (default 2)'),
-				minClipSeconds: z.number().min(0).max(3600).optional().describe('Shortest clip that gets one (default 1)'),
+				minClipSeconds: z
+					.number()
+					.min(0)
+					.max(3600)
+					.optional()
+					.describe('Shortest clip that gets one (default 1)'),
 				excludeClipIds: ExcludeArg,
 				seed: SeedArg,
 				timeoutSeconds: TimeoutArg,

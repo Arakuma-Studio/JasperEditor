@@ -36,7 +36,11 @@ import { closeApps, makeApp, tempAppdir } from './helpers.ts';
 import { asset } from './sound-design-fixture.ts';
 import { PACK, writeWav } from './sound-fixtures.ts';
 
-const ENV_KEYS = ['JASPER_SOUND_STARTER_DIR', 'JASPER_SOUND_SYNTH_VARIANTS', 'JASPER_SOUND_AUTO_INDEX'] as const;
+const ENV_KEYS = [
+	'JASPER_SOUND_STARTER_DIR',
+	'JASPER_SOUND_SYNTH_VARIANTS',
+	'JASPER_SOUND_AUTO_INDEX',
+] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 const HOST = { host: '127.0.0.1:47900' };
 const TOKEN = 'tok_auto_0123456789abcdef01234';
@@ -134,12 +138,23 @@ function userEdit(file: string, seqId: string, commands: unknown[]) {
 	const r = applyTransaction(
 		doc,
 		{ label: 'user edit', origin: 'user', sequenceId: seqId, commands },
-		{ ids: createCounterIdSource(900), now: () => '2026-10-26T01:00:00.000Z', revision: env.revision, registries: defaultRegistries() },
+		{
+			ids: createCounterIdSource(900),
+			now: () => '2026-10-26T01:00:00.000Z',
+			revision: env.revision,
+			registries: defaultRegistries(),
+		},
 	);
 	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
 	writeFileSync(
 		file,
-		JSON.stringify(makeEnvelope(r.document, { revision: env.revision + 1, savedAt: '2026-10-26T01:00:00.000Z', platform: 'test' })),
+		JSON.stringify(
+			makeEnvelope(r.document, {
+				revision: env.revision + 1,
+				savedAt: '2026-10-26T01:00:00.000Z',
+				platform: 'test',
+			}),
+		),
 	);
 }
 
@@ -161,7 +176,11 @@ async function propose(projectId: string, pass: string, body: unknown, headers =
 	return { job, result: AutomationPassResultSchema.parse(job.result) as AutomationPassResult };
 }
 async function getProposal(projectId: string, id: string): Promise<Proposal> {
-	const r = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposals/${id}`, headers: AGENT_H });
+	const r = await app.inject({
+		method: 'GET',
+		url: `/api/projects/${projectId}/proposals/${id}`,
+		headers: AGENT_H,
+	});
 	expect(r.statusCode, r.body).toBe(200);
 	return (r.json() as { proposal: Proposal }).proposal;
 }
@@ -193,11 +212,20 @@ async function exportPath(doc: ProjectDocument, seqId: string) {
 	const core = coreServices(app);
 	const plan = await planExport(
 		{
-			envelope: makeEnvelope(doc, { revision: 1, savedAt: '2026-10-26T00:00:00.000Z', platform: 'test' }) as never,
+			envelope: makeEnvelope(doc, {
+				revision: 1,
+				savedAt: '2026-10-26T00:00:00.000Z',
+				platform: 'test',
+			}) as never,
 			sequenceId: seqId,
 			settings: exportSettings(seqId),
 		},
-		{ registry: core.registry, fonts: core.fonts, capabilities: CAPS, extensions: core.exports.nativeExtensions.all() },
+		{
+			registry: core.registry,
+			fonts: core.fonts,
+			capabilities: CAPS,
+			extensions: core.exports.nativeExtensions.all(),
+		},
 	);
 	return plan.plan;
 }
@@ -224,7 +252,11 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 	it('dry run: counts, coverage, cost, budget and sounds — nothing stored', async () => {
 		const { projectId, seqId } = seed([90, 90, 90, 90, 90]);
 		const before = await savedDoc(projectId);
-		const r = await post(url(projectId, 'decorate-cuts'), { sequenceId: seqId, mode: 'dryRun', params: { seed: 4 } });
+		const r = await post(url(projectId, 'decorate-cuts'), {
+			sequenceId: seqId,
+			mode: 'dryRun',
+			params: { seed: 4 },
+		});
 		expect(r.statusCode, r.body).toBe(200);
 		const out = AutomationPassResultSchema.parse(r.json());
 		expect(out.summary).toMatchObject({ pass: 'decorate-cuts', count: 4, considered: 4, coverage: 1 });
@@ -234,7 +266,11 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 		expect(out.sfx!.available).toBeGreaterThanOrEqual(4);
 		expect(out.budget.fits).toBe(true);
 		expect(out.proposalId).toBeNull();
-		const list = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposals`, headers: AGENT_H });
+		const list = await app.inject({
+			method: 'GET',
+			url: `/api/projects/${projectId}/proposals`,
+			headers: AGENT_H,
+		});
 		expect((list.json() as { proposals: unknown[] }).proposals).toEqual([]);
 		expect((await savedDoc(projectId)).revision).toBe(before.revision);
 	});
@@ -257,7 +293,10 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 	it('proposes kits with centred whooshes; an agent accepts it as ONE transaction (default on)', async () => {
 		const { projectId, seqId, clips } = seed([120, 120, 120, 120]);
 		const before = await savedDoc(projectId);
-		const { job, result } = await propose(projectId, 'decorate-cuts', { sequenceId: seqId, params: { seed: 9 } });
+		const { job, result } = await propose(projectId, 'decorate-cuts', {
+			sequenceId: seqId,
+			params: { seed: 9 },
+		});
 		expect(job.origin).toEqual({ type: 'agent', agentRunId: 'auto-agent' });
 		expect(result.proposalId).toMatch(/^prp_/);
 		expect(result.invalid).toEqual([]);
@@ -319,7 +358,11 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 			{ type: 'clip.trim', clipId: clips[0]!.id, edge: 'out', deltaFrames: -10 },
 			{ type: 'clip.move', clipIds: [clips[1]!.id, clips[2]!.id], deltaFrames: -10 },
 		]);
-		const r = await post(`/api/projects/${projectId}/proposals/${id}/refresh`, { itemIds: 'stale' }, EDITOR_H);
+		const r = await post(
+			`/api/projects/${projectId}/proposals/${id}/refresh`,
+			{ itemIds: 'stale' },
+			EDITOR_H,
+		);
 		expect(r.statusCode, r.body).toBe(200);
 		const out = ProposalRefreshResponseSchema.parse(r.json());
 		expect(out.refreshed).toEqual(expect.arrayContaining(['kit:120', 'kit:240']));
@@ -333,7 +376,9 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 			EDITOR_H,
 		);
 		expect(rr.statusCode, rr.body).toBe(200);
-		const k2 = ProposalRefreshResponseSchema.parse(rr.json()).proposal.items.find((it) => it.id === 'kit:120')!;
+		const k2 = ProposalRefreshResponseSchema.parse(rr.json()).proposal.items.find(
+			(it) => it.id === 'kit:120',
+		)!;
 		expect((k2.meta as { seed: number }).seed).toBe(seed0 + 1);
 		expect(k2.state).toBe('pending');
 	});
@@ -353,7 +398,9 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 		await acceptAll(projectId, kb.result.proposalId!);
 		const { doc } = await savedDoc(projectId);
 		const keyed = Object.values(doc.sequences[seqId]!.clips).filter(
-			(c) => ((c as { transform?: { scale: { keyframes: unknown[] } } }).transform?.scale.keyframes.length ?? 0) > 0,
+			(c) =>
+				((c as { transform?: { scale: { keyframes: unknown[] } } }).transform?.scale.keyframes.length ?? 0) >
+				0,
 		);
 		expect(keyed).toHaveLength(5);
 		const plan = await exportPath(doc, seqId);
@@ -366,7 +413,9 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 			{ type: 'project.updateSettings', settings: { agentProposals: { 'edit-automation': false } } },
 		]);
 		const { result } = await propose(projectId, 'ken-burns', { sequenceId: seqId, params: { share: 1 } });
-		const r = await post(`/api/projects/${projectId}/proposals/${result.proposalId}/accept`, { itemIds: 'all' });
+		const r = await post(`/api/projects/${projectId}/proposals/${result.proposalId}/accept`, {
+			itemIds: 'all',
+		});
 		expect(r.statusCode).toBe(403);
 		expect(r.json()).toMatchObject({ code: 'APPROVAL_REQUIRED' });
 	});

@@ -98,7 +98,8 @@ export async function proposePass(
 		);
 	}
 	const parsed = AutomationPassResultSchema.safeParse(job.result);
-	if (!parsed.success) throw new AutomationRunError('E_BAD_RESULT', t('The engine returned an unreadable result'));
+	if (!parsed.success)
+		throw new AutomationRunError('E_BAD_RESULT', t('The engine returned an unreadable result'));
 	return parsed.data;
 }
 

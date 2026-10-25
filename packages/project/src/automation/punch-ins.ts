@@ -15,7 +15,7 @@ import { layerMatrix } from '../render/transform.ts';
 import type { Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
-import { flicksPerFrame, FLICKS_PER_SECOND } from '../time.ts';
+import { FLICKS_PER_SECOND, flicksPerFrame } from '../time.ts';
 import {
 	AutomationInputError,
 	adjustmentTrackFor,
@@ -59,7 +59,11 @@ export type PunchPlacement = {
 	scale: number;
 	seed: number;
 	/** Where it zooms, in sequence pixels, and how that point was found. */
-	target: { x: number; y: number; source: 'center' | 'point' | 'faces' | 'saliency' | 'roto' | 'center-fallback' };
+	target: {
+		x: number;
+		y: number;
+		source: 'center' | 'point' | 'faces' | 'saliency' | 'roto' | 'center-fallback';
+	};
 	/** The clip's phrases end in "!" or "?" (ranked first). */
 	emphasis: boolean;
 	start: 'midpoint' | 'word';
@@ -95,7 +99,10 @@ export type PunchPlan = {
 	candidates: number;
 	skipped: (ClipSkip & { timecode: string })[];
 	/** Method `adjustment`: the track of the Transform clips (existing, or a new "ZOOM" right above the A-roll). */
-	zoomTrack: { trackId: string; label: string; create: false } | { create: true; name: string; index: number } | null;
+	zoomTrack:
+		| { trackId: string; label: string; create: false }
+		| { create: true; name: string; index: number }
+		| null;
 	warnings: { code: string; message: string }[];
 };
 
@@ -109,7 +116,10 @@ export function resolvePunchParams(raw: unknown, geo: Pick<FrameGeometry, 'fps'>
 	const p: PunchInParams = parsed.data;
 	const fps = fpsValue(geo.fps);
 	return {
-		minFrames: Math.max(1, Math.ceil((p.minClipSeconds ?? AUTOMATION_DEFAULTS.punchMinClipSeconds) * fps - 1e-6)),
+		minFrames: Math.max(
+			1,
+			Math.ceil((p.minClipSeconds ?? AUTOMATION_DEFAULTS.punchMinClipSeconds) * fps - 1e-6),
+		),
 		density: p.density ?? AUTOMATION_DEFAULTS.punchDensity,
 		scale: p.scale ?? AUTOMATION_DEFAULTS.punchScale,
 		rampFrames: p.rampFrames ?? AUTOMATION_DEFAULTS.punchRampFrames,
@@ -223,7 +233,14 @@ const r3 = (x: number) => Math.round(x * 1000) / 1000;
  * Motion keys that zoom the clip by `k` about the sequence point `p` between clip-relative frames `a` and `b`:
  * scale × k and position' = p + k (position − p), linear in both, so every frame in between is the same zoom about p.
  */
-export function zoomMotion(m: TransformValues, k: number, p: Vec2, a: number, b: number, reverse = false): MotionPlan {
+export function zoomMotion(
+	m: TransformValues,
+	k: number,
+	p: Vec2,
+	a: number,
+	b: number,
+	reverse = false,
+): MotionPlan {
 	const to: Vec2 = [r3(p[0] + k * (m.position[0] - p[0])), r3(p[1] + k * (m.position[1] - p[1]))];
 	const moves = Math.abs(to[0] - m.position[0]) > 1e-6 || Math.abs(to[1] - m.position[1]) > 1e-6;
 	const s = { from: r3(m.scale), to: r3(m.scale * k) };
@@ -257,7 +274,8 @@ export function rotoSubject(doc: ProjectDocument, seq: Sequence, c: Clip, frame:
 			rate?: { num: number; den: number };
 			result?: { faces?: { startFrame: number; poses: number[]; present: number[] }[] } | null;
 		};
-		if (ro.kind !== 'faces' || !ro.result?.faces || !ro.rate || !(ro.rate.num > 0 && ro.rate.den > 0)) continue;
+		if (ro.kind !== 'faces' || !ro.result?.faces || !ro.rate || !(ro.rate.num > 0 && ro.rate.den > 0))
+			continue;
 		const mf = Math.floor((t * ro.rate.num) / (ro.rate.den * FLICKS_PER_SECOND) + 1e-6);
 		for (const face of ro.result.faces) {
 			const i = mf - face.startFrame;
@@ -276,7 +294,13 @@ export function rotoSubject(doc: ProjectDocument, seq: Sequence, c: Clip, frame:
 }
 
 /** A point of the clip's picture (0…1) on the sequence frame through its Motion, clamped to the frame. */
-function pictureToFrame(doc: ProjectDocument, seq: Sequence, c: Clip, m: TransformValues, s: ClipSubject): Vec2 {
+function pictureToFrame(
+	doc: ProjectDocument,
+	seq: Sequence,
+	c: Clip,
+	m: TransformValues,
+	s: ClipSubject,
+): Vec2 {
 	const geo = frameGeometry(seq);
 	let box: { width: number; height: number };
 	try {
@@ -319,7 +343,12 @@ function adjustmentOf(
 				keyframes: {
 					scaleHeight: [
 						{ frame: 0, value: 100, interpolation: 'linear' },
-						{ frame: Math.min(ramp, end - start), value: scale, interpolation: 'linear', inInterpolation: 'linear' },
+						{
+							frame: Math.min(ramp, end - start),
+							value: scale,
+							interpolation: 'linear',
+							inInterpolation: 'linear',
+						},
 					],
 				},
 			},
@@ -364,7 +393,8 @@ function placeOne(
 			const [x, y] = pictureToFrame(doc, seq, c, m, s);
 			target = { x, y, source: s.source };
 		} else target = { x: geo.width / 2, y: geo.height / 2, source: 'center-fallback' };
-	} else target = { x: r3(params.target.x * geo.width), y: r3(params.target.y * geo.height), source: 'point' };
+	} else
+		target = { x: r3(params.target.x * geo.width), y: r3(params.target.y * geo.height), source: 'point' };
 	const p: Vec2 = [target.x, target.y];
 	const a = st.frame - c.start;
 	const altScale = params.scale === 140 ? 180 : 140;
@@ -437,7 +467,10 @@ export function planPunchIns(
 			message: `${punches.filter((p) => p.target.source === 'center-fallback').length} punch-in(s) zoom to the centre: no face tracking or saliency result for their clip`,
 		});
 	if (params.start === 'word' && words.length === 0)
-		warnings.push({ code: 'W_NO_WORDS', message: 'No transcript words: the zooms start at the clip midpoints' });
+		warnings.push({
+			code: 'W_NO_WORDS',
+			message: 'No transcript words: the zooms start at the clip midpoints',
+		});
 	const trackIndex = seq.videoTracks.findIndex((t) => t.id === track.id);
 	return {
 		pass: PUNCH_PASS,
@@ -451,7 +484,10 @@ export function planPunchIns(
 		zoomTrack:
 			params.method === 'adjustment' && punches.length
 				? zoomTrackOf(seq, trackIndex, [
-						...punches.map((p): [number, number] => [p.adjustment.start, p.adjustment.start + p.adjustment.length]),
+						...punches.map((p): [number, number] => [
+							p.adjustment.start,
+							p.adjustment.start + p.adjustment.length,
+						]),
 					])
 				: null,
 		warnings,
@@ -465,11 +501,7 @@ function zoomTrackOf(seq: Sequence, aRollIndex: number, spans: [number, number][
 		const r = adjustmentTrackFor(seq, spans, { name: 'ZOOM', minIndex: aRollIndex + 1 });
 		if (!r.create && r.trackId === above.id) return r;
 	}
-	const r = adjustmentTrackFor(
-		{ ...seq, videoTracks: [] } as Sequence,
-		spans,
-		{ name: 'ZOOM' },
-	);
+	const r = adjustmentTrackFor({ ...seq, videoTracks: [] } as Sequence, spans, { name: 'ZOOM' });
 	const names = new Set(seq.videoTracks.map((t) => (t.name ?? '').trim().toLowerCase()));
 	let name = r.create ? r.name : 'ZOOM';
 	for (let n = 2; names.has(name.toLowerCase()) && n < 1000; n++) name = `ZOOM ${n}`;

@@ -242,7 +242,15 @@ const JOLT: KitFamily = {
 	],
 };
 
-const WHIP_DIRS: { id: string; label: string; weight: number; dir: number; a: [number, number]; m: [number, number]; b: [number, number] }[] = [
+const WHIP_DIRS: {
+	id: string;
+	label: string;
+	weight: number;
+	dir: number;
+	a: [number, number];
+	m: [number, number];
+	b: [number, number];
+}[] = [
 	{ id: 'left', label: 'Whip left', weight: 65, dir: 90, a: [0.5, 0.5], m: [0, 0.5], b: [-0.5, 0.5] },
 	{ id: 'right', label: 'Whip right', weight: 61, dir: 90, a: [-0.5, 0.5], m: [0, 0.5], b: [0.5, 0.5] },
 	{ id: 'up', label: 'Whip up', weight: 62, dir: 0, a: [0.5, 0.5], m: [0.5, 0], b: [0.5, -0.5] },
@@ -257,41 +265,42 @@ const WHIP: KitFamily = {
 	after: 20,
 	variants: WHIP_DIRS.map(
 		(d): KitVariant => ({
-		id: d.id,
-		label: d.label,
-		weight: d.weight,
-		segments: [
-			{
-				span: 'whole',
-				effects: [
-					{
-						effectId: 'jasper.offset',
-						params: { blendWithOriginal: 0 },
-						keyframes: {
-							shiftCenterTo: [
-								{ at: -12, value: d.a },
-								{ at: 0, value: d.m, ease: 'penner.quart-in' },
-								{ at: 13, value: d.b, ease: 'penner.quart-out' },
-							],
+			id: d.id,
+			label: d.label,
+			weight: d.weight,
+			segments: [
+				{
+					span: 'whole',
+					effects: [
+						{
+							effectId: 'jasper.offset',
+							params: { blendWithOriginal: 0 },
+							keyframes: {
+								shiftCenterTo: [
+									{ at: -12, value: d.a },
+									{ at: 0, value: d.m, ease: 'penner.quart-in' },
+									{ at: 13, value: d.b, ease: 'penner.quart-out' },
+								],
+							},
 						},
-					},
-					{
-						effectId: 'jasper.directional-blur',
-						params: { direction: d.dir },
-						scaleWithFrame: ['blurLength'],
-						keyframes: {
-							blurLength: [
-								{ at: -12, value: 0 },
-								{ at: -3, value: 270, ease: 'penner.quart-in' },
-								{ at: 3, value: 270, ease: 'linear' },
-								{ at: 13, value: 0, ease: 'penner.quart-out' },
-							],
+						{
+							effectId: 'jasper.directional-blur',
+							params: { direction: d.dir },
+							scaleWithFrame: ['blurLength'],
+							keyframes: {
+								blurLength: [
+									{ at: -12, value: 0 },
+									{ at: -3, value: 270, ease: 'penner.quart-in' },
+									{ at: 3, value: 270, ease: 'linear' },
+									{ at: 13, value: 0, ease: 'penner.quart-out' },
+								],
+							},
 						},
-					},
-				],
-			},
-		],
-	})),
+					],
+				},
+			],
+		}),
+	),
 };
 
 type ZoomBlurDir = {
@@ -527,14 +536,18 @@ const SPIN: KitFamily = {
 	weight: 116,
 	before: 20,
 	after: 20,
-	variants: [spinVariant('ccw', 'Spin counter-clockwise', 60, 1), spinVariant('cw', 'Spin clockwise', 56, -1)],
+	variants: [
+		spinVariant('ccw', 'Spin counter-clockwise', 60, 1),
+		spinVariant('cw', 'Spin clockwise', 56, -1),
+	],
 };
 
 /** Shorts: S_Shake on 10 + 10 frames at every cut (Amplitude 0.5, Frequency 6, Motion Blur on, Seed 0). */
 export const SHORTS_SHAKE_PACK: KitPack = {
 	id: 'shorts-shake',
 	label: 'Shorts shake',
-	description: 'S_Shake on an adjustment clip 10 frames before and after every cut (the vertical shorts recipe).',
+	description:
+		'S_Shake on an adjustment clip 10 frames before and after every cut (the vertical shorts recipe).',
 	families: [SHAKE],
 	repeatPenalty: 1,
 };

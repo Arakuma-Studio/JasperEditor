@@ -13,7 +13,6 @@ import {
 	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
-import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
 	AudioClassifyRequestSchema,
 	BeatsRequestSchema,
@@ -21,6 +20,7 @@ import {
 	RemixPlanRequestSchema,
 	RemixPlanResultSchema,
 } from './audio-fx.ts';
+import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,

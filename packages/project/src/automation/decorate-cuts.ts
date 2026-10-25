@@ -5,11 +5,12 @@
 // takes a family short enough to fit, else it is skipped (reported). Each kit's decisions come from its own seed
 // (`itemSeed(seed, 'decorate-cuts', cut frame)`), so the plan is deterministic and Reroll re-plans one kit with the
 // next seed. Pure: the engine adds the SFX (sound-design cues and placement) and builds the proposal.
+
+import type { BatchEffect, BatchItemKey } from '../commands/schemas/batch.ts';
 import { clipsInRange } from '../derive/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { CutMapError, type PictureCut, pictureCuts } from '../structure/cuts.ts';
-import type { BatchEffect, BatchItemKey } from '../commands/schemas/batch.ts';
 import {
 	AutomationInputError,
 	adjustmentTrackFor,
@@ -115,7 +116,10 @@ export type DecoratePlan = {
 };
 
 /** Normalised parameters (defaults by aspect); throws `AutomationInputError` for an invalid pack or params. */
-export function resolveDecorateParams(raw: unknown, geo: Pick<FrameGeometry, 'vertical'>): ResolvedDecorateParams {
+export function resolveDecorateParams(
+	raw: unknown,
+	geo: Pick<FrameGeometry, 'vertical'>,
+): ResolvedDecorateParams {
 	const parsed = DecorateCutsParamsSchema.safeParse(raw ?? {});
 	if (!parsed.success)
 		throw new AutomationInputError(
@@ -129,7 +133,8 @@ export function resolveDecorateParams(raw: unknown, geo: Pick<FrameGeometry, 've
 	else {
 		const pk = KitPackSchema.parse(p.pack);
 		const issues = kitPackIssues(pk);
-		if (issues.length) throw new AutomationInputError('E_INVALID_PARAM', `pack: ${issues.slice(0, 3).join('; ')}`);
+		if (issues.length)
+			throw new AutomationInputError('E_INVALID_PARAM', `pack: ${issues.slice(0, 3).join('; ')}`);
 		pack = pk;
 	}
 	if (p.families)
@@ -355,7 +360,7 @@ function cutsOf(doc: ProjectDocument, seq: Sequence, params: ResolvedDecoratePar
 	return cuts;
 }
 
-function context(doc: ProjectDocument, seq: Sequence, params: ResolvedDecorateParams): PlanContext {
+function context(seq: Sequence, params: ResolvedDecorateParams): PlanContext {
 	const geo = frameGeometry(seq);
 	let trackTaken: [number, number][] | null = null;
 	if (params.fxTrack !== undefined) {
@@ -374,7 +379,7 @@ export function planDecorateCuts(
 ): DecoratePlan {
 	const seq = automationSequence(doc, sequenceId);
 	const params = resolveDecorateParams(rawParams, frameGeometry(seq));
-	const ctx = context(doc, seq, params);
+	const ctx = context(seq, params);
 	const cuts = cutsOf(doc, seq, params);
 	const decorated = params.skipDecorated ? adjustmentSpans(seq) : [];
 	const kits: KitPlacement[] = [];
@@ -418,8 +423,7 @@ export function planDecorateCuts(
 		if (!picked) {
 			if (f - shortest / 2 < 0 || f + shortest / 2 > hi)
 				skip(f, 'edge', 'too close to the start or end of the sequence for any kit');
-			else if (ctx.trackTaken && f >= prevEnd)
-				skip(f, 'track-busy', 'the FX track already has a clip there');
+			else if (ctx.trackTaken && f >= prevEnd) skip(f, 'track-busy', 'the FX track already has a clip there');
 			else skip(f, 'too-close', 'too close to the previous kit for any kit of the pack');
 			continue;
 		}
@@ -528,7 +532,7 @@ export function replanKits(
 ): KitReplan[] {
 	const seq = automationSequence(doc, sequenceId);
 	const params = resolveDecorateParams(rawParams, frameGeometry(seq));
-	const ctx = context(doc, seq, params);
+	const ctx = context(seq, params);
 	const cuts = cutsOf(doc, seq, { ...params, range: undefined } as ResolvedDecorateParams);
 	const decorated = params.skipDecorated ? adjustmentSpans(seq) : [];
 	const famIndex = new Map(params.pack.families.map((f, i) => [f.id, i]));

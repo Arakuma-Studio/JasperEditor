@@ -9,7 +9,7 @@ import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
-import { AutomationDialog, dialogParams, DryRunSummary } from '../src/automation/AutomationDialog.tsx';
+import { AutomationDialog, DryRunSummary, dialogParams } from '../src/automation/AutomationDialog.tsx';
 import { AUTOMATE_MENU } from '../src/automation/menu.ts';
 import { automationCommands } from '../src/commands/automation.ts';
 import { proposalCommands } from '../src/commands/proposals.ts';
@@ -62,7 +62,10 @@ function result(
 			...(pass === 'decorate-cuts' ? { track: 'new track FX' } : {}),
 			warnings: [],
 		},
-		sfx: pass === 'ken-burns' ? null : { enabled: true, type: 'whoosh', available: 4, placed: 2, sounds: 2, unsounded: 0 },
+		sfx:
+			pass === 'ken-burns'
+				? null
+				: { enabled: true, type: 'whoosh', available: 4, placed: 2, sounds: 2, unsounded: 0 },
 		budget: { fits: true, items: 3, commands: 9 },
 		proposalId: null,
 		revision: null,
@@ -186,7 +189,9 @@ describe('the pass dialog', () => {
 			req: { sequenceId: t.seqId, mode: 'dryRun', params: { seed: 1 } },
 		});
 		const summary = within(dialog).getByTestId('automation-summary');
-		expect(within(summary).getByTestId('automation-summary-count').textContent).toBe('2 of 3 cuts get a kit (67 %)');
+		expect(within(summary).getByTestId('automation-summary-count').textContent).toBe(
+			'2 of 3 cuts get a kit (67 %)',
+		);
 		expect(within(summary).getByTestId('automation-summary-families').textContent).toBe('Jolt 1 · Whip 1');
 		expect(within(summary).getByTestId('automation-summary-skipped').textContent).toContain(
 			'Too close to the previous kit 1',
@@ -199,7 +204,11 @@ describe('the pass dialog', () => {
 		await chooseOption(screen.getByRole('combobox', { name: 'Kit pack' }), 'Shorts shake');
 		await chooseOption(screen.getByRole('combobox', { name: 'Range' }), 'In to Out');
 		await settle();
-		expect(t.calls.at(-1)!.req.params).toEqual({ seed: 1, pack: 'shorts-shake', range: { start: 30, end: 90 } });
+		expect(t.calls.at(-1)!.req.params).toEqual({
+			seed: 1,
+			pack: 'shorts-shake',
+			range: { start: 30, end: 90 },
+		});
 		// the long-form pack shows its families and the repeat probability
 		await chooseOption(screen.getByRole('combobox', { name: 'Kit pack' }), 'Long-form transition pack');
 		expect(within(dialog).getByTestId('automation-families')).toBeTruthy();
@@ -251,7 +260,9 @@ describe('the pass dialog', () => {
 		await chooseOption(screen.getByRole('combobox', { name: 'Range' }), 'In to Out');
 		await settle();
 		expect(within(dialog).getByTestId('automation-summary-budget').textContent).toContain('frame 4000');
-		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(true);
+		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(
+			true,
+		);
 	});
 
 	it('dialogParams drops unset values and reads In to Out as the other range pickers do', () => {
@@ -266,7 +277,9 @@ describe('the pass dialog', () => {
 			] as never[],
 		});
 		const seq = session.getCommitted().sequences[seqId]!;
-		expect(dialogParams(seq, { a: 1, b: undefined, range: { start: 1, end: 2 } }, 'sequence')).toEqual({ a: 1 });
+		expect(dialogParams(seq, { a: 1, b: undefined, range: { start: 1, end: 2 } }, 'sequence')).toEqual({
+			a: 1,
+		});
 		expect(dialogParams(seq, {}, 'inout')).toEqual({ range: { start: 10, end: 50 } });
 	});
 
@@ -317,7 +330,11 @@ describe('Reroll in review', () => {
 				proposal: {
 					...p,
 					updatedAt: '2999-01-01T00:00:00.000Z',
-					items: p.items.map((it) => ({ ...it, label: 'Whip left at 00:00:02:00', meta: { ...(it.meta as object), seed: 8 } })),
+					items: p.items.map((it) => ({
+						...it,
+						label: 'Whip left at 00:00:02:00',
+						meta: { ...(it.meta as object), seed: 8 },
+					})),
 				},
 				refreshed: ['kit:60'],
 				dropped: [],

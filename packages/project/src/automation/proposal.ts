@@ -42,7 +42,11 @@ const FX_TRACK_REF = '$fxTrack';
 const ZOOM_TRACK_REF = '$zoomTrack';
 
 /** Effects the native export draws on an adjustment layer (crop and flips, `BUILTIN_NATIVE_EFFECTS`). */
-const NATIVE_EFFECTS: ReadonlySet<string> = new Set(['jasper.crop', 'jasper.flip-horizontal', 'jasper.flip-vertical']);
+const NATIVE_EFFECTS: ReadonlySet<string> = new Set([
+	'jasper.crop',
+	'jasper.flip-horizontal',
+	'jasper.flip-vertical',
+]);
 
 function effectsCost(effects: readonly BatchEffect[], frames: number): AutomationCost {
 	const remote = [...new Set(effects.map((e) => e.effectId).filter((id) => !NATIVE_EFFECTS.has(id)))];
@@ -67,7 +71,8 @@ export type PassItems = {
 const binName = 'Sound Effects';
 
 function soundSetup(doc: ProjectDocument, sfx: PassSfx | undefined, order: readonly string[]) {
-	if (!sfx) return { items: [] as ProposalItemInput[], mediaOf: new Map<string, string>(), setupOf: new Map() };
+	if (!sfx)
+		return { items: [] as ProposalItemInput[], mediaOf: new Map<string, string>(), setupOf: new Map() };
 	const ids: string[] = [];
 	for (const id of order) {
 		const a = sfx.assign.get(id);
@@ -101,7 +106,12 @@ function kitCommands(
 			type: 'clip.addAdjustmentBatch',
 			sequenceId: seq.id,
 			trackId: trackRef,
-			items: choice.clips.map((c) => ({ start: c.start, length: c.length, name: c.name, effects: c.effects })),
+			items: choice.clips.map((c) => ({
+				start: c.start,
+				length: c.length,
+				name: c.name,
+				effects: c.effects,
+			})),
 		},
 		...(sound ?? []),
 	];
@@ -154,7 +164,9 @@ export function kitItem(
 					});
 			})()
 		: null;
-	const clips = [k.cut.outgoingClipId, k.cut.incomingClipId].filter((x): x is string => !!x && !!seq.clips[x]);
+	const clips = [k.cut.outgoingClipId, k.cut.incomingClipId].filter(
+		(x): x is string => !!x && !!seq.clips[x],
+	);
 	const title = s?.title ?? null;
 	return {
 		id: k.id,
@@ -283,7 +295,9 @@ export function motionTargets(clipId: string, m: MotionPlan): Record<string, unk
 		...(m.scaleWidth
 			? [{ clipId, path: ['transform', 'scaleWidth'], keys: keys(m.scaleWidth.from, m.scaleWidth.to) }]
 			: []),
-		...(m.position ? [{ clipId, path: ['transform', 'position'], keys: keys(m.position.from, m.position.to) }] : []),
+		...(m.position
+			? [{ clipId, path: ['transform', 'position'], keys: keys(m.position.from, m.position.to) }]
+			: []),
 	];
 }
 
@@ -294,7 +308,12 @@ export function motionTargets(clipId: string, m: MotionPlan): Record<string, unk
 export function punchItem(
 	seq: Sequence,
 	p: PunchPlacement,
-	o: { method: 'motion' | 'adjustment'; trackRef: string | null; requires: readonly string[]; sound: ItemSound | null },
+	o: {
+		method: 'motion' | 'adjustment';
+		trackRef: string | null;
+		requires: readonly string[];
+		sound: ItemSound | null;
+	},
 ): ProposalItemInput {
 	const fps = frameGeometry(seq).fps;
 	const s = o.sound;
@@ -416,7 +435,8 @@ export function punchInItems(doc: ProjectDocument, seq: Sequence, plan: PunchPla
 	}
 	return {
 		items: [...setup, ...sounds.items, ...items],
-		cost: plan.method === 'adjustment' ? effectsCost(effects, frames) : { class: 'native', frames, effects: [] },
+		cost:
+			plan.method === 'adjustment' ? effectsCost(effects, frames) : { class: 'native', frames, effects: [] },
 		unsounded,
 	};
 }
@@ -426,7 +446,8 @@ export function punchInItems(doc: ProjectDocument, seq: Sequence, plan: PunchPla
 
 /** The proposal item of one Ken Burns move. */
 export function kenBurnsItem(seq: Sequence, m: KenBurnsPlacement): ProposalItemInput {
-	const label = (d: 'in' | 'out') => (d === 'in' ? `Ken Burns in ${m.scale} %` : `Ken Burns out ${m.scale} %`);
+	const label = (d: 'in' | 'out') =>
+		d === 'in' ? `Ken Burns in ${m.scale} %` : `Ken Burns out ${m.scale} %`;
 	return {
 		id: m.id,
 		label: `${label(m.direction)} at ${m.timecode}`.slice(0, 200),
@@ -455,7 +476,11 @@ export function kenBurnsItem(seq: Sequence, m: KenBurnsPlacement): ProposalItemI
 			{
 				label: label(m.alternative.direction),
 				commands: [
-					{ type: 'keyframe.addBatch', sequenceId: seq.id, targets: motionTargets(m.clipId, m.alternative.motion) },
+					{
+						type: 'keyframe.addBatch',
+						sequenceId: seq.id,
+						targets: motionTargets(m.clipId, m.alternative.motion),
+					},
 				],
 				meta: { direction: m.alternative.direction },
 			},

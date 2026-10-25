@@ -58,7 +58,11 @@ export default async function automationRoutes(app: FastifyInstance): Promise<vo
 			if (!isProjectId(projectId)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
 			const passParsed = AutomationPassIdSchema.safeParse(req.params.pass);
 			if (!passParsed.success)
-				throw new HttpError(404, 'NOT_FOUND', `Unknown automation pass: ${String(req.params.pass).slice(0, 40)}`);
+				throw new HttpError(
+					404,
+					'NOT_FOUND',
+					`Unknown automation pass: ${String(req.params.pass).slice(0, 40)}`,
+				);
 			const pass = passParsed.data;
 			const body = parseOr400(AutomationPassRequestSchema, req.body ?? {});
 			const agent = deps.agent();

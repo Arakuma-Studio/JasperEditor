@@ -13,10 +13,18 @@ import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
 const P = 'prj_automation';
-const doc: ProjectDocument = createEmptyProject({ ids: createCounterIdSource(3), name: 'A', preset: 'hd-1080p-30' });
+const doc: ProjectDocument = createEmptyProject({
+	ids: createCounterIdSource(3),
+	name: 'A',
+	preset: 'hd-1080p-30',
+});
 const SEQ = Object.keys(doc.sequences)[0]!;
 
-const result = (mode: 'propose' | 'dryRun', pass: string, proposalId: string | null): AutomationPassResult => ({
+const result = (
+	mode: 'propose' | 'dryRun',
+	pass: string,
+	proposalId: string | null,
+): AutomationPassResult => ({
 	mode,
 	pass: pass as AutomationPassResult['pass'],
 	projectId: P,
@@ -31,7 +39,9 @@ const result = (mode: 'propose' | 'dryRun', pass: string, proposalId: string | n
 		skipped: {
 			count: 1,
 			byCode: { 'too-close': 1 },
-			first: [{ frame: 50, timecode: '00:00:01:20', code: 'too-close', reason: 'too close to the previous kit' }],
+			first: [
+				{ frame: 50, timecode: '00:00:01:20', code: 'too-close', reason: 'too close to the previous kit' },
+			],
 		},
 		families: { jolt: 2, whip: 1 },
 		cost: { class: 'remotion', frames: 80, effects: ['jasper.transform'] },
@@ -73,7 +83,9 @@ function fakeEngine(opts: { jobState?: 'succeeded' | 'failed'; error?: EngineJob
 		getJob: async () =>
 			job(
 				opts.jobState ?? 'succeeded',
-				(opts.jobState ?? 'succeeded') === 'succeeded' ? result('propose', lastPass, 'prp_0000000000000009') : undefined,
+				(opts.jobState ?? 'succeeded') === 'succeeded'
+					? result('propose', lastPass, 'prp_0000000000000009')
+					: undefined,
 			),
 		refreshProposal: async (projectId: string, proposalId: string, req: unknown) => {
 			calls.push({ name: 'refreshProposal', args: [projectId, proposalId, req] });
@@ -172,7 +184,12 @@ describe('editing automation tools', () => {
 
 	it('add_punch_ins / add_ken_burns propose: the job is waited for and the proposal named', async () => {
 		const t = await connect();
-		const p = await t.call('add_punch_ins', { projectId: P, density: 1, target: { x: 0.3, y: 0.4 }, method: 'motion' });
+		const p = await t.call('add_punch_ins', {
+			projectId: P,
+			density: 1,
+			target: { x: 0.3, y: 0.4 },
+			method: 'motion',
+		});
 		expect(p.r.isError).toBeFalsy();
 		expect(p.json.proposalId).toBe('prp_0000000000000009');
 		expect(p.json.next).toContain('Review panel');

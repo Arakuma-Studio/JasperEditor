@@ -11,7 +11,7 @@ import { AutomationInputError, automationSequence } from './common.ts';
 import { replanKits } from './decorate-cuts.ts';
 import { replanKenBurns } from './ken-burns.ts';
 import { AUTOMATION_PASSES, type AutomationPass } from './params.ts';
-import { kenBurnsItem, type ItemSound, kitItem, punchItem } from './proposal.ts';
+import { type ItemSound, kenBurnsItem, kitItem, punchItem } from './proposal.ts';
 import { type ClipSubject, replanPunchIns } from './punch-ins.ts';
 import { nextSeed } from './rng.ts';
 import { resolveSfx, sfxMediaInfo } from './sfx.ts';
@@ -40,12 +40,19 @@ const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 function assetOfRef(p: Proposal, ref: string): unknown {
 	for (const it of p.items)
 		for (const c of it.commands as Record<string, unknown>[])
-			if ((c.type === 'media.register' || c.type === 'media.upgradeLibraryCopy') && c.ref === ref) return c.asset;
+			if ((c.type === 'media.register' || c.type === 'media.upgradeLibraryCopy') && c.ref === ref)
+				return c.asset;
 	return null;
 }
 
 /** The sound an item had (kept by a refresh): its media, timing info and gain offset; null for a silent item. */
-function soundOf(doc: ProjectDocument, p: Proposal, it: ProposalItem, type: string, gainDb?: number): ItemSound | null {
+function soundOf(
+	doc: ProjectDocument,
+	p: Proposal,
+	it: ProposalItem,
+	type: string,
+	gainDb?: number,
+): ItemSound | null {
 	const s = metaOf(it).sound as { soundId?: unknown; title?: unknown; mediaId?: unknown } | undefined;
 	const mediaId = str(s?.mediaId);
 	const soundId = str(s?.soundId);
@@ -93,7 +100,8 @@ export function refreshAutomationItems(
 	opts: { reroll?: boolean; subjects?: Readonly<Record<string, ClipSubject>> } = {},
 ): AutomationRefresh {
 	const rep = automationReportOf(p);
-	if (!rep) return { ok: false, code: 'E_INVALID_PARAM', message: 'The proposal is not an editing-automation pass' };
+	if (!rep)
+		return { ok: false, code: 'E_INVALID_PARAM', message: 'The proposal is not an editing-automation pass' };
 	let seq: ReturnType<typeof automationSequence>;
 	try {
 		seq = automationSequence(doc, p.sequenceId);
@@ -190,7 +198,11 @@ export function refreshAutomationItems(
 		}
 	} catch (e) {
 		if (e instanceof AutomationInputError)
-			return { ok: false, code: e.code === 'E_NOT_FOUND' ? 'E_NOT_FOUND' : 'E_INVALID_PARAM', message: e.message };
+			return {
+				ok: false,
+				code: e.code === 'E_NOT_FOUND' ? 'E_NOT_FOUND' : 'E_INVALID_PARAM',
+				message: e.message,
+			};
 		throw e;
 	}
 	return { ok: true, items, dropped };

@@ -151,7 +151,8 @@ export function editAnchor(
 ): Record<string, unknown> | null {
 	const a = cut.outgoingClipId ? seq.clips[cut.outgoingClipId] : undefined;
 	const b = cut.incomingClipId ? seq.clips[cut.incomingClipId] : undefined;
-	if (!a || !b || a.trackId !== b.trackId || a.start + a.duration !== cut.frame || b.start !== cut.frame) return null;
+	if (!a || !b || a.trackId !== b.trackId || a.start + a.duration !== cut.frame || b.start !== cut.frame)
+		return null;
 	return { type: 'edit', trackId: a.trackId, outgoingClipId: a.id, incomingClipId: b.id };
 }
 

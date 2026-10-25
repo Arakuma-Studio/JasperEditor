@@ -223,7 +223,9 @@ function SeedRow(p: { value: number; onChange(v: number): void }) {
 function DecorateFields(p: { seq: Sequence; params: Params; set(k: string, v: unknown): void }) {
 	const vertical = p.seq.settings.height > p.seq.settings.width;
 	const packId = typeof p.params.pack === 'string' ? p.params.pack : 'auto';
-	const pack: KitPack = builtinKitPack(packId === 'auto' ? (vertical ? 'shorts-shake' : 'long-pack') : packId)!;
+	const pack: KitPack = builtinKitPack(
+		packId === 'auto' ? (vertical ? 'shorts-shake' : 'long-pack') : packId,
+	)!;
 	const fam = (p.params.families ?? {}) as Record<string, number>;
 	const shares = pack.families.map((f) => fam[f.id] ?? f.weight);
 	const total = shares.reduce((a, b) => a + b, 0) || 1;
@@ -242,7 +244,10 @@ function DecorateFields(p: { seq: Sequence; params: Params; set(k: string, v: un
 					options={[
 						{
 							value: 'auto',
-							label: t('Automatic: {0}', name(builtinKitPack(vertical ? 'shorts-shake' : 'long-pack')!.label)),
+							label: t(
+								'Automatic: {0}',
+								name(builtinKitPack(vertical ? 'shorts-shake' : 'long-pack')!.label),
+							),
 						},
 						{ value: 'shorts-shake', label: name('Shorts shake') },
 						{ value: 'long-pack', label: name('Long-form transition pack') },
@@ -347,7 +352,8 @@ function DecorateFields(p: { seq: Sequence; params: Params; set(k: string, v: un
 
 function PunchFields(p: { seq: Sequence; params: Params; set(k: string, v: unknown): void }) {
 	const target = p.params.target;
-	const targetKind = target === 'subject' ? 'subject' : target && typeof target === 'object' ? 'point' : 'center';
+	const targetKind =
+		target === 'subject' ? 'subject' : target && typeof target === 'object' ? 'point' : 'center';
 	const pt = (target && typeof target === 'object' ? target : { x: 0.5, y: 0.5 }) as { x: number; y: number };
 	return (
 		<>
@@ -560,7 +566,10 @@ export function DryRunSummary(p: { result: AutomationPassResult }) {
 			{!r.budget.fits ? (
 				<span className="text-pr-warning" data-testid="automation-summary-budget">
 					{r.budget.suggestedRange
-						? t('Too big for one proposal: choose In to Out up to frame {0}, then the rest', r.budget.suggestedRange.end)
+						? t(
+								'Too big for one proposal: choose In to Out up to frame {0}, then the rest',
+								r.budget.suggestedRange.end,
+							)
 						: t('Too big for one proposal: choose a shorter range')}
 				</span>
 			) : null}

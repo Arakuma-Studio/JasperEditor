@@ -41,7 +41,9 @@ export type FrameGeometry = {
 export function frameGeometry(seq: Sequence): FrameGeometry {
 	const s = seq.settings;
 	const fps =
-		s?.frameRate && s.frameRate.num > 0 && s.frameRate.den > 0 ? s.frameRate : ({ num: 30, den: 1 } as Rational);
+		s?.frameRate && s.frameRate.num > 0 && s.frameRate.den > 0
+			? s.frameRate
+			: ({ num: 30, den: 1 } as Rational);
 	const width = Number.isFinite(s?.width) && s.width > 0 ? s.width : 1920;
 	const height = Number.isFinite(s?.height) && s.height > 0 ? s.height : 1080;
 	return {
@@ -151,7 +153,8 @@ export function motionCandidates(
 	const list = clipsOnTrack(seq, track.id);
 	for (const c of list) {
 		if (opts.range && (c.start < opts.range.start || c.start + c.duration > opts.range.end)) continue;
-		const skip = (code: string, reason: string) => skipped.push({ clipId: c.id, frame: c.start, code, reason });
+		const skip = (code: string, reason: string) =>
+			skipped.push({ clipId: c.id, frame: c.start, code, reason });
 		if (!isPicture(c)) {
 			if (c.kind !== 'adjustment') skip('kind', `a ${c.kind} clip`);
 			continue;

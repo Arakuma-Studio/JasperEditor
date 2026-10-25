@@ -1,5 +1,5 @@
-import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
 import { AUTOMATE_MENU } from '../../automation/menu.ts';
+import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
 import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
 import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
 import type { ShellMenuItem } from './resolve.ts';

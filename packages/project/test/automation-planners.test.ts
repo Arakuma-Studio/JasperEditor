@@ -11,9 +11,9 @@ import {
 	AutomationInputError,
 	automationReportOf,
 	batchKeysOf,
+	type Clip,
 	chainWeights,
 	checkInvariants,
-	type Clip,
 	createProposal,
 	defaultRegistries,
 	EDIT_AUTOMATION_FEATURE,
@@ -70,7 +70,19 @@ function aroll(lengths: number[], opts: { preset?: string; track?: string } = {}
 	});
 	const r = h.ok(cmds);
 	for (const x of r.results) ids.push((x as { clipIds: string[] }).clipIds[0]!);
-	return { h, ids, cuts: lengths.slice(0, -1).reduce<number[]>((acc, l) => [...acc, (acc.at(-1) ?? 0) + l], []) };
+	return {
+		h,
+		ids,
+		cuts: cutsOf(lengths),
+	};
+}
+
+/** The cut frames of clips of `lengths` placed end to end. */
+function cutsOf(lengths: number[]): number[] {
+	const out: number[] = [];
+	let at = 0;
+	for (const l of lengths.slice(0, -1)) out.push((at += l));
+	return out;
 }
 
 const fxOf = (c: Clip) => (c as { effects: EffectInstance[] }).effects;
@@ -98,7 +110,9 @@ describe('kit packs (data)', () => {
 		for (const id of ['penner.quart-in', 'penner.quart-out', 'penner.cubic-in', 'penner.circ-out'])
 			expect(resolveKitEase(id)).toMatchObject({ easeOut: expect.any(Object), easeIn: expect.any(Object) });
 		expect(resolveKitEase('penner.nope-in')).toBeNull();
-		expect(KIT_MODEL_STRINGS).toEqual(expect.arrayContaining(['Jolt', 'Whip left', 'Zoom through in', 'Shake']));
+		expect(KIT_MODEL_STRINGS).toEqual(
+			expect.arrayContaining(['Jolt', 'Whip left', 'Zoom through in', 'Shake']),
+		);
 	});
 
 	it('the repeat penalty keeps the shares and gives P(same family) = 0.23 for the long-form pack', () => {
@@ -145,7 +159,8 @@ describe('Decorate Cuts planner', () => {
 			expect(k.start).toBeGreaterThanOrEqual(prevEnd);
 			prevEnd = k.end;
 			// clips: one over the kit, or one ending on the frame before the cut and one starting on it
-			if (k.clips.length === 1) expect(k.clips[0]).toMatchObject({ start: k.start, length: k.before + k.after });
+			if (k.clips.length === 1)
+				expect(k.clips[0]).toMatchObject({ start: k.start, length: k.before + k.after });
 			else {
 				expect(k.clips[0]!.start + k.clips[0]!.length).toBe(k.frame);
 				expect(k.clips[1]!.start).toBe(k.frame);
@@ -211,7 +226,15 @@ describe('Decorate Cuts planner', () => {
 
 	it('skips cuts near the sequence edges, under transitions and already decorated', () => {
 		const { h, ids } = aroll([8, 120, 120, 120]);
-		h.ok([{ type: 'transition.add', clipId: ids[2]!, edge: 'out', effectId: 'jasper.cross-dissolve', duration: 10 }]);
+		h.ok([
+			{
+				type: 'transition.add',
+				clipId: ids[2]!,
+				edge: 'out',
+				effectId: 'jasper.cross-dissolve',
+				duration: 10,
+			},
+		]);
 		h.ok([{ type: 'clip.addAdjustment', at: 120, duration: 20, track: 'V2' }]);
 		const plan = planDecorateCuts(h.doc, h.seqId, {});
 		const codes = Object.fromEntries(plan.skipped.map((s) => [s.frame, s.code]));
@@ -219,7 +242,9 @@ describe('Decorate Cuts planner', () => {
 		expect(codes[128]).toBe('decorated');
 		expect(codes[248]).toBe('transition');
 		expect(plan.kits).toEqual([]);
-		expect(planDecorateCuts(h.doc, h.seqId, { skipDecorated: false }).kits.map((k) => k.frame)).toEqual([128]);
+		expect(planDecorateCuts(h.doc, h.seqId, { skipDecorated: false }).kits.map((k) => k.frame)).toEqual([
+			128,
+		]);
 	});
 
 	it('coverage, minimum spacing, range and track options', () => {
@@ -229,7 +254,8 @@ describe('Decorate Cuts planner', () => {
 		expect(half).toBeGreaterThan(all * 0.3);
 		expect(half).toBeLessThan(all * 0.7);
 		const spaced = planDecorateCuts(h.doc, h.seqId, { minSpacingFrames: 400 }).kits;
-		for (let i = 1; i < spaced.length; i++) expect(spaced[i]!.frame - spaced[i - 1]!.frame).toBeGreaterThanOrEqual(400);
+		for (let i = 1; i < spaced.length; i++)
+			expect(spaced[i]!.frame - spaced[i - 1]!.frame).toBeGreaterThanOrEqual(400);
 		const range = { start: cuts[10]!, end: cuts[20]! };
 		const ranged = planDecorateCuts(h.doc, h.seqId, { range }).kits;
 		for (const k of ranged) expect(k.frame >= range.start && k.frame < range.end).toBe(true);
@@ -316,13 +342,16 @@ describe('Decorate Cuts proposal', () => {
 
 	it('the whip kit evaluates its curves relative to the cut (eased into the cut, out after it)', () => {
 		const { h } = aroll([120, 120]);
-		const plan = planDecorateCuts(h.doc, h.seqId, { families: { jolt: 0, 'zoom-blur': 0, 'zoom-through': 0, spin: 0 } });
+		const plan = planDecorateCuts(h.doc, h.seqId, {
+			families: { jolt: 0, 'zoom-blur': 0, 'zoom-through': 0, spin: 0 },
+		});
 		expect(plan.kits[0]!.family).toBe('whip');
 		acceptAll(h, propose(h, passDraft(plan, passItems(h.doc, plan), {})));
 		const clip = Object.values(h.seq.clips).find((c) => c.kind === 'adjustment')!;
 		const blur = fxOf(clip).find((e) => e.effectId === 'jasper.directional-blur')!;
 		const F = flicksPerFrame(h.seq.settings.frameRate);
-		const at = (frame: number) => evaluate(blur.params.blurLength as Animatable<number>, (frame - clip.start) * F);
+		const at = (frame: number) =>
+			evaluate(blur.params.blurLength as Animatable<number>, (frame - clip.start) * F);
 		expect(at(120 - 12)).toBeCloseTo(0, 6);
 		expect(at(120 - 3)).toBeCloseTo(270, 3);
 		expect(at(120)).toBeCloseTo(270, 3);
@@ -439,7 +468,11 @@ describe('punch-ins planner', () => {
 		const { h } = aroll([120, 120, 120]);
 		h.ok([{ type: 'track.add', kind: 'video', name: 'Titles' }]);
 		const names = h.seq.videoTracks.map((t) => t.name);
-		const plan = planPunchIns(h.doc, h.seqId, { method: 'adjustment', density: 1, target: { x: 0.25, y: 0.25 } });
+		const plan = planPunchIns(h.doc, h.seqId, {
+			method: 'adjustment',
+			density: 1,
+			target: { x: 0.25, y: 0.25 },
+		});
 		expect(plan.zoomTrack).toMatchObject({ create: true, name: 'ZOOM', index: 1 });
 		acceptAll(h, propose(h, passDraft(plan, passItems(h.doc, plan), {})));
 		expect(h.seq.videoTracks.map((t) => t.name)).toEqual([names[0], 'ZOOM', ...names.slice(1)]);

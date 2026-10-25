@@ -16,8 +16,8 @@ import {
 	type SoundEntry,
 } from '@jasper/api';
 import {
-	type AutomationPlan,
 	AutomationInputError,
+	type AutomationPlan,
 	assignSfx,
 	automationReportOf,
 	automationSequence,
@@ -26,13 +26,13 @@ import {
 	type PassSfx,
 	type ProjectDocument,
 	type Proposal,
+	type PunchPlan,
 	parsePassParams,
 	passDraft,
 	passItems,
 	passSummary,
 	planPass,
 	proposalBudget,
-	type PunchPlan,
 	rankSfx,
 	refreshAutomationItems,
 	type SfxNeeds,
@@ -73,7 +73,11 @@ export function inputError(e: unknown): never {
 	if (e instanceof AutomationInputError)
 		throw new HttpError(
 			e.code === 'E_NOT_FOUND' ? 404 : e.code === 'E_TRACK_LOCKED' ? 409 : 400,
-			e.code === 'E_NOT_FOUND' ? 'NOT_FOUND' : e.code === 'E_TRACK_LOCKED' ? 'TRACK_LOCKED' : 'VALIDATION_FAILED',
+			e.code === 'E_NOT_FOUND'
+				? 'NOT_FOUND'
+				: e.code === 'E_TRACK_LOCKED'
+					? 'TRACK_LOCKED'
+					: 'VALIDATION_FAILED',
 			e.message,
 			{ code: e.code },
 		);
@@ -131,7 +135,13 @@ async function measureSubjects(
 	let done = 0;
 	for (const p of todo) {
 		if (ctx.signal.aborted) break;
-		const clip = seq.clips[p.clipId] as { kind: string; mediaId?: string; sourceIn: number; start: number; speed?: { rate: number } };
+		const clip = seq.clips[p.clipId] as {
+			kind: string;
+			mediaId?: string;
+			sourceIn: number;
+			start: number;
+			speed?: { rate: number };
+		};
 		const key = clip?.kind === 'video' && clip.mediaId ? engineKeyOf(doc, clip.mediaId) : null;
 		const media = clip?.mediaId ? doc.media?.[clip.mediaId] : undefined;
 		const vs = media?.probe?.streams?.find((s) => s.type === 'video') as
@@ -143,7 +153,10 @@ async function measureSubjects(
 		}
 		const F = (FLICKS_PER_SECOND * seq.settings.frameRate.den) / seq.settings.frameRate.num;
 		const t = clip.sourceIn + (p.frame - clip.start) * F * (clip.speed?.rate ?? 1);
-		const startFrame = Math.max(0, Math.floor((t * vs.frameRate.num) / (vs.frameRate.den * FLICKS_PER_SECOND)));
+		const startFrame = Math.max(
+			0,
+			Math.floor((t * vs.frameRate.num) / (vs.frameRate.den * FLICKS_PER_SECOND)),
+		);
 		try {
 			const r = await reframe.analyze(
 				{ projectId, mediaKey: key, startFrame, frameCount: 3 },
@@ -226,7 +239,9 @@ async function registerSounds(
 			});
 		}
 	};
-	await Promise.all(Array.from({ length: Math.min(REGISTER_CONCURRENCY, Math.max(1, order.length)) }, worker));
+	await Promise.all(
+		Array.from({ length: Math.min(REGISTER_CONCURRENCY, Math.max(1, order.length)) }, worker),
+	);
 	if (fatal) throw fatal;
 	order.forEach((soundId, i) => {
 		const reg = results[i];
@@ -256,7 +271,10 @@ function budgetOf(items: Parameters<typeof proposalBudget>[0]) {
 }
 
 /** What a pass would do on the live document (nothing stored; sounds are counted, not registered). */
-export async function dryRunPass(deps: AutomationDeps, input: Omit<AutomationJobInput, 'who'>): Promise<AutomationPassResult> {
+export async function dryRunPass(
+	deps: AutomationDeps,
+	input: Omit<AutomationJobInput, 'who'>,
+): Promise<AutomationPassResult> {
 	const agent = deps.agent();
 	if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The agent service is not running');
 	const { doc, revision } = await liveDocument(agent, input.projectId);
@@ -302,14 +320,23 @@ export async function dryRunPass(deps: AutomationDeps, input: Omit<AutomationJob
 
 function parseJobInput(raw: unknown): AutomationJobInput {
 	const r = raw as Partial<AutomationJobInput> | null;
-	if (!r || typeof r.projectId !== 'string' || typeof r.pass !== 'string' || !r.params || typeof r.params !== 'object')
+	if (
+		!r ||
+		typeof r.projectId !== 'string' ||
+		typeof r.pass !== 'string' ||
+		!r.params ||
+		typeof r.params !== 'object'
+	)
 		throw new JobError('VALIDATION_FAILED', 'The automation request is invalid', false);
 	return {
 		projectId: r.projectId,
 		pass: r.pass as AutomationPassId,
 		...(typeof r.sequenceId === 'string' ? { sequenceId: r.sequenceId } : {}),
 		params: r.params as Record<string, unknown>,
-		who: { editor: r.who?.editor === true, agent: typeof r.who?.agent === 'string' ? r.who.agent.slice(0, 64) : 'An agent' },
+		who: {
+			editor: r.who?.editor === true,
+			agent: typeof r.who?.agent === 'string' ? r.who.agent.slice(0, 64) : 'An agent',
+		},
 	};
 }
 
@@ -340,7 +367,11 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 	const params = validParams(input.pass, input.params);
 	let plan = planOrThrow(doc, input.pass, input.sequenceId, params);
 	const warnings: { code: string; message: string }[] = [];
-	if (plan.pass === 'punch-ins' && params.target === 'subject' && plan.punches.some((p) => p.target.source === 'center-fallback')) {
+	if (
+		plan.pass === 'punch-ins' &&
+		params.target === 'subject' &&
+		plan.punches.some((p) => p.target.source === 'center-fallback')
+	) {
 		ctx.progress(0.05, { stage: 'Finding the subject' });
 		const m = await measureSubjects(doc, plan, deps.reframe(), ctx, input.projectId);
 		if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
@@ -350,7 +381,10 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 	const needs = sfxNeeds(doc, plan, params as { sfx?: never });
 	const sounds = deps.sounds();
 	if (needs && !sounds)
-		warnings.push({ code: 'W_NO_LIBRARY', message: 'The sound library is not running: the decorations have no sound' });
+		warnings.push({
+			code: 'W_NO_LIBRARY',
+			message: 'The sound library is not running: the decorations have no sound',
+		});
 	const pick = await pickSounds(sounds, needs, plan.sequenceId);
 	let sfx: PassSfx | undefined;
 	let registered = 0;
@@ -412,7 +446,11 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 		return { ...base, proposalId: null, revision: null, itemCount: 0, invalid: [] };
 	}
 	ctx.progress(0.9, { stage: `Checking ${draft.items.length} proposal items` });
-	const created = await proposals.create(input.projectId, draft as unknown as Record<string, unknown>, input.who);
+	const created = await proposals.create(
+		input.projectId,
+		draft as unknown as Record<string, unknown>,
+		input.who,
+	);
 	if (ctx.signal.aborted) {
 		await proposals.delete(input.projectId, created.proposal.id).catch(() => undefined);
 		throw new JobError('JOB_CANCELLED', 'Cancelled');
@@ -444,11 +482,17 @@ export function automationRefresher(deps: AutomationDeps) {
 		reroll?: boolean;
 	}) => {
 		const rep = automationReportOf(input.proposal);
-		if (!rep) throw new HttpError(422, 'VALIDATION_FAILED', 'The proposal has no automation report to re-plan from');
+		if (!rep)
+			throw new HttpError(422, 'VALIDATION_FAILED', 'The proposal has no automation report to re-plan from');
 		let subjects: Record<string, ClipSubject> | undefined;
 		if (rep.pass === 'punch-ins' && rep.params.target === 'subject') {
 			// re-measured for the clips being refreshed (their zoom may start elsewhere now)
-			const plan = planOrThrow(input.doc, 'punch-ins', input.proposal.sequenceId ?? undefined, rep.params) as PunchPlan;
+			const plan = planOrThrow(
+				input.doc,
+				'punch-ins',
+				input.proposal.sequenceId ?? undefined,
+				rep.params,
+			) as PunchPlan;
 			const wanted = new Set(
 				input.proposal.items
 					.filter((it) => input.itemIds.includes(it.id))
@@ -470,7 +514,10 @@ export function automationRefresher(deps: AutomationDeps) {
 			...(input.reroll ? { reroll: true } : {}),
 			...(subjects ? { subjects } : {}),
 		});
-		if (!r.ok) throw new HttpError(r.code === 'E_NOT_FOUND' ? 404 : 422, 'VALIDATION_FAILED', r.message, { code: r.code });
+		if (!r.ok)
+			throw new HttpError(r.code === 'E_NOT_FOUND' ? 404 : 422, 'VALIDATION_FAILED', r.message, {
+				code: r.code,
+			});
 		return { items: r.items, dropped: r.dropped };
 	};
 }
