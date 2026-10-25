@@ -198,7 +198,7 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 		const f = fakeOrt();
 		const m = await WhisperModel.load(dir, { ort: f.ort, encoder: 'webgpu', decoder: 'webgpu', threads: 2 });
 		expect(m.providers).toEqual({ encoder: 'webgpu', decoder: 'webgpu' });
-		await m.transcribe(noiseAudio(3), { language: 'en', beamSize: 1, temperatureFallback: false });
+		await m.transcribe(noiseAudio(3, (t) => t % 1 < 0.6), { language: 'en', beamSize: 1, temperatureFallback: false });
 		await m.release();
 		const steps = f.sessions.filter((x) => x.provider === 'webgpu' && x.location).at(-1)!;
 		expect(steps.runs.every((r) => r.cached)).toBe(true);
@@ -208,7 +208,7 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 			(async () => {
 				const m2 = await WhisperModel.load(dir, { ort: f.ort, encoder: 'cpu', decoder: 'webgpu', threads: 2 });
 				try {
-					await m2.transcribe(noiseAudio(3), { language: 'en', beamSize: 5 });
+					await m2.transcribe(noiseAudio(3, (t) => t % 1 < 0.6), { language: 'en', beamSize: 5 });
 				} finally {
 					await m2.release();
 				}
@@ -236,7 +236,7 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		const f = fakeOrt({ createError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'no adapter' : null) });
 		const out = await runSpeechJob(
 			{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
-			{ ort: f.ort, audio: noiseAudio(3) },
+			{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 		);
 		expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 		expect(out.device.fallbacks).toEqual([
@@ -250,7 +250,7 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		const devices: string[] = [];
 		const out = await runSpeechJob(
 			{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
-			{ ort: f.ort, audio: noiseAudio(3), onDevice: (d) => devices.push(`${d.encoder}/${d.decoder}#${d.attempt}`) },
+			{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6), onDevice: (d) => devices.push(`${d.encoder}/${d.decoder}#${d.attempt}`) },
 		);
 		expect(devices).toEqual(['webgpu/cpu#1', 'cpu/cpu#2']);
 		expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
@@ -272,7 +272,7 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		await expect(
 			runSpeechJob(
 				{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
-				{ ort: f.ort, audio: noiseAudio(3) },
+				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 			),
 		).rejects.toThrow('device lost');
 	});
@@ -282,7 +282,7 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		let runs = 0;
 		const f = fakeOrt({ runError: (part) => (part === 'encoder' && ++runs > 0 ? 'broken model' : null) });
 		await expect(
-			runSpeechJob({ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en' }, { ort: f.ort, audio: noiseAudio(3) }),
+			runSpeechJob({ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en' }, { ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) }),
 		).rejects.toThrow('broken model');
 		expect(runs).toBe(1);
 	});
@@ -303,7 +303,7 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 					beamSize: 1,
 					device: { encoder: 'cuda', decoder: 'cpu', calibrate: 'cuda' },
 				},
-				{ ort: f.ort, audio: noiseAudio(3) },
+				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 			);
 			expect(out.calibration).toMatchObject({ provider: 'cuda', decoder: want });
 			expect(out.calibration!.cpuMsPerToken).toBeGreaterThan(0);

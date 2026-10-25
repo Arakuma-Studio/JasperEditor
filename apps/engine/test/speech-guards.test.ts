@@ -178,8 +178,11 @@ describe('decoder-level guards (TC-003, OpenAI hallucination_silence_threshold)'
 		expect(
 			knownPhraseRuns(['Subtítulos', 'realizados', 'por', 'la', 'comunidad', 'de', 'Amara.org'].map(w)),
 		).toEqual([[0, 7]]);
-		expect(knownPhraseRuns(['y', 'Gracias', 'por', 'ver', 'el', 'video.', 'Fin'].map(w))).toEqual([[1, 6]]);
+		expect(knownPhraseRuns(['Bien.', 'Gracias', 'por', 'ver', 'el', 'video.', 'Fin'].map(w))).toEqual([[1, 6]]);
+		// not a sentence of its own
+		expect(knownPhraseRuns(['y', 'Gracias', 'por', 'ver', 'el', 'video.'].map(w))).toEqual([]);
 		expect(knownPhraseRuns(['Gracias', 'a', 'todos'].map(w))).toEqual([]);
+		expect(knownPhraseRuns(['Hola.', 'Gracias.'].map(w))).toEqual([[1, 2]]);
 		expect(knownPhraseRuns(['Thank', 'you.'].map(w))).toEqual([[0, 2]]);
 		expect(phraseOverNonSpeech(0.2)).toBe(true);
 		expect(phraseOverNonSpeech(0.8)).toBe(false);
@@ -188,10 +191,21 @@ describe('decoder-level guards (TC-003, OpenAI hallucination_silence_threshold)'
 
 describe('BPE encoding of initial prompts (SG-012, TC-003)', () => {
 	// byte-level stand-ins: 'Ġ' = space; merges build " hola", "eh" and "..."
+	// every byte has a stand-in character (GPT-2's bytes_to_unicode), like a real vocabulary
 	const vocab: Record<string, number> = {};
-	const chars = ['Ġ', 'h', 'o', 'l', 'a', 'e', '.', ',', 'm', '¿', '?', 'v', 'Ã', '±', 'n'];
-	chars.forEach((c, i) => {
-		vocab[c] = i;
+	const bs: number[] = [];
+	for (let b = 0x21; b <= 0x7e; b++) bs.push(b);
+	for (let b = 0xa1; b <= 0xac; b++) bs.push(b);
+	for (let b = 0xae; b <= 0xff; b++) bs.push(b);
+	const cs = [...bs];
+	let extra = 0;
+	for (let b = 0; b < 256; b++)
+		if (!bs.includes(b)) {
+			bs.push(b);
+			cs.push(256 + extra++);
+		}
+	cs.forEach((c, i) => {
+		vocab[String.fromCodePoint(c)] = i;
 	});
 	const merges = ['Ġ h', 'o l', 'Ġh ol', 'Ġhol a', 'e h', '. .', '.. .'];
 	for (const m of merges) vocab[m.replace(' ', '')] = Object.keys(vocab).length;
@@ -261,7 +275,7 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 		const tok = new WhisperTokenizer({ model: { vocab }, added_tokens: added } as TokenizerJson, false);
 		const cfg = { suppress: [4, 5], beginSuppress: [3], maxInitialTimestampIndex: 3, timestamps: true };
 		/** The filters as they were before SG-013 (loops instead of fill, the whole row normalised). */
-		const reference = (logits: Float32Array, seq: readonly number[]) => {
+		const reference = (logits: Float32Array, seq: readonly number[], finalRule = true) => {
 			const tb = tok.timestampBegin;
 			if (seq.length === 0) for (const x of cfg.beginSuppress) if (x < logits.length) logits[x] = NEG;
 			for (const x of cfg.suppress) if (x < logits.length) logits[x] = NEG;
@@ -286,6 +300,7 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 				for (let i = 0; i < tb; i++) logits[i] = NEG;
 				for (let i = tb + cfg.maxInitialTimestampIndex + 1; i < logits.length; i++) logits[i] = NEG;
 			}
+			if (!finalRule) return;
 			const lp = logSoftmax(logits);
 			let m = NEG;
 			for (let i = tb; i < lp.length; i++) if (lp[i]! > m) m = lp[i]!;
@@ -298,11 +313,23 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 				if (ts > maxText) for (let i = 0; i < tb; i++) logits[i] = NEG;
 			}
 		};
+		/** Both sides of the timestamp rule in float64: the old code compared float32 log-softmax values. */
+		const margin = (xs: number[], seq: readonly number[]) => {
+			const l = Float32Array.from(xs);
+			reference(l, seq, false);
+			const tb = tok.timestampBegin;
+			const ts = logSumExp(l, tb, l.length);
+			let maxText = NEG;
+			for (let i = 0; i < tb; i++) if (l[i]! > maxText) maxText = l[i]!;
+			return Number.isFinite(ts) && Number.isFinite(maxText) ? Math.abs(ts - maxText) : Number.POSITIVE_INFINITY;
+		};
 		fc.assert(
 			fc.property(
 				fc.array(fc.double({ min: -10, max: 10, noNaN: true }), { minLength: 19, maxLength: 19 }),
 				fc.array(fc.integer({ min: 0, max: 18 }), { maxLength: 6 }),
 				(xs, seq) => {
+					// float32 rounding of the old normalised row may flip an exact-to-1e-5 tie: not a behaviour change
+					fc.pre(margin(xs, seq) > 1e-4);
 					const a = Float32Array.from(xs);
 					const c = Float32Array.from(xs);
 					applyFilters(a, seq, tok, cfg);

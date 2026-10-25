@@ -184,22 +184,22 @@ export function refineWords<W extends RefinableWord>(
 	extendWordsIntoSpeech(len, words, db, 25, mask);
 	const drop = new Set<number>([...orphans, ...unvoicedWords(words, mask)]);
 	const removed: Array<{ text: string; start: number; end: number; reason: string }> = [];
-	const remaining = words.map((w, i) => ({ w, i })).filter((x) => !drop.has(x.i));
-	for (const [a, b] of knownPhraseRuns(remaining.map((x) => ({ text: x.w.text ?? '' })))) {
-		const span = remaining.slice(a, b);
+	// known hallucination phrases over non-speech (TC-003), judged over the whole phrase
+	for (const [a, b] of knownPhraseRuns(words.map((w) => ({ text: w.text ?? '' })))) {
+		const span = words.slice(a, b);
 		let voiced = 0;
 		let total = 0;
-		for (const { w } of span) {
+		for (const w of span) {
 			const frames = Math.max(1, Math.ceil((w.end - w.start) / VAD_FRAME));
 			voiced += voicedFraction(w, mask) * frames;
 			total += frames;
 		}
 		if (phraseOverNonSpeech(total ? voiced / total : 0)) {
-			for (const x of span) drop.add(x.i);
+			for (let i = a; i < b; i++) drop.add(i);
 			removed.push({
-				text: span.map((x) => x.w.text ?? '').join(' '),
-				start: span[0].w.start / SAMPLE_RATE,
-				end: span[span.length - 1].w.end / SAMPLE_RATE,
+				text: span.map((w) => w.text ?? '').join(' '),
+				start: span[0]!.start / SAMPLE_RATE,
+				end: span[span.length - 1]!.end / SAMPLE_RATE,
 				reason: 'known-phrase',
 			});
 		}

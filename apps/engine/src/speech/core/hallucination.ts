@@ -153,9 +153,14 @@ const PHRASES = [...new Set(KNOWN_HALLUCINATIONS.map(normalizePhrase))]
 	.filter((p) => p.length)
 	.sort((a, b) => b.length - a.length);
 
+/** A word ending a sentence ("vídeo.", "watching!"). */
+const ENDS_SENTENCE = /[.!?…。！？]["'”)\]]*$/u;
+
 /**
- * Word ranges `[i0, i1)` whose normalised text is a whole known phrase (longest match first, non-overlapping).
- * Words that normalise to nothing (punctuation) inside a run are part of it.
+ * Word ranges `[i0, i1)` whose normalised text is a whole known phrase (longest match first, non-overlapping), as a
+ * sentence of its own: the word before it ends a sentence (or there is none) and its last word ends one (or is the
+ * last word) — so "Gracias a todos" is never taken for "Gracias.". Words that normalise to nothing (punctuation)
+ * inside a run are part of it.
  */
 export function knownPhraseRuns(words: readonly { text: string }[]): Array<[number, number]> {
 	const norm = words.map((w) => normalizePhrase(w.text));
@@ -184,7 +189,9 @@ export function knownPhraseRuns(words: readonly { text: string }[]): Array<[numb
 				if (!ok) break;
 				j++;
 			}
-			if (k === p.length && j > i) {
+			const startsSentence = i === 0 || ENDS_SENTENCE.test(words[i - 1]?.text.trim() ?? '');
+			const endsSentence = j === words.length || ENDS_SENTENCE.test(words[j - 1]?.text.trim() ?? '');
+			if (k === p.length && j > i && startsSentence && endsSentence) {
 				matched = j - i;
 				break;
 			}
