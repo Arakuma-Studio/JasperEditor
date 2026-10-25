@@ -75,13 +75,15 @@ for (const c of cases) {
 	const gen = [{ type: 'captions.generate', template: 'builtin:pixel-pop' }];
 	const first = run(doc, seqId, gen);
 	const out = first.result.ok ? (first.result.results[0] as { count: number; stats: unknown }) : null;
+	const brolls = Object.values(first.document.sequences[seqId]!.clips).filter((x) => x.kind === 'video').length;
+	if (brolls < 2) throw new Error(`fixture has ${brolls} video clips`);
 	const generate = time(() => run(doc, seqId, gen));
 	// move every B-roll clip 7 frames later, then align
 	const moved = run(first.document, seqId, [
 		{
 			type: 'clip.move',
 			clipIds: Object.values(first.document.sequences[seqId]!.clips)
-				.filter((x) => x.trackId === first.document.sequences[seqId]!.videoTracks[1]!.id)
+				.filter((x) => x.kind === 'video' && x.trackId !== first.document.sequences[seqId]!.videoTracks[0]!.id)
 				.map((x) => x.id),
 			deltaFrames: 7,
 		},
