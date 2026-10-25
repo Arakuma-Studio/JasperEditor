@@ -1,23 +1,36 @@
 // Ease segments (keyframe assistant): reading and writing the temporal shape of one keyframe segment without
-// disturbing its neighbours. The model stores one interpolation per key (the segment it leaves) plus an in and an out
-// ease (schema/common.ts); `keyframes.ts` evaluates the segment A → B as
-//   hold                     when A holds (or the value only steps),
-//   linear (progress = u)     when A is `linear` (B's in ease is then ignored),
-//   bezier(out(A), in(B))     otherwise, where a `linear` B arrives with the linear ease and an `auto-bezier` key's eases
-//                             are derived from its neighbours on every evaluation.
+// disturbing its neighbours. A key stores an outgoing `interpolation`, an optional incoming `inInterpolation`
+// (keyframe-sides) and an in and an out ease (schema/common.ts). The ONE rule of how a segment A → B evaluates is
+// `segmentShape` in keyframes.ts (After Effects: A's outgoing side and B's incoming side; Hold decided by A; linear
+// only when both sides are Linear, a Linear side of a curved segment is influence ⅙ at the average speed; the legacy
+// reading when B has no `inInterpolation`: linear whenever A is Linear, a Linear B contributes ⅓·1). These helpers
+// read through it and write keys so that it returns what was asked.
 // A run of roving keys between two fixed keys moves as ONE segment shaped by the fixed keys (`rovingProgress`), so a
 // segment that touches a roving key is addressed as its enclosing run.
+// spatial-points: `metric` = the spatial metric of effect point values (temporal auto-bezier speeds, path lengths and
+// speeds are measured in its pixels, as the evaluator does).
 //
 // These helpers work on plain key arrays (sorted by time) and mutate the keys in place; callers re-run the command
 // layer's `finish` afterwards (auto-bezier refresh, roving re-timing).
-import { incomingEase, isHoldOnlyValue, outgoingEase, rovingRuns } from '../keyframes.ts';
-import { isVec2Value, spatialSegmentLength } from '../keyframes-spatial.ts';
+import {
+	effectiveInInterpolation,
+	explicitInSide,
+	incomingEase,
+	inInterpolationOf,
+	isBothSided,
+	isHoldOnlyValue,
+	outgoingEase,
+	rovingRuns,
+	segmentShape,
+} from '../keyframes.ts';
+import { isVec2Value, type SpatialMetric, spatialSegmentLength } from '../keyframes-spatial.ts';
 import { pathValueDistance } from '../path/interp.ts';
 import { isBezierPath } from '../path/model.ts';
-import type { Ease, Keyframe } from '../schema/common.ts';
+import type { Ease, InInterpolation, Interpolation, Keyframe } from '../schema/common.ts';
 import { FLICKS_PER_SECOND } from '../time.ts';
 
 type Keys = Keyframe<unknown>[];
+type Metric = SpatialMetric | null | undefined;
 
 /** The evaluator's linear ease (influence ⅓, slope 1): a Bézier segment with it on both sides is exactly linear. */
 export const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
@@ -40,38 +53,106 @@ export function spanLeaving(kfs: Keys, i: number, runs = rovingRuns([...kfs])): 
 	return run ? { a: run.a, b: run.b, roving: true } : { a: i, b: i + 1, roving: false };
 }
 
-/** The effective shape of span a → b as the evaluator draws it: a hold, or the two eases (linear = linear eases). */
-export function spanEases(
-	kfs: Keys,
-	a: number,
-	b: number,
-): { hold: true } | { hold: false; out: Ease; in: Ease } {
+/** The two side types of a span: A's outgoing type and the incoming type that shapes the span at B. */
+export type SpanSides = {
+	outInterpolation: Interpolation;
+	/** `effectiveInInterpolation` (hold after a Hold key, linear after a Linear key read the legacy way). */
+	inInterpolation: Interpolation;
+};
+
+/**
+ * The effective shape of span a → b exactly as the evaluator draws it (`segmentShape`): a hold, or the two eases —
+ * `linear` (progress = time) is reported with the linear ease on both sides — plus the sides' types.
+ */
+export type SpanShape = SpanSides &
+	({ hold: true } | { hold: false; linear: boolean; out: Ease; in: Ease });
+
+export function spanEases(kfs: Keys, a: number, b: number, metric?: Metric): SpanShape {
 	const A = kfs[a]!;
-	if (A.interpolation === 'hold' || isHoldOnlyValue(A.value)) return { hold: true };
-	if (A.interpolation === 'linear') return { hold: false, out: { ...LINEAR_EASE }, in: { ...LINEAR_EASE } };
-	const out = outgoingEase(kfs, a);
-	const inn = incomingEase(kfs, b);
-	return { hold: false, out: { ...out }, in: { ...inn } };
+	const sides: SpanSides = {
+		outInterpolation: A.interpolation,
+		inInterpolation: effectiveInInterpolation(kfs, b, a) ?? inInterpolationOf(kfs[b]!),
+	};
+	if (isHoldOnlyValue(A.value)) return { ...sides, hold: true };
+	const shape = segmentShape(kfs, a, b, metric);
+	if (shape === 'hold') return { ...sides, hold: true };
+	if (shape === 'linear')
+		return { ...sides, hold: false, linear: true, out: { ...LINEAR_EASE }, in: { ...LINEAR_EASE } };
+	return { ...sides, hold: false, linear: false, out: { ...shape.out }, in: { ...shape.in } };
 }
 
-/** Effective eases captured before an edit (auto-bezier eases depend on neighbours an edit may remove). */
-export type CapturedEases = { aIn?: Ease; bOut?: Ease; cOut?: Ease };
+/** Effective eases / sides captured before an edit (auto-bezier eases depend on neighbours an edit may remove). */
+export type CapturedEases = {
+	/** The ease A's incoming side contributes, and the explicit incoming side reproducing it (`explicitInSide`). */
+	aIn?: Ease;
+	aSide?: { type: InInterpolation; ease: Ease };
+	/** The ease B's outgoing side contributes. */
+	bOut?: Ease;
+};
 
 /** Captures the effective eases `writeSpan` keeps for span a → b. */
-export function captureEases(kfs: Keys, a: number, b: number): CapturedEases {
+export function captureEases(kfs: Keys, a: number, b: number, metric?: Metric): CapturedEases {
 	return {
-		...(a > 0 ? { aIn: { ...incomingEase(kfs, a) } } : {}),
-		bOut: { ...outgoingEase(kfs, b) },
-		...(b + 1 < kfs.length ? { cOut: { ...outgoingEase(kfs, b + 1) } } : {}),
+		...(a > 0
+			? {
+					aIn: { ...incomingEase(kfs, a, metric) },
+					aSide: (({ type, ease }) => ({ type, ease: { ...ease } }))(explicitInSide(kfs, a, metric)),
+				}
+			: {}),
+		bOut: { ...outgoingEase(kfs, b, metric) },
 	};
 }
 
+const copyEase = (e: Ease): Ease => ({ influence: e.influence, slope: e.slope });
+
 /**
- * Makes span a → b evaluate exactly as bezier(out, inn), keeping every other segment as it evaluated before:
- * - A becomes `bezier` (from linear / hold / auto / continuous), its in ease set to the ease it effectively arrived with;
- * - B keeps `bezier` / `hold`; an `auto-bezier` or `continuous-bezier` B becomes `bezier` with its effective out ease
- *   (so `finish` cannot re-derive the in ease just set); a `linear` B becomes `bezier` with the linear out ease, and
- *   the key after it then arrives linearly (as it did behind a linear B).
+ * Lets key `i`'s outgoing type become `out` without changing the segment arriving at it (keyframe-sides):
+ * - with an explicit incoming side: Auto / Continuous Bezier there (they shape both sides) becomes Bezier frozen at
+ *   the ease it contributed; other incoming types are independent of the outgoing one;
+ * - read the legacy way: a Bezier / Hold / Continuous key arrives with its stored ease, which takes the contributed
+ *   one; becoming Linear or Auto would change the reading, so the incoming side is made explicit (`explicitInSide`).
+ */
+export function keepIncoming(kfs: Keys, i: number, out: Interpolation, captured: CapturedEases): void {
+	const k = kfs[i]!;
+	if (k.inInterpolation !== undefined) {
+		if (isBothSided(k.inInterpolation) && k.inInterpolation !== out) {
+			k.inInterpolation = 'bezier';
+			if (captured.aIn) k.easeIn = copyEase(captured.aIn);
+		}
+		return;
+	}
+	if (i === 0 || k.interpolation === out) return;
+	if (out === 'bezier' || out === 'hold' || out === 'continuous-bezier') {
+		if (captured.aIn) k.easeIn = copyEase(captured.aIn);
+		return;
+	}
+	const side = captured.aSide;
+	if (!side) return;
+	const both = isBothSided(side.type) && side.type !== out;
+	k.inInterpolation = both ? 'bezier' : side.type;
+	if (k.inInterpolation === 'bezier') k.easeIn = copyEase(side.ease);
+}
+
+/**
+ * Lets key `i`'s incoming side become `inType` without changing the segment leaving it: an Auto / Continuous Bezier
+ * outgoing side (they shape both sides) becomes Bezier frozen at the ease it contributed (`bOut`).
+ */
+export function keepOutgoing(kfs: Keys, i: number, inType: InInterpolation, bOut: Ease | undefined): void {
+	const k = kfs[i]!;
+	if (isBothSided(k.interpolation) && k.interpolation !== inType) {
+		k.interpolation = 'bezier';
+		if (bOut) k.easeOut = copyEase(bOut);
+	}
+}
+
+/**
+ * Makes span a → b evaluate exactly as bezier(out, inn), keeping every other segment evaluating as before:
+ * - A's outgoing side becomes Bezier with `out` (`keepIncoming` keeps the segment arriving at A);
+ * - B's incoming side becomes Bezier with `inn`: a legacy Bezier / Hold B just takes the ease, a legacy Auto /
+ *   Continuous B becomes Bezier with its effective out ease (so `finish` cannot re-derive the in ease just set), a
+ *   legacy Linear B gets an explicit Bezier incoming side (its Linear outgoing side, and the segment after it, stay),
+ *   a per-side B gets `inInterpolation: 'bezier'` (`keepOutgoing` for a both-sided outgoing type).
+ * A span that already is exactly linear stays as it is for the linear ease.
  * `captured` = eases measured on the array before keys were removed (multi-point rebuilds); default = measured now.
  */
 export function writeSpan(
@@ -80,33 +161,29 @@ export function writeSpan(
 	b: number,
 	out: Ease,
 	inn: Ease,
-	captured: CapturedEases = captureEases(kfs, a, b),
+	captured?: CapturedEases,
+	metric?: Metric,
 ): void {
+	if (isLinearEase(out) && isLinearEase(inn) && segmentShape(kfs, a, b, metric) === 'linear') return;
+	const cap = captured ?? captureEases(kfs, a, b, metric);
 	const A = kfs[a]!;
 	const B = kfs[b]!;
-	const C = kfs[b + 1];
-	if (A.interpolation === 'linear' && isLinearEase(out) && isLinearEase(inn)) return; // already exactly linear
-	if (A.interpolation !== 'bezier') {
-		A.interpolation = 'bezier';
-		if (captured.aIn) A.easeIn = { ...captured.aIn };
-	}
-	A.easeOut = { influence: out.influence, slope: out.slope };
-	if (B.interpolation === 'linear' && isLinearEase(inn)) return; // a linear B already arrives linearly
-	if (B.interpolation === 'linear') {
-		B.interpolation = 'bezier';
-		B.easeOut = { ...LINEAR_EASE };
-		if (C && C.interpolation !== 'linear') {
-			if (C.interpolation === 'auto-bezier') {
-				C.interpolation = 'bezier';
-				if (captured.cOut) C.easeOut = { ...captured.cOut };
-			}
-			C.easeIn = { ...LINEAR_EASE };
+	keepIncoming(kfs, a, 'bezier', cap);
+	A.interpolation = 'bezier';
+	A.easeOut = copyEase(out);
+	if (B.inInterpolation === undefined) {
+		if (B.interpolation === 'linear') {
+			if (isLinearEase(inn)) return; // a legacy Linear B already arrives with the linear ease
+			B.inInterpolation = 'bezier';
+		} else if (isBothSided(B.interpolation)) {
+			B.interpolation = 'bezier';
+			if (cap.bOut) B.easeOut = copyEase(cap.bOut);
 		}
-	} else if (B.interpolation === 'auto-bezier' || B.interpolation === 'continuous-bezier') {
-		B.interpolation = 'bezier';
-		if (captured.bOut) B.easeOut = { ...captured.bOut };
+	} else {
+		keepOutgoing(kfs, b, 'bezier', cap.bOut);
+		B.inInterpolation = 'bezier';
 	}
-	B.easeIn = { influence: inn.influence, slope: inn.slope };
+	B.easeIn = copyEase(inn);
 }
 
 /** Magnitude of a value change as the evaluator measures speeds (absolute, Euclidean, RMS vertex shift). */
@@ -121,22 +198,26 @@ export function valueDistance(a: unknown, b: unknown): number {
 	return 0;
 }
 
-/** Distance travelled over span a → b: arc length along curved spatial segments, the value distance otherwise. */
-export function spanDistance(kfs: Keys, a: number, b: number): number {
+/**
+ * Distance travelled over span a → b: arc length along curved spatial segments (in the metric's pixels for effect
+ * points), the value distance otherwise.
+ */
+export function spanDistance(kfs: Keys, a: number, b: number, metric?: Metric): number {
 	let d = 0;
 	for (let i = a; i < b; i++) {
 		const u = kfs[i]!.value;
 		const v = kfs[i + 1]!.value;
-		d += isVec2Value(u) && isVec2Value(v) ? spatialSegmentLength(kfs, i) : valueDistance(u, v);
+		d += isVec2Value(u) && isVec2Value(v) ? spatialSegmentLength(kfs, i, metric) : valueDistance(u, v);
 	}
 	return d;
 }
 
 /**
  * Average velocity of span a → b in value units per second: signed for numbers (an ease slope multiplies it), the
- * speed along the value / path otherwise. 0 for a span of zero duration.
+ * speed along the value / path otherwise (layer px per second for effect points with a `metric`). 0 for a span of
+ * zero duration.
  */
-export function spanAverageVelocity(kfs: Keys, a: number, b: number): number {
+export function spanAverageVelocity(kfs: Keys, a: number, b: number, metric?: Metric): number {
 	const A = kfs[a]!;
 	const B = kfs[b]!;
 	const seconds = (B.time - A.time) / FLICKS_PER_SECOND;
@@ -148,7 +229,7 @@ export function spanAverageVelocity(kfs: Keys, a: number, b: number): number {
 		const d = spanDistance(kfs, a, b);
 		return (B.value >= A.value ? d : -d) / seconds;
 	}
-	return spanDistance(kfs, a, b) / seconds;
+	return spanDistance(kfs, a, b, metric) / seconds;
 }
 
 /** Highest and lowest progress a Bézier ease pair reaches inside the segment (sampled; ends are 0 and 1). */

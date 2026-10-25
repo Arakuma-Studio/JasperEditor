@@ -80,17 +80,26 @@ type KeyOut = {
 	inInterpolation?: string;
 } & KeyEaseSummary;
 
-/** Maps keys to their listing entries, each with the compact ease of the segment leaving it. */
+/**
+ * Maps keys to their listing entries, each with the compact ease of the segment leaving it (`metric`: the spatial
+ * metric the property evaluates with — effect points — so auto-bezier eases match what renders).
+ */
 function withEases<T extends object>(
 	keys: readonly Keyframe<unknown>[],
 	entry: (k: Keyframe<unknown>) => T,
+	metric?: SpatialMetric,
 ): (T & KeyEaseSummary)[] {
-	const eases = keyEaseSummaries(keys);
+	const eases = keyEaseSummaries(keys, undefined, metric);
 	return keys.map((k, i) => ({ ...entry(k), ...eases[i] }));
 }
 
 /** A property's keys in sequence frames, each with the compact ease of the segment leaving it. */
-function keysOf(seq: Sequence, clip: Clip, anim: Animatable<unknown> | null): KeyOut[] {
+function keysOf(
+	seq: Sequence,
+	clip: Clip,
+	anim: Animatable<unknown> | null,
+	metric?: SpatialMetric,
+): KeyOut[] {
 	if (!anim) return [];
 	return withEases(anim.keyframes as readonly Keyframe<unknown>[], (k) => {
 		const frame = sequenceFrameOfContentTime(clip, k.time, seq.settings.frameRate as Rational);
@@ -102,7 +111,7 @@ function keysOf(seq: Sequence, clip: Clip, anim: Animatable<unknown> | null): Ke
 			interpolation: k.interpolation,
 			...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 		};
-	});
+	}, metric);
 }
 
 /** Why a clip draws nothing at `frame` (null = it is rendered). */
@@ -227,7 +236,7 @@ export function clipKeyframesQuery(
 		.filter((s) => keyMatches(s.key, filter))
 		.flatMap((s) => {
 			const r = resolvePropertyAt(ctx, s, clip.start);
-			const keyframes = keysOf(seq, clip, r.anim).filter((k) => k.frame >= lo && k.frame <= hi);
+			const keyframes = keysOf(seq, clip, r.anim, r.metric).filter((k) => k.frame >= lo && k.frame <= hi);
 			if (!keyframes.length) return [];
 			return [
 				{ key: s.key, label: s.label, target: propertyKeyToParamPath({ clipId: clip.id }, s.key), keyframes },
@@ -261,7 +270,7 @@ export function clipPropertiesQuery(
 		.map((s) => {
 			const r = resolvePropertyAt(ctx, s, at);
 			const rv = renderedValue(view, s.key, r.value);
-			const keys = keysOf(seq, clip, r.anim);
+			const keys = keysOf(seq, clip, r.anim, r.metric);
 			const target = propertyKeyToParamPath({ clipId: clip.id }, s.key);
 			// Wave expressions: the stored expression, its error, and its value where the scene view does not hold the
 			// property (shape, text, masks…).
@@ -432,7 +441,7 @@ function seqParam(
 						value: round(k.value),
 						interpolation: k.interpolation,
 						...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
-					})),
+					}), metric),
 				}
 			: {}),
 		...(notRendered ? { rendered: false, why: notRendered } : {}),

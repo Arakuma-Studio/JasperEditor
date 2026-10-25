@@ -204,8 +204,14 @@ function perSideEase<T>(
 /**
  * Effective ease leaving key i as the evaluator uses it (auto-bezier → computed). Linear: ⅓·1 when the next key is
  * read the legacy way (the segment is then linear anyway), After Effects' ⅙·1 when it is per side (keyframe-sides).
+ * spatial-points: `metric` = the metric of vec2 values (temporal auto-bezier speeds are measured in it).
  */
-export function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+export function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number, metric?: SpatialMetric | null): Ease {
+	const m = activeMetric(metric);
+	if (m && isVec2Value(kfs[i]?.value)) {
+		const w = metricWindow(kfs as readonly Keyframe<unknown>[], i, m);
+		return outgoingEase(w.keys, w.j);
+	}
 	const k = kfs[i]!;
 	if (isPerSideSegmentEnd(kfs, i + 1)) return perSideEase(kfs, i, 'out', k.interpolation);
 	if (k.interpolation === 'auto-bezier')
@@ -214,8 +220,16 @@ export function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	return k.easeOut;
 }
 
-/** Effective ease arriving at key i as the evaluator uses it (per side when the key has `inInterpolation`). */
-export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+/**
+ * Effective ease arriving at key i as the evaluator uses it (per side when the key has `inInterpolation`).
+ * spatial-points: `metric` as for `outgoingEase`.
+ */
+export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number, metric?: SpatialMetric | null): Ease {
+	const m = activeMetric(metric);
+	if (m && isVec2Value(kfs[i]?.value)) {
+		const w = metricWindow(kfs as readonly Keyframe<unknown>[], i, m);
+		return incomingEase(w.keys, w.j);
+	}
 	const k = kfs[i]!;
 	if (k.inInterpolation !== undefined) return perSideEase(kfs, i, 'in', k.inInterpolation);
 	if (k.interpolation === 'auto-bezier') return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'in') };
@@ -284,15 +298,50 @@ export function segmentProgress<T>(kfs: readonly Keyframe<T>[], i: number, u: nu
 /**
  * The incoming type that actually shapes the segment arriving at key `i` — what the UI shows on the key's left
  * half: `hold` after a Hold key (After Effects draws it overridden), `linear` after a Linear key when the key is read
- * the legacy way, else `inInterpolationOf`. Null for the first key.
+ * the legacy way, else `inInterpolationOf`. Null for the first key. `from` = the key the segment leaves (the fixed
+ * start of a roving run ending at `i`; default the previous key).
  */
-export function effectiveInInterpolation<T>(kfs: readonly Keyframe<T>[], i: number): Interpolation | null {
-	const prev = kfs[i - 1];
+export function effectiveInInterpolation<T>(
+	kfs: readonly Keyframe<T>[],
+	i: number,
+	from = i - 1,
+): Interpolation | null {
+	const prev = from >= 0 && from < i ? kfs[from] : undefined;
 	if (!prev) return null;
 	if (prev.interpolation === 'hold') return 'hold';
 	const k = kfs[i]!;
 	if (k.inInterpolation === undefined && prev.interpolation === 'linear') return 'linear';
 	return inInterpolationOf(k);
+}
+
+/**
+ * keyframe-sides: the explicit incoming side (type and ease) that reproduces exactly how the segment arriving at key
+ * `i` evaluates now, so the key's outgoing type can change without touching that segment (the rule of
+ * `keyframe.setInterpolation {side: 'out'}`, also used by the ease commands and the ease clipboard):
+ * - a key with `inInterpolation` keeps it (ease = the one it contributes: computed for Auto Bezier, ⅙·1 for Linear);
+ * - read the legacy way: after a Linear key the segment is linear → Linear; a Hold key arrives with its stored ease →
+ *   Bezier; a Linear key after a curving key contributed ⅓·1 → Bezier {⅓, 1} (an explicit Linear side is After
+ *   Effects' ⅙·1); a Linear first key, or one after a Hold, → Linear; otherwise its own type.
+ */
+export function explicitInSide<T>(
+	kfs: readonly Keyframe<T>[],
+	i: number,
+	metric?: SpatialMetric | null,
+	/** The key the arriving segment leaves (the fixed start of a roving run ending at `i`; default the previous key). */
+	from = i - 1,
+): { type: InInterpolation; ease: Ease } {
+	const k = kfs[i]!;
+	if (k.inInterpolation !== undefined)
+		return { type: k.inInterpolation, ease: incomingEase(kfs, i, metric) };
+	const prev = from >= 0 && from < i ? kfs[from] : undefined;
+	const own = k.interpolation;
+	if (prev?.interpolation === 'linear') return { type: 'linear', ease: AE_LINEAR_SIDE };
+	if (own === 'hold') return { type: 'bezier', ease: k.easeIn };
+	if (own === 'linear')
+		return prev && prev.interpolation !== 'hold'
+			? { type: 'bezier', ease: LINEAR_EASE }
+			: { type: 'linear', ease: AE_LINEAR_SIDE };
+	return { type: own, ease: incomingEase(kfs, i, metric) };
 }
 
 /** True for the interpolations that shape both sides of a key (After Effects: only when both sides are Bezier). */

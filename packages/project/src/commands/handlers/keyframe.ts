@@ -6,6 +6,7 @@ import {
 	autoSlope,
 	EASE_PRESETS,
 	evaluate,
+	explicitInSide,
 	isBothSided,
 	isHoldOnlyValue,
 	keySidesIssue,
@@ -317,17 +318,11 @@ function setEase(key: DKey, side: 'in' | 'out', e: Ease): void {
 function freezeIncoming(kfs: DKey[], i: number): void {
 	const k = kfs[i]!;
 	if (k.inInterpolation !== undefined) return;
-	const prev = kfs[i - 1];
-	const own = k.interpolation;
-	if (prev && prev.interpolation === 'linear') {
-		k.inInterpolation = 'linear';
-		return;
-	}
-	if (own === 'hold') k.inInterpolation = 'bezier';
-	else if (own === 'linear') {
-		k.inInterpolation = prev && prev.interpolation !== 'hold' ? 'bezier' : 'linear';
-		if (k.inInterpolation === 'bezier') k.easeIn = { ...LINEAR };
-	} else k.inInterpolation = own;
+	// The evaluator's rule (`explicitInSide`); a Bezier side takes the ease it contributed (a Hold key's stored one,
+	// ⅓·1 for a legacy Linear key).
+	const side = explicitInSide(kfs as Keyframe<unknown>[], i);
+	k.inInterpolation = side.type;
+	if (side.type === 'bezier') k.easeIn = { influence: side.ease.influence, slope: side.ease.slope };
 }
 
 /**
@@ -382,7 +377,7 @@ function sideRefusal(
  * Per-side segments follow After Effects: a segment is linear only when both its sides are Linear, so an Ease In after
  * a Linear key shapes the segment without touching the Linear key.
  */
-function applyInterpolation(
+export function applyInterpolation(
 	anim: DAnim,
 	key: DKey,
 	interpolation: Interpolation,
