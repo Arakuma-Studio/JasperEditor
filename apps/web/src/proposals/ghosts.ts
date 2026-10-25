@@ -342,9 +342,9 @@ export function buildGhostModel(input: {
 				ghostKeys(itemId, rawId, c, null);
 				continue;
 			}
-			const tr = after.transitions?.[id] as Transition | undefined;
-			if (tr && !before.transitions?.[id]) {
-				ghostTransition(itemId, rawId, tr, 'created');
+			const trn = after.transitions?.[id] as Transition | undefined;
+			if (trn && !before.transitions?.[id]) {
+				ghostTransition(itemId, rawId, trn, 'created');
 				continue;
 			}
 			const tr = findTrack(after, id);
