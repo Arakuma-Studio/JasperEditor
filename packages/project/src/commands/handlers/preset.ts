@@ -1,7 +1,8 @@
 // effect.applyPreset (S03:FX-030, FX-010 "applying to N clips is one undo entry", AGT-002 `presets.apply`).
 // The preset is validated first (parseEffectPreset). Per target clip:
 // - intrinsic properties overwrite: Motion (only the properties the preset has), Opacity + Blend Mode, the pinned
-//   Crop (the clip's first `jasper.crop`, created at index 0 when missing), Volume, Panner;
+//   Crop (the stack's first effect when it is a `jasper.crop`, else a new crop inserted at index 0: a preset's Crop
+//   applies first, crop-order), Volume, Panner;
 // - applied effects are appended (or inserted at `index`) as new instances with new ids; every param goes through
 //   `buildParams`, so values are validated and clamped like `effect.add`, and keyframes get new ids;
 // - key times map by the preset type (Scale / Anchor to In / Anchor to Out, effect-presets/time.ts) onto the clip's
@@ -15,6 +16,7 @@ import { EASE_PRESETS, normalizeKeySides } from '../../keyframes.ts';
 import { CROP_EFFECT, type EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { intrinsicBoxOf, resolvePropertySpec } from '../../registry/properties.ts';
+import { pinnedCropOf } from '../../render/crop.ts';
 import { dropForeignRotoRefs } from '../../roto/index.ts';
 import type { Animatable, Keyframe, Vec2 } from '../../schema/common.ts';
 import { type Clip, type EffectInstance, isKnownClipKind } from '../../schema/sequence.ts';
@@ -208,7 +210,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			const spec = h.registries.effects.get(CROP_EFFECT.id) ?? CROP_EFFECT;
 			const params = paramsFor(spec, intrinsic.crop.params as Record<string, PresetAnim<unknown>>);
 			const list = effects();
-			const existing = list.find((fx) => fx.effectId === CROP_EFFECT.id);
+			const existing = pinnedCropOf(list);
 			if (existing) {
 				existing.params = params as never;
 				existing.enabled = intrinsic.crop.enabled ?? true;

@@ -78,6 +78,7 @@ Rules:
 - Tracks are "V1", "V2"… (video, V1 lowest) and "A1", "A2"… (audio). A video file placed with add_clip creates a linked video+audio pair.
 - Deleting tracks/items or anything with force: true needs the user's approval in an open editor window; if they deny it (E_APPROVAL_DENIED), do not retry without asking.
 - The same goes for destructive operations outside the timeline: deleting an effect preset, removing a downloaded model, cleaning cache that saved projects use, deleting all render files, moving the cache, restoring a version over a project, changing processing settings. The user answers on a card in the editor; only they can (you cannot approve or deny through any tool).
+- A clip's video effects render top to bottom in stack order (Premiere's standard effects), Crop included, then Motion and Opacity: Crop before or after a Horizontal Flip, Mirror or blur gives a different picture (apply_commands effect.reorder moves an effect). Crop's Edge Feather (px of the clip's own frame) fades the picture in from each crop edge.
 - Undo/redo only touch this agent's own History entries.
 - Errors come back as tool errors with a code and a hint on what to do next.
 - Arguments are strict: an unknown key (at any depth, in tool arguments and inside apply_commands commands) is an error (E_UNKNOWN_ARGUMENT / E_SCHEMA) naming it, the accepted keys and the likely typo — never silently ignored.

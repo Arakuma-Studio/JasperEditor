@@ -12,6 +12,7 @@ import {
 	type EffectPresetFolder,
 	PresetBuildError,
 	parseEffectPreset,
+	pinnedCropOf,
 	presetMatches,
 	presetSummary,
 } from '@jasper/project';
@@ -181,7 +182,12 @@ export function registerPresetTools(ctx: ToolContext): void {
 					.object({
 						motion: z.boolean().optional(),
 						opacity: z.boolean().optional(),
-						crop: z.boolean().optional(),
+						crop: z
+							.boolean()
+							.optional()
+							.describe(
+								'The pinned Crop: a crop at the top of the stack (it applies first); a crop placed after other effects is saved through effectIds, keeping its place',
+							),
 						volume: z.boolean().optional(),
 						panner: z.boolean().optional(),
 						effectIds: z.array(z.string()).optional().describe('Effect instance ids ("fx_…") of the clip'),
@@ -204,9 +210,11 @@ export function registerPresetTools(ctx: ToolContext): void {
 				const clip = Object.values(doc.sequences)
 					.map((s) => s.clips[a.clipId!])
 					.find(Boolean);
-				const all = ((clip as { effects?: { id: string; effectId: string }[] } | undefined)?.effects ?? [])
-					.filter((fx) => fx.effectId !== 'jasper.crop')
-					.map((fx) => fx.id);
+				// crop-order: the pinned Crop (a crop at the top of the stack) is a section of its own; a crop placed after
+				// other effects is an ordinary stack effect.
+				const stack = (clip as { effects?: { id: string; effectId: string }[] } | undefined)?.effects ?? [];
+				const pinned = pinnedCropOf(stack);
+				const all = stack.filter((fx) => fx !== pinned).map((fx) => fx.id);
 				try {
 					raw = buildEffectPreset(doc, a.clipId, {
 						name: a.name,

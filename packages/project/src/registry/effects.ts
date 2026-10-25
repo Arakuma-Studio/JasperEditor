@@ -327,7 +327,12 @@ const pct = (name: string, label: string, def = 0): ParamSpec => ({
 	animatable: true,
 });
 
-/** Crop (S01:FX-003): insets in percent of the intrinsic box, feather in pixels. */
+/**
+ * Crop (S01:FX-003): insets in percent of the intrinsic box, Edge Feather in layer pixels. It applies where it sits in
+ * the stack (schema v8). Edge Feather fades the picture in from each crop edge with the profile of `render/crop.ts`;
+ * `preview.css` / `native.filter` describe the hard cut — the renderers draw the feather themselves (the fx chain's
+ * shader, compositions/src/fx/builtins.ts; the native mask, apps/engine/src/export/crop.ts).
+ */
 export const CROP_EFFECT: EffectSpec = {
 	id: 'jasper.crop',
 	version: 1,

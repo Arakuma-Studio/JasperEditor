@@ -7,6 +7,7 @@
 // module says when a stack must be flat (`flatStackReason`) and what the compositor does at a frame (`flatOpsAt`).
 import {
 	clipHasMasks,
+	cropMayFeather,
 	defaultEffectRegistry,
 	isCssBlend,
 	type MediaHandle,
@@ -130,9 +131,9 @@ export function isDomPictureClip(clip: Pick<Clip, 'kind' | 'source'>, media: Med
 }
 
 /**
- * The clip draws through its own HTML-in-Canvas (LayerBox `FxDomPicture`): a DOM picture with GPU shader effects,
- * masks or (for the chain kinds) colour effects, or one whose picture is captured for something else (`tapped`: a GPU
- * transition side, a track read as a Track Matte).
+ * The clip draws through its own HTML-in-Canvas (LayerBox `FxDomPicture`): a DOM picture with GPU shader effects, a
+ * crop with Edge Feather, masks or (for the chain kinds) colour effects, or one whose picture is captured for something
+ * else (`tapped`: a GPU transition side, a track read as a Track Matte).
  */
 export function clipDrawsThroughCanvas(clip: Clip, media: MediaLike, tapped = false): boolean {
 	if (!isDomPictureClip(clip, media)) return false;
@@ -143,6 +144,8 @@ export function clipDrawsThroughCanvas(clip: Clip, media: MediaLike, tapped = fa
 		if (spec?.appliesTo !== 'video') continue;
 		if (spec.gpu) return true;
 		if (spec.color && CHAIN_KINDS.has(clip.kind)) return true;
+		// crop-order: Edge Feather runs in the canvas chain (fx/builtins.ts `CROP_FEATHER_GPU`).
+		if (fx.effectId === 'jasper.crop' && cropMayFeather(fx.params)) return true;
 	}
 	return false;
 }
