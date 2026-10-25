@@ -4,14 +4,16 @@
 //   extras running (S11:ANM-014: seek order never changes a frame);
 // - the card fits every canvas (long comment, huge counts, marks): its painted box stays inside the frame;
 // - with SOCIAL_CALIBRATION_DIR set, writes the calibration stills (hold frame, card at 2× tokcomment's CSS px).
-// Fonts: TikTok Sans from @fontsource/tiktok-sans (SOCIAL_FONT_DIR overrides its `files/` dir); emoji: Apple images
-// from SOCIAL_EMOJI_DIR (`<codepoints>.png`), else the emoji draw as text.
+// Fonts: TikTok Sans from @fontsource/tiktok-sans (SOCIAL_FONT_DIR overrides its `files/` dir), Roboto from
+// @fontsource/roboto; emoji: images from SOCIAL_EMOJI_DIR (`<codepoints>.png` = Apple; subdirectories `apple/`,
+// `twemoji/`, `noto/` = that pack), else the emoji draw as text.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { socialDefaults } from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CardProps } from './social-comment-render/types.ts';
@@ -23,15 +25,20 @@ const CHROME =
 	(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined);
 const ffmpeg = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 
-/** The TikTok Sans files: SOCIAL_FONT_DIR, else @fontsource/tiktok-sans as installed for the engine. */
-function fontDir(): string | null {
-	if (process.env.SOCIAL_FONT_DIR) return process.env.SOCIAL_FONT_DIR;
+/** The `files/` dir of a @fontsource package as installed for the engine (null when it is not installed). */
+function fontsourceDir(pkg: string): string | null {
 	try {
 		const req = createRequire(join(here, '../../../apps/engine/package.json'));
-		return join(dirname(req.resolve('@fontsource/tiktok-sans/package.json')), 'files');
+		return join(dirname(req.resolve(`${pkg}/package.json`)), 'files');
 	} catch {
 		return null;
 	}
+}
+
+/** The TikTok Sans files: SOCIAL_FONT_DIR, else @fontsource/tiktok-sans as installed for the engine. */
+function fontDir(): string | null {
+	if (process.env.SOCIAL_FONT_DIR) return process.env.SOCIAL_FONT_DIR;
+	return fontsourceDir('@fontsource/tiktok-sans');
 }
 
 function rgba(png: Buffer): { data: Buffer; width: number; height: number } {
@@ -154,6 +161,145 @@ CALIBRATION.push(
 	},
 );
 
+// YouTube: the comment (tokcomment `youtube-video` captures) and the Shorts card (`youtube-shorts`; no verified, time
+// or counts); Noto emoji (YouTube's default pack)
+for (const theme of ['light', 'dark'])
+	for (const verified of [false, true])
+		CALIBRATION.push({
+			name: `youtube-comment_${theme}_verified-${verified ? 'on' : 'off'}`,
+			canvas: '1080x1920',
+			params: { variant: 'youtube-comment', theme, verified },
+		});
+for (const [unit, label] of [
+	['minute', 'mins'],
+	['hour', 'hrs'],
+	['day', 'days'],
+	['week', 'wks'],
+	['month', 'mth'],
+	['year', 'yrs'],
+] as const)
+	CALIBRATION.push({
+		name: `youtube-comment_light_time-3-${label}`,
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', timeValue: 3, timeUnit: unit },
+	});
+for (const [variant, prefix] of [
+	['youtube-comment', 'youtube-comment'],
+	['youtube-shorts-reply', 'youtube-shorts-reply'],
+] as const)
+	CALIBRATION.push(
+		{ name: `${prefix}_light_text-short`, canvas: '1080x1920', params: { variant, text: 'Love this! 🔥' } },
+		{ name: `${prefix}_light_text-long`, canvas: '1080x1920', params: { variant, text: LONG } },
+		{
+			name: `${prefix}_light_highlight`,
+			canvas: '1080x1920',
+			params: { variant, text: 'Write any ==comment== and see what happens 😊' },
+		},
+		{
+			name: `${prefix}_light_blur`,
+			canvas: '1080x1920',
+			params: { variant, text: 'Write any ||comment|| and see what happens 😊' },
+		},
+		{
+			name: `${prefix}_light_remove`,
+			canvas: '1080x1920',
+			params: { variant, text: 'Write any ~~comment~~ and see what happens 😊' },
+		},
+		{
+			name: `${prefix}_light_avatar-uploaded`,
+			canvas: '1080x1920',
+			params: { variant, avatar: { mediaId: 'med_avatar' } },
+			media: true,
+		},
+		{
+			name: `${prefix}_light_avatar-generated`,
+			canvas: '1080x1920',
+			params: { variant, avatar: { generated: 42 }, handle: 'lunapark' },
+		},
+		{
+			name: `${prefix}_dark_mentions`,
+			canvas: '1080x1920',
+			params: { variant, theme: 'dark', text: 'Write any comment @friend and see what happens #shorts 😊' },
+		},
+		{
+			name: `${prefix}_light_mentions`,
+			canvas: '1080x1920',
+			params: { variant, text: 'Write any comment @friend and see what happens #shorts 😊' },
+		},
+		{
+			name: `${prefix}_light_no-profile`,
+			canvas: '1080x1920',
+			params: { variant, showProfile: false },
+		},
+		{
+			name: `${prefix}_light_long-name`,
+			canvas: '1080x1920',
+			params: {
+				variant,
+				handle: 'averyveryveryverylongusername_with_many_characters_123456',
+				verified: true,
+			},
+		},
+	);
+CALIBRATION.push(
+	{
+		name: 'youtube-shorts-reply_light_default',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-shorts-reply' },
+	},
+	{
+		name: 'youtube-shorts-reply_dark_default',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-shorts-reply', theme: 'dark' },
+	},
+	{
+		name: 'youtube-comment_light_counts-raw',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', likes: 1_234_567, replies: 1_234_567 },
+	},
+	{
+		name: 'youtube-comment_light_counts-huge',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', likes: 987_654_321_000, replies: 4_812_345, verified: true },
+	},
+	{
+		name: 'youtube-comment_light_no-replies',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', replies: 0 },
+	},
+	{
+		name: 'youtube-comment_dark_one-reply',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', theme: 'dark', replies: 1, timeValue: 1, timeUnit: 'month' },
+	},
+	{
+		name: 'youtube-comment_dark_liked',
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', theme: 'dark', likeTick: true },
+	},
+);
+for (const frame of [16, 22, 30, 40, 48])
+	CALIBRATION.push({
+		name: `anim_youtube-extras_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'youtube-comment', wordReveal: true, likeTick: true },
+		frame,
+	});
+for (const frame of [3, 6, 9, 13])
+	CALIBRATION.push({
+		name: `anim_youtube-shorts-grow_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'youtube-shorts-reply', entrance: 'grow-from-tail' },
+		frame,
+	});
+
+// the YouTube cases start from the variant's tokcomment defaults ("Username", 10 months ago, 72 likes, 2 replies)
+for (const c of CALIBRATION) {
+	const variant = c.params.variant;
+	if (typeof variant === 'string' && variant.startsWith('youtube-'))
+		c.params = { ...socialDefaults(variant as 'youtube-comment'), ...c.params };
+}
+
 // animation frames (filmstrips on the calibration page): each entrance, the extras, the exit
 for (const [entrance, frames] of [
 	['classic-pop', [2, 4, 6, 8]],
@@ -199,18 +345,34 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				copyFileSync(join(dir, file), join(pub, 'fonts', file));
 				fonts.push({ family: 'TikTok Sans', weight, file: `fonts/${file}` });
 			}
+		// Roboto (the YouTube cards)
+		const roboto = fontsourceDir('@fontsource/roboto');
+		if (roboto)
+			for (const weight of [400, 500]) {
+				const file = `roboto-latin-${weight}-normal.woff2`;
+				if (!existsSync(join(roboto, file))) continue;
+				copyFileSync(join(roboto, file), join(pub, 'fonts', file));
+				fonts.push({ family: 'Roboto', weight, file: `fonts/${file}` });
+			}
 		const emojiDir = process.env.SOCIAL_EMOJI_DIR;
-		if (emojiDir && existsSync(emojiDir))
-			for (const f of readdirSync(emojiDir).filter((n) => n.endsWith('.png'))) {
-				copyFileSync(join(emojiDir, f), join(pub, 'emoji', f));
+		const addEmoji = (dir: string, pack: string) => {
+			mkdirSync(join(pub, 'emoji', pack), { recursive: true });
+			for (const f of readdirSync(dir).filter((n) => n.endsWith('.png'))) {
+				copyFileSync(join(dir, f), join(pub, 'emoji', pack, f));
 				const grapheme = String.fromCodePoint(
 					...f
 						.replace('.png', '')
 						.split('-')
 						.map((h) => Number.parseInt(h, 16)),
 				);
-				emojiFiles[`apple:${grapheme}`] = `emoji/${f}`;
+				emojiFiles[`${pack}:${grapheme}`] = `emoji/${pack}/${f}`;
 			}
+		};
+		if (emojiDir && existsSync(emojiDir)) {
+			addEmoji(emojiDir, 'apple');
+			for (const pack of ['apple', 'twemoji', 'noto'])
+				if (existsSync(join(emojiDir, pack))) addEmoji(join(emojiDir, pack), pack);
+		}
 		// a 256 px gradient picture as the uploaded avatar (no personal data)
 		spawnSync(ffmpeg, [
 			'-v',
@@ -276,6 +438,23 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 					entrance: 'drop-bounce',
 				},
 			},
+			{
+				name: 'youtube-comment-dark',
+				canvas: '1080x1080',
+				params: {
+					variant: 'youtube-comment',
+					theme: 'dark',
+					likeTick: true,
+					wordReveal: true,
+					entrance: 'grow-from-tail',
+					verified: true,
+				},
+			},
+			{
+				name: 'youtube-shorts-light',
+				canvas: '1080x1920',
+				params: { variant: 'youtube-shorts-reply', wordReveal: true, entrance: 'classic-pop' },
+			},
 		];
 		for (const c of cases) {
 			const frames = [0, 6, 14, 22, 30, 45, 146];
@@ -318,6 +497,18 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				{ text: longest },
 				{ variant: 'tiktok-comment', text: longest, likes: 1e12, replies: 1e12 },
 				{ variant: 'tiktok-comment', likes: 999_999_999_999, replies: 999_999, displayName: 'x'.repeat(64) },
+				{ variant: 'youtube-comment', text: longest, likes: 1e12, replies: 1e12, verified: true },
+				{
+					variant: 'youtube-comment',
+					likes: 999_999_999_999,
+					replies: 999_999_999_999,
+					timeValue: 10000,
+					timeUnit: 'month',
+					handle: 'x'.repeat(64),
+					verified: true,
+				},
+				{ variant: 'youtube-shorts-reply', text: longest },
+				{ variant: 'youtube-shorts-reply', handle: 'x'.repeat(64), text: 'ok' },
 			]) {
 				const png = await still({ name: 'fit', canvas, params }, 100);
 				const box = paintedBox(png);
@@ -335,7 +526,11 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		const out = process.env.SOCIAL_CALIBRATION_DIR!;
 		mkdirSync(out, { recursive: true });
 		const manifest: Record<string, ReturnType<typeof paintedBox>> = {};
-		for (const c of CALIBRATION) {
+		// SOCIAL_CALIBRATION_FILTER: a regular expression of the case names to render (e.g. "^youtube-")
+		const only = process.env.SOCIAL_CALIBRATION_FILTER
+			? new RegExp(process.env.SOCIAL_CALIBRATION_FILTER)
+			: null;
+		for (const c of CALIBRATION.filter((k) => !only || only.test(k.name))) {
 			// the hold frame; 9:16 zooms the 420 px card by 1.8 → scale 2 / 1.8 draws it at tokcomment's 2× (840 px)
 			const png = await still(c, c.frame ?? 100, 2 / 1.8);
 			writeFileSync(join(out, `${c.name}.png`), png);

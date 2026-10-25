@@ -4,14 +4,15 @@ import type { SocialVariant } from '@jasper/mg-templates';
 import type { SocialVariantImpl } from './contract.ts';
 import { TIKTOK_COMMENT, TIKTOK_REPLY } from './tiktok.tsx';
 import { unavailableVariant } from './unavailable.tsx';
+import { YOUTUBE_COMMENT, YOUTUBE_SHORTS_REPLY } from './youtube.tsx';
 
 export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantImpl>> = {
 	'tiktok-reply': TIKTOK_REPLY,
 	'tiktok-comment': TIKTOK_COMMENT,
 	'instagram-post': unavailableVariant('instagram-post'),
 	'instagram-reel-reply': unavailableVariant('instagram-reel-reply'),
-	'youtube-comment': unavailableVariant('youtube-comment'),
-	'youtube-shorts-reply': unavailableVariant('youtube-shorts-reply'),
+	'youtube-comment': YOUTUBE_COMMENT,
+	'youtube-shorts-reply': YOUTUBE_SHORTS_REPLY,
 	'x-post': unavailableVariant('x-post'),
 };
 

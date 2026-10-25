@@ -343,11 +343,13 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	// "Reply" and the replies line 600 on the comment row (tokcomment's weights)
 	'tiktok-reply': { family: 'TikTok Sans', weights: [600, 700] },
 	'tiktok-comment': { family: 'TikTok Sans', weights: [500, 600] },
+	// Roboto (Apache-2.0, bundled; YouTube's comment font): handle, "N replies" 500, time, comment and counts 400 on the
+	// comment; header 400 and comment 500 on the Shorts card
+	'youtube-comment': { family: 'Roboto', weights: [400, 500] },
+	'youtube-shorts-reply': { family: 'Roboto', weights: [400, 500] },
 	// built by the follow-up variant packages (WP6b–d)
 	'instagram-post': null,
 	'instagram-reel-reply': null,
-	'youtube-comment': null,
-	'youtube-shorts-reply': null,
 	'x-post': null,
 };
 
@@ -375,7 +377,12 @@ export function fillSocialCommentParams(
 const DEFAULTS = socialCommentParamsSchema.parse({});
 
 /** The variants with a card of their own (the others draw a "not available yet" card and get no preset). */
-export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = ['tiktok-reply', 'tiktok-comment'];
+export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
+	'tiktok-reply',
+	'tiktok-comment',
+	'youtube-comment',
+	'youtube-shorts-reply',
+];
 
 /**
  * The variant of social-comment params whose card this build does not draw yet (the clip shows a "not available" card
@@ -399,8 +406,14 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 		name: 'Instagram · Reels reply',
 		description: 'The Instagram "Replying to" Reels card.',
 	},
-	'youtube-comment': { name: 'YouTube · Comment', description: 'A YouTube video comment.' },
-	'youtube-shorts-reply': { name: 'YouTube · Shorts reply', description: 'The YouTube Shorts comment card.' },
+	'youtube-comment': {
+		name: 'YouTube · Comment',
+		description: 'A YouTube video comment with likes, the reply button and "N replies".',
+	},
+	'youtube-shorts-reply': {
+		name: 'YouTube · Shorts reply',
+		description: 'The "Comment from @handle" card YouTube shows on a Shorts reply.',
+	},
 	'x-post': { name: 'X · Post', description: 'An X post card.' },
 };
 

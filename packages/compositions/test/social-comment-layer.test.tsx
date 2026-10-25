@@ -123,4 +123,21 @@ describe('social-comment@1 in the sequence composition', () => {
 		expect(none.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
 		none.unmount();
 	});
+	it('draws the YouTube cards through the layer: comment with the uploaded avatar, Shorts card with the YouTube default', () => {
+		const { doc, mediaId } = project({ variant: 'youtube-comment', handle: 'luna.makes', replies: 3 }, true);
+		const view = frame(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+		expect(view.container.querySelector('[data-social-variant="youtube-comment"]')).not.toBeNull();
+		expect(view.getByTestId('social-avatar-media').getAttribute('src')).toBe(
+			`https://engine.test/media/${mediaId}?sig=1`,
+		);
+		expect(view.container.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna.makes');
+		expect(view.container.querySelector('[data-part="replies"]')!.textContent).toBe('3 replies');
+		view.unmount();
+		const shorts = frame(project({ variant: 'youtube-shorts-reply' }, false).doc, (a) =>
+			handle(`/m/${a.id}`),
+		);
+		expect(shorts.container.querySelector('[data-social-variant="youtube-shorts-reply"]')).not.toBeNull();
+		expect(shorts.container.querySelector('[data-social-avatar="default"] rect')).not.toBeNull();
+		shorts.unmount();
+	});
 });

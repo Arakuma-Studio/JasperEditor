@@ -17,6 +17,7 @@ import {
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
+	SOCIAL_VARIANT_FONTS,
 	SOCIAL_WORD_STAGGER_MS,
 	type SocialScheduleInput,
 	socialCardScale,
@@ -24,6 +25,7 @@ import {
 	socialCommentPresets,
 	socialCommentSchedule,
 	socialCommentSegments,
+	socialCommentUnavailableVariant,
 	socialLikesTick,
 	socialTickCount,
 	stripMarks,
@@ -263,7 +265,23 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
 			['tiktok-reply', 'TikTok · Comment reply'],
 			['tiktok-comment', 'TikTok · Comment'],
+			['youtube-comment', 'YouTube · Comment'],
+			['youtube-shorts-reply', 'YouTube · Shorts reply'],
 		]);
+		// the YouTube presets carry tokcomment's YouTube defaults ("Username", 10 months ago, 72 likes, 2 replies)
+		const yt = socialComment.presets!.find((p) => p.id === 'youtube-comment')!;
+		expect({ ...socialComment.defaults, ...yt.params }).toMatchObject({
+			variant: 'youtube-comment',
+			handle: 'Username',
+			timeValue: 10,
+			timeUnit: 'month',
+			likes: 72,
+			replies: 2,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'youtube-comment' })).toBeNull();
+		expect(socialCommentUnavailableVariant({ variant: 'youtube-shorts-reply' })).toBeNull();
+		expect(SOCIAL_VARIANT_FONTS['youtube-comment']).toEqual({ family: 'Roboto', weights: [400, 500] });
+		expect(SOCIAL_VARIANT_FONTS['youtube-shorts-reply']).toEqual({ family: 'Roboto', weights: [400, 500] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,
