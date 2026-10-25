@@ -12,6 +12,7 @@ import {
 	colorRunKey,
 	cropMayFeather,
 	type EffectSpec,
+	effectParamMetric,
 	FX_MAX_CANVAS,
 	type FxClipInfo,
 	type FxEffectPlan,
@@ -244,7 +245,10 @@ export function useLayerFx(
 			if (hit) return hit;
 			const inst = byId.get(fx.id);
 			if (!inst) return undefined;
-			const f = fxParamsAtFn(inst, clip, fps, { frame: realFrame, params: fx.params });
+			// spatial-points: sub-frame samples of effect points use the layer box's metric, as the frame does.
+			const f = fxParamsAtFn(inst, clip, fps, { frame: realFrame, params: fx.params }, (name) =>
+				effectParamMetric(inst, name, clip.intrinsicBox),
+			);
 			cache.set(fx.id, f);
 			return f;
 		};

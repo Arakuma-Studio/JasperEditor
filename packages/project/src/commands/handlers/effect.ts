@@ -4,7 +4,7 @@ import type { Draft } from 'immer';
 import { resolveStripRef } from '../../audio/strip.ts';
 import { EASE_PRESETS, keySidesIssue, retimeRoving } from '../../keyframes.ts';
 import { refreshAutoTangents } from '../../keyframes-spatial.ts';
-import type { EffectSpec } from '../../registry/effects.ts';
+import { type EffectSpec, paramSpatialMetric } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import {
@@ -36,11 +36,15 @@ function mustLocate(doc: DDoc, fxId: string, h: HandlerContext) {
 	return loc;
 }
 
-/** Initial params: registry defaults with validated overrides (values or full Animatables). */
+/**
+ * Initial params: registry defaults with validated overrides (values or full Animatables). spatial-points: `box` = the
+ * layer box of the owner (clip intrinsic box, or the sequence frame for track effects), the metric of its points.
+ */
 export function buildParams(
 	spec: EffectSpec,
 	overrides: Record<string, unknown> | undefined,
 	h: HandlerContext,
+	box?: { width: number; height: number },
 ): Record<string, Animatable<ParamValue>> {
 	for (const name of Object.keys(overrides ?? {}))
 		if (!spec.params.some((p) => p.name === name))
@@ -93,6 +97,8 @@ export function buildParams(
 							mode: sp.data.mode,
 							inTangent: [sp.data.inTangent[0], sp.data.inTangent[1]] as [number, number],
 							outTangent: [sp.data.outTangent[0], sp.data.outTangent[1]] as [number, number],
+							// spatial-points: the Auto Bezier rule travels with the key (a pasted proportional key keeps its shape).
+							...(sp.data.auto ? { auto: sp.data.auto } : {}),
 						}
 					: undefined;
 				return {
@@ -114,10 +120,11 @@ export function buildParams(
 			const ex = (a as { expression?: unknown }).expression;
 			const expression = validExpression(ex, label, h);
 			const anim = { value, keyframes, ...(expression ? { expression } : {}) } as Animatable<ParamValue>;
-			refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+			const metric = paramSpatialMetric(p, box);
+			refreshAutoTangents(anim.keyframes as Keyframe<unknown>[], metric);
 			// keyframes-blend: roving keys sit where the motion passes them.
-			retimeRoving(anim.keyframes as Keyframe<unknown>[]);
-			refreshAutoBezier(anim as never);
+			retimeRoving(anim.keyframes as Keyframe<unknown>[], metric);
+			refreshAutoBezier(anim as never, metric);
 			out[p.name] = anim;
 			continue;
 		}
@@ -152,6 +159,8 @@ export const effectHandlers = {
 			);
 		let list: DEffect[];
 		let instanceDefaults: Record<string, unknown> = {};
+		// spatial-points: the owner's layer box (the metric of pasted point paths).
+		let box: { width: number; height: number } | undefined;
 		if (cmd.target === 'master') {
 			const seq = h.sequence(doc, cmd.sequenceId);
 			if (spec.appliesTo !== 'audio')
@@ -174,11 +183,9 @@ export const effectHandlers = {
 			const c = clip as { effects?: DEffect[] };
 			c.effects ??= [];
 			list = c.effects;
+			box = intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as never });
 			// Wave expressions: clip-dependent defaults (Point Control starts at the clip's centre).
-			if (spec.instanceDefaults)
-				instanceDefaults = spec.instanceDefaults({
-					box: intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as never }),
-				});
+			if (spec.instanceDefaults) instanceDefaults = spec.instanceDefaults({ box });
 		} else {
 			const seq = h.sequence(doc, cmd.target.sequenceId ?? cmd.sequenceId);
 			// submix tracks (`S1`… or their id) take track effects too.
@@ -190,13 +197,14 @@ export const effectHandlers = {
 				h.fail('E_INVALID_PARAM', `${spec.label} cannot go on a ${track.kind} track`, { path: [track.id] });
 			track.effects ??= [];
 			list = track.effects;
+			box = { width: seq.settings.width, height: seq.settings.height };
 		}
 		const fx: EffectInstance = {
 			id: h.ids.next('fx'),
 			effectId: spec.id,
 			effectVersion: spec.version,
 			enabled: true,
-			params: buildParams(spec, { ...instanceDefaults, ...cmd.params }, h),
+			params: buildParams(spec, { ...instanceDefaults, ...cmd.params }, h, box),
 		};
 		const index = Math.min(cmd.index ?? list.length, list.length);
 		list.splice(index, 0, fx as DEffect);

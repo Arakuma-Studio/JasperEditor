@@ -33,7 +33,8 @@ type Keyframe<T> = { …existing fields…; spatial?: Spatial };   // keyframeSc
   mode new keys get). `transform.position` and `transform.anchor`: `'auto-bezier'`; Corner Pin corners:
   `'linear'` (points, but new keys stay straight like tracker output). Everything else (shape size, Lumetri
   wheels, template/composition vec2 params) is not a point: commands refuse spatial data there and keyframe
-  paste drops it. `exportAgentSchema().properties[].spatial` exposes the flag.
+  paste drops it. spatial-points ([spatial-points.md](spatial-points.md)) made every effect point
+  (`fxParam.point`) spatial, with lengths measured in the layer box's pixels. `exportAgentSchema().properties[].spatial` exposes the flag.
 - **Default for new keys (KF-021):** keys created by `param.set` (stopwatch semantics), `param.setAnimated` and
   `keyframe.add` on position/anchor are Auto Bezier spatial + Linear temporal. Existing keys never change on
   load. Tracker bakes (`tracker.apply`) still write linear keys.

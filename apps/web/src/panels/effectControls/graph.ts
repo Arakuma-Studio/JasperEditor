@@ -21,6 +21,7 @@ import {
 	outgoingEase,
 	type PropertySpec,
 	type Rational,
+	type SpatialMetric,
 	segmentShape,
 } from '@jasper/project';
 import type { Range } from './lib.ts';
@@ -116,14 +117,18 @@ export function sampleValueCurves(
 	return Array.from({ length: dims }, (_, d) => pts.map((p) => ({ x: p.x, y: p.v[d]! })));
 }
 
-/** Display velocity (units / second) between two content times; signed for numbers, speed for vec2. */
+/**
+ * Display velocity (units / second) between two content times; signed for numbers, speed for vec2. spatial-points: a
+ * point with a metric (normalised to its layer box) reports its speed in the box's pixels per second.
+ */
 function rateBetween(anim: Anim, t1: number, t2: number, map: TimeMap, opts?: EvaluateOptions): number {
 	const a = componentsOf(evaluate(anim, t1, opts));
 	const b = componentsOf(evaluate(anim, t2, opts));
 	const perFlick = 1 / (t2 - t1);
 	if (a.length === 1) return (b[0]! - a[0]!) * perFlick * map.flicksPerX * map.fps;
+	const m = a.length === 2 ? opts?.metric : null;
 	let s = 0;
-	for (let i = 0; i < a.length; i++) s += (b[i]! - a[i]!) ** 2;
+	for (let i = 0; i < a.length; i++) s += ((b[i]! - a[i]!) * (m ? m[i]! : 1)) ** 2;
 	return Math.sqrt(s) * perFlick * Math.abs(map.flicksPerX) * map.fps;
 }
 
@@ -183,10 +188,11 @@ function segmentOf(kfs: readonly Kf[], i: number, side: Side): [number, number] 
  * segment leaving a Linear key, or two Linear sides) reads as the linear-equivalent ease on both its sides; a Linear
  * side of a curved per-side segment is After Effects' ⅙ linear ease.
  */
-function effectiveEase(kfs: readonly Kf[], i: number, side: Side): Ease {
+function effectiveEase(kfs: readonly Kf[], i: number, side: Side, metric?: SpatialMetric | null): Ease {
 	const [a, b] = side === 'out' ? [i, i + 1] : [i - 1, i];
 	if (a < 0 || b >= kfs.length) return side === 'out' ? outgoingEase(kfs, i) : incomingEase(kfs, i);
-	const shape = segmentShape(kfs, a, b);
+	// spatial-points: temporal auto-bezier speeds of effect points are measured in layer-box pixels.
+	const shape = segmentShape(kfs, a, b, metric);
 	if (shape === 'linear') return LINEAR;
 	if (shape === 'hold') return side === 'out' ? outgoingEase(kfs, i) : incomingEase(kfs, i);
 	return side === 'out' ? shape.out : shape.in;
@@ -212,7 +218,7 @@ export function sideHasHandle(k: Pick<Kf, 'interpolation' | 'inInterpolation'>, 
  * segment is linear-equivalent (progress = u, so the derivative at the key is exactly the unit). This
  * follows whatever distance the evaluator normalises by (straight or spatial paths).
  */
-function unitVelocity(anim: Anim, i: number, side: Side, map: TimeMap): number {
+function unitVelocity(anim: Anim, i: number, side: Side, map: TimeMap, opts?: EvaluateOptions): number {
 	const seg = segmentOf(anim.keyframes, i, side);
 	if (!seg) return 0;
 	const [ai, bi] = seg;
@@ -222,8 +228,8 @@ function unitVelocity(anim: Anim, i: number, side: Side, map: TimeMap): number {
 	const b = kfs[bi]!;
 	const h = (b.time - a.time) * H;
 	return side === 'out'
-		? rateBetween(probe, a.time, a.time + h, map)
-		: rateBetween(probe, b.time - h, b.time, map);
+		? rateBetween(probe, a.time, a.time + h, map, opts)
+		: rateBetween(probe, b.time - h, b.time, map, opts);
 }
 
 export type VelocityHandle = {
@@ -240,8 +246,16 @@ export type VelocityHandle = {
 	tipX: number;
 };
 
-/** Velocity-graph direction handles of key `i` (in, out) for the sides that are interpolated. */
-export function velocityHandles(anim: Anim, i: number, map: TimeMap): VelocityHandle[] {
+/**
+ * Velocity-graph direction handles of key `i` (in, out) for the sides that are interpolated. `opts` = the property's
+ * evaluate options (spatial-points: its metric).
+ */
+export function velocityHandles(
+	anim: Anim,
+	i: number,
+	map: TimeMap,
+	opts?: EvaluateOptions,
+): VelocityHandle[] {
 	const kfs = anim.keyframes;
 	const k = kfs[i]!;
 	const out: VelocityHandle[] = [];
@@ -249,8 +263,8 @@ export function velocityHandles(anim: Anim, i: number, map: TimeMap): VelocityHa
 		const seg = segmentOf(kfs, i, side);
 		if (!seg) continue;
 		const other = side === 'out' ? seg[1] : seg[0];
-		const ease = effectiveEase(kfs, i, side);
-		const unit = unitVelocity(anim, i, side, map);
+		const ease = effectiveEase(kfs, i, side, opts?.metric);
+		const unit = unitVelocity(anim, i, side, map, opts);
 		const span = kfs[other]!.time - k.time;
 		out.push({
 			side,
@@ -335,14 +349,14 @@ export function easeFromValueDrag(
 }
 
 /** Rate of change (component `d` per flick) at key `i` on one side, one-sided, from `evaluate()`. */
-function componentRate(anim: Anim, i: number, other: number, d: number): number {
+function componentRate(anim: Anim, i: number, other: number, d: number, opts?: EvaluateOptions): number {
 	const k = anim.keyframes[i]!;
 	const o = anim.keyframes[other]!;
 	// A short one-sided step (1e-6 of the segment): the tangent, not a chord.
 	const h = (o.time - k.time) * 1e-6;
 	if (h === 0) return 0;
-	const a = componentsOf(evaluate(anim, k.time))[d]!;
-	const b = componentsOf(evaluate(anim, k.time + h))[d]!;
+	const a = componentsOf(evaluate(anim, k.time, opts))[d]!;
+	const b = componentsOf(evaluate(anim, k.time + h, opts))[d]!;
 	return (b - a) / h;
 }
 
@@ -360,7 +374,12 @@ export type Vec2ValueHandle = ValueHandle & {
  * X / Y curve at the key (`evaluate()`, so curved spatial paths work too), `influence · T` long in time. Both
  * components share the key's one temporal ease (speed along the path), so dragging either edits that ease.
  */
-export function vec2ValueHandles(anim: Anim, i: number, map: TimeMap): Vec2ValueHandle[] {
+export function vec2ValueHandles(
+	anim: Anim,
+	i: number,
+	map: TimeMap,
+	opts?: EvaluateOptions,
+): Vec2ValueHandle[] {
 	const kfs = anim.keyframes;
 	const k = kfs[i]!;
 	const v = componentsOf(k.value);
@@ -370,7 +389,7 @@ export function vec2ValueHandles(anim: Anim, i: number, map: TimeMap): Vec2Value
 		const seg = segmentOf(kfs, i, side);
 		if (!seg) continue;
 		const other = side === 'out' ? seg[1] : seg[0];
-		const ease = effectiveEase(kfs, i, side);
+		const ease = effectiveEase(kfs, i, side, opts?.metric);
 		const span = kfs[other]!.time - k.time;
 		// The linear-equivalent probe gives the rate per unit slope (as `unitVelocity`).
 		const [ai, bi] = seg;
@@ -379,7 +398,7 @@ export function vec2ValueHandles(anim: Anim, i: number, map: TimeMap): Vec2Value
 			keyframes: kfs.map((x, j) => (j === ai || j === bi ? linearProbeKey(x) : x)),
 		};
 		for (let d = 0; d < 2; d++) {
-			const rate = componentRate(anim, i, other, d);
+			const rate = componentRate(anim, i, other, d, opts);
 			out.push({
 				side,
 				key: i,
@@ -387,7 +406,7 @@ export function vec2ValueHandles(anim: Anim, i: number, map: TimeMap): Vec2Value
 				ease,
 				dim: d,
 				keyY: v[d]!,
-				unitRate: componentRate(probe, i, other, d),
+				unitRate: componentRate(probe, i, other, d, opts),
 				tipX: map.toX(k.time + ease.influence * span),
 				tipY: v[d]! + rate * ease.influence * span,
 			});

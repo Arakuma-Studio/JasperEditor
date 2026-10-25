@@ -68,6 +68,8 @@ function toPresetAnim<T>(a: Animatable<T>, timing: ClipTiming, seq: Sequence): P
 						...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 						easeIn: { ...k.easeIn },
 						easeOut: { ...k.easeOut },
+						// spatial-points: curved paths of point keys travel with the preset.
+						...(k.spatial ? { spatial: clone(k.spatial) } : {}),
 					})),
 				}
 			: {}),

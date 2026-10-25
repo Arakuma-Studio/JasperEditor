@@ -17,6 +17,7 @@ import type {
 	Interpolation,
 	ParamValue,
 	RationalT,
+	Spatial,
 	Vec2,
 } from '../schema/common.ts';
 import {
@@ -26,6 +27,7 @@ import {
 	InterpolationSchema,
 	ParamValueSchema,
 	RationalSchema,
+	SpatialSchema,
 	Vec2Schema,
 } from '../schema/common.ts';
 import { type BlendMode, BlendModeSchema } from '../schema/sequence.ts';
@@ -61,6 +63,11 @@ export const PresetKeyframeSchema = z.looseObject({
 	inInterpolation: InInterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
+	/**
+	 * spatial-points: the spatial path of a point key (Motion Position / Anchor Point, effect points); kept only on
+	 * point properties when applied. Absent = linear spatial.
+	 */
+	spatial: SpatialSchema.optional(),
 });
 export type PresetKeyframe<T = unknown> = {
 	id?: string;
@@ -70,6 +77,7 @@ export type PresetKeyframe<T = unknown> = {
 	inInterpolation?: InInterpolation;
 	easeIn?: Ease;
 	easeOut?: Ease;
+	spatial?: Spatial;
 };
 
 function presetAnim<T extends z.ZodType>(value: T) {

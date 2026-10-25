@@ -198,5 +198,5 @@ Scale keys 10 % at frame 0 and 100 % at frame 60, both Linear.
   direction is an assumption (§5).
 - Segments of documents written before this change keep the legacy reading until a side edit touches them. A Linear
   key into a Bezier key stays linear there, as it always rendered.
-- Spatial interpolation of effect point params (Transform / Offset) is a separate work package. The spatial code
-  paths are untouched.
+- Spatial interpolation of effect point params (Transform / Offset) is covered by spatial-points
+  ([spatial-points.md](spatial-points.md)); the temporal per-side rules above apply to those keys unchanged.

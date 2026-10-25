@@ -48,6 +48,7 @@ import {
 	type PropertySpec,
 	PUPPET_PIN_LABELS,
 	PUPPET_PIN_PROPS,
+	paramSpatialMetric,
 	planeHomography,
 	propertyEvaluateOptions,
 	type Rational,
@@ -570,13 +571,21 @@ export class World {
 			if (!p && !stored) return null;
 			const ps = p && spec ? effectParamPropertySpec(fx.id, spec as EffectSpec, p) : null;
 			const anim = stored ?? { value: p!.default, keyframes: [] };
+			// spatial-points: effect points walk their paths in the layer box's pixels (clip box; the sequence frame for
+			// track and master effects), exactly as the renderers evaluate them.
+			const metric = paramSpatialMetric(
+				p,
+				info.kind === 'clip'
+					? this.box(info.seq, info.clip)
+					: { width: info.seq.settings.width, height: info.seq.settings.height },
+			);
 			return {
 				...base,
 				name: p?.label ?? name,
 				matchName: name,
 				kind: p ? propKind(p.type, p.ui?.control) : kindOfValue(anim.value),
 				options: p?.options,
-				opts: ps ? propertyEvaluateOptions(ps) : {},
+				opts: { ...(ps ? propertyEvaluateOptions(ps) : {}), ...(metric ? { metric } : {}) },
 				anim,
 				expression: anim.expression,
 				propertyIndex: indexIn(`effects.${fx.id}`),

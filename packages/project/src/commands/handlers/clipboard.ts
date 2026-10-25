@@ -640,7 +640,13 @@ function applyAttributes(
 							effectId: spec.id,
 							effectVersion: spec.version,
 							enabled: copy.enabled,
-							params: buildParams(spec, copy.params, h),
+							// spatial-points: the target's layer box is the metric of its point paths.
+							params: buildParams(
+								spec,
+								copy.params,
+								h,
+								intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: t as Clip }),
+							),
 						}
 					: { ...copy, id: h.ids.next('fx') };
 				dropForeignRotoRefs(c as { rotos?: { id: string }[] }, instance as never);
@@ -879,10 +885,11 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 			...incoming.values(),
 		].sort((a, b) => a.time - b.time);
 		target.anim.keyframes = merged as never;
-		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[]);
+		// spatial-points: effect points measure their paths in the target layer box's pixels.
+		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[], target.metric);
 		// keyframes-blend: roving keys sit where the motion passes them.
-		retimeRoving(target.anim.keyframes as Keyframe<unknown>[]);
-		refreshAutoBezier(target.anim);
+		retimeRoving(target.anim.keyframes as Keyframe<unknown>[], target.metric);
+		refreshAutoBezier(target.anim, target.metric);
 		(target.anim as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
 		pasted.push(...[...incoming.values()].map((k) => k.id));
 		paths.push(path);

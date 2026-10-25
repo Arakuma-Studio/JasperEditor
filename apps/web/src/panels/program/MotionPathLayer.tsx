@@ -10,21 +10,25 @@ type Props = { path: MotionPath; view: View; selected: ReadonlySet<string> };
 
 export const MotionPathLayer = memo(function MotionPathLayer({ path, view, selected }: Props) {
 	const d = dotsPathData(path, view);
-	// the Anchor Point path draws in the accent colour (its keys are layer-space values).
+	// the Anchor Point path draws in the accent colour (its keys are layer-space values); spatial-points: effect point
+	// paths too (their keys are layer-box values).
 	const anchor = path.property === 'anchor';
+	const effect = path.property === 'effect';
 	return (
 		<g
-			data-testid={anchor ? 'overlay-anchor-path' : 'overlay-motion-path'}
+			data-testid={anchor ? 'overlay-anchor-path' : effect ? 'overlay-effect-path' : 'overlay-motion-path'}
 			data-clip-id={path.clipId}
 			data-property={path.property}
+			data-effect-param={path.effect?.param}
 			pointerEvents="none"
 		>
+			{path.effect ? <title>{path.effect.label}</title> : null}
 			<path d={d} stroke={MONITOR_COLORS.casing} strokeWidth={4} strokeLinecap="round" fill="none" />
 			<path
-				data-testid={anchor ? 'anchor-path-dots' : 'motion-path-dots'}
+				data-testid={anchor ? 'anchor-path-dots' : effect ? 'effect-path-dots' : 'motion-path-dots'}
 				data-count={path.dots.length}
 				d={d}
-				stroke={anchor ? 'var(--pr-accent)' : MONITOR_COLORS.handleFill}
+				stroke={anchor || effect ? 'var(--pr-accent)' : MONITOR_COLORS.handleFill}
 				strokeWidth={2}
 				strokeLinecap="round"
 				fill="none"

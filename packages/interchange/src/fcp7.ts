@@ -2013,6 +2013,12 @@ class Fcp7Exporter {
 		rate: Rate,
 		map: (v: Vec2) => [number, number],
 	): void {
+		// spatial-points: FCP 7 XML point keyframes are written as values with one temporal interpolation; the spatial
+		// path (Linear / Bezier / Auto Bezier tangents) is not mapped, so the receiving application decides the curve.
+		if (a.keyframes.some((k) => (k.spatial?.mode ?? 'linear') !== 'linear'))
+			this.report.warn(`the curved motion path of ${name} is not carried by FCP 7 XML (key values only)`, {
+				instead: 'the key values, with the receiving application’s own path between them',
+			});
 		const w = this.w;
 		w.open('parameter').text('parameterid', id).text('name', name);
 		const [x, y] = map(a.value);

@@ -100,7 +100,13 @@ export const fxParam = {
 			extra,
 		);
 	},
-	/** A point normalised to the layer box (vec2; on-canvas handle). */
+	/**
+	 * A point normalised to the layer box (vec2; on-canvas handle). spatial-points: a position, so its keys carry
+	 * spatial paths (After Effects: effect control points have motion paths and spatial interpolation; Premiere's
+	 * Transform / Offset points store spatial tangents), Auto Bezier for new keys like Motion's Position, measured in
+	 * layer pixels (`spatialMetric: 'layer-box'`). Transition params built with it are not spatial (the transition
+	 * target strips it: transitions have no motion path).
+	 */
 	point(name: string, label: string, def: Vec2 = [0.5, 0.5], extra?: Extra) {
 		return merge(
 			{
@@ -110,6 +116,8 @@ export const fxParam = {
 				default: def,
 				range: { softMin: -1, softMax: 2, step: 0.001 },
 				animatable: true,
+				spatial: 'auto-bezier',
+				spatialMetric: 'layer-box',
 				ui: { control: 'point' },
 			},
 			extra,
