@@ -4,6 +4,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
+	type EffectParams,
 	planGpuTransition,
 	SMOOTH_SLIDE,
 	SMOOTH_SLIDE_EASINGS,
@@ -231,7 +232,7 @@ describe('Smooth Slide: poses, shutter and dolly', () => {
 describe('Smooth Slide: CPU reference geometry', () => {
 	const F = { width: 64, height: 36 };
 	const at = (x: number, y: number, e: number, params: Record<string, unknown>, s = 1) =>
-		smoothSlideContributions([x, y], { e, s }, { ...defaults(), ...params }, F);
+		smoothSlideContributions([x, y], { e, s }, { ...defaults(), ...params } as EffectParams, F);
 	type C = ReturnType<typeof at>;
 	const same = (got: C, want: C) => {
 		expect(got.map((c) => [c.side, c.reflection])).toEqual(want.map((c) => [c.side, c.reflection]));
