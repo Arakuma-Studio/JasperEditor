@@ -8,7 +8,16 @@ import { join } from 'node:path';
 import { cropCoverageAt } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, ensureFixtures, H, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	H,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+} from './helpers.ts';
 
 const W = 1280;
 const HH = 720;
@@ -69,7 +78,13 @@ function newDoc(): DocBuilder {
 function patternDoc(effects: unknown[]): DocBuilder {
 	const d = newDoc();
 	d.tx([
-		{ type: 'clip.place', source: { mediaId: d.addMedia(patternMedia) }, at: 0, tracks: { video: 'V2' }, ref: '$l' },
+		{
+			type: 'clip.place',
+			source: { mediaId: d.addMedia(patternMedia) },
+			at: 0,
+			tracks: { video: 'V2' },
+			ref: '$l',
+		},
 		...effects,
 	]);
 	return d;
@@ -159,7 +174,9 @@ describe('Crop where it sits in the stack (native)', () => {
 
 	it('a feathered crop before a flip is mirrored with its feather', async () => {
 		const ins: [number, number, number, number] = [0.25, 0, 0, 0];
-		const r = await still(whiteDoc([add('jasper.crop', { left: 25, feather: 30 }), add('jasper.flip-horizontal')]));
+		const r = await still(
+			whiteDoc([add('jasper.crop', { left: 25, feather: 30 }), add('jasper.flip-horizontal')]),
+		);
 		const c = compare(
 			r.rgb,
 			(x, y) => {
@@ -198,7 +215,11 @@ describe('Crop where it sits in the stack (native)', () => {
 		const ins: [number, number, number, number] = [0.1, 0.1, 0.1, 0.1];
 		const r = await still(
 			whiteDoc([
-				{ type: 'param.set', target: ['clip', '$l', 'transform', 'position'], value: [W / 2 + 0.5, HH / 2 + 0.5] },
+				{
+					type: 'param.set',
+					target: ['clip', '$l', 'transform', 'position'],
+					value: [W / 2 + 0.5, HH / 2 + 0.5],
+				},
 				add('jasper.crop', { left: 10, top: 10, right: 10, bottom: 10, feather: 24 }),
 			]),
 		);
@@ -256,8 +277,12 @@ describe('adjustment layers: crops limit the region (native)', () => {
 		const O = (await still(adjustmentDoc(null))).rgb;
 		const A = (await still(adjustmentDoc([grade]))).rgb;
 		const half = W / 2;
-		const after = await still(adjustmentDoc([grade, add('jasper.crop', { left: 50 }), add('jasper.flip-horizontal')]));
-		const before = await still(adjustmentDoc([grade, add('jasper.flip-horizontal'), add('jasper.crop', { left: 50 })]));
+		const after = await still(
+			adjustmentDoc([grade, add('jasper.crop', { left: 50 }), add('jasper.flip-horizontal')]),
+		);
+		const before = await still(
+			adjustmentDoc([grade, add('jasper.flip-horizontal'), add('jasper.crop', { left: 50 })]),
+		);
 		// Crop → Flip: the window [W/2, W) is mirrored to the left half, which shows the flipped adjusted composite.
 		const a = compare(after.rgb, (x, y) => (x < half ? px(A, W - 1 - x, y) : px(O, x, y)), 1);
 		expect(a.bad, `worst ${a.worst}`).toBe(0);

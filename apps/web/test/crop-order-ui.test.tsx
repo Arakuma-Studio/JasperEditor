@@ -21,7 +21,11 @@ function setup(effects: string[]) {
 		session.apply({
 			label: 'fx',
 			origin: 'user',
-			commands: effects.map((effectId) => ({ type: 'effect.add', target: { clipId: id }, effectId })) as never,
+			commands: effects.map((effectId) => ({
+				type: 'effect.add',
+				target: { clipId: id },
+				effectId,
+			})) as never,
 		});
 		session.select('timeline', [id!]);
 		session.transport.seek(10);
@@ -68,7 +72,9 @@ describe('Crop in the Effect Controls stack', () => {
 		expect(section(`${id}:crop`)).toBeNull();
 		const listed = header(`${id}:fx:${crop!.id}`);
 		expect(listed.getAttribute('data-fx-index')).toBe('1');
-		const order = [...document.querySelectorAll('[data-ec-section]')].map((e) => e.getAttribute('data-ec-section'));
+		const order = [...document.querySelectorAll('[data-ec-section]')].map((e) =>
+			e.getAttribute('data-ec-section'),
+		);
 		expect(order.indexOf(`${id}:fx:${blur!.id}`)).toBeLessThan(order.indexOf(`${id}:fx:${crop!.id}`));
 		// One undo step restores Crop → Blur and the pinned section.
 		act(() => void session.undo());

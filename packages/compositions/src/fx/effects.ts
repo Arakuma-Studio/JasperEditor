@@ -240,7 +240,11 @@ export type FxMixParams = {
 /** A feathered crop window in canvas pixels: edges x0 < x1, y0 < y1 and the Edge Feather `f`. */
 export type FxFeatherRect = { x0: number; y0: number; x1: number; y1: number; f: number };
 
-type FeatherHolder = { featherCanvas?: HTMLCanvasElement; featherKey?: string; featherScratch?: HTMLCanvasElement };
+type FeatherHolder = {
+	featherCanvas?: HTMLCanvasElement;
+	featherKey?: string;
+	featherScratch?: HTMLCanvasElement;
+};
 
 /**
  * The coverage of feathered crop windows as a canvas whose alpha is Π `cropEdgeCoverage` (separable per window:

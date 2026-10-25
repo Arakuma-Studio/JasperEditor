@@ -86,7 +86,11 @@ export function cropCoverageAt(
 }
 
 /** Insets mirrored by a horizontal and/or vertical flip of the box (a flip after the crop mirrors its window). */
-export function mirrorCropInsets(insets: Readonly<CropInsets>, horizontal: boolean, vertical: boolean): CropInsets {
+export function mirrorCropInsets(
+	insets: Readonly<CropInsets>,
+	horizontal: boolean,
+	vertical: boolean,
+): CropInsets {
 	const [l, t, r, b] = insets;
 	return [horizontal ? r : l, vertical ? b : t, horizontal ? l : r, vertical ? t : b];
 }
@@ -119,7 +123,12 @@ export function stackCrops<E extends StackEffect>(effects: readonly E[]): StackC
 			if (e.effectId === FLIP_H) h = !h;
 			else if (e.effectId === FLIP_V) v = !v;
 		}
-		out.push({ fx, index, insets: mirrorCropInsets(cropInsets(fx.params), h, v), feather: cropFeather(fx.params) });
+		out.push({
+			fx,
+			index,
+			insets: mirrorCropInsets(cropInsets(fx.params), h, v),
+			feather: cropFeather(fx.params),
+		});
 	});
 	return out;
 }

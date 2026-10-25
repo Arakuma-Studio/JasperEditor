@@ -583,7 +583,9 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			if (!applied) continue;
 			// Edge Feather: the alpha × the shared feather profile, at its place on every path (crop.ts).
 			if (isFeatheredCrop(applied)) {
-				f.push(cropFeatherFilter({ clip: c, effect: applied, f0, f1, fps, bw, bh, label: `${label}cf${index}` }));
+				f.push(
+					cropFeatherFilter({ clip: c, effect: applied, f0, f1, fps, bw, bh, label: `${label}cf${index}` }),
+				);
 				continue;
 			}
 			// Hard crops of a sub-pixel layer are the kernel's anti-aliased clip (stream/plan.ts `cropAt`).

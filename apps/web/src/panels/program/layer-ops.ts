@@ -49,7 +49,8 @@ export function layerStateAt(
 	const t = contentTimeAt(clip, f, seq.settings.frameRate);
 	// crop-order: the window the crops leave visible where they sit in the stack (flips after a crop mirror it).
 	const stack = (
-		(clip as { effects?: { effectId: string; enabled: boolean; params: Record<string, never> }[] }).effects ?? []
+		(clip as { effects?: { effectId: string; enabled: boolean; params: Record<string, never> }[] }).effects ??
+		[]
 	).map((e) => ({
 		effectId: e.effectId,
 		enabled: e.enabled,

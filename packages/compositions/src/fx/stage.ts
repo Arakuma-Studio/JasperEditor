@@ -269,7 +269,9 @@ export function useLayerFx(
 	// crop-order: crops whose Edge Feather is above 0 anywhere in the clip keep the feathered path on every frame.
 	const featheredCrops = useMemo(
 		() =>
-			new Set(clip.effects.filter((e) => e.effectId === 'jasper.crop' && cropMayFeather(e.params)).map((e) => e.id)),
+			new Set(
+				clip.effects.filter((e) => e.effectId === 'jasper.crop' && cropMayFeather(e.params)).map((e) => e.id),
+			),
 		[clip],
 	);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails

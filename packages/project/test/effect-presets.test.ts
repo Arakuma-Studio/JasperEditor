@@ -136,7 +136,13 @@ describe('Save Preset (buildEffectPreset)', () => {
 			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1], ref: '$a' },
 			{ type: 'clip.addSolid', at: 100, duration: 30, track: 'V1', color: [0, 1, 0, 1], ref: '$b' },
 			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.flip-horizontal', ref: '$f' },
-			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.crop', params: { left: 30 }, ref: '$c' },
+			{
+				type: 'effect.add',
+				target: { clipId: '$a' },
+				effectId: 'jasper.crop',
+				params: { left: 30 },
+				ref: '$c',
+			},
 		]);
 		const { $a: a, $b: b, $f: f, $c: c } = r.refs as Record<string, string>;
 		const p = save(h, a!, 'scale', { crop: true, effectIds: [f!, c!] });
@@ -146,7 +152,11 @@ describe('Save Preset (buildEffectPreset)', () => {
 		h.ok([{ type: 'effect.applyPreset', preset: p, clipIds: [b!] }]);
 		const B = h.seq.clips[b!] as Solid;
 		// Pinned (defaults) crop first, then Flip → Crop as in the source.
-		expect(B.effects.map((e) => e.effectId)).toEqual(['jasper.crop', 'jasper.flip-horizontal', 'jasper.crop']);
+		expect(B.effects.map((e) => e.effectId)).toEqual([
+			'jasper.crop',
+			'jasper.flip-horizontal',
+			'jasper.crop',
+		]);
 		expect(B.effects[2]!.params.left!.value).toBe(30);
 		ok(h);
 	});

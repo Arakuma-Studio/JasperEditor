@@ -180,7 +180,13 @@ describe('a v7 project with Crop listed after another effect', () => {
 		const clipId = 'clp_00000000000VC001';
 		const anim = (value: unknown) => ({ value, keyframes: [] });
 		file.document.sequences[seqId]!.clips[clipId]!.effects = [
-			{ id: 'fx_0000000000000001', effectId: 'jasper.flip-horizontal', effectVersion: 1, enabled: true, params: {} },
+			{
+				id: 'fx_0000000000000001',
+				effectId: 'jasper.flip-horizontal',
+				effectVersion: 1,
+				enabled: true,
+				params: {},
+			},
 			{
 				id: 'fx_0000000000000002',
 				effectId: 'jasper.gaussian-blur',

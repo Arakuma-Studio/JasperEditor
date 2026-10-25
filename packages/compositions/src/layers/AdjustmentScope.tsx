@@ -62,11 +62,15 @@ export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 
 /** Effects that commute with a crop on an adjustment layer (pointwise colour, flips, other crops, the layer map). */
 function commutesWithCrop(fx: ResolvedEffect): boolean {
-	if (fx.effectId === CROP || fx.effectId === 'jasper.flip-horizontal' || fx.effectId === 'jasper.flip-vertical')
+	if (
+		fx.effectId === CROP ||
+		fx.effectId === 'jasper.flip-horizontal' ||
+		fx.effectId === 'jasper.flip-vertical'
+	)
 		return true;
 	if (fx.effectId === 'jasper.corner-pin') return true;
 	const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
-	return !spec || spec.appliesTo !== 'video' || (!!spec.color && !spec.gpu);
+	return spec?.appliesTo !== 'video' || (!!spec.color && !spec.gpu);
 }
 
 /**

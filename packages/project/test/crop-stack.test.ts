@@ -16,7 +16,11 @@ import {
 	stackCrops,
 } from '../src/index.ts';
 
-const crop = (params: Record<string, unknown>, enabled = true) => ({ effectId: 'jasper.crop', enabled, params });
+const crop = (params: Record<string, unknown>, enabled = true) => ({
+	effectId: 'jasper.crop',
+	enabled,
+	params,
+});
 const flipH = { effectId: 'jasper.flip-horizontal', enabled: true, params: {} };
 const flipV = { effectId: 'jasper.flip-vertical', enabled: true, params: {} };
 const mirror = { effectId: 'jasper.mirror', enabled: true, params: {} };
@@ -105,8 +109,12 @@ describe('crop params', () => {
 		expect(cropMayFeather({ feather: 3 })).toBe(true);
 		expect(cropMayFeather({ feather: { value: 0, keyframes: [] } })).toBe(false);
 		expect(cropMayFeather({ feather: { value: 0, keyframes: [{ value: 0 }, { value: 8 }] } })).toBe(true);
-		expect(cropMayFeather({ feather: { value: 0, keyframes: [], expression: { enabled: true } } })).toBe(true);
-		expect(cropMayFeather({ feather: { value: 0, keyframes: [], expression: { enabled: false } } })).toBe(false);
+		expect(cropMayFeather({ feather: { value: 0, keyframes: [], expression: { enabled: true } } })).toBe(
+			true,
+		);
+		expect(cropMayFeather({ feather: { value: 0, keyframes: [], expression: { enabled: false } } })).toBe(
+			false,
+		);
 		expect(cropMayFeather({})).toBe(false);
 	});
 });
@@ -119,7 +127,12 @@ describe('the crop window in stack order', () => {
 		expect(cropWindow([crop({ top: 10 }), flipV, flipH])).toEqual({ left: 0, top: 0, right: 0, bottom: 10 });
 		// Two flips of the same axis cancel; disabled flips do not count.
 		expect(cropWindow([left30, flipH, flipH])).toEqual({ left: 30, top: 0, right: 0, bottom: 0 });
-		expect(cropWindow([left30, { ...flipH, enabled: false }])).toEqual({ left: 30, top: 0, right: 0, bottom: 0 });
+		expect(cropWindow([left30, { ...flipH, enabled: false }])).toEqual({
+			left: 30,
+			top: 0,
+			right: 0,
+			bottom: 0,
+		});
 	});
 
 	it('intersects several crops, ignores disabled ones and returns null without a crop', () => {

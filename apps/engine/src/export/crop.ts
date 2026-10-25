@@ -167,7 +167,16 @@ export function hardCropFilter(o: {
 }): string | null {
 	const { effect: applied, bw, bh } = o;
 	if (o.f1 - o.f0 > 1 && CROP_EDGES.some((e) => isAnimated(applied.params[e])))
-		return cropMaskFilter({ clip: o.clip, effect: applied, f0: o.f0, f1: o.f1, fps: o.fps, bw, bh, label: o.label });
+		return cropMaskFilter({
+			clip: o.clip,
+			effect: applied,
+			f0: o.f0,
+			f1: o.f1,
+			fps: o.fps,
+			bw,
+			bh,
+			label: o.label,
+		});
 	const v = (k: string) => Number(o.params[k] ?? 0);
 	const l = Math.round((v('left') / 100) * bw);
 	const r = Math.round((v('right') / 100) * bw);
