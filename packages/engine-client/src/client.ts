@@ -125,6 +125,7 @@ export type MediaVariant =
 	| 'poster'
 	| 'sprite.json'
 	| 'peaks.json'
+	| 'playback-audio.json'
 	| { proxy: '720' | '540' }
 	| { sprite: number }
 	| { peaks: number };
@@ -353,9 +354,13 @@ export class EngineClient {
 	relinkAsset(assetId: string, req: AssetRelinkRequest) {
 		return this.call('assetRelink', { params: { assetId }, body: req });
 	}
-	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`). */
+	/** S04:AS-011: finds offline assets — last known paths, located files' mappings, a folder (job `relink-scan`). */
 	relinkScan(projectId: string, req: RelinkScanRequest) {
 		return this.call('relinkScan', { params: { projectId }, body: req });
+	}
+	/** The full result of a finished `relink-scan` job. */
+	relinkScanResult(projectId: string, jobId: string) {
+		return this.call('relinkScanResult', { params: { projectId, jobId } });
 	}
 	/** Sound library status: counts, starter kit, indexing (spec 12 §2.8). */
 	soundLibraryStatus() {
@@ -759,6 +764,30 @@ export class EngineClient {
 	listFonts() {
 		return this.call('fontsList');
 	}
+	/** wp fonts: the user font library (every installed face, limits, repairs made on open). */
+	fontLibrary() {
+		return this.call('fontLibraryList');
+	}
+	/** wp fonts: installs a font file (TTF, OTF, TTC, WOFF, WOFF2) into the user font library. */
+	installFont(file: Blob | ArrayBuffer | Uint8Array, fileName?: string, signal?: AbortSignal) {
+		const name = fileName ?? (file instanceof Blob ? this.blobName(file) : undefined);
+		return this.call('fontInstall', {
+			body: file,
+			...(name ? { query: { fileName: name.slice(0, 255) } } : {}),
+			...(signal ? { signal } : {}),
+		});
+	}
+	/** wp fonts: installs a font file from the engine's machine (local mode). */
+	installFontPath(path: string) {
+		return this.call('fontInstallPath', { body: { path } });
+	}
+	removeFont(fontId: string) {
+		return this.call('fontDelete', { params: { fontId } });
+	}
+	/** wp fonts: the saved projects that use a library face. */
+	fontUsage(fontId: string) {
+		return this.call('fontUsage', { params: { fontId } });
+	}
 	mgTemplates() {
 		return this.call('mgTemplates');
 	}
@@ -817,6 +846,7 @@ export class EngineClient {
 		if (variant === 'poster') return this.url(`/media/${k}/poster.jpg`);
 		if (variant === 'sprite.json') return this.url(`/media/${k}/sprite.json`);
 		if (variant === 'peaks.json') return this.url(`/media/${k}/peaks.json`);
+		if (variant === 'playback-audio.json') return this.url(`/media/${k}/playback-audio.json`);
 		if ('proxy' in variant) return this.url(`/media/${k}/proxy/${variant.proxy}`);
 		if ('sprite' in variant) return this.url(`/media/${k}/sprite/${variant.sprite}.jpg`);
 		return this.url(`/media/${k}/peaks/${variant.peaks}.bin`);

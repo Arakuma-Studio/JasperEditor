@@ -48,7 +48,14 @@ import {
 	RenderPlanSchema,
 	StillRequestSchema,
 } from './exports.ts';
-import { FontCatalogSchema } from './fonts.ts';
+import {
+	FontCatalogSchema,
+	FontDeleteResponseSchema,
+	FontInstallPathRequestSchema,
+	FontInstallResponseSchema,
+	FontLibraryResponseSchema,
+	FontUsageResponseSchema,
+} from './fonts.ts';
 import {
 	EngineGapsInfoSchema,
 	EngineGapsSettingsSchema,
@@ -92,6 +99,7 @@ import {
 	InterchangePrerenderPlanRequestSchema,
 	InterchangePrerenderPlanResponseSchema,
 	RelinkScanRequestSchema,
+	RelinkScanResultSchema,
 } from './interchange.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
@@ -531,6 +539,27 @@ export const ROUTES = {
 
 	fontsList: { method: 'GET', path: '/api/fonts', response: FontCatalogSchema },
 	fontFile: { method: 'GET', path: '/fonts/*', response: 'binary' },
+	/** wp fonts: the user font library (shared by every project). */
+	fontLibraryList: { method: 'GET', path: '/api/fonts/library', response: FontLibraryResponseSchema },
+	/** Installs the font file sent as the body (TTF, OTF, TTC, WOFF, WOFF2; `fileName` names it). */
+	fontInstall: {
+		method: 'POST',
+		path: '/api/fonts/library',
+		query: z.object({ fileName: z.string().max(255).optional() }),
+		body: 'binary',
+		response: FontInstallResponseSchema,
+	},
+	/** Installs a font file from the engine's machine (local mode only). */
+	fontInstallPath: {
+		method: 'POST',
+		path: '/api/fonts/library/install-path',
+		body: FontInstallPathRequestSchema,
+		response: FontInstallResponseSchema,
+	},
+	/** Removes a face (an agent's request needs the user's approval in the editor). */
+	fontDelete: { method: 'DELETE', path: '/api/fonts/library/:fontId', response: FontDeleteResponseSchema },
+	/** Saved projects that use the face. */
+	fontUsage: { method: 'GET', path: '/api/fonts/library/:fontId/usage', response: FontUsageResponseSchema },
 
 	mgTemplates: {
 		method: 'GET',
@@ -997,12 +1026,21 @@ export const ROUTES = {
 		body: AssetRelinkRequestSchema,
 		response: AssetRelinkResponseSchema,
 	},
-	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`, result `RelinkScanResult`). */
+	/**
+	 * S04:AS-011: finds offline assets — last known paths, Relink others automatically from located files (`anchors`)
+	 * and a folder search (job `relink-scan`, result `RelinkScanSummary`).
+	 */
 	relinkScan: {
 		method: 'POST',
 		path: '/api/projects/:projectId/relink-scan',
 		body: RelinkScanRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** The full `RelinkScanResult` of a finished `relink-scan` job. */
+	relinkScanResult: {
+		method: 'GET',
+		path: '/api/projects/:projectId/relink-scan/:jobId',
+		response: RelinkScanResultSchema,
 	},
 	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
 	captionFileRead: {

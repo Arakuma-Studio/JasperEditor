@@ -1,0 +1,8 @@
+asset:        schema-v8.jasper
+title:        Schema history fixture, v8
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-25 by the Premiere-port schema bump
+notes:        Derived from schema-v7.jasper for packages/project/test/schema-history.test.ts: v8 (Premiere port) applies Crop in stack order, so the video clip lists a Mirror effect followed by a Crop with Edge Feather, which v8 renders in that order. References no media bytes.

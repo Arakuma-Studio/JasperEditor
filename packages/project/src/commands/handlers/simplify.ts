@@ -6,7 +6,15 @@ import type { Animatable, Keyframe } from '../../schema/common.ts';
 import type { Clip, EffectInstance, ProjectDocument, Sequence, TrackedBy } from '../../schema/index.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { type AnimLocation, allAnimatables, clipAnimatables, finish, locate, targetOf } from './keyframe.ts';
+import {
+	type AnimLocation,
+	allAnimatables,
+	clipAnimatables,
+	finish,
+	locate,
+	MetricMap,
+	targetOf,
+} from './keyframe.ts';
 import { locateEffect } from './param.ts';
 import type { HandlerMap } from './util.ts';
 import { clone as plain } from './util.ts';
@@ -119,8 +127,9 @@ export function simplifyLocations(
 	const targets: SimplifyTarget[] = [];
 	const anims: DAnim[] = [];
 	const skipped: SimplifyReport['skipped'] = [];
+	const metrics = new MetricMap();
 	for (const { loc, selected } of locations) {
-		const t = targetOf(doc, loc, h); // lock check, value rule
+		const t = metrics.note(targetOf(doc, loc, h)); // lock check, value rule
 		if (t.rule.holdOnly) {
 			skipped.push({ path: [...loc.path], reason: 'hold-only parameter' });
 			continue;
@@ -149,7 +158,7 @@ export function simplifyLocations(
 		anims[i]!.keyframes = keys as never;
 		touched.push(anims[i]!);
 	});
-	finish(touched);
+	finish(touched, metrics.of);
 	return { ...plan.report, skipped: [...skipped, ...plan.report.skipped] };
 }
 

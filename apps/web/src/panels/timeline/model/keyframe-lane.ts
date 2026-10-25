@@ -17,6 +17,7 @@ import {
 	effectParamPropertySpec,
 	evaluate,
 	isRovingKey,
+	type Keyframe,
 	kindCapabilities,
 	MASK_PROPS,
 	type Mask,
@@ -34,6 +35,29 @@ import {
 	type Sequence,
 	sequenceFrameOfContentTime,
 } from '@jasper/project';
+
+/**
+ * keyframe-sides: the keys of `clip` with the given ids, wherever they live in the clip (intrinsic properties, effect
+ * params, masks, …): the timeline's key context menu checks their common Temporal Interpolation. Depth-bounded walk.
+ */
+export function clipKeysById(clip: Clip, ids: ReadonlySet<string>): Keyframe<unknown>[] {
+	const out: Keyframe<unknown>[] = [];
+	const walk = (v: unknown, depth: number): void => {
+		if (!v || typeof v !== 'object' || depth > 16 || out.length >= ids.size) return;
+		if (Array.isArray(v)) {
+			for (const x of v) walk(x, depth + 1);
+			return;
+		}
+		const o = v as Record<string, unknown>;
+		if (typeof o.id === 'string' && ids.has(o.id) && typeof o.interpolation === 'string' && 'time' in o) {
+			out.push(o as unknown as Keyframe<unknown>);
+			return;
+		}
+		for (const x of Object.values(o)) walk(x, depth + 1);
+	};
+	walk(clip, 0);
+	return out;
+}
 
 /** Lanes show on tracks at least this tall (Premiere draws keyframes on expanded tracks). */
 export const LANE_MIN_TRACK_PX = 48;
@@ -259,7 +283,8 @@ export function laneModel(
 	const r = resolvePropertyAt({ doc, seq, clip }, spec, clip.start);
 	const anim = r.anim;
 	const range = laneRange(spec, anim);
-	const opts = propertyEvaluateOptions(spec);
+	// spatial-points: effect points evaluate with the metric they were resolved with (layer box px).
+	const opts = { ...propertyEvaluateOptions(spec), ...(r.metric ? { metric: r.metric } : {}) };
 	const band = hasBand(spec);
 	const keys: LaneKey[] = (anim?.keyframes ?? [])
 		.map((k, i, all): LaneKey | null => {

@@ -1,7 +1,7 @@
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
 import { evaluate, isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
-import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
+import { newKeySpatial, refreshAutoTangents, type SpatialMetric } from '../../keyframes-spatial.ts';
 import {
 	MASK_EXPANSION_RANGE,
 	MASK_FEATHER_RANGE,
@@ -10,8 +10,8 @@ import {
 	MASK_PROPS,
 	type MaskProp,
 } from '../../masks/model.ts';
-import type { ParamSpec } from '../../registry/effects.ts';
-import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
+import { type ParamSpec, paramSpatialMetric } from '../../registry/effects.ts';
+import { intrinsicBoxOf, type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import {
 	type Animatable,
 	type Keyframe,
@@ -68,6 +68,11 @@ export type Target =
 			rule: ValueRule;
 			time(at: ParamAt | undefined): number;
 			label: string;
+			/**
+			 * spatial-points: pixels per value unit of a point normalised to its layer box (effect points), for the
+			 * spatial rules and evaluation of its keys; absent = isotropic value units.
+			 */
+			metric?: SpatialMetric;
 	  }
 	| { type: 'static'; set(v: unknown): void; rule: ValueRule; label: string };
 
@@ -158,6 +163,16 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 		}
 	}
 	return null;
+}
+
+/**
+ * spatial-points: the layer box of an effect's owner — the clip's intrinsic box, or the sequence frame for track and
+ * master effects (they process the frame).
+ */
+export function effectOwnerBox(doc: DDoc, seq: DSeq, clip: DClip | null): { width: number; height: number } {
+	return clip
+		? intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as Clip })
+		: { width: seq.settings.width, height: seq.settings.height };
 }
 
 /**
@@ -286,7 +301,17 @@ export function resolveTarget(
 		const clip = found.clip;
 		const time = (at: ParamAt | undefined) =>
 			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
-		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${found.fx.effectId}.${p.name}` };
+		// spatial-points: points normalised to the layer box measure their paths in its pixels (track and master effects:
+		// the sequence frame).
+		const metric = p.spatialMetric ? paramSpatialMetric(p, effectOwnerBox(doc, found.seq, clip)) : undefined;
+		return {
+			type: 'anim',
+			anim,
+			rule: ruleFromParam(p),
+			time,
+			label: `${found.fx.effectId}.${p.name}`,
+			...(metric ? { metric } : {}),
+		};
 	}
 	// `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).
 	if (head === 'mask' && a && rest.length === 1) {
@@ -351,7 +376,9 @@ export function resolveTarget(
 			const f = h.sequenceContentTime(s, at) / F;
 			return Math.round(Math.min(t.duration - 1, Math.max(0, f - start))) * F;
 		};
-		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${spec.label}.${p.name}` };
+		// spatial-points: transitions have no motion path (their params are never spatial).
+		const { spatial: _spatial, ...rule } = ruleFromParam(p);
+		return { type: 'anim', anim, rule, time, label: `${spec.label}.${p.name}` };
 	}
 	if (head === 'track' && a && rest.length === 1 && (rest[0] === 'volumeDb' || rest[0] === 'pan')) {
 		const seq = h.sequence(doc, cmd.sequenceId);
@@ -492,7 +519,11 @@ export function newKeyframe(
 	};
 }
 
-function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>): string {
+function upsertKeyframe(
+	anim: Draft<Animatable<unknown>>,
+	kf: Keyframe<unknown>,
+	metric?: SpatialMetric,
+): string {
 	const existing = anim.keyframes.find((k) => k.time === kf.time);
 	let id = kf.id;
 	if (existing) {
@@ -502,9 +533,9 @@ function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>)
 		anim.keyframes.push(kf as never);
 		anim.keyframes.sort((x, y) => x.time - y.time);
 	}
-	refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+	refreshAutoTangents(anim.keyframes as Keyframe<unknown>[], metric);
 	// keyframes-blend: roving keys sit where the motion passes them.
-	retimeRoving(anim.keyframes as Keyframe<unknown>[]);
+	retimeRoving(anim.keyframes as Keyframe<unknown>[], metric);
 	return id;
 }
 
@@ -521,7 +552,11 @@ export const paramHandlers = {
 		if (target.anim.keyframes.length > 0) {
 			const t = target.time(cmd.at);
 			const hold = target.rule.holdOnly || isHoldOnlyValue(value);
-			const id = upsertKeyframe(target.anim, newKeyframe(h, t, value, hold, target.rule.spatial));
+			const id = upsertKeyframe(
+				target.anim,
+				newKeyframe(h, t, value, hold, target.rule.spatial),
+				target.metric,
+			);
 			return { applied: value, clamped, keyframeId: id, time: t };
 		}
 		target.anim.value = value as never;
@@ -545,7 +580,10 @@ export const paramHandlers = {
 			return { keyframeId: kf.id, time: t };
 		}
 		if (anim.keyframes.length === 0) return { value: anim.value };
-		const v = evaluate(anim as Animatable<unknown>, t, { holdOnly: target.rule.holdOnly });
+		const v = evaluate(anim as Animatable<unknown>, t, {
+			holdOnly: target.rule.holdOnly,
+			...(target.metric ? { metric: target.metric } : {}),
+		});
 		anim.value = JSON.parse(JSON.stringify(v)) as never;
 		anim.keyframes = [];
 		return { value: v };

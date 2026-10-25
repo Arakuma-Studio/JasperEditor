@@ -116,6 +116,16 @@ export type ShaderTransitionInit = {
 	migrate?: TransitionSpec['migrate'];
 };
 
+/**
+ * spatial-points: transition params are not spatial (a transition has no motion path; its keys are progress-timed
+ * values), so the `spatial` / `spatialMetric` that `fxParam.point` gives effect points are dropped.
+ */
+function withoutSpatial(p: ParamSpec): ParamSpec {
+	if (p.spatial === undefined && p.spatialMetric === undefined) return p;
+	const { spatial: _spatial, spatialMetric: _metric, ...rest } = p;
+	return rest;
+}
+
 /** The full param list of a shader transition: Start, End, own params, then the requested standard options. */
 export function shaderTransitionParams(init: Pick<ShaderTransitionInit, 'params' | 'options'>): ParamSpec[] {
 	const o = init.options ?? {};
@@ -128,7 +138,7 @@ export function shaderTransitionParams(init: Pick<ShaderTransitionInit, 'params'
 		...(o.reverse === false ? [] : [trParam.reverse()]),
 		...(o.antiAliasing ? [trParam.antiAliasing()] : []),
 		...(o.center ? [trParam.center(Array.isArray(o.center) ? o.center : undefined)] : []),
-	];
+	].map(withoutSpatial);
 }
 
 export function defineShaderTransition(init: ShaderTransitionInit): TransitionSpec {

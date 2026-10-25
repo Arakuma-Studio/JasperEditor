@@ -1,6 +1,7 @@
 // Copying keyframed grades between clips (S06:CGU-004, CGA-002 copy_grade): keyframe times are clip content time,
 // so a copied keyframe is re-timed to keep its offset from the clip's first frame. Shared by the web Paste Grade
 // and the MCP copy_grade tool.
+import { reversedKeyTiming } from '../keyframes.ts';
 import type { Keyframe } from '../schema/common.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 
@@ -33,9 +34,25 @@ export function retimeKeyframes<T>(
 			? to.sourceIn + (to.duration - 1 - i) * F * to.speed.rate
 			: to.sourceIn + i * F * to.speed.rate;
 	const byTime = new Map<number, Keyframe<T>>();
-	for (const k of keyframes) {
+	// keyframe-sides: keys with an explicit incoming side, landing the other way round, are mirrored exactly (each
+	// segment's two sides swap ends; `reversedKeyTiming`).
+	const mirror =
+		!!from.speed.reverse !== !!to.speed.reverse && keyframes.some((k) => k.inInterpolation !== undefined);
+	keyframes.forEach((k, i) => {
 		const time = Math.max(0, Math.round(at(offset(k.time))));
-		byTime.set(time, { ...k, time });
-	}
+		if (!mirror) {
+			byTime.set(time, { ...k, time });
+			return;
+		}
+		const { inInterpolation: _side, ...rest } = k;
+		const t = reversedKeyTiming(keyframes as readonly Keyframe<unknown>[], i);
+		byTime.set(time, {
+			...rest,
+			time,
+			interpolation: t.interpolation,
+			easeIn: { ...t.easeIn },
+			easeOut: { ...t.easeOut },
+		});
+	});
 	return [...byTime.values()].sort((a, b) => a.time - b.time);
 }

@@ -93,6 +93,8 @@ function freezeAutoBezier(a: Animatable<Vec2>): Animatable<Vec2> {
 			return {
 				...k,
 				interpolation: 'bezier',
+				// keyframe-sides: an explicit Auto Bezier incoming side freezes with it.
+				...(k.inInterpolation === 'auto-bezier' ? { inInterpolation: 'bezier' as const } : {}),
 				easeIn: { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'in') },
 				easeOut: { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') },
 			};
@@ -112,6 +114,7 @@ function sameAnimNumber(a: Animatable<number>, b: Animatable<number>): boolean {
 		return (
 			k.time === o.time &&
 			k.interpolation === o.interpolation &&
+			k.inInterpolation === o.inInterpolation &&
 			nearlyEqual(k.value, o.value) &&
 			k.easeIn.influence === o.easeIn.influence &&
 			k.easeIn.slope === o.easeIn.slope &&

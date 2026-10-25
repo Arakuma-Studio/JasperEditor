@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
 	type Animatable,
 	BRIGHTNESS_CONTRAST_EFFECT,
+	bezierProgress,
 	buildRenderSnapshot,
 	type Clip,
 	CROP_EFFECT,
@@ -343,12 +344,16 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 		expect(opacityAt(h, id, 50)).toBeCloseTo(50, 9);
 		const easy = { influence: 1 / 3, slope: 0 };
 		h.ok([{ type: 'keyframe.setInterpolation', keyframeIds: [a], interpolation: 'bezier', easeOut: easy }]);
-		// S01 KF-003: zero outgoing slope and linear incoming slope give p(1/2)=3/8.
-		expect(opacityAt(h, id, 50)).toBeCloseTo(37.5, 6);
-		// Ease In on the second key (first key back to linear): mirror image.
+		// S01 KF-003 with keyframe-sides: zero outgoing slope into a Linear incoming side, which contributes After
+		// Effects' linear ease (influence ⅙ at the average speed): the cubic (0,0) (⅓,0) (⅚,⅚) (1,1).
+		const half = bezierProgress(0.5, easy, { influence: 1 / 6, slope: 1 });
+		expect(half).toBeCloseTo(0.36293666, 7);
+		expect(opacityAt(h, id, 50)).toBeCloseTo(100 * half, 6);
+		// Ease In on the second key (first key back to linear): mirror image — the Linear key no longer cancels it.
 		h.ok([{ type: 'keyframe.setInterpolation', keyframeIds: [a], interpolation: 'linear' }]);
 		h.ok([{ type: 'keyframe.setInterpolation', keyframeIds: [b], interpolation: 'bezier', easeIn: easy }]);
-		expect(opacityAt(h, id, 50)).toBeCloseTo(62.5, 6);
+		expect(opacityAt(h, id, 50)).toBeCloseTo(100 * (1 - half), 6);
+		expect(clipOf(h, id).opacity.keyframes[0]!.interpolation).toBe('linear');
 		// Easy Ease on both keys: symmetric, p(0.5) = 0.5, flat start (AC-08).
 		h.ok([
 			{

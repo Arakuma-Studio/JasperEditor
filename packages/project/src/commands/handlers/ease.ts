@@ -10,6 +10,8 @@ import { planPathCleanup } from '../../ease/path-fit.ts';
 import {
 	captureEases,
 	easeProgressRange,
+	keepIncoming,
+	keepOutgoing,
 	LINEAR_EASE,
 	spanAverageVelocity,
 	spanEases,
@@ -17,7 +19,7 @@ import {
 	writeSpan,
 } from '../../ease/segments.ts';
 import { rovingRuns, stopRoving } from '../../keyframes.ts';
-import { effectiveTangents } from '../../keyframes-spatial.ts';
+import { effectiveTangents, type SpatialMetric } from '../../keyframes-spatial.ts';
 import { SLIDER_CONTROL_ID } from '../../registry/expression-controls.ts';
 import type { Animatable, Ease, Keyframe } from '../../schema/common.ts';
 import type { EffectInstance } from '../../schema/sequence.ts';
@@ -25,14 +27,16 @@ import type { DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import {
 	describeEaseGroup,
+	type EaseClip,
 	type EaseGroup,
+	groupMetric,
 	isPointGroup,
 	isSteppingGroup,
 	sectionSpans,
 	selectionGroups,
 } from './ease-read.ts';
 import { effectHandlers } from './effect.ts';
-import { finish } from './keyframe.ts';
+import { applyInterpolation, finish } from './keyframe.ts';
 import { validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 import { clone } from './util.ts';
@@ -57,7 +61,8 @@ class Changes {
 	/** Writes a group's keys back to the document and re-derives what `finish` maintains. */
 	commit(g: EaseGroup, keys: Keys = g.kfs): void {
 		g.loc.anim.keyframes = keys as never;
-		finish([g.loc.anim]);
+		// spatial-points: auto-bezier eases, Auto Bezier tangents and roving times of effect points in their metric.
+		finish([g.loc.anim], () => groupMetric(g));
 		this.committed.push(g);
 	}
 	result() {
@@ -108,18 +113,18 @@ function applyCubic(
 	const spans = sectionSpans(g, sections);
 	if (!spans.length) return 'no segment in the chosen sections';
 	const { easeOut, easeIn } = cubicToEases(curve);
-	for (const sp of spans) writeSpan(g.kfs, sp.a, sp.b, easeOut, easeIn);
+	for (const sp of spans) writeSpan(g.kfs, sp.a, sp.b, easeOut, easeIn, undefined, groupMetric(g));
 	warnOrientation(g, [{ out: easeOut, in: easeIn }], h);
 	return null;
 }
 
 /** Stops roving on the span's end keys (keeping their times and speed) and clears it inside; true if any roved. */
-function clearRoving(kfs: Keys, a: number, b: number): boolean {
+function clearRoving(kfs: Keys, a: number, b: number, metric?: SpatialMetric): boolean {
 	let any = false;
 	for (let i = a; i <= b; i++) if (kfs[i]!.roving) any = true;
 	if (!any) return false;
 	// Fresh array copies: roving runs are cached per array.
-	for (const i of [a, b]) if (kfs[i]!.roving) stopRoving([...kfs], i);
+	for (const i of [a, b]) if (kfs[i]!.roving) stopRoving([...kfs], i, metric);
 	for (let i = a; i <= b; i++) delete kfs[i]!.roving;
 	return true;
 }
@@ -132,7 +137,7 @@ function applyMulti(g: EaseGroup, curve: MultiEase, h: HandlerContext, changes: 
 	const kfs = g.kfs;
 	const a = sel[0]!;
 	const b = sel[sel.length - 1]!;
-	const roved = clearRoving(kfs, a, b);
+	const roved = clearRoving(kfs, a, b, groupMetric(g));
 	let r: ReturnType<typeof applyMultiEase>;
 	try {
 		r = applyMultiEase({
@@ -141,6 +146,7 @@ function applyMulti(g: EaseGroup, curve: MultiEase, h: HandlerContext, changes: 
 			b,
 			curve,
 			spatial: isPointGroup(g),
+			metric: groupMetric(g),
 			newId: () => h.ids.next('kf'),
 			validate: (v) => validateValue(v, g.target.rule, h, label),
 		});
@@ -203,20 +209,31 @@ function applyCurve(
 	return changes.result();
 }
 
-/** Pastes one key's eases onto key i (both sides; neighbouring holds keep holding). */
-function pasteKeyEase(g: EaseGroup, i: number, clip: { easeIn: Ease; easeOut: Ease }): boolean {
+/**
+ * Pastes one key's two sides onto key i (keyframe-sides: Premiere / After Effects semantics, as
+ * `keyframe.setInterpolation` with the copied types and eases): its incoming side takes the copied incoming type and
+ * ease, its outgoing side the outgoing ones; the neighbours keep their own sides (a Linear neighbour side of a now
+ * curved segment is After Effects' ⅙ linear ease; a Hold neighbour keeps holding), and the next key's incoming side
+ * becomes explicit so the segment leaving key i is read per side. Auto Bezier re-derives its eases from the target's
+ * neighbours and Continuous Bezier keeps its sides' velocities equal, as those types do. A clip without types pastes
+ * Bezier sides. A roving key takes its run's ease (refused here).
+ */
+function pasteKeyEase(g: EaseGroup, i: number, clip: Extract<EaseClip, { kind: 'key' }>): boolean {
 	const kfs = g.kfs;
 	const runs = rovingRuns([...kfs]);
 	if (runs.some((r) => i > r.a && i < r.b)) return false; // a roving key's eases are its run's
-	const before = spanLeaving(kfs, i - 1, runs);
-	const prev = before ? spanEases(kfs, before.a, before.b) : null;
-	if (before && prev && !prev.hold) writeSpan(kfs, before.a, before.b, prev.out, clip.easeIn);
-	else kfs[i]!.easeIn = { ...clip.easeIn };
-	const after = spanLeaving(kfs, i, runs);
-	if (after) {
-		const next = spanEases(kfs, after.a, after.b);
-		writeSpan(kfs, after.a, after.b, clip.easeOut, next.hold ? LINEAR_EASE : next.in);
-	} else kfs[i]!.easeOut = { ...clip.easeOut };
+	const inType = clip.inInterpolation ?? 'bezier';
+	const outType = clip.interpolation ?? 'bezier';
+	const anim = { keyframes: kfs } as unknown as Draft<Animatable<unknown>>;
+	const key = kfs[i] as Draft<Keyframe<unknown>>;
+	const metric = groupMetric(g);
+	const easeIn = { ...clip.easeIn };
+	const easeOut = { ...clip.easeOut };
+	if (inType === outType) applyInterpolation(anim, key, outType, easeIn, easeOut, 'both', metric);
+	else {
+		applyInterpolation(anim, key, inType, easeIn, undefined, 'in', metric);
+		applyInterpolation(anim, key, outType, undefined, easeOut, 'out', metric);
+	}
 	return true;
 }
 
@@ -284,7 +301,7 @@ export const easeHandlers = {
 		for (let k = 0; k < count; k++) {
 			const t = targets[k]!;
 			const e = cubicToEases(clip.segments[n === 1 ? 0 : k]!);
-			writeSpan(t.g.kfs, t.a, t.b, e.easeOut, e.easeIn);
+			writeSpan(t.g.kfs, t.a, t.b, e.easeOut, e.easeIn, undefined, groupMetric(t.g));
 			warnOrientation(t.g, [{ out: e.easeOut, in: e.easeIn }], h);
 			touched.add(t.g);
 		}
@@ -323,6 +340,7 @@ export const easeHandlers = {
 		const label = g!.target.label;
 		if (isSteppingGroup(g!)) h.fail('E_INVALID_PARAM', `${label} holds its values: it has no speed`);
 		const kfs = g!.kfs;
+		const metric = groupMetric(g!);
 		const i = g!.selected[0]!;
 		const runs = rovingRuns([...kfs]);
 		if (runs.some((r) => i > r.a && i < r.b))
@@ -336,16 +354,16 @@ export const easeHandlers = {
 			const sp = spanLeaving(kfs, side === 'in' ? i - 1 : i, runs);
 			const why = !sp
 				? `there is no keyframe ${side === 'in' ? 'before' : 'after'} it`
-				: spanEases(kfs, sp.a, sp.b).hold
+				: spanEases(kfs, sp.a, sp.b, metric).hold
 					? `the segment ${side === 'in' ? 'before' : 'after'} it holds`
 					: null;
 			if (why || !sp) {
 				if (cmd.side !== 'both') h.fail('E_INVALID_PARAM', `No ${side} speed: ${why}`);
 				continue;
 			}
-			const e = spanEases(kfs, sp.a, sp.b) as { hold: false; out: Ease; in: Ease };
+			const e = spanEases(kfs, sp.a, sp.b, metric) as { hold: false; out: Ease; in: Ease };
 			const cur = side === 'in' ? e.in : e.out;
-			const avg = spanAverageVelocity(kfs, sp.a, sp.b);
+			const avg = spanAverageVelocity(kfs, sp.a, sp.b, metric);
 			let slope = cur.slope;
 			if (cmd.speed !== undefined) {
 				if (avg === 0 && cmd.speed !== 0)
@@ -359,8 +377,9 @@ export const easeHandlers = {
 				influence: cmd.influence !== undefined ? cmd.influence / 100 : cur.influence,
 				slope,
 			};
-			if (side === 'in') writeSpan(kfs, sp.a, sp.b, e.out, next);
-			else writeSpan(kfs, sp.a, sp.b, next, e.in);
+			// The segment's other side keeps the ease it contributes (a Linear side its linear ease, as a Bezier side).
+			if (side === 'in') writeSpan(kfs, sp.a, sp.b, e.out, next, undefined, metric);
+			else writeSpan(kfs, sp.a, sp.b, next, e.in, undefined, metric);
 			applied++;
 		}
 		if (!applied) h.fail('E_INVALID_PARAM', 'The keyframe has no segment to set a speed on');
@@ -403,19 +422,23 @@ export const easeHandlers = {
 		const changes = new Changes();
 		changes.track(g);
 		const kfs = g.kfs;
+		const metric = groupMetric(g);
 		const a = g.selected[0]!;
 		const b = g.selected[g.selected.length - 1]!;
 		const A = kfs[a]!;
 		const B = kfs[b]!;
 		// Constant speed along the path between A and B: the keys between rove, the run is linear.
-		if (A.roving || B.roving) clearRoving(kfs, a, b);
+		if (A.roving || B.roving) clearRoving(kfs, a, b, metric);
+		const captured = captureEases(kfs, a, b, metric);
 		const rovingIds: string[] = [];
 		for (let i = a + 1; i < b; i++) {
 			kfs[i]!.interpolation = 'linear';
+			// keyframe-sides: a roving key's sides do not shape anything (its run is one segment).
+			delete kfs[i]!.inInterpolation;
 			kfs[i]!.roving = true;
 			rovingIds.push(kfs[i]!.id);
 		}
-		writeSpan(kfs, a, b, LINEAR_EASE, LINEAR_EASE, captureEases(kfs, a, b));
+		writeSpan(kfs, a, b, LINEAR_EASE, LINEAR_EASE, captured, metric);
 		changes.commit(g);
 		// The Slider Control, keyed 0 → 100 with Easy Ease over the same span.
 		const added = (effectHandlers['effect.add'] as (d: DDoc, c: unknown, hh: HandlerContext) => unknown)(
@@ -502,15 +525,17 @@ export const easeHandlers = {
 				continue;
 			}
 			const kfs = g.kfs;
+			const metric = groupMetric(g);
 			const a = g.selected[0]!;
 			const b = g.selected[g.selected.length - 1]!;
-			if (clearRoving(kfs, a, b))
+			if (clearRoving(kfs, a, b, metric))
 				h.warn('W_EASE_ROVING_CLEARED', `${label}: keys in the cleaned span no longer rove`);
-			const plan = planPathCleanup(kfs, a, b, tolerance);
-			const captured = captureEases(kfs, a, b);
-			const aTan = effectiveTangents(kfs, a);
-			const bTan = effectiveTangents(kfs, b);
-			const prevEases = a > 0 && !['linear', 'hold'].includes(kfs[a - 1]!.interpolation);
+			// spatial-points: an effect point's path is fitted in its layer box's pixels (tolerance in layer px).
+			const plan = planPathCleanup(kfs, a, b, tolerance, metric);
+			// Measured before keys go: Auto Bezier eases / tangents depend on the neighbours removed.
+			const captured = captureEases(kfs, a, b, metric);
+			const aTan = effectiveTangents(kfs, a, metric);
+			const bTan = effectiveTangents(kfs, b, metric);
 			const keptSet = new Set(plan.kept);
 			const removed = kfs.slice(a, b + 1).filter((_, j) => !keptSet.has(a + j));
 			const keys: Keys = [];
@@ -527,20 +552,25 @@ export const easeHandlers = {
 						: i === b
 							? spatialFor(t.in, bTan.outTangent)
 							: spatialFor(t.in, t.out);
-				if (i === b) {
-					// B's own segment (after the span) is kept: an Auto Bezier B freezes its current eases.
-					if (k.interpolation === 'auto-bezier') {
+				if (i === a) {
+					// A leaves linearly; the segment arriving at A keeps its shape (keyframe-sides: `keepIncoming`).
+					keepIncoming(kfs, a, 'linear', captured);
+					k.interpolation = 'linear';
+					k.easeOut = { ...LINEAR_EASE };
+				} else if (i === b) {
+					// B arrives linearly (after a Linear key: linear in both readings); its own segment (after the span) is
+					// kept: an Auto Bezier B freezes its current eases (they depend on the keys removed before it).
+					if (k.inInterpolation !== undefined) {
+						keepOutgoing(kfs, b, 'linear', captured.bOut);
+						k.inInterpolation = 'linear';
+					} else if (k.interpolation === 'auto-bezier') {
 						k.interpolation = 'bezier';
 						if (captured.bOut) k.easeOut = { ...captured.bOut };
 						k.easeIn = { ...LINEAR_EASE };
 					}
-				} else if (i === a && prevEases) {
-					// The segment arriving at A keeps its ease: A stays Bezier with a linear out ease.
-					k.interpolation = 'bezier';
-					if (captured.aIn) k.easeIn = { ...captured.aIn };
-					k.easeOut = { ...LINEAR_EASE };
 				} else {
 					k.interpolation = 'linear';
+					delete k.inInterpolation;
 					k.easeIn = { ...LINEAR_EASE };
 					k.easeOut = { ...LINEAR_EASE };
 				}

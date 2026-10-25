@@ -14,8 +14,9 @@ const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100
 /**
  * The per-layer pipeline (S03 §4.2, S03:DM-012), from the inside out:
  * 1. source content (`children`, styled with `style`) in an intrinsic-size box;
- * 2. effects, crop first, each one wrapper element (preview CSS or an SVG filter). Crop uses
- *    `clip-path` on an inner element so blur/shadow of later effects are not clipped. M2 (S06:CG-040): colour
+ * 2. effects in stack order (Crop where it sits, schema v8), each one wrapper element (preview CSS or an SVG filter).
+ *    Crop is a `clip-path` on its own wrapper: it cuts what the effects inside it drew, and blur/shadow of later
+ *    effects (outer wrappers) are not clipped. M2 (S06:CG-040): colour
  *    runs (and the non-colour effects before them) run as canvas passes on the source picture inside the source
  *    component (`useColorStage`); the layer then passes only the remaining effects here (`effects`);
  * 3. the layer matrix on the outer element (`transform-origin: 0 0`); a corner pin (M2) makes it the

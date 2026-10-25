@@ -518,7 +518,7 @@ function transitionEdges(ctx: FindCtx): { sample: number; frame: number; clip: A
 		const inc = t.incomingClipId ? (ctx.seq.clips[t.incomingClipId] as AudioClip | undefined) : undefined;
 		const outC = t.outgoingClipId ? (ctx.seq.clips[t.outgoingClipId] as AudioClip | undefined) : undefined;
 		if (inc?.kind !== 'audio' || outC?.kind !== 'audio') continue;
-		const span = transitionSpan(inc.start, t.duration, t.alignment);
+		const span = transitionSpan(inc.start, t.duration, t.alignment, t.cutPosition);
 		for (const f of [span.start, span.end])
 			if (f > 0 && f < ctx.duration && f !== inc.start)
 				out.push({

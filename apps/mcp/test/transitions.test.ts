@@ -238,4 +238,166 @@ describe('GPU transitions through MCP (transition framework)', () => {
 		});
 		expect(up.transition.params).toEqual({ direction: 'eastToWest', borderWidth: 3 });
 	});
+
+	it('lists Smooth Slide with its controls and adds / updates it by short name', async () => {
+		const { call } = await connect();
+		type Param = { name: string; type: string; default: unknown; options?: string[] };
+		type Type = { effectId: string; type: string; label: string; bin: string; params: Param[] };
+		const { types: all } = await call<{ count: number; types: Type[] }>('list_transition_types', {
+			search: 'dolly',
+		});
+		const slide = all.find((t) => t.effectId === 'jasper.smooth-slide')!;
+		expect(slide).toMatchObject({ label: 'Smooth Slide', type: 'smooth-slide', bin: 'Slide' });
+		const names = slide.params.map((p) => p.name);
+		for (const n of [
+			'direction',
+			'animation',
+			'dolly',
+			'reflection',
+			'blurriness',
+			'falloff',
+			'aspect',
+			'motionBlur',
+			'shutterAngle',
+			'edgeSmoothing',
+		])
+			expect(names).toContain(n);
+		expect(slide.params.find((p) => p.name === 'animation')!.options).toHaveLength(22);
+		await call('add_transition', {
+			projectId: 'prj_test',
+			type: 'smooth-slide',
+			durationFrames: 10,
+			track: 'V1',
+			at: 100,
+			params: { direction: 'up', animation: 'easeOutExpo', dolly: 0.5 },
+		});
+		type Listed = { id: string; effectId: string; params?: Record<string, unknown> };
+		const list = await call<{ transitions: Listed[] }>('list_transitions', { projectId: 'prj_test' });
+		const t = list.transitions.find((x) => x.effectId === 'jasper.smooth-slide')!;
+		expect(t.params).toEqual({ direction: 'up', animation: 'easeOutExpo', dolly: 0.5 });
+		const up = await call<{ transition: Listed }>('update_transition', {
+			projectId: 'prj_test',
+			transitionId: t.id,
+			params: { reflection: true, motionBlur: 'medium', shutterAngle: 180 },
+		});
+		expect(up.transition.params).toMatchObject({ reflection: true, motionBlur: 'medium', shutterAngle: 180 });
+	});
+});
+
+describe('Premiere audio crossfades through MCP (Custom Fade, Custom Start)', () => {
+	async function connect() {
+		const engine = fakeEngine(null);
+		const { server } = createJasperMcpServer({ link: engine.link, agentName: 'transitions-test' });
+		const [a, b] = InMemoryTransport.createLinkedPair();
+		await server.connect(a);
+		const client = new Client({ name: 'transitions-test', version: '1' });
+		await client.connect(b);
+		open.push(client);
+		const raw = async (name: string, args: Record<string, unknown>) => {
+			const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
+			const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
+			return { r, text };
+		};
+		const call = async <T>(name: string, args: Record<string, unknown>) => {
+			const { r, text } = await raw(name, args);
+			expect(r.isError, text).toBeFalsy();
+			return JSON.parse(text) as T;
+		};
+		return { call, raw };
+	}
+	type Listed = {
+		id: string;
+		effectId: string;
+		alignment: string;
+		cutOffset?: number;
+		span?: { start: number; end: number };
+		params?: Record<string, unknown>;
+	};
+
+	it('adds an off-centre asymmetrical custom-fade crossfade and updates it', async () => {
+		const { call } = await connect();
+		await call('add_transition', {
+			projectId: 'prj_test',
+			type: 'custom-fade',
+			durationFrames: 20,
+			track: 'A1',
+			at: 100,
+			cutOffset: 5,
+			params: {
+				fadeShape: 'cosine',
+				fadeValue: 30,
+				symmetry: 'asymmetric',
+				outFadeShape: 'linear',
+				outFadeValue: -10,
+			},
+		});
+		const list = await call<{ transitions: Listed[] }>('list_transitions', { projectId: 'prj_test' });
+		const cf = list.transitions.find((t) => t.effectId === 'jasper.custom-fade')!;
+		expect(cf).toMatchObject({
+			alignment: 'custom-start',
+			cutOffset: 5,
+			span: { start: 95, end: 115 },
+			params: {
+				fadeShape: 'cosine',
+				fadeValue: 30,
+				symmetry: 'asymmetric',
+				outFadeShape: 'linear',
+				outFadeValue: -10,
+			},
+		});
+		const up = await call<{ transition: Listed }>('update_transition', {
+			projectId: 'prj_test',
+			transitionId: cf.id,
+			alignment: 'center',
+			params: { fadeValue: 12 },
+		});
+		expect(up.transition).toMatchObject({ alignment: 'center', params: { fadeValue: 12 } });
+		expect(up.transition.cutOffset).toBeUndefined();
+		const off = await call<{ transition: Listed }>('update_transition', {
+			projectId: 'prj_test',
+			transitionId: cf.id,
+			cutOffset: 15,
+		});
+		expect(off.transition).toMatchObject({ alignment: 'custom-start', cutOffset: 15 });
+		const ex = await call<{ transition: Listed }>('update_transition', {
+			projectId: 'prj_test',
+			transitionId: cf.id,
+			effectId: 'exponential-fade',
+		});
+		expect(ex.transition.effectId).toBe('jasper.exponential-fade');
+	});
+
+	it('refuses a cutOffset on a fade and a bad fade shape as tool errors', async () => {
+		const { raw, call } = await connect();
+		const fade = await raw('add_transition', {
+			projectId: 'prj_test',
+			type: 'custom-fade',
+			durationFrames: 10,
+			track: 'A1',
+			at: 0,
+			cutOffset: 3,
+		});
+		expect(fade.r.isError).toBe(true);
+		expect(fade.text).toContain('E_INVALID_PARAM');
+		const bad = await raw('add_transition', {
+			projectId: 'prj_test',
+			type: 'custom-fade',
+			durationFrames: 10,
+			track: 'A1',
+			at: 100,
+			params: { fadeShape: 'parabolic' },
+		});
+		expect(bad.r.isError).toBe(true);
+		const types = await call<{ types: { effectId: string; params: { name: string }[] }[] }>(
+			'list_transition_types',
+			{ medium: 'audio' },
+		);
+		expect(types.types.find((t) => t.effectId === 'jasper.custom-fade')?.params.map((p) => p.name)).toEqual([
+			'fadeShape',
+			'fadeValue',
+			'symmetry',
+			'outFadeShape',
+			'outFadeValue',
+		]);
+	});
 });

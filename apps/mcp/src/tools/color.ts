@@ -587,6 +587,7 @@ function planCopyGrade(
 						time: k.time,
 						value: k.value,
 						interpolation: k.interpolation,
+						...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 						easeIn: k.easeIn,
 						easeOut: k.easeOut,
 					})),

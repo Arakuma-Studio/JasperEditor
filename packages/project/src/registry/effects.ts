@@ -3,7 +3,9 @@
 import type { Lut, Rgb } from '../color/lut.ts';
 import type { SequenceColorInfo } from '../color/model.ts';
 import type { OcioConfig } from '../color/ocio/config.ts';
-import type { ParamValue, SpatialInterpolation } from '../schema/common.ts';
+import { evaluate, expressionBindingOf } from '../keyframes.ts';
+import type { SpatialMetric } from '../keyframes-spatial.ts';
+import type { Animatable, ParamValue, SpatialInterpolation } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
 import { AUDIO_EFFECTS } from './audio/index.ts';
 import {
@@ -98,6 +100,12 @@ export type ParamSpec = {
 	 * spatial paths. Absent = not a point (component-wise lerp only, e.g. colour wheels).
 	 */
 	spatial?: SpatialInterpolation;
+	/**
+	 * spatial-points: the units of a point's spatial path. `layer-box` = normalised to the layer box (x · box width,
+	 * y · box height pixels; `fxParam.point`, Corner Pin), so arc length, Auto Bezier handles and speeds are measured
+	 * with the metric [width, height] (`paramSpatialMetric`). Absent = isotropic value units (layer px).
+	 */
+	spatialMetric?: 'layer-box';
 	options?: readonly string[];
 	/** Human labels for `options` (same order). */
 	optionLabels?: readonly string[];
@@ -279,6 +287,64 @@ export function createEffectRegistry(specs: readonly EffectSpec[]): EffectRegist
 	};
 }
 
+/**
+ * spatial-points: the spatial metric of a param's keys (pixels per value unit along x and y), or undefined when its
+ * value units are isotropic or it is not a point: `[box.width, box.height]` for points normalised to the layer box.
+ * `box` = the layer box of the owner (a clip's intrinsic box; the sequence frame for track and master effects).
+ */
+export function paramSpatialMetric(
+	p: Pick<ParamSpec, 'type' | 'spatial' | 'spatialMetric'> | undefined,
+	box: { width: number; height: number } | null | undefined,
+): SpatialMetric | undefined {
+	if (p?.type !== 'vec2' || !p.spatial || p.spatialMetric !== 'layer-box' || !box) return undefined;
+	return [box.width, box.height];
+}
+
+const paramIndex = new WeakMap<EffectSpec, Map<string, ParamSpec>>();
+
+/** The param spec `name` of an effect spec (indexed once per spec). */
+export function effectParamSpec(spec: EffectSpec, name: string): ParamSpec | undefined {
+	let m = paramIndex.get(spec);
+	if (!m) {
+		m = new Map(spec.params.map((p) => [p.name, p]));
+		paramIndex.set(spec, m);
+	}
+	return m.get(name);
+}
+
+/**
+ * spatial-points: the spatial metric of param `name` of an effect instance in a layer box (the default registry, which
+ * the render snapshot, the resolver and the engine share); undefined for unknown effects and non-point params.
+ */
+export function effectParamMetric(
+	fx: { effectId: string; effectVersion?: number },
+	name: string,
+	box: { width: number; height: number } | null | undefined,
+	registry: Pick<EffectRegistry, 'get'> = defaultEffectRegistry,
+): SpatialMetric | undefined {
+	if (!box) return undefined;
+	const spec = registry.get(fx.effectId, fx.effectVersion);
+	return spec ? paramSpatialMetric(effectParamSpec(spec, name), box) : undefined;
+}
+
+/**
+ * spatial-points: an effect param's value at content time `t` with its spatial metric (points normalised to the layer
+ * box walk their paths by arc length in the box's pixels). The one call every renderer uses (`resolveLayerProps`,
+ * the shader effects' sub-frame sampling through `fxParamsAtFn`'s metrics), so preview and every export path agree.
+ * Bound expressions keep their property's own options (which carry the same metric).
+ */
+export function evaluateEffectParam(
+	fx: { effectId: string; effectVersion?: number },
+	name: string,
+	anim: Animatable<ParamValue>,
+	t: number,
+	box: { width: number; height: number } | null | undefined,
+): ParamValue {
+	const metric =
+		anim.keyframes.length > 1 && !expressionBindingOf(anim) ? effectParamMetric(fx, name, box) : undefined;
+	return evaluate(anim, t, metric ? { metric } : undefined);
+}
+
 /** Effects panel badges (S05:EFX-001, R-PUI §12): "Real-time" = previewable, "Native" = ffmpeg export. */
 export function effectBadges(spec: EffectSpec): { realtime: boolean; native: boolean } {
 	return {
@@ -327,7 +393,12 @@ const pct = (name: string, label: string, def = 0): ParamSpec => ({
 	animatable: true,
 });
 
-/** Crop (S01:FX-003): insets in percent of the intrinsic box, feather in pixels. */
+/**
+ * Crop (S01:FX-003): insets in percent of the intrinsic box, Edge Feather in layer pixels. It applies where it sits in
+ * the stack (schema v8). Edge Feather fades the picture in from each crop edge with the profile of `render/crop.ts`;
+ * `preview.css` / `native.filter` describe the hard cut — the renderers draw the feather themselves (the fx chain's
+ * shader, compositions/src/fx/builtins.ts; the native mask, apps/engine/src/export/crop.ts).
+ */
 export const CROP_EFFECT: EffectSpec = {
 	id: 'jasper.crop',
 	version: 1,
@@ -573,6 +644,7 @@ const pinCorner = (name: string, label: string, def: [number, number]): ParamSpe
 	animatable: true,
 	// Points (spatial paths available); new keys stay straight like the tracker's (S09).
 	spatial: 'linear',
+	spatialMetric: 'layer-box',
 });
 
 /**

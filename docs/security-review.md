@@ -421,6 +421,8 @@ Every state-changing engine route and what an agent may do with it:
 |---|---|---|
 | `DELETE /api/effect-presets/:id`, `…/folders/:id` (`delete_effect_preset`) | **Gated** | The user's library, shared by all projects, no undo |
 | `POST /api/effect-presets`, `PUT …/:id`, `POST …/import`, `POST/PUT …/folders` (`save_effect_preset`) | Open | Add, rename, move: nothing is lost; import never overwrites |
+| `DELETE /api/fonts/library/:id` (`remove_font`; wp fonts) | **Gated** | The user's font library, shared by all projects, no undo; the card names the saved projects that use the font |
+| `POST /api/fonts/library`, `POST /api/fonts/library/install-path` (`install_font`) | Open | Adds fonts (validated, size- and count-bounded); never overwrites an installed face; path installs are local mode only |
 | `DELETE /api/roto/models/:id`, `DELETE /api/speech/models/:id` (`remove_roto_model`, `remove_speech_model`) | **Gated** | Gigabytes to download again; features stop working meanwhile |
 | `DELETE /api/sounds/semantic/models/:id` (`remove_describe_search_model`; WP-E9) | **Gated** | 780 MB to download again; its cached embeddings go with it; Describe-it search and Find Moment stop working meanwhile (nothing installed: nothing asked) |
 | `POST …/models/:id/install` (`install_*_model`, `install_describe_search_model`) | Open | Catalogue-pinned downloads, size-bounded (ENG-2) |
@@ -470,7 +472,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/sound-design/motion` (`analyze_picture_motion`), engine cue sources of `POST /api/sound-design/cues` (`find_sound_cues` sources scene / beat / pixel), `POST /api/audio/beats` | Open | Read-only for the project: a picture render of ≤ 10 min into the job's scratch directory (deleted when it ends), Scene Edit Detection and beat analyses of registered media; only small JSON results are cached (`<appdir>/sounds/analysis/`). `POST /api/audio/beats {cachedOnly: true}` reads the cache only (404 `BEATS_NOT_ANALYSED`, nothing started); in-request analyses stop when the client closes its connection (`clientGoneSignal`) |
 | `PUT /api/settings/processing` (`set_processing_settings`) | **Gated**, now for every caller without the editor key | Where media is sent (was opt-in by a query parameter) |
 | `POST /api/project-manager` (`project_manager`) | Open | Copies into a new destination under free names; sources untouched |
-| `POST /api/assets/:id/relink`, `…/relink-scan` (`link_media`) | Open | Registers and compares files; the relink itself is a transaction (undoable; `force` is gated) |
+| `POST /api/assets/:id/relink`, `…/relink-scan`, `GET …/relink-scan/:jobId` (`link_media`) | Open | Registers and compares files (local engines only; paths of another computer refused); the scan walk is bounded (files, depth, time; symbolic links not followed) and its result is readable only through its own project; the relink itself is a transaction (undoable; `force` is gated) |
 | `POST /api/media/register`, `/derivatives`, `/variants`, `/process`, `/transcribe`, `/loudness-normalize`, `/api/media-jobs` | Open | New derived files under engine-chosen names; originals are never written |
 | `POST /api/exports`, `/api/stills`, `/api/interchange/export`, `/api/imports/lottie/export` | Open | Never overwrite (DATA-3) |
 | `POST /api/jobs/:id/cancel`, `/retry` (`cancel_job`) | Open | Restartable; partial outputs are the job's own |

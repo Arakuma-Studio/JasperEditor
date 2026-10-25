@@ -7,6 +7,7 @@ import {
 	clipHandles,
 	clipsAtEditPoint,
 	clipsOnTrack,
+	cutOffsetOf,
 	DIP_TO_BLACK,
 	fitTransitionDuration,
 	type MediaAsset,
@@ -37,6 +38,8 @@ export type TransitionGeom = {
 	duration: number;
 	/** `in` = fade at a clip head (incoming only), `out` = at a clip tail, null = between two clips. */
 	oneSided: 'in' | 'out' | null;
+	/** Premiere's Custom Start (`Transition.cutPosition`): frames of the drawn span before the cut; else absent. */
+	cutOffset?: number;
 	outgoing: Clip | null;
 	incoming: Clip | null;
 	/** Media available after the outgoing clip's out-point / before the incoming clip's in-point (frames). */
@@ -84,11 +87,13 @@ export function transitionGeom(seq: Sequence, media: MediaRecord, t: Transition)
 		effectId: t.effectId,
 		wanted: t.duration,
 		alignment: t.alignment,
+		cutPosition: t.cutPosition,
 		outgoing: outgoing ? { duration: outgoing.duration, tail: free ? inf : tail } : null,
 		incoming: incoming ? { duration: incoming.duration, head: free ? inf : head } : null,
 	});
 	const d = Math.max(1, duration);
-	const span = spanOf(cut, d, t.alignment, oneSided);
+	const custom = !oneSided && t.cutPosition !== undefined;
+	const span = spanOf(cut, d, t.alignment, oneSided, custom ? t.cutPosition : undefined);
 	const used = oneSided ? { tail: 0, head: 0 } : handleUse(t.effectId, cut, span.start, span.end);
 	return {
 		t,
@@ -99,6 +104,7 @@ export function transitionGeom(seq: Sequence, media: MediaRecord, t: Transition)
 		end: span.end,
 		duration,
 		oneSided,
+		...(custom ? { cutOffset: cutOffsetOf(d, t.alignment, t.cutPosition) } : {}),
 		outgoing,
 		incoming,
 		handles: { tail, head },
@@ -200,6 +206,7 @@ export function transitionBand(rowHeight: number): { top: number; height: number
 export function resizableEdges(g: TransitionGeom): { start: boolean; end: boolean } {
 	if (g.oneSided === 'in') return { start: false, end: true };
 	if (g.oneSided === 'out') return { start: true, end: false };
+	if (g.cutOffset !== undefined) return { start: true, end: true };
 	if (g.t.alignment === 'start-at-cut') return { start: false, end: true };
 	if (g.t.alignment === 'end-at-cut') return { start: true, end: false };
 	return { start: true, end: true };
@@ -267,16 +274,19 @@ export function hitTransition(
 	return best;
 }
 
-type EdgeDragResult = { duration: number; alignment: Alignment };
+type EdgeDragResult = { duration: number; alignment: Alignment; cutOffset?: number };
 
 /**
  * Edge drag → requested duration and alignment (before `fitTransitionDuration`, which the handler
  * applies). `frame` is the (snapped) boundary frame under the pointer. Centred transitions resize
- * symmetrically; with Alt the other edge stays put and the transition becomes start-/end-at-cut once
- * the dragged edge reaches the cut (otherwise it stays symmetric).
+ * symmetrically; with Alt the other edge stays put: the transition becomes Premiere's Custom Start (`cutOffset`
+ * frames before the cut), or start-/end-at-cut once the dragged edge reaches the cut. A Custom Start transition
+ * always keeps its other edge.
  */
 export function edgeDrag(
-	g: Pick<TransitionGeom, 'cut' | 'start' | 'end' | 'oneSided'> & { t: Pick<Transition, 'alignment'> },
+	g: Pick<TransitionGeom, 'cut' | 'start' | 'end' | 'oneSided' | 'cutOffset'> & {
+		t: Pick<Transition, 'alignment'>;
+	},
 	edge: 'start' | 'end',
 	frame: number,
 	alt: boolean,
@@ -285,18 +295,29 @@ export function edgeDrag(
 	const a = g.t.alignment;
 	if (g.oneSided === 'in') return { duration: Math.max(1, frame - g.start), alignment: a };
 	if (g.oneSided === 'out') return { duration: Math.max(1, g.end - frame), alignment: a };
-	if (a === 'start-at-cut') return { duration: Math.max(1, frame - cut), alignment: a };
-	if (a === 'end-at-cut') return { duration: Math.max(1, cut - frame), alignment: a };
-	// centre
-	if (alt) {
-		if (edge === 'start' && frame >= cut)
-			return { duration: Math.max(1, g.end - cut), alignment: 'start-at-cut' };
-		if (edge === 'end' && frame <= cut)
-			return { duration: Math.max(1, cut - g.start), alignment: 'end-at-cut' };
+	if (g.cutOffset === undefined && a === 'start-at-cut')
+		return { duration: Math.max(1, frame - cut), alignment: a };
+	if (g.cutOffset === undefined && a === 'end-at-cut')
+		return { duration: Math.max(1, cut - frame), alignment: a };
+	if (alt || g.cutOffset !== undefined) {
+		// The other edge stays put.
+		if (edge === 'start') {
+			if (frame >= cut) return { duration: Math.max(1, g.end - cut), alignment: 'start-at-cut' };
+			return { duration: g.end - frame, alignment: 'center', cutOffset: cut - frame };
+		}
+		if (frame <= cut) return { duration: Math.max(1, cut - g.start), alignment: 'end-at-cut' };
+		return { duration: frame - g.start, alignment: 'center', cutOffset: cut - g.start };
 	}
 	// transitionSpan centre: start = cut − ⌊d/2⌋, end = cut + ⌈d/2⌉.
 	const half = edge === 'end' ? frame - cut : cut - frame;
 	return { duration: Math.max(1, 2 * half), alignment: 'center' };
+}
+
+/** The `transition.update` an edge drag asks for (a Custom Start offset instead of the alignment when it has one). */
+export function edgeDragCommand(transitionId: string, want: EdgeDragResult): CommandOf<'transition.update'> {
+	return want.cutOffset !== undefined
+		? { type: 'transition.update', transitionId, duration: want.duration, cutOffset: want.cutOffset }
+		: { type: 'transition.update', transitionId, duration: want.duration, alignment: want.alignment };
 }
 
 /**
@@ -325,10 +346,11 @@ function spanOf(
 	duration: number,
 	alignment: Alignment,
 	oneSided: 'in' | 'out' | null,
+	cutPosition?: number,
 ): { start: number; end: number } {
 	if (oneSided === 'in') return { start: cut, end: cut + duration };
 	if (oneSided === 'out') return { start: cut - duration, end: cut };
-	return transitionSpan(cut, duration, alignment);
+	return transitionSpan(cut, duration, alignment, cutPosition);
 }
 
 /** ±px band around an edit point where the drop targets the cut itself. */
@@ -366,21 +388,24 @@ export function handleFeedback(input: {
 	effectId: string;
 	cut: number;
 	alignment: Alignment;
+	/** Custom Start: the cut position of the requested span (`Transition.cutPosition`). */
+	cutPosition?: number;
 	oneSided: 'in' | 'out' | null;
 	outgoing: Clip | null;
 	incoming: Clip | null;
 	wanted: number;
 	handles: { tail: number; head: number };
 }): HandleFeedback {
-	const { cut, alignment, oneSided, outgoing, incoming, effectId } = input;
+	const { cut, alignment, oneSided, outgoing, incoming, effectId, cutPosition } = input;
 	const fitted = fitTransitionDuration({
 		effectId,
 		wanted: input.wanted,
 		alignment,
+		cutPosition,
 		outgoing: outgoing ? { duration: outgoing.duration, tail: input.handles.tail } : null,
 		incoming: incoming ? { duration: incoming.duration, head: input.handles.head } : null,
 	});
-	const wanted = spanOf(cut, input.wanted, alignment, oneSided);
+	const wanted = spanOf(cut, input.wanted, alignment, oneSided, cutPosition);
 	const bands: { start: number; end: number }[] = [];
 	const missing: { start: number; end: number }[] = [];
 	if (!oneSided) {
@@ -396,14 +421,14 @@ export function handleFeedback(input: {
 		if (use.tail > input.handles.tail) missing.push({ start: cut + input.handles.tail, end: cut + use.tail });
 	} else if (fitted < input.wanted) {
 		// A fade longer than its clip.
-		const f = spanOf(cut, fitted, alignment, oneSided);
+		const f = spanOf(cut, fitted, alignment, oneSided, cutPosition);
 		missing.push(
 			oneSided === 'in' ? { start: f.end, end: wanted.end } : { start: wanted.start, end: f.start },
 		);
 	}
 	return {
 		wanted,
-		fitted: fitted > 0 ? spanOf(cut, fitted, alignment, oneSided) : null,
+		fitted: fitted > 0 ? spanOf(cut, fitted, alignment, oneSided, cutPosition) : null,
 		bands,
 		missing,
 		fittedDuration: fitted,
@@ -448,6 +473,7 @@ export function resolveTransitionDrop(input: {
 			effectId: spec.id,
 			wanted: g.t.duration,
 			alignment: g.t.alignment,
+			cutPosition: g.t.cutPosition,
 			outgoing: g.outgoing ? { duration: g.outgoing.duration, tail: g.handles.tail } : null,
 			incoming: g.incoming ? { duration: g.incoming.duration, head: g.handles.head } : null,
 		});

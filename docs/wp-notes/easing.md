@@ -260,11 +260,18 @@ original. Code: `packages/project/src/ease/` (`curve.ts` contract, `segments.ts`
 
 ### Model recap
 
-- A key stores one interpolation (the segment it **leaves**) plus `easeIn` / `easeOut` = `{influence ∈ (0, 1],
-  slope}`; the slope is relative to the segment's average speed (1 = linear). The evaluator (`keyframes.ts`) draws
-  segment A → B as: hold (A holds), linear (A `linear`; B's in ease ignored), else
-  `bezier(outgoingEase(A), incomingEase(B))`, where a `linear` B arrives with the linear ease (⅓, 1) and an
-  `auto-bezier` key's eases are derived from its neighbours on every evaluation.
+- A key stores its outgoing `interpolation`, an optional incoming `inInterpolation` (docs/wp-notes/keyframe-sides.md)
+  and `easeIn` / `easeOut` = `{influence ∈ (0, 1], slope}`; the slope is relative to the segment's average speed
+  (1 = linear). The evaluator's ONE rule, `segmentShape` (`keyframes.ts`), draws segment A → B from A's outgoing
+  side and B's incoming side (After Effects): hold when A holds; linear when both sides are Linear; else
+  `bezier(out, in)`, where a Linear side of a curved segment is After Effects' linear ease (influence ⅙, slope 1)
+  and an Auto Bezier side is derived from the neighbours on every evaluation. A B without `inInterpolation` is read
+  the legacy way: linear whenever A is Linear, a Linear B arriving with (⅓, 1). Every ease read below goes through
+  `segmentShape` (`spanEases`), so what the commands, the panel and the agents report is what renders.
+- spatial-points: an effect point (values normalised to the layer box) evaluates with the box's pixel metric
+  (docs/wp-notes/spatial-points.md). The ease code takes the same metric (`Target.metric`, `groupMetric`):
+  auto-bezier eases, average speeds (layer px/s), arc lengths of multi-point rebuilds and the clean-up fit are
+  measured in those pixels, and `finish` refreshes auto-bezier eases and roving times with it.
 - CSS `cubic-bezier(x1, y1, x2, y2)` ↔ eases (`curve.ts`): `out.influence = x1`, `out.slope = y1 / x1`,
   `in.influence = 1 − x2`, `in.slope = (1 − y2) / (1 − x2)`; influence 0 is stored as 0.001 (the closest the model
   holds). Exact both ways (property tests in `ease-curve.test.ts`, `ease-apply.test.ts`).
@@ -273,18 +280,26 @@ original. Code: `packages/project/src/ease/` (`curve.ts` contract, `segments.ts`
 
 ### Writing one segment without disturbing the others (`writeSpan`)
 
-To make span A → B exactly `bezier(out, in)`:
+To make span A → B exactly `bezier(out, in)` — A's outgoing side and B's incoming side Bezier with those eases —
+while every other segment evaluates bit-identically:
 
-- A becomes `bezier` (from linear / hold / auto / continuous) with its in ease set to the ease it effectively arrived
-  with (so the segment before A is unchanged).
-- B keeps `bezier` / `hold`. An `auto-bezier` or `continuous-bezier` B becomes `bezier` with its current effective
-  out ease, so `finish` cannot re-derive (overwrite) the in ease just set. A `linear` B becomes `bezier` with the
-  linear out ease, and the key after it is made to arrive linearly (an `auto-bezier` one is frozen to `bezier` with
-  its effective out ease) — exactly how the segment B → C evaluated behind a linear B.
+- A's outgoing side becomes Bezier (`interpolation: 'bezier'`, `easeOut = out`). `keepIncoming` keeps the segment
+  arriving at A: an explicit Auto / Continuous incoming side (they shape both sides) becomes Bezier frozen at the
+  ease it contributed; a key read the legacy way takes the ease it arrived with as `easeIn` (Bezier, Hold and
+  Continuous keys arrive with their stored ease).
+- B's incoming side becomes Bezier with `in`; its outgoing side keeps its type, so the segment after B is unchanged:
+  a legacy Bezier / Hold B just takes `easeIn`; a legacy Auto / Continuous B becomes `bezier` with its effective out
+  ease (so `finish` cannot re-derive the in ease just set); a legacy Linear B gets `inInterpolation: 'bezier'` and
+  keeps leaving Linear (previously it became Bezier and the key after it was patched); a per-side B gets
+  `inInterpolation: 'bezier'` (`keepOutgoing` freezes a both-sided outgoing type).
 - Already linear spans written with linear eases are left alone.
 
-Multi-point rebuilds measure these effective eases on the key list **before** inner keys are removed (auto-bezier
-eases depend on neighbours).
+Multi-point rebuilds measure the effective eases (and the explicit incoming side, `explicitInSide`) on the key list
+**before** inner keys are removed (auto-bezier eases depend on neighbours). Property tests (`ease-sides.test.ts`,
+fast-check): random keys mixing legacy and per-side ones (numbers, and vec2 effect points with a layer-box metric,
+straight and curved) — after `writeSpan` the span follows the cubic to 1e-6, every other segment and key evaluates
+`Object.is`-identically, every key passes INV-011, and `spanEases` reads back exactly the eases written; the same
+through `keyframe.applyEase` with `finish`, invariants and undo / redo.
 
 ### `keyframe.applyEase { keyframeIds, curve, sections? }`
 
@@ -309,7 +324,10 @@ run), `out` = the span leaving the last selected key; missing neighbours are ski
   the points. Roving keys in the span are cleared (`stopRoving` on its ends keeps their times) with
   `W_EASE_ROVING_CLEARED`.
 - **Point properties** (vec2 with spatial interpolation) keep their drawn motion path: y is the fraction of the
-  path's arc length L from A to B through the removed keys; y < 0 / y > 1 continue straight along the start / end
+  path's arc length L from A to B through the removed keys (effect points: measured on the keys in the layer box's
+  pixels, `keysInMetric`, with points and handles mapped back — the evaluator's metric; measured on a 1920 × 1080
+  Transform Position arch, the rebuilt motion is within 0.75 px of the curve's pixel arc fraction, while the
+  metric-free layout is several px off, `ease-sides.test.ts`); y < 0 / y > 1 continue straight along the start / end
   tangent by y·L / (y − 1)·L (the evaluator's own overshoot rule, `pathPointAt`). New keys sit at
   `pathPointAt` of the original segment (64-sample arc tables, as the evaluator) and the original Bézier segments
   are split there with de Casteljau sub-curves as the new tangents, so the drawn path is unchanged. Where a curve
@@ -330,14 +348,24 @@ run), `out` = the span leaving the last selected key; missing neighbours are ski
 
 ### Clipboard: `copyEase`, `keyframe.pasteEase`, `copyValues`, `keyframe.pasteValues`
 
-- `copyEase(doc, ids)` (pure; reads locked tracks): one key → `{kind: 'key', easeIn, easeOut}` (effective eases);
+- `copyEase(doc, ids)` (pure; reads locked tracks): one key → `{kind: 'key', easeIn, easeOut, inInterpolation,
+  interpolation}` — its two sides (keyframe-sides): per side the ease it contributes to its segment as rendered (a
+  Linear / Hold side: the ease it would contribute) and its type — incoming = the explicit side reproducing the
+  arriving segment (`explicitInSide`: a legacy key is Linear after a Linear key, Bezier for a Hold key or a Linear
+  key after a curving one), outgoing = `interpolation`; Auto / Continuous on a key whose sides then differ become
+  Bezier at their contributed ease; a roving key copies its run's two ends as Bezier sides;
   otherwise `{kind: 'segments', segments}` = the `middle` spans of every property as cubic-bezier, plus — for 3+ keys
   of one property — `curve`: all keys first … last as a multi curve (x = normalised time, y = normalised value:
   arc fraction for points, projection on B − A for vectors; handles from the segments' eases). The curve is omitted
   when it cannot be expressed (equal end values, a hold or roving run inside, y beyond ±10, > 64 points). With no
   span and several single keys the first key's eases are copied.
-- `pasteEase`: `key` → both sides of every target key (a neighbouring hold keeps holding; a roving key takes its
-  run's ease and is skipped); `segments` with `curve` and `mode ≠ 'segments'` → like `applyEase` multi; otherwise 1
+- `pasteEase`: `key` → both sides of every target key as `keyframe.setInterpolation` sets them (Premiere / After
+  Effects): the target key takes the copied incoming type and ease and the outgoing ones, the next key's incoming
+  side becomes explicit (so the segment leaving the target is read per side), the neighbours keep their own sides —
+  a Linear neighbour of a now curved segment contributes ⅙·1, as an Ease In after a Linear key (previously the
+  neighbour was converted to Bezier ⅓·1); a neighbouring hold keeps holding; Auto Bezier re-derives its eases from
+  the target's neighbours and Continuous Bezier matches its in speed to its out speed, as those types do; a clip
+  without types (older entries, agents) pastes Bezier sides; a roving key takes its run's ease and is skipped; `segments` with `curve` and `mode ≠ 'segments'` → like `applyEase` multi; otherwise 1
   curve → every target span (sections as above), n curves → in order (property, then time); a count mismatch pastes
   min(n, m) with `W_EASE_COUNT_MISMATCH`. `mode: 'curve'` without a curve refuses.
 - `copyValues` / `pasteValues`: values in order (property, then time), each validated like `keyframe.update`
@@ -349,10 +377,13 @@ run), `out` = the span leaving the last selected key; missing neighbours are ski
 `speed = slope × average velocity of the span`, average velocity = Δv / Δt in units per second (signed for numbers;
 Euclidean for vectors; arc length for curved spatial segments; the run's travelled distance for roving runs — the
 evaluator's `distance`). `setVelocity {keyframeId, side, speed?, influence? (0.1 … 100 %)}` writes through
-`writeSpan`; a span whose value does not change (Δv = 0) cannot hold a nonzero speed (refused), a held span and a
-roving key are refused, `both` sets the sides that exist. `describeKeyframeEases` returns per property the selected
-keys (time, value, interpolation, effective in / out ease with influence %, slope, speed) and the in / middle / out
-segments as cubic-bezier with their average speed.
+`writeSpan` (the segment's other side keeps the ease it contributes, a Linear side as an equivalent Bezier side);
+a span whose value does not change (Δv = 0) cannot hold a nonzero speed (refused), a held span and a roving key are
+refused, `both` sets the sides that exist. Effect points measure speeds in layer px/s. `describeKeyframeEases`
+returns per property the selected keys (time, value, interpolation, `inInterpolation` when explicit, effective in /
+out side with its type, influence %, slope, speed) and the in / middle / out segments as cubic-bezier with `hold`,
+`linear`, their two side types (`outInterpolation`, `inInterpolation` = the type B's incoming side acts as) and
+their average speed — all from `segmentShape`.
 
 ### `keyframe.createPathController { keyframeIds, replaceExpression? }`
 
@@ -379,9 +410,10 @@ Refusals: not a point property, several properties, track / master properties, a
 
 `keyframes.simplify` keeps the *timing* at every frame and refits temporal eases; Clean Up Path is a different
 measure, so it is a separate planner (`path-fit.ts`) rather than a mode of the simplifier: the span's timing becomes
-linear (A keeps its arriving ease as Bezier with a linear out ease; an Auto Bezier B is frozen so the segment after it
-is unchanged) and the fewest keys are kept whose drawn path stays within the tolerance (value units — sequence px for
-Motion). Fit after Schneider, "An Algorithm for Automatically Fitting Digitized Curves" (Graphics Gems, 1990),
+linear (A leaves Linear with its arriving segment kept by `keepIncoming`; the kept keys between are legacy Linear; a
+per-side B arrives Linear, an Auto Bezier B is frozen so the segment after it is unchanged) and the fewest keys are
+kept whose drawn path stays within the tolerance (sequence px for Motion; layer px for effect points, fitted on the
+keys in the metric's pixels). Fit after Schneider, "An Algorithm for Automatically Fitting Digitized Curves" (Graphics Gems, 1990),
 implemented from the published description: per candidate span one cubic from key i to key j with end tangents along
 the original path's directions there, least squares on chord-length parameters with Newton re-parameterisation,
 accepted when the two-sided distance (original samples ↔ fitted curve) is within the tolerance; shortest path over

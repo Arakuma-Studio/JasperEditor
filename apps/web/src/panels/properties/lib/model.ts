@@ -121,8 +121,10 @@ export function cropEffectOf(clip: Clip): EffectInstance | null {
 }
 
 /**
- * The pinned Crop section (ARCHITECTURE §2.3): shows the clip's first `jasper.crop` effect, or registry
- * defaults when there is none; the first edit creates the effect at stack index 0.
+ * The pinned Crop section (ARCHITECTURE §2.3): shows the clip's first `jasper.crop` effect wherever it sits in the
+ * stack (it renders there, crop-order), or registry defaults when there is none; the first edit creates the effect
+ * at stack index 0 (applied before the other effects). Effect Controls pins only a crop at the top of the stack and
+ * lists later ones with the other effects.
  */
 export function bindCrop(
 	doc: ProjectDocument,

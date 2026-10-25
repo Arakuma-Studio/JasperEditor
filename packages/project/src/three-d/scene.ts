@@ -3,14 +3,7 @@
 // CPU renderers all use it). Ported from EffectCraft `render/three_d/{camera,light}.rs` (MIT OR Apache-2.0).
 
 import { contentTimeAt } from '../derive/index.ts';
-import {
-	bezierProgress,
-	evaluate,
-	expressionBindingOf,
-	incomingEase,
-	isHoldOnlyValue,
-	outgoingEase,
-} from '../keyframes.ts';
+import { evaluate, expressionBindingOf, isHoldOnlyValue, segmentProgress } from '../keyframes.ts';
 import { multiplyMatrix3 } from '../math/matrix3.ts';
 import type { Mat3 } from '../render/homography.ts';
 import type {
@@ -159,8 +152,8 @@ export function orientationMatrixAt(o: Animatable<Vec3>, t: number): Matrix4 {
 	if (a.interpolation === 'hold' || isHoldOnlyValue(a.value))
 		return mat4Orientation(vec3Of(a.value, [0, 0, 0]));
 	const u = (t - a.time) / Math.max(1, b.time - a.time);
-	const p =
-		a.interpolation === 'linear' ? u : bezierProgress(u, outgoingEase(kfs, i), incomingEase(kfs, i + 1));
+	// keyframe-sides: the shared segment rule (a's outgoing side, b's incoming side).
+	const p = segmentProgress(kfs, i, u);
 	const qa = quatFromMat4(mat4Orientation(vec3Of(a.value, [0, 0, 0])));
 	const qb = quatFromMat4(mat4Orientation(vec3Of(b.value, [0, 0, 0])));
 	return mat4FromQuat(slerp(qa, qb, Math.min(1, Math.max(0, p))));

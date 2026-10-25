@@ -130,6 +130,37 @@ describe('Save Preset (buildEffectPreset)', () => {
 		expect(p.effects?.[0]?.params.radius?.keyframes?.map((k) => k.time / F30)).toEqual([0, 29]);
 	});
 
+	it('crop-order: a crop after other effects is saved as an ordinary effect and re-applied at its place', () => {
+		const h = new Harness();
+		const r = h.ok([
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1], ref: '$a' },
+			{ type: 'clip.addSolid', at: 100, duration: 30, track: 'V1', color: [0, 1, 0, 1], ref: '$b' },
+			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.flip-horizontal', ref: '$f' },
+			{
+				type: 'effect.add',
+				target: { clipId: '$a' },
+				effectId: 'jasper.crop',
+				params: { left: 30 },
+				ref: '$c',
+			},
+		]);
+		const { $a: a, $b: b, $f: f, $c: c } = r.refs as Record<string, string>;
+		const p = save(h, a!, 'scale', { crop: true, effectIds: [f!, c!] });
+		// No crop at the top of the stack: the pinned Crop is the defaults; the listed crop keeps its place.
+		expect(p.intrinsic?.crop?.params.left?.value).toBe(0);
+		expect(p.effects?.map((e) => e.effectId)).toEqual(['jasper.flip-horizontal', 'jasper.crop']);
+		h.ok([{ type: 'effect.applyPreset', preset: p, clipIds: [b!] }]);
+		const B = h.seq.clips[b!] as Solid;
+		// Pinned (defaults) crop first, then Flip → Crop as in the source.
+		expect(B.effects.map((e) => e.effectId)).toEqual([
+			'jasper.crop',
+			'jasper.flip-horizontal',
+			'jasper.crop',
+		]);
+		expect(B.effects[2]!.params.left!.value).toBe(30);
+		ok(h);
+	});
+
 	it('refuses an empty selection and unknown instance ids', () => {
 		const { h, a } = project();
 		expect(() => buildEffectPreset(h.doc, a, { name: 'x', type: 'scale', sections: {} })).toThrow(

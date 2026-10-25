@@ -11,7 +11,15 @@
 // their original segment exactly, so a solution always exists. The fewest kept keys come from a shortest path over the
 // accepted spans (dynamic programming): a span is only fitted when it can improve a key count, and each scan from a
 // key stops after a run of rejected ends.
-import { type BezierSegment, bezierPoint, spatialSegment } from '../keyframes-spatial.ts';
+import {
+	activeMetric,
+	type BezierSegment,
+	bezierPoint,
+	fromMetric,
+	keysInMetric,
+	type SpatialMetric,
+	spatialSegment,
+} from '../keyframes-spatial.ts';
 import type { Keyframe, Vec2 } from '../schema/common.ts';
 
 type Keys = Keyframe<unknown>[];
@@ -32,7 +40,8 @@ export type PathFitPlan = {
 	kept: number[];
 	/** Tangents of the kept keys (offsets from their values), per kept index. */
 	tangents: Map<number, { in: Vec2; out: Vec2 }>;
-	/** Largest measured distance between the new and the original path (value units, sequence px for Motion). */
+	/** Largest measured distance between the new and the original path (value units, sequence px for Motion; with a
+	 * metric, its pixels). */
 	maxError: number;
 };
 
@@ -155,7 +164,27 @@ type Span = { seg: BezierSegment; error: number };
  * Plans the clean-up of span a → b (point keys, plain array). `dirs` give the path's direction leaving / arriving at
  * each key (null where the path does not move).
  */
-export function planPathCleanup(kfs: Keys, a: number, b: number, tolerance: number): PathFitPlan {
+export function planPathCleanup(
+	kfs: Keys,
+	a: number,
+	b: number,
+	tolerance: number,
+	/**
+	 * spatial-points: the evaluator's metric of the point values (effect points: [box width, box height]). The path is
+	 * fitted on the keys in its pixels — `tolerance` and `maxError` are layer px — and the tangents mapped back to value
+	 * units (the same Béziers).
+	 */
+	metric?: SpatialMetric | null,
+): PathFitPlan {
+	const m = activeMetric(metric);
+	if (m) {
+		const plan = planPathCleanup(keysInMetric(kfs, m), a, b, tolerance);
+		for (const t of plan.tangents.values()) {
+			t.in = fromMetric(t.in, m);
+			t.out = fromMetric(t.out, m);
+		}
+		return plan;
+	}
 	const segs: BezierSegment[] = [];
 	for (let i = a; i < b; i++) segs.push(segmentOf(kfs, i));
 	const samples = segs.map((s) =>

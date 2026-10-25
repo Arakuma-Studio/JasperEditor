@@ -318,8 +318,10 @@ transition, `LayerProps.transition` is set during the span: `u_progress` (the tr
 | text, shape, motion graphic (fframes SVG twin, anime template) | via HTML-in-Canvas: Electron (enabled by the desktop app) and Chrome ≥ 148 with chrome://flags/#canvas-draw-element; otherwise the layer draws unprocessed with the chip "GPU effects need HTML-in-Canvas…" | yes (bake / Remotion path) |
 | no WebGL2 / lost context (preview) | effects bypassed, chip "GPU effects unavailable/paused"; a CSS `preview` fallback of the spec is used if present | render fails `WEBGL_UNAVAILABLE` |
 
-Stack order (S03 §4.2, FX-002): crop first, then the stack in order. The canvas chain covers the stack up to the last
-shader or colour effect: shader effects, colour runs (one baked LUT per run, same shader as the colour stage),
+Stack order (FX-002; crop-order, schema v8): the stack in order, Crop where it sits (v7 drew Crop first; v7 projects
+are migrated so their Crop comes first). The canvas chain covers the stack up to the last shader or colour effect, or
+crop that needs it (Edge Feather, which runs as the `CROP_FEATHER_GPU` stand-in; a crop before a pixel-mixing effect
+the colour stage would move ahead of it — [crop-order.md](crop-order.md)): shader effects, colour runs (one baked LUT per run, same shader as the colour stage),
 CSS-filter effects (2D canvas filter), crop and flips run in exact order. Built-ins whose preview needs an SVG filter
 at their params (Gaussian Blur with one direction or Repeat Edge Pixels) run as GPU stand-ins in the chain
 (`compositions/src/fx/builtins.ts`), so their order is exact too; `reordered` now only lists effects with other

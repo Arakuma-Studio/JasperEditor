@@ -262,7 +262,14 @@ describe('interchange through the engine', () => {
 			return j.state === 'succeeded' || j.state === 'failed' ? j : null;
 		}, 30_000);
 		expect(end.state).toBe('succeeded');
-		const res = end.result as RelinkScanResult;
+		expect(end.result).toMatchObject({ found: 3, notFound: 0, ambiguous: 0 });
+		const full = await app.inject({
+			method: 'GET',
+			url: `/api/projects/prj_0000000000000001/relink-scan/${job.id}`,
+			headers: JSON_H,
+		});
+		expect(full.statusCode, full.body).toBe(200);
+		const res = full.json() as RelinkScanResult;
 		expect(res.notFound).toEqual([]);
 		expect(res.found.map((f) => f.path.split('/').pop()).sort()).toEqual([
 			'clip-a.mp4',

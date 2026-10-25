@@ -1,9 +1,10 @@
 // Transitions drawn in a track row (S10:TUI-001…006): a semi-opaque rect over the span, positioned with
 // translateX like clip bodies, with the "ramp" glyph (fade-in rising, fade-out falling, both for a
-// dissolve between two clips; quarter-sine curves for constant-power audio), an elided label, selection
+// dissolve between two clips; audio transitions draw each side's gain curve from the shared curve model —
+// quarter sine for Constant Power, a Custom Fade's shape and value), an elided label, selection
 // accent and hatched end caps where the span reaches the end of the available media. Memoised on
 // primitive props: never re-rendered per playhead frame (S02:TL-155).
-import { fadeCurve, type Rational } from '@jasper/project';
+import { type AudioFadeCurve, audioTransitionCurves, fadeCurve, type Rational } from '@jasper/project';
 import { memo } from 'react';
 import { formatTimecode } from '../../../gaps/time-display.ts';
 import type { TransitionGeom } from '../model/transitions.ts';
@@ -21,7 +22,9 @@ type TransitionViewProps = {
 	title: string;
 	selected: boolean;
 	shape: 'in' | 'out' | 'both';
-	curve: 'linear' | 'equal-power' | 'exponential';
+	/** Gain curves of the fade in / fade out as keys (`curveKey`: primitives keep the memo). */
+	inCurve: string;
+	outCurve: string;
 	capStart: boolean;
 	capEnd: boolean;
 	broken: boolean;
@@ -31,6 +34,18 @@ type TransitionViewProps = {
 };
 
 const ALIGN_LABEL = { center: 'Center at Cut', 'start-at-cut': 'Start at Cut', 'end-at-cut': 'End at Cut' };
+
+/** A gain curve as a string key: `linear`, `equal-power`, `exponential` or `shape:<type>:<value>`. */
+function curveKey(c: AudioFadeCurve): string {
+	return c.curve === 'shape' && c.shape ? `shape:${c.shape.type}:${c.shape.value}` : c.curve;
+}
+
+function curveOfKey(key: string): AudioFadeCurve {
+	const [curve, type, value] = key.split(':');
+	if (curve === 'shape')
+		return { curve: 'shape', shape: { type: type === 'linear' ? 'linear' : 'cosine', value: Number(value) } };
+	return { curve: curve === 'equal-power' || curve === 'exponential' ? curve : 'linear' };
+}
 
 /** Tooltip text (TUI-001): type, duration (timecode + frames), alignment, handles used. */
 function transitionTitle(g: TransitionGeom, rate: Rational, dropFrame: boolean): string {
@@ -43,7 +58,9 @@ function transitionTitle(g: TransitionGeom, rate: Rational, dropFrame: boolean):
 			? g.oneSided === 'in'
 				? 'Fade in at the clip head'
 				: 'Fade out at the clip tail'
-			: ALIGN_LABEL[g.t.alignment],
+			: g.cutOffset !== undefined
+				? `Custom Start (${g.cutOffset} frames before the cut)`
+				: ALIGN_LABEL[g.t.alignment],
 	];
 	if (!g.oneSided) {
 		const headUsed = Math.max(0, g.cut - g.start);
@@ -80,12 +97,7 @@ export function transitionViewProps(
 		title: transitionTitle(g, rate, dropFrame),
 		selected,
 		shape: g.oneSided === 'in' ? 'in' : g.oneSided === 'out' ? 'out' : 'both',
-		curve:
-			g.t.effectId === 'jasper.constant-power'
-				? 'equal-power'
-				: g.t.effectId === 'jasper.exponential-fade'
-					? 'exponential'
-					: 'linear',
+		...curveKeys(g),
 		capStart: g.capStart,
 		capEnd: g.capEnd,
 		broken: g.broken,
@@ -94,18 +106,22 @@ export function transitionViewProps(
 	};
 }
 
+/** The fade in / fade out curve keys of a transition: audio from `audioTransitionCurves`, video linear ramps. */
+function curveKeys(g: TransitionGeom): { inCurve: string; outCurve: string } {
+	if (g.spec?.appliesTo !== 'audio') return { inCurve: 'linear', outCurve: 'linear' };
+	const c = audioTransitionCurves(g.t);
+	// A fade at a clip tail uses the transition's main curve (`in`), mirrored in time.
+	return { inCurve: curveKey(c.in), outCurve: curveKey(g.oneSided === 'out' ? c.in : c.out) };
+}
+
 /** SVG path (viewBox 100×100, y down) of a fade: `in` rises from bottom-left, `out` falls. */
-function rampPath(
-	kind: 'in' | 'out',
-	curve: 'linear' | 'equal-power' | 'exponential',
-	x0 = 0,
-	x1 = 100,
-): string {
-	if (curve === 'linear') return kind === 'in' ? `M${x0} 100 L${x1} 0` : `M${x0} 0 L${x1} 100`;
+function rampPath(kind: 'in' | 'out', key: string, x0 = 0, x1 = 100): string {
+	if (key === 'linear') return kind === 'in' ? `M${x0} 100 L${x1} 0` : `M${x0} 0 L${x1} 100`;
+	const c = curveOfKey(key);
 	const pts: string[] = [];
 	for (let i = 0; i <= 16; i++) {
 		const p = i / 16;
-		const gain = fadeCurve(curve, kind === 'in' ? p : 1 - p);
+		const gain = fadeCurve(c.curve, kind === 'in' ? p : 1 - p, c.shape);
 		pts.push(`${(x0 + (x1 - x0) * p).toFixed(2)} ${(100 - gain * 100).toFixed(2)}`);
 	}
 	return `M${pts.join(' L')}`;
@@ -123,8 +139,8 @@ function TransitionViewImpl(p: TransitionViewProps) {
 			// Dip to black: down to the middle, then up.
 			paths.push(rampPath('out', 'linear', 0, 50), rampPath('in', 'linear', 50, 100));
 		} else {
-			if (p.shape !== 'out') paths.push(rampPath('in', p.curve));
-			if (p.shape !== 'in') paths.push(rampPath('out', p.curve));
+			if (p.shape !== 'out') paths.push(rampPath('in', p.inCurve));
+			if (p.shape !== 'in') paths.push(rampPath('out', p.outCurve));
 		}
 	}
 	return (

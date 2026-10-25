@@ -123,6 +123,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('app.preferences', 'General…'),
 				c('app.preferences', 'Timeline…', { page: 'timeline' }),
 				c('cache.preferences', 'Media Cache…'),
+				c('fonts.preferences', 'Fonts…'),
 				c('speech.preferences', 'Transcription…'),
 				sub('Appearance', [
 					c('view.theme.darkest', 'Darkest'),
@@ -457,6 +458,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('text.applyAnimation', 'Apply Out…', { side: 'out' }),
 				c('text.removeAnimation', 'Remove', { side: 'both' }),
 			]),
+			sep,
+			c('fonts.resolve', 'Resolve Fonts…'),
+			c('fonts.add', 'Add Fonts…'),
 		],
 	},
 	{

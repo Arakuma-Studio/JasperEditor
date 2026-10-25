@@ -29,7 +29,7 @@ export const EVENT_PAYLOADS = {
 	'media.updated': z.object({
 		mediaKey: z.string(),
 		status: z.enum(['online', 'missing', 'processing', 'error']),
-		derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema).optional(),
+		derivatives: z.partialRecord(DerivativeKindSchema, DerivativeStatusSchema).optional(),
 	}),
 	'derivative.ready': z.object({ mediaKey: z.string(), kind: DerivativeKindSchema, url: z.string() }),
 	/** An interpreted picture (display / proxy / master of a pixel variant) is ready. */
@@ -63,6 +63,8 @@ export const EVENT_PAYLOADS = {
 	'mgBundle.rebuilt': MgBundleRebuiltEventSchema,
 	/** A cleaning pass removed cache entries (Preferences ▸ Media Cache refreshes). */
 	'cache.cleaned': CacheGcReportSchema,
+	/** wp fonts: the user font library changed (font menus, the Program monitor and Preferences ▸ Fonts refresh). */
+	'fonts.changed': z.object({ revision: z.number().int() }),
 	/** The user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */

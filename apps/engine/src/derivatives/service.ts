@@ -1,17 +1,20 @@
 // Derivatives (ARCHITECTURE §9.4, S04 §7): keyframe index, poster, filmstrip sprite + index, waveform peaks,
-// proxies. Content-addressed under `<appdir>/cache/<fingerprintHex>/<kind>-<paramsHash>.<ext>` (S04:CA-001),
+// proxies, playback audio. Content-addressed under `<appdir>/cache/<fingerprintHex>/<kind>-<paramsHash>.<ext>` (S04:CA-001),
 // so the same file in several projects shares artifacts, and a job whose artifact exists completes at once.
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type {
-	DerivativeKind,
-	DerivativeStatus,
-	EngineJob,
-	JobKind,
-	PeaksHeader,
-	SpriteIndex,
+import {
+	DERIVATIVE_KINDS,
+	type DerivativeKind,
+	type DerivativeStatus,
+	type EngineJob,
+	type JobKind,
+	type PeaksHeader,
+	type PlaybackAudioHeader,
+	type SpriteIndex,
 } from '@jasper/api';
+import { needsPlaybackAudio } from '@jasper/project';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError, type JobPriority } from '../jobs/types.ts';
@@ -32,6 +35,7 @@ const GENERATOR_VERSIONS: Record<DerivativeKind, number> = {
 	peaks: 2,
 	'proxy-720': 1,
 	'proxy-540': 1,
+	'playback-audio': 1,
 };
 
 const SPRITE_TILE_WIDTH = 160;
@@ -46,6 +50,7 @@ const JOB_KIND: Record<DerivativeKind, JobKind> = {
 	peaks: 'peaks',
 	'proxy-720': 'proxy',
 	'proxy-540': 'proxy',
+	'playback-audio': 'playback-audio',
 };
 const SLOTS: Record<DerivativeKind, number> = {
 	keyframes: 1,
@@ -54,6 +59,7 @@ const SLOTS: Record<DerivativeKind, number> = {
 	peaks: 1,
 	'proxy-720': 4,
 	'proxy-540': 4,
+	'playback-audio': 1,
 };
 const TITLES: Record<DerivativeKind, string> = {
 	keyframes: 'Keyframe index',
@@ -62,6 +68,7 @@ const TITLES: Record<DerivativeKind, string> = {
 	peaks: 'Waveform',
 	'proxy-720': 'Proxy 720p',
 	'proxy-540': 'Proxy 540p',
+	'playback-audio': 'Playback audio',
 };
 
 /** What `alphaProxy` needs from a media record. */
@@ -102,6 +109,8 @@ function paramsFor(kind: DerivativeKind, proxyEncoder?: string | null, alpha = f
 			return { height: 720, gop: 15, crf: 23, ...enc };
 		case 'proxy-540':
 			return { height: 540, gop: 15, crf: 26, ...enc };
+		case 'playback-audio':
+			return { codec: PLAYBACK_AUDIO_CODEC, format: 'wav' };
 		default:
 			return {};
 	}
@@ -114,12 +123,18 @@ function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, alpha = 
 		.slice(0, 12);
 }
 
+/** pp-wma-preview: the playback audio is 32-bit float PCM in WAV (RF64 past 4 GiB), see `playbackAudio`. */
+const PLAYBACK_AUDIO_CODEC = 'pcm_f32le';
+
+type KindSource = Pick<MediaRecord, 'kind' | 'hasAudio' | 'container' | 'probe'> &
+	Partial<Pick<MediaRecord, 'vector' | 'lottie'>>;
+
 /** Which derivative kinds make sense for a media record. */
-function applicableKinds(
-	r: Pick<MediaRecord, 'kind' | 'hasAudio'> & Partial<Pick<MediaRecord, 'vector' | 'lottie'>>,
-): DerivativeKind[] {
+function applicableKinds(r: KindSource): DerivativeKind[] {
 	// imports: vector stills and Lottie animations are drawn by the composition (posters come from the client).
 	if (r.vector || r.lottie) return [];
+	// pp-wma-preview: audio the browser cannot decode (WMA, AC-3, ALAC…) gets a playback copy for previews.
+	const playback = needsPlaybackAudio(r) ? (['playback-audio'] as const) : [];
 	switch (r.kind) {
 		case 'video':
 			return [
@@ -129,28 +144,27 @@ function applicableKinds(
 				...(r.hasAudio ? (['peaks'] as const) : []),
 				'proxy-720',
 				'proxy-540',
+				...playback,
 			];
 		case 'animated-image':
 			return ['poster', 'sprite'];
 		case 'image':
 			return ['poster'];
 		case 'audio':
-			return ['peaks'];
+			return ['peaks', ...playback];
 		default:
 			return [];
 	}
 }
 
 /** Kinds queued automatically after registration (S04:IN-011, ARCHITECTURE §9.4). */
-function autoKinds(
-	r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'> &
-		Partial<Pick<MediaRecord, 'vector' | 'lottie'>>,
-): DerivativeKind[] {
+function autoKinds(r: KindSource & Pick<MediaRecord, 'browserPlayable'>): DerivativeKind[] {
 	if (r.kind !== 'video') return applicableKinds(r);
 	return [
 		'keyframes',
 		'poster',
 		...(r.hasAudio ? (['peaks'] as const) : []),
+		...(needsPlaybackAudio(r) ? (['playback-audio'] as const) : []),
 		'sprite',
 		...(r.browserPlayable === 'no' ? (['proxy-720'] as const) : []),
 	];
@@ -170,10 +184,10 @@ export class DerivativeService {
 		},
 	) {}
 
-	/** Registers the job runners for keyframes/poster/sprite/peaks/proxy. */
+	/** Registers the job runners for keyframes/poster/sprite/peaks/proxy/playback audio. */
 	registerRunners(): void {
 		const runner = (ctx: JobContext) => this.run(ctx);
-		for (const k of ['keyframes', 'poster', 'sprite', 'peaks', 'proxy'] as const)
+		for (const k of ['keyframes', 'poster', 'sprite', 'peaks', 'proxy', 'playback-audio'] as const)
 			this.deps.queue.registerRunner(k, runner);
 	}
 
@@ -209,6 +223,12 @@ export class DerivativeService {
 				return { main: join(base, `sprite-${hash}.json`), dir: join(base, `sprite-${hash}`), hash };
 			case 'peaks':
 				return { main: join(base, `peaks-${hash}.json`), dir: join(base, `peaks-${hash}`), hash };
+			case 'playback-audio':
+				return {
+					main: join(base, `playback-audio-${hash}.json`),
+					dir: join(base, `playback-audio-${hash}`),
+					hash,
+				};
 			default:
 				return { main: join(base, `${kind}-${hash}.${alpha ? 'webm' : 'mp4'}`), dir: null, hash };
 		}
@@ -231,6 +251,8 @@ export class DerivativeService {
 				return `/media/${k}/proxy/720?v=${h}`;
 			case 'proxy-540':
 				return `/media/${k}/proxy/540?v=${h}`;
+			case 'playback-audio':
+				return `/media/${k}/playback-audio.json?v=${h}`;
 		}
 	}
 
@@ -246,10 +268,9 @@ export class DerivativeService {
 	/** Per-kind status for `GET /api/media/:key` (S01:LIFE-050 shape). */
 	async status(r: MediaRecord): Promise<Record<DerivativeKind, DerivativeStatus>> {
 		const out = {} as Record<DerivativeKind, DerivativeStatus>;
-		const kinds: DerivativeKind[] = ['keyframes', 'poster', 'sprite', 'peaks', 'proxy-720', 'proxy-540'];
-		const dedupeKeys = new Set(kinds.map((kind) => this.dedupeKey(r, kind)));
+		const dedupeKeys = new Set(DERIVATIVE_KINDS.map((kind) => this.dedupeKey(r, kind)));
 		const active = this.deps.queue.list({ active: true, dedupeKeys });
-		for (const kind of kinds) {
+		for (const kind of DERIVATIVE_KINDS) {
 			if (await this.isReady(r, kind)) {
 				out[kind] = { state: 'ready', progress: 1, url: this.url(r.mediaKey, kind) };
 				continue;
@@ -279,6 +300,7 @@ export class DerivativeService {
 		const jobs: EngineJob[] = [];
 		for (const kind of kinds) {
 			if (!applicable.has(kind)) continue;
+			// The playback audio is interactive: until it exists a preview of the media is silent.
 			const priority =
 				opts.priority ??
 				(kind === 'sprite' || kind.startsWith('proxy-') ? ('background' as const) : ('interactive' as const));
@@ -344,6 +366,9 @@ export class DerivativeService {
 					case 'proxy-720':
 					case 'proxy-540':
 						await this.proxy(ctx, r, src, p, input.kind === 'proxy-720' ? 720 : 540);
+						break;
+					case 'playback-audio':
+						await this.playbackAudio(ctx, r, src, p);
 						break;
 				}
 			} catch (e) {
@@ -529,6 +554,75 @@ export class DerivativeService {
 		await atomicWriteJson(p.main, header);
 	}
 
+	/**
+	 * pp-wma-preview: every audio stream of the file decoded by FFmpeg — the decoder the export reads the original with —
+	 * into 32-bit float WAV, one file per stream: no resampling, no channel change, no filter, so sample n of the WAV is
+	 * sample n of FFmpeg's decode of the original (what the export mixes; float keeps decoder overshoots above 0 dBFS
+	 * and every sample of 8…24-bit sources exactly). WAV has no encoder delay or priming, and the browser decodes it in
+	 * mediabunny without WebCodecs, sample-accurately at any seek. RF64 past 4 GiB (mediabunny reads it).
+	 */
+	private async playbackAudio(ctx: JobContext, r: MediaRecord, src: string, p: ArtifactPaths): Promise<void> {
+		const audio = r.probe.streams.filter((s) => s.type === 'audio');
+		if (audio.length === 0) throw new JobError('UNSUPPORTED_MEDIA', 'No audio stream', false);
+		const tmpDir = `${p.dir}.${Date.now().toString(36)}.partial`;
+		ctx.addPartial(tmpDir);
+		await mkdir(tmpDir, { recursive: true });
+		const dur = r.durationSec ?? 0;
+		const hash = paramsHash('playback-audio');
+		const streams: PlaybackAudioHeader['streams'] = [];
+		for (let k = 0; k < audio.length; k++) {
+			const st = audio[k]!;
+			const file = join(tmpDir, `${st.index}.wav`);
+			await this.deps.ff.run(
+				[
+					'-i',
+					src,
+					'-map',
+					`0:${st.index}`,
+					'-vn',
+					'-sn',
+					'-dn',
+					'-map_metadata',
+					'-1',
+					'-c:a',
+					PLAYBACK_AUDIO_CODEC,
+					'-rf64',
+					'auto',
+					'-f',
+					'wav',
+					file,
+				],
+				{
+					signal: ctx.signal,
+					onSpawn: ctx.trackChild,
+					nice: 10,
+					onProgress: (pr) => {
+						if (dur > 0) ctx.progress((k + Math.min(1, pr.outTimeUs / 1e6 / dur)) / audio.length);
+					},
+				},
+			);
+			const info = await readWavInfo(file);
+			if (!info || info.frames === 0)
+				throw new JobError(
+					'UNSUPPORTED_MEDIA',
+					`FFmpeg decoded no audio from stream ${st.index} (${st.codec}) of ${r.originalName}`,
+					false,
+				);
+			streams.push({
+				index: st.index,
+				sampleRate: info.sampleRate,
+				channels: info.channels,
+				frames: info.frames,
+				url: `/media/${encodeURIComponent(r.mediaKey)}/playback-audio/${st.index}.wav?v=${hash}`,
+			});
+			ctx.progress((k + 1) / audio.length);
+		}
+		await rm(p.dir!, { recursive: true, force: true });
+		await rename(tmpDir, p.dir!);
+		const header: PlaybackAudioHeader = { version: 1, codec: PLAYBACK_AUDIO_CODEC, streams };
+		await atomicWriteJson(p.main, header);
+	}
+
 	private async proxy(
 		ctx: JobContext,
 		r: MediaRecord,
@@ -651,5 +745,58 @@ export class DerivativeService {
 			},
 		});
 		await rename(tmp, p.main);
+	}
+}
+
+/**
+ * The format and length of a WAV / RF64 file FFmpeg wrote (`fmt ` and `ds64` / `data` chunks in the first 64 KiB);
+ * null when it is not one.
+ */
+export async function readWavInfo(
+	file: string,
+): Promise<{ channels: number; sampleRate: number; bitsPerSample: number; frames: number } | null> {
+	const fh = await open(file, 'r');
+	try {
+		const head = Buffer.alloc(65_536);
+		const { bytesRead } = await fh.read(head, 0, head.length, 0);
+		const b = head.subarray(0, bytesRead);
+		if (b.length < 12) return null;
+		const riff = b.toString('latin1', 0, 4);
+		if ((riff !== 'RIFF' && riff !== 'RF64') || b.toString('latin1', 8, 12) !== 'WAVE') return null;
+		const size = (await fh.stat()).size;
+		let pos = 12;
+		let fmt: { channels: number; sampleRate: number; bitsPerSample: number; blockAlign: number } | null =
+			null;
+		let ds64Data: number | null = null;
+		while (pos + 8 <= b.length) {
+			const id = b.toString('latin1', pos, pos + 4);
+			const len = b.readUInt32LE(pos + 4);
+			const body = pos + 8;
+			if (id === 'fmt ' && body + 16 <= b.length) {
+				fmt = {
+					channels: b.readUInt16LE(body + 2),
+					sampleRate: b.readUInt32LE(body + 4),
+					blockAlign: b.readUInt16LE(body + 12),
+					bitsPerSample: b.readUInt16LE(body + 14),
+				};
+			} else if (id === 'ds64' && body + 24 <= b.length) {
+				ds64Data = Number(b.readBigUInt64LE(body + 8));
+			} else if (id === 'data') {
+				if (!fmt || fmt.blockAlign <= 0 || fmt.channels <= 0 || fmt.sampleRate <= 0) return null;
+				// RF64 / a streamed header: the data chunk says 0xFFFFFFFF; the ds64 chunk or the file size tell.
+				const declared = len === 0xffffffff ? (ds64Data ?? size - body) : len;
+				const bytes = Math.max(0, Math.min(declared, size - body));
+				return {
+					channels: fmt.channels,
+					sampleRate: fmt.sampleRate,
+					bitsPerSample: fmt.bitsPerSample,
+					frames: Math.floor(bytes / fmt.blockAlign),
+				};
+			}
+			pos = body + len + (len & 1);
+		}
+		return null;
+	} finally {
+		await fh.close();
 	}
 }

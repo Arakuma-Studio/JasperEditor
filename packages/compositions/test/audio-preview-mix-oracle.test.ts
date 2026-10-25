@@ -14,9 +14,12 @@ import { fileURLToPath } from 'node:url';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
 	type Animatable,
+	audioFadeGain,
 	buildRenderSnapshot,
 	type ClipReader,
 	FLICKS_PER_SECOND,
+	fadeCurve,
+	fadeShapeGain,
 	type RenderAudioClip,
 	type RenderSnapshot,
 	renderMixToBuffers,
@@ -208,6 +211,74 @@ function panScene(): Case {
 	return { snapshot, data, results: [] };
 }
 
+/**
+ * Premiere port (audio crossfades): A1 — clip A (frames 3…21) and clip B (21…45) joined by an asymmetrical,
+ * off-centre Custom Fade (span [18, 30): 3 frames before the cut; fade in Cosine @ 30, fade out Linear @ −10); A2 —
+ * clip C (30…50) with an Exponential Fade in and a Constant Power fade out of 6 frames. A plays on the left channel
+ * only, B on the right only, C on the left only, so each fade's envelope can be read from the mix.
+ */
+function crossfadeScene(): Case & { ids: { a: string; b: string; c: string } } {
+	const h = new Harness();
+	const media = [0, 1, 2].map(() => h.registerVideo({ kind: 'audio', seconds: 4 }));
+	while (h.seq.audioTracks.length < 2) h.ok([{ type: 'track.add', kind: 'audio' }]);
+	const F = S / FPS;
+	const place = (m: string, at: number, inF: number, outF: number, track: string, ref: string) => ({
+		type: 'clip.place',
+		source: { mediaId: m },
+		sourceRange: { in: { flicks: inF * F }, out: { flicks: outF * F } },
+		at,
+		tracks: { audio: track },
+		ref,
+	});
+	const r = h.ok([
+		place(media[0]!, OFF, 6, 24, 'A1', '$a'),
+		place(media[1]!, 21, 15, 39, 'A1', '$b'),
+		place(media[2]!, 30, 0, 20, 'A2', '$c'),
+	]);
+	const ids = { a: r.refs.$a!, b: r.refs.$b!, c: r.refs.$c! };
+	h.ok([
+		{
+			type: 'transition.add',
+			trackId: h.seq.audioTracks[0]!.id,
+			at: 21,
+			effectId: 'jasper.custom-fade',
+			duration: 12,
+			cutOffset: 3,
+			params: {
+				fadeShape: 'cosine',
+				fadeValue: 30,
+				symmetry: 'asymmetric',
+				outFadeShape: 'linear',
+				outFadeValue: -10,
+			},
+		},
+		{ type: 'transition.add', clipId: ids.c, edge: 'in', effectId: 'jasper.exponential-fade', duration: 6 },
+		{ type: 'transition.add', clipId: ids.c, edge: 'out', effectId: 'jasper.constant-power', duration: 6 },
+	]);
+	const snapshot = buildRenderSnapshot(h.doc, h.seqId, {
+		resolveMedia: (a) => ({
+			url: a.id,
+			proxyUrl: null,
+			kind: a.kind,
+			width: null,
+			height: null,
+			durationFlicks: a.probe.durationFlicks,
+			hasAudio: true,
+			rotation: 0,
+		}),
+		resolveFont: () => null,
+	});
+	const data = new Map<string, number[][]>();
+	snapshot.audioClips.forEach((c, i) => {
+		const [s0, s1] = spanOf(c, snapshot.settings.fps, SR);
+		const n = Math.min(s1 - s0, LEN);
+		const sig = noise(50 + i, n, 0.4);
+		const zero = new Array<number>(n).fill(0);
+		data.set(c.clipId, c.clipId === ids.b ? [zero, sig] : [sig, zero]);
+	});
+	return { snapshot, data, results: [], ids };
+}
+
 function reader(data: Map<string, number[][]>) {
 	return (clip: RenderAudioClip, at: { offset: number; length: number }): ClipReader => {
 		const d = data.get(clip.clipId)!;
@@ -358,6 +429,49 @@ describe.runIf(!!CHROME)(
 				expect(regions.build.worst).toBeLessThan(1e-4);
 				expect(regions.after.worst).toBeLessThan(1e-4);
 			});
+
+		it('audio crossfades: an asymmetrical off-centre Custom Fade, Exponential / Constant Power fades', async () => {
+			const c = crossfadeScene();
+			const e = await exported(c);
+			const p = await preview(c);
+			const all = worst(p.channels, e, 0, LEN);
+			const span = worst(p.channels, e, 18 * 1600, 30 * 1600);
+			const fades = worst(p.channels, e, 30 * 1600, 50 * 1600);
+			// The export's envelope is the curve model's: sample i of a clip = gain(i) × its source sample.
+			const clip = (id: string) => c.snapshot.audioClips.find((x) => x.clipId === id)!;
+			const fps = c.snapshot.settings.fps;
+			let envelope = 0;
+			const check = (id: string, ch: number, from: number, to: number) => {
+				const k = clip(id);
+				const s0 = spanOf(k, fps, SR)[0];
+				const src = c.data.get(id)![ch]!;
+				for (let i = from * 1600; i < to * 1600; i++)
+					envelope = Math.max(
+						envelope,
+						Math.abs(e[ch]![i]! - audioFadeGain(k.fades, i / 1600) * src[i - s0]!),
+					);
+			};
+			check(c.ids.a, 0, 18, 30);
+			check(c.ids.b, 1, 18, 30);
+			check(c.ids.c, 0, 30, 50);
+			// …and the fades are the ones asked for (midpoint of the crossfade: frame 24; C's fades).
+			const a = clip(c.ids.a);
+			const b = clip(c.ids.b);
+			const cc = clip(c.ids.c);
+			expect(audioFadeGain(a.fades, 24)).toBeCloseTo(fadeShapeGain({ type: 'linear', value: -10 }, 0.5), 12);
+			expect(audioFadeGain(b.fades, 24)).toBeCloseTo(fadeShapeGain({ type: 'cosine', value: 30 }, 0.5), 12);
+			expect(audioFadeGain(a.fades, 18)).toBe(1);
+			expect(audioFadeGain(b.fades, 30)).toBe(1);
+			expect(audioFadeGain(cc.fades, 33)).toBeCloseTo(fadeCurve('exponential', 0.5), 12);
+			expect(audioFadeGain(cc.fades, 47)).toBeCloseTo(fadeCurve('equal-power', 0.5), 12);
+			console.log(JSON.stringify({ crossfades: { all, span, fades, envelope, latency: p.latency } }));
+			expect(all.peak).toBeGreaterThan(0.1);
+			expect(envelope).toBeLessThan(1e-6);
+			// preview while playing = export, float32 against float32 (as the other scenes)
+			expect(span.worst).toBeLessThan(1e-4);
+			expect(fades.worst).toBeLessThan(1e-4);
+			expect(all.worst).toBeLessThan(1e-4);
+		});
 
 		it('pan sweeps: strip pan, clip pan, the 5.1 puck of a track and of a send, a 5.1 submix pan', async () => {
 			const c = panScene();

@@ -8,6 +8,7 @@ export const JOB_KINDS = [
 	'sprite',
 	'peaks',
 	'proxy',
+	'playback-audio',
 	'analysis',
 	'transcription',
 	'model-download',

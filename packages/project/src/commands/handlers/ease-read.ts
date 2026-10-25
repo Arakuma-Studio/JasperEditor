@@ -12,12 +12,12 @@ import {
 	spanLeaving,
 } from '../../ease/segments.ts';
 import { createCounterIdSource } from '../../ids.ts';
-import { isHoldOnlyValue, rovingRuns } from '../../keyframes.ts';
-import { isVec2Value } from '../../keyframes-spatial.ts';
+import { explicitInSide, isBothSided, isHoldOnlyValue, outgoingEase, rovingRuns } from '../../keyframes.ts';
+import { isVec2Value, type SpatialMetric } from '../../keyframes-spatial.ts';
 import { defaultPresetRegistry } from '../../presets.ts';
 import { defaultEffectRegistry } from '../../registry/effects.ts';
 import { emptyMgRegistry } from '../../registry/mg.ts';
-import type { Ease, Interpolation, Keyframe } from '../../schema/common.ts';
+import type { Ease, InInterpolation, Interpolation, Keyframe } from '../../schema/common.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
 import { type DDoc, HandlerContext } from '../context.ts';
@@ -61,6 +61,14 @@ export function selectionGroups(doc: DDoc, ids: readonly string[], h: HandlerCon
 	}
 	for (const id of want) if (!found.has(id)) h.fail('E_NOT_FOUND', `Keyframe not found: ${id}`);
 	return groups;
+}
+
+/**
+ * spatial-points: the evaluator's metric of the group's values (effect points normalised to the layer box: [box width,
+ * box height]); undefined for isotropic units.
+ */
+export function groupMetric(g: EaseGroup): SpatialMetric | undefined {
+	return g.target.metric;
 }
 
 /** True when the property's keys only step (hold-only parameters, strings, booleans…). */
@@ -141,12 +149,20 @@ function readSelection<T>(
 
 /** One side of a key as the Keyframe Velocity editor shows it. */
 export type EaseSideInfo = {
+	/**
+	 * keyframe-sides: the temporal type shaping this side (outgoing: the key's `interpolation`; incoming: the type it
+	 * acts as in the arriving segment, `SpanSides.inInterpolation` — hold after a Hold key).
+	 */
+	interpolation: Interpolation;
 	/** Influence as a fraction (0, 1] and in percent. */
 	influence: number;
 	influencePercent: number;
 	/** Slope relative to the segment's average speed (1 = linear). */
 	slope: number;
-	/** Speed in property units per second (sequence px/s along the path for points; signed for numbers). */
+	/**
+	 * Speed in property units per second (sequence px/s along the path for Motion points, layer px/s for effect points;
+	 * signed for numbers).
+	 */
 	speed: number;
 };
 
@@ -157,6 +173,8 @@ export type EaseKeyInfo = {
 	seconds: number;
 	value: unknown;
 	interpolation: Interpolation;
+	/** keyframe-sides: the key's own incoming type when it has one (absent: read the legacy way). */
+	inInterpolation?: InInterpolation;
 	roving: boolean;
 	/** Effective eases (null: no segment on that side, or the key roves). */
 	easeIn: EaseSideInfo | null;
@@ -168,11 +186,16 @@ export type EaseSegmentInfo = {
 	toId: string;
 	section: 'in' | 'middle' | 'out';
 	hold: boolean;
+	/** The segment is linear (progress = time): both sides Linear, or a Linear first key read the legacy way. */
+	linear: boolean;
+	/** keyframe-sides: the first key's outgoing type and the type shaping the segment's arrival at the last key. */
+	outInterpolation: Interpolation;
+	inInterpolation: Interpolation;
 	/** A run of roving keys between the two fixed keys. */
 	roving: boolean;
 	/** The segment as cubic-bezier (linear = (⅓, ⅓, ⅔, ⅔)). */
 	curve: CubicEase;
-	/** Average speed of the segment in property units per second (signed for numbers). */
+	/** Average speed of the segment in property units per second (signed for numbers; layer px/s for effect points). */
 	averageSpeed: number;
 };
 
@@ -188,8 +211,9 @@ export type EasePropertyInfo = {
 	segments: EaseSegmentInfo[];
 };
 
-function sideInfo(e: Ease, avg: number): EaseSideInfo {
+function sideInfo(e: Ease, avg: number, interpolation: Interpolation): EaseSideInfo {
 	return {
+		interpolation,
 		influence: e.influence,
 		influencePercent: e.influence * 100,
 		slope: e.slope,
@@ -200,6 +224,7 @@ function sideInfo(e: Ease, avg: number): EaseSideInfo {
 /** The Keyframe Velocity view of one group (selected keys, segments). */
 export function describeEaseGroup(g: EaseGroup): EasePropertyInfo {
 	const { kfs } = g;
+	const metric = groupMetric(g);
 	const runs = rovingRuns([...kfs]);
 	const roving = (i: number) => runs.some((r) => i > r.a && i < r.b);
 	const keys: EaseKeyInfo[] = g.selected.map((i) => {
@@ -208,9 +233,13 @@ export function describeEaseGroup(g: EaseGroup): EasePropertyInfo {
 		const after = roving(i) ? null : spanLeaving(kfs, i, runs);
 		const side = (sp: EaseSpan | null, which: 'in' | 'out') => {
 			if (!sp) return null;
-			const e = spanEases(kfs, sp.a, sp.b);
+			const e = spanEases(kfs, sp.a, sp.b, metric);
 			const ease = e.hold ? (which === 'in' ? k.easeIn : k.easeOut) : which === 'in' ? e.in : e.out;
-			return sideInfo(ease, spanAverageVelocity(kfs, sp.a, sp.b));
+			return sideInfo(
+				ease,
+				spanAverageVelocity(kfs, sp.a, sp.b, metric),
+				which === 'in' ? e.inInterpolation : e.outInterpolation,
+			);
 		};
 		return {
 			id: k.id,
@@ -218,6 +247,7 @@ export function describeEaseGroup(g: EaseGroup): EasePropertyInfo {
 			seconds: k.time / FLICKS_PER_SECOND,
 			value: clone(k.value),
 			interpolation: k.interpolation,
+			...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 			roving: roving(i),
 			easeIn: side(before, 'in'),
 			easeOut: side(after, 'out'),
@@ -226,15 +256,18 @@ export function describeEaseGroup(g: EaseGroup): EasePropertyInfo {
 	const segments: EaseSegmentInfo[] = [];
 	for (const section of ['in', 'middle', 'out'] as const)
 		for (const sp of sectionSpans(g, [section])) {
-			const e = spanEases(kfs, sp.a, sp.b);
+			const e = spanEases(kfs, sp.a, sp.b, metric);
 			segments.push({
 				fromId: kfs[sp.a]!.id,
 				toId: kfs[sp.b]!.id,
 				section,
 				hold: e.hold,
+				linear: !e.hold && e.linear,
+				outInterpolation: e.outInterpolation,
+				inInterpolation: e.inInterpolation,
 				roving: sp.roving,
 				curve: e.hold ? easesToCubic(LINEAR_EASE, LINEAR_EASE) : easesToCubic(e.out, e.in),
-				averageSpeed: spanAverageVelocity(kfs, sp.a, sp.b),
+				averageSpeed: spanAverageVelocity(kfs, sp.a, sp.b, metric),
 			});
 		}
 	segments.sort((x, y) => kfs.findIndex((k) => k.id === x.fromId) - kfs.findIndex((k) => k.id === y.fromId));
@@ -262,9 +295,19 @@ export function describeKeyframeEases(
 	return r.ok ? { ok: true, properties: r.value } : r;
 }
 
-/** An ease clipboard entry (`keyframe.pasteEase`'s `clip`). */
+/**
+ * An ease clipboard entry (`keyframe.pasteEase`'s `clip`). `key`: one key's two sides — the ease each contributes and
+ * (keyframe-sides) its temporal type, `inInterpolation` incoming and `interpolation` outgoing (absent: Bezier, what a
+ * pasted ease used to make).
+ */
 export type EaseClip =
-	| { kind: 'key'; easeIn: Ease; easeOut: Ease }
+	| {
+			kind: 'key';
+			easeIn: Ease;
+			easeOut: Ease;
+			inInterpolation?: InInterpolation;
+			interpolation?: Interpolation;
+	  }
 	| { kind: 'segments'; segments: CubicEase[]; curve?: MultiEase };
 
 /** Progress coordinate of a key along span A → B: arc fraction for points, projection for vectors. */
@@ -274,8 +317,9 @@ function progressOf(g: EaseGroup, a: number, b: number, i: number): number | nul
 	const B = kfs[b]!.value;
 	const V = kfs[i]!.value;
 	if (isPointGroup(g)) {
-		const total = spanDistance(kfs, a, b);
-		return total > 0 ? spanDistance(kfs, a, i) / total : null;
+		const metric = groupMetric(g);
+		const total = spanDistance(kfs, a, b, metric);
+		return total > 0 ? spanDistance(kfs, a, i, metric) / total : null;
 	}
 	if (typeof A === 'number' && typeof B === 'number' && typeof V === 'number')
 		return B !== A ? (V - A) / (B - A) : null;
@@ -310,7 +354,7 @@ function curveOf(g: EaseGroup, a: number, b: number): MultiEase | null {
 	points[points.length - 1] = { x: 1, y: 1 };
 	for (let i = a; i < b; i++) {
 		const m = i - a;
-		const e = spanEases(kfs, i, i + 1);
+		const e = spanEases(kfs, i, i + 1, groupMetric(g));
 		if (e.hold) return null;
 		const c = easesToCubic(e.out, e.in);
 		const p = points[m]!;
@@ -325,7 +369,50 @@ function curveOf(g: EaseGroup, a: number, b: number): MultiEase | null {
 }
 
 /**
- * Copies eases from keys: one key → its two effective eases (`kind: 'key'`); otherwise the segments between
+ * One key's two sides as an ease clip (keyframe-sides): per side the ease it contributes to its segment as the
+ * evaluator draws it (`spanEases`; a Linear / Hold side the ease it would contribute, `explicitInSide` / `outgoingEase`)
+ * and its type — incoming = the explicit side reproducing the arriving segment (`explicitInSide`), outgoing = the key's
+ * `interpolation`. Auto / Continuous Bezier on a key whose sides differ become Bezier at the eases they contribute
+ * (they shape both sides). A roving key has no eases of its own: its run's two ends (as Bezier sides).
+ */
+function keyEaseClip(g: EaseGroup, i: number): EaseClip {
+	const kfs = g.kfs;
+	const metric = groupMetric(g);
+	const runs = rovingRuns([...kfs]);
+	const k = kfs[i]!;
+	const before = spanLeaving(kfs, i - 1, runs);
+	const after = spanLeaving(kfs, i, runs);
+	const e1 = before ? spanEases(kfs, before.a, before.b, metric) : null;
+	const e2 = after ? spanEases(kfs, after.a, after.b, metric) : null;
+	const curved = (e: ReturnType<typeof spanEases> | null) => (e && !e.hold && !e.linear ? e : null);
+	if (runs.some((r) => i > r.a && i < r.b)) {
+		const run = curved(e1);
+		return {
+			kind: 'key',
+			easeIn: { ...(run ? run.in : k.easeIn) },
+			easeOut: { ...(run ? run.out : k.easeOut) },
+			inInterpolation: 'bezier',
+			interpolation: 'bezier',
+		};
+	}
+	const inSide = explicitInSide(kfs, i, metric, before?.a);
+	const cin = curved(e1);
+	const cout = curved(e2);
+	let inType: InInterpolation = inSide.type;
+	let outType: Interpolation = k.interpolation;
+	if (inType !== outType && isBothSided(inType)) inType = 'bezier';
+	if (inType !== outType && isBothSided(outType)) outType = 'bezier';
+	return {
+		kind: 'key',
+		easeIn: { ...(cin ? cin.in : inSide.ease) },
+		easeOut: { ...(cout ? cout.out : outgoingEase(kfs, i, metric)) },
+		inInterpolation: inType,
+		interpolation: outType,
+	};
+}
+
+/**
+ * Copies eases from keys: one key → its two sides (`kind: 'key'`: the eases and types, `keyEaseClip`); otherwise the segments between
  * consecutive selected keys (property order, then time) as cubic-bezier curves, plus — for three or more keys of a
  * single property whose first and last values differ — the whole span as a multi-point curve. Reads locked tracks.
  */
@@ -336,19 +423,7 @@ export function copyEase(
 ): { ok: true; clip: EaseClip } | ReadFailure {
 	const r = readSelection(doc, keyframeIds, registries, (groups): EaseClip | string => {
 		const total = groups.reduce((n, g) => n + g.selected.length, 0);
-		const keyClip = (g: EaseGroup, i: number): EaseClip => {
-			const kfs = g.kfs;
-			const before = spanLeaving(kfs, i - 1);
-			const after = spanLeaving(kfs, i);
-			const e1 = before ? spanEases(kfs, before.a, before.b) : null;
-			const e2 = after ? spanEases(kfs, after.a, after.b) : null;
-			return {
-				kind: 'key',
-				easeIn: { ...(e1 && !e1.hold ? e1.in : kfs[i]!.easeIn) },
-				easeOut: { ...(e2 && !e2.hold ? e2.out : kfs[i]!.easeOut) },
-			};
-		};
-		if (total === 1) return keyClip(groups[0]!, groups[0]!.selected[0]!);
+		if (total === 1) return keyEaseClip(groups[0]!, groups[0]!.selected[0]!);
 		const segments: CubicEase[] = [];
 		for (const g of groups) {
 			if (isSteppingGroup(g)) continue;
@@ -358,7 +433,8 @@ export function copyEase(
 			}
 		}
 		if (!segments.length) {
-			if (groups.every((g) => g.selected.length === 1)) return keyClip(groups[0]!, groups[0]!.selected[0]!);
+			if (groups.every((g) => g.selected.length === 1))
+				return keyEaseClip(groups[0]!, groups[0]!.selected[0]!);
 			return 'Select two adjacent keyframes of a property (or one keyframe) to copy its ease';
 		}
 		const single = groups.length === 1 ? groups[0]! : null;

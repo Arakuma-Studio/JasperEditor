@@ -165,6 +165,15 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 									h: Math.max(0, box.h * (1 - s.insets[1] - s.insets[3])),
 								}
 							: null,
+						feather: s.feather?.length
+							? s.feather.map((c) => ({
+									x0: box.x + c.insets[0] * box.w,
+									y0: box.y + c.insets[1] * box.h,
+									x1: box.x + (1 - c.insets[2]) * box.w,
+									y1: box.y + (1 - c.insets[3]) * box.h,
+									f: c.feather * stage.layout.pxScale,
+								}))
+							: null,
 						masks: s.opacityMasks?.length
 							? { masks: s.opacityMasks, box, pxScale: stage.layout.pxScale }
 							: null,

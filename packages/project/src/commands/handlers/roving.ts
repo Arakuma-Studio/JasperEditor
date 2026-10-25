@@ -5,7 +5,7 @@
 import { isHoldOnlyValue, stopRoving } from '../../keyframes.ts';
 import type { Keyframe } from '../../schema/common.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { finish, locate, targetOf } from './keyframe.ts';
+import { finish, locate, MetricMap, targetOf } from './keyframe.ts';
 import type { HandlerMap } from './util.ts';
 
 export const rovingHandlers = {
@@ -13,8 +13,9 @@ export const rovingHandlers = {
 		const found = locate(doc, cmd.keyframeIds, h);
 		const touched = new Set<(typeof found)[number]['anim']>();
 		let updated = 0;
+		const metrics = new MetricMap();
 		for (const loc of found) {
-			const target = targetOf(doc, loc, h);
+			const target = metrics.note(targetOf(doc, loc, h));
 			const kfs = loc.anim.keyframes as Keyframe<unknown>[];
 			const i = kfs.indexOf(loc.key as Keyframe<unknown>);
 			if (cmd.roving) {
@@ -30,11 +31,11 @@ export const rovingHandlers = {
 					continue;
 				}
 				loc.key.roving = true;
-			} else stopRoving(kfs, i);
+			} else stopRoving(kfs, i, target.metric);
 			updated++;
 			touched.add(loc.anim);
 		}
-		finish(touched);
+		finish(touched, metrics.of);
 		return { updated };
 	},
 } satisfies HandlerMap;

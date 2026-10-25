@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fadeShapeGain } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
@@ -55,7 +56,7 @@ const settings = (seqId: string) => ({
  * A1: tone 1000 Hz at 0…45 (media 0.5…2 s), tone 1500 Hz at 45…90 (media 0.5…2 s), joined by a centred
  * 20-frame crossfade: span [35, 55), 10 frames of handle on each side.
  */
-async function crossfadeDoc(effectId: string) {
+async function crossfadeDoc(effectId: string, extra: Record<string, unknown> = {}) {
 	const d = new DocBuilder();
 	const a = d.addMedia(await register(app, join(dir, 'tone-1000.wav')));
 	const b = d.addMedia(await register(app, join(dir, 'tone-1500.wav')));
@@ -67,12 +68,12 @@ async function crossfadeDoc(effectId: string) {
 		ref,
 	});
 	d.tx([place(a, 0, '$a'), place(b, 45, '$b')]);
-	d.tx([{ type: 'transition.add', trackId: d.track('A1'), at: 45, effectId, duration: 20 }]);
+	d.tx([{ type: 'transition.add', trackId: d.track('A1'), at: 45, effectId, duration: 20, ...extra }]);
 	return d;
 }
 
-async function exportedAudio(effectId: string): Promise<string> {
-	const d = await crossfadeDoc(effectId);
+async function exportedAudio(effectId: string, extra: Record<string, unknown> = {}): Promise<string> {
+	const d = await crossfadeDoc(effectId, extra);
 	const start = await app.inject({
 		method: 'POST',
 		url: '/api/exports',
@@ -167,5 +168,32 @@ describe('audio crossfades on the native path (S10:TUI-052)', () => {
 		expect(full).toBeGreaterThan(0);
 		expect(at(45, 1000) / full).toBeCloseTo(0.5, 1);
 		expect(at(45, 1500) / full).toBeCloseTo(0.5, 1);
+	}, 180_000);
+
+	it('exports an off-centre asymmetrical Custom Fade on the curves it asks for (Premiere port)', async () => {
+		// span [40, 60): 5 frames before the cut; B fades in on Cosine @ 30, A fades out on Linear @ −10
+		const x = pcm(
+			await exportedAudio('jasper.custom-fade', {
+				cutOffset: 5,
+				params: {
+					fadeShape: 'cosine',
+					fadeValue: 30,
+					symmetry: 'asymmetric',
+					outFadeShape: 'linear',
+					outFadeValue: -10,
+				},
+			}),
+		);
+		const at = (frame: number, hz: number) => toneAmplitude(x, frame * 1600 - 480, 960, hz);
+		const full = at(20, 1000);
+		expect(full).toBeGreaterThan(0);
+		expect(at(35, 1500)).toBeLessThan(full * 0.02); // before the span: only A
+		expect(at(65, 1000)).toBeLessThan(full * 0.02); // after it: only B
+		// the 20 ms window of frame f is centred on its first sample (f·1600 − 480 … f·1600 + 480)
+		for (const f of [42, 45, 50, 55, 58]) {
+			const p = (f - 40) / 20;
+			expect(at(f, 1500) / full).toBeCloseTo(fadeShapeGain({ type: 'cosine', value: 30 }, p), 1);
+			expect(at(f, 1000) / full).toBeCloseTo(fadeShapeGain({ type: 'linear', value: -10 }, 1 - p), 1);
+		}
 	}, 180_000);
 });

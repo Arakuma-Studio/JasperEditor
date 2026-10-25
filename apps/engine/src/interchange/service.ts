@@ -11,7 +11,7 @@
 //
 // @jasper/interchange is pure (no fs); everything that touches files lives here.
 import { constants as fsConstants } from 'node:fs';
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, parse as parsePath } from 'node:path';
 import type {
 	AssetRelinkRequest,
@@ -28,8 +28,9 @@ import type {
 	RegisteredMedia,
 	RelinkScanRequest,
 	RelinkScanResult,
+	RelinkScanSummary,
 } from '@jasper/api';
-import { InterchangeExportRequestSchema, RelinkScanRequestSchema } from '@jasper/api';
+import { InterchangeExportRequestSchema, RelinkScanRequestSchema, RelinkScanResultSchema } from '@jasper/api';
 import {
 	type AudioEssence,
 	aiffFile,
@@ -51,8 +52,11 @@ import {
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Clip,
+	displayPath,
 	flicksPerFrame,
 	importedDescriptors,
+	isAbsoluteAnywhere,
+	isHostAbsolute,
 	loadProject,
 	type MediaAsset,
 	type MediaLocator,
@@ -64,17 +68,26 @@ import { mediaKeyOf } from '../export/planner.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintFile } from '../media/fingerprint.ts';
 import { sec } from '../tools/ffmpeg.ts';
-import { safeFileName } from '../tools/fs.ts';
+import { atomicWriteJson, safeFileName } from '../tools/fs.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
+import {
+	effectiveCriteria,
+	failedCriteria,
+	hostPlatform,
+	relinkDiff,
+	relinkMatch,
+	relinkNeedsConfirm,
+	runRelinkScan,
+} from './relink.ts';
 
 /** Engine identity used in `engine-store` locators (M1 talks to exactly one local engine). */
 const LOCAL_ENGINE_ID = 'local';
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_TEXT_DOCUMENT_BYTES = 256 * 1024 * 1024;
 const FLICKS = 705_600_000;
-const SCAN_MAX_FILES = 200_000;
-const SCAN_MAX_DEPTH = 32;
+/** File name of a `relink-scan` job's full result in its render folder. */
+const RELINK_RESULT = 'relink-scan.json';
 
 type StoredExport = { request: ReturnType<typeof InterchangeExportRequestSchema.parse> };
 
@@ -129,73 +142,6 @@ const EXTENSION: Record<InterchangeFormat, string> = {
 	omf: 'omf',
 	ale: 'ale',
 };
-
-/** What differs between an asset and a candidate file (what the user is asked to confirm). */
-export function relinkDiff(asset: MediaAsset, reg: RegisteredMedia): AssetRelinkResponse['diff'] {
-	const out: AssetRelinkResponse['diff'] = [];
-	const fmtDur = (f: number | null) => (f === null ? 'none' : `${(f / FLICKS).toFixed(2)} s`);
-	const v = (p: MediaAsset['probe']) =>
-		p.streams.find((s) => s.type === 'video') as
-			| { width: number; height: number; frameRate: { num: number; den: number } }
-			| undefined;
-	const audio = (p: MediaAsset['probe']) =>
-		p.streams
-			.filter((s) => s.type === 'audio')
-			.map((s) => `${(s as { channels: number }).channels} ch`)
-			.join(' + ') || 'none';
-	if (asset.kind !== reg.kind) out.push({ field: 'kind', was: asset.kind, now: reg.kind });
-	const a = asset.probe.durationFlicks;
-	const b = reg.probe.durationFlicks;
-	const va = v(asset.probe);
-	const vb = v(reg.probe as MediaAsset['probe']);
-	const frame = va ? (FLICKS * va.frameRate.den) / va.frameRate.num : FLICKS / 100;
-	// An imported placeholder knows at least the length its clips use (often only that): a longer file is fine.
-	const placeholder = asset.fingerprint.startsWith('pending:interchange:');
-	const durationDiffers =
-		a !== null && b !== null
-			? placeholder
-				? b < a - frame
-				: Math.abs(a - b) > frame
-			: !placeholder && a !== b;
-	if (durationDiffers) out.push({ field: 'duration', was: fmtDur(a), now: fmtDur(b) });
-	if (va && vb && (va.width !== vb.width || va.height !== vb.height))
-		out.push({ field: 'resolution', was: `${va.width}×${va.height}`, now: `${vb.width}×${vb.height}` });
-	if (va && vb && va.frameRate.num * vb.frameRate.den !== vb.frameRate.num * va.frameRate.den) {
-		const f = (r: { num: number; den: number }) => `${Math.round((r.num / r.den) * 1000) / 1000} fps`;
-		out.push({ field: 'frameRate', was: f(va.frameRate), now: f(vb.frameRate) });
-	}
-	const aa = audio(asset.probe);
-	const ab = audio(reg.probe as MediaAsset['probe']);
-	if (aa !== ab && asset.probe.streams.some((s) => s.type === 'audio'))
-		out.push({ field: 'audio', was: aa, now: ab });
-	if (asset.originalName.toLowerCase() !== reg.originalName.toLowerCase())
-		out.push({ field: 'name', was: asset.originalName, now: reg.originalName });
-	if (asset.sizeBytes > 0 && asset.sizeBytes !== reg.sizeBytes)
-		out.push({ field: 'size', was: `${asset.sizeBytes} bytes`, now: `${reg.sizeBytes} bytes` });
-	return out;
-}
-
-export function relinkMatch(asset: MediaAsset, reg: RegisteredMedia): AssetRelinkResponse['match'] {
-	if (asset.fingerprint === reg.fingerprint) return 'fingerprint';
-	return asset.fingerprint.startsWith('pending:interchange:') ? 'placeholder' : 'different';
-}
-
-/**
- * A different file is relinked only when confirmed; so is a placeholder whose kind differs or whose file is shorter
- * than the document's clips need. A placeholder's resolution and frame rate are often guesses (EDL, ALE): their
- * differences are listed but do not block.
- */
-export function relinkNeedsConfirm(
-	match: AssetRelinkResponse['match'],
-	diff: AssetRelinkResponse['diff'],
-): boolean {
-	if (match === 'fingerprint') return false;
-	if (match === 'different') return true;
-	return diff.some((d) => d.field === 'kind' || d.field === 'duration');
-}
-
-const nameKey = (name: string, ignoreExt: boolean) =>
-	(ignoreExt ? parsePath(name).name : name).normalize('NFC').toLowerCase();
 
 export class InterchangeService {
 	constructor(private readonly core: CoreServices) {}
@@ -259,7 +205,8 @@ export class InterchangeService {
 			for (let i = next++; i < files.length; i = next++) {
 				const m = files[i]!;
 				const p = m.path!;
-				if (!isAbsolute(p) || !this.local) {
+				// A path of another computer (a Windows drive on a Mac…) stays the placeholder's last known path.
+				if (!isHostAbsolute(p, hostPlatform()) || !this.local) {
 					notFound.add(m.id);
 					continue;
 				}
@@ -732,7 +679,7 @@ export class InterchangeService {
 
 	async relink(req: AssetRelinkRequest): Promise<AssetRelinkResponse> {
 		this.requireLocal('Linking media by path');
-		if (!isAbsolute(req.path)) throw new HttpError(400, 'VALIDATION_FAILED', 'The path must be absolute');
+		this.requireHostPath(req.path, 'The file');
 		let reg: RegisteredMedia;
 		try {
 			reg = await this.core.media.registerPath(req.path, { projectId: req.projectId });
@@ -743,127 +690,113 @@ export class InterchangeService {
 		const asset = req.asset as MediaAsset;
 		const match = relinkMatch(asset, reg);
 		const diff = relinkDiff(asset, reg);
+		const failed = req.match?.length
+			? failedCriteria(
+					asset,
+					reg,
+					basename(req.path),
+					effectiveCriteria(req.match, req.ignoreExtension ?? false),
+				)
+			: [];
 		return {
 			media: reg,
 			match,
 			diff,
-			needsConfirm: relinkNeedsConfirm(match, diff),
+			failed,
+			needsConfirm: relinkNeedsConfirm(match, diff) || failed.length > 0,
 		};
 	}
 
+	/** An absolute path of the engine host; a path of another computer (a Windows drive on a Mac…) is refused. */
+	private requireHostPath(p: string, what: string): void {
+		if (isHostAbsolute(p, hostPlatform())) return;
+		if (isAbsoluteAnywhere(p))
+			throw new HttpError(
+				400,
+				'VALIDATION_FAILED',
+				`${what} "${displayPath(p)}" is a path of another computer; choose where it is on this one`,
+			);
+		throw new HttpError(400, 'VALIDATION_FAILED', `${what} must be an absolute path`);
+	}
+
 	async startScan(projectId: string, raw: RelinkScanRequest): Promise<EngineJob> {
-		this.requireLocal('Searching folders');
+		this.requireLocal('Searching for media');
 		const req = RelinkScanRequestSchema.parse(raw);
-		if (!isAbsolute(req.folder)) throw new HttpError(400, 'VALIDATION_FAILED', 'The folder must be absolute');
-		const info = await stat(req.folder).catch(() => null);
-		if (!info?.isDirectory()) throw new HttpError(404, 'NOT_FOUND', 'No such folder');
+		if (req.folder) {
+			this.requireHostPath(req.folder, 'The folder');
+			const info = await stat(req.folder).catch(() => null);
+			if (!info?.isDirectory()) throw new HttpError(404, 'NOT_FOUND', 'No such folder');
+		}
+		for (const a of req.anchors ?? []) this.requireHostPath(a.to, 'The located file');
+		// The request can hold thousands of assets: it lives in a file, not in the journaled job input.
+		const dir = join(this.core.config.paths.rendersDir, '.requests');
+		await mkdir(dir, { recursive: true });
+		const file = join(dir, `relink-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+		await writeFile(file, JSON.stringify(req));
+		const what = req.anchors?.length
+			? `${req.assets.length} offline`
+			: req.folder
+				? basename(req.folder) || req.folder
+				: 'last known paths';
 		return this.core.queue.submit({
 			kind: 'relink-scan',
-			title: `Search for media – ${basename(req.folder) || req.folder}`,
+			title: `Link Media – ${what}`,
 			priority: 'user',
 			cpuSlots: 1,
 			origin: { type: 'user' },
 			projectId,
-			input: { projectId, request: req },
-			stage: 'Scanning',
+			input: { projectId, request: file },
+			stage: 'Queued',
 		});
 	}
 
-	private async runScan(ctx: JobContext): Promise<RelinkScanResult> {
-		const { projectId, request: req } = ctx.input as {
-			projectId: string;
-			request: ReturnType<typeof RelinkScanRequestSchema.parse>;
-		};
-		const files: { path: string; name: string; size: number }[] = [];
-		let truncated = false;
-		const walk = async (dir: string, depth: number): Promise<void> => {
-			if (depth > SCAN_MAX_DEPTH || ctx.signal.aborted) return;
-			const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-			for (const e of entries) {
-				if (files.length >= SCAN_MAX_FILES) {
-					truncated = true;
-					return;
-				}
-				if (e.name.startsWith('.')) continue;
-				const p = join(dir, e.name);
-				if (e.isDirectory()) await walk(p, depth + 1);
-				else if (e.isFile()) {
-					const st = await stat(p).catch(() => null);
-					if (st) files.push({ path: p, name: e.name, size: st.size });
-				}
-			}
-			if (files.length % 500 === 0) ctx.progress(null, { stage: `Scanning (${files.length} files)` });
-		};
-		await walk(req.folder, 0);
-		const byName = new Map<string, typeof files>();
-		const bySize = new Map<number, typeof files>();
-		for (const f of files) {
-			const k = nameKey(f.name, req.ignoreExtension);
-			byName.set(k, [...(byName.get(k) ?? []), f]);
-			bySize.set(f.size, [...(bySize.get(f.size) ?? []), f]);
+	private async runScan(ctx: JobContext): Promise<RelinkScanSummary> {
+		const { projectId, request } = ctx.input as { projectId: string; request: string };
+		let req: ReturnType<typeof RelinkScanRequestSchema.parse>;
+		try {
+			req = RelinkScanRequestSchema.parse(JSON.parse(await readFile(request, 'utf8')));
+		} catch (e) {
+			throw new JobError(
+				'VALIDATION_FAILED',
+				`The relink request cannot be read: ${(e as Error).message}`,
+				false,
+			);
+		} finally {
+			await rm(request, { force: true }).catch(() => undefined);
 		}
-		const found: RelinkScanResult['found'] = [];
-		const notFound: string[] = [];
-		const assets = req.assets as MediaAsset[];
-		for (const [i, a] of assets.entries()) {
-			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'cancelled');
-			ctx.progress(i / assets.length, { stage: `Matching ${i + 1}/${assets.length}: ${a.originalName}` });
-			const want = new Set(req.match);
-			let hit: {
-				file: (typeof files)[number];
-				reg: RegisteredMedia;
-				matched: RelinkScanResult['found'][number]['matched'];
-			} | null = null;
-			for (const f of byName.get(nameKey(a.originalName, req.ignoreExtension)) ?? []) {
-				if (want.has('size') && a.sizeBytes > 0 && f.size !== a.sizeBytes) continue;
-				let reg: RegisteredMedia;
-				try {
-					reg = await this.core.media.registerPath(f.path, { projectId });
-				} catch {
-					continue;
-				}
-				if (want.has('duration') && relinkDiff(a, reg).some((d) => d.field === 'duration')) continue;
-				// Media Start: the start timecode, when the asset knows one.
-				if (
-					want.has('mediaStart') &&
-					a.probe.startTimecode &&
-					reg.probe.startTimecode !== a.probe.startTimecode
-				)
-					continue;
-				hit = {
-					file: f,
-					reg,
-					matched: req.match.filter(
-						(m) => (m !== 'size' || a.sizeBytes > 0) && (m !== 'mediaStart' || !!a.probe.startTimecode),
-					),
-				};
-				break;
-			}
-			// Then by fingerprint: files of the asset's size whose content is the asset's (moved and renamed).
-			if (!hit && a.sizeBytes > 0 && !a.fingerprint.startsWith('pending:'))
-				for (const f of bySize.get(a.sizeBytes) ?? []) {
-					const fp = await fingerprintFile(f.path).catch(() => null);
-					if (fp?.fingerprint !== a.fingerprint) continue;
-					try {
-						hit = { file: f, reg: await this.core.media.registerPath(f.path, { projectId }), matched: [] };
-						break;
-					} catch {}
-				}
-			if (!hit) {
-				notFound.push(a.id);
-				continue;
-			}
-			const match = relinkMatch(a, hit.reg);
-			found.push({
-				assetId: a.id,
-				path: hit.file.path,
-				media: hit.reg,
-				matched: hit.matched,
-				match,
-				diff: relinkDiff(a, hit.reg),
-			});
-		}
-		return { found, notFound, scannedFiles: files.length, truncated };
+		const result = await runRelinkScan(req, {
+			register: (p) => this.core.media.registerPath(p, { projectId }),
+			fingerprint: async (p) => (await fingerprintFile(p).catch(() => null))?.fingerprint ?? null,
+			host: hostPlatform(),
+			signal: ctx.signal,
+			progress: (p, stage) => ctx.progress(p, { stage }),
+		});
+		const out = join(this.core.config.paths.renderDir(ctx.job.id), RELINK_RESULT);
+		await mkdir(dirname(out), { recursive: true });
+		await atomicWriteJson(out, result);
+		return {
+			found: result.found.filter((f) => !f.needsConfirm).length,
+			needsConfirm: result.found.filter((f) => f.needsConfirm).length,
+			ambiguous: result.ambiguous.length,
+			notFound: result.notFound.length,
+			scannedFiles: result.scannedFiles,
+			truncated: result.truncated,
+			timedOut: result.timedOut,
+		};
+	}
+
+	/** The full result of a finished `relink-scan` job of the project (null: no such job or not finished). */
+	async scanResult(projectId: string, jobId: string): Promise<RelinkScanResult> {
+		const job = /^[A-Za-z0-9_-]+$/.test(jobId) ? this.core.queue.get(jobId) : null;
+		if (job?.kind !== 'relink-scan' || job.projectId !== projectId)
+			throw new HttpError(404, 'JOB_NOT_FOUND', 'No such Link Media search in this project');
+		if (job.state !== 'succeeded')
+			throw new HttpError(409, 'JOB_NOT_FINISHED', `The Link Media search is ${job.state}`);
+		const file = join(this.core.config.paths.renderDir(jobId), RELINK_RESULT);
+		const text = await readFile(file, 'utf8').catch(() => null);
+		if (text === null)
+			throw new HttpError(404, 'NOT_FOUND', 'The result of this search is no longer available');
+		return RelinkScanResultSchema.parse(JSON.parse(text));
 	}
 }
 

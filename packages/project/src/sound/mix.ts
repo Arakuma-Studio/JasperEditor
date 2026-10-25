@@ -18,7 +18,7 @@
 //   interface sounds (ui, click, key, tick: dry by design), not the ones also playing bed (dialogue, music, ambience:
 //   sends are per track).
 import { readEssentialSound } from '../essential/model.ts';
-import { EASE_PRESETS, evaluate, incomingEase, outgoingEase } from '../keyframes.ts';
+import { EASE_PRESETS, evaluate, incomingEase, outgoingEase, segmentShape } from '../keyframes.ts';
 import type { Animatable, Ease, Keyframe } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { AudioClip, Clip, Sequence } from '../schema/sequence.ts';
@@ -174,7 +174,10 @@ function straightFrom(kfs: readonly Keyframe<number>[], i: number): boolean {
 	const k = kfs[i];
 	if (!k) return true;
 	if (k.roving || kfs[i + 1]?.roving) return false;
-	return k.interpolation === 'linear' || k.interpolation === 'hold';
+	if (!kfs[i + 1]) return k.interpolation === 'linear' || k.interpolation === 'hold';
+	// keyframe-sides: a Linear key followed by an eased incoming side curves.
+	const shape = segmentShape(kfs, i);
+	return shape === 'linear' || shape === 'hold';
 }
 
 /** Index of the last key at or before lane time `k` (−1 before the first). */
@@ -193,7 +196,7 @@ export type CurveWrite = {
 };
 
 /** How a written key interpolates (an edge key keeps the ease of the curve outside the range it rewrites). */
-export type KeyShape = Pick<Keyframe<number>, 'interpolation' | 'easeIn' | 'easeOut'>;
+export type KeyShape = Pick<Keyframe<number>, 'interpolation' | 'inInterpolation' | 'easeIn' | 'easeOut'>;
 /** A point to write: sequence flicks, value, and optionally the key's shape (default: linear). */
 export type CurvePoint = readonly [number, number] | readonly [number, number, KeyShape];
 
@@ -250,6 +253,7 @@ export function writeCurve(
 		if (sh)
 			Object.assign(key, {
 				interpolation: sh.interpolation,
+				...(sh.inInterpolation ? { inInterpolation: sh.inInterpolation } : {}),
 				easeIn: { ...sh.easeIn },
 				easeOut: { ...sh.easeOut },
 			});
@@ -544,7 +548,29 @@ export function mergeDips(
 			const orig = kfs[idx]!;
 			if (at === 'lo') {
 				const prev = kfs[idx - 1];
-				if (!prev || prev.interpolation === 'linear' || prev.interpolation === 'hold') return [t, v] as const;
+				if (!prev || prev.interpolation === 'hold') return [t, v] as const;
+				// keyframe-sides: a per-side arriving segment keeps its reading (explicit incoming side).
+				if (orig.inInterpolation !== undefined) {
+					const shape = segmentShape(kfs, idx - 1);
+					return [
+						t,
+						v,
+						shape === 'linear' || shape === 'hold'
+							? {
+									interpolation: 'linear',
+									inInterpolation: 'linear',
+									easeIn: { ...LINEAR },
+									easeOut: { ...LINEAR },
+								}
+							: {
+									interpolation: 'linear',
+									inInterpolation: 'bezier',
+									easeIn: { ...shape.in },
+									easeOut: { ...LINEAR },
+								},
+					] as const;
+				}
+				if (prev.interpolation === 'linear') return [t, v] as const;
 				return [
 					t,
 					v,

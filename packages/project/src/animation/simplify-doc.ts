@@ -6,11 +6,14 @@
 //   corners and its centre when pinned): for an affine layer this bounds every point of the picture, because the
 //   difference of two affine maps is affine and peaks at a corner of the box.
 // - Value group (every other parameter): the distance in the parameter's own units (absolute value, Euclidean
-//   for vectors).
+//   for vectors). spatial-points: points normalised to their layer box measure it in the box's pixels (unit `px`),
+//   and every effect point is evaluated with its spatial metric, as the renderers evaluate it.
 // Samples: every frame the clip shows at its current timing, extended over the handles to the keys around the
 // simplified span, plus every original key time. Pure; used by the `keyframes.simplify` command, `tracker.apply`
 // (`simplify` option) and previews.
 import { evaluate, isHoldOnlyValue } from '../keyframes.ts';
+import type { SpatialMetric } from '../keyframes-spatial.ts';
+import { effectParamMetric } from '../registry/effects.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import { applyMat3, type Quad, unitSquareToQuad } from '../render/homography.ts';
 import { CORNER_PIN_EFFECT_ID, CORNER_PIN_PARAMS } from '../render/scene.ts';
@@ -140,8 +143,26 @@ type Prepared = {
 	window: [number, number];
 };
 
+/**
+ * spatial-points: the spatial metric of an effect point target (its layer box in pixels per unit: the clip's
+ * intrinsic box, the sequence frame for track and master effects), else undefined.
+ */
+function targetMetric(doc: ProjectDocument, t: SimplifyTarget): SpatialMetric | undefined {
+	if (t.path[0] !== 'effect') return undefined;
+	const [, fxId, name] = t.path;
+	const lists: (readonly EffectInstance[] | undefined)[] = t.clip
+		? [(t.clip as { effects?: EffectInstance[] }).effects]
+		: [...[...t.seq.videoTracks, ...t.seq.audioTracks].map((tr) => tr.effects), t.seq.master.effects];
+	const fx = lists.flatMap((l) => l ?? []).find((e) => e.id === fxId);
+	if (!fx || !name) return undefined;
+	const box = t.clip
+		? intrinsicBoxOf({ clip: t.clip, doc, seq: t.seq })
+		: { width: t.seq.settings.width, height: t.seq.settings.height };
+	return effectParamMetric(fx, name, box);
+}
+
 /** Checks a target and builds its solver channel, or returns why it cannot be simplified. */
-function prepare(t: SimplifyTarget, index: number): Prepared | string {
+function prepare(t: SimplifyTarget, index: number, metric?: SpatialMetric): Prepared | string {
 	const keys = t.anim.keyframes as Keyframe<SimplifyValue>[];
 	if (keys.length < 3) return 'fewer than 3 keyframes';
 	if (keys.some((k) => isHoldOnlyValue(k.value))) return 'hold-only values cannot be simplified';
@@ -165,7 +186,7 @@ function prepare(t: SimplifyTarget, index: number): Prepared | string {
 	return {
 		target: t,
 		index,
-		channel: { keys, span: [i0, i1], ...(locked?.size ? { locked } : {}) },
+		channel: { keys, span: [i0, i1], ...(locked?.size ? { locked } : {}), ...(metric ? { metric } : {}) },
 		window,
 	};
 }
@@ -195,7 +216,7 @@ export function planSimplify(
 		const k = t.path.join('\u0000');
 		if (seen.has(k)) return;
 		seen.add(k);
-		const p = prepare(t, i);
+		const p = prepare(t, i, targetMetric(doc, t));
 		if (typeof p === 'string') {
 			skipped.push({ path: [...t.path], reason: p });
 			return;
@@ -233,7 +254,7 @@ export function planSimplify(
 			properties.push({
 				path: [...m.target.path],
 				label: m.target.label ?? m.target.path.slice(2).join('.'),
-				unit: g.kind === 'geometry' ? 'px' : (m.target.unit ?? ''),
+				unit: g.kind === 'geometry' || m.channel.metric ? 'px' : (m.target.unit ?? ''),
 				group: gi,
 				before: r.before[j]!,
 				after: r.after[j]!,
@@ -242,7 +263,7 @@ export function planSimplify(
 		return {
 			kind: g.kind,
 			clipId: g.clip?.id ?? null,
-			unit: g.kind === 'geometry' ? 'px' : (g.members[0]!.target.unit ?? ''),
+			unit: g.kind === 'geometry' || g.members[0]!.channel.metric ? 'px' : (g.members[0]!.target.unit ?? ''),
 			paths: g.members.map((m) => [...m.target.path]),
 			samples: times.length,
 			maxError: r.maxError,
@@ -273,20 +294,25 @@ function toVec(v: unknown): number[] {
 	return typeof v === 'number' ? [v] : (v as number[]);
 }
 
-/** |Δ| in the parameter's units (absolute value, Euclidean for vectors). */
+/**
+ * |Δ| in the parameter's units (absolute value, Euclidean for vectors); spatial-points: in layer pixels for points
+ * normalised to their layer box (each component × the metric).
+ */
 function valueDeviation(m: Prepared, times: readonly number[]) {
 	const anim = { value: m.channel.keys[0]!.value, keyframes: m.channel.keys as Keyframe<SimplifyValue>[] };
 	const dim = toVec(m.channel.keys[0]!.value).length;
+	const metric = m.channel.metric;
+	const scale = (d: number) => (metric && dim === 2 ? metric[d]! : 1);
 	const orig = new Float64Array(times.length * dim);
 	times.forEach((t, s) => {
-		const v = toVec(evaluate(anim, t));
+		const v = toVec(evaluate(anim, t, metric ? { metric } : undefined));
 		for (let d = 0; d < dim; d++) orig[s * dim + d] = v[d]!;
 	});
 	return (s: number, values: readonly Float64Array[]): number => {
 		const v = values[0]!;
 		if (dim === 1) return Math.abs(v[0]! - orig[s]!);
 		let sum = 0;
-		for (let d = 0; d < dim; d++) sum += (v[d]! - orig[s * dim + d]!) ** 2;
+		for (let d = 0; d < dim; d++) sum += ((v[d]! - orig[s * dim + d]!) * scale(d)) ** 2;
 		return Math.sqrt(sum);
 	};
 }
@@ -332,7 +358,8 @@ function geometryDeviation(doc: ProjectDocument, g: GroupSpec, times: readonly n
 		? CORNER_PIN_PARAMS.map((name, i) =>
 				times.map((t) => {
 					const a = pin.params[name];
-					const v = a ? evaluate(a, t) : null;
+					// spatial-points: the corners' paths in the layer box's pixels, as the resolver evaluates them.
+					const v = a ? evaluate(a, t, { metric: [box.width, box.height] }) : null;
 					return Array.isArray(v) && v.length === 2 ? (v as number[]) : defaults[i]!;
 				}),
 			)

@@ -255,7 +255,7 @@ export function transitionPlacement(
 	const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 	const cut = out ? out.start + out.duration : inc ? inc.start : null;
 	if (cut === null) return null;
-	return { cut, ...transitionSpan(cut, t.duration, t.alignment) };
+	return { cut, ...transitionSpan(cut, t.duration, t.alignment, t.cutPosition) };
 }
 
 /** `get_timeline`: one line per transition overlapping [from, to), in track order then time. */

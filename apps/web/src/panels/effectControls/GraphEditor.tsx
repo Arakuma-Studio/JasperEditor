@@ -44,6 +44,7 @@ import {
 	samplePostVelocityCurve,
 	sampleValueCurves,
 	sampleVelocityCurve,
+	sideHasHandle,
 	timeMapOf,
 	type ValueHandle,
 	type Vec2ValueHandle,
@@ -139,7 +140,14 @@ export function PropertyGraphs(
 	const kfs = anim.keyframes;
 	const clip = b.clip;
 	const map = useMemo(() => timeMapOf(clip, seq.settings.frameRate), [clip, seq.settings.frameRate]);
-	const opts = useMemo(() => propertyEvaluateOptions(row.spec), [row.spec]);
+	// spatial-points: effect points are sampled with the metric they were resolved with (layer box px).
+	const metric = b.resolved.metric;
+	const metricKey = metric ? `${metric[0]}x${metric[1]}` : '';
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the metric's values (a new array per resolve)
+	const opts = useMemo(
+		() => ({ ...propertyEvaluateOptions(row.spec), ...(metric ? { metric } : {}) }),
+		[row.spec, metricKey],
+	);
 	const boxRef = useRef<HTMLDivElement>(null);
 	const width = useWidth(boxRef);
 	const [frozen, setFrozen] = useState<{ value: YRange; velocity: YRange } | null>(null);
@@ -174,7 +182,10 @@ export function PropertyGraphs(
 		() => (bound ? samplePostVelocityCurve(bound, map, range, width, opts) : null),
 		[bound, map, range, width, opts],
 	);
-	const vHandles = useMemo(() => kfs.map((_, i) => velocityHandles(anim, i, map)), [anim, kfs, map]);
+	const vHandles = useMemo(
+		() => kfs.map((_, i) => velocityHandles(anim, i, map, opts)),
+		[anim, kfs, map, opts],
+	);
 
 	const valueBox = Math.max(30, Math.round((height - 1) * 0.55));
 	const velocityBox = Math.max(24, height - valueBox - 1);
@@ -200,6 +211,8 @@ export function PropertyGraphs(
 	const precision = row.spec.ui.precision ?? 1;
 	const unit =
 		row.spec.unit === 'deg' ? '°' : row.spec.unit === '%' ? '%' : row.spec.unit ? ` ${row.spec.unit}` : '';
+	// spatial-points: the speed of a point normalised to its layer box is measured in the box's pixels.
+	const speedUnit = metric ? ' px' : unit;
 
 	const startDrag = (e: ReactPointerEvent, drag: Drag) => {
 		const x0 = e.clientX;
@@ -307,7 +320,7 @@ export function PropertyGraphs(
 				const next = ease(dx, dy);
 				return {
 					commands: planEaseEdit(base, keyIndex, side, next, alt0 || ev.altKey),
-					tip: `Speed ${formatGraphValue(next.slope * unitSpeed, precision)}${unit}/s · Influence ${Math.round(next.influence * 100)}%`,
+					tip: `Speed ${formatGraphValue(next.slope * unitSpeed, precision)}${speedUnit}/s · Influence ${Math.round(next.influence * 100)}%`,
 				};
 			},
 		});
@@ -448,18 +461,15 @@ export function PropertyGraphs(
 	const valueHandleList: ValueHandle[] =
 		kind === 'number'
 			? selectedIdx.flatMap((i) =>
-					kfs[i]!.interpolation === 'bezier' || kfs[i]!.interpolation === 'continuous-bezier'
-						? valueHandles(anim as Animatable<number>, i, map)
-						: [],
+					// keyframe-sides: a handle on each Bezier side (an Ease In key has one on its incoming side only).
+					valueHandles(anim as Animatable<number>, i, map).filter((h) => sideHasHandle(kfs[i]!, h.side)),
 				)
 			: [];
 
 	const vec2HandleList: Vec2ValueHandle[] =
 		kind === 'vec2'
 			? selectedIdx.flatMap((i) =>
-					kfs[i]!.interpolation === 'bezier' || kfs[i]!.interpolation === 'continuous-bezier'
-						? vec2ValueHandles(anim, i, map)
-						: [],
+					vec2ValueHandles(anim, i, map, opts).filter((h) => sideHasHandle(kfs[i]!, h.side)),
 				)
 			: [];
 
@@ -484,7 +494,7 @@ export function PropertyGraphs(
 			>
 				{labels(vr, valueBox, unit, `graph-value-labels-${row.id}`, 'value')}
 				<div className="h-px bg-pr-border-subtle" />
-				{labels(velR, velocityBox, `${unit}/s`, `graph-velocity-labels-${row.id}`, 'velocity')}
+				{labels(velR, velocityBox, `${speedUnit}/s`, `graph-velocity-labels-${row.id}`, 'velocity')}
 			</div>
 			{props.showTimeline ? (
 				<div

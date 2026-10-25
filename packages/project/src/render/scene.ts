@@ -6,9 +6,11 @@ import type { WarpAnalysisData } from '../gaps/warp/analysis.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
+import { evaluateEffectParam } from '../registry/effects.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
 import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
+import { cropWindow } from './crop.ts';
 import {
 	applyMat3,
 	boxToQuad,
@@ -177,20 +179,16 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		effectId: fx.effectId,
 		effectVersion: fx.effectVersion,
 		enabled: fx.enabled,
-		params: Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t)])),
+		// spatial-points: effect points walk their paths in the layer box's pixels.
+		params: Object.fromEntries(
+			Object.entries(fx.params).map(([k, a]) => [k, evaluateEffectParam(fx, k, a, t, c.intrinsicBox)]),
+		),
 		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
 		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
 		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
 	}));
-	const cropFx = effects.find((e) => e.effectId === 'jasper.crop' && e.enabled);
-	const crop: Crop | null = cropFx
-		? {
-				left: Number(cropFx.params.left ?? 0),
-				top: Number(cropFx.params.top ?? 0),
-				right: Number(cropFx.params.right ?? 0),
-				bottom: Number(cropFx.params.bottom ?? 0),
-			}
-		: null;
+	// crop-order: the window the stack's crops leave visible (flips after a crop mirror it; several intersect).
+	const crop: Crop | null = cropWindow(effects);
 	const matrix = transform ? layerMatrix(transform) : IDENTITY;
 	const rect = visibleRect(c.intrinsicBox, crop ?? undefined);
 	const pin = cornerPinQuad(effects, c.intrinsicBox);

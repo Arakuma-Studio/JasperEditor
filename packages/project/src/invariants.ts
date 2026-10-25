@@ -23,7 +23,7 @@ import { createFontRef, createTrack, DEFAULT_FONT_FAMILY } from './factories.ts'
 import { gapsIssues, repairGaps } from './gaps/index.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
-import { isRovingKey, retimeRoving } from './keyframes.ts';
+import { isRovingKey, keySidesIssue, normalizeKeySides, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
 import {
@@ -34,7 +34,7 @@ import {
 	pruneMulticamAngles,
 } from './multicam/model.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
-import type { EffectRegistry } from './registry/effects.ts';
+import type { EffectRegistry, ParamSpec } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
@@ -43,7 +43,15 @@ import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
 import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet.ts';
-import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
+import type {
+	AudioClip,
+	Clip,
+	ClipRoto,
+	EffectInstance,
+	Sequence,
+	Track,
+	Transition,
+} from './schema/sequence.ts';
 import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
@@ -59,7 +67,6 @@ import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
-
 import {
 	contentSpanFlicks,
 	FLICKS_PER_SECOND,
@@ -70,6 +77,7 @@ import {
 } from './time.ts';
 import { remapIssues, repairRemap } from './time-remap/invariants.ts';
 import { isRemapped } from './time-remap/model.ts';
+import { CUSTOM_FADE, transitionSpec } from './transitions.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
 
@@ -346,11 +354,58 @@ function repairMediaBounds(
 	}
 }
 
+/** Premiere port (v8): what is wrong with a transition's `cutPosition` (a number in (0, 1) between two clips). */
+function cutPositionIssue(t: Transition): string | null {
+	const cp = (t as { cutPosition?: unknown }).cutPosition;
+	if (cp === undefined) return null;
+	if (typeof cp !== 'number' || !Number.isFinite(cp) || cp <= 0 || cp >= 1)
+		return 'has a cut position that is not a number between 0 and 1';
+	return !t.outgoingClipId || !t.incomingClipId ? 'is a fade with a cut position' : null;
+}
+
+/** Premiere port (v8): whether a Custom Fade param is unreadable (unknown option, out of range, keyframed). */
+function customFadeParamBad(t: Transition, p: ParamSpec): boolean {
+	const a = t.params[p.name] as { value?: unknown; keyframes?: unknown[] } | undefined;
+	if (a === undefined) return false;
+	const v = a.value;
+	if ((a.keyframes?.length ?? 0) > 0) return true;
+	if (p.type === 'enum') return typeof v !== 'string' || !(p.options ?? []).includes(v);
+	return (
+		typeof v !== 'number' ||
+		!Number.isFinite(v) ||
+		v < (p.range?.min ?? Number.NEGATIVE_INFINITY) ||
+		v > (p.range?.max ?? Number.POSITIVE_INFINITY)
+	);
+}
+
+/** INV-010 (Premiere port fields): the cut position and the Custom Fade params of a transition. */
+function transitionFieldIssues(t: Transition): string[] {
+	const out: string[] = [];
+	const cp = cutPositionIssue(t);
+	if (cp) out.push(cp);
+	if (t.effectId === CUSTOM_FADE)
+		for (const p of transitionSpec(CUSTOM_FADE)?.params ?? [])
+			if (customFadeParamBad(t, p)) out.push(`has an unreadable ${p.label} (${p.name})`);
+	return out;
+}
+
 /** Transitions that no longer satisfy INV-010 after the other repairs are removed. */
 function repairTransitionsFinal(seq: Sequence, note: (a: string, e: string, d: string) => void): void {
 	const edges = new Set<string>();
 	for (const key of Object.keys(seq.transitions)) {
 		const t = seq.transitions[key]!;
+		// Premiere port (v8 fields): a bad cut position is dropped (the alignment stays), an unreadable Custom Fade
+		// param goes back to its default.
+		if (cutPositionIssue(t)) {
+			delete (t as { cutPosition?: unknown }).cutPosition;
+			note('drop-cut-position', t.id, 'unreadable or misplaced cut position removed (the alignment stays)');
+		}
+		if (t.effectId === CUSTOM_FADE)
+			for (const p of transitionSpec(CUSTOM_FADE)?.params ?? [])
+				if (customFadeParamBad(t, p)) {
+					delete t.params[p.name];
+					note('reset-transition-param', t.id, `unreadable ${p.label} reset to its default`);
+				}
 		const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : null;
 		const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : null;
 		const keys = [out ? `${out.id}:out` : null, inc ? `${inc.id}:in` : null].filter((k): k is string => !!k);
@@ -677,6 +732,9 @@ export function invariantCheckers(
 					issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
 				if (badSpatial(k))
 					issues.push(inv('INV-011', 'Spatial interpolation needs a vec2 key and finite tangents', path));
+				// keyframe-sides: a readable incoming temporal type.
+				const sides = keySidesIssue(k as { interpolation?: unknown; inInterpolation?: unknown });
+				if (sides) issues.push(inv('INV-011', `Keyframe ${k.id}: ${sides}`, [...path, k.id]));
 			}
 			// keyframes-blend: Rove Across Time is never on the first / last key or a hold key.
 			const kfs = a.keyframes as unknown as Keyframe<unknown>[];
@@ -946,6 +1004,8 @@ export function invariantCheckers(
 					last = k.time;
 					if (valueShape(k.value) !== shape)
 						issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
+					const sides = keySidesIssue(k as { interpolation?: unknown; inInterpolation?: unknown });
+					if (sides) issues.push(inv('INV-011', `Keyframe ${k.id}: ${sides}`, [...path, k.id]));
 				}
 			}
 		}
@@ -1113,6 +1173,9 @@ export function invariantCheckers(
 				if (c && t.duration > c.duration)
 					issues.push(inv('INV-010', `Transition ${t.id} is longer than clip ${c.id}`, tw));
 			}
+			// Premiere port: an off-centre cut position needs both clips; Custom Fade params are readable.
+			for (const why of transitionFieldIssues(t))
+				issues.push(inv('INV-010', `Transition ${t.id} ${why}`, tw));
 			// A fade at a clip's head uses only its `in` edge, a fade at the tail only its `out` edge.
 			for (const k of [out ? `${out.id}:out` : null, inc ? `${inc.id}:in` : null]) {
 				if (!k) continue;
@@ -1666,7 +1729,13 @@ export function repairDocument(
 				const ok = list.every(
 					(k, i) => valueShape(k.value) === shape && (i === 0 || k.time > list[i - 1]!.time),
 				);
-				if (ok && list.length > 0) continue;
+				if (ok && list.length > 0) {
+					// keyframe-sides: unreadable incoming types (the keys stay).
+					for (const k of list)
+						if (normalizeKeySides(k))
+							note('repair-key-sides', k.id, `params.${name}: incoming interpolation made readable`);
+					continue;
+				}
 				delete pk[name];
 				if (list.length > 0) note('drop-keyframes', c.id, `malformed keyframes of params.${name} removed`);
 			}
@@ -1832,9 +1901,14 @@ export function repairDocument(
 	}
 
 	// keyframes-blend: roving flags where a key cannot rove are dropped; roving keys get their run's times.
+	// keyframe-sides: unreadable incoming interpolations first (an unknown one is dropped, so the key reads the legacy
+	// way; Auto / Continuous Bezier on a key whose sides differ becomes Bezier with its stored ease).
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		forEachAnimatable(seq, [seq.id], (a, path) => {
 			const kfs = a.keyframes as unknown as Keyframe<unknown>[];
+			for (const k of kfs)
+				if (normalizeKeySides(k))
+					note('repair-key-sides', k.id, `${path.join('.')}: incoming interpolation made readable`);
 			if (!kfs.some((k) => k.roving)) return;
 			const bad = kfs.filter((k, i) => k.roving && !isRovingKey(kfs, i)).map((k) => k.id);
 			retimeRoving(kfs);

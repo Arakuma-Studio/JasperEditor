@@ -166,7 +166,8 @@ function statusOf(rt: MediaRuntime | undefined): ItemStatus {
 	if (rt.availability === 'resolving') return 'resolving';
 	if (rt.availability === 'needs-engine') return 'needs-engine';
 	const busy = (s: MediaRuntime['thumbs']) => s.state === 'queued' || s.state === 'running';
-	if (busy(rt.thumbs) || busy(rt.peaks)) return 'analyzing';
+	// pp-wma-preview: the playback audio of audio the browser cannot decode counts as analysis too.
+	if (busy(rt.thumbs) || busy(rt.peaks) || (rt.playbackAudio && busy(rt.playbackAudio))) return 'analyzing';
 	return 'online';
 }
 
