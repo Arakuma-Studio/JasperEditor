@@ -78,6 +78,8 @@ export const BROWSER_AUDIO_CODECS: Readonly<Record<AudioContainerFamily, Readonl
 
 /** The demuxer family of an ffprobe `format_name` ("mov,mp4,m4a,3gp,3g2,mj2" → isobmff); null = not demuxable. */
 export function audioContainerFamily(container: string): AudioContainerFamily | null {
+	// Lenient: documents and engine records from elsewhere may lack the field (never throw on render paths).
+	if (typeof container !== 'string') return null;
 	for (const token of container.toLowerCase().split(',')) {
 		const f = CONTAINER_FAMILY[token.trim()];
 		if (f) return f;
@@ -88,7 +90,7 @@ export function audioContainerFamily(container: string): AudioContainerFamily | 
 /** True when the preview decodes an audio stream of `codec` (ffprobe name) in `container` (ffprobe `format_name`). */
 export function browserDecodesAudio(container: string, codec: string): boolean {
 	const family = audioContainerFamily(container);
-	return !!family && BROWSER_AUDIO_CODECS[family].has(codec.toLowerCase());
+	return !!family && typeof codec === 'string' && BROWSER_AUDIO_CODECS[family].has(codec.toLowerCase());
 }
 
 type AudioSource = Pick<MediaAsset, 'kind' | 'container'> & { probe: Pick<MediaAsset['probe'], 'streams'> };
@@ -96,7 +98,7 @@ type AudioSource = Pick<MediaAsset, 'kind' | 'container'> & { probe: Pick<MediaA
 /** The audio streams of a media file the preview cannot decode (empty: the original plays). */
 export function undecodableAudioStreams(m: AudioSource): AudioStream[] {
 	if (m.kind !== 'audio' && m.kind !== 'video') return [];
-	return m.probe.streams.filter(
+	return (m.probe?.streams ?? []).filter(
 		(s): s is AudioStream => s.type === 'audio' && !browserDecodesAudio(m.container, s.codec),
 	);
 }

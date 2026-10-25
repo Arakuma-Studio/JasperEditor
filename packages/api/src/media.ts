@@ -118,7 +118,11 @@ export type DerivativeStatus = z.infer<typeof DerivativeStatusSchema>;
 export const MediaStatusSchema = z.object({
 	mediaKey: z.string(),
 	status: z.enum(['online', 'missing', 'processing', 'error']),
-	derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema),
+	/**
+	 * Every kind this engine knows; partial so a client accepts an engine from before a kind existed (pp-wma-preview:
+	 * `playback-audio`) instead of failing the whole status.
+	 */
+	derivatives: z.partialRecord(DerivativeKindSchema, DerivativeStatusSchema),
 });
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 
