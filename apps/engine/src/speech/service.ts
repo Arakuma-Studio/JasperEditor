@@ -42,6 +42,7 @@ import type { ProcessingService } from '../processing/service.ts';
 import { DownloadError } from '../tools/download.ts';
 import { ortPackageDir, ortVersion, type ProviderId } from '../tools/ort.ts';
 import type { CoreServices } from '../tools/services.ts';
+import type { VoiceAnalysisService } from '../voice/service.ts';
 import { CudaError, CudaProvider } from './cuda.ts';
 import { speechCommand } from './entry.ts';
 import { type SpeechCatalogEntry, SpeechModelError, type SpeechModelStore } from './models.ts';
@@ -100,6 +101,8 @@ export class SpeechService {
 		private readonly env: Record<string, string | undefined> = process.env,
 		private readonly platform: string = osPlatform(),
 		private readonly arch: string = osArch(),
+		/** Spec 14 TC-001 voice analysis (registered after the speech routes, so read lazily). */
+		private readonly voice: () => VoiceAnalysisService | undefined = () => undefined,
 	) {
 		const paths = core.config.paths;
 		this.state = new SpeechStateStore(join(paths.engineDir, 'speech.json'));
@@ -728,6 +731,7 @@ export class SpeechService {
 		let span: [number, number] = [0, 1];
 		let source: SpeechJobSpec['input'];
 		let durationSec: number | undefined;
+		let voiceAnalysis: SpeechJobSpec['voiceAnalysis'];
 		if (input.target === 'media') {
 			const record = this.core.registry.get(input.mediaKey);
 			if (!record) throw new JobError('ASSET_NOT_FOUND', 'The media is no longer registered', false);
@@ -735,6 +739,7 @@ export class SpeechService {
 			if (!file) throw new JobError('MEDIA_OFFLINE', 'The media file is not available on the engine', false);
 			source = { path: file, ffmpeg, ...(input.streamIndex !== null ? { stream: input.streamIndex } : {}) };
 			durationSec = input.durationSec;
+			voiceAnalysis = await this.voiceAnalysisFor(record, input.mediaKey, input.streamIndex, ctx);
 			target = { type: 'media', mediaKey: input.mediaKey, streamIndex: input.streamIndex };
 		} else {
 			const req = input.request;
@@ -795,6 +800,7 @@ export class SpeechService {
 				: {}),
 			scratch,
 			...(durationSec ? { durationSec } : {}),
+			...(voiceAnalysis ? { voiceAnalysis } : {}),
 		};
 		const fallbacks: SpeechDeviceReport['fallbacks'] = [];
 		if (plan.unavailableReason)
@@ -882,10 +888,34 @@ export class SpeechService {
 				skippedWindows: out.guard.skippedWindows,
 				droppedWords: out.guard.droppedWords,
 				removed: out.guard.removed.slice(0, 200).map((r) => ({ ...r, start: r.start + offsetSec, end: r.end + offsetSec })),
+				frames: out.guard.frames,
 			},
 			accuracy,
 			beamSize,
 		};
+	}
+
+	/**
+	 * Spec 14 TC-004: the voice analysis the worker refines word bounds against. When the stream has none yet, a
+	 * `voice-analysis` job starts next to this one (≈ 9 s per hour of audio, so it is ready long before recognition
+	 * ends); without the voice service the worker's energy VAD is used.
+	 */
+	private async voiceAnalysisFor(
+		record: MediaRecord,
+		mediaKey: string,
+		streamIndex: number | null,
+		ctx: JobContext,
+	): Promise<SpeechJobSpec['voiceAnalysis']> {
+		const voice = this.voice();
+		if (!voice) return undefined;
+		try {
+			const stream = streamIndex ?? voice.target(mediaKey).streamIndex;
+			if (!(await voice.readBytes(record, stream))) voice.submit(mediaKey, { streamIndex: stream }, ctx.job.origin);
+			return { path: voice.path(record, stream), fingerprint: record.fingerprint, stream };
+		} catch (e) {
+			ctx.log(`voice analysis unavailable: ${e instanceof Error ? e.message : String(e)}`);
+			return undefined;
+		}
 	}
 
 	private async runWorker(

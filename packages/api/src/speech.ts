@@ -170,6 +170,8 @@ export const SpeechGuardReportSchema = z.object({
 	droppedWords: z.number().int().min(0),
 	/** Known hallucination phrases removed over non-speech, and runs of ≥ 4 identical tokens. */
 	removed: z.array(z.object({ text: z.string(), start: z.number(), end: z.number(), reason: z.string() })).max(200),
+	/** Speech frames the word bounds were refined against (spec 14 TC-004): the voice analysis, or the energy VAD. */
+	frames: z.enum(['voice-analysis', 'energy']).optional(),
 });
 export type SpeechGuardReport = z.infer<typeof SpeechGuardReportSchema>;
 

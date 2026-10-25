@@ -30,13 +30,13 @@ import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 
-export const SPEECH_GUIDE = `Speech to text (local Whisper on the engine; nothing is uploaded): list_speech_models shows the models (tiny / base / small, multilingual or English-only ".en"; size, licence, installed); install_speech_model downloads one (pinned revision, SHA-256 verified; the licence is MIT — say so to the user). transcribe makes transcripts: mediaId / clipId (that media), or sequenceId with mode "media" (default: every clip media heard in the sequence without a transcript, or all with replace: true) or "mix" (the sequence's mixed audio, optionally inOutOnly; the words go back to the clips' media in media time, covering only what the sequence plays). Options: model (default whisper-base), language (ISO 639-1, default auto-detect), translate (English text of other languages), speakerLabels (+ speakerCount when known). Word times come from cross-attention alignment refined against the audio (pauses stay pauses), with a confidence per word. With wait (default true) it commits ONE undo step "Generate Transcript"; with wait: false it returns the jobs — follow them with wait_for_job, then call transcribe {projectId, jobIds} to commit. get_transcript reads a media's transcript (media time) or a sequence's (sequence time, as heard through its audio clips). Then use the transcript_* / captions tools for text-based editing and captions.`;
+export const SPEECH_GUIDE = `Speech to text (local Whisper on the engine; nothing is uploaded): list_speech_models shows the models (tiny / base / small, multilingual or English-only ".en", and large-v3-turbo — the most accurate; its half-precision variant is for NVIDIA GPUs) with size, licence, installed, recommended (for this computer), runsOn (encoder/decoder provider, device, threads) and speed (minutes per 10 min of audio, "measured" from the last run or "estimated"); install_speech_model downloads one (pinned revision, SHA-256 verified, resumable; the licence is MIT — say so to the user). transcribe makes transcripts: mediaId / clipId (that media), or sequenceId with mode "media" (default: every clip media heard in the sequence without a transcript, or all with replace: true) or "mix" (the sequence's mixed audio, optionally inOutOnly; the words go back to the clips' media in media time, covering only what the sequence plays). Options: model (default: the recommended model), language (ISO 639-1, default auto-detect), translate (English text of other languages), speakerLabels (+ speakerCount when known), accuracy ("standard" greedy, default; "best" beam 5, slower), device ("auto" default = the Transcription preference; "cpu"; "gpu" — falls back to the CPU with the reason), verbatim (keep filler words: um, eh…), initialPrompt (names, vocabulary), conditionOnPreviousText (default true). Results report where it ran (device, fallbacks) and what the hallucination guard removed (text over silence, loops, known phrases such as "Thanks for watching"). engine_status shows the GPU probe (speech.providers / chosen). Word times come from cross-attention alignment refined against the audio (pauses stay pauses; the media's voice analysis when it exists), with a confidence per word. With wait (default true) it commits ONE undo step "Generate Transcript"; with wait: false it returns the jobs — follow them with wait_for_job, then call transcribe {projectId, jobIds} to commit. get_transcript reads a media's transcript (media time) or a sequence's (sequence time, as heard through its audio clips). Then use the transcript_* / captions tools for text-based editing and captions.`;
 
 const OptionsShape = {
 	model: z
 		.string()
 		.optional()
-		.describe('Speech model id from list_speech_models (default: the catalogue default, whisper-base)'),
+		.describe('Speech model id from list_speech_models (default: the model recommended for this computer)'),
 	language: z.string().optional().describe('ISO 639-1 language code, or "auto" (default) to detect it'),
 	translate: z
 		.boolean()
@@ -50,7 +50,25 @@ const OptionsShape = {
 		.min(1)
 		.max(10)
 		.optional()
-		.describe('Beam search width (default 5; 1 = faster greedy)'),
+		.describe('Beam search width (overrides accuracy; 1 = greedy, 5 = best)'),
+	accuracy: z
+		.enum(['standard', 'best'])
+		.optional()
+		.describe('"standard" (greedy with temperature fallback, default) or "best" (beam search 5, slower)'),
+	device: z
+		.enum(['auto', 'cpu', 'gpu'])
+		.optional()
+		.describe('Processor: "auto" (the Transcription preference), "cpu", or "gpu" (falls back to the CPU and says why)'),
+	verbatim: z.boolean().optional().describe('Keep filler words (um, eh, o sea…): a verbatim prompt in the language'),
+	initialPrompt: z
+		.string()
+		.max(1000)
+		.optional()
+		.describe('Initial prompt: names, vocabulary or style the speech uses'),
+	conditionOnPreviousText: z
+		.boolean()
+		.optional()
+		.describe('Condition each 30 s window on the previous text (default true; false resists repetition loops)'),
 };
 
 type Opts = {
@@ -60,6 +78,11 @@ type Opts = {
 	speakerLabels?: boolean;
 	speakerCount?: number;
 	beamSize?: number;
+	accuracy?: 'standard' | 'best';
+	device?: 'auto' | 'cpu' | 'gpu';
+	verbatim?: boolean;
+	initialPrompt?: string;
+	conditionOnPreviousText?: boolean;
 };
 
 function requestOf(o: Opts) {
@@ -70,6 +93,11 @@ function requestOf(o: Opts) {
 		...(o.speakerLabels || o.speakerCount ? { speakerLabels: true } : {}),
 		...(o.speakerCount ? { speakerCount: o.speakerCount } : {}),
 		...(o.beamSize ? { beamSize: o.beamSize } : {}),
+		...(o.accuracy ? { accuracy: o.accuracy } : {}),
+		...(o.device && o.device !== 'auto' ? { device: o.device } : {}),
+		...(o.verbatim ? { verbatim: true } : {}),
+		...(o.initialPrompt?.trim() ? { initialPrompt: o.initialPrompt.trim() } : {}),
+		...(o.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
 	};
 }
 
@@ -176,6 +204,18 @@ async function commit(
 			...(plan.unassigned ? { droppedWords: plan.unassigned } : {}),
 			seconds: Math.round(res.duration / FLICKS_PER_SECOND),
 			transcribeSeconds: Math.round(res.timings.transcribeMs / 100) / 10,
+			...(res.device ? { device: res.device } : {}),
+			...(res.accuracy ? { accuracy: res.accuracy } : {}),
+			...(res.guard
+				? {
+						guard: {
+							skippedWindows: res.guard.skippedWindows,
+							droppedWords: res.guard.droppedWords,
+							removed: res.guard.removed.slice(0, 20),
+							...(res.guard.frames ? { frames: res.guard.frames } : {}),
+						},
+					}
+				: {}),
 		});
 	}
 	if (!commands.length)
@@ -200,7 +240,7 @@ export function registerSpeechTools(ctx: ToolContext): void {
 		{
 			title: 'List speech models',
 			description:
-				'The speech-to-text models (OpenAI Whisper on ONNX Runtime): id, name, parameters, languages (multilingual or English-only), size, licence and attribution, pinned revision, and whether each is installed.',
+				'The speech-to-text models (OpenAI Whisper on ONNX Runtime): id, name, parameters, languages (multilingual or English-only), size, precision, licence and attribution, pinned revision, whether each is installed, `recommended` (for this computer), `runsOn` (encoder / decoder execution provider, device name, threads) and `speed` (minutes per 10 min of audio; basis "measured" = the last run, "estimated" = reference table).',
 			input: {},
 			annotations: READ_ONLY,
 		},

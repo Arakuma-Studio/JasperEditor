@@ -6,6 +6,7 @@ import { JobError } from '../jobs/types.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import { SpeechService } from '../speech/service.ts';
+import type { VoiceAnalysisService } from '../voice/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
@@ -30,12 +31,20 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 	const core = coreServices(app);
 	const processing = app.jasper.services.processing as ProcessingService | undefined;
 	if (!processing) throw new Error('speech routes need the processing routes (model catalogue) first');
-	const svc = new SpeechService(core, processing);
+	const svc = new SpeechService(
+		core,
+		processing,
+		process.env,
+		undefined,
+		undefined,
+		() => app.jasper.services.voice as VoiceAnalysisService | undefined,
+	);
 	app.jasper.services.speech = svc;
 	svc.registerRunners();
 	await svc.init();
 	// spec 16 SG-008: the upscaler reads the same provider probe
 	processing.setOrtProviderSource((probe) => svc.upscalerProviders(probe));
+	processing.cudaRuntimeInfo = async () => ({ dir: svc.cuda.dir, installed: (await svc.cuda.state()) === 'installed' });
 	core.registerCapabilityProvider(async () => ({ features: { speech: await svc.features() } }));
 
 	app.get(

@@ -155,6 +155,9 @@ export class ProcessingService {
 	 * implementation, run in a worker — the engine process never loads ONNX Runtime); `env` = what jasper-proc needs
 	 * to use the downloaded CUDA provider. Without the speech service: the CPU when ONNX Runtime is installed.
 	 */
+	/** Spec 16 SG-006: the downloaded CUDA provider (for Help ▸ About ▸ Licenses), set by the speech routes. */
+	cudaRuntimeInfo: (() => Promise<{ dir: string; installed: boolean }>) | null = null;
+
 	private ortSource: ((probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>) | null =
 		null;
 

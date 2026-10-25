@@ -584,7 +584,8 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
   `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
   (`docs/wp-notes/captions.md`).
-- Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
+- Speech to text (local Whisper; GPU when it helps — `engine_status` shows the provider probe, `transcribe`
+  takes `device` and `accuracy`): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
   `get_transcript` (`docs/wp-notes/speech.md`).
 - Voice analysis (10 ms levels, voicing, speech / breath / silence frames of a media's audio stream; a cached engine
   job): `get_voice_analysis` (`docs/wp-notes/transcript-cleanup.md`).

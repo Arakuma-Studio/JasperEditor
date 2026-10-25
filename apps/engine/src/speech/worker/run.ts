@@ -7,6 +7,7 @@
 // that fails too.
 import type { ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project';
 import type { ProviderId } from '../../tools/ort.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
 import { knownPhraseRuns, phraseOverNonSpeech } from '../core/hallucination.ts';
@@ -55,6 +56,11 @@ export type SpeechJobSpec = {
 	scratch?: string;
 	/** Audio duration hint (seconds) for decode progress. */
 	durationSec?: number;
+	/**
+	 * Spec 14 TC-004: the media stream's voice analysis (TC-001 frame classes) to refine word bounds against, when it
+	 * exists by the end of recognition (the engine starts the analysis next to the transcription).
+	 */
+	voiceAnalysis?: { path: string; fingerprint: string; stream: number };
 };
 
 export type SpeechJobWord = {
@@ -91,9 +97,37 @@ export type SpeechJobOutput = {
 		skippedWindows: number;
 		droppedWords: number;
 		removed: Array<{ text: string; start: number; end: number; reason: string }>;
+		/** Which speech frames refined the word bounds (TC-004). */
+		frames: 'voice-analysis' | 'energy';
 	};
 	profile: WhisperResult['profile'];
 };
+
+/**
+ * TC-004: speech/breath frames of the voice analysis as a mask over our 10 ms frames (frame k = samples
+ * [160 k, 160 (k + 1)) in both), or null when the file is missing, invalid or of another decode length.
+ */
+export async function voiceAnalysisMask(
+	va: NonNullable<SpeechJobSpec['voiceAnalysis']>,
+	frames: number,
+): Promise<Uint8Array | null> {
+	let bytes: Uint8Array;
+	try {
+		bytes = new Uint8Array(await readFile(va.path));
+	} catch {
+		return null;
+	}
+	const r = decodeVoiceAnalysis(bytes, {
+		fingerprint: va.fingerprint,
+		stream: va.stream,
+		analysisVersion: VOICE_ANALYSIS_VERSION,
+	});
+	if (!r.ok || Math.abs(r.analysis.frameCount - frames) > 2) return null;
+	const mask = new Uint8Array(frames);
+	const cls = r.analysis.classes;
+	for (let f = 0; f < frames && f < cls.length; f++) mask[f] = cls[f] !== VOICE_CLASSES.silence ? 1 : 0;
+	return mask;
+}
 
 /** Decodes the input to mono 16 kHz float32 with ffmpeg (whole clip in memory; tests and tools). */
 export async function decodeAudio(
@@ -299,7 +333,11 @@ async function recognise(
 		fallbacks.push({ stage: 'job', part: 'both', from: gpu, to: 'cpu', reason });
 	}
 	const { r, model } = result;
-	const refined = refineWords(input, r.words.map((w) => ({ ...w })));
+	const vaMask = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
+	const refined = refineWords(
+		vaMask ? { samples: input.samples, db: input.db, mask: vaMask } : input,
+		r.words.map((w) => ({ ...w })),
+	);
 	const words = refined.words;
 	let labels: number[] | null = null;
 	let speakers = 0;
@@ -333,7 +371,12 @@ async function recognise(
 		timings: { decodeMs: t1 - t0, loadMs, transcribeMs: Date.now() - t1 - loadMs },
 		device: { ...model.providers, threads, fallbacks },
 		calibration: model.calibration,
-		guard: { skippedWindows: r.guard.skippedWindows, droppedWords: refined.dropped, removed },
+		guard: {
+			skippedWindows: r.guard.skippedWindows,
+			droppedWords: refined.dropped,
+			removed,
+			frames: vaMask ? 'voice-analysis' : 'energy',
+		},
 		profile: r.profile,
 	};
 }
