@@ -97,8 +97,13 @@ export function providerOption(id: ProviderId): import('onnxruntime-node').Infer
 /** First line of an error, bounded (reasons are shown to people). */
 export function shortReason(e: unknown): string {
 	const m = e instanceof Error ? e.message : String(e);
-	const line = m.split('\n').find((l) => l.trim()) ?? m;
-	return line.trim().slice(0, 300) || 'unknown error';
+	let line = (m.split('\n').find((l) => l.trim()) ?? m).trim();
+	// ONNX Runtime prefixes its messages with the source location and the failed check:
+	// "/onnxruntime_src/…/webgpu_context.cc:136 … was false. Failed to get a WebGPU adapter: …"
+	const after = /\bwas false\.\s*(.+)$/.exec(line);
+	if (after?.[1]) line = after[1];
+	line = line.replace(/^\S+\.(?:cc|cpp|h):\d+\s+/, '');
+	return line.slice(0, 300) || 'unknown error';
 }
 
 export type ProviderProbe = { id: ProviderId; available: boolean; reason?: string };

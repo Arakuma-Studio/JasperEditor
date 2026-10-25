@@ -61,7 +61,11 @@ beforeAll(async () => {
 		file('encoder_model.onnx', 'not an onnx model'),
 		file('decoder_model_merged.onnx', 'not an onnx model either'),
 	];
-	const bad = [{ ...file('weights.bin', 'payload'), sha256: '0'.repeat(64) }];
+	// spec 16 SG-023: a speech entry needs its config, encoder and decoder; one of them is corrupt here
+	const bad = [
+		...good.slice(0, 4),
+		{ ...file('decoder-bad.onnx', 'payload'), path: 'decoder_model_merged.onnx', sha256: '0'.repeat(64) },
+	];
 	writeFileSync(
 		join(dir, 'catalog.json'),
 		JSON.stringify({
@@ -160,10 +164,9 @@ describe('speech models (processing catalogue `speech`)', () => {
 		const done = await waitJob((r.json() as EngineJob).id);
 		expect(done.state).toBe('failed');
 		expect(done.error?.code).toBe('SPEECH_MODEL_CHECKSUM');
-		expect(existsSync(join(app.appdir, 'models', 'speech', 'test-corrupt', 'weights.bin.partial'))).toBe(
-			false,
-		);
-		expect(existsSync(join(app.appdir, 'models', 'speech', 'test-corrupt', 'weights.bin'))).toBe(false);
+		const d = join(app.appdir, 'models', 'speech', 'test-corrupt');
+		expect(existsSync(join(d, 'decoder_model_merged.onnx.partial'))).toBe(false);
+		expect(existsSync(join(d, 'decoder_model_merged.onnx'))).toBe(false);
 	}, 60_000);
 
 	it('English-only models refuse translation and other languages', async () => {
