@@ -78,6 +78,7 @@ function toTemplateInfo(def: AnyMgTemplate, cache: MotionCache): MgTemplateInfo 
 		...(isAnimeTemplate(def) ? { renderer: 'anime' as const } : {}),
 		...(def.description ? { description: def.description } : {}),
 		defaultDurationSeconds: def.defaultDurationSeconds,
+		...(def.fill ? { fill: def.fill.bind(def) } : {}),
 		// fframes templates: measured on their SVG twins. Anime templates are drawn by @jasper/motion (anime.js),
 		// which this layer may not import (ARCHITECTURE §3.1): they are measured on their motion model (the phases
 		// and eases the implementations share with it, `anime/motion.ts`); a template without a model falls back to

@@ -34,7 +34,18 @@ export type MgTemplateInfo = {
 	 * the mg cues then fall back to the declared `introFrames` / `outroFrames`. Must be pure and never throw.
 	 */
 	motionSpeed?(params: Record<string, unknown>, timing: MgTemplateMotionTiming): number[] | null;
+	/**
+	 * Optional fill hook (social-comments design §7.10; `MgTemplateDefinition.fill`): fills the params `partial`
+	 * omits, deterministically for `seed` (never touching given ones), for `clip.addMotionGraphic {fill}`.
+	 * `params` = `partial` plus the filled values (the defaults are merged after); `filled` = the filled names.
+	 */
+	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
 };
+
+/** Result of a template fill hook (MgTemplateInfo.fill). */
+export type MgTemplateFillResult =
+	| { ok: true; params: Record<string, unknown>; filled: string[] }
+	| { ok: false; error: string; issues?: unknown };
 
 /** Result of a template version upgrade (S11:ATP-009). */
 export type MgTemplateUpgrade = { version: number; params: Record<string, unknown> };
