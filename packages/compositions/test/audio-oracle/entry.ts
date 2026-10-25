@@ -57,10 +57,11 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 		else src.start(0, -when);
 	});
 	const out = await ctx.startRendering();
+	const latency = Math.round(graph.latency * sr);
 	graph.dispose();
 	return {
 		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
-		latency: Math.round(graph.latency * sr),
+		latency,
 	};
 }
 
@@ -124,10 +125,11 @@ async function transport(spec: TransportSpec): Promise<{
 	});
 	const out = await ctx.startRendering();
 	graph.setPlaying(false);
+	const paused = graph.latency * sr;
 	graph.dispose();
 	return {
 		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
-		readAhead: { before, after, paused: graph.latency * sr },
+		readAhead: { before, after, paused },
 	};
 }
 
@@ -201,10 +203,11 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	}
 	const out = await ctx.startRendering();
 	graph.setPlaying(false);
+	const latency = Math.round(graph.latency * sr);
 	graph.dispose();
 	return {
 		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
-		latency: Math.round(graph.latency * sr),
+		latency,
 	};
 }
 

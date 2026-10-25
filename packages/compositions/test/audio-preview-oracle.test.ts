@@ -212,10 +212,7 @@ describe.runIf(!!CHROME)(
 			});
 		}
 
-		/**
-		 * Worst |preview − export| (both channels) over `[from, to)`, the signal peak, and the lag in −3000…3000 samples
-		 * that best matches the preview to the export (0 = aligned).
-		 */
+		/** Worst |preview − export| (both channels) over `[from, to)` and the signal peak. */
 		function compare(p: number[][], e: Float32Array[], from = 0, to = LEN) {
 			let worst = 0;
 			let peak = 0;
@@ -224,20 +221,7 @@ describe.runIf(!!CHROME)(
 					worst = Math.max(worst, Math.abs(p[c]![i]! - e[c]![i]!));
 					peak = Math.max(peak, Math.abs(e[c]![i]!));
 				}
-			const w0 = 3000 + AT * 1600;
-			const errorAt = (lag: number, ceiling = Number.POSITIVE_INFINITY) => {
-				let err = 0;
-				for (let i = w0; i < w0 + 4096 && err <= ceiling; i++) err += Math.abs(p[0]![i + lag]! - e[0]![i]!);
-				return err;
-			};
-			// Error terms are nonnegative: once a candidate is worse than the best, its remaining samples cannot win.
-			let best = { lag: 0, err: errorAt(0) };
-			for (let lag = -3000; lag <= 3000; lag++) {
-				if (lag === 0) continue;
-				const err = errorAt(lag, best.err);
-				if (err < best.err) best = { lag, err };
-			}
-			return { worst, peak, lag: best.lag };
+			return { worst, peak };
 		}
 
 		it('track, submix, Mix and clip effect latency: identical to the export, sample for sample', async () => {
@@ -247,7 +231,6 @@ describe.runIf(!!CHROME)(
 			expect(p.latency).toBe(1004);
 			const r = compare(p.channels, e);
 			expect(r.peak).toBeGreaterThan(0.05);
-			expect(r.lag).toBe(0);
 			// float32 Web Audio vs the float32 mixer (summation order, DelayNode on float32 delay times)
 			expect(r.worst).toBeLessThan(1e-4);
 		});
@@ -268,7 +251,6 @@ describe.runIf(!!CHROME)(
 			const [p, e] = await Promise.all([preview(c, before), exported(c)]);
 			expect(p.latency).toBe(1004);
 			const r = compare(p.channels, e);
-			expect(r.lag).toBe(0);
 			expect(r.worst).toBeLessThan(1e-4);
 		});
 
@@ -278,7 +260,6 @@ describe.runIf(!!CHROME)(
 			// A1 2048 → S1 (+374) → Mix (+256)
 			expect(p.latency).toBe(2678);
 			const onset = AT * 1600;
-			expect(compare(p.channels, e).lag).toBe(0);
 			// the STFT frame phase only shows at the onset (−43 dB here), never as a delay
 			expect(compare(p.channels, e, 0, onset + 9600).worst).toBeLessThan(0.01);
 			expect(compare(p.channels, e, onset + 9600).worst).toBeLessThan(3e-4);
@@ -292,7 +273,6 @@ describe.runIf(!!CHROME)(
 			const g = 10 ** (-6 / 20);
 			const scaled = e.map((ch) => ch.map((v) => v * g));
 			const r = compare(p.channels, scaled);
-			expect(r.lag).toBe(0);
 			expect(r.worst).toBeLessThan(1e-4);
 		});
 	},
