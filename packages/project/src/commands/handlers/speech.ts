@@ -1,7 +1,7 @@
 // A media asset has one attached transcript shared by all its clips.
 import { normalizeWords } from '../../captions/words.ts';
 import type { Transcript } from '../../schema/media.ts';
-import { mergeTranscriptWords } from '../../speech/index.ts';
+import { mergeTranscriptSegments, mergeTranscriptWords, normalizeTranscriptSegments, transcriptSegments } from '../../speech/index.ts';
 import type { HandlerMap } from './util.ts';
 
 export const SPEECH_OWNER = 'speech';
@@ -20,6 +20,7 @@ export const speechHandlers = {
 		for (const w of cmd.words)
 			if (w.speaker && !speakers[w.speaker])
 				speakers[w.speaker] = { name: `Speaker ${Object.keys(speakers).length + 1}` };
+		const segments = cmd.segments ? normalizeTranscriptSegments(cmd.segments) : undefined;
 		const words = normalizeWords(
 			cmd.words.map((w) => ({
 				text: w.text,
@@ -56,11 +57,16 @@ export const speechHandlers = {
 				if (merged.coverage) t.coverage = merged.coverage;
 				else delete t.coverage;
 				t.speakers = { ...current.speakers, ...speakers };
+				const segs = mergeTranscriptSegments(transcriptSegments(current), segments ?? [], coverage);
+				if (segs.length) t.segments = segs;
+				else delete t.segments;
 			} else {
 				t.words = words;
 				t.speakers = speakers;
 				if (coverage) t.coverage = coverage;
 				else delete t.coverage;
+				if (segments?.length) t.segments = segments;
+				else delete t.segments;
 			}
 			Object.assign(t, meta);
 			if (!cmd.task) delete t.task;
@@ -84,6 +90,7 @@ export const speechHandlers = {
 			speakers,
 			...meta,
 			...(coverage ? { coverage } : {}),
+			...(segments?.length ? { segments } : {}),
 		} as Transcript;
 		h.defineRef(cmd.ref, id);
 		return { transcriptId: id, words: words.length, replaced: false };

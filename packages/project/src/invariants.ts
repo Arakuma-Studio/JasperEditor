@@ -63,6 +63,7 @@ import {
 	repairSoundDesign,
 	sequenceSoundDesignIssue,
 } from './sound/repair.ts';
+import { normalizeTranscriptSegments, transcriptSegmentsProblem } from './speech/index.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
@@ -1366,6 +1367,9 @@ export function runInvariants(
 		// wp speech: coverage ranges sorted, disjoint, non-empty
 		const cov = coverageProblem(t.coverage);
 		if (cov) issues.push(inv('INV-012', `Transcript ${t.id}: ${cov}`, ['transcripts', t.id, 'coverage']));
+		// spec 14 TC-003: decoder scores per segment, read leniently
+		const segs = transcriptSegmentsProblem(t.segments);
+		if (segs) issues.push(inv('INV-012', `Transcript ${t.id}: ${segs}`, ['transcripts', t.id, 'segments']));
 	}
 	const captionTrsUsers = new TouchedMap<string, number>();
 
@@ -1927,6 +1931,13 @@ export function repairDocument(
 			);
 			t.coverage = mergeRanges(ok);
 			note('normalize-coverage', t.id, 'transcript coverage ranges sorted and merged');
+		}
+		// spec 14 TC-003: malformed segments dropped, the rest sorted
+		if (transcriptSegmentsProblem(t.segments)) {
+			const segs = normalizeTranscriptSegments(t.segments);
+			if (segs.length) t.segments = segs;
+			else delete t.segments;
+			note('normalize-segments', t.id, 'transcript segments: malformed entries dropped, sorted by start');
 		}
 	}
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {

@@ -376,7 +376,6 @@ export class WhisperModel {
 	/** One cached step: logits of `token` and the grown self-attention cache. */
 	private async step(
 		token: number,
-		xa: Tensor,
 		cache: Record<string, Tensor>,
 		dec: PartSession = this.decoder,
 	): Promise<Float32Array> {
@@ -387,7 +386,7 @@ export class WhisperModel {
 			dec.run(
 				{
 					input_ids: this.ids([token]),
-					encoder_hidden_states: xa,
+					encoder_hidden_states: this.stepXa(1),
 					...cache,
 					use_cache_branch: new this.ort.Tensor('bool', [true], [1]),
 				},
@@ -402,6 +401,23 @@ export class WhisperModel {
 				if (dec.deviceResident && old && old !== cache[k] && old.location === 'gpu-buffer') old.dispose();
 			}
 		return rowOf(out.logits as Tensor, 0);
+	}
+
+	private stepXaCache = new Map<number, Tensor>();
+	/**
+	 * `encoder_hidden_states` of a cached step: the merged decoder's cache branch reads the cross-attention keys and
+	 * values from the cache and ignores this input, so a [B, 1, d_model] placeholder replaces the window's encoder
+	 * output (the same tokens and times on the LJ fixture with tiny and turbo; ≈ 10 % less decoder time per step on
+	 * the CPU, and no 7.7 MB host→device copy per step on a GPU decoder).
+	 */
+	private stepXa(batch: number): Tensor {
+		let t = this.stepXaCache.get(batch);
+		if (!t) {
+			const d = this.cfg.d_model;
+			t = new this.ort.Tensor('float32', new Float32Array(batch * d), [batch, 1, d]);
+			this.stepXaCache.set(batch, t);
+		}
+		return t;
 	}
 
 	/** Frees device-resident cache tensors (no-op on the CPU). */
@@ -455,7 +471,7 @@ export class WhisperModel {
 			try {
 				for (let i = 0; i < CALIBRATION_STEPS; i++) {
 					const t = performance.now();
-					const row = await this.step(next, xa, cache as Record<string, Tensor>, dec);
+					const row = await this.step(next, cache as Record<string, Tensor>, dec);
 					times.push(performance.now() - t);
 					next = argmax(row.subarray(0, this.tok.eot));
 				}
@@ -518,7 +534,7 @@ export class WhisperModel {
 				seq.push(next);
 				if (repeating(seq, this.tok.timestampBegin)) break;
 				if (i + 1 >= sampleLen) break;
-				cur = await this.step(next, xa, cache as Record<string, Tensor>);
+				cur = await this.step(next, cache as Record<string, Tensor>);
 			}
 			const text = this.tok.decode(seq.filter((t) => t < this.tok.eot));
 			return {
@@ -580,7 +596,6 @@ export class WhisperModel {
 		const finished = new Map<string, { seq: number[]; score: number }>();
 		const sampleLen = Math.min(224, this.cfg.max_target_positions - full.length - 1);
 		const cfg: FilterConfig = { ...this.filters, timestamps: true };
-		const xaBatch = new Map<number, Tensor>([[1, xa]]);
 		const encKeys = Object.keys(cache).filter((k) => k.includes('.encoder.'));
 		const encBatch = new Map<number, Record<string, Tensor>>();
 		const encFor = (b: number) => {
@@ -628,11 +643,6 @@ export class WhisperModel {
 			const feeds: Record<string, Tensor> = { ...encFor(B) };
 			for (const k of Object.keys(cache))
 				if (k.includes('.decoder.')) feeds[k] = this.gatherBatch(cache[k] as Tensor, idx);
-			let xb = xaBatch.get(B);
-			if (!xb) {
-				xb = this.repeatBatch(xa, B);
-				xaBatch.set(B, xb);
-			}
 			const fetches = ['logits'];
 			for (let l = 0; l < this.cfg.decoder_layers; l++)
 				for (const kv of ['key', 'value']) fetches.push(`present.${l}.decoder.${kv}`);
@@ -644,7 +654,7 @@ export class WhisperModel {
 							BigInt64Array.from(live.map((c) => BigInt(c.seq[c.seq.length - 1]))),
 							[B, 1],
 						),
-						encoder_hidden_states: xb as Tensor,
+						encoder_hidden_states: this.stepXa(B),
 						...feeds,
 						use_cache_branch: new this.ort.Tensor('bool', [true], [1]),
 					},

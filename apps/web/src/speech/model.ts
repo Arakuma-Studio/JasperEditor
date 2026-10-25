@@ -1,6 +1,6 @@
 // wp speech, client side: what a "Generate Transcript" request covers, the options it remembers, and the commands a
 // finished `transcription` job commits (`transcript.attach`, one undo step "Generate Transcript").
-import type { TranscribeOptions, TranscriptionResult } from '@jasper/api';
+import type { SpeechModel, TranscribeOptions, TranscriptionResult } from '@jasper/api';
 import {
 	type AudioClip,
 	type CommandInput,
@@ -12,6 +12,7 @@ import {
 	transcriptForMedia,
 } from '@jasper/project';
 import { z } from 'zod';
+import { t } from '../i18n/runtime.ts';
 
 /** OpenAI Whisper's languages (tokenizer.py `LANGUAGES`), by ISO 639-1 code (`yue` = Cantonese). */
 export const WHISPER_LANGUAGES: ReadonlyArray<[string, string]> = [
@@ -131,11 +132,15 @@ export type GenerateOptions = Required<Pick<TranscribeOptions, 'model' | 'langua
 	inOutOnly: boolean;
 	/** Re-transcribe media that already have a transcript (otherwise they are skipped). */
 	replace: boolean;
+	/** spec 16 SG-010: Standard (greedy) or Best (beam 5); null = the Transcription preference. */
+	accuracy: 'standard' | 'best' | null;
+	/** spec 14 TC-003: keep filler words (a verbatim prompt in the language). */
+	verbatim: boolean;
 };
 
 const KEY = 'jasper:speech-options';
 
-export function defaultOptions(model = 'whisper-base'): GenerateOptions {
+export function defaultOptions(model = 'whisper-small'): GenerateOptions {
 	return {
 		model,
 		language: 'auto',
@@ -145,6 +150,8 @@ export function defaultOptions(model = 'whisper-base'): GenerateOptions {
 		analysis: 'media',
 		inOutOnly: false,
 		replace: true,
+		accuracy: null,
+		verbatim: false,
 	};
 }
 
@@ -160,6 +167,8 @@ export function parseGenerateOptions(value: unknown, defaultModel: string): Gene
 			analysis: z.enum(['media', 'mix']).catch(base.analysis),
 			inOutOnly: z.boolean().catch(base.inOutOnly),
 			replace: z.boolean().catch(base.replace),
+			accuracy: z.enum(['standard', 'best']).nullable().catch(base.accuracy),
+			verbatim: z.boolean().catch(base.verbatim),
 		})
 		.safeParse(value);
 	return parsed.success ? parsed.data : base;
@@ -192,7 +201,26 @@ export function requestOptions(o: GenerateOptions, multilingual: boolean): Trans
 		...(multilingual && o.task === 'translate' ? { task: 'translate' as const } : {}),
 		...(o.speakerLabels ? { speakerLabels: true } : {}),
 		...(o.speakerLabels && o.speakerCount > 0 ? { speakerCount: o.speakerCount } : {}),
+		...(o.accuracy ? { accuracy: o.accuracy } : {}),
+		...(o.verbatim ? { verbatim: true } : {}),
 	};
+}
+
+/** "≈ 3.2 min per 10 min of audio (estimated)" / "(measured, last run)" (SG-030). */
+export function speedText(m: Pick<SpeechModel, 'speed'>): string | null {
+	const s = m.speed;
+	if (!s) return null;
+	const v = s.minutesPer10Min < 10 ? s.minutesPer10Min.toFixed(1) : String(Math.round(s.minutesPer10Min));
+	return s.basis === 'measured'
+		? t('{0} min per 10 min of audio (measured, last run)', v)
+		: t('≈ {0} min per 10 min of audio (estimated)', v);
+}
+
+/** "Runs on: NVIDIA GeForce RTX 3060 (CUDA) encoder · CPU decoder · 8 threads" (SG-030). */
+export function runsOnText(m: Pick<SpeechModel, 'runsOn'>): string | null {
+	const r = m.runsOn;
+	if (!r) return null;
+	return t('Runs on: {0} · {1} threads', r.device, r.threads);
 }
 
 /** The Project panel name of a sequence. */

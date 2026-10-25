@@ -54,7 +54,7 @@ export function ortVersion(env: Record<string, string | undefined> = process.env
 	}
 }
 
-/** The platform directory of the native binding (`bin/napi-v*/<platform>/<arch>`), or null. */
+/** The platform directory of the native binding (`bin/napi-vN/<platform>/<arch>`), or null. */
 export function ortBinDir(pkgDir: string | null): string | null {
 	if (!pkgDir) return null;
 	try {

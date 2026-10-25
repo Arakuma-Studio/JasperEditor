@@ -103,7 +103,7 @@ export class SpeechService {
 	) {
 		const paths = core.config.paths;
 		this.state = new SpeechStateStore(join(paths.engineDir, 'speech.json'));
-		this.cuda = new CudaProvider(paths.root, env, platform as NodeJS.Platform, arch);
+		this.cuda = new CudaProvider(paths.root, env, platform as NodeJS.Platform, arch as NodeJS.Architecture);
 		this.models.setRecommendation(() => this.recommendation());
 	}
 
@@ -766,7 +766,7 @@ export class SpeechService {
 			if (!mix.path) throw new JobError('MIX_FAILED', 'The sequence mix produced no audio', false);
 			const fps = snap.settings.fps;
 			offsetFlicks = planned.range.start * flicksPerFrame(fps);
-			durationSec = Math.max(0, (planned.range.end - planned.range.start) / fps);
+			durationSec = Math.max(0, ((planned.range.end - planned.range.start) * flicksPerFrame(fps)) / FLICKS_PER_SECOND);
 			span = [0.15, 1];
 			source = { path: mix.path, ffmpeg };
 			target = {
