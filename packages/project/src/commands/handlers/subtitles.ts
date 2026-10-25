@@ -718,7 +718,7 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 			: group.sourceRef.kind === 'clips'
 				? { clipIds: group.sourceRef.clipIds.filter((id) => !!plainSeq(seq).clips[id]) }
 				: 'sequence-transcript';
-	if (typeof source === 'object' && 'clipIds' in source && !source.clipIds.length)
+	if (typeof source === 'object' && 'clipIds' in source && !source.clipIds?.length)
 		h.fail('E_NOT_FOUND', 'The clips the group was made from are gone');
 	const src = sourceWords(doc, seq, source as never, range, h, group.language);
 	const old = groupClips(plainSeq(seq), group.id).filter(
@@ -1350,19 +1350,19 @@ export const subtitleHandlers = {
 			h.fail('E_INVALID_PARAM', `Template id ${cmd.id} is reserved or malformed`);
 		const t = templateFromClip(doc, seq, latest(clip) as TextClip, cmd, h);
 		const r = parseSubtitleTemplate(t);
-		if (!r.ok) h.fail(r.code, `The clip cannot be saved as a template: ${r.message}`);
+		if (!r.ok) return h.fail(r.code, `The clip cannot be saved as a template: ${r.message}`);
 		storeTemplateChecked(doc, r.template, h);
 		return { templateId: r.template.id, template: r.template };
 	},
 	'subtitleTemplate.add': (doc, cmd, h) => {
 		const r = parseSubtitleTemplate(cmd.template);
-		if (!r.ok) h.fail(r.code, `Invalid subtitle template: ${r.message}`, { path: ['template'] });
+		if (!r.ok) return h.fail(r.code, `Invalid subtitle template: ${r.message}`, { path: ['template'] });
 		storeTemplateChecked(doc, r.template, h);
 		return { templateId: r.template.id };
 	},
 	'subtitleTemplate.delete': (doc, cmd, h) => {
 		const rec = (doc as { subtitleTemplates?: Record<string, unknown> }).subtitleTemplates;
-		if (!rec?.[cmd.templateId]) h.fail('E_NOT_FOUND', `Project subtitle template not found: ${cmd.templateId}`);
+		if (!rec?.[cmd.templateId]) return h.fail('E_NOT_FOUND', `Project subtitle template not found: ${cmd.templateId}`);
 		delete rec[cmd.templateId];
 		if (!Object.keys(rec).length) delete (doc as { subtitleTemplates?: unknown }).subtitleTemplates;
 		return { templateId: cmd.templateId };

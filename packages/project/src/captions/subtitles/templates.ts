@@ -14,6 +14,7 @@
 // - `highlight`: none / the word being spoken / karaoke (spoken so far) / keywords, drawn with Source Text keys and
 //   styled runs (text clips) or the caption highlight (caption tracks).
 import { z } from 'zod';
+import { utf8Length } from '../../clipboard/payload.ts';
 import { type EffectPreset, EffectPresetSchema } from '../../effect-presets/schema.ts';
 import { DEFAULT_FONT_FAMILY } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
@@ -136,7 +137,7 @@ export function parseSubtitleTemplate(raw: unknown): TemplateParseResult {
 		};
 	let size = 0;
 	try {
-		size = new TextEncoder().encode(JSON.stringify(raw)).length;
+		size = utf8Length(JSON.stringify(raw));
 	} catch {
 		return { ok: false, code: 'E_INVALID_PARAM', message: 'The subtitle template is not serialisable' };
 	}
