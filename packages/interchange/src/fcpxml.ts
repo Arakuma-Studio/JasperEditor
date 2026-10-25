@@ -717,9 +717,9 @@ class FcpxmlImporter {
 					const [x, y] = pair(v);
 					return [r9(cx + (x * fh) / 100), r9(cy - (y * fh) / 100)];
 				};
-				const pos = this.kparam(a, 'position', kt, (v) => toPx(v, fw / 2, fh / 2));
+				const pos = this.kparam(a, 'position', kt, (v) => toPx(v, fw / 2, fh / 2), true);
 				if (pos) t.position = pos;
-				const anc = this.kparam(a, 'anchor', kt, (v) => toPx(v, src.width / 2, src.height / 2));
+				const anc = this.kparam(a, 'anchor', kt, (v) => toPx(v, src.width / 2, src.height / 2), true);
 				if (anc) t.anchor = anc;
 				const sx = this.kparam(a, 'scale', kt, (v) => r9(pair(v)[0] * 100));
 				const sy = this.kparam(a, 'scale', kt, (v) => r9(pair(v)[1] * 100));
@@ -802,7 +802,11 @@ class FcpxmlImporter {
 						if (v) params[ps.name] = v;
 					} else if (ps.type === 'boolean')
 						params[ps.name] = anim(p.attrs.value === '1' || p.attrs.value === 'true');
-					else if (ps.type === 'vec2' && p.attrs.value) params[ps.name] = anim(pair(p.attrs.value));
+					else if (ps.type === 'vec2' && (p.attrs.value || child(p, 'keyframeAnimation'))) {
+						// spatial-points: vec2 keyframes; point params read each key's `curve`.
+						const v = this.kparam(a, p.attrs.name ?? k!, kt, (x) => pair(x), !!ps.spatial);
+						if (v) params[ps.name] = v;
+					}
 					else if ((ps.type === 'enum' || ps.type === 'string') && p.attrs.value !== undefined)
 						params[ps.name] = anim(p.attrs.value);
 					else if (ps.type === 'color' && p.attrs.value) {
@@ -822,7 +826,17 @@ class FcpxmlImporter {
 	}
 
 	/** A parameter from an adjustment attribute, with `<param name><keyframeAnimation>` keys. */
-	kparam<T>(a: XNode, name: string, kt: (t: number) => number, map: (v: string) => T): Animatable<T> | null {
+	kparam<T>(
+		a: XNode,
+		name: string,
+		kt: (t: number) => number,
+		map: (v: string) => T,
+		/**
+		 * spatial-points: a point property — `curve="linear"` keys are Linear spatial, Smooth ones (the DTD default)
+		 * Auto Bezier (FCPXML carries no handles; the closest smooth path).
+		 */
+		spatial = false,
+	): Animatable<T> | null {
 		const pnode = children(a, 'param').find((p) => p.attrs.name === name || p.attrs.key === name);
 		const raw = a.attrs[name] ?? pnode?.attrs.value;
 		if (raw === undefined && !pnode) return null;
@@ -853,6 +867,16 @@ class FcpxmlImporter {
 				k.inInterpolation = k.interpolation === 'hold' ? 'bezier' : (k.interpolation as 'linear' | 'bezier');
 		});
 		for (const k of out.keyframes) k.id = `kf${k.time}`;
+		if (spatial) {
+			const curves = new Map<number, string>();
+			for (const k of children(ka, 'keyframe')) {
+				const t = at(k, 'time');
+				if (t !== null) curves.set(kt(t), (k.attrs.curve ?? 'smooth').toLowerCase());
+			}
+			for (const k of out.keyframes)
+				if (curves.get(k.time) !== 'linear' && k.interpolation !== 'hold')
+					k.spatial = { mode: 'auto-bezier', inTangent: [0, 0], outTangent: [0, 0], auto: 'proportional' };
+		}
 		if (out.keyframes[0]) out.value = out.keyframes[0].value;
 		return out;
 	}
@@ -1628,7 +1652,30 @@ class FcpxmlExporter {
 							['value', v],
 						]),
 					);
-				else if (Array.isArray(v))
+				else if (Array.isArray(v) && v.length === 2 && ps.type === 'vec2') {
+					// spatial-points: vec2 params keep their keyframes; point params their spatial curve.
+					const spatial = !!ps.spatial;
+					if (spatial && pa.keyframes.length)
+						this.reportSpatial(pa.keyframes, `${spec.label} ${ps.label} on clip "${c.name}"`, where);
+					params.push(
+						this.kparam(
+							'param',
+							ps.name,
+							pa as Animatable<number[]>,
+							rate,
+							toLocal,
+							(x) => x.map(n).join(' '),
+							[['key', ps.name]],
+							true,
+							spatial,
+						),
+					);
+				} else if (Array.isArray(v)) {
+					if (pa.keyframes.length)
+						this.report.warn(
+							`keyframes of ${spec.label} ${ps.label} on clip "${c.name}" are written as its static value`,
+							{ subject: where, instead: 'the static value' },
+						);
 					params.push(
 						el('param', [
 							['name', ps.name],
@@ -1636,6 +1683,7 @@ class FcpxmlExporter {
 							['value', (v as number[]).map(n).join(' ')],
 						]),
 					);
+				}
 			}
 			kids.push(
 				el(
@@ -1754,22 +1802,34 @@ class FcpxmlExporter {
 				`${n(((v[0] - cx) / fh) * 100)} ${n((-(v[1] - cy) / fh) * 100)}`;
 			const attrs: [string, string][] = [];
 			const params: El[] = [];
-			const add = <T>(name: string, a: Animatable<T>, f: (v: T) => string, isDefault: boolean) => {
+			const add = <T>(
+				name: string,
+				a: Animatable<T>,
+				f: (v: T) => string,
+				isDefault: boolean,
+				spatial = false,
+			) => {
 				if (isDefault && !a.keyframes.length) return;
 				attrs.push([name, f(a.value)]);
-				if (a.keyframes.length) params.push(this.keyParam(name, a, rate, toLocal, f));
+				if (a.keyframes.length) {
+					// spatial-points: a key's `curve` is its spatial interpolation (Linear corner / Smooth path).
+					if (spatial) this.reportSpatial(a.keyframes, `${name} of clip "${c.name}"`, where);
+					params.push(this.keyParam(name, a, rate, toLocal, f, spatial));
+				}
 			};
 			add(
 				'position',
 				t.position,
 				pos(fw / 2, fh / 2),
 				t.position.value[0] === fw / 2 && t.position.value[1] === fh / 2,
+				true,
 			);
 			add(
 				'anchor',
 				t.anchor,
 				pos(src.width / 2, src.height / 2),
 				t.anchor.value[0] === src.width / 2 && t.anchor.value[1] === src.height / 2,
+				true,
 			);
 			const sw = t.uniformScale ? t.scale : t.scaleWidth;
 			const fx = t.flipH ? -1 : 1;
@@ -1818,21 +1878,45 @@ class FcpxmlExporter {
 		}
 	}
 
+	/**
+	 * spatial-points: reports what FCPXML cannot carry of a point's spatial path. A key's `curve` is Linear or Smooth
+	 * (FCPXML 1.10 DTD: "whether the value changes smoothly over the keyframe, or linearly"; Final Cut's viewer offers
+	 * Linear / Smooth on motion-path keyframes); no handle data exists, so Bezier / Continuous Bezier tangents are lost
+	 * and Final Cut draws its own smooth curve through Smooth keys.
+	 */
+	reportSpatial(
+		keys: readonly Keyframe<unknown>[],
+		what: string,
+		where: { kind: 'clip'; id: string; name: string; frame: number },
+	): void {
+		const modes = new Set(keys.map((k) => k.spatial?.mode ?? 'linear'));
+		if (modes.has('bezier') || modes.has('continuous-bezier'))
+			this.report.warn(
+				`the motion-path handles of ${what} are not carried by FCPXML (its keys are written Smooth)`,
+				{ subject: where, instead: 'Smooth keys (the receiving application draws its own curve)' },
+			);
+		else if (modes.has('auto-bezier'))
+			this.report.info(
+				`the curved motion path of ${what} is written as Smooth keys (the receiving application draws its own curve)`,
+				{ subject: where },
+			);
+	}
+
 	keyParam<T>(
 		name: string,
 		a: Animatable<T>,
 		rate: Rate,
 		toLocal: (t: number) => number,
 		f: (v: T) => string,
+		/** spatial-points: a point property — each key's `curve` is its spatial interpolation. */
+		spatial = false,
 	): El {
 		const keys: El[] = [];
 		a.keyframes.forEach((k, i) => {
+			const attrs = interpAttrs(k.interpolation, k.inInterpolation);
+			if (spatial) attrs[1] = ['curve', (k.spatial?.mode ?? 'linear') === 'linear' ? 'linear' : 'smooth'];
 			keys.push(
-				el('keyframe', [
-					['time', fmtTime(toLocal(k.time), rate)],
-					['value', f(k.value)],
-					...interpAttrs(k.interpolation, k.inInterpolation),
-				]),
+				el('keyframe', [['time', fmtTime(toLocal(k.time), rate)], ['value', f(k.value)], ...attrs]),
 			);
 			// A hold key: FCPXML has no hold interpolation; the value is repeated on the frame before the next key, which
 			// holds it on every frame.
@@ -1862,10 +1946,12 @@ class FcpxmlExporter {
 		f: (v: T) => string,
 		extra: [string, string][] = [],
 		asParam = false,
+		spatial = false,
 	): El {
 		if (asParam) {
 			const e = el('param', [['name', name], ...extra, ['value', f(a.value)]]);
-			if (a.keyframes.length) e.children.push(this.keyParam(name, a, rate, toLocal, f).children[0]!);
+			if (a.keyframes.length)
+				e.children.push(this.keyParam(name, a, rate, toLocal, f, spatial).children[0]!);
 			return e;
 		}
 		const e = el(tag, [[name, f(a.value)], ...extra]);
