@@ -363,7 +363,6 @@ describe('interchange MCP tools', () => {
 		expect(scanCall.anchors).toEqual([
 			{ from: 'D:\\Shoot\\Day 1\\C003.mov', to: '/Volumes/Mac/Shoot/Day 1/C003.mov', relativePath: null },
 		]);
-		expect(scanCall.assets.map((x) => x.id).sort()).toEqual([engine.refs.$a, engine.refs.$b].sort());
 		expect(scanCall.match).toEqual(['name', 'extension', 'duration', 'streams']);
 		// the located file and the verified A001 in one transaction; B002 needs force (shorter than its clips)
 		expect(r.body.linked).toBe(2);

@@ -34,7 +34,7 @@ const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
  * WAV URL once the engine made it, null until then (the preview is silent rather than failing on the original) —
  * or undefined when the original's audio plays.
  */
-export function playbackAudioUrls(
+function playbackAudioUrls(
 	asset: MediaAsset,
 	runtime: Pick<MediaRuntime, 'playbackAudio' | 'playbackAudioUrl'> | undefined,
 ): Record<string, string> | null | undefined {

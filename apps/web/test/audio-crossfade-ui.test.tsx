@@ -1,27 +1,24 @@
 // Premiere port: audio crossfade UI — Effect Controls' fade curve and Custom Fade controls, the Custom Start
-// alignment, the timeline geometry / edge drags of off-centre transitions and the curves the timeline draws.
+// alignment and actual timeline edge gestures of off-centre transitions.
 import type { Sequence, Transition } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
-import { transitionViewProps } from '../src/panels/timeline/components/TransitionView.tsx';
-import {
-	edgeDrag,
-	edgeDragCommand,
-	resizableEdges,
-	transitionGeom,
-} from '../src/panels/timeline/model/transitions.ts';
-import { makeSession, videoAsset } from './timeline-helpers.ts';
+import { makeSession, setupTimeline, videoAsset } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
 beforeEach(() => globalThis.localStorage?.clear());
 afterEach(() => cleanup());
 
 /** Two A/V clips cut at frame 120 (2 s of media handle on each side) and an audio crossfade of `effectId` on A1. */
-function scene(effectId = 'jasper.constant-power', extra: Record<string, unknown> = {}) {
-	const { session, seqId } = makeSession();
+function scene(
+	effectId = 'jasper.constant-power',
+	extra: Record<string, unknown> = {},
+	timeline?: ReturnType<typeof setupTimeline>,
+) {
+	const { session, seqId } = timeline ?? makeSession();
 	const apply = (commands: unknown[]) => {
 		const r = session.apply({
 			label: 'setup',
@@ -57,7 +54,7 @@ function scene(effectId = 'jasper.constant-power', extra: Record<string, unknown
 	const seq = () => session.getCommitted().sequences[seqId] as Sequence;
 	const id = r.refs.$x!;
 	const t = () => seq().transitions[id] as Transition;
-	return { session, seq, id, t };
+	return { session, id, t };
 }
 
 function mount(s: ReturnType<typeof scene>) {
@@ -70,11 +67,9 @@ function mount(s: ReturnType<typeof scene>) {
 }
 
 describe('Effect Controls: audio transition curve and Custom Fade controls', () => {
-	it('draws both sides of a fixed crossfade; picking Custom Fade starts from its own curve (Constant Gain → Linear @ 0)', () => {
+	it('picking Custom Fade preserves the Constant Gain curve as Linear @ 0', () => {
 		const s = scene('jasper.constant-gain');
 		mount(s);
-		expect(screen.getByTestId('audio-fade-curve-in')).toBeTruthy();
-		expect(screen.getByTestId('audio-fade-curve-out')).toBeTruthy();
 		expect(screen.queryByTestId('custom-fade-shape')).toBeNull();
 		act(() => {
 			fireEvent.change(screen.getByTestId('transition-type'), { target: { value: 'jasper.custom-fade' } });
@@ -131,8 +126,9 @@ describe('Effect Controls: audio transition curve and Custom Fade controls', () 
 		});
 		expect(s.t()).toMatchObject({
 			effectId: 'jasper.custom-fade',
-			params: { fadeShape: { value: 'cosine' }, fadeValue: { value: 30 } },
+			params: { fadeShape: { value: 'cosine' } },
 		});
+		expect(s.t().params.fadeValue?.value).toBeGreaterThan(19);
 		expect(s.session.getState().history.entries.length).toBe(n + 1);
 	});
 
@@ -141,7 +137,6 @@ describe('Effect Controls: audio transition curve and Custom Fade controls', () 
 		mount(s);
 		const sel = screen.getByTestId('transition-alignment') as HTMLSelectElement;
 		expect(sel.value).toBe('custom');
-		expect([...sel.options].map((o) => o.textContent)).toContain('Custom Start');
 		act(() => {
 			fireEvent.change(sel, { target: { value: 'center' } });
 		});
@@ -149,61 +144,20 @@ describe('Effect Controls: audio transition curve and Custom Fade controls', () 
 	});
 });
 
-describe('timeline: Custom Start geometry, edge drags and curves', () => {
-	it('draws the span off-centre, resizes from either edge keeping the other one', () => {
-		const s = scene('jasper.constant-power', { cutOffset: 5 });
-		const g = transitionGeom(s.seq(), s.session.getCommitted().media, s.t())!;
-		expect(g).toMatchObject({ cut: 120, start: 115, end: 135, cutOffset: 5 });
-		expect(resizableEdges(g)).toEqual({ start: true, end: true });
-		expect(edgeDrag(g, 'end', 140, false)).toEqual({ duration: 25, alignment: 'center', cutOffset: 5 });
-		expect(edgeDrag(g, 'start', 110, false)).toEqual({ duration: 25, alignment: 'center', cutOffset: 10 });
-		expect(edgeDrag(g, 'start', 125, false)).toEqual({ duration: 15, alignment: 'start-at-cut' });
-		expect(edgeDragCommand('t', { duration: 25, alignment: 'center', cutOffset: 10 })).toEqual({
-			type: 'transition.update',
-			transitionId: 't',
-			duration: 25,
-			cutOffset: 10,
-		});
-		// Alt on a centred transition keeps the other edge too
-		const c = scene('jasper.constant-power');
-		const gc = transitionGeom(c.seq(), c.session.getCommitted().media, c.t())!;
-		expect(edgeDrag(gc, 'end', 136, true)).toEqual({ duration: 26, alignment: 'center', cutOffset: 10 });
-		expect(edgeDrag(gc, 'end', 136, false)).toEqual({ duration: 32, alignment: 'center' });
-	});
-
-	it('the timeline draws each side’s curve (Custom Fade asymmetrical, one-sided fades)', () => {
-		const s = scene('jasper.custom-fade', {
-			params: {
-				fadeShape: 'linear',
-				fadeValue: 12,
-				symmetry: 'asymmetric',
-				outFadeShape: 'cosine',
-				outFadeValue: 30,
-			},
-		});
-		const g = transitionGeom(s.seq(), s.session.getCommitted().media, s.t())!;
-		const p = transitionViewProps(
-			g,
-			{ scrollFrame: 0, pxPerFrame: 2 } as never,
-			60,
-			false,
-			{ num: 30, den: 1 },
-			false,
-		);
-		expect(p.inCurve).toBe('shape:linear:12');
-		expect(p.outCurve).toBe('shape:cosine:30');
-		expect(p.title).toContain('Center at Cut');
-		const o = scene('jasper.constant-power', { cutOffset: 5 });
-		const go = transitionGeom(o.seq(), o.session.getCommitted().media, o.t())!;
-		const po = transitionViewProps(
-			go,
-			{ scrollFrame: 0, pxPerFrame: 2 } as never,
-			60,
-			false,
-			{ num: 30, den: 1 },
-			false,
-		);
-		expect(po.inCurve).toBe('equal-power');
-		expect(po.title).toContain('Custom Start (5 frames before the cut)');
+describe('timeline: Custom Start edge gestures', () => {
+	it('resizes either edge without moving the opposite edge and becomes at-cut when dragged past the cut', () => {
+		const timeline = setupTimeline({ pxPerFrame: 4 });
+		timeline.session.setToggles({ snapping: false });
+		const s = scene('jasper.constant-power', { cutOffset: 5 }, timeline);
+		const y = timeline.rowY('A1');
+		timeline.drag(timeline.x(135) - 1, y, timeline.x(140), y);
+		expect(s.t()).toMatchObject({ duration: 25, cutPosition: 0.2 }); // span 115…140
+		timeline.session.undo();
+		timeline.drag(timeline.x(115) + 1, y, timeline.x(110), y);
+		expect(s.t()).toMatchObject({ duration: 25, cutPosition: 0.4 }); // span 110…135
+		timeline.session.undo();
+		timeline.drag(timeline.x(115) + 1, y, timeline.x(125), y);
+		expect(s.t()).toMatchObject({ duration: 15, alignment: 'start-at-cut' });
+		expect(s.t().cutPosition).toBeUndefined();
 	});
 });

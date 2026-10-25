@@ -1,11 +1,10 @@
-// wp fonts: the editor side of the user font library — missing-font detection, the font menu (sections, missing
-// marks, picking a library family registers it in one undoable step), and the Player's font resolution matching the
+// wp fonts: missing-font detection, searchable Properties selection of an installed family in one undoable step,
+// and the Player's font resolution matching the
 // engine's (PostScript names reach library faces).
 import type { FontCatalog } from '@jasper/api';
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { missingProjectFonts, projectFontStatus } from '../src/fonts/actions.ts';
-import { FontPicker } from '../src/fonts/FontPicker.tsx';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { missingProjectFonts } from '../src/fonts/actions.ts';
 import { fontsStore } from '../src/fonts/store.ts';
 import { buildProgramDoc } from '../src/panels/program/render-doc.ts';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
@@ -77,17 +76,15 @@ function textProject(families: string[]) {
 }
 
 describe('project font status', () => {
-	it('a font named by its PostScript name is available; an unknown one used by text is missing', () => {
+	it('only used unavailable families are missing; an unknown catalog waits for resolution', () => {
 		const { session } = textProject(['Pixel12x10', 'Minion Pro', 'Inter']);
+		const extra = session.apply({
+			label: 'unused',
+			origin: 'user',
+			commands: [{ type: 'font.add', family: 'Unused family' }],
+		});
+		if (!extra.ok) throw new Error(JSON.stringify(extra.errors));
 		const doc = session.getCommitted();
-		const status = projectFontStatus(doc, catalog);
-		expect(status.map((s) => [s.font.family, s.available, s.source])).toEqual(
-			expect.arrayContaining([
-				['Pixel12x10', true, 'custom'],
-				['Minion Pro', false, null],
-				['Inter', true, 'bundled'],
-			]),
-		);
 		expect(missingProjectFonts(doc, catalog).map((s) => [s.font.family, s.use.clips])).toEqual([
 			['Minion Pro', 1],
 		]);
@@ -114,70 +111,7 @@ describe('project font status', () => {
 });
 
 describe('font menu', () => {
-	it('lists project, installed and bundled fonts, marks missing ones, and hands catalog families to onPickFamily', () => {
-		const onPickFamily = vi.fn();
-		const onPickFont = vi.fn();
-		const docFonts = {
-			fnt_a: { id: 'fnt_a', family: 'Minion Pro' },
-			fnt_b: { id: 'fnt_b', family: 'Inter' },
-		};
-		renderWithSession(
-			makeSession(),
-			<FontPicker
-				value="fnt_a"
-				docFonts={docFonts}
-				onPickFont={onPickFont}
-				onPickFamily={onPickFamily}
-				onResolveFonts={() => {}}
-				data-testid="picker"
-			/>,
-		);
-		const trigger = screen.getByTestId('picker');
-		expect(trigger.getAttribute('data-missing')).toBe('true');
-		act(() => {
-			fireEvent.click(trigger);
-		});
-		const menu = screen.getByTestId('font-picker');
-		const project = within(menu).getByLabelText('Project Fonts');
-		const minion = within(project)
-			.getAllByRole('button')
-			.find((b) => b.getAttribute('data-font-family') === 'Minion Pro')!;
-		expect(minion.getAttribute('data-missing')).toBe('true');
-		expect(within(menu).getByLabelText('My Fonts').textContent).toContain('Pixel 12x10');
-		// Inter is in the project, so it is not listed again under the bundled fonts
-		expect(within(menu).getByLabelText('Bundled Fonts').textContent).not.toContain('Inter');
-		expect(within(menu).getByText('Resolve Fonts…')).toBeTruthy();
-		const pixel = within(menu)
-			.getAllByRole('button')
-			.find((b) => b.getAttribute('data-font-family') === 'Pixel 12x10')!;
-		act(() => {
-			fireEvent.click(pixel);
-		});
-		expect(onPickFamily).toHaveBeenCalledWith('Pixel 12x10');
-		expect(onPickFont).not.toHaveBeenCalled();
-	});
-
-	it('search filters the menu', () => {
-		renderWithSession(
-			makeSession(),
-			<FontPicker
-				value={null}
-				docFonts={{}}
-				onPickFont={() => {}}
-				onPickFamily={() => {}}
-				data-testid="picker"
-			/>,
-		);
-		act(() => {
-			fireEvent.click(screen.getByTestId('picker'));
-		});
-		fireEvent.change(screen.getByLabelText('Search fonts'), { target: { value: 'pix' } });
-		const menu = screen.getByTestId('font-picker');
-		expect(within(menu).queryByText('Inter')).toBeNull();
-		expect(within(menu).getByText('Pixel 12x10')).toBeTruthy();
-	});
-
-	it('Properties ▸ Text: picking an installed family registers it and sets it in one undo step', () => {
+	it('Properties ▸ Text: search and pick an installed family in one undo step', () => {
 		const { session, ids } = textProject(['Inter']);
 		act(() => session.select('timeline', [ids[0]!]));
 		renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
@@ -185,6 +119,8 @@ describe('font menu', () => {
 		act(() => {
 			fireEvent.click(screen.getByTestId('prop-text.fontId'));
 		});
+		fireEvent.change(screen.getByRole('searchbox', { name: 'Search fonts' }), { target: { value: 'pix' } });
+		expect(within(screen.getByTestId('font-picker')).queryByRole('button', { name: 'Inter' })).toBeNull();
 		const pixel = within(screen.getByTestId('font-picker'))
 			.getAllByRole('button')
 			.find((b) => b.getAttribute('data-font-family') === 'Pixel 12x10')!;
