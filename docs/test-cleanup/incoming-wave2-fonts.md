@@ -25,7 +25,7 @@ identity or implementation shape, so behavior-preserving internal refactors pass
 Each row identifies the input/transition/process boundary that remaining owners do
 not cover. Shared facts apply to every explicitly named row, satisfying all six bars.
 
-Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 12**, **OPTIMIZE 3**, **REWRITE 19**. 34 default cases survive plus one opt-in rendering case (35 total); three redundant executions are removed.
+Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 11**, **OPTIMIZE 3**, **REWRITE 20**. 34 default cases survive plus one opt-in rendering case (35 total); three redundant executions are removed.
 
 ## apps/engine/test/font-parser.test.ts
 
@@ -83,7 +83,7 @@ Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 12**, **OPTIMIZE 3**
 
 | Baseline test name | Disposition | Contract, oracle, unique failure and surviving owner |
 | --- | --- | --- |
-| a Pixel12x10 title renders with the installed font in the preview, the native and Remotion exports and stills | KEEP | AGENTS export fidelity/wp-fonts: actual installed font renders consistently through Program composition, auto hybrid, forced Remotion and still route (≥99% bytes within 3/255), each visibly distinct from the pre-install fallback (>2,000 changed reference pixels, ≥80% of that for outputs). Real generated original glyphs, decoded artifacts and independent pre-install witness reject silent fallback. Output-level parity resists renderer refactors; no lower resolver test establishes Chromium font acceptance and every export route. Intentionally expensive; default baseline skips this REMOTION_E2E suite, supplemental execution is separately scheduled. |
+| a Pixel12x10 title renders with the installed font in the preview, the native and Remotion exports and stills | REWRITE (also optimize) | AGENTS export fidelity/wp-fonts: actual installed font must render consistently through Program composition, auto hybrid, forced Remotion and still route (≥99% bytes within 3/255), each visibly distinct from a controlled pre-install fallback (>2,000 changed reference pixels, ≥80% of that for outputs). A visible Source Sans 3 styled-run control keeps the fallback face identical before/after; a real library-font-load failure now makes contrast zero instead of passing by changing to Arial. Original generated glyphs and decoded artifacts provide the independent oracle. Static first-frame duration 1 replaces 30 equivalent frames without changing 720p/120px glyphs, codec or bounds. Output-level parity resists renderer refactors; lower resolvers cannot establish Chromium font acceptance and every actual export route. Two restored optimized runs pass; all five decoded pictures exactly match the controlled 30-frame baseline. |
 
 ## Removed infrastructure and production seams
 
@@ -95,7 +95,7 @@ in `tools/services.ts` supplies only `onChange` and `log`; remove unused `now` a
 `limits` injection options, their limits type and the clock-forwarding method.
 The production default date and 64 MiB/1,000/2 GiB behavior remain the same.
 Remove the unused fixture `padBytes` option/table; `glyphRects` now creates cheap,
-valid blank fonts for real capacity states. No dependency/configuration changes. Net test/support change: +2 lines; production source: −9 lines. The extra real-cap fixture replaces unsafe test-only limit overrides; the repository-wide cleanup remains strongly net-negative.
+valid blank fonts for real capacity states. No dependency/configuration changes. Net test/support change: +9 lines; production source: −9 lines. The extra real-cap fixture replaces unsafe test-only limit overrides; the repository-wide cleanup remains strongly net-negative.
 
 The actual-cap fixtures have consistent font bytes, SHA256 IDs, sizes and names.
 The 1,000-face fixture stays far below 2 GiB; the 32-file byte fixture stays below 1,000
@@ -153,9 +153,9 @@ valid optimized regression protection. The whole three-file baseline was part of
 larger 60-file run, so no comparable process-wall or CI speedup is inferred.
 No concurrency, fuzz sample count, meaningful assertion or tolerance was weakened.
 
-The optional renderer test remains unchanged in this commit. The default baseline
-records it skipped; no claim of a successful supplemental render is made here until
-its scheduled before/after execution. No skipped oracle counts as success.
+The default baseline records the optional renderer test skipped. Its separate actual
+rendering execution and final oracle correction are recorded below; no skipped
+oracle counts as success.
 
 ### Corrected WOFF2 oracle and independent protocol evidence
 
@@ -187,3 +187,75 @@ Actual engine TypeScript passed again with the four-GiB heap allowance;
 Biome and diff checks passed for the final source. No production behavior changed
 in this followup. Raw logs/scripts/results:
 `/tmp/jasper-test-cleanup/wave2-fonts/{length-*,mutant-length-*}`.
+
+### Actual font rendering: correct the identity oracle, then remove repeated frames
+
+The original opt-in owner was green but had a second false positive: disabling
+registration only for `/fonts/library/` faces left catalog/planner metadata correct
+and all pixel-parity/contrast assertions passed. Before installation the output
+used Source Sans 3; after a failed library load it silently used Arial. Different
+fallback glyphs satisfied the difference witness (24,782 pixels), while all paths
+agreed on the same wrong face. That old green run is not valid regression evidence.
+
+The existing case now renders its final character explicitly in Source Sans 3 via
+the public text styled-run contract. This visible control loads the declared
+fallback family on every path. A failed library font therefore renders exactly
+like the pre-install fallback, rather than choosing a different available face.
+The same real production mutation now fails the intended identity assertion:
+**0 changed pixels, required >2,000**. There is no private FontFace-call assertion,
+production injection hook, extra test or widened bound. Production source was
+restored in `finally`, and actual runtime sourcemaps prove both normal and mutant
+bundles contain the exact owned composition source.
+
+The fixture is static: no animation, keyframe, transition or time-dependent content.
+Once the oracle was corrected, a fresh 30-frame/frame15 baseline ran before shortening
+the movie to one frame and sampling frame0. The 720p resolution, 120px glyphs, ProRes
+settings, 99% within 3/255 parity, >2,000 reference difference and 80% delivered
+contrast bounds are unchanged. The required three exported movies have actual
+`ffprobe` frame counts 30→1. All **five** decoded pictures—fallback, Program
+composition, native, forced Remotion and still—are byte-identical between the
+controlled 30-frame baseline and **both** single-frame runs (maximum RGB byte
+difference 0). Valid reference contrast is 36,739 pixels in all three runs. The
+Program reference and extracted native PNG were inspected visually: original block
+glyphs, the visible fallback control, full frame and background render correctly.
+
+Comparable quiet single-file measurements (same Node 20.19, pnpm 10.34.5,
+Vitest 4.1.11, worker cap 2, Chrome 156, required oracles, unchanged system decoder and
+root's verified LGPL render binaries; owned fresh engine/temp/bundle per run):
+
+| Controlled fixture | Command wall | Vitest | Case body | Result |
+| --- | ---: | ---: | ---: | --- |
+| 30 frames, frame15 baseline | 44.81 s | 43.60 s | 23.121 s | 1/1 pass |
+| 1 frame, frame0 first run | 39.00 s | 37.77 s | 16.886 s | 1/1 pass |
+| 1 frame, frame0 restored repeat | 42.49 s | 41.26 s | 20.514 s | 1/1 pass |
+
+Final-repeat wall saving: **2.32 s / 5.18%** versus the controlled baseline. The
+first optimized run was faster still, but the 3.49 s difference between optimized
+samples shows material variance; no universal CI saving is inferred from these
+samples. Cold application imports remain roughly 19–20 s. The earlier unguarded original/single-frame runs are archived as failed-oracle
+discovery and are excluded from this performance comparison. Every positive render reported 100.000%
+of native/Remotion/still bytes within 3/255 of the preview.
+
+Actual command (run separately for each source version, with short owned `TMPDIR`
+and an external evidence collector before normal temp teardown):
+
+```sh
+env -u NODE_OPTIONS REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 \
+  JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+  pnpm exec vitest run apps/engine/test/font-library.e2e.test.ts \
+  --maxWorkers=2 --reporter=default --reporter=json \
+  --outputFile.json=<run>/run.json
+```
+
+Actual engine TypeScript passed again with the four-GiB heap (33.49 s), as did
+changed-file Biome and diff checks. One initial diagnostic mutant attempt used a
+long external temp-path label and Chrome failed its Unix socket-path limit before
+rendering; this is explicitly **not** a caught font regression. Shortening only
+the evidence-run label allowed the real mutant evaluation. An optional Pillow
+artifact-analysis import was unavailable; existing FFmpeg/ffprobe oracles performed
+all extraction, frame-count and byte comparisons instead, without adding a dependency.
+
+Evidence: `/tmp/jasper-test-cleanup/wave2-fonts/optin/` includes source/alias proofs,
+per-run logs/JSON/GNU time, copied actual movies/PNGs, source-map hashes,
+`comparison.json`, `performance.json`, and external runner/analyzer scripts in the
+parent directory. Generated media remain ignored and are not committed.

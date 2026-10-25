@@ -176,19 +176,26 @@ describe.runIf(enabled)('library fonts: preview vs every export path (REMOTION_E
 				settings: { backgroundColor: [0.3, 0.3, 0.3, 1] },
 			},
 			{ type: 'font.add', family: 'Pixel12x10', ref: '$f' },
+			{ type: 'font.add', family: 'Source Sans 3', ref: '$fallback' },
 			{
 				type: 'clip.addText',
 				at: 0,
-				duration: 30,
+				duration: 1,
 				track: 'V1',
-				content: { text: 'PIXEL TITLE 12', style: { fontId: '$f', sizePx: 120, fill: [1, 1, 1, 1] } },
+				content: {
+					text: 'PIXEL TITLE 12',
+					style: { fontId: '$f', sizePx: 120, fill: [1, 1, 1, 1] },
+					// A visible control loads the declared fallback on every path. A failed library load then
+					// matches the pre-install rendering instead of differing merely because Arial was used.
+					runs: [{ from: 13, to: 14, style: { fontId: '$fallback' } }],
+				},
 			},
 		]);
 		// Neutral colours: the Remotion path's ProRes intermediate subsamples chroma, which would blur coloured edges.
 		// Before the font is installed: fallback + warning (the comparison baseline for "the font is really used").
 		const fallback = await exportDoc(d, 'auto');
 		expect(fallback.plan.warnings.map((w: { code: string }) => w.code)).toContain('FONT_FALLBACK');
-		const fallbackFrame = decode(fallback.out, 15);
+		const fallbackFrame = decode(fallback.out, 0);
 
 		const up = await engine.app.inject({
 			method: 'POST',
@@ -198,15 +205,15 @@ describe.runIf(enabled)('library fonts: preview vs every export path (REMOTION_E
 		});
 		expect(up.statusCode, up.body).toBe(201);
 
-		const reference = await previewFrame(d, 15);
+		const reference = await previewFrame(d, 0);
 		const native = await exportDoc(d, 'auto');
 		expect(native.plan.warnings.map((w: { code: string }) => w.code)).not.toContain('FONT_FALLBACK');
 		expect(native.plan.path).toBe('hybrid');
 		const remotion = await exportDoc(d, 'remotion');
 		expect(remotion.plan.warnings.map((w: { code: string }) => w.code)).not.toContain('FONT_FALLBACK');
-		const stillFrame = decode(await still(d, 15));
+		const stillFrame = decode(await still(d, 0));
 
-		const frames = { native: decode(native.out, 15), remotion: decode(remotion.out, 15), still: stillFrame };
+		const frames = { native: decode(native.out, 0), remotion: decode(remotion.out, 0), still: stillFrame };
 		const textPixels = changedPixels(reference, fallbackFrame);
 		// the library font draws visibly different glyphs than the fallback (thousands of pixels at 120 px)
 		expect(textPixels).toBeGreaterThan(2000);
