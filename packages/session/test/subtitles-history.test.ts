@@ -93,6 +93,7 @@ describe('subtitle commands in the session history', () => {
 			const depth = s.getState().history.index;
 			const r = s.apply({ label: 'Step', origin: 'user', commands: typeof commands === 'function' ? commands(before) : commands });
 			expect(r.ok, JSON.stringify(r)).toBe(true);
+			if (!r.ok) throw new Error('failed');
 			expect(s.getState().history.index).toBe(depth + 1);
 			const afterSnapshot = structuredClone(s.getCommitted());
 			expect(s.undo().ok).toBe(true);
