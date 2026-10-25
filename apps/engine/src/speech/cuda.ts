@@ -64,6 +64,8 @@ export class CudaProvider {
 		private readonly env: Record<string, string | undefined> = process.env,
 		private readonly platform = process.platform,
 		private readonly arch = process.arch,
+		/** Where the pinned package is fetched from (tests serve a local copy; the sha256 pin is unchanged). */
+		private readonly packageUrl: string = ORT_CUDA_PACKAGE.url,
 	) {}
 
 	get supported(): boolean {
@@ -218,7 +220,7 @@ export class CudaProvider {
 				`The CUDA provider ${ORT_CUDA_PACKAGE.ortVersion} needs onnxruntime-node ${ORT_CUDA_PACKAGE.ortVersion} (found ${version ?? 'none'})`,
 			);
 		const total = ORT_CUDA_PACKAGE.sizeBytes;
-		await downloadVerified(ORT_CUDA_PACKAGE, this.downloadPath, {
+		await downloadVerified({ ...ORT_CUDA_PACKAGE, url: this.packageUrl }, this.downloadPath, {
 			...(opts.signal ? { signal: opts.signal } : {}),
 			onProgress: (b) => opts.onProgress?.(b, total, 'Downloading the CUDA provider'),
 		});

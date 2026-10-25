@@ -114,7 +114,7 @@
       "name": "Whisper base",
       "parameters": 74,
       "multilingual": true,
-      "description": "The default: a good balance of speed and accuracy. 99 languages; translate to English.",
+      "description": "A good balance of speed and accuracy on slower computers. 99 languages; translate to English.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
       "attribution": "OpenAI Whisper base (Radford et al. 2022, MIT); ONNX export with cross-attention outputs by onnx-community (Hugging Face) from openai/whisper-base",

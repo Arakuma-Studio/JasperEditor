@@ -699,7 +699,6 @@ export class SpeechService {
 
 	private async devicePlan(
 		modelId: string,
-		entry: SpeechCatalogEntry,
 		request: 'auto' | 'cpu' | 'gpu',
 		beamSize: number,
 	): Promise<{ plan: DevicePlan; env: Record<string, string>; gpuName: string | null }> {
@@ -713,8 +712,6 @@ export class SpeechService {
 			calibrations: await this.state.calibrations(),
 		});
 		if (probe === null && request === 'gpu') plan.unavailableReason = 'the provider probe failed';
-		// fp16 models: the decoder is fp16 too; still correct on the CPU (slower) — nothing to change
-		void entry;
 		const usesCuda = [plan.encoder, plan.decoder, plan.calibrate].includes('cuda');
 		const env = usesCuda ? ((await this.cudaUse(await this.settings())).env ?? {}) : {};
 		return { plan, env, gpuName: probe?.gpu?.name ?? null };
@@ -739,7 +736,7 @@ export class SpeechService {
 		const scratch = await ctx.scratchDir();
 		const { accuracy, beamSize, request } = await this.decodingOf(options);
 		ctx.progress(0, { stage: 'Choosing the processor' });
-		const { plan, env, gpuName } = await this.devicePlan(modelId, entry, request, beamSize);
+		const { plan, env, gpuName } = await this.devicePlan(modelId, request, beamSize);
 		const threads = Math.max(1, Math.min(ctx.slots, this.threads()));
 		let target: TranscriptionResult['target'];
 		let offsetFlicks = 0;

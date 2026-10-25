@@ -205,6 +205,7 @@ export function SpeechPreferencesPage() {
 				}
 			>
 				<div className="flex items-center gap-2">
+					<span className="text-pr-muted">Processor</span>
 					<Select
 						label="Processor"
 						className="w-56"
@@ -217,6 +218,7 @@ export function SpeechPreferencesPage() {
 							{ value: 'gpu', label: 'GPU' },
 						]}
 					/>
+					<span className="ml-3 text-pr-muted">Accuracy</span>
 					<Select
 						label="Accuracy"
 						className="w-56"
