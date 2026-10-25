@@ -23,6 +23,7 @@ import {
 	type TemplateTiming,
 	templateFit,
 } from './common.tsx';
+import { editableParamProps } from './editable.ts';
 import type { AnimeTemplateProps } from './types.ts';
 
 /** `o` opacity, `y` rise (em). */
@@ -115,6 +116,7 @@ export function Counter(props: AnimeTemplateProps) {
 				</div>
 				{p.label ? (
 					<div
+						{...editableParamProps('label')}
 						style={{
 							fontSize: labelSize,
 							fontWeight: 500,

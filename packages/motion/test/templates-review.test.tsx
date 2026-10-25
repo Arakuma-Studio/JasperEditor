@@ -19,6 +19,8 @@ function renderTemplate(id: string, frame: number, params?: Record<string, unkno
 				canvas={canvas}
 				seed={7}
 				isPreview={false}
+				emojiUrls={{}}
+				imageUrls={{}}
 				mediaUrls={{}}
 			/>
 		);

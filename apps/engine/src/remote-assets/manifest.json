@@ -4390,5 +4390,27 @@
       "licence": "Apache-2.0 (Noto Emoji images, github.com/googlefonts/noto-emoji); flag images public domain",
       "attribution": "Noto Emoji images Copyright Google LLC, licensed under the Apache License 2.0"
     }
+  ],
+  "images": [
+    {
+      "id": "x-default-avatar",
+      "url": "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png",
+      "sha256": "6d34bedb72ec3f2dc15085747d365fbb3f34319d5b549a8776438b92853344b6",
+      "format": "png",
+      "licence": "proprietary (X Corp. default profile image) — downloaded at runtime from X's CDN, not redistributed",
+      "source": "X default profile image (licenses/platform-assets.md), re-downloaded and hash-verified 2026-10-25",
+      "width": 400,
+      "height": 400
+    },
+    {
+      "id": "youtube-default-avatar",
+      "url": "https://yt3.ggpht.com/a/default-user=s240-c-k-c0x00ffffff-no-rj",
+      "sha256": "9929d44d4db47289e3be5904d05a3bcbd9d6af581b04d6e6f272f7f7317adca4",
+      "format": "jpeg",
+      "licence": "proprietary (YouTube default user avatar, Google LLC) — downloaded at runtime from YouTube's image CDN, not redistributed",
+      "source": "YouTube default user avatar (licenses/platform-assets.md), re-downloaded and hash-verified 2026-10-25",
+      "width": 240,
+      "height": 240
+    }
   ]
 }

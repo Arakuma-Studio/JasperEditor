@@ -22,6 +22,7 @@ import {
 	type TemplateTiming,
 	templateFit,
 } from './common.tsx';
+import { editableParamProps } from './editable.ts';
 import type { AnimeTemplateProps } from './types.ts';
 
 /** `s` bar scale, `w` panel reveal 0…1, `o`/`x` word opacity and offset (px, towards the bar). */
@@ -68,15 +69,18 @@ function Words({
 	offset,
 	sign,
 	style,
+	param,
 }: {
 	segments: TextSegment[];
 	values: readonly Readonly<Values>[];
 	offset: number;
 	sign: number;
 	style: CSSProperties;
+	/** The string param drawn (Program-monitor editing). */
+	param: string;
 }) {
 	return (
-		<div style={{ ...style, whiteSpace: 'pre' }}>
+		<div {...editableParamProps(param)} style={{ ...style, whiteSpace: 'pre' }}>
 			{keyedSegments(segments).map(({ seg, key }) => {
 				if (seg.space) return <span key={key}>{seg.text}</span>;
 				const v = values[offset + seg.unitIndex]!;
@@ -177,6 +181,7 @@ export function LowerThirdAnim(props: AnimeTemplateProps) {
 					values={values}
 					offset={2}
 					sign={sign}
+					param="name"
 					style={{ fontSize: nameSize, fontWeight: 700, lineHeight: 1.2, color: rgbaCss(p.nameColor) }}
 				/>
 				{p.role ? (
@@ -185,6 +190,7 @@ export function LowerThirdAnim(props: AnimeTemplateProps) {
 						values={values}
 						offset={2 + nameWords}
 						sign={sign}
+						param="role"
 						style={{ fontSize: roleSize, fontWeight: 400, lineHeight: 1.35, color: rgbaCss(p.roleColor) }}
 					/>
 				) : null}

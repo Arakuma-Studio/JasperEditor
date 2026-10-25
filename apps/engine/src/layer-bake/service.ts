@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
+import { emojiKey } from '@jasper/mg-templates';
 import {
 	contentTimeAt,
 	interpretMediaHandle,
@@ -48,6 +49,7 @@ import {
 	expressionKeyPart,
 	FileHashCache,
 	KEY_RE,
+	type KeyEmoji,
 	type KeyFont,
 	type KeyMaterial,
 	type KeyMedia,
@@ -60,7 +62,9 @@ import {
 	type BakeVariant,
 	bakeClip,
 	bakeDoc,
+	clipEmoji,
 	clipFonts,
+	clipImages,
 	cropRect,
 	drawnSpan,
 	hasColorEffects,
@@ -536,9 +540,53 @@ export class LayerBakeService {
 				fileSha256: await this.hashes.hash(file),
 			});
 		}
-		return out.sort((a, b) =>
-			`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`),
+		return out.sort(
+			(a, b) =>
+				`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`) ||
+				// subset files of one face (social-comment §7.8)
+				(a.fileSha256 ?? '').localeCompare(b.fileSha256 ?? ''),
 		);
+	}
+
+	/** Signed absolute URLs of an emoji or image table (headless renders cannot send the session cookie). */
+	private signedEmoji(emoji: Record<string, string> | undefined): Record<string, string> | undefined {
+		if (!emoji) return undefined;
+		const out: Record<string, string> = {};
+		for (const [k, url] of Object.entries(emoji))
+			out[k] = url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), url) : url;
+		return out;
+	}
+
+	/** social-comment §7.8: key part of the remote images the clips draw (manifest id + pinned hash). */
+	private keyImages(clips: readonly RenderVisualClip[]): { id: string; sha256: string | null }[] | undefined {
+		const ids = new Set<string>();
+		for (const c of clips)
+			for (const id of ('mg' in c.source ? c.source.mg.assets?.images : undefined) ?? []) ids.add(id);
+		if (ids.size === 0) return undefined;
+		return [...ids].sort().map((id) => ({ id, sha256: this.core.remoteAssets.image(id)?.sha256 ?? null }));
+	}
+
+	/** social-comment §7.8: key part of the template emoji the clips draw (pack id + version, image hashes). */
+	private async keyEmoji(clips: readonly RenderVisualClip[]): Promise<KeyEmoji[] | undefined> {
+		const byPack = new Map<string, Set<string>>();
+		for (const c of clips) {
+			const assets = 'mg' in c.source ? c.source.mg.assets : undefined;
+			for (const { pack, graphemes } of assets?.emoji ?? []) {
+				const set = byPack.get(pack) ?? new Set<string>();
+				for (const g of graphemes) set.add(g);
+				byPack.set(pack, set);
+			}
+		}
+		if (byPack.size === 0) return undefined;
+		const remote = this.core.remoteAssets;
+		const out: KeyEmoji[] = [];
+		for (const [pack, set] of [...byPack].sort(([a], [b]) => a.localeCompare(b))) {
+			const files: KeyEmoji['files'] = [];
+			for (const g of set) files.push({ key: emojiKey(g), sha256: await remote.emojiHash(pack, g) });
+			files.sort((a, b) => a.key.localeCompare(b.key));
+			out.push({ pack, version: remote.pack(pack)?.version ?? null, files });
+		}
+		return out;
 	}
 
 	/**
@@ -583,6 +631,10 @@ export class LayerBakeService {
 			...f,
 			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
 		}));
+		const emoji = this.signedEmoji(clipEmoji(unshifted, snap.emoji));
+		const images = this.signedEmoji(clipImages(unshifted, snap.images));
+		const keyEmoji = await this.keyEmoji([unshifted]);
+		const keyImages = this.keyImages([unshifted]);
 		const material: KeyMaterial = {
 			v: LAYER_BAKE_VERSION,
 			recipe: variant.recipe,
@@ -594,6 +646,8 @@ export class LayerBakeService {
 			fps: { num: seq.fps.num, den: seq.fps.den },
 			fonts: await this.keyFonts(fonts),
 			media: this.keyMedia(planned, mediaIds),
+			...(keyEmoji ? { emoji: keyEmoji } : {}),
+			...(keyImages ? { images: keyImages } : {}),
 			bundleId: env.bundleId,
 			animejs: env.animejs,
 			remotion: env.remotion,
@@ -610,7 +664,14 @@ export class LayerBakeService {
 			graded: false,
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>
-			bakeDoc(snap, this.signedRotos(c), { variant, rect: r, media, fonts: signedFonts });
+			bakeDoc(snap, this.signedRotos(c), {
+				variant,
+				rect: r,
+				media,
+				fonts: signedFonts,
+				...(emoji ? { emoji } : {}),
+				...(images ? { images } : {}),
+			});
 		return {
 			clipId: clip.clipId,
 			clipName: clip.name,
@@ -672,6 +733,20 @@ export class LayerBakeService {
 			...f,
 			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
 		}));
+		const spanEmoji = this.signedEmoji(
+			sides.reduce<Record<string, string> | undefined>((acc, c) => {
+				const e = clipEmoji(c, snap.emoji);
+				return e ? { ...(acc ?? {}), ...e } : acc;
+			}, undefined),
+		);
+		const spanKeyEmoji = await this.keyEmoji(sides);
+		const spanImages = this.signedEmoji(
+			sides.reduce<Record<string, string> | undefined>((acc, c) => {
+				const e = clipImages(c, snap.images);
+				return e ? { ...(acc ?? {}), ...e } : acc;
+			}, undefined),
+		);
+		const spanKeyImages = this.keyImages(sides);
 		const material: KeyMaterial = {
 			v: LAYER_BAKE_VERSION,
 			recipe: variant.recipe,
@@ -683,6 +758,8 @@ export class LayerBakeService {
 			fps: { num: seq.fps.num, den: seq.fps.den },
 			fonts: await this.keyFonts(uniqueFonts),
 			media: this.keyMedia(planned, mediaIds),
+			...(spanKeyEmoji ? { emoji: spanKeyEmoji } : {}),
+			...(spanKeyImages ? { images: spanKeyImages } : {}),
 			bundleId: o.env.bundleId,
 			animejs: o.env.animejs,
 			remotion: o.env.remotion,
@@ -702,6 +779,8 @@ export class LayerBakeService {
 			audioClips: [],
 			media,
 			fonts: signedFonts,
+			...(spanEmoji ? { emoji: spanEmoji } : {}),
+			...(spanImages ? { images: spanImages } : {}),
 			master: { volumeDb: { value: 0, keyframes: [] } },
 			warnings: [],
 		};
