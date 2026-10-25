@@ -145,7 +145,7 @@ const TEMPLATE_NOT_INSTALLED_HINT =
 	'A clip uses a motion-graphic template this JasperEditor build lacks: update JasperEditor, or replace or delete that clip (get_timeline shows it; details.blockers name the clips).';
 // social-comment §7.8: a template's platform font, emoji or image is not available (details.assets names each).
 const TEMPLATE_ASSETS_HINT =
-	'A template needs a platform font, emoji or image that is not available; details.assets names each one, its clips and why. REMOTE_ASSETS_OFF: the user has to turn on Preferences ▸ Privacy & Network ▸ "Platform fonts & emoji for social templates" (an agent turning it on is asked about in the editor). DOWNLOAD_NOT_FOUND / REMOTE_ASSET_UNKNOWN: switch the clip\'s emojiStyle or remove that emoji. DOWNLOAD_FAILED / DOWNLOAD_TIMEOUT: retry later.';
+	'A template needs a platform font, emoji or image that is not available; details.assets names each one, its clips and why. REMOTE_ASSETS_OFF: the user has to turn on Preferences ▸ Privacy & Network ▸ "Platform fonts & emoji for social templates" (an agent turning it on is asked about in the editor). DOWNLOAD_NOT_FOUND / REMOTE_ASSET_UNKNOWN: switch the clip\'s emojiStyle or remove that emoji. DOWNLOAD_FAILED / DOWNLOAD_TIMEOUT: retry later. PREFETCH_LIMIT: the render uses more different emoji of one pack than one export fetches (4,096): use fewer.';
 const TEMPLATE_MEDIA_HINT =
 	'A template media param (e.g. an avatar) holds a medium that is not a still picture (a video, Lottie or PDF page; details.blockers name the clips): set it to {mediaId} of a still image with set_motion_graphic_params, or to null.';
 const WEBGL_HINT =

@@ -4,7 +4,11 @@
 // - the snapshot: faces / emoji that resolve nowhere (not bundled, not in the manifest);
 // - the Player: template layers report what failed to load (MissingAssetReporterContext).
 // "Retry download" asks the engine again and reloads failed fonts and images; the chip never blocks editing.
-import type { RemoteAssetMissing, RemoteAssetPrefetchResponse } from '@jasper/api';
+import {
+	REMOTE_PREFETCH_MAX_EMOJI,
+	type RemoteAssetMissing,
+	type RemoteAssetPrefetchResponse,
+} from '@jasper/api';
 import {
 	type MissingAssetReporter,
 	type MissingTemplateAsset,
@@ -128,7 +132,10 @@ export function useTemplateAssetPrefetch(
 	const request = useMemo(
 		() => ({
 			fonts: declared.fonts.slice(0, 64),
-			emoji: declared.emoji.slice(0, 8).map((e) => ({ ...e, graphemes: e.graphemes.slice(0, 512) })),
+			// the engine's per-pack cap (REMOTE_PREFETCH_MAX_EMOJI covers every emoji of Unicode; exports report any over it)
+			emoji: declared.emoji
+				.slice(0, 8)
+				.map((e) => ({ ...e, graphemes: e.graphemes.slice(0, REMOTE_PREFETCH_MAX_EMOJI) })),
 			images: declared.images.slice(0, 32),
 		}),
 		[declared],

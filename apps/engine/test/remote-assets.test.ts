@@ -492,6 +492,51 @@ describe('override manifest, prefetch and notice', () => {
 	});
 });
 
+describe('prefetch emoji cap (never silent)', () => {
+	/** `n` distinct emoji graphemes (regional-indicator pairs: flags, 26 × 26). */
+	const flags = (n: number) =>
+		Array.from({ length: n }, (_, i) =>
+			String.fromCodePoint(0x1f1e6 + (Math.floor(i / 26) % 26), 0x1f1e6 + (i % 26)),
+		);
+
+	it('every distinct emoji of a large project is fetched or reported (over 512 per pack)', async () => {
+		const s = service();
+		await s.putSettings({ platformAssets: false });
+		const graphemes = flags(600);
+		const r = await s.prefetch({ emoji: [{ pack: 'apple', graphemes: [...graphemes, ...graphemes] }] });
+		expect(r.available).toBe(0);
+		// none skipped: each one is reported missing with why (the network is off)
+		expect(r.missing).toHaveLength(600);
+		expect(new Set(r.missing.map((m) => (m.kind === 'emoji' ? m.grapheme : '')))).toEqual(new Set(graphemes));
+		expect(server.hits.size).toBe(0);
+	});
+
+	it('emoji over the cap are reported missing by name (PREFETCH_LIMIT), the others fetched', async () => {
+		const s = service({ prefetchMaxEmoji: 1 });
+		const r = await s.prefetch({
+			emoji: [
+				{ pack: 'apple', graphemes: [GRIN, GRIN] },
+				{ pack: 'apple', graphemes: [HEART] },
+			],
+		});
+		expect(r.available).toBe(1);
+		expect(r.missing).toEqual([
+			{
+				kind: 'emoji',
+				pack: 'apple',
+				grapheme: HEART,
+				error: {
+					code: 'PREFETCH_LIMIT',
+					message: `More than 1 different emoji of the apple pack in one render: ${HEART} was not fetched`,
+					detail: { pack: 'apple', limit: 1 },
+					retryable: false,
+				},
+			},
+		]);
+		expect(server.hits.get('/emoji/2764-fe0f.png')).toBeUndefined();
+	});
+});
+
 describe('remote images (platform default avatars)', () => {
 	it('downloads by id against the pinned hash, serves by file name, refuses changed bytes', async () => {
 		const s = service();

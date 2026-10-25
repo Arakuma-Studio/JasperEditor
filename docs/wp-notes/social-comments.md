@@ -1506,8 +1506,15 @@ missing one is a striped "Image … is not available" banner in preview and an e
 - Limits: per-host concurrency 4, per attempt timeout 30 s (fonts) / 15 s (emoji), size caps 16 MB / 1 MB (declared
   `content-length` and while streaming), 2 retries with 300 ms doubling backoff for network errors, timeouts, 5xx,
   408 and 429 only. Concurrent requests for one file share one download. Prefetch runs ≤ 8 emoji at a time.
+- Prefetch fetches at most `REMOTE_PREFETCH_MAX_EMOJI` (4,096, `@jasper/api`) different emoji per pack per call — a
+  render's whole document (the planner calls the service directly) or the editor's check (the HTTP route's schema
+  takes the same number). Unicode's fully-qualified emoji with every skin-tone and ZWJ form number ≈3,800 (basis:
+  `emoji-test.txt` of Unicode 15.1–16.0), so a real project never reaches it; any emoji over it is reported missing
+  by name (`PREFETCH_LIMIT`, not retryable), which blocks the export through `TEMPLATE_ASSETS_UNAVAILABLE`. Before,
+  the 513th and later emoji of a pack were neither fetched nor reported.
 - Errors are `{code, message, detail?, retryable}`: `REMOTE_ASSET_UNKNOWN` (404), `REMOTE_ASSETS_OFF` (409),
   `DOWNLOAD_NOT_FOUND` (404), `DOWNLOAD_FAILED` / `DOWNLOAD_TIMEOUT` (502 / 504, retryable), `DOWNLOAD_TOO_LARGE`,
+  `PREFETCH_LIMIT` (a prefetch's emoji cap, above),
   `ASSET_HASH_MISMATCH`, `ASSET_BAD_CONTENT` (502), `ASSET_CACHE_WRITE` (500, retryable). Failures are never cached
   (`no-store`).
 - `JASPER_REMOTE_MANIFEST=<file>` replaces the shipped base manifest (tests use an empty one so they never reach the
