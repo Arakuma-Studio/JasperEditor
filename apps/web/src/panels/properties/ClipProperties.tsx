@@ -14,9 +14,11 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
-import { type ReactNode, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { clipSections } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
+import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
+import { FontPicker } from '../../fonts/FontPicker.tsx';
 import { formatTimecode } from '../../gaps/time-display.ts';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
@@ -275,31 +277,6 @@ function SpeedSection({ clips, seq }: { clips: Clip[]; seq: Sequence }) {
 	);
 }
 
-type FontOption = { id: string; label: string; disabled?: boolean };
-
-/** Font families: the project's fonts plus the engine catalog (/api/fonts) for reference. */
-function useFontOptions(session: EditorSession, docFonts: Record<string, { id: string; family: string }>) {
-	const [catalog, setCatalog] = useState<string[]>([]);
-	useEffect(() => {
-		let cancelled = false;
-		session.engine
-			?.listFonts()
-			.then((r) => !cancelled && setCatalog(r.fonts.map((f) => f.family)))
-			.catch(() => undefined);
-		return () => {
-			cancelled = true;
-		};
-	}, [session]);
-	const inDoc = Object.values(docFonts);
-	const known = new Set(inDoc.map((f) => f.family));
-	const options: FontOption[] = [
-		...inDoc.map((f) => ({ id: f.id, label: f.family })),
-		// a bundled family not in the project yet is registered when picked (font.add).
-		...catalog.filter((f) => !known.has(f)).map((f) => ({ id: `catalog:${f}`, label: f })),
-	];
-	return options;
-}
-
 function TextSections(props: {
 	session: EditorSession;
 	visual: Clip[];
@@ -308,7 +285,6 @@ function TextSections(props: {
 	render(r: Row | null, extra?: Partial<Parameters<typeof PropertyRow>[0]>): ReactNode;
 }) {
 	const { visual, ctx, rows, render, session } = props;
-	const fonts = useFontOptions(session, ctx.doc.fonts);
 	const get = (k: string) => rows([k], visual)[0] ?? null;
 	const content = get('text.content');
 	const fontRow = get('text.fontId');
@@ -353,20 +329,16 @@ function TextSections(props: {
 				{fontRow
 					? render(fontRow, {
 							editor: (
-								<select
-									aria-label="Font"
-									className="h-[20px] min-w-0 flex-1 rounded-pr-control bg-pr-field px-1 font-pr text-pr-ui text-pr-text"
-									value={rowValue(fontRow).mixed ? '' : String(rowValue(fontRow).value)}
-									onChange={(e) => e.target.value && setRow(fontRow, e.target.value)}
+								<FontPicker
+									label="Font"
+									value={rowValue(fontRow).mixed ? null : String(rowValue(fontRow).value)}
+									docFonts={ctx.doc.fonts}
+									onPickFont={(id) => setRow(fontRow, id)}
+									onPickFamily={(family) => setRow(fontRow, `catalog:${family}`)}
+									onResolveFonts={() => openResolveFonts(session)}
+									onManageFonts={() => openFontPreferences(session)}
 									data-testid="prop-text.fontId"
-								>
-									{rowValue(fontRow).mixed ? <option value="">–</option> : null}
-									{fonts.map((f) => (
-										<option key={f.id} value={f.id} disabled={f.disabled}>
-											{f.label}
-										</option>
-									))}
-								</select>
+								/>
 							),
 						})
 					: null}

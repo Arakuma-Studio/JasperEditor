@@ -104,7 +104,11 @@ export class CapabilityService {
 				fframes: 'unavailable',
 				fframesReason: 'The jasper-mg renderer is not registered',
 			},
-			fonts: { bundledCatalog: this.deps.fonts.available, systemFonts: false, customUpload: false },
+			fonts: {
+				bundledCatalog: this.deps.fonts.available,
+				systemFonts: false,
+				customUpload: this.deps.fonts.libraryAvailable,
+			},
 			limits: {
 				maxUploadBytes: null,
 				freeDiskBytes: null,

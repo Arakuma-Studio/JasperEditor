@@ -759,6 +759,30 @@ export class EngineClient {
 	listFonts() {
 		return this.call('fontsList');
 	}
+	/** wp fonts: the user font library (every installed face, limits, repairs made on open). */
+	fontLibrary() {
+		return this.call('fontLibraryList');
+	}
+	/** wp fonts: installs a font file (TTF, OTF, TTC, WOFF, WOFF2) into the user font library. */
+	installFont(file: Blob | ArrayBuffer | Uint8Array, fileName?: string, signal?: AbortSignal) {
+		const name = fileName ?? (file instanceof Blob ? this.blobName(file) : undefined);
+		return this.call('fontInstall', {
+			body: file,
+			...(name ? { query: { fileName: name.slice(0, 255) } } : {}),
+			...(signal ? { signal } : {}),
+		});
+	}
+	/** wp fonts: installs a font file from the engine's machine (local mode). */
+	installFontPath(path: string) {
+		return this.call('fontInstallPath', { body: { path } });
+	}
+	removeFont(fontId: string) {
+		return this.call('fontDelete', { params: { fontId } });
+	}
+	/** wp fonts: the saved projects that use a library face. */
+	fontUsage(fontId: string) {
+		return this.call('fontUsage', { params: { fontId } });
+	}
 	mgTemplates() {
 		return this.call('mgTemplates');
 	}

@@ -254,6 +254,29 @@ type PlanDeps = {
 	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
 };
 
+/** Font ids a text or captions layer draws with: its style, styled runs and Source Text keys. */
+function clipFontIds(c: RenderVisualClip): string[] {
+	if ('captions' in c.source) return [c.source.captions.style.fontId];
+	if (c.kind !== 'text' || !('text' in c.source)) return [];
+	const t = c.source.text as {
+		style: { fontId: string };
+		runs?: { style?: { fontId?: string } }[];
+	};
+	const keys = (
+		c.source as {
+			sourceTextKeyframes?: {
+				value?: { style?: { fontId?: string }; runs?: { style?: { fontId?: string } }[] };
+			}[];
+		}
+	).sourceTextKeyframes;
+	const out = [t.style.fontId];
+	for (const ct of [t, ...(keys ?? []).map((k) => k.value)]) {
+		if (ct?.style?.fontId) out.push(ct.style.fontId);
+		for (const r of ct?.runs ?? []) if (r.style?.fontId) out.push(r.style.fontId);
+	}
+	return out;
+}
+
 /** color-mgmt: the (nested) sequences of a snapshot that blend in linear light ('' = the exported one). */
 function linearBlendSequences(snap: RenderSnapshot, name = ''): string[] {
 	const out = snap.settings.color?.blendLinear ? [name] : [];
@@ -303,7 +326,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			}
 		}
 	}
-	const fontFallbacks = new Set<string>();
+	/** Fonts not in the catalog (bundled families or the user font library) → their family, FONT_FALLBACK. */
+	const fontFallbacks = new Map<string, string>();
 	let captionWarnings: RenderPlan['warnings'] = [];
 	try {
 		captionWarnings = captionPlanWarnings(document, seq, settings, range);
@@ -321,7 +345,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		},
 		resolveFont: (font, weight, italic) => {
 			const r = deps.fonts.resolve(font.family, weight, italic);
-			if (r?.fallback) fontFallbacks.add(font.id);
+			if (r?.fallback) fontFallbacks.set(font.id, font.family);
 			return r?.url ?? null;
 		},
 	});
@@ -550,16 +574,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	if (fontFallbacks.size > 0) {
-		const ids = visual
-			.filter(
-				(c) =>
-					(c.kind === 'text' && 'text' in c.source && fontFallbacks.has(c.source.text.style.fontId)) ||
-					('captions' in c.source && fontFallbacks.has(c.source.captions.style.fontId)),
-			)
-			.map((c) => c.clipId);
+		const ids = visual.filter((c) => clipFontIds(c).some((id) => fontFallbacks.has(id))).map((c) => c.clipId);
+		const families = [...new Set(fontFallbacks.values())].sort();
 		warnings.push({
 			code: 'FONT_FALLBACK',
-			message: 'Some fonts are not bundled; the default family is used instead',
+			message: `${families.length === 1 ? 'A font is' : 'Fonts are'} not installed: ${families.join(', ')}. The default family is used instead; install ${families.length === 1 ? 'it' : 'them'} in Preferences ▸ Fonts (Graphics ▸ Resolve Fonts…)`,
 			itemIds: ids,
 		});
 	}

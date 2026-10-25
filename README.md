@@ -486,6 +486,8 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `get_text_animators` `remove_text_animators` `set_text_path` `convert_text_animation`.
 - Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
   `delete_effect_preset`.
+- Fonts (the user font library, Edit ▸ Preferences ▸ Fonts): `list_fonts` `install_font` `remove_font`
+  (`docs/wp-notes/fonts.md`).
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
 - Blend modes: `list_blend_modes` `set_blend_mode` (Premiere's 27 + After Effects' stencils, `docs/wp-notes/keyframes-blend.md`).
 - 3D layers, cameras and lights: `set_3d_layer` `set_3d_transform` `set_material` `add_camera` `camera_settings` `move_camera` `add_light` `light_settings` `set_3d_renderer` `get_3d_scene`; 3D Camera Tracker: `track_camera` `get_camera_tracker` `create_tracked_camera` `set_tracker_ground` `delete_track_points` (After Effects' Classic 3D and 3D Camera Tracker, `docs/wp-notes/three-d.md`).

@@ -421,6 +421,8 @@ Every state-changing engine route and what an agent may do with it:
 |---|---|---|
 | `DELETE /api/effect-presets/:id`, `…/folders/:id` (`delete_effect_preset`) | **Gated** | The user's library, shared by all projects, no undo |
 | `POST /api/effect-presets`, `PUT …/:id`, `POST …/import`, `POST/PUT …/folders` (`save_effect_preset`) | Open | Add, rename, move: nothing is lost; import never overwrites |
+| `DELETE /api/fonts/library/:id` (`remove_font`; wp fonts) | **Gated** | The user's font library, shared by all projects, no undo; the card names the saved projects that use the font |
+| `POST /api/fonts/library`, `POST /api/fonts/library/install-path` (`install_font`) | Open | Adds fonts (validated, size- and count-bounded); never overwrites an installed face; path installs are local mode only |
 | `DELETE /api/roto/models/:id`, `DELETE /api/speech/models/:id` (`remove_roto_model`, `remove_speech_model`) | **Gated** | Gigabytes to download again; features stop working meanwhile |
 | `DELETE /api/sounds/semantic/models/:id` (`remove_describe_search_model`; WP-E9) | **Gated** | 780 MB to download again; its cached embeddings go with it; Describe-it search and Find Moment stop working meanwhile (nothing installed: nothing asked) |
 | `POST …/models/:id/install` (`install_*_model`, `install_describe_search_model`) | Open | Catalogue-pinned downloads, size-bounded (ENG-2) |
