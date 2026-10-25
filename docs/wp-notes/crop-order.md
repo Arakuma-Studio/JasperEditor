@@ -81,6 +81,7 @@ continuous at f → 0, and equal to a numerical box-filtered average of the ramp
 | Preview / Remotion, CSS stages (`pipeline.ts` `effectStages`, `LayerBox`) | `clip-path: inset()` on its own wrapper at its stack position (inner wrappers = earlier effects): exact | CSS gradients are dithered/resampled, so never used: the layer takes the fx chain |
 | fx canvas chain (`fx/plan.ts`) | `crop` step at its position; after the last chain step it stays a CSS stage (still in order) | GPU stand-in step at its position (shared profile, feather × `pxScale`); keyframed/expressed feather (`cropMayFeather`) keeps this path on every frame |
 | Colour stage (`color/chain.ts`) | stays a CSS stage (crop commutes with LUTs); a crop placed before a pixel-mixing effect that precedes a colour run would be cut after it, so such layers take the fx chain (`cropNeedsChain`) | layer takes the fx chain |
+| Flat compositor (`fx/flat-plan.ts`) | DOM layers captured in composition space keep their CSS stages | a DOM layer with a feathered crop counts as drawing through its own canvas (`clipDrawsThroughCanvas`) |
 | No WebGL2 / no HTML-in-Canvas (preview) | unchanged | hard `clip-path` plus the "GPU effects unavailable" chip (bypass recorded); renders cancel instead |
 | Adjustment layers (`AdjustmentScope.tsx`, `fxAdjustmentMix`) | region = intersection of the crop windows, each mirrored by the flips after it; a crop before a pixel-mixing effect also cuts (hard) at its place | region coverage × profile: original + coverage · (mixed − original) |
 | Native filter path (`native.ts` `layerSourceChain`) | `crop`+`pad` (whole px) or the keyframed rectangle mask, at its place | `cropFeatherFilter`: `geq` x- and y-profiles (`W×1`, `1×H`, per-frame edge/feather expressions), replicated, `lut2` product, alpha multiply — at its place |
@@ -131,6 +132,8 @@ the visible window is mirrored (as v7 drew it).
   has `feather: 6`, which no path drew before; old vs new differ only in a band along the four edges of the pinned crop
   window (2 515 px, PSNR 27.1 dB against the old frame, max 193 where the hard edge met the card), the rest of the frame
   is unchanged.
+- Regression suites rerun unchanged (REMOTION_E2E=1): all 61 `golden-scenes.e2e` scenes (only `crop-corner-pin`
+  re-blessed, above), `golden-parity.e2e`, `edit-structure-render.e2e`.
 - Unit tests: `packages/project/test/crop-stack.test.ts`, `packages/compositions/test/crop-order.test.ts`,
   `apps/web/test/crop-order-ui.test.tsx`.
 
