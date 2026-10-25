@@ -84,7 +84,10 @@ What is covered:
 
 Native-vs-Remotion parity: `apps/engine/test/native-animated.test.ts` (keyframed Motion / Opacity / crop, SSIM ≥ 0.98,
 `REMOTION_E2E=1`) and `apps/engine/test/golden-parity.e2e.test.ts` (static compositor scenes exported natively and
-by Remotion, compared with each other and with goldens). `apps/engine/test/blend-export.test.ts` checks a native
+by Remotion, compared with each other and with goldens), `apps/engine/test/crop-order-parity.e2e.test.ts` (Crop in
+stack order and Edge Feather, export vs Remotion and vs the shared feather profile; `REMOTION_E2E=1`) and
+`apps/engine/test/crop-order-native.test.ts` (the same on the native path against computed pixels, no Chrome).
+`apps/engine/test/blend-export.test.ts` checks a native
 Multiply / half-opacity Normal / Difference stack against independently calculated pixels, plus literal kernel
 vectors for transparent layer pixels, stencil clearing and inactive-frame passthrough.
 
