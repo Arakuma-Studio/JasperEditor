@@ -315,10 +315,24 @@ The root incoming baseline completed before edits: 503 passed, five failed (unre
 
 A final caller census found `cropCoverageAt` only in test files. It is not used by a renderer; its independently rewritten unit oracle therefore still protected dead code. The wrapper/function export and that one case are deleted. The engine render owner replaces its wrapper imports with the documented product of four real `cropEdgeCoverage` primitives. That primitive has actual production callers in `packages/compositions/src/fx/effects.ts` and retains the independent numerical ramp oracle; actual native corner and feather images own the four-edge product. This is not a production rendering change.
 
-The preceding 192 / 44 / 106 execution results refer to `ed56979a` before this final one-case deletion. This followup runs only static Biome and diff checks while the shared browser/render queue is active; root validates the integrated final source. Final assigned disposition totals after the further public-preset consolidation below: 102 KEEP, 24 REWRITE, 1 OPTIMIZE, 7 CONSOLIDATE, 14 DELETE; 128 named declarations survive 148. Of 92 new declarations: 49 KEEP, 22 REWRITE, 1 OPTIMIZE, 6 CONSOLIDATE, 14 DELETE.
+The preceding 192 / 44 / 106 execution results refer to `ed56979a` before this final one-case deletion. The final crop/preset validation below covers this removal together with the public preset consolidation; root additionally validates the integrated full source. Final assigned disposition totals after the further public-preset consolidation below: 102 KEEP, 24 REWRITE, 1 OPTIMIZE, 7 CONSOLIDATE, 14 DELETE; 128 named declarations survive 148. Of 92 new declarations: 49 KEEP, 22 REWRITE, 1 OPTIMIZE, 6 CONSOLIDATE, 14 DELETE.
 
 ## Public pinned-crop overwrite owner
 
 The `pinnedCropOf` helper returns a reference used by real preset and MCP callers, but reference identity itself is not an independently specified public behavior. Its direct unit is consolidated into existing `effect.applyPreset` behavior. Before reapplying the saved preset, a real `param.set` changes the target's pinned crop from left 10 to left 27; reapplying must restore literal 10 and retain exactly one crop. This catches detached-clone writes while allowing helper/caller refactors that preserve actual crop editing. No production function is removed or changed. The original overwrite owner's outcome becomes REWRITE, and the helper unit becomes CONSOLIDATE.
 
-Static Biome and diff checks pass at this checkpoint. The changed preset/crop targets and a detached-clone mutation of the real helper are queued for the next isolated validation slot; no runtime pass is claimed for this final consolidation yet.
+Final validation at `8b56b7b4`: both crop/preset files passed **24 of 24 cases**, 10.06 s runner. A real production mutation returning `{ ...first }` from `pinnedCropOf` made the rewritten preset owner fail exactly at the meaningful write: **received left 27, expected preset left 10**. Original source bytes were restored and their SHA-256 verified (`73f9bce66adbae78ffd697f095e3674af97a924c6a507b579d3aea36c65da588`); the same **24 cases passed again**, 9.78 s runner. The mutation exited 1 in 10.241 s command wall time. Neither target skipped or retried a case; there was no unhandled error. Biome and diff checks passed. The physical crop reference and the public overwrite owner remain protected; identity itself is no longer asserted.
+
+```sh
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run \
+  packages/project/test/crop-stack.test.ts packages/project/test/effect-presets.test.ts \
+  --maxWorkers=2 --reporter=default --reporter=json \
+  --outputFile.json=/tmp/jasper-test-cleanup/incoming-wave2/model-pinned-target.json
+# Repeat after byte-restoring the mutant: identical command, outputFile model-pinned-restored.json.
+env -u NODE_OPTIONS pnpm exec vitest run packages/project/test/effect-presets.test.ts \
+  --maxWorkers=2 --testNamePattern 'overwrites intrinsics, appends effects' \
+  --reporter=default --reporter=json \
+  --outputFile.json=/tmp/jasper-test-cleanup/incoming-wave2/model-pinned-mutant.json
+```
+
+The isolated mutation/restoration implementation and raw evidence are `model-pinned-mutant.py` and `model-pinned-mutant-evidence.json` under the same evidence directory. No production change survives the proof.
