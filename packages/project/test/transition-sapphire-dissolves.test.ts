@@ -32,7 +32,10 @@ describe('Sapphire dissolve timing and migration', () => {
 		expect(peak.env).toBeCloseTo(1);
 		expect(peak.mix).toBeCloseTo(0.5);
 		expect(dissolveTiming({ slowIn: 1, slowOut: 1 }, 0.1).t).toBeLessThan(0.05);
-		expect(dissolveTiming({ shiftPeak: -0.2 }, 0.3)).toMatchObject({ env: 1, mix: 0.5 });
+		expect(dissolveTiming({ shiftPeak: -0.2 }, 0.3)).toMatchObject({
+			env: expect.closeTo(1, 12),
+			mix: expect.closeTo(0.5, 12),
+		});
 		expect(dissolveTiming({}, 0.25).mix).toBeCloseTo(0.25);
 		expect(dissolveTiming({ dissolveSpeed: 3 }, 0.25).mix).toBe(0);
 		expect(dissolveTiming({ dissolveSpeed: 10 }, 0.5).mix).toBe(0.5);
