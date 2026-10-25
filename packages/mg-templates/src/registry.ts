@@ -1,8 +1,11 @@
-import type {
-	MgTemplateInfo,
-	MgTemplateMotionTiming,
-	MgTemplateRegistry,
-	MgTemplateUpgrade,
+import {
+	MG_PRESET_ID,
+	type MgTemplateInfo,
+	type MgTemplateMotionTiming,
+	type MgTemplatePreset,
+	type MgTemplateRegistry,
+	type MgTemplateUi,
+	type MgTemplateUpgrade,
 } from '@jasper/project';
 import { z } from 'zod';
 import { svgTemplateSpeed } from './motion.ts';
@@ -36,6 +39,10 @@ export type MgCatalogEntryJson = {
 	canvases: string[];
 	/** Absent means fframes, matching the native renderer catalog. */
 	renderer?: 'anime';
+	/** Named param presets (absent when the template has none). */
+	presets?: MgTemplatePreset[];
+	/** UI hints of the params (absent when the template has none). */
+	ui?: MgTemplateUi;
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
@@ -77,6 +84,8 @@ function toTemplateInfo(def: AnyMgTemplate, cache: MotionCache): MgTemplateInfo 
 		canvases: def.canvases,
 		...(isAnimeTemplate(def) ? { renderer: 'anime' as const } : {}),
 		...(def.description ? { description: def.description } : {}),
+		...(def.presets?.length ? { presets: def.presets } : {}),
+		...(def.ui ? { ui: def.ui } : {}),
 		defaultDurationSeconds: def.defaultDurationSeconds,
 		// fframes templates: measured on their SVG twins. Anime templates are drawn by @jasper/motion (anime.js),
 		// which this layer may not import (ARCHITECTURE §3.1): they are measured on their motion model (the phases
@@ -163,6 +172,9 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 		if (map.has(k)) throw new Error(`Duplicate motion-graphic template ${k}`);
 		const check = d.paramsSchema.safeParse(d.defaults);
 		if (!check.success) throw new Error(`Defaults of ${k} do not match its params schema`);
+		const names = paramNames(d);
+		checkPresets(d, k, names);
+		checkUi(d, k, names);
 		map.set(k, d);
 	}
 	const cache = motionCache();
@@ -190,6 +202,125 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 				...(d.description ? { description: d.description } : {}),
 				canvases: d.canvases.map((c) => `${c.width}x${c.height}`),
 				...(isAnimeTemplate(d) ? { renderer: 'anime' as const } : {}),
+				...(d.presets?.length ? { presets: d.presets.map(presetJson) } : {}),
+				...(d.ui ? { ui: uiJson(d.ui) } : {}),
 			})),
 	};
+}
+
+/** The params of a preset applied to the template defaults (undefined when the template has no such preset). */
+export function templatePresetParams(
+	def: Pick<AnyMgTemplate, 'defaults' | 'presets'>,
+	presetId: string,
+): Record<string, unknown> | undefined {
+	const preset = def.presets?.find((p) => p.id === presetId);
+	return preset ? { ...def.defaults, ...preset.params } : undefined;
+}
+
+/** Param names of a template (the top-level properties of its params JSON Schema). */
+function paramNames(d: AnyMgTemplate): Set<string> {
+	const json = z.toJSONSchema(d.paramsSchema, { unrepresentable: 'any', io: 'input' }) as {
+		properties?: Record<string, unknown>;
+	};
+	return new Set(Object.keys(json.properties ?? {}));
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+	!!v && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+/** Longest preset / group id (they appear in refs and section ids). */
+const MAX_ID_LENGTH = 64;
+
+function firstIssue(r: { error?: { issues: { path: PropertyKey[]; message: string }[] } }): string {
+	const i = r.error?.issues[0];
+	return i ? `${i.path.map(String).join('.') || '(params)'}: ${i.message}` : 'invalid';
+}
+
+/** Presets (S: social comments): unique valid ids, names, only known params, defaults ⊕ params pass the schema. */
+function checkPresets(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void {
+	if (d.presets === undefined) return;
+	if (!Array.isArray(d.presets)) throw new Error(`Presets of ${k} must be an array`);
+	const ids = new Set<string>();
+	for (const p of d.presets as unknown[]) {
+		if (!isPlainObject(p)) throw new Error(`A preset of ${k} is not an object`);
+		const id = p.id;
+		if (typeof id !== 'string' || id.length > MAX_ID_LENGTH || !MG_PRESET_ID.test(id))
+			throw new Error(`Preset id ${JSON.stringify(id)} of ${k} must match [a-z0-9][a-z0-9-]* (≤ ${MAX_ID_LENGTH})`);
+		if (ids.has(id)) throw new Error(`Duplicate preset ${k}:${id}`);
+		ids.add(id);
+		if (!nonEmpty(p.name)) throw new Error(`Preset ${k}:${id} needs a name`);
+		if (p.description !== undefined && typeof p.description !== 'string')
+			throw new Error(`The description of preset ${k}:${id} must be a string`);
+		if (!isPlainObject(p.params)) throw new Error(`The params of preset ${k}:${id} must be an object`);
+		for (const name of Object.keys(p.params))
+			if (!names.has(name)) throw new Error(`Preset ${k}:${id} sets an unknown param "${name}"`);
+		const r = d.paramsSchema.safeParse({ ...d.defaults, ...p.params });
+		if (!r.success) throw new Error(`Preset ${k}:${id} does not match the params schema (${firstIssue(r)})`);
+	}
+}
+
+/** UI hints: groups and per-param hints name existing params; `visibleWhen` values are valid for their param. */
+function checkUi(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void {
+	const ui = d.ui as unknown;
+	if (ui === undefined) return;
+	if (!isPlainObject(ui)) throw new Error(`The ui hints of ${k} must be an object`);
+	const { groups, params } = ui as { groups?: unknown; params?: unknown };
+	if (groups !== undefined) {
+		if (!Array.isArray(groups)) throw new Error(`ui.groups of ${k} must be an array`);
+		const ids = new Set<string>();
+		const placed = new Set<string>();
+		for (const g of groups as unknown[]) {
+			if (!isPlainObject(g)) throw new Error(`A ui group of ${k} is not an object`);
+			if (!nonEmpty(g.id) || g.id.length > MAX_ID_LENGTH)
+				throw new Error(`A ui group of ${k} needs an id (≤ ${MAX_ID_LENGTH} characters)`);
+			if (ids.has(g.id)) throw new Error(`Duplicate ui group "${g.id}" in ${k}`);
+			ids.add(g.id);
+			if (!nonEmpty(g.label)) throw new Error(`ui group "${g.id}" of ${k} needs a label`);
+			if (!Array.isArray(g.params)) throw new Error(`ui group "${g.id}" of ${k} needs a params array`);
+			for (const name of g.params as unknown[]) {
+				if (typeof name !== 'string' || !names.has(name))
+					throw new Error(`ui group "${g.id}" of ${k} lists an unknown param ${JSON.stringify(name)}`);
+				if (placed.has(name)) throw new Error(`Param "${name}" of ${k} is in more than one ui group`);
+				placed.add(name);
+			}
+		}
+	}
+	if (params === undefined) return;
+	if (!isPlainObject(params)) throw new Error(`ui.params of ${k} must be an object`);
+	for (const [name, h] of Object.entries(params)) {
+		if (!names.has(name)) throw new Error(`ui.params of ${k} names an unknown param "${name}"`);
+		if (!isPlainObject(h)) throw new Error(`ui.params.${name} of ${k} must be an object`);
+		for (const key of ['label', 'description', 'control'] as const)
+			if (h[key] !== undefined && !nonEmpty(h[key]))
+				throw new Error(`ui.params.${name}.${key} of ${k} must be a non-empty string`);
+		if (h.multiline !== undefined && typeof h.multiline !== 'boolean')
+			throw new Error(`ui.params.${name}.multiline of ${k} must be a boolean`);
+		const w = h.visibleWhen;
+		if (w === undefined) continue;
+		if (!isPlainObject(w) || typeof w.param !== 'string' || !Array.isArray(w.in) || w.in.length === 0)
+			throw new Error(`ui.params.${name}.visibleWhen of ${k} must be {param, in: [values…]}`);
+		if (w.param === name || !names.has(w.param))
+			throw new Error(`ui.params.${name}.visibleWhen of ${k} must name another param of the template`);
+		for (const v of w.in as unknown[]) {
+			const r = d.paramsSchema.safeParse({ ...d.defaults, [w.param]: v });
+			if (!r.success)
+				throw new Error(
+					`ui.params.${name}.visibleWhen of ${k}: ${JSON.stringify(v)} is not a valid value of "${w.param}"`,
+				);
+		}
+	}
+}
+
+/** JSON-safe copies (the catalogue is served over HTTP and listed to agents). */
+function presetJson(p: MgTemplatePreset): MgTemplatePreset {
+	return {
+		id: p.id,
+		name: p.name,
+		...(p.description ? { description: p.description } : {}),
+		params: JSON.parse(JSON.stringify(p.params)) as Record<string, unknown>,
+	};
+}
+
+function uiJson(ui: MgTemplateUi): MgTemplateUi {
+	return JSON.parse(JSON.stringify(ui)) as MgTemplateUi;
 }

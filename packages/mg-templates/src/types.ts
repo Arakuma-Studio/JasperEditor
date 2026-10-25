@@ -1,7 +1,10 @@
 // Motion-graphic template definitions: the TS twins of the Rust `jasper-mg` templates
 // (ARCHITECTURE §10.2, D-12). Each definition mirrors one Rust module in
 // native/mg/crates/jasper-mg-templates/src (same id, version, param names, defaults and ranges).
+import type { MgTemplatePreset, MgTemplateUi } from '@jasper/project';
 import type { ZodType } from 'zod';
+
+export type { MgTemplateParamUi, MgTemplatePreset, MgTemplateUi } from '@jasper/project';
 
 export type MgCanvas = { width: number; height: number };
 
@@ -48,6 +51,14 @@ export type MgTemplateBase<P extends Record<string, unknown> = Record<string, un
 	canvases: MgCanvas[];
 	/** Upgrade path from older versions of this template id to this version. */
 	upgrades?: readonly MgTemplateUpgradeStep[];
+	/**
+	 * Named param presets: the Motion Templates gallery shows one card per preset instead of one for the template,
+	 * `list_motion_templates` lists them and `add_motion_graphic` accepts `"<id>:<preset>"`. `params` holds what the
+	 * preset changes; defaults ⊕ params must pass `paramsSchema` (checked by `createMgRegistry`).
+	 */
+	presets?: readonly MgTemplatePreset[];
+	/** UI hints of the params: groups (ordered sub-sections), labels, tooltips, multi-line, visibility, controls. */
+	ui?: MgTemplateUi;
 };
 
 /** fframes template (D-12): rendered by `jasper-mg`, previewed by its TS SVG twin. */
