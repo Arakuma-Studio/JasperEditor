@@ -711,22 +711,41 @@ The six-bar evidence is factored per file below: the exact test title identifies
 
 ## Validation and measurements
 
-Coordinator baseline (`JASPER_REQUIRE_ORACLES=1`, Node 24.22.1, pnpm 10.34.5, Vitest 4.1.11, `--maxWorkers=2`): all **296 expanded cases in these 43 files passed**. The complete baseline has unrelated failures; those belong to the coordinator's repository-wide report. Measured case durations in this scope: layer-bake idle preview 4460 ms, tracker fallback polling 904 ms, simplify cancellation 490 ms. These are individual case durations from the full run, not isolated wall-clock measurements.
+The coordinator's original full-suite baseline (`JASPER_REQUIRE_ORACLES=1`, `--maxWorkers=2`) passed all **296 expanded cases in these 43 files**. The full repository baseline had unrelated failures, recorded by the coordinator. Measured individual baseline cases in this scope: layer-bake idle preview 4460 ms, tracker fallback polling 904 ms, simplify cancellation 490 ms.
 
-Static checks actually executed: changed-file Biome check/format (17 TypeScript files), `git diff --check`, exhaustive `rg` caller checks for removed seams, and matching all 273 original declaration identities against `/tmp/jasper-test-cleanup/baseline-declarations.json` (zero mismatches). Runtime/typecheck/mutation checks remain **pending under the coordinator's validation lock**. No speedup is claimed.
+Local validation used Node **20.19.0**, pnpm **10.34.5**, Vitest **4.1.11**, on the same eight-vCPU AMD EPYC-Genoa / 15 GiB Linux host. Required-oracle/browser environment variables were set for the changed-test run. No real browser or FFmpeg work was needed by these targets. Install used the frozen lockfile and existing offline package store, without linking another checkout's workspace aliases.
 
-Pending commands after the coordinator releases the lock:
+Commands actually executed:
 
 ```sh
-export PATH=/root/.local/share/mise/installs/node/24.22.1/bin:$PATH
+export PATH=/tmp/jasper-test-cleanup/toolchain/node-v20.19.0-linux-x64/bin:/root/.local/share/mise/installs/node/24.22.1/bin:$PATH
 pnpm install --frozen-lockfile --offline
-# All 43 paths listed in this ledger, with --maxWorkers=2:
-pnpm exec vitest run <owned-files> --maxWorkers=2
-pnpm --filter @jasper/web typecheck
-python3 /tmp/measure-web-features-cleanup.py
+JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run apps/web/test/easing-commands.test.ts apps/web/test/easing-curve-edit.test.ts apps/web/test/easing-panel.test.tsx apps/web/test/layer-bake-runtime.test.ts apps/web/test/motion-path.test.tsx apps/web/test/stroke-animation-dock.test.ts apps/web/test/stroke-animation.test.tsx apps/web/test/text-animation.test.tsx apps/web/test/tracking-actions.test.tsx apps/web/test/tracking-simplify.test.tsx --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/web-features-target.json
 python3 /tmp/mutate-web-features-cleanup.py
+python3 /tmp/measure-web-features-cleanup.py
 ```
 
-The measurement helper alternates the original and optimized three debounce/polling files twice with the same runner/worker settings and restores the final files in `finally`; it records wall-clock times, exit codes and host load. The mutation helper temporarily changes the production idle delay from 2000 to 1000 ms and requires rejection by the no-early-submission assertion before restoring the original file. These helpers have been prepared, **not executed**. Root owns integrated lint/typecheck/test/build/E2E and final comparable full-suite timing.
+Changed targets: **10 files / 116 tests passed**, Vitest duration **23.17 s**, whole-command wall clock **24.30 s**. Retained text-animation UI tests emitted React DOM-nesting diagnostics; no diagnostic was suppressed. The test changes introduced no failures in these targets.
+
+The intended regression mutation changed production `PREVIEW_IDLE_MS` from 2000 to 1000. The optimized preview test rejected it specifically at the 1999-ms no-early-request assertion (`expected length 0`, got `1`), rather than an unrelated error. The helper restored production source in `finally`; all subsequent measurement runs passed with the original source.
+
+The measurement helper alternated original and optimized versions of only these three test files twice: `layer-bake-runtime.test.ts`, `tracking-actions.test.tsx`, `tracking-simplify.test.tsx`. Original test text came from `8b4c8936`; all other files and runner settings stayed identical. Every invocation used:
+
+```sh
+JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/web/test/layer-bake-runtime.test.ts apps/web/test/tracking-actions.test.tsx apps/web/test/tracking-simplify.test.tsx --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=<per-run-result.json>
+```
+
+| Version | Run | Whole-command wall s | Sum of case durations s | Result |
+|---|---:|---:|---:|---|
+| before | 1 | 14.298 | 6.863 | 26 passed |
+| after | 1 | 16.425 | 0.611 | 26 passed |
+| before | 2 | 23.749 | 6.947 | 26 passed |
+| after | 2 | 13.524 | 0.621 | 26 passed |
+
+Measured mean wall clock: **19.023 → 14.975 s**, a **4.049 s / 21.3%** lower point estimate. Variance is substantial: the first after run was slower, the ranges overlap, and import/transform time dominates. These four samples do **not** establish a full-suite or CI speedup. Mean summed test-case duration decreased **6.905 → 0.616 s** (6.289 s / 91.1%); the real waits were the consistent contribution removed. The final group still spends about 0.18–0.19 s on its real tracking-overlay gesture and 0.14 s on its simplification-preview workflow; these uniquely protect actual pointer/session behavior.
+
+Raw metadata/logs: `/tmp/jasper-test-cleanup/web-features-target.*`, `web-features-before-{1,2}.*`, `web-features-after-{1,2}.*`, `web-features-measurements.json`, `web-features-mutation.log`. The four measurement start-load samples were 2.73, 3.00, 2.80, 2.27; other bounded agent tasks were running on this shared host. Final test files were restored after measurement and the source checkout matched the implementation commit.
+
+Static verification passed: changed-file Biome check/format (17 TypeScript files), `git diff --check`, exhaustive `rg` caller checks for removed seams, and matching all 273 original declaration identities against the coordinator's baseline inventory (zero mismatches). Root owns the authoritative integrated lint/typecheck/test/build/E2E gates and full-suite timing. A repeated full web typecheck was deliberately not run in this resource slot, following the coordinator's instruction.
 
 Declaration dispositions: CONSOLIDATE 13, DELETE 12, KEEP 227, OPTIMIZE 6, REWRITE 15. Final runnable counts differ because one real modifier test expands to four cases.
