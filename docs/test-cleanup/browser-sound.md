@@ -118,4 +118,23 @@ JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm e
 JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome E2E_PORT=49550 E2E_APPDIR=/tmp/jasper-test-cleanup/browser-final/mutant-appdir JASPER_APPDIR=/tmp/jasper-test-cleanup/browser-final/mutant-appdir E2E_SKIP_BUILD=1 PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/jasper-test-cleanup/browser-final/mutant-c2b.json pnpm e2e e2e/sound-p0-transport.spec.ts --grep 'seek during playback' --workers=1 --reporter=line,json
 ```
 
-After restoring source, the same targeted lower command passed1selected test (3filtered by `-t`) in18.45s process wall, proving the mutation was removed. Final `pnpm exec biome check` on the five changed TypeScript files and `git diff --check` passed; actual TypeScript `env NODE_OPTIONS=--max-old-space-size=4096 pnpm e2e:typecheck` also passed. No production source diff remains. The parent owns the final two source-current browser passes and will record their results here. The existing paused-seek settling waits remain: public playhead position alone does not prove decoder/audio-anchor readiness, and replacing them with an immediate query would change the exercised timing without an equivalent documented readiness signal. No extra sleep, timeout, retry or production hook was added.
+After restoring source, the same targeted lower command passed1selected test (3filtered by `-t`) in18.45s process wall, proving the mutation was removed. Final `pnpm exec biome check` on the five changed TypeScript files and `git diff --check` passed; actual TypeScript `env NODE_OPTIONS=--max-old-space-size=4096 pnpm e2e:typecheck` also passed. No production source diff remains. The completed two source-current root browser passes are recorded below. The existing paused-seek settling waits remain: public playhead position alone does not prove decoder/audio-anchor readiness, and replacing them with an immediate query would change the exercised timing without an equivalent documented readiness signal. No extra sleep, timeout, retry or production hook was added.
+
+
+## Completed root validation
+
+At final source `797e53fc`, the complete 53-spec browser run passed113 cases with
+two expected skips (native motion graphics unavailable; real CLAP not configured),
+zero failures/flaky cases, errors or retried test results, in1182.448s runner /
+1183.95s command wall. All14 strict tap consumers passed there and again in a new
+appdir/port:14/14, no skips/errors/retries,292.055s runner /293.49s wall. Each test
+result contains one attempt; the six big-edit, three long-read-ahead and24paused-seek
+plays retain their full configured count, with no recording discard/replay branch.
+
+The previously failing Sound Check first-click workflow passed unchanged in55.701s
+after the production pointer/focus fix, including confirmation, Apply, recheck and
+MCP agreement. The original failed full run is preserved separately; it is not a
+performance baseline. Full final-run artifacts were copied before the repeat and
+SHA-256 indexed (287 fresh outputs). Exact commands, source/build hashes, skip
+limits and all recorded failures are in the [completed root report](README.md#validation-and-limitations).
+No full sound-browser or CI speedup is inferred from these different workloads.

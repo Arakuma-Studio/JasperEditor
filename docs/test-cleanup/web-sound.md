@@ -883,4 +883,5 @@ the restored two-case file passed in12.68s runner/13.74s command wall. Joint-cas
 bodies were147ms in both successful runs. The repository's actual web TypeScript
 compiler passed (38.60s); scoped Biome and diff checks passed without fixes. No
 performance improvement is inferred from these different targets or startup costs.
-Root owns subsequent integrated gates and the final comparable suite measurement.
+The [completed root report](README.md#validation-and-limitations) records integrated
+gates and the final suite measurement, including workload/tool comparison limits.

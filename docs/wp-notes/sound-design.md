@@ -10828,9 +10828,9 @@ was removed; its source, JSON, traces and screenshots remain under `/tmp/jasper-
 That directory also preserves the original full-run trace/error/screenshot, sanitized `baseline-click-summary.json`,
 `{baseline,click,final}-provenance.json`, `{baseline,click,final}-repro.{log,json,time}` and build logs/timings. No retry,
 synthetic click, sleep, geometry assertion, private event-shape test, production hook or confirmation shortcut was
-added. The parent owns a fresh full integration/gate and the unchanged end-to-end workflow after cherry-picking.
+added. Root integrated the patch without rewriting history; the completed full gate and unchanged workflow are recorded below.
 
-Targeted checks passed: all18existing panel tests (36.82s process wall), actual web TypeScript (41.21s), the changed component’s Biome check and `git diff --check`. The final own-source web build passed (55.42s); the only build warnings were existing bundle-size/annotation notices. These are verification timings, not a claimed suite/CI speedup. The unchanged full Sound Check workflow still needs the parent’s source-current integrated rerun.
+Targeted checks passed: all18existing panel tests (36.82s process wall), actual web TypeScript (41.21s), the changed component’s Biome check and `git diff --check`. The final own-source web build passed (55.42s); the only build warnings were existing bundle-size/annotation notices. These are verification timings, not a claimed suite/CI speedup. The completed source-current integrated rerun is recorded below.
 
 Validation commands (each browser variant’s complete environment, JSON and logs are preserved in the evidence directory; baseline used the runner’s existing retain-on-failure trace default):
 
@@ -10845,3 +10845,11 @@ NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web typecheck
 pnpm exec biome check apps/web/src/panels/soundCheck/SoundCheckPanel.tsx
 git diff --check
 ```
+
+
+Integrated validation at `797e53fc` passed the unchanged complete Sound Check
+workflow (55.701 s), the full 53-spec browser suite (113 passed, two documented
+skips), and a separate 14/14 transport repeat with no retries. Root lint, actual
+TypeScript, the complete required default suite and fresh production/Remotion
+builds also passed. See the [final test-cleanup report](../test-cleanup/README.md#validation-and-limitations)
+for commands, retained failure evidence, timings and unavailable native/model coverage.
