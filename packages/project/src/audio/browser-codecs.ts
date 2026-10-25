@@ -25,7 +25,15 @@ const CONTAINER_FAMILY: Readonly<Record<string, AudioContainerFamily>> = {
 	mpegts: 'mpegts',
 };
 
-export type AudioContainerFamily = 'isobmff' | 'matroska' | 'ogg' | 'wav' | 'mp3' | 'flac' | 'adts' | 'mpegts';
+export type AudioContainerFamily =
+	| 'isobmff'
+	| 'matroska'
+	| 'ogg'
+	| 'wav'
+	| 'mp3'
+	| 'flac'
+	| 'adts'
+	| 'mpegts';
 
 /** WebCodecs AudioDecoder codecs of Chromium / Electron (AAC needs the proprietary-codec build Electron ships). */
 const WEBCODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'] as const;
@@ -68,7 +76,16 @@ export const BROWSER_AUDIO_CODECS: Readonly<Record<AudioContainerFamily, Readonl
 	]),
 	// mediabunny's Ogg demuxer reads Vorbis and Opus streams (no Ogg FLAC).
 	ogg: new Set(['vorbis', 'opus']),
-	wav: new Set(['pcm_u8', 'pcm_s16le', 'pcm_s24le', 'pcm_s32le', 'pcm_f32le', 'pcm_f64le', 'pcm_mulaw', 'pcm_alaw']),
+	wav: new Set([
+		'pcm_u8',
+		'pcm_s16le',
+		'pcm_s24le',
+		'pcm_s32le',
+		'pcm_f32le',
+		'pcm_f64le',
+		'pcm_mulaw',
+		'pcm_alaw',
+	]),
 	mp3: new Set(['mp3']),
 	flac: new Set(['flac']),
 	adts: new Set(['aac']),

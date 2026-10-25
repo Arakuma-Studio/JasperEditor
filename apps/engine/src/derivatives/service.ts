@@ -764,7 +764,8 @@ export async function readWavInfo(
 		if ((riff !== 'RIFF' && riff !== 'RF64') || b.toString('latin1', 8, 12) !== 'WAVE') return null;
 		const size = (await fh.stat()).size;
 		let pos = 12;
-		let fmt: { channels: number; sampleRate: number; bitsPerSample: number; blockAlign: number } | null = null;
+		let fmt: { channels: number; sampleRate: number; bitsPerSample: number; blockAlign: number } | null =
+			null;
 		let ds64Data: number | null = null;
 		while (pos + 8 <= b.length) {
 			const id = b.toString('latin1', pos, pos + 4);

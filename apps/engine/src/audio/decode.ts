@@ -157,7 +157,9 @@ export function clipDecodeArgs(o: {
 	const args = [
 		...(loops ? ['-stream_loop', '-1'] : []),
 		// sample-exact: read from the start up to the span's end, with room for timestamps that run ahead of the samples
-		...(o.sampleExact ? ['-t', sec(startSec + durSec + 0.5)] : ['-ss', sec(startSec), '-t', sec(durSec + 0.25)]),
+		...(o.sampleExact
+			? ['-t', sec(startSec + durSec + 0.5)]
+			: ['-ss', sec(startSec), '-t', sec(durSec + 0.25)]),
 		'-i',
 		o.path,
 		'-map',

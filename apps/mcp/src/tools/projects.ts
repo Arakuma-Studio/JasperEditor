@@ -356,7 +356,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Get media info',
 			description:
-				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy, playback-audio), playbackAudio (needed: the browser cannot decode the audio — WMA, AC-3, ALAC… — so previews play the engine\'s lossless playback copy, silent until its status is ready; exports always decode the original), its derivation (for processed versions: the original and the recipe), its sourceRange (which source frames the file holds) and every version of the same original with the source frames [start, end) each holds (for use_media_version).',
+				"Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy, playback-audio), playbackAudio (needed: the browser cannot decode the audio — WMA, AC-3, ALAC… — so previews play the engine's lossless playback copy, silent until its status is ready; exports always decode the original), its derivation (for processed versions: the original and the recipe), its sourceRange (which source frames the file holds) and every version of the same original with the source frames [start, end) each holds (for use_media_version).",
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1).describe('Media id ("med_…") from list_media or import_media'),

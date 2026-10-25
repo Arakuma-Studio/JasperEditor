@@ -183,9 +183,9 @@ export function audioSrc(
  * track), so the picture plays instead of the whole element failing on the undecodable track. The sound plays from
  * the playback audio (`audioSrc`).
  */
-export function videoAudioTrackProps(
-	media: Pick<MediaHandle, 'playbackAudio'>,
-): { audioStreamIndex?: number } {
+export function videoAudioTrackProps(media: Pick<MediaHandle, 'playbackAudio'>): {
+	audioStreamIndex?: number;
+} {
 	return media.playbackAudio === undefined ? {} : { audioStreamIndex: NO_AUDIO_TRACK };
 }
 const NO_AUDIO_TRACK = 1_000_000;

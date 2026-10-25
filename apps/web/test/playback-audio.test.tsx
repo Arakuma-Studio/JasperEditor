@@ -22,7 +22,9 @@ function wma(): RegisteredMedia {
 		browserPlayable: 'no',
 		probe: {
 			...r.probe,
-			streams: [{ index: 0, type: 'audio', codec: 'wmav2', sampleRate: 44100, channels: 2, channelLayout: '' }],
+			streams: [
+				{ index: 0, type: 'audio', codec: 'wmav2', sampleRate: 44100, channels: 2, channelLayout: '' },
+			],
 		},
 	};
 }
@@ -47,12 +49,17 @@ const URL0 = '/media/mk_song00000001/playback-audio.json?v=abcdef012345';
 describe('media handles for previews', () => {
 	it('WMA: the stream WAVs once ready, null (silent) before, never the original', () => {
 		const a = asset(wma());
-		expect(playbackAudioUrls(a, rt({ playbackAudio: { state: 'ready', progress: 1 }, playbackAudioUrl: URL0 }))).toEqual({
+		expect(
+			playbackAudioUrls(a, rt({ playbackAudio: { state: 'ready', progress: 1 }, playbackAudioUrl: URL0 })),
+		).toEqual({
 			'0': '/media/mk_song00000001/playback-audio/0.wav?v=abcdef012345',
 		});
 		expect(playbackAudioUrls(a, rt({ playbackAudio: { state: 'running', progress: 0.4 } }))).toBeNull();
 		expect(playbackAudioUrls(a, undefined)).toBeNull();
-		const h = resolveMediaHandle(a, rt({ playbackAudio: { state: 'ready', progress: 1 }, playbackAudioUrl: URL0 }));
+		const h = resolveMediaHandle(
+			a,
+			rt({ playbackAudio: { state: 'ready', progress: 1 }, playbackAudioUrl: URL0 }),
+		);
 		expect(h?.url).toBe('/media/mk_song00000001');
 		expect(h?.playbackAudio).toEqual({ '0': '/media/mk_song00000001/playback-audio/0.wav?v=abcdef012345' });
 		expect(resolveMediaHandle(a, rt({}))?.playbackAudio).toBeNull();
@@ -159,14 +166,22 @@ describe('timeline badge', () => {
 			label: 'Audio 42%',
 			tone: 'busy',
 		});
-		const failed = playbackAudioBadge(a, rt({ playbackAudio: { state: 'failed', progress: 0, error: 'boom' } }));
+		const failed = playbackAudioBadge(
+			a,
+			rt({ playbackAudio: { state: 'failed', progress: 0, error: 'boom' } }),
+		);
 		expect(failed?.tone).toBe('failed');
 		expect(failed?.title).toContain('boom');
 		expect(playbackAudioBadge(a, rt({ playbackAudio: { state: 'ready', progress: 1 } }))).toBeNull();
 		// offline media show "Media Offline" instead; AAC media never get a badge
-		expect(playbackAudioBadge(a, rt({ availability: 'offline', playbackAudio: { state: 'queued', progress: 0 } }))).toBeNull();
 		expect(
-			playbackAudioBadge(asset(registered('clip.mp4')), rt({ playbackAudio: { state: 'none', progress: 0 } })),
+			playbackAudioBadge(a, rt({ availability: 'offline', playbackAudio: { state: 'queued', progress: 0 } })),
+		).toBeNull();
+		expect(
+			playbackAudioBadge(
+				asset(registered('clip.mp4')),
+				rt({ playbackAudio: { state: 'none', progress: 0 } }),
+			),
 		).toBeNull();
 	});
 });

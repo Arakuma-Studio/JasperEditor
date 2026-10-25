@@ -124,6 +124,8 @@ describe('playbackAudioStreamUrl', () => {
 		expect(playbackAudioStreamUrl('/media/k/playback-audio.json?v=1&sig=x', Number.NaN)).toBe(
 			'/media/k/playback-audio/0.wav?v=1&sig=x',
 		);
-		expect(playbackAudioStreamUrl('/media/k/playback-audio.json', -3.7)).toBe('/media/k/playback-audio/0.wav');
+		expect(playbackAudioStreamUrl('/media/k/playback-audio.json', -3.7)).toBe(
+			'/media/k/playback-audio/0.wav',
+		);
 	});
 });

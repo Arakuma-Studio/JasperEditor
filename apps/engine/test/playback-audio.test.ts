@@ -58,7 +58,9 @@ function ffDecode(file: string, map = '0:a:0'): Float32Array {
 }
 
 /** The samples of a 32-bit float WAV read straight from its data chunk (what mediabunny's PCM decoder yields). */
-async function wavSamples(file: string): Promise<{ channels: number; sampleRate: number; data: Float32Array }> {
+async function wavSamples(
+	file: string,
+): Promise<{ channels: number; sampleRate: number; data: Float32Array }> {
 	const info = await readWavInfo(file);
 	expect(info).not.toBeNull();
 	expect(info!.bitsPerSample).toBe(32);
@@ -385,9 +387,9 @@ describe('exports read the original, on the playback audio’s sample timeline',
 			expect(a).not.toContain('-ss');
 			expect(a.join(' ')).toContain('atrim=start_sample=22050');
 		}
-		expect(
-			spawn.mock.calls.some((c) => (c[0] as string[]).some((x) => x.includes('playback-audio'))),
-		).toBe(false);
+		expect(spawn.mock.calls.some((c) => (c[0] as string[]).some((x) => x.includes('playback-audio')))).toBe(
+			false,
+		);
 		const out = (await core.exports.outputFile(job.id))!;
 		const exported = ffDecode(out);
 		// the preview's samples (the playback WAV from the In point) at the export rate, with the export's resampler

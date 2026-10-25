@@ -25,13 +25,15 @@ export function playbackAudioBadge(
 		const pct = Math.round(Math.min(1, Math.max(0, Number.isFinite(st.progress) ? st.progress : 0)) * 100);
 		return {
 			label: `Audio ${pct}%`,
-			title: 'Preparing audio the browser cannot decode for playback; the clip is silent in the preview until then',
+			title:
+				'Preparing audio the browser cannot decode for playback; the clip is silent in the preview until then',
 			tone: 'busy',
 		};
 	}
 	return {
 		label: 'Audio queued',
-		title: 'Preparing audio the browser cannot decode for playback; the clip is silent in the preview until then',
+		title:
+			'Preparing audio the browser cannot decode for playback; the clip is silent in the preview until then',
 		tone: 'busy',
 	};
 }

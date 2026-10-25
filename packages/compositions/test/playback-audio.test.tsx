@@ -49,7 +49,7 @@ const clip = (streamIndex: number) =>
 
 const opts = { isPreview: true, useProxies: false, transparentBackground: false } as never;
 const srcs = (node: ReactNode, attr: string) =>
-	[...render(<>{node}</>).container.querySelectorAll(`[${attr}]`)].map((e) => e.getAttribute(attr));
+	[...render(<div>{node}</div>).container.querySelectorAll(`[${attr}]`)].map((e) => e.getAttribute(attr));
 
 describe('audioSrc', () => {
 	it('picks the clip stream’s playback WAV, falls back to the first, is null while not ready', () => {
@@ -59,7 +59,9 @@ describe('audioSrc', () => {
 		// absent: the original (or the mandatory proxy) as for any media
 		const { playbackAudio: _, ...plain } = WMA;
 		expect(audioSrc(plain, 0, { useProxies: false })).toBe('/media/mk_wma');
-		expect(audioSrc({ ...plain, proxyUrl: '/p', browserDecodable: false }, 0, { useProxies: false })).toBe('/p');
+		expect(audioSrc({ ...plain, proxyUrl: '/p', browserDecodable: false }, 0, { useProxies: false })).toBe(
+			'/p',
+		);
 	});
 
 	it('takes the audio track off <Video> of such media only', () => {
@@ -71,16 +73,19 @@ describe('audioSrc', () => {
 
 describe('AudioLayer', () => {
 	it('plays the playback audio of the clip’s stream, never the undecodable original', () => {
-		expect(srcs(<AudioLayer clip={clip(2)} media={WMA} fps={30} options={opts} />, 'data-audio-src')).toEqual([
-			'/media/mk_wma/playback-audio/2.wav?v=1',
-		]);
+		expect(srcs(<AudioLayer clip={clip(2)} media={WMA} fps={30} options={opts} />, 'data-audio-src')).toEqual(
+			['/media/mk_wma/playback-audio/2.wav?v=1'],
+		);
 		expect(
-			srcs(<AudioLayer clip={clip(0)} media={{ ...WMA, playbackAudio: null }} fps={30} options={opts} />, 'data-audio-src'),
+			srcs(
+				<AudioLayer clip={clip(0)} media={{ ...WMA, playbackAudio: null }} fps={30} options={opts} />,
+				'data-audio-src',
+			),
 		).toEqual([]);
 		const { playbackAudio: _, ...plain } = WMA;
-		expect(srcs(<AudioLayer clip={clip(0)} media={plain} fps={30} options={opts} />, 'data-audio-src')).toEqual([
-			'/media/mk_wma',
-		]);
+		expect(
+			srcs(<AudioLayer clip={clip(0)} media={plain} fps={30} options={opts} />, 'data-audio-src'),
+		).toEqual(['/media/mk_wma']);
 	});
 });
 
