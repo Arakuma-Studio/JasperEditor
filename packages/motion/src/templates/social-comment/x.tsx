@@ -3,7 +3,13 @@
 // the remote-asset manifest) and the live x.com measurements of 2026 where they differ from tokcomment (colours, the
 // action bar's equal columns, counts at 400, zero counts hidden). Deliberate differences from tokcomment and the
 // tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "X card".
-import { formatCount, formatTime, REMOTE_IMAGE_IDS, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
+import {
+	avatarNameFor,
+	formatCount,
+	formatTime,
+	REMOTE_IMAGE_IDS,
+	SOCIAL_VARIANT_FONTS,
+} from '@jasper/mg-templates';
 import type { CSSProperties, ReactNode } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { X_GLYPHS } from '../social/glyphs.ts';
@@ -168,7 +174,7 @@ function XAvatar({
 			avatar={params.avatar}
 			platform="x"
 			size={AVATAR}
-			name={params.displayName}
+			name={avatarNameFor(params.variant, params)}
 			fontFamily={FONT}
 			assets={assets}
 			style={style}

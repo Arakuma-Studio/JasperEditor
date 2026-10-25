@@ -3,7 +3,13 @@
 // SF Pro Text (the iPhone app's system font) instead of the capture host's Liberation Sans fallback, and the
 // platform's weights, tracking and link colours (WP5 measurements). Deliberate differences from tokcomment and the
 // tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "Instagram cards: calibration".
-import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
+import {
+	avatarNameFor,
+	formatCount,
+	formatRepliesLabel,
+	formatTime,
+	SOCIAL_VARIANT_FONTS,
+} from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { INSTAGRAM_GLYPHS } from '../social/glyphs.ts';
@@ -70,7 +76,7 @@ function InstagramAvatar(p: {
 			platform="instagram"
 			size={p.size}
 			// Instagram shows the handle, so a generated avatar's initials come from it
-			name={p.params.handle}
+			name={avatarNameFor(p.params.variant, p.params)}
 			fontFamily={FONT}
 			assets={p.assets}
 			style={{ background: p.backdrop }}

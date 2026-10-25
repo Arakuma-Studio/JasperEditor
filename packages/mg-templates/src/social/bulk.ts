@@ -6,6 +6,7 @@ import {
 	SOCIAL_PARAM_NAMES,
 	SOCIAL_VARIANTS,
 	type SocialParamName,
+	shownNameParam,
 	VARIANT_CAPABILITIES,
 } from './variants.ts';
 
@@ -36,9 +37,10 @@ export const SOCIAL_KEEP_PARAMS: readonly SocialParamName[] = SOCIAL_PARAM_NAMES
 export const SOCIAL_ADD_ANOTHER = { reroll: SOCIAL_REROLL_PARAMS } as const;
 
 /** The name a variant shows first: TikTok and X the display name, Instagram and YouTube the handle. */
-const shownName = Object.fromEntries(
-	SOCIAL_VARIANTS.map((v) => [v, VARIANT_CAPABILITIES[v].displayName ? 'displayName' : 'handle']),
-) as Record<string, string>;
+const shownName = Object.fromEntries(SOCIAL_VARIANTS.map((v) => [v, shownNameParam(v)])) as Record<
+	string,
+	string
+>;
 /** What a "Username" means per variant: the handle where the card draws one, else (TikTok) the nickname. */
 const userName = Object.fromEntries(
 	SOCIAL_VARIANTS.map((v) => [v, VARIANT_CAPABILITIES[v].handle ? 'handle' : 'displayName']),
