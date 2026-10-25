@@ -11,6 +11,7 @@ import { installStrictValidation } from './strict.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
 import { AUDIO_FX_GUIDE, registerAudioFxTools } from './tools/audio-fx.ts';
+import { AUTOMATION_GUIDE, registerAutomationTools } from './tools/automation.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
@@ -122,6 +123,7 @@ const FULL_GUIDE = [
 	AUDIO_FX_GUIDE,
 	SOUND_GUIDE,
 	PROPOSALS_GUIDE,
+	AUTOMATION_GUIDE,
 	CAPTIONS_GUIDE,
 	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
@@ -198,6 +200,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundSemanticTools(ctx);
 	registerSoundProfileTools(ctx);
 	registerProposalTools(ctx);
+	registerAutomationTools(ctx);
 	registerCaptionTools(ctx);
 	registerTextStyleTools(ctx);
 	registerSpeechTools(ctx);

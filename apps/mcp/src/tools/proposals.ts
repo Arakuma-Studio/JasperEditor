@@ -298,7 +298,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Refresh proposal',
 			description:
-				'Asks the proposal’s producer to re-plan its stale items (the clips or cuts they decorate moved) on the current edit: they come back pending for review with fresh anchors; nothing is applied, accepted and rejected items stay. itemIds "stale" (default) = every stale item, or ids of pending, stale or invalid items. Refused with E_NOT_REFRESHABLE when the feature’s producer cannot re-plan (propose again instead).',
+				'Asks the proposal’s producer to re-plan its stale items (the clips or cuts they decorate moved) on the current edit: they come back pending for review with fresh anchors; nothing is applied, accepted and rejected items stay. itemIds "stale" (default) = every stale item, or ids of pending, stale or invalid items. reroll: true = "Reroll": re-plan the items with the next seed of each (another draw of the same pass, e.g. another kit family for a Decorate Cuts item; items whose meta.rerollable is true). Refused with E_NOT_REFRESHABLE when the feature’s producer cannot re-plan (propose again instead).',
 			input: {
 				projectId: ProjectIdArg,
 				proposalId: ProposalIdArg,
@@ -306,12 +306,19 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.union([z.literal('stale'), z.array(z.string().min(1).max(64)).min(1).max(2000)])
 					.optional()
 					.describe('"stale" (default) or item ids (get_proposal)'),
+				reroll: z
+					.boolean()
+					.optional()
+					.describe('Re-plan with the next seed of each item (another draw); default false'),
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, proposalId, itemIds }) => {
+		async ({ projectId, proposalId, itemIds, reroll }) => {
 			const r = await proposalCall<ProposalRefreshResponse>(ctx, (c) =>
-				c.refreshProposal(projectId, proposalId, { itemIds: itemIds ?? 'stale' }),
+				c.refreshProposal(projectId, proposalId, {
+					itemIds: itemIds ?? 'stale',
+					...(reroll ? { reroll: true } : {}),
+				}),
 			);
 			return jsonResult({
 				proposalId,
