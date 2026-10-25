@@ -4,8 +4,9 @@
 // `replaceVisible(markup, next)` diffs the old and new visible text (longest common prefix and suffix, never splitting
 // a surrogate pair). Unchanged characters keep their marks. Inserted characters:
 // - a non-space character joins the word it is typed into: the mark of the character before it when that is not a
-//   space, else of the character after the insertion when the inserted run reaches it without a space, else (typing
-//   over a selection) the mark of the first non-space character it replaced, else none;
+//   space, else of the character after the insertion when the inserted run reaches it without a space, else the mark
+//   both sides of the insertion share (typing inside a marked phrase), else (typing over a selection) the mark of the
+//   first non-space character it replaced, else none;
 // - whitespace is settled like `applyMark` does: a whitespace run touching the edit is marked only when the
 //   non-space characters on both sides share the same mark (so a space typed inside a highlighted phrase stays inside
 //   the pill, and a trailing space never extends it). Runs elsewhere are left exactly as they were.
@@ -40,19 +41,35 @@ export function encodeMarks(visible: string, marks: readonly SocialMarkKind[]): 
 	return serializeMarks(spans);
 }
 
-/** Markup whose visible text is `next`, keeping the marks of `markup` (see the module comment). */
-export function replaceVisible(markup: unknown, next: string): string {
+/**
+ * Markup whose visible text is `next`, keeping the marks of `markup` (see the module comment). `caret`: where the
+ * caret is after the edit (the textarea's `selectionEnd`), which anchors the edit in repeated text.
+ */
+export function replaceVisible(markup: unknown, next: string, caret?: number): string {
 	const source = typeof markup === 'string' ? markup : '';
 	const target = typeof next === 'string' ? next : '';
 	const prev = decodeMarkup(source);
 	if (prev.visible === target) return source;
 	const a = prev.visible;
 	const max = Math.min(a.length, target.length);
-	let p = 0;
-	while (p < max && a.charCodeAt(p) === target.charCodeAt(p)) p++;
-	if (p > 0 && p < max && isHigh(a.charCodeAt(p - 1))) p--;
-	let q = 0;
-	while (q < max - p && a.charCodeAt(a.length - 1 - q) === target.charCodeAt(target.length - 1 - q)) q++;
+	let pMax = 0;
+	while (pMax < max && a.charCodeAt(pMax) === target.charCodeAt(pMax)) pMax++;
+	let qMax = 0;
+	while (qMax < max && a.charCodeAt(a.length - 1 - qMax) === target.charCodeAt(target.length - 1 - qMax))
+		qMax++;
+	let p = pMax;
+	let q = qMax;
+	if (pMax + qMax > max) {
+		// Repeated text ("aa|a"): every split with p + q = max is a valid diff. The caret after the edit (the end of
+		// the inserted run) picks the right one; without it the prefix is taken greedily.
+		const qLow = max - pMax;
+		q = qLow;
+		if (typeof caret === 'number' && Number.isFinite(caret))
+			q = Math.min(qMax, Math.max(qLow, target.length - Math.trunc(caret)));
+		p = max - q;
+	}
+	// never split a surrogate pair (shrinking the common prefix / suffix is always valid)
+	if (p > 0 && isHigh(a.charCodeAt(p - 1))) p--;
 	if (q > 0 && isLow(target.charCodeAt(target.length - q))) q--;
 	const removedFrom = p;
 	const removedTo = a.length - q;
@@ -71,6 +88,9 @@ export function replaceVisible(markup: unknown, next: string): string {
 	// the inserted run reaches the following character without a space from index `k` on
 	let reachesRight = insEnd < target.length && !isSpace(target[insEnd]);
 	const rightMark = reachesRight ? (marks[insEnd] ?? 'none') : 'none';
+	// the insertion sits inside one mark (e.g. " big" typed into a highlighted "hello world")
+	const enclosing: SocialMarkKind =
+		p > 0 && insEnd < target.length && marks[p - 1] === marks[insEnd] ? (marks[p - 1] ?? 'none') : 'none';
 	const joinsRight: boolean[] = new Array(insEnd - p).fill(false);
 	for (let k = insEnd - 1; k >= p; k--) {
 		if (isSpace(target[k])) reachesRight = false;
@@ -80,7 +100,7 @@ export function replaceVisible(markup: unknown, next: string): string {
 		if (isSpace(target[k])) continue;
 		if (k > 0 && !isSpace(target[k - 1])) marks[k] = marks[k - 1] ?? 'none';
 		else if (joinsRight[k - p]) marks[k] = rightMark;
-		else marks[k] = replaced;
+		else marks[k] = enclosing !== 'none' ? enclosing : replaced;
 	}
 	// settle whitespace runs inside the insertion and touching its edges
 	let from = p;

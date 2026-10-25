@@ -1237,7 +1237,10 @@ export function jsonSchemaPropertySpecs(
 		const hint = o.ui?.[path.join('.')];
 		// Template media params (`mediaParam()`: `{mediaId} | null` with `x-jasper-kind: "media"`): the media picker.
 		const mediaKinds = templateMediaKindsOf(s0) ?? templateMediaKindsOf(s);
-		if (mediaKinds) {
+		// A media param whose value can also be another shape (the social-comment avatar `{mediaId} | {generated} |
+		// null`) is a JSON value validated whole by the template schema; it keeps its media kinds for its control.
+		const mixedMedia = mediaKinds !== null && isMixedMediaUnion(root, s);
+		if (mediaKinds && !mixedMedia) {
 			out.push({
 				key: [o.keyPrefix, ...path].join('.'),
 				label:
@@ -1272,6 +1275,10 @@ export function jsonSchemaPropertySpecs(
 		else if (t === 'string') kind = 'string';
 		else if (o.tuples && t === 'array' && s.minItems === 4 && s.maxItems === 4) kind = 'color';
 		else if (o.tuples && t === 'array' && s.minItems === 2 && s.maxItems === 2) kind = 'vec2';
+		// WP7a: an object or a union of shapes (e.g. the social-comment avatar `{mediaId} | {generated} | null`) is a
+		// JSON value validated whole by the template schema (as a string it could never be written).
+		else if (t === 'object' || (t === undefined && (Array.isArray(s.anyOf) || Array.isArray(s.oneOf))))
+			kind = 'json';
 		else kind = o.tuples ? 'string' : 'json';
 		if (hint?.control === 'json') kind = 'json';
 		const integer = t === 'integer';
@@ -1319,6 +1326,7 @@ export function jsonSchemaPropertySpecs(
 			defaultValue: dflt !== undefined ? dflt : s.default,
 			description: typeof s.description === 'string' ? s.description : undefined,
 			valueSchema: s,
+			...(mixedMedia && mediaKinds ? { mediaKinds, mediaNullable: true } : {}),
 		});
 	};
 	const walk = (s0: JsonSchema | boolean | undefined, path: string[], dflt: unknown, depth: number) => {
@@ -1336,6 +1344,19 @@ export function jsonSchemaPropertySpecs(
 	};
 	walk(root, [], o.defaults, 0);
 	return out;
+}
+
+/** Whether a template media param node is a union with members other than `{mediaId}` objects and `null`. */
+function isMixedMediaUnion(root: JsonSchema, s: JsonSchema): boolean {
+	const members = Array.isArray(s.anyOf) ? s.anyOf : Array.isArray(s.oneOf) ? s.oneOf : null;
+	if (!members) return false;
+	return members.some((m0) => {
+		const m = derefSchema(root, m0 as JsonSchema);
+		if (!isRecord(m)) return true;
+		if (m.type === 'null') return false;
+		const props = isRecord(m.properties) ? Object.keys(m.properties) : [];
+		return !(props.length === 1 && props[0] === 'mediaId');
+	});
 }
 
 /** The media kinds of a template media param schema node (`x-jasper-kind: "media"`), else null. */

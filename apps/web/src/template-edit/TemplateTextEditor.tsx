@@ -571,7 +571,7 @@ function EditorBox({
 	const takeVisible = (next: string, caret: TextRange | null) => {
 		const clean = multiline ? next.replace(/\r\n?/g, '\n') : next.replace(/[\r\n]+/g, ' ');
 		pendingSel.current = caret;
-		setDraft(marks ? replaceVisible(draft.value, clean) : clean);
+		setDraft(marks ? replaceVisible(draft.value, clean, caret?.end) : clean);
 	};
 
 	const insert = (s: string) => {

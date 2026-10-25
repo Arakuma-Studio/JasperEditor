@@ -46,7 +46,17 @@ describe('shipped anime templates', () => {
 			if (!Impl || !(key in expected)) continue;
 			const t = animeTemplateTiming(def, { fps, localFrame: 60, durationFrames: 150 });
 			const view = render(
-				<Impl params={def.defaults} {...t} fps={fps} canvas={canvas} seed={1} isPreview mediaUrls={{}} />,
+				<Impl
+					params={def.defaults}
+					{...t}
+					fps={fps}
+					canvas={canvas}
+					seed={1}
+					isPreview
+					mediaUrls={{}}
+					emojiUrls={{}}
+					imageUrls={{}}
+				/>,
 			);
 			const marked = [...view.container.querySelectorAll(`[${TEMPLATE_PARAM_ATTR}]`)];
 			expect(marked.map((el) => readEditableParam(el)!.param).sort(), key).toEqual(

@@ -143,6 +143,9 @@ const BROWSER_DOWNLOAD_NOTE =
 	'No browser is installed yet: the first Remotion render downloads a headless Chrome (needs network access and can take a minute); if that fails, install Google Chrome or set JASPER_BROWSER_EXECUTABLE.';
 const TEMPLATE_NOT_INSTALLED_HINT =
 	'A clip uses a motion-graphic template this JasperEditor build lacks: update JasperEditor, or replace or delete that clip (get_timeline shows it; details.blockers name the clips).';
+// social-comment §7.8: a template's platform font, emoji or image is not available (details.assets names each).
+const TEMPLATE_ASSETS_HINT =
+	'A template needs a platform font, emoji or image that is not available; details.assets names each one, its clips and why. REMOTE_ASSETS_OFF: the user has to turn on Preferences ▸ Privacy & Network ▸ "Platform fonts & emoji for social templates" (an agent turning it on is asked about in the editor). DOWNLOAD_NOT_FOUND / REMOTE_ASSET_UNKNOWN: switch the clip\'s emojiStyle or remove that emoji. DOWNLOAD_FAILED / DOWNLOAD_TIMEOUT: retry later.';
 const WEBGL_HINT =
 	'The render browser has no WebGL2 (colour grading on the Remotion path needs it): set JASPER_REMOTION_GL to angle, swangle, egl or swiftshader, install Google Chrome, or export with engine "native" when the sequence allows it.';
 
@@ -191,6 +194,7 @@ export function renderHint(
 	detail?: unknown,
 ): string | undefined {
 	if (code === 'TEMPLATE_NOT_INSTALLED') return TEMPLATE_NOT_INSTALLED_HINT;
+	if (code === 'TEMPLATE_ASSETS_UNAVAILABLE') return TEMPLATE_ASSETS_HINT;
 	if (code === 'WEBGL_UNAVAILABLE') return WEBGL_HINT;
 	const parts: string[] = [];
 	if (code === 'PATH_NOT_ELIGIBLE') {

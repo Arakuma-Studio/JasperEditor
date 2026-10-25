@@ -566,6 +566,295 @@ The test-only template lives in `packages/mg-templates/test/fixtures/avatar-test
 - Pre-existing, outside this scope: media that only effect params use (e.g. the image of a displacement map) are
   still not counted by Project Manager "Exclude Unused", `item.delete` or `collectOrphans`.
 
+## Template implementation
+
+Work package WP6a (`sc/template`): the `social-comment@1` anime template, the framework every variant card is
+built on, and the two TikTok cards. Labels as above: **[tok]** tokcomment reference set, **[M]** platform
+measurements (WP5), **[E]** estimate or choice.
+
+### Where it lives
+
+| Piece | File |
+|---|---|
+| Definition, schedule (all timing), text units, layout constants, presets, UI hints | `packages/mg-templates/src/templates/anime/social-comment.ts` |
+| Closed-form eases (`jasper.spring`, `jasper.dropBounce`), `easeFunction` | `packages/mg-templates/src/templates/anime/eases.ts` |
+| Motion model (`social-comment@1` in `MODELS`) | `packages/mg-templates/src/templates/anime/motion.ts` |
+| Implementation (`ANIME_TEMPLATE_IMPLS['social-comment@1']`) | `packages/motion/src/templates/social-comment/` |
+| Export blocker for cards not built yet | `apps/engine/src/mg/templates.ts` (`missingTemplates`) |
+
+`packages/motion/src/templates/social-comment/`:
+- `index.tsx`: `SocialComment` — parses the params (invalid params fall back to the defaults), builds the schedule's
+  timelines, hands the extras' values to the card.
+- `build.ts`: `buildSocialComment(schedule)`, `buildSocialTick(tick)`, `socialTickProgressAt` (also used by the
+  cue test).
+- `stage.tsx`: `SocialStage` (centring, zoom, fit, entrance transform), `socialFitZoom`.
+- `contract.ts`: the variant contract. `parts.tsx`: shared parts. `assets.tsx`: picture and emoji touch points.
+- `tiktok.tsx`: the TikTok cards. `unavailable.tsx`: stand-in card. `variants.ts`: `SOCIAL_VARIANT_IMPLS`.
+
+### Adding a variant (WP6b–d)
+
+**The contract** (`packages/motion/src/templates/social-comment/contract.ts`):
+- A variant is a `SocialVariantImpl = { Card, growOrigin, bleed?, unavailable? }`.
+- `Card(props: SocialCardProps)` draws ONE card at **reference px**: the tokcomment CSS px of its blueprint (copy the
+  numbers from `ref/<variant>/styles_*.json`). The card sets its own width: 420, or `width: fit-content` with
+  `maxWidth: 305` for the Reels and Shorts cards. Never zoom, centre or position the card; the frame does that.
+- `props`:
+  - `params`: parsed `SocialCommentParams`;
+  - `text`: `{ spans, segments, units }` from `socialCommentSegments`;
+  - `anim`: `{ words, likes, heart }`;
+  - `assets`: `{ mediaUrls, imageUrls, emojiUrls, emojiPack, idScope }`.
+- `growOrigin`: the CSS `transform-origin` of the "grow from tail" entrance, in % of the card box. Use the bubble tail's
+  corner on bubble cards (TikTok reply `0% 100%`) and the avatar's corner elsewhere (`0% 0%`).
+- `bleed`: reference px the card paints outside its box per side (a `box-shadow`), so the fit keeps it on screen.
+  The TikTok comment row's `0 25px 50px -12px` shadow gives `{ top: 13, right: 38, bottom: 63, left: 38 }`.
+
+**Entrances and extras need no code in a card.** The frame applies every entrance and the exit to the whole card,
+and passes the extras through `anim`:
+- `words`: draw the comment with `CommentText`, which applies them;
+- `likes`: show `formatCount(variant, anim.likes, 'likes')`; it ticks;
+- `heart`: when set, scale the like icon by `heart.s` and cross-fade outline → filled by `heart.f`. See `LikeHeart`
+  in `tiktok.tsx`.
+
+Never add timelines, timers or animation inside a card. The output must be a pure function of the props.
+
+**Wiring a variant:**
+1. Create `instagram.tsx` / `youtube.tsx` / `x.tsx` next to `tiktok.tsx`, exporting one `SocialVariantImpl` per
+   variant.
+2. Replace the `unavailableVariant(...)` entry in `variants.ts` with it.
+3. In `packages/mg-templates/src/templates/anime/social-comment.ts`:
+   - add the variant to `SOCIAL_COMMENT_READY_VARIANTS` (this adds its gallery preset and lifts the export blocker);
+   - fill its `SOCIAL_VARIANT_FONTS` entry (family and weights; the font must exist in the bundled catalogue or the
+     remote manifest);
+   - check its `PRESET_NAMES` entry.
+4. Update the preset expectations in `packages/mg-templates/test/social-comment-template.test.ts` and the "not
+   available" loop in `packages/motion/test/social-comment.test.tsx`.
+
+**Theme tokens:** one `const <VARIANT>_THEME = { light: {…}, dark: {…} }` per card in its own file, with hex colours
+copied from the reference dumps (`styles_light*.json` / `styles_dark*.json`). Colours that come from the platform
+measurements carry an [M] / [M-css] comment.
+- Glyph colours: pass `color` to `Glyph`. `glyphColor(glyph, theme)` gives the platform's own when the reference has
+  none.
+- Mentions and hashtags go in `CommentText`'s `colors`.
+- These are platform colours, not editor UI, so `scripts/check-tokens.mjs` does not apply to the template's inline
+  styles.
+
+**Shared parts** (`parts.tsx`, `assets.tsx`). Use them; don't fork them:
+- `SocialAvatar({ avatar, platform, size, name, fontFamily, assets, style })`.
+  - Pass the name the card shows as `name`; the generated avatar's initials come from it.
+  - The Properties `social-avatar` preview uses `displayName`. Tell the integrator if a handle-only card passes
+    `handle`.
+- `Glyph({ glyph, size, color, scope: assets.idScope, style })`. `size` is a number or `[w, h]`.
+- `CommentText(...)`: highlight, blur, remove, mentions, emoji, word reveal.
+  - It carries `data-template-param="text"` and `data-template-marks="true"` (C5).
+- `TextWithEmoji({ text, fontSize, emoji, assets })` for names. Wrap a name in an element with
+  `data-template-param="displayName"` (or `"handle"`) that holds exactly that text (C5; switch to
+  `editableParamProps` when WP7b lands).
+- `EmojiMetrics`: `{ size: 1.2, shift: -0.22 }` (em) matched TikTok. Re-measure per platform with `tools/yellow.mjs`.
+- Formatters from `@jasper/mg-templates`: `formatCount`, `formatTime`, `formatRepliesLabel` (an empty string means
+  no replies row), `VARIANT_CAPABILITIES`.
+
+**Tests a variant must pass:**
+- `packages/motion/test/mg-cue-timing.test.ts`:
+  - The schedule depends only on the entrance, the word units and whether the variant draws likes, so a new variant
+    needs no new model code.
+  - Add VARIANTS rows for it: at least one entrance × {word reveal, like tick} when it draws likes. The test checks
+    the model against anime.js frame by frame and the cues within ±1 frame.
+- `packages/motion/test/social-comment.test.tsx`: add the card's own checks, as for TikTok: header and name
+  rules, counts, replies, `showProfile`, verified.
+- `packages/motion/test/social-comment-render.e2e.test.ts` (`REMOTION_E2E=1`):
+  - add the variant to the parity cases and the fit loop (long text, huge counts, 64-character names, every canvas);
+  - add its calibration cases to `CALIBRATION`, named `<variant>_<theme>_<state>` after the tokcomment captures they
+    pair with.
+
+**Calibration workflow.** Everything sits outside the repo: the captures are third-party screenshots.
+1. Inputs:
+   - fonts: `SOCIAL_FONT_DIR` (a directory of woff2 files);
+   - emoji: `SOCIAL_EMOJI_DIR` (Apple PNGs named `<codepoints>.png`, e.g. `1f60a.png`).
+2. Render the stills: `REMOTION_E2E=1 SOCIAL_FONT_DIR=… SOCIAL_EMOJI_DIR=… SOCIAL_CALIBRATION_DIR=<dir>/stills
+   pnpm exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`.
+   - These are hold-frame `renderStill`s at 9:16, scaled 2/1.8 so a 420 px card is 840 px, the scale of the
+     tokcomment captures.
+   - `entry.tsx` loads the faces in `fonts` from the public dir. Extend the font list in the test's `beforeAll` for
+     other families.
+3. Crop and compare with the tools in `/var/lib/orquester/workspaces/jaspersito/research/calibration/tiktok/tools/`;
+   copy them to `calibration/<platform>/tools/`:
+   - `crop.mjs <stills> <cards>`: crops to the opaque card box, over tokcomment's grey #8a8a8a;
+   - `cmp.sh <ref> <ours> <out> [h]`: ref | ours | difference strip;
+   - `inkbox.mjs` and `yellow.mjs`: ink and emoji bounding boxes, for cap height, line width and emoji size;
+   - `page.mjs <dir>`: the side-by-side page (edit its `PAIRS` table).
+4. Iterate until layout, spacing and colour match. List the deliberate differences in this note: real font and
+   glyphs, bug fixes. If the real font's cap height differs from the capture's font, scale the font size to keep the
+   reference's cap height (see the TikTok reply).
+
+**Don't touch** (shared; changes go through WP6a or the integrator):
+- `index.tsx`, `stage.tsx`, `build.ts`, `contract.ts`, `parts.tsx`, `assets.tsx`;
+- the schedule and its constants in `social-comment.ts`;
+- `eases.ts` and the `social-comment@1` model in `motion.ts`;
+- `tiktok.tsx`.
+
+If a shared part lacks something, add an optional prop instead of changing its behaviour.
+
+### Timing (design §7.6)
+
+One pure schedule, `socialCommentSchedule({ totalMs, introMs, outroMs, entrance, units, tick })`, is built into
+anime.js timelines by the implementation and evaluated by the motion model, so the cue test compares them frame by
+frame.
+
+| Phase | Tweens (ms at the declared intro) |
+|---|---|
+| Classic pop | scale 0 → 1.3 (150, `outQuad`) → 1 (120, `inOutQuad`); opacity 0 → 1 (60) |
+| Soft spring | scale 0.6 → 1.035 (260, `outCubic`) → 1 (190, `inOutQuad`); opacity (150, `out`) |
+| Grow from tail | scale 0 → 1 (420, `outBack`) from `growOrigin`; tilt −8° → 0 (500, `jasper.spring`); opacity (100) |
+| Drop & bounce | 60 design px fall with one 14 % bounce (550, `jasper.dropBounce`); opacity (165) |
+| Word reveal | each word unit: scale 0.5 → 1 (220, `outBack`), opacity (110); one every 90 ms (at most 2.4 s for all) |
+| Like tick | count 0 → likes (900, `outCubic`, formatted every frame); heart scale 1 → 1.3 → 1 and fill (300) |
+| Exit | scale 1 → 0.82 and opacity 1 → 0, eased in, over the outro |
+
+- **Declared windows:** the intro is 17 frames at 30 fps (566.7 ms, the longest entrance); the outro is 6 frames
+  (200 ms). `animeTemplateTiming` compresses both on short clips, and the entrance tweens scale with the intro.
+- **Extras:** they start when the entrance ends and must finish before the exit. When they do not fit, they compress
+  proportionally into the time left. A tween is never shorter than 1 ms, and a value's tweens never overlap
+  (fast-check). The extras run in the hold after the declared intro; the cues come from the model, so the land cue
+  falls where the last word or the heart settles.
+- **Rest state = hold state (ANM-009):** every word shown, the final count, the heart filled when it ticked.
+- **Soft spring:** it was first a closed-form spring, but its slow tail kept the card moving below the cue threshold,
+  and the frame and continuous cue measures disagreed by up to 7 frames. It is now two eased segments with zero speed
+  at the turn and at the end. `jasper.spring` remains for the tilt settle.
+- **Like tick on variants without likes:** the tick needs a variant that shows likes (`socialLikesTick`). On the
+  TikTok reply bubble it is ignored.
+
+### Presets, Properties hints, avatar and fill
+
+- **Presets:** `socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS)` gives one preset per variant with a card, id =
+  variant, named "TikTok · Comment reply" and "TikTok · Comment". Its params are the variant's tokcomment defaults
+  (`socialDefaults`) that differ from the schema's. Agents use `"social-comment:tiktok-reply"`.
+- **Groups:** Look (variant, theme, emojiStyle), Author (displayName, handle, avatar, showProfile, verified), Stats
+  (timeValue, timeUnit, likes, replies, reposts, views, showReposts, showViews), Text (text) and Animation (entrance,
+  wordReveal, likeTick).
+- **Visibility:** every param a variant may not draw has `visibleWhen: { param: 'variant', in: variantsWithParam(p) }`.
+- **Custom controls (WP7):**
+  - `text`: multiline, control `social-comment-text`;
+  - likes, replies, reposts and views: `social-count`;
+  - `timeValue`: `social-time` (the control draws value and unit in one row and hides the `timeUnit` row);
+  - `avatar`: `social-avatar`.
+
+  Until they are registered, Properties shows the standard editors.
+- **Avatar:** it keeps the `{ mediaId } | { generated } | null` union. The union carries `mediaParam()`'s metadata
+  (`x-jasper-kind: "media"`, kinds `["image"]`), so `paramsPropertySpecs` offers the media picker (verified), commands
+  check that a `{ mediaId }` names an image, and every integrity path counts it. The picker shows "None" for a
+  generated avatar; `social-avatar` adds the generated choice.
+- **Fill hook:** `fill = fillSocialCommentParams`, which wraps `fillSocialParams`. It returns the given params plus the
+  filled ones and the filled names, never throws, and returns `{ ok: false }` on bad input. The MCP `TEMPLATES_GUIDE`
+  has a social-comments paragraph and a three-comment batch example.
+
+### Text, marks and emoji
+
+- **Units:** `socialCommentSegments(text, variant)` gives the `tokenizeComment` spans and the Intl.Segmenter word
+  segments.
+  - A highlighted run across words (`==any comment==`) is one unit with one pill, as tokcomment merges adjacent
+    highlighted words. Separate highlights stay separate units.
+  - The model and the renderer count the same units.
+- **Highlight:** tokcomment's `#FFE500` pill, black text, 6 px radius, padding `.05em .35em`, `box-decoration-break:
+  clone`.
+- **Blur:** `blur(4px)` at reference size on an inline-block word. The card's zoom scales the radius with the card:
+  7.2 design px on 9:16.
+- **Remove:** `opacity: 0`, so the gap is kept.
+- **Mentions and hashtags:** TikTok's info colour, tux `--ui-text-info`: #2B5DB9 light, #60B3FF dark [M-css]. They
+  are coloured on both TikTok cards [E]; a highlight's text stays black.
+- **Emoji:** images of the clip's pack (`resolveEmojiStyle`).
+  - Size 1.2 em, centred on the text's middle (shift −0.22 em), with a 0.03 em side bearing so adjacent emoji keep a
+    hairline gap.
+  - Calibrated against the tokcomment captures: 30 vs 29 px ink at 2×, centre within 0.5 px.
+- **Word reveal:** units become inline-block so they can scale; whitespace stays text, so lines break as without the
+  reveal.
+
+### Placement and fit
+
+- **Zoom:** the card is drawn at reference px and zoomed with CSS `zoom` by `socialCardScale`. That is 1.8 on 9:16
+  (a 420 px card is 756 px, 70 % of the width), 1.7 on 1:1 and 1.6 on 16:9. It is centred on the design stage.
+- **Why `zoom`:** the zoomed box is the drawn size, so the entrance wrapper's `transform-origin` lands on the real
+  corner (the tail tip) and flex centring sees the real size.
+- **Fit:** a long comment shrinks the whole card to ≤ 88 % of the design height and ≤ 96 % of its width, the shadow
+  bleed included.
+  - It is measured in a layout effect with layout boxes (`offsetWidth` / `offsetHeight`), after fonts load; at most
+    three passes per layout.
+  - The fit is applied before paint, so the Player, `renderStill` and exports agree (checked below).
+- **Counts:** they never overflow. The formatters keep them short ("987.6B", "View 4.8M replies"), the stats group
+  never shrinks, and the left group clips.
+
+### TikTok cards: calibration
+
+- **Blueprint:** tokcomment's computed-style dumps (`ref/tiktok-reply`, `ref/tiktok-video`), copied in CSS px.
+  - Reply bubble: 420 wide, padding 18/18/22, radius 10 10 10 0, avatar 50 at +20, gap 14, header 600, comment 700
+    at −0.025 em, line height 1.2, bubble #FFF / #1E1E1E, header #5A5A5A / #C0C0C0.
+  - Comment row: 420 wide, padding 12/10/5, radius 2, 1 px black/5 % border, 0 25 50 −12 black/25 % shadow, avatar 38,
+    name 13/500, text 14/500 at 1.25, meta 11–12 px, icons #A2A2A2, rule 23 × 1, plus its dark colours.
+- **Bubble tail:** tokcomment draws it with three skewed CSS squares. It was traced from the 2× captures into one
+  path, 25.5 wide and 21 tall, with a 4 px rounded tip.
+- **Evidence:** a side-by-side page per variant and theme, with long text, huge counts, marks, emoji, uploaded vs
+  generated avatar and animation filmstrips, is at
+  `/var/lib/orquester/workspaces/jaspersito/research/calibration/tiktok/index.html`. It sits outside the repository:
+  the tokcomment captures are third-party screenshots. Its stills come from Remotion `renderStill` at 2× reference
+  px.
+- **Rerunning:** `REMOTION_E2E=1 SOCIAL_FONT_DIR=<tiktok-sans files> SOCIAL_EMOJI_DIR=<cp>.png dir
+  SOCIAL_CALIBRATION_DIR=<out> pnpm exec vitest run packages/motion/test/social-comment-render.e2e.test.ts`. The
+  crop, compare and page tools are in that directory's `tools/`.
+- **Measured matches:**
+  - comment card height 228 px against tokcomment's 229 (2×);
+  - the comment row's text line within 2 %;
+  - the highlight pill's position and size within 2 px.
+
+**Deliberate differences from tokcomment:**
+- **Font:** TikTok Sans (TikTok's current UI font, OFL) instead of Proxima Nova (reply) or the capture host's
+  Liberation Sans fallback (comment).
+  - TikTok Sans has a 5–7 % taller cap height, so the reply sizes are scaled to keep the reference's cap heights:
+    header 18.5 px instead of 20, comment 29.5 px instead of 31.
+  - It is also ≈ 9 % wider, so lines hold fewer characters: the default comment wraps onto 3 lines on the reply and a
+    long comment takes one more line on the comment row.
+- **Glyphs:** TikTok's real glyphs (`TIKTOK_GLYPHS`) replace lucide and react-icons: verified badge, heart outline
+  and liked heart, dislike (derived), chevron. The heart's stroke is thinner and the chevron filled, as on TikTok.
+  - Sizes are set to the reference's visual sizes: heart box 20 (lucide 15.55 at 83 % fill vs TikTok 65 %), dislike
+    17, chevron 12, badges 18 and 10.
+- **Default avatar:** TikTok's own (`TIKTOK_DEFAULT_AVATAR`) instead of the hot-linked Twitter default.
+- **Emoji:** Apple images instead of the capture host's Noto font.
+- **tokcomment bugs fixed:**
+  - "Reply to␣username␣'s": flex gaps put the space before the apostrophe; the header is now one sentence that wraps
+    naturally for long names.
+  - Counts render verbatim ("1234567"); they are now formatted per platform.
+  - "View 0 replies": 0 replies now hides the row.
+  - Huge counts overflow the card; they now stay short.
+- **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
+
+### Verification
+
+- **Commands run** (`--maxWorkers=2`):
+  - `pnpm exec vitest run packages/mg-templates` (12 files): the schedule (entrance shapes, rest and exit values,
+    reveal stagger and cap, tick, compression, no overlapping tweens by fast-check), text units (fast-check coverage),
+    eases.
+  - `packages/motion/test/mg-cue-timing.test.ts`: the anime.js values equal the model at every frame and half frame.
+    The land and exit cues sit within ±1 frame of the real animation for every entrance × {none, word reveal, like
+    tick, both}, at 6 rates, on short clips (1.5 s, 0.6 s), with sourceIn and a long marked comment: 71 tests.
+  - `packages/motion/test/social-comment.test.tsx`: cards per variant × theme, header, counts and replies rules,
+    showProfile, invalid params, entrance rest and exit, word reveal and like tick values per frame, seek-order
+    independence (fast-check), avatars, glyphs, marks, mentions, emoji, emoji split, fit zoom.
+  - `packages/compositions/test/social-comment-layer.test.tsx`: the real layer path, with the avatar from a project
+    medium through `mediaUrls` → `TemplateImage`, an offline avatar placeholder and the default avatar.
+  - `apps/engine/test/anime-templates.test.ts`: a card style not built yet blocks the plan.
+- **`REMOTION_E2E=1 packages/motion/test/social-comment-render.e2e.test.ts`** (Chrome 156):
+  - `renderStill` equals `renderFrames` (concurrency 2), byte for byte, at frames during the entrance and extras;
+  - the painted card stays inside every canvas for a 1,400-character marked comment, 1e12 counts and a 64-character
+    name;
+  - it writes the calibration stills.
+- **`REMOTION_E2E=1 determinism-render.e2e.test.ts`:** passes with `social-comment@1` in the parity document (6/6).
+
+### Limits
+
+- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Unverified:**
+  - The reply sticker's mention colour [E].
+  - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
+    cut, so display text is slightly looser than the app's.
+
 ## Placement & agent API
 
 Design §7.9 ("insertion never overwrites") and §7.10 (agent UX). Generic: nothing here is specific to social
@@ -661,6 +950,351 @@ comments; every motion-graphic template (and the other generator clips) gets it.
   disjointness.
 - `e2e/mg-insert-placement.spec.ts` (`pnpm e2e e2e/mg-insert-placement.spec.ts`): two gallery double-clicks at one
   playhead land on V1 and V2 in the built app; Ctrl+Z removes the second.
+
+## Properties controls
+
+WP7a (`sc/controls`), design §7.3, §7.5, §7.9. The custom Properties / Effect Controls controls of the
+social-comment template and the Randomize actions. Code: `apps/web/src/social-comments/`; registered at start-up by
+`registerSocialCommentControls()` (`register.ts`, called from `apps/web/src/commands/mg.ts`). The UX blueprint is
+tokcomment's left panel (`research/tokcomment-recon/ref/index.md`), with its bugs fixed.
+
+### Control names (what the template's `ui.params.<name>.control` hints use)
+
+| Control | Params | Layout | What it does |
+|---|---|---|---|
+| `social-comment-text` | `text` | block (under the label, full width) | marks-aware comment editor |
+| `social-count` | `likes`, `replies`, `reposts`, `views` | inline | count field with platform preview and a per-field wand |
+| `social-time` | `timeValue` (also edits `timeUnit`) | inline | value + unit in one row with the platform preview |
+| `social-avatar` | `avatar` | block | image / generated / default picker and Randomize identity |
+
+`social-count` and `social-time` also put a **Randomize stats** wand in the header of the group they are in. The test
+template the tests use (`apps/web/test/social-test-template.ts`) shows the expected hints: the groups of design §7.3,
+`visibleWhen: { param: 'variant', in: variantsWithParam(p) }` for params not every variant draws, `multiline` on
+`text`, and the four control names. `timeUnit` needs no hint: its row is hidden while the time control is shown.
+
+### Contract additions to C3 (`apps/web/src/extensions/index.ts`, additive)
+
+```ts
+type TemplateParamControlProps = {
+  clipId; paramName; value; params; disabled;           // unchanged
+  onChange(next, opts?: { coalesce?: boolean }): boolean;   // now reports whether the write was applied
+  clipIds: readonly string[];                               // every selected clip (clipId first)
+  mixed: boolean;                                           // the selected clips hold different values
+  onChangeParams(patch: TemplateParamPatchInput, opts?: { label?: string; coalesceKey?: string }): boolean;
+};
+type TemplateParamPatchInput = Record<string, unknown>
+  | ((params, clipId, index) => Record<string, unknown> | null | undefined);   // one patch per clip
+registerTemplateParamControl(name, component, options?: {
+  alsoEdits?: readonly string[];     // sibling params whose own rows are hidden while this control is shown
+  layout?: 'inline' | 'block';       // block: drawn under the label row across the panel
+  groupActions?: readonly { id: string; component: ComponentType<TemplateGroupActionProps> }[];
+}): () => void
+type TemplateGroupActionProps = { clipIds; params; paramNames; onChangeParams; disabled };
+```
+
+- `onChangeParams` plans each param through the same `param.set` path as a row edit (a keyframe at the playhead when the
+  param is animated, `planTemplateParamPatch` in `panels/properties/lib/template-params.ts`) and applies everything as
+  **one** History entry. A function patch is called per selected clip with that clip's params, so Randomize gives every
+  clip its own values; a clip whose patch is null is left alone.
+- Group actions are drawn once per group header in Properties (`TemplateGroupActions`) and Effect Controls, isolated
+  by an error boundary like the controls.
+- Object and union template params (the avatar `{mediaId} | {generated} | null`) were mapped to `string` property
+  specs, so `param.set` refused every object and no UI or agent could change them. They are now `json` specs validated
+  whole by the template schema (`jsonSchemaPropertySpecs`, regression test
+  `packages/project/test/template-object-params.test.ts`). Without a custom control such a row shows its JSON value
+  read-only instead of a blank editor.
+
+### `social-comment-text`
+
+- **Editor:** a native textarea holding the *visible* text (marks stripped) over a backdrop drawn with the same box
+  metrics. The textarea text is transparent; the backdrop shows highlight as a pill, blur blurred, remove dimmed and
+  struck through (the card makes it invisible; the editor must keep it findable), @mentions and #hashtags in the
+  accent colour (`tokenizeComment` for the clip's variant). Caret, selection, IME, emoji input, spell check and
+  screen-reader text are the browser's own. The raw markup is shown only with **Show markup**, where it can be edited
+  directly (same limits).
+- **Marks survive typing** (`marks-edit.ts` `replaceVisible`): each change of the visible text is diffed against the
+  old one (common prefix/suffix, never splitting a surrogate pair; in repeated text such as "aa|a", where several
+  splits are valid, the caret after the edit picks the one the person made — found by the fuzz test); unchanged characters keep their marks; a typed
+  non-space joins the mark of the word it is typed into (left neighbour, else the word it reaches on the right, else
+  the mark around the insertion, else the mark of the first word it replaced); whitespace runs touching the edit are
+  settled like `applyMark` does (inside a phrase with one mark → marked; at its edge → unmarked). Runs elsewhere are
+  untouched. The markup is written in `serializeMarks`' canonical form (visible text never changes).
+- **Mark buttons:** Highlight, Blur, Remove, Clear Marks act on the selection grown to whole words (`applyMark`); a
+  mark button on words that all carry that mark removes it (shown pressed). Buttons don't take the focus, so the
+  selection stays. Shortcuts in the editor: **Ctrl+Shift+1 / 2 / 3 / 0** (physical Control on macOS too, ⌃⇧1…;
+  ⌘⇧3/4 are macOS screenshots). None of them is in the default keymap or the presets; at every press the editor checks
+  the *active* keymap and leaves a chord to the app if the user bound it, and the tooltips then omit it.
+- **Undo steps:** a typing burst is one History entry (`coalesce`, the session's 750 ms window); each mark action is
+  its own entry labelled "Highlight", "Blur", "Remove" or "Clear Marks"; nothing is written while an IME composition
+  is open (the composed text is written at `compositionend`). Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y inside the
+  editor run the project's undo/redo, so the field and the document never disagree. An outside change (undo, an agent)
+  replaces the editor text and keeps the caret where it can.
+- **Limits:** the counter shows grapheme clusters (`Intl.Segmenter`: "👍🏽", "🇪🇸", "👨‍👩‍👧" count as one) against
+  the schema's 2000 visible characters; the schema counts UTF-16 code units, so the textarea's `maxLength` and the
+  checks use code units and the counter's tooltip says emoji may count twice. Text over 2000 visible characters or
+  markup over 4000 is refused with a message; nothing is written.
+- **Several clips:** differing texts show an empty editor with a "Multiple values" placeholder; typing replaces every
+  selected clip's text (as the default text field does). Mark buttons need a selection, so they stay disabled there.
+
+### `social-count`
+
+- Accepts what people type (`count-input.ts` `parseCountInput`, fast-checked): digits; groups with `,`, `.`, spaces,
+  `_` or `'`; K/M/B suffixes in any case with `.` or `,` decimals (`12.3K`, `1,5k`, `3.4M`, `2B`); full-width digits
+  (NFKC); a leading `+`. A single separator followed by exactly three digits groups (`1,234` = `1.234` = 1234), also
+  before a suffix for a comma (`1,000B`, as the card prints the cap) but not for a dot (`1.234K` = 1234). Suffixed values
+  round to the nearest integer; plain fractions, negatives, values over 1e12 and anything else are refused with a
+  message under the field (`role="alert"`, `aria-invalid`), the stored value unchanged. Escape restores the stored
+  value; ↑/↓ step by 1 (Shift: 10). The card's own text always reads back (property test over every variant).
+- Next to the field: the count as the card prints it (`formatCount` for the clip's variant).
+- The wand writes one believable value consistent with the others (one undo step): replies, reposts and views follow
+  the current likes (`fillSocialParams` ratios: 1–5 %, 10–30 %, 10–50×); likes are drawn so the current replies stay
+  1–5 % of them (tokcomment's distribution when there are no replies). A clip whose variant hides the field is left
+  alone.
+
+### `social-time`
+
+- Value (0…10000) and unit (Minutes … Years, singular for 1) in one row; the unit is written to `timeUnit`, whose own row
+  is hidden (`alsoEdits`). The preview is `formatTime` for the clip's variant ("3h", "3 months ago"). Months stay months
+  on every platform (tokcomment printed YouTube months as hours; test "months stay months").
+- A wand draws a plausible age for the platform (`randomStats` time). Differing units across selected clips show "–".
+
+### `social-avatar`
+
+- Three sources as a segmented control: **Image** (a project image), **Generated** (`{ generated: seed }`, drawn with
+  `generatedAvatar(seed, displayName)` like the template; **Reshuffle** draws a new seed) and **Default** (`null`, the
+  platform silhouette). A value the control does not understand is shown as the default and replaced by the next pick.
+- Image: WP1's `MediaParamPicker` (still images only, "None" = default, drops on the field) plus a drop zone over the
+  whole control for Project panel items (`droppedMediaId`) and desktop image files, and **Import an image…** (the
+  tokcomment upload button), which imports the file into the project root bin through the import service and then
+  sets it (two History entries: the import and the avatar). Video, animated images and other files are refused with
+  "Only still images can be avatars". A media id no longer in the project is flagged ("The image is no longer in the
+  project"). The preview shows the engine poster, then the original file. The media part is isolated in
+  `AvatarMediaPicker.tsx`.
+- **Randomize identity** writes `displayName`, `handle` and `avatar` (`randomIdentity`: a made-up name, matching handle,
+  generated avatar) as one History entry "Randomize Identity", with a different identity per selected clip.
+
+### Randomize stats
+
+The group wand fills every stat the clip's variant draws — `timeValue`, `timeUnit`, `likes`, `replies`, and `reposts` /
+`views` on X — from `randomStats(variant, seed)` with a fresh seed per selected clip, as one History entry
+"Randomize Stats". Stats a variant hides (`VARIANT_CAPABILITIES`) keep their values. Seeds come from
+`crypto.getRandomValues`; the document only receives the concrete values, so it stays deterministic.
+
+### Robustness, accessibility, strings
+
+- Every control reads its value and siblings defensively (`params.ts`: unknown variant → `tiktok-reply`, non-integer or
+  out-of-range counts → "–", unknown avatar shapes → default) and is tested with garbage values (numbers, objects, NaN,
+  wrong shapes); a refused write shows "The change was refused" and restores the stored value. The host's error boundary
+  remains the last line.
+- Labels: every input, select, toolbar (`role="toolbar"`, `aria-controls`) and icon button has an accessible name; mark
+  buttons expose `aria-pressed`; errors are `role="alert"` and linked with `aria-describedby`; the segmented avatar
+  source is a radio group. Read-only projects: the editor is `readOnly` (selectable), everything else disabled.
+- Strings go through i18n (`pnpm i18n`; Spanish in `es.json`). The mark labels use context keys
+  (`Highlight [word mark]` …) because "Highlight" already means Lumetri's highlights in the catalogue.
+- Icons (`@jasper/ui` registry, lucide): `text.highlight`, `text.blur`, `text.remove`, `text.clearMarks`,
+  `text.markup`, `action.randomize`, `action.reshuffle`, `action.randomIdentity`, `media.avatar`.
+
+### Tests
+
+- `apps/web/test/social-count-input.test.ts`: parser cases and fast-check (never throws; round trip of plain and
+  grouped counts; the card's `formatCount` text reads back within its truncation for every variant).
+- `apps/web/test/social-marks-edit.test.ts`: typing, deleting, replacing and emoji around marks; fast-check that the
+  visible text is always the target and that marks outside the edit are preserved; selection state vs `applyMark`;
+  grapheme counts.
+- `apps/web/test/social-params.test.ts`: Randomize patches respect capabilities, stay consistent and parse.
+- `apps/web/test/social-controls.test.tsx`: the controls in the real Properties and Effect Controls panels (layout,
+  hidden time unit, group wand), typing/marks/undo/redo through the session, coalescing, IME composition, limits,
+  shortcuts, Show markup, multi-selection (mixed values, per-clip randomization), drops, read-only, garbage values,
+  refusals, and the fallback when the controls are not registered.
+- `packages/project/test/template-object-params.test.ts`: object/union params are writable and validated (fails
+  without the `json` mapping).
+
+### Limitations
+
+- The template itself (`social-comment@1`, WP6a) was not on this branch: the controls were built and exercised against
+  the test template above. WP6a's template needs the hints listed above for them to appear.
+- The generated-avatar preview passes `displayName` for the initials; if the template draws initials from another
+  name (e.g. the handle on Instagram), the small preview can differ from the card.
+- The avatar resolution warning of design §7.11 (below 2× the drawn size) is not part of these controls.
+- In the markup view the mark buttons are disabled (the markup is edited as text there).
+
+## Remote fonts & emoji (WP2 `sc/assets`, design §7.8, §7.11)
+
+### What it does
+
+Templates that replicate a platform draw with the platform's fonts and emoji. A template declares them; the render
+snapshot loads exactly those faces and emoji images for preview and export; what the app may not ship is downloaded
+by the engine on first need, verified, cached and served through the font routes. Nothing is ever substituted: a
+missing asset is a visible marker in the Player and a named export blocker.
+
+### Contracts (C2)
+
+| Piece | Where |
+|---|---|
+| `EmojiPackId = 'apple' \| 'twemoji' \| 'noto'`, `EMOJI_PACK_IDS`, `splitEmoji(text)`, `emojiGraphemes(text, limit?)`, `isEmojiGrapheme(g)`, `emojiKey(g)`, `emojiCodepointKey(g, {stripFe0f?, join?, minDigits?})`, `emojiCodepointCandidates(g, rule)`, `graphemeOfEmojiKey(key)` | `packages/mg-templates/src/emoji.ts` |
+| `MgAnimeTemplateDefinition.requiredAssets?(params): TemplateRequiredAssets` (`{ fonts: {family, weight, style}[]; emoji?: { pack, graphemes }; images?: string[] }` — `images`: manifest image ids) | `packages/mg-templates/src/types.ts` |
+| `templateRequiredAssets(def, params, paramKeyframes?)`, `templateAssetOptions(registry, {font, emoji})`, `resolveTemplateParams(def, params)`, `TemplateRequiredAssetsSchema` | `packages/mg-templates/src/assets.ts` |
+| `SnapshotOptions.templateAssets` (`required`, `font`, `emoji`, `image?`), `RenderTemplateAssets`, `mg.assets` on anime clips, `RenderSnapshot.emoji`, `RenderSnapshot.images`, `fonts[].unicodeRange`, `templateFontId(family)` (`template:<family>`), `emojiTableKey(pack, g)`, `TemplateFaceFile` | `packages/project/src/render/snapshot.ts` |
+| `AnimeTemplateProps.emojiUrls` (keyed `${pack}:${grapheme}`; `emojiUrlOf(urls, pack, g)`), `AnimeTemplateProps.imageUrls` (keyed by manifest image id) | `packages/motion/src/templates/types.ts`, `index.ts` |
+| `EmojiImage({url, size, alt, pack?, style?})`, `MissingAssetMarker({kind, label, size?, style?})`, `MissingAssetReporterContext`, `TemplateAssetScopeContext`, `retryTemplateAssets()`, `useTemplateAssetEpoch()`, `missingAssetLabel()` | `packages/motion/src/templates/assets.tsx` |
+| `MgTemplatePreview` prop `assets?: {font, emoji}` (gallery posters load declared fonts / emoji) | `packages/compositions/src/layers/MotionGraphicLayer.tsx` |
+| Manifest `apps/engine/src/remote-assets/manifest.json` (schema `schema.ts`; filled by WP5), override `<appdir>/assets/remote-manifest.override.json` | `apps/engine/src/remote-assets/` |
+| Routes: `GET /fonts/remote/<id>-<sha16>.<fmt>`, `GET /fonts/emoji/<pack>/<version>/<key>.<png\|svg>`, `GET /fonts/images/<id>-<sha16>.<png\|jpeg\|webp\|svg>`, `GET/PUT /api/settings/network`, `GET /api/remote-assets`, `POST /api/remote-assets/prefetch`, `POST /api/remote-assets/notice/ack`; event `remoteAssets.changed` | `apps/engine/src/routes/fonts.ts`, `remote-assets.ts`; `packages/api/src/remote-assets.ts` |
+| Export blocker `TEMPLATE_ASSETS_UNAVAILABLE` (409; `detail.assets[]` with `kind`, `label`, `reason`, `code`, `retryable`, `clipIds`) | `apps/engine/src/remote-assets/plan.ts`, `export/planner.ts` |
+
+Manifest schema additions beyond the contract (all optional, for packs whose file names need them): `cpJoin` (code
+point separator in `{cp}`, default `-`), `cpMinDigits` (zero padding, default none — Noto's `emoji_u0023_20e3` is
+`{cp}` with `cpJoin: "_"`, `cpMinDigits: 4`), and `{name}` in `urlTemplate` with a `names` map (canonical key → slug)
+for CDNs whose paths carry an emoji name (Emojipedia's `grinning-face_1f600.png`; looked up by the sequence as typed,
+without U+FE0F and fully qualified). Font `format` may be `woff2`, `woff`, `ttf` or `otf`; a font entry may carry a CSS
+`unicodeRange` — when every entry of one face has one, they are its subset files and load together. An optional
+`images` section (`id`, `url`, `sha256`, `format` png / jpeg / webp / svg, `licence`, optional `source`, `width`,
+`height`) lists remote images templates declare by id (X's and YouTube's default avatars); they are pinned by SHA-256
+like the fonts, served at `/fonts/images/…`, handed to templates as `imageUrls`, follow the same network policy, and a
+missing one is a striped "Image … is not available" banner in preview and an export blocker naming it.
+
+### How it flows
+
+1. **Declaration.** `requiredAssets(params)` of the template, evaluated for the params and for the params with each
+   keyframe value substituted (a keyframed text or emoji style changes what is drawn; ≤ 64 variants), validated with
+   zod and bounded (≤ 32 faces, ≤ 512 emoji per pack); a throwing or invalid hook declares nothing.
+2. **Snapshot** (`buildRenderSnapshot`, every consumer that renders passes `templateAssets`): declared faces join
+   `fonts` with `fontId: template:<family>` — bundled faces as every subset file (latin, latin-ext) with its CSS
+   `unicode-range`, so extended Latin never falls back to a host font; remote faces as one file — and emoji URLs join
+   `emoji`. The clip's source carries `mg.assets`. Unresolvable ones become `TEMPLATE_FONT_UNAVAILABLE` /
+   `TEMPLATE_EMOJI_UNAVAILABLE` warnings. Nested sequences merge both into the parent. This fixes the old gap where a
+   font named only in template params loaded only if a text clip used it: a declaring template never relies on
+   `TEMPLATE_FONT`.
+3. **Resolution.** Faces: bundled catalogue first, then the manifest, by exact family (case-insensitive), weight and
+   style — never another weight or family. Emoji: the pack must be in the manifest; the URL is
+   `/fonts/emoji/<pack>/<version>/<every code point, lower hex, "-">.<format>`. Editor: `apps/web/src/remote-assets/resolve.ts`
+   over `GET /api/fonts` (which lists remote families with `source: 'remote'` and `emojiPacks`); engine:
+   `FontCatalogService.templateFaceFiles` and `RemoteAssetService.emojiUrl`. Text clips never resolve remote families
+   (preview and export agree; the text font picker does not offer them).
+4. **Layer.** `MotionGraphicLayer` waits for exactly the declared faces, passes `emojiUrls` (the clip's entries of the
+   table) and checks what is missing (absent from the snapshot or failed to load). Player: the card is drawn with a
+   striped "Font … is not available" banner, emoji drawn by `EmojiImage` without a URL or whose image fails show a
+   dashed "?" square of the emoji's size, and everything is reported to the Program monitor. Renders (export, bake,
+   still): the layer throws / `EmojiImage` calls `cancelRender`, so a file that broke after planning fails the render
+   with the reason instead of exporting a substitute.
+5. **Planner.** `planExport` builds the snapshot with engine URLs, then `checkTemplateAssets` downloads every remote
+   face and emoji the clips declare (network policy permitting) and throws `TEMPLATE_ASSETS_UNAVAILABLE` naming each
+   missing font, or emoji and pack, the clips and the reason ("not in the manifest", `REMOTE_ASSETS_OFF`,
+   `DOWNLOAD_NOT_FOUND`, `ASSET_HASH_MISMATCH`…) — before anything renders, on every path (native, hybrid, Remotion,
+   stills, previews, layer-bake previews: they all plan through it).
+6. **Bake key.** `clipFonts` takes exactly the declared faces, so `KeyMaterial.fonts` holds the SHA-256 of each file
+   (remote fonts hashed from the cache); `KeyMaterial.emoji` (present only when the layer draws emoji) holds pack id,
+   pack version and each image's SHA-256. The bake document carries signed font and emoji URLs.
+
+### Downloads (`RemoteAssetService`)
+
+- Cache: `<appdir>/assets/remote/fonts/<id>-<sha256[0:16]>.<format>` and `…/emoji/<pack>/<version>/<key>.<format>`
+  with `index.json`. Every file is written with `atomicWriteFile` (same-directory temp, fsync, rename, directory
+  fsync); the emoji index too (`atomicWriteJson`, per-pack mutex).
+- Fonts are pinned by the manifest's SHA-256: a different download is `ASSET_HASH_MISMATCH` and nothing is cached; a
+  cached file is re-hashed once per process (a damaged file is reported with its path, not served). The hash prefix in
+  the file name makes the URL immutable (`cache-control: immutable` and the service worker's cache-first `/fonts/`).
+- Emoji lookups try the sequence as typed and its fully-qualified form (`fullyQualifiedEmoji`: U+FE0F after every
+  text-default emoji character, UTS #51), each with or without U+FE0F per the pack rule — a ZWJ sequence typed without
+  VS16 (`🏳‍🌈`) still finds Twemoji's `1f3f3-fe0f-200d-1f308.svg`.
+- Emoji cannot be pinned in advance: the first verified fetch (PNG magic / SVG root, no HTML pages, no active SVG
+  content, size cap) records its SHA-256 in the index; later downloads (cache deleted) must match, else
+  `ASSET_HASH_MISMATCH` — a changed upstream needs a pack version bump in the override, which starts a new
+  directory and a new bake key. `fe0f: try-both` tries the full sequence, then the one without U+FE0F (only a 404
+  moves on).
+- Limits: per-host concurrency 4, per attempt timeout 30 s (fonts) / 15 s (emoji), size caps 16 MB / 1 MB (declared
+  `content-length` and while streaming), 2 retries with 300 ms doubling backoff for network errors, timeouts, 5xx,
+  408 and 429 only. Concurrent requests for one file share one download. Prefetch runs ≤ 8 emoji at a time.
+- Errors are `{code, message, detail?, retryable}`: `REMOTE_ASSET_UNKNOWN` (404), `REMOTE_ASSETS_OFF` (409),
+  `DOWNLOAD_NOT_FOUND` (404), `DOWNLOAD_FAILED` / `DOWNLOAD_TIMEOUT` (502 / 504, retryable), `DOWNLOAD_TOO_LARGE`,
+  `ASSET_HASH_MISMATCH`, `ASSET_BAD_CONTENT` (502), `ASSET_CACHE_WRITE` (500, retryable). Failures are never cached
+  (`no-store`).
+- `JASPER_REMOTE_MANIFEST=<file>` replaces the shipped base manifest (tests use an empty one so they never reach the
+  real CDNs; an air-gapped install can point at its own mirror); a missing or invalid file gives an empty base and a
+  log line. The override still applies on top.
+- The manifest override is re-read when its size or mtime changes; an invalid or oversized (> 4 MB) override is
+  ignored and reported (`GET /api/remote-assets` → `manifest.override`), never fatal.
+- Serving: the routes are under `/fonts/`, so session auth, signed URLs for the headless browser (`UrlSigner`
+  `SIGNABLE`), the dev proxy and the service worker apply unchanged; emoji keys are validated
+  (`graphemeOfEmojiKey`: canonical lower-hex, one emoji grapheme) before anything is fetched, and only the manifest's
+  current pack version is served.
+
+### Network policy (spec 04 OF-002)
+
+"Platform fonts & emoji for social templates" (`<appdir>/engine/network.json`, zod-validated, a corrupt file reads as
+the default) is on by default and shown in Preferences ▸ Privacy & Network with what is cached, the source hosts, the
+override state and the licence caveat. Off: no request is made; cached files are still used; missing ones block
+exports (`REMOTE_ASSETS_OFF`). An agent turning it on is asked about in the editor (`requireUserApproval`); turning it
+off needs no approval. The first successful download records a notice (what, from where, licence caveat) shown once
+as a non-blocking toast by the first editor window that sees it and acknowledged in the engine — downloads made by
+headless, MCP or CLI renders are announced in the next editor that connects.
+
+### Editor
+
+- The Program monitor prefetches the sequence's declared assets as soon as the document needs them (debounced), so
+  every clip is covered, and shows **"N template assets not available"** (bottom left) listing each font / emoji, the
+  clips and the reason, with **Retry download** (asks the engine again, then reloads failed fonts and images:
+  `retryTemplateAssets`) and **Privacy & Network…**. The catalogue and the prefetch are refreshed on
+  `remoteAssets.changed` (settings or manifest).
+- Strings are in the i18n catalogue with Spanish translations.
+
+### For the gallery and other Players
+
+`MgTemplatePreview` takes `assets={catalogAssetResolver(catalog)}` (`apps/web/src/remote-assets/resolve.ts`, stable per
+catalogue object) to load a declaring template's fonts, emoji and images in gallery posters and hover previews;
+without it the poster shows the markers.
+
+### Bundled fonts
+
+TikTok Sans (`@fontsource/tiktok-sans` 5.3.0, OFL-1.1, Copyright 2024 TikTok Inc.) is bundled like the other catalogue
+families (latin + latin-ext, every weight 300–900; the templates use 400/500/600/700) and listed in
+`THIRD_PARTY_NOTICES.md`. Roboto 400/500/700 (latin + latin-ext) were already bundled. The packaged engine copies
+`unicode.json` with each family so subset files carry their ranges.
+
+### Limitations
+
+- The shipped manifest holds WP5's real Chirp, SF Pro and pack entries (see "Platform assets & sources") and the two
+  remote default avatars (`images`: `x-default-avatar`, `youtube-default-avatar`, re-downloaded and hash-verified on
+  2026-10-25; ids as `REMOTE_IMAGE_IDS` in `@jasper/mg-templates`, checked against `PLATFORM_DEFAULT_AVATARS` by
+  `packages/motion/test/default-avatar-images.test.ts`). Tests use a local fixture server, never the network.
+- Fonts the existing anime templates (Title Reveal, Lower Third (Animated), Callout, Counter) draw are not declared
+  and still use the `TEMPLATE_FONT` stack (`Inter` first), as before; only templates that declare assets are covered.
+- Bundled template faces load their latin and latin-ext files; other scripts (Cyrillic, Greek, Vietnamese) of a
+  bundled family are not loaded, so those characters use the next font of the stack (same in preview and export).
+- Emoji images are drawn by the template; `splitEmoji` follows UTS #51 presentation (text-default pictographs such as
+  © or ☺ without VS16 stay text). An emoji a pack lacks is a blocker naming it.
+- A template face of the variable Inter family (`Inter Variable`) loads its latin file only (no subset ranges are read
+  for variable families).
+
+### Verification (2026-10-25, this host: 8 cores shared with other agents)
+
+- Unit / integration (vitest, `--maxWorkers=2`): `packages/mg-templates/test/emoji-assets.test.ts` (segmentation,
+  codepoint keys, fully-qualified lookup, fast-check round trips and key fuzzing, `requiredAssets` collection);
+  `packages/project/test/template-assets-snapshot.test.ts` (declared faces load without a text clip, emoji / image
+  tables, warnings, nested merge); `packages/motion/test/template-assets.test.tsx` (EmojiImage, marker, retry, render
+  failure); `packages/compositions/test/template-assets-layer.test.tsx` (emojiUrls / imageUrls, markers, reports, render
+  failure, exact face gating, subset files with unicode ranges, failed-face retry); `apps/engine/test/remote-assets.test.ts`
+  (local fixture server: download, pinned hash, damaged cache, HTML pages, policy off, offline, timeout, size caps,
+  bounded retries, concurrent dedup, per-host limit, emoji pin index, try-both / fully-qualified / `{name}` /
+  `cpJoin`+`cpMinDigits` mappings in the platform-glyphs manifest's shape, override reload, prefetch, notice, images,
+  subset font entries, fast-check over manifests); `apps/engine/test/remote-assets-routes.test.ts` (catalogue incl.
+  TikTok Sans and Roboto 400/500/700, routes with session token / signed URL / anonymous 401, settings and agent
+  approval, status / notice, planner blocker for font, emoji, pack and image, bake key covers font hashes, emoji pack
+  version and image hashes); `apps/web/test/remote-assets.test.tsx` (catalogue resolution, Program warning and Retry,
+  Privacy & Network page, one-time notice).
+- `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/template-assets.e2e.test.ts` — **ran** with
+  `/usr/bin/google-chrome`: a test-only template (aliased into the test bundle, never shipped) declaring a font and an
+  emoji renders byte-identical PNGs with `renderStill` per frame and `renderFrames` at concurrency 1 and 3; the emoji
+  image is drawn; serving another file for the same declared face changes the glyphs (ink differs > 10 %); a missing
+  emoji or font fails the render. An engine layer-bake e2e with a declaring template needs a shipped declaring
+  template (WP4's) inside the engine's Remotion bundle and was not run here.
+- Running app (built engine + web on port 48120, appdir `/tmp/jasper-assets`, a local fixture CDN, Title Reveal
+  patched locally — not committed — to declare `Chirp` 700 and its emoji): the first download raised the notice toast
+  once; with the setting off and an empty cache the card showed the "Font "Chirp" 700 is not available" banner and the
+  Program monitor "3 template assets not available" with reasons; switching the setting on in Preferences ▸ Privacy &
+  Network downloaded the files, removed the banner without a reload and left "1 template asset not available" for the
+  emoji the fixture CDN lacks; `POST /api/exports/plan` answered 409 `TEMPLATE_ASSETS_UNAVAILABLE` naming that emoji,
+  its pack and the clip.
 
 ## Program monitor editing
 
