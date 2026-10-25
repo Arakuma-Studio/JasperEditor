@@ -38,7 +38,7 @@ export function currentSelection(session: EditorSession): TextSelection | null {
 function run(session: EditorSession, label: string, commands: Command[]): TransactionResult | null {
 	if (!commands.length) return null;
 	const r = session.apply({ label, origin: 'user', commands });
-	if (!r.ok) toast({ kind: 'error', message: `${label}: ${r.errors.map((e) => e.message).join('; ')}` });
+	if (!r.ok) toast({ kind: 'error', title: t('{0} refused', label), detail: r.errors.map((e) => e.message).join('; ') });
 	return r;
 }
 
@@ -52,7 +52,7 @@ export async function newStyleFromSelection(session: EditorSession): Promise<voi
 	const text = sel?.clips.filter(isTextClip) ?? [];
 	const primary = sel?.primary && isTextClip(sel.primary) ? sel.primary : text[text.length - 1];
 	if (!sel || !primary) {
-		toast({ kind: 'info', message: 'Select a text clip first.' });
+		toast({ kind: 'info', title: 'Select a text clip first' });
 		return;
 	}
 	const name = await promptName({
@@ -77,7 +77,7 @@ export function detachSelection(session: EditorSession): void {
 	const sel = currentSelection(session);
 	const linked = sel ? selectionLink(sel.doc, sel.clips).linked : [];
 	if (!linked.length) {
-		toast({ kind: 'info', message: 'No selected clip is linked to a text style.' });
+		toast({ kind: 'info', title: 'No selected clip is linked to a text style' });
 		return;
 	}
 	run(session, `Detach From Text Style (${count(linked.length)})`, detachCommands(linked));
@@ -87,7 +87,7 @@ export function resetSelection(session: EditorSession): void {
 	const sel = currentSelection(session);
 	const linked = sel ? selectionLink(sel.doc, sel.clips).linked : [];
 	if (!linked.length) {
-		toast({ kind: 'info', message: 'No selected clip is linked to a text style.' });
+		toast({ kind: 'info', title: 'No selected clip is linked to a text style' });
 		return;
 	}
 	run(session, `Reset to Text Style (${count(linked.length)})`, resetCommands(linked));
@@ -150,7 +150,7 @@ export function runSelectionHelper(session: EditorSession, helperId: string): nu
 	const input = { doc: sel.doc, seq: sel.seq, selected: sel.clips, primary: sel.primary };
 	const reason = helper.unavailable?.(input) ?? null;
 	if (reason) {
-		toast({ kind: 'info', message: reason });
+		toast({ kind: 'info', title: reason });
 		return null;
 	}
 	const ids = helper.select(input);

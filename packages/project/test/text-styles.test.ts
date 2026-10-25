@@ -260,8 +260,8 @@ describe('style patch semantics (property tests)', () => {
 		fc.assert(
 			fc.property(style, patch, (a, p) => {
 				expect(TextStylePatchSchema.safeParse(p).success).toBe(true);
-				const once = applyStylePatch(a, p);
-				expect(sameValue(applyStylePatch(once, p), once)).toBe(true);
+				const once = applyStylePatch(a, p as never);
+				expect(sameValue(applyStylePatch(once, p as never), once)).toBe(true);
 				const changed = Object.keys(diffStyle(a, once));
 				for (const k of changed) expect(Object.keys(p)).toContain(k);
 				if (p.shadow && a.shadow) {
