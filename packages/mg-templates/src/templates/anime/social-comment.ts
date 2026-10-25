@@ -352,13 +352,15 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	// "Reply" and the replies line 600 on the comment row (tokcomment's weights)
 	'tiktok-reply': { family: 'TikTok Sans', weights: [600, 700] },
 	'tiktok-comment': { family: 'TikTok Sans', weights: [500, 600] },
+	// SF Pro Text (remote manifest; the iPhone app's system font, Text cut below 20 pt): username, "Reply" and the
+	// replies line 600, comment, time and like count 400 on the post comment; comment and "Replying to" 400 on the Reels
+	// card (Instagram's weights, WP5 measurements)
+	'instagram-post': { family: 'SF Pro Text', weights: [400, 600] },
+	'instagram-reel-reply': { family: 'SF Pro Text', weights: [400] },
 	// Roboto (Apache-2.0, bundled; YouTube's comment font): handle, "N replies" 500, time, comment and counts 400 on the
 	// comment; header 400 and comment 500 on the Shorts card
 	'youtube-comment': { family: 'Roboto', weights: [400, 500] },
 	'youtube-shorts-reply': { family: 'Roboto', weights: [400, 500] },
-	// built by the follow-up variant packages (WP6b–d)
-	'instagram-post': null,
-	'instagram-reel-reply': null,
 	// Chirp (X's UI font, remote manifest `chirp-*`): name 700; handle, time, post text and counts 400 (x.com 2026)
 	'x-post': { family: 'Chirp', weights: [400, 700] },
 };
@@ -426,6 +428,8 @@ const DEFAULTS = socialCommentParamsSchema.parse({});
 export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
 	'tiktok-reply',
 	'tiktok-comment',
+	'instagram-post',
+	'instagram-reel-reply',
 	'youtube-comment',
 	'youtube-shorts-reply',
 	'x-post',
@@ -448,10 +452,13 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 		description: 'The "Reply to name\'s comment" bubble TikTok shows on a video reply.',
 	},
 	'tiktok-comment': { name: 'TikTok · Comment', description: 'A TikTok comment with likes and replies.' },
-	'instagram-post': { name: 'Instagram · Post comment', description: 'An Instagram post comment.' },
+	'instagram-post': {
+		name: 'Instagram · Post comment',
+		description: 'An Instagram post comment with its like heart and replies.',
+	},
 	'instagram-reel-reply': {
-		name: 'Instagram · Reels reply',
-		description: 'The Instagram "Replying to" Reels card.',
+		name: 'Instagram · Reel reply',
+		description: 'The "Replying to username" card Instagram shows on a Reel made in reply to a comment.',
 	},
 	'youtube-comment': {
 		name: 'YouTube · Comment',

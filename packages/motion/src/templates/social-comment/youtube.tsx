@@ -3,7 +3,13 @@
 // (YouTube's comment font, bundled) and the live youtube.com measurements of 2026 where they differ from tokcomment
 // (avatar size, the colours of the handle, counts, icons, thread line and "N replies"). Deliberate differences from
 // tokcomment and the tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "YouTube cards".
-import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
+import {
+	avatarNameFor,
+	formatCount,
+	formatRepliesLabel,
+	formatTime,
+	SOCIAL_VARIANT_FONTS,
+} from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { YOUTUBE_GLYPHS } from '../social/glyphs.ts';
@@ -30,8 +36,8 @@ const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
 // ------------------------------------------------------------------------------------------------ avatar
 
 /**
- * The author's avatar (`SocialAvatar`): the picture, a generated one (initials from the handle the card shows: YouTube
- * does not show the display name) or YouTube's default picture (the manifest image `SOCIAL_DEFAULT_AVATAR_IMAGES.youtube`
+ * The author's avatar (`SocialAvatar`): the picture, a generated one (initials from the name the card shows,
+ * `avatarNameFor`: the handle on YouTube, as the Properties preview) or YouTube's default picture (the manifest image `SOCIAL_DEFAULT_AVATAR_IMAGES.youtube`
  * from `assets.imageUrls`, declared by the template's `requiredAssets`).
  */
 function YouTubeAvatar(p: {
@@ -45,7 +51,7 @@ function YouTubeAvatar(p: {
 			avatar={p.params.avatar}
 			platform="youtube"
 			size={p.size}
-			name={p.params.handle}
+			name={avatarNameFor(p.params.variant, p.params)}
 			fontFamily={FONT}
 			assets={p.assets}
 			{...(p.style ? { style: p.style } : {})}

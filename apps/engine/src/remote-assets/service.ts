@@ -17,6 +17,7 @@ import {
 	type NetworkSettings,
 	REMOTE_FONT_PREFIX,
 	REMOTE_IMAGE_PREFIX,
+	REMOTE_PREFETCH_MAX_EMOJI,
 	type RemoteAssetFetch,
 	type RemoteAssetMissing,
 	type RemoteAssetPrefetchRequest,
@@ -30,7 +31,6 @@ import {
 	emojiKey,
 	graphemeOfEmojiKey,
 	isEmojiGrapheme,
-	MAX_TEMPLATE_EMOJI,
 } from '@jasper/mg-templates';
 import { z } from 'zod';
 import { atomicWriteFile, atomicWriteJson, readJsonOrNull, sha256File } from '../tools/fs.ts';
@@ -99,6 +99,8 @@ export type RemoteAssetServiceOptions = {
 	fetchImpl?: typeof fetch;
 	fontLimits?: Partial<FetchLimits>;
 	emojiLimits?: Partial<FetchLimits>;
+	/** Distinct emoji per pack one prefetch fetches (default `REMOTE_PREFETCH_MAX_EMOJI`; tests lower it). */
+	prefetchMaxEmoji?: number;
 	perHost?: number;
 	/** `remoteAssets.changed` events. */
 	onChanged?(e: RemoteAssetsChangedEvent): void;
@@ -614,9 +616,31 @@ export class RemoteAssetService {
 				missing.push({ kind: 'font', ...face, error: asRemoteAssetError(e).toJSON() });
 			}
 		}
+		// Distinct emoji per pack, bounded: the ones over the cap are reported missing by name (never skipped silently).
+		const cap = Math.max(1, Math.floor(this.o.prefetchMaxEmoji ?? REMOTE_PREFETCH_MAX_EMOJI));
 		const jobs: { pack: string; grapheme: string }[] = [];
-		for (const { pack, graphemes } of req.emoji ?? [])
-			for (const g of [...new Set(graphemes)].slice(0, MAX_TEMPLATE_EMOJI)) jobs.push({ pack, grapheme: g });
+		const perPack = new Map<string, Set<string>>();
+		for (const { pack, graphemes } of req.emoji ?? []) {
+			let seen = perPack.get(pack);
+			if (!seen) perPack.set(pack, (seen = new Set()));
+			for (const g of graphemes) {
+				if (seen.has(g)) continue;
+				seen.add(g);
+				if (seen.size <= cap) jobs.push({ pack, grapheme: g });
+				else
+					missing.push({
+						kind: 'emoji',
+						pack,
+						grapheme: g,
+						error: new RemoteAssetError(
+							'PREFETCH_LIMIT',
+							`More than ${cap} different emoji of the ${pack} pack in one render: ${g} was not fetched`,
+							false,
+							{ pack, limit: cap },
+						).toJSON(),
+					});
+			}
+		}
 		let next = 0;
 		const worker = async () => {
 			while (next < jobs.length) {

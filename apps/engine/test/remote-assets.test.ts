@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { EMOJI_PACK_IDS, REMOTE_IMAGE_IDS } from '@jasper/mg-templates';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkImage, RemoteAssetError } from '../src/remote-assets/fetcher.ts';
+import { checkImage, RemoteAssetError, svgHasActiveContent } from '../src/remote-assets/fetcher.ts';
 import shipped from '../src/remote-assets/manifest.json' with { type: 'json' };
 import {
 	baseManifest,
@@ -404,6 +404,73 @@ describe('emoji', () => {
 		expect(() => checkImage(f('<html><svg/></html>'), 'svg')).toThrow();
 	});
 
+	it('SVG check: encoded and disguised active content is refused, Twemoji-style markup passes', () => {
+		const svg = (inner: string, attrs = '') => ({
+			bytes: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"${attrs}>${inner}</svg>`),
+			contentType: 'image/svg+xml',
+			url: 'x',
+		});
+		for (const [inner, attrs] of [
+			['<a href="&#106;avascript:alert(1)"><path d="M0 0"/></a>', ''],
+			['<a xlink:href="&#x6A;&#x61;vascript:alert(1)"/>', ''],
+			['<a href="java&#9;script:alert(1)"/>', ''],
+			['<a href="java&Tab;script&colon;alert(1)"/>', ''],
+			['<a href="&amp;#106;avascript:x"/>', ''],
+			['<a href="javascript&#58alert(1)"/>', ''],
+			['', '/onload="alert(1)"'],
+			['<g ONCLICK = "x()"/>', ''],
+			['<svg:script>alert(1)</svg:script>', ''],
+			['<foreignObject><div/></foreignObject>', ''],
+			['<image href="https://tracker.example/p.png"/>', ''],
+			["<image xlink:href = '//cdn.example/p.png'/>", ''],
+			['<use href="data:image/svg+xml;base64,AAAA"/>', ''],
+			['<rect style="fill:url(https://x/y)"/>', ''],
+			['<style>@import "https://x/y.css";</style>', ''],
+			['<animate attributeName="href" values="javascript:alert(1)"/>', ''],
+		] as const)
+			expect(() => checkImage(svg(inner, attrs), 'svg'), `${attrs}${inner}`).toThrow(/scripts or external/);
+		expect(() =>
+			checkImage(
+				{
+					bytes: Buffer.from('<?xml version="1.0"?><?xml-stylesheet href="https://x/s.css"?><svg/>'),
+					contentType: '',
+					url: 'x',
+				},
+				'svg',
+			),
+		).toThrow();
+		expect(() =>
+			checkImage(
+				{
+					bytes: Buffer.from('<!DOCTYPE svg [<!ENTITY x "javascript:">]><svg><a href="&x;"/></svg>'),
+					contentType: '',
+					url: 'x',
+				},
+				'svg',
+			),
+		).toThrow();
+		// what real emoji SVGs use: same-document references, gradients, inline styles, text that mentions "on"
+		expect(() =>
+			checkImage(
+				svg(
+					'<defs><linearGradient id="a"><stop offset="0" stop-color="#fff"/></linearGradient></defs><circle fill="url(#a)" style="fill: url( \'#a\' )" r="9"/><use xlink:href="#a"/><use href=" #a"/><title>Smiling face on time</title>',
+					' viewBox="0 0 36 36" xmlns:xlink="http://www.w3.org/1999/xlink"',
+				),
+				'svg',
+			),
+		).not.toThrow();
+	});
+
+	it('svgHasActiveContent never throws (fuzz)', () => {
+		fc.assert(
+			fc.property(fc.string({ maxLength: 400 }), (s) => {
+				expect(typeof svgHasActiveContent(s)).toBe('boolean');
+				expect(typeof svgHasActiveContent(`<svg>${s}&#${s}&#x${s};</svg>`)).toBe('boolean');
+			}),
+			{ numRuns: 300 },
+		);
+	});
+
 	it('serves only canonical keys of the current pack version', async () => {
 		const s = service();
 		await expect(s.ensureEmojiFile('apple', '1', '1f600.png')).resolves.toMatchObject({
@@ -489,6 +556,51 @@ describe('override manifest, prefetch and notice', () => {
 		await s.ensureEmojiImage('apple', HEART);
 		await s.flush();
 		expect((await service().status()).notice.pending).toBe(false);
+	});
+});
+
+describe('prefetch emoji cap (never silent)', () => {
+	/** `n` distinct emoji graphemes (regional-indicator pairs: flags, 26 × 26). */
+	const flags = (n: number) =>
+		Array.from({ length: n }, (_, i) =>
+			String.fromCodePoint(0x1f1e6 + (Math.floor(i / 26) % 26), 0x1f1e6 + (i % 26)),
+		);
+
+	it('every distinct emoji of a large project is fetched or reported (over 512 per pack)', async () => {
+		const s = service();
+		await s.putSettings({ platformAssets: false });
+		const graphemes = flags(600);
+		const r = await s.prefetch({ emoji: [{ pack: 'apple', graphemes: [...graphemes, ...graphemes] }] });
+		expect(r.available).toBe(0);
+		// none skipped: each one is reported missing with why (the network is off)
+		expect(r.missing).toHaveLength(600);
+		expect(new Set(r.missing.map((m) => (m.kind === 'emoji' ? m.grapheme : '')))).toEqual(new Set(graphemes));
+		expect(server.hits.size).toBe(0);
+	});
+
+	it('emoji over the cap are reported missing by name (PREFETCH_LIMIT), the others fetched', async () => {
+		const s = service({ prefetchMaxEmoji: 1 });
+		const r = await s.prefetch({
+			emoji: [
+				{ pack: 'apple', graphemes: [GRIN, GRIN] },
+				{ pack: 'apple', graphemes: [HEART] },
+			],
+		});
+		expect(r.available).toBe(1);
+		expect(r.missing).toEqual([
+			{
+				kind: 'emoji',
+				pack: 'apple',
+				grapheme: HEART,
+				error: {
+					code: 'PREFETCH_LIMIT',
+					message: `More than 1 different emoji of the apple pack in one render: ${HEART} was not fetched`,
+					detail: { pack: 'apple', limit: 1 },
+					retryable: false,
+				},
+			},
+		]);
+		expect(server.hits.get('/emoji/2764-fe0f.png')).toBeUndefined();
 	});
 });
 

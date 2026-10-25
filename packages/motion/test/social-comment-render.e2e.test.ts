@@ -11,6 +11,8 @@
 // files; it is not redistributed, so without it the X card draws in a fallback face), remote images from
 // SOCIAL_IMAGE_DIR (`<manifest image id>.png`, e.g. `x-default-avatar.png`; without it the X default avatar is its
 // vector twin).
+// Instagram: SF Pro Text from SOCIAL_SF_PRO_DIR (the manifest's `SF-Pro-Text-{Regular,Semibold}.otf`; not
+// redistributed, so without it the Instagram cards draw in a fallback face).
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -20,7 +22,9 @@ import { fileURLToPath } from 'node:url';
 import {
 	animeTemplateTiming,
 	emojiGraphemes,
+	isSocialVariant,
 	SOCIAL_DEFAULT_TEXT,
+	SOCIAL_VARIANT_FONTS,
 	socialComment,
 	socialCommentParamsSchema,
 	socialCommentSchedule,
@@ -111,7 +115,7 @@ type Case = {
 
 /** The calibration matrix (design §8 "visual calibration"), named after the tokcomment captures it pairs with. */
 const CALIBRATION: Case[] = [];
-for (const variant of ['tiktok-reply', 'tiktok-comment'])
+for (const variant of ['tiktok-reply', 'tiktok-comment', 'instagram-post'])
 	for (const theme of ['light', 'dark'])
 		for (const verified of [false, true])
 			CALIBRATION.push({
@@ -119,9 +123,16 @@ for (const variant of ['tiktok-reply', 'tiktok-comment'])
 				canvas: '1080x1920',
 				params: { variant, theme, verified },
 			});
-for (const variant of ['tiktok-reply', 'tiktok-comment']) {
+for (const theme of ['light', 'dark'])
+	CALIBRATION.push({
+		name: `instagram-reel-reply_${theme}_default`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-reel-reply', theme },
+	});
+for (const variant of ['tiktok-reply', 'tiktok-comment', 'instagram-post', 'instagram-reel-reply']) {
 	// tokcomment's edit and avatar captures were taken with the time left at 3 years
-	const y3 = variant === 'tiktok-comment' ? { timeValue: 3, timeUnit: 'year' } : {};
+	const y3 =
+		variant === 'tiktok-comment' || variant === 'instagram-post' ? { timeValue: 3, timeUnit: 'year' } : {};
 	CALIBRATION.push(
 		{ name: `${variant}_light_text-short`, canvas: '1080x1920', params: { variant, text: 'Love this! 🔥' } },
 		{ name: `${variant}_light_text-long`, canvas: '1080x1920', params: { variant, text: LONG } },
@@ -149,7 +160,7 @@ for (const variant of ['tiktok-reply', 'tiktok-comment']) {
 		{
 			name: `${variant}_light_avatar-generated`,
 			canvas: '1080x1920',
-			params: { variant, avatar: { generated: 42 }, displayName: 'Luna Park' },
+			params: { variant, avatar: { generated: 42 }, displayName: 'Luna Park', handle: 'luna.park' },
 		},
 		{
 			name: `${variant}_dark_mentions`,
@@ -169,6 +180,75 @@ CALIBRATION.push(
 			timeValue: 3,
 			timeUnit: 'year',
 		},
+	},
+	{
+		name: 'instagram-post_light_counts-huge',
+		canvas: '1080x1920',
+		params: {
+			variant: 'instagram-post',
+			likes: 987_654_321_000,
+			replies: 4_812_345,
+			timeValue: 3,
+			timeUnit: 'year',
+		},
+	},
+	...(
+		[
+			['minute', 'mins'],
+			['hour', 'hrs'],
+			['day', 'days'],
+			['week', 'wks'],
+			['month', 'mth'],
+			['year', 'yrs'],
+		] as const
+	).map(([timeUnit, label]) => ({
+		name: `instagram-post_light_time-3-${label}`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', timeValue: 3, timeUnit },
+	})),
+	{
+		name: 'instagram-post_light_liked',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', likeTick: true, likes: 1234 },
+	},
+	{
+		name: 'instagram-post_dark_liked',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', theme: 'dark', likeTick: true, likes: 1234, verified: true },
+	},
+	{
+		name: 'instagram-post_light_no-likes-no-replies',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', likes: 0, replies: 0 },
+	},
+	{
+		name: 'instagram-post_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			variant: 'instagram-post',
+			handle: 'averyveryveryverylongusername_with_many_characters_123456789',
+			verified: true,
+			timeValue: 3,
+			timeUnit: 'year',
+		},
+	},
+	{
+		name: 'instagram-reel-reply_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			variant: 'instagram-reel-reply',
+			handle: 'averyveryveryverylongusername_with_many_characters_123456789',
+		},
+	},
+	{
+		name: 'instagram-post_light_no-profile',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', showProfile: false },
+	},
+	{
+		name: 'instagram-reel-reply_dark_no-profile',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-reel-reply', theme: 'dark', showProfile: false },
 	},
 	{
 		name: 'tiktok-comment_light_no-profile',
@@ -484,6 +564,20 @@ for (const frame of [16, 22, 30, 40, 48, 146, 148])
 		params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true },
 		frame,
 	});
+for (const frame of [3, 6, 9, 13, 16, 22, 30, 40, 48, 146, 148])
+	CALIBRATION.push({
+		name: `anim_instagram_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', entrance: 'grow-from-tail', wordReveal: true, likeTick: true },
+		frame,
+	});
+for (const frame of [3, 6, 9, 13, 22, 40])
+	CALIBRATION.push({
+		name: `anim_instagram-reel_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-reel-reply', entrance: 'grow-from-tail', wordReveal: true },
+		frame,
+	});
 
 describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 1_200_000 }, () => {
 	let r: typeof import('@remotion/renderer');
@@ -517,6 +611,17 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				if (!existsSync(join(roboto, file))) continue;
 				copyFileSync(join(roboto, file), join(pub, 'fonts', file));
 				fonts.push({ family: 'Roboto', weight, file: `fonts/${file}` });
+			}
+		const sfPro = process.env.SOCIAL_SF_PRO_DIR;
+		if (sfPro)
+			for (const [weight, style] of [
+				[400, 'Regular'],
+				[600, 'Semibold'],
+			] as const) {
+				const file = `SF-Pro-Text-${style}.otf`;
+				if (!existsSync(join(sfPro, file))) continue;
+				copyFileSync(join(sfPro, file), join(pub, 'fonts', file));
+				fonts.push({ family: 'SF Pro Text', weight, file: `fonts/${file}` });
 			}
 		// Chirp (the X card): the manifest's latin subset files, when SOCIAL_CHIRP_DIR holds them
 		const chirp = process.env.SOCIAL_CHIRP_DIR;
@@ -607,9 +712,12 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		await browser?.close({ silent: true });
 	});
 
+	// a case's params over its variant's tokcomment defaults (the captures show each variant's own defaults); the page
+	// loads only the variant's own font family, as `requiredAssets` does in the editor and the engine
+	const variantOf = (c: Case) => (isSocialVariant(c.params.variant) ? c.params.variant : 'tiktok-reply');
 	const propsOf = (c: Case): CardProps => ({
-		params: c.params,
-		fonts,
+		params: { ...socialDefaults(variantOf(c)), ...c.params },
+		fonts: fonts.filter((f) => f.family === SOCIAL_VARIANT_FONTS[variantOf(c)]?.family),
 		mediaFiles: c.media ? { med_avatar: 'avatar.png' } : {},
 		emojiFiles,
 		imageFiles,
@@ -694,6 +802,23 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				canvas: '1080x1920',
 				params: { ...socialDefaults('youtube-shorts-reply'), wordReveal: true, entrance: 'classic-pop' },
 			},
+			{
+				name: 'instagram-post-dark',
+				canvas: '1080x1080',
+				params: {
+					variant: 'instagram-post',
+					theme: 'dark',
+					likeTick: true,
+					wordReveal: true,
+					verified: true,
+					entrance: 'classic-pop',
+				},
+			},
+			{
+				name: 'instagram-reel-light',
+				canvas: '1080x1920',
+				params: { variant: 'instagram-reel-reply', wordReveal: true, entrance: 'soft-spring' },
+			},
 		];
 		// SC_CASE=<name> runs one case (debugging)
 		for (const c of cases.filter((x) => !process.env.SC_CASE || x.name === process.env.SC_CASE)) {
@@ -761,6 +886,10 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				{ text: longest },
 				{ variant: 'tiktok-comment', text: longest, likes: 1e12, replies: 1e12 },
 				{ variant: 'tiktok-comment', likes: 999_999_999_999, replies: 999_999, displayName: 'x'.repeat(64) },
+				{ variant: 'instagram-post', text: longest, likes: 1e12, replies: 1e12, verified: true },
+				{ variant: 'instagram-post', likes: 999_999_999_999, replies: 999_999, handle: 'x'.repeat(64) },
+				{ variant: 'instagram-reel-reply', text: longest },
+				{ variant: 'instagram-reel-reply', handle: 'x'.repeat(64), text: 'ok' },
 				{
 					variant: 'x-post',
 					text: longest,

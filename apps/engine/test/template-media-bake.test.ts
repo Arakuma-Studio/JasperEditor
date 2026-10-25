@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProjectDocument, RenderVisualClip } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { PlannedExport } from '../src/export/planner.ts';
+import { type PlannedExport, templatePictureProblem } from '../src/export/planner.ts';
+import { createImportsExtension } from '../src/imports/extension.ts';
+import type { VariantService } from '../src/imports/variants.ts';
 import type { BakeEnvironment } from '../src/layer-bake/key.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -171,5 +173,66 @@ describe('template media params in layer bakes and exports', () => {
 		expect(q.plan.warnings.find((w) => w.code === 'OFFLINE_TEMPLATE_MEDIA')?.itemIds).toEqual([
 			'clp_AVATAR0000000001',
 		]);
+	});
+
+	it('a template picture the browser cannot decode gets its display picture (bake and Remotion), never the placeholder', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const mediaId = d.addMedia(red);
+		const clipId = addAvatarClip(d, mediaId);
+		// a still the browser cannot decode (HEIF, EXR…): the probe says so
+		d.doc = structuredClone(d.doc) as ProjectDocument;
+		const stream = d.doc.media[mediaId]!.probe.streams.find((x) => x.type === 'video')!;
+		(stream as { browserDecodable?: boolean }).browserDecodable = false;
+		const ensured: string[] = [];
+		const variants = {
+			ensureAndWait: async (r: { mediaKey: string }, kind: string) => {
+				ensured.push(`${r.mediaKey}:${kind}`);
+				return '/tmp/display.png';
+			},
+			url: (r: { mediaKey: string }, kind: string) => `/media/${r.mediaKey}/variant/${kind}`,
+		} as unknown as VariantService;
+		const ext = createImportsExtension({ variants, registry: coreServices(app).registry });
+		for (const purpose of ['native', 'remotion'] as const) {
+			const p = await plan(d);
+			const ctx = {
+				signal: new AbortController().signal,
+				stage: () => undefined,
+				scratchDir: async () => tmpdir(),
+				log: () => undefined,
+				jobId: 'job_test',
+				purpose,
+			};
+			const art = (await ext.prepare!(p, ctx)) as Map<string, { proxyUrl?: string }>;
+			expect(art.get(mediaId)?.proxyUrl, purpose).toBe(`/media/${red.mediaKey}/variant/display`);
+			if (purpose === 'native') {
+				// the layer bake's document draws the display picture
+				const b = await svc.planBake(p, clipOf(p, clipId), { env: ENV });
+				expect(b.doc.media[mediaId]?.browserDecodable).toBe(false);
+				expect(b.doc.media[mediaId]?.proxyUrl).toMatch(
+					new RegExp(`/media/${red.mediaKey}/variant/display\\?.+`),
+				);
+			}
+		}
+		expect(ensured).toEqual([`${red.mediaKey}:display`, `${red.mediaKey}:display`]);
+	});
+
+	it('media no picture can show (a video, a PDF page) block the export by name instead of drawing the placeholder', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const mediaId = d.addMedia(red);
+		addAvatarClip(d, mediaId);
+		d.doc = structuredClone(d.doc) as ProjectDocument;
+		(d.doc.media[mediaId] as { kind: string }).kind = 'video';
+		await expect(plan(d)).rejects.toMatchObject({
+			code: 'TEMPLATE_MEDIA_UNDRAWABLE',
+			message: expect.stringContaining(`${mediaId} (a video medium)`),
+		});
+	});
+
+	it('templatePictureProblem: stills (and SVG) are pictures; videos, Lottie and PDF pages are not', () => {
+		expect(templatePictureProblem({ kind: 'image' })).toBeNull();
+		expect(templatePictureProblem({ kind: 'image', vector: { format: 'svg' } })).toBeNull();
+		expect(templatePictureProblem({ kind: 'image', vector: { format: 'pdf' } })).toBe('a pdf page');
+		expect(templatePictureProblem({ kind: 'image', lottie: {} })).toBe('a Lottie animation');
+		expect(templatePictureProblem({ kind: 'video' })).toBe('a video medium');
 	});
 });

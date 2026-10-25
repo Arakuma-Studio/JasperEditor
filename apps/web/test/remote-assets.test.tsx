@@ -205,6 +205,22 @@ describe('Program monitor warning', () => {
 			),
 		);
 	});
+
+	it('lists a template picture the Player could not draw (failed, offline or undecodable avatar) with its clip', () => {
+		render(
+			<TemplateAssetWarning
+				doc={docWith()}
+				reported={new Map([['c1', [{ kind: 'media', mediaId: 'med_avatar' }]]])}
+				engine={{ issues: [], retry: async () => null }}
+			/>,
+		);
+		const chip = screen.getByTestId('program-template-assets-chip');
+		expect(chip.textContent).toContain('1 template asset not available');
+		fireEvent.click(chip);
+		const list = screen.getByTestId('program-template-assets-list');
+		expect(list.textContent).toContain('Picture med_avatar');
+		expect(list.textContent).toContain('Reply card');
+	});
 });
 
 function status(o: Partial<RemoteAssetsStatus> = {}): RemoteAssetsStatus {

@@ -4,7 +4,11 @@
 // - the snapshot: faces / emoji that resolve nowhere (not bundled, not in the manifest);
 // - the Player: template layers report what failed to load (MissingAssetReporterContext).
 // "Retry download" asks the engine again and reloads failed fonts and images; the chip never blocks editing.
-import type { RemoteAssetMissing, RemoteAssetPrefetchResponse } from '@jasper/api';
+import {
+	REMOTE_PREFETCH_MAX_EMOJI,
+	type RemoteAssetMissing,
+	type RemoteAssetPrefetchResponse,
+} from '@jasper/api';
 import {
 	type MissingAssetReporter,
 	type MissingTemplateAsset,
@@ -83,6 +87,7 @@ export function declaredAssets(doc: RenderDoc | null): {
 /** Identity of an asset (JSON of its normalised fields; `parseKey` reads it back). */
 export function assetKey(a: MissingTemplateAsset): string {
 	if (a.kind === 'font') return JSON.stringify(['font', a.family, a.weight, a.style]);
+	if (a.kind === 'media') return JSON.stringify(['media', a.mediaId]);
 	return a.kind === 'emoji' ? JSON.stringify(['emoji', a.pack, a.grapheme]) : JSON.stringify(['image', a.id]);
 }
 
@@ -127,7 +132,10 @@ export function useTemplateAssetPrefetch(
 	const request = useMemo(
 		() => ({
 			fonts: declared.fonts.slice(0, 64),
-			emoji: declared.emoji.slice(0, 8).map((e) => ({ ...e, graphemes: e.graphemes.slice(0, 512) })),
+			// the engine's per-pack cap (REMOTE_PREFETCH_MAX_EMOJI covers every emoji of Unicode; exports report any over it)
+			emoji: declared.emoji
+				.slice(0, 8)
+				.map((e) => ({ ...e, graphemes: e.graphemes.slice(0, REMOTE_PREFETCH_MAX_EMOJI) })),
 			images: declared.images.slice(0, 32),
 		}),
 		[declared],
@@ -290,6 +298,7 @@ function unresolved(doc: RenderDoc | null, key: string): boolean {
 	const a = parseKey(key);
 	if (a.kind === 'emoji') return !doc?.emoji?.[`${a.pack}:${a.grapheme}`];
 	if (a.kind === 'image') return !doc?.images?.[a.id];
+	if (a.kind === 'media') return false;
 	return !doc?.fonts.some(
 		(f) => f.fontId === `template:${a.family}` && f.weight === a.weight && f.style === a.style,
 	);
@@ -299,5 +308,6 @@ function parseKey(key: string): MissingTemplateAsset {
 	const [kind, a, b, c] = JSON.parse(key) as [string, string, string | number, string?];
 	if (kind === 'font')
 		return { kind: 'font', family: a, weight: Number(b), style: c === 'italic' ? 'italic' : 'normal' };
+	if (kind === 'media') return { kind: 'media', mediaId: a };
 	return kind === 'emoji' ? { kind: 'emoji', pack: a, grapheme: String(b) } : { kind: 'image', id: a };
 }

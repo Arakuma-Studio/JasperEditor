@@ -10,6 +10,7 @@ import {
 	createStaticMgRegistry,
 	defaultRegistries,
 	type MgTemplateInfo,
+	mgInstanceParams,
 	mgRerollParams,
 	resolveMgTemplateParams,
 } from '../src/index.ts';
@@ -322,11 +323,31 @@ describe('clip.duplicateMotionGraphic', () => {
 	});
 });
 
-describe('mgRerollParams / resolveMgTemplateParams', () => {
+describe('mgRerollParams / mgInstanceParams / resolveMgTemplateParams', () => {
 	it('lists the reroll hint only with a fill hook', () => {
 		expect(mgRerollParams(card)).toEqual(['handle', 'likes', 'glow']);
 		expect(mgRerollParams(noFill)).toEqual([]);
 		expect(mgRerollParams(noHint)).toEqual([]);
+		// a catalogue entry / import view (JSON, no hook key): the registry only accepts the hint with a hook
+		expect(mgRerollParams({ ui: { addAnother: { reroll: ['handle', 'handle', 'likes'] } } })).toEqual([
+			'handle',
+			'likes',
+		]);
+	});
+
+	it('mgInstanceParams: base (preset or copied clip) without the per-instance params not given, given over it', () => {
+		const preset = { handle: 'username', likes: 9, glow: true, text: 'Look' };
+		expect(mgInstanceParams(card, preset, { likes: 3 })).toEqual({
+			params: { text: 'Look', likes: 3 },
+			reroll: ['handle', 'glow'],
+		});
+		expect(mgInstanceParams(card, undefined, undefined)).toEqual({
+			params: {},
+			reroll: ['handle', 'likes', 'glow'],
+		});
+		// no fill hook / no hint: the base is kept as it is
+		expect(mgInstanceParams(noFill, preset, {}).params).toEqual(preset);
+		expect(mgInstanceParams(noHint, preset, { text: 'x' }).params).toEqual({ ...preset, text: 'x' });
 	});
 	it('resolves like clip.addMotionGraphic (fill → defaults → schema → media)', () => {
 		const r = resolveMgTemplateParams(card, { text: 'Hi' }, { seed: 2, media: {} });

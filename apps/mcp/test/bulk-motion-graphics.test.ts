@@ -38,6 +38,8 @@ const commentParams = z.strictObject({
 	verified: z.boolean().default(false),
 	likes: z.number().int().min(0).max(1e12).default(10),
 	text: z.string().max(400).default('Write any comment'),
+	/** A template media param (like social-comment's avatar): `{mediaId}` of a medium in the project, or null. */
+	avatar: z.object({ mediaId: z.string() }).nullable().default(null),
 });
 const lowerParams = z.strictObject({
 	name: z.string().max(60).default('Name'),
@@ -273,6 +275,7 @@ describe('duplicate_motion_graphic', () => {
 			text: 'Keep me',
 			likes: 3,
 			verified: true,
+			avatar: null,
 		});
 		expect([...copy.rerolled].sort()).toEqual(['displayName', 'handle', 'likes']);
 		expect((seqOf(engine.doc()).clips[copy.clipId] as unknown as { params: unknown }).params).toEqual(
@@ -427,7 +430,9 @@ describe('import_motion_graphics_csv', () => {
 			},
 			{ row: 4, line: 5, errors: ['Likes: -3 is below the minimum 0'] },
 		]);
-		expect(engine.txs).toHaveLength(0);
+		// the other rows were only dry-run (to report the command's refusals too): nothing changed
+		expect(engine.txs.every((t) => t.dryRun)).toBe(true);
+		expect(engine.revision()).toBe(1);
 		const body = ok(
 			await call('import_motion_graphics_csv', { template: 'comment', csv, skipInvalid: true }),
 		);
@@ -436,15 +441,67 @@ describe('import_motion_graphics_csv', () => {
 		expect(body.skipped.map((r: Json) => r.row)).toEqual([2, 4]);
 	});
 
-	it('maps a refused transaction back to its CSV row', async () => {
+	it('a row the command refuses (fill hook) is a row error naming its CSV row', async () => {
 		const engine = fakeEngine();
 		const { call } = await connect(engine);
 		const e = err(
 			await call('import_motion_graphics_csv', { template: 'comment', csv: 'text\nfine\n\nrefuse\n' }),
 		);
-		expect(e.message).toMatch(/^row 2 \(line 4\): .*this text cannot be filled.*Nothing was imported/);
-		expect(e.details.items).toEqual([expect.objectContaining({ row: 2, line: 4, code: 'E_INVALID_PARAM' })]);
+		expect(e.code).toBe('E_INVALID_PARAM');
+		expect(e.message).toMatch(
+			/^1 of 2 rows have errors \(first: row 2, .*this text cannot be filled.*Nothing was imported/,
+		);
+		expect(e.details.rows).toEqual([
+			{ row: 2, line: 4, errors: [expect.stringContaining('this text cannot be filled')] },
+		]);
 		expect(Object.keys(seqOf(engine.doc()).clips)).toHaveLength(0);
+	});
+
+	it('rows that pass the coercion but that the command refuses (missing media, fill) are skipped with skipInvalid, and reported with every other bad row without it', async () => {
+		const engine = fakeEngine();
+		const { call } = await connect(engine);
+		const csv =
+			'Comment\tAvatar\tLikes\n' +
+			'one\t\t1\n' +
+			'two\t{"mediaId":"nope"}\t2\n' +
+			'refuse\t\t3\n' +
+			'four\t\tlots\n' +
+			'five\t{"mediaId":"gone"}\t5\n' +
+			'six\t\t6\n';
+		// without skipInvalid: the coercion error (row 4) and the command's refusals (rows 2, 3, 5) together
+		const e = err(await call('import_motion_graphics_csv', { template: 'comment', csv, seed: 4 }));
+		expect(e.message).toMatch(/^4 of 6 rows have errors \(first: row 2, Media not found: nope/);
+		expect(e.details.rows).toEqual([
+			{ row: 2, line: 3, errors: [expect.stringContaining('Media not found: nope')] },
+			{ row: 3, line: 4, errors: [expect.stringContaining('this text cannot be filled')] },
+			{ row: 4, line: 5, errors: ['Likes: "lots" is not a number'] },
+			{ row: 5, line: 6, errors: [expect.stringContaining('Media not found: gone')] },
+		]);
+		expect(engine.txs.every((t) => t.dryRun)).toBe(true);
+		expect(engine.revision()).toBe(1);
+		// with skipInvalid: the good rows are imported one after another, the others reported
+		const body = ok(
+			await call('import_motion_graphics_csv', { template: 'comment', csv, seed: 4, skipInvalid: true }),
+		);
+		expect(body.rows.map((r: Json) => [r.row, r.start, r.params.text])).toEqual([
+			[1, 0, 'one'],
+			[6, 120, 'six'],
+		]);
+		expect(body.skipped.map((r: Json) => r.row)).toEqual([2, 3, 4, 5]);
+		expect(Object.keys(seqOf(engine.doc()).clips)).toHaveLength(2);
+		expect(engine.revision()).toBe(2);
+		// a dry run reports the same without changing anything
+		const dry = ok(
+			await call('import_motion_graphics_csv', {
+				template: 'comment',
+				csv,
+				seed: 4,
+				skipInvalid: true,
+				dryRun: true,
+			}),
+		);
+		expect(dry.skipped.map((r: Json) => r.row)).toEqual([2, 3, 4, 5]);
+		expect(engine.revision()).toBe(2);
 	});
 
 	it('dry runs resolve without changing the project, deterministically for a seed', async () => {

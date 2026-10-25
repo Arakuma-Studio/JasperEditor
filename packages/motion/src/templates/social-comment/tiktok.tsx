@@ -2,7 +2,13 @@
 // tiktok-video: computed-style dumps of every element, light and dark) with TikTok's real glyphs (glyphs.ts) and
 // TikTok Sans instead of tokcomment's Proxima Nova / Roboto stand-ins. Deliberate differences from tokcomment and the
 // tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "Template implementation".
-import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
+import {
+	avatarNameFor,
+	formatCount,
+	formatRepliesLabel,
+	formatTime,
+	SOCIAL_VARIANT_FONTS,
+} from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { TIKTOK_GLYPHS } from '../social/glyphs.ts';
@@ -65,7 +71,7 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 						avatar={p.avatar}
 						platform="tiktok"
 						size={50}
-						name={p.displayName}
+						name={avatarNameFor(p.variant, p)}
 						fontFamily={FONT}
 						assets={assets}
 						style={{ marginTop: 20 }}
@@ -224,7 +230,7 @@ function TikTokCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 						avatar={p.avatar}
 						platform="tiktok"
 						size={38}
-						name={p.displayName}
+						name={avatarNameFor(p.variant, p)}
 						fontFamily={FONT}
 						assets={assets}
 						style={{ background: theme.avatarBg }}
