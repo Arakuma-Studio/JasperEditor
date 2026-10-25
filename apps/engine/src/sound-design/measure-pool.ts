@@ -2,12 +2,12 @@
 // plan, a rebalance, a delivery or a Sound Check never holds the engine's event loop for the seconds the offline mixer
 // takes (wp-note WP6.5b item 7: the first plan with every style option did ≈ 69 solo renders on the main thread).
 //
-// Lifecycle (like the sound analysis worker, sounds/analysis.ts): up to `size` workers (default 2), started on first
+// Lifecycle (like the sound analysis worker, sounds/analysis.ts): up to two workers, started on first
 // use, each stopped after 30 s idle; a request goes to an idle worker, else a new one, else the least busy. Results
 // come back with their PCM transferred, not copied.
 // - cancel (the job's signal): the op is told to stop (its ffmpeg decoders are killed) and the request rejects at once
 //   with JOB_CANCELLED; a worker that does not answer within 5 s is ended and its other requests move to a new one.
-// - timeout (default 10 min per op): MEASURE_TIMEOUT (retryable); the worker is ended, its other requests move.
+// - timeout (10 min per op): MEASURE_TIMEOUT (retryable); the worker is ended, its other requests move.
 // - crash (an uncaught error, an exit, a failed start after it was ready): every request on it rejects with
 //   MEASURE_FAILED (retryable) — a job fails (or, in a plan, falls back to default levels with W_LEVELS_UNMEASURED),
 //   never hangs. A request is moved at most twice (MEASURE_FAILED after that).
@@ -62,22 +62,6 @@ function tsxBootstrap(url: URL): string {
 	return `import(${JSON.stringify(api)}).then((m) => { m.register(); return import(${JSON.stringify(url.href)}); })`;
 }
 
-/** What the measurer needs of a worker thread (a seam: tests inject fakes). */
-type MeasureWorker = {
-	postMessage(message: MeasureWorkerRequest): void;
-	terminate(): unknown;
-	unref?(): void;
-	on(event: 'message', fn: (m: MeasureWorkerResponse) => void): unknown;
-	on(event: 'error', fn: (e: Error) => void): unknown;
-	on(event: 'exit', fn: (code: number) => void): unknown;
-};
-type MeasureWorkerFactory = (url: URL) => MeasureWorker;
-
-const defaultWorkerFactory: MeasureWorkerFactory = (url) =>
-	(url.pathname.endsWith('.ts')
-		? new Worker(tsxBootstrap(url), { eval: true })
-		: new Worker(url)) as unknown as MeasureWorker;
-
 type Pending = {
 	id: number;
 	op: MeasureOp;
@@ -92,7 +76,7 @@ type Pending = {
 };
 
 type Slot = {
-	worker: MeasureWorker;
+	worker: Worker;
 	ready: Promise<Slot>;
 	pending: Map<number, Pending>;
 	/** Cancelled requests the worker has not answered yet (id → grace timer). */
@@ -110,42 +94,17 @@ export class SoundDesignMeasurer {
 	private nextId = 1;
 	/** No worker could be started: measure in-thread from now on. */
 	private unavailable = false;
-	private readonly createWorker: MeasureWorkerFactory;
-	private readonly size: number;
-	private readonly startTimeoutMs: number;
-	private readonly idleMs: number;
-	private readonly timeoutMs: number;
-	private readonly cancelGraceMs: number;
 
 	constructor(
 		private readonly url: URL | null,
 		private readonly log: (m: string) => void = () => {},
-		opts: {
-			createWorker?: MeasureWorkerFactory;
-			size?: number;
-			startTimeoutMs?: number;
-			idleMs?: number;
-			timeoutMs?: number;
-			cancelGraceMs?: number;
-		} = {},
-	) {
-		this.createWorker = opts.createWorker ?? defaultWorkerFactory;
-		this.size = Math.max(1, Math.floor(opts.size ?? DEFAULT_SIZE));
-		this.startTimeoutMs = opts.startTimeoutMs ?? START_TIMEOUT_MS;
-		this.idleMs = opts.idleMs ?? IDLE_MS;
-		this.timeoutMs = opts.timeoutMs ?? OP_TIMEOUT_MS;
-		this.cancelGraceMs = opts.cancelGraceMs ?? CANCEL_GRACE_MS;
-	}
+	) {}
 
 	/**
-	 * Runs one op. `env.signal` cancels it (`JOB_CANCELLED`); `timeoutMs` bounds it (`MEASURE_TIMEOUT`). In-thread
+	 * Runs one op. `env.signal` cancels it (`JOB_CANCELLED`); the ten-minute deadline bounds it (`MEASURE_TIMEOUT`). In-thread
 	 * (no worker) the op runs with `env` as given (the job's ffmpeg and child tracking).
 	 */
-	async run<O extends MeasureOp>(
-		op: O,
-		env: RenderEnv,
-		opts: { timeoutMs?: number } = {},
-	): Promise<MeasureOpResult<O['kind']>> {
+	async run<O extends MeasureOp>(op: O, env: RenderEnv): Promise<MeasureOpResult<O['kind']>> {
 		const signal = env.signal;
 		if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled', true);
 		if (!this.url || this.unavailable) return this.inThread(op, env);
@@ -174,7 +133,7 @@ export class SoundDesignMeasurer {
 			};
 			onAbort = () => this.cancel(p);
 			signal?.addEventListener('abort', onAbort, { once: true });
-			const ms = opts.timeoutMs ?? this.timeoutMs;
+			const ms = OP_TIMEOUT_MS;
 			if (ms > 0) {
 				timer = setTimeout(
 					() =>
@@ -238,18 +197,20 @@ export class SoundDesignMeasurer {
 		slot.worker.postMessage({ id: p.id, op: p.op, bins: p.bins });
 	}
 
-	/** An idle live worker, else a new one (up to `size`), else the least busy. Throws when none can be made. */
+	/** An idle live worker, else a new one (up to two), else the least busy. Throws when none can be made. */
 	private pick(): Slot {
 		this.slots = this.slots.filter((s) => !s.dead);
 		const idle = this.slots.find((s) => load(s) === 0);
 		if (idle) return idle;
-		if (this.slots.length < this.size) return this.start();
+		if (this.slots.length < DEFAULT_SIZE) return this.start();
 		return this.slots.reduce((a, b) => (load(b) < load(a) ? b : a));
 	}
 
 	private start(): Slot {
 		const url = this.url!;
-		const worker = this.createWorker(url);
+		const worker = url.pathname.endsWith('.ts')
+			? new Worker(tsxBootstrap(url), { eval: true })
+			: new Worker(url);
 		worker.unref?.();
 		const slot: Slot = {
 			worker,
@@ -268,7 +229,7 @@ export class SoundDesignMeasurer {
 					this.end(slot);
 					reject(new Error('the worker did not start'));
 				}
-			}, this.startTimeoutMs);
+			}, START_TIMEOUT_MS);
 			timer.unref?.();
 			worker.on('message', (m: MeasureWorkerResponse) => {
 				if (slot.dead) return;
@@ -344,7 +305,7 @@ export class SoundDesignMeasurer {
 		}
 		const grace = setTimeout(() => {
 			if (!slot.dead && slot.cancelling.has(p.id)) this.endAndMove(slot);
-		}, this.cancelGraceMs);
+		}, CANCEL_GRACE_MS);
 		grace.unref?.();
 		slot.cancelling.set(p.id, grace);
 	}
@@ -375,7 +336,7 @@ export class SoundDesignMeasurer {
 		if (slot.dead || load(slot) > 0 || slot.cancelling.size > 0) return;
 		slot.idle = setTimeout(() => {
 			if (!slot.dead && load(slot) === 0 && slot.cancelling.size === 0) this.end(slot);
-		}, this.idleMs);
+		}, IDLE_MS);
 		slot.idle.unref?.();
 	}
 

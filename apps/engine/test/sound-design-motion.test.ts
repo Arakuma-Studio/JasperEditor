@@ -519,7 +519,7 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 				type: 'soundCue.add',
 				cues: [
 					{
-						frame: analysed.events.find((e) => e.kind === 'land')!.frame,
+						frame: 60, // The generated box stops at this known frame; no dependency on another test's result.
 						kind: 'land',
 						weight: 'support',
 						source: 'derived',

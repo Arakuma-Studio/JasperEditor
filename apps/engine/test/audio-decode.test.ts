@@ -1,12 +1,12 @@
 // Clip decoding for the offline mixer (audio/decode.ts) against real ffmpeg: the decoded samples must be exactly the
 // clip's content span, forwards or reversed (sound-design Phase 0, WP0.2).
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FLICKS_PER_SECOND } from '@jasper/project';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { clipDecodeArgs } from '../src/audio/decode.ts';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { clipDecodeArgs, PcmStreamReader } from '../src/audio/decode.ts';
 import { TEST_FFMPEG } from './helpers.ts';
 
 const SR = 48000;
@@ -29,6 +29,25 @@ beforeAll(() => {
 	]);
 	expect(r.status, r.stderr.toString()).toBe(0);
 });
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+it.each([
+	{ bin: process.execPath, args: ['--eval', 'process.exit(7)'], code: 'TOOL_FAILED', exitCode: 7 },
+	{ bin: join(dir, 'missing-decoder'), args: [], code: 'BINARY_MISSING', exitCode: undefined },
+])(
+	'a decoder failure reaches the caller as $code instead of silence',
+	async ({ bin, args, code, exitCode }) => {
+		const reader = new PcmStreamReader(1, spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] }));
+		try {
+			await expect(reader.read([new Float32Array(1)], 1)).rejects.toMatchObject({
+				code,
+				...(exitCode === undefined ? {} : { detail: { exitCode } }),
+			});
+		} finally {
+			reader.close();
+		}
+	},
+);
 
 /** Content time (s) of every decoded sample, or NaN for silence. */
 function decode(o: {
