@@ -98,6 +98,8 @@ describe('tetrahedral interpolation', () => {
 		};
 		const l = bakeLut(9, aff);
 		for (const c of [
+			[0, 0, 0],
+			[1, 1, 1],
 			[0.13, 0.77, 0.5],
 			[0.99, 0.01, 0.42],
 		] as Rgb[]) {

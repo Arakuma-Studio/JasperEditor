@@ -6,7 +6,7 @@ This maps every named declaration and parser-fuzz target in the current project-
 
 For each retained row: (1) the named file source independently specifies the contract; (2) violating its named result is the recognizable caller-visible failure; (3) the quoted fixed-data/property oracle can disagree with production; (4) it observes the public/format/command/render/invariant seam identified by its source; (5) output-based assertions tolerate behavior-preserving helper and algorithm changes; (6) the row owns its named input/transition/format edge, while other rows own different inputs or boundaries. Fresh detailed rows make additional ownership/deletion reasoning explicit. A source/contract inventory is separate from execution: validation and measurements appear in project-core.md and the root report.
 
-Disposition families: DELETE 8, REWRITE 13, OPTIMIZE 1, CONSOLIDATE 4, KEEP 847.
+Disposition families: DELETE 8, REWRITE 13, OPTIMIZE 1, CONSOLIDATE 5, KEEP 846.
 
 ## packages/project/test/agent-mcp-cli.test.ts
 
@@ -248,7 +248,7 @@ S06 grading/colour-management and scope contracts, cited published reference coo
 | Baseline line / test family | Disposition | Evidence / independent oracle |
 | --- | --- | --- |
 | 74: matches the brute-force simplex reference for sizes 2–33 | OPTIMIZE | [Fresh six-bar decision](project-core.md); `expect(Math.abs(a[k]! - b[k]!)).toBeLessThan(2e-6)` |
-| 90: is exact on affine LUTs and at lattice nodes | KEEP | [Fresh six-bar decision](project-core.md); `expect(at(w, [3 / 6, 5 / 6, 1 / 6])).toEqual(node(w, 3, 5, 1))` |
+| 90: is exact on affine LUTs and at lattice nodes | CONSOLIDATE | [Fresh six-bar decision](project-core.md); `expect(at(w, [3 / 6, 5 / 6, 1 / 6])).toEqual(node(w, 3, 5, 1))` |
 | 113: 1D shaper + 3D (Resolve layout): parse, apply, write, read back | KEEP | [Fresh six-bar decision](project-core.md); `expect(l.shaper?.domainMax).toEqual([4, 4, 4])` |
 | 129: 1D only, with LUT_1D_INPUT_RANGE | KEEP | [Fresh six-bar decision](project-core.md); `expect(at(l, [1, 1, 1])).toEqual([0.5, 0.25, 0.125])` |
 | 134: a 3D LUT with LUT_3D_INPUT_RANGE alone takes that domain | KEEP | [Fresh six-bar decision](project-core.md); `expect(l.domainMin).toEqual([-0.5, -0.5, -0.5])` |
