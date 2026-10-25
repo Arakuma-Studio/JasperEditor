@@ -3,7 +3,6 @@
 // snapshot and the bounded `collectParamMediaIds` walk.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 import { collectOrphans } from '../src/commands/handlers/project.ts';
 import {
 	buildClipsPayload,
@@ -13,10 +12,7 @@ import {
 	type ClipboardPayload,
 	checkInvariants,
 	collectParamMediaIds,
-	createStaticMgRegistry,
-	defaultRegistries,
 	loadProject,
-	type MgTemplateInfo,
 	makeEnvelope,
 	mediaUsage,
 	PARAM_MEDIA_MAX_DEPTH,
@@ -25,45 +21,14 @@ import {
 	planProjectManager,
 	repairDocument,
 	rewriteParamMedia,
-	TEMPLATE_MEDIA_KIND,
-	TEMPLATE_MEDIA_KINDS_KEY,
-	TEMPLATE_PARAM_KIND_KEY,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
+import { avatarCard, avatarRegistries } from './template-media-fixture.ts';
 
 type Mg = Extract<Clip, { kind: 'motion-graphic' }>;
 
-/** What `mediaParam()` of @jasper/mg-templates builds (this package may not import it). */
-const media = (kinds: string[] = ['image']) =>
-	z
-		.strictObject({ mediaId: z.string().min(1).max(256) })
-		.nullable()
-		.default(null)
-		.meta({ [TEMPLATE_PARAM_KIND_KEY]: TEMPLATE_MEDIA_KIND, [TEMPLATE_MEDIA_KINDS_KEY]: kinds });
-
-const cardSchema = z.strictObject({
-	name: z.string().max(40).default('Ada'),
-	avatar: media(),
-	/** A nested reference (a list of pictures) proves the deep walk. */
-	gallery: z
-		.array(media(['image', 'video']))
-		.max(4)
-		.default([]),
-});
-
-const card: MgTemplateInfo = {
-	id: 'avatar-card',
-	version: 1,
-	name: 'Avatar card',
-	category: 'Test',
-	paramsSchema: cardSchema,
-	defaults: cardSchema.parse({}) as Record<string, unknown>,
-	introFrames: 10,
-	outroFrames: 10,
-	canvasDefault: 'sequence',
-	renderer: 'anime',
-};
-const registries = () => defaultRegistries(createStaticMgRegistry([card]));
+const card = avatarCard;
+const registries = avatarRegistries;
 const invOpts = () => ({ mgTemplates: registries().mgTemplates });
 
 function setup() {
