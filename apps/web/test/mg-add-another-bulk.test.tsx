@@ -238,7 +238,7 @@ describe('bulk import dialog', () => {
 		expect(rows[0]!.textContent).toContain('luna.park');
 		expect(rows[0]!.textContent).toContain('1200');
 		expect(screen.getByTestId('mg-bulk-summary').textContent).toMatch(
-			/2 of 3 rows will be added from 00:00:02:00; 1 with errors/,
+			/2 of 3 rows will be added from 00:00:02:00; rows with errors left out: 1/,
 		);
 		const before = s.getCommitted();
 		fireEvent.click(screen.getByTestId('mg-bulk-insert'));

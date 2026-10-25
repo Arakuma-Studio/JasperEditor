@@ -297,7 +297,7 @@
   "{0} of {1} fonts, {2} emoji images, {3} of {4} images",
   "{0} of {1} picture events have no onset within 100 ms (chance {2}); no sound at all at {3}: add a whoosh into the cut, a hit or a click there.",
   "{0} of {1} picture events have no onset within 100 ms (chance {2}): sound plays through them but nothing starts; add an accent on the ones that matter.",
-  "{0} of {1} rows will be added from {2}; {3} with errors are left out",
+  "{0} of {1} rows will be added from {2}; rows with errors left out: {3}",
   "{0} of {1} selected",
   "{0} of {1} selected sounds on auto gain",
   "{0} of {1} sounds",

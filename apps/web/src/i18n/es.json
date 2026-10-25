@@ -11118,7 +11118,7 @@
   "{0} is too large to import (at most {1} MB)": "{0} es demasiado grande para importarlo (máximo {1} MB)",
   "{0} must be above {1}": "{0} debe ser mayor que {1}",
   "{0} must be below {1}": "{0} debe ser menor que {1}",
-  "{0} of {1} rows will be added from {2}; {3} with errors are left out": "Se añadirán {0} de {1} filas desde {2}; se omiten {3} con errores",
+  "{0} of {1} rows will be added from {2}; rows with errors left out: {3}": "Se añadirán {0} de {1} filas desde {2}; filas con errores omitidas: {3}",
   "{0} rows will be added one after another from {1}": "Se añadirán {0} filas una tras otra desde {1}",
   "{0} rows with errors were left out": "Se omitieron {0} filas con errores",
   "A quote opened on line {0} is never closed: the rest of the text is in one cell": "Unas comillas abiertas en la línea {0} no se cierran nunca: el resto del texto queda en una celda",
