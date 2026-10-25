@@ -8,6 +8,7 @@ import {
 	enableAgentBridge,
 	focusTimeline,
 	importFiles,
+	playheadFrame,
 	query,
 	ROOT,
 	sequenceSummary,
@@ -84,8 +85,10 @@ test('Voice-over: the fake microphone is recorded into A3 at the playhead', asyn
 	const a3 = summary.tracks?.find((t) => t.label === 'A3');
 	expect(a3, JSON.stringify(summary.tracks)).toBeTruthy();
 	const header = page.locator(`[data-track-header="${a3!.id}"]`);
+	const recordFrame = await playheadFrame(page);
 	await header.locator('[data-control="voiceover"]').click();
-	await page.waitForTimeout(4500);
+	// Playback starts only after capture is ready; wait past the record point and pre-roll.
+	await expect.poll(() => playheadFrame(page), { timeout: 20_000 }).toBeGreaterThan(recordFrame + 6);
 	await header.locator('[data-control="voiceover"]').click();
 	await expect.poll(async () => (await clips(page, ['A3'])).length, { timeout: 60_000 }).toBe(1);
 	const [take] = await clips(page, ['A3']);

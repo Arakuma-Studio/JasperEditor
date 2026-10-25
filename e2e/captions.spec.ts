@@ -129,11 +129,13 @@ test('Text ▸ Captions: edit text, search and replace, add a caption at the pla
 });
 
 test('the Program monitor draws the caption under the playhead', async () => {
-	await focusTimeline(page);
-	await page.keyboard.press('Home');
-	for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowRight');
-	await expect(page.locator('[data-caption-page]').first()).toContainText('Hello from the captions panel', {
-		timeout: 30_000,
+	await query(page, 'playhead.set', { frame: 30 });
+	await expect(
+		page.locator('[data-caption-page]').filter({ hasText: 'Hello from the captions panel' }).first(),
+	).toBeVisible({ timeout: 30_000 });
+	await test.info().attach('program-caption', {
+		body: await page.getByTestId('program-player-wrapper').screenshot(),
+		contentType: 'image/png',
 	});
 });
 

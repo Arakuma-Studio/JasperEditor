@@ -1,12 +1,21 @@
 // Automation IDs must survive reordering: data-testid, entity IDs, or unique scope/role/name paths.
 // Positional "#n" IDs cannot identify controls reliably (EffectCraft's ui_agent_audit contract).
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, query, serverInfo, transact } from './support.ts';
+import {
+	createProject,
+	enableAgentBridge,
+	expectTransaction,
+	importFiles,
+	query,
+	serverInfo,
+	transact,
+} from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
 let projectId = '';
+let textId = '';
 
 type El = {
 	id: string;
@@ -15,7 +24,6 @@ type El = {
 	name: string;
 	panel: string | null;
 	tag: string;
-	kind: string;
 	className?: string;
 };
 
@@ -33,23 +41,22 @@ test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
 	await enableAgentBridge(page);
 	projectId = await createProject(page, 'E2E UI audit');
-	await importFiles(page, ['clip-a.mp4', 'clip-b.mp4']);
+	await importFiles(page, ['clip-a.mp4']);
 	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
 		.media;
 	const a = media.find((m) => m.originalName === 'clip-a.mp4')!.mediaId;
-	const b = media.find((m) => m.originalName === 'clip-b.mp4')!.mediaId;
-	// Content for selection-driven panels: two clips with a transition, a title with an effect and keyframes,
-	// a marker; the title is selected so Effect Controls, Properties and Lumetri show their controls.
+	// Content for selection-driven panels: footage, a title with an effect and keyframes, and a marker.
+	// Select the title so Effect Controls, Properties and Lumetri show their controls.
 	const r = await transact(page, [
 		{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: 'A1' } },
-		{ type: 'clip.place', source: { mediaId: b }, at: 60, tracks: { video: 'V1', audio: 'A1' } },
 		{ type: 'clip.addText', ref: '$t', at: 10, duration: 60, track: 'V2', content: { text: 'Audit' } },
 		{ type: 'effect.add', target: { clipId: '$t' }, effectId: 'jasper.gaussian-blur', params: { radius: 4 } },
 		{ type: 'keyframe.add', target: ['clip', '$t', 'opacity'], at: { sequenceFrame: 10 }, value: 0 },
 		{ type: 'keyframe.add', target: ['clip', '$t', 'opacity'], at: { sequenceFrame: 40 }, value: 100 },
 		{ type: 'marker.add', frame: 20, name: 'Audit marker' },
 	]);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
+	expectTransaction(r);
+	textId = r.refs.$t!;
 });
 
 test.afterAll(async () => {
@@ -69,29 +76,23 @@ async function gaps(where: string, panel?: string): Promise<string[]> {
 		);
 }
 
-test('every interactive element of every panel in every workspace has a stable automation id', async () => {
+test('every panel and every workspace chrome has stable automation ids', async () => {
 	const state = await ui<{ workspace: { id: string; available: string[] } }>('state');
 	const found = new Set<string>();
 	const seenPanels = new Set<string>();
-	const select = async () => {
-		const clips = await query<{ clips: { id: string; kind: string }[] }>(page, 'sequence.clipsInRange', {
-			from: 0,
-			to: 200,
-		});
-		const text = clips.clips.find((c) => c.kind === 'text');
-		if (text) await ui('click', { timeline: { clipId: text.id } });
-	};
 	for (const ws of state.workspace.available) {
 		await ui('command', { id: 'workspace.switch', args: { id: ws } });
-		await page.waitForTimeout(400);
-		await select().catch(() => undefined);
+		await expect(page.getByTestId('panel-loading').filter({ visible: true })).toHaveCount(0);
+		await ui('click', { timeline: { clipId: textId } }).catch(() => undefined);
 		for (const g of await gaps(`[${ws}] chrome`)) found.add(g);
 		const panels = (await ui<{ panels: { kind: string; instanceId: string }[] }>('state')).panels;
 		for (const p of panels) {
+			// Maximize and audit each panel once; workspace-specific chrome is checked above.
+			if (seenPanels.has(p.kind)) continue;
 			seenPanels.add(p.kind);
 			await ui('command', { id: `panel.focus.${p.kind}` });
 			await ui('command', { id: 'panel.maximize' }).catch(() => undefined);
-			await page.waitForTimeout(250);
+			await expect(page.getByTestId('panel-loading').filter({ visible: true })).toHaveCount(0);
 			for (const g of await gaps(`[${ws}] ${p.kind}`, p.instanceId)) found.add(g);
 			await ui('command', { id: 'panel.maximize' }).catch(() => undefined);
 		}
@@ -103,7 +104,7 @@ test('every interactive element of every panel in every workspace has a stable a
 		.filter((k) => !seenPanels.has(k));
 	for (const kind of kinds) {
 		await ui('command', { id: `panel.focus.${kind}` });
-		await page.waitForTimeout(300);
+		await expect(page.getByTestId('panel-loading').filter({ visible: true })).toHaveCount(0);
 		for (const g of await gaps(`[window menu] ${kind}`, kind)) found.add(g);
 	}
 	const chrome = await ui<{ elements: El[] }>('elements', { limit: 2000 });

@@ -15,7 +15,8 @@ test.beforeEach(async ({ page: current }) => {
 		{
 			type: 'clip.addText',
 			at: 0,
-			duration: 90,
+			// The longest tested animation is 45 frames; keep one rest frame and no extra export tail.
+			duration: 46,
 			track: 'V1',
 			content: { text: 'Hello brave world', style: { sizePx: 160, weight: 700 } },
 			textAnimation: { in: { preset: 'slide-up', durationFrames: 20, params: { unit: 'word' } } },

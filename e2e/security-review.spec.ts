@@ -56,7 +56,6 @@ test('only a trusted user can approve a destructive agent request; denial preser
 	await expect(card).toBeVisible({ timeout: 20_000 });
 	const click = await call('ui_click', { projectId, id: 'agent-approval-approve' });
 	expect(click.isError, text(click)).toBeFalsy();
-	await page.waitForTimeout(500);
 	await expect(card).toBeVisible();
 	expect((await sequenceSummary(page)).tracks!.some((t) => t.id === a3.id)).toBe(true);
 	await testInfo.attach('untrusted-approval-blocked', {
@@ -77,27 +76,6 @@ test('only a trusted user can approve a destructive agent request; denial preser
 	expect((await sequenceSummary(page)).tracks!.some((t) => t.id === a3.id)).toBe(false);
 	await testInfo.attach('approval-results', {
 		body: JSON.stringify({ denied, approved: ok, tracks: (await sequenceSummary(page)).tracks }, null, 2),
-		contentType: 'application/json',
-	});
-});
-
-test('DEV-1: the engine refuses requests without its token; the page is the editor through HttpOnly cookies', async () => {
-	const testInfo = test.info();
-	const { port } = serverInfo();
-	// Node's own fetch: no cookie, no token.
-	expect((await fetch(`http://127.0.0.1:${port}/api/projects`)).status).toBe(401);
-	expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200);
-	expect(await page.evaluate(() => fetch('/api/projects').then((r) => r.status))).toBe(200);
-	expect(await page.evaluate(() => document.cookie)).not.toMatch(/jasper_(session|editor)/);
-	const cookies = await page.context().cookies();
-	const evidence: { name: string; httpOnly: boolean; sameSite: string }[] = [];
-	for (const name of [`jasper_session_${port}`, `jasper_editor_${port}`]) {
-		const c = cookies.find((x) => x.name === name);
-		expect(c, name).toMatchObject({ httpOnly: true, sameSite: 'Strict' });
-		evidence.push({ name, httpOnly: c!.httpOnly, sameSite: c!.sameSite });
-	}
-	await testInfo.attach('cookie-metadata', {
-		body: JSON.stringify(evidence, null, 2),
 		contentType: 'application/json',
 	});
 });

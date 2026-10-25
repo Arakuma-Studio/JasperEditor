@@ -44,7 +44,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
-	await page?.close();
+	await page?.context().close();
 });
 
 test('Media Browser: browse the fixtures folder, preview a clip, import it in place', async () => {
