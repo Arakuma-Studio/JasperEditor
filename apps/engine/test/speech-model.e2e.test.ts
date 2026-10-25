@@ -1,12 +1,17 @@
 // Public-domain LJ Speech fixture: twelve sentences with measured onsets/offsets, 71.6 s (three Whisper windows).
 // Uses JASPER_SPEECH_MODELS_DIR or target/speech-models; SPEECH_E2E=1 downloads missing models via the verified installer.
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, TranscriptionResult } from '@jasper/api';
 import { FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
+import { WhisperTokenizer } from '../src/speech/core/tokenizer.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
+import { decodeAudio } from '../src/speech/worker/run.ts';
+import { VERBATIM_PROMPTS } from '../src/speech/worker/whisper.ts';
+import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
 import { wordErrorRate } from './speech-wer.ts';
 
@@ -15,6 +20,28 @@ const MODELS = ['whisper-tiny.en', 'whisper-tiny'];
 const store = new SpeechModelStore(CACHE, loadCatalog({}).speech);
 const present = await Promise.all(MODELS.map(async (id) => store.installed(store.entry(id)!)));
 const enabled = process.env.SPEECH_E2E === '1' || present.every(Boolean);
+/** spec 16: large-v3-turbo from a local directory with the catalogue's files (e.g. the build VM's model cache). */
+const TURBO_DIR = process.env.JASPER_SPEECH_TURBO_DIR ?? null;
+
+/** 16-bit PCM mono 16 kHz WAV. */
+function wav(samples: Float32Array): Buffer {
+	const b = Buffer.alloc(44 + samples.length * 2);
+	b.write('RIFF', 0);
+	b.writeUInt32LE(36 + samples.length * 2, 4);
+	b.write('WAVEfmt ', 8);
+	b.writeUInt32LE(16, 16);
+	b.writeUInt16LE(1, 20);
+	b.writeUInt16LE(1, 22);
+	b.writeUInt32LE(16_000, 24);
+	b.writeUInt32LE(32_000, 28);
+	b.writeUInt16LE(2, 32);
+	b.writeUInt16LE(16, 34);
+	b.write('data', 36);
+	b.writeUInt32LE(samples.length * 2, 40);
+	for (let i = 0; i < samples.length; i++)
+		b.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i]! * 32767))), 44 + i * 2);
+	return b;
+}
 
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
 type Truth = {
@@ -187,6 +214,73 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		}
 	}, 600_000);
 
+	it('a silence gap (spec 16 SG-011): no words in it, none lost after it', async () => {
+		const ffmpeg = resolveBinaries({ env: process.env }).ffmpeg as string;
+		const audio = await decodeAudio({ path: FIXTURE, ffmpeg });
+		// the fixture's first 22.5 s, 30 s of digital silence, then the rest
+		const cut = Math.round(22.5 * 16_000);
+		const gap = 30 * 16_000;
+		const out = new Float32Array(audio.length + gap);
+		out.set(audio.subarray(0, cut));
+		out.set(audio.subarray(cut), cut + gap);
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-gap-'));
+		const file = join(dir, 'gap.wav');
+		writeFileSync(file, wav(out));
+		const m = await register(app, file);
+		const r = await app.inject({
+			method: 'POST',
+			url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
+			headers: JSON_H,
+			payload: { model: 'whisper-tiny.en', language: 'en' },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const res = (r.json() as EngineJob).result as TranscriptionResult;
+		const sec = (f: number) => f / FLICKS_PER_SECOND;
+		const inGap = res.words.filter((w) => (sec(w.start) + sec(w.end)) / 2 > 22.6 && (sec(w.start) + sec(w.end)) / 2 < 52.4);
+		const before = truth.utterances.filter((u) => u.end <= 22.5);
+		const after = truth.utterances.filter((u) => u.start >= 22.5);
+		const hypAfter = res.words.filter((w) => sec(w.start) >= 52.4).map((w) => w.text).join(' ');
+		const werAfter = wordErrorRate(after.map((u) => u.text).join(' '), hypAfter);
+		const hypBefore = res.words.filter((w) => sec(w.end) <= 22.6).map((w) => w.text).join(' ');
+		const werBefore = wordErrorRate(before.map((u) => u.text).join(' '), hypBefore);
+		console.log(
+			`silence gap: ${inGap.length} words in the gap, WER before ${(werBefore * 100).toFixed(2)} %, after ${(werAfter * 100).toFixed(2)} %, guard ${JSON.stringify(res.guard)}`,
+		);
+		expect(inGap).toEqual([]);
+		expect(werAfter).toBeLessThanOrEqual(0.06);
+		expect(werBefore).toBeLessThanOrEqual(0.06);
+		expect(res.guard?.skippedWindows ?? 0).toBeGreaterThanOrEqual(0);
+	}, 600_000);
+
+	it('verbatim prompt: the real tokenizer encodes it losslessly and a verbatim, unconditioned job keeps its accuracy', async () => {
+		const tok = new WhisperTokenizer(
+			JSON.parse(readFileSync(join(CACHE, 'whisper-tiny', 'tokenizer.json'), 'utf8')),
+			true,
+		);
+		for (const p of Object.values(VERBATIM_PROMPTS)) {
+			const ids = tok.encode(` ${p}`);
+			expect(tok.decode(ids)).toBe(` ${p}`);
+			expect(ids.length).toBeLessThan(Buffer.byteLength(p));
+			expect(ids.every((t) => t < tok.eot)).toBe(true);
+		}
+		const m = await register(app, FIXTURE);
+		const r = await app.inject({
+			method: 'POST',
+			url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
+			headers: JSON_H,
+			payload: { model: 'whisper-tiny.en', language: 'en', verbatim: true, conditionOnPreviousText: false },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const res = (r.json() as EngineJob).result as TranscriptionResult;
+		const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
+		console.log(`tiny.en verbatim, no previous text: WER ${(wer * 100).toFixed(2)} %`);
+		expect(wer).toBeLessThanOrEqual(0.06);
+		expect(res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number')).toBe(
+			true,
+		);
+		expect(res.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
+	}, 600_000);
+
 	it('cancels a running transcription (the child process is killed)', async () => {
 		const m = await register(app, FIXTURE);
 		const r = await app.inject({
@@ -206,4 +300,38 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const done = await waitJob(job.id, 60_000);
 		expect(done.state).toBe('cancelled');
 	}, 300_000);
+});
+
+describe.skipIf(!enabled || !TURBO_DIR)('large-v3-turbo from a local model directory (spec 16 SG-020)', () => {
+	beforeAll(async () => {
+		app = await makeApp({ totalSlots: 8 });
+		const dir = join(app.appdir, 'models', 'speech');
+		mkdirSync(dir, { recursive: true });
+		symlinkSync(TURBO_DIR as string, join(dir, 'whisper-large-v3-turbo'), 'dir');
+	}, 120_000);
+	afterAll(async () => {
+		await closeApps();
+	});
+
+	it('the pinned files verify and transcribe the fixture (greedy and beam 5): WER ≤ 4 %', async () => {
+		const m = await register(app, FIXTURE);
+		for (const accuracy of ['standard', 'best'] as const) {
+			const r = await app.inject({
+				method: 'POST',
+				url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
+				headers: JSON_H,
+				payload: { model: 'whisper-large-v3-turbo', language: 'en', accuracy },
+			});
+			expect(r.statusCode, r.body).toBe(200);
+			const res = (r.json() as EngineJob).result as TranscriptionResult;
+			const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
+			const t = timing(res.words);
+			console.log(
+				`turbo ${accuracy}: WER ${(wer * 100).toFixed(2)} %, boundary mean ${(t.mean * 1000).toFixed(0)} ms, rtf ${res.timings.rtf}, device ${res.device?.label}`,
+			);
+			expect(wer).toBeLessThanOrEqual(0.04);
+			expect(t.outside).toBe(0);
+			expect(res.beamSize).toBe(accuracy === 'best' ? 5 : 1);
+		}
+	}, 1_800_000);
 });
