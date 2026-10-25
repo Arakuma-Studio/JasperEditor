@@ -32,8 +32,8 @@ import { type FeatureBlock, resolveVoiceWorker, VoiceFeatureRunner } from './poo
 
 /** Frames per block handed to a worker (10 s). */
 export const VOICE_BLOCK_FRAMES = 1000;
-/** Worker threads per job (at most; the job's CPU slots decide). */
-const MAX_THREADS = 4;
+/** Worker threads per job (at most; the job's CPU slots decide): 2 analyse an hour in ≈ 9 s on the build VM. */
+const MAX_THREADS = 2;
 
 type VoiceJobInput = { mediaKey: string; streamIndex: number };
 
