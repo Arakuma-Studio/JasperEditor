@@ -214,9 +214,12 @@ describe('effect.applyPreset', () => {
 		for (const k of [...C.opacity.keyframes, ...C.effects[2]!.params.radius!.keyframes])
 			expect(ids.has(k.id)).toBe(false);
 		// Applying again overwrites the pinned crop instead of adding a second one, and appends another blur.
+		h.ok([{ type: 'param.set', target: ['effect', C.effects[0]!.id, 'left'], value: 27 }]);
+		expect((h.seq.clips[c] as Solid).effects[0]!.params.left!.value).toBe(27);
 		h.ok([{ type: 'effect.applyPreset', preset, clipIds: [c] }]);
 		const C2 = h.seq.clips[c] as Solid;
 		expect(C2.effects.filter((e) => e.effectId === 'jasper.crop')).toHaveLength(1);
+		expect(C2.effects[0]!.params.left!.value).toBe(10);
 		expect(C2.effects.filter((e) => e.effectId === 'jasper.gaussian-blur')).toHaveLength(2);
 		ok(h);
 	});

@@ -10,7 +10,6 @@ import {
 	cropWindow,
 	intersectCropInsets,
 	mirrorCropInsets,
-	pinnedCropOf,
 	resolveLayerProps,
 } from '../src/index.ts';
 
@@ -148,15 +147,5 @@ describe('the crop window in stack order', () => {
 		expect(after.bounds).toEqual({ x: 0, y: 0, width: 70, height: 50 });
 		const before = props([fx('b', 'jasper.flip-horizontal'), fx('a', 'jasper.crop', { left: 30 })]);
 		expect(before.bounds).toEqual({ x: 30, y: 0, width: 70, height: 50 });
-	});
-});
-
-describe('pinnedCropOf', () => {
-	it('is the first effect when it is a crop, else null (a later crop is an ordinary stack effect)', () => {
-		const c = crop({ left: 1 });
-		expect(pinnedCropOf([c, mirror])).toBe(c);
-		expect(pinnedCropOf([mirror, c])).toBeNull();
-		expect(pinnedCropOf([])).toBeNull();
-		expect(pinnedCropOf(undefined)).toBeNull();
 	});
 });
