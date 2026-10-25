@@ -1469,7 +1469,7 @@ export class LayerBakeService {
 		});
 		closed.catch(() => undefined);
 		let i = 0;
-		let buf = Buffer.alloc(0);
+		let buf: Buffer = Buffer.alloc(0);
 		for await (const chunk of child.stdout! as AsyncIterable<Buffer>) {
 			buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
 			while (buf.length >= frameBytes && i < plans.length) {

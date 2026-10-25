@@ -41,6 +41,7 @@ import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
+import { layerStill } from '../layer-bake/layer.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 // wp-m2-anime-templates (S11:ATP-002/008/010)
@@ -57,6 +58,7 @@ import {
 	outputFormatChanges,
 } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
+import { compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
@@ -252,6 +254,8 @@ type PlanDeps = {
 	effects?: EffectRegistry;
 	/** parity (roto): frames a matte set holds on this engine (null = gone, e.g. cleaned from the cache). */
 	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
+	/** spec 13 AS-074: memory the native composite may use (bytes); default `compositeMemoryBudget()`. */
+	memoryBudget?: number;
 };
 
 /** Font ids a text or captions layer draws with: its style, styled runs and Source Text keys. */
@@ -673,6 +677,15 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 
+	// spec 13 AS-074: a composite that cannot fit in memory is refused before anything runs (a bake of an hour that
+	// ends in an OOM kill, or the engine killed with it), with what it would need.
+	if (blockers.length === 0 && !video?.alpha && settings.engine !== 'remotion') {
+		const reason = compositeMemoryBlocker(
+			estimateComposite(snapshot, range),
+			deps.memoryBudget ?? compositeMemoryBudget(),
+		);
+		if (reason) blockers.push({ path: 'native', reason });
+	}
 	const nativeEligible = blockers.length === 0;
 	// `hybrid` = the native composite with baked graphics layers (S04 §11.2, S11:LBK-002).
 	const nativePath = baked.length > 0 ? 'hybrid' : 'native';
@@ -1052,8 +1065,8 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 }
 
 function subpixelIn(snap: RenderSnapshot, c: RenderVisualClip): boolean {
-	// wp masks: layers with Opacity masks are kernel streams too.
-	if (maskExportRoute(c) === 'stream') return true;
+	// wp masks: layers with Opacity masks are kernel streams too; so are lowered layers (spec 13 AS-070).
+	if (maskExportRoute(c) === 'stream' || layerStill(c)) return true;
 	const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
 	return needsSubpixel(c, props, {
 		bw: Math.max(1, Math.round(c.intrinsicBox.width)),

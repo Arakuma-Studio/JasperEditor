@@ -1159,6 +1159,7 @@ export class ExportService {
 			},
 			threads: ctx.slots,
 			still,
+			trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
 			extensions: { list: exts, prepared },
 			...(audio?.path
 				? {
@@ -1268,7 +1269,10 @@ export class ExportService {
 		} catch (e) {
 			streamAbort.abort();
 			await Promise.all(producers);
-			throw streamError ?? e;
+			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
+			const se = streamError as Error | null;
+			const consequence = !se || /^layer stream:/.test(se.message);
+			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted, se) : se;
 		} finally {
 			ctx.signal.removeEventListener('abort', onJobAbort);
 		}
@@ -2206,6 +2210,25 @@ export class ExportService {
  * this export's audio stream (same codec, bit rate, rate, channels): every mux copies it instead of encoding the WAV
  * again — the delivered bits are the checked bits, and the export saves one audio encode.
  */
+/**
+ * spec 13 AS-074: a composite killed by the system (SIGKILL that the job did not send: the OOM killer, a memory
+ * limit) becomes an `OUT_OF_MEMORY` job error naming the cause, never a crash; other errors pass unchanged.
+ */
+export function killedComposite(
+	e: unknown,
+	inputs: number,
+	cancelled: boolean,
+	streamError: Error | null = null,
+): unknown {
+	if (cancelled || !(e instanceof Error) || !/exited SIGKILL/.test(e.message)) return streamError ?? e;
+	return new JobError(
+		'OUT_OF_MEMORY',
+		`The export's compositor (ffmpeg, ${inputs} inputs) was killed by the system, most likely because the machine ran out of memory; close other applications or export a shorter range`,
+		false,
+		{ inputs },
+	);
+}
+
 function deliveredEncode(p: PlannedExport, audio: MixdownResult | null): string | null {
 	const n = audio?.normalized;
 	const file = n?.delivery.encoded;

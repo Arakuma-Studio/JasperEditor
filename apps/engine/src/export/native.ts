@@ -97,6 +97,11 @@ type NativeBuildOptions = {
 	/** edit-structure: what the extensions prepared for each nested sequence (`nestPath` keys). */
 	nested?: ReadonlyMap<string, PreparedExtensions>;
 	/**
+	 * spec 13 AS-072: constant-picture layers of a track share one kernel stream (default true; false = one input
+	 * per layer, the comparison path of the tests and `JASPER_EXPORT_TRACK_STREAMS=0`).
+	 */
+	trackStreams?: boolean;
+	/**
 	 * color-mgmt: the working → output (exports) or working → display (stills) LUT filter (`lut3d=…`), null when the
 	 * output is the working space. The tags, matrix and bit depth come from `output.color`.
 	 */
@@ -703,6 +708,8 @@ type StackContext = {
 	nested?: ReadonlyMap<string, PreparedExtensions>;
 	/** Nest path of this stack ('' = the sequence). */
 	path: string;
+	/** spec 13 AS-072: group constant-picture layers into kernel streams. */
+	trackStreams?: boolean;
 	/**
 	 * keyframes-blend (the sequence's own stack only): ends the current process of the pipeline at a blend layer —
 	 * `backdrop` (the composite below) and `layer` (the layer on transparency) go to the blend kernel — and returns the
@@ -740,7 +747,7 @@ function drawStack(ctx: StackContext): string {
 	// Members have no transition handles, fades, masks or blend mode, so they never overlap another layer of their
 	// track in time and the track's stacking order is kept when they share one stream.
 	const memberOf = (c: RenderVisualClip, f0: number, f1: number, sides: boolean): TapMember | null => {
-		if (!ctx.addStream || !exts || sides) return null;
+		if (!ctx.addStream || !exts || sides || ctx.trackStreams === false) return null;
 		if ((c.blendMode ?? 'normal') !== 'normal' || c.threeD || c.kind === 'adjustment') return null;
 		if (c.fades?.length || c.headHandle || c.tailHandle || c.freezeHead || c.freezeTail) return null;
 		if (maskExportRoute(c) !== 'none' || 'nest' in c.source) return null;
@@ -1224,6 +1231,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(exts ? { exts } : {}),
 		...(o.nested ? { nested: o.nested } : {}),
 		path: '',
+		trackStreams: o.trackStreams !== false,
 		blend: {
 			cut: (backdrop, layer, plan, mode) => {
 				const label = `bk${segments.length}`;

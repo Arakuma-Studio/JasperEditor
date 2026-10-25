@@ -2,9 +2,26 @@
 // each child leads its own process group so cancellation can terminate the whole tree (S04:JB-020):
 // SIGTERM to the group, then SIGKILL after a grace period.
 import { type ChildProcess, spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { setPriority } from 'node:os';
 
 const KILL_GRACE_MS = 3000;
+/**
+ * spec 13 AS-074: Linux OOM-killer preference of tool processes (−1000…1000; the engine keeps its own, normally 0).
+ * When memory runs out, a composite or decoder is killed — the job fails with that error — rather than the engine
+ * (textperf: the engine process itself was the victim of a 240-layer composite). Raising it needs no privilege.
+ */
+export const TOOL_OOM_SCORE_ADJ = 900;
+
+/** Makes a child (and the processes it starts) the preferred OOM victim over the engine; best effort, Linux only. */
+export function preferOomKill(pid: number | undefined): void {
+	if (pid === undefined || process.platform !== 'linux') return;
+	try {
+		writeFileSync(`/proc/${pid}/oom_score_adj`, String(TOOL_OOM_SCORE_ADJ));
+	} catch {
+		// gone already, or /proc unavailable
+	}
+}
 
 /** Signals a whole process group (POSIX), falling back to the single child. */
 function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -66,6 +83,7 @@ export function spawnTool(bin: string, args: readonly string[], opts: SpawnOptio
 		detached: process.platform !== 'win32',
 		windowsHide: true,
 	});
+	preferOomKill(child.pid);
 	if (opts.nice && child.pid !== undefined) {
 		try {
 			// os.setPriority is per-process; the group's children inherit the niceness.
