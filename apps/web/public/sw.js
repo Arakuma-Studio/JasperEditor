@@ -1,10 +1,18 @@
 // JasperEditor service worker (ARCHITECTURE §12, S05:PWA-004/005, R-OMS §3.5/§8.3).
 // Served as-is; pwa.test.ts exercises this script directly. Bump VERSION to invalidate the cached shell.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `jasper-shell-${VERSION}`;
 const ASSETS_CACHE = `jasper-assets-${VERSION}`;
-const ASSETS_MAX_ENTRIES = 80;
+const ASSETS_MAX_ENTRIES = 84;
+
+// Generated at build time from the optional runtimes' static import closure. Registration happens after window
+// load: warm their source for offline use here without downloading or evaluating them on the page's critical path.
+try {
+	importScripts('/editor-assets.js');
+} catch {
+	// A missing optional list must not prevent the worker from installing.
+}
 
 const BYPASS_PREFIXES = [
 	'/api',
@@ -51,15 +59,27 @@ function classifyRequest(req) {
 self.addEventListener('install', (event) => {
 	// Not cache.addAll: one missing file must not fail the whole install.
 	event.waitUntil(
-		caches.open(SHELL_CACHE).then((cache) =>
-			Promise.all(
+		caches.open(SHELL_CACHE).then(async (cache) => {
+			await Promise.all(
 				PRECACHE_URLS.map((url) =>
 					fetch(url, { cache: 'reload' })
 						.then((res) => (res.ok ? cache.put(url === '/' ? '/index.html' : url, res) : undefined))
 						.catch(() => undefined),
 				),
-			),
-		),
+			);
+			const assets = await caches.open(ASSETS_CACHE);
+			// Sequential background requests leave bandwidth for the already running editor. One failed runtime
+			// does not prevent the remaining ones or the shell from being available offline.
+			for (const url of self.jasperEditorAssets ?? []) {
+				try {
+					const res = await fetch(url, { cache: 'force-cache' });
+					if (res.ok) await assets.put(url, res);
+				} catch {
+					// The shell still installs if the network disappears during the warm-up.
+				}
+			}
+			await trimCache(ASSETS_CACHE, ASSETS_MAX_ENTRIES);
+		}),
 	);
 	// Let existing tabs finish with their current worker before this version activates.
 });

@@ -7,7 +7,7 @@ import { defineConfig, type Plugin, type ProxyOptions } from 'vite';
 // browser the dev editor key.
 import { authenticateProxy, createDevAuth, type DevAuth, editorCookieMiddleware } from './dev-auth.ts';
 // gaps (UI-6): UI strings through the active language's catalogue.
-import { EDITOR_BOOT, editorBootScript, editorChunks } from './editor-boot.ts';
+import { EDITOR_BOOT, editorBootScript, editorChunks, optionalEditorChunks } from './editor-boot.ts';
 import { jasperI18n } from './i18n/vite-plugin.mjs';
 
 const ENGINE = process.env.JASPER_ENGINE_URL ?? 'http://127.0.0.1:47900';
@@ -71,6 +71,11 @@ function editorBoot(): Plugin {
 				fileName: EDITOR_BOOT,
 				source: editorBootScript(editorChunks(bundle)),
 			});
+			this.emitFile({
+				type: 'asset',
+				fileName: 'editor-assets.js',
+				source: `self.jasperEditorAssets = ${JSON.stringify(optionalEditorChunks(bundle))};\n`,
+			});
 		},
 	};
 }
@@ -81,6 +86,12 @@ function vendorChunk(id: string): string | undefined {
 	// often than the app: its own chunk keeps the entry chunk under 500 kB.
 	if (/[\\/]packages[\\/]project[\\/]src[\\/]/.test(id)) return 'app-project';
 	if (!id.includes('node_modules')) return undefined;
+	// Keep on-demand dependencies out of the shared vendor chunk: assigning a lazy import there makes
+	// every entry that uses any vendor module download and evaluate it, including Home and plain video projects.
+	if (/[\\/]pdfjs-dist[\\/]/.test(id)) return 'vendor-pdf';
+	if (/[\\/]@jitl[\\/]quickjs-singlefile-browser-release-sync[\\/]/.test(id)) return 'vendor-quickjs';
+	if (/[\\/]lottie-web[\\/]/.test(id)) return 'vendor-lottie';
+	if (/[\\/]modern-screenshot[\\/]/.test(id)) return 'vendor-screenshot';
 	if (/[\\/](remotion|@remotion)[\\/]/.test(id)) return 'vendor-remotion';
 	// S11:ANM-023: anime.js (reached through @jasper/compositions → @jasper/motion) in its own chunk.
 	if (/[\\/]animejs[\\/]/.test(id)) return 'vendor-anime';
