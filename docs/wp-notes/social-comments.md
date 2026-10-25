@@ -1318,9 +1318,9 @@ consumer. Composition clips keep their own editor (`mg-bundles/CanvasTextEditor.
 - **Other params.** A mark on a param that is not a string is ignored, and the double-click goes to other handlers.
 - **Line breaks.** Multi-line editing follows `ui.params.<name>.multiline` (C3). No extra definition hint was needed:
   discovery is by the rendered DOM, so the proposed `ui.params[name].canvasEdit` was not added.
-- **Shipped templates.** The four anime templates now mark their text (attributes only, pixels unchanged, no
+- **Shipped templates.** The anime templates mark their text with the helper (attributes only, pixels unchanged, no
   `renderVersion` bump): Title Reveal `title` / `subtitle`, Lower Third (Animated) `name` / `role`, Callout `label`,
-  Counter `label`. social-comment (WP6a) marks `displayName` and `text` (with marks).
+  Counter `label`, and social-comment `displayName` (TikTok reply header and comment row) and `text` (with marks).
 
 ### Double-click → target
 
@@ -1418,14 +1418,15 @@ locked").
 
 **Word marks.** Marks params are edited as their visible text, with the marks drawn as editor-only styled runs:
 highlight is tinted, blur has a wavy underline and remove is struck through. Each input is mapped back onto the markup
-with `replaceVisible` (`apps/web/src/social-comments/marks-edit.ts`), so marks stay on their words:
+with `replaceVisible` (`apps/web/src/social-comments/marks-edit.ts`, given the caret so repeated text is anchored at
+the edit), so marks stay on their words:
 
 - a character typed inside or at the end of a word takes that word's mark;
 - whitespace joins a mark only between two words that carry the same mark;
 - unchanged characters keep theirs.
 
-That module is WP7a's marks editing model (sc/controls), taken verbatim (formatted) so the integration has one
-implementation, not two.
+That module is WP7a's marks editing model (§ Properties controls), shared by the Properties text control and this
+editor.
 
 **The marks toolbar.** A non-empty selection in a marks param shows a floating **Highlight / Blur / Remove / Clear**
 toolbar above it. The buttons do not take focus, and the pressed state shows when every selected word already carries
@@ -1472,6 +1473,7 @@ have collided with the overlay's move and marquee gestures.
 | Rest time (table and fast-check); hold in previews only and only for the held clip; graded preview replaced by the live layer while held | `packages/compositions/test/template-edit-hold.test.tsx` (fixtures `hold-test-template.ts` / `hold-test-impl.tsx`) |
 | Contract: `editableParamProps`, `readEditableParam` (fast-check); every shipped template marks its text params | `packages/motion/test/editable-params.test.tsx`, `packages/mg-templates/test/editable.test.ts` |
 | Real Player in Chrome: mid-intro double-click opens on the rest layout, editor box within 3 px of the text, Enter and Esc, undo; rotated 12° and 140 % scale at 200 % zoom; topmost of two overlapping cards; locked track message; 9:16 sequence | `e2e/template-canvas-edit.spec.ts` (screenshots in `test-results/e2e-template-canvas-edit/`) |
+| Real social-comment@1 from its gallery presets (9:16, mid-entrance): TikTok comment — text box within 2 px, Blur from the toolbar, typing and Shift+Enter keep the marks, Enter, the name, undo of both steps; TikTok reply — the name inside "Reply to …'s comment", Highlight, Esc | same spec |
 
 ### Limitations
 

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
+	clips,
 	createProject,
 	enableAgentBridge,
 	expectTransaction,
@@ -216,4 +217,151 @@ test('vertical 9:16 sequence', async () => {
 	await page.keyboard.type('!');
 	await page.keyboard.press('Enter');
 	await expect.poll(async () => (await clipParams(id)).name).toBe('Vertical Name!');
+});
+
+/** The screen centre of `word` inside an element's text. */
+async function pointOf(l: Locator, word: string): Promise<{ x: number; y: number }> {
+	return l.evaluate((el, w) => {
+		const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+		let t: Text | null;
+		while ((t = walker.nextNode() as Text | null)) {
+			const i = t.data.indexOf(w);
+			if (i < 0) continue;
+			const r = document.createRange();
+			r.setStart(t, i);
+			r.setEnd(t, i + w.length);
+			const b = r.getBoundingClientRect();
+			return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+		}
+		throw new Error(`"${w}" is not drawn`);
+	}, word);
+}
+
+/** A 9:16 project with one social-comment clip inserted from its gallery preset card. */
+async function socialPreset(name: string, preset: string): Promise<string> {
+	await page.goto('/');
+	await expect(page.getByTestId('home')).toBeVisible();
+	await page.getByTestId('home-new').click();
+	await page.getByTestId('new-project-name').fill(name);
+	await page.getByTestId('new-project-preset').selectOption('vertical-1080x1920-30');
+	await page.getByTestId('new-project-create').click();
+	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await expect.poll(() => page.evaluate(() => !!window.jasper)).toBe(true);
+	await page.getByText('Motion Templates', { exact: true }).first().click();
+	const card = page.locator(`[data-preset="${preset}"]`).first();
+	await expect(card).toBeVisible();
+	await card.dblclick();
+	await expect.poll(async () => (await clips(page)).length).toBe(1);
+	const [clip] = await clips(page);
+	// Text without emoji (no remote emoji needed), with word marks.
+	expectTransaction(
+		await transact(page, [
+			{
+				type: 'clip.update',
+				clipId: clip!.id,
+				patch: { params: { displayName: 'Luna Park', text: 'Hello ==big== world and more' } },
+			} as never,
+		]),
+	);
+	await page.getByTestId('program-zoom').selectOption('100');
+	// Mid-entrance: the editor opens on the settled card.
+	await seek(5);
+	return clip!.id;
+}
+
+test('social comment (TikTok comment preset): marks survive typing, the toolbar, multi-line text, the name', async () => {
+	const id = await socialPreset('E2E Canvas Edit TikTok comment', 'tiktok-comment');
+	const text = paramEl(id, 'text');
+	await expect(text).toBeAttached();
+	const p = await pointOf(text, 'world');
+	await page.mouse.dblclick(p.x, p.y);
+	await expect(input()).toBeVisible();
+	await expect(input()).toHaveAttribute('data-value', 'Hello ==big== world and more');
+	await expect(program().locator(`[data-clip-id="${id}"] [data-template-hold="true"]`)).toBeAttached();
+	const rest = (await text.boundingBox())!;
+	const ed = (await input().boundingBox())!;
+	expect(Math.abs(ed.x - rest.x)).toBeLessThan(2);
+	expect(Math.abs(ed.y - rest.y)).toBeLessThan(2);
+	expect(Math.abs(ed.width - rest.width)).toBeLessThan(2);
+	expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('world');
+	const toolbar = page.getByTestId('template-marks-toolbar');
+	await expect(toolbar).toBeVisible();
+	writeFileSync(
+		join(OUT, 'tiktok-comment-editing.png'),
+		await page.getByTestId('program-viewport').screenshot(),
+	);
+	await toolbar.locator('[data-mark-action="blur"]').click();
+	await expect.poll(async () => (await clipParams(id)).text).toBe('Hello ==big== ||world|| and more');
+	expect((await appliedLabels(page)).at(-1)).toBe('Blur Words');
+	// Typing keeps the marks; Shift+Enter is a new line (multi-line param); Enter applies one step.
+	await expect(input()).toBeVisible();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' yes');
+	await page.keyboard.press('Shift+Enter');
+	await page.keyboard.type('two');
+	writeFileSync(
+		join(OUT, 'tiktok-comment-typing.png'),
+		await page.getByTestId('program-viewport').screenshot(),
+	);
+	await page.keyboard.press('Enter');
+	await expect
+		.poll(async () => (await clipParams(id)).text)
+		.toBe('Hello ==big== ||world|| and more yes\ntwo');
+	expect((await appliedLabels(page)).at(-1)).toBe('Edit Text');
+	// The name (a flex item in the header row).
+	const name = paramEl(id, 'displayName');
+	const np = await pointOf(name, 'Park');
+	await page.mouse.dblclick(np.x, np.y);
+	await expect(input()).toHaveAttribute('data-value', 'Luna Park');
+	const nRest = (await name.boundingBox())!;
+	const nEd = (await input().boundingBox())!;
+	expect(Math.abs(nEd.x - nRest.x)).toBeLessThan(2);
+	expect(Math.abs(nEd.y - nRest.y)).toBeLessThan(2);
+	await page.keyboard.type('Lake');
+	await page.keyboard.press('Enter');
+	await expect.poll(async () => (await clipParams(id)).displayName).toBe('Luna Lake');
+	await page.waitForTimeout(300);
+	writeFileSync(
+		join(OUT, 'tiktok-comment-after.png'),
+		await page.getByTestId('program-viewport').screenshot(),
+	);
+	// Undo from the Timeline: the name, then the text step.
+	await page.getByTestId('timeline-track-area').click({ position: { x: 5, y: 5 } });
+	await page.keyboard.press('Control+KeyZ');
+	await expect.poll(async () => (await clipParams(id)).displayName).toBe('Luna Park');
+	await page.keyboard.press('Control+KeyZ');
+	await expect.poll(async () => (await clipParams(id)).text).toBe('Hello ==big== ||world|| and more');
+});
+
+test('social comment (TikTok reply preset): the name inside "Reply to …", Highlight from the toolbar, Esc', async () => {
+	const id = await socialPreset('E2E Canvas Edit TikTok reply', 'tiktok-reply');
+	const name = paramEl(id, 'displayName');
+	await expect(name).toBeAttached();
+	const np = await pointOf(name, 'Luna');
+	await page.mouse.dblclick(np.x, np.y);
+	await expect(input()).toHaveAttribute('data-value', 'Luna Park');
+	expect(await page.evaluate(() => document.getSelection()?.toString())).toBe('Luna');
+	const nRest = (await name.boundingBox())!;
+	const nEd = (await input().boundingBox())!;
+	expect(Math.abs(nEd.x - nRest.x)).toBeLessThan(2);
+	expect(Math.abs(nEd.y - nRest.y)).toBeLessThan(3);
+	writeFileSync(join(OUT, 'tiktok-reply-name.png'), await page.getByTestId('program-viewport').screenshot());
+	await page.keyboard.type('Nova');
+	await page.keyboard.press('Enter');
+	await expect.poll(async () => (await clipParams(id)).displayName).toBe('Nova Park');
+
+	const text = paramEl(id, 'text');
+	const p = await pointOf(text, 'more');
+	await page.mouse.dblclick(p.x, p.y);
+	await expect(input()).toHaveAttribute('data-value', 'Hello ==big== world and more');
+	await page.getByTestId('template-marks-toolbar').locator('[data-mark-action="highlight"]').click();
+	await expect.poll(async () => (await clipParams(id)).text).toBe('Hello ==big== world and ==more==');
+	writeFileSync(
+		join(OUT, 'tiktok-reply-highlight.png'),
+		await page.getByTestId('program-viewport').screenshot(),
+	);
+	await page.keyboard.type('X');
+	await page.keyboard.press('Escape');
+	await expect(input()).toHaveCount(0);
+	expect((await clipParams(id)).text).toBe('Hello ==big== world and ==more==');
 });
