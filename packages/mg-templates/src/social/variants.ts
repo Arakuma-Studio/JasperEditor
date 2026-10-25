@@ -165,3 +165,21 @@ export function variantsWithParam(param: SocialParamName): SocialVariant[] {
 export function isSocialVariant(value: unknown): value is SocialVariant {
 	return typeof value === 'string' && (SOCIAL_VARIANTS as readonly string[]).includes(value);
 }
+
+/**
+ * The name a variant shows for the author first: TikTok and X the display name, Instagram and YouTube the handle
+ * (`VARIANT_CAPABILITIES`). Unknown variants read as the schema default (`tiktok-reply`).
+ */
+export function shownNameParam(variant: unknown): 'displayName' | 'handle' {
+	const v = isSocialVariant(variant) ? variant : 'tiktok-reply';
+	return VARIANT_CAPABILITIES[v].displayName ? 'displayName' : 'handle';
+}
+
+/**
+ * The name a generated avatar's initials come from (`generatedAvatar(seed, name)`): the one the card shows
+ * (`shownNameParam`), so the Properties preview and every card draw the same initials. `''` when it is not a string.
+ */
+export function avatarNameFor(variant: unknown, params: Readonly<Record<string, unknown>>): string {
+	const value = params[shownNameParam(variant)];
+	return typeof value === 'string' ? value : '';
+}

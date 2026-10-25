@@ -3,7 +3,7 @@
 // re-randomizes (`ui.addAnother.reroll`, through the template's fill hook) — one command, so one undo step from the
 // timeline, Properties, the gallery, the palette and MCP alike.
 
-import { fillTemplateParams, mgRerollParams, validateTemplateParams } from '../../registry/mg-params.ts';
+import { fillTemplateParams, mgInstanceParams, validateTemplateParams } from '../../registry/mg-params.ts';
 import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import {
@@ -31,12 +31,10 @@ function duplicateMotionGraphic(doc: DDoc, cmd: CommandOf<'clip.duplicateMotionG
 	const info = h.registries.mgTemplates.get(source.template.id, source.template.version);
 	if (!info) h.fail('E_INVALID_PARAM', `Template ${ref} is not installed, so its params cannot be checked`);
 
-	// Kept: every param except the re-randomized ones; the caller's params win over both.
+	// Kept: every param except the re-randomized ones; the caller's params win over both (`mgInstanceParams`, the
+	// rule presets follow too).
 	const given = cmd.params ?? {};
-	const reroll = mgRerollParams(info).filter((n) => !Object.hasOwn(given, n));
-	const kept: Record<string, unknown> = { ...source.params };
-	for (const n of reroll) delete kept[n];
-	const base = { ...kept, ...given };
+	const { params: base, reroll } = mgInstanceParams(info, source.params, given);
 	let params: Record<string, unknown> = base;
 	let filled: string[] = [];
 	if (reroll.length > 0) {

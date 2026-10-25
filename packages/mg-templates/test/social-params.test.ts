@@ -4,11 +4,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+	avatarNameFor,
 	resolveEmojiStyle,
 	SOCIAL_DEFAULT_TEXT,
 	SOCIAL_PARAM_NAMES,
 	SOCIAL_VARIANTS,
 	type SocialVariant,
+	shownNameParam,
 	socialCommentParamsSchema,
 	socialCommentPartialSchema,
 	socialDefaults,
@@ -218,5 +220,29 @@ describe('socialCommentParamsSchema', () => {
 				socialCommentPartialSchema.safeParse(x);
 			}),
 		);
+	});
+});
+
+describe('avatarNameFor (the name generated-avatar initials come from)', () => {
+	it('is the name the card shows: display name on TikTok and X, handle on Instagram and YouTube', () => {
+		const params = { displayName: 'Zed Alpha', handle: 'luna.park' };
+		const byVariant = Object.fromEntries(SOCIAL_VARIANTS.map((v) => [v, avatarNameFor(v, params)]));
+		expect(byVariant).toEqual({
+			'tiktok-reply': 'Zed Alpha',
+			'tiktok-comment': 'Zed Alpha',
+			'instagram-post': 'luna.park',
+			'instagram-reel-reply': 'luna.park',
+			'youtube-comment': 'luna.park',
+			'youtube-shorts-reply': 'luna.park',
+			'x-post': 'Zed Alpha',
+		});
+		for (const v of SOCIAL_VARIANTS)
+			expect(VARIANT_CAPABILITIES[v][shownNameParam(v)], `${v} draws the name its avatar uses`).toBe(true);
+	});
+
+	it('reads unknown variants as the default and non-strings as no name', () => {
+		expect(avatarNameFor('myspace', { displayName: 'Ana', handle: 'ana' })).toBe('Ana');
+		expect(avatarNameFor(undefined, { displayName: 7 })).toBe('');
+		expect(avatarNameFor('instagram-post', {})).toBe('');
 	});
 });

@@ -21,7 +21,13 @@ export {
 	useTemplateAssetEpoch,
 } from './assets.tsx';
 export { type EditableParamProps, editableParamProps } from './editable.ts';
-export { TemplateImage, TemplateImagePlaceholder, type TemplateImageProps } from './image.tsx';
+export {
+	TemplateImage,
+	TemplateImageError,
+	TemplateImagePlaceholder,
+	type TemplateImageProps,
+	TemplateMediaIdsContext,
+} from './image.tsx';
 export type { AnimeTemplateProps } from './types.ts';
 
 /** URL of an emoji of a pack in `AnimeTemplateProps.emojiUrls` (undefined when not available). */

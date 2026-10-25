@@ -28,6 +28,14 @@ const FaceSchema = z.object({
 	style: z.enum(['normal', 'italic']),
 });
 
+/**
+ * Distinct emoji of one pack one prefetch fetches: a render's whole document, or the editor's check of it. Unicode's
+ * fully-qualified emoji with every skin-tone and ZWJ form number ≈3,800 (`emoji-test.txt` of Unicode 15.1–16.0), so
+ * this covers any real project; the engine reports the ones over it as missing by name (`PREFETCH_LIMIT`), which
+ * blocks the export, never skips them silently.
+ */
+export const REMOTE_PREFETCH_MAX_EMOJI = 4096;
+
 /** `POST /api/remote-assets/prefetch`: fetch (or check) the assets a render needs before it starts. */
 export const RemoteAssetPrefetchRequestSchema = z.object({
 	fonts: z.array(FaceSchema).max(64).default([]),
@@ -35,7 +43,7 @@ export const RemoteAssetPrefetchRequestSchema = z.object({
 		.array(
 			z.object({
 				pack: z.string().min(1).max(32),
-				graphemes: z.array(z.string().min(1).max(64)).max(512),
+				graphemes: z.array(z.string().min(1).max(64)).max(REMOTE_PREFETCH_MAX_EMOJI),
 			}),
 		)
 		.max(8)

@@ -138,6 +138,20 @@ const rowErrors = (r: MgImportRow) => ({
 	errors: r.errors.map(mgImportText),
 });
 
+/** A row with its problems, as reported (`details.rows`, `skipped`). */
+type BadRow = { row: number; line: number; errors: string[] };
+
+/**
+ * A refusal that belongs to its row — the template's params schema, its fill hook or a template media check
+ * (`resolveMgTemplateParams`, what the editor's import dialog checks each row with) — rather than to the import as a
+ * whole (a locked track, a stale revision, a missing sequence…).
+ */
+function rowRefusal(e: TxErrors[number], count: number): boolean {
+	if (e.commandIndex < 0 || e.commandIndex >= count) return false;
+	if (e.code === 'E_INVALID_PARAM') return true;
+	return (e.code === 'E_NOT_FOUND' || e.code === 'E_SCHEMA') && e.path?.[0] === 'params';
+}
+
 export function registerBulkMotionGraphics(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -235,7 +249,7 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 		'import_motion_graphics_csv',
 		{
 			title: 'Import motion graphics from CSV',
-			description: `Bulk import (the editor's spreadsheet import): one motion-graphic clip per row of CSV text or rows copied from a spreadsheet (TSV; semicolon CSV too), at most ${TABLE_MAX_ROWS} rows and ${TABLE_MAX_CHARS / 1024 / 1024} MB. The first row names the columns: param names or Properties labels (any case, spaces / "_" / "-" ignored), the template's aliases (social-comment: User → the name the variant shows, Username → the handle, Comment → text, Verified yes/true/1; "@" before a handle is dropped), plus optional start and duration (3, 1.5s, 0:03, 90f or timecode). Other columns are ignored and reported (social-comment: Image URL — remote images are not imported). Cells are read by the param type: "1,234", "1.2K", "3.5M"; yes/no; enum values ignoring case and punctuation; JSON for object params. An empty cell is not given: the preset, then the template's fill hook (deterministic for seed), then the defaults decide. Rows go one after another from startAt (default 0), each at the previous row's end (default length: the template's), on the first free video track from track (default V2) up — never overwriting — all in ONE transaction (one undo step). Rows with errors refuse the whole call (details.rows lists every row's errors) unless skipInvalid: true skips them. Returns the column mapping and per row the clip id, track, start/end, the resolved params and which were filled.`,
+			description: `Bulk import (the editor's spreadsheet import): one motion-graphic clip per row of CSV text or rows copied from a spreadsheet (TSV; semicolon CSV too), at most ${TABLE_MAX_ROWS} rows and ${TABLE_MAX_CHARS / 1024 / 1024} MB. The first row names the columns: param names or Properties labels (any case, spaces / "_" / "-" ignored), the template's aliases (social-comment: User → the name the variant shows, Username → the handle, Comment → text, Verified yes/true/1; "@" before a handle is dropped), plus optional start and duration (3, 1.5s, 0:03, 90f or timecode). Other columns are ignored and reported (social-comment: Image URL — remote images are not imported). Cells are read by the param type: "1,234", "1.2K", "3.5M"; yes/no; enum values ignoring case and punctuation; JSON for object params. An empty cell is not given: the preset, then the template's fill hook (deterministic for seed), then the defaults decide. Rows go one after another from startAt (default 0), each at the previous row's end (default length: the template's), on the first free video track from track (default V2) up — never overwriting — all in ONE transaction (one undo step). Rows with errors — cells that do not fit their param, and rows the template refuses (its params checks and fill, or a media param such as avatar {mediaId} naming a medium the project does not have) — refuse the whole call (details.rows lists every bad row's errors) unless skipInvalid: true skips them (listed in skipped). Returns the column mapping and per row the clip id, track, start/end, the resolved params and which were filled.`,
 			input: {
 				projectId: ProjectIdArg,
 				csv: z
@@ -302,52 +316,85 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 			const columns = plan.columns.map(columnBody);
 			const bad = plan.rows.filter((r) => r.errors.length > 0);
 			const valid = plan.rows.filter((r) => r.errors.length === 0);
-			if (bad.length > 0 && !a.skipInvalid)
+			const seed = a.seed ?? randomInt(0, 2 ** 32);
+			const track = a.track ?? DEFAULT_MG_FLOOR;
+			const commandsOf = (rows: readonly MgImportRow[]) => {
+				const places = scheduleMgImport(rows, { startAt, defaultDuration: plan.defaultDuration });
+				return rows.map((r, i) => mgImportCommand(plan, r, places[i]!, { seed, track, sequenceId: seq.id }));
+			};
+			const run = (rows: readonly MgImportRow[], dryRun: boolean) =>
+				transact(
+					ctx,
+					a.projectId,
+					{
+						label: `Import ${rows.length} motion graphic${rows.length === 1 ? '' : 's'}`,
+						commands: commandsOf(rows),
+						sequenceId: seq.id,
+						...(dryRun ? { dryRun: true } : {}),
+					},
+					extra,
+				);
+			const refusedTx = (rows: readonly MgImportRow[], res: Awaited<ReturnType<typeof run>>) => {
+				const r = res.result as Extract<typeof res.result, { ok: false }>;
+				return refused(
+					r.errors,
+					rows.length,
+					(i) => ({
+						label: `row ${rows[i]!.index + 1} (line ${rows[i]!.line})`,
+						details: { row: rows[i]!.index + 1, line: rows[i]!.line },
+					}),
+					{ appliedBy: res.appliedBy, revision: r.revision },
+					'Nothing was imported.',
+				);
+			};
+			// Rows that pass the JSON-Schema coercion can still be refused by the command — zod refinements, the fill hook,
+			// media that is not in the project: what the editor's dialog checks each row with (`resolveMgTemplateParams`).
+			// Those are row errors like the coercion ones. The happy path is one transaction; after a refusal, dry runs of
+			// the rows after it find the next one (k refused rows: k + 1 runs, each shorter than the one before).
+			// With coercion errors and no skipInvalid nothing is imported, so the rows are only dry-run (to report every
+			// bad row together).
+			const refuseAll = bad.length > 0 && !a.skipInvalid;
+			let rows = valid;
+			let res = rows.length > 0 ? await run(rows, refuseAll || a.dryRun === true) : null;
+			const refusedRows = new Map<number, BadRow>();
+			if (res && !res.result.ok) {
+				let pending = rows;
+				let probe = res;
+				while (!probe.result.ok) {
+					const e = probe.result.errors[0];
+					if (!e || !rowRefusal(e, pending.length)) throw refusedTx(pending, probe);
+					const row = pending[e.commandIndex]!;
+					refusedRows.set(row.index, { row: row.index + 1, line: row.line, errors: [e.message] });
+					pending = pending.slice(e.commandIndex + 1);
+					if (pending.length === 0) break;
+					probe = await run(pending, true);
+				}
+				rows = valid.filter((r) => !refusedRows.has(r.index));
+			}
+			const skipped = [...bad.map(rowErrors), ...refusedRows.values()].sort((x, y) => x.row - y.row);
+			if (skipped.length > 0 && !a.skipInvalid)
 				throw new ToolError(
 					'E_INVALID_PARAM',
-					`${bad.length} of ${plan.rows.length} rows have errors (first: row ${bad[0]!.index + 1}, ${mgImportText(bad[0]!.errors[0]!)}). Nothing was imported.`,
+					`${skipped.length} of ${plan.rows.length} rows have errors (first: row ${skipped[0]!.row}, ${skipped[0]!.errors[0]}). Nothing was imported.`,
 					'Fix the cells listed in details.rows, or pass skipInvalid: true to import the other rows.',
-					{ rows: bad.map(rowErrors), columns },
+					{ rows: skipped, columns },
 				);
-			if (valid.length === 0)
+			if (rows.length === 0 || !res)
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					'No row can be imported',
 					'Every row has errors (details.rows).',
 					{
-						rows: bad.map(rowErrors),
+						rows: skipped,
 						columns,
 					},
 				);
-			const seed = a.seed ?? randomInt(0, 2 ** 32);
-			const places = scheduleMgImport(valid, { startAt, defaultDuration: plan.defaultDuration });
-			const track = a.track ?? DEFAULT_MG_FLOOR;
-			const commands = valid.map((r, i) =>
-				mgImportCommand(plan, r, places[i]!, { seed, track, sequenceId: seq.id }),
-			);
-			const res = await transact(
-				ctx,
-				a.projectId,
-				{
-					label: `Import ${valid.length} motion graphic${valid.length === 1 ? '' : 's'}`,
-					commands,
-					sequenceId: seq.id,
-					...(a.dryRun ? { dryRun: true } : {}),
-				},
-				extra,
-			);
+			if (refusedRows.size > 0) {
+				res = await run(rows, a.dryRun === true);
+				if (!res.result.ok) throw refusedTx(rows, res);
+			}
 			const r = res.result;
-			if (!r.ok)
-				throw refused(
-					r.errors,
-					valid.length,
-					(i) => ({
-						label: `row ${valid[i]!.index + 1} (line ${valid[i]!.line})`,
-						details: { row: valid[i]!.index + 1, line: valid[i]!.line },
-					}),
-					{ appliedBy: res.appliedBy, revision: r.revision },
-					'Nothing was imported.',
-				);
+			if (!r.ok) throw refusedTx(rows, res);
 			const results = r.results as AddResult[];
 			const { results: _results, ...body } = txBody(res, r, a.dryRun === true);
 			return jsonResult({
@@ -358,7 +405,7 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 				seed,
 				columns,
 				rows: results.map((x, i) => {
-					const row = valid[i]!;
+					const row = rows[i]!;
 					return {
 						row: row.index + 1,
 						line: row.line,
@@ -373,7 +420,7 @@ export function registerBulkMotionGraphics(ctx: ToolContext): void {
 						...(row.warnings.length ? { warnings: row.warnings.map(mgImportText) } : {}),
 					};
 				}),
-				...(bad.length ? { skipped: bad.map(rowErrors) } : {}),
+				...(skipped.length ? { skipped } : {}),
 			});
 		},
 	);

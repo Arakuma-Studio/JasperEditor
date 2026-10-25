@@ -13,9 +13,15 @@ import {
 	type RenderSnapshot,
 } from '@jasper/project';
 import { Thumbnail } from '@remotion/player';
-import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_RENDER_OPTIONS, type RenderOptions, SequenceComposition } from '../src/index.ts';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+	DEFAULT_RENDER_OPTIONS,
+	MissingAssetReporterContext,
+	type MissingTemplateAsset,
+	type RenderOptions,
+	SequenceComposition,
+} from '../src/index.ts';
 
 vi.mock('@jasper/mg-templates', async (importOriginal) => {
 	const m = await importOriginal<typeof import('@jasper/mg-templates')>();
@@ -104,19 +110,37 @@ function snapshot(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle 
 	});
 }
 
-function renderFrame(doc: RenderSnapshot, options: RenderOptions = DEFAULT_RENDER_OPTIONS) {
+function renderFrame(
+	doc: RenderSnapshot,
+	options: RenderOptions = DEFAULT_RENDER_OPTIONS,
+	reports?: Map<string, readonly MissingTemplateAsset[]>,
+	errors?: Error[],
+) {
 	return render(
-		<Thumbnail
-			component={SequenceComposition}
-			inputProps={{ doc, options }}
-			compositionWidth={doc.settings.width}
-			compositionHeight={doc.settings.height}
-			durationInFrames={Math.max(1, doc.durationFrames)}
-			fps={30}
-			frameToDisplay={5}
-		/>,
+		<MissingAssetReporterContext.Provider value={(id, assets) => reports?.set(id, assets)}>
+			<Thumbnail
+				// the Thumbnail's error boundary: what a render would fail with
+				errorFallback={({ error }) => {
+					errors?.push(error);
+					return <div data-testid="render-error">{error.message}</div>;
+				}}
+				component={SequenceComposition}
+				inputProps={{ doc, options }}
+				compositionWidth={doc.settings.width}
+				compositionHeight={doc.settings.height}
+				durationInFrames={Math.max(1, doc.durationFrames)}
+				fps={30}
+				frameToDisplay={5}
+			/>
+		</MissingAssetReporterContext.Provider>,
 	);
 }
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
+
+const UNDECODABLE = () => handle('https://engine.test/media/orig.heic', { browserDecodable: false });
 
 describe('template media params in the sequence composition', () => {
 	it('the avatar URL the consumer resolved reaches the template through mediaUrls and TemplateImage', () => {
@@ -156,6 +180,69 @@ describe('template media params in the sequence composition', () => {
 			expect(view.queryByTestId('avatar')).toBeNull();
 			expect(view.container.querySelector('[data-avatar-initials]')?.textContent).toBe('Z');
 			view.unmount();
+		}
+	});
+
+	it('render: a picture the browser cannot decode without a display picture fails the render by name', () => {
+		// NODE_ENV=test is a render for Remotion (getRemotionEnvironment().isRendering)
+		const { doc, mediaId } = project(true);
+		const errors: Error[] = [];
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const view = renderFrame(snapshot(doc, UNDECODABLE), DEFAULT_RENDER_OPTIONS, undefined, errors);
+			// (React may render the failing tree more than once before giving up)
+			expect(errors.length).toBeGreaterThan(0);
+			for (const e of errors)
+				expect(e.message).toContain(
+					`picture ${mediaId} cannot be decoded by the browser and has no display picture`,
+				);
+			expect(view.container.querySelector('[data-template-image="placeholder"]')).toBeNull();
+			view.unmount();
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it('Player: an undecodable picture without a display picture is marked and reported, not silent', async () => {
+		vi.stubEnv('NODE_ENV', 'development');
+		const { doc, mediaId } = project(true);
+		const reports = new Map<string, readonly MissingTemplateAsset[]>();
+		const view = renderFrame(snapshot(doc, UNDECODABLE), DEFAULT_RENDER_OPTIONS, reports);
+		expect(view.queryByTestId('avatar')).toBeNull();
+		expect(view.container.querySelector('[data-avatar-initials]')).not.toBeNull();
+		expect(view.container.querySelector('[data-missing-asset="image"]')?.textContent).toBe(
+			`Picture ${mediaId} is not available`,
+		);
+		await waitFor(() => expect([...reports.values()].flat()).toEqual([{ kind: 'media', mediaId }]));
+		view.unmount();
+	});
+
+	it('a picture that fails to load: the Player reports it; a render fails with TemplateImageError', async () => {
+		vi.stubEnv('NODE_ENV', 'development');
+		const { doc, mediaId } = project(true);
+		const snap = snapshot(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+		const reports = new Map<string, readonly MissingTemplateAsset[]>();
+		const view = renderFrame(snap, DEFAULT_RENDER_OPTIONS, reports);
+		await act(async () => {
+			fireEvent.error(view.getByTestId('avatar'));
+		});
+		expect(view.queryByTestId('avatar')).toBeNull();
+		await waitFor(() => expect([...reports.values()].flat()).toEqual([{ kind: 'media', mediaId }]));
+		view.unmount();
+		vi.stubEnv('NODE_ENV', 'test');
+		const errors: Error[] = [];
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const rendered = renderFrame(snap, DEFAULT_RENDER_OPTIONS, undefined, errors);
+			await act(async () => {
+				fireEvent.error(rendered.getByTestId('avatar'));
+			});
+			expect(errors.length).toBeGreaterThan(0);
+			expect(new Set(errors.map((e) => e.name))).toEqual(new Set(['TemplateImageError']));
+			expect(errors[0]!.message).toContain(`Template picture ${mediaId} could not be loaded`);
+			rendered.unmount();
+		} finally {
+			spy.mockRestore();
 		}
 	});
 });

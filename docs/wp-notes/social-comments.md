@@ -523,14 +523,26 @@ Media a template param references are counted wherever a clip's own `mediaId` is
 - **Layer.** `MotionGraphicLayer` builds `AnimeTemplateProps.mediaUrls` (`Readonly<Record<mediaId, url>>`) from the
   document's media handles (`ColorDocContext`, as effect media): `mediaSrc` picks the proxy / display picture when
   the original is not browser-decodable; offline or missing media are absent; `{}` when the params reference none.
+  The media left out are never silent: in the Player each one is reported as `{kind: 'media', mediaId}` (a
+  `MissingTemplateAsset`, listed by the Program monitor's template-asset chip as "Picture med_…") and marked with the
+  striped banner; in a render a medium that is online but not browser-decodable without a display picture fails the
+  render by name ("picture med_… cannot be decoded by the browser and has no display picture"). An offline medium
+  renders as the template's fallback with the planner's `OFFLINE_TEMPLATE_MEDIA` warning (the `OFFLINE_MEDIA` policy).
+  The layer also provides `TemplateMediaIdsContext` (URL → media id) so `TemplateImage` names what failed.
 - **Drawing.** `TemplateImage` (`@jasper/motion/templates`, `packages/motion/src/templates/image.tsx`) is an `<img>`
   (`crossOrigin="anonymous"`) that holds the render with `delayRender` from its first frame until the picture is
-  loaded and decoded (`img.decode()`), like `useFxImages`. A load error releases the render and draws
-  `TemplateImagePlaceholder` (a neutral dashed box) or the template's `fallback`; it never cancels the render.
+  loaded and decoded (`img.decode()`), like `useFxImages`. A load error in a render (`getRemotionEnvironment()
+  .isRendering`) fails it with `cancelRender(new TemplateImageError(url, mediaId))` ("Template picture med_… could not
+  be loaded from <url without its signature>"); in the Player it releases the render, draws
+  `TemplateImagePlaceholder` (a neutral dashed box) or the template's `fallback`, and reports the medium (above).
 - **Exports.** Remotion exports sign every snapshot handle (`remotionProps`); layer bakes sign the media
   `referencedMediaIds` finds in the clip source (template params included) and key the bake on each medium's
-  fingerprint, size and mtime (`keyMedia`), so a relinked avatar re-bakes. The planner warns
-  `OFFLINE_TEMPLATE_MEDIA` when a template shows offline media (those pictures render as placeholders).
+  fingerprint, size and mtime (`keyMedia`), so a relinked avatar re-bakes. The `imports` extension counts template
+  pictures as browser-drawn media, so a still the browser cannot decode (HEIF, EXR, interpreted pixels) gets its
+  `display` picture in bakes and Remotion renders like any image clip. The planner warns `OFFLINE_TEMPLATE_MEDIA`
+  when a template shows offline media (those pictures render as the template's fallback) and refuses media no
+  `<img>` can show — a video, a Lottie animation, a PDF page — with `TEMPLATE_MEDIA_UNDRAWABLE` (409, per-clip
+  blockers naming the medium; `templatePictureProblem`, `apps/engine/src/export/planner.ts`).
 
 ### UI and agents
 
@@ -540,6 +552,12 @@ Media a template param references are counted wherever a clip's own `mediaId` is
   keyframable.
 - MCP `list_motion_templates` lists a media param as `media image` (or `media image|video`); the templates guide says
   what it takes and how it is refused.
+- Preview stills draw the project's media: the one-clip preview document of `render_motion_graphic_preview` (anime
+  templates) and of `add_motion_graphic {dryRun, preview}` gets a `media.register` copy (same id, its bin name, the
+  media it derives from first) of every medium the params reference (`previewMediaCommands`,
+  `apps/mcp/src/tools/templates.ts`), so the engine resolves the same stored file. `render_motion_graphic_preview`
+  takes an optional `projectId` for this; params with a `{mediaId}` and no `projectId` are refused by name
+  (E_INVALID_PARAM), a medium the project lacks with E_NOT_FOUND (`apps/mcp/test/add-motion-graphic.test.ts`).
 
 ### Tests
 
@@ -558,7 +576,8 @@ The test-only template lives in `packages/mg-templates/test/fixtures/avatar-test
 ### Limitations
 
 - `TemplateImage` draws still pictures. A `kinds: ['video']` param resolves to the medium's URL, but no
-  seek-driven template video component exists yet, so templates should declare images (the default).
+  seek-driven template video component exists yet, so templates should declare images (the default); exports of a
+  template showing a video are refused (`TEMPLATE_MEDIA_UNDRAWABLE`).
 - Animated images (GIF / animated WebP) are not offered: an `<img>` animates on the wall clock, which renders could
   not reproduce.
 - `media.derive {replaceInClips}` (processed versions) rewrites clips' own media only; template params keep the
@@ -1121,9 +1140,14 @@ comments; every motion-graphic template (and the other generator clips) gets it.
 - `clip.addMotionGraphic {fill: {seed}}` runs it on the given params; the given values always win over what it
   returns, then the template defaults are merged under and the params schema (and the template media-param checks:
   missing medium `E_NOT_FOUND`, wrong kind `E_INVALID_PARAM`) validates the result.
-- Layering with presets: defaults → preset → fill → caller params. Callers (MCP, gallery) resolve a preset ref and
-  send `{...preset.params, ...params}` as the given params, so the fill only fills what both leave out and never
-  overrides the preset. The gallery / `mg.insert` never asks for a fill (humans get the preset or the defaults). A refusal, a throw or a
+- Layering with presets: defaults → preset → fill → caller params, with one rule for every new instance —
+  `mgInstanceParams(template, base, given)` (`packages/project/src/registry/mg-params.ts`): presets set the look, so
+  the per-instance params the template re-randomizes (`ui.addAnother.reroll`: social-comment's identity and stats)
+  never come from the preset; the caller gives them or the fill hook picks them. MCP `add_motion_graphic` sends
+  `mgInstanceParams(entry, preset.params, params).params` as the given params; the bulk import (web dialog and MCP,
+  `planMgImport`) starts every row from the same; `clip.duplicateMotionGraphic` applies it to the copied clip's
+  params. The gallery / `mg.insert` never asks for a fill (humans get the preset as shown on its card, or the
+  defaults). A refusal, a throw or a
   non-object result → `E_INVALID_PARAM` (the issues' messages joined into the message). Templates without a hook:
   defaults only, `filled: []`.
 - The command result is `{clipId, sequenceId, trackId, track ("V3"), createdTrack?, start, duration, params,
@@ -1294,8 +1318,11 @@ type TemplateGroupActionProps = { clipIds; params; paramNames; onChangeParams; d
 ### `social-avatar`
 
 - Three sources as a segmented control: **Image** (a project image), **Generated** (`{ generated: seed }`, drawn with
-  `generatedAvatar(seed, displayName)` like the template; **Reshuffle** draws a new seed) and **Default** (`null`, the
-  platform silhouette). A value the control does not understand is shown as the default and replaced by the next pick.
+  `generatedAvatar(seed, avatarNameFor(variant, params))`; **Reshuffle** draws a new seed) and **Default** (`null`, the
+  platform silhouette). `avatarNameFor` (`@jasper/mg-templates` social core, `variants.ts`, with `shownNameParam`) is
+  the name the card shows first — TikTok and X the display name, Instagram and YouTube the handle — so the initials
+  match the card's; the cards should take their generated-avatar name from it too (TikTok and X pass `displayName`
+  today, which is the same). A value the control does not understand is shown as the default and replaced by the next pick.
 - Image: WP1's `MediaParamPicker` (still images only, "None" = default, drops on the field) plus a drop zone over the
   whole control for Project panel items (`droppedMediaId`) and desktop image files, and **Import an image…** (the
   tokcomment upload button), which imports the file into the project root bin through the import service and then
@@ -1464,9 +1491,9 @@ ui.import?: {
 - **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
   `H:MM:SS` and timecode. Starts are capped at 100 h, lengths at 1 h; a length must be ≥ 1 frame.
 - **Presets:** every row starts from the preset's params except the ones the template re-randomizes
-  (`ui.addAnother.reroll`). Rows are new instances: with the TikTok comment preset each row still gets its own
-  identity and stats (the preset's are tokcomment's placeholders). `add_motion_graphic` keeps WP3b's layering, where
-  the preset wins over the fill.
+  (`ui.addAnother.reroll`), through `mgInstanceParams` — the rule `add_motion_graphic` and Add another follow too.
+  Rows are new instances: with the TikTok comment preset each row still gets its own identity and stats (the
+  preset's are tokcomment's placeholders).
 - **Messages** are codes with values (`MG_IMPORT_TEXT`, `mgImportText` for English). The web app translates the
   templates; `pnpm i18n` lists them in the model strings, with the template-ignored reasons.
 - **Placement:** `scheduleMgImport` places included rows one after another from the start (a row's `start` resets
@@ -1508,10 +1535,16 @@ ui.import?: {
 - **`import_motion_graphics_csv`** `{projectId, csv, template ("id", "id:preset", …), delimiter?, startAt?
   (default 0: MCP has no playhead), track? (default V2), seed?, skipInvalid?, dryRun?, sequenceId?}`:
   - runs the same parser, planner and command builder against the engine catalogue entry;
-  - row errors refuse the call with every bad row in `details.rows`, or are skipped with `skipInvalid`;
-  - a refused transaction names its CSV row and line.
-  - MCP has no zod schemas, so only the JSON Schema checks run before the transaction; fill and schema refusals
-    come back from the transaction (first failing row).
+  - row errors refuse the call with every bad row in `details.rows`, or are skipped (and listed in `skipped`) with
+    `skipInvalid`;
+  - MCP has no zod schemas or fill hooks (it does not depend on `@jasper/mg-templates`), so the JSON Schema checks run
+    first and the engine's `clip.addMotionGraphic` — the same `resolveMgTemplateParams` checks the dialog previews
+    with: zod refinements, the fill hook, template media that is not in the project — checks the rest. A command
+    refusal of a row (`E_INVALID_PARAM`, or `E_NOT_FOUND` / `E_SCHEMA` on `params…`) is that row's error: the call
+    runs one transaction on the happy path; after a refusal, dry runs of the rows after the refused one find the
+    next (k refused rows: k + 1 runs, each shorter). Without `skipInvalid` the valid rows are only dry-run so every
+    bad row — coercion and command refusals — is reported together and nothing is imported;
+  - any other refusal (a locked track, a stale revision…) names its CSV row and line and imports nothing.
 - `TEMPLATES_GUIDE` and the server instructions mention both tools.
 
 ### Tests
@@ -1629,15 +1662,27 @@ missing one is a striped "Image … is not available" banner in preview and an e
   text-default emoji character, UTS #51), each with or without U+FE0F per the pack rule — a ZWJ sequence typed without
   VS16 (`🏳‍🌈`) still finds Twemoji's `1f3f3-fe0f-200d-1f308.svg`.
 - Emoji cannot be pinned in advance: the first verified fetch (PNG magic / SVG root, no HTML pages, no active SVG
-  content, size cap) records its SHA-256 in the index; later downloads (cache deleted) must match, else
+  content, size cap) records its SHA-256 in the index. The SVG check (`svgHasActiveContent`, `fetcher.ts`) reads the
+  markup with character references decoded (numeric with or without `;`, the named ones that spell schemes, twice
+  for `&amp;#…`) and refuses script / foreignObject / handler / iframe / embed / object elements under any prefix,
+  event-handler attributes (also `<svg/onload=…>`), `javascript:` / `vbscript:` with whitespace or control characters
+  inside, `href` / `xlink:href` / `src` that are not `#id`, `url(…)` that is not `url(#id)`, `@import`,
+  `<?xml-stylesheet` and `<!ENTITY`. Later downloads (cache deleted) must match, else
   `ASSET_HASH_MISMATCH` — a changed upstream needs a pack version bump in the override, which starts a new
   directory and a new bake key. `fe0f: try-both` tries the full sequence, then the one without U+FE0F (only a 404
   moves on).
 - Limits: per-host concurrency 4, per attempt timeout 30 s (fonts) / 15 s (emoji), size caps 16 MB / 1 MB (declared
   `content-length` and while streaming), 2 retries with 300 ms doubling backoff for network errors, timeouts, 5xx,
   408 and 429 only. Concurrent requests for one file share one download. Prefetch runs ≤ 8 emoji at a time.
+- Prefetch fetches at most `REMOTE_PREFETCH_MAX_EMOJI` (4,096, `@jasper/api`) different emoji per pack per call — a
+  render's whole document (the planner calls the service directly) or the editor's check (the HTTP route's schema
+  takes the same number). Unicode's fully-qualified emoji with every skin-tone and ZWJ form number ≈3,800 (basis:
+  `emoji-test.txt` of Unicode 15.1–16.0), so a real project never reaches it; any emoji over it is reported missing
+  by name (`PREFETCH_LIMIT`, not retryable), which blocks the export through `TEMPLATE_ASSETS_UNAVAILABLE`. Before,
+  the 513th and later emoji of a pack were neither fetched nor reported.
 - Errors are `{code, message, detail?, retryable}`: `REMOTE_ASSET_UNKNOWN` (404), `REMOTE_ASSETS_OFF` (409),
   `DOWNLOAD_NOT_FOUND` (404), `DOWNLOAD_FAILED` / `DOWNLOAD_TIMEOUT` (502 / 504, retryable), `DOWNLOAD_TOO_LARGE`,
+  `PREFETCH_LIMIT` (a prefetch's emoji cap, above),
   `ASSET_HASH_MISMATCH`, `ASSET_BAD_CONTENT` (502), `ASSET_CACHE_WRITE` (500, retryable). Failures are never cached
   (`no-store`).
 - `JASPER_REMOTE_MANIFEST=<file>` replaces the shipped base manifest (tests use an empty one so they never reach the
@@ -1645,6 +1690,10 @@ missing one is a striped "Image … is not available" banner in preview and an e
   log line. The override still applies on top.
 - The manifest override is re-read when its size or mtime changes; an invalid or oversized (> 4 MB) override is
   ignored and reported (`GET /api/remote-assets` → `manifest.override`), never fatal.
+- Every emoji and remote image file is served with `Content-Security-Policy: sandbox; default-src 'none';
+  style-src 'unsafe-inline'; img-src data:` (`REMOTE_IMAGE_CSP`) and `X-Content-Type-Options: nosniff`, so an SVG
+  opened from the engine origin can neither run scripts nor load anything, even one cached before the check above
+  was hardened.
 - Serving: the routes are under `/fonts/`, so session auth, signed URLs for the headless browser (`UrlSigner`
   `SIGNABLE`), the dev proxy and the service worker apply unchanged; emoji keys are validated
   (`graphemeOfEmojiKey`: canonical lower-hex, one emoji grapheme) before anything is fetched, and only the manifest's

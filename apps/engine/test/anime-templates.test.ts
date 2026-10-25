@@ -180,6 +180,50 @@ describe('templates that are not installed block every export path (S11:ATP-010,
 		});
 	});
 
+	it('a clip inside a nested sequence blocks too (a pending social-comment card, or a missing template)', async () => {
+		const b = build();
+		const ids = createCounterIdSource(500);
+		const nested = applyTransaction(
+			b.doc,
+			{
+				label: 'nest',
+				origin: 'user',
+				sequenceId: b.seqId,
+				commands: [{ type: 'clip.nest', clipIds: [b.anime], name: 'Nested card' }],
+			},
+			{ ids, now: () => 't', revision: 1, registries: defaultRegistries(mgRegistry) },
+		);
+		if (!nested.result.ok) throw new Error(JSON.stringify(nested.result.errors));
+		const doc = JSON.parse(JSON.stringify(nested.document)) as ProjectDocument;
+		const inner = Object.entries(doc.sequences).find(([id]) => id !== b.seqId);
+		if (!inner) throw new Error('clip.nest made no sequence');
+		const innerSeq = inner[1];
+		const clip = Object.values(innerSeq.clips).find((c) => c.kind === 'motion-graphic') as unknown as {
+			template: { id: string; version: number };
+			params: Record<string, unknown>;
+		};
+		expect(clip, 'the nested sequence holds the motion graphic').toBeDefined();
+		// the top-level sequence only holds the nest clip (and the fframes clip)
+		expect(
+			Object.values(doc.sequences[b.seqId]!.clips).filter((c) => c.kind === 'motion-graphic'),
+		).toHaveLength(1);
+		const pending = SOCIAL_VARIANTS.find((v) => !SOCIAL_COMMENT_READY_VARIANTS.includes(v));
+		let expected: string;
+		if (pending) {
+			clip.template = { id: 'social-comment', version: 1 };
+			clip.params = { variant: pending };
+			expected = `social-comment@1 (${VARIANT_LABELS[pending]} card)`;
+		} else {
+			// every card is drawn: a template this build lacks stands in for the pending card
+			clip.template = { id: 'retired-reveal', version: 7 };
+			expected = 'retired-reveal@7';
+		}
+		await expect(plan(doc, b.seqId, { still: true })).rejects.toMatchObject({
+			code: 'TEMPLATE_NOT_INSTALLED',
+			message: expect.stringContaining(expected),
+		});
+	});
+
 	it('POST /api/exports and /api/exports/plan answer 409; a still job fails with the same code', async () => {
 		const b = build();
 		const doc = withMissing(b);

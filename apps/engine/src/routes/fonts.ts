@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { asRemoteAssetError, type RemoteAssetError } from '../remote-assets/fetcher.ts';
+import { asRemoteAssetError, REMOTE_IMAGE_CSP, type RemoteAssetError } from '../remote-assets/fetcher.ts';
 import { serveFile } from '../tools/http.ts';
 import { fail, guarded } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -43,7 +43,11 @@ export default async function fontsRoutes(app: FastifyInstance): Promise<void> {
 					// remote images of the manifest (`images/<id>-<hash>.<format>`: platform default avatars…)
 					if (rest.startsWith('images/')) {
 						const img = await remoteAssets.ensureImageFile(rest.slice('images/'.length));
-						return serveFile(req, reply, img.path, { cache: 'immutable', contentType: img.contentType });
+						return serveFile(req, reply, img.path, {
+							cache: 'immutable',
+							contentType: img.contentType,
+							extraHeaders: { 'content-security-policy': REMOTE_IMAGE_CSP },
+						});
 					}
 					const parts = rest.slice('emoji/'.length).split('/');
 					if (parts.length !== 3) return fail(reply, 404, 'NOT_FOUND', 'Unknown emoji image');
@@ -56,7 +60,13 @@ export default async function fontsRoutes(app: FastifyInstance): Promise<void> {
 						return fail(reply, 404, 'NOT_FOUND', 'Unknown emoji image');
 					}
 					const img = await remoteAssets.ensureEmojiFile(pack, version, parts[2]!);
-					return serveFile(req, reply, img.path, { cache: 'immutable', contentType: img.contentType });
+					// SVG packs (Twemoji…) are markup served from the engine origin: no scripts, nothing external
+					// (on top of the download check), and never sniffed as anything else (serveFile's nosniff).
+					return serveFile(req, reply, img.path, {
+						cache: 'immutable',
+						contentType: img.contentType,
+						extraHeaders: { 'content-security-policy': REMOTE_IMAGE_CSP },
+					});
 				} catch (e) {
 					const err = asRemoteAssetError(e);
 					return reply

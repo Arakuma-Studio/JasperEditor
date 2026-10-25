@@ -214,6 +214,63 @@ describe('catalogue and routes', () => {
 	});
 });
 
+describe('SVG emoji served from the engine origin', () => {
+	it('carry a CSP without scripts or external loads, and nosniff (PNG emoji and remote images too)', async () => {
+		const appdir = tempAppdir();
+		const m = fixtureManifest(server.url);
+		writeOverride(appdir, {
+			...m,
+			emojiPacks: [
+				...m.emojiPacks,
+				{
+					id: 'twemoji',
+					name: 'Twemoji',
+					version: '1',
+					urlTemplate: `${server.url}/tw/{cp}.svg`,
+					fe0f: 'strip',
+					format: 'svg',
+					pixelSize: null,
+					licence: 'test fixture',
+					attribution: null,
+				},
+			],
+		});
+		server.routes.set('/tw/1f600.svg', {
+			body: Buffer.from(
+				'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><defs><linearGradient id="g"/></defs><circle fill="url(#g)" cx="18" cy="18" r="18"/><use xlink:href="#g"/></svg>',
+			),
+			contentType: 'image/svg+xml',
+		});
+		const base = join(appdir, 'base-manifest.json');
+		writeFileSync(base, JSON.stringify({ version: 1, fonts: [], emojiPacks: [] }));
+		const app = await makeApp({ appdir, token: TOKEN, env: { JASPER_REMOTE_MANIFEST: base } });
+		const IMAGE_FILE = `/fonts/images/x-default-avatar-${sha256(AVATAR_BYTES).slice(0, 16)}.jpeg`;
+		for (const [path, type] of [
+			['/fonts/emoji/twemoji/1/1f600.svg', 'image/svg+xml'],
+			['/fonts/emoji/apple/1/1f600.png', 'image/png'],
+			[IMAGE_FILE, 'image/jpeg'],
+		] as const) {
+			const r = await app.inject({ method: 'GET', url: path, headers: AUTH });
+			expect(r.statusCode, path).toBe(200);
+			expect(r.headers['content-type'], path).toContain(type);
+			expect(r.headers['content-security-policy'], path).toBe(
+				"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+			);
+			expect(r.headers['x-content-type-options'], path).toBe('nosniff');
+		}
+		// an SVG with entity-encoded active content is refused at download, never served
+		server.routes.set('/tw/1f680.svg', {
+			body: Buffer.from(
+				'<svg xmlns="http://www.w3.org/2000/svg"><a href="&#106;avascript:alert(1)"><circle r="9"/></a></svg>',
+			),
+			contentType: 'image/svg+xml',
+		});
+		const bad = await app.inject({ method: 'GET', url: '/fonts/emoji/twemoji/1/1f680.svg', headers: AUTH });
+		expect(bad.statusCode).toBe(502);
+		expect(bad.json()).toMatchObject({ code: 'ASSET_BAD_CONTENT' });
+	});
+});
+
 describe('agents need the user to turn network use on', () => {
 	it('an agent switching it on is asked about in the editor; switching it off is not', async () => {
 		const app = await appWithFixtures({ editorKey: 'editor-key' });
