@@ -215,8 +215,15 @@ describe('social-comment@1 Instagram cards', () => {
 	it("avatars: Instagram's default look for null, initials from the handle for a generated one, showProfile hides it", () => {
 		const d = render(at(post, 100));
 		const def = q(d.container, '[data-social-avatar="default"]')!;
-		expect(def.style.background).toMatch(/#C7C7C7|rgb\(199, 199, 199\)/i);
-		expect(def.innerHTML).toContain(INSTAGRAM_DEFAULT_AVATAR.shoulders);
+		const paths = [...def.querySelectorAll('path')].map((el) => [
+			el.getAttribute('d'),
+			el.getAttribute('fill'),
+		]);
+		expect(paths).toEqual([
+			[INSTAGRAM_DEFAULT_AVATAR.disc, '#C7C7C7'],
+			[INSTAGRAM_DEFAULT_AVATAR.head, '#FFFFFF'],
+			[INSTAGRAM_DEFAULT_AVATAR.shoulders, '#FFFFFF'],
+		]);
 		d.unmount();
 		const g = render(at({ ...post, avatar: { generated: 3 }, handle: 'zed.wolf' }, 100));
 		expect(q(g.container, '[data-social-avatar="generated"]')).not.toBeNull();

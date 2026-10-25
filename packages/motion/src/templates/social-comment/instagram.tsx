@@ -29,35 +29,30 @@ const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
 /**
  * Instagram's default ("no photo") avatar: a white head-and-shoulders figure on a neutral grey disc. Instagram serves
  * its own only through signed, expiring CDN URLs (WP5), so it is drawn here as a vector in the same style [E]: the
- * head a circle above the centre, the shoulders a dome cut by the disc.
+ * head a circle above the centre, the shoulders a dome (radius 17) whose foot follows the disc. The disc is SVG geometry,
+ * not a CSS rounded clip, so its edge rasterises the same in every render (preview, still, frames).
  */
 function InstagramDefaultAvatar({ size, style }: { size: number; style?: CSSProperties }) {
+	const a = INSTAGRAM_DEFAULT_AVATAR;
 	return (
-		<div
-			data-social-avatar="default"
-			style={{
-				width: size,
-				height: size,
-				borderRadius: '50%',
-				overflow: 'hidden',
-				flexShrink: 0,
-				background: INSTAGRAM_DEFAULT_AVATAR.background,
-				...style,
-			}}
-		>
+		<div data-social-avatar="default" style={{ width: size, height: size, flexShrink: 0, ...style }}>
 			<svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-				<circle cx="24" cy="18.6" r="8.4" fill={INSTAGRAM_DEFAULT_AVATAR.figure} />
-				<path d={INSTAGRAM_DEFAULT_AVATAR.shoulders} fill={INSTAGRAM_DEFAULT_AVATAR.figure} />
+				<path d={a.disc} fill={a.background} />
+				<path d={a.head} fill={a.figure} />
+				<path d={a.shoulders} fill={a.figure} />
 			</svg>
 		</div>
 	);
 }
 
-/** The default avatar's colours and shoulder path (48 × 48 box). */
+/** The default avatar's colours and paths (48 × 48 box). */
 export const INSTAGRAM_DEFAULT_AVATAR = {
 	background: '#C7C7C7',
 	figure: '#FFFFFF',
-	shoulders: 'M7.2 48C7.2 37.4 14.7 30.4 24 30.4S40.8 37.4 40.8 48Z',
+	disc: 'M0 24a24 24 0 1 0 48 0a24 24 0 1 0 -48 0Z',
+	head: 'M15.6 18.6a8.4 8.4 0 1 0 16.8 0a8.4 8.4 0 1 0 -16.8 0Z',
+	// the dome of a radius-17 circle centred at (24, 47.5), closed along the disc between their intersections
+	shoulders: 'M7.964 41.856A17 17 0 0 1 40.036 41.856A24 24 0 0 1 7.964 41.856Z',
 } as const;
 
 /** The avatar of an Instagram card: the user's picture, a generated one, or Instagram's default look (`null`). */

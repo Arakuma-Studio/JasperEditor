@@ -431,6 +431,11 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				...browserOpts,
 			});
 			const differing = frames.filter((f) => !stills.get(f)!.equals(out.get(f)!));
+			// keep the differing pair for inspection
+			for (const f of differing) {
+				writeFileSync(join(work, `${c.name}_f${f}_still.png`), stills.get(f)!);
+				writeFileSync(join(work, `${c.name}_f${f}_frames.png`), out.get(f)!);
+			}
 			expect(differing, c.name).toEqual([]);
 			expect(stills.get(0)!.equals(stills.get(45)!)).toBe(false);
 		}
