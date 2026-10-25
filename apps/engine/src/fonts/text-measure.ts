@@ -34,7 +34,12 @@ const ResultSchema = z.array(
 );
 
 type Request = { key: string; job: TextMeasureJob };
-type Live = { browser: SharedRenderBrowser; page: MeasurePage; close(): Promise<void>; fonts: Map<string, string> };
+type Live = {
+	browser: SharedRenderBrowser;
+	page: MeasurePage;
+	close(): Promise<void>;
+	fonts: Map<string, string>;
+};
 type MeasurePage = {
 	evaluate<T>(fn: (arg: string) => T | Promise<T>, arg: string): Promise<T>;
 };
@@ -72,7 +77,10 @@ export class HeadlessTextMeasurer {
 	 * The faces of a content as the export snapshot resolves them (`FontCatalogService.resolve`: the family's file,
 	 * else the fallback family's), each with the file the page loads; null when a face has no file here.
 	 */
-	facesOf(content: TextContent, fonts: Readonly<Record<string, FontRef>>): (MeasureFace & { path: string })[] {
+	facesOf(
+		content: TextContent,
+		fonts: Readonly<Record<string, FontRef>>,
+	): (MeasureFace & { path: string })[] {
 		const out = new Map<string, MeasureFace & { path: string }>();
 		for (const s of contentStyles(content)) {
 			const font = fonts[s.fontId];
@@ -100,7 +108,8 @@ export class HeadlessTextMeasurer {
 		const b = { width: box.autoSize === 'width' ? 0 : box.width, autoSize: box.autoSize };
 		// Font ids are not part of the key: a transaction that creates its font gets a new id every round.
 		const family = (id: unknown) => (typeof id === 'string' ? (fonts[id]?.family ?? id) : id);
-		const unId = (st: Record<string, unknown>) => ('fontId' in st ? { ...st, fontId: family(st.fontId) } : st);
+		const unId = (st: Record<string, unknown>) =>
+			'fontId' in st ? { ...st, fontId: family(st.fontId) } : st;
 		const key = JSON.stringify([
 			content.text,
 			unId(content.style as unknown as Record<string, unknown>),
@@ -112,7 +121,12 @@ export class HeadlessTextMeasurer {
 		return {
 			key,
 			job: {
-				content: { text: content.text, style: content.style, runs: content.runs, paragraphs: content.paragraphs },
+				content: {
+					text: content.text,
+					style: content.style,
+					runs: content.runs,
+					paragraphs: content.paragraphs,
+				},
 				box: { width: box.width, autoSize: box.autoSize },
 				faces: faces.map(({ path: _p, ...f }) => f),
 			},
@@ -201,7 +215,7 @@ export class HeadlessTextMeasurer {
 			const parsed = ResultSchema.safeParse(raw);
 			if (!parsed.success || parsed.data.length !== batch.length)
 				throw new Error('The text measuring page returned an invalid result');
-			batch.forEach((r, k) => this.remember(r.key, parsed.data[k] ?? null));
+			for (const [k, r] of batch.entries()) this.remember(r.key, parsed.data[k] ?? null);
 		}
 		return true;
 	}

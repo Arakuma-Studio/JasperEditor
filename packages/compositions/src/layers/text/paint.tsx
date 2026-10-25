@@ -35,7 +35,15 @@ import {
 	type TextStyle,
 	textStrokeExtent,
 } from '@jasper/project';
-import { type CSSProperties, Fragment, type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react';
+import {
+	type CSSProperties,
+	Fragment,
+	type ReactNode,
+	useId,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from 'react';
 import { rgbaCss } from '../../metadata.ts';
 
 /** What one copy of the text paints. */
@@ -137,7 +145,8 @@ export function planTextPaint(styles: readonly TextStyle[], fauxBoldPx = 0): Tex
 			const k = shadowKey(sh);
 			if (!shadows.has(k)) shadows.set(k, sh);
 		}
-		for (const d of drawnStrokes(s)) bands.set(`${d.slot}:${d.position}`, { slot: d.slot, position: d.position });
+		for (const d of drawnStrokes(s))
+			bands.set(`${d.slot}:${d.position}`, { slot: d.slot, position: d.position });
 		strokeExtent = Math.max(strokeExtent, textStrokeExtent(s));
 	}
 	const list = [...bands.values()].sort((a, b) => b.slot - a.slot || a.position.localeCompare(b.position));
@@ -270,7 +279,17 @@ export function TileFilter({
 	for (let k = 1; k < parts.length; k++) {
 		const name = `s${k}`;
 		prim.push(
-			<feComposite key={name} in={acc!} in2={parts[k]} operator="arithmetic" k1={0} k2={1} k3={1} k4={0} result={name} />,
+			<feComposite
+				key={name}
+				in={acc!}
+				in2={parts[k]}
+				operator="arithmetic"
+				k1={0}
+				k2={1}
+				k3={1}
+				k4={0}
+				result={name}
+			/>,
 		);
 		acc = name;
 	}

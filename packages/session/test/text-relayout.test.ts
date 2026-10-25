@@ -1,13 +1,13 @@
 // spec 13 SH-004: the session measures text the measurer could not size yet (clips made headless, fonts loading)
 // as soon as it can — system transactions, no History entries — and undo / redo keep working around them.
 import {
+	applyTransaction,
 	type Clip,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
 	type ProjectDocument,
 	type TextMeasurer,
-	applyTransaction,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { EditorSession } from '../src/index.ts';
@@ -52,7 +52,16 @@ function headlessDoc(): { doc: ProjectDocument; clipId: string } {
 			label: 'agent',
 			origin: 'user',
 			sequenceId: seqId,
-			commands: [{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style: { sizePx: 100 } }, ref: '$t' }],
+			commands: [
+				{
+					type: 'clip.addText',
+					at: 0,
+					duration: 30,
+					track: 'V1',
+					content: { text: 'Hello', style: { sizePx: 100 } },
+					ref: '$t',
+				},
+			],
 		},
 		{ ids, now: NOW, revision: 0, registries: defaultRegistries() },
 	);
@@ -96,7 +105,16 @@ describe('pending text relayout (spec 13 SH-004)', () => {
 		const r = s.apply({
 			label: 'Add Text',
 			origin: 'user',
-			commands: [{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style: { sizePx: 100 } }, ref: '$t' }],
+			commands: [
+				{
+					type: 'clip.addText',
+					at: 0,
+					duration: 30,
+					track: 'V1',
+					content: { text: 'Hello', style: { sizePx: 100 } },
+					ref: '$t',
+				},
+			],
 		});
 		if (!r.ok) throw new Error('add text');
 		const clipId = r.refs.$t!;
@@ -104,7 +122,11 @@ describe('pending text relayout (spec 13 SH-004)', () => {
 		ready();
 		await tick();
 		expect(clipOf(s, clipId).box.width).toBe(250);
-		s.apply({ label: 'Edit', origin: 'user', commands: [{ type: 'clip.update', clipId, patch: { content: { text: 'Hello world' } } }] });
+		s.apply({
+			label: 'Edit',
+			origin: 'user',
+			commands: [{ type: 'clip.update', clipId, patch: { content: { text: 'Hello world' } } }],
+		});
 		expect(clipOf(s, clipId).box.width).toBe(550);
 		expect(s.undo().ok).toBe(true);
 		expect(clipOf(s, clipId).box.width).toBe(250);

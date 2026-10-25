@@ -303,9 +303,13 @@ export function TypesetText({
 		if (!plan.bands.length) return [fill];
 		if (plan.filter) return [{ g, kind: 'tiles', output: 'all' }];
 		return [
-			...plan.bands.filter((b) => b.position === 'outside').map((band) => ({ g, kind: 'band' as const, band })),
+			...plan.bands
+				.filter((b) => b.position === 'outside')
+				.map((band) => ({ g, kind: 'band' as const, band })),
 			fill,
-			...plan.bands.filter((b) => b.position === 'center').map((band) => ({ g, kind: 'band' as const, band })),
+			...plan.bands
+				.filter((b) => b.position === 'center')
+				.map((band) => ({ g, kind: 'band' as const, band })),
 		];
 	};
 	const visible = placed.filter((g) => g.xf.opacity > 0);
@@ -395,7 +399,9 @@ export function TypesetText({
 								transformOrigin: `0 ${baseline}px`,
 							}
 						: {}),
-					...(variationSettings(s, g.xf.axes) ? { fontVariationSettings: variationSettings(s, g.xf.axes) } : {}),
+					...(variationSettings(s, g.xf.axes)
+						? { fontVariationSettings: variationSettings(s, g.xf.axes) }
+						: {}),
 					...paintCss(ps, mode, fauxBold),
 				}}
 			>

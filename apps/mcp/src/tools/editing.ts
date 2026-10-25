@@ -447,7 +447,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add text',
 			description:
-				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour\'s alpha. The box follows the glyph metrics of the font (measured in the editor or the engine\'s render browser; `layoutPending` marks an estimate). Preview and every export draw the same.',
+				"Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour's alpha. The box follows the glyph metrics of the font (measured in the editor or the engine's render browser; `layoutPending` marks an estimate). Preview and every export draw the same.",
 			input: {
 				projectId: ProjectIdArg,
 				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
@@ -481,7 +481,12 @@ export function registerEditingTools(ctx: ToolContext): void {
 						angleDeg: z.number().min(-3600).max(3600).optional().describe('Default 90 (down)'),
 						distancePx: z.number().min(0).max(10000).optional().describe('Default 0'),
 						blurPx: z.number().min(0).max(10000).optional().describe('Default 0'),
-						spreadPx: z.number().min(0).max(10000).optional().describe('Growth before the blur (Premiere Size); default 0'),
+						spreadPx: z
+							.number()
+							.min(0)
+							.max(10000)
+							.optional()
+							.describe('Growth before the blur (Premiere Size); default 0'),
 					})
 					.optional()
 					.describe('Drop shadow of the glyphs and strokes'),

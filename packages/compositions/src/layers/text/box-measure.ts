@@ -115,7 +115,13 @@ export function facesFor(
 		const url = faceUrl(font, s.weight, s.italic);
 		if (url === 'pending') return null;
 		if (url)
-			out.set(key, { fontId: font.id, family: font.family, weight: s.weight, style: s.italic ? 'italic' : 'normal', url });
+			out.set(key, {
+				fontId: font.id,
+				family: font.family,
+				weight: s.weight,
+				style: s.italic ? 'italic' : 'normal',
+				url,
+			});
 	}
 	return [...out.values()];
 }
@@ -159,7 +165,11 @@ export function createDomTextMeasurer(faceUrl: FaceUrlResolver): DomTextMeasurer
 }
 
 /** One measurement of the engine's batch (`__jasperTextMeasure.measure`). */
-export type TextMeasureJob = { content: TextContent; box: Pick<TextBox, 'width' | 'autoSize'>; faces: MeasureFace[] };
+export type TextMeasureJob = {
+	content: TextContent;
+	box: Pick<TextBox, 'width' | 'autoSize'>;
+	faces: MeasureFace[];
+};
 
 /**
  * Installs `window.__jasperTextMeasure` (the Remotion bundle's page, used by the engine's headless measurer):
@@ -172,7 +182,8 @@ export function installTextMeasureHook(): void {
 	w.__jasperTextMeasure = {
 		async measure(jobs: TextMeasureJob[]): Promise<(MeasuredBox | null)[]> {
 			const all = new Map<string, MeasureFace>();
-			for (const j of jobs) for (const f of j.faces) all.set(`${f.family}|${f.weight}|${f.style}|${f.url}`, f);
+			for (const j of jobs)
+				for (const f of j.faces) all.set(`${f.family}|${f.weight}|${f.style}|${f.url}`, f);
 			await whenFacesSettled([...all.values()]);
 			if (document.fonts?.ready) await document.fonts.ready;
 			return jobs.map((j) => {

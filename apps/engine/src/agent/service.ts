@@ -562,9 +562,7 @@ export class AgentService {
 							...(textMeasurer ? { textMeasurer } : {}),
 						},
 					);
-				const { document, result } = this.opts.textMeasurer
-					? await this.opts.textMeasurer.apply(run)
-					: run();
+				const { document, result } = this.opts.textMeasurer ? await this.opts.textMeasurer.apply(run) : run();
 				if (!result.ok || tx.dryRun || document === doc) return result;
 				const envelope = makeEnvelope(document, {
 					revision: result.revision,

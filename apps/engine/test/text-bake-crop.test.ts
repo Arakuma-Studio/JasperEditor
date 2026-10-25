@@ -40,7 +40,11 @@ function caption(o: { measured: boolean; extra?: Command[] }): RenderVisualClip 
 			origin: 'user',
 			sequenceId: seqId,
 			commands: [
-				{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: 1080, height: 1920 } } as Command,
+				{
+					type: 'sequence.updateSettings',
+					sequenceId: seqId,
+					settings: { width: 1080, height: 1920 },
+				} as Command,
 				{
 					type: 'clip.addText',
 					at: 0,
@@ -122,7 +126,13 @@ describe('text bake crop (spec 13 SH-004)', () => {
 							style: {
 								sizePx: 98,
 								strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
-								shadow: { color: [0.13, 0.11, 0.35, 0.8], angleDeg: 90, distancePx: 0, blurPx: 250, spreadPx: 26.87 },
+								shadow: {
+									color: [0.13, 0.11, 0.35, 0.8],
+									angleDeg: 90,
+									distancePx: 0,
+									blurPx: 250,
+									spreadPx: 26.87,
+								},
 							},
 						},
 					},

@@ -882,7 +882,11 @@ export function buildRenderSnapshot(
 					break;
 				}
 				case 'text': {
-					source = { text: c.content, box: c.box, ...(c.layoutPending ? { layoutPending: true as const } : {}) };
+					source = {
+						text: c.content,
+						box: c.box,
+						...(c.layoutPending ? { layoutPending: true as const } : {}),
+					};
 					if (c.textAnimation && (c.textAnimation.in || c.textAnimation.out)) {
 						const w = resolveTextAnimationWindows(c);
 						source.animation = {

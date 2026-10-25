@@ -65,8 +65,8 @@ import {
 } from './sound/repair.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
-import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
+import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
 	contentSpanFlicks,
@@ -891,7 +891,8 @@ export function invariantCheckers(
 		}
 		// spec 13 SH-004: stroke lists and shadow spreads of the clip's text styles.
 		for (const st of clipTextStyles(c, cw))
-			for (const m of textStyleIssues(st.style)) issues.push(inv('INV-012', `Clip ${c.id} text style ${m}`, st.path));
+			for (const m of textStyleIssues(st.style))
+				issues.push(inv('INV-012', `Clip ${c.id} text style ${m}`, st.path));
 		// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
 		// presets are preserved and skipped by the renderers).
 		const ta = r.textAnimation as Record<string, { durationFrames?: unknown } | null | undefined> | undefined;
@@ -1343,7 +1344,12 @@ export function runInvariants(
 	(doc.settings.captionStylePresets ?? []).forEach((p, i) => {
 		for (const m of textStyleIssues(p.style))
 			issues.push(
-				inv('INV-012', `Caption style preset ${p.id} ${m}`, ['settings', 'captionStylePresets', String(i), 'style']),
+				inv('INV-012', `Caption style preset ${p.id} ${m}`, [
+					'settings',
+					'captionStylePresets',
+					String(i),
+					'style',
+				]),
 			);
 	});
 	for (const f of Object.values(doc.fonts)) {
@@ -1856,7 +1862,8 @@ export function repairDocument(
 	}
 	// spec 13 SH-004: stroke lists beyond the limit are cut, shadow spreads clamped to 0…MAX_SHADOW_SPREAD_PX.
 	for (const st of storedTextStyles(doc))
-		for (const n of repairTextStyle(st.style)) note('repair-text-style', st.entity, `${st.path.join('.')}: ${n}`);
+		for (const n of repairTextStyle(st.style))
+			note('repair-text-style', st.entity, `${st.path.join('.')}: ${n}`);
 	// malformed animator data is dropped, out-of-range values clamped.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		for (const c of Object.values(seq.clips))

@@ -947,7 +947,14 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 				// spec 13 SH-004: the other strokes stay; 0 removes the only stroke, or hides the first of several.
 				return {
 					content: {
-						style: { strokes: w > 0 ? [{ ...cur, widthPx: w }, ...rest] : rest.length ? [{ ...cur, widthPx: 0 }, ...rest] : [] },
+						style: {
+							strokes:
+								w > 0
+									? [{ ...cur, widthPx: w }, ...rest]
+									: rest.length
+										? [{ ...cur, widthPx: 0 }, ...rest]
+										: [],
+						},
 					},
 				};
 			},
@@ -971,7 +978,10 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 				return {
 					content: {
 						style: {
-							strokes: [{ ...cur, widthPx: cur.widthPx > 0 ? cur.widthPx : 4, color: v }, ...otherStrokes(clip)],
+							strokes: [
+								{ ...cur, widthPx: cur.widthPx > 0 ? cur.widthPx : 4, color: v },
+								...otherStrokes(clip),
+							],
 						},
 					},
 				};

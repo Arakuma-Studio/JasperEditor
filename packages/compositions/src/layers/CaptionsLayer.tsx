@@ -198,7 +198,8 @@ export function CaptionsLayer(layer: LayerProps) {
 			: {};
 	// spec 13 SH-004: the same paint passes as text clips (every stroke, shadow with spread), `text/paint.tsx`.
 	const styles = [style as unknown as TextStyle];
-	if (style.highlight.mode !== 'none') styles.push({ ...style, fill: style.highlight.color } as unknown as TextStyle);
+	if (style.highlight.mode !== 'none')
+		styles.push({ ...style, fill: style.highlight.color } as unknown as TextStyle);
 	const plan = planTextPaint(styles);
 	const render = (mode: PaintMode) => {
 		const fmt: Fmt = { i: false, b: false, u: false };

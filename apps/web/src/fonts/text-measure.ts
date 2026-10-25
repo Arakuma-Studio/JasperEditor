@@ -26,7 +26,10 @@ export function clipsWithChangedFaces(doc: ProjectDocument, prev: FontsState, ne
 	for (const seq of Object.values(doc.sequences))
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'text' || c.box.autoSize === 'none') continue;
-			const styles = [c.content.style, ...(c.content.runs ?? []).map((r) => ({ ...c.content.style, ...r.style }))];
+			const styles = [
+				c.content.style,
+				...(c.content.runs ?? []).map((r) => ({ ...c.content.style, ...r.style })),
+			];
 			const changed = styles.some((s) => {
 				const family = doc.fonts[s.fontId]?.family;
 				return !!family && url(prev, family, s.weight, s.italic) !== url(next, family, s.weight, s.italic);
@@ -47,6 +50,10 @@ export function followFontCatalog(session: EditorSession, measurer: DomTextMeasu
 		if (!before.catalog || !st.catalog || before.catalog === st.catalog) return;
 		const ids = clipsWithChangedFaces(session.getCommitted(), before, st);
 		if (ids.length)
-			session.apply({ label: 'Measure Text', origin: 'system', commands: [{ type: 'text.relayout', clipIds: ids }] });
+			session.apply({
+				label: 'Measure Text',
+				origin: 'system',
+				commands: [{ type: 'text.relayout', clipIds: ids }],
+			});
 	});
 }

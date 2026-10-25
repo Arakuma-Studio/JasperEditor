@@ -471,7 +471,8 @@ export function layoutText(
 	} catch {
 		m = null;
 	}
-	const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_MEASURED_SIDE;
+	const ok = (v: unknown): v is number =>
+		typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_MEASURED_SIDE;
 	if (m && ok(m.width) && ok(m.height)) {
 		if (box.autoSize === 'width') {
 			clip.box.width = m.width;
@@ -828,10 +829,12 @@ export const clipCoreHandlers = {
 		const targets: { seq: DSeq; clip: Draft<Extract<Clip, { kind: 'text' }>> }[] = [];
 		if (cmd.clipIds !== undefined) {
 			const ids = idList(cmd.clipIds);
-			if (ids.length === 0) h.fail('E_INVALID_PARAM', 'text.relayout needs at least one clip', { path: ['clipIds'] });
+			if (ids.length === 0)
+				h.fail('E_INVALID_PARAM', 'text.relayout needs at least one clip', { path: ['clipIds'] });
 			for (const id of ids) {
 				const { seq, clip } = h.clip(doc, id);
-				if (clip.kind !== 'text') h.fail('E_INVALID_PARAM', `${id} is not a text clip`, { path: ['clipIds'] });
+				if (clip.kind !== 'text')
+					h.fail('E_INVALID_PARAM', `${id} is not a text clip`, { path: ['clipIds'] });
 				// Measuring derives the box from the content: it is not an edit, locked tracks included.
 				targets.push({ seq, clip: clip as Draft<Extract<Clip, { kind: 'text' }>> });
 			}
@@ -840,7 +843,10 @@ export const clipCoreHandlers = {
 				for (const clip of Object.values(seq.clips))
 					if (clip.kind === 'text' && clip.layoutPending) targets.push({ seq, clip });
 		if (!h.ctx.textMeasurer && targets.length)
-			h.warn('W_LAYOUT_PENDING', 'No text measurer here: the boxes stay estimated until the editor measures them');
+			h.warn(
+				'W_LAYOUT_PENDING',
+				'No text measurer here: the boxes stay estimated until the editor measures them',
+			);
 		const pending: string[] = [];
 		for (const { seq, clip } of targets) {
 			if (!h.ctx.textMeasurer) continue;

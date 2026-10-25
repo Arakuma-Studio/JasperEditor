@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import {
 	applyTransaction,
 	type Clip,
-	createRandomIdSource,
 	createEmptyProject,
+	createRandomIdSource,
 	defaultRegistries,
 	type TextMeasurer,
 } from '@jasper/project';
@@ -38,7 +38,10 @@ function fakeDeps(o: { fail?: boolean } = {}) {
 							evaluate: async (_fn: unknown, json: string) => {
 								const jobs = JSON.parse(json) as Job[];
 								calls.push(jobs);
-								return jobs.map((j) => ({ width: j.content.text.length * j.content.style.sizePx * 0.5, height: 120 }));
+								return jobs.map((j) => ({
+									width: j.content.text.length * j.content.style.sizePx * 0.5,
+									height: 120,
+								}));
 							},
 						}),
 					},
@@ -64,7 +67,15 @@ function run(m: TextMeasurer) {
 			label: 't',
 			origin: 'user',
 			sequenceId: Object.keys(doc.sequences)[0]!,
-			commands: [{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style: { sizePx: 100 } } }],
+			commands: [
+				{
+					type: 'clip.addText',
+					at: 0,
+					duration: 30,
+					track: 'V1',
+					content: { text: 'Hello', style: { sizePx: 100 } },
+				},
+			],
 		},
 		{ ids, now: () => 't', revision: 0, registries: defaultRegistries(), textMeasurer: m },
 	);

@@ -12,7 +12,13 @@ import {
 import { Thumbnail } from '@remotion/player';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RENDER_OPTIONS, paintCss, planTextPaint, type RenderDoc, SequenceComposition } from '../src/index.ts';
+import {
+	DEFAULT_RENDER_OPTIONS,
+	paintCss,
+	planTextPaint,
+	type RenderDoc,
+	SequenceComposition,
+} from '../src/index.ts';
 
 const RED = [1, 0, 0, 1] as [number, number, number, number];
 const base: TextStyle = {
@@ -31,11 +37,17 @@ const base: TextStyle = {
 	allCaps: false,
 };
 const st = (o: Partial<TextStyle>): TextStyle => ({ ...base, ...o });
-const stroke = (widthPx: number, position: 'outside' | 'center' | 'inside', color = RED) => ({ color, widthPx, position });
+const stroke = (widthPx: number, position: 'outside' | 'center' | 'inside', color = RED) => ({
+	color,
+	widthPx,
+	position,
+});
 
 describe('paint plan', () => {
 	it('opaque fills with outside strokes, and centre strokes above them, take the fast path', () => {
-		expect(planTextPaint([st({ strokes: [stroke(4, 'outside'), stroke(10, 'outside')] })]).filter).toBe(false);
+		expect(planTextPaint([st({ strokes: [stroke(4, 'outside'), stroke(10, 'outside')] })]).filter).toBe(
+			false,
+		);
 		expect(planTextPaint([st({ strokes: [stroke(4, 'center'), stroke(10, 'outside')] })]).filter).toBe(false);
 		expect(planTextPaint([st({ fill: [1, 1, 1, 0.5], strokes: [stroke(4, 'center')] })]).filter).toBe(false);
 	});
@@ -44,7 +56,12 @@ describe('paint plan', () => {
 		expect(planTextPaint([st({ strokes: [stroke(4, 'inside')] })]).filter).toBe(true);
 		expect(planTextPaint([st({ fill: [1, 1, 1, 0.99], strokes: [stroke(4, 'outside')] })]).filter).toBe(true);
 		// a translucent run anywhere in the text
-		expect(planTextPaint([st({ strokes: [stroke(4, 'outside')] }), st({ fill: [0, 0, 1, 0.5], strokes: [stroke(4, 'outside')] })]).filter).toBe(true);
+		expect(
+			planTextPaint([
+				st({ strokes: [stroke(4, 'outside')] }),
+				st({ fill: [0, 0, 1, 0.5], strokes: [stroke(4, 'outside')] }),
+			]).filter,
+		).toBe(true);
 		expect(planTextPaint([st({ strokes: [stroke(10, 'outside'), stroke(4, 'center')] })]).filter).toBe(true);
 	});
 
@@ -67,16 +84,34 @@ describe('paint plan', () => {
 
 	it('paint CSS: centred stroke widths 2w (outside, inside) and w (centre); other spans draw nothing', () => {
 		const s = st({ strokes: [stroke(5, 'outside'), stroke(3, 'inside'), stroke(4, 'center')] });
-		expect(paintCss(s, { kind: 'band', slot: 0, position: 'outside' })).toMatchObject({ color: 'transparent', WebkitTextStroke: '10.000px rgba(255, 0, 0, 1)' });
-		expect(paintCss(s, { kind: 'band', slot: 1, position: 'inside' }).WebkitTextStroke).toBe('6.000px rgba(255, 0, 0, 1)');
-		expect(paintCss(s, { kind: 'band', slot: 2, position: 'center' }).WebkitTextStroke).toBe('4.000px rgba(255, 0, 0, 1)');
-		expect(paintCss(s, { kind: 'band', slot: 0, position: 'inside' }).WebkitTextStroke).toBe('0px transparent');
+		expect(paintCss(s, { kind: 'band', slot: 0, position: 'outside' })).toMatchObject({
+			color: 'transparent',
+			WebkitTextStroke: '10.000px rgba(255, 0, 0, 1)',
+		});
+		expect(paintCss(s, { kind: 'band', slot: 1, position: 'inside' }).WebkitTextStroke).toBe(
+			'6.000px rgba(255, 0, 0, 1)',
+		);
+		expect(paintCss(s, { kind: 'band', slot: 2, position: 'center' }).WebkitTextStroke).toBe(
+			'4.000px rgba(255, 0, 0, 1)',
+		);
+		expect(paintCss(s, { kind: 'band', slot: 0, position: 'inside' }).WebkitTextStroke).toBe(
+			'0px transparent',
+		);
 		expect(paintCss(s, { kind: 'mask' })).toMatchObject({ color: '#fff' });
-		expect(paintCss(s, { kind: 'fill' })).toMatchObject({ color: 'rgba(255, 255, 255, 1)', WebkitTextStroke: '0px transparent' });
+		expect(paintCss(s, { kind: 'fill' })).toMatchObject({
+			color: 'rgba(255, 255, 255, 1)',
+			WebkitTextStroke: '0px transparent',
+		});
 		// shadow silhouette: glyph + outer strokes (5) + spread (3), as a centred stroke of 2 × 8, opaque colour
-		const sh = st({ ...s, shadow: { color: [0, 0, 0, 0.5], angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: 3 } });
+		const sh = st({
+			...s,
+			shadow: { color: [0, 0, 0, 0.5], angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: 3 },
+		});
 		const key = planTextPaint([sh]).shadows[0]!.key;
-		expect(paintCss(sh, { kind: 'shadow', key })).toMatchObject({ color: 'rgba(0, 0, 0, 1)', WebkitTextStroke: '16.000px rgba(0, 0, 0, 1)' });
+		expect(paintCss(sh, { kind: 'shadow', key })).toMatchObject({
+			color: 'rgba(0, 0, 0, 1)',
+			WebkitTextStroke: '16.000px rgba(0, 0, 0, 1)',
+		});
 		expect(paintCss(sh, { kind: 'shadow', key: 'other' }).color).toBe('transparent');
 	});
 });
@@ -91,7 +126,11 @@ function snapshot(commands: Command[], captions = false): RenderDoc {
 		{ ids, now: () => 't', revision: 0, registries: defaultRegistries() },
 	);
 	if (!result.ok) throw new Error(JSON.stringify(result.errors));
-	return buildRenderSnapshot(document, seqId, { resolveMedia: () => null, resolveFont: () => null, ...(captions ? { captions: 'visible' as const } : {}) });
+	return buildRenderSnapshot(document, seqId, {
+		resolveMedia: () => null,
+		resolveFont: () => null,
+		...(captions ? { captions: 'visible' as const } : {}),
+	});
 }
 function frame(doc: RenderDoc, f = 5) {
 	return render(
@@ -107,11 +146,25 @@ function frame(doc: RenderDoc, f = 5) {
 	);
 }
 const addText = (style: Record<string, unknown>): Command =>
-	({ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style }, box: { width: 400, height: 100, autoSize: 'none' } }) as unknown as Command;
+	({
+		type: 'clip.addText',
+		at: 0,
+		duration: 30,
+		track: 'V1',
+		content: { text: 'Hello', style },
+		box: { width: 400, height: 100, autoSize: 'none' },
+	}) as unknown as Command;
 
 describe('text and caption layer structure', () => {
 	it('fast path: shadow layer, outside band copy, then the fill copy (the one text block)', () => {
-		const r = frame(snapshot([addText({ strokes: [stroke(6, 'outside')], shadow: { color: RED, angleDeg: 0, distancePx: 4, blurPx: 6, spreadPx: 2 } })]));
+		const r = frame(
+			snapshot([
+				addText({
+					strokes: [stroke(6, 'outside')],
+					shadow: { color: RED, angleDeg: 0, distancePx: 4, blurPx: 6, spreadPx: 2 },
+				}),
+			]),
+		);
 		const c = r.container;
 		expect(c.querySelectorAll('[data-text-block]')).toHaveLength(1);
 		expect(c.querySelectorAll('[data-text-copy="band"]')).toHaveLength(1);
@@ -127,7 +180,12 @@ describe('text and caption layer structure', () => {
 		const r = frame(snapshot([addText({ strokes: [stroke(6, 'inside'), stroke(4, 'outside')] })]));
 		const c = r.container;
 		// bands bottom first: the last stroke (slot 1) first
-		expect([...c.querySelectorAll('[data-text-tile]')].map((e) => e.getAttribute('data-text-tile'))).toEqual(['fill', 'mask', 'b1outside', 'b0inside']);
+		expect([...c.querySelectorAll('[data-text-tile]')].map((e) => e.getAttribute('data-text-tile'))).toEqual([
+			'fill',
+			'mask',
+			'b1outside',
+			'b0inside',
+		]);
 		const offsets = [...c.querySelectorAll('feOffset')].map((e) => Number(e.getAttribute('dx')));
 		const T = -offsets[0]!;
 		expect(T).toBeGreaterThan(400);

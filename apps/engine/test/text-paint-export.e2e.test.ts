@@ -74,7 +74,12 @@ describe.runIf(enabled)('text paint on every export path (REMOTION_E2E=1)', { ti
 		seqId = Object.keys(doc.sequences)[0]!;
 		const file = appdirPaths(appdir).projectFile(projectId);
 		mkdirSync(join(file, '..'), { recursive: true });
-		writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 0, savedAt: '2026-10-25T00:00:00.000Z', platform: 'test' })));
+		writeFileSync(
+			file,
+			JSON.stringify(
+				makeEnvelope(doc, { revision: 0, savedAt: '2026-10-25T00:00:00.000Z', platform: 'test' }),
+			),
+		);
 		engine = await startEngine({
 			appdir,
 			port: Number(process.env.JASPER_E2E_PORT ?? 0),
@@ -83,7 +88,9 @@ describe.runIf(enabled)('text paint on every export path (REMOTION_E2E=1)', { ti
 			env: {
 				PATH: process.env.PATH,
 				JASPER_TEXT_MEASURE: 'on',
-				...(process.env.JASPER_BROWSER_EXECUTABLE ? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE } : {}),
+				...(process.env.JASPER_BROWSER_EXECUTABLE
+					? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE }
+					: {}),
 			},
 		});
 		// a dev engine bundles the compositions on first use: build it before measuring
@@ -95,7 +102,11 @@ describe.runIf(enabled)('text paint on every export path (REMOTION_E2E=1)', { ti
 
 	const queue = () => coreServices(engine.app).queue;
 	const wait = async (id: string): Promise<EngineJob> => {
-		await until(() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''), 900_000, 250);
+		await until(
+			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
+			900_000,
+			250,
+		);
 		return queue().get(id)!;
 	};
 	const load = (): ProjectDocument =>
@@ -114,7 +125,11 @@ describe.runIf(enabled)('text paint on every export path (REMOTION_E2E=1)', { ti
 
 	it('headless text gets a measured box; its bake is cropped tight; hybrid, still and Remotion frames agree', async () => {
 		const tx = await agentTx([
-			{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { backgroundColor: [0.3, 0.32, 0.35, 1] } },
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: seqId,
+				settings: { backgroundColor: [0.3, 0.32, 0.35, 1] },
+			},
 			{ type: 'font.add', family: 'Source Sans 3', ref: '$f' },
 			{
 				type: 'clip.addText',
@@ -161,7 +176,9 @@ describe.runIf(enabled)('text paint on every export path (REMOTION_E2E=1)', { ti
 		const vc = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clip.id)!;
 		const rect = cropRect(vc, { f0: 0, f1: 30 }, { width: W, height: H, fps: snap.settings.fps })!;
 		expect(rect).not.toBeNull();
-		console.info(`[text-paint-export] box ${clip.box.width}×${clip.box.height}, bake rect ${rect.w}×${rect.h}`);
+		console.info(
+			`[text-paint-export] box ${clip.box.width}×${clip.box.height}, bake rect ${rect.w}×${rect.h}`,
+		);
 		// box + 2 × (ink + paint extent) + 2 × 2 px, even-aligned; the same clip with an estimated box keeps the 10 % bleed
 		expect(Math.abs(rect.h - (clip.box.height + 2 * (contentBleed(vc) ?? 0) + 4))).toBeLessThanOrEqual(2);
 		const pending = { ...vc, source: { ...(vc.source as object), layoutPending: true } } as typeof vc;
@@ -185,29 +202,57 @@ describe.runIf(enabled)('text paint on every export path (REMOTION_E2E=1)', { ti
 				encoderSpeed: 'fast',
 			},
 		};
-		const envelope = makeEnvelope(doc, { revision: 1, savedAt: '2026-10-25T00:00:00.000Z', platform: 'test' });
+		const envelope = makeEnvelope(doc, {
+			revision: 1,
+			savedAt: '2026-10-25T00:00:00.000Z',
+			platform: 'test',
+		});
 		const plan = (
-			await engine.app.inject({ method: 'POST', url: '/api/exports/plan', headers: { ...JSON_H, ...hostH() }, payload: { envelope, sequenceId: seqId, settings } })
+			await engine.app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: { ...JSON_H, ...hostH() },
+				payload: { envelope, sequenceId: seqId, settings },
+			})
 		).json();
 		expect(plan.path).toBe('hybrid');
-		const r = await engine.app.inject({ method: 'POST', url: '/api/exports', headers: { ...JSON_H, ...hostH() }, payload: { envelope, sequenceId: seqId, settings } });
+		const r = await engine.app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope, sequenceId: seqId, settings },
+		});
 		expect(r.statusCode, r.body).toBeLessThan(300);
 		const done = await wait(r.json().id);
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
 		const out = join(core.config.paths.rendersDir, done.id, 'output.mov');
 		const ref = join(tempAppdir('jasper-tp-ref-'), 'ref.png');
 		await core.remotion.renderStill({
-			inputProps: { doc: snap, options: { isPreview: false, useProxies: false, transparentBackground: false } },
+			inputProps: {
+				doc: snap,
+				options: { isPreview: false, useProxies: false, transparentBackground: false },
+			},
 			output: ref,
 			frame: 10,
 			signal: new AbortController().signal,
 		});
 		const share = within(decode(out, 10), decode(ref), 3);
-		const s = await engine.app.inject({ method: 'POST', url: '/api/stills', headers: { ...JSON_H, ...hostH() }, payload: { envelope, sequenceId: seqId, frame: 10 } });
+		const s = await engine.app.inject({
+			method: 'POST',
+			url: '/api/stills',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope, sequenceId: seqId, frame: 10 },
+		});
 		const stillJob = await wait(s.json().id);
 		expect(stillJob.state, JSON.stringify(stillJob.error)).toBe('succeeded');
-		const stillShare = within(decode(join(core.config.paths.rendersDir, stillJob.id, 'output.png')), decode(ref), 3);
-		console.info(`[text-paint-export] share within 3/255 of the Remotion frame: hybrid ${share.toFixed(4)}, still ${stillShare.toFixed(4)}`);
+		const stillShare = within(
+			decode(join(core.config.paths.rendersDir, stillJob.id, 'output.png')),
+			decode(ref),
+			3,
+		);
+		console.info(
+			`[text-paint-export] share within 3/255 of the Remotion frame: hybrid ${share.toFixed(4)}, still ${stillShare.toFixed(4)}`,
+		);
 		expect(share).toBeGreaterThanOrEqual(0.99); // as layer-bake.e2e: ProRes 4444 + native composite rounding
 		expect(stillShare).toBeGreaterThan(0.995);
 	});

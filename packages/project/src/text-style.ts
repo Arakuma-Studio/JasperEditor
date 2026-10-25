@@ -71,7 +71,13 @@ export function resolveTextShadow(shadow: TextStyle['shadow'] | undefined): Reso
 	const blur = finite(shadow.blurPx) ? Math.max(0, shadow.blurPx) : 0;
 	const spread = finite(shadow.spreadPx) ? Math.min(MAX_SHADOW_SPREAD_PX, Math.max(0, shadow.spreadPx)) : 0;
 	const round = (v: number) => Math.round(v * 1e6) / 1e6;
-	return { dx: round(Math.cos(angle) * d), dy: round(Math.sin(angle) * d), sigma: blur / 2, spreadPx: spread, color };
+	return {
+		dx: round(Math.cos(angle) * d),
+		dy: round(Math.sin(angle) * d),
+		sigma: blur / 2,
+		spreadPx: spread,
+		color,
+	};
 }
 
 /** Gaussian tails count up to 3 σ (beyond it a blurred edge is below 0.14 % of the shadow's alpha). */
@@ -139,17 +145,15 @@ export function clipTextStyles(c: Clip, cw: string[]): StoredTextStyle[] {
 		out.push({ style: x.style, entity: c.id, path: [...path, 'style'] });
 		for (const list of ['runs', 'paragraphs'] as const) {
 			const v = x[list];
-			if (Array.isArray(v))
-				v.forEach((r, i) =>
-					out.push({ style: (r as { style?: unknown })?.style, entity: c.id, path: [...path, list, String(i), 'style'] }),
-				);
+			if (!Array.isArray(v)) continue;
+			for (const [i, r] of v.entries())
+				out.push({ style: (r as { style?: unknown })?.style, entity: c.id, path: [...path, list, String(i), 'style'] });
 		}
 	};
 	if (c.kind === 'text') {
 		content(c.content, [...cw, 'content']);
-		(c.sourceTextKeyframes ?? []).forEach((k, i) =>
-			content(k.value, [...cw, 'sourceTextKeyframes', String(i), 'value']),
-		);
+		for (const [i, k] of (c.sourceTextKeyframes ?? []).entries())
+			content(k.value, [...cw, 'sourceTextKeyframes', String(i), 'value']);
 	} else if (c.kind === 'captions') out.push({ style: c.style, entity: c.id, path: [...cw, 'style'] });
 	return out;
 }
@@ -167,8 +171,7 @@ export function storedTextStyles(doc: ProjectDocument): StoredTextStyle[] {
 			if (t.styleDefaults)
 				out.push({ style: t.styleDefaults, entity: t.id, path: [...base, 'tracks', t.id, 'styleDefaults'] });
 	}
-	(doc.settings?.captionStylePresets ?? []).forEach((p, i) =>
-		out.push({ style: p.style, entity: p.id, path: ['settings', 'captionStylePresets', String(i), 'style'] }),
-	);
+	for (const [i, p] of (doc.settings?.captionStylePresets ?? []).entries())
+		out.push({ style: p.style, entity: p.id, path: ['settings', 'captionStylePresets', String(i), 'style'] });
 	return out;
 }

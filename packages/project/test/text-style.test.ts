@@ -61,11 +61,25 @@ describe('paint geometry', () => {
 	});
 
 	it('resolves the shadow: angle 0 = right, 90 = down, σ = blur / 2, spread clamped, transparent = none', () => {
-		const sh = resolveTextShadow({ color: [0, 0, 0, 0.8], angleDeg: 90, distancePx: 10, blurPx: 250, spreadPx: 26.87 });
+		const sh = resolveTextShadow({
+			color: [0, 0, 0, 0.8],
+			angleDeg: 90,
+			distancePx: 10,
+			blurPx: 250,
+			spreadPx: 26.87,
+		});
 		expect(sh).toMatchObject({ dx: 0, dy: 10, sigma: 125, spreadPx: 26.87, color: [0, 0, 0, 0.8] });
-		expect(resolveTextShadow({ color: red, angleDeg: 0, distancePx: 5, blurPx: 0 })).toMatchObject({ dx: 5, dy: 0, spreadPx: 0 });
-		expect(resolveTextShadow({ color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: -4 })!.spreadPx).toBe(0);
-		expect(resolveTextShadow({ color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: 1e9 })!.spreadPx).toBe(MAX_SHADOW_SPREAD_PX);
+		expect(resolveTextShadow({ color: red, angleDeg: 0, distancePx: 5, blurPx: 0 })).toMatchObject({
+			dx: 5,
+			dy: 0,
+			spreadPx: 0,
+		});
+		expect(
+			resolveTextShadow({ color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: -4 })!.spreadPx,
+		).toBe(0);
+		expect(
+			resolveTextShadow({ color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: 1e9 })!.spreadPx,
+		).toBe(MAX_SHADOW_SPREAD_PX);
 		expect(resolveTextShadow({ color: [0, 0, 0, 0], angleDeg: 0, distancePx: 0, blurPx: 0 })).toBeNull();
 		expect(resolveTextShadow(null)).toBeNull();
 	});
@@ -76,7 +90,9 @@ describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => 
 		expect(textStyleIssues({ shadow: { spreadPx: -1 } })).toHaveLength(1);
 		expect(textStyleIssues({ shadow: { spreadPx: MAX_SHADOW_SPREAD_PX + 1 } })).toHaveLength(1);
 		expect(textStyleIssues({ shadow: { spreadPx: 26.87 } })).toEqual([]);
-		expect(textStyleIssues({ strokes: Array.from({ length: MAX_TEXT_STROKES + 1 }, () => ({})) })).toHaveLength(1);
+		expect(
+			textStyleIssues({ strokes: Array.from({ length: MAX_TEXT_STROKES + 1 }, () => ({})) }),
+		).toHaveLength(1);
 		expect(textStyleIssues(null)).toEqual([]);
 	});
 
@@ -84,9 +100,14 @@ describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => 
 		fc.assert(
 			fc.property(
 				fc.record({
-					strokes: fc.option(fc.array(fc.constant({ color: red, widthPx: 1, position: 'outside' }), { maxLength: 40 }), { nil: undefined }),
+					strokes: fc.option(
+						fc.array(fc.constant({ color: red, widthPx: 1, position: 'outside' }), { maxLength: 40 }),
+						{ nil: undefined },
+					),
 					shadow: fc.option(
-						fc.record({ spreadPx: fc.oneof(fc.double(), fc.constant('x' as unknown as number), fc.constant(undefined)) }),
+						fc.record({
+							spreadPx: fc.oneof(fc.double(), fc.constant('x' as unknown as number), fc.constant(undefined)),
+						}),
 						{ nil: null },
 					),
 				}),
@@ -106,7 +127,11 @@ describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => 
 		const doc = structuredClone(h.doc);
 		const clip = doc.sequences[h.seqId]!.clips[id] as TextClip;
 		clip.content.style.shadow = { color: red, angleDeg: 0, distancePx: 0, blurPx: 4, spreadPx: -3 };
-		clip.content.style.strokes = Array.from({ length: 20 }, () => ({ color: red, widthPx: 2, position: 'outside' as const }));
+		clip.content.style.strokes = Array.from({ length: 20 }, () => ({
+			color: red,
+			widthPx: 2,
+			position: 'outside' as const,
+		}));
 		expect(checkInvariants(doc).map((i) => i.invariant)).toContain('INV-012');
 		const repaired = repairDocument(doc, h.ids);
 		const style = (repaired.document.sequences[h.seqId]!.clips[id] as TextClip).content.style;
@@ -120,12 +145,16 @@ describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => 
 
 	it('refuses a transaction that sets a negative spread (E_INVARIANT); a valid spread round-trips', () => {
 		const h = new Harness();
-		const id = h.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' }, ref: '$t' }]).refs.$t!;
+		const id = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' }, ref: '$t' },
+		]).refs.$t!;
 		const bad = h.tx([
 			{
 				type: 'clip.update',
 				clipId: id,
-				patch: { content: { style: { shadow: { color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: -1 } } } },
+				patch: {
+					content: { style: { shadow: { color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: -1 } } },
+				},
 			},
 		]);
 		expect(bad.ok).toBe(false);
@@ -133,7 +162,11 @@ describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => 
 			{
 				type: 'clip.update',
 				clipId: id,
-				patch: { content: { style: { shadow: { color: red, angleDeg: 90, distancePx: 0, blurPx: 250, spreadPx: 26.87 } } } },
+				patch: {
+					content: {
+						style: { shadow: { color: red, angleDeg: 90, distancePx: 0, blurPx: 250, spreadPx: 26.87 } },
+					},
+				},
 			},
 		]);
 		expect((h.seq.clips[id] as TextClip).content.style.shadow?.spreadPx).toBe(26.87);
@@ -145,8 +178,17 @@ describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => 
 		h.ok([{ type: 'caption.add', at: 0, duration: 30, text: 'Hi' }]);
 		const doc = structuredClone(h.doc);
 		const track = doc.sequences[h.seqId]!.captionTracks[0]!;
-		track.styleDefaults = { ...(track.styleDefaults ?? ({} as never)), shadow: { color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: -2 } } as never;
-		doc.settings.captionStylePresets = [{ id: 'p1', name: 'P', style: { shadow: { color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: 1e7 } } }];
+		track.styleDefaults = {
+			...(track.styleDefaults ?? ({} as never)),
+			shadow: { color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: -2 },
+		} as never;
+		doc.settings.captionStylePresets = [
+			{
+				id: 'p1',
+				name: 'P',
+				style: { shadow: { color: red, angleDeg: 0, distancePx: 0, blurPx: 0, spreadPx: 1e7 } },
+			},
+		];
 		const issues = checkInvariants(doc).filter((i) => i.invariant === 'INV-012');
 		expect(issues.length).toBeGreaterThanOrEqual(2);
 		const r = repairDocument(doc, h.ids);
@@ -162,7 +204,10 @@ function fakeMeasurer(calls: unknown[] = []): TextMeasurer {
 			if (content.text.includes('pending')) return null;
 			const lines = content.text.split('\n');
 			const w = Math.max(...lines.map((l) => l.length)) * content.style.sizePx * 0.6;
-			return { width: box.autoSize === 'width' ? Math.ceil(w) : box.width, height: Math.ceil(lines.length * content.style.sizePx * content.style.lineHeight) };
+			return {
+				width: box.autoSize === 'width' ? Math.ceil(w) : box.width,
+				height: Math.ceil(lines.length * content.style.sizePx * content.style.lineHeight),
+			};
 		},
 	};
 }
@@ -171,7 +216,16 @@ describe('text measurer contract (S01:KND-006, SH-004)', () => {
 	it('point text takes the measured box, the default anchor follows it, and the font table reaches the measurer', () => {
 		const calls: unknown[] = [];
 		const h = new Harness({ ctx: { textMeasurer: fakeMeasurer(calls) } });
-		const id = h.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style: { sizePx: 100 } }, ref: '$t' }]).refs.$t!;
+		const id = h.ok([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				content: { text: 'Hello', style: { sizePx: 100 } },
+				ref: '$t',
+			},
+		]).refs.$t!;
 		const c = h.seq.clips[id] as TextClip;
 		expect(c.box).toMatchObject({ width: 300, height: 120 });
 		expect(c.layoutPending).toBeUndefined();
@@ -185,23 +239,63 @@ describe('text measurer contract (S01:KND-006, SH-004)', () => {
 
 	it('a custom anchor stays; a measurer that cannot measure (or answers nonsense) leaves an estimate, pending', () => {
 		const h = new Harness({ ctx: { textMeasurer: fakeMeasurer() } });
-		const id = h.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style: { sizePx: 100 } }, transform: { anchor: [10, 10] }, ref: '$t' }]).refs.$t!;
+		const id = h.ok([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				content: { text: 'Hello', style: { sizePx: 100 } },
+				transform: { anchor: [10, 10] },
+				ref: '$t',
+			},
+		]).refs.$t!;
 		h.ok([{ type: 'clip.update', clipId: id, patch: { content: { text: 'Hello again' } } }]);
 		expect((h.seq.clips[id] as TextClip).transform.anchor.value).toEqual([10, 10]);
 		h.ok([{ type: 'clip.update', clipId: id, patch: { content: { text: 'pending text' } } }]);
 		expect((h.seq.clips[id] as TextClip).layoutPending).toBe(true);
 		const nan = new Harness({ ctx: { textMeasurer: { measure: () => ({ width: Number.NaN, height: 4 }) } } });
-		const id2 = nan.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'x' }, ref: '$t' }]).refs.$t!;
+		const id2 = nan.ok([
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'x' }, ref: '$t' },
+		]).refs.$t!;
 		expect((nan.seq.clips[id2] as TextClip).layoutPending).toBe(true);
-		const thrower = new Harness({ ctx: { textMeasurer: { measure: () => { throw new Error('boom'); } } } });
-		const id3 = thrower.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'x' }, ref: '$t' }]).refs.$t!;
+		const thrower = new Harness({
+			ctx: {
+				textMeasurer: {
+					measure: () => {
+						throw new Error('boom');
+					},
+				},
+			},
+		});
+		const id3 = thrower.ok([
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'x' }, ref: '$t' },
+		]).refs.$t!;
 		expect((thrower.seq.clips[id3] as TextClip).layoutPending).toBe(true);
 	});
 
 	it('text.relayout measures every pending clip (headless-made) once a measurer is there; refuses non-text clips', () => {
 		const headless = new Harness();
-		const a = headless.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Alpha', style: { sizePx: 50 } }, ref: '$t' }]).refs.$t!;
-		const b = headless.ok([{ type: 'clip.addText', at: 30, duration: 30, track: 'V2', content: { text: 'Beta beta', style: { sizePx: 50 } }, ref: '$t' }]).refs.$t!;
+		const a = headless.ok([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				content: { text: 'Alpha', style: { sizePx: 50 } },
+				ref: '$t',
+			},
+		]).refs.$t!;
+		const b = headless.ok([
+			{
+				type: 'clip.addText',
+				at: 30,
+				duration: 30,
+				track: 'V2',
+				content: { text: 'Beta beta', style: { sizePx: 50 } },
+				ref: '$t',
+			},
+		]).refs.$t!;
 		expect((headless.seq.clips[a] as TextClip).layoutPending).toBe(true);
 		// no measurer: nothing changes, a warning says why
 		const none = headless.ok([{ type: 'text.relayout' }]);
@@ -217,10 +311,16 @@ describe('text measurer contract (S01:KND-006, SH-004)', () => {
 		// the previous document is untouched (undo restores it)
 		expect((before.sequences[headless.seqId]!.clips[a] as TextClip).layoutPending).toBe(true);
 		// measuring again changes nothing
-		const again = headless.tx([{ type: 'text.relayout', clipIds: [a] }], { ctx: { textMeasurer: fakeMeasurer() } });
+		const again = headless.tx([{ type: 'text.relayout', clipIds: [a] }], {
+			ctx: { textMeasurer: fakeMeasurer() },
+		});
 		expect(again.ok && again.changed).toEqual([]);
-		const solid = headless.ok([{ type: 'clip.addSolid', at: 0, duration: 10, track: 'V3', color: red, ref: '$s' }]).refs.$s!;
-		const refused = headless.tx([{ type: 'text.relayout', clipIds: [solid] }], { ctx: { textMeasurer: fakeMeasurer() } });
+		const solid = headless.ok([
+			{ type: 'clip.addSolid', at: 0, duration: 10, track: 'V3', color: red, ref: '$s' },
+		]).refs.$s!;
+		const refused = headless.tx([{ type: 'text.relayout', clipIds: [solid] }], {
+			ctx: { textMeasurer: fakeMeasurer() },
+		});
 		expect(refused.ok).toBe(false);
 		expect(!refused.ok && refused.errors[0]!.code).toBe('E_INVALID_PARAM');
 		expect(headless.tx([{ type: 'text.relayout', clipIds: [] }]).ok).toBe(false);
