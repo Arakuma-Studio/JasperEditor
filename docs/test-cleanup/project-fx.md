@@ -309,4 +309,30 @@ Changes remove family-private assertion shapes, five declaration/self-comparison
 
 Expanded original cases: 182. Dispositions: **CONSOLIDATE 6**, **DELETE 5**, **KEEP 159**, **OPTIMIZE 1**, **REWRITE 11**. The four removed CONSOLIDATE cases and five DELETE cases account for all nine removed executions. Two CONSOLIDATE rows are surviving owners, so disposition totals deliberately differ from removal totals.
 
-Validation is pending the coordinator’s baseline-complete signal. Targeted test commands, measured results and typecheck status will be recorded before commit. No performance gain is claimed before measurement. The only intentionally removed setup replay is the redundant second transition-razor transaction workflow; all real numeric/protocol/regression owners remain.
+The coordinator’s original full-suite baseline contains all **23 owned files / 182 expanded cases passing**. Validation used the same repository and Node **v20.19.0**, pnpm **10.34.5**, Vitest **4.1.11**, `--maxWorkers=2`, `JASPER_REQUIRE_ORACLES=1` and `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome`. The project-fx worktree installed its own workspace dependencies with `pnpm install --frozen-lockfile`; no root dependency symlink was used. Installation passed, with expected warnings for unbuilt MCP binary outputs and the repository-disabled onnxruntime install script. Those tools are not used by these targets.
+
+The exact focused passing command was:
+
+```sh
+pnpm exec vitest run packages/project/test/effect-presets.test.ts packages/project/test/fx-framework-followups.test.ts packages/project/test/fx-motion-blur.test.ts packages/project/test/fx-sapphire-adjust-composite.test.ts packages/project/test/fx-sapphire-blur-sharpen.test.ts packages/project/test/fx-sapphire-time-flicker.test.ts packages/project/test/fx-shader.test.ts packages/project/test/transition-defaults.test.ts packages/project/test/transition-framework.test.ts packages/project/test/transition-polish.test.ts packages/project/test/transition-razor.test.ts packages/project/test/transition-sapphire-dissolves.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile=/tmp/jasper-test-cleanup/project-fx-final.json
+```
+
+All **12 changed files / 115 cases passed**. Vitest reported **13.12 s**; `/usr/bin/time` measured **14.18 s wall**, **22.23 s user CPU**, **3.65 s system CPU** and **277884 KiB peak RSS**. Runner totals were transform 11.10 s, import 22.70 s, setup 382 ms and test bodies 575 ms (parallel totals overlap). Imports/transforms dominate these inexpensive model contracts. No independent typecheck, full-suite, build, GL or browser gate was repeated in this bounded resource slot; the coordinator’s integrated gates are authoritative. The unchanged real GL numeric oracles were explicitly confirmed retained by their compositions owner. Changed-file Biome and `git diff --check` passed earlier and source restoration left a clean worktree.
+
+| Measurement | Original root baseline test-body time | Focused final test-body time |
+|---|---:|---:|
+| transition-polish.test.ts | 189.338 ms | 72.376 ms |
+| transition-razor.test.ts | 119.965 ms | 118.406 ms |
+| effect-presets.test.ts | 105.174 ms | 103.409 ms |
+
+These are the three slowest original owned files; the final changed-target order is transition-razor, effect-presets, transition-polish. The slowest final individual case was the incoming video/audio crossfade split at **33.638 ms**: it owns linked transition fitting and original-document immutability, so its real command workflow remains. The original full-suite wall time was **35 min 11.47 s**, with failures outside this scope. There is **no comparable isolated before/after wall measurement** for these 12 files: the original measurement ran the whole repository and the final one shared the host with bounded independent agents. No percentage gain, whole-suite speedup, CI saving or repeat-run variance is claimed. The removed second transition-razor fixture/transaction replay reduces redundant work; the measured split-file difference is too small and conditions too different to establish a speedup. Nine redundant or invalid executions and 128 net test lines were removed while the retained numeric/protocol/regression owners remain.
+
+Mutation checks used restoring edits in this worktree and the exact commands below; each intended mutant exited 1 for the named assertion, rather than a setup/import error:
+
+```sh
+pnpm exec vitest run packages/project/test/transition-polish.test.ts --maxWorkers=2 -t 'picks the planar tracker with samples first'
+pnpm exec vitest run packages/project/test/transition-sapphire-dissolves.test.ts --maxWorkers=2 -t 'timing eases, shifts and narrows the dissolve while preserving its endpoints'
+pnpm exec vitest run packages/project/test/effect-presets.test.ts --maxWorkers=2 -t 'rejects invalid presets'
+```
+
+Removing sampled-planar priority made the tracker assertion receive `point` instead of `planar` (8.137 s wall); forcing dissolve mix to zero failed its required end mix 1 (7.982 s); changing the empty-preset parser refusal from `E_INVALID_PARAM` to `E_SCHEMA` failed the code assertion (11.623 s). A preliminary mutation of the later apply handler correctly passed because this empty input is refused by the parser before that handler branch; it was replaced with the mutation at the actual contract owner. Every mutation was restored byte for byte in `finally`; no mutation or product behavior change was committed. Normal passing tests preceded the mutations, and restored source bytes match the passing revision. Mutation logs and the timing JSON live outside Git in `/tmp/jasper-test-cleanup/project-fx-*` for coordinator evidence. These three checks establish targeted regression detection; they do not claim exhaustive mutation coverage or proof of timing stability.
