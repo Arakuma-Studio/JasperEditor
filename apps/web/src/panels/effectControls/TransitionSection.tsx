@@ -10,6 +10,8 @@
 import {
 	type Command,
 	type CommandOf,
+	CUSTOM_FADE,
+	customFadeParamsFor,
 	evaluate,
 	flicksPerFrame,
 	formatTimecode,
@@ -37,13 +39,18 @@ import type { InspectorOps } from '../properties/lib/ops.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import {
 	edgeDrag,
+	edgeDragCommand,
 	resizableEdges,
 	type TransitionGeom,
 	transitionGeom,
 } from '../timeline/model/transitions.ts';
+import { AudioFadeCurve } from './AudioFadeCurve.tsx';
 
 const ALIGNMENTS = TRANSITION_ALIGNMENTS.map((a) => a.value);
 const ALIGNMENT_LABELS = TRANSITION_ALIGNMENTS.map((a) => a.label);
+/** Premiere port: an off-centre span (`Transition.cutPosition`) shows as Premiere's "Custom Start". */
+const CUSTOM_START = 'custom' as const;
+type AlignmentChoice = Transition['alignment'] | typeof CUSTOM_START;
 
 /** The selected transition of the active sequence (last selected), from the drawn document. */
 function useSelectedTransition(): { seq: Sequence; geom: TransitionGeom } | null {
@@ -106,7 +113,15 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 					options={specs.map((s) => s.id)}
 					labels={specs.map((s) => (s.gpu ? `${s.label} (${s.subBin ?? s.bin})` : s.label))}
 					label="Transition type"
-					onChange={(effectId) => update('Replace Transition', { effectId })}
+					onChange={(effectId) =>
+						update(
+							'Replace Transition',
+							// A fixed audio transition made a Custom Fade starts from its own curve (Premiere).
+							effectId === CUSTOM_FADE && medium === 'audio'
+								? { effectId, params: customFadeParamsFor(t.effectId) }
+								: { effectId },
+						)
+					}
 					data-testid="transition-type"
 				/>
 			</Row>
@@ -131,18 +146,27 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 				</p>
 			) : null}
 			<Row label="Alignment">
-				<SelectField<Transition['alignment']>
-					value={t.alignment}
-					options={ALIGNMENTS}
-					labels={ALIGNMENT_LABELS}
+				<SelectField<AlignmentChoice>
+					value={t.cutPosition !== undefined && !geom.oneSided ? CUSTOM_START : t.alignment}
+					options={t.cutPosition !== undefined && !geom.oneSided ? [...ALIGNMENTS, CUSTOM_START] : ALIGNMENTS}
+					labels={
+						t.cutPosition !== undefined && !geom.oneSided
+							? [...ALIGNMENT_LABELS, 'Custom Start']
+							: ALIGNMENT_LABELS
+					}
 					label="Transition alignment"
 					disabled={!!geom.oneSided}
-					onChange={(alignment) => update('Transition Alignment', { alignment })}
+					onChange={(alignment) => {
+						if (alignment !== CUSTOM_START) update('Transition Alignment', { alignment });
+					}}
 					data-testid="transition-alignment"
 				/>
 			</Row>
 			<AbDiagram session={props.session} geom={geom} seq={seq} />
-			{geom.spec && geom.spec.params.length > 0 ? (
+			{medium === 'audio' && geom.spec ? (
+				<AudioFadeCurve t={t} spec={geom.spec} oneSided={geom.oneSided} ops={ops} />
+			) : null}
+			{geom.spec && geom.spec.params.length > 0 && t.effectId !== CUSTOM_FADE ? (
 				<TransitionParams session={props.session} spec={geom.spec} t={t} seq={seq} span={geom} ops={ops} />
 			) : null}
 		</section>
@@ -195,17 +219,13 @@ function AbDiagram(props: { session: EditorSession; geom: TransitionGeom; seq: S
 				active = true;
 			}
 			const want = edgeDrag(g0, edge, frame, ev.altKey);
-			const r = ops.scrub.update([
-				{
-					type: 'transition.update',
-					transitionId: g0.t.id,
-					duration: want.duration,
-					alignment: want.alignment,
-				} as Command,
-			]);
+			const r = ops.scrub.update([edgeDragCommand(g0.t.id, want) as Command]);
 			if (r?.ok) {
-				const res = r.results[0] as { duration: number; alignment: string };
-				changed = res.duration !== g0.t.duration || res.alignment !== g0.t.alignment;
+				const res = r.results[0] as { duration: number; alignment: string; cutOffset?: number };
+				changed =
+					res.duration !== g0.t.duration ||
+					res.alignment !== g0.t.alignment ||
+					res.cutOffset !== g0.cutOffset;
 				const clamped = r.warnings.some((w) => w.code === 'W_TRANSITION_SHORTENED');
 				setTip(
 					`Duration ${formatTimecode(res.duration, rate, { dropFrame: seq.settings.dropFrame })} (${res.duration})${clamped ? ' · Limited by media handles' : ''}`,

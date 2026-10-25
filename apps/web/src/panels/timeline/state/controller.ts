@@ -46,6 +46,7 @@ import { cursorFor, type GestureKind, resolveGesture } from '../model/tools.ts';
 import {
 	bodyDragAlignment,
 	edgeDrag,
+	edgeDragCommand,
 	handleFeedback,
 	type TransitionGeom,
 	type TransitionIndex,
@@ -881,18 +882,25 @@ export class TimelineController {
 		);
 		const want = edgeDrag(g, d.edge, frame, p.alt);
 		if (!d.gesture) d.gesture = this.session.beginGesture('Transition Duration');
-		const r = d.gesture.update([
-			{ type: 'transition.update', transitionId: g.t.id, duration: want.duration, alignment: want.alignment },
-		]);
+		const r = d.gesture.update([edgeDragCommand(g.t.id, want)]);
 		const res = r.ok
-			? (r.results[0] as { duration: number; alignment: TransitionGeom['t']['alignment'] })
+			? (r.results[0] as {
+					duration: number;
+					alignment: TransitionGeom['t']['alignment'];
+					cutOffset?: number;
+				})
 			: null;
-		d.unchanged = !!res && res.duration === g.t.duration && res.alignment === g.t.alignment;
+		d.unchanged =
+			!!res &&
+			res.duration === g.t.duration &&
+			res.alignment === g.t.alignment &&
+			res.cutOffset === g.cutOffset;
 		const clamped = r.ok && r.warnings.some((w) => w.code === 'W_TRANSITION_SHORTENED');
 		const fb = handleFeedback({
 			effectId: g.t.effectId,
 			cut: g.cut,
 			alignment: want.alignment,
+			...(want.cutOffset !== undefined ? { cutPosition: want.cutOffset / want.duration } : {}),
 			oneSided: g.oneSided,
 			outgoing: g.outgoing,
 			incoming: g.incoming,
@@ -935,7 +943,8 @@ export class TimelineController {
 			{ type: 'transition.update', transitionId: g.t.id, alignment, duration: g.t.duration },
 		]);
 		const res = r.ok ? (r.results[0] as { duration: number }) : null;
-		d.unchanged = alignment === g.t.alignment && (!res || res.duration === g.t.duration);
+		d.unchanged =
+			alignment === g.t.alignment && g.t.cutPosition === undefined && (!res || res.duration === g.t.duration);
 		const label =
 			alignment === 'center' ? 'Center at Cut' : alignment === 'start-at-cut' ? 'Start at Cut' : 'End at Cut';
 		const clamped = r.ok && r.warnings.some((w) => w.code === 'W_TRANSITION_SHORTENED');
