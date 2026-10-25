@@ -477,6 +477,36 @@ VARIANTS.push(
 	},
 );
 
+// X: the post card draws likes (the heart ticks) — every entrance with both extras, the like tick alone with huge counts
+// at another rate, word reveal growing from its avatar corner on a short clip
+for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
+	VARIANTS.push({
+		template: 'social-comment',
+		rate: '30',
+		seconds: 5,
+		params: { variant: 'x-post', entrance, wordReveal: true, likeTick: true },
+	});
+VARIANTS.push(
+	{
+		template: 'social-comment',
+		rate: '50',
+		seconds: 3,
+		params: {
+			variant: 'x-post',
+			theme: 'dark',
+			entrance: 'soft-spring',
+			likeTick: true,
+			likes: 987_654_321_000,
+		},
+	},
+	{
+		template: 'social-comment',
+		rate: '29.97',
+		seconds: 1.5,
+		params: { variant: 'x-post', entrance: 'grow-from-tail', wordReveal: true },
+	},
+);
+
 const report: string[] = [];
 const before: number[] = [];
 const after: number[] = [];

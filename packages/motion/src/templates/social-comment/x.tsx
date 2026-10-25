@@ -382,28 +382,26 @@ function XPostCard({ params: p, text, anim, assets }: SocialCardProps) {
 							count={shownCount(p.replies, 'replies')}
 							color={theme.secondary}
 						/>
-						{p.showReposts ? (
-							<Engagement
-								part="reposts"
-								icon={icon(X_GLYPHS.repost)}
-								count={shownCount(p.reposts, 'reposts')}
-								color={theme.secondary}
-							/>
-						) : null}
+						{/* showReposts off hides the count; the icon stays (the param's contract) */}
+						<Engagement
+							part="reposts"
+							icon={icon(X_GLYPHS.repost)}
+							count={p.showReposts ? shownCount(p.reposts, 'reposts') : ''}
+							color={theme.secondary}
+						/>
 						<Engagement
 							part="likes"
 							icon={<LikeHeart heart={anim.heart} color={theme.secondary} />}
 							count={shownCount(anim.likes, 'likes')}
 							color={mixColor(theme.secondary, LIKED, liked)}
 						/>
-						{p.showViews ? (
-							<Engagement
-								part="views"
-								icon={icon(X_GLYPHS.views)}
-								count={shownCount(p.views, 'views')}
-								color={theme.secondary}
-							/>
-						) : null}
+						{/* showViews off hides the count; the icon stays (the param's contract) */}
+						<Engagement
+							part="views"
+							icon={icon(X_GLYPHS.views)}
+							count={p.showViews ? shownCount(p.views, 'views') : ''}
+							color={theme.secondary}
+						/>
 						<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
 							{icon(X_GLYPHS.bookmark)}
 							{icon(X_GLYPHS.share)}
