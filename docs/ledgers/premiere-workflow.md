@@ -100,22 +100,24 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
   on the M4 Max CPU); don't add medium or int8; GPU for the encoder (CUDA Linux, WebGPU Mac/Windows/Linux), decoder on
   CPU except CUDA + greedy (RTX 3060 RTF 0.155, WER 3.3 %); greedy default, beam 5 "Best"; fix hallucinations in
   silence and non-resumable downloads.
-- 🔄 textperf — export/preview cost of 100 and ~1,000 animated text clips; architecture for fast subtitle export.
+- ✅ textperf — today 1,000 animated captions can't export (≈ 205–230 MB per caption input in the hybrid composite,
+  1,000 → ≈ 220 GB; per-caption Remotion bakes; an engine-killed crash path); still + native motion prototype 5.3×
+  faster; batched stills 99 in 9.6 s → spec 13 §4 AS-070…076.
 
 ### Phase 2 — specs (to write in `docs/specs/`)
-- 🔄 13 — Automatic subtitles (draft written: `docs/specs/13-auto-subtitles.md`; §4 export architecture waits for
-  textperf): options, text-clip output, templates (user style + generic), cut-aware timing,
+- ✅ 13 — Automatic subtitles (`docs/specs/13-auto-subtitles.md`, §4 export architecture from textperf): options, text-clip output, templates (user style + generic), cut-aware timing,
   multi-clip styling, text rendering upgrades (strokes, shadow spread, measurer), conversion to/from caption tracks,
   export performance architecture.
-- 🔄 14 — Transcript cleanup (draft written: `docs/specs/14-transcript-cleanup.md`): typed findings detector, audio-confirmed pauses, Spanish fillers, repeats/retakes,
+- ✅ 14 — Transcript cleanup (`docs/specs/14-transcript-cleanup.md`): typed findings detector, audio-confirmed pauses, Spanish fillers, repeats/retakes,
   script alignment, configurable auto-cut (padding, gaps, crossfades, guidance tracks, presets), review UI, agents.
-- 🔄 15 — Editing-pattern automation (draft written: `docs/specs/15-edit-automation.md`): shared `pictureCuts`, Decorate Cuts kits, punch-ins, Ken Burns, overlays,
+- ✅ 15 — Editing-pattern automation (`docs/specs/15-edit-automation.md`): shared `pictureCuts`, Decorate Cuts kits, punch-ins, Ken Burns, overlays,
   overlay slides, music beds, style recipes and Style Check, proposals for new features + agent accept policies.
-- 🔄 16 — Speech on GPU and model catalogue (draft written: `docs/specs/16-speech-gpu-models.md`): provider selection (CUDA/CoreML/DirectML/CPU), packaging, catalogue
+- ✅ 16 — Speech on GPU and model catalogue (`docs/specs/16-speech-gpu-models.md`): provider selection (CUDA/CoreML/DirectML/CPU), packaging, catalogue
   (medium/turbo/quantised), defaults per device class, measured evaluation table.
 
 ### Phase 3 — implementation (queue ≤ 6 agents, worktrees `.claude/worktrees/<name>`, VM-only testing)
-- ⏳ Foundation (coordinator): integration branch, schema v9 bump shared by all features.
+- ✅ Foundation (coordinator): integration branch `feat/workflow`, schema v9 bump (13d0a095; 2,287 project tests
+  pass on the VM).
 - ⏳ Work packages: defined when the specs land (listed here with branch, owner, status).
 
 ### Phase 4 — integration
@@ -147,5 +149,5 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 ## 8. Log
 - 2026-10-25 — ff main; VM provisioned; Mac workspace; scripts exported; research agents launched (codemap, subs,
   auto, whisper, edits, textperf, cutsurvey); NVIDIA box rented; codemap, auto, subs, cutsurvey finished; lock
-  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 13–16 drafted (13 §4 pending textperf); VM lock switched to a want-file queue
+  fairness rules set on the Mac and the VM; ledgers created; edits research finished; specs 13–16 written (13 §4 from textperf); research phase complete; schema v9 foundation on feat/workflow; VM lock switched to a want-file queue
   after starvation in both directions.
