@@ -38,7 +38,7 @@ function makeClip(name: string, color: string): string {
 		'-v',
 		'error',
 		'-y',
-		...['-f', 'lavfi', '-i', `color=c=${color}:s=1280x720:r=30:d=6`],
+		...['-f', 'lavfi', '-i', `color=c=${color}:s=1920x1080:r=30:d=6`],
 		...['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=6'],
 		...h264Args(),
 		...['-c:a', 'aac', '-b:a', '96k', '-shortest', '-movflags', '+faststart', file],
