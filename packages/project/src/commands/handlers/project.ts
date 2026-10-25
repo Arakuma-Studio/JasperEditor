@@ -2,7 +2,13 @@ import type { Draft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
-import type { MediaItem, ProjectDocument, ProjectItem, SourceMarks } from '../../schema/document.ts';
+import {
+	type MediaItem,
+	ProjectAgentProposalsSchema,
+	type ProjectDocument,
+	type ProjectItem,
+	type SourceMarks,
+} from '../../schema/document.ts';
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
 import type { LibraryProvenance } from '../../sound/provenance.ts';
@@ -93,7 +99,14 @@ export const projectHandlers = {
 		doc.name = cmd.name;
 	},
 	'project.updateSettings': (doc, cmd) => {
-		Object.assign(doc.settings, cmd.settings);
+		const { agentProposals, ...rest } = cmd.settings;
+		Object.assign(doc.settings, rest);
+		// spec 15 EA-001: merged per feature (an unreadable stored value is replaced, never merged into)
+		if (agentProposals) {
+			const s = doc.settings as Record<string, unknown>;
+			const prev = ProjectAgentProposalsSchema.safeParse(s.agentProposals);
+			s.agentProposals = { ...(prev.success ? prev.data : {}), ...agentProposals };
+		}
 	},
 	'bin.create': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.parentBinId, h);

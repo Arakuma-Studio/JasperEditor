@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
+import { BATCH_OWNER, batchHandlers } from './handlers/batch.ts';
 import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
@@ -80,7 +81,8 @@ export type CommandOwner =
 	| 'previews'
 	| 'gaps'
 	| 'keyframe-ease'
-	| 'sound-design';
+	| 'sound-design'
+	| 'edit-automation';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -386,6 +388,8 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.removeBus': 'Remove SFX Room Glue',
 	'soundDesign.applyDelivery': 'Apply Delivery Preset',
 	'soundDesign.layBed': 'Lay Ambience Bed',
+	'clip.addAdjustmentBatch': 'New Adjustment Layers',
+	'keyframe.addBatch': 'Add Keyframes',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -432,6 +436,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundHandlers, SOUND_DESIGN_OWNER],
 	[soundMixHandlers, SOUND_DESIGN_OWNER],
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
+	[batchHandlers, BATCH_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -468,7 +473,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === PREVIEWS_OWNER ||
 				owner === GAPS_OWNER ||
 				owner === EASE_OWNER ||
-				owner === SOUND_DESIGN_OWNER
+				owner === SOUND_DESIGN_OWNER ||
+				owner === BATCH_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

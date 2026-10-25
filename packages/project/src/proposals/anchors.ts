@@ -102,17 +102,111 @@ function anchorIndex(doc: ProjectDocument): Map<string, string> {
 	return m;
 }
 
-/** Where an entity is (see `anchorIndex`), or null when the document has no such top-level entity. */
+// ---- spec 15 EA-003: finer anchors. A decoration names what it is about in `meta.anchorOn`: the clips it decorates
+// (fingerprinted like any clip: track, start, length, In point, speed) and the cuts it sits on (a track and a frame
+// where one clip ends and the next starts). An adjustment clip over a cut names neither by id in its commands, so
+// without these it would never go stale when the cut moves.
+
+/** Anchor key of a cut (not an entity id): `cut@<trackId>@<frame>`. */
+export const CUT_ANCHOR_PREFIX = 'cut@';
+export function cutAnchorKey(trackId: string, frame: number): string {
+	return `${CUT_ANCHOR_PREFIX}${trackId}@${frame}`;
+}
+function parseCutKey(key: string): { trackId: string; frame: number } | null {
+	if (!key.startsWith(CUT_ANCHOR_PREFIX)) return null;
+	const rest = key.slice(CUT_ANCHOR_PREFIX.length);
+	const at = rest.lastIndexOf('@');
+	if (at <= 0) return null;
+	const frame = Number(rest.slice(at + 1));
+	return Number.isSafeInteger(frame) && frame >= 0 ? { trackId: rest.slice(0, at), frame } : null;
+}
+
+/** Most clips / cuts one item anchors through `meta.anchorOn`. */
+export const MAX_ANCHOR_ON = 64;
+
+/** What `meta.anchorOn` declares (read leniently: malformed entries are ignored, bounded). */
+export function anchorOnOf(meta: unknown): { clips: string[]; cuts: { trackId: string; frame: number }[] } {
+	const on = rec(rec(meta).anchorOn);
+	const clips = (Array.isArray(on.clips) ? on.clips : [])
+		.filter((x): x is string => looksLikeId(x))
+		.slice(0, MAX_ANCHOR_ON);
+	const cuts = (Array.isArray(on.cuts) ? on.cuts : [])
+		.map((c) => rec(c))
+		.filter(
+			(c) =>
+				typeof c.trackId === 'string' &&
+				c.trackId.length > 0 &&
+				c.trackId.length <= 128 &&
+				typeof c.frame === 'number' &&
+				Number.isSafeInteger(c.frame) &&
+				c.frame >= 0,
+		)
+		.slice(0, MAX_ANCHOR_ON)
+		.map((c) => ({ trackId: c.trackId as string, frame: c.frame as number }));
+	return { clips, cuts };
+}
+
+type CutIndex = Map<string, { ends: Map<number, string>; starts: Map<number, string> }>;
+const cutCache = new WeakMap<object, CutIndex>();
+/** trackId → clip edges (frame → clip id) of every sequence. */
+function cutIndex(doc: ProjectDocument): CutIndex {
+	const hit = cutCache.get(doc);
+	if (hit) return hit;
+	const m: CutIndex = new Map();
+	for (const seqRaw of Object.values(rec(doc.sequences)))
+		for (const [id, cRaw] of Object.entries(rec(rec(seqRaw).clips))) {
+			const c = rec(cRaw);
+			if (typeof c.trackId !== 'string' || typeof c.start !== 'number' || typeof c.duration !== 'number') continue;
+			const e = m.get(c.trackId) ?? { ends: new Map(), starts: new Map() };
+			e.starts.set(c.start, id);
+			e.ends.set(c.start + c.duration, id);
+			m.set(c.trackId, e);
+		}
+	cutCache.set(doc, m);
+	return m;
+}
+
+/** `cut:<track>:<frame>:<outgoing>:<incoming>` when a clip ends and another starts there on the track, else null. */
+function cutFingerprint(doc: ProjectDocument, trackId: string, frame: number): string | null {
+	const e = cutIndex(doc).get(trackId);
+	const out = e?.ends.get(frame);
+	const inc = e?.starts.get(frame);
+	return out && inc && out !== inc ? `cut:${trackId}:${frame}:${out}:${inc}` : null;
+}
+
+/** Where an entity is (see `anchorIndex`; a cut key: its two clips), or null when the document has no such entity. */
 export function anchorFingerprint(doc: ProjectDocument, id: string): string | null {
+	const cut = parseCutKey(id);
+	if (cut) return cutFingerprint(doc, cut.trackId, cut.frame);
 	return anchorIndex(doc).get(id) ?? null;
 }
 
-/** The anchors of a command set: every named entity the document has, with its fingerprint. */
-export function itemAnchors(doc: ProjectDocument, commands: readonly unknown[]): Record<string, string> {
+/**
+ * The anchors of a command set: every named entity the document has, with its fingerprint, plus what the item's
+ * `meta.anchorOn` declares (the clips it decorates, the cuts it sits on; spec 15 EA-003).
+ */
+export function itemAnchors(
+	doc: ProjectDocument,
+	commands: readonly unknown[],
+	meta?: unknown,
+): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const id of commandEntityIds(commands)) {
 		const fp = anchorFingerprint(doc, id);
 		if (fp !== null) out[id] = fp;
+	}
+	if (meta !== undefined) {
+		const on = anchorOnOf(meta);
+		for (const id of on.clips) {
+			const fp = anchorFingerprint(doc, id);
+			if (fp !== null) out[id] = fp;
+		}
+		for (const c of on.cuts) {
+			const key = cutAnchorKey(c.trackId, c.frame);
+			const fp = cutFingerprint(doc, c.trackId, c.frame);
+			// producers name cuts of the same document; one that is not there anchors nothing (the dry run decides)
+			if (fp !== null) out[key] = fp;
+		}
 	}
 	return out;
 }
@@ -120,13 +214,14 @@ export function itemAnchors(doc: ProjectDocument, commands: readonly unknown[]):
 /** What an anchor was, for a reason a person can read: an entity kind, and where it was / is (sequence frames). */
 export type AnchorProblem = {
 	id: string;
-	entity: 'clip' | 'cue' | 'marker' | 'transition' | 'track' | 'media' | 'item' | 'sequence' | 'other';
+	entity: 'clip' | 'cue' | 'cut' | 'marker' | 'transition' | 'track' | 'media' | 'item' | 'sequence' | 'other';
 	/**
 	 * deleted: gone from the document; track: a clip on another track; start: a clip moved in time; length: trimmed;
-	 * retimed: In point or speed changed; frame: a cue or marker moved; changed: anything else about it.
+	 * retimed: In point or speed changed; frame: a cue, marker or cut moved (a cut: its two clips meet elsewhere);
+	 * changed: anything else about it (a cut: other clips meet there now).
 	 */
 	change: 'deleted' | 'track' | 'start' | 'length' | 'retimed' | 'frame' | 'changed';
-	/** Where it was and is (frames of the sequence): a clip's start, a cue's or marker's frame. */
+	/** Where it was and is (frames of the sequence): a clip's start, a cue's, marker's or cut's frame. */
 	at?: number;
 	to?: number;
 	/** A clip's length before and after (frames), for `length`. */
@@ -142,6 +237,7 @@ export type AnchorProblem = {
 
 const ENTITY_OF_PREFIX: Record<string, AnchorProblem['entity']> = {
 	clip: 'clip',
+	cut: 'cut',
 	cue: 'cue',
 	marker: 'marker',
 	transition: 'transition',
@@ -228,6 +324,29 @@ export function anchorProblem(
 				};
 			return { ...base, change: 'retimed' };
 		}
+		if (entity === 'cut') {
+			// stored `cut:<track>:<frame>:<outgoing>:<incoming>`: where do those two clips meet now?
+			const at = frameAt(a, 2);
+			const cutBase: AnchorProblem = {
+				id,
+				entity,
+				change: 'deleted',
+				...(opts.sequenceId ? { sequenceId: opts.sequenceId } : {}),
+				...(at !== undefined ? { at } : {}),
+			};
+			const idx = anchorIndex(doc);
+			const outFp = a[3] ? idx.get(a[3]) : undefined;
+			const incFp = a[4] ? idx.get(a[4]) : undefined;
+			if (outFp && incFp) {
+				const o = outFp.split(':');
+				const n = incFp.split(':');
+				const oEnd = (frameAt(o, 2) ?? Number.NaN) + (frameAt(o, 3) ?? Number.NaN);
+				const nStart = frameAt(n, 2);
+				if (o[1] === n[1] && nStart !== undefined && oEnd === nStart)
+					return { ...cutBase, change: nStart === at && now !== null ? 'changed' : 'frame', to: nStart };
+			}
+			return now === null ? cutBase : { ...cutBase, change: 'changed' };
+		}
 		if (entity === 'cue' || entity === 'marker') {
 			const at = frameAt(a, 1);
 			if (at !== undefined) base.at = at;
@@ -268,6 +387,12 @@ export function anchorProblemText(doc: ProjectDocument, p: AnchorProblem): strin
 		if (p.change === 'deleted') return `${what} was deleted`;
 		if (p.change === 'frame' && p.to !== undefined) return `${what} moved to ${tc(p.to)}`;
 		return `${what} changed`;
+	}
+	if (p.entity === 'cut') {
+		const what = `The cut${at}`;
+		if (p.change === 'frame' && p.to !== undefined) return `${what} moved to ${tc(p.to)}`;
+		if (p.change === 'deleted') return `${what} is gone`;
+		return `${what} is between other clips now`;
 	}
 	if (p.entity === 'marker') {
 		const what = `The marker${quoted}${at}`;

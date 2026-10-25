@@ -24,6 +24,11 @@ export const ERROR_CODES = [
 	'E_REVISION_MISMATCH',
 	'E_SCHEMA',
 	'E_LIMIT',
+	/**
+	 * Spec 15 EA-004: a producer's result would not fit the transaction caps (its accept would exceed the command or byte
+	 * limit of one transaction); the refusal names a range that fits. Nothing is stored or applied.
+	 */
+	'E_TOO_LARGE',
 	'E_AMBIGUOUS',
 	'E_NOT_OWNER',
 	'E_NOT_IMPLEMENTED',
