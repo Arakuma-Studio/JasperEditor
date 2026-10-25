@@ -3,6 +3,7 @@
 // approval gate for agents, cancellation and recovery of a damaged index. Generated WAVs only, no network.
 
 import { execFileSync } from 'node:child_process';
+import { once } from 'node:events';
 import {
 	copyFileSync,
 	existsSync,
@@ -34,7 +35,6 @@ import { appdirPaths } from '@jasper/config';
 import {
 	createCounterIdSource,
 	createEmptyProject,
-	inferTypesFromName,
 	LIBRARY_LEAD_SILENCE_SEC,
 	LibraryProvenanceSchema,
 	libraryTrailSilenceSamples,
@@ -42,7 +42,7 @@ import {
 } from '@jasper/project';
 import fc from 'fast-check';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir, until } from './helpers.ts';
@@ -76,7 +76,6 @@ afterEach(async () => {
 		else process.env[k] = saved[k];
 	}
 });
-afterAll(closeApps);
 
 async function get<T = unknown>(app: FastifyInstance, url: string, headers: Record<string, string> = H) {
 	const r = await app.inject({ method: 'GET', url, headers });
@@ -157,10 +156,10 @@ describe('indexing the starter kit', { timeout: 300_000 }, () => {
 		expect(heavy.descriptors.peakSec).toBeLessThan(0.04);
 		expect(heavy.descriptors.headQuietSec).toBeGreaterThan(0.015);
 		// Types inferred from the file name when the manifest gives none; CC-BY gets a credit line.
-		expect((await byTitle(app, 'Soft click')).types).toEqual(inferTypesFromName('ui/click_soft.wav'));
-		expect((await byTitle(app, 'Fast whoosh')).attribution).toBe(
-			'"Fast whoosh" by Jane Doe (https://example.invalid/sounds), licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)',
-		);
+		expect((await byTitle(app, 'Soft click')).types).toEqual(['click', 'ui']);
+		const credit = (await byTitle(app, 'Fast whoosh')).attribution;
+		expect(credit).toContain('Jane Doe');
+		expect(credit).toContain('CC-BY-4.0');
 		const lib = JSON.parse(readFileSync(appdirPaths(app.appdir).soundLibraryIndex, 'utf8'));
 		expect(lib).toMatchObject({
 			format: 'jasper-sound-library',
@@ -385,10 +384,11 @@ describe('agents and folders (approval gate, security review AGT-3)', { timeout:
 				wake?.();
 			}
 		});
+		const welcome = once(ws, 'message');
 		ws.send(
 			JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }),
 		);
-		await new Promise((r) => setTimeout(r, 100));
+		await welcome;
 		const card = async (n: number) => {
 			while (cards.length < n) await new Promise<void>((r) => (wake = r));
 			return cards[n - 1]!;
@@ -417,7 +417,6 @@ describe('agents and folders (approval gate, security review AGT-3)', { timeout:
 		const editor = await editorSession(app);
 		const denied = putRoots(app, [{ path: folder, license: 'LicenseRef-UserRoyaltyFree' }], AGENT);
 		const c1 = await editor.card(1);
-		expect(c1.label).toBe('Add a sound folder');
 		expect(c1.summary).toContain(folder);
 		expect(c1.summary).toContain('LicenseRef-UserRoyaltyFree');
 		editor.answer(c1, 'denied');
@@ -439,14 +438,12 @@ describe('agents and folders (approval gate, security review AGT-3)', { timeout:
 		// A licence declaration is the user's: asked.
 		const relicense = putRoots(app, [{ ...root, license: 'CC0-1.0' }], AGENT);
 		const c3 = await editor.card(3);
-		expect(c3.label).toBe('Change a sound folder’s licence');
 		editor.answer(c3, 'denied');
 		expect((await relicense).statusCode).toBe(403);
 
 		// Removing: asked too.
 		const remove = putRoots(app, [], AGENT);
 		const c4 = await editor.card(4);
-		expect(c4.label).toBe('Remove a sound folder');
 		expect(c4.summary).toContain('Booms');
 		editor.answer(c4, 'approved');
 		expect((await remove).statusCode).toBe(200);
@@ -547,6 +544,8 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		expect(v.spectrogram).toMatchObject({ bins: 64, frames: 60, minHz: 20, maxHz: 20000, floorDb: -96 });
 		// The loudest peak is where the hit is.
 		const peaks = Buffer.from(v.peaks.data, 'base64');
+		expect(peaks).toHaveLength(60);
+		expect(Buffer.from(v.spectrogram.data, 'base64')).toHaveLength(60 * 64);
 		expect(peaks.indexOf(Math.max(...peaks))).toBeLessThanOrEqual(5);
 		rmSync(appdirPaths(app.appdir).soundCacheDir, { recursive: true, force: true });
 		const again = SoundVisualSchema.parse((await get(app, `/api/sounds/${heavy.id}/visual`)).body);

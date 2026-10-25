@@ -253,12 +253,8 @@ export class SoundService {
 
 	constructor(
 		private readonly core: CoreServices,
-		private readonly opts: {
-			env?: Record<string, string | undefined>;
+		opts: {
 			log?: (m: string) => void;
-			/** Tests: a smaller library cap. */
-			maxSounds?: number;
-			now?: () => number;
 			/** The processing service (its model catalogue holds the Describe-it search model); none: describe is unavailable. */
 			processing?: ProcessingService | null;
 		} = {},
@@ -272,7 +268,7 @@ export class SoundService {
 			...(opts.log ? { log: opts.log } : {}),
 		});
 		this.roots = new SoundRootStore(paths.soundRootsFile, opts.log);
-		this.analyzer = new SoundAnalyzer(resolveSoundWorker(this.env()), opts.log);
+		this.analyzer = new SoundAnalyzer(resolveSoundWorker(process.env), opts.log);
 		this.indexer = new SoundIndexer({
 			library: this.library,
 			roots: this.roots,
@@ -282,9 +278,8 @@ export class SoundService {
 			packsDir: paths.soundPacksDir,
 			synthDir: paths.soundSynthDir,
 			cacheDir: paths.soundCacheDir,
-			synthItems: () => synthItems(this.env()),
+			synthItems: () => synthItems(process.env),
 			local: () => this.local,
-			...(opts.maxSounds !== undefined ? { maxSounds: opts.maxSounds } : {}),
 			followUp: (jobId, full) => {
 				void core.queue
 					.wait(jobId)
@@ -294,7 +289,7 @@ export class SoundService {
 			...(opts.log ? { log: opts.log } : {}),
 		});
 		core.queue.registerRunner('sound-index', (ctx) => this.indexer.run(ctx));
-		const env = this.env();
+		const env = process.env;
 		const ms = (k: string) => {
 			const v = Number(env[k]);
 			return Number.isFinite(v) && v > 0 ? v : undefined;
@@ -323,14 +318,14 @@ export class SoundService {
 				fileOf: (e) => this.fileOf(e),
 				...(opts.log ? { log: opts.log } : {}),
 			},
-			this.env(),
+			process.env,
 		);
 	}
 
 	/** The pack catalogue (the built-in one is read once; a `JASPER_SOUND_CATALOG` override on every call). */
 	async packCatalog(): Promise<PackCatalog> {
-		if (this.env()[SOUND_CATALOG_ENV]) return loadPackCatalog(this.env());
-		this.catalogCache ??= await loadPackCatalog(this.env());
+		if (process.env[SOUND_CATALOG_ENV]) return loadPackCatalog(process.env);
+		this.catalogCache ??= await loadPackCatalog(process.env);
 		return this.catalogCache;
 	}
 
@@ -426,10 +421,6 @@ export class SoundService {
 		};
 	}
 
-	private env(): Record<string, string | undefined> {
-		return this.opts.env ?? process.env;
-	}
-
 	/** Folders and their files may be used (local mode, D-47). */
 	get local(): boolean {
 		const { config } = this.core;
@@ -437,7 +428,7 @@ export class SoundService {
 	}
 
 	starterDir(): string {
-		return starterDir(this.env());
+		return starterDir(process.env);
 	}
 
 	/** The starter manifest (re-read at most every 5 s). */
@@ -452,10 +443,6 @@ export class SoundService {
 	/** The queued or running index job, if any. */
 	activeIndexJob(): EngineJob | null {
 		return this.core.queue.list({ active: true, kind: 'sound-index' })[0] ?? null;
-	}
-
-	private nowMs(): number {
-		return this.opts.now?.() ?? Date.now();
 	}
 
 	/**
@@ -515,7 +502,7 @@ export class SoundService {
 	 * index is asked for; after a failure it waits (1 min, doubling per failure, at most 1 h).
 	 */
 	async autoIndex(): Promise<EngineJob | null> {
-		const env = this.env();
+		const env = process.env;
 		const flag = env[AUTO_INDEX_ENV] ?? (env.VITEST ? '0' : '1');
 		if (flag === '0' || flag === 'false') return null;
 		if (this.activeIndexJob()) return null;
@@ -530,7 +517,7 @@ export class SoundService {
 			const sameKit = last.starterHash === starterHash;
 			if (state === 'cancelled' && sameKit) return null;
 			if (state === 'failed' || state === 'interrupted') {
-				if (sameKit && this.nowMs() < last.retryAt) return null;
+				if (sameKit && Date.now() < last.retryAt) return null;
 				failures = sameKit ? last.failures : 0;
 			}
 			// A job that succeeded was the last one (a later need, e.g. a new kit, may start one at once).
@@ -541,7 +528,7 @@ export class SoundService {
 			jobId: job.id,
 			starterHash,
 			failures: next,
-			retryAt: this.nowMs() + Math.min(AUTO_RETRY_MAX_MS, AUTO_RETRY_BASE_MS * 2 ** (next - 1)),
+			retryAt: Date.now() + Math.min(AUTO_RETRY_MAX_MS, AUTO_RETRY_BASE_MS * 2 ** (next - 1)),
 		};
 		return job;
 	}
@@ -999,9 +986,9 @@ export class SoundService {
 		return { ...reg, library, existingMediaId, ...(inexact ? { inexact } : {}) };
 	}
 
-	/** A positive byte count from the engine's environment (test overrides), else undefined. */
+	/** A positive byte count from the engine's environment, else undefined. */
 	private envBytes(key: string): number | undefined {
-		const v = Number(this.env()[key]);
+		const v = Number(process.env[key]);
 		return Number.isFinite(v) && v > 0 ? v : undefined;
 	}
 

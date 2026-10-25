@@ -21,18 +21,14 @@ export type WorkerResponse =
 	| { id: 0; ready: true };
 
 /** The worker module to use, or null to analyse in-thread. */
-export function resolveSoundWorker(
-	env: Record<string, string | undefined> = process.env,
-	base: string = import.meta.url,
-	execArgv: readonly string[] = process.execArgv,
-): URL | null {
+export function resolveSoundWorker(env: Record<string, string | undefined> = process.env): URL | null {
 	const o = env[SOUND_WORKER_ENV];
 	if (o === 'off' || o === '0') return null;
 	if (o) return o.startsWith('file:') ? new URL(o) : pathToFileURL(o);
-	const bundled = new URL('./sound-worker.mjs', base);
+	const bundled = new URL('./sound-worker.mjs', import.meta.url);
 	if (existsSync(fileURLToPath(bundled))) return bundled;
-	if (execArgv.some((a) => a.includes('tsx'))) {
-		const ts = new URL('./analysis-worker.ts', base);
+	if (process.execArgv.some((a) => a.includes('tsx'))) {
+		const ts = new URL('./analysis-worker.ts', import.meta.url);
 		if (existsSync(fileURLToPath(ts))) return ts;
 	}
 	return null;
@@ -46,22 +42,6 @@ function tsxBootstrap(url: URL): string {
 	const api = import.meta.resolve('tsx/esm/api');
 	return `import(${JSON.stringify(api)}).then((m) => { m.register(); return import(${JSON.stringify(url.href)}); })`;
 }
-
-/** What the analyzer needs of a worker thread (a seam: tests inject fakes). */
-export type AnalysisWorker = {
-	postMessage(message: WorkerRequest): void;
-	terminate(): unknown;
-	unref?(): void;
-	on(event: 'message', fn: (m: WorkerResponse) => void): unknown;
-	on(event: 'error', fn: (e: Error) => void): unknown;
-	on(event: 'exit', fn: (code: number) => void): unknown;
-};
-export type AnalysisWorkerFactory = (url: URL) => AnalysisWorker;
-
-const defaultWorkerFactory: AnalysisWorkerFactory = (url) =>
-	(url.pathname.endsWith('.ts')
-		? new Worker(tsxBootstrap(url), { eval: true })
-		: new Worker(url)) as unknown as AnalysisWorker;
 
 /** A request sent to a worker: kept (with its samples) until it settles, so it can move to a new worker. */
 type Pending = {
@@ -78,7 +58,7 @@ type Pending = {
 
 /** One worker thread and the requests posted to it. Events of a slot only ever touch its own requests. */
 type Slot = {
-	worker: AnalysisWorker;
+	worker: Worker;
 	ready: Promise<Slot>;
 	pending: Map<number, Pending>;
 	/** Ended (by us or by itself): its later events are ignored. */
@@ -94,22 +74,11 @@ export class SoundAnalyzer {
 	private idle: NodeJS.Timeout | null = null;
 	/** The worker could not be started: analyse in-thread from now on. */
 	private unavailable = false;
-	private readonly createWorker: AnalysisWorkerFactory;
-	private readonly startTimeoutMs: number;
-	private readonly idleMs: number;
 
 	constructor(
 		private readonly url: URL | null,
 		private readonly log: (m: string) => void = () => {},
-		opts: { createWorker?: AnalysisWorkerFactory; startTimeoutMs?: number; idleMs?: number } = {},
-	) {
-		this.createWorker = opts.createWorker ?? defaultWorkerFactory;
-		this.startTimeoutMs = opts.startTimeoutMs ?? START_TIMEOUT_MS;
-		this.idleMs = opts.idleMs ?? IDLE_MS;
-	}
-
-	/** Where the last analysis ran (tests). */
-	lastMode: 'worker' | 'thread' | null = null;
+	) {}
 
 	/**
 	 * Runs one analysis. `signal` cancels it (`JOB_CANCELLED`); `timeoutMs` bounds it (`ANALYSIS_TIMEOUT`). Stopping a
@@ -121,7 +90,7 @@ export class SoundAnalyzer {
 		opts: { timeoutMs?: number } = {},
 	): Promise<AnalysisResult> {
 		if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-		if (!this.url || this.unavailable) return this.inThread(job);
+		if (!this.url || this.unavailable) return runAnalysis(job);
 		if (this.idle) clearTimeout(this.idle);
 		const id = this.nextId++;
 		let timer: NodeJS.Timeout | null = null;
@@ -169,11 +138,6 @@ export class SoundAnalyzer {
 		});
 	}
 
-	private inThread(job: AnalysisJob): AnalysisResult {
-		this.lastMode = 'thread';
-		return runAnalysis(job);
-	}
-
 	/** Posts a request to the current worker (started when needed); falls back to in-thread when none can start. */
 	private async dispatch(p: Pending): Promise<void> {
 		let slot: Slot;
@@ -184,7 +148,7 @@ export class SoundAnalyzer {
 			this.unavailable = true;
 			this.log(`sound analysis: no worker thread (${(e as Error).message}); analysing in-thread`);
 			try {
-				p.resolve(this.inThread(p.job));
+				p.resolve(runAnalysis(p.job));
 			} catch (err) {
 				p.reject(err as Error);
 			}
@@ -199,7 +163,6 @@ export class SoundAnalyzer {
 		p.posts++;
 		p.slot = slot;
 		slot.pending.set(p.id, p);
-		this.lastMode = 'worker';
 		// The samples are copied, not transferred: the request can be posted again if this worker is stopped.
 		slot.worker.postMessage({ id: p.id, job: p.job } satisfies WorkerRequest);
 	}
@@ -207,13 +170,13 @@ export class SoundAnalyzer {
 	private start(): Promise<Slot> {
 		if (this.slot && !this.slot.dead) return this.slot.ready;
 		const url = this.url!;
-		let worker: AnalysisWorker;
+		let worker: Worker;
 		try {
-			worker = this.createWorker(url);
+			worker = url.pathname.endsWith('.ts') ? new Worker(tsxBootstrap(url), { eval: true }) : new Worker(url);
 		} catch (e) {
 			return Promise.reject(e as Error);
 		}
-		worker.unref?.();
+		worker.unref();
 		const slot: Slot = { worker, ready: null as unknown as Promise<Slot>, pending: new Map(), dead: false };
 		this.slot = slot;
 		slot.ready = new Promise<Slot>((resolve, reject) => {
@@ -223,7 +186,7 @@ export class SoundAnalyzer {
 					this.end(slot);
 					reject(new Error('the worker did not start'));
 				}
-			}, this.startTimeoutMs);
+			}, START_TIMEOUT_MS);
 			timer.unref?.();
 			worker.on('message', (m: WorkerResponse) => {
 				if (slot.dead) return;
@@ -265,7 +228,7 @@ export class SoundAnalyzer {
 		slot.dead = true;
 		if (this.slot === slot) this.slot = null;
 		try {
-			void Promise.resolve(slot.worker.terminate()).catch(() => undefined);
+			void slot.worker.terminate().catch(() => undefined);
 		} catch {
 			// already gone
 		}
@@ -296,7 +259,7 @@ export class SoundAnalyzer {
 		if (!slot || slot.pending.size > 0) return;
 		this.idle = setTimeout(() => {
 			if (this.slot === slot && slot.pending.size === 0) this.end(slot);
-		}, this.idleMs);
+		}, IDLE_MS);
 		this.idle.unref?.();
 	}
 

@@ -61,12 +61,12 @@ const ENGINE_ANALYSIS_REVISION = 2;
 export const ANALYSIS_VERSION = SOUND_DESCRIPTORS_VERSION * 1000 + ENGINE_ANALYSIS_REVISION;
 
 /** Folder scans are bounded (security review §5: depth and count, no symlinked folders). */
-export const MAX_SCAN_DEPTH = 12;
-export const MAX_FILES_PER_ROOT = 20_000;
+const MAX_SCAN_DEPTH = 12;
+const MAX_FILES_PER_ROOT = 20_000;
 /** At most this many sounds in the library. */
-export const MAX_LIBRARY_SOUNDS = 50_000;
+const MAX_LIBRARY_SOUNDS = 50_000;
 /** Scans per job when the folder list changes or another request arrives during a scan (then a follow-up job). */
-export const MAX_PASSES = 3;
+const MAX_PASSES = 3;
 const MAX_REPORTED_ERRORS = 100;
 const MAX_TAGS = 16;
 /** Words that say nothing about a sound (left out of folder tags). */
@@ -195,14 +195,14 @@ const storedTypes = (types: readonly string[]) =>
 		.slice(0, 32);
 
 /** A readable title from a file name: extension dropped, `_` and `-` as spaces. */
-export function titleFromFile(name: string): string {
+function titleFromFile(name: string): string {
 	const base = name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
 	const t = base.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 	return (t || base || name).slice(0, 500);
 }
 
 /** Tags of a folder sound: the words of its folders and file name (no numbers, stopwords or one-letter words). */
-export function tagsFromPath(relPath: string): string[] {
+function tagsFromPath(relPath: string): string[] {
 	const out: string[] = [];
 	for (const t of tokenizeSoundText(relPath.replace(/\.[A-Za-z0-9]{1,5}$/, ''))) {
 		if (t.length < 2 || /^\d+$/.test(t) || TAG_STOPWORDS.has(t) || out.includes(t)) continue;
@@ -255,7 +255,7 @@ function manifestItems(m: LoadedManifest, kind: 'starter' | 'pack'): IndexItem[]
 }
 
 /** Walks a user folder: audio files only, hidden names and symlinks skipped, bounded depth and count. */
-export async function walkRoot(
+async function walkRoot(
 	root: SoundRoot,
 	signal: AbortSignal,
 	onError: (file: string, message: string) => void,
@@ -347,7 +347,7 @@ function synthEntryItem(s: SynthItem): IndexItem {
 	};
 }
 
-export type IndexDeps = {
+type IndexDeps = {
 	library: SoundLibrary;
 	roots: SoundRootStore;
 	ffmpeg: Ffmpeg;
@@ -358,11 +358,8 @@ export type IndexDeps = {
 	synthDir: string;
 	cacheDir: string;
 	synthItems: () => SynthItem[];
-	now?: () => string;
 	/** Folders may be scanned (local mode, D-47; default true). Folder roots are skipped otherwise. */
 	local?: () => boolean;
-	/** At most this many sounds (default MAX_LIBRARY_SOUNDS; tests use small caps). */
-	maxSounds?: number;
 	/** Queue another index job once job `jobId` has finished (the scan it committed was already stale). */
 	followUp?: (jobId: string, full: boolean) => void;
 	log?: (m: string) => void;
@@ -500,10 +497,6 @@ async function loadPacks(packsDir: string, onError: (file: string, message: stri
 export class SoundIndexer {
 	constructor(private readonly deps: IndexDeps) {}
 
-	private now(): string {
-		return this.deps.now?.() ?? new Date().toISOString();
-	}
-
 	/** An index request that arrived while a job was queued or running: one more pass (full when asked). */
 	private requested: { full: boolean } | null = null;
 
@@ -583,7 +576,7 @@ export class SoundIndexer {
 	 * One complete scan: the next index and what changed. Commits nothing. `base` (a previous pass of the same job)
 	 * supplies the file records the stat shortcut trusts instead of the committed index's.
 	 */
-	async scan(
+	private async scan(
 		ctx: Pick<JobContext, 'signal' | 'progress' | 'trackChild'>,
 		full: boolean,
 		base?: Pick<LibrarySnapshot, 'files'>,
@@ -596,7 +589,7 @@ export class SoundIndexer {
 			if (errors.length < MAX_REPORTED_ERRORS)
 				errors.push({ source, file, code, message: message.slice(0, 500) });
 		};
-		const maxSounds = Math.max(0, Math.floor(d.maxSounds ?? MAX_LIBRARY_SOUNDS));
+		const maxSounds = MAX_LIBRARY_SOUNDS;
 		const libraryFull = (source: SoundSourceType, what: string) =>
 			err(source, what, 'LIBRARY_FULL', `the library holds at most ${maxSounds} sounds`);
 		ctx.progress(null, { stage: 'Listing sounds' });
@@ -745,7 +738,7 @@ export class SoundIndexer {
 					indexedAt:
 						previous && previous.analysisVersion === ANALYSIS_VERSION && previous.fingerprint === fingerprint
 							? previous.indexedAt
-							: this.now(),
+							: new Date().toISOString(),
 					analysisVersion: ANALYSIS_VERSION,
 					materials: itemMaterials(item),
 					...(takes ? { takes } : {}),
@@ -779,7 +772,7 @@ export class SoundIndexer {
 		for (const p of packs.flatMap((m) => m.packs)) packMap[p.id] = p;
 		return {
 			next: {
-				indexedAt: this.now(),
+				indexedAt: new Date().toISOString(),
 				starterHash: starter.hash,
 				roots,
 				packs: packMap,

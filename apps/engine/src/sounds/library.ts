@@ -39,7 +39,7 @@ export type LibrarySnapshot = {
  * analysis version and title, its materials and its takes (number, range, flags: a take id names that range; P6-E9),
  * in id order (16 hex digits of sha256). Entries without materials or takes hash as before them.
  */
-export function snapshotHashOf(sounds: Record<string, SoundEntry>): string {
+function snapshotHashOf(sounds: Record<string, SoundEntry>): string {
 	const h = createHash('sha256');
 	for (const id of Object.keys(sounds).sort()) {
 		const s = sounds[id]!;

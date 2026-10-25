@@ -44,9 +44,9 @@ export const PACK_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
  * A `files` pack downloads its files one after the other, starting at most one http(s) request per this interval
  * (BigSoundBank asks for polite fetching; a 40-file pack takes ≥ 40 s).
  */
-export const PACK_FILE_INTERVAL_MS = 1000;
+const PACK_FILE_INTERVAL_MS = 1000;
 /** Sent with every pack download: who is fetching, and why. */
-export const PACK_USER_AGENT =
+const PACK_USER_AGENT =
 	'JasperEditor sound-pack installer (video editor; downloads a sound pack the user asked for; <=1 request/s)';
 /** Partial downloads not touched for this long are deleted when the engine starts. */
 const STALE_PARTIAL_MS = 30 * 24 * 3600_000;
@@ -478,7 +478,7 @@ export type InstalledPack = {
 	record: InstallRecord;
 };
 
-export type PackStoreOptions = {
+type PackStoreOptions = {
 	packsDir: string;
 	catalog: () => Promise<PackCatalog>;
 	/** Stall / overall timeouts (tests make them short). */
@@ -486,7 +486,6 @@ export type PackStoreOptions = {
 	timeoutMs?: number;
 	/** Least time between two http(s) requests of a `files` pack (default {@link PACK_FILE_INTERVAL_MS}). */
 	fileIntervalMs?: number;
-	now?: () => Date;
 };
 
 export class SoundPackStore {
@@ -719,7 +718,7 @@ export class SoundPackStore {
 			}
 			if (ctx.signal.aborted) throw new PackError('JOB_CANCELLED', 'Cancelled');
 			ctx.progress?.(null, 'Installing');
-			const installedAt = (this.o.now?.() ?? new Date()).toISOString();
+			const installedAt = new Date().toISOString();
 			await atomicWriteJson(join(stage, PACK_MANIFEST_FILE), packManifestOf(e, installedAt), true);
 			// The finished folder must read back as the pack the catalogue describes before it replaces anything.
 			const check = await loadPackManifest(stage, id);

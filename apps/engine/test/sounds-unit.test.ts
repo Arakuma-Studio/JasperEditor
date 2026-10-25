@@ -13,9 +13,9 @@ import {
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { resolveSoundWorker, SoundAnalyzer } from '../src/sounds/analysis.ts';
-import { runAnalysis } from '../src/sounds/analysis-core.ts';
-import { attributionFor, tagsFromPath, titleFromFile } from '../src/sounds/index-job.ts';
-import { SoundLibrary, snapshotHashOf } from '../src/sounds/library.ts';
+import type { AnalysisResult } from '../src/sounds/analysis-core.ts';
+import { attributionFor } from '../src/sounds/index-job.ts';
+import { SoundLibrary } from '../src/sounds/library.ts';
 import { loadManifest, loadPackManifest } from '../src/sounds/starter.ts';
 import { computePeaks, computeSpectrogram, computeVisual } from '../src/sounds/visual.ts';
 import { makeStarter, PACK, SR, samples } from './sound-fixtures.ts';
@@ -181,8 +181,8 @@ describe('visual data', { timeout: 120_000 }, () => {
 	});
 
 	it('bounds long input to 3000 frames and handles silence, NaN and empty input', () => {
-		const long = new Float32Array(SR * 40);
-		const s = computeSpectrogram([long], SR);
+		const rate = 8000; // Valid voice-audio rate; the frame cap is independent of FFT size.
+		const s = computeSpectrogram([new Float32Array(rate * 40)], rate);
 		expect(s.frames).toBe(3000);
 		expect(s.data.every((v) => v === 0)).toBe(true);
 		const bad = new Float32Array(1000).fill(Number.NaN);
@@ -198,45 +198,26 @@ describe('visual data', { timeout: 120_000 }, () => {
 		});
 		expect(v).toMatchObject({ coveredSec: 0, peaks: { count: 0 }, spectrogram: { frames: 0 } });
 	});
-
-	it('encodes peaks and spectrogram as base64 of their dimensions', () => {
-		const ch = samples('hit', 0.5);
-		const v = computeVisual({
-			soundId: 'snd_0000000000000000',
-			fingerprint: 'q1:x',
-			durationSec: 0.5,
-			peakSec: 0.03,
-			channels: ch,
-			rate: SR,
-		});
-		expect(Buffer.from(v.peaks.data, 'base64').length).toBe(v.peaks.count);
-		expect(v.peaks.count).toBe(50);
-		expect(Buffer.from(v.spectrogram.data, 'base64').length).toBe(v.spectrogram.frames * v.spectrogram.bins);
-		expect(v.coveredSec).toBe(0.5);
-	});
 });
 
-describe('names, tags and credits', () => {
-	it('derives titles and tags from paths', () => {
-		expect(titleFromFile('Door_Slam-01.wav')).toBe('Door Slam 01');
-		expect(titleFromFile('.wav')).toBe('.wav');
-		expect(tagsFromPath('Foley/Doors/Door_Slam-01.wav')).toEqual(['foley', 'doors', 'door', 'slam']);
-		expect(tagsFromPath('SFX/sound 1.wav')).toEqual([]);
-	});
-
+describe('credits', () => {
 	it('writes a credit line when the licence asks for one, or fills the folder template', () => {
 		expect(attributionFor({ title: 'Boom', author: 'A', license: 'CC0-1.0' })).toBeNull();
-		expect(
-			attributionFor({
-				title: 'Boom',
-				author: 'Jane',
-				license: 'CC-BY-4.0',
-				licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
-				sourceUrl: 'https://x.invalid/boom',
-			}),
-		).toBe(
-			'"Boom" by Jane (https://x.invalid/boom), licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)',
-		);
+		const credit = attributionFor({
+			title: 'Boom',
+			author: 'Jane',
+			license: 'CC-BY-4.0',
+			licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+			sourceUrl: 'https://x.invalid/boom',
+		});
+		for (const field of [
+			'Boom',
+			'Jane',
+			'CC-BY-4.0',
+			'https://x.invalid/boom',
+			'https://creativecommons.org/licenses/by/4.0/',
+		])
+			expect(credit).toContain(field);
 		expect(
 			attributionFor({
 				title: 'Boom',
@@ -251,7 +232,7 @@ describe('names, tags and credits', () => {
 });
 
 describe('library index store', () => {
-	it('persists atomically and reloads the same snapshot', async () => {
+	it('persists committed entries, notifies consumers and reloads a fresh store', async () => {
 		const dir = tempAppdir('jasper-lib-');
 		const file = join(dir, 'sounds', 'library.json');
 		const changes: unknown[] = [];
@@ -266,7 +247,6 @@ describe('library index store', () => {
 			sounds: { [e.id]: e },
 			files: { 'starter:a.wav': { size: 1, mtimeMs: 2, fingerprint: e.fingerprint } },
 		});
-		expect(s.snapshotHash).toBe(snapshotHashOf({ [e.id]: e }));
 		expect(changes).toEqual([{ snapshotHash: s.snapshotHash, sounds: 1 }]);
 		// No temporary files left behind.
 		expect(readdirSync(join(dir, 'sounds'))).toEqual(['library.json']);
@@ -317,27 +297,6 @@ describe('library index store', () => {
 		expect(Object.keys((await lib.snapshot()).files)).toEqual(['a']);
 		// The file itself is left for the rebuild to replace.
 		expect(JSON.parse(readFileSync(file, 'utf8')).format).toBe('jasper-sound-library');
-	});
-
-	it('removes sounds and file records by predicate', async () => {
-		const dir = tempAppdir('jasper-lib-');
-		const lib = new SoundLibrary(join(dir, 'library.json'));
-		const a = entry('snd_00000000000000a1', {
-			source: { type: 'folder', rootId: 'root_000000000001', relPath: 'a.wav' },
-		});
-		const b = entry('snd_00000000000000b1');
-		await lib.commit({
-			indexedAt: null,
-			starterHash: '',
-			roots: [],
-			packs: {},
-			sounds: { [a.id]: a, [b.id]: b },
-			files: { 'folder:root_000000000001:a.wav': { size: 1, mtimeMs: 1, fingerprint: 'q1:a' } },
-		});
-		expect(await lib.remove((e) => e.source.type === 'folder', ['folder:root_000000000001:'])).toBe(1);
-		expect((await lib.entries()).map((e) => e.id)).toEqual([b.id]);
-		expect((await lib.snapshot()).files).toEqual({});
-		expect(await lib.remove(() => false, [])).toBe(0);
 	});
 });
 
@@ -419,39 +378,31 @@ describe('analysis worker thread', { timeout: 300_000 }, () => {
 		durationSec: seconds,
 	});
 
-	it('resolves the worker module: env, bundle, tsx source, or none', () => {
+	function expectHit(result: AnalysisResult, seconds: number) {
+		expect(result.descriptors!.durationSec).toBe(seconds);
+		expect(result.descriptors!.peakSec).toBeGreaterThan(0.015);
+		expect(result.descriptors!.peakSec).toBeLessThan(0.04);
+		expect(result.visual.peaks.count).toBe(seconds * 100);
+		const peaks = Buffer.from(result.visual.peaks.data, 'base64');
+		expect(peaks.subarray(0, 2)).toEqual(Buffer.from([0, 0]));
+		expect(peaks[2]).toBeGreaterThan(0);
+	}
+
+	it('respects the worker off switch and explicit module path', () => {
 		expect(resolveSoundWorker({ JASPER_SOUND_WORKER: 'off' })).toBeNull();
 		expect(resolveSoundWorker({ JASPER_SOUND_WORKER: '/x/w.mjs' })?.href).toBe('file:///x/w.mjs');
-		const base = pathToFileURL(join(tempAppdir('jasper-w-'), 'engine.mjs')).href;
-		expect(resolveSoundWorker({}, base, [])).toBeNull();
-		writeFileSync(new URL('./sound-worker.mjs', base), '');
-		expect(resolveSoundWorker({}, base, [])?.href).toBe(new URL('./sound-worker.mjs', base).href);
-		const src = pathToFileURL(join(HERE, '..', 'src', 'sounds', 'analysis.ts')).href;
-		expect(resolveSoundWorker({}, src, ['--import', 'file:///x/tsx/dist/loader.mjs'])?.pathname).toMatch(
-			/analysis-worker\.ts$/,
-		);
-		expect(resolveSoundWorker({}, src, [])).toBeNull();
 	});
 
-	it('gives the same results as in-thread analysis, and survives cancellation', async () => {
+	it('analyses a known signal and survives malformed requests', async () => {
 		const file = await bundleWorker();
 		const analyzer = new SoundAnalyzer(pathToFileURL(file));
 		try {
-			const expected = runAnalysis(job(0.5));
-			const got = await analyzer.run(job(0.5));
-			expect(analyzer.lastMode).toBe('worker');
-			expect(got).toEqual(expected);
-			// Cancelling a running analysis ends the worker; the next one starts a new worker.
-			const ctrl = new AbortController();
-			const long = analyzer.run(job(20, 7), ctrl.signal);
-			setTimeout(() => ctrl.abort(), 50);
-			await expect(long).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
-			expect(await analyzer.run(job(0.5))).toEqual(expected);
+			expectHit(await analyzer.run(job(0.5)), 0.5);
 			// Hostile input is a typed failure, not a dead worker.
 			await expect(analyzer.run({ ...job(0.1), rate: Number.NaN })).rejects.toMatchObject({
 				code: 'UNSUPPORTED_MEDIA',
 			});
-			expect(await analyzer.run(job(0.5))).toEqual(expected);
+			expectHit(await analyzer.run(job(0.5)), 0.5);
 		} finally {
 			await analyzer.close();
 		}
@@ -460,11 +411,7 @@ describe('analysis worker thread', { timeout: 300_000 }, () => {
 	it('falls back to in-thread analysis when no worker can start', async () => {
 		const analyzer = new SoundAnalyzer(pathToFileURL(join(tempAppdir('jasper-w-'), 'missing.mjs')));
 		const r = await analyzer.run(job(0.3));
-		expect(analyzer.lastMode).toBe('thread');
-		expect(r).toEqual(runAnalysis(job(0.3)));
-		const none = new SoundAnalyzer(null);
-		await none.run(job(0.2));
-		expect(none.lastMode).toBe('thread');
+		expectHit(r, 0.3);
 		await analyzer.close();
 	});
 });

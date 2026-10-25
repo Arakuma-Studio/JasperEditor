@@ -1071,14 +1071,14 @@ Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packa
    current are ignored; stopping one request (cancel, timeout) ends its worker and re-posts that worker's other
    requests to a new one (at most 3 posts each); visual analyses time out after `VISUAL_TIMEOUT_MS` = 120 s
    (`503 ANALYSIS_TIMEOUT`). Samples are copied to the worker instead of transferred (≤ 35 MB more, transiently).
-   Seam: `new SoundAnalyzer(url, log, {createWorker})`.
+   Worker lifecycle tests use the public worker URL with real protocol fixtures.
 6. **Cache growth.** After every committed index, `pruneSoundCache` deletes `cache/<fp>/` folders of fingerprints
    the index has neither as a sound nor as a file record, analysis/visual files of older versions in kept folders,
    and `synth/*-<seed>-v<n>.wav` renders the index does not list (older `SYNTH_VERSION`s included). Other files are
    left alone. (Cached analyses of a cancelled scan's files survive when the next successful scan still lists them.)
 7. **Library cap.** A running count replaces `Object.keys(sounds).length` per file; the cap applies while listing
    (`walkRoot({maxFiles})` stops a folder at the room left, `LIBRARY_FULL` reported) and room is reserved for every
-   synth item. Test seam: `IndexDeps.maxSounds`.
+   synth item. `sounds-index.test.ts` verifies the real limits with virtual filesystem/media I/O.
 8. **Credit changes.** A changed `author` or `attributionTemplate` (or `label` when the template uses `{folder}`) is
    `recredited` in the plan: it starts a rescan, and an agent doing it is asked (card "Change a sound folder’s credit
    line", naming the folder and the old → new value).
