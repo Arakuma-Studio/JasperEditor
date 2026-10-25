@@ -64,6 +64,11 @@ import type {
 import type { ExportOptions, ImportOptions } from './options.ts';
 import { fileName, isAbsolutePath, kindFromExtension, pathToFileUrl, resolvePath } from './paths.ts';
 import { premiereAudioTransition, premiereFadeShapeOf, premiereShapeType } from './premiere-audio-fades.ts';
+import {
+	type PremiereParam,
+	premiereTransitionForMatchName,
+	premiereTransitionParams,
+} from './premiere-transitions.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
 	flicksPerFrame,
@@ -985,11 +990,23 @@ class Fcp7Importer {
 		const audio = kind === 'audio';
 		// The name, else the effect id (a localised Premiere writes its display name, e.g. "Potencia constante").
 		const eid = childText(eff, 'effectid');
+		// Third-party Premiere transitions are recognised by their MatchName (`effectid`), whose display name may
+		// collide with a built-in one (Universe "Slide"), with their parameters converted (premiere-transitions.ts).
+		const matchName = eid ?? '';
+		const mapped = audio ? null : premiereTransitionForMatchName(matchName);
 		let effectId =
+			mapped ??
 			knownTransition(name, audio) ??
 			(eid ? knownTransition(eid, audio) : null) ??
 			transitionFromName(name, audio, this.report);
-		let params: ITransition['params'] = {};
+		let params: ITransition['params'] = mapped
+			? premiereTransitionParams(
+					matchName,
+					children(eff, 'parameter').map((p) => premiereParamOf(p, rate)),
+					this.report,
+					{ kind: 'transition', name, frame: start },
+				)
+			: {};
 		if (audio) {
 			// Premiere's fade shape (FadeShapeType / FadeShapeValue / CrossfadeSymmetry) as transition parameters.
 			const param = (...ids: string[]): string | undefined => {
@@ -1108,6 +1125,25 @@ function readParam(p: XNode, map: (v: number) => number, rate: Rate): Animatable
 	}
 	finishKeys(out);
 	return out;
+}
+
+/** A transition `<parameter>` as a Premiere parameter (name, value, keyframes in flicks from the span start). */
+function premiereParamOf(p: XNode, rate: Rate): PremiereParam {
+	const scalar = (n: XNode | null): number | string | null => {
+		const t = childText(n, 'value');
+		if (t === null) return null;
+		const x = Number(t);
+		return t.trim() !== '' && Number.isFinite(x) ? x : t;
+	};
+	return {
+		name: childText(p, 'name') ?? childText(p, 'parameterid') ?? '',
+		value: scalar(p),
+		keyframes: children(p, 'keyframe').map((k) => ({
+			time: keyTime(k, rate),
+			value: scalar(k) ?? 0,
+			interpolation: interpOf(k),
+		})),
+	};
 }
 
 function readXY(v: XNode | null): [number, number] {

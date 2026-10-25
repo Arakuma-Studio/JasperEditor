@@ -50,7 +50,8 @@ export function stabilizeRenderDoc(prev: RenderDoc | null, next: RenderDoc): Ren
 			pt.trackId === t.trackId &&
 			pt.clips.length === clips.length &&
 			pt.clips.every((c, j) => c === clips[j]) &&
-			jsonEqual(pt.mattes, t.mattes)
+			// Everything else on the track (transitions and their params, mattes, …) must be unchanged too.
+			jsonEqual({ ...pt, clips: [] }, { ...t, clips: [] })
 		)
 			return pt;
 		tracksChanged = true;
