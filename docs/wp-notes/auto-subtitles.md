@@ -403,3 +403,28 @@ inference + magnitude check), medium-high for Tilt (documented degrees); frequen
 The template → project text style link is one function (`linkTemplateStyle`). The styling commands work on groups
 through `caption.groupId` (`text.setStyle {groupId}`, `textStyle.apply / detach / reset {groupId}`); the highlight
 upkeep rebuilds its Source Text keys after any style change so they never hold a stale style.
+
+## 9. Agents (AS-041)
+
+MCP (`apps/mcp/src/tools/captions.ts`, `apps/mcp/src/tools/subtitles.ts`; strict arguments; times as frames, seconds
+or timecode; guide text `SUBTITLES_GUIDE` with the recommended flow transcribe → clean up (spec 14) →
+`captions_from_transcript` with a template → `align_captions_to_cuts` after edits → `style_text` /
+`apply_subtitle_template` → `export_captions {groupId}`):
+
+- `captions_from_transcript` — with any of `output`, `template`, `rules` (every AS-002 rule), `text`, `cutAware`,
+  `source`, `range`, `trackName`, `nest`, `dryRun` it emits `captions.generate` (one undo step; the dry run returns
+  the statistics and the first subtitles with timecodes); with only its original arguments (`maxChars`, `lines`,
+  `minSeconds`, `maxSeconds`, `gapFrames`, `breakPauseSeconds`, `preset`, `track`, …) it keeps the original caption-track
+  path (`transcript.createCaptions`), so existing agent flows behave as before.
+- `list_caption_groups {sequenceId?, groupId?, offset?, limit?}` (groups: name, template, language, rules, track,
+  clip count; with `groupId` a paged list of its clips with frames, timecodes, text and word counts),
+  `align_captions_to_cuts {groupId | clipIds, options?, dryRun?}`, `regenerate_captions {groupId, range?, rules?, text?,
+  cutAware?, dryRun?}`, `convert_captions {groupId | clipIds | captionTrackId, to, keepSource?, template?}`.
+- Templates: `list_subtitle_templates` (built-ins, project copies and the user library, each with whether its font
+  family is installed), `save_subtitle_template {clipId, name, toLibrary?}` (project copy, then the library),
+  `apply_subtitle_template {template, groupId | clipIds, parts?}`, `delete_subtitle_template {templateId, from:
+  project | library}` (library deletion is approved by the user in the editor).
+- `export_captions {groupId}` writes SRT / VTT / any caption format from a text-clip group (`captionCuesForGroup`).
+
+Tests: `apps/mcp/test/subtitles.test.ts` (each tool, dry run, refusals: unknown template, unknown argument, mixed
+paths, locked track; the original `captions_from_transcript` path; describe_commands examples).
