@@ -72,6 +72,11 @@ export function buildExportSettings(
 		credits?: CreditsChoice;
 		/** The engine's ffmpeg has an Opus encoder (VP9 goes into WebM with Opus; default true). */
 		opus?: boolean;
+		/**
+		 * ProRes only: a transparent background — straight-alpha ProRes 4444 in MOV, no audio (overlays such as social
+		 * comments to place over footage in another editor; the engine renders it on the Remotion path).
+		 */
+		alpha?: boolean;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -81,6 +86,7 @@ export function buildExportSettings(
 	const rate =
 		a.sampleRate && a.sampleRate !== 'sequence' ? a.sampleRate : (s.audioSampleRate as 44100 | 48000 | 96000);
 	const format = exportFormatOf(choice.codec ?? 'h264', choice.opus ?? true);
+	const alpha = choice.alpha === true && choice.codec === 'prores';
 	return {
 		sequenceId: seq.id,
 		range: choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' },
@@ -107,6 +113,7 @@ export function buildExportSettings(
 						},
 					}
 				: {}),
+			...(alpha ? { proresProfile: '4444' as const, alpha: true } : {}),
 		},
 		audio: {
 			codec: format.audio,
@@ -126,6 +133,7 @@ export function buildExportSettings(
 		...(choice.smartRender ? { smartRender: true } : {}),
 		...(choice.useProxies ? { draftUseProxies: true } : {}),
 		...(choice.credits && choice.credits !== 'off' ? { credits: { sidecar: choice.credits } } : {}),
+		...(alpha ? { videoOnly: true } : {}),
 	};
 }
 
@@ -252,14 +260,25 @@ export function sizeEstimateText(plan: RenderPlan | null): string {
 	return `Size depends on content (~${formatBytes(plan.estimate.bytes)})`;
 }
 
-export function outputDescription(seq: Sequence, frames: number, encoder?: EncoderChoice | null): string {
+export function outputDescription(
+	seq: Sequence,
+	frames: number,
+	encoder?: EncoderChoice | null,
+	alpha = false,
+): string {
 	const fps = fpsOf(seq.settings.frameRate);
 	const fpsText = Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
+	const duration = formatDuration(frames / fps);
+	if (alpha && encoder?.codec === 'prores')
+		return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${PRORES_ALPHA_LABEL} · no audio · ${duration}`;
 	const video = encoder ? CODEC_LABELS[encoder.codec] : 'H.264';
 	const audio =
 		encoder?.audioEncoder === 'libopus' ? 'Opus' : encoder?.audioEncoder === 'pcm_s16le' ? 'PCM' : 'AAC';
-	return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${video} · ${audio} 48 kHz stereo · ${formatDuration(frames / fps)}`;
+	return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${video} · ${audio} 48 kHz stereo · ${duration}`;
 }
+
+/** The ProRes export with a transparent background (`buildExportSettings` `alpha`). */
+export const PRORES_ALPHA_LABEL = 'ProRes 4444 with alpha';
 
 export const CODEC_LABELS: Record<VideoCodec, string> = {
 	h264: 'H.264',
@@ -428,6 +447,8 @@ type Remembered = {
 	useProxies?: boolean;
 	/** spec 12 §2.11: the sound credits choice last exported with */
 	credits?: CreditsChoice;
+	/** ProRes with a transparent background (4444 + alpha) */
+	alpha?: boolean;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
@@ -502,6 +523,7 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(v.smartRender === true ? { smartRender: true } : {}),
 			...(v.useProxies === true ? { useProxies: true } : {}),
 			...(isCreditsChoice(v.credits) ? { credits: v.credits } : {}),
+			...(v.alpha === true ? { alpha: true } : {}),
 		};
 	} catch {
 		return null;
