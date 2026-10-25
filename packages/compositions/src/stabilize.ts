@@ -78,6 +78,7 @@ export function stabilizeRenderDoc(prev: RenderDoc | null, next: RenderDoc): Ren
 		// audio-mix: the mixer topology (pan, faders, sends, automation…) changes without any clip changing.
 		...(next.audioMix ? { audioMix: reuse(prev.audioMix, next.audioMix) } : {}),
 		...(next.matteTracks ? { matteTracks: reuse(prev.matteTracks, next.matteTracks) } : {}),
+		...(next.emoji ? { emoji: reuse(prev.emoji, next.emoji) } : {}),
 	};
 	const same =
 		out.version === prev.version &&

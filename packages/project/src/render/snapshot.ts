@@ -215,6 +215,12 @@ export type RenderVisualSource =
 				 * unevaluated like shapes, RND-001); the layer evaluates them with the shared evaluator. Anime only.
 				 */
 				paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+				/**
+				 * social-comment §7.8: the font faces and emoji the anime template draws (its `requiredAssets` over the
+				 * params and every param keyframe). The faces are in `RenderSnapshot.fonts` (fontId `template:<family>`)
+				 * and the emoji URLs in `RenderSnapshot.emoji` when available. Absent = the template declares none.
+				 */
+				assets?: RenderTemplateAssets;
 			};
 	  }
 	/** Shape Animatables remain unevaluated until the layer renders each frame. */
@@ -459,6 +465,23 @@ export type RenderAudioClip = {
 	nestGain?: { start: number; end: number; db: number }[];
 };
 
+/** social-comment §7.8: what an anime template draws besides its params (see `SnapshotOptions.templateAssets`). */
+export type RenderTemplateAssets = {
+	fonts: { family: string; weight: number; style: 'normal' | 'italic' }[];
+	/** Emoji graphemes per image pack (one entry per pack). */
+	emoji: { pack: string; graphemes: string[] }[];
+};
+
+/** Font id of a template-declared face in `RenderSnapshot.fonts` (no document font has this form). */
+export function templateFontId(family: string): string {
+	return `template:${family}`;
+}
+
+/** Key of an emoji image in `RenderSnapshot.emoji` / `AnimeTemplateProps.emojiUrls`. */
+export function emojiTableKey(pack: string, grapheme: string): string {
+	return `${pack}:${grapheme}`;
+}
+
 export type RenderSnapshot = {
 	version: 1;
 	sequenceId: string;
@@ -505,6 +528,11 @@ export type RenderSnapshot = {
 	/** null = offline. */
 	media: Record<string, MediaHandle | null>;
 	fonts: { fontId: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }[];
+	/**
+	 * social-comment §7.8: emoji image URLs of the anime templates' required emoji, keyed `emojiTableKey(pack,
+	 * grapheme)`; an unavailable image is absent. Absent = no template draws emoji.
+	 */
+	emoji?: Record<string, string>;
 	master: { volumeDb: Animatable<number> };
 	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
 	warnings: { clipId: string; code: string; message: string }[];
@@ -527,6 +555,22 @@ export type SnapshotOptions = {
 	 * `rotoStorePath(key)`); default the unsigned same-origin path.
 	 */
 	resolveRoto?(key: string): string;
+	/**
+	 * social-comment §7.8: fonts and emoji of anime templates. `required` gives a clip's template assets
+	 * (`@jasper/mg-templates` `templateAssetOptions` binds it to the template registry); `font` the URL of a face
+	 * (exact family / weight / style, never a fallback; null = unavailable) and `emoji` the URL of an emoji image of a
+	 * pack (null = unavailable). Unavailable assets become snapshot warnings (`TEMPLATE_FONT_UNAVAILABLE`,
+	 * `TEMPLATE_EMOJI_UNAVAILABLE`) that export planners turn into blockers. Absent = template assets are not resolved.
+	 */
+	templateAssets?: {
+		required(mg: {
+			template: { id: string; version: number };
+			params: Record<string, unknown>;
+			paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+		}): RenderTemplateAssets | null;
+		font(face: RenderTemplateAssets['fonts'][number]): string | null;
+		emoji(pack: string, grapheme: string): string | null;
+	};
 	/** Pre-render URLs known to the consumer. */
 	resolveComposition?(clip: {
 		clipId: string;
@@ -720,6 +764,43 @@ export function buildRenderSnapshot(
 	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
+	const emojiTable: Record<string, string> = {};
+	// social-comment §7.8: a template's declared faces join the document's fonts; its emoji join the emoji table.
+	const useTemplateAssets = (clipId: string, mg: Extract<RenderVisualSource, { mg: unknown }>['mg']) => {
+		const resolver = opts.templateAssets;
+		const assets = resolver?.required(mg);
+		if (!resolver || !assets || (assets.fonts.length === 0 && assets.emoji.length === 0)) return;
+		mg.assets = assets;
+		for (const face of assets.fonts) {
+			const fontId = templateFontId(face.family);
+			const key = `${fontId}:${face.weight}:${face.style === 'italic'}`;
+			if (fontKeys.has(key)) continue;
+			const url = resolver.font(face);
+			if (url) fontKeys.set(key, { fontId, ...face, url });
+			else
+				warnings.push({
+					clipId,
+					code: 'TEMPLATE_FONT_UNAVAILABLE',
+					message: `Font "${face.family}" ${face.weight}${face.style === 'italic' ? ' italic' : ''} is not available`,
+				});
+		}
+		for (const { pack, graphemes } of assets.emoji) {
+			const missing: string[] = [];
+			for (const g of graphemes) {
+				const key = emojiTableKey(pack, g);
+				if (key in emojiTable) continue;
+				const url = resolver.emoji(pack, g);
+				if (url) emojiTable[key] = url;
+				else missing.push(g);
+			}
+			if (missing.length)
+				warnings.push({
+					clipId,
+					code: 'TEMPLATE_EMOJI_UNAVAILABLE',
+					message: `Emoji ${missing.slice(0, 8).join(' ')}${missing.length > 8 ? ` (+${missing.length - 8})` : ''} of the ${pack} pack ${missing.length === 1 ? 'is' : 'are'} not available`,
+				});
+		}
+	};
 	let itemNames: Map<string, string> | null = null;
 	const sourceInfoOf = (mediaId: string): RenderVisualClip['sourceInfo'] => {
 		if (!itemNames) {
@@ -776,6 +857,7 @@ export function buildRenderSnapshot(
 			const key = `${f.fontId}:${f.weight}:${f.style === 'italic'}`;
 			if (!fontKeys.has(key)) fontKeys.set(key, f);
 		}
+		for (const [k, url] of Object.entries(sub.emoji ?? {})) if (!(k in emojiTable)) emojiTable[k] = url;
 		for (const w of sub.warnings) warnings.push({ ...w, message: `In nested sequence: ${w.message}` });
 		return { snap: sub, nestedFps };
 	};
@@ -961,6 +1043,7 @@ export function buildRenderSnapshot(
 								: {}),
 						},
 					};
+					if (renderer === 'anime') useTemplateAssets(c.id, source.mg);
 					break;
 				}
 				case 'shape': {
@@ -1283,6 +1366,7 @@ export function buildRenderSnapshot(
 		audioClips,
 		media,
 		fonts: [...fontKeys.values()],
+		...(Object.keys(emojiTable).length ? { emoji: emojiTable } : {}),
 		master: { volumeDb: seq.master.volumeDb },
 		audioMix,
 		warnings,
