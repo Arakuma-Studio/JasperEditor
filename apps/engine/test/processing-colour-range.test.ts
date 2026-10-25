@@ -4,12 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
+import { repoRoot } from '@jasper/testkit/env';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
-import { ROOT } from './helpers.ts';
 
-const LGPL_DIR = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
+const LGPL_DIR = join(repoRoot(), 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 
 function version(ffmpeg: string): string | null {
 	const r = spawnSync(ffmpeg, ['-hide_banner', '-version'], { encoding: 'utf8' });
@@ -29,7 +29,8 @@ const FFMPEGS = (() => {
 
 const W = 480;
 const H = 272;
-const N = 30;
+// Range fidelity is independent of clip duration; 12 frames include a complete 9-frame temporal denoise window.
+const N = 12;
 const PAD = 12;
 /** The black and white patches (output coordinates before jitter). */
 const BLACK = { x0: 40, y0: 30, x1: 200, y1: 110 };

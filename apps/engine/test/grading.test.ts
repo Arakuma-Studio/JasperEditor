@@ -122,6 +122,7 @@ describe('POST /api/grading/match', () => {
 			reference: { sequenceId: d.seqId, frame: 40 },
 		});
 		expect(out.statusCode).toBe(400);
+		expect(out.json().code).toBe('VALIDATION_FAILED');
 		const fx = await post('/api/grading/match', {
 			envelope: d.envelope(),
 			sequenceId: d.seqId,
@@ -131,6 +132,7 @@ describe('POST /api/grading/match', () => {
 			reference: { sequenceId: d.seqId, frame: 40 },
 		});
 		expect(fx.statusCode).toBe(404);
+		expect(fx.json().code).toBe('EFFECT_NOT_FOUND');
 	});
 });
 

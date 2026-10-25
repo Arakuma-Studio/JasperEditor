@@ -237,7 +237,7 @@ describe('render keys (LBK-020)', () => {
 			expect(await keyOfClip(d, t, { ...ENV, ...change })).not.toBe(k2);
 	});
 
-	it('identical titles share a bake unless they are seeded by their clip id (text animators, anime templates)', async () => {
+	it('identical titles share a bake unless a text animation or shader seeds them by clip id', async () => {
 		const d = new DocBuilder('hd-720p-30');
 		const a = smallTitle(d, 'Twin', { at: 0, track: 'V1' });
 		const b = smallTitle(d, 'Twin', { at: 0, track: 'V2' });
@@ -273,6 +273,17 @@ describe('render keys (LBK-020)', () => {
 		const kf = await keyOfClip(d, a);
 		withAnim('forward', 12);
 		expect(await keyOfClip(d, a)).not.toBe(kf);
+		// Shader noise also depends on clip id, even when the source and effect instance are unchanged.
+		const shader = new DocBuilder('hd-720p-30');
+		const x = smallTitle(shader, 'Noise', { at: 0, track: 'V1' });
+		shader.tx([
+			{ type: 'effect.add', target: { clipId: x }, effectId: 'jasper.noise', params: { amount: 10 } },
+		]);
+		const p = await planned(shader);
+		const source = clipOf(p.snapshot, x);
+		const first = await svc.planBake(p, source, { env: ENV });
+		const renamed = await svc.planBake(p, { ...source, clipId: b }, { env: ENV });
+		expect(renamed.key).not.toBe(first.key);
 	});
 
 	it('another title using a different font weight does not invalidate this title’s bake', async () => {

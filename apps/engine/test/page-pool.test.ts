@@ -1,3 +1,4 @@
+import { setImmediate } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
 import { type PageGrant, type PagePoolProgress, runPagePool } from '../src/remotion/page-pool.ts';
@@ -29,8 +30,6 @@ function manual(want: number, weight = want * 30) {
 	return t;
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 0));
-
 describe('page budget', () => {
 	it('never grants more pages than the render budget', async () => {
 		const big = manual(4);
@@ -39,10 +38,10 @@ describe('page budget', () => {
 		const s2 = manual(1, 1);
 		const tasks = [s1, mid, big, s2];
 		const p = runPagePool(tasks, { budget: 6, maxInFlight: 4, signal: new AbortController().signal });
-		await tick();
+		await setImmediate();
 		expect([big, mid, s1, s2].reduce((n, t) => n + (t.grant?.pages ?? 0), 0)).toBeLessThanOrEqual(6);
 		mid.finish();
-		await tick();
+		await setImmediate();
 		expect([big, s1, s2].reduce((n, t) => n + (t.grant?.pages ?? 0), 0)).toBeLessThanOrEqual(6);
 		big.finish();
 		s1.finish('a');
@@ -53,20 +52,20 @@ describe('page budget', () => {
 	it('bounds the renders in flight; maxInFlight 1 runs them one after the other with the whole budget', async () => {
 		const ts = [manual(1, 1), manual(1, 1), manual(1, 1), manual(1, 1), manual(1, 1), manual(1, 1)];
 		const p = runPagePool(ts, { budget: 6, maxInFlight: 4, signal: new AbortController().signal });
-		await tick();
+		await setImmediate();
 		expect(ts.filter((t) => t.started)).toHaveLength(4);
 		for (const t of ts) if (t.started) t.finish();
-		await tick();
+		await setImmediate();
 		expect(ts.every((t) => t.started)).toBe(true);
 		for (const t of ts) t.finish();
 		await p;
 		const seq = [manual(6), manual(2)];
 		const q = runPagePool(seq, { budget: 6, maxInFlight: 1, signal: new AbortController().signal });
-		await tick();
+		await setImmediate();
 		expect(seq[0]!.grant?.pages).toBe(6);
 		expect(seq[1]!.started).toBe(false);
 		seq[0]!.finish();
-		await tick();
+		await setImmediate();
 		expect(seq[1]!.grant?.pages).toBe(2);
 		seq[1]!.finish();
 		await q;
@@ -81,12 +80,12 @@ describe('page budget', () => {
 			signal: new AbortController().signal,
 			onProgress: (s) => seen.push(s),
 		});
-		await tick();
+		await setImmediate();
 		a.grant!.progress(0.5);
 		expect(seen.at(-1)).toMatchObject({ done: 0, running: 2, total: 2 });
 		expect(seen.at(-1)!.fraction).toBeCloseTo(15 / 40);
 		b.finish();
-		await tick();
+		await setImmediate();
 		expect(seen.at(-1)).toMatchObject({ done: 1, running: 1 });
 		expect(seen.at(-1)!.fraction).toBeCloseTo(25 / 40);
 		a.finish();
@@ -103,7 +102,7 @@ describe('page budget', () => {
 			() => null,
 			(e) => e,
 		);
-		await tick();
+		await setImmediate();
 		expect(a.started && b.started).toBe(true);
 		a.fail(new JobError('RENDER_FAILED', 'boom'));
 		const err = (await settled) as JobError;
@@ -120,7 +119,7 @@ describe('page budget', () => {
 			() => null,
 			(e) => e,
 		);
-		await tick();
+		await setImmediate();
 		ac.abort();
 		const err = (await settled) as JobError;
 		expect(err.code).toBe('JOB_CANCELLED');

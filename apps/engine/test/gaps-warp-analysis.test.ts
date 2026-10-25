@@ -42,10 +42,8 @@ function walk(n: number, limit = 24, seed = 1234567, step = 6) {
 	return { xs, ys };
 }
 
-let analysis: WarpAnalysisResult;
-
 describe('Warp Stabilizer analysis', () => {
-	it('measures the known camera walk frame by frame', async () => {
+	it('analyses the camera walk, stabilises it and refuses exports until that analysis is present', async () => {
 		const shaky = await register(app, fixture('shaky.mp4'));
 		const r = await app.inject({
 			method: 'POST',
@@ -56,7 +54,7 @@ describe('Warp Stabilizer analysis', () => {
 		expect(r.statusCode, r.body).toBe(202);
 		const done = await coreServices(app).queue.wait(r.json().id);
 		expect(done.error, JSON.stringify(done.error)).toBeUndefined();
-		analysis = done.result as WarpAnalysisResult;
+		const analysis = done.result as WarpAnalysisResult;
 		expect(analysis.analysedFrames).toBe(90);
 		expect(analysis.size).toEqual([1920, 1080]);
 		expect(WarpAnalysisDataSchema.safeParse(analysis).success).toBe(true);
@@ -76,11 +74,9 @@ describe('Warp Stabilizer analysis', () => {
 		expect(bad, `max error ${maxErr.toFixed(2)} px`).toBeLessThanOrEqual(2);
 		expect(analysis.tracks!.length).toBeGreaterThan(40);
 		expect(analysis.confidence!).toBeGreaterThan(0.8);
-	}, 300_000);
 
-	it('the stored analysis stabilises the walk (No Motion holds the scene still)', () => {
+		// Applying the stored analysis holds the authored scene still.
 		const a = analysis as never;
-		const w = walk(90);
 		// A scene point at the centre of frame 0 is at centre − (walk − walk0) on frame k.
 		const at = (k: number): [number, number] => [960 - (w.xs[k]! - w.xs[0]!), 540 - (w.ys[k]! - w.ys[0]!)];
 		for (const method of ['position', 'perspective', 'subspaceWarp'] as const) {
@@ -91,10 +87,8 @@ describe('Warp Stabilizer analysis', () => {
 			const spread = Math.max(...outs.map((p) => Math.hypot(p[0] - outs[45]![0], p[1] - outs[45]![1])));
 			expect(spread, method).toBeLessThan(method === 'subspaceWarp' ? 2.5 : 1.5);
 		}
-	});
 
-	it('the export planner refuses an un-analysed Warp Stabilizer and accepts an analysed one', async () => {
-		const shaky = await register(app, fixture('shaky.mp4'));
+		// The planner refuses the effect until that analysis is attached.
 		const d = new DocBuilder();
 		const m = d.addMedia(shaky);
 		d.tx([{ type: 'clip.place', source: { mediaId: m }, at: 0 }]);

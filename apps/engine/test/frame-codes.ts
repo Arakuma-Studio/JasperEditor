@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-/** Decode the burned-in frame codes in one pass; starting ffmpeg for each frame dominated this suite. */
+/** Decode increasing, unique burned-in frame-code indices in one FFmpeg process. */
 export function frameCodes(
 	file: string,
 	frames: readonly number[],
@@ -14,6 +14,7 @@ export function frameCodes(
 		],
 		...['-vsync', '0', '-f', 'rawvideo', '-'],
 	]);
+	if (r.error) throw r.error;
 	if (r.status !== 0) throw new Error(r.stderr.toString());
 	if (r.stdout.length !== frames.length * 420 * 3)
 		throw new Error(`Expected ${frames.length} frame-code strips from ${file}, got ${r.stdout.length} bytes`);

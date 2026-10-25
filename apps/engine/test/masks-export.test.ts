@@ -105,7 +105,7 @@ describe('mask export routing', () => {
 			sequenceId: d.seqId,
 			settings: settings(d.seqId, 10) as never,
 		});
-		if (planned.plan.path === 'native') throw new Error('a masked effect must not export natively');
+		expect(['hybrid', 'remotion']).toContain(planned.plan.path);
 		if (planned.plan.path === 'remotion')
 			expect(planned.plan.blockers.some((b) => b.itemId === s)).toBe(true);
 	}, 120_000);

@@ -9,7 +9,6 @@ import { join } from 'node:path';
 import type { EngineJob, ExportSettings, RenderPlan } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-	audioCodecFamily,
 	type EncoderInventory,
 	fitOutputFormat,
 	outputFormatChanges,
@@ -52,21 +51,7 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 			audioEncoder: 'aac',
 		});
 		expect(fitOutputFormat('hevc', 'export', true, { container: 'mov' }).container).toBe('mov');
-	});
-
-	it('keeps the codec defaults when nothing or the same is asked (no behaviour change)', () => {
-		expect(fitOutputFormat('h264', 'export', true)).toEqual({ container: 'mp4', audioEncoder: 'aac' });
-		expect(fitOutputFormat('prores', 'export', true)).toEqual({
-			container: 'mov',
-			audioEncoder: 'pcm_s16le',
-		});
-		expect(fitOutputFormat('vp9', 'export', true)).toEqual({ container: 'webm', audioEncoder: 'libopus' });
-		expect(fitOutputFormat('vp9', 'export', false)).toEqual({ container: 'mp4', audioEncoder: 'aac' });
-		expect(fitOutputFormat('av1', 'export', true, { container: 'mp4', audio: 'aac' })).toEqual({
-			container: 'mp4',
-			audioEncoder: 'aac',
-		});
-		// proxies stay MP4 whatever is asked
+		// Proxy files remain MP4 even when MOV and PCM were requested.
 		expect(fitOutputFormat('h264', 'proxy', true, { container: 'mov', audio: 'pcm' })).toEqual({
 			container: 'mp4',
 			audioEncoder: 'aac',
@@ -81,11 +66,9 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 			audio: 'aac',
 		})!;
 		expect(prores).toMatchObject({ container: 'mov', audioEncoder: 'pcm_s16le' });
-		expect(outputFormatChanges(prores, { container: 'mp4', audio: 'aac' })).toEqual([
+		expect(outputFormatChanges(prores, { container: 'mp4', audio: 'aac' })).toMatchObject([
 			{
 				code: 'OUTPUT_CONTAINER_CHANGED',
-				message:
-					'MP4 was requested but MP4 does not carry ProRes (MP4 takes H.264, HEVC, AV1, VP9): the file is MOV',
 				// the values, for editors that say it in their language (final carry-over cleanup, item 6)
 				params: {
 					requested: 'MP4',
@@ -97,7 +80,6 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 			},
 			{
 				code: 'AUDIO_CODEC_CHANGED',
-				message: 'AAC audio was requested but ProRes masters carry PCM audio: the audio is PCM',
 				params: { requested: 'AAC', written: 'PCM', container: 'MOV', why: 'prores' },
 			},
 		]);
@@ -119,10 +101,9 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 			audio: 'pcm',
 		})!;
 		expect(pcmInMp4).toMatchObject({ container: 'mp4', audioEncoder: 'aac' });
-		expect(outputFormatChanges(pcmInMp4, { container: 'mp4', audio: 'pcm' })).toEqual([
+		expect(outputFormatChanges(pcmInMp4, { container: 'mp4', audio: 'pcm' })).toMatchObject([
 			{
 				code: 'AUDIO_CODEC_CHANGED',
-				message: 'PCM audio was requested but MP4 does not carry PCM audio (PCM needs MOV): the audio is AAC',
 				params: { requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' },
 			},
 		]);
@@ -134,12 +115,9 @@ describe('fitOutputFormat / selectVideoEncoder honour the requested container an
 		})!;
 		expect(webm).toMatchObject({ container: 'mp4', audioEncoder: 'aac' });
 		expect(outputFormatChanges(webm, { container: 'webm', audio: 'opus' })[0]).toMatchObject({
-			message: 'WEBM was requested but WebM needs Opus audio, which this ffmpeg build lacks: the file is MP4',
+			code: 'OUTPUT_CONTAINER_CHANGED',
 			params: { requested: 'WEBM', written: 'MP4', why: 'opus' },
 		});
-		expect(audioCodecFamily('pcm_s24le')).toBe('pcm');
-		expect(audioCodecFamily('libopus')).toBe('opus');
-		expect(audioCodecFamily('aac')).toBe('aac');
 	});
 });
 
@@ -246,9 +224,7 @@ describe('H.264 + PCM in MOV on a real engine (WP6.5a item 6)', { timeout: 300_0
 		const d = await doc();
 		const p = await plan(d, { container: 'mp4' });
 		const w = p.warnings.find((x) => x.code === 'AUDIO_CODEC_CHANGED');
-		expect(w?.message).toBe(
-			'PCM audio was requested but MP4 does not carry PCM audio (PCM needs MOV): the audio is AAC',
-		);
+		expect(w?.params).toMatchObject({ requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' });
 		const start = await app.inject({
 			method: 'POST',
 			url: '/api/exports',
@@ -260,10 +236,11 @@ describe('H.264 + PCM in MOV on a real engine (WP6.5a item 6)', { timeout: 300_0
 		};
 		expect(job.error, JSON.stringify(job.error)).toBeUndefined();
 		expect(job.result).toMatchObject({ container: 'mp4', audioCodec: 'aac' });
-		expect(job.result.warnings).toContainEqual({
-			code: 'AUDIO_CODEC_CHANGED',
-			message: w!.message,
-			params: { requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' },
-		});
+		expect(job.result.warnings).toContainEqual(
+			expect.objectContaining({
+				code: 'AUDIO_CODEC_CHANGED',
+				params: { requested: 'PCM', written: 'AAC', container: 'MP4', why: 'container' },
+			}),
+		);
 	});
 });

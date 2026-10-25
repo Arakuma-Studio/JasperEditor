@@ -267,13 +267,10 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		return { d, ids };
 	}
 
-	let main: Awaited<ReturnType<typeof mainDoc>>;
-	let first: Awaited<ReturnType<typeof exportDoc>>;
-
-	it('plans hybrid; bakes one PNG per static layer; the output matches a full Remotion render (≤ 3/255 on 99 %)', async () => {
-		main = await mainDoc();
+	it('hybrid layer bakes match Remotion, preserve straight alpha and reuse masters for stills', async () => {
+		const main = await mainDoc();
 		const { d } = main;
-		first = await exportDoc(d, 'auto');
+		const first = await exportDoc(d, 'auto');
 		expect(first.done.state, JSON.stringify(first.done.error)).toBe('succeeded');
 		expect(first.plan.path).toBe('hybrid');
 		expect(first.done.result).toMatchObject({ renderPath: 'hybrid', frames: 60 });
@@ -336,88 +333,90 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			{ type: 'clip.update', clipIds: [footage], patch: { enabled: true } },
 			{ type: 'sequence.updateSettings', sequenceId: d.seqId, settings: { backgroundColor: [0, 0, 0, 1] } },
 		]);
-	}, 1_800_000);
 
-	it('masters keep straight alpha: over R/G/B/W within 2/255 of the browser still', async () => {
-		const { d, ids } = main;
-		const planned = await coreServices(engine.app).exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: proresSettings(d.seqId, 'auto') as never,
-		});
-		const clip = planned.snapshot.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === ids.moving)!;
-		const plan = await svc.planBake(planned, clip, { env: await svc.environment() });
-		const bake = (await svc.lookup(plan.key))!;
-		expect(bake.still).toBe(false);
-		const doc = bake.rect ? plan.doc : (plan.fullDoc ?? plan.doc);
-		expect([doc.settings.width, doc.settings.height]).toEqual([bake.width, bake.height]);
-		const k = 20;
-		const out = join(tempAppdir('jasper-lb-still-'), 'still.png');
-		await coreServices(engine.app).remotion.renderStill({
-			inputProps: {
-				doc: { ...doc, range: { start: k, end: k + 1 }, durationFrames: 1 },
-				options: {
-					isPreview: false,
-					useProxies: false,
-					transparentBackground: true,
-					layerFilter: [ids.moving],
+		// The same cached master must preserve straight alpha over every background channel.
+		{
+			const { d, ids } = main;
+			const planned = await coreServices(engine.app).exports.plan({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: proresSettings(d.seqId, 'auto') as never,
+			});
+			const clip = planned.snapshot.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === ids.moving)!;
+			const plan = await svc.planBake(planned, clip, { env: await svc.environment() });
+			const bake = (await svc.lookup(plan.key))!;
+			expect(bake.still).toBe(false);
+			const doc = bake.rect ? plan.doc : (plan.fullDoc ?? plan.doc);
+			expect([doc.settings.width, doc.settings.height]).toEqual([bake.width, bake.height]);
+			const k = 20;
+			const out = join(tempAppdir('jasper-lb-still-'), 'still.png');
+			await coreServices(engine.app).remotion.renderStill({
+				inputProps: {
+					doc: { ...doc, range: { start: k, end: k + 1 }, durationFrames: 1 },
+					options: {
+						isPreview: false,
+						useProxies: false,
+						transparentBackground: true,
+						layerFilter: [ids.moving],
+					},
 				},
-			},
-			output: out,
-			frame: 0,
-			signal: new AbortController().signal,
-		});
-		const png = decode(out, { pix: 'rgba' });
-		const mframe = decode(bake.path, { frame: k, pix: 'rgba' });
-		let semi = 0;
-		let worst = 0;
-		for (const bg of [
-			[255, 0, 0],
-			[0, 255, 0],
-			[0, 0, 255],
-			[255, 255, 255],
-		] as [number, number, number][]) {
-			const a = over(mframe, bg);
-			const b = over(png, bg);
-			for (let i = 0, j = 0; i < png.length; i += 4, j += 3) {
-				const alpha = png[i + 3]!;
-				if (alpha === 0 || alpha === 255) continue;
-				semi++;
-				for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(a[j + c]! - b[j + c]!));
+				output: out,
+				frame: 0,
+				signal: new AbortController().signal,
+			});
+			const png = decode(out, { pix: 'rgba' });
+			const mframe = decode(bake.path, { frame: k, pix: 'rgba' });
+			let semi = 0;
+			let worst = 0;
+			for (const bg of [
+				[255, 0, 0],
+				[0, 255, 0],
+				[0, 0, 255],
+				[255, 255, 255],
+			] as [number, number, number][]) {
+				const a = over(mframe, bg);
+				const b = over(png, bg);
+				for (let i = 0, j = 0; i < png.length; i += 4, j += 3) {
+					const alpha = png[i + 3]!;
+					if (alpha === 0 || alpha === 255) continue;
+					semi++;
+					for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(a[j + c]! - b[j + c]!));
+				}
 			}
+			report(`[LBK alpha] semi-transparent samples ${semi}, worst difference ${worst}/255`);
+			expect(semi).toBeGreaterThan(1000); // anti-aliased glyph edges and the shadow
+			expect(worst).toBeLessThanOrEqual(2);
 		}
-		report(`[LBK alpha] semi-transparent samples ${semi}, worst difference ${worst}/255`);
-		expect(semi).toBeGreaterThan(1000); // anti-aliased glyph edges and the shadow
-		expect(worst).toBeLessThanOrEqual(2);
-	}, 600_000);
 
-	it('stills take the same path: cached masters are reused, else one frame per layer is baked (LBK-025)', async () => {
-		const { d } = main;
-		const s = await still(d, 30);
-		expect(s.done.state, JSON.stringify(s.done.error)).toBe('succeeded');
-		expect(s.done.result).toMatchObject({ renderPath: 'hybrid' });
-		expect(s.bakes).toHaveLength(0);
-		const exp = await exportDoc(d, 'auto');
-		expect(
-			within(decode(s.file, { pix: 'rgb24' }), decode(exp.out, { frame: 30, pix: 'rgb24' }), 3),
-		).toBeGreaterThanOrEqual(0.99);
-		const t = d.tx([
-			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Fresh' }, ref: '$f' },
-		]).refs.$f!;
-		d.tx([
-			{
-				type: 'param.setAnimated',
-				target: ['clip', t, 'opacity'],
-				animated: true,
-				at: { sequenceFrame: 60 },
-			},
-		]);
-		d.tx([{ type: 'clip.move', clipIds: [t], deltaFrames: 60 }]);
-		d.tx([{ type: 'param.set', target: ['clip', t, 'opacity'], value: 0, at: { sequenceFrame: 89 } }]);
-		const s2 = await still(d, 70);
-		expect(s2.done.state, JSON.stringify(s2.done.error)).toBe('succeeded');
-		expect(s2.bakes).toHaveLength(1);
-		expect(s2.bakes[0]!.result).toMatchObject({ still: true, frames: 1 });
+		// Stills reuse these masters; a fresh layer bakes only the requested frame (LBK-025).
+		{
+			const { d } = main;
+			const s = await still(d, 30);
+			expect(s.done.state, JSON.stringify(s.done.error)).toBe('succeeded');
+			expect(s.done.result).toMatchObject({ renderPath: 'hybrid' });
+			expect(s.bakes).toHaveLength(0);
+			const exp = await exportDoc(d, 'auto');
+			expect(
+				within(decode(s.file, { pix: 'rgb24' }), decode(exp.out, { frame: 30, pix: 'rgb24' }), 3),
+			).toBeGreaterThanOrEqual(0.99);
+			const t = d.tx([
+				{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Fresh' }, ref: '$f' },
+			]).refs.$f!;
+			d.tx([
+				{
+					type: 'param.setAnimated',
+					target: ['clip', t, 'opacity'],
+					animated: true,
+					at: { sequenceFrame: 60 },
+				},
+			]);
+			d.tx([{ type: 'clip.move', clipIds: [t], deltaFrames: 60 }]);
+			d.tx([{ type: 'param.set', target: ['clip', t, 'opacity'], value: 0, at: { sequenceFrame: 89 } }]);
+			const s2 = await still(d, 70);
+			expect(s2.done.state, JSON.stringify(s2.done.error)).toBe('succeeded');
+			expect(s2.bakes).toHaveLength(1);
+			expect(s2.bakes[0]!.result).toMatchObject({ still: true, frames: 1 });
+		}
 	}, 1_800_000);
 
 	it('a Lumetri grade on a title shows in the native export, the Remotion export and the graded preview (FIX-002)', async () => {

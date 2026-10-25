@@ -6,6 +6,7 @@ import type { RenderPlan } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { analysePackets, smartPieces } from '../src/export/smart.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -84,18 +85,6 @@ describe('GOP analysis and the copy/render split (pure)', () => {
 		]);
 	});
 });
-
-/** The 6-bit frame number burnt into frame-code.mp4 (see export.test.ts). */
-function frameCode(file: string, frame: number): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
 
 /** framemd5 lines (decoded picture hashes) of frames [from, to) of a file's video. */
 function frameHashes(file: string, from: number, to: number): string[] {
@@ -206,7 +195,7 @@ describe('smart rendering exports (real ffmpeg)', () => {
 		expect(spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-f', 'null', '-']).stderr.toString().trim()).toBe(
 			'',
 		);
-		for (const n of [0, 1, 19, 20, 21, 40, 53]) expect(frameCode(file, n), `frame ${n}`).toBe(n + 10);
+		expect(frameCodes(file, [0, 1, 19, 20, 21, 40, 53])).toEqual([10, 11, 29, 30, 31, 50, 63]);
 		expect(frameHashes(file, 20, 54)).toEqual(frameHashes(fixture('frame-code.mp4'), 30, 64));
 	}, 300_000);
 
@@ -275,7 +264,7 @@ describe('smart rendering exports (real ffmpeg)', () => {
 			),
 		).toBe(50);
 		expect(frameHashes(file, 0, 30)).toEqual(frameHashes(src, 0, 30));
-		expect(frameCode(file, 35)).toBe(35);
+		expect(frameCodes(file, [35])[0]).toBe(35);
 	}, 300_000);
 
 	it('explains why it cannot copy', async () => {

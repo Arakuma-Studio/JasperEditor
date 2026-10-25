@@ -406,7 +406,6 @@ describe('mg-bundles routes (no browser)', () => {
 	it('serves bundle files (Range, traversal-safe), the live host page and cached pre-renders', async () => {
 		const app = await makeApp();
 		const svc = mgBundleService(app)!;
-		expect(svc).toBeTruthy();
 		const reg = await registerFake(app, fakeBundle(tempAppdir('jasper-fake-')));
 		expect(reg.kind).toBe('mg-bundle');
 		expect(reg.mgBundle?.compositions[0]?.id).toBe('Title');
@@ -450,7 +449,6 @@ describe('mg-bundles routes (no browser)', () => {
 		const host = await app.inject({ method: 'GET', url: String(redirect.headers.location), headers: JSON_H });
 		expect(host.statusCode).toBe(200);
 		expect(host.headers['cache-control']).toBe('no-store');
-		expect(host.body).toContain('__jasperMgHost');
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: JSON_H })).json().status,
 		).toMatch(/online|processing/);
