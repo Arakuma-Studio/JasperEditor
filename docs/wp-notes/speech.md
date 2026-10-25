@@ -385,3 +385,50 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
 
 ### 11.7 Measurements (SG-041)
 
+
+Research numbers (before this work, spec 16 §0 — M4 Max, build VM, RTX 3060): turbo is the most accurate (Spanish
+voice-over WER 3.4 % vs small 6.8 %), RTF 0.256 on the M4 Max CPU, 0.215 with the WebGPU encoder, 0.155 on the RTX
+3060 with CUDA + greedy. Post-implementation reruns, all **measured** on the build VM (16 shared EPYC-Rome vCPU,
+30 GB, Node 24.22.1, onnxruntime-node 1.30.0, CPU only — no GPU), the LJ fixture (71.6 s, English, language given),
+8 threads, with the VM bench lock held; the VM was shared with other agents' test suites, so the load average is
+given per run. Rerunnable: the private harness (`research/whisper/harness/bench.ts`, copied with paths to the two
+checkouts) and `pnpm exec vitest run apps/engine/test/speech-model.e2e.test.ts` with
+`JASPER_SPEECH_MODELS_DIR` / `JASPER_SPEECH_TURBO_DIR`.
+
+| Run (load average) | Config | RTF before (85e1bc76) | RTF after | JS ms per decoder run before → after |
+|---|---|---|---|---|
+| round 1 (2.0 → 7.3) | tiny greedy | 0.046 | 0.045 | 6.96 → 5.87 |
+| | tiny beam 5 | 0.096 | 0.090 | 19.27 → 13.11 |
+| | turbo greedy | 0.238 | 0.241 | 8.26 → 6.66 |
+| | turbo beam 5 | 0.317 | 0.328 | 25.58 → 17.09 |
+| round 2 (11.6 → 12.1) | tiny greedy / beam 5 | 0.051 / 0.122 | 0.043 / 0.105 | 7.50 → 5.86 / 21.98 → 13.24 |
+| | turbo greedy / beam 5 | 0.280 / 0.349 | 0.251 / 0.344 | 9.38 → 6.94 / 28.16 → 17.13 |
+
+"JS per decoder run" = recognition time minus ONNX Runtime run time, divided by the decoder runs: it also contains
+the log-mel front end, alignment (DTW), word timing and refinement, which do not scale with tokens. The per-token hot
+spots alone (`micro.mts`: the same random 51,866-token logits through the old and the new functions, single thread,
+interleaved, load ≈ 20): greedy step 1.39–1.59 → 0.52 ms (**2.7–3.0×**), beam-5 step (5 rows: filters,
+normalisation, top-6) 8.36–8.38 → 3.06–3.36 ms (**2.5–2.7×**), log-mel of 30 s + 30 s padding (128 bands)
+430–467 → 294–312 ms (1.45×) — SG-013's ≥ 2× per token is met for the per-token work; end to end the JS share falls
+by 1.2–1.5×, and recognition time is dominated by ONNX Runtime (turbo's encoder: 12 s of 17 s). Greedy is now the
+default: turbo 0.24 vs 0.32 RTF for beam 5 on this machine.
+
+| Check (engine job, `speech-model.e2e.test.ts`) | Result |
+|---|---|
+| tiny.en greedy | WER 1.92 %, boundary error mean 18 ms / max 40 ms, no word outside the speech (historical beam 5: 1.9 %, 18 / 40 ms) |
+| tiny (auto) + speaker labels | en p 0.999, WER 8.33 %, 1 speaker |
+| sequence mix (trimmed, offset) | WER 6.15 % |
+| silence gap (30 s of digital silence inserted at a pause) | 0 words in the gap; WER 5.56 % before it, 2.50 % after it |
+| tiny.en without previous text | WER 1.92 % |
+| turbo greedy / beam 5 / verbatim | WER 1.92 % / 1.92 % / 2.56 %; RTF 0.307 / 0.374 / 1.01 (4 threads, job slots; the verbatim prompt triggered temperature fallbacks on this English fixture) |
+
+Memory (SG-014), one hour (LJ fixture × 50 = 59.7 min WAV), tiny greedy, 8 threads, `/usr/bin/time -v` of the
+worker: before 1.81 GB peak RSS, 3 min 56 s; after **1.25 GB**, 2 min 40 s (the 71.6 s clip alone peaks at ≈ 1.1 GB
+— model and runtime); 7,900 vs 7,882 words (the guard dropped 18 words lying in silence between the repeated clips).
+
+CUDA delivery on the build VM (Linux x64, no NVIDIA driver; `SPEECH_CUDA_PACKAGE=… vitest run
+apps/engine/test/speech-cuda.e2e.test.ts`): the pinned 236 MB package downloaded through a server that dropped the
+first transfer at 20 MB, resumed with a Range request, verified, extracted and installed in 6.4 s (local server);
+the worker loaded ONNX Runtime 1.30.0 from the app-directory copy; CUDA was reported unavailable ("Failed to load
+shared library") with the missing NVIDIA libraries listed. **Not verified on real NVIDIA hardware** in this
+workstream; WebGPU not verified either (no adapter on the VM). CPU-vs-GPU text parity: skipped (no GPU).
