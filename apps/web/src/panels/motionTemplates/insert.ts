@@ -1,6 +1,9 @@
 // Inserting motion templates (S05:MGT-002, S01:KND-009): default duration from the template, default
-// params (C3: or a preset's params over them), at the playhead on the targeted video track, through the
-// `clip.addMotionGraphic` command.
+// params (C3: or a preset's params over them), at the playhead, through the `clip.addMotionGraphic` command.
+// Insertion never overwrites (social-comments design §7.9): without an explicit track (gallery double-click /
+// Enter, Program drop, a timeline drop outside the video tracks) the clip goes on the first free unlocked video
+// track from the targeted one up (`placement: 'first-free'`), a new top track when all are busy; a drop on a video
+// track keeps overwriting there.
 // Also the drag payload other panels (Timeline, Program) accept for template drops.
 import { mgRegistry, templatePresetParams } from '@jasper/mg-templates';
 import type { Command, Sequence } from '@jasper/project';
@@ -53,19 +56,19 @@ export function readMgTemplateDrag(dt: Pick<DataTransfer, 'getData'>): MgTemplat
 }
 
 /**
- * Track for a new graphic: the topmost targeted, unlocked video track; else the topmost unlocked
- * video track; else `V1` (the command creates it).
+ * Lowest track a first-free insert considers: the topmost targeted video track (a locked one is skipped upward by
+ * the placement), else the first video track (`V1`; the command creates it when the sequence has none).
  */
-function targetVideoTrack(seq: Sequence, view: Pick<SequenceViewState, 'targeting'> | null): string {
-	const tracks = seq.videoTracks.filter((t) => !t.locked);
+export function firstFreeFloor(seq: Sequence, view: Pick<SequenceViewState, 'targeting'> | null): string {
 	const targeted = new Set(view?.targeting.video ?? []);
-	for (let i = tracks.length - 1; i >= 0; i--) if (targeted.has(tracks[i]!.id)) return tracks[i]!.id;
-	const top = tracks.at(-1);
-	return top ? top.id : 'V1';
+	for (let i = seq.videoTracks.length - 1; i >= 0; i--)
+		if (targeted.has(seq.videoTracks[i]!.id)) return seq.videoTracks[i]!.id;
+	return seq.videoTracks[0]?.id ?? 'V1';
 }
 
 /**
- * Inserts a template at the playhead of the active sequence and selects the new clip.
+ * Inserts a template at the playhead of the active sequence and selects the new clip: on `trackId` (overwriting
+ * the range there) when given, else first-free from the targeted video track up (one undo step either way).
  * Returns the new clip id, or throws with a user-facing message.
  */
 export function insertMotionTemplate(
@@ -98,7 +101,9 @@ export function insertMotionTemplate(
 				sequenceId,
 				at: Math.max(0, Math.round(at)),
 				duration: Math.max(1, Math.round((def.defaultDurationSeconds * num) / den)),
-				track: opts.trackId ?? targetVideoTrack(seq, state.views[sequenceId] ?? null),
+				...(opts.trackId
+					? { track: opts.trackId }
+					: { track: firstFreeFloor(seq, state.views[sequenceId] ?? null), placement: 'first-free' }),
 				template: { id: def.id, version: def.version },
 				params,
 			} as Command,

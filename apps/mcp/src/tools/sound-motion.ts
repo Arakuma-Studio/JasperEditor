@@ -4,9 +4,9 @@
 // over the speed / moving-area / unexplained-change curves with every event marked. Agents cannot watch footage; this
 // is how they see where it moves.
 import { MOTION_ANALYSIS_LIMITS, MotionAnalysisResultSchema } from '@jasper/api';
-import { sequenceDuration, sequenceTimecode, TimeInputSchema } from '@jasper/project';
+import { sequenceDuration, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	captureStill,
@@ -64,7 +64,7 @@ export function registerSoundMotionTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				range: z
-					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.object({ start: TimeArgSchema, end: TimeArgSchema })
 					.optional()
 					.describe(`Sequence range [start, end) (default the whole sequence; ≤ 10 min). ${TIME_FORMATS}`),
 				images: z.boolean().optional().describe('Add the PNG strip (default true)'),

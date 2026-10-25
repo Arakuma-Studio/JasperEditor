@@ -53,13 +53,12 @@ import {
 	soundCredits,
 	soundText,
 	soundTimingOf,
-	TimeInputSchema,
 	takeIdOf,
 	trackLabel,
 	VISUAL_KINDS,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -801,7 +800,7 @@ export function registerSoundTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
 				at: z
-					.union([z.literal('playhead'), TimeInputSchema])
+					.union([z.literal('playhead'), TimeArgSchema])
 					.describe(`Where the aligned point lands: "playhead" (the open editor's) or ${TIME_FORMATS}`),
 				align: z
 					.enum(['auto', 'peak', 'start', 'end'])

@@ -10,9 +10,9 @@ import {
 	SoundRoomTonePlanSchema,
 	SoundRoomToneResultSchema,
 } from '@jasper/api';
-import { type Sequence, TimeInputSchema } from '@jasper/project';
+import type { Sequence } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	defineTool,
@@ -37,7 +37,7 @@ const PREVIEW = z
 	.optional()
 	.describe('true: only measure and return the plan and its transaction (nothing is proposed or changed)');
 const TIMEOUT = z.number().int().min(1).max(900).optional().describe('Wait for the job (default 300 s)');
-const SPAN = z.object({ start: TimeInputSchema, end: TimeInputSchema });
+const SPAN = z.object({ start: TimeArgSchema, end: TimeArgSchema });
 
 const fmtDb = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(Math.round(x * 10) / 10)}`;
 

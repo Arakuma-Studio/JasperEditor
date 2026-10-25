@@ -22,12 +22,11 @@ import {
 	type TextEdit,
 	type TextIssue,
 	type TextStyleRole,
-	TimeInputSchema,
 	TrackRefSchema,
 	textLayerValue,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg } from '../arguments.ts';
+import { ProjectIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -54,8 +53,7 @@ export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (compos
 - Texts: list_composition_texts {projectId, clipId} shows every text a composition exposes (path, label, current value, limits, and the props that style it: fontFamily/fontSize/fontWeight/italic/color/align/lineHeight/letterSpacing when the composition exposes them); set_composition_text edits one or more texts (and their style) as one undo step. Respect maxChars/maxLines (warnings) and maxLength (errors); both tools also measure the layout by rendering the composition in the engine (warnings MG_TEXT_OFF_FRAME, MG_TEXT_CLIPPED, MG_TEXT_OUTSIDE_BOX, MG_TEXT_LINES, with the text's box): fix those by shortening or breaking the text, then check with render_frame.`;
 
 const IdArg = z.string().min(1);
-const TimeArg = (what: string) =>
-	TimeInputSchema.describe(`${what}. Frames, {"seconds": x} or timecode "HH:MM:SS:FF"`);
+const TimeArg = (what: string) => TimeArgSchema.describe(`${what}. ${TIME_FORMATS}`);
 
 /** Engine errors keep their actionable hint (e.g. MG_REMOTION_VERSION, S08:MGA-002). */
 function engineToolError(e: unknown): never {

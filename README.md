@@ -346,7 +346,11 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   frame number); native exports bake them through the layer-bake extension. They are never sent to `jasper-mg`.
 - A clip whose template is not installed shows a placeholder card and blocks every export ("template id@vN is
   not installed").
-- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
+- Inserting never overwrites: a double-click, Enter or a drop on the Program monitor puts the clip on the first
+  free video track from the targeted one (else V1) up, adding a track on top when all are busy (one undo step); a
+  drop onto a video track of the timeline still overwrites there.
+- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic` (one or many graphics per call,
+  first-free placement, seeded fill, `dryRun` + `preview`), `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
 - **Presets:** a template may declare named param presets (e.g. Counter ▸ Subscribers / Percentage / Money Raised).
   The gallery then shows one card per preset instead of one for the template (search matches preset names; insert,
@@ -656,6 +660,19 @@ once before enabling a project-scoped server; start it from the repository root 
 - **Property reads.** `get_clip_properties` / `get_param` return `value` (the keyframed value at a time, as
   Effect Controls shows it) next to `evaluated` (what the renderer draws then), keyframes in sequence frames and
   the `param.set` target; `rendered: false` + `why` when that frame draws nothing.
+- **Times.** Every time argument of a tool takes frames, `{"frames": n}`, `{"seconds": x}`, `"3s"` / `"1.5s"`,
+  `"250ms"`, a clock `"00:03"` (M:SS) or `"1:02:03"` (H:MM:SS), or timecode `"HH:MM:SS:FF"`. The shape decides:
+  a unit suffix is seconds / milliseconds, one or two `:` a clock (whole seconds — use `"3.5s"` for fractions),
+  three separators always timecode. Commands inside `apply_commands` / `POST /api/agent/tx` keep the command
+  forms (frames, `{frames}`, `{seconds}`, timecode).
+- **Graphics never overwrite.** `add_motion_graphic` places each clip on the first free unlocked video track from
+  V2 up for its time range (a new top track when all are busy); one call adds one graphic or `items: [...]` (up to
+  200) as one transaction (one undo step, all or nothing), fills omitted params with the template's fill hook from
+  a `seed` (returned), and returns per item the clip id, track, start/end and the fully resolved params. An
+  explicit `track` keeps the older behaviour (overwrite on exactly that track) unless `placement: "first-free"`.
+  `dryRun: true` resolves the same without changing the project; `preview: true` adds a still per item (up to 10).
+  Raw commands get the same placement with `placement: "first-free"` on `clip.addText` / `addSolid` / `addShape` /
+  `addMotionGraphic` (`docs/wp-notes/social-comments.md` "Placement & agent API").
 
 ### Live UI: look at and operate the editor window
 

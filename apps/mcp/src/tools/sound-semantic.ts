@@ -25,11 +25,10 @@ import {
 	readLibraryProvenance,
 	requiresAttribution,
 	sequenceTimecode,
-	TimeInputSchema,
 	trackLabel,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -337,7 +336,7 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 				startSec: z.number().min(0).describe('Start of the range in the sound (seconds)'),
 				endSec: z.number().min(0).describe('End of the range (seconds)'),
 				at: z
-					.union([z.literal('playhead'), TimeInputSchema])
+					.union([z.literal('playhead'), TimeArgSchema])
 					.describe(`Where the range starts: "playhead" or ${TIME_FORMATS}`),
 				track: z
 					.string()
