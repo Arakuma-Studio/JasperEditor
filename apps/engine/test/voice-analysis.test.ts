@@ -5,7 +5,16 @@
 // decoder, offline-media and worker failures become job errors while the engine keeps serving. Real speech (the LJ
 // Speech public-domain fixture) is speech inside its utterances and not between them.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	utimesSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type EngineJob, type VoiceAnalysisJobResult, VoiceAnalysisJobResultSchema } from '@jasper/api';
@@ -15,7 +24,17 @@ import { build } from 'esbuild';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath } from '../src/cache/layout.ts';
 import { fingerprintHex } from '../src/media/fingerprint.ts';
-import { closeApps, H, JSON_H, makeApp, ROOT, register, TEST_FFMPEG, type TestApp, until } from './helpers.ts';
+import {
+	closeApps,
+	H,
+	JSON_H,
+	makeApp,
+	ROOT,
+	register,
+	TEST_FFMPEG,
+	type TestApp,
+	until,
+} from './helpers.ts';
 
 const HAVE_FFMPEG = spawnSync(TEST_FFMPEG, ['-version'], { encoding: 'utf8' }).status === 0;
 const SR = 16_000;
@@ -40,8 +59,9 @@ function programme(seconds: number, seed = 1): Float32Array {
 		const t = i / SR;
 		x[i] = rnd() * 10 ** (-68 / 20) * Math.sqrt(3);
 		const cycle = t % 4;
-		const f0 = 110 + 40 * Math.floor(t / 4 % 4);
-		if (cycle < 1.6) for (let h = 1; f0 * h < 3000; h++) x[i]! += (0.08 / h) * Math.sin((2 * Math.PI * f0 * h * i) / SR);
+		const f0 = 110 + 40 * Math.floor((t / 4) % 4);
+		if (cycle < 1.6)
+			for (let h = 1; f0 * h < 3000; h++) x[i]! += (0.08 / h) * Math.sin((2 * Math.PI * f0 * h * i) / SR);
 		else if (cycle > 2.2 && cycle < 2.6) x[i]! += rnd() * 0.004;
 	}
 	return x;
@@ -88,7 +108,9 @@ function cacheFiles(app: TestApp, fingerprint: string): string[] {
 
 /** The pure analysis of a 16 kHz mono file's samples (what the engine must produce for it). */
 function expected(x: Float32Array, fingerprint: string, stream: number): Uint8Array {
-	return encodeVoiceAnalysis(buildVoiceAnalysis({ fingerprint, stream, samples: x.length, planes: voiceFeatures(x) }));
+	return encodeVoiceAnalysis(
+		buildVoiceAnalysis({ fingerprint, stream, samples: x.length, planes: voiceFeatures(x) }),
+	);
 }
 
 beforeAll(() => {
@@ -202,7 +224,11 @@ describe.skipIf(!HAVE_FFMPEG)('voice-analysis job and routes', () => {
 			[post(app, still.mediaKey), 422, 'UNSUPPORTED_MEDIA'],
 			[getFile(app, m.mediaKey, 3), 400, 'VALIDATION_FAILED'],
 			[
-				app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}/voice-analysis?streamIndex=x`, headers: H }),
+				app.inject({
+					method: 'GET',
+					url: `/api/media/${m.mediaKey}/voice-analysis?streamIndex=x`,
+					headers: H,
+				}),
 				400,
 				'VALIDATION_FAILED',
 			],
@@ -222,12 +248,16 @@ describe.skipIf(!HAVE_FFMPEG)('voice-analysis job and routes', () => {
 		const m = await register(app, long);
 		const job = (await post(app, m.mediaKey, {}, false)).json() as EngineJob;
 		await until(async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json() as EngineJob;
+			const j = (
+				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
+			).json() as EngineJob;
 			return j.state === 'running' && (j.progress ?? 0) > 0 ? j : null;
 		}, 60_000);
 		await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
 		const done = await until(async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json() as EngineJob;
+			const j = (
+				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
+			).json() as EngineJob;
 			return ['cancelled', 'failed', 'succeeded'].includes(j.state) ? j : null;
 		}, 20_000);
 		expect(done.state).toBe('cancelled');

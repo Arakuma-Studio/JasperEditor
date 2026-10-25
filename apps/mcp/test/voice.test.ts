@@ -23,7 +23,10 @@ import { readToolResponse } from './tool-response.ts';
 
 const S = 705_600_000;
 
-function asset(key: string, streams: Array<{ index: number; type: 'audio' | 'subtitle' }>): Omit<MediaAsset, 'id'> {
+function asset(
+	key: string,
+	streams: Array<{ index: number; type: 'audio' | 'subtitle' }>,
+): Omit<MediaAsset, 'id'> {
 	return {
 		kind: 'audio',
 		fingerprint: `q1:${key.slice(3).padStart(64, '0')}`,
@@ -35,7 +38,14 @@ function asset(key: string, streams: Array<{ index: number; type: 'audio' | 'sub
 			startTimecode: null,
 			streams: streams.map((s) =>
 				s.type === 'audio'
-					? { index: s.index, type: 'audio', codec: 'aac', sampleRate: 48000, channels: 2, channelLayout: 'stereo' }
+					? {
+							index: s.index,
+							type: 'audio',
+							codec: 'aac',
+							sampleRate: 48000,
+							channels: 2,
+							channelLayout: 'stereo',
+						}
 					: { index: s.index, type: 'subtitle', codec: 'ass', language: null },
 			),
 			rotationDegrees: 0,
@@ -82,7 +92,11 @@ function fakeEngine(opts: { cached: boolean; jobState?: EngineJob['state'] }) {
 					]),
 					ref: '$a',
 				},
-				{ type: 'media.register', asset: asset('mk_bbbbbbbbbbbbbbbbbbbbbbbb', [{ index: 0, type: 'subtitle' }]), ref: '$b' },
+				{
+					type: 'media.register',
+					asset: asset('mk_bbbbbbbbbbbbbbbbbbbbbbbb', [{ index: 0, type: 'subtitle' }]),
+					ref: '$b',
+				},
 			],
 		} as never,
 		{ ids, now: () => '2026-10-25T00:00:00.000Z', revision: 0, registries: defaultRegistries() },
@@ -193,7 +207,11 @@ describe('get_voice_analysis', () => {
 	it('is a read-only tool with a documented guide', async () => {
 		const { client } = await connect({ cached: true });
 		const tool = (await client.listTools()).tools.find((t) => t.name === 'get_voice_analysis')!;
-		expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
+		expect(tool.annotations).toMatchObject({
+			readOnlyHint: true,
+			destructiveHint: false,
+			openWorldHint: false,
+		});
 		expect(client.getInstructions()).toContain('get_voice_analysis');
 	});
 
@@ -238,7 +256,8 @@ describe('get_voice_analysis', () => {
 		expect(p.runs.map((x) => x.cls)).toEqual(['silence', 'speech', 'silence']);
 		expect(p.nextFromSeconds).toBe(3.5);
 		// at most 6000 points: a long page with a small step is coarsened
-		const big = (await call({ mediaId: engine.a, summary: false, seconds: 600, stepMs: 10 })).read(Summary).page!;
+		const big = (await call({ mediaId: engine.a, summary: false, seconds: 600, stepMs: 10 })).read(Summary)
+			.page!;
 		expect(big.times.length).toBeLessThanOrEqual(6000);
 		expect(big.nextFromSeconds).toBeUndefined();
 		expect(big.toSeconds).toBe(20);

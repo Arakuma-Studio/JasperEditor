@@ -37,11 +37,22 @@ export function registerVoiceTools(ctx: ToolContext): void {
 					.min(0)
 					.max(65_535)
 					.optional()
-					.describe('Container stream index of an audio stream (get_media_info); default the first audio stream'),
-				summary: z.boolean().optional().describe('true (default): totals and windows only; false: add a page of frames'),
+					.describe(
+						'Container stream index of an audio stream (get_media_info); default the first audio stream',
+					),
+				summary: z
+					.boolean()
+					.optional()
+					.describe('true (default): totals and windows only; false: add a page of frames'),
 				fromSeconds: z.number().min(0).optional().describe('Page start, media seconds (summary: false)'),
 				seconds: z.number().positive().max(MAX_PAGE_SECONDS).optional().describe('Page length (default 60)'),
-				stepMs: z.number().int().min(10).max(60_000).optional().describe('Milliseconds per point (default 100)'),
+				stepMs: z
+					.number()
+					.int()
+					.min(10)
+					.max(60_000)
+					.optional()
+					.describe('Milliseconds per point (default 100)'),
 				analyze: z.boolean().optional().describe('Run the analysis when none is cached (default true)'),
 			},
 			annotations: READ_ONLY,
@@ -50,7 +61,11 @@ export function registerVoiceTools(ctx: ToolContext): void {
 			const { doc } = await loadDoc(ctx, args.projectId);
 			const asset = doc.media[args.mediaId];
 			if (!asset)
-				throw new ToolError('E_NOT_FOUND', `No media ${args.mediaId} in this project`, 'Call list_media for valid ids.');
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`No media ${args.mediaId} in this project`,
+					'Call list_media for valid ids.',
+				);
 			const loc = asset.locators.find((l) => l.type === 'engine-store');
 			if (loc?.type !== 'engine-store')
 				throw new ToolError(
@@ -123,9 +138,7 @@ export function registerVoiceTools(ctx: ToolContext): void {
 					flatness: page.flatness,
 					classes: page.classes,
 					runs: page.runs,
-					...(page.toFrame < analysis.frameCount
-						? { nextFromSeconds: voiceFrameSeconds(page.toFrame) }
-						: {}),
+					...(page.toFrame < analysis.frameCount ? { nextFromSeconds: voiceFrameSeconds(page.toFrame) } : {}),
 				};
 			}
 			return jsonResult(body);

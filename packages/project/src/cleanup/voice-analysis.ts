@@ -193,7 +193,10 @@ export function voiceAnalysisFileBytes(frameCount: number, headerBytes: number):
 }
 
 /** Largest valid file (the engine refuses to read bigger ones). */
-export const VOICE_ANALYSIS_MAX_FILE_BYTES = voiceAnalysisFileBytes(VOICE_ANALYSIS_MAX_FRAMES, MAX_HEADER_BYTES);
+export const VOICE_ANALYSIS_MAX_FILE_BYTES = voiceAnalysisFileBytes(
+	VOICE_ANALYSIS_MAX_FRAMES,
+	MAX_HEADER_BYTES,
+);
 
 let CRC_TABLE: Uint32Array | null = null;
 
@@ -410,7 +413,11 @@ export function summarizeVoiceAnalysis(a: VoiceAnalysis): VoiceAnalysisSummary {
 		breathFloorDb: a.levels.breathFloorDb,
 		seconds: { silence: sec(a.counts.silence), breath: sec(a.counts.breath), speech: sec(a.counts.speech) },
 		runs,
-		longestSeconds: { silence: sec(longest.silence), breath: sec(longest.breath), speech: sec(longest.speech) },
+		longestSeconds: {
+			silence: sec(longest.silence),
+			breath: sec(longest.breath),
+			speech: sec(longest.speech),
+		},
 		windows: a.windows.map((w) => ({
 			startSeconds: sec(w.startFrame),
 			seconds: sec(w.frameCount),

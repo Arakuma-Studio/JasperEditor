@@ -46,7 +46,7 @@ function pattern(): Float32Array {
 		const c = t % 3.7;
 		if (c < 2.2) {
 			// syllables: 5 Hz amplitude modulation, pitch gliding 100–220 Hz
-			const f0 = 100 + 60 * (1 + Math.sin(t * 0.9)) ;
+			const f0 = 100 + 60 * (1 + Math.sin(t * 0.9));
 			phase += (2 * Math.PI * f0) / SR;
 			const env = 0.5 + 0.5 * Math.sin(2 * Math.PI * 5 * t);
 			let v = 0;
@@ -95,9 +95,25 @@ console.log(
 
 {
 	const t0 = performance.now();
-	const r = spawnSync(bins.ffmpeg!, ['-v', 'error', '-i', rec, '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-f', 'null', '-']);
+	const r = spawnSync(bins.ffmpeg!, [
+		'-v',
+		'error',
+		'-i',
+		rec,
+		'-map',
+		'0:a:0',
+		'-ac',
+		'1',
+		'-ar',
+		'16000',
+		'-f',
+		'null',
+		'-',
+	]);
 	if (r.status !== 0) throw new Error(String(r.stderr));
-	console.log(JSON.stringify({ step: 'ffmpeg decode + resample only', seconds: (performance.now() - t0) / 1000 }));
+	console.log(
+		JSON.stringify({ step: 'ffmpeg decode + resample only', seconds: (performance.now() - t0) / 1000 }),
+	);
 }
 
 const record = {

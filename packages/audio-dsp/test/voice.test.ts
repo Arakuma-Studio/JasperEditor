@@ -196,7 +196,11 @@ describe('frame features', () => {
 					// each block gets only its own samples plus the window context, like the engine's blocks
 					const s0 = Math.max(0, f0 * VOICE_HOP - VOICE_WINDOW_LEAD);
 					const s1 = Math.min(x.length, f1 * VOICE_HOP + (VOICE_WINDOW - VOICE_WINDOW_LEAD));
-					const part = { level: new Uint8Array(f1 - f0), voicing: new Uint8Array(f1 - f0), flatness: new Uint8Array(f1 - f0) };
+					const part = {
+						level: new Uint8Array(f1 - f0),
+						voicing: new Uint8Array(f1 - f0),
+						flatness: new Uint8Array(f1 - f0),
+					};
 					ex.compute(x.slice(s0, s1), s0, f0, f1 - f0, part);
 					out.level.set(part.level, f0);
 					out.voicing.set(part.voicing, f0);
@@ -214,7 +218,8 @@ describe('frame features', () => {
 		y[800] = Number.NaN;
 		y[801] = Number.POSITIVE_INFINITY;
 		const f = voiceFeatures(y);
-		for (const p of [f.level, f.voicing, f.flatness]) for (const v of p) expect(Number.isInteger(v)).toBe(true);
+		for (const p of [f.level, f.voicing, f.flatness])
+			for (const v of p) expect(Number.isInteger(v)).toBe(true);
 		const ex = new VoiceFeatureExtractor();
 		const out = { level: new Uint8Array(2), voicing: new Uint8Array(2), flatness: new Uint8Array(2) };
 		expect(() => ex.compute(x, 0, 0, 3, out)).toThrow(RangeError);
@@ -279,14 +284,17 @@ describe('frame classes (TC-001)', () => {
 
 	it('breath-like runs shorter than 120 ms or longer than 900 ms are silence', () => {
 		const [a7, b7] = r[7]!;
-		expect(Array.from(classes.subarray(Math.floor(a7 / VOICE_HOP) - 2, Math.ceil(b7 / VOICE_HOP) + 2))).toEqual(
+		expect(
+			Array.from(classes.subarray(Math.floor(a7 / VOICE_HOP) - 2, Math.ceil(b7 / VOICE_HOP) + 2)),
+		).toEqual(
 			Array(Math.ceil(b7 / VOICE_HOP) + 2 - (Math.floor(a7 / VOICE_HOP) - 2)).fill(VOICE_CLASS_SILENCE),
 		);
 		expect(every(inner(classes, r[9]!), VOICE_CLASS_SILENCE)).toBe(true);
 	});
 
 	it('the noise floor between events is silence', () => {
-		for (const k of [0, 2, 4, 6, 8, 10, 12, 14]) expect(every(inner(classes, r[k]!), VOICE_CLASS_SILENCE), `${k}`).toBe(true);
+		for (const k of [0, 2, 4, 6, 8, 10, 12, 14])
+			expect(every(inner(classes, r[k]!), VOICE_CLASS_SILENCE), `${k}`).toBe(true);
 	});
 
 	it('speech runs have no gaps under 60 ms and no blips under 40 ms; breath-like runs last 120–900 ms', () => {
@@ -331,14 +339,26 @@ describe('frame classes (TC-001)', () => {
 		const c = classifyVoiceFrames(voiceFeatures(p.x)).classes;
 		const [a1] = p.ranges[1]!;
 		const [, b3] = p.ranges[3]!;
-		expect(Array.from(c.subarray(Math.ceil(a1 / VOICE_HOP) + 3, Math.floor(b3 / VOICE_HOP) - 3)).every((v) => v === VOICE_CLASS_SPEECH)).toBe(true);
+		expect(
+			Array.from(c.subarray(Math.ceil(a1 / VOICE_HOP) + 3, Math.floor(b3 / VOICE_HOP) - 3)).every(
+				(v) => v === VOICE_CLASS_SPEECH,
+			),
+		).toBe(true);
 		const [a5, b5] = p.ranges[5]!;
-		expect(Array.from(c.subarray(Math.floor(a5 / VOICE_HOP) - 3, Math.ceil(b5 / VOICE_HOP) + 3)).every((v) => v !== VOICE_CLASS_SPEECH)).toBe(true);
+		expect(
+			Array.from(c.subarray(Math.floor(a5 / VOICE_HOP) - 3, Math.ceil(b5 / VOICE_HOP) + 3)).every(
+				(v) => v !== VOICE_CLASS_SPEECH,
+			),
+		).toBe(true);
 	});
 
 	it('rejects planes of different lengths', () => {
 		expect(() =>
-			classifyVoiceFrames({ level: new Uint8Array(3), voicing: new Uint8Array(2), flatness: new Uint8Array(3) }),
+			classifyVoiceFrames({
+				level: new Uint8Array(3),
+				voicing: new Uint8Array(2),
+				flatness: new Uint8Array(3),
+			}),
 		).toThrow(RangeError);
 	});
 });

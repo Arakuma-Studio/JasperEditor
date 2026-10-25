@@ -43,7 +43,11 @@ describe('EngineClient voice analysis', () => {
 	it('fetches and decodes the analysis file of a stream', async () => {
 		const bytes = encodeVoiceAnalysis(analysis);
 		const { c, urls } = client(
-			() => new Response(bytes as Uint8Array<ArrayBuffer>, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
+			() =>
+				new Response(bytes as Uint8Array<ArrayBuffer>, {
+					status: 200,
+					headers: { 'content-type': 'application/octet-stream' },
+				}),
 		);
 		const a = await c.getVoiceAnalysis('mk_1', 1);
 		expect(urls).toEqual(['http://e/api/media/mk_1/voice-analysis?streamIndex=1']);
@@ -71,7 +75,10 @@ describe('EngineClient voice analysis', () => {
 		expect(e).toBeInstanceOf(EngineError);
 		expect((e as EngineError).code).toBe('INVALID_RESPONSE');
 		const html = client(() => new Response('<html>', { status: 502 }));
-		await expect(html.c.getVoiceAnalysis('mk_1')).rejects.toMatchObject({ code: 'HTTP_ERROR', retryable: true });
+		await expect(html.c.getVoiceAnalysis('mk_1')).rejects.toMatchObject({
+			code: 'HTTP_ERROR',
+			retryable: true,
+		});
 	});
 
 	it('posts the analysis job', async () => {
@@ -89,9 +96,14 @@ describe('EngineClient voice analysis', () => {
 		const seen: Array<{ url: string; body: unknown }> = [];
 		const { c } = client((url, init) => {
 			seen.push({ url, body: JSON.parse(String(init.body)) });
-			return new Response(JSON.stringify(job), { status: 202, headers: { 'content-type': 'application/json' } });
+			return new Response(JSON.stringify(job), {
+				status: 202,
+				headers: { 'content-type': 'application/json' },
+			});
 		});
 		expect((await c.analyzeVoice('mk_1', { streamIndex: 2 }, true)).kind).toBe('voice-analysis');
-		expect(seen).toEqual([{ url: 'http://e/api/media/mk_1/voice-analysis?wait=1', body: { streamIndex: 2 } }]);
+		expect(seen).toEqual([
+			{ url: 'http://e/api/media/mk_1/voice-analysis?wait=1', body: { streamIndex: 2 } },
+		]);
 	});
 });

@@ -10,7 +10,13 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EngineJob, VoiceAnalysisJobResult } from '@jasper/api';
-import { VOICE_HOP, VOICE_SAMPLE_RATE, VOICE_WINDOW_LEAD, VOICE_WINDOW_TAIL, voiceFrameCount } from '@jasper/audio-dsp';
+import {
+	VOICE_HOP,
+	VOICE_SAMPLE_RATE,
+	VOICE_WINDOW_LEAD,
+	VOICE_WINDOW_TAIL,
+	voiceFrameCount,
+} from '@jasper/audio-dsp';
 import {
 	buildVoiceAnalysis,
 	decodeVoiceAnalysis,
@@ -62,7 +68,8 @@ export class VoiceAnalysisService {
 		const rec = this.core.registry.get(mediaKey);
 		if (!rec) throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 		const audio = rec.probe.streams.filter((s) => s.type === 'audio');
-		if (audio.length === 0) throw new HttpError(422, 'UNSUPPORTED_MEDIA', `${rec.originalName} has no audio stream`);
+		if (audio.length === 0)
+			throw new HttpError(422, 'UNSUPPORTED_MEDIA', `${rec.originalName} has no audio stream`);
 		if (streamIndex === undefined) return { rec, streamIndex: audio[0]!.index };
 		if (!audio.some((s) => s.index === streamIndex))
 			throw new HttpError(

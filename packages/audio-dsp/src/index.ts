@@ -114,7 +114,6 @@ export {
 	type SyncOptions,
 	type SyncResult,
 } from './sync.ts';
-export { type DecodedWav, decodeWav, encodeWav, type WavFormat, wavChannelMask } from './wav.ts';
 export {
 	classifyVoiceFrames,
 	DIGITAL_SILENCE_DB,
@@ -143,3 +142,4 @@ export {
 	voiceLevelDb,
 	voiceLevels,
 } from './voice.ts';
+export { type DecodedWav, decodeWav, encodeWav, type WavFormat, wavChannelMask } from './wav.ts';

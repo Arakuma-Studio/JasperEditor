@@ -35,7 +35,8 @@ function signal(seconds = 150): Float32Array {
 		s = (s * 1103515245 + 12345) >>> 0;
 		x[i] = ((s / 2 ** 32) * 2 - 1) * 10 ** (-70 / 20) * Math.sqrt(3);
 		const t = i / SR;
-		if (t % 5 < 1) for (let h = 1; h < 10; h++) x[i]! += (0.1 / h) * Math.sin((2 * Math.PI * 150 * h * i) / SR);
+		if (t % 5 < 1)
+			for (let h = 1; h < 10; h++) x[i]! += (0.1 / h) * Math.sin((2 * Math.PI * 150 * h * i) / SR);
 	}
 	return x;
 }
@@ -85,7 +86,12 @@ describe('buildVoiceAnalysis', () => {
 		const back = decodeVoiceAnalysis(encodeVoiceAnalysis(empty));
 		expect(back.ok).toBe(true);
 		const silent = analysisOf(new Float32Array(SR * 2));
-		expect(silent.levels).toEqual({ floorDb: null, speechDb: null, speechThresholdDb: null, breathFloorDb: null });
+		expect(silent.levels).toEqual({
+			floorDb: null,
+			speechDb: null,
+			speechThresholdDb: null,
+			breathFloorDb: null,
+		});
 		expect(silent.counts.silence).toBe(200);
 		expect(silent.windows[0]!.floorDb).toBeNull();
 		expect(decodeVoiceAnalysis(encodeVoiceAnalysis(silent)).ok).toBe(true);
@@ -105,7 +111,11 @@ describe('buildVoiceAnalysis', () => {
 
 describe('the binary file', () => {
 	it('round-trips exactly and is ≈ 4 bytes per frame', () => {
-		const r = decodeVoiceAnalysis(FILE, { fingerprint: FP, stream: 1, analysisVersion: VOICE_ANALYSIS_VERSION });
+		const r = decodeVoiceAnalysis(FILE, {
+			fingerprint: FP,
+			stream: 1,
+			analysisVersion: VOICE_ANALYSIS_VERSION,
+		});
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
 		expect({ ...r.analysis }).toEqual({ ...A });

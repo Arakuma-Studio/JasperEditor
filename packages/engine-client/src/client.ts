@@ -15,6 +15,7 @@ import {
 	type CaptionFileReadRequest,
 	type ColorMatchRequest,
 	type DerivativeKind,
+	decodeVoiceAnalysis,
 	type EngineJob,
 	type EnvelopeJson,
 	ErrorShapeSchema,
@@ -79,11 +80,10 @@ import {
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
-	VOICE_ANALYSIS_MAX_FILE_BYTES,
 	type VersionRestoreRequest,
+	VOICE_ANALYSIS_MAX_FILE_BYTES,
 	type VoiceAnalysis,
 	type VoiceAnalyzeRequest,
-	decodeVoiceAnalysis,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';

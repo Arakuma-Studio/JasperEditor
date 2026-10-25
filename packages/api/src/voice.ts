@@ -27,7 +27,12 @@ export type VoiceAnalyzeRequest = z.infer<typeof VoiceAnalyzeRequestSchema>;
 
 /** `GET /api/media/:key/voice-analysis?streamIndex=N` → the analysis file (application/octet-stream). */
 export const VoiceAnalysisQuerySchema = z
-	.object({ streamIndex: z.string().regex(/^\d{1,5}$/).optional() })
+	.object({
+		streamIndex: z
+			.string()
+			.regex(/^\d{1,5}$/)
+			.optional(),
+	})
 	.strict();
 
 const Db = z.number().nullable();

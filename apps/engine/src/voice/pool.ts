@@ -104,7 +104,8 @@ export class VoiceFeatureRunner {
 				const live = this.slots.filter((x) => !x.dead);
 				if (live.length) slot = live.reduce((a, b) => (b.pending.size < a.pending.size ? b : a));
 				else {
-					if (!this.inThread) this.log(`voice analysis: no worker thread (${e.message}); analysing in-thread`);
+					if (!this.inThread)
+						this.log(`voice analysis: no worker thread (${e.message}); analysing in-thread`);
 					this.inThread ??= new VoiceFeatureExtractor();
 					return this.run(block);
 				}
