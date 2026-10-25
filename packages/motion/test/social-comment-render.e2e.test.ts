@@ -106,10 +106,10 @@ function paintedBox(png: Buffer) {
 }
 
 /**
- * Content ms from which the clip is at rest: its entrance and every extra (words popping, the like count ticking, the
- * heart thumping) have ended; the exit starts later. The schedule the implementation builds.
+ * Content ms of the clip's rest: from the end of its entrance and every extra (words popping, the like count ticking,
+ * the heart thumping) to the start of its exit. The schedule the implementation builds.
  */
-function restFrom(c: { params: Record<string, unknown> }): number {
+function restWindow(c: { params: Record<string, unknown> }): { from: number; to: number } {
 	const variant = isSocialVariant(c.params.variant) ? c.params.variant : 'tiktok-reply';
 	const p = socialCommentParamsSchema.parse({ ...socialDefaults(variant), ...c.params });
 	const t = animeTemplateTiming(socialComment, { fps: 30, localFrame: 0, durationFrames: 150 });
@@ -123,7 +123,7 @@ function restFrom(c: { params: Record<string, unknown> }): number {
 	for (const tr of s.tracks)
 		for (const tw of tr.tweens) if (tw.start < s.exitStart) end = Math.max(end, tw.start + tw.dur);
 	if (s.tick) end = Math.max(end, s.tick.start + s.tick.dur);
-	return end;
+	return { from: end, to: s.exitStart };
 }
 
 const LONG =
@@ -893,7 +893,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			// ≤ 43/255; see docs/wp-notes/social-comments.md "Paint determinism"): those frames are held to the project's
 			// parity standard for Chrome-painted layers (≥ 99 % of the pixels within 3/255, like the layer-bake and
 			// determinism tests).
-			const rest = restFrom(c);
+			const rest = restWindow(c);
 			for (const f of differing) {
 				const a = rgba(stills.get(f)!).data;
 				const b = rgba(out.get(f)!).data;
@@ -907,7 +907,8 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 					if (d > 3) over3++;
 					max = Math.max(max, d);
 				}
-				const atRest = (f * 1000) / 30 >= rest;
+				const ms = (f * 1000) / 30;
+				const atRest = ms >= rest.from && ms < rest.to;
 				const within3 = 1 - over3 / (a.length / 4);
 				parity.push({ case: c.name, frame: f, pixels: n, max, within3, atRest });
 				if (atRest || within3 < 0.99)
