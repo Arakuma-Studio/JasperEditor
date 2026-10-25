@@ -63,6 +63,8 @@ export const MgTemplateUiSchema = z.object({
 				.optional(),
 		})
 		.optional(),
+	/** Gallery preview framing: the canvas the poster draws the template on (covering the thumbnail). */
+	preview: z.object({ canvas: z.object({ width: z.number(), height: z.number() }) }).optional(),
 });
 
 export const MgTemplateCatalogEntrySchema = z.object({

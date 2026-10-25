@@ -68,6 +68,7 @@ export type MgTemplateUiJson = {
 		trimPrefix?: Record<string, string>;
 		age?: { value: string; unit: string; columns?: string[] };
 	};
+	preview?: { canvas: { width: number; height: number } };
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
@@ -318,14 +319,17 @@ function checkUi(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void 
 		params,
 		addAnother,
 		import: importHints,
+		preview,
 	} = ui as {
 		groups?: unknown;
 		params?: unknown;
 		addAnother?: unknown;
 		import?: unknown;
+		preview?: unknown;
 	};
 	checkAddAnother(d, k, names, addAnother);
 	checkImportHints(k, names, importHints);
+	checkPreviewHint(k, preview);
 	if (groups !== undefined) {
 		if (!Array.isArray(groups)) throw new Error(`ui.groups of ${k} must be an array`);
 		const ids = new Set<string>();
@@ -390,6 +394,21 @@ function checkAddAnother(d: AnyMgTemplate, k: string, names: ReadonlySet<string>
 	for (const name of v.reroll as unknown[])
 		if (typeof name !== 'string' || !names.has(name))
 			throw new Error(`ui.addAnother.reroll of ${k} names an unknown param ${JSON.stringify(name)}`);
+}
+
+/** Largest side of a preview canvas (`ui.preview.canvas`). */
+const MAX_PREVIEW_SIDE = 8192;
+
+/** `ui.preview`: `{canvas: {width, height}}`, whole pixels in 1…8192. */
+function checkPreviewHint(k: string, v: unknown): void {
+	if (v === undefined) return;
+	const c = isPlainObject(v) ? v.canvas : undefined;
+	const side = (n: unknown) =>
+		typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= MAX_PREVIEW_SIDE;
+	if (!isPlainObject(c) || !side(c.width) || !side(c.height))
+		throw new Error(
+			`ui.preview of ${k} must be {canvas: {width, height}} in whole pixels (1…${MAX_PREVIEW_SIDE})`,
+		);
 }
 
 /** `ui.import`: aliases to params of the template (or per-row choices by another param), ignored columns, prefixes. */

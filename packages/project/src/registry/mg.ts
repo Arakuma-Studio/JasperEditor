@@ -75,6 +75,13 @@ export type MgTemplateUi = {
 	addAnother?: { reroll: readonly string[] };
 	/** Spreadsheet / CSV bulk import (`planMgImport`): extra column names, ignored columns, value prefixes. */
 	import?: MgTemplateImportUi;
+	/**
+	 * Gallery poster and hover preview framing (`MgTemplatePreview`): the template is drawn on `canvas` (e.g. the
+	 * 1080×1920 a small card is designed for) and that canvas covers the thumbnail, centred, instead of the
+	 * template being drawn on the thumbnail's own 16:9 canvas where a small card is tiny. Previews only: clips and
+	 * exports are unchanged.
+	 */
+	preview?: { canvas: { width: number; height: number } };
 };
 
 /**

@@ -529,6 +529,8 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	// grouped like tokcomment's control panel (design §7.9); custom controls are registered by the web app (until then
 	// Properties falls back to the standard editors)
 	ui: {
+		// the gallery draws the card on the 9:16 canvas it is designed for, covering the 16:9 thumbnail (App QA N7)
+		preview: { canvas: { width: 1080, height: 1920 } },
 		groups: [
 			{ id: 'look', label: 'Look', params: ['variant', 'theme', 'emojiStyle'] },
 			{

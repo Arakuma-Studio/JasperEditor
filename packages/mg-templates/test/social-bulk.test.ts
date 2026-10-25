@@ -67,6 +67,12 @@ describe('ui.addAnother / ui.import validation (createMgRegistry)', () => {
 			/age.columns .* non-empty/,
 		);
 		expect(bad({ import: { age: 'timeValue' } })).toThrow(/ui.import.age .* must be/);
+		expect(bad({ preview: { canvas: { width: 0, height: 1920 } } })).toThrow(/ui.preview .* whole pixels/);
+		expect(bad({ preview: { canvas: { width: 1080.5, height: 1920 } } })).toThrow(/ui.preview/);
+		expect(bad({ preview: { canvas: '9:16' } })).toThrow(/ui.preview/);
+		expect(() =>
+			createMgRegistry([{ ...T, ui: { ...T.ui, preview: { canvas: { width: 1080, height: 1920 } } } }]),
+		).not.toThrow();
 	});
 	it('serialises the hints into the catalogue JSON', () => {
 		const entry = reg.catalogJson()[0]!;

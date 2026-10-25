@@ -520,7 +520,8 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	const frame = useCurrentFrame();
 	const { fps, width, height, durationInFrames } = useVideoConfig();
 	const def = mgRegistry.getDefinition(props.templateId, props.version);
-	const canvas = { width, height };
+	const framing = mgPreviewFraming(def?.ui?.preview, { width, height });
+	const canvas = framing?.canvas ?? { width, height };
 	const params = useMemo(
 		() => (def ? resolveTemplateParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
 		[def, props.params],
@@ -599,10 +600,43 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	}
 	return (
 		<AbsoluteFill
-			style={{ background: props.background ?? 'transparent' }}
+			style={{ background: props.background ?? 'transparent', overflow: 'hidden' }}
 			data-mg-preview-template={props.templateId}
 		>
-			{content}
+			{framing ? (
+				<div
+					data-mg-preview-frame={`${canvas.width}x${canvas.height}`}
+					style={{
+						position: 'absolute',
+						left: (width - canvas.width) / 2,
+						top: (height - canvas.height) / 2,
+						width: canvas.width,
+						height: canvas.height,
+						transform: `scale(${framing.scale})`,
+						transformOrigin: '50% 50%',
+					}}
+				>
+					{content}
+				</div>
+			) : (
+				content
+			)}
 		</AbsoluteFill>
 	);
+}
+
+/**
+ * The framing of a template's gallery preview (`ui.preview`): drawn on `canvas` (e.g. the 1080×1920 a small card is
+ * designed for), scaled to cover the preview, centred. Null without the hint (the template is drawn on the preview's
+ * own canvas) or for an unusable one. Previews only: clips and exports never read it.
+ */
+export function mgPreviewFraming(
+	hint: { canvas?: { width?: unknown; height?: unknown } } | undefined,
+	preview: { width: number; height: number },
+): { canvas: { width: number; height: number }; scale: number } | null {
+	const c = hint?.canvas;
+	const ok = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 8192;
+	if (!c || !ok(c.width) || !ok(c.height) || !(preview.width > 0) || !(preview.height > 0)) return null;
+	const canvas = { width: Math.round(c.width), height: Math.round(c.height) };
+	return { canvas, scale: Math.max(preview.width / canvas.width, preview.height / canvas.height) };
 }

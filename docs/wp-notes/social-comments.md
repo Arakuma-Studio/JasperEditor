@@ -2170,6 +2170,18 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
 - Tests: `packages/motion/test/social-x-fit.test.tsx` — the budget for the longest counts per column, all four, and
   fast-check over all counts; in Chrome (runs when a Chrome is found, like the GL tests) the em bounds of the face
   drawn and the laid-out card: every count unclipped and ≥ 6 px before the next icon, with the fallback face and
-  with Chirp when `SOCIAL_CHIRP_DIR` holds its Regular woff2. The test fails on the previous layout (3.9 px for
-  "999.9M" in the fallback face; 0.4 px in Chirp).
+  with Chirp when `SOCIAL_CHIRP_DIR` holds its Regular woff2. The test fails on the previous layout (3.9 px
+  between "999.9M" replies and the repost icon in the fallback face).
+
+### Gallery previews frame the card (N7)
+
+- Generic template hint `ui.preview: {canvas: {width, height}}` (`MgTemplateUi`, validated by `createMgRegistry`:
+  whole pixels 1…8192; carried in the catalogue JSON). `MgTemplatePreview` (`@jasper/compositions`, the poster
+  `<Thumbnail>` and the hover `<Player>` of the Motion Templates panel) draws the template on that canvas and scales
+  it to cover the 16:9 thumbnail, centred (`mgPreviewFraming`); the overflow is clipped.
+- `social-comment@1`: `preview: {canvas: {width: 1080, height: 1920}}`, the 9:16 canvas the cards are designed for:
+  the card spans about 80 % of the thumbnail width instead of about 35 %, at the same layout as in a 9:16 project.
+- Only previews read the hint: clips, the Program monitor and exports draw on the clip's canvas as before.
+- Limitation: the 16:9 crop of a 9:16 canvas shows its middle 32 %; a preset whose card were taller than that would
+  be cut at the top and bottom of the thumbnail (no preset is).
 
