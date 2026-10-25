@@ -305,11 +305,16 @@ const key = <T>(seconds: number, value: T, extra: Record<string, unknown> = {}) 
 
 /**
  * S_Shake random amplitude of the Pixel Pop template, converted from the user's Premiere S_Shake (Amplitude 0.6,
- * Frequency 1, X / Y / Tilt Rand Amp 72 / 36 / 5): calibration method and result in docs/wp-notes/auto-subtitles.md
- * (§ "S_Shake calibration"). Our S_Shake offsets are Amplitude × Rand Amp × 0.1 layer-box widths × noise and
- * Amplitude × Tilt Rand Amp × 5° × noise (registry/fx/sapphire-distort-warp/math.ts).
+ * Frequency 1, X / Y / Tilt Rand Amp 72 / 36 / 5). Calibration (docs/wp-notes/auto-subtitles.md § "S_Shake
+ * calibration"): Premiere shows Sapphire's X / Y Rand Amp ×360 (72 / 36 = Sapphire's defaults 0.2 / 0.1, in frame
+ * widths × 0.1), Tilt in degrees. Sapphire measures offsets on the clip's frame, our S_Shake on the layer box (the
+ * text box, `box.widthPct` of the frame width), so X / Y = value / 360 × 100 / widthPct; Tilt = 5° / 5° per unit.
  */
-export const PIXEL_POP_SHAKE = { xRandAmp: 0.889, yRandAmp: 0.444, tiltRandAmp: 1 };
+export const PIXEL_POP_SHAKE = {
+	xRandAmp: Math.round((72 / 360) * (100 / 75) * 1000) / 1000,
+	yRandAmp: Math.round((36 / 360) * (100 / 75) * 1000) / 1000,
+	tiltRandAmp: 5 / 5,
+};
 
 const PIXEL_FONT = 'Pixel12x10';
 const PIXEL_PURPLE = hex('#AE00FF');
