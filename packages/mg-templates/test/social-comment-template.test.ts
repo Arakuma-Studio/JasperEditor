@@ -23,9 +23,11 @@ import {
 	socialCardScale,
 	socialComment,
 	socialCommentPresets,
+	socialCommentRequiredAssets,
 	socialCommentSchedule,
 	socialCommentSegments,
 	socialCommentUnavailableVariant,
+	socialDefaults,
 	socialLikesTick,
 	socialTickCount,
 	stripMarks,
@@ -268,6 +270,7 @@ describe('social-comment@1 presets and fill hook', () => {
 			['tiktok-comment', 'TikTok · Comment'],
 			['instagram-post', 'Instagram · Post comment'],
 			['instagram-reel-reply', 'Instagram · Reel reply'],
+			['x-post', 'X · Post'],
 		]);
 		// a preset carries its variant's tokcomment defaults
 		expect(templatePresetParams(socialComment, 'instagram-post')).toMatchObject({
@@ -280,6 +283,22 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialCommentUnavailableVariant({ variant: 'instagram-post' })).toBeNull();
 		expect(socialCommentUnavailableVariant({ variant: 'instagram-reel-reply' })).toBeNull();
 		expect(SOCIAL_VARIANT_FONTS['instagram-post']).toEqual({ family: 'SF Pro Text', weights: [400, 600] });
+		expect(SOCIAL_VARIANT_FONTS['instagram-reel-reply']).toEqual({ family: 'SF Pro Text', weights: [400] });
+		// the X preset carries tokcomment's X defaults (2h, 45 replies, 12 reposts, 1.2K likes, 12K views)
+		const x = socialComment.presets!.find((p) => p.id === 'x-post')!;
+		expect({ ...socialComment.defaults, ...x.params }).toMatchObject({
+			variant: 'x-post',
+			displayName: 'Display Name',
+			handle: 'username',
+			timeValue: 2,
+			timeUnit: 'hour',
+			replies: 45,
+			reposts: 12,
+			likes: 1200,
+			views: 12_000,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'x-post' })).toBeNull();
+		expect(SOCIAL_VARIANT_FONTS['x-post']).toEqual({ family: 'Chirp', weights: [400, 700] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,
@@ -327,5 +346,58 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(r.params).toMatchObject({ variant: 'tiktok-reply', text: 'Part two please' });
 		expect(r.params.avatar).toMatchObject({ generated: expect.any(Number) });
 		expect(r.filled).toEqual(expect.arrayContaining(['displayName', 'handle', 'avatar']));
+	});
+});
+
+describe('social-comment@1 required assets', () => {
+	it('TikTok: TikTok Sans faces, the emoji of the comment and the shown name in the clip pack, no image', () => {
+		const a = socialCommentRequiredAssets({
+			...socialDefaults('tiktok-reply'),
+			displayName: 'Luna ✨',
+			handle: 'luna',
+			text: 'so ==good 😊== 🔥🔥',
+			emojiStyle: 'twemoji',
+		});
+		expect(a.fonts).toEqual([
+			{ family: 'TikTok Sans', weight: 600, style: 'normal' },
+			{ family: 'TikTok Sans', weight: 700, style: 'normal' },
+		]);
+		expect(a.emoji).toEqual({ pack: 'twemoji', graphemes: ['😊', '🔥', '✨'] });
+		expect(a.images).toBeUndefined();
+		const plain = socialCommentRequiredAssets({ ...socialDefaults('tiktok-comment'), text: 'no emoji' });
+		expect(plain.emoji).toBeUndefined();
+		expect(plain.fonts.map((f) => f.weight)).toEqual([500, 600]);
+	});
+
+	it('a variant whose card is not built yet declares nothing; the declaration passes the asset schema', () => {
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('youtube-comment'), handle: 'a', text: 'A 😀' }),
+		).toEqual({ fonts: [] });
+		// Instagram: SF Pro Text faces and the emoji of the comment; its default avatar is a vector (no image)
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('instagram-post'), displayName: 'Z 🔥', text: 'A 😀' }),
+		).toEqual({
+			fonts: [
+				{ family: 'SF Pro Text', weight: 400, style: 'normal' },
+				{ family: 'SF Pro Text', weight: 600, style: 'normal' },
+			],
+			emoji: { pack: 'apple', graphemes: ['😀'] },
+		});
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('instagram-reel-reply'), text: 'no emoji' }),
+		).toEqual({ fonts: [{ family: 'SF Pro Text', weight: 400, style: 'normal' }] });
+		// X: Chirp faces, the emoji of the text, the name and the handle, and the raster default avatar
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('x-post'), displayName: 'A 😀', text: 'hi' }),
+		).toEqual({
+			fonts: [
+				{ family: 'Chirp', weight: 400, style: 'normal' },
+				{ family: 'Chirp', weight: 700, style: 'normal' },
+			],
+			emoji: { pack: 'apple', graphemes: ['😀'] },
+			images: ['x-default-avatar'],
+		});
+		const info = mgRegistry.getDefinition('social-comment', 1)!;
+		expect((info as { requiredAssets?: unknown }).requiredAssets).toBe(socialCommentRequiredAssets);
 	});
 });

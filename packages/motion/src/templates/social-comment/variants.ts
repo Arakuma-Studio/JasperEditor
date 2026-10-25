@@ -5,6 +5,7 @@ import type { SocialVariantImpl } from './contract.ts';
 import { INSTAGRAM_POST, INSTAGRAM_REEL_REPLY } from './instagram.tsx';
 import { TIKTOK_COMMENT, TIKTOK_REPLY } from './tiktok.tsx';
 import { unavailableVariant } from './unavailable.tsx';
+import { X_POST } from './x.tsx';
 
 export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantImpl>> = {
 	'tiktok-reply': TIKTOK_REPLY,
@@ -13,7 +14,7 @@ export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantI
 	'instagram-reel-reply': INSTAGRAM_REEL_REPLY,
 	'youtube-comment': unavailableVariant('youtube-comment'),
 	'youtube-shorts-reply': unavailableVariant('youtube-shorts-reply'),
-	'x-post': unavailableVariant('x-post'),
+	'x-post': X_POST,
 };
 
 /** Whether a variant has its real card (false: the "not available" card is drawn). */

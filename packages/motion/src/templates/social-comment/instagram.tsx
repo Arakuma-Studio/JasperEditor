@@ -8,7 +8,7 @@ import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { INSTAGRAM_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['instagram-post']!.family}", sans-serif`;
 
@@ -145,7 +145,7 @@ function LikeHeart({
 		top: (16 - HEART_PX) / 2,
 	};
 	return (
-		<span data-part="heart" style={{ ...box, transform: `scale(${round4(heart.s)})` }}>
+		<span data-part="heart" style={{ ...box, boxShadow: INK_RING, transform: `scale(${round4(heart.s)})` }}>
 			<Glyph
 				glyph={INSTAGRAM_GLYPHS.heartOutline}
 				size={HEART_PX}

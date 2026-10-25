@@ -487,3 +487,49 @@ Follow AGENTS.md §7. Feature-specific checks:
   comments; measure a 50-comment batch.
 - **Reference fidelity:** tokcomment is itself an imitation and six of its variants rendered in a
   fallback font. Calibration against real screenshots catches what it got wrong.
+
+## 11. Addendum (2026-10-25): app-store review cards
+
+The requester added store reviews to the scope, with reference screenshots stored outside the repo at
+`/var/lib/orquester/workspaces/jaspersito/research/store-reviews-ref/`:
+- `play-store-review-user-ref.png`: the Play Store review card. Leave out the "Was this review helpful? Yes/No"
+  footer, as the requester asked.
+- `app-store-web-reviews-user-ref.webp`: App Store review cards in their web/macOS style.
+- `app-store-ios-reviews-user-ref.png`: App Store review cards in the iOS App Store app's Ratings & Reviews
+  list.
+
+They are three new variants of the same `social-comment@1` template. The template is unreleased, so it is
+extended in place.
+
+| Variant id | Look |
+|---|---|
+| `play-store-review` | Avatar, name, kebab; green stars + date; body clamped with a fade on the last line |
+| `app-store-review` | Grey rounded card; orange stars; "name, MM/DD/YYYY"; bold title; body clamped to 4 lines with a blue "more" |
+| `app-store-review-ios` | Grey rounded card in the iOS app; bold title + relative date on the right; small stars + username on the right; body |
+
+These come with new parameters:
+- `rating`: integer 1–5.
+- `title`: the App Store variants; single line, bold.
+- `date`: ISO `YYYY-MM-DD`, formatted per variant. Play is `M/D/YY` as in the reference; the App Store web style
+  is `MM/DD/YYYY`.
+- `edited`: boolean, iOS-only "edited" prefix.
+- `truncate`: boolean, default on. When on, the platform's line clamp applies, with the fade or "more".
+
+The iOS variant shows its date relatively (`timeValue`/`timeUnit` → "Sun", "2d", "1y ago" per the iOS app's rules).
+All existing behaviour applies to these variants:
+- the entrances, word reveal and word marks;
+- emoji: Apple for the App Store, Noto for Play;
+- avatar media/generated/default where the variant has an avatar;
+- Properties controls, with a star-rating control and a date control;
+- Program-monitor editing, presets, the randomizer (plausible star distribution, titles, dates), bulk-import
+  aliases (`Rating`, `Stars`, `Title`, `Date`) and the agent API.
+
+The like tick has no counterpart here. These variants offer a **star fill** extra in its place: the stars fill one
+by one after the entrance.
+
+Fonts:
+- Play Store: Google Sans / Roboto per live measurement.
+- App Store: SF Pro, through the remote manifest.
+
+Calibration uses the requester's screenshots, plus live measurements of play.google.com and apps.apple.com review
+cards where public pages allow.

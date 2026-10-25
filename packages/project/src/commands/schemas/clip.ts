@@ -211,6 +211,21 @@ export const ClipAddMotionGraphicCmd = cmd('clip.addMotionGraphic', {
 	fill: z.strictObject({ seed: z.number().int().min(0).max(0xffff_ffff) }).optional(),
 	canvas: canvas.optional(),
 });
+/**
+ * "Add another" (social-comments design §7.9): a copy of a motion-graphic clip (transform, effects, keyframes, name,
+ * label) right after it — at `at`, default the source's end — with the same duration, on the first free unlocked
+ * video track from `track` (default the source's track) up, so it never overwrites. The params the template lists
+ * in `ui.addAnother.reroll` get fresh values from its fill hook (deterministic for `seed`); the others are copied.
+ * `params` (validated by the template) win over both. Keyframes of re-randomized or given params are dropped.
+ */
+export const ClipDuplicateMotionGraphicCmd = cmd('clip.duplicateMotionGraphic', {
+	clipId: IdRefSchema,
+	seed: z.number().int().min(0).max(0xffff_ffff),
+	at: TimeInputSchema.optional(),
+	track: TrackRefSchema.optional(),
+	params: z.record(z.string(), z.unknown()).optional(),
+	ref: RefDeclSchema.optional(),
+});
 export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	...placementTarget,
 	/** Default: the composition's length at the sequence rate (S08:MGC-004); longer values are clamped. */
@@ -440,6 +455,7 @@ export const CLIP_COMMANDS = [
 	ClipAddShapeCmd,
 	ClipAddCaptionsCmd,
 	ClipAddAdjustmentCmd,
+	ClipDuplicateMotionGraphicCmd,
 	ClipMoveCmd,
 	ClipTrimCmd,
 	ClipSlipCmd,

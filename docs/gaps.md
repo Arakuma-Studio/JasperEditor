@@ -756,10 +756,17 @@ shows; the desktop smoke and packaged-app checks were not run (no xvfb on the se
 Animated platform comment cards (`social-comment@1`, design `docs/superpowers/specs/2026-10-25-social-comment-templates-design.md`).
 **Done when:** all seven variants are drawn faithfully in light and dark, with presets, Properties controls, canvas
 editing, randomize, bulk import and agent batches.
-**Status (in progress):** the template, its animation framework, the two TikTok cards and the two Instagram cards
-(post comment, Reel reply) are built — see [wp-notes/social-comments.md](wp-notes/social-comments.md) "Template
-implementation". The YouTube and X cards are not built yet: a clip set to one of them shows a striped "not available yet" card in preview, has no
-gallery preset, and every export path refuses it (`TEMPLATE_NOT_INSTALLED`, "social-comment@1 (X post card)").
+**Status (in progress):** the template, its animation framework, the two TikTok cards, the two Instagram cards (post
+comment, Reel reply) and the X post card are built — see [wp-notes/social-comments.md](wp-notes/social-comments.md)
+"Template implementation", "Instagram cards: calibration" and "X card". The YouTube cards are not built yet: a clip set
+to one of them shows a striped "not available yet" card in preview, has no gallery preset, and every export path
+refuses it (`TEMPLATE_NOT_INSTALLED`, e.g. "social-comment@1 (YouTube video comment card)"). X card limits: only the
+blue verified badge (gold / grey need a schema field); the Grok mark is always drawn; Chirp is the latin subset, so
+other scripts fall back to the next font of the stack. Instagram card limit: the default avatar is drawn in Instagram's
+style, not from Instagram's own image (no stable public source).
+Add another and bulk import (CSV / pasted TSV, MCP `import_motion_graphics_csv`) are built — "Add another & bulk
+import". Their gaps: an `Image URL` column is reported as ignored (no remote picture import), XLSX is not read, and
+Add another has no keyboard shortcut (the free chord collides with macOS's Dock toggle).
 
 ## For agents choosing work
 

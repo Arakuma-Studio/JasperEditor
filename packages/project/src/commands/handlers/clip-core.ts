@@ -4,6 +4,7 @@ import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
+import { fillTemplateParams, validateTemplateParams } from '../../registry/mg-params.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
@@ -48,7 +49,7 @@ import {
 } from './clip-common.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
-import { applyTemplatePatch, assertTemplateMedia } from './mg-template.ts';
+import { applyTemplatePatch } from './mg-template.ts';
 import { markMulticamClips } from './multicam-placement.ts';
 import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
@@ -468,56 +469,28 @@ function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerCont
 }
 
 /** Runs the template's fill hook (MgTemplateInfo.fill) on the given params; none = the params unchanged. */
+/** The fill step of `clip.addMotionGraphic` (`fillTemplateParams`), refusals as command errors. */
 function fillMgParams(
 	info: MgTemplateInfo,
 	given: Record<string, unknown>,
 	seed: number,
 	h: HandlerContext,
 ): { params: Record<string, unknown>; filled: string[] } {
-	if (!info.fill) return { params: given, filled: [] };
-	const label = `${info.id}@${info.version}`;
-	let r: ReturnType<NonNullable<MgTemplateInfo['fill']>>;
-	try {
-		r = info.fill({ ...given }, seed);
-	} catch (e) {
-		return h.fail('E_INVALID_PARAM', `Could not fill the params of ${label}: ${(e as Error)?.message ?? e}`);
-	}
-	if (!r || typeof r !== 'object') return h.fail('E_INVALID_PARAM', `The fill of ${label} returned nothing`);
-	if (!r.ok) {
-		const issues = Array.isArray(r.issues)
-			? `: ${r.issues
-					.slice(0, 10)
-					.map((i) => (i && typeof i === 'object' && 'message' in i ? String(i.message) : JSON.stringify(i)))
-					.join('; ')}`
-			: '';
-		return h.fail('E_INVALID_PARAM', `Invalid params for ${label}: ${r.error}${issues}`);
-	}
-	const params = r.params;
-	if (!params || typeof params !== 'object' || Array.isArray(params))
-		return h.fail('E_INVALID_PARAM', `The fill of ${label} returned no params object`);
-	// The hook fills omitted params only: the given values win whatever it returned.
-	return {
-		params: { ...params, ...given },
-		filled: (Array.isArray(r.filled) ? r.filled : []).filter(
-			(n): n is string => typeof n === 'string' && !Object.hasOwn(given, n),
-		),
-	};
+	const r = fillTemplateParams(info, given, seed);
+	if (!r.ok) return h.fail(r.code, r.message, r.path ? { path: r.path } : undefined);
+	return { params: r.params, filled: r.filled };
 }
 
+/** Params schema + template media checks (`validateTemplateParams`), refusals as command errors. */
 function validateMgParams(
 	doc: DDoc,
 	info: MgTemplateInfo,
 	params: Record<string, unknown>,
 	h: HandlerContext,
 ): Record<string, unknown> {
-	const parsed = info.paramsSchema.safeParse(params);
-	if (!parsed.success) {
-		const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
-		h.fail('E_INVALID_PARAM', `Invalid params for ${info.id}@${info.version}: ${msg}`);
-	}
-	// Template media params (avatars) reference media of the project, of the kinds they take.
-	assertTemplateMedia(doc.media, info, parsed.data as Record<string, unknown>, h);
-	return parsed.data as Record<string, unknown>;
+	const r = validateTemplateParams(info, params, doc.media);
+	if (!r.ok) return h.fail(r.code, r.message, r.path ? { path: r.path } : undefined);
+	return r.params;
 }
 
 function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) {

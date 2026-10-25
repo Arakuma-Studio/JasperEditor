@@ -12,6 +12,7 @@
 import { type Fit, SOCIAL_CARD_MAX_HEIGHT, socialCardScale } from '@jasper/mg-templates';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import type { SocialVariantImpl } from './contract.ts';
+import { INK_RING } from './parts.tsx';
 
 /** Share of the design width a card may take at most. */
 const MAX_WIDTH = 0.96;
@@ -84,6 +85,7 @@ export function SocialStage(p: {
 				data-social-card=""
 				style={{
 					flex: 'none',
+					boxShadow: INK_RING,
 					transformOrigin: p.origin,
 					transform: `translateY(${r3(v.y ?? 0)}px) rotate(${r3(v.r ?? 0)}deg) scale(${r3(v.s ?? 1)})`,
 					opacity: r3(v.o ?? 1),

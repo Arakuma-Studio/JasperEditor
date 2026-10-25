@@ -76,6 +76,7 @@ export * from './registry/fx/index.ts';
 export * from './registry/kinds.ts';
 export * from './registry/lumetri-spatial.ts';
 export * from './registry/mg.ts';
+export * from './registry/mg-params.ts';
 export { mediaParamId } from './registry/param-values.ts';
 export * from './registry/properties.ts';
 export * from './registry/text-animator-properties.ts';
@@ -110,6 +111,9 @@ import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
+export * from './bulk/messages.ts';
+export * from './bulk/mg-import.ts';
+export * from './bulk/table.ts';
 export { DEFAULT_CLEANUP_TOLERANCE } from './commands/handlers/ease.ts';
 export {
 	copyEase,

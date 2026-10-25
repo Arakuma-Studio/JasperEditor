@@ -4,8 +4,10 @@
 import {
 	type CommentSpan,
 	generatedAvatar,
+	SOCIAL_DEFAULT_AVATAR_IMAGES,
 	type SocialAvatar as SocialAvatarParam,
 	type SocialTextSegment,
+	splitEmoji,
 } from '@jasper/mg-templates';
 import type { CSSProperties, ReactNode } from 'react';
 import { editableParamProps } from '../editable.ts';
@@ -15,7 +17,7 @@ import {
 	type SocialPlatform,
 	scopeGlyphIds,
 } from '../social/glyphs.ts';
-import { AvatarPicture, EmojiGlyph, splitEmojiPieces } from './assets.tsx';
+import { AvatarPicture, EmojiGlyph } from './assets.tsx';
 import type { SocialCardAssets, SocialWordValues } from './contract.ts';
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0);
@@ -104,8 +106,10 @@ export function SocialAvatar(p: {
 	const box: CSSProperties = {
 		width: p.size,
 		height: p.size,
+		// no `overflow: hidden` clip: every avatar is round by itself (the picture by its own radius, the glyphs are
+		// discs). A rounded clip inside the scaled / rotated entrance made Chrome rasterize the avatar edge differently
+		// depending on the frames visited before (renderStill ≠ renderFrames on ~70 px, S11:ANM-014).
 		borderRadius: '50%',
-		overflow: 'hidden',
 		flexShrink: 0,
 		...p.style,
 	};
@@ -158,8 +162,14 @@ export function SocialAvatar(p: {
 		</div>
 	);
 	if (def.kind === 'remote') {
-		const url = p.assets.imageUrls[def.image.url];
-		return url ? <AvatarPicture src={url} style={{ ...box, objectFit: 'cover' }} /> : silhouette;
+		// the manifest image (`requiredAssets().images`); not available yet: the silhouette (the layer marks it)
+		const id = SOCIAL_DEFAULT_AVATAR_IMAGES[p.platform];
+		const url = id ? p.assets.imageUrls[id] : undefined;
+		return url ? (
+			<AvatarPicture src={url} style={{ ...box, objectFit: 'cover' }} fallback={silhouette} />
+		) : (
+			silhouette
+		);
 	}
 	return silhouette;
 }
@@ -177,7 +187,7 @@ export function TextWithEmoji(p: {
 	emoji: EmojiMetrics;
 	assets: SocialCardAssets;
 }): ReactNode {
-	return splitEmojiPieces(p.text).map((piece, i) =>
+	return splitEmoji(p.text).map((piece, i) =>
 		piece.kind === 'text' ? (
 			// biome-ignore lint/suspicious/noArrayIndexKey: pieces of a static string
 			<span key={i}>{piece.text}</span>
@@ -197,6 +207,14 @@ export function TextWithEmoji(p: {
 	);
 }
 
+/**
+ * A transparent ring that widens an animated element's ink overflow by 3 px. Chrome repaints a transformed element
+ * within its ink rect; without the ring the anti-aliased edges just outside it kept the previous frame's pixels, so a
+ * frame painted after an animation differed from the same frame painted alone (renderFrames ≠ renderStill,
+ * S11:ANM-014). Every element a card transforms per frame carries it.
+ */
+export const INK_RING = '0 0 0 3px transparent';
+
 /** tokcomment's highlight pill: #FFE500, black text, 6 px radius, padding .05em .35em (one pill per run). */
 export const HIGHLIGHT_STYLE: CSSProperties = {
 	background: '#FFE500',
@@ -207,8 +225,17 @@ export const HIGHLIGHT_STYLE: CSSProperties = {
 	WebkitBoxDecorationBreak: 'clone',
 };
 
-/** tokcomment's blur mark: `blur(4px)` at reference size (the card's zoom scales it with the card). */
+/**
+ * tokcomment's blur mark, `blur(4px)` at reference size (the card's zoom scales it with the card). Drawn as a text
+ * shadow of the same Gaussian (a shadow blur radius is twice the standard deviation: 8 px) under transparent glyphs:
+ * a CSS `filter` on the words made Chrome composite them, and a frame painted after an entrance then differed from the
+ * same frame painted alone (renderFrames ≠ renderStill, S11:ANM-014). Emoji inside a blurred word keep the filter.
+ */
 export const BLUR_PX = 4;
+const BLURRED_TEXT_STYLE: CSSProperties = {
+	WebkitTextFillColor: 'transparent',
+	textShadow: `0 0 ${2 * BLUR_PX}px currentColor`,
+};
 
 type Piece = CommentSpan & { start: number };
 
@@ -227,7 +254,7 @@ function piecesOf(spans: readonly Piece[], start: number, end: number): Piece[] 
  * The comment text: whitespace runs as text (they wrap), word units as spans (inline-block, popping, while word
  * reveal runs), each cut into its styled spans:
  * - highlight: tokcomment's yellow pill; a unit that is one highlighted run carries one pill;
- * - blur: `blur(4px)` (inline-block); remove: invisible, the gap kept;
+ * - blur: the glyphs blurred like `blur(4px)` (a text shadow under transparent glyphs); remove: invisible, the gap kept;
  * - mentions / hashtags in the variant's colours (black inside a highlight);
  * - emoji as images of the clip's pack (`emoji` metrics relative to the font size).
  * `style` is the text block's style (font, size, line height, colour); its `fontSize` must be a number.
@@ -257,12 +284,11 @@ export function CommentText(p: {
 		const style: CSSProperties = {};
 		if (!inPill && piece.mark !== 'highlight' && piece.role !== 'plain') style.color = p.colors[piece.role];
 		if (piece.mark === 'highlight' && !inPill) Object.assign(style, HIGHLIGHT_STYLE);
-		if (piece.mark === 'blur')
-			Object.assign(style, { display: 'inline-block', filter: `blur(${BLUR_PX}px)` });
+		if (piece.mark === 'blur') Object.assign(style, BLURRED_TEXT_STYLE);
 		if (piece.mark === 'remove') style.opacity = 0;
 		return (
 			<span key={key} data-mark={piece.mark === 'none' ? undefined : piece.mark} style={style}>
-				{splitEmojiPieces(piece.text).map((e, i) =>
+				{splitEmoji(piece.text).map((e, i) =>
 					e.kind === 'text' ? (
 						e.text
 					) : (
@@ -272,7 +298,7 @@ export function CommentText(p: {
 							grapheme={e.grapheme}
 							size={emojiPx}
 							assets={p.assets}
-							style={emojiStyle}
+							style={piece.mark === 'blur' ? { ...emojiStyle, filter: `blur(${BLUR_PX}px)` } : emojiStyle}
 						/>
 					),
 				)}
@@ -292,6 +318,7 @@ export function CommentText(p: {
 				const v = p.words?.[seg.unit];
 				const unitStyle: CSSProperties = seg.highlight ? { ...HIGHLIGHT_STYLE } : {};
 				if (v) {
+					unitStyle.boxShadow = INK_RING;
 					unitStyle.display = 'inline-block';
 					unitStyle.maxWidth = '100%';
 					unitStyle.opacity = r3(v.o);

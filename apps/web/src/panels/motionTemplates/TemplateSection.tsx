@@ -1,6 +1,6 @@
 // Properties ▸ Template (S05:ECP-008/PRP-001 actions, S11:ATP-007/008/009; registered through `clipSections` by
 // commands/mg.ts): the template's name, version and engine ("anime · Remotion" / "fframes" / not installed), and
-// its actions — "Update template to vN" when the registry has an upgrade path (one undo step), Re-render (fframes
+// its actions — Add Another (social-comments design §7.9), Import Spreadsheet…, "Update template to vN" when the registry has an upgrade path (one undo step), Re-render (fframes
 // only; hidden for anime templates, which jasper-mg never renders) and Open in Motion Templates. Mixed selections
 // list every engine and offer the actions any selected clip supports. The params form stays in the built-in
 // Parameters section.
@@ -9,6 +9,7 @@ import { useStoreSelector } from '@jasper/session/react';
 import { Button, toast } from '@jasper/ui';
 import type { ClipSectionProps } from '../../extensions/index.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { addAnotherMotionGraphics } from './add-another.ts';
 import { templateUpgradeFor, updateTemplates } from './upgrades.ts';
 
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
@@ -103,6 +104,28 @@ export function MgTemplateSection({ session, clips }: ClipSectionProps) {
 						onClick={() => run('mg.rerender')}
 					>
 						Re-render
+					</Button>
+				) : null}
+				{engine !== 'not installed' || !same ? (
+					<Button
+						disabled={readOnly}
+						data-testid="mg-template-add-another"
+						title="Add a copy right after each selected clip with fresh random values (identity and stats for social comments)"
+						onClick={() => {
+							const r = addAnotherMotionGraphics(session, { clipIds: mg.map((c) => c.id) });
+							if (!r.ok) toast({ kind: 'warning', title: 'Could not add another', detail: r.message });
+						}}
+					>
+						Add Another
+					</Button>
+				) : null}
+				{same && info ? (
+					<Button
+						disabled={readOnly || !runtime}
+						data-testid="mg-template-bulk-import"
+						onClick={() => void runtime?.run('mg.bulkImport', { templateId: info.id, version: info.version })}
+					>
+						Import Spreadsheet…
 					</Button>
 				) : null}
 				<Button disabled={!runtime} onClick={() => run('panel.focus.motionTemplates')}>
