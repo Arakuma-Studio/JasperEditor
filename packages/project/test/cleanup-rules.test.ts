@@ -24,7 +24,10 @@ import { FLICKS_PER_SECOND } from '../src/time.ts';
 const S = (x: number) => Math.round(x * FLICKS_PER_SECOND);
 
 /** Words "a b c | d e" with `|` a 0.8 s pause; 0.25 s words, `gap` between words. */
-function say(text: string, opts: { gap?: number; pause?: number; t0?: number; dur?: number } = {}): CleanupWordIn[] {
+function say(
+	text: string,
+	opts: { gap?: number; pause?: number; t0?: number; dur?: number } = {},
+): CleanupWordIn[] {
 	let t = opts.t0 ?? 1;
 	const out: CleanupWordIn[] = [];
 	for (const tok of text.split(/\s+/)) {
@@ -52,7 +55,12 @@ function voiceFor(words: readonly CleanupWordIn[], extraSpeech: Array<[number, n
 	};
 	for (const w of words) mark(w.start / FLICKS_PER_SECOND, w.end / FLICKS_PER_SECOND);
 	for (const [a, b] of extraSpeech) mark(a, b);
-	return { classes, level, frameCount: n, levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 } };
+	return {
+		classes,
+		level,
+		frameCount: n,
+		levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
+	};
 }
 
 function kinds(
@@ -130,10 +138,13 @@ describe('rules (Spanish)', () => {
 
 	it('a script prefers an earlier take that covers the line better', () => {
 		const script = 'Diseñé las curvas cerradas para el circuito de montaña.';
-		const r = kinds('diseñé las curvas cerradas para el circuito de montaña | diseñé las curvas cerradas para', {
-			script,
-			settings: { rules: { restart: 'off', falseStart: 'off' } },
-		});
+		const r = kinds(
+			'diseñé las curvas cerradas para el circuito de montaña | diseñé las curvas cerradas para',
+			{
+				script,
+				settings: { rules: { restart: 'off', falseStart: 'off' } },
+			},
+		);
 		const g = r.r.groups[0];
 		expect(g).toBeDefined();
 		expect(g!.chosen).toBe(0);
@@ -180,7 +191,9 @@ describe('rules (Spanish)', () => {
 		const cut = kinds('jue- juego nuevo');
 		expect(cut.label(0)).toBe('stutter');
 		// a pause ≥ 0.3 s between the copies is not a stutter
-		expect(kinds('el | el juego', { settings: { rules: { falseStart: 'off', retake: 'off' } } }).label(0)).toBeNull();
+		expect(
+			kinds('el | el juego', { settings: { rules: { falseStart: 'off', retake: 'off' } } }).label(0),
+		).toBeNull();
 	});
 
 	it('ASR suspects: low confidence, implausible durations, decoder scores', () => {
@@ -275,8 +288,7 @@ describe('edges', () => {
 		// floor −65; a word from frame 10 to 20 with an onset ramp and a decay to frame 26
 		level: Uint8Array.from(
 			Array.from({ length: 40 }, (_, k) => {
-				const db =
-					k < 9 ? -65 : k === 9 ? -45 : k < 20 ? -25 : k < 27 ? -25 - (k - 19) * 6 : -65;
+				const db = k < 9 ? -65 : k === 9 ? -45 : k < 20 ? -25 : k < 27 ? -25 - (k - 19) * 6 : -65;
 				return (db + 120) * 2;
 			}),
 		),

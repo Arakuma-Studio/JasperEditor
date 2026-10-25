@@ -223,7 +223,7 @@ recordings (1,644 words: retakes, restarts, false starts, fillers, marker phrase
 Whisper-like timestamp offsets; quantised levels and classes), each run through the prototype itself by a generator kept
 with the private research (`.prproj-analysis/box/cleanup-port/gen.py`, synthetic inputs only) and through the port with
 the prototype's presets `fast` and `calm` → identical per-word labels, identical guard decisions, kept ranges equal to
-1e-9 s (fixture `test/fixtures/cleanup-port.json`, 365 KB). The check switches off the spec's added rules and the
+1e-9 s (fixture `test/fixtures/cleanup-port.json`, 419 KB). The check switches off the spec's added rules and the
 strict removal below, which are deliberate differences.
 
 Deliberate differences from the prototype (labelled):
