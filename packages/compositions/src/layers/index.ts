@@ -39,6 +39,7 @@ export {
 	MgTemplatePreview,
 	type MgTemplatePreviewProps,
 	mgPreviewFraming,
+	templateContentBox,
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export {

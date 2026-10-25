@@ -2185,3 +2185,18 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
 - Limitation: the 16:9 crop of a 9:16 canvas shows its middle 32 %; a preset whose card were taller than that would
   be cut at the top and bottom of the thumbnail (no preset is).
 
+### Missing-asset banners on the card (N8)
+
+- The striped "Font … is not available" / "Image … is not available" banners of a template (Program monitor and
+  other previews; renders never draw them) are anchored inside the top-left corner of what the template drew,
+  not the canvas corner: `templateContentBox(host, skip)` (`@jasper/compositions`, `MotionGraphicLayer.tsx`) takes
+  the union of the outermost elements smaller than the layer (full-size wrappers — the template's `AbsoluteFill`,
+  the social stage — are looked through), in the layer's unscaled px. Measured in a layout effect after every
+  render, so the banners follow an animated card; the state only changes when the box moves.
+- Banner text size: `min(canvas height / 40, card width / 40)` (≥ 10 px) on a card; `canvas height / 40` at the
+  canvas corner when there is no layout or no smaller element (a template that fills the canvas).
+- Generic: no template contract change; any card-like template gets it.
+- So at Program zoom ≥ 100 % the banner is where the card is (before: off screen at the canvas corner).
+- Tests: `packages/compositions/test/template-marker-anchor.test.tsx` (box measurement with scale, no-layout
+  fallback, a social card with a missing font anchored and sized on the card).
+
