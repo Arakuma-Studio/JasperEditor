@@ -374,6 +374,16 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const projectId = engine.doc().projectId;
 		const e = errOf(await call('render_frame', { projectId, at: 0 }));
 		expect(e.code).toBe('TEMPLATE_NOT_INSTALLED');
+		failure = new EngineError(
+			'TEMPLATE_ASSETS_UNAVAILABLE',
+			'Template assets are not available — font "Chirp" 700',
+			{
+				status: 409,
+			},
+		);
+		const a = errOf(await call('render_frame', { projectId, at: 0 }));
+		expect(a.code).toBe('TEMPLATE_ASSETS_UNAVAILABLE');
+		expect(a.hint).toContain('Privacy & Network');
 		failure = new EngineError('RENDER_FAILED', 'Could not find Chrome (ver. 134). Run ensureBrowser()', {
 			status: 502,
 		});
