@@ -8,6 +8,7 @@ import {
 	formatTimecode,
 	MG_IMPORT_TEXT,
 	type MgImportMessage,
+	paramsPropertySpecs,
 	TABLE_MAX_CHARS,
 	TABLE_MAX_ROWS,
 } from '@jasper/project';
@@ -158,7 +159,18 @@ function BulkImportBody({
 	}, [info, seq, text, delimiter, option?.preset, doc.media, seed, startAt]);
 
 	const tc = (frame: number) => (seq ? formatTimecode(frame, seq.settings.frameRate) : String(frame));
-	const label = (name: string) => info?.ui?.params?.[name]?.label ?? name;
+	// the row labels Properties shows (template hints, schema titles, humanized names)
+	const labels = useMemo(() => {
+		const m = new Map<string, string>();
+		try {
+			for (const spec of info ? paramsPropertySpecs(info) : [])
+				if (spec.key.startsWith('params.')) m.set(spec.key.slice('params.'.length), spec.label);
+		} catch {
+			// a template whose schema has no property specs: the param names stand in
+		}
+		return m;
+	}, [info]);
+	const label = (name: string) => labels.get(name) ?? name;
 	const included = model?.ok ? model.included : 0;
 	const errorRows = model?.ok ? model.rows.filter((r) => !r.included) : [];
 
@@ -316,6 +328,7 @@ function BulkImportBody({
 								<tr>
 									<th className="px-1 py-0.5 font-normal">#</th>
 									<th className="px-1 py-0.5 font-normal">Start</th>
+									<th className="px-1 py-0.5 font-normal">Length</th>
 									{model.shown.map((p) => (
 										<th key={p} className="px-1 py-0.5 font-normal whitespace-nowrap">
 											{t(label(p))}
@@ -341,6 +354,9 @@ function BulkImportBody({
 											<td className="px-1 py-0.5 text-pr-muted">{r.row.index + 1}</td>
 											<td className="px-1 py-0.5 whitespace-nowrap text-pr-muted">
 												{r.included && r.start !== undefined ? tc(r.start) : '—'}
+											</td>
+											<td className="px-1 py-0.5 whitespace-nowrap text-pr-muted">
+												{r.included && r.duration !== undefined ? tc(r.duration) : '—'}
 											</td>
 											{errors.length ? (
 												<td
