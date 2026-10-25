@@ -825,6 +825,73 @@ frame.
   - Huge counts overflow the card; they now stay short.
 - **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
 
+### Instagram cards: calibration
+
+Work package WP6b (`sc/v-instagram`): `instagram-post` and `instagram-reel-reply` in
+`packages/motion/src/templates/social-comment/instagram.tsx`. Labels as above, plus **[M-css]** Instagram's own CSS
+variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guidelines.
+
+- **Blueprint:** tokcomment's computed-style dumps (`ref/instagram-post`, `ref/instagram-reels`), copied in CSS px.
+  - Post comment: 420 wide, padding 16/14/6, radius 2, 1 px black/5 % (dark white/5 %) border, no shadow; avatar 36,
+    gap 13; header 12/18 with the badge 10.5 and the time 3 px after it; comment 14 px at 1.3, margins 3 / 5.25; "Reply"
+    row 12/18 3 px below; replies row 10 px below with a 25 × 1 rule (#B5B5B5 / #383838) and 5 + 6 px before the label;
+    like column 25.6 wide (8 px left padding), heart 16 px slot, count 11.04/16.56 6 px under it. Card #FFF / #222328,
+    comment #0F0F0F / #FFF, secondary #888 / #A3A9AF.
+  - Reel reply: `width: fit-content`, at most **255** px (the size tokcomment draws it at on a desktop viewport; its
+    mobile layout is wider with 18 px text, the guide's 305 does not appear in the dumps), padding 16, radius 6,
+    `0 1px 2px` black/5 % shadow (`bleed` 1/2/3/2), a 1 px white/5 % border only in dark; avatar 36, gap 11; comment
+    15 px at 1.375, 3 px above "Replying to username" 13/19.5 (truncated with an ellipsis). Card #FFF / #222328,
+    comment #000 / #FFF, "Replying to" #888 / #A8A8A8.
+- **Font:** SF Pro Text (remote manifest `sf-pro-text-400/600`; `SOCIAL_VARIANT_FONTS`: 400 + 600 on the post, 400 on
+  the Reel card). The iPhone app's system font [M-web, S-3p], the Text cut because every size is below 20 pt.
+  - tokcomment's sizes are kept: SF Pro's cap height is within 1 px of the capture's (2×: "W" 20 vs 19 px, "u" 13 vs
+    13), so no size scaling was needed.
+  - Tracking per size from Apple's SF Pro table [HIG]: 11 px +0.06, 12 px 0, 13 px −0.08, 14 px −0.15, 15 px −0.23
+    (iOS applies it to the system font).
+  - Weights are Instagram's [M], not tokcomment's 500 (which its fallback font drew as 400): username, "Reply" and the
+    replies line 600; comment, time and count 400.
+- **Glyphs:** `INSTAGRAM_GLYPHS` heart outline / filled and verified badge. The heart is drawn 15.5 px in the 16 px
+  slot and the column moves 1.5 px down, so its ink box and centre match tokcomment's lucide heart (30 × 26 px at 2×).
+- **Colours added:** mentions and hashtags in `--ig-link` #00376B / #E0F1FF [M-css]; liked heart `--ig-badge` #FF3040
+  [M-css].
+- **Default avatar** (`avatar: null`): Instagram has no stable public source (WP5), and the only unsigned image of its
+  web bundle (`/images/instagram/xig/anonymousUser.jpg`) is the pre-2018 blue-grey bust. The card draws the current
+  look as a vector: a #C7C7C7 disc with a white head (r 8.4 at 24/18.6 in a 48 box) and shoulders cut by the disc
+  [E: Instagram's grey `#C7C7C7` and the figure's proportions are chosen to match the platform's default, not measured
+  from it]. `INSTAGRAM_DEFAULT_AVATAR` exports the colours and path. Generated avatars take their initials from the
+  handle (the name the card shows).
+- **Emoji:** Apple images at 1.2 em, shift −0.22 em (TikTok's metrics): 31 px tall at 2× against the capture's 29 px
+  Noto glyph, centre within 2 px of it on the post, 0.5 px on the Reel card.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/instagram/index.html` (outside the
+  repository), one row per tokcomment capture of both cards, light and dark, plus long names, 0 likes and replies,
+  huge counts, the liked heart, mentions, generated avatar, no profile, and filmstrips of grow-from-tail with word
+  reveal and like tick. Rerun with `REMOTION_E2E=1 SOCIAL_SF_PRO_DIR=<SF-Pro-Text-{Regular,Semibold}.otf>
+  SOCIAL_EMOJI_DIR=<cp>.png dir SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER=instagram pnpm exec
+  vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`, then that directory's
+  `tools/crop.mjs` and `tools/page.mjs`. The e2e test's cases now start from their variant's `socialDefaults`, as the
+  captures do.
+- **Measured matches (2× px):** post card 235 px high against 238, Reel card 191 against 192 (dark, with its border:
+  193 against 196); the rest is the 1 px border, which Chrome snaps to whole device pixels under the card's zoom; comment and "Reply" baselines within
+  1 px; "View 5 more replies" within 1 px; heart ink box 30 × 26 at the same place; Reel card 509 px wide against 510.
+
+**Deliberate differences from tokcomment:**
+- **Font:** SF Pro Text instead of Liberation Sans. SF Pro is ≈ 3 % wider: the default comment ends 17 px (2×) further
+  right, and a comment that only just fits on tokcomment wraps one word earlier (the highlighted default text wraps
+  its emoji).
+- **Weights, tracking, glyphs, link and liked colours:** Instagram's, as listed above.
+- **Default avatar:** Instagram's grey silhouette look instead of the hot-linked Twitter default; emoji are Apple
+  images instead of the host's Noto font.
+- **tokcomment bugs fixed:**
+  - the dark-mode username is white (tokcomment's `text-black` overrides its `text-[#ffffff]`, drawing it black);
+  - counts are formatted per Instagram ("1,234", "12.3K", "987.6B"; tokcomment prints "1234567" verbatim);
+  - 0 replies hides the replies row, 1 reply reads "View 1 more reply";
+  - 0 likes shows no number under the heart, as on Instagram;
+  - the like column keeps its width: a long count stays centred under the heart (spilling into the gap and the card's
+    padding) instead of squeezing the comment or pushing the heart.
+- **Like tick:** the count ticks up, then the heart thumps and fills in #FF3040; the Reel card has no likes, so its
+  like tick is ignored (`socialLikesTick`).
+- **Grow from tail:** both cards grow from the avatar corner (`0% 0%`).
+
 ### Verification
 
 - **Commands run** (`--maxWorkers=2`):
@@ -849,7 +916,7 @@ frame.
 
 ### Limits
 
-- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Variants:** the YouTube and X cards are not built (WP6c–d). See `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
