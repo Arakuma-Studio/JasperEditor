@@ -78,6 +78,7 @@ export function SocialComment(props: AnimeTemplateProps) {
 				layoutKey={JSON.stringify(layout)}
 				card={values[0]!}
 				origin={p.entrance === 'grow-from-tail' ? impl.growOrigin : '50% 50%'}
+				bleed={impl.bleed}
 			>
 				<impl.Card params={p} text={text} anim={anim} assets={assets} />
 			</SocialStage>

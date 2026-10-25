@@ -343,4 +343,9 @@ function TikTokCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 }
 
 export const TIKTOK_REPLY: SocialVariantImpl = { Card: TikTokReplyCard, growOrigin: '0% 100%' };
-export const TIKTOK_COMMENT: SocialVariantImpl = { Card: TikTokCommentCard, growOrigin: '0% 0%' };
+export const TIKTOK_COMMENT: SocialVariantImpl = {
+	Card: TikTokCommentCard,
+	growOrigin: '0% 0%',
+	// the card's 0 25px 50px -12px shadow: 50 − 12 = 38 px around, moved 25 px down
+	bleed: { top: 13, right: 38, bottom: 63, left: 38 },
+};

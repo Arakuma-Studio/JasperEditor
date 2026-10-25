@@ -64,6 +64,11 @@ export type SocialVariantImpl = {
 	 * variants (TikTok reply: `0% 100%`), the avatar's corner on the others.
 	 */
 	growOrigin: string;
+	/**
+	 * Reference px the card paints outside its box (a drop shadow), per side: the fit keeps them on the stage too.
+	 * Absent: none.
+	 */
+	bleed?: Readonly<{ top: number; right: number; bottom: number; left: number }>;
 	/** Set on the stand-in of a variant whose card is not built yet (unavailable.tsx). */
 	unavailable?: boolean;
 };

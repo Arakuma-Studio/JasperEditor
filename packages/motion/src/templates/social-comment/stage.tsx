@@ -11,6 +11,7 @@
 // layout (tests) the canvas scale is used.
 import { type Fit, SOCIAL_CARD_MAX_HEIGHT, socialCardScale } from '@jasper/mg-templates';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import type { SocialVariantImpl } from './contract.ts';
 
 /** Share of the design width a card may take at most. */
 const MAX_WIDTH = 0.96;
@@ -26,10 +27,12 @@ export function socialFitZoom(
 	k: number,
 	max: number,
 	design: { width: number; height: number },
+	bleed: SocialVariantImpl['bleed'] = undefined,
 ): number {
 	if (!(measured.w > 0 && measured.h > 0 && k > 0)) return max;
-	const natW = measured.w / k;
-	const natH = measured.h / k;
+	// the card's natural size (reference px) with what it paints outside its box; centred, so the larger side counts
+	const natW = measured.w / k + 2 * Math.max(bleed?.left ?? 0, bleed?.right ?? 0);
+	const natH = measured.h / k + 2 * Math.max(bleed?.top ?? 0, bleed?.bottom ?? 0);
 	return r4(
 		Math.min(max, (design.width * MAX_WIDTH) / natW, (design.height * SOCIAL_CARD_MAX_HEIGHT) / natH),
 	);
@@ -43,6 +46,8 @@ export function SocialStage(p: {
 	card: Readonly<Record<string, number>>;
 	/** `transform-origin` of the entrance (the card's centre, or the variant's grow corner). */
 	origin: string;
+	/** What the card paints outside its box (reference px), kept on the stage by the fit. */
+	bleed?: SocialVariantImpl['bleed'];
 	children: ReactNode;
 }) {
 	const design = { width: p.fit.designW, height: p.fit.designH };
@@ -57,7 +62,7 @@ export function SocialStage(p: {
 		if (!el) return;
 		const passes = current?.passes ?? 0;
 		if (passes >= MAX_PASSES) return;
-		const want = socialFitZoom({ w: el.offsetWidth, h: el.offsetHeight }, k, max, design);
+		const want = socialFitZoom({ w: el.offsetWidth, h: el.offsetHeight }, k, max, design, p.bleed);
 		if (Math.abs(want - k) > 1e-3) setFitted({ key, k: want, passes: passes + 1 });
 	});
 	const v = p.card;

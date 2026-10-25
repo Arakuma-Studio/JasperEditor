@@ -154,6 +154,28 @@ CALIBRATION.push(
 	},
 );
 
+// animation frames (filmstrips on the calibration page): each entrance, the extras, the exit
+for (const [entrance, frames] of [
+	['classic-pop', [2, 4, 6, 8]],
+	['soft-spring', [2, 5, 8, 12]],
+	['grow-from-tail', [3, 6, 9, 13]],
+	['drop-bounce', [4, 8, 12, 16]],
+] as const)
+	for (const frame of frames)
+		CALIBRATION.push({
+			name: `anim_${entrance}_f${String(frame).padStart(3, '0')}`,
+			canvas: '1080x1920',
+			params: { entrance },
+			frame,
+		});
+for (const frame of [16, 22, 30, 40, 48, 146, 148])
+	CALIBRATION.push({
+		name: `anim_extras_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true },
+		frame,
+	});
+
 describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 1_200_000 }, () => {
 	let r: typeof import('@remotion/renderer');
 	let browser: HeadlessBrowser | undefined;
