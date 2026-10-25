@@ -8,6 +8,7 @@ import {
 	type RegisteredMedia,
 	TERMINAL_JOB_STATES,
 } from '@jasper/api';
+import { isHostAbsolute } from '@jasper/project';
 import type { CacheService } from '../cache/service.ts';
 import { buildOcioBundle, bundleFileName } from '../color/ocio-bundle.ts';
 import type { DerivativeService } from '../derivatives/service.ts';
@@ -108,6 +109,9 @@ export class MediaService {
 		opts: { projectId?: string; copyIntoProject?: boolean } = {},
 	): Promise<RegisteredMedia> {
 		if (!isAbsolute(rawPath)) throw new MediaError('BAD_REQUEST', 'Paths must be absolute');
+		// Link Media: a POSIX path on a Windows engine is a path of another computer, not one on the current drive.
+		if (!isHostAbsolute(rawPath, process.platform === 'win32' ? 'win32' : 'posix'))
+			throw new MediaError('BAD_REQUEST', 'The path belongs to another computer');
 		let path: string;
 		try {
 			path = await realpath(resolve(rawPath));

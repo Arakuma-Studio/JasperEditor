@@ -92,6 +92,7 @@ import {
 	InterchangePrerenderPlanRequestSchema,
 	InterchangePrerenderPlanResponseSchema,
 	RelinkScanRequestSchema,
+	RelinkScanResultSchema,
 } from './interchange.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
@@ -997,12 +998,21 @@ export const ROUTES = {
 		body: AssetRelinkRequestSchema,
 		response: AssetRelinkResponseSchema,
 	},
-	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`, result `RelinkScanResult`). */
+	/**
+	 * S04:AS-011: finds offline assets — last known paths, Relink others automatically from located files (`anchors`)
+	 * and a folder search (job `relink-scan`, result `RelinkScanSummary`).
+	 */
 	relinkScan: {
 		method: 'POST',
 		path: '/api/projects/:projectId/relink-scan',
 		body: RelinkScanRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** The full `RelinkScanResult` of a finished `relink-scan` job. */
+	relinkScanResult: {
+		method: 'GET',
+		path: '/api/projects/:projectId/relink-scan/:jobId',
+		response: RelinkScanResultSchema,
 	},
 	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
 	captionFileRead: {
