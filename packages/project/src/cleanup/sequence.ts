@@ -379,7 +379,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const res = run.result;
 		const words = res.words;
 		const byIndex = new Map<number, number>();
-		words.forEach((w, k) => byIndex.set(w.i, k));
+		for (const [k, w] of words.entries()) byIndex.set(w.i, k);
 		const harshSkip = new Set<CleanupFinding>();
 		const removedFor = () => {
 			const removed = new Array<boolean>(words.length).fill(false);

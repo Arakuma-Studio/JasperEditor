@@ -382,7 +382,7 @@ export function levelPauseRanges(
 	const retimed: string[] = [];
 	for (const [clipId, ws] of byClip) {
 		const clip = seq.clips[clipId] as DClip | undefined;
-		if (!clip || clip.kind !== 'audio') continue;
+		if (clip?.kind !== 'audio') continue;
 		if (clip.speed.reverse || clip.speed.rate !== 1 || isRemapped(clip as Clip)) {
 			retimed.push(clipId);
 			continue;
