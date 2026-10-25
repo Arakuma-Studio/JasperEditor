@@ -46,6 +46,8 @@ const CARD: MgTemplateCatalogEntry = {
 	native: false,
 	renderer: 'anime',
 	presets: [{ id: 'pro', name: 'Pro', params: { handle: 'brand', text: 'From the preset' } }],
+	// per-instance params (like social-comment's identity and stats): never taken from a preset
+	ui: { addAnother: { reroll: ['handle', 'likes'] } },
 };
 const LOWER: MgTemplateCatalogEntry = {
 	id: 'lower-third',
@@ -93,6 +95,7 @@ const infoOf = (
 	canvasDefault: 'sequence',
 	...(t.renderer ? { renderer: t.renderer } : {}),
 	...(fill ? { fill } : {}),
+	...(t.ui ? { ui: t.ui as MgTemplateInfo['ui'] } : {}),
 });
 /** A fill hook like the social-comment one: identity and stats from the seed, given fields kept. */
 const cardFill: MgTemplateInfo['fill'] = (partial, seed) => {
@@ -489,24 +492,33 @@ describe('add_motion_graphic: presets (WP3a refs) with batches, placement and th
 					{ template: 'card:pro', at: 0 },
 					{ template: 'card@1:pro', at: 0, params: { text: 'Mine' } },
 					{ template: 'card', at: 0 },
+					{ template: 'card:pro', at: 0, params: { handle: 'given' } },
 				],
 			}),
 		);
+		// presets set the look (text); the per-instance params (handle, likes) come from the fill hook, like bulk
+		// import rows and Add another copies (mgInstanceParams)
 		expect(body.items[0]).toMatchObject({
 			template: 'card@1',
 			preset: 'pro',
 			track: 'V2',
-			params: { handle: 'brand', text: 'From the preset', likes: 5 },
-			filled: ['likes'],
+			params: { handle: HANDLES[5 % HANDLES.length], text: 'From the preset', likes: 5 },
+			filled: ['handle', 'likes'],
 		});
 		expect(body.items[1]).toMatchObject({
 			preset: 'pro',
 			track: 'V3',
-			params: { handle: 'brand', text: 'Mine' },
+			params: { text: 'Mine' },
 		});
-		expect(body.items[1]!.filled).toEqual(['likes']);
+		expect(body.items[1]!.params.handle).not.toBe('brand');
+		expect(body.items[1]!.filled).toEqual(['handle', 'likes']);
 		expect(body.items[2]!.preset).toBeUndefined();
 		expect(body.items[2]!.filled).toEqual(['handle', 'likes']);
+		// a per-instance param the caller gives is kept
+		expect(body.items[3]).toMatchObject({
+			params: { handle: 'given', text: 'From the preset' },
+			filled: ['likes'],
+		});
 	});
 
 	it('reports unknown presets and malformed refs per item before applying anything', async () => {

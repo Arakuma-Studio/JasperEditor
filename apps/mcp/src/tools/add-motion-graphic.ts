@@ -5,7 +5,13 @@
 // the editor, HTTP (`/api/agent/tx`) and the CLI (`jasper call add_motion_graphic`) use too.
 import { randomInt } from 'node:crypto';
 import type { MgTemplateCatalogEntry, MgTemplatePresetEntry, MgTemplatesResponse } from '@jasper/api';
-import { type ProjectDocument, type Sequence, sequenceTimecode, TrackRefSchema } from '@jasper/project';
+import {
+	mgInstanceParams,
+	type ProjectDocument,
+	type Sequence,
+	sequenceTimecode,
+	TrackRefSchema,
+} from '@jasper/project';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
@@ -29,7 +35,7 @@ const TemplateRefArg = z
 const ParamsArg = z
 	.record(z.string(), z.unknown())
 	.describe(
-		'Template params (list_motion_templates shows each one); they win over everything. Omitted params come from the preset ("<id>:<preset>"), then the template’s fill hook when it has one (believable values from the seed), then the template defaults',
+		'Template params (list_motion_templates shows each one); they win over everything. Omitted params come from the preset ("<id>:<preset>": the look), then the template’s fill hook when it has one (believable values from the seed), then the template defaults. The per-instance params a template re-randomizes (list_motion_templates: ui.addAnother.reroll; social-comment: name, handle, avatar and stats) never come from the preset: give them, or the fill hook picks them',
 	);
 const TrackArg = TrackRefSchema.describe(
 	'A video track label ("V3") or id. Given: the clip goes on exactly that track and overwrites what is there in its time range (the behaviour before first-free placement), unless placement is "first-free" (then it is the lowest track tried). Omitted: first-free from V2 up',
@@ -67,8 +73,9 @@ function itemCommand(r: Resolved, seed: number, sequenceId: string | undefined):
 	const { item, template: t } = r;
 	const placement = item.placement ?? (item.track ? 'overwrite' : 'first-free');
 	// Layering (the command merges defaults under and runs the fill hook): defaults → preset → fill → item params.
-	// The preset's params travel as given params, so the fill only fills what both leave out.
-	const params = { ...(r.preset?.params ?? {}), ...(item.params ?? {}) };
+	// Presets set the look (`mgInstanceParams`, the rule of bulk import and Add another): the per-instance params the
+	// template re-randomizes (ui.addAnother.reroll) come from the item or the fill hook, never from the preset.
+	const { params } = mgInstanceParams(t, r.preset?.params, item.params);
 	return {
 		type: 'clip.addMotionGraphic',
 		at: item.at,

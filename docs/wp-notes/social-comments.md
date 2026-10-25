@@ -980,9 +980,14 @@ comments; every motion-graphic template (and the other generator clips) gets it.
 - `clip.addMotionGraphic {fill: {seed}}` runs it on the given params; the given values always win over what it
   returns, then the template defaults are merged under and the params schema (and the template media-param checks:
   missing medium `E_NOT_FOUND`, wrong kind `E_INVALID_PARAM`) validates the result.
-- Layering with presets: defaults → preset → fill → caller params. Callers (MCP, gallery) resolve a preset ref and
-  send `{...preset.params, ...params}` as the given params, so the fill only fills what both leave out and never
-  overrides the preset. The gallery / `mg.insert` never asks for a fill (humans get the preset or the defaults). A refusal, a throw or a
+- Layering with presets: defaults → preset → fill → caller params, with one rule for every new instance —
+  `mgInstanceParams(template, base, given)` (`packages/project/src/registry/mg-params.ts`): presets set the look, so
+  the per-instance params the template re-randomizes (`ui.addAnother.reroll`: social-comment's identity and stats)
+  never come from the preset; the caller gives them or the fill hook picks them. MCP `add_motion_graphic` sends
+  `mgInstanceParams(entry, preset.params, params).params` as the given params; the bulk import (web dialog and MCP,
+  `planMgImport`) starts every row from the same; `clip.duplicateMotionGraphic` applies it to the copied clip's
+  params. The gallery / `mg.insert` never asks for a fill (humans get the preset as shown on its card, or the
+  defaults). A refusal, a throw or a
   non-object result → `E_INVALID_PARAM` (the issues' messages joined into the message). Templates without a hook:
   defaults only, `filled: []`.
 - The command result is `{clipId, sequenceId, trackId, track ("V3"), createdTrack?, start, duration, params,
@@ -1323,9 +1328,9 @@ ui.import?: {
 - **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
   `H:MM:SS` and timecode. Starts are capped at 100 h, lengths at 1 h; a length must be ≥ 1 frame.
 - **Presets:** every row starts from the preset's params except the ones the template re-randomizes
-  (`ui.addAnother.reroll`). Rows are new instances: with the TikTok comment preset each row still gets its own
-  identity and stats (the preset's are tokcomment's placeholders). `add_motion_graphic` keeps WP3b's layering, where
-  the preset wins over the fill.
+  (`ui.addAnother.reroll`), through `mgInstanceParams` — the rule `add_motion_graphic` and Add another follow too.
+  Rows are new instances: with the TikTok comment preset each row still gets its own identity and stats (the
+  preset's are tokcomment's placeholders).
 - **Messages** are codes with values (`MG_IMPORT_TEXT`, `mgImportText` for English). The web app translates the
   templates; `pnpm i18n` lists them in the model strings, with the template-ignored reasons.
 - **Placement:** `scheduleMgImport` places included rows one after another from the start (a row's `start` resets
