@@ -12,7 +12,7 @@
 import { type Fit, SOCIAL_CARD_MAX_HEIGHT, socialCardScale } from '@jasper/mg-templates';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import type { SocialVariantImpl } from './contract.ts';
-import { INK_RING } from './parts.tsx';
+import { motionStyle } from './parts.tsx';
 
 /** Share of the design width a card may take at most. */
 const MAX_WIDTH = 0.96;
@@ -20,7 +20,6 @@ const MAX_WIDTH = 0.96;
 const MAX_PASSES = 3;
 
 const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
-const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0);
 
 /** The zoom that fits a card measured `w × h` layout px at zoom `k` into the stage (never above `max`). */
 export function socialFitZoom(
@@ -83,13 +82,8 @@ export function SocialStage(p: {
 			<div
 				ref={ref}
 				data-social-card=""
-				style={{
-					flex: 'none',
-					boxShadow: INK_RING,
-					transformOrigin: p.origin,
-					transform: `translateY(${r3(v.y ?? 0)}px) rotate(${r3(v.r ?? 0)}deg) scale(${r3(v.s ?? 1)})`,
-					opacity: r3(v.o ?? 1),
-				}}
+				// the entrance / exit while the card moves; nothing at rest (the un-animated card, see motionStyle)
+				style={{ flex: 'none', ...motionStyle(v, p.origin) }}
 			>
 				<div style={{ zoom: k }}>{p.children}</div>
 			</div>
