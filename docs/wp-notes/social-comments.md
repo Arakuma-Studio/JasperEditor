@@ -540,6 +540,12 @@ Media a template param references are counted wherever a clip's own `mediaId` is
   keyframable.
 - MCP `list_motion_templates` lists a media param as `media image` (or `media image|video`); the templates guide says
   what it takes and how it is refused.
+- Preview stills draw the project's media: the one-clip preview document of `render_motion_graphic_preview` (anime
+  templates) and of `add_motion_graphic {dryRun, preview}` gets a `media.register` copy (same id, its bin name, the
+  media it derives from first) of every medium the params reference (`previewMediaCommands`,
+  `apps/mcp/src/tools/templates.ts`), so the engine resolves the same stored file. `render_motion_graphic_preview`
+  takes an optional `projectId` for this; params with a `{mediaId}` and no `projectId` are refused by name
+  (E_INVALID_PARAM), a medium the project lacks with E_NOT_FOUND (`apps/mcp/test/add-motion-graphic.test.ts`).
 
 ### Tests
 

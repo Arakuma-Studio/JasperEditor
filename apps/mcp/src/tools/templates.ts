@@ -7,6 +7,7 @@ import type {
 import { EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
+	collectParamMediaIds,
 	createEmptyProject,
 	createRandomIdSource,
 	createStaticMgRegistry,
@@ -46,7 +47,7 @@ export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - Templates may declare presets (named param sets, e.g. one per look): list_motion_templates lists them with a ready-made ref. Pass "<id>:<preset>" (or "<id>@<version>:<preset>") as template to add_motion_graphic or render_motion_graphic_preview: the preset's params apply over the defaults and your params over the preset.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
 - set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.
-- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays).
+- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays). render_motion_graphic_preview draws such media only with projectId (the project holding them); add_motion_graphic previews use the call's project.
 - add_motion_graphic adds one graphic (template, params, at, duration, track) or many with items: [...] (up to 200) in ONE transaction — one undo step, all or nothing. Placement never overwrites: without track each clip goes on the first free unlocked video track from V2 up for its time range (a new top track when all are busy), and the items of one call never collide. track: "V3" keeps the old behaviour (overwrite on exactly that track); add placement: "first-free" to start the search there instead.
 - Every param is optional. Params layer as defaults → preset ("<id>:<preset>") → the template's fill hook → your params: templates with a fill hook fill what you and the preset leave out with believable values from seed (deterministic; a random seed is used and returned when you give none), the others take their defaults. The result lists per item clipId, track, start/end (frames + timecode), the fully resolved params and which ones were filled.
 - dryRun: true returns that result without changing the project; add preview: true for a still of each item at the middle of its hold (up to 10 items). Errors name the failing item (details.items[].index).
@@ -288,7 +289,53 @@ type AnimePreviewSpec = {
 	height: number;
 	fps: number;
 	durationFrames: number;
+	/** The project whose media the params reference (template media params such as an avatar). */
+	project?: ProjectDocument;
 };
+
+/** Longest `derivation` chain followed when copying a medium into a preview document. */
+const MAX_DERIVATION_DEPTH = 32;
+
+/**
+ * `media.register` commands copying every medium `params` reference (and the media they derive from, sources first)
+ * from `project` into a preview document, ids kept, so the still shows the project's picture. Refuses media
+ * references without a project (E_INVALID_PARAM) and media the project does not hold (E_NOT_FOUND).
+ */
+export function previewMediaCommands(
+	params: Record<string, unknown>,
+	project: ProjectDocument | undefined,
+): Record<string, unknown>[] {
+	const ids = collectParamMediaIds(params);
+	if (ids.length === 0) return [];
+	if (!project)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`The params reference project media (${ids.join(', ')}) and no project was given`,
+			'Pass projectId: the preview draws the media of that project (list_media lists their ids).',
+		);
+	const order: string[] = [];
+	const seen = new Set<string>();
+	const visit = (id: string, depth: number, via: string): void => {
+		if (seen.has(id)) return;
+		const asset = project.media[id];
+		if (!asset)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`Media not found: ${id}${via}`,
+				'Use the {mediaId} of a medium in the project (list_media), import_media first, or pass null for none.',
+			);
+		seen.add(id);
+		const from = asset.derivation?.fromMediaId;
+		if (from && depth < MAX_DERIVATION_DEPTH) visit(from, depth + 1, ` (the source of ${id})`);
+		order.push(id);
+	};
+	for (const id of ids) visit(id, 0, '');
+	return order.map((id) => {
+		const { library: _library, ...asset } = project.media[id]!;
+		const item = Object.values(project.items).find((it) => it.kind === 'media' && it.mediaId === id);
+		return { type: 'media.register', asset, ...(item ? { name: item.name } : {}) };
+	});
+}
 
 /** Validates params against the template's JSON Schema (E_INVALID_PARAM listing the issues). */
 function checkParams(t: MgTemplateCatalogEntry, params: Record<string, unknown>): void {
@@ -336,6 +383,7 @@ function animePreviewDocument(
 			label: 'Preview',
 			origin: 'user',
 			commands: [
+				...previewMediaCommands(spec.params, spec.project),
 				{
 					type: 'clip.addMotionGraphic',
 					at: 0,
@@ -356,7 +404,7 @@ function animePreviewDocument(
 			`Could not build the preview: ${result.errors.map((e) => e.message).join('; ')}`,
 			'Check the params against list_motion_templates.',
 		);
-	return { doc: document, sequenceId: seq.id, clipId: result.refs.$mg ?? result.created[0]! };
+	return { doc: document, sequenceId: seq.id, clipId: result.refs.$mg! };
 }
 
 /** `introFrames`/`outroFrames` of the catalogue are written at this rate (`ANIME_REFERENCE_FPS`, @jasper/mg-templates). */
@@ -435,6 +483,7 @@ export async function animeTemplatePreview(
 		durationSeconds?: number;
 		fps?: number;
 		frames?: number;
+		project?: ProjectDocument;
 	},
 	extra?: Extra,
 ): Promise<CallToolResult> {
@@ -444,7 +493,14 @@ export async function animeTemplatePreview(
 	const width = evenSize(a.width ?? 960);
 	const height = evenSize(a.height ?? 540);
 	const durationFrames = Math.max(1, Math.round((a.durationSeconds ?? t.defaultDurationSeconds ?? 5) * fps));
-	const { doc, sequenceId } = animePreviewDocument(t, { params, width, height, fps, durationFrames });
+	const { doc, sequenceId } = animePreviewDocument(t, {
+		params,
+		width,
+		height,
+		fps,
+		durationFrames,
+		...(a.project ? { project: a.project } : {}),
+	});
 	const envelope = toolEnvelope(doc, 0);
 	const frames = previewFrames(durationFrames, a.frames ?? 1, {
 		introFrames: t.introFrames,
@@ -505,6 +561,8 @@ type TemplatePreviewArgs = {
 	durationSeconds?: number;
 	fps?: number;
 	frames?: number;
+	/** Anime templates: the project whose media the params reference (copied into the preview document). */
+	project?: ProjectDocument;
 };
 
 /**

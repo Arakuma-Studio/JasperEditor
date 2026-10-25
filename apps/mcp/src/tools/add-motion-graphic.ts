@@ -218,7 +218,7 @@ async function previews(
 				ctx,
 				cat,
 				resolved[i]!.template,
-				{ params: x.params, ...previewSize(seq), durationSeconds: seconds, fps, frames: 1 },
+				{ params: x.params, ...previewSize(seq), durationSeconds: seconds, fps, frames: 1, project: doc },
 				extra,
 			);
 			const text = out.content.find((c) => c.type === 'text');

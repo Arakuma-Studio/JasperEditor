@@ -58,6 +58,24 @@ const LOWER: MgTemplateCatalogEntry = {
 	native: true,
 };
 
+/** A template with an image media param (like social-comment's avatar). */
+const avatarParams = z.strictObject({
+	name: z.string().max(40).default('user'),
+	avatar: z.object({ mediaId: z.string() }).nullable().default(null),
+});
+const AVATAR: MgTemplateCatalogEntry = {
+	id: 'avatar-card',
+	version: 1,
+	name: 'Avatar card',
+	category: 'Social',
+	paramsSchema: jsonSchema(avatarParams),
+	defaults: avatarParams.parse({}),
+	defaultDurationSeconds: 2,
+	canvases: ['1920x1080'],
+	native: false,
+	renderer: 'anime',
+};
+
 const HANDLES = ['ana', 'bo', 'cy', 'dee', 'eli'];
 const infoOf = (
 	t: MgTemplateCatalogEntry,
@@ -92,7 +110,11 @@ const cardFill: MgTemplateInfo['fill'] = (partial, seed) => {
 	return { ok: true, params: out, filled };
 };
 const registries = defaultRegistries(
-	createStaticMgRegistry([infoOf(CARD, cardParams, cardFill), infoOf(LOWER, lowerParams)]),
+	createStaticMgRegistry([
+		infoOf(CARD, cardParams, cardFill),
+		infoOf(LOWER, lowerParams),
+		infoOf(AVATAR, avatarParams),
+	]),
 );
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -104,10 +126,12 @@ function fakeEngine() {
 	let nextJob = 0;
 	const txs: { commands: unknown[]; dryRun?: boolean }[] = [];
 	const stills: { frame: number; width: number }[] = [];
+	/** The document of every still requested (the preview document the engine would draw). */
+	const stillDocs: ProjectDocument[] = [];
 	const jobs = new Map<string, EngineJob>();
 	const client: Record<string, unknown> = {
 		mgTemplates: async (): Promise<MgTemplatesResponse> => ({
-			templates: [CARD, LOWER],
+			templates: [CARD, LOWER, AVATAR],
 			renderer: { status: 'unavailable', reason: 'not built' },
 		}),
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
@@ -126,8 +150,9 @@ function fakeEngine() {
 			}
 			return { result: r.result, appliedBy: 'headless' };
 		},
-		requestStill: async (req: { frame: number; width: number }) => {
+		requestStill: async (req: { frame: number; width: number; envelope: { document: ProjectDocument } }) => {
 			stills.push({ frame: req.frame, width: req.width });
+			stillDocs.push(req.envelope.document);
 			const id = `job_still${++nextJob}`;
 			const job = {
 				id,
@@ -154,7 +179,67 @@ function fakeEngine() {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, txs, stills, doc: () => doc, revision: () => revision };
+	return {
+		link,
+		txs,
+		stills,
+		stillDocs,
+		doc: () => doc,
+		revision: () => revision,
+		/** Registers an image medium in the project (as import_media would). */
+		addImage: (): string => {
+			const r = applyTransaction(
+				doc,
+				{
+					label: 'Import',
+					origin: 'user',
+					commands: [
+						{
+							type: 'media.register',
+							asset: {
+								kind: 'image',
+								fingerprint: `q1:${'a'.repeat(64)}`,
+								originalName: 'ana.png',
+								sizeBytes: 1000,
+								container: 'png_pipe',
+								probe: {
+									durationFlicks: null,
+									startTimecode: null,
+									streams: [
+										{
+											index: 0,
+											type: 'video',
+											codec: 'png',
+											width: 64,
+											height: 64,
+											pixelAspect: { num: 1, den: 1 },
+											frameRate: { num: 25, den: 1 },
+											pixelFormat: 'rgb24',
+											bitDepth: 8,
+											color: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'pc' },
+											browserDecodable: true,
+										},
+									],
+									rotationDegrees: 0,
+									hasAlpha: false,
+									variableFrameRate: false,
+								},
+								locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_ana' }],
+								derivation: null,
+							},
+							name: 'Ana avatar',
+							ref: '$m',
+						},
+					],
+				} as never,
+				{ ids, now: () => '2026-10-25T00:00:00.000Z', revision, registries },
+			);
+			if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
+			doc = r.document;
+			revision++;
+			return r.result.refs.$m!;
+		},
+	};
 }
 
 let open: Client[] = [];
@@ -494,6 +579,63 @@ describe('add_motion_graphic: dryRun and preview', () => {
 		// fframes without the native renderer: reported on the item, the dry run still succeeds
 		const ff = ok(await call({ dryRun: true, preview: true, template: 'lower-third', at: 0 }));
 		expect(ff.items[0]!.preview).toMatchObject({ error: { code: 'RENDERER_UNAVAILABLE' } });
+	});
+
+	it('previews draw the project media the params reference (avatar), in add_motion_graphic and render_motion_graphic_preview', async () => {
+		const engine = fakeEngine();
+		const mediaId = engine.addImage();
+		const { client, call } = await connect(engine);
+		const r = await call({
+			dryRun: true,
+			preview: true,
+			template: 'avatar-card',
+			at: 0,
+			params: { avatar: { mediaId } },
+		});
+		const body = ok(r);
+		expect(body.items[0]!.preview).toMatchObject({ image: 0, template: 'avatar-card@1' });
+		expect(body.items[0]!.preview).not.toHaveProperty('error');
+		const drawn = (d: ProjectDocument) => {
+			const clip = Object.values(seqOf(d).clips).find((c) => c.kind === 'motion-graphic') as unknown as {
+				params: Record<string, unknown>;
+			};
+			return {
+				avatar: clip.params.avatar,
+				asset: d.media[mediaId],
+				item: Object.values(d.items).find((it) => it.kind === 'media' && it.mediaId === mediaId),
+			};
+		};
+		const source = engine.doc().media[mediaId]!;
+		expect(drawn(engine.stillDocs[0]!)).toMatchObject({
+			avatar: { mediaId },
+			asset: { id: mediaId, fingerprint: source.fingerprint, locators: source.locators },
+			item: { name: 'Ana avatar' },
+		});
+		// render_motion_graphic_preview: the same with projectId; without it the media reference is refused by name
+		const preview = (args: Record<string, unknown>) =>
+			client.callTool({
+				name: 'render_motion_graphic_preview',
+				arguments: { template: 'avatar-card', params: { avatar: { mediaId } }, ...args },
+			}) as Promise<CallToolResult>;
+		const p = await preview({ projectId: engine.doc().projectId });
+		expect(p.isError, textOf(p)).toBeFalsy();
+		expect(p.content.filter((c) => c.type === 'image')).toHaveLength(1);
+		expect(drawn(engine.stillDocs[1]!)).toMatchObject({ avatar: { mediaId }, asset: { id: mediaId } });
+		const noProject = err(await preview({}));
+		expect(noProject).toMatchObject({ code: 'E_INVALID_PARAM', message: expect.stringContaining(mediaId) });
+		expect(noProject.hint).toContain('projectId');
+		const unknown = err(
+			(await client.callTool({
+				name: 'render_motion_graphic_preview',
+				arguments: {
+					template: 'avatar-card',
+					projectId: engine.doc().projectId,
+					params: { avatar: { mediaId: 'med_nope' } },
+				},
+			})) as CallToolResult,
+		);
+		expect(unknown).toMatchObject({ code: 'E_NOT_FOUND', message: expect.stringContaining('med_nope') });
+		expect(engine.stillDocs).toHaveLength(2);
 	});
 
 	it('refuses preview without dryRun and above the preview cap', async () => {
