@@ -342,6 +342,10 @@ describe('emoji', () => {
 			url: `${server.url}/emoji/2764.png`,
 		});
 		expect(s.emojiUrl('apple', HEART)).toBe('/fonts/emoji/apple/1/2764-fe0f.png');
+		expect((await s.status()).emojiPacks[0]!.cached).toBe(1);
+		rmSync(path);
+		// the status counts files on disk, not index entries
+		expect((await s.status()).emojiPacks[0]!.cached).toBe(0);
 		expect(s.emojiUrl('apple', 'a')).toBeNull();
 		expect(s.emojiUrl('noto', GRIN)).toBeNull();
 	});

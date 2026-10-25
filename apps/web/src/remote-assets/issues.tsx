@@ -155,9 +155,18 @@ export function useTemplateAssetPrefetch(
 			return null;
 		}
 	}, [client, key]);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `epoch` re-runs the prefetch (settings / manifest changed)
+	const seenEpoch = useRef(epoch);
 	useEffect(() => {
-		const t = setTimeout(() => void run(), PREFETCH_DEBOUNCE_MS);
+		// After a settings / manifest change the Player loads what failed before again once the engine has it.
+		const changed = seenEpoch.current !== epoch;
+		seenEpoch.current = epoch;
+		const t = setTimeout(
+			() =>
+				void run().then((r) => {
+					if (changed && r) retryTemplateAssets();
+				}),
+			PREFETCH_DEBOUNCE_MS,
+		);
 		return () => clearTimeout(t);
 	}, [run, epoch]);
 	return { issues, retry: run };

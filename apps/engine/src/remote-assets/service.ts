@@ -655,7 +655,10 @@ export class RemoteAssetService {
 				host: hostOf(p.urlTemplate.replace(/\{(cp|name)\}/g, 'x')),
 				licence: p.licence,
 				attribution: p.attribution,
-				cached: Object.keys((await this.index(p)).entries).length,
+				// files actually on disk (the cache may have been cleared since they were indexed)
+				cached: Object.keys((await this.index(p)).entries).filter((k) =>
+					existsSync(join(this.emojiDir(p), `${k}.${p.format}`)),
+				).length,
 			});
 		return {
 			settings: await this.settings.get(),
