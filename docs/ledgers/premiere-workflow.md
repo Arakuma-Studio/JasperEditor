@@ -101,7 +101,8 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 - 🔄 textperf — export/preview cost of 100 and ~1,000 animated text clips; architecture for fast subtitle export.
 
 ### Phase 2 — specs (to write in `docs/specs/`)
-- ⏳ 13 — Automatic subtitles: options, text-clip output, templates (user style + generic), cut-aware timing,
+- 🔄 13 — Automatic subtitles (draft written: `docs/specs/13-auto-subtitles.md`; §4 export architecture waits for
+  textperf): options, text-clip output, templates (user style + generic), cut-aware timing,
   multi-clip styling, text rendering upgrades (strokes, shadow spread, measurer), conversion to/from caption tracks,
   export performance architecture.
 - 🔄 14 — Transcript cleanup (draft written: `docs/specs/14-transcript-cleanup.md`): typed findings detector, audio-confirmed pauses, Spanish fillers, repeats/retakes,
