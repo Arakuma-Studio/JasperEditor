@@ -135,7 +135,7 @@ test('a video with a cut and its transcript', async () => {
 			})),
 		}),
 	);
-	await page.getByTestId('text.transcript.import').click();
+	// no transcript yet: the Transcript tab shows the import tool
 	const fc = page.waitForEvent('filechooser');
 	await page.getByTestId('text.transcript.importFile').click();
 	await (await fc).setFiles(json);
