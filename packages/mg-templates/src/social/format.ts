@@ -93,13 +93,15 @@ const NOW: Readonly<Record<SocialPlatform, string>> = {
 	youtube: 'Just now',
 	x: 'now',
 	'play-store': 'now',
-	'app-store': 'now',
+	// the iPhone App Store's TIME_AGO_JUST_NOW
+	'app-store': 'Just now',
 };
 
 /**
  * How long ago a comment was posted, as the platform shows it: compact "3m", "3h", "3d", "3w", "3mo", "3y" on
- * TikTok, Instagram and X; "1 minute ago", "10 months ago" on YouTube. 0 shows "Just now" (TikTok, YouTube) or "now"
- * (Instagram, X). `value` is floored and clamped to 0…10000; an unknown unit reads as days. Never throws.
+ * TikTok, Instagram and X; "1 minute ago", "10 months ago" on YouTube; the iPhone App Store's "3h ago", "2d ago",
+ * "3w ago", "4mo ago", "1y ago" ("Just now" under an hour) on App Store reviews. 0 shows "Just now" (TikTok, YouTube,
+ * App Store) or "now" (Instagram, X). `value` is floored and clamped to 0…10000; an unknown unit reads as days. Never throws.
  */
 export function formatTime(variant: SocialVariant, value: number, unit: SocialTimeUnit): string {
 	const v = Math.min(10_000, toCount(value));
@@ -107,7 +109,8 @@ export function formatTime(variant: SocialVariant, value: number, unit: SocialTi
 	const platform = platformOf(variant);
 	if (v === 0) return NOW[platform];
 	if (platform === 'youtube') return `${v} ${u}${v === 1 ? '' : 's'} ago`;
-	if (platform === 'app-store') return `${v}${COMPACT[u]} ago`;
+	// the iPhone App Store's review age (TIME_AGO_*_AGO of iOS 15–26: no minutes label, so under an hour is "Just now")
+	if (platform === 'app-store') return u === 'minute' ? NOW[platform] : `${v}${COMPACT[u]} ago`;
 	return `${v}${COMPACT[u]}`;
 }
 
@@ -134,4 +137,15 @@ export function formatRepliesLabel(variant: SocialVariant, n: number): string {
 		case 'app-store':
 			return '';
 	}
+}
+
+/**
+ * The age of an iPhone App Store review as its card prints it: `formatTime` ("2d ago", "1y ago", "Just now") with the
+ * "edited " prefix of an edited review ("edited 1y ago"; under an hour "edited just now"). Strings of the App Store
+ * frameworks of iOS 15–26 (TIME_AGO_*, TIME_AGO_EDITED_TIME, TIME_AGO_EDITED_JUST_NOW). Never throws.
+ */
+export function formatReviewAge(value: number, unit: SocialTimeUnit, edited: boolean): string {
+	const age = formatTime('app-store-review-ios', value, unit);
+	if (!edited) return age;
+	return age === NOW['app-store'] ? 'edited just now' : `edited ${age}`;
 }

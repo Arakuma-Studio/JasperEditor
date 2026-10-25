@@ -4,10 +4,12 @@ import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+	APP_STORE_GLYPHS,
 	glyphColor,
 	INSTAGRAM_GLYPHS,
 	PLATFORM_DEFAULT_AVATARS,
 	PLATFORM_GLYPHS,
+	PLAY_STORE_GLYPHS,
 	type PlatformGlyph,
 	scopeGlyphIds,
 	TIKTOK_DEFAULT_AVATAR,
@@ -114,6 +116,16 @@ describe('platform glyphs', () => {
 		);
 	});
 
+	it('has the store review glyphs (stars, Play kebab)', () => {
+		expect(Object.keys(PLAY_STORE_GLYPHS).sort()).toEqual(['more', 'star']);
+		expect(Object.keys(APP_STORE_GLYPHS).sort()).toEqual(['legacyStar', 'legacyStarEmpty', 'star', 'starOutline']);
+		// the legacy stars share their 13 × 14 sprite cell, the current ones Apple's 64-unit box
+		expect(APP_STORE_GLYPHS.legacyStar.viewBox).toBe(APP_STORE_GLYPHS.legacyStarEmpty.viewBox);
+		expect(APP_STORE_GLYPHS.star.viewBox).toBe(APP_STORE_GLYPHS.starOutline.viewBox);
+		expect(PLATFORM_DEFAULT_AVATARS['play-store'].kind).toBe('none');
+		expect(PLATFORM_DEFAULT_AVATARS['app-store'].kind).toBe('none');
+	});
+
 	it.each(ALL)('%s is well-formed', (_name, g) => {
 		const vb = g.viewBox.split(' ').map(Number);
 		expect(vb).toHaveLength(4);
@@ -150,7 +162,7 @@ describe('platform glyphs', () => {
 			expect(g.defaultColor?.light).toMatch(COLOR);
 			expect(g.defaultColor?.dark).toMatch(COLOR);
 		}
-		expect(['live-dom', 'live-bundle', 'live-cdn', 'derived']).toContain(g.origin);
+		expect(['live-dom', 'live-bundle', 'live-cdn', 'archived', 'derived']).toContain(g.origin);
 	});
 
 	it('rejects malformed path data in the validator', () => {
@@ -198,6 +210,8 @@ describe('provenance record (licenses/platform-assets.md, AGENTS.md §3 item 5)'
 		['Instagram', INSTAGRAM_GLYPHS],
 		['YouTube', YOUTUBE_GLYPHS],
 		['X', X_GLYPHS],
+		['Google Play', PLAY_STORE_GLYPHS],
+		['App Store', APP_STORE_GLYPHS],
 	];
 
 	it.each(sets)('lists every %s glyph with the method the module records', (heading, set) => {

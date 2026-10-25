@@ -785,7 +785,9 @@ export function fillSocialParams(partial: unknown, seed: number): SocialFillResu
 	const base = socialDefaults(variant);
 	const s = rng(seed, SALT_FILL).int(0, 0xffff_ffff);
 	const identity = randomIdentity(s);
-	const stats: { -readonly [K in keyof SocialStats]: SocialStats[K] } = { ...statsFor(variant, s, given.likes) };
+	const stats: { -readonly [K in keyof SocialStats]: SocialStats[K] } = {
+		...statsFor(variant, s, given.likes),
+	};
 	// store reviews: a given date gives the age and a given age the date, so the two agree; the title suits the rating
 	if (VARIANT_CAPABILITIES[variant]?.rating) {
 		const timeGiven = given.timeValue !== undefined || given.timeUnit !== undefined;

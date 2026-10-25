@@ -458,11 +458,13 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 	},
 	'app-store-review': {
 		name: 'App Store · Review',
-		description: 'An App Store review card in its web / Mac style: orange stars, name and date, title, text and "more".',
+		description:
+			'An App Store review card in its web / Mac style: orange stars, name and date, title, text and "more".',
 	},
 	'app-store-review-ios': {
 		name: 'App Store · Review (iPhone app)',
-		description: 'An App Store review from the iPhone app\'s Ratings & Reviews list: title and age, stars and name, text.',
+		description:
+			"An App Store review from the iPhone app's Ratings & Reviews list: title and age, stars and name, text.",
 	},
 };
 

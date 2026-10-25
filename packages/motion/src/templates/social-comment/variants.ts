@@ -2,6 +2,7 @@
 // "not available" card (never a blank or a wrong platform), see unavailable.tsx.
 import type { SocialVariant } from '@jasper/mg-templates';
 import type { SocialVariantImpl } from './contract.ts';
+import { APP_STORE_REVIEW, APP_STORE_REVIEW_IOS, PLAY_STORE_REVIEW } from './store.tsx';
 import { TIKTOK_COMMENT, TIKTOK_REPLY } from './tiktok.tsx';
 import { unavailableVariant } from './unavailable.tsx';
 
@@ -13,6 +14,9 @@ export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantI
 	'youtube-comment': unavailableVariant('youtube-comment'),
 	'youtube-shorts-reply': unavailableVariant('youtube-shorts-reply'),
 	'x-post': unavailableVariant('x-post'),
+	'play-store-review': PLAY_STORE_REVIEW,
+	'app-store-review': APP_STORE_REVIEW,
+	'app-store-review-ios': APP_STORE_REVIEW_IOS,
 };
 
 /** Whether a variant has its real card (false: the "not available" card is drawn). */
