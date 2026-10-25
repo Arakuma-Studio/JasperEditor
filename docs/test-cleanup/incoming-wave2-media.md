@@ -1,10 +1,12 @@
 # Incoming media and relink tests
 
-This ledger audits `2d364873..69c96e3b`, integrated at `99d57175`, in these four
-engine test files. All **31 named declarations** were read with their production
-owners: **22 incoming declarations and nine existing declarations**. The root's
-unmodified incoming baseline ran all 31 successfully. Dispositions are **8 KEEP,
-12 REWRITE, 5 OPTIMIZE, 4 CONSOLIDATE and 2 DELETE**; 25 declarations survive.
+This ledger audits `2d364873..69c96e3b`, integrated at `99d57175`, in four
+engine test files, followed by three existing imports declarations at `572cf0ed`.
+All **34 named declarations** were read with their production owners: **22 incoming
+declarations and 12 existing declarations**. The root's unmodified incoming baseline
+ran the initial 31 successfully; the three late imports owners also passed at the
+earlier default checkpoint. Dispositions are **8 KEEP, 14 REWRITE, 5 OPTIMIZE,
+5 CONSOLIDATE and 2 DELETE**; 27 declarations survive.
 A consolidation decision includes a removed duplicate whose contract is named
 below. Moving four HTTP tests preserves their declarations and independent contracts.
 
@@ -194,6 +196,67 @@ fingerprint case, requested-bounds case and cached-reuse case with `-t` under
 the same environment. Evidence and orchestration are under
 `/tmp/jasper-test-cleanup/incoming-wave2/media-{profile,mutations}*`.
 
-Net change versus the incoming source is **−89 test/support LOC** and **−1
-production LOC**, excluding this required audit ledger. No production algorithm,
+For the initial four-file wave, net change versus the incoming source is **−89
+test/support LOC** and **−1 production LOC**, excluding this required audit ledger.
+The late imports rewrite below removes another three test LOC: cumulative media
+cleanup **−92 test/support LOC / −1 production LOC**. No production algorithm,
 schema, dependency, media recipe or runtime default changed.
+
+
+## Late imports archive and display owners
+
+Re-audited three existing declarations in `apps/engine/test/imports.test.ts` at
+`572cf0ed`; these add no new declarations. Their original census keys were appended
+to the same media disposition manifest. The unrelated HEIF probe case remains
+unchanged: the failed system-6 full run had a newly generated HEIF that its oracle
+could not read, while the actual pinned LGPL 7.1.5 probe succeeds. That run is not
+a passing gate or a comparable final performance sample.
+
+| Original declaration | Disposition | All six behavioral-bar requirements |
+| --- | --- | --- |
+| round-trips stored archives and reads deflated entries | REWRITE | Independent contract: [PKWARE APPNOTE 6.3.10 §§4.3.7/12/16](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), dotLottie interchange and the documented caller-supplied allocation cap. Detectable bugs: invalid stored-file framing/body/path/checksum, failed method-8 decoding or ignored read limit. Independent oracles: literal wire signatures/method/name/body, Node's native CRC32 and the existing separately generated deflated dotLottie manifest's literal `spin` animation. Stable seam: archive bytes and public ZIP helper results/errors used by Lottie loading/export and sound packs. Refactor resistance: inspect standard fields using their wire lengths/offsets; allow different extra fields/comments, do not invoke the writer's own reader as its oracle or assert private collaborators. Unique protection: fuzz wrappers establish typed failure/termination, not correct decoded payload/CRC or the caller's smaller cap; HTTP Lottie metadata does not establish generic archive/limit behavior. Remove Python, temporary ZIP generation and the conditional success-only branch. |
+| decodes EXR with the sRGB transfer and Radiance HDR through zscale | CONSOLIDATE | Actual EXR transfer and deep-source precision now belong to the public display owner below. A private `-apply_trc`/filter-array/boolean inventory cannot prove rendered pixels and rejects behavior-preserving changes to decode strategy. Model interpretation owners retain field-order behavior; TIFF16 in the real display case protects its distinct deep-source heuristic. Drop the Radiance filter-name-only pin without claiming a decoded Radiance fixture or adding unsupported codec behavior. All production helpers have real variants/sequence callers and remain. |
+| makes display pictures of stills a browser cannot decode | REWRITE | Independent contract: [imports work note](../wp-notes/imports.md#3-engine-appsenginesrcimports-routes-routesimportsts) and `MediaVariantRequest/Status` promise an sRGB display picture, with 16-bit output for deep sources. Independent [sRGB transfer math](https://www.w3.org/TR/css-color-4/#color-conversion-code) maps scene-linear .25 to approximately .5371, about 137/255. Authored 2×2 grays .25… .2506 must retain a nonzero difference smaller than one 8-bit code in actual RGB48 samples; a fake 16-bit header after 8-bit quantization fails. Stable seam: HTTP variant request, its actual job, served PNG bytes and independent FFmpeg RGB48 decoding. Refactor resistance: no CLI flag shape, private variant-service cast or production transfer helper supplies expectations. Recognizable bugs: omitted/double TRC, lost precision, wrong bit depth, failed job or invalid served picture. Unique protection: the former helper pins/codec-only owner could not distinguish wrong gamma or 8-bit-then-upcast output; real TIFF16 also retains the previous non-EXR deep-metadata case. |
+
+The test file has net **−3 LOC**. Removed one redundant declaration; replaced its
+metadata/flag probes with one existing behavioral owner. No production source,
+helper export, dependency, fixture recipe, configured timeout or HEIF assertion
+changes. `decoderArgs`, `sourceFilters` and `isDeep` remain because their non-test
+variants/sequence consumers are real.
+
+Validation with normal pinned LGPL 7.1.5 binaries: **9/9 passed twice**, including
+the unchanged HEIF case, actual native alpha export and strengthened display
+owner. Vitest durations were 24.23/24.54 s, GNU command wall 25.28/25.65 s.
+These repetitions check stability; there is no before/after speed claim because
+the intervening failed full run used a different oracle/fixture inventory.
+
+Four real production mutations failed exactly the intended retained declaration:
+
+| Mutation | Independent assertion that failed |
+| --- | --- |
+| Write zero ZIP checksums | Native CRC32 expected 3,421,780,262; actual central-directory checksum 0 |
+| Ignore the caller's smaller read limit | Valid deflated entry was returned instead of the required typed refusal |
+| Omit the EXR transfer | Actual decoded display grays failed the independently expected 137±1 sRGB code |
+| Quantize to eight bits before upcasting the PNG | Its PNG still declares 16 bits and coarse gray remains plausible, but actual RGB48 span 261 exceeds the one-8-bit-code bound 257 |
+
+All four production files/edits were restored in `finally`; current byte hashes
+match their original SHA-256 values. The complete restored nine-case file passed
+after the mutations. The real engine TypeScript check passed in 32.97 s with
+`NODE_OPTIONS=--max-old-space-size=4096`; Biome checked the changed test and
+`git diff --check` passed. No test retry, skip, tolerance widening or production
+change is part of this patch.
+
+```sh
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 \
+  JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+  pnpm exec vitest run apps/engine/test/imports.test.ts --maxWorkers=2 \
+  --reporter=default --reporter=json \
+  --outputFile.json=/tmp/jasper-test-cleanup/imports-probe-diagnosis/candidate-restored.json
+env NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/engine typecheck
+pnpm exec biome check apps/engine/test/imports.test.ts
+```
+
+Exact selected mutation argv, failure messages, source hashes and the two
+independent HEIF probe outputs are retained under
+`/tmp/jasper-test-cleanup/imports-probe-diagnosis/`. Root still owns the final
+integrated full gate; this passing file is not reported as that whole-suite gate.

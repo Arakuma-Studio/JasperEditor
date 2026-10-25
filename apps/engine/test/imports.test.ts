@@ -2,10 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { LayeredExtractResult, RegisteredMedia } from '@jasper/api';
+import { crc32 } from 'node:zlib';
+import type { LayeredExtractResult, MediaVariantStatus, RegisteredMedia } from '@jasper/api';
 import { fileFieldOrder } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { decoderArgs, isDeep, sourceFilters } from '../src/imports/decode.ts';
 import { editorBlendMode, psdBlendMode } from '../src/imports/psd.ts';
 import { listZip, readZipEntry, writeStoredZip, ZipError } from '../src/imports/zip.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -17,32 +17,29 @@ import {
 	JSON_H,
 	makeApp,
 	register,
+	TEST_FFMPEG,
 	type TestApp,
+	tempAppdir,
 } from './helpers.ts';
 
 describe('zip reader', () => {
-	it('round-trips stored archives and reads deflated entries', () => {
-		const files = [
-			{ name: 'manifest.json', data: Buffer.from('{"version":"1"}') },
-			{ name: 'animations/a.json', data: Buffer.from('x'.repeat(5000)) },
-		];
-		const zip = writeStoredZip(files);
-		const entries = listZip(zip);
-		expect(entries.map((e) => e.name)).toEqual(['manifest.json', 'animations/a.json']);
-		expect(readZipEntry(zip, entries[1]!).toString()).toBe('x'.repeat(5000));
-		// A deflated archive written by the system zip tool when present.
-		const dir = mkdtempSync(join(tmpdir(), 'jasper-zip-'));
-		const r = spawnSync('python3', [
-			'-c',
-			`import zipfile;z=zipfile.ZipFile('${dir}/d.zip','w',zipfile.ZIP_DEFLATED);z.writestr('a.txt','hello '*1000);z.close()`,
-		]);
-		if (r.status === 0) {
-			const buf = readFileSync(join(dir, 'd.zip'));
-			const e = listZip(buf);
-			expect(e[0]!.method).toBe(8);
-			expect(readZipEntry(buf, e[0]!).toString()).toBe('hello '.repeat(1000));
-			expect(() => readZipEntry(buf, e[0]!, 100)).toThrow(ZipError);
-		}
+	it('writes interoperable stored ZIP records and reads bounded deflated entries', () => {
+		// PKWARE APPNOTE §§4.3.7/12/16: independent wire fields, not this module's own reader.
+		const zip = writeStoredZip([{ name: 'a.txt', data: Buffer.from('123456789') }]);
+		expect(zip.readUInt32LE(0)).toBe(0x04034b50);
+		expect(zip.readUInt16LE(8)).toBe(0);
+		const payload = 30 + zip.readUInt16LE(26) + zip.readUInt16LE(28);
+		expect(zip.subarray(30, 30 + zip.readUInt16LE(26)).toString()).toBe('a.txt');
+		expect(zip.subarray(payload, payload + 9).toString()).toBe('123456789');
+		const cd = zip.readUInt32LE(zip.lastIndexOf(Buffer.from('504b0506', 'hex')) + 16);
+		expect(zip.readUInt32LE(cd)).toBe(0x02014b50);
+		expect(zip.readUInt32LE(cd + 16)).toBe(crc32('123456789'));
+		expect(zip.readUInt32LE(cd + 42)).toBe(0);
+		const archive = readFileSync(fixture('imports-anim.lottie'));
+		const manifest = listZip(archive).find((e) => e.name === 'manifest.json')!;
+		expect(manifest.method).toBe(8);
+		expect(JSON.parse(readZipEntry(archive, manifest).toString()).animations).toEqual([{ id: 'spin' }]);
+		expect(() => readZipEntry(archive, manifest, 8)).toThrow(ZipError);
 	});
 });
 
@@ -51,21 +48,6 @@ describe('PSD blend modes and decode filters', () => {
 		expect(editorBlendMode('linear-dodge')).toBe('add');
 		expect(psdBlendMode('subtraction').mode).toBe('subtract');
 		expect(psdBlendMode('weird').mode).toBe('normal');
-	});
-
-	it('decodes EXR with the sRGB transfer and Radiance HDR through zscale', () => {
-		const rec = (codec: string, bitDepth = 8, pixelFormat = 'rgb24') => ({
-			kind: 'image',
-			probe: { streams: [{ type: 'video', codec, bitDepth, pixelFormat } as never] },
-		});
-		expect(decoderArgs(rec('exr'))).toEqual(['-apply_trc', 'iec61966_2_1']);
-		expect(decoderArgs(rec('png'))).toEqual([]);
-		expect(sourceFilters(rec('hdr'), null)[0]).toMatch(/^zscale=/);
-		expect(sourceFilters(rec('png'), { deinterlace: 'upper' })).toEqual([
-			'bwdif=mode=send_frame:parity=tff:deint=all',
-		]);
-		expect(isDeep(rec('tiff', 16, 'rgb48le'))).toBe(true);
-		expect(isDeep(rec('png'))).toBe(false);
 	});
 });
 
@@ -215,25 +197,40 @@ describe('imports on the engine', () => {
 		expect(merged.probe.streams[0]).toMatchObject({ width: psd.layered!.width, height: psd.layered!.height });
 	}, 120_000);
 
-	it('makes display pictures of stills a browser cannot decode', async () => {
-		const exr = await register(app, fixture('imports-still.exr'));
-		const r = await post(`/api/media/${exr.mediaKey}/variants`, { kind: 'display', variant: '' });
-		expect(r.statusCode, r.body).toBe(200);
-		const services = app.jasper.services.imports as {
-			variants: { ensureAndWait(r: unknown, kind: string, variant: string): Promise<string> };
-		};
-		const rec = coreServices(app).registry.get(exr.mediaKey)!;
-		const path = await services.variants.ensureAndWait(rec, 'display', '');
-		const probe = spawnSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', path], {
-			encoding: 'utf8',
-		});
-		const s = JSON.parse(probe.stdout).streams[0];
-		expect(s.codec_name).toBe('png');
-		expect(s.pix_fmt).toMatch(/64|48/);
-		const served = await get(`/media/${exr.mediaKey}/variant/display`);
-		expect(served.statusCode).toBe(200);
-		expect(served.headers['content-type']).toBe('image/png');
-		expect((await get(`/media/${exr.mediaKey}/variant/display?v=bogus`)).statusCode).toBe(400);
+	it('makes sRGB display pictures of linear EXR without losing deep-source precision', async () => {
+		const linear = join(tempAppdir('jasper-linear-exr-'), 'gray.exr');
+		// Four nearly equal scene-linear grays per RGB plane: all round to the same 8-bit sRGB code.
+		const data = Float32Array.from({ length: 12 }, (_, i) => 0.25 + (i % 4) * 0.0002);
+		const encodeArgs = [
+			...['-v', 'error', '-f', 'rawvideo', '-pixel_format', 'gbrpf32le', '-video_size', '2x2', '-i', '-'],
+			...['-frames:v', '1', '-c:v', 'exr', '-format', 'half', linear],
+		];
+		const made = spawnSync(TEST_FFMPEG, encodeArgs, { input: Buffer.from(data.buffer) });
+		expect(made.status, made.stderr?.toString()).toBe(0);
+		for (const file of [linear, fixture('imports-still-16.tif')]) {
+			const media = await register(app, file);
+			const r = await post(`/api/media/${media.mediaKey}/variants`, { kind: 'display', variant: '' });
+			expect(r.statusCode, r.body).toBe(200);
+			const { jobId } = r.json() as MediaVariantStatus;
+			if (jobId) expect((await coreServices(app).queue.wait(jobId)).state).toBe('succeeded');
+			const served = await get(`/media/${media.mediaKey}/variant/display`);
+			expect(served.statusCode, served.body).toBe(200);
+			expect(served.headers['content-type']).toBe('image/png');
+			expect(served.rawPayload.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+			expect(served.rawPayload[24]).toBe(16); // PNG IHDR bit depth, independently specified on the wire.
+			if (file === linear) {
+				const decodeArgs = ['-v', 'error', '-i', '-', '-pix_fmt', 'rgb48le', '-f', 'rawvideo', '-'];
+				const rgb = spawnSync(TEST_FFMPEG, decodeArgs, { input: served.rawPayload });
+				expect(rgb.status, rgb.stderr?.toString()).toBe(0);
+				expect(rgb.stdout.length).toBe(24);
+				const grays = Array.from({ length: 4 }, (_, i) => rgb.stdout.readUInt16LE(i * 6));
+				expect(grays.every((v) => Math.abs(v / 257 - 137) <= 1)).toBe(true); // sRGB(.25) ≈ .5371
+				const span = Math.max(...grays) - Math.min(...grays);
+				expect(span).toBeGreaterThan(0);
+				expect(span).toBeLessThan(257); // Preserve differences smaller than one 8-bit code.
+				expect((await get(`/media/${media.mediaKey}/variant/display?v=bogus`)).statusCode).toBe(400);
+			}
+		}
 	}, 120_000);
 
 	it('exports a sequence with a still and a Lottie clip as Lottie', async () => {
