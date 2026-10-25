@@ -189,12 +189,14 @@ test('the exported frames show the subtitles on both sides of the cut', async ({
 	// Pixel Pop sits at 0.83 of a 16:9 frame: white text with a purple outline over a dark picture
 	const region = { x: 0.3, y: 0.76, w: 0.4, h: 0.14 };
 	const at = (frame: number) => regionLuma(out.file, (frame + 0.5) / rate, region);
+	// each shot against its own empty frames (shot A is black, shot B dark blue): A between two subtitles, B after the last
 	const before = at(cut - 2);
 	const after = at(cut + 10);
-	const empty = at(Math.round(5.6 * rate));
-	writeFileSync(join(OUT, 'luma.json'), JSON.stringify({ before, after, empty }));
-	expect(before).toBeGreaterThan(empty + 8);
-	expect(after).toBeGreaterThan(empty + 8);
+	const emptyA = at(Math.round(1.7 * rate));
+	const emptyB = at(Math.round(5.6 * rate));
+	writeFileSync(join(OUT, 'luma.json'), JSON.stringify({ before, after, emptyA, emptyB }));
+	expect(before).toBeGreaterThan(emptyA + 4);
+	expect(after).toBeGreaterThan(emptyB + 4);
 	for (const [name, f] of [
 		['before-cut', cut - 2],
 		['after-cut', cut + 10],

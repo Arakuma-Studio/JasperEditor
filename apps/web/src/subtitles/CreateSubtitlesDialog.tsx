@@ -502,12 +502,12 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 							<SessionProvider session={session}>
 								<PanelErrorBoundary name="Subtitle preview">
 									<FrameView
-								doc={preview.doc}
-								sequenceId={preview.sequenceId}
-								frame={preview.first.frame}
-								label={t('First subtitle')}
-								testId="subtitles-preview-frame"
-							/>
+										doc={preview.doc}
+										sequenceId={preview.sequenceId}
+										frame={preview.first.frame}
+										label={t('First subtitle')}
+										testId="subtitles-preview-frame"
+									/>
 								</PanelErrorBoundary>
 							</SessionProvider>
 						) : null}
