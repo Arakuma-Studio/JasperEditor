@@ -96,7 +96,8 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 - ✅ edits — how the user cuts voice (ground truth = Premiere picture edit in 17 projects + export↔raw alignment);
   detector + level-referenced auto-cut prototype reproduces the user's cuts (precision 0.90, recall 0.78, 72 % of
   edit points within 50 ms).
-- 🔄 whisper — GPU providers per platform, medium/large exports, benchmarks (Mac CPU/CoreML, VM CPU, RTX 3060 CUDA),
+- 🔄 whisper (CUDA part done: RTX 3060 large-v3-turbo greedy RTF 0.155, WER 3.3 % on the user's Spanish; no CUDA IO
+  binding in onnxruntime-node makes beam decoding on GPU slower than CPU) — GPU providers per platform, medium/large exports, benchmarks (Mac CPU/CoreML, VM CPU, RTX 3060 CUDA),
   Spanish WER vs the user's captions/scripts.
 - 🔄 textperf — export/preview cost of 100 and ~1,000 animated text clips; architecture for fast subtitle export.
 
@@ -133,7 +134,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 |---|---|---|---|
 | Build VM (Hetzner cpx51) | $0.44/h | 2026-10-25 17:44 UTC | lifetime 24 h |
 | GTX 1650 (vast.ai) | $0.056/h | minutes | destroyed (insufficient VRAM) |
-| RTX 3060 (vast.ai) | $0.084/h | 2026-10-25 18:23 UTC | deadline 22:23 UTC; destroy after the Whisper eval |
+| RTX 3060 (vast.ai) | $0.084/h | 2026-10-25 18:23 UTC | destroyed after the CUDA eval (≈ $0.17 total) |
 
 ## 7. Open questions / risks
 - Whether onnxruntime-node 1.30 ships CoreML / DirectML providers (whisper research).
