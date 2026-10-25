@@ -331,6 +331,10 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
                    classify,voice,           # music beats, Scene Edit Detection results (spec 12 P6-R2), Auto Tag classes,
                    frametimes}/              # dialogue voice activity (P6-R3) and frame times of analysed video; pruned to the newest
   models/sound/<modelId>/                    # optional Describe-it model (LAION CLAP weights downloaded on request + our ONNX graphs; D-53)
+  engine/network.json                        # Settings ▸ Privacy & Network (platform fonts & emoji on/off) + first-download notice
+  assets/remote-manifest.override.json       # user override of the remote-asset manifest (entries replace by id)
+  assets/remote/fonts/<id>-<sha16>.<fmt>     # downloaded platform fonts (pinned SHA-256; atomic writes; social-comment §7.8)
+  assets/remote/emoji/<pack>/<version>/      # downloaded emoji images (<codepoints>.<png|svg>) + index.json (first-fetch hash pins)
   tmp/                                       # wiped on start
 ```
 

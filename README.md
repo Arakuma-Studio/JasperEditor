@@ -348,6 +348,16 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   not installed").
 - MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
+- **Platform fonts and emoji** (social-comment templates, `docs/wp-notes/social-comments.md` "Remote fonts &
+  emoji"): a template declares the faces and emoji it draws; bundled faces (TikTok Sans, Roboto, …) load from the
+  catalogue, the others (Chirp, SF Pro, Apple / Twemoji / Noto emoji images) are downloaded by the engine on first
+  need from the remote-asset manifest (`apps/engine/src/remote-assets/manifest.json`, fixed or overridden without a
+  release in `<appdir>/assets/remote-manifest.override.json`) into `<appdir>/assets/remote/`, verified and served at
+  `/fonts/remote/…` and `/fonts/emoji/…`. Downloads are a named network use, **Preferences ▸ Privacy & Network ▸
+  Platform fonts & emoji for social templates** (on by default; headless, MCP and CLI renders follow it too). A
+  missing font or emoji shows a striped marker on the card and a warning in the Program monitor (**Retry
+  download**), and blocks exports with `TEMPLATE_ASSETS_UNAVAILABLE`, naming the font, or the emoji and its pack —
+  never a substitute.
 
 ## PWA (installable web app)
 
