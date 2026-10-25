@@ -21,7 +21,7 @@ import { KeyedMutex } from '../tools/mutex.ts';
 
 /** Sequence ids are document ids; anything else is not stored (a file name must never come from hostile input). */
 const SEQ_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-export const SOUND_CHECK_STORE_LIMITS = { perProject: 32, maxBytes: 16 * 1024 * 1024 } as const;
+const SOUND_CHECK_STORE_LIMITS = { perProject: 32, maxBytes: 16 * 1024 * 1024 } as const;
 
 const StoredSchema = z.object({
 	version: z.literal(1),
@@ -34,10 +34,7 @@ export type StoredSoundCheck = z.infer<typeof StoredSchema>;
 export type SoundCheckReportStoreOptions = {
 	/** `<appdir>/projects/<pid>` (AppdirPaths.projectDir). */
 	projectDir: (projectId: string) => string;
-	now?: () => Date;
 	log?: (msg: string) => void;
-	perProject?: number;
-	maxBytes?: number;
 	/** Whether the project still exists (a check finishing after its project was deleted keeps nothing). */
 	exists?: (projectId: string) => Promise<boolean>;
 	/** Whether a finished check of this sequence is still worth keeping (its sequence was not deleted meanwhile). */
@@ -46,16 +43,10 @@ export type SoundCheckReportStoreOptions = {
 
 export class SoundCheckReportStore {
 	private readonly mutex = new KeyedMutex();
-	private readonly now: () => Date;
 	private readonly log: (msg: string) => void;
-	readonly perProject: number;
-	readonly maxBytes: number;
 
 	constructor(private readonly opts: SoundCheckReportStoreOptions) {
-		this.now = opts.now ?? (() => new Date());
 		this.log = opts.log ?? ((m) => console.warn(m));
-		this.perProject = opts.perProject ?? SOUND_CHECK_STORE_LIMITS.perProject;
-		this.maxBytes = opts.maxBytes ?? SOUND_CHECK_STORE_LIMITS.maxBytes;
 	}
 
 	private dir(projectId: string): string {
@@ -77,11 +68,11 @@ export class SoundCheckReportStore {
 				if (!file) return false;
 				if (this.opts.exists && !(await this.opts.exists(projectId))) return false;
 				if (this.opts.keep && !(await this.opts.keep(projectId, result.sequenceId))) return false;
-				const stored: StoredSoundCheck = { version: 1, savedAt: this.now().toISOString(), jobId, result };
+				const stored: StoredSoundCheck = { version: 1, savedAt: new Date().toISOString(), jobId, result };
 				const text = JSON.stringify(stored);
-				if (text.length > this.maxBytes) {
+				if (text.length > SOUND_CHECK_STORE_LIMITS.maxBytes) {
 					this.log(
-						`[sound-check] report of ${projectId}/${result.sequenceId} not kept: ${text.length} bytes (at most ${this.maxBytes})`,
+						`[sound-check] report of ${projectId}/${result.sequenceId} not kept: ${text.length} bytes (at most ${SOUND_CHECK_STORE_LIMITS.maxBytes})`,
 					);
 					return false;
 				}
@@ -110,7 +101,8 @@ export class SoundCheckReportStore {
 			let text: string;
 			try {
 				const st = await stat(file);
-				if (st.size > this.maxBytes + 1024 * 1024) return this.aside(file, 'larger than a report can be');
+				if (st.size > SOUND_CHECK_STORE_LIMITS.maxBytes + 1024 * 1024)
+					return this.aside(file, 'larger than a report can be');
 				text = await readFile(file, 'utf8');
 			} catch (e) {
 				if ((e as NodeJS.ErrnoException).code === 'ENOENT' || (e as NodeJS.ErrnoException).code === 'ENOTDIR')
@@ -175,7 +167,7 @@ export class SoundCheckReportStore {
 	}
 
 	private async aside(file: string, problem: string): Promise<null> {
-		const to = `${file}.corrupt-${this.now().getTime()}`;
+		const to = `${file}.corrupt-${Date.now()}`;
 		try {
 			await rename(file, to);
 		} catch {
@@ -193,7 +185,7 @@ export class SoundCheckReportStore {
 		} catch {
 			return;
 		}
-		if (names.length <= this.perProject) return;
+		if (names.length <= SOUND_CHECK_STORE_LIMITS.perProject) return;
 		const dated: { name: string; t: number }[] = [];
 		for (const name of names) {
 			if (name === keep) continue;
@@ -204,7 +196,7 @@ export class SoundCheckReportStore {
 			}
 		}
 		dated.sort((a, b) => a.t - b.t || (a.name < b.name ? -1 : 1));
-		for (const d of dated.slice(0, names.length - this.perProject))
+		for (const d of dated.slice(0, names.length - SOUND_CHECK_STORE_LIMITS.perProject))
 			await rm(join(this.dir(projectId), d.name), { force: true });
 	}
 }

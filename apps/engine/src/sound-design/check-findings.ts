@@ -1378,7 +1378,7 @@ function fadePoints(t0: number, t1: number, v0: number, out: boolean, steps = 16
  * falling: a fade reaching zero, not one that stops at a level) — ends; it is not "mid-sound" even when the fade's last
  * 10 ms are over −60 dBFS (End on Bar's one-beat fade into the bar line; final verification B). Pure.
  */
-export function endsWithFadeOut(tap: {
+function endsWithFadeOut(tap: {
 	tailRmsDb: number;
 	tailPeakDb: number;
 	fadeFromDb?: number | null;

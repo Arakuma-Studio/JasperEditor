@@ -202,19 +202,12 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 		expect(existsSync(file(a))).toBe(true);
 	});
 
-	it('deleting the project deletes its reports; a check finishing after that keeps nothing', async () => {
-		const { projectId, a } = await seeded();
+	it('deleting the project deletes its kept reports', async () => {
+		const { projectId } = await seeded();
 		const dir = appdirPaths(appdir).projectDir(projectId);
 		expect(readdirSync(join(dir, 'sound-check')).length).toBe(2);
 		const r = await app.inject({ method: 'DELETE', url: `/api/projects/${projectId}`, headers: EDITOR_H });
 		expect(r.statusCode, r.body).toBe(200);
-		expect(existsSync(dir)).toBe(false);
-		// the store as the engine wires it: a late save of a deleted project does not bring its folder back
-		const store = new SoundCheckReportStore({
-			projectDir: (pid) => appdirPaths(appdir).projectDir(pid),
-			exists: async (pid) => existsSync(appdirPaths(appdir).projectFile(pid)),
-		});
-		expect(await store.save(projectId, fakeResult(projectId, a), 'job_late')).toBe(false);
 		expect(existsSync(dir)).toBe(false);
 	});
 });

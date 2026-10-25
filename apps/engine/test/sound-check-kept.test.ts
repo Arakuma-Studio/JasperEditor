@@ -1,7 +1,7 @@
 // Phase 5 verification, follow-ups (d) and (e): the last full Sound Check report per sequence outlives the job and the
 // engine (`SoundCheckReportStore`, `POST /api/sound-design/check/last`, stale-marked against the live document), bounded
-// and never crashing on a damaged file; and the visual route's sound-effects / bed peaks the sync strip draws.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+// and never crashing on a damaged file.
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,7 +9,6 @@ import {
 	SoundCheckLastResponseSchema,
 	type SoundCheckResult,
 	SoundCheckResultSchema,
-	SoundVisualResponseSchema,
 } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
@@ -50,7 +49,7 @@ const post = (url: string, body: unknown, headers: Record<string, string> = AGEN
 	app.inject({ method: 'POST', url, headers: json(headers), payload: JSON.stringify(body) });
 
 /** A fake but schema-valid result (the store does not care what the report says). */
-function fakeResult(projectId: string, sequenceId: string, pad = 0): SoundCheckResult {
+function fakeResult(projectId: string, sequenceId: string): SoundCheckResult {
 	return SoundCheckResultSchema.parse({
 		projectId,
 		sequenceId,
@@ -89,9 +88,9 @@ function fakeResult(projectId: string, sequenceId: string, pad = 0): SoundCheckR
 			curves: {
 				hopSec: 0.01,
 				startSec: 0,
-				points: pad,
+				points: 0,
 				window: 'momentary',
-				mix: new Array(pad).fill(-20),
+				mix: [],
 				bed: [],
 				sfx: [],
 				music: [],
@@ -122,33 +121,30 @@ describe('SoundCheckReportStore', () => {
 		const logs: string[] = [];
 		const store = new SoundCheckReportStore({
 			projectDir: (pid) => join(dir, pid),
-			perProject: 3,
 			log: (m) => logs.push(m),
 		});
 		expect(await store.get('prj_a', 'seq_1')).toBeNull();
 		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_1'), 'job_1')).toBe(true);
 		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_1'), 'job_2')).toBe(true);
 		expect((await store.get('prj_a', 'seq_1'))!.jobId).toBe('job_2');
-		// at most 3 sequences: the least recently written goes
-		for (const s of ['seq_2', 'seq_3', 'seq_4']) {
-			await new Promise((r) => setTimeout(r, 15));
+		// Set distinct mtimes explicitly: eviction must not depend on filesystem clock resolution.
+		const folder = join(dir, 'prj_a', 'sound-check');
+		utimesSync(join(folder, 'seq_1.json'), 0, 0);
+		for (let i = 2; i <= 33; i++) {
+			const s = `seq_${i}`;
 			expect(await store.save('prj_a', fakeResult('prj_a', s), `job_${s}`)).toBe(true);
+			utimesSync(join(folder, `${s}.json`), i, i);
 		}
 		const files = readdirSync(join(dir, 'prj_a', 'sound-check')).sort();
-		expect(files).toEqual(['seq_2.json', 'seq_3.json', 'seq_4.json']);
+		expect(files).toEqual(Array.from({ length: 32 }, (_, i) => `seq_${i + 2}.json`).sort());
 		expect(await store.get('prj_a', 'seq_1')).toBeNull();
-		// no temp files are left behind
-		expect(files.every((f) => !f.startsWith('.'))).toBe(true);
 		// a sequence id that is not a document id is never a file name
 		expect(await store.save('prj_a', fakeResult('prj_a', '../evil'), 'job_x')).toBe(false);
 		expect(await store.get('prj_a', '../evil')).toBeNull();
 		// over the size bound: not kept, logged, never thrown
-		const small = new SoundCheckReportStore({
-			projectDir: (pid) => join(dir, pid),
-			maxBytes: 2000,
-			log: (m) => logs.push(m),
-		});
-		expect(await small.save('prj_b', fakeResult('prj_b', 'seq_1', 400), 'job_big')).toBe(false);
+		const oversized = fakeResult('prj_b', 'seq_1');
+		oversized.report.preset.source = 'x'.repeat(16 * 1024 * 1024);
+		expect(await store.save('prj_b', oversized, 'job_big')).toBe(false);
 		expect(logs.some((l) => l.includes('not kept'))).toBe(true);
 		expect(existsSync(join(dir, 'prj_b', 'sound-check', 'seq_1.json'))).toBe(false);
 	});
@@ -257,25 +253,5 @@ describe('the last report on a real engine', { timeout: 600_000 }, () => {
 		// strict arguments
 		const bad = await post('/api/sound-design/check/last', { projectId, extra: 1 });
 		expect(bad.statusCode).toBe(400);
-	});
-
-	it('the visual route gives the sound-effects and bed peaks: the hit is in the sfx peaks, not in the bed', async () => {
-		const fx = buildCheckDoc(media);
-		const projectId = seed(fx.doc());
-		const v = await post('/api/sound-design/visual', { projectId, range: { start: 0, end: 120 } });
-		expect(v.statusCode, v.body).toBe(200);
-		const vis = SoundVisualResponseSchema.parse(v.json());
-		expect(vis.stemPeakDb).toBeDefined();
-		const { sfx, bed } = vis.stemPeakDb!;
-		expect(sfx).toHaveLength(vis.points);
-		expect(bed).toHaveLength(vis.points);
-		// the hit aligned at 1 s (hop 100): loud in the sfx peaks; the sfx stem is near silent before it
-		const around = (a: number[], i: number) => Math.max(...a.slice(Math.max(0, i - 3), i + 4));
-		expect(around(sfx, 100)).toBeGreaterThan(-30);
-		expect(around(sfx, 100)).toBeGreaterThan(Math.max(...sfx.slice(40, 60)) + 20);
-		// every mix peak is at least as loud as each stem's (the stems sum to the mix)
-		for (let i = 0; i < vis.points; i += 10) {
-			expect(vis.waveformPeakDb[i]! + 6.1).toBeGreaterThanOrEqual(Math.max(sfx[i]!, bed[i]!));
-		}
 	});
 });

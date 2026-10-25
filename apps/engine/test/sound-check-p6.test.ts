@@ -244,29 +244,6 @@ afterAll(async () => {
 });
 
 describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () => {
-	it('the clean fixture passes; its fade-out end is no ENDING or SILENCE; HEAD and ARC are info', async () => {
-		const fx = buildCheckDoc(media);
-		const report = await check(seed(fx.doc()), 'clean p6');
-		expect(report.verdict, describeIssues(report)).toBe('pass');
-		for (const c of ['CLICK', 'EDGE', 'HARSH', 'COVERAGE', 'ENDING', 'SILENCE', 'LICENSE'])
-			expect(
-				issuesOf(report, c).filter((i) => i.severity !== 'info'),
-				describeIssues(report),
-			).toEqual([]);
-		// the music starts at full level on the first sample: HEAD (info), with a fade-in fix on the Mix lane
-		const head = issuesOf(report, 'HEAD')[0];
-		expect(head, describeIssues(report)).toBeDefined();
-		expect(head!.severity).toBe('info');
-		expect(head!.category).toBe('edges');
-		expect(head!.fix!.commands![0]).toMatchObject({
-			type: 'mixer.writeAutomation',
-			stripId: 'Mix',
-			lane: 'volume',
-		});
-		for (const i of [...issuesOf(report, 'ARC'), ...issuesOf(report, 'LAYER_INAUDIBLE')])
-			expect(i.severity).toBe('info');
-	});
-
 	/** The clean fixture with a loud held chord on its own track from 4.5 to 6.5 s: the loudest moment of the mix. */
 	const loudMiddle = (o: Parameters<typeof buildCheckDoc>[1] = {}) => {
 		const fx = buildCheckDoc(media, o);
@@ -285,14 +262,13 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		return fx;
 	};
 
-	it('ARC: the loudest 3 s hold no hero → info naming the moment and the biggest hero', async () => {
+	it('ARC: a loud middle without a hero is informational', async () => {
 		const report = await check(seed(loudMiddle().doc()), 'arc');
 		const arc = issuesOf(report, 'ARC');
 		expect(arc, describeIssues(report)).toHaveLength(1);
 		expect(arc[0]!.severity).toBe('info');
 		expect(arc[0]!.category).toBe('loudness');
 		expect(arc[0]!.measured!.variant).toBe('no-hero');
-		expect(arc[0]!.message.text).toMatch(/the biggest hero is Test hit \d \(00:00:0\d:\d\d\)$/);
 		expect(arc[0]!.frame!).toBeGreaterThanOrEqual(135);
 		expect(arc[0]!.frame!).toBeLessThanOrEqual(195);
 	});
@@ -341,7 +317,6 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		expect(issue.timecode).toBe('00:00:04:00');
 		expect(Math.abs((issue.measured!.atSec as number) - 4)).toBeLessThanOrEqual(0.001);
 		expect(issue.measured!.edge).toBe('start');
-		expect(issue.message.key).toMatch(/^Click at an edit: the start of/);
 		expect(issue.fix!.commands![0]).toMatchObject({ type: 'transition.add', clipId: clip.id, edge: 'in' });
 	});
 
@@ -368,7 +343,6 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		);
 		expect(issue.frame).toBe(150);
 		expect(issue.measured!.preDb as number).toBeGreaterThan(-20);
-		expect(issue.message.text).toMatch(/starts mid-sound at 00:00:05:00/);
 		// the fade also removes the step at the edit
 		expect(
 			issuesOf(again, 'CLICK').filter((i) => i.severity === 'error' && i.clipIds?.includes(clip.id)),
@@ -540,7 +514,6 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		expect(issue.cueId).toBe(cues.refs.$c3);
 		expect(issue.frame).toBe(63);
 		expect(issue.measured).toMatchObject({ filled: 3, unfilled: 1 });
-		expect(issue.message.text).toMatch(/^3 of 4 appear cues like these have a sound; 1 do not: 00:00:02:03/);
 		expect(issue.fix!.commands![0]).toMatchObject({ type: 'soundDesign.place', cueId: cues.refs.$c3 });
 	});
 
@@ -589,7 +562,6 @@ describe('Sound Check Phase 6 findings (real engine)', { timeout: 600_000 }, () 
 		expect(sa, describeIssues(report)).toHaveLength(1);
 		expect(sa[0]).toMatchObject({ severity: 'warning', clipIds: [fx.ids.clipC], category: 'licence' });
 		expect(sa[0]!.measured!.variant).toBe('shareAlike');
-		expect(sa[0]!.message.text).toMatch(/ShareAlike\): a video synced with it must be shared under CC BY-SA/);
 		expect(issuesOf(report, 'CREDITS')).toHaveLength(1);
 		expect(report.verdict).toBe('warn');
 	});

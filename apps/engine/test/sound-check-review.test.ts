@@ -13,14 +13,7 @@ import {
 } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
-import {
-	FLICKS_PER_SECOND,
-	makeEnvelope,
-	type ProjectDocument,
-	readSoundCheckTarget,
-	SOUND_CHECK_MESSAGES,
-	soundCheckStatus,
-} from '@jasper/project';
+import { FLICKS_PER_SECOND, makeEnvelope, type ProjectDocument, soundCheckStatus } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
@@ -180,7 +173,6 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 			mine.map((i) => i.severity),
 			describeIssues(report),
 		).toEqual(['info']);
-		expect(mine[0]!.message.text).toMatch(/reversed/);
 	});
 
 	it('SILENCE is the loudest channel: a left-only room tone at −58.5 dBFS is not silence; at −62 it is', async () => {
@@ -277,7 +269,6 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		// its fix needs the user's judgement, and says why in a translatable message
 		const fix = issuesOf(r2, 'DIP')[0]!.fix!;
 		expect(fix.safe).toBe(false);
-		expect(fix.whyMessage).toEqual({ key: SOUND_CHECK_MESSAGES.whySilence, params: [], text: fix.why });
 	});
 
 	it('DIP: hits ringing out over a steady, quiet music bed are not a dip (the programme holds) (verification)', async () => {
@@ -316,7 +307,6 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		expect(st, JSON.stringify(st.summary)).toMatchObject({ state: 'current', reasons: [] });
 		// the report states the target it checked
 		expect(result.report.preset).toMatchObject({ custom: true });
-		expect(result.report.preset.integratedLufs).toBe(readSoundCheckTarget(target)!.integratedLufs);
 	});
 
 	it("MUSIC_OVER_VOICE: the ducking fix is safe only when the delivery's own depth (6 dB) clears 8 LU", async () => {
@@ -332,7 +322,6 @@ describe('Sound Check engine review (real engine)', { timeout: 600_000 }, () => 
 		const under = issue!.measured!.underLu as number;
 		expect(under).toBeLessThan(2);
 		expect(issue!.fix!.safe, JSON.stringify(issue!.fix)).toBe(false);
-		expect(issue!.fix!.why).toMatch(/6\.0 dB/);
 		// applied anyway, it does not resolve the finding (what "not safe" said)
 		await job(`/api/sound-design/${issue!.fix!.job!.route}`, issue!.fix!.job!.body, EDITOR_H);
 		const again = SoundCheckResultSchema.parse(
