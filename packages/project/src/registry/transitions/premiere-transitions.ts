@@ -23,6 +23,7 @@ import { MODERN_WIPES } from './premiere/modern-wipe.ts';
 import { PREMIERE_3D_MOTION } from './premiere/motion3d.ts';
 import { PREMIERE_PAGE_PEELS } from './premiere/page.ts';
 import { PREMIERE_SLIDES } from './premiere/slide.ts';
+import { SMOOTH_SLIDE } from './premiere/smooth-slide.ts';
 import { PREMIERE_VR } from './premiere/vr.ts';
 import { PREMIERE_WIPES } from './premiere/wipe.ts';
 
@@ -150,7 +151,8 @@ void main() {
  * Premiere's video transitions, bin by bin (TRANSITION_BINS order), alphabetical inside a bin: the classic standard
  * transitions (./premiere/{motion3d,dissolve,iris,page,slide,wipe}.ts and Push / Cross Zoom / Iris Round above) and
  * the modern ones Premiere 25.5 / 26 added from Film Impact (./premiere/modern-*.ts) and the Immersive Video (VR)
- * ones (./premiere/vr.ts). Folders the framework has no bin for yet sit in MODERN_BINS (see there).
+ * ones (./premiere/vr.ts), plus Smooth Slide (./premiere/smooth-slide.ts: an eased push with dolly, reflection and
+ * motion blur, docs/wp-notes/smooth-slide.md). Folders the framework has no bin for yet sit in MODERN_BINS (see there).
  */
 export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = byBinAndLabel([
 	PUSH,
@@ -161,6 +163,7 @@ export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = byBinAndLabel([
 	...PREMIERE_IRISES,
 	...PREMIERE_PAGE_PEELS,
 	...PREMIERE_SLIDES,
+	SMOOTH_SLIDE,
 	...PREMIERE_WIPES,
 	...MODERN_DISSOLVES,
 	...MODERN_SLIDES,
