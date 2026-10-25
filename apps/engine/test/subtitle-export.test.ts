@@ -171,9 +171,19 @@ describe('kernel streams (spec 13 AS-072)', () => {
 		expect(fa).toHaveLength(n * 8);
 		expect(fb).toHaveLength(n * 8);
 		let worst = 0;
+		let differing = 0;
+		let where = '';
 		for (let f = 0; f < fa.length; f++)
-			for (let i = 0; i < fa[f]!.length; i++) worst = Math.max(worst, Math.abs(fa[f]![i]! - fb[f]![i]!));
-		expect(worst, 'max channel difference').toBe(0);
+			for (let i = 0; i < fa[f]!.length; i++) {
+				const e = Math.abs(fa[f]![i]! - fb[f]![i]!);
+				if (e > 0) differing++;
+				if (e > worst) {
+					worst = e;
+					const px = Math.floor(i / 3);
+					where = `frame ${f} (${px % W}, ${Math.floor(px / W)}) ${fa[f]![i]} vs ${fb[f]![i]}`;
+				}
+			}
+		expect(worst, `max channel difference ${where}; ${differing} values differ`).toBe(0);
 	}, 600_000);
 
 	it('the composite’s inputs do not grow with the clip count (300 stills: still one pipe)', async () => {
@@ -192,7 +202,7 @@ describe('kernel streams (spec 13 AS-072)', () => {
 			extensions: { list: [], prepared: new Map() },
 		});
 		expect(g.streams).toHaveLength(1);
-		expect(g.inputs).toHaveLength(1);
+		expect(g.inputs, JSON.stringify(g.inputs)).toHaveLength(1);
 		expect((g.filter.match(/overlay=/g) ?? []).length).toBe(1);
 	}, 300_000);
 });
