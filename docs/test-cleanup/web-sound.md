@@ -1,6 +1,6 @@
 # Web sound test cleanup
 
-Scope: all 38 `apps/web/test/{sound*,audio*}.test.*` files present at 8b4c8936; 315 test declarations (parameterized runtime cases may differ). REWRITE 10; KEEP 261; DELETE 37; CONSOLIDATE 2; OPTIMIZE 5. The report includes deleted tests by their original full names.
+Scope: all 38 `apps/web/test/{sound*,audio*}.test.*` files present at 8b4c8936; 315 test declarations (parameterized runtime cases may differ). REWRITE 12; KEEP 259; DELETE 37; CONSOLIDATE 2; OPTIMIZE 5. The report includes deleted tests by their original full names.
 
 The independent sources are repository specifications and historical failures in the sound-design work note, not the implementation under test. Below, each test row names its exact contract/failure; the source and seam paragraphs apply to every row in that file. The retained oracle column records literal/fixture output assertions. For CONSOLIDATE, one removed direct-filter declaration and its surviving timeline-playback owner are counted separately. Engine/device doubles supply external input and do not perform the UI action under test. Unique ownership distinguishes command/panel wiring from the shared project algorithm; duplicated direct placement/track algorithms were removed. Refactor resistance means internal calculations/helpers can change while these externally observed results remain.
 
@@ -108,8 +108,8 @@ Seam/refactor resistance: input/document conversion functions with literal outpu
 
 | Original test name | Disposition | Independent oracle / failed bar | Unique failure or surviving owner |
 | --- | --- | --- | --- |
-| Fix all safe judges the safe fixes together > after the hero was demoted with its own Fix, its hero-solved gain is left for the next check | KEEP | expect(asked).toEqual([]); expect(one.ok).toBe(true) | Distinct scenario: after the hero was demoted with its own Fix, its hero-solved gain is left for the next check. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
-| Fix all safe judges the safe fixes together > normalisation off: two gains each under the true-peak ceiling but not together: the second is left | KEEP | expect(all.applied).toEqual([`MASKED:${f.ids.clipA}`]); expect(all.skipped).toEqual([`MASKED:${f.ids.clipB}`]) | Distinct scenario: normalisation off: two gains each under the true-peak ceiling but not together: the second is left. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
+| Fix all safe judges the safe fixes together > after the hero was demoted with its own Fix, its hero-solved gain is left for the next check | REWRITE | **B1:** Spec12 §2.6 joint safe-fix revalidation; WP6.5b item8; WP5.2 follow-ups(a) requires unsafe confirmation and Cancel applying nothing. **B2/B3:** An authored hero gain becomes 4.0 LU unsafe after demotion; the literal risk must appear in the real dialog, while gain/history remain unchanged before and after Cancel. The safe demotion must apply without a dialog, and Fix all safe must skip the stale gain. | **B4/B5:** Public applyCheckFix/fixAllSafe with the real session, DialogHost and Cancel control; no injected confirmation function, helper return shape or exact English sentence. **B6:** Pure planner tests cannot prove dialog/decline wiring; the generic panel's already-unsafe fix does not exercise a formerly safe report invalidated by a later role edit. Explicit pending-dialog settlement preserves isolation even after an assertion failure. |
+| Fix all safe judges the safe fixes together > normalisation off: two gains each under the true-peak ceiling but not together: the second is left | REWRITE | **B1:** Spec12 §2.6 and WP6.5b item8 require joint true-peak headroom checks with normalization off. **B2/B3:** Known overlapping −4 dBTP mix models permit either +4 dB gain alone but not both; literal applied/skipped issue IDs, actual clip gains, one history entry and fixed IDs detect unsafe joint application or incorrect attribution. | **B4/B5:** Public fixAllSafe commits to the real session and follows its normal rerun path; no rerun flag or assertions about an arranged engine error, internal template spelling or history-label copy remain. **B6:** Pure headroom math does not prove the web coordinator commits only the accepted fix; generic Fix all safe lacks these overlapping peak constraints. The dependency's unavailable check is handled by the existing runSoundCheck error boundary while committed fix/history assertions remain independent. |
 
 ## apps/web/test/sound-check-listen-keep.test.ts
 
@@ -840,3 +840,47 @@ and diagnostic runs selected `-t 'a personality shows'` and `-t 'Auto Sound Pass
 respectively. JSON, logs and the restoration/mutation manifests preserve exact
 commands and results. No speedup is claimed against an original test that stopped
 before its asynchronous work completed. Root owns the subsequent full-suite gate.
+
+## Joint-fix confirmation and rerun seams
+
+A caller census found no production consumer of `ConfirmFix`, the optional
+`applyCheckFix` confirmation callback, or the `fixAllSafe` rerun flag. Only the two
+joint-fix cases used these overrides; the panel and keyboard commands already use
+the normal dialog and automatic rerun. Both overrides and the unused
+`fixConfirmation` export are removed; the helper remains local. Production default
+behavior is unchanged.
+
+Both existing joint-fix rows above are now REWRITE. The first mounts the real
+`DialogHost`, proves a safe demotion needs no dialog, and observes the stale gain's
+independent 4.0 LU risk through an actual confirmation. Gain/history stay unchanged
+while it is open and after the user presses Cancel. An asynchronous cleanup hook
+settles pending confirmations before unmounting, including on assertion failure.
+The second retains applied/skipped IDs, committed gains, fixed IDs and a single
+history entry while using the normal rerun path. Exact English/template and
+history-label assertions are removed; no arranged dependency error is an oracle.
+No test declaration, dependency, production hook or wrapper was added. Test source
+is net +1 line, and production source is net −8 lines against `0c126950`; the real
+dialog adds meaningful integration protection without another test execution.
+
+Validation used Node20.19.0/pnpm10.34.5 and two Vitest workers. Evidence is under
+`/tmp/jasper-test-cleanup/joint-confirm/`:
+
+```sh
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/web/test/sound-check-joint-fix.test.ts apps/web/test/sound-check-panel.test.tsx --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/joint-confirm/affected.json
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/web/test/sound-check-joint-fix.test.ts --maxWorkers=2 -t 'after the hero was demoted' --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/joint-confirm/mutant.json
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/web/test/sound-check-joint-fix.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-cleanup/joint-confirm/restored.json
+env NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web typecheck
+pnpm exec biome check apps/web/src/sound/check-run.ts apps/web/test/sound-check-joint-fix.test.ts
+git diff --check
+```
+
+The affected run passed all20 cases (two joint-fix and eighteen panel cases), with
+zero skips/unhandled errors, in34.44s runner/35.58s command wall. A real mutation
+stopped re-judging report-marked-safe fixes on the current document: the selected
+case failed because the required dialog never appeared. The source was restored
+byte-for-byte in `finally` (matching SHA-256 recorded in `mutant-evidence.json`);
+the restored two-case file passed in12.68s runner/13.74s command wall. Joint-case
+bodies were147ms in both successful runs. The repository's actual web TypeScript
+compiler passed (38.60s); scoped Biome and diff checks passed without fixes. No
+performance improvement is inferred from these different targets or startup costs.
+Root owns subsequent integrated gates and the final comparable suite measurement.
