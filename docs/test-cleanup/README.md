@@ -485,12 +485,15 @@ by the default gate. Exact supplemental results/skips are listed above when run.
 
 ## Git delivery
 
-Branch: `test/contract-cleanup`. Remote `origin/main` was fetched and integrated
-through `69c96e3b` without rewriting history; all 341 new declarations received
-the same audit and the affected existing owners were re-audited. The final fetch
-confirmed `origin/main` remained at that integrated revision,
-with no unaudited incoming changes. The final delivery message records the pushed
-commit and verified remote result.
+Delivery branch: `main`. The cleanup was developed on `test/contract-cleanup`, then
+fast-forwarded into `main` without rewriting history. Remote `origin/main` was
+fetched and integrated through `69c96e3b`; all 341 incoming declarations received
+the same audit and affected existing owners were re-audited. The final fetch
+confirmed no additional incoming changes. Delivered application, test and build
+inputs match validated source `797e53fc`; subsequent commits change only the report.
+The final delivery message records the commit pushed to `origin/main` and the
+verified remote result.
+
 No unrelated working-tree changes were present initially, no shared stash or
 force push was used, and only task files are committed.
 
