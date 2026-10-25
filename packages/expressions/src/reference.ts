@@ -259,6 +259,16 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 		'content("Group 1").content("Rectangle Path 1").size',
 		'Vector shapes: an item by name, index or id; groups have .content(name) and .transform (anchorPoint, position, scale, skew, skewAxis, rotation, opacity); items expose their properties by name (size, roundness, color, opacity, strokeWidth → width, start, end, offset, copies…).',
 	),
+	L(
+		'toLayer',
+		'content(…).toLayer(point, t = time)',
+		'Ours (not After Effects): a point in the space a shape item’s values live in (its enclosing groups’ transforms) → layer pixels; follow with toComp for sequence pixels. fromLayer, toLayerVec and fromLayerVec likewise.',
+	),
+	L(
+		'trimPath',
+		'content("Trim Paths 1").trimPath(item)',
+		'Ours: the path a Trim Paths measures, in its group’s space (operators above it applied, nested groups mapped in): one path item by id or name (Simultaneously), or with no argument all its paths laid end to end (Individually). It has the path methods; pointOnPath at the trim’s tip fraction lands on the trimmed stroke’s end.',
+	),
 	L('audio', 'thisLayer.audio', 'Audio clips: audioLevels (Volume, dB) and pan.'),
 	L('params', 'thisLayer.params(name)', 'Motion-graphic template parameters (read only).'),
 	L('marker', 'thisLayer.marker', 'Clip markers.'),
@@ -281,6 +291,35 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	P('name', 'prop.name', 'Property name.'),
 	P('propertyIndex', 'prop.propertyIndex', 'Index inside its group.'),
 	P('preExpressionValue', 'prop.preExpressionValue', 'Keyframed value at the current time.'),
+	// Path (a shape path item's Path: content("Group 1").content("Path 1").path; rectangles, ellipses and polystars too).
+	P(
+		'points',
+		'path.points(t = time)',
+		'Vertices [[x, y], …] of a shape path item (Path, Rectangle, Ellipse, Polystar outline) in the space of its group (group transforms not applied, as in After Effects); Path Direction Reversed lists them the other way.',
+	),
+	P('inTangents', 'path.inTangents(t = time)', 'Incoming tangent handles, relative to their vertex.'),
+	P('outTangents', 'path.outTangents(t = time)', 'Outgoing tangent handles, relative to their vertex.'),
+	P('isClosed', 'path.isClosed()', 'Whether the path is closed.'),
+	P(
+		'pointOnPath',
+		'path.pointOnPath(percentage = 0.5, t = time)',
+		'Point at a fraction 0…1 of the arc length (clamped, closed paths do not wrap, as in After Effects), in the group’s space.',
+	),
+	P(
+		'tangentOnPath',
+		'path.tangentOnPath(percentage = 0.5, t = time)',
+		'Unit tangent (direction of travel) there.',
+	),
+	P(
+		'normalOnPath',
+		'path.normalOnPath(percentage = 0.5, t = time)',
+		'Unit normal there: the tangent turned a quarter, [-ty, tx].',
+	),
+	P(
+		'createPath',
+		'createPath(points, inTangents, outTangents, isClosed)',
+		'Not available: no property takes a path value (shape and mask paths take no expressions); raises an error.',
+	),
 	// Keys and markers.
 	K('time', 'key.time', 'Keyframe time (sequence seconds).'),
 	K('value', 'key.value', 'Keyframe value.'),

@@ -222,13 +222,14 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		};
 	};
 	let budget = MAX_MODEL_VALUES;
+	const tooLarge = () =>
+		new ModelParseError(
+			`The model is too large (more than ${MAX_MODEL_VALUES / 1e6} million vertex and index values)`,
+		);
 	/** Counts `n` values against the model's allowance, before anything of that size is allocated. */
 	const spend = (n: number) => {
 		budget -= n;
-		if (!(n >= 0) || !(budget >= 0))
-			throw new ModelParseError(
-				`The model is too large (more than ${MAX_MODEL_VALUES / 1e6} million vertex and index values)`,
-			);
+		if (!(n >= 0) || !(budget >= 0)) throw tooLarge();
 	};
 	const COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
 	const KNOWN_COMPONENT_TYPES = new Set([5120, 5121, 5122, 5123, 5125, 5126]);
@@ -387,9 +388,57 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		if (normals.length === 0) return { ...flatShaded(positions, uvs, tris), material };
 		return { positions, normals, uvs, indices: Uint32Array.from(tris), material };
 	};
+	/** Values `readAccessor(i)` will count (NaN when the accessor or its count is not readable). */
+	const accessorValues = (i: number): number => {
+		const a = json.accessors?.[i];
+		const n = a ? COMPONENTS[a.type] : undefined;
+		return a && n && Number.isSafeInteger(a.count) && a.count >= 0 ? a.count * n : Number.NaN;
+	};
+	/** What `primitive(p)` will spend: its accessor reads plus its output, exactly as counted there. */
+	const primitiveSpend = (p: GltfPrimitive): number => {
+		const mode = p.mode ?? 4;
+		if (mode !== 4 && mode !== 5 && mode !== 6) return 0;
+		if (p.attributes?.POSITION === undefined) return 0;
+		const positions = accessorValues(p.attributes.POSITION);
+		const count = positions / (COMPONENTS[json.accessors?.[p.attributes.POSITION]?.type ?? ''] ?? Number.NaN);
+		let total = positions;
+		let indices = count;
+		if (p.indices !== undefined) {
+			indices = accessorValues(p.indices);
+			total += indices;
+		}
+		const tris = mode === 4 ? Math.floor(indices / 3) * 3 : Math.max(0, indices - 2) * 3;
+		total += count * 3 + tris * (p.attributes.NORMAL !== undefined ? 1 : 4);
+		if (p.attributes.NORMAL !== undefined) total += accessorValues(p.attributes.NORMAL);
+		if (p.attributes.TEXCOORD_0 !== undefined) total += accessorValues(p.attributes.TEXCOORD_0);
+		return total;
+	};
+	/** The allowance the walk from `roots` will spend; stops once it is over the allowance or not readable. */
+	const plannedSpend = (roots: readonly number[]): number => {
+		const seen = new Set<number>();
+		const stack: [number, number][] = roots.map((r) => [r, 0]);
+		let total = 0;
+		while (stack.length > 0) {
+			const [index, depth] = stack.pop() as [number, number];
+			const node = json.nodes?.[index];
+			if (!node) continue;
+			if (depth > 64 || seen.has(index)) return Number.NaN;
+			seen.add(index);
+			if (node.mesh !== undefined)
+				for (const p of json.meshes?.[node.mesh]?.primitives ?? []) total += primitiveSpend(p);
+			if (!(total <= MAX_MODEL_VALUES)) return total;
+			for (const c of node.children ?? []) stack.push([c, depth + 1]);
+		}
+		return total;
+	};
 	const sceneIndex = json.scene ?? 0;
 	const roots: number[] = json.scenes?.[sceneIndex]?.nodes ?? (json.nodes ?? []).map((_, i) => i);
 	const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+	// The walk decodes a mesh once per node that shows it, so a small mesh under many nodes would decode and transform
+	// close to the whole allowance (seconds of work) before `spend` refused it. The allowance the walk will spend
+	// follows from the accessor counts alone: refuse up front when it is over. Anything this estimate cannot read
+	// (malformed counts, a reused node, a cycle) is left to the walk, which reports it precisely.
+	if (plannedSpend(roots) > MAX_MODEL_VALUES) throw tooLarge();
 	for (const r of roots) visit(r, I, 0);
 	return out;
 }

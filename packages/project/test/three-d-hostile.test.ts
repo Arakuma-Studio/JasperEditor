@@ -4,6 +4,7 @@ import {
 	accessorOfZeros,
 	badIndices,
 	HOSTILE_MODELS,
+	manyInstances,
 	sharedChildren,
 	sharedImage,
 	strideZero,
@@ -35,10 +36,17 @@ describe('hostile glTF documents', () => {
 			const r = attempt(make());
 			expect(r.error).toBeInstanceOf(ModelParseError);
 			expect(r.ms).toBeLessThan(LIMIT_MS);
-			// The 20 000-instance document legitimately reads up to the allowance before it is refused.
 			expect(r.grownMiB).toBeLessThan(1024);
 		},
 	);
+
+	it('a mesh shown by more nodes than the allowance covers is refused before any of it is decoded', () => {
+		const r = attempt(manyInstances());
+		expect(r.error).toBeInstanceOf(ModelParseError);
+		expect((r.error as Error).message).toMatch(/too large/);
+		expect(r.grownMiB).toBeLessThan(16);
+		expect(r.ms).toBeLessThan(2000);
+	});
 
 	it('refuses non-finite, fractional, negative and out-of-range indices', () => {
 		for (const values of [

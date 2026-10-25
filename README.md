@@ -481,7 +481,8 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `add_shape` `get_motion_path` `set_spatial_interpolation`.
 - Vector shapes: `add_vector_shape` `svg_to_shape` `list_shape_presets` `get_shape` `add_shape_items`
   `update_shape_item` `remove_shape_items` `move_shape_item` `group_shape_items` `duplicate_shape_item`
-  `edit_shape_path` `convert_shape_to_vector`.
+  `edit_shape_path` `convert_shape_to_vector`; Trim Paths animations: `animate_trim_paths` (with an optional tracer
+  in the same undo step) `reverse_path_direction` `add_line` `add_trim_tracer`.
 - Text animators: `list_text_animator_presets` `apply_text_animator_preset` `add_text_animator` `add_text_selector`
   `get_text_animators` `remove_text_animators` `set_text_path` `convert_text_animation`.
 - Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
@@ -493,6 +494,9 @@ Tools (use MCP `listTools` for the current catalog and schemas):
 - 3D layers, cameras and lights: `set_3d_layer` `set_3d_transform` `set_material` `add_camera` `camera_settings` `move_camera` `add_light` `light_settings` `set_3d_renderer` `get_3d_scene`; 3D Camera Tracker: `track_camera` `get_camera_tracker` `create_tracked_camera` `set_tracker_ground` `delete_track_points` (After Effects' Classic 3D and 3D Camera Tracker, `docs/wp-notes/three-d.md`).
 - Keyframes and presets: `get_motion_path` `set_spatial_interpolation` `set_roving` · `list_effect_presets` `get_effect_preset`
   `save_effect_preset` `apply_effect_preset` `delete_effect_preset`.
+- Keyframe easing: `list_ease_presets` `get_keyframe_eases` `apply_ease` `transfer_ease` `transfer_keyframe_values`
+  `set_keyframe_velocity` `create_path_controller` `cleanup_motion_path` (`docs/wp-notes/easing.md`,
+  `docs/wp-notes/mcp-cli.md` § 7).
 - Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.
 - Render previews and performance: `get_render_bar_state` `render_previews` `delete_render_files` `perf_stats`
   (`docs/wp-notes/previews.md`).
@@ -1094,7 +1098,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property and fuzz sweeps; `JASPER_BLESS=1` re-blesses goldens (docs/testing.md) |
 | `pnpm perf` | Sequential snapshot, scene, selection, timeline-transition, and cache-reference microbenchmarks |
-| `pnpm lint` | Biome + design-token, anime.js, dependency-layer and asset-attribution checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`, `scripts/check-layers.mjs`, `scripts/check-assets.mjs`) |
+| `pnpm lint` | Biome + design-token, anime.js and dependency-layer checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`, `scripts/check-layers.mjs`) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |
 | `pnpm mcp:build` | only the MCP server: esbuild bundle `apps/mcp/dist/jasper-mcp.mjs` (one executable file) |

@@ -179,6 +179,44 @@ describe('Effect Controls ▸ Spatial Interpolation (S03:KF-021)', () => {
 		expect(screen.queryByTestId('ec-kf-menu')).toBeNull();
 	});
 
+	it('opens its submenu fixed beside its row, flipped left at the window edge, not clipped by the scrolling menu', () => {
+		const { session, id } = setup();
+		renderWithSession(session, <EffectControlsPanel instanceId="ec1" visible />);
+		const key = keysOf(session, id)[1]!;
+		const open = (rect: { left: number; right: number; top: number }) => {
+			act(() => {
+				fireEvent.contextMenu(document.querySelector(`[data-kf-id="${key.id}"]`) as HTMLElement, {
+					clientX: 10,
+					clientY: 10,
+				});
+			});
+			const item = within(screen.getByTestId('ec-kf-menu')).getByTestId('ec-kf-spatial');
+			const row = item.parentElement as HTMLElement;
+			row.getBoundingClientRect = () =>
+				({
+					...rect,
+					bottom: rect.top + 22,
+					width: rect.right - rect.left,
+					height: 22,
+					x: rect.left,
+					y: rect.top,
+				}) as DOMRect;
+			act(() => {
+				fireEvent.click(item);
+			});
+			return screen.getByTestId('ec-kf-spatial-menu');
+		};
+		const beside = open({ left: 100, right: 300, top: 50 });
+		expect(beside.className).toContain('fixed');
+		expect(beside.style.left).toBe('300px');
+		expect(beside.style.top).toBe('50px');
+		act(() => {
+			fireEvent.keyDown(document, { key: 'Escape' });
+		});
+		const flipped = open({ left: 900, right: window.innerWidth + 50, top: 50 });
+		expect(flipped.style.left).toBe('900px');
+	});
+
 	it('is not offered for keys of non-point properties', () => {
 		const { session, id } = setup();
 		act(

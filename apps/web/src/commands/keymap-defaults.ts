@@ -322,6 +322,13 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('effectControls.toggleLoop', 'Ctrl+KeyL', 'effectControls'),
 	// Wave expressions: After Effects' Add Expression shortcut (Alt+Shift+= / Option+Shift+=).
 	b('inspector.toggleExpression', 'Alt+Shift+Equal', 'effectControls', { mac: 'Opt+Shift+Equal' }),
+	// Keyframe easing: After Effects' Easy Ease keys (F9, Shift+F9 ease in, Ctrl/Cmd+Shift+F9 ease out); in the Easing
+	// panel Copy / Paste act on the ease of the selected keys.
+	b('ease.easyEase', 'F9', G),
+	b('ease.easyEaseIn', 'Shift+F9', G),
+	b('ease.easyEaseOut', 'Ctrl+Shift+F9', G),
+	b('ease.copy', 'Ctrl+KeyC', 'easing'),
+	b('ease.paste', 'Ctrl+KeyV', 'easing'),
 	// sound-design (spec 12 §2.7): Sound Library scope (Space audition, Enter insert, F favourite, L loop, Ctrl+F search)
 	b('soundLibrary.audition', 'Space', 'soundLibrary'),
 	b('soundLibrary.insert', 'Enter', 'soundLibrary'),

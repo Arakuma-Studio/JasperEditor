@@ -114,6 +114,63 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		transform: { position: [960, 900] },
 	},
+	// Trim Paths animations (docs/wp-notes/shapes.md § 12); "$line" is bound by the shape.addLine example.
+	'shape.addLine': {
+		type: 'shape.addLine',
+		orientation: 'horizontal',
+		at: 0,
+		durationFrames: 90,
+		strokeWidth: 12,
+		color: [1, 0.8, 0, 1],
+		ref: '$line',
+	},
+	'shape.animateTrim': {
+		type: 'shape.animateTrim',
+		clipIds: ['$line'],
+		style: 'inOut',
+		durationFrames: 20,
+		inOutLag: 0.5,
+	},
+	'shape.reversePathDirection': { type: 'shape.reversePathDirection', clipIds: ['$line'] },
+	// Trim tracer (docs/wp-notes/expressions.md § 1.9): without trimItemId it follows the clip's master trim, so it can
+	// follow shape.animateTrim in the same transaction.
+	'shape.addTrimTracer': {
+		type: 'shape.addTrimTracer',
+		clipId: '$line',
+		tip: 'end',
+		orient: true,
+		ref: '$tracer',
+	},
+	// Keyframe easing (docs/wp-notes/easing.md § Easing commands). "$k0" … "$k2" are opacity keys and "$p0" … "$p2"
+	// position keys of one clip, bound by `ref` on keyframe.add commands earlier in the transaction.
+	'keyframe.applyEase': {
+		type: 'keyframe.applyEase',
+		keyframeIds: ['$k0', '$k1'],
+		curve: { kind: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+		sections: ['middle'],
+	},
+	'keyframe.pasteEase': {
+		type: 'keyframe.pasteEase',
+		keyframeIds: ['$k1', '$k2'],
+		clip: { kind: 'segments', segments: [{ kind: 'cubic', x1: 0.42, y1: 0, x2: 0.58, y2: 1 }] },
+	},
+	'keyframe.pasteValues': { type: 'keyframe.pasteValues', keyframeIds: ['$k0', '$k2'], values: [100, 0] },
+	'keyframe.setVelocity': {
+		type: 'keyframe.setVelocity',
+		keyframeId: '$k1',
+		side: 'out',
+		speed: -150,
+		influence: 50,
+	},
+	'keyframe.createPathController': {
+		type: 'keyframe.createPathController',
+		keyframeIds: ['$p0', '$p1', '$p2'],
+	},
+	'keyframes.cleanupPath': {
+		type: 'keyframes.cleanupPath',
+		keyframeIds: ['$p0', '$p1', '$p2'],
+		tolerance: 1,
+	},
 	// wp masks
 	'mask.add': {
 		type: 'mask.add',

@@ -1,8 +1,0 @@
-asset:        schema-v7.jasper
-title:        Schema history fixture, v7
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-15 by the sound-design Phase 1 verification
-notes:        Generated once through the command system from schema-v6.jasper for packages/project/test/schema-history.test.ts: v7 (sound design, spec 12) adds a library sound media with provenance (MediaAsset.library with leadSilenceSec) placed on an audio track as an Essential Sound SFX clip whose Pan is an offset (panOffset). References no media bytes.

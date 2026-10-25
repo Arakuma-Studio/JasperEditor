@@ -52,6 +52,39 @@ type Kernel = {
 	coeffs: Float64Array;
 };
 
+// Scrubbing and interpreted clips repeatedly convert short buffers at the same rates. The
+// coefficient tables depend only on these rates and quality, never on channel/sample data.
+// Keep both retention and entry count bounded when a speed ramp visits many different rates.
+const MAX_CACHED_KERNEL_BYTES = 16 * 1024 * 1024;
+const MAX_CACHED_KERNELS = 8;
+const kernels = new Map<string, Kernel>();
+let cachedKernelBytes = 0;
+
+function kernelFor(from: number, to: number, quality: ResampleQuality, exactPhases: number): Kernel {
+	const key = `${from}/${to}/${quality}`;
+	const cached = kernels.get(key);
+	if (cached) {
+		kernels.delete(key);
+		kernels.set(key, cached);
+		return cached;
+	}
+	const probe = buildKernel(from, to, quality, 1, 0);
+	const exact = exactPhases > 0 && exactPhases * probe.taps <= MAX_EXACT_TABLE;
+	const phases = exact ? exactPhases : DENSE_PHASES;
+	const kernel = buildKernel(from, to, quality, phases, exact ? phases : phases + 1);
+	const bytes = kernel.coeffs.byteLength;
+	if (bytes <= MAX_CACHED_KERNEL_BYTES) {
+		while (kernels.size >= MAX_CACHED_KERNELS || cachedKernelBytes + bytes > MAX_CACHED_KERNEL_BYTES) {
+			const oldest = kernels.keys().next().value!;
+			cachedKernelBytes -= kernels.get(oldest)!.coeffs.byteLength;
+			kernels.delete(oldest);
+		}
+		kernels.set(key, kernel);
+		cachedKernelBytes += bytes;
+	}
+	return kernel;
+}
+
 function buildKernel(
 	from: number,
 	to: number,
@@ -124,10 +157,9 @@ export function resample(
 	const g = integer ? gcd(fromRate, toRate) : 1;
 	const L = toRate / g;
 	const M = fromRate / g;
-	const probe = buildKernel(fromRate, toRate, quality, 1, 0);
-	if (integer && L * probe.taps <= MAX_EXACT_TABLE) {
-		const kern = buildKernel(fromRate, toRate, quality, L, L);
-		const { taps, k, coeffs } = kern;
+	const kern = kernelFor(fromRate, toRate, quality, integer ? L : 0);
+	const { taps, k, coeffs } = kern;
+	if (integer && L * taps <= MAX_EXACT_TABLE) {
 		for (let n = 0; n < outLen; n++) {
 			const num = n * M;
 			const base = Math.floor(num / L);
@@ -138,8 +170,6 @@ export function resample(
 		return out;
 	}
 	// dense table: DENSE_PHASES + 1 rows (row P = a whole-sample shift of row 0), linear interpolation
-	const kern = buildKernel(fromRate, toRate, quality, DENSE_PHASES, DENSE_PHASES + 1);
-	const { taps, k, coeffs } = kern;
 	const step = fromRate / toRate;
 	for (let n = 0; n < outLen; n++) {
 		const t = n * step;

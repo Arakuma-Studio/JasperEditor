@@ -66,6 +66,9 @@ for (const presets of presetFamilies) {
 	}
 }
 for (const p of project.builtinEssentialPresets()) add(p.name);
+// Ease presets: `group` holds a group id, so only preset and group names are display strings.
+for (const p of project.builtinEasePresets()) add(p.name);
+for (const g of project.BUILTIN_EASE_GROUPS) add(g.name);
 // Delivery presets (sound design, Phase 4): the names and where their numbers come from (Delivery Target…).
 for (const p of Object.values(project.DELIVERY_PRESETS)) {
 	add(p.label);

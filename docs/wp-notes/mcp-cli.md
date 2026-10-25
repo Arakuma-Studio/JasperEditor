@@ -148,6 +148,88 @@ count, frames vs `render_frame` mean diff < 6–10, re-imported clip renders the
 {wait}` (progress seen, job `cancelled`, no file). Measured 2026-10-07 on the shared 12-core machine: 7/7 pass in
 55 s (`node scripts/mcp-qa.mjs`).
 
+## 7. Easing and Trim Paths tools
+
+Branch `feat/mcp-ease-trim`. The agent surface of the easing commands (`docs/wp-notes/easing.md` § Easing commands)
+and the Trim Paths animations (`docs/wp-notes/shapes.md` § 12, `docs/wp-notes/expressions.md` § 1.9). Code:
+`apps/mcp/src/tools/ease.ts` (`EASE_GUIDE`), `apps/mcp/src/tools/trim-paths.ts` (`TRIM_PATHS_GUIDE`), read-outs in
+`packages/project/src/agent/keyframe-eases.ts` and `properties-query.ts` (`clipKeyframesQuery`). Both guides are in
+the server instructions and `jasper://guide`.
+
+**Read-back.** Every keyframe listing of `clip.properties` / `param.get` (clip, transition, track and master
+parameters) now carries, per key, the segment **leaving** it as the evaluator draws it: `ease` = `"hold"`,
+`"linear"` or `"cubic-bezier(x1, y1, x2, y2)"` (four decimals; auto-bezier eases derived from the neighbours), plus
+`easePreset` when a shaped segment matches a built-in preset (`matchEasePreset`, 1e-3) and `roving: true` on roving
+keys (their run is one segment, reported on its first key). The last key has no `ease`. Linear and hold segments do
+not run the matcher, so tracking data and plain fades cost nothing extra; matches are memoised per curve within a
+listing. Speeds and influences are left to `get_keyframe_eases` to keep the listing small.
+
+**Key selection** (all ease tools except `transfer_*` / `set_keyframe_velocity`): `keyframeIds`, or `clipId` +
+`properties?` (keys or prefixes as `get_clip_properties` lists them; unknown ones are `E_NOT_FOUND`) + `from?` /
+`to?` (sequence times, inclusive). `create_path_controller` and `cleanup_motion_path` default to
+`["transform.position"]`. The tools read the stored document (no expression binding) so ids are the stored ones.
+
+| Tool | Arguments | Command / notes |
+|---|---|---|
+| `list_ease_presets` | `{group?}` | groups; per preset `id, name, group, kind` and `cubicBezier` or `points` |
+| `get_keyframe_eases` | selection (≤ 2000 keys, else `E_LIMIT`) | `keyframeEasesView`: per property `path, label, clipId, spatial`, keys `{id, frame, timecode, value, interpolation, roving?, in/out: {influence %, speed, slope}}`, segments `{fromId, toId, section, ease, preset?, roving?, averageSpeed}`, `span.preset` for 3+ keys whose run matches a preset (2e-3) |
+| `apply_ease` | selection, `curve`, `sections?` | `keyframe.applyEase`; result `{affected, created, removed}` + the read-back of the resulting keys |
+| `transfer_ease` | `fromKeyframeIds, toKeyframeIds, sections?, mode?` | `copyEase` on the current document, then `keyframe.pasteEase` (one step; returns what was copied) |
+| `transfer_keyframe_values` | `fromKeyframeIds, toKeyframeIds` | `copyValues` + `keyframe.pasteValues` |
+| `set_keyframe_velocity` | `keyframeId, side, speed?, influence? %` | `keyframe.setVelocity` (one of speed / influence required) |
+| `create_path_controller` | selection, `replaceExpression?` | `keyframe.createPathController`; also returns the slider's `param.set` target |
+| `cleanup_motion_path` | selection, `tolerance?` | `keyframes.cleanupPath` |
+| `animate_trim_paths` | `clipIds, style, reverse?, animateOffset?, duration?, offsetDegrees?, copies?, inOutLag?, at?, curve?, tracer?, sequenceId?` | `shape.animateTrim` (+ `shape.addTrimTracer` per animated clip); returns per clip `trimId`, its Start / End / Offset keys with frames and eases, parts, tracer |
+| `reverse_path_direction` | `clipIds` | `shape.reversePathDirection` |
+| `add_line` | `orientation, length?, strokeWidth?, color? "#RRGGBB(AA)", at?, duration?, track?, name?, sequenceId?` | `shape.addLine` |
+| `add_trim_tracer` | `clipId, trimItemId?, pathItemId?, tip?, followerClipId?, orient?, name?` | `shape.addTrimTracer` |
+
+- **Curves** (`parseCurveArg`): a preset id or name (case-insensitive), a CSS keyword (`linear`, `ease`,
+  `ease-in`, `ease-out`, `ease-in-out` → the `basic.*` preset with that timing), `"cubic-bezier(a, b, c, d)"` (exactly
+  four plain decimal numbers, x in 0…1, y in ±10; hex, `NaN`, `Infinity` and wrong counts are refused),
+  `{x1, y1, x2, y2}` or `{points}` (validated by `MultiEaseSchema`). Unknown presets name close ids. Trim Paths take
+  cubic curves only (`parseCubicCurveArg`; multi presets refused with a hint).
+- **Durations** (`animate_trim_paths`, `add_line`): frames, `{frames}`, `{seconds}` or a timecode counted from 0
+  (the sequence start timecode is not subtracted, unlike a time).
+- **Trim + tracer atomicity.** The tracer needs the master trim's id, which only exists after `shape.animateTrim`
+  ran. `shape.addTrimTracer`'s `trimItemId` is now optional (default: the clip's master trim — Part 1's last trim
+  after a divide, else the last top-level item when it is a Trim Paths; none → `E_INVALID_PARAM`), so the tool sends
+  `[animateTrim, addTrimTracer × animated clips]` as **one transaction = one History entry**. Which clips animate is
+  the command's decision (others warn `W_TRIM_SKIPPED`), so the tool dry-runs the animation first and adds tracers
+  only for the clips it reports.
+- Annotations: reads `READ_ONLY`; `apply_ease`, `transfer_ease`, `cleanup_motion_path` destructive-idempotent (a
+  multi-point curve or a clean-up deletes keys); `set_keyframe_velocity`, `transfer_keyframe_values` idempotent
+  setters; `animate_trim_paths` destructive (re-running replaces an animation; a tracer is added each time);
+  `create_path_controller`, `reverse_path_direction` (a toggle), `add_line`, `add_trim_tracer` additive.
+- `describe_commands` examples: `keyframe.applyEase`, `keyframe.pasteEase`, `keyframe.pasteValues`,
+  `keyframe.setVelocity`, `keyframe.createPathController`, `keyframes.cleanupPath`, `shape.addTrimTracer` (next to
+  trim-core's `shape.addLine`, `shape.animateTrim`, `shape.reversePathDirection`); the test applies all of them to a
+  real document.
+
+**Tests.** `apps/mcp/test/ease-trim.test.ts`: every tool against an in-process engine stand-in that applies
+transactions with the real command system, answers queries with `runAgentQuery` and keeps an undo stack; read-back
+after apply (cubic presets of four groups, `bounce.out-3` → `span.preset`), sections, transfer / velocity / path
+controller / clean-up, refusals and strict-argument errors (nothing applied), undo of agent entries, trim + tracer as
+one transaction, re-runs replacing, skipped clips without tracers, multi curves refused for trims; the curve parser
+with fast-check (any string parses or is `E_INVALID_PARAM`; cubic strings round-trip; out-of-range x refused); the
+command examples; the guide resource. `packages/project/test/vector/tracer.test.ts`: the default master trim,
+including after a divide in the same transaction.
+
+Measured 2026-10-20 on the shared host (load average ≈ 57–60), `--maxWorkers=1`: `pnpm exec vitest run` of
+`apps/mcp/test/{ease-trim,conventions,vector-shapes,animation,unit,bundle}.test.ts`,
+`packages/project/test/{vector/tracer,agent-mcp-cli,agent,ease-clipboard}.test.ts`,
+`packages/session/test/trim-tracer.test.ts`, `packages/expressions/test/{trim-tracer,bind}.test.ts`: 13 files,
+92 tests passed. `pnpm --filter @jasper/project typecheck`, `pnpm --filter @jasper/mcp typecheck`,
+`node scripts/check-layers.mjs` and `biome check` on the changed files: pass. Not run here: the full `pnpm verify`
+gate, the opt-in `pnpm qa:mcp` scenarios and a live editor session (the History / undo path was exercised through the
+engine stand-in's undo stack, not `EditorSession`).
+
+**Limits.** `get_keyframe_eases` / read-backs resolve properties with the built-in registries: keyframed params of
+motion-graphic templates the MCP process does not know are not described (the commands themselves run in the
+engine / editor with the real registries). Segments into / out of a selection name their outside key by id only (its
+frame is in `get_clip_properties`). `span.preset` matching on point properties is subject to the arc-length tables'
+accuracy (≈ 0.2 % of the path) and may not match at 2e-3.
+
 ## Verified in the real app
 
 Built stack on 49020 (`e2e/agent-ui.spec.ts`, `e2e/ui-audit.spec.ts`): a clip dragged 30 frames by `ui_drag`

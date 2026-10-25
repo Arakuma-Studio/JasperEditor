@@ -1,8 +1,0 @@
-asset:        contact-sheet.png
-title:        Contact sheet of the Sapphire-style paint, half-tone, kaleidoscope, edge and emboss effects
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-08 by JasperDev (fixups workstream)
-notes:        Remotion stills of each effect (defaults, or representative settings when the defaults change nothing) over a procedural picture (packages/compositions/test/docs-gallery.e2e.test.ts, REMOTION_E2E=1 DOCS_GALLERY=1; picture from scripts/docs/gallery-scenes.mjs: ffmpeg lavfi gradients, mandelbrot, testsrc2 and boxes, no photographs). Replaces the sheet removed on 2026-10-07 (third-party photographs).

@@ -61,6 +61,8 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	essentialSound: 'Essential Sound',
 	essentialGraphics: 'Essential Graphics',
 	mediaBrowser: 'Media Browser',
+	easing: 'Easing',
+	strokeAnimation: 'Stroke Animation',
 	soundLibrary: 'Sound Library',
 	review: 'Review',
 	soundCheck: 'Sound Check',

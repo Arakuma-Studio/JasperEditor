@@ -163,77 +163,7 @@ export type GoldenOptions = {
 	name?: string;
 	/** Size cap on bless (default `MAX_GOLDEN_BYTES`). */
 	maxBytes?: number;
-	/** Title of the attribution sidecar written on bless (default: the file name). */
-	title?: string;
-	/** What renders the frame, for the sidecar notes (default: the test file that called `expectGolden`). */
-	generatedBy?: string;
 };
-
-const today = () => new Date().toISOString().slice(0, 10);
-
-/** The `<file>.attribution` sidecar of a golden frame (FilmCraft's `sidecar_text`, our sidecar format). */
-export function goldenSidecar(fileName: string, title: string, generatedBy: string): string {
-	return [
-		`asset:        ${fileName}`,
-		`title:        ${title}`,
-		'author:       JasperEditor contributors',
-		'source:       original work',
-		'license:      LicenseRef-JasperEditor',
-		'license-file: none',
-		`added:        ${today()} by the golden-frame harness (JASPER_BLESS=1)`,
-		`notes:        Golden reference frame rendered by JasperEditor's own renderer from a procedurally generated scene (no external media, no third-party artwork), by ${generatedBy}. Regenerate with JASPER_BLESS=1 and review the PNG (docs/testing.md).`,
-		'',
-	].join('\n');
-}
-
-const GOLDEN_SECTION = '## Golden frames';
-
-/**
- * Writes the sidecar of a blessed golden (when missing) and its row in ATTRIBUTION.md's "Golden frames" table
- * (creating the section before "Generated test media" when needed), so `scripts/check-assets.mjs` passes.
- */
-export function attributeGolden(path: string, title: string, generatedBy: string): void {
-	const side = `${path}.attribution`;
-	if (!existsSync(side)) writeFileSync(side, goldenSidecar(basename(path), title, generatedBy));
-	const index = join(repoRoot(), 'ATTRIBUTION.md');
-	if (!existsSync(index)) return;
-	const relPath = relative(repoRoot(), path).replace(/\\/g, '/');
-	if (relPath.startsWith('..') || isAbsolute(relPath)) return; // outside the repository (unit tests)
-	const row = `| \`${relPath}\` | JasperEditor contributors | original work | LicenseRef-JasperEditor |`;
-	let text = readFileSync(index, 'utf8');
-	if (text.includes(`\`${relPath}\``)) return;
-	if (!text.includes(`\n${GOLDEN_SECTION}\n`)) {
-		const section = [
-			GOLDEN_SECTION,
-			'',
-			'Reference frames of the golden-frame tests (`packages/testkit`, docs/testing.md), rendered by JasperEditor from',
-			'procedurally generated scenes; written by `JASPER_BLESS=1`.',
-			'',
-			'| Asset | Author | Source | Licence |',
-			'|---|---|---|---|',
-			'',
-		].join('\n');
-		const at = text.indexOf('\n## Generated test media');
-		text =
-			at >= 0
-				? `${text.slice(0, at + 1)}${section}\n${text.slice(at + 1)}`
-				: `${text.trimEnd()}\n\n${section}`;
-	}
-	const head = text.indexOf(`\n${GOLDEN_SECTION}\n`);
-	const tableStart = text.indexOf('|---|---|---|---|\n', head) + '|---|---|---|---|\n'.length;
-	let end = tableStart;
-	while (text.startsWith('| ', end)) end = text.indexOf('\n', end) + 1;
-	const rows = [...text.slice(tableStart, end).split('\n').filter(Boolean), row].sort();
-	writeFileSync(index, `${text.slice(0, tableStart)}${rows.join('\n')}\n${text.slice(end)}`);
-}
-
-/** The test file calling into the harness (for sidecar notes). */
-function callerFile(): string {
-	const stack = new Error().stack?.split('\n') ?? [];
-	const line = stack.find((l) => /\.(test|spec)\.[cm]?[jt]sx?/.test(l) && !l.includes('/testkit/'));
-	const m = line && /(?:\(|\s)(\/[^:)]+)/.exec(line);
-	return m ? relative(repoRoot(), m[1]!) : 'a golden-frame test';
-}
 
 /**
  * Compares `actual` with the golden PNG at `golden` (or blesses it with `JASPER_BLESS=1`). Returns the difference;
@@ -255,7 +185,6 @@ export function checkGolden(golden: string, actual: Rgba8, tol: Tolerance, opts:
 			writeFileSync(golden, bytes);
 			console.info(`blessed ${rel(golden)} (${size} bytes)`);
 		}
-		attributeGolden(golden, opts.title ?? name, opts.generatedBy ?? callerFile());
 		return { maxAbs: 0, meanAbs: 0, p99: 0, psnr: Number.POSITIVE_INFINITY, differing: 0 };
 	}
 	if (!existsSync(golden))

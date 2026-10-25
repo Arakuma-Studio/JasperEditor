@@ -1,8 +1,0 @@
-asset:        Inter-Bold.ttf
-title:        Inter Bold font (test fixture copy)
-author:       The Inter Project Authors
-source:       https://github.com/rsms/inter
-license:      OFL-1.1
-license-file: fixtures/mg-project/public/fonts/OFL.txt
-added:        2026-10-01 by JasperDev (sidecar 2026-10-07 by the process workstream)
-notes:        Copy of native/mg/crates/jasper-mg-templates/media/Inter_24pt-Bold.ttf used by the fixture Remotion project to test embedded fonts.

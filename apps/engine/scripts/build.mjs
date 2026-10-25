@@ -42,8 +42,7 @@ await build({
 	});
 	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
 	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
-	// Sound design (spec 12 §2.1): the bundled starter kit (`manifest.json`, the audio files and their
-	// `.attribution` sidecars) next to engine.mjs, where `src/sounds/starter.ts` looks for `sounds/starter`.
+	// Sound design (spec 12 §2.1): the bundled starter kit (`manifest.json` and the audio files) next to engine.mjs, where `src/sounds/starter.ts` looks for `sounds/starter`.
 	const { existsSync, rmSync } = await import('node:fs');
 	// WP-E9 (spec 12 P6-E14): the weight-free CLAP graphs of Describe-it search (src/sounds/semantic/models.ts copies
 	// them next to the downloaded weights when the model is installed).

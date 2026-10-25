@@ -268,7 +268,8 @@ export class DerivativeService {
 	/** Per-kind status for `GET /api/media/:key` (S01:LIFE-050 shape). */
 	async status(r: MediaRecord): Promise<Record<DerivativeKind, DerivativeStatus>> {
 		const out = {} as Record<DerivativeKind, DerivativeStatus>;
-		const active = this.deps.queue.list({ active: true });
+		const dedupeKeys = new Set(DERIVATIVE_KINDS.map((kind) => this.dedupeKey(r, kind)));
+		const active = this.deps.queue.list({ active: true, dedupeKeys });
 		for (const kind of DERIVATIVE_KINDS) {
 			if (await this.isReady(r, kind)) {
 				out[kind] = { state: 'ready', progress: 1, url: this.url(r.mediaKey, kind) };

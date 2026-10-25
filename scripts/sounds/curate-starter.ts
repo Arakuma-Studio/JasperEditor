@@ -15,8 +15,7 @@
 // The selection (`starter-selection.json`) lists each kit file with its source pack, source file(s), types, title,
 // tags and, for derived sounds, the ffmpeg filter graph (inputs `[in0]`, `[in1]`… at 48 kHz stereo, output `[out]`)
 // and a plain-language `derivation`. `build` refuses when an output's judge rejects its first type, when the kit
-// exceeds 8 MB, when two outputs have the same audio, or when ffmpeg is a GPL build. Afterwards run
-// `node scripts/sounds/make-sidecars.mjs` for the `.attribution` sidecars and the ATTRIBUTION.md rows.
+// exceeds 8 MB, when two outputs have the same audio, or when ffmpeg is a GPL build.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -64,7 +63,7 @@ export type SelectionSound = {
 	src: string[];
 	/** ffmpeg filter graph over `[in0]…` producing `[out]` (derived sounds only). */
 	filter?: string;
-	/** What the filter does, for the sidecar notes. */
+	/** What the filter does, in plain language. */
 	derivation?: string;
 };
 export type Selection = { packs: SelectionPack[]; sounds: SelectionSound[] };
@@ -232,10 +231,9 @@ function build(work: string, sel: Selection, outDir: string, reportFile: string 
 			throw new Error(`${s.file}: a filter needs a derivation note (and back)`);
 	}
 	mkdirSync(outDir, { recursive: true });
-	// The kit folder holds exactly the selection: stale audio and sidecars go.
+	// The kit folder holds exactly the selection: stale audio goes.
 	for (const f of readdirSync(outDir))
-		if (/\.(ogg|wav|flac)(\.attribution)?$/.test(f) && !names.has(f.replace(/\.attribution$/, '')))
-			rmSync(join(outDir, f));
+		if (/\.(ogg|wav|flac)$/.test(f) && !names.has(f)) rmSync(join(outDir, f));
 
 	const rows: BuildRow[] = [];
 	const audioHashes = new Map<string, string>();
@@ -337,7 +335,7 @@ function build(work: string, sel: Selection, outDir: string, reportFile: string 
 	].join('\n');
 	if (reportFile) writeFileSync(reportFile, `${md}\n`);
 	console.log(`\n${md}`);
-	console.log(`\nwrote ${relative(ROOT, manifestPath)}; now run: node scripts/sounds/make-sidecars.mjs`);
+	console.log(`\nwrote ${relative(ROOT, manifestPath)}`);
 }
 
 function arg(name: string, args: string[]): string | null {

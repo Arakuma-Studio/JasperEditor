@@ -25,6 +25,8 @@ export const PANEL_KINDS = [
 	'essentialSound',
 	'essentialGraphics',
 	'mediaBrowser',
+	'easing',
+	'strokeAnimation',
 	'soundLibrary',
 	'review',
 	'soundCheck',
@@ -64,10 +66,11 @@ export interface PanelDefinition {
 	touch: 'tab' | 'sheet' | 'hidden';
 	requires?: Capability[];
 	/**
-	 * Where the panel opens when the workspace layout has no place for it — as a tab next to this panel
-	 * (Premiere docks the Media Browser with the Project panel); without it the panel floats.
+	 * Where the panel opens when the workspace layout has no place for it — as a tab next to this panel, or the first
+	 * open one of a preference list (Premiere docks the Media Browser with the Project panel); without an open
+	 * neighbour the panel floats.
 	 */
-	dockWith?: PanelKind;
+	dockWith?: PanelKind | readonly PanelKind[];
 	/** One line for the agent's UI catalog (S05 §17.6). */
 	agentDescription: string;
 	/** A count shown on the panel's tab (e.g. items left to review); renders nothing when there is none. */

@@ -3,6 +3,7 @@ import '../fx/register.ts';
 import '../simwarp/register.ts';
 import '../audio-fx/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
+import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
@@ -11,6 +12,7 @@ import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { colorMgmtCommands } from './color-mgmt.ts';
 import { compositionCommands } from './composition.ts';
+import { easingCommands } from './easing.ts';
 import { editCommands } from './edit.ts';
 import { editUxCommands } from './edit-ux.ts';
 import { exportCommands } from './export.ts';
@@ -79,6 +81,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	transitionCommands,
 	textAnimationCommands,
 	shapeCommands,
+	strokeAnimationCommands,
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
@@ -98,6 +101,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	threeDCommands,
 	gapsCommands,
 	polishCommands,
+	easingCommands,
 	// sound-design (spec 12): Sound Library, Cue Seam
 	soundCommands,
 	soundCueCommands,

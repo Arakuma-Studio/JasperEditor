@@ -143,6 +143,91 @@ false, error}`. `textIndex` (1-based), `textTotal`, `selectorValue` are globals;
 and unit. Tested in `packages/expressions/test/bind.test.ts`. The text-animators workstream had not landed in
 `integrate/parity` when this one merged, so the selector itself (UI and rendering) is theirs to build on this API.
 
+### 1.9 Path methods and the trim tracer (path-trace)
+
+**Path objects.** Every path-producing shape item — Path, and the outlines of Rectangle, Ellipse and Polystar —
+exposes After Effects' Path property as `.path` (`content("Group 1").content("Path 1").path`, name "Path", match
+name `ADBE Vector Shape`). Methods, `t` = sequence seconds (default `time`):
+
+| Method | Result |
+|---|---|
+| `points(t)`, `inTangents(t)`, `outTangents(t)` | vertices `[[x, y], …]`; tangents relative to their vertex (AE's vertex model) |
+| `isClosed()` | the closed flag |
+| `pointOnPath(percentage = 0.5, t)` | point at that fraction of the **arc length** |
+| `tangentOnPath(percentage = 0.5, t)` | unit tangent (direction of travel) there |
+| `normalOnPath(percentage = 0.5, t)` | unit normal: the tangent turned a quarter, `[-ty, tx]` |
+
+- **Space:** the coordinates of the space the item lives in — its group's contents, group transforms *not* applied
+  (Adobe: shape path points are relative to the anchor point of the path's shape group). Parametric outlines use the
+  renderer's vertex order (`vector/primitives.ts`); Path Direction Reversed reverses them, so a reversed rectangle
+  lists the same first vertex and runs the other way.
+- **Percentage:** clamped to 0…1, closed paths do not wrap (After Effects clamps); non-finite percentages and
+  times are expression errors (`pointOnPath: percentage must be a finite number`), never host failures.
+- **Arc length:** the geometry comes from `vector/trace.ts` (`PathQuery`) on top of Trim Paths' own measurement
+  (`ops.ts` `Measured`: walked segments, closing line included, adaptive 8-point Gauss–Legendre per segment to
+  1e-4 px, Newton/bisection inverse to 1e-4 px), so a point at a trim's tip fraction is where the renderer cuts.
+  Measured against dense chord sampling (4 000 chords per segment) on a rectangle, a reversed rectangle, an
+  ellipse, a star and an open Bézier: < 0.01 px at eight fractions each (`test/paths.test.ts`).
+- **Bounded cost:** a query measures at most 50 000 segments (more → error, e.g. a Repeater of a dense star);
+  measured paths are cached per world (layer, locator, time; 64 entries) and the prelude memoises host answers
+  within an evaluation. Animated paths and expression-driven item values are evaluated at `t` on the bound clip.
+- **`createPath()` stays unported:** no expression-capable property takes a path value (shape paths and mask paths
+  refuse expressions), so it raises `createPath(): no property takes a path value here…`.
+
+**Ours (not After Effects), documented in the language reference:**
+
+- `item.toLayer(point, t)`, `fromLayer`, `toLayerVec`, `fromLayerVec` on every shape item: between the space the
+  item's values live in (its enclosing groups' transforms) and layer pixels (the box's top-left origin that
+  `toComp` takes; vector contents are centred on the box). AE has no equivalent — its users chain group transforms
+  by hand; `thisComp.layer(…).toComp(item.toLayer(p))` gives sequence pixels.
+- `trim.trimPath(item?)` on a Trim Paths: a Path object for what that trim measures, in its group's space —
+  operators above it applied, nested groups' paths mapped into its space (so non-uniform group scales change arc
+  length exactly as the renderer sees it), Repeater copies included (`item` = the first copy). With an item (id or
+  name) the one path (Simultaneously); without, all its paths laid end to end (what Individually measures). Built
+  from the renderer's own stack evaluation (`trimInputPaths` in `vector/evaluate.ts`, which runs the shared
+  `collect` with a probe and stops at the trim).
+
+**`shape.addTrimTracer`** (command; `packages/project/src/commands/handlers/shape-tracer.ts`) writes, on a follower
+clip's Position (and Rotation with `orient`), an expression of this form (ids, so renames keep it working):
+
+```js
+var shape = thisComp.layer("clp_…");
+var trim = shape.content("shp_group").content("shp_trim");
+var path = trim.trimPath("shp_path"); // Individually: trim.trimPath()
+var u = clamp(trim.end / 100, 0, 1) + ((trim.offset / 360) % 1 + 1) % 1;
+if (u > 1) u -= 1;                    // Start tip: if (u >= 1) u -= 1;
+shape.toComp(trim.toLayer(path.pointOnPath(u)))
+// orient: var d = shape.toCompVec(trim.toLayerVec(path.tangentOnPath(u)));
+//         value + radiansToDegrees(Math.atan2(d[1], d[0]))
+```
+
+The tip fraction is the renderer's (`ops.ts` `trimIntervals`): Start / End clamped to 0…1, Offset wrapped into
+0…1 (360° = one length) and added; the kept interval `[s + off, e + off]` wraps past 1, so the End tip at exactly
+1 stays at the path's end and the Start tip at 1 moves to its start — on open and closed paths alike (an open path
+then draws two pieces, a closed one draws one piece across its start). Simultaneously each path is trimmed by its own
+length, so the tracer follows the chosen path; Individually the paths are measured end to end. The follower's
+anchor point rides the tip (Position is the anchor's sequence position); its own Rotation value adds to the path
+angle. `tip: 'auto'` picks the property whose keyframes change most (summed |Δ| between keys; End on a tie).
+Defaults: a 12 px white dot with a 1.5 px black stroke named "Tracer" on the free, unlocked video track right above
+the shape clip, else a new track inserted there; same start and duration. Refusals: unknown clip / items
+(`E_NOT_FOUND`), non-vector clips, non-trim items, paths the trim does not affect, trims with no path or in a
+disabled group, followers in another sequence or without Motion (`E_INVALID_PARAM`), the shape clip as its own
+follower (`E_CYCLE`), a follower on a locked track (`E_TRACK_LOCKED`; the shape clip is only read, so its own
+track may be locked). Replacing an expression the follower had
+warns `W_EXPRESSION_REPLACED`. One undo step. Without `trimItemId` the clip's master trim is followed (Part 1's
+last trim after a divide, else the last top-level item when it is a Trim Paths; none → `E_INVALID_PARAM`), so
+`shape.animateTrim` + `shape.addTrimTracer` fit in one transaction (MCP `animate_trim_paths {tracer}`,
+`docs/wp-notes/mcp-cli.md` § 7).
+
+Limits: at the joint between two paths of an Individually trim the End tip belongs to the earlier path (the
+renderer's piece ends there too; the Start tip is drawn from the next one — they differ only at that instant, by the
+gap between the paths). When Start and End cover the whole length the renderer draws the untrimmed path while the
+tracer keeps the computed position; a disabled trim trims nothing but the tracer still follows its values. The
+follower is placed with a 2D `[x, y]` Position (3D followers keep their own z only through their pre-expression
+value: not handled). Rotation from `atan2` wraps at ±180°. No Effect Controls / menu entry yet: the command is
+available through `apply_commands` and the MCP tools `add_trim_tracer` / `animate_trim_paths` (the trim UI belongs to
+the `trim-ui` workstream).
+
 ## 2. Verified behaviour (measured)
 
 - `pnpm exec vitest run packages/expressions --maxWorkers=1` exercises observable expression values,
@@ -172,6 +257,34 @@ and unit. Tested in `packages/expressions/test/bind.test.ts`. The text-animators
   frames: PSNR 43.4 dB average (min 42.4) — the Node and headless-Chrome evaluations agree; the difference is
   encoding.
 
+- `packages/expressions/test/paths.test.ts` (5): vertex lists, tangents and closed flags of rectangle (normal and
+  reversed), ellipse, star and Bézier paths; `pointOnPath` / `tangentOnPath` / `normalOnPath` against dense chord
+  sampling (< 0.01 px); clamping; animated paths at `t`; `toLayer` / `fromLayer` against hand-written group
+  matrices; non-finite / malformed arguments, non-invertible groups and `createPath()` as expression errors; the
+  50 000-segment bound.
+- `packages/expressions/test/trim-tracer.test.ts` (5): followers created by `shape.addTrimTracer` against the tip
+  computed from the geometry (< 0.01 px; requirement 0.5 px) at six frames each and against the first / last point
+  of the stroke the renderer draws (< 0.01 px) for: End on an open path in nested groups (position, rotation,
+  non-uniform scale, anchor) under the clip's Motion (position, rotation, scale, anchor) with `orient` (< 0.05°);
+  Start (erase) on a reversed closed rectangle with Offset animated; Offset wrapping twice around a closed ellipse
+  and across the ends of an open path; Individually over two paths in different groups; Simultaneously on a
+  chosen path, still exact after renaming the items and the clip. **Export fidelity:** the follower's Position and
+  Rotation from the render snapshot bound in Node — sampled with `resolveLayerProps(clip, clipContentTime(…))`
+  exactly as `apps/engine/src/export/native.ts` does — equal the values from the snapshot after a JSON round trip
+  and `bindSnapshotExpressions` (what the Remotion renderer does) and the document's (`toEqual`). Real exports:
+  `apps/engine/test/trim-paths-export.e2e.test.ts` (`REMOTION_E2E=1`; shapes.md § 12 "Verification and limits")
+  measures the exported dot / oriented follower on the evaluated tip on the hybrid (layer bake) and Remotion paths:
+  centroid ≤ 0.09 px (dot), ≤ 0.13 px and 0.28° (bar).
+- `packages/project/test/vector/tracer.test.ts` (5) and `packages/session/test/trim-tracer.test.ts` (1): created
+  dot (track above, span, contents), generated text, auto tip, Individually, busy / locked track above → new track,
+  driving an existing clip with `W_EXPRESSION_REPLACED`, every refusal code, invariants clean; undo / redo restore
+  the exact documents (follower, new track, replaced expression).
+- Cost (measured, Node 20, 16 cores at load average ≈ 105, `propertyStatusAt` over 90 frames, median): the tracer's
+  Position ≈ 52 ms vs ≈ 32 ms for a baseline expression reading `content()` + `toComp` + `wiggle` in the same run —
+  ≈ 1.6× an ordinary multi-reference expression; the shared measured path makes the Rotation cheaper (≈ 28 ms).
+  Profiled: most of the time is QuickJS interpretation; property-tree lookups (`content()` chains) are now cached per
+  world (`World.children`), which cut the profiled CPU of the run by ≈ 35 %.
+
 ## 3. Comparison with EffectCraft (`crates/expr`, `crates/effects/src/controls.rs`)
 
 Equal: the object model surface used in Premiere-style documents, array maths semantics, loop types, wiggle /
@@ -188,8 +301,8 @@ language menu, presets, and agent tools that test and sample expressions.
 
 Not ported (no counterpart in a Premiere document): 3D layers, cameras and lights (`activeCamera`, `lookAt`
 returns the AE angles but nothing 3D renders), `footage()` data files, the Source Text style *setters*
-(`setText`, `setFontSize`… — styles are read-only here), shape-layer path objects (`createPath`,
-`pointOnPath`), parenting (`hasParent` is false).
+(`setText`, `setFontSize`… — styles are read-only here), `createPath` (no property takes a path value; §1.9),
+parenting (`hasParent` is false).
 
 ## 4. Limits and decisions
 
@@ -219,6 +332,15 @@ returns the AE angles but nothing 3D renders), `footage()` data files, the Sourc
   Alt-click the stopwatch.
 - EffectCraft `crates/expr` (prelude.js, rewrite.rs, noise.rs, host.rs) and `crates/effects/src/controls.rs`
   (recorded in `licenses/ported/expressions.md`).
+- Path methods: Adobe, *Expression language reference* ▸ "Path property attributes and methods" (`points(t)`,
+  `inTangents(t)`, `outTangents(t)`, `isClosed()`, `pointOnPath(percentage = 0.5, t)`, `tangentOnPath(…)`,
+  `normalOnPath(…)`, `createPath(…)`; shape path points relative to the anchor point of the path's shape group, the
+  group transform not applied; percentages of the path's arc length) and the docsforadobe Path Property page
+  (ae-expressions.docsforadobe.dev/objects/path-property/). Clamping of out-of-range percentages and the normal's
+  orientation (`[-ty, tx]`) are not stated by Adobe: taken from lottie-web's expression support (MIT; behaviour
+  reference only, no code ported), which reproduces After Effects' results. The trim tracer is our command
+  (inspired by public descriptions of After Effects scripts that drive a null with `pointOnPath` at a trim's end);
+  its maths is the renderer's Trim Paths (`docs/wp-notes/shapes.md` §5).
 - Undocumented, chosen as most plausible: the exact noise function and wiggle construction (AE does not publish
   them; ours are smooth, bounded by `amp` per octave and deterministic); the post-expression graph sampling
   density; audio-level interpolation between frames.

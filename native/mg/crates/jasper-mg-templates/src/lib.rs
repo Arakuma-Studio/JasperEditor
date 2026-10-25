@@ -21,8 +21,8 @@ use serde_json::Value;
 pub use lower_third::LowerThirdParams;
 pub use title_card::TitleCardParams;
 
-// The media of `crates/jasper-mg-templates/media`, staged by build.rs without the `.attribution`
-// sidecars (the macro accepts media files only); the path is relative to the workspace root.
+// The media of `crates/jasper-mg-templates/media`, staged by build.rs (the macro accepts media files
+// only); the path is relative to the workspace root.
 fframes::include_media_dir!(pub struct MgMedia, "target/mg-media");
 
 /// Renderer version, part of the render cache key (S04:MG-011). Bump when any template's output

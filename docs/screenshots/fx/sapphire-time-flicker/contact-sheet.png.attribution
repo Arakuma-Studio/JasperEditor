@@ -1,8 +1,0 @@
-asset:        contact-sheet.png
-title:        Contact sheet of the Sapphire-style Time and Flicker effects
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-10-05 by JasperDev (sidecar 2026-10-07 by the process workstream)
-notes:        Remotion renders of each effect over ffmpeg testsrc2-style colour bars.

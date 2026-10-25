@@ -21,7 +21,7 @@ var textTotal = 1;
 var selectorValue = [100, 100, 100];
 
 var __COMP = 0, __COMPNAME = 1, __LAYER = 2, __LINFO = 3, __CHILD = 4, __PINFO = 5, __VALUE = 6, __XFORM = 7,
-  __RECT = 8, __MARKERS = 9, __TEXT = 10, __SAMPLE = 11, __PROJ = 12;
+  __RECT = 8, __MARKERS = 9, __TEXT = 10, __SAMPLE = 11, __PROJ = 12, __PATH = 13, __PATHAT = 14, __SPACE = 15;
 
 // Deterministic environment: no wall clock, no unseeded randomness.
 (function () {
@@ -92,7 +92,7 @@ function __result(r) {
   if (Array.isArray(r)) return r.map(function (x) { return __v(x); });
   if (typeof r === 'function') return String(r);
   if (r !== null && typeof r === 'object' && !Array.isArray(r)) {
-    if (r.__isProp || r.__isGroup || r.__isComp) return String(r);
+    if (r.__isProp || r.__isGroup || r.__isComp || r.__isPath) return String(r);
   }
   return r;
 }
@@ -463,7 +463,60 @@ function hexToRgb(hex) {
 function __child(seq, owner, group, key) {
   var info = __h(__CHILD, seq, owner, group, key);
   if (info === null) return undefined;
+  // A shape path item's Path (AE "ADBE Vector Shape"): a Path object with the path methods.
+  if (!info[1] && info[3] === 'ADBE Vector Shape')
+    return new PathProp(seq, owner, 'i:' + info[0].slice(12, info[0].length - 5), info[2], info[5]);
   return info[1] ? __mkGroup(seq, owner, info) : __mkProp(seq, owner, info[0]);
+}
+
+// Path objects (After Effects' Path property methods). Coordinates are in the space the path lives in (its shape
+// group); percentages run along arc length, clamped to 0...1 as AE clamps; t is sequence seconds (default time).
+// __l is the host locator: i:<itemId> (a path item's outline) or t:<trimId>:<item> (what a Trim Paths measures).
+function __time(t, what) {
+  if (t === undefined) return time;
+  t = __v(t);
+  if (typeof t !== 'number' || !isFinite(t)) __err(what + ': time must be a finite number');
+  return t;
+}
+function __pct(p, what) {
+  if (p === undefined) return 0.5;
+  p = __v(p);
+  if (typeof p !== 'number' || !isFinite(p)) __err(what + ': percentage must be a finite number');
+  return p;
+}
+function __pt(p, what) {
+  p = __v(p);
+  if (!Array.isArray(p) || p.length < 2 || !isFinite(p[0]) || !isFinite(p[1]))
+    __err(what + ': expected a point [x, y] of finite numbers');
+  return p;
+}
+function __copyPts(list) { return list.map(function (q) { return [q[0], q[1]]; }); }
+
+function PathProp(seq, owner, loc, name, index) {
+  this.__s = seq; this.__o = owner; this.__l = loc; this.__n = name; this.__x = index;
+}
+PathProp.prototype = {
+  __isPath: true,
+  get name() { return this.__n; },
+  get matchName() { return 'ADBE Vector Shape'; },
+  get propertyIndex() { return this.__x; },
+  get value() { return this; },
+  __vx: function (t, what) { return __h(__PATH, this.__s, this.__o, this.__l, __time(t, what)); },
+  points: function (t) { return __copyPts(this.__vx(t, 'points')[1]); },
+  inTangents: function (t) { return __copyPts(this.__vx(t, 'inTangents')[2]); },
+  outTangents: function (t) { return __copyPts(this.__vx(t, 'outTangents')[3]); },
+  isClosed: function () { return this.__vx(undefined, 'isClosed')[0]; },
+  __at: function (p, t, what) { return __h(__PATHAT, this.__s, this.__o, this.__l, __time(t, what), __pct(p, what)); },
+  pointOnPath: function (p, t) { var r = this.__at(p, t, 'pointOnPath'); return [r[0], r[1]]; },
+  tangentOnPath: function (p, t) { var r = this.__at(p, t, 'tangentOnPath'); return [r[2], r[3]]; },
+  // The tangent turned a quarter (lottie-web's convention for AE: [-ty, tx]).
+  normalOnPath: function (p, t) { var r = this.__at(p, t, 'normalOnPath'); return [r[3] === 0 ? 0 : -r[3], r[2]]; },
+  createPath: function () { return createPath(); },
+  toString: function () { return '[object Path]'; },
+};
+
+function createPath() {
+  __err('createPath(): no property takes a path value here (shape and mask paths take no expressions)');
 }
 
 function Comp(seq) { this.__s = seq; this.__i = null; }
@@ -661,11 +714,35 @@ var __groupHandler = {
   },
 };
 
+// Shape items (content("Group 1"), content("Trim Paths 1")…): property groups with our space helpers (not AE):
+// toLayer / fromLayer map between the space the item's own values live in (its enclosing groups) and layer pixels;
+// a Trim Paths also gives the path it measures (trimPath).
+var __ShapeItemProto = Object.create(__GroupProto);
+__ShapeItemProto.__id = function () { return this.__p.slice(12); };
+__ShapeItemProto.__sp = function (t, what) { return __h(__SPACE, this.__s, this.__o, this.__id(), __time(t, what)); };
+__ShapeItemProto.toLayer = function (p, t) { return __m3(this.__sp(t, 'toLayer')[0], __pt(p, 'toLayer')); };
+__ShapeItemProto.toLayerVec = function (p, t) { return __m3v(this.__sp(t, 'toLayerVec')[0], __pt(p, 'toLayerVec')); };
+__ShapeItemProto.fromLayer = function (p, t) {
+  var x = this.__sp(t, 'fromLayer');
+  if (x[1] === null) __err('fromLayer: the group transforms of "' + this.name + '" are not invertible (zero scale)');
+  return __m3(x[1], __pt(p, 'fromLayer'));
+};
+__ShapeItemProto.fromLayerVec = function (p, t) {
+  var x = this.__sp(t, 'fromLayerVec');
+  if (x[1] === null) __err('fromLayerVec: the group transforms of "' + this.name + '" are not invertible (zero scale)');
+  return __m3v(x[1], __pt(p, 'fromLayerVec'));
+};
+__ShapeItemProto.trimPath = function (item) {
+  if (this.matchName !== 'ADBE Vector Filter - Trim') __err('trimPath(): "' + this.name + '" is not a Trim Paths');
+  var k = item === undefined || item === null ? '' : String(__v(item));
+  return new PathProp(this.__s, this.__o, 't:' + this.__id() + ':' + k, 'Trim Paths input', 0);
+};
+
 function __mkGroup(seq, owner, info) {
   var f = function (k) { return f.__get(k); };
   delete f.name;
   delete f.length;
-  Object.setPrototypeOf(f, __GroupProto);
+  Object.setPrototypeOf(f, /^shape[.]items[.][^.]+$/.test(info[0]) ? __ShapeItemProto : __GroupProto);
   f.__s = seq; f.__o = owner; f.__p = info[0]; f.__info = info;
   return new Proxy(f, __groupHandler);
 }
@@ -750,6 +827,7 @@ Prop.prototype = {
   get expression() { return this.__info[9]; },
   get expressionEnabled() { return this.__info[5]; },
   get canSetExpression() { return true; },
+  createPath: function () { return createPath(); },
   get propertyGroup() { return function () { __err('propertyGroup() is not supported'); }; },
   __wrap: function (v) {
     if (this.__info[1] === 'layer') return v === null || v === '' ? null : new Layer(this.__s, v);

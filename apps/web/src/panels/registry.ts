@@ -3,6 +3,7 @@
 import audioClipMixer from './audioClipMixer/index.ts';
 import audioMeters from './audioMeters/index.ts';
 import audioTrackMixer from './audioTrackMixer/index.ts';
+import easing from './easing/index.ts';
 import effectControls from './effectControls/index.ts';
 import effects from './effects/index.ts';
 import essentialGraphics from './essentialGraphics/index.ts';
@@ -22,6 +23,7 @@ import scopes from './scopes/index.ts';
 import soundCheck from './soundCheck/index.ts';
 import soundLibrary from './soundLibrary/index.ts';
 import source from './source/index.ts';
+import strokeAnimation from './strokeAnimation/index.ts';
 import text from './text/index.ts';
 import timeline from './timeline/index.ts';
 import tools from './tools/index.ts';
@@ -50,6 +52,8 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	essentialSound,
 	essentialGraphics,
 	mediaBrowser,
+	easing,
+	strokeAnimation,
 	soundLibrary,
 	review,
 	soundCheck,

@@ -768,6 +768,9 @@ export class RemotionService {
 						serveUrl,
 						composition,
 						inputProps: input.inputProps,
+						// Lossless frame capture: Remotion's default for videos is JPEG (quality 80), whose 4:2:0 chroma
+						// and DCT ringing blur thin strokes and saturated edges well past what Program preview draws.
+						imageFormat: 'png' as const,
 						...(input.intermediate
 							? {
 									codec: 'prores' as const,

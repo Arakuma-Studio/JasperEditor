@@ -1,8 +1,0 @@
-asset:        basic.jasper
-title:        Hand-made test project, v2
-author:       JasperEditor contributors
-source:       original work
-license:      LicenseRef-JasperEditor
-license-file: none
-added:        2026-09-30 by JasperDev (sidecar 2026-10-07 by the process workstream)
-notes:        Hand-written JSON project envelope for load/migration tests: schema v2: the same project after the v1→v2 label migration. References no media bytes.

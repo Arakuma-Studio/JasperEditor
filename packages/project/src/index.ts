@@ -2,6 +2,8 @@
 // keyframes, registries, render snapshot and scene resolver. No DOM, no Node built-ins, no React.
 export * from './agent/addressing.ts';
 export * from './agent/guard.ts';
+export * from './agent/keyframe-eases.ts';
+export { clipKeyframesQuery, PropertyQueryError } from './agent/properties-query.ts';
 export * from './agent/queries.ts';
 export * from './agent/schema-export.ts';
 export * from './agent/strict.ts';
@@ -109,4 +111,21 @@ import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
+export { DEFAULT_CLEANUP_TOLERANCE } from './commands/handlers/ease.ts';
+export {
+	copyEase,
+	copyValues,
+	describeKeyframeEases,
+	type EaseClip,
+	type EaseKeyInfo,
+	type EasePropertyInfo,
+	type EaseSegmentInfo,
+	type EaseSideInfo,
+} from './commands/handlers/ease-read.ts';
+export * from './ease/curve.ts';
+export * from './ease/fit.ts';
+export { applyMultiEase, MultiEaseError, type MultiEaseInput, type MultiEaseResult } from './ease/multi.ts';
+export { type PathFitPlan, planPathCleanup } from './ease/path-fit.ts';
+export * from './ease/presets.ts';
+export * from './ease/segments.ts';
 export * from './vector/index.ts';

@@ -74,7 +74,10 @@ without depth writes. Depth of field is a screen-space gather over the nearest s
 shared parser (`parseModel`); the layer is always 3D; Advanced 3D draws the model's primitives (base colour factor and
 texture, metallic / roughness, emissive, alpha mode) fitted to half the frame height around the frame centre in layer
 space, then moved by the layer's Motion and 3D transform. Classic 3D draws no models (snapshot warning
-`THREE_D_MODEL_CLASSIC`, as After Effects requires Advanced 3D for models).
+`THREE_D_MODEL_CLASSIC`, as After Effects requires Advanced 3D for models). The parser allows 64 million vertex and
+index values per model; the total is computed from accessor counts over the scene's nodes before anything is decoded,
+so a small mesh shown by many nodes is refused at once instead of after decoding up to the allowance
+(`packages/project/test/three-d-hostile.test.ts`).
 
 **3D Camera Tracker.** A `camtrack` job runs the `jasper-camtrack` child process: ffmpeg decodes the span at an
 analysis size (960 px, Detailed Analysis 1440 px), OpenCV.js tracks Shi–Tomasi corners frame to frame (pyramidal LK

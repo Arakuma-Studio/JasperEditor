@@ -35,9 +35,9 @@ import {
 import { layerDoubleClickHandlers } from '../../extensions/index.ts';
 // wp-m2-shapes: geometry hit-test (XF-001) and "Resize shapes by size" handles (S11:SHP-007).
 import {
-	hitsLayerGeometry,
 	layerEditQuad,
 	layerEditRect,
+	pickLayerAt,
 	resizeShapeBySize,
 	shapeLayerSize,
 	shapeSizeCommand,
@@ -91,7 +91,6 @@ import {
 	HANDLE_IDS,
 	type HandleId,
 	handlePoint,
-	hitTest,
 	moveAnchor,
 	type Quad,
 	RotationTracker,
@@ -472,13 +471,7 @@ export function TransformOverlay({
 		unionBounds(layers.map((l) => quadBounds(layerEditQuad(l))));
 
 	const layerAt = (p: Vec2): string | null =>
-		hitTest(
-			live.current.scene
-				.filter((l) => l.props.transform && hitsLayerGeometry(l, p))
-				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: layerEditQuad(l) as Quad })),
-			p,
-			locked,
-		);
+		pickLayerAt(live.current.scene, p, live.current.view.scale, locked);
 
 	const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
 		// A text selection left by an earlier drag makes Chromium start a native drag of it on the next

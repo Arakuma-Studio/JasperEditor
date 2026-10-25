@@ -62,6 +62,20 @@ export const WARNING_CODES = [
 	'W_TRACKING_UNLINKED',
 	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
 	'W_TRACK_MATTE_CLEARED',
+	/** shape.animateTrim / shape.reversePathDirection: clips that cannot hold paths (or a trim) were left alone. */
+	'W_TRIM_SKIPPED',
+	/** path-trace: shape.addTrimTracer replaced an expression the follower already had. */
+	'W_EXPRESSION_REPLACED',
+	/** keyframe assistant: properties an ease command could not apply to (named in the message). */
+	'W_EASE_SKIPPED',
+	/** keyframe assistant: a curve piece with equal end values cannot hold a shaped ease (made linear). */
+	'W_EASE_FLAT_SEGMENT',
+	/** keyframe assistant: 3D Orientation clamps progress to [0, 1], so a curve's overshoot is not shown. */
+	'W_EASE_CLAMPED',
+	/** keyframe assistant: pasted eases / values and target keys differ in number (the first min(n, m) pasted). */
+	'W_EASE_COUNT_MISMATCH',
+	/** keyframe assistant: keys in an eased / cleaned span stopped roving. */
+	'W_EASE_ROVING_CLEARED',
 	/** sound design: a cue's stop-before / build skipped a place (its track is locked, or its automation is too dense). */
 	'W_MIX_SKIPPED',
 ] as const;

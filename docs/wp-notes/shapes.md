@@ -95,6 +95,7 @@ form (`ShapeItemInputSchema`): static values or Animatables, colours as RGBA or 
 subpaths → several path items) or a path value; missing fields take the defaults. `clip.update {shape}` is refused on
 vector shapes (it is the rectangle / ellipse patch). `clip.pasteAttributes {shapeStyle}` copies a vector shape's
 contents onto another vector shape (fresh ids, keys re-timed).
+One-click Trim Paths animations (`shape.animateTrim`), `shape.reversePathDirection` and `shape.addLine`: §12.
 
 ## 4. Stacking semantics (After Effects; `evaluate.ts`)
 
@@ -183,6 +184,77 @@ paint, Wiggle's noise, Offset Paths on open paths), the choice above is EffectCr
 - **Paste**: SVG markup or SVG path data on the system clipboard pastes as a vector shape (into the selected vector
   shape at the playhead, else a new shape clip on the lowest targeted track), warnings in a notice.
 
+## Stroke Animation panel
+
+One-click Trim Paths animations for the selected shape clips (Window ▸ Stroke Animation; it opens as a tab beside
+Effect Controls, else Properties, else Project — `dockWith` takes a preference list — so it docks in every built-in
+layout instead of floating; `apps/web/test/stroke-animation-dock.test.ts`). Code: `apps/web/src/panels/strokeAnimation/StrokeAnimationPanel.tsx`
+(panel), `apps/web/src/stroke-animation/` (`model.ts` pure button → payload logic, `commands.ts` UI commands,
+`prefs.ts` preferences, `adapter.ts` the single dispatch point to the `shape.*` commands). The workflow — buttons
+that set up a draw-on / draw-off / from-the-middle / divided Trim Paths animation in one click, modifier clicks for
+reverse and offset, a tracer that follows the tip — follows public descriptions of After Effects stroke-animation
+scripts; names, glyphs and layout are our own.
+
+- **Buttons** (a responsive grid; below 240 px the labels collapse to the glyphs, the tooltip always names the
+  action and gives its description or the reason it is disabled):
+  Draw — In, Out, In & Out (`shape.animateTrim` styles `in`, `out`, `inOut`); Middle — Grow from Middle, Shrink to
+  Middle (`middleIn`, `middleOut`); Divide — Divide In, Divide Out (`divideIn`, `divideOut`, Copies parts);
+  Utilities — Reverse Path Direction (`shape.reversePathDirection`), Horizontal Line / Vertical Line
+  (`shape.addLine` at the playhead, 5 s, on the targeted video track when it is free there, else the first free
+  one; the new clip becomes the selection); Trace — Tracer on Next (toggle) and Add Tracer (`shape.addTrimTracer`).
+  The glyphs (`stroke.*`, `panel.strokeAnimation` in `packages/ui/src/icons/registry.ts`) are original line drawings
+  on the 24-unit icon grid: dots mark the moving tip / tail, chevrons the direction, ticks the borders of the parts.
+- **Modifiers**: Alt-click reverses, Shift-click animates the offset, Alt+Shift-click does both. They toggle the
+  Reverse / Animate offset checkboxes for that click only (a checked Reverse + Alt-click = not reversed); while Alt or
+  Shift is held the checkboxes show the state the click would use. Menus and the palette use the checkboxes.
+- **Targets**: every selected clip of kind `shape` in the active sequence (rectangles / ellipses are converted to
+  vector shapes by the command; clips it cannot animate come back as `W_TRIM_SKIPPED` warnings, shown in one
+  notification). Disabled with a reason without a project, a sequence, a shape selection or write access
+  (read-only project). Add Tracer needs exactly one selected vector shape with Trim Paths and accepts one more
+  selected clip with a Motion transform as the follower (Settings ▸ "Follower turns with the path" sets `orient`).
+  The trim it follows: the one chosen in the panel's Follow list (shown when the shape has several trims, named with
+  their groups, e.g. "Part 1 › Trim Paths 1"), else the trim item selected in Properties ▸ Shape Contents, else the
+  last top-level trim (the one the one-click animations keep and reuse), else the first trim whose Start / End are not
+  expressions (the master of a Divide animation, in Part 1).
+- **Start**: "Playhead (inside the clip)" (default) starts each clip's animation at the playhead when the playhead is
+  inside that clip, else at the clip start; "Clip start" always uses the clip start. Clips with different starts get
+  one `shape.animateTrim` each, in one transaction.
+- **One transaction, one undo step per click**. With Tracer on Next the click first dry-runs the animation
+  (`dryRun`, nothing changes) to learn which clips it animates (skipped clips get no tracer), then applies
+  `shape.animateTrim` plus one `shape.addTrimTracer` per animated clip, without `trimItemId` (the tracer follows the
+  clip's master trim), as one transaction. Refusals are an error notification and change nothing.
+- **Settings** (collapsible; per-user, `localStorage` key `jasper:stroke-animation-prefs`, zod schema version 1,
+  validated field by field so a corrupt or newer value keeps every valid field): Duration (frames, shown also as
+  sequence timecode; 1–3600, default 10), Offset (degrees, used with Animate offset; default 180), Copies (Divide,
+  2–64, default 4), In-out lag (In & Out, 1–100 %, default 50 %; the command refuses 0), Start at, Curve (Default = the command's ease; one
+  of the cubic presets of the built-in ease catalogue — `strokeCurvePresets()`, shown as "Group · Name"; multi-segment
+  presets are not offered because `shape.animateTrim` takes one cubic; Custom cubic typed as `x1, y1, x2, y2` or
+  `cubic-bezier(…)`, validated by `CubicEaseSchema`; a typed curve equal to a preset shows as that preset; a small
+  graph of the curve), Tracer follows (Moving tip / Start / End), and a checkbox per button to hide it. Only the settings a style
+  uses are sent (copies for Divide, lag for In & Out, offset degrees with Animate offset).
+- **Menus and palette**: Graphics ▸ Stroke Animation ▸ (every action, the Tracer on Next toggle with a check mark,
+  and the panel); palette entries "Stroke Animation: …". No default shortcuts (they can be bound in Keyboard
+  Shortcuts); `apps/web/test/keymap.test.ts` stays conflict-free.
+- **Checked in the running app** (engine 47932 / Vite 5192, 1080p 29.97, Duration 30 frames): Horizontal Line +
+  Draw In with Tracer on Next (one transaction, the dot rides the tip), a rectangle (fill only, converted) + Grow
+  from Middle, Vertical Line + Divide In (4 parts), Add Tracer on the divided line (follows Part 1's master); scrubbed
+  to frames 8, 12 and 20 and inspected the Program monitor: the parts and tips are where the keys put them. Clicking
+  3.5 screen px beside the 8 px vertical line at 25 % zoom selects it. A shape whose stroke is fully trimmed (e.g. at
+  the first frame of Draw In) has nothing drawn to click; select it in the timeline.
+- **Thin lines in the Program monitor**: clicking picks shapes by their drawn geometry. The tolerance used to be 3
+  layer px, i.e. under one screen pixel for a 2 px line at 25–50 % zoom, and the pick also required the point to lie
+  in the shape's edit box (stroke half-width + 1 px around a zero-height / zero-width path). `pickLayerAt`
+  (`apps/web/src/shapes/geometry.ts`) now uses at least `SHAPE_HIT_SCREEN_PX` = 5 screen pixels (converted through
+  the monitor zoom and the layer's scale, never below the old 3 layer px) for the geometry and grows the edit box by
+  the same distance; `apps/web/test/thin-line-hit.test.ts` picks horizontal and vertical lines 4 screen px off at
+  25 / 50 / 100 / 200 % (it failed at 25 % and 50 % before).
+- Tests: `apps/web/test/stroke-animation.test.tsx` — style × modifier payloads through the pure builder and the panel
+  buttons, start rules, settings persistence and validation with fast-check, curve text and presets, disabled states,
+  tracer targeting, menu ↔ command coverage (stubbed adapter); and end to end with the real commands: keys at the
+  playhead, re-run replaces, undo; every style on a vector shape and a converted rectangle; skipped-clip warning and
+  refusal (document unchanged); Tracer on Next in one transaction (skipped clips get none; one undo removes both); Add Tracer with a follower (Position and
+  Rotation expressions); Reverse Path Direction; Add Horizontal Line at the playhead, selected.
+
 ## 7. SVG → shapes (for paste, import and agents)
 
 `packages/project/src/vector/svg-import.ts`, exported from `@jasper/project`:
@@ -221,7 +293,9 @@ Expressions (expressions workstream): every number / point / colour item propert
 (`expression.set` on its ParamPath; gradients and paths are refused like masks' paths); the object model follows
 After Effects: `content("Group 1").content("Rectangle Path 1").size`, `content("Group 1").transform.position`,
 `thisLayer.content(…)`, items by name, index or id, AE match names. Bound in documents and render snapshots
-(`mapShapeItemAnimatables`).
+(`mapShapeItemAnimatables`). Path items (and rectangle / ellipse / polystar outlines) expose AE's Path methods
+(`.path.points()`, `pointOnPath()`, `tangentOnPath()`…), shape items `toLayer()` / `fromLayer()` and Trim Paths
+`trimPath()`; `shape.addTrimTracer` makes a follower clip ride a trim's tip with them (expressions note §1.9).
 
 Blend modes: groups, fills and strokes take the full clip set (`BLEND_MODES`, keyframes-blend's 32). Interchange:
 vector shape clips are reported / pre-rendered as shape clips like every DOM graphic.
@@ -265,3 +339,125 @@ instead of linesweeper (EffectCraft's tidy-up kept).
 - Offset Paths on open paths outlines them with butt ends; Merge Paths closes open paths implicitly (as filled).
 - Vertices are edited on path items; parametric rectangles / ellipses / polystars convert first (Convert to Bezier
   Path), as in After Effects.
+
+## 12. Trim Paths animations
+
+Branch `feat/trim-core`. One-click Trim Paths animations for vector shape clips, as undoable document commands
+(`packages/project/src/commands/{schemas,handlers}/shape-trim.ts`; the keys, expressions and part layout are pure data
+from `vector/trim-animate.ts`). Clean-room design from the public idea of "animate a trim in one click"; no third-party
+text, names or icons.
+
+### `shape.animateTrim`
+
+`{clipIds (1…1000), style, reverse?, animateOffset?, durationFrames? (1…100000, default 10, sequence frames),
+offsetDegrees? (|x| ≤ 36000, default 180), copies? (2…64, default 4, divide styles only), inOutLag? (0 < x ≤ 1, default
+0.5, inOut only), at? (sequence time, default each clip's start), curve? (CubicEase)}` →
+`{clips: [{clipId, converted, trimIds (master first), groupIds (groups this run created), partIds (divide: every part,
+part 1 first)}], skipped: clipId[]}`.
+
+Path parameter u ∈ [0, 1] runs along each path in its direction (Path Direction honoured); p ∈ [0, 1] is the eased
+progress of a segment (keys `from` at the segment start, `to` at its end). D = `durationFrames`, L = `inOutLag` · D,
+N = `copies`, s = 100 / N. Visible parts and keys (Start / End in %):
+
+| Style | Visible | Keys | reverse: visible | reverse: keys |
+|---|---|---|---|---|
+| `in` | [0, p] | Start 0, End 0→100 | [1 − p, 1] | End 100, Start 100→0 |
+| `out` | [p, 1] | End 100, Start 0→100 | [0, 1 − p] | Start 0, End 100→0 |
+| `inOut` | [tail, head] | End 0→100 over [0, D], Start 0→100 over [L, L + D] | [1 − head, 1 − tail] | Start 100→0 over [0, D], End 100→0 over [L, L + D] |
+| `middleIn` | [½ − p/2, ½ + p/2] | Start 50→0, End 50→100 | [0, p/2] ∪ [1 − p/2, 1] | Start 0, End 0→100, linked Offset |
+| `middleOut` | [p/2, 1 − p/2] | Start 0→50, End 100→50 | [0, (1−p)/2] ∪ [1 − (1−p)/2, 1] | Start 0, End 100→0, linked Offset |
+| `divideIn` | ∪ᵢ [(i−1)/N, (i−1)/N + p/N] | master Start 0, End 0→s | ∪ᵢ [i/N − p/N, i/N] | End s, Start s→0 |
+| `divideOut` | ∪ᵢ [(i−1)/N + p/N, i/N] | master End s, Start 0→s | ∪ᵢ [(i−1)/N, i/N − p/N] | Start 0, End s→0 |
+
+- **inOut** is two segments of length D each, the tail starting L after the head (total D + L). `inOutLag` 0 is refused
+  (`E_SCHEMA`): head and tail would move together and nothing would ever be visible.
+- **Linked Offset** (reverse middle styles): the trim keeps [0, End] and its Offset carries the expression
+  `value + -1.8 * content("<trimId>").end` (by item id): −1.8 · End degrees = minus half of the visible length
+  (360° = one length, §5), so the visible piece is centred on the path start; on closed paths it stays one piece
+  across the start (§5), on open paths it shows as two pieces at the ends. `value` keeps the property keyable.
+- **Divide**: the clip's top-level contents are wrapped in one group unless they already are one group; that group
+  becomes "Part 1" and is duplicated into "Part 2…N" (fresh item and keyframe ids). Part 1 ends with the master trim;
+  part i (i ≥ 2) ends with a trim whose Start / End are `content("<part1Id>").content("<masterId>").start|end` and
+  whose Offset is `value + content("<part1Id>").content("<masterId>").offset` with value (i − 1) · 360 / N: N
+  pieces of 1/N draw on / off together. A clip may hold at most 20 000 items after dividing (`E_LIMIT`).
+- **animateOffset**: the master's Offset is keyed 0 → `offsetDegrees` (−`offsetDegrees` with `reverse`) over the
+  whole animation (D, or D + L for inOut); with a linked Offset the expression adds to the keyed value; divide parts
+  follow it through their expression.
+- **Eases**: entering motion (`in`, `middleIn`, `divideIn`, inOut's head) cubic-bezier(⅓, ⅓, ⅔, 1), exiting motion
+  (`out`, `middleOut`, `divideOut`, inOut's tail) cubic-bezier(⅓, 0, ⅔, ⅔); the Offset segment uses the style's curve
+  (constant speed for inOut). `curve` replaces every animated segment's curve. Curves become key eases with
+  `cubicToEases` (bezier interpolation; the outer sides of the two keys are linear).
+- **Timing**: keys are at `at` and `at` + segment offsets in sequence frames, converted to the clip's content time
+  with `contentTimeAt` (speed scales the spacing; fractional frames — e.g. L = 2.5 — are kept exact in flicks). On a
+  reversed clip content time runs backwards: the keys swap and the curve is mirrored (cubic(1 − x2, 1 − y2, 1 − x1,
+  1 − y1)) so the on-screen motion is the same. A key before the clip's content start is refused (`E_INVALID_PARAM`).
+- **Placement and re-runs**: the trim goes last in the top-level contents (it trims every path above it in the shape,
+  §4). Running the command again replaces the animation instead of stacking: earlier parts are found by the exact part
+  expressions above (no marker in the document, so it survives renames and saving), the linked parts are removed and
+  part 1's master trim is reused; otherwise a trim that is the last top-level item is reused (its id, name and
+  Trim Multiple Shapes mode kept, re-enabled; its Start / End / Offset values, keys and expressions replaced — this
+  also applies to a static trim the user placed last). After a divide, a non-divide style leaves part 1 as a plain
+  group named "Part 1" (the picture is the same; the original group name is not restored).
+- **Clips**: rectangle / ellipse clips are converted to vector shapes in the same transaction
+  (`convertShapeClipToVector`, the `shape.convertToVector` path; `converted: true`). Other clips and vector shapes
+  without path items are skipped with one `W_TRIM_SKIPPED` warning naming them and the reason; when no clip applies
+  the command is refused (`E_INVALID_PARAM`); a clip on a locked track refuses the command (`E_TRACK_LOCKED`).
+
+### `shape.reversePathDirection {clipIds}`
+
+Toggles Path Direction on every rect / ellipse / polystar / path item at every depth (reversed → absent = normal, so
+toggling twice restores the contents exactly). Returns `{clips: [{clipId, paths}]}`; rectangle / ellipse and non-shape
+clips are skipped with `W_TRIM_SKIPPED` (convert first), none applicable → `E_INVALID_PARAM`; locked → `E_TRACK_LOCKED`.
+
+### `shape.addLine`
+
+`{orientation: 'horizontal'|'vertical', length? (default 60 % of the frame width / height), strokeWidth? (default 8),
+color? (RGBA 0…1, default white), at? (default 0), durationFrames? (default 5 s), trackId? (default: the top video
+track when free over the range, else a new top track — the camera / light rule), name? (default "Line"), ref?,
+sequenceId?}` → `{clipId, pathId, strokeId, length}`. Composes `clip.addShape {type: 'vector'}` with an open path
+from −length/2 to +length/2 through content (0, 0) and a stroke only: content (0, 0) is the layer centre, the default
+anchor and position, so the anchor sits on the line's centre with no offset.
+
+### Verification and limits
+
+Measured 2026-10-20 on the shared host (load average ≈ 65), `--maxWorkers=1`:
+
+- `pnpm exec vitest run packages/project/test/vector/trim-animate.test.ts packages/expressions/test/trim-animate.test.ts`:
+  91/91. The project suite checks exact values, key times, interpolation and eases for every style × reverse ×
+  animateOffset (28 cases, expectations written out from the table above), divide layout (fresh unique ids, master in
+  part 1, part expressions by id), `at` / duration / lag / offset / `curve`, speed and reversed clips (keys in
+  content time, mirrored curve; set on the document directly because shape clips have no speed control today),
+  re-runs for all 7 × 7 style pairs × reverse (same contents as a fresh run, ids aside; one trim or N, never
+  stacked), reuse of a last user trim (id, name, mode), merging parts back next to added items, conversion of
+  rectangle clips, `W_TRIM_SKIPPED`, `E_INVALID_PARAM`, `E_NOT_FOUND`, `E_TRACK_LOCKED`, `E_LIMIT`, schema refusals,
+  undo (the earlier snapshot is untouched) / redo (the same contents), `checkInvariants` = [] after edits; Path
+  Direction toggling and the trimmed geometry following the direction; `shape.addLine` geometry, anchor, defaults
+  and refusals. The expressions suite evaluates the geometry through `evaluateVectorShape` with the document's
+  expressions bound (`bindDocumentExpressions`) and measures the visible u-intervals at p = 0, ¼, ½, 1 (inOut also
+  past D) on an open line and a closed square, with and without animated Offset, and for two paths Simultaneously /
+  Individually; the default eases follow `evaluateEaseCurve`; re-running each style pair draws the same geometry
+  as a fresh run.
+- **Preview / export**: the export path renders shape clips from the JSON render snapshot, binding its expressions
+  in the renderer (`bindSnapshotExpressions`, §1); the test builds the snapshot, round-trips it through JSON, binds
+  it and draws the layer at its resolved content time: identical SVG path data to the document-bound (preview)
+  evaluation for the linked-offset and divide styles at six frames, and different from the unbound document (the
+  expressions do run).
+- **Real exports** (2026-10-20, shared host at load ≈ 40–55, `--maxWorkers=1`, LGPL binaries directory,
+  `JASPER_FFMPEG_LGPL_ONLY=1`): `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/trim-paths-export.e2e.test.ts`
+  plans a 1280×720, 36-frame scene (`in` on a line with a created tracer dot, `in` + reverse on a curve with an
+  oriented follower, `middleIn` + reverse with the linked Offset on a rectangle starting at frame 6, `divideIn` × 4 with
+  animated Offset starting at frame 3) as `hybrid` (each shape baked through Remotion) and exports it there and on the
+  Remotion path (ProRes 4444). Hybrid vs Remotion: SSIM min 0.9980 (≥ 0.98 required), worst per-frame mean |Δ|
+  0.080, ≤ 0.128 % of values off by > 24. Against the evaluator, both exports: drawn outline share within 0.0006
+  (middleIn) and 0.010 (divideIn) of End − Start (× N), tracer dot centroid ≤ 0.09 px from the evaluated tip,
+  oriented bar ≤ 0.13 px / 0.28°. The run found that the Remotion path captured frames as JPEG (edges of a 10 px
+  stroke at 216 / 246 instead of 255, ±7 ringing beside it; the share of values off by > 24 reached 0.30 % at frame
+  12); fixed in `remotion/service.ts` (PNG capture, wp-3l.md).
+- `pnpm --filter @jasper/project typecheck`, `@jasper/expressions`, `@jasper/mcp`: pass. Existing
+  `packages/project/test/vector/{commands,evaluate}.test.ts` and `packages/expressions/test/shapes.test.ts`: pass.
+
+Limits: part copies duplicate the whole group, so expressions inside the copied contents that reference items by id
+still point at part 1's items; the part expressions address part 1 at the top level (moving the parts into another
+group breaks the link, and then a re-run no longer recognises them); if the user deletes every part except part 1,
+part 1's trim stays and a non-divide re-run adds a top-level trim; keys follow `contentTimeAt` (speed and reverse),
+not a time remap.

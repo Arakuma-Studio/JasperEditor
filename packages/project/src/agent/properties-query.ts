@@ -28,6 +28,7 @@ import type { Clip, EffectInstance, Sequence } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
 import { transitionSpec, transitionStartFrame } from '../transitions.ts';
+import { type KeyEaseSummary, keyEaseSummaries } from './keyframe-eases.ts';
 import { queryMediaHandle } from './media.ts';
 
 export type PropertyQueryEnv = {
@@ -77,11 +78,21 @@ type KeyOut = {
 	interpolation: string;
 	/** keyframe-sides: the incoming side when the key has one of its own. */
 	inInterpolation?: string;
-};
+} & KeyEaseSummary;
 
+/** Maps keys to their listing entries, each with the compact ease of the segment leaving it. */
+function withEases<T extends object>(
+	keys: readonly Keyframe<unknown>[],
+	entry: (k: Keyframe<unknown>) => T,
+): (T & KeyEaseSummary)[] {
+	const eases = keyEaseSummaries(keys);
+	return keys.map((k, i) => ({ ...entry(k), ...eases[i] }));
+}
+
+/** A property's keys in sequence frames, each with the compact ease of the segment leaving it. */
 function keysOf(seq: Sequence, clip: Clip, anim: Animatable<unknown> | null): KeyOut[] {
 	if (!anim) return [];
-	return anim.keyframes.map((k: Keyframe<unknown>) => {
+	return withEases(anim.keyframes as readonly Keyframe<unknown>[], (k) => {
 		const frame = sequenceFrameOfContentTime(clip, k.time, seq.settings.frameRate as Rational);
 		return {
 			id: k.id,
@@ -171,21 +182,8 @@ function renderedValue(
 	return { value: fallback, rendered: !!l || !!view.audio };
 }
 
-/** Properties of a clip at a sequence frame, with keyframed `value` and rendered `evaluated`. */
-export function clipPropertiesQuery(
-	env: PropertyQueryEnv,
-	args: { clipId: string; frame?: number; keys?: string[] },
-) {
-	const { seq, clip } = findClip(env.doc, args.clipId);
-	const end = clip.start + clip.duration - 1;
-	let frame = args.frame;
-	if (frame === undefined) {
-		const ph = env.playhead?.().frame;
-		frame =
-			ph !== undefined && env.activeSequenceId === seq.id && ph >= clip.start && ph <= end ? ph : clip.start;
-	}
-	if (frame < 0) throw new PropertyQueryError('E_INVALID_PARAM', 'frame must be ≥ 0');
-	const at = Math.min(end, Math.max(clip.start, frame));
+/** Every property spec of a clip (intrinsic, template / composition params, known effects' params). */
+function clipSpecs(env: PropertyQueryEnv, clip: Clip) {
 	const template =
 		clip.kind === 'motion-graphic'
 			? env.mgTemplates?.get(
@@ -202,12 +200,64 @@ export function clipPropertiesQuery(
 		effectsOut.push({ id: fx.id, effectId: fx.effectId, enabled: fx.enabled, known: !!spec });
 		if (spec) specs.push(...effectPropertySpecs(fx, spec));
 	}
+	return { specs, effectsOut };
+}
+
+const keyMatches = (key: string, filter: readonly string[] | null) =>
+	!filter || filter.some((k) => key === k || key.startsWith(`${k}.`));
+
+/**
+ * The keyframes of a clip's animated properties (sequence frames, compact eases): only the keys / key prefixes
+ * of `keys` (as clip.properties takes them) and only keys whose frame lies in [fromFrame, toFrame] when given.
+ * `unmatched` lists the `keys` entries that name no property of the clip. Agents select keys with it (MCP
+ * apply_ease, get_keyframe_eases…).
+ */
+export function clipKeyframesQuery(
+	env: PropertyQueryEnv,
+	args: { clipId: string; keys?: readonly string[]; fromFrame?: number; toFrame?: number },
+) {
+	const { seq, clip } = findClip(env.doc, args.clipId);
+	const { specs } = clipSpecs(env, clip);
+	const filter = args.keys?.length ? args.keys : null;
+	const unmatched = (filter ?? []).filter((k) => !specs.some((s) => keyMatches(s.key, [k])));
+	const ctx = { doc: env.doc, seq, clip };
+	const lo = args.fromFrame ?? Number.NEGATIVE_INFINITY;
+	const hi = args.toFrame ?? Number.POSITIVE_INFINITY;
+	const properties = specs
+		.filter((s) => keyMatches(s.key, filter))
+		.flatMap((s) => {
+			const r = resolvePropertyAt(ctx, s, clip.start);
+			const keyframes = keysOf(seq, clip, r.anim).filter((k) => k.frame >= lo && k.frame <= hi);
+			if (!keyframes.length) return [];
+			return [
+				{ key: s.key, label: s.label, target: propertyKeyToParamPath({ clipId: clip.id }, s.key), keyframes },
+			];
+		});
+	return { clipId: clip.id, sequenceId: seq.id, properties, unmatched };
+}
+
+/** Properties of a clip at a sequence frame, with keyframed `value` and rendered `evaluated`. */
+export function clipPropertiesQuery(
+	env: PropertyQueryEnv,
+	args: { clipId: string; frame?: number; keys?: string[] },
+) {
+	const { seq, clip } = findClip(env.doc, args.clipId);
+	const end = clip.start + clip.duration - 1;
+	let frame = args.frame;
+	if (frame === undefined) {
+		const ph = env.playhead?.().frame;
+		frame =
+			ph !== undefined && env.activeSequenceId === seq.id && ph >= clip.start && ph <= end ? ph : clip.start;
+	}
+	if (frame < 0) throw new PropertyQueryError('E_INVALID_PARAM', 'frame must be ≥ 0');
+	const at = Math.min(end, Math.max(clip.start, frame));
+	const { specs, effectsOut } = clipSpecs(env, clip);
 	const filter = args.keys?.length ? args.keys : null;
 	const view = rendererView(env.doc, seq, clip, at);
 	const ctx = { doc: env.doc, seq, clip };
 	const why = notRenderedReason(seq, clip, frame);
 	const properties = specs
-		.filter((s) => !filter || filter.some((k) => s.key === k || s.key.startsWith(`${k}.`)))
+		.filter((s) => keyMatches(s.key, filter))
 		.map((s) => {
 			const r = resolvePropertyAt(ctx, s, at);
 			const rv = renderedValue(view, s.key, r.value);
@@ -323,7 +373,7 @@ export function paramGetQuery(env: PropertyQueryEnv, args: { target: string[]; f
 				animated: anim.keyframes.length > 0,
 				...(anim.keyframes.length
 					? {
-							keyframes: anim.keyframes.map((k) => ({
+							keyframes: withEases(anim.keyframes, (k) => ({
 								id: k.id,
 								frame: start + Math.round(k.time / F),
 								timecode: tc(seq, start + Math.round(k.time / F)),
@@ -375,7 +425,7 @@ function seqParam(
 		animated: anim.keyframes.length > 0,
 		...(anim.keyframes.length
 			? {
-					keyframes: anim.keyframes.map((k) => ({
+					keyframes: withEases(anim.keyframes, (k) => ({
 						id: k.id,
 						frame: Math.round(k.time / F),
 						timecode: tc(seq, Math.round(k.time / F)),
