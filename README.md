@@ -502,7 +502,7 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   (`docs/wp-notes/previews.md`).
 - Edit structure: `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips`
   `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
-  `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
+  `list_through_edits` `join_through_edits` `list_cuts` `find_gaps` `make_subsequence` `add_frame_hold`
   `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
 - Time remapping, time interpolation, Scene Edit Detection: `get_time_remap` `set_time_remap` `set_segment_speed`
   `add_speed_keyframe` `remove_speed_keyframes` `move_speed_keyframe` `set_speed_transition` `add_freeze_segment`
