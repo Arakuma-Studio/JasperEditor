@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { type EngineJob, PlaybackAudioHeaderSchema } from '@jasper/api';
 import { FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { clipDecodeArgs } from '../src/audio/decode.ts';
+import { clipDecodeArgs, resamplerArgs } from '../src/audio/decode.ts';
 import { readWavInfo } from '../src/derivatives/service.ts';
 import { ToolError } from '../src/tools/process.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -107,7 +107,8 @@ function freshWma(name: string, hz: number): string {
 	return out;
 }
 
-const partialsIn = (file: string) => readdirSync(dirname(file)).filter((f) => f.includes('.partial'));
+const partialsIn = (file: string) =>
+	readdirSync(dirname(file)).filter((f) => f.startsWith('playback-audio-') && f.includes('.partial'));
 
 type RunFn = ReturnType<typeof coreServices>['ffmpeg']['run'];
 /**
@@ -333,12 +334,12 @@ describe('exports read the original, on the playback audio’s sample timeline',
 		expect(maxErr).toBeLessThan(1e-6);
 	}, 90_000);
 
-	it('a native export decodes the WMA itself and puts its click where the preview plays it', async () => {
+	it('a native export decodes the WMA itself and lines up with the preview’s samples (lag 0, residual ≤ −50 dB)', async () => {
 		const core = coreServices(app);
 		const m = await register(app, WMA);
 		await settled(m.mediaKey);
 		const rec = core.registry.get(m.mediaKey)!;
-		const wav = await wavSamples(join(core.derivatives.paths(rec.fingerprint, 'playback-audio').dir!, '0.wav'));
+		const wavFile = join(core.derivatives.paths(rec.fingerprint, 'playback-audio').dir!, '0.wav');
 		const d = new DocBuilder('hd-1080p-30', 900);
 		const mediaId = d.addMedia(m);
 		d.tx([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: 'A1' } }]);
@@ -389,20 +390,40 @@ describe('exports read the original, on the playback audio’s sample timeline',
 		).toBe(false);
 		const out = (await core.exports.outputFile(job.id))!;
 		const exported = ffDecode(out);
-		const peakAt = (x: Float32Array, ch: number, channels: number) => {
-			let best = 0;
-			let at = 0;
-			for (let i = ch; i < x.length; i += channels)
-				if (Math.abs(x[i]!) > best) {
-					best = Math.abs(x[i]!);
-					at = (i - ch) / channels;
-				}
-			return at;
+		// the preview's samples (the playback WAV from the In point) at the export rate, with the export's resampler
+		const r = spawnSync(
+			TEST_FFMPEG,
+			['-v', 'error', '-i', wavFile, '-af', `aresample=48000:${resamplerArgs(true)}`, '-f', 'f32le', '-'],
+			{ maxBuffer: 1 << 26 },
+		);
+		expect(r.status, r.stderr.toString()).toBe(0);
+		const preview = new Float32Array(r.stdout.buffer, r.stdout.byteOffset, r.stdout.byteLength / 4);
+		// 2.5 s from 0.1 s into the clip; both channels; the lag that matches best must be 0 and the rest ≤ −50 dB
+		const SR = 48000;
+		const n = Math.round(2.5 * SR);
+		const e0 = Math.round((clipStartSec + 0.1) * SR);
+		const p0 = Math.round((0.5 + 0.1) * SR);
+		const fit = (lag: number) => {
+			let ep = 0;
+			let pp = 0;
+			let ee = 0;
+			for (let i = 0; i < n * 2; i++) {
+				const e = exported[e0 * 2 + i]!;
+				const p = preview[(p0 + lag) * 2 + i]!;
+				ep += e * p;
+				pp += p * p;
+				ee += e * e;
+			}
+			const g = ep / pp;
+			return { g, residualDb: 10 * Math.log10(Math.max(1e-30, ee - 2 * g * ep + g * g * pp) / ee) };
 		};
-		// the right channel carries a steady tone plus the click: its peak is the click
-		const previewSec = (peakAt(wav.data, 1, 2) - 22050) / 44100;
-		const exportSec = peakAt(exported, 1, 2) / 48000 - clipStartSec;
-		expect(previewSec).toBeGreaterThan(0.3);
-		expect(Math.abs(exportSec - previewSec)).toBeLessThan(2 / 44100);
+		let best = { lag: 0, ...fit(0) };
+		for (let lag = -24; lag <= 24; lag++) {
+			const f = fit(lag);
+			if (f.residualDb < best.residualDb) best = { lag, ...f };
+		}
+		expect(best.lag).toBe(0);
+		expect(best.residualDb).toBeLessThan(-50);
+		expect(best.g).toBeGreaterThan(0.5);
 	}, 180_000);
 });
