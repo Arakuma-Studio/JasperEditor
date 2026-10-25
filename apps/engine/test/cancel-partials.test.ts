@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { copyNoOverwrite } from '../src/export/service.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 const queues: JobQueue[] = [];
 afterEach(async () => {

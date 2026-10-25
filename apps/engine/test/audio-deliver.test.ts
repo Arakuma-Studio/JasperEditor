@@ -17,7 +17,7 @@ import {
 } from '../src/audio/deliver.ts';
 import { WAV_F32_HEADER_BYTES, writeDeliveryWav } from '../src/audio/mixdown.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
-import { TEST_FFMPEG, TEST_FFPROBE } from './helpers.ts';
+import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 import { loudMix, quietMix } from './loud-fixture.ts';
 
 const SR = 48_000;

@@ -162,7 +162,9 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		expect((await store.listVersions(id)).length).toBe(1);
 		const lease = await store.acquireLease(id, '00000000-0000-4000-8000-00000000000a');
 		await expect(store.acquireLease(id, '00000000-0000-4000-8000-00000000000b')).rejects.toMatchObject({
-			code: 'LEASE_HELD',
+			name: 'LeaseHeldError',
+			projectId: id,
+			holderSessionId: '00000000-0000-4000-8000-00000000000a',
 		});
 		await store.releaseLease(id, lease.leaseId);
 		await store.delete(id);

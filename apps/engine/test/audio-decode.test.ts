@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { clipDecodeArgs, PcmStreamReader } from '../src/audio/decode.ts';
-import { TEST_FFMPEG } from './helpers.ts';
+import { TEST_FFMPEG } from './fixtures.ts';
 
 const SR = 48000;
 const dir = mkdtempSync(join(tmpdir(), 'jasper-decode-'));

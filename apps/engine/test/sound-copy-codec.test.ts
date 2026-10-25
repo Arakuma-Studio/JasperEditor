@@ -10,7 +10,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { copyCodecFor, probeAudioStream, writePaddedSound } from '../src/sounds/pad.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
-import { TEST_FFMPEG, TEST_FFPROBE, tempAppdir } from './helpers.ts';
+import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
+import { tempAppdir } from './temp.ts';
 
 const SR = 48_000;
 const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });

@@ -6,7 +6,7 @@ import { appdirPaths } from '@jasper/config';
 import type { Proposal } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { ProposalStore } from '../src/proposals/store.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 const PID = 'prj_000000000000000P';
 let n = 0;

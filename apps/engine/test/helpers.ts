@@ -1,7 +1,3 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	applyTransaction,
@@ -12,45 +8,15 @@ import {
 	makeEnvelope,
 	type ProjectDocument,
 } from '@jasper/project';
-import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import type { FastifyInstance } from 'fastify';
+import { createServer, engineConfig } from '../src/index.ts';
 import { tempAppdir } from './temp.ts';
 
+export { ensureFixtures, FIXTURES, fixture, ROOT, TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 export { tempAppdir } from './temp.ts';
 
-export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-export const FIXTURES = join(ROOT, 'fixtures', 'media');
-/** A clean CI checkout has no vendor binaries; use the engine's oracle resolution when the LGPL build is absent. */
-const VENDOR_FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
-export const TEST_FFMPEG = existsSync(join(VENDOR_FFMPEG, 'ffmpeg'))
-	? join(VENDOR_FFMPEG, 'ffmpeg')
-	: (ffmpegPath() ?? 'ffmpeg');
-export const TEST_FFPROBE = existsSync(join(VENDOR_FFMPEG, 'ffprobe'))
-	? join(VENDOR_FFMPEG, 'ffprobe')
-	: (ffprobePath() ?? 'ffprobe');
 export const H = { host: '127.0.0.1:47900' } as const;
 export const JSON_H = { ...H, 'content-type': 'application/json' } as const;
-
-export function ensureFixtures(): void {
-	const needed = [
-		'clip-a.mp4',
-		'clip-b.mp4',
-		'tone.wav',
-		'still.png',
-		'phone-rot90.mp4',
-		'overlay-alpha.mov',
-		'overlay-alpha.webm',
-		'frame-code.mp4',
-		'overlay-alpha-vp8.webm',
-	];
-	if (needed.every((n) => existsSync(join(FIXTURES, n)))) return;
-	const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
-	if (r.status !== 0) throw new Error('fixture generation failed');
-}
-
-export function fixture(name: string): string {
-	return join(FIXTURES, name);
-}
 
 export type TestApp = FastifyInstance & { appdir: string };
 
@@ -69,7 +35,7 @@ export async function makeApp(
 	} = {},
 ): Promise<TestApp> {
 	const appdir = opts.appdir ?? tempAppdir();
-	const { createServer, engineConfig, prepareAppdir } = await import('../src/index.ts');
+	const { prepareAppdir } = await import('../src/index.ts');
 	prepareAppdir(appdir);
 	const config = engineConfig({
 		appdir,

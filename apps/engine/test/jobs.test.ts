@@ -222,10 +222,15 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 			const updates = () => events.filter((e) => e.type === 'job.updated').map((e) => e.payload as EngineJob);
 			for (let i = 1; i <= 200; i++) {
 				ctx.progress(i / 250);
-				if (i % 5 === 0) await vi.advanceTimersByTimeAsync(25);
+				if (i % 5 === 0) await vi.advanceTimersByTimeAsync(i === 200 ? 24 : 25);
 			}
-			// One second allows at most four progress events, plus the forced running state.
+			// This 999 ms window allows at most four progress events, plus the forced running state.
 			expect(updates().length).toBeLessThanOrEqual(5);
+			expect(
+				updates().some(
+					(j) => j.state === 'running' && j.progress !== null && j.progress > 0 && j.progress < 1,
+				),
+			).toBe(true);
 			ctx.progress(0.9); // the final state must bypass a pending throttled update
 			finish();
 			await q.wait(job.id);

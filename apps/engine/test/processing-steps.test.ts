@@ -9,7 +9,7 @@ import { assertLgplFilters } from '../src/processing/proc/filters.ts';
 import { runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
 import { createUpscaleStep } from '../src/processing/proc/upscale.ts';
-import { ensureFixtures, fixture, ROOT } from './helpers.ts';
+import { ensureFixtures, fixture, ROOT } from './fixtures.ts';
 import { writeTinySrModel } from './tiny-model.ts';
 
 const LGPL = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);

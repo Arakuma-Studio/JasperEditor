@@ -10,7 +10,7 @@ import { runAnalysis } from '../src/sounds/analysis-core.ts';
 import { decodeSound } from '../src/sounds/decode.ts';
 import { loadManifest, starterDir } from '../src/sounds/starter.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
-import { ROOT, TEST_FFMPEG, TEST_FFPROBE } from './helpers.ts';
+import { ROOT, TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 
 /** P1-R4: the bundled kit is at most 8 MB. */
 const BUDGET_BYTES = 8 * 1024 * 1024;
