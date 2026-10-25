@@ -1499,7 +1499,12 @@ missing one is a striped "Image … is not available" banner in preview and an e
   text-default emoji character, UTS #51), each with or without U+FE0F per the pack rule — a ZWJ sequence typed without
   VS16 (`🏳‍🌈`) still finds Twemoji's `1f3f3-fe0f-200d-1f308.svg`.
 - Emoji cannot be pinned in advance: the first verified fetch (PNG magic / SVG root, no HTML pages, no active SVG
-  content, size cap) records its SHA-256 in the index; later downloads (cache deleted) must match, else
+  content, size cap) records its SHA-256 in the index. The SVG check (`svgHasActiveContent`, `fetcher.ts`) reads the
+  markup with character references decoded (numeric with or without `;`, the named ones that spell schemes, twice
+  for `&amp;#…`) and refuses script / foreignObject / handler / iframe / embed / object elements under any prefix,
+  event-handler attributes (also `<svg/onload=…>`), `javascript:` / `vbscript:` with whitespace or control characters
+  inside, `href` / `xlink:href` / `src` that are not `#id`, `url(…)` that is not `url(#id)`, `@import`,
+  `<?xml-stylesheet` and `<!ENTITY`. Later downloads (cache deleted) must match, else
   `ASSET_HASH_MISMATCH` — a changed upstream needs a pack version bump in the override, which starts a new
   directory and a new bake key. `fe0f: try-both` tries the full sequence, then the one without U+FE0F (only a 404
   moves on).
@@ -1522,6 +1527,10 @@ missing one is a striped "Image … is not available" banner in preview and an e
   log line. The override still applies on top.
 - The manifest override is re-read when its size or mtime changes; an invalid or oversized (> 4 MB) override is
   ignored and reported (`GET /api/remote-assets` → `manifest.override`), never fatal.
+- Every emoji and remote image file is served with `Content-Security-Policy: sandbox; default-src 'none';
+  style-src 'unsafe-inline'; img-src data:` (`REMOTE_IMAGE_CSP`) and `X-Content-Type-Options: nosniff`, so an SVG
+  opened from the engine origin can neither run scripts nor load anything, even one cached before the check above
+  was hardened.
 - Serving: the routes are under `/fonts/`, so session auth, signed URLs for the headless browser (`UrlSigner`
   `SIGNABLE`), the dev proxy and the service worker apply unchanged; emoji keys are validated
   (`graphemeOfEmojiKey`: canonical lower-hex, one emoji grapheme) before anything is fetched, and only the manifest's
