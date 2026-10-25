@@ -196,7 +196,7 @@ describe('one-pass extract = successive range.extract', () => {
 				for (const c of H.clips('A1')) {
 					const p = sc.pieces[H.clips('A1').indexOf(c)];
 					if (!p || p.jl === 0) continue;
-					H.tx([{ type: 'clip.trim', clipId: c.id, edge: p.jl > 0 ? 'out' : 'in', deltaFrames: p.jl > 0 ? -p.jl : -p.jl, linked: false }]);
+					H.tx([{ type: 'clip.trim', clipId: c.id, edge: p.jl > 0 ? 'out' : 'in', deltaFrames: -p.jl, linked: false }]);
 				}
 				if (sc.music) {
 					H.ok([
