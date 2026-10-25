@@ -1,9 +1,9 @@
 // @vitest-environment node
 // HTML-in-Canvas must capture late video draws, including contexts asking for low latency.
+import { fileURLToPath } from 'node:url';
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { installCaptureSafeCanvases } from '../src/fx/capture-safe-canvas.ts';
-import { CHROME } from './gl-browser.ts';
+import { bundleGlEntry, CHROME } from './gl-browser.ts';
 
 const run = !!CHROME && process.env.FX_GL !== '0';
 
@@ -60,7 +60,11 @@ const htmlInCanvas = () => {
 
 describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 	let browser: Browser;
+	let installScript: string;
 	beforeAll(async () => {
+		installScript = await bundleGlEntry(
+			fileURLToPath(new URL('./capture-safe-canvas/entry.ts', import.meta.url)),
+		);
 		browser = await chromium.launch({
 			executablePath: CHROME!,
 			headless: true,
@@ -79,14 +83,18 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 			{ color: 'rgb(255,0,255)', expected: [255, 0, 255, 255] },
 		]) {
 			const page = await browser.newPage();
+			const errors: string[] = [];
+			page.on('pageerror', (error) => errors.push(error.message));
 			try {
 				await page.setContent(PAGE);
 				ctx.skip(
 					!(await page.evaluate(htmlInCanvas)),
 					`Chrome ${browser.version()} has no HTML-in-Canvas (148+)`,
 				);
-				await page.evaluate(`(${installCaptureSafeCanvases.toString()})()`);
-				expect(await page.evaluate(probe, { color, desynchronized })).toEqual(expected);
+				await page.addScriptTag({ content: installScript });
+				const actual = await page.evaluate(probe, { color, desynchronized });
+				expect(errors).toEqual([]);
+				expect(actual).toEqual(expected);
 			} finally {
 				await page.close();
 			}

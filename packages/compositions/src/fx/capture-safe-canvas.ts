@@ -1,6 +1,5 @@
 // HTML-in-Canvas cannot capture updates from desynchronized 2D canvases in headless Chrome or Electron.
 // Disable this latency hint for Remotion video canvases; the Player owns their paint timing.
-// This function is self-contained so browser tests can evaluate its source.
 export function installCaptureSafeCanvases(): void {
 	if (typeof HTMLCanvasElement === 'undefined') return;
 	const proto = HTMLCanvasElement.prototype as HTMLCanvasElement & { __jasperCaptureSafe?: true };

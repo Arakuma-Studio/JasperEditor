@@ -1,6 +1,5 @@
 // Chrome can leave resume() pending when suspend() overlaps it. Remotion also waits for the audio clock
 // to advance after resume(), so suspend() must wait for that advance (bounded to 250 ms).
-// This function is self-contained so browser tests can evaluate its source.
 export function installSerialAudioContext(): void {
 	const AC = (globalThis as { AudioContext?: { prototype: AudioContext } }).AudioContext;
 	if (!AC) return;
