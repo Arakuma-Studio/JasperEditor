@@ -103,20 +103,34 @@ results.push({
 	case: 'detectCleanup, 1 h of speech (Fast)',
 	words: h1.words.length,
 	frames: h1.voice.frameCount,
-	findings: detectCleanup({ mediaId: 'med_bench', words: h1.words, voice: h1.voice, language: 'es', settings: FAST_SETTINGS })
-		.findings.length,
+	findings: detectCleanup({
+		mediaId: 'med_bench',
+		words: h1.words,
+		voice: h1.voice,
+		language: 'es',
+		settings: FAST_SETTINGS,
+	}).findings.length,
 	targetMs: 200,
 	...time(() =>
-		detectCleanup({ mediaId: 'med_bench', words: h1.words, voice: h1.voice, language: 'es', settings: FAST_SETTINGS }),
+		detectCleanup({
+			mediaId: 'med_bench',
+			words: h1.words,
+			voice: h1.voice,
+			language: 'es',
+			settings: FAST_SETTINGS,
+		}),
 	),
 });
 
 // a 30 fps sequence playing the hour: linked V1 + A1, music on a sync-locked A2
 const H = new Harness({ preset: 'hd-1080p-30' });
 const media = H.registerVideo({ seconds: h1.seconds });
-const music = (H.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio', seconds: h1.seconds }) }]).results[0] as {
-	mediaId: string;
-}).mediaId;
+const music = (
+	H.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio', seconds: h1.seconds }) }])
+		.results[0] as {
+		mediaId: string;
+	}
+).mediaId;
 H.ok([
 	{ type: 'clip.place', source: { mediaId: media }, at: 0, tracks: { video: 'V1', audio: ['A1'] } },
 	{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: ['A2'] } },
@@ -134,7 +148,10 @@ results.push({
 
 const a1 = H.clips('A1')[0]!.id;
 const step = Math.floor((h1.seconds * 30) / 1500);
-const ranges = Array.from({ length: 1500 }, (_, i) => ({ start: i * step + 10, end: i * step + 10 + Math.floor(step / 3) }));
+const ranges = Array.from({ length: 1500 }, (_, i) => ({
+	start: i * step + 10,
+	end: i * step + 10 + Math.floor(step / 3),
+}));
 const base = H.doc;
 let revisionDelta = 0;
 let clipsAfter = 0;

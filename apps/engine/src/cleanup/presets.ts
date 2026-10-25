@@ -6,7 +6,12 @@
 // renamed `cleanup-presets.json.corrupt-<time>` before starting empty. Built-ins (`builtin.*`) are never stored.
 import { randomBytes } from 'node:crypto';
 import { rename } from 'node:fs/promises';
-import { CleanupPresetSchema, type CleanupOverrides, type CleanupPreset, CROCKFORD_ALPHABET } from '@jasper/project';
+import {
+	type CleanupOverrides,
+	type CleanupPreset,
+	CleanupPresetSchema,
+	CROCKFORD_ALPHABET,
+} from '@jasper/project';
 import { atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
 import { HttpError } from '../tools/reply.ts';
 
@@ -52,7 +57,12 @@ export class CleanupPresetLibrary {
 
 	private async load(): Promise<LibraryFile> {
 		if (this.state) return this.state;
-		const empty: LibraryFile = { format: 'jasper-cleanup-preset-library', version: 1, revision: 0, presets: [] };
+		const empty: LibraryFile = {
+			format: 'jasper-cleanup-preset-library',
+			version: 1,
+			revision: 0,
+			presets: [],
+		};
 		const raw = await readJsonOrNull<Record<string, unknown>>(this.file);
 		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
 			if (await exists(this.file)) {
@@ -77,7 +87,10 @@ export class CleanupPresetLibrary {
 		if (invalid.length) this.opts.log?.(`cleanup presets: ${invalid.length} invalid entries kept aside`);
 		this.state = {
 			...empty,
-			revision: typeof raw.revision === 'number' && Number.isInteger(raw.revision) && raw.revision >= 0 ? raw.revision : 0,
+			revision:
+				typeof raw.revision === 'number' && Number.isInteger(raw.revision) && raw.revision >= 0
+					? raw.revision
+					: 0,
 			presets,
 			...(invalid.length ? { invalid } : {}),
 		};

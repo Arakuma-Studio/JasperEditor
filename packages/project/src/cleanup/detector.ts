@@ -9,7 +9,6 @@
 // stutters, head / tail, lexical review, ASR suspects; plus the frame findings: pauses, breaths, untranscribed voice.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH, voiceLevelDb } from '@jasper/audio-dsp';
 import { FLICKS_PER_SECOND } from '../time.ts';
-import type { VoiceAnalysis } from './voice-analysis.ts';
 import {
 	builtinLists,
 	type CleanupLanguage,
@@ -45,6 +44,7 @@ import type {
 	RuleAction,
 } from './schema.ts';
 import { ScriptIndex, scriptLines, scriptTokens } from './script.ts';
+import type { VoiceAnalysis } from './voice-analysis.ts';
 
 /** Seconds per voice-analysis frame. */
 export const FR = 0.01;
@@ -146,9 +146,13 @@ export function findingFingerprint(
 }
 
 /** The lists the detector uses: built-ins of the language, with the sequence's edited lists replacing theirs. */
-export function effectiveLists(lang: CleanupLanguage | null, edits?: CleanupLists | null): CleanupLanguageLists {
+export function effectiveLists(
+	lang: CleanupLanguage | null,
+	edits?: CleanupLists | null,
+): CleanupLanguageLists {
 	const b = builtinLists(lang);
-	const norm = (xs: readonly string[]) => xs.map((x) => phraseTokens(x).join(' ')).filter((x) => x.length > 0);
+	const norm = (xs: readonly string[]) =>
+		xs.map((x) => phraseTokens(x).join(' ')).filter((x) => x.length > 0);
 	return {
 		...b,
 		fillers: edits?.fillers ? norm(edits.fillers).filter((x) => !x.includes(' ')) : b.fillers,
@@ -347,13 +351,16 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			const ws = units[u]!.map((k) => aw[k]!);
 			const probs = ws.map((w) => w.conf).filter((p): p is number => p !== null);
 			const m = unitLine[u];
-			const complete = m && maxCov > 0 ? m.coverage >= 0.6 * maxCov : unitContent[u]!.length >= 0.6 * maxContent;
+			const complete =
+				m && maxCov > 0 ? m.coverage >= 0.6 * maxCov : unitContent[u]!.length >= 0.6 * maxContent;
 			return {
 				range: { start: input.words[ws[0]!.i]!.start, end: input.words[ws[ws.length - 1]!.i]!.end },
 				words: [ws[0]!.i, ws[ws.length - 1]!.i],
 				text: ws.map((w) => w.text.trim()).join(' '),
 				...(m ? { scriptLine: m.line, coverage: Math.round(m.coverage * 1000) / 1000 } : {}),
-				meanProb: probs.length ? Math.round((probs.reduce((a, b) => a + b, 0) / probs.length) * 1000) / 1000 : null,
+				meanProb: probs.length
+					? Math.round((probs.reduce((a, b) => a + b, 0) / probs.length) * 1000) / 1000
+					: null,
 				complete,
 			};
 		});
@@ -366,7 +373,12 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			let best = -1;
 			for (let t = 0; t < takes.length; t++) {
 				const c = takes[t]!.coverage;
-				if (t !== chosen && c !== undefined && c >= cc + T.scriptPreferEarlier && (best < 0 || c >= takes[best]!.coverage!))
+				if (
+					t !== chosen &&
+					c !== undefined &&
+					c >= cc + T.scriptPreferEarlier &&
+					(best < 0 || c >= takes[best]!.coverage!)
+				)
 					best = t;
 			}
 			if (best >= 0) chosen = best;
@@ -379,7 +391,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				if (l && (l.kind === 'retake' || l.kind === 'false-start' || l.kind === 'restart')) labels[k] = null;
 			}
 			for (let t = 0; t < takes.length; t++)
-				if (t !== chosen) for (const k of units[list[t]!]!) claimWord(ctx, k, 'retake', retakeAction, list[t]);
+				if (t !== chosen)
+					for (const k of units[list[t]!]!) claimWord(ctx, k, 'retake', retakeAction, list[t]);
 		}
 		for (const u of list) unitGroup.set(u, gi);
 		groups.push({ id: `g${gi}`, takes, chosen });
@@ -529,7 +542,12 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	if (lines.length) {
 		const takes = new Array<number>(lines.length).fill(0);
 		for (const m of unitLine) if (m) takes[m.line]!++;
-		script = lines.map((l) => ({ index: l.index, text: l.text, said: takes[l.index]! > 0, takes: takes[l.index]! }));
+		script = lines.map((l) => ({
+			index: l.index,
+			text: l.text,
+			said: takes[l.index]! > 0,
+			takes: takes[l.index]!,
+		}));
 	}
 	return { mediaId: input.mediaId, stream, language: lang, words, guarded, findings, groups, script };
 }
@@ -584,7 +602,14 @@ function frameFindings(
 	hi = Math.min(voice.frameCount, hi);
 	const push = (kind: FindingKind, action: RuleAction, a: number, b: number) => {
 		if (action === 'off') return;
-		out.push({ kind, suggested: action, start: Math.round(a * F), end: Math.round(b * F), words: null, text: '' });
+		out.push({
+			kind,
+			suggested: action,
+			start: Math.round(a * F),
+			end: Math.round(b * F),
+			words: null,
+			text: '',
+		});
 	};
 	const T = settings.thresholds;
 	const mg = Math.round(settings.gaps.maxGapS / FR);
@@ -604,7 +629,8 @@ function frameFindings(
 				if (covered[g - lo]) any = true;
 				g++;
 			}
-			if (!any && (g - f) * FR >= T.untranscribedMinS - 1e-9) push('untranscribed', settings.rules.untranscribed, f, g);
+			if (!any && (g - f) * FR >= T.untranscribedMinS - 1e-9)
+				push('untranscribed', settings.rules.untranscribed, f, g);
 		} else {
 			while (g < hi && voice.classes[g] !== VOICE_CLASS_SPEECH) g++;
 			const between = f > lo && clsAt(voice, f - 1) === VOICE_CLASS_SPEECH && g < hi;
@@ -634,4 +660,3 @@ function frameFindings(
 export function levelDbAt(v: CleanupVoice, k: number): number {
 	return k >= 0 && k < v.frameCount ? voiceLevelDb(v.level[k]!) : -120;
 }
-

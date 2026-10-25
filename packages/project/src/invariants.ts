@@ -4,9 +4,11 @@
 
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
+import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
+import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
@@ -64,8 +66,6 @@ import {
 	sequenceSoundDesignIssue,
 } from './sound/repair.ts';
 import { isNestClip } from './structure/nest.ts';
-import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
-import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
@@ -943,7 +943,8 @@ export function invariantCheckers(
 		}
 		// spec 14 TC-024: edge micro-fades must be readable, on audio clips only (INV-CLEANUP).
 		if (r.edgeFades !== undefined) {
-			const bad = c.kind === 'audio' ? edgeFadesProblem(r.edgeFades) : `a ${c.kind} clip cannot carry edge fades`;
+			const bad =
+				c.kind === 'audio' ? edgeFadesProblem(r.edgeFades) : `a ${c.kind} clip cannot carry edge fades`;
 			if (bad) issues.push(inv('INV-CLEANUP', `Clip ${c.id}: ${bad}`, [...cw, 'edgeFades']));
 		}
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
@@ -1749,7 +1750,11 @@ export function repairDocument(
 			const fixed = repairSequenceCleanup(sc.cleanup);
 			if (fixed) sc.cleanup = fixed;
 			else delete sc.cleanup;
-			note('repair-cleanup', seq.id, fixed ? 'unreadable cleanup settings dropped, the rest kept' : 'unreadable cleanup state removed');
+			note(
+				'repair-cleanup',
+				seq.id,
+				fixed ? 'unreadable cleanup settings dropped, the rest kept' : 'unreadable cleanup state removed',
+			);
 		}
 		for (const c of Object.values(seq.clips)) {
 			const cr = c as { edgeFades?: unknown };

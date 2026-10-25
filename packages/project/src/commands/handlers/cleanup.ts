@@ -5,18 +5,18 @@ import type { Draft } from 'immer';
 import { type SeqWord, transcriptForMedia } from '../../captions/sequence-transcript.ts';
 import type { CleanupVoice } from '../../cleanup/detector.ts';
 import { planMediaCuts } from '../../cleanup/plan.ts';
-import { keptToFrames } from '../../cleanup/sequence.ts';
-import { decodeVoiceAnalysis } from '../../cleanup/voice-analysis.ts';
 import {
 	CLEANUP_MAX_REJECTED,
 	type CleanupLists,
+	type CleanupOverrides,
 	FAST_SETTINGS,
 	mergeCleanupSettings,
-	type CleanupOverrides,
 	readSequenceCleanup,
 	type SequenceCleanup,
 	sequenceCleanupIssue,
 } from '../../cleanup/schema.ts';
+import { keptToFrames } from '../../cleanup/sequence.ts';
+import { decodeVoiceAnalysis } from '../../cleanup/voice-analysis.ts';
 import { contentTimeAt } from '../../derive/index.ts';
 import { evaluate } from '../../keyframes.ts';
 import type { Animatable } from '../../schema/common.ts';
@@ -77,21 +77,22 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 	const results: RangeResult[] = [];
 	const frames: Array<[number, number]> = [];
 	const retimed: string[] = [];
-	cmd.ranges.forEach((r, index) => {
-		if (r.end <= r.start) h.fail('E_INVALID_PARAM', `Range ${index} is empty (end ${r.end} <= start ${r.start})`);
+	for (const [index, r] of cmd.ranges.entries()) {
+		if (r.end <= r.start)
+			h.fail('E_INVALID_PARAM', `Range ${index} is empty (end ${r.end} <= start ${r.start})`);
 		if ('clipId' in r) {
 			const c = seq.clips[r.clipId];
 			if (!c) return h.fail('E_NOT_FOUND', `Clip ${r.clipId} (range ${index}) is not in sequence ${seq.id}`);
 			if (c.speed.reverse || c.speed.rate !== 1 || isRemapped(c as Clip)) {
 				retimed.push(c.id);
-				return;
+				continue;
 			}
 			speech.add(c.id);
 			const a = Math.max(c.start, Math.round(c.start + (r.start - c.sourceIn) / F));
 			const b = Math.min(end(c), Math.round(c.start + (r.end - c.sourceIn) / F));
 			if (b <= a) {
 				results.push({ index, start: a, end: Math.max(a, b), applied: false, reason: 'outside the clip' });
-				return;
+				continue;
 			}
 			frames.push([a, b]);
 			results.push({ index, start: a, end: b, applied: true });
@@ -99,7 +100,7 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 			frames.push([r.start, r.end]);
 			results.push({ index, start: r.start, end: r.end, applied: true });
 		}
-	});
+	}
 	if (retimed.length)
 		h.fail(
 			'E_UNSUPPORTED',
@@ -113,7 +114,8 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 			if (c.kind === 'audio' && c.enabled && audioTracks.has(c.trackId) && transcriptForMedia(doc, c.mediaId))
 				speech.add(c.id);
 	}
-	if (!speech.size) h.fail('E_INVALID_PARAM', 'No speech clip: pass clipIds (no transcribed audio clip found)');
+	if (!speech.size)
+		h.fail('E_INVALID_PARAM', 'No speech clip: pass clipIds (no transcribed audio clip found)');
 	const ranges = mergeFrameRanges(frames);
 	const targets = targetClips(seq, speech);
 	const trackIds = new Set<string>();
@@ -178,16 +180,29 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 		muted++;
 	}
 	if (unsupported.length)
-		h.fail('E_UNSUPPORTED', `Mute needs forward clips that are not time-remapped: ${unsupported.join(', ')}`, {
-			blocking: unsupported,
-		});
+		h.fail(
+			'E_UNSUPPORTED',
+			`Mute needs forward clips that are not time-remapped: ${unsupported.join(', ')}`,
+			{
+				blocking: unsupported,
+			},
+		);
 	return { ...base, frames: 0, joins: 0, tracks: [...trackIds], fades: 0, mutedClips: muted };
 }
 
 /** Volume keys holding −96 dB over each range, ramping over `fadeS` (content seconds × speed) on both sides. */
-function muteClip(c: DClip, hits: ReadonlyArray<readonly [number, number]>, rate: Rational, fadeS: number, h: HandlerContext) {
+function muteClip(
+	c: DClip,
+	hits: ReadonlyArray<readonly [number, number]>,
+	rate: Rational,
+	fadeS: number,
+	h: HandlerContext,
+) {
 	const vol = (c as unknown as { volumeDb: Draft<Animatable<number>> }).volumeDb;
-	const orig: Animatable<number> = { value: vol.value, keyframes: vol.keyframes.map((k) => ({ ...k })) as never };
+	const orig: Animatable<number> = {
+		value: vol.value,
+		keyframes: vol.keyframes.map((k) => ({ ...k })) as never,
+	};
 	const c0 = c.sourceIn;
 	const c1 = contentTimeAt(c, end(c), rate);
 	const fadeC = fadeS * FLICKS_PER_SECOND * c.speed.rate;
@@ -345,7 +360,14 @@ export function levelPauseRanges(
 ): Array<[number, number]> {
 	const rate = seq.settings.frameRate as Rational;
 	const settings = mergeCleanupSettings(FAST_SETTINGS, {
-		edges: { mode: 'level', reference: 'floor', outDb: o.outDb, inDb: o.inDb, padBeforeS: o.padBefore, padAfterS: o.padAfter },
+		edges: {
+			mode: 'level',
+			reference: 'floor',
+			outDb: o.outDb,
+			inDb: o.inDb,
+			padBeforeS: o.padBefore,
+			padAfterS: o.padAfter,
+		},
 		gaps: { maxGapS: o.minSeconds, keepGapS: 0, keepGapSentenceS: 0, breath: 'remove' },
 		guards: { minPieceS: 0 },
 	});
@@ -380,12 +402,17 @@ export function levelPauseRanges(
 		const plan = planMediaCuts({ words: aw, removed: aw.map(() => false), voice, settings });
 		const extent: [number, number] = [clip.start, end(clip)];
 		const kept = keptToFrames(clip, rate, voice, plan.kept, settings.edges.snapWindowS, extent);
-		for (let i = 0; i + 1 < kept.length; i++) if (kept[i + 1]![0] > kept[i]![1]) out.push([kept[i]![1], kept[i + 1]![0]]);
+		for (let i = 0; i + 1 < kept.length; i++)
+			if (kept[i + 1]![0] > kept[i]![1]) out.push([kept[i]![1], kept[i + 1]![0]]);
 	}
 	if (retimed.length)
-		h.fail('E_UNSUPPORTED', `Level mode needs clips at 100 % speed, not reversed or remapped: ${retimed.join(', ')}`, {
-			blocking: retimed,
-		});
+		h.fail(
+			'E_UNSUPPORTED',
+			`Level mode needs clips at 100 % speed, not reversed or remapped: ${retimed.join(', ')}`,
+			{
+				blocking: retimed,
+			},
+		);
 	if (missing.size)
 		h.fail(
 			'E_INVALID_PARAM',

@@ -6,7 +6,12 @@
 // totals. Media without a usable analysis (offline, not in the engine store, no audio) are planned in word mode and
 // reported. Nothing changes the document: applying is the client's `cleanup.apply` transaction.
 import { randomBytes } from 'node:crypto';
-import type { CleanupAnalysisFile, CleanupAnalysisJobResult, CleanupAnalyzeRequest, EngineJob } from '@jasper/api';
+import type {
+	CleanupAnalysisFile,
+	CleanupAnalysisJobResult,
+	CleanupAnalyzeRequest,
+	EngineJob,
+} from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	analyzeSequenceCleanup,
@@ -125,7 +130,9 @@ export class CleanupAnalysisService {
 		if (!seq)
 			throw new JobError(
 				req.sequenceId ? 'SEQUENCE_NOT_FOUND' : 'VALIDATION_FAILED',
-				req.sequenceId ? `Sequence not found: ${req.sequenceId}` : 'sequenceId is required (several sequences)',
+				req.sequenceId
+					? `Sequence not found: ${req.sequenceId}`
+					: 'sequenceId is required (several sequences)',
 				false,
 			);
 		const scope = {
@@ -138,9 +145,17 @@ export class CleanupAnalysisService {
 
 		// voice analyses of the speech media
 		const voices = new Map<string, CleanupVoice | null>();
-		const voice = { cached: [] as string[], analysed: [] as string[], missing: [] as { mediaId: string; reason: string }[] };
+		const voice = {
+			cached: [] as string[],
+			analysed: [] as string[],
+			missing: [] as { mediaId: string; reason: string }[],
+		};
 		const wanted = new Map<string, { mediaId: string; stream: number }>();
-		for (const c of sc.clips) wanted.set(`${c.mediaId}\u0000${c.channels.streamIndex}`, { mediaId: c.mediaId, stream: c.channels.streamIndex });
+		for (const c of sc.clips)
+			wanted.set(`${c.mediaId}\u0000${c.channels.streamIndex}`, {
+				mediaId: c.mediaId,
+				stream: c.channels.streamIndex,
+			});
 		const svc = this.deps.voice();
 		let done = 0;
 		for (const [key, { mediaId, stream }] of wanted) {
@@ -167,7 +182,8 @@ export class CleanupAnalysisService {
 						const fin = await this.core.queue.wait(job.id);
 						ctx.signal.removeEventListener('abort', onAbort);
 						ctx.signal.throwIfAborted();
-						if (fin.state !== 'succeeded') miss(`voice analysis ${fin.state}: ${fin.error?.message ?? ''}`.trim());
+						if (fin.state !== 'succeeded')
+							miss(`voice analysis ${fin.state}: ${fin.error?.message ?? ''}`.trim());
 						else {
 							a = await svc.read(rec, streamIndex);
 							if (a) voice.analysed.push(mediaId);
@@ -194,7 +210,8 @@ export class CleanupAnalysisService {
 			...(req.decisions ? { decisions: req.decisions } : {}),
 			scope,
 		});
-		if (!analysis.ok) throw new JobError(analysis.code, analysis.message, false, { clipIds: analysis.clipIds });
+		if (!analysis.ok)
+			throw new JobError(analysis.code, analysis.message, false, { clipIds: analysis.clipIds });
 		let id = '';
 		for (const b of randomBytes(12)) id += CROCKFORD_ALPHABET[b & 31];
 		const analysisId = `cla_${id}`;

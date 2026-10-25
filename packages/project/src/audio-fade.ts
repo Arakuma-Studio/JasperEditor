@@ -101,7 +101,8 @@ export const EDGE_FADE_MAX_MS = 30;
  */
 export type AudioEdgeFades = { inMs?: number; outMs?: number };
 
-const fadeMsOk = (v: unknown) => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= EDGE_FADE_MAX_MS);
+const fadeMsOk = (v: unknown) =>
+	v === undefined || (typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= EDGE_FADE_MAX_MS);
 
 /** INV-CLEANUP: what is wrong with a clip's `edgeFades`, or null (absent is fine). */
 export function edgeFadesProblem(v: unknown): string | null {

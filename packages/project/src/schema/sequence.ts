@@ -1,6 +1,8 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 
 import { z } from 'zod';
+import type { AudioEdgeFades } from '../audio-fade.ts';
+import type { SequenceCleanup } from '../cleanup/schema.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
 import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
@@ -30,8 +32,6 @@ import {
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
-import type { SequenceCleanup } from '../cleanup/schema.ts';
-import type { AudioEdgeFades } from '../audio-fade.ts';
 import type { ClipBed, ClipSfx, SoundDesign } from './sound.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 import {

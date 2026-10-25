@@ -7,7 +7,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { type CleanupVoice, detectCleanup } from '../src/cleanup/detector.ts';
 import { planMediaCuts } from '../src/cleanup/plan.ts';
-import { type CleanupSettings, FAST_SETTINGS, type FindingKind, mergeCleanupSettings } from '../src/cleanup/schema.ts';
+import {
+	type CleanupSettings,
+	FAST_SETTINGS,
+	type FindingKind,
+	mergeCleanupSettings,
+} from '../src/cleanup/schema.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 
 type Case = {

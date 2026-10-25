@@ -76,7 +76,8 @@ const claim = (ctx: RuleContext, k: number, kind: FindingKind, action: RuleActio
 const content = (ctx: RuleContext, idx: readonly number[]) =>
 	idx.map((k) => ctx.words[k]!.n).filter((t) => !ctx.fillers.has(t));
 /** Prototype `cw`: content words (not stop words, ≥ 3 letters). */
-const cw = (ctx: RuleContext, toks: readonly string[]) => toks.filter((t) => !ctx.stop.has(t) && t.length >= 3);
+const cw = (ctx: RuleContext, toks: readonly string[]) =>
+	toks.filter((t) => !ctx.stop.has(t) && t.length >= 3);
 
 /** Rule 3 of the prototype (vocalic fillers) + drawn-out single vowels (spec). */
 export function ruleFillers(ctx: RuleContext): void {
@@ -179,7 +180,8 @@ export function ruleTakes(ctx: RuleContext): { units: number[][]; hits: TakeHit[
 			const cj = cw(ctx, cq);
 			let hit: boolean;
 			if (c.length === 1) hit = cq[0] === c[0] && qStart - uEnd < t.falseStartGapS;
-			else if (ci.length >= 2 && cj.length) hit = lcs(ci, cj) / ci.length >= t.retakeSimilarity && cj.slice(0, 3).includes(ci[0]!);
+			else if (ci.length >= 2 && cj.length)
+				hit = lcs(ci, cj) / ci.length >= t.retakeSimilarity && cj.slice(0, 3).includes(ci[0]!);
 			else hit = c.length <= 3 && c.every((x, k) => cq[k] === x);
 			if (hit) {
 				hits.push({ from: a, to: b });
@@ -210,7 +212,11 @@ export function ruleOffScript(ctx: RuleContext, phs: readonly number[][]): void 
  * Whether `toks` is made only of marker phrases and vocalic fillers (greedy longest match; the prototype's
  * standalone-phrase rule checked single tokens, which the single-word entries reproduce).
  */
-export function onlyMarkers(toks: readonly string[], markers: readonly string[][], fillers: ReadonlySet<string>): boolean {
+export function onlyMarkers(
+	toks: readonly string[],
+	markers: readonly string[][],
+	fillers: ReadonlySet<string>,
+): boolean {
 	let i = 0;
 	while (i < toks.length) {
 		if (fillers.has(toks[i]!)) {
@@ -219,7 +225,8 @@ export function onlyMarkers(toks: readonly string[], markers: readonly string[][
 		}
 		let best = 0;
 		for (const m of markers)
-			if (m.length > best && i + m.length <= toks.length && m.every((x, k) => toks[i + k] === x)) best = m.length;
+			if (m.length > best && i + m.length <= toks.length && m.every((x, k) => toks[i + k] === x))
+				best = m.length;
 		if (!best) return false;
 		i += best;
 	}
@@ -227,7 +234,11 @@ export function onlyMarkers(toks: readonly string[], markers: readonly string[][
 }
 
 /** The prototype's standalone-phrase rule: a phrase of ≤ `markerPhraseMaxWords` words made only of markers. */
-export function ruleMarkerPhrases(ctx: RuleContext, phs: readonly number[][], markers: readonly string[][]): void {
+export function ruleMarkerPhrases(
+	ctx: RuleContext,
+	phs: readonly number[][],
+	markers: readonly string[][],
+): void {
 	const a = ctx.settings.rules.fillerPhrase;
 	if (a === 'off') return;
 	const max = ctx.settings.thresholds.markerPhraseMaxWords;
@@ -251,7 +262,12 @@ export function ruleStutters(ctx: RuleContext): void {
 	for (let j = 1; j < w.length; j++) {
 		// cut-off word: "jue- juego"
 		const prev = w[j - 1]!;
-		if (/[-‐‑–—]$/.test(prev.text.trim()) && w[j]!.n.startsWith(prev.n) && w[j]!.n !== prev.n && w[j]!.s - prev.e < gap) {
+		if (
+			/[-‐‑–—]$/.test(prev.text.trim()) &&
+			w[j]!.n.startsWith(prev.n) &&
+			w[j]!.n !== prev.n &&
+			w[j]!.s - prev.e < gap
+		) {
 			claim(ctx, j - 1, 'stutter', a);
 			continue;
 		}
@@ -273,7 +289,11 @@ export function ruleStutters(ctx: RuleContext): void {
  * Lexical marker at a clause start, followed by a comma or a pause ("Bueno, …", "Este… "): flagged for review with low
  * confidence; inside a sentence ("este video", "pero bueno") never.
  */
-export function ruleLexicalReview(ctx: RuleContext, phs: readonly number[][], markers: readonly string[][]): void {
+export function ruleLexicalReview(
+	ctx: RuleContext,
+	phs: readonly number[][],
+	markers: readonly string[][],
+): void {
 	if (ctx.settings.rules.fillerLexical === 'off') return;
 	const w = ctx.words;
 	for (const ph of phs) {
@@ -284,7 +304,8 @@ export function ruleLexicalReview(ctx: RuleContext, phs: readonly number[][], ma
 		const last = w[ph[best - 1]!]!;
 		const next = w[ph[best]!]!;
 		const comma = /[,…;:]$|\.\.\.$/.test(last.text.trim());
-		if (comma || next.s - last.e >= 0.15) for (let k = 0; k < best; k++) claim(ctx, ph[k]!, 'filler-lexical', 'review');
+		if (comma || next.s - last.e >= 0.15)
+			for (let k = 0; k < best; k++) claim(ctx, ph[k]!, 'filler-lexical', 'review');
 	}
 }
 

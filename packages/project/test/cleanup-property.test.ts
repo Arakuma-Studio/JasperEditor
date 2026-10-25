@@ -12,7 +12,23 @@ import { checkInvariants, type ProjectDocument, type Sequence } from '../src/ind
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import { Harness } from './helpers.ts';
 
-const VOCAB = ['hola', 'eh', 'vamos', 'a', 'hacer', 'un', 'juego', 'de', 'carreras', 'bueno', 'la', 'carretera', 'mmm', 'coches', 'y'];
+const VOCAB = [
+	'hola',
+	'eh',
+	'vamos',
+	'a',
+	'hacer',
+	'un',
+	'juego',
+	'de',
+	'carreras',
+	'bueno',
+	'la',
+	'carretera',
+	'mmm',
+	'coches',
+	'y',
+];
 
 /** Random words over random sound: each word is speech (loud core + quieter edges), gaps are silence or breath. */
 const recording = fc
@@ -77,10 +93,17 @@ describe('planning properties', () => {
 	it('kept pieces are sorted, disjoint, inside the media, without removed sound, without split words', () => {
 		fc.assert(
 			fc.property(recording, (r) => {
-				const d = detectCleanup({ mediaId: 'med_p', words: r.words, voice: r.voice, language: 'es', settings: r.settings });
+				const d = detectCleanup({
+					mediaId: 'med_p',
+					words: r.words,
+					voice: r.voice,
+					language: 'es',
+					settings: r.settings,
+				});
 				const removedIdx = new Set<number>();
 				for (const f of d.findings)
-					if (f.words && f.suggested === 'remove') for (let i = f.words[0]; i <= f.words[1]; i++) removedIdx.add(i);
+					if (f.words && f.suggested === 'remove')
+						for (let i = f.words[0]; i <= f.words[1]; i++) removedIdx.add(i);
 				const removed = d.words.map((w, k) => d.guarded[k] || removedIdx.has(w.i));
 				const plan = planMediaCuts({ words: d.words, removed, voice: r.voice, settings: r.settings });
 				const kept = plan.kept;
@@ -117,7 +140,13 @@ describe('planning properties', () => {
 		fc.assert(
 			fc.property(recording, (r) => {
 				const settings = mergeCleanupSettings(FAST_SETTINGS, {});
-				const d = detectCleanup({ mediaId: 'med_p', words: r.words, voice: r.voice, language: 'es', settings });
+				const d = detectCleanup({
+					mediaId: 'med_p',
+					words: r.words,
+					voice: r.voice,
+					language: 'es',
+					settings,
+				});
 				const plan = planMediaCuts({ words: d.words, removed: d.guarded, voice: r.voice, settings });
 				for (const [a, b] of plan.kept) {
 					expect(b - a).toBeGreaterThanOrEqual(settings.guards.minPieceS - 1e-9);
@@ -141,7 +170,12 @@ function shape(seq: Sequence) {
 	};
 	const tracks: Record<string, Array<[number, number, number, string]>> = {};
 	for (const c of Object.values(seq.clips)) {
-		(tracks[c.trackId] ??= []).push([c.start, c.duration, c.sourceIn, (c as { mediaId?: string }).mediaId ?? '']);
+		(tracks[c.trackId] ??= []).push([
+			c.start,
+			c.duration,
+			c.sourceIn,
+			(c as { mediaId?: string }).mediaId ?? '',
+		]);
 	}
 	for (const l of Object.values(tracks)) l.sort((a, b) => a[0] - b[0]);
 	const sets = (rec: Record<string, { members: string[] }>) =>
@@ -159,7 +193,11 @@ function shape(seq: Sequence) {
 describe('one-pass extract = successive range.extract', () => {
 	const scenario = fc.record({
 		pieces: fc.array(
-			fc.record({ gap: fc.integer({ min: 0, max: 40 }), len: fc.integer({ min: 5, max: 120 }), jl: fc.integer({ min: -6, max: 6 }) }),
+			fc.record({
+				gap: fc.integer({ min: 0, max: 40 }),
+				len: fc.integer({ min: 5, max: 120 }),
+				jl: fc.integer({ min: -6, max: 6 }),
+			}),
 			{ minLength: 1, maxLength: 6 },
 		),
 		music: fc.boolean(),
@@ -167,10 +205,13 @@ describe('one-pass extract = successive range.extract', () => {
 		lockV2: fc.boolean(),
 		group: fc.boolean(),
 		markers: fc.array(fc.integer({ min: 0, max: 900 }), { maxLength: 5 }),
-		ranges: fc.array(fc.record({ a: fc.integer({ min: 0, max: 900 }), len: fc.integer({ min: 1, max: 60 }) }), {
-			minLength: 1,
-			maxLength: 12,
-		}),
+		ranges: fc.array(
+			fc.record({ a: fc.integer({ min: 0, max: 900 }), len: fc.integer({ min: 1, max: 60 }) }),
+			{
+				minLength: 1,
+				maxLength: 12,
+			},
+		),
 	});
 	it('matches on random timelines with links, J / L edges, groups, sync lock, locked tracks and markers', () => {
 		fc.assert(
@@ -192,13 +233,27 @@ describe('one-pass extract = successive range.extract', () => {
 					at += p.len;
 				}
 				if (sc.music)
-					cmds.push({ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V2', audio: ['A2'] }, mode: 'overwrite' });
+					cmds.push({
+						type: 'clip.place',
+						source: { mediaId: m },
+						at: 0,
+						tracks: { video: 'V2', audio: ['A2'] },
+						mode: 'overwrite',
+					});
 				H.ok(cmds);
 				// J / L edges: roll the sound of each piece a little (when there is room)
 				for (const c of H.clips('A1')) {
 					const p = sc.pieces[H.clips('A1').indexOf(c)];
 					if (!p || p.jl === 0) continue;
-					H.tx([{ type: 'clip.trim', clipId: c.id, edge: p.jl > 0 ? 'out' : 'in', deltaFrames: -p.jl, linked: false }]);
+					H.tx([
+						{
+							type: 'clip.trim',
+							clipId: c.id,
+							edge: p.jl > 0 ? 'out' : 'in',
+							deltaFrames: -p.jl,
+							linked: false,
+						},
+					]);
 				}
 				if (sc.music) {
 					H.ok([
@@ -216,7 +271,9 @@ describe('one-pass extract = successive range.extract', () => {
 				const docOne = H.doc;
 				// the same tracks, one range.extract per merged range, right to left
 				H.doc = base;
-				const tracks = (one.ok ? ((one.results[0] as { tracks: string[] }).tracks ?? []) : []).filter(Boolean);
+				const tracks = (one.ok ? ((one.results[0] as { tracks: string[] }).tracks ?? []) : []).filter(
+					Boolean,
+				);
 				const merged = [...ranges].sort((x, y) => x.start - y.start);
 				const mr: Array<[number, number]> = [];
 				for (const r of merged) {

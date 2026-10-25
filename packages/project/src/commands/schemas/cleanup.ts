@@ -28,7 +28,10 @@ export const CleanupApplyCmd = cmd('cleanup.apply', {
 	sequenceId: IdRefSchema.optional(),
 	/** The speech clips (default: the clips of source ranges, else every transcribed audio clip). */
 	clipIds: z.array(IdRefSchema).min(1).optional(),
-	ranges: z.array(z.union([CleanupSourceRangeSchema, CleanupSequenceRangeSchema])).min(1).max(CLEANUP_APPLY_MAX_RANGES),
+	ranges: z
+		.array(z.union([CleanupSourceRangeSchema, CleanupSequenceRangeSchema]))
+		.min(1)
+		.max(CLEANUP_APPLY_MAX_RANGES),
 	/**
 	 * `extract` (default): ripple delete on the speech clips' tracks, their linked partners' and clip groups' tracks;
 	 * unlocked sync-locked tracks follow. `lift`: leave gaps. `mute`: Volume keys down to −∞ dB over the ranges (with

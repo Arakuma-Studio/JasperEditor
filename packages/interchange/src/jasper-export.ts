@@ -691,12 +691,16 @@ export function fromJasper(
 				});
 		}
 		// spec 14 TC-024: sub-frame edge micro-fades (the declick of a cleanup join) have no equivalent in any format
-		const ef = c.kind === 'audio' ? (c as { edgeFades?: { inMs?: number; outMs?: number } }).edgeFades : undefined;
+		const ef =
+			c.kind === 'audio' ? (c as { edgeFades?: { inMs?: number; outMs?: number } }).edgeFades : undefined;
 		if (ef && (ef.inMs || ef.outMs))
-			report.warn(`the ${ef.inMs && ef.outMs ? 'edge micro-fades' : 'edge micro-fade'} of clip "${c.name}" at frame ${c.start} ${ef.inMs && ef.outMs ? 'are' : 'is'} not carried`, {
-				subject: { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start },
-				instead: 'hard cuts at its edges (a 1-frame audio transition is the closest equivalent)',
-			});
+			report.warn(
+				`the ${ef.inMs && ef.outMs ? 'edge micro-fades' : 'edge micro-fade'} of clip "${c.name}" at frame ${c.start} ${ef.inMs && ef.outMs ? 'are' : 'is'} not carried`,
+				{
+					subject: { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start },
+					instead: 'hard cuts at its edges (a 1-frame audio transition is the closest equivalent)',
+				},
+			);
 		if (pre) {
 			const mid = prerenderMedia(c, pre);
 			return {

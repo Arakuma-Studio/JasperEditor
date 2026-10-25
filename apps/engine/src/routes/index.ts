@@ -8,6 +8,7 @@ import cacheRoutes from './cache.ts';
 import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
+import cleanupRoutes from './cleanup.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
@@ -38,7 +39,6 @@ import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
 import voiceRoutes from './voice.ts';
-import cleanupRoutes from './cleanup.ts';
 
 const ROUTE_PLUGINS = [
 	capabilitiesRoutes,

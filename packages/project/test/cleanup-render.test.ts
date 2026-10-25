@@ -136,7 +136,10 @@ describe('INV-CLEANUP and repair', () => {
 		const doc = structuredClone(h.doc) as ProjectDocument;
 		const seq = doc.sequences[h.seqId] as unknown as Record<string, unknown>;
 		seq.cleanup = {
-			settings: { presetId: 'builtin.natural', overrides: { gaps: { maxGapS: 0.3, bogus: 1 }, edges: { outDb: 'x' } } },
+			settings: {
+				presetId: 'builtin.natural',
+				overrides: { gaps: { maxGapS: 0.3, bogus: 1 }, edges: { outDb: 'x' } },
+			},
 			script: { name: 'S', text: 'hola' },
 			rejected: ['ok~1~pause~1~2~00000000', 'bad fp', 'ok~1~pause~1~2~00000000'],
 			lists: { es: { fillers: ['eh', 7] }, 'not a lang': { fillers: ['x'] } },

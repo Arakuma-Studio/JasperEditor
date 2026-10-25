@@ -6,7 +6,7 @@
 // truncation and rounding where it truncates and rounds) so the port places the same edges. Then edges are snapped
 // to the sequence's frame grid: frame boundaries within `snapWindowS` compete on level (the quietest 10 ms frame
 // wins); with none in the window an in point snaps down and an out point up (never into the word). Pure.
-import { FR, levelDbAt, type CleanupVoice } from './detector.ts';
+import { type CleanupVoice, FR, levelDbAt } from './detector.ts';
 import type { CleanupEdges } from './schema.ts';
 
 /** The level an edge rule compares with: floor + dB, or speech level − dB. Null without levels. */

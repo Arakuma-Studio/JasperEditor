@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeSequenceCleanup, type CleanupAnalysis } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
-import { scoreKept, type SynthEvent, type SynthRecording, synthRecording } from './cleanup-synth.ts';
+import { type SynthEvent, type SynthRecording, scoreKept, synthRecording } from './cleanup-synth.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
 export const GOLDEN_SCRIPT = [
@@ -85,7 +85,8 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		expect(speech / frames).toBeGreaterThan(0.95);
 		const [a, b] = rec.breaths[0]!;
 		let breath = 0;
-		for (let f = Math.ceil(a * 100) + 3; f < Math.floor(b * 100) - 3; f++) if (rec.voice.classes[f] === 1) breath++;
+		for (let f = Math.ceil(a * 100) + 3; f < Math.floor(b * 100) - 3; f++)
+			if (rec.voice.classes[f] === 1) breath++;
 		expect(breath).toBeGreaterThan(5);
 	});
 
@@ -109,18 +110,30 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		expect(a.script?.every((l) => l.said)).toBe(true);
 		// the cough is flagged for review and kept (never removed automatically)
 		const [ca, cb] = rec.coughs[0]!;
-		const cough = a.findings.find((f) => f.kind === 'untranscribed' && f.range.start / FLICKS_PER_SECOND < cb && f.range.end / FLICKS_PER_SECOND > ca);
+		const cough = a.findings.find(
+			(f) =>
+				f.kind === 'untranscribed' &&
+				f.range.start / FLICKS_PER_SECOND < cb &&
+				f.range.end / FLICKS_PER_SECOND > ca,
+		);
 		expect(cough?.suggested).toBe('review');
 		expect(keptSeconds(a).some(([s, e]) => s < cb && e > ca)).toBe(true);
 		// accepting it removes it
-		const b = analyzeSequenceCleanup({ doc: H.doc, seq: H.seq, voice: () => rec.voice, decisions: { accept: [cough!.id] } });
+		const b = analyzeSequenceCleanup({
+			doc: H.doc,
+			seq: H.seq,
+			voice: () => rec.voice,
+			decisions: { accept: [cough!.id] },
+		});
 		if (!b.ok) throw new Error(b.message);
 		expect(keptSeconds(b).some(([s, e]) => s < cb && e > ca)).toBe(false);
 		// head chatter and off-script talk need the script; kinds found
 		const kinds = new Set(a.findings.filter((f) => f.suggested === 'remove').map((f) => f.kind));
 		for (const k of ['false-start', 'filler-vocalic', 'off-script', 'restart', 'filler-phrase', 'pause'])
 			expect(kinds, k).toContain(k);
-		expect(a.media).toEqual([expect.objectContaining({ mediaId, voice: true, edgeMode: 'level', language: 'es' })]);
+		expect(a.media).toEqual([
+			expect.objectContaining({ mediaId, voice: true, edgeMode: 'level', language: 'es' }),
+		]);
 		// edges: every kept piece starts within 40 ms before a kept word's sound and ends within its decay
 		const kw = rec.words.filter((w) => w.keep);
 		for (const [s, e] of keptSeconds(a)) {

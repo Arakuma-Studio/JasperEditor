@@ -33,6 +33,14 @@ import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
 import {
+	CleanupAnalysisFileSchema,
+	CleanupAnalyzeRequestSchema,
+	CleanupPresetCreateRequestSchema,
+	CleanupPresetDeleteResponseSchema,
+	CleanupPresetLibraryResponseSchema,
+	CleanupPresetUpdateRequestSchema,
+} from './cleanup.ts';
+import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
 	EffectPresetFolderCreateRequestSchema,
@@ -262,14 +270,6 @@ import {
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
-import {
-	CleanupAnalysisFileSchema,
-	CleanupAnalyzeRequestSchema,
-	CleanupPresetCreateRequestSchema,
-	CleanupPresetDeleteResponseSchema,
-	CleanupPresetLibraryResponseSchema,
-	CleanupPresetUpdateRequestSchema,
-} from './cleanup.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 

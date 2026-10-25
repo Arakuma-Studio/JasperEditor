@@ -748,14 +748,21 @@ export function resolveAudioTransitions(
 		const raw = (c as { edgeFades?: unknown }).edgeFades;
 		if (raw === undefined) continue;
 		const ef = readEdgeFades(raw);
-		const has = (type: 'in' | 'out') => clips.get(c.id)?.fades.some((f) => f.type === type && !f.edge) ?? false;
+		const has = (type: 'in' | 'out') =>
+			clips.get(c.id)?.fades.some((f) => f.type === type && !f.edge) ?? false;
 		if (ef.inMs && !has('in')) {
 			const frames = Math.min(c.duration, (ef.inMs / 1000) * fps);
 			entry(c.id).fades.push({ type: 'in', start: c.start, frames, curve: 'equal-power', edge: true });
 		}
 		if (ef.outMs && !has('out')) {
 			const frames = Math.min(c.duration, (ef.outMs / 1000) * fps);
-			entry(c.id).fades.push({ type: 'out', start: clipEnd(c) - frames, frames, curve: 'equal-power', edge: true });
+			entry(c.id).fades.push({
+				type: 'out',
+				start: clipEnd(c) - frames,
+				frames,
+				curve: 'equal-power',
+				edge: true,
+			});
 		}
 	}
 	return { clips, skipped };

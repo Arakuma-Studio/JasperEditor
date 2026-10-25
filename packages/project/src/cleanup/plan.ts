@@ -6,7 +6,7 @@
 // breaths kept, the gap policy's air inside / between sentences (`keepGapS`, `keepGapSentenceS`), word mode for media
 // without a voice analysis, and the "avoid harsh cuts" guard. Times are media seconds. Pure.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH } from '@jasper/audio-dsp';
-import { FR, levelDbAt, type CleanupVoice } from './detector.ts';
+import { type CleanupVoice, FR, levelDbAt } from './detector.ts';
 import { edgeThreshold, levelInPoint, levelOutPoint } from './edges.ts';
 import type { AWord } from './rules.ts';
 import type { CleanupSettings } from './schema.ts';
@@ -69,7 +69,8 @@ const SENTENCE_END = /[.?!…]["'»”’)]*$/u;
 /** Plans the kept pieces of one media (see the module comment). */
 export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const P = input.settings;
-	const voice = input.voice && input.voice.frameCount > 0 && input.voice.levels.floorDb !== null ? input.voice : null;
+	const voice =
+		input.voice && input.voice.frameCount > 0 && input.voice.levels.floorDb !== null ? input.voice : null;
 	const mode = voice ? P.edges.mode : 'word';
 	const keepIdx: number[] = [];
 	for (let k = 0; k < input.words.length; k++) if (!input.removed[k]) keepIdx.push(k);
@@ -172,7 +173,8 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 		const gap = nxt.a - cur.b;
 		if (!(gap > 0)) continue;
 		const lastWord = cur.k >= 0 ? input.words[cur.k]! : null;
-		const want = lastWord && SENTENCE_END.test(lastWord.text.trim()) ? P.gaps.keepGapSentenceS : P.gaps.keepGapS;
+		const want =
+			lastWord && SENTENCE_END.test(lastWord.text.trim()) ? P.gaps.keepGapSentenceS : P.gaps.keepGapS;
 		const extra = want - pads;
 		if (!(extra > 1e-9)) continue;
 		let ea = Math.min(extra * wa, gap / 2, cur.maxB - cur.b);
@@ -345,7 +347,12 @@ function nonSpeechBefore(v: CleanupVoice, t: number): number {
  * The "avoid harsh cuts" guard (TC-023): whether a cut between kept pieces ending at `out` and starting at `inn`
  * (seconds) lands on loud sound — no frame within `window` of an edge is below the in-threshold.
  */
-export function isHarshCut(voice: CleanupVoice, settings: CleanupSettings, out: number, inn: number): boolean {
+export function isHarshCut(
+	voice: CleanupVoice,
+	settings: CleanupSettings,
+	out: number,
+	inn: number,
+): boolean {
 	const thr = edgeThreshold(voice, settings.edges, 'in');
 	if (thr === null) return false;
 	const w = Math.max(0, Math.round(settings.guards.harshWindowS / FR));

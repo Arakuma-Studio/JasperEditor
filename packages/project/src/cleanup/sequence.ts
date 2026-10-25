@@ -12,7 +12,13 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { isRemapped } from '../time-remap/model.ts';
-import { type CleanupSegmentIn, type CleanupVoice, type DetectResult, detectCleanup, FR } from './detector.ts';
+import {
+	type CleanupSegmentIn,
+	type CleanupVoice,
+	type DetectResult,
+	detectCleanup,
+	FR,
+} from './detector.ts';
 import { snapEdge } from './edges.ts';
 import { cleanupLanguageOf } from './lists.ts';
 import { isHarshCut, planMediaCuts, type Span } from './plan.ts';
@@ -47,7 +53,12 @@ export type CleanupScope = {
 	range?: { from: number; to: number } | null;
 };
 
-export type CleanupRefusal = { ok: false; code: 'E_UNSUPPORTED' | 'E_INVALID_PARAM' | 'E_NOT_FOUND'; message: string; clipIds: string[] };
+export type CleanupRefusal = {
+	ok: false;
+	code: 'E_UNSUPPORTED' | 'E_INVALID_PARAM' | 'E_NOT_FOUND';
+	message: string;
+	clipIds: string[];
+};
 
 export type CleanupPlanRange = {
 	/** Sequence frames, half-open. */
@@ -160,7 +171,12 @@ export function speechClipsOf(
 	if (wanted) {
 		const missing = [...wanted].filter((id) => !seq.clips[id]);
 		if (missing.length)
-			return { ok: false, code: 'E_NOT_FOUND', message: `Clips not found: ${missing.join(', ')}`, clipIds: missing };
+			return {
+				ok: false,
+				code: 'E_NOT_FOUND',
+				message: `Clips not found: ${missing.join(', ')}`,
+				clipIds: missing,
+			};
 		// linked partners and group members of the given clips count as given
 		for (const id of [...wanted]) {
 			const c = seq.clips[id]!;
@@ -202,7 +218,8 @@ export function speechClipsOf(
 
 /** Whether finding `f` is removed under `d` (and the sequence's persisted rejections). */
 export function isAccepted(f: CleanupFinding, d: CleanupDecisions, rejected: ReadonlySet<string>): boolean {
-	const has = (list: readonly string[] | undefined) => !!list && (list.includes(f.id) || list.includes(f.fingerprint));
+	const has = (list: readonly string[] | undefined) =>
+		!!list && (list.includes(f.id) || list.includes(f.fingerprint));
 	if (has(d.reject)) return false;
 	if (has(d.accept)) return true;
 	if (d.rejectKinds?.includes(f.kind)) return false;
@@ -252,13 +269,32 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 	const toMediaFlicks = (c: Clip, frame: number) => c.sourceIn + (frame - c.start) * F;
 
 	// one detection per media + stream
-	type MediaRun = { key: string; mediaId: string; stream: number; clips: SpeechClip[]; result: DetectResult; voice: CleanupVoice | null; transcriptId: string; language: string | null };
+	type MediaRun = {
+		key: string;
+		mediaId: string;
+		stream: number;
+		clips: SpeechClip[];
+		result: DetectResult;
+		voice: CleanupVoice | null;
+		transcriptId: string;
+		language: string | null;
+	};
 	const runs = new Map<string, MediaRun>();
 	for (const c of sc.clips) {
 		const key = `${c.mediaId}\u0000${c.channels.streamIndex}`;
 		const r = runs.get(key);
 		if (r) r.clips.push(c);
-		else runs.set(key, { key, mediaId: c.mediaId, stream: c.channels.streamIndex, clips: [c], result: null as never, voice: null, transcriptId: '', language: null });
+		else
+			runs.set(key, {
+				key,
+				mediaId: c.mediaId,
+				stream: c.channels.streamIndex,
+				clips: [c],
+				result: null as never,
+				voice: null,
+				transcriptId: '',
+				language: null,
+			});
 	}
 	const findings: CleanupFinding[] = [];
 	const groups: RetakeGroup[] = [];
@@ -296,7 +332,12 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		result.findings = findings.slice(findings.length - result.findings.length);
 		result.groups = groups.slice(gBase);
 		script0 ??= result.script;
-		Object.assign(run, { result, voice: voice && voice.frameCount > 0 ? voice : null, transcriptId: t.id, language: result.language });
+		Object.assign(run, {
+			result,
+			voice: voice && voice.frameCount > 0 ? voice : null,
+			transcriptId: t.id,
+			language: result.language,
+		});
 		media.push({
 			mediaId: run.mediaId,
 			stream: run.stream,
@@ -309,7 +350,12 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 	}
 
 	// ---- decisions → per-media plan inputs, per clip pieces
-	type ClipPlan = { clip: SpeechClip; run: MediaRun; keptFrames: Array<[number, number]>; extent: [number, number] };
+	type ClipPlan = {
+		clip: SpeechClip;
+		run: MediaRun;
+		keptFrames: Array<[number, number]>;
+		extent: [number, number];
+	};
 	const clipPlans: ClipPlan[] = [];
 	const skipped: CleanupPlan['skipped'] = [];
 	const accepted = new Set<CleanupFinding>();
@@ -320,7 +366,8 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 	for (const run of runs.values())
 		for (const g of run.result.groups) {
 			const choice = decisions.retakes?.[g.id];
-			if (choice === undefined || !Number.isInteger(choice) || choice < 0 || choice >= g.takes.length) continue;
+			if (choice === undefined || !Number.isInteger(choice) || choice < 0 || choice >= g.takes.length)
+				continue;
 			g.takes.forEach((take, ti) => {
 				for (let i = take.words[0]; i <= take.words[1]; i++)
 					(ti === choice ? forcedKeep : forcedRemove).add(`${run.key}:${i}`);
@@ -357,7 +404,12 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const spans = (pred: (f: CleanupFinding) => boolean): Span[] =>
 			res.findings.filter(pred).map((f) => [sec(f.range.start), sec(f.range.end)] as Span);
 		const keepSpeech = spans((f) => f.kind === 'untranscribed' && !accepted.has(f));
-		const keepPauses = spans((f) => f.kind === 'pause' && !accepted.has(f) && (decisionTouches(f, decisions) || rejected.has(f.fingerprint)));
+		const keepPauses = spans(
+			(f) =>
+				f.kind === 'pause' &&
+				!accepted.has(f) &&
+				(decisionTouches(f, decisions) || rejected.has(f.fingerprint)),
+		);
 		const keepBreaths = spans((f) => f.kind === 'breath' && !accepted.has(f));
 		const removeBreaths = spans((f) => f.kind === 'breath' && accepted.has(f));
 		for (const clip of run.clips) {
@@ -389,7 +441,9 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 					const fs = sec(f.range.start);
 					const fe = sec(f.range.end);
 					if (fe <= lo || fs >= hi) continue;
-					const i = kept.findIndex((p, k) => p[1] <= fs + 1e-9 && (kept[k + 1]?.[0] ?? Number.POSITIVE_INFINITY) >= fe - 1e-9);
+					const i = kept.findIndex(
+						(p, k) => p[1] <= fs + 1e-9 && (kept[k + 1]?.[0] ?? Number.POSITIVE_INFINITY) >= fe - 1e-9,
+					);
 					const next = kept[i + 1];
 					if (i < 0 || !next || next[0] - kept[i]![1] > 2) continue;
 					if (isHarshCut(run.voice, settings, kept[i]![1], next[0])) {
@@ -409,7 +463,12 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				if (l && p[0] - l[1] < g.minCutFrames) l[1] = p[1];
 				else joined.push([p[0], p[1]]);
 			}
-			clipPlans.push({ clip, run, keptFrames: joined.filter((p) => p[1] - p[0] >= g.minSliverFrames), extent });
+			clipPlans.push({
+				clip,
+				run,
+				keptFrames: joined.filter((p) => p[1] - p[0] >= g.minSliverFrames),
+				extent,
+			});
 		}
 	}
 
@@ -458,7 +517,8 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		}
 		kindFrames.set(run.key, arr);
 	}
-	const topClipAt = (frame: number) => clipPlans.find((cp) => cp.extent[0] <= frame && frame < cp.extent[1]) ?? null;
+	const topClipAt = (frame: number) =>
+		clipPlans.find((cp) => cp.extent[0] <= frame && frame < cp.extent[1]) ?? null;
 	const removedByKind: Partial<Record<FindingKind, number>> = {};
 	const ranges: CleanupPlanRange[] = removedRanges.map(([a, b]) => {
 		const secs = new Map<FindingKind, number>();
@@ -468,15 +528,20 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			if (e <= s || topClipAt(s) !== cp) continue;
 			const v = cp.run.voice;
 			const kf = kindFrames.get(cp.run.key)!;
-			const m0 = (toMediaFlicks(cp.clip, s) / FLICKS_PER_SECOND) / FR;
-			const m1 = (toMediaFlicks(cp.clip, e) / FLICKS_PER_SECOND) / FR;
+			const m0 = toMediaFlicks(cp.clip, s) / FLICKS_PER_SECOND / FR;
+			const m1 = toMediaFlicks(cp.clip, e) / FLICKS_PER_SECOND / FR;
 			for (let k = Math.floor(m0); k < Math.ceil(m1); k++) {
 				const w = Math.min(k + 1, m1) - Math.max(k, m0);
 				if (w <= 0) continue;
 				let kind: FindingKind;
 				if (k >= 0 && k < kf.length && kf[k]! >= 0) kind = FINDING_KINDS[kf[k]!]!;
 				else if (v && k >= 0 && k < v.frameCount)
-					kind = v.classes[k] === VOICE_CLASS_SPEECH ? 'untranscribed' : v.classes[k] === VOICE_CLASS_BREATH ? 'breath' : 'pause';
+					kind =
+						v.classes[k] === VOICE_CLASS_SPEECH
+							? 'untranscribed'
+							: v.classes[k] === VOICE_CLASS_BREATH
+								? 'breath'
+								: 'pause';
 				else kind = 'pause';
 				secs.set(kind, (secs.get(kind) ?? 0) + w * FR);
 			}
@@ -558,7 +623,9 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		sequenceId: seq.id,
 		clipIds: sc.clips.map((c) => c.id),
 		ranges,
-		kept: clipPlans.flatMap((cp) => cp.keptFrames.map(([start, end]) => ({ clipId: cp.clip.id, start, end }))),
+		kept: clipPlans.flatMap((cp) =>
+			cp.keptFrames.map(([start, end]) => ({ clipId: cp.clip.id, start, end })),
+		),
 		stats,
 		skipped,
 		fadeMs: settings.joins.fadeMs,
@@ -606,5 +673,7 @@ export function keptToFrames(
 }
 
 function decisionTouches(f: CleanupFinding, d: CleanupDecisions): boolean {
-	return !!d.reject?.includes(f.id) || !!d.reject?.includes(f.fingerprint) || !!d.rejectKinds?.includes(f.kind);
+	return (
+		!!d.reject?.includes(f.id) || !!d.reject?.includes(f.fingerprint) || !!d.rejectKinds?.includes(f.kind)
+	);
 }

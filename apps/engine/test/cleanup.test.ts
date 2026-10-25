@@ -4,12 +4,20 @@
 // word mode; refusals become job errors; presets are stored atomically, survive a restart, keep unreadable entries
 // aside, and feed the analysis.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-	type CleanupAnalysisJobResult,
 	CleanupAnalysisFileSchema,
+	type CleanupAnalysisJobResult,
 	CleanupAnalysisJobResultSchema,
 	CleanupPresetLibraryResponseSchema,
 	type EngineJob,
@@ -55,7 +63,12 @@ function recording(seed = 3) {
 		for (const w of line.split(' ')) {
 			const d = Math.min(0.5, 0.12 + 0.05 * w.length);
 			spans.push([t, t + d]);
-			words.push({ text: w, start: Math.round((t + 0.02) * FPS), end: Math.round((t + d + 0.03) * FPS), confidence: 0.9 });
+			words.push({
+				text: w,
+				start: Math.round((t + 0.02) * FPS),
+				end: Math.round((t + d + 0.03) * FPS),
+				confidence: 0.9,
+			});
 			t += d + 0.05;
 		}
 		t += 1.2;
@@ -129,7 +142,9 @@ describe.skipIf(!HAVE_FFMPEG)('cleanup-analysis job', () => {
 		expect(file.analysis).toEqual(JSON.parse(JSON.stringify(pure)));
 		expect(res.stats).toEqual(file.analysis.plan.stats);
 		// again: the voice analysis comes from the cache
-		const again = resultOf((await analyze(app, { projectId: PROJECT, document: b.envelope() })).json() as EngineJob);
+		const again = resultOf(
+			(await analyze(app, { projectId: PROJECT, document: b.envelope() })).json() as EngineJob,
+		);
 		expect(again.voice.cached).toEqual([mediaId]);
 		expect(again.voice.analysed).toEqual([]);
 	});
@@ -138,10 +153,14 @@ describe.skipIf(!HAVE_FFMPEG)('cleanup-analysis job', () => {
 		const app = await makeApp();
 		const { b, mediaId } = await sequenceWith(app, 'talk2.wav');
 		const res = resultOf(
-			(await analyze(app, { projectId: PROJECT, document: b.envelope(), analyzeVoice: false })).json() as EngineJob,
+			(
+				await analyze(app, { projectId: PROJECT, document: b.envelope(), analyzeVoice: false })
+			).json() as EngineJob,
 		);
 		expect(res.voice.missing).toEqual([{ mediaId, reason: expect.stringContaining('no voice analysis') }]);
-		const file = CleanupAnalysisFileSchema.parse((await app.inject({ method: 'GET', url: res.url, headers: H })).json());
+		const file = CleanupAnalysisFileSchema.parse(
+			(await app.inject({ method: 'GET', url: res.url, headers: H })).json(),
+		);
 		expect(file.analysis.media[0]!.edgeMode).toBe('word');
 		expect(file.analysis.media[0]!.voice).toBe(false);
 	});
@@ -183,7 +202,12 @@ describe('cleanup presets', () => {
 		});
 		expect(u.json().name).toBe('Mi estilo 2');
 		expect(u.json().settings).toEqual({ gaps: { maxGapS: 0.2 } });
-		const ro = await app.inject({ method: 'PUT', url: '/api/cleanup-presets/builtin.fast', headers: JSON_H, payload: { name: 'x' } });
+		const ro = await app.inject({
+			method: 'PUT',
+			url: '/api/cleanup-presets/builtin.fast',
+			headers: JSON_H,
+			payload: { name: 'x' },
+		});
 		expect(ro.statusCode).toBe(404);
 		const bad = await app.inject({
 			method: 'POST',
@@ -202,7 +226,9 @@ describe('cleanup presets', () => {
 		expect(list.presets.map((x) => x.name)).toEqual(['Mi estilo 2']);
 		const d = await app2.inject({ method: 'DELETE', url: `/api/cleanup-presets/${p.id}`, headers: H });
 		expect(d.json()).toEqual({ ok: true, removed: p.id });
-		expect((await app2.inject({ method: 'GET', url: '/api/cleanup-presets', headers: H })).json().presets).toEqual([]);
+		expect(
+			(await app2.inject({ method: 'GET', url: '/api/cleanup-presets', headers: H })).json().presets,
+		).toEqual([]);
 	});
 
 	it('keeps unreadable entries aside and moves an unreadable file away', async () => {
@@ -227,14 +253,23 @@ describe('cleanup presets', () => {
 		const list = (await app.inject({ method: 'GET', url: '/api/cleanup-presets', headers: H })).json();
 		expect(list.revision).toBe(4);
 		expect(list.presets.map((x: { name: string }) => x.name)).toEqual(['ok']);
-		await app.inject({ method: 'POST', url: '/api/cleanup-presets', headers: JSON_H, payload: { name: 'n', settings: {} } });
+		await app.inject({
+			method: 'POST',
+			url: '/api/cleanup-presets',
+			headers: JSON_H,
+			payload: { name: 'n', settings: {} },
+		});
 		const saved = JSON.parse(readFileSync(file, 'utf8'));
 		expect(saved.invalid).toHaveLength(1);
 		await closeApps();
 		writeFileSync(file, '{not json');
 		const app3 = await makeApp({ appdir });
-		expect((await app3.inject({ method: 'GET', url: '/api/cleanup-presets', headers: H })).json().presets).toEqual([]);
-		expect(readdirSync(join(appdir, 'presets')).some((f) => f.startsWith('cleanup-presets.json.corrupt-'))).toBe(true);
+		expect(
+			(await app3.inject({ method: 'GET', url: '/api/cleanup-presets', headers: H })).json().presets,
+		).toEqual([]);
+		expect(
+			readdirSync(join(appdir, 'presets')).some((f) => f.startsWith('cleanup-presets.json.corrupt-')),
+		).toBe(true);
 		expect(existsSync(file)).toBe(false);
 	});
 
@@ -249,11 +284,21 @@ describe('cleanup presets', () => {
 				payload: { name: 'calm', basedOn: 'builtin.natural', settings: { joins: { fadeMs: 7 } } },
 			})
 		).json();
-		const res = resultOf((await analyze(app, { projectId: PROJECT, document: b.envelope(), presetId: p.id })).json() as EngineJob);
-		const file = CleanupAnalysisFileSchema.parse((await app.inject({ method: 'GET', url: res.url, headers: H })).json());
+		const res = resultOf(
+			(
+				await analyze(app, { projectId: PROJECT, document: b.envelope(), presetId: p.id })
+			).json() as EngineJob,
+		);
+		const file = CleanupAnalysisFileSchema.parse(
+			(await app.inject({ method: 'GET', url: res.url, headers: H })).json(),
+		);
 		expect(file.analysis.settings.joins.fadeMs).toBe(7);
 		expect(file.analysis.settings.edges.mode).toBe('speech');
-		const nope = await analyze(app, { projectId: PROJECT, document: b.envelope(), presetId: 'cup_ZZZZZZZZZZZZZZZZ' });
+		const nope = await analyze(app, {
+			projectId: PROJECT,
+			document: b.envelope(),
+			presetId: 'cup_ZZZZZZZZZZZZZZZZ',
+		});
 		expect(nope.statusCode).toBe(422);
 		expect(nope.json()).toMatchObject({ code: 'PRESET_NOT_FOUND' });
 	});

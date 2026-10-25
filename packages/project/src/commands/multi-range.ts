@@ -5,7 +5,7 @@
 // pieces right after range k are relinked per original link group (as each `range.extract` relinks its splits),
 // then every clip and marker moves left by the removed frames before it (prefix sums). Then the cut edges of audio
 // clips get edge micro-fades and the sound's J / L offset. O((clips + ranges) · log ranges) plus the splits.
-import { contentHandles } from './ripple.ts';
+
 import type { DClip, DDoc, DSeq, HandlerContext } from './context.ts';
 import {
 	cleanupSequence,
@@ -16,6 +16,7 @@ import {
 	syncFollowerTracks,
 	trackClipIds,
 } from './placement.ts';
+import { contentHandles } from './ripple.ts';
 
 export type CutRangesOptions = {
 	/** Sorted, disjoint, non-empty `[from, to)` sequence-frame ranges. */
@@ -61,11 +62,18 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 	const ranges = o.ranges;
 	const tracks = new Set(o.trackIds);
 	if (o.ripple) for (const t of syncFollowerTracks(seq, tracks)) tracks.add(t.id);
-	const result: CutRangesResult = { frames: 0, joins: 0, tracks: [...tracks], fades: 0, jl: { applied: 0, skipped: 0 } };
+	const result: CutRangesResult = {
+		frames: 0,
+		joins: 0,
+		tracks: [...tracks],
+		fades: 0,
+		jl: { applied: 0, skipped: 0 },
+	};
 	if (!ranges.length) return result;
 	// prefix sums: removed[k] = frames of ranges[0..k)
 	const removedBefore = new Array<number>(ranges.length + 1).fill(0);
-	for (let k = 0; k < ranges.length; k++) removedBefore[k + 1] = removedBefore[k]! + (ranges[k]![1] - ranges[k]![0]);
+	for (let k = 0; k < ranges.length; k++)
+		removedBefore[k + 1] = removedBefore[k]! + (ranges[k]![1] - ranges[k]![0]);
 	result.frames = removedBefore[ranges.length]!;
 	const shiftAt = (x: number) => removedBefore[firstEndingAfter(ranges, x)]!;
 
@@ -170,7 +178,11 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 				const fout = outCut.has(id);
 				if (!fin && !fout) continue;
 				const r = c as unknown as { edgeFades?: { inMs?: number; outMs?: number } };
-				r.edgeFades = { ...(r.edgeFades ?? {}), ...(fin ? { inMs: fadeMs } : {}), ...(fout ? { outMs: fadeMs } : {}) };
+				r.edgeFades = {
+					...(r.edgeFades ?? {}),
+					...(fin ? { inMs: fadeMs } : {}),
+					...(fout ? { outMs: fadeMs } : {}),
+				};
 				result.fades += (fin ? 1 : 0) + (fout ? 1 : 0);
 			}
 		if (jl !== 0 && o.trackIds.has(trackId))

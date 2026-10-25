@@ -312,7 +312,10 @@ export function builtinCleanupSettings(id: string | undefined): CleanupSettings 
 }
 
 /** `base` with `overrides` applied group by group (a fresh object; neither input changes). */
-export function mergeCleanupSettings(base: CleanupSettings, overrides?: CleanupOverrides | null): CleanupSettings {
+export function mergeCleanupSettings(
+	base: CleanupSettings,
+	overrides?: CleanupOverrides | null,
+): CleanupSettings {
 	const o = overrides ?? {};
 	return {
 		rules: { ...base.rules, ...o.rules },
@@ -390,7 +393,9 @@ export const CleanupListsSchema = z
 export type CleanupLists = z.infer<typeof CleanupListsSchema>;
 
 /** A language key of the per-sequence lists: a BCP-47 primary subtag (`es`, `en`, `pt`…). */
-export const CleanupListLanguageSchema = z.string().regex(/^[a-z]{2,3}$/, 'a language code such as "es" or "en"');
+export const CleanupListLanguageSchema = z
+	.string()
+	.regex(/^[a-z]{2,3}$/, 'a language code such as "es" or "en"');
 
 export const FINGERPRINT_RE = /^[A-Za-z0-9_:.~-]{1,200}$/;
 export const CleanupFingerprintSchema = z.string().regex(FINGERPRINT_RE, 'a finding fingerprint');

@@ -827,7 +827,9 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
 			if (a.dryRun) {
 				const words = sequenceWords(doc, seq);
-				const hits = a.fillers ? findFillers(words, a.fillers) : languageFillerHits(doc, seq, words, undefined);
+				const hits = a.fillers
+					? findFillers(words, a.fillers)
+					: languageFillerHits(doc, seq, words, undefined);
 				const ranges = mergeRanges(fillerRanges(words, hits, seq.settings.frameRate));
 				return jsonResult({
 					hits: hits.map(([s, e]) => ({

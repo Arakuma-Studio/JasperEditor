@@ -61,7 +61,9 @@ export const CleanupAnalysisSchema = z.object({
 	findings: z.array(CleanupFindingSchema),
 	groups: z.array(RetakeGroupSchema),
 	script: z
-		.array(z.object({ index: z.number().int(), text: z.string(), said: z.boolean(), takes: z.number().int() }))
+		.array(
+			z.object({ index: z.number().int(), text: z.string(), said: z.boolean(), takes: z.number().int() }),
+		)
 		.nullable(),
 	media: z.array(
 		z.object({

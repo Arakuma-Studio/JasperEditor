@@ -35,6 +35,7 @@ import {
 	wordRangeFrames,
 } from '../../captions/sequence-transcript.ts';
 import { normalizeWords, replaceWordRange, spreadTokens, tokenizeText } from '../../captions/words.ts';
+import { languageFillerHits } from '../../cleanup/fillers.ts';
 import { buildClipsPayload } from '../../clipboard/build.ts';
 import { anim, createTrack, defaultTransform } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
@@ -58,9 +59,8 @@ import {
 	trackClips,
 } from '../placement.ts';
 import type { CaptionRulesInput, CommandOf, TimeInput } from '../schemas/index.ts';
-import { commonFields, ensureDefaultFont } from './clip-common.ts';
-import { languageFillerHits } from '../../cleanup/fillers.ts';
 import { levelPauseRanges, voiceArgument } from './cleanup.ts';
+import { commonFields, ensureDefaultFont } from './clip-common.ts';
 import { clipEditHandlers } from './clip-edit.ts';
 import { clipboardHandlers } from './clipboard.ts';
 import { type HandlerMap, idList, clone as plain } from './util.ts';
@@ -297,7 +297,11 @@ function rippleDeleteRanges(
 ): number {
 	const merged = mergeRanges(ranges).filter(([a, b]) => b > a);
 	if (!merged.length) return 0;
-	const tracks = new Set(allTracksIn(seq).filter((t) => !t.locked).map((t) => t.id));
+	const tracks = new Set(
+		allTracksIn(seq)
+			.filter((t) => !t.locked)
+			.map((t) => t.id),
+	);
 	return cutRanges(doc, seq, h, { ranges: merged, trackIds: tracks, ripple: true, fadeMs }).frames;
 }
 
@@ -1161,7 +1165,9 @@ export const captionHandlers = {
 		const words = seqWordsOf(doc, seq);
 		const lo = cmd.fromWord ?? 0;
 		const hi = Math.min(cmd.toWord ?? words.length - 1, words.length - 1);
-		const all = cmd.fillers ? findFillers(words, cmd.fillers) : languageFillerHits(doc, seq, words, cmd.language);
+		const all = cmd.fillers
+			? findFillers(words, cmd.fillers)
+			: languageFillerHits(doc, seq, words, cmd.language);
 		const hits = all.filter(([a, b]) => a >= lo && b - 1 <= hi);
 		const ranges = fillerRanges(words, hits, seq.settings.frameRate);
 		const removed = rippleDeleteRanges(doc, seq, ranges, h, cmd.fadeMs);

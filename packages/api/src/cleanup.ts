@@ -25,7 +25,10 @@ export const CleanupAnalyzeRequestSchema = z
 		document: z.unknown().optional(),
 		/** Scope: these clips (with their linked partners and groups) and / or this frame range. */
 		clipIds: z.array(z.string().min(1).max(200)).max(10_000).optional(),
-		range: z.object({ from: z.number().int().min(0), to: z.number().int().min(1) }).strict().optional(),
+		range: z
+			.object({ from: z.number().int().min(0), to: z.number().int().min(1) })
+			.strict()
+			.optional(),
 		/** Preset (`builtin.fast`, `builtin.natural` or a user preset id) and overrides; default the sequence's. */
 		presetId: z.string().min(1).max(200).optional(),
 		overrides: CleanupOverridesSchema.optional(),

@@ -3,7 +3,7 @@
 // lift / mute / markers, undo (the previous document is untouched) / redo (re-applying is deterministic), refusals and
 // invariants (every transaction runs the invariant checker in `verify` mode under tests).
 import { describe, expect, it } from 'vitest';
-import { resolveAudioTransitions } from '../src/transitions.ts';
+import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import {
 	checkInvariants,
 	encodeVoiceAnalysis,
@@ -11,8 +11,8 @@ import {
 	readSequenceCleanup,
 	sequenceCleanupSettings,
 } from '../src/index.ts';
-import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
+import { resolveAudioTransitions } from '../src/transitions.ts';
 import { GOLDEN_EVENTS, goldenSequence } from './cleanup-golden.test.ts';
 import { synthRecording } from './cleanup-synth.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -24,21 +24,31 @@ const s = (x: number) => Math.round(x * FLICKS_PER_SECOND);
 function talk() {
 	const H = new Harness({ preset: 'hd-1080p-30' });
 	const mediaId = H.registerVideo({ seconds: 20 });
-	const music = (H.ok([{ type: 'media.register', asset: videoAsset({ seconds: 20, kind: 'audio' }) }]).results[0] as {
-		mediaId: string;
-	}).mediaId;
+	const music = (
+		H.ok([{ type: 'media.register', asset: videoAsset({ seconds: 20, kind: 'audio' }) }]).results[0] as {
+			mediaId: string;
+		}
+	).mediaId;
 	const broll = H.registerVideo({ seconds: 20, audio: false });
 	H.ok([
-		{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' },
+		{
+			type: 'clip.place',
+			source: { mediaId },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		},
 		{ type: 'clip.place', source: { mediaId: music }, at: 0, tracks: { audio: ['A2'] }, mode: 'overwrite' },
 		{ type: 'clip.place', source: { mediaId: broll }, at: 0, tracks: { video: 'V2' }, mode: 'overwrite' },
 	]);
-	const words = ['Hola', 'eh', 'a', 'todos', 'hoy', 'vamos', 'a', 'programar', 'un', 'juego'].map((text, i) => ({
-		text,
-		start: s(1 + i),
-		end: s(1.5 + i),
-		confidence: 0.9,
-	}));
+	const words = ['Hola', 'eh', 'a', 'todos', 'hoy', 'vamos', 'a', 'programar', 'un', 'juego'].map(
+		(text, i) => ({
+			text,
+			start: s(1 + i),
+			end: s(1.5 + i),
+			confidence: 0.9,
+		}),
+	);
 	H.ok([{ type: 'transcript.create', mediaId, language: 'es', origin: 'manual', words }]);
 	const a1 = H.clips('A1')[0]!.id;
 	const v1 = H.clips('V1')[0]!.id;
@@ -54,7 +64,15 @@ describe('cleanup.apply', () => {
 		const snap = clone(before);
 		const rev = H.revision;
 		const r = H.ok([
-			{ type: 'cleanup.apply', clipIds: [a1], ranges: [{ start: 30, end: 45 }, { start: 90, end: 120 }, { start: 100, end: 130 }] },
+			{
+				type: 'cleanup.apply',
+				clipIds: [a1],
+				ranges: [
+					{ start: 30, end: 45 },
+					{ start: 90, end: 120 },
+					{ start: 100, end: 130 },
+				],
+			},
 		]);
 		expect(H.revision).toBe(rev + 1);
 		const res = r.results[0] as { merged: number; frames: number; joins: number; ranges: unknown[] };
@@ -89,8 +107,19 @@ describe('cleanup.apply', () => {
 	it('re-applying the same edit gives the same timeline (redo)', () => {
 		const run = () => {
 			const { H, a1 } = talk();
-			H.ok([{ type: 'cleanup.apply', clipIds: [a1], ranges: [{ start: 30, end: 45 }, { start: 200, end: 260 }] }]);
-			return ['V1', 'V2', 'A1', 'A2'].map((t) => H.clips(t).map((c) => [c.id, c.start, c.duration, c.sourceIn, c.linkId]));
+			H.ok([
+				{
+					type: 'cleanup.apply',
+					clipIds: [a1],
+					ranges: [
+						{ start: 30, end: 45 },
+						{ start: 200, end: 260 },
+					],
+				},
+			]);
+			return ['V1', 'V2', 'A1', 'A2'].map((t) =>
+				H.clips(t).map((c) => [c.id, c.start, c.duration, c.sourceIn, c.linkId]),
+			);
 		};
 		expect(run()).toEqual(run());
 	});
@@ -145,7 +174,15 @@ describe('cleanup.apply', () => {
 	it('refuses without any speech clip', () => {
 		const H = new Harness({ preset: 'hd-1080p-30' });
 		const m = H.registerVideo({ seconds: 5 });
-		H.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 0,
+				tracks: { video: 'V1', audio: ['A1'] },
+				mode: 'overwrite',
+			},
+		]);
 		const r = H.tx([{ type: 'cleanup.apply', ranges: [{ start: 10, end: 20 }] }]);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.errors[0]!.code).toBe('E_INVALID_PARAM');
@@ -209,17 +246,30 @@ describe('cleanup.apply', () => {
 		]);
 		expect(H.spans('A2')).toEqual([[0, 600]]);
 		const { H: M, a1: ma } = talk();
-		M.ok([{ type: 'cleanup.apply', clipIds: [ma], ranges: [{ start: 60, end: 90 }, { start: 300, end: 330 }], mode: 'markers' }]);
+		M.ok([
+			{
+				type: 'cleanup.apply',
+				clipIds: [ma],
+				ranges: [
+					{ start: 60, end: 90 },
+					{ start: 300, end: 330 },
+				],
+				mode: 'markers',
+			},
+		]);
 		expect(M.spans('A1')).toEqual([[0, 600]]);
 		expect(M.seq.markers.map((m) => [m.frame, m.duration, m.name])).toEqual([
 			[60, 30, 'Clean Up'],
 			[300, 30, 'Clean Up'],
 		]);
 		const { H: U, a1: ua } = talk();
-		U.ok([{ type: 'cleanup.apply', clipIds: [ua], ranges: [{ start: 60, end: 90 }], mode: 'mute', fadeMs: 10 }]);
+		U.ok([
+			{ type: 'cleanup.apply', clipIds: [ua], ranges: [{ start: 60, end: 90 }], mode: 'mute', fadeMs: 10 },
+		]);
 		expect(U.spans('A1')).toEqual([[0, 600]]);
-		const keys = (U.clips('A1')[0] as unknown as { volumeDb: { keyframes: Array<{ time: number; value: number }> } })
-			.volumeDb.keyframes;
+		const keys = (
+			U.clips('A1')[0] as unknown as { volumeDb: { keyframes: Array<{ time: number; value: number }> } }
+		).volumeDb.keyframes;
 		const F = FLICKS_PER_SECOND / 30;
 		expect(keys.map((k) => [k.time, k.value])).toEqual([
 			[60 * F - s(0.01), 0],
@@ -228,7 +278,9 @@ describe('cleanup.apply', () => {
 			[90 * F + s(0.01), 0],
 		]);
 		// the video and the music are untouched
-		expect((U.clips('A2')[0] as unknown as { volumeDb: { keyframes: unknown[] } }).volumeDb.keyframes).toEqual([]);
+		expect(
+			(U.clips('A2')[0] as unknown as { volumeDb: { keyframes: unknown[] } }).volumeDb.keyframes,
+		).toEqual([]);
 		expect(checkInvariants(U.doc)).toEqual([]);
 	});
 
@@ -236,9 +288,20 @@ describe('cleanup.apply', () => {
 		const { H, a1 } = talk();
 		// 20 s = 600 frames is too short: stretch the speech clip with a long media first
 		const big = H.registerVideo({ seconds: 3600 });
-		H.ok([{ type: 'clip.place', source: { mediaId: big }, at: 600, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: big },
+				at: 600,
+				tracks: { video: 'V1', audio: ['A1'] },
+				mode: 'overwrite',
+			},
+		]);
 		const clip = H.clips('A1')[1]!.id;
-		const ranges = Array.from({ length: 1500 }, (_, i) => ({ start: 600 + i * 60 + 20, end: 600 + i * 60 + 35 }));
+		const ranges = Array.from({ length: 1500 }, (_, i) => ({
+			start: 600 + i * 60 + 20,
+			end: 600 + i * 60 + 35,
+		}));
 		const r = H.ok([{ type: 'cleanup.apply', clipIds: [clip, a1], ranges, fadeMs: 4 }]);
 		expect((r.results[0] as { frames: number }).frames).toBe(1500 * 15);
 		expect(H.clips('A1')).toHaveLength(1 + 1501);
@@ -263,7 +326,9 @@ describe('cleanup.configure', () => {
 		expect(c.settings).toEqual({ presetId: 'builtin.natural', overrides: { gaps: { maxGapS: 0.3 } } });
 		expect(sequenceCleanupSettings(H.seq).gaps.maxGapS).toBe(0.3);
 		expect(sequenceCleanupSettings(H.seq).edges.mode).toBe('speech');
-		H.ok([{ type: 'cleanup.configure', settings: { overrides: { joins: { fadeMs: 6 } } }, mergeOverrides: true }]);
+		H.ok([
+			{ type: 'cleanup.configure', settings: { overrides: { joins: { fadeMs: 6 } } }, mergeOverrides: true },
+		]);
 		c = readSequenceCleanup(H.seq as { cleanup?: unknown });
 		expect(c.settings).toEqual({
 			presetId: 'builtin.natural',
@@ -326,7 +391,9 @@ describe('transcript.removePauses / removeFillers (spec 14 TC-032)', () => {
 		const { H, mediaId } = goldenSequence(rec);
 		const analysis = Buffer.from(encodeVoiceAnalysis(rec.voice)).toString('base64');
 		const before = total(H, 'A1');
-		const r = H.ok([{ type: 'transcript.removePauses', mode: 'level', minSeconds: 0.12, voice: [{ mediaId, analysis }] }]);
+		const r = H.ok([
+			{ type: 'transcript.removePauses', mode: 'level', minSeconds: 0.12, voice: [{ mediaId, analysis }] },
+		]);
 		const out = before - total(H, 'A1');
 		expect((r.results[0] as { pauses: number }).pauses).toBeGreaterThan(10);
 		expect(out).toBeGreaterThan(30 * 8);
