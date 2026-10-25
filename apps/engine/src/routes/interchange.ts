@@ -77,4 +77,10 @@ export default async function interchangeRoutes(app: FastifyInstance): Promise<v
 			return reply.code(202).send(await svc.startScan(req.params.projectId, body));
 		}),
 	);
+
+	type ScanResult = { Params: { projectId: string; jobId: string } };
+	app.get<ScanResult>(
+		'/api/projects/:projectId/relink-scan/:jobId',
+		guarded<ScanResult>(async (req) => svc.scanResult(req.params.projectId, req.params.jobId)),
+	);
 }

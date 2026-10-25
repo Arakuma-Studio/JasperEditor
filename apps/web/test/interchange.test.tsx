@@ -1,13 +1,13 @@
 import type { EngineJob, InterchangeExportResult } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { importTimeline } from '@jasper/interchange';
-import { checkInvariants, defaultRegistries } from '@jasper/project';
+import { checkInvariants, defaultRegistries, relinkMediaCommand } from '@jasper/project';
 import { DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createCommandContext, registerAllCommands } from '../src/commands/index.ts';
 import { getCommand } from '../src/commands/registry.ts';
-import { InterchangeExportDialog, offlineMedia, relinkCommand } from '../src/interchange/dialogs.tsx';
+import { InterchangeExportDialog, offlineMedia } from '../src/interchange/dialogs.tsx';
 import { isTimelineFileName, isTimelineXmlHead } from '../src/interchange/formats.ts';
 import { importTimelineFiles } from '../src/interchange/import.ts';
 import { makeSession } from './timeline-helpers.ts';
@@ -110,7 +110,7 @@ describe('interchange UI', () => {
 		const t = session.apply({
 			label: 'Link Media',
 			origin: 'user',
-			commands: [relinkCommand(a.id, reg, false) as never],
+			commands: [relinkMediaCommand(a, reg) as never],
 		});
 		expect(t.ok).toBe(true);
 		const linked = session.getCommitted().media[a.id]!;

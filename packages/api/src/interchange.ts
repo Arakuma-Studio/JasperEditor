@@ -178,21 +178,34 @@ export const InterchangePrerenderPlanResponseSchema = z.object({
 	),
 });
 
-/** File name (always first), file size, media duration, media start (start timecode). */
-export const RELINK_CRITERIA = ['name', 'size', 'duration', 'mediaStart'] as const;
+/**
+ * Link Media ▸ Match File Properties (docs/wp-notes/link-media.md §1): `name` the file name without extension,
+ * `extension` the extension (case-insensitive), `size` the byte size, `duration` the media length, `mediaStart` the
+ * start timecode, `streams` the kind and stream layout (video / audio). A property the asset does not record (a size
+ * of 0, no start timecode) is not compared.
+ */
+export const RELINK_CRITERIA = ['name', 'extension', 'size', 'duration', 'mediaStart', 'streams'] as const;
 export const RelinkCriterionSchema = z.enum(RELINK_CRITERIA);
+export type RelinkCriterion = z.infer<typeof RelinkCriterionSchema>;
+
+/** Longest path a relink request carries (characters). */
+const PATH = z.string().min(1).max(32_767);
 
 export const AssetRelinkRequestSchema = z.object({
 	projectId: z.string().min(1),
-	/** The replacement file (absolute, local engines). */
-	path: z.string().min(1),
+	/** The replacement file (absolute on the engine host, local engines). */
+	path: PATH,
 	/** The asset as the document has it (to compare fingerprint, duration, resolution, frame rate, audio layout). */
 	asset: MediaAssetSchema,
+	/** Selected match properties the file must satisfy (`failed` lists those it does not); default none. */
+	match: z.array(RelinkCriterionSchema).max(RELINK_CRITERIA.length).optional(),
+	/** Compatibility: `name` compares the whole file name unless this is true or `extension` is listed. */
+	ignoreExtension: z.boolean().optional(),
 });
 export type AssetRelinkRequest = z.infer<typeof AssetRelinkRequestSchema>;
 
 export const RelinkDiffSchema = z.object({
-	field: z.enum(['duration', 'resolution', 'frameRate', 'audio', 'kind', 'name', 'size']),
+	field: z.enum(['duration', 'resolution', 'frameRate', 'audio', 'kind', 'name', 'size', 'mediaStart']),
 	was: z.string(),
 	now: z.string(),
 });
@@ -204,24 +217,62 @@ export const AssetRelinkResponseSchema = z.object({
 	match: z.enum(['fingerprint', 'placeholder', 'different']),
 	/** What differs (empty when nothing the user would notice does). */
 	diff: z.array(RelinkDiffSchema),
+	/** Selected match properties the file does not satisfy. */
+	failed: z.array(RelinkCriterionSchema).optional(),
 	/** The user must confirm (`force`) before relinking. */
 	needsConfirm: z.boolean(),
 });
 export type AssetRelinkResponse = z.infer<typeof AssetRelinkResponseSchema>;
 
+/** A located file: its last known path (any operating system) and its path on the engine host now. */
+export const RelinkAnchorSchema = z.object({
+	from: PATH,
+	to: PATH,
+	/** The asset's project-relative path (MediaLocator `relativeToProject`), when known. */
+	relativePath: PATH.nullable().optional(),
+});
+export type RelinkAnchor = z.infer<typeof RelinkAnchorSchema>;
+
+/** Most offline media one Link Media run checks (the request body stays well under the engine's 20 MB limit). */
+export const RELINK_MAX_ASSETS = 20_000;
+
 export const RelinkScanRequestSchema = z.object({
-	/** Folder to search (absolute, local engines), recursively. */
-	folder: z.string().min(1),
-	/** The offline assets to find. */
-	assets: z.array(MediaAssetSchema).min(1).max(5000),
-	/** What must match besides the file kind: name (always first), size, duration, media start timecode. */
+	/** Folder to search (absolute on the engine host, local engines), recursively. */
+	folder: PATH.optional(),
+	/**
+	 * Relink others automatically: files the user located. Each gives a folder mapping (old → new parent folders
+	 * aligned on their longest common suffix), a project-relative base and a folder to look in and search.
+	 */
+	anchors: z.array(RelinkAnchorSchema).max(1000).optional(),
+	/** The offline assets to find (each asset's last known path is tried first when the engine can open it). */
+	assets: z.array(MediaAssetSchema).min(1).max(RELINK_MAX_ASSETS),
+	/** Match File Properties every candidate must satisfy (besides a compatible kind). */
 	match: z.array(RelinkCriterionSchema).min(1).default(['name']),
-	/** Name match ignores the extension (a transcoded file). */
+	/** Compatibility: `name` compares the whole file name unless this is true or `extension` is listed. */
 	ignoreExtension: z.boolean().default(false),
+	/** Time budget of the folder walk (seconds); the files seen until then are used and `timedOut` is set. */
+	timeLimitSec: z.number().int().min(1).max(3600).default(120),
+	/** Most files the folder walk indexes. */
+	maxFiles: z.number().int().min(1).max(200_000).default(200_000),
 });
 export type RelinkScanRequest = z.input<typeof RelinkScanRequestSchema>;
 
-/** `EngineJob.result` of a `relink-scan` job. */
+/**
+ * How a file was found: `original` its own last known path; `mapping` a located file's folder mapping; `relative`
+ * its project-relative path; `same-folder` a located file's folder; `search` the folder walk (by name);
+ * `fingerprint` the folder walk (same bytes under another name).
+ */
+export const RelinkStepSchema = z.enum([
+	'original',
+	'mapping',
+	'relative',
+	'same-folder',
+	'search',
+	'fingerprint',
+]);
+export type RelinkStep = z.infer<typeof RelinkStepSchema>;
+
+/** The full result of a `relink-scan` job (`GET /api/projects/:projectId/relink-scan/:jobId`). */
 export const RelinkScanResultSchema = z.object({
 	found: z.array(
 		z.object({
@@ -231,10 +282,33 @@ export const RelinkScanResultSchema = z.object({
 			matched: z.array(RelinkCriterionSchema),
 			match: z.enum(['fingerprint', 'placeholder', 'different']),
 			diff: z.array(RelinkDiffSchema),
+			step: RelinkStepSchema.optional(),
+			/** A different file, or a kind / length the clips cannot use: link only when the user confirms. */
+			needsConfirm: z.boolean().optional(),
 		}),
 	),
+	/** Several files satisfy the match properties: listed (at most 20), never guessed. */
+	ambiguous: z
+		.array(z.object({ assetId: z.string(), step: RelinkStepSchema, candidates: z.array(z.string()) }))
+		.default([]),
 	notFound: z.array(z.string()),
 	scannedFiles: z.number().int().min(0),
 	truncated: z.boolean(),
+	/** The folder walk stopped at its time budget. */
+	timedOut: z.boolean().default(false),
+	/** The folder mappings derived from the anchors (display paths). */
+	mappings: z.array(z.object({ from: z.string(), to: z.string() })).default([]),
 });
 export type RelinkScanResult = z.infer<typeof RelinkScanResultSchema>;
+
+/** `EngineJob.result` of a `relink-scan` job: counts; the full result is fetched separately (it can be large). */
+export const RelinkScanSummarySchema = z.object({
+	found: z.number().int().min(0),
+	needsConfirm: z.number().int().min(0),
+	ambiguous: z.number().int().min(0),
+	notFound: z.number().int().min(0),
+	scannedFiles: z.number().int().min(0),
+	truncated: z.boolean(),
+	timedOut: z.boolean(),
+});
+export type RelinkScanSummary = z.infer<typeof RelinkScanSummarySchema>;

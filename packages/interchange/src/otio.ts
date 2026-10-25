@@ -43,7 +43,14 @@ import type {
 } from './model.ts';
 import { FLICKS } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
-import { fileName, isAbsolutePath, pathToFileUrl, relativePath, resolvePath } from './paths.ts';
+import {
+	fileName,
+	isAbsolutePath,
+	pathToFileUrl,
+	relativePath,
+	relativeReference,
+	resolvePath,
+} from './paths.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import { flicksToFrames, fps, framesToFlicks, rateFromFloat } from './time.ts';
 
@@ -793,6 +800,7 @@ class OtioImporter {
 						kind: m.kind,
 						path,
 						url: path ? null : url,
+						relativePath: path && url ? relativeReference(url) : null,
 						duration: m.duration !== undefined ? m.duration : spec.duration,
 						video: m.video ?? (m.kind === 'audio' ? undefined : spec.video),
 						audio: m.audio ?? spec.audio,

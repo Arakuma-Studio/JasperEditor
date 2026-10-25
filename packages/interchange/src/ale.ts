@@ -15,7 +15,7 @@
 import { Builder } from './build.ts';
 import type { IMedia, IProject, Rate } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
-import { resolvePath } from './paths.ts';
+import { relativeReference, resolvePath } from './paths.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import { flicksToFrames, formatTc, fps, framesToFlicks, parseTc, RATE_24, rateFromFloat } from './time.ts';
 
@@ -124,6 +124,7 @@ export function importAle(text: string, opts: ImportOptions, report: Report): IP
 			name,
 			kind: hasV ? 'video' : 'audio',
 			path,
+			relativePath: fullFile ? relativeReference(fullFile) : null,
 			duration: len !== null ? framesToFlicks(len, rate) : null,
 			...(hasV ? { video: { width, height, rate } } : {}),
 			...(ch ? { audio: { sampleRate, channels: ch } } : {}),

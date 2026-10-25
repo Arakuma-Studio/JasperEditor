@@ -39,7 +39,7 @@ import {
 import { effectSpecOf, transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IMedia, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
-import { isAbsolutePath, kindFromExtension, pathToFileUrl, resolvePath } from './paths.ts';
+import { isAbsolutePath, kindFromExtension, pathToFileUrl, relativeReference, resolvePath } from './paths.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
 	flicksToFrames,
@@ -256,6 +256,7 @@ class FcpxmlImporter {
 				kind: !hasVideo ? 'audio' : ext === 'image' ? 'image' : 'video',
 				path,
 				url: isUrl ? src : null,
+				relativePath: src && !isUrl ? relativeReference(src) : null,
 				duration: at(n, 'duration'),
 				...(hasVideo ? { video: { width: fmt?.width ?? 1920, height: fmt?.height ?? 1080, rate } } : {}),
 				...(hasAudio

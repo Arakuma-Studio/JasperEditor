@@ -14,7 +14,7 @@ import { transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import { FLICKS } from './model.ts';
 import type { EssenceKey, ImportOptions, MediaOptions } from './options.ts';
-import { fileName, fileStem, resolvePath } from './paths.ts';
+import { fileName, fileStem, relativeReference, resolvePath } from './paths.ts';
 import type { Report } from './report.ts';
 import { bigDivRound } from './time.ts';
 import { wavFile } from './wav.ts';
@@ -602,6 +602,7 @@ export function toProject(doc: CDocument, opts: ImportOptions, report: Report): 
 				name: display || 'Media',
 				kind: pic ? (isStill(pic) ? 'image' : 'video') : 'audio',
 				path,
+				relativePath: path && first.path ? relativeReference(first.path) : null,
 				duration: Math.max(0, ...srcs.map((s) => s.length)) || null,
 				...(pic
 					? { video: { width: Math.max(1, pic.width), height: Math.max(1, pic.height), rate: pic.frameRate } }

@@ -78,6 +78,7 @@ export { mediaParamId } from './registry/param-values.ts';
 export * from './registry/properties.ts';
 export * from './registry/text-animator-properties.ts';
 export * from './registry/transitions/index.ts';
+export * from './relink/index.ts';
 export * from './render/index.ts';
 export * from './roto/index.ts';
 export * from './schema/index.ts';

@@ -353,9 +353,13 @@ export class EngineClient {
 	relinkAsset(assetId: string, req: AssetRelinkRequest) {
 		return this.call('assetRelink', { params: { assetId }, body: req });
 	}
-	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`). */
+	/** S04:AS-011: finds offline assets — last known paths, located files' mappings, a folder (job `relink-scan`). */
 	relinkScan(projectId: string, req: RelinkScanRequest) {
 		return this.call('relinkScan', { params: { projectId }, body: req });
+	}
+	/** The full result of a finished `relink-scan` job. */
+	relinkScanResult(projectId: string, jobId: string) {
+		return this.call('relinkScanResult', { params: { projectId, jobId } });
 	}
 	/** Sound library status: counts, starter kit, indexing (spec 12 §2.8). */
 	soundLibraryStatus() {

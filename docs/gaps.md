@@ -126,7 +126,7 @@ the timeline) works as one undoable step.
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,
 markers and basic effects, with round-trip tests through the reference implementations' fixtures.
-**Status (merged):** done — see [wp-notes/interchange.md](wp-notes/interchange.md): FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in process (D-40), round trips tested (`packages/interchange/test/*`), pre-renders of what a format cannot carry, Link Media. Per-format losses in its §7; never tried on files exported by Premiere.
+**Status (merged):** done — see [wp-notes/interchange.md](wp-notes/interchange.md): FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in process (D-40), round trips tested (`packages/interchange/test/*`), pre-renders of what a format cannot carry, Link Media (relink one file and the others are found from its folder mapping, Windows/UNC paths kept on macOS/Linux: [wp-notes/link-media.md](wp-notes/link-media.md); Tape Name / Description / Clip ID matching unavailable — documents do not record them — and shown disabled). Per-format losses in its §7; never tried on files exported by Premiere.
 
 ### edit-structure
 **Done when:** nested sequences (Nest…, sequences as clips, open in timeline), group / ungroup, adjustment layers,

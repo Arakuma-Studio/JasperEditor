@@ -24,6 +24,7 @@ import { t } from '../i18n/runtime.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
+import { useLinkMediaOnOpen } from '../interchange/link-media/on-open.ts';
 import { ProjectDialogHost } from '../panels/project/dialogs.tsx';
 import { activeProjectBin } from '../panels/project/instances.ts';
 import { useProposalsSync } from '../proposals/state.ts';
@@ -167,6 +168,8 @@ function LifecycleBody(props: {
 		const sync = createMediaRuntimeSync(session, engine.client, engine.subscribe);
 		return () => sync.dispose();
 	}, [session, engine.client, engine.subscribe, engineConnected]);
+	// Link Media when the project opened with offline media (Premiere shows it on open).
+	useLinkMediaOnOpen(session, engine.client, engineConnected);
 
 	useEffect(
 		() =>

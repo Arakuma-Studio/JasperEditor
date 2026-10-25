@@ -1,20 +1,16 @@
 // wp interchange dialogs: File ▸ Export ▸ <timeline format> options (Premiere's export dialogs: Final Cut Pro XML,
 // AAF, OMF, EDL; plus FCPXML, OpenTimelineIO and Avid ALE), the report shown after every import and export (what
-// was not carried and what was written instead), and Link Media (S04:AS-011: locate one file, or search a folder
-// matching by name, size and duration).
+// was not carried and what was written instead), and the registration of Link Media (link-media/LinkMediaDialog.tsx).
 import type {
-	AssetRelinkResponse,
 	EngineJob,
 	InterchangeExportOptions,
 	InterchangeExportResult,
 	InterchangeFormat,
 	InterchangeMissing,
 	InterchangeReportEntry,
-	RegisteredMedia,
-	RelinkScanResult,
 } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import type { MediaAsset, MediaLocator, Sequence } from '@jasper/project';
+import type { Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	Button,
@@ -26,11 +22,13 @@ import {
 	Select,
 	TextField,
 } from '@jasper/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { exportEnvelope } from '../export/settings.ts';
 import { useDialogClose } from '../extensions/dialog.ts';
-import { LOCAL_ENGINE_ID } from '../import/assets.ts';
 import { defaultPrerender, formatEntry, PRERENDER_LABELS } from './formats.ts';
+import { LinkMediaDialog } from './link-media/LinkMediaDialog.tsx';
+
+export { offlineMedia } from './link-media/LinkMediaDialog.tsx';
 
 export const INTERCHANGE_EXPORT_DIALOG = 'interchange.export';
 export const INTERCHANGE_REPORT_DIALOG = 'interchange.report';
@@ -601,285 +599,6 @@ export function InterchangeExportDialog(props: HostedDialogProps<ExportProps>) {
 					<p className="text-pr-small text-pr-muted" role="status">
 						{job.stage ?? job.state}
 						{typeof job.progress === 'number' ? ` — ${Math.round(job.progress * 100)}%` : ''}
-					</p>
-				) : null}
-				{error ? (
-					<p className="text-pr-small text-pr-danger" role="alert">
-						{error}
-					</p>
-				) : null}
-			</div>
-		</Dialog>
-	);
-}
-
-type LinkProps = { session: EditorSession; engine: EngineClient; mediaIds?: string[] };
-
-/** Media that is offline: an imported placeholder (no file yet) or a file the engine cannot find. */
-export function offlineMedia(session: EditorSession): MediaAsset[] {
-	const st = session.getState();
-	const doc = session.getCommitted();
-	return (Object.values(doc.media) as MediaAsset[]).filter(
-		(m) =>
-			(m.kind === 'video' || m.kind === 'audio' || m.kind === 'image' || m.kind === 'animated-image') &&
-			(m.fingerprint.startsWith('pending:interchange:') || st.media[m.id]?.availability === 'offline'),
-	);
-}
-
-/** The `media.relink` command for a registered file. */
-export function relinkCommand(mediaId: string, reg: RegisteredMedia, force: boolean) {
-	const store: MediaLocator = { type: 'engine-store', engineId: LOCAL_ENGINE_ID, key: reg.mediaKey };
-	const paths = reg.locators.filter((l) => l.type === 'path');
-	return {
-		type: 'media.relink',
-		mediaId,
-		locator: store,
-		locators: [store, ...paths],
-		probe: reg.probe,
-		fingerprint: reg.fingerprint,
-		sizeBytes: reg.sizeBytes,
-		originalName: reg.originalName,
-		container: reg.container,
-		...(force ? { force: true } : {}),
-	};
-}
-
-type Candidate = {
-	assetId: string;
-	path: string;
-	media: RegisteredMedia;
-	match: AssetRelinkResponse['match'];
-	diff: AssetRelinkResponse['diff'];
-	needsConfirm: boolean;
-	accept: boolean;
-};
-
-export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
-	const { session, engine } = props;
-	const { open, finish } = useDialogClose(props.close);
-	const assets = useMemo(() => {
-		const all = offlineMedia(session);
-		return props.mediaIds?.length ? all.filter((m) => props.mediaIds!.includes(m.id)) : all;
-	}, [session, props.mediaIds]);
-	const [folder, setFolder] = useState('');
-	const [byName, setByName] = useState(true);
-	const [bySize, setBySize] = useState(false);
-	const [byDuration, setByDuration] = useState(true);
-	const [byStart, setByStart] = useState(false);
-	const [ignoreExt, setIgnoreExt] = useState(false);
-	const [found, setFound] = useState<Record<string, Candidate>>({});
-	const [locate, setLocate] = useState<Record<string, string>>({});
-	const [busy, setBusy] = useState<string | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const [summary, setSummary] = useState<string | null>(null);
-
-	const criteria = [
-		...(byName ? (['name'] as const) : []),
-		...(bySize ? (['size'] as const) : []),
-		...(byDuration ? (['duration'] as const) : []),
-		...(byStart ? (['mediaStart'] as const) : []),
-	];
-	const search = async () => {
-		setError(null);
-		if (!folder.trim()) return setError('Enter the folder to search');
-		setBusy('Searching…');
-		try {
-			const job = await engine.relinkScan(session.projectId, {
-				folder: folder.trim(),
-				assets: assets as never,
-				match: criteria.length ? criteria : ['name'],
-				ignoreExtension: ignoreExt,
-			});
-			const end = await waitForJob(engine, job.id, (j) => setBusy(j.stage ?? 'Searching…'));
-			if (end.state !== 'succeeded') throw new Error(end.error?.message ?? `The search ${end.state}`);
-			const res = end.result as RelinkScanResult;
-			setFound((f) => {
-				const next = { ...f };
-				for (const c of res.found) {
-					const needsConfirm =
-						c.match === 'different' || c.diff.some((d) => ['kind', 'duration'].includes(d.field));
-					next[c.assetId] = {
-						assetId: c.assetId,
-						path: c.path,
-						media: c.media as unknown as RegisteredMedia,
-						match: c.match,
-						diff: c.diff,
-						needsConfirm,
-						accept: !needsConfirm,
-					};
-				}
-				return next;
-			});
-			setSummary(
-				`Found ${res.found.length} of ${assets.length} in ${res.scannedFiles} files${
-					res.truncated ? ' (only the first files were searched)' : ''
-				}`,
-			);
-		} catch (e) {
-			setError(errorText(e));
-		} finally {
-			setBusy(null);
-		}
-	};
-
-	const locateOne = async (a: MediaAsset) => {
-		const p = (locate[a.id] ?? '').trim();
-		if (!p) return;
-		setError(null);
-		setBusy(`Checking ${a.originalName}…`);
-		try {
-			const r = await engine.relinkAsset(a.id, { projectId: session.projectId, path: p, asset: a as never });
-			setFound((f) => ({
-				...f,
-				[a.id]: {
-					assetId: a.id,
-					path: p,
-					media: r.media as unknown as RegisteredMedia,
-					match: r.match,
-					diff: r.diff,
-					needsConfirm: r.needsConfirm,
-					accept: !r.needsConfirm,
-				},
-			}));
-		} catch (e) {
-			setError(errorText(e));
-		} finally {
-			setBusy(null);
-		}
-	};
-
-	const accepted = Object.values(found).filter((c) => c.accept);
-	const apply = () => {
-		if (!accepted.length) return false;
-		const r = session.apply({
-			label: accepted.length === 1 ? 'Link Media' : `Link Media (${accepted.length})`,
-			origin: 'user',
-			commands: accepted.map((c) => relinkCommand(c.assetId, c.media, c.needsConfirm) as never),
-		});
-		if (!r.ok) {
-			setError(r.errors[0]?.message ?? 'Linking failed');
-			return false;
-		}
-		finish({ linked: accepted.length });
-		return true;
-	};
-
-	return (
-		<Dialog
-			open={open}
-			onOpenChange={(o) => !o && finish()}
-			title="Link Media"
-			size="large"
-			primaryLabel={accepted.length ? `Link ${accepted.length}` : 'Link'}
-			primaryDisabled={!accepted.length || !!busy}
-			onPrimary={apply}
-			data-testid="link-media-dialog"
-		>
-			<div className="flex flex-col gap-3 text-pr-ui">
-				{assets.length === 0 ? <p className="text-pr-muted">No media is offline.</p> : null}
-				<div className="flex flex-col gap-1.5">
-					<Row label="Search folder">
-						<TextField
-							value={folder}
-							onChange={(e) => setFolder(e.target.value)}
-							placeholder="/path/to/media"
-							aria-label="Search folder"
-							data-testid="link-media-folder"
-						/>
-						<Button
-							variant="secondary"
-							onClick={() => void search()}
-							disabled={!!busy || !assets.length}
-							data-testid="link-media-search"
-						>
-							Search
-						</Button>
-					</Row>
-					<Row label="Match by">
-						<div className="flex flex-wrap gap-3">
-							<Checkbox id="lm-name" label="File Name" checked={byName} onCheckedChange={setByName} />
-							<Checkbox
-								id="lm-ext"
-								label="Ignore Extension"
-								checked={ignoreExt}
-								onCheckedChange={setIgnoreExt}
-							/>
-							<Checkbox id="lm-size" label="File Size" checked={bySize} onCheckedChange={setBySize} />
-							<Checkbox
-								id="lm-duration"
-								label="Media Duration"
-								checked={byDuration}
-								onCheckedChange={setByDuration}
-							/>
-							<Checkbox id="lm-start" label="Media Start" checked={byStart} onCheckedChange={setByStart} />
-						</div>
-					</Row>
-				</div>
-				<table className="w-full text-left text-pr-small" data-testid="link-media-table">
-					<thead className="text-pr-muted">
-						<tr>
-							<th className="py-1 font-normal">Media</th>
-							<th className="py-1 font-normal">Last known path</th>
-							<th className="py-1 font-normal">Found</th>
-							<th className="py-1 font-normal">Link</th>
-						</tr>
-					</thead>
-					<tbody>
-						{assets.map((a) => {
-							const c = found[a.id];
-							const last = a.locators.find((l) => l.type === 'path');
-							return (
-								<tr key={a.id} className="align-top">
-									<td className="py-1 pr-2 text-pr-text">{a.originalName}</td>
-									<td className="max-w-[220px] truncate py-1 pr-2 text-pr-muted">
-										{last && last.type === 'path' ? last.path : '—'}
-									</td>
-									<td className="py-1 pr-2">
-										{c ? (
-											<div className="flex flex-col">
-												<span className="truncate text-pr-text">{c.path}</span>
-												{c.diff.length ? (
-													<span className={c.needsConfirm ? 'text-pr-warning' : 'text-pr-muted'}>
-														{c.diff.map((d) => `${d.field}: ${d.was} → ${d.now}`).join('; ')}
-													</span>
-												) : (
-													<span className="text-pr-muted">
-														{c.match === 'fingerprint' ? 'same file' : 'matches'}
-													</span>
-												)}
-											</div>
-										) : (
-											<div className="flex gap-1">
-												<TextField
-													value={locate[a.id] ?? ''}
-													onChange={(e) => setLocate((l) => ({ ...l, [a.id]: e.target.value }))}
-													placeholder="File path…"
-													aria-label={`Locate ${a.originalName}`}
-												/>
-												<Button variant="quiet" onClick={() => void locateOne(a)} disabled={!!busy}>
-													Locate
-												</Button>
-											</div>
-										)}
-									</td>
-									<td className="py-1">
-										{c ? (
-											<Checkbox
-												id={`lm-accept-${a.id}`}
-												aria-label={`Link ${a.originalName}`}
-												checked={c.accept}
-												onCheckedChange={(v) => setFound((f) => ({ ...f, [a.id]: { ...c, accept: v } }))}
-											/>
-										) : null}
-									</td>
-								</tr>
-							);
-						})}
-					</tbody>
-				</table>
-				{busy || summary ? (
-					<p className="text-pr-small text-pr-muted" role="status" data-testid="link-media-status">
-						{busy ?? summary}
 					</p>
 				) : null}
 				{error ? (

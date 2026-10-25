@@ -109,12 +109,13 @@ test('File ▸ Import of an EDL whose media moved, then Link Media by folder', a
 	await page.getByTestId('interchange-report-link-media').click();
 	const dlg = page.getByTestId('link-media-dialog');
 	await expect(dlg).toBeVisible();
-	await page.getByTestId('link-media-folder').fill(FIXTURES);
-	await page.getByTestId('link-media-search').click();
-	await expect(dlg.getByRole('button', { name: 'Link 2' })).toBeEnabled({ timeout: 60_000 });
+	await expect(dlg.getByTestId('link-media-row')).toHaveCount(2);
 	await page.screenshot({ path: join(OUT, '5-link-media.png') });
-	await dlg.getByRole('button', { name: 'Link 2' }).click();
-	await expect(dlg).toBeHidden();
+	// the folder search links every verified file as one transaction; with nothing left offline the dialog is done
+	await page.getByTestId('link-media-folder').fill(FIXTURES);
+	await expect(page.getByTestId('link-media-search')).toBeEnabled({ timeout: 60_000 });
+	await page.getByTestId('link-media-search').click();
+	await expect(dlg).toBeHidden({ timeout: 60_000 });
 	await expect.poll(pending).toBe(0);
 	const d = await doc();
 	const seqItem = Object.values(d.items).find((i) => i.kind === 'sequence' && i.name === 'Moved Cut')!;
