@@ -1476,6 +1476,7 @@ ui.import?: {
   aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
   ignored?: Record<string, string>;                 // column name → reason shown in the preview
   trimPrefix?: Record<string, string>;              // param → prefix removed from its cells ("@")
+  age?: { value: string; unit: string; columns?: readonly string[] }; // "3h" in one cell → count + unit params
 }
 ```
 
@@ -1497,6 +1498,9 @@ ui.import?: {
       `Content`, `Comment text` → `text`; `Like count`, `Hearts` → `likes`; `Reply count` → `replies`; `Retweets` →
       `reposts`; `View count` → `views`; `Type` → `variant`; `Ago` → `timeValue`; `Time unit` → `timeUnit`;
       `Blue check`, `Badge` → `verified`.
+    - **Age in one cell** (`age: {value: 'timeValue', unit: 'timeUnit', columns: ['Time', 'Age', 'Time ago',
+      'Posted ago', 'When']}`): those columns, the `Posted` label and the `Ago` alias read "3h", "2 weeks", "10mo",
+      "1y", "5 min", "3 hours ago", "an hour ago", "yesterday", "just now" (see "Age cells" below).
     - Param names and Properties labels (`Comment`, `Display Name`, `Style`, `Verified`…) match without aliases.
   - **Image columns** (`Image URL`, `Avatar URL`, `Profile picture`, `Photo`, …) are ignored with a visible reason:
     remote images are not imported in v1. No existing import path takes a URL. An `avatar` column takes JSON
@@ -1578,6 +1582,21 @@ ui.import?: {
   - Enums: case and punctuation ignored (`TikTok Comment` → `tiktok-comment`).
   - Strings: outer whitespace trimmed; length and pattern checked.
   - Object / array params: JSON.
+- **Age cells** (`ui.import.age`, `parseAgeCell` in `packages/project/src/bulk/age.ts`; sc/polish, App QA N4 —
+  tokcomment-style sheets have one "Time" column):
+  - a count and a unit, any case, optional space, trailing "ago" and dot: `s/sec/second(s)`, `m/min(s)/minute(s)`,
+    `h/hr(s)/hour(s)`, `d/day(s)`, `w/wk(s)/week(s)`, `mo/mos/mon/mth(s)/month(s)`, `y/yr(s)/year(s)`; "a" / "an" /
+    "one" = 1; "yesterday", "last week / month / year"; "now", "just now", "moments ago" = count 0 (any unit, the
+    row's unit column or the fill decides). "m" is minutes (TikTok's "5m"); months are "mo".
+  - the count goes to `value` (its schema checks it: whole number, 0…9999 on social cards), the unit to the enum
+    value of `unit` named like it (`hour` / `hours`); a unit the template does not offer (seconds on social cards)
+    is a row error naming the units it offers.
+  - a bare number is the count alone, so the separate `Ago` + `Time unit` columns still work; when the row also sets
+    the unit param in its own column, that column wins and the row gets a warning.
+  - English unit words only (they are what the platforms print); "1.5h", "3h 20m" and dates are not ages.
+  - `createMgRegistry` checks both params exist and differ and the column names are non-empty; the catalogue JSON
+    (`@jasper/api` `MgTemplateUiSchema`) carries the hint to MCP, so the dialog and `import_motion_graphics_csv` read
+    the same cells the same way.
 - **Empty cells** are "not given": the preset, then the fill hook, then the defaults decide. A row cannot set an
   empty text; the preview shows what the row gets.
 - **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
@@ -1643,6 +1662,9 @@ ui.import?: {
 
 - `packages/project/test/bulk-table.test.ts`: parser rules, caps, a 2 MB timing. fast-check: no throw on arbitrary
   strings, `parse(format(records))` round trip for CSV / TSV / `;`, increasing record lines.
+- `packages/project/test/bulk-age.test.ts`: age spellings, non-ages, fast-check (never throws; every spelling round
+  trips), age columns in the plan (Time / Age / Ago / Posted / param name), the separate-columns form, unit column
+  precedence, errors, broken hints ignored, fast-check planner on arbitrary age cells.
 - `packages/project/test/mg-import.test.ts`: mapping, aliases per variant, coercion errors, times, preset reroll
   exclusion, schedule, preview = inserted params. fast-check: coercion and the planner never throw.
 - `packages/project/test/mg-duplicate.test.ts`: placement, reroll / keep, determinism, copy fidelity, first-free and

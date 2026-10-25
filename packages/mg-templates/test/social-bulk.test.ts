@@ -54,6 +54,19 @@ describe('ui.addAnother / ui.import validation (createMgRegistry)', () => {
 		expect(bad({ import: { trimPrefix: { nope: '@' } } })).toThrow(/trimPrefix .* unknown param/);
 		expect(bad({ import: { trimPrefix: { handle: '' } } })).toThrow(/non-empty string/);
 		expect(bad({ import: [] })).toThrow(/ui.import .* must be an object/);
+		expect(bad({ import: { age: { value: 'nope', unit: 'timeUnit' } } })).toThrow(
+			/age.value .* unknown param/,
+		);
+		expect(bad({ import: { age: { value: 'timeValue', unit: 'nope' } } })).toThrow(
+			/age.unit .* unknown param/,
+		);
+		expect(bad({ import: { age: { value: 'timeValue', unit: 'timeValue' } } })).toThrow(
+			/two different params/,
+		);
+		expect(bad({ import: { age: { value: 'timeValue', unit: 'timeUnit', columns: [''] } } })).toThrow(
+			/age.columns .* non-empty/,
+		);
+		expect(bad({ import: { age: 'timeValue' } })).toThrow(/ui.import.age .* must be/);
 	});
 	it('serialises the hints into the catalogue JSON', () => {
 		const entry = reg.catalogJson()[0]!;
@@ -218,5 +231,28 @@ describe('the real social-comment@1 template', () => {
 			? planMgImport(t.table, mgImportTemplateOf(real)!, { rate, preset: 'tiktok-comment' })
 			: null;
 		expect(p?.ok && p.plan.rows[0]!.params).toEqual({ displayName: '@luna', text: 'Hi', verified: true });
+	});
+
+	it('imports ages in one Time / Age / Ago / Posted cell (App QA N4), and the separate columns', async () => {
+		const { mgRegistry } = await import('../src/index.ts');
+		const real = mgImportTemplateOf(mgRegistry.get('social-comment', 1)!)!;
+		expect(real.ui?.import?.age).toMatchObject({ value: 'timeValue', unit: 'timeUnit' });
+		const rows = (csv: string) => {
+			const t = parseTable(csv);
+			const p = t.ok ? planMgImport(t.table, real, { rate, preset: 'x-post' }) : null;
+			if (!p?.ok) throw new Error('plan failed');
+			return p.plan.rows.map((r) => [r.params.timeValue, r.params.timeUnit, r.errors.length]);
+		};
+		for (const h of ['Time', 'Age', 'Ago', 'Posted', 'Time ago', 'Posted ago', 'When'])
+			expect(rows(`Comment\t${h}\nA\t3h\nB\t2 weeks\nC\t10 months\nD\t1y\nE\t5 min\nF\tjust now`)).toEqual([
+				[3, 'hour', 0],
+				[2, 'week', 0],
+				[10, 'month', 0],
+				[1, 'year', 0],
+				[5, 'minute', 0],
+				[0, undefined, 0],
+			]);
+		expect(rows('Comment,Ago,Time unit\nA,3,day')).toEqual([[3, 'day', 0]]);
+		expect(rows('Comment,Time\nA,45s')).toEqual([[undefined, undefined, 1]]);
 	});
 });

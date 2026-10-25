@@ -311,6 +311,26 @@ describe('bulk import dialog', () => {
 		await s.close();
 	});
 
+	it('reads an age in one Time cell ("3h", "2 weeks", "1y") into Posted + Unit (App QA N4)', async () => {
+		const s = await openImport();
+		fireEvent.change(screen.getByTestId('mg-bulk-text'), {
+			target: { value: 'Comment\tTime\nOne\t3h\nTwo\t2 weeks\nThree\t1y\nFour\tsoon' },
+		});
+		const columns = screen.getByTestId('mg-bulk-columns');
+		expect(within(columns).getByText(/^Time/).getAttribute('data-column-kind')).toBe('param');
+		const rows = within(screen.getByTestId('mg-bulk-preview')).getAllByRole('row').slice(1);
+		expect(rows.map((r) => r.getAttribute('data-included'))).toEqual(['true', 'true', 'true', 'false']);
+		expect(within(rows[3]!).getByTestId('mg-bulk-row-error').textContent).toContain('"soon" is not an age');
+		fireEvent.click(screen.getByTestId('mg-bulk-insert'));
+		await waitFor(() => expect(mgClips(s)).toHaveLength(3));
+		expect(mgClips(s).map((c) => [c.params.timeValue, c.params.timeUnit])).toEqual([
+			[3, 'hour'],
+			[2, 'week'],
+			[1, 'year'],
+		]);
+		await s.close();
+	});
+
 	it('reads a chosen CSV file, refuses a file over the cap and shows parse errors', async () => {
 		await openImport({ template: { id: T.id, version: 1 } });
 		const input = screen.getByTestId('mg-bulk-file-input') as HTMLInputElement;

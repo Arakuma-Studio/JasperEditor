@@ -6,7 +6,8 @@
 // case and punctuation, JSON for object params) and checked against its constraints; an empty cell is "not given"
 // (the template's fill hook or its defaults decide). Rows are placed one after another from a start frame, each on
 // the first free video track. Pure: the web dialog and the MCP tool share it, and `resolveMgTemplateParams` turns a
-// row into the exact params `clip.addMotionGraphic` will store.
+// row into the exact params `clip.addMotionGraphic` will store. An age column ("3h", "2 weeks"; `ui.import.age`) fills
+// a count and a unit param from one cell.
 import { z } from 'zod';
 import type { Command } from '../commands/index.ts';
 import type {
@@ -18,6 +19,7 @@ import type {
 import { mgInstanceParams } from '../registry/mg-params.ts';
 import { type Rational, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
+import { parseAgeCell } from './age.ts';
 import { type MgImportMessage, type MgImportTextCode, shortValue as short } from './messages.ts';
 import type { ParsedTable, TableDelimiter } from './table.ts';
 
@@ -310,6 +312,51 @@ function aliasTarget(target: MgTemplateImportTarget, lookup: (param: string) => 
 const plainEntries = <T>(o: unknown): [string, T][] =>
 	isObj(o) ? (Object.entries(o) as [string, T][]).filter(([k]) => typeof k === 'string') : [];
 
+/** The template's age hint (`ui.import.age`) when both params exist; null otherwise. */
+function ageHint(
+	hints: Partial<MgTemplateImportUi>,
+	params: readonly string[],
+): { value: string; unit: string; columns: readonly string[] } | null {
+	const a = hints.age as unknown;
+	if (!isObj(a) || typeof a.value !== 'string' || typeof a.unit !== 'string') return null;
+	if (!params.includes(a.value) || !params.includes(a.unit) || a.value === a.unit) return null;
+	const columns = Array.isArray(a.columns) ? a.columns.filter((c): c is string => typeof c === 'string') : [];
+	return { value: a.value, unit: a.unit, columns };
+}
+
+/**
+ * An age cell (`parseAgeCell`) → the count (checked against the value param's schema) and the unit param's enum
+ * value (null: "just now", any unit). Not an age: the cell is read as the count alone (`coerceCell`), so a bare
+ * "3" keeps working with a separate unit column.
+ */
+function coerceAge(
+	raw: string,
+	valueProp: unknown,
+	unitProp: unknown,
+): { ok: true; value: unknown; unit: string | null } | { ok: false; message: MgImportMessage } {
+	const text = raw.trim();
+	const age = parseAgeCell(text);
+	if (!age) {
+		const plain = coerceCell(text, valueProp);
+		if (plain.ok) return { ok: true, value: plain.value, unit: null };
+		return plain.message.code === 'not-number' ? { ok: false, message: msg('not-age', short(text)) } : plain;
+	}
+	const { kind, schema } = paramShape(valueProp);
+	if (kind === 'integer' || kind === 'number') {
+		const bad = checkNumber(age.value, schema, kind === 'integer');
+		if (bad) return { ok: false, message: bad };
+	}
+	if (age.unit === null) return { ok: true, value: age.value, unit: null };
+	const unitShape = paramShape(unitProp);
+	const offered = (
+		Array.isArray(unitShape.schema.enum) ? unitShape.schema.enum : [unitShape.schema.const]
+	).filter((v): v is string => typeof v === 'string');
+	const unit = offered.find((v) => enumKey(v) === age.unit || enumKey(v) === `${age.unit}s`);
+	if (unit === undefined)
+		return { ok: false, message: msg('age-unit-not-offered', short(text), age.unit, offered.join(', ')) };
+	return { ok: true, value: age.value, unit };
+}
+
 /** Matches the header row to params, timing columns and ignored columns. */
 export function mapImportColumns(header: readonly string[], template: MgImportTemplate): MgImportColumn[] {
 	const props =
@@ -331,6 +378,8 @@ export function mapImportColumns(header: readonly string[], template: MgImportTe
 			.filter(([, v]) => typeof v === 'string')
 			.map(([k, v]) => [normalizeColumnName(k), v as string]),
 	);
+	const age = ageHint(hints, params);
+	const ageColumns = new Set((age?.columns ?? []).map(normalizeColumnName));
 	const used = new Map<string, string>();
 	return header.map((raw, index) => {
 		const headerText = raw.trim();
@@ -353,6 +402,7 @@ export function mapImportColumns(header: readonly string[], template: MgImportTe
 					: { ...col, kind: 'ignored', reason: msg('column-bad-alias') };
 			return { ...col, kind: 'alias', target: alias };
 		}
+		if (age && ageColumns.has(key)) return claim(age.value);
 		if (START_COLUMNS.includes(key)) {
 			if (used.has('$start'))
 				return { ...col, kind: 'ignored', reason: msg('column-duplicate', used.get('$start')!) };
@@ -404,6 +454,7 @@ export function planMgImport(
 	if (data.length === 0) return { ok: false, message: msg('no-data') };
 	const hints = isObj(template.ui?.import) ? template.ui.import : {};
 	const trim = new Map(plainEntries<unknown>(hints.trimPrefix).filter(([, v]) => typeof v === 'string' && v));
+	const age = ageHint(hints, Object.keys(props));
 	const fps = opts.rate.den > 0 ? opts.rate.num / opts.rate.den : 0;
 	const defaultSeconds =
 		typeof template.defaultDurationSeconds === 'number' && template.defaultDurationSeconds > 0
@@ -428,10 +479,22 @@ export function planMgImport(
 			else row.warnings.push(issue.message);
 		}
 		if (cells.length > header.length) row.warnings.push(msg('extra-cells', cells.length - header.length));
+		// the unit an age cell gave (applied after every column, unless the row sets the unit param itself)
+		let ageUnit: { unit: string; column: MgImportColumn; text: string } | null = null;
 		const assign = (param: string, column: MgImportColumn, rawText: string) => {
 			let text = rawText;
 			const prefix = trim.get(param) as string | undefined;
 			if (prefix && text.trim().startsWith(prefix)) text = text.trim().slice(prefix.length);
+			if (age && param === age.value) {
+				const a = coerceAge(text, props[param], props[age.unit]);
+				if (!a.ok) row.errors.push({ ...a.message, column: column.header });
+				else {
+					row.params[param] = a.value;
+					row.sources[param] = column.index;
+					if (a.unit !== null) ageUnit = { unit: a.unit, column, text: short(text.trim()) };
+				}
+				return;
+			}
 			const c = coerceCell(text, props[param]);
 			if (!c.ok) row.errors.push({ ...c.message, column: column.header });
 			else {
@@ -461,6 +524,17 @@ export function planMgImport(
 				continue;
 			}
 			assign(target, c, cell(c));
+		}
+		const given = ageUnit as { unit: string; column: MgImportColumn; text: string } | null;
+		if (given && age) {
+			if (!Object.hasOwn(row.params, age.unit)) {
+				row.params[age.unit] = given.unit;
+				row.sources[age.unit] = given.column.index;
+			} else if (row.params[age.unit] !== given.unit)
+				row.warnings.push({
+					...msg('age-unit-overridden', given.text, age.unit),
+					column: given.column.header,
+				});
 		}
 		for (const c of columns) {
 			if ((c.kind !== 'start' && c.kind !== 'duration') || cell(c).trim() === '') continue;

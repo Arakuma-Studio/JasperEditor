@@ -66,6 +66,7 @@ export type MgTemplateUiJson = {
 		aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
 		ignored?: Record<string, string>;
 		trimPrefix?: Record<string, string>;
+		age?: { value: string; unit: string; columns?: string[] };
 	};
 };
 
@@ -398,10 +399,11 @@ function checkImportHints(k: string, names: ReadonlySet<string>, v: unknown): vo
 		if (typeof name !== 'string' || !names.has(name))
 			throw new Error(`${where} of ${k} names an unknown param ${JSON.stringify(name)}`);
 	};
-	const { aliases, ignored, trimPrefix } = v as {
+	const { aliases, ignored, trimPrefix, age } = v as {
 		aliases?: unknown;
 		ignored?: unknown;
 		trimPrefix?: unknown;
+		age?: unknown;
 	};
 	if (aliases !== undefined) {
 		if (!isPlainObject(aliases)) throw new Error(`ui.import.aliases of ${k} must be an object`);
@@ -432,6 +434,14 @@ function checkImportHints(k: string, names: ReadonlySet<string>, v: unknown): vo
 			if (typeof prefix !== 'string' || prefix.length === 0)
 				throw new Error(`ui.import.trimPrefix.${name} of ${k} must be a non-empty string`);
 		}
+	}
+	if (age !== undefined) {
+		if (!isPlainObject(age)) throw new Error(`ui.import.age of ${k} must be {value, unit, columns?}`);
+		param(age.value, 'ui.import.age.value');
+		param(age.unit, 'ui.import.age.unit');
+		if (age.value === age.unit) throw new Error(`ui.import.age of ${k} needs two different params`);
+		if (age.columns !== undefined && (!Array.isArray(age.columns) || !age.columns.every(nonEmpty)))
+			throw new Error(`ui.import.age.columns of ${k} must be non-empty column names`);
 	}
 }
 

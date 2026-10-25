@@ -94,6 +94,12 @@ export type MgTemplateImportUi = {
 	ignored?: Readonly<Record<string, string>>;
 	/** Prefixes removed from a param's cells before validation (`{handle: '@'}`: "@luna" → "luna"). */
 	trimPrefix?: Readonly<Record<string, string>>;
+	/**
+	 * An age in one cell ("3h", "2 weeks", "just now"; `parseAgeCell`) → the count param `value` and the unit param
+	 * `unit` (an enum offering some of `AGE_UNITS`: 'minute', 'hour'…). Read from the columns of `value` (its name,
+	 * label and aliases) and from `columns` (more names, e.g. "Time", "Age"); a bare number stays the count alone.
+	 */
+	age?: { value: string; unit: string; columns?: readonly string[] };
 };
 
 export type MgTemplateInfo = {
