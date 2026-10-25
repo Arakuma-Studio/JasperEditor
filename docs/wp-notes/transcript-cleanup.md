@@ -414,14 +414,14 @@ sub-frame fades: every format (FCP7, FCPXML, OTIO, EDL, AAF, OMF) names them in 
 ### Performance (TC-060, pure half) — measured
 
 `pnpm exec tsx packages/project/bench/cleanup.ts` (results: `packages/project/bench/cleanup.results.json`); fixture:
-one hour of synthetic speech (BENCH_WORDS words, 360,000 voice frames), a 30 fps sequence with the hour on linked V1 +
-A1 and music on a sync-locked A2. BENCH_MACHINE.
+one hour of synthetic speech (7,148 words, 360,000 voice frames), a 30 fps sequence with the hour on linked V1 +
+A1 and music on a sync-locked A2. Build VM (AMD EPYC-Rome, 16 vCPU, Node 24.22.1), 2026-10-26, under the shared bench lock, load average 12.3 → 11.5 (other agents' test runs; the benchmark is single-threaded), production invariant mode (incremental); 1 warm-up + 7 runs, medians.
 
 | Case | Median | Target |
 |---|---|---|
-| `detectCleanup`, 1 h (Fast) | BENCH_DETECT | ≤ 200 ms |
-| `analyzeSequenceCleanup`, 1 h (detect + plan + frames + stats) | BENCH_ANALYZE | — |
-| `cleanup.apply`, 1,500 ranges, one transaction (production invariant check), 4 ms fades | BENCH_APPLY (BENCH_CLIPS clips after, 1 revision = one undo step) | ≤ 2 s |
+| `detectCleanup`, 1 h (Fast) | 42 ms (31–72) | ≤ 200 ms |
+| `analyzeSequenceCleanup`, 1 h (detect + plan + frames + stats) | 142 ms (136–164); 882 ranges, 28.7 cuts / min | — |
+| `cleanup.apply`, 1,500 ranges, one transaction (production invariant check), 4 ms fades | 453 ms (428–620); 4,503 clips after, 1 revision = one undo step | ≤ 2 s |
 
 ### Limitations
 
