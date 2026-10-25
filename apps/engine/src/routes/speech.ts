@@ -37,7 +37,7 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 		process.env,
 		undefined,
 		undefined,
-		() => app.jasper.services.voice as VoiceAnalysisService | undefined,
+		() => app.jasper.services.voiceAnalysis as VoiceAnalysisService | undefined,
 	);
 	app.jasper.services.speech = svc;
 	svc.registerRunners();

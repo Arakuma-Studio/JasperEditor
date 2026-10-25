@@ -96,11 +96,16 @@ afterAll(async () => {
 
 describe('MCP over stdio with a token-protected engine', () => {
 	it('discovers the engine, edits media, renders a frame, and exports a playable video', async () => {
-		const status = await ok<{ engine: { url: string; foundBy: string } }>('engine_status');
+		const status = await ok<{ engine: { url: string; foundBy: string }; speech?: { status: string; threads: number } }>(
+			'engine_status',
+		);
 		expect(status.engine).toMatchObject({
 			url: `http://127.0.0.1:${PORT}`,
 			foundBy: 'runtime-file',
 		});
+		// spec 16 SG-031: where speech-to-text runs
+		expect(status.speech).toMatchObject({ status: expect.any(String) });
+		expect(status.speech?.threads).toBeGreaterThanOrEqual(1);
 		projectId = (await ok<{ projectId: string }>('create_project', { name: 'MCP integration' })).projectId;
 		const imported = await ok<{ imported: { mediaId: string }[] }>('import_media', {
 			projectId,

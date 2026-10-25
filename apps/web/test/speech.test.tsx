@@ -13,7 +13,9 @@ import { toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AutoTranscribeHost, saveAuto } from '../src/speech/auto.tsx';
+import { transcriptionDevice } from '../src/panels/jobs/model.ts';
 import { GenerateTranscriptDialog } from '../src/speech/GenerateTranscriptDialog.tsx';
+import { SpeechPreferencesPage } from '../src/speech/PreferencesPage.tsx';
 import { transcriptionWatcher } from '../src/speech/jobs.ts';
 import { defaultOptions, mixAttach, requestOptions } from '../src/speech/model.ts';
 import { EngineProvider } from '../src/state/engine.tsx';
@@ -99,7 +101,34 @@ function model(id: string, installed: boolean, extra: Partial<SpeechModel> = {})
 
 type Call = { method: string; url: string; body: unknown };
 
-function fakeEngine(state: { models: SpeechModel[]; job?: () => EngineJob }) {
+const PROBE = {
+	platform: 'linux',
+	arch: 'x64',
+	ortVersion: '1.30.0',
+	providers: [
+		{ id: 'cuda', available: false, reason: 'the NVIDIA runtime is missing: libcudnn.so.9' },
+		{ id: 'webgpu', available: true, device: 'NVIDIA GeForce RTX 3060' },
+		{ id: 'cpu', available: true },
+	],
+	chosen: { encoder: 'webgpu', decoder: 'cpu' },
+	threads: 8,
+	gpu: { name: 'NVIDIA GeForce RTX 3060', provider: 'webgpu', vramMb: 12288 },
+	ramBytes: 32 * 1024 ** 3,
+	cores: 16,
+	calibrations: [],
+	probedAt: '2026-10-25T10:00:00.000Z',
+	cuda: {
+		state: 'not-installed',
+		ortVersion: '1.30.0',
+		downloadBytes: 236_037_232,
+		runtime: { ok: false, missing: ['libcudnn.so.9'], driverVersion: '580.1', gpu: 'NVIDIA GeForce RTX 3060', vramMb: 12288 },
+		guidance: 'Install cuDNN 9',
+		license: 'MIT',
+	},
+};
+
+function fakeEngine(state: { models: SpeechModel[]; job?: () => EngineJob; settings?: Record<string, unknown> }) {
+	state.settings ??= { processor: 'auto', accuracy: 'standard', nvidiaGpu: false };
 	const calls: Call[] = [];
 	const json = (b: unknown, status = 200) =>
 		new Response(JSON.stringify(b), { status, headers: { 'x-jasper-api': '1' } });
@@ -141,6 +170,11 @@ function fakeEngine(state: { models: SpeechModel[]; job?: () => EngineJob }) {
 				},
 			});
 		if (url === '/api/speech/models') return json({ models: state.models });
+		if (url === '/api/speech/settings') {
+			if (method === 'PUT') state.settings = { ...state.settings, ...(body as object) };
+			return json(state.settings);
+		}
+		if (url === '/api/speech/probe') return json(PROBE);
 		const install = /^\/api\/speech\/models\/([^/]+)\/install$/.exec(url);
 		if (install) {
 			state.models = state.models.map((m) =>
@@ -260,6 +294,36 @@ describe('Generate Transcript dialog', () => {
 			calls.some((c) => c.method === 'POST' && c.url === '/api/speech/models/whisper-base/install'),
 		).toBe(true);
 		expect((screen.getByRole('button', { name: 'Transcribe' }) as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it('sends Accuracy and verbatim, and shows where the model runs and how fast (spec 16 SG-010/SG-030)', async () => {
+		const { session, mediaId } = makeSession();
+		const { client, calls } = fakeEngine({
+			models: [
+				model('whisper-base', true, {
+					runsOn: { encoder: 'webgpu', decoder: 'cpu', device: 'RTX 3060 (WebGPU) encoder · CPU decoder', threads: 8 },
+					speed: { minutesPer10Min: 1.7, basis: 'estimated', accuracy: 'standard' },
+				}),
+			],
+		});
+		render(
+			<EngineProvider client={client}>
+				<GenerateTranscriptDialog session={session} target={{ kind: 'media', mediaIds: [mediaId] }} close={() => {}} />
+			</EngineProvider>,
+		);
+		const runsOn = await screen.findByTestId('speech-runs-on');
+		expect(runsOn.textContent).toContain('Runs on: RTX 3060 (WebGPU) encoder · CPU decoder · 8 threads');
+		expect(runsOn.textContent).toContain('≈ 1.7 min per 10 min of audio (estimated)');
+		await chooseOption(screen.getByRole('combobox', { name: 'Accuracy' }), 'Best (slower)');
+		fireEvent.click(screen.getByRole('checkbox', { name: 'Keep filler words (verbatim: eh, um, so…)' }));
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Transcribe' }));
+		});
+		await waitFor(() => expect(calls.some((c) => c.url === `/api/media/${KEY}/transcribe`)).toBe(true));
+		expect(calls.find((c) => c.url === `/api/media/${KEY}/transcribe`)?.body).toMatchObject({
+			accuracy: 'best',
+			verbatim: true,
+		});
 	});
 
 	it('English-only models fix the language and cannot translate', () => {
@@ -398,5 +462,59 @@ describe('automatic transcription on import', () => {
 		});
 		expect(calls.filter((c) => c.url === `/api/media/${KEY}/transcribe`)).toHaveLength(1);
 		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
+	});
+});
+
+describe('Preferences ▸ Transcription (spec 16 SG-030)', () => {
+	it('shows Processor, Accuracy, the GPU probe, NVIDIA status and the recommended model; saves the Processor', async () => {
+		const { client, calls } = fakeEngine({
+			models: [
+				model('whisper-base', true, {
+					recommended: true,
+					runsOn: { encoder: 'webgpu', decoder: 'cpu', device: 'RTX 3060 (WebGPU) encoder · CPU decoder', threads: 8 },
+					speed: { minutesPer10Min: 2.4, basis: 'measured', at: '2026-10-25T10:00:00Z', accuracy: 'standard' },
+				}),
+			],
+		});
+		render(
+			<EngineProvider client={client}>
+				<SpeechPreferencesPage />
+			</EngineProvider>,
+		);
+		expect(await screen.findByTestId('speech-model-whisper-base-recommended')).toBeTruthy();
+		expect(screen.getByTestId('speech-model-whisper-base-runs-on').textContent).toContain(
+			'2.4 min per 10 min of audio (measured, last run)',
+		);
+		const probe = await screen.findByTestId('speech-probe');
+		expect(probe.textContent).toContain('GPU: NVIDIA GeForce RTX 3060 (WebGPU)');
+		expect(screen.getByTestId('speech-provider-cuda').textContent).toContain('libcudnn.so.9');
+		expect(screen.getByTestId('speech-cuda-status').textContent).toContain('missing libcudnn.so.9');
+		await waitFor(() => expect((screen.getByRole('combobox', { name: 'Processor' }) as HTMLButtonElement).disabled).toBe(false));
+		await chooseOption(screen.getByRole('combobox', { name: 'Processor' }), 'CPU');
+		await waitFor(() =>
+			expect(calls.some((c) => c.method === 'PUT' && c.url === '/api/speech/settings')).toBe(true),
+		);
+		expect(calls.find((c) => c.method === 'PUT' && c.url === '/api/speech/settings')?.body).toEqual({
+			processor: 'cpu',
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('speech-reprobe'));
+		});
+		await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.url === '/api/speech/probe')).toBe(true));
+	});
+
+	it('the Jobs panel names the device and the fallback of a transcription', () => {
+		const job = {
+			kind: 'transcription' as const,
+			result: {
+				device: {
+					label: 'CPU',
+					fallbacks: [{ stage: 'job', part: 'both', from: 'webgpu', to: 'cpu', reason: 'device lost' }],
+				},
+			},
+		};
+		expect(transcriptionDevice(job)).toEqual({ label: 'CPU', fallback: 'device lost' });
+		expect(transcriptionDevice({ kind: 'export', result: {} })).toBeNull();
+		expect(transcriptionDevice({ kind: 'transcription', result: undefined })).toBeNull();
 	});
 });

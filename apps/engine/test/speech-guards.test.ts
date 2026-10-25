@@ -87,7 +87,7 @@ describe('hallucination guard over a silence gap (SG-011 regression: "Gracias po
 		]);
 		expect(r.words.map((w) => w.text)).toEqual(['Hello.']);
 		expect(r.removed.some((x) => x.reason === 'known-phrase' && /Thanks/.test(x.text))).toBe(true);
-		const spoken = refineWords(frames(audio(3, () => true)), [
+		const spoken = refineWords(frames(audio(3, (t) => t >= 0.4 && t < 1.4)), [
 			{ text: 'Gracias.', start: s(0.5), end: s(1.2), probability: 0.9 },
 		]);
 		expect(spoken.words.map((w) => w.text)).toEqual(['Gracias.']);
