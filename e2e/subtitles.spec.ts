@@ -108,10 +108,8 @@ test('a video with a cut and its transcript', async () => {
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	// the transcript of shot A (Text ▸ Transcript ▸ Import…): a phrase whose first word starts 0.2 s after the cut
-	await page
-		.getByTestId('text.tab.Transcript')
-		.click()
-		.catch(() => undefined);
+	await page.getByRole('tab', { name: 'Text', exact: true }).click();
+	await page.getByTestId('text.tab.Transcript').click();
 	const json = join(OUT, 'shot-a.transcript.json');
 	const F = 705_600_000;
 	writeFileSync(
