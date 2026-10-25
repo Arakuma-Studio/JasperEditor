@@ -63,6 +63,8 @@ export const EVENT_PAYLOADS = {
 	'mgBundle.rebuilt': MgBundleRebuiltEventSchema,
 	/** A cleaning pass removed cache entries (Preferences ▸ Media Cache refreshes). */
 	'cache.cleaned': CacheGcReportSchema,
+	/** wp fonts: the user font library changed (font menus, the Program monitor and Preferences ▸ Fonts refresh). */
+	'fonts.changed': z.object({ revision: z.number().int() }),
 	/** The user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */

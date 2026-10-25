@@ -167,6 +167,8 @@ export function appdirPaths(appdir: string) {
 		/** User libraries shared by every project and by agents (S03:FX-030 effect presets). */
 		presetsDir: join(appdir, 'presets'),
 		effectPresetsFile: join(appdir, 'presets', 'effect-presets.json'),
+		/** wp fonts: the user font library (`library.json` + `files/<fontId>.<ext>`), shared by every project. */
+		fontsDir: join(appdir, 'fonts'),
 		/** Sound library (spec 12 §2.1), shared by every project. */
 		soundsDir: join(appdir, 'sounds'),
 		/** The library index `{version, snapshotHash, roots, packs, sounds, files}` (atomic writes). */

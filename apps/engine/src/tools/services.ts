@@ -12,6 +12,7 @@ import type { NativeExtension } from '../export/native-ext.ts';
 import type { PlanCapabilities } from '../export/planner.ts';
 import { ExportService, type MgMasterProvider } from '../export/service.ts';
 import { FontCatalogService } from '../fonts/catalog.ts';
+import { FontLibrary } from '../fonts/library.ts';
 import { JobQueue } from '../jobs/queue.ts';
 import { MediaRegistry } from '../media/registry.ts';
 import { MediaService } from '../media/service.ts';
@@ -43,6 +44,8 @@ export type CoreServices = {
 	/** Per-session crash-recovery journals (S01:PER-021, AC-18, D-39). */
 	recovery: RecoveryJournal;
 	fonts: FontCatalogService;
+	/** wp fonts: the user font library (`<appdir>/fonts`), part of `fonts`' catalog. */
+	fontLibrary: FontLibrary;
 	remotion: RemotionService;
 	exports: ExportService;
 	capabilities: CapabilityService;
@@ -145,7 +148,11 @@ export async function createCoreServices(
 			return g ? { revision: g.revision, document: g.envelope.document } : null;
 		},
 	});
-	const fonts = new FontCatalogService(env);
+	const fontLibrary = await FontLibrary.open(paths.fontsDir, {
+		onChange: (revision) => broadcaster.publish('fonts.changed', { revision }),
+		log: opts.log,
+	});
+	const fonts = new FontCatalogService(env, fontLibrary);
 	const remotion = new RemotionService({
 		bundleCacheDir: paths.remotionBundleDir,
 		usageLog: join(paths.logsDir, 'remotion-usage.jsonl'),
@@ -222,6 +229,7 @@ export async function createCoreServices(
 		projects,
 		recovery,
 		fonts,
+		fontLibrary,
 		remotion,
 		exports: exportsSvc,
 		capabilities,
