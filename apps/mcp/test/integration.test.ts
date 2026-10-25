@@ -488,6 +488,57 @@ describe('MCP over stdio with a token-protected engine', () => {
 		const bad = await call('set_spatial_interpolation', { projectId, mode: 'bezier' });
 		expect(bad.isError).toBe(true);
 	});
+
+	it('reads and sets the motion path of an effect point (spatial-points: Transform effect Position)', async () => {
+		const added = await ok<{ refs: Record<string, string> }>('apply_commands', {
+			projectId,
+			label: 'Solid',
+			commands: [{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V3', color: [1, 0, 0, 1], ref: '$s' }],
+		});
+		const clipId = added.refs.$s!;
+		const fx = await ok<{ refs: Record<string, string> }>('apply_commands', {
+			projectId,
+			label: 'Transform',
+			commands: [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.transform', ref: '$fx' }],
+		});
+		const effectInstanceId = fx.refs.$fx!;
+		const pos = ['effect', effectInstanceId, 'position'];
+		await ok('apply_commands', {
+			projectId,
+			label: 'Animate',
+			commands: [
+				{ type: 'keyframe.add', target: pos, at: { sequenceFrame: 0 }, value: [0.1, 0.2] },
+				{ type: 'keyframe.add', target: pos, at: { sequenceFrame: 30 }, value: [0.5, 0.8] },
+				{ type: 'keyframe.add', target: pos, at: { sequenceFrame: 60 }, value: [0.9, 0.2] },
+			],
+		});
+		type Path = {
+			units: string;
+			box: { width: number; height: number };
+			keys: { frame: number; spatial: string; value: number[] }[];
+			points: { position: number[] }[];
+			pathLength: number;
+		};
+		const effect = { effectInstanceId, param: 'position' };
+		const path = await ok<Path>('get_motion_path', { projectId, clipId, effect });
+		expect(path.units).toBe('layer-box');
+		expect(path.box).toEqual({ width: 1920, height: 1080 });
+		expect(path.keys.map((k) => [k.frame, k.spatial, k.value])).toEqual([
+			[0, 'auto-bezier', [0.1, 0.2]],
+			[30, 'auto-bezier', [0.5, 0.8]],
+			[60, 'auto-bezier', [0.9, 0.2]],
+		]);
+		// The straight chords in layer pixels are a lower bound of the curved path's length.
+		const chord = 2 * Math.hypot(0.4 * 1920, 0.6 * 1080);
+		expect(path.pathLength).toBeGreaterThan(chord);
+		await ok('set_spatial_interpolation', { projectId, clipId, effect, mode: 'linear' });
+		const straight = await ok<Path>('get_motion_path', { projectId, clipId, effect });
+		expect(straight.keys.every((k) => k.spatial === 'linear')).toBe(true);
+		expect(Math.abs(straight.pathLength - chord)).toBeLessThan(1);
+		const notPoint = await call('get_motion_path', { projectId, clipId, effect: { effectInstanceId, param: 'rotation' } });
+		expect(notPoint.isError).toBe(true);
+		expect(json<{ error: { code: string } }>(notPoint).error.code).toBe('E_INVALID_PARAM');
+	});
 });
 
 describe('jasper-mcp --start-engine', () => {

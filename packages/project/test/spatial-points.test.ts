@@ -395,3 +395,28 @@ describe('commands on effect points', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });
+
+describe('Corner Pin corners (native warp stage input)', () => {
+	it('the pinned quad follows the corner paths evaluated in layer-box pixels', () => {
+		const h = new Harness();
+		h.ok([{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [1, 0, 0, 1] }]);
+		const id = h.clips('V1')[0]!.id;
+		h.ok([{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.corner-pin', ref: '$p' }]);
+		const fxId = (h.seq.clips[id] as unknown as VClip).effects[0]!.id;
+		const tl = ['effect', fxId, 'topLeft'];
+		h.ok([
+			{ type: 'keyframe.add', target: tl, value: [0, 0], at: { sequenceFrame: 0 }, spatial: { mode: 'bezier', inTangent: [0, 0], outTangent: [0.2, 0] } },
+			{ type: 'keyframe.add', target: tl, value: [0.1, 0.3], at: { sequenceFrame: 60 }, spatial: { mode: 'bezier', inTangent: [0, -0.2], outTangent: [0, 0] } },
+		]);
+		const c = h.seq.clips[id] as unknown as VClip & { transform: never; opacity: never };
+		const rate = h.seq.settings.frameRate as Rational;
+		const t = contentTimeAt(c as never, 25, rate);
+		const props = resolveLayerProps(
+			{ transform: null, opacity: { value: 100, keyframes: [] }, intrinsicBox: { width: W, height: H }, effects: c.effects },
+			t,
+		);
+		const want = evaluate(c.effects[0]!.params.topLeft as Animatable<Vec2>, t, { metric: M });
+		expect(props.quad[0][0]).toBeCloseTo(want[0] * W, 6);
+		expect(props.quad[0][1]).toBeCloseTo(want[1] * H, 6);
+	});
+});
