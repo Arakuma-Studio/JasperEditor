@@ -8,7 +8,7 @@ Changes: removed the Phase-6 template inventory file, private geometry/copy/menu
 
 Loudness tests now assert real session persistence/undo and a real read-only refusal. The missing-cue negative test checks the specific failure reason and preserves the previous fill target. Reversed mixer sampling keeps its literal oracle and drops the comparison computed with production evaluators. Audition looping uses the specified 250 ms instead of the exported implementation constant; cache eviction observes refetches after six buffers, rather than 48 plays and private byte introspection. Search debounce/listen input setup uses controlled timers.
 
-Validation/timing are appended after the measurement window. No CI speedup is inferred from source changes.
+Validation and timing are recorded below. No CI speedup is inferred from source changes.
 
 ## apps/web/test/audio-engine-ops.test.ts
 
@@ -736,7 +736,7 @@ Seam/refactor resistance: real rendered controls or registered UI commands, publ
 | Auto Sound Pass… sound design style > starts from the sequence’s style; "No personality" sends null (none, whatever the sequence says) | KEEP | expect(within(style).getByRole('combobox', { name: 'Personality' }).textContent).toBe('Warm'); expect(within(style).getByRole('combobox', { name: 'Runs of staggered cues' }).textContent).toMatch( /^Flat/, ) | Distinct scenario: starts from the sequence’s style; "No personality" sends null (none, whatever the sequence says). Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
 | Suggest Cues… sound design style > a personality leaves its excluded types out of the suggestions; what changed is stored in the same step | KEEP | expect(within(style).queryByRole('combobox', { name: 'Runs of staggered cues' })).toBeNull(); expect(cuts.length).toBeGreaterThan(0) | Distinct scenario: a personality leaves its excluded types out of the suggestions; what changed is stored in the same step. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
 | Preferences ▸ Sound design style > edits the active sequence’s style, one undo step per change | KEEP | expect(style()).toEqual({ personality: 'mechanical' }); expect(style()).toEqual({ personality: 'mechanical', duckUnderTyping: true }) | Distinct scenario: edits the active sequence’s style, one undo step per change. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
-| Fill With keeps the variation policy > a click is the voice (speed 1, no gain offset); a key varies its level only; a hit varies both | KEEP | expect(click.speed.rate).toBe(1); expect((click.sfx.level as { offsetDb?: number } \\| undefined)?.offsetDb ?? 0).toBe(0) | Distinct scenario: a click is the voice (speed 1, no gain offset); a key varies its level only; a hit varies both. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
+| Fill With keeps the variation policy > a click is the voice (speed 1, no gain offset); a key varies its level only; a hit varies both | KEEP | expect(click.speed.rate).toBe(1); expect((click.sfx.level as { offsetDb?: number } \| undefined)?.offsetDb ?? 0).toBe(0) | Distinct scenario: a click is the voice (speed 1, no gain offset); a key varies its level only; a hit varies both. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
 | variation cycling of a take > walks the recording’s other clean takes after the ring, before the family | KEEP | expect(list).toEqual([ t1, 'snd_00000000000000ab', `${rec.id}~t2`, `${rec.id}~t3`, 'snd_00000000000000cd', 'snd_00000000000000ef', ]) | Distinct scenario: walks the recording’s other clean takes after the ring, before the family. Direct model tests cover calculations; this case owns this input/action transition at the listed boundary. |
 
 ## Gate and infrastructure ownership
@@ -750,3 +750,50 @@ No snapshot, media fixture, runtime flag, package dependency or configuration wa
 The dead-seam pass also removes unused `sleep` options from `PlanRunOptions`, `SoundJobOptions`, `runSoundCheck` and `runListen`, and their forwarding branches. No repository caller supplies them; the default 400 ms polling timer, cancellation and job transitions are unchanged. The web-core workstream removes the matching proposal-check option. The drag-payload rewrite asserts the independently specified `application/x-jasper-sound` MIME literally, so changing a shared writer/reader constant cannot make an invalid wire format pass.
 
 A final export sweep makes `descriptorWords`, `CATEGORY_ORDER`, `CATEGORY_LABELS`, `CHECK_FOR_ENCODINGS` and `GLYPH_PX` internal after their direct tests were removed. The CC BY credit test now reads the actual install confirmation; `hostOf` and `installConfirmBody` are internal, and their private malformed-URL probes are gone. No production caller imported these names.
+
+
+## Validation and measured limits
+
+Canonical unmodified baseline: all 315 owned cases in 38 files passed. The slowest owned file was `sound-check-panel.test.tsx` (13.395 s reported execution interval), followed by `sound-mix-ui.test.tsx` (3.892 s) and `sound-library-review.test.tsx` (2.678 s). These are runner file intervals, not suite wall time.
+
+Environment: Node 20.19.0, pnpm 10.34.5, Vitest 4.1.11, Linux x86-64 on the shared 8-vCPU AMD EPYC Genoa host with approximately 15 GiB RAM. Runtime commands used `JASPER_REQUIRE_ORACLES=1`, `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome` and at most two Vitest workers. Other coordinated web validations were active; a matched isolated baseline process run was not performed.
+
+The changed-file command passed **22 files / 190 cases**, with no failure or skip, in **50.47 s process wall time** (GNU time). Its slowest reported files were `sound-mix-ui.test.tsx` (3.863 s), `sound-library-review.test.tsx` (1.715 s) and `sound-p2v-in-context.test.tsx` (1.677 s).
+
+```sh
+JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run \
+  apps/web/test/audio-engine-ops.test.ts apps/web/test/audio-mix.test.ts \
+  apps/web/test/sound-audition.test.ts apps/web/test/sound-beds.test.tsx \
+  apps/web/test/sound-check-listen-keep.test.ts apps/web/test/sound-check-model.test.ts \
+  apps/web/test/sound-cue-commands.test.tsx apps/web/test/sound-cue-seam-model.test.ts \
+  apps/web/test/sound-cue-seam.test.tsx apps/web/test/sound-describe-ui.test.tsx \
+  apps/web/test/sound-fill-ui.test.tsx apps/web/test/sound-i18n.test.tsx \
+  apps/web/test/sound-library-model.test.ts apps/web/test/sound-library-panel.test.tsx \
+  apps/web/test/sound-library-review.test.tsx apps/web/test/sound-library-takes.test.tsx \
+  apps/web/test/sound-mix-model.test.ts apps/web/test/sound-mix-ui.test.tsx \
+  apps/web/test/sound-p2v-in-context.test.tsx apps/web/test/sound-p2v-seam.test.tsx \
+  apps/web/test/sound-p2v-suggest.test.tsx apps/web/test/sound-packs-ui.test.tsx \
+  --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-cleanup/web-sound-changed.json
+```
+
+Three intentional source mutations each failed exactly the intended case, with the expected assertion failure; every source was restored exactly in a `finally` block:
+
+- Removing the loudness-analysis refusal propagation made `a read-only store fails without changing the document` fail because its promise resolved.
+- Raising the decoded cache budget from 160 MiB to 240 MiB made `evicts the oldest decoded sound at the byte budget and does not cache oversized buffers` fail because the evicted sound was not fetched again.
+- Changing the shared writer/reader MIME to `application/x-jasper-sounds` made `round-trips and refuses malformed payloads` fail against the independently specified MIME.
+
+Each mutation used `pnpm exec vitest run <owner-file> --maxWorkers=1 -t <exact-case-name> --reporter=json --outputFile=<mutation-report>` with the same environment. The owner files were respectively `audio-engine-ops.test.ts`, `sound-audition.test.ts` and `sound-library-model.test.ts`. Exit status 1 was required; no unrelated failed test was accepted as evidence.
+
+The restored source and timer-sensitive scenarios then passed **5 files / 35 cases**, no failures or skips, in **14.24 s process wall time**:
+
+```sh
+JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run \
+  apps/web/test/audio-engine-ops.test.ts apps/web/test/sound-audition.test.ts \
+  apps/web/test/sound-library-model.test.ts apps/web/test/sound-library-review.test.tsx \
+  apps/web/test/sound-check-listen-keep.test.ts \
+  --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-cleanup/web-sound-restored.json
+```
+
+The repeated library-review interval was 1.781 s. Both runs passed the controlled debounce and input-listener clocks; no new flakiness was observed in these two executions. This is diagnostic evidence, not a matched overall-suite speedup. The full baseline and focused final processes have different scopes, so no absolute or percentage suite improvement is calculated here. Full integrated lint/typecheck/test/build, total suite timings and remote delivery belong to the root integration gate; repeated unaffected scope and a separate full web typecheck were explicitly deferred by the coordinator. No opt-in browser, desktop, rendering or extended-fuzz suite was run by this workstream because no product rendering/UI behavior changed.
+
+`pnpm exec biome check` passed on every changed TS/TSX file; `git diff --check` passed. Final net test/helper LOC is **−885** and production cleanup is **−32 LOC**. All 315 original declarations have a disposition; the final owned suite has 277 declarations: 37 DELETE plus one removed CONSOLIDATE source, with the surviving consolidation owner counted separately. No new test declaration was added.
