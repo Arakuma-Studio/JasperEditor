@@ -161,3 +161,168 @@ export function drawLayer(
 		}
 	}
 }
+
+/**
+ * spec 13 AS-070/073 — the multi-tap kernel of lowered layers (a still drawn through its Motion, the Transform
+ * effect and S_Shake as per-frame affine maps, `stream/lowered.ts`): every output pixel of `rect` is the weighted sum
+ * of `taps`, each a bilinear premultiplied sample of the picture through its own affine map, times the anti-aliased
+ * coverage of the picture's visible rectangle and of each stage's rectangle (the layer box the Transform effect
+ * samples from, the effect canvas S_Shake samples from), the way the effects' shaders sum their shutter taps
+ * (`sum / wsum`). One tap without stages equals `drawLayer`. Self-contained (runs in the workers).
+ *
+ * `prog` (packed numbers): `[nTaps, wsum, …taps]`, a tap = `w, a0…a5 (output px → picture px, u = a0·x + a1·y + a2,
+ * v = a3·x + a4·y + a5), clip u0, v0, u1, v1 (picture px), nStages, nStages × (s0…s5 (output px → stage coords),
+ * r0, r1, r2, r3)`. `acc` = scratch of at least `4 × rect area` floats. `dst` is cleared outside `rect`.
+ */
+export function drawTaps(
+	src: Uint8Array,
+	sw: number,
+	cw: number,
+	ch: number,
+	dst: Uint8Array,
+	dw: number,
+	dh: number,
+	prog: ArrayLike<number>,
+	opacity: number,
+	rect: ArrayLike<number> | null,
+	acc: Float32Array,
+): void {
+	dst.fill(0);
+	const nTaps = prog[0]! | 0;
+	const wsum = prog[1]!;
+	if (!rect || !(opacity > 0) || nTaps < 1 || !(wsum > 0) || cw < 1 || ch < 1) return;
+	const x0 = Math.max(0, Math.floor(rect[0]!));
+	const y0 = Math.max(0, Math.floor(rect[1]!));
+	const x1 = Math.min(dw, Math.ceil(rect[2]!));
+	const y1 = Math.min(dh, Math.ceil(rect[3]!));
+	if (x1 <= x0 || y1 <= y0) return;
+	const rw = x1 - x0;
+	const n = rw * (y1 - y0) * 4;
+	acc.fill(0, 0, n);
+	const s32 =
+		src.byteOffset % 4 === 0
+			? new Uint32Array(src.buffer, src.byteOffset, src.byteLength >> 2)
+			: new Uint32Array(src.slice().buffer);
+	const maxU = cw - 1;
+	const maxV = ch - 1;
+	let p = 2;
+	for (let t = 0; t < nTaps; t++) {
+		const w = prog[p++]!;
+		const m0 = prog[p++]!;
+		const m1 = prog[p++]!;
+		const m2 = prog[p++]!;
+		const m3 = prog[p++]!;
+		const m4 = prog[p++]!;
+		const m5 = prog[p++]!;
+		const cu0 = Math.max(0, prog[p++]!);
+		const cv0 = Math.max(0, prog[p++]!);
+		const cu1 = Math.min(cw, prog[p++]!);
+		const cv1 = Math.min(ch, prog[p++]!);
+		const ns = prog[p++]! | 0;
+		// Stage maps and rectangles, with their output-px gradients (coverage ramps in output px).
+		const stg = new Float64Array(ns * 12);
+		for (let s = 0; s < ns; s++) {
+			for (let k = 0; k < 10; k++) stg[s * 12 + k] = prog[p + s * 10 + k]!;
+			stg[s * 12 + 10] = 1 / Math.hypot(stg[s * 12]!, stg[s * 12 + 1]!);
+			stg[s * 12 + 11] = 1 / Math.hypot(stg[s * 12 + 3]!, stg[s * 12 + 4]!);
+		}
+		p += ns * 10;
+		if (!(w > 0) || cu1 <= cu0 || cv1 <= cv0) continue;
+		const lu = Math.min(cu0 + 0.5, (cu0 + cu1) / 2);
+		const hu = Math.max(cu1 - 0.5, (cu0 + cu1) / 2);
+		const lv = Math.min(cv0 + 0.5, (cv0 + cv1) / 2);
+		const hv = Math.max(cv1 - 0.5, (cv0 + cv1) / 2);
+		const gu = 1 / Math.hypot(m0, m1);
+		const gv = 1 / Math.hypot(m3, m4);
+		for (let y = y0; y < y1; y++) {
+			const Y = y + 0.5;
+			const X0 = x0 + 0.5;
+			let u = m0 * X0 + m1 * Y + m2;
+			let v = m3 * X0 + m4 * Y + m5;
+			let o = (y - y0) * rw * 4;
+			for (let x = x0; x < x1; x++, u += m0, v += m3, o += 4) {
+				let cu = 0.5 + Math.min(u - cu0, cu1 - u) * gu;
+				if (cu <= 0) continue;
+				let cv = 0.5 + Math.min(v - cv0, cv1 - v) * gv;
+				if (cv <= 0) continue;
+				if (cu > 1) cu = 1;
+				if (cv > 1) cv = 1;
+				let cover = cu * cv;
+				for (let s = 0; s < ns; s++) {
+					const q = s * 12;
+					const X = x + 0.5;
+					const su = stg[q]! * X + stg[q + 1]! * Y + stg[q + 2]!;
+					const sv = stg[q + 3]! * X + stg[q + 4]! * Y + stg[q + 5]!;
+					let ku = 0.5 + Math.min(su - stg[q + 6]!, stg[q + 8]! - su) * stg[q + 10]!;
+					let kv = 0.5 + Math.min(sv - stg[q + 7]!, stg[q + 9]! - sv) * stg[q + 11]!;
+					if (ku <= 0 || kv <= 0) {
+						cover = 0;
+						break;
+					}
+					if (ku > 1) ku = 1;
+					if (kv > 1) kv = 1;
+					cover *= ku * kv;
+				}
+				if (!(cover > 0)) continue;
+				let su = (u < lu ? lu : u > hu ? hu : u) - 0.5;
+				let sv = (v < lv ? lv : v > hv ? hv : v) - 0.5;
+				if (su < 0) su = 0;
+				else if (su > maxU) su = maxU;
+				if (sv < 0) sv = 0;
+				else if (sv > maxV) sv = maxV;
+				const iu = su | 0;
+				const iv = sv | 0;
+				const fx = su - iu;
+				const fy = sv - iv;
+				const iu1 = iu < maxU ? iu + 1 : iu;
+				const iv1 = iv < maxV ? iv + 1 : iv;
+				const t00 = s32[iv * sw + iu]!;
+				const t10 = s32[iv * sw + iu1]!;
+				const t01 = s32[iv1 * sw + iu]!;
+				const t11 = s32[iv1 * sw + iu1]!;
+				const a00 = (t00 >>> 24) * (1 - fx) * (1 - fy);
+				const a10 = (t10 >>> 24) * fx * (1 - fy);
+				const a01 = (t01 >>> 24) * (1 - fx) * fy;
+				const a11 = (t11 >>> 24) * fx * fy;
+				const a = a00 + a10 + a01 + a11;
+				if (a <= 0) continue;
+				const k = w * cover;
+				acc[o] +=
+					(k * ((t00 & 255) * a00 + (t10 & 255) * a10 + (t01 & 255) * a01 + (t11 & 255) * a11)) / 255;
+				acc[o + 1] +=
+					(k *
+						(((t00 >> 8) & 255) * a00 +
+							((t10 >> 8) & 255) * a10 +
+							((t01 >> 8) & 255) * a01 +
+							((t11 >> 8) & 255) * a11)) /
+					255;
+				acc[o + 2] +=
+					(k *
+						(((t00 >> 16) & 255) * a00 +
+							((t10 >> 16) & 255) * a10 +
+							((t01 >> 16) & 255) * a01 +
+							((t11 >> 16) & 255) * a11)) /
+					255;
+				acc[o + 3] += k * a;
+			}
+		}
+	}
+	const op = Math.min(1, opacity) / wsum;
+	for (let y = y0; y < y1; y++) {
+		let o = (y - y0) * rw * 4;
+		let d = (y * dw + x0) * 4;
+		for (let x = x0; x < x1; x++, o += 4, d += 4) {
+			const a = acc[o + 3]!;
+			if (!(a > 0)) continue;
+			const k = 255 / a;
+			const r = acc[o]! * k;
+			const g = acc[o + 1]! * k;
+			const b = acc[o + 2]! * k;
+			const al = a * op;
+			dst[d] = (r > 255 ? 255 : r) + 0.5;
+			dst[d + 1] = (g > 255 ? 255 : g) + 0.5;
+			dst[d + 2] = (b > 255 ? 255 : b) + 0.5;
+			dst[d + 3] = (al > 255 ? 255 : al) + 0.5;
+		}
+	}
+}

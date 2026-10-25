@@ -52,6 +52,13 @@ export type LayerOverride = {
 	 * remap, frame hold, interpolation): frame k shows sequence frame `startFrame + k`, played linearly.
 	 */
 	retimed?: boolean;
+	/**
+	 * spec 13 AS-070 (`layer` space, `still`): `path` is a still of the layer's region `lowered` (layer px; the
+	 * layer box grown by its content bleed, 1 px per layer px) drawn WITHOUT Motion, Opacity and the lowered effects
+	 * (Transform, S_Shake): the builder draws them per frame with the multi-tap kernel (`stream/lowered.ts`). The
+	 * clip's other effects are in the still.
+	 */
+	lowered?: { x: number; y: number; w: number; h: number };
 };
 
 type NativeEffectSupport = false | 'static' | 'animated';

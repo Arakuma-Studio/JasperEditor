@@ -110,7 +110,9 @@ import {
 	resultSoundWarnings,
 } from './sound-credits.ts';
 import { convertStill, stillCurveFor } from './still-formats.ts';
+import type { StreamLayerPlan } from './stream/plan.ts';
 import { streamLayer } from './stream/run.ts';
+import { streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
 
@@ -1207,12 +1209,12 @@ export class ExportService {
 		const runStreams = (child: ChildProcess, streams = graph.streams) => {
 			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
+				const run = { workers, signal: streamAbort.signal, onSpawn: ctx.trackChild };
 				producers.push(
-					streamLayer(this.deps.ff, s.plan, sink, {
-						workers,
-						signal: streamAbort.signal,
-						onSpawn: ctx.trackChild,
-					}).catch((e: Error) => {
+					('kind' in s.plan && s.plan.kind === 'taps'
+						? streamTaps(this.deps.ff, s.plan, sink, run)
+						: streamLayer(this.deps.ff, s.plan as StreamLayerPlan, sink, run)
+					).catch((e: Error) => {
 						if (streamAbort.signal.aborted) return;
 						streamError ??= e;
 						void terminateTree(child, 500);

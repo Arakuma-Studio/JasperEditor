@@ -38,6 +38,10 @@ type Prepared = LayerBakePrepared & { [SPANS]?: Map<string, LayerOverride> };
 
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
 const RENDER_FIXED_COST_FRAMES = 30;
+/** spec 13 AS-071: stills per sheet render at most (bounds a sheet's frame size spread and a failed sheet's retry). */
+const SHEET_MAX = 64;
+/** Progress weight of one sheet frame (a still costs ≈ 0.1 s in a sheet against ≈ 3.4 s alone, textperf). */
+const SHEET_FRAME_COST = 1;
 
 /** What the native builder (override) or the Remotion path (graded master) gets for one clip. */
 function entryOf(
@@ -49,6 +53,17 @@ function entryOf(
 	if (grade && graded)
 		return {
 			graded: { key: graded.key, rect: graded.rect, startFrame: plan.startFrame, frames: grade.frames },
+		};
+	// spec 13 AS-070: the still of the layer region, drawn through Motion and the lowered effects by the kernel.
+	if (plan.variant.recipe === 'layer-still' && plan.picture)
+		return {
+			override: {
+				path: bake.path,
+				space: 'layer',
+				startFrame: plan.startFrame,
+				still: true,
+				lowered: plan.picture,
+			},
 		};
 	return {
 		override: {
@@ -152,43 +167,99 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			}
 			const renders = [...groups.values()];
 			const isMaster = (g: typeof items) => g[0]!.plan.variant.recipe === 'master';
+			// spec 13 AS-071: still bakes (static layers, lowered layers' layer stills) render together, many per sheet
+			// render; the rest (masters, single frames, spans, graded entries) one render each, as before.
+			const isSheet = (g: typeof items) => {
+				const { plan, grade } = g[0]!;
+				return !grade && !plan.span && (plan.variant.recipe === 'still' || plan.variant.recipe === 'layer-still');
+			};
+			const sheetGroups = renders.filter(isSheet);
+			const singles = renders.filter((g) => !isSheet(g));
+			// Similar sizes share a sheet (its frames are as large as its largest still).
+			const area = (g: typeof items) => {
+				const r = g[0]!.plan.rect;
+				return r ? r.w * r.h : g[0]!.plan.material.width * g[0]!.plan.material.height;
+			};
+			sheetGroups.sort((a, b) => area(a) - area(b));
+			const sheets: (typeof items)[][] = [];
+			for (let i = 0; i < sheetGroups.length; i += SHEET_MAX) sheets.push(sheetGroups.slice(i, i + SHEET_MAX));
 			// Side by side, the masters split the budget by length; one after the other, each takes all of it (as before).
-			const masters = renders.filter(isMaster);
+			const masters = singles.filter(isMaster);
 			const masterShares = pageShares(
 				masters.map((m) => m[0]!.plan.frames),
 				budget,
 			);
 			const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
 			const release = par.sharedBrowser && maxInFlight > 1 ? svc.browserSession(ctx.jobId) : null;
+			const metaOf = (g: PageGrant) => ({
+				parentId: ctx.jobId,
+				...(ctx.projectId ? { projectId: ctx.projectId } : {}),
+				signal: g.signal,
+				concurrency: g.pages,
+				...(release ? { browserGroup: ctx.jobId } : {}),
+				onProgress: g.progress,
+			});
+			/** The entries of a group from its bake (a clipped layer still → a master of each clip, AS-070). */
+			const finish = async (
+				group: typeof items,
+				bake: BakeResult,
+				graded: { key: string; path: string; rect: Rect | null } | null,
+				meta: ReturnType<typeof metaOf>,
+			) => {
+				for (const it of group) {
+					if (bake.clipped && it.clip) {
+						const master = await svc.planBake(planned, it.clip, { env, frame: single, master: true });
+						const mb = await svc.ensureBake(master, meta);
+						out.set(it.clip.clipId, entryOf(master, mb, null, null));
+						continue;
+					}
+					const entry = entryOf(it.plan, bake, it.grade, graded);
+					if (it.clip) out.set(it.clip.clipId, entry);
+					else if (entry.override) {
+						out[SPANS] ??= new Map();
+						out[SPANS].set(it.plan.clipId, entry.override);
+					}
+				}
+			};
 			try {
 				await runPagePool(
-					renders.map((group) => {
-						const { plan, grade } = group[0]!;
-						return {
-							want: !isMaster(group) ? 1 : maxInFlight === 1 ? budget : shares.get(group)!,
-							weight: plan.frames + RENDER_FIXED_COST_FRAMES,
+					[
+						...sheets.map((sheet) => ({
+							// A sheet spreads its frames over every page it is granted.
+							want: budget,
+							weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
 							run: async (g: PageGrant) => {
-								const meta = {
-									parentId: ctx.jobId,
-									...(ctx.projectId ? { projectId: ctx.projectId } : {}),
-									signal: g.signal,
-									concurrency: g.pages,
-									...(release ? { browserGroup: ctx.jobId } : {}),
-									onProgress: g.progress,
-								};
-								const bake = await svc.ensureBake(plan, meta);
-								const graded = grade ? await svc.ensureGraded(plan, grade, meta) : null;
-								for (const it of group) {
-									const entry = entryOf(it.plan, bake, it.grade, graded);
-									if (it.clip) out.set(it.clip.clipId, entry);
-									else if (entry.override) {
-										out[SPANS] ??= new Map();
-										out[SPANS].set(it.plan.clipId, entry.override);
-									}
+								const meta = metaOf(g);
+								const bakes = await svc.ensureSheet(
+									sheet.map((group) => group[0]!.plan),
+									meta,
+								);
+								for (const group of sheet) {
+									const bake = bakes.get(group[0]!.plan.key);
+									if (!bake)
+										throw new JobError(
+											'LAYER_BAKE_FAILED',
+											`The bake of "${group[0]!.plan.clipName}" is missing`,
+											true,
+										);
+									await finish(group, bake, null, meta);
 								}
 							},
-						};
-					}),
+						})),
+						...singles.map((group) => {
+							const { plan, grade } = group[0]!;
+							return {
+								want: !isMaster(group) ? 1 : maxInFlight === 1 ? budget : shares.get(group)!,
+								weight: plan.frames + RENDER_FIXED_COST_FRAMES,
+								run: async (g: PageGrant) => {
+									const meta = metaOf(g);
+									const bake = await svc.ensureBake(plan, meta);
+									const graded = grade ? await svc.ensureGraded(plan, grade, meta) : null;
+									await finish(group, bake, graded, meta);
+								},
+							};
+						}),
+					],
 					{
 						budget,
 						maxInFlight,

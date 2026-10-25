@@ -8,6 +8,9 @@
 // are drawn sub-pixel by our kernel and streamed in on pipes (`stream/`, `NativeGraph.streams`);
 // the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
 // AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
+// spec 13 AS-070/072/073: constant-picture layers of a track (baked text stills, lowered text layers drawn through
+// Motion / Transform / S_Shake by the multi-tap kernel, still images with sub-pixel Motion) share one kernel stream
+// (`stream/taps.ts`): one input per track instead of one per clip, so memory follows what is on screen.
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
 // `fade=…:alpha=1` on the layer (the same linear ramps `fadeFactor` evaluates for the composition), the black
 // of a dip to black is a colour layer under the track's clips (audio crossfades are part of the mixdown).
@@ -46,7 +49,12 @@ import {
 	type PreparedExtensions,
 } from './native-ext.ts';
 import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
+import { chainMember, constantSource, loweredMember, stillMember } from './stream/members.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
+import { planTapStream, type TapMember, type TapStreamPlan } from './stream/taps.ts';
+
+/** What feeds one pipe of the composite: a sub-pixel layer, or a kernel stream of constant pictures (spec 13 AS-072). */
+export type StreamPlan = StreamLayerPlan | TapStreamPlan;
 
 /**
  * swscale flags for every YUV ↔ RGB conversion of the composite. Without `accurate_rnd` the default
@@ -107,7 +115,7 @@ type NativeGraph = {
 	 * Sub-pixel layers (stream/plan.ts): raw RGBA frames the caller writes to the composite's pipe `fd`
 	 * (`streamLayer`, spawn the composite with `pipes: streams.length`, fds 3, 4, …).
 	 */
-	streams: { fd: number; plan: StreamLayerPlan }[];
+	streams: { fd: number; plan: StreamPlan }[];
 	/**
 	 * keyframes-blend: the processes before this one when the stack has blend layers (in order). Segment i's raw
 	 * output (`2W×H` RGBA: composite ‖ layer) goes through the blend kernel into the next process's `pipe:3`
@@ -126,7 +134,7 @@ export type BlendSegment = {
 	args: string[];
 	filter: string;
 	/** Sub-pixel streams of this process (fds after its backdrop pipe). */
-	streams: { fd: number; plan: StreamLayerPlan }[];
+	streams: { fd: number; plan: StreamPlan }[];
 	/** fd of this process's backdrop pipe (the previous kernel's output); null for the first. */
 	backdropFd: number | null;
 	/** Frames on stdout (the stack's frames + 1 margin). */
@@ -197,6 +205,8 @@ type LayerPlan =
 	| { clip: RenderVisualClip; f0: number; f1: number }
 	/** Full-frame colour under a track's clips (the black of a dip to black). */
 	| { matte: { color: readonly number[] }; f0: number; f1: number }
+	/** spec 13 AS-072: constant-picture layers of one track drawn by one kernel stream (`stream/taps.ts`). */
+	| { taps: TapStreamPlan; f0: number; f1: number }
 	/** wave1c: the pre-rendered span of a GPU transition (sides + stage, a `sequence` override). */
 	| {
 			span: LayerOverride;
@@ -310,7 +320,7 @@ type LayerSourceOptions = {
 		nested?: ReadonlyMap<string, PreparedExtensions>;
 		path: string;
 		threads: number;
-		addStream?: (plan: StreamLayerPlan) => number;
+		addStream?: (plan: StreamPlan) => number;
 	};
 };
 
@@ -685,7 +695,7 @@ type StackContext = {
 	addInput(args: string[]): number;
 	chains: string[];
 	/** Main-graph sub-pixel streams; absent in decoder graphs (warp/stream decoders): nested layers there need none. */
-	addStream?: (plan: StreamLayerPlan) => number;
+	addStream?: (plan: StreamPlan) => number;
 	sources: NativeSourceResolver;
 	threads: number;
 	exts?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
@@ -726,6 +736,63 @@ function drawStack(ctx: StackContext): string {
 	let last = bgLabel;
 	let li = 0;
 
+	// spec 13 AS-072: a constant-picture layer of the main graph as a kernel stream member (null = drawn on its own).
+	// Members have no transition handles, fades, masks or blend mode, so they never overlap another layer of their
+	// track in time and the track's stacking order is kept when they share one stream.
+	const memberOf = (c: RenderVisualClip, f0: number, f1: number, sides: boolean): TapMember | null => {
+		if (!ctx.addStream || !exts || sides) return null;
+		if ((c.blendMode ?? 'normal') !== 'normal' || c.threeD || c.kind === 'adjustment') return null;
+		if (c.fades?.length || c.headHandle || c.tailHandle || c.freezeHead || c.freezeTail) return null;
+		if (maskExportRoute(c) !== 'none' || 'nest' in c.source) return null;
+		const override = pickOverride(exts.list, exts.prepared, c);
+		if (override?.lowered)
+			return loweredMember(
+				c,
+				f0,
+				f1,
+				{ path: override.path, picture: override.lowered },
+				{ W, H, fps, swsFlags: SWS_FLAGS },
+			);
+		if (override?.space === 'sequence') {
+			if (!override.still || override.colorRuns || override.includesFades || override.decoder) return null;
+			return stillMember(
+				c.clipId,
+				f0,
+				f1,
+				{ path: override.path, rect: override.rect ?? null },
+				{ W, H, swsFlags: SWS_FLAGS },
+			);
+		}
+		if (override || !constantSource(c)) return null;
+		if (c.kind === 'still' && !('mediaId' in c.source && srcs.media(c.source.mediaId))) return null;
+		const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
+		const box = {
+			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+		};
+		// Whole-pixel static stills stay on the filter path (exact, no kernel).
+		if (!needsSubpixel(c, props, box)) return null;
+		const decInputs: string[][] = [];
+		const chain = layerSourceChain({
+			clip: c,
+			f0,
+			f1,
+			fps,
+			props,
+			sources: srcs,
+			override: null,
+			extensions: exts,
+			addInput: (args) => {
+				decInputs.push(args);
+				return decInputs.length - 1;
+			},
+			label: `${P}m`,
+			skipCrop: true,
+		});
+		const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
+		return chainMember(c.clipId, f0, f1, plan, chain);
+	};
+
 	const layers: LayerPlan[] = [];
 	for (const track of snap.videoTracks) {
 		for (const m of track.mattes ?? []) {
@@ -752,6 +819,7 @@ function drawStack(ctx: StackContext): string {
 				spans.push({ t, ov, sides, blendMode: modes.size === 1 ? [...modes][0]! : 'normal' });
 			}
 		}
+		const trackLayers: { clip: RenderVisualClip; f0: number; f1: number }[] = [];
 		for (const c of track.clips) {
 			// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
 			let f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
@@ -764,8 +832,36 @@ function drawStack(ctx: StackContext): string {
 				if (a <= f0) f0 = Math.max(f0, b);
 				else f1 = Math.min(f1, a);
 			}
-			if (f1 > f0) layers.push({ clip: c, f0, f1 });
+			if (f1 > f0) trackLayers.push({ clip: c, f0, f1 });
 		}
+		// spec 13 AS-072: two or more constant-picture layers of the track → one kernel stream in their place.
+		const members = new Map<string, TapMember>();
+		for (const l of trackLayers) {
+			const m = memberOf(
+				l.clip,
+				l.f0,
+				l.f1,
+				spans.some((sp) => sp.sides.has(l.clip.clipId)),
+			);
+			if (m) members.set(l.clip.clipId, m);
+		}
+		// Members never overlap in time (a track without handles); keep the first of any that would.
+		let lastEnd = Number.NEGATIVE_INFINITY;
+		for (const m of [...members.values()].sort((a, b) => a.f0 - b.f0)) {
+			if (m.f0 < lastEnd) members.delete(m.clipId);
+			else lastEnd = m.f1;
+		}
+		if (members.size >= 2) {
+			const plan = planTapStream([...members.values()], W, H, fps);
+			let placed = false;
+			for (const l of trackLayers) {
+				if (!members.has(l.clip.clipId)) layers.push(l);
+				else if (!placed) {
+					placed = true;
+					layers.push({ taps: plan, f0: plan.g0, f1: plan.g1 });
+				}
+			}
+		} else layers.push(...trackLayers);
 		for (const sp of spans) {
 			const f0 = Math.max(sp.t.start, R0);
 			const f1 = Math.min(sp.t.start + sp.t.duration, R1);
@@ -830,6 +926,23 @@ function drawStack(ctx: StackContext): string {
 				last = `o${label}`;
 				return;
 			}
+			if ('taps' in layer) {
+				// spec 13 AS-072: one pipe for a run of constant-picture layers of a track.
+				const pl = layer.taps;
+				if (!ctx.addStream) throw new Error('A kernel stream outside the main graph');
+				const label = `${P}l${li++}`;
+				const fd = ctx.addStream(pl);
+				const k = ctx.addInput([
+					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${pl.outW}x${pl.outH}`],
+					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+				]);
+				ctx.chains.push(
+					`[${k}:v:0]setpts=PTS-STARTPTS,${shift}[${label}]`,
+					`[${last}][${label}]overlay=x=${pl.x}:y=${pl.y}:format=rgb:eof_action=pass:${enable}[o${label}]`,
+				);
+				last = `o${label}`;
+				return;
+			}
 			const c = layer.clip;
 			const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
 			const label = `${P}l${li++}`;
@@ -838,6 +951,38 @@ function drawStack(ctx: StackContext): string {
 			// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
 			// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
 			const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
+			if (override?.lowered) {
+				// spec 13 AS-070/073: a still of the layer box drawn through Motion, Transform and S_Shake by the kernel.
+				if (!ctx.addStream)
+					throw new Error(
+						`Lowered layer ${c.clipId} inside a nested sequence whose nest clip is drawn in its own process (route through Remotion)`,
+					);
+				const plan = planTapStream(
+					[
+						loweredMember(
+							c,
+							f0,
+							layer.f1,
+							{ path: override.path, picture: override.lowered },
+							{ W, H, fps, swsFlags: SWS_FLAGS },
+						),
+					],
+					W,
+					H,
+					fps,
+				);
+				const fd = ctx.addStream(plan);
+				const k = ctx.addInput([
+					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
+					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+				]);
+				ctx.chains.push(
+					`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
+					`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[o${label}]`,
+				);
+				last = `o${label}`;
+				return;
+			}
 			if (override?.space === 'sequence') {
 				// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
 				// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's

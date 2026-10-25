@@ -15,7 +15,7 @@
 // per export, and a bake already being rendered for another export (or another clip) is joined, not rendered twice.
 // Every render is logged for licence reporting (LBK-026).
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
 import {
@@ -32,6 +32,7 @@ import {
 } from '@jasper/project';
 import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
+import { encodePng } from '../export/synthetic.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
 import { importsArtifactsOf, withImportsUrls } from '../imports/extension.ts';
@@ -66,6 +67,7 @@ import {
 	hasColorEffects,
 	isColorEffect,
 	isStaticLayer,
+	layerStill,
 	type Rect,
 	referencedMediaIds,
 	variantFrames,
@@ -105,6 +107,11 @@ export type LayerMeta = {
 	lastUsedAt: string;
 	/** Graded entries: the ungraded bake they were made from. */
 	source?: string;
+	/**
+	 * spec 13 AS-070: a `layer-still` whose picture touches its border (the layer draws past its content bleed): the
+	 * layer is baked as a master instead.
+	 */
+	clipped?: boolean;
 	material: unknown;
 };
 
@@ -130,6 +137,8 @@ export type BakePlan = {
 	 * and the transition stage (no layer filter).
 	 */
 	span?: boolean;
+	/** spec 13 AS-070 (`layer-still`): the layer region the still covers (layer px, see `layerStill`). */
+	picture?: { x: number; y: number; w: number; h: number };
 };
 
 /** A graded entry (Remotion path / preview, LBK-010): bake + colour runs. */
@@ -154,6 +163,8 @@ export type BakeResult = {
 	frames: number;
 	width: number;
 	height: number;
+	/** spec 13 AS-070: the `layer-still` touches its border (bake the layer as a master instead). */
+	clipped?: boolean;
 };
 
 /**
@@ -162,6 +173,8 @@ export type BakeResult = {
  */
 export type LayerBakeJobInput =
 	| { op: 'bake'; bake: BakePlan; concurrency?: number; browserGroup?: string }
+	/** spec 13 AS-071: still bakes (`still`, `layer-still`) rendered together as the frames of one sheet render. */
+	| { op: 'sheet'; bakes: BakePlan[]; concurrency?: number; browserGroup?: string }
 	| {
 			op: 'grade';
 			bake: BakePlan;
@@ -410,7 +423,16 @@ export class LayerBakeService {
 		await this.markUsed(key, meta);
 		const path = this.removing.has(key) ? null : this.filePath(key, file);
 		if (!path) return null;
-		return { key, path, still, rect: meta.rect, frames: meta.frames, width: meta.width, height: meta.height };
+		return {
+			key,
+			path,
+			still,
+			rect: meta.rect,
+			frames: meta.frames,
+			width: meta.width,
+			height: meta.height,
+			...(meta.clipped ? { clipped: true } : {}),
+		};
 	}
 
 	private async markUsed(key: string, meta: LayerMeta): Promise<void> {
@@ -549,11 +571,17 @@ export class LayerBakeService {
 	async planBake(
 		planned: Pick<PlannedExport, 'document' | 'media' | 'snapshot'>,
 		clip: RenderVisualClip,
-		o: { env: BakeEnvironment; frame?: number | null },
+		o: { env: BakeEnvironment; frame?: number | null; master?: boolean },
 	): Promise<BakePlan> {
 		const asBaked = bakeClip(clip, { variant: { recipe: 'master' }, stripColor: true });
 		const isStatic = isStaticLayer(asBaked);
 		const span = drawnSpan(clip);
+		// spec 13 AS-070: static content whose picture moves → one still of the layer region (native motion), unless
+		// that still was found clipped (`master`).
+		if (!isStatic && !o.master && layerStill(clip)) {
+			const ls = await this.plan(planned, clip, { recipe: 'layer-still' }, o.env);
+			if (!(await this.lookup(ls.key))?.clipped) return ls;
+		}
 		const full = await this.plan(planned, clip, isStatic ? { recipe: 'still' } : { recipe: 'master' }, o.env);
 		if (o.frame === undefined || o.frame === null || isStatic) return full;
 		if (await this.lookup(full.key)) return full;
@@ -573,8 +601,15 @@ export class LayerBakeService {
 		const f0 = variant.recipe === 'frame' ? span.start + variant.frame : span.start;
 		const f1 = variant.recipe === 'master' ? span.end : f0 + 1;
 		const unshifted = bakeClip(clip, { variant, stripColor: true });
-		const rect = cropRect(clip, { f0, f1 }, { width: seq.width, height: seq.height, fps: seq.fps });
-		const shiftedClip = rect ? bakeClip(clip, { variant, stripColor: true, shift: rect }) : unshifted;
+		// spec 13 AS-070: a layer-still's frame is its layer region (the clip translated into it by `bakeClip`).
+		const picture = variant.recipe === 'layer-still' ? layerStill(clip) : null;
+		if (variant.recipe === 'layer-still' && !picture)
+			throw new JobError('LAYER_BAKE_FAILED', `"${clip.name}" cannot be baked as a layer still`, false);
+		const rect = picture
+			? { x: 0, y: 0, w: picture.w, h: picture.h }
+			: cropRect(clip, { f0, f1 }, { width: seq.width, height: seq.height, fps: seq.fps });
+		const shiftedClip =
+			rect && !picture ? bakeClip(clip, { variant, stripColor: true, shift: rect }) : unshifted;
 		const fonts = clipFonts(unshifted, snap.fonts);
 		const mediaIds = referencedMediaIds([unshifted.source, unshifted.effects]);
 		const media: RenderSnapshot['media'] = {};
@@ -601,6 +636,7 @@ export class LayerBakeService {
 			gl: env.gl,
 			still: variant.recipe !== 'master',
 			rect,
+			...(picture ? { picture } : {}),
 			...(clip.kind === 'motion-graphic' ? { renderVersion: templateRenderVersion(clip) } : {}),
 			...(() => {
 				const e = expressionKeyPart(clip, snap.expressions);
@@ -618,7 +654,8 @@ export class LayerBakeService {
 			variant,
 			rect,
 			doc: docOf(shiftedClip, rect),
-			fullDoc: rect ? docOf(unshifted, null) : null,
+			fullDoc: rect && !picture ? docOf(unshifted, null) : null,
+			...(picture ? { picture } : {}),
 			frames,
 			startFrame: f0,
 			colorRuns: hasColorEffects(clip),
@@ -845,6 +882,52 @@ export class LayerBakeService {
 		return done;
 	}
 
+	/**
+	 * spec 13 AS-071: the bakes of still plans (`still`, `layer-still`), the missing ones rendered together in ONE
+	 * child job as the frames of one sheet render (one browser page set and bundle load for all of them, instead of one
+	 * render each: textperf measured ≈ 3.4 s fixed cost per still render, ≈ 0.1 s per frame of a sheet). Keys already
+	 * cached are reused; keys another caller is rendering are joined (`ensureBake`). Results by key.
+	 */
+	async ensureSheet(plans: readonly BakePlan[], meta: EnsureMeta): Promise<Map<string, BakeResult>> {
+		const out = new Map<string, BakeResult>();
+		this.leaseUntilDone(
+			plans.map((p) => p.key),
+			meta.parentId,
+		);
+		const missing: BakePlan[] = [];
+		const joined: BakePlan[] = [];
+		for (const p of plans) {
+			if (out.has(p.key) || missing.some((m) => m.key === p.key)) continue;
+			const hit = await this.lookup(p.key);
+			if (hit) {
+				this.stats.reused++;
+				out.set(p.key, hit);
+			} else if (this.inflight.has(p.key)) joined.push(p);
+			else missing.push(p);
+		}
+		if (meta.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+		if (missing.length === 1) joined.push(missing.pop()!);
+		if (missing.length > 0) {
+			const input: LayerBakeJobInput = { op: 'sheet', bakes: missing, ...this.childOptions(meta) };
+			const job = this.submitChild(input, missing[0]!, meta);
+			const entry: InFlight = { jobId: job.id, done: this.childDone(job.id, missing[0]!) };
+			entry.done.catch(() => undefined);
+			for (const p of missing) this.inflight.set(p.key, entry);
+			try {
+				await this.follow(entry, meta, () => this.core.queue.cancel(job.id));
+			} finally {
+				for (const p of missing) if (this.inflight.get(p.key) === entry) this.inflight.delete(p.key);
+			}
+			for (const p of missing) {
+				const r = await this.lookup(p.key);
+				if (!r) throw new JobError('LAYER_BAKE_FAILED', `The bake of "${p.clipName}" is missing`, true);
+				out.set(p.key, r);
+			}
+		}
+		for (const p of joined) out.set(p.key, await this.ensureBake(p, meta));
+		return out;
+	}
+
 	/** The graded master (frame sequence, `graded/`) of a planned grade, rendered in a child job when missing. */
 	async ensureGraded(
 		bake: BakePlan,
@@ -929,7 +1012,10 @@ export class LayerBakeService {
 		const key = input.op === 'grade' ? input.grade.key : plan.key;
 		return this.core.queue.submit({
 			kind: 'layer-bake',
-			title: `${input.op === 'grade' ? 'Grade graphics' : 'Bake graphics'} – ${plan.clipName}`,
+			title:
+				input.op === 'sheet'
+					? `Bake graphics – ${input.bakes.length} stills`
+					: `${input.op === 'grade' ? 'Grade graphics' : 'Bake graphics'} – ${plan.clipName}`,
 			priority: 'user',
 			// No slots of its own: its Remotion pages are a share of the page budget of the parent, which holds the
 			// CPU slots (S11:LBK-022).
@@ -1054,6 +1140,7 @@ export class LayerBakeService {
 
 	private async run(ctx: JobContext): Promise<unknown> {
 		const input = ctx.input as LayerBakeJobInput;
+		if (input.op === 'sheet') return this.runSheet(ctx, input);
 		// The bake (and the graded entry) are written and read for the whole job.
 		const release = this.lease(input.op === 'grade' ? [input.bake.key, input.grade.key] : [input.bake.key]);
 		try {
@@ -1151,6 +1238,17 @@ export class LayerBakeService {
 		await render(plan.doc);
 		let rect = plan.rect;
 		const seq = { width: plan.material.width, height: plan.material.height };
+		// spec 13 AS-070: every edge of a layer-still is inside the layer's drawing: content there was cut.
+		const clipped =
+			!!plan.picture &&
+			(await this.clippedAtBorder(
+				ff,
+				tmp,
+				{ x: 1, y: 1, w: plan.picture.w, h: plan.picture.h },
+				{ width: plan.picture.w + 2, height: plan.picture.h + 2 },
+				ctx,
+			));
+		if (clipped) ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
 		if (rect && plan.fullDoc && (await this.clippedAtBorder(ff, tmp, rect, seq, ctx))) {
 			// The layer drew past the planned crop (LBK-005 safety net): render the whole frame instead.
 			ctx.log(`layer-bake: ${plan.clipId} touches the crop border; re-rendering full frame`);
@@ -1170,6 +1268,7 @@ export class LayerBakeService {
 			clipName: plan.clipName,
 			createdAt: t,
 			lastUsedAt: t,
+			...(clipped ? { clipped: true } : {}),
 			material: plan.material,
 		};
 		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
@@ -1183,6 +1282,7 @@ export class LayerBakeService {
 			frames: plan.frames,
 			width: meta.width,
 			height: meta.height,
+			...(clipped ? { clipped: true } : {}),
 		};
 	}
 
@@ -1227,6 +1327,227 @@ export class LayerBakeService {
 			await rm(stats, { force: true });
 			for (const m of text.matchAll(/YMAX=(\d+(?:\.\d+)?)/g)) if (Number(m[1]) > RECT_CLIP_ALPHA) return true;
 		}
+		return false;
+	}
+
+	/** A `sheet` child job (spec 13 AS-071): its stills, then every still the sheet could not hold alone. */
+	private async runSheet(ctx: JobContext, input: Extract<LayerBakeJobInput, { op: 'sheet' }>): Promise<unknown> {
+		const release = this.lease(input.bakes.map((b) => b.key));
+		try {
+			const browser = await this.sharedBrowser(input.browserGroup);
+			const redo = await this.renderSheet(ctx, input.bakes, { concurrency: input.concurrency, browser });
+			// Stills that drew past their crop are rendered alone (full frame when needed, LBK-005).
+			for (const [i, plan] of redo.entries()) {
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				ctx.progress(0.9 + (0.1 * i) / redo.length, { stage: `Re-rendering ${plan.clipName}` });
+				await this.renderBake(ctx, plan, { concurrency: input.concurrency, weight: 0, browser });
+			}
+			ctx.progress(1, { stage: 'Baked' });
+			return { stills: input.bakes.length, rerendered: redo.length };
+		} catch (e) {
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			if (e instanceof JobError) throw e;
+			const msg = String((e as Error)?.message ?? e);
+			throw new JobError('LAYER_BAKE_FAILED', `Baking ${input.bakes.length} stills failed: ${msg.slice(0, 1200)}`, true);
+		} finally {
+			release();
+			void this.refreshBytes();
+		}
+	}
+
+	/**
+	 * spec 13 AS-071 — renders still plans as the frames of one document (frame i = plan i's one-frame clip, every
+	 * clip translated into the top-left of a frame as large as the largest of them), decodes the PNG frames with one
+	 * ffmpeg, crops each to its own size, checks its crop border like `clippedAtBorder` (sequence stills: the edges
+	 * inside the frame; layer stills: every edge) and writes each cache entry. Returns the sequence stills that touched
+	 * their crop border (re-rendered alone by the caller); a clipped layer still is stored with `clipped`.
+	 */
+	private async renderSheet(
+		ctx: JobContext,
+		plans: readonly BakePlan[],
+		o: { concurrency: number | undefined; browser: SharedRenderBrowser | null },
+	): Promise<BakePlan[]> {
+		const reason = this.unavailableReason();
+		if (reason)
+			throw new JobError(
+				'LAYER_BAKE_UNAVAILABLE',
+				`Graphics layers need the Remotion renderer to bake: ${reason}`,
+				false,
+			);
+		const sizeOf = (p: BakePlan) => ({ w: p.rect?.w ?? p.material.width, h: p.rect?.h ?? p.material.height });
+		const W = Math.max(2, ...plans.map((p) => sizeOf(p).w));
+		const H = Math.max(2, ...plans.map((p) => sizeOf(p).h));
+		const first = plans[0]!.doc;
+		const fonts = new Map<string, RenderSnapshot['fonts'][number]>();
+		const media: RenderSnapshot['media'] = {};
+		const clips: RenderVisualClip[] = [];
+		for (const [i, p] of plans.entries()) {
+			const c = p.doc.videoTracks[0]?.clips[0];
+			if (!c) throw new JobError('LAYER_BAKE_FAILED', `The bake of "${p.clipName}" has no layer`, false);
+			clips.push({ ...c, trackId: 'sheet', start: i, duration: 1 });
+			for (const f of p.doc.fonts) fonts.set(`${f.family}|${f.weight}|${f.style}|${f.url}`, f);
+			Object.assign(media, p.doc.media);
+		}
+		const doc: RenderSnapshot = {
+			...first,
+			settings: { ...first.settings, width: W, height: H, backgroundColor: [0, 0, 0, 0] },
+			range: { start: 0, end: plans.length },
+			durationFrames: plans.length,
+			videoTracks: [{ trackId: 'sheet', clips }],
+			audioClips: [],
+			media,
+			fonts: [...fonts.values()],
+		};
+		const scratch = await ctx.scratchDir();
+		const dir = join(scratch, `sheet-${Date.now().toString(36)}`);
+		await mkdir(dir, { recursive: true });
+		ctx.progress(0, { stage: `Rendering 0/${plans.length} stills` });
+		await this.core.remotion.renderStillSheet({
+			inputProps: {
+				doc,
+				options: {
+					isPreview: false,
+					useProxies: false,
+					transparentBackground: true,
+					layerFilter: clips.map((c) => c.clipId),
+				},
+			},
+			outputDir: dir,
+			signal: ctx.signal,
+			...(o.concurrency ? { concurrency: o.concurrency } : {}),
+			...(o.browser ? { browser: o.browser } : {}),
+			log: ctx.log,
+			onProgress: (p) =>
+				ctx.progress((0.8 * p.renderedFrames) / p.totalFrames, {
+					stage: `Rendering ${p.renderedFrames}/${p.totalFrames} stills`,
+				}),
+		});
+		// `<frame>.png` → `%06d.png` (one image2 input).
+		const files = (await readdir(dir)).filter((f) => /^\d+\.png$/.test(f));
+		if (files.length !== plans.length)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`The sheet render wrote ${files.length} stills, expected ${plans.length}`,
+				true,
+			);
+		for (const f of files) await rename(join(dir, f), join(dir, `s${gradedFrameName(Number.parseInt(f, 10))}`));
+		ctx.progress(0.8, { stage: 'Cropping stills' });
+		const redo: BakePlan[] = [];
+		const frameBytes = W * H * 4;
+		const ff = this.ffmpeg();
+		const child = ff.spawnRaw(
+			[
+				'-f',
+				'image2',
+				'-framerate',
+				'25',
+				'-start_number',
+				'0',
+				'-i',
+				join(dir, 's%06d.png'),
+				'-frames:v',
+				String(plans.length),
+				'-f',
+				'rawvideo',
+				'-pix_fmt',
+				'rgba',
+				'pipe:1',
+			],
+			{ signal: ctx.signal, onSpawn: ctx.trackChild },
+		);
+		let stderr = '';
+		child.stderr!.setEncoding('utf8').on('data', (c: string) => {
+			stderr = (stderr + c).slice(-4000);
+		});
+		const closed = new Promise<void>((resolve, reject) => {
+			child.on('error', reject);
+			child.on('close', (code, sig) =>
+				code === 0
+					? resolve()
+					: reject(new JobError('TOOL_FAILED', `ffmpeg exited ${code ?? sig}: ${stderr.trim().slice(-1500)}`, true)),
+			);
+		});
+		closed.catch(() => undefined);
+		let i = 0;
+		let buf = Buffer.alloc(0);
+		for await (const chunk of child.stdout! as AsyncIterable<Buffer>) {
+			buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
+			while (buf.length >= frameBytes && i < plans.length) {
+				const frame = buf.subarray(0, frameBytes);
+				const plan = plans[i]!;
+				const clippedSeq = await this.storeSheetStill(plan, frame, W, ctx);
+				if (clippedSeq) redo.push(plan);
+				i++;
+				buf = buf.subarray(frameBytes);
+				ctx.progress(0.8 + (0.1 * i) / plans.length, { stage: `Cropping stills ${i}/${plans.length}` });
+			}
+		}
+		await closed;
+		if (i !== plans.length)
+			throw new JobError('FRAME_COUNT_MISMATCH', `The sheet decode gave ${i} stills, expected ${plans.length}`, true);
+		await rm(dir, { recursive: true, force: true });
+		return redo;
+	}
+
+	/**
+	 * One frame of a sheet (`W` px rows, RGBA): its plan's still cropped from the top-left, checked at its crop border
+	 * and stored. True when a sequence still touched its border (to be rendered alone); a clipped layer still is
+	 * stored with `clipped` (the layer is then baked as a master).
+	 */
+	private async storeSheetStill(plan: BakePlan, frame: Buffer, W: number, ctx: JobContext): Promise<boolean> {
+		const w = plan.rect?.w ?? plan.material.width;
+		const h = plan.rect?.h ?? plan.material.height;
+		const px = new Uint8Array(w * h * 4);
+		for (let y = 0; y < h; y++) px.set(frame.subarray(y * W * 4, y * W * 4 + w * 4), y * w * 4);
+		const alphaAt = (x: number, y: number) => px[(y * w + x) * 4 + 3]!;
+		const edge = (side: 'top' | 'bottom' | 'left' | 'right') => {
+			if (side === 'top' || side === 'bottom') {
+				const y = side === 'top' ? 0 : h - 1;
+				for (let x = 0; x < w; x++) if (alphaAt(x, y) > RECT_CLIP_ALPHA) return true;
+				return false;
+			}
+			const x = side === 'left' ? 0 : w - 1;
+			for (let y = 0; y < h; y++) if (alphaAt(x, y) > RECT_CLIP_ALPHA) return true;
+			return false;
+		};
+		let clipped = false;
+		if (plan.picture) clipped = (['top', 'bottom', 'left', 'right'] as const).some(edge);
+		else if (plan.rect && plan.fullDoc) {
+			const r = plan.rect;
+			const seq = { width: plan.material.width, height: plan.material.height };
+			const inner = [
+				r.y > 0 ? ('top' as const) : null,
+				r.y + r.h < seq.height ? ('bottom' as const) : null,
+				r.x > 0 ? ('left' as const) : null,
+				r.x + r.w < seq.width ? ('right' as const) : null,
+			].filter((s): s is 'top' | 'bottom' | 'left' | 'right' => s !== null);
+			// Rendered alone, with the full-frame fallback of `renderBake`.
+			if (inner.some(edge)) return true;
+		}
+		if (clipped) ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
+		const dir = this.entryDir(plan.key);
+		await mkdir(dir, { recursive: true });
+		const scratch = await ctx.scratchDir();
+		const tmp = join(scratch, `sheet-${plan.key}.png`);
+		await writeFile(tmp, encodePng(px, w, h));
+		await rename(tmp, join(dir, 'still.png'));
+		const t = this.now().toISOString();
+		const meta: LayerMeta = {
+			kind: 'layer',
+			key: plan.key,
+			recipe: plan.variant.recipe,
+			rect: plan.rect,
+			frames: plan.frames,
+			width: w,
+			height: h,
+			clipName: plan.clipName,
+			createdAt: t,
+			lastUsedAt: t,
+			...(clipped ? { clipped: true } : {}),
+			material: plan.material,
+		};
+		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
+		this.stats.rendered++;
 		return false;
 	}
 

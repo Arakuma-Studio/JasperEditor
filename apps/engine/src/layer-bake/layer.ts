@@ -20,6 +20,7 @@ import {
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';
+import { loweredMoves, loweredRefusal } from '../export/stream/lowered.ts';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
 const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic', 'captions']);
@@ -191,7 +192,12 @@ export type BakeVariant =
 	/** Static layer: one frame for the whole span; no fades (the builder applies them). */
 	| { recipe: 'still' }
 	/** One frame of a non-static layer (stills, LBK-025): `frame` counted from the span start; fades baked. */
-	| { recipe: 'frame'; frame: number };
+	| { recipe: 'frame'; frame: number }
+	/**
+	 * spec 13 AS-070: a lowered layer (`layerStill`): one frame of its layer region without Motion, Opacity and the
+	 * lowered effects (the native kernel draws them per frame); no fades.
+	 */
+	| { recipe: 'layer-still' };
 
 /**
  * The clip as the bake renders it: only enabled effects, colour effects removed when ffmpeg applies them
@@ -214,6 +220,7 @@ export function bakeClip(
 	const effects = c.effects.filter((fx) => fx.enabled && !(strip && isColorEffect(fx, o.registry)));
 	const { headHandle, tailHandle, fades, ...rest } = c;
 	let out: RenderVisualClip;
+	if (o.variant.recipe === 'layer-still') return layerStillClip(c, o.registry);
 	if (o.variant.recipe === 'still') out = { ...rest, effects, start: 0, duration: 1 };
 	else
 		out = {
@@ -246,6 +253,77 @@ function shifted(t: Transform, s: { x: number; y: number }): Transform {
 		},
 	};
 }
+
+const constant = <T>(value: T) => ({ value, keyframes: [] });
+
+/**
+ * spec 13 AS-070: the clip as a `layer-still` bake draws it — one frame, its layer region at 1 px per layer px with
+ * the region's origin at (0, 0) of the bake frame: Motion is a translation by the bleed (no scale, rotation or flips),
+ * Opacity 100 %, no lowered effects, no keyframes on what is left, no handles or fades.
+ */
+export function layerStillClip(c: RenderVisualClip, registry?: EffectRegistry): RenderVisualClip {
+	const pic = layerStill(c, registry);
+	const e = pic ? -pic.x : 0;
+	const { headHandle: _h, tailHandle: _t, fades: _f, expressionPositionShift: _s, ...rest } = c;
+	return {
+		...rest,
+		start: 0,
+		duration: 1,
+		effects: [],
+		opacity: constant(100),
+		transform: {
+			position: constant([e, e] as [number, number]),
+			anchor: constant([0, 0] as [number, number]),
+			scale: constant(100),
+			scaleWidth: constant(100),
+			uniformScale: true,
+			rotation: constant(0),
+			flipH: false,
+			flipV: false,
+		},
+	};
+}
+
+/**
+ * spec 13 AS-070 — the layer region a text layer is baked as when its content is static but its picture moves
+ * (keyframed Motion / Opacity, the Transform effect, S_Shake without motion blur or RGB split, `loweredRefusal`):
+ * its box grown by the content bleed (strokes, shadow, ink) on every side, whole pixels, in layer px. Null = not a
+ * lowered layer (static layers keep the `still` recipe, the rest a master).
+ */
+export function layerStill(
+	c: RenderVisualClip,
+	registry: EffectRegistry = defaultEffectRegistry,
+): { x: number; y: number; w: number; h: number } | null {
+	if (!isDomLayer(c) || c.threeD || loweredRefusal(c) || !loweredMoves(c)) return null;
+	const bare: RenderVisualClip = {
+		...c,
+		effects: [],
+		opacity: constant(100),
+		...(c.transform
+			? {
+					transform: {
+						...c.transform,
+						position: constant(c.transform.position.value),
+						anchor: constant(c.transform.anchor.value),
+						scale: constant(c.transform.scale.value),
+						scaleWidth: constant(c.transform.scaleWidth.value),
+						rotation: constant(c.transform.rotation.value),
+					},
+				}
+			: {}),
+	};
+	if (!isStaticLayer(bare, registry)) return null;
+	const bleed = contentBleed(bare, registry);
+	if (bleed === null || !Number.isFinite(bleed)) return null;
+	const e = Math.ceil(Math.max(0, bleed)) + 2;
+	const w = Math.ceil(c.intrinsicBox.width) + 2 * e;
+	const h = Math.ceil(c.intrinsicBox.height) + 2 * e;
+	if (!(w > 0 && h > 0) || w > MAX_LAYER_STILL_SIDE || h > MAX_LAYER_STILL_SIDE) return null;
+	return { x: -e, y: -e, w, h };
+}
+
+/** Largest side of a lowered layer's still (larger layers keep the master recipe). */
+const MAX_LAYER_STILL_SIDE = 4096;
 
 /** Frames of the render document of a variant: the drawn span, or one frame. */
 export function variantFrames(c: RenderVisualClip, v: BakeVariant): number {
