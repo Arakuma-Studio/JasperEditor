@@ -1009,13 +1009,19 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			{
 				kind: 'submenu',
 				label: 'Alignment',
-				items: TRANSITION_ALIGNMENTS.map(({ value: a, label }) => ({
-					kind: 'item' as const,
-					label,
-					checked: t.alignment === a,
-					disabled: !!g.oneSided,
-					run: () => updateTransition('Transition Alignment', t, { alignment: a }),
-				})),
+				items: [
+					...TRANSITION_ALIGNMENTS.map(({ value: a, label }) => ({
+						kind: 'item' as const,
+						label,
+						// Premiere port: an off-centre span is "Custom Start" (picking an alignment drops it).
+						checked: t.alignment === a && g.cutOffset === undefined,
+						disabled: !!g.oneSided,
+						run: () => updateTransition('Transition Alignment', t, { alignment: a }),
+					})),
+					...(g.cutOffset !== undefined
+						? [{ kind: 'item' as const, label: 'Custom Start', checked: true, disabled: true, run: () => {} }]
+						: []),
+				],
 			},
 			{
 				kind: 'submenu',

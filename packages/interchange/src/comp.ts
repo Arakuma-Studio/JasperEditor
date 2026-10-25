@@ -10,7 +10,7 @@
 // Port of FilmCraft `crates/interchange/src/comp.rs` (MIT OR Apache-2.0).
 import { type Animatable, type Keyframe, segmentShape, transitionSpec } from '@jasper/project';
 import { Builder, dbToGain, describeClip, frameOf, gainToDb, newClip, reportVisualLoss } from './build.ts';
-import { transitionFromName } from './effects.ts';
+import { transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import { FLICKS } from './model.ts';
 import type { EssenceKey, ImportOptions, MediaOptions } from './options.ts';
@@ -302,6 +302,21 @@ export function fromProject(
 			const a = tr.from ? idx.get(tr.from) : undefined;
 			const b = tr.to ? idx.get(tr.to) : undefined;
 			const end = tr.start + tr.duration;
+			// Only the transition's type (a JasperEditor comment) and its span travel: its params (a Custom Fade's
+			// fade shape, a GPU transition's options) do not.
+			if ((sub === null || sub === 0) && Object.keys(tr.params ?? {}).length > 0)
+				report.warn(
+					`the parameters of transition "${transitionLabel(tr.effectId)}" (${Object.keys(tr.params).join(', ')}) are not carried by ${formatName}`,
+					{
+						subject: {
+							kind: 'transition',
+							id: tr.id,
+							name: transitionLabel(tr.effectId),
+							frame: frameOf(tr.start, rate),
+						},
+						instead: 'the transition with its default parameters',
+					},
+				);
 			if (
 				a !== undefined &&
 				b !== undefined &&

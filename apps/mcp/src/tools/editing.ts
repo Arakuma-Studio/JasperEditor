@@ -506,14 +506,14 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add transition',
 			description:
-				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black; or any GPU transition of list_transition_types (push, iris-round, cross-zoom, s.dissolve-luma, …; params e.g. {"direction": "eastToWest"}; a GPU transition at a free clip edge transitions from/to transparency). Audio tracks: constant-gain or constant-power fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). The duration is shortened (with a warning) to what the clips and their handles allow.',
+				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black; or any GPU transition of list_transition_types (push, iris-round, cross-zoom, s.dissolve-luma, …; params e.g. {"direction": "eastToWest"}; a GPU transition at a free clip edge transitions from/to transparency). Audio tracks: constant-gain (linear), constant-power (quarter sine), exponential-fade or custom-fade (Premiere\'s Custom Fade: params fadeShape "linear" | "cosine", fadeValue −100…100 — Cosine at 19 is constant power, Linear at 0 constant gain; symmetry "symmetric" | "asymmetric" with outFadeShape / outFadeValue for the outgoing clip) fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). cutOffset places the cut off-centre (Premiere\'s Custom Start: frames of the span before the cut). The duration is shortened (with a warning) to what the clips and their handles allow.',
 			input: {
 				projectId: ProjectIdArg,
 				type: z
 					.string()
 					.min(1)
 					.describe(
-						'Transition type: cross-dissolve, dip-to-black, constant-gain, constant-power, or any type of list_transition_types (short name, effect id or label)',
+						'Transition type: cross-dissolve, dip-to-black, constant-gain, constant-power, exponential-fade, custom-fade, or any type of list_transition_types (short name, effect id or label)',
 					),
 				params: z
 					.record(z.string(), z.unknown())
@@ -529,6 +529,15 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.optional()
 					.describe(
 						'Where a transition between two clips sits (default center); start-at-cut needs handles only on the outgoing clip, end-at-cut only on the incoming one',
+					),
+				cutOffset: z
+					.number()
+					.int()
+					.min(0)
+					.max(600)
+					.optional()
+					.describe(
+						"Custom Start (transitions between two clips): frames of the span before the cut, 0…durationFrames, instead of alignment (Premiere's off-centre crossfades)",
 					),
 				sequenceId: SequenceIdArg,
 			},
@@ -555,6 +564,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 						...(a.params ? { params: a.params } : {}),
 						...(a.clipId ? { clipId: a.clipId, edge: a.edge } : { trackId: a.track, at: a.at }),
 						...(a.alignment ? { alignment: a.alignment } : {}),
+						...(a.cutOffset !== undefined ? { cutOffset: a.cutOffset } : {}),
 						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
 					},
 				],

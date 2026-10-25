@@ -17,15 +17,17 @@
 //
 // Port of FilmCraft `crates/interchange/src/fcp7.rs` (MIT OR Apache-2.0), extended (bins and master clips on
 // export, crop, ticks above 2^53, blend modes, generators, channel mapping, hold filters).
-import type {
-	Animatable,
-	EffectInstance,
-	InInterpolation,
-	Interpolation,
-	Keyframe,
-	LabelColor,
-	Transform,
-	Vec2,
+import {
+	type Animatable,
+	CUSTOM_FADE,
+	clampFadeValue,
+	type EffectInstance,
+	type InInterpolation,
+	type Interpolation,
+	type Keyframe,
+	type LabelColor,
+	type Transform,
+	type Vec2,
 } from '@jasper/project';
 import { blendFromFcp7, fcp7BlendName } from './blend.ts';
 import {
@@ -45,7 +47,7 @@ import {
 	sourceOut,
 	unscaled,
 } from './build.ts';
-import { effectSpecOf, transitionFromName, transitionLabel } from './effects.ts';
+import { effectSpecOf, knownTransition, transitionFromName, transitionLabel } from './effects.ts';
 import type {
 	IBinEntry,
 	IClip,
@@ -61,6 +63,7 @@ import type {
 } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
 import { fileName, isAbsolutePath, kindFromExtension, pathToFileUrl, resolvePath } from './paths.ts';
+import { premiereAudioTransition, premiereFadeShapeOf, premiereShapeType } from './premiere-audio-fades.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
 	flicksPerFrame,
@@ -979,7 +982,42 @@ class Fcp7Importer {
 		if (e <= s) return;
 		const eff = child(c, 'effect');
 		const name = childText(eff, 'name') || childText(eff, 'effectid') || 'Cross Dissolve';
-		const effectId = transitionFromName(name, kind === 'audio', this.report);
+		const audio = kind === 'audio';
+		// The name, else the effect id (a localised Premiere writes its display name, e.g. "Potencia constante").
+		const eid = childText(eff, 'effectid');
+		let effectId =
+			knownTransition(name, audio) ??
+			(eid ? knownTransition(eid, audio) : null) ??
+			transitionFromName(name, audio, this.report);
+		let params: ITransition['params'] = {};
+		if (audio) {
+			// Premiere's fade shape (FadeShapeType / FadeShapeValue / CrossfadeSymmetry) as transition parameters.
+			const param = (...ids: string[]): string | undefined => {
+				for (const x of children(eff, 'parameter'))
+					if (ids.includes((childText(x, 'parameterid') ?? '').toLowerCase()))
+						return childText(x, 'value') ?? undefined;
+				return undefined;
+			};
+			const r = premiereAudioTransition(
+				effectId,
+				{
+					type: param('fadeshapetype', 'fadeshape'),
+					value: param('fadeshapevalue', 'fadevalue'),
+					symmetry: param('crossfadesymmetry', 'symmetry'),
+				},
+				this.report,
+				{ name, frame: start },
+			);
+			effectId = r.effectId;
+			params = r.params;
+			if (effectId === CUSTOM_FADE) {
+				const outType = premiereShapeType(param('outfadeshape'));
+				const outValue = Number(param('outfadevalue'));
+				if (outType) params.outFadeShape = { value: outType, keyframes: [] };
+				if (param('outfadevalue') !== undefined && Number.isFinite(outValue))
+					params.outFadeValue = { value: clampFadeValue(outValue), keyframes: [] };
+			}
+		}
 		const align = (childText(c, 'alignment') ?? '').toLowerCase();
 		let from: IClip | undefined;
 		let to: IClip | undefined;
@@ -1020,7 +1058,7 @@ class Fcp7Importer {
 			start: s,
 			duration: e - s,
 			alignment,
-			params: {},
+			params,
 		});
 		t.transitions.sort((a, b) => a.start - b.start);
 	}
@@ -1526,6 +1564,23 @@ class Fcp7Exporter {
 		w.text('effectcategory', kind === 'audio' ? 'Crossfade' : 'Dissolve')
 			.text('effecttype', 'transition')
 			.text('mediatype', kind);
+		if (x.effectId === CUSTOM_FADE) {
+			// Premiere's fade shape fields; an asymmetrical crossfade's fade out as JasperEditor parameters.
+			const shape = premiereFadeShapeOf(x.params);
+			const out = premiereFadeShapeOf({
+				fadeShape: x.params.outFadeShape ?? { value: 'cosine', keyframes: [] },
+				fadeValue: x.params.outFadeValue ?? { value: 19, keyframes: [] },
+			});
+			const param = (id: string, label: string, value: number | string) =>
+				w.open('parameter').text('parameterid', id).text('name', label).text('value', value).close();
+			param('FadeShapeType', 'Fade Shape', shape.FadeShapeType);
+			param('FadeShapeValue', 'Fade Value', shape.FadeShapeValue);
+			param('CrossfadeSymmetry', 'Crossfade Symmetry', shape.CrossfadeSymmetry);
+			if (shape.CrossfadeSymmetry === 1) {
+				param('outFadeShape', 'Fade Out Shape', out.FadeShapeType === 1 ? 'cosine' : 'linear');
+				param('outFadeValue', 'Fade Out Value', out.FadeShapeValue);
+			}
+		}
 		w.close().close();
 	}
 

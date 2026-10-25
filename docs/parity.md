@@ -21,7 +21,7 @@ the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction); no row's grade 
 | **Breadth, weighted by tier** (P0 ×3, P1 ×2, P2 ×1) | **≈ 98%** using the fractions below; ≈ 98% counting every partial feature as half (was ≈ 91% before `gaps`, ≈ 59% at `main` 051cf53) |
 | P0 / P1 / P2 | 97% / 99% / 100% (fractions) |
 | Features done / partial / missing | 89 / 3 / 0 of 92 (partial: CL-4, EX-2, PL-2) |
-| Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
+| Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 4 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
 | Menu entries | 291 menu entries and 280 default key bindings at the polish assessment (historical inventory); current dispatch behavior: `apps/web/test/registry.test.tsx`; shortcut conflicts: `apps/web/test/keymap.test.ts` |
 | Panels | 22 (`listPanels()`), the Media Browser among them |
 | Document commands | 256 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
@@ -145,7 +145,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | TR-1 | Video transitions: 172 (Premiere standard plus Sapphire-style) | P0 | done | `TRANSITION_SPECS` | — |
-| TR-2 | Audio crossfades: constant gain, constant power, exponential fade | P0 | done | 3 audio transitions in `TRANSITION_SPECS` (wp-notes/audio-fx.md; transition-audio tests, `apps/engine/test/audio-fx.test.ts`) | audio-fx |
+| TR-2 | Audio crossfades: constant gain, constant power, exponential fade, Custom Fade (fade shape, fade value, crossfade symmetry), Custom Start (off-centre) crossfades | P0 | done | 4 audio transitions in `TRANSITION_SPECS` (wp-notes/audio-fx.md, wp-notes/audio-crossfades.md; transition-audio tests, `packages/project/test/audio-crossfade-shapes.test.ts`, `apps/engine/test/audio-fx.test.ts`, measured envelope `apps/engine/test/audio-crossfade.test.ts`, preview = export `packages/compositions/test/audio-preview-mix-oracle.test.ts`); Premiere's exact fade-value curve is an evidence-anchored assumption (work note) | audio-fx, pp-audio-crossfades |
 | TR-3 | Default transitions, apply to selection, timeline handles | P1 | done | wp-m3-transdefaults | — |
 
 ### Tracking & roto

@@ -8,7 +8,16 @@
 // (`registry/transitions/*`, `FX_TRANSITIONS`). A GPU transition resolves to a `RenderTransition` of its track (the
 // frame-space shader stage of the compositions) instead of ramps; both clips get the handles the span needs.
 
-import type { RenderAudioFade } from './audio-fade.ts';
+import {
+	clampFadeValue,
+	FADE_SHAPE_TYPES,
+	FADE_VALUE_EQUAL_POWER,
+	FADE_VALUE_MAX,
+	FADE_VALUE_MIN,
+	type FadeShape,
+	type FadeShapeType,
+	type RenderAudioFade,
+} from './audio-fade.ts';
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
 import type { ParamSpec } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
@@ -26,6 +35,7 @@ export const DIP_TO_BLACK = 'jasper.dip-to-black';
 export const CONSTANT_GAIN = 'jasper.constant-gain';
 export const CONSTANT_POWER = 'jasper.constant-power';
 export const EXPONENTIAL_FADE = 'jasper.exponential-fade';
+export const CUSTOM_FADE = 'jasper.custom-fade';
 
 /**
  * A transition type (the transition registry, S01:TRN-001 `effectId`). Built-ins render as opacity ramps, mattes
@@ -127,7 +137,116 @@ export const BUILTIN_TRANSITION_SPECS: readonly TransitionSpec[] = [
 		params: [],
 		capabilities: BUILTIN,
 	},
+	{
+		// Premiere's "Custom Fade" (what dragging an audio fade handle up or down makes): a fade shape (Linear / Cosine)
+		// and its fade value; a crossfade's sides mirror each other (Symmetrical) or have their own shapes
+		// (Asymmetrical, Audition's crossfade option). docs/wp-notes/audio-crossfades.md.
+		id: CUSTOM_FADE,
+		version: 1,
+		label: 'Custom Fade',
+		appliesTo: 'audio',
+		description:
+			'Audio fade or crossfade on an adjustable curve: a fade shape (Linear or Cosine) bent by its fade value (0 = the plain shape; Cosine at 19 is Constant Power, Linear at 0 Constant Gain). A crossfade is symmetrical (the outgoing clip fades out on the mirror of the fade in) or asymmetrical (the fade out has its own shape and value).',
+		bin: 'Crossfade',
+		keywords: ['fade', 'curve', 'cosine', 'shape', 'asymmetric', 'handle'],
+		params: [
+			fadeShapeParam('fadeShape', 'Fade Shape'),
+			fadeValueParam('fadeValue', 'Fade Value'),
+			{
+				name: 'symmetry',
+				label: 'Crossfade Symmetry',
+				type: 'enum',
+				default: 'symmetric',
+				options: ['symmetric', 'asymmetric'],
+				optionLabels: ['Symmetrical', 'Asymmetrical'],
+				animatable: false,
+			},
+			fadeShapeParam('outFadeShape', 'Fade Out Shape'),
+			fadeValueParam('outFadeValue', 'Fade Out Value'),
+		],
+		capabilities: BUILTIN,
+	},
 ];
+
+function fadeShapeParam(name: string, label: string): ParamSpec {
+	return {
+		name,
+		label,
+		type: 'enum',
+		default: 'cosine',
+		options: FADE_SHAPE_TYPES,
+		optionLabels: ['Linear', 'Cosine'],
+		animatable: false,
+	};
+}
+
+function fadeValueParam(name: string, label: string): ParamSpec {
+	return {
+		name,
+		label,
+		type: 'number',
+		default: FADE_VALUE_EQUAL_POWER,
+		range: { min: FADE_VALUE_MIN, max: FADE_VALUE_MAX, step: 1 },
+		animatable: false,
+		ui: { control: 'slider', bipolar: true },
+	};
+}
+
+/** The curve of one side of an audio transition (`RenderAudioFade` without its timing). */
+export type AudioFadeCurve = Pick<RenderAudioFade, 'curve' | 'shape'>;
+
+const staticParam = (t: Pick<Transition, 'params'>, name: string): unknown => {
+	const a = (t.params as Record<string, { value?: unknown } | undefined>)[name];
+	return a && typeof a === 'object' ? a.value : undefined;
+};
+
+/** A Custom Fade's shape from its params (unknown / malformed values read as the defaults). */
+function shapeOf(t: Pick<Transition, 'params'>, shapeName: string, valueName: string): FadeShape {
+	const type = staticParam(t, shapeName);
+	const value = staticParam(t, valueName);
+	return {
+		type: (FADE_SHAPE_TYPES as readonly unknown[]).includes(type) ? (type as FadeShapeType) : 'cosine',
+		value: value === undefined ? FADE_VALUE_EQUAL_POWER : clampFadeValue(value),
+	};
+}
+
+/**
+ * The gain curves of an audio transition's sides: `in` = the incoming clip's fade in (and a one-sided fade of
+ * either side), `out` = the outgoing clip's fade out of a crossfade. Constant Gain / Power and Exponential Fade use
+ * the same curve on both sides (mirrored in time); a Custom Fade its shape, the fade out its own shape when the
+ * crossfade is asymmetrical. Unknown effects read as Constant Gain (they are not rendered).
+ */
+export function audioTransitionCurves(t: Pick<Transition, 'effectId' | 'params'>): {
+	in: AudioFadeCurve;
+	out: AudioFadeCurve;
+} {
+	if (t.effectId === CUSTOM_FADE) {
+		const main: AudioFadeCurve = { curve: 'shape', shape: shapeOf(t, 'fadeShape', 'fadeValue') };
+		const asym = staticParam(t, 'symmetry') === 'asymmetric';
+		return {
+			in: main,
+			out: asym ? { curve: 'shape', shape: shapeOf(t, 'outFadeShape', 'outFadeValue') } : main,
+		};
+	}
+	const curve: RenderAudioFade['curve'] =
+		t.effectId === CONSTANT_POWER
+			? 'equal-power'
+			: t.effectId === EXPONENTIAL_FADE
+				? 'exponential'
+				: 'linear';
+	return { in: { curve }, out: { curve } };
+}
+
+/**
+ * The Custom Fade params that sound like a fixed audio transition (Premiere: dragging the fade handle of a Constant
+ * Power transition turns it into a Custom Fade starting at Cosine @ 19; Constant Gain is Linear @ 0). Exponential
+ * Fade has no exact shape: Linear @ −44 (x^5.0, the same gain at the midpoint, −30 dB) is where a drag starts.
+ */
+export function customFadeParamsFor(effectId: string): { fadeShape: FadeShapeType; fadeValue: number } {
+	if (effectId === CONSTANT_GAIN) return { fadeShape: 'linear', fadeValue: 0 };
+	if (effectId === EXPONENTIAL_FADE) return { fadeShape: 'linear', fadeValue: -44 };
+	return { fadeShape: 'cosine', fadeValue: FADE_VALUE_EQUAL_POWER };
+}
 
 /** Transitions this build renders (unknown ids in a document are preserved and not rendered, S01:FX-022). */
 export const TRANSITION_SPECS: readonly TransitionSpec[] = [...BUILTIN_TRANSITION_SPECS, ...FX_TRANSITIONS];
@@ -195,28 +314,63 @@ export function clipHandles(
 	return c.speed.reverse ? { head: after, tail: before } : { head: before, tail: after };
 }
 
-/** The frame span `[start, end)` a transition of `duration` frames covers around the edit point `cut`. */
+/**
+ * Frames of a two-sided transition's `duration`-frame span before its cut: `cutPosition` (Premiere's Custom Start,
+ * `Transition.cutPosition`: the fraction of the span before the cut) when set, else the alignment's (centre ⌊d/2⌋,
+ * start-at-cut 0, end-at-cut d).
+ */
+export function cutOffsetOf(
+	duration: number,
+	alignment: Transition['alignment'],
+	cutPosition?: number | null,
+): number {
+	if (typeof cutPosition === 'number' && Number.isFinite(cutPosition))
+		return Math.min(duration, Math.max(0, Math.round(Math.min(1, Math.max(0, cutPosition)) * duration)));
+	return alignment === 'start-at-cut' ? 0 : alignment === 'end-at-cut' ? duration : duration >> 1;
+}
+
+/**
+ * The frame span `[start, end)` a transition of `duration` frames covers around the edit point `cut` (off-centre
+ * with a `cutPosition`, see `cutOffsetOf`).
+ */
 export function transitionSpan(
 	cut: number,
 	duration: number,
 	alignment: Transition['alignment'],
+	cutPosition?: number | null,
 ): { start: number; end: number } {
-	const start =
-		alignment === 'start-at-cut' ? cut : alignment === 'end-at-cut' ? cut - duration : cut - (duration >> 1);
+	const start = cut - cutOffsetOf(duration, alignment, cutPosition);
 	return { start, end: start + duration };
 }
 
 /**
+ * The `Transition.cutPosition` for `offset` frames of a `duration`-frame two-sided span before the cut, or undefined
+ * when an alignment says it (0 = start-at-cut, `duration` = end-at-cut, ⌊d/2⌋ = centre): `alignment` is what to
+ * store with it.
+ */
+export function cutPositionFor(
+	offset: number,
+	duration: number,
+): { alignment: Transition['alignment']; cutPosition?: number } {
+	const d = Math.max(1, Math.round(duration));
+	const o = Math.min(d, Math.max(0, Math.round(Number.isFinite(offset) ? offset : d >> 1)));
+	if (o === 0) return { alignment: 'start-at-cut' };
+	if (o === d) return { alignment: 'end-at-cut' };
+	if (o === d >> 1) return { alignment: 'center' };
+	return { alignment: 'center', cutPosition: o / d };
+}
+
+/**
  * First sequence frame of a transition's span as stored (before render-time clamping to the handles), or null when
- * its clips are missing. Two-sided: `transitionSpan(cut, duration, alignment)`; a fade: inside its clip.
+ * its clips are missing. Two-sided: `transitionSpan(cut, duration, alignment, cutPosition)`; a fade: inside its clip.
  */
 export function transitionStartFrame(
 	seq: Pick<Sequence, 'clips'>,
-	t: Pick<Transition, 'outgoingClipId' | 'incomingClipId' | 'duration' | 'alignment'>,
+	t: Pick<Transition, 'outgoingClipId' | 'incomingClipId' | 'duration' | 'alignment' | 'cutPosition'>,
 ): number | null {
 	const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 	const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
-	if (inc && out) return transitionSpan(inc.start, t.duration, t.alignment).start;
+	if (inc && out) return transitionSpan(inc.start, t.duration, t.alignment, t.cutPosition).start;
 	if (inc) return inc.start;
 	if (out) return clipEnd(out) - Math.min(t.duration, out.duration);
 	return null;
@@ -232,6 +386,8 @@ export function fitTransitionDuration(input: {
 	effectId: string;
 	wanted: number;
 	alignment: Transition['alignment'];
+	/** `Transition.cutPosition` (off-centre span; the offset scales with the duration). */
+	cutPosition?: number | null;
 	outgoing: { duration: number; tail: number } | null;
 	incoming: { duration: number; head: number } | null;
 }): number {
@@ -241,7 +397,7 @@ export function fitTransitionDuration(input: {
 	if (incoming) d = Math.min(d, incoming.duration);
 	if (!outgoing || !incoming) return d; // a fade uses the clip's own frames only
 	const fits = (n: number) => {
-		const { start, end } = transitionSpan(0, n, alignment);
+		const { start, end } = transitionSpan(0, n, alignment, input.cutPosition);
 		if (input.effectId === DIP_TO_BLACK) {
 			const mid = start + Math.ceil(n / 2);
 			return Math.max(0, mid) <= outgoing.tail && Math.max(0, -mid) <= incoming.head;
@@ -429,6 +585,7 @@ export function resolveVideoTransitions(
 				effectId: t.effectId,
 				wanted: t.duration,
 				alignment: t.alignment,
+				cutPosition: t.cutPosition,
 				outgoing: { duration: out.duration, tail: freeze ? Number.POSITIVE_INFINITY : avail.tail },
 				incoming: { duration: inc.duration, head: freeze ? Number.POSITIVE_INFINITY : avail.head },
 			});
@@ -436,7 +593,7 @@ export function resolveVideoTransitions(
 				skipped.push({ transitionId: t.id, reason: 'no media handles for the transition' });
 				continue;
 			}
-			const { start, end } = transitionSpan(cut, d, t.alignment);
+			const { start, end } = transitionSpan(cut, d, t.alignment, t.cutPosition);
 			const a = entry(out.id);
 			const b = entry(inc.id);
 			if (freeze) {
@@ -516,12 +673,13 @@ export type ResolvedAudioTransitions = {
 };
 
 /**
- * What the audio transitions (constant gain / constant power) of a sequence mean for rendering. One-sided
- * ones are gain ramps over the clip's own first / last frames. A two-sided one (a crossfade, S10:TUI-052)
- * covers `transitionSpan(cut, d, alignment)` = [s, e): the outgoing clip plays `e − cut` frames into its tail
- * handle and fades out over [s, e), the incoming one starts `cut − s` frames early (head handle) and fades in
- * over the same span. Linear ramps keep the sum of the amplitudes at 1, equal-power (quarter sine / cosine)
- * ramps the sum of the powers. Handles are clamped to what the media holds at render time (as for video),
+ * What the audio transitions (Constant Gain / Constant Power / Exponential Fade / Custom Fade) of a sequence mean
+ * for rendering. One-sided ones are gain ramps over the clip's own first / last frames. A two-sided one (a
+ * crossfade, S10:TUI-052) covers `transitionSpan(cut, d, alignment, cutPosition)` = [s, e): the outgoing clip plays
+ * `e − cut` frames into its tail handle and fades out over [s, e), the incoming one starts `cut − s` frames early
+ * (head handle) and fades in over the same span, each on its curve (`audioTransitionCurves`). Linear ramps keep the
+ * sum of the amplitudes at 1, equal-power (quarter sine / cosine, any shape at fade value 19) ramps the sum of the
+ * powers. Handles are clamped to what the media holds at render time (as for video),
  * so a crossfade whose clips were trimmed afterwards degrades to a shorter one.
  */
 export function resolveAudioTransitions(
@@ -543,12 +701,7 @@ export function resolveAudioTransitions(
 		if (!audioTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
 		if (spec?.appliesTo !== 'audio') continue;
-		const curve =
-			t.effectId === CONSTANT_POWER
-				? 'equal-power'
-				: t.effectId === EXPONENTIAL_FADE
-					? 'exponential'
-					: 'linear';
+		const curves = audioTransitionCurves(t);
 		const o = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 		const i = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 		if (o && i) {
@@ -559,6 +712,7 @@ export function resolveAudioTransitions(
 				effectId: t.effectId,
 				wanted: t.duration,
 				alignment: t.alignment,
+				cutPosition: t.cutPosition,
 				outgoing: { duration: o.duration, tail: clipHandles(doc, seq, o).tail },
 				incoming: { duration: i.duration, head: clipHandles(doc, seq, i).head },
 			});
@@ -566,18 +720,23 @@ export function resolveAudioTransitions(
 				skipped.push({ transitionId: t.id, reason: 'no media handles for the audio crossfade' });
 				continue;
 			}
-			const { start, end } = transitionSpan(cut, d, t.alignment);
+			const { start, end } = transitionSpan(cut, d, t.alignment, t.cutPosition);
 			const a = entry(o.id);
 			const b = entry(i.id);
 			a.tailHandle = Math.max(a.tailHandle, end - cut);
 			b.headHandle = Math.max(b.headHandle, cut - start);
-			a.fades.push({ type: 'out', start, frames: d, curve });
-			b.fades.push({ type: 'in', start, frames: d, curve });
+			a.fades.push({ type: 'out', start, frames: d, ...curves.out });
+			b.fades.push({ type: 'in', start, frames: d, ...curves.in });
 		} else if (i) {
-			entry(i.id).fades.push({ type: 'in', start: i.start, frames: Math.min(t.duration, i.duration), curve });
+			entry(i.id).fades.push({
+				type: 'in',
+				start: i.start,
+				frames: Math.min(t.duration, i.duration),
+				...curves.in,
+			});
 		} else if (o) {
 			const d = Math.min(t.duration, o.duration);
-			entry(o.id).fades.push({ type: 'out', start: clipEnd(o) - d, frames: d, curve });
+			entry(o.id).fades.push({ type: 'out', start: clipEnd(o) - d, frames: d, ...curves.in });
 		}
 	}
 	return { clips, skipped };
@@ -596,7 +755,7 @@ export function resolveAudioFades(
 	return out;
 }
 
-export { audioFadeGain, fadeCurve } from './audio-fade.ts';
+export { audioFadeGain, fadeCurve, fadeShapeGain } from './audio-fade.ts';
 
 /** Clips that meet at frame `at` on a track: the one ending there and the one starting there. */
 export function clipsAtEditPoint(

@@ -120,11 +120,13 @@ fields of later phases are added to v7 until `feat/sound-design` merges to `main
 
 ### Fields added in v8
 
-Optional fields of the Premiere port, read leniently with read-time defaults (MIG-005); the v8 bump (above) makes
-v7 builds open these files read-only.
+Optional fields of the Premiere port, read leniently with read-time defaults (MIG-005); v7 builds open v8 files
+read-only (the v8 bump above), so they never drop them.
 
 | Field | Since | Read leniently | Repair |
 |---|---|---|---|
+| `Transition.cutPosition` | Premiere port (audio crossfades: Premiere's Custom Start alignment, wp-notes/audio-crossfades.md) | any value accepted (`z.custom<number>()`); absent = the `alignment`'s position. A number in (0, 1): the fraction of a two-sided span before its cut (frames before the cut = round(cutPosition × duration), `cutOffsetOf`), so a shortened transition keeps its proportions. INV-010 reports a value that is not a number in (0, 1) or sits on a one-sided fade. Commands take `cutOffset` frames (`transition.add` / `transition.update`; an `alignment` drops it) | `drop-cut-position` removes it (the transition keeps its `alignment`). Idempotent |
+| `Transition.params` of `jasper.custom-fade` (`fadeShape`, `fadeValue`, `symmetry`, `outFadeShape`, `outFadeValue`) | Premiere port (Custom Fade) | ordinary transition params (`AnimParamSchema`); absent = Cosine @ 19, symmetrical (`audioTransitionCurves` reads unknown shapes as Cosine and clamps values to −100…100). INV-010 reports an unknown option, a non-finite or out-of-range value, or keyframes | `reset-transition-param` deletes the unreadable param (its default applies). Idempotent |
 | `Keyframe.inInterpolation` (`linear` / `bezier` / `auto-bezier` / `continuous-bezier`) | keyframe-sides ([wp-notes/keyframe-sides.md](wp-notes/keyframe-sides.md)) | any value loads (`z.custom`). Absent = the key is read the legacy way (its `interpolation` for both sides; a segment leaving a Linear key is linear), so existing documents evaluate exactly as before. Present = the segment arriving at the key is evaluated per side (After Effects: a Linear side is influence ⅙ at the average speed). INV-011 reports an unknown value and Auto / Continuous Bezier on a key whose sides differ | `repair-key-sides` (`normalizeKeySides`): an unknown value is dropped (legacy reading); one-sided Auto / Continuous Bezier becomes Bezier with the stored ease. Also on motion-graphic `paramKeyframes`; pastes and presets are normalized the same way. Idempotent |
 
 ## Saving
