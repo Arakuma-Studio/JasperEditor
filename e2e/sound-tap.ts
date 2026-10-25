@@ -22,8 +22,6 @@ export const TAP = () => {
 		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
 		starts: { t: number; player: number }[];
-		/** Media buffers connected (Remotion schedules each right after): context time, state, player. */
-		connects: { t: number; suspended: boolean; player: number }[];
 	};
 	const w = window as unknown as { __tap: Tap };
 	// Which player a buffer source belongs to: the node it is first connected to (each Remotion media player has its
@@ -31,7 +29,7 @@ export const TAP = () => {
 	const players = new WeakMap<AudioNode, number>();
 	const playerOf = new WeakMap<AudioBufferSourceNode, number>();
 	let nextPlayer = 0;
-	w.__tap = { on: false, ctxs: [], stops: [], late: [], starts: [], connects: [] };
+	w.__tap = { on: false, ctxs: [], stops: [], late: [], starts: [] };
 	const code = `class T extends AudioWorkletProcessor {
 		constructor() { super(); this.on = false; this.buf = [];
 			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage(this.buf); this.buf = []; } }; }
@@ -76,18 +74,6 @@ export const TAP = () => {
 				players.set(dest, id);
 			}
 			playerOf.set(this, id);
-			if (w.__tap.on)
-				w.__tap.connects.push({
-					t: this.context.currentTime,
-					suspended: this.context.state !== 'running',
-					player: id,
-				});
-			(w.__tap as unknown as { all?: unknown[] }).all?.push([
-				'connect',
-				+this.context.currentTime.toFixed(5),
-				this.context.state === 'running' ? 'r' : 's',
-				id,
-			]);
 		}
 		if (dest instanceof AudioDestinationNode) return connect.apply(this, [busOf(dest), ...args.slice(1)]);
 		return connect.apply(this, args);
@@ -105,15 +91,7 @@ export const TAP = () => {
 	AudioBufferSourceNode.prototype.start = function (this: AudioBufferSourceNode, ...a: number[]) {
 		const when = a[0] ?? 0;
 		const ctx = this.context;
-		// diagnostics (a spec sets `__tap.all` to an array): every media buffer start, also while suspended
-		(w.__tap as unknown as { all?: unknown[] }).all?.push([
-			'start',
-			+ctx.currentTime.toFixed(5),
-			+when.toFixed(5),
-			+(a[1] ?? 0).toFixed(5),
-			ctx.state === 'running' ? 'r' : 's',
-			playerOf.get(this) ?? -1,
-		]);
+
 		const entry = w.__tap.ctxs.find((c) => c.ctx === ctx);
 		if (entry) entry.starts++;
 		if (w.__tap.on && ctx.state === 'running')
@@ -139,8 +117,6 @@ export type Recording = {
 	late: { t: number; by: number }[];
 	/** Every media buffer start while the context ran: context time and player. */
 	starts: { t: number; player: number }[];
-	/** Every media buffer Remotion scheduled (connected), also while suspended. */
-	connects: { t: number; suspended: boolean; player: number }[];
 	marks: Record<string, number>;
 };
 
@@ -155,7 +131,6 @@ export async function arm(p: Page): Promise<void> {
 					stops: unknown[];
 					late: unknown[];
 					starts: unknown[];
-					connects: unknown[];
 					armedAll?: number[];
 				};
 			}
@@ -169,7 +144,6 @@ export async function arm(p: Page): Promise<void> {
 		t.stops.length = 0;
 		t.late.length = 0;
 		t.starts.length = 0;
-		t.connects.length = 0;
 		// the program context is suspended while paused: its frozen time is where the next Play starts
 		t.armedAll = t.ctxs.map((c) => c.ctx.currentTime);
 		t.on = true;
@@ -210,7 +184,6 @@ export async function disarm(p: Page): Promise<Recording> {
 					stops: { t: number; player: number }[];
 					late: { t: number; by: number }[];
 					starts: { t: number; player: number }[];
-					connects: { t: number; suspended: boolean; player: number }[];
 					marks?: Record<string, number>;
 					armedAll?: number[];
 				};
@@ -245,7 +218,6 @@ export async function disarm(p: Page): Promise<Recording> {
 			stops: t.stops.map((s) => ({ t: s.t, player: s.player })),
 			late: t.late.map((l) => ({ t: l.t, by: l.by })),
 			starts: t.starts.map((x) => ({ t: x.t, player: x.player })),
-			connects: t.connects.map((x) => ({ t: x.t, suspended: x.suspended, player: x.player })),
 			marks,
 		};
 	});
@@ -255,12 +227,6 @@ export async function disarm(p: Page): Promise<Recording> {
 export function timeOf(r: Recording, i: number): number {
 	const b = Math.floor(i / 128);
 	return (r.frames[b]! + (i - b * 128)) / r.rate;
-}
-
-/** Context frame of sample `i` of a recording. */
-export function frameOf(r: Recording, i: number): number {
-	const b = Math.floor(i / 128);
-	return r.frames[b]! + (i - b * 128);
 }
 
 /** Local maxima of |x| above `min`, merged within 5 ms, as context times. */

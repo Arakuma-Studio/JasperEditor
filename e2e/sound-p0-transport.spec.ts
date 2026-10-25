@@ -330,6 +330,7 @@ test('Play after a seek while paused: no audio from before the seek', async () =
 	await playFor(page, 500);
 	await seekPaused(page, frameAt(4.5));
 	const rec = await playFor(page, 600);
+	expect(rec.data.length, 'the tap must record audio quanta to prove silence').toBeGreaterThan(0);
 	const max = rec.data.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 	let first = -1;
 	for (let i = 0; i < rec.data.length; i++)

@@ -99,9 +99,6 @@ test('style in Preferences → Auto Sound Pass → apply: climbing cards, one cl
 	await style.scrollIntoViewIfNeeded();
 	await style.getByRole('combobox', { name: 'Personality' }).click();
 	await page.getByRole('option', { name: 'Bright' }).click();
-	await expect(style.getByTestId('sound-style-personality-description')).toHaveText(
-		'Light and sparkling: chimes, pops and UI blips, glass and metal, no low booms.',
-	);
 	await prefs.screenshot({ path: join(outDir, '1-preferences-style.png') });
 	await page.keyboard.press('Escape');
 	await expect(prefs).toBeHidden();

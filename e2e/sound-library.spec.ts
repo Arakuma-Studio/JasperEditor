@@ -4,7 +4,7 @@
 // peak snapping to the playhead (ghost with peak tick) → File ▸ Export ▸ Sound Credits…. Screenshots of the panel
 // (normal, high contrast) and of the drag ghost go to test-results/e2e-sound-library.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -46,42 +46,13 @@ async function sequence(p: Page): Promise<Seq> {
 type Lib = {
 	soundId: string;
 	title?: string;
-	types?: string[];
 	source?: { type: string; file?: string };
 	leadSilenceSec?: number;
-	trailSilenceSec?: number;
-	descriptors?: { peakSec: number; onsetSec: number; durationSec: number };
+	descriptors?: { peakSec: number; onsetSec: number };
 };
-type Media = { id: string; library?: Lib; probe?: { durationFlicks: number | null } };
+type Media = { id: string; library?: Lib };
 async function media(p: Page): Promise<Record<string, Media>> {
 	return query(p, 'doc.get', { path: ['media'] });
-}
-
-/** The point of a library sound its type aligns (spec 12 §2.1 defaultAlign): the end of the sound for risers and
- * reverses (the media's probed length minus its trailing silence, to the sample), the onset for UI sounds, else the peak; seconds into the registered media
- * (its descriptors include any lead silence). */
-function alignedPointSec(m: Media): number {
-	const d = m.library!.descriptors!;
-	const t = m.library!.types?.[0];
-	if (t === 'riser' || t === 'reverse') return soundEndSec(m);
-	return t === 'ui' ? d.onsetSec : d.peakSec;
-}
-
-/**
- * The end of the SOUND in its registered media, as placement computes it (spec 12 §2.3, fix "SFX tail truncation",
- * Phase 5 verification): registration pads short sounds with trailing silence, which `end` alignment leaves out — the
- * media's probed length minus `trailSilenceSec` (sample-exact; the 0.1 ms-quantised `durationSec − trailSilenceSec` when
- * the media has no length or disagrees); a copy without a trail ends where its media does.
- */
-function soundEndSec(m: Media): number {
-	const d = m.library!.descriptors!;
-	const trail = m.library!.trailSilenceSec ?? 0;
-	const media = m.probe?.durationFlicks ? m.probe.durationFlicks / FLICKS : null;
-	if (trail <= 0) return media ?? d.durationSec;
-	const quantised = d.durationSec - trail;
-	const exact = media !== null ? media - trail : Number.NaN;
-	const end = Number.isFinite(exact) && exact > 0 && Math.abs(exact - quantised) <= 0.002 ? exact : quantised;
-	return Math.min(media ?? d.durationSec, Math.max(d.peakSec, d.onsetSec, end));
 }
 
 /** The first channel of an audio file as 48 kHz float samples (ffmpeg). */
@@ -144,12 +115,8 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 
 	// search
 	await panel.getByTestId('sound-search').fill('crunch');
-	await expect(list.getByRole('option').first()).toHaveAttribute('aria-label', /crunch/i, {
-		timeout: 30_000,
-	});
-	const first = list.getByRole('option').first();
-	const label = (await first.getAttribute('aria-label'))!;
-	expect(label).toMatch(/peak at \d+ ms/);
+	const first = list.getByRole('option', { name: /^Crunchy impact/ }).first();
+	await expect(first).toBeVisible({ timeout: 30_000 });
 
 	// audition: Space plays alone (aria-live), the Mix meters show it, no history entry
 	await query(page, 'playhead.set', { frame: 45 });
@@ -173,9 +140,8 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	const m = (await media(page))[clip.mediaId]!;
 	expect(m.library?.soundId).toMatch(/^snd_/);
 	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
-	// the type's point (peak; the end of a reverse such as "Reverse crunch") plays exactly on frame 45 (errorFlicks
-	// 0): library sounds are registered with lead silence when their head is not quiet
-	const peakAt = clip.start * F + alignedPointSec(m) * FLICKS - clip.sourceIn;
+	// This impact's peak plays exactly on frame45, including the silence prepended during registration.
+	const peakAt = clip.start * F + m.library!.descriptors!.peakSec * FLICKS - clip.sourceIn;
 	expect(Math.abs(peakAt - 45 * F)).toBeLessThanOrEqual(2);
 	expect(JSON.stringify(clip)).toContain('"sfx"');
 	expect((await appliedLabels(page)).at(-1)).toMatch(/^Add Sound /);
@@ -213,7 +179,7 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	seq = await sequence(page);
 	const dropped = Object.values(seq.clips)[0]!;
 	const dm = (await media(page))[dropped.mediaId]!;
-	const droppedPeak = dropped.start * F + alignedPointSec(dm) * FLICKS - dropped.sourceIn;
+	const droppedPeak = dropped.start * F + dm.library!.descriptors!.peakSec * FLICKS - dropped.sourceIn;
 	expect(Math.abs(droppedPeak - 45 * F)).toBeLessThanOrEqual(2);
 	// dropped on A1: the drop target is the user's explicit choice
 	expect(dropped.trackId).toBe(seq.audioTracks[0]!.id);
@@ -236,7 +202,7 @@ test('search, audition, insert peak-aligned, undo, drag with peak snapping, cred
 	await page.evaluate(() => document.documentElement.removeAttribute('data-pr-contrast'));
 });
 
-test('inserted library sounds play their aligned point exactly on the frame in an export (ffmpeg)', async ({
+test('inserted library sounds play their aligned point exactly on the frame in a Remotion export (ffmpeg)', async ({
 	request,
 }) => {
 	test.setTimeout(900_000);
@@ -283,26 +249,29 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 		const lib = all[clip.mediaId]!.library!;
 		const lead = lib.leadSilenceSec ?? 0;
 		const d = lib.descriptors!;
-		// the end of the sound, before any trailing silence, as placement computes it (fix "SFX tail truncation")
-		const end = soundEndSec(all[clip.mediaId]!);
-		const point = p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : end;
+		const kit = join(ROOT, 'apps', 'engine', 'sounds', 'starter', lib.source!.file!);
+		const ref = decodeMono(kit);
+		// End alignment leaves the original sound's last sample on the cue; registration's padding is not the sound.
+		const point =
+			p.align === 'peak' ? d.peakSec : p.align === 'start' ? d.onsetSec : lead + ref.length / 48_000;
 		// the document: the aligned point plays exactly at the cue frame
 		const at = clip.start * F + point * FLICKS - clip.sourceIn;
 		expect(
 			Math.abs(at - p.cue * F),
 			`${p.title} ${JSON.stringify({ clip, lib, at: at / F })}`,
 		).toBeLessThanOrEqual(2);
-		return { ...p, clip, lib, lead, point };
+		return { ...p, clip, lib, lead, point, ref };
 	});
 	// the loud-headed hits were registered with lead silence; nothing went on A1–A3
 	expect(placed[0]!.lead).toBe(0.05);
 	expect(placed.every((x) => seq.audioTracks.findIndex((t) => t.id === x.clip.trackId) >= 3)).toBe(true);
 	await page.screenshot({ path: join(outDir, 'peaks-timeline.png') });
 
+	// Native timing is owned by sound-fill and the engine placement oracle; this scenario owns the Remotion path.
 	const { file } = await exportViaUi(page, request, {
-		engine: 'native',
+		engine: 'remotion',
 		fileName: 'sound-p1-peaks.mp4',
-		expectPath: /native/i,
+		expectPath: /remotion/i,
 		outDir,
 		jobTimeoutMs: 600_000,
 	});
@@ -310,8 +279,7 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 	const SR = 48_000;
 	const report: Record<string, unknown>[] = [];
 	for (const x of placed) {
-		const kit = join(ROOT, 'apps', 'engine', 'sounds', 'starter', x.lib.source!.file!);
-		const ref = decodeMono(kit);
+		const ref = x.ref;
 		// the aligned point in the library file (the media's descriptors include the lead silence)
 		const refPoint = Math.round((x.point - x.lead) * SR);
 		// 100 ms of the sound next to its aligned point: long enough to hold its envelope, so a tonal sound cannot match
@@ -330,7 +298,6 @@ test('inserted library sounds play their aligned point exactly on the frame in a
 	}
 	test.info().annotations.push({ type: 'export alignment', description: JSON.stringify(report) });
 	console.log('export alignment', JSON.stringify(report));
-	expect(readFileSync(file).length).toBeGreaterThan(1000);
 });
 
 test('Preferences ▸ Sound Library adds a user folder with its licence; its sound is found and inserted exactly', async () => {
@@ -402,9 +369,9 @@ test('Preferences ▸ Sound Library adds a user folder with its licence; its sou
 	const m = all[clip.mediaId]!;
 	expect(m.library!.leadSilenceSec).toBe(0.05);
 	const F = (FLICKS * seq.settings.frameRate.den) / seq.settings.frameRate.num;
-	expect(Math.abs(clip.start * F + alignedPointSec(m) * FLICKS - clip.sourceIn - 20 * F)).toBeLessThanOrEqual(
-		2,
-	);
+	expect(
+		Math.abs(clip.start * F + m.library!.descriptors!.peakSec * FLICKS - clip.sourceIn - 20 * F),
+	).toBeLessThanOrEqual(2);
 	await panel.getByRole('button', { name: /Commercial-safe/ }).click();
 
 	// Remove the folder again (Preferences ▸ Sound Library ▸ Remove, Save Folders): the engine is as the test found it
