@@ -455,6 +455,13 @@ export function registerEditingTools(ctx: ToolContext): void {
 				duration: timeArg('Length, e.g. {"seconds": 3}'),
 				track: TrackRefSchema.optional().describe('Video track (default V2)'),
 				sizePx: z.number().positive().max(2000).optional().describe('Font size in pixels'),
+				// wp fonts
+				font: z
+					.string()
+					.min(1)
+					.max(200)
+					.optional()
+					.describe('Font family or PostScript name (list_fonts; default Source Sans 3)'),
 				color: z.string().optional().describe('Text color "#RRGGBB" or "#RRGGBBAA" (default white)'),
 				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence pixels'),
 				// M2 (wp-m2-text-anim, S11:ANA-002): text animators of the new clip (see list_text_animations).
@@ -472,6 +479,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 			const style: Record<string, unknown> = {};
 			if (a.sizePx) style.sizePx = a.sizePx;
 			if (a.color) style.fill = hexToRgba(a.color);
+			if (a.font) style.fontId = '$font';
 			// M2 (wp-m2-text-anim, S11:ANA-002)
 			const textAnimation = await textAnimationOf(
 				ctx,
@@ -484,6 +492,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 				a.projectId,
 				`Text "${a.text.slice(0, 30)}"`,
 				[
+					...(a.font ? [{ type: 'font.add', family: a.font, ref: '$font' }] : []),
 					{
 						type: 'clip.addText',
 						at: a.at,
