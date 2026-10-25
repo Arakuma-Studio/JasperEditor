@@ -14,7 +14,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "perf": "node scripts/performance.mjs",
-    "lint": "biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs && node scripts/check-layers.mjs",
+    "lint": "biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs && node scripts/check-layers.mjs && node scripts/i18n.mjs --check",
     "format": "biome format --write .",
     "build": "pnpm -r --if-present build",
     "mg:build": "node scripts/mg-build.mjs",

@@ -3,10 +3,10 @@
 // 100+), so the default is 180 s and `E2E_SERVER_TIMEOUT_MS` raises or lowers it for one run.
 
 /** Default web-server start-up timeout in milliseconds. */
-export const E2E_SERVER_TIMEOUT_DEFAULT_MS = 180_000;
+const E2E_SERVER_TIMEOUT_DEFAULT_MS = 180_000;
 /** Accepted range for `E2E_SERVER_TIMEOUT_MS` (1 s … 1 h). */
-export const E2E_SERVER_TIMEOUT_MIN_MS = 1_000;
-export const E2E_SERVER_TIMEOUT_MAX_MS = 3_600_000;
+const E2E_SERVER_TIMEOUT_MIN_MS = 1_000;
+const E2E_SERVER_TIMEOUT_MAX_MS = 3_600_000;
 
 /**
  * Reads `E2E_SERVER_TIMEOUT_MS`. Unset or empty gives the default; anything that is not a whole number of

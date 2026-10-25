@@ -51,7 +51,7 @@ const BROWSER_LAYER = ['node', 'electron', 'server'];
  * `nodeOnly`: source files that are Node scripts (Node
  * built-ins allowed, with the reason); `reactOnlyUnder`: React only in this subdirectory of `src/`.
  */
-export const LAYERS = {
+const LAYERS = {
 	'packages/audio-dsp': {
 		name: '@jasper/audio-dsp',
 		deps: [],
@@ -233,7 +233,7 @@ const fix = {
  * Violations of one source file. `rel` is repo-relative with `/`; `ctx` = {dir, layer, declared: Set, exportsOf(name)}.
  * @returns {{line: number, rule: string, spec: string, message: string}[]}
  */
-export function fileViolations(rel, text, ctx) {
+function fileViolations(rel, text, ctx) {
 	const { dir, layer } = ctx;
 	const out = [];
 	const lines = text.split('\n');
@@ -354,7 +354,7 @@ function exportsOf(root, name) {
 	return null;
 }
 
-export function checkRepo(root, layers = LAYERS) {
+export function checkRepo(root) {
 	root = resolve(root);
 	const problems = [];
 	const graph = dependencyGraph(root);
@@ -367,7 +367,7 @@ export function checkRepo(root, layers = LAYERS) {
 			const dir = `${top}/${n}`;
 			const manifest = join(root, dir, 'package.json');
 			if (!existsSync(manifest)) continue;
-			const layer = layers[dir];
+			const layer = LAYERS[dir];
 			if (!layer) {
 				problems.push({
 					file: `${dir}/package.json`,

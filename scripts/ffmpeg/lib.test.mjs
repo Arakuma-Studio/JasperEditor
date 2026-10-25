@@ -1,10 +1,24 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { checkPackagedApp, checkTree } from './check-lgpl.mjs';
 import { loadManifest, platformKey, rewriteElfRpath, VENDOR_DIR } from './lib.mjs';
+
+const tempDir = (prefix) => {
+	const root = mkdtempSync(join(tmpdir(), prefix));
+	onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+	return root;
+};
 
 const LGPL_CONF =
 	"--prefix=/ffbuild/prefix --enable-version3 --enable-shared --disable-libfdk-aac --enable-libopenh264 --disable-libx264 --disable-libx265 --enable-libvpx --extra-libs='-lgomp -ldl'";
@@ -13,7 +27,7 @@ const REMOTION_CONF =
 
 describe('checkTree', () => {
 	it('fails on GPL libraries and Remotion compositor packages, passes LGPL ones', () => {
-		const root = mkdtempSync(join(tmpdir(), 'lgpl-check-'));
+		const root = tempDir('lgpl-check-');
 		const ok = join(root, 'ok');
 		const bad = join(root, 'bad', 'node_modules', '@remotion', 'compositor-linux-x64-gnu');
 		mkdirSync(ok, { recursive: true });
@@ -55,7 +69,7 @@ describe('vid.stab rule (S07:PST-003)', () => {
 	});
 
 	it('pnpm ffmpeg:check reads the record from BUILDINFO.json next to the binaries', () => {
-		const root = mkdtempSync(join(tmpdir(), 'lgpl-vidstab-'));
+		const root = tempDir('lgpl-vidstab-');
 		for (const [name, commit] of [
 			['pinned', pin.commit],
 			['other', 'f'.repeat(40)],
@@ -75,7 +89,7 @@ describe('vid.stab rule (S07:PST-003)', () => {
 
 describe('checkPackagedApp', () => {
 	const app = (opts = {}) => {
-		const root = mkdtempSync(join(tmpdir(), 'packaged-'));
+		const root = tempDir('packaged-');
 		const res = join(root, 'resources');
 		const lgpl = join(res, 'ffmpeg-lgpl');
 		mkdirSync(lgpl, { recursive: true });
@@ -98,7 +112,7 @@ describe('checkPackagedApp', () => {
 
 	it('fails without the LGPL directory, or when it lacks the notice', () => {
 		expect(checkPackagedApp(app({ noLgplDir: true }).root).problems.join(' ')).toMatch(/incomplete/);
-		const empty = mkdtempSync(join(tmpdir(), 'packaged-'));
+		const empty = tempDir('packaged-');
 		expect(checkPackagedApp(empty).problems.join(' ')).toMatch(/no ffmpeg-lgpl directory/);
 		expect(checkPackagedApp(app({ noNotice: true }).root).problems.join(' ')).toMatch(/NOTICE-FFmpeg/);
 	});
@@ -154,7 +168,7 @@ describe.runIf(
 		spawnSync('readelf', ['--version'], { stdio: 'ignore' }).status === 0,
 )('rewriteElfRpath (requires readelf and vendored FFmpeg)', () => {
 	it('rewrites the RPATH of the vendored ffmpeg in place', () => {
-		const copy = join(mkdtempSync(join(tmpdir(), 'rpath-')), 'ffmpeg');
+		const copy = join(tempDir('rpath-'), 'ffmpeg');
 		copyFileSync(vendorFfmpeg, copy);
 		rewriteElfRpath(copy, 'lib');
 		// An independent ELF reader must see the changed artifact, not just a return value.
