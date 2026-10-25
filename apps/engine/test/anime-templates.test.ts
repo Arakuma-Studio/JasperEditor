@@ -1,5 +1,10 @@
 import { MgTemplatesResponseSchema } from '@jasper/api';
-import { mgRegistry } from '@jasper/mg-templates';
+import {
+	mgRegistry,
+	SOCIAL_COMMENT_READY_VARIANTS,
+	SOCIAL_VARIANTS,
+	VARIANT_LABELS,
+} from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -160,10 +165,17 @@ describe('templates that are not installed block every export path (S11:ATP-010,
 		clip.params = { variant: 'tiktok-comment' };
 		const ok = await plan(doc, b.seqId, { still: true });
 		expect(missingTemplates(ok.snapshot)).toEqual([]);
-		clip.params = { variant: 'x-post' };
+		// every card built so far plans; the first one still to come blocks with its name
+		for (const variant of SOCIAL_COMMENT_READY_VARIANTS) {
+			clip.params = { variant };
+			expect(missingTemplates((await plan(doc, b.seqId, { still: true })).snapshot), variant).toEqual([]);
+		}
+		const pending = SOCIAL_VARIANTS.find((v) => !SOCIAL_COMMENT_READY_VARIANTS.includes(v));
+		if (!pending) return;
+		clip.params = { variant: pending };
 		await expect(plan(doc, b.seqId, { still: true })).rejects.toMatchObject({
 			code: 'TEMPLATE_NOT_INSTALLED',
-			message: expect.stringContaining('social-comment@1 (X post card)'),
+			message: expect.stringContaining(`social-comment@1 (${VARIANT_LABELS[pending]} card)`),
 		});
 	});
 

@@ -11171,5 +11171,7 @@
   "The text is too large to import ({0} KB; at most {1} MB)": "El texto es demasiado grande para importarlo ({0} KB; máximo {1} MB)",
   "There are no rows to import": "No hay filas para importar",
   "There are no rows under the column names": "No hay filas bajo los nombres de columna",
-  "Too many rows: at most {0} rows (plus the header row) can be imported at once": "Demasiadas filas: se pueden importar como máximo {0} filas (más la fila de encabezado) a la vez"
+  "Too many rows: at most {0} rows (plus the header row) can be imported at once": "Demasiadas filas: se pueden importar como máximo {0} filas (más la fila de encabezado) a la vez",
+  "An X post with replies, reposts, likes and views.": "Una publicación de X con respuestas, reposts, «me gusta» y visualizaciones.",
+  "X · Post": "X · Publicación"
 }

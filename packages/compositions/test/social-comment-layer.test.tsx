@@ -123,4 +123,23 @@ describe('social-comment@1 in the sequence composition', () => {
 		expect(none.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
 		none.unmount();
 	});
+
+	it('draws the X post card through the layer: uploaded avatar, @handle, counts; no avatar draws the X default', () => {
+		const { doc, mediaId } = project(
+			{ variant: 'x-post', handle: 'luna', likes: 1234, verified: true },
+			true,
+		);
+		const view = frame(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+		expect(view.container.querySelector('[data-social-variant="x-post"]')).not.toBeNull();
+		expect(view.getByTestId('social-avatar-media').getAttribute('src')).toBe(
+			`https://engine.test/media/${mediaId}?sig=1`,
+		);
+		expect(view.container.querySelector('[data-part="handle"]')!.textContent).toBe('@luna');
+		expect(view.container.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna');
+		expect(view.container.querySelector('[data-part="likes"]')!.textContent).toBe('1.2K');
+		view.unmount();
+		const none = frame(project({ variant: 'x-post' }, false).doc, (a) => handle(`/m/${a.id}`));
+		expect(none.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
+		none.unmount();
+	});
 });

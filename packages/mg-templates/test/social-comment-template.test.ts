@@ -17,6 +17,7 @@ import {
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
+	SOCIAL_VARIANT_FONTS,
 	SOCIAL_WORD_STAGGER_MS,
 	type SocialScheduleInput,
 	socialCardScale,
@@ -24,6 +25,7 @@ import {
 	socialCommentPresets,
 	socialCommentSchedule,
 	socialCommentSegments,
+	socialCommentUnavailableVariant,
 	socialLikesTick,
 	socialTickCount,
 	stripMarks,
@@ -263,7 +265,23 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
 			['tiktok-reply', 'TikTok · Comment reply'],
 			['tiktok-comment', 'TikTok · Comment'],
+			['x-post', 'X · Post'],
 		]);
+		// the X preset carries tokcomment's X defaults (2h, 45 replies, 12 reposts, 1.2K likes, 12K views)
+		const x = socialComment.presets!.find((p) => p.id === 'x-post')!;
+		expect({ ...socialComment.defaults, ...x.params }).toMatchObject({
+			variant: 'x-post',
+			displayName: 'Display Name',
+			handle: 'username',
+			timeValue: 2,
+			timeUnit: 'hour',
+			replies: 45,
+			reposts: 12,
+			likes: 1200,
+			views: 12_000,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'x-post' })).toBeNull();
+		expect(SOCIAL_VARIANT_FONTS['x-post']).toEqual({ family: 'Chirp', weights: [400, 700] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,
