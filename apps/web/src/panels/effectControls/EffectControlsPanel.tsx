@@ -8,7 +8,7 @@
 // M3 (wp-m3-presets, S03:EC-004/FX-030): effect headers (intrinsic ones too) select with click / Ctrl/Shift-click
 // and have a context menu with Save Preset… (presets.ts), Reset and Remove; presets dropped here apply to the shown
 // clips.
-import type { Command } from '@jasper/project';
+import type { Command, Keyframe } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	useSessionOrNull,
@@ -73,6 +73,7 @@ import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
 	clipRange,
+	commonPreset,
 	INTERPOLATION_MENU,
 	type InterpolationPreset,
 	interpolationCommand,
@@ -303,6 +304,18 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					for (const b of r.bindings)
 						if (b.path && (b.resolved.anim?.keyframes ?? []).some((k) => want.has(k.id)))
 							out.set(b.path.join('/'), [...b.path]);
+		return [...out.values()];
+	};
+
+	/** keyframe-sides: the keys with the given ids (the key context menu checks their common interpolation). */
+	const keysWithIds = (ids: readonly string[]): Keyframe<unknown>[] => {
+		const want = new Set(ids);
+		const out = new Map<string, Keyframe<unknown>>();
+		for (const g of groups)
+			for (const s of g.sections)
+				for (const r of s.rows)
+					for (const b of r.bindings)
+						for (const k of b.resolved.anim?.keyframes ?? []) if (want.has(k.id)) out.set(k.id, k);
 		return [...out.values()];
 	};
 
@@ -671,6 +684,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 			</div>
 		);
 	};
+	// keyframe-sides: the Temporal Interpolation item the right-clicked keys share (checked in the key menu).
+	const menuPreset = menu ? commonPreset(keysWithIds(menu.ids)) : null;
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard shortcuts (Delete) and drops
@@ -1030,23 +1045,35 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					onPointerDown={(e) => e.stopPropagation()}
 					data-testid="ec-kf-menu"
 				>
-					{INTERPOLATION_MENU.map((m, i) => (
-						<button
-							key={m.preset}
-							type="button"
-							role="menuitem"
-							className={cx(
-								'block w-full px-3 py-[3px] text-left text-pr-ui text-pr-text hover:bg-pr-accent-fill hover:text-pr-on-accent',
-								i === 5 && 'mt-1 border-t border-pr-border-subtle pt-1',
-							)}
-							onClick={() => {
-								applyPreset(menu.ids, m.preset);
-								setMenu(null);
-							}}
-						>
-							{m.label}
-						</button>
-					))}
+					{/* keyframe-sides: Premiere's Temporal Interpolation items; Ease In / Ease Out set one side. */}
+					<div className="px-3 pt-[2px] pb-[3px] text-pr-small text-pr-muted" role="presentation">
+						Temporal Interpolation
+					</div>
+					{INTERPOLATION_MENU.map((m, i) => {
+						const on = menuPreset === m.preset;
+						return (
+							<button
+								key={m.preset}
+								type="button"
+								role="menuitemradio"
+								aria-checked={on}
+								data-preset={m.preset}
+								className={cx(
+									'flex w-full items-center gap-2 px-3 py-[3px] text-left text-pr-ui text-pr-text hover:bg-pr-accent-fill hover:text-pr-on-accent',
+									i === 5 && 'mt-1 border-t border-pr-border-subtle pt-1',
+								)}
+								onClick={() => {
+									applyPreset(menu.ids, m.preset);
+									setMenu(null);
+								}}
+							>
+								<span className="inline-block w-3" aria-hidden>
+									{on ? '✓' : ''}
+								</span>
+								{m.label}
+							</button>
+						);
+					})}
 					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
 					<SpatialInterpolationSubmenu
 						groups={groups}

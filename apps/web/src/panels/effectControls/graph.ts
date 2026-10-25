@@ -21,6 +21,7 @@ import {
 	outgoingEase,
 	type PropertySpec,
 	type Rational,
+	segmentShape,
 } from '@jasper/project';
 import type { Range } from './lib.ts';
 
@@ -178,14 +179,32 @@ function segmentOf(kfs: readonly Kf[], i: number, side: Side): [number, number] 
 }
 
 /**
- * Ease the evaluator actually uses on one side of key `i`. A segment leaving a Linear key is linear
- * whatever its end key stores, so the arriving side then reads as the linear-equivalent ease.
+ * Ease the evaluator actually uses on one side of key `i` (`segmentShape`, keyframe-sides). A linear segment (a legacy
+ * segment leaving a Linear key, or two Linear sides) reads as the linear-equivalent ease on both its sides; a Linear
+ * side of a curved per-side segment is After Effects' ⅙ linear ease.
  */
 function effectiveEase(kfs: readonly Kf[], i: number, side: Side): Ease {
-	if (side === 'out') return outgoingEase(kfs, i);
-	const prev = kfs[i - 1];
-	if (prev && prev.interpolation === 'linear') return LINEAR;
-	return incomingEase(kfs, i);
+	const [a, b] = side === 'out' ? [i, i + 1] : [i - 1, i];
+	if (a < 0 || b >= kfs.length) return side === 'out' ? outgoingEase(kfs, i) : incomingEase(kfs, i);
+	const shape = segmentShape(kfs, a, b);
+	if (shape === 'linear') return LINEAR;
+	if (shape === 'hold') return side === 'out' ? outgoingEase(kfs, i) : incomingEase(kfs, i);
+	return side === 'out' ? shape.out : shape.in;
+}
+
+/** A key turned linear-equivalent Bezier, read the legacy way (the probes measuring the rate per unit slope). */
+function linearProbeKey(k: Kf): Kf {
+	const { inInterpolation: _side, ...rest } = k;
+	return { ...rest, interpolation: 'bezier' as Interpolation, easeIn: { ...LINEAR }, easeOut: { ...LINEAR } };
+}
+
+/**
+ * Whether a side of key `k` has a Bezier handle in the value graph (S03:KF-022; keyframe-sides): its own type on that
+ * side is Bezier or Continuous Bezier — an Ease In key has one on its incoming side only.
+ */
+export function sideHasHandle(k: Pick<Kf, 'interpolation' | 'inInterpolation'>, side: Side): boolean {
+	const t = side === 'out' ? k.interpolation : (k.inInterpolation ?? k.interpolation);
+	return t === 'bezier' || t === 'continuous-bezier';
 }
 
 /**
@@ -197,11 +216,7 @@ function unitVelocity(anim: Anim, i: number, side: Side, map: TimeMap): number {
 	const seg = segmentOf(anim.keyframes, i, side);
 	if (!seg) return 0;
 	const [ai, bi] = seg;
-	const kfs = anim.keyframes.map((k, j) =>
-		j === ai || j === bi
-			? { ...k, interpolation: 'bezier' as Interpolation, easeIn: { ...LINEAR }, easeOut: { ...LINEAR } }
-			: k,
-	);
+	const kfs = anim.keyframes.map((k, j) => (j === ai || j === bi ? linearProbeKey(k) : k));
 	const probe = { value: anim.value, keyframes: kfs };
 	const a = kfs[ai]!;
 	const b = kfs[bi]!;
@@ -361,11 +376,7 @@ export function vec2ValueHandles(anim: Anim, i: number, map: TimeMap): Vec2Value
 		const [ai, bi] = seg;
 		const probe = {
 			value: anim.value,
-			keyframes: kfs.map((x, j) =>
-				j === ai || j === bi
-					? { ...x, interpolation: 'bezier' as Interpolation, easeIn: { ...LINEAR }, easeOut: { ...LINEAR } }
-					: x,
-			),
+			keyframes: kfs.map((x, j) => (j === ai || j === bi ? linearProbeKey(x) : x)),
 		};
 		for (let d = 0; d < 2; d++) {
 			const rate = componentRate(anim, i, other, d);
@@ -414,14 +425,13 @@ export function panRange(r: YRange, delta: number): YRange {
 }
 
 /**
- * Commands for a handle edit on one side of key `i` (S03:KF-022, S01:KF-004):
- * - Continuous Bezier keeps its in/out speeds linked (the handler matches the other side), unless
- *   `breakLink` (Alt/Option) converts the key to Bezier;
- * - Linear and Auto Bezier keys become Bezier, with the untouched side frozen at its current shape;
- * - Hold keys keep holding (only their arriving side is editable);
- * - an arriving segment that leaves a Linear key needs that key to be Bezier (linear-equivalent eases)
- *   for the new ease to show (also for linked edits of the leaving side); `keyframe.update` does this
- *   for Bezier targets, here for the others.
+ * Commands for a handle edit on one side of key `i` (S03:KF-022, S01:KF-004; keyframe-sides):
+ * - Continuous Bezier keys keep their in/out speeds linked (the handler matches the other side), unless `breakLink`
+ *   (Alt/Option) edits only the dragged side, which makes the key Bezier;
+ * - otherwise only the dragged side changes (`keyframe.update` with `side`): it becomes Bezier with the new ease, and
+ *   the handler keeps the other side's shape (a Linear side stays Linear, an Auto Bezier one is frozen). The segment
+ *   it shapes is evaluated per side, so the ease shows even after a Linear key (After Effects).
+ * - Hold keys keep holding (only their arriving side is editable).
  */
 export function planEaseEdit(
 	kfs: readonly Kf[],
@@ -431,35 +441,16 @@ export function planEaseEdit(
 	breakLink: boolean,
 ): Command[] {
 	const k = kfs[i]!;
-	const prev = kfs[i - 1];
-	const next = kfs[i + 1];
-	const linked = k.interpolation === 'continuous-bezier' && !breakLink;
-	const interpolation: Interpolation =
-		k.interpolation === 'hold' ? 'hold' : linked ? 'continuous-bezier' : 'bezier';
-	const cmds: Command[] = [];
-	// Linked (continuous) edits move the arriving side too, so it must be visible as well.
-	if ((side === 'in' || linked) && prev?.interpolation === 'linear' && interpolation !== 'bezier') {
-		const before = kfs[i - 2];
-		const keepIn = before && before.interpolation !== 'linear' && before.interpolation !== 'hold';
-		cmds.push({
-			type: 'keyframe.update',
-			keyframeId: prev.id,
-			interpolation: 'bezier',
-			easeOut: { ...LINEAR },
-			...(keepIn ? { easeIn: effectiveEase(kfs, i - 1, 'in') } : {}),
-		} as Command);
-	}
+	const linked =
+		k.interpolation === 'continuous-bezier' &&
+		(k.inInterpolation === undefined || k.inInterpolation === 'continuous-bezier') &&
+		!breakLink;
 	const e = { influence: ease.influence, slope: ease.slope };
-	const update: CommandOf<'keyframe.update'> = { type: 'keyframe.update', keyframeId: k.id, interpolation };
+	const update: CommandOf<'keyframe.update'> = linked
+		? { type: 'keyframe.update', keyframeId: k.id, interpolation: 'continuous-bezier' }
+		: { type: 'keyframe.update', keyframeId: k.id, interpolation: 'bezier', side };
 	update[side === 'in' ? 'easeIn' : 'easeOut'] = e;
-	if (!linked && interpolation === 'bezier' && k.interpolation !== 'bezier') {
-		// Freeze the other side at the shape it had (stored eases of Linear keys are not meaningful).
-		if (side === 'in' && next) update.easeOut = effectiveEase(kfs, i, 'out');
-		if (side === 'out' && prev && prev.interpolation !== 'linear')
-			update.easeIn = effectiveEase(kfs, i, 'in');
-	}
-	cmds.push(update as Command);
-	return cmds;
+	return [update as Command];
 }
 
 export type YRange = { min: number; max: number };
