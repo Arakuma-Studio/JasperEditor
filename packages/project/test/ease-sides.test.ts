@@ -76,14 +76,14 @@ function keysOf<V>(spec: Spec<V>[]): Keyframe<V>[] {
 	}));
 }
 
-/** Every time sample outside the open span (a, a + 1): the other segments and every key time. */
+/** Every time sample outside span a → a + 1 (whose start, key a's time, it evaluates): the other segments, the keys. */
 function outsideTimes(n: number, a: number): number[] {
 	const ts: number[] = [];
 	for (let s = 0; s < n - 1; s++) {
 		if (s === a) continue;
 		for (let k = 0; k < 20; k++) ts.push((s + k / 20) * SEC);
 	}
-	for (let i = 0; i < n; i++) ts.push(i * SEC);
+	for (let i = 0; i < n; i++) if (i !== a) ts.push(i * SEC);
 	return ts;
 }
 

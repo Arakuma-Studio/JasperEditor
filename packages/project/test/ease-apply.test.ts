@@ -19,7 +19,7 @@ const SWIFT: CubicEase = { kind: 'cubic', x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
 const BACK: CubicEase = { kind: 'cubic', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 };
 
 describe('keyframe.applyEase (cubic)', () => {
-	it('two keys: the middle segment follows cubic-bezier exactly; keys become Bezier', () => {
+	it('two keys: the middle segment follows cubic-bezier exactly; the segment\'s sides become Bezier', () => {
 		const { h, key, anim } = setup();
 		const ids = key('transform.rotation', [
 			[0, 0],
@@ -30,7 +30,10 @@ describe('keyframe.applyEase (cubic)', () => {
 		expect(res.affected.sort()).toEqual([...ids].sort());
 		expect(res.created).toEqual([]);
 		const a = anim<number>('transform.rotation');
-		expect(a.keyframes.map((k) => k.interpolation)).toEqual(['bezier', 'bezier']);
+		// keyframe-sides: the first key leaves Bezier; the last key arrives Bezier (its own incoming side) and keeps its
+		// Linear outgoing side.
+		expect(a.keyframes.map((k) => k.interpolation)).toEqual(['bezier', 'linear']);
+		expect(a.keyframes[1]!.inInterpolation).toBe('bezier');
 		const [t0, t1] = [a.keyframes[0]!.time, a.keyframes[1]!.time];
 		for (let k = 0; k <= 100; k++) {
 			const u = k / 100;
@@ -54,8 +57,10 @@ describe('keyframe.applyEase (cubic)', () => {
 		expect(k[1]!.easeIn).toEqual(easeIn);
 		expect(k[1]!.easeOut).toEqual(easeOut);
 		expect(k[2]!.easeIn).toEqual(easeIn);
-		expect(k[2]!.interpolation).toBe('bezier');
-		// Segment 2 → 3 stays linear (key 2 leaves with the linear ease, key 3 is untouched).
+		// keyframe-sides: key 2 arrives Bezier and still leaves Linear.
+		expect(k[2]!.inInterpolation).toBe('bezier');
+		expect(k[2]!.interpolation).toBe('linear');
+		// Segment 2 → 3 stays linear (key 2 leaves Linear, key 3 is untouched and read the legacy way).
 		const a = anim<number>('transform.rotation');
 		const mid = (k[2]!.time + k[3]!.time) / 2;
 		expect(evaluate(a, mid)).toBeCloseTo(45, 9);
