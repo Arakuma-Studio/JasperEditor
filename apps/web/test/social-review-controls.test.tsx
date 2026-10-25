@@ -117,13 +117,7 @@ describe('social-rating', () => {
 		const { session, clip } = await openSession([socialDefaults('play-store-review')]);
 		properties(session);
 		const radios = within(screen.getByTestId('social-rating')).getAllByRole('radio');
-		expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual([
-			'false',
-			'false',
-			'false',
-			'true',
-			'false',
-		]);
+		expect(radios.map((r) => (r as HTMLInputElement).checked)).toEqual([false, false, false, true, false]);
 		expect(radios.map((r) => r.getAttribute('aria-label'))).toEqual([
 			'1 star',
 			'2 stars',
@@ -145,14 +139,22 @@ describe('social-rating', () => {
 		await session.close();
 	});
 
-	it('works from the keyboard: arrows, Home / End and digits; one tab stop on the checked star', async () => {
+	it('works from the keyboard: arrows, Home / End and digits; native radios named per star', async () => {
 		const { session, clip } = await openSession([socialDefaults('app-store-review')]);
 		properties(session);
 		const group = screen.getByTestId('social-rating');
-		const tabbable = within(group)
-			.getAllByRole('radio')
-			.filter((r) => r.tabIndex === 0);
-		expect(tabbable.map((r) => r.getAttribute('aria-label'))).toEqual(['4 stars']);
+		const checked = (within(group).getAllByRole('radio') as HTMLInputElement[]).filter((r) => r.checked);
+		expect(checked.map((r) => r.getAttribute('aria-label'))).toEqual(['4 stars']);
+		// a fieldset named by its legend, one radio name for the five stars
+		expect(group.tagName).toBe('FIELDSET');
+		expect(group.querySelector('legend')?.textContent).toBe('Rating');
+		expect(
+			new Set(
+				within(group)
+					.getAllByRole('radio')
+					.map((r) => (r as HTMLInputElement).name),
+			).size,
+		).toBe(1);
 		act(() => fireEvent.keyDown(group, { key: 'ArrowRight' }));
 		expect(clip().params.rating).toBe(5);
 		act(() => fireEvent.keyDown(group, { key: 'ArrowRight' }));
@@ -280,7 +282,7 @@ describe('read-only and robustness', () => {
 		act(() => session.store.setState({ readOnly: true } as never));
 		properties(session);
 		for (const r of within(screen.getByTestId('social-rating')).getAllByRole('radio'))
-			expect((r as HTMLButtonElement).disabled).toBe(true);
+			expect((r as HTMLInputElement).disabled).toBe(true);
 		expect((screen.getByTestId('social-date-input') as HTMLInputElement).disabled).toBe(true);
 		expect((screen.getByTestId('social-date-randomize') as HTMLButtonElement).disabled).toBe(true);
 		expect((screen.getByTestId('social-randomize-stats') as HTMLButtonElement).disabled).toBe(true);
