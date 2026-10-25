@@ -183,7 +183,12 @@ describe('kernel streams (spec 13 AS-072)', () => {
 					where = `frame ${f} (${px % W}, ${Math.floor(px / W)}) ${fa[f]![i]} vs ${fb[f]![i]}`;
 				}
 			}
-		expect(worst, `max channel difference ${where}; ${differing} values differ`).toBe(0);
+		const perFrame = fa.map((x, f) => {
+			let k = 0;
+			for (let i = 0; i < x.length; i++) if (x[i] !== fb[f]![i]) k++;
+			return k;
+		});
+		expect(worst, `max channel difference ${where}; ${differing} values differ; per frame ${perFrame.join(',')}`).toBe(0);
 	}, 600_000);
 
 	it('the composite’s inputs do not grow with the clip count (300 stills: still one pipe)', async () => {
@@ -203,7 +208,8 @@ describe('kernel streams (spec 13 AS-072)', () => {
 		});
 		expect(g.streams).toHaveLength(1);
 		expect(g.inputs, JSON.stringify(g.inputs)).toHaveLength(1);
-		expect((g.filter.match(/overlay=/g) ?? []).length).toBe(1);
+		// The solid below and the one stream.
+		expect((g.filter.match(/overlay=/g) ?? []).length).toBe(2);
 	}, 300_000);
 });
 
