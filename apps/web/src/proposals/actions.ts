@@ -462,6 +462,35 @@ export async function applyReview(
 	return { ok: true, applied: appliedNow, total, stale: r.stale.length, entryId };
 }
 
+/** The item may be drawn again with its next seed (spec 15 EA-032 "Reroll": the producer marks it `meta.rerollable`). */
+export function isRerollable(it: { meta?: unknown; setup?: boolean }): boolean {
+	return !it.setup && (it.meta as { rerollable?: unknown } | undefined)?.rerollable === true;
+}
+
+/**
+ * "Reroll" (spec 15 EA-032): the producer re-plans the item with its next seed — another draw of the same pass (another
+ * kit family for a cut, the other direction for a Ken Burns move) — and it comes back pending; nothing is applied.
+ */
+export async function rerollReviewItem(
+	session: EditorSession,
+	itemId: string,
+): Promise<{ ok: boolean; message: string }> {
+	const c = proposalsFor(session);
+	const r = await c.refreshItems([itemId], { reroll: true });
+	if (!r.ok) {
+		const message =
+			r.code === 'E_NOT_REFRESHABLE' ? t('Its producer cannot re-plan items: ask for a new proposal instead') : r.message;
+		toast({ kind: 'warning', title: t('The item could not be rerolled'), detail: message });
+		announce(message);
+		return { ok: false, message };
+	}
+	const it = c.getState().items.find((x) => x.id === itemId);
+	const message = it ? t('Rerolled: {0}', it.label) : t('The item no longer applies');
+	toast({ kind: 'info', title: message });
+	announce(message);
+	return { ok: true, message };
+}
+
 /**
  * "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans the stale items (or `itemIds`) on the current
  * edit; they come back pending for review — nothing is applied. Announced and toasted; a producer that cannot

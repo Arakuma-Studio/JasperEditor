@@ -11,15 +11,18 @@ import { t } from '../i18n/runtime.ts';
 import {
 	acceptAll,
 	applyReview,
+	currentItemId,
 	cycleAlternative,
 	decide,
 	discardReview,
+	isRerollable,
 	exitReview,
 	openReview,
 	playReviewItem,
 	playReviewRange,
 	refreshReview,
 	rejectAll,
+	rerollReviewItem,
 	stepReviewItem,
 } from '../proposals/actions.ts';
 import { registerProposalUi } from '../proposals/register.tsx';
@@ -267,6 +270,25 @@ export const proposalCommands: UiCommand[] = [
 		run: async (ctx, args) => {
 			const a = args as z.infer<typeof AltArgs>;
 			if (ctx.session) await cycleAlternative(ctx.session, a?.dir ?? 1, a?.itemId);
+		},
+	},
+	{
+		id: 'proposals.rerollItem',
+		label: 'Reroll Proposal Item',
+		description:
+			'Plan an item of the proposal under review again with its next seed ("Reroll", spec 15: another kit family for a cut, the other direction for a Ken Burns move; default: the current item); it comes back pending, nothing is applied. Only items their producer marks rerollable.',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: ItemArgs,
+		when: (ctx) => {
+			if (!writableReview(ctx)) return false;
+			const id = (ctx.session && currentItemId(ctx.session)) ?? null;
+			return itemsOf(ctx).some((it) => it.id === id && isRerollable(it) && it.state !== 'accepted' && it.state !== 'applied');
+		},
+		disabledReason: (ctx) => (!reviewing(ctx) ? notReviewing() : t('The current item cannot be rerolled')),
+		run: async (ctx, args) => {
+			const id = (args as z.infer<typeof ItemArgs>)?.itemId ?? (ctx.session ? currentItemId(ctx.session) : null);
+			if (ctx.session && id) await rerollReviewItem(ctx.session, id);
 		},
 	},
 	{

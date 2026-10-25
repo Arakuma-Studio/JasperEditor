@@ -626,9 +626,13 @@ export class ProposalsController {
 	/**
 	 * "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans the stale items (or `itemIds`) on the current
 	 * document; they come back pending for review (nothing is applied). Refused with the engine's reason when the
-	 * feature's producer does not refresh (E_NOT_REFRESHABLE).
+	 * feature's producer does not refresh (E_NOT_REFRESHABLE). `reroll` (spec 15 EA-032 "Reroll"): re-plan the items with
+	 * the next seed of each (another draw of the same pass).
 	 */
-	async refreshItems(itemIds: readonly string[] | 'stale' = 'stale'): Promise<ActionResult> {
+	async refreshItems(
+		itemIds: readonly string[] | 'stale' = 'stale',
+		opts: { reroll?: boolean } = {},
+	): Promise<ActionResult> {
 		const engine = this.engine;
 		const id = this.store.getState().activeId;
 		if (!engine || !id) return fail('E_NO_ENGINE', 'No proposal is under review');
@@ -637,6 +641,7 @@ export class ProposalsController {
 		return this.call(async () => {
 			const r = await refresh(this.session.projectId, id, {
 				itemIds: itemIds === 'stale' ? 'stale' : [...itemIds],
+				...(opts.reroll ? { reroll: true } : {}),
 			});
 			return { proposal: r.proposal, changed: [...r.refreshed, ...r.dropped] };
 		});

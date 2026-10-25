@@ -1,4 +1,5 @@
 import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
+import { AUTOMATE_MENU } from '../../automation/menu.ts';
 import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
 import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
 import type { ShellMenuItem } from './resolve.ts';
@@ -324,6 +325,10 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			c('sequence.makeSubsequence', 'Make Subsequence'),
 			sep,
+			sub(
+				'Automate',
+				AUTOMATE_MENU.flatMap((e) => [...(e.separatorBefore ? [sep] : []), c(e.command, () => e.label)]),
+			),
 			sub('Sound Design', [
 				c('sound.suggestCues', 'Suggest Cues…'),
 				c('sound.autoSoundPass', 'Auto Sound Pass…'),
