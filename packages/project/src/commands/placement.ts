@@ -74,9 +74,9 @@ export function resolveOrCreateTrack(seq: DSeq, ref: string, h: HandlerContext, 
 }
 
 /**
- * First-free placement (social-comments design §7.9, "insertion never overwrites"): the lowest unlocked track of
- * `kind` at or above `floorIndex` (0-based) that has no clip in `[at, at + n)`; when every such track is locked or
- * busy, a new track of that kind is added on top (or the missing tracks up to `floorIndex` are added, as an
+ * First-free placement (social-comments design §7.9, "insertion never overwrites"): the lowest unlocked, visible
+ * (output on) track of `kind` at or above `floorIndex` (0-based) that has no clip in `[at, at + n)`; when every such
+ * track is locked, hidden or busy, a new track of that kind is added on top (or the missing tracks up to `floorIndex` are added, as an
  * overwrite to a missing `V5` label does). Deterministic: tracks are tried in order and only the track list grows.
  * The caller places on an empty range, so no clip is trimmed, split or shifted and sync-locked tracks never move.
  */
@@ -100,7 +100,9 @@ export function firstFreeTrack(
 	const floor = Math.max(0, Math.floor(floorIndex));
 	for (let i = floor; i < current.length; i++) {
 		const t = latest(current[i]!);
-		if (!t.locked && !busy.has(t.id)) return { track: list[i]!, index: i, created: false };
+		// a locked track refuses edits and a track with its output off is not drawn (the graphic would be invisible)
+		if (!t.locked && t.output !== false && !busy.has(t.id))
+			return { track: list[i]!, index: i, created: false };
 	}
 	const index = Math.max(current.length, floor);
 	return { track: ensureTrackAt(seq, kind, index, h), index, created: true };
