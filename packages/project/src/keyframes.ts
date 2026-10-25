@@ -298,15 +298,10 @@ export function segmentProgress<T>(kfs: readonly Keyframe<T>[], i: number, u: nu
 /**
  * The incoming type that actually shapes the segment arriving at key `i` — what the UI shows on the key's left
  * half: `hold` after a Hold key (After Effects draws it overridden), `linear` after a Linear key when the key is read
- * the legacy way, else `inInterpolationOf`. Null for the first key. `from` = the key the segment leaves (the fixed
- * start of a roving run ending at `i`; default the previous key).
+ * the legacy way, else `inInterpolationOf`. Null for the first key.
  */
-export function effectiveInInterpolation<T>(
-	kfs: readonly Keyframe<T>[],
-	i: number,
-	from = i - 1,
-): Interpolation | null {
-	const prev = from >= 0 && from < i ? kfs[from] : undefined;
+export function effectiveInInterpolation<T>(kfs: readonly Keyframe<T>[], i: number): Interpolation | null {
+	const prev = kfs[i - 1];
 	if (!prev) return null;
 	if (prev.interpolation === 'hold') return 'hold';
 	const k = kfs[i]!;

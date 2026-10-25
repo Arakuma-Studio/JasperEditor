@@ -13,10 +13,8 @@
 // These helpers work on plain key arrays (sorted by time) and mutate the keys in place; callers re-run the command
 // layer's `finish` afterwards (auto-bezier refresh, roving re-timing).
 import {
-	effectiveInInterpolation,
 	explicitInSide,
 	incomingEase,
-	inInterpolationOf,
 	isBothSided,
 	isHoldOnlyValue,
 	outgoingEase,
@@ -56,7 +54,12 @@ export function spanLeaving(kfs: Keys, i: number, runs = rovingRuns([...kfs])): 
 /** The two side types of a span: A's outgoing type and the incoming type that shapes the span at B. */
 export type SpanSides = {
 	outInterpolation: Interpolation;
-	/** `effectiveInInterpolation` (hold after a Hold key, linear after a Linear key read the legacy way). */
+	/**
+	 * The type B's incoming side acts as: `hold` after a Hold key (overridden, as After Effects draws it), else the
+	 * explicit incoming side that reproduces the span (`explicitInSide`: a key read the legacy way is Linear after a
+	 * Linear key, Bezier for a Hold key or a Linear key after a curving one — they arrive with their stored / the ⅓·1
+	 * ease —, its own type otherwise).
+	 */
 	inInterpolation: Interpolation;
 };
 
@@ -70,7 +73,7 @@ export function spanEases(kfs: Keys, a: number, b: number, metric?: Metric): Spa
 	const A = kfs[a]!;
 	const sides: SpanSides = {
 		outInterpolation: A.interpolation,
-		inInterpolation: effectiveInInterpolation(kfs, b, a) ?? inInterpolationOf(kfs[b]!),
+		inInterpolation: A.interpolation === 'hold' ? 'hold' : explicitInSide(kfs, b, metric, a).type,
 	};
 	if (isHoldOnlyValue(A.value)) return { ...sides, hold: true };
 	const shape = segmentShape(kfs, a, b, metric);

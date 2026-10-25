@@ -150,9 +150,8 @@ function readSelection<T>(
 /** One side of a key as the Keyframe Velocity editor shows it. */
 export type EaseSideInfo = {
 	/**
-	 * keyframe-sides: the temporal type shaping this side (outgoing: the key's `interpolation`; incoming: the type that
-	 * shapes the arriving segment — `effectiveInInterpolation`: hold after a Hold key, linear after a Linear key read
-	 * the legacy way).
+	 * keyframe-sides: the temporal type shaping this side (outgoing: the key's `interpolation`; incoming: the type it
+	 * acts as in the arriving segment, `SpanSides.inInterpolation` — hold after a Hold key).
 	 */
 	interpolation: Interpolation;
 	/** Influence as a fraction (0, 1] and in percent. */
