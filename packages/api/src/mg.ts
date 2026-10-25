@@ -13,6 +13,34 @@ export const MgRenderSpecSchema = z.object({
 });
 export type MgRenderSpec = z.infer<typeof MgRenderSpecSchema>;
 
+/** A named param preset of a template: `params` holds what it changes (the defaults fill the rest). */
+export const MgTemplatePresetSchema = z.object({
+	id: z.string().min(1).max(64),
+	name: z.string().min(1),
+	description: z.string().optional(),
+	params: z.record(z.string(), z.unknown()),
+});
+export type MgTemplatePresetEntry = z.infer<typeof MgTemplatePresetSchema>;
+
+/** UI hints of a template's params (groups, labels, tooltips, multi-line, visibility, custom controls). */
+export const MgTemplateUiSchema = z.object({
+	groups: z
+		.array(z.object({ id: z.string().min(1), label: z.string().min(1), params: z.array(z.string()) }))
+		.optional(),
+	params: z
+		.record(
+			z.string(),
+			z.object({
+				label: z.string().optional(),
+				description: z.string().optional(),
+				multiline: z.boolean().optional(),
+				visibleWhen: z.object({ param: z.string(), in: z.array(z.unknown()) }).optional(),
+				control: z.string().optional(),
+			}),
+		)
+		.optional(),
+});
+
 export const MgTemplateCatalogEntrySchema = z.object({
 	id: z.string(),
 	version: z.number().int(),
@@ -31,6 +59,10 @@ export const MgTemplateCatalogEntrySchema = z.object({
 	native: z.boolean().optional(),
 	/** `anime` templates are drawn by `@jasper/motion` and baked by layer-bake; absent = fframes. */
 	renderer: z.enum(['fframes', 'anime']).optional(),
+	/** Named param presets (gallery cards; `"<id>:<preset>"` in add_motion_graphic). */
+	presets: z.array(MgTemplatePresetSchema).optional(),
+	/** UI hints of the params (Properties / Effect Controls). */
+	ui: MgTemplateUiSchema.optional(),
 });
 export type MgTemplateCatalogEntry = z.infer<typeof MgTemplateCatalogEntrySchema>;
 

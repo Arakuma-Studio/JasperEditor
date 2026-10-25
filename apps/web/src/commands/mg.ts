@@ -13,6 +13,8 @@ import type { CommandCtx, UiCommand } from './types.ts';
 const InsertArgs = z.object({
 	templateId: z.string().min(1),
 	version: z.number().int().positive().default(1),
+	/** C3: a preset id of the template (its params over the defaults). */
+	preset: z.string().min(1).max(64).optional(),
 	/** Sequence frame; default the playhead. */
 	at: z.number().int().min(0).optional(),
 	trackId: z.string().optional(),
@@ -74,7 +76,7 @@ export const mgCommands: UiCommand[] = [
 		id: 'mg.insert',
 		label: 'Insert Motion Template',
 		description:
-			'Adds a motion-graphic template at the playhead on the targeted video track (default duration and params).',
+			'Adds a motion-graphic template at the playhead on the targeted video track (default duration and params; with preset, that preset of the template).',
 		icon: 'panel.motionTemplates',
 		scope: 'editing',
 		argsSchema: InsertArgs,
@@ -85,7 +87,7 @@ export const mgCommands: UiCommand[] = [
 			if (!ctx.session) throw new Error('No project is open');
 			insertMotionTemplate(
 				ctx.session,
-				{ id: a.templateId, version: a.version },
+				{ id: a.templateId, version: a.version, ...(a.preset ? { preset: a.preset } : {}) },
 				{ at: a.at, trackId: a.trackId },
 			);
 		},

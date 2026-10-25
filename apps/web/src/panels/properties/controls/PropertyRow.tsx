@@ -3,8 +3,8 @@
 // and reset ⟲. Every numeric scrub is one gesture = one undo step; discrete edits are one transaction.
 // In Effect Controls a twirl opens the row's Value / Velocity graphs (S05:ECP-005, S03:KF-022).
 import { type Command, dropdownItems, type ProjectDocument, type Sequence } from '@jasper/project';
-import type { TransportStore } from '@jasper/session';
-import { useSessionOrNull } from '@jasper/session/react';
+import type { SessionState, TransportStore } from '@jasper/session';
+import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { Fragment, type ReactNode, useMemo, useRef, useState } from 'react';
 import { browseForLut } from '../../../color/actions.ts';
@@ -20,6 +20,8 @@ import {
 	rowStatus,
 	setExpressionCommand,
 } from '../../../expressions/row.ts';
+import { templateParamControls } from '../../../extensions/index.ts';
+import { useRegistry } from '../../../extensions/react.ts';
 import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
@@ -40,6 +42,7 @@ import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from '.
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { MediaParamPicker } from './MediaParamPicker.tsx';
 import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
+import { TemplateParamControlHost } from './TemplateParamControl.tsx';
 
 export type RowContext = {
 	doc: ProjectDocument;
@@ -56,6 +59,8 @@ export type RowContext = {
 };
 
 const OUTSIDE_HINT = 'Move the playhead over the clip to add a keyframe';
+
+const NO_SESSION_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 const unitText = (u?: string) => (u === 'deg' ? '°' : u === '%' ? '%' : u ? ` ${u}` : undefined);
 
@@ -75,6 +80,16 @@ export function PropertyRow(props: {
 	const label = editLabel(row, clips);
 	const scrubRow = useRef<Row | null>(null);
 	const session = useSessionOrNull();
+	const readOnly = useStoreSelector(
+		session?.store ?? NO_SESSION_STORE,
+		(st: SessionState | null) => st?.readOnly === true,
+	);
+	// C3: a template param whose template names a registered custom control.
+	const controls = useRegistry(templateParamControls);
+	const customControl =
+		spec.ui.customControl && spec.key.startsWith('params.')
+			? controls.find((c) => c.id === spec.ui.customControl)
+			: undefined;
 	const anim = animState(row);
 	const animatable = spec.animatable !== 'no';
 	const outside = row.bindings.every((b) => b.resolved.outside);
@@ -349,6 +364,29 @@ export function PropertyRow(props: {
 
 	const editor = (() => {
 		if (props.editor) return props.editor;
+		if (customControl) {
+			const first = row.bindings[0]!;
+			const { mixed, value } = shown();
+			const clipIds = row.bindings.map((b) => b.clip.id).join(',');
+			return (
+				<TemplateParamControlHost
+					def={customControl}
+					clipId={first.clip.id}
+					paramName={spec.key.slice('params.'.length)}
+					value={mixed ? first.resolved.value : value}
+					params={(first.clip as { params?: Record<string, unknown> }).params ?? {}}
+					disabled={readOnly}
+					onChange={(next, opts) => {
+						const plan = planSet(row, live(), () => next);
+						apply(
+							plan.commands,
+							plan.skipped,
+							opts?.coalesce ? { coalesceKey: `template-param:${row.id}:${clipIds}` } : undefined,
+						);
+					}}
+				/>
+			);
+		}
 		const custom = controlEditor();
 		if (custom) return custom;
 		const { mixed, value } = shown();
