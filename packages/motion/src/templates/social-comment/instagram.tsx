@@ -5,6 +5,7 @@
 // tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "Instagram cards: calibration".
 import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
+import { editableParamProps } from '../editable.ts';
 import { INSTAGRAM_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
 import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
@@ -198,7 +199,7 @@ function InstagramPostCard({ params: p, text, anim, assets }: SocialCardProps) {
 					>
 						<span
 							data-part="name"
-							data-template-param="handle"
+							{...editableParamProps('handle')}
 							style={{
 								fontWeight: 600,
 								color: theme.name,
@@ -385,7 +386,7 @@ function InstagramReelReplyCard({ params: p, text, anim, assets }: SocialCardPro
 					}}
 				>
 					{'Replying to '}
-					<span data-template-param="handle">{p.handle}</span>
+					<span {...editableParamProps('handle')}>{p.handle}</span>
 				</div>
 			</div>
 		</div>

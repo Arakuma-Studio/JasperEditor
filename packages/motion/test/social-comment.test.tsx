@@ -36,6 +36,8 @@ function at(params: Record<string, unknown>, frame: number, extra: Record<string
 			seed={7}
 			isPreview={false}
 			mediaUrls={{}}
+			imageUrls={{}}
+			emojiUrls={{}}
 			{...extra}
 		/>
 	);
@@ -121,6 +123,8 @@ describe('social-comment@1 cards', () => {
 				seed={1}
 				isPreview
 				mediaUrls={{}}
+				imageUrls={{}}
+				emojiUrls={{}}
 			/>,
 		);
 		expect(r.container.querySelector('[data-social-variant="tiktok-reply"]')).not.toBeNull();
