@@ -8,6 +8,10 @@ scale (§5) is workstream `ui-perf` ([`wp-notes/ui-perf.md`](wp-notes/ui-perf.md
 how to measure, and historical measured results. The tables in §§4–6 record the stated builds and host loads;
 they are not validation of the current checkout.
 
+The [performance investigation](wp-notes/performance-hunt.md) records measured cuts to
+Find, Project sorting, bulk selection, resampling, media-status lookup and initial
+JavaScript loading, with baseline comparisons, rerunnable tools and integration checks.
+
 ## 1. Budgets
 
 | Budget | Value | Source | Checked by |
