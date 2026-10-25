@@ -1821,3 +1821,167 @@ have collided with the overlay's move and marquee gestures.
 - **Templates inside nested sequences**, and 3D template layers, are edited in Properties, not on the canvas.
 - **Other Players** showing the same clip (the comparison view) also show the rest frame while the editor is open.
 - **A graded (colour-effected) template** shows ungraded while it is being edited.
+
+## Store reviews
+
+WP6e (`sc/store-reviews`), design §11. Three more variants of `social-comment@1` (extended in place; the template is
+unreleased): `play-store-review`, `app-store-review` (web / Mac card) and `app-store-review-ios` (iPhone App Store
+"Ratings & Reviews"). Labels: **[ref]** the requester's screenshots (outside the repo:
+`research/store-reviews-ref/`), **[M]** live measurements of play.google.com and apps.apple.com, **[M-archive]**
+archived apps.apple.com pages (web.archive.org, 2021–2025), **[S]** a cited source, **[E]** estimate or choice.
+Measurements, scripts and screenshots: `/var/lib/orquester/workspaces/jaspersito/research/platform-measurements/store-reviews/index.md`
+(outside the repo; third-party screenshots are not committed).
+
+### Core (`packages/mg-templates/src/social/`)
+
+- **Variants and platforms:** `SOCIAL_VARIANTS` gains the three ids; `VARIANT_PLATFORM` maps them to the new
+  platforms `play-store` and `app-store`; `SOCIAL_REVIEW_VARIANTS`, `isReviewVariant(v)`.
+- **New params** (every one `.describe()`d with the variants that draw it):
+
+  | Param | Schema | Default | Drawn by |
+  |---|---|---|---|
+  | `rating` | integer 1–5 | 4 | all three |
+  | `date` | `z.iso.date()` + year 1970–2099 (a real calendar date; JSON Schema `format: "date"`) | `2025-09-24` | Play, App Store web |
+  | `edited` | boolean | false | iPhone |
+  | `title` | single line, ≤ 120 characters, `''` hides it | `Review title` | App Store web, iPhone |
+  | `truncate` | boolean | true (iPhone: false) | all three |
+
+  The iPhone card shows `timeValue` / `timeUnit` as its age. Store cards draw `displayName` (the Google account name /
+  App Store nickname, free text); Play also `avatar` / `showProfile`; the App Store cards have no avatar. Existing
+  variants' capabilities are unchanged (tested). `likeTick` is offered on the store cards (it fills the stars).
+- **Defaults:** neutral placeholders like tokcomment's ("Display Name", "Review title", "Write any review and see what
+  happens 😊"), 4 stars as the Play screenshot, the iPhone age "1y ago" as its first card. The iPhone default is
+  `truncate: false`: its screenshot is the "See All" list, which shows whole reviews.
+- **Formats** (`review.ts`, `format.ts`; no `Intl`, no clock): `parseReviewDate`, `formatReviewDate('play-store' |
+  'app-store', iso)` → Play `M/D/YY` ("11/6/18") [ref], App Store web `MM/DD/YYYY` ("09/24/2021") [ref]
+  [M-archive: always numeric]. `formatTime` for App Store variants and `formatReviewAge(value, unit, edited)` give the
+  iPhone age from the App Store frameworks' strings of iOS 15–26 [S: applelocalization.com `TIME_AGO_*` keys, raw
+  responses saved with the measurements]: "Just now" (value 0, or minutes: there is no minutes string), "5h ago",
+  "2d ago", "3w ago", "4mo ago", "1y ago"; edited: "edited 1y ago", "edited just now" (`TIME_AGO_EDITED_TIME`,
+  `TIME_AGO_EDITED_JUST_NOW`). Values are printed in the unit given (no rollover) [E]. Day arithmetic uses `Date.UTC`
+  (`dayNumber`, `dateOfDayNumber`, `weekday`).
+- **Plain text:** the stores do not link `@mentions` or `#hashtags`; `tokenizeComment` leaves them plain on store
+  platforms. `formatRepliesLabel` is empty, `formatCount` comma-groups (no store card draws counts).
+- **Emoji:** `auto` = Noto on Play (Android), Apple on the App Store (`PLATFORM_EMOJI_PACK`).
+- **Randomizer** (`random.ts`; deterministic, separate review stream so the comment stats of a seed are unchanged):
+  `randomRating(seed)` with `SOCIAL_RATING_WEIGHTS` 1★ 13 / 2★ 5 / 3★ 8 / 4★ 18 / 5★ 56 — the J-shaped distribution of
+  online ratings [S: Hu, Pavlou & Zhang, CACM 52(10), 2009], high average like popular apps [E];
+  `randomReviewDate(seed)` = `SOCIAL_REVIEW_DATE_ANCHOR` (2026-10-25, fixed: no wall clock) minus `⌊730·u²⌋` days
+  (recent likelier; half within six months); `reviewAge(daysAgo)` → the iPhone units (hours on the day, days < 7,
+  weeks < 30, months < 365, years); `randomReviewTitle(rating, seed)` from made-up short titles per star count.
+  `randomStats` adds `rating` and `date` for every variant and gives store cards the age of their date.
+  `fillSocialParams`: a given date sets the age and a given age the date (they agree), the title suits the rating.
+- **Add another / bulk import** (`bulk.ts`): `rating`, `date` and `title` are re-randomized (a new review);
+  aliases `Stars`, `Star rating`, `Score` → rating; `Review title`, `Headline` → title; `Review date`, `Date posted`,
+  `Posted on` → date; `Review`, `Review text` → text; `Was edited` → edited (`Rating`, `Title`, `Date`, `Edited`,
+  `Truncate` match as param names). Date cells (generic, any param with `format: "date"`, `cellIsoDate` in
+  `packages/project/src/bulk/mg-import.ts`): year first with `-`, `/` or `.` and an optional time
+  ("2025/9/4 10:30" → `2025-09-04`); month-first and day-first forms are refused ("is not a date (year-month-day…)"),
+  as they are ambiguous.
+
+### Template (`social-comment.ts`, `packages/motion/src/templates/social-comment/store.tsx`)
+
+- Ready variants, presets **Play Store · Review**, **App Store · Review**, **App Store · Review (iPhone app)**; fonts
+  Roboto 400/500 (bundled) for Play [M: play.google.com renders all card text in Roboto; Google Sans only on the
+  helpful buttons, which the card leaves out], SF Pro Text 400/600 (remote manifest) for the App Store cards.
+  `requiredAssets` also declares the emoji of `title`.
+- **UI hints:** Stats group `rating` (`social-rating`), `date` (`social-date`), `edited`; Text group `title`, `text`,
+  `truncate` ("Truncate Long Text"); `avatar` / `showProfile` hidden on the App Store cards; `likeTick` relabelled
+  "Likes Tick Up / Stars Fill" with a tooltip.
+- **Stars and the extra.** `socialStarFill(rating, p)`: star *i* fills while `p · rating` runs from *i* to *i* + 1;
+  the card draws the filled glyph over the empty one clipped to the fill (left to right, as the stores draw partial
+  stars). The frame passes the tick progress as `anim.tick` (optional, additive field of `SocialCardAnim`; 1 at rest)
+  and the thump as `anim.heart.s`, which pulses the row by a quarter of the heart's scale. The schedule and the
+  motion model are unchanged; the model's `textAt` is `socialTickText` (the count, or "2.63/4 stars"), and the
+  cue-timing test covers every entrance × both extras on the three cards plus a 1-star short clip and 59.94 fps.
+  Animated stars carry `INK_RING`.
+- **Clamp** (`ClampBox`): the text sits in a clip box of `lines × lineHeight`; a layout effect measures with layout
+  boxes (`offset*`, unaffected by the entrance transform, word-reveal scales and the zoom; as fractions of the box)
+  whether the text overflows and where the last visible line's words end; the result is applied before paint (≤ 3
+  passes), so Player, still and export agree. Play: 3 lines, the last fading from 29.8 dp before its text end to 2.6 dp
+  after it [ref, pixel profile]. App Store web: 4 lines, the archived mask (last line hidden under "more" for 32.8 px,
+  fading in over 36 px) and "more" #0070C9 [M-archive]. iPhone: 5 lines, the current card's mask scaled to the 15 pt
+  "more" (44 / 80 pt) and "more" in tint blue [M, scaled E].
+- **Blueprints and units:**
+  - Play [ref]: dp = screenshot px ÷ 3.525 (Roboto 14 sp name 500 / 14 sp body / 12 sp date fit its text widths at that
+    scale; the card is a 411 dp phone minus 16 dp margins): card 380 wide, 1 px #E1E1E1 border, 4 dp radius, 16 dp
+    padding, 32 dp avatar + 16 dp gap, kebab 21 dp, stars 11.63 × 11.06 dp ink on a 13.76 dp pitch, body line 22.27 dp.
+    Glyphs: Play's star path and its Material Icons Extended `more_vert` [M]. Light colours from the screenshot
+    (stars #479B5F / #BABABA, text #616161, name #212121); dark = Play's dark tokens (#202124, #E8EAED, #9AA0A6,
+    stars #00A173 / #3C4043) [M-css].
+  - App Store web [M-archive]: CSS px of the legacy `.we-customer-review`: 314 wide, #F8F8F8, radius 6, padding
+    13/16/16, min-height 184, sprite stars 24 × 25 per star (stretched, filled #FF9500 / empty #BFBFBF), byline 12/16 600
+    #636366, title 13/18 600 −0.005em #1D1D1F, body 13/18. Dark (the legacy site had none; the Mac App Store has one):
+    current apps.apple.com dark tokens [M-css] and an estimated empty-star grey #5A5A5E [E].
+  - iPhone [ref]: pt = screenshot px ÷ 0.769 (a 390 pt iPhone; SF Pro Text 15 pt fits its text widths): card 350
+    wide, radius 8, padding 15.1/22/20, title 15/20 600, age and name 15 secondary, stars 13 pt on a 15 pt pitch,
+    body 15/20. Stars are the current apps.apple.com filled / outline glyphs (the same layout) [M]. Colours: iOS
+    system colours (systemGray6 card, label, secondaryLabel, systemOrange, tint) [E: the screenshot is too small to
+    read colours].
+- **Glyph provenance:** `PLAY_STORE_GLYPHS` (`star`, `more`), `APP_STORE_GLYPHS` (`star`, `starOutline`,
+  `legacyStar`, `legacyStarEmpty`) in `glyphs.ts`; new origin `archived` for the legacy sprite; rows in
+  `licenses/platform-assets.md`. `PLATFORM_DEFAULT_AVATARS` for both stores is `none` (Play: the grey silhouette).
+
+### Controls (`apps/web/src/social-comments/`)
+
+- `social-rating` (`SocialRatingControl.tsx`): five stars over visually hidden native radio inputs in a `fieldset`
+  (legend "Rating", one name); click or arrows / Home / End / digits 1–5; each pick one History entry (arrow presses
+  coalesce); hover preview; read-only disables; a refused write says so; mixed ratings show "–".
+- `social-date` (`SocialDateControl.tsx`): native date input (min 1970-01-01, max 2099-12-31) writing only real dates
+  (typing coalesces into one entry; an incomplete date on blur shows an error; Esc restores), the store's printed form
+  next to it, and a wand (`randomReviewDate`).
+- Both bring the **Randomize Stats** wand to the Stats group; `statsPatch` now also writes `rating` and `date` where the
+  variant draws them (iPhone: rating and the age).
+- Icon `rating.star` (lucide Star, filled with `fill-current`).
+
+### Agents
+
+`TEMPLATES_GUIDE` has a store-review paragraph with an example; the import paragraph lists the store columns. The
+three presets reach MCP through the catalogue. `@jasper/mg-templates` became a test-only dependency of `apps/mcp`
+(`scripts/check-layers.mjs` `testDeps`) so `apps/mcp/test/social-review.test.ts` drives the tools against the real
+catalogue entry.
+
+### Calibration
+
+Side-by-side page: `/var/lib/orquester/workspaces/jaspersito/research/calibration/store-reviews/index.html` (screenshot
+crop | renderStill at the screenshot's scale | difference; every variant × theme, long reviews, marks, long names;
+star-fill frames). Rerun: `REMOTION_E2E=1 SOCIAL_SF_PRO_DIR=<SF-Pro-Text-*.otf> SOCIAL_EMOJI_APPLE_DIR=<cp>.png
+SOCIAL_REVIEW_CASES=<calibration>/ref-cases.json SOCIAL_CALIBRATION_DIR=<calibration>/stills pnpm exec vitest run
+packages/motion/test/social-review-render.e2e.test.ts -t calibration`, then `tools/crop.mjs` and `tools/page.mjs`.
+Measured: Play name, stars, date, body lines and kebab within 1–2 screenshot px (≈ 0.5 dp) and the same line breaks and
+fade; App Store web rows within 1 CSS px, same wrapping, mask and "more"; iPhone title, stars, name and body rows
+within 1 pt, same line breaks.
+
+**Deliberate differences:**
+- iPhone ages follow iOS 15–26 ("2d ago"); the screenshot (iOS ≤ 14) shows a weekday ("Sun") for recent reviews. No
+  source gives the old rules, and the params store an age, not a date.
+- Play: the helpful footer is left out (requested); the avatar default is the neutral silhouette; dark theme from
+  today's Play web tokens (the 2018 app had none). Live Play web differs from the screenshot (no card chrome, 12 px
+  stars, long dates, no clamp) — the screenshot is the blueprint.
+- App Store web: SF Pro Text v16 from the manifest instead of the archived web v2 files (≈ 1.5 % wider); dark theme
+  added (Mac App Store).
+- Emoji are images of the clip's pack (Noto on Play, Apple on the App Store).
+
+### Tests
+
+`packages/mg-templates/test/social-review.test.ts` (dates incl. leap years and fast-check round trips, store formats,
+ratings distribution, randomizer and fill consistency, plain text, star fill fast-check, bulk aliases and date
+cells, Add another on a review), `social-params.test.ts` (capabilities, defaults, schema caps, date validity
+property), `social-comment-template.test.ts` (presets), `packages/motion/test/social-review.test.tsx` (cards, glyphs,
+colours, ages, star fill per frame, pulse, seek-order fast-check, clamp with stubbed layout), `social-glyphs.test.ts`
+(new sets and provenance rows), `mg-cue-timing.test.ts` (store rows), `packages/motion/test/social-review-render.e2e.test.ts`
+(`REMOTION_E2E=1`: renderStill = renderFrames during entrance, word reveal and star fill on the three cards; clamp
+on / off; fit on every canvas with 64-character names, 120-character titles and long reviews; calibration stills),
+`apps/web/test/social-review-controls.test.tsx` (rows per variant, stars and date with undo / redo, keyboard,
+multi-selection, wand, Randomize Stats, Effect Controls, read-only, garbage values, refusals),
+`apps/mcp/test/social-review.test.ts`, `e2e/social-store-reviews.spec.ts` (built app: gallery insert of the three
+presets, Roboto / SF Pro cards, stars and date edited in Properties with undo, App Store title edited on the Program,
+"more" on a long review, edited age, stars mid-fill; screenshots in `test-results/e2e-social-store-reviews/`).
+
+### Limits
+
+- iPhone weekday ages of iOS ≤ 14 are not modelled (see above); the iOS card's thresholds between units are not
+  documented by Apple [E], and ages print in the unit given.
+- The iPhone card geometry comes from a low-resolution marketing screenshot (0.77 px/pt): ±1 pt.
+- App Store web and Play dark themes are derived, not captured (neither screenshot nor the legacy site has one).
+- Bulk-import dates must be year first.
