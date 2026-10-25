@@ -15,7 +15,8 @@ import { editableParamProps } from '../editable.ts';
 import { X_GLYPHS } from '../social/glyphs.ts';
 import { AvatarPicture } from './assets.tsx';
 import type { SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, motionStyle, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { VectorImage } from './vector.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['x-post']!.family}", sans-serif`;
 
@@ -118,19 +119,24 @@ function mixColor(from: string, to: string, t: number): string {
  * 400 px file (sha256 6d34bedb…).
  */
 function XDefaultAvatar({ size, style }: { size: number; style?: CSSProperties }) {
+	// a vector image rounded by its own radius (no rounded `overflow` clip: see "Paint determinism")
 	return (
-		<div
-			data-social-avatar="default"
-			style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, ...style }}
-		>
-			<svg viewBox="0 0 400 400" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-				<rect width="400" height="400" fill="#CCD6DD" />
-				<path
-					d="M124 161A76 72 0 0 1 200 89A76 72 0 0 1 276 161V204A70 50 0 0 1 206 254H194A70 50 0 0 1 124 204Z"
-					fill="#657786"
-				/>
-				<circle cx="200" cy="410" r="132" fill="#657786" />
-			</svg>
+		<div data-social-avatar="default" style={{ width: size, height: size, flexShrink: 0, ...style }}>
+			<VectorImage
+				name="x-default-avatar"
+				viewBox="0 0 400 400"
+				width={size}
+				height={size}
+				paths={[
+					{ d: 'M0 0H400V400H0Z', fill: '#CCD6DD' },
+					{
+						d: 'M124 161A76 72 0 0 1 200 89A76 72 0 0 1 276 161V204A70 50 0 0 1 206 254H194A70 50 0 0 1 124 204Z',
+						fill: '#657786',
+					},
+					{ d: 'M68 410a132 132 0 1 0 264 0a132 132 0 1 0 -264 0Z', fill: '#657786' },
+				]}
+				style={{ borderRadius: '50%' }}
+			/>
 		</div>
 	);
 }
@@ -197,8 +203,7 @@ function LikeHeart({ heart, color }: { heart: SocialCardProps['anim']['heart']; 
 				width: ICON,
 				height: ICON,
 				flexShrink: 0,
-				boxShadow: INK_RING,
-				transform: `scale(${r4(heart.s)})`,
+				...motionStyle({ s: heart.s }),
 			}}
 		>
 			<Glyph

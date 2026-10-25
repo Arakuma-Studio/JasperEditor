@@ -13,7 +13,8 @@ import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { TIKTOK_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, motionStyle, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { VectorImage } from './vector.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['tiktok-comment']!.family}", sans-serif`;
 
@@ -124,15 +125,14 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 					/>
 				</div>
 			</div>
-			<svg
+			<VectorImage
+				name="tail"
 				viewBox={`0 -0.5 26 ${TAIL_H + 0.5}`}
 				width={26}
 				height={TAIL_H + 0.5}
-				aria-hidden="true"
-				style={{ position: 'absolute', left: 0, bottom: 0, display: 'block' }}
-			>
-				<path d={TAIL_PATH} fill={theme.bg} />
-			</svg>
+				paths={[{ d: TAIL_PATH, fill: theme.bg }]}
+				style={{ position: 'absolute', left: 0, bottom: 0 }}
+			/>
 		</div>
 	);
 }
@@ -187,8 +187,7 @@ function LikeHeart({
 			style={{
 				...box,
 				display: 'block',
-				boxShadow: INK_RING,
-				transform: `scale(${Math.round(heart.s * 1e4) / 1e4})`,
+				...motionStyle({ s: heart.s }),
 			}}
 		>
 			<Glyph

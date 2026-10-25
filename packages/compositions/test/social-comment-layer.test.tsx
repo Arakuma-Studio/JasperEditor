@@ -233,8 +233,9 @@ describe('social-comment@1 in the motion-graphic layer', () => {
 			handle(`/m/${a.id}`),
 		);
 		const def = missing.view.container.querySelector('[data-social-avatar="default"]')!;
-		expect(def.querySelector('img')).toBeNull();
-		expect(def.querySelector('svg')).not.toBeNull();
+		// the silhouette (a vector image) until the manifest picture is delivered
+		expect(def.querySelector('img:not([data-vector])')).toBeNull();
+		expect(def.querySelector('img[data-vector]')).not.toBeNull();
 		missing.view.unmount();
 	});
 });

@@ -14,7 +14,8 @@ import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { INSTAGRAM_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, motionStyle, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { VectorImage } from './vector.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['instagram-post']!.family}", sans-serif`;
 
@@ -43,11 +44,17 @@ function InstagramDefaultAvatar({ size, style }: { size: number; style?: CSSProp
 	const a = INSTAGRAM_DEFAULT_AVATAR;
 	return (
 		<div data-social-avatar="default" style={{ width: size, height: size, flexShrink: 0, ...style }}>
-			<svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-				<path d={a.disc} fill={a.background} />
-				<path d={a.head} fill={a.figure} />
-				<path d={a.shoulders} fill={a.figure} />
-			</svg>
+			<VectorImage
+				name="instagram-default-avatar"
+				viewBox="0 0 48 48"
+				width={size}
+				height={size}
+				paths={[
+					{ d: a.disc, fill: a.background },
+					{ d: a.head, fill: a.figure },
+					{ d: a.shoulders, fill: a.figure },
+				]}
+			/>
 		</div>
 	);
 }
@@ -151,7 +158,7 @@ function LikeHeart({
 		top: (16 - HEART_PX) / 2,
 	};
 	return (
-		<span data-part="heart" style={{ ...box, boxShadow: INK_RING, transform: `scale(${round4(heart.s)})` }}>
+		<span data-part="heart" style={{ ...box, ...motionStyle({ s: heart.s }) }}>
 			<Glyph
 				glyph={INSTAGRAM_GLYPHS.heartOutline}
 				size={HEART_PX}

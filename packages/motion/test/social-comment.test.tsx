@@ -27,9 +27,23 @@ import { INSTAGRAM_DEFAULT_AVATAR } from '../src/templates/social-comment/instag
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
 import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
 import { socialVariantAvailable } from '../src/templates/social-comment/variants.ts';
+import { vectorMarkupOf } from '../src/templates/social-comment/vector.tsx';
 import { xActionLayout, xActionsWidth } from '../src/templates/social-comment/x.tsx';
 
 const Impl = ANIME_TEMPLATE_IMPLS['social-comment@1']!;
+
+/** The vector images inside `el` (icons, badges, default avatars, the bubble tail: `VectorImage`). */
+const vectors = (el: ParentNode) => [...el.querySelectorAll<HTMLImageElement>('img[data-vector]')];
+/** The SVG document a vector image draws. */
+const markup = (img: Element) => vectorMarkupOf(img) ?? '';
+/** Every vector drawing inside `el`, concatenated (to look for a glyph's path data). */
+const drawn = (el: ParentNode) => vectors(el).map(markup).join('');
+/** `[d, fill]` of each path a vector image draws. */
+const pathsOf = (img: Element): [string, string][] =>
+	[...markup(img).matchAll(/<path d="([^"]*)" fill="([^"]*)"/g)].map((m) => [
+		m[1]!.replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+		m[2]!,
+	]);
 
 // Remotion counts NODE_ENV=test as a render (a missing emoji would cancel it): these tests are the Player's
 // behaviour. happy-dom reports every image as complete at once; a browser does so only once it loaded or broke.
@@ -105,11 +119,11 @@ describe('social-comment@1 cards', () => {
 		const r = render(at({ displayName: 'Luna', verified: true }, 100));
 		const header = r.container.querySelector('[data-part="header"]')!;
 		expect(header.textContent).toBe("Reply to Luna's comment");
-		expect(header.querySelectorAll('svg')).toHaveLength(1);
-		expect(r.container.querySelectorAll('svg path[d^="M0 -0.5H25.5"]')).toHaveLength(1);
+		expect(vectors(header)).toHaveLength(1);
+		expect(vectors(r.container).filter((v) => markup(v).includes('d="M0 -0.5H25.5'))).toHaveLength(1);
 		r.unmount();
 		const plain = render(at({ displayName: 'Luna' }, 100));
-		expect(plain.container.querySelector('[data-part="header"] svg')).toBeNull();
+		expect(plain.container.querySelector('[data-part="header"] img[data-vector]')).toBeNull();
 		plain.unmount();
 	});
 
@@ -180,17 +194,17 @@ describe('social-comment@1 Instagram cards', () => {
 		expect(q(c, '[data-part="name"]')!.getAttribute('data-template-param')).toBe('handle');
 		expect(q(c, '[data-part="name"]')!.textContent).toBe('username');
 		expect(q(c, '[data-part="time"]')!.textContent).toBe('2w');
-		expect(q(c, '[data-part="header"]')!.querySelector('svg')).toBeNull();
+		expect(q(c, '[data-part="header"]')!.querySelector('img[data-vector]')).toBeNull();
 		expect(q(c, '[data-part="meta"]')!.textContent).toBe('Reply');
 		expect(q(c, '[data-part="likes"]')!.textContent).toBe('114');
 		expect(q(c, '[data-part="replies"]')!.textContent).toBe('View 5 more replies');
 		// the outline heart (Instagram's own glyph), no filled heart without the like tick
-		expect(q(c, '[data-part="heart"]')!.innerHTML).toContain(INSTAGRAM_GLYPHS.heartOutline.paths[0]!.d);
-		expect(q(c, '[data-part="heart"]')!.innerHTML).not.toContain(INSTAGRAM_GLYPHS.heartFilled.paths[0]!.d);
+		expect(drawn(q(c, '[data-part="heart"]')!)).toContain(INSTAGRAM_GLYPHS.heartOutline.paths[0]!.d);
+		expect(drawn(q(c, '[data-part="heart"]')!)).not.toContain(INSTAGRAM_GLYPHS.heartFilled.paths[0]!.d);
 		r.unmount();
 		const v = render(at({ ...post, verified: true }, 100));
-		const badge = v.container.querySelector('[data-part="header"] svg')!;
-		expect(badge.innerHTML).toContain(INSTAGRAM_GLYPHS.verified.paths[0]!.d);
+		const badge = v.container.querySelector('[data-part="header"] img[data-vector]')!;
+		expect(markup(badge)).toContain(INSTAGRAM_GLYPHS.verified.paths[0]!.d);
 		v.unmount();
 	});
 
@@ -246,10 +260,7 @@ describe('social-comment@1 Instagram cards', () => {
 	it("avatars: Instagram's default look for null, initials from the handle for a generated one, showProfile hides it", () => {
 		const d = render(at(post, 100));
 		const def = q(d.container, '[data-social-avatar="default"]')!;
-		const paths = [...def.querySelectorAll('path')].map((el) => [
-			el.getAttribute('d'),
-			el.getAttribute('fill'),
-		]);
+		const paths = vectors(def).flatMap(pathsOf);
 		expect(paths).toEqual([
 			[INSTAGRAM_DEFAULT_AVATAR.disc, '#C7C7C7'],
 			[INSTAGRAM_DEFAULT_AVATAR.head, '#FFFFFF'],
@@ -285,10 +296,10 @@ describe('social-comment@1 Instagram cards', () => {
 		}
 		expect(shown()).toBe('12.3K');
 		expect(seen.size).toBeGreaterThan(10);
-		const svgs = q(view.container, '[data-part="heart"]')!.querySelectorAll<SVGElement>('svg');
+		const svgs = vectors(q(view.container, '[data-part="heart"]')!);
 		expect(svgs).toHaveLength(2);
 		expect(svgs[1]!.style.opacity).toBe('1');
-		expect(hex(svgs[1]!.style.color)).toBe('#ff3040');
+		expect(pathsOf(svgs[1]!).map(([, fill]) => hex(fill))).toContain('#ff3040');
 		view.unmount();
 	});
 
@@ -300,7 +311,7 @@ describe('social-comment@1 Instagram cards', () => {
 		expect(q(c, '[data-part="replying"]')!.textContent).toBe('Replying to username');
 		expect(q(c, '[data-part="replying"] [data-template-param="handle"]')!.textContent).toBe('username');
 		// the only drawing is the default avatar: no badge, heart or count
-		expect([...c.querySelectorAll('svg')].every((svg) => svg.closest('[data-social-avatar]'))).toBe(true);
+		expect(vectors(c).every((svg) => svg.closest('[data-social-avatar]'))).toBe(true);
 		expect(q(c, '[data-part="likes"]')).toBeNull();
 		// the emoji is an image of the Apple pack (EmojiImage), never a host-font glyph
 		expect(q(c, '[data-template-param="text"]')!.textContent).toBe('Write any comment and see what happens ');
@@ -328,17 +339,17 @@ describe('social-comment@1 YouTube cards', () => {
 		expect(q(c, 'name')!.textContent).toBe('@luna.makes');
 		// the editable element holds exactly the handle (the "@" is outside it, contract C5)
 		expect(c.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna.makes');
-		expect(q(c, 'header')!.querySelectorAll('svg')).toHaveLength(1);
-		expect(q(c, 'header')!.innerHTML).toContain(YOUTUBE_GLYPHS.verified.paths[0]!.d);
+		expect(vectors(q(c, 'header')!)).toHaveLength(1);
+		expect(drawn(q(c, 'header')!)).toContain(YOUTUBE_GLYPHS.verified.paths[0]!.d);
 		expect(q(c, 'time')!.textContent).toBe('10 months ago');
 		expect(q(c, 'likes')!.textContent).toBe('72');
 		expect(q(c, 'replies')!.textContent).toBe('2 replies');
 		expect(q(c, 'thread')).not.toBeNull();
 		for (const g of ['thumbUp', 'thumbDown', 'reply', 'more', 'chevronDown'] as const)
-			expect(c.innerHTML, g).toContain(YOUTUBE_GLYPHS[g].paths[0]!.d);
+			expect(drawn(c), g).toContain(YOUTUBE_GLYPHS[g].paths[0]!.d);
 		r.unmount();
 		const plain = render(at(yt, 100));
-		expect(q(plain.container, 'header')!.querySelector('svg')).toBeNull();
+		expect(q(plain.container, 'header')!.querySelector('img[data-vector]')).toBeNull();
 		plain.unmount();
 	});
 
@@ -383,8 +394,8 @@ describe('social-comment@1 YouTube cards', () => {
 			const base = socialDefaults(variant);
 			const missing = render(at(base, 100));
 			const el = missing.container.querySelector('[data-social-avatar="default"]')!;
-			expect(el.querySelector('img')).toBeNull();
-			expect(el.querySelector('svg')).not.toBeNull();
+			expect(el.querySelector('img:not([data-vector])')).toBeNull();
+			expect(el.querySelector('img[data-vector]')).not.toBeNull();
 			missing.unmount();
 			const raster = render(at(base, 100, { imageUrls: { [id]: 'http://engine/yt-default.jpg' } }));
 			expect(
@@ -438,9 +449,9 @@ describe('social-comment@1 YouTube cards', () => {
 		for (let f = 1; f <= 60; f++) act(() => view.rerender(at(p, f)));
 		expect(q(view.container, 'likes')!.textContent).toBe('12K');
 		const icon = q(view.container, 'like-icon')!;
-		const svgs = icon.querySelectorAll<SVGElement>('svg');
+		const svgs = vectors(icon);
 		expect(svgs).toHaveLength(2);
-		expect(svgs[1]!.innerHTML).toContain(YOUTUBE_GLYPHS.thumbUpFilled.paths[0]!.d);
+		expect(markup(svgs[1]!)).toContain(YOUTUBE_GLYPHS.thumbUpFilled.paths[0]!.d);
 		expect(svgs[1]!.style.opacity).toBe('1');
 		expect(svgs[0]!.style.opacity).toBe('0');
 		// the widest counts it passes through reserve the width (the buttons after it never move during the tick)
@@ -456,7 +467,7 @@ describe('social-comment@1 YouTube cards', () => {
 		const c = r.container;
 		expect(q(c, 'header')!.textContent).toBe('Comment from @luna');
 		expect(c.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna');
-		expect(q(c, 'header')!.querySelector('svg')).toBeNull();
+		expect(q(c, 'header')!.querySelector('img[data-vector]')).toBeNull();
 		for (const part of ['likes', 'time', 'replies', 'thread', 'like-icon'])
 			expect(q(c, part), part).toBeNull();
 		expect(c.querySelector('[data-social-avatar]')).not.toBeNull();
@@ -494,12 +505,12 @@ describe('social-comment@1 X post card', () => {
 		expect(part(c, 'time')!.textContent).toBe('2h');
 		const d = (g: { paths: readonly { d: string }[] }) => g.paths[0]!.d;
 		const header = part(c, 'header')!;
-		expect(header.querySelector(`path[d="${d(X_GLYPHS.verifiedBlue)}"]`)).not.toBeNull();
-		expect(header.querySelector(`path[d="${d(X_GLYPHS.grok)}"]`)).not.toBeNull();
-		expect(header.querySelector(`path[d="${d(X_GLYPHS.more)}"]`)).not.toBeNull();
+		expect(drawn(header)).toContain(d(X_GLYPHS.verifiedBlue));
+		expect(drawn(header)).toContain(d(X_GLYPHS.grok));
+		expect(drawn(header)).toContain(d(X_GLYPHS.more));
 		r.unmount();
 		const plain = view({});
-		expect(plain.container.querySelector(`path[d="${d(X_GLYPHS.verifiedBlue)}"]`)).toBeNull();
+		expect(drawn(plain.container)).not.toContain(d(X_GLYPHS.verifiedBlue));
 		plain.unmount();
 	});
 
@@ -524,7 +535,7 @@ describe('social-comment@1 X post card', () => {
 		]);
 		const actions = part(c, 'actions')!;
 		for (const g of ['reply', 'repost', 'like', 'views', 'bookmark', 'share'] as const)
-			expect(actions.querySelector(`path[d="${X_GLYPHS[g].paths[0]!.d}"]`), g).not.toBeNull();
+			expect(drawn(actions), g).toContain(X_GLYPHS[g].paths[0]!.d);
 		// the secondary colour of x.com 2026 (rgba(0, 0, 0, .6)), not tokcomment's greys
 		expect(part(c, 'likes')!.style.color).toBe('rgba(0, 0, 0, 0.6)');
 		r.unmount();
@@ -535,14 +546,14 @@ describe('social-comment@1 X post card', () => {
 		// the count goes, the icon stays (and the columns keep their places)
 		for (const n of ['reposts', 'views']) {
 			expect(part(r.container, n), n).toBeNull();
-			expect(part(r.container, `${n}-action`)!.querySelector('svg'), n).not.toBeNull();
+			expect(part(r.container, `${n}-action`)!.querySelector('img[data-vector]'), n).not.toBeNull();
 		}
 		expect(part(r.container, 'replies')!.textContent).toBe('45');
 		r.unmount();
 		const zero = view({ replies: 0, reposts: 0, likes: 0, views: 0 });
 		for (const n of ['replies', 'reposts', 'likes', 'views']) {
 			expect(part(zero.container, n), n).toBeNull();
-			expect(part(zero.container, `${n}-action`)!.querySelector('svg'), n).not.toBeNull();
+			expect(part(zero.container, `${n}-action`)!.querySelector('img[data-vector]'), n).not.toBeNull();
 		}
 		zero.unmount();
 	});
@@ -583,10 +594,10 @@ describe('social-comment@1 X post card', () => {
 		expect(likes()!.textContent).toBe('12.3K');
 		expect(likes()!.style.color).toMatch(/^(#F91880|rgb\(249, 24, 128\))$/i);
 		const icon = v.container.querySelector('[data-part="like-icon"]')!;
-		const [outline, filled] = [...icon.querySelectorAll<SVGElement>('svg')];
+		const [outline, filled] = vectors(icon);
 		expect(outline!.style.opacity).toBe('0');
 		expect(filled!.style.opacity).toBe('1');
-		expect(filled!.querySelector('path')!.getAttribute('d')).toBe(X_GLYPHS.likeFilled.paths[0]!.d);
+		expect(pathsOf(filled!)[0]![0]).toBe(X_GLYPHS.likeFilled.paths[0]!.d);
 		v.unmount();
 	});
 
@@ -625,7 +636,7 @@ describe('social-comment@1 X post card', () => {
 		resolved.unmount();
 		const twin = view({});
 		expect(
-			twin.container.querySelector('[data-social-avatar="default"] svg rect')!.getAttribute('fill'),
+			pathsOf(twin.container.querySelector('[data-social-avatar="default"] img[data-vector]')!)[0]![1],
 		).toBe('#CCD6DD');
 		twin.unmount();
 		const pic = view({ avatar: { mediaId: 'med_a' } }, { mediaUrls: { med_a: 'http://x/a.png' } });
@@ -673,10 +684,8 @@ describe('social-comment@1 animation', () => {
 		};
 		for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce']) {
 			expect(style(0, entrance).opacity, entrance).toBe('0');
-			expect(style(60, entrance), entrance).toEqual({
-				opacity: '1',
-				transform: 'translateY(0px) rotate(0deg) scale(1)',
-			});
+			// at rest the card is un-animated: no transform, no opacity (S11:ANM-009)
+			expect(style(60, entrance), entrance).toEqual({ opacity: '', transform: '' });
 			expect(Number(style(FRAMES - 1, entrance).opacity)).toBeLessThan(0.5);
 		}
 	});
@@ -685,8 +694,9 @@ describe('social-comment@1 animation', () => {
 		const p = { wordReveal: true, text: 'one two three ==four five== six' };
 		const units = (frame: number) => {
 			const r = render(at(p, frame));
+			// an un-animated word (at rest) has no opacity style: it is fully shown
 			const o = [...r.container.querySelectorAll<HTMLElement>('[data-unit]')].map((u) =>
-				Number(u.style.opacity),
+				u.style.opacity === '' ? 1 : Number(u.style.opacity),
 			);
 			r.unmount();
 			return o;
@@ -719,8 +729,8 @@ describe('social-comment@1 animation', () => {
 		for (let i = 1; i < nums.length; i++) expect(nums[i]).toBeGreaterThanOrEqual(nums[i - 1]!);
 		const filled =
 			view.container.querySelectorAll<SVGElement>('[data-part="likes"]')[0]!.previousElementSibling!;
-		expect(filled.querySelectorAll('svg')).toHaveLength(2);
-		expect((filled.querySelectorAll('svg')[1] as SVGElement).style.opacity).toBe('1');
+		expect(vectors(filled)).toHaveLength(2);
+		expect(vectors(filled)[1]!.style.opacity).toBe('1');
 		view.unmount();
 		expect(t.introMs).toBeGreaterThan(0);
 	});
@@ -762,7 +772,7 @@ describe('social-comment@1 shared parts', () => {
 					assets={ASSETS}
 				/>,
 			);
-			const out = r.container.innerHTML;
+			const out = r.container.innerHTML + drawn(r.container);
 			r.unmount();
 			return out;
 		};
@@ -785,8 +795,12 @@ describe('social-comment@1 shared parts', () => {
 				color="#123"
 			/>,
 		);
-		const paths = r.container.querySelectorAll('path');
-		expect([...paths].map((p) => p.getAttribute('fill'))).toEqual(['currentColor', '#f00']);
+		// drawn as a vector image: the `currentColor` paths take `color`, own fills are kept
+		expect(
+			vectors(r.container)
+				.flatMap(pathsOf)
+				.map(([, fill]) => fill),
+		).toEqual(['#123', '#f00']);
 		r.unmount();
 	});
 
