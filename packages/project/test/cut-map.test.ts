@@ -378,7 +378,12 @@ describe('pictureCuts: animated pictures', () => {
 		const x = put(h, a, 0, 0, 90);
 		put(h, b, 90, 0, 90);
 		h.ok([
-			{ type: 'param.setAnimated', target: ['clip', x, 'transform', 'scale'], animated: true, at: { frames: 0 } },
+			{
+				type: 'param.setAnimated',
+				target: ['clip', x, 'transform', 'scale'],
+				animated: true,
+				at: { frames: 0 },
+			},
 			{ type: 'param.set', target: ['clip', x, 'transform', 'scale'], value: 100, at: { frames: 0 } },
 			{ type: 'param.set', target: ['clip', x, 'transform', 'scale'], value: 130, at: { frames: 89 } },
 		]);

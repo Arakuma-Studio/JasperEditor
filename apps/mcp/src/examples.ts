@@ -221,6 +221,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		value: 0.5,
 	},
 	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	// spec 15 EA-031: a cut kit (adjustment clip 10 + 10 frames around the cut at 00:00:02:00 with a blur and a
+	// Transform zoom keyed relative to the item's start) — one command per decoration; on V3 (created when missing).
+	'clip.addAdjustmentBatch': {
+		type: 'clip.addAdjustmentBatch',
+		trackId: 'V3',
+		items: [
+			{
+				start: 50,
+				length: 20,
+				name: 'Zoom-blur',
+				effects: [
+					{
+						effectId: 'jasper.gaussian-blur',
+						keyframes: {
+							radius: [
+								{ frame: 0, value: 0, interpolation: 'bezier', easeOut: { influence: 0.75, slope: 0 } },
+								{ frame: 10, value: 40 },
+								{ frame: 20, value: 0 },
+							],
+						},
+					},
+					{
+						effectId: 'jasper.transform',
+						params: { shutterAngle: 360 },
+						keyframes: {
+							scaleHeight: [
+								{ frame: 0, value: 100 },
+								{ frame: 10, value: 170 },
+								{ frame: 20, value: 100 },
+							],
+						},
+					},
+				],
+				ref: '$kit',
+			},
+		],
+	},
+	// spec 15 EA-031: punch-in keys on clips (Motion scale 100 → 180 % over 7 frames from the clip's midpoint), here
+	// on the clip of the clip.place example ("$clip").
+	'keyframe.addBatch': {
+		type: 'keyframe.addBatch',
+		targets: [
+			{
+				clipId: '$clip',
+				path: ['transform', 'scale'],
+				keys: [
+					{ at: { frames: 30 }, value: 100 },
+					{ at: { frames: 37 }, value: 180 },
+				],
+			},
+		],
+	},
 	'keyframe.add': {
 		type: 'keyframe.add',
 		target: ['clip', '$clip', 'transform', 'position'],
@@ -631,6 +683,26 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 	'textStyle.reset': { type: 'textStyle.reset', clipIds: ['$title'], fields: ['sizePx'] },
 	'textStyle.detach': { type: 'textStyle.detach', clipIds: ['$title'] },
 	'textStyle.delete': { type: 'textStyle.delete', styleId: '$style' },
+	// spec 13 AS-001…AS-020: automatic subtitles as text clips ("$subs" = the new subtitle group).
+	'captions.generate': {
+		type: 'captions.generate',
+		template: 'builtin:pixel-pop',
+		rules: { maxWords: 3, holdSeconds: 0.5 },
+		cutAware: { lookBackSeconds: 0.5 },
+		ref: '$subs',
+	},
+	'captions.alignToCuts': { type: 'captions.alignToCuts', groupId: '$subs' },
+	'captions.regenerate': { type: 'captions.regenerate', groupId: '$subs', rules: { maxWords: 2 } },
+	'subtitleTemplate.apply': {
+		type: 'subtitleTemplate.apply',
+		template: 'builtin:bold-pop',
+		groupId: '$subs',
+		parts: { style: true, animation: true },
+	},
+	'captions.updateGroup': { type: 'captions.updateGroup', groupId: '$subs', name: 'Spanish subtitles' },
+	'captions.convert': { type: 'captions.convert', groupId: '$subs', to: 'caption-track', keepSource: true },
+	'captions.deleteGroup': { type: 'captions.deleteGroup', groupId: '$subs', clips: 'keep' },
+	'subtitleTemplate.save': { type: 'subtitleTemplate.save', clipId: '$title', name: 'My subtitles' },
 };
 
 /** A multi-command transaction showing temp refs. */

@@ -31,8 +31,10 @@ import {
 	openReview,
 	playReviewItem,
 	REVIEW_STATE_LABELS,
+	refreshReview,
 	rejectAll,
 } from '../../proposals/actions.ts';
+import { useProposalFeature } from '../../proposals/feature-state.ts';
 import { whyLines } from '../../proposals/ghosts.ts';
 import { isOwnKey, runScopedKey } from '../../proposals/keys.ts';
 import {
@@ -131,7 +133,10 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const seq = useSessionState((s) => s.document.sequences[seqId] as Sequence | undefined);
 	const ghost = useGhostModel(session, seqId);
 	const previewSeq = useProposals(session, (s) => s.preview?.result.document.sequences[seqId]);
-	const model = useMemo(() => buildReviewModel(items, ghost), [items, ghost]);
+	const feature = proposal?.feature;
+	const model = useMemo(() => buildReviewModel(items, ghost, feature), [items, ghost, feature]);
+	// spec 15 EA-003: whether the feature's producer re-plans stale items ("Refresh proposal")
+	const featureInfo = useProposalFeature(engine, session.projectId, feature);
 	// P6-E5: the proposal's Sound Check — the newer of the one kept on it and the last one run here
 	const checkLast = useStoreSelector(proposalCheckStore(session), (s) => s.last);
 	const check = useMemo((): SoundCheckProposalSummary | null => {
@@ -328,6 +333,25 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 								<span className="text-pr-warning">
 									! {t('{0} stale or invalid', counts.stale + counts.invalid)}
 								</span>
+							) : null}
+							{counts.stale ? (
+								<Button
+									variant="quiet"
+									busy={busy}
+									disabled={readOnly || !featureInfo?.refreshable}
+									disabledReason={
+										readOnly
+											? t('The project is read-only')
+											: !featureInfo?.refreshable
+												? t('Its producer cannot re-plan items: ask for a new proposal instead')
+												: undefined
+									}
+									title={t('Re-plan the stale items on the current edit (nothing is applied)')}
+									onClick={() => void refreshReview(session)}
+									data-testid="review-refresh"
+								>
+									↻ {t('Refresh proposal')}
+								</Button>
 							) : null}
 							{counts.applied ? <span>{t('{0} applied', counts.applied)}</span> : null}
 							{previewing ? (

@@ -14,6 +14,7 @@ import {
 	FLICKS_PER_SECOND,
 	groupClips,
 	isTemplateEffect,
+	PIXEL_POP_SHAKE,
 	type ProjectDocument,
 	repairDocument,
 	type Sequence,
@@ -361,5 +362,71 @@ describe('load repair (schema v9 fields)', () => {
 		expect(checkInvariants(a.document)).toEqual([]);
 		const b = repairDocument(a.document, ids);
 		expect(b.report).toEqual([]);
+	});
+});
+
+describe('cut-aware edge cases on documents (AS-013)', () => {
+	it('an overlay below the coverage threshold is not a cut; above it is', () => {
+		const { H, b } = shot({ cut: false, words: [['one', 2.5, 2.8], ['two', 3.05, 3.4]] });
+		const r = H.ok([{ type: 'clip.place', source: { mediaId: b }, at: 90, tracks: { video: 'V2' }, audio: false, mode: 'overwrite' }]);
+		const pip = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
+		H.ok([{ type: 'param.set', target: ['clip', pip, 'transform', 'scale'], value: 60 }]); // 36 % of the frame
+		const g = gen(H, { rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } });
+		expect(subs(H).map((c) => c.start)).not.toContain(90);
+		H.ok([{ type: 'captions.deleteGroup', groupId: g.groupId }]);
+		H.ok([{ type: 'param.set', target: ['clip', pip, 'transform', 'scale'], value: 90 }]); // 81 %
+		gen(H, { rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } });
+		for (const c of subs(H)) expect(c.start >= 90 || c.start + c.duration <= 90).toBe(true);
+		valid(H.doc);
+	});
+	it('reversed dialogue gives no words and is reported', () => {
+		const { H } = shot({ cut: false });
+		const audio = H.clips('A1')[0]!;
+		H.ok([{ type: 'clip.setSpeed', clipIds: [audio.id], reverse: true, ripple: false }]);
+		const r = H.tx([{ type: 'captions.generate' }]);
+		expect(r.ok || r.errors[0]!.code).toBe('E_INVALID_PARAM');
+	});
+	it('subtitles inside a nested sequence align to the cuts of the sequence it is placed in (warned)', () => {
+		const { H, b } = shot({ cut: false, words: [['one', 2.5, 2.8], ['two', 3.05, 3.4]] });
+		// nest the A-roll pair, then cut to B-roll in the parent at frame 90 over the nest
+		const pair = [H.clips('V1')[0]!.id, H.clips('A1')[0]!.id];
+		const n = H.ok([{ type: 'clip.nest', clipIds: pair, name: 'A-roll', ref: '$n' }]);
+		const nested = (n.results[0] as { sequenceId: string }).sequenceId;
+		H.ok([{ type: 'clip.place', source: { mediaId: b }, at: 90, tracks: { video: 'V2' }, audio: false, mode: 'overwrite' }]);
+		const r = H.ok([{ type: 'captions.generate', sequenceId: nested, rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } }]);
+		expect(r.warnings.some((w) => /nested sequence/.test(w.message))).toBe(true);
+		const seq = H.doc.sequences[nested]!;
+		const list = Object.values(seq.clips).filter((c) => captionOf(c));
+		for (const c of list) expect(c.start >= 90 || c.start + c.duration <= 90).toBe(true);
+		valid(H.doc);
+	});
+	for (const preset of ['hd-1080p-23.976', 'hd-1080p-25', 'hd-1080p-29.97', 'hd-1080p-59.94', 'hd-1080p-60'])
+		it(`cut-aligned and invariant-clean at ${preset}`, () => {
+			const H = new Harness({ preset });
+			const rate = H.seq.settings.frameRate;
+			const a = H.registerVideo({ seconds: 10, fps: rate });
+			const b = H.registerVideo({ seconds: 10, fps: rate });
+			const cut = Math.round((3 * rate.num) / rate.den);
+			H.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+			H.ok([{ type: 'clip.place', source: { mediaId: b }, at: cut, tracks: { video: 'V1' }, audio: false, mode: 'overwrite' }]);
+			H.ok([{ type: 'transcript.create', mediaId: a, language: 'en', origin: 'manual', words: [
+				{ text: 'one', start: sec(2.5), end: sec(2.9) },
+				{ text: 'two', start: sec(2.9), end: sec(3.2) },
+				{ text: 'three', start: sec(3.2), end: sec(3.8) },
+			] }]);
+			const g = gen(H, { rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } });
+			expect(g.stats.crossing).toBe(0);
+			expect(subs(H).some((c) => c.start === cut)).toBe(true);
+			for (const c of subs(H)) expect(c.start >= cut || c.start + c.duration <= cut).toBe(true);
+			valid(H.doc);
+		});
+	it('the Pixel Pop shake reproduces the Premiere offsets on any frame (calibration)', () => {
+		// Premiere: offset = Amplitude × (Rand Amp / 360) × 0.1 frame widths; ours: × 0.1 layer-box widths
+		for (const [w] of [[1080], [1920]]) {
+			const premierePx = 0.6 * (72 / 360) * 0.1 * w;
+			const boxW = (w * 75) / 100;
+			const oursPx = 0.6 * PIXEL_POP_SHAKE.xRandAmp * 0.1 * boxW;
+			expect(Math.abs(oursPx - premierePx)).toBeLessThan(0.05);
+		}
 	});
 });

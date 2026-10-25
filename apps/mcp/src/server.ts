@@ -54,6 +54,7 @@ import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
+import { registerSubtitleTools, SUBTITLES_GUIDE } from './tools/subtitles.ts';
 import { registerTextStyleTools, TEXT_STYLES_GUIDE } from './tools/text-styles.ts';
 import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
@@ -123,6 +124,7 @@ const FULL_GUIDE = [
 	SOUND_GUIDE,
 	PROPOSALS_GUIDE,
 	CAPTIONS_GUIDE,
+	SUBTITLES_GUIDE,
 	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
 	VOICE_GUIDE,
@@ -199,6 +201,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundProfileTools(ctx);
 	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
+	registerSubtitleTools(ctx);
 	registerTextStyleTools(ctx);
 	registerSpeechTools(ctx);
 	registerVoiceTools(ctx);
