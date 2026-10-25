@@ -10780,3 +10780,68 @@ the Final verification A scripts (`gate.sh`, `final.sh`):
   44.5 min; `e2e/mg-fallback-check.mjs` PASS.
 - Gate at 7c2150f5 (the fix and this note): lint 52 s, typecheck 350 s, **7 366 passed, 241 skipped, 0 failed** (771
   files, 22.0 min), build 102 s, `notices --check`, `i18n:check`, `e2e:typecheck` ok.
+
+
+## Sound Check finding actions: selection must follow pointer activation
+
+Contract: [Spec12’s Sound Check panel](../specs/12-sound-design.md) exposes a Fix action for each finding and confirms a
+fix that needs the user’s judgement before applying it. The existing real-browser workflow `e2e/sound-check.spec.ts`
+owns physical pointer activation, actual confirmation, one undo entry and rechecked output;
+`apps/web/test/sound-check-panel.test.tsx` separately owns confirmation contents and cancellation without a mutation.
+A direct `fireEvent.click` cannot exercise movement between a real pointer press and release.
+
+At source checkpoint `76af3b2d`, the strict browser run reached the silence finding’s enabled Fix… button but never
+opened its confirmation. The saved trace’s `call@298` hit-tests at x402.23 with y709.5/872.5/1034.5, including repeated
+interception by other finding text and sticky group headings. Its final physical click begins at579974.722ms with
+the button at y1022.5 and the scroll container at215. Immediately after the click returns, the silence finding is
+selected and the container is at258: selection moved the content43px during the gesture. `Findings.onPointerDown`
+changes the cursor; its cursor effect calls `scrollIntoView`, so the button moves before release and its click handler
+can be missed. `applyCheckFix` still requires confirmation for this unsafe finding, and the document/finding remained
+unchanged. The failure is meaningful product behavior, rather than a missing wait for job completion.
+
+Actual-app reproduction used a copy of the saved failed project, Chrome at1800×1050, normal port-scoped Playwright
+harness authentication, Node20.19.0/pnpm10.34.5, required oracles and the verified LGPL7.1 FFmpeg binaries with
+`JASPER_FFMPEG_LGPL_ONLY=1`. The baseline source/current copied build failed the same15s dialog expectation after one
+physical Fix click (36.26s process wall). The proposed minimal `onClick`-only selection still failed (26.32s): when no
+finding was current, the nested button’s native focus bubbled to the list initializer, selected its first
+OUT_OF_SYNC finding and scrolled from602 to160 before mouseup. This second measured failure justified restricting
+initial selection to direct focus on the list (`event.target === event.currentTarget`). Direct list focus and its
+keyboard commands retain their behavior.
+
+Final change: select the pointer-activated finding on `click`, after its nested button receives activation, and ignore
+nested control focus when initializing the list’s keyboard cursor. Keep current-row scrolling and the existing
+confirmation/cancellation/editing logic. The identical actual-app probe then passed in both the floating panel and the
+original Sound Design workspace layout (2/2,15.7s runner/17.26s process wall). Each trace contains exactly one physical
+Fix input; each showed the unsafe-change confirmation, and Cancel left the sequence document unchanged. Confirmation
+screenshots were visually inspected. The earlier hover-only Acknowledge action may explain hit-test oscillation, but
+neither final layout needed another actionability attempt; no speculative hover/layout change was made.
+
+Every built component variant was checked against its generated source map. The final
+`SoundCheckPanel-Ddlz54AL.js.map` contains the exact changed component, SHA-256
+`f62028684cd089502f8b1da90488f934818ae5d087f3304dceefa390133e6658`. Engine/MCP, fixtures and LGPL artifacts were copied only
+while their production inputs matched root76af; each changed web variant was built from the isolated worktree’s own
+workspace-linked source. No generated output was edited or committed.
+
+The existing permanent browser scenario and all confirmation assertions remain unchanged. A temporary diagnostic
+probe reused the saved project through the normal authenticated harness and public editor/agent UI interfaces, then
+was removed; its source, JSON, traces and screenshots remain under `/tmp/jasper-test-cleanup/sound-check-pointer/`.
+That directory also preserves the original full-run trace/error/screenshot, sanitized `baseline-click-summary.json`,
+`{baseline,click,final}-provenance.json`, `{baseline,click,final}-repro.{log,json,time}` and build logs/timings. No retry,
+synthetic click, sleep, geometry assertion, private event-shape test, production hook or confirmation shortcut was
+added. The parent owns a fresh full integration/gate and the unchanged end-to-end workflow after cherry-picking.
+
+Targeted checks passed: all18existing panel tests (36.82s process wall), actual web TypeScript (41.21s), the changed component’s Biome check and `git diff --check`. The final own-source web build passed (55.42s); the only build warnings were existing bundle-size/annotation notices. These are verification timings, not a claimed suite/CI speedup. The unchanged full Sound Check workflow still needs the parent’s source-current integrated rerun.
+
+Validation commands (each browser variant’s complete environment, JSON and logs are preserved in the evidence directory; baseline used the runner’s existing retain-on-failure trace default):
+
+```sh
+pnpm install --frozen-lockfile --offline --ignore-scripts
+NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web build
+# Browser variants: Node preload removed; pinned JASPER_FFMPEG/JASPER_FFPROBE point to this tree’s verified vendor binaries.
+# Each variant used its own copied appdir and port49650/49651/49652; E2E_SKIP_BUILD=1 followed verified source-current builds.
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome JASPER_FFMPEG_LGPL_ONLY=1 pnpm e2e e2e/sound-check-pointer-probe.spec.ts --workers=1 --reporter=line,json --trace=on
+env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/web/test/sound-check-panel.test.tsx --maxWorkers=2
+NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/web typecheck
+pnpm exec biome check apps/web/src/panels/soundCheck/SoundCheckPanel.tsx
+git diff --check
+```

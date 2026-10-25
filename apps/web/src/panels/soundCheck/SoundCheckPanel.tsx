@@ -739,8 +739,9 @@ function Findings(props: {
 			className="border-b border-pr-border outline-none focus-visible:ring-1 focus-visible:ring-pr-focus"
 			data-testid="sound-check-findings"
 			onKeyDown={onKeyDown}
-			onFocus={() => {
-				if (!cur && order[0]) setFindingCursor(session, order[0].id);
+			onFocus={(e) => {
+				// Only list focus initializes keyboard selection; a nested button must finish its pointer click first.
+				if (e.target === e.currentTarget && !cur && order[0]) setFindingCursor(session, order[0].id);
 			}}
 		>
 			{groups.map((g) => (
@@ -763,6 +764,7 @@ function Findings(props: {
 						const expanded = strip && open.has(i.id);
 						return (
 							// biome-ignore lint/a11y/useFocusableInteractive: listbox options are reached with aria-activedescendant
+							// biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles keyboard selection and activation
 							<div
 								key={i.id}
 								id={`${idPrefix}${i.id}`}
@@ -773,7 +775,7 @@ function Findings(props: {
 								data-code={i.code}
 								data-frame={i.frame ?? i.range?.start ?? ''}
 								className={`group border-t border-pr-border-subtle px-2 py-1 ${cur === i.id ? 'bg-pr-selected' : ''}`}
-								onPointerDown={() => setFindingCursor(session, i.id)}
+								onClick={() => setFindingCursor(session, i.id)}
 							>
 								<div className="flex items-start gap-1.5">
 									<span
