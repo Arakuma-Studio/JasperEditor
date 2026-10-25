@@ -98,7 +98,8 @@ describe('pending text relayout (spec 13 SH-004)', () => {
 			origin: 'user',
 			commands: [{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello', style: { sizePx: 100 } }, ref: '$t' }],
 		});
-		const clipId = (r.ok && r.refs.$t)!;
+		if (!r.ok) throw new Error('add text');
+		const clipId = r.refs.$t!;
 		expect(clipOf(s, clipId).layoutPending).toBe(true);
 		ready();
 		await tick();
