@@ -37,7 +37,11 @@ export function buildSocialComment(schedule: SocialCommentSchedule): {
 		if (!target) continue;
 		target[track.prop] = track.initial;
 		for (const tw of track.tweens)
-			tl.add(target, { [track.prop]: [tw.from, tw.to], duration: tw.dur, ease: socialEase(tw.ease) }, tw.start);
+			tl.add(
+				target,
+				{ [track.prop]: [tw.from, tw.to], duration: tw.dur, ease: socialEase(tw.ease) },
+				tw.start,
+			);
 	}
 	return { timeline: tl, targets };
 }

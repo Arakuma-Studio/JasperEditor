@@ -35,10 +35,14 @@ function fontDir(): string | null {
 }
 
 function rgba(png: Buffer): { data: Buffer; width: number; height: number } {
-	const probe = spawnSync(ffmpeg, ['-v', 'error', '-f', 'png_pipe', '-i', '-', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'], {
-		input: png,
-		maxBuffer: 1 << 30,
-	});
+	const probe = spawnSync(
+		ffmpeg,
+		['-v', 'error', '-f', 'png_pipe', '-i', '-', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'],
+		{
+			input: png,
+			maxBuffer: 1 << 30,
+		},
+	);
 	if (probe.status !== 0) throw new Error(`ffmpeg: ${probe.stderr.toString()}`);
 	const width = png.readUInt32BE(16);
 	const height = png.readUInt32BE(20);
@@ -66,7 +70,13 @@ function paintedBox(png: Buffer) {
 const LONG =
 	'Okay this is honestly the best tutorial I have seen all week 😂 I tried it on my own videos and the engagement doubled overnight, can you please make a part two about editing? 🔥🙏 Thanks so much!';
 
-type Case = { name: string; canvas: string; params: Record<string, unknown>; frame?: number; media?: boolean };
+type Case = {
+	name: string;
+	canvas: string;
+	params: Record<string, unknown>;
+	frame?: number;
+	media?: boolean;
+};
 
 /** The calibration matrix (design §8 "visual calibration"), named after the tokcomment captures it pairs with. */
 const CALIBRATION: Case[] = [];
@@ -121,10 +131,27 @@ CALIBRATION.push(
 	{
 		name: 'tiktok-comment_light_counts-huge',
 		canvas: '1080x1920',
-		params: { variant: 'tiktok-comment', likes: 987_654_321_000, replies: 4_812_345, timeValue: 3, timeUnit: 'year' },
+		params: {
+			variant: 'tiktok-comment',
+			likes: 987_654_321_000,
+			replies: 4_812_345,
+			timeValue: 3,
+			timeUnit: 'year',
+		},
 	},
-	{ name: 'tiktok-comment_light_no-profile', canvas: '1080x1920', params: { variant: 'tiktok-comment', showProfile: false } },
-	{ name: 'tiktok-reply_light_long-name', canvas: '1080x1920', params: { displayName: 'averyveryveryverylongusername_with_many_characters_123456 ✨', text: 'Short reply text here' } },
+	{
+		name: 'tiktok-comment_light_no-profile',
+		canvas: '1080x1920',
+		params: { variant: 'tiktok-comment', showProfile: false },
+	},
+	{
+		name: 'tiktok-reply_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			displayName: 'averyveryveryverylongusername_with_many_characters_123456 ✨',
+			text: 'Short reply text here',
+		},
+	},
 );
 
 describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 1_200_000 }, () => {
@@ -154,16 +181,30 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		if (emojiDir && existsSync(emojiDir))
 			for (const f of readdirSync(emojiDir).filter((n) => n.endsWith('.png'))) {
 				copyFileSync(join(emojiDir, f), join(pub, 'emoji', f));
-				const grapheme = String.fromCodePoint(...f.replace('.png', '').split('-').map((h) => Number.parseInt(h, 16)));
+				const grapheme = String.fromCodePoint(
+					...f
+						.replace('.png', '')
+						.split('-')
+						.map((h) => Number.parseInt(h, 16)),
+				);
 				emojiFiles[`apple:${grapheme}`] = `emoji/${f}`;
 			}
 		// a 256 px gradient picture as the uploaded avatar (no personal data)
 		spawnSync(ffmpeg, [
-			'-v', 'error', '-y', '-f', 'lavfi', '-i',
+			'-v',
+			'error',
+			'-y',
+			'-f',
+			'lavfi',
+			'-i',
 			'gradients=s=256x256:c0=0xff6b6b:c1=0x4d96ff:x0=0:y0=0:x1=256:y1=256:nb_colors=2',
-			'-frames:v', '1', join(pub, 'avatar.png'),
+			'-frames:v',
+			'1',
+			join(pub, 'avatar.png'),
 		]);
-		console.log(`[social-comment] fonts: ${fonts.length} faces, emoji: ${Object.keys(emojiFiles).length}; artifacts ${work}`);
+		console.log(
+			`[social-comment] fonts: ${fonts.length} faces, emoji: ${Object.keys(emojiFiles).length}; artifacts ${work}`,
+		);
 		serveUrl = await bundle({ entryPoint: join(here, 'social-comment-render', 'entry.tsx'), publicDir: pub });
 		browser = await r.openBrowser('chrome', { ...browserOpts });
 	}, 900_000);
@@ -205,7 +246,13 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			{
 				name: 'comment-dark',
 				canvas: '1920x1080',
-				params: { variant: 'tiktok-comment', theme: 'dark', likeTick: true, wordReveal: true, entrance: 'drop-bounce' },
+				params: {
+					variant: 'tiktok-comment',
+					theme: 'dark',
+					likeTick: true,
+					wordReveal: true,
+					entrance: 'drop-bounce',
+				},
 			},
 		];
 		for (const c of cases) {

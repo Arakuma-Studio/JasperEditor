@@ -11,19 +11,25 @@
 // starts: on a short clip they compress proportionally into the time left. The exit (≈ 200 ms, scale to 82 % and fade,
 // eased in) is the declared outro, anchored at the content end. Outside these windows the card is at rest and shows
 // its hold state (S11:ANM-009): every word shown, the final count, the heart filled when it ticked.
-import { ANIME_REFERENCE_FPS } from './common.ts';
+
 import { CANVASES } from '../../core.ts';
 import {
 	type CommentSpan,
+	SOCIAL_PARAM_NAMES,
+	SOCIAL_VARIANTS,
 	type SocialCommentParams,
 	type SocialEntrance,
+	type SocialParamName,
 	type SocialVariant,
 	socialCommentParamsSchema,
+	socialDefaults,
 	tokenizeComment,
 	VARIANT_CAPABILITIES,
+	variantsWithParam,
 } from '../../social/index.ts';
 import { segmentText } from '../../text-units.ts';
-import type { MgAnimeTemplateDefinition } from '../../types.ts';
+import type { MgAnimeTemplateDefinition, MgTemplateParamUi, MgTemplatePreset } from '../../types.ts';
+import { ANIME_REFERENCE_FPS } from './common.ts';
 import type { AnimeTween, TemplateTiming } from './motion.ts';
 
 // ------------------------------------------------------------------------------------------------------ timing
@@ -89,7 +95,14 @@ export type SocialScheduleInput = TemplateTiming & {
 	tick: boolean;
 };
 
-type NominalTween = { prop: SocialCardProp; start: number; dur: number; from: number; to: number; ease: string };
+type NominalTween = {
+	prop: SocialCardProp;
+	start: number;
+	dur: number;
+	from: number;
+	to: number;
+	ease: string;
+};
 
 /** The entrances as tweens in ms of the declared intro window (scaled with it when it is compressed). */
 const ENTRANCES: Readonly<Record<SocialEntrance, readonly NominalTween[]>> = {
@@ -336,6 +349,54 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 
 const DEFAULTS = socialCommentParamsSchema.parse({});
 
+/** The variants with a card of their own (the others draw a "not available yet" card and get no preset). */
+export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = ['tiktok-reply', 'tiktok-comment'];
+
+/**
+ * The variant of social-comment params whose card this build does not draw yet (the clip shows a "not available" card
+ * in preview; exports refuse it like a template that is not installed), else null.
+ */
+export function socialCommentUnavailableVariant(params: unknown): SocialVariant | null {
+	const v = (params as { variant?: unknown } | null)?.variant;
+	const variant = (SOCIAL_VARIANTS as readonly unknown[]).includes(v) ? (v as SocialVariant) : 'tiktok-reply';
+	return SOCIAL_COMMENT_READY_VARIANTS.includes(variant) ? null : variant;
+}
+
+/** Gallery card names of the variant presets ("<platform> · <card>"). */
+const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: string }>> = {
+	'tiktok-reply': {
+		name: 'TikTok · Comment reply',
+		description: 'The "Reply to name\'s comment" bubble TikTok shows on a video reply.',
+	},
+	'tiktok-comment': { name: 'TikTok · Comment', description: 'A TikTok comment with likes and replies.' },
+	'instagram-post': { name: 'Instagram · Post comment', description: 'An Instagram post comment.' },
+	'instagram-reel-reply': {
+		name: 'Instagram · Reels reply',
+		description: 'The Instagram "Replying to" Reels card.',
+	},
+	'youtube-comment': { name: 'YouTube · Comment', description: 'A YouTube video comment.' },
+	'youtube-shorts-reply': { name: 'YouTube · Shorts reply', description: 'The YouTube Shorts comment card.' },
+	'x-post': { name: 'X · Post', description: 'An X post card.' },
+};
+
+/** One preset per variant with a card: tokcomment's defaults of that variant (what differs from the schema's). */
+export function socialCommentPresets(variants: readonly SocialVariant[]): MgTemplatePreset[] {
+	return variants.map((variant) => {
+		const d = socialDefaults(variant);
+		const params: Record<string, unknown> = {};
+		for (const k of SOCIAL_PARAM_NAMES)
+			if (JSON.stringify(d[k]) !== JSON.stringify(DEFAULTS[k])) params[k] = d[k];
+		params.variant = variant;
+		return { id: variant, ...PRESET_NAMES[variant], params };
+	});
+}
+
+/** Params a variant may not draw are shown only for the variants that draw them (`variantsWithParam`). */
+const byVariant = (param: SocialParamName): Pick<MgTemplateParamUi, 'visibleWhen'> => {
+	const variants = variantsWithParam(param);
+	return variants.length < SOCIAL_VARIANTS.length ? { visibleWhen: { param: 'variant', in: variants } } : {};
+};
+
 export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	id: 'social-comment',
 	version: 1,
@@ -352,4 +413,46 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	outroFrames: SOCIAL_COMMENT_OUTRO_FRAMES,
 	defaultDurationSeconds: 5,
 	canvases: [...CANVASES],
+	presets: socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS),
+	// grouped like tokcomment's control panel (design §7.9); custom controls are registered by the web app (until then
+	// Properties falls back to the standard editors)
+	ui: {
+		groups: [
+			{ id: 'look', label: 'Look', params: ['variant', 'theme', 'emojiStyle'] },
+			{
+				id: 'author',
+				label: 'Author',
+				params: ['displayName', 'handle', 'avatar', 'showProfile', 'verified'],
+			},
+			{
+				id: 'stats',
+				label: 'Stats',
+				params: ['timeValue', 'timeUnit', 'likes', 'replies', 'reposts', 'views', 'showReposts', 'showViews'],
+			},
+			{ id: 'text', label: 'Text', params: ['text'] },
+			{ id: 'animation', label: 'Animation', params: ['entrance', 'wordReveal', 'likeTick'] },
+		],
+		params: {
+			variant: { label: 'Style' },
+			emojiStyle: { label: 'Emoji' },
+			displayName: { label: 'Display Name', ...byVariant('displayName') },
+			handle: { label: 'Handle', ...byVariant('handle') },
+			avatar: { label: 'Avatar', control: 'social-avatar' },
+			showProfile: { label: 'Show Avatar' },
+			verified: { label: 'Verified', ...byVariant('verified') },
+			// value and unit are one row of the `social-time` control
+			timeValue: { label: 'Posted', control: 'social-time', ...byVariant('timeValue') },
+			timeUnit: { label: 'Unit', control: 'social-time', ...byVariant('timeUnit') },
+			likes: { label: 'Likes', control: 'social-count', ...byVariant('likes') },
+			replies: { label: 'Replies', control: 'social-count', ...byVariant('replies') },
+			reposts: { label: 'Reposts', control: 'social-count', ...byVariant('reposts') },
+			views: { label: 'Views', control: 'social-count', ...byVariant('views') },
+			showReposts: { label: 'Show Reposts', ...byVariant('showReposts') },
+			showViews: { label: 'Show Views', ...byVariant('showViews') },
+			text: { label: 'Comment', multiline: true, control: 'social-comment-text' },
+			entrance: { label: 'Entrance' },
+			wordReveal: { label: 'Words One by One' },
+			likeTick: { label: 'Likes Tick Up', ...byVariant('likeTick') },
+		},
+	},
 };

@@ -163,6 +163,9 @@ export function SocialAvatar(p: {
 	return silhouette;
 }
 
+/** Side bearing of an emoji image (em): adjacent emoji keep a hairline gap, as OS emoji glyphs do. */
+const EMOJI_GAP = 0.03;
+
 /** Emoji drawing inside a text run: image size and baseline shift as fractions of the font size. */
 export type EmojiMetrics = { size: number; shift: number };
 
@@ -184,7 +187,10 @@ export function TextWithEmoji(p: {
 				grapheme={piece.grapheme}
 				size={r3(p.fontSize * p.emoji.size)}
 				assets={p.assets}
-				style={{ verticalAlign: `${r3(p.emoji.shift * p.fontSize)}px` }}
+				style={{
+					verticalAlign: `${r3(p.emoji.shift * p.fontSize)}px`,
+					margin: `0 ${r3(EMOJI_GAP * p.fontSize)}px`,
+				}}
 			/>
 		),
 	);
@@ -242,12 +248,16 @@ export function CommentText(p: {
 	});
 	const fontSize = p.style.fontSize;
 	const emojiPx = r3(fontSize * p.emoji.size);
-	const emojiStyle: CSSProperties = { verticalAlign: `${r3(p.emoji.shift * fontSize)}px` };
+	const emojiStyle: CSSProperties = {
+		verticalAlign: `${r3(p.emoji.shift * fontSize)}px`,
+		margin: `0 ${r3(EMOJI_GAP * fontSize)}px`,
+	};
 	const drawPiece = (piece: Piece, inPill: boolean, key: string) => {
 		const style: CSSProperties = {};
 		if (!inPill && piece.mark !== 'highlight' && piece.role !== 'plain') style.color = p.colors[piece.role];
 		if (piece.mark === 'highlight' && !inPill) Object.assign(style, HIGHLIGHT_STYLE);
-		if (piece.mark === 'blur') Object.assign(style, { display: 'inline-block', filter: `blur(${BLUR_PX}px)` });
+		if (piece.mark === 'blur')
+			Object.assign(style, { display: 'inline-block', filter: `blur(${BLUR_PX}px)` });
 		if (piece.mark === 'remove') style.opacity = 0;
 		return (
 			<span key={key} data-mark={piece.mark === 'none' ? undefined : piece.mark} style={style}>
@@ -269,7 +279,12 @@ export function CommentText(p: {
 		);
 	};
 	return (
-		<div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', ...p.style }}>
+		<div
+			// Program-monitor inline editing (WP7b): the element whose box is the visible comment, marks-aware
+			data-template-param="text"
+			data-template-marks="true"
+			style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', ...p.style }}
+		>
 			{p.segments.map((seg) => {
 				const key = `o${seg.start}`;
 				const pieces = piecesOf(spans, seg.start, seg.start + seg.text.length);

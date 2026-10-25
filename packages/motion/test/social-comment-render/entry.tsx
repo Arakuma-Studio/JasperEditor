@@ -1,9 +1,17 @@
 // Remotion entry of the social-comment render tests (social-comment-render.e2e.test.ts): the template alone on a
 // transparent canvas of each design size, its fonts loaded from the bundle's public dir before the first frame
 // (`delayRender`, like the layer's font gate), emoji and avatar pictures passed as public-dir files.
-import { socialComment, animeTemplateTiming } from '@jasper/mg-templates';
+import { animeTemplateTiming, socialComment } from '@jasper/mg-templates';
 import { useState } from 'react';
-import { Composition, continueRender, delayRender, registerRoot, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import {
+	Composition,
+	continueRender,
+	delayRender,
+	registerRoot,
+	staticFile,
+	useCurrentFrame,
+	useVideoConfig,
+} from 'remotion';
 import { SocialComment } from '../../src/templates/social-comment/index.tsx';
 import type { CardProps } from './types.ts';
 
@@ -37,7 +45,11 @@ function Card(props: CardProps) {
 	const frame = useCurrentFrame();
 	const { width, height, durationInFrames } = useVideoConfig();
 	useFonts(props.fonts);
-	const t = animeTemplateTiming(socialComment, { fps: FPS, localFrame: frame, durationFrames: durationInFrames });
+	const t = animeTemplateTiming(socialComment, {
+		fps: FPS,
+		localFrame: frame,
+		durationFrames: durationInFrames,
+	});
 	const urls = (m: Record<string, string>) =>
 		Object.fromEntries(Object.entries(m).map(([k, v]) => [k, staticFile(v)]));
 	const extra = { mediaUrls: urls(props.mediaFiles), emojiUrls: urls(props.emojiFiles) };

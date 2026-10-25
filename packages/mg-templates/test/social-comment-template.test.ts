@@ -144,7 +144,8 @@ describe('social-comment@1 schedule', () => {
 		expect(value(s, heart, 'f', s.exitStart)).toBe(1);
 		expect(value(s, heart, 's', s.exitStart)).toBe(1);
 		let top = 0;
-		for (let ms = s.entranceEnd + 900; ms < s.entranceEnd + 1200; ms++) top = Math.max(top, value(s, heart, 's', ms)!);
+		for (let ms = s.entranceEnd + 900; ms < s.entranceEnd + 1200; ms++)
+			top = Math.max(top, value(s, heart, 's', ms)!);
 		expect(top).toBeCloseTo(1.3, 6);
 		expect(socialTickCount(1393, 0)).toBe(0);
 		expect(socialTickCount(1393, 1)).toBe(1393);
@@ -178,7 +179,9 @@ describe('social-comment@1 schedule', () => {
 					});
 					for (const tr of s.tracks)
 						for (let i = 1; i < tr.tweens.length; i++)
-							expect(tr.tweens[i]!.start).toBeGreaterThanOrEqual(tr.tweens[i - 1]!.start + tr.tweens[i - 1]!.dur - 1e-9);
+							expect(tr.tweens[i]!.start).toBeGreaterThanOrEqual(
+								tr.tweens[i - 1]!.start + tr.tweens[i - 1]!.dur - 1e-9,
+							);
 					const room = s.exitStart - s.entranceEnd;
 					// when there is room for the shortest tweens, every extra ends before the exit starts
 					if (room >= 4)

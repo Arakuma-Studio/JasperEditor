@@ -21,13 +21,13 @@ import {
 	CALLOUT_PHASES,
 	calloutParams,
 	counterParams,
+	formatCount,
 	formatCounterValue,
 	K_OPACITY,
 	lowerThirdAnimParams,
 	mgRegistry,
 	needsShaping,
 	phaseTimes,
-	formatCount,
 	segmentText,
 	socialCommentParamsSchema,
 	socialCommentSchedule,
@@ -439,7 +439,12 @@ for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bo
 			params: { variant: 'tiktok-comment', entrance, wordReveal, likeTick },
 		});
 VARIANTS.push(
-	{ template: 'social-comment', rate: '25', seconds: 5, params: { entrance: 'drop-bounce', wordReveal: true } },
+	{
+		template: 'social-comment',
+		rate: '25',
+		seconds: 5,
+		params: { entrance: 'drop-bounce', wordReveal: true },
+	},
 	{
 		template: 'social-comment',
 		rate: '59.94',

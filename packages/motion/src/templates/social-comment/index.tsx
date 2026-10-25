@@ -24,8 +24,8 @@ import type { SocialCardAnim, SocialCardAssets, SocialWordValues } from './contr
 import { SocialStage } from './stage.tsx';
 import { SOCIAL_VARIANT_IMPLS } from './variants.ts';
 
-export type { SocialCardAnim, SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
 export { buildSocialComment, buildSocialTick, socialTickProgressAt } from './build.ts';
+export type { SocialCardAnim, SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
 
 const DEFAULTS = socialCommentParamsSchema.parse({});
 
@@ -38,7 +38,6 @@ function paramsOf(raw: Record<string, unknown>): SocialCommentParams {
 export function SocialComment(props: AnimeTemplateProps) {
 	const p = paramsOf(props.params);
 	const fit = templateFit(props.canvas);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the text and variant it reads
 	const text = useMemo(() => socialCommentSegments(p.text, p.variant), [p.text, p.variant]);
 	const tick = socialLikesTick(p);
 	const input: SocialScheduleInput = {
@@ -66,7 +65,7 @@ export function SocialComment(props: AnimeTemplateProps) {
 	};
 	const scope = useId().replace(/[^A-Za-z0-9_-]/g, '_');
 	const assets: SocialCardAssets = {
-		...socialAssetUrls(props as Parameters<typeof socialAssetUrls>[0]),
+		...socialAssetUrls(props),
 		emojiPack: resolveEmojiStyle(p.variant, p.emojiStyle),
 		idScope: `sc${scope}`,
 	};

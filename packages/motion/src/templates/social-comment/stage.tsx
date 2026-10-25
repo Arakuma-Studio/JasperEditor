@@ -9,9 +9,8 @@
 // S11:ANM-010) after the fonts are loaded (the layer renders templates only then). A shrink is applied in the same
 // commit (layout effect, before paint), so every frame — Player, still or export — shows the fitted card; without
 // layout (tests) the canvas scale is used.
-import { SOCIAL_CARD_MAX_HEIGHT, socialCardScale } from '@jasper/mg-templates';
+import { type Fit, SOCIAL_CARD_MAX_HEIGHT, socialCardScale } from '@jasper/mg-templates';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
-import type { Fit } from '@jasper/mg-templates';
 
 /** Share of the design width a card may take at most. */
 const MAX_WIDTH = 0.96;
@@ -31,7 +30,9 @@ export function socialFitZoom(
 	if (!(measured.w > 0 && measured.h > 0 && k > 0)) return max;
 	const natW = measured.w / k;
 	const natH = measured.h / k;
-	return r4(Math.min(max, (design.width * MAX_WIDTH) / natW, (design.height * SOCIAL_CARD_MAX_HEIGHT) / natH));
+	return r4(
+		Math.min(max, (design.width * MAX_WIDTH) / natW, (design.height * SOCIAL_CARD_MAX_HEIGHT) / natH),
+	);
 }
 
 export function SocialStage(p: {

@@ -508,10 +508,7 @@ function socialCommentModel(
 		let show: AnimeTrack['show'];
 		if (tr.prop === 'o' || tr.prop === 'f') show = { kind: 'opacity' };
 		else if (tr.target === 0)
-			show =
-				tr.prop === 's'
-					? { kind: 'scale' }
-					: { kind: 'px', perUnit: tr.prop === 'r' ? cornerArc : 1 };
+			show = tr.prop === 's' ? { kind: 'scale' } : { kind: 'px', perUnit: tr.prop === 'r' ? cornerArc : 1 };
 		else show = { kind: 'px', perUnit: (tr.target === s.heartTarget ? 20 : 24) * k };
 		return { ...tr, show };
 	});

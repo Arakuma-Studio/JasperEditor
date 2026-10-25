@@ -82,7 +82,9 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 						}}
 					>
 						{'Reply to '}
-						<TextWithEmoji text={p.displayName} fontSize={HEADER_PX} emoji={EMOJI} assets={assets} />
+						<span data-template-param="displayName">
+							<TextWithEmoji text={p.displayName} fontSize={HEADER_PX} emoji={EMOJI} assets={assets} />
+						</span>
 						{"'s"}
 						{p.verified ? (
 							<span
@@ -160,7 +162,15 @@ const COMMENT_THEME = {
 const LIKED = TIKTOK_GLYPHS.heartFilled.defaultColor;
 
 /** The like heart; while the like tick runs it thumps (`s`) and fills (`f`) in TikTok's liked colour. */
-function LikeHeart({ theme, heart, color }: { theme: 'light' | 'dark'; heart: SocialCardProps['anim']['heart']; color: string }) {
+function LikeHeart({
+	theme,
+	heart,
+	color,
+}: {
+	theme: 'light' | 'dark';
+	heart: SocialCardProps['anim']['heart'];
+	color: string;
+}) {
 	const size = 20;
 	const box: CSSProperties = { position: 'relative', width: size, height: size, margin: '-1px -2px 0' };
 	if (!heart) return <Glyph glyph={TIKTOK_GLYPHS.heartOutline} size={size} color={color} style={box} />;
@@ -216,6 +226,7 @@ function TikTokCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 					<div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2, minWidth: 0 }}>
 						<span
 							data-part="name"
+							data-template-param="displayName"
 							style={{
 								fontSize: 13,
 								lineHeight: '19.5px',
@@ -295,7 +306,12 @@ function TikTokCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 									{formatCount(p.variant, anim.likes, 'likes')}
 								</span>
 							</div>
-							<Glyph glyph={TIKTOK_GLYPHS.dislike} size={17} color={theme.icons} style={{ margin: '0 -0.7px' }} />
+							<Glyph
+								glyph={TIKTOK_GLYPHS.dislike}
+								size={17}
+								color={theme.icons}
+								style={{ margin: '0 -0.7px' }}
+							/>
 						</div>
 					</div>
 					{replies ? (

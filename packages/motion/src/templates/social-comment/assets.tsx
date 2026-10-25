@@ -1,7 +1,8 @@
 // Pictures and emoji of the social-comment cards: the touch points with the template media params (contract C1:
 // `mediaUrls`, `TemplateImage`) and the remote emoji packs (contract C2: `emojiUrls`, `EmojiImage`, `splitEmoji`).
-// Every card draws avatars and emoji through these two components, so the cards never depend on how the URLs arrive.
+// Every card draws avatars and emoji through these components, so the cards never depend on how the URLs arrive.
 import type { CSSProperties, ReactNode } from 'react';
+import { TemplateImage } from '../image.tsx';
 import type { SocialCardAssets } from './contract.ts';
 
 /** URLs of the clip's media / emoji (props of the anime template; empty when the clip references none). */
@@ -10,36 +11,24 @@ export function socialAssetUrls(props: {
 	emojiUrls?: Readonly<Record<string, string>>;
 	imageUrls?: Readonly<Record<string, string>>;
 }): Pick<SocialCardAssets, 'mediaUrls' | 'emojiUrls' | 'imageUrls'> {
-	return { mediaUrls: props.mediaUrls ?? {}, emojiUrls: props.emojiUrls ?? {}, imageUrls: props.imageUrls ?? {} };
+	return {
+		mediaUrls: props.mediaUrls ?? {},
+		emojiUrls: props.emojiUrls ?? {},
+		imageUrls: props.imageUrls ?? {},
+	};
 }
 
-/** The visible stand-in of a picture that is missing (offline media): a neutral dashed disc, never transparent. */
-function MissingPicture({ style }: { style?: CSSProperties }) {
-	return (
-		<div
-			data-social-avatar="missing"
-			aria-hidden="true"
-			style={{
-				boxSizing: 'border-box',
-				background: 'rgba(128, 128, 128, 0.45)',
-				border: '2px dashed rgba(255, 255, 255, 0.7)',
-				...style,
-			}}
-		/>
-	);
-}
-
-/** An avatar picture (`mediaUrls[mediaId]`); a missing one draws a visible placeholder. */
+/**
+ * An avatar picture (`mediaUrls[mediaId]`) through `TemplateImage` (contract C1): the render waits until it is
+ * decoded; a missing or unreadable medium draws `TemplateImage`'s visible placeholder in the avatar's circle.
+ */
 export function AvatarPicture(p: { src: string | undefined; style: CSSProperties; fallback?: ReactNode }) {
-	if (!p.src) return <>{p.fallback ?? <MissingPicture style={p.style} />}</>;
 	return (
-		<img
+		<TemplateImage
 			src={p.src}
-			alt=""
-			crossOrigin="anonymous"
-			draggable={false}
-			data-social-avatar="media"
-			style={{ display: 'block', objectFit: 'cover', ...p.style }}
+			style={{ objectFit: 'cover', ...p.style }}
+			{...(p.fallback ? { fallback: p.fallback } : {})}
+			data-testid="social-avatar-media"
 		/>
 	);
 }
@@ -68,7 +57,12 @@ export function splitEmojiPieces(text: string): EmojiPiece[] {
 }
 
 /** One emoji grapheme as an image of the clip's pack, `size` px square. */
-export function EmojiGlyph(p: { grapheme: string; size: number; assets: SocialCardAssets; style?: CSSProperties }) {
+export function EmojiGlyph(p: {
+	grapheme: string;
+	size: number;
+	assets: SocialCardAssets;
+	style?: CSSProperties;
+}) {
 	const url = p.assets.emojiUrls[`${p.assets.emojiPack}:${p.grapheme}`];
 	if (!url)
 		return (
