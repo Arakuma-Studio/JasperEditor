@@ -38,6 +38,7 @@ import {
 	vecComponent,
 } from '../lib/model.ts';
 import type { InspectorOps } from '../lib/ops.ts';
+import { applyTemplateParamPatch, clipParams } from '../lib/template-params.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from './fields.tsx';
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { MediaParamPicker } from './MediaParamPicker.tsx';
@@ -367,23 +368,39 @@ export function PropertyRow(props: {
 		if (customControl) {
 			const first = row.bindings[0]!;
 			const { mixed, value } = shown();
-			const clipIds = row.bindings.map((b) => b.clip.id).join(',');
+			const clips = row.bindings.map((b) => b.clip);
+			const clipIds = clips.map((c) => c.id);
 			return (
 				<TemplateParamControlHost
 					def={customControl}
 					clipId={first.clip.id}
 					paramName={spec.key.slice('params.'.length)}
 					value={mixed ? first.resolved.value : value}
-					params={(first.clip as { params?: Record<string, unknown> }).params ?? {}}
+					params={clipParams(first.clip)}
 					disabled={readOnly}
+					clipIds={clipIds}
+					mixed={mixed}
 					onChange={(next, opts) => {
 						const plan = planSet(row, live(), () => next);
-						apply(
+						report(plan.skipped);
+						if (plan.commands.length === 0) return plan.skipped.length === 0;
+						const r = ctx.ops.apply(
+							label,
 							plan.commands,
-							plan.skipped,
-							opts?.coalesce ? { coalesceKey: `template-param:${row.id}:${clipIds}` } : undefined,
+							opts?.coalesce ? { coalesceKey: `template-param:${row.id}:${clipIds.join(',')}` } : undefined,
 						);
+						return r?.ok === true;
 					}}
+					onChangeParams={(patch, opts) =>
+						applyTemplateParamPatch(
+							{ doc: ctx.doc, seq: ctx.seq, ops: ctx.ops, frame: live, hint: ctx.hint },
+							clips,
+							session?.ctx.registries.mgTemplates,
+							patch,
+							label,
+							opts,
+						)
+					}
 				/>
 			);
 		}
@@ -490,6 +507,10 @@ export function PropertyRow(props: {
 	};
 	const canReset = spec.defaultValue !== undefined && row.bindings.some((b) => b.path !== null);
 	const ec = ctx.mode === 'effectControls';
+	// WP7a: a custom control with `layout: 'block'` is drawn under the label row across the panel width.
+	const block = !props.editor && customControl?.layout === 'block';
+	const focusRow = () =>
+		inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id });
 
 	return (
 		<Fragment>
@@ -498,20 +519,12 @@ export function PropertyRow(props: {
 				className={cx(
 					'group flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1',
 					props.indent ? (ctx.mode === 'effectControls' ? 'pl-[3px]' : 'pl-5') : 'pl-2',
-					spec.ui.multiline && 'items-start py-1',
+					spec.ui.multiline && !block && 'items-start py-1',
 					props.className,
 				)}
 				data-row={row.id}
-				onPointerDownCapture={() =>
-					inspectorFocus.set({
-						source: ctx.mode,
-						clipIds: row.bindings.map((b) => b.clip.id),
-						rowId: row.id,
-					})
-				}
-				onFocusCapture={() =>
-					inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id })
-				}
+				onPointerDownCapture={focusRow}
+				onFocusCapture={focusRow}
 			>
 				{ec && props.indent ? (
 					<span className="flex w-[13px] shrink-0 justify-center">
@@ -565,7 +578,7 @@ export function PropertyRow(props: {
 					data-expression={rx?.expression ? (exprActive ? 'active' : 'inactive') : undefined}
 					title={exprActive ? 'Value set by an expression' : undefined}
 				>
-					{editor}
+					{block ? null : editor}
 				</span>
 				{animatable && (!ec || anim !== 'none') ? (
 					<span className="flex shrink-0 items-center">
@@ -617,6 +630,16 @@ export function PropertyRow(props: {
 					) : null}
 				</span>
 			</div>
+			{block ? (
+				<div
+					className={cx('flex min-w-0 pr-1 pb-1', props.indent && !ec ? 'pl-5' : 'pl-2', outside && 'opacity-60')}
+					data-row-block={row.id}
+					onPointerDownCapture={focusRow}
+					onFocusCapture={focusRow}
+				>
+					{editor}
+				</div>
+			) : null}
 			{ec && rx?.expression ? (
 				<ExpressionRow
 					doc={ctx.doc}
