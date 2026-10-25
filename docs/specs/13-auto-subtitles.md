@@ -176,5 +176,40 @@ animation, words-per-line, emoji.
   maps; report how often our captions start on the user's cut frames vs the user's own (target ≥ 95 % of cuts with
   speech within 0.5 s get a caption start on the cut; 0 captions across a cut).
 
-## 4. Export architecture (filled in from the textperf measurements)
-Pending — see the ledger; this section is completed before implementation of AS-051 starts.
+## 4. Export architecture (from the textperf measurements, 2026-10-25)
+
+Measured on the build VM (16 shared vCPU, 30 GB, no GPU; private `research/textperf`): the hybrid composite opens one
+ffmpeg input per text clip — ≈ 205–230 MB RSS per animated caption, ≈ 40 MB per static one, throughput 242 fps at 99
+inputs → 17 fps at 1,000; 99 animated captions peak at 19–25 GB, 240 were OOM-killed at a 22 GB cap, 1,000 would need
+≈ 220 GB. Each caption is its own Remotion render (static ≈ 3.4 s, almost all fixed setup; animated ≈ 8.1–8.5 s, 6 in
+flight). Short (99 captions): no text 29 s / 1.3 GB; static 97 s / 10.8 GB; pop 183 s / 19 GB; pop + 22 S_Shake 194 s /
+25 GB; forced Remotion 365 s / 10.9 GB. Long 2-min slice (240 captions): only the Remotion path finishes (843 s, 8.3 GB
+→ ≈ 63 min for 9 min). Caption-track items and nests don't help (same per-item bakes). One run killed the engine
+process itself mid-export (crash path). Prototype without code changes: bake the pop as a still and let the native
+path draw the scale keys → short exports in 34.5 s (5.3× faster, +19 % over no text); one Remotion render for all
+distinct stills: 99 captions in 9.6 s instead of ≈ 60 s. Preview with 1,080 captions in headless software Chrome:
+7.5 → 2.6 fps (single noisy runs).
+
+- AS-070 **Still + native motion**: text clips whose animation is expressible as Motion/Opacity transforms (scale,
+  position, rotation, opacity keys incl. the pop-in) and whose content is static are baked once as a still (cropped
+  tightly to the glyphs + stroke + shadow extent, not the current wide margin) and composited natively with their
+  keyframed transform by the existing native motion kernel. Pixel parity with preview within the AGENTS §4 tolerances
+  (test per template).
+- AS-071 **Batched still rendering**: all distinct stills of an export are rendered in as few Remotion renders as
+  possible (one page renders many stills; identical content + style shares one still across clips).
+- AS-072 **Bounded composite memory**: memory must scale with what is on screen, not with the clip count: one native
+  input stream per text track (an image sequence / concatenated stills timed to the track) or a composite split into
+  time windows containing only the clips visible in each window. Target peak RSS ≤ 6 GB for a 10-minute 1080p export
+  with 1,200 animated subtitles on the build VM (measure).
+- AS-073 **Shake**: S_Shake without motion blur and RGB split is converted to deterministic per-frame transforms (same
+  seed rules as the shader) and composited natively; otherwise shaken clips of a track are batched into one render per
+  track. Parity test vs the shader.
+- AS-074 **Preflight and robustness**: the planner estimates composite memory and routes or refuses with a named
+  blocker before starting a composite that can't fit; ffmpeg OOM/kill becomes a job error, never an engine crash
+  (find and fix the measured engine-killed path; regression test with a memory-capped child).
+- AS-075 **Preview**: the Program monitor mounts only text clips within a window around the playhead (and caches
+  rasterised stills of static subtitles), so playback with 1,200 subtitles stays within 10 % of the video-only frame
+  rate on the build VM's headless Chrome (measure; record conditions).
+- AS-076 **Targets** (build VM, measured before/after in the wp-note): short with 99 Pixel Pop subtitles ≤ 1.3× the
+  no-text export time; 9-minute long-form with 1,080 subtitles ≤ 10 minutes and ≤ 6 GB peak RSS on every export path
+  the planner chooses; second export with a warm cache ≤ the no-text time + 20 %.
