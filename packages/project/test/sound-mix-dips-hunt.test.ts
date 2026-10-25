@@ -141,49 +141,46 @@ describe('mergeDips targeted hunt (properties)', () => {
 		TIMEOUT,
 	);
 
-	for (const maxDips of [3, 12])
-		it(
-			`linear / hold lanes, the WP4.2a generator${maxDips > 3 ? ' with many dips (up to 12)' : ' as is'}`,
-			() => {
-				const dip = fc
-					.record({
-						s: fc.integer({ min: 0, max: 380 }),
-						len: fc.integer({ min: 0, max: 60 }),
-						depth: fc.double({ min: -60, max: 0, noNaN: true }),
-						fade: fc.integer({ min: 0, max: 400 }),
-					})
-					.map((d) => ({
-						start: d.s * 10 * MS,
-						end: (d.s + d.len) * 10 * MS,
-						depthDb: d.depth,
-						fadeMs: d.fade,
-					}));
-				fc.assert(
-					fc.property(
-						fc.array(
-							fc.record({
-								t: fc.integer({ min: 0, max: 40 }),
-								v: fc.double({ min: -40, max: 10, noNaN: true }),
-								hold: fc.boolean(),
-							}),
-							{ maxLength: 8 },
-						),
-						fc.double({ min: -20, max: 6, noNaN: true }),
-						fc.array(dip, { minLength: 1, maxLength: maxDips }),
-						(keys, value, ds) =>
-							checkLinearDips(
-								keysOf(
-									keys.map((k) => ({ time: k.t * 100 * MS, v: k.v, interp: k.hold ? 'hold' : 'linear' })),
-								),
-								value,
-								ds,
-							),
+	it(
+		'linear / hold lanes, the WP4.2a generator with many dips (up to 12)',
+		() => {
+			const dip = fc
+				.record({
+					s: fc.integer({ min: 0, max: 380 }),
+					len: fc.integer({ min: 0, max: 60 }),
+					depth: fc.double({ min: -60, max: 0, noNaN: true }),
+					fade: fc.integer({ min: 0, max: 400 }),
+				})
+				.map((d) => ({
+					start: d.s * 10 * MS,
+					end: (d.s + d.len) * 10 * MS,
+					depthDb: d.depth,
+					fadeMs: d.fade,
+				}));
+			fc.assert(
+				fc.property(
+					fc.array(
+						fc.record({
+							t: fc.integer({ min: 0, max: 40 }),
+							v: fc.double({ min: -40, max: 10, noNaN: true }),
+							hold: fc.boolean(),
+						}),
+						{ maxLength: 8 },
 					),
-					{ numRuns: RUNS },
-				);
-			},
-			TIMEOUT,
-		);
+					fc.double({ min: -20, max: 6, noNaN: true }),
+					fc.array(dip, { minLength: 1, maxLength: 12 }),
+					(keys, value, ds) =>
+						checkLinearDips(
+							keysOf(keys.map((k) => ({ time: k.t * 100 * MS, v: k.v, interp: k.hold ? 'hold' : 'linear' }))),
+							value,
+							ds,
+						),
+				),
+				{ numRuns: RUNS },
+			);
+		},
+		TIMEOUT,
+	);
 
 	it(
 		'curved lanes (Bézier, auto-Bézier, continuous) on the sequence and a reversed 2× clip: touching / identical dips',

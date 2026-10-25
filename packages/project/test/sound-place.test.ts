@@ -112,7 +112,7 @@ describe('peakAlignedStart (spec 12 §2.3)', () => {
 			expect(r.ok, JSON.stringify(b)).toBe(false);
 			if (!r.ok) expect(r.code).toBe('E_INVALID_PARAM');
 		}
-		expect(peakAlignedStart(null as never).ok).toBe(false);
+		expect(peakAlignedStart(null as never)).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
 	});
 
 	const fpsArb = fc.oneof(

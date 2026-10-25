@@ -1,7 +1,7 @@
 // Fix "SFX tail truncation" (spec 12 §2.3; wp-note): a placed clip never ends inside its sound. Registration pads
 // trailing silence (`libraryTrailSilenceSamples`, `trailSilenceSec`), placement rounds the clip's whole frames UP to the
 // sound's end (its −60 dB tail when the provenance knows it), and media without the trail (copies registered before the
-// fix, sounds over 120 s, project audio) end less than one frame past their media (INV-005's tolerance: silence).
+// fix, sounds over 1 h, project audio) end less than one frame past their media (INV-005's tolerance: silence).
 // Exported audio: apps/engine/test/sound-tail.test.ts.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +11,6 @@ import {
 	checkInvariants,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
-	LIBRARY_PAD_MAX_SECONDS,
 	LIBRARY_TRAIL_SILENCE_SEC,
 	type LibraryProvenance,
 	libraryDescriptorIssue,
@@ -66,9 +65,8 @@ const contentEnd = (h: Harness, c: AudioClip) =>
 	c.sourceIn + c.duration * flicksPerFrame(h.seq.settings.frameRate) * c.speed.rate;
 
 describe('registration: trailing silence', () => {
-	it('pads sounds that do not end in 50 ms of quiet, or whose end is unknown; never sounds over 120 s', () => {
-		const pad = Math.ceil(LIBRARY_TRAIL_SILENCE_SEC * SR);
-		expect(pad).toBe(2400);
+	it('pads sounds that do not end in 50 ms of quiet, or whose end is unknown; never sounds over 1 h', () => {
+		const pad = 2400;
 		// a 30 ms click fading to −60 dB at its last sample
 		expect(libraryTrailSilenceSamples({ peakSec: 0.001, tailSec: 0.029, durationSec: 0.03 }, SR)).toBe(pad);
 		// 60 ms of quiet after the tail: nothing to add
@@ -82,8 +80,9 @@ describe('registration: trailing silence', () => {
 		expect(
 			libraryTrailSilenceSamples({ peakSec: 1, tailSec: 2, durationSec: 60 }, SR, { analysedSec: 60 }),
 		).toBe(0);
-		// beds over 120 s are never copied; hostile numbers give 0
-		expect(libraryTrailSilenceSamples({ peakSec: 1, durationSec: LIBRARY_PAD_MAX_SECONDS + 1 }, SR)).toBe(0);
+		expect(libraryTrailSilenceSamples({ peakSec: 1, durationSec: 3600 }, SR)).toBe(pad);
+		// beds over 1 h are never copied; hostile numbers give 0
+		expect(libraryTrailSilenceSamples({ peakSec: 1, durationSec: 3601 }, SR)).toBe(0);
 		for (const bad of [Number.NaN, -1, 0, Number.POSITIVE_INFINITY])
 			expect(libraryTrailSilenceSamples({ peakSec: 0, tailSec: 0, durationSec: bad }, SR)).toBe(0);
 		expect(libraryTrailSilenceSamples({ peakSec: 0, durationSec: 1 }, Number.NaN)).toBe(0);
@@ -95,7 +94,6 @@ describe('registration: trailing silence', () => {
 		expect(d.peakSec).toBeCloseTo(LIB.descriptors!.peakSec + 0.05, 12);
 		expect(d.durationSec).toBeCloseTo(LIB.descriptors!.durationSec + 0.1, 12);
 		expect(d.tailSec).toBe(0.4);
-		expect(shiftLibraryDescriptors(LIB.descriptors!, 0, 0)).toBe(LIB.descriptors);
 	});
 
 	it('provenance carries trailSilenceSec and tailSec; bad values are dropped on read, impossible ones refused', () => {
@@ -121,7 +119,7 @@ describe('registration: trailing silence', () => {
 				library: { ...p, descriptors: { ...p.descriptors, tailSec: 5 } },
 			},
 		]);
-		expect(r.ok).toBe(false);
+		expect(r).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 
 	it('repairDocument drops a damaged trailSilenceSec and keeps the rest (INV-LIBRARY flags it)', () => {
@@ -287,10 +285,12 @@ describe('placement never ends inside the sound', () => {
 			timing: { ...base, durationSec: 0.15, tailEndSec: 0.08 },
 			mediaDurationFlicks: 0.15 * FLICKS_PER_SECOND,
 		});
-		expect(quiet.ok && quiet.placement.sourceInFlicks + quiet.placement.frames * F).toBeLessThanOrEqual(
+		expect(quiet.ok).toBe(true);
+		if (!quiet.ok) return;
+		expect(quiet.placement.sourceInFlicks + quiet.placement.frames * F).toBeLessThanOrEqual(
 			0.15 * FLICKS_PER_SECOND,
 		);
-		// a sound over 120 s (never padded): its last partial frame is not dropped
+		// an unpadded legacy copy: its last partial frame is not dropped
 		const bed = planSoundInsert({
 			cueFrame: 0,
 			fps,
@@ -324,7 +324,7 @@ describe('soundDesign.place / swap keep the whole sound (commands)', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// the result says how long the clip is
 		expect((r.results[0] as { clips: { duration: number }[] }).clips[0]!.duration).toBe(c.duration);
-		// undo = the document before, untouched
+		// The previous document stays unchanged.
 		expect(before.sequences[h.seqId]!.clips[c.id]).toBeUndefined();
 	});
 

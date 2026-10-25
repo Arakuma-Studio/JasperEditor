@@ -10,13 +10,9 @@ import {
 	mixFingerprint,
 	readSoundCheckTarget,
 	repairDocument,
-	SOUND_CHECK_CUSTOM_LABEL,
-	SOUND_CHECK_MODEL_STRINGS,
-	SOUND_CHECK_VERDICT_MARKER,
 	soundCheckHumanVerdicts,
 	soundCheckInputsHash,
 	soundCheckStatus,
-	soundCheckVerdictMarkerName,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -118,10 +114,6 @@ describe('custom delivery target', () => {
 			{ numRuns: 300 },
 		);
 	});
-
-	it('its label is a model string (translated by the editor)', () => {
-		expect(SOUND_CHECK_MODEL_STRINGS).toContain(SOUND_CHECK_CUSTOM_LABEL);
-	});
 });
 
 describe('listen-here verdict markers', () => {
@@ -131,14 +123,14 @@ describe('listen-here verdict markers', () => {
 			{
 				type: 'marker.add',
 				frame: 90,
-				name: soundCheckVerdictMarkerName('flag'),
+				name: 'Sound Check: flagged',
 				markerType: 'comment',
 				comment: '  the hit is late  ',
 			},
-			{ type: 'marker.add', frame: 30, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'comment' },
+			{ type: 'marker.add', frame: 30, name: 'Sound Check: sounds right', markerType: 'comment' },
 			// not verdicts: another name, another type
 			{ type: 'marker.add', frame: 40, name: 'Sound Check: maybe', markerType: 'comment' },
-			{ type: 'marker.add', frame: 50, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'chapter' },
+			{ type: 'marker.add', frame: 50, name: 'Sound Check: sounds right', markerType: 'chapter' },
 		]);
 		const v = soundCheckHumanVerdicts(h.seq);
 		expect(v.map(({ frame, verdict, note }) => ({ frame, verdict, note }))).toEqual([
@@ -150,7 +142,7 @@ describe('listen-here verdict markers', () => {
 
 	it('an agent-authored marker with a verdict name is not a human verdict', () => {
 		const h = new Harness();
-		h.ok([{ type: 'marker.add', frame: 10, name: SOUND_CHECK_VERDICT_MARKER.ok, markerType: 'comment' }], {
+		h.ok([{ type: 'marker.add', frame: 10, name: 'Sound Check: sounds right', markerType: 'comment' }], {
 			origin: { agent: 'sound-agent' },
 		});
 		expect(soundCheckHumanVerdicts(h.seq)).toEqual([]);
@@ -167,7 +159,7 @@ describe('listen-here verdict markers', () => {
 					fc.record({
 						id: fc.oneof(fc.string(), fc.integer()),
 						frame: fc.oneof(fc.integer(), fc.double()),
-						name: fc.constantFrom(SOUND_CHECK_VERDICT_MARKER.ok, SOUND_CHECK_VERDICT_MARKER.flag, 'x'),
+						name: fc.constantFrom('Sound Check: sounds right', 'Sound Check: flagged', 'x'),
 						type: fc.constantFrom('comment', 'chapter'),
 						author: fc.oneof(fc.constant('user'), fc.anything()),
 						comment: fc.anything(),

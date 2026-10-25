@@ -338,14 +338,6 @@ export function soundCheckAudioKey(v: unknown): string {
 	return `${a.codec}/${a.bitrateKbps ?? 'default'}${a.sampleRate ? `@${a.sampleRate}` : ''}`;
 }
 
-/** The English label of a Sound Check encoding (the editor translates it): "AAC 256 kb/s", "PCM / master". */
-export function soundCheckAudioLabel(v: unknown): string {
-	const a = readSoundCheckAudio(v);
-	if (!a) return 'PCM / master';
-	if (a.codec === 'pcm') return `PCM ${a.sampleRate! / 1000} kHz`;
-	return `${a.codec === 'aac' ? 'AAC' : 'Opus'}${a.bitrateKbps ? ` ${a.bitrateKbps} kb/s` : ''}`;
-}
-
 /**
  * A custom delivery target a check can be run against instead of a preset's numbers (the Sound Check panel's
  * "Custom…", MCP `sound_check {target}`; wp-note "Phase 5 → WP5.2"): integrated loudness and true-peak ceiling.

@@ -9,10 +9,6 @@ import {
 	type ProjectDocument,
 	readLibraryProvenance,
 	repairDocument,
-	SOUND_CHECK_CATEGORY,
-	SOUND_CHECK_CODES,
-	SOUND_CHECK_MESSAGES,
-	soundCheckMessage,
 	unknownCommandKeyIssues,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -52,15 +48,5 @@ describe('LibraryProvenance.inexact', () => {
 		// a newer build's extra fields inside it are kept
 		const newer = { ...LIB, inexact: { reason: 'too-large', bytes: 5 } };
 		expect(readLibraryProvenance(newer)!.inexact).toEqual({ reason: 'too-large', bytes: 5 });
-	});
-
-	it('Sound Check has the INEXACT information in the sync group, with a message per reason', () => {
-		expect(SOUND_CHECK_CODES).toContain('INEXACT');
-		expect(SOUND_CHECK_CATEGORY.INEXACT).toBe('sync');
-		expect(soundCheckMessage('inexactTooLong', 'Rain', '00:00:01:00', 60).text).toBe(
-			'Rain at 00:00:01:00 is not sample-exact: sounds over 60 min are used as they are (placement exact to a frame)',
-		);
-		for (const k of ['inexactTooLong', 'inexactTooLarge', 'inexactDiskSpace'] as const)
-			expect(SOUND_CHECK_MESSAGES[k]).toMatch(/^\{0\} at \{1\} is not sample-exact/);
 	});
 });

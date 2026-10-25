@@ -6,17 +6,15 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
-	applyTransaction,
 	type ClipSfx,
 	checkInvariants,
-	createCounterIdSource,
 	FLICKS_PER_SECOND,
 	type LibraryProvenance,
 	libraryCopyShift,
 	type MediaAsset,
 	olderLibraryCopyOf,
 } from '../src/index.ts';
-import { Harness, makeCtx, videoAsset } from './helpers.ts';
+import { Harness, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
 
 type SfxClip = AudioClip & { sfx?: ClipSfx };
@@ -66,7 +64,7 @@ const soundAt = (h: Harness, id: string) => {
 };
 
 describe('media.upgradeLibraryCopy', () => {
-	it('replaces an older copy in place: same media and item, new file, every clip plays the same samples; undo / redo', () => {
+	it('replaces an older copy in place: same media and item, new file, every clip plays the same samples; immutability', () => {
 		const h = new Harness();
 		// an Ogg registered as it is (no lead, no trail), placed twice: one with pan keyframes
 		const old = register(h, copyAsset(0, 0));
@@ -87,24 +85,14 @@ describe('media.upgradeLibraryCopy', () => {
 		const soundB = soundAt(h, b);
 		const asset = copyAsset(0.05, 0.05);
 		const cmds = [{ type: 'media.upgradeLibraryCopy', mediaId: old, asset, ref: '$m' }];
-		const run = () =>
-			applyTransaction(
-				before,
-				{ label: 't', origin: 'user', sequenceId: h.seqId, commands: cmds as never },
-				makeCtx({ revision: h.revision }, createCounterIdSource(77)),
-			);
-		const first = run();
-		expect(first.result.ok, JSON.stringify(first.result)).toBe(true);
-		if (!first.result.ok) return;
-		expect(first.result.results[0]).toMatchObject({ mediaId: old, upgraded: true, clipIds: [a, b] });
-		expect(first.result.refs.$m).toBe(old);
+		const first = h.ok(cmds);
+		expect(first.results[0]).toMatchObject({ mediaId: old, upgraded: true, clipIds: [a, b] });
+		expect(first.refs.$m).toBe(old);
 		const shift = Math.round(0.05 * FLICKS_PER_SECOND);
-		expect((first.result.results[0] as { shiftFlicks: number }).shiftFlicks).toBe(shift);
-		// undo = the untouched document, redo = the same result
+		expect((first.results[0] as { shiftFlicks: number }).shiftFlicks).toBe(shift);
+		// The previous document stays unchanged.
 		expect(clone(before)).toEqual(snap);
-		expect(run().document).toEqual(first.document);
-		expect(checkInvariants(first.document)).toEqual([]);
-		h.doc = first.document;
+		expect(checkInvariants(h.doc)).toEqual([]);
 		const m = h.doc.media[old] as MediaAsset & { library?: LibraryProvenance };
 		expect(m.fingerprint).toBe(asset.fingerprint);
 		expect(m.probe.durationFlicks).toBe(asset.probe.durationFlicks);

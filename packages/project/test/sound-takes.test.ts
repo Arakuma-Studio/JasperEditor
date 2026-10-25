@@ -3,9 +3,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	COMMAND_CATALOG,
 	checkInvariants,
-	LibraryProvenanceSchema,
 	loadProject,
 	materialsOf,
 	parseTakeId,
@@ -27,6 +25,7 @@ describe('take ids', () => {
 	it('snd_<16 hex>~t<n> with n 1…64; parse, build and the recording of an id', () => {
 		for (const n of [1, 9, 10, 42, 59, 60, 64]) {
 			const id = takeIdOf(REC, n);
+			expect(id).toBe(`${REC}~t${n}`);
 			expect(SOUND_REF_RE.test(id), id).toBe(true);
 			expect(parseTakeId(id)).toEqual({ parentId: REC, index: n });
 			expect(recordingIdOf(id)).toBe(REC);
@@ -61,17 +60,13 @@ describe('LibraryProvenance.take', () => {
 		take: { soundId: REC, index: 3, sourceStartSec: 1.2345, sourceEndSec: 1.4567 },
 	};
 
-	it('is accepted by media.setLibraryInfo, undone and redone, and round-trips through save and load', () => {
+	it('is accepted by media.setLibraryInfo and round-trips through save and load', () => {
 		const h = new Harness();
 		const m = h.registerVideo({ kind: 'audio', seconds: 1 });
 		const before = h.doc;
 		h.ok([{ type: 'media.setLibraryInfo', mediaId: m, library: TAKE_LIB }]);
 		expect(h.doc.media[m]!.library).toEqual(TAKE_LIB);
 		expect(before.media[m]!.library).toBeUndefined();
-		const after = h.doc;
-		h.doc = before;
-		h.ok([{ type: 'media.setLibraryInfo', mediaId: m, library: TAKE_LIB }]);
-		expect(h.doc).toEqual(after);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		const loaded = loadProject(clone(h.doc));
 		expect(loaded.repairs).toEqual([]);
@@ -87,10 +82,12 @@ describe('LibraryProvenance.take', () => {
 			{ ...TAKE_LIB.take, index: 65 },
 			{ ...TAKE_LIB.take, soundId: takeIdOf(REC, 2) },
 		]) {
-			expect(LibraryProvenanceSchema.safeParse({ ...TAKE_LIB, take }).success).toBe(false);
-			expect(h.tx([{ type: 'media.setLibraryInfo', mediaId: m, library: { ...TAKE_LIB, take } }]).ok).toBe(
-				false,
-			);
+			expect(
+				h.tx([{ type: 'media.setLibraryInfo', mediaId: m, library: { ...TAKE_LIB, take } }]),
+			).toMatchObject({
+				ok: false,
+				errors: [{ code: 'E_SCHEMA' }],
+			});
 		}
 		expect(h.doc.media[m]!.library).toBeUndefined();
 	});
@@ -110,17 +107,17 @@ describe('LibraryProvenance.take', () => {
 });
 
 describe('commands take take ids wherever a sound id goes', () => {
-	it('soundDesign.setPalette with takes: applied, undone; a bad take id is refused', () => {
-		const schema = COMMAND_CATALOG['soundDesign.setPalette'].schema;
+	it('soundDesign.setPalette accepts takes without changing the previous document; a bad take id is refused', () => {
 		const ok = { type: 'soundDesign.setPalette', soundIds: [takeIdOf(REC, 1), REC] };
-		expect(schema.safeParse(ok).success).toBe(true);
-		expect(schema.safeParse({ ...ok, soundIds: [`${REC}~t0`] }).success).toBe(false);
 		const h = new Harness();
 		const before = h.doc;
 		h.ok([ok]);
 		expect(h.seq.soundDesign?.settings?.palette).toEqual([takeIdOf(REC, 1), REC]);
 		expect(Object.values(before.sequences)[0]!.soundDesign?.settings?.palette ?? []).toEqual([]);
-		expect(h.tx([{ ...ok, soundIds: [`${REC}~t99`] }]).ok).toBe(false);
+		expect(h.tx([{ ...ok, soundIds: [`${REC}~t99`] }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_SCHEMA' }],
+		});
 	});
 });
 

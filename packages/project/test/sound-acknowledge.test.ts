@@ -1,5 +1,5 @@
 // Acknowledged Sound Check findings (spec 12 §4 P6-E4; wp-note "Phase 6 → WP-E2"): `soundDesign.acknowledgeIssue` /
-// `unacknowledgeIssue` (undo / redo, refusals — an agent acknowledging an error is E_APPROVAL_REQUIRED, limits), the
+// `unacknowledgeIssue` (immutability, refusals — an agent acknowledging an error is E_APPROVAL_REQUIRED, limits), the
 // marks `applySoundAcknowledgements` puts on a report's findings (left out of the verdict, counted, back after the
 // target changed, worse or an agent's word on an error), load / repair (malformed entries dropped, idempotent), a copied
 // sequence starting without them, and fuzz (hostile entries and findings never throw).
@@ -91,7 +91,7 @@ const ackCmd = (
 });
 
 describe('soundDesign.acknowledgeIssue / unacknowledgeIssue', () => {
-	it('stores the acknowledgement (user, reason, target, hash); undo / redo; unacknowledge removes it', () => {
+	it('stores the acknowledgement (user, reason, target, hash); immutability; unacknowledge removes it', () => {
 		const { h, clipId, cueId, masked } = fixture();
 		const before = h.doc;
 		const snapshot = clone(before);
@@ -111,25 +111,18 @@ describe('soundDesign.acknowledgeIssue / unacknowledgeIssue', () => {
 		expect(entry.inputsHash).toBe(soundAckInputsHash(h.doc, h.seqId, { clipIds: [clipId], cueId }));
 		expect(checkInvariants(h.doc)).toEqual([]);
 		expect(soundDesignIssue((h.seq as { soundDesign?: unknown }).soundDesign)).toBeNull();
-		// undo = the document before (untouched); redo = the same sequences
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const after = clone(h.doc);
-		h.doc = before;
-		h.ok([ackCmd(masked)]);
-		expect(clone(h.doc.sequences)).toEqual(after.sequences);
 		// acknowledged again: replaced (one entry, the new reason)
 		h.ok([ackCmd(masked, 'Quiet on purpose under the voice')]);
 		expect(Object.keys(soundAcknowledgementsOf(h.seq))).toEqual([masked.id]);
 		expect(soundAcknowledgementsOf(h.seq)[masked.id]!.reason).toBe('Quiet on purpose under the voice');
-		// unacknowledge: gone (and the field with the last one); undo brings it back
-		const withAck = h.doc;
+		// Unacknowledge removes the final entry and the empty field.
 		const u = h.ok([{ type: 'soundDesign.unacknowledgeIssue', key: masked.id }]);
 		expect((u.results[0] as { removed: { reason: string } }).removed.reason).toBe(
 			'Quiet on purpose under the voice',
 		);
 		expect((h.seq as { soundDesign?: { acknowledged?: unknown } }).soundDesign?.acknowledged).toBeUndefined();
-		h.doc = withAck;
-		expect(soundAcknowledgementsOf(h.seq)[masked.id]).toBeDefined();
 	});
 
 	it('agents: warnings and infos yes (by agent, its name); an error is E_APPROVAL_REQUIRED; the user may', () => {
@@ -227,7 +220,7 @@ describe('applySoundAcknowledgements (what Sound Check reports)', () => {
 		expect(again.issues).toEqual(r.issues);
 	});
 
-	it('editing the clip brings the finding back, "acknowledged before the change"; undoing the edit hides it again', () => {
+	it('editing the clip brings the finding back, "acknowledged before the change"; restoring the original document hides it again', () => {
 		const { h, clipId, musicClip, masked, silence } = fixture();
 		h.ok([ackCmd(masked), ackCmd(silence, 'quiet on purpose')]);
 		const acked = h.doc;

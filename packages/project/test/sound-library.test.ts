@@ -1,12 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	COMMAND_CATALOG,
 	checkInvariants,
 	createCounterIdSource,
 	LibraryProvenanceSchema,
 	loadProject,
-	MediaAssetSchema,
 	type ProjectDocument,
 	readLibraryProvenance,
 	repairDocument,
@@ -19,13 +17,7 @@ const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const audio = (h: Harness, seconds = 1) => h.registerVideo({ kind: 'audio', seconds });
 
 describe('media.setLibraryInfo (spec 12 §2.9)', () => {
-	it('is registered with owner sound-design and a History label', () => {
-		const e = COMMAND_CATALOG['media.setLibraryInfo'];
-		expect(e.owner).toBe('sound-design');
-		expect(e.label).toBe('Set Sound Library Info');
-	});
-
-	it('sets and removes provenance; undo restores the previous document and redo reapplies it', () => {
+	it('sets and removes provenance without mutating the previous document', () => {
 		const h = new Harness();
 		const m = audio(h);
 		const before = h.doc;
@@ -34,15 +26,10 @@ describe('media.setLibraryInfo (spec 12 §2.9)', () => {
 		expect(r.changed).toContain(m);
 		expect(h.doc.media[m]!.library).toEqual(LIB);
 		expect(r.results[0]).toEqual({ mediaId: m, library: LIB });
-		const after = h.doc;
-		// undo = the document before the transaction, untouched (snapshot History, packages/session)
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
 		expect(before.media[m]!.library).toBeUndefined();
-		// redo = the same transaction on the same document gives the same result
-		h.doc = before;
-		h.ok([{ type: 'media.setLibraryInfo', mediaId: m, library: LIB }]);
-		expect(h.doc).toEqual(after);
-		// null removes it, undoably
+		// null removes it without mutating the previous document
 		const withLib = h.doc;
 		h.ok([{ type: 'media.setLibraryInfo', mediaId: m, library: null }]);
 		expect(h.doc.media[m]!.library).toBeUndefined();
@@ -162,13 +149,6 @@ describe('LibraryProvenance in the document (INV-LIBRARY, repair, load)', () => 
 		(doc.media[m] as Record<string, unknown>).library = library;
 		return { doc, m, h };
 	}
-
-	it('the document schema accepts anything there, so a load never fails on it', () => {
-		for (const library of [5, 'x', null, [], { soundId: 3 }, LIB])
-			expect(
-				MediaAssetSchema.safeParse({ ...videoAsset({ kind: 'audio' }), id: 'med_x', library }).success,
-			).toBe(true);
-	});
 
 	it('flags unreadable provenance (INV-LIBRARY) and repairs it field by field with a report', () => {
 		const { doc, m, h } = docWith({

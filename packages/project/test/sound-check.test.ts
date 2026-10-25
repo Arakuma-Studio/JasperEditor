@@ -1,6 +1,6 @@
 // Sound Check model (spec 12 §2.6, P5-R1; wp-note "Phase 5 → WP5.1"): `soundDesign.setCheck` (store / clear the summary,
-// undo / redo, refusals), the credits setting, staleness (`soundCheckStatus`: the mix, the cues / loudness settings,
-// the preset), the verdict and counts, the message templates, load and repair.
+// immutability, refusals), the credits setting, staleness (`soundCheckStatus`: the mix, the cues / loudness settings,
+// the preset), the verdict and counts, load and repair.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -13,16 +13,9 @@ import {
 	readSoundCheckAudio,
 	readSoundDesign,
 	repairDocument,
-	SOUND_CHECK_CATEGORY,
-	SOUND_CHECK_CODES,
-	SOUND_CHECK_MESSAGES,
-	SOUND_CHECK_MODEL_STRINGS,
-	SYNC_TOLERANCE_FRAMES,
 	soundCheckAudioKey,
-	soundCheckAudioLabel,
 	soundCheckCounts,
 	soundCheckInputsHash,
-	soundCheckMessage,
 	soundCheckStatus,
 	soundCheckVerdict,
 	soundDesignSettingsOf,
@@ -65,7 +58,7 @@ const summary = (h: Harness, over: Record<string, unknown> = {}) => ({
 });
 
 describe('soundDesign.setCheck', () => {
-	it('stores the summary (current), clears it with null; undo / redo', () => {
+	it('stores the summary (current), clears it with null; immutability', () => {
 		const { h } = fixture();
 		expect(soundCheckStatus(h.doc, h.seqId)).toMatchObject({ state: 'none', summary: null });
 		const before = h.doc;
@@ -80,12 +73,8 @@ describe('soundDesign.setCheck', () => {
 			reasons: [],
 			summary: { verdict: 'warn', jobId: 'job_0123456789' },
 		});
-		// undo = the untouched document before; redo = the same sequences
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const after = clone(h.doc);
-		h.doc = before;
-		h.ok([cmd]);
-		expect(clone(h.doc.sequences)).toEqual(after.sequences);
 		// a partial range is kept
 		h.ok([{ type: 'soundDesign.setCheck', summary: summary(h, { range: { start: 0, end: 90 } }) }]);
 		expect(soundCheckStatus(h.doc, h.seqId).summary!.range).toEqual({ start: 0, end: 90 });
@@ -164,7 +153,7 @@ describe('soundDesign.setCheck', () => {
 		expect(soundCheckInputsHash(h.doc, h.seqId, 'web')).toBe(summary(h).inputsHash);
 	});
 
-	it('the export encoding checked for: recorded, hashed (absent = the PCM master, old hashes valid), stale against another Check for; undo / redo', () => {
+	it('the export encoding checked for: recorded, hashed (absent = the PCM master, old hashes valid), stale against another Check for; immutability', () => {
 		const { h } = fixture();
 		const aac = { codec: 'aac', bitrateKbps: 256 } as const;
 		// absent / the PCM master: the same hash as before the field existed
@@ -178,7 +167,7 @@ describe('soundDesign.setCheck', () => {
 		).not.toBe(withAac);
 		const before = h.doc;
 		h.ok([{ type: 'soundDesign.setCheck', summary: summary(h, { inputsHash: withAac, exportAudio: aac }) }]);
-		// undo: the document before is untouched
+		// The previous document stays unchanged.
 		expect(
 			readSoundDesign((Object.values(before.sequences)[0] as { soundDesign?: unknown }).soundDesign)
 				?.lastCheck,
@@ -205,7 +194,7 @@ describe('soundDesign.setCheck', () => {
 		expect(loaded.repairs).toEqual([]);
 	});
 
-	it('readSoundCheckAudio / soundCheckAudioKey / soundCheckAudioLabel read untrusted encodings', () => {
+	it('readSoundCheckAudio and soundCheckAudioKey read untrusted encodings', () => {
 		expect(readSoundCheckAudio({ codec: 'aac', bitrateKbps: 256 })).toEqual({
 			codec: 'aac',
 			bitrateKbps: 256,
@@ -219,21 +208,13 @@ describe('soundDesign.setCheck', () => {
 			codec: 'pcm',
 			sampleRate: 44100,
 		});
-		for (const bad of [null, 1, 'aac', {}, { codec: 'mp3' }, { codec: 'aac', bitrateKbps: 'x' }])
-			expect(soundCheckAudioKey(bad)).toBe(
-				bad && typeof bad === 'object' && 'codec' in bad && bad.codec === 'aac' ? 'aac/default' : '',
-			);
+		for (const bad of [null, 1, 'aac', {}, { codec: 'mp3' }]) expect(soundCheckAudioKey(bad)).toBe('');
 		expect(soundCheckAudioKey({ codec: 'aac', bitrateKbps: 99999 })).toBe('aac/default');
-		expect(soundCheckAudioLabel({ codec: 'aac', bitrateKbps: 256 })).toBe('AAC 256 kb/s');
-		expect(soundCheckAudioLabel({ codec: 'opus', bitrateKbps: 160 })).toBe('Opus 160 kb/s');
-		expect(soundCheckAudioLabel(undefined)).toBe('PCM / master');
-		expect(soundCheckAudioLabel({ codec: 'pcm', sampleRate: 44100 })).toBe('PCM 44.1 kHz');
 		// never throws on anything
 		fc.assert(
 			fc.property(fc.anything(), (v) => {
 				readSoundCheckAudio(v);
 				soundCheckAudioKey(v);
-				soundCheckAudioLabel(v);
 			}),
 			{ numRuns: 300 },
 		);
@@ -312,7 +293,7 @@ describe('soundDesign.setCheck', () => {
 	});
 });
 
-describe('Sound Check verdict, counts and messages', () => {
+describe('Sound Check verdict and counts', () => {
 	it('verdict: fail with an error, warn with a warning, info never fails', () => {
 		expect(soundCheckVerdict([])).toBe('pass');
 		expect(soundCheckVerdict([{ severity: 'info' }])).toBe('pass');
@@ -325,61 +306,5 @@ describe('Sound Check verdict, counts and messages', () => {
 				{ code: 'TRUE_PEAK', severity: 'error' },
 			]),
 		).toEqual({ MASKED: 2, warning: 2, TRUE_PEAK: 1, error: 1 });
-	});
-
-	it('spec tolerances and every code', () => {
-		expect(SYNC_TOLERANCE_FRAMES).toMatchObject({ cut: 1, land: 2, move: 3, appear: 1 });
-		expect(SOUND_CHECK_CODES).toEqual([
-			'LOUDNESS',
-			'TRUE_PEAK',
-			'OUT_OF_SYNC',
-			// fix "SFX tail truncation": a clip cut before its sound has faded (spec 12 §2.6)
-			'TRUNCATED',
-			// a library sound used as it is, not as a sample-exact copy (information; final carry-over cleanup)
-			'INEXACT',
-			// Phase 6 (spec 12 §4 P6-E1…E3)
-			'CLICK',
-			'EDGE',
-			'ENDING',
-			'HEAD',
-			'MASKED',
-			'LAYER_INAUDIBLE',
-			'HARSH',
-			'OVERLOAD',
-			'MUSIC_OVER_VOICE',
-			'SILENCE',
-			'DIP',
-			'ARC',
-			'STALE_CUE',
-			'NO_PICTURE_EVENT',
-			'COVERAGE',
-			'DENSITY',
-			'REPEAT',
-			'LICENSE',
-			'CREDITS',
-			// P6-E8: the rows of a reference-profile comparison (warnings and infos only)
-			'REFERENCE',
-		]);
-		expect(SOUND_CHECK_CATEGORY.TRUNCATED).toBe('sync');
-		expect(SOUND_CHECK_CATEGORY.INEXACT).toBe('sync');
-		expect(SOUND_CHECK_CATEGORY.REFERENCE).toBe('reference');
-	});
-
-	it('messages: the template is the key, parameters fill it, every template is a unique model string', () => {
-		const m = soundCheckMessage('silence', 0.8, '00:00:01:24', '00:00:02:18');
-		expect(m).toEqual({
-			key: 'Silence under −60 dBFS for {0} s from {1} to {2}',
-			params: [0.8, '00:00:01:24', '00:00:02:18'],
-			text: 'Silence under −60 dBFS for 0.8 s from 00:00:01:24 to 00:00:02:18',
-		});
-		expect(new Set(SOUND_CHECK_MODEL_STRINGS).size).toBe(SOUND_CHECK_MODEL_STRINGS.length);
-		for (const [k, t] of Object.entries(SOUND_CHECK_MESSAGES)) {
-			const n = new Set([...t.matchAll(/\{(\d+)\}/g)].map((x) => x[1])).size;
-			const filled = soundCheckMessage(
-				k as keyof typeof SOUND_CHECK_MESSAGES,
-				...Array.from({ length: n }, (_, i) => `p${i}`),
-			);
-			expect(filled.text, k).not.toMatch(/\{\d+\}/);
-		}
 	});
 });

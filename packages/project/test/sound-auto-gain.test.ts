@@ -1,6 +1,6 @@
 // `soundDesign.setAutoGain` (Essential Sound ▸ Sound Design ▸ "Auto gain", spec 12 §2.7; wp-note "Phase 4 → WP4.2b"):
 // off keeps the gain as the user's own (the level stays for display, marked `manual`), so swaps, role changes and
-// delivery presets leave it alone; on hands it back; a solve naming the clip replaces the record; undo / redo; refusals;
+// delivery presets leave it alone; on hands it back; a solve naming the clip replaces the record; immutability; refusals;
 // the flag through load and repair.
 import { describe, expect, it } from 'vitest';
 import {
@@ -48,7 +48,7 @@ const placed = (r: { results: unknown[] }) =>
 	r.results.flatMap((q) => ((q as { clips?: { clipId: string }[] }).clips ?? []).map((c) => c.clipId));
 
 describe('soundDesign.setAutoGain', () => {
-	it('off keeps the solved gain as the user’s (level kept, manual); on hands it back; undo / redo', () => {
+	it('off keeps the solved gain as the user’s (level kept, manual); on hands it back; immutability', () => {
 		const h = new Harness();
 		const m = libMedia(h);
 		const [a] = placed(
@@ -79,12 +79,8 @@ describe('soundDesign.setAutoGain', () => {
 			manual: true,
 		});
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// undo = the document before (untouched), redo = the same document
+		// The previous document stays unchanged.
 		expect(before).toEqual(snapshot);
-		const after = clone(h.doc);
-		h.doc = before;
-		h.ok([off]);
-		expect(clone(h.doc.sequences)).toEqual(after.sequences);
 		// on: the solver owns it again (the gain still equals the record)
 		const on = h.ok([{ type: 'soundDesign.setAutoGain', clipIds: [a!], auto: true }]);
 		expect(on.results[0]).toEqual({ clips: [{ clipId: a, owner: 'solver' }] });

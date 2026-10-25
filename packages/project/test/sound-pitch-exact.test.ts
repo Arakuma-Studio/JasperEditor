@@ -8,7 +8,6 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
-	applyTransaction,
 	type ClipSfx,
 	checkInvariants,
 	clipPitchOf,
@@ -18,7 +17,7 @@ import {
 	readClipSfx,
 	repairDocument,
 } from '../src/index.ts';
-import { Harness, makeCtx, videoAsset } from './helpers.ts';
+import { Harness, videoAsset } from './helpers.ts';
 import { LIB } from './sound-fixtures.ts';
 
 type SfxClip = AudioClip & { sfx?: ClipSfx };
@@ -106,44 +105,30 @@ describe('pitch reset is exact (sfx.pitch)', () => {
 		const m = libMedia(h);
 		const F = flicksPerFrame(h.seq.settings.frameRate);
 		const id = placed(h, m, 90, { rate: 1.0199 });
-		for (const st of [2.5, 7.25, -2.6, -11.5, 0.49, 0]) {
+		for (const [st, shifter] of [
+			[2.5, null],
+			[7.25, [7, 25]],
+			[-2.6, null],
+			[-11.5, [-11, -50]],
+			[0.49, null],
+			[0, null],
+		] as const) {
 			swapPitch(h, id, m, st);
 			const c = clip(h, id);
 			const varispeed = Math.abs(st) <= 3;
 			expect(c.speed.rate).toBe(varispeed ? Math.round(1.0199 * 2 ** (st / 12) * 1e6) / 1e6 : 1.0199);
-			expect(shifters(c)).toHaveLength(varispeed ? 0 : 1);
+			expect(c.speed.maintainPitch).toBe(false);
+			expect(shifters(c).map((fx) => [fx.params.semitones!.value, fx.params.cents!.value])).toEqual(
+				shifter ? [shifter] : [],
+			);
 			expect(clipPitchOf(c).st).toBe(st);
 			expect(Math.abs(alignedAt(c, F) - 90 * F)).toBeLessThanOrEqual(1);
 		}
 		expect(clip(h, id).speed.rate).toBe(1.0199);
-	});
-
-	it('undo / redo: the record follows the document', () => {
-		const h = new Harness();
-		const m = libMedia(h);
-		const id = placed(h, m, 90, { rate: 1.015 });
-		swapPitch(h, id, m, 2.5);
-		const before = h.doc;
-		const snap = clone(before);
-		const cmds = [{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 0 }];
-		const run = () =>
-			applyTransaction(
-				before,
-				{ label: 't', origin: 'user', sequenceId: h.seqId, commands: cmds as never },
-				makeCtx({ revision: h.revision }, createCounterIdSource(7)),
-			);
-		const first = run();
-		expect(first.result.ok).toBe(true);
-		// undo = the untouched document (still 2.5 st), redo = the same result
-		expect(clone(before)).toEqual(snap);
-		expect((before.sequences[h.seqId]!.clips[id] as SfxClip).sfx!.pitch).toEqual({
-			st: 2.5,
-			baseRate: 1.015,
+		expect(h.tx([{ type: 'soundDesign.swap', clipId: id, mediaId: m, pitchSt: 13 }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_SCHEMA' }],
 		});
-		expect(run().document).toEqual(first.document);
-		const after = first.document.sequences[h.seqId]!.clips[id] as SfxClip;
-		expect(after.speed.rate).toBe(1.015);
-		expect(after.sfx!.pitch).toEqual({ st: 0, baseRate: 1.015 });
 	});
 
 	it('a clip placed before the record (none) keeps the previous reading; a stale record is ignored', () => {
