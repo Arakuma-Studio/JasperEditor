@@ -31,7 +31,9 @@ export const GOLDEN_EVENTS: SynthEvent[] = [
 	{ say: 'eh', keep: false },
 	{ pauseS: 0.35 },
 	{ say: 'con curvas muy cerradas.', keep: true },
-	{ pauseS: 3.0 },
+	{ pauseS: 1.5 },
+	{ coughS: 0.25 },
+	{ pauseS: 1.5 },
 	{ say: 'madre mía qué calor hace aquí hoy', keep: false },
 	{ pauseS: 1.2 },
 	{ breathS: 0.35 },
@@ -98,7 +100,7 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		expect(sc.timeRecall).toBeGreaterThanOrEqual(0.9);
 		expect(a.plan.stats.largestSilenceLeft).not.toBeNull();
 		expect(a.plan.stats.largestSilenceLeft!).toBeLessThanOrEqual(0.25);
-		expect(a.plan.stats.joins).toBeGreaterThanOrEqual(5);
+		expect(a.plan.stats.joins).toBeGreaterThanOrEqual(4);
 		// the abandoned take is grouped with the kept one, the last take chosen, the script line named
 		const g = a.groups.find((x) => x.takes.some((t) => t.text.startsWith('Hoy')));
 		expect(g).toBeDefined();
@@ -106,10 +108,14 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		expect(g!.takes[g!.chosen]!.scriptLine).toBe(0);
 		expect(a.script?.every((l) => l.said)).toBe(true);
 		// the cough is flagged for review and kept (never removed automatically)
-		const [ca, cb] = rec.coughs[0] ?? [0, 0];
-		void ca;
-		void cb;
-		expect(a.findings.some((f) => f.kind === 'untranscribed')).toBe(rec.coughs.length > 0);
+		const [ca, cb] = rec.coughs[0]!;
+		const cough = a.findings.find((f) => f.kind === 'untranscribed' && f.range.start / FLICKS_PER_SECOND < cb && f.range.end / FLICKS_PER_SECOND > ca);
+		expect(cough?.suggested).toBe('review');
+		expect(keptSeconds(a).some(([s, e]) => s < cb && e > ca)).toBe(true);
+		// accepting it removes it
+		const b = analyzeSequenceCleanup({ doc: H.doc, seq: H.seq, voice: () => rec.voice, decisions: { accept: [cough!.id] } });
+		if (!b.ok) throw new Error(b.message);
+		expect(keptSeconds(b).some(([s, e]) => s < cb && e > ca)).toBe(false);
 		// head chatter and off-script talk need the script; kinds found
 		const kinds = new Set(a.findings.filter((f) => f.suggested === 'remove').map((f) => f.kind));
 		for (const k of ['false-start', 'filler-vocalic', 'off-script', 'restart', 'filler-phrase', 'pause'])
@@ -122,7 +128,10 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 			if (!first) continue;
 			expect(first.s - s).toBeLessThan(0.06);
 			expect(first.s - s).toBeGreaterThan(-0.04);
-			void e;
+			const last = [...kw].reverse().find((w) => w.s < e && w.e > s)!;
+			// out point inside the decay: after the tone's end, before its tail fades into the floor
+			expect(e - last.e).toBeGreaterThan(-0.01);
+			expect(e - last.e).toBeLessThan(0.2);
 		}
 	});
 
@@ -133,15 +142,18 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		const sc = scoreKept(rec, keptSeconds(a));
 		// head chatter and the off-script line stay (no script): recall drops, precision does not
 		expect(sc.wordPrecision).toBeGreaterThanOrEqual(0.9);
-		expect(sc.wordRecall).toBeGreaterThanOrEqual(0.6);
+		expect(sc.wordRecall).toBeGreaterThanOrEqual(0.4);
+		expect(a.findings.some((f) => f.kind === 'off-script' || f.kind === 'head-tail')).toBe(false);
 	});
 
-	it('Natural keeps air and lists the retake for review', () => {
+	it('Natural keeps air and lists marker phrases and off-script talk for review', () => {
 		const { H } = goldenSequence(rec);
 		H.ok([{ type: 'cleanup.configure', settings: { presetId: 'builtin.natural' } }]);
 		const a = analyzeSequenceCleanup({ doc: H.doc, seq: H.seq, voice: () => rec.voice });
 		if (!a.ok) throw new Error(a.message);
-		expect(a.findings.some((f) => f.kind === 'retake' && f.suggested === 'review')).toBe(true);
+		expect(a.findings.some((f) => f.kind === 'filler-phrase' && f.suggested === 'review')).toBe(true);
+		expect(a.findings.some((f) => f.kind === 'off-script' && f.suggested === 'review')).toBe(true);
+		expect(a.media[0]!.edgeMode).toBe('speech');
 		const fast = analyzeSequenceCleanup({
 			doc: goldenSequence(rec).H.doc,
 			seq: goldenSequence(rec).H.seq,

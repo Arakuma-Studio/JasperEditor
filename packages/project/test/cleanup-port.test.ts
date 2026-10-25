@@ -122,7 +122,7 @@ describe('cleanup port vs the research prototype', () => {
 			const want = c.expect.reasons.map((x) => (x ? KIND[x]! : null));
 			expect(got).toEqual(want);
 			const removed = r.words.map((w, k) => r.guarded[k] || label.has(w.i));
-			const plan = planMediaCuts({ words: r.words, removed, voice, settings });
+			const plan = planMediaCuts({ words: r.words, removed, voice, settings, strictRemoval: false });
 			expect(plan.kept.length).toBe(c.expect.kept.length);
 			plan.kept.forEach(([a, b], i) => {
 				expect(a).toBeCloseTo(c.expect.kept[i]![0], 9);

@@ -28,6 +28,11 @@ export type MediaPlanInput = {
 	keepBreaths?: readonly Span[];
 	/** … except these (accepted breath findings) when the policy is `keep`. */
 	removeBreaths?: readonly Span[];
+	/**
+	 * Removed words between kept words closer than `maxGapS` are cut out too (default). `false` = the prototype's
+	 * behaviour (they stay inside the joined range), for the port check.
+	 */
+	strictRemoval?: boolean;
 };
 
 export type MediaPlan = {
@@ -72,77 +77,74 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const maxGap = P.gaps.maxGapS;
 
 	// 1. kept word extents (snapped to speech frames)
-	type R = [number, number, number]; // start, end, last kept word index (−1: none)
+	type R = { a: number; b: number; k: number; minA: number; maxB: number }; // k: last kept word (−1: none)
+	const piece = (a: number, b: number, k: number): R => ({
+		a,
+		b,
+		k,
+		minA: Number.NEGATIVE_INFINITY,
+		maxB: Number.POSITIVE_INFINITY,
+	});
 	const rng: R[] = [];
-	if (voice && mode !== 'word') {
-		const n = voice.frameCount;
-		const sp = (k: number) => voice.classes[k] === VOICE_CLASS_SPEECH;
+	const speechMode = !!voice && mode !== 'word';
+	if (voice && speechMode) {
 		for (const k of keepIdx) {
-			const w = input.words[k]!;
-			const a = Math.trunc(w.s / FR);
-			const b = Math.ceil(w.e / FR);
-			const lo = Math.max(0, a - 5);
-			const hi = Math.min(n, b + 5);
-			let first = -1;
-			let last = -1;
-			for (let f = lo; f < hi; f++)
-				if (sp(f)) {
-					if (first < 0) first = f;
-					last = f;
-				}
-			if (first < 0) continue; // no voice under the word: misplaced word time or hallucination
-			rng.push([first * FR, (last + 1) * FR, k]);
+			const ext = speechExtent(voice, input.words[k]!, 5);
+			if (ext) rng.push(piece(ext[0], ext[1], k)); // else: no voice under the word (misplaced time / hallucination)
 		}
-		for (const [a, b] of input.keepSpeech ?? []) rng.push([a, b, -1]);
-	} else {
-		for (const k of keepIdx) rng.push([input.words[k]!.s, input.words[k]!.e, k]);
-		for (const [a, b] of input.keepSpeech ?? []) rng.push([a, b, -1]);
-	}
-	rng.sort((x, y) => x[0] - y[0] || x[1] - y[1] || x[2] - y[2]);
+	} else for (const k of keepIdx) rng.push(piece(input.words[k]!.s, input.words[k]!.e, k));
+	for (const [a, b] of input.keepSpeech ?? []) rng.push(piece(a, b, -1));
+	rng.sort((x, y) => x.a - y.a || x.b - y.b || x.k - y.k);
 
 	// 2. join across gaps ≤ maxGap (and rejected pauses)
 	const out0: R[] = [];
-	for (const [a, b, k] of rng) {
+	for (const r of rng) {
 		const l = out0[out0.length - 1];
-		if (l && (a - l[1] <= maxGap || overlaps(input.keepPauses, l[1], a))) {
-			l[1] = Math.max(l[1], b);
-			if (k >= 0 && (l[2] < 0 || input.words[k]!.e >= input.words[l[2]]!.e)) l[2] = k;
-		} else out0.push([a, b, k]);
+		if (l && (r.a - l.b <= maxGap || overlaps(input.keepPauses, l.b, r.a))) {
+			l.b = Math.max(l.b, r.b);
+			if (r.k >= 0 && (l.k < 0 || input.words[r.k]!.e >= input.words[l.k]!.e)) l.k = r.k;
+		} else out0.push({ ...r });
 	}
 
 	// 3. pause compression inside the joined ranges
 	let out: R[] = [];
-	if (voice && mode !== 'word') {
+	const lastKeptBefore = lastKeptFinder(input.words, keepIdx);
+	if (voice && speechMode) {
 		const mg = Math.round(maxGap / FR);
-		for (const [a, b, k] of out0) {
-			const fa = Math.round(a / FR);
-			const fb = Math.round(b / FR);
+		for (const r of out0) {
+			const fa = Math.round(r.a / FR);
+			const fb = Math.round(r.b / FR);
 			let cur = fa;
 			const mask: boolean[] = [];
 			for (let f = fa; f < fb; f++) mask.push(voice.classes[f] !== VOICE_CLASS_SPEECH);
 			for (const [x, y] of runsOf(mask)) {
 				if (y - x > mg && x > 0 && fa + y < fb && !overlaps(input.keepPauses, (fa + x) * FR, (fa + y) * FR)) {
-					out.push([cur * FR, (fa + x) * FR, lastWordBefore(input.words, keepIdx, (fa + x) * FR)]);
+					out.push(piece(cur * FR, (fa + x) * FR, lastKeptBefore((fa + x) * FR)));
 					cur = fa + y;
 				}
 			}
-			out.push([cur * FR, fb * FR, k]);
+			out.push(piece(cur * FR, fb * FR, r.k));
 		}
-	} else out = out0.map((r) => [r[0], r[1], r[2]] as R);
+	} else out = out0.map((r) => ({ ...r }));
 
-	// 4. edges, pads, breath before the onset
+	// 3b. removed words inside a joined range go too (the prototype kept a removed word closer than maxGap to kept
+	// ones); the kept words' sound wins where they touch
+	if (input.strictRemoval !== false) out = subtractRemoved(out, input, keepIdx, voice, speechMode, piece);
+
+	// 4. edges, pads, breath before the onset (never past a removed word next to the piece)
 	const res: R[] = [];
 	const thrOut = voice ? edgeThreshold(voice, P.edges, 'out') : null;
 	const thrIn = voice ? edgeThreshold(voice, P.edges, 'in') : null;
 	const breathMax = Math.round(P.gaps.breathKeepMaxS / FR);
-	for (let [a, b, k] of out) {
+	for (const r of out) {
+		let { a, b } = r;
 		if (voice && mode === 'level' && thrOut !== null && thrIn !== null) {
-			b = levelOutPoint(voice, a, b, thrOut);
-			a = levelInPoint(voice, a, thrIn);
+			b = Math.min(levelOutPoint(voice, a, b, thrOut), r.maxB);
+			a = Math.max(levelInPoint(voice, a, thrIn), r.minA);
 		}
 		let a2 = a - P.edges.padBeforeS;
-		const b2 = b + P.edges.padAfterS;
-		if (voice && mode !== 'word') {
+		const b2 = Math.min(b + P.edges.padAfterS, r.maxB);
+		if (voice && speechMode) {
 			let f = Math.trunc(a / FR) - 1;
 			let m = 0;
 			const keepPolicy = P.gaps.breath === 'keep';
@@ -157,9 +159,9 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 			// prototype `keep_breath`: a2 = min(a2, (k + 1) · FR) whenever the policy keeps breaths
 			if (m > 0 || keepPolicy) a2 = Math.min(a2, (f + 1) * FR);
 		}
-		res.push([Math.max(0, a2), b2, k]);
+		res.push({ ...r, a: Math.max(0, a2, r.minA), b: b2 });
 	}
-	res.sort((x, y) => x[0] - y[0]);
+	res.sort((x, y) => x.a - y.a);
 
 	// 5. the gap policy's air: inside a sentence keepGapS, between sentences keepGapSentenceS
 	const pads = P.edges.padBeforeS + P.edges.padAfterS;
@@ -167,40 +169,144 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	for (let i = 0; i + 1 < res.length; i++) {
 		const cur = res[i]!;
 		const nxt = res[i + 1]!;
-		const gap = nxt[0] - cur[1];
+		const gap = nxt.a - cur.b;
 		if (!(gap > 0)) continue;
-		const lastWord = cur[2] >= 0 ? input.words[cur[2]]! : null;
+		const lastWord = cur.k >= 0 ? input.words[cur.k]! : null;
 		const want = lastWord && SENTENCE_END.test(lastWord.text.trim()) ? P.gaps.keepGapSentenceS : P.gaps.keepGapS;
 		const extra = want - pads;
 		if (!(extra > 1e-9)) continue;
-		let ea = Math.min(extra * wa, gap / 2);
-		let eb = Math.min(extra - ea, gap - ea);
-		if (voice && mode !== 'word') {
+		let ea = Math.min(extra * wa, gap / 2, cur.maxB - cur.b);
+		let eb = Math.min(extra - ea, gap - ea, nxt.a - nxt.minA);
+		if (voice && speechMode) {
 			// never into speech (removed words stay removed)
-			ea = Math.min(ea, nonSpeechAfter(voice, cur[1]));
-			eb = Math.min(eb, nonSpeechBefore(voice, nxt[0]));
+			ea = Math.min(ea, nonSpeechAfter(voice, cur.b));
+			eb = Math.min(eb, nonSpeechBefore(voice, nxt.a));
 		}
-		cur[1] += Math.max(0, ea);
-		nxt[0] -= Math.max(0, eb);
+		cur.b += Math.max(0, ea);
+		nxt.a -= Math.max(0, eb);
 	}
 
 	// 6. merge overlaps, drop short pieces
 	const merged: R[] = [];
 	for (const r of res) {
 		const l = merged[merged.length - 1];
-		if (l && r[0] <= l[1]) {
-			l[1] = Math.max(l[1], r[1]);
-			if (r[2] >= 0) l[2] = r[2];
-		} else merged.push([r[0], r[1], r[2]]);
+		if (l && r.a <= l.b) {
+			l.b = Math.max(l.b, r.b);
+			if (r.k >= 0) l.k = r.k;
+		} else merged.push({ ...r });
 	}
-	const kept = merged.filter((x) => x[1] - x[0] >= P.guards.minPieceS).map((x) => [x[0], x[1]] as Span);
+	const kept = merged.filter((x) => x.b - x.a >= P.guards.minPieceS).map((x) => [x.a, x.b] as Span);
 	return { kept, mode };
 }
 
-function lastWordBefore(words: readonly AWord[], keepIdx: readonly number[], t: number): number {
-	let best = -1;
-	for (const k of keepIdx) if (words[k]!.e <= t + 0.06) best = k;
-	return best;
+/** Speech frames of a word (prototype: its frames ± `pad` frames), as seconds; null without speech. */
+export function speechExtent(voice: CleanupVoice, w: { s: number; e: number }, pad: number): Span | null {
+	const a = Math.trunc(w.s / FR);
+	const b = Math.ceil(w.e / FR);
+	const lo = Math.max(0, a - pad);
+	const hi = Math.min(voice.frameCount, b + pad);
+	let first = -1;
+	let last = -1;
+	for (let f = lo; f < hi; f++)
+		if (voice.classes[f] === VOICE_CLASS_SPEECH) {
+			if (first < 0) first = f;
+			last = f;
+		}
+	return first < 0 ? null : [first * FR, (last + 1) * FR];
+}
+
+/** The spans of removed words (their own speech frames, or word times in word mode), minus kept words' sound. */
+export function removedSpans(
+	input: Pick<MediaPlanInput, 'words' | 'removed'>,
+	keepIdx: readonly number[],
+	voice: CleanupVoice | null,
+	speechMode: boolean,
+): Span[] {
+	const keptExt: Span[] = [];
+	for (const k of keepIdx) {
+		const w = input.words[k]!;
+		const e = voice && speechMode ? speechExtent(voice, w, 0) : ([w.s, w.e] as Span);
+		if (e) keptExt.push(e);
+	}
+	keptExt.sort((x, y) => x[0] - y[0]);
+	const out: Span[] = [];
+	for (let k = 0; k < input.words.length; k++) {
+		if (!input.removed[k]) continue;
+		const w = input.words[k]!;
+		const e = voice && speechMode ? speechExtent(voice, w, 0) : ([w.s, w.e] as Span);
+		if (!e) continue;
+		let parts: Span[] = [e];
+		for (const [x, y] of keptExt) {
+			if (y <= e[0]) continue;
+			if (x >= e[1]) break;
+			parts = parts.flatMap(([p, q]) => {
+				const r: Span[] = [];
+				if (x > p) r.push([p, Math.min(q, x)]);
+				if (y < q) r.push([Math.max(p, y), q]);
+				return r.filter(([u, v]) => v - u > 1e-9);
+			});
+		}
+		out.push(...parts);
+	}
+	out.sort((x, y) => x[0] - y[0]);
+	const merged: Span[] = [];
+	for (const sp of out) {
+		const l = merged[merged.length - 1];
+		if (l && sp[0] <= l[1] + 1e-9) l[1] = Math.max(l[1], sp[1]);
+		else merged.push([sp[0], sp[1]]);
+	}
+	return merged;
+}
+
+function subtractRemoved<R extends { a: number; b: number; k: number; minA: number; maxB: number }>(
+	pieces: R[],
+	input: MediaPlanInput,
+	keepIdx: readonly number[],
+	voice: CleanupVoice | null,
+	speechMode: boolean,
+	make: (a: number, b: number, k: number) => R,
+): R[] {
+	const rem = removedSpans(input, keepIdx, voice, speechMode);
+	if (!rem.length) return pieces;
+	const lastKeptBefore = lastKeptFinder(input.words, keepIdx);
+	const out: R[] = [];
+	let j = 0;
+	for (const p of pieces) {
+		while (j < rem.length && rem[j]![1] <= p.a) j++;
+		let cur: R = p;
+		let q = j;
+		while (q < rem.length && rem[q]![0] < cur.b) {
+			const [x, y] = rem[q]!;
+			if (x > cur.a) {
+				const left = make(cur.a, x, lastKeptBefore(x));
+				left.minA = cur.minA;
+				left.maxB = x;
+				out.push(left);
+			}
+			const rest = make(Math.max(cur.a, y), cur.b, cur.k);
+			rest.minA = y;
+			rest.maxB = cur.maxB;
+			cur = rest;
+			q++;
+		}
+		if (cur.b - cur.a > 1e-9) out.push(cur);
+	}
+	return out;
+}
+
+/** The last kept word ending before `t` (+ 60 ms), by binary search over kept words in end order. */
+function lastKeptFinder(words: readonly AWord[], keepIdx: readonly number[]): (t: number) => number {
+	const byEnd = [...keepIdx].sort((x, y) => words[x]!.e - words[y]!.e);
+	return (t: number) => {
+		let lo = 0;
+		let hi = byEnd.length;
+		while (lo < hi) {
+			const m = (lo + hi) >> 1;
+			if (words[byEnd[m]!]!.e <= t + 0.06) lo = m + 1;
+			else hi = m;
+		}
+		return lo > 0 ? byEnd[lo - 1]! : -1;
+	};
 }
 
 /** Seconds of non-speech from `t` forward (until the first speech frame). */
