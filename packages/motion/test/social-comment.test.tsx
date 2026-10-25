@@ -11,16 +11,28 @@ import {
 } from '@jasper/mg-templates';
 import { act, render } from '@testing-library/react';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
 import { TIKTOK_DEFAULT_AVATAR } from '../src/templates/social/glyphs.ts';
-import { splitEmojiPieces } from '../src/templates/social-comment/assets.tsx';
 import type { SocialCardAssets } from '../src/templates/social-comment/contract.ts';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
 import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
 import { socialVariantAvailable } from '../src/templates/social-comment/variants.ts';
 
 const Impl = ANIME_TEMPLATE_IMPLS['social-comment@1']!;
+
+// Remotion counts NODE_ENV=test as a render (a missing emoji would cancel it): these tests are the Player's
+// behaviour. happy-dom reports every image as complete at once; a browser does so only once it loaded or broke.
+const completeDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'complete');
+beforeEach(() => {
+	vi.stubEnv('NODE_ENV', 'development');
+	Object.defineProperty(HTMLImageElement.prototype, 'complete', { configurable: true, get: () => false });
+});
+afterEach(() => {
+	vi.unstubAllEnvs();
+	if (completeDesc) Object.defineProperty(HTMLImageElement.prototype, 'complete', completeDesc);
+});
+const EMOJI_URLS = { 'apple:😊': '/fonts/emoji/apple/419/1f60a.png' };
 const fps = 30;
 const FRAMES = 150;
 
@@ -35,6 +47,8 @@ function at(params: Record<string, unknown>, frame: number, extra: Record<string
 			seed={7}
 			isPreview={false}
 			mediaUrls={{}}
+			emojiUrls={EMOJI_URLS}
+			imageUrls={{}}
 			{...extra}
 		/>
 	);
@@ -120,6 +134,8 @@ describe('social-comment@1 cards', () => {
 				seed={1}
 				isPreview
 				mediaUrls={{}}
+				emojiUrls={{}}
+				imageUrls={{}}
 			/>,
 		);
 		expect(r.container.querySelector('[data-social-variant="tiktok-reply"]')).not.toBeNull();
@@ -270,36 +286,26 @@ describe('social-comment@1 shared parts', () => {
 			/>,
 		);
 		const c = r.container;
-		expect(c.textContent!.replace(/😊/, '')).toBe('hi big deal secret gone @bob #fyp  🤔');
+		// the emoji are images (the missing one a "?" marker), the rest is text
+		expect(c.textContent).toBe('hi big deal secret gone @bob #fyp  ?');
 		const pill = [...c.querySelectorAll<HTMLElement>('[data-unit]')].find(
 			(u) => u.textContent === 'big deal',
 		)!;
 		expect(pill.style.background).toMatch(/#FFE500|rgb\(255, 229, 0\)/i);
-		expect(c.querySelector<HTMLElement>('[data-mark="blur"]')!.style.filter).toBe('blur(4px)');
+		const blurred = c.querySelector<HTMLElement>('[data-mark="blur"]')!;
+		expect(blurred.style.textShadow).toBe('0 0 8px currentColor');
 		expect(c.querySelector<HTMLElement>('[data-mark="remove"]')!.style.opacity).toBe('0');
-		const colored = [...c.querySelectorAll<HTMLElement>('span:not([data-unit])')].filter(
-			(s) => s.style.color,
-		);
+		const colored = [
+			...c.querySelectorAll<HTMLElement>('span:not([data-unit]):not([data-missing-asset])'),
+		].filter((s) => s.style.color);
 		expect(colored.map((s) => [s.textContent, s.style.color])).toEqual([
 			['@bob', 'rgb(1, 2, 3)'],
 			['#fyp', 'rgb(4, 5, 6)'],
 		]);
 		expect(c.querySelector('img[data-emoji="😊"]')!.getAttribute('src')).toBe('http://x/1f60a.png');
-		// an emoji without an image of the pack is drawn as text (the emoji pack delivery marks it, contract C2)
-		expect(c.querySelector('[data-emoji-text="🤔"]')).not.toBeNull();
+		// an emoji the pack does not deliver is a visible marker (EmojiImage → MissingAssetMarker), never a host glyph
+		expect(c.querySelector('[data-missing-asset="emoji"]')!.getAttribute('aria-label')).toMatch(/🤔/);
 		r.unmount();
-	});
-
-	it('emoji split: text runs and whole emoji graphemes (flags, ZWJ, keycaps, skin tones)', () => {
-		expect(splitEmojiPieces('a👍🏽b🇵🇦👨‍👩‍👧1️⃣ c')).toEqual([
-			{ kind: 'text', text: 'a' },
-			{ kind: 'emoji', grapheme: '👍🏽' },
-			{ kind: 'text', text: 'b' },
-			{ kind: 'emoji', grapheme: '🇵🇦' },
-			{ kind: 'emoji', grapheme: '👨‍👩‍👧' },
-			{ kind: 'emoji', grapheme: '1️⃣' },
-			{ kind: 'text', text: ' c' },
-		]);
 	});
 
 	it('fit zoom: the canvas scale unless the card is too tall or wide; a measured card at any zoom gives one answer', () => {

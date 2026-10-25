@@ -6,7 +6,7 @@ import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } fro
 import type { CSSProperties } from 'react';
 import { TIKTOK_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['tiktok-comment']!.family}", sans-serif`;
 
@@ -176,7 +176,14 @@ function LikeHeart({
 	if (!heart) return <Glyph glyph={TIKTOK_GLYPHS.heartOutline} size={size} color={color} style={box} />;
 	const f = Math.min(1, Math.max(0, heart.f));
 	return (
-		<span style={{ ...box, display: 'block', transform: `scale(${Math.round(heart.s * 1e4) / 1e4})` }}>
+		<span
+			style={{
+				...box,
+				display: 'block',
+				boxShadow: INK_RING,
+				transform: `scale(${Math.round(heart.s * 1e4) / 1e4})`,
+			}}
+		>
 			<Glyph
 				glyph={TIKTOK_GLYPHS.heartOutline}
 				size={size}

@@ -157,7 +157,8 @@ describe('templates that are not installed block every export path (S11:ATP-010,
 			params: Record<string, unknown>;
 		};
 		clip.template.id = 'social-comment';
-		clip.params = { variant: 'tiktok-comment' };
+		// no emoji: the plan needs only the bundled TikTok Sans, never the remote emoji CDN
+		clip.params = { variant: 'tiktok-comment', text: 'Plain text' };
 		const ok = await plan(doc, b.seqId, { still: true });
 		expect(missingTemplates(ok.snapshot)).toEqual([]);
 		clip.params = { variant: 'x-post' };

@@ -52,7 +52,7 @@ function Card(props: CardProps) {
 	});
 	const urls = (m: Record<string, string>) =>
 		Object.fromEntries(Object.entries(m).map(([k, v]) => [k, staticFile(v)]));
-	const extra = { mediaUrls: urls(props.mediaFiles), emojiUrls: urls(props.emojiFiles) };
+	const extra = { mediaUrls: urls(props.mediaFiles), emojiUrls: urls(props.emojiFiles), imageUrls: {} };
 	return (
 		<div style={{ position: 'absolute', inset: 0, background: props.background ?? 'transparent' }}>
 			<SocialComment
