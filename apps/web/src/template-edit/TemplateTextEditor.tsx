@@ -32,7 +32,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
-import { t } from '../i18n/runtime.ts';
+import { t, withoutContext } from '../i18n/runtime.ts';
 import { activeSequence } from '../panels/program/edits.ts';
 import type { View } from '../panels/program/viewport.ts';
 import { toScreen } from '../panels/program/viewport.ts';
@@ -55,10 +55,12 @@ const MEASURE_FRAMES = 120;
 const MAX_LOCAL_UNDO = 200;
 const MESSAGE_MS = 3500;
 
-const MARK_LABELS: Record<SocialMark, string> = {
-	highlight: 'Highlight',
-	blur: 'Blur',
-	remove: 'Remove',
+// "[word mark]" tells these keys apart from their homonyms in the catalogue (e.g. the Lumetri "Highlight").
+const MARK_LABELS: Record<SocialMark | 'clear', string> = {
+	highlight: 'Highlight [word mark]',
+	blur: 'Blur [word mark]',
+	remove: 'Remove [word mark]',
+	clear: 'Clear [word marks]',
 };
 const MARK_STEP_LABELS: Record<SocialMark | 'clear', string> = {
 	highlight: 'Highlight Words',
@@ -767,7 +769,7 @@ function EditorBox({
 							disabled={readOnly}
 							onClick={() => markAction(m)}
 						>
-							{MARK_LABELS[m]}
+							{withoutContext(MARK_LABELS[m])}
 						</button>
 					))}
 					<button
@@ -777,7 +779,7 @@ function EditorBox({
 						disabled={readOnly}
 						onClick={() => markAction(null)}
 					>
-						Clear
+						{withoutContext(MARK_LABELS.clear)}
 					</button>
 				</div>
 			) : null}
