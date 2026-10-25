@@ -508,7 +508,7 @@ path (`reversedKeyTiming`, `reversedSpatial`), so each segment's ease is mirrore
 
 ### Status and limits
 
-- Every action is enabled when its document command is in the model's command catalogue (`docCommandSupport`, checked
+- Every action is enabled when its document command is in the model's command catalogue (`isCommandType`, checked
   at run time); otherwise it is disabled with "This build has no … command yet".
 - The built-in groups and curves are the catalogue of "Built-in presets" above (`builtinEasePresets()`, shown with
   `t(name)`); the highlighted tile is `matchEasePreset` of the editor's curve against built-in and user curves.

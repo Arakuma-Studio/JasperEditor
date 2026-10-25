@@ -107,7 +107,7 @@ export class SoundDesignMeasurer {
 	async run<O extends MeasureOp>(op: O, env: RenderEnv): Promise<MeasureOpResult<O['kind']>> {
 		const signal = env.signal;
 		if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled', true);
-		if (!this.url || this.unavailable) return this.inThread(op, env);
+		if (!this.url || this.unavailable) return runMeasureOp(op, env);
 		const id = this.nextId++;
 		let timer: NodeJS.Timeout | null = null;
 		let onAbort: (() => void) | null = null;
@@ -156,10 +156,6 @@ export class SoundDesignMeasurer {
 		});
 	}
 
-	private async inThread<O extends MeasureOp>(op: O, env: RenderEnv): Promise<MeasureOpResult<O['kind']>> {
-		return runMeasureOp(op, env);
-	}
-
 	/** Posts a request to a worker (started when needed); runs it in-thread when no worker can start. */
 	private async dispatch(p: Pending): Promise<void> {
 		let slot: Slot;
@@ -176,7 +172,7 @@ export class SoundDesignMeasurer {
 			this.unavailable = true;
 			this.log(`sound design: no measurement worker (${(e as Error).message}); measuring in-thread`);
 			try {
-				p.resolve(await this.inThread(p.op, p.env));
+				p.resolve(await runMeasureOp(p.op, p.env));
 			} catch (err) {
 				p.reject(err as Error);
 			}
@@ -211,7 +207,7 @@ export class SoundDesignMeasurer {
 		const worker = url.pathname.endsWith('.ts')
 			? new Worker(tsxBootstrap(url), { eval: true })
 			: new Worker(url);
-		worker.unref?.();
+		worker.unref();
 		const slot: Slot = {
 			worker,
 			ready: null as unknown as Promise<Slot>,
