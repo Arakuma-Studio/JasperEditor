@@ -1,4 +1,4 @@
-import { isAnimeTemplate, mgRegistry } from '@jasper/mg-templates';
+import { isAnimeTemplate, mgRegistry, templateAssetOptions } from '@jasper/mg-templates';
 import {
 	anim,
 	applyTransaction,
@@ -23,7 +23,17 @@ export const PARITY_SCENE = {
 	durationInFrames: PARITY_DOC_FRAMES,
 } as const;
 
-export function parityDoc(): RenderSnapshot {
+/**
+ * Template assets of the parity scene (social-comment §7.8): the URLs of the font faces and emoji images the anime
+ * templates declare (`requiredAssets`; social-comment@1 draws TikTok Sans and an emoji). The test passes data URLs
+ * built in Node; without them the templates' assets are not resolved (the bundle's default props only).
+ */
+export type ParityAssets = {
+	font(face: { family: string; weight: number; style: 'normal' | 'italic' }): string | null;
+	emoji(pack: string, grapheme: string): string | null;
+};
+
+export function parityDoc(assets?: ParityAssets): RenderSnapshot {
 	const ids = createCounterIdSource(1);
 	const base = createEmptyProject({ ids, name: 'Parity', preset: 'hd-720p-30' });
 	const ctx = { ids, now: () => 't', revision: 0, registries: defaultRegistries(mgRegistry) };
@@ -110,5 +120,9 @@ export function parityDoc(): RenderSnapshot {
 		shape,
 		transform: defaultTransform(shapeIntrinsicBox(shape), frame, 'none'),
 	};
-	return buildRenderSnapshot(doc, seq.id, { resolveMedia: () => null, resolveFont: () => null });
+	return buildRenderSnapshot(doc, seq.id, {
+		resolveMedia: () => null,
+		resolveFont: () => null,
+		...(assets ? { templateAssets: templateAssetOptions(mgRegistry, assets) } : {}),
+	});
 }

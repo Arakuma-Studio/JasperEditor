@@ -9,7 +9,7 @@ import { editableParamProps } from '../editable.ts';
 import { X_GLYPHS } from '../social/glyphs.ts';
 import { AvatarPicture } from './assets.tsx';
 import type { SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['x-post']!.family}", sans-serif`;
 
@@ -152,8 +152,12 @@ function XAvatar({
 			...style,
 		};
 		return url ? (
-			<div data-social-avatar="default" style={{ ...box, overflow: 'hidden' }}>
-				<AvatarPicture src={url} style={{ display: 'block', width: AVATAR, height: AVATAR }} />
+			// round by its own radius, not an `overflow: hidden` clip (see SocialAvatar: renderFrames = renderStill)
+			<div data-social-avatar="default" style={box}>
+				<AvatarPicture
+					src={url}
+					style={{ display: 'block', width: AVATAR, height: AVATAR, borderRadius: '50%' }}
+				/>
 			</div>
 		) : (
 			<XDefaultAvatar size={AVATAR} style={style} />
@@ -187,6 +191,7 @@ function LikeHeart({ heart, color }: { heart: SocialCardProps['anim']['heart']; 
 				width: ICON,
 				height: ICON,
 				flexShrink: 0,
+				boxShadow: INK_RING,
 				transform: `scale(${r4(heart.s)})`,
 			}}
 		>

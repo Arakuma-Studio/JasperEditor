@@ -2,7 +2,8 @@
 // Reused renderer pages accumulate frame history. Compare sequential, reversed and shuffled seeks
 // with independent still renders, including paused Player frames.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -52,6 +53,43 @@ function differingFraction(a: Buffer, b: Buffer, tolerance: number): number {
 	return bad / (a.length / 4);
 }
 
+/**
+ * Data URLs of the template assets the parity scene declares (social-comment@1: TikTok Sans 600/700 of the reply
+ * bubble, bundled for the engine by @fontsource/tiktok-sans, and its 😊 as a generated solid PNG), so renders and the
+ * Player load them like the engine's routes would.
+ */
+function parityAssets() {
+	const req = createRequire(join(here, '../../../apps/engine/package.json'));
+	const files = join(dirname(req.resolve('@fontsource/tiktok-sans/package.json')), 'files');
+	const font = (weight: number) =>
+		`data:font/woff2;base64,${readFileSync(join(files, `tiktok-sans-latin-${weight}-normal.woff2`)).toString('base64')}`;
+	const png = spawnSync(
+		ffmpeg,
+		[
+			'-v',
+			'error',
+			'-f',
+			'lavfi',
+			'-i',
+			'color=c=0xffcc33:s=72x72',
+			'-frames:v',
+			'1',
+			'-f',
+			'image2pipe',
+			'-vcodec',
+			'png',
+			'-',
+		],
+		{ maxBuffer: 1 << 24 },
+	).stdout;
+	const emoji = `data:image/png;base64,${png.toString('base64')}`;
+	return {
+		font: (f: { family: string; weight: number }) =>
+			f.family === 'TikTok Sans' && [500, 600, 700].includes(f.weight) ? font(f.weight) : null,
+		emoji: () => emoji,
+	};
+}
+
 const mismatches = (got: (Buffer | undefined)[], want: Buffer[], map: (i: number) => number = (i) => i) =>
 	got.flatMap((b, i) => (b && want[map(i)] && b.equals(want[map(i)]!) ? [] : [map(i)]));
 
@@ -61,7 +99,7 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 	let serveUrl = '';
 	let browser: HeadlessBrowser | undefined;
 	const work = enabled ? mkdtempSync(join(tmpdir(), 'jasper-anm014-')) : '';
-	const doc = parityDoc();
+	const doc = parityDoc(enabled ? parityAssets() : undefined);
 	const PROPS: Record<string, ParityProps> = {
 		Sequence: { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } },
 	};
