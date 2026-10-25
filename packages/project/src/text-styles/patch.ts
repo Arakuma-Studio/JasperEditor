@@ -29,14 +29,11 @@ export type TextBackground = NonNullable<TextStyle['background']>;
 
 /** A stroke added where a style had none (Properties ▸ Add Stroke, `strokes.set` past the end). */
 export const DEFAULT_TEXT_STROKE: TextStroke = { color: [0, 0, 0, 1], widthPx: 4, position: 'outside' };
-/** The shadow a partial shadow patch starts from when the style has none (Premiere's Shadow defaults). */
-export const DEFAULT_TEXT_SHADOW: TextShadow = {
-	color: [0, 0, 0, 0.75],
-	angleDeg: 135,
-	distancePx: 7,
-	blurPx: 10,
-	spreadPx: 0,
-};
+/**
+ * The shadow a partial shadow patch starts from when the style has none (Premiere's Shadow defaults). Only the
+ * required fields: merging a complete shadow over it gives that shadow exactly (`spreadPx` absent = 0).
+ */
+export const DEFAULT_TEXT_SHADOW: TextShadow = { color: [0, 0, 0, 0.75], angleDeg: 135, distancePx: 7, blurPx: 10 };
 /** The box a partial background patch starts from (the Properties Box defaults). */
 export const DEFAULT_TEXT_BACKGROUND: TextBackground = { color: [0, 0, 0, 0.6], paddingPx: 16, radiusPx: 0 };
 
