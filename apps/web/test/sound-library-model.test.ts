@@ -4,7 +4,7 @@ import { flicksPerFrame, type Sequence } from '@jasper/project';
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resolveSoundDrop } from '../src/panels/timeline/model/sound-drop.ts';
-import { JASPER_SOUND_MIME, readSoundDrag, writeSoundDrag } from '../src/sound/insert.ts';
+import { readSoundDrag, writeSoundDrag } from '../src/sound/insert.ts';
 import {
 	DEFAULT_FILTERS,
 	decodeBase64,
@@ -256,7 +256,7 @@ describe('drag payload', () => {
 		const e = soundEntry();
 		const d = dt();
 		writeSoundDrag(d as unknown as DataTransfer, e);
-		expect(d.types).toContain(JASPER_SOUND_MIME);
+		expect(d.types).toContain('application/x-jasper-sound');
 		expect(readSoundDrag(d)).toEqual({ type: 'jasper/sound', soundId: e.id });
 		for (const raw of [
 			'{',
@@ -265,7 +265,7 @@ describe('drag payload', () => {
 			'7',
 		]) {
 			const bad = dt();
-			bad.setData(JASPER_SOUND_MIME, raw);
+			bad.setData('application/x-jasper-sound', raw);
 			expect(readSoundDrag(bad)).toBeNull();
 		}
 		expect(readSoundDrag(null)).toBeNull();

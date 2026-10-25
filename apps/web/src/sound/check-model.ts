@@ -51,7 +51,7 @@ export type CheckVerdict = SoundCheckReport['verdict'];
  * its tone…). `edges` and `tonal` are the Phase 6 review lenses (spec 12 §4 P6-E1…E3); `reference` (P6-E8) holds
  * the comparison with a reference profile, a style rather than a defect: last.
  */
-export const CATEGORY_ORDER: readonly CheckCategory[] = [
+const CATEGORY_ORDER: readonly CheckCategory[] = [
 	'sync',
 	'edges',
 	'loudness',
@@ -61,7 +61,7 @@ export const CATEGORY_ORDER: readonly CheckCategory[] = [
 	'licence',
 	'reference',
 ];
-export const CATEGORY_LABELS: Record<CheckCategory, string> = {
+const CATEGORY_LABELS: Record<CheckCategory, string> = {
 	sync: 'Sync',
 	edges: 'Edges',
 	loudness: 'Loudness',
@@ -773,7 +773,7 @@ export function verdictCommands(
 export const CHECK_FOR_MASTER = 'master';
 
 /** The encodings "Check for" offers (`aac:256`, `opus:160`, `master`) in menu order. */
-export const CHECK_FOR_ENCODINGS: readonly SoundCheckAudio[] = [
+const CHECK_FOR_ENCODINGS: readonly SoundCheckAudio[] = [
 	{ codec: 'aac', bitrateKbps: 128 },
 	{ codec: 'aac', bitrateKbps: 192 },
 	{ codec: 'aac', bitrateKbps: 256 },

@@ -138,10 +138,11 @@ describe('Cue Seam selection is one domain', () => {
 describe('Cue Seam at the extremes', () => {
 	it('a non-finite pointer x hits nothing (never the first cue)', () => {
 		const geoms = layoutCues(
-			[{ id: 'cue_1', frame: 0, kind: 'cut', weight: 'support', source: 'user' }],
+			[{ id: 'cue_0000000000000001', frame: 0, kind: 'cut', weight: 'support', source: 'user' }],
 			{ scrollFrame: 0, pxPerFrame: 0.01, width: 1200 },
 			{ rate: { num: 30, den: 1 }, selected: new Set() },
 		);
+		expect(hitCue(geoms, 0)).toBe('cue_0000000000000001');
 		expect(hitCue(geoms, Number.NaN)).toBeNull();
 		expect(hitCue(geoms, Number.POSITIVE_INFINITY)).toBeNull();
 	});

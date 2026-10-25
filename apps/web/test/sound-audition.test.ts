@@ -277,6 +277,8 @@ describe('AuditionPlayer', () => {
 		expect(fetchBytes).toHaveBeenCalledTimes(6);
 		await p.play(request(0));
 		expect(fetchBytes).toHaveBeenCalledTimes(7);
+		await p.play(request(1)); // the recent hit survives the next eviction
+		expect(fetchBytes).toHaveBeenCalledTimes(7);
 
 		// A decoder may return more PCM than the format promised: still playable, never retained.
 		const big = player();

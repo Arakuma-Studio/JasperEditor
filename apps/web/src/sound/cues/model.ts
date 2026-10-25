@@ -29,7 +29,7 @@ import { typeLabel } from '../model.ts';
 /** Height of the Cue Seam lane (the widened video/audio divider). */
 export const SEAM_PX = 18;
 /** Glyph sizes by weight: hero 12 px, support 8 px, ambient small. */
-export const GLYPH_PX: Readonly<Record<CueWeight, number>> = { hero: 12, support: 8, ambient: 6 };
+const GLYPH_PX: Readonly<Record<CueWeight, number>> = { hero: 12, support: 8, ambient: 6 };
 /** Two heroes closer than this are a conflict (spec 12 §2.2 budgets never keep them; a user can). */
 export const HERO_CONFLICT_SEC = 0.5;
 /** Most glyphs drawn at once (heroes first): beyond it they overlap anyway at that zoom. */

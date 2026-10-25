@@ -29,8 +29,6 @@ const POLL_MS = 400;
 export type PlanRunOptions = {
 	signal?: AbortSignal;
 	onJob?(job: EngineJob): void;
-	/** Test hook: how to wait between polls. */
-	sleep?(ms: number): Promise<void>;
 };
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -44,7 +42,6 @@ export async function runSoundPlan(
 	req: SoundDesignPlanRequest,
 	opts: PlanRunOptions = {},
 ): Promise<SoundDesignPlanResult> {
-	const sleep = opts.sleep ?? defaultSleep;
 	let job: EngineJob;
 	try {
 		job = (await engine.planSoundDesign(req, opts.signal)) as EngineJob;
@@ -64,7 +61,7 @@ export async function runSoundPlan(
 			}
 			throw new PlanError('E_CANCELLED', t('Cancelled'));
 		}
-		await sleep(POLL_MS);
+		await defaultSleep(POLL_MS);
 		try {
 			job = (await engine.getJob(job.id)) as EngineJob;
 		} catch (e) {

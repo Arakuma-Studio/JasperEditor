@@ -112,7 +112,7 @@ export type ListenOutcome =
 export async function runListen(
 	session: EditorSession,
 	engine: ListenEngine,
-	opts: { sequenceId?: string; detail?: SoundListenDetail; sleep?(ms: number): Promise<void> } = {},
+	opts: { sequenceId?: string; detail?: SoundListenDetail } = {},
 ): Promise<ListenOutcome> {
 	const store = listenStore(session);
 	const id = opts.sequenceId ?? session.getState().activeSequenceId;
@@ -172,7 +172,6 @@ export async function runListen(
 								}
 							: {},
 					),
-				...(opts.sleep ? { sleep: opts.sleep } : {}),
 			},
 		);
 		if (aborts.get(session) === ac) aborts.delete(session);

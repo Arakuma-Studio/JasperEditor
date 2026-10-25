@@ -200,7 +200,6 @@ export async function runSoundCheck(
 		 * plan's). Absent: the sequence's "Check for" (`checkForOf`); null: the PCM master.
 		 */
 		exportAudio?: SoundCheckExportAudio | null;
-		sleep?(ms: number): Promise<void>;
 	} = {},
 ): Promise<RunOutcome> {
 	const store = soundCheckStore(session);
@@ -256,7 +255,6 @@ export async function runSoundCheck(
 								}
 							: {},
 					),
-				...(opts.sleep ? { sleep: opts.sleep } : {}),
 			},
 		);
 		if (aborts.get(session) === ac) aborts.delete(session);

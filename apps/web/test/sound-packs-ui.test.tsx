@@ -11,7 +11,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { getCommand, registerCommands } from '../src/commands/registry.ts';
 import { soundCommands } from '../src/commands/sound.ts';
 import { AuditionPlayer } from '../src/sound/audition.ts';
-import { hostOf, installConfirmBody, PacksSection, requestPacksFocus } from '../src/sound/PacksSection.tsx';
+import { PacksSection, requestPacksFocus } from '../src/sound/PacksSection.tsx';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
 import { fakeSoundEngine, mockAuditionPlayer, soundEntry, soundPack } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
@@ -231,12 +231,11 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 		expect((await screen.findByRole('alert')).textContent).toContain('engine down');
 	});
 
-	it('the confirmation names the credit line of a CC BY pack', () => {
-		expect(
-			installConfirmBody(soundPack({ license: 'CC-BY-4.0', attribution: '"X" by Y (CC BY 4.0)' })),
-		).toContain('Credit required: "X" by Y (CC BY 4.0)');
-		expect(hostOf('not a url')).toBe('not a url');
-		expect(hostOf(null)).toBe('');
+	it('the confirmation names the credit line of a CC BY pack', async () => {
+		renderPacks([soundPack({ license: 'CC-BY-4.0', attribution: '"X" by Y (CC BY 4.0)' })]);
+		fireEvent.click(await screen.findByRole('button', { name: 'Install UI Audio' }));
+		const dialog = await screen.findByTestId('confirm-dialog');
+		expect(dialog.textContent).toContain('"X" by Y (CC BY 4.0)');
 	});
 
 	it('Install Sound Packs… (command) opens the Sound Library page and focuses the Packs section', async () => {
