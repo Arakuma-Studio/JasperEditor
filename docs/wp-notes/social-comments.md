@@ -2119,8 +2119,8 @@ was found. A 2160×3840 sequence renders the card sharp at 4K; a 1080×1920 sequ
   footage when a comment is dropped on V1.
 - Comments that overlap in time are drawn at the same centred place, so the top one hides the others. (Add Another
   twice from the same source stacking the second copy: fixed in sc/polish.)
-- (Fixed in sc/polish: compound ages in one column; clip names.)
-- X: a six-character repost count touches the like icon.
+- Fixed in sc/polish (§ Polish below): compound ages in one column, clip names, the X count spacing, small cards
+  in the gallery thumbnails, the missing-font banner at the canvas corner.
 - Remotion-path ProRes 4444: opaque pixels decode with alpha 1020/1023 (also for text clips; README § Export).
 
 ## Polish (sc/polish)
