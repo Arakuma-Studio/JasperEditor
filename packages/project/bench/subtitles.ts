@@ -13,8 +13,9 @@ import { Harness, makeCtx } from '../test/helpers.ts';
 
 function fixture(o: { preset: string; seconds: number; words: number; cuts: number }) {
 	const h = new Harness({ preset: o.preset });
-	const a = h.registerVideo({ seconds: o.seconds + 10 });
-	const b = h.registerVideo({ seconds: o.seconds + 10, audio: false });
+	const frame = { width: h.seq.settings.width, height: h.seq.settings.height };
+	const a = h.registerVideo({ seconds: o.seconds + 10, ...frame });
+	const b = h.registerVideo({ seconds: o.seconds + 10, audio: false, ...frame });
 	h.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
 	const rate = h.seq.settings.frameRate;
 	const fps = rate.num / rate.den;
