@@ -78,7 +78,8 @@ colour and `-webkit-text-stroke`, which never changes layout.
 No export path draws text without the compositions (no `drawtext` / libass): native and hybrid exports bake text with
 the same component (layer bake), stills and thumbnails render the composition, so no new planner blocker is needed;
 the planner now warns `TEXT_LAYOUT_PENDING` when a text box is still an estimate. Validation: `MAX_TEXT_STROKES` (16)
-and `MAX_SHADOW_SPREAD_PX` (10 000) are invariants (INV-012) with repair (`repair-text-style`); the renderers also cap
+and `MAX_SHADOW_SPREAD_PX` (10 000) are invariants (INV-012; `MAX_TEXT_STROKES` is the one constant the text-style
+patches of SH-003 also bound with; their command schema accepts spreads up to 1 000 px) with repair (`repair-text-style`); the renderers also cap
 at 16 strokes and clamp the spread, so an unreadable value never allocates.
 
 ## 3. Text measurer
@@ -143,6 +144,15 @@ deterministic; textperf measured 1080 × 760 with its own box) — ≈ 2 × fewe
   text-relayout.test.ts` (system relayout without History entries, redo back to an estimate, read-only),
   `packages/compositions/test/text-paint.test.tsx` (plan decisions, paint CSS, layer structure),
   `apps/engine/test/text-bake-crop.test.ts`.
+- In the running app (build VM dev stack, engine 47923 / vite 5193, Chromium via agent-browser): a project made by
+  an agent transaction while the dev bundle was still building (boxes estimated, `layoutPending`) opened in the editor;
+  the session measured both titles at once (Montserrat 800: 848 → 836 px and 1144 → 1027 px wide, anchors moved to
+  the new centres, no History entry) and autosave wrote them (revision 1 → 2). The Program monitor and a Program
+  still drew the outside stroke with its 27 px-spread / 120 px-blur shadow (fast path) and the inside + outside
+  strokes under a 50 % fill (tile filter). Found and fixed on the way: autosave took the revision current when it
+  attached as saved, so a measurement made between open and autosave was never saved
+  (`packages/session/src/persistence/autosave.ts` now starts from `EditorSession.openedRevision`; regression test in
+  `text-relayout.test.ts`).
 - Goldens re-blessed after inspection: `goldens/scenes/text.png` (drop shadow blur 1 px: the shadow is now a blurred
   silhouette instead of a CSS text-shadow; PSNR 42.2 dB vs the old golden, max 67 levels on the shadow's anti-aliased
   edge, the text pixels unchanged) and `goldens/scenes/captions.png` (3 pixels where the two lines' background boxes
