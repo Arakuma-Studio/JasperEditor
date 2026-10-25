@@ -108,7 +108,9 @@ describe('Motion Templates panel', () => {
 		expect(screen.getByRole('listitem', { name: 'Title Card (Titles)' })).toBeTruthy();
 		fireEvent.change(screen.getByLabelText('Search templates'), { target: { value: '' } });
 		fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'anime' } });
-		fireEvent.keyDown(screen.getByRole('listitem', { name: 'Counter (Counters)' }), { key: 'Enter' });
+		fireEvent.keyDown(screen.getByRole('listitem', { name: 'Subscribers · Counter (Counters)' }), {
+			key: 'Enter',
+		});
 		const after = Object.values(Object.values(session.getCommitted().sequences)[0]!.clips).filter(
 			(c) => c.kind === 'motion-graphic',
 		);

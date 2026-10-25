@@ -673,6 +673,48 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		);
 	};
 
+	/**
+	 * A section's visible rows; C3: template params in `rowGroups` under a collapsible sub-header per group (rows in no
+	 * group first). A group whose rows are all filtered out is not drawn.
+	 */
+	const renderSectionRows = (s: FxSection, rows: Row[]): ReactNode => {
+		if (!s.rowGroups) return rows.map((r) => renderRow(r));
+		const byId = new Map(rows.map((r) => [r.id, r]));
+		const grouped = new Set(s.rowGroups.flatMap((g) => g.rowIds));
+		return (
+			<>
+				{rows.filter((r) => !grouped.has(r.id)).map((r) => renderRow(r))}
+				{s.rowGroups.map((g) => {
+					const groupRows = g.rowIds.map((id) => byId.get(id)).filter((r): r is Row => !!r);
+					if (groupRows.length === 0) return null;
+					const key = `${s.id}:group:${g.id}`;
+					const groupOpen = !collapsed[key];
+					return (
+						<div key={key} data-ec-param-group={g.id}>
+							<div className="flex items-stretch">
+								<div
+									style={left}
+									className="flex h-[var(--pr-row-h)] min-w-0 shrink-0 items-center gap-1 pl-4 pr-1"
+								>
+									<MiniButton
+										label={groupOpen ? `Collapse ${g.label}` : `Expand ${g.label}`}
+										onClick={() => setCollapsed({ ...collapsed, [key]: groupOpen })}
+										data-testid={`ec-group-toggle-${g.id}`}
+									>
+										<CaretGlyph open={groupOpen} size={11} />
+									</MiniButton>
+									<span className="min-w-0 flex-1 truncate text-pr-ui text-pr-text">{g.label}</span>
+								</div>
+								{lane(<SummaryLane rows={groupRows} seq={seq} range={range} />)}
+							</div>
+							{groupOpen ? groupRows.map((r) => renderRow(r)) : null}
+						</div>
+					);
+				})}
+			</>
+		);
+	};
+
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard shortcuts (Delete) and drops
 		<div
@@ -912,7 +954,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												/>
 											</div>
 										) : null}
-										{open ? rows.map((r) => renderRow(r)) : null}
+										{open ? renderSectionRows(s, rows) : null}
 										{open && s.textAnimators ? (
 											<TextAnimatorList
 												session={session}

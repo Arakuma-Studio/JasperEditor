@@ -77,4 +77,44 @@ export const counter: MgAnimeTemplateDefinition<CounterParams> = {
 	outroFrames: 15,
 	defaultDurationSeconds: 5,
 	canvases: [...CANVASES],
+	// C3: one gallery card per common use; the params grouped as in the Essential Graphics panel.
+	presets: [
+		{ id: 'subscribers', name: 'Subscribers', description: 'Counts up to 1,250 subscribers.', params: {} },
+		{
+			id: 'percentage',
+			name: 'Percentage',
+			description: 'Counts up to 100 % with a "Complete" label.',
+			params: { to: 100, suffix: '%', label: 'Complete' },
+		},
+		{
+			id: 'money-raised',
+			name: 'Money Raised',
+			description: 'Counts up to $25,000 with a "Raised" label.',
+			params: { to: 25000, prefix: '$', label: 'Raised' },
+		},
+	],
+	ui: {
+		groups: [
+			{
+				id: 'number',
+				label: 'Number',
+				params: ['from', 'to', 'decimals', 'decimalSeparator', 'thousandsSeparator', 'prefix', 'suffix'],
+			},
+			{ id: 'label', label: 'Label', params: ['label', 'labelColor'] },
+			{ id: 'style', label: 'Style', params: ['numberColor', 'size'] },
+			{ id: 'animation', label: 'Animation', params: ['countSeconds', 'ease'] },
+		],
+		params: {
+			decimalSeparator: {
+				description: 'Shown when the number has decimals.',
+				visibleWhen: { param: 'decimals', in: [1, 2, 3, 4, 5, 6] },
+			},
+			size: { label: 'Number Size', description: 'Number size in design pixels (the label is 30 % of it).' },
+			countSeconds: {
+				label: 'Count Duration',
+				description:
+					'Seconds from the clip start to the final number (clamped to the content before the outro).',
+			},
+		},
+	},
 };
