@@ -176,10 +176,13 @@ import {
 	ProposalCreateResponseSchema,
 	ProposalDecisionResponseSchema,
 	ProposalDeleteResponseSchema,
+	ProposalFeaturesResponseSchema,
 	ProposalGetQuerySchema,
 	ProposalListResponseSchema,
 	ProposalMarkAppliedRequestSchema,
 	ProposalNoteRequestSchema,
+	ProposalRefreshRequestSchema,
+	ProposalRefreshResponseSchema,
 	ProposalRejectRequestSchema,
 	ProposalReopenRequestSchema,
 	ProposalResponseSchema,
@@ -258,6 +261,7 @@ import {
 } from './speech.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
+import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -848,6 +852,21 @@ export const ROUTES = {
 		path: '/api/media/:key/transcribe',
 		body: TranscribeMediaRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** Spec 14 TC-001: a `voice-analysis` job for one audio stream of a media (result `VoiceAnalysisJobResult`). */
+	voiceAnalyze: {
+		method: 'POST',
+		path: '/api/media/:key/voice-analysis',
+		body: VoiceAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** The cached voice analysis file of a stream (`decodeVoiceAnalysis`); 404 `VOICE_ANALYSIS_NOT_FOUND` when none. */
+	voiceAnalysisGet: {
+		method: 'GET',
+		path: '/api/media/:key/voice-analysis',
+		query: VoiceAnalysisQuerySchema,
+		response: 'binary',
 	},
 	/** A `transcription` job for the mixed audio of a sequence (result in sequence time). */
 	speechTranscribeSequence: {
@@ -1498,6 +1517,19 @@ export const ROUTES = {
 		method: 'DELETE',
 		path: '/api/projects/:projectId/proposals/:proposalId',
 		response: ProposalDeleteResponseSchema,
+	},
+	/** Spec 15 EA-003 "Refresh proposal": the feature's producer re-plans stale items (nothing is applied). */
+	proposalRefresh: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/refresh',
+		body: ProposalRefreshRequestSchema,
+		response: ProposalRefreshResponseSchema,
+	},
+	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
+	proposalFeatures: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposal-features',
+		response: ProposalFeaturesResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 

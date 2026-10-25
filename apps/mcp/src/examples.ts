@@ -223,6 +223,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		value: 0.5,
 	},
 	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	// spec 15 EA-031: a cut kit (adjustment clip 10 + 10 frames around the cut at 00:00:02:00 with a blur and a
+	// Transform zoom keyed relative to the item's start) — one command per decoration; on V3 (created when missing).
+	'clip.addAdjustmentBatch': {
+		type: 'clip.addAdjustmentBatch',
+		trackId: 'V3',
+		items: [
+			{
+				start: 50,
+				length: 20,
+				name: 'Zoom-blur',
+				effects: [
+					{
+						effectId: 'jasper.gaussian-blur',
+						keyframes: {
+							radius: [
+								{ frame: 0, value: 0, interpolation: 'bezier', easeOut: { influence: 0.75, slope: 0 } },
+								{ frame: 10, value: 40 },
+								{ frame: 20, value: 0 },
+							],
+						},
+					},
+					{
+						effectId: 'jasper.transform',
+						params: { shutterAngle: 360 },
+						keyframes: {
+							scaleHeight: [
+								{ frame: 0, value: 100 },
+								{ frame: 10, value: 170 },
+								{ frame: 20, value: 100 },
+							],
+						},
+					},
+				],
+				ref: '$kit',
+			},
+		],
+	},
+	// spec 15 EA-031: punch-in keys on clips (Motion scale 100 → 180 % over 7 frames from the clip's midpoint), here
+	// on the clip of the clip.place example ("$clip").
+	'keyframe.addBatch': {
+		type: 'keyframe.addBatch',
+		targets: [
+			{
+				clipId: '$clip',
+				path: ['transform', 'scale'],
+				keys: [
+					{ at: { frames: 30 }, value: 100 },
+					{ at: { frames: 37 }, value: 180 },
+				],
+			},
+		],
+	},
 	'keyframe.add': {
 		type: 'keyframe.add',
 		target: ['clip', '$clip', 'transform', 'position'],
@@ -586,6 +638,53 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		minConfidence: 0.5,
 	},
+	// spec 13 SH-003 / AS-032: many text clips at once ("$title" from the clip.addText example; "$selection" in the
+	// open editor): a deep style patch, effects with keys timed from each clip's In, and linked project text styles.
+	'text.setStyle': {
+		type: 'text.setStyle',
+		clipIds: ['$title'],
+		patch: {
+			sizePx: 98,
+			strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
+			shadow: { color: [0.13, 0.11, 0.35, 0.8], angleDeg: 90, distancePx: 0, blurPx: 12 },
+		},
+	},
+	'effect.addMany': {
+		type: 'effect.addMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		keyframes: {
+			radius: [
+				{ offset: { frames: 0 }, value: 30 },
+				{ offset: { seconds: 0.1 }, value: 0 },
+			],
+		},
+	},
+	'effect.setParamMany': {
+		type: 'effect.setParamMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		param: 'radius',
+		value: 12,
+		at: { frames: 1 },
+	},
+	'effect.removeMany': {
+		type: 'effect.removeMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		occurrence: 0,
+	},
+	'textStyle.create': { type: 'textStyle.create', name: 'Pixel Pop', fromClipId: '$title', ref: '$style' },
+	'textStyle.apply': { type: 'textStyle.apply', styleId: '$style', clipIds: ['$title'] },
+	'textStyle.update': {
+		type: 'textStyle.update',
+		styleId: '$style',
+		patch: { sizePx: 110, fill: [1, 1, 1, 1] },
+	},
+	'textStyle.rename': { type: 'textStyle.rename', styleId: '$style', name: 'Pixel Pop 2025' },
+	'textStyle.reset': { type: 'textStyle.reset', clipIds: ['$title'], fields: ['sizePx'] },
+	'textStyle.detach': { type: 'textStyle.detach', clipIds: ['$title'] },
+	'textStyle.delete': { type: 'textStyle.delete', styleId: '$style' },
 };
 
 /** A multi-command transaction showing temp refs. */

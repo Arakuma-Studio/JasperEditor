@@ -189,6 +189,61 @@ export const ProposalDecisionResponseSchema = z.object({
 });
 export type ProposalDecisionResponse = z.infer<typeof ProposalDecisionResponseSchema>;
 
+/**
+ * `POST …/:proposalId/refresh` (spec 15 EA-003, "Refresh proposal"): the feature's producer re-plans items on the
+ * current document — `"stale"` = every stale item (re-validated first), or ids (pending, stale or invalid ones).
+ * Nothing is applied; re-planned items come back pending for review. `409 PROPOSAL_NOT_REFRESHABLE` when the feature
+ * has no producer that refreshes.
+ */
+export const ProposalRefreshRequestSchema = z.strictObject({
+	itemIds: z.union([z.literal('stale'), z.array(ProposalItemIdSchema).min(1).max(PROPOSAL_LIMITS.maxItems)]),
+});
+export type ProposalRefreshRequest = z.infer<typeof ProposalRefreshRequestSchema>;
+
+export const ProposalRefreshResponseSchema = z.object({
+	proposal: ProposalSchema,
+	/** Items re-planned (pending again, or invalid when the new plan fails). */
+	refreshed: z.array(z.string()),
+	/** Items the producer found no longer apply (invalid, with the reason). */
+	dropped: z.array(z.string()),
+	/** Requested items the producer left as they were. */
+	unchanged: z.array(z.string()),
+	/** Items stale after the refresh (on the current document). */
+	stale: z.array(ProposalStaleItemSchema),
+	/** Document revision the refresh was planned on. */
+	revision: z.number().int(),
+});
+export type ProposalRefreshResponse = z.infer<typeof ProposalRefreshResponseSchema>;
+
+/** One proposal feature as agents and the editor read it (`GET /api/projects/:projectId/proposal-features`). */
+export const ProposalFeatureSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	description: z.string(),
+	itemNoun: z.object({ one: z.string(), other: z.string() }),
+	groups: z.array(z.object({ id: z.string(), label: z.string() })),
+	producers: z.array(z.string()),
+	/**
+	 * Whether an agent may accept its proposals in this project: `project` — Project Settings ▸ Agent Proposals
+	 * (`allowed`, `default`, `explicit` = the user set it); `sound-sequence` — per sequence (`sequences`: id → allowed).
+	 */
+	agentAccept: z.union([
+		z.object({
+			setting: z.literal('project'),
+			allowed: z.boolean(),
+			default: z.boolean(),
+			explicit: z.boolean(),
+		}),
+		z.object({ setting: z.literal('sound-sequence'), sequences: z.record(z.string(), z.boolean()) }),
+	]),
+	/** Its producer re-plans stale items on request ("Refresh proposal"). */
+	refreshable: z.boolean(),
+});
+export type ProposalFeature = z.infer<typeof ProposalFeatureSchema>;
+
+export const ProposalFeaturesResponseSchema = z.object({ features: z.array(ProposalFeatureSchema) });
+export type ProposalFeaturesResponse = z.infer<typeof ProposalFeaturesResponseSchema>;
+
 export const ProposalDeleteResponseSchema = z.object({ proposalId: z.string(), deleted: z.literal(true) });
 export type ProposalDeleteResponse = z.infer<typeof ProposalDeleteResponseSchema>;
 
@@ -207,6 +262,8 @@ export const PROPOSAL_CHANGES = [
 	'waiting',
 	/** A Sound Check of the proposal was stored on it (`report.check`, spec 12 §4 P6-E5); its items did not change. */
 	'checked',
+	/** Its producer re-planned items ("Refresh proposal", spec 15 EA-003). */
+	'refreshed',
 ] as const;
 
 /** Event `proposal.changed` (engine `/events`, scoped to the project). */

@@ -1,7 +1,8 @@
 /**
  * @jasper/audio-dsp — pure, deterministic, allocation-free-in-the-hot-path audio DSP (AudioWorklet friendly):
  * BS.1770-4 / EBU R128 loudness, true-peak detection and limiting, level meters, channel layouts and pan
- * laws, auto-ducking analysis, WAV I/O, band-limited resampling and audio sync (two-pass GCC-PHAT, wp-multicam).
+ * laws, auto-ducking analysis, WAV I/O, band-limited resampling, audio sync (two-pass GCC-PHAT, wp-multicam) and voice
+ * analysis frames (levels, voicing, flatness, speech / breath / silence classes; spec 14 TC-001).
  * Audio is planar `Float32Array[]`.
  *
  * Large parts are ported from FilmCraft `crates/audio-dsp` (MIT OR Apache-2.0,
@@ -113,4 +114,32 @@ export {
 	type SyncOptions,
 	type SyncResult,
 } from './sync.ts';
+export {
+	classifyVoiceFrames,
+	DIGITAL_SILENCE_DB,
+	type LevelStats,
+	levelStats,
+	quantiseUnit,
+	quantiseVoiceLevel,
+	speechThresholdDb,
+	unitOf,
+	VOICE_CLASS_BREATH,
+	VOICE_CLASS_RULES,
+	VOICE_CLASS_SILENCE,
+	VOICE_CLASS_SPEECH,
+	VOICE_HOP,
+	VOICE_LEVEL_MIN_DB,
+	VOICE_LEVEL_STEP_DB,
+	VOICE_SAMPLE_RATE,
+	VOICE_WINDOW,
+	VOICE_WINDOW_LEAD,
+	VOICE_WINDOW_TAIL,
+	VoiceFeatureExtractor,
+	type VoiceFeaturePlanes,
+	type VoiceLevels,
+	voiceFeatures,
+	voiceFrameCount,
+	voiceLevelDb,
+	voiceLevels,
+} from './voice.ts';
 export { type DecodedWav, decodeWav, encodeWav, type WavFormat, wavChannelMask } from './wav.ts';

@@ -79,6 +79,10 @@ for (const p of Object.values(project.DELIVERY_PRESETS)) {
 for (const t of project.SOUND_MODEL_STRINGS) add(t);
 // Proposals: why a previewed item fails (WP6.5b: an invariant broken only together with the items before it).
 for (const t of project.PROPOSAL_MODEL_STRINGS) add(t);
+// spec 13 AS-030: the dynamic stroke rows (`text.stroke.<i>.*`) and the stroke list's History steps.
+for (const t of project.TEXT_STROKE_MODEL_STRINGS) add(t);
+// Proposal features (spec 15 EA-002): names, item nouns and the Review groups producers declare.
+for (const t of project.PROPOSAL_FEATURE_MODEL_STRINGS) add(t);
 // The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
 add('Agent');
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));

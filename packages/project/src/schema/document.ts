@@ -1,5 +1,6 @@
 // Project document root, project items and the persistence envelope (S01 §4, §5, PER-002).
 import { z } from 'zod';
+import type { ProjectTextStyle } from '../text-styles/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, LabelColorSchema, nonNegInt } from './common.ts';
 import {
@@ -177,6 +178,18 @@ export const ProjectIngestSchema = z.looseObject({
 });
 export type ProjectIngest = DeepStrip<z.infer<typeof ProjectIngestSchema>>;
 
+/**
+ * Spec 15 EA-001 (schema v9): Project Settings ▸ General ▸ Agent Proposals — "Allow agents to apply <feature>
+ * proposals", per proposal feature id (`edit-automation`, `subtitles`, `transcript-cleanup`). Absent entries take the
+ * feature's default (on for these three, `PROPOSAL_FEATURES`); sound design keeps its own per-sequence setting
+ * (`soundDesign.settings.agentsMayApply`). An agent turning an entry on needs the user's approval (agent guard).
+ */
+export const PROJECT_AGENT_PROPOSAL_FEATURE_RE = /^[a-z][a-z0-9-]{0,63}$/;
+export const ProjectAgentProposalsSchema = z
+	.record(z.string().regex(PROJECT_AGENT_PROPOSAL_FEATURE_RE), z.boolean())
+	.refine((r) => Object.keys(r).length <= 64, 'at most 64 features');
+export type ProjectAgentProposals = z.infer<typeof ProjectAgentProposalsSchema>;
+
 export const ProjectSettingsSchema = z.looseObject({
 	defaultSequencePreset: z.string(),
 	mediaPolicy: z.looseObject({ copyOnImport: z.boolean() }),
@@ -193,6 +206,12 @@ export const ProjectSettingsSchema = z.looseObject({
 	display: ProjectDisplaySchema.optional(),
 	scratch: ProjectScratchSchema.optional(),
 	ingest: ProjectIngestSchema.optional(),
+	/**
+	 * v9 (spec 15 EA-001): agent accept per proposal feature (`ProjectAgentProposalsSchema`). Read leniently: an
+	 * unreadable value never fails the load (`agentProposalsAllowed` treats it as off; repair rewrites it as off and
+	 * reports it). `project.updateSettings` validates it strictly.
+	 */
+	agentProposals: z.unknown().optional(),
 });
 export type ProjectSettings = DeepStrip<z.infer<typeof ProjectSettingsSchema>>;
 
@@ -209,6 +228,11 @@ export const ProjectDocumentSchema = z.looseObject({
 	fonts: z.record(z.string(), FontRefSchema),
 	sequences: z.record(z.string(), SequenceSchema),
 	extensions: z.record(z.string(), z.unknown()),
+	/**
+	 * spec 13 SH-002 (schema v9): named project text styles by id (`tsy_…`) that text clips link to (`styleId`).
+	 * Read leniently (any value loads; INV-TEXTSTYLE checks it, `repairTextStyles` fixes it on load); absent = none.
+	 */
+	textStyles: z.custom<Record<string, ProjectTextStyle>>(() => true).optional(),
 });
 
 export type ProjectDocument = {
@@ -224,6 +248,8 @@ export type ProjectDocument = {
 	fonts: Record<string, FontRef>;
 	sequences: Record<string, Sequence>;
 	extensions: Record<string, unknown>;
+	/** spec 13 SH-002: named project text styles by id (absent = none; see `text-styles/model.ts`). */
+	textStyles?: Record<string, ProjectTextStyle>;
 };
 
 export type ProjectEnvelope = {

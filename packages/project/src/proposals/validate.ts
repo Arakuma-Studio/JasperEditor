@@ -18,6 +18,7 @@ import {
 	documentHash,
 	itemAnchors,
 } from './anchors.ts';
+import { proposalBudget, tooLargeIssue } from './budget.ts';
 import { type ComposedAccept, composeAcceptTx, itemOfCommand } from './compose.ts';
 import {
 	PROPOSAL_LIMITS,
@@ -26,6 +27,7 @@ import {
 	ProposalDraftSchema,
 	type ProposalIssue,
 	type ProposalItem,
+	type ProposalItemInput,
 	ProposalSchema,
 	selectedCommands,
 } from './schema.ts';
@@ -110,7 +112,15 @@ function setState(it: ProposalItem, state: ProposalItem['state'], reason?: strin
  * that conflicts with the items before it becomes `invalid`). Records each item's anchors. Accepted, rejected and
  * already invalid items are left as they are.
  */
-export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: ProposalContext): Proposal {
+export function validateProposal(
+	doc: ProjectDocument,
+	proposal: Proposal,
+	ctx: ProposalContext,
+	opts: {
+		/** Validate only these items (a refresh: the re-planned ones); the others keep their states and anchors. */
+		only?: ReadonlySet<string>;
+	} = {},
+): Proposal {
 	const items = new Map(proposal.items.map((it) => [it.id, it]));
 	const current = (): Proposal => ({ ...proposal, items: proposal.items.map((it) => items.get(it.id)!) });
 	const invalidate = (id: string, reason: string) => {
@@ -122,15 +132,16 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 	// The whole set first, with the invariant checker. When it holds, each item's own dry run only has to show that
 	// its commands apply without the other items (handlers refuse what is missing); the invariants were checked on
 	// the full set, and `planAccept` checks the exact set it applies again. This keeps 2 000 items affordable.
+	const inScope = (id: string) => !opts.only || opts.only.has(id);
 	const undecided = proposal.items
-		.filter((it) => it.state === 'pending' || it.state === 'stale')
+		.filter((it) => (it.state === 'pending' || it.state === 'stale') && inScope(it.id))
 		.map((it) => it.id);
 	const whole = undecided.length ? composeForCheck(current(), undecided) : null;
 	const wholeOk = !!whole?.ok && dryRunCommands(doc, whole.tx.commands, ctx, proposal.sequenceId).ok;
 	const itemCtx: ProposalContext = wholeOk ? { ...ctx, checkInvariants: false } : ctx;
 	for (const it0 of proposal.items) {
 		const it = items.get(it0.id)!;
-		if (it.state !== 'pending' && it.state !== 'stale') continue;
+		if ((it.state !== 'pending' && it.state !== 'stale') || !inScope(it.id)) continue;
 		const composed = composeForCheck(current(), [it.id]);
 		if (!composed.ok) {
 			invalidate(it.id, issueReason(composed.errors));
@@ -148,10 +159,11 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 		items.set(it.id, setState(it, 'pending'));
 	}
 	// Everything valid together: an item that conflicts with the items before it is invalid.
-	const stillAll = current().items.filter((it) => it.state === 'pending').length === undecided.length;
+	const stillAll =
+		current().items.filter((it) => it.state === 'pending' && inScope(it.id)).length === undecided.length;
 	for (let pass = 0; !(wholeOk && stillAll); pass++) {
 		const p = current();
-		const live = p.items.filter((it) => it.state === 'pending').map((it) => it.id);
+		const live = p.items.filter((it) => it.state === 'pending' && inScope(it.id)).map((it) => it.id);
 		if (live.length === 0) break;
 		if (pass >= MAX_CONFLICT_PASSES) {
 			for (const id of live) invalidate(id, 'not validated: too many items conflict with each other');
@@ -172,7 +184,9 @@ export function validateProposal(doc: ProjectDocument, proposal: Proposal, ctx: 
 	return {
 		...out,
 		items: out.items.map((it) =>
-			it.state === 'pending' ? { ...it, anchors: itemAnchors(doc, selectedCommands(it)) } : it,
+			it.state === 'pending' && inScope(it.id)
+				? { ...it, anchors: itemAnchors(doc, selectedCommands(it), it.meta) }
+				: it,
 		),
 	};
 }
@@ -240,6 +254,12 @@ function createProposalUnchecked(
 	meta: CreateProposalMeta,
 	ctx: ProposalContext,
 ): { ok: true; proposal: Proposal } | { ok: false; errors: ProposalIssue[] } {
+	// Spec 15 EA-004: over the caps, the creator learns what fits (a range to run the pass on) before anything else.
+	const rawItems = (draftIn as { items?: unknown } | null)?.items;
+	if (Array.isArray(rawItems)) {
+		const tooLarge = tooLargeIssue(proposalBudget(rawItems.filter((x) => x && typeof x === 'object')));
+		if (tooLarge) return { ok: false, errors: [tooLarge] };
+	}
 	const parsed = ProposalDraftSchema.safeParse(draftIn);
 	if (!parsed.success)
 		return {
@@ -255,14 +275,96 @@ function createProposalUnchecked(
 	const sequenceId = draft.sequenceId ?? null;
 	if (sequenceId !== null && !Object.hasOwn(doc.sequences, sequenceId))
 		errors.push({ code: 'E_NOT_FOUND', message: `Sequence not found: ${sequenceId}`, path: ['sequenceId'] });
-	const sets = (it: ProposalDraft['items'][number]) => [
+	if (errors.length) return { ok: false, errors: errors.slice(0, 100) };
+	const prepared = prepareItems(doc, draft.items, sequenceId);
+	if (!prepared.ok) return prepared;
+	const { items, addressFailures } = prepared;
+
+	const proposal: Proposal = {
+		version: 1,
+		id: meta.id,
+		projectId: meta.projectId,
+		sequenceId,
+		feature: draft.feature,
+		title: draft.title,
+		summary: draft.summary ?? '',
+		author: meta.author,
+		createdAt: meta.now,
+		updatedAt: meta.now,
+		baseRevision: meta.revision,
+		docHash: documentHash(doc),
+		items: items.map((it) =>
+			addressFailures.has(it.id) ? setState(it, 'invalid', addressFailures.get(it.id)!) : it,
+		),
+		...(draft.report !== undefined ? { report: draft.report } : {}),
+	};
+	const tooBig = proposalBytesIssue(proposal);
+	if (tooBig) return { ok: false, errors: [tooBig] };
+	const validated = validateProposal(doc, withInvalidDependents(proposal, addressFailures.keys()), {
+		...ctx,
+		revision: meta.revision,
+	});
+	const check = ProposalSchema.safeParse(validated);
+	if (!check.success)
+		return {
+			ok: false,
+			errors: [{ code: 'E_SCHEMA', message: `proposal: ${check.error.issues[0]?.message ?? 'invalid'}` }],
+		};
+	return { ok: true, proposal: validated };
+}
+
+/** E_TOO_LARGE when the stored proposal would exceed `maxBytes` (spec 15 EA-004), else null. */
+function proposalBytesIssue(proposal: Proposal): ProposalIssue | null {
+	let bytes = 0;
+	try {
+		bytes = utf8Length(JSON.stringify(proposal));
+	} catch {
+		bytes = Number.POSITIVE_INFINITY;
+	}
+	if (bytes <= PROPOSAL_LIMITS.maxBytes) return null;
+	return {
+		code: 'E_TOO_LARGE',
+		message: `A proposal may be at most ${PROPOSAL_LIMITS.maxBytes} bytes (got ${bytes}): run the pass on a shorter range`,
+		detail: { bytes, limits: { maxBytes: PROPOSAL_LIMITS.maxBytes } },
+	};
+}
+
+/** Items requiring one of `invalidIds` (pending) become invalid too. */
+function withInvalidDependents(p: Proposal, invalidIds: Iterable<string>): Proposal {
+	let out = p;
+	for (const id of invalidIds)
+		out = {
+			...out,
+			items: out.items.map((it) =>
+				dependents(out, id).some((d) => d.id === it.id) && it.state === 'pending'
+					? setState(it, 'invalid', `requires item ${id}, which is invalid`)
+					: it,
+			),
+		};
+	return out;
+}
+
+/**
+ * A creator's items as stored (pending), checked like a draft's: no unknown command keys, agent addressing forms
+ * resolved against `doc` (an item whose address fails is listed in `addressFailures`), every command of a known type
+ * whose schema parses. Shared by `createProposal` and `refreshProposalItems`.
+ */
+export function prepareItems(
+	doc: ProjectDocument,
+	inputs: readonly ProposalItemInput[],
+	sequenceId: string | null,
+):
+	| { ok: true; items: ProposalItem[]; addressFailures: Map<string, string> }
+	| { ok: false; errors: ProposalIssue[] } {
+	const errors: ProposalIssue[] = [];
+	const sets = (it: ProposalItemInput) => [
 		{ path: ['commands'] as (string | number)[], commands: it.commands },
 		...(it.alternatives ?? []).map((a, k) => ({
 			path: ['alternatives', k, 'commands'],
 			commands: a.commands,
 		})),
 	];
-	draft.items.forEach((it, i) => {
+	inputs.forEach((it, i) => {
 		for (const s of sets(it))
 			for (const issue of unknownCommandKeyIssues(s.commands))
 				errors.push({
@@ -282,7 +384,7 @@ function createProposalUnchecked(
 		if (!addressFailures.has(id)) addressFailures.set(id, issueReason(r.errors));
 		return commands;
 	};
-	const items: ProposalItem[] = draft.items.map((it) => {
+	const items: ProposalItem[] = inputs.map((it) => {
 		const commands = resolve(it.id, it.commands);
 		const alternatives = it.alternatives?.map((a) => ({ ...a, commands: resolve(it.id, a.commands) }));
 		return {
@@ -331,61 +433,11 @@ function createProposalUnchecked(
 			});
 	});
 	if (errors.length) return { ok: false, errors: errors.slice(0, 100) };
-
-	const proposal: Proposal = {
-		version: 1,
-		id: meta.id,
-		projectId: meta.projectId,
-		sequenceId,
-		feature: draft.feature,
-		title: draft.title,
-		summary: draft.summary ?? '',
-		author: meta.author,
-		createdAt: meta.now,
-		updatedAt: meta.now,
-		baseRevision: meta.revision,
-		docHash: documentHash(doc),
-		items: items.map((it) =>
-			addressFailures.has(it.id) ? setState(it, 'invalid', addressFailures.get(it.id)!) : it,
-		),
-		...(draft.report !== undefined ? { report: draft.report } : {}),
-	};
-	let bytes = 0;
-	try {
-		bytes = utf8Length(JSON.stringify(proposal));
-	} catch {
-		bytes = Number.POSITIVE_INFINITY;
-	}
-	if (bytes > PROPOSAL_LIMITS.maxBytes)
-		return {
-			ok: false,
-			errors: [
-				{
-					code: 'E_LIMIT',
-					message: `A proposal may be at most ${PROPOSAL_LIMITS.maxBytes} bytes (got ${bytes})`,
-				},
-			],
-		};
-	// Items requiring an address-invalid item are invalid too; validation then dry-runs the rest.
-	let withDeps = proposal;
-	for (const id of addressFailures.keys())
-		withDeps = {
-			...withDeps,
-			items: withDeps.items.map((it) =>
-				dependents(withDeps, id).some((d) => d.id === it.id) && it.state === 'pending'
-					? setState(it, 'invalid', `requires item ${id}, which is invalid`)
-					: it,
-			),
-		};
-	const validated = validateProposal(doc, withDeps, { ...ctx, revision: meta.revision });
-	const check = ProposalSchema.safeParse(validated);
-	if (!check.success)
-		return {
-			ok: false,
-			errors: [{ code: 'E_SCHEMA', message: `proposal: ${check.error.issues[0]?.message ?? 'invalid'}` }],
-		};
-	return { ok: true, proposal: validated };
+	return { ok: true, items, addressFailures };
 }
+
+/** Exported for `refreshProposalItems` (same rules as creation). */
+export { proposalBytesIssue, setState as setItemState, withInvalidDependents };
 
 /**
  * Why an item is stale, for the editor to say in the user's language: an anchor moved or went (with what it was, where

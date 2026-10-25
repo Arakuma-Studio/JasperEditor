@@ -28,6 +28,8 @@ function rgbaCss(c: readonly number[]): string {
 /** 24×16 swatch opening the platform color picker, plus alpha in percent (S05:CT-014). */
 export function ColorField(props: {
 	value: RGBA | null;
+	/** spec 13 AS-030: the differing colours of a mixed selection (the swatch shows the first two split). */
+	mixed?: readonly RGBA[];
 	label: string;
 	onChange(v: RGBA): void;
 	disabled?: boolean;
@@ -46,9 +48,12 @@ export function ColorField(props: {
 				style={{
 					background: value
 						? rgbaCss(c)
-						: 'repeating-linear-gradient(45deg, var(--pr-border-strong) 0 3px, transparent 3px 6px)',
+						: props.mixed && props.mixed.length >= 2
+							? `linear-gradient(135deg, ${rgbaCss(props.mixed[0]!)} 0 50%, ${rgbaCss(props.mixed[1]!)} 50% 100%)`
+							: 'repeating-linear-gradient(45deg, var(--pr-border-strong) 0 3px, transparent 3px 6px)',
 				}}
-				title={props.label}
+				title={value ? props.label : `${props.label}: Mixed`}
+				data-mixed={value ? undefined : 'true'}
 			>
 				<input
 					type="color"
@@ -132,7 +137,7 @@ export function SelectField<T extends string | number>(props: {
 			}}
 			data-testid={props['data-testid']}
 		>
-			{props.value === null ? <option value="">–</option> : null}
+			{props.value === null ? <option value="">Mixed</option> : null}
 			{props.groups
 				? optionRuns(props.groups, props.options.length).map((run) => (
 						<optgroup key={`${run.label}:${run.start}`} label={run.label}>

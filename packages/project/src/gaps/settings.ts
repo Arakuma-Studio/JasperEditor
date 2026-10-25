@@ -1,5 +1,7 @@
 import type { Issue } from '../commands/types.ts';
+import { projectSettingFeatures } from '../proposals/features.ts';
 import {
+	ProjectAgentProposalsSchema,
 	type ProjectDisplay,
 	ProjectDisplaySchema,
 	type ProjectDocument,
@@ -79,6 +81,8 @@ registerGapsCheck({
 		bad('display', ProjectDisplaySchema);
 		bad('scratch', ProjectScratchSchema);
 		bad('ingest', ProjectIngestSchema);
+		// v9 (spec 15 EA-001): Project Settings ▸ Agent Proposals
+		bad('agentProposals', ProjectAgentProposalsSchema);
 		return out;
 	},
 	repair(doc, note) {
@@ -97,8 +101,27 @@ registerGapsCheck({
 				);
 			}
 		}
+		agentProposalsRepair(s, (detail) => note('reset-project-settings', doc.projectId, detail));
 	},
 });
+
+/**
+ * Unreadable Project Settings ▸ Agent Proposals (spec 15 EA-001): readable entries are kept; the rest are rewritten as
+ * off — never as the default on, so damage never lets agents apply what the user may have turned off. Reported.
+ */
+function agentProposalsRepair(s: Record<string, unknown>, report: (detail: string) => void): void {
+	const v = s.agentProposals;
+	if (v === undefined || ProjectAgentProposalsSchema.safeParse(v).success) return;
+	const out: Record<string, boolean> = {};
+	if (v && typeof v === 'object' && !Array.isArray(v))
+		for (const [k, x] of Object.entries(v as Record<string, unknown>))
+			if (/^[a-z][a-z0-9-]{0,63}$/.test(k) && Object.keys(out).length < 64) out[k] = x === true;
+	for (const f of projectSettingFeatures()) if (!Object.hasOwn(out, f.id)) out[f.id] = false;
+	s.agentProposals = out;
+	report(
+		'unreadable "Allow agents to apply … proposals" settings: agents may not apply those proposals until you turn them on again (Project Settings ▸ General ▸ Agent Proposals)',
+	);
+}
 
 const issue = (invariant: string, message: string, path: string[]): Issue => ({
 	commandIndex: -1,

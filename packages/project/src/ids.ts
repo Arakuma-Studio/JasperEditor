@@ -40,6 +40,8 @@ export const ID_PREFIXES = {
 	cameraTracker: 'ctk',
 	/** sound-design (spec 12 §2.2): sound cues of a sequence (`Sequence.soundDesign.cues`). */
 	soundCue: 'cue',
+	/** spec 13 SH-002: project text styles (`ProjectDocument.textStyles`). */
+	textStyle: 'tsy',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

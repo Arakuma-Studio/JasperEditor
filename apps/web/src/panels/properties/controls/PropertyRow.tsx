@@ -25,13 +25,9 @@ import { inspectorFocus } from '../lib/focus.ts';
 import {
 	animState,
 	editLabel,
-	keyAtFrame,
-	navigateKey,
-	planReset,
-	planSet,
-	planStopwatch,
-	planToggleKey,
+	PLAYHEAD_PLANNER,
 	type Row,
+	type RowPlanner,
 	rowValue,
 	vecComponent,
 } from '../lib/model.ts';
@@ -53,9 +49,27 @@ export type RowContext = {
 	hint(message: string): void;
 	/** Asks before turning a stopwatch off (S03:KF-041); calls `onConfirm` when accepted. */
 	confirmStopwatchOff(label: string, onConfirm: () => void): void;
+	/** How edits become commands (default: at the playhead; Effect Controls N-clips mode: relative to each In). */
+	planner?: RowPlanner;
 };
 
 const OUTSIDE_HINT = 'Move the playhead over the clip to add a keyframe';
+
+/** spec 13 AS-030: the different colours of a mixed colour row, in binding order (for the split swatch). */
+function distinctColors(row: Row): [number, number, number, number][] {
+	const out: [number, number, number, number][] = [];
+	const seen = new Set<string>();
+	for (const b of row.bindings) {
+		const v = b.resolved.value;
+		if (!Array.isArray(v) || v.length !== 4) continue;
+		const k = JSON.stringify(v);
+		if (seen.has(k)) continue;
+		seen.add(k);
+		out.push(v as [number, number, number, number]);
+		if (out.length === 2) break;
+	}
+	return out;
+}
 
 const unitText = (u?: string) => (u === 'deg' ? '°' : u === '%' ? '%' : u ? ` ${u}` : undefined);
 
@@ -70,6 +84,7 @@ export function PropertyRow(props: {
 	twirl?: { open: boolean; onToggle(): void };
 }) {
 	const { row, ctx } = props;
+	const P = ctx.planner ?? PLAYHEAD_PLANNER;
 	const spec = row.spec;
 	const clips = row.bindings.length;
 	const label = editLabel(row, clips);
@@ -120,7 +135,7 @@ export function PropertyRow(props: {
 		ctx.ops.apply(label, commands, opts);
 	};
 	const commitFn = (compute: (base: unknown) => unknown) => {
-		const plan = planSet(row, live(), compute);
+		const plan = P.set(row, live(), compute);
 		apply(plan.commands, plan.skipped);
 	};
 
@@ -130,14 +145,14 @@ export function PropertyRow(props: {
 	};
 	const scrubTo = (compute: (base: unknown) => unknown) => {
 		const base = scrubRow.current ?? row;
-		const plan = planSet(base, live(), compute);
+		const plan = P.set(base, live(), compute);
 		ctx.ops.scrub.update(plan.commands);
 	};
 	const scrubEnd = (cancelled: boolean) => {
 		const base = scrubRow.current;
 		scrubRow.current = null;
 		ctx.ops.scrub.end(cancelled);
-		if (base && !cancelled) report(planSet(base, live(), (b) => b).skipped);
+		if (base && !cancelled) report(P.set(base, live(), (b) => b).skipped);
 	};
 
 	const numberEditor = (component?: 0 | 1 | 2) => {
@@ -375,9 +390,10 @@ export function PropertyRow(props: {
 				return (
 					<ColorField
 						value={mixed ? null : (value as [number, number, number, number])}
+						mixed={mixed ? distinctColors(row) : undefined}
 						label={row.label}
 						onChange={(c) => {
-							const plan = planSet(row, live(), () => c);
+							const plan = P.set(row, live(), () => c);
 							apply(plan.commands, plan.skipped, {
 								coalesceKey: `color:${row.id}:${row.bindings.map((b) => b.clip.id).join(',')}`,
 							});
@@ -418,11 +434,11 @@ export function PropertyRow(props: {
 		}
 	})();
 
-	const keyHere = row.bindings.every((b) => keyAtFrame(b, ctx.seq, ctx.frame) !== null);
-	const prev = anim !== 'none' ? navigateKey(row, ctx.seq, ctx.frame, -1) : null;
-	const next = anim !== 'none' ? navigateKey(row, ctx.seq, ctx.frame, 1) : null;
+	const keyHere = P.keyHere(row, ctx.seq, ctx.frame);
+	const prev = anim !== 'none' ? P.navigate(row, ctx.seq, ctx.frame, -1) : null;
+	const next = anim !== 'none' ? P.navigate(row, ctx.seq, ctx.frame, 1) : null;
 	const toggleKey = () => {
-		const plan = planToggleKey(row, ctx.seq, live());
+		const plan = P.toggleKey(row, ctx.seq, live());
 		if (plan.commands.length === 0 && plan.skipped.length) ctx.hint(OUTSIDE_HINT);
 		else apply(plan.commands, plan.skipped);
 	};
@@ -437,17 +453,17 @@ export function PropertyRow(props: {
 			return;
 		}
 		if (anim === 'none') {
-			const plan = planStopwatch(row, live(), true);
+			const plan = P.stopwatch(row, live(), true);
 			ctx.ops.apply(`Toggle Animation: ${row.label}`, plan.commands);
 		} else {
 			ctx.confirmStopwatchOff(row.label, () => {
-				const plan = planStopwatch(row, live(), false);
+				const plan = P.stopwatch(row, live(), false);
 				ctx.ops.apply(`Toggle Animation: ${row.label}`, plan.commands);
 			});
 		}
 	};
 	const reset = () => {
-		const plan = planReset(row, ctx.doc, ctx.seq, live());
+		const plan = P.reset(row, ctx.doc, ctx.seq, live());
 		apply(plan.commands, plan.skipped);
 	};
 	const canReset = spec.defaultValue !== undefined && row.bindings.some((b) => b.path !== null);
@@ -536,7 +552,7 @@ export function PropertyRow(props: {
 								label={`Previous keyframe for ${row.label}`}
 								disabled={prev === null}
 								onClick={() => {
-									const f = navigateKey(row, ctx.seq, live(), -1);
+									const f = P.navigate(row, ctx.seq, live(), -1);
 									if (f !== null) ctx.transport.seek(f);
 								}}
 								data-testid={`kf-prev-${row.id}`}
@@ -561,7 +577,7 @@ export function PropertyRow(props: {
 								label={`Next keyframe for ${row.label}`}
 								disabled={next === null}
 								onClick={() => {
-									const f = navigateKey(row, ctx.seq, live(), 1);
+									const f = P.navigate(row, ctx.seq, live(), 1);
 									if (f !== null) ctx.transport.seek(f);
 								}}
 								data-testid={`kf-next-${row.id}`}

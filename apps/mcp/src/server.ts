@@ -54,6 +54,7 @@ import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
+import { registerTextStyleTools, TEXT_STYLES_GUIDE } from './tools/text-styles.ts';
 import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
@@ -61,6 +62,7 @@ import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.t
 import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
 import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
+import { registerVoiceTools, VOICE_GUIDE } from './tools/voice.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
@@ -121,7 +123,9 @@ const FULL_GUIDE = [
 	SOUND_GUIDE,
 	PROPOSALS_GUIDE,
 	CAPTIONS_GUIDE,
+	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
+	VOICE_GUIDE,
 	ROTO_GUIDE,
 	SIM_WARP_GUIDE,
 	INTERCHANGE_GUIDE,
@@ -195,7 +199,9 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundProfileTools(ctx);
 	registerProposalTools(ctx);
 	registerCaptionTools(ctx);
+	registerTextStyleTools(ctx);
 	registerSpeechTools(ctx);
+	registerVoiceTools(ctx);
 	registerRotoTools(ctx);
 	registerSimWarpTools(ctx);
 	registerInterchangeTools(ctx);

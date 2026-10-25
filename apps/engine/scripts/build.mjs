@@ -90,6 +90,23 @@ await build({
 	logLevel: 'warning',
 });
 
+// Spec 14 TC-001: the voice analysis worker threads (frame features off the engine's main thread), loaded by
+// src/voice/pool.ts from `voice-worker.mjs` next to engine.mjs.
+await build({
+	entryPoints: [join(root, 'src/voice/worker.ts')],
+	outfile: join(root, 'dist/voice-worker.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
 // wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
 // engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.
 await build({
