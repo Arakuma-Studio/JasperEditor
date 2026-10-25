@@ -8,9 +8,11 @@ import {
 	checkInvariants,
 	contentTimeAt,
 	createCounterIdSource,
+	dropUnreadableKeySides,
 	evaluate,
 	type Interpolation,
 	type Keyframe,
+	loadProject,
 	type ProjectDocument,
 	type Rational,
 	repairDocument,
@@ -351,11 +353,31 @@ describe('invariants, repair and paste (keyframe-sides)', () => {
 		there.forEach((v, j) => {
 			expect(v).toBeCloseTo(samples(0, 200)[j]!, 9);
 		});
-		// A tampered payload cannot smuggle an unreadable side in.
+		// A tampered payload cannot smuggle an unreadable side in: the payload schema refuses it.
 		payload.keyframes.keyframes[1].inInterpolation = 'hold';
 		h.ok([{ type: 'clip.addSolid', at: 800, duration: 300, track: 'V3', color: [0, 0, 1, 1] }]);
 		const third = h.clips('V3')[0]!.id;
-		h.ok([{ type: 'keyframe.paste', payload, clipId: third, at: { sequenceFrame: 800 } }]);
+		const doc = h.doc;
+		const r = h.tx([{ type: 'keyframe.paste', payload, clipId: third, at: { sequenceFrame: 800 } }]);
+		expect(r.ok).toBe(false);
+		expect(h.doc).toBe(doc);
 		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('loadProject reads a damaged incoming side leniently: dropped before validation and reported', () => {
+		const { h, ids } = setup();
+		const raw = clone(h.doc) as unknown as { sequences: Record<string, { clips: Record<string, VClip> }> };
+		const c = Object.values(Object.values(raw.sequences)[0]!.clips)[0]!;
+		(c.opacity.keyframes[1] as { inInterpolation?: unknown }).inInterpolation = { evil: true };
+		(c.opacity.keyframes[2] as { inInterpolation?: unknown }).inInterpolation = 'bezier';
+		const before = clone(raw);
+		const r = loadProject(raw);
+		expect(raw).toEqual(before); // the caller's data is not mutated
+		expect(r.repairs.filter((x) => x.action === 'repair-key-sides').map((x) => x.entity)).toEqual([ids[1]]);
+		const kfs = (Object.values(Object.values(r.document.sequences)[0]!.clips)[0] as VClip).opacity.keyframes;
+		expect(kfs[1]).not.toHaveProperty('inInterpolation');
+		expect(kfs[2]!.inInterpolation).toBe('bezier');
+		expect(r.issues).toEqual([]);
+		expect(dropUnreadableKeySides(r.document)).toEqual([]);
 	});
 });

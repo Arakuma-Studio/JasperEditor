@@ -167,8 +167,10 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 		time: int(),
 		value,
 		interpolation: InterpolationSchema,
-		// keyframe-sides: read leniently (any value loads); INV-011 reports a bad one and `repairDocument` fixes it.
-		inInterpolation: z.custom<InInterpolation>(() => true).optional(),
+		// keyframe-sides: strict (and JSON-Schema-representable: command and MCP inputs reuse this schema). Documents
+		// are read leniently all the same: `loadProject` drops an unknown value before validation
+		// (`dropUnreadableKeySides`), and INV-011 / `repairDocument` handle one-sided Auto / Continuous Bezier.
+		inInterpolation: InInterpolationSchema.optional(),
 		easeIn: EaseSchema,
 		easeOut: EaseSchema,
 		spatial: SpatialSchema.optional(),
