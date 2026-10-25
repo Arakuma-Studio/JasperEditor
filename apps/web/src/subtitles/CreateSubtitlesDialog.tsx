@@ -12,8 +12,17 @@ import {
 	templateNeedsFont,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useStoreSelector } from '@jasper/session/react';
-import { Button, Checkbox, Dialog, type HostedDialogProps, Select, TextField, toast } from '@jasper/ui';
+import { SessionProvider, useStoreSelector } from '@jasper/session/react';
+import {
+	Button,
+	Checkbox,
+	Dialog,
+	type HostedDialogProps,
+	PanelErrorBoundary,
+	Select,
+	TextField,
+	toast,
+} from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { useFonts } from '../fonts/hooks.ts';
 import { installFontFiles, isFontAvailable, pickFontFiles } from '../fonts/store.ts';
@@ -489,13 +498,18 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 				<div className="flex min-w-0 flex-col gap-2" data-testid="subtitles-preview">
 					<div className="aspect-video w-full overflow-hidden rounded-pr-control bg-pr-field-deep">
 						{preview?.ok && preview.first ? (
-							<FrameView
+							// hosted dialogs render outside the editor's SessionProvider; a preview failure stays in the box
+							<SessionProvider session={session}>
+								<PanelErrorBoundary name="Subtitle preview">
+									<FrameView
 								doc={preview.doc}
 								sequenceId={preview.sequenceId}
 								frame={preview.first.frame}
 								label={t('First subtitle')}
 								testId="subtitles-preview-frame"
 							/>
+								</PanelErrorBoundary>
+							</SessionProvider>
 						) : null}
 					</div>
 					{preview?.ok && preview.first ? (
