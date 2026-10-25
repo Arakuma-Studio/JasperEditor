@@ -274,9 +274,8 @@ function TemplateCard({
 				<span className="shrink-0 text-pr-small text-pr-dim">{entry.durationSeconds.toFixed(1)} s</span>
 			</div>
 			<div className="flex gap-1 px-0.5 text-pr-small text-pr-muted">
-				<span className="truncate">
-					{entry.ref.preset ? `${entry.templateName} · ${entry.category}` : entry.category}
-				</span>
+				{/* preset cards: the template name (the category is in the filter and the accessible name) */}
+				<span className="truncate">{entry.ref.preset ? entry.templateName : entry.category}</span>
 				<span className="ml-auto shrink-0">{entry.aspects.join(' · ')}</span>
 			</div>
 			<div className="truncate px-0.5 text-pr-small text-pr-dim" data-engine-label={entry.engine}>

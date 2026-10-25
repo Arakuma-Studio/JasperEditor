@@ -42,7 +42,22 @@ export type MgCatalogEntryJson = {
 	/** Named param presets (absent when the template has none). */
 	presets?: MgTemplatePreset[];
 	/** UI hints of the params (absent when the template has none). */
-	ui?: MgTemplateUi;
+	ui?: MgTemplateUiJson;
+};
+
+/** `MgTemplateUi` as plain JSON (mutable arrays, the shape of `@jasper/api` `MgTemplateUiSchema`). */
+export type MgTemplateUiJson = {
+	groups?: { id: string; label: string; params: string[] }[];
+	params?: Record<
+		string,
+		{
+			label?: string;
+			description?: string;
+			multiline?: boolean;
+			visibleWhen?: { param: string; in: unknown[] };
+			control?: string;
+		}
+	>;
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
@@ -323,6 +338,6 @@ function presetJson(p: MgTemplatePreset): MgTemplatePreset {
 	};
 }
 
-function uiJson(ui: MgTemplateUi): MgTemplateUi {
-	return JSON.parse(JSON.stringify(ui)) as MgTemplateUi;
+function uiJson(ui: MgTemplateUi): MgTemplateUiJson {
+	return JSON.parse(JSON.stringify(ui)) as MgTemplateUiJson;
 }

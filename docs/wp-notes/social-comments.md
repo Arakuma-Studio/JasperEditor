@@ -44,7 +44,7 @@ hint over the schema's `.describe()`). `TEMPLATES_GUIDE` documents the ref synta
 
 ### Gallery (Motion Templates ▸ Templates)
 
-- A template with presets shows one card per preset (title = preset name, second line "template · category",
+- A template with presets shows one card per preset (title = preset name, second line = the template name,
   `data-preset` on the card, accessible name "Preset · Template (Category)") and no card for the bare template.
   Templates without presets are unchanged.
 - The poster (anime: `<Thumbnail>`; fframes: the SVG twin) and the hover preview get `params` = the preset's params
