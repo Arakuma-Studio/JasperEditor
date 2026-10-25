@@ -210,7 +210,6 @@ export type RelinkScanDeps = {
 	host: HostPlatform;
 	signal: AbortSignal;
 	progress(progress: number | null, stage: string): void;
-	now?: () => number;
 };
 
 type IndexedFile = { path: string; name: string };
@@ -239,7 +238,7 @@ function outermost(roots: string[]): string[] {
 }
 
 export async function runRelinkScan(req: ScanRequest, deps: RelinkScanDeps): Promise<RelinkScanResult> {
-	const now = deps.now ?? Date.now;
+	const now = Date.now;
 	const criteria = effectiveCriteria(req.match, req.ignoreExtension);
 	const anchors = (req.anchors ?? []).filter((a) => isHostAbsolute(a.to, deps.host));
 	const ctx = planContext(anchors);

@@ -752,7 +752,7 @@ export class DerivativeService {
  * The format and length of a WAV / RF64 file FFmpeg wrote (`fmt ` and `ds64` / `data` chunks in the first 64 KiB);
  * null when it is not one.
  */
-export async function readWavInfo(
+async function readWavInfo(
 	file: string,
 ): Promise<{ channels: number; sampleRate: number; bitsPerSample: number; frames: number } | null> {
 	const fh = await open(file, 'r');

@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type {
 	AssetRelinkResponse,
 	EngineJob,
@@ -327,6 +327,147 @@ describe('interchange through the engine', () => {
 			},
 		});
 		expect(edl.statusCode).toBe(422);
-		expect(edl.json().code).toMatch(/^INTERCHANGE_/);
+		expect(edl.json().code).toBe('INTERCHANGE_PARSE');
+	});
+});
+
+/** Registered metadata supplies the schema-valid input; each route receives its own offline placeholder. */
+function relinkPlaceholder(
+	id: string,
+	path: string,
+	opts: { seconds?: number; kind?: MediaAsset['kind'] } = {},
+): MediaAsset {
+	const asset = Object.values(doc.doc.media).find((m) => m.kind === (opts.kind ?? 'video'))!;
+	return {
+		...asset,
+		id,
+		fingerprint: `pending:interchange:${id}`,
+		originalName: path.split(/[/\\]/).pop()!,
+		sizeBytes: 0,
+		probe: { ...asset.probe, durationFlicks: (opts.seconds ?? 2) * 705_600_000 },
+		locators: [{ type: 'path', path, relativeToProject: null }],
+	};
+}
+
+describe('Link Media routes', () => {
+	const post = (url: string, payload: object) =>
+		app.inject({ method: 'POST', url, headers: JSON_H, payload });
+
+	it('relinking to a path of another computer is refused with a named error', async () => {
+		const a = relinkPlaceholder('med_a', 'D:\\Media\\clip-a.mp4');
+		const r = await post('/api/assets/med_a/relink', {
+			projectId: 'prj_1',
+			path: 'D:\\Media\\clip-a.mp4',
+			asset: a,
+		});
+		expect(r.statusCode).toBe(400);
+		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED', retryable: false });
+		const rel = await post('/api/assets/med_a/relink', { projectId: 'prj_1', path: 'clip-a.mp4', asset: a });
+		expect(rel.statusCode).toBe(400);
+		expect(rel.json().code).toBe('VALIDATION_FAILED');
+		const bad = await post('/api/assets/med_a/relink', {
+			projectId: 'prj_1',
+			path: fixture('clip-a.mp4'),
+			asset: { id: 'med_a' },
+		});
+		expect(bad.statusCode).toBe(400);
+		expect(bad.json().code).toBe('VALIDATION_FAILED');
+	});
+
+	it('a located file is verified against the selected match properties', async () => {
+		const a = relinkPlaceholder('med_a', 'D:\\Media\\clip-a.mov', { seconds: 600 });
+		const r = await post('/api/assets/med_a/relink', {
+			projectId: 'prj_1',
+			path: fixture('clip-a.mp4'),
+			asset: a,
+			match: ['name', 'extension', 'duration'],
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		expect(r.json().failed).toEqual(['extension', 'duration']);
+		expect(r.json().needsConfirm).toBe(true);
+	});
+
+	it('relink-scan validates its body, folders and anchors; the result route checks the job', async () => {
+		const a = relinkPlaceholder('med_a', 'D:\\Media\\clip-a.mp4');
+		for (const payload of [{ assets: [] }, { assets: [a], match: ['bogus'] }]) {
+			const invalid = await post('/api/projects/prj_1/relink-scan', payload);
+			expect(invalid.statusCode).toBe(400);
+			expect(invalid.json().code).toBe('VALIDATION_FAILED');
+		}
+		const far = await post('/api/projects/prj_1/relink-scan', {
+			assets: [a],
+			anchors: [{ from: 'D:\\a.mov', to: 'E:\\a.mov' }],
+		});
+		expect(far.statusCode).toBe(400);
+		expect(far.json().code).toBe('VALIDATION_FAILED');
+		const nofolder = await post('/api/projects/prj_1/relink-scan', {
+			assets: [a],
+			folder: join(tempAppdir(), 'nope'),
+		});
+		expect(nofolder.statusCode).toBe(404);
+		expect(nofolder.json().code).toBe('NOT_FOUND');
+		const missing = await app.inject({
+			method: 'GET',
+			url: '/api/projects/prj_1/relink-scan/job_nope',
+			headers: JSON_H,
+		});
+		expect(missing.statusCode).toBe(404);
+		expect(missing.json().code).toBe('JOB_NOT_FOUND');
+	});
+
+	it('locate one Windows-path placeholder, the job relinks the others; the result is per project', async () => {
+		const mac = tempAppdir('jasper-mac-route-');
+		mkdirSync(join(mac, 'Media', 'B roll'), { recursive: true });
+		copyFileSync(fixture('clip-a.mp4'), join(mac, 'Media', 'clip-a.mp4'));
+		copyFileSync(fixture('clip-b.mp4'), join(mac, 'Media', 'B roll', 'clip-b.mp4'));
+		copyFileSync(fixture('tone.wav'), join(mac, 'Media', 'tone.wav'));
+		const assets = [
+			relinkPlaceholder('med_b', 'D:\\Media\\B roll\\clip-b.mp4', { seconds: 0.5 }),
+			relinkPlaceholder('med_t', 'D:\\Media\\tone.wav', { kind: 'audio', seconds: 0.5 }),
+		];
+		const r = await post('/api/projects/prj_2/relink-scan', {
+			anchors: [{ from: 'D:\\Media\\clip-a.mp4', to: join(mac, 'Media', 'clip-a.mp4') }],
+			assets,
+			match: ['name', 'extension', 'duration', 'streams'],
+		});
+		expect(r.statusCode, r.body).toBe(202);
+		const job = r.json() as EngineJob;
+		const end = await until(async () => {
+			const j = (
+				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: JSON_H })
+			).json() as EngineJob;
+			return ['succeeded', 'failed', 'cancelled'].includes(j.state) ? j : null;
+		}, 60_000);
+		expect(end.state, JSON.stringify(end.error)).toBe('succeeded');
+		expect(end.result).toEqual({
+			found: 2,
+			needsConfirm: 0,
+			ambiguous: 0,
+			notFound: 0,
+			scannedFiles: 0,
+			truncated: false,
+			timedOut: false,
+		});
+		const other = await app.inject({
+			method: 'GET',
+			url: `/api/projects/prj_1/relink-scan/${job.id}`,
+			headers: JSON_H,
+		});
+		expect(other.statusCode).toBe(404);
+		expect(other.json().code).toBe('JOB_NOT_FOUND');
+		const full = (
+			await app.inject({ method: 'GET', url: `/api/projects/prj_2/relink-scan/${job.id}`, headers: JSON_H })
+		).json() as RelinkScanResult;
+		expect(full.found.map((f) => [f.assetId, f.step, basename(f.path)])).toEqual([
+			['med_b', 'mapping', 'clip-b.mp4'],
+			['med_t', 'mapping', 'tone.wav'],
+		]);
+		const linked = await app.inject({
+			method: 'GET',
+			url: `/api/media/${full.found[0]!.media.mediaKey}`,
+			headers: JSON_H,
+		});
+		expect(linked.statusCode, linked.body).toBe(200);
+		expect(linked.json().status).toBe('online');
 	});
 });
