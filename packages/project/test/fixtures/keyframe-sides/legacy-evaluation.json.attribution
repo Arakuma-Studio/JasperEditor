@@ -1,0 +1,8 @@
+asset:        legacy-evaluation.json
+title:        Keyframe evaluation golden of the evaluator before per-side interpolation
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-25 by the keyframe-sides work package
+notes:        48 seeded pseudo-random Animatables (numbers, vec2, vec2 with curved spatial paths, roving keys, every temporal interpolation and random eases) and their values at 32+ times each, computed by packages/project/src/keyframes.ts as of commit 27363576 (before inInterpolation existed). packages/project/test/keyframe-sides.test.ts checks that documents without inInterpolation still evaluate to exactly these values. Contains no media or user data.

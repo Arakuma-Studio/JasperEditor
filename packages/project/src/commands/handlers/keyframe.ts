@@ -6,7 +6,9 @@ import {
 	autoSlope,
 	EASE_PRESETS,
 	evaluate,
+	isBothSided,
 	isHoldOnlyValue,
+	keySidesIssue,
 	retimeRoving,
 	stopRoving,
 } from '../../keyframes.ts';
@@ -14,7 +16,14 @@ import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyfra
 import { MASK_PROPS } from '../../masks/model.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import { textAnimatorPropertySpecs } from '../../registry/text-animator-properties.ts';
-import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
+import type {
+	Animatable,
+	Ease,
+	InInterpolation,
+	Interpolation,
+	InterpolationSide,
+	Keyframe,
+} from '../../schema/common.ts';
 import type { Mask } from '../../schema/mask.ts';
 import { PUPPET_PIN_PROPS } from '../../schema/puppet.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
@@ -263,15 +272,89 @@ function snapTime(loc: AnimLocation, t: number): number {
 	return Math.round(g.origin + Math.round((t - g.origin) / g.step) * g.step);
 }
 
+/** The incoming type of a key read the legacy way, as an incoming side (Hold keys arrive with their stored ease). */
+function inInterpolationLegacy(key: DKey): Interpolation {
+	return key.interpolation === 'hold' ? 'bezier' : key.interpolation;
+}
+
 function setEase(key: DKey, side: 'in' | 'out', e: Ease): void {
 	if (side === 'in') key.easeIn = { influence: e.influence, slope: e.slope };
 	else key.easeOut = { influence: e.influence, slope: e.slope };
 }
 
 /**
- * Applies an interpolation (+ optional eases) to one key. For Ease In on a key whose previous key is
- * `linear`, the previous key becomes `bezier` with linear-equivalent eases: the segment then honours
- * the new arrival ease while the previous key's other segment is unchanged (S01:KF-003 step 5).
+ * keyframe-sides: makes key i's incoming side explicit WITHOUT changing the segment arriving at it (used when only its
+ * outgoing side is edited). A key read the legacy way contributes: nothing after a Linear key (the segment is linear:
+ * explicit Linear reproduces it), its stored ease after a curving key (a legacy Linear key ⅓·1 — kept as a Bezier side
+ * with that ease, since an explicit Linear side is After Effects' ⅙·1), the computed ease for Auto Bezier.
+ */
+function freezeIncoming(kfs: DKey[], i: number): void {
+	const k = kfs[i]!;
+	if (k.inInterpolation !== undefined) return;
+	const prev = kfs[i - 1];
+	const own = k.interpolation;
+	if (prev && prev.interpolation === 'linear') {
+		k.inInterpolation = 'linear';
+		return;
+	}
+	if (own === 'hold') k.inInterpolation = 'bezier';
+	else if (own === 'linear') {
+		k.inInterpolation = prev && prev.interpolation !== 'hold' ? 'bezier' : 'linear';
+		if (k.inInterpolation === 'bezier') k.easeIn = { ...LINEAR };
+	} else k.inInterpolation = own;
+}
+
+/**
+ * keyframe-sides: makes key i's incoming side explicit with its own type (a legacy key's `interpolation`; Hold keys
+ * arrive with their stored ease, i.e. Bezier). Used for the key after an edited outgoing side, so the edited segment is
+ * evaluated per side.
+ */
+function explicitIncoming(kfs: DKey[], i: number): void {
+	const k = kfs[i];
+	if (!k || k.inInterpolation !== undefined) return;
+	k.inInterpolation = k.interpolation === 'hold' ? 'bezier' : k.interpolation;
+}
+
+/**
+ * keyframe-sides: Auto / Continuous Bezier shape both sides, so on a key whose sides now differ they become Bezier,
+ * frozen at their current shape (After Effects: adjusting one side of an Auto Bezier key converts it).
+ */
+function settleSides(kfs: DKey[], i: number): void {
+	const k = kfs[i]!;
+	if (k.inInterpolation === undefined || k.inInterpolation === k.interpolation) return;
+	const ks = kfs as Keyframe<unknown>[];
+	if (k.inInterpolation === 'auto-bezier')
+		k.easeIn = { influence: AUTO_INFLUENCE, slope: autoSlope(ks, i, 'in') };
+	if (isBothSided(k.inInterpolation)) k.inInterpolation = 'bezier';
+	if (k.interpolation === 'auto-bezier')
+		k.easeOut = { influence: AUTO_INFLUENCE, slope: autoSlope(ks, i, 'out') };
+	if (isBothSided(k.interpolation)) k.interpolation = 'bezier';
+}
+
+/** Refusal for a temporal interpolation that cannot go on the requested side (keyframe-sides). */
+function sideRefusal(
+	interpolation: Interpolation,
+	side: InterpolationSide,
+	easeIn: Ease | undefined,
+	easeOut: Ease | undefined,
+): string | null {
+	if (side !== 'both' && isBothSided(interpolation))
+		return `${interpolation === 'auto-bezier' ? 'Auto Bezier' : 'Continuous Bezier'} shapes both sides of a key; use side "both"`;
+	if (side === 'in' && interpolation === 'hold')
+		return 'Hold applies to the side leaving a key (use side "out" or "both")';
+	if (side === 'in' && easeOut) return 'easeOut does not apply to the incoming side';
+	if (side === 'out' && easeIn) return 'easeIn does not apply to the outgoing side';
+	return null;
+}
+
+/**
+ * Applies a temporal interpolation (+ optional eases) to one side, or both, of one key (S01:KF-004; keyframe-sides):
+ * - `in`: the key's incoming type; its outgoing side keeps its shape (an Auto / Continuous one becomes Bezier).
+ * - `out` (and Hold on `both`: Hold only leaves a key): the outgoing type; the incoming side is made explicit first,
+ *   unchanged, and the next key's incoming side explicit, so the edited segment is evaluated per side.
+ * - `both`: both types; the next key's incoming side becomes explicit.
+ * Per-side segments follow After Effects: a segment is linear only when both its sides are Linear, so an Ease In after
+ * a Linear key shapes the segment without touching the Linear key.
  */
 function applyInterpolation(
 	anim: DAnim,
@@ -279,19 +362,23 @@ function applyInterpolation(
 	interpolation: Interpolation,
 	easeIn: Ease | undefined,
 	easeOut: Ease | undefined,
+	side: InterpolationSide = 'both',
 ): void {
-	key.interpolation = interpolation;
-	if (easeIn) setEase(key, 'in', easeIn);
-	if (easeOut) setEase(key, 'out', easeOut);
-	const i = anim.keyframes.indexOf(key);
-	if (interpolation === 'bezier' && easeIn && i > 0) {
-		const prev = anim.keyframes[i - 1] as DKey;
-		if (prev.interpolation === 'linear') {
-			prev.interpolation = 'bezier';
-			prev.easeIn = { ...LINEAR };
-			prev.easeOut = { ...LINEAR };
-		}
+	const kfs = anim.keyframes as DKey[];
+	const i = kfs.indexOf(key);
+	const where = side === 'both' && interpolation === 'hold' ? 'out' : side;
+	if (where === 'in') {
+		key.inInterpolation = interpolation as InInterpolation;
+		if (easeIn) setEase(key, 'in', easeIn);
+	} else {
+		if (where === 'out') freezeIncoming(kfs, i);
+		else key.inInterpolation = interpolation as InInterpolation;
+		key.interpolation = interpolation;
+		if (easeIn) setEase(key, 'in', easeIn);
+		if (easeOut) setEase(key, 'out', easeOut);
+		explicitIncoming(kfs, i + 1);
 	}
+	settleSides(kfs, i);
 	if (interpolation === 'continuous-bezier') matchContinuous(anim, i, easeIn && !easeOut ? 'in' : 'out');
 }
 
@@ -313,6 +400,10 @@ export const keyframeHandlers = {
 		if (key) {
 			key.value = value as never; // KF-002: same time → replace the value, keep id and interpolation
 			if (cmd.interpolation) key.interpolation = cmd.interpolation;
+			// keyframe-sides: an explicit incoming side follows a both-sided type (Auto / Continuous shape both sides).
+			if (cmd.inInterpolation) key.inInterpolation = cmd.inInterpolation;
+			else if (key.inInterpolation !== undefined && isBothSided(cmd.interpolation))
+				key.inInterpolation = cmd.interpolation as InInterpolation;
 			if (cmd.easeIn) setEase(key, 'in', cmd.easeIn);
 			if (cmd.easeOut) setEase(key, 'out', cmd.easeOut);
 		} else {
@@ -324,12 +415,15 @@ export const keyframeHandlers = {
 				time,
 				value: value as never,
 				interpolation: cmd.interpolation ?? (steps ? 'hold' : 'linear'),
+				...(cmd.inInterpolation && !steps ? { inInterpolation: cmd.inInterpolation } : {}),
 				easeIn: { ...(cmd.easeIn ?? LINEAR) },
 				easeOut: { ...(cmd.easeOut ?? LINEAR) },
 				...(spatial ? { spatial } : {}),
 			} as DKey;
 			anim.keyframes.push(key);
 		}
+		const sides = keySidesIssue(key);
+		if (sides) h.fail('E_INVALID_PARAM', `${target.label}: ${sides}`);
 		const id = key.id;
 		if (cmd.spatial) {
 			anim.keyframes.sort((x, y) => x.time - y.time);
@@ -350,9 +444,16 @@ export const keyframeHandlers = {
 			if (v.clamped) h.warn('W_VALUE_CLAMPED', `${target.label} clamped to ${JSON.stringify(v.value)}`);
 			key.value = v.value as never;
 		}
-		const interpolation = cmd.interpolation ?? key.interpolation;
-		if (cmd.interpolation !== undefined || cmd.easeIn || cmd.easeOut)
-			applyInterpolation(loc!.anim, key, interpolation, cmd.easeIn, cmd.easeOut);
+		const side = cmd.side ?? 'both';
+		// keyframe-sides: without `interpolation`, the edited side keeps its type.
+		const interpolation =
+			cmd.interpolation ??
+			(side === 'in' ? (key.inInterpolation ?? inInterpolationLegacy(key)) : key.interpolation);
+		if (cmd.interpolation !== undefined || cmd.easeIn || cmd.easeOut) {
+			const refusal = sideRefusal(interpolation, side, cmd.easeIn, cmd.easeOut);
+			if (refusal) h.fail('E_INVALID_PARAM', `${target.label}: ${refusal}`);
+			applyInterpolation(loc!.anim, key, interpolation, cmd.easeIn, cmd.easeOut, side);
+		}
 		if (cmd.spatial) {
 			assertSpatialTarget(target, h);
 			const kfs = loc!.anim.keyframes as Keyframe<unknown>[];
@@ -429,9 +530,12 @@ export const keyframeHandlers = {
 		const touched = new Set<DAnim>();
 		// Process in time order so neighbour conversions see the final state of earlier keys.
 		found.sort((a, b) => a.key.time - b.key.time);
+		const side = cmd.side ?? 'both';
+		const refusal = sideRefusal(cmd.interpolation, side, cmd.easeIn, cmd.easeOut);
+		if (refusal) h.fail('E_INVALID_PARAM', refusal);
 		for (const loc of found) {
 			targetOf(doc, loc, h);
-			applyInterpolation(loc.anim, loc.key, cmd.interpolation, cmd.easeIn, cmd.easeOut);
+			applyInterpolation(loc.anim, loc.key, cmd.interpolation, cmd.easeIn, cmd.easeOut, side);
 			touched.add(loc.anim);
 		}
 		finish(touched);

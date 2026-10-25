@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
 	EaseSchema,
+	InInterpolationSchema,
 	InterpolationSchema,
+	InterpolationSideSchema,
 	SpatialInterpolationSchema,
 	Vec2Schema,
 } from '../../schema/common.ts';
@@ -36,6 +38,11 @@ export const KeyframeAddCmd = cmd('keyframe.add', {
 	at: ParamAtSchema,
 	value: z.unknown().optional(),
 	interpolation: InterpolationSchema.optional(),
+	/**
+	 * keyframe-sides: the key's incoming temporal type (absent = the key is read the legacy way: `interpolation` for
+	 * both sides). Auto / Continuous Bezier only together with the same `interpolation`.
+	 */
+	inInterpolation: InInterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
 	/** Additive (spatial-motion-path): point properties only; default = the property's (Auto Bezier for position). */
@@ -49,6 +56,8 @@ export const KeyframeUpdateCmd = cmd('keyframe.update', {
 	interpolation: InterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
+	/** keyframe-sides: which side `interpolation` / the eases apply to (as `keyframe.setInterpolation`; default both). */
+	side: InterpolationSideSchema.optional(),
 	/** Additive (spatial-motion-path): point properties only. */
 	spatial: SpatialInputSchema.optional(),
 });
@@ -60,11 +69,19 @@ export const KeyframeMoveCmd = cmd('keyframe.move', {
 		z.strictObject({ frames: z.number().int() }),
 	]),
 });
+/**
+ * Right-click ▸ Temporal Interpolation (S01:KF-004; keyframe-sides). `side` (default `both`): `in` sets only the
+ * incoming side (Premiere's Ease In: `{interpolation: 'bezier', easeIn: {influence: ⅓, slope: 0}, side: 'in'}`),
+ * `out` only the outgoing side (Ease Out). Linear and Bezier apply to either side; Hold only leaves a key (`both`
+ * means the outgoing side); Auto / Continuous Bezier shape both sides, so they need `both`. Setting a side switches
+ * the segments it shapes to per-side (After Effects) evaluation; the side not set keeps its current shape.
+ */
 export const KeyframeSetInterpolationCmd = cmd('keyframe.setInterpolation', {
 	keyframeIds: z.array(IdRefSchema).min(1),
 	interpolation: InterpolationSchema,
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
+	side: InterpolationSideSchema.optional(),
 });
 export const KeyframesPruneCmd = cmd('keyframes.prune', { clipId: IdRefSchema });
 /**
