@@ -129,3 +129,14 @@ describe('playbackAudioStreamUrl', () => {
 		);
 	});
 });
+
+describe('Object.prototype keys (regression: fast-check seed 1848947810 hit "__proto__")', () => {
+	it('never resolve to a container family or throw', () => {
+		for (const key of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+			expect(audioContainerFamily(key)).toBeNull();
+			expect(() => browserDecodesAudio(key, '')).not.toThrow();
+			expect(browserDecodesAudio(key, 'aac')).toBe(false);
+			expect(browserDecodesAudio(`mov,${key}`, 'aac')).toBe(true);
+		}
+	});
+});

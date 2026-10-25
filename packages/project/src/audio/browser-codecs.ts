@@ -98,8 +98,9 @@ export function audioContainerFamily(container: string): AudioContainerFamily | 
 	// Lenient: documents and engine records from elsewhere may lack the field (never throw on render paths).
 	if (typeof container !== 'string') return null;
 	for (const token of container.toLowerCase().split(',')) {
-		const f = CONTAINER_FAMILY[token.trim()];
-		if (f) return f;
+		// Own keys only: a token like "__proto__" or "constructor" must not reach Object.prototype.
+		const t = token.trim();
+		if (Object.hasOwn(CONTAINER_FAMILY, t)) return CONTAINER_FAMILY[t]!;
 	}
 	return null;
 }
