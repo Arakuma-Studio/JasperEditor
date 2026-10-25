@@ -58,6 +58,7 @@ export type MgTemplateUiJson = {
 			multiline?: boolean;
 			visibleWhen?: { param: string; in: unknown[] };
 			control?: string;
+			options?: Record<string, string>;
 		}
 	>;
 	addAnother?: { reroll: string[] };
@@ -353,6 +354,15 @@ function checkUi(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void 
 				throw new Error(`ui.params.${name}.${key} of ${k} must be a non-empty string`);
 		if (h.multiline !== undefined && typeof h.multiline !== 'boolean')
 			throw new Error(`ui.params.${name}.multiline of ${k} must be a boolean`);
+		if (h.options !== undefined) {
+			if (!isPlainObject(h.options)) throw new Error(`ui.params.${name}.options of ${k} must be an object`);
+			for (const [value, label] of Object.entries(h.options)) {
+				if (!nonEmpty(label))
+					throw new Error(`ui.params.${name}.options.${value} of ${k} must be a non-empty string`);
+				if (!d.paramsSchema.safeParse({ ...d.defaults, [name]: value }).success)
+					throw new Error(`ui.params.${name}.options of ${k}: "${value}" is not a valid value of "${name}"`);
+			}
+		}
 		const w = h.visibleWhen;
 		if (w === undefined) continue;
 		if (!isPlainObject(w) || typeof w.param !== 'string' || !Array.isArray(w.in) || w.in.length === 0)

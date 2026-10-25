@@ -1457,6 +1457,9 @@ function applyTemplateUi(ui: MgTemplateUi | undefined, specs: PropertySpec[]): P
 			...(h.label ? { label: h.label } : {}),
 			...(h.description ? { description: h.description } : {}),
 			...(h.visibleWhen ? { visibleWhen: { param: h.visibleWhen.param, in: [...h.visibleWhen.in] } } : {}),
+			...(h.options && s.options
+				? { optionLabels: s.options.map((o, i) => h.options?.[o] ?? s.optionLabels?.[i] ?? o) }
+				: {}),
 			ui: {
 				...s.ui,
 				...(h.multiline !== undefined && s.kind === 'string' ? { multiline: h.multiline } : {}),

@@ -42,6 +42,7 @@ import {
 	loadExportChoice,
 	MATCH_SEQUENCE_PRESET,
 	outputDescription,
+	PRORES_ALPHA_LABEL,
 	sanitizeFileName,
 	saveExportChoice,
 	validateExport,
@@ -113,6 +114,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [smartRender, setSmartRender] = useState(remembered?.smartRender === true);
 	// gaps (PRJ-8): Use Proxies (Premiere's Export Settings option; drafts only, off by default).
 	const [useProxies, setUseProxies] = useState(remembered?.useProxies === true);
+	// social-comment §7.11: ProRes with a transparent background (4444 + straight alpha, no audio).
+	const [alpha, setAlpha] = useState(remembered?.alpha === true);
 	// spec 12 §2.11: the sound credits sidecar — the last choice for this sequence, else the sequence's sound design
 	// setting, else Markdown when a sound it uses needs a credit (CC BY…), else Off.
 	const creditsDefault = (id: string | null): CreditsChoice => {
@@ -154,6 +157,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setUsePreviews(r?.usePreviews === true);
 		setSmartRender(r?.smartRender === true);
 		setUseProxies(r?.useProxies === true);
+		setAlpha(r?.alpha === true);
 		setCreditsChoice(r?.credits ?? (defaultCreditsSidecar(session.getCommitted(), sequenceId) || 'off'));
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
@@ -187,6 +191,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						useProxies,
 						credits: creditsChoice,
 						opus,
+						alpha,
 					})
 				: null,
 		[
@@ -203,6 +208,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 			smartRender,
 			useProxies,
 			opus,
+			alpha,
 		],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
@@ -297,6 +303,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				...(usePreviews ? { usePreviews } : {}),
 				...(smartRender ? { smartRender } : {}),
 				...(useProxies ? { useProxies } : {}),
+				...(alpha ? { alpha } : {}),
 				credits: creditsChoice,
 			});
 			close();
@@ -442,7 +449,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<span>
 							{effectiveCodec === 'h264'
 								? MATCH_SEQUENCE_PRESET.label
-								: `Match Sequence – ${CODEC_LABELS[effectiveCodec]}`}
+								: `Match Sequence – ${effectiveCodec === 'prores' && alpha ? PRORES_ALPHA_LABEL : CODEC_LABELS[effectiveCodec]}`}
 						</span>
 					</Field>
 					<Field label="Format">
@@ -463,6 +470,22 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							))}
 						</select>
 					</Field>
+					{effectiveCodec === 'prores' ? (
+						<Field label="Background">
+							<label
+								className="flex items-center gap-2 text-pr-small"
+								title="ProRes 4444 with straight alpha and no audio: graphics such as comments, titles or lower thirds to place over footage in another editor. Disable the footage tracks you do not want in it."
+							>
+								<input
+									type="checkbox"
+									data-testid="export-alpha"
+									checked={alpha}
+									onChange={(e) => setAlpha(e.target.checked)}
+								/>
+								Transparent (ProRes 4444 with alpha, no audio)
+							</label>
+						</Field>
+					) : null}
 					<Field label="Encoder">
 						<select
 							data-testid="export-encoder-select"
@@ -809,7 +832,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 					<div className="border-t border-pr-border-subtle pt-2">
 						<h3 className="mb-1 text-pr-small text-pr-muted">SUMMARY</h3>
 						<p className="mb-2 text-pr-small">
-							{seq ? outputDescription(seq, frames.end - frames.start, chosenEncoder) : ''}
+							{seq ? outputDescription(seq, frames.end - frames.start, chosenEncoder, alpha) : ''}
 						</p>
 						<PlanSummary state={plan} engine={engineChoice} sequence={seq} hideSoundWarnings />
 					</div>

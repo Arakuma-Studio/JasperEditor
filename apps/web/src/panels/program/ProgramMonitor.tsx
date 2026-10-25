@@ -2,7 +2,6 @@
 // transport, zoom/pan, overlays and on-canvas transform. The Player is sized at the composition size
 // and scaled by one CSS transform (S03:PGM-002) so overlays share its geometry exactly.
 
-import type { FontCatalog } from '@jasper/api';
 import {
 	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
@@ -12,7 +11,6 @@ import {
 	type RenderOptions,
 	SequenceComposition,
 } from '@jasper/compositions';
-import type { EngineClient } from '@jasper/engine-client';
 import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
 import {
 	useGestureFrameDocument,
@@ -48,6 +46,7 @@ import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { registerProgramPerf } from '../../previews/perf.ts';
 import { useHeardDocument } from '../../proposals/state.ts';
+import { useFontCatalog } from '../../remote-assets/font-catalog.ts';
 import {
 	TemplateAssetWarning,
 	useLayerAssetReports,
@@ -119,36 +118,6 @@ export function ProgramMonitor(props: PanelProps) {
 		);
 	}
 	return <ProgramMonitorBody session={session} instanceId={props.instanceId} />;
-}
-
-/**
- * The engine's font catalogue. social-comment §7.8: read again when the remote-asset settings or manifest change
- * (`epoch` counts those changes, so template assets are prefetched again too).
- */
-function useFontCatalog(engine: EngineClient | null): { catalog: FontCatalog | null; epoch: number } {
-	const [catalog, setCatalog] = useState<FontCatalog | null>(null);
-	const [epoch, setEpoch] = useState(0);
-	const subscribe = useEngineOrNull()?.subscribe;
-	useEffect(
-		() =>
-			subscribe?.((e) => {
-				if (e?.type === 'remoteAssets.changed' && e.payload.reason !== 'fetched') setEpoch((n) => n + 1);
-			}),
-		[subscribe],
-	);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `epoch` re-reads the catalogue
-	useEffect(() => {
-		if (!engine) return;
-		let cancelled = false;
-		engine
-			.listFonts()
-			.then((c) => !cancelled && setCatalog(c))
-			.catch(() => undefined); // engine without the fonts route: text uses the fallback stack
-		return () => {
-			cancelled = true;
-		};
-	}, [engine, epoch]);
-	return { catalog, epoch };
 }
 
 /** Resolution of GPU shader-effect canvases per playback resolution (RenderOptions.fxPreviewScale). */

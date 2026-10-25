@@ -21,6 +21,8 @@ import { Button, ContextMenu, cx, Icon, openDialog, type ResolvedMenuItem, Tabs 
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '../../i18n/runtime.ts';
 import { MG_IMPORT_DIALOG } from '../../mg-bundles/ImportDialog.tsx';
+import { useFontCatalog } from '../../remote-assets/font-catalog.ts';
+import { catalogAssetResolver, type TemplateAssetResolver } from '../../remote-assets/resolve.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { TextAnimationsTab } from '../../text-animation/TextAnimationsTab.tsx';
 import type { PanelProps } from '../types.ts';
@@ -67,8 +69,15 @@ const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:1
 
 const NO_PARAMS: Record<string, unknown> = {};
 
-/** Merges the TS catalog with the engine's native flags for fframes templates; one entry per preset (C3). */
-function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
+/**
+ * Merges the TS catalog with the engine's native flags for fframes templates; one entry per preset (C3).
+ * social-comment §7.8: `assets` resolves the fonts, emoji and images anime templates declare (the engine's font
+ * catalogue), so posters and hover previews draw them instead of "not available" markers.
+ */
+function galleryEntries(
+	engineTemplates: MgTemplateCatalogEntry[] | null,
+	assets: TemplateAssetResolver,
+): GalleryEntry[] {
 	return mgRegistry.definitions().flatMap((def) => {
 		const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
 		const anime = isAnimeTemplate(def);
@@ -92,7 +101,7 @@ function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): Galle
 					name: def.name,
 					description: def.description ?? '',
 					params: NO_PARAMS,
-					preview: { templateId: def.id, version: def.version },
+					preview: { templateId: def.id, version: def.version, assets },
 				},
 			];
 		return def.presets.map((p) => ({
@@ -102,7 +111,7 @@ function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): Galle
 			name: p.name,
 			description: p.description ?? def.description ?? '',
 			params: p.params,
-			preview: { templateId: def.id, version: def.version, params: p.params },
+			preview: { templateId: def.id, version: def.version, params: p.params, assets },
 		}));
 	});
 }
@@ -324,7 +333,11 @@ export function MotionTemplatesPanel(props: PanelProps) {
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
 	const [tab, setTab] = useState<MotionTemplatesTab>(() => initialTab());
 	const { client } = useEngine();
-	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
+	const { catalog: fontCatalog } = useFontCatalog(client);
+	const entries = useMemo(
+		() => galleryEntries(catalog.templates, catalogAssetResolver(fontCatalog)),
+		[catalog.templates, fontCatalog],
+	);
 	const previews = useMemo(
 		() =>
 			new Map(

@@ -1003,6 +1003,10 @@ graphics)** and lists one graphics group per baked layer.
   Remotion path (warning `NATIVE_FALLBACK` in the job result); a forced **Native** export fails with the error.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
+- **Transparent background:** Export mode ▸ Format **ProRes 422 HQ** ▸ Background **Transparent** (MCP: `start_export
+  {preset: "overlay-prores-4444-alpha"}`) writes straight-alpha ProRes 4444 in MOV without audio, rendered on the
+  Remotion path — e.g. social comments to lay over footage in another editor. Disable the footage clips first.
+  Opaque pixels decode with alpha 1020/1023 (10-bit), not 1023 (measured; the Remotion ProRes path's alpha scaling).
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
   test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte);
   preview request timing and stale-result handling: `apps/web/test/layer-bake-runtime.test.ts`.

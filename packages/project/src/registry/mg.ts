@@ -53,6 +53,11 @@ export type MgTemplateParamUi = {
 	visibleWhen?: { param: string; in: readonly unknown[] };
 	/** Name of a custom control registered by the web app (`registerTemplateParamControl`). */
 	control?: string;
+	/**
+	 * Enum params: the menu label of each value (`{'classic-pop': 'Classic pop'}`); values without one show the value.
+	 * Every key must be a valid value of the param.
+	 */
+	options?: Readonly<Record<string, string>>;
 };
 
 /**

@@ -11118,7 +11118,7 @@
   "{0} is too large to import (at most {1} MB)": "{0} es demasiado grande para importarlo (máximo {1} MB)",
   "{0} must be above {1}": "{0} debe ser mayor que {1}",
   "{0} must be below {1}": "{0} debe ser menor que {1}",
-  "{0} of {1} rows will be added from {2}; {3} with errors are left out": "Se añadirán {0} de {1} filas desde {2}; se omiten {3} con errores",
+  "{0} of {1} rows will be added from {2}; rows with errors left out: {3}": "Se añadirán {0} de {1} filas desde {2}; filas con errores omitidas: {3}",
   "{0} rows will be added one after another from {1}": "Se añadirán {0} filas una tras otra desde {1}",
   "{0} rows with errors were left out": "Se omitieron {0} filas con errores",
   "A quote opened on line {0} is never closed: the rest of the text is in one cell": "Unas comillas abiertas en la línea {0} no se cierran nunca: el resto del texto queda en una celda",
@@ -11181,5 +11181,15 @@
   "A YouTube video comment with likes, the reply button and \"N replies\".": "Un comentario de vídeo de YouTube con «me gusta», el botón de responder y \"N replies\".",
   "The \"Comment from @handle\" card YouTube shows on a Shorts reply.": "La tarjeta \"Comment from @handle\" que YouTube muestra en una respuesta con un Short.",
   "YouTube · Comment": "YouTube · Comentario",
-  "YouTube · Shorts reply": "YouTube · Respuesta en Shorts"
+  "YouTube · Shorts reply": "YouTube · Respuesta en Shorts",
+  "ProRes 4444 with straight alpha and no audio: graphics such as comments, titles or lower thirds to place over footage in another editor. Disable the footage tracks you do not want in it.": "ProRes 4444 con alfa directo y sin audio: gráficos como comentarios, títulos o rótulos para colocar sobre el metraje en otro editor. Desactive las pistas de metraje que no quiera incluir.",
+  "Transparent (ProRes 4444 with alpha, no audio)": "Transparente (ProRes 4444 con alfa, sin audio)",
+  "Apple": "Apple",
+  "Classic pop": "Pop clásico",
+  "Drop & bounce": "Caída y rebote",
+  "Grow from tail": "Crecer desde la cola",
+  "Noto": "Noto",
+  "Platform": "Plataforma",
+  "Soft spring": "Muelle suave",
+  "Twemoji": "Twemoji"
 }

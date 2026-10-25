@@ -415,7 +415,7 @@ function BulkImportBody({
 					{model?.ok
 						? errorRows.length
 							? t(
-									'{0} of {1} rows will be added from {2}; {3} with errors are left out',
+									'{0} of {1} rows will be added from {2}; rows with errors left out: {3}',
 									included,
 									model.rows.length,
 									tc(startAt),

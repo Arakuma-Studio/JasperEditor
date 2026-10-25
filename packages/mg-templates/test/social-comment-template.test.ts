@@ -6,6 +6,7 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	paramsPropertySpecs,
 } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -437,5 +438,32 @@ describe('social-comment@1 required assets', () => {
 		});
 		const info = mgRegistry.getDefinition('social-comment', 1)!;
 		expect((info as { requiredAssets?: unknown }).requiredAssets).toBe(socialCommentRequiredAssets);
+	});
+});
+
+describe('social-comment@1 Properties menus', () => {
+	it('show the entrance, style, theme and emoji names instead of their ids (values stay the ids agents use)', () => {
+		const specs = paramsPropertySpecs(mgRegistry.get('social-comment', 1)!);
+		const labels = (k: string) => {
+			const s = specs.find((x) => x.key === `params.${k}`)!;
+			return Object.fromEntries(s.options!.map((o, i) => [o, s.optionLabels![i]]));
+		};
+		expect(labels('entrance')).toEqual({
+			'classic-pop': 'Classic pop',
+			'soft-spring': 'Soft spring',
+			'grow-from-tail': 'Grow from tail',
+			'drop-bounce': 'Drop & bounce',
+		});
+		expect(labels('variant')).toMatchObject({
+			'tiktok-reply': 'TikTok · Comment reply',
+			'x-post': 'X · Post',
+		});
+		expect(labels('theme')).toEqual({ light: 'Light', dark: 'Dark' });
+		expect(labels('emojiStyle')).toEqual({
+			auto: 'Platform',
+			apple: 'Apple',
+			twemoji: 'Twemoji',
+			noto: 'Noto',
+		});
 	});
 });

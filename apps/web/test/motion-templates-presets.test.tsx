@@ -26,13 +26,20 @@ vi.mock('../src/panels/motionTemplates/PreviewThumb.tsx', () => ({
 	},
 }));
 
+/** The engine's font catalogue (`GET /api/fonts`) a test serves; null: the route answers 501 like every other. */
+let fontCatalog: unknown = null;
 const engine = () =>
 	new EngineClient({
-		fetch: (async () =>
-			new Response(JSON.stringify({ code: 'NOT_IMPLEMENTED', message: 'later', retryable: false }), {
-				status: 501,
-				headers: { 'x-jasper-api': '1' },
-			})) as unknown as typeof fetch,
+		fetch: (async (input: RequestInfo | URL) =>
+			fontCatalog && String(input).includes('/api/fonts')
+				? new Response(JSON.stringify(fontCatalog), {
+						status: 200,
+						headers: { 'content-type': 'application/json', 'x-jasper-api': '1' },
+					})
+				: new Response(JSON.stringify({ code: 'NOT_IMPLEMENTED', message: 'later', retryable: false }), {
+						status: 501,
+						headers: { 'x-jasper-api': '1' },
+					})) as unknown as typeof fetch,
 	});
 
 async function openSession() {
@@ -58,6 +65,7 @@ afterEach(() => {
 	unregister?.();
 	unregister = undefined;
 	previews.length = 0;
+	fontCatalog = null;
 	cleanup();
 });
 
@@ -88,15 +96,57 @@ describe('Motion Templates gallery ▸ presets', () => {
 		expect(lowerThird[0]!.hasAttribute('data-preset')).toBe(false);
 		// posters and hover previews get the preset's params over the defaults; template cards none
 		const percentage = previews.find((p) => p.label === 'Percentage preview')!;
-		expect(percentage.inputProps).toEqual({
+		const { assets: _a, ...percentageProps } = percentage.inputProps;
+		expect(percentageProps).toEqual({
 			templateId: 'counter',
 			version: 1,
 			params: { to: 100, suffix: '%', label: 'Complete' },
 		});
-		expect(previews.find((p) => p.label === 'Lower Third preview')!.inputProps).toEqual({
-			templateId: 'lower-third',
-			version: 1,
-		});
+		const { assets: _b, ...lowerThirdProps } = previews.find(
+			(p) => p.label === 'Lower Third preview',
+		)!.inputProps;
+		expect(lowerThirdProps).toEqual({ templateId: 'lower-third', version: 1 });
+		await session.close();
+	});
+
+	it('posters and hover previews resolve the fonts and emoji templates declare from the engine catalogue (no markers)', async () => {
+		fontCatalog = {
+			fonts: [
+				{
+					family: 'TikTok Sans',
+					source: 'bundled',
+					weights: [600],
+					styles: ['normal'],
+					files: [
+						{ weight: 600, style: 'normal', url: '/fonts/tiktok-sans/tiktok-sans-latin-600-normal.woff2' },
+					],
+				},
+			],
+			emojiPacks: [
+				{ id: 'apple', name: 'Apple', version: 'v1', format: 'png', licence: 'test', attribution: null },
+			],
+			images: [],
+		};
+		const session = await openSession();
+		gallery(session);
+		type Assets = {
+			font(face: { family: string; weight: number; style: 'normal' | 'italic' }): unknown;
+			emoji(pack: string, grapheme: string): string | null;
+		};
+		const reply = () =>
+			previews.filter((p) => p.label?.startsWith('TikTok · Comment reply')).at(-1)?.inputProps.assets as
+				| Assets
+				| undefined;
+		// the catalogue arrives after the first render; the cards then get a resolver over it
+		await vi.waitFor(() =>
+			expect(reply()?.font({ family: 'TikTok Sans', weight: 600, style: 'normal' })).toBeTruthy(),
+		);
+		expect(JSON.stringify(reply()!.font({ family: 'TikTok Sans', weight: 600, style: 'normal' }))).toContain(
+			'tiktok-sans-latin-600-normal.woff2',
+		);
+		expect(reply()!.emoji('apple', '😊')).toMatch(/^\/fonts\/emoji\/apple\/v1\/1f60a\.png$/);
+		// never another weight or family
+		expect(reply()!.font({ family: 'TikTok Sans', weight: 700, style: 'normal' })).toBeNull();
 		await session.close();
 	});
 

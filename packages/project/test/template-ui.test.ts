@@ -46,6 +46,18 @@ const UI: NonNullable<MgTemplateInfo['ui']> = {
 };
 
 describe('paramsPropertySpecs with ui hints', () => {
+	it('labels enum options from ui.params.<name>.options (values keep their ids; unlabelled values show the id)', () => {
+		const specs = paramsPropertySpecs(
+			tpl({ params: { variant: { options: { tiktok: 'TikTok · Comment' } } } }),
+		);
+		expect(specs.find((s) => s.key === 'params.variant')).toMatchObject({
+			kind: 'enum',
+			options: ['tiktok', 'x'],
+			optionLabels: ['TikTok · Comment', 'x'],
+		});
+		expect(paramsPropertySpecs(tpl()).find((s) => s.key === 'params.variant')!.optionLabels).toBeUndefined();
+	});
+
 	it('keeps the schema order and labels without hints', () => {
 		const specs = paramsPropertySpecs(tpl());
 		expect(specs.map((s) => s.key)).toEqual([

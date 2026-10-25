@@ -359,11 +359,14 @@ template features; the social-comment template uses them, any other template may
 - `presets?: { id, name, description?, params }[]` — `params` holds only what the preset changes. Ids match
   `[a-z0-9][a-z0-9-]*` (≤ 64), unique per template.
 - `ui?: { groups?: { id, label, params[] }[]; params?: Record<name, { label?, description?, multiline?,
-  visibleWhen?: { param, in[] }, control? }> }`.
+  visibleWhen?: { param, in[] }, control?, options? }> }`. `options` maps an enum param's values to menu labels
+  (`{'classic-pop': 'Classic pop'}`); Properties and Effect Controls show the label, the stored value stays the id, a
+  value without a label shows its id; the labels join the model-string catalogue.
 - `createMgRegistry` validates both and throws on the first problem (like invalid defaults): presets need a name,
   plain-object params naming only params of the template, and `{...defaults, ...params}` must pass `paramsSchema`;
   groups need unique ids and labels and may only list existing params, each param in at most one group; `ui.params`
-  may only name existing params; `label` / `description` / `control` are non-empty strings, `multiline` a boolean;
+  may only name existing params; `label` / `description` / `control` are non-empty strings, `multiline` a boolean,
+  `options` an object whose keys are valid values of the param and whose labels are non-empty strings;
   `visibleWhen` names another param and lists at least one value, each a valid value of that param (checked with
   the schema, so a misspelt variant fails at start-up / in tests, not silently in the UI).
 - `templatePresetParams(def, presetId)` = defaults ⊕ preset params (undefined for an unknown preset).
@@ -2046,3 +2049,49 @@ have collided with the overlay's move and marquee gestures.
 - **Templates inside nested sequences**, and 3D template layers, are edited in Properties, not on the canvas.
 - **Other Players** showing the same clip (the comparison view) also show the rest frame while the editor is open.
 - **A graded (colour-effected) template** shows ungraded while it is being edited.
+
+## App QA (sc/app-qa)
+
+Hands-on QA of the built app (engine + web + Remotion bundle + MCP CLI from the branch, real CDNs, Chrome 156 under
+Xvfb driven by Playwright) after the TikTok, Instagram, X and YouTube cards landed. Screenshots, frames, exports and
+the findings index are outside the repository (third-party look-alikes): `research/app-qa/index.md`.
+
+### Changed
+
+- **Gallery assets.** The Motion Templates gallery passes `catalogAssetResolver` (the engine's font catalogue) to
+  `MgTemplatePreview`, so posters and hover previews draw the declared fonts, emoji and images instead of
+  "not available" markers. `useFontCatalog` is shared by the Program monitor and the gallery
+  (`apps/web/src/remote-assets/font-catalog.ts`).
+- **Enum labels.** `ui.params.<name>.options` (§ Presets & UI hints): Style shows the preset names, Theme
+  Light / Dark, Emoji Platform / Apple / Twemoji / Noto, Entrance Classic pop / Soft spring / Grow from tail /
+  Drop & bounce. Stored values (and what agents pass) are unchanged.
+- **Transparent background export** (design §7.11): Export mode ▸ Format ProRes ▸ Background **Transparent (ProRes
+  4444 with alpha, no audio)**, remembered per sequence, and the MCP preset `overlay-prores-4444-alpha`. Both send
+  `video {codec: prores, proresProfile: '4444', alpha: true}`, `container: mov`, `videoOnly: true`; Auto routes it to
+  the Remotion path. Before, only the engine API (interchange pre-renders) could ask for it.
+- **CLI.** `jasper call … --out f.png` writes every image of a result (`f-0.png`, `f-1.png`…), so a dry-run batch
+  keeps one preview per item.
+
+### Measured
+
+Export vs Program monitor at 100 % zoom (848×431 centre region, whole-pixel Player box, best alignment ±2 px; YouTube
+comment and TikTok comment intro / hold / outro, overlapping cards, Shorts reply hold and outro; 9 frames):
+- straight-alpha ProRes 4444 over black vs the Program with the footage disabled: SSIM 0.978–0.995, 94.6–99.0 % of
+  pixels within 3/255;
+- H.264 MP4 with the footage: SSIM 0.88–0.91 while the footage plays (the footage is decoded by the Player's
+  `<video>` and by ffmpeg, then 4:2:0 encoded), 0.991–0.993 and ≥ 97.9 % within 3/255 once it ends.
+The residue is glyph and icon edge anti-aliasing (headed vs headless Chrome); no layout, colour or timing difference
+was found. A 2160×3840 sequence renders the card sharp at 4K; a 1080×1920 sequence exported at 2160×3840 is the
+1080 render scaled up.
+
+### Open findings (not changed here)
+
+- A gallery drop onto an occupied timeline track overwrites the clip there (documented placement rule), which cuts
+  footage when a comment is dropped on V1.
+- Comments that overlap in time are drawn at the same centred place, so the top one hides the others; Add Another
+  twice from the same source stacks the second copy at the same time on the next track.
+- Bulk import does not read compound ages ("3h", "2 weeks") from one column; use `Ago` + `Time unit`.
+- Every comment clip is named "Social comment", so the Program asset list and the export blocker cannot tell cards
+  apart.
+- X: a six-character repost count touches the like icon.
+- Remotion-path ProRes 4444: opaque pixels decode with alpha 1020/1023 (also for text clips; README § Export).

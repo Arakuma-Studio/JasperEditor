@@ -36,6 +36,8 @@ export const MgTemplateUiSchema = z.object({
 				multiline: z.boolean().optional(),
 				visibleWhen: z.object({ param: z.string(), in: z.array(z.unknown()) }).optional(),
 				control: z.string().optional(),
+				/** Enum params: the menu label of each value. */
+				options: z.record(z.string(), z.string()).optional(),
 			}),
 		)
 		.optional(),
