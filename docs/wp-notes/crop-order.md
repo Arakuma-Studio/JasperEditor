@@ -127,6 +127,10 @@ the visible window is mirrored (as v7 drew it).
   max 3, Mirror→Crop ∞ dB, Crop→Mirror 75.2 dB, Crop→Blur 58.1 dB, Blur→Crop 60.2 dB (both hybrid), adjustment layer
   with feather and a flip 60.4 dB; feathered scenes vs the profile ≤ 2/255 on both; Crop→X differs from X→Crop
   (max > 64) for Flip, Mirror and Blur.
+- Golden `packages/compositions/test/goldens/scenes/crop-corner-pin.png` re-blessed after inspection: the scene's crop
+  has `feather: 6`, which no path drew before; old vs new differ only in a band along the four edges of the pinned crop
+  window (2 515 px, PSNR 27.1 dB against the old frame, max 193 where the hard edge met the card), the rest of the frame
+  is unchanged.
 - Unit tests: `packages/project/test/crop-stack.test.ts`, `packages/compositions/test/crop-order.test.ts`,
   `apps/web/test/crop-order-ui.test.tsx`.
 
