@@ -348,6 +348,17 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   not installed").
 - MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
+- **Presets:** a template may declare named param presets (e.g. Counter ▸ Subscribers / Percentage / Money Raised).
+  The gallery then shows one card per preset instead of one for the template (search matches preset names; insert,
+  drag and the hover preview use the preset's params over the defaults). Agents pass `"<id>:<preset>"` or
+  `"<id>@<version>:<preset>"` as `template` to `add_motion_graphic` / `render_motion_graphic_preview`;
+  `list_motion_templates` lists each preset with its ref.
+- **UI hints:** a template's `ui` groups its params into ordered sub-sections of Properties ▸ Parameters and Effect
+  Controls ▸ Template, sets labels, tooltips and multi-line text, hides params that do not apply to the current value
+  of another param (`visibleWhen`, e.g. per variant) and can name a custom control registered by the web app
+  (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
+  labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
+  Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
 
 ## PWA (installable web app)
 
