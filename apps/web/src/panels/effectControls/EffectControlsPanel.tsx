@@ -683,7 +683,12 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	 */
 	const renderSectionRows = (s: FxSection, all: Row[]): ReactNode => {
 		// WP7a: rows edited by another row's custom control (`alsoEdits`, e.g. the time unit) are not drawn twice.
-		const absorbed = s.rowGroups ? absorbedTemplateParams(all.map((r) => r.spec), paramControls) : null;
+		const absorbed = s.rowGroups
+			? absorbedTemplateParams(
+					all.map((r) => r.spec),
+					paramControls,
+				)
+			: null;
 		const rows = absorbed?.size ? all.filter((r) => !absorbed.has(r.id.slice('params.'.length))) : all;
 		if (!s.rowGroups) return rows.map((r) => renderRow(r));
 		const byId = new Map(rows.map((r) => [r.id, r]));

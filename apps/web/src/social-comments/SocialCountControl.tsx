@@ -87,7 +87,10 @@ export function SocialCountControl(p: TemplateParamControlProps) {
 	};
 
 	return (
-		<span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-[2px]" data-social-count={field}>
+		<span
+			className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-[2px]"
+			data-social-count={field}
+		>
 			<input
 				type="text"
 				inputMode="decimal"

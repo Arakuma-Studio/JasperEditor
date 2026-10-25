@@ -34,7 +34,9 @@ export function timeValueOf(v: unknown): number | null {
 }
 
 export function timeUnitOf(v: unknown): SocialTimeUnit | null {
-	return typeof v === 'string' && (SOCIAL_TIME_UNITS as readonly string[]).includes(v) ? (v as SocialTimeUnit) : null;
+	return typeof v === 'string' && (SOCIAL_TIME_UNITS as readonly string[]).includes(v)
+		? (v as SocialTimeUnit)
+		: null;
 }
 
 export const isCountField = (name: string): name is SocialCountField =>
@@ -91,7 +93,11 @@ export function timePatch(params: Params, seed: number): Record<string, unknown>
  * 10–30 %, 10–50×, as `randomStats`); likes are drawn so the current replies stay 1–5 % of them (tokcomment's
  * distribution when there are no replies to match). Null when the clip's variant does not draw the field.
  */
-export function countPatch(field: SocialCountField, params: Params, seed: number): Record<string, unknown> | null {
+export function countPatch(
+	field: SocialCountField,
+	params: Params,
+	seed: number,
+): Record<string, unknown> | null {
 	if (!applies(params, field)) return null;
 	const variant = variantOf(params);
 	const likes = countOf(params.likes);

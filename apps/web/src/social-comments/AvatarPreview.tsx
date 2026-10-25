@@ -18,7 +18,12 @@ export function avatarChoice(value: unknown): AvatarChoice {
 	if (typeof value !== 'object' || Array.isArray(value)) return { kind: 'invalid' };
 	const v = value as { mediaId?: unknown; generated?: unknown };
 	if (typeof v.mediaId === 'string' && v.mediaId) return { kind: 'media', mediaId: v.mediaId };
-	if (typeof v.generated === 'number' && Number.isInteger(v.generated) && v.generated >= 0 && v.generated <= 0xffff_ffff)
+	if (
+		typeof v.generated === 'number' &&
+		Number.isInteger(v.generated) &&
+		v.generated >= 0 &&
+		v.generated <= 0xffff_ffff
+	)
 		return { kind: 'generated', seed: v.generated };
 	return { kind: 'invalid' };
 }
@@ -87,7 +92,11 @@ export function AvatarPreview(props: {
 			)}
 			role="img"
 			aria-label={
-				choice?.kind === 'media' ? t('Avatar image') : choice === null ? t('Multiple values') : t('Default avatar')
+				choice?.kind === 'media'
+					? t('Avatar image')
+					: choice === null
+						? t('Multiple values')
+						: t('Default avatar')
 			}
 			style={box}
 			data-testid="social-avatar-preview"

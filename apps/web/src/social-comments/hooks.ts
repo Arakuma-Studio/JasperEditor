@@ -16,7 +16,8 @@ const isRecord = (v: unknown): v is Params => typeof v === 'object' && v !== nul
 
 function paramsIn(doc: ProjectDocument, activeSequenceId: string | null, clipId: string): Params | null {
 	const active = activeSequenceId ? doc.sequences[activeSequenceId] : undefined;
-	const clip = active?.clips[clipId] ?? Object.values(doc.sequences).find((s) => s.clips[clipId])?.clips[clipId];
+	const clip =
+		active?.clips[clipId] ?? Object.values(doc.sequences).find((s) => s.clips[clipId])?.clips[clipId];
 	const p = (clip as { params?: unknown } | undefined)?.params;
 	return isRecord(p) ? p : null;
 }
@@ -67,5 +68,8 @@ export function useProjectMedia(): Readonly<Record<string, MediaAsset>> {
 /** The project document (null without a session). */
 export function useProjectDocument(): ProjectDocument | null {
 	const session = useSessionOrNull();
-	return useStoreSelector(session?.store ?? NO_SESSION_STORE, (st: SessionState | null) => st?.document ?? null);
+	return useStoreSelector(
+		session?.store ?? NO_SESSION_STORE,
+		(st: SessionState | null) => st?.document ?? null,
+	);
 }

@@ -1272,6 +1272,10 @@ export function jsonSchemaPropertySpecs(
 		else if (t === 'string') kind = 'string';
 		else if (o.tuples && t === 'array' && s.minItems === 4 && s.maxItems === 4) kind = 'color';
 		else if (o.tuples && t === 'array' && s.minItems === 2 && s.maxItems === 2) kind = 'vec2';
+		// WP7a: an object or a union of shapes (e.g. the social-comment avatar `{mediaId} | {generated} | null`) is a
+		// JSON value validated whole by the template schema (as a string it could never be written).
+		else if (t === 'object' || (t === undefined && (Array.isArray(s.anyOf) || Array.isArray(s.oneOf))))
+			kind = 'json';
 		else kind = o.tuples ? 'string' : 'json';
 		if (hint?.control === 'json') kind = 'json';
 		const integer = t === 'integer';

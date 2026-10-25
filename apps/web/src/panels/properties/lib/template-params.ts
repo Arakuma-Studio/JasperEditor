@@ -1,7 +1,14 @@
 // WP7a: multi-param writes for custom template-param controls and group actions (`onChangeParams`): one patch per
 // selected clip, planned through the same `param.set` path as a row edit (a keyframe at the playhead when the param is
 // animated), applied as ONE undoable transaction. Pure planning + a small React helper used by both inspector panels.
-import type { Clip, Command, MgTemplateRegistry, ProjectDocument, PropertySpec, Sequence } from '@jasper/project';
+import type {
+	Clip,
+	Command,
+	MgTemplateRegistry,
+	ProjectDocument,
+	PropertySpec,
+	Sequence,
+} from '@jasper/project';
 import type {
 	TemplateParamControlDef,
 	TemplateParamPatch,
@@ -85,7 +92,11 @@ export function applyTemplateParamPatch(
 	const plan = planTemplateParamPatch(ctx.doc, ctx.seq, clips, ctx.frame(), mg, input);
 	if (plan.skipped.length) ctx.hint?.(t('Move the playhead over the clip to add a keyframe'));
 	if (plan.commands.length === 0) return plan.skipped.length === 0;
-	const r = ctx.ops.apply(opts.label ?? label, plan.commands, opts.coalesceKey ? { coalesceKey: opts.coalesceKey } : {});
+	const r = ctx.ops.apply(
+		opts.label ?? label,
+		plan.commands,
+		opts.coalesceKey ? { coalesceKey: opts.coalesceKey } : {},
+	);
 	return r?.ok === true;
 }
 

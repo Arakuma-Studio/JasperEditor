@@ -13,7 +13,11 @@ export function RandomizeStatsAction(p: TemplateGroupActionProps) {
 	return (
 		<span className="flex items-center gap-1">
 			{refused ? (
-				<span role="alert" className="text-pr-small text-pr-danger" data-testid="social-randomize-stats-error">
+				<span
+					role="alert"
+					className="text-pr-small text-pr-danger"
+					data-testid="social-randomize-stats-error"
+				>
 					{t('The change was refused')}
 				</span>
 			) : null}

@@ -7,8 +7,9 @@
 // - An optional suffix K (×1,000), M (×1,000,000) or B (×1,000,000,000), any case.
 // - "." and "," are both accepted. When both appear, the last one is the decimal separator and the other groups
 //   digits. One kind appearing several times groups digits ("1,234,567", "1.234.567"). One single separator followed by
-//   exactly three digits and no suffix groups digits ("1,234" = "1.234" = 1234: a count cannot be 1.234); otherwise it
-//   is the decimal separator ("1.5K", "1,5K", "12.5" → not a whole number).
+//   exactly three digits groups digits ("1,234" = "1.234" = 1234: a count cannot be 1.234), also before a suffix for
+//   a comma ("1,000B", as the card prints it) but not for a dot ("1.234K" = 1234); otherwise it is the decimal
+//   separator ("1.5K", "1,5K", "12.5" → not a whole number).
 // - Group separators must split the digits into groups of three after a first group of one to three digits.
 // - With a suffix the result is rounded to the nearest integer ("1.2345K" → 1235); without one, a fraction is an error.
 // - A leading "-" (or "−") makes an otherwise valid number an error ("negative").
@@ -22,11 +23,7 @@ const MULTIPLIER: Readonly<Record<string, bigint>> = { k: 1_000n, m: 1_000_000n,
 
 const groupsValid = (int: string, sep: string): boolean => {
 	const parts = int.split(sep);
-	return (
-		parts.length > 1 &&
-		/^\d{1,3}$/.test(parts[0]!) &&
-		parts.slice(1).every((p) => /^\d{3}$/.test(p))
-	);
+	return parts.length > 1 && /^\d{1,3}$/.test(parts[0]!) && parts.slice(1).every((p) => /^\d{3}$/.test(p));
 };
 
 /** Splits a number body ("1,234.5") into integer and fraction digits, or null when malformed. */
@@ -49,7 +46,10 @@ function splitNumber(body: string, hasSuffix: boolean): { int: string; frac: str
 	const count = dots + commas;
 	if (count > 1) return groupsValid(body, sep) ? { int: body.split(sep).join(''), frac: '' } : null;
 	const [int = '', frac = ''] = body.split(sep);
-	if (!hasSuffix && /^\d{1,3}$/.test(int) && /^\d{3}$/.test(frac)) return { int: int + frac, frac: '' };
+	// a group of three digits: "1,234" / "1.234" (a count cannot be 1.234) and "1,000B" (the card's own grouping);
+	// with a suffix a dot stays decimal ("1.234K")
+	if ((!hasSuffix || sep === ',') && /^\d{1,3}$/.test(int) && /^\d{3}$/.test(frac))
+		return { int: int + frac, frac: '' };
 	if (!/^\d*$/.test(int) || !/^\d+$/.test(frac)) return null;
 	return { int: int || '0', frac };
 }

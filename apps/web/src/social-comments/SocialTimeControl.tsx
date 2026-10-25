@@ -157,7 +157,12 @@ export function SocialTimeControl(p: TemplateParamControlProps) {
 				</MiniButton>
 			</span>
 			{error ? (
-				<span id={errorId} role="alert" className="w-full text-pr-small text-pr-danger" data-testid="social-time-error">
+				<span
+					id={errorId}
+					role="alert"
+					className="w-full text-pr-small text-pr-danger"
+					data-testid="social-time-error"
+				>
 					{countErrorText(error, SOCIAL_TIME_VALUE_MAX)}
 				</span>
 			) : null}

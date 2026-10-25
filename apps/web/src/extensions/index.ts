@@ -103,7 +103,11 @@ export type TemplateParamPatch = Readonly<Record<string, unknown>>;
 /** A patch for all clips, or one per clip (null/undefined = leave that clip alone). */
 export type TemplateParamPatchInput =
 	| TemplateParamPatch
-	| ((params: Readonly<Record<string, unknown>>, clipId: string, index: number) => TemplateParamPatch | null | undefined);
+	| ((
+			params: Readonly<Record<string, unknown>>,
+			clipId: string,
+			index: number,
+	  ) => TemplateParamPatch | null | undefined);
 export type TemplateParamWriteOptions = {
 	/** History label (default: the row's label). */
 	label?: string;
@@ -144,7 +148,10 @@ export type TemplateParamControlDef = {
 };
 export const templateParamControls = createRegistry<TemplateParamControlDef>();
 
-export type TemplateParamControlOptions = Pick<TemplateParamControlDef, 'alsoEdits' | 'layout' | 'groupActions'>;
+export type TemplateParamControlOptions = Pick<
+	TemplateParamControlDef,
+	'alsoEdits' | 'layout' | 'groupActions'
+>;
 
 /** Registers a custom template-param control under `name` (C3); returns the unregister function. */
 export function registerTemplateParamControl(

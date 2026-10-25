@@ -360,6 +360,24 @@ export function PropertyRow(props: {
 						</span>
 					);
 				}
+				// WP7a: an object-valued template param without its custom control: its value, read-only.
+				if (spec.key.startsWith('params.')) {
+					let text = '–';
+					try {
+						text = mixed ? '–' : (JSON.stringify(value) ?? '–');
+					} catch {
+						text = '?';
+					}
+					return (
+						<span
+							className="min-w-0 truncate font-pr-mono text-pr-small text-pr-muted"
+							title={text}
+							data-testid={`prop-${row.id}`}
+						>
+							{text}
+						</span>
+					);
+				}
 				return null;
 			case 'wheel':
 				return <WheelField row={row} ctx={writeCtx} title="" data-testid={`prop-${row.id}`} />;
@@ -637,7 +655,11 @@ export function PropertyRow(props: {
 			</div>
 			{block ? (
 				<div
-					className={cx('flex min-w-0 pr-1 pb-1', props.indent && !ec ? 'pl-5' : 'pl-2', outside && 'opacity-60')}
+					className={cx(
+						'flex min-w-0 pr-1 pb-1',
+						props.indent && !ec ? 'pl-5' : 'pl-2',
+						outside && 'opacity-60',
+					)}
 					data-row-block={row.id}
 					onPointerDownCapture={focusRow}
 					onFocusCapture={focusRow}

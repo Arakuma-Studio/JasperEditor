@@ -4,8 +4,9 @@
 // `replaceVisible(markup, next)` diffs the old and new visible text (longest common prefix and suffix, never splitting
 // a surrogate pair). Unchanged characters keep their marks. Inserted characters:
 // - a non-space character joins the word it is typed into: the mark of the character before it when that is not a
-//   space, else of the character after the insertion when the inserted run reaches it without a space, else (typing
-//   over a selection) the mark of the first non-space character it replaced, else none;
+//   space, else of the character after the insertion when the inserted run reaches it without a space, else the mark
+//   both sides of the insertion share (typing inside a marked phrase), else (typing over a selection) the mark of the
+//   first non-space character it replaced, else none;
 // - whitespace is settled like `applyMark` does: a whitespace run touching the edit is marked only when the
 //   non-space characters on both sides share the same mark (so a space typed inside a highlighted phrase stays inside
 //   the pill, and a trailing space never extends it). Runs elsewhere are left exactly as they were.
@@ -71,6 +72,9 @@ export function replaceVisible(markup: unknown, next: string): string {
 	// the inserted run reaches the following character without a space from index `k` on
 	let reachesRight = insEnd < target.length && !isSpace(target[insEnd]);
 	const rightMark = reachesRight ? (marks[insEnd] ?? 'none') : 'none';
+	// the insertion sits inside one mark (e.g. " big" typed into a highlighted "hello world")
+	const enclosing: SocialMarkKind =
+		p > 0 && insEnd < target.length && marks[p - 1] === marks[insEnd] ? (marks[p - 1] ?? 'none') : 'none';
 	const joinsRight: boolean[] = new Array(insEnd - p).fill(false);
 	for (let k = insEnd - 1; k >= p; k--) {
 		if (isSpace(target[k])) reachesRight = false;
@@ -80,7 +84,7 @@ export function replaceVisible(markup: unknown, next: string): string {
 		if (isSpace(target[k])) continue;
 		if (k > 0 && !isSpace(target[k - 1])) marks[k] = marks[k - 1] ?? 'none';
 		else if (joinsRight[k - p]) marks[k] = rightMark;
-		else marks[k] = replaced;
+		else marks[k] = enclosing !== 'none' ? enclosing : replaced;
 	}
 	// settle whitespace runs inside the insertion and touching its edges
 	let from = p;
@@ -144,7 +148,10 @@ let segmenter: Intl.Segmenter | null | undefined;
 export function countGraphemes(text: string): number {
 	if (segmenter === undefined) {
 		try {
-			segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+			segmenter =
+				typeof Intl.Segmenter === 'function'
+					? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+					: null;
 		} catch {
 			segmenter = null;
 		}
