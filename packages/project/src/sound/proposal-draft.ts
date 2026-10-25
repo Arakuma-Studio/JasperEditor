@@ -145,93 +145,12 @@ export function soundProposalItems(
 		for (const s of gone) missing.add(s);
 		return gone.length === 0;
 	});
-	const setup: ProposalItemInput[] = [];
-	const mediaOf = new Map<string, string>();
-	const setupOf = new Map<string, string>();
-	const byFingerprint = new Map<string, { ref: string; item: string }>();
-	let binRef: string | null = rootBin(doc, opts.binName);
-	let binItem: string | null = null;
-	let n = 0;
-	const need = (soundId: string) => {
-		if (mediaOf.has(soundId)) return;
-		const m = byId.get(soundId)!;
-		const existing = existingSoundMedia(doc, m);
-		if (existing) {
-			mediaOf.set(soundId, existing);
-			const own = readLibraryProvenance((doc.media[existing] as { library?: unknown }).library);
-			if (!own) {
-				const id = soundSetupItemId(soundId);
-				setup.push({
-					id,
-					label: `Sound provenance: ${m.title}`.slice(0, 200),
-					group: SOUND_PROPOSAL_SETUP_GROUP,
-					commands: [{ type: 'media.setLibraryInfo', mediaId: existing, library: m.library }],
-					meta: { setup: true, soundId, title: m.title },
-				});
-				setupOf.set(soundId, id);
-			}
-			return;
-		}
-		// Two library ids of one file (a pack and a folder) become one media.
-		const twin = byFingerprint.get(m.fingerprint);
-		if (twin) {
-			mediaOf.set(soundId, twin.ref);
-			setupOf.set(soundId, twin.item);
-			return;
-		}
-		if (!binRef) {
-			binRef = '$sfxBin';
-			binItem = SOUND_PROPOSAL_BIN_ITEM;
-			setup.push({
-				id: SOUND_PROPOSAL_BIN_ITEM,
-				label: `Bin "${opts.binName}"`.slice(0, 200),
-				group: SOUND_PROPOSAL_SETUP_GROUP,
-				commands: [{ type: 'bin.create', name: opts.binName, ref: binRef }],
-				meta: { setup: true },
-			});
-		}
-		const ref = `$snd${n}`;
-		const itemRef = `$sndItem${n}`;
-		const older = olderLibraryCopyOf(doc, soundId, m.fingerprint);
-		n++;
-		const id = soundSetupItemId(soundId);
-		setup.push({
-			id,
-			label: `Import ${m.title}`.slice(0, 200),
-			group: SOUND_PROPOSAL_SETUP_GROUP,
-			commands: [
-				// an older copy of this sound in the project is replaced in place (one media per sound, WP6.5b)
-				older
-					? {
-							type: 'media.upgradeLibraryCopy',
-							mediaId: older,
-							asset: { ...m.register.asset, library: m.library },
-							ifPossible: true,
-							...(typeof m.register.name === 'string' ? { name: m.register.name } : {}),
-							...(m.register.label !== undefined ? { label: m.register.label } : {}),
-							binId: binRef,
-							ref,
-							itemRef,
-						}
-					: {
-							...m.register,
-							asset: { ...m.register.asset, library: m.library },
-							binId: binRef,
-							ref,
-							itemRef,
-						},
-			],
-			...(binItem ? { requires: [binItem] } : {}),
-			meta: { setup: true, soundId, title: m.title },
-		});
-		mediaOf.set(soundId, ref);
-		setupOf.set(soundId, id);
-		byFingerprint.set(m.fingerprint, { ref, item: id });
-	};
+	const order: string[] = [];
 	for (const p of usable) {
-		for (const l of p.layers) if (l.soundId) need(l.soundId);
-		for (const a of p.alternatives ?? []) need(a.soundId);
+		for (const l of p.layers) if (l.soundId) order.push(l.soundId);
+		for (const a of p.alternatives ?? []) order.push(a.soundId);
 	}
+	const { items: setup, mediaOf, setupOf } = soundSetupItems(doc, media, order, { binName: opts.binName });
 	const cues: ProposalItemInput[] = [];
 	const places: ProposalItemInput[] = [];
 	const follow: ProposalItemInput[] = [];
@@ -311,4 +230,115 @@ export function soundProposalItems(
 		mediaOf,
 		missing: [...missing],
 	};
+}
+
+export type SoundSetupItems = {
+	/** The setup items (the bin, then one per sound to import or to give provenance), in first-use order. */
+	items: ProposalItemInput[];
+	/** Per sound: the media id it is placed with (a project media id, or the `$ref` its setup item declares). */
+	mediaOf: Map<string, string>;
+	/** Per sound: the setup item a placement of it requires (absent: the project has it as it is). */
+	setupOf: Map<string, string>;
+};
+
+/**
+ * The setup items that make library sounds available to placements in a proposal (shared by sound design and the
+ * editing-automation passes): the "Sound Effects" bin when the project has none, one `media.register` (or
+ * `media.upgradeLibraryCopy`) per sound not in the project yet, one `media.setLibraryInfo` per project media of the same
+ * file that lacks its provenance. `soundIds` in first-use order (repeats ignored); sounds missing from `media` are
+ * skipped (the caller leaves their placements out).
+ */
+export function soundSetupItems(
+	doc: ProjectDocument,
+	media: readonly SoundProposalMedia[],
+	soundIds: readonly string[],
+	opts: { binName: string },
+): SoundSetupItems {
+	const byId = new Map(media.map((m) => [m.soundId, m]));
+	const setup: ProposalItemInput[] = [];
+	const mediaOf = new Map<string, string>();
+	const setupOf = new Map<string, string>();
+	const byFingerprint = new Map<string, { ref: string; item: string }>();
+	let binRef: string | null = rootBin(doc, opts.binName);
+	let binItem: string | null = null;
+	let n = 0;
+	const need = (soundId: string) => {
+		if (mediaOf.has(soundId)) return;
+		const m = byId.get(soundId);
+		if (!m) return;
+		const existing = existingSoundMedia(doc, m);
+		if (existing) {
+			mediaOf.set(soundId, existing);
+			const own = readLibraryProvenance((doc.media[existing] as { library?: unknown }).library);
+			if (!own) {
+				const id = soundSetupItemId(soundId);
+				setup.push({
+					id,
+					label: `Sound provenance: ${m.title}`.slice(0, 200),
+					group: SOUND_PROPOSAL_SETUP_GROUP,
+					commands: [{ type: 'media.setLibraryInfo', mediaId: existing, library: m.library }],
+					meta: { setup: true, soundId, title: m.title },
+				});
+				setupOf.set(soundId, id);
+			}
+			return;
+		}
+		// Two library ids of one file (a pack and a folder) become one media.
+		const twin = byFingerprint.get(m.fingerprint);
+		if (twin) {
+			mediaOf.set(soundId, twin.ref);
+			setupOf.set(soundId, twin.item);
+			return;
+		}
+		if (!binRef) {
+			binRef = '$sfxBin';
+			binItem = SOUND_PROPOSAL_BIN_ITEM;
+			setup.push({
+				id: SOUND_PROPOSAL_BIN_ITEM,
+				label: `Bin "${opts.binName}"`.slice(0, 200),
+				group: SOUND_PROPOSAL_SETUP_GROUP,
+				commands: [{ type: 'bin.create', name: opts.binName, ref: binRef }],
+				meta: { setup: true },
+			});
+		}
+		const ref = `$snd${n}`;
+		const itemRef = `$sndItem${n}`;
+		const older = olderLibraryCopyOf(doc, soundId, m.fingerprint);
+		n++;
+		const id = soundSetupItemId(soundId);
+		setup.push({
+			id,
+			label: `Import ${m.title}`.slice(0, 200),
+			group: SOUND_PROPOSAL_SETUP_GROUP,
+			commands: [
+				// an older copy of this sound in the project is replaced in place (one media per sound, WP6.5b)
+				older
+					? {
+							type: 'media.upgradeLibraryCopy',
+							mediaId: older,
+							asset: { ...m.register.asset, library: m.library },
+							ifPossible: true,
+							...(typeof m.register.name === 'string' ? { name: m.register.name } : {}),
+							...(m.register.label !== undefined ? { label: m.register.label } : {}),
+							binId: binRef,
+							ref,
+							itemRef,
+						}
+					: {
+							...m.register,
+							asset: { ...m.register.asset, library: m.library },
+							binId: binRef,
+							ref,
+							itemRef,
+						},
+			],
+			...(binItem ? { requires: [binItem] } : {}),
+			meta: { setup: true, soundId, title: m.title },
+		});
+		mediaOf.set(soundId, ref);
+		setupOf.set(soundId, id);
+		byFingerprint.set(m.fingerprint, { ref, item: id });
+	};
+	for (const id of soundIds) need(id);
+	return { items: setup, mediaOf, setupOf };
 }
