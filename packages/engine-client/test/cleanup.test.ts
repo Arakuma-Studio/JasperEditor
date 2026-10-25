@@ -1,6 +1,6 @@
 // EngineClient transcript cleanup calls (spec 14): the analysis job request and the validated analysis file; an
 // evicted analysis and an invalid file become EngineErrors.
-import { FAST_SETTINGS } from '@jasper/project';
+import { FAST_SETTINGS } from '@jasper/api';
 import { describe, expect, it } from 'vitest';
 import { EngineClient, EngineError } from '../src/index.ts';
 
@@ -85,7 +85,9 @@ describe('EngineClient cleanup', () => {
 		const gone = client(() =>
 			json({ code: 'CLEANUP_ANALYSIS_NOT_FOUND', message: 'No such analysis', retryable: false }, 404),
 		);
-		await expect(gone.c.getCleanupAnalysis('cla_x')).rejects.toMatchObject({ code: 'CLEANUP_ANALYSIS_NOT_FOUND' });
+		await expect(gone.c.getCleanupAnalysis('cla_x')).rejects.toMatchObject({
+			code: 'CLEANUP_ANALYSIS_NOT_FOUND',
+		});
 		const bad = client(() => json({ ...file, analysis: { ...file.analysis, findings: [{ id: 1 }] } }));
 		await expect(bad.c.getCleanupAnalysis('cla_1')).rejects.toBeInstanceOf(EngineError);
 	});

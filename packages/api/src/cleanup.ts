@@ -10,6 +10,9 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 
+/** The built-in presets and their settings, for clients that only depend on the API. */
+export { BUILTIN_CLEANUP_PRESETS, FAST_SETTINGS, NATURAL_SETTINGS } from '@jasper/project';
+
 const Kind = z.enum(FINDING_KINDS);
 
 /** `POST /api/cleanup/analyze[?wait=1]` → a `cleanup-analysis` job (result `CleanupAnalysisJobResult`). */
