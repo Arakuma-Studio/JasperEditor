@@ -109,13 +109,14 @@ export type SpeechJobOutput = {
 };
 
 /**
- * TC-004: speech/breath frames of the voice analysis as a mask over our 10 ms frames (frame k = samples
- * [160 k, 160 (k + 1)) in both), or null when the file is missing, invalid or of another decode length.
+ * TC-004: the voice analysis' frame classes as masks over our 10 ms frames (frame k = samples [160 k, 160 (k + 1))
+ * in both): `speech` (bounds snap to it) and `presence` (speech or breath: what keeps a word), or null when the
+ * file is missing, invalid or of another decode length.
  */
 export async function voiceAnalysisMask(
 	va: NonNullable<SpeechJobSpec['voiceAnalysis']>,
 	frames: number,
-): Promise<Uint8Array | null> {
+): Promise<{ speech: Uint8Array; presence: Uint8Array } | null> {
 	let bytes: Uint8Array;
 	try {
 		bytes = new Uint8Array(await readFile(va.path));
@@ -128,10 +129,14 @@ export async function voiceAnalysisMask(
 		analysisVersion: VOICE_ANALYSIS_VERSION,
 	});
 	if (!r.ok || Math.abs(r.analysis.frameCount - frames) > 2) return null;
-	const mask = new Uint8Array(frames);
+	const speech = new Uint8Array(frames);
+	const presence = new Uint8Array(frames);
 	const cls = r.analysis.classes;
-	for (let f = 0; f < frames && f < cls.length; f++) mask[f] = cls[f] !== VOICE_CLASSES.silence ? 1 : 0;
-	return mask;
+	for (let f = 0; f < frames && f < cls.length; f++) {
+		speech[f] = cls[f] === VOICE_CLASSES.speech ? 1 : 0;
+		presence[f] = cls[f] !== VOICE_CLASSES.silence ? 1 : 0;
+	}
+	return { speech, presence };
 }
 
 /** Decodes the input to mono 16 kHz float32 with ffmpeg (whole clip in memory; tests and tools). */
@@ -168,8 +173,11 @@ export async function decodeAudio(
 	});
 }
 
-/** What word-bound refinement reads of the audio. */
-export type FrameSource = { samples: number; db: Float32Array; mask: SpeechMask };
+/**
+ * What word-bound refinement reads of the audio: `mask` = speech frames (bounds snap to them), `presence` = speech
+ * or breath frames (a word with less than 20 % of them lies in silence; default `mask`).
+ */
+export type FrameSource = { samples: number; db: Float32Array; mask: SpeechMask; presence?: SpeechMask };
 
 type RefinableWord = { start: number; end: number; text?: string };
 
@@ -188,10 +196,11 @@ export function refineWords<W extends RefinableWord>(
 	removed: Array<{ text: string; start: number; end: number; reason: string }>;
 } {
 	const { samples, db, mask } = src;
+	const presence = src.presence ?? mask;
 	const len = { length: samples };
 	const orphans = new Set(splitAtPauses(len, words, db, mask));
 	extendWordsIntoSpeech(len, words, db, 25, mask);
-	const drop = new Set<number>([...orphans, ...unvoicedWords(words, mask)]);
+	const drop = new Set<number>([...orphans, ...unvoicedWords(words, presence)]);
 	const removed: Array<{ text: string; start: number; end: number; reason: string }> = [];
 	// known hallucination phrases over non-speech (TC-003), judged over the whole phrase
 	for (const [a, b] of knownPhraseRuns(words.map((w) => ({ text: w.text ?? '' })))) {
@@ -200,7 +209,7 @@ export function refineWords<W extends RefinableWord>(
 		let total = 0;
 		for (const w of span) {
 			const frames = Math.max(1, Math.ceil((w.end - w.start) / VAD_FRAME));
-			voiced += voicedFraction(w, mask) * frames;
+			voiced += voicedFraction(w, presence) * frames;
 			total += frames;
 		}
 		if (phraseOverNonSpeech(total ? voiced / total : 0)) {
@@ -357,7 +366,7 @@ async function recognise(
 	const { r, model } = result;
 	const vaMask = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
 	const refined = refineWords(
-		vaMask ? { samples: input.samples, db: input.db, mask: vaMask } : input,
+		vaMask ? { samples: input.samples, db: input.db, mask: vaMask.speech, presence: vaMask.presence } : input,
 		r.words.map((w) => ({ ...w })),
 	);
 	const words = refined.words;

@@ -11,7 +11,7 @@
 // 2. Language: unless given, the first window's decoder logits after `<|startoftranscript|>` are compared over
 //    the language tokens.
 // 3. Decoding with timestamp tokens (`core/decode.ts` filters), conditioned on an initial prompt (verbatim
-//    transcription, spec 14 TC-003) and the previous windows' text (`<|startofprev|>`, up to 223 tokens). Default
+//    transcription, spec 14 TC-003; OpenAI semantics: it starts the running text) and the previous windows' text (`<|startofprev|>`, up to 223 tokens). Default
 //    greedy (spec 16 SG-010 "Standard"), beam search with 5 beams for "Best". Temperature fallback (0 → 0.2 → … →
 //    1.0, seeded sampling) when the text compresses more than 2.4× (a loop) or its mean log-probability is below
 //    −1; windows whose `<|nospeech|>` probability is above 0.6 while the text is improbable are skipped.
@@ -849,9 +849,14 @@ export class WhisperModel {
 			}
 			const sotSeq = this.sotSequence(language, task);
 			if (this.gpuDecoder && beamSize === 1) await this.calibrate(xa, sotSeq);
-			if (initial === null) initial = this.initialPromptTokens(language, opts);
-			const previous = condition ? allTokens.slice(promptResetSince) : [];
-			const prompt = [...initial, ...previous.slice(-Math.max(0, this.maxPrompt - initial.length))];
+			if (initial === null) {
+				// OpenAI `initial_prompt`: the first tokens of the running text, so it conditions the first window
+				// and keeps conditioning through the previous text until a prompt reset (temperature > 0.5, a silence
+				// of ≥ 2 s, or conditionOnPreviousText off)
+				initial = this.initialPromptTokens(language, opts);
+				allTokens.push(...initial);
+			}
+			const prompt = allTokens.slice(promptResetSince);
 			const r = await this.decodeWithFallback(xa, sotSeq, prompt, fallback, 1234 + windowIndex, beamSize);
 			windowIndex++;
 			if (r.noSpeechProb > NO_SPEECH_THRESHOLD && r.avgLogprob < LOGPROB_THRESHOLD) {

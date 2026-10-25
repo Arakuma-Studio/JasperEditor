@@ -217,8 +217,8 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 	it('a silence gap (spec 16 SG-011): no words in it, none lost after it', async () => {
 		const ffmpeg = resolveBinaries({ env: process.env }).ffmpeg as string;
 		const audio = await decodeAudio({ path: FIXTURE, ffmpeg });
-		// the fixture's first 22.5 s, 30 s of digital silence, then the rest
-		const cut = Math.round(22.5 * 16_000);
+		// the fixture up to the pause at 17.5 s, 30 s of digital silence, then the rest
+		const cut = Math.round(17.5 * 16_000);
 		const gap = 30 * 16_000;
 		const out = new Float32Array(audio.length + gap);
 		out.set(audio.subarray(0, cut));
@@ -237,10 +237,10 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const res = (r.json() as EngineJob).result as TranscriptionResult;
 		const sec = (f: number) => f / FLICKS_PER_SECOND;
 		const inGap = res.words.filter(
-			(w) => (sec(w.start) + sec(w.end)) / 2 > 22.6 && (sec(w.start) + sec(w.end)) / 2 < 52.4,
+			(w) => (sec(w.start) + sec(w.end)) / 2 > 17.6 && (sec(w.start) + sec(w.end)) / 2 < 47.4,
 		);
-		const before = truth.utterances.filter((u) => u.end <= 22.5);
-		const after = truth.utterances.filter((u) => u.start >= 22.5);
+		const before = truth.utterances.filter((u) => u.end <= 17.5);
+		const after = truth.utterances.filter((u) => u.start >= 17.5);
 		const hypAfter = res.words
 			.filter((w) => sec(w.start) >= 52.4)
 			.map((w) => w.text)
@@ -260,7 +260,7 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		expect(res.guard?.skippedWindows ?? 0).toBeGreaterThanOrEqual(0);
 	}, 600_000);
 
-	it('verbatim prompt: the real tokenizer encodes it losslessly and a verbatim, unconditioned job keeps its accuracy', async () => {
+	it('verbatim prompts: the real tokenizer encodes them losslessly; an unconditioned job keeps its accuracy', async () => {
 		const tok = new WhisperTokenizer(
 			JSON.parse(readFileSync(join(CACHE, 'whisper-tiny', 'tokenizer.json'), 'utf8')),
 			true,
@@ -271,21 +271,22 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 			expect(ids.length).toBeLessThan(Buffer.byteLength(p));
 			expect(ids.every((t) => t < tok.eot)).toBe(true);
 		}
+		// an unconditioned job keeps its accuracy
 		const m = await register(app, FIXTURE);
 		const r = await app.inject({
 			method: 'POST',
 			url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
 			headers: JSON_H,
-			payload: { model: 'whisper-tiny.en', language: 'en', verbatim: true, conditionOnPreviousText: false },
+			payload: { model: 'whisper-tiny.en', language: 'en', conditionOnPreviousText: false },
 		});
 		expect(r.statusCode, r.body).toBe(200);
 		const res = (r.json() as EngineJob).result as TranscriptionResult;
 		const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
-		console.log(`tiny.en verbatim, no previous text: WER ${(wer * 100).toFixed(2)} %`);
+		console.log(`tiny.en without previous text: WER ${(wer * 100).toFixed(2)} %`);
 		expect(wer).toBeLessThanOrEqual(0.06);
-		expect(
-			res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number'),
-		).toBe(true);
+		expect(res.segments.every((sg) => typeof sg.avgLogprob === 'number' && typeof sg.noSpeechProb === 'number')).toBe(
+			true,
+		);
 		expect(res.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 	}, 600_000);
 
@@ -323,14 +324,18 @@ describe.skipIf(!enabled || !TURBO_DIR)(
 			await closeApps();
 		});
 
-		it('the pinned files verify and transcribe the fixture (greedy and beam 5): WER ≤ 4 %', async () => {
+		it('the pinned files verify and transcribe the fixture (greedy, beam 5, verbatim): WER ≤ 4 %', async () => {
 			const m = await register(app, FIXTURE);
-			for (const accuracy of ['standard', 'best'] as const) {
+			for (const accuracy of ['standard', 'best', 'verbatim'] as const) {
 				const r = await app.inject({
 					method: 'POST',
 					url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
 					headers: JSON_H,
-					payload: { model: 'whisper-large-v3-turbo', language: 'en', accuracy },
+					payload: {
+						model: 'whisper-large-v3-turbo',
+						language: 'en',
+						...(accuracy === 'verbatim' ? { verbatim: true } : { accuracy }),
+					},
 				});
 				expect(r.statusCode, r.body).toBe(200);
 				const res = (r.json() as EngineJob).result as TranscriptionResult;
