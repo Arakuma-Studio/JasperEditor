@@ -2,7 +2,7 @@
 
 Scope: 66 original engine test files (16,462 lines), excluding the render and sound owners. Test-declaration/target inventory is explicit below; parameterized and generated fuzz cases inherit their declaration's outcome and are expanded by the runner. The two observational benchmark templates expand to 12 deleted cases.
 
-Original baseline declarations: 413 — DELETE 5, REWRITE 11, OPTIMIZE 19, CONSOLIDATE 9, KEEP 369. Thirteen additional fuzz-target definitions are listed for completeness and inherit their retained wrapper's outcome; they are not counted twice in the declaration totals. Four workflow pairs become four surviving owners; a fifth owner moves the roto-reference contract into real cache cleaning. The five deleted declarations expand to fifteen runtime cases, including twelve optional benchmark cases.
+Original baseline declarations: 413 — DELETE 6, REWRITE 13, OPTIMIZE 19, CONSOLIDATE 9, KEEP 366. Thirteen additional fuzz-target definitions are listed for completeness and inherit their retained wrapper's outcome; they are not counted twice in the declaration totals. Four workflow pairs become four surviving owners; a fifth owner moves the roto-reference contract into real cache cleaning. The six deleted declarations expand to sixteen runtime cases, including twelve optional benchmark cases.
 
 A row's name states the exact expected behavior and recognizable regression (the behavior is absent or wrong). Its file profile supplies the independent requirement source, oracle, stable seam and why another owner does not supersede it. These profiles apply individually to every retained row; no KEEP decision is based on coverage percentage or passing status. Numerical image/audio geometry is feature output, not UI layout.
 
@@ -1422,7 +1422,7 @@ Independent source: AGENTS child/worker failures become settled job errors; S04 
 
 Stable seam and refactor resistance: Actual Worker threads/ExportWorkerPool completion/error and a spawned tsx engine path. Assertions concern semantic output/protocol/files rather than private call count or markup.
 
-Independent oracle: Settled/rejected promises with explicit error reason, real worker exit, valid allocation bounds and successful tsx subprocess completion.
+Independent oracle: Settled/rejected promises with explicit error reason, invalid-count refusal before allocation, real worker exit and successful tsx subprocess completion.
 
 Unique failure protection: Close, mid-flight exit, startup failure, unclonable input and allocation refusal fail at different lifecycle stages; the real tsx case catches dev-only worker boot bugs that Vitest transforms mask.
 
@@ -1432,11 +1432,11 @@ Production owners inspected: `../src/export/worker-pool.ts`.
 |---|---|---|
 | `'closing settles both running and queued requests'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
 | `'the blend pool works in the dev engine (tsx, esbuild keepNames)'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
-| `'refuses invalid worker counts before allocating workers: %s'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
-| `'bounds worker and frame-slot allocation'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
+| `'refuses invalid worker counts before allocating workers: %s'` | REWRITE | The documented invalid-count-before-allocation contract now requires RangeError and zero factory calls rather than incidental English wording. This catches attempted allocation or the wrong failure reason at the shared constructor boundary before any worker resource is created. |
+| `'bounds worker and frame-slot allocation'` | DELETE | Fails independent exact contract, refactor resistance and unique credible input: it restates private workers+3 buffering and feeds framePoolSize hypotheticalMAX/invalidslots. Every production caller (streamLayer, blendSegment, renderWarpLayer) already supplies slots=min(total,workers+3); slots are not a user configuration seam. The shared constructor retains invalid-count-before-allocation and worker lifecycle tests; real native render owners retain successful pool/output behavior. framePoolSize stays because three production pool modules use it. |
 | `'terminates already-created workers if startup fails'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
 | `'rejects running and queued tasks when a worker exits'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
-| `'rejects unclonable messages without leaving a request pending'` | KEEP | The named behavior supplies a distinct failure in this file's contract profile; its authored/third-party oracle is independent of the implementation, it observes the stable boundary listed above, and no remaining lower owner proves that boundary failure. |
+| `'rejects unclonable messages without leaving a request pending'` | REWRITE | Requires the independent Node structured-clone protocol failure name DataCloneError, with a settled rejected request and real worker teardown. An unrelated worker boot/lifecycle error can no longer satisfy this case. |
 
 ## Added surviving owner
 
@@ -1444,4 +1444,19 @@ Production owners inspected: `../src/export/worker-pool.ts`.
 
 ## Validation and performance
 
-Pending controlled runs after the root baseline completes. This report does not claim a measured speedup or that skipped optional model/SSH/PowerShell/vendor suites passed. Root suite timings and detailed runner expansion are reported by the integration audit.
+The completed root baseline (`pnpm test --maxWorkers=2`) reported 2109.71 s wall time: 793 files, 7911 cases, 7661 passed, 248 skipped and 2 failed. This owner's 66 files contributed 698 expanded cases: 661 passed, 36 skipped and one failed. The owned failure is the permission-based cache rename setup described above; the other baseline failure is the separate composition canvas suite.
+
+Slowest owned baseline cases, measured inside that shared full run:
+
+| Case | Baseline time | Retained cost / action |
+|---|---:|---|
+| Denoise quality, all methods | 69.966 s | Lossless patch crop; all methods and 40% threshold retained. |
+| Upscale frame/rate/audio conservation | 36.347 s | S07 §8.2 explicitly requires the full six-second 720p fixture for every step. |
+| Camera tracking job accuracy | 31.837 s | Real media extraction, worker and public job output must match authored camera truth. |
+| Radial-distortion solve | 29.390 s | Unique public accuracy contract for the lens-distortion mode. |
+| Variable-zoom solve | 20.495 s | Unique public accuracy contract for focal length changing during motion. |
+| Import alpha interpretation | 14.983 s | Four real export pixel oracles retained on one small frame. |
+
+The cleanup changes test/support LOC by −206; the separately owned shared frame decoder adds 25 LOC once at integration. No wall-time saving is claimed before controlled validation. Root full-suite timing, aggregate runner/import cost and expanded counts belong to the integration report; file-duration sums are not wall time.
+
+Affected runtime tests, engine typecheck and intended-regression mutation checks remain pending the coordinator's bounded resource slot. Targeted Biome checks and staged diff checks passed. Optional real SSH, SAM, speech-model and PowerShell suites remain conditional; their absence is not claimed as a pass. The shared `tempAppdir` teardown and lazy helper import also require the integrated full engine gate.
