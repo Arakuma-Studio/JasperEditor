@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { brotliCompressSync } from 'node:zlib';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { FontParseError, parseFont } from '../src/fonts/sfnt.ts';
@@ -166,19 +166,20 @@ describe('font parser: refusals', () => {
 		expect(refusal(big).code).toBe('FONT_TOO_LARGE');
 	});
 
-	it('refuses decompression bombs: a WOFF2 stream larger than its directory declares', () => {
+	it('refuses surplus WOFF2 payload bytes beyond the table directory lengths', () => {
 		const w2 = toWoff2(ttf);
-		// The declared table total stays ≈ 19 KB; the stream expands past it.
-		const bomb = brotliCompressSync(new Uint8Array(64 * 1024));
 		const v = new DataView(w2.buffer, w2.byteOffset, w2.byteLength);
 		const total = v.getUint32(20);
 		const head = w2.subarray(0, w2.length - ((total + 3) & ~3));
-		const out = new Uint8Array(head.length + bomb.length);
+		// Keep every actual font table valid: only the surplus byte violates WOFF2 §5.
+		const tables = brotliDecompressSync(w2.subarray(head.length, head.length + total));
+		const payload = brotliCompressSync(Buffer.concat([tables, Buffer.from([0])]));
+		const out = new Uint8Array(head.length + payload.length);
 		out.set(head);
-		out.set(bomb, head.length);
+		out.set(payload, head.length);
 		const ov = new DataView(out.buffer);
 		ov.setUint32(8, out.length);
-		ov.setUint32(20, bomb.length);
+		ov.setUint32(20, payload.length);
 		expect(refusal(out).code).toBe('FONT_INVALID');
 	});
 

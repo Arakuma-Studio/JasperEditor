@@ -25,7 +25,7 @@ identity or implementation shape, so behavior-preserving internal refactors pass
 Each row identifies the input/transition/process boundary that remaining owners do
 not cover. Shared facts apply to every explicitly named row, satisfying all six bars.
 
-Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 12**, **OPTIMIZE 4**, **REWRITE 18**. 34 default cases survive plus one opt-in rendering case (35 total); three redundant executions are removed.
+Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 12**, **OPTIMIZE 3**, **REWRITE 19**. 34 default cases survive plus one opt-in rendering case (35 total); three redundant executions are removed.
 
 ## apps/engine/test/font-parser.test.ts
 
@@ -44,8 +44,8 @@ Disposition totals: **CONSOLIDATE 3**, **DELETE 1**, **KEEP 12**, **OPTIMIZE 4**
 | refuses tables that point outside the file and truncated files | KEEP | Out-of-file table extents and truncated headers/bodies must be FONT_INVALID. Literal code at parseFont catches unsafe reads or acceptance; missing-table fixtures are complete containers, so do not own extent checking. |
 | refuses WOFF2 / WOFF collections with a clear message | REWRITE | WOFF/WOFF2 ttcf flavor is unsupported, not corrupt: literal FONT_UNSUPPORTED for each container. Drop English message spelling. TTC success must remain supported, so the plain collection owner cannot replace these format-specific refusals. |
 | refuses files over the size cap before reading them | REWRITE | The independently documented 64 MiB file cap is pinned with literal 64 MiB + 1 input and FONT_TOO_LARGE, rather than allocating relative to the production constant. Detects silently increased/removed cap; HTTP preflight is a separate boundary and never invokes this parser with the oversized bytes. |
-| refuses decompression bombs: a WOFF2 stream larger than its directory declares | OPTIMIZE | A brotli stream that expands beyond the WOFF2 directory total must be FONT_INVALID. 64 KiB already exceeds the unchanged ≈19 KiB total, replacing 8 MiB of irrelevant zeros and a redundant five-second body clock. Container decompression and length checks remain real; WOFF1 has another decoder. This verifies refusal, not a measured peak-memory bound. |
-| refuses a WOFF table that inflates past its declared length | REWRITE | A zlib-compressed WOFF name table expanding beyond its declared length must be FONT_INVALID. Remove non-contract English zlib/declared words while keeping a fixture assertion that the chosen table really is compressed. Distinct from WOFF2 brotli and sfnt extent checks. |
+| refuses decompression bombs: a WOFF2 stream larger than its directory declares | REWRITE | [WOFF2 §5](https://www.w3.org/TR/WOFF2/) independently requires the decoded block size to equal the directory lengths. Keep the actual valid font-table payload and append one surplus byte; the only invalidity is this length mismatch. The former zero-filled payload still failed on invalid font metadata after both length protections were removed, so it was a false-positive refusal. The corrected case fails that real mutant. This is wire-format validation, not an allocation-safety claim; WOFF1 uses a different decoder. |
+| refuses a WOFF table that inflates past its declared length | REWRITE | [WOFF1 §5](https://www.w3.org/TR/WOFF/) requires a decoded table to match origLength. A zlib-compressed WOFF name table expanding beyond its declared length must be FONT_INVALID. Remove non-contract English zlib/declared words while keeping a fixture assertion that the chosen table really is compressed. Distinct from WOFF2 brotli and sfnt extent checks. |
 | random bytes, with and without a font signature | REWRITE | AGENTS requires parser fuzzing: 1500 arbitrary/signature-prefixed byte arrays yield either structurally valid bounded faces or FontParseError. Independent bounds are literal name≤128 and weight 1…1000 instead of reading the implementation limit. Detects unexpected parser exceptions at a public boundary; valid-font mutation fuzz cannot cover arbitrary signatures. |
 | valid fonts of every container with flipped bytes and truncations | REWRITE | AGENTS parser fuzzing: 1500 flipped/truncated valid fonts across four containers retain the same typed-refusal/valid-face invariant with literal name bound. Detects deep directory/name/stream crashes unreachable with purely random headers. Existing per-input timing remains; no sample count was reduced. |
 | huge declared counts and lengths are refused without large allocations | REWRITE | AGENTS bounded untrusted allocations: 600 huge header/count mutations across supported containers must yield valid bounded faces or FontParseError without array-buffer growth above the documented 128 MiB plus 1 MiB allowance. Pin literal budget; rename a misleading unconditional-refusal claim because a mutation can land in an unused field. This property observes allocations and results rather than private guard calls; heap sampling is not a complete process-peak guarantee. |
@@ -95,7 +95,7 @@ in `tools/services.ts` supplies only `onChange` and `log`; remove unused `now` a
 `limits` injection options, their limits type and the clock-forwarding method.
 The production default date and 64 MiB/1,000/2 GiB behavior remain the same.
 Remove the unused fixture `padBytes` option/table; `glyphRects` now creates cheap,
-valid blank fonts for real capacity states. No dependency/configuration changes. Net test/support change: +1 line; production source: −9 lines. The extra real-cap fixture replaces unsafe test-only limit overrides; the repository-wide cleanup remains strongly net-negative.
+valid blank fonts for real capacity states. No dependency/configuration changes. Net test/support change: +2 lines; production source: −9 lines. The extra real-cap fixture replaces unsafe test-only limit overrides; the repository-wide cleanup remains strongly net-negative.
 
 The actual-cap fixtures have consistent font bytes, SHA256 IDs, sizes and names.
 The 1,000-face fixture stays far below 2 GiB; the 32-file byte fixture stays below 1,000
@@ -146,12 +146,44 @@ both subsequent full targets passed. Logs and mutation script/results are under
 Measured case costs: the old injected-limit case took 58.8 ms in the integrated
 baseline; real-cap protection took 1,563 ms initially and 1,501 ms finally. This
 approximately 1.44 s body increase is deliberate stronger production-cap coverage,
-not claimed as a performance win. Parser file span fell from 599.8 to 410 ms; the
-8 MiB bomb case formerly cost 276.6 ms and now costs 36.5 ms with
-the same declared-length refusal. The whole three-file baseline was part of a
+not claimed as a performance win. The initial parser file span fell from 599.8 to 410 ms, but the reduced all-zero
+WOFF2 fixture subsequently proved a false positive and was replaced, as below. Its
+36.5 ms timing is historical evidence for that discarded fixture, not a claim of
+valid optimized regression protection. The whole three-file baseline was part of a
 larger 60-file run, so no comparable process-wall or CI speedup is inferred.
 No concurrency, fuzz sample count, meaningful assertion or tolerance was weakened.
 
 The optional renderer test remains unchanged in this commit. The default baseline
 records it skipped; no claim of a successful supplemental render is made here until
 its scheduled before/after execution. No skipped oracle counts as success.
+
+### Corrected WOFF2 oracle and independent protocol evidence
+
+The final review tested the claimed refusal rather than trusting the green result.
+Removing both the actual brotli output bound and decoded-length check left the old
+all-zero WOFF2 case green (one selected case, 414 ms runner): unrelated invalid
+head/name bytes still yielded `FONT_INVALID`. It did not establish its claimed
+length regression and is not retained in that form.
+
+[WOFF2 §5](https://www.w3.org/TR/WOFF2/) requires the decoded data-block size to
+match the summed directory lengths. The corrected fixture decompresses its valid
+generated WOFF2 payload, appends exactly one surplus byte, recompresses it and
+updates only the compressed/file lengths. Every actual font table stays valid.
+The same real production mutant then fails with `expected a refusal`, because
+`parseFont` now wrongly accepts the container. Neither test checks private calls
+or demands a particular guard implementation; any implementation that correctly
+refuses the malformed wire format passes.
+
+[WOFF1 §5](https://www.w3.org/TR/WOFF/) independently requires decoded table size
+to equal `origLength`. Its existing genuine compressed name bytes plus shortened
+directory length already had this property: removing its output bound and exact
+length check caused `expected a refusal` (396 ms runner). It needs no replacement
+fixture. Neither case claims to measure peak allocations or independently prove
+the decompressor's per-call memory budget. The separate large-header fuzz owner
+retains its explicit observed-allocation bound and limitations.
+
+Restored source passed all 17 parser cases in 833 ms runner / 389 ms bodies.
+Actual engine TypeScript passed again with the four-GiB heap allowance;
+Biome and diff checks passed for the final source. No production behavior changed
+in this followup. Raw logs/scripts/results:
+`/tmp/jasper-test-cleanup/wave2-fonts/{length-*,mutant-length-*}`.
