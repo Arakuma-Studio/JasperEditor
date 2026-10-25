@@ -119,7 +119,7 @@ export const proposalCommands: UiCommand[] = [
 		id: 'proposals.refresh',
 		label: 'Refresh Proposal',
 		description:
-			'Ask the proposal’s producer to re-plan its stale items on the current edit (spec 15 "Refresh proposal"): they come back pending for review; nothing is applied. Disabled when no item is stale; refused when the producer cannot re-plan.',
+			'Ask the proposal’s producer to re-plan its stale items on the current edit ("Refresh proposal"): they come back pending for review; nothing is applied. Disabled when no item is stale; refused when the producer cannot re-plan.',
 		scope: 'global',
 		agentExposed: true,
 		when: hasStale,
