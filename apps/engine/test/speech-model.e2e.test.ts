@@ -78,8 +78,13 @@ function timing(words: Array<{ start: number; end: number }>, offsetSec = 0) {
 			errs.push(99);
 			continue;
 		}
-		errs.push(Math.abs(mine[0]!.start / FLICKS_PER_SECOND - offsetSec - u.start));
-		errs.push(Math.abs(mine[mine.length - 1]!.end / FLICKS_PER_SECOND - offsetSec - u.end));
+		const e1 = Math.abs(mine[0]!.start / FLICKS_PER_SECOND - offsetSec - u.start);
+		const e2 = Math.abs(mine[mine.length - 1]!.end / FLICKS_PER_SECOND - offsetSec - u.end);
+		if (Math.max(e1, e2) > 0.15)
+			console.log(
+				`boundary ${u.start}–${u.end}: first "${mine[0]!.text}" ${e1.toFixed(2)} s, last "${mine.at(-1)!.text}" ${e2.toFixed(2)} s off`,
+			);
+		errs.push(e1, e2);
 	}
 	const outside = words.filter(
 		(w) =>
@@ -242,18 +247,22 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const before = truth.utterances.filter((u) => u.end <= 17.5);
 		const after = truth.utterances.filter((u) => u.start >= 17.5);
 		const hypAfter = res.words
-			.filter((w) => sec(w.start) >= 52.4)
+			.filter((w) => sec(w.start) >= 47.4)
 			.map((w) => w.text)
 			.join(' ');
 		const werAfter = wordErrorRate(after.map((u) => u.text).join(' '), hypAfter);
 		const hypBefore = res.words
-			.filter((w) => sec(w.end) <= 22.6)
+			.filter((w) => sec(w.end) <= 17.6)
 			.map((w) => w.text)
 			.join(' ');
 		const werBefore = wordErrorRate(before.map((u) => u.text).join(' '), hypBefore);
 		console.log(
 			`silence gap: ${inGap.length} words in the gap, WER before ${(werBefore * 100).toFixed(2)} %, after ${(werAfter * 100).toFixed(2)} %, guard ${JSON.stringify(res.guard)}`,
 		);
+		if (werAfter > 0.06)
+			console.log(
+				`after the gap: ${res.words.map((w) => `${w.text}@${sec(w.start).toFixed(2)}`).join(' ')}; segments ${JSON.stringify(res.segments.map((x) => [x.start, x.end]))}`,
+			);
 		expect(inGap).toEqual([]);
 		expect(werAfter).toBeLessThanOrEqual(0.06);
 		expect(werBefore).toBeLessThanOrEqual(0.06);

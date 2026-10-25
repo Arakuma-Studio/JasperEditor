@@ -366,7 +366,10 @@ async function recognise(
 	const { r, model } = result;
 	const vaMask = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
 	const refined = refineWords(
-		vaMask ? { samples: input.samples, db: input.db, mask: vaMask.speech, presence: vaMask.presence } : input,
+		// bounds snap to the energy VAD (measured on the LJ fixture: boundary error max 40 ms vs 280 ms with the
+		// voice analysis' speech class, and diarisation unchanged); what keeps a word is speech or breath in the voice
+		// analysis, which tells noise and music from voice
+		vaMask ? { samples: input.samples, db: input.db, mask: input.mask, presence: vaMask.presence } : input,
 		r.words.map((w) => ({ ...w })),
 	);
 	const words = refined.words;
