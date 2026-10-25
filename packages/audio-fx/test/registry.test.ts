@@ -62,7 +62,8 @@ describe('audio-fx registry', () => {
 			for (let c = 0; c < 2; c++)
 				for (let i = 0; i < n; i++) {
 					const a = big[c]![i]!;
-					if (!Number.isFinite(a)) throw new Error(`${id}: non-finite output`);
+					if (!Number.isFinite(a) || !Number.isFinite(small[c]![i]!))
+						throw new Error(`${id}: non-finite output`);
 					if (Math.abs(a - small[c]![i]!) > 1e-6)
 						throw new Error(`${id}: block-size dependent output at ${i}`);
 				}
@@ -148,8 +149,13 @@ describe('audio-fx registry', () => {
 			const b1 = x.slice();
 			const b2 = x.slice();
 			fx.process([b1, b2], 0, x.length);
-			for (let i = 0; i < x.length; i++)
-				if (Math.abs(a1[i]! - b1[i]!) >= 1e-6) throw new Error(`${id}: reset did not clear the state (${i})`);
+			for (const [expected, actual] of [
+				[a1, b1],
+				[a2, b2],
+			] as const)
+				for (let i = 0; i < x.length; i++)
+					if (!Number.isFinite(actual[i]!) || !(Math.abs(expected[i]! - actual[i]!) < 1e-6))
+						throw new Error(`${id}: reset did not clear the state (${i})`);
 		}
 	});
 });

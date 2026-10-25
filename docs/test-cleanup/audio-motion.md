@@ -718,10 +718,10 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 | Test declaration (all parameterized rows) | Disposition | Reason / surviving protection |
 |---|---|---|
 | refuses unknown processor and parameter identifiers | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
-| output is independent of the block size, with a parameter change mid-stream | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| output is independent of the block size, with a parameter change mid-stream | REWRITE | Retains the exact streaming inputs/chunks and1e-6 result tolerance. Rejects nonfinite output on both full-block and fragmented paths; formerly a NaN on the fragmented path made abs(a-NaN)>tolerance false and silently passed. Public block-size invariance is specified by the AudioProcessor streaming contract and not superseded by individual effect tone tests. |
 | handles empty, single-sample, mono and extra-channel blocks | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | extreme settings stay finite and tails end without subnormals (%s, %s) | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
-| reset restores the initial behaviour | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| reset restores the initial behaviour | REWRITE | Retains independent before/after reset output invariance on the same seeded input, now checking both stereo channels and rejecting NaN differences. A right-channel-only stale state or NaN previously escaped the left-only negative comparison; public reset semantics require both channels and unique per-processor states. |
 
 ### `packages/audio-fx/test/regressions-p0.test.ts`
 
