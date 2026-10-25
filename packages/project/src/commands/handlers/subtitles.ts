@@ -407,7 +407,9 @@ function placeTextSubtitles(
 	// perf: the track's clips under the subtitles are found once (the subtitles never overlap each other)
 	const lo = Math.min(...caps.map((c) => c.start));
 	const hi = Math.max(...caps.map((c) => c.end));
-	const pool = caps.length ? trackCandidates(seq, new Map([[track.id, { lo, hi }]])).get(track.id) : undefined;
+	const pool = caps.length
+		? trackCandidates(seq, new Map([[track.id, { lo, hi }]])).get(track.id)
+		: undefined;
 	for (const c of caps) {
 		if (c.end <= c.start) continue;
 		relinkSplits(seq, clearRange(seq, track.id, c.start, c.end, h, new Set(), pool), h);

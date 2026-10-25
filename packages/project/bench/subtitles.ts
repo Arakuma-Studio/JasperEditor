@@ -8,7 +8,12 @@
 // timed. Each case: one warm-up, then 7 samples (each a full transaction on the same base document); medians.
 import { cpus, loadavg, totalmem } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { applyTransaction, createRandomIdSource, FLICKS_PER_SECOND, type ProjectDocument } from '../src/index.ts';
+import {
+	applyTransaction,
+	createRandomIdSource,
+	FLICKS_PER_SECOND,
+	type ProjectDocument,
+} from '../src/index.ts';
 import { Harness, makeCtx } from '../test/helpers.ts';
 
 function fixture(o: { preset: string; seconds: number; words: number; cuts: number }) {
@@ -16,7 +21,15 @@ function fixture(o: { preset: string; seconds: number; words: number; cuts: numb
 	const frame = { width: h.seq.settings.width, height: h.seq.settings.height };
 	const a = h.registerVideo({ seconds: o.seconds + 10, ...frame });
 	const b = h.registerVideo({ seconds: o.seconds + 10, audio: false, ...frame });
-	h.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+	h.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId: a },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		},
+	]);
 	const rate = h.seq.settings.frameRate;
 	const fps = rate.num / rate.den;
 	const every = o.seconds / o.cuts;
@@ -61,7 +74,11 @@ function time(fn: () => unknown): { median: number; min: number; max: number } {
 }
 
 function run(doc: ProjectDocument, seqId: string, commands: unknown[]) {
-	const r = applyTransaction(doc, { label: 'bench', origin: 'user', sequenceId: seqId, commands }, makeCtx({}, createRandomIdSource()));
+	const r = applyTransaction(
+		doc,
+		{ label: 'bench', origin: 'user', sequenceId: seqId, commands },
+		makeCtx({}, createRandomIdSource()),
+	);
 	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
 	return r;
 }
@@ -76,7 +93,9 @@ for (const c of cases) {
 	const gen = [{ type: 'captions.generate', template: 'builtin:pixel-pop' }];
 	const first = run(doc, seqId, gen);
 	const out = first.result.ok ? (first.result.results[0] as { count: number; stats: unknown }) : null;
-	const brolls = Object.values(first.document.sequences[seqId]!.clips).filter((x) => x.kind === 'video').length;
+	const brolls = Object.values(first.document.sequences[seqId]!.clips).filter(
+		(x) => x.kind === 'video',
+	).length;
 	if (brolls < 2) throw new Error(`fixture has ${brolls} video clips`);
 	const generate = time(() => run(doc, seqId, gen));
 	// move every B-roll clip 7 frames later, then align
@@ -84,7 +103,9 @@ for (const c of cases) {
 		{
 			type: 'clip.move',
 			clipIds: Object.values(first.document.sequences[seqId]!.clips)
-				.filter((x) => x.kind === 'video' && x.trackId !== first.document.sequences[seqId]!.videoTracks[0]!.id)
+				.filter(
+					(x) => x.kind === 'video' && x.trackId !== first.document.sequences[seqId]!.videoTracks[0]!.id,
+				)
 				.map((x) => x.id),
 			deltaFrames: 7,
 		},
@@ -93,13 +114,24 @@ for (const c of cases) {
 		(moved.sequences[seqId] as { captionGroups?: Record<string, unknown> }).captionGroups ?? {},
 	)[0]!;
 	const align = time(() => run(moved, seqId, [{ type: 'captions.alignToCuts', groupId }]));
-	results.push({ case: c.name, subtitles: out?.count, stats: out?.stats, generateMs: generate, alignAfterMoveMs: align });
+	results.push({
+		case: c.name,
+		subtitles: out?.count,
+		stats: out?.stats,
+		generateMs: generate,
+		alignAfterMoveMs: align,
+	});
 }
 console.log(
 	JSON.stringify(
 		{
 			date: new Date().toISOString(),
-			machine: { cpus: cpus().length, model: cpus()[0]?.model, memGB: Math.round(totalmem() / 2 ** 30), node: process.version },
+			machine: {
+				cpus: cpus().length,
+				model: cpus()[0]?.model,
+				memGB: Math.round(totalmem() / 2 ** 30),
+				node: process.version,
+			},
 			loadavg: loadavg(),
 			results,
 		},
