@@ -130,7 +130,7 @@ describe('rules (Spanish)', () => {
 
 	it('a script prefers an earlier take that covers the line better', () => {
 		const script = 'Diseñé las curvas cerradas para el circuito de montaña.';
-		const r = kinds('diseñé las curvas cerradas para el circuito de montaña | diseñé las curvas', {
+		const r = kinds('diseñé las curvas cerradas para el circuito de montaña | diseñé las curvas cerradas para', {
 			script,
 			settings: { rules: { restart: 'off', falseStart: 'off' } },
 		});
@@ -147,12 +147,13 @@ describe('rules (Spanish)', () => {
 	it('off-script phrases and head / tail need a script', () => {
 		const script = 'Hoy vamos a crear un juego de carreras.\nDespués programé los coches.';
 		const r = kinds(
-			'vale ya está grabando esto | hoy vamos a crear un juego de carreras | madre mía qué calor hace aquí | después programé los coches | bueno adiós a todos',
+			'vale ya está grabando esto | hoy vamos a crear un juego de carreras | madre mía qué calor hace aquí | después programé los coches | adiós amigos',
 			{ script },
 		);
 		expect(r.byWord.slice(0, 5).every((k) => k === 'off-script')).toBe(true);
 		expect(r.byWord.slice(13, 19).every((k) => k === 'off-script')).toBe(true);
-		expect(r.byWord.slice(23).every((k) => k === 'head-tail' || k === 'filler-phrase')).toBe(true);
+		expect(r.byWord.slice(5, 13).every((k) => k === null)).toBe(true);
+		expect(r.byWord.slice(23)).toEqual(['head-tail', 'head-tail']);
 		const none = kinds('vale ya está grabando esto | hoy vamos a crear un juego');
 		expect(none.byWord.some((k) => k === 'off-script' || k === 'head-tail')).toBe(false);
 	});
@@ -238,8 +239,8 @@ describe('rules (English)', () => {
 	it('English fillers, markers and restarts', () => {
 		const r = kinds('so um we built the track | you know | then we we added cars', { language: 'en' });
 		expect(r.label(1)).toBe('filler-vocalic');
-		expect(r.byWord.slice(5, 7)).toEqual(['filler-phrase', 'filler-phrase']);
-		expect(r.label(8)).toBe('stutter');
+		expect(r.byWord.slice(6, 8)).toEqual(['filler-phrase', 'filler-phrase']);
+		expect(r.label(9)).toBe('stutter');
 		// Spanish lists do not apply to English ("este" is a word)
 		expect(kinds('este | bueno', { language: 'en' }).byWord).toEqual([null, null]);
 	});
