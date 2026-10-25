@@ -3,6 +3,7 @@
 // the fit zoom. Real-Chrome layout (fit on every canvas, renderStill = renderFrames) is social-comment-render.e2e.
 import {
 	animeTemplateTiming,
+	generatedAvatar,
 	REMOTE_IMAGE_IDS,
 	SOCIAL_VARIANTS,
 	socialComment,
@@ -14,7 +15,12 @@ import { act, render } from '@testing-library/react';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
-import { INSTAGRAM_GLYPHS, TIKTOK_DEFAULT_AVATAR, X_GLYPHS } from '../src/templates/social/glyphs.ts';
+import {
+	INSTAGRAM_GLYPHS,
+	TIKTOK_DEFAULT_AVATAR,
+	X_GLYPHS,
+	YOUTUBE_GLYPHS,
+} from '../src/templates/social/glyphs.ts';
 import type { SocialCardAssets } from '../src/templates/social-comment/contract.ts';
 import { INSTAGRAM_DEFAULT_AVATAR } from '../src/templates/social-comment/instagram.tsx';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
@@ -70,13 +76,18 @@ const ASSETS: SocialCardAssets = {
 };
 
 describe('social-comment@1 cards', () => {
-	it('draws the TikTok, Instagram and X cards in both themes and a visible "not available" card for the variants still to come', () => {
+	it('draws every variant\'s card in both themes (a variant without one would draw a visible "not available" card)', () => {
 		for (const variant of SOCIAL_VARIANTS)
 			for (const theme of ['light', 'dark']) {
 				const r = render(at({ ...socialDefaults(variant), theme }, 100));
 				const card = r.container.querySelector('[data-social-variant]')!;
 				expect(card.getAttribute('data-social-variant')).toBe(variant);
-				if (variant.startsWith('tiktok') || variant.startsWith('instagram') || variant === 'x-post') {
+				if (
+					variant.startsWith('tiktok') ||
+					variant.startsWith('instagram') ||
+					variant.startsWith('youtube') ||
+					variant === 'x-post'
+				) {
 					expect(socialVariantAvailable(variant)).toBe(true);
 					expect(card.hasAttribute('data-social-unavailable')).toBe(false);
 				} else {
@@ -300,6 +311,167 @@ describe('social-comment@1 Instagram cards', () => {
 			expect(q(r.container, '[data-social-card]')!.style.transformOrigin).toBe('0% 0%');
 			r.unmount();
 		}
+	});
+});
+
+describe('social-comment@1 YouTube cards', () => {
+	const yt = socialDefaults('youtube-comment');
+	const shorts = socialDefaults('youtube-shorts-reply');
+	const q = (c: HTMLElement, part: string) => c.querySelector(`[data-part="${part}"]`);
+
+	it('comment: "@handle", the badge only when verified, "N units ago", likes, "N replies" with the thread line', () => {
+		const r = render(at({ ...yt, handle: 'luna.makes', verified: true }, 100));
+		const c = r.container;
+		expect(q(c, 'name')!.textContent).toBe('@luna.makes');
+		// the editable element holds exactly the handle (the "@" is outside it, contract C5)
+		expect(c.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna.makes');
+		expect(q(c, 'header')!.querySelectorAll('svg')).toHaveLength(1);
+		expect(q(c, 'header')!.innerHTML).toContain(YOUTUBE_GLYPHS.verified.paths[0]!.d);
+		expect(q(c, 'time')!.textContent).toBe('10 months ago');
+		expect(q(c, 'likes')!.textContent).toBe('72');
+		expect(q(c, 'replies')!.textContent).toBe('2 replies');
+		expect(q(c, 'thread')).not.toBeNull();
+		for (const g of ['thumbUp', 'thumbDown', 'reply', 'more', 'chevronDown'] as const)
+			expect(c.innerHTML, g).toContain(YOUTUBE_GLYPHS[g].paths[0]!.d);
+		r.unmount();
+		const plain = render(at(yt, 100));
+		expect(q(plain.container, 'header')!.querySelector('svg')).toBeNull();
+		plain.unmount();
+	});
+
+	it('comment: months stay months, 1 reply is singular, 0 replies hides the row and the thread line (tokcomment bugs)', () => {
+		const r = render(at({ ...yt, timeValue: 3, timeUnit: 'month', replies: 1 }, 100));
+		expect(q(r.container, 'time')!.textContent).toBe('3 months ago');
+		expect(q(r.container, 'replies')!.textContent).toBe('1 reply');
+		r.unmount();
+		const none = render(at({ ...yt, replies: 0, timeValue: 0 }, 100));
+		expect(q(none.container, 'replies')).toBeNull();
+		expect(q(none.container, 'thread')).toBeNull();
+		expect(none.container.textContent).not.toMatch(/0 replies/);
+		expect(q(none.container, 'time')!.textContent).toBe('Just now');
+		none.unmount();
+	});
+
+	it('comment: huge counts stay short (no overflow), formatted the YouTube way', () => {
+		const r = render(at({ ...yt, likes: 987_654_321_000, replies: 4_812_345 }, 100));
+		expect(q(r.container, 'likes')!.textContent).toBe('987B');
+		expect(q(r.container, 'replies')!.textContent).toBe('4.8M replies');
+		r.unmount();
+		const k = render(at({ ...yt, likes: 1_234_567, replies: 1_299 }, 100));
+		expect(q(k.container, 'likes')!.textContent).toBe('1.2M');
+		expect(q(k.container, 'replies')!.textContent).toBe('1.2K replies');
+		k.unmount();
+	});
+
+	it('comment: showProfile false hides the avatar and the thread line; name and text stay editable', () => {
+		const r = render(at({ ...yt, showProfile: false }, 100));
+		expect(r.container.querySelector('[data-social-avatar]')).toBeNull();
+		expect(q(r.container, 'thread')).toBeNull();
+		expect(r.container.querySelector('[data-template-param="handle"]')!.textContent).toBe('Username');
+		expect(
+			r.container.querySelector('[data-template-param="text"][data-template-marks="true"]'),
+		).not.toBeNull();
+		r.unmount();
+	});
+
+	it('avatars: YouTube default picture by its manifest id (silhouette until delivered), a picture, generated initials from the handle', () => {
+		const id = REMOTE_IMAGE_IDS.youtubeDefaultAvatar;
+		for (const variant of ['youtube-comment', 'youtube-shorts-reply'] as const) {
+			const base = socialDefaults(variant);
+			const missing = render(at(base, 100));
+			const el = missing.container.querySelector('[data-social-avatar="default"]')!;
+			expect(el.querySelector('img')).toBeNull();
+			expect(el.querySelector('svg')).not.toBeNull();
+			missing.unmount();
+			const raster = render(at(base, 100, { imageUrls: { [id]: 'http://engine/yt-default.jpg' } }));
+			expect(
+				raster.container.querySelector('img[data-testid="social-avatar-media"]')!.getAttribute('src'),
+			).toBe('http://engine/yt-default.jpg');
+			raster.unmount();
+			const pic = render(
+				at({ ...base, avatar: { mediaId: 'med_a' } }, 100, { mediaUrls: { med_a: 'http://x/a.png' } }),
+			);
+			expect(pic.container.innerHTML).toContain('src="http://x/a.png"');
+			pic.unmount();
+			// YouTube shows the handle, so a generated avatar's initials come from it (not the hidden display name)
+			const seed = [...Array(64).keys()].find((n) => generatedAvatar(n, 'zed').style === 'initials')!;
+			const gen = render(
+				at({ ...base, avatar: { generated: seed }, handle: 'zed', displayName: 'Amy Bo' }, 100),
+			);
+			const g = gen.container.querySelector('[data-social-avatar="generated"]')!;
+			expect(g.textContent).toBe(generatedAvatar(seed, 'zed').initials);
+			expect(g.textContent).not.toBe(generatedAvatar(seed, 'Amy Bo').initials);
+			gen.unmount();
+		}
+	});
+
+	it('comment: mentions and hashtags in YouTube link blue per theme; emoji as Noto images by default', () => {
+		const text = 'hi @bob #fyp 😊';
+		for (const [theme, color] of [
+			['light', '#065FD4'],
+			['dark', '#3EA6FF'],
+		] as const) {
+			const r = render(
+				at({ ...yt, theme, text }, 100, { emojiUrls: { 'noto:😊': 'http://x/noto/1f60a.png' } }),
+			);
+			const colored = [...r.container.querySelectorAll<HTMLElement>('[data-template-param="text"] span')]
+				.filter((sp) => sp.style.color && !sp.hasAttribute('data-unit'))
+				.map((sp) => [sp.textContent, sp.style.color]);
+			expect(colored).toEqual([
+				['@bob', color],
+				['#fyp', color],
+			]);
+			expect(r.container.querySelector('img[data-emoji="😊"]')!.getAttribute('src')).toBe(
+				'http://x/noto/1f60a.png',
+			);
+			r.unmount();
+		}
+	});
+
+	it('comment like tick: the count rises, then the thumb is filled (hold state)', () => {
+		const p = { ...yt, likeTick: true, likes: 12_345 };
+		const view = render(at(p, 0));
+		expect(q(view.container, 'likes')!.textContent).toBe('0');
+		for (let f = 1; f <= 60; f++) act(() => view.rerender(at(p, f)));
+		expect(q(view.container, 'likes')!.textContent).toBe('12K');
+		const icon = q(view.container, 'like-icon')!;
+		const svgs = icon.querySelectorAll<SVGElement>('svg');
+		expect(svgs).toHaveLength(2);
+		expect(svgs[1]!.innerHTML).toContain(YOUTUBE_GLYPHS.thumbUpFilled.paths[0]!.d);
+		expect(svgs[1]!.style.opacity).toBe('1');
+		expect(svgs[0]!.style.opacity).toBe('0');
+		// the widest counts it passes through reserve the width (the buttons after it never move during the tick)
+		const reserved = [
+			...q(view.container, 'likes')!.parentElement!.querySelectorAll('[aria-hidden="true"]'),
+		].map((e) => e.textContent);
+		expect(reserved).toEqual(['12K', '9', '99', '999', '9.9K']);
+		view.unmount();
+	});
+
+	it('Shorts card: "Comment from @handle", no stats, no badge, no like tick; showProfile hides the avatar', () => {
+		const r = render(at({ ...shorts, verified: true, likeTick: true, handle: 'luna' }, 100));
+		const c = r.container;
+		expect(q(c, 'header')!.textContent).toBe('Comment from @luna');
+		expect(c.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna');
+		expect(q(c, 'header')!.querySelector('svg')).toBeNull();
+		for (const part of ['likes', 'time', 'replies', 'thread', 'like-icon'])
+			expect(q(c, part), part).toBeNull();
+		expect(c.querySelector('[data-social-avatar]')).not.toBeNull();
+		r.unmount();
+		const bare = render(at({ ...shorts, showProfile: false }, 100));
+		expect(bare.container.querySelector('[data-social-avatar]')).toBeNull();
+		expect(q(bare.container, 'header')!.textContent).toBe('Comment from @Username');
+		bare.unmount();
+	});
+
+	it('Shorts card: a long handle stays on one line (ellipsis), the card stays at most 305 reference px wide', () => {
+		const r = render(at({ ...shorts, handle: 'x'.repeat(64) }, 100));
+		const header = q(r.container, 'header') as HTMLElement;
+		expect(header.style.whiteSpace).toBe('nowrap');
+		expect(header.style.textOverflow).toBe('ellipsis');
+		const card = r.container.querySelector<HTMLElement>('[data-social-variant="youtube-shorts-reply"]')!;
+		expect(card.style.maxWidth).toBe('305px');
+		r.unmount();
 	});
 });
 
