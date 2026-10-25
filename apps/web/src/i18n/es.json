@@ -11060,5 +11060,9 @@
   "Verified": "Verificado",
   "View count shown next to the views icon. A raw non-negative integer (0…1e12); the card formats it the way the platform does (\"12K\", \"1.5M\"). Used by: x-post.": "Número de visualizaciones junto al icono de visualizaciones. Un entero no negativo sin formato (0…1e12); la tarjeta lo formatea como la plataforma (\"12K\", \"1.5M\"). Lo usa: x-post.",
   "Which platform card to draw: 'tiktok-reply' (TikTok \"Reply to name's comment\" bubble shown on a video reply), 'tiktok-comment' (TikTok comment row), 'instagram-post' (Instagram post comment), 'instagram-reel-reply' (Instagram \"Replying to username\" Reels card), 'youtube-comment' (YouTube video comment), 'youtube-shorts-reply' (YouTube \"Comment from @handle\" Shorts card), 'x-post' (X post). Switching variant keeps every other value; fields a variant does not draw are kept and ignored.": "Qué tarjeta de plataforma dibujar: 'tiktok-reply' (bocadillo \"Reply to name's comment\" de TikTok en una respuesta en vídeo), 'tiktok-comment' (fila de comentario de TikTok), 'instagram-post' (comentario de publicación de Instagram), 'instagram-reel-reply' (tarjeta \"Replying to username\" de Reels de Instagram), 'youtube-comment' (comentario de vídeo de YouTube), 'youtube-shorts-reply' (tarjeta \"Comment from @handle\" de Shorts de YouTube), 'x-post' (publicación de X). Cambiar de variante conserva los demás valores; los campos que una variante no dibuja se conservan y se ignoran.",
-  "Words One by One": "Palabras una a una"
+  "Words One by One": "Palabras una a una",
+  "A YouTube video comment with likes, the reply button and \"N replies\".": "Un comentario de vídeo de YouTube con «me gusta», el botón de responder y \"N replies\".",
+  "The \"Comment from @handle\" card YouTube shows on a Shorts reply.": "La tarjeta \"Comment from @handle\" que YouTube muestra en una respuesta con un Short.",
+  "YouTube · Comment": "YouTube · Comentario",
+  "YouTube · Shorts reply": "YouTube · Respuesta en Shorts"
 }

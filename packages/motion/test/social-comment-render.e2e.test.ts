@@ -186,29 +186,31 @@ for (const [unit, label] of [
 for (const [variant, prefix] of [
 	['youtube-comment', 'youtube-comment'],
 	['youtube-shorts-reply', 'youtube-shorts-reply'],
-] as const)
+] as const) {
+	// tokcomment's edit and avatar captures of the comment were taken with the time left at 3 years
+	const y3 = variant === 'youtube-comment' ? { timeValue: 3, timeUnit: 'year' } : {};
 	CALIBRATION.push(
 		{ name: `${prefix}_light_text-short`, canvas: '1080x1920', params: { variant, text: 'Love this! 🔥' } },
 		{ name: `${prefix}_light_text-long`, canvas: '1080x1920', params: { variant, text: LONG } },
 		{
 			name: `${prefix}_light_highlight`,
 			canvas: '1080x1920',
-			params: { variant, text: 'Write any ==comment== and see what happens 😊' },
+			params: { variant, ...y3, text: 'Write any ==comment== and see what happens 😊' },
 		},
 		{
 			name: `${prefix}_light_blur`,
 			canvas: '1080x1920',
-			params: { variant, text: 'Write any ||comment|| and see what happens 😊' },
+			params: { variant, ...y3, text: 'Write any ||comment|| and see what happens 😊' },
 		},
 		{
 			name: `${prefix}_light_remove`,
 			canvas: '1080x1920',
-			params: { variant, text: 'Write any ~~comment~~ and see what happens 😊' },
+			params: { variant, ...y3, text: 'Write any ~~comment~~ and see what happens 😊' },
 		},
 		{
 			name: `${prefix}_light_avatar-uploaded`,
 			canvas: '1080x1920',
-			params: { variant, avatar: { mediaId: 'med_avatar' } },
+			params: { variant, ...y3, avatar: { mediaId: 'med_avatar' } },
 			media: true,
 		},
 		{
@@ -241,6 +243,7 @@ for (const [variant, prefix] of [
 			},
 		},
 	);
+}
 CALIBRATION.push(
 	{
 		name: 'youtube-shorts-reply_light_default',
