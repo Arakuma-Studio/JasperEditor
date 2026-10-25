@@ -264,7 +264,13 @@ describe('LGPL filters only (D-13)', () => {
 });
 
 describe('every step keeps frame count, rate and audio (S07 §8 test 2)', () => {
-	const src = () => fixture('clip-b.mp4');
+	const source = fixture('clip-b.mp4');
+	let vin: ReturnType<typeof probe>[number];
+	let sourceAudioHash: string;
+	beforeAll(() => {
+		vin = probe(source).find((s) => s.codec_type === 'video')!;
+		sourceAudioHash = audioHash(source);
+	});
 	const cases: Array<[string, ProcessStep[]]> = [
 		['deblock', [{ op: 'deblock', filter: 'strong' }]],
 		['denoise-atadenoise', [{ op: 'denoise', method: 'atadenoise', strength: 0.5 }]],
@@ -284,8 +290,7 @@ describe('every step keeps frame count, rate and audio (S07 §8 test 2)', () => 
 	];
 	for (const [name, steps] of cases)
 		it(name, async () => {
-			const { output, res } = await proc(src(), steps, name);
-			const [vin] = probe(src()).filter((s) => s.codec_type === 'video');
+			const { output, res } = await proc(source, steps, name);
 			const [vout] = probe(output).filter((s) => s.codec_type === 'video');
 			expect(vout.nb_read_packets).toBe(vin.nb_read_packets);
 			expect(res.frames).toBe(Number(vin.nb_read_packets));
@@ -294,7 +299,7 @@ describe('every step keeps frame count, rate and audio (S07 §8 test 2)', () => 
 			expect(vout.color_space).toBe('bt709');
 			const up = steps.some((s) => s.op === 'upscale');
 			expect(Number(vout.width)).toBe(Number(vin.width) * (up ? 2 : 1));
-			expect(audioHash(output)).toBe(audioHash(src()));
+			expect(audioHash(output)).toBe(sourceAudioHash);
 		}, 600_000);
 });
 
@@ -386,21 +391,36 @@ describe('de-judder of a range reads context frames (PST-013)', () => {
 });
 
 describe('denoise and deblock (S07 §8 test 5)', () => {
-	const W = 1280;
-	const H = 720;
 	it('noise sigma of a flat patch drops ≥ 40 % (medium) with every method', async () => {
-		const rect: [number, number, number, number] = [760, 100, 1200, 300];
-		const before = noiseSigma(grey(fixture('noisy.mkv'), W, H), W, rect);
+		// Preserve the original 440×200 measured patch and its noise bytes, with 64 px
+		// of context on every side (beyond the spatial filters' support). Full-frame
+		// dimensions/rate/audio remain independently checked by the conservation cases.
+		const W = 568;
+		const H = 328;
+		const input = join(dir, 'noise-patch.mkv');
+		const cropped = spawnSync(FFMPEG, [
+			'-v',
+			'error',
+			'-i',
+			fixture('noisy.mkv'),
+			'-vf',
+			'crop=568:328:696:36',
+			'-c:v',
+			'ffv1',
+			'-level',
+			'3',
+			'-an',
+			input,
+		]);
+		expect(cropped.status, cropped.stderr.toString()).toBe(0);
+		const rect: [number, number, number, number] = [64, 64, 504, 264];
+		const before = noiseSigma(grey(input, W, H), W, rect);
+		expect(before).toBeGreaterThan(2);
 		for (const method of ['atadenoise', 'fftdnoiz', 'nlmeans'] as const) {
-			const { output } = await proc(
-				fixture('noisy.mkv'),
-				[{ op: 'denoise', method, strength: 0.5 }],
-				`noisy-${method}`,
-				{
-					startFrame: 0,
-					endFrame: method === 'nlmeans' ? 12 : 50,
-				},
-			);
+			const { output } = await proc(input, [{ op: 'denoise', method, strength: 0.5 }], `noisy-${method}`, {
+				startFrame: 0,
+				endFrame: method === 'nlmeans' ? 12 : 50,
+			});
 			const after = noiseSigma(grey(output, W, H), W, rect);
 			expect(after, method).toBeLessThanOrEqual(before * 0.6);
 		}

@@ -80,12 +80,16 @@ async function session(app: App, headers: Record<string, string>, projectId: str
 			const p = m.payload as { approvalId: string; answerKey: string };
 			answer(p.approvalId, decision, p.answerKey);
 		});
-	return { ws, received, welcome, next, card, answer, auto };
+	const settle = async () => {
+		const after = received.length;
+		ws.send(JSON.stringify({ type: 'ping' }));
+		await next((m) => m.type === 'pong' && received.indexOf(m) >= after);
+	};
+	return { ws, received, welcome, next, card, answer, auto, settle };
 }
 
 const cards = (s: { received: Msg[] }) =>
 	s.received.filter((m) => m.type === 'event' && m.event === 'agent.approval.requested');
-const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 
 function seed(app: App, name = 'Hardening'): { projectId: string; file: string } {
 	const doc = createEmptyProject({ ids: createCounterIdSource(5), name, preset: 'hd-1080p-30' });
@@ -156,7 +160,7 @@ describe('AGT-2: approval answers count only from the editor connection that was
 
 		const pending = postTx(app, projectId);
 		const card = await editor.card();
-		await settle();
+		await rogue.settle();
 		expect(cards(rogue)).toEqual([]);
 
 		const published = events.find((e) => e.type === 'agent.approval.requested');
@@ -169,7 +173,7 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		rogue.answer(card.approvalId, 'approved', 'guess');
 		rogue.answer(card.approvalId, 'approved', card.answerKey);
 		rogue.answer(card.approvalId, 'denied', card.answerKey);
-		await settle();
+		await rogue.settle();
 		expect(
 			agentService(app)
 				.approvals.pending()
@@ -206,7 +210,7 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		a.answer(cardA1.approvalId, 'approved');
 		a.answer(cardA1.approvalId, 'approved', otherA.answerKey);
 		a.answer(cardA1.approvalId, 'approved', cardB1.answerKey);
-		await settle();
+		await a.settle();
 		expect(agentService(app).approvals.pending().length).toBe(2);
 
 		a.answer(cardA1.approvalId, 'denied', cardA1.answerKey);
@@ -695,7 +699,9 @@ describe('DEV-1: an engine that listens always has a token', () => {
 		].join('\n');
 		expect(everything).not.toContain(KEY);
 		expect(engine.pairingUrl).toBeNull();
-		expect(() => statSync(appdirPaths(appdir).devEditorKeyFile)).toThrow();
+		expect(() => statSync(appdirPaths(appdir).devEditorKeyFile)).toThrowError(
+			expect.objectContaining({ code: 'ENOENT' }),
+		);
 	});
 
 	it('a dev engine keeps its editor key in a 0600 file next to the runtime file and reuses it', async () => {

@@ -721,7 +721,7 @@ preview plays it (0.06 LU from the PCM export, headless-Chrome oracle `apps/engi
 Sound Check checks for an export encoding everywhere (the panel's "Check for", default the last export settings or the
 target's typical AAC 256 / AAC 128 / PCM; the summary records it and is stale for another; MCP defaults the same); a
 lossy normalised export took 3–4× the time of the one-pass export — now ≈ 1.0–1.25× on a typical mix (measured,
-`apps/engine/test/delivery-speed.bench.test.ts`). Limits left: the preview's peaks are the PCM's, not the codec's; a
+the export-time table in `docs/wp-notes/sound-design.md`). Limits left: the preview's peaks are the PCM's, not the codec's; a
 loud, bright stress mix at AAC 128 kb/s still needs two encode rounds (≈ 2.7× the one-pass export); Sound
 Check's OVERLOAD (the limiter pulls 7 dB on the hero hit) stays a warning for the user's judgement; a review alternate
 can be a Jasper Synth sound when the library has fewer real takes.

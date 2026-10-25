@@ -85,7 +85,9 @@ describe('ProposalStore', () => {
 		await expect(store.create(other, { ...proposal(), projectId: other })).rejects.toMatchObject({
 			code: 'PROJECT_NOT_FOUND',
 		});
-		expect(() => readdirSync(paths.projectDir(other))).toThrow();
+		expect(() => readdirSync(paths.projectDir(other))).toThrowError(
+			expect.objectContaining({ code: 'ENOENT' }),
+		);
 		expect((await store.list(other)).proposals).toEqual([]);
 	});
 

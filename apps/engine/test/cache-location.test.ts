@@ -137,7 +137,7 @@ describe('cache location (S04:CA-021)', () => {
 				type: 'clip.place',
 				source: { mediaId: mid },
 				at: 0,
-				sourceRange: { in: { seconds: 0 }, out: { seconds: 1 } },
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 1 } },
 			},
 		]);
 		const ex = await app.inject({
@@ -153,8 +153,8 @@ describe('cache location (S04:CA-021)', () => {
 					container: 'mp4',
 					video: {
 						codec: 'h264',
-						width: 640,
-						height: 360,
+						width: 64,
+						height: 36,
 						frameRate: { num: 30, den: 1 },
 						scaling: 'fit',
 						quality: { mode: 'crf', value: 23 },

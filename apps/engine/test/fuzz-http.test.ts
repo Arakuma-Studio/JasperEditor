@@ -4,7 +4,7 @@ import { afterAll } from 'vitest';
 import { closeApps, JSON_H, makeApp, type TestApp } from './helpers.ts';
 
 /** `printRoutes({commonPrefix: false})` tree → [path, methods][] (HEAD left out: GET covers it). */
-export function parseRouteTree(tree: string): [string, string[]][] {
+function parseRouteTree(tree: string): [string, string[]][] {
 	const out: [string, string[]][] = [];
 	const stack: string[] = [];
 	for (const line of tree.split('\n')) {

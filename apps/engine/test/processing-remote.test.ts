@@ -183,7 +183,7 @@ describe('remote executor (shims)', () => {
 		const first = slowRemote.upload(big, dest, { signal: ac.signal });
 		await until(() => existsSync(`${dest}.part`) && statSync(`${dest}.part`).size > 0, 20_000, 20);
 		ac.abort();
-		await expect(first).rejects.toThrow();
+		await expect(first).rejects.toMatchObject({ code: 'CANCELLED' });
 		const partial = statSync(`${dest}.part`).size;
 		expect(partial).toBeGreaterThan(0);
 		expect(partial).toBeLessThan(24 * 1024 * 1024);

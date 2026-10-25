@@ -13,7 +13,7 @@ import {
 	type TransactionResult,
 } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type WebSocket from 'ws';
 import {
 	type AgentProjectStore,
@@ -30,6 +30,7 @@ const services: AgentService[] = [];
 afterEach(async () => {
 	for (const a of apps.splice(0)) await a.close();
 	for (const s of services.splice(0)) s.close();
+	vi.useRealTimers();
 });
 
 function seedProject(projectFile: (id: string) => string) {
@@ -349,11 +350,14 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 				},
 			}),
 		);
-		await new Promise((r) => setTimeout(r, 30));
-		expect(events.find((e) => e.type === 'doc.changed')).toMatchObject({
-			projectId,
-			payload: { revision: 9, projectId },
-		});
+		await vi.waitFor(
+			() =>
+				expect(events.find((e) => e.type === 'doc.changed')).toMatchObject({
+					projectId,
+					payload: { revision: 9, projectId },
+				}),
+			{ interval: 5 },
+		);
 		ws.terminate();
 	});
 
@@ -495,8 +499,11 @@ function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number
 
 describe('AgentService timeouts', () => {
 	it('returns E_APPROVAL_TIMEOUT when nobody answers the approval', async () => {
+		vi.useFakeTimers();
 		const { service, socket, projectId } = makeService({ approvalTimeoutMs: 40 });
-		const r = await service.transact(projectId, tx([{ type: 'item.delete', itemIds: ['itm_X'] }]));
+		const pending = service.transact(projectId, tx([{ type: 'item.delete', itemIds: ['itm_X'] }]));
+		await vi.advanceTimersByTimeAsync(40);
+		const r = await pending;
 		expect(r.result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_TIMEOUT' }] });
 		expect(
 			socket.sent.some(
@@ -508,6 +515,7 @@ describe('AgentService timeouts', () => {
 	});
 
 	it('ignores approval answers from connections that never said hello', async () => {
+		vi.useFakeTimers();
 		const { service, socket, projectId } = makeService({ approvalTimeoutMs: 80 });
 		const stranger = new FakeSocket();
 		service.handleSocket(stranger, { editor: true });
@@ -519,17 +527,21 @@ describe('AgentService timeouts', () => {
 			event: 'agent.approval.resolve',
 			payload: { approvalId, decision: 'approved', answerKey },
 		});
+		await vi.advanceTimersByTimeAsync(80);
 		expect((await p).result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_TIMEOUT' }] });
 	});
 
 	it('returns E_NO_SESSION on a relay timeout while the lease is live, headless once it expired', async () => {
+		vi.useFakeTimers();
 		const { service, store, projectId } = makeService({ relayTimeoutMs: 30 });
 		store.lease = {
 			sessionId: 'ses_1',
 			leaseId: 'lease_1',
 			expiresAt: new Date(Date.now() + 60_000).toISOString(),
 		};
-		const live = await service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'x' }]));
+		const liveRequest = service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'x' }]));
+		await vi.advanceTimersByTimeAsync(30);
+		const live = await liveRequest;
 		expect(live).toMatchObject({
 			appliedBy: 'session',
 			result: { ok: false, errors: [{ code: 'E_NO_SESSION' }] },
@@ -539,7 +551,9 @@ describe('AgentService timeouts', () => {
 			leaseId: 'lease_1',
 			expiresAt: new Date(Date.now() - 1).toISOString(),
 		};
-		const expired = await service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'y' }]));
+		const expiredRequest = service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'y' }]));
+		await vi.advanceTimersByTimeAsync(30);
+		const expired = await expiredRequest;
 		expect(expired).toMatchObject({ appliedBy: 'headless', result: { ok: true, revision: 1 } });
 	});
 

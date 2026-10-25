@@ -314,7 +314,7 @@ describe('ENG-4: project ids in paths are validated', () => {
 		});
 		expect(r.statusCode).toBe(400);
 		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
-		await new Promise((res) => setTimeout(res, 300));
+		// Validation refuses the request before submitting any media job.
 		expect(existsSync(join(app.appdir, 'escaped'))).toBe(false);
 	});
 });

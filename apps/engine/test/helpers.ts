@@ -14,7 +14,6 @@ import {
 } from '@jasper/project';
 import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import type { FastifyInstance } from 'fastify';
-import { createServer, engineConfig } from '../src/index.ts';
 import { tempAppdir } from './temp.ts';
 
 export { tempAppdir } from './temp.ts';
@@ -70,7 +69,7 @@ export async function makeApp(
 	} = {},
 ): Promise<TestApp> {
 	const appdir = opts.appdir ?? tempAppdir();
-	const { prepareAppdir } = await import('../src/index.ts');
+	const { createServer, engineConfig, prepareAppdir } = await import('../src/index.ts');
 	prepareAppdir(appdir);
 	const config = engineConfig({
 		appdir,

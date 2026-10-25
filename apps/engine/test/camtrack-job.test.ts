@@ -69,14 +69,12 @@ afterAll(async () => {
 });
 
 describe('camtrack jobs', () => {
-	let first: CamTrackResult;
-
-	it('solves the camera of the plate: focal length, path and rotation against the truth', async () => {
+	it('solves the camera against the truth, then reuses tracks without deleted points', async () => {
 		const job = await finished(
 			await post({ mediaKey: key, span: [0, 59], settings: SETTINGS, clipId: 'c1', trackerId: 'ct1' }),
 		);
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		first = job.result as CamTrackResult;
+		const first = job.result as CamTrackResult;
 		expect(first).toMatchObject({ clipId: 'c1', trackerId: 'ct1', span: [0, 59], size: [640, 360] });
 		expect(first.frames.length).toBe(60 * 8);
 		expect(first.methodUsed).toBe('typical');
@@ -115,12 +113,10 @@ describe('camtrack jobs', () => {
 			rot = Math.max(rot, (2 * Math.asin(Math.min(1, Math.sqrt(squared / 8))) * 180) / Math.PI);
 		}
 		expect(rot).toBeLessThan(0.5);
-	}, 600_000);
 
-	it('re-solves from the cached tracks without the deleted points', async () => {
+		// Continue the same solve workflow: a re-solve reuses tracks and excludes deleted points.
 		const gone = first.points.slice(0, 10).map((p) => p.id);
-		const t0 = Date.now();
-		const job = await finished(
+		const reSolved = await finished(
 			await post({
 				mediaKey: key,
 				span: [0, 59],
@@ -128,12 +124,11 @@ describe('camtrack jobs', () => {
 				deleted: gone,
 			}),
 		);
-		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		const r = job.result as CamTrackResult;
+		expect(reSolved.state, JSON.stringify(reSolved.error)).toBe('succeeded');
+		const r = reSolved.result as CamTrackResult;
 		expect(r.points.some((p) => gone.includes(p.id))).toBe(false);
 		expect(r.shot).toBe('specify');
 		expect(r.tracks).toBe(first.tracks);
-		expect(Date.now() - t0).toBeLessThan(600_000);
 	}, 600_000);
 
 	it('cancels a running job (the child process is killed)', async () => {

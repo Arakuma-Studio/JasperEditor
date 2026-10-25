@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineJob, EventEnvelope } from '@jasper/api';
 import fc from 'fast-check';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Broadcaster } from '../src/events/broadcaster.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
-import { JobError, type JobRunner } from '../src/jobs/types.ts';
+import { type JobContext, JobError, type JobRunner } from '../src/jobs/types.ts';
 import { Ffmpeg, resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { spawnTool } from '../src/tools/process.ts';
 import { closeApps, H, makeApp, tempAppdir, until } from './helpers.ts';
@@ -91,8 +91,13 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		const q = makeQueue({ slots: 4 });
 		const started: { title: string; slots: number }[] = [];
 		const gates: (() => void)[] = [];
+		const backgroundSawExport: boolean[] = [];
 		const runner: JobRunner = (ctx) => {
 			started.push({ title: ctx.job.title, slots: ctx.slots });
+			if (ctx.job.priority === 'background')
+				backgroundSawExport.push(
+					q.list({ active: true }).some((j) => j.kind === 'export' && j.state === 'running'),
+				);
 			return new Promise<void>((res) => gates.push(res));
 		};
 		q.registerRunner('analysis', runner);
@@ -103,11 +108,10 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		await until(() => started.length === 2);
 		expect(started[1]).toEqual({ title: 'export', slots: 3 });
 		q.submit({ kind: 'analysis', title: 'bg', priority: 'background', cpuSlots: 0 });
-		await new Promise((r) => setTimeout(r, 100));
-		expect(started.map((s) => s.title)).toEqual(['probe', 'export']);
 		gates[1]!();
 		await q.wait(exp.id);
 		await until(() => started.length === 3);
+		expect(backgroundSawExport).toEqual([false]);
 		for (const g of gates) g();
 	});
 
@@ -153,28 +157,49 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 	);
 
 	it('throttles job.updated to 4/s per job and always sends the final state (JB-040)', async () => {
-		const b = new Broadcaster();
-		const events: EventEnvelope[] = [];
-		b.subscribe((e) => events.push(e));
-		const q = makeQueue({ broadcaster: b });
-		q.registerRunner('analysis', async (ctx) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-10-16T10:00:00.000Z'));
+		try {
+			const events: EventEnvelope[] = [];
+			const b = new Broadcaster();
+			b.subscribe((e) => events.push(e));
+			const q = makeQueue({ broadcaster: b, journal: null });
+			let ctx!: JobContext;
+			let finish!: () => void;
+			let entered!: () => void;
+			const started = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			q.registerRunner('analysis', (jobContext) => {
+				ctx = jobContext;
+				entered();
+				return new Promise<void>((resolve) => {
+					finish = resolve;
+				});
+			});
+			q.start();
+			const job = q.submit({ kind: 'analysis', title: 't', priority: 'user', cpuSlots: 1 });
+			await started;
+			const updates = () => events.filter((e) => e.type === 'job.updated').map((e) => e.payload as EngineJob);
 			for (let i = 1; i <= 200; i++) {
-				ctx.progress(i / 200);
-				if (i % 20 === 0) await new Promise((r) => setTimeout(r, 25));
+				ctx.progress(i / 250);
+				if (i % 5 === 0) await vi.advanceTimersByTimeAsync(25);
 			}
-			return null;
-		});
-		q.start();
-		const t0 = Date.now();
-		const j = q.submit({ kind: 'analysis', title: 't', priority: 'user', cpuSlots: 1 });
-		await q.wait(j.id);
-		const elapsed = (Date.now() - t0) / 1000;
-		const updates = events.filter((e) => e.type === 'job.updated');
-		// running + throttled progress + final: bounded by 4/s plus the forced state changes.
-		expect(updates.length).toBeLessThanOrEqual(Math.ceil(elapsed * 4) + 4);
-		expect((updates.at(-1)!.payload as EngineJob).state).toBe('succeeded');
-		expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['job.created', 'job.finished']));
-		expect(events.at(-1)!.type).toBe('job.finished');
+			// One second allows at most four progress events, plus the forced running state.
+			expect(updates().length).toBeLessThanOrEqual(5);
+			ctx.progress(0.9); // the final state must bypass a pending throttled update
+			finish();
+			await q.wait(job.id);
+			expect(updates().at(-1)).toMatchObject({ state: 'succeeded', progress: 1 });
+			expect(updates().length).toBeLessThanOrEqual(6);
+			expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['job.created', 'job.finished']));
+			expect(events.at(-1)!.type).toBe('job.finished');
+			const finishedEvents = events.length;
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(events).toHaveLength(finishedEvents);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 
@@ -391,7 +416,8 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 			return null;
 		});
 		fifth.start();
-		await new Promise((r) => setTimeout(r, 100));
+		// Allow any incorrectly re-queued work to enter its runner.
+		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(seen).toEqual([{ mediaKey: 'mk_2' }]);
 	});
 

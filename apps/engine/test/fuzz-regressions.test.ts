@@ -6,7 +6,6 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { writeStoredZip } from '../src/imports/zip.ts';
 import { mapProbe } from '../src/media/probe.ts';
 import { extractZip, ZipError } from '../src/mg-bundles/zip.ts';
-import { ToolError } from '../src/tools/process.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'engine-fuzz-reg-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -94,6 +93,6 @@ describe('ffprobe JSON mapping', () => {
 	});
 	it('no usable stream is UNSUPPORTED_MEDIA', () => {
 		for (const bad of [null, 1, 'x', { streams: 'no' }, { streams: [{ codec_type: 5 }] }])
-			expect(() => mapProbe(bad)).toThrow(ToolError);
+			expect(() => mapProbe(bad)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_MEDIA' }));
 	});
 });

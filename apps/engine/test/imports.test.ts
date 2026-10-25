@@ -272,13 +272,14 @@ describe('imports on the engine', () => {
 		const png = join(dir, 'premul.png');
 		// Premultiplied colour (64, 32, 16) at alpha 128 = straight (128, 64, 32).
 		const mk = spawnSync('ffmpeg', [
-			...['-v', 'error', '-f', 'lavfi', '-i', 'color=c=0x402010:size=1920x1080:duration=1'],
+			...['-v', 'error', '-f', 'lavfi', '-i', 'color=c=0x402010:size=64x36:duration=1'],
 			...['-vf', "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='128'", '-frames:v', '1', png],
 		]);
 		expect(mk.status).toBe(0);
 		const reg = await register(app, png);
 		const measure = async (interpretation: Record<string, unknown> | null) => {
 			const d = new DocBuilder();
+			d.tx([{ type: 'sequence.updateSettings', settings: { width: 64, height: 36 } }]);
 			const m = d.addMedia(reg);
 			if (interpretation) d.tx([{ type: 'media.interpret', mediaIds: [m], interpretation }]);
 			d.tx([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1' } }]);
@@ -287,12 +288,12 @@ describe('imports on the engine', () => {
 				sequenceId: d.seqId,
 				settings: {
 					sequenceId: d.seqId,
-					range: { type: 'entire' },
+					range: { type: 'custom', startFrame: 0, endFrame: 1 },
 					container: 'mp4',
 					video: {
 						codec: 'h264',
-						width: 1920,
-						height: 1080,
+						width: 64,
+						height: 36,
 						frameRate: { num: 30, den: 1 },
 						scaling: 'fit',
 						quality: { mode: 'crf', value: 12 },
@@ -313,7 +314,7 @@ describe('imports on the engine', () => {
 					'-i',
 					file,
 					'-vf',
-					'format=rgb24,crop=1:1:960:540',
+					'format=rgb24,crop=1:1:32:18',
 					'-frames:v',
 					'1',
 					'-f',

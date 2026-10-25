@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RegisteredMedia } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -27,20 +28,6 @@ import {
 const H = { host: '127.0.0.1:47900' };
 let app: TestApp;
 let dir: string;
-
-/** The burned-in 6-bit frame number of `fixtures/media/frame-code.mp4` (1920×1080) at one frame of a file. */
-function frameCode(file: string, frame: number): number {
-	const r = spawnSync('ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),scale=1920:1080,format=rgb24,crop=420:1:40:70`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
-	if (r.status !== 0) throw new Error(r.stderr.toString());
-	if (r.stdout.length !== 420 * 3) throw new Error(`Cannot decode frame ${frame} from ${file}`);
-	let code = 0;
-	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
-	return code;
-}
 
 function frameCount(file: string): number {
 	const r = spawnSync(
@@ -110,7 +97,7 @@ async function exportCodes(d: DocBuilder, frames: number[]): Promise<number[]> {
 	expect(artifact.statusCode).toBe(200);
 	const file = join(dir, `${start.json().id}.mp4`);
 	writeFileSync(file, artifact.rawPayload);
-	return frames.map((f) => frameCode(file, f));
+	return frameCodes(file, frames);
 }
 
 beforeAll(async () => {
@@ -124,16 +111,11 @@ afterAll(async () => {
 	if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-let codedMedia: RegisteredMedia;
-
 describe('ranged processing (S07:PRC-015)', () => {
-	let coded: RegisteredMedia;
-	let res: ProcessResult;
 	const steps = [{ op: 'deblock', filter: 'weak' }];
 
-	it('processes exactly the source frames [12, 48): result range, registry record, frame-exact content', async () => {
-		coded = await register(app, fixture('frame-code.mp4'));
-		codedMedia = coded;
+	it('processes the exact range, then swaps a clip onto that version and back without changing frames', async () => {
+		const coded = await register(app, fixture('frame-code.mp4'));
 		const r = await app.inject({
 			method: 'POST',
 			url: `/api/media/${coded.mediaKey}/process`,
@@ -143,7 +125,7 @@ describe('ranged processing (S07:PRC-015)', () => {
 		expect(r.statusCode).toBe(200);
 		const job = await waitJob((r.json() as EngineJob).id);
 		expect(job.error).toBeUndefined();
-		res = job.result as ProcessResult;
+		const res = job.result as ProcessResult;
 		expect(res.range).toEqual({ startFrame: 12, endFrame: 48 });
 		expect(res.registered.originalName).toContain('frames 12–47');
 		const index = JSON.parse(readFileSync(join(app.appdir, 'engine', 'media-index.json'), 'utf8'));
@@ -154,10 +136,9 @@ describe('ranged processing (S07:PRC-015)', () => {
 		});
 		const out = rec.storage.path as string;
 		expect(frameCount(out)).toBe(36);
-		expect([0, 1, 17, 35].map((i) => frameCode(out, i))).toEqual([12, 13, 29, 47]);
-	}, 300_000);
+		expect(frameCodes(out, [0, 1, 17, 35])).toEqual([12, 13, 29, 47]);
 
-	it('a clip swapped onto the ranged version exports the same source frames on the native path, and back', async () => {
+		// Apply this ranged result to a clip, then restore its original source.
 		const d = new DocBuilder('hd-1080p-30', 23);
 		const original = d.addMedia(coded);
 		const placed = d.tx([
@@ -275,9 +256,10 @@ describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelle
 		writeFileSync(join(pdir, 'project.jasper'), JSON.stringify(project.envelope()));
 		expect((await del(used.mediaKey)).json()).toEqual({ deleted: false, reason: 'in-use' });
 		expect(existsSync(join(app.appdir, 'media', used.mediaKey))).toBe(true);
+		const coded = await register(app, fixture('frame-code.mp4'));
 		const res = await app.inject({
 			method: 'POST',
-			url: `/api/media/${codedMedia.mediaKey}/process`,
+			url: `/api/media/${coded.mediaKey}/process`,
 			headers: JSON_H,
 			payload: {
 				steps: [{ op: 'deblock', filter: 'weak' }],

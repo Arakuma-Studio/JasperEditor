@@ -23,12 +23,7 @@ import fc from 'fast-check';
 import { afterAll, describe, expect, it } from 'vitest';
 import type WebSocket from 'ws';
 import type { AgentService } from '../src/agent/service.ts';
-import {
-	AcceptIntentSchema,
-	idsWithBodies,
-	prepareIntent,
-	reconcileEvidence,
-} from '../src/proposals/journal.ts';
+import { AcceptIntentSchema, prepareIntent, reconcileEvidence } from '../src/proposals/journal.ts';
 import type { ProposalService } from '../src/proposals/service.ts';
 import { closeApps, makeApp } from './helpers.ts';
 
@@ -397,7 +392,8 @@ describe('accept journal: evidence and hostile intent files', { timeout: TIMEOUT
 		).document;
 		const ev = reconcileEvidence(live, intent);
 		expect(ev.applied).toBe(true);
-		if (ev.applied) expect(ev.created.sort()).toEqual(idsWithBodies(live, intent.ids).sort());
+		if (ev.applied)
+			expect(ev.created.sort()).toEqual([`mrk_${intent.ids[0]}`, `trk_${intent.ids[1]}`].sort());
 		expect(createPresetIdSource(['bad', intent.ids[0]!], createCounterIdSource(7)).next('clp')).toBe(
 			`clp_${intent.ids[0]}`,
 		);
