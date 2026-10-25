@@ -3,7 +3,7 @@
 // their words, or caption clips); `captions.regenerate` rebuilds a group from the current transcript keeping the
 // clips that still match; `captions.alignToCuts` re-runs the cut steps on existing subtitles; `captions.convert`
 // turns a text-clip group into a caption track and back; `subtitleTemplate.*` stores, saves and applies templates.
-import type { Draft } from 'immer';
+import { current, type Draft, isDraft } from 'immer';
 import { plainCaptionText } from '../../captions/formats/core.ts';
 import {
 	CAPTION_CONTENT_ORIGIN,
@@ -354,7 +354,9 @@ function cutEventsOrFail(
 	h: HandlerContext,
 ) {
 	try {
-		return subtitleCutEvents(plainDoc(doc), plainSeq(seq), outputTrackId, opts);
+		// a plain snapshot: the cut map's per-track indexes are cached by record identity, never on drafts
+		const snap = (isDraft(doc) ? current(doc) : doc) as ProjectDocument;
+		return subtitleCutEvents(snap, snap.sequences[seq.id]!, outputTrackId, opts);
 	} catch (e) {
 		if (e instanceof CutMapError) return h.fail(e.code, e.message, { path: ['cutAware'] });
 		throw e;
