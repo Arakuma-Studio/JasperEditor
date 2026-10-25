@@ -116,7 +116,7 @@ export type PremierePitchShifterInput = {
 	params: readonly PremierePitchParam[];
 	/** The component's Bypass flag (`.prproj` `<Bypass>`; FCP7 `<enabled>FALSE</enabled>`). */
 	bypass?: boolean | null;
-	/** Effect Controls ▸ Rename (`.prproj` `<InstanceName>`), e.g. "VOZ UWU". */
+	/** Effect Controls ▸ Rename (`.prproj` `<InstanceName>`), e.g. "Voice FX". */
 	instanceName?: string | null;
 	/** The plug-in state (`.prproj` OpaqueData `prop.map` with a `ParamList`): values the parameter list leaves out. */
 	pluginState?: string | null;

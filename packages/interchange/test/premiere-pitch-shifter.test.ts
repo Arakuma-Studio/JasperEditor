@@ -209,12 +209,12 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 			{
 				params: spanish(0.299546808004),
 				bypass: false,
-				instanceName: 'VOZ UWU',
+				instanceName: 'Voice FX',
 				pluginState: pluginState([0.29954681, 1, 0.088465765, 0.58336532, 0.75, 0.75]),
 			},
 			report,
 		);
-		expect(m).toMatchObject({ effectId: 'jasper.audio.pitch-shifter', enabled: true, name: 'VOZ UWU' });
+		expect(m).toMatchObject({ effectId: 'jasper.audio.pitch-shifter', enabled: true, name: 'Voice FX' });
 		expect(m.decoded).toMatchObject({
 			precision: 'high',
 			useDefaults: true,
@@ -305,7 +305,7 @@ describe('Premiere Pitch Shifter: the decoded instance', () => {
 	});
 
 	it('identifies the effect by match name, the Spanish name or a Premiere-only parameter, not by JasperEditor id', () => {
-		expect(isPremierePitchShifter(PREMIERE_PITCH_SHIFTER_MATCH_NAME, 'VOZ UWU')).toBe(true);
+		expect(isPremierePitchShifter(PREMIERE_PITCH_SHIFTER_MATCH_NAME, 'Voice FX')).toBe(true);
 		expect(isPremierePitchShifter('ADBE Pitch Shifter', null)).toBe(true);
 		expect(isPremierePitchShifter('x', 'Desfasador de tono')).toBe(true);
 		expect(isPremierePitchShifter('Pitch Shifter', 'Pitch Shifter', ['Transpose Ratio'])).toBe(true);
@@ -519,12 +519,12 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 						p('Precision', 1) +
 						p('Use Appropriate Default Settings', 0.75) +
 						p('Use Positive Cents', 0.75),
-					{ name: 'VOZ UWU' },
+					{ name: 'Voice FX' },
 				),
 			),
 		);
 		const fx = clip.effects.find((e) => e.effectId === 'jasper.audio.pitch-shifter')!;
-		expect(fx).toMatchObject({ enabled: true, name: 'VOZ UWU' });
+		expect(fx).toMatchObject({ enabled: true, name: 'Voice FX' });
 		const st = fx.params.semitones as Animatable<number>;
 		const ce = fx.params.cents as Animatable<number>;
 		const at = (t: number) => evaluateKeyframes(st, t) * 100 + evaluateKeyframes(ce, t);
@@ -600,7 +600,7 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 
 	it('into a document: a valid Pitch Shifter effect (invariants)', () => {
 		const text = xml(
-			pitchFilter(p('Transpose Ratio', 0.303227752447) + p('Use Positive Cents', 0.25), { name: 'VOZ UWU' }),
+			pitchFilter(p('Transpose Ratio', 0.303227752447) + p('Use Positive Cents', 0.25), { name: 'Voice FX' }),
 		);
 		const imp = importTimeline(new TextEncoder().encode(text), {
 			format: 'fcp7',
@@ -621,7 +621,7 @@ describe('FCP7 XML (Premiere dialect): Pitch Shifter', () => {
 					).effects ?? [],
 			)
 			.find((e) => e.effectId === 'jasper.audio.pitch-shifter')!;
-		expect(fx.name).toBe('VOZ UWU');
+		expect(fx.name).toBe('Voice FX');
 		expect([fx.params.semitones!.value, fx.params.cents!.value]).toEqual([0, -80]);
 	});
 });

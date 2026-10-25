@@ -35,11 +35,11 @@ function placeholders(text: string, baseDir?: string) {
 describe('media references from other computers', () => {
 	it('Windows and UNC references stay absolute paths (never joined to the import folder)', () => {
 		const locs = placeholders(
-			edl(['D:\\JasperDev\\short hackers\\TV.mp4', '\\\\nas\\media\\b.mov']),
+			edl(['D:\\Videos\\Short A\\TV.mp4', '\\\\nas\\media\\b.mov']),
 			'/Users/me/Edits',
 		);
 		expect(locs.map((l) => l && 'path' in l && l.path).sort()).toEqual([
-			'D:\\JasperDev\\short hackers\\TV.mp4',
+			'D:\\Videos\\Short A\\TV.mp4',
 			'\\\\nas\\media\\b.mov',
 		]);
 		expect(locs.every((l) => l && 'relativeToProject' in l && l.relativeToProject === null)).toBe(true);
@@ -57,8 +57,8 @@ describe('media references from other computers', () => {
 	});
 
 	it('file URLs of Windows drives decode to drive paths; relative references are recognised', () => {
-		expect(fileUrlToPath('file://localhost/D%3a/JasperDev/a%20b.mp4')).toBe('D:/JasperDev/a b.mp4');
-		expect(isAbsolutePath('D:/JasperDev/a b.mp4')).toBe(true);
+		expect(fileUrlToPath('file://localhost/D%3a/Videos/a%20b.mp4')).toBe('D:/Videos/a b.mp4');
+		expect(isAbsolutePath('D:/Videos/a b.mp4')).toBe(true);
 		expect(resolvePath('file://localhost/D%3a/x.mp4', '/base')).toBe('D:/x.mp4');
 		expect(relativeReference('Footage/a.mov')).toBe('Footage/a.mov');
 		expect(relativeReference('..\\a.mov')).toBe('..\\a.mov');

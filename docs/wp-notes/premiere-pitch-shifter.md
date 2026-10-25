@@ -33,7 +33,7 @@ No Adobe software, binaries, presets or artwork were used.
 | 4 · Overlapping · Superposición · Overlapping | 0…1 | chunk overlap, 0–50 % (S1) | none; as above |
 | 5 · Use Appropriate Default Settings · Usar ajuste predeterminado · Use Default Setting | 0.25 / 0.75 | Splicing Frequency and Overlapping derived from the ratio | — (no counterpart needed) |
 | 6 · Use Positive Cents · Utilizar centenas positivas · Use Positive Cents | 0.25 / 0.75 | how the ratio is shown as semitones + cents | chooses the split (below); its keyframes are reported and ignored |
-| instance name (Effect Controls ▸ Rename, `<InstanceName>`) | text | e.g. "VOZ UWU" | `EffectInstance.name` |
+| instance name (Effect Controls ▸ Rename, `<InstanceName>`) | text | e.g. "Voice FX" | `EffectInstance.name` |
 
 **Transpose Ratio is linear in n.** Evidence: S5's measured table and S6's whole-semitone values all satisfy
 0.5 + 1.5·n = 2^(st/12) to float32 precision (0.2272643 → 0.840896 = 2^(−3/12); 0.2605991 → 2^(−2/12);
@@ -80,10 +80,10 @@ stale (one instance's state has Splicing 0.0851 / Overlapping 0.5657 where its p
 | 0.299546808 | 0.949320 | −90.04 c (−1 st +9.96 c) | 1 | 0.75 → 0.25 |
 | 0.414974689 | 1.122462 | +200.00 c (+2 st) | 2 | 0.75 |
 
-61 are named "VOZ UWU" (the two +2 st ones are unnamed). None bypassed; Use Appropriate Default Settings 0.75 in all;
+61 share one custom instance name (the two +2 st ones are unnamed). None bypassed; Use Appropriate Default Settings 0.75 in all;
 Splicing Frequency 0.0833…0.0885 and Overlapping 0.557…0.583 vary with the ratio (the automatic defaults); Precision
-has no stored value (plug-in state: 1). Plug-in state present in 31 (22 Version 1, 9 Version 2). So the "VOZ UWU"
-preset is a slight *lowering* of the voice (20–90 cents, mostly −80), not a chipmunk shift — whole-semitone values
+has no stored value (plug-in state: 1). Plug-in state present in 31 (22 Version 1, 9 Version 2). So that named
+voice preset is a slight *lowering* of the voice (20–90 cents, mostly −80), not a chipmunk shift — whole-semitone values
 (the ±12 range) are clearly decoded right by §2's evidence, so this is the user's setting, not a decoding error.
 Every user instance converts without a warning.
 

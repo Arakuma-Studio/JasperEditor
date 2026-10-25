@@ -134,30 +134,30 @@ describe('Relink others automatically (engine search)', () => {
 	it('one located Windows file relinks the others by the folder mapping, relative path, same folder and search', async () => {
 		const mac = tempAppdir('jasper-mac-');
 		tree(mac, {
-			'JasperDev/short hackers/TV static.mp4': 2,
-			'JasperDev/short hackers/avatar/Happy.png': 0,
-			'Cosas Importantes/musik/Toby Fox/sans.mp3': 3,
+			'Videos/Short A/TV static.mp4': 2,
+			'Videos/Short A/avatar/Happy.png': 0,
+			'Assets/music/Composer/theme.mp3': 3,
 			// moved out of its old folder into the located file's folder
-			'JasperDev/short hackers/loose.wav': 1,
+			'Videos/Short A/loose.wav': 1,
 			// moved deeper under the located file's folder
-			'JasperDev/short hackers/deep/er/buried.mov': 2,
+			'Videos/Short A/deep/er/buried.mov': 2,
 			// two files of the same name: never guessed
-			'JasperDev/short hackers/a/dup.mov': 2,
-			'JasperDev/short hackers/b/dup.mov': 2,
+			'Videos/Short A/a/dup.mov': 2,
+			'Videos/Short A/b/dup.mov': 2,
 		});
 		const assets = [
-			placeholder('happy', 'D:\\JasperDev\\short hackers\\avatar\\Happy.png', { kind: 'image' }),
-			placeholder('sans', 'D:\\Cosas Importantes\\musik\\Toby Fox\\sans.mp3', { kind: 'audio', seconds: 3 }),
+			placeholder('happy', 'D:\\Videos\\Short A\\avatar\\Happy.png', { kind: 'image' }),
+			placeholder('sans', 'D:\\Assets\\music\\Composer\\theme.mp3', { kind: 'audio', seconds: 3 }),
 			placeholder('loose', 'E:\\Old SFX\\loose.wav', { kind: 'audio', seconds: 1 }),
 			placeholder('buried', 'F:\\elsewhere\\buried.mov'),
 			placeholder('dup', 'G:\\x\\dup.mov'),
-			placeholder('gone', 'D:\\JasperDev\\short hackers\\never there.mov'),
+			placeholder('gone', 'D:\\Videos\\Short A\\never there.mov'),
 		];
 		const { r } = await scan({
 			anchors: [
 				{
-					from: 'D:\\JasperDev\\short hackers\\TV static.mp4',
-					to: join(mac, 'JasperDev/short hackers/TV static.mp4'),
+					from: 'D:\\Videos\\Short A\\TV static.mp4',
+					to: join(mac, 'Videos/Short A/TV static.mp4'),
 				},
 			],
 			assets,
@@ -165,10 +165,10 @@ describe('Relink others automatically (engine search)', () => {
 		});
 		const by = Object.fromEntries(r.found.map((f) => [f.assetId, [f.step, f.path]]));
 		expect(by).toEqual({
-			happy: ['mapping', join(mac, 'JasperDev/short hackers/avatar/Happy.png')],
-			sans: ['mapping', join(mac, 'Cosas Importantes/musik/Toby Fox/sans.mp3')],
-			loose: ['same-folder', join(mac, 'JasperDev/short hackers/loose.wav')],
-			buried: ['search', join(mac, 'JasperDev/short hackers/deep/er/buried.mov')],
+			happy: ['mapping', join(mac, 'Videos/Short A/avatar/Happy.png')],
+			sans: ['mapping', join(mac, 'Assets/music/Composer/theme.mp3')],
+			loose: ['same-folder', join(mac, 'Videos/Short A/loose.wav')],
+			buried: ['search', join(mac, 'Videos/Short A/deep/er/buried.mov')],
 		});
 		expect(r.found.every((f) => f.match === 'placeholder' && f.needsConfirm === false)).toBe(true);
 		expect(r.ambiguous).toEqual([
@@ -176,14 +176,14 @@ describe('Relink others automatically (engine search)', () => {
 				assetId: 'dup',
 				step: 'search',
 				candidates: [
-					join(mac, 'JasperDev/short hackers/a/dup.mov'),
-					join(mac, 'JasperDev/short hackers/b/dup.mov'),
+					join(mac, 'Videos/Short A/a/dup.mov'),
+					join(mac, 'Videos/Short A/b/dup.mov'),
 				],
 			},
 		]);
 		expect(r.notFound).toEqual(['gone']);
 		expect(r.mappings).toEqual([{ from: 'D:\\', to: mac }]);
-		// the walk covers the located file's folder only (sans.mp3 was found by the mapping)
+		// the walk covers the located file's folder only (theme.mp3 was found by the mapping)
 		expect(r.scannedFiles).toBe(6);
 	});
 

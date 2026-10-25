@@ -1,7 +1,7 @@
 # Link Media — relink one file, find the others
 
 Premiere-style Link Media (S04:AS-011) for projects whose media moved, including projects made on another
-operating system: thousands of media referenced by Windows paths (`D:\JasperDev\…`, `D:\Cosas Importantes\…`) that
+operating system: thousands of media referenced by Windows paths (`D:\Videos\…`, `D:\Assets\…`) that
 now sit on a macOS or Linux drive. You locate one missing file. The engine works out how its folder moved and finds
 the other offline media from that. Every linked file goes into one undoable transaction.
 
@@ -66,7 +66,7 @@ from third-party writing. Anything not documented is labelled **undocumented**.
   versus `/Volumes`. In practice teams relink once per system (community, Adobe beta thread
   [Improvements to relinking](https://community.adobe.com/announcements-732/new-in-beta-improvements-to-relinking-312004)).
 - **Project-relative paths.** A `.prproj` stores `<FilePath>` and `<RelativePath>`, which is relative to the project
-  file, for example `..\..\Cosas Importantes\…`. Only forum evidence exists for this
+  file, for example `..\..\Assets\…`. Only forum evidence exists for this
   ([Creative COW](https://creativecow.net/forums/thread/relocating-premiere-projects-and-corresponding-fil/)).
 
 **Choices made here where Premiere is undocumented:**
@@ -115,8 +115,8 @@ three things from the anchors.
 **Folder mappings.** The old and new parent folders are aligned on their longest common suffix of folder names.
 The parts before that suffix become the mapping:
 
-- `D:\JasperDev\short hackers\TV.mp4` → `/Volumes/Mac/JasperDev/short hackers/TV.mp4` maps `D:\` → `/Volumes/Mac`.
-  So `D:\Cosas Importantes\avatar\Happy.png` → `/Volumes/Mac/Cosas Importantes/avatar/Happy.png`.
+- `D:\Videos\Short A\TV.mp4` → `/Volumes/Mac/Videos/Short A/TV.mp4` maps `D:\` → `/Volumes/Mac`.
+  So `D:\Assets\avatar\Happy.png` → `/Volumes/Mac/Assets/avatar/Happy.png`.
 - A file found in an unrelated folder maps its whole old folder, so siblings and subfolders follow it.
 - When the folder did not move, there is no mapping.
 - The most specific mapping (longest old prefix) is tried first. On a tie, the later anchor wins.
@@ -264,7 +264,7 @@ nothing is left to locate.
 **Exercised in the running app** (engine 47915, vite 5185, Linux):
 
 1. An EDL imported with Windows paths came in as five placeholders, tagged "another computer".
-2. The generated media sat in `/tmp/…/Mac/JasperDev/short hackers/…` and `/tmp/…/Mac/Cosas Importantes/…`.
+2. The generated media sat in `/tmp/…/Mac/Videos/Short A/…` and `/tmp/…/Mac/Assets/…`.
 3. Locating `TV static.mp4` linked it, `Happy.mp4` (Same folder structure) and `buried.mp4` (Search, it had moved
    from `E:\Old Exports`) in one step.
 4. Reopening the project opened the dialog by itself for the two still offline.

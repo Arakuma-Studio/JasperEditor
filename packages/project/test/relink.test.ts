@@ -35,8 +35,8 @@ const drive = fc.constantFrom('C', 'D', 'e', 'Z');
 
 describe('path classification', () => {
 	it('recognises Windows drive, UNC and POSIX paths as absolute, and others as relative', () => {
-		expect(classifyPath('D:\\JasperDev\\a.mp4')).toBe('windows');
-		expect(classifyPath('d:/JasperDev/a.mp4')).toBe('windows');
+		expect(classifyPath('D:\\Videos\\a.mp4')).toBe('windows');
+		expect(classifyPath('d:/Videos/a.mp4')).toBe('windows');
 		expect(classifyPath('\\\\nas\\share\\a.mov')).toBe('unc');
 		expect(classifyPath('//nas/share/a.mov')).toBe('unc');
 		expect(classifyPath('/Volumes/Mac/a.mov')).toBe('posix');
@@ -123,7 +123,7 @@ describe('path classification', () => {
 	});
 
 	it('file names, stems and extensions', () => {
-		expect(pathBaseName('D:\\Cosas Importantes\\avatar\\Happy.png')).toBe('Happy.png');
+		expect(pathBaseName('D:\\Assets\\avatar\\Happy.png')).toBe('Happy.png');
 		expect(pathBaseName('/Volumes/x/clip.MOV')).toBe('clip.MOV');
 		expect(fileStemOf('a.b.mov')).toBe('a.b');
 		expect(fileStemOf('.hidden')).toBe('.hidden');
@@ -135,14 +135,14 @@ describe('path classification', () => {
 describe('path mapping from a located file', () => {
 	it('aligns the old and new parent folders on their longest common suffix', () => {
 		const m = deriveMapping(
-			'D:\\JasperDev\\short hackers\\TV static.mp4',
-			'/Volumes/Mac/JasperDev/short hackers/TV static.mp4',
+			'D:\\Videos\\Short A\\TV static.mp4',
+			'/Volumes/Mac/Videos/Short A/TV static.mp4',
 		)!;
 		expect(formatPath(m.from)).toBe('D:\\');
 		expect(formatPath(m.to)).toBe('/Volumes/Mac');
 		expect(m.commonSuffix).toBe(2);
-		expect(applyMapping(m, 'D:\\Cosas Importantes\\avatar\\Happy.png')).toBe(
-			'/Volumes/Mac/Cosas Importantes/avatar/Happy.png',
+		expect(applyMapping(m, 'D:\\Assets\\avatar\\Happy.png')).toBe(
+			'/Volumes/Mac/Assets/avatar/Happy.png',
 		);
 		// another drive is not under the mapping
 		expect(applyMapping(m, 'E:\\Cosas\\a.png')).toBeNull();
@@ -190,12 +190,12 @@ describe('path mapping from a located file', () => {
 describe('project-relative paths', () => {
 	it('derives where the relative base is from the located file and resolves the others', () => {
 		const b = deriveRelativeBase(
-			'..\\..\\Cosas Importantes\\Premiere Project (JASPERDEV)\\Backgrounds\\vhs.mp4',
-			'/Volumes/Mac/Cosas Importantes/Premiere Project (JASPERDEV)/Backgrounds/vhs.mp4',
+			'..\\..\\Assets\\Premiere Project\\Backgrounds\\vhs.mp4',
+			'/Volumes/Mac/Assets/Premiere Project/Backgrounds/vhs.mp4',
 		)!;
 		expect(formatPath(b.base)).toBe('/Volumes/Mac');
 		expect(b.ups).toBe(2);
-		expect(resolveRelative(b, '..\\..\\musik\\sans.mp3')).toBe('/Volumes/Mac/musik/sans.mp3');
+		expect(resolveRelative(b, '..\\..\\music\\theme.mp3')).toBe('/Volumes/Mac/music/theme.mp3');
 		// three levels up: one above the base
 		expect(resolveRelative(b, '..\\..\\..\\x.mp3')).toBe('/Volumes/x.mp3');
 		// fewer `..` than the located file needs the project folder's own name: not resolvable here
@@ -209,15 +209,15 @@ describe('candidate ordering', () => {
 	it('mapping, relative path, same folder, then the bounded search', () => {
 		const ctx = planContext([
 			{
-				from: 'D:\\JasperDev\\short hackers\\TV.mp4',
-				to: '/Volumes/Mac/JasperDev/short hackers/TV.mp4',
+				from: 'D:\\Videos\\Short A\\TV.mp4',
+				to: '/Volumes/Mac/Videos/Short A/TV.mp4',
 				relativePath: 'TV.mp4',
 			},
 		]);
 		const steps = plannedSteps(
 			{
 				name: 'Happy.png',
-				oldPath: 'D:\\JasperDev\\short hackers\\avatar\\Happy.png',
+				oldPath: 'D:\\Videos\\Short A\\avatar\\Happy.png',
 				relativePath: 'avatar\\Happy.png',
 			},
 			ctx,
@@ -225,15 +225,15 @@ describe('candidate ordering', () => {
 		expect(steps.map((s) => s.step)).toEqual(['mapping', 'relative', 'same-folder', 'search']);
 		expect(steps[0]).toEqual({
 			step: 'mapping',
-			paths: ['/Volumes/Mac/JasperDev/short hackers/avatar/Happy.png'],
+			paths: ['/Volumes/Mac/Videos/Short A/avatar/Happy.png'],
 		});
 		expect(steps[1]).toEqual({
 			step: 'relative',
-			paths: ['/Volumes/Mac/JasperDev/short hackers/avatar/Happy.png'],
+			paths: ['/Volumes/Mac/Videos/Short A/avatar/Happy.png'],
 		});
 		expect(steps[2]).toEqual({
 			step: 'same-folder',
-			folders: ['/Volumes/Mac/JasperDev/short hackers'],
+			folders: ['/Volumes/Mac/Videos/Short A'],
 			name: 'Happy.png',
 		});
 	});
@@ -260,8 +260,8 @@ describe('candidate ordering', () => {
 
 	it('scales: planning 20 000 offline media is linear and fast', () => {
 		const ctx = planContext([
-			{ from: 'D:\\JasperDev\\p0\\f.mp4', to: '/Volumes/Mac/JasperDev/p0/f.mp4' },
-			{ from: 'D:\\Cosas Importantes\\x\\g.mp4', to: '/Volumes/Mac/Cosas Importantes/x/g.mp4' },
+			{ from: 'D:\\Videos\\p0\\f.mp4', to: '/Volumes/Mac/Videos/p0/f.mp4' },
+			{ from: 'D:\\Assets\\x\\g.mp4', to: '/Volumes/Mac/Assets/x/g.mp4' },
 		]);
 		const t0 = performance.now();
 		let mapped = 0;
@@ -269,7 +269,7 @@ describe('candidate ordering', () => {
 			const steps = plannedSteps(
 				{
 					name: `f${i}.mp4`,
-					oldPath: `D:\\JasperDev\\p${i % 300}\\sub ${i % 7}\\f${i}.mp4`,
+					oldPath: `D:\\Videos\\p${i % 300}\\sub ${i % 7}\\f${i}.mp4`,
 					relativePath: null,
 				},
 				ctx,
