@@ -10,6 +10,7 @@ import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
+import subtitleTemplateRoutes from './subtitle-templates.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
@@ -55,6 +56,7 @@ const ROUTE_PLUGINS = [
 	// The agent relay supplies references to open projects for cache protection.
 	cacheRoutes,
 	effectPresetRoutes,
+	subtitleTemplateRoutes,
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,

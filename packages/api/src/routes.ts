@@ -1,4 +1,4 @@
-import { EffectPresetFolderSchema, EffectPresetSchema } from '@jasper/project';
+import { EffectPresetFolderSchema, EffectPresetSchema, SubtitleTemplateSchema } from '@jasper/project';
 import { z } from 'zod';
 import {
 	AgentMcpInfoSchema,
@@ -42,6 +42,11 @@ import {
 	EffectPresetLibraryResponseSchema,
 	EffectPresetUpdateRequestSchema,
 } from './effect-presets.ts';
+import {
+	SubtitleTemplateDeleteResponseSchema,
+	SubtitleTemplateLibraryResponseSchema,
+	SubtitleTemplateSaveRequestSchema,
+} from './subtitle-templates.ts';
 import {
 	ExportPlanRequestSchema,
 	ExportStartRequestSchema,
@@ -958,6 +963,26 @@ export const ROUTES = {
 		path: '/api/cache/settings',
 		body: CacheSettingsSchema,
 		response: CacheSettingsSchema,
+	},
+
+	/** spec 13 AS-020: the user subtitle template library. */
+	subtitleTemplatesList: {
+		method: 'GET',
+		path: '/api/subtitle-templates',
+		response: SubtitleTemplateLibraryResponseSchema,
+	},
+	/** Saves (creates or replaces) a template by its id; built-in ids are refused. */
+	subtitleTemplateSave: {
+		method: 'PUT',
+		path: '/api/subtitle-templates/:templateId',
+		body: SubtitleTemplateSaveRequestSchema,
+		response: SubtitleTemplateSchema,
+	},
+	/** Deletes a template of the library (agents: the user approves it in the editor). */
+	subtitleTemplateDelete: {
+		method: 'DELETE',
+		path: '/api/subtitle-templates/:templateId',
+		response: SubtitleTemplateDeleteResponseSchema,
 	},
 
 	effectPresetsList: {

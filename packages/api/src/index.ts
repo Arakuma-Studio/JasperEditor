@@ -8,6 +8,7 @@ export * from './captions.ts';
 export * from './common.ts';
 export type * from './desktop.ts';
 export * from './effect-presets.ts';
+export * from './subtitle-templates.ts';
 export * from './events.ts';
 export * from './exports.ts';
 export * from './fonts.ts';

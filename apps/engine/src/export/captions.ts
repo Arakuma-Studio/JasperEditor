@@ -8,7 +8,9 @@ import {
 	CAPTION_FORMAT_INFO,
 	type CaptionDocument,
 	type CaptionFileFormat,
+	captionCuesForGroup,
 	captionCuesForTrack,
+	captionGroupsOf,
 	type ProjectDocument,
 	resolveTrackRef,
 	type Sequence,
@@ -28,30 +30,53 @@ export function captionBurnMode(
 	return b;
 }
 
+/**
+ * spec 13 AS-005: a subtitle group of text clips exports like a caption track. Its stand-in track carries the
+ * group's id, name and language (the cues come from `captionCuesForGroup`).
+ */
+function groupTrack(seq: Sequence, groupId: string): Track | null {
+	const g = captionGroupsOf(seq)[groupId];
+	if (!g) return null;
+	return { id: g.id, kind: 'caption', name: g.name, language: g.language, locked: false, syncLock: false } as Track;
+}
+
+const isGroup = (seq: Sequence, t: Track) => !seq.captionTracks.includes(t) && !!captionGroupsOf(seq)[t.id];
+
 function resolveTracks(seq: Sequence, refs: readonly string[]): Track[] {
 	const out: Track[] = [];
 	for (const r of refs) {
 		const id = resolveTrackRef(seq, r);
-		const t = seq.captionTracks.find((x) => x.id === id);
-		if (!t) throw new CaptionExportError(`Caption track not found: ${r}`);
-		if (!out.includes(t)) out.push(t);
+		const t = seq.captionTracks.find((x) => x.id === id) ?? groupTrack(seq, r);
+		if (!t) throw new CaptionExportError(`Caption track or subtitle group not found: ${r}`);
+		if (!out.some((x) => x.id === t.id)) out.push(t);
 	}
 	return out;
+}
+
+/** Every caption track, then every subtitle group of text clips. */
+function allSources(seq: Sequence): Track[] {
+	return [
+		...seq.captionTracks,
+		...Object.keys(captionGroupsOf(seq))
+			.map((id) => groupTrack(seq, id))
+			.filter((t): t is Track => !!t),
+	];
 }
 
 export class CaptionExportError extends Error {
 	readonly code = 'CAPTIONS_INVALID';
 }
 
-/** Active track first, then C1…Cn. */
+/** Active track first, then C1…Cn, then subtitle groups (in their order). */
 function ordered(seq: Sequence, tracks: Track[]): Track[] {
 	const active = activeCaptionTrack(seq);
+	const groups = Object.keys(captionGroupsOf(seq));
+	const rank = (t: Track) => {
+		const i = seq.captionTracks.indexOf(t);
+		return i >= 0 ? i : seq.captionTracks.length + groups.indexOf(t.id);
+	};
 	return [...tracks].sort((a, b) =>
-		a.id === active?.id
-			? -1
-			: b.id === active?.id
-				? 1
-				: seq.captionTracks.indexOf(a) - seq.captionTracks.indexOf(b),
+		a.id === active?.id ? -1 : b.id === active?.id ? 1 : rank(a) - rank(b),
 	);
 }
 
@@ -69,6 +94,16 @@ function trackOutput(
 	t: Track,
 	range: { start: number; end: number },
 ): CaptionTrackOutput {
+	if (isGroup(seq, t)) {
+		const label = `S${Object.keys(captionGroupsOf(seq)).indexOf(t.id) + 1}`;
+		return {
+			track: t,
+			label,
+			name: t.name ?? `Subtitles ${label}`,
+			language: t.language ?? 'und',
+			doc: { cues: captionCuesForGroup(seq, t.id, range), blocks: [], warnings: [] },
+		};
+	}
 	const i = seq.captionTracks.indexOf(t);
 	const label = `C${i + 1}`;
 	return {
@@ -88,7 +123,7 @@ export function embeddedTracks(
 	range: { start: number; end: number },
 ): CaptionTrackOutput[] {
 	if (!c?.embed) return [];
-	const list = c.embed === true ? seq.captionTracks : resolveTracks(seq, c.embed);
+	const list = c.embed === true ? allSources(seq) : resolveTracks(seq, c.embed);
 	return ordered(seq, list)
 		.map((t) => trackOutput(doc, seq, t, range))
 		.filter((o) => o.doc.cues.length > 0);
@@ -103,11 +138,15 @@ export function sidecarTracks(
 ): CaptionTrackOutput[] {
 	if (!c?.sidecar?.length) return [];
 	const sel = c.sidecarTracks ?? 'active';
+	// "active": the active caption track; without caption tracks, the first subtitle group of text clips
+	const firstGroup = () => allSources(seq).slice(seq.captionTracks.length, seq.captionTracks.length + 1);
 	const list =
 		sel === 'all'
-			? seq.captionTracks
+			? allSources(seq)
 			: sel === 'active'
-				? [activeCaptionTrack(seq)].filter((t): t is Track => !!t)
+				? seq.captionTracks.length
+					? [activeCaptionTrack(seq)].filter((t): t is Track => !!t)
+					: firstGroup()
 				: resolveTracks(seq, sel);
 	return ordered(seq, list)
 		.map((t) => trackOutput(doc, seq, t, range))
