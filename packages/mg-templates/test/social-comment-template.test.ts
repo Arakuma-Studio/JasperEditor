@@ -17,6 +17,7 @@ import {
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
+	SOCIAL_VARIANT_FONTS,
 	SOCIAL_WORD_STAGGER_MS,
 	type SocialScheduleInput,
 	socialCardScale,
@@ -24,10 +25,12 @@ import {
 	socialCommentPresets,
 	socialCommentSchedule,
 	socialCommentSegments,
+	socialCommentUnavailableVariant,
 	socialLikesTick,
 	socialTickCount,
 	stripMarks,
 	TEMPLATE_EASE_FUNCTIONS,
+	templatePresetParams,
 	trackValueAt,
 } from '../src/index.ts';
 
@@ -263,7 +266,20 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
 			['tiktok-reply', 'TikTok · Comment reply'],
 			['tiktok-comment', 'TikTok · Comment'],
+			['instagram-post', 'Instagram · Post comment'],
+			['instagram-reel-reply', 'Instagram · Reel reply'],
 		]);
+		// a preset carries its variant's tokcomment defaults
+		expect(templatePresetParams(socialComment, 'instagram-post')).toMatchObject({
+			variant: 'instagram-post',
+			timeValue: 2,
+			timeUnit: 'week',
+			likes: 114,
+			replies: 5,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'instagram-post' })).toBeNull();
+		expect(socialCommentUnavailableVariant({ variant: 'instagram-reel-reply' })).toBeNull();
+		expect(SOCIAL_VARIANT_FONTS['instagram-post']).toEqual({ family: 'SF Pro Text', weights: [400, 600] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,

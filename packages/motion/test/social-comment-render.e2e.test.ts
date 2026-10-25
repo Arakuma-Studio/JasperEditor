@@ -4,14 +4,17 @@
 //   extras running (S11:ANM-014: seek order never changes a frame);
 // - the card fits every canvas (long comment, huge counts, marks): its painted box stays inside the frame;
 // - with SOCIAL_CALIBRATION_DIR set, writes the calibration stills (hold frame, card at 2× tokcomment's CSS px).
-// Fonts: TikTok Sans from @fontsource/tiktok-sans (SOCIAL_FONT_DIR overrides its `files/` dir); emoji: Apple images
-// from SOCIAL_EMOJI_DIR (`<codepoints>.png`), else the emoji draw as text.
+// Fonts: TikTok Sans from @fontsource/tiktok-sans (SOCIAL_FONT_DIR overrides its `files/` dir); SF Pro Text (Instagram)
+// from SOCIAL_SF_PRO_DIR (the remote manifest's `SF-Pro-Text-{Regular,Semibold}.otf`, never in the repo), else the
+// Instagram cards draw in the host's fallback font; emoji: Apple images from SOCIAL_EMOJI_DIR (`<codepoints>.png`),
+// else the emoji draw as text.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isSocialVariant, socialDefaults } from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CardProps } from './social-comment-render/types.ts';
@@ -80,7 +83,7 @@ type Case = {
 
 /** The calibration matrix (design §8 "visual calibration"), named after the tokcomment captures it pairs with. */
 const CALIBRATION: Case[] = [];
-for (const variant of ['tiktok-reply', 'tiktok-comment'])
+for (const variant of ['tiktok-reply', 'tiktok-comment', 'instagram-post'])
 	for (const theme of ['light', 'dark'])
 		for (const verified of [false, true])
 			CALIBRATION.push({
@@ -88,9 +91,16 @@ for (const variant of ['tiktok-reply', 'tiktok-comment'])
 				canvas: '1080x1920',
 				params: { variant, theme, verified },
 			});
-for (const variant of ['tiktok-reply', 'tiktok-comment']) {
+for (const theme of ['light', 'dark'])
+	CALIBRATION.push({
+		name: `instagram-reel-reply_${theme}_default`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-reel-reply', theme },
+	});
+for (const variant of ['tiktok-reply', 'tiktok-comment', 'instagram-post', 'instagram-reel-reply']) {
 	// tokcomment's edit and avatar captures were taken with the time left at 3 years
-	const y3 = variant === 'tiktok-comment' ? { timeValue: 3, timeUnit: 'year' } : {};
+	const y3 =
+		variant === 'tiktok-comment' || variant === 'instagram-post' ? { timeValue: 3, timeUnit: 'year' } : {};
 	CALIBRATION.push(
 		{ name: `${variant}_light_text-short`, canvas: '1080x1920', params: { variant, text: 'Love this! 🔥' } },
 		{ name: `${variant}_light_text-long`, canvas: '1080x1920', params: { variant, text: LONG } },
@@ -118,7 +128,7 @@ for (const variant of ['tiktok-reply', 'tiktok-comment']) {
 		{
 			name: `${variant}_light_avatar-generated`,
 			canvas: '1080x1920',
-			params: { variant, avatar: { generated: 42 }, displayName: 'Luna Park' },
+			params: { variant, avatar: { generated: 42 }, displayName: 'Luna Park', handle: 'luna.park' },
 		},
 		{
 			name: `${variant}_dark_mentions`,
@@ -138,6 +148,75 @@ CALIBRATION.push(
 			timeValue: 3,
 			timeUnit: 'year',
 		},
+	},
+	{
+		name: 'instagram-post_light_counts-huge',
+		canvas: '1080x1920',
+		params: {
+			variant: 'instagram-post',
+			likes: 987_654_321_000,
+			replies: 4_812_345,
+			timeValue: 3,
+			timeUnit: 'year',
+		},
+	},
+	...(
+		[
+			['minute', 'mins'],
+			['hour', 'hrs'],
+			['day', 'days'],
+			['week', 'wks'],
+			['month', 'mth'],
+			['year', 'yrs'],
+		] as const
+	).map(([timeUnit, label]) => ({
+		name: `instagram-post_light_time-3-${label}`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', timeValue: 3, timeUnit },
+	})),
+	{
+		name: 'instagram-post_light_liked',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', likeTick: true, likes: 1234 },
+	},
+	{
+		name: 'instagram-post_dark_liked',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', theme: 'dark', likeTick: true, likes: 1234, verified: true },
+	},
+	{
+		name: 'instagram-post_light_no-likes-no-replies',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', likes: 0, replies: 0 },
+	},
+	{
+		name: 'instagram-post_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			variant: 'instagram-post',
+			handle: 'averyveryveryverylongusername_with_many_characters_123456789',
+			verified: true,
+			timeValue: 3,
+			timeUnit: 'year',
+		},
+	},
+	{
+		name: 'instagram-reel-reply_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			variant: 'instagram-reel-reply',
+			handle: 'averyveryveryverylongusername_with_many_characters_123456789',
+		},
+	},
+	{
+		name: 'instagram-post_light_no-profile',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', showProfile: false },
+	},
+	{
+		name: 'instagram-reel-reply_dark_no-profile',
+		canvas: '1080x1920',
+		params: { variant: 'instagram-reel-reply', theme: 'dark', showProfile: false },
 	},
 	{
 		name: 'tiktok-comment_light_no-profile',
@@ -175,6 +254,20 @@ for (const frame of [16, 22, 30, 40, 48, 146, 148])
 		params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true },
 		frame,
 	});
+for (const frame of [3, 6, 9, 13, 16, 22, 30, 40, 48, 146, 148])
+	CALIBRATION.push({
+		name: `anim_instagram_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-post', entrance: 'grow-from-tail', wordReveal: true, likeTick: true },
+		frame,
+	});
+for (const frame of [3, 6, 9, 13, 22, 40])
+	CALIBRATION.push({
+		name: `anim_instagram-reel_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { variant: 'instagram-reel-reply', entrance: 'grow-from-tail', wordReveal: true },
+		frame,
+	});
 
 describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 1_200_000 }, () => {
 	let r: typeof import('@remotion/renderer');
@@ -198,6 +291,17 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				if (!existsSync(join(dir, file))) continue;
 				copyFileSync(join(dir, file), join(pub, 'fonts', file));
 				fonts.push({ family: 'TikTok Sans', weight, file: `fonts/${file}` });
+			}
+		const sfPro = process.env.SOCIAL_SF_PRO_DIR;
+		if (sfPro)
+			for (const [weight, style] of [
+				[400, 'Regular'],
+				[600, 'Semibold'],
+			] as const) {
+				const file = `SF-Pro-Text-${style}.otf`;
+				if (!existsSync(join(sfPro, file))) continue;
+				copyFileSync(join(sfPro, file), join(pub, 'fonts', file));
+				fonts.push({ family: 'SF Pro Text', weight, file: `fonts/${file}` });
 			}
 		const emojiDir = process.env.SOCIAL_EMOJI_DIR;
 		if (emojiDir && existsSync(emojiDir))
@@ -234,8 +338,12 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		await browser?.close({ silent: true });
 	});
 
+	// a case's params over its variant's tokcomment defaults (the captures show each variant's own defaults)
 	const propsOf = (c: Case): CardProps => ({
-		params: c.params,
+		params: {
+			...socialDefaults(isSocialVariant(c.params.variant) ? c.params.variant : 'tiktok-reply'),
+			...c.params,
+		},
 		fonts,
 		mediaFiles: c.media ? { med_avatar: 'avatar.png' } : {},
 		emojiFiles,
@@ -275,6 +383,23 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 					wordReveal: true,
 					entrance: 'drop-bounce',
 				},
+			},
+			{
+				name: 'instagram-post-dark',
+				canvas: '1080x1080',
+				params: {
+					variant: 'instagram-post',
+					theme: 'dark',
+					likeTick: true,
+					wordReveal: true,
+					verified: true,
+					entrance: 'classic-pop',
+				},
+			},
+			{
+				name: 'instagram-reel-light',
+				canvas: '1080x1920',
+				params: { variant: 'instagram-reel-reply', wordReveal: true, entrance: 'soft-spring' },
 			},
 		];
 		for (const c of cases) {
@@ -318,6 +443,10 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				{ text: longest },
 				{ variant: 'tiktok-comment', text: longest, likes: 1e12, replies: 1e12 },
 				{ variant: 'tiktok-comment', likes: 999_999_999_999, replies: 999_999, displayName: 'x'.repeat(64) },
+				{ variant: 'instagram-post', text: longest, likes: 1e12, replies: 1e12, verified: true },
+				{ variant: 'instagram-post', likes: 999_999_999_999, replies: 999_999, handle: 'x'.repeat(64) },
+				{ variant: 'instagram-reel-reply', text: longest },
+				{ variant: 'instagram-reel-reply', handle: 'x'.repeat(64), text: 'ok' },
 			]) {
 				const png = await still({ name: 'fit', canvas, params }, 100);
 				const box = paintedBox(png);
@@ -335,7 +464,10 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		const out = process.env.SOCIAL_CALIBRATION_DIR!;
 		mkdirSync(out, { recursive: true });
 		const manifest: Record<string, ReturnType<typeof paintedBox>> = {};
-		for (const c of CALIBRATION) {
+		// SOCIAL_CALIBRATION_FILTER: only the cases whose name contains one of its comma-separated parts (iterating on
+		// one variant)
+		const only = process.env.SOCIAL_CALIBRATION_FILTER?.split(',').filter(Boolean) ?? [];
+		for (const c of CALIBRATION.filter((k) => only.length === 0 || only.some((o) => k.name.includes(o)))) {
 			// the hold frame; 9:16 zooms the 420 px card by 1.8 → scale 2 / 1.8 draws it at tokcomment's 2× (840 px)
 			const png = await still(c, c.frame ?? 100, 2 / 1.8);
 			writeFileSync(join(out, `${c.name}.png`), png);

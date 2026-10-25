@@ -13,9 +13,10 @@ import { act, render } from '@testing-library/react';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
-import { TIKTOK_DEFAULT_AVATAR } from '../src/templates/social/glyphs.ts';
+import { INSTAGRAM_GLYPHS, TIKTOK_DEFAULT_AVATAR } from '../src/templates/social/glyphs.ts';
 import { splitEmojiPieces } from '../src/templates/social-comment/assets.tsx';
 import type { SocialCardAssets } from '../src/templates/social-comment/contract.ts';
+import { INSTAGRAM_DEFAULT_AVATAR } from '../src/templates/social-comment/instagram.tsx';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
 import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
 import { socialVariantAvailable } from '../src/templates/social-comment/variants.ts';
@@ -54,13 +55,13 @@ const ASSETS: SocialCardAssets = {
 };
 
 describe('social-comment@1 cards', () => {
-	it('draws the TikTok cards in both themes and a visible "not available" card for the variants still to come', () => {
+	it('draws the TikTok and Instagram cards in both themes and a visible "not available" card for the variants still to come', () => {
 		for (const variant of SOCIAL_VARIANTS)
 			for (const theme of ['light', 'dark']) {
 				const r = render(at({ ...socialDefaults(variant), theme }, 100));
 				const card = r.container.querySelector('[data-social-variant]')!;
 				expect(card.getAttribute('data-social-variant')).toBe(variant);
-				if (variant.startsWith('tiktok')) {
+				if (variant.startsWith('tiktok') || variant.startsWith('instagram')) {
 					expect(socialVariantAvailable(variant)).toBe(true);
 					expect(card.hasAttribute('data-social-unavailable')).toBe(false);
 				} else {
@@ -124,6 +125,157 @@ describe('social-comment@1 cards', () => {
 		);
 		expect(r.container.querySelector('[data-social-variant="tiktok-reply"]')).not.toBeNull();
 		r.unmount();
+	});
+});
+
+describe('social-comment@1 Instagram cards', () => {
+	const post = socialDefaults('instagram-post');
+	const reel = socialDefaults('instagram-reel-reply');
+	const q = (c: HTMLElement, sel: string) => c.querySelector<HTMLElement>(sel);
+	/** A CSS colour as `#rrggbb` (happy-dom keeps hex as written, browsers report rgb()). */
+	const hex = (color: string) => {
+		const m = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(color);
+		return m
+			? `#${m
+					.slice(1)
+					.map((n) => Number(n).toString(16).padStart(2, '0'))
+					.join('')}`
+			: color.toLowerCase();
+	};
+
+	it('post comment: handle, time, likes and "View N more replies" with tokcomment\'s defaults; the badge only when verified', () => {
+		const r = render(at(post, 100));
+		const c = r.container;
+		expect(q(c, '[data-part="name"]')!.getAttribute('data-template-param')).toBe('handle');
+		expect(q(c, '[data-part="name"]')!.textContent).toBe('username');
+		expect(q(c, '[data-part="time"]')!.textContent).toBe('2w');
+		expect(q(c, '[data-part="header"]')!.querySelector('svg')).toBeNull();
+		expect(q(c, '[data-part="meta"]')!.textContent).toBe('Reply');
+		expect(q(c, '[data-part="likes"]')!.textContent).toBe('114');
+		expect(q(c, '[data-part="replies"]')!.textContent).toBe('View 5 more replies');
+		// the outline heart (Instagram's own glyph), no filled heart without the like tick
+		expect(q(c, '[data-part="heart"]')!.innerHTML).toContain(INSTAGRAM_GLYPHS.heartOutline.paths[0]!.d);
+		expect(q(c, '[data-part="heart"]')!.innerHTML).not.toContain(INSTAGRAM_GLYPHS.heartFilled.paths[0]!.d);
+		r.unmount();
+		const v = render(at({ ...post, verified: true }, 100));
+		const badge = v.container.querySelector('[data-part="header"] svg')!;
+		expect(badge.innerHTML).toContain(INSTAGRAM_GLYPHS.verified.paths[0]!.d);
+		v.unmount();
+	});
+
+	it('post comment: counts per Instagram; 1 reply is singular; 0 replies hides the row; 0 likes shows no number', () => {
+		const one = render(at({ ...post, replies: 1, likes: 9_999 }, 100));
+		expect(q(one.container, '[data-part="replies"]')!.textContent).toBe('View 1 more reply');
+		expect(q(one.container, '[data-part="likes"]')!.textContent).toBe('9,999');
+		one.unmount();
+		const none = render(at({ ...post, replies: 0, likes: 0 }, 100));
+		expect(q(none.container, '[data-part="replies"]')).toBeNull();
+		expect(q(none.container, '[data-part="likes"]')).toBeNull();
+		expect(q(none.container, '[data-part="heart"]')).not.toBeNull();
+		none.unmount();
+		const huge = render(at({ ...post, likes: 987_654_321_000, replies: 4_812_345 }, 100));
+		expect(q(huge.container, '[data-part="likes"]')!.textContent).toBe('987.6B');
+		expect(q(huge.container, '[data-part="replies"]')!.textContent).toBe('View 4.8M more replies');
+		// the like column keeps its width, so a long count never narrows the comment
+		expect(q(huge.container, '[data-part="like"]')!.style.width).toBe('25.6px');
+		huge.unmount();
+		for (const [timeValue, timeUnit, shown] of [
+			[3, 'minute', '3m'],
+			[3, 'hour', '3h'],
+			[3, 'day', '3d'],
+			[56, 'week', '56w'],
+			[3, 'month', '3mo'],
+			[3, 'year', '3y'],
+			[0, 'day', 'now'],
+		] as const) {
+			const t = render(at({ ...post, timeValue, timeUnit }, 100));
+			expect(q(t.container, '[data-part="time"]')!.textContent).toBe(shown);
+			t.unmount();
+		}
+	});
+
+	it('dark theme: the username is light on the dark card (tokcomment drew it black), mentions in --ig-link', () => {
+		for (const [theme, name, link] of [
+			['light', '#000000', '#00376b'],
+			['dark', '#ffffff', '#e0f1ff'],
+		] as const) {
+			const r = render(at({ ...post, theme, text: 'hi @luna.park #fyp' }, 100));
+			expect(hex(q(r.container, '[data-part="name"]')!.style.color)).toBe(name);
+			const colored = [...r.container.querySelectorAll<HTMLElement>('[data-template-param="text"] span')]
+				.filter((s) => s.style.color)
+				.map((s) => [s.textContent, hex(s.style.color)]);
+			expect(colored).toEqual([
+				['@luna.park', link],
+				['#fyp', link],
+			]);
+			r.unmount();
+		}
+	});
+
+	it("avatars: Instagram's default look for null, initials from the handle for a generated one, showProfile hides it", () => {
+		const d = render(at(post, 100));
+		const def = q(d.container, '[data-social-avatar="default"]')!;
+		expect(def.style.background).toMatch(/#C7C7C7|rgb\(199, 199, 199\)/i);
+		expect(def.innerHTML).toContain(INSTAGRAM_DEFAULT_AVATAR.shoulders);
+		d.unmount();
+		const g = render(at({ ...post, avatar: { generated: 3 }, handle: 'zed.wolf' }, 100));
+		expect(q(g.container, '[data-social-avatar="generated"]')).not.toBeNull();
+		g.unmount();
+		const m = render(
+			at({ ...reel, avatar: { mediaId: 'med_a' } }, 100, { mediaUrls: { med_a: 'http://x/a.png' } }),
+		);
+		expect(m.container.innerHTML).toContain('src="http://x/a.png"');
+		m.unmount();
+		for (const params of [post, reel]) {
+			const r = render(at({ ...params, showProfile: false }, 100));
+			expect(q(r.container, '[data-social-avatar]')).toBeNull();
+			expect(q(r.container, '[data-template-param="handle"]')!.textContent).toBe('username');
+			expect(q(r.container, '[data-template-param="text"][data-template-marks="true"]')).not.toBeNull();
+			r.unmount();
+		}
+	});
+
+	it('like tick: the count rises to the final value, then the heart is filled in Instagram red (hold state)', () => {
+		const p = { ...post, likeTick: true, likes: 12_345 };
+		const view = render(at(p, 0));
+		const shown = () => q(view.container, '[data-part="likes"]')!.textContent;
+		expect(shown()).toBe('0');
+		const seen = new Set<string>();
+		for (let f = 1; f <= 60; f++) {
+			act(() => view.rerender(at(p, f)));
+			seen.add(shown()!);
+		}
+		expect(shown()).toBe('12.3K');
+		expect(seen.size).toBeGreaterThan(10);
+		const svgs = q(view.container, '[data-part="heart"]')!.querySelectorAll<SVGElement>('svg');
+		expect(svgs).toHaveLength(2);
+		expect(svgs[1]!.style.opacity).toBe('1');
+		expect(hex(svgs[1]!.style.color)).toBe('#ff3040');
+		view.unmount();
+	});
+
+	it('Reels reply: the comment and "Replying to <handle>", no stats, no badge, at most 255 px wide', () => {
+		const r = render(at({ ...reel, verified: true, likeTick: true }, 100));
+		const c = r.container;
+		const card = q(c, '[data-social-variant="instagram-reel-reply"]')!;
+		expect(card.style.maxWidth).toBe('255px');
+		expect(q(c, '[data-part="replying"]')!.textContent).toBe('Replying to username');
+		expect(q(c, '[data-part="replying"] [data-template-param="handle"]')!.textContent).toBe('username');
+		// the only drawing is the default avatar: no badge, heart or count
+		expect([...c.querySelectorAll('svg')].every((svg) => svg.closest('[data-social-avatar]'))).toBe(true);
+		expect(q(c, '[data-part="likes"]')).toBeNull();
+		expect(q(c, '[data-template-param="text"]')!.textContent).toBe(
+			'Write any comment and see what happens 😊',
+		);
+		r.unmount();
+	});
+
+	it('grow from tail grows from the avatar corner on both cards', () => {
+		for (const params of [post, reel]) {
+			const r = render(at({ ...params, entrance: 'grow-from-tail' }, 4));
+			expect(q(r.container, '[data-social-card]')!.style.transformOrigin).toBe('0% 0%');
+			r.unmount();
+		}
 	});
 });
 
