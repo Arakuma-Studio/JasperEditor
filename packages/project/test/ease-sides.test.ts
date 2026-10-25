@@ -111,25 +111,35 @@ describe('writeSpan / spanEases follow the per-side evaluator', () => {
 			easeOut: easeArb,
 		});
 		fc.assert(
-			fc.property(fc.array(keyArb, { minLength: 2, maxLength: 7 }), fc.nat(), cubicArb, (spec, pick, curve) => {
-				const kfs = keysOf(spec) as Keyframe<unknown>[];
-				const a = pick % (kfs.length - 1);
-				const before: Animatable<number> = { value: 0, keyframes: structuredClone(kfs) as Keyframe<number>[] };
-				const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
-				writeSpan(kfs, a, a + 1, easeOut, easeIn);
-				const after: Animatable<number> = { value: 0, keyframes: kfs as Keyframe<number>[] };
-				for (const k of kfs) expect(keySidesIssue(k)).toBeNull();
-				const v0 = spec[a]!.value;
-				const v1 = spec[a + 1]!.value;
-				for (let k = 0; k <= 20; k++) {
-					const u = k / 20;
-					const want = u === 1 ? v1 : v0 + cssCubic(curve as CubicEase, u) * (v1 - v0);
-					expect(Math.abs(evaluate(after, (a + u) * SEC) - want)).toBeLessThan(1e-6 * (1 + Math.abs(v1 - v0)));
-				}
-				for (const t of outsideTimes(kfs.length, a))
-					expect(Object.is(evaluate(after, t), evaluate(before, t))).toBe(true);
-				expectReadBack(kfs, a, easeOut, easeIn);
-			}),
+			fc.property(
+				fc.array(keyArb, { minLength: 2, maxLength: 7 }),
+				fc.nat(),
+				cubicArb,
+				(spec, pick, curve) => {
+					const kfs = keysOf(spec) as Keyframe<unknown>[];
+					const a = pick % (kfs.length - 1);
+					const before: Animatable<number> = {
+						value: 0,
+						keyframes: structuredClone(kfs) as Keyframe<number>[],
+					};
+					const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
+					writeSpan(kfs, a, a + 1, easeOut, easeIn);
+					const after: Animatable<number> = { value: 0, keyframes: kfs as Keyframe<number>[] };
+					for (const k of kfs) expect(keySidesIssue(k)).toBeNull();
+					const v0 = spec[a]!.value;
+					const v1 = spec[a + 1]!.value;
+					for (let k = 0; k <= 20; k++) {
+						const u = k / 20;
+						const want = u === 1 ? v1 : v0 + cssCubic(curve as CubicEase, u) * (v1 - v0);
+						expect(Math.abs(evaluate(after, (a + u) * SEC) - want)).toBeLessThan(
+							1e-6 * (1 + Math.abs(v1 - v0)),
+						);
+					}
+					for (const t of outsideTimes(kfs.length, a))
+						expect(Object.is(evaluate(after, t), evaluate(before, t))).toBe(true);
+					expectReadBack(kfs, a, easeOut, easeIn);
+				},
+			),
 			{ numRuns: 600, seed: 11 },
 		);
 	});
@@ -155,7 +165,10 @@ describe('writeSpan / spanEases follow the per-side evaluator', () => {
 					if (curved)
 						for (const k of kfs) k.spatial = { mode: 'auto-bezier', inTangent: [0, 0], outTangent: [0, 0] };
 					const a = pick % (kfs.length - 1);
-					const before: Animatable<Vec2> = { value: [0, 0], keyframes: structuredClone(kfs) as Keyframe<Vec2>[] };
+					const before: Animatable<Vec2> = {
+						value: [0, 0],
+						keyframes: structuredClone(kfs) as Keyframe<Vec2>[],
+					};
 					const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
 					writeSpan(kfs, a, a + 1, easeOut, easeIn, undefined, metric);
 					const after: Animatable<Vec2> = { value: [0, 0], keyframes: kfs as Keyframe<Vec2>[] };
@@ -186,7 +199,14 @@ describe('writeSpan / spanEases follow the per-side evaluator', () => {
 
 	it('reads a per-side segment as it renders: Linear out side + Bezier in side curve (⅙ on the Linear side)', () => {
 		const kfs: Keyframe<unknown>[] = [
-			{ id: 'a', time: 0, value: 0, interpolation: 'linear', easeIn: SIXTH, easeOut: { influence: 1 / 3, slope: 1 } },
+			{
+				id: 'a',
+				time: 0,
+				value: 0,
+				interpolation: 'linear',
+				easeIn: SIXTH,
+				easeOut: { influence: 1 / 3, slope: 1 },
+			},
 			{
 				id: 'b',
 				time: SEC,
@@ -218,7 +238,13 @@ describe('writeSpan / spanEases follow the per-side evaluator', () => {
 function rotationKeys(
 	h: Harness,
 	clipId: string,
-	keys: { value: number; interpolation: Interpolation; inInterpolation?: InInterpolation; easeIn: Ease; easeOut: Ease }[],
+	keys: {
+		value: number;
+		interpolation: Interpolation;
+		inInterpolation?: InInterpolation;
+		easeIn: Ease;
+		easeOut: Ease;
+	}[],
 ) {
 	h.ok(
 		keys.map((k, i) => ({
@@ -243,48 +269,53 @@ describe('keyframe.applyEase on mixed legacy / per-side keys (commands)', () => 
 			easeOut: easeArb,
 		});
 		fc.assert(
-			fc.property(fc.array(keyArb, { minLength: 2, maxLength: 5 }), fc.nat(), cubicArb, (spec, pick, curve) => {
-				const { h, id, anim } = setup();
-				rotationKeys(
-					h,
-					id,
-					spec.map((s) => ({ value: s.value, ...s.sides, easeIn: s.easeIn, easeOut: s.easeOut })),
-				);
-				const rot = () => anim<number>('transform.rotation');
-				const before = structuredClone(rot());
-				const docBefore = h.doc;
-				const ids = before.keyframes.map((k) => k.id);
-				const a = pick % (ids.length - 1);
-				const command = { type: 'keyframe.applyEase', keyframeIds: [ids[a]!, ids[a + 1]!], curve };
-				h.ok([command]);
-				expectValid(h);
-				const after = rot();
-				const t = before.keyframes.map((k) => k.time);
-				const v0 = before.keyframes[a]!.value;
-				const v1 = before.keyframes[a + 1]!.value;
-				for (let k = 0; k < 20; k++) {
-					const u = k / 20;
-					const want = v0 + cssCubic(curve as CubicEase, u) * (v1 - v0);
-					expect(Math.abs(evaluate(after, t[a]! + u * (t[a + 1]! - t[a]!)) - want)).toBeLessThan(
-						1e-6 * (1 + Math.abs(v1 - v0)),
+			fc.property(
+				fc.array(keyArb, { minLength: 2, maxLength: 5 }),
+				fc.nat(),
+				cubicArb,
+				(spec, pick, curve) => {
+					const { h, id, anim } = setup();
+					rotationKeys(
+						h,
+						id,
+						spec.map((s) => ({ value: s.value, ...s.sides, easeIn: s.easeIn, easeOut: s.easeOut })),
 					);
-				}
-				for (let s = 0; s < t.length - 1; s++) {
-					if (s === a) continue;
-					for (let k = 0; k <= 20; k++) {
-						const at = t[s]! + ((t[s + 1]! - t[s]!) * k) / 20;
-						expect(Object.is(evaluate(after, at), evaluate(before, at))).toBe(true);
+					const rot = () => anim<number>('transform.rotation');
+					const before = structuredClone(rot());
+					const docBefore = h.doc;
+					const ids = before.keyframes.map((k) => k.id);
+					const a = pick % (ids.length - 1);
+					const command = { type: 'keyframe.applyEase', keyframeIds: [ids[a]!, ids[a + 1]!], curve };
+					h.ok([command]);
+					expectValid(h);
+					const after = rot();
+					const t = before.keyframes.map((k) => k.time);
+					const v0 = before.keyframes[a]!.value;
+					const v1 = before.keyframes[a + 1]!.value;
+					for (let k = 0; k < 20; k++) {
+						const u = k / 20;
+						const want = v0 + cssCubic(curve as CubicEase, u) * (v1 - v0);
+						expect(Math.abs(evaluate(after, t[a]! + u * (t[a + 1]! - t[a]!)) - want)).toBeLessThan(
+							1e-6 * (1 + Math.abs(v1 - v0)),
+						);
 					}
-				}
-				const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
-				expectReadBack(after.keyframes as Keyframe<unknown>[], a, easeOut, easeIn);
-				// Undo is a document swap (the previous document is untouched); redo is deterministic.
-				const result = structuredClone(after);
-				h.doc = docBefore;
-				expect(rot()).toEqual(before);
-				h.ok([command]);
-				expect(rot()).toEqual(result);
-			}),
+					for (let s = 0; s < t.length - 1; s++) {
+						if (s === a) continue;
+						for (let k = 0; k <= 20; k++) {
+							const at = t[s]! + ((t[s + 1]! - t[s]!) * k) / 20;
+							expect(Object.is(evaluate(after, at), evaluate(before, at))).toBe(true);
+						}
+					}
+					const { easeOut, easeIn } = cubicToEases(curve as CubicEase);
+					expectReadBack(after.keyframes as Keyframe<unknown>[], a, easeOut, easeIn);
+					// Undo is a document swap (the previous document is untouched); redo is deterministic.
+					const result = structuredClone(after);
+					h.doc = docBefore;
+					expect(rot()).toEqual(before);
+					h.ok([command]);
+					expect(rot()).toEqual(result);
+				},
+			),
 			{ numRuns: 60, seed: 5 },
 		);
 	});
@@ -429,7 +460,12 @@ describe('describeKeyframeEases reports sides', () => {
 		expect(p.keys[0]!.easeIn).toMatchObject({ interpolation: 'bezier', influence: 0.5, slope: 0 });
 		expect(p.keys[0]!.easeOut).toMatchObject({ interpolation: 'hold' });
 		const [into, out] = p.segments;
-		expect(into).toMatchObject({ hold: false, linear: false, outInterpolation: 'linear', inInterpolation: 'bezier' });
+		expect(into).toMatchObject({
+			hold: false,
+			linear: false,
+			outInterpolation: 'linear',
+			inInterpolation: 'bezier',
+		});
 		expect(into!.curve.x1).toBeCloseTo(1 / 6, 12);
 		expect(into!.curve.y1).toBeCloseTo(1 / 6, 12);
 		expect(out).toMatchObject({ hold: true, outInterpolation: 'hold', inInterpolation: 'hold' });
@@ -553,7 +589,8 @@ describe('effect points: rebuilds and clean-up in the layer box pixels', () => {
 		const t0 = before.keyframes[0]!.time;
 		const t1 = before.keyframes[2]!.time;
 		const original: Vec2[] = [];
-		for (let j = 0; j <= 4000; j++) original.push(px(evaluate(before, t0 + ((t1 - t0) * j) / 4000, { metric: M })));
+		for (let j = 0; j <= 4000; j++)
+			original.push(px(evaluate(before, t0 + ((t1 - t0) * j) / 4000, { metric: M })));
 		const r = h.ok([{ type: 'keyframes.cleanupPath', keyframeIds: ids, tolerance: 0.5 }]);
 		expectValid(h);
 		const res = r.results[0] as { properties: { maxError: number }[] };

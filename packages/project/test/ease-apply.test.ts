@@ -19,7 +19,7 @@ const SWIFT: CubicEase = { kind: 'cubic', x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
 const BACK: CubicEase = { kind: 'cubic', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 };
 
 describe('keyframe.applyEase (cubic)', () => {
-	it('two keys: the middle segment follows cubic-bezier exactly; the segment\'s sides become Bezier', () => {
+	it("two keys: the middle segment follows cubic-bezier exactly; the segment's sides become Bezier", () => {
 		const { h, key, anim } = setup();
 		const ids = key('transform.rotation', [
 			[0, 0],
