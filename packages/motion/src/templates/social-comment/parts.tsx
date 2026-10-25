@@ -11,79 +11,59 @@ import {
 } from '@jasper/mg-templates';
 import type { CSSProperties, ReactNode } from 'react';
 import { editableParamProps } from '../editable.ts';
-import {
-	PLATFORM_DEFAULT_AVATARS,
-	type PlatformGlyph,
-	type SocialPlatform,
-	scopeGlyphIds,
-} from '../social/glyphs.ts';
+import { PLATFORM_DEFAULT_AVATARS, type PlatformGlyph, type SocialPlatform } from '../social/glyphs.ts';
 import { AvatarPicture, EmojiGlyph } from './assets.tsx';
 import type { SocialCardAssets, SocialWordValues } from './contract.ts';
+import { VectorImage } from './vector.tsx';
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0);
 
 /**
- * A platform glyph (glyphs.ts) as inline SVG: paths in order, `currentColor` paths in `color`, fixed fills kept,
- * gradients scoped per instance (`scope`, SVG ids are document-global).
+ * A platform glyph (glyphs.ts) as a vector image (`VectorImage`: rasterized whole, the same in every render): paths in
+ * order, the `currentColor` paths in `color` (default black), fixed fills and gradients kept.
  */
 export function Glyph(p: {
 	glyph: PlatformGlyph;
 	/** Square size, or `[width, height]` in px. */
 	size: number | readonly [number, number];
 	color?: string;
+	/** Kept for callers; an image's gradient ids are its own, so no scoping is needed. */
 	scope?: string;
 	style?: CSSProperties;
 }) {
-	const g = p.scope && p.glyph.gradients?.length ? scopeGlyphIds(p.glyph, p.scope) : p.glyph;
+	const g = p.glyph;
 	const [w, h] = typeof p.size === 'number' ? [p.size, p.size] : p.size;
 	return (
-		<svg
+		<VectorImage
+			name="glyph"
 			viewBox={g.viewBox}
 			width={w}
 			height={h}
-			aria-hidden="true"
-			style={{ display: 'block', flexShrink: 0, overflow: 'visible', color: p.color, ...p.style }}
-		>
-			{g.gradients?.length ? (
-				<defs>
-					{g.gradients.map((gr) => (
-						<linearGradient
-							key={gr.id}
-							id={gr.id}
-							gradientUnits="userSpaceOnUse"
-							x1={gr.x1}
-							y1={gr.y1}
-							x2={gr.x2}
-							y2={gr.y2}
-						>
-							{gr.stops.map((s) => (
-								<stop key={`${s.offset}-${s.color}`} offset={s.offset} stopColor={s.color} />
-							))}
-						</linearGradient>
-					))}
-				</defs>
-			) : null}
-			{g.paths.map((path, i) => (
-				<path
-					// biome-ignore lint/suspicious/noArrayIndexKey: a glyph's paths are static and ordered
-					key={i}
-					d={path.d}
-					fill={path.fill ?? 'currentColor'}
-					fillRule={path.fillRule}
-					fillOpacity={path.fillOpacity}
-				/>
-			))}
-		</svg>
+			paths={g.paths.map((path) => ({
+				d: path.d,
+				fill: path.fill ?? p.color ?? '#000000',
+				...(path.fillRule ? { fillRule: path.fillRule } : {}),
+				...(path.fillOpacity !== undefined ? { fillOpacity: path.fillOpacity } : {}),
+			}))}
+			{...(g.gradients?.length ? { gradients: g.gradients } : {})}
+			{...(p.style ? { style: p.style } : {})}
+		/>
 	);
 }
 
 /** A neutral head-and-shoulders figure (generated avatars without initials, platforms without a default avatar). */
 function Silhouette({ size, color }: { size: number; color: string }) {
 	return (
-		<svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-			<circle cx="24" cy="19" r="8.5" fill={color} />
-			<path d="M8.3 42.1a18 18 0 0 1 31.4 0A23.9 23.9 0 0 1 24 48a23.9 23.9 0 0 1-15.7-5.9Z" fill={color} />
-		</svg>
+		<VectorImage
+			name="silhouette"
+			viewBox="0 0 48 48"
+			width={size}
+			height={size}
+			paths={[
+				{ d: 'M15.5 19a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0 -17 0Z', fill: color },
+				{ d: 'M8.3 42.1a18 18 0 0 1 31.4 0A23.9 23.9 0 0 1 24 48a23.9 23.9 0 0 1-15.7-5.9Z', fill: color },
+			]}
+		/>
 	);
 }
 
@@ -215,6 +195,38 @@ export function TextWithEmoji(p: {
  */
 export const INK_RING = '0 0 0 3px transparent';
 
+const q3 = (n: number | undefined, d: number) =>
+	n !== undefined && Number.isFinite(n) ? Math.round(n * 1000) / 1000 : d;
+
+/**
+ * The style of an element a card animates per frame (scale `s`, opacity `o`, drop `y` px, tilt `r` deg): while it
+ * moves, its transform, opacity and `INK_RING`; at rest NOTHING, so the rest state is the un-animated DOM (S11:ANM-009)
+ * and no transform left over from an earlier frame (a hair off identity, `rotate(-0.003deg)`) can keep Chrome from
+ * repainting it: every rest frame paints the same however it is reached (renderFrames = renderStill).
+ */
+export function motionStyle(
+	v: { s?: number; o?: number; y?: number; r?: number },
+	origin?: string,
+): CSSProperties {
+	const s = q3(v.s, 1);
+	const o = q3(v.o, 1);
+	const y = q3(v.y, 0);
+	const r = q3(v.r, 0);
+	if (s === 1 && o === 1 && y === 0 && r === 0) return {};
+	const transform = [
+		y !== 0 ? `translateY(${y}px)` : '',
+		r !== 0 ? `rotate(${r}deg)` : '',
+		s !== 1 ? `scale(${s})` : '',
+	]
+		.filter(Boolean)
+		.join(' ');
+	return {
+		boxShadow: INK_RING,
+		...(transform ? { transform, ...(origin ? { transformOrigin: origin } : {}) } : {}),
+		...(o !== 1 ? { opacity: o } : {}),
+	};
+}
+
 /** tokcomment's highlight pill: #FFE500, black text, 6 px radius, padding .05em .35em (one pill per run). */
 export const HIGHLIGHT_STYLE: CSSProperties = {
 	background: '#FFE500',
@@ -318,11 +330,10 @@ export function CommentText(p: {
 				const v = p.words?.[seg.unit];
 				const unitStyle: CSSProperties = seg.highlight ? { ...HIGHLIGHT_STYLE } : {};
 				if (v) {
-					unitStyle.boxShadow = INK_RING;
+					// inline-block whenever word reveal is on (the layout never changes between frames); animated until rest
 					unitStyle.display = 'inline-block';
 					unitStyle.maxWidth = '100%';
-					unitStyle.opacity = r3(v.o);
-					unitStyle.transform = `scale(${r3(v.s)})`;
+					Object.assign(unitStyle, motionStyle(v));
 				}
 				return (
 					<span key={key} data-unit={seg.unit} style={unitStyle}>

@@ -14,7 +14,7 @@ import type { CSSProperties } from 'react';
 import { editableParamProps } from '../editable.ts';
 import { YOUTUBE_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, motionStyle, SocialAvatar, TextWithEmoji } from './parts.tsx';
 
 const FONT = `"${SOCIAL_VARIANT_FONTS['youtube-comment']!.family}", sans-serif`;
 
@@ -156,9 +156,8 @@ function LikeThumb({
 				height: size,
 				margin: `0 ${THUMB_MARGIN}px`,
 				flexShrink: 0,
-				transform: `scale(${r4(heart.s)})`,
-				// transformed per frame: widen its ink rect (preview / export parity, see INK_RING)
-				boxShadow: INK_RING,
+				// thumped per frame, untransformed at rest (preview / export parity, see motionStyle)
+				...motionStyle({ s: heart.s }),
 			}}
 		>
 			<Glyph
