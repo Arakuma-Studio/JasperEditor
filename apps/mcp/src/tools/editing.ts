@@ -25,8 +25,8 @@ import {
 import { jsonResult, ToolError } from '../errors.ts';
 import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
+import { registerAddMotionGraphic } from './add-motion-graphic.ts';
 import { AnimateArg, textAnimationOf } from './animation.ts';
-
 import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
@@ -34,7 +34,8 @@ const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
 
 const TIME_NOTES = [
-	'Times on the timeline are sequence frames; every time argument also accepts {"seconds": x} or a timecode string "HH:MM:SS:FF".',
+	'Times on the timeline are sequence frames; every time argument of a command also accepts {"frames": n}, {"seconds": x} or a timecode string "HH:MM:SS:FF" (the helper tools also take "3s", "250ms", "00:03" and "1:02:03").',
+	'Generator clips (clip.addText / addSolid / addShape / addMotionGraphic) take placement: "first-free" to land on the lowest unlocked track at or above `track` that is empty for their range (a new top track when none is) instead of overwriting; clip.addMotionGraphic {fill: {seed}} fills omitted params with the template\'s fill hook.',
 	'Tracks are addressed by label: "V1" is the lowest video track, "A1" the first audio track (or by track id).',
 	'Creating commands may declare "ref": "$name"; later commands in the same transaction can use "$name" as an id.',
 	'Instead of ids you can write {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}}, {"markerByName": "Intro"} or {"itemByName": "Cam A.mp4"} (a project item).',
@@ -603,55 +604,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		},
 	);
 
-	defineTool(
-		ctx,
-		'add_motion_graphic',
-		{
-			title: 'Add motion graphic',
-			description:
-				'Adds an animated motion-graphic template clip (clip.addMotionGraphic), e.g. a lower third or title card. See list_motion_templates for template ids and their params (omitted params use the template defaults).',
-			input: {
-				projectId: ProjectIdArg,
-				template: z
-					.string()
-					.min(1)
-					.describe('Template id, optionally with version: "lower-third" or "lower-third@1"'),
-				params: z.record(z.string(), z.unknown()).optional().describe('Template parameters'),
-				at: timeArg('Start time'),
-				duration: timeArg('Length (default: the template default, else 5 s)').optional(),
-				track: TrackRefSchema.optional().describe('Video track (default V2)'),
-				sequenceId: SequenceIdArg,
-			},
-			annotations: EDIT,
-		},
-		async (a, extra) => {
-			const [id, v] = a.template.split('@');
-			const { templates } = await ctx.engine((c) => c.mgTemplates());
-			const matches = templates.filter((t) => t.id === id && (v === undefined || t.version === Number(v)));
-			const t = matches.sort((x, y) => y.version - x.version)[0];
-			if (!t)
-				throw new ToolError(
-					'E_NOT_FOUND',
-					`Unknown motion template "${a.template}"`,
-					`Available: ${templates.map((x) => `${x.id}@${x.version}`).join(', ')} (list_motion_templates).`,
-				);
-			return applyHelper(
-				ctx,
-				a.projectId,
-				t.name,
-				[
-					{
-						type: 'clip.addMotionGraphic',
-						at: a.at,
-						duration: a.duration ?? { seconds: t.defaultDurationSeconds ?? 5 },
-						track: a.track ?? 'V2',
-						template: { id: t.id, version: t.version },
-						...(a.params ? { params: a.params } : {}),
-						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
-					},
-				],
-				extra,
-			);
-		},
-	);
+	// add_motion_graphic: single item or items[], presets, first-free placement, fill, dry run + preview (its own
+	// module, add-motion-graphic.ts).
+	registerAddMotionGraphic(ctx);
 }

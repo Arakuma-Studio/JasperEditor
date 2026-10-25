@@ -29,7 +29,7 @@ import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
 import { locateMask, validateMaskPath } from './mask-location.ts';
-import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
+import { assertTemplateMedia, templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './puppet-location.ts';
 import { ensureShapeStorage } from './shape-storage.ts';
 import { ensureMoreOptions, parseSourceText, sourceTextDraftAnim } from './text-animators.ts';
@@ -58,6 +58,8 @@ type ValueRule = {
 	check?: (v: unknown) => boolean;
 	/** `json` values with a schema (text-animators: Source Text): returns the parsed value or throws a message. */
 	parse?: (v: unknown) => unknown;
+	/** `media` values of template params: `null` is "none". */
+	nullable?: boolean;
 };
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
@@ -79,6 +81,7 @@ function ruleFromProperty(s: PropertySpec): ValueRule {
 		holdOnly: s.animatable === 'hold-only',
 		...(s.kind === 'vec2' && s.animatable === 'continuous' && s.spatial ? { spatial: s.spatial } : {}),
 		...(s.validate ? { check: s.validate } : {}),
+		...(s.mediaNullable ? { nullable: true } : {}),
 	};
 }
 export function ruleFromParam(p: ParamSpec): ValueRule {
@@ -267,6 +270,8 @@ export function resolveTarget(
 					const next = { ...(parent as Record<string, unknown>), [field]: v };
 					const parsed = template.paramsSchema.safeParse(next);
 					if (!parsed.success) h.fail('E_INVALID_PARAM', `Invalid value for ${key}`);
+					// Template media params (avatars) name media of the project, of the kinds they take.
+					assertTemplateMedia(doc.media, template, { [field]: v }, h);
 				}
 				parent[field] = v;
 			},
@@ -430,6 +435,7 @@ export function validateValue(
 			if (typeof v !== 'string') return fail();
 			return { value: v, clamped: false };
 		case 'media':
+			if (v === null && rule.nullable) return { value: null, clamped: false };
 			if (!v || typeof v !== 'object' || typeof (v as { mediaId?: unknown }).mediaId !== 'string')
 				return fail();
 			return { value: v, clamped: false };

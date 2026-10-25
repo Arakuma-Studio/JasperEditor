@@ -1,8 +1,11 @@
 // Motion-graphic template definitions: the TS twins of the Rust `jasper-mg` templates
 // (ARCHITECTURE §10.2, D-12). Each definition mirrors one Rust module in
 // native/mg/crates/jasper-mg-templates/src (same id, version, param names, defaults and ranges).
+import type { MgTemplatePreset, MgTemplateUi } from '@jasper/project';
 import type { ZodType } from 'zod';
 import type { EmojiPackId } from './emoji.ts';
+
+export type { MgTemplateParamUi, MgTemplatePreset, MgTemplateUi } from '@jasper/project';
 
 export type MgCanvas = { width: number; height: number };
 
@@ -49,7 +52,28 @@ export type MgTemplateBase<P extends Record<string, unknown> = Record<string, un
 	canvases: MgCanvas[];
 	/** Upgrade path from older versions of this template id to this version. */
 	upgrades?: readonly MgTemplateUpgradeStep[];
+	/**
+	 * Named param presets: the Motion Templates gallery shows one card per preset instead of one for the template,
+	 * `list_motion_templates` lists them and `add_motion_graphic` accepts `"<id>:<preset>"`. `params` holds what the
+	 * preset changes; defaults ⊕ params must pass `paramsSchema` (checked by `createMgRegistry`).
+	 */
+	presets?: readonly MgTemplatePreset[];
+	/** UI hints of the params: groups (ordered sub-sections), labels, tooltips, multi-line, visibility, controls. */
+	ui?: MgTemplateUi;
+	/**
+	 * Optional fill hook (social-comments design §7.10), used when an agent omits params
+	 * (`clip.addMotionGraphic {fill: {seed}}`, MCP `add_motion_graphic`): fills the params `partial` omits —
+	 * never the given ones — deterministically for `seed` (a uint32). `params` = `partial` plus the filled values
+	 * (the defaults are merged after, then the paramsSchema validates); `filled` = the names it filled. Return
+	 * `{ok: false}` instead of throwing. Templates without a hook just merge their defaults.
+	 */
+	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
 };
+
+/** Result of `MgTemplateBase.fill` (the same shape as `MgTemplateFillResult` of @jasper/project). */
+export type MgTemplateFillResult =
+	| { ok: true; params: Record<string, unknown>; filled: string[] }
+	| { ok: false; error: string; issues?: unknown };
 
 /** fframes template (D-12): rendered by `jasper-mg`, previewed by its TS SVG twin. */
 export type MgSvgTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =

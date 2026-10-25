@@ -18,6 +18,10 @@
 // `<!-- ported-source:end -->` (Help ▸ About ▸ Licenses shows that part on its own), followed by the text of every
 // licence the records name (`licenses/texts/<SPDX id>.txt`). An incomplete record (no upstream URL, licence or
 // copyright line) or a licence without its text fails generation and `--check`.
+//
+// Platform assets (AGENTS.md §3 items 1 and 5): `licenses/platform-assets.md`, the provenance of the platform icons,
+// fonts and emoji the social-comment templates use (with the Twemoji CC-BY attribution), is copied last, between
+// `<!-- platform-assets:start -->` and `<!-- platform-assets:end -->`.
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +32,9 @@ const PORTED_DIR = 'licenses/ported';
 const LICENSE_TEXTS_DIR = 'licenses/texts';
 export const PORTED_START = '<!-- ported-source:start -->';
 export const PORTED_END = '<!-- ported-source:end -->';
+const PLATFORM_ASSETS_FILE = 'licenses/platform-assets.md';
+export const PLATFORM_ASSETS_START = '<!-- platform-assets:start -->';
+export const PLATFORM_ASSETS_END = '<!-- platform-assets:end -->';
 
 /**
  * Build-time packages (devDependencies of the roots, or the bundlers' own dependencies) whose output ships in the
@@ -286,6 +293,19 @@ export function collectPorted(repo) {
 	return records;
 }
 
+/**
+ * The platform-asset record (`licenses/platform-assets.md`) as `{file, title, body}`, or null when there is none.
+ * Throws when it has no `# Title` line.
+ */
+export function collectPlatformAssets(repo) {
+	const path = join(repo, PLATFORM_ASSETS_FILE);
+	if (!existsSync(path)) return null;
+	const text = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').trim();
+	const title = /^#\s+(.+)$/m.exec(text)?.[1].trim();
+	if (!title) throw new Error(`${PLATFORM_ASSETS_FILE}: missing its "# Title" line`);
+	return { file: PLATFORM_ASSETS_FILE, title, body: text.replace(/^#\s+.+\n*/, '').trim() };
+}
+
 /** One spelling per copyright line: single spaces, no trailing full stop. */
 function normalizeCopyright(line) {
 	return line
@@ -332,7 +352,7 @@ const cleanUrl = (u) =>
 		.replace(/^github:/, 'https://github.com/') ?? null;
 
 /** The Markdown file (deterministic: no dates, no absolute paths). */
-export function renderNotices(notices, ported = [], portedTexts = []) {
+export function renderNotices(notices, ported = [], portedTexts = [], platformAssets = null) {
 	const lines = [
 		'# Third-party notices',
 		'',
@@ -356,6 +376,13 @@ export function renderNotices(notices, ported = [], portedTexts = []) {
 			lines.indexOf('| Package | Version | Licence |') - 2,
 			0,
 			`${ported.length} ported source record${ported.length === 1 ? '' : 's'} (code and algorithms ported from other projects, \`licenses/ported/\`) follow the packages.`,
+			'',
+		);
+	if (platformAssets)
+		lines.splice(
+			lines.indexOf('| Package | Version | Licence |') - 2,
+			0,
+			`The platform icons, fonts and emoji of the social-comment templates (proprietary marks of their owners, and the Twemoji and Noto emoji attributions) are listed last (\`${platformAssets.file}\`).`,
 			'',
 		);
 	for (const n of notices) {
@@ -398,6 +425,19 @@ export function renderNotices(notices, ported = [], portedTexts = []) {
 		}
 		lines.push(PORTED_END, '');
 	}
+	if (platformAssets)
+		lines.push(
+			PLATFORM_ASSETS_START,
+			'',
+			`# ${platformAssets.title}`,
+			'',
+			`Record: \`${platformAssets.file}\``,
+			'',
+			platformAssets.body,
+			'',
+			PLATFORM_ASSETS_END,
+			'',
+		);
 	return `${lines.join('\n').trimEnd()}\n`;
 }
 
@@ -407,13 +447,15 @@ if (isMain) {
 	const file = join(repo, OUTPUT);
 	const notices = collectNotices(repo);
 	let ported;
+	let platformAssets;
 	try {
 		ported = collectPorted(repo);
+		platformAssets = collectPlatformAssets(repo);
 	} catch (e) {
-		console.error(`ported source records: ${e.message}`);
+		console.error(`licence records: ${e.message}`);
 		process.exit(1);
 	}
-	const text = renderNotices(notices, ported, portedLicenseTexts(repo, ported));
+	const text = renderNotices(notices, ported, portedLicenseTexts(repo, ported), platformAssets);
 	const audit = process.argv.indexOf('--audit');
 	if (audit >= 0) {
 		const dirs = process.argv.slice(audit + 1).map((d) => resolve(d));
@@ -430,7 +472,7 @@ if (isMain) {
 		const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
 		if (current !== text) {
 			console.error(
-				`${OUTPUT} is out of date (packages or licenses/ported/*.md changed): run \`pnpm notices\` and commit the result.`,
+				`${OUTPUT} is out of date (packages, licenses/ported/*.md or licenses/platform-assets.md changed): run \`pnpm notices\` and commit the result.`,
 			);
 			process.exit(1);
 		}

@@ -19,6 +19,7 @@ export {
 	TemplateAssetScopeContext,
 	useTemplateAssetEpoch,
 } from './assets.tsx';
+export { TemplateImage, TemplateImagePlaceholder, type TemplateImageProps } from './image.tsx';
 export type { AnimeTemplateProps } from './types.ts';
 
 /** URL of an emoji of a pack in `AnimeTemplateProps.emojiUrls` (undefined when not available). */

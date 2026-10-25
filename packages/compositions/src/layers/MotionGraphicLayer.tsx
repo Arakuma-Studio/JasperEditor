@@ -27,6 +27,7 @@ import {
 	TemplateAssetScopeContext,
 } from '@jasper/motion/templates';
 import {
+	collectParamMediaIds,
 	emojiTableKey,
 	evaluateTemplateParams,
 	FLICKS_PER_SECOND,
@@ -46,8 +47,10 @@ import {
 	useRef,
 } from 'react';
 import { AbsoluteFill, getRemotionEnvironment, useCurrentFrame, useVideoConfig } from 'remotion';
+import { ColorDocContext } from '../color/chain.ts';
 import { EmojiTableContext, FontsReadyContext, ImageTableContext, useFontsReadyState } from '../fonts.ts';
-import type { LayerProps, RenderDoc } from '../types.ts';
+import { mediaSrc } from '../pipeline.ts';
+import type { LayerProps, RenderDoc, RenderOptions } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
 /** Engine render state of a motion-graphic clip (S03:KND-060 badge: none | rendering n% | ready). */
@@ -254,6 +257,33 @@ function SvgTwin({ markup }: { markup: string }) {
 	);
 }
 
+const NO_MEDIA: Readonly<Record<string, string>> = Object.freeze({});
+
+/**
+ * `AnimeTemplateProps.mediaUrls`: the URL of every medium the template params reference (avatars), from the
+ * document's media handles exactly like effect media (engine URLs, signed in renders; the proxy or display picture
+ * where the original is not browser-decodable). Missing or offline media are left out.
+ */
+function useTemplateMediaUrls(
+	params: Record<string, unknown>,
+	options: Pick<RenderOptions, 'useProxies'>,
+): Readonly<Record<string, string>> {
+	const media = useContext(ColorDocContext).media;
+	const ids = collectParamMediaIds(params);
+	const key = ids.join('\n');
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the referenced ids
+	return useMemo(() => {
+		if (ids.length === 0) return NO_MEDIA;
+		const out: Record<string, string> = {};
+		for (const id of ids) {
+			const h = media[id];
+			if (!h || (h.browserDecodable === false && !h.proxyUrl)) continue;
+			out[id] = mediaSrc(h, options);
+		}
+		return out;
+	}, [key, media, options.useProxies]);
+}
+
 /**
  * An anime template for one frame: keyframed params evaluated at `contentTime` (shared evaluator, S11:ATP-006),
  * schema-resolved, responsive time from the clip (S11:ATP-004), seed `hash32(clipId, 'template')`. Rendered only
@@ -274,6 +304,8 @@ function AnimeTemplate(p: {
 	isPreview: boolean;
 	/** The document's font faces (template-declared faces are checked against them). */
 	fonts?: RenderDoc['fonts'];
+	/** Proxy choice of the media URLs (absent: originals). */
+	useProxies?: boolean;
 }) {
 	const fontsState = useContext(FontsReadyContext);
 	const fontsReady = fontsState.allLoaded;
@@ -309,6 +341,7 @@ function AnimeTemplate(p: {
 			fontsReady ? missingTemplateAssets(assets, p.fonts, emojiTable, imageTable, fontsState.isFailed) : [],
 		[fontsReady, assets, p.fonts, emojiTable, imageTable, fontsState],
 	);
+	const mediaUrls = useTemplateMediaUrls(params, { useProxies: p.useProxies ?? false });
 	const scope = useClipAssetScope(p.clipId);
 	if (!Impl)
 		return (
@@ -341,6 +374,7 @@ function AnimeTemplate(p: {
 				isPreview={p.isPreview}
 				emojiUrls={emojiUrls}
 				imageUrls={imageUrls}
+				mediaUrls={mediaUrls}
 			/>
 			<LayerMissingReport missing={missing} />
 			<FontMarkers missing={missing} height={p.mg.canvas.height} />
@@ -382,6 +416,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				fps={fps}
 				isPreview={options.isPreview}
 				fonts={layer.fonts}
+				useProxies={options.useProxies}
 			/>
 		);
 	else {

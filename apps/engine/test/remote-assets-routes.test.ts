@@ -53,7 +53,15 @@ function writeOverride(appdir: string, manifest: unknown) {
 async function appWithFixtures(o: { editorKey?: string } = {}): Promise<TestApp> {
 	const appdir = tempAppdir();
 	writeOverride(appdir, fixtureManifest(server.url));
-	return makeApp({ appdir, token: TOKEN, ...(o.editorKey ? { editorKey: o.editorKey } : {}) });
+	// An empty base manifest: the shipped one points at real CDNs, which tests never reach.
+	const base = join(appdir, 'base-manifest.json');
+	writeFileSync(base, JSON.stringify({ version: 1, fonts: [], emojiPacks: [] }));
+	return makeApp({
+		appdir,
+		token: TOKEN,
+		env: { JASPER_REMOTE_MANIFEST: base },
+		...(o.editorKey ? { editorKey: o.editorKey } : {}),
+	});
 }
 
 beforeAll(async () => {

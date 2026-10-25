@@ -3,6 +3,7 @@
 // reference (media closed over derivation sources and font files, synthetics, transcripts, fonts).
 // Pure: callers pass the committed document; nothing here reads session state.
 
+import { clipParamMediaIds } from '../param-media.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { ProjectDocument, ProjectItem } from '../schema/document.ts';
@@ -85,6 +86,8 @@ function collectClipReferences(clip: Clip, refs: References): void {
 	if (typeof r.sequenceId === 'string' && isKnownClipKind(clip.kind)) refs.sequences.add(r.sequenceId);
 	for (const f of styleFonts(r)) refs.fonts.add(f);
 	for (const m of effectMediaIds(r.effects as EffectInstance[] | undefined)) refs.media.add(m);
+	// template media params (avatars) travel with the clip like its own source.
+	for (const m of clipParamMediaIds(clip)) refs.media.add(m);
 }
 
 function collectSequenceReferences(seq: Sequence, refs: References): void {

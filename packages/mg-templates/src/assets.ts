@@ -11,6 +11,17 @@ import { type AnyMgTemplate, isAnimeTemplate, type TemplateRequiredAssets } from
 export const MAX_TEMPLATE_FONTS = 32;
 /** Distinct emoji graphemes one clip may declare per pack. */
 export const MAX_TEMPLATE_EMOJI = 512;
+/**
+ * Remote images of the shipped remote-asset manifest (`images` section) templates may declare in
+ * `requiredAssets().images` and read from `AnimeTemplateProps.imageUrls` by the same id: the platforms' default
+ * avatars (X, YouTube; TikTok's is a glyph, Instagram has no stable public one).
+ */
+export const REMOTE_IMAGE_IDS = {
+	xDefaultAvatar: 'x-default-avatar',
+	youtubeDefaultAvatar: 'youtube-default-avatar',
+} as const;
+export type RemoteImageId = (typeof REMOTE_IMAGE_IDS)[keyof typeof REMOTE_IMAGE_IDS];
+
 /** Remote images one clip may declare. */
 export const MAX_TEMPLATE_IMAGES = 16;
 /** Keyframed param values `requiredAssets` is evaluated for, per clip. */

@@ -21,6 +21,7 @@ function renderTemplate(id: string, frame: number, params?: Record<string, unkno
 				isPreview={false}
 				emojiUrls={{}}
 				imageUrls={{}}
+				mediaUrls={{}}
 			/>
 		);
 	};

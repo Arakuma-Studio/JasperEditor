@@ -3,12 +3,13 @@
 // pin index and the first-fetch notice.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { EMOJI_PACK_IDS } from '@jasper/mg-templates';
+import { EMOJI_PACK_IDS, REMOTE_IMAGE_IDS } from '@jasper/mg-templates';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkImage, RemoteAssetError } from '../src/remote-assets/fetcher.ts';
 import shipped from '../src/remote-assets/manifest.json' with { type: 'json' };
 import {
+	baseManifest,
 	loadManifest,
 	mergeManifests,
 	parseOverride,
@@ -73,9 +74,29 @@ afterEach(async () => {
 });
 
 describe('manifest', () => {
-	it('ships a valid manifest (entries are filled by the platform-glyphs work package)', () => {
+	it('JASPER_REMOTE_MANIFEST replaces the shipped base manifest; a bad file gives an empty one with a reason', () => {
+		const file = join(dir, 'base.json');
+		writeFileSync(file, JSON.stringify(fixtureManifest('https://cdn.example')));
+		expect(baseManifest({ JASPER_REMOTE_MANIFEST: file }).manifest.fonts.map((f) => f.id)).toEqual([
+			'chirp-700',
+		]);
+		writeFileSync(file, '{"version":2}');
+		const bad = baseManifest({ JASPER_REMOTE_MANIFEST: file });
+		expect(bad.manifest).toEqual(EMPTY);
+		expect(bad.error).toContain('base.json');
+		expect(baseManifest({ JASPER_REMOTE_MANIFEST: join(dir, 'nope.json') }).error).toBeTruthy();
+		expect(baseManifest({}).manifest).toEqual(shippedManifest());
+	});
+
+	it('ships a valid manifest with the default-avatar images templates reference by id', () => {
 		expect(RemoteManifestSchema.safeParse(shipped).success).toBe(true);
-		expect(shippedManifest().version).toBe(1);
+		const m = shippedManifest();
+		expect(m.version).toBe(1);
+		for (const id of Object.values(REMOTE_IMAGE_IDS))
+			expect(
+				m.images.some((i) => i.id === id),
+				id,
+			).toBe(true);
 	});
 
 	it('merges the appdir override by id and reports an invalid override without failing', () => {

@@ -346,18 +346,34 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   frame number); native exports bake them through the layer-bake extension. They are never sent to `jasper-mg`.
 - A clip whose template is not installed shows a placeholder card and blocks every export ("template id@vN is
   not installed").
-- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
+- Inserting never overwrites: a double-click, Enter or a drop on the Program monitor puts the clip on the first
+  free video track from the targeted one (else V1) up, adding a track on top when all are busy (one undo step); a
+  drop onto a video track of the timeline still overwrites there.
+- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic` (one or many graphics per call,
+  first-free placement, seeded fill, `dryRun` + `preview`), `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
 - **Platform fonts and emoji** (social-comment templates, `docs/wp-notes/social-comments.md` "Remote fonts &
   emoji"): a template declares the faces and emoji it draws; bundled faces (TikTok Sans, Roboto, …) load from the
   catalogue, the others (Chirp, SF Pro, Apple / Twemoji / Noto emoji images) are downloaded by the engine on first
   need from the remote-asset manifest (`apps/engine/src/remote-assets/manifest.json`, fixed or overridden without a
   release in `<appdir>/assets/remote-manifest.override.json`) into `<appdir>/assets/remote/`, verified and served at
-  `/fonts/remote/…` and `/fonts/emoji/…`. Downloads are a named network use, **Preferences ▸ Privacy & Network ▸
+  `/fonts/remote/…` and `/fonts/emoji/…`; remote images of the manifest (X's and YouTube's default avatars) the same
+  way at `/fonts/images/…`. Downloads are a named network use, **Preferences ▸ Privacy & Network ▸
   Platform fonts & emoji for social templates** (on by default; headless, MCP and CLI renders follow it too). A
   missing font or emoji shows a striped marker on the card and a warning in the Program monitor (**Retry
   download**), and blocks exports with `TEMPLATE_ASSETS_UNAVAILABLE`, naming the font, or the emoji and its pack —
   never a substitute.
+- **Presets:** a template may declare named param presets (e.g. Counter ▸ Subscribers / Percentage / Money Raised).
+  The gallery then shows one card per preset instead of one for the template (search matches preset names; insert,
+  drag and the hover preview use the preset's params over the defaults). Agents pass `"<id>:<preset>"` or
+  `"<id>@<version>:<preset>"` as `template` to `add_motion_graphic` / `render_motion_graphic_preview`;
+  `list_motion_templates` lists each preset with its ref.
+- **UI hints:** a template's `ui` groups its params into ordered sub-sections of Properties ▸ Parameters and Effect
+  Controls ▸ Template, sets labels, tooltips and multi-line text, hides params that do not apply to the current value
+  of another param (`visibleWhen`, e.g. per variant) and can name a custom control registered by the web app
+  (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
+  labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
+  Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
 
 ## PWA (installable web app)
 
@@ -646,6 +662,19 @@ once before enabling a project-scoped server; start it from the repository root 
 - **Property reads.** `get_clip_properties` / `get_param` return `value` (the keyframed value at a time, as
   Effect Controls shows it) next to `evaluated` (what the renderer draws then), keyframes in sequence frames and
   the `param.set` target; `rendered: false` + `why` when that frame draws nothing.
+- **Times.** Every time argument of a tool takes frames, `{"frames": n}`, `{"seconds": x}`, `"3s"` / `"1.5s"`,
+  `"250ms"`, a clock `"00:03"` (M:SS) or `"1:02:03"` (H:MM:SS), or timecode `"HH:MM:SS:FF"`. The shape decides:
+  a unit suffix is seconds / milliseconds, one or two `:` a clock (whole seconds — use `"3.5s"` for fractions),
+  three separators always timecode. Commands inside `apply_commands` / `POST /api/agent/tx` keep the command
+  forms (frames, `{frames}`, `{seconds}`, timecode).
+- **Graphics never overwrite.** `add_motion_graphic` places each clip on the first free unlocked video track from
+  V2 up for its time range (a new top track when all are busy); one call adds one graphic or `items: [...]` (up to
+  200) as one transaction (one undo step, all or nothing), fills omitted params with the template's fill hook from
+  a `seed` (returned), and returns per item the clip id, track, start/end and the fully resolved params. An
+  explicit `track` keeps the older behaviour (overwrite on exactly that track) unless `placement: "first-free"`.
+  `dryRun: true` resolves the same without changing the project; `preview: true` adds a still per item (up to 10).
+  Raw commands get the same placement with `placement: "first-free"` on `clip.addText` / `addSolid` / `addShape` /
+  `addMotionGraphic` (`docs/wp-notes/social-comments.md` "Placement & agent API").
 
 ### Live UI: look at and operate the editor window
 

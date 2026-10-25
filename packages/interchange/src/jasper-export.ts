@@ -6,6 +6,7 @@ import {
 	type Clip,
 	captionClipSpeaker,
 	captionClipText,
+	clipParamMediaIds,
 	cueMarkers,
 	flicksPerFrame,
 	isEnabledMulticamClip,
@@ -866,6 +867,8 @@ export function fromJasper(
 					synthetics.set(c.syntheticId, clone(doc.synthetics[c.syntheticId]));
 				addMedia((c.composition as { mediaId?: string } | undefined)?.mediaId);
 				scan(c.effects);
+				// template media params (avatars) of motion graphics.
+				for (const id of clipParamMediaIds(c)) addMedia(id);
 			}
 			for (const t of [...s.videoTracks, ...s.audioTracks, ...s.captionTracks]) {
 				scan(t.effects);

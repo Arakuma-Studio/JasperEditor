@@ -173,3 +173,29 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 		}
 	});
 });
+
+describe('graded preview identity', () => {
+	it('covers the content of media a template param shows (avatars), like the LUTs of the grade', async () => {
+		const { layerIdentity } = await import('../src/layer-bake/runtime.ts');
+		const clip = {
+			clipId: 'clp_1',
+			kind: 'motion-graphic',
+			name: 'Comment',
+			trackId: 'trk_1',
+			start: 0,
+			effects: [],
+			source: {
+				mg: {
+					template: { id: 'avatar-test', version: 1 },
+					params: { avatar: { mediaId: 'med_A' } },
+					canvas: { width: 1920, height: 1080 },
+				},
+			},
+		} as unknown as RenderVisualClip;
+		const seq = { width: 1920, height: 1080, fps: { num: 30, den: 1 } };
+		const media = (fingerprint: string) => ({ med_A: { fingerprint } }) as never;
+		const a = layerIdentity(clip, seq, media('q1:aaa'));
+		expect(layerIdentity(clip, seq, media('q1:aaa'))).toBe(a);
+		expect(layerIdentity(clip, seq, media('q1:bbb'))).not.toBe(a);
+	});
+});

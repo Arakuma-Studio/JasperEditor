@@ -21,6 +21,7 @@ import type {
 	ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
+import { normalizeTimeArg, TIME_HINT } from './arguments.ts';
 import { toolEnvelope } from './envelope.ts';
 import {
 	cancelledResult,
@@ -153,13 +154,9 @@ export function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence;
 }
 
 /** Resolve a tool's sequence time while preserving its actionable input hint. */
-export function frameOf(
-	seq: Sequence,
-	t: unknown,
-	hint = 'Times are frames, {"seconds": x} or "HH:MM:SS:FF".',
-): number {
+export function frameOf(seq: Sequence, t: unknown, hint = TIME_HINT): number {
 	try {
-		return resolveFrameInput(seq, t);
+		return resolveFrameInput(seq, normalizeTimeArg(t));
 	} catch (e) {
 		throw new ToolError('E_INVALID_PARAM', (e as Error).message, hint);
 	}
@@ -535,7 +532,7 @@ export async function captureStill(
 		cap = resolveCaptureArgs(
 			{ doc: loaded.doc },
 			{
-				frame: args.frame,
+				frame: normalizeTimeArg(args.frame),
 				...(args.width ? { width: args.width } : {}),
 				...(sequenceId ? { sequenceId } : {}),
 			},
@@ -544,7 +541,7 @@ export async function captureStill(
 		throw new ToolError(
 			(e as { code?: string }).code ?? 'E_INVALID_PARAM',
 			(e as Error).message,
-			'Times are frames, {"seconds": x} or "HH:MM:SS:FF"; sequence ids come from get_project.',
+			`${TIME_HINT} Sequence ids come from get_project.`,
 		);
 	}
 	const envelope = toolEnvelope(loaded.doc, loaded.revision);

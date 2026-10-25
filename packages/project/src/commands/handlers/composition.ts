@@ -12,14 +12,16 @@ import {
 import { anim, type Box, defaultTransform } from '../../factories.ts';
 import type { MgCompositionInfo } from '../../schema/media.ts';
 import type { Clip, CompositionClip } from '../../schema/sequence.ts';
-import type { DClip, DDoc, HandlerContext } from '../context.ts';
+import type { DClip, DDoc, DTrack, HandlerContext } from '../context.ts';
 import {
 	assertKindFits,
 	assertUnlocked,
 	cleanupSequence,
 	clearRange,
+	firstFreeTrack,
 	relinkSplits,
 	resolveOrCreateTrack,
+	trackSlotOf,
 } from '../placement.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -130,11 +132,19 @@ export const compositionHandlers = {
 				'MG_FPS_MISMATCH',
 				`Composition ${info.id} is ${info.fps} fps, the sequence ${+(rate.num / rate.den).toFixed(3)} fps: it renders at the sequence rate`,
 			);
-		const track = resolveOrCreateTrack(seq, cmd.track, h, true);
-		assertUnlocked(track, h);
-		assertKindFits('composition', track, h);
+		let track: DTrack;
+		if (cmd.placement === 'first-free') {
+			// social-comments §7.9: the lowest free unlocked video track at or above `track`, nothing cleared.
+			const slot = trackSlotOf(seq, cmd.track, h);
+			assertKindFits('composition', { kind: slot.kind, id: cmd.track }, h);
+			track = firstFreeTrack(seq, slot.kind, slot.index, at, duration, h).track;
+		} else {
+			track = resolveOrCreateTrack(seq, cmd.track, h, true);
+			assertUnlocked(track, h);
+			assertKindFits('composition', track, h);
+		}
 		const id = h.newId(doc, 'clp', cmd.id);
-		relinkSplits(seq, clearRange(seq, track.id, at, at + duration, h), h);
+		if (cmd.placement !== 'first-free') relinkSplits(seq, clearRange(seq, track.id, at, at + duration, h), h);
 		const frame: Box = { width: seq.settings.width, height: seq.settings.height };
 		const canvas = cmd.canvas ?? { width: info.width, height: info.height };
 		const box = canvas === 'sequence' ? frame : canvas;

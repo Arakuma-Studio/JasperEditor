@@ -1,6 +1,17 @@
+import {
+	applyTransaction,
+	createCounterIdSource,
+	createEmptyProject,
+	defaultRegistries,
+} from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { createMgRegistry, type MgTemplateDefinition, mgRegistry } from '../src/index.ts';
+import {
+	createMgRegistry,
+	type MgTemplateDefinition,
+	mgRegistry,
+	templatePresetParams,
+} from '../src/index.ts';
 
 const params = z.strictObject({ title: z.string().min(1).default('Hello') });
 const sample: MgTemplateDefinition<z.infer<typeof params>> = {
@@ -44,8 +55,177 @@ describe('@jasper/mg-templates registry', () => {
 		});
 	});
 
+	it('passes the optional fill hook to the command layer (clip.addMotionGraphic {fill})', () => {
+		const fillable: MgTemplateDefinition<z.infer<typeof params>> = {
+			...sample,
+			id: 'fillable',
+			fill(partial, seed) {
+				if (partial.title !== undefined) return { ok: true, params: partial, filled: [] };
+				return { ok: true, params: { ...partial, title: `Seed ${seed}` }, filled: ['title'] };
+			},
+		};
+		const registry = createMgRegistry([sample, fillable]);
+		expect(registry.get('test-card', 1)?.fill).toBeUndefined();
+		expect(registry.get('fillable', 1)?.fill?.({}, 4)).toEqual({
+			ok: true,
+			params: { title: 'Seed 4' },
+			filled: ['title'],
+		});
+		const ids = createCounterIdSource(1);
+		const doc = createEmptyProject({ ids, name: 'Fill' });
+		const { result } = applyTransaction(
+			doc,
+			{
+				label: 'fill',
+				origin: 'user',
+				commands: [
+					{
+						type: 'clip.addMotionGraphic',
+						at: 0,
+						duration: 30,
+						track: 'V1',
+						placement: 'first-free',
+						template: { id: 'fillable', version: 1 },
+						fill: { seed: 7 },
+					},
+				],
+			},
+			{ ids, now: () => 't', revision: 0, registries: defaultRegistries(registry) },
+		);
+		expect(result).toMatchObject({
+			ok: true,
+			results: [{ track: 'V1', params: { title: 'Seed 7' }, filled: ['title'], seed: 7 }],
+		});
+	});
+
 	it('rejects duplicate template versions and invalid defaults', () => {
 		expect(() => createMgRegistry([sample, sample])).toThrow();
 		expect(() => createMgRegistry([{ ...sample, defaults: { title: '' } }])).toThrow();
+	});
+});
+
+const variantParams = z.strictObject({
+	variant: z.enum(['a', 'b', 'c']).default('a'),
+	title: z.string().max(200).default('Hello'),
+	views: z.number().int().min(0).default(0),
+});
+const withExtras: MgTemplateDefinition<z.infer<typeof variantParams>> = {
+	...(sample as unknown as MgTemplateDefinition<z.infer<typeof variantParams>>),
+	id: 'variant-card',
+	paramsSchema: variantParams,
+	defaults: variantParams.parse({}),
+	presets: [
+		{ id: 'a', name: 'Variant A', params: {} },
+		{ id: 'b-dark', name: 'Variant B', description: 'The B look', params: { variant: 'b', views: 12 } },
+	],
+	ui: {
+		groups: [
+			{ id: 'look', label: 'Look', params: ['variant'] },
+			{ id: 'text', label: 'Text', params: ['title', 'views'] },
+		],
+		params: {
+			title: { label: 'Comment', description: 'The comment text', multiline: true, control: 'marks-text' },
+			views: { visibleWhen: { param: 'variant', in: ['b'] } },
+		},
+	},
+};
+
+describe('presets and UI hints (C3)', () => {
+	it('exposes presets and ui in the template info and the catalogue JSON', () => {
+		const registry = createMgRegistry([withExtras]);
+		expect(registry.get('variant-card', 1)?.presets?.map((p) => p.id)).toEqual(['a', 'b-dark']);
+		expect(registry.get('variant-card', 1)?.ui?.groups?.[0]?.label).toBe('Look');
+		const entry = registry.catalogJson()[0]!;
+		expect(entry.presets).toEqual([
+			{ id: 'a', name: 'Variant A', params: {} },
+			{ id: 'b-dark', name: 'Variant B', description: 'The B look', params: { variant: 'b', views: 12 } },
+		]);
+		expect(entry.ui?.params?.views).toEqual({ visibleWhen: { param: 'variant', in: ['b'] } });
+		// Templates without presets / hints keep their catalogue shape (schemas/catalog.json mirrors the Rust one).
+		const plain = createMgRegistry([sample]).catalogJson()[0]!;
+		expect('presets' in plain || 'ui' in plain).toBe(false);
+	});
+
+	it('applies a preset over the defaults', () => {
+		expect(templatePresetParams(withExtras, 'b-dark')).toEqual({ variant: 'b', title: 'Hello', views: 12 });
+		expect(templatePresetParams(withExtras, 'nope')).toBeUndefined();
+	});
+
+	it.each([
+		[
+			'an invalid preset value',
+			{ presets: [{ id: 'x', name: 'X', params: { variant: 'z' } }] },
+			/does not match/,
+		],
+		['an unknown preset param', { presets: [{ id: 'x', name: 'X', params: { nope: 1 } }] }, /unknown param/],
+		[
+			'a duplicate preset id',
+			{
+				presets: [
+					{ id: 'x', name: 'X', params: {} },
+					{ id: 'x', name: 'Y', params: {} },
+				],
+			},
+			/Duplicate preset/,
+		],
+		['a malformed preset id', { presets: [{ id: 'X:1', name: 'X', params: {} }] }, /must match/],
+		['a preset without a name', { presets: [{ id: 'x', name: ' ', params: {} }] }, /needs a name/],
+		[
+			'preset params that are no object',
+			{ presets: [{ id: 'x', name: 'X', params: [] }] },
+			/must be an object/,
+		],
+		[
+			'a group naming an unknown param',
+			{ ui: { groups: [{ id: 'g', label: 'G', params: ['nope'] }] } },
+			/unknown param/,
+		],
+		[
+			'a param in two groups',
+			{
+				ui: {
+					groups: [
+						{ id: 'g', label: 'G', params: ['title'] },
+						{ id: 'h', label: 'H', params: ['title'] },
+					],
+				},
+			},
+			/more than one ui group/,
+		],
+		['a group without a label', { ui: { groups: [{ id: 'g', label: '', params: [] }] } }, /needs a label/],
+		['hints of an unknown param', { ui: { params: { nope: { label: 'N' } } } }, /unknown param/],
+		[
+			'visibleWhen on an unknown param',
+			{ ui: { params: { views: { visibleWhen: { param: 'nope', in: ['a'] } } } } },
+			/another param/,
+		],
+		[
+			'visibleWhen on itself',
+			{ ui: { params: { views: { visibleWhen: { param: 'views', in: [1] } } } } },
+			/another param/,
+		],
+		[
+			'visibleWhen with an impossible value',
+			{ ui: { params: { views: { visibleWhen: { param: 'variant', in: ['z'] } } } } },
+			/not a valid value/,
+		],
+		[
+			'visibleWhen without values',
+			{ ui: { params: { views: { visibleWhen: { param: 'variant', in: [] } } } } },
+			/must be \{param/,
+		],
+		['an empty control name', { ui: { params: { title: { control: '' } } } }, /non-empty string/],
+	])('rejects %s', (_name, patch, message) => {
+		const def = {
+			...withExtras,
+			presets: undefined,
+			ui: undefined,
+			...patch,
+		} as unknown as MgTemplateDefinition;
+		expect(() => createMgRegistry([def])).toThrow(message);
+	});
+
+	it('the shipped catalogue passes the preset and ui checks', () => {
+		expect(() => createMgRegistry(mgRegistry.definitions())).not.toThrow();
 	});
 });

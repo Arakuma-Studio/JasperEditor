@@ -31,6 +31,7 @@ import {
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { multicamView } from '../multicam/model.ts';
+import { clipParamMediaIds } from '../param-media.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { expandLumetriSpatial } from '../registry/lumetri-spatial.ts';
@@ -1085,6 +1086,8 @@ export function buildRenderSnapshot(
 				}
 				case 'motion-graphic': {
 					const { renderer, ...template } = c.template;
+					// Template media params (avatars) resolve like effect media: handles (signed URLs in renders) in `media`.
+					for (const id of clipParamMediaIds(c)) if (doc.media[id]) useMedia(id);
 					source = {
 						mg: {
 							template,

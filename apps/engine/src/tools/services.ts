@@ -19,6 +19,7 @@ import { prerenderKey } from '../mg-bundles/service.ts';
 import { LeaseManager } from '../projects/leases.ts';
 import { RecoveryJournal } from '../projects/recovery.ts';
 import { ProjectStoreFs } from '../projects/store.ts';
+import { baseManifest } from '../remote-assets/manifest.ts';
 import { RemoteAssetService } from '../remote-assets/service.ts';
 import { RemotionService } from '../remotion/service.ts';
 import { UploadService } from '../uploads/service.ts';
@@ -148,7 +149,10 @@ export async function createCoreServices(
 			return g ? { revision: g.revision, document: g.envelope.document } : null;
 		},
 	});
+	const remoteBase = baseManifest(env);
+	if (remoteBase.error) opts.log?.(`[remote-assets] base manifest ignored: ${remoteBase.error}`);
 	const remoteAssets = new RemoteAssetService({
+		manifest: remoteBase.manifest,
 		dir: paths.remoteAssetsDir,
 		overridePath: paths.remoteManifestOverride,
 		settingsPath: paths.networkSettings,

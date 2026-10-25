@@ -10,7 +10,7 @@ import {
 	trimSides,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
+import { normalizeTimeArg, ProjectIdArg, SequenceIdArg, TIME_HINT, timeArg } from '../arguments.ts';
 import {
 	applyCommands,
 	defineTool,
@@ -50,13 +50,9 @@ const FitArg = z
 
 function frameOf(seq: Sequence, input: unknown): number {
 	try {
-		return resolveFrameInput(seq, input);
+		return resolveFrameInput(seq, normalizeTimeArg(input));
 	} catch (e) {
-		throw new ToolError(
-			'E_INVALID_PARAM',
-			(e as Error).message,
-			'Use frames, {"seconds": x} or "HH:MM:SS:FF".',
-		);
+		throw new ToolError('E_INVALID_PARAM', (e as Error).message, TIME_HINT);
 	}
 }
 

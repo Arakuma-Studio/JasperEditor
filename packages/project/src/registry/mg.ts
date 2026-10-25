@@ -8,6 +8,62 @@ export type MgCanvasSize = { width: number; height: number };
 /** Timing of a clip whose template motion is measured: sequence rate and content length (sourceIn + duration). */
 export type MgTemplateMotionTiming = { fps: number; totalFrames: number };
 
+/**
+ * A named param preset of a template (social comments: one per platform variant). `params` holds only the params
+ * the preset sets; the template defaults fill the rest (`{...defaults, ...params}` must pass the params schema,
+ * which `createMgRegistry` checks). Referenced as `"<templateId>:<presetId>"` / `"<templateId>@<version>:<presetId>"`.
+ */
+export type MgTemplatePreset = {
+	/** Lower-case id (`[a-z0-9][a-z0-9-]*`), unique within the template. */
+	id: string;
+	name: string;
+	description?: string;
+	params: Record<string, unknown>;
+};
+
+/** Valid preset ids (they appear in `"<id>:<preset>"` refs). */
+export const MG_PRESET_ID = /^[a-z0-9][a-z0-9-]*$/;
+
+/** The parts of a template reference: `"<id>"`, `"<id>@<version>"`, `"<id>:<preset>"` or `"<id>@<version>:<preset>"`. */
+export type MgTemplateRefParts = { id: string; version?: number; preset?: string };
+
+const TEMPLATE_REF = /^([^@:\s]+)(?:@([1-9]\d{0,8}))?(?::([a-z0-9][a-z0-9-]*))?$/;
+
+/** Parses a template reference (null when malformed: empty id, a non-positive version, a bad preset id). */
+export function parseMgTemplateRef(ref: string): MgTemplateRefParts | null {
+	if (typeof ref !== 'string' || ref.length > 256) return null;
+	const m = TEMPLATE_REF.exec(ref.trim());
+	if (!m) return null;
+	return {
+		id: m[1]!,
+		...(m[2] !== undefined ? { version: Number(m[2]) } : {}),
+		...(m[3] !== undefined ? { preset: m[3] } : {}),
+	};
+}
+
+/** UI hints of one template param (Properties / Effect Controls). */
+export type MgTemplateParamUi = {
+	/** Row label (default: the schema `title`, else the humanized param name). */
+	label?: string;
+	/** Tooltip (default: the schema `.describe()` text). */
+	description?: string;
+	/** String params: a multi-line text area. */
+	multiline?: boolean;
+	/** Shown only while the param `param` holds one of `in` (e.g. fields that exist only on some variants). */
+	visibleWhen?: { param: string; in: readonly unknown[] };
+	/** Name of a custom control registered by the web app (`registerTemplateParamControl`). */
+	control?: string;
+};
+
+/**
+ * UI hints of a template: ordered groups of params (one sub-section each; params in no group come first) and
+ * per-param hints. Validated by `createMgRegistry` (every name must be a param of the template).
+ */
+export type MgTemplateUi = {
+	groups?: ReadonlyArray<{ id: string; label: string; params: readonly string[] }>;
+	params?: Readonly<Record<string, MgTemplateParamUi>>;
+};
+
 export type MgTemplateInfo = {
 	id: string;
 	version: number;
@@ -27,6 +83,10 @@ export type MgTemplateInfo = {
 	description?: string;
 	/** M2 (S11:ANA-001): default clip length when inserted (S05:MGT-002). */
 	defaultDurationSeconds?: number;
+	/** Named param presets (gallery cards, `"<id>:<preset>"` refs). */
+	presets?: readonly MgTemplatePreset[];
+	/** Labels, tooltips, groups, visibility and custom controls of the params (`paramsPropertySpecs`). */
+	ui?: MgTemplateUi;
 	/**
 	 * Sound design (spec 12 §2.2, optional): the template's picture speed per CONTENT frame `0 … totalFrames − 1`
 	 * at `timing.fps` (`speed[i]`: from frame i − 1 to i, `speed[0]` = 0) in canvas diagonals per second, the units
@@ -34,7 +94,18 @@ export type MgTemplateInfo = {
 	 * the mg cues then fall back to the declared `introFrames` / `outroFrames`. Must be pure and never throw.
 	 */
 	motionSpeed?(params: Record<string, unknown>, timing: MgTemplateMotionTiming): number[] | null;
+	/**
+	 * Optional fill hook (social-comments design §7.10; `MgTemplateDefinition.fill`): fills the params `partial`
+	 * omits, deterministically for `seed` (never touching given ones), for `clip.addMotionGraphic {fill}`.
+	 * `params` = `partial` plus the filled values (the defaults are merged after); `filled` = the filled names.
+	 */
+	fill?(partial: Record<string, unknown>, seed: number): MgTemplateFillResult;
 };
+
+/** Result of a template fill hook (MgTemplateInfo.fill). */
+export type MgTemplateFillResult =
+	| { ok: true; params: Record<string, unknown>; filled: string[] }
+	| { ok: false; error: string; issues?: unknown };
 
 /** Result of a template version upgrade (S11:ATP-009). */
 export type MgTemplateUpgrade = { version: number; params: Record<string, unknown> };

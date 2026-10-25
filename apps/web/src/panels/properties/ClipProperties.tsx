@@ -9,8 +9,11 @@ import {
 	type EffectInstance,
 	isKnownClipKind,
 	kindCapabilities,
+	type PropertySpec,
 	paramsPropertySpecs,
 	type Sequence,
+	templateParamSections,
+	templateParamVisible,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
@@ -465,19 +468,38 @@ function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: Edit
 			</Section>
 		);
 	}
-	const specs = paramsPropertySpecs(tpl);
+	// C3: the template's ui hints — params that apply to none of the selected clips are hidden (`visibleWhen`), the
+	// others are grouped in its sections (in order; params in no group first).
+	const specs = paramsPropertySpecs(tpl).filter((s) =>
+		visual.some((c) => templateParamVisible(s, (c as { params?: Record<string, unknown> }).params)),
+	);
+	const renderSpec = (s: PropertySpec, indent: boolean) => {
+		const row = makeRow(
+			s.key,
+			visual.map((c) => bindProperty(ctx.doc, ctx.seq, c, s.key, ctx.frame, mg)),
+		);
+		return row ? <PropertyRow key={row.id} row={row} ctx={ctx} indent={indent} /> : null;
+	};
 	return (
 		<Section id="properties.template" title={`Parameters · ${tpl.name}`}>
 			<p className="px-2 pb-1 text-pr-small text-pr-muted">
 				{tpl.id}@{tpl.version} · {tpl.category}
 			</p>
-			{specs.map((s) => {
-				const row = makeRow(
-					s.key,
-					visual.map((c) => bindProperty(ctx.doc, ctx.seq, c, s.key, ctx.frame, mg)),
-				);
-				return row ? <PropertyRow key={row.id} row={row} ctx={ctx} /> : null;
-			})}
+			{templateParamSections(specs).map((sec) =>
+				sec.section ? (
+					<Section
+						key={sec.section.id}
+						id={`properties.template.${tpl.id}.${sec.section.id}`}
+						title={sec.section.label}
+						variant="group"
+						className="pl-2"
+					>
+						<div data-template-group={sec.section.id}>{sec.specs.map((s) => renderSpec(s, true))}</div>
+					</Section>
+				) : (
+					sec.specs.map((s) => renderSpec(s, false))
+				),
+			)}
 		</Section>
 	);
 }

@@ -21,6 +21,28 @@ export function shippedManifest(raw: unknown = shipped): LoadedManifest['manifes
 	return r.success ? r.data : { version: 1, fonts: [], emojiPacks: [], images: [] };
 }
 
+/**
+ * The base manifest: the file named by `JASPER_REMOTE_MANIFEST` (tests, air-gapped installs pointing at their own
+ * mirror) when set, else the shipped one. A missing or invalid file gives an empty manifest and a reason, never a crash.
+ */
+export function baseManifest(env: Record<string, string | undefined>): {
+	manifest: RemoteManifest;
+	error?: string;
+} {
+	const file = env.JASPER_REMOTE_MANIFEST;
+	if (!file) return { manifest: shippedManifest() };
+	let text: string;
+	try {
+		text = readFileSync(file, 'utf8');
+	} catch (e) {
+		return { manifest: shippedManifest({}), error: `${file}: ${(e as Error).message}` };
+	}
+	const r = parseOverride(text);
+	return 'error' in r
+		? { manifest: shippedManifest({}), error: `${file}: ${r.error}` }
+		: { manifest: r.manifest };
+}
+
 /** `base` with `override`'s entries replacing those of the same id (new ids are added after the base entries). */
 export function mergeManifests(base: RemoteManifest, override: RemoteManifest): RemoteManifest {
 	const fontIds = new Set(override.fonts.map((f) => f.id));

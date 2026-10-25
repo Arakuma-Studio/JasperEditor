@@ -120,6 +120,9 @@ export function createMgService(opts: MgServiceOptions) {
 				...(twin?.description ? { description: twin.description } : {}),
 				canvases: t.canvases,
 				native: true,
+				// Presets and UI hints live on the TS definition (the binary's catalog has none).
+				...(twin?.presets ? { presets: twin.presets } : {}),
+				...(twin?.ui ? { ui: twin.ui } : {}),
 			};
 		});
 		const nativeKeys = new Set(native.map((t) => `${t.id}@${t.version}`));
