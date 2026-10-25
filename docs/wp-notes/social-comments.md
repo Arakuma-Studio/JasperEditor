@@ -906,7 +906,11 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
 - **Thumbs:** YouTube's 18-unit thumbs at 17 px match the ink of tokcomment's 16 px lucide thumbs (14 px wide); −0.5 px
   margins keep tokcomment's 16 px slots. Kebab 15 px (dots 2.5 px, as tokcomment's), badge 13 px (a 12 px disc),
   reply bubble 16 px, chevron 20 px.
-- **Like tick:** the outline thumb cross-fades to YouTube's filled thumb (same colour) and thumps.
+- **Like tick:** the outline thumb cross-fades to YouTube's filled thumb (same colour) and thumps. While the count
+  ticks, the widest count it passes through (the final one and the all-nines value of each smaller order of magnitude)
+  reserves its width, so the dislike and reply buttons never move. Without it the moving glyphs were anti-aliased
+  differently depending on the frames painted before (`renderStill` ≠ `renderFrames` on ≈ 50 px, 1 run in 3; 0 in 4
+  after).
 - **Mentions and hashtags:** YouTube's link blue #065FD4 / #3EA6FF [E]: the value of YouTube's
   `--yt-spec-call-to-action`; no comment with a mention was captured.
 - **Emoji:** Noto images at 1.2 em, shifted −0.29 em (comment) and −0.25 em (Shorts). Measured on the 2× captures:

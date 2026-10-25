@@ -171,6 +171,18 @@ function LikeThumb({
 	);
 }
 
+/**
+ * The count strings that reserve the like count's width while it ticks 0 → `likes`: the final count and the widest
+ * of each order of magnitude below it (all nines: Roboto's digits are tabular, so a run of nines is the widest of its
+ * length and format).
+ */
+function tickWidths(variant: SocialCardProps['params']['variant'], likes: number): string[] {
+	const out = new Set([formatCount(variant, likes, 'likes')]);
+	for (let nines = 9; nines < likes && out.size < 16; nines = nines * 10 + 9)
+		out.add(formatCount(variant, nines, 'likes'));
+	return [...out];
+}
+
 function YouTubeCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 	const theme = COMMENT_THEME[p.theme];
 	const replies = formatRepliesLabel(p.variant, p.replies);
@@ -280,9 +292,11 @@ function YouTubeCommentCard({ params: p, text, anim, assets }: SocialCardProps) 
 					>
 						<div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
 							<LikeThumb heart={anim.heart} color={theme.icons} size={THUMB} />
+							{/* while the likes tick, the widest count they pass through reserves its width, so the buttons after
+							    it never move (no layout shift; moving glyphs would rasterize differently per frame order) */}
 							<span
-								data-part="likes"
 								style={{
+									display: 'inline-grid',
 									marginBottom: -3,
 									fontSize: 12,
 									lineHeight: '15px',
@@ -290,7 +304,16 @@ function YouTubeCommentCard({ params: p, text, anim, assets }: SocialCardProps) 
 									color: theme.count,
 								}}
 							>
-								{formatCount(p.variant, anim.likes, 'likes')}
+								{anim.heart
+									? tickWidths(p.variant, p.likes).map((t) => (
+											<span key={t} aria-hidden="true" style={{ gridArea: '1 / 1', visibility: 'hidden' }}>
+												{t}
+											</span>
+										))
+									: null}
+								<span data-part="likes" style={{ gridArea: '1 / 1' }}>
+									{formatCount(p.variant, anim.likes, 'likes')}
+								</span>
 							</span>
 						</div>
 						<Glyph

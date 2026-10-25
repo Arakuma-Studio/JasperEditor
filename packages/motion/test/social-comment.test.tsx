@@ -271,6 +271,11 @@ describe('social-comment@1 YouTube cards', () => {
 		expect(svgs[1]!.innerHTML).toContain(YOUTUBE_GLYPHS.thumbUpFilled.paths[0]!.d);
 		expect(svgs[1]!.style.opacity).toBe('1');
 		expect(svgs[0]!.style.opacity).toBe('0');
+		// the widest counts it passes through reserve the width (the buttons after it never move during the tick)
+		const reserved = [
+			...q(view.container, 'likes')!.parentElement!.querySelectorAll('[aria-hidden="true"]'),
+		].map((e) => e.textContent);
+		expect(reserved).toEqual(['12K', '9', '99', '999', '9.9K']);
 		view.unmount();
 	});
 
