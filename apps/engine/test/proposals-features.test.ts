@@ -80,12 +80,23 @@ function userEdit(file: string, seqId: string, commands: unknown[]) {
 	const r = applyTransaction(
 		doc,
 		{ label: 'user edit', origin: 'user', sequenceId: seqId, commands },
-		{ ids: createCounterIdSource(900), now: () => '2026-10-25T01:00:00.000Z', revision, registries: defaultRegistries() },
+		{
+			ids: createCounterIdSource(900),
+			now: () => '2026-10-25T01:00:00.000Z',
+			revision,
+			registries: defaultRegistries(),
+		},
 	);
 	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
 	writeFileSync(
 		file,
-		JSON.stringify(makeEnvelope(r.document, { revision: revision + 1, savedAt: '2026-10-25T01:00:00.000Z', platform: 'test' })),
+		JSON.stringify(
+			makeEnvelope(r.document, {
+				revision: revision + 1,
+				savedAt: '2026-10-25T01:00:00.000Z',
+				platform: 'test',
+			}),
+		),
 	);
 }
 
@@ -149,7 +160,9 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 		const adj = Object.values(after.doc.sequences[seqId]!.clips).filter((c) => c.kind === 'adjustment');
 		expect(adj.map((c) => [c.start, c.duration])).toEqual([[50, 20]]);
 		// the user turns it off: refused, with the setting named
-		userEdit(file, seqId, [{ type: 'project.updateSettings', settings: { agentProposals: { 'edit-automation': false } } }]);
+		userEdit(file, seqId, [
+			{ type: 'project.updateSettings', settings: { agentProposals: { 'edit-automation': false } } },
+		]);
 		const q = await create(app, projectId, automation(seqId, [kit('k2', v1, 60, [])]), AGENT_H);
 		const refused = await post(app, `${base(projectId)}/${q.id}/accept`, { itemIds: 'all' }, AGENT_H);
 		expect(refused.statusCode).toBe(403);
@@ -166,7 +179,9 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 				projectId,
 				transaction: {
 					label: 'grant',
-					commands: [{ type: 'project.updateSettings', settings: { agentProposals: { 'edit-automation': true } } }],
+					commands: [
+						{ type: 'project.updateSettings', settings: { agentProposals: { 'edit-automation': true } } },
+					],
 				},
 			},
 			AGENT_H,
@@ -201,20 +216,45 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 	it('lists the features with this project’s agent-accept state and whether they refresh', async () => {
 		const app = await secured();
 		const { projectId, seqId, file } = seed(app);
-		userEdit(file, seqId, [{ type: 'project.updateSettings', settings: { agentProposals: { subtitles: false } } }]);
-		const r = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposal-features`, headers: AGENT_H });
+		userEdit(file, seqId, [
+			{ type: 'project.updateSettings', settings: { agentProposals: { subtitles: false } } },
+		]);
+		const r = await app.inject({
+			method: 'GET',
+			url: `/api/projects/${projectId}/proposal-features`,
+			headers: AGENT_H,
+		});
 		expect(r.statusCode, r.body).toBe(200);
 		const { features } = ProposalFeaturesResponseSchema.parse(r.json());
 		const by = Object.fromEntries(features.map((f) => [f.id, f]));
-		expect(by['sound-design']!.agentAccept).toEqual({ setting: 'sound-sequence', sequences: { [seqId]: false } });
-		expect(by['edit-automation']!.agentAccept).toEqual({ setting: 'project', allowed: true, default: true, explicit: false });
-		expect(by.subtitles!.agentAccept).toEqual({ setting: 'project', allowed: false, default: true, explicit: true });
+		expect(by['sound-design']!.agentAccept).toEqual({
+			setting: 'sound-sequence',
+			sequences: { [seqId]: false },
+		});
+		expect(by['edit-automation']!.agentAccept).toEqual({
+			setting: 'project',
+			allowed: true,
+			default: true,
+			explicit: false,
+		});
+		expect(by.subtitles!.agentAccept).toEqual({
+			setting: 'project',
+			allowed: false,
+			default: true,
+			explicit: true,
+		});
 		expect(by['transcript-cleanup']!.groups.map((g) => g.id)).toContain('retakes');
 		expect(features.every((f) => f.refreshable === false)).toBe(true);
 		const svc = app.jasper.services.proposals as ProposalService;
 		const off = svc.registerRefresher('edit-automation', () => ({ items: [] }));
 		const again = ProposalFeaturesResponseSchema.parse(
-			(await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposal-features`, headers: AGENT_H })).json(),
+			(
+				await app.inject({
+					method: 'GET',
+					url: `/api/projects/${projectId}/proposal-features`,
+					headers: AGENT_H,
+				})
+			).json(),
 		);
 		expect(again.features.find((f) => f.id === 'edit-automation')!.refreshable).toBe(true);
 		off();
@@ -231,7 +271,12 @@ describe('E_TOO_LARGE (EA-004)', { timeout: TIMEOUT }, () => {
 			meta: { frame: i * 100 },
 			commands: Array.from({ length: 500 }, (_, k) => ({ type: 'marker.add', frame: i * 100 + k })),
 		}));
-		const r = await post(app, base(projectId), { feature: 'edit-automation', title: 'Huge', sequenceId: seqId, items }, AGENT_H);
+		const r = await post(
+			app,
+			base(projectId),
+			{ feature: 'edit-automation', title: 'Huge', sequenceId: seqId, items },
+			AGENT_H,
+		);
 		expect(r.statusCode).toBe(413);
 		expect(r.json()).toMatchObject({
 			code: 'PROPOSAL_TOO_LARGE',
@@ -249,7 +294,10 @@ describe('Refresh proposal (EA-003)', { timeout: TIMEOUT }, () => {
 		const p = await create(
 			app,
 			projectId,
-			automation(seqId, [kit('k60', v1, 60, [a.id, b.id]), { id: 'mk', label: 'Marker', commands: [{ type: 'marker.add', frame: 5 }] }]),
+			automation(seqId, [
+				kit('k60', v1, 60, [a.id, b.id]),
+				{ id: 'mk', label: 'Marker', commands: [{ type: 'marker.add', frame: 5 }] },
+			]),
 			AGENT_H,
 		);
 		// no producer yet: refused with a reason
@@ -270,7 +318,9 @@ describe('Refresh proposal (EA-003)', { timeout: TIMEOUT }, () => {
 			calls.push(itemIds);
 			expect((proposal.report as { params: unknown }).params).toEqual({ kit: 'blur' });
 			const seq = doc.sequences[seqId]!;
-			const [ca, cb] = Object.values(seq.clips).filter((c) => c.trackId === v1).sort((x, y) => x.start - y.start);
+			const [ca, cb] = Object.values(seq.clips)
+				.filter((c) => c.trackId === v1)
+				.sort((x, y) => x.start - y.start);
 			const cut = ca!.start + ca!.duration;
 			return { items: itemIds.map((id) => kit(id, v1, cut, [ca!.id, cb!.id])) };
 		});

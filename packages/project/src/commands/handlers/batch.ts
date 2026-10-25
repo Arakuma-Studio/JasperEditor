@@ -30,7 +30,11 @@ function within<T>(where: string, path: string[], f: () => T): T {
 
 type AddAdjustment = (d: DDoc, c: CommandOf<'clip.addAdjustment'>, h: HandlerContext) => { clipId: string };
 type AddEffect = (d: DDoc, c: CommandOf<'effect.add'>, h: HandlerContext) => { effectInstanceId: string };
-type AddKey = (d: DDoc, c: CommandOf<'keyframe.add'>, h: HandlerContext) => { keyframeId: string; time: number };
+type AddKey = (
+	d: DDoc,
+	c: CommandOf<'keyframe.add'>,
+	h: HandlerContext,
+) => { keyframeId: string; time: number };
 
 /** effect.add params of one batch effect: static values, and animated ones as `{value, keyframes}` in content time. */
 function effectParams(
@@ -44,7 +48,10 @@ function effectParams(
 		keys.forEach((k, i) => {
 			if (k.frame > length)
 				within(`keyframes.${name}[${i}]`, ['keyframes', name, String(i)], () =>
-					h.fail('E_INVALID_PARAM', `frame ${k.frame} is after the item's end (its length is ${length} frames)`),
+					h.fail(
+						'E_INVALID_PARAM',
+						`frame ${k.frame} is after the item's end (its length is ${length} frames)`,
+					),
 				);
 		});
 		params[name] = {
@@ -100,7 +107,9 @@ export const batchHandlers = {
 		const existing = resolveTrackIn(seq, cmd.trackId);
 		if (existing && !cmd.overwrite) {
 			const label = findTrackIn(seq, existing);
-			const name = label ? `${label.kind === 'video' ? 'V' : label.kind === 'audio' ? 'A' : 'C'}${label.index + 1}` : existing;
+			const name = label
+				? `${label.kind === 'video' ? 'V' : label.kind === 'audio' ? 'A' : 'C'}${label.index + 1}`
+				: existing;
 			const onTrack = Object.values(seq.clips)
 				.filter((c) => c.trackId === existing)
 				.sort((a, b) => a.start - b.start);
@@ -141,9 +150,14 @@ export const batchHandlers = {
 				trackRef = clip.trackId;
 				clipIds.push(clipId);
 				const fxIds: string[] = [];
-				(it.effects ?? []).forEach((e, k) =>
+				for (const [k, e] of (it.effects ?? []).entries())
 					within(`effects[${k}] (${e.effectId})`, ['effects', String(k)], () => {
-						const params = effectParams(e, span.length, (f) => h.clipContentTime(seq, clip, { frames: f }), h);
+						const params = effectParams(
+							e,
+							span.length,
+							(f) => h.clipContentTime(seq, clip, { frames: f }),
+							h,
+						);
 						const r = addEffect(
 							doc,
 							{
@@ -155,8 +169,7 @@ export const batchHandlers = {
 							h,
 						);
 						fxIds.push(r.effectInstanceId);
-					}),
-				);
+					});
 				effectInstanceIds.push(fxIds);
 			});
 		});
@@ -177,18 +190,21 @@ export const batchHandlers = {
 				let target: string[];
 				if (t.path[0] === 'effect') {
 					if (t.path.length !== 3)
-						h.fail('E_INVALID_PARAM', 'an effect path is ["effect", effectInstanceId, param]', { path: ['path'] });
+						h.fail('E_INVALID_PARAM', 'an effect path is ["effect", effectInstanceId, param]', {
+							path: ['path'],
+						});
 					// a temp ref of an effect added earlier in the transaction (`path` is not an id key: resolved here)
 					const raw = t.path[1]!;
 					const fxId = isTempRef(raw) ? h.refs.get(raw) : raw;
 					if (!fxId) h.fail('E_NOT_FOUND', `Unknown temp ref ${raw}`, { path: ['path'] });
 					const fx = ((clip as { effects?: { id: string }[] }).effects ?? []).find((f) => f.id === fxId);
-					if (!fx) h.fail('E_NOT_FOUND', `Effect instance ${raw} is not on clip ${clip.id}`, { path: ['path'] });
+					if (!fx)
+						h.fail('E_NOT_FOUND', `Effect instance ${raw} is not on clip ${clip.id}`, { path: ['path'] });
 					target = ['effect', fxId, t.path[2]!];
 				} else target = ['clip', clip.id, ...t.path];
 				const times = new Map<number, number>();
 				const ids: string[] = [];
-				t.keys.forEach((k, j) =>
+				for (const [j, k] of t.keys.entries())
 					within(`keys[${j}]`, ['keys', String(j)], () => {
 						const r = addKey(
 							doc,
@@ -211,8 +227,7 @@ export const batchHandlers = {
 							h.fail('E_INVALID_PARAM', `lands on the same frame as keys[${prev}] (one key per frame)`);
 						times.set(r.time, j);
 						ids.push(r.keyframeId);
-					}),
-				);
+					});
 				keyframeIds.push(ids);
 			});
 		});

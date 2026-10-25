@@ -353,7 +353,9 @@ export function prepareItems(
 	doc: ProjectDocument,
 	inputs: readonly ProposalItemInput[],
 	sequenceId: string | null,
-): { ok: true; items: ProposalItem[]; addressFailures: Map<string, string> } | { ok: false; errors: ProposalIssue[] } {
+):
+	| { ok: true; items: ProposalItem[]; addressFailures: Map<string, string> }
+	| { ok: false; errors: ProposalIssue[] } {
 	const errors: ProposalIssue[] = [];
 	const sets = (it: ProposalItemInput) => [
 		{ path: ['commands'] as (string | number)[], commands: it.commands },

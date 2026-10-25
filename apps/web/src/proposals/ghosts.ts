@@ -227,7 +227,16 @@ export function buildGhostModel(input: {
 	const owner = setupOwners(input.items);
 	const cuesAfter = new Map(cuesOf(after).map((c) => [c.id, c]));
 	const cuesBefore = new Map(cuesOf(before).map((c) => [c.id, c]));
-	type Span = { start: number; end: number; c: number; t: number; q: number; r: number; k: number; x: number };
+	type Span = {
+		start: number;
+		end: number;
+		c: number;
+		t: number;
+		q: number;
+		r: number;
+		k: number;
+		x: number;
+	};
 	const span = new Map<string, Span>();
 	const touch = (itemId: string, start: number, end: number, what: 'c' | 't' | 'q' | 'r' | 'k' | 'x') => {
 		const s = span.get(itemId) ?? {
@@ -300,7 +309,12 @@ export function buildGhostModel(input: {
 		});
 		touch(itemId, sorted[0]!, sorted[sorted.length - 1]! + 1, 'k');
 	};
-	const ghostTransition = (itemId: string, sourceItemId: string, tr: Transition, change: 'created' | 'changed') => {
+	const ghostTransition = (
+		itemId: string,
+		sourceItemId: string,
+		tr: Transition,
+		change: 'created' | 'changed',
+	) => {
 		const r = region(after, tr.trackId);
 		const start = transitionStartFrame(after, tr);
 		if (!r || start === null || !finite(start) || !finite(tr.duration) || tr.duration <= 0) return;
@@ -703,7 +717,13 @@ export function whyLines(
 		if (tr.itemId === item.id && tr.sourceItemId === item.id && facts.length < 4)
 			facts.push(
 				tr.change === 'created'
-					? t('{0} on {1} at {2} ({3} frames)', tr.name, trackDisplay(lookup, tr.trackId, false), tc(tr.start), tr.duration)
+					? t(
+							'{0} on {1} at {2} ({3} frames)',
+							tr.name,
+							trackDisplay(lookup, tr.trackId, false),
+							tc(tr.start),
+							tr.duration,
+						)
 					: t('{0} changes on {1} at {2}', tr.name, trackDisplay(lookup, tr.trackId, false), tc(tr.start)),
 			);
 	for (const k of model.keys ?? [])

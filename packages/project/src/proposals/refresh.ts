@@ -31,7 +31,12 @@ export const ProposalRefreshSchema = z.strictObject({
 	items: z.array(ProposalItemInputSchema).max(PROPOSAL_LIMITS.maxItems),
 	/** Requested items that no longer apply (the cut they sat on is gone…): they become invalid with the reason. */
 	dropped: z
-		.array(z.strictObject({ itemId: ProposalItemIdSchema, reason: z.string().min(1).max(PROPOSAL_LIMITS.maxReason) }))
+		.array(
+			z.strictObject({
+				itemId: ProposalItemIdSchema,
+				reason: z.string().min(1).max(PROPOSAL_LIMITS.maxReason),
+			}),
+		)
 		.max(PROPOSAL_LIMITS.maxItems)
 		.optional(),
 	/** A new feature report (replaces the stored one; the stored Sound Check, `report.check`, is kept). */
@@ -67,7 +72,10 @@ export function refreshProposalItems(
 	try {
 		return refreshUnchecked(doc, proposal, itemIds, refreshIn, ctx, now);
 	} catch (e) {
-		return { ok: false, errors: [{ code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) }] };
+		return {
+			ok: false,
+			errors: [{ code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) }],
+		};
 	}
 }
 
@@ -96,9 +104,18 @@ function refreshUnchecked(
 	const seen = new Set<string>();
 	const check = (id: string, what: string) => {
 		const it = byId.get(id);
-		if (!it) errors.push({ code: 'E_NOT_FOUND', message: `${what} ${id} is not an item of the proposal`, itemId: id });
+		if (!it)
+			errors.push({
+				code: 'E_NOT_FOUND',
+				message: `${what} ${id} is not an item of the proposal`,
+				itemId: id,
+			});
 		else if (!requested.has(id))
-			errors.push({ code: 'E_INVALID_PARAM', message: `${what} ${id} was not asked to be refreshed`, itemId: id });
+			errors.push({
+				code: 'E_INVALID_PARAM',
+				message: `${what} ${id} was not asked to be refreshed`,
+				itemId: id,
+			});
 		else if (!REFRESHABLE_STATES.includes(it.state))
 			errors.push({
 				code: 'E_INVALID_PARAM',

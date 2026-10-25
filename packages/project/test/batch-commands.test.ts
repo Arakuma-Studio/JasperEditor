@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	type AdjustmentClip,
 	type Animatable,
-	checkInvariants,
 	type Clip,
+	checkInvariants,
 	type EffectInstance,
 	evaluate,
 	flicksPerFrame,
@@ -40,7 +40,12 @@ const kit = (start: number, length = 20, name?: string) => ({
 		},
 		{
 			effectId: 'jasper.transform',
-			keyframes: { scaleHeight: [{ frame: 0, value: 100 }, { frame: Math.floor(length / 2), value: 180 }] },
+			keyframes: {
+				scaleHeight: [
+					{ frame: 0, value: 100 },
+					{ frame: Math.floor(length / 2), value: 180 },
+				],
+			},
 		},
 	],
 });
@@ -53,7 +58,9 @@ describe('clip.addAdjustmentBatch', () => {
 	it('places adjustment clips with effects and keys relative to each item, in one command', () => {
 		const h = new Harness();
 		const before = h.doc;
-		const r = h.ok([{ type: 'clip.addAdjustmentBatch', trackId: 'V2', items: [kit(10), kit(100, 20, 'Jolt')] }]);
+		const r = h.ok([
+			{ type: 'clip.addAdjustmentBatch', trackId: 'V2', items: [kit(10), kit(100, 20, 'Jolt')] },
+		]);
 		valid(h);
 		const res = r.results[0] as { clipIds: string[]; effectInstanceIds: string[][]; trackId: string };
 		expect(res.clipIds).toHaveLength(2);
@@ -96,7 +103,10 @@ describe('clip.addAdjustmentBatch', () => {
 			{
 				type: 'clip.addAdjustmentBatch',
 				trackId: `V${h.seq.videoTracks.length + 1}`,
-				items: [{ ...kit(0), ref: '$k0' }, { ...kit(40), ref: '$k1' }],
+				items: [
+					{ ...kit(0), ref: '$k0' },
+					{ ...kit(40), ref: '$k1' },
+				],
 			},
 			{ type: 'clip.update', clipId: '$k1', patch: { name: 'Second' } },
 		]);
@@ -133,7 +143,9 @@ describe('clip.addAdjustmentBatch', () => {
 		e = refuse([kit(0), { start: 200, length: 10, effects: [{ effectId: 'jasper.nope' }] }]);
 		expect(e.code).toBe('E_UNKNOWN_EFFECT');
 		expect(e.message).toMatch(/^items\[1\]: effects\[0\] \(jasper\.nope\)/);
-		e = refuse([{ start: 200, length: 10, effects: [{ effectId: 'jasper.gaussian-blur', params: { radiuss: 3 } }] }]);
+		e = refuse([
+			{ start: 200, length: 10, effects: [{ effectId: 'jasper.gaussian-blur', params: { radiuss: 3 } }] },
+		]);
 		expect(e.code).toBe('E_INVALID_PARAM');
 		expect(e.message).toContain('items[0]: effects[0]');
 		e = refuse([
@@ -236,7 +248,9 @@ describe('keyframe.addBatch', () => {
 	it('keys Motion scale on many clips (punch-ins) and an effect of a clip, in one command', () => {
 		const h = new Harness();
 		const clips = clipsOnV1(h, 3);
-		h.ok([{ type: 'effect.add', target: { clipId: clips[0]!.id }, effectId: 'jasper.gaussian-blur', ref: '$fx' }]);
+		h.ok([
+			{ type: 'effect.add', target: { clipId: clips[0]!.id }, effectId: 'jasper.gaussian-blur', ref: '$fx' },
+		]);
 		const fxId = fxOf(h.clips('V1')[0]!)[0]!.id;
 		const before = h.doc;
 		const r = h.ok([
@@ -268,7 +282,9 @@ describe('keyframe.addBatch', () => {
 		const blur = fxOf(h.clips('V1')[0]!)[0]!;
 		expect((blur.params.radius as Animatable<number>).keyframes.map((k) => k.value)).toEqual([5]);
 		h.doc = before;
-		expect((h.clips('V1')[1] as { transform: { scale: Animatable<number> } }).transform.scale.keyframes).toEqual([]);
+		expect(
+			(h.clips('V1')[1] as { transform: { scale: Animatable<number> } }).transform.scale.keyframes,
+		).toEqual([]);
 	});
 
 	it('resolves an effect added earlier in the transaction by its temp ref', () => {
@@ -278,7 +294,9 @@ describe('keyframe.addBatch', () => {
 			{ type: 'effect.add', target: { clipId: c!.id }, effectId: 'jasper.gaussian-blur', ref: '$fx' },
 			{
 				type: 'keyframe.addBatch',
-				targets: [{ clipId: c!.id, path: ['effect', '$fx', 'radius'], keys: [{ at: { frames: 2 }, value: 9 }] }],
+				targets: [
+					{ clipId: c!.id, path: ['effect', '$fx', 'radius'], keys: [{ at: { frames: 2 }, value: 9 }] },
+				],
 			},
 		]);
 		valid(h);
@@ -297,18 +315,37 @@ describe('keyframe.addBatch', () => {
 			return errorsOf(r)[0]!;
 		};
 		const scale = (clipId: string, keys: unknown[]) => ({ clipId, path: ['transform', 'scale'], keys });
-		let e = refuse([scale(clips[0]!.id, [{ at: { frames: 1 }, value: 120 }]), scale('clp_000000000000NOPE', [{ at: { frames: 1 }, value: 1 }])]);
+		let e = refuse([
+			scale(clips[0]!.id, [{ at: { frames: 1 }, value: 120 }]),
+			scale('clp_000000000000NOPE', [{ at: { frames: 1 }, value: 1 }]),
+		]);
 		expect(e.code).toBe('E_NOT_FOUND');
 		expect(e.message).toMatch(/^targets\[1\] \(clp_000000000000NOPE transform\.scale\)/);
-		e = refuse([scale(clips[1]!.id, [{ at: { frames: 1 }, value: 120 }, { at: { frames: 4 }, value: 'big' }])]);
+		e = refuse([
+			scale(clips[1]!.id, [
+				{ at: { frames: 1 }, value: 120 },
+				{ at: { frames: 4 }, value: 'big' },
+			]),
+		]);
 		expect(e.code).toBe('E_INVALID_PARAM');
 		expect(e.message).toContain(`targets[0] (${clips[1]!.id} transform.scale): keys[1]`);
 		expect(e.path?.slice(0, 4)).toEqual(['targets', '0', 'keys', '1']);
-		e = refuse([scale(clips[0]!.id, [{ at: { frames: 3 }, value: 120 }, { at: { frames: 3 }, value: 130 }])]);
+		e = refuse([
+			scale(clips[0]!.id, [
+				{ at: { frames: 3 }, value: 120 },
+				{ at: { frames: 3 }, value: 130 },
+			]),
+		]);
 		expect(e.message).toContain('keys[1]: lands on the same frame as keys[0]');
 		e = refuse([{ clipId: clips[0]!.id, path: ['nope', 'x'], keys: [{ at: { frames: 1 }, value: 1 }] }]);
 		expect(e.code).toBe('E_INVALID_PARAM');
-		e = refuse([{ clipId: clips[0]!.id, path: ['effect', 'fx_000000000000NOPE', 'radius'], keys: [{ at: { frames: 1 }, value: 1 }] }]);
+		e = refuse([
+			{
+				clipId: clips[0]!.id,
+				path: ['effect', 'fx_000000000000NOPE', 'radius'],
+				keys: [{ at: { frames: 1 }, value: 1 }],
+			},
+		]);
 		expect(e.code).toBe('E_NOT_FOUND');
 		expect(e.message).toContain('is not on clip');
 	});

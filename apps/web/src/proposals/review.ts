@@ -5,8 +5,8 @@
 // badge and the Apply button show, the navigation order, the frame range Review zooms to, what an Apply would remove
 // from the user's sequence (named in the confirmation) and the proposal card's sentence counts.
 import {
-	agentProposalGrants,
 	APPROVAL_COMMANDS,
+	agentProposalGrants,
 	COMMAND_CATALOG,
 	type CueKind,
 	createSeededIdSource,
@@ -15,8 +15,8 @@ import {
 	type Proposal,
 	type ProposalContext,
 	previewProposalSteps,
-	SOUND_DESIGN_FEATURE,
 	type Sequence,
+	SOUND_DESIGN_FEATURE,
 	selectedCommands,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem } from '@jasper/session';

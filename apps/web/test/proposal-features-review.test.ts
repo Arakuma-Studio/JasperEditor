@@ -11,7 +11,11 @@ import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import { buildGhostModel, layoutGhosts, whyLines } from '../src/proposals/ghosts.ts';
 import { approvalNeeds, buildReviewModel, cardSentence } from '../src/proposals/review.ts';
 import { describeProblem } from '../src/proposals/stale-text.ts';
-import { genericVocabulary, registerReviewVocabulary, reviewVocabulary } from '../src/proposals/vocabulary.ts';
+import {
+	genericVocabulary,
+	registerReviewVocabulary,
+	reviewVocabulary,
+} from '../src/proposals/vocabulary.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 function item(id: string, o: Partial<ReviewItem> = {}): ReviewItem {
@@ -71,17 +75,21 @@ describe('review vocabulary per feature', () => {
 		expect(cardSentence('agent', 'Pass', 'sound-design', { sounds: 0, newTracks: 0, items: 2 })).toBe(
 			'agent proposes Pass: 2 items',
 		);
-		expect(reviewVocabulary('sound-design').applyToast(2, 5, 'agent')).toBe('Applied 2 of 5 sounds from agent');
+		expect(reviewVocabulary('sound-design').applyToast(2, 5, 'agent')).toBe(
+			'Applied 2 of 5 sounds from agent',
+		);
 	});
 
 	it('names items with the feature noun in the card and the Apply toast; unknown features say items', () => {
-		expect(cardSentence('agent', 'Decorate Cuts', 'edit-automation', { sounds: 0, newTracks: 0, items: 214 })).toBe(
-			'agent proposes Decorate Cuts: 214 edits',
-		);
+		expect(
+			cardSentence('agent', 'Decorate Cuts', 'edit-automation', { sounds: 0, newTracks: 0, items: 214 }),
+		).toBe('agent proposes Decorate Cuts: 214 edits');
 		expect(cardSentence('agent', 'Subs', 'subtitles', { sounds: 0, newTracks: 0, items: 1 })).toBe(
 			'agent proposes Subs: 1 subtitle',
 		);
-		expect(reviewVocabulary('transcript-cleanup').applyToast(12, 40, 'agent')).toBe('Applied 12 of 40 cuts from agent');
+		expect(reviewVocabulary('transcript-cleanup').applyToast(12, 40, 'agent')).toBe(
+			'Applied 12 of 40 cuts from agent',
+		);
 		expect(reviewVocabulary('color-pass').applyToast(1, 2, 'agent')).toBe('Applied 1 of 2 items from agent');
 		expect(genericVocabulary('color-pass').itemsText(3)).toBe('3 items');
 		// a producer with its own sentence
@@ -89,9 +97,13 @@ describe('review vocabulary per feature', () => {
 			...genericVocabulary('subtitles'),
 			cardSentence: (agent, title, c) => `${agent} subtitles ${title} (${c.items})`,
 		});
-		expect(cardSentence('a', 'T', 'subtitles', { sounds: 0, newTracks: 0, items: 9 })).toBe('a subtitles T (9)');
+		expect(cardSentence('a', 'T', 'subtitles', { sounds: 0, newTracks: 0, items: 9 })).toBe(
+			'a subtitles T (9)',
+		);
 		off();
-		expect(cardSentence('a', 'T', 'subtitles', { sounds: 0, newTracks: 0, items: 9 })).toBe('a proposes T: 9 subtitles');
+		expect(cardSentence('a', 'T', 'subtitles', { sounds: 0, newTracks: 0, items: 9 })).toBe(
+			'a proposes T: 9 subtitles',
+		);
 	});
 
 	it('a hostile group never throws', () => {
@@ -117,12 +129,18 @@ describe('review vocabulary per feature', () => {
 
 	it('says where a cut went', () => {
 		const seq = { settings: { frameRate: { num: 30, den: 1 }, dropFrame: false, startTimecodeFrames: 0 } };
-		expect(describeProblem({ type: 'anchor', id: 'cut@t@60', entity: 'cut', change: 'frame', at: 60, to: 50 }, seq as never)).toBe(
-			'Cut at 00:00:02:00 moved to 00:00:01:20',
-		);
-		expect(describeProblem({ type: 'anchor', id: 'cut@t@60', entity: 'cut', change: 'deleted', at: 60 }, seq as never)).toBe(
-			'Cut at 00:00:02:00 is gone',
-		);
+		expect(
+			describeProblem(
+				{ type: 'anchor', id: 'cut@t@60', entity: 'cut', change: 'frame', at: 60, to: 50 },
+				seq as never,
+			),
+		).toBe('Cut at 00:00:02:00 moved to 00:00:01:20');
+		expect(
+			describeProblem(
+				{ type: 'anchor', id: 'cut@t@60', entity: 'cut', change: 'deleted', at: 60 },
+				seq as never,
+			),
+		).toBe('Cut at 00:00:02:00 is gone');
 	});
 });
 
@@ -164,7 +182,13 @@ async function fixture() {
 								effects: [
 									{
 										effectId: 'jasper.gaussian-blur',
-										keyframes: { radius: [{ frame: 0, value: 0 }, { frame: 10, value: 40 }, { frame: 20, value: 0 }] },
+										keyframes: {
+											radius: [
+												{ frame: 0, value: 0 },
+												{ frame: 10, value: 40 },
+												{ frame: 20, value: 0 },
+											],
+										},
 									},
 								],
 							},
@@ -203,7 +227,13 @@ async function fixture() {
 				label: 'Title',
 				meta: { group: 'reactions', frame: 0 },
 				commands: [
-					{ type: 'clip.addText', at: 0, duration: 30, track: 'V3', content: { text: 'Hi', style: { sizePx: 96 } } },
+					{
+						type: 'clip.addText',
+						at: 0,
+						duration: 30,
+						track: 'V3',
+						content: { text: 'Hi', style: { sizePx: 96 } },
+					},
 				],
 			},
 		],
@@ -246,7 +276,9 @@ describe('ghosts of the workflow features', () => {
 			`2 keyframes on ${seq.clips[f.a]!.name} from 00:00:01:00 to 00:00:01:07`,
 		);
 		const disItem = st.items.find((i) => i.id === 'dissolve')!;
-		expect(whyLines(disItem, m, seq, undefined).facts[0]).toBe('Cross Dissolve on V1 at 00:00:01:25 (10 frames)');
+		expect(whyLines(disItem, m, seq, undefined).facts[0]).toBe(
+			'Cross Dissolve on V1 at 00:00:01:25 (10 frames)',
+		);
 		// laid out on their rows
 		const layout = computeLayout({
 			height: 600,

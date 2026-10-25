@@ -121,7 +121,10 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 	// spec 15 EA-001: what the project stores now, and the dialog's choices (saved with OK, one undoable edit)
 	const agentStart = () =>
 		Object.fromEntries(
-			projectSettingFeatures().map((f) => [f.id, agentProposalsAllowed(session.getCommitted(), f.id) === true]),
+			projectSettingFeatures().map((f) => [
+				f.id,
+				agentProposalsAllowed(session.getCommitted(), f.id) === true,
+			]),
 		) as Record<string, boolean>;
 	const [agents, setAgents] = useState<Record<string, boolean>>(agentStart);
 	const [ingFolder, setIngFolder] = useState<'media' | 'custom'>(
@@ -228,10 +231,10 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 					/>
 				))}
 				<p className="text-pr-small text-pr-dim">
-					On (the default): an agent may apply these proposals itself, each as one undoable History step; edits
-					that need your approval still ask. Off: agents only propose and you apply in the Review panel. An agent
-					cannot turn these on by itself. Sound design proposals have their own setting per sequence (Preferences
-					▸ Sound Library).
+					On (the default): an agent may apply these proposals itself, each as one undoable History step;
+					edits that need your approval still ask. Off: agents only propose and you apply in the Review panel.
+					An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence
+					(Preferences ▸ Sound Library).
 				</p>
 			</Group>
 		</div>

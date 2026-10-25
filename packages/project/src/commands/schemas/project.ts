@@ -21,7 +21,9 @@ export const ProjectUpdateSettingsCmd = cmd('project.updateSettings', {
 	 * Fields replace the stored ones, except `agentProposals` (spec 15 EA-001), which is merged per feature: features
 	 * not named keep their setting. An agent turning a feature on needs the user's approval.
 	 */
-	settings: ProjectSettingsSchema.partial().extend({ agentProposals: ProjectAgentProposalsSchema.optional() }),
+	settings: ProjectSettingsSchema.partial().extend({
+		agentProposals: ProjectAgentProposalsSchema.optional(),
+	}),
 });
 
 export const BinCreateCmd = cmd('bin.create', {

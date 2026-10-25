@@ -281,7 +281,9 @@ export function registerProposalTools(ctx: ToolContext): void {
 			annotations: READ_ONLY,
 		},
 		async ({ projectId }) => {
-			const r = await proposalCall<{ features: ProposalFeature[] }>(ctx, (c) => c.proposalFeatures(projectId));
+			const r = await proposalCall<{ features: ProposalFeature[] }>(ctx, (c) =>
+				c.proposalFeatures(projectId),
+			);
 			return jsonResult({
 				projectId,
 				features: r.features,
@@ -338,7 +340,9 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.string()
 					.max(64)
 					.optional()
-					.describe('Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup")'),
+					.describe(
+						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup")',
+					),
 				undecided: z.boolean().optional().describe('Only proposals with items still to review'),
 			},
 			annotations: READ_ONLY,

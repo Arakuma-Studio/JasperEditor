@@ -37,7 +37,16 @@ const proposal = (state: 'pending' | 'stale'): Proposal =>
 		updatedAt: '2026-10-25T00:00:00.000Z',
 		baseRevision: 0,
 		docHash: 'x',
-		items: [{ id: 'k1', label: 'Kit', group: 'cut-kits', commands: [{ type: 'marker.add', frame: 1 }], requires: [], state }],
+		items: [
+			{
+				id: 'k1',
+				label: 'Kit',
+				group: 'cut-kits',
+				commands: [{ type: 'marker.add', frame: 1 }],
+				requires: [],
+				state,
+			},
+		],
 	}) as Proposal;
 
 function fakeEngine(opts: { refreshable: boolean }) {
@@ -63,11 +72,22 @@ function fakeEngine(opts: { refreshable: boolean }) {
 		refreshProposal: async (projectId: string, proposalId: string, req: unknown) => {
 			calls.push({ name: 'refreshProposal', args: [projectId, proposalId, req] });
 			if (!opts.refreshable)
-				throw new EngineError('PROPOSAL_NOT_REFRESHABLE', 'The producer of "edit-automation" proposals does not re-plan items', {
-					status: 409,
-					detail: { code: 'E_NOT_REFRESHABLE' },
-				});
-			return { proposal: proposal('pending'), refreshed: ['k1'], dropped: [], unchanged: [], stale: [], revision: 4 };
+				throw new EngineError(
+					'PROPOSAL_NOT_REFRESHABLE',
+					'The producer of "edit-automation" proposals does not re-plan items',
+					{
+						status: 409,
+						detail: { code: 'E_NOT_REFRESHABLE' },
+					},
+				);
+			return {
+				proposal: proposal('pending'),
+				refreshed: ['k1'],
+				dropped: [],
+				unchanged: [],
+				stale: [],
+				revision: 4,
+			};
 		},
 	};
 	const link: EngineConnection = {
@@ -105,7 +125,11 @@ describe('proposal feature tools', () => {
 		const t = await connect({ refreshable: true });
 		const { r, json } = await t.call('list_proposal_features', { projectId: P });
 		expect(r.isError).toBeFalsy();
-		expect(json.features[0]).toMatchObject({ id: 'edit-automation', agentAccept: { allowed: true }, refreshable: true });
+		expect(json.features[0]).toMatchObject({
+			id: 'edit-automation',
+			agentAccept: { allowed: true },
+			refreshable: true,
+		});
 	});
 
 	it('refresh_proposal re-plans stale items (default "stale"); refused with E_NOT_REFRESHABLE and a hint', async () => {
@@ -128,7 +152,14 @@ describe('proposal feature tools', () => {
 		const t = await connect({ refreshable: true });
 		const g = await t.client.readResource({ uri: 'jasper://guide' });
 		const text = (g.contents[0] as { text: string }).text;
-		for (const s of ['list_proposal_features', 'refresh_proposal', 'E_TOO_LARGE', 'clip.addAdjustmentBatch', 'keyframe.addBatch', 'meta.anchorOn'])
+		for (const s of [
+			'list_proposal_features',
+			'refresh_proposal',
+			'E_TOO_LARGE',
+			'clip.addAdjustmentBatch',
+			'keyframe.addBatch',
+			'meta.anchorOn',
+		])
 			expect(text).toContain(s);
 	});
 });

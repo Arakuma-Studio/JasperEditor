@@ -21,11 +21,11 @@ import {
 	looksLikeId,
 	markAccepted,
 	type Origin,
+	PROPOSAL_FEATURES,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalContext,
 	type ProposalIssue,
-	PROPOSAL_FEATURES,
 	type ProposalItemInput,
 	type ProposalPolicyDecision,
 	planAccept,
@@ -33,9 +33,9 @@ import {
 	projectSettingFeatures,
 	proposalCounts,
 	REFRESHABLE_STATES,
+	type Registries,
 	readAgentProposals,
 	refreshProposalItems,
-	type Registries,
 	rejectItems,
 	reopenItems,
 	reopenRefusals,
@@ -759,7 +759,12 @@ export class ProposalService {
 	 * anchors). Nothing is applied: the reviewer (or an allowed agent) accepts them like any item. The editor and the
 	 * proposal's agent may ask; accepted and rejected items are never replaced.
 	 */
-	async refresh(projectId: string, proposalId: string, req: { itemIds: string[] | 'stale' }, _who: Requester) {
+	async refresh(
+		projectId: string,
+		proposalId: string,
+		req: { itemIds: string[] | 'stale' },
+		_who: Requester,
+	) {
 		await this.ensureProject(projectId);
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {
 			const p0 = await this.load(projectId, proposalId);
@@ -801,7 +806,11 @@ export class ProposalService {
 				return stamped;
 			};
 			if (ids.length === 0) {
-				const kept = await save(p, 'revalidated', rv.stale.map((x) => x.itemId));
+				const kept = await save(
+					p,
+					'revalidated',
+					rv.stale.map((x) => x.itemId),
+				);
 				return { proposal: kept, refreshed: [], dropped: [], unchanged: [], stale: rv.stale, revision };
 			}
 			let planned: Awaited<ReturnType<ProposalRefresher>>;
@@ -832,7 +841,11 @@ export class ProposalService {
 				);
 			}
 			// the rest of the proposal on the same document (items requiring a refreshed one may hold again)
-			const after = revalidate(doc, settleSetupItems(r.proposal, this.now().toISOString()).proposal, this.ctx(revision));
+			const after = revalidate(
+				doc,
+				settleSetupItems(r.proposal, this.now().toISOString()).proposal,
+				this.ctx(revision),
+			);
 			const out = await save(after.proposal, 'refreshed', [...r.refreshed, ...r.dropped]);
 			return {
 				proposal: out,

@@ -5,7 +5,11 @@
 // user asked for agent-driven automation; every accept is one undoable "Agent: …" History entry and destructive
 // commands inside still need the user's approval card). Pure data and readers: the engine registers the policies
 // (`ProposalService.registerPolicy`), the editor and MCP read the same table.
-import { type ProjectAgentProposals, ProjectAgentProposalsSchema, type ProjectDocument } from '../schema/document.ts';
+import {
+	type ProjectAgentProposals,
+	ProjectAgentProposalsSchema,
+	type ProjectDocument,
+} from '../schema/document.ts';
 import { soundDesignSettingsOf } from '../schema/sound.ts';
 // type-only: gaps/settings (the invariants) reads this module, so it must not evaluate the proposal schema first
 import type { Proposal } from './schema.ts';
@@ -145,7 +149,10 @@ export function projectSettingFeatures(): ProposalFeatureInfo[] {
 
 /** The stored per-feature entries when readable (null: absent or unreadable). Never throws. */
 export function readAgentProposals(settings: unknown): ProjectAgentProposals | null {
-	const v = settings && typeof settings === 'object' ? (settings as { agentProposals?: unknown }).agentProposals : undefined;
+	const v =
+		settings && typeof settings === 'object'
+			? (settings as { agentProposals?: unknown }).agentProposals
+			: undefined;
 	if (v === undefined) return {};
 	const r = ProjectAgentProposalsSchema.safeParse(v);
 	return r.success ? r.data : null;
@@ -156,7 +163,10 @@ export function readAgentProposals(settings: unknown): ProjectAgentProposals | n
  * else the feature's default. An unreadable setting counts as off (the safe side; repair reports it). null for a
  * feature whose agent accept is not a project setting (sound design, unknown features).
  */
-export function agentProposalsAllowed(doc: Pick<ProjectDocument, 'settings'>, feature: string): boolean | null {
+export function agentProposalsAllowed(
+	doc: Pick<ProjectDocument, 'settings'>,
+	feature: string,
+): boolean | null {
 	const f = BY_ID.get(feature);
 	if (!f || f.agentAccept.setting !== 'project') return null;
 	const stored = readAgentProposals(doc.settings);

@@ -115,8 +115,7 @@ export function proposalBudget(
 		};
 	// time order (items without a frame keep their place after the timed ones)
 	const ordered = [...rows].sort(
-		(a, b) =>
-			(a.frame ?? Number.POSITIVE_INFINITY) - (b.frame ?? Number.POSITIVE_INFINITY) || a.i - b.i,
+		(a, b) => (a.frame ?? Number.POSITIVE_INFINITY) - (b.frame ?? Number.POSITIVE_INFINITY) || a.i - b.i,
 	);
 	let fit = 0;
 	let c = 0;

@@ -245,7 +245,13 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 					{
 						effectId: 'jasper.transform',
 						params: { shutterAngle: 360 },
-						keyframes: { scaleHeight: [{ frame: 0, value: 100 }, { frame: 10, value: 170 }, { frame: 20, value: 100 }] },
+						keyframes: {
+							scaleHeight: [
+								{ frame: 0, value: 100 },
+								{ frame: 10, value: 170 },
+								{ frame: 20, value: 100 },
+							],
+						},
 					},
 				],
 				ref: '$kit',

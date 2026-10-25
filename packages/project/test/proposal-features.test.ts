@@ -10,6 +10,7 @@ import {
 	approvalReasons,
 	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
+	createCounterIdSource,
 	createProposal,
 	cutAnchorKey,
 	defaultRegistries,
@@ -31,7 +32,6 @@ import {
 	SOUND_DESIGN_FEATURE,
 	SUBTITLES_FEATURE,
 	TRANSCRIPT_CLEANUP_FEATURE,
-	createCounterIdSource,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -87,14 +87,16 @@ describe('proposal features', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 		const p = { feature: SUBTITLES_FEATURE } as Proposal;
 		expect(projectFeaturePolicy(SUBTITLES_FEATURE)(h.doc, p)).toMatchObject({ allowed: false });
-		expect(
-			(projectFeaturePolicy(SUBTITLES_FEATURE)(h.doc, p) as { reason: string }).reason,
-		).toContain('Allow agents to apply subtitles proposals');
+		expect((projectFeaturePolicy(SUBTITLES_FEATURE)(h.doc, p) as { reason: string }).reason).toContain(
+			'Allow agents to apply subtitles proposals',
+		);
 		expect(projectFeaturePolicy(EDIT_AUTOMATION_FEATURE)(h.doc, p)).toEqual({ allowed: true });
 		// undo = the document before
 		expect(agentProposalsAllowed(before, SUBTITLES_FEATURE)).toBe(true);
 		// strict command validation
-		const bad = h.tx([{ type: 'project.updateSettings', settings: { agentProposals: { subtitles: 'yes' } } }]);
+		const bad = h.tx([
+			{ type: 'project.updateSettings', settings: { agentProposals: { subtitles: 'yes' } } },
+		]);
 		expect(bad.ok ? null : bad.errors[0]!.code).toBe('E_SCHEMA');
 	});
 
@@ -111,7 +113,10 @@ describe('proposal features', () => {
 	it('reads an unreadable setting as off, loads it, and repairs it to off with a report', () => {
 		const h = new Harness();
 		const doc = structuredClone(h.doc);
-		(doc.settings as Record<string, unknown>).agentProposals = { subtitles: 'maybe', 'edit-automation': true };
+		(doc.settings as Record<string, unknown>).agentProposals = {
+			subtitles: 'maybe',
+			'edit-automation': true,
+		};
 		expect(agentProposalsAllowed(doc, EDIT_AUTOMATION_FEATURE)).toBe(false);
 		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-PROJECT-SETTINGS')).toBe(true);
 		const r = repairDocument(doc, createCounterIdSource(900));
@@ -126,11 +131,14 @@ describe('proposal features', () => {
 		for (const junk of [{ subtitles: 'maybe' }, 'on', 42, [true], null]) {
 			const d = structuredClone(h.doc);
 			(d.settings as Record<string, unknown>).agentProposals = junk;
-			const env = makeEnvelope({ ...d, schemaVersion: CURRENT_SCHEMA_VERSION }, {
-				revision: 1,
-				savedAt: NOW,
-				platform: 'test',
-			});
+			const env = makeEnvelope(
+				{ ...d, schemaVersion: CURRENT_SCHEMA_VERSION },
+				{
+					revision: 1,
+					savedAt: NOW,
+					platform: 'test',
+				},
+			);
 			const loaded = loadProject(JSON.parse(JSON.stringify(env)));
 			expect(loaded.issues).toEqual([]);
 			for (const f of projectSettingFeatures())
@@ -262,7 +270,9 @@ describe('finer anchors (spec 15 EA-003)', () => {
 		]);
 		const rv = revalidate(h.doc, p, { ...CTX, revision: h.revision });
 		expect(rv.proposal.items[0]!.state).toBe('stale');
-		const prob = anchorProblem(h.doc, { [cutAnchorKey(trackId, 60)]: it0.anchors![cutAnchorKey(trackId, 60)]! });
+		const prob = anchorProblem(h.doc, {
+			[cutAnchorKey(trackId, 60)]: it0.anchors![cutAnchorKey(trackId, 60)]!,
+		});
 		expect(prob).toMatchObject({ entity: 'cut', change: 'frame', at: 60, to: 50 });
 	});
 
@@ -320,7 +330,14 @@ describe('refreshProposalItems (Refresh proposal)', () => {
 		expect(k.anchors?.[cutAnchorKey(trackId, 50)]).toBeDefined();
 		expect(r.proposal.items[1]!.note).toBe('keep it');
 		// a drop
-		const d = refreshProposalItems(h.doc, stale, ['k60'], { items: [], dropped: [{ itemId: 'k60', reason: 'the cut is gone' }] }, CTX, NOW);
+		const d = refreshProposalItems(
+			h.doc,
+			stale,
+			['k60'],
+			{ items: [], dropped: [{ itemId: 'k60', reason: 'the cut is gone' }] },
+			CTX,
+			NOW,
+		);
 		expect(d.ok && d.proposal.items[0]!.state).toBe('invalid');
 		expect(d.ok && d.proposal.items[0]!.reason).toContain('the cut is gone');
 		// nothing returned: unchanged
@@ -334,20 +351,29 @@ describe('refreshProposalItems (Refresh proposal)', () => {
 			{ ...kitItem('k60', trackId, 60, [a.id, b.id]) },
 			{ id: 't', label: 'Track', commands: [{ type: 'track.add', kind: 'video', ref: '$fx' }] },
 		]);
-		const rejected = { ...p, items: p.items.map((it) => (it.id === 'k60' ? { ...it, state: 'rejected' as const } : it)) };
+		const rejected = {
+			...p,
+			items: p.items.map((it) => (it.id === 'k60' ? { ...it, state: 'rejected' as const } : it)),
+		};
 		const codes = (pp: Proposal, ids: string[], res: unknown) => {
 			const r = refreshProposalItems(h.doc, pp, ids, res, CTX, NOW);
 			return r.ok ? [] : r.errors.map((e) => e.code);
 		};
-		expect(codes(rejected, ['k60'], { items: [kitItem('k60', trackId, 60, [])] })).toEqual(['E_INVALID_PARAM']);
+		expect(codes(rejected, ['k60'], { items: [kitItem('k60', trackId, 60, [])] })).toEqual([
+			'E_INVALID_PARAM',
+		]);
 		expect(codes(p, ['t'], { items: [kitItem('k60', trackId, 60, [])] })).toEqual(['E_INVALID_PARAM']);
 		expect(codes(p, ['k60'], { items: [{ ...kitItem('zz', trackId, 60, []) }] })).toEqual(['E_NOT_FOUND']);
 		expect(
-			codes(p, ['t'], { items: [{ id: 't', label: 'Track', commands: [{ type: 'track.add', kind: 'video', ref: '$other' }] }] }),
+			codes(p, ['t'], {
+				items: [{ id: 't', label: 'Track', commands: [{ type: 'track.add', kind: 'video', ref: '$other' }] }],
+			}),
 		).toEqual(['E_INVALID_PARAM']);
 		expect(codes(p, ['k60'], { items: 'x' })).toEqual(['E_SCHEMA']);
-		expect(codes(p, ['k60'], { items: [{ ...kitItem('k60', trackId, 60, []), commands: [{ type: 'marker.add', frme: 1 }] }] })).toEqual([
-			'E_SCHEMA',
-		]);
+		expect(
+			codes(p, ['k60'], {
+				items: [{ ...kitItem('k60', trackId, 60, []), commands: [{ type: 'marker.add', frme: 1 }] }],
+			}),
+		).toEqual(['E_SCHEMA']);
 	});
 });

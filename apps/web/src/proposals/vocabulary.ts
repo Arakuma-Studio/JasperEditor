@@ -38,7 +38,13 @@ function fold(key: string): string {
 export function genericVocabulary(feature: string): ReviewVocabulary {
 	const info = proposalFeatureInfo(feature);
 	const itemsText = (n: number) =>
-		info ? (n === 1 ? t(info.itemNoun.one) : t(info.itemNoun.other, n)) : n === 1 ? t('1 item') : t('{0} items', n);
+		info
+			? n === 1
+				? t(info.itemNoun.one)
+				: t(info.itemNoun.other, n)
+			: n === 1
+				? t('1 item')
+				: t('{0} items', n);
 	return {
 		groupOf: (item) => fold(text(metaOf(item.meta).group) ?? item.group ?? ''),
 		itemsText,

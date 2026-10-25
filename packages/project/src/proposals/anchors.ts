@@ -156,7 +156,8 @@ function cutIndex(doc: ProjectDocument): CutIndex {
 	for (const seqRaw of Object.values(rec(doc.sequences)))
 		for (const [id, cRaw] of Object.entries(rec(rec(seqRaw).clips))) {
 			const c = rec(cRaw);
-			if (typeof c.trackId !== 'string' || typeof c.start !== 'number' || typeof c.duration !== 'number') continue;
+			if (typeof c.trackId !== 'string' || typeof c.start !== 'number' || typeof c.duration !== 'number')
+				continue;
 			const e = m.get(c.trackId) ?? { ends: new Map(), starts: new Map() };
 			e.starts.set(c.start, id);
 			e.ends.set(c.start + c.duration, id);
@@ -214,7 +215,17 @@ export function itemAnchors(
 /** What an anchor was, for a reason a person can read: an entity kind, and where it was / is (sequence frames). */
 export type AnchorProblem = {
 	id: string;
-	entity: 'clip' | 'cue' | 'cut' | 'marker' | 'transition' | 'track' | 'media' | 'item' | 'sequence' | 'other';
+	entity:
+		| 'clip'
+		| 'cue'
+		| 'cut'
+		| 'marker'
+		| 'transition'
+		| 'track'
+		| 'media'
+		| 'item'
+		| 'sequence'
+		| 'other';
 	/**
 	 * deleted: gone from the document; track: a clip on another track; start: a clip moved in time; length: trimmed;
 	 * retimed: In point or speed changed; frame: a cue, marker or cut moved (a cut: its two clips meet elsewhere);

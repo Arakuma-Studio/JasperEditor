@@ -72,7 +72,10 @@ export function approvalReasons(tx: Pick<AgentTxInput, 'commands' | 'dryRun'>): 
 /** Features a `project.updateSettings` command turns on for agents (`settings.agentProposals[f] === true`). */
 export function agentProposalGrants(command: unknown): string[] {
 	const settings = (command as { settings?: unknown } | null)?.settings;
-	const ap = settings && typeof settings === 'object' ? (settings as { agentProposals?: unknown }).agentProposals : null;
+	const ap =
+		settings && typeof settings === 'object'
+			? (settings as { agentProposals?: unknown }).agentProposals
+			: null;
 	if (!ap || typeof ap !== 'object' || Array.isArray(ap)) return [];
 	return Object.entries(ap as Record<string, unknown>)
 		.filter(([, v]) => v === true)
