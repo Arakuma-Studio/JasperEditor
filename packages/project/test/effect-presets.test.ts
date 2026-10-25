@@ -226,14 +226,14 @@ describe('effect.applyPreset', () => {
 
 	it('rejects invalid presets', () => {
 		const { h, c } = project();
-		for (const preset of [
-			{ format: 'nope' },
-			{ ...builtinEffectPreset('builtin.fade-in')!, version: 2 },
-			{ ...builtinEffectPreset('builtin.fade-in')!, type: 'sideways' },
-			{ ...builtinEffectPreset('builtin.fade-in')!, intrinsic: undefined },
-		]) {
+		for (const [preset, code] of [
+			[{ format: 'nope' }, 'E_SCHEMA'],
+			[{ ...builtinEffectPreset('builtin.fade-in')!, version: 2 }, 'E_SCHEMA'],
+			[{ ...builtinEffectPreset('builtin.fade-in')!, type: 'sideways' }, 'E_SCHEMA'],
+			[{ ...builtinEffectPreset('builtin.fade-in')!, intrinsic: undefined }, 'E_INVALID_PARAM'],
+		] as const) {
 			const r = h.tx([{ type: 'effect.applyPreset', preset: roundTrip(preset), clipIds: [c] }]);
-			expect(r.ok).toBe(false);
+			expect(r).toMatchObject({ ok: false, errors: [{ code }] });
 		}
 	});
 });

@@ -401,7 +401,7 @@ const OCIO_VALUES = OCIO_SPACES.map((s) => s.value);
 const OCIO_LABELS = OCIO_SPACES.map((s) => s.label);
 
 /** The conversion S_OCIOTransform applies for its params: curves (GLSL ids) and the primaries matrix. */
-export function ocioTransformOf(p: EffectParams) {
+function ocioTransformOf(p: EffectParams) {
 	let from = ocioSpace(str(p, 'from', 'logc3'));
 	let to = ocioSpace(str(p, 'to', 'rec709'));
 	if (bool(p, 'switchToAndFrom')) [from, to] = [to, from];

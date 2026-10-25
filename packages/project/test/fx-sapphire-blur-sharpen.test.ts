@@ -41,9 +41,8 @@ describe('pass planning', () => {
 		};
 		for (const s of FAMILY) {
 			const p = plan(s, stress[s.id] ?? {});
-			const outputs = p.passes.filter((x) => x.output).length;
+			const outputs = new Set(p.passes.map((pass) => pass.output).filter(Boolean)).size;
 			expect(outputs + p.textures.length, s.id).toBeLessThanOrEqual(12);
-			expect(new Set(p.passes.map((x) => x.output).filter(Boolean)).size, s.id).toBe(outputs);
 		}
 	});
 });

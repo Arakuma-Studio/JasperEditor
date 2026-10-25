@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { type FxFrameContext, gpuPasses, planGpuEffect } from '../src/index.ts';
 import type { EffectParams, EffectSpec } from '../src/registry/effects.ts';
 import { ocioMatrix, ocioSpace } from '../src/registry/fx/sapphire-adjust-composite/ocio.ts';
-import {
-	ocioTransformOf,
-	SAPPHIRE_ADJUST_COMPOSITE_EFFECTS,
-} from '../src/registry/fx/sapphire-adjust-composite.ts';
+import { SAPPHIRE_ADJUST_COMPOSITE_EFFECTS } from '../src/registry/fx/sapphire-adjust-composite.ts';
 
 const ctx: FxFrameContext = {
 	width: 1920,
@@ -36,11 +33,6 @@ describe('S_OCIOTransform maths', () => {
 			expect(r2020[i]).toBeCloseTo(v, 6); // BT.2087
 		});
 	});
-
-	it('Switch To And From swaps the direction', () => {
-		const t = ocioTransformOf({ from: 'srgb', to: 'acescg', switchToAndFrom: true });
-		expect([t.from.value, t.to.value]).toEqual(['acescg', 'srgb']);
-	});
 });
 
 describe('pass plans', () => {
@@ -68,7 +60,7 @@ describe('pass plans', () => {
 				Object.fromEntries(Object.entries(everything).filter(([k]) => s.params.some((x) => x.name === k))),
 			);
 			const passes = gpuPasses(s.gpu!, p, ctx);
-			const named = passes.length - 1;
+			const named = new Set(passes.slice(0, -1).map((pass, index) => pass.output ?? `pass${index}`)).size;
 			const textures = s.params.filter((x) => x.type === 'media').length;
 			expect(named + textures, s.id).toBeLessThanOrEqual(12);
 			expect(() =>

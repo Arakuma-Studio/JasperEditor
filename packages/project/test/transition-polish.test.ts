@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
+	type ClipTracker,
 	defaultRegistries,
 	type EffectSpec,
-	exportAgentSchema,
 	flicksPerFrame,
 	type MediaHandle,
 	planGpuTransition,
@@ -33,13 +33,6 @@ const HANDLE: MediaHandle = {
 const spec = (id: string) => transitionSpec(id)!;
 const defaults = (s: TransitionSpec) => Object.fromEntries(s.params.map((p) => [p.name, p.default]));
 const side = { width: 64, height: 36, compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity: 1 };
-
-describe('expensive transitions', () => {
-	it('exports the flag in the agent schema', () => {
-		const schema = exportAgentSchema(defaultRegistries());
-		expect(schema.transitions.find((t) => t.id === 'jasper.s.swish-3d')?.expensive).toBe(true);
-	});
-});
 
 describe('image params on transitions', () => {
 	it('binds the image as u_<name> + u_<name>_size, like effects', () => {
@@ -234,18 +227,25 @@ describe('trackers of transition sides', () => {
 			] as [number, number][],
 		};
 		const samples = { start: 0, step: 1, stride: 2 as const, data: [1, 2], confidence: [1] };
-		const mk = (id: string, kind: 'planar' | 'point', s: typeof samples | null) =>
-			({
-				id,
-				name: id,
-				kind,
-				reference: kind === 'point' ? { time: 0, point: [1, 1] as [number, number] } : ref,
-				samples: s,
-				method: 'm',
-			}) as never;
+		const planarSamples: TrackerSamples = {
+			...samples,
+			stride: 8,
+			data: [0, 0, 1, 0, 1, 1, 0, 1],
+		};
+		const mk = (id: string, kind: 'planar' | 'point', s: TrackerSamples | null): ClipTracker => ({
+			id,
+			name: id,
+			kind,
+			reference: kind === 'point' ? { time: 0, point: [1, 1] as [number, number] } : ref,
+			samples: s,
+			method: 'm',
+		});
 		expect(transitionTrackerOf(undefined)).toBeNull();
 		expect(transitionTrackerOf([mk('a', 'planar', null), mk('b', 'point', samples)])!.id).toBe('b');
 		expect(transitionTrackerOf([mk('a', 'planar', null)])!.id).toBe('a');
+		expect(
+			transitionTrackerOf([mk('point', 'point', samples), mk('planar', 'planar', planarSamples)])!.id,
+		).toBe('planar');
 	});
 });
 

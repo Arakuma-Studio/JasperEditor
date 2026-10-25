@@ -113,7 +113,7 @@ export function jitterFramesSource(
 const permutations = new Map<string, Uint32Array>();
 
 /** A deterministic permutation of 0…n−1 for a seed (Fisher–Yates on `fxRandom`; memoised, pure). */
-export function seededPermutation(n: number, seed: number): Uint32Array {
+function seededPermutation(n: number, seed: number): Uint32Array {
 	const key = `${seed}:${n}`;
 	const hit = permutations.get(key);
 	if (hit) return hit;

@@ -74,6 +74,10 @@ describe('transition.applyDefault uses each medium’s default length (TUI-032)'
 		const ts = all(h);
 		expect(ts).toHaveLength(6);
 		for (const t of ts) expect(t.duration).toBe(isVideo(h, t) ? 20 : 10);
+		expect(ts.filter((t) => t.outgoingClipId && t.incomingClipId).map((t) => t.alignment)).toEqual([
+			'center',
+			'center',
+		]);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
@@ -122,12 +126,6 @@ describe('transition.applyDefault alignment (TUI-033)', () => {
 			expect(checkInvariants(h.doc)).toEqual([]);
 		});
 	}
-
-	it('without it the two-sided ones stay centred (M2 behaviour)', () => {
-		const { h, va, vb } = twoLinkedClips();
-		h.ok([{ type: 'transition.applyDefault', clipIds: [va, vb], edges: 'both' }]);
-		expect(all(h).find((t) => t.outgoingClipId && t.incomingClipId)!.alignment).toBe('center');
-	});
 
 	it('refuses an unknown alignment', () => {
 		const { h, va } = twoLinkedClips();

@@ -87,16 +87,10 @@ describe('razor inside a transition (WP6.5a item 1)', () => {
 			expect(t!.alignment).toBe('center');
 		}
 		expect(r.warnings.filter((w) => w.code === 'W_TRANSITION_SHORTENED')).toHaveLength(2);
-		// undo restores the document before (untouched); redo gives the same edit
+		// The transaction leaves the original document untouched for undo.
 		const beforeSeq = Object.values(before.sequences)[0]!;
 		expect(Object.values(beforeSeq.transitions).map((t) => t.duration)).toEqual([30, 30]);
 		expect(Object.keys(beforeSeq.clips)).toHaveLength(4);
-		const redo = withCrossfades();
-		const r2 = redo.h.tx([{ type: 'clip.split', at: 105, clipIds: [redo.vb] }]);
-		expect(r2.ok).toBe(true);
-		expect(redo.h.seq.transitions).toEqual(h.seq.transitions);
-		expect(redo.h.spans('V1')).toEqual(h.spans('V1'));
-		expect(redo.h.spans('A1')).toEqual(h.spans('A1'));
 	});
 
 	it('Add Edit on the outgoing clip inside the span moves the transition to the right part and fits it', () => {

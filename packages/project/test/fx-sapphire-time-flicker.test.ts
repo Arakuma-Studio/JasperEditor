@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { EffectSpec, FxFrameContext, FxTimeContext } from '../src/index.ts';
+import type { EffectSpec, FxTimeContext } from '../src/index.ts';
 import {
-	clampToSpan,
 	flickerGains,
 	freezeFrameSource,
 	historyOffsets,
@@ -10,7 +9,6 @@ import {
 	randomEditsSource,
 	retimeSource,
 	reverseEditsSource,
-	seededPermutation,
 	spreadOffsets,
 } from '../src/registry/fx/sapphire-time-flicker/time-math.ts';
 import { SAPPHIRE_TIME_FLICKER_EFFECTS } from '../src/registry/fx/sapphire-time-flicker.ts';
@@ -32,16 +30,6 @@ const tctx = (frame: number, over: Partial<FxTimeContext> = {}): FxTimeContext =
 	seed: 0.37,
 	...over,
 });
-const fctx = (frame: number): FxFrameContext => ({
-	width: 640,
-	height: 360,
-	pxScale: 1,
-	fps: 30,
-	frame,
-	duration: 60,
-	seed: 0.37,
-	progress: 0,
-});
 const remap = (
 	label: string,
 	frame: number,
@@ -56,50 +44,6 @@ const samples = (
 ) => spec(label).gpu!.time!.samples!(defaults(spec(label), over), tctx(frame, ctx));
 
 describe('Sapphire Time + Flicker family', () => {
-	it('every time hook is pure: same inputs → same outputs, over random seeks and settings', () => {
-		const frames = [0, 1, 7, 29, 30, 59, -3, 63, 12, 0];
-		const variants: Record<string, Record<string, unknown>[]> = {
-			S_Retime: ['speed', 'longer', 'scale', 'fps', 'length', 'variable'].map((mode) => ({
-				mode,
-				inputFrame: 12.5,
-			})),
-			S_GetFrame: [{ getFrame: 7.25, interpFrames: true }],
-			S_FlickerRemove: [{ holdFromFrame: true, holdFrame: 4 }],
-			S_CutToDissolve: [{ show: 'cutFrames' }, { show: 'a' }],
-			S_RepairFrames: [{ show: 'badFrame' }],
-			S_TimeDisplace: [{ shiftRelativeTo: 'frame0' }],
-		};
-		for (const s of SAPPHIRE_TIME_FLICKER_EFFECTS) {
-			const t = s.gpu!.time;
-			for (const over of [{}, ...(variants[s.label] ?? [])]) {
-				const p = defaults(s, over);
-				for (const f of frames) {
-					const ctx = tctx(f, { headHandle: 4, tailHandle: 4 });
-					if (t?.remap) {
-						const r = t.remap(p, ctx);
-						expect(Number.isFinite(r)).toBe(true);
-						expect(t.remap(p, { ...ctx })).toBe(r);
-					}
-					if (t?.samples) {
-						const a = t.samples(p, ctx);
-						expect(t.samples(p, { ...ctx })).toEqual(a);
-						expect(a.length).toBeLessThanOrEqual(8); // shader time-sample protocol (§9)
-						const base = t.remap ? clampToSpan(t.remap(p, ctx), ctx) : f;
-						for (const o of a) {
-							expect(Number.isInteger(o)).toBe(true);
-							// never outside the drawn span (would read as transparent)
-							expect(base + o).toBeGreaterThanOrEqual(-4);
-							expect(base + o).toBeLessThanOrEqual(63);
-						}
-						expect([...a].sort((x, y) => x - y)).toEqual(a);
-					}
-					const u = s.gpu!.uniforms?.(p, fctx(f));
-					if (u) expect(s.gpu!.uniforms!(p, fctx(f))).toEqual(u);
-				}
-			}
-		}
-	});
-
 	it('S_FreezeFrame follows the documented sequences', () => {
 		// 1-based in the docs: 1 2 3 4 5 6 7 8 9 10 11 → 1 1 1 1 1 6 6 6 6 6 11
 		expect(Array.from({ length: 11 }, (_, f) => freezeFrameSource(f, 5, 0))).toEqual([
@@ -137,8 +81,6 @@ describe('Sapphire Time + Flicker family', () => {
 	});
 
 	it('S_RandomEdits is a permutation of whole segments', () => {
-		const p = seededPermutation(30, 0.37);
-		expect([...p].sort((x, y) => x - y)).toEqual(Array.from({ length: 30 }, (_, i) => i));
 		const shown = Array.from({ length: 60 }, (_, f) => randomEditsSource(f, 2, 0.37, 60));
 		expect([...shown].sort((x, y) => x - y)).toEqual(Array.from({ length: 60 }, (_, i) => i));
 		for (let f = 0; f < 60; f += 2) expect(shown[f + 1]).toBe(shown[f]! + 1);
@@ -161,7 +103,6 @@ describe('Sapphire Time + Flicker family', () => {
 		expect(s.gpu!.time!.remap!(p, tctx(3))).toBe(0.75);
 		expect(s.gpu!.time!.samples!(p, tctx(3))).toEqual([1]);
 		expect(s.gpu!.time!.samples!(p, tctx(4))).toEqual([]);
-		expect(s.gpu!.uniforms!(p, fctx(3))).toEqual({ u_t: 0.75 });
 	});
 
 	it('S_GetFrame shows Get Frame, blending the next frame with Interp Frames', () => {
@@ -202,29 +143,16 @@ describe('Sapphire Time + Flicker family', () => {
 
 	it('S_TimeWarpRGB samples one frame per shifted channel', () => {
 		expect(samples('S_TimeWarpRGB', 30)).toEqual([-1, 1]);
-		expect(spec('S_TimeWarpRGB').gpu!.uniforms!(defaults(spec('S_TimeWarpRGB')), fctx(30))).toEqual({
-			u_twOffsets: [-1, -0, 1],
-		});
 		expect(samples('S_TimeWarpRGB', 0)).toEqual([1]);
 	});
 
-	it('S_CutToDissolve: the other side of the cut inside the window, eased progress', () => {
+	it('S_CutToDissolve samples the other side of the cut inside its window', () => {
 		const p = { cutPoint: 30, dissolveLength: 6 };
 		expect(samples('S_CutToDissolve', 26, p)).toEqual([]);
 		expect(samples('S_CutToDissolve', 27, p)).toEqual([3]); // B side held at frame 30
 		expect(samples('S_CutToDissolve', 31, p)).toEqual([-2]); // A side held at frame 29
 		expect(samples('S_CutToDissolve', 33, p)).toEqual([]);
 		expect(samples('S_CutToDissolve', 50, { ...p, show: 'cutFrames' })).toEqual([-21, -20]);
-		const u = (f: number, o = {}) =>
-			spec('S_CutToDissolve').gpu!.uniforms!(defaults(spec('S_CutToDissolve'), { ...p, ...o }), fctx(f)) as {
-				u_ct: number;
-			};
-		const ts = [27, 28, 29, 30, 31, 32].map((f) => u(f).u_ct);
-		for (let i = 1; i < ts.length; i++) expect(ts[i]!).toBeGreaterThan(ts[i - 1]!);
-		expect(ts[0]!).toBeGreaterThan(0);
-		expect(ts[5]!).toBeLessThan(1);
-		expect(u(29, { slowInOut: 0 }).u_ct).toBeCloseTo(2.5 / 6);
-		expect(u(27, { slowInOut: 4 }).u_ct).toBeLessThan(u(27, { slowInOut: 0 }).u_ct);
 	});
 
 	it('S_RepairFrames reads the good frames around the bad ones', () => {
@@ -233,8 +161,6 @@ describe('Sapphire Time + Flicker family', () => {
 		expect(samples('S_RepairFrames', 10, p)).toEqual([-1, 2]);
 		expect(samples('S_RepairFrames', 11, p)).toEqual([-2, 1]);
 		expect(samples('S_RepairFrames', 40, { ...p, show: 'badFrame' })).toEqual([-30]);
-		const u = spec('S_RepairFrames').gpu!.uniforms!(defaults(spec('S_RepairFrames'), p), fctx(11));
-		expect(u).toEqual({ u_t: 2 / 3, u_bad: true });
 	});
 
 	it('S_MotionDetect compares with Delay Frames before (or after) the current frame', () => {

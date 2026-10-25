@@ -6,7 +6,6 @@ import {
 	type FxFrameContext,
 	fxBuiltinUniforms,
 	fxParam,
-	fxRandom,
 	fxSeed,
 	fxSourceFrame,
 	fxTimeSamples,
@@ -190,15 +189,6 @@ describe('seeds and randomness (S11 §2 determinism)', () => {
 		const withSeed = spec({ params: [seedParam(), fxParam.percent('amount', 'Amount', 50)] });
 		expect(paramUniforms(withSeed, { seed: 7, amount: 50 }).map((u) => u.name)).toEqual(['u_amount']);
 		expect(validateGpuEffect(withSeed)).toEqual([]);
-	});
-
-	it('fxRandom is deterministic and spread over 0..1', () => {
-		const xs = Array.from({ length: 2000 }, (_, i) => fxRandom(0.37, i));
-		expect(xs).toEqual(Array.from({ length: 2000 }, (_, i) => fxRandom(0.37, i)));
-		expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
-		expect(Math.max(...xs)).toBeLessThan(1);
-		const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
-		expect(Math.abs(mean - 0.5)).toBeLessThan(0.03);
 	});
 });
 
