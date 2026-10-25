@@ -64,8 +64,7 @@ export type SpanSides = {
  * The effective shape of span a → b exactly as the evaluator draws it (`segmentShape`): a hold, or the two eases —
  * `linear` (progress = time) is reported with the linear ease on both sides — plus the sides' types.
  */
-export type SpanShape = SpanSides &
-	({ hold: true } | { hold: false; linear: boolean; out: Ease; in: Ease });
+export type SpanShape = SpanSides & ({ hold: true } | { hold: false; linear: boolean; out: Ease; in: Ease });
 
 export function spanEases(kfs: Keys, a: number, b: number, metric?: Metric): SpanShape {
 	const A = kfs[a]!;
@@ -103,7 +102,7 @@ export function captureEases(kfs: Keys, a: number, b: number, metric?: Metric): 
 	};
 }
 
-const copyEase = (e: Ease): Ease => ({ influence: e.influence, slope: e.slope });
+const cloneEase = (e: Ease): Ease => ({ influence: e.influence, slope: e.slope });
 
 /**
  * Lets key `i`'s outgoing type become `out` without changing the segment arriving at it (keyframe-sides):
@@ -117,20 +116,20 @@ export function keepIncoming(kfs: Keys, i: number, out: Interpolation, captured:
 	if (k.inInterpolation !== undefined) {
 		if (isBothSided(k.inInterpolation) && k.inInterpolation !== out) {
 			k.inInterpolation = 'bezier';
-			if (captured.aIn) k.easeIn = copyEase(captured.aIn);
+			if (captured.aIn) k.easeIn = cloneEase(captured.aIn);
 		}
 		return;
 	}
 	if (i === 0 || k.interpolation === out) return;
 	if (out === 'bezier' || out === 'hold' || out === 'continuous-bezier') {
-		if (captured.aIn) k.easeIn = copyEase(captured.aIn);
+		if (captured.aIn) k.easeIn = cloneEase(captured.aIn);
 		return;
 	}
 	const side = captured.aSide;
 	if (!side) return;
 	const both = isBothSided(side.type) && side.type !== out;
 	k.inInterpolation = both ? 'bezier' : side.type;
-	if (k.inInterpolation === 'bezier') k.easeIn = copyEase(side.ease);
+	if (k.inInterpolation === 'bezier') k.easeIn = cloneEase(side.ease);
 }
 
 /**
@@ -141,7 +140,7 @@ export function keepOutgoing(kfs: Keys, i: number, inType: InInterpolation, bOut
 	const k = kfs[i]!;
 	if (isBothSided(k.interpolation) && k.interpolation !== inType) {
 		k.interpolation = 'bezier';
-		if (bOut) k.easeOut = copyEase(bOut);
+		if (bOut) k.easeOut = cloneEase(bOut);
 	}
 }
 
@@ -170,20 +169,20 @@ export function writeSpan(
 	const B = kfs[b]!;
 	keepIncoming(kfs, a, 'bezier', cap);
 	A.interpolation = 'bezier';
-	A.easeOut = copyEase(out);
+	A.easeOut = cloneEase(out);
 	if (B.inInterpolation === undefined) {
 		if (B.interpolation === 'linear') {
 			if (isLinearEase(inn)) return; // a legacy Linear B already arrives with the linear ease
 			B.inInterpolation = 'bezier';
 		} else if (isBothSided(B.interpolation)) {
 			B.interpolation = 'bezier';
-			if (cap.bOut) B.easeOut = copyEase(cap.bOut);
+			if (cap.bOut) B.easeOut = cloneEase(cap.bOut);
 		}
 	} else {
 		keepOutgoing(kfs, b, 'bezier', cap.bOut);
 		B.inInterpolation = 'bezier';
 	}
-	B.easeIn = copyEase(inn);
+	B.easeIn = cloneEase(inn);
 }
 
 /** Magnitude of a value change as the evaluator measures speeds (absolute, Euclidean, RMS vertex shift). */

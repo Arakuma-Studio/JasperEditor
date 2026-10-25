@@ -331,8 +331,7 @@ export function explicitInSide<T>(
 	from = i - 1,
 ): { type: InInterpolation; ease: Ease } {
 	const k = kfs[i]!;
-	if (k.inInterpolation !== undefined)
-		return { type: k.inInterpolation, ease: incomingEase(kfs, i, metric) };
+	if (k.inInterpolation !== undefined) return { type: k.inInterpolation, ease: incomingEase(kfs, i, metric) };
 	const prev = from >= 0 && from < i ? kfs[from] : undefined;
 	const own = k.interpolation;
 	if (prev?.interpolation === 'linear') return { type: 'linear', ease: AE_LINEAR_SIDE };

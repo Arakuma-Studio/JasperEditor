@@ -101,17 +101,21 @@ function keysOf(
 	metric?: SpatialMetric,
 ): KeyOut[] {
 	if (!anim) return [];
-	return withEases(anim.keyframes as readonly Keyframe<unknown>[], (k) => {
-		const frame = sequenceFrameOfContentTime(clip, k.time, seq.settings.frameRate as Rational);
-		return {
-			id: k.id,
-			frame,
-			timecode: tc(seq, frame),
-			value: round(k.value),
-			interpolation: k.interpolation,
-			...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
-		};
-	}, metric);
+	return withEases(
+		anim.keyframes as readonly Keyframe<unknown>[],
+		(k) => {
+			const frame = sequenceFrameOfContentTime(clip, k.time, seq.settings.frameRate as Rational);
+			return {
+				id: k.id,
+				frame,
+				timecode: tc(seq, frame),
+				value: round(k.value),
+				interpolation: k.interpolation,
+				...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
+			};
+		},
+		metric,
+	);
 }
 
 /** Why a clip draws nothing at `frame` (null = it is rendered). */
@@ -434,14 +438,18 @@ function seqParam(
 		animated: anim.keyframes.length > 0,
 		...(anim.keyframes.length
 			? {
-					keyframes: withEases(anim.keyframes, (k) => ({
-						id: k.id,
-						frame: Math.round(k.time / F),
-						timecode: tc(seq, Math.round(k.time / F)),
-						value: round(k.value),
-						interpolation: k.interpolation,
-						...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
-					}), metric),
+					keyframes: withEases(
+						anim.keyframes,
+						(k) => ({
+							id: k.id,
+							frame: Math.round(k.time / F),
+							timecode: tc(seq, Math.round(k.time / F)),
+							value: round(k.value),
+							interpolation: k.interpolation,
+							...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
+						}),
+						metric,
+					),
 				}
 			: {}),
 		...(notRendered ? { rendered: false, why: notRendered } : {}),

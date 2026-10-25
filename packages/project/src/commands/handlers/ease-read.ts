@@ -12,13 +12,7 @@ import {
 	spanLeaving,
 } from '../../ease/segments.ts';
 import { createCounterIdSource } from '../../ids.ts';
-import {
-	explicitInSide,
-	isBothSided,
-	isHoldOnlyValue,
-	outgoingEase,
-	rovingRuns,
-} from '../../keyframes.ts';
+import { explicitInSide, isBothSided, isHoldOnlyValue, outgoingEase, rovingRuns } from '../../keyframes.ts';
 import { isVec2Value, type SpatialMetric } from '../../keyframes-spatial.ts';
 import { defaultPresetRegistry } from '../../presets.ts';
 import { defaultEffectRegistry } from '../../registry/effects.ts';
