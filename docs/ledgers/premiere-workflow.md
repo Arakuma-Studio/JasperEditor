@@ -121,13 +121,13 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids):
 | WP | Scope | Depends on | State |
 |---|---|---|---|
-| cutmap | SH-001 `pictureCuts` + MCP `list_cuts` | — | 🔄 |
+| cutmap | SH-001 `pictureCuts` + MCP `list_cuts` | — | ✅ merged (31 ms on 5,000 clips; 2,588 tests) |
 | styling | SH-003 batch styling commands, linked text styles (SH-002 textStyles/styleId), AS-030…033 multi-clip Properties + Effect Controls N-clips mode + selection helpers + MCP | — | 🔄 |
 | textrender | SH-004 all strokes, shadow spread, real text measurer, tighter bake crop | — | 🔄 |
 | speech | spec 16 (providers, catalogue, downloads, decoding, guards, UI, MCP) + TC-003/TC-004 | — | 🔄 |
 | voice | TC-001/002 voice-analysis job + derivative + `VoiceAnalysis` contract + MCP `get_voice_analysis` | — | ✅ merged (1 h of audio in 9.4 s on the VM; 253 tests) |
 | proposals | EA-001…004 proposals for new features (policies, review vocabulary, ghosts, anchors) + EA-031 batch commands | — | 🔄 |
-| subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | ⏳ |
+| subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | 🔄 (started on cutmap; merges styling when it lands) |
 | subexport | AS-050, AS-070…076 still + native motion, batched stills, bounded composite, native shake, preflight, preview windowing | textrender | ⏳ |
 | cleanup | TC-010…033 detector, script alignment, plan + edges, presets, `cleanup.apply` | voice | 🔄 |
 | cleanupui | TC-040…051, TC-060, TC-070/071 review UI, derived preview, MCP, calibration on the Mac | cleanup, speech | ⏳ |
