@@ -1372,10 +1372,16 @@ ui.import?: {
 - **`import_motion_graphics_csv`** `{projectId, csv, template ("id", "id:preset", …), delimiter?, startAt?
   (default 0: MCP has no playhead), track? (default V2), seed?, skipInvalid?, dryRun?, sequenceId?}`:
   - runs the same parser, planner and command builder against the engine catalogue entry;
-  - row errors refuse the call with every bad row in `details.rows`, or are skipped with `skipInvalid`;
-  - a refused transaction names its CSV row and line.
-  - MCP has no zod schemas, so only the JSON Schema checks run before the transaction; fill and schema refusals
-    come back from the transaction (first failing row).
+  - row errors refuse the call with every bad row in `details.rows`, or are skipped (and listed in `skipped`) with
+    `skipInvalid`;
+  - MCP has no zod schemas or fill hooks (it does not depend on `@jasper/mg-templates`), so the JSON Schema checks run
+    first and the engine's `clip.addMotionGraphic` — the same `resolveMgTemplateParams` checks the dialog previews
+    with: zod refinements, the fill hook, template media that is not in the project — checks the rest. A command
+    refusal of a row (`E_INVALID_PARAM`, or `E_NOT_FOUND` / `E_SCHEMA` on `params…`) is that row's error: the call
+    runs one transaction on the happy path; after a refusal, dry runs of the rows after the refused one find the
+    next (k refused rows: k + 1 runs, each shorter). Without `skipInvalid` the valid rows are only dry-run so every
+    bad row — coercion and command refusals — is reported together and nothing is imported;
+  - any other refusal (a locked track, a stale revision…) names its CSV row and line and imports nothing.
 - `TEMPLATES_GUIDE` and the server instructions mention both tools.
 
 ### Tests
