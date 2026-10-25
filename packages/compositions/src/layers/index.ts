@@ -40,6 +40,12 @@ export {
 	type MgTemplatePreviewProps,
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
+export {
+	animeTemplateRestMs,
+	setTemplateEditHold,
+	templateEditHold,
+	useTemplateEditHold,
+} from './template-edit-hold.ts';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
 export { drawPdfPage, pdfPagePicture } from './VectorLayer.tsx';
 export {

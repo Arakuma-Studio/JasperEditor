@@ -1,6 +1,6 @@
 // M2 UI extension points (ARCHITECTURE §19.10). Each work package registers into these from its own module;
 // the host panels (Effect Controls, Properties, Program monitor, Timeline, Project) render what is registered.
-import type { Clip, EffectInstance, EffectSpec, ProjectItem, Rational } from '@jasper/project';
+import type { Clip, EffectInstance, EffectSpec, ProjectItem, Rational, ResolvedLayer } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import type { ComponentProps, ComponentType } from 'react';
 import type { TransformOverlay } from '../panels/program/TransformOverlay.tsx';
@@ -124,16 +124,25 @@ export const programOverlays = createRegistry<ProgramOverlayDef>();
  */
 export type LayerDoubleClickContext = {
 	session: EditorSession;
-	clip: Clip;
+	/** The topmost unlocked layer under the pointer; null only for handlers registered with `anyPoint`. */
+	clip: Clip | null;
 	/** The double-clicked point in sequence pixels. */
 	point: [number, number];
 	/** Sequence frame shown. */
 	frame: number;
+	/** WP7b canvas-edit (additive): the layers the monitor resolved at `frame`, bottom to top. */
+	scene?: readonly ResolvedLayer[];
+	/** Monitor zoom (screen px per sequence px). */
+	viewScale?: number;
+	/** The Program overlay surface that received the double-click (scopes DOM lookups to this monitor). */
+	surface?: Element | null;
 };
 export type LayerDoubleClickHandler = {
 	id: string;
 	run(ctx: LayerDoubleClickContext): boolean;
 	order?: number;
+	/** Also called where no unlocked layer is under the pointer (`clip` null), e.g. to explain a locked track. */
+	anyPoint?: boolean;
 };
 export const layerDoubleClickHandlers = createRegistry<LayerDoubleClickHandler>();
 
