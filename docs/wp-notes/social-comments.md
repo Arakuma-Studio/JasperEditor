@@ -825,6 +825,78 @@ frame.
   - Huge counts overflow the card; they now stay short.
 - **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
 
+### X card
+
+WP6d (`sc/v-x`): `x-post` in `packages/motion/src/templates/social-comment/x.tsx` (`X_POST`). Font: Chirp 400/700
+from the remote manifest (`SOCIAL_VARIANT_FONTS['x-post']`; the card draws no 500 or 800). Glyphs: `X_GLYPHS`. Emoji:
+Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
+
+- **Blueprint [tok]:** `ref/x-post`, copied in CSS px. 420 wide, padding 10/16/8, radius 1, 1 px border black/white
+  5 %, the comment row's `0 25px 50px -12px` shadow (same `bleed` as the TikTok comment), bg #FFF / #000. Avatar 52,
+  gap 12. Header row 21 px high, gap 4, 2 px below: name 14/700, badge, `@handle` 14/400, a 2 px dot with 2 px margins,
+  time 14/400, then (pushed right) the Grok mark and "More", 8 px apart. Post 16/20, 3 px above the action row. Action
+  row 30 px high: icon, count 8 px after it; bookmark and share 12 px apart at the right.
+- **x.com 2026 over tokcomment [M]** (`research/platform-measurements`, X):
+  - name and post #000 / #FFF (tokcomment #0F0F0F, dark name #DADADA);
+  - handle, time, dot, icons and counts rgba(0,0,0,.6) / rgba(255,255,255,.6) (`--x-fg-secondary`; tokcomment
+    #737479 / #71767B / #767779);
+  - counts 13 px / 400 with tabular figures (tokcomment 12.96 / 500);
+  - Grok and More in the primary colour (dark: white; tokcomment's dark ellipsis #71767B);
+  - mentions and hashtags #1D9BF0 in both themes;
+  - **action bar: four equal columns** (x.com's `flex-1` engagement columns) for replies, reposts, likes and views,
+    then bookmark and share. Each column clips its count, so no count can push bookmark and share out of the card
+    (tokcomment's space-between row overflows with raw counts, `07_…_BUG-share-icon-overflows`). Icons keep their
+    places whatever the counts; with tokcomment's default counts they sit up to 7 px from its space-between positions.
+  - **a 0 count is not shown** (x.com shows the icon alone) [E: x.com behaviour; the measured post had no zero count].
+- **`showReposts` / `showViews`** hide the count and keep the icon (the params' contract, "the icon stays"), so the
+  columns never move.
+- **Grok mark:** included. x.com puts the Grok "Explain this post" ghost button (`icon-logo-grok`) left of "More" for
+  signed-in viewers when the post allows Grok analysis (bundle code; not rendered logged out [M]); the reference layout
+  shows it, and a screenshot of a post is usually taken signed in. It is X's real mark (`X_GLYPHS.grok`), not
+  tokcomment's imitation. There is no param to hide it (the schema is shared; not added in WP6d).
+- **Verified badge:** X's blue badge with the cut-out tick (`X_GLYPHS.verifiedBlue`), 14 px = 1 em of the name as on
+  x.com. Gold (organisations) and grey (government) exist in `X_GLYPHS` but `verified` is a boolean, so only blue is
+  drawn; a colour choice would need a schema field (proposed, not added).
+- **Sizes against the captures' ink (2×):** action icons 15 px (X's 24-unit glyphs: 24–26 px ink, as tokcomment's 14 px
+  lucide icons with their strokes), Grok 15, More 15, badge 14 (24 px ink, same as tokcomment's).
+- **Text:** Chirp keeps the captures' cap heights at tokcomment's sizes (2×: name "D" 20 vs 19 px, post "W" 22 vs 22 px),
+  so no size was scaled. It sits about 1 px higher in its line box, so the header text moves 1 px down
+  (`HEADER_SHIFT`). Chirp is ≈ 3 % wider than the captures' Liberation Sans (post line 622 vs 605 px), so a long
+  post can wrap one word earlier.
+- **Emoji:** Apple images at 1.2 em, shift −0.22 em: 34 × 34 px box against the capture's 34 × 32 glyph, top within 1 px.
+- **Like tick:** the outline heart cross-fades to X's filled heart in #F91880 (`--x-magenta-500` [M-css]) and thumps;
+  the count's colour moves from the secondary colour to #F91880 with the fill, as x.com colours a liked count. The count
+  starts hidden (0) and appears as it ticks up.
+- **Avatars:** a picture (`mediaUrls`), a generated one (initials from `displayName`, as the Properties preview), or
+  X's default profile picture (`null`): the manifest image `REMOTE_IMAGE_IDS.xDefaultAvatar` from
+  `assets.imageUrls` when the engine resolved it, else its vector twin (a #CCD6DD field, a #657786 head and shoulders,
+  measured on the 400 px file sha256 6d34bedb…), so the card never shows a wrong platform's silhouette.
+- **Fit:** the name and the handle truncate with an ellipsis; the badge, dot, time, Grok and More never shrink; counts
+  stay short ("999.9B", "1,000B" at the 1e12 cap) and clip inside their columns.
+- **Grow from tail:** no tail; the card grows from the avatar corner (`0% 0%`).
+- **Inline editing (C5):** `displayName` (the name span), `handle` (a span inside `@…`, without the "@") and `text`
+  (marks) carry `editableParamProps`.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/x/index.html` (outside the repo): all 18
+  tokcomment captures side by side with our `renderStill` at 2× and a difference overlay, plus generated avatar, huge
+  and zero counts, hidden reposts / views, liked (light, dark), no profile, long names, mentions and entrance / extras
+  filmstrips. To rerun: the manifest's Chirp files (`Chirp-*.latin.woff2`) in a directory, Apple PNGs (`<cp>.png`),
+  X's default avatar as `x-default-avatar.png`, then `REMOTION_E2E=1 SOCIAL_CHIRP_DIR=<chirp> SOCIAL_EMOJI_DIR=<emoji>
+  SOCIAL_IMAGE_DIR=<images> SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER='^(x-post_|anim_x-)' pnpm
+  exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools (`crop.mjs`, `cmp.sh`,
+  `filmstrips.sh`, `page.mjs`) in that directory's `tools/`. The e2e entry takes remote images as `imageFiles`
+  (`imageUrls`).
+- **Measured matches (2×):** card 840 × 230 opaque px for the 840 × 232 capture (the half-covered edge rows fall
+  outside the opaque crop); header, post and action rows within 1 px vertically; name width 183 vs 181 px; badge,
+  time and More within 2 px horizontally.
+
+**Deliberate differences from tokcomment:**
+- **Font:** Chirp instead of the capture host's Liberation Sans (tokcomment asks for Roboto, which never loaded).
+- **Glyphs:** X's own reply, repost, like / liked, views, bookmark, share, More, blue badge and Grok mark instead of
+  lucide and a Grok imitation.
+- **The [M] values above,** the equal-column action bar and hidden zero counts.
+- **Emoji:** Apple images (x.com shows the viewer's OS emoji since 2026; tokcomment's capture host drew Noto).
+- **tokcomment bugs fixed:** raw counts ("1234567" → "1.2M") and the share icon pushed out of the card.
+
 ### Verification
 
 - **Commands run** (`--maxWorkers=2`):
@@ -849,7 +921,8 @@ frame.
 
 ### Limits
 
-- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Variants:** the Instagram and YouTube cards are not built (WP6b–c); the X card is ("X card" above). See
+  `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
