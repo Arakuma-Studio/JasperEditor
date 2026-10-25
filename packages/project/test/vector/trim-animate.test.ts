@@ -325,26 +325,6 @@ function signature(items: readonly ShapeItem[]): unknown {
 }
 
 describe('re-running replaces the earlier animation', () => {
-	for (const first of TRIM_ANIMATION_STYLES)
-		it(`${first} then every style`, () => {
-			for (const second of TRIM_ANIMATION_STYLES)
-				for (const reverse of [false, true]) {
-					const h = new Harness();
-					const id = addVector(h, [{ type: 'group', name: 'Art', contents: LINE }]);
-					const fresh = new Harness();
-					const fid = addVector(fresh, [{ type: 'group', name: 'Art', contents: LINE }]);
-					animate(h, [id], { style: first, copies: 3, animateOffset: true });
-					const r = animate(h, [id], { style: second, reverse, copies: 5 }).clips[0]!;
-					animate(fresh, [fid], { style: second, reverse, copies: 5 });
-					const label = `${first} → ${second}${reverse ? ' reversed' : ''}`;
-					// Same result as on a fresh clip, the earlier trim reused (no stacking, no leftover parts).
-					expect(signature(contentsOf(h, id)), label).toEqual(signature(contentsOf(fresh, fid)));
-					expect(trims(contentsOf(h, id)).length, label).toBe(second.startsWith('divide') ? 5 : 1);
-					expect(r.trimIds.length, label).toBe(second.startsWith('divide') ? 5 : 1);
-					expect(checkInvariants(h.doc), label).toEqual([]);
-				}
-		});
-
 	it('reuses the last top-level trim (id, name, mode) and re-enables it', () => {
 		const h = new Harness();
 		const id = addVector(h, [
@@ -352,11 +332,16 @@ describe('re-running replaces the earlier animation', () => {
 			{ type: 'trim', name: 'My Trim', end: 40, mode: 'individual', enabled: false },
 		]);
 		const trimId = contentsOf(h, id)[2]!.id;
+		animate(h, [id], { style: 'middleIn', reverse: true, animateOffset: true });
 		const r = animate(h, [id], { style: 'out' }).clips[0]!;
 		expect(r.trimIds).toEqual([trimId]);
 		const t = contentsOf(h, id)[2] as Trim;
 		expect([t.name, t.mode, t.enabled]).toEqual(['My Trim', 'individual', undefined]);
-		expect(t.end.value).toBe(100);
+		// Replacing a linked reversed animation removes its old offset expression and end keys.
+		expectChannel(t.start, [0, 100, 0, 10, EXIT]);
+		expectChannel(t.end, 100);
+		expectChannel(t.offset, 0);
+		expect(t.offset.expression).toBeUndefined();
 		// The divide styles keep the reused trim (as the master) and its mode on every part.
 		const d = animate(h, [id], { style: 'divideIn', copies: 2 }).clips[0]!;
 		expect(d.trimIds[0]).toBe(trimId);

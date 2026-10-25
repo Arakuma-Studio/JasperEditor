@@ -120,15 +120,6 @@ export function badIndices(values: number[] = [0, -1, 1.5]): Uint8Array {
 	return enc(d);
 }
 
-export const HOSTILE_MODELS: Record<string, () => Uint8Array> = {
-	'an accessor of 100 million zero vectors': () => accessorOfZeros(),
-	'a stride of 0 with a count of 100 million': () => strideZero(),
-	'nodes that share their children (8 ways, 14 levels)': () => sharedChildren(),
-	'20 000 instances of a 30 000-vertex mesh': () => manyInstances(),
-	'a broken data: URI': brokenDataUri,
-	'negative and fractional indices': () => badIndices(),
-};
-
 export function hostileModelSeeds(): Uint8Array[] {
 	return [
 		accessorOfZeros(1000),

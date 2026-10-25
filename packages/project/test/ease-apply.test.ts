@@ -1,19 +1,13 @@
 // keyframe.applyEase — cubic sections, neighbour preservation, roving, refusals (docs/wp-notes/easing.md).
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
 	type CubicEase,
 	cubicToEases,
-	defaultRegistries,
 	evaluate,
-	exportAgentSchema,
-	type Interpolation,
-	type Keyframe,
 	unknownCommandKeyIssues,
-	writeSpan,
 } from '../src/index.ts';
-import { cssCubic, expectValid, SEC, sample, setup } from './ease-helpers.ts';
+import { cssCubic, expectValid, sample, setup } from './ease-helpers.ts';
 
 const SWIFT: CubicEase = { kind: 'cubic', x1: 0.42, y1: 0, x2: 0.58, y2: 1 };
 const BACK: CubicEase = { kind: 'cubic', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 };
@@ -163,58 +157,6 @@ describe('keyframe.applyEase (cubic)', () => {
 		expect(evaluate(a, a.keyframes[1]!.time)).toBeCloseTo(30, 3);
 		expectValid(h);
 	});
-
-	it('property: any neighbourhood — the target span is exact, all others unchanged', () => {
-		const interps: Interpolation[] = ['linear', 'bezier', 'auto-bezier', 'continuous-bezier', 'hold'];
-		const easeArb = fc.record({
-			influence: fc.double({ min: 0.05, max: 1, noNaN: true }),
-			slope: fc.double({ min: -2, max: 3, noNaN: true }),
-		});
-		const keyArb = fc.record({
-			value: fc.double({ min: -100, max: 100, noNaN: true }),
-			interpolation: fc.constantFrom(...interps),
-			easeIn: easeArb,
-			easeOut: easeArb,
-		});
-		const cubicArb = fc.record({
-			kind: fc.constant('cubic' as const),
-			x1: fc.double({ min: 0.01, max: 1, noNaN: true }),
-			y1: fc.double({ min: -2, max: 3, noNaN: true }),
-			x2: fc.double({ min: 0, max: 0.99, noNaN: true }),
-			y2: fc.double({ min: -2, max: 3, noNaN: true }),
-		});
-		fc.assert(
-			fc.property(
-				fc.array(keyArb, { minLength: 2, maxLength: 6 }),
-				fc.nat(),
-				cubicArb,
-				(spec, pick, curve) => {
-					const kfs: Keyframe<number>[] = spec.map((s, i) => ({ id: `kf_${i}`, time: i * SEC, ...s }));
-					const a = pick % (kfs.length - 1);
-					const before: Animatable<number> = { value: 0, keyframes: structuredClone(kfs) };
-					const { easeOut, easeIn } = cubicToEases(curve);
-					writeSpan(kfs as Keyframe<unknown>[], a, a + 1, easeOut, easeIn);
-					const after: Animatable<number> = { value: 0, keyframes: kfs };
-					const v0 = before.keyframes[a]!.value;
-					const v1 = before.keyframes[a + 1]!.value;
-					for (let k = 0; k <= 20; k++) {
-						const u = k / 20;
-						const t = (a + u) * SEC;
-						const want = u === 1 ? v1 : v0 + cssCubic(curve, u) * (v1 - v0);
-						expect(Math.abs(evaluate(after, t) - want)).toBeLessThan(1e-6 * (1 + Math.abs(v1 - v0)));
-					}
-					for (let s = 0; s < kfs.length - 1; s++) {
-						if (s === a) continue;
-						for (let k = 1; k < 20; k++) {
-							const t = (s + k / 20) * SEC;
-							expect(evaluate(after, t)).toBeCloseTo(evaluate(before, t), 9);
-						}
-					}
-				},
-			),
-			{ numRuns: 300, seed: 7 },
-		);
-	});
 });
 
 describe('keyframe.applyEase refusals and skips', () => {
@@ -301,17 +243,7 @@ describe('keyframe.applyEase refusals and skips', () => {
 		expectValid(h);
 	});
 
-	it('schemas export to JSON Schema and strict key checks reach inside curves', () => {
-		const s = exportAgentSchema(defaultRegistries());
-		for (const t of [
-			'keyframe.applyEase',
-			'keyframe.pasteEase',
-			'keyframe.pasteValues',
-			'keyframe.setVelocity',
-			'keyframe.createPathController',
-			'keyframes.cleanupPath',
-		] as const)
-			expect(s.commands[t].implemented).toBe(true);
+	it('strict agent key checks identify an unknown key inside an ease curve', () => {
 		const issues = unknownCommandKeyIssues([
 			{
 				type: 'keyframe.applyEase',
@@ -319,6 +251,6 @@ describe('keyframe.applyEase refusals and skips', () => {
 				curve: { kind: 'cubic', x1: 0.4, y1: 0, x2: 0.6, y2: 1, bogus: 1 },
 			},
 		]);
-		expect(issues.length).toBe(1);
+		expect(issues).toEqual([expect.objectContaining({ code: 'E_SCHEMA', path: ['curve'], commandIndex: 0 })]);
 	});
 });

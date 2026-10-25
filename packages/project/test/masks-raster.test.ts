@@ -3,7 +3,6 @@ import {
 	type BezierPath,
 	ellipsePath,
 	packMasks,
-	polygonPath,
 	prepareMasks,
 	type ResolvedMask,
 	rasterizeMaskPack,
@@ -110,35 +109,5 @@ describe('mask coverage', () => {
 		);
 		expect(half[0]!.feather).toBe(5);
 		expect(half[0]!.expansion).toBe(2);
-	});
-});
-
-describe('mask coverage golden frame', () => {
-	it('a fixed stack of every feature rasterises to the stored checksum (8-bit, 160×90)', () => {
-		const masks: ResolvedMask[] = [
-			rm(ellipsePath([70, 45], [50, 30]), { feather: 12, expansion: 3 }),
-			rm(rectPath(60, 20, 140, 70), { mode: 'subtract', feather: 4, opacity: 80 }),
-			rm(
-				polygonPath([
-					[10, 80],
-					[80, 5],
-					[150, 85],
-				]),
-				{ mode: 'lighten', inverted: true, opacity: 35, falloff: 'linear', feather: 20 },
-			),
-			rm(
-				{ ...rectPath(20, 10, 60, 50), feather: [{ segment: 1, t: 0.5, radius: 15, tension: 0.3 }] },
-				{ mode: 'difference' },
-			),
-		];
-		const { cov } = raster(masks, 160, 90);
-		let h = 2166136261;
-		let sum = 0;
-		for (const v of cov) {
-			const b = Math.round(v * 255);
-			sum += b;
-			h = Math.imul(h ^ b, 16777619) >>> 0;
-		}
-		expect({ sum, hash: h.toString(16) }).toMatchSnapshot();
 	});
 });

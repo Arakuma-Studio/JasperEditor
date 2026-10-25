@@ -1,17 +1,9 @@
 // Shared set-up for the keyframe assistant (easing) tests.
 import { expect } from 'vitest';
-import {
-	type Animatable,
-	type CubicEase,
-	checkInvariants,
-	evaluate,
-	type Keyframe,
-	type Vec2,
-} from '../src/index.ts';
+import { type Animatable, type CubicEase, checkInvariants, evaluate, type Vec2 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
 export const SEC = 705_600_000;
-export const FRAME = SEC / 30;
 
 /** Reference CSS cubic-bezier: solve x(t) = u by bisection, return y(t). */
 export function cssCubic(c: CubicEase, u: number): number {
@@ -62,17 +54,6 @@ export function sample<T>(a: Animatable<T>, t0: number, t1: number, n = 200): T[
 	return Array.from({ length: n + 1 }, (_, k) => evaluate(a, t0 + ((t1 - t0) * k) / n));
 }
 
-export function expectClose(a: unknown, b: unknown, tol: number): void {
-	if (typeof a === 'number' && typeof b === 'number') {
-		expect(Math.abs(a - b)).toBeLessThanOrEqual(tol);
-		return;
-	}
-	const x = a as number[];
-	const y = b as number[];
-	expect(x.length).toBe(y.length);
-	for (let i = 0; i < x.length; i++) expect(Math.abs(x[i]! - y[i]!)).toBeLessThanOrEqual(tol);
-}
-
 export function expectValid(h: Harness): void {
 	expect(checkInvariants(h.doc)).toEqual([]);
 }
@@ -91,5 +72,3 @@ export function distanceToPolyline(p: Vec2, poly: readonly Vec2[]): number {
 	}
 	return best;
 }
-
-export const times = (kfs: readonly Keyframe<unknown>[]) => kfs.map((k) => k.time);

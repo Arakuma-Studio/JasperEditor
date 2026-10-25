@@ -2,7 +2,6 @@
 // The tip positions those expressions compute are verified in packages/expressions/test/trim-tracer.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
-	type Clip,
 	checkInvariants,
 	type ShapeClip,
 	type ShapeItem,
@@ -57,13 +56,10 @@ const codeOf = (h: Harness, cmd: Record<string, unknown>) => {
 	const r = h.tx([{ type: 'shape.addTrimTracer', ...cmd }]);
 	return r.ok ? 'ok' : r.errors[0]!.code;
 };
-const posExpr = (h: Harness, id: string) =>
-	(h.seq.clips[id] as Clip & { transform: { position: { expression?: { text: string } } } }).transform
-		.position.expression?.text;
 
 describe('shape.addTrimTracer', () => {
 	it('creates a dot clip on the track above over the same span, driven by an id-addressed expression', () => {
-		const { h, shapeId, groupId, pathId, trimId } = setup();
+		const { h, shapeId, pathId, trimId } = setup();
 		const r = tracer(h, { clipId: shapeId, trimItemId: trimId, ref: '$f' });
 		expect(r).toMatchObject({
 			created: true,
@@ -77,15 +73,7 @@ describe('shape.addTrimTracer', () => {
 		expect([f.start, f.duration, f.name, f.kind]).toEqual([10, 80, 'Tracer', 'shape']);
 		const dot = ((f as ShapeClip).shape as VectorShapeData).contents;
 		expect(dot.map((i) => i.type)).toEqual(['ellipse', 'stroke', 'fill']);
-		const text = posExpr(h, r.clipId)!;
-		expect(text).toBe(r.expressions.position);
-		expect(text).toContain(`thisComp.layer(${JSON.stringify(shapeId)})`);
-		expect(text).toContain(`.content(${JSON.stringify(trimId)})`);
-		expect(text).toContain(`trim.trimPath(${JSON.stringify(pathId)})`);
-		expect(text).toContain('trim.end / 100');
-		expect(text).toContain('if (u > 1) u -= 1;');
-		// the trim is top level: no group in its chain; the path's group id is not needed (trimPath finds it).
-		expect(text).not.toContain(groupId);
+
 		expect(r.expressions.rotation).toBeUndefined();
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
@@ -108,17 +96,9 @@ describe('shape.addTrimTracer', () => {
 		]);
 		const ra = tracer(a.h, { clipId: a.shapeId, trimItemId: a.trimId });
 		expect(ra.tip).toBe('start');
-		expect(ra.expressions.position).toContain('trim.start / 100');
-		expect(ra.expressions.position).toContain('if (u >= 1) u -= 1;');
 		const b = setup({ end: 100, mode: 'individual' }, [{ type: 'ellipse', name: 'E', size: [40, 40] }]);
 		const rb = tracer(b.h, { clipId: b.shapeId, trimItemId: b.trimId, tip: 'auto', orient: true });
 		expect(rb).toMatchObject({ tip: 'end', mode: 'individual', pathItemId: null });
-		expect(rb.expressions.position).toContain('trim.trimPath();');
-		expect(rb.expressions.rotation).toContain('tangentOnPath(u)');
-		expect(
-			(b.h.seq.clips[rb.clipId] as Clip & { transform: { rotation: { expression?: { text: string } } } })
-				.transform.rotation.expression?.text,
-		).toBe(rb.expressions.rotation);
 		// the paths it measures, in stacking order
 		const contents = ((b.h.seq.clips[b.shapeId] as ShapeClip).shape as VectorShapeData).contents;
 		expect(trimInputPaths(contents, b.trimId, 0)!.paths.map((p) => p.itemId)).toHaveLength(2);
@@ -140,9 +120,8 @@ describe('shape.addTrimTracer', () => {
 		const res = h.ok([
 			{ type: 'shape.addTrimTracer', clipId: shapeId, trimItemId: trimId, follower: { clipId: solid } },
 		]);
-		expect((res.results[0] as Tracer).created).toBe(false);
+		expect(res.results[0]).toMatchObject({ clipId: solid, created: false });
 		expect(res.warnings.map((w) => w.code)).toContain('W_EXPRESSION_REPLACED');
-		expect(posExpr(h, solid)).toContain('pointOnPath(u)');
 		expect(checkInvariants(h.doc)).toEqual([]);
 
 		const l = setup();

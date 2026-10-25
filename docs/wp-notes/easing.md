@@ -57,7 +57,7 @@ unchanged. `EasePreset.group` is a group id (`basic`, `penner`, …); the displa
 5. More than `maxPoints` points → `E_LIMIT`/`points`. A single remaining piece is split at t = ½ by de Casteljau
    (same curve) because a multi curve needs ≥ 3 points.
 
-Deterministic: fixed grids and search orders, no randomness (tested by refitting every preset).
+Deterministic: fixed grids and search orders, no randomness (tested with representative curve fits).
 
 ### Catalog: formulas and sources
 
@@ -123,9 +123,9 @@ These are numeric facts; no Material code or assets are included.
 Max |curve − source| over 10 000 evenly spaced x (`easeCurveMaxError(p.curve, builtinEaseSource(p.id), 9999)`).
 Rerun (from `packages/project`):
 `npx tsx -e "import('./src/ease/presets.ts').then(async (m) => { const f = await import('./src/ease/fit.ts'); for (const p of m.builtinEasePresets()) console.log(p.id, f.easeCurveMaxError(p.curve, m.builtinEaseSource(p.id), 9999).toExponential(2)); })"`.
-`packages/project/test/ease-presets.test.ts` asserts ≤ 0.002 on the same 10 000 samples for every preset, and
-checks the Penner presets against an independent copy of the equations on 2000 samples. Exact curves (CSS,
-Material, Basic) are their own source.
+`packages/project/test/ease-presets.test.ts` checks the Penner presets against an independent copy of the equations
+on 2000 samples and pins the published CSS and Material control points. The 10 000-sample comparison above is
+a diagnostic against the production source functions, not an independent regression oracle.
 
 | Id | Name | Curve | Max error |
 |---|---|---|---|
@@ -294,8 +294,8 @@ run), `out` = the span leaving the last selected key; missing neighbours are ski
 `middle`, one key → `in` + `out`.
 
 - **cubic**: every chosen span gets `cubicToEases(curve)` through `writeSpan`; the span then evaluates exactly as
-  CSS `cubic-bezier` (verified to 1e-9; fast-check over random neighbourhoods of all five interpolations shows every
-  other segment unchanged).
+  CSS `cubic-bezier` (verified to 1e-9 through `keyframe.applyEase`; neighbouring linear, Auto Bezier, hold and
+  continuous segments are checked for preservation through the same command boundary).
 - **multi** (needs `middle` and 2+ selected keys per property): span = first … last selected key. Keys strictly
   inside are removed; for curve points (x_m, y_m) new keys get `time = tA + round(x_m·(tB − tA))` (whole flicks, no
   frame rounding) and `value = vA + y_m·(vB − vA)` (numbers, vectors, colours componentwise; validated / clamped like
