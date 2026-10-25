@@ -283,7 +283,8 @@ export function laneModel(
 	const r = resolvePropertyAt({ doc, seq, clip }, spec, clip.start);
 	const anim = r.anim;
 	const range = laneRange(spec, anim);
-	const opts = propertyEvaluateOptions(spec);
+	// spatial-points: effect points evaluate with the metric they were resolved with (layer box px).
+	const opts = { ...propertyEvaluateOptions(spec), ...(r.metric ? { metric: r.metric } : {}) };
 	const band = hasBand(spec);
 	const keys: LaneKey[] = (anim?.keyframes ?? [])
 		.map((k, i, all): LaneKey | null => {

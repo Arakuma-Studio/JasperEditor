@@ -1,7 +1,17 @@
 // Keyframe evaluation (S01:KF-003, KF-004, KF-007). The single evaluator shared by the Player, the
 // overlay, Effect Controls and the native planner (S01:KF-009). vec2 point keys with a curved spatial
 // path (S03:KF-030/031) are evaluated along the path by `keyframes-spatial.ts`.
-import { isVec2Value, pathPointAt, spatialSegment, spatialSegmentLength } from './keyframes-spatial.ts';
+import {
+	activeMetric,
+	fromMetric,
+	isVec2Value,
+	keysInMetric,
+	metricWindow,
+	pathPointAt,
+	type SpatialMetric,
+	spatialSegment,
+	spatialSegmentLength,
+} from './keyframes-spatial.ts';
 import { lerpPathValues, pathValueDistance } from './path/interp.ts';
 import { type BezierPath, isBezierPath } from './path/model.ts';
 import {
@@ -127,8 +137,21 @@ function isLocalExtremum(prev: unknown, cur: unknown, next: unknown): boolean {
 	return false;
 }
 
-/** Auto-bezier slope on one side of keyframe i (S01:KF-004). */
-export function autoSlope<T>(kfs: readonly Keyframe<T>[], i: number, side: 'in' | 'out'): number {
+/**
+ * Auto-bezier slope on one side of keyframe i (S01:KF-004). spatial-points: vec2 values with a `metric` measure their
+ * speeds in its units (pixels).
+ */
+export function autoSlope<T>(
+	kfs: readonly Keyframe<T>[],
+	i: number,
+	side: 'in' | 'out',
+	metric?: SpatialMetric | null,
+): number {
+	const m = activeMetric(metric);
+	if (m && isVec2Value(kfs[i]?.value)) {
+		const w = metricWindow(kfs as readonly Keyframe<unknown>[], i, m);
+		return autoSlope(w.keys, w.j, side);
+	}
 	const k = kfs[i]!;
 	const prev = kfs[i - 1];
 	const next = kfs[i + 1];
@@ -211,7 +234,18 @@ export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
  * Hold-only values and `holdOnly` parameters are the caller's business (they step whatever the keys say).
  */
 export type SegmentShape = 'hold' | 'linear' | { out: Ease; in: Ease };
-export function segmentShape<T>(kfs: readonly Keyframe<T>[], ia: number, ib = ia + 1): SegmentShape {
+export function segmentShape<T>(
+	kfs: readonly Keyframe<T>[],
+	ia: number,
+	ib = ia + 1,
+	/** spatial-points: the metric of vec2 values (temporal auto-bezier speeds are measured in it). */
+	metric?: SpatialMetric | null,
+): SegmentShape {
+	const m = activeMetric(metric);
+	if (m && isVec2Value(kfs[ia]?.value)) {
+		const lo = Math.max(0, ia - 2);
+		return segmentShape(keysInMetric(kfs as readonly Keyframe<unknown>[], m, lo, ib + 4), ia - lo, ib - lo);
+	}
 	const a = kfs[ia]!;
 	const b = kfs[ib]!;
 	if (a.interpolation === 'hold') return 'hold';
@@ -330,6 +364,12 @@ export type EvaluateOptions = {
 	holdOnly?: boolean;
 	/** Clamp numeric results (and every vector component) to the parameter range. */
 	clamp?: { min?: number; max?: number };
+	/**
+	 * spatial-points: pixels per value unit of a vec2 point whose units are not isotropic (effect points normalised to
+	 * the layer box: [box width, box height]). Arc length, Auto Bezier handles, temporal auto-bezier speeds and roving
+	 * distances are measured in pixels; absent = value units (`activeMetric`).
+	 */
+	metric?: SpatialMetric | null;
 };
 
 function clampValue<T>(v: T, c?: { min?: number; max?: number }): T {
@@ -407,6 +447,10 @@ export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: Eval
 	const i = keyframeIndexAt(kfs, t);
 	const a = kfs[i]!;
 	const b = kfs[i + 1]!;
+	// spatial-points: a point in non-isotropic units is evaluated with its lengths measured in pixels.
+	const m = activeMetric(opts?.metric);
+	if (m && isVec2Value(a.value) && isVec2Value(b.value))
+		return clampValue(evaluateInMetric(kfs as readonly Keyframe<unknown>[], i, t, m, opts) as T, opts?.clamp);
 	// keyframes-blend: inside a run of roving keys the whole run is one segment (Rove Across Time).
 	if (!opts?.holdOnly) {
 		const run = rovingRunAt(kfs as readonly Keyframe<unknown>[], i);
@@ -421,6 +465,45 @@ export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: Eval
 	// S03:KF-031: along a curved spatial path the progress is an arc-length fraction.
 	const path = spatialSegment(kfs as readonly Keyframe<unknown>[], i);
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
+}
+
+const metricKeysCache = new WeakMap<readonly Keyframe<unknown>[], { m: SpatialMetric; keys: Keyframe<unknown>[] }>();
+
+/** Every key in metric units, cached per array and metric (documents are immutable between edits, as `rovingRuns`). */
+function allKeysInMetric(kfs: readonly Keyframe<unknown>[], m: SpatialMetric): Keyframe<unknown>[] {
+	const hit = metricKeysCache.get(kfs);
+	if (hit && hit.m[0] === m[0] && hit.m[1] === m[1] && hit.keys.length === kfs.length) return hit.keys;
+	const keys = keysInMetric(kfs, m);
+	metricKeysCache.set(kfs, { m: [m[0], m[1]], keys });
+	return keys;
+}
+
+/**
+ * spatial-points: the value of the segment leaving vec2 key `i` (kfs[i].time ≤ t < kfs[i + 1].time) with lengths in
+ * metric units. The progress comes from the keys in pixels (temporal auto-bezier speeds, roving distances), a curved
+ * segment is walked by arc length in pixels (the point mapped back to value units: the same Bézier), and a straight
+ * one is the plain lerp of the stored values at that progress.
+ */
+function evaluateInMetric(
+	kfs: readonly Keyframe<unknown>[],
+	i: number,
+	t: number,
+	m: SpatialMetric,
+	opts: EvaluateOptions | undefined,
+): unknown {
+	const a = kfs[i]!;
+	const b = kfs[i + 1]!;
+	if (!opts?.holdOnly && kfs.some((k) => k.roving)) {
+		const all = allKeysInMetric(kfs, m);
+		const run = rovingRunAt(all, i);
+		if (run) return fromMetric(rovingValue(all, run, t) as [number, number], m);
+	}
+	if (a.interpolation === 'hold' || opts?.holdOnly) return a.value;
+	const w = metricWindow(kfs, i, m);
+	const u = (t - a.time) / (b.time - a.time);
+	const p = segmentProgress(w.keys, w.j, u);
+	const path = spatialSegment(w.keys, w.j);
+	return path ? fromMetric(pathPointAt(path, p), m) : lerpValue(a.value, b.value, p);
 }
 
 /**
@@ -529,8 +612,20 @@ function rovingTimeOf(kfs: readonly Keyframe<unknown>[], run: RovingRun, f: numb
  * hold). Returns true when a time changed. Called by every command that edits keys (evaluation does not need the
  * stored times: they place the keys on the timeline).
  */
-export function retimeRoving(kfs: Keyframe<unknown>[]): boolean {
+export function retimeRoving(kfs: Keyframe<unknown>[], metric?: SpatialMetric | null): boolean {
 	if (!kfs.some((k) => k.roving)) return false;
+	const m = activeMetric(metric);
+	if (m && kfs.some((k) => isVec2Value(k.value))) {
+		// spatial-points: the run's distances in pixels; the times (and cleared flags) are copied back.
+		const keys = keysInMetric(kfs, m);
+		const changed = retimeRoving(keys);
+		keys.forEach((k, i) => {
+			const o = kfs[i]!;
+			if (o.time !== k.time) o.time = k.time;
+			if (o.roving && !k.roving) delete o.roving;
+		});
+		return changed;
+	}
 	kfs.forEach((k, i) => {
 		if (k.roving && !isRovingKey(kfs, i)) delete k.roving;
 	});
@@ -593,9 +688,22 @@ function frozenSegDistance(kfs: readonly Keyframe<unknown>[], i: number): number
  * Freezes a roving key (it stops roving): Continuous Bezier with the run's speed at the key on both sides, expressed
  * as the normalised slopes of its two segments (slope = speed / segment average speed).
  */
-export function stopRoving(kfs: Keyframe<unknown>[], i: number): void {
+export function stopRoving(kfs: Keyframe<unknown>[], i: number, metric?: SpatialMetric | null): void {
 	const k = kfs[i]!;
 	if (!k.roving) return;
+	const m = activeMetric(metric);
+	if (m && isVec2Value(k.value)) {
+		// spatial-points: the run's speed and the segments' average speeds in pixels (their ratios are the slopes).
+		const keys = keysInMetric(kfs, m);
+		stopRoving(keys, i);
+		const f = keys[i]!;
+		delete k.roving;
+		k.interpolation = f.interpolation;
+		if (f.inInterpolation !== undefined) k.inInterpolation = f.inInterpolation;
+		k.easeIn = f.easeIn;
+		k.easeOut = f.easeOut;
+		return;
+	}
 	const v = isRovingKey(kfs, i) ? rovingSpeedAt(kfs, i) : null;
 	delete k.roving;
 	if (v === null) return;

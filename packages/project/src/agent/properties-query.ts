@@ -9,7 +9,8 @@ import { compositionOfClip } from '../composition/props.ts';
 import { findTrack, trackLabel } from '../derive/index.ts';
 import { expressionInfoAt } from '../expressions.ts';
 import { evaluate, evaluateKeyframes } from '../keyframes.ts';
-import type { EffectRegistry } from '../registry/effects.ts';
+import type { SpatialMetric } from '../keyframes-spatial.ts';
+import { type EffectRegistry, paramSpatialMetric } from '../registry/effects.ts';
 import type { MgTemplateRegistry } from '../registry/mg.ts';
 import {
 	effectPropertySpecs,
@@ -287,6 +288,8 @@ export function paramGetQuery(env: PropertyQueryEnv, args: { target: string[]; f
 					args.frame,
 					anim ?? { value: spec!.default, keyframes: [] },
 					fx.enabled ? null : 'the effect is bypassed',
+					// spatial-points: track / master effect points measure their paths in the sequence frame's pixels.
+					paramSpatialMetric(spec, { width: seq.settings.width, height: seq.settings.height }),
 				);
 			}
 		}
@@ -358,10 +361,11 @@ function seqParam(
 	frameArg: number | undefined,
 	anim: Animatable<unknown>,
 	notRendered: string | null,
+	metric?: SpatialMetric,
 ) {
 	const F = flicksPerFrame(seq.settings.frameRate as Rational);
 	const frame = frameArg ?? 0;
-	const value = evaluate(anim, frame * F);
+	const value = evaluate(anim, frame * F, metric ? { metric } : undefined);
 	return {
 		sequenceId: seq.id,
 		frame,

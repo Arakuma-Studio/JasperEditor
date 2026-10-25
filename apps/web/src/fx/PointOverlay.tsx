@@ -1,13 +1,5 @@
 import type { Vec2 } from '@jasper/project';
-import {
-	applyMat3,
-	type Command,
-	invertMat3,
-	layerMapOf,
-	type ParamSpec,
-	type ResolvedLayer,
-	resolveSceneAt,
-} from '@jasper/project';
+import { type Command, type ParamSpec, resolveSceneAt } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { useMemo } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
@@ -15,27 +7,15 @@ import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { toScreen, toSequence } from '../panels/program/viewport.ts';
 import { type DragSpec, useFocusedEffect, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
+import { pointToSequence, sequenceToPoint } from './point-map.ts';
 
 /** Point params of an effect spec (vec2 with `ui.control: 'point'`). */
 export function pointParams(params: readonly ParamSpec[]): ParamSpec[] {
 	return params.filter((p) => p.type === 'vec2' && p.ui?.control === 'point');
 }
 
-/** A normalised point of a layer → sequence pixels (through the full layer map). */
-export function pointToSequence(layer: Pick<ResolvedLayer, 'props'>, n: Vec2): Vec2 {
-	const { box } = layer.props;
-	return applyMat3(layerMapOf(layer.props), [n[0] * box.width, n[1] * box.height]) as Vec2;
-}
-
-/** Sequence pixels → the normalised point of a layer (null when the layer map is singular). */
-export function sequenceToPoint(layer: Pick<ResolvedLayer, 'props'>, s: Vec2): Vec2 | null {
-	const inv = invertMat3(layerMapOf(layer.props));
-	if (!inv) return null;
-	const { box } = layer.props;
-	const p = applyMat3(inv, s);
-	const r = (v: number) => Math.round(v * 1e6) / 1e6 || 0;
-	return [r(p[0] / box.width), r(p[1] / box.height)];
-}
+// The point ↔ sequence mapping lives in `point-map.ts` (shared with the Program monitor's effect-point motion paths).
+export { pointToSequence, sequenceToPoint } from './point-map.ts';
 
 export function FxPointOverlay(props: ProgramOverlayHostProps) {
 	const session = props.session;

@@ -23,6 +23,7 @@
 //    the tolerance there (numerical corner cases) keeps its original keys, so the guarantee is unconditional.
 //  - Keys outside the span and the segments leaving it are untouched (boundary eases are made explicit).
 import { evaluate, incomingEase, isHoldOnlyValue, segmentShape } from '../keyframes.ts';
+import { keysInMetric, type SpatialMetric } from '../keyframes-spatial.ts';
 import type { Animatable, Ease, Keyframe } from '../schema/common.ts';
 
 export type SimplifyValue = number | number[];
@@ -44,7 +45,20 @@ export type SimplifyChannel = {
 	span: readonly [number, number];
 	/** Indices (into `keys`) inside the span that must stay (e.g. keys the user did not select). */
 	locked?: ReadonlySet<number>;
+	/**
+	 * spatial-points: the spatial metric of a point normalised to its layer box; the channel is evaluated (and its
+	 * original segments read) with it, exactly as the renderers evaluate it.
+	 */
+	metric?: SpatialMetric;
 };
+
+/** The evaluator options of a channel (its spatial metric). */
+const evalOpts = (ch: SimplifyChannel) => (ch.metric ? { metric: ch.metric } : undefined);
+
+/** The keys the evaluator's segment rules read for a channel (in metric units when it has a metric). */
+function shapeKeys(ch: SimplifyChannel): readonly Key[] {
+	return ch.metric ? (keysInMetric(ch.keys as Keyframe<unknown>[], ch.metric) as Key[]) : ch.keys;
+}
 
 export type SimplifyProblem = {
 	channels: readonly SimplifyChannel[];
@@ -146,7 +160,7 @@ export function simplifyKeyframes(problem: SimplifyProblem): SimplifyResult {
 		const dim = dimOf(k[0]!.value);
 		const orig = new Float64Array(S * dim);
 		const anim: Animatable<SimplifyValue> = { value: k[0]!.value, keyframes: k as Key[] };
-		for (let s = 0; s < S; s++) write(orig, s * dim, evaluate(anim, times[s]!));
+		for (let s = 0; s < S; s++) write(orig, s * dim, evaluate(anim, times[s]!, evalOpts(ch)));
 		return {
 			ch,
 			dim,
@@ -187,7 +201,7 @@ export function simplifyKeyframes(problem: SimplifyProblem): SimplifyResult {
 				result[c] = keys[j]!;
 				const st = states[c]!;
 				const anim: Animatable<SimplifyValue> = { value: keys[j]![0]!.value, keyframes: keys[j]! };
-				for (let s = 0; s < S; s++) write(st.cur, s * st.dim, evaluate(anim, times[s]!));
+				for (let s = 0; s < S; s++) write(st.cur, s * st.dim, evaluate(anim, times[s]!, evalOpts(st.ch)));
 			});
 		});
 		// Verification with the real evaluator (the `cur` arrays were filled with it above).
@@ -492,12 +506,14 @@ function solveSubGroup(
 	return group.map((c, j) => {
 		const st = states[c]!;
 		const keys = st.ch.keys;
+		// spatial-points: segment rules (temporal auto-bezier speeds) read in the channel's metric.
+		const rule = shapeKeys(st.ch);
 		const [i0, i1] = st.ch.span;
 		const segOf = (pos: number): Exclude<Shape, { kind: 'original' }> | 'none' => {
 			// Shape of the segment leaving kept[pos] (or the original segment leaving the span).
-			if (pos >= kept.length - 1) return i1 < keys.length - 1 ? originalSegment(keys, i1) : 'none';
+			if (pos >= kept.length - 1) return i1 < keys.length - 1 ? originalSegment(rule, i1) : 'none';
 			const sh = shapes[kept[pos + 1]!]![j]!;
-			return sh.kind === 'original' ? originalSegment(keys, i0 + kept[pos]!) : sh;
+			return sh.kind === 'original' ? originalSegment(rule, i0 + kept[pos]!) : sh;
 		};
 		const before = keys.slice(0, i0) as Key[];
 		const after = keys.slice(i1 + 1) as Key[];
@@ -506,7 +522,7 @@ function solveSubGroup(
 			// Incoming side: the segment arriving at this key.
 			let inEase: Ease | 'linear' | 'none';
 			if (pos === 0) {
-				inEase = i0 === 0 ? 'none' : { ...incomingEase(keys, i0) };
+				inEase = i0 === 0 ? 'none' : { ...incomingEase(rule, i0) };
 			} else {
 				const s = segOf(pos - 1);
 				inEase = s === 'none' ? 'none' : s.kind === 'ease' ? s.in : 'linear';

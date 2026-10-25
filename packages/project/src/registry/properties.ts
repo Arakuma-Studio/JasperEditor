@@ -16,6 +16,7 @@ import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
 import { mediaDisplaySize } from '../interpret/model.ts';
 import { type EvaluateOptions, evaluate } from '../keyframes.ts';
+import type { SpatialMetric } from '../keyframes-spatial.ts';
 import {
 	MASK_DEFAULT_FEATHER,
 	MASK_EXPANSION_RANGE,
@@ -107,6 +108,8 @@ export type PropertySpec = {
 	 * spatial (the keys never carry `spatial`; e.g. scale-like vectors, shape size, colour wheels).
 	 */
 	spatial?: SpatialInterpolation;
+	/** spatial-points: units of the spatial path (`ParamSpec.spatialMetric`); absent = isotropic value units. */
+	spatialMetric?: 'layer-box';
 	options?: readonly string[];
 	optionLabels?: readonly string[];
 	/** Menu section of each option (`options` order); consecutive runs are drawn as labelled groups. */
@@ -1458,6 +1461,9 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		range: p.range,
 		animatable: p.animatable ? 'continuous' : 'hold-only',
 		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),
+		...(p.type === 'vec2' && p.animatable && p.spatial && p.spatialMetric
+			? { spatialMetric: p.spatialMetric }
+			: {}),
 		options: p.options,
 		optionLabels: p.optionLabels,
 		storagePath: ['$effect', fxId, p.name],
@@ -1628,6 +1634,11 @@ export type ResolvedProperty = {
 	time: number;
 	/** The playhead is outside the clip (value is the clamped first/last one, S03:EC-006). */
 	outside: boolean;
+	/**
+	 * spatial-points: the spatial metric the value was evaluated with (points normalised to the layer box: [box width,
+	 * box height]); consumers sampling `anim` themselves (graphs, lanes) pass it to `evaluate()`.
+	 */
+	metric?: SpatialMetric;
 };
 
 /**
@@ -1635,13 +1646,19 @@ export type ResolvedProperty = {
  * by the resolver and every consumer that samples the curve itself (Effect Controls graphs, S03:KF-022).
  */
 export function propertyEvaluateOptions(
-	s: Pick<PropertySpec, 'kind' | 'range' | 'animatable'>,
+	s: Pick<PropertySpec, 'kind' | 'range' | 'animatable'> & Partial<Pick<PropertySpec, 'spatial' | 'spatialMetric'>>,
+	/** spatial-points: the layer box of the owner (points normalised to it measure their paths in its pixels). */
+	box?: { width: number; height: number } | null,
 ): EvaluateOptions {
 	const clamp =
 		s.kind === 'number' && s.range && (s.range.min !== undefined || s.range.max !== undefined)
 			? { min: s.range.min, max: s.range.max }
 			: undefined;
-	return { holdOnly: s.animatable === 'hold-only', clamp };
+	const metric =
+		box && s.kind === 'vec2' && s.spatial && s.spatialMetric === 'layer-box'
+			? ([box.width, box.height] as const)
+			: undefined;
+	return { holdOnly: s.animatable === 'hold-only', clamp, ...(metric ? { metric } : {}) };
 }
 
 /** Value of a property at a sequence frame (S03:PRP-010). */
@@ -1649,8 +1666,16 @@ export function resolvePropertyAt(ctx: PropertyContext, s: PropertySpec, frame: 
 	const { time, outside } = clipContentTimeAtFrame(ctx.clip, frame, ctx.seq.settings.frameRate);
 	const stored = readStoredProperty(ctx, s);
 	if (isAnimatableValue(stored)) {
-		const value = evaluate(stored, time, propertyEvaluateOptions(s));
-		return { value, animated: stored.keyframes.length > 0, anim: stored, time, outside };
+		const opts = propertyEvaluateOptions(s, s.spatialMetric ? intrinsicBoxOf(ctx) : undefined);
+		const value = evaluate(stored, time, opts);
+		return {
+			value,
+			animated: stored.keyframes.length > 0,
+			anim: stored,
+			time,
+			outside,
+			...(opts.metric ? { metric: opts.metric } : {}),
+		};
 	}
 	if (stored === undefined && s.defaultValue !== undefined)
 		return { value: propertyDefault(ctx, s), animated: false, anim: null, time, outside };

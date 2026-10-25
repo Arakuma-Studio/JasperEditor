@@ -23,12 +23,19 @@ import { openSimplify } from './simplify-actions.ts';
 import { trackingStore, useTracking } from './store.ts';
 
 /** Corner-pin params of an effect instance evaluated at a sequence frame (normalised). */
-function pinAt(clip: Clip, fx: EffectEditorProps['fx'], frame: number, fps: Rational): Quad {
+function pinAt(
+	clip: Clip,
+	fx: EffectEditorProps['fx'],
+	frame: number,
+	fps: Rational,
+	box: { width: number; height: number },
+): Quad {
 	const inClip = Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
 	const t = clipContentTime(clip, inClip, fps);
 	return CORNER_PIN_PARAMS.map((k, i) => {
 		const a = fx.params[k];
-		const v = a ? evaluate(a, t) : null;
+		// spatial-points: corner paths in the layer box's pixels, as the resolver evaluates them.
+		const v = a ? evaluate(a, t, { metric: [box.width, box.height] }) : null;
 		return Array.isArray(v) && v.length === 2 ? [Number(v[0]), Number(v[1])] : CORNER_PIN_DEFAULTS[i]!;
 	}) as Quad;
 }
@@ -45,7 +52,7 @@ export function CornerPinEditor(props: EffectEditorProps) {
 		tb && tb.mode === 'corner-pin' && (!tb.effectInstanceId || tb.effectInstanceId === fx.id) ? tb : null;
 	const loc = driven ? findTracker(doc, driven.trackerId) : null;
 	const box = seq ? intrinsicBoxOf({ clip, doc, seq }) : { width: 1920, height: 1080 };
-	const convex = seq ? pinIsConvex(pinAt(clip, fx, frame, seq.settings.frameRate), box) : true;
+	const convex = seq ? pinIsConvex(pinAt(clip, fx, frame, seq.settings.frameRate, box), box) : true;
 	const act = (fn: () => void) => {
 		try {
 			setError(null);

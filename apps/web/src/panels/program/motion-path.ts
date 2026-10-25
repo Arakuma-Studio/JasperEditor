@@ -5,6 +5,9 @@
 // the same `toScreen` / `toSequence` mapping as the transform gizmo handles monitor zoom and pan.
 // Anchor Point paths too (values in layer space, drawn through the layer map at the playhead, as After
 // Effects shows an anchor path over its layer), snapping and multi-key drags, Pen-tool vertex conversion.
+// spatial-points: the paths of effect point params (Transform's Position / Anchor Point, Offset's Shift Center To, …:
+// values normalised to the layer box) are drawn through the layer map at the playhead too, evaluated with the box's
+// metric exactly as the renderers do (`buildEffectPointPath`).
 import {
 	applyMatrix,
 	type Command,
@@ -17,6 +20,7 @@ import {
 	type Rational,
 	type RenderVisualClip,
 	type SpatialInterpolation,
+	type SpatialMetric,
 	spatialModeOf,
 	type Vec2,
 } from '@jasper/project';
@@ -41,16 +45,23 @@ type MotionPathKey = {
 	offClip: boolean;
 };
 
-/** Which point property the path animates. */
-type MotionPathProperty = 'position' | 'anchor';
+/** Which point property the path animates (`effect` = an effect point param, `effect` names it). */
+type MotionPathProperty = 'position' | 'anchor' | 'effect';
 
 export type MotionPath = {
 	clipId: string;
 	trackId: string;
 	property: MotionPathProperty;
+	/** spatial-points: the effect instance and point param of an `effect` path. */
+	effect?: { fxId: string; param: string; label: string };
 	/** Property space (value units) → sequence px, and sequence-px vectors → property-space vectors. */
 	toSeq(v: Vec2): Vec2;
 	vecFromSeq(d: Vec2): Vec2;
+	/**
+	 * spatial-points: sequence px → property space for maps that are not affine (a corner-pinned layer's projective
+	 * map); drags then turn pointer positions into values through it. Absent = `vecFromSeq` (affine maps).
+	 */
+	fromSeq?(p: Vec2): Vec2 | null;
 	/** Evaluated position at every frame of the clip (sequence px); spacing encodes speed. */
 	dots: Vec2[];
 	keys: MotionPathKey[];
@@ -102,6 +113,80 @@ export function buildMotionPath(
 		};
 	});
 	return { clipId: clip.clipId, trackId: clip.trackId, property, toSeq, vecFromSeq, dots, keys };
+}
+
+/**
+ * spatial-points: the motion path of an effect point param (values normalised to the layer box, ≥ 2 keys), drawn through
+ * `map` (the layer's map at the playhead: normalised point ↔ sequence px). Evaluated with the box's `metric`, so the
+ * dots (one per clip frame) sit exactly where the renderers put the point, and Auto Bezier handles are the ones the
+ * evaluator uses.
+ */
+export function buildEffectPointPath(
+	clip: RenderVisualClip,
+	fps: Rational,
+	effect: { fxId: string; param: string; label: string },
+	map: { toSeq(n: Vec2): Vec2; fromSeq(p: Vec2): Vec2 | null },
+	metric?: SpatialMetric,
+): MotionPath | null {
+	const fx = clip.effects.find((e) => e.id === effect.fxId);
+	const anim = fx?.params[effect.param];
+	if (!anim || anim.keyframes.length < 2) return null;
+	const kfs = anim.keyframes as readonly Keyframe<unknown>[];
+	if (!kfs.every((k) => Array.isArray(k.value) && k.value.length === 2)) return null;
+	const opts = metric ? { metric } : undefined;
+	const dots: Vec2[] = [];
+	for (let f = 0; f < clip.duration; f++) {
+		const v = evaluate(anim, contentTimeAt(clip, clip.start + f, fps), opts) as Vec2;
+		dots.push(map.toSeq([v[0], v[1]]));
+	}
+	const t0 = contentTimeAt(clip, clip.start, fps);
+	const t1 = contentTimeAt(clip, clip.start + clip.duration - 1, fps);
+	const [lo, hi] = [Math.min(t0, t1), Math.max(t0, t1)];
+	const handles = kfs.length <= MAX_HANDLE_KEYS;
+	const keys = kfs.map((k, i): MotionPathKey => {
+		const mode = spatialModeOf(k);
+		const tg = effectiveTangents(kfs, i, metric);
+		const curved = handles && mode !== 'linear';
+		const value: Vec2 = [(k.value as Vec2)[0], (k.value as Vec2)[1]];
+		const at = (t: Vec2): Vec2 => map.toSeq([value[0] + t[0], value[1] + t[1]]);
+		return {
+			id: k.id,
+			pos: map.toSeq(value),
+			value,
+			mode,
+			inHandle: curved && i > 0 ? at(tg.inTangent) : null,
+			outHandle: curved && i < kfs.length - 1 ? at(tg.outTangent) : null,
+			offClip: k.time < lo || k.time > hi,
+		};
+	});
+	// Vectors through the map's local linearisation at the box centre (only used without `fromSeq`).
+	const c = map.toSeq([0.5, 0.5]);
+	const ex = map.toSeq([1.5, 0.5]);
+	const ey = map.toSeq([0.5, 1.5]);
+	const inv = invertMatrix({ a: ex[0] - c[0], b: ex[1] - c[1], c: ey[0] - c[0], d: ey[1] - c[1], e: 0, f: 0 });
+	return {
+		clipId: clip.clipId,
+		trackId: clip.trackId,
+		property: 'effect',
+		effect,
+		toSeq: map.toSeq,
+		vecFromSeq: (d) => (inv ? [inv.a * d[0] + inv.c * d[1], inv.b * d[0] + inv.d * d[1]] : [0, 0]),
+		fromSeq: map.fromSeq,
+		dots,
+		keys,
+	};
+}
+
+/**
+ * The property-space offset of a sequence point from a key: through `fromSeq` when the path has one (projective maps),
+ * else the affine vector map.
+ */
+function offsetFrom(path: MotionPath, key: MotionPathKey, at: Vec2): Vec2 {
+	if (path.fromSeq) {
+		const v = path.fromSeq(at);
+		if (v) return [v[0] - key.value[0], v[1] - key.value[1]];
+	}
+	return path.vecFromSeq([at[0] - key.pos[0], at[1] - key.pos[1]]);
 }
 
 type PathHit = { kind: 'key'; keyId: string } | { kind: 'tangent'; keyId: string; side: 'in' | 'out' };
@@ -179,9 +264,11 @@ export function motionPathDragCommands(
 	/** Snaps the grabbed key's new sequence position (keyframes-blend); returns the corrected position. */
 	snap?: (at: Vec2) => Vec2,
 ): { commands: Command[]; readout: string } {
+	// spatial-points: effect points are normalised to the layer box (3 decimals, as Effect Controls shows them).
+	const fmt = d.path.property === 'effect' ? fmtPoint : fmtPx;
 	if (d.hit.kind === 'key' && d.pull) {
 		// Pull Continuous Bezier handles out of the key: the out handle follows the pointer, the in one opposite.
-		const out = d.path.vecFromSeq([p[0] - d.key.pos[0], p[1] - d.key.pos[1]]);
+		const out = offsetFrom(d.path, d.key, p);
 		return {
 			commands: [
 				{
@@ -206,7 +293,7 @@ export function motionPathDragCommands(
 			if (!(mods.shift && dx === 0)) dx = at[0] - d.key.pos[0];
 			if (!(mods.shift && dy === 0)) dy = at[1] - d.key.pos[1];
 		}
-		const dv = d.path.vecFromSeq([dx, dy]);
+		const dv = offsetFrom(d.path, d.key, [d.key.pos[0] + dx, d.key.pos[1] + dy]);
 		const commands = d.group.map(
 			(k) =>
 				({
@@ -223,7 +310,7 @@ export function motionPathDragCommands(
 	}
 	const handle0 = d.hit.side === 'in' ? d.key.inHandle : d.key.outHandle;
 	const grab = handle0 ? [handle0[0] - d.start[0], handle0[1] - d.start[1]] : [0, 0];
-	const tangent: Vec2 = d.path.vecFromSeq([p[0] + grab[0]! - d.key.pos[0], p[1] + grab[1]! - d.key.pos[1]]);
+	const tangent: Vec2 = offsetFrom(d.path, d.key, [p[0] + grab[0]!, p[1] + grab[1]!]);
 	return {
 		commands: [
 			{
@@ -237,7 +324,8 @@ export function motionPathDragCommands(
 	};
 }
 
-const fmt = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+const fmtPx = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+const fmtPoint = (n: number) => (Math.round(n * 1000) / 1000).toFixed(3);
 
 /** SVG path data drawing every sample as a round 2 px dot (one element for the whole path). */
 export function dotsPathData(path: MotionPath, view: View): string {

@@ -7,7 +7,8 @@
 // Authoring guide (normative for effect authors): docs/wp-notes/fx-shader-framework.md.
 
 import type { WarpAnalysisData } from '../../gaps/warp/analysis.ts';
-import { evaluate } from '../../keyframes.ts';
+import { evaluate, expressionBindingOf } from '../../keyframes.ts';
+import type { SpatialMetric } from '../../keyframes-spatial.ts';
 import type { ResolvedPuppet } from '../../puppet/model.ts';
 import type { Animatable, ParamValue } from '../../schema/common.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
@@ -1197,13 +1198,16 @@ export function fxClipContentTime(
 /**
  * `FxParamsAt` of an effect instance: its animatable params evaluated (shared `evaluate()`, keyframes in content time)
  * at a fractional clip-local frame. `current` (the frame being drawn and its already-evaluated params) is returned
- * as is for that frame, so `paramsAt(ctx.frame)` is exactly `p`. Results are cached per frame.
+ * as is for that frame, so `paramsAt(ctx.frame)` is exactly `p`. Results are cached per frame. spatial-points:
+ * `metricOf(name)` = the spatial metric of a point param (`effectParamMetric` with the clip's layer box), so sub-frame
+ * samples follow the same arc-length timing as the frame (`evaluateEffectParam`).
  */
 export function fxParamsAtFn(
 	instance: { readonly params: Readonly<Record<string, Animatable<ParamValue>>> },
 	clip: { duration: number; sourceIn: number; speed: { rate: number; reverse?: boolean } },
 	fps: number,
 	current?: { frame: number; params: EffectParams },
+	metricOf?: (name: string) => SpatialMetric | undefined,
 ): FxParamsAt {
 	const cache = new Map<number, EffectParams>();
 	return (frame: number) => {
@@ -1213,7 +1217,11 @@ export function fxParamsAtFn(
 		if (hit) return hit;
 		const t = fxClipContentTime(clip, f, fps);
 		const out: Record<string, ParamValue> = {};
-		for (const [k, a] of Object.entries(instance.params)) out[k] = evaluate(a, t);
+		for (const [k, a] of Object.entries(instance.params)) {
+			const metric =
+				metricOf && a.keyframes.length > 1 && !expressionBindingOf(a) ? metricOf(k) : undefined;
+			out[k] = evaluate(a, t, metric ? { metric } : undefined);
+		}
 		if (cache.size > 256) cache.clear();
 		cache.set(f, out);
 		return out;

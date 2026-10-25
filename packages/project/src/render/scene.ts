@@ -4,6 +4,7 @@
 import { contentTimeAt } from '../derive/index.ts';
 import type { WarpAnalysisData } from '../gaps/warp/analysis.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
+import { evaluateEffectParam } from '../registry/effects.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
@@ -177,7 +178,10 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		effectId: fx.effectId,
 		effectVersion: fx.effectVersion,
 		enabled: fx.enabled,
-		params: Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t)])),
+		// spatial-points: effect points walk their paths in the layer box's pixels.
+		params: Object.fromEntries(
+			Object.entries(fx.params).map(([k, a]) => [k, evaluateEffectParam(fx, k, a, t, c.intrinsicBox)]),
+		),
 		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
 		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
 		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
