@@ -1,7 +1,7 @@
 import type { EngineJob, PreviewSettings } from '@jasper/api';
 import { audioPreviewSegments, previewSegments, previewSettingsOf, type Sequence } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -24,8 +24,8 @@ export const PREVIEWS_GUIDE = `Render previews (Premiere's Sequence â–¸ Renderâ€
 
 const RangeArg = z
 	.object({
-		from: z.unknown().describe('Frame, {"seconds": x} or "HH:MM:SS:FF"'),
-		to: z.unknown().describe('Exclusive end: frame, {"seconds": x} or "HH:MM:SS:FF"'),
+		from: z.unknown().describe(`Start. ${TIME_FORMATS}`),
+		to: z.unknown().describe(`Exclusive end. ${TIME_FORMATS}`),
 	})
 	.optional()
 	.describe('Range [from, to); default: In/Out, else the whole sequence');

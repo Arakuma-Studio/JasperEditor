@@ -10,6 +10,7 @@ import { AgentQueryNameSchema } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { parseFriendlyTime } from './arguments.ts';
 import { type EngineConnection, EngineLink } from './link.ts';
 import { createJasperMcpServer } from './server.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -47,7 +48,7 @@ Options:
   --project <id|name>    project to work on (env JASPER_PROJECT; default: the project open in the editor
                          window, else the only project)
   --sequence <id>        sequence (default: the project's first / the editor's active one)
-  --at <time>            time for get / props / render-frame: frames, 2.5s, or HH:MM:SS:FF
+  --at <time>            time for get / props / render-frame: frames, 2.5s, 250ms, 00:03, 1:02:03 or HH:MM:SS:FF
   --label <text>         History label for exec (default: the command type)
   --dry-run              validate exec / run / set without applying
   --keep-going           run: continue after a failed line
@@ -149,15 +150,15 @@ function kvArgs(items: readonly string[]): Record<string, unknown> {
 	return out;
 }
 
-/** `--at`: 30 (frames), 2.5s (seconds), HH:MM:SS:FF, or JSON. */
+/** `--at`: 30 (frames), 2.5s / 250ms / 00:03 / 1:02:03 (friendly times, arguments.ts), HH:MM:SS:FF, or JSON. */
 function timeValue(s: string): unknown {
-	const sec = /^(-?\d+(?:\.\d+)?)s$/.exec(s.trim());
-	if (sec) return { seconds: Number(sec[1]) };
+	const sec = parseFriendlyTime(s.trim());
+	if (sec !== null) return { seconds: sec };
 	if (/^-?\d+$/.test(s.trim())) return Number(s);
 	if (/^\d{1,3}[:;]\d{1,2}[:;]\d{1,2}[:;.]\d{1,3}$/.test(s.trim())) return s.trim();
 	const v = looseValue(s);
 	if (v && typeof v === 'object') return v;
-	throw new UsageError(`Not a time: "${s}" (use frames, 2.5s or HH:MM:SS:FF)`);
+	throw new UsageError(`Not a time: "${s}" (use frames, 2.5s, 250ms, 00:03, 1:02:03 or HH:MM:SS:FF)`);
 }
 
 type Out = { stdout(s: string): void; stderr(s: string): void };

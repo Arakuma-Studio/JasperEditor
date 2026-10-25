@@ -75,7 +75,8 @@ Workflow:
 5. start_export → wait_for_job → the output file.
 
 Rules:
-- Times are sequence frames; every time argument also accepts {"seconds": x} or timecode "HH:MM:SS:FF". Results give both frames and timecode.
+- Times are sequence frames; every time argument of these tools also accepts {"seconds": x}, "3s" / "1.5s" / "250ms", a clock "00:03" (M:SS) or "1:02:03" (H:MM:SS), or timecode "HH:MM:SS:FF" (four fields are always timecode). Commands inside apply_commands take frames, {"frames": n}, {"seconds": x} or timecode. Results give both frames and timecode.
+- add_motion_graphic never overwrites unless you name a track: graphics go on the first free video track for their time range (one call can add many: items[], one undo step).
 - Tracks are "V1", "V2"… (video, V1 lowest) and "A1", "A2"… (audio). A video file placed with add_clip creates a linked video+audio pair.
 - Deleting tracks/items or anything with force: true needs the user's approval in an open editor window; if they deny it (E_APPROVAL_DENIED), do not retry without asking.
 - The same goes for destructive operations outside the timeline: deleting an effect preset, removing a downloaded model, cleaning cache that saved projects use, deleting all render files, moving the cache, restoring a version over a project, changing processing settings. The user answers on a card in the editor; only they can (you cannot approve or deny through any tool).
