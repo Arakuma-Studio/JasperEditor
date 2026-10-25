@@ -406,7 +406,8 @@ export function parseCubicBezier(text: string): CubicParse {
 	const t = String(text ?? '').trim();
 	if (!t) return { ok: false, error: 'Enter cubic-bezier(x1, y1, x2, y2)' };
 	if (t.length > MAX_TEXT) return { ok: false, error: 'The text is too long' };
-	const keyword = CSS_KEYWORDS[t.toLowerCase().replace(/;$/, '')];
+	const name = t.toLowerCase().replace(/;$/, '');
+	const keyword = Object.hasOwn(CSS_KEYWORDS, name) ? CSS_KEYWORDS[name] : undefined;
 	if (keyword) {
 		const [x1, y1, x2, y2] = keyword;
 		return { ok: true, curve: { kind: 'cubic', x1, y1, x2, y2 } };
