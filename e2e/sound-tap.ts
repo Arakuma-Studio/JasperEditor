@@ -18,7 +18,13 @@ export const TAP = () => {
 	type Block = { f: number; d: Float32Array };
 	type Tap = {
 		on: boolean;
-		ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; blocks: Block[]; starts: number }[];
+		ctxs: {
+			ctx: BaseAudioContext;
+			node: AudioWorkletNode | null;
+			blocks: Block[];
+			starts: number;
+			flush?: () => void;
+		}[];
 		stops: { t: number; player: number }[];
 		late: { t: number; by: number }[];
 		starts: { t: number; player: number }[];
@@ -32,7 +38,7 @@ export const TAP = () => {
 	w.__tap = { on: false, ctxs: [], stops: [], late: [], starts: [] };
 	const code = `class T extends AudioWorkletProcessor {
 		constructor() { super(); this.on = false; this.buf = [];
-			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage(this.buf); this.buf = []; } }; }
+			this.port.onmessage = (e) => { this.on = e.data.on; if (!this.on) { this.port.postMessage({ blocks: this.buf, flushed: true }); this.buf = []; } }; }
 		process(inputs) { const x = inputs[0] && inputs[0][0];
 			if (this.on) { this.buf.push({ f: currentFrame, d: x ? new Float32Array(x) : new Float32Array(128) });
 				if (this.buf.length >= 256) { this.port.postMessage(this.buf); this.buf = []; } }
@@ -48,14 +54,27 @@ export const TAP = () => {
 		bus = ctx.createGain();
 		buses.set(ctx, bus);
 		connect.call(bus, dest);
-		const entry = { ctx, node: null as AudioWorkletNode | null, blocks: [] as Block[], starts: 0 };
+		const entry = {
+			ctx,
+			node: null as AudioWorkletNode | null,
+			blocks: [] as Block[],
+			starts: 0,
+			flush: undefined as (() => void) | undefined,
+		};
 		w.__tap.ctxs.push(entry);
 		void ctx.audioWorklet.addModule(url).then(() => {
 			const node = new AudioWorkletNode(ctx, 'jasper-e2e-tap', {
 				channelCount: 2,
 				channelCountMode: 'explicit',
 			});
-			node.port.onmessage = (e: MessageEvent<Block[]>) => entry.blocks.push(...e.data);
+			node.port.onmessage = (e: MessageEvent<Block[] | { blocks: Block[]; flushed: true }>) => {
+				if (Array.isArray(e.data)) entry.blocks.push(...e.data);
+				else {
+					entry.blocks.push(...e.data.blocks);
+					entry.flush?.();
+					entry.flush = undefined;
+				}
+			};
 			const mute = ctx.createGain();
 			mute.gain.value = 0;
 			connect.call(bus!, node);
@@ -169,13 +188,35 @@ export async function mark(p: Page, name: string): Promise<void> {
 
 /** Stops recording; returns the loudest context's recording (the program's; others are silent). */
 export async function disarm(p: Page): Promise<Recording> {
-	await p.evaluate(() => {
-		const t = (window as unknown as { __tap: { on: boolean; ctxs: { node: AudioWorkletNode | null }[] } })
-			.__tap;
+	await p.evaluate(async () => {
+		const t = (
+			window as unknown as {
+				__tap: {
+					on: boolean;
+					ctxs: { ctx: BaseAudioContext; node: AudioWorkletNode | null; flush?: () => void }[];
+				};
+			}
+		).__tap;
 		t.on = false;
-		for (const c of t.ctxs) c.node?.port.postMessage({ on: false });
+		await Promise.all(
+			t.ctxs
+				.filter((c) => c.node && c.ctx.state !== 'closed')
+				.map(
+					(c) =>
+						new Promise<void>((resolve, reject) => {
+							const timeout = setTimeout(
+								() => reject(new Error('AudioWorklet did not acknowledge its flush')),
+								5_000,
+							);
+							c.flush = () => {
+								clearTimeout(timeout);
+								resolve();
+							};
+							c.node!.port.postMessage({ on: false });
+						}),
+				),
+		);
 	});
-	await p.waitForTimeout(300);
 	return p.evaluate(() => {
 		const t = (
 			window as unknown as {
