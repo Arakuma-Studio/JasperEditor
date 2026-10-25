@@ -296,7 +296,7 @@ export function paramSpatialMetric(
 	p: Pick<ParamSpec, 'type' | 'spatial' | 'spatialMetric'> | undefined,
 	box: { width: number; height: number } | null | undefined,
 ): SpatialMetric | undefined {
-	if (!p || p.type !== 'vec2' || !p.spatial || p.spatialMetric !== 'layer-box' || !box) return undefined;
+	if (p?.type !== 'vec2' || !p.spatial || p.spatialMetric !== 'layer-box' || !box) return undefined;
 	return [box.width, box.height];
 }
 

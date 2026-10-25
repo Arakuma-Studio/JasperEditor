@@ -95,16 +95,22 @@ describe.runIf(enabled)('effect point motion paths: preview vs export (REMOTION_
 
 	const queue = () => coreServices(engine.app).queue;
 	const wait = async (id: string): Promise<EngineJob> => {
-		await until(() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''), 3_600_000, 250);
+		await until(
+			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
+			3_600_000,
+			250,
+		);
 		return queue().get(id)!;
 	};
 
 	it('a Transform with a curved Position path: export = composition = the evaluator (layer-box arc length)', async () => {
 		const d = new DocBuilder('hd-720p-30');
-		const s = d.tx([{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0.55, 0, 1], ref: '$s' }])
-			.refs.$s!;
-		const fxId = d.tx([{ type: 'effect.add', target: { clipId: s }, effectId: 'jasper.transform', ref: '$fx' }])
-			.refs.$fx!;
+		const s = d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0.55, 0, 1], ref: '$s' },
+		]).refs.$s!;
+		const fxId = d.tx([
+			{ type: 'effect.add', target: { clipId: s }, effectId: 'jasper.transform', ref: '$fx' },
+		]).refs.$fx!;
 		const pos = ['effect', fxId, 'position'];
 		d.tx([
 			{ type: 'param.set', target: ['effect', fxId, 'scaleHeight'], value: 12 },
@@ -152,14 +158,18 @@ describe.runIf(enabled)('effect point motion paths: preview vs export (REMOTION_
 		const snap = buildRenderSnapshot(d.doc, d.seqId, { resolveFont: () => null, resolveMedia: () => null });
 		const seq = d.doc.sequences[d.seqId]!;
 		const clip = seq.clips[s]!;
-		const anim = (clip as unknown as { effects: EffectInstance[] }).effects[0]!.params.position as Animatable<Vec2>;
+		const anim = (clip as unknown as { effects: EffectInstance[] }).effects[0]!.params
+			.position as Animatable<Vec2>;
 		const shares: number[] = [];
 		const errs: number[] = [];
 		const offs: number[] = [];
 		for (const f of [0, 8, 15, 22, 30, 38, 45, 52, 59]) {
 			const ref = join(tempAppdir('jasper-spatial-ref-'), 'ref.png');
 			await svc.remotion.renderStill({
-				inputProps: { doc: snap, options: { isPreview: false, useProxies: false, transparentBackground: false } },
+				inputProps: {
+					doc: snap,
+					options: { isPreview: false, useProxies: false, transparentBackground: false },
+				},
 				output: ref,
 				frame: f,
 				signal: new AbortController().signal,

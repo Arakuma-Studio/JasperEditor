@@ -87,11 +87,15 @@ describe('evaluation with a layer-box metric', () => {
 			const out: number[] = [];
 			for (let f = 0; f < 60; f++)
 				out.push(
-					dist(px(evaluate(a, f * F, metric ? { metric } : undefined)), px(evaluate(a, (f + 1) * F, metric ? { metric } : undefined))),
+					dist(
+						px(evaluate(a, f * F, metric ? { metric } : undefined)),
+						px(evaluate(a, (f + 1) * F, metric ? { metric } : undefined)),
+					),
 				);
 			return out;
 		};
-		const spread = (v: number[]) => (Math.max(...v) - Math.min(...v)) / (v.reduce((x, y) => x + y) / v.length);
+		const spread = (v: number[]) =>
+			(Math.max(...v) - Math.min(...v)) / (v.reduce((x, y) => x + y) / v.length);
 		expect(spread(speeds(M))).toBeLessThan(0.01);
 		// Without the metric the speed is constant in normalised units, which is uneven on a 16:9 layer.
 		expect(spread(speeds())).toBeGreaterThan(0.05);
@@ -136,7 +140,12 @@ describe('evaluation with a layer-box metric', () => {
 	});
 
 	it('Auto Bezier (proportional) handles are measured in pixels', () => {
-		const auto = (): Spatial => ({ mode: 'auto-bezier', inTangent: [0, 0], outTangent: [0, 0], auto: 'proportional' });
+		const auto = (): Spatial => ({
+			mode: 'auto-bezier',
+			inTangent: [0, 0],
+			outTangent: [0, 0],
+			auto: 'proportional',
+		});
 		const kfs = [key(0, [0.1, 0.5], auto()), key(30, [0.5, 0.2], auto()), key(60, [0.6, 0.9], auto())];
 		const t = effectiveTangents(kfs, 1, M);
 		// Reference computed by hand in px: direction next − prev, each handle ⅓ of its own chord in px.
@@ -148,7 +157,7 @@ describe('evaluation with a layer-box metric', () => {
 		const lin = dist(K, P) / 3;
 		const lout = dist(N, K) / 3;
 		const want = {
-			inTangent: [(-d[0] / l) * lin / W, (-d[1] / l) * lin / H],
+			inTangent: [((-d[0] / l) * lin) / W, ((-d[1] / l) * lin) / H],
 			outTangent: [((d[0] / l) * lout) / W, ((d[1] / l) * lout) / H],
 		};
 		for (const s of ['inTangent', 'outTangent'] as const)
@@ -159,7 +168,10 @@ describe('evaluation with a layer-box metric', () => {
 	});
 
 	it('property: no metric, an isotropic metric and straight segments evaluate bit-identically to before', () => {
-		const vec = fc.tuple(fc.double({ min: -2, max: 2, noNaN: true }), fc.double({ min: -2, max: 2, noNaN: true }));
+		const vec = fc.tuple(
+			fc.double({ min: -2, max: 2, noNaN: true }),
+			fc.double({ min: -2, max: 2, noNaN: true }),
+		);
 		fc.assert(
 			fc.property(
 				fc.array(vec, { minLength: 2, maxLength: 5 }),
@@ -221,7 +233,10 @@ describe('which effect params are positions', () => {
 		] as const)
 			expect(pick(id, name).spatial).toBe('auto-bezier');
 		// Corner Pin corners stay Linear for new keys (tracker output), but measure in the layer box too.
-		expect(pick('jasper.corner-pin', 'topLeft')).toMatchObject({ spatial: 'linear', spatialMetric: 'layer-box' });
+		expect(pick('jasper.corner-pin', 'topLeft')).toMatchObject({
+			spatial: 'linear',
+			spatialMetric: 'layer-box',
+		});
 	});
 
 	it('non-position vectors (colour wheels) and every transition param are not spatial', () => {
@@ -234,7 +249,14 @@ describe('which effect params are positions', () => {
 	});
 });
 
-type VClip = { id: string; effects: EffectInstance[]; start: number; duration: number; sourceIn: number; speed: { rate: number; reverse?: boolean } };
+type VClip = {
+	id: string;
+	effects: EffectInstance[];
+	start: number;
+	duration: number;
+	sourceIn: number;
+	speed: { rate: number; reverse?: boolean };
+};
 
 function withTransform(duration = 90) {
 	const h = new Harness();
@@ -268,12 +290,19 @@ describe('commands on effect points', () => {
 		for (const f of [5, 15, 45]) {
 			const ct = contentTimeAt(c as never, f, rate);
 			const props = resolveLayerProps(
-				{ transform: null, opacity: { value: 100, keyframes: [] }, intrinsicBox: { width: W, height: H }, effects: c.effects },
+				{
+					transform: null,
+					opacity: { value: 100, keyframes: [] },
+					intrinsicBox: { width: W, height: H },
+					effects: c.effects,
+				},
 				ct,
 			);
 			const want = evaluate(fx().params.position as Animatable<Vec2>, ct, { metric: M });
 			expect(props.effects[0]!.params.position).toEqual(want);
-			expect(evaluateEffectParam(fx(), 'position', fx().params.position!, ct, { width: W, height: H })).toEqual(want);
+			expect(
+				evaluateEffectParam(fx(), 'position', fx().params.position!, ct, { width: W, height: H }),
+			).toEqual(want);
 			// …and it is off the straight chord (a curve).
 			const plain = evaluate(fx().params.position as Animatable<Vec2>, ct);
 			expect(plain).not.toEqual(want);
@@ -299,7 +328,11 @@ describe('commands on effect points', () => {
 		const k0 = keys()[0]!.id;
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, outTangent: [0.1, 0] }]);
 		// Continuous: the other side opposite, its length kept in PIXELS (it had none: mirrored).
-		expect(keys()[0]!.spatial).toMatchObject({ mode: 'continuous-bezier', outTangent: [0.1, 0], inTangent: [-0.1, 0] });
+		expect(keys()[0]!.spatial).toMatchObject({
+			mode: 'continuous-bezier',
+			outTangent: [0.1, 0],
+			inTangent: [-0.1, 0],
+		});
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, inTangent: [0, 0.1] }]);
 		// The out side turns opposite the new in side and keeps its 192 px length: 192 px / 1080 px = 0.1778 in y.
 		const s0 = keys()[0]!.spatial!;
@@ -308,7 +341,9 @@ describe('commands on effect points', () => {
 		expect(s0.outTangent[1]).toBeCloseTo(-192 / 1080, 12);
 		h.ok([{ type: 'keyframe.update', keyframeId: k0, spatial: { mode: 'linear' } }]);
 		expect(keys()[0]!.spatial).toEqual({ mode: 'linear', inTangent: [0, 0], outTangent: [0, 0] });
-		h.ok([{ type: 'keyframe.setSpatialInterpolation', keyframeIds: keys().map((k) => k.id), mode: 'auto-bezier' }]);
+		h.ok([
+			{ type: 'keyframe.setSpatialInterpolation', keyframeIds: keys().map((k) => k.id), mode: 'auto-bezier' },
+		]);
 		expect(keys().every((k) => k.spatial?.mode === 'auto-bezier')).toBe(true);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// Undo = the document before (immutable); redo = re-applying gives the same document.
@@ -318,7 +353,9 @@ describe('commands on effect points', () => {
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, outTangent: [0.1, 0] }]);
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: k0, inTangent: [0, 0.1] }]);
 		h.ok([{ type: 'keyframe.update', keyframeId: k0, spatial: { mode: 'linear' } }]);
-		h.ok([{ type: 'keyframe.setSpatialInterpolation', keyframeIds: keys().map((k) => k.id), mode: 'auto-bezier' }]);
+		h.ok([
+			{ type: 'keyframe.setSpatialInterpolation', keyframeIds: keys().map((k) => k.id), mode: 'auto-bezier' },
+		]);
 		expect(JSON.stringify(h.doc.sequences)).toBe(done);
 	});
 
@@ -328,7 +365,12 @@ describe('commands on effect points', () => {
 		const rot = keys('rotation')[0]!.id;
 		const before = h.doc;
 		for (const cmd of [
-			{ type: 'keyframe.add', target: target('rotation'), at: { sequenceFrame: 5 }, spatial: { mode: 'bezier' } },
+			{
+				type: 'keyframe.add',
+				target: target('rotation'),
+				at: { sequenceFrame: 5 },
+				spatial: { mode: 'bezier' },
+			},
 			{ type: 'keyframe.update', keyframeId: rot, spatial: { mode: 'bezier' } },
 			{ type: 'keyframe.setSpatialInterpolation', keyframeIds: [rot], mode: 'bezier' },
 			{ type: 'keyframe.setTangents', keyframeId: rot, outTangent: [1, 0] },
@@ -336,7 +378,9 @@ describe('commands on effect points', () => {
 			expect(h.tx([cmd])).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 			expect(h.doc).toBe(before);
 		}
-		const lumetri = defaultEffectRegistry.list().find((s) => s.params.some((p) => p.ui?.control === 'wheel'))!;
+		const lumetri = defaultEffectRegistry
+			.list()
+			.find((s) => s.params.some((p) => p.ui?.control === 'wheel'))!;
 		const wheel = lumetri.params.find((p) => p.ui?.control === 'wheel')!;
 		h.ok([{ type: 'effect.add', target: { clipId: id }, effectId: lumetri.id, ref: '$l' }]);
 		const lfx = (h.seq.clips[id] as unknown as VClip).effects.find((e) => e.effectId === lumetri.id)!;
@@ -352,8 +396,17 @@ describe('commands on effect points', () => {
 			]),
 		).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 		// Plain keys on a wheel never get spatial data.
-		h.ok([{ type: 'keyframe.add', target: ['effect', lfx.id, wheel.name], value: [0.1, 0.1], at: { sequenceFrame: 0 } }]);
-		const wk = (h.seq.clips[id] as unknown as VClip).effects.find((e) => e.id === lfx.id)!.params[wheel.name]!;
+		h.ok([
+			{
+				type: 'keyframe.add',
+				target: ['effect', lfx.id, wheel.name],
+				value: [0.1, 0.1],
+				at: { sequenceFrame: 0 },
+			},
+		]);
+		const wk = (h.seq.clips[id] as unknown as VClip).effects.find((e) => e.id === lfx.id)!.params[
+			wheel.name
+		]!;
 		expect(wk.keyframes[0]!.spatial).toBeUndefined();
 	});
 
@@ -364,15 +417,34 @@ describe('commands on effect points', () => {
 			{ type: 'keyframe.add', target: target(), value: [0.5, 0.2], at: { sequenceFrame: 30 } },
 			{ type: 'keyframe.add', target: target(), value: [0.8, 0.5], at: { sequenceFrame: 60 } },
 		]);
-		h.ok([{ type: 'keyframe.setTangents', keyframeId: keys()[1]!.id, outTangent: [0.1, 0.05], breakContinuity: true }]);
+		h.ok([
+			{
+				type: 'keyframe.setTangents',
+				keyframeId: keys()[1]!.id,
+				outTangent: [0.1, 0.05],
+				breakContinuity: true,
+			},
+		]);
 		const src = keys().map((k) => k.spatial);
 		// Keyframe paste onto another Transform's Position keeps the spatial data.
 		h.ok([{ type: 'clip.addSolid', at: 100, duration: 90, track: 'V1', color: [0, 1, 0, 1] }]);
 		const other = h.clips('V1')[1]!.id;
 		h.ok([{ type: 'effect.add', target: { clipId: other }, effectId: 'jasper.transform' }]);
 		const ofx = (h.seq.clips[other] as unknown as VClip).effects[0]!;
-		const payload = buildKeyframesPayload(h.doc, id, keys().map((k) => k.id));
-		h.ok([{ type: 'keyframe.paste', clipId: other, payload, at: { sequenceFrame: 100 }, target: ['effect', ofx.id, 'position'] }]);
+		const payload = buildKeyframesPayload(
+			h.doc,
+			id,
+			keys().map((k) => k.id),
+		);
+		h.ok([
+			{
+				type: 'keyframe.paste',
+				clipId: other,
+				payload,
+				at: { sequenceFrame: 100 },
+				target: ['effect', ofx.id, 'position'],
+			},
+		]);
 		const pasted = (h.seq.clips[other] as unknown as VClip).effects[0]!.params.position!.keyframes;
 		expect(pasted.map((k) => k.spatial?.mode)).toEqual(src.map((s) => s?.mode));
 		expect(pasted[1]!.spatial!.outTangent).toEqual([0.1, 0.05]);
@@ -382,15 +454,26 @@ describe('commands on effect points', () => {
 			type: 'anchor-in',
 			sections: { effectIds: [fx().id] },
 		});
-		expect((preset.effects![0]!.params.position!.keyframes![1] as { spatial?: Spatial }).spatial?.mode).toBe('bezier');
+		expect((preset.effects![0]!.params.position!.keyframes![1] as { spatial?: Spatial }).spatial?.mode).toBe(
+			'bezier',
+		);
 		h.ok([{ type: 'effect.applyPreset', preset, clipIds: [other] }]);
 		const applied = (h.seq.clips[other] as unknown as VClip).effects.at(-1)!.params.position!.keyframes;
 		expect(applied[1]!.spatial).toMatchObject({ mode: 'bezier', outTangent: [0.1, 0.05] });
 		// Simplify measures an effect point's deviation in layer pixels.
 		const c = clip();
-		const plan = planSimplify(h.doc, [
-			{ path: ['effect', fx().id, 'position'], anim: fx().params.position as never, seq: h.seq, clip: c as never },
-		], 0.1);
+		const plan = planSimplify(
+			h.doc,
+			[
+				{
+					path: ['effect', fx().id, 'position'],
+					anim: fx().params.position as never,
+					seq: h.seq,
+					clip: c as never,
+				},
+			],
+			0.1,
+		);
 		expect(plan.report.groups[0]!.unit).toBe('px');
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
@@ -405,14 +488,31 @@ describe('Corner Pin corners (native warp stage input)', () => {
 		const fxId = (h.seq.clips[id] as unknown as VClip).effects[0]!.id;
 		const tl = ['effect', fxId, 'topLeft'];
 		h.ok([
-			{ type: 'keyframe.add', target: tl, value: [0, 0], at: { sequenceFrame: 0 }, spatial: { mode: 'bezier', inTangent: [0, 0], outTangent: [0.2, 0] } },
-			{ type: 'keyframe.add', target: tl, value: [0.1, 0.3], at: { sequenceFrame: 60 }, spatial: { mode: 'bezier', inTangent: [0, -0.2], outTangent: [0, 0] } },
+			{
+				type: 'keyframe.add',
+				target: tl,
+				value: [0, 0],
+				at: { sequenceFrame: 0 },
+				spatial: { mode: 'bezier', inTangent: [0, 0], outTangent: [0.2, 0] },
+			},
+			{
+				type: 'keyframe.add',
+				target: tl,
+				value: [0.1, 0.3],
+				at: { sequenceFrame: 60 },
+				spatial: { mode: 'bezier', inTangent: [0, -0.2], outTangent: [0, 0] },
+			},
 		]);
 		const c = h.seq.clips[id] as unknown as VClip & { transform: never; opacity: never };
 		const rate = h.seq.settings.frameRate as Rational;
 		const t = contentTimeAt(c as never, 25, rate);
 		const props = resolveLayerProps(
-			{ transform: null, opacity: { value: 100, keyframes: [] }, intrinsicBox: { width: W, height: H }, effects: c.effects },
+			{
+				transform: null,
+				opacity: { value: 100, keyframes: [] },
+				intrinsicBox: { width: W, height: H },
+				effects: c.effects,
+			},
 			t,
 		);
 		const want = evaluate(c.effects[0]!.params.topLeft as Animatable<Vec2>, t, { metric: M });

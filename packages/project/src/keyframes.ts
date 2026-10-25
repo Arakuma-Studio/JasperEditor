@@ -467,7 +467,10 @@ export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: Eval
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
 }
 
-const metricKeysCache = new WeakMap<readonly Keyframe<unknown>[], { m: SpatialMetric; keys: Keyframe<unknown>[] }>();
+const metricKeysCache = new WeakMap<
+	readonly Keyframe<unknown>[],
+	{ m: SpatialMetric; keys: Keyframe<unknown>[] }
+>();
 
 /** Every key in metric units, cached per array and metric (documents are immutable between edits, as `rovingRuns`). */
 function allKeysInMetric(kfs: readonly Keyframe<unknown>[], m: SpatialMetric): Keyframe<unknown>[] {

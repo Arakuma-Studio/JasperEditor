@@ -1218,8 +1218,7 @@ export function fxParamsAtFn(
 		const t = fxClipContentTime(clip, f, fps);
 		const out: Record<string, ParamValue> = {};
 		for (const [k, a] of Object.entries(instance.params)) {
-			const metric =
-				metricOf && a.keyframes.length > 1 && !expressionBindingOf(a) ? metricOf(k) : undefined;
+			const metric = metricOf && a.keyframes.length > 1 && !expressionBindingOf(a) ? metricOf(k) : undefined;
 			out[k] = evaluate(a, t, metric ? { metric } : undefined);
 		}
 		if (cache.size > 256) cache.clear();

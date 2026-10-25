@@ -169,11 +169,7 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
  * spatial-points: the layer box of an effect's owner — the clip's intrinsic box, or the sequence frame for track and
  * master effects (they process the frame).
  */
-export function effectOwnerBox(
-	doc: DDoc,
-	seq: DSeq,
-	clip: DClip | null,
-): { width: number; height: number } {
+export function effectOwnerBox(doc: DDoc, seq: DSeq, clip: DClip | null): { width: number; height: number } {
 	return clip
 		? intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as Clip })
 		: { width: seq.settings.width, height: seq.settings.height };
@@ -307,9 +303,7 @@ export function resolveTarget(
 			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
 		// spatial-points: points normalised to the layer box measure their paths in its pixels (track and master effects:
 		// the sequence frame).
-		const metric = p.spatialMetric
-			? paramSpatialMetric(p, effectOwnerBox(doc, found.seq, clip))
-			: undefined;
+		const metric = p.spatialMetric ? paramSpatialMetric(p, effectOwnerBox(doc, found.seq, clip)) : undefined;
 		return {
 			type: 'anim',
 			anim,

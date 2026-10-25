@@ -25,7 +25,9 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 const fxOf = (s: EditorSession, id: string) =>
-	(clipOf(s, id) as unknown as { effects: EffectInstance[] }).effects.find((e) => e.effectId === 'jasper.transform')!;
+	(clipOf(s, id) as unknown as { effects: EffectInstance[] }).effects.find(
+		(e) => e.effectId === 'jasper.transform',
+	)!;
 const keysOf = (s: EditorSession, id: string) => fxOf(s, id).params.position!.keyframes as Keyframe<Vec2>[];
 
 /** A 90-frame 1920×1080 solid with a Transform effect whose Position has Auto Bezier keys at frames 0, 30, 60. */
@@ -59,7 +61,10 @@ function overlay(session: EditorSession, view = { scale: 0.5, x: 0, y: 0 }) {
 	const ui = () => (
 		<TransformOverlay
 			session={session}
-			doc={buildRenderSnapshot(session.getDrawn(), seqId, { resolveMedia: () => null, resolveFont: () => null })}
+			doc={buildRenderSnapshot(session.getDrawn(), seqId, {
+				resolveMedia: () => null,
+				resolveFont: () => null,
+			})}
 			view={view}
 			viewport={{ width: 960, height: 540 }}
 			transport={session.transport}
@@ -73,7 +78,12 @@ function overlay(session: EditorSession, view = { scale: 0.5, x: 0, y: 0 }) {
 
 const drag = (svg: HTMLElement, from: Vec2, to: Vec2, opts: { altKey?: boolean } = {}) => {
 	fireEvent.pointerDown(svg, { clientX: from[0], clientY: from[1], button: 0, pointerId: 1 });
-	fireEvent.pointerMove(svg, { clientX: (from[0] + to[0]) / 2, clientY: (from[1] + to[1]) / 2, pointerId: 1, ...opts });
+	fireEvent.pointerMove(svg, {
+		clientX: (from[0] + to[0]) / 2,
+		clientY: (from[1] + to[1]) / 2,
+		pointerId: 1,
+		...opts,
+	});
 	fireEvent.pointerMove(svg, { clientX: to[0], clientY: to[1], pointerId: 1, ...opts });
 	fireEvent.pointerUp(svg, { clientX: to[0], clientY: to[1], pointerId: 1, ...opts });
 };
@@ -138,7 +148,8 @@ describe('Program monitor ▸ effect point motion path', () => {
 		const t0 = (mid.spatial as { outTangent: Vec2 }).outTangent;
 		expect(s.outTangent[0]).toBeCloseTo(t0[0], 4);
 		expect(s.outTangent[1]).toBeCloseTo(t0[1] - 60 / 1080, 4);
-		const cross = s.inTangent[0] * 1920 * s.outTangent[1] * 1080 - s.inTangent[1] * 1080 * s.outTangent[0] * 1920;
+		const cross =
+			s.inTangent[0] * 1920 * s.outTangent[1] * 1080 - s.inTangent[1] * 1080 * s.outTangent[0] * 1920;
 		expect(Math.abs(cross)).toBeLessThan(1e-3);
 		act(() => session.undo());
 		expect(keysOf(session, id)[1]!.spatial!.mode).toBe('auto-bezier');

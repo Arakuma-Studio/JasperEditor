@@ -69,15 +69,17 @@ describe('spatial-points interchange', () => {
 		const text = exportFcpxml(p, sid, {}, report);
 		// Motion Position: auto, auto, linear → smooth, smooth, linear (the temporal interp stays linear).
 		const position = text.slice(text.indexOf('<param name="position"'));
-		expect([...position.matchAll(/<keyframe [^>]*interp="(\w+)" curve="(\w+)"/g)].slice(0, 3).map((m) => m[2])).toEqual([
-			'smooth',
-			'smooth',
-			'linear',
-		]);
+		expect(
+			[...position.matchAll(/<keyframe [^>]*interp="(\w+)" curve="(\w+)"/g)].slice(0, 3).map((m) => m[2]),
+		).toEqual(['smooth', 'smooth', 'linear']);
 		// The effect point is written with its keyframes (it used to be its static value only).
 		const fxParam = text.slice(text.indexOf('<param name="position" key="position"'));
 		expect(fxParam).toContain('<keyframeAnimation>');
-		expect([...fxParam.matchAll(/<keyframe [^>]*value="([^"]+)"[^>]*curve="(\w+)"/g)].slice(0, 3).map((m) => [m[1], m[2]])).toEqual([
+		expect(
+			[...fxParam.matchAll(/<keyframe [^>]*value="([^"]+)"[^>]*curve="(\w+)"/g)]
+				.slice(0, 3)
+				.map((m) => [m[1], m[2]]),
+		).toEqual([
 			['0.2 0.5', 'smooth'],
 			['0.5 0.2', 'smooth'],
 			['0.8 0.5', 'linear'],

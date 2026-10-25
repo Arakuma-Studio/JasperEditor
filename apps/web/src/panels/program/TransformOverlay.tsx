@@ -16,10 +16,10 @@ import {
 	layerMatrix,
 	type Mat3,
 	mat3FromMat2D,
+	type Vec2 as PVec2,
 	quadBounds,
 	type Rect,
 	type ResolvedLayer,
-	type Vec2 as PVec2,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
@@ -323,16 +323,23 @@ export function TransformOverlay({
 		return null;
 	}, [doc, selected, focusedFx]);
 	const fxInst = fxClip?.effects.find((e) => e.id === focusedFx && e.enabled);
-	const fxSpec = fxInst ? session.ctx.registries.effects.get(fxInst.effectId, fxInst.effectVersion) : undefined;
+	const fxSpec = fxInst
+		? session.ctx.registries.effects.get(fxInst.effectId, fxInst.effectVersion)
+		: undefined;
 	const fxLayer = fxClip ? scene.find((l) => l.clip.clipId === fxClip.clipId) : undefined;
 	const fxMaps = fxLayer
 		? { full: layerMapOf(fxLayer.props), motion: mat3FromMat2D(fxLayer.props.matrix) }
 		: null;
 	const fxMapKey = fxMaps ? `${fxMaps.full.join(',')}|${fxMaps.motion.join(',')}` : '';
 	const fxTiming = fxClip
-		? [fxClip.clipId, fxClip.start, fxClip.duration, fxClip.sourceIn, fxClip.speed.rate, fxClip.speed.reverse].join(
-				'|',
-			)
+		? [
+				fxClip.clipId,
+				fxClip.start,
+				fxClip.duration,
+				fxClip.sourceIn,
+				fxClip.speed.rate,
+				fxClip.speed.reverse,
+			].join('|')
 		: '';
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the instance, its timing and the layer maps
 	const fxPaths = useMemo((): MotionPath[] => {

@@ -806,8 +806,7 @@ class FcpxmlImporter {
 						// spatial-points: vec2 keyframes; point params read each key's `curve`.
 						const v = this.kparam(a, p.attrs.name ?? k!, kt, (x) => pair(x), !!ps.spatial);
 						if (v) params[ps.name] = v;
-					}
-					else if ((ps.type === 'enum' || ps.type === 'string') && p.attrs.value !== undefined)
+					} else if ((ps.type === 'enum' || ps.type === 'string') && p.attrs.value !== undefined)
 						params[ps.name] = anim(p.attrs.value);
 					else if (ps.type === 'color' && p.attrs.value) {
 						const c = p.attrs.value.trim().split(/\s+/).map(Number);
@@ -1915,9 +1914,7 @@ class FcpxmlExporter {
 		a.keyframes.forEach((k, i) => {
 			const attrs = interpAttrs(k.interpolation, k.inInterpolation);
 			if (spatial) attrs[1] = ['curve', (k.spatial?.mode ?? 'linear') === 'linear' ? 'linear' : 'smooth'];
-			keys.push(
-				el('keyframe', [['time', fmtTime(toLocal(k.time), rate)], ['value', f(k.value)], ...attrs]),
-			);
+			keys.push(el('keyframe', [['time', fmtTime(toLocal(k.time), rate)], ['value', f(k.value)], ...attrs]));
 			// A hold key: FCPXML has no hold interpolation; the value is repeated on the frame before the next key, which
 			// holds it on every frame.
 			const nx = a.keyframes[i + 1];
@@ -1950,8 +1947,7 @@ class FcpxmlExporter {
 	): El {
 		if (asParam) {
 			const e = el('param', [['name', name], ...extra, ['value', f(a.value)]]);
-			if (a.keyframes.length)
-				e.children.push(this.keyParam(name, a, rate, toLocal, f, spatial).children[0]!);
+			if (a.keyframes.length) e.children.push(this.keyParam(name, a, rate, toLocal, f, spatial).children[0]!);
 			return e;
 		}
 		const e = el(tag, [[name, f(a.value)], ...extra]);

@@ -152,10 +152,7 @@ function targetMetric(doc: ProjectDocument, t: SimplifyTarget): SpatialMetric | 
 	const [, fxId, name] = t.path;
 	const lists: (readonly EffectInstance[] | undefined)[] = t.clip
 		? [(t.clip as { effects?: EffectInstance[] }).effects]
-		: [
-				...[...t.seq.videoTracks, ...t.seq.audioTracks].map((tr) => tr.effects),
-				t.seq.master.effects,
-			];
+		: [...[...t.seq.videoTracks, ...t.seq.audioTracks].map((tr) => tr.effects), t.seq.master.effects];
 	const fx = lists.flatMap((l) => l ?? []).find((e) => e.id === fxId);
 	if (!fx || !name) return undefined;
 	const box = t.clip
@@ -266,8 +263,7 @@ export function planSimplify(
 		return {
 			kind: g.kind,
 			clipId: g.clip?.id ?? null,
-			unit:
-				g.kind === 'geometry' || g.members[0]!.channel.metric ? 'px' : (g.members[0]!.target.unit ?? ''),
+			unit: g.kind === 'geometry' || g.members[0]!.channel.metric ? 'px' : (g.members[0]!.target.unit ?? ''),
 			paths: g.members.map((m) => [...m.target.path]),
 			samples: times.length,
 			maxError: r.maxError,

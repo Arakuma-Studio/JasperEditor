@@ -163,7 +163,14 @@ export function buildEffectPointPath(
 	const c = map.toSeq([0.5, 0.5]);
 	const ex = map.toSeq([1.5, 0.5]);
 	const ey = map.toSeq([0.5, 1.5]);
-	const inv = invertMatrix({ a: ex[0] - c[0], b: ex[1] - c[1], c: ey[0] - c[0], d: ey[1] - c[1], e: 0, f: 0 });
+	const inv = invertMatrix({
+		a: ex[0] - c[0],
+		b: ex[1] - c[1],
+		c: ey[0] - c[0],
+		d: ey[1] - c[1],
+		e: 0,
+		f: 0,
+	});
 	return {
 		clipId: clip.clipId,
 		trackId: clip.trackId,

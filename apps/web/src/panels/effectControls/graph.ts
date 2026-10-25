@@ -21,8 +21,8 @@ import {
 	outgoingEase,
 	type PropertySpec,
 	type Rational,
-	segmentShape,
 	type SpatialMetric,
+	segmentShape,
 } from '@jasper/project';
 import type { Range } from './lib.ts';
 
@@ -250,7 +250,12 @@ export type VelocityHandle = {
  * Velocity-graph direction handles of key `i` (in, out) for the sides that are interpolated. `opts` = the property's
  * evaluate options (spatial-points: its metric).
  */
-export function velocityHandles(anim: Anim, i: number, map: TimeMap, opts?: EvaluateOptions): VelocityHandle[] {
+export function velocityHandles(
+	anim: Anim,
+	i: number,
+	map: TimeMap,
+	opts?: EvaluateOptions,
+): VelocityHandle[] {
 	const kfs = anim.keyframes;
 	const k = kfs[i]!;
 	const out: VelocityHandle[] = [];

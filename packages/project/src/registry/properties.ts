@@ -1646,7 +1646,8 @@ export type ResolvedProperty = {
  * by the resolver and every consumer that samples the curve itself (Effect Controls graphs, S03:KF-022).
  */
 export function propertyEvaluateOptions(
-	s: Pick<PropertySpec, 'kind' | 'range' | 'animatable'> & Partial<Pick<PropertySpec, 'spatial' | 'spatialMetric'>>,
+	s: Pick<PropertySpec, 'kind' | 'range' | 'animatable'> &
+		Partial<Pick<PropertySpec, 'spatial' | 'spatialMetric'>>,
 	/** spatial-points: the layer box of the owner (points normalised to it measure their paths in its pixels). */
 	box?: { width: number; height: number } | null,
 ): EvaluateOptions {

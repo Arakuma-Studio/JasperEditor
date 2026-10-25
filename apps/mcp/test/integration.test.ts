@@ -535,7 +535,11 @@ describe('MCP over stdio with a token-protected engine', () => {
 		const straight = await ok<Path>('get_motion_path', { projectId, clipId, effect });
 		expect(straight.keys.every((k) => k.spatial === 'linear')).toBe(true);
 		expect(Math.abs(straight.pathLength - chord)).toBeLessThan(1);
-		const notPoint = await call('get_motion_path', { projectId, clipId, effect: { effectInstanceId, param: 'rotation' } });
+		const notPoint = await call('get_motion_path', {
+			projectId,
+			clipId,
+			effect: { effectInstanceId, param: 'rotation' },
+		});
 		expect(notPoint.isError).toBe(true);
 		expect(json<{ error: { code: string } }>(notPoint).error.code).toBe('E_INVALID_PARAM');
 	});

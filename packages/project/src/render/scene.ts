@@ -4,9 +4,9 @@
 import { contentTimeAt } from '../derive/index.ts';
 import type { WarpAnalysisData } from '../gaps/warp/analysis.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
-import { evaluateEffectParam } from '../registry/effects.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
+import { evaluateEffectParam } from '../registry/effects.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
 import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';

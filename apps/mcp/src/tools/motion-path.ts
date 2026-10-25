@@ -65,14 +65,18 @@ function effectPointOf(
 	clip: Clip,
 	ref: { effectInstanceId: string; param: string },
 ): { anim: Animatable<Vec2>; metric: SpatialMetric | undefined; box: { width: number; height: number } } {
-	const fx = ((clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === ref.effectInstanceId);
+	const fx = ((clip as { effects?: EffectInstance[] }).effects ?? []).find(
+		(e) => e.id === ref.effectInstanceId,
+	);
 	if (!fx)
 		throw new ToolError(
 			'E_NOT_FOUND',
 			`Clip ${clip.id} has no effect ${ref.effectInstanceId}`,
 			'get_clip_properties lists the clip effects and their ids.',
 		);
-	const p = defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.params.find((x) => x.name === ref.param);
+	const p = defaultEffectRegistry
+		.get(fx.effectId, fx.effectVersion)
+		?.params.find((x) => x.name === ref.param);
 	if (!p?.spatial)
 		throw new ToolError(
 			'E_INVALID_PARAM',
