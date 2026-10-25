@@ -209,7 +209,7 @@ Independent source: S11 FIX-010, ARCHITECTURE D-13/D-36; AGENTS third-party noti
 |---|---|---|
 | without an engine, the About notice identifies anime.js and its MIT license | KEEP | Without engine, About still names anime.js and MIT. Required attribution content, not arbitrary UI copy. |
 | links THIRD_PARTY_NOTICES.md and shows it when opened | KEEP | Link targets /THIRD_PARTY_NOTICES.md and opening displays returned notice. Protects public asset path and accessible licence delivery. |
-| says so when the file is missing | REWRITE | 404 displays a missing-file explanation. Failure-surface contract remains; narrow wording to semantic failure, not exact phrase. |
+| says so when the file is missing | KEEP | A real 404 displays a missing-file explanation. The existing partial semantic pattern is the only visible error boundary; changing it to another phrase would add no stronger protection. |
 | shows the ported source records on their own (licenses/ported, D-36) | KEEP | Ported marker section shows Blur kernels and excludes unrelated animejs package row. Protects provenance record extraction. |
 
 ## `apps/web/test/time.test.ts`
