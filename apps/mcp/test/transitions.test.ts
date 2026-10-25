@@ -238,4 +238,48 @@ describe('GPU transitions through MCP (transition framework)', () => {
 		});
 		expect(up.transition.params).toEqual({ direction: 'eastToWest', borderWidth: 3 });
 	});
+
+	it('lists Smooth Slide with its controls and adds / updates it by short name', async () => {
+		const { call } = await connect();
+		type Param = { name: string; type: string; default: unknown; options?: string[] };
+		type Type = { effectId: string; type: string; label: string; bin: string; params: Param[] };
+		const { types: all } = await call<{ count: number; types: Type[] }>('list_transition_types', {
+			search: 'dolly',
+		});
+		const slide = all.find((t) => t.effectId === 'jasper.smooth-slide')!;
+		expect(slide).toMatchObject({ label: 'Smooth Slide', type: 'smooth-slide', bin: 'Slide' });
+		const names = slide.params.map((p) => p.name);
+		for (const n of [
+			'direction',
+			'animation',
+			'dolly',
+			'reflection',
+			'blurriness',
+			'falloff',
+			'aspect',
+			'motionBlur',
+			'shutterAngle',
+			'edgeSmoothing',
+		])
+			expect(names).toContain(n);
+		expect(slide.params.find((p) => p.name === 'animation')!.options).toHaveLength(22);
+		await call('add_transition', {
+			projectId: 'prj_test',
+			type: 'smooth-slide',
+			durationFrames: 10,
+			track: 'V1',
+			at: 100,
+			params: { direction: 'up', animation: 'easeOutExpo', dolly: 0.5 },
+		});
+		type Listed = { id: string; effectId: string; params?: Record<string, unknown> };
+		const list = await call<{ transitions: Listed[] }>('list_transitions', { projectId: 'prj_test' });
+		const t = list.transitions.find((x) => x.effectId === 'jasper.smooth-slide')!;
+		expect(t.params).toEqual({ direction: 'up', animation: 'easeOutExpo', dolly: 0.5 });
+		const up = await call<{ transition: Listed }>('update_transition', {
+			projectId: 'prj_test',
+			transitionId: t.id,
+			params: { reflection: true, motionBlur: 'medium', shutterAngle: 180 },
+		});
+		expect(up.transition.params).toMatchObject({ reflection: true, motionBlur: 'medium', shutterAngle: 180 });
+	});
 });
