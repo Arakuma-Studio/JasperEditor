@@ -129,8 +129,12 @@ function fakeEngine() {
 				},
 			],
 		}),
-		call: async (name: string, opts: { params?: Record<string, string>; body?: { template?: SubtitleTemplate } } = {}) => {
-			if (name === 'subtitleTemplatesList') return { revision: libRevision, templates: structuredClone(library) };
+		call: async (
+			name: string,
+			opts: { params?: Record<string, string>; body?: { template?: SubtitleTemplate } } = {},
+		) => {
+			if (name === 'subtitleTemplatesList')
+				return { revision: libRevision, templates: structuredClone(library) };
 			if (name === 'subtitleTemplateSave') {
 				const t = { ...opts.body!.template!, id: opts.params!.templateId! };
 				const i = library.findIndex((x) => x.id === t.id);
@@ -206,7 +210,10 @@ describe('subtitle MCP tools (spec 13 AS-041)', () => {
 		expect(engine.doc()).toBe(before);
 		expect(dry.body.stats.count).toBe(dry.body.captions.length);
 		expect(dry.body.captions[0].in.timecode).toMatch(/^\d\d:\d\d:\d\d:\d\d$/);
-		const made = await call('captions_from_transcript', { template: 'builtin:pixel-pop', rules: { maxWords: 2 } });
+		const made = await call('captions_from_transcript', {
+			template: 'builtin:pixel-pop',
+			rules: { maxWords: 2 },
+		});
 		expect(made.isError, JSON.stringify(made.body)).toBe(false);
 		expect(made.body.subtitles.groupId).toMatch(/^cgp_/);
 		expect(made.body.subtitles.stats.crossing).toBe(0);
@@ -223,7 +230,10 @@ describe('subtitle MCP tools (spec 13 AS-041)', () => {
 		const seq = engine.doc().sequences[engine.seqId]!;
 		expect(seq.captionTracks).toHaveLength(1);
 		expect(subs(engine.doc(), engine.seqId)).toHaveLength(0);
-		const cap = await call('captions_from_transcript', { output: 'caption-track', template: 'builtin:subtitles' });
+		const cap = await call('captions_from_transcript', {
+			output: 'caption-track',
+			template: 'builtin:subtitles',
+		});
 		expect(cap.isError, JSON.stringify(cap.body)).toBe(false);
 		expect(engine.doc().sequences[engine.seqId]!.captionTracks).toHaveLength(2);
 	});
@@ -240,7 +250,11 @@ describe('subtitle MCP tools (spec 13 AS-041)', () => {
 		engine.apply({
 			label: 'lock',
 			commands: [
-				{ type: 'track.update', trackId: engine.doc().sequences[engine.seqId]!.videoTracks[0]!.id, patch: { locked: true } },
+				{
+					type: 'track.update',
+					trackId: engine.doc().sequences[engine.seqId]!.videoTracks[0]!.id,
+					patch: { locked: true },
+				},
 			],
 		});
 		const locked = await call('captions_from_transcript', { track: 'V1', output: 'text-clips' });
@@ -250,10 +264,15 @@ describe('subtitle MCP tools (spec 13 AS-041)', () => {
 
 	it('list_caption_groups, align_captions_to_cuts, regenerate_captions, export_captions {groupId}', async () => {
 		const { call, engine } = await connect();
-		const made = await call('captions_from_transcript', { cutAware: false, rules: { maxWords: 5, maxChars: 40 } });
+		const made = await call('captions_from_transcript', {
+			cutAware: false,
+			rules: { maxWords: 5, maxChars: 40 },
+		});
 		const groupId = made.body.subtitles.groupId as string;
 		const groups = await call('list_caption_groups', {});
-		expect(groups.body.groups.map((g: Json) => [g.groupId, g.clips > 0, g.language])).toEqual([[groupId, true, 'es']]);
+		expect(groups.body.groups.map((g: Json) => [g.groupId, g.clips > 0, g.language])).toEqual([
+			[groupId, true, 'es'],
+		]);
 		const page = await call('list_caption_groups', { groupId, limit: 1 });
 		expect(page.body.clips).toHaveLength(1);
 		expect(page.body.clips[0].in.timecode).toBe('00:00:00:05');
@@ -262,7 +281,8 @@ describe('subtitle MCP tools (spec 13 AS-041)', () => {
 		expect(dry.isError, JSON.stringify(dry.body)).toBe(false);
 		const aligned = await call('align_captions_to_cuts', { groupId });
 		expect(aligned.body.report.crossing).toBe(0);
-		for (const c of subs(engine.doc(), engine.seqId)) expect(c.start >= 50 || c.start + c.duration <= 50).toBe(true);
+		for (const c of subs(engine.doc(), engine.seqId))
+			expect(c.start >= 50 || c.start + c.duration <= 50).toBe(true);
 		const regen = await call('regenerate_captions', { groupId, dryRun: true });
 		expect(regen.isError, JSON.stringify(regen.body)).toBe(false);
 		expect(regen.body.report.dryRun).toBe(true);
@@ -307,10 +327,17 @@ describe('subtitle MCP tools (spec 13 AS-041)', () => {
 		expect(applied.isError, JSON.stringify(applied.body)).toBe(false);
 		expect(captionGroupsOf(engine.doc().sequences[engine.seqId]!)[groupId]!.templateId).toBe('lib_only');
 		const withProject = await call('list_subtitle_templates', {});
-		expect(withProject.body.templates.some((t: Json) => t.templateId === templateId && t.source === 'project')).toBe(true);
+		expect(
+			withProject.body.templates.some((t: Json) => t.templateId === templateId && t.source === 'project'),
+		).toBe(true);
 		expect((await call('delete_subtitle_template', { templateId, from: 'project' })).isError).toBe(false);
-		expect((await call('delete_subtitle_template', { templateId: 'lib_only', from: 'library' }, false)).isError).toBe(false);
-		expect((await call('delete_subtitle_template', { templateId: 'builtin:pixel-pop', from: 'library' }, false)).isError).toBe(true);
+		expect(
+			(await call('delete_subtitle_template', { templateId: 'lib_only', from: 'library' }, false)).isError,
+		).toBe(false);
+		expect(
+			(await call('delete_subtitle_template', { templateId: 'builtin:pixel-pop', from: 'library' }, false))
+				.isError,
+		).toBe(true);
 	});
 
 	it('the describe_commands examples of the subtitle commands apply in order', () => {

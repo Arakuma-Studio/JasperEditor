@@ -12,19 +12,19 @@
 // All three are read leniently (any value loads); INV-SUBTITLE checks them, `repairSubtitleSequence` / `repairSubtitleTemplates` repair them on load.
 import { z } from 'zod';
 import { idPrefixOf, isValidId } from '../../ids.ts';
+import { RGBASchema } from '../../schema/common.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
-import { RGBASchema } from '../../schema/common.ts';
 import {
-	StoredCutAwareSchema,
-	StoredSubtitleRulesSchema,
-	StoredSubtitleTextSchema,
 	type CutAwareOptions,
-	type SubtitleRules,
-	type SubtitleText,
 	DEFAULT_CUT_AWARE,
 	GENERIC_SUBTITLE_RULES,
 	GENERIC_SUBTITLE_TEXT,
+	StoredCutAwareSchema,
+	StoredSubtitleRulesSchema,
+	StoredSubtitleTextSchema,
+	type SubtitleRules,
+	type SubtitleText,
 } from './rules.ts';
 
 export const CAPTION_GROUP_PREFIX = 'cgp';
@@ -66,7 +66,11 @@ export const SubtitleHighlightSchema = z.strictObject({
 	/** `keywords`: words shown in the highlight colour (case and punctuation ignored); empty = the longest word. */
 	keywords: z.array(z.string().trim().min(1).max(64)).max(500).optional(),
 });
-export type SubtitleHighlight = { mode: HighlightMode; color: [number, number, number, number]; keywords?: string[] };
+export type SubtitleHighlight = {
+	mode: HighlightMode;
+	color: [number, number, number, number];
+	keywords?: string[];
+};
 export const NO_HIGHLIGHT: SubtitleHighlight = { mode: 'none', color: [1, 0.84, 0, 1] };
 
 export const SubtitleSourceRefSchema = z.union([
@@ -127,7 +131,10 @@ export function clipCaptionProblem(clip: Clip): string | null {
 	if (v === undefined) return null;
 	if (clip.kind !== 'text') return `a ${clip.kind} clip cannot carry subtitle words`;
 	for (const fx of clip.effects)
-		if ((fx as { subtitleTemplate?: unknown }).subtitleTemplate !== undefined && typeof (fx as { subtitleTemplate?: unknown }).subtitleTemplate !== 'string')
+		if (
+			(fx as { subtitleTemplate?: unknown }).subtitleTemplate !== undefined &&
+			typeof (fx as { subtitleTemplate?: unknown }).subtitleTemplate !== 'string'
+		)
 			return `effect ${fx.id}: unreadable subtitle template mark`;
 	const r = TextClipCaptionSchema.safeParse(v);
 	if (!r.success) {
@@ -169,7 +176,10 @@ export function captionGroupsOf(seq: Pick<Sequence, 'id'>): Record<string, Capti
 	return out;
 }
 
-export function captionGroupOf(seq: Pick<Sequence, 'id'>, id: string | null | undefined): CaptionGroup | null {
+export function captionGroupOf(
+	seq: Pick<Sequence, 'id'>,
+	id: string | null | undefined,
+): CaptionGroup | null {
 	if (!id) return null;
 	const rec = (seq as { captionGroups?: unknown }).captionGroups;
 	if (!isPlain(rec) || !Object.hasOwn(rec, id)) return null;
@@ -180,7 +190,9 @@ export function captionGroupOf(seq: Pick<Sequence, 'id'>, id: string | null | un
 export function groupClips(seq: Sequence, groupId: string): Clip[] {
 	const out: Clip[] = [];
 	for (const c of Object.values(seq.clips)) if (captionOf(c)?.groupId === groupId) out.push(c);
-	return out.sort((a, b) => a.start - b.start || a.trackId.localeCompare(b.trackId) || a.id.localeCompare(b.id));
+	return out.sort(
+		(a, b) => a.start - b.start || a.trackId.localeCompare(b.trackId) || a.id.localeCompare(b.id),
+	);
 }
 
 /** Group id → clip ids of every subtitle group of a sequence (groups without clips included). */
@@ -253,7 +265,10 @@ export function reidCaptionGroups(seq: Sequence, newId: () => string): void {
 	for (const c of Object.values(seq.clips)) {
 		const cap = (c as { caption?: { groupId?: unknown } }).caption;
 		if (cap && typeof cap.groupId === 'string' && map.has(cap.groupId))
-			(c as { caption: TextClipCaption }).caption = { ...(cap as TextClipCaption), groupId: map.get(cap.groupId)! };
+			(c as { caption: TextClipCaption }).caption = {
+				...(cap as TextClipCaption),
+				groupId: map.get(cap.groupId)!,
+			};
 	}
 }
 
@@ -321,7 +336,11 @@ export function repairSubtitleSequence(seq: Sequence, newGroupId: () => string, 
 		if (r.caption === undefined) continue;
 		if (c.kind !== 'text' || !isPlain(r.caption)) {
 			delete r.caption;
-			note('drop-caption', c.id, `subtitle words removed (${c.kind !== 'text' ? `a ${c.kind} clip` : 'unreadable'})`);
+			note(
+				'drop-caption',
+				c.id,
+				`subtitle words removed (${c.kind !== 'text' ? `a ${c.kind} clip` : 'unreadable'})`,
+			);
 			continue;
 		}
 		const cap = r.caption;
@@ -330,10 +349,7 @@ export function repairSubtitleSequence(seq: Sequence, newGroupId: () => string, 
 			const words = cap.words
 				.filter(
 					(w): w is CaptionWord =>
-						isPlain(w) &&
-						typeof w.text === 'string' &&
-						Number.isFinite(w.start) &&
-						Number.isFinite(w.end),
+						isPlain(w) && typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end),
 				)
 				.slice(0, MAX_CAPTION_WORDS)
 				.map((w) => {
@@ -342,7 +358,8 @@ export function repairSubtitleSequence(seq: Sequence, newGroupId: () => string, 
 				})
 				.sort((a, b) => a.start - b.start || a.end - b.end);
 			for (let i = 0; i + 1 < words.length; i++)
-				if (words[i]!.end > words[i + 1]!.start) words[i]!.end = Math.max(words[i]!.start, words[i + 1]!.start);
+				if (words[i]!.end > words[i + 1]!.start)
+					words[i]!.end = Math.max(words[i]!.start, words[i + 1]!.start);
 			if (JSON.stringify(words) !== JSON.stringify(cap.words)) {
 				cap.words = words;
 				note('repair-caption-words', c.id, 'subtitle words sorted and made non-overlapping');

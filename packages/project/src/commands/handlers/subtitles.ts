@@ -4,13 +4,13 @@
 // clips that still match; `captions.alignToCuts` re-runs the cut steps on existing subtitles; `captions.convert`
 // turns a text-clip group into a caption track and back; `subtitleTemplate.*` stores, saves and applies templates.
 import type { Draft } from 'immer';
+import { plainCaptionText } from '../../captions/formats/core.ts';
 import {
 	CAPTION_CONTENT_ORIGIN,
 	captionClipWords,
 	captionPages,
 	resolveCaptionStyle,
 } from '../../captions/model.ts';
-import { plainCaptionText } from '../../captions/formats/core.ts';
 import { type SeqWord, sequenceWords } from '../../captions/sequence-transcript.ts';
 import {
 	applyHighlight,
@@ -59,16 +59,16 @@ import {
 	builtinSubtitleTemplate,
 	findSubtitleTemplate,
 	parseSubtitleTemplate,
-	styleAtReference,
 	SUBTITLE_TEMPLATE_FORMAT,
 	SUBTITLE_TEMPLATE_VERSION,
 	type SubtitleTemplate,
+	styleAtReference,
 	templatePosition,
 	templateStyle,
 } from '../../captions/subtitles/templates.ts';
 import { normalizeWord } from '../../captions/words.ts';
 import { buildEffectPreset } from '../../effect-presets/build.ts';
-import { anim, createFontRef, createTrack, defaultTransform } from '../../factories.ts';
+import { createFontRef, createTrack, defaultTransform } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import {
 	type CaptionStyle,
@@ -184,7 +184,9 @@ function linkTemplateStyle(
 	clipIds: readonly string[],
 	h: HandlerContext,
 ): TextStyle {
-	const d = doc as { textStyles?: Record<string, ProjectTextStyle & { templateId?: string; frame?: string }> };
+	const d = doc as {
+		textStyles?: Record<string, ProjectTextStyle & { templateId?: string; frame?: string }>;
+	};
 	const frame = `${seq.settings.width}x${seq.settings.height}`;
 	let found: (ProjectTextStyle & { templateId?: string; frame?: string }) | null = null;
 	for (const [k, v] of Object.entries(latest(d.textStyles ?? {}))) {
@@ -195,7 +197,8 @@ function linkTemplateStyle(
 	if (!found) {
 		const names = new Set(Object.values(latest(d.textStyles ?? {})).map((s) => s.name.toLowerCase()));
 		let name = t.name.slice(0, 110);
-		if (names.has(name.toLowerCase())) name = `${t.name.slice(0, 100)} ${seq.settings.width}×${seq.settings.height}`;
+		if (names.has(name.toLowerCase()))
+			name = `${t.name.slice(0, 100)} ${seq.settings.width}×${seq.settings.height}`;
 		for (let i = 2; names.has(name.toLowerCase()); i++) name = `${t.name.slice(0, 100)} ${i}`;
 		if (Object.keys(latest(d.textStyles ?? {})).length >= 1000) return style;
 		const id = h.ids.next('tsy');
@@ -208,7 +211,7 @@ function linkTemplateStyle(
 	if (!doc.fonts[linked.fontId]) return style;
 	for (const id of clipIds) {
 		const c = seq.clips[id] as DText | undefined;
-		if (!c || c.kind !== 'text') continue;
+		if (c?.kind !== 'text') continue;
 		(c as { styleId?: string }).styleId = found.id;
 		delete (c as { styleOverrides?: unknown }).styleOverrides;
 		c.content.style = clone(linked) as DText['content']['style'];
@@ -219,7 +222,12 @@ function linkTemplateStyle(
 // ---------------------------------------------------------------------------------------------------------------
 // Sources
 
-type SourceWords = { words: LayoutWord[]; language: string; warnings: string[]; sourceRef: SubtitleSourceRef };
+type SourceWords = {
+	words: LayoutWord[];
+	language: string;
+	warnings: string[];
+	sourceRef: SubtitleSourceRef;
+};
 
 function rangeFrames(seq: DSeq, r: { start: TimeInput; end: TimeInput } | undefined, h: HandlerContext) {
 	if (!r) return null;
@@ -248,7 +256,8 @@ function sourceWords(
 		if (!pdoc.media[source.mediaId]) h.fail('E_NOT_FOUND', `Media not found: ${source.mediaId}`);
 		ws = all.filter((w) => w.mediaId === source.mediaId);
 		sourceRef = { kind: 'media', mediaId: source.mediaId };
-		if (!ws.length) h.fail('E_INVALID_PARAM', `No transcribed audio clip of the sequence plays media ${source.mediaId}`);
+		if (!ws.length)
+			h.fail('E_INVALID_PARAM', `No transcribed audio clip of the sequence plays media ${source.mediaId}`);
 	} else if (source && typeof source === 'object' && 'clipIds' in source) {
 		const ids = new Set<string>();
 		for (const id of source.clipIds) {
@@ -277,11 +286,18 @@ function sourceWords(
 	let reversed = 0;
 	let remapped = 0;
 	for (const c of Object.values(pseq.clips)) {
-		if (c.kind === 'audio' && c.enabled && c.speed.reverse && pdoc.transcripts && hasTranscript(pdoc, c.mediaId))
+		if (
+			c.kind === 'audio' &&
+			c.enabled &&
+			c.speed.reverse &&
+			pdoc.transcripts &&
+			hasTranscript(pdoc, c.mediaId)
+		)
 			reversed++;
 		if (c.kind === 'video' && (c as { timeRemap?: unknown }).timeRemap && c.linkId) remapped++;
 	}
-	if (reversed) warnings.push(`${reversed} reversed audio clip(s) give no words (reversed speech is not subtitled)`);
+	if (reversed)
+		warnings.push(`${reversed} reversed audio clip(s) give no words (reversed speech is not subtitled)`);
 	if (remapped)
 		warnings.push(
 			`${remapped} time-remapped video clip(s): their subtitles follow the linked audio's timing, not the remapped picture`,
@@ -393,7 +409,12 @@ function placeTextSubtitles(
 		const content: TextContent = { text, style: clone(o.style) };
 		const l = templateLayout(o.template, seq, content);
 		const transform = defaultTransform(l.box, frame, 'none');
-		const timing = { start: c.start, duration: c.end - c.start, sourceIn: origin, speed: { rate: 1, reverse: false } };
+		const timing = {
+			start: c.start,
+			duration: c.end - c.start,
+			sourceIn: origin,
+			speed: { rate: 1, reverse: false },
+		};
 		const caption: TextClipCaption = {
 			groupId: o.groupId,
 			words: wordsToContent(timing as never, c.words, rate).slice(0, MAX_CAPTION_WORDS),
@@ -468,7 +489,8 @@ function applyTemplateMotion(
 		for (const id of ids) {
 			const c = seq.clips[id] as DText;
 			const made = new Set(r.effectInstanceIds[id] ?? []);
-			for (const fx of c.effects) if (made.has(fx.id)) (fx as { subtitleTemplate?: string }).subtitleTemplate = t.id;
+			for (const fx of c.effects)
+				if (made.has(fx.id)) (fx as { subtitleTemplate?: string }).subtitleTemplate = t.id;
 			const cap = c.caption as TextClipCaption | undefined;
 			if (cap) c.caption = { ...cap, anchorIn: c.sourceIn } as never;
 		}
@@ -478,7 +500,9 @@ function applyTemplateMotion(
 /** Removes the effects a template added earlier (re-applying a template replaces its animation). */
 function removeTemplateEffects(clip: DText): void {
 	if (!clip.effects.some((fx) => isTemplateEffect(fx as { subtitleTemplate?: unknown }))) return;
-	clip.effects = clip.effects.filter((fx) => !isTemplateEffect(fx as { subtitleTemplate?: unknown })) as DText['effects'];
+	clip.effects = clip.effects.filter(
+		(fx) => !isTemplateEffect(fx as { subtitleTemplate?: unknown }),
+	) as DText['effects'];
 }
 
 function newGroup(
@@ -545,7 +569,10 @@ function captionStyleOfTemplate(
 		maxCharsPerLine: rules.maxChars,
 		maxLines: rules.lines,
 		maxSegmentMs: Math.round(rules.maxSeconds * 1000),
-		highlight: { mode: hl.mode === 'word' ? 'word' : hl.mode === 'karaoke' ? 'karaoke' : 'none', color: [...hl.color] as never },
+		highlight: {
+			mode: hl.mode === 'word' ? 'word' : hl.mode === 'karaoke' ? 'karaoke' : 'none',
+			color: [...hl.color] as never,
+		},
 		linePct: Math.min(100, Math.max(0, ((p.y * H - blockH / 2) / H) * 100)),
 		positionPct: Math.min(100, Math.max(0, p.x * 100)),
 	};
@@ -579,9 +606,13 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 	if (cmd.trackId && cmd.trackId !== 'new') {
 		const t = h.track(seq, cmd.trackId);
 		if (output === 'caption-track' ? t.kind !== 'caption' : t.kind !== 'video')
-			h.fail('E_TRACK_KIND', `Track ${cmd.trackId} is not a ${output === 'caption-track' ? 'caption' : 'video'} track`, {
-				blocking: [t.id],
-			});
+			h.fail(
+				'E_TRACK_KIND',
+				`Track ${cmd.trackId} is not a ${output === 'caption-track' ? 'caption' : 'video'} track`,
+				{
+					blocking: [t.id],
+				},
+			);
 		assertUnlocked(t, h);
 	}
 	const src = sourceWords(doc, seq, cmd.source, range, h, cmd.language);
@@ -651,12 +682,20 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 	setGroup(seq, group);
 	// content time of a subtitle's In: one hour, like caption clips (room to extend heads by trims and alignment)
 	const origin = CAPTION_CONTENT_ORIGIN;
-	const ids = placeTextSubtitles(seq, track, layout.captions, { template, groupId: group.id, style, highlight }, h, origin);
+	const ids = placeTextSubtitles(
+		seq,
+		track,
+		layout.captions,
+		{ template, groupId: group.id, style, highlight },
+		h,
+		origin,
+	);
 	applyTemplateMotion(doc, seq, ids, template, h);
 	const linked = linkTemplateStyle(doc, seq, template, style, ids, h);
 	for (const id of ids) {
 		const c = seq.clips[id] as DText;
-		if (JSON.stringify(latest(c.content.style)) !== JSON.stringify(linked)) c.content.style = clone(linked) as never;
+		if (JSON.stringify(latest(c.content.style)) !== JSON.stringify(linked))
+			c.content.style = clone(linked) as never;
 		applyHighlight(c as unknown as TextClip, highlight, () => h.ids.next('kf'));
 	}
 	cleanupSequence(seq, h);
@@ -691,16 +730,10 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 	};
 }
 
-
 // ---------------------------------------------------------------------------------------------------------------
 // captions.regenerate (AS-006)
 
-const normText = (s: string) =>
-	s
-		.split(/\s+/)
-		.map(normalizeWord)
-		.filter(Boolean)
-		.join(' ');
+const normText = (s: string) => s.split(/\s+/).map(normalizeWord).filter(Boolean).join(' ');
 
 function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: HandlerContext) {
 	const seq = sequenceOfGroup(doc, cmd.groupId, h);
@@ -802,7 +835,14 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 		const fontId = fontIdFor(doc, template.fontFamily, h);
 		const style = templateStyle(template, fontId, seq.settings.width, seq.settings.height);
 		const hl = group.highlight ?? NO_HIGHLIGHT;
-		created = placeTextSubtitles(seq, track, fresh, { template, groupId: group.id, style, highlight: hl }, h, CAPTION_CONTENT_ORIGIN);
+		created = placeTextSubtitles(
+			seq,
+			track,
+			fresh,
+			{ template, groupId: group.id, style, highlight: hl },
+			h,
+			CAPTION_CONTENT_ORIGIN,
+		);
 		applyTemplateMotion(doc, seq, created, template, h);
 		const linked = linkTemplateStyle(doc, seq, template, style, created, h);
 		for (const id of created) {
@@ -826,7 +866,11 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 // ---------------------------------------------------------------------------------------------------------------
 // captions.alignToCuts (AS-012)
 
-function textClipsOf(doc: DDoc, cmd: { groupId?: string; clipIds?: readonly string[] | '$selection' }, h: HandlerContext) {
+function textClipsOf(
+	doc: DDoc,
+	cmd: { groupId?: string; clipIds?: readonly string[] | '$selection' },
+	h: HandlerContext,
+) {
 	if ((cmd.groupId === undefined) === (cmd.clipIds === undefined))
 		h.fail('E_INVALID_PARAM', 'Give groupId or clipIds (one of them)');
 	if (cmd.groupId !== undefined) {
@@ -843,9 +887,16 @@ function textClipsOf(doc: DDoc, cmd: { groupId?: string; clipIds?: readonly stri
 	const clips = ids.map((id) => pseq.clips[id]!).sort((a, b) => a.start - b.start);
 	const bad = clips.filter((c) => c.kind !== 'text');
 	if (bad.length)
-		h.fail('E_INVALID_PARAM', `Not text clips: ${bad.slice(0, 8).map((c) => `${c.id} (${c.kind})`).join(', ')}`, {
-			blocking: bad.map((c) => c.id),
-		});
+		h.fail(
+			'E_INVALID_PARAM',
+			`Not text clips: ${bad
+				.slice(0, 8)
+				.map((c) => `${c.id} (${c.kind})`)
+				.join(', ')}`,
+			{
+				blocking: bad.map((c) => c.id),
+			},
+		);
 	const gid = captionOf(clips[0]!)?.groupId;
 	const group = gid ? captionGroupOf(pseq, gid) : null;
 	return { seq, group: group ? clone(group) : null, clips };
@@ -906,7 +957,8 @@ function alignToCuts(doc: DDoc, cmd: CommandOf<'captions.alignToCuts'>, h: Handl
 			l.push(p);
 			by.set(id, l);
 		}
-		for (const c of list) plans.push({ clipId: c.id, pieces: (by.get(c.id) ?? []).sort((a, b) => a.start - b.start) });
+		for (const c of list)
+			plans.push({ clipId: c.id, pieces: (by.get(c.id) ?? []).sort((a, b) => a.start - b.start) });
 	}
 	let moved = 0;
 	let snapped = 0;
@@ -919,7 +971,8 @@ function alignToCuts(doc: DDoc, cmd: CommandOf<'captions.alignToCuts'>, h: Handl
 			continue;
 		}
 		const first = p.pieces[0]!;
-		if (first.start !== orig.start || p.pieces[p.pieces.length - 1]!.end !== orig.start + orig.duration) moved++;
+		if (first.start !== orig.start || p.pieces[p.pieces.length - 1]!.end !== orig.start + orig.duration)
+			moved++;
 		if (first.start !== orig.start && first.start !== first.wordStart) snapped++;
 		for (const piece of p.pieces) changes.push({ clipId: p.clipId, start: piece.start, end: piece.end });
 	}
@@ -967,7 +1020,8 @@ const TEXT_STYLE_KEYS = Object.keys(TextStyleSchema.shape) as (keyof TextStyle)[
 
 function textStyleFromCaption(cs: CaptionStyle): TextStyle {
 	const out: Record<string, unknown> = {};
-	for (const k of TEXT_STYLE_KEYS) if ((cs as Record<string, unknown>)[k] !== undefined) out[k] = clone((cs as Record<string, unknown>)[k]);
+	for (const k of TEXT_STYLE_KEYS)
+		if ((cs as Record<string, unknown>)[k] !== undefined) out[k] = clone((cs as Record<string, unknown>)[k]);
 	return out as TextStyle;
 }
 
@@ -978,7 +1032,9 @@ function unrepresentable(c: TextClip): string[] {
 	if (c.effects.length) out.push('effects');
 	if (c.textAnimation?.in || c.textAnimation?.out) out.push('text animation');
 	if ((c.animators ?? []).length) out.push('text animators');
-	const keyed = [c.transform.position, c.transform.scale, c.transform.rotation, c.opacity].some((a) => a.keyframes.length);
+	const keyed = [c.transform.position, c.transform.scale, c.transform.rotation, c.opacity].some(
+		(a) => a.keyframes.length,
+	);
 	if (keyed) out.push('keyframes');
 	if ((r.masks as unknown[] | undefined)?.length) out.push('masks');
 	if (c.blendMode !== 'normal') out.push('blend mode');
@@ -1031,7 +1087,11 @@ function convertToCaptionTrack(doc: DDoc, cmd: CommandOf<'captions.convert'>, h:
 						const F = flicksPerFrame(rate);
 						const s = c.start * F;
 						const d = c.duration * F;
-						return { text: t, start: s + Math.round((d * i) / a.length), end: s + Math.round((d * (i + 1)) / a.length) };
+						return {
+							text: t,
+							start: s + Math.round((d * i) / a.length),
+							end: s + Math.round((d * (i + 1)) / a.length),
+						};
 					});
 		// line breaks of the text kept
 		const pos2 = locateWords(c.content.text, ws);
@@ -1056,7 +1116,10 @@ function convertToCaptionTrack(doc: DDoc, cmd: CommandOf<'captions.convert'>, h:
 		};
 	});
 	if (!cmd.keepSource) for (const c of texts) removeClip(seq, c.id, h);
-	const clipIds = placeCaptionClips(doc, seq, track, blocks, h, { language: group?.language ?? 'und', origin: 'manual' });
+	const clipIds = placeCaptionClips(doc, seq, track, blocks, h, {
+		language: group?.language ?? 'und',
+		origin: 'manual',
+	});
 	if (!cmd.keepSource && group && !groupClips(plainSeq(seq), group.id).length)
 		delete (seq as { captionGroups?: Record<string, CaptionGroup> }).captionGroups?.[group.id];
 	const lost = [...report].map(([feature, clips]) => ({ feature, clips }));
@@ -1087,7 +1150,8 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 		if (!ids.length) h.fail('E_INVALID_PARAM', 'Give captionTrackId or caption clipIds');
 		const pseq = plainSeq(seq);
 		const bad = ids.filter((id) => pseq.clips[id]?.kind !== 'captions');
-		if (bad.length) h.fail('E_INVALID_PARAM', `Not caption clips: ${bad.slice(0, 8).join(', ')}`, { blocking: bad });
+		if (bad.length)
+			h.fail('E_INVALID_PARAM', `Not caption clips: ${bad.slice(0, 8).join(', ')}`, { blocking: bad });
 		captionIds = ids;
 		trackId = pseq.clips[ids[0]!]!.trackId;
 	}
@@ -1106,7 +1170,12 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 	const vtrack = subtitleVideoTrack(seq, undefined, cmd.trackName ?? ctrack.name ?? 'Subtitles', h);
 	const trackStyle = resolveCaptionStyle(ctrack.styleDefaults, undefined, fallbackFont, H);
 	const hl: SubtitleHighlight = template?.highlight ?? {
-		mode: trackStyle.highlight.mode === 'word' ? 'word' : trackStyle.highlight.mode === 'karaoke' ? 'karaoke' : 'none',
+		mode:
+			trackStyle.highlight.mode === 'word'
+				? 'word'
+				: trackStyle.highlight.mode === 'karaoke'
+					? 'karaoke'
+					: 'none',
 		color: [...trackStyle.highlight.color] as SubtitleHighlight['color'],
 	};
 	const group = newGroup(h, {
@@ -1136,17 +1205,25 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 		const words = captionClipWords(pdoc, cc, rate);
 		const groups: (typeof words)[] = [];
 		for (const w of words) {
-			if (!groups.length || (w.breakBefore === 'segment' && groups[groups.length - 1]!.length)) groups.push([]);
+			if (!groups.length || (w.breakBefore === 'segment' && groups[groups.length - 1]!.length))
+				groups.push([]);
 			groups[groups.length - 1]!.push(w);
 		}
 		const t = cc.transform;
-		if (t.scale.value !== 100 || t.rotation.value !== 0 || t.scale.keyframes.length || t.position.keyframes.length)
+		if (
+			t.scale.value !== 100 ||
+			t.rotation.value !== 0 ||
+			t.scale.keyframes.length ||
+			t.position.keyframes.length
+		)
 			lost.set('caption transform', (lost.get('caption transform') ?? 0) + 1);
 		const dx = t.position.value[0] - t.anchor.value[0];
 		const dy = t.position.value[1] - t.anchor.value[1];
 		pages.forEach((p, k) => {
 			const g = groups[k] ?? [];
-			const text = plainCaptionText(p.lines.map((l) => l.map((w) => (w.space ? ` ${w.text}` : w.text)).join('')).join('\n'));
+			const text = plainCaptionText(
+				p.lines.map((l) => l.map((w) => (w.space ? ` ${w.text}` : w.text)).join('')).join('\n'),
+			);
 			if (!text.trim() || p.end <= p.start) return;
 			const seqWords: CaptionWord[] = g.map((w) => ({
 				text: plainCaptionText(cs.allCaps ? w.text.toUpperCase() : w.text),
@@ -1173,9 +1250,22 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 				: { box: { width: boxW, height: blockH, autoSize: 'height' }, position: [cx + dx, cy + dy] };
 			relinkSplits(seq, clearRange(seq, vtrack.id, p.start, p.end, h), h);
 			const id = h.ids.next('clp');
-			const timing = { start: p.start, duration: p.end - p.start, sourceIn: CAPTION_CONTENT_ORIGIN, speed: { rate: 1, reverse: false } };
+			const timing = {
+				start: p.start,
+				duration: p.end - p.start,
+				sourceIn: CAPTION_CONTENT_ORIGIN,
+				speed: { rate: 1, reverse: false },
+			};
 			seq.clips[id] = {
-				...commonFields(id, vtrack.id, p.start, p.end - p.start, CAPTION_CONTENT_ORIGIN, nameOf(text), 'lavender'),
+				...commonFields(
+					id,
+					vtrack.id,
+					p.start,
+					p.end - p.start,
+					CAPTION_CONTENT_ORIGIN,
+					nameOf(text),
+					'lavender',
+				),
 				kind: 'text',
 				content,
 				box: layout.box,
@@ -1201,7 +1291,8 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 		for (const cid of captionIds) removeClip(seq, cid, h);
 		if (cmd.captionTrackId !== undefined) {
 			const i = seq.captionTracks.findIndex((t) => t.id === trackId);
-			if (i >= 0 && !Object.values(plainSeq(seq).clips).some((c) => c.trackId === trackId)) seq.captionTracks.splice(i, 1);
+			if (i >= 0 && !Object.values(plainSeq(seq).clips).some((c) => c.trackId === trackId))
+				seq.captionTracks.splice(i, 1);
 		}
 	}
 	if (lost.size)
@@ -1211,7 +1302,14 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 		);
 	cleanupSequence(seq, h);
 	h.defineRef(cmd.ref, group.id);
-	return { to: 'text-clips', groupId: group.id, trackId: vtrack.id, clipIds: ids, count: ids.length, unrepresentable: [...lost].map(([feature, clips]) => ({ feature, clips })) };
+	return {
+		to: 'text-clips',
+		groupId: group.id,
+		trackId: vtrack.id,
+		clipIds: ids,
+		count: ids.length,
+		unrepresentable: [...lost].map(([feature, clips]) => ({ feature, clips })),
+	};
 }
 
 function convert(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: HandlerContext) {
@@ -1244,7 +1342,10 @@ function templateFromClip(
 	const aspect = aspectKeyOf(W, H);
 	const cap = captionOf(clip);
 	const group = cap ? captionGroupOf(plainSeq(seq), cap.groupId) : null;
-	const fx = cmd.effects === false ? [] : clip.effects.filter((e) => !(e as { internal?: boolean }).internal).map((e) => e.id);
+	const fx =
+		cmd.effects === false
+			? []
+			: clip.effects.filter((e) => !(e as { internal?: boolean }).internal).map((e) => e.id);
 	let preset = null;
 	if (fx.length) {
 		try {
@@ -1261,7 +1362,14 @@ function templateFromClip(
 	const ta = clip.textAnimation;
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
 	const side = (a: NonNullable<typeof ta>['in']) =>
-		a ? { preset: a.preset, version: a.version, seconds: Math.round((a.durationFrames / fps) * 1000) / 1000, params: clone(a.params) } : null;
+		a
+			? {
+					preset: a.preset,
+					version: a.version,
+					seconds: Math.round((a.durationFrames / fps) * 1000) / 1000,
+					params: clone(a.params),
+				}
+			: null;
 	const now = h.ctx.now();
 	const style = styleAtReference(clip.content.style as TextStyle, W, H);
 	return {
@@ -1282,7 +1390,13 @@ function templateFromClip(
 			...(ta && (ta.in || ta.out) ? { textAnimation: { in: side(ta.in), out: side(ta.out) } } : {}),
 			...(preset ? { preset } : {}),
 		},
-		...(group ? { rules: { ...group.rules }, text: clone(group.text), highlight: clone(group.highlight ?? NO_HIGHLIGHT) } : {}),
+		...(group
+			? {
+					rules: { ...group.rules },
+					text: clone(group.text),
+					highlight: clone(group.highlight ?? NO_HIGHLIGHT),
+				}
+			: {}),
 	} as SubtitleTemplate;
 }
 
@@ -1307,10 +1421,15 @@ function applyTemplate(doc: DDoc, cmd: CommandOf<'subtitleTemplate.apply'>, h: H
 	if (parts.animation) applyTemplateMotion(doc, seq, ids, template, h);
 	const hl = template.highlight ?? NO_HIGHLIGHT;
 	if (group && cmd.groupId !== undefined) {
-		const next: CaptionGroup = { ...group, templateId: template.id, ...(parts.highlight ? { highlight: hl } : {}) };
+		const next: CaptionGroup = {
+			...group,
+			templateId: template.id,
+			...(parts.highlight ? { highlight: hl } : {}),
+		};
 		setGroup(seq, next);
 	}
-	if (parts.highlight) for (const id of ids) applyHighlight(seq.clips[id] as unknown as TextClip, hl, () => h.ids.next('kf'));
+	if (parts.highlight)
+		for (const id of ids) applyHighlight(seq.clips[id] as unknown as TextClip, hl, () => h.ids.next('kf'));
 	return { templateId: template.id, clipIds: ids, count: ids.length };
 }
 
@@ -1363,7 +1482,8 @@ export const subtitleHandlers = {
 	},
 	'subtitleTemplate.delete': (doc, cmd, h) => {
 		const rec = (doc as { subtitleTemplates?: Record<string, unknown> }).subtitleTemplates;
-		if (!rec?.[cmd.templateId]) return h.fail('E_NOT_FOUND', `Project subtitle template not found: ${cmd.templateId}`);
+		if (!rec?.[cmd.templateId])
+			return h.fail('E_NOT_FOUND', `Project subtitle template not found: ${cmd.templateId}`);
 		delete rec[cmd.templateId];
 		if (!Object.keys(rec).length) delete (doc as { subtitleTemplates?: unknown }).subtitleTemplates;
 		return { templateId: cmd.templateId };

@@ -1,8 +1,9 @@
 // Semantics follow Premiere Pro and S01 (SEQ-010/011, CLP-012, AST-010, KND-011/012); the algorithms port FilmCraft
 // `crates/edit/src/{lib,through,multicam}.rs` and `crates/engine/src/{commands,clip_ops,sequence_tools}.rs`
 // (MIT OR Apache-2.0, see licenses/ported/edit-structure.md).
-import { reidCaptionGroups } from '../../captions/subtitles/model.ts';
+
 import type { Draft } from 'immer';
+import { reidCaptionGroups } from '../../captions/subtitles/model.ts';
 import { clipEnd, contentTimeAt, isThroughEdit } from '../../derive/index.ts';
 import { anim, createSequence, defaultTransform } from '../../factories.ts';
 import { TRACK_MATTE_EFFECT_ID } from '../../masks/track-matte.ts';

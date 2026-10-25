@@ -40,20 +40,27 @@ export function subtitleCutEvents(
 		includeOverlays: opts.includeOverlays,
 	});
 	for (const w of r.warnings) warnings.push(`Cut map: ${w.message}`);
-	const events: CutEvent[] = r.cuts.map((c) => ({ frame: c.frame, ...(c.zone ? { zone: { ...c.zone } } : {}) }));
+	const events: CutEvent[] = r.cuts.map((c) => ({
+		frame: c.frame,
+		...(c.zone ? { zone: { ...c.zone } } : {}),
+	}));
 	// AS-013 "output in a nest": the parents' cuts over this sequence
 	const nests = nestClipsOf(doc, seq.id);
 	if (nests.length) {
 		const Fc = flicksPerFrame(seq.settings.frameRate);
 		let mapped = 0;
 		for (const { parent, clip } of nests) {
-			if (clip.speed.reverse || (clip as { timeRemap?: unknown }).timeRemap || (clip as { frameHold?: unknown }).frameHold) {
+			if (
+				clip.speed.reverse ||
+				(clip as { timeRemap?: unknown }).timeRemap ||
+				(clip as { frameHold?: unknown }).frameHold
+			) {
 				warnings.push(
 					`Nest clip ${clip.id} in "${parent.id}" is reversed, time-remapped or held: its cuts were not mapped`,
 				);
 				continue;
 			}
-			let pc;
+			let pc: ReturnType<typeof analyzePictureCuts>;
 			try {
 				pc = analyzePictureCuts(doc, parent.id, {
 					range: { start: clip.start, end: clip.start + clip.duration },

@@ -21,7 +21,9 @@ describe('subtitle template library (AS-020)', () => {
 		const appdir = tempAppdir();
 		const app = await makeApp({ appdir });
 		const events: unknown[] = [];
-		coreServices(app).broadcaster.subscribe((e) => e.type === 'subtitleTemplates.changed' && events.push(e.payload));
+		coreServices(app).broadcaster.subscribe(
+			(e) => e.type === 'subtitleTemplates.changed' && events.push(e.payload),
+		);
 		expect((await app.inject({ method: 'GET', url: '/api/subtitle-templates', headers: H })).json()).toEqual({
 			revision: 0,
 			templates: [],
@@ -44,14 +46,18 @@ describe('subtitle template library (AS-020)', () => {
 		expect(again.json().createdAt).toBe(saved.json().createdAt);
 		expect(events).toEqual([{ revision: 1 }, { revision: 2 }]);
 		const file = appdirPaths(appdir).subtitleTemplatesFile;
-		expect(JSON.parse(readFileSync(file, 'utf8')).templates.map((t: SubtitleTemplate) => t.name)).toEqual(['Renamed']);
+		expect(JSON.parse(readFileSync(file, 'utf8')).templates.map((t: SubtitleTemplate) => t.name)).toEqual([
+			'Renamed',
+		]);
 		await app.close();
 		const next = await makeApp({ appdir });
 		const list = (await next.inject({ method: 'GET', url: '/api/subtitle-templates', headers: H })).json();
 		expect(list.revision).toBe(2);
 		const del = await next.inject({ method: 'DELETE', url: '/api/subtitle-templates/stm_A', headers: H });
 		expect(del.json()).toEqual({ ok: true, removed: 'stm_A' });
-		expect((await next.inject({ method: 'DELETE', url: '/api/subtitle-templates/stm_A', headers: H })).statusCode).toBe(404);
+		expect(
+			(await next.inject({ method: 'DELETE', url: '/api/subtitle-templates/stm_A', headers: H })).statusCode,
+		).toBe(404);
 	});
 
 	it('refuses invalid templates and built-in ids', async () => {
@@ -78,21 +84,45 @@ describe('subtitle template library (AS-020)', () => {
 		mkdirSync(dirname(file), { recursive: true });
 		writeFileSync(file, '{not json');
 		const app = await makeApp({ appdir });
-		expect((await app.inject({ method: 'GET', url: '/api/subtitle-templates', headers: H })).json().templates).toEqual([]);
-		expect(readdirSync(dirname(file)).some((n) => n.startsWith('subtitle-templates.json.corrupt-'))).toBe(true);
+		expect(
+			(await app.inject({ method: 'GET', url: '/api/subtitle-templates', headers: H })).json().templates,
+		).toEqual([]);
+		expect(readdirSync(dirname(file)).some((n) => n.startsWith('subtitle-templates.json.corrupt-'))).toBe(
+			true,
+		);
 		await app.close();
 		writeFileSync(
 			file,
-			JSON.stringify({ format: 'jasper-subtitle-template-library', version: 1, revision: 4, templates: [pop('stm_C'), { junk: true }] }),
+			JSON.stringify({
+				format: 'jasper-subtitle-template-library',
+				version: 1,
+				revision: 4,
+				templates: [pop('stm_C'), { junk: true }],
+			}),
 		);
 		const two = await makeApp({ appdir });
-		expect((await two.inject({ method: 'GET', url: '/api/subtitle-templates', headers: H })).json().templates).toHaveLength(1);
-		await two.inject({ method: 'PUT', url: '/api/subtitle-templates/stm_D', headers: JSON_H, payload: { template: pop('stm_D') } });
+		expect(
+			(await two.inject({ method: 'GET', url: '/api/subtitle-templates', headers: H })).json().templates,
+		).toHaveLength(1);
+		await two.inject({
+			method: 'PUT',
+			url: '/api/subtitle-templates/stm_D',
+			headers: JSON_H,
+			payload: { template: pop('stm_D') },
+		});
 		expect(JSON.parse(readFileSync(file, 'utf8')).invalid).toEqual([{ junk: true }]);
 		await two.close();
-		writeFileSync(file, JSON.stringify({ format: 'jasper-subtitle-template-library', version: 9, revision: 1, templates: [] }));
+		writeFileSync(
+			file,
+			JSON.stringify({ format: 'jasper-subtitle-template-library', version: 9, revision: 1, templates: [] }),
+		);
 		const three = await makeApp({ appdir });
-		const w = await three.inject({ method: 'PUT', url: '/api/subtitle-templates/stm_E', headers: JSON_H, payload: { template: pop('stm_E') } });
+		const w = await three.inject({
+			method: 'PUT',
+			url: '/api/subtitle-templates/stm_E',
+			headers: JSON_H,
+			payload: { template: pop('stm_E') },
+		});
 		expect(w.statusCode).toBe(409);
 	});
 });

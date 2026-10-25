@@ -143,7 +143,11 @@ export function breakLines(
 }
 
 /** The text of a subtitle: its display words on lines (`\n`), the trailing punctuation stripped when asked. */
-export function subtitleText(words: readonly string[], lineStarts: readonly number[], strip: boolean): string {
+export function subtitleText(
+	words: readonly string[],
+	lineStarts: readonly number[],
+	strip: boolean,
+): string {
 	if (!words.length) return '';
 	const shown = [...words];
 	if (strip) shown[shown.length - 1] = stripTrailing(shown[shown.length - 1]!);

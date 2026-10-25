@@ -4,5 +4,5 @@ export * from './formats/index.ts';
 export * from './model.ts';
 export * from './retime.ts';
 export * from './sequence-transcript.ts';
-export * from './words.ts';
 export * from './subtitles/index.ts';
+export * from './words.ts';

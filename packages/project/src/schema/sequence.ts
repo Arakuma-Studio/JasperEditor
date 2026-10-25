@@ -1,6 +1,7 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 
 import { z } from 'zod';
+import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
 import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
@@ -12,7 +13,6 @@ import {
 	SequenceSampleRateSchema,
 } from './audio.ts';
 import { BlendModeSchema } from './blend.ts';
-import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { DeepStrip } from './common.ts';
 import {
 	AnimNumberSchema,

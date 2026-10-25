@@ -20,15 +20,15 @@ import { DEFAULT_FONT_FAMILY } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import { type TextStyle, TextStyleSchema } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
-import {
-	CutAwareSchema,
-	SubtitleRulesSchema,
-	SubtitleTextSchema,
-	type CutAwareInput,
-	type SubtitleRulesInput,
-	type SubtitleTextInput,
-} from './rules.ts';
 import { type SubtitleHighlight, SubtitleHighlightSchema } from './model.ts';
+import {
+	type CutAwareInput,
+	CutAwareSchema,
+	type SubtitleRulesInput,
+	SubtitleRulesSchema,
+	type SubtitleTextInput,
+	SubtitleTextSchema,
+} from './rules.ts';
 
 export const SUBTITLE_TEMPLATE_FORMAT = 'jasper-subtitle-template';
 export const SUBTITLE_TEMPLATE_VERSION = 1;
@@ -174,7 +174,11 @@ export function aspectKeyOf(width: number, height: number): AspectKey {
 }
 
 /** The box centre (fractions of the frame) of a template for a frame: its aspect, else the nearest one given. */
-export function templatePosition(t: SubtitleTemplate, width: number, height: number): { x: number; y: number } {
+export function templatePosition(
+	t: SubtitleTemplate,
+	width: number,
+	height: number,
+): { x: number; y: number } {
 	const want = aspectKeyOf(width, height);
 	if (t.position[want]) return t.position[want]!;
 	const r = width > 0 && height > 0 ? width / height : 16 / 9;
@@ -425,28 +429,48 @@ const t = (
 });
 
 export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
-	t('pixel-pop', 'Pixel Pop', 'Short pixel-font words that pop in and shake: white, purple outline, soft shadow.', {
-		output: 'text-clips',
-		fontFamily: PIXEL_FONT,
-		style: pixelStyle(98, 11.5),
-		box: { widthPct: 75 },
-		position: { '9:16': { x: 0.5, y: 0.5 }, '16:9': { x: 0.5, y: 0.83 }, '1:1': { x: 0.5, y: 0.7 }, '4:5': { x: 0.5, y: 0.62 } },
-		animation: { preset: PIXEL_POP_PRESET },
-		rules: PIXEL_POP_RULES,
-		text: PIXEL_POP_TEXT,
-		highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
-	}),
-	t('pixel-pop-classic', 'Pixel Pop Classic', 'Large pixel-font words zooming in from nothing, thick purple outline.', {
-		output: 'text-clips',
-		fontFamily: PIXEL_FONT,
-		style: pixelStyle(130, 30),
-		box: { widthPct: 75 },
-		position: { '9:16': { x: 0.5, y: 0.5 }, '16:9': { x: 0.5, y: 0.8 }, '1:1': { x: 0.5, y: 0.7 }, '4:5': { x: 0.5, y: 0.62 } },
-		animation: { preset: PIXEL_POP_CLASSIC_PRESET },
-		rules: PIXEL_POP_RULES,
-		text: PIXEL_POP_TEXT,
-		highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
-	}),
+	t(
+		'pixel-pop',
+		'Pixel Pop',
+		'Short pixel-font words that pop in and shake: white, purple outline, soft shadow.',
+		{
+			output: 'text-clips',
+			fontFamily: PIXEL_FONT,
+			style: pixelStyle(98, 11.5),
+			box: { widthPct: 75 },
+			position: {
+				'9:16': { x: 0.5, y: 0.5 },
+				'16:9': { x: 0.5, y: 0.83 },
+				'1:1': { x: 0.5, y: 0.7 },
+				'4:5': { x: 0.5, y: 0.62 },
+			},
+			animation: { preset: PIXEL_POP_PRESET },
+			rules: PIXEL_POP_RULES,
+			text: PIXEL_POP_TEXT,
+			highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
+		},
+	),
+	t(
+		'pixel-pop-classic',
+		'Pixel Pop Classic',
+		'Large pixel-font words zooming in from nothing, thick purple outline.',
+		{
+			output: 'text-clips',
+			fontFamily: PIXEL_FONT,
+			style: pixelStyle(130, 30),
+			box: { widthPct: 75 },
+			position: {
+				'9:16': { x: 0.5, y: 0.5 },
+				'16:9': { x: 0.5, y: 0.8 },
+				'1:1': { x: 0.5, y: 0.7 },
+				'4:5': { x: 0.5, y: 0.62 },
+			},
+			animation: { preset: PIXEL_POP_CLASSIC_PRESET },
+			rules: PIXEL_POP_RULES,
+			text: PIXEL_POP_TEXT,
+			highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
+		},
+	),
 	t('subtitles', 'Subtitles', 'Classic subtitles: two lines on a translucent box at the bottom.', {
 		output: 'caption-track',
 		fontFamily: 'Source Sans 3',
@@ -457,7 +481,12 @@ export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
 			background: { color: [0, 0, 0, 0.6], paddingPx: 12, radiusPx: 0 },
 		}),
 		box: { widthPct: 80 },
-		position: { '16:9': { x: 0.5, y: 0.86 }, '9:16': { x: 0.5, y: 0.78 }, '1:1': { x: 0.5, y: 0.85 }, '4:5': { x: 0.5, y: 0.84 } },
+		position: {
+			'16:9': { x: 0.5, y: 0.86 },
+			'9:16': { x: 0.5, y: 0.78 },
+			'1:1': { x: 0.5, y: 0.85 },
+			'4:5': { x: 0.5, y: 0.84 },
+		},
 		highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
 	}),
 	t('bold-pop', 'Bold Pop', 'Heavy upper-case words with a dark outline that pop in.', {
@@ -471,9 +500,23 @@ export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
 			shadow: { color: [0, 0, 0, 0.5], angleDeg: 90, distancePx: 4, blurPx: 8 },
 		}),
 		box: { widthPct: 80 },
-		position: { '9:16': { x: 0.5, y: 0.58 }, '16:9': { x: 0.5, y: 0.8 }, '1:1': { x: 0.5, y: 0.72 }, '4:5': { x: 0.5, y: 0.64 } },
+		position: {
+			'9:16': { x: 0.5, y: 0.58 },
+			'16:9': { x: 0.5, y: 0.8 },
+			'1:1': { x: 0.5, y: 0.72 },
+			'4:5': { x: 0.5, y: 0.64 },
+		},
 		animation: { textAnimation: { in: { preset: 'pop', seconds: 0.2 } } },
-		rules: { maxChars: 16, lines: 1, maxWords: 3, minSeconds: 0.3, maxSeconds: 2.5, breakPauseSeconds: 0.4, holdSeconds: 0.4, punctuation: 'always' },
+		rules: {
+			maxChars: 16,
+			lines: 1,
+			maxWords: 3,
+			minSeconds: 0.3,
+			maxSeconds: 2.5,
+			breakPauseSeconds: 0.4,
+			holdSeconds: 0.4,
+			punctuation: 'always',
+		},
 		text: { case: 'upper' },
 		highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
 	}),
@@ -486,8 +529,21 @@ export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
 			strokes: [{ color: [0, 0, 0, 1], widthPx: 6, position: 'outside' }],
 		}),
 		box: { widthPct: 82 },
-		position: { '9:16': { x: 0.5, y: 0.62 }, '16:9': { x: 0.5, y: 0.82 }, '1:1': { x: 0.5, y: 0.75 }, '4:5': { x: 0.5, y: 0.68 } },
-		rules: { maxChars: 22, lines: 2, maxWords: 6, minSeconds: 0.5, maxSeconds: 4, breakPauseSeconds: 0.6, punctuation: 'always' },
+		position: {
+			'9:16': { x: 0.5, y: 0.62 },
+			'16:9': { x: 0.5, y: 0.82 },
+			'1:1': { x: 0.5, y: 0.75 },
+			'4:5': { x: 0.5, y: 0.68 },
+		},
+		rules: {
+			maxChars: 22,
+			lines: 2,
+			maxWords: 6,
+			minSeconds: 0.5,
+			maxSeconds: 4,
+			breakPauseSeconds: 0.6,
+			punctuation: 'always',
+		},
 		highlight: { mode: 'word', color: hex('#FFD400') },
 	}),
 	t('karaoke', 'Karaoke', 'Words fill with colour as they are spoken.', {
@@ -500,8 +556,21 @@ export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
 			strokes: [{ color: [0, 0, 0, 1], widthPx: 6, position: 'outside' }],
 		}),
 		box: { widthPct: 84 },
-		position: { '9:16': { x: 0.5, y: 0.64 }, '16:9': { x: 0.5, y: 0.83 }, '1:1': { x: 0.5, y: 0.76 }, '4:5': { x: 0.5, y: 0.7 } },
-		rules: { maxChars: 28, lines: 2, maxWords: 8, minSeconds: 0.6, maxSeconds: 5, breakPauseSeconds: 0.7, punctuation: 'half' },
+		position: {
+			'9:16': { x: 0.5, y: 0.64 },
+			'16:9': { x: 0.5, y: 0.83 },
+			'1:1': { x: 0.5, y: 0.76 },
+			'4:5': { x: 0.5, y: 0.7 },
+		},
+		rules: {
+			maxChars: 28,
+			lines: 2,
+			maxWords: 8,
+			minSeconds: 0.6,
+			maxSeconds: 5,
+			breakPauseSeconds: 0.7,
+			punctuation: 'half',
+		},
 		highlight: { mode: 'karaoke', color: hex('#33D6FF') },
 	}),
 	t('minimal', 'Minimal', 'Plain white text with a soft shadow that fades in.', {
@@ -514,8 +583,15 @@ export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
 			shadow: { color: [0, 0, 0, 0.6], angleDeg: 90, distancePx: 2, blurPx: 6 },
 		}),
 		box: { widthPct: 80 },
-		position: { '16:9': { x: 0.5, y: 0.87 }, '9:16': { x: 0.5, y: 0.76 }, '1:1': { x: 0.5, y: 0.85 }, '4:5': { x: 0.5, y: 0.82 } },
-		animation: { textAnimation: { in: { preset: 'fade', seconds: 0.15 }, out: { preset: 'fade', seconds: 0.1 } } },
+		position: {
+			'16:9': { x: 0.5, y: 0.87 },
+			'9:16': { x: 0.5, y: 0.76 },
+			'1:1': { x: 0.5, y: 0.85 },
+			'4:5': { x: 0.5, y: 0.82 },
+		},
+		animation: {
+			textAnimation: { in: { preset: 'fade', seconds: 0.15 }, out: { preset: 'fade', seconds: 0.1 } },
+		},
 		highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
 	}),
 	t('lower-third', 'Lower Third', 'Left-aligned text on a dark bar in the lower third.', {
@@ -529,7 +605,12 @@ export const BUILTIN_SUBTITLE_TEMPLATES: readonly SubtitleTemplate[] = [
 			background: { color: [0.06, 0.07, 0.09, 0.78], paddingPx: 16, radiusPx: 6 },
 		}),
 		box: { widthPct: 56 },
-		position: { '16:9': { x: 0.34, y: 0.8 }, '9:16': { x: 0.5, y: 0.74 }, '1:1': { x: 0.4, y: 0.8 }, '4:5': { x: 0.42, y: 0.78 } },
+		position: {
+			'16:9': { x: 0.34, y: 0.8 },
+			'9:16': { x: 0.5, y: 0.74 },
+			'1:1': { x: 0.4, y: 0.8 },
+			'4:5': { x: 0.42, y: 0.78 },
+		},
 		animation: { textAnimation: { in: { preset: 'slide-right', seconds: 0.25 } } },
 		rules: { maxChars: 40, lines: 2, minSeconds: 1, maxSeconds: 6, punctuation: 'half' },
 		highlight: { mode: 'none', color: [1, 0.84, 0, 1] },
@@ -547,7 +628,9 @@ const isPlain = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The readable project templates by id. */
-export function projectSubtitleTemplates(doc: Pick<ProjectDocument, 'sequences'>): Record<string, SubtitleTemplate> {
+export function projectSubtitleTemplates(
+	doc: Pick<ProjectDocument, 'sequences'>,
+): Record<string, SubtitleTemplate> {
 	const rec = (doc as { subtitleTemplates?: unknown }).subtitleTemplates;
 	const out: Record<string, SubtitleTemplate> = {};
 	if (!isPlain(rec)) return out;
@@ -570,7 +653,8 @@ export function findSubtitleTemplate(
 export function subtitleTemplatesIssues(doc: ProjectDocument): [string, string[]][] {
 	const rec = (doc as { subtitleTemplates?: unknown }).subtitleTemplates;
 	if (rec === undefined) return [];
-	if (!isPlain(rec)) return [['subtitleTemplates must be an object of templates by id', ['subtitleTemplates']]];
+	if (!isPlain(rec))
+		return [['subtitleTemplates must be an object of templates by id', ['subtitleTemplates']]];
 	const out: [string, string[]][] = [];
 	const keys = Object.keys(rec);
 	if (keys.length > 500) out.push(['more than 500 subtitle templates', ['subtitleTemplates']]);
@@ -578,7 +662,10 @@ export function subtitleTemplatesIssues(doc: ProjectDocument): [string, string[]
 		const r = parseSubtitleTemplate(rec[k]);
 		if (!r.ok) out.push([`Subtitle template ${k}: ${r.message}`, ['subtitleTemplates', k]]);
 		else if (r.template.id !== k)
-			out.push([`Subtitle template ${k}: record key differs from id ${r.template.id}`, ['subtitleTemplates', k]]);
+			out.push([
+				`Subtitle template ${k}: record key differs from id ${r.template.id}`,
+				['subtitleTemplates', k],
+			]);
 	}
 	return out;
 }

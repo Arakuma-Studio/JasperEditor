@@ -6,6 +6,12 @@ import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
+import {
+	clipCaptionProblem,
+	repairSubtitleSequence,
+	sequenceSubtitleIssues,
+} from './captions/subtitles/model.ts';
+import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
@@ -67,12 +73,6 @@ import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
-import {
-	clipCaptionProblem,
-	repairSubtitleSequence,
-	sequenceSubtitleIssues,
-} from './captions/subtitles/model.ts';
-import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
 	contentSpanFlicks,

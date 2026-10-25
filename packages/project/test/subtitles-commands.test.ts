@@ -5,12 +5,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildClipsPayload,
 	type CaptionsClip,
+	type Clip,
 	captionClipText,
 	captionCuesForGroup,
 	captionGroupsOf,
 	captionOf,
 	checkInvariants,
-	type Clip,
+	createCounterIdSource,
 	FLICKS_PER_SECOND,
 	groupClips,
 	isTemplateEffect,
@@ -21,7 +22,6 @@ import {
 	textStylesOf,
 	wordsInSequence,
 	writeCaptionFile,
-	createCounterIdSource,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -34,9 +34,26 @@ function shot(opts: { cut?: boolean; words?: Array<[string, number, number]> } =
 	const H = new Harness({ preset: 'hd-1080p-30' });
 	const a = H.registerVideo({ seconds: 10 });
 	const b = H.registerVideo({ seconds: 10 });
-	H.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+	H.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId: a },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		},
+	]);
 	if (opts.cut !== false)
-		H.ok([{ type: 'clip.place', source: { mediaId: b }, at: 90, tracks: { video: 'V1' }, audio: false, mode: 'overwrite' }]);
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: b },
+				at: 90,
+				tracks: { video: 'V1' },
+				audio: false,
+				mode: 'overwrite',
+			},
+		]);
 	// words in seconds of media A (= sequence time: placed at 0)
 	const list = opts.words ?? [
 		['Hola', 0.2, 0.5],
@@ -113,7 +130,9 @@ describe('captions.generate (AS-001, AS-003)', () => {
 			]);
 		}
 		expect(textStylesOf(H.doc).some((s) => s.name === 'Pixel Pop')).toBe(true);
-		expect((H.doc as { subtitleTemplates?: Record<string, unknown> }).subtitleTemplates?.['builtin:pixel-pop']).toBeTruthy();
+		expect(
+			(H.doc as { subtitleTemplates?: Record<string, unknown> }).subtitleTemplates?.['builtin:pixel-pop'],
+		).toBeTruthy();
 		// the "de" of "juego de Doors" stays with "Doors" (Spanish weak words)
 		expect(subs(H).some((c) => c.content.text.endsWith(' de'))).toBe(false);
 		valid(H.doc);
@@ -136,14 +155,15 @@ describe('captions.generate (AS-001, AS-003)', () => {
 	it('dry run: statistics and a preview, no change', () => {
 		const { H } = shot();
 		const doc = H.doc;
-		const r = H.ok([{ type: 'captions.generate', dryRun: true, template: 'builtin:pixel-pop' }]).results[0] as {
+		const r = H.ok([{ type: 'captions.generate', dryRun: true, template: 'builtin:pixel-pop' }])
+			.results[0] as {
 			stats: { count: number };
 			captions: { text: string }[];
 		};
 		expect(H.doc).toBe(doc);
 		expect(r.stats.count).toBe(r.captions.length);
 	});
-	it('caption-track output keeps today\'s behaviour with the template style and the same rules', () => {
+	it("caption-track output keeps today's behaviour with the template style and the same rules", () => {
 		const { H } = shot();
 		const r = H.ok([{ type: 'captions.generate', output: 'caption-track', template: 'builtin:subtitles' }])
 			.results[0] as { trackId: string; clipIds: string[] };
@@ -151,7 +171,9 @@ describe('captions.generate (AS-001, AS-003)', () => {
 		expect(t.styleDefaults?.boxWidthPct).toBe(80);
 		const caps = Object.values(H.seq.clips).filter((c): c is CaptionsClip => c.kind === 'captions');
 		expect(caps.length).toBe(r.clipIds.length);
-		expect(captionClipText(H.doc, caps.sort((x, y) => x.start - y.start)[0]!, H.seq.settings.frameRate)).toContain('Hola');
+		expect(
+			captionClipText(H.doc, caps.sort((x, y) => x.start - y.start)[0]!, H.seq.settings.frameRate),
+		).toContain('Hola');
 		valid(H.doc);
 	});
 	it('refusals: locked track, wrong track kind, no transcript, unknown or invalid template', () => {
@@ -183,7 +205,14 @@ describe('captions.generate (AS-001, AS-003)', () => {
 
 describe('editing integrity (AS-006)', () => {
 	it('a razor cut divides the words and each half keeps its own text', () => {
-		const { H } = shot({ cut: false, words: [['alpha', 0.2, 0.5], ['beta', 0.5, 0.8], ['gamma', 0.8, 1.1]] });
+		const { H } = shot({
+			cut: false,
+			words: [
+				['alpha', 0.2, 0.5],
+				['beta', 0.5, 0.8],
+				['gamma', 0.8, 1.1],
+			],
+		});
 		gen(H, { rules: { maxWords: 3, minSeconds: 0.2, maxChars: 40, lines: 1 } });
 		const c = subs(H)[0]!;
 		expect(c.content.text).toBe('alpha beta gamma');
@@ -202,7 +231,14 @@ describe('editing integrity (AS-006)', () => {
 		expect(spans(H).map((x) => x[2])).toEqual(['longword', 'longword']);
 	});
 	it('a text edit re-times the changed words and keeps the unchanged ones', () => {
-		const { H } = shot({ cut: false, words: [['alpha', 0.2, 0.5], ['beta', 0.5, 0.8], ['gamma', 0.8, 1.1]] });
+		const { H } = shot({
+			cut: false,
+			words: [
+				['alpha', 0.2, 0.5],
+				['beta', 0.5, 0.8],
+				['gamma', 0.8, 1.1],
+			],
+		});
 		gen(H, { rules: { maxWords: 3, minSeconds: 0.2, maxChars: 40, lines: 1 } });
 		const c = subs(H)[0]!;
 		const before = captionOf(c)!.words;
@@ -214,7 +250,13 @@ describe('editing integrity (AS-006)', () => {
 		valid(H.doc);
 	});
 	it('template keys stay anchored to the In after a trim', () => {
-		const { H } = shot({ cut: false, words: [['alpha', 1, 1.5], ['beta', 1.5, 2]] });
+		const { H } = shot({
+			cut: false,
+			words: [
+				['alpha', 1, 1.5],
+				['beta', 1.5, 2],
+			],
+		});
 		gen(H, { template: 'builtin:pixel-pop', cutAware: false });
 		const c = subs(H)[0]!;
 		H.ok([{ type: 'clip.trim', clipId: c.id, edge: 'in', deltaFrames: -6 }]);
@@ -223,7 +265,9 @@ describe('editing integrity (AS-006)', () => {
 		const k = t.effects[0]!.params.opacity as { keyframes: { time: number }[] };
 		expect(Math.round((k.keyframes[0]!.time - t.sourceIn) / F30)).toBe(0);
 		// words stay where they were in sequence time
-		expect(wordsInSequence(t, H.seq.settings.frameRate)).toEqual(wordsInSequence(c, H.seq.settings.frameRate));
+		expect(wordsInSequence(t, H.seq.settings.frameRate)).toEqual(
+			wordsInSequence(c, H.seq.settings.frameRate),
+		);
 		valid(H.doc);
 	});
 	it('a pasted subtitle brings its group to another sequence', () => {
@@ -247,8 +291,14 @@ describe('regenerate, align to cuts (AS-006, AS-012)', () => {
 		const first = subs(H)[0]!;
 		const trs = Object.values(H.doc.transcripts).find((t) => t.mediaId === a)!;
 		const last = trs.words.length - 1;
-		H.ok([{ type: 'transcript.editText', transcriptId: trs.id, fromWord: last, toWord: last, text: 'Puertas.' }]);
-		const g = H.ok([{ type: 'captions.regenerate', groupId: r.groupId }]).results[0] as { kept: number; created: number; removed: number };
+		H.ok([
+			{ type: 'transcript.editText', transcriptId: trs.id, fromWord: last, toWord: last, text: 'Puertas.' },
+		]);
+		const g = H.ok([{ type: 'captions.regenerate', groupId: r.groupId }]).results[0] as {
+			kept: number;
+			created: number;
+			removed: number;
+		};
 		expect(g.kept).toBeGreaterThan(0);
 		expect(g.created).toBeGreaterThan(0);
 		expect(subs(H)[0]!.id).toBe(first.id);
@@ -256,20 +306,40 @@ describe('regenerate, align to cuts (AS-006, AS-012)', () => {
 		valid(H.doc);
 	});
 	it('align to cuts after the picture is re-edited', () => {
-		const { H } = shot({ cut: false, words: [['one', 2.5, 2.8], ['two', 3.05, 3.4]] });
+		const { H } = shot({
+			cut: false,
+			words: [
+				['one', 2.5, 2.8],
+				['two', 3.05, 3.4],
+			],
+		});
 		gen(H, { rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 }, cutAware: false });
 		expect(subs(H).length).toBe(1);
 		// a cut appears at frame 90 later
 		const b = H.registerVideo({ seconds: 5 });
-		H.ok([{ type: 'clip.place', source: { mediaId: b }, at: 90, tracks: { video: 'V1' }, audio: false, mode: 'overwrite' }]);
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: b },
+				at: 90,
+				tracks: { video: 'V1' },
+				audio: false,
+				mode: 'overwrite',
+			},
+		]);
 		const g = subs(H)[0]!.content.text;
-		const r = H.ok([{ type: 'captions.alignToCuts', groupId: captionOf(subs(H)[0]!)!.groupId }]).results[0] as {
+		const r = H.ok([{ type: 'captions.alignToCuts', groupId: captionOf(subs(H)[0]!)!.groupId }])
+			.results[0] as {
 			splitAtCuts: number;
 			crossing: number;
 		};
 		expect(r.splitAtCuts).toBe(1);
 		expect(r.crossing).toBe(0);
-		expect(spans(H).map((x) => x[2]).join(' ')).toBe(g);
+		expect(
+			spans(H)
+				.map((x) => x[2])
+				.join(' '),
+		).toBe(g);
 		for (const c of subs(H)) expect(c.start >= 90 || c.start + c.duration <= 90).toBe(true);
 		valid(H.doc);
 	});
@@ -296,7 +366,9 @@ describe('conversion and export (AS-005)', () => {
 		const r = gen(H);
 		const cues = captionCuesForGroup(H.seq as Sequence, r.groupId);
 		expect(cues.length).toBe(subs(H).length);
-		const srt = writeCaptionFile({ cues, blocks: [], warnings: [] }, 'srt', { rate: H.seq.settings.frameRate });
+		const srt = writeCaptionFile({ cues, blocks: [], warnings: [] }, 'srt', {
+			rate: H.seq.settings.frameRate,
+		});
 		expect(String(srt)).toContain('Hola');
 	});
 });
@@ -306,7 +378,9 @@ describe('groups and templates (AS-020)', () => {
 		const { H } = shot({ cut: false });
 		const r = gen(H, { template: 'builtin:bold-pop' });
 		const c = subs(H)[0]!;
-		const t = H.ok([{ type: 'subtitleTemplate.save', clipId: c.id, name: 'Mine' }]).results[0] as { templateId: string };
+		const t = H.ok([{ type: 'subtitleTemplate.save', clipId: c.id, name: 'Mine' }]).results[0] as {
+			templateId: string;
+		};
 		const r2 = gen(H, { template: 'builtin:minimal', trackId: 'new' });
 		const rev = H.revision;
 		H.ok([{ type: 'subtitleTemplate.apply', template: t.templateId, groupId: r2.groupId }]);
@@ -357,7 +431,12 @@ describe('load repair (schema v9 fields)', () => {
 		const ids = createCounterIdSource(900);
 		const a = repairDocument(doc, ids);
 		expect(a.report.map((x) => x.action)).toEqual(
-			expect.arrayContaining(['repair-caption-words', 'drop-caption', 'repair-caption-group', 'drop-subtitle-template']),
+			expect.arrayContaining([
+				'repair-caption-words',
+				'drop-caption',
+				'repair-caption-group',
+				'drop-subtitle-template',
+			]),
 		);
 		expect(checkInvariants(a.document)).toEqual([]);
 		const b = repairDocument(a.document, ids);
@@ -367,8 +446,23 @@ describe('load repair (schema v9 fields)', () => {
 
 describe('cut-aware edge cases on documents (AS-013)', () => {
 	it('an overlay below the coverage threshold is not a cut; above it is', () => {
-		const { H, b } = shot({ cut: false, words: [['one', 2.5, 2.8], ['two', 3.05, 3.4]] });
-		const r = H.ok([{ type: 'clip.place', source: { mediaId: b }, at: 90, tracks: { video: 'V2' }, audio: false, mode: 'overwrite' }]);
+		const { H, b } = shot({
+			cut: false,
+			words: [
+				['one', 2.5, 2.8],
+				['two', 3.05, 3.4],
+			],
+		});
+		const r = H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: b },
+				at: 90,
+				tracks: { video: 'V2' },
+				audio: false,
+				mode: 'overwrite',
+			},
+		]);
 		const pip = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
 		H.ok([{ type: 'param.set', target: ['clip', pip, 'transform', 'scale'], value: 60 }]); // 36 % of the frame
 		const g = gen(H, { rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } });
@@ -387,13 +481,34 @@ describe('cut-aware edge cases on documents (AS-013)', () => {
 		expect(r.ok || r.errors[0]!.code).toBe('E_INVALID_PARAM');
 	});
 	it('subtitles inside a nested sequence align to the cuts of the sequence it is placed in (warned)', () => {
-		const { H, b } = shot({ cut: false, words: [['one', 2.5, 2.8], ['two', 3.05, 3.4]] });
+		const { H, b } = shot({
+			cut: false,
+			words: [
+				['one', 2.5, 2.8],
+				['two', 3.05, 3.4],
+			],
+		});
 		// nest the A-roll pair, then cut to B-roll in the parent at frame 90 over the nest
 		const pair = [H.clips('V1')[0]!.id, H.clips('A1')[0]!.id];
 		const n = H.ok([{ type: 'clip.nest', clipIds: pair, name: 'A-roll', ref: '$n' }]);
 		const nested = (n.results[0] as { sequenceId: string }).sequenceId;
-		H.ok([{ type: 'clip.place', source: { mediaId: b }, at: 90, tracks: { video: 'V2' }, audio: false, mode: 'overwrite' }]);
-		const r = H.ok([{ type: 'captions.generate', sequenceId: nested, rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } }]);
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: b },
+				at: 90,
+				tracks: { video: 'V2' },
+				audio: false,
+				mode: 'overwrite',
+			},
+		]);
+		const r = H.ok([
+			{
+				type: 'captions.generate',
+				sequenceId: nested,
+				rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 },
+			},
+		]);
 		expect(r.warnings.some((w) => /nested sequence/.test(w.message))).toBe(true);
 		const seq = H.doc.sequences[nested]!;
 		const list = Object.values(seq.clips).filter((c) => captionOf(c));
@@ -407,13 +522,38 @@ describe('cut-aware edge cases on documents (AS-013)', () => {
 			const a = H.registerVideo({ seconds: 10, fps: rate });
 			const b = H.registerVideo({ seconds: 10, fps: rate });
 			const cut = Math.round((3 * rate.num) / rate.den);
-			H.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
-			H.ok([{ type: 'clip.place', source: { mediaId: b }, at: cut, tracks: { video: 'V1' }, audio: false, mode: 'overwrite' }]);
-			H.ok([{ type: 'transcript.create', mediaId: a, language: 'en', origin: 'manual', words: [
-				{ text: 'one', start: sec(2.5), end: sec(2.9) },
-				{ text: 'two', start: sec(2.9), end: sec(3.2) },
-				{ text: 'three', start: sec(3.2), end: sec(3.8) },
-			] }]);
+			H.ok([
+				{
+					type: 'clip.place',
+					source: { mediaId: a },
+					at: 0,
+					tracks: { video: 'V1', audio: ['A1'] },
+					mode: 'overwrite',
+				},
+			]);
+			H.ok([
+				{
+					type: 'clip.place',
+					source: { mediaId: b },
+					at: cut,
+					tracks: { video: 'V1' },
+					audio: false,
+					mode: 'overwrite',
+				},
+			]);
+			H.ok([
+				{
+					type: 'transcript.create',
+					mediaId: a,
+					language: 'en',
+					origin: 'manual',
+					words: [
+						{ text: 'one', start: sec(2.5), end: sec(2.9) },
+						{ text: 'two', start: sec(2.9), end: sec(3.2) },
+						{ text: 'three', start: sec(3.2), end: sec(3.8) },
+					],
+				},
+			]);
 			const g = gen(H, { rules: { minSeconds: 0.2, maxWords: 5, maxChars: 40 } });
 			expect(g.stats.crossing).toBe(0);
 			expect(subs(H).some((c) => c.start === cut)).toBe(true);

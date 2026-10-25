@@ -3,6 +3,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+	breakLines,
 	type CutEvent,
 	DEFAULT_CUT_AWARE,
 	FLICKS_PER_SECOND,
@@ -10,14 +11,13 @@ import {
 	type LayoutWord,
 	layoutSubtitles,
 	PIXEL_POP_RULES,
+	type Rational,
 	resolveCutAware,
 	resolveSubtitleRules,
 	resolveSubtitleText,
 	transformWords,
-	breakLines,
 	weakWordsFor,
 	workCaptionText,
-	type Rational,
 } from '../src/index.ts';
 
 const R60: Rational = { num: 60, den: 1 };
@@ -100,12 +100,11 @@ describe('rules (AS-002)', () => {
 		);
 		expect(r.captions.map(workCaptionText)).toEqual(['hello', 'there', 'friend']);
 		const long = lay(
-			words(
-				Array.from({ length: 12 }, (_, i) => [`w${i}`, i * 60, i * 60 + 50] as [string, number, number]),
-			),
+			words(Array.from({ length: 12 }, (_, i) => [`w${i}`, i * 60, i * 60 + 50] as [string, number, number])),
 			{ rules: { maxSeconds: 2, maxChars: 72, lines: 3, minSeconds: 0.1 } },
 		);
-		for (const c of long.captions) expect(c.words[c.words.length - 1]!.end - c.words[0]!.start).toBeLessThanOrEqual(2 * FLICKS_PER_SECOND);
+		for (const c of long.captions)
+			expect(c.words[c.words.length - 1]!.end - c.words[0]!.start).toBeLessThanOrEqual(2 * FLICKS_PER_SECOND);
 	});
 	it('punctuation: never / once half full / always (commas too)', () => {
 		const ws = words([
@@ -114,17 +113,17 @@ describe('rules (AS-002)', () => {
 			['there.', 20, 30],
 			['Next', 30, 40],
 		]);
-		expect(lay(ws, { rules: { punctuation: 'never', maxChars: 42, minSeconds: 0.1 } }).captions).toHaveLength(1);
-		expect(lay(ws, { rules: { punctuation: 'half', maxChars: 10, lines: 1, minSeconds: 0.1 } }).captions.map(workCaptionText)).toEqual([
-			'Hi, you',
-			'there.',
-			'Next',
-		]);
-		expect(lay(ws, { rules: { punctuation: 'always', minSeconds: 0.1 } }).captions.map(workCaptionText)).toEqual([
-			'Hi,',
-			'you there.',
-			'Next',
-		]);
+		expect(lay(ws, { rules: { punctuation: 'never', maxChars: 42, minSeconds: 0.1 } }).captions).toHaveLength(
+			1,
+		);
+		expect(
+			lay(ws, { rules: { punctuation: 'half', maxChars: 10, lines: 1, minSeconds: 0.1 } }).captions.map(
+				workCaptionText,
+			),
+		).toEqual(['Hi, you', 'there.', 'Next']);
+		expect(
+			lay(ws, { rules: { punctuation: 'always', minSeconds: 0.1 } }).captions.map(workCaptionText),
+		).toEqual(['Hi,', 'you there.', 'Next']);
 	});
 	it('a gap between subtitles and a hold until the next one (up to X s)', () => {
 		const ws = words([
@@ -140,7 +139,9 @@ describe('rules (AS-002)', () => {
 		]);
 	});
 	it('the Pixel Pop defaults make 1–3 word, one-line subtitles of at most 13 characters', () => {
-		const text = 'Hoy hice el juego de Doors en 24 horas y con RTX y puedes ir a descargarlo ya mismo!'.split(' ');
+		const text = 'Hoy hice el juego de Doors en 24 horas y con RTX y puedes ir a descargarlo ya mismo!'.split(
+			' ',
+		);
 		const ws = words(text.map((t, i) => [t, i * 12, i * 12 + 10] as [string, number, number]));
 		const r = lay(ws, { base: PIXEL_POP_RULES, language: 'es' });
 		for (const c of r.captions) {
@@ -156,7 +157,12 @@ describe('text transforms (AS-002) and line breaking (AS-042)', () => {
 		const t = (opts: Partial<typeof GENERIC_SUBTITLE_TEXT>, list: string[]) =>
 			transformWords(list, { ...GENERIC_SUBTITLE_TEXT, ...opts }, 'es');
 		expect(t({ case: 'upper' }, ['ñandú', 'hola'])).toEqual(['ÑANDÚ', 'HOLA']);
-		expect(t({ case: 'sentence' }, ['HOLA.', 'QUÉ', 'TAL?', 'bien'])).toEqual(['Hola.', 'Qué', 'tal?', 'Bien']);
+		expect(t({ case: 'sentence' }, ['HOLA.', 'QUÉ', 'TAL?', 'bien'])).toEqual([
+			'Hola.',
+			'Qué',
+			'tal?',
+			'Bien',
+		]);
 		expect(t({ replaceGlyphs: true }, ['“Hola…”', '—sí'])).toEqual(['"Hola..."', '-sí']);
 		expect(t({ replaceGlyphs: true, missingGlyphs: '…' }, ['“Hola…”'])).toEqual(['“Hola...”']);
 		expect(t({ profanity: { words: ['mierda'], mask: 'first-letter' } }, ['¡Mierda!', 'bien'])).toEqual([
@@ -165,7 +171,13 @@ describe('text transforms (AS-002) and line breaking (AS-042)', () => {
 		]);
 	});
 	it('strips trailing punctuation per subtitle', () => {
-		const r = lay(words([['Hola,', 0, 10], ['amigos!', 10, 20]]), { text: { stripTrailingPunctuation: true }, rules: { punctuation: 'never' } });
+		const r = lay(
+			words([
+				['Hola,', 0, 10],
+				['amigos!', 10, 20],
+			]),
+			{ text: { stripTrailingPunctuation: true }, rules: { punctuation: 'never' } },
+		);
 		expect(workCaptionText(r.captions[0]!)).toBe('Hola, amigos');
 	});
 	it('Spanish: a line or a one-line subtitle does not end on an article or preposition when avoidable', () => {
@@ -180,18 +192,26 @@ describe('text transforms (AS-002) and line breaking (AS-042)', () => {
 			),
 			{ base: PIXEL_POP_RULES, language: 'es' },
 		);
-		for (const c of r.captions.slice(0, -1)) expect(['de', 'el', 'en']).not.toContain(c.words[c.words.length - 1]!.text);
+		for (const c of r.captions.slice(0, -1))
+			expect(['de', 'el', 'en']).not.toContain(c.words[c.words.length - 1]!.text);
 	});
 });
 
 describe('cut awareness (AS-010 / AS-013)', () => {
 	const ca = { lookBackSeconds: 0.5, lookAheadSeconds: 0.05 };
 	it('splits a subtitle with words on both sides of a cut', () => {
-		const r = lay(words([['one', 0, 20], ['two', 20, 40], ['three', 45, 70]]), {
-			cuts: [{ frame: 42 }],
-			rules: { minSeconds: 0.1 },
-			cutAware: ca,
-		});
+		const r = lay(
+			words([
+				['one', 0, 20],
+				['two', 20, 40],
+				['three', 45, 70],
+			]),
+			{
+				cuts: [{ frame: 42 }],
+				rules: { minSeconds: 0.1 },
+				cutAware: ca,
+			},
+		);
 		expect(spans(r)).toEqual([
 			[0, 42, 'one two'],
 			[42, 70, 'three'],
@@ -200,11 +220,17 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 		expect(r.stats.crossing).toBe(0);
 	});
 	it('moves the start to a cut when all words come after it (the 27-frame case) and ends on a cut', () => {
-		const r = lay(words([['hello', 30, 50], ['world', 50, 70]]), {
-			cuts: [{ frame: 33 }],
-			rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const r = lay(
+			words([
+				['hello', 30, 50],
+				['world', 50, 70],
+			]),
+			{
+				cuts: [{ frame: 33 }],
+				rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		expect(r.captions[0]!.start).toBe(33);
 		const e = lay(words([['hold', 0, 20]]), {
 			cuts: [{ frame: 25 }],
@@ -214,108 +240,204 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 		expect(spans(e)).toEqual([[0, 25, 'hold']]);
 	});
 	it('a word straddling a cut goes to the side holding most of it; several cuts in one word', () => {
-		const r = lay(words([['a', 0, 10], ['bbbbbb', 10, 30]]), { cuts: [{ frame: 13 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const r = lay(
+			words([
+				['a', 0, 10],
+				['bbbbbb', 10, 30],
+			]),
+			{ cuts: [{ frame: 13 }], rules: { minSeconds: 0.1 }, cutAware: ca },
+		);
 		expect(spans(r)).toEqual([
 			[0, 13, 'a'],
 			[13, 30, 'bbbbbb'],
 		]);
-		const m = lay(words([['long', 0, 60]]), { cuts: [{ frame: 10 }, { frame: 20 }, { frame: 50 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const m = lay(words([['long', 0, 60]]), {
+			cuts: [{ frame: 10 }, { frame: 20 }, { frame: 50 }],
+			rules: { minSeconds: 0.1 },
+			cutAware: ca,
+		});
 		expect(spans(m)).toEqual([[20, 50, 'long']]);
 	});
 	it('starts on a cut up to the look-back before it (the previous subtitle ends there)', () => {
-		const r = lay(words([['a', 0, 18], ['b', 40, 60]]), {
-			cuts: [{ frame: 30 }],
-			rules: { minSeconds: 0.1, holdSeconds: 2, breakPauseSeconds: 0.2 },
-			cutAware: ca,
-		});
+		const r = lay(
+			words([
+				['a', 0, 18],
+				['b', 40, 60],
+			]),
+			{
+				cuts: [{ frame: 30 }],
+				rules: { minSeconds: 0.1, holdSeconds: 2, breakPauseSeconds: 0.2 },
+				cutAware: ca,
+			},
+		);
 		expect(spans(r)).toEqual([
 			[0, 30, 'a'],
 			[30, 180, 'b'],
 		]);
 		expect(r.stats.snappedToCuts).toBe(1);
 		// beyond the look-back: no snap
-		const far = lay(words([['a', 0, 5], ['b', 70, 80]]), { cuts: [{ frame: 30 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const far = lay(
+			words([
+				['a', 0, 5],
+				['b', 70, 80],
+			]),
+			{ cuts: [{ frame: 30 }], rules: { minSeconds: 0.1 }, cutAware: ca },
+		);
 		expect(far.captions[1]!.start).toBe(70);
 	});
 	it('look ahead: a start just before a cut moves to the cut', () => {
-		const r = lay(words([['a', 100, 101], ['b', 101, 140]]), { cuts: [{ frame: 102 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const r = lay(
+			words([
+				['a', 100, 101],
+				['b', 101, 140],
+			]),
+			{ cuts: [{ frame: 102 }], rules: { minSeconds: 0.1 }, cutAware: ca },
+		);
 		expect(r.captions[0]!.start).toBe(102);
 		expect(r.captions).toHaveLength(1);
 	});
 	it('a cut on the first or the last frame of a subtitle', () => {
-		const first = lay(words([['x', 30, 60]]), { cuts: [{ frame: 30 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const first = lay(words([['x', 30, 60]]), {
+			cuts: [{ frame: 30 }],
+			rules: { minSeconds: 0.1 },
+			cutAware: ca,
+		});
 		expect(spans(first)).toEqual([[30, 60, 'x']]);
-		const last = lay(words([['x', 30, 58]]), { cuts: [{ frame: 59 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const last = lay(words([['x', 30, 58]]), {
+			cuts: [{ frame: 59 }],
+			rules: { minSeconds: 0.1 },
+			cutAware: ca,
+		});
 		expect(last.captions[0]!.end).toBeLessThanOrEqual(59);
 	});
 	it('a piece made too short is extended away from its cut, else kept and reported', () => {
-		const r = lay(words([['a', 0, 30], ['b', 30, 34]]), {
-			cuts: [{ frame: 31 }],
-			rules: { minSeconds: 0.2, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const r = lay(
+			words([
+				['a', 0, 30],
+				['b', 30, 34],
+			]),
+			{
+				cuts: [{ frame: 31 }],
+				rules: { minSeconds: 0.2, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		const b = r.captions.find((c) => workCaptionText(c) === 'b')!;
 		expect(b.start).toBe(31);
 		expect(b.end).toBe(43);
-		const boxed = lay(words([['a', 0, 30], ['b', 30, 34], ['c', 36, 60]]), {
-			cuts: [{ frame: 31 }, { frame: 35 }],
-			rules: { minSeconds: 0.05, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const boxed = lay(
+			words([
+				['a', 0, 30],
+				['b', 30, 34],
+				['c', 36, 60],
+			]),
+			{
+				cuts: [{ frame: 31 }, { frame: 35 }],
+				rules: { minSeconds: 0.05, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		expect(boxed.stats.crossing).toBe(0);
 	});
 	it('cut zones: a subtitle started before a transition may run through it; montages merge', () => {
-		const through = lay(words([['long', 0, 50], ['talk', 50, 100]]), {
-			cuts: [{ frame: 60, zone: { start: 45, end: 75 } }],
-			rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const through = lay(
+			words([
+				['long', 0, 50],
+				['talk', 50, 100],
+			]),
+			{
+				cuts: [{ frame: 60, zone: { start: 45, end: 75 } }],
+				rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		expect(spans(through)).toEqual([[0, 100, 'long talk']]);
-		const inside = lay(words([['a', 0, 48], ['b', 52, 100]]), {
-			cuts: [{ frame: 60, zone: { start: 45, end: 75 } }],
-			rules: { minSeconds: 0.1, breakPauseSeconds: 0.05 },
-			cutAware: ca,
-		});
+		const inside = lay(
+			words([
+				['a', 0, 48],
+				['b', 52, 100],
+			]),
+			{
+				cuts: [{ frame: 60, zone: { start: 45, end: 75 } }],
+				rules: { minSeconds: 0.1, breakPauseSeconds: 0.05 },
+				cutAware: ca,
+			},
+		);
 		expect(inside.captions[1]!.start).toBe(60);
-		const montage = lay(words([['x', 0, 30], ['y', 30, 60]]), {
-			cuts: [{ frame: 20 }, { frame: 24 }, { frame: 28 }],
-			rules: { minSeconds: 0.2, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const montage = lay(
+			words([
+				['x', 0, 30],
+				['y', 30, 60],
+			]),
+			{
+				cuts: [{ frame: 20 }, { frame: 24 }, { frame: 28 }],
+				rules: { minSeconds: 0.2, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		expect(montage.stats.merged).toBe(2);
 		expect(montage.captions.length).toBeLessThanOrEqual(2);
 	});
 	it('transitions shorter than 3 frames are hard cuts', () => {
-		const r = lay(words([['long', 0, 50], ['talk', 50, 100]]), {
-			cuts: [{ frame: 60, zone: { start: 59, end: 61 } }],
-			rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const r = lay(
+			words([
+				['long', 0, 50],
+				['talk', 50, 100],
+			]),
+			{
+				cuts: [{ frame: 60, zone: { start: 59, end: 61 } }],
+				rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		expect(r.captions.map((c) => c.start)).toEqual([0, 60]);
 	});
 	it('speaker change at a cut; a cut during a pause', () => {
-		const r = lay(words([['a', 0, 20, 'A'], ['b', 20, 40, 'B']]), { cuts: [{ frame: 20 }], rules: { minSeconds: 0.1 }, cutAware: ca });
+		const r = lay(
+			words([
+				['a', 0, 20, 'A'],
+				['b', 20, 40, 'B'],
+			]),
+			{ cuts: [{ frame: 20 }], rules: { minSeconds: 0.1 }, cutAware: ca },
+		);
 		expect(spans(r)).toEqual([
 			[0, 20, 'a'],
 			[20, 40, 'b'],
 		]);
-		const p = lay(words([['a', 0, 20], ['b', 70, 90]]), {
-			cuts: [{ frame: 50 }],
-			rules: { minSeconds: 0.1, holdSeconds: 2, breakPauseSeconds: 0.3 },
-			cutAware: ca,
-		});
+		const p = lay(
+			words([
+				['a', 0, 20],
+				['b', 70, 90],
+			]),
+			{
+				cuts: [{ frame: 50 }],
+				rules: { minSeconds: 0.1, holdSeconds: 2, breakPauseSeconds: 0.3 },
+				cutAware: ca,
+			},
+		);
 		expect(spans(p)).toEqual([
 			[0, 50, 'a'],
 			[50, 210, 'b'],
 		]);
 	});
 	it('cut awareness off keeps the speech timing', () => {
-		const r = lay(words([['hello', 30, 50]]), { cuts: [{ frame: 33 }], rules: { minSeconds: 0.1 }, cutAware: false });
+		const r = lay(words([['hello', 30, 50]]), {
+			cuts: [{ frame: 33 }],
+			rules: { minSeconds: 0.1 },
+			cutAware: false,
+		});
 		expect(r.captions[0]!.start).toBe(30);
 	});
 	for (const [label, rate] of RATES)
 		it(`frame-exact at ${label} fps`, () => {
-			const ws = words([['uno', 0, 20], ['dos', 20, 40], ['tres', 45, 70]], rate);
+			const ws = words(
+				[
+					['uno', 0, 20],
+					['dos', 20, 40],
+					['tres', 45, 70],
+				],
+				rate,
+			);
 			const r = lay(ws, { cuts: [{ frame: 42 }], rules: { minSeconds: 0.1 }, cutAware: ca, rate });
 			expect(r.captions.map((c) => [c.start, c.end])).toEqual([
 				[0, 42],
@@ -326,7 +448,10 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 
 describe('properties', () => {
 	const arb = fc.record({
-		gaps: fc.array(fc.tuple(fc.integer({ min: 0, max: 40 }), fc.integer({ min: 1, max: 40 })), { minLength: 1, maxLength: 60 }),
+		gaps: fc.array(fc.tuple(fc.integer({ min: 0, max: 40 }), fc.integer({ min: 1, max: 40 })), {
+			minLength: 1,
+			maxLength: 60,
+		}),
 		cuts: fc.array(fc.integer({ min: 1, max: 3000 }), { maxLength: 30 }),
 		zones: fc.array(fc.boolean(), { maxLength: 30 }),
 		maxWords: fc.option(fc.integer({ min: 1, max: 5 }), { nil: null }),

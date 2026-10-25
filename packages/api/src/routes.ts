@@ -43,11 +43,6 @@ import {
 	EffectPresetUpdateRequestSchema,
 } from './effect-presets.ts';
 import {
-	SubtitleTemplateDeleteResponseSchema,
-	SubtitleTemplateLibraryResponseSchema,
-	SubtitleTemplateSaveRequestSchema,
-} from './subtitle-templates.ts';
-import {
 	ExportPlanRequestSchema,
 	ExportStartRequestSchema,
 	RenderPlanSchema,
@@ -264,6 +259,11 @@ import {
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
+import {
+	SubtitleTemplateDeleteResponseSchema,
+	SubtitleTemplateLibraryResponseSchema,
+	SubtitleTemplateSaveRequestSchema,
+} from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';

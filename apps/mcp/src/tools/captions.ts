@@ -26,11 +26,11 @@ import {
 	resolveTrackRef,
 	type Sequence,
 	type SeqWord,
+	SubtitleRulesSchema,
+	SubtitleTextSchema,
 	searchWords,
 	sequenceTimecode,
 	sequenceWords,
-	SubtitleRulesSchema,
-	SubtitleTextSchema,
 	supportsDropFrame,
 	trackLabel,
 	writeCaptionFileBytes,
@@ -69,7 +69,9 @@ export const CAPTIONS_GUIDE = `Captions and transcripts:
 const TrackArg = z.string().describe('Caption track: "C1", "C2"… or a track id');
 const SubtitleTemplateArg = z
 	.union([z.string().min(1).max(80), z.record(z.string(), z.unknown())])
-	.describe('A subtitle template id ("builtin:pixel-pop", a project or library template id) or a template object');
+	.describe(
+		'A subtitle template id ("builtin:pixel-pop", a project or library template id) or a template object',
+	);
 const FormatArg = z.enum(CAPTION_FILE_FORMATS);
 const ClipIdsArg = z
 	.array(z.string().min(1))
@@ -280,7 +282,11 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				throw new ToolError('E_INVALID_PARAM', 'Give track or groupId, not both');
 			const group = a.groupId !== undefined ? captionGroupsOf(seq)[a.groupId] : undefined;
 			if (a.groupId !== undefined && !group)
-				throw new ToolError('E_NOT_FOUND', `Subtitle group not found: ${a.groupId}`, 'See list_caption_groups.');
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Subtitle group not found: ${a.groupId}`,
+					'See list_caption_groups.',
+				);
 			const t = group ? null : captionTrackOf(seq, a.track);
 			const fromPath = a.path ? captionFormatFromName(extname(a.path)) : null;
 			const format: CaptionFileFormat = a.format ?? fromPath ?? 'srt';
@@ -289,7 +295,9 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				: undefined;
 			if (range && range.end <= range.start)
 				throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
-			const cues = group ? captionCuesForGroup(seq, group.id, range) : captionCuesForTrack(doc, seq, t!.id, range);
+			const cues = group
+				? captionCuesForGroup(seq, group.id, range)
+				: captionCuesForTrack(doc, seq, t!.id, range);
 			const language = group ? group.language : (t!.language ?? 'en');
 			const bytes = writeCaptionFileBytes({ cues, blocks: [...(t?.vttBlocks ?? [])], warnings: [] }, format, {
 				rate: seq.settings.frameRate,
@@ -980,7 +988,10 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				toWord: z.number().int().min(0).optional(),
 				name: z.string().optional().describe('Track name (captions) / subtitle group name'),
 				language: z.string().optional(),
-				preset: z.string().optional().describe('Caption style preset for the new caption track (original path)'),
+				preset: z
+					.string()
+					.optional()
+					.describe('Caption style preset for the new caption track (original path)'),
 				output: z.enum(['text-clips', 'caption-track']).optional(),
 				template: SubtitleTemplateArg.optional(),
 				rules: SubtitleRulesSchema.optional().describe(
@@ -998,17 +1009,33 @@ export function registerCaptionTools(ctx: ToolContext): void {
 					.describe('Whose words: the sequence transcript (default), one media, or some clips'),
 				range: RangeArg.optional().describe('Only words in this sequence range'),
 				trackName: z.string().min(1).max(120).optional(),
-				nest: z.boolean().optional().describe('Put the subtitles in a nested sequence (they then do not follow ripple edits)'),
+				nest: z
+					.boolean()
+					.optional()
+					.describe('Put the subtitles in a nested sequence (they then do not follow ripple edits)'),
 				dryRun: z.boolean().optional(),
 			},
 			annotations: EDIT,
 		},
 		async (a, extra) => {
-			const legacy = (['maxChars', 'lines', 'minSeconds', 'maxSeconds', 'gapFrames', 'breakPauseSeconds'] as const)
+			const legacy = (
+				['maxChars', 'lines', 'minSeconds', 'maxSeconds', 'gapFrames', 'breakPauseSeconds'] as const
+			)
 				.filter((k) => a[k] !== undefined)
 				.map((k) => [k, a[k]]);
 			const generate = (
-				['output', 'template', 'rules', 'text', 'cutAware', 'source', 'range', 'trackName', 'nest', 'dryRun'] as const
+				[
+					'output',
+					'template',
+					'rules',
+					'text',
+					'cutAware',
+					'source',
+					'range',
+					'trackName',
+					'nest',
+					'dryRun',
+				] as const
 			).some((k) => a[k] !== undefined);
 			if (!generate) {
 				const rules = Object.fromEntries(legacy);
@@ -1024,7 +1051,8 @@ export function registerCaptionTools(ctx: ToolContext): void {
 						ref: '$captions',
 					},
 				];
-				if (a.preset) commands.push({ type: 'caption.applyPreset', presetId: a.preset, trackId: '$captions' });
+				if (a.preset)
+					commands.push({ type: 'caption.applyPreset', presetId: a.preset, trackId: '$captions' });
 				const res = await transact(
 					ctx,
 					a.projectId,

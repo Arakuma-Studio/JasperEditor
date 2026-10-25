@@ -26,7 +26,9 @@ const notFound = (id: string) =>
 	new HttpError(
 		404,
 		'TEMPLATE_NOT_FOUND',
-		id.startsWith('builtin:') ? 'Built-in subtitle templates are read-only' : `Subtitle template not found: ${id}`,
+		id.startsWith('builtin:')
+			? 'Built-in subtitle templates are read-only'
+			: `Subtitle template not found: ${id}`,
 	);
 
 export class SubtitleTemplateLibrary {
@@ -36,7 +38,11 @@ export class SubtitleTemplateLibrary {
 
 	constructor(
 		private readonly file: string,
-		private readonly opts: { now?: () => string; onChange?: (revision: number) => void; log?: (m: string) => void } = {},
+		private readonly opts: {
+			now?: () => string;
+			onChange?: (revision: number) => void;
+			log?: (m: string) => void;
+		} = {},
 	) {}
 
 	private now(): string {
@@ -120,14 +126,19 @@ export class SubtitleTemplateLibrary {
 	save(id: string, raw: Record<string, unknown>): Promise<SubtitleTemplate> {
 		return this.mutate((s) => {
 			if (id.startsWith('builtin:')) throw notFound(id);
-			if (!/^[\w:.-]{1,80}$/.test(id)) throw new HttpError(400, 'VALIDATION_FAILED', `Malformed template id ${id}`);
+			if (!/^[\w:.-]{1,80}$/.test(id))
+				throw new HttpError(400, 'VALIDATION_FAILED', `Malformed template id ${id}`);
 			const now = this.now();
 			const old = s.templates.find((t) => t.id === id);
 			const { builtIn: _b, ...rest } = raw;
 			const r = parseSubtitleTemplate({ ...rest, id, createdAt: old?.createdAt ?? now, updatedAt: now });
 			if (!r.ok) throw new HttpError(400, 'TEMPLATE_INVALID', r.message);
 			if (!old && s.templates.length >= MAX_LIBRARY_TEMPLATES)
-				throw new HttpError(409, 'LIBRARY_FULL', `The library holds at most ${MAX_LIBRARY_TEMPLATES} templates`);
+				throw new HttpError(
+					409,
+					'LIBRARY_FULL',
+					`The library holds at most ${MAX_LIBRARY_TEMPLATES} templates`,
+				);
 			if (old) s.templates[s.templates.indexOf(old)] = r.template;
 			else s.templates.push(r.template);
 			return r.template;

@@ -100,7 +100,12 @@ function ceilFrame(t: number, rate: Rational): number {
 }
 
 /** Whether `words` fit in `lines` lines of `maxChars` (a single word longer than a line takes a line). */
-function fitsLines(words: readonly string[], maxChars: number, lines: number, weak: ReadonlySet<string> | null) {
+function fitsLines(
+	words: readonly string[],
+	maxChars: number,
+	lines: number,
+	weak: ReadonlySet<string> | null,
+) {
 	const starts = breakLines(words, maxChars, Number.POSITIVE_INFINITY, weak);
 	if (starts.length + 1 > lines) return false;
 	return true;
@@ -220,7 +225,10 @@ export function prepareCutEvents(
 		.map((c) => ({
 			frame: Math.round(c.frame),
 			zone:
-				c.zone && c.zone.end - c.zone.start >= MIN_ZONE_FRAMES && c.zone.start <= c.frame && c.frame < c.zone.end
+				c.zone &&
+				c.zone.end - c.zone.start >= MIN_ZONE_FRAMES &&
+				c.zone.start <= c.frame &&
+				c.frame < c.zone.end
 					? { start: Math.round(c.zone.start), end: Math.round(c.zone.end) }
 					: undefined,
 		}))
@@ -507,7 +515,8 @@ export function layoutSubtitles(input: SubtitleLayoutInput): SubtitleLayout {
 	const valid = words.filter(
 		(w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start && w.text.trim().length > 0,
 	);
-	if (valid.length < words.length) stats.warnings.push(`${words.length - valid.length} unusable word(s) skipped`);
+	if (valid.length < words.length)
+		stats.warnings.push(`${words.length - valid.length} unusable word(s) skipped`);
 	const display = displayWords(valid, text, language);
 	const groups = groupSubtitleWords(valid, display, rules, rate, language);
 	let caps = captionsFromGroups(valid, display, groups, rules, text, rate, language);

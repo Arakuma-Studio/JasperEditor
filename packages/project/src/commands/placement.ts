@@ -3,6 +3,7 @@
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized; scans read the drafts'
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
 import { type Draft, isDraft, original } from 'immer';
+import { splitCaptionWords } from '../captions/subtitles/clips.ts';
 import { clipsInRange } from '../derive/index.ts';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
@@ -14,7 +15,6 @@ import { contentSpanFlicks } from '../time.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
 import { isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';
-import { splitCaptionWords } from '../captions/subtitles/clips.ts';
 import { clone as snapshot } from './handlers/util.ts';
 
 export const end = (c: { start: number; duration: number }) => c.start + c.duration;

@@ -13,8 +13,8 @@ import {
 	type ProjectDocument,
 	projectSubtitleTemplates,
 	type Sequence,
-	type SubtitleTemplate,
 	SubtitleRulesSchema,
+	type SubtitleTemplate,
 	SubtitleTextSchema,
 	sequenceTimecode,
 	trackLabel,
@@ -95,7 +95,12 @@ export async function runOne(
 	extra: Extra | undefined,
 	sequenceId?: string,
 ) {
-	const res = await transact(ctx, projectId, { label, commands: [command], ...(sequenceId ? { sequenceId } : {}) }, extra);
+	const res = await transact(
+		ctx,
+		projectId,
+		{ label, commands: [command], ...(sequenceId ? { sequenceId } : {}) },
+		extra,
+	);
 	const ok = requireOk(res);
 	return { body: txBody(res, ok), result: (ok.results[0] ?? {}) as Record<string, unknown> };
 }
@@ -132,7 +137,11 @@ function groupRow(seq: Sequence, id: string, clips: number) {
 	};
 }
 
-function templateRow(t: SubtitleTemplate, source: 'built-in' | 'project' | 'library', catalog: FontCatalog | null) {
+function templateRow(
+	t: SubtitleTemplate,
+	source: 'built-in' | 'project' | 'library',
+	catalog: FontCatalog | null,
+) {
 	const font = catalog ? resolveCatalogFont(catalog, t.fontFamily, t.style.weight, t.style.italic) : null;
 	const fontStatus = !catalog
 		? 'unknown'
@@ -154,7 +163,9 @@ function templateRow(t: SubtitleTemplate, source: 'built-in' | 'project' | 'libr
 			: {}),
 		highlight: t.highlight?.mode ?? 'none',
 		animation: {
-			textAnimation: [t.animation?.textAnimation?.in?.preset, t.animation?.textAnimation?.out?.preset].filter(Boolean),
+			textAnimation: [t.animation?.textAnimation?.in?.preset, t.animation?.textAnimation?.out?.preset].filter(
+				Boolean,
+			),
 			effects: (t.animation?.preset?.effects ?? []).map((e) => e.effectId),
 		},
 		...(t.rules ? { rules: t.rules } : {}),
@@ -187,7 +198,11 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 				.map(([id, ids]) => groupRow(seq, id, ids.length));
 			if (!a.groupId) return jsonResult({ sequenceId: seq.id, groups });
 			if (!captionGroupsOf(seq)[a.groupId])
-				throw new ToolError('E_NOT_FOUND', `Subtitle group not found: ${a.groupId}`, 'Call list_caption_groups without groupId.');
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Subtitle group not found: ${a.groupId}`,
+					'Call list_caption_groups without groupId.',
+				);
 			const clips = groupClips(seq, a.groupId);
 			const offset = a.offset ?? 0;
 			const limit = a.limit ?? 200;
@@ -236,7 +251,13 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 				ctx,
 				a.projectId,
 				'Align Subtitles to Cuts',
-				defined({ type: 'captions.alignToCuts', groupId: a.groupId, clipIds: a.clipIds, options: a.options, dryRun: a.dryRun }),
+				defined({
+					type: 'captions.alignToCuts',
+					groupId: a.groupId,
+					clipIds: a.clipIds,
+					options: a.options,
+					dryRun: a.dryRun,
+				}),
 				extra,
 				a.sequenceId,
 			);
@@ -266,7 +287,8 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const n = [a.groupId, a.clipIds, a.captionTrack].filter((x) => x !== undefined).length;
-			if (n !== 1) throw new ToolError('E_INVALID_PARAM', 'Give exactly one of groupId, clipIds, captionTrack');
+			if (n !== 1)
+				throw new ToolError('E_INVALID_PARAM', 'Give exactly one of groupId, clipIds, captionTrack');
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const template = await templateForCommand(ctx, doc, a.template);
 			const { body, result } = await runOne(
@@ -347,7 +369,9 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 			]);
 			const project = a.projectId ? projectSubtitleTemplates((await loadDoc(ctx, a.projectId)).doc) : {};
 			const builtIn = BUILTIN_SUBTITLE_TEMPLATES.map((t) => templateRow(t, 'built-in', catalog));
-			const library = (lib?.templates ?? []).map((t) => templateRow(t as SubtitleTemplate, 'library', catalog));
+			const library = (lib?.templates ?? []).map((t) =>
+				templateRow(t as SubtitleTemplate, 'library', catalog),
+			);
 			const inProject = Object.values(project)
 				.filter((t) => !t.id.startsWith('builtin:'))
 				.map((t) => templateRow(t, 'project', catalog));
@@ -394,7 +418,10 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 			if (a.toLibrary !== false) {
 				library = await ctx
 					.engine((c) =>
-						c.call('subtitleTemplateSave', { params: { templateId: template.id }, body: { template } as never }),
+						c.call('subtitleTemplateSave', {
+							params: { templateId: template.id },
+							body: { template } as never,
+						}),
 					)
 					.then(() => ({ saved: true }))
 					.catch((e: Error) => ({ saved: false, error: e.message }));
@@ -436,7 +463,13 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 				ctx,
 				a.projectId,
 				'Apply Subtitle Template',
-				defined({ type: 'subtitleTemplate.apply', template, groupId: a.groupId, clipIds: a.clipIds, parts: a.parts }),
+				defined({
+					type: 'subtitleTemplate.apply',
+					template,
+					groupId: a.groupId,
+					clipIds: a.clipIds,
+					parts: a.parts,
+				}),
 				extra,
 				a.sequenceId,
 			);
@@ -450,7 +483,7 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 		{
 			title: 'Delete subtitle template',
 			description:
-				"Deletes a subtitle template from the project (from: \"project\", undoable; groups using it keep their look) or from the user's library (from: \"library\": not undoable, only when the user asks — it needs their approval in an open JasperEditor window). Built-ins cannot be deleted.",
+				'Deletes a subtitle template from the project (from: "project", undoable; groups using it keep their look) or from the user\'s library (from: "library": not undoable, only when the user asks — it needs their approval in an open JasperEditor window). Built-ins cannot be deleted.',
 			input: {
 				projectId: ProjectIdArg.optional(),
 				templateId: z.string().min(1),
@@ -460,9 +493,14 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			if (a.templateId.startsWith('builtin:') && a.from === 'library')
-				throw new ToolError('E_INVALID_PARAM', 'Built-in templates are read-only', 'Only your own templates can be deleted.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Built-in templates are read-only',
+					'Only your own templates can be deleted.',
+				);
 			if (a.from === 'project') {
-				if (!a.projectId) throw new ToolError('E_INVALID_PARAM', 'projectId is required with from: "project"');
+				if (!a.projectId)
+					throw new ToolError('E_INVALID_PARAM', 'projectId is required with from: "project"');
 				const { body } = await runOne(
 					ctx,
 					a.projectId,
@@ -472,7 +510,9 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 				);
 				return jsonResult(body);
 			}
-			const r = await ctx.engine((c) => c.call('subtitleTemplateDelete', { params: { templateId: a.templateId } }));
+			const r = await ctx.engine((c) =>
+				c.call('subtitleTemplateDelete', { params: { templateId: a.templateId } }),
+			);
 			return jsonResult({ ok: true, removed: r.removed });
 		},
 	);

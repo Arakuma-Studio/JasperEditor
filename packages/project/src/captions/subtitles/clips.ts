@@ -1,10 +1,11 @@
 // Spec 13 AS-005 / AS-006: operations on subtitle text clips — their words in sequence time, the razor (words
 // divided by midpoint, each half's text rebuilt with its styled runs), text edits re-timing unchanged words (LCS),
 // the highlight drawn with Source Text keys, template keys re-anchored to the In, and SRT / VTT cues of a group.
-import type { Cue } from '../formats/core.ts';
+
 import type { Keyframe } from '../../schema/common.ts';
 import type { Clip, Sequence, TextContent, TextStyle } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import type { Cue } from '../formats/core.ts';
 import { retimeText } from '../retime.ts';
 import { normalizeWord, tokenizeText } from '../words.ts';
 import {
@@ -63,7 +64,10 @@ export function wordsToContent(c: Timing, words: readonly CaptionWord[], rate: R
  * UTF-16 offsets of each word in `text` (matched in order, case and punctuation ignored); null when the words cannot
  * all be found in order (the text was rewritten).
  */
-export function locateWords(text: string, words: readonly { text: string }[]): Array<[number, number]> | null {
+export function locateWords(
+	text: string,
+	words: readonly { text: string }[],
+): Array<[number, number]> | null {
 	const toks: Array<[number, number, string]> = [];
 	const re = /\S+/g;
 	for (let m = re.exec(text); m; m = re.exec(text)) toks.push([m.index, m.index + m[0].length, m[0]]);
@@ -183,7 +187,9 @@ export function retimeCaptionWords(
 	const next = retimeText(
 		old.map((w) => ({ ...w, confidence: null, speaker: null, breakBefore: 'none' as const })),
 		toks,
-		old.length ? { start: Math.min(span.start, old[0]!.start), end: Math.max(span.end, old[old.length - 1]!.end) } : span,
+		old.length
+			? { start: Math.min(span.start, old[0]!.start), end: Math.max(span.end, old[old.length - 1]!.end) }
+			: span,
 	);
 	return next.map((w) => ({ text: w.text, start: Math.max(0, w.start), end: Math.max(0, w.end) }));
 }
@@ -215,7 +221,9 @@ function highlightRuns(
 ): TextContent['runs'] {
 	const base = (content.runs ?? []).filter((r) => !(r as { tag?: string }).tag);
 	const hl = pos
-		.map(([a, b], i) => (pick(i) ? { from: a, to: b, style: { fill: [...color] as TextStyle['fill'] }, tag: STYLE_KEY } : null))
+		.map(([a, b], i) =>
+			pick(i) ? { from: a, to: b, style: { fill: [...color] as TextStyle['fill'] }, tag: STYLE_KEY } : null,
+		)
 		.filter((r): r is NonNullable<typeof r> => !!r);
 	const all = [...base, ...hl];
 	return all.length ? (all as TextContent['runs']) : undefined;
@@ -265,12 +273,7 @@ export function applyHighlight(
 	const keys: Keyframe<TextContent>[] = [];
 	const base = JSON.parse(JSON.stringify(content)) as TextContent;
 	const at = (t: number, active: number) => {
-		const runs = highlightRuns(
-			base,
-			pos,
-			(i) => (hl.mode === 'word' ? i === active : i <= active),
-			hl.color,
-		);
+		const runs = highlightRuns(base, pos, (i) => (hl.mode === 'word' ? i === active : i <= active), hl.color);
 		const value: TextContent = { ...base, ...(runs ? { runs } : {}) };
 		if (!runs) delete value.runs;
 		keys.push({
@@ -300,7 +303,8 @@ export function applyHighlight(
 type Animish = { value: unknown; keyframes?: { time: number }[] };
 
 /** Whether an effect instance was added by a subtitle template. */
-export const isTemplateEffect = (fx: { subtitleTemplate?: unknown }) => typeof fx.subtitleTemplate === 'string';
+export const isTemplateEffect = (fx: { subtitleTemplate?: unknown }) =>
+	typeof fx.subtitleTemplate === 'string';
 
 /** Shifts the keys of the template's effect instances by the In's move since they were laid out (mutates). */
 export function reanchorTemplateKeys(clip: TextClip): boolean {

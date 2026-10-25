@@ -37,7 +37,14 @@ export function captionBurnMode(
 function groupTrack(seq: Sequence, groupId: string): Track | null {
 	const g = captionGroupsOf(seq)[groupId];
 	if (!g) return null;
-	return { id: g.id, kind: 'caption', name: g.name, language: g.language, locked: false, syncLock: false } as Track;
+	return {
+		id: g.id,
+		kind: 'caption',
+		name: g.name,
+		language: g.language,
+		locked: false,
+		syncLock: false,
+	} as Track;
 }
 
 const isGroup = (seq: Sequence, t: Track) => !seq.captionTracks.includes(t) && !!captionGroupsOf(seq)[t.id];
@@ -75,9 +82,7 @@ function ordered(seq: Sequence, tracks: Track[]): Track[] {
 		const i = seq.captionTracks.indexOf(t);
 		return i >= 0 ? i : seq.captionTracks.length + groups.indexOf(t.id);
 	};
-	return [...tracks].sort((a, b) =>
-		a.id === active?.id ? -1 : b.id === active?.id ? 1 : rank(a) - rank(b),
-	);
+	return [...tracks].sort((a, b) => (a.id === active?.id ? -1 : b.id === active?.id ? 1 : rank(a) - rank(b)));
 }
 
 export type CaptionTrackOutput = {

@@ -445,7 +445,11 @@ export function estimateTextBox(content: TextContent, frameW: number): { width: 
 }
 
 /** Applies measurement (browser) or marks layout pending (headless) (S01:KND-006). */
-export function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerContext, frameW: number): void {
+export function layoutText(
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	h: HandlerContext,
+	frameW: number,
+): void {
 	const content = clip.content as TextContent;
 	const box = clip.box as TextBox;
 	if (box.autoSize === 'none') {

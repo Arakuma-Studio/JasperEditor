@@ -9,7 +9,13 @@ import {
 	readCaptionFile,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { captionPlanWarnings, embeddedTracks, sidecarBytes, sidecarName, sidecarTracks } from '../src/export/captions.ts';
+import {
+	captionPlanWarnings,
+	embeddedTracks,
+	sidecarBytes,
+	sidecarName,
+	sidecarTracks,
+} from '../src/export/captions.ts';
 
 function project(): { doc: ProjectDocument; groupId: string } {
 	const ids = createCounterIdSource(3);
@@ -34,7 +40,16 @@ function project(): { doc: ProjectDocument; groupId: string } {
 				probe: {
 					durationFlicks: 10 * FLICKS_PER_SECOND,
 					startTimecode: null,
-					streams: [{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48000, channels: 2, channelLayout: 'stereo' }],
+					streams: [
+						{
+							index: 0,
+							type: 'audio',
+							codec: 'pcm_s16le',
+							sampleRate: 48000,
+							channels: 2,
+							channelLayout: 'stereo',
+						},
+					],
 					rotationDegrees: 0,
 					hasAlpha: false,
 					variableFrameRate: false,
@@ -60,7 +75,9 @@ function project(): { doc: ProjectDocument; groupId: string } {
 			],
 		},
 	]);
-	const g = run([{ type: 'captions.generate', template: 'builtin:bold-pop' }]).results[0] as { groupId: string };
+	const g = run([{ type: 'captions.generate', template: 'builtin:bold-pop' }]).results[0] as {
+		groupId: string;
+	};
 	return { doc, groupId: g.groupId };
 }
 
@@ -78,6 +95,8 @@ describe('subtitle groups as caption outputs', () => {
 		expect(sidecarName('output', side[0]!, 'srt', true)).toBe('output.srt');
 		expect(embeddedTracks(doc, seq, { embed: true }, range)).toHaveLength(1);
 		expect(captionPlanWarnings(doc, seq, { captions: { sidecar: ['srt'] } }, range)).toEqual([]);
-		expect(() => sidecarTracks(doc, seq, { sidecar: ['srt'], sidecarTracks: ['cgp_NOPE000000000000'] }, range)).toThrow();
+		expect(() =>
+			sidecarTracks(doc, seq, { sidecar: ['srt'], sidecarTracks: ['cgp_NOPE000000000000'] }, range),
+		).toThrow();
 	});
 });

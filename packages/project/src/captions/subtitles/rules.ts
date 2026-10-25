@@ -22,7 +22,13 @@ export type PunctuationBreak = (typeof PUNCTUATION_BREAKS)[number];
 
 /** Layout and timing rules (AS-002). Ranges are the dialog's. */
 export const SubtitleRulesSchema = z.strictObject({
-	maxChars: z.number().int().min(7).max(72).optional().describe('Maximum characters per line (7–72, default 42)'),
+	maxChars: z
+		.number()
+		.int()
+		.min(7)
+		.max(72)
+		.optional()
+		.describe('Maximum characters per line (7–72, default 42)'),
 	lines: z.number().int().min(1).max(3).optional().describe('Lines per subtitle (1–3, default 2)'),
 	maxWords: z
 		.number()
@@ -32,9 +38,25 @@ export const SubtitleRulesSchema = z.strictObject({
 		.nullable()
 		.optional()
 		.describe('Maximum words per subtitle (1–20; null = off, the default)'),
-	minSeconds: z.number().min(0.1).max(10).optional().describe('Minimum duration in seconds (0.1–10, default 1)'),
-	maxSeconds: z.number().min(0.5).max(60).optional().describe('Maximum duration in seconds (0.5–60, default 7)'),
-	gapFrames: z.number().int().min(0).max(30).optional().describe('Frames between subtitles (0–30, default 0)'),
+	minSeconds: z
+		.number()
+		.min(0.1)
+		.max(10)
+		.optional()
+		.describe('Minimum duration in seconds (0.1–10, default 1)'),
+	maxSeconds: z
+		.number()
+		.min(0.5)
+		.max(60)
+		.optional()
+		.describe('Maximum duration in seconds (0.5–60, default 7)'),
+	gapFrames: z
+		.number()
+		.int()
+		.min(0)
+		.max(30)
+		.optional()
+		.describe('Frames between subtitles (0–30, default 0)'),
 	breakPauseSeconds: z
 		.number()
 		.min(0.05)
@@ -47,7 +69,9 @@ export const SubtitleRulesSchema = z.strictObject({
 		.max(10)
 		.nullable()
 		.optional()
-		.describe('Hold a subtitle on screen until the next one, up to this many seconds (null = off, the default)'),
+		.describe(
+			'Hold a subtitle on screen until the next one, up to this many seconds (null = off, the default)',
+		),
 	punctuation: z
 		.enum(PUNCTUATION_BREAKS)
 		.optional()
@@ -146,7 +170,9 @@ export const CutAwareSchema = z.strictObject({
 	transitions: z
 		.enum(TRANSITION_BEHAVIOURS)
 		.optional()
-		.describe('At two-sided transitions: snap boundaries to the edit point (default) or avoid the transition'),
+		.describe(
+			'At two-sided transitions: snap boundaries to the edit point (default) or avoid the transition',
+		),
 });
 export type CutAwareInput = z.infer<typeof CutAwareSchema>;
 export type CutAwareOptions = {
