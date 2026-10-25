@@ -214,7 +214,9 @@ describe('the real social-comment@1 template', () => {
 		expect(real.ui?.addAnother?.reroll).toEqual(SOCIAL_REROLL_PARAMS);
 		expect(real.ui?.import?.trimPrefix).toEqual({ handle: '@' });
 		const t = parseTable('User,Comment,Verified\n@luna,Hi,yes');
-		const p = t.ok ? planMgImport(t.table, mgImportTemplateOf(real)!, { rate, preset: 'tiktok-comment' }) : null;
+		const p = t.ok
+			? planMgImport(t.table, mgImportTemplateOf(real)!, { rate, preset: 'tiktok-comment' })
+			: null;
 		expect(p?.ok && p.plan.rows[0]!.params).toEqual({ displayName: '@luna', text: 'Hi', verified: true });
 	});
 });
