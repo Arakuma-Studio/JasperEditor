@@ -1395,7 +1395,7 @@ function endsWithFadeOut(tap: {
 
 /** ENDING and HEAD (P6-E3) from the delivered mix's first 5 ms and last 50 ms. */
 export function endingFindings(
-	ctx: FindCtx,
+	ctx: Pick<FindCtx, 'seq' | 'F' | 'range' | 'duration' | 'tc' | 'add' | 'dryRun' | 'commandFix'>,
 	tap: { headPeakDb: number; tailRmsDb: number; tailPeakDb: number; fadeFromDb?: number | null } | null,
 ): void {
 	if (!tap) return;

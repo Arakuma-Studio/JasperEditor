@@ -4,12 +4,7 @@
 // fades out over its last half second ends; a mix cut at a loud frame, or one that only dips, still does not.
 import { createEmptyProject, createSeededIdSource } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import {
-	EdgeTap,
-	endingFindings,
-	type FindCtx,
-	type FindingIssue,
-} from '../src/sound-design/check-findings.ts';
+import { EdgeTap, endingFindings, type FindingIssue } from '../src/sound-design/check-findings.ts';
 
 const SR = 48_000;
 
@@ -51,8 +46,11 @@ function hasEnding(tap: ReturnType<EdgeTap['result']>): boolean {
 			F: 23_520_000,
 			tc: String,
 			dryRun: () => ({ ok: false, message: 'No fix requested' }),
+			commandFix: () => {
+				throw new Error('No fix requested');
+			},
 			add: (issue: FindingIssue) => issues.push(issue),
-		} as FindCtx,
+		},
 		tap,
 	);
 	return issues.some((issue) => issue.code === 'ENDING');
