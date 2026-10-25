@@ -528,6 +528,43 @@ VARIANTS.push(
 	},
 );
 
+// YouTube: the comment draws likes (the thumb ticks) — every entrance with both extras, and the like tick alone at
+// another rate; the Shorts card has no likes (its tick is off) — word reveal growing from its avatar corner, and a
+// like tick that must be ignored.
+for (const entrance of ['classic-pop', 'soft-spring', 'grow-from-tail', 'drop-bounce'])
+	VARIANTS.push({
+		template: 'social-comment',
+		rate: '30',
+		seconds: 5,
+		params: { variant: 'youtube-comment', entrance, wordReveal: true, likeTick: true },
+	});
+VARIANTS.push(
+	{
+		template: 'social-comment',
+		rate: '25',
+		seconds: 3,
+		params: {
+			variant: 'youtube-comment',
+			theme: 'dark',
+			entrance: 'soft-spring',
+			likeTick: true,
+			likes: 1_234_567,
+		},
+	},
+	{
+		template: 'social-comment',
+		rate: '30',
+		seconds: 5,
+		params: { variant: 'youtube-shorts-reply', entrance: 'grow-from-tail', wordReveal: true },
+	},
+	{
+		template: 'social-comment',
+		rate: '59.94',
+		seconds: 2,
+		params: { variant: 'youtube-shorts-reply', entrance: 'drop-bounce', likeTick: true, wordReveal: true },
+	},
+);
+
 const report: string[] = [];
 const before: number[] = [];
 const after: number[] = [];

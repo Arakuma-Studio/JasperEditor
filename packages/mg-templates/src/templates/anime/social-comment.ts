@@ -357,9 +357,10 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	// card (Instagram's weights, WP5 measurements)
 	'instagram-post': { family: 'SF Pro Text', weights: [400, 600] },
 	'instagram-reel-reply': { family: 'SF Pro Text', weights: [400] },
-	// built by the follow-up variant package (WP6c)
-	'youtube-comment': null,
-	'youtube-shorts-reply': null,
+	// Roboto (Apache-2.0, bundled; YouTube's comment font): handle, "N replies" 500, time, comment and counts 400 on the
+	// comment; header 400 and comment 500 on the Shorts card
+	'youtube-comment': { family: 'Roboto', weights: [400, 500] },
+	'youtube-shorts-reply': { family: 'Roboto', weights: [400, 500] },
 	// Chirp (X's UI font, remote manifest `chirp-*`): name 700; handle, time, post text and counts 400 (x.com 2026)
 	'x-post': { family: 'Chirp', weights: [400, 700] },
 };
@@ -429,6 +430,8 @@ export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
 	'tiktok-comment',
 	'instagram-post',
 	'instagram-reel-reply',
+	'youtube-comment',
+	'youtube-shorts-reply',
 	'x-post',
 ];
 
@@ -457,8 +460,14 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 		name: 'Instagram · Reel reply',
 		description: 'The "Replying to username" card Instagram shows on a Reel made in reply to a comment.',
 	},
-	'youtube-comment': { name: 'YouTube · Comment', description: 'A YouTube video comment.' },
-	'youtube-shorts-reply': { name: 'YouTube · Shorts reply', description: 'The YouTube Shorts comment card.' },
+	'youtube-comment': {
+		name: 'YouTube · Comment',
+		description: 'A YouTube video comment with likes, the reply button and "N replies".',
+	},
+	'youtube-shorts-reply': {
+		name: 'YouTube · Shorts reply',
+		description: 'The "Comment from @handle" card YouTube shows on a Shorts reply.',
+	},
 	'x-post': {
 		name: 'X · Post',
 		description: 'An X post with replies, reposts, likes and views.',

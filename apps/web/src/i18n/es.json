@@ -11177,5 +11177,9 @@
   "There are no rows under the column names": "No hay filas bajo los nombres de columna",
   "Too many rows: at most {0} rows (plus the header row) can be imported at once": "Demasiadas filas: se pueden importar como máximo {0} filas (más la fila de encabezado) a la vez",
   "An X post with replies, reposts, likes and views.": "Una publicación de X con respuestas, reposts, «me gusta» y visualizaciones.",
-  "X · Post": "X · Publicación"
+  "X · Post": "X · Publicación",
+  "A YouTube video comment with likes, the reply button and \"N replies\".": "Un comentario de vídeo de YouTube con «me gusta», el botón de responder y \"N replies\".",
+  "The \"Comment from @handle\" card YouTube shows on a Shorts reply.": "La tarjeta \"Comment from @handle\" que YouTube muestra en una respuesta con un Short.",
+  "YouTube · Comment": "YouTube · Comentario",
+  "YouTube · Shorts reply": "YouTube · Respuesta en Shorts"
 }
