@@ -366,8 +366,11 @@ describe('properties', () => {
 						expect(w.end).toBeLessThanOrEqual(c.end * F + 1);
 						expect(w.end).toBeGreaterThanOrEqual(w.start);
 					}
-					// no subtitle runs across a hard cut
-					for (const cut of cuts) if (!cut.zone) expect(cut.frame <= c.start || cut.frame >= c.end).toBe(true);
+					// no subtitle runs across a hard cut (cuts closer than the minimum duration are merged into zones)
+					for (const cut of r.events)
+						if (!cut.zone) expect(cut.frame <= c.start || cut.frame >= c.end).toBe(true);
+						// a zone's edit point is crossed only by a subtitle that started before the zone
+						else if (cut.frame > c.start && cut.frame < c.end) expect(c.start).toBeLessThan(cut.zone.start);
 				}
 				expect(r.stats.crossing).toBe(0);
 				// every word is shown exactly once
