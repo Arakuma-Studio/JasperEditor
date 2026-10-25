@@ -82,7 +82,11 @@ leaving a Linear key was linear whatever the next key stored, so an Ease In afte
 
 - `Keyframe.inInterpolation?: 'linear' | 'bezier' | 'auto-bezier' | 'continuous-bezier'` (`IN_INTERPOLATIONS`).
   - `interpolation` stays the outgoing side, and also the incoming side when `inInterpolation` is absent.
-  - Read leniently: `z.custom`, so any value loads.
+  - The schema is a strict optional enum, because command and MCP tool input schemas reuse `keyframeSchema` and must
+    be JSON-Schema-representable (a `z.custom` broke MCP `tools/list`).
+  - Documents still load leniently: `loadProject` drops an unknown value before validation
+    (`dropUnreadableKeySides`, reported as `repair-key-sides`). Command inputs and clipboard payloads refuse it
+    (`E_SCHEMA`).
 - **Absent = exactly the old behaviour.** A segment whose right key has no `inInterpolation` is read the legacy way:
   - linear when the left key is Linear;
   - otherwise a Linear right key contributes ⅓·1, as before.

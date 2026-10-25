@@ -283,6 +283,38 @@ export function keySidesIssue(k: { interpolation?: unknown; inInterpolation?: un
 }
 
 /**
+ * keyframe-sides, lenient document reading: walks a raw (migrated, not yet validated) document and deletes every
+ * `inInterpolation` that is not one of `IN_INTERPOLATIONS` from objects inside a `keyframes` list (or a motion-graphic
+ * `paramKeyframes` list), so a damaged value never fails a load; the key is then read the legacy way. Returns the ids
+ * of the keys changed (for the repair report). Iterative with a depth bound (hostile nesting cannot overflow).
+ */
+export function dropUnreadableKeySides(raw: unknown): string[] {
+	const changed: string[] = [];
+	const stack: [unknown, number][] = [[raw, 0]];
+	const MAX_DEPTH = 64;
+	while (stack.length) {
+		const [v, depth] = stack.pop()!;
+		if (!v || typeof v !== 'object' || depth > MAX_DEPTH) continue;
+		if (Array.isArray(v)) {
+			for (const x of v) stack.push([x, depth + 1]);
+			continue;
+		}
+		const o = v as Record<string, unknown>;
+		if (
+			'inInterpolation' in o &&
+			'interpolation' in o &&
+			'time' in o &&
+			!(IN_INTERPOLATIONS as readonly unknown[]).includes(o.inInterpolation)
+		) {
+			if (o.inInterpolation !== undefined) changed.push(typeof o.id === 'string' ? o.id : '?');
+			delete o.inInterpolation;
+		}
+		for (const x of Object.values(o)) if (x && typeof x === 'object') stack.push([x, depth + 1]);
+	}
+	return changed;
+}
+
+/**
  * Makes key `k`'s sides readable in place (repairDocument, pastes, presets): an unknown incoming type is dropped (the
  * key is read the legacy way), and Auto / Continuous Bezier on a key whose sides differ becomes Bezier with the
  * stored ease of that side. Returns true when something changed.

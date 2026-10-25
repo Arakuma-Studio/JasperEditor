@@ -3,6 +3,7 @@
 
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
+import { dropUnreadableKeySides } from './keyframes.ts';
 import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
@@ -215,6 +216,12 @@ export function loadProject(
 			issues: [],
 		};
 	}
+	// keyframe-sides: an unreadable incoming interpolation is dropped before validation (lenient reading, reported).
+	const sideRepairs: RepairEntry[] = dropUnreadableKeySides(m.document).map((id) => ({
+		action: 'repair-key-sides',
+		entity: id,
+		detail: 'unreadable incoming interpolation removed (the key is read with its interpolation on both sides)',
+	}));
 	const parsed = ProjectDocumentSchema.safeParse(m.document);
 	if (!parsed.success) {
 		const msg = parsed.error.issues
@@ -234,5 +241,5 @@ export function loadProject(
 		repairs = r.report;
 		issues = checkInvariants(document, invOpts);
 	}
-	return { document, readOnly: false, migration: m.report, repairs, issues };
+	return { document, readOnly: false, migration: m.report, repairs: [...sideRepairs, ...repairs], issues };
 }
