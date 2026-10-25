@@ -187,10 +187,11 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 				feature: 'transcript-cleanup',
 				title: 'Clean up',
 				sequenceId: seqId,
-				items: [{ id: 'rm', label: 'Remove V1', commands: [{ type: 'track.remove', trackIds: ['V1'] }] }],
+				items: [{ id: 'rm', label: 'Remove A3', commands: [{ type: 'track.remove', trackIds: ['A3'] }] }],
 			},
 			AGENT_H,
 		);
+		expect(p.items[0]!.state).toBe('pending');
 		const r = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
 		expect(r.statusCode).toBe(403);
 		expect(r.json().code).toBe('APPROVAL_DENIED');
