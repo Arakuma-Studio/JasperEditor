@@ -16,7 +16,7 @@ const enabled = !!PKG && process.platform === 'linux' && process.arch === 'x64';
 
 let srv: Server;
 let url = '';
-let requests: Array<string | null> = [];
+const requests: Array<string | null> = [];
 
 describe.skipIf(!enabled)('NVIDIA CUDA provider install (SG-006, real package)', () => {
 	beforeAll(async () => {
