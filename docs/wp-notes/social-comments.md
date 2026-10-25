@@ -993,6 +993,88 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
   Reel card (9:16, word reveal); the fit loop keeps both cards inside every canvas with a 1,400-character marked
   comment, 1e12 counts and 64-character handles.
 
+### YouTube cards
+
+WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
+`packages/motion/src/templates/social-comment/youtube.tsx` (`YOUTUBE_COMMENT`, `YOUTUBE_SHORTS_REPLY`). Font: Roboto
+400/500 (bundled, `SOCIAL_VARIANT_FONTS`). Glyphs: `YOUTUBE_GLYPHS`. Emoji: Noto (`emojiStyle: auto`).
+
+- **Blueprint [tok]:** `ref/youtube-video` and `ref/youtube-shorts`, copied in CSS px.
+  - Comment: 420 wide, padding 12/12/5, radius 6, 1 px border black/white 5 %, bg #FFF / #0F0F0F. Header: `@handle`
+    13/500, badge, a 3 px dot, time 12 px #606060 / #AAA, kebab on the right. Comment 15/21 with 19 px right padding.
+    Actions 9 px below: thumb up + count (12 px), thumb down, reply bubble in a 37 px button. "N replies" + chevron
+    22 px lower, in a 14/500 button pulled 12 px left. Thread line from 8 px under the avatar to just above the replies
+    text, with a quarter-circle corner.
+  - Shorts card: `fit-content`, at most 305 wide, padding 8/20/12, radius 16, avatar 34 at +8, gap 12. Header
+    "Comment from @handle" (one line, ellipsis); comment 17/500, line height 1.3, −0.025 em.
+- **youtube.com 2026 over tokcomment [M]** (`research/platform-measurements`, YouTube):
+  - avatar 36 instead of 34 (gap 12, so the text column stays at tokcomment's x = 61);
+  - "N replies" #0F0F0F / #F1F1F1 (tokcomment #606060 / #FFF); dark handle #F1F1F1 (tokcomment #AAA); dark count
+    #AAAAAA (tokcomment #FFF); icons #0F0F0F / #F1F1F1;
+  - thread line 1 px #E5E5E5 / #3F3F3F (tokcomment 2 px #0000001A / #363636); chevron pointing down.
+  - The mobile-app layout of tokcomment (the dot, the reply bubble instead of desktop's "Reply" text) is kept.
+- **Shorts header:** the captures' header is 155.5 px wide with an 8.5 px cap height whose top sits 17 px into the
+  card. That is 12 px tracked 0.025 em, on the baseline of tokcomment's 16 px / 24 px line; the card draws it at 12 px
+  and moves it down 1.4 px (Roboto's ascent/descent) so it can end in an ellipsis.
+- **Thumbs:** YouTube's 18-unit thumbs at 17 px match the ink of tokcomment's 16 px lucide thumbs (14 px wide); −0.5 px
+  margins keep tokcomment's 16 px slots. Kebab 15 px (dots 2.5 px, as tokcomment's), badge 13 px (a 12 px disc),
+  reply bubble 16 px, chevron 20 px.
+- **Like tick:** the outline thumb cross-fades to YouTube's filled thumb (same colour) and thumps. While the count
+  ticks, the widest count it passes through (the final one and the all-nines value of each smaller order of magnitude)
+  reserves its width, so the dislike and reply buttons never move. Without it the moving glyphs were anti-aliased
+  differently depending on the frames painted before (`renderStill` ≠ `renderFrames` on ≈ 50 px, 1 run in 3; 0 in 4
+  after).
+- **Mentions and hashtags:** YouTube's link blue #065FD4 / #3EA6FF [E]: the value of YouTube's
+  `--yt-spec-call-to-action`; no comment with a mention was captured.
+- **Emoji:** Noto images at 1.2 em, shifted −0.29 em (comment) and −0.25 em (Shorts). Measured on the 2× captures:
+  31–32 px boxes as tokcomment's Noto glyphs, tops within 1 px (comment) and 2 px (Shorts).
+- **Avatars (`SocialAvatar`):** the generated avatar takes its initials from `avatarNameFor(variant, params)`: the
+  handle on YouTube (it does not show the display name), as the Properties preview. The default avatar is YouTube's `default-user` picture, the manifest image
+  `SOCIAL_DEFAULT_AVATAR_IMAGES.youtube` (`youtube-default-avatar`), declared by the template's `requiredAssets` and
+  read from `assets.imageUrls`; until it is delivered the card shows the neutral silhouette, the layer reports it and
+  the planner blocks exports.
+- **Paint rules:** the thumping like thumb carries `INK_RING`; no rounded `overflow: hidden` clip (the Shorts card's
+  16 px corners are its background's own radius); the blur mark is `CommentText`'s text shadow.
+- **Grow from tail:** neither card has a tail; both grow from the avatar corner (`0% 0%`).
+- **Fit:** the handle truncates (comment) or ends in an ellipsis (Shorts); counts stay short (`formatCount`: "987B",
+  "4.8M replies"), the actions and the time never shrink.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/youtube/index.html` (outside the
+  repo): every tokcomment capture side by side with our `renderStill` at 2× and a difference overlay, plus long
+  names, huge counts, no replies, one reply, liked, no profile, mentions, generated avatar and entrance filmstrips. To
+  rerun: Noto PNGs (`<cp>.png`) under `<dir>/noto/` (the render e2e reads `apple/`, `twemoji/` and `noto/`
+  subdirectories), then `REMOTION_E2E=1 SOCIAL_EMOJI_DIR=<dir>
+  SOCIAL_IMAGE_DIR=<dir with youtube-default-avatar.jpg> SOCIAL_CALIBRATION_DIR=<out>
+  SOCIAL_CALIBRATION_FILTER='^(youtube-|anim_youtube)' pnpm exec vitest run
+  packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools in that directory's `tools/`
+  (`filmstrips.sh` added).
+- **Measured matches (2×):** comment card 297 × 840 px (tokcomment 299; the 0.5 px edge rows of a 149.5 px card fall
+  outside the opaque crop), header, comment and action rows within 1 px, thread end within 2 px; Shorts card 609 × 175
+  (610 × 176), header cap within 0 px, comment lines within 1 px.
+
+- **Tests:** `packages/motion/test/social-comment.test.tsx` "YouTube cards" (header, badge, time, counts, replies and
+  thread line rules, months stay months, 0 replies, huge counts, showProfile, default / raster / picture / generated
+  avatars, link colours, Noto emoji, like tick, Shorts card); `mg-cue-timing.test.ts` VARIANTS rows (each entrance
+  with both extras, the tick alone at 25 fps, the Shorts card with reveal and an ignored tick);
+  `social-comment-template.test.ts` (presets, fonts, required images); `social-comment-layer.test.tsx` (layer path:
+  Roboto faces, Noto emoji image, the default avatar image resolved or missing); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
+  `e2e/social-youtube.spec.ts` (`pnpm e2e`: gallery insert of both presets, the card in the Program in Roboto with the
+  downloaded default avatar, in-place edit of the handle and a highlight, variant switch).
+- **Render e2e results (`REMOTION_E2E=1`, Chrome 156, this host):** the YouTube parity cases (1:1 dark comment with
+  grow-from-tail, word reveal, like tick and badge; 9:16 Shorts card with classic pop and word reveal) passed 4 of 4
+  single runs and three full runs; the fit loop keeps both cards inside every canvas (1,400-character marked comment,
+  1e12 counts, 64-character handles, 10,000 months). One framework case, the TikTok comment `comment-light-spring`,
+  exceeded its 1/255 entrance tolerance (max 2/255, frame 12) in 2 of 9 runs on this branch and 0 of 4 at the
+  integration base; it is independent of the render harness change (also seen with the base `entry.tsx`).
+**Deliberate differences from tokcomment:**
+- **Font:** Roboto, as tokcomment specifies but its capture host never loaded (Liberation Sans in the captures).
+  Widths are within 1 % at the same sizes, so no size was scaled. The Shorts comment is 500 as specified; the capture
+  fell back to a 400 face.
+- **Glyphs:** YouTube's own instead of lucide / react-icons; the chevron points down.
+- **The [M] values above,** and `@handle` instead of the bare "Username".
+- **Default avatar:** YouTube's own instead of the hot-linked Twitter default. **Emoji:** Noto images.
+- **tokcomment bugs fixed:** months printed as hours; raw counts ("1234567"); "View 0 replies" (0 hides the row and the
+  thread line); huge counts overflowing.
+
 ### X card
 
 WP6d (`sc/v-x`): `x-post` in `packages/motion/src/templates/social-comment/x.tsx` (`X_POST`). Font: Chirp 400/700
@@ -1100,8 +1182,8 @@ Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
 
 ### Limits
 
-- **Variants:** the YouTube cards are not built (WP6c); the Instagram and X cards are ("Instagram cards: calibration",
-  "X card" above). See `docs/gaps.md` "social-comment".
+- **Variants:** every variant has its card ("Instagram cards: calibration", "YouTube cards", "X card" above). See
+  `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
@@ -1986,6 +2068,7 @@ Measurements, scripts and screenshots: `/var/lib/orquester/workspaces/jaspersito
   | `rating` | integer 1–5 | 4 | all three |
   | `date` | `z.iso.date()` + year 1970–2099 (a real calendar date; JSON Schema `format: "date"`) | `2025-09-24` | Play, App Store web |
   | `edited` | boolean | false | iPhone |
+  | `iosAgeStyle` | `'weekday'` \| `'relative'` | `'weekday'` | iPhone |
   | `title` | single line, ≤ 120 characters, `''` hides it | `Review title` | App Store web, iPhone |
   | `truncate` | boolean | true (iPhone: false) | all three |
 
@@ -2004,7 +2087,15 @@ Measurements, scripts and screenshots: `/var/lib/orquester/workspaces/jaspersito
   iPhone age from the App Store frameworks' strings of iOS 15–26 [S: applelocalization.com `TIME_AGO_*` keys, raw
   responses saved with the measurements]: "Just now" (value 0, or minutes: there is no minutes string), "5h ago",
   "2d ago", "3w ago", "4mo ago", "1y ago"; edited: "edited 1y ago", "edited just now" (`TIME_AGO_EDITED_TIME`,
-  `TIME_AGO_EDITED_JUST_NOW`). Values are printed in the unit given (no rollover) [E]. Day arithmetic uses `Date.UTC`
+  `TIME_AGO_EDITED_JUST_NOW`). Values are printed in the unit given (no rollover) [E].
+  **Weekday ages (default):** the requester's screenshot (iOS 14-era App Store) prints recent reviews as a weekday
+  ("Sun") and old ones relatively ("edited 1y ago"); the iPhone card follows it: an age under 7 days
+  (`reviewAgeDays`: minutes and hours 0, days, weeks × 7, months × 30, years × 365) prints the weekday of
+  `SOCIAL_REVIEW_DATE_ANCHOR` (2026-10-25, a Sunday) minus the age (`weekdayBeforeAnchor`, `IOS_WEEKDAYS`: "Sun"…
+  "Sat"), older ages the relative form. The exact iOS 14 thresholds are not documented [E: under a week, as the
+  screenshot's "Sun" beside "1y ago"]. Because iOS 15–26 ship the relative strings above, the iPhone card has a
+  setting, `iosAgeStyle: 'weekday' | 'relative'` ("Recent Dates" in Properties; default `weekday`), and
+  `formatReviewAge(value, unit, edited, style)` implements both. Day arithmetic uses `Date.UTC`
   (`dayNumber`, `dateOfDayNumber`, `weekday`).
 - **Plain text:** the stores do not link `@mentions` or `#hashtags`; `tokenizeComment` leaves them plain on store
   platforms. `formatRepliesLabel` is empty, `formatCount` comma-groups (no store card draws counts).
@@ -2100,8 +2191,7 @@ fade; App Store web rows within 1 CSS px, same wrapping, mask and "more"; iPhone
 within 1 pt, same line breaks.
 
 **Deliberate differences:**
-- iPhone ages follow iOS 15–26 ("2d ago"); the screenshot (iOS ≤ 14) shows a weekday ("Sun") for recent reviews. No
-  source gives the old rules, and the params store an age, not a date.
+- iPhone ages: the screenshot's weekday rule by default; `iosAgeStyle: 'relative'` gives today's iOS ("2d ago").
 - Play: the helpful footer is left out (requested); the avatar default is the neutral silhouette; dark theme from
   today's Play web tokens (the 2018 app had none). Live Play web differs from the screenshot (no card chrome, 12 px
   stars, long dates, no clamp) — the screenshot is the blueprint.
@@ -2127,8 +2217,8 @@ presets, Roboto / SF Pro cards, stars and date edited in Properties with undo, A
 
 ### Limits
 
-- iPhone weekday ages of iOS ≤ 14 are not modelled (see above); the iOS card's thresholds between units are not
-  documented by Apple [E], and ages print in the unit given.
+- The iPhone card's thresholds between units (weekday under a week, then weeks, months, years) are not documented
+  by Apple [E]; ages print in the unit given, and weekdays count back from the fixed anchor date.
 - The iPhone card geometry comes from a low-resolution marketing screenshot (0.77 px/pt): ±1 pt.
 - App Store web and Play dark themes are derived, not captured (neither screenshot nor the legacy site has one).
 - Bulk-import dates must be year first.

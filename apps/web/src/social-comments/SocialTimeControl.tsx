@@ -2,6 +2,7 @@
 // `timeValue` and editing `timeUnit` too (its own row is hidden, `alsoEdits`), with the platform's wording as a preview
 // ("3h", "3 months ago"). Months stay months on every platform (tokcomment printed YouTube months as hours).
 import {
+	formatReviewAge,
 	formatTime,
 	SOCIAL_TIME_UNITS,
 	SOCIAL_TIME_VALUE_MAX,
@@ -17,6 +18,26 @@ import { shared, useClipsParams } from './hooks.ts';
 import { TIME_UNIT_LABELS, TIME_UNIT_SINGULAR_LABELS } from './labels.ts';
 import { randomSeed, timePatch, timeUnitOf, timeValueOf, variantOf } from './params.ts';
 import { countErrorText } from './SocialCountControl.tsx';
+
+/**
+ * The age as the clip's card prints it: the platform's form, or on the iPhone App Store card its weekday / relative
+ * age with the "edited" prefix (`formatReviewAge`, the clip's `edited` and `iosAgeStyle`).
+ */
+export function timePreview(
+	variant: string,
+	value: number,
+	unit: SocialTimeUnit,
+	params: Readonly<Record<string, unknown>>,
+): string {
+	if (variant === 'app-store-review-ios')
+		return formatReviewAge(
+			value,
+			unit,
+			params.edited === true,
+			params.iosAgeStyle === 'relative' ? 'relative' : 'weekday',
+		);
+	return formatTime(variant as Parameters<typeof formatTime>[0], value, unit);
+}
 
 export function SocialTimeControl(p: TemplateParamControlProps) {
 	const all = useClipsParams(p.clipIds, p.params);
@@ -139,7 +160,7 @@ export function SocialTimeControl(p: TemplateParamControlProps) {
 				title={t('Shown on the card as')}
 				data-testid="social-time-preview"
 			>
-				{previewValue === null || unit === null ? '–' : formatTime(variant, previewValue, unit)}
+				{previewValue === null || unit === null ? '–' : timePreview(variant, previewValue, unit, p.params)}
 			</output>
 			<span className="ml-auto">
 				<MiniButton

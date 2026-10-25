@@ -1,6 +1,7 @@
 // Per-platform number, time and replies formatting for social-comment cards (design 2026-10-25 §7.4). Pure,
 // deterministic and locale-independent: no `Intl` (its output differs between the preview browser and the render
 // Chrome). Rules and their sources: docs/wp-notes/social-comments.md "Social comment core".
+import { reviewAgeDays, weekdayBeforeAnchor } from './review.ts';
 import {
 	SOCIAL_TIME_UNITS,
 	type SocialCountField,
@@ -139,13 +140,28 @@ export function formatRepliesLabel(variant: SocialVariant, n: number): string {
 	}
 }
 
+/** How the iPhone card prints recent ages (`iosAgeStyle`). */
+export type IosAgeStyle = 'weekday' | 'relative';
+
 /**
- * The age of an iPhone App Store review as its card prints it: `formatTime` ("2d ago", "1y ago", "Just now") with the
- * "edited " prefix of an edited review ("edited 1y ago"; under an hour "edited just now"). Strings of the App Store
- * frameworks of iOS 15–26 (TIME_AGO_*, TIME_AGO_EDITED_TIME, TIME_AGO_EDITED_JUST_NOW). Never throws.
+ * The age of an iPhone App Store review as its card prints it.
+ * - `weekday` (default; the requester's screenshot, the iOS 14-era App Store): an age under 7 days prints the weekday
+ *   of the review — `SOCIAL_REVIEW_DATE_ANCHOR` minus the age ("Sun", "Fri"); older ages the relative form.
+ * - `relative` (the App Store of iOS 15–26, TIME_AGO_* strings): "Just now" under an hour, "5h ago", "2d ago".
+ * Relative ages: "3w ago", "4mo ago", "1y ago" (`formatTime`). An edited review gets the "edited " prefix ("edited Sun",
+ * "edited 1y ago"; under an hour in the relative form "edited just now", TIME_AGO_EDITED_JUST_NOW). Never throws.
  */
-export function formatReviewAge(value: number, unit: SocialTimeUnit, edited: boolean): string {
-	const age = formatTime('app-store-review-ios', value, unit);
+export function formatReviewAge(
+	value: number,
+	unit: SocialTimeUnit,
+	edited: boolean,
+	style: IosAgeStyle = 'weekday',
+): string {
+	const days = reviewAgeDays(value, unit);
+	const age =
+		style !== 'relative' && days < 7
+			? weekdayBeforeAnchor(days)
+			: formatTime('app-store-review-ios', value, unit);
 	if (!edited) return age;
 	return age === NOW['app-store'] ? 'edited just now' : `edited ${age}`;
 }

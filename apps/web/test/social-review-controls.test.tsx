@@ -14,6 +14,7 @@ import { statsPatch } from '../src/social-comments/params.ts';
 import { registerSocialCommentControls } from '../src/social-comments/register.ts';
 import { datePreview, SocialDateControl } from '../src/social-comments/SocialDateControl.tsx';
 import { SocialRatingControl } from '../src/social-comments/SocialRatingControl.tsx';
+import { timePreview } from '../src/social-comments/SocialTimeControl.tsx';
 
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 
@@ -108,7 +109,14 @@ describe('rows per store variant', () => {
 		expect(rowOf(view, 'edited')).not.toBeNull();
 		expect(rowOf(view, 'date')).toBeNull();
 		expect(rowOf(view, 'rating')).not.toBeNull();
+		expect(rowOf(view, 'iosAgeStyle')).not.toBeNull();
+		// the age preview is the card's: "1y ago" by default (older than a week)
+		expect(screen.getByTestId('social-time-preview').textContent).toBe('1y ago');
 		await ios.session.close();
+		// under a week: the reference screenshot's weekday, or today's relative form, with "edited"
+		expect(timePreview('app-store-review-ios', 2, 'day', { edited: true })).toBe('edited Fri');
+		expect(timePreview('app-store-review-ios', 2, 'day', { iosAgeStyle: 'relative' })).toBe('2d ago');
+		expect(timePreview('tiktok-comment', 2, 'day', { edited: true })).toBe('2d');
 	});
 });
 

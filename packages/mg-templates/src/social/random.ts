@@ -11,6 +11,7 @@ import {
 	parseReviewDate,
 	SOCIAL_RATING_MAX,
 	SOCIAL_RATING_MIN,
+	SOCIAL_REVIEW_DATE_ANCHOR,
 } from './review.ts';
 import {
 	SOCIAL_COUNT_MAX,
@@ -582,11 +583,6 @@ export function randomStats(variant: SocialVariant, seed: number): SocialStats {
 // ---------------------------------------------------------------------------------------------------------------
 // Store reviews
 
-/**
- * The fixed "today" review dates are drawn back from (no wall clock: the same seed gives the same date on every
- * machine and day). The date this feature was built.
- */
-export const SOCIAL_REVIEW_DATE_ANCHOR = '2026-10-25';
 /** Reviews are drawn at most this many days before the anchor (about two years). */
 export const SOCIAL_REVIEW_MAX_AGE_DAYS = 730;
 

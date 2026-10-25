@@ -20,7 +20,9 @@ import {
 	fillSocialParams,
 	formatCount,
 	formatRepliesLabel,
+	formatReviewAge,
 	formatReviewDate,
+	IOS_WEEKDAYS,
 	isoDate,
 	mgRegistry,
 	parseReviewDate,
@@ -29,6 +31,7 @@ import {
 	randomReviewTitle,
 	randomStats,
 	reviewAge,
+	reviewAgeDays,
 	SOCIAL_RATING_WEIGHTS,
 	SOCIAL_REROLL_PARAMS,
 	SOCIAL_REVIEW_DATE_ANCHOR,
@@ -41,6 +44,7 @@ import {
 	socialTickText,
 	tokenizeComment,
 	weekday,
+	weekdayBeforeAnchor,
 } from '../src/index.ts';
 
 describe('calendar dates', () => {
@@ -95,6 +99,47 @@ describe('calendar dates', () => {
 					expect(app).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
 				} else expect([play, app]).toEqual(['', '']);
 			}),
+		);
+	});
+});
+
+describe('iPhone review ages', () => {
+	it('prints the weekday under a week (the reference screenshot, default) and the relative form otherwise', () => {
+		expect(weekdayBeforeAnchor(0)).toBe('Sun'); // 2026-10-25 is a Sunday
+		expect([1, 2, 3, 4, 5, 6, 7].map(weekdayBeforeAnchor)).toEqual([
+			'Sat',
+			'Fri',
+			'Thu',
+			'Wed',
+			'Tue',
+			'Mon',
+			'Sun',
+		]);
+		expect(formatReviewAge(2, 'day', false)).toBe('Fri');
+		expect(formatReviewAge(3, 'hour', true)).toBe('edited Sun');
+		expect(formatReviewAge(0, 'minute', false)).toBe('Sun');
+		expect(formatReviewAge(1, 'week', false)).toBe('1w ago');
+		expect(formatReviewAge(1, 'year', true)).toBe('edited 1y ago');
+		expect(formatReviewAge(2, 'day', false, 'relative')).toBe('2d ago');
+		expect(formatReviewAge(0, 'hour', true, 'relative')).toBe('edited just now');
+		expect(formatReviewAge(10, 'minute', false, 'relative')).toBe('Just now');
+		expect(reviewAgeDays(2, 'week')).toBe(14);
+		expect(reviewAgeDays(Number.NaN, 'day')).toBe(0);
+	});
+
+	it('never throws; a weekday exactly when the age is under 7 days (property)', () => {
+		fc.assert(
+			fc.property(
+				fc.double(),
+				fc.constantFrom('minute', 'hour', 'day', 'week', 'month', 'year', 'bogus'),
+				fc.boolean(),
+				(v, u, edited) => {
+					const s = formatReviewAge(v, u as never, edited);
+					const name = s.replace(/^edited /, '');
+					expect((IOS_WEEKDAYS as readonly string[]).includes(name)).toBe(reviewAgeDays(v, u) < 7);
+					expect(s.startsWith('edited ')).toBe(edited);
+				},
+			),
 		);
 	});
 });

@@ -160,6 +160,23 @@ test('iPhone preset: title, "1y ago" / "edited 1y ago", outline stars; the stars
 	await seek(61);
 	await seek(60);
 	await expect(cardEl(id, '[data-part="date"]')).toHaveText('edited 1y ago');
+	// under a week: the reference screenshot's weekday (counted back from Sunday 2026-10-25), or today's "2d ago"
+	expectTransaction(
+		await transact(page, [
+			{ type: 'clip.update', clipId: id, patch: { params: { timeValue: 2, timeUnit: 'day' } } } as never,
+		]),
+	);
+	await seek(61);
+	await seek(60);
+	await expect(cardEl(id, '[data-part="date"]')).toHaveText('edited Fri');
+	expectTransaction(
+		await transact(page, [
+			{ type: 'clip.update', clipId: id, patch: { params: { iosAgeStyle: 'relative' } } } as never,
+		]),
+	);
+	await seek(61);
+	await seek(60);
+	await expect(cardEl(id, '[data-part="date"]')).toHaveText('edited 2d ago');
 	await expect(filledStars(id)).toHaveCount(4);
 	writeFileSync(
 		join(OUT, 'app-store-review-ios-dark.png'),

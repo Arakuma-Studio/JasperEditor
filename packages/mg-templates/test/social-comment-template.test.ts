@@ -14,6 +14,7 @@ import {
 	animeTemplateTiming,
 	easeFunction,
 	mgRegistry,
+	REMOTE_IMAGE_IDS,
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
@@ -270,6 +271,8 @@ describe('social-comment@1 presets and fill hook', () => {
 			['tiktok-comment', 'TikTok · Comment'],
 			['instagram-post', 'Instagram · Post comment'],
 			['instagram-reel-reply', 'Instagram · Reel reply'],
+			['youtube-comment', 'YouTube · Comment'],
+			['youtube-shorts-reply', 'YouTube · Shorts reply'],
 			['x-post', 'X · Post'],
 			['play-store-review', 'Play Store · Review'],
 			['app-store-review', 'App Store · Review'],
@@ -287,6 +290,33 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialCommentUnavailableVariant({ variant: 'instagram-reel-reply' })).toBeNull();
 		expect(SOCIAL_VARIANT_FONTS['instagram-post']).toEqual({ family: 'SF Pro Text', weights: [400, 600] });
 		expect(SOCIAL_VARIANT_FONTS['instagram-reel-reply']).toEqual({ family: 'SF Pro Text', weights: [400] });
+		// the YouTube presets carry tokcomment's YouTube defaults ("Username", 10 months ago, 72 likes, 2 replies)
+		const yt = socialComment.presets!.find((p) => p.id === 'youtube-comment')!;
+		expect({ ...socialComment.defaults, ...yt.params }).toMatchObject({
+			variant: 'youtube-comment',
+			handle: 'Username',
+			timeValue: 10,
+			timeUnit: 'month',
+			likes: 72,
+			replies: 2,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'youtube-comment' })).toBeNull();
+		expect(socialCommentUnavailableVariant({ variant: 'youtube-shorts-reply' })).toBeNull();
+		// the YouTube default avatar is a remote image the clip declares (snapshot, planner) only while it is drawn
+		const req = (p: Record<string, unknown>) =>
+			socialComment.requiredAssets!(socialComment.paramsSchema.parse({ ...socialComment.defaults, ...p }));
+		expect(req({ variant: 'youtube-comment' }).images).toEqual([REMOTE_IMAGE_IDS.youtubeDefaultAvatar]);
+		expect(req({ variant: 'youtube-shorts-reply' }).images).toEqual([REMOTE_IMAGE_IDS.youtubeDefaultAvatar]);
+		expect(req({ variant: 'youtube-comment', showProfile: false }).images).toBeUndefined();
+		expect(req({ variant: 'youtube-comment', avatar: { generated: 4 } }).images).toBeUndefined();
+		expect(req({ variant: 'tiktok-comment' }).images).toBeUndefined();
+		// the variant's font faces load with the clip (Roboto 400 / 500 for YouTube)
+		expect(req({ variant: 'youtube-comment' }).fonts).toEqual([
+			{ family: 'Roboto', weight: 400, style: 'normal' },
+			{ family: 'Roboto', weight: 500, style: 'normal' },
+		]);
+		expect(SOCIAL_VARIANT_FONTS['youtube-comment']).toEqual({ family: 'Roboto', weights: [400, 500] });
+		expect(SOCIAL_VARIANT_FONTS['youtube-shorts-reply']).toEqual({ family: 'Roboto', weights: [400, 500] });
 		// the X preset carries tokcomment's X defaults (2h, 45 replies, 12 reposts, 1.2K likes, 12K views)
 		const x = socialComment.presets!.find((p) => p.id === 'x-post')!;
 		expect({ ...socialComment.defaults, ...x.params }).toMatchObject({
@@ -384,10 +414,18 @@ describe('social-comment@1 required assets', () => {
 		expect(plain.fonts.map((f) => f.weight)).toEqual([500, 600]);
 	});
 
-	it('a variant whose card is not built yet declares nothing; the declaration passes the asset schema', () => {
+	it('every variant declares its faces, the emoji it shows and its raster default avatar; the declaration passes the asset schema', () => {
+		// YouTube: Roboto faces, the emoji of the comment and of the handle in Noto, YouTube's default avatar image
 		expect(
 			socialCommentRequiredAssets({ ...socialDefaults('youtube-comment'), handle: 'a', text: 'A 😀' }),
-		).toEqual({ fonts: [] });
+		).toEqual({
+			fonts: [
+				{ family: 'Roboto', weight: 400, style: 'normal' },
+				{ family: 'Roboto', weight: 500, style: 'normal' },
+			],
+			emoji: { pack: 'noto', graphemes: ['😀'] },
+			images: ['youtube-default-avatar'],
+		});
 		// Instagram: SF Pro Text faces and the emoji of the comment; its default avatar is a vector (no image)
 		expect(
 			socialCommentRequiredAssets({ ...socialDefaults('instagram-post'), displayName: 'Z 🔥', text: 'A 😀' }),

@@ -126,6 +126,7 @@ describe('variants and capabilities', () => {
 			'timeUnit',
 			'rating',
 			'edited',
+			'iosAgeStyle',
 			'title',
 			'truncate',
 			'likeTick',

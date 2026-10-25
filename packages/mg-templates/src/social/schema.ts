@@ -11,6 +11,7 @@ import {
 	SOCIAL_DATE_MIN_YEAR,
 	SOCIAL_RATING_MAX,
 	SOCIAL_RATING_MIN,
+	SOCIAL_REVIEW_DATE_ANCHOR,
 } from './review.ts';
 import {
 	SOCIAL_EMOJI_STYLES,
@@ -187,6 +188,11 @@ const FIELDS = {
 		.describe(
 			`The review was edited: the iPhone App Store card prefixes its age with "edited" ("edited 1y ago"). ${uses('edited')}`,
 		),
+	iosAgeStyle: z
+		.enum(['weekday', 'relative'])
+		.describe(
+			`How the iPhone App Store card prints a review younger than a week: 'weekday' (the iOS 14-era App Store of the requester's screenshot: the review's weekday, "Sun", counted back from the fixed date ${SOCIAL_REVIEW_DATE_ANCHOR}) or 'relative' (today's App Store, iOS 15+: "Just now", "5h ago", "2d ago"). Older reviews print "3w ago", "4mo ago", "1y ago" either way. ${uses('iosAgeStyle')}`,
+		),
 	title: z
 		.string()
 		.max(SOCIAL_TITLE_MAX)
@@ -240,6 +246,7 @@ const COMMON_DEFAULTS = {
 	rating: 4,
 	date: '2025-09-24',
 	edited: false,
+	iosAgeStyle: 'weekday',
 	title: 'Review title',
 	text: SOCIAL_DEFAULT_TEXT,
 	truncate: true,

@@ -596,7 +596,7 @@ function AppStoreIosCard({ params: p, text, anim, assets }: SocialCardProps) {
 					{p.title ? <TextWithEmoji text={p.title} fontSize={15} emoji={EMOJI} assets={assets} /> : ' '}
 				</div>
 				<span data-part="date" style={{ ...meta, flexShrink: 0 }}>
-					{formatReviewAge(p.timeValue, p.timeUnit, p.edited)}
+					{formatReviewAge(p.timeValue, p.timeUnit, p.edited, p.iosAgeStyle)}
 				</span>
 			</div>
 			<div

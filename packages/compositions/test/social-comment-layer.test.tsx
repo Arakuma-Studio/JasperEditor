@@ -2,7 +2,7 @@
 // snapshot (template assets declared by `requiredAssets`, resolved like the engine does) → MotionGraphicLayer → the
 // TikTok card: avatar from the project medium (mediaUrls → TemplateImage), emoji images of the pack (emojiUrls →
 // EmojiImage); an offline avatar draws the visible placeholder.
-import { mgRegistry, templateAssetOptions } from '@jasper/mg-templates';
+import { mgRegistry, REMOTE_IMAGE_IDS, templateAssetOptions } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -18,6 +18,7 @@ import {
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ColorDocContext } from '../src/color/chain.ts';
+import { ImageTableContext } from '../src/fonts.ts';
 import {
 	DEFAULT_RENDER_OPTIONS,
 	EmojiTableContext,
@@ -108,7 +109,12 @@ const EMOJI = (pack: string, g: string) =>
 	`https://engine.test/fonts/emoji/${pack}/${[...g].map((c) => c.codePointAt(0)!.toString(16)).join('-')}.png`;
 
 /** The clip's layer at `at` through the render snapshot with the template assets resolved (WP2's path). */
-function layer(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | null, at = 100) {
+function layer(
+	doc: ProjectDocument,
+	resolve: (a: MediaAsset) => MediaHandle | null,
+	at = 100,
+	image?: (id: string) => string | null,
+) {
 	const fonts: string[] = [];
 	const snap: RenderSnapshot = buildRenderSnapshot(doc, Object.keys(doc.sequences)[0]!, {
 		resolveMedia: resolve,
@@ -116,9 +122,10 @@ function layer(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | n
 		templateAssets: templateAssetOptions(mgRegistry, {
 			font: (f) => {
 				fonts.push(`${f.family} ${f.weight}`);
-				return `/fonts/tiktok-sans/${f.weight}.woff2`;
+				return `/fonts/${f.family.toLowerCase().replace(/ /g, '-')}/${f.weight}.woff2`;
 			},
 			emoji: EMOJI,
+			...(image ? { image } : {}),
 		}),
 	});
 	// the sequence composition provides these tables (SequenceComposition: Emoji/Image tables, ColorDocContext)
@@ -136,9 +143,11 @@ function layer(doc: ProjectDocument, resolve: (a: MediaAsset) => MediaHandle | n
 	const view = render(
 		<FontsReadyContext.Provider value={{ allLoaded: true }}>
 			<EmojiTableContext.Provider value={snap.emoji}>
-				<ColorDocContext.Provider value={{ media: snap.media, bypass: new Set(), isPreview: true }}>
-					<MotionGraphicLayer {...props} />
-				</ColorDocContext.Provider>
+				<ImageTableContext.Provider value={snap.images}>
+					<ColorDocContext.Provider value={{ media: snap.media, bypass: new Set(), isPreview: true }}>
+						<MotionGraphicLayer {...props} />
+					</ColorDocContext.Provider>
+				</ImageTableContext.Provider>
 			</EmojiTableContext.Provider>
 		</FontsReadyContext.Provider>,
 	);
@@ -191,5 +200,41 @@ describe('social-comment@1 in the motion-graphic layer', () => {
 		const none = layer(project({ variant: 'x-post' }, false).doc, (a) => handle(`/m/${a.id}`)).view;
 		expect(none.container.querySelector('[data-social-avatar="default"]')).not.toBeNull();
 		none.unmount();
+	});
+
+	it('draws the YouTube cards through the layer: Roboto faces, uploaded avatar, @handle, replies; the default avatar image', () => {
+		const { doc, mediaId } = project({ variant: 'youtube-comment', handle: 'luna.makes', replies: 3 }, true);
+		const { view, fonts } = layer(doc, (a) => handle(`https://engine.test/media/${a.id}?sig=1`));
+		expect(new Set(fonts)).toEqual(new Set(['Roboto 400', 'Roboto 500']));
+		expect(view.container.querySelector('[data-social-variant="youtube-comment"]')).not.toBeNull();
+		expect(view.getByTestId('social-avatar-media').getAttribute('src')).toBe(
+			`https://engine.test/media/${mediaId}?sig=1`,
+		);
+		expect(view.container.querySelector('[data-template-param="handle"]')!.textContent).toBe('luna.makes');
+		expect(view.container.querySelector('[data-part="replies"]')!.textContent).toBe('3 replies');
+		// the default comment's 😊 as an image of YouTube's pack (Noto)
+		expect(view.container.querySelector('img[data-emoji]')!.getAttribute('src')).toBe(EMOJI('noto', '😊'));
+		view.unmount();
+		// the default avatar: the remote image the clip declares, resolved by the snapshot → imageUrls → the card
+		const id = REMOTE_IMAGE_IDS.youtubeDefaultAvatar;
+		const served = layer(
+			project({ variant: 'youtube-shorts-reply' }, false).doc,
+			(a) => handle(`/m/${a.id}`),
+			100,
+			(i) => `https://engine.test/remote/images/${i}`,
+		);
+		expect(served.snap.images).toEqual({ [id]: `https://engine.test/remote/images/${id}` });
+		expect(
+			served.view.container.querySelector('img[data-testid="social-avatar-media"]')!.getAttribute('src'),
+		).toBe(`https://engine.test/remote/images/${id}`);
+		served.view.unmount();
+		// not delivered: the neutral silhouette (the layer reports the missing image; exports are blocked)
+		const missing = layer(project({ variant: 'youtube-shorts-reply' }, false).doc, (a) =>
+			handle(`/m/${a.id}`),
+		);
+		const def = missing.view.container.querySelector('[data-social-avatar="default"]')!;
+		expect(def.querySelector('img')).toBeNull();
+		expect(def.querySelector('svg')).not.toBeNull();
+		missing.view.unmount();
 	});
 });

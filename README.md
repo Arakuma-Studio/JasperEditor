@@ -355,7 +355,8 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
 - **Store reviews** (`social-comment@1` presets Play Store · Review, App Store · Review and App Store · Review
   (iPhone app)): a Google Play, App Store web / Mac or iPhone App Store review card with star rating (Properties:
   click or arrow-key the stars), date (date picker; the card prints it the store's way, "11/6/18" / "09/24/2021"),
-  title, "edited" and the iPhone age ("2d ago"); long reviews are clamped like the store (Play's fade, the App Store's
+  title, "edited" and the iPhone age ("Sun" under a week as in the iOS 14-era App Store, else "1y ago"; **Recent
+  Dates** switches to today's "2d ago"); long reviews are clamped like the store (Play's fade, the App Store's
   "more"; **Truncate Long Text** off shows all). **Likes Tick Up / Stars Fill** fills the stars one by one. Bulk import
   takes `Rating` / `Stars`, `Title`, `Date` (YYYY-MM-DD) and `Edited` columns (`docs/wp-notes/social-comments.md`
   "Store reviews").

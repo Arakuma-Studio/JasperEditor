@@ -10,6 +10,13 @@ export const SOCIAL_RATING_MAX = 5;
 export const SOCIAL_DATE_MIN_YEAR = 1970;
 export const SOCIAL_DATE_MAX_YEAR = 2099;
 
+/**
+ * The fixed "today" of store reviews (no wall clock: the same params give the same card on every machine and day):
+ * random review dates are drawn back from it, and the iPhone card's weekday ages count back from it. The date this
+ * feature was built (a Sunday).
+ */
+export const SOCIAL_REVIEW_DATE_ANCHOR = '2026-10-25';
+
 /** `YYYY-MM-DD`. */
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/u;
 
@@ -82,4 +89,31 @@ export function formatReviewDate(style: 'play-store' | 'app-store', iso: unknown
 export function clampRating(rating: unknown): number {
 	if (typeof rating !== 'number' || !Number.isFinite(rating)) return SOCIAL_RATING_MAX;
 	return Math.min(SOCIAL_RATING_MAX, Math.max(SOCIAL_RATING_MIN, Math.round(rating)));
+}
+
+/** Days an age spans: minutes and hours are the same day; weeks 7, months 30 and years 365 days. Never negative. */
+export function reviewAgeDays(value: number, unit: string): number {
+	const v = typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+	switch (unit) {
+		case 'day':
+			return v;
+		case 'week':
+			return v * 7;
+		case 'month':
+			return v * 30;
+		case 'year':
+			return v * 365;
+		default:
+			return 0;
+	}
+}
+
+/** Short English weekday names as the iPhone App Store prints them, Sunday first. */
+export const IOS_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** The weekday of the day `daysAgo` days before `SOCIAL_REVIEW_DATE_ANCHOR` ("Sun" for 0: the anchor is a Sunday). */
+export function weekdayBeforeAnchor(daysAgo: number): string {
+	const anchor = parseReviewDate(SOCIAL_REVIEW_DATE_ANCHOR) as CalendarDate;
+	const day = dayNumber(anchor) - Math.max(0, Math.floor(Number.isFinite(daysAgo) ? daysAgo : 0));
+	return IOS_WEEKDAYS[weekday(dateOfDayNumber(day))]!;
 }

@@ -119,12 +119,20 @@ describe('store review cards', () => {
 		};
 		expect(age({})).toBe('1y ago');
 		expect(age({ edited: true })).toBe('edited 1y ago');
-		expect(age({ timeValue: 2, timeUnit: 'day' })).toBe('2d ago');
 		expect(age({ timeValue: 3, timeUnit: 'week' })).toBe('3w ago');
 		expect(age({ timeValue: 4, timeUnit: 'month' })).toBe('4mo ago');
-		expect(age({ timeValue: 5, timeUnit: 'hour' })).toBe('5h ago');
-		expect(age({ timeValue: 30, timeUnit: 'minute' })).toBe('Just now');
-		expect(age({ timeValue: 0, timeUnit: 'day', edited: true })).toBe('edited just now');
+		// the screenshot's iOS 14-era rule (default): under a week, the weekday counted back from Sunday 2026-10-25
+		expect(age({ timeValue: 2, timeUnit: 'day' })).toBe('Fri');
+		expect(age({ timeValue: 6, timeUnit: 'day' })).toBe('Mon');
+		expect(age({ timeValue: 5, timeUnit: 'hour' })).toBe('Sun');
+		expect(age({ timeValue: 0, timeUnit: 'day', edited: true })).toBe('edited Sun');
+		expect(age({ timeValue: 7, timeUnit: 'day' })).toBe('7d ago');
+		// today's App Store (iOS 15+)
+		const rel = { iosAgeStyle: 'relative' };
+		expect(age({ ...rel, timeValue: 2, timeUnit: 'day' })).toBe('2d ago');
+		expect(age({ ...rel, timeValue: 5, timeUnit: 'hour' })).toBe('5h ago');
+		expect(age({ ...rel, timeValue: 30, timeUnit: 'minute' })).toBe('Just now');
+		expect(age({ ...rel, timeValue: 0, timeUnit: 'day', edited: true })).toBe('edited just now');
 		const r = render(at({ ...IOS, rating: 1 }, 100));
 		const c = r.container;
 		expect(part(c, 'title')!.textContent).toBe('Review title');
