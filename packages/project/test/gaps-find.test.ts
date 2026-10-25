@@ -120,8 +120,10 @@ describe('find', () => {
 		const originalName = doc.media[item.mediaId]!.originalName;
 		expect(findSource(originalName).map((hit) => hit.frame)).toEqual([0, 0]);
 		delete doc.items[item.id];
+		doc.rootItems = doc.rootItems.filter((id) => id !== item.id);
 		expect(findSource('Later alias').map((hit) => hit.frame)).toEqual([0, 0]);
 		delete doc.items.alias;
+		doc.rootItems = doc.rootItems.filter((id) => id !== 'alias');
 		expect(findSource(originalName).map((hit) => hit.frame)).toEqual([0, 0]);
 	});
 
