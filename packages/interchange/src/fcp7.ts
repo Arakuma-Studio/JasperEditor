@@ -8,8 +8,10 @@
 // id), `generatoritem`s (Slug/Black Video, Color, Bars and Tone, Transparent Video, Counting Leader),
 // `transitionitem`s (alignment, Premiere transition names), and the filters Basic Motion (scale, rotation,
 // center, anchor point), Opacity, Crop, Time Remap (constant speed, reverse, freeze), Audio Levels and Audio Pan,
-// all with keyframes; `compositemode` blend modes. Other effects are written with their JasperEditor id and read
-// back by id or by display name; anything unknown is reported.
+// all with keyframes; `compositemode` blend modes. Premiere's Pitch Shifter (match name / "Transpose Ratio") is
+// read into, and the Pitch Shifter written as, Premiere's normalised representation (premiere-pitch-shifter.ts).
+// Other effects are written with their JasperEditor id and read back by id or by display name; anything unknown is
+// reported.
 //
 // Coordinates (FilmCraft's reading of the xmeml description): Basic Motion `center` is relative to the frame
 // centre as a fraction of the frame width/height (0,0 = centred); `centerOffset` (anchor) likewise relative to
@@ -26,6 +28,7 @@ import {
 	type Interpolation,
 	type Keyframe,
 	type LabelColor,
+	PITCH_SHIFTER_EFFECT_ID,
 	type Transform,
 	type Vec2,
 } from '@jasper/project';
@@ -71,6 +74,13 @@ import {
 	resolvePath,
 } from './paths.ts';
 import { premiereAudioTransition, premiereFadeShapeOf, premiereShapeType } from './premiere-audio-fades.ts';
+import {
+	isPremierePitchShifter,
+	jasperPitchToPremiere,
+	PREMIERE_PITCH_SHIFTER_MATCH_NAME,
+	premierePitchField,
+	premierePitchShifterToJasper,
+} from './premiere-pitch-shifter.ts';
 import {
 	type PremiereParam,
 	premiereTransitionForMatchName,
@@ -951,6 +961,45 @@ class Fcp7Importer {
 				});
 				return;
 			}
+		}
+		// Premiere's Pitch Shifter (normalised Transpose Ratio, …) → JasperEditor's Pitch Shifter (semitones + cents).
+		if (
+			kind === 'audio' &&
+			isPremierePitchShifter(
+				id,
+				name,
+				params.flatMap((p) => [childText(p, 'name'), childText(p, 'parameterid')]),
+			)
+		) {
+			const ratioParam = params.find(
+				(p) =>
+					premierePitchField(childText(p, 'name')) === 'ratio' ||
+					premierePitchField(childText(p, 'parameterid')) === 'ratio',
+			);
+			const max = ratioParam ? childNum(ratioParam, 'valuemax') : null;
+			const m = premierePitchShifterToJasper(
+				{
+					params: params.map((p) => ({
+						...premiereParamOf(p, rate),
+						id: childText(p, 'parameterid') ?? undefined,
+					})),
+					bypass: !enabled,
+					instanceName: name,
+					...(max !== null && max > 1.5 ? { ratioScale: 'ratio' as const } : {}),
+					snap: (t) => framesToFlicks(flicksToFrames(t, rate), rate),
+				},
+				this.report,
+				{ kind: 'effect', name: 'Pitch Shifter' },
+			);
+			clip.effects.push({
+				id: this.b.id('fx'),
+				effectId: m.effectId,
+				effectVersion: m.effectVersion,
+				enabled: m.enabled,
+				params: m.params,
+				...(m.name ? { name: m.name } : {}),
+			});
+			return;
 		}
 		const spec = effectSpecOf(id, kind) ?? effectSpecOf(name, kind);
 		if (!spec) {
@@ -1991,6 +2040,10 @@ class Fcp7Exporter {
 			this.closeEffect();
 			return;
 		}
+		if (e.effectId === PITCH_SHIFTER_EFFECT_ID && kind === 'audio') {
+			this.premierePitchShifter(c, e, rate, where);
+			return;
+		}
 		const spec = effectSpecOf(e.effectId);
 		if (!spec) {
 			this.report.warn(`unknown effect "${e.effectId}" on clip "${c.name}" was not exported`, {
@@ -2038,6 +2091,41 @@ class Fcp7Exporter {
 					},
 				);
 		}
+		this.closeEffect();
+	}
+
+	/**
+	 * JasperEditor's Pitch Shifter in Premiere's representation (premiere-pitch-shifter.ts): Premiere's match name as
+	 * the effect id, the normalised Transpose Ratio (keyframes kept, intermediate keys where the curves would differ),
+	 * Precision High, Use Appropriate Default Settings on and Use Positive Cents from the sign of the cents.
+	 */
+	premierePitchShifter(
+		c: IClip,
+		e: IClip['effects'][number],
+		rate: Rate,
+		where: { kind: 'effect'; id: string; name: string; frame: number },
+	): void {
+		const subject = { ...where, name: 'Pitch Shifter' };
+		const p = jasperPitchToPremiere(e.params, this.report, subject, (t) =>
+			framesToFlicks(flicksToFrames(t, rate), rate),
+		);
+		if (e.name)
+			this.report.info(
+				`the instance name "${e.name}" of the Pitch Shifter on clip "${c.name}" is not carried by Final Cut Pro XML`,
+				{ subject, instead: 'the effect name "Pitch Shifter"' },
+			);
+		this.openEffect(
+			'Pitch Shifter',
+			PREMIERE_PITCH_SHIFTER_MATCH_NAME,
+			'Time and Pitch',
+			'filter',
+			'audio',
+			e.enabled,
+		);
+		this.numParam('ADBE Pitch Shifter-0001', 'Transpose Ratio', 0, 1, p.ratio, rate, (v) => v);
+		this.simpleParam('ADBE Pitch Shifter-0002', 'Precision', '1');
+		this.simpleParam('ADBE Pitch Shifter-0005', 'Use Appropriate Default Settings', '0.75');
+		this.simpleParam('ADBE Pitch Shifter-0006', 'Use Positive Cents', p.positiveCents ? '0.75' : '0.25');
 		this.closeEffect();
 	}
 }

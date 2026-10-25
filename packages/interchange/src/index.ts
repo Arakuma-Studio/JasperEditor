@@ -32,6 +32,7 @@ export { exportOmf, importOmf, sniffOmf } from './omf/index.ts';
 export * from './options.ts';
 export * from './otio.ts';
 export * from './paths.ts';
+export * from './premiere-pitch-shifter.ts';
 export * from './premiere-transitions.ts';
 export * from './prerender.ts';
 export * from './report.ts';
