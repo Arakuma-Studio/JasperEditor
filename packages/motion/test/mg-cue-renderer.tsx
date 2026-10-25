@@ -45,7 +45,11 @@ function capture(
 	const Impl = ANIME_TEMPLATE_IMPLS[`${template}@${def.version}`]!;
 	const input = { ...def.defaults, ...params };
 	const label = String(
-		template === 'title-reveal' ? input.title : template === 'lower-third-anim' ? input.role : input.label,
+		template === 'title-reveal'
+			? String(input.title).at(-1)
+			: template === 'lower-third-anim'
+				? input.role
+				: input.label,
 	);
 	const host = document.createElement('div');
 	host.style.cssText = 'position:relative;width:1920px;height:1080px';

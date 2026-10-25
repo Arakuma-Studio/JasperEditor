@@ -10,7 +10,7 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 - Remove profile shape/freezing inventories, the copied SplitMix32 mixing oracle, cross-test cue report accumulators and redundant Date/profile executions.
 - Preserve documented public exports/configuration (including SplitMix32 and SOLVER_CONSTRAINTS) even where repository callers are absent. Production processing and stored formats remain unchanged.
 - Rewrite judge threshold/reason and musical-key expectations so they can disagree with production constants/helpers. Drop incidental solver prose and iteration lower bounds while retaining gains, warning/limit codes, conflict identities and advice data.
-- Replace the private 40-variant template builder/target comparison with four caller regressions (one per shipped template) through real public template components. The browser observes a label's actual text range, cumulative opacity and scale/motion, with the independently documented weights/threshold and ±1 frame tolerance. The historical cases retain fixed callout land59 and counter exit286 measurements from WP6.5b item16 and emit JSON measurements in `test-results/motion-cues/`.
+- Replace the private 40-variant template builder/target comparison with four caller regressions (one per shipped template) through real public template components. The browser observes a label's actual text range, cumulative opacity and scale/motion, with the independently documented weights/threshold and ±1 frame tolerance. The title uses forward-staggered XY at0.55 and observes the last supplied glyph Y; it must start after the first frame and settle at the cue, catching lost propagation of stagger. The historical cases retain fixed callout land59 and counter exit286 measurements from WP6.5b item16 and emit JSON measurements in `test-results/motion-cues/`.
 - All six formerly exported template builder/helpers and four input types are made local after a repository caller search. The pure model's two raw construction/evaluation helpers and three representation types become local too; test-only `target`/`prop` correspondence fields and their unused indexing parameters are removed. They still serve their components; only test-only exports disappear. The two raw model helpers/types had also leaked through facade star exports; no documented or production-consumed facade API is removed.
 - Existing Remotion and native parity suites remain opt-in and require their real dependencies. The rewritten default cue tests require Chrome/Playwright and deliberately fail setup if no usable browser exists; they are not moved out of the default gate or replaced with a mock.
 - Expensive retained ownership: EBU/FFmpeg oracle programmes distinguish gates, sample rates, layouts and transients; synth hashes/quality cover every promised variant (spec P1-R3); effect extremes/reset/silence protect streaming and silent-strip elision; QuickJS resource/isolation and renderer parity protect failures cheaper seams cannot observe.
@@ -1257,7 +1257,7 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 | Test declaration (all parameterized rows) | Disposition | Reason / surviving protection |
 |---|---|---|
 | rejects unknown fields, invalid RGBA channels and oversized text | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
-| exposes actual number and colour controls as keyframable | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| exposes actual number and colour controls as keyframable | KEEP | ATP-006 exposes counter from/numberColor as continuous properties and decimals/label as non-animatable. Literal public params.* property keys and eligibility values catch broken editing/keyframe metadata at paramsPropertySpecs; rendered default-value tests cannot catch refusal to animate a valid property. |
 | anchors the intro at content 0 and the outro at the content end; the hold stretches | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | sourceIn shifts content time; the outro stays anchored at sourceIn + duration | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | converts reference frames to whole frames at other rates (frame-exact) | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
@@ -1286,7 +1286,7 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 | the Phase 2 fixture’s lower third (frame 330, 90 frames, 30 fps) lands at 350, not the declared 360 | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | prints the measured frames | DELETE | B2/B3/B4/B6: only prints an array and verifies that prior tests appended to it. Each preceding case independently checks land/exit and anchor values; the shared report accumulator is removed. |
 | anime templates are measured on their motion model (WP6.5b); a registry without it gets the declared timing | REWRITE | Retains the named numerical outputs, warning/limit codes and independent motion/solver oracle. Removes incidental prose, implementation iteration lower bounds or report-accumulator writes; these must not fail an equivalent refactor. |
-| every shipped template is measured: the fframes ones here (VARIANTS), the anime ones in @jasper/motion | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| every shipped template is measured: the fframes ones here (VARIANTS), the anime ones in @jasper/motion | DELETE | B2/B5/B6: only inventories function presence, model registration and fixture membership. The existing fframes cue variants assert actual timing/anchors; the four public browser template regressions assert actual rendered motion↔cue agreement. A shape-only registry check adds no independent behavioral protection. |
 | a registry without motionSpeed (createStaticMgRegistry) gives the declared frames for the same template | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | clips longer than the measuring cap fall back to the declared timing | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | random templates, clip starts, durations, sourceIn and rates | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
@@ -1321,7 +1321,7 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 
 | Test declaration (all parameterized rows) | Disposition | Reason / surviving protection |
 |---|---|---|
-| ships the required fframes and anime template versions | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| ships the required fframes and anime template versions | KEEP | ATP-003 and the saved motion-graphic reference protocol require the six literal id@version keys. Public registry lookup/list availability detects orphaned persisted project references; these keys survive internal identifier renames. Timing/render tests do not independently own this complete compatibility vocabulary. |
 | exposes template lookup and a JSON schema for API clients | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | rejects duplicate template versions and invalid defaults | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 
@@ -1397,14 +1397,14 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 
 | Test declaration (all parameterized rows) | Disposition | Reason / surviving protection |
 |---|---|---|
-| pins anime.js 4.5.0 exactly | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| pins anime.js 4.5.0 exactly | KEEP | ANM-011 and ARCHITECTURE D-31 explicitly require exact4.5.0 and stamp it into render-cache identity. Literal package dependency key and public ANIMEJS_VERSION can independently disagree after an unsafe upgrade or stale stamp; identifier-only implementation changes preserve them. No broader seek/pixel test enforces this published configuration obligation. |
 | never autoplays when the caller requests autoplay | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | canonical seek restores the gap value after visiting the end | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | frameToMs = frame * 1000 / fps | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | hash32 is FNV-1a over UTF-8 and separates seed arguments | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | seededRandom is deterministic per seed and in [0, 1) | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | resolves steps and falls back for an unknown ease | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
-| returns frozen copies of the seeked values | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
+| returns frozen copies of the seeked values | KEEP | ANM API §3 and ARCHITECTURE §20.2 explicitly promise frozen copied targets. Literal500ms/1000ms results prove an earlier caller snapshot cannot change after a later seek, plus public freeze status. This catches aliasing/mutability beyond ordinary current-frame correctness, through the documented hook without private memo/cache inspection. |
 | gives identical values for shuffled frame orders (one mounted instance) | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | builds once ready, seeks per ms before paint and reverts on unmount | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | createPausedTimeline drops loop / frameRate / alternate (seek-only driving) | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
@@ -1445,11 +1445,27 @@ Every table row uses the six-part evidence immediately above its file: **B1** in
 | does not substitute a different implementation for an unknown preset version | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 | typewriter@2 blinks while idle in either direction and honors caretBlink | KEEP | Six-part evidence above; retains the exact named contract and independent output oracle. |
 
+### `packages/expressions/test/fuzz.test.ts` (helper-generated targets)
+
+`describeFuzz` / `textTarget` generates these two runtime cases; the canonical baseline declaration inventory intentionally counts explicit `it` / `test` declarations, so they are additional audited targets rather than duplicate declaration records. Both passed the complete baseline.
+
+- B1: AGENTS §0 requires parser/loader fuzzing; docs/expressions.md and docs/wp-notes/expressions.md specify safe syntax and document-evaluation entry points with returned diagnostics.
+- B2: Mutated/truncated/hostile JavaScript must not escape either entry point as an uncaught host exception, and a diagnostic must be a string or null. The evaluation target exercises rotation, position and source-text document bindings.
+- B3: The independently specified error-result union and no-host-crash invariant are checked on generated inputs; no production-generated expected expression value is reused.
+- B4: Public checkExpressionSyntax and evaluateExpressionText, with a public document/reference/time boundary.
+- B5: Internal parser, QuickJS adapter, error wording and binding identifiers can change while returned diagnostics and process safety remain stable.
+- B6: Syntax rejection tests use fixed cases and resource tests use selected adversarial programmes; this owner explores combinations of damaged language inputs through actual parsing and binding. The two entry points have distinct crash boundaries. The existing bounded corpus/properties are retained, not replayed in engine/UI tests.
+
+| Generated target | Disposition | Reason / surviving protection |
+|---|---|---|
+| syntax check (message or null) | KEEP | Six-part evidence above; uniquely catches hostile-input exceptions or invalid result types at the syntax parser boundary. |
+| evaluate on a document (value or message) | KEEP | Six-part evidence above; uniquely exercises damaged expressions through the actual QuickJS/document bindings while requiring returned diagnostics. |
+
 ## Validation and performance
 
 The coordinator's unmodified Node20.19.0 baseline (`JASPER_REQUIRE_ORACLES=1`, Chrome present, `pnpm test --maxWorkers=2`) contains73 owned files:930 passed cases and8 pre-existing opt-in skips. No owned baseline case failed. The global baseline has2 failures outside this scope (engine cache permission simulation and capture-safe-canvas); their owners investigate them.
 
-The earlier Node24.22.1 experiment failed five pinned synth byte cases. A focused unmodified Node20.19.0 rerun of all19 recipe hash cases passed; no hash was re-blessed. The final validation uses the repository's CI runtime20.19.0. This identifies a pre-existing runtime byte-portability limit, not a reason to delete the independent hashes.
+The earlier Node24.22.1 experiment failed five pinned synth byte cases. A focused unmodified Node20.19.0 rerun of all19 recipe hash cases passed; no hash was re-blessed. The final validation uses the repository's CI runtime20.19.0. The Jasper Synth section of docs/wp-notes/sound-design.md explicitly limits bit-exactness to a given Node/V8 math implementation and requires a synth version bump when that changes. This is a pre-existing runtime byte-portability limit; cleanup neither changes the version nor re-blesses the independent hashes.
 
 Observed baseline file execution windows (imports/startup excluded; not a scope wall-clock estimate): registry21.681s, synth17.736s, EBU loudness oracle10.730s, music-picture10.336s, reverb/pitch9.200s, tempo7.226s and sync7.170s. Registry extrema/long tails, EBU programmes, explicit152 synth quality variants, raw acoustic sync and genuine musical analysis retain their independently specified contracts. The pitch DFT, duplicate synth renders, generated classifier replay, matcher dispatch and flat-band fixture are the measured optimization targets.
 

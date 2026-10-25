@@ -31,10 +31,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	estimateTextWidth,
-	hasAnimeMotionModel,
-	isAnimeTemplate,
 	lowerThirdParams,
-	MG_CATALOG,
 	mgRegistry,
 	svgTemplateSpeed,
 	titleCard,
@@ -368,18 +365,6 @@ describe('declared-timing fallback', () => {
 			['land', 30 + info.introFrames, 0.5],
 			['exit', 150 - info.outroFrames, 0.4],
 		]);
-	});
-
-	it('every shipped template is measured: the fframes ones here (VARIANTS), the anime ones in @jasper/motion', () => {
-		for (const def of MG_CATALOG) {
-			expect(mgRegistry.get(def.id, def.version)!.motionSpeed, def.id).toBeTypeOf('function');
-			if (isAnimeTemplate(def)) expect(hasAnimeMotionModel(def), def.id).toBe(true);
-			else
-				expect(
-					VARIANTS.some((v) => v.template === def.id),
-					def.id,
-				).toBe(true);
-		}
 	});
 
 	it('a registry without motionSpeed (createStaticMgRegistry) gives the declared frames for the same template', () => {

@@ -130,13 +130,18 @@ describe('rendered template motion and sound cues', () => {
 	});
 
 	it.each([
-		['title-reveal', { title: 'X', subtitle: '', underline: false, stagger: 0, ease: 'linear' }],
+		[
+			'title-reveal',
+			{ title: 'XY', subtitle: '', underline: false, stagger: 0.55, order: 'forward', ease: 'linear' },
+		],
 		['lower-third-anim', { name: 'Jasper', role: 'Editor', ease: 'linear' }],
 	] as const)('%s land follows the rendered text', async (template, params) => {
 		const duration = Math.round(5 * fps);
 		const land = cues(template, params, duration).find((c) => c.kind === 'land')!;
 		const moving = await motion(template, params, duration, 0, 150);
 		expect(moving.length).toBeGreaterThan(0);
+		// ATP-003: the second supplied glyph follows the first in a forward stagger.
+		if (template === 'title-reveal') expect(moving[0]!).toBeGreaterThan(1);
 		expect(Math.abs(moving.at(-1)! - land.frame)).toBeLessThanOrEqual(1);
 	});
 
