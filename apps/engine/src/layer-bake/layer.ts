@@ -6,6 +6,7 @@ import {
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	emojiTableKey,
 	evaluateVectorShape,
 	gpuIsTimeDependent,
 	hasActiveExpression,
@@ -16,6 +17,7 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 	type Transform,
+	templateFontId,
 	textAnimatorsTimeVarying,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
@@ -269,6 +271,10 @@ export function bakeDoc(
 		rect: Rect | null;
 		media: RenderSnapshot['media'];
 		fonts: RenderSnapshot['fonts'];
+		/** social-comment §7.8: the clip's emoji images (`clipEmoji`, signed). */
+		emoji?: RenderSnapshot['emoji'];
+		/** social-comment §7.8: the clip's remote images (`clipImages`, signed). */
+		images?: RenderSnapshot['images'];
 	},
 ): RenderSnapshot {
 	const frames = variantFrames(clip, o.variant);
@@ -287,6 +293,8 @@ export function bakeDoc(
 		audioClips: [],
 		media: o.media,
 		fonts: o.fonts,
+		...(o.emoji ? { emoji: o.emoji } : {}),
+		...(o.images ? { images: o.images } : {}),
 		master: { volumeDb: { value: 0, keyframes: [] } },
 		warnings: [],
 		// Wave expressions: the renderer binds the clip's expressions against the whole project.
@@ -368,10 +376,51 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 			if (f) used.add(f);
 		}
 	} else {
+		// social-comment §7.8: the faces an anime template declares, exactly (fontId `template:<family>`).
+		const declared = new Set(
+			(('mg' in clip.source ? clip.source.mg.assets?.fonts : undefined) ?? []).map(
+				(f) => `${templateFontId(f.family)}|${f.weight}|${f.style}`,
+			),
+		);
 		const named = stringsIn(clip.source, new Set());
-		for (const f of fonts) if (named.has(f.fontId) || named.has(f.family)) used.add(f);
+		for (const f of fonts)
+			if (f.fontId.startsWith('template:')) {
+				if (declared.has(`${f.fontId}|${f.weight}|${f.style}`)) used.add(f);
+			} else if (named.has(f.fontId) || named.has(f.family)) used.add(f);
 	}
 	return fonts.filter((f) => used.has(f));
+}
+
+/** social-comment §7.8: the entries of the snapshot's image table an anime template clip draws, or undefined. */
+export function clipImages(
+	clip: RenderVisualClip,
+	table: RenderSnapshot['images'],
+): Record<string, string> | undefined {
+	const ids = 'mg' in clip.source ? clip.source.mg.assets?.images : undefined;
+	if (!ids?.length || !table) return undefined;
+	const out: Record<string, string> = {};
+	for (const id of ids) if (table[id]) out[id] = table[id];
+	return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * social-comment §7.8: the entries of the snapshot's emoji table an anime template clip draws (its declared emoji that
+ * are available), or undefined when it draws none.
+ */
+export function clipEmoji(
+	clip: RenderVisualClip,
+	table: RenderSnapshot['emoji'],
+): Record<string, string> | undefined {
+	const assets = 'mg' in clip.source ? clip.source.mg.assets : undefined;
+	if (!assets || !table) return undefined;
+	const out: Record<string, string> = {};
+	for (const { pack, graphemes } of assets.emoji)
+		for (const g of graphemes) {
+			const k = emojiTableKey(pack, g);
+			const url = table[k];
+			if (url) out[k] = url;
+		}
+	return Object.keys(out).length ? out : undefined;
 }
 
 /** Share of the frame below which a crop rect is used (a rect covering more renders the full frame). */

@@ -1,11 +1,15 @@
-// Curated bundled font catalog (S04:FT-001…003 subset, ARCHITECTURE §9.2): ten OFL/Apache families from
+// Curated bundled font catalog (S04:FT-001…003 subset, ARCHITECTURE §9.2): OFL/Apache families from
 // @fontsource packages, served at `/fonts/<id>/<file>.woff2` so the Player, headless Remotion renders and
 // stills load the same files. Unknown families fall back to the default family (FONT_FALLBACK).
+// social-comment §7.8: TikTok Sans (OFL) is bundled for the TikTok templates; the remote platform fonts of the
+// remote-asset manifest are listed with `source: 'remote'` (served at `/fonts/remote/…`) for the templates that declare
+// them — text clips never resolve them, and a template face never falls back to another family.
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { FontCatalog, FontFamily } from '@jasper/api';
+import { catalogFaceFiles, type FontCatalog, type FontFamily } from '@jasper/api';
+import type { RemoteAssetService } from '../remote-assets/service.ts';
 
 const CATALOG_IDS = [
 	'inter',
@@ -18,6 +22,7 @@ const CATALOG_IDS = [
 	'oswald',
 	'playfair-display',
 	'jetbrains-mono',
+	'tiktok-sans',
 ] as const;
 
 /**
@@ -41,6 +46,20 @@ type Metadata = {
 };
 
 type ResolvedFamily = FontFamily & { id: string; dir: string };
+
+/** CSS unicode-range of each subset (`unicode.json` of a @fontsource package; {} when absent or unreadable). */
+function unicodeRanges(dir: string): Record<string, string> {
+	try {
+		const raw = JSON.parse(readFileSync(join(dir, 'unicode.json'), 'utf8')) as unknown;
+		if (!raw || typeof raw !== 'object') return {};
+		const out: Record<string, string> = {};
+		for (const [k, v] of Object.entries(raw))
+			if (typeof v === 'string' && /^[U+0-9A-Fa-f?, -]+$/.test(v)) out[k] = v;
+		return out;
+	} catch {
+		return {};
+	}
+}
 
 function packageDir(
 	id: string,
@@ -68,7 +87,11 @@ function packageDir(
 export class FontCatalogService {
 	private readonly families: ResolvedFamily[] = [];
 
-	constructor(env: Record<string, string | undefined> = process.env) {
+	constructor(
+		env: Record<string, string | undefined> = process.env,
+		/** social-comment §7.8: remote platform fonts and emoji packs (absent: bundled fonts only). */
+		readonly remote: RemoteAssetService | null = null,
+	) {
 		for (const id of CATALOG_IDS) {
 			const dir = packageDir(id, env);
 			if (!dir) continue;
@@ -78,6 +101,7 @@ export class FontCatalogService {
 			} catch {
 				continue;
 			}
+			const ranges = unicodeRanges(dir);
 			const files: FontFamily['files'] = [];
 			for (const subset of SUBSETS) {
 				if (!meta.subsets.includes(subset)) continue;
@@ -85,7 +109,13 @@ export class FontCatalogService {
 					for (const style of meta.styles) {
 						const file = `${id}-${subset}-${weight}-${style}.woff2`;
 						if (!existsSync(join(dir, 'files', file))) continue;
-						files.push({ weight, style, subset, url: `/fonts/${id}/${file}` });
+						files.push({
+							weight,
+							style,
+							subset,
+							url: `/fonts/${id}/${file}`,
+							...(ranges[subset] ? { unicodeRange: ranges[subset] } : {}),
+						});
 					}
 				}
 			}
@@ -149,7 +179,44 @@ export class FontCatalogService {
 	}
 
 	catalog(): FontCatalog {
-		return { fonts: this.families.map(({ id: _id, dir: _dir, ...f }) => f) };
+		const bundled = this.families.map(({ id: _id, dir: _dir, ...f }) => f);
+		if (!this.remote) return { fonts: bundled };
+		return {
+			fonts: [...bundled, ...this.remote.catalogFamilies()],
+			emojiPacks: this.remote.emojiPacks(),
+			images: this.remote.catalogImages(),
+		};
+	}
+
+	/** The bundled files of exactly this face (latin and latin-ext with their unicode ranges), or null. */
+	private bundledFace(face: {
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+	}): { url: string; unicodeRange?: string }[] | null {
+		const fam = this.byFamily(face.family);
+		if (!fam || fam.family.toLowerCase() !== face.family.trim().toLowerCase()) return null;
+		return catalogFaceFiles({ fonts: [fam] }, face);
+	}
+
+	/** Whether exactly this face is bundled (no download needed). */
+	isBundledFace(face: { family: string; weight: number; style: 'normal' | 'italic' }): boolean {
+		return this.bundledFace(face) !== null;
+	}
+
+	/**
+	 * social-comment §7.8: engine-relative URLs of a template face — the bundled catalogue first (every subset file with
+	 * its unicode range), then the remote manifest (one file, or its subset entries with their ranges) — or null. Exact family, weight and style: never a
+	 * fallback (AGENTS §4). Remote files may still need downloading (`remote.prefetch`).
+	 */
+	templateFaceFiles(face: {
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+	}): { url: string; unicodeRange?: string }[] | null {
+		const bundled = this.bundledFace(face);
+		if (bundled) return bundled;
+		return this.remote?.fontFiles(face) ?? null;
 	}
 
 	byFamily(family: string): ResolvedFamily | null {
@@ -183,8 +250,12 @@ export class FontCatalogService {
 		return { url: best.url, family: fam.family, fallback };
 	}
 
-	/** Absolute path of `/fonts/<id>/<file>` or null (validated: catalog id + plain file name). */
+	/**
+	 * Absolute path of `/fonts/<id>/<file>` or null (validated: catalog id + plain file name). `remote/<file>`: the
+	 * cached, verified remote font (null when not downloaded yet).
+	 */
 	filePath(rest: string): string | null {
+		if (rest.startsWith('remote/')) return this.remote?.cachedFontPath(rest.slice('remote/'.length)) ?? null;
 		const m = /^([a-z0-9-]+)\/([a-z0-9-]+\.(woff2|woff))$/.exec(rest);
 		if (!m) return null;
 		const fam = this.families.find((f) => f.id === m[1]);

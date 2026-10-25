@@ -16,6 +16,7 @@ import {
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from '../../import/assets.ts';
+import { type CatalogForAssets, catalogTemplateAssets } from '../../remote-assets/resolve.ts';
 
 type ProxyTier = '720' | '540';
 type MediaUrlFn = (mediaKey: string, variant?: 'original' | { proxy: ProxyTier }) => string;
@@ -91,8 +92,18 @@ export function resolveMediaHandle(
 	};
 }
 
-type FontCatalogLike = {
-	fonts: { family: string; files: { weight: number; style: 'normal' | 'italic'; url: string }[] }[];
+type FontCatalogLike = CatalogForAssets & {
+	fonts: {
+		family: string;
+		source?: string;
+		files: {
+			weight: number;
+			style: 'normal' | 'italic';
+			url: string;
+			subset?: string;
+			unicodeRange?: string;
+		}[];
+	}[];
 };
 
 /**
@@ -105,7 +116,11 @@ function fontUrlFromCatalog(
 	weight: number,
 	italic: boolean,
 ): string | null {
-	const fam = catalog?.fonts.find((f) => f.family.toLowerCase() === font.family.toLowerCase());
+	// social-comment §7.8: remote platform families are for the templates that declare them; text clips resolve like
+	// the engine's export (unknown → the default sans), so preview and export agree.
+	const fam = catalog?.fonts.find(
+		(f) => f.source !== 'remote' && f.family.toLowerCase() === font.family.toLowerCase(),
+	);
 	if (!fam || fam.files.length === 0) return null;
 	const style = italic ? 'italic' : 'normal';
 	const same = fam.files.filter((f) => f.style === style);
@@ -142,6 +157,8 @@ export function buildProgramDoc(input: RenderDocInput, prev: RenderDoc | null): 
 			}),
 		resolveFont: (font, weight, italic) =>
 			fontUrlFromCatalog(input.fontCatalog ?? null, font, weight, italic),
+		// social-comment §7.8: the fonts and emoji anime templates declare
+		templateAssets: catalogTemplateAssets(input.fontCatalog ?? null),
 	});
 	return stabilizeRenderDoc(prev, next);
 }
