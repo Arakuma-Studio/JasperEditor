@@ -13,7 +13,7 @@ import {
 	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
-import { AutomationPassRequestSchema } from './automation.ts';
+import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
 	AudioClassifyRequestSchema,
 	BeatsRequestSchema,
@@ -1535,6 +1535,7 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/projects/:projectId/automation/:pass',
 		body: AutomationPassRequestSchema,
+		response: z.union([AutomationPassResultSchema, EngineJobSchema]),
 	},
 	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
 	proposalFeatures: {
