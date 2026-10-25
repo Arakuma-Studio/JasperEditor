@@ -69,14 +69,14 @@ describe('event payload validation', () => {
 
 describe('remix plan request (sound-design P0)', () => {
 	it('caps the analysed music range so the beat similarity matrix cannot exhaust memory', async () => {
-		const { RemixPlanRequestSchema, MAX_REMIX_SOURCE_SECONDS } = await import('../src/audio-fx.ts');
+		const { RemixPlanRequestSchema } = await import('../src/audio-fx.ts');
 		const req = (durationSeconds: number) => ({
 			mediaKey: 'm',
 			startSeconds: 0,
 			durationSeconds,
 			targetSeconds: 60,
 		});
-		expect(RemixPlanRequestSchema.safeParse(req(MAX_REMIX_SOURCE_SECONDS)).success).toBe(true);
-		expect(RemixPlanRequestSchema.safeParse(req(4 * 3600)).success).toBe(false);
+		expect(RemixPlanRequestSchema.safeParse(req(1800)).success).toBe(true);
+		expect(RemixPlanRequestSchema.safeParse(req(1801)).success).toBe(false);
 	});
 });

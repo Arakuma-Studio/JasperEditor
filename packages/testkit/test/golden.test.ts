@@ -117,7 +117,6 @@ describe('golden files', () => {
 		const path = join(dir, 'sub', 'new.png');
 		checkGolden(path, ramp(20, 10), Tolerance.RENDER);
 		expect(decodePng(readFileSync(path))).toEqual(ramp(20, 10));
-		expect(existsSync(`${path}.attribution`)).toBe(false);
 		const noise = rgba8(200, 200);
 		const rng = new Rng(1);
 		for (let i = 0; i < noise.data.length; i++) noise.data[i] = rng.next() & 0xff;

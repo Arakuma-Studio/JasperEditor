@@ -12,7 +12,6 @@ import {
 	ScrubbyNumber,
 	SegmentedControl,
 	Select,
-	segmentedKeyTarget,
 	TimecodeField,
 	ToastStore,
 	TreeList,
@@ -420,6 +419,7 @@ describe('Dialog Enter key (S05)', () => {
 		await act(async () => {
 			fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		});
+		expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true');
 		expect(screen.getByRole('alert').textContent).toBe('Disk full');
 		expect(close).not.toHaveBeenCalled();
 	});
@@ -461,36 +461,7 @@ describe('Dialog Enter key (S05)', () => {
 	});
 });
 
-describe('Dialog is modal for assistive tech and keyboard dispatchers (S05)', () => {
-	it('sets aria-modal on the dialog element', () => {
-		render(
-			<Dialog open onOpenChange={() => {}} title="M" primaryLabel="Go" onPrimary={() => false}>
-				<span>body</span>
-			</Dialog>,
-		);
-		const el = screen.getByRole('dialog');
-		expect(el.getAttribute('aria-modal')).toBe('true');
-	});
-});
-
 describe('SegmentedControl (WAI-ARIA radio group, WP6.5a)', () => {
-	it('segmentedKeyTarget: arrows move with wrap and skip disabled options; Home / End; other keys null', () => {
-		const all = [true, true, true];
-		expect(segmentedKeyTarget('ArrowRight', 0, all)).toBe(1);
-		expect(segmentedKeyTarget('ArrowRight', 2, all)).toBe(0);
-		expect(segmentedKeyTarget('ArrowLeft', 0, all)).toBe(2);
-		expect(segmentedKeyTarget('ArrowDown', 1, all)).toBe(2);
-		expect(segmentedKeyTarget('ArrowUp', 1, all)).toBe(0);
-		expect(segmentedKeyTarget('Home', 2, all)).toBe(0);
-		expect(segmentedKeyTarget('End', 0, all)).toBe(2);
-		expect(segmentedKeyTarget('ArrowRight', 0, [true, false, true])).toBe(2);
-		expect(segmentedKeyTarget('Home', 2, [false, true, true])).toBe(1);
-		expect(segmentedKeyTarget('ArrowRight', 0, all, 'rtl')).toBe(2);
-		expect(segmentedKeyTarget('ArrowRight', -1, all)).toBe(0);
-		expect(segmentedKeyTarget('Enter', 0, all)).toBeNull();
-		expect(segmentedKeyTarget('ArrowRight', 0, [false, false])).toBeNull();
-	});
-
 	function Harness(props: { disabledB?: boolean; onChange?: (v: string) => void }) {
 		const [v, setV] = useState<'a' | 'b' | 'c' | null>('b');
 		return (
@@ -530,6 +501,21 @@ describe('SegmentedControl (WAI-ARIA radio group, WP6.5a)', () => {
 		expect(fireEvent.keyDown(radios[0]!, { key: 'x' })).toBe(true);
 		expect(fireEvent.keyDown(radios[0]!, { key: 'ArrowRight', ctrlKey: true })).toBe(true);
 		expect(changes).toEqual(['c', 'a']);
+		for (const [key, target] of [
+			['End', 2],
+			['Home', 0],
+			['ArrowLeft', 2],
+			['ArrowUp', 1],
+			['ArrowDown', 2],
+		] as const) {
+			fireEvent.keyDown(document.activeElement!, { key });
+			expect(document.activeElement).toBe(radios[target]);
+			expect(radios[target]!.getAttribute('aria-checked')).toBe('true');
+		}
+		group.setAttribute('dir', 'rtl');
+		fireEvent.keyDown(radios[2]!, { key: 'ArrowRight' });
+		expect(document.activeElement).toBe(radios[1]);
+		expect(changes.at(-1)).toBe('b');
 	});
 
 	it('disabled options are skipped and never a Tab stop; a disabled group takes no keys', () => {

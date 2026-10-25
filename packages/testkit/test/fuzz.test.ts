@@ -62,18 +62,23 @@ describe('fuzz kit', () => {
 	});
 
 	it('flags slow inputs', async () => {
+		let elapsed = 0;
+		const clock = vi.spyOn(performance, 'now').mockImplementation(() => elapsed);
 		const slow = jsonTarget(
 			'slow',
 			[1],
 			() => {
-				const t = Date.now();
-				while (Date.now() - t < 30);
+				elapsed += 30;
 			},
 			undefined,
 			{ slowMs: 5, iterations: 2, properties: 1 },
 		);
-		const f = await runFuzzTarget(slow, { scale: 1, maxFailures: 1 });
-		expect(f[0]!.error).toMatch(/took \d+ ms/);
+		try {
+			const f = await runFuzzTarget(slow, { scale: 1, maxFailures: 1 });
+			expect(f[0]!.error).toMatch(/took 30 ms \(limit 5 ms\)/);
+		} finally {
+			clock.mockRestore();
+		}
 	});
 });
 
