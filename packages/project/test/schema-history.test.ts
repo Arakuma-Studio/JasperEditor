@@ -51,6 +51,8 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	'5→6': () => ({}),
 	// v6 → v7 (sound design): version bump only; v6 builds open the files read-only.
 	'6→7': () => ({}),
+	// v7 → v8 (social comments: template media params): version bump only; v7 builds open the files read-only.
+	'7→8': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {

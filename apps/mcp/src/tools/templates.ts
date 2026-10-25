@@ -18,6 +18,9 @@ import {
 	type ProjectDocument,
 	parseMgTemplateRef,
 	type Sequence,
+	TEMPLATE_MEDIA_KIND,
+	TEMPLATE_MEDIA_KINDS_KEY,
+	TEMPLATE_PARAM_KIND_KEY,
 	validateJsonSchema,
 } from '@jasper/project';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -42,7 +45,8 @@ export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - list_motion_templates shows every template with renderer ("fframes" = native jasper-mg renderer, "anime" = drawn by Remotion), its params (type, range, default, keyframable) and the full paramsSchema.
 - Templates may declare presets (named param sets, e.g. one per look): list_motion_templates lists them with a ready-made ref. Pass "<id>:<preset>" (or "<id>@<version>:<preset>") as template to add_motion_graphic or render_motion_graphic_preview: the preset's params apply over the defaults and your params over the preset.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
-- set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.`;
+- set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.
+- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays).`;
 
 /**
  * Bounds at or beyond the safe-integer range are no bounds (zod's `.int()` writes ±MAX_SAFE_INTEGER into the JSON
@@ -68,10 +72,17 @@ function range(min: number | undefined, max: number | undefined): string {
 	return '';
 }
 
-type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json';
+type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json' | 'media';
 
 /** Kind of one params-schema property (mirrors the property specs of @jasper/project `paramsPropertySpecs`). */
 function paramKind(s0: JsonSchemaNode): { kind: ParamKind; type: string } {
+	// Template media params (`mediaParam()`): `{mediaId} | null` of the listed media kinds.
+	if (s0[TEMPLATE_PARAM_KIND_KEY] === TEMPLATE_MEDIA_KIND) {
+		const kinds = Array.isArray(s0[TEMPLATE_MEDIA_KINDS_KEY])
+			? (s0[TEMPLATE_MEDIA_KINDS_KEY] as unknown[])
+			: [];
+		return { kind: 'media', type: `media ${kinds.map(String).join('|') || 'any'}` };
+	}
 	const s = unwrapNullable(s0);
 	const t = Array.isArray(s.type) ? (s.type as string[]).find((x) => x !== 'null') : s.type;
 	const options = Array.isArray(s.enum)

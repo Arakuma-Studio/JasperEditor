@@ -8,6 +8,7 @@ import { SocialComment } from './social-comment/index.tsx';
 import { TitleReveal } from './title-reveal.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
+export { TemplateImage, TemplateImagePlaceholder, type TemplateImageProps } from './image.tsx';
 export type { AnimeTemplateProps } from './types.ts';
 
 export const ANIME_TEMPLATE_IMPLS: Readonly<Record<string, ComponentType<AnimeTemplateProps>>> =
