@@ -33,6 +33,15 @@ const TAIL_H = 21;
  */
 const TAIL_PATH = 'M0 -0.5H25.5L12.2 15.6C10 18.4 7.6 21 4.2 21C1.9 21 0 19.4 0 16.6Z';
 
+/**
+ * Text sizes of the reply sticker: tokcomment's 20 px header and 31 px comment were set in Proxima Nova; TikTok Sans
+ * has a 7 % (header, 600) and 5 % (comment, 700) taller cap height, so the sizes are scaled to keep the reference's
+ * cap heights (measured on the 2× captures: "R" 27 px, "W" 42 px). TikTok Sans is also ≈ 9 % wider, so a line holds a
+ * few characters less than on tokcomment.
+ */
+const HEADER_PX = 18.5;
+const BODY_PX = 29.5;
+
 function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 	const theme = REPLY_THEME[p.theme];
 	return (
@@ -65,7 +74,7 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 					<div
 						data-part="header"
 						style={{
-							fontSize: 20,
+							fontSize: HEADER_PX,
 							lineHeight: '30px',
 							fontWeight: 600,
 							color: theme.header,
@@ -73,7 +82,7 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 						}}
 					>
 						{'Reply to '}
-						<TextWithEmoji text={p.displayName} fontSize={20} emoji={EMOJI} assets={assets} />
+						<TextWithEmoji text={p.displayName} fontSize={HEADER_PX} emoji={EMOJI} assets={assets} />
 						{"'s"}
 						{p.verified ? (
 							<span
@@ -97,7 +106,7 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 						assets={assets}
 						style={{
 							marginTop: 2,
-							fontSize: 31,
+							fontSize: BODY_PX,
 							fontWeight: 700,
 							lineHeight: 1.2,
 							letterSpacing: '-0.025em',
@@ -307,7 +316,7 @@ function TikTokCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 							<div style={{ width: 23, height: 1, background: theme.rule, flexShrink: 0 }} />
 							<span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
 								{replies}
-								<Glyph glyph={TIKTOK_GLYPHS.chevronDown} size={11} color={theme.replies} />
+								<Glyph glyph={TIKTOK_GLYPHS.chevronDown} size={12} color={theme.replies} />
 							</span>
 						</div>
 					) : null}
