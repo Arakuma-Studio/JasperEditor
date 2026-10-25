@@ -468,6 +468,27 @@ VARIANTS.push(
 		params: { variant: 'tiktok-comment', wordReveal: true, likeTick: true },
 	},
 	{ template: 'social-comment', rate: '30', seconds: 0.6, params: { entrance: 'drop-bounce' } },
+	// Instagram: the post comment draws likes (its tick runs), the Reels reply card does not (word reveal only)
+	...(['classic-pop', 'grow-from-tail'] as const).flatMap((entrance) => [
+		{
+			template: 'social-comment',
+			rate: '30',
+			seconds: 5,
+			params: { variant: 'instagram-post', entrance, wordReveal: true, likeTick: true, likes: 114 },
+		},
+		{
+			template: 'social-comment',
+			rate: '30',
+			seconds: 5,
+			params: { variant: 'instagram-reel-reply', entrance, wordReveal: true, likeTick: true },
+		},
+	]),
+	{
+		template: 'social-comment',
+		rate: '25',
+		seconds: 1.5,
+		params: { variant: 'instagram-post', entrance: 'soft-spring', likeTick: true, likes: 987_654 },
+	},
 	{
 		template: 'social-comment',
 		rate: '30',

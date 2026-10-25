@@ -2,6 +2,7 @@
 // "not available" card (never a blank or a wrong platform), see unavailable.tsx.
 import type { SocialVariant } from '@jasper/mg-templates';
 import type { SocialVariantImpl } from './contract.ts';
+import { INSTAGRAM_POST, INSTAGRAM_REEL_REPLY } from './instagram.tsx';
 import { TIKTOK_COMMENT, TIKTOK_REPLY } from './tiktok.tsx';
 import { unavailableVariant } from './unavailable.tsx';
 import { X_POST } from './x.tsx';
@@ -9,8 +10,8 @@ import { X_POST } from './x.tsx';
 export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantImpl>> = {
 	'tiktok-reply': TIKTOK_REPLY,
 	'tiktok-comment': TIKTOK_COMMENT,
-	'instagram-post': unavailableVariant('instagram-post'),
-	'instagram-reel-reply': unavailableVariant('instagram-reel-reply'),
+	'instagram-post': INSTAGRAM_POST,
+	'instagram-reel-reply': INSTAGRAM_REEL_REPLY,
 	'youtube-comment': unavailableVariant('youtube-comment'),
 	'youtube-shorts-reply': unavailableVariant('youtube-shorts-reply'),
 	'x-post': X_POST,
