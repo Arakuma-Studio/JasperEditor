@@ -41,11 +41,11 @@ describe('Export dialog container and audio codec', () => {
 		expect(alpha.video).toMatchObject({ codec: 'prores', proresProfile: '4444', alpha: true });
 		expect(alpha.videoOnly).toBe(true);
 		const plain = buildExportSettings(seq, { range: 'entire', engine: 'auto', codec: 'prores' });
-		expect(plain.video.alpha).toBeUndefined();
-		expect(plain.video.proresProfile).toBeUndefined();
+		expect(plain.video?.alpha).toBeUndefined();
+		expect(plain.video?.proresProfile).toBeUndefined();
 		expect(plain.videoOnly).toBeUndefined();
 		const h264 = buildExportSettings(seq, { range: 'entire', engine: 'auto', codec: 'h264', alpha: true });
-		expect([h264.container, h264.video.alpha, h264.videoOnly]).toEqual(['mp4', undefined, undefined]);
+		expect([h264.container, h264.video?.alpha, h264.videoOnly]).toEqual(['mp4', undefined, undefined]);
 		const prores = {
 			codec: 'prores' as const,
 			encoder: 'prores_ks',
