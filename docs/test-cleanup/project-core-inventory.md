@@ -6,7 +6,7 @@ This maps every named declaration and parser-fuzz target in the current project-
 
 For each retained row: (1) the named file source independently specifies the contract; (2) violating its named result is the recognizable caller-visible failure; (3) the quoted fixed-data/property oracle can disagree with production; (4) it observes the public/format/command/render/invariant seam identified by its source; (5) output-based assertions tolerate behavior-preserving helper and algorithm changes; (6) the row owns its named input/transition/format edge, while other rows own different inputs or boundaries. Fresh detailed rows make additional ownership/deletion reasoning explicit. A source/contract inventory is separate from execution: validation and measurements appear in project-core.md and the root report.
 
-Disposition families: DELETE 8, REWRITE 13, OPTIMIZE 2, CONSOLIDATE 5, KEEP 845.
+Disposition families: DELETE 8, REWRITE 13, OPTIMIZE 2, CONSOLIDATE 5, KEEP 845 (810 named declarations + 35 fuzz families).
 
 ## packages/project/test/agent-mcp-cli.test.ts
 

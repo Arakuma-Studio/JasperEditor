@@ -818,7 +818,7 @@ The generic Auto Sound Pass tests do not cover these personality/grammar choices
 
 Evidence under `/tmp/jasper-test-cleanup/style-async/`:
 
-- Original isolated file: six assertions passed; the original whole-suite teardown
+- Original isolated file: six cases passed; the original whole-suite teardown
   exception did not reproduce in isolation. Adding only a completion assertion at
   the old exit points deterministically failed both cases (`closed=[]`), proving
   unfinished work. This diagnostic is not committed.
