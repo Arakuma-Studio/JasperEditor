@@ -360,6 +360,8 @@ function EditorBox({
 	const [error, setError] = useState<string | null>(null);
 	const [sel, setSel] = useState<TextRange | null>(null);
 	const [toolbarAt, setToolbarAt] = useState<Vec2 | null>(null);
+	/** The editor's drawn box in overlay px (it grows while typing): the tip goes under it. */
+	const [drawn, setDrawn] = useState<{ left: number; bottom: number } | null>(null);
 	const ref = useRef<HTMLDivElement>(null);
 	const composing = useRef(false);
 	const pendingSel = useRef<TextRange | null>(null);
@@ -504,6 +506,17 @@ function EditorBox({
 		pendingSel.current = null;
 		if (want && document.activeElement === el) selectOffsets(el, want.start, want.end);
 	}, [draft.value]);
+
+	// Where the editor is drawn now (it grows with the text), for the tip under it.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-read whenever the text, the box or the view changes
+	useLayoutEffect(() => {
+		const el = ref.current;
+		const host = hostRef.current?.getBoundingClientRect();
+		if (!el || !host) return;
+		const r = el.getBoundingClientRect();
+		const next = r.width + r.height > 0 ? { left: r.left - host.left, bottom: r.bottom - host.top } : null;
+		setDrawn((d) => (d && next && d.left === next.left && d.bottom === next.bottom ? d : next));
+	}, [draft.value, box, view, layer]);
 
 	// Open: focus, and select the word that was double-clicked (all of it when the caret API is missing).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: once per editor
@@ -676,6 +689,8 @@ function EditorBox({
 	const info = marks && sel ? selectionMarks(draft.value, sel.start, sel.end) : null;
 	const showToolbar = !!info?.range && !!sel && sel.start !== sel.end;
 	const tb = toolbarAt ?? [midX, minY];
+	const tipLeft = drawn ? drawn.left : minX;
+	const tipTop = drawn ? Math.max(drawn.bottom, maxY) : maxY;
 	const keyHint = multiline
 		? t('Enter to apply · Shift+Enter for a new line · Esc to cancel')
 		: t('Enter to apply · Esc to cancel');
@@ -752,7 +767,7 @@ function EditorBox({
 				<div
 					role="toolbar"
 					aria-label={t('Word marks')}
-					className="pointer-events-auto absolute z-20 flex gap-0.5 rounded-pr-control border border-pr-border-strong bg-pr-menu-bg p-0.5 shadow"
+					className="pointer-events-auto absolute z-20 flex gap-0.5 rounded-pr-control border border-pr-menu-border bg-pr-menu p-0.5 shadow"
 					style={{ left: tb[0], top: tb[1] - 6, transform: 'translate(-50%, -100%)' }}
 					data-testid="template-marks-toolbar"
 					// Keep the editor's focus and selection while a button is pressed.
@@ -764,7 +779,7 @@ function EditorBox({
 							key={m}
 							type="button"
 							aria-pressed={info ? selectionHas(info, m) : false}
-							className="rounded-pr-control px-2 py-0.5 text-pr-small text-pr-text hover:bg-pr-hover aria-pressed:bg-pr-bg-selected-row"
+							className="rounded-pr-control px-2 py-0.5 text-pr-small text-pr-text hover:bg-pr-hover aria-pressed:bg-pr-selected"
 							data-mark-action={m}
 							disabled={readOnly}
 							onClick={() => markAction(m)}
@@ -785,7 +800,7 @@ function EditorBox({
 			) : null}
 			<div
 				className="absolute z-10 max-w-[360px] rounded-pr-control bg-pr-tooltip px-2 py-1 text-pr-small shadow"
-				style={{ left: Math.max(4, minX), top: maxY + 10 }}
+				style={{ left: Math.max(4, tipLeft), top: tipTop + 10 }}
 				data-testid="template-text-tip"
 			>
 				{error ? (
