@@ -33,6 +33,8 @@ export function vectorSvg(o: {
 	height: number;
 	paths: readonly VectorPath[];
 	gradients?: readonly VectorGradient[];
+	/** `none` stretches the drawing into the box (default: keep its aspect, centred). */
+	preserveAspectRatio?: 'none';
 }): string {
 	const defs = o.gradients?.length
 		? `<defs>${o.gradients
@@ -52,7 +54,8 @@ export function vectorSvg(o: {
 				}/>`,
 		)
 		.join('');
-	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${esc(o.viewBox)}" width="${o.width}" height="${o.height}" overflow="visible">${defs}${paths}</svg>`;
+	const aspect = o.preserveAspectRatio ? ` preserveAspectRatio="${o.preserveAspectRatio}"` : '';
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${esc(o.viewBox)}" width="${o.width}" height="${o.height}"${aspect} overflow="visible">${defs}${paths}</svg>`;
 }
 
 /** The data URL of a drawing. */
@@ -77,6 +80,7 @@ export function VectorImage(p: {
 	height: number;
 	paths: readonly VectorPath[];
 	gradients?: readonly VectorGradient[];
+	preserveAspectRatio?: 'none';
 	name?: string;
 	style?: CSSProperties;
 }) {

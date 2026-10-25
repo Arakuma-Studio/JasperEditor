@@ -21,7 +21,8 @@ import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState }
 import { editableParamProps } from '../editable.ts';
 import { APP_STORE_GLYPHS, PLAY_STORE_GLYPHS, type PlatformGlyph } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
-import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { CommentText, type EmojiMetrics, Glyph, motionStyle, SocialAvatar, TextWithEmoji } from './parts.tsx';
+import { VectorImage } from './vector.tsx';
 
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0);
 const r4 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 0);
@@ -54,25 +55,24 @@ function Star(p: {
 	width: number;
 	height: number;
 	stretch?: boolean;
-	/** The star changes per frame (the like tick runs): widen its ink rect (`INK_RING`, paint determinism). */
-	animated?: boolean;
 	style?: CSSProperties;
 }) {
 	const f = Math.min(1, Math.max(0, Number.isFinite(p.fill) ? p.fill : 0));
+	// drawn as vector images (rasterized whole, the same in every render: "Paint determinism")
 	const glyph = (g: PlatformGlyph, color: string, style: CSSProperties) => (
-		<svg
+		<VectorImage
+			name="star"
 			viewBox={g.viewBox}
 			width={p.width}
 			height={p.height}
-			preserveAspectRatio={p.stretch ? 'none' : undefined}
-			aria-hidden="true"
-			style={{ position: 'absolute', left: 0, top: 0, display: 'block', overflow: 'visible', ...style }}
-		>
-			{g.paths.map((path, i) => (
-				// biome-ignore lint/suspicious/noArrayIndexKey: a glyph's paths are static and ordered
-				<path key={i} d={path.d} fill={path.fill ?? color} fillRule={path.fillRule} />
-			))}
-		</svg>
+			paths={g.paths.map((path) => ({
+				d: path.d,
+				fill: path.fill ?? color,
+				...(path.fillRule ? { fillRule: path.fillRule } : {}),
+			}))}
+			{...(p.stretch ? { preserveAspectRatio: 'none' as const } : {})}
+			style={{ position: 'absolute', left: 0, top: 0, ...style }}
+		/>
 	);
 	return (
 		<span
@@ -83,7 +83,6 @@ function Star(p: {
 				flexShrink: 0,
 				width: p.width,
 				height: p.height,
-				...(p.animated ? { boxShadow: INK_RING } : {}),
 				...p.style,
 			}}
 		>
@@ -99,14 +98,12 @@ function Star(p: {
 function StarRow(p: {
 	rating: number;
 	anim: SocialCardProps['anim'];
-	star: (fill: number, animated: boolean) => ReactNode;
+	star: (fill: number) => ReactNode;
 	gap: number;
 	style?: CSSProperties;
 }) {
 	const fill = socialStarFill(p.rating, p.anim.tick ?? 1);
 	const s = starPulse(p.anim.heart);
-	// the like tick fills and pulses the stars frame by frame
-	const animated = p.anim.heart !== null;
 	return (
 		<span
 			data-part="stars"
@@ -116,17 +113,16 @@ function StarRow(p: {
 				display: 'flex',
 				gap: p.gap,
 				flexShrink: 0,
-				transformOrigin: '50% 50%',
-				// always set (a style key that comes and goes would reorder the inline style between frames)
-				transform: s === 1 ? 'none' : `scale(${s})`,
-				...(animated ? { boxShadow: INK_RING } : {}),
 				...p.style,
+				// pulsed by the thump; un-animated at rest (`motionStyle`, paint determinism). Last, so a frame reached from
+				// another one serializes its style like a fresh one (keys that come back are appended)
+				...motionStyle({ s }, '50% 50%'),
 			}}
 		>
 			{fill.map((f, i) => (
 				// biome-ignore lint/suspicious/noArrayIndexKey: the five star slots are fixed
 				<span key={i} style={{ display: 'contents' }}>
-					{p.star(f, animated)}
+					{p.star(f)}
 				</span>
 			))}
 		</span>
@@ -311,14 +307,13 @@ function PlayStoreCard({ params: p, text, anim, assets }: SocialCardProps) {
 					anim={anim}
 					gap={2.13}
 					style={{ position: 'relative', top: 0.85 }}
-					star={(f, animated) => (
+					star={(f) => (
 						<Star
 							empty={star}
 							filled={star}
 							emptyColor={theme.starOff}
 							filledColor={theme.starOn}
 							fill={f}
-							animated={animated}
 							width={11.63}
 							height={11.06}
 						/>
@@ -424,14 +419,13 @@ function AppStoreWebCard({ params: p, text, anim, assets }: SocialCardProps) {
 					rating={p.rating}
 					anim={anim}
 					gap={0}
-					star={(f, animated) => (
+					star={(f) => (
 						<Star
 							empty={APP_STORE_GLYPHS.legacyStarEmpty}
 							filled={APP_STORE_GLYPHS.legacyStar}
 							emptyColor={theme.starOff}
 							filledColor={theme.starOn}
 							fill={f}
-							animated={animated}
 							width={24}
 							height={25}
 							stretch
@@ -608,14 +602,13 @@ function AppStoreIosCard({ params: p, text, anim, assets }: SocialCardProps) {
 					anim={anim}
 					gap={2}
 					style={{ marginTop: 1.2 }}
-					star={(f, animated) => (
+					star={(f) => (
 						<Star
 							empty={APP_STORE_GLYPHS.starOutline}
 							filled={APP_STORE_GLYPHS.star}
 							emptyColor={theme.star}
 							filledColor={theme.star}
 							fill={f}
-							animated={animated}
 							width={13}
 							height={13}
 						/>
