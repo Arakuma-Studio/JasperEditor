@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-25T23:45:04.226Z",
+  "machine": {
+    "cpus": 16,
+    "model": "AMD EPYC-Rome Processor",
+    "memGB": 31,
+    "node": "v24.22.1"
+  },
+  "loadavg": [
+    22.57,
+    20.51,
+    17.93
+  ],
+  "results": [
+    {
+      "case": "long 10 min 59.94 (1080p)",
+      "subtitles": 1165,
+      "stats": {
+        "count": 1165,
+        "snappedToCuts": 229,
+        "splitAtCuts": 370,
+        "belowMinimum": 85,
+        "merged": 0,
+        "dropped": 0,
+        "crossing": 0,
+        "warnings": []
+      },
+      "generateMs": {
+        "median": 688.7,
+        "min": 637.4,
+        "max": 782.3
+      },
+      "alignAfterMoveMs": {
+        "median": 408.3,
+        "min": 391.5,
+        "max": 502.2
+      }
+    },
+    {
+      "case": "short 60 s 9:16 (60 fps)",
+      "subtitles": 116,
+      "stats": {
+        "count": 116,
+        "snappedToCuts": 18,
+        "splitAtCuts": 43,
+        "belowMinimum": 0,
+        "merged": 0,
+        "dropped": 0,
+        "crossing": 0,
+        "warnings": []
+      },
+      "generateMs": {
+        "median": 66.5,
+        "min": 61.8,
+        "max": 100
+      },
+      "alignAfterMoveMs": {
+        "median": 34.9,
+        "min": 31.8,
+        "max": 42.2
+      }
+    }
+  ]
+}

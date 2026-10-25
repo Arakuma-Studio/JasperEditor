@@ -428,3 +428,74 @@ or timecode; guide text `SUBTITLES_GUIDE` with the recommended flow transcribe �
 
 Tests: `apps/mcp/test/subtitles.test.ts` (each tool, dry run, refusals: unknown template, unknown argument, mixed
 paths, locked track; the original `captions_from_transcript` path; describe_commands examples).
+
+## 10. Verification and measurements
+
+Tests (all run on the build VM; numbers of the latest runs):
+
+- `packages/project/test/subtitles-layout.test.ts` (26): rules, text transforms, Spanish line breaks, every cut step
+  and edge case, five frame rates, fast-check property (200 runs).
+- `packages/project/test/subtitles-commands.test.ts` (29): generation (text clips, Pixel Pop effects and keys, linked
+  style, template copy, weak words), cut alignment on documents (cut, overlay below / above the threshold, nest
+  mapping, reversed dialogue, five frame rates), dry run, caption-track output (also into a track without a stored
+  style), refusals (locked track, track kind, no transcript, unknown / invalid template, bad range), nesting, razor,
+  text edit re-timing, template keys after a trim, paste into another sequence, regenerate, align after re-editing,
+  conversion round trip, SRT from a group, save / apply templates, word highlight, groups, sequence duplicate, load
+  repair (idempotent), the S_Shake calibration.
+- `packages/session/test/subtitles-history.test.ts`: generate (≈ 200 Pixel Pop subtitles on a 9:16 59.94 short
+  with 60 B-roll cuts), align, regenerate, apply template, text edit, razor, convert both ways — one History entry
+  each, undo / redo restore the exact documents.
+- `apps/engine/test/subtitle-templates.test.ts` (library: save / replace / delete / restart, refusals, unreadable
+  file, invalid entries kept aside, newer library read-only), `apps/engine/test/subtitles-export.test.ts` (sidecars
+  and embedded streams from a group, SRT round trip).
+- `apps/mcp/test/subtitles.test.ts` (§9).
+- Whole suites after integration: `packages/project` 205 files / 2 440 tests, `packages/session` 20 / 81,
+  `apps/mcp` 69 / 284 (+ 8 skipped by design), engine subset (subtitle templates, subtitle export, caption export,
+  effect presets, proposal features) 5 / 19 — all passing; typecheck of project, session, api, config, engine, mcp;
+  `check-layers`, `check-tokens`; biome on the changed files.
+
+Generation speed (`pnpm exec tsx packages/project/bench/subtitles.ts`, results in
+`packages/project/bench/subtitles.results.json`; the whole `captions.generate` / `captions.alignToCuts` transaction
+including the cut map, placement, template effects, linked style and invariants; 7 samples, median; bench lock held;
+build VM AMD EPYC-Rome 16 vCPU, 31 GB, Node 24.22.1, **load average 22.6 / 20.5 / 17.9 from other agents' jobs**, so
+these are upper bounds):
+
+| Case | Subtitles | Generate (median, min–max) | Align after the B-roll moved 7 frames |
+|---|---|---|---|
+| 10 min 1080p 59.94, 1 500 words, 300 B-roll cutaways (Pixel Pop) | 1 165 (229 snapped, 370 split, 0 crossing) | 689 ms (637–782) | 408 ms (392–502) |
+| 60 s 9:16 60 fps, 160 words, 40 cutaways | 116 (18 snapped, 43 split) | 66.5 ms (62–100) | 34.9 ms (32–42) |
+
+Before running the cut map on a plain snapshot of the document (`current(draft)`), its per-track indexes were rebuilt
+on every lookup because they are never cached on Immer drafts: 1 955 ms / 4 311 ms for the long case (same machine,
+load ≈ 24, CPU profile: 18 s self time in `sequenceIndex` over the run).
+
+**Accuracy harness (AS-061, private, aggregate only)**: generation + cut alignment with the Pixel Pop rules on the
+Premiere transcripts of the user's decoded projects mapped onto their main timelines (the research `subs` mapping),
+against the projects' cut frames; scripts in `.prproj-analysis/research/subtitles-harness/` (outside the repo).
+"Speech cuts" = cuts with a word starting within 0.5 s after them, inside the stretch the user captioned.
+
+| | Shorts (18 projects, 3 096 words, 344 speech cuts) | Long-form (8 projects, 11 793 words, 1 022 speech cuts) |
+|---|---|---|
+| Subtitle starts exactly on the cut — ours | **98.8 %** (within ±2 frames 99.4 %) | **99.8 %** (99.8 %) |
+| — the user's own captions | 59.6 % (79.1 %) | 30.3 % (75.0 %) |
+| Subtitles across a cut — ours | 0 across hard cuts; 3 of 1 870 run through montage zones (cuts 1–5 frames apart) | 0 across hard cuts; 1 of 6 811 through a montage zone |
+| — the user's own (≥ 3 frames each side) | 82 of 1 845 | 107 of 6 537 |
+
+Target (≥ 95 % of speech cuts get a subtitle start on the cut; 0 subtitles across a cut): met for starts; for
+crossings, met for every hard cut — the 4 run-throughs are §3 step 5 montage zones (flash cuts closer than the
+minimum duration), allowed by the spec's zone rule. Layout time for all 26 projects: 81 ms.
+
+## 11. Limitations
+
+- Montage zones let a subtitle started before a burst of cuts closer than the minimum duration run through it (spec
+  rule); `minSeconds` lower than the shortest shot avoids that.
+- Weak-word lists exist for Spanish and English only; other languages break lines greedily.
+- Glyph replacement uses the template's `missingGlyphs` (or the whole table); the font's character map is not read.
+- The Pixel Pop shadow's blur / spread are assumptions (§6); `spreadPx` draws once the text-rendering work (SH-004)
+  lands. Box heights are estimated (0.55 em per character, one line per `\n`) until a text measurer is wired.
+- Caption markup (`<i>`, `<b>`) becomes plain text on conversion to text clips; caption clips' Motion scale /
+  rotation / keys are reported, not converted.
+- Subtitles inside a nested sequence align to the parents' cuts only for constant-speed nest clips.
+- Highlight (word / karaoke) uses Source Text keys, so it does not combine with legacy in / out text animations on
+  the same clip (the typeset renderer draws keyed text); none of the built-ins combines them.
+- Export speed with many animated subtitles is the subtitle-export work (AS-050 / AS-070…076), not changed here.
