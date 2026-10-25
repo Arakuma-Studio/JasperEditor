@@ -31,7 +31,7 @@ function h264Args(): string[] {
 	return ['-c:v', 'libopenh264', '-b:v', '1M', '-allow_skip_frames', '0', '-pix_fmt', 'yuv420p', '-g', '30'];
 }
 
-/** A 6 s 1280×720 clip of one flat colour with a tone (lavfi color + sine; the fixture recipes' encoder). */
+/** A 6 s 1920×1080 clip of one flat colour with a tone (lavfi color + sine; the fixture recipes' encoder). */
 function makeClip(name: string, color: string): string {
 	const file = join(OUT, name);
 	execFileSync(FFMPEG, [
@@ -161,7 +161,10 @@ test('Create Subtitles with Pixel Pop: one History entry, cut-aligned subtitles'
 		.sort((x, y) => x.start - y.start);
 	// never across the cut; the phrase after it starts on the cut frame (look-back 0.5 s)
 	for (const c of subs)
-		expect(c.start >= cut || c.start + c.duration <= cut, `${c.content?.text}`).toBe(true);
+		expect(
+			c.start >= cut || c.start + c.duration <= cut,
+			`${c.content?.text} [${c.start}, ${c.start + c.duration}) vs cut ${cut}: ${JSON.stringify(subs.map((x) => [x.start, x.start + x.duration, x.content?.text]))}`,
+		).toBe(true);
 	const onCut = subs.find((c) => c.start === cut);
 	expect(onCut?.content?.text).toBe('el juego');
 	expect(subs.find((c) => c.start + c.duration === cut)).toBeTruthy();
