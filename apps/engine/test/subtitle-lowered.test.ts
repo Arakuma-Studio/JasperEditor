@@ -277,7 +277,8 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 				progress: 0,
 				seed: fxSeed(c.clipId, ids.sh, sp),
 			};
-			const pose = (shake.gpu!.uniforms!(sp, ctx) as { u_shakeNow: { vec4s: number[] } }).u_shakeNow.vec4s;
+			const pose = (shake.gpu!.uniforms!(sp, ctx) as unknown as { u_shakeNow: { vec4s: number[] } }).u_shakeNow
+				.vec4s;
 			const taps = tapsOf(f.prog);
 			if (taps.length > 1) {
 				blurred++;
@@ -285,7 +286,10 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 				continue;
 			}
 			if (taps.length === 0) continue;
-			const tu = transform.gpu!.uniforms!(tp, { ...ctx, seed: 0 }) as { u_tfA: number[]; u_tfT: number[] };
+			const tu = transform.gpu!.uniforms!(tp, { ...ctx, seed: 0 }) as unknown as {
+				u_tfA: number[];
+				u_tfT: number[];
+			};
 			const tap = taps[0]!;
 			// Stages: the canvas the browser draws, S_Shake's canvas, the Transform's box.
 			const pad = gpuPadding(shake, sp, ctx);
@@ -442,7 +446,7 @@ describe('kernel streams and the memory preflight (AS-072, AS-074)', () => {
 									...c.source,
 									animation: { in: { preset: 'fade', durationFrames: 6, params: {} } },
 								},
-							} as RenderVisualClip)
+							} as unknown as RenderVisualClip)
 						: c,
 				),
 			})),
