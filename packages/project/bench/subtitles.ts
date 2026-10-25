@@ -8,7 +8,7 @@
 // timed. Each case: one warm-up, then 7 samples (each a full transaction on the same base document); medians.
 import { cpus, loadavg, totalmem } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { applyTransaction, FLICKS_PER_SECOND, type ProjectDocument } from '../src/index.ts';
+import { applyTransaction, createRandomIdSource, FLICKS_PER_SECOND, type ProjectDocument } from '../src/index.ts';
 import { Harness, makeCtx } from '../test/helpers.ts';
 
 function fixture(o: { preset: string; seconds: number; words: number; cuts: number }) {
@@ -60,7 +60,7 @@ function time(fn: () => unknown): { median: number; min: number; max: number } {
 }
 
 function run(doc: ProjectDocument, seqId: string, commands: unknown[]) {
-	const r = applyTransaction(doc, { label: 'bench', origin: 'user', sequenceId: seqId, commands }, makeCtx());
+	const r = applyTransaction(doc, { label: 'bench', origin: 'user', sequenceId: seqId, commands }, makeCtx({}, createRandomIdSource()));
 	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
 	return r;
 }
