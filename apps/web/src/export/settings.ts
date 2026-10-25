@@ -175,14 +175,19 @@ export const DEFAULT_CAPTION_CHOICE: CaptionExportChoice = {
 	sidecarTracks: 'active',
 };
 
-export function captionSettings(c: CaptionExportChoice, seq?: Sequence): NonNullable<ExportSettings['captions']> {
+export function captionSettings(
+	c: CaptionExportChoice,
+	seq?: Sequence,
+): NonNullable<ExportSettings['captions']> {
 	// a remembered group that is not in this sequence falls back to the active caption source
 	const group = c.sidecarTracks.startsWith('cgp_') ? c.sidecarTracks : null;
 	const tracks = group ? (seq && captionGroupsOf(seq)[group] ? [group] : 'active') : c.sidecarTracks;
 	return {
 		burnIn: c.burnIn,
 		embed: c.embed,
-		...(c.sidecar !== 'none' ? { sidecar: [c.sidecar], sidecarTracks: tracks as 'active' | 'all' | string[] } : {}),
+		...(c.sidecar !== 'none'
+			? { sidecar: [c.sidecar], sidecarTracks: tracks as 'active' | 'all' | string[] }
+			: {}),
 	};
 }
 

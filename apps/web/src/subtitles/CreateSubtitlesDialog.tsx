@@ -36,10 +36,22 @@ import {
 import { useSubtitleLibrary } from './store.ts';
 import { templateName } from './templates.ts';
 
-export type CreateSubtitlesProps = { session: EditorSession; sequenceId: string; source?: SubtitleSourceChoice };
+export type CreateSubtitlesProps = {
+	session: EditorSession;
+	sequenceId: string;
+	source?: SubtitleSourceChoice;
+};
 
 type RuleKey = keyof Required<SubtitleRulesInput>;
-const NUMERIC_RULES: Array<{ key: RuleKey; label: string; min: number; max: number; int?: boolean; nullable?: boolean; unit?: string }> = [
+const NUMERIC_RULES: Array<{
+	key: RuleKey;
+	label: string;
+	min: number;
+	max: number;
+	int?: boolean;
+	nullable?: boolean;
+	unit?: string;
+}> = [
 	{ key: 'maxChars', label: 'Characters per line', min: 7, max: 72, int: true },
 	{ key: 'lines', label: 'Lines', min: 1, max: 3, int: true },
 	{ key: 'maxWords', label: 'Words per subtitle', min: 1, max: 20, int: true, nullable: true },
@@ -78,7 +90,8 @@ export function parseRule(
 	if (!s) return { ok: true, value: undefined };
 	if (spec.nullable && (s === 'off' || s === t('off').toLowerCase())) return { ok: true, value: null };
 	const n = Number(s.replace(',', '.'));
-	if (!Number.isFinite(n) || n < spec.min || n > spec.max || (spec.int && !Number.isInteger(n))) return { ok: false };
+	if (!Number.isFinite(n) || n < spec.min || n > spec.max || (spec.int && !Number.isInteger(n)))
+		return { ok: false };
 	return { ok: true, value: n };
 }
 
@@ -116,10 +129,13 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 	const words = useMemo(() => (seq ? sequenceWords(doc, seq) : []), [doc, seq]);
 	const media = useMemo(() => {
 		const ids = [...new Set(words.map((w) => w.mediaId))];
-		return ids.map((id) => [id, (doc.media[id] as { originalName?: string } | undefined)?.originalName ?? id] as const);
+		return ids.map(
+			(id) => [id, (doc.media[id] as { originalName?: string } | undefined)?.originalName ?? id] as const,
+		);
 	}, [words, doc.media]);
 	const selected = selection.filter((id) => seq?.clips[id]);
-	const range = seq && seq.inPoint !== null && seq.outPoint !== null ? { start: seq.inPoint, end: seq.outPoint } : null;
+	const range =
+		seq && seq.inPoint !== null && seq.outPoint !== null ? { start: seq.inPoint, end: seq.outPoint } : null;
 
 	// invalid typed rules block Create (and are shown red)
 	const invalid = new Set<string>();
@@ -151,14 +167,15 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 	const key = command ? JSON.stringify(command) : '';
 
 	// live preview (debounced): the command applied to a copy of the document
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the serialised command (`key`) is the dependency
 	useEffect(() => {
 		if (!command || invalid.size) return;
 		const id = setTimeout(() => setPreview(previewGeneration(session.getCommitted(), command)), 250);
 		return () => clearTimeout(id);
-		// biome-ignore lint/correctness/useExhaustiveDependencies: the serialised command is the dependency
 	}, [key, session, invalid.size]);
 
-	const needsFont = !!template && templateNeedsFont(template) && !isFontAvailable(fonts.catalog, template.fontFamily);
+	const needsFont =
+		!!template && templateNeedsFont(template) && !isFontAvailable(fonts.catalog, template.fontFamily);
 	const setRule = (k: string, v: string) => setRaw((r) => ({ ...r, [k]: v }));
 
 	if (!seq)
@@ -178,7 +195,8 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 				toast({ kind: 'warning', title: t('Subtitles not created'), detail: r.errors[0]?.message });
 				return false;
 			}
-			for (const w of r.warnings.slice(0, 3)) toast({ kind: 'info', title: t('Create Subtitles'), detail: w.message });
+			for (const w of r.warnings.slice(0, 3))
+				toast({ kind: 'info', title: t('Create Subtitles'), detail: w.message });
 			textPanelRequests.open('subtitles');
 			return true;
 		} finally {
@@ -220,7 +238,11 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 							options={[
 								{ value: 'sequence', label: t('Sequence transcript') },
 								...media.map(([id, name]) => ({ value: `media:${id}`, label: name })),
-								{ value: 'clips', label: t('Selected clips ({0})', selected.length), disabled: !selected.length },
+								{
+									value: 'clips',
+									label: t('Selected clips ({0})', selected.length),
+									disabled: !selected.length,
+								},
 							]}
 						/>
 						{range ? (
@@ -256,7 +278,10 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 							data-testid="subtitles-font-notice"
 						>
 							<span className="min-w-0 flex-1">
-								{t('This template uses the font "{0}", which is not installed: the subtitles show in the default font until you install it.', template!.fontFamily)}
+								{t(
+									'This template uses the font "{0}", which is not installed: the subtitles show in the default font until you install it.',
+									template!.fontFamily,
+								)}
 							</span>
 							<Button
 								onClick={async () => {
@@ -280,7 +305,10 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 							options={[
 								{
 									value: 'template',
-									label: t('As the template ({0})', template?.output === 'caption-track' ? t('caption track') : t('text clips')),
+									label: t(
+										'As the template ({0})',
+										template?.output === 'caption-track' ? t('caption track') : t('text clips'),
+									),
 								},
 								{ value: 'text-clips', label: t('Text clips (effects, animation)') },
 								{ value: 'caption-track', label: t('Caption track (subtitle files)') },
@@ -334,7 +362,11 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 								options={Object.entries(PUNCTUATION_LABELS).map(([value, label]) => ({ value, label }))}
 							/>
 						</RuleRow>
-						<RuleRow label={t('Case')} generic={t(CASE_LABELS[cols.genericText.case]!)} tmpl={t(CASE_LABELS[cols.templateText.case]!)}>
+						<RuleRow
+							label={t('Case')}
+							generic={t(CASE_LABELS[cols.genericText.case]!)}
+							tmpl={t(CASE_LABELS[cols.templateText.case]!)}
+						>
 							<Select
 								label="Case"
 								className="w-40"
@@ -350,7 +382,9 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 						>
 							<Checkbox
 								checked={opts.text.stripTrailingPunctuation ?? cols.templateText.stripTrailingPunctuation}
-								onCheckedChange={(v) => setOpts({ ...opts, text: { ...opts.text, stripTrailingPunctuation: v === true } })}
+								onCheckedChange={(v) =>
+									setOpts({ ...opts, text: { ...opts.text, stripTrailingPunctuation: v === true } })
+								}
 								aria-label="Strip trailing punctuation"
 							/>
 						</RuleRow>
@@ -361,11 +395,17 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 						>
 							<Checkbox
 								checked={opts.text.replaceGlyphs ?? cols.templateText.replaceGlyphs}
-								onCheckedChange={(v) => setOpts({ ...opts, text: { ...opts.text, replaceGlyphs: v === true } })}
+								onCheckedChange={(v) =>
+									setOpts({ ...opts, text: { ...opts.text, replaceGlyphs: v === true } })
+								}
 								label="Use plain dots and quotes (… “ ”)"
 							/>
 						</RuleRow>
-						<RuleRow label={t('Mask words')} generic={t('off')} tmpl={cols.templateText.profanity ? t('on') : t('off')}>
+						<RuleRow
+							label={t('Mask words')}
+							generic={t('off')}
+							tmpl={cols.templateText.profanity ? t('on') : t('off')}
+						>
 							<TextField
 								className="w-full"
 								value={profanity}
@@ -426,7 +466,9 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 									label="At transitions"
 									className="w-56"
 									value={cut.transitions}
-									onValueChange={(v) => setOpts({ ...opts, cutAware: { ...opts.cutAware, transitions: v as 'snap' | 'avoid' } })}
+									onValueChange={(v) =>
+										setOpts({ ...opts, cutAware: { ...opts.cutAware, transitions: v as 'snap' | 'avoid' } })
+									}
 									options={[
 										{ value: 'snap', label: t('Change on the edit point') },
 										{ value: 'avoid', label: t('Change outside the transition') },
@@ -462,7 +504,10 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 						</p>
 					) : null}
 					{stats ? (
-						<dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 text-pr-small" data-testid="subtitles-counts">
+						<dl
+							className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 text-pr-small"
+							data-testid="subtitles-counts"
+						>
 							<dt className="text-pr-muted">Subtitles</dt>
 							<dd data-testid="subtitles-count">{stats.count}</dd>
 							<dt className="text-pr-muted">Started on a cut</dt>

@@ -21,7 +21,12 @@ let client: EngineClient | null = null;
 let loading: Promise<void> | null = null;
 
 export function subtitleLibrary(): StoreApi<SubtitleLibraryState> {
-	store ??= createStore<SubtitleLibraryState>(() => ({ status: 'offline', revision: 0, templates: [], error: null }));
+	store ??= createStore<SubtitleLibraryState>(() => ({
+		status: 'offline',
+		revision: 0,
+		templates: [],
+		error: null,
+	}));
 	return store;
 }
 

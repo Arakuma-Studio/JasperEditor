@@ -1,7 +1,14 @@
 // spec 13: registers the subtitle dialogs, the timeline clip menu entries for text clips (Save as Template…, Apply
 // Template…, Select Subtitle Group) and the Edit ▸ Select ▸ Subtitle Group / Same Template helpers. Called at module
 // load of `commands/subtitles.ts` (in COMMAND_MODULES).
-import { captionGroupOf, captionGroupsOf, captionOf, type Clip, groupClips, type Sequence } from '@jasper/project';
+import {
+	type Clip,
+	captionGroupOf,
+	captionGroupsOf,
+	captionOf,
+	groupClips,
+	type Sequence,
+} from '@jasper/project';
 import { registerDialog } from '@jasper/ui';
 import { clipMenuExtensions, type MenuItemSpec } from '../extensions/index.ts';
 import { type SelectionHelper, selectionHelpers } from '../selection/helpers.ts';
@@ -79,14 +86,20 @@ export function registerSubtitlesUi(): void {
 			const doc = session.getCommitted();
 			const seq = Object.values(doc.sequences).find((s) => s.clips[clip.id]);
 			const items: MenuItemSpec[] = [
-				{ kind: 'item', label: 'Save as Template…', disabled: readOnly, run: () => openSaveTemplate(session, clip.id) },
+				{
+					kind: 'item',
+					label: 'Save as Template…',
+					disabled: readOnly,
+					run: () => openSaveTemplate(session, clip.id),
+				},
 			];
 			if (cap && seq) {
 				const g = captionGroupOf(seq, cap.groupId);
 				items.push({
 					kind: 'item',
 					label: 'Select Subtitle Group',
-					run: () => session.select('timeline', subtitleGroupClipIds(seq, clip), 'replace', { linked: false }),
+					run: () =>
+						session.select('timeline', subtitleGroupClipIds(seq, clip), 'replace', { linked: false }),
 				});
 				if (g?.templateId)
 					items.push({

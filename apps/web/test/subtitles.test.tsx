@@ -63,8 +63,17 @@ function talk(words = 12): EditorSession {
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		return r;
 	};
-	const mediaId = (ok([{ type: 'media.register', asset: asset() }]).results[0] as { mediaId: string }).mediaId;
-	ok([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+	const mediaId = (ok([{ type: 'media.register', asset: asset() }]).results[0] as { mediaId: string })
+		.mediaId;
+	ok([
+		{
+			type: 'clip.place',
+			source: { mediaId },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		},
+	]);
 	const s = (x: number) => Math.round(x * FLICKS_PER_SECOND);
 	ok([
 		{
@@ -72,7 +81,11 @@ function talk(words = 12): EditorSession {
 			mediaId,
 			language: 'es',
 			origin: 'manual',
-			words: Array.from({ length: words }, (_, i) => ({ text: `p${i}`, start: s(i * 0.4), end: s(i * 0.4 + 0.38) })),
+			words: Array.from({ length: words }, (_, i) => ({
+				text: `p${i}`,
+				start: s(i * 0.4),
+				end: s(i * 0.4 + 0.38),
+			})),
 		},
 	]);
 	return session;
@@ -83,8 +96,19 @@ describe('Create Subtitles (AS-040)', () => {
 	it('builds one captions.generate command from the choices', () => {
 		const tpl = BUILTIN_SUBTITLE_TEMPLATES.find((t) => t.id === 'builtin:pixel-pop')!;
 		const cmd = generateCommand(
-			{ ...DEFAULT_CREATE_OPTIONS, rules: { maxWords: 2 }, text: { case: 'upper' }, language: 'es', nest: true },
-			{ sequenceId: 'seq_1', source: { kind: 'media', mediaId: 'med_1' }, range: { start: 0, end: 90 }, template: tpl },
+			{
+				...DEFAULT_CREATE_OPTIONS,
+				rules: { maxWords: 2 },
+				text: { case: 'upper' },
+				language: 'es',
+				nest: true,
+			},
+			{
+				sequenceId: 'seq_1',
+				source: { kind: 'media', mediaId: 'med_1' },
+				range: { start: 0, end: 90 },
+				template: tpl,
+			},
 		);
 		expect(cmd).toEqual({
 			type: 'captions.generate',
@@ -103,11 +127,22 @@ describe('Create Subtitles (AS-040)', () => {
 	it('previews the counts on a copy of the document and creates in one History entry', async () => {
 		const session = talk(12);
 		const before = session.getCommitted();
-		const p = previewGeneration(before, generateCommand(DEFAULT_CREATE_OPTIONS, { sequenceId: seqOf(session).id, source: { kind: 'sequence' }, range: null, template: BUILTIN_SUBTITLE_TEMPLATES[0]! }));
+		const p = previewGeneration(
+			before,
+			generateCommand(DEFAULT_CREATE_OPTIONS, {
+				sequenceId: seqOf(session).id,
+				source: { kind: 'sequence' },
+				range: null,
+				template: BUILTIN_SUBTITLE_TEMPLATES[0]!,
+			}),
+		);
 		expect(p.ok && p.stats.count).toBe(4);
 		expect(session.getCommitted()).toBe(before);
 		const close = vi.fn();
-		renderWithSession(session, <CreateSubtitlesDialog session={session} sequenceId={seqOf(session).id} close={close} />);
+		renderWithSession(
+			session,
+			<CreateSubtitlesDialog session={session} sequenceId={seqOf(session).id} close={close} />,
+		);
 		await waitFor(() => expect(screen.getByTestId('subtitles-count').textContent).toBe('4'));
 		// font notice: Pixel12x10 is not in the (empty) font catalogue
 		expect(screen.getByTestId('subtitles-font-notice')).toBeTruthy();
@@ -129,10 +164,23 @@ describe('Create Subtitles (AS-040)', () => {
 	it('hides the font notice when the family is installed', async () => {
 		fontsStore().setState({
 			status: 'ready',
-			catalog: { fonts: [{ family: 'Pixel12x10', source: 'custom', weights: [500], styles: ['normal'], files: [{ weight: 500, style: 'normal', url: '/fonts/library/x.ttf' }] as never }] },
+			catalog: {
+				fonts: [
+					{
+						family: 'Pixel12x10',
+						source: 'custom',
+						weights: [500],
+						styles: ['normal'],
+						files: [{ weight: 500, style: 'normal', url: '/fonts/library/x.ttf' }] as never,
+					},
+				],
+			},
 		});
 		const session = talk(4);
-		renderWithSession(session, <CreateSubtitlesDialog session={session} sequenceId={seqOf(session).id} close={() => {}} />);
+		renderWithSession(
+			session,
+			<CreateSubtitlesDialog session={session} sequenceId={seqOf(session).id} close={() => {}} />,
+		);
 		await waitFor(() => expect(screen.getByTestId('subtitles-count')).toBeTruthy());
 		expect(screen.queryByTestId('subtitles-font-notice')).toBeNull();
 		fontsStore().setState({ status: 'offline', catalog: null });
@@ -166,16 +214,32 @@ describe('Subtitles tab (AS-040)', () => {
 });
 
 describe('Select ▸ Subtitle Group / Same Template (AS-032)', () => {
-	it('selects the primary subtitle\'s group, and every subtitle of groups with its template', () => {
+	it("selects the primary subtitle's group, and every subtitle of groups with its template", () => {
 		const session = talk(8);
 		const ok = (cmd: unknown) => {
 			const r = session.apply({ label: 'g', origin: 'user', commands: [cmd as never] });
 			if (!r.ok) throw new Error(JSON.stringify(r.errors));
 			return r.results[0] as { clipIds: string[] };
 		};
-		const a = ok({ type: 'captions.generate', template: 'builtin:minimal', rules: { maxWords: 2 }, cutAware: false });
-		const b = ok({ type: 'captions.generate', template: 'builtin:minimal', rules: { maxWords: 4 }, cutAware: false, trackId: 'new' });
-		const c = ok({ type: 'captions.generate', template: 'builtin:bold-pop', cutAware: false, trackId: 'new' });
+		const a = ok({
+			type: 'captions.generate',
+			template: 'builtin:minimal',
+			rules: { maxWords: 2 },
+			cutAware: false,
+		});
+		const b = ok({
+			type: 'captions.generate',
+			template: 'builtin:minimal',
+			rules: { maxWords: 4 },
+			cutAware: false,
+			trackId: 'new',
+		});
+		const c = ok({
+			type: 'captions.generate',
+			template: 'builtin:bold-pop',
+			cutAware: false,
+			trackId: 'new',
+		});
 		const seq = seqOf(session);
 		const doc = session.getCommitted();
 		const primary = seq.clips[a.clipIds[0]!]!;

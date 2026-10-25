@@ -4,12 +4,12 @@ import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { EmptyState, Tabs } from '@jasper/ui';
 import { useEffect, useState } from 'react';
+import { SubtitlesTab } from '../../subtitles/SubtitlesTab.tsx';
 import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
 import { CaptionsTab } from './CaptionsTab.tsx';
 import { textPanelRequests } from './state.ts';
 import { TranscriptTab } from './TranscriptTab.tsx';
-import { SubtitlesTab } from '../../subtitles/SubtitlesTab.tsx';
 
 export function TextPanel(_props: PanelProps) {
 	const session = useSessionOrNull();

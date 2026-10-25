@@ -97,7 +97,9 @@ export function SaveTemplateDialog(props: HostedDialogProps<{ session: EditorSes
 	);
 }
 
-export function ApplyTemplateDialog(props: HostedDialogProps<{ session: EditorSession; target: ApplyTarget }>) {
+export function ApplyTemplateDialog(
+	props: HostedDialogProps<{ session: EditorSession; target: ApplyTarget }>,
+) {
 	const { session, target } = props;
 	const doc = useStoreSelector(session.store, (s) => s.document);
 	const library = useSubtitleLibrary();
@@ -142,9 +144,17 @@ export function ApplyTemplateDialog(props: HostedDialogProps<{ session: EditorSe
 		>
 			<div className="flex flex-col gap-2">
 				<p className="text-pr-text">{entry ? templateName(entry.template) : t('The template is gone.')}</p>
-				<Checkbox checked={parts.style} onCheckedChange={set('style')} label="Text style (linked project style)" />
+				<Checkbox
+					checked={parts.style}
+					onCheckedChange={set('style')}
+					label="Text style (linked project style)"
+				/>
 				<Checkbox checked={parts.layout} onCheckedChange={set('layout')} label="Box and position" />
-				<Checkbox checked={parts.animation} onCheckedChange={set('animation')} label="Animation and effects" />
+				<Checkbox
+					checked={parts.animation}
+					onCheckedChange={set('animation')}
+					label="Animation and effects"
+				/>
 				<Checkbox checked={parts.highlight} onCheckedChange={set('highlight')} label="Word highlight" />
 			</div>
 		</Dialog>

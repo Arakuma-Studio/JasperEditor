@@ -61,9 +61,17 @@ export const subtitleCommands: UiCommand[] = [
 				sequenceId: e.seq.id,
 				commands: groups.map((groupId) => ({ type: 'captions.alignToCuts', groupId })),
 			});
-			if (!r.ok) ctx.ui.toast({ kind: 'warning', message: 'Align Subtitles to Cuts: not possible', detail: r.errors[0]?.message });
+			if (!r.ok)
+				ctx.ui.toast({
+					kind: 'warning',
+					message: 'Align Subtitles to Cuts: not possible',
+					detail: r.errors[0]?.message,
+				});
 			else {
-				const n = r.results.reduce((s: number, x) => s + ((x as { splitAtCuts?: number }).splitAtCuts ?? 0), 0);
+				const n = r.results.reduce(
+					(s: number, x) => s + ((x as { splitAtCuts?: number }).splitAtCuts ?? 0),
+					0,
+				);
 				const m = r.results.reduce((s: number, x) => s + ((x as { moved?: number }).moved ?? 0), 0);
 				ctx.ui.toast({ kind: 'info', message: `Subtitles aligned: ${m} moved, ${n} split at cuts` });
 			}

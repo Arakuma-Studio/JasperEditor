@@ -6,11 +6,11 @@
 import {
 	CAPTION_FORMAT_INFO,
 	type CaptionFileFormat,
+	type Clip,
+	type CommandInput,
 	captionCuesForGroup,
 	captionGroupsOf,
 	captionOf,
-	type Clip,
-	type CommandInput,
 	findSubtitleTemplate,
 	groupClips,
 	type ProjectDocument,
@@ -22,8 +22,8 @@ import type { EditorSession } from '@jasper/session';
 import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import { Button, confirmDialog, EmptyState, Select, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { t } from '../i18n/runtime.ts';
 import { formatTimecode } from '../gaps/time-display.ts';
+import { t } from '../i18n/runtime.ts';
 import { downloadBytes } from '../panels/text/state.ts';
 import { availableTemplates } from './model.ts';
 import { openApplyTemplate, openCreateSubtitles, openSaveTemplate } from './open.ts';
@@ -63,10 +63,7 @@ export function SubtitlesTab({ session, seq }: Props) {
 	const [active, setActive] = useState<string | null>(ids[0] ?? null);
 	const groupId = active && groups[active] ? active : (ids[0] ?? null);
 	const group = groupId ? groups[groupId]! : null;
-	const clips = useMemo(
-		() => (groupId ? (groupClips(seq, groupId) as TextClip[]) : []),
-		[seq, groupId],
-	);
+	const clips = useMemo(() => (groupId ? (groupClips(seq, groupId) as TextClip[]) : []), [seq, groupId]);
 	const templates = useMemo(() => availableTemplates(doc, library.templates), [doc, library.templates]);
 	const [applyId, setApplyId] = useState<string>('builtin:pixel-pop');
 	const [format, setFormat] = useState<CaptionFileFormat>('srt');
@@ -74,11 +71,13 @@ export function SubtitlesTab({ session, seq }: Props) {
 
 	// a newly created group becomes the shown one
 	const known = useRef(new Set(ids));
+	const idsKey = ids.join('|');
 	useEffect(() => {
-		const fresh = ids.find((id) => !known.current.has(id));
-		known.current = new Set(ids);
+		const now = idsKey ? idsKey.split('|') : [];
+		const fresh = now.find((id) => !known.current.has(id));
+		known.current = new Set(now);
 		if (fresh) setActive(fresh);
-	}, [ids.join('|')]);
+	}, [idsKey]);
 
 	const apply = (label: string, commands: CommandInput[]) => {
 		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
@@ -164,12 +163,19 @@ export function SubtitlesTab({ session, seq }: Props) {
 					options={ids.map((id) => ({ value: id, label: groups[id]!.name }))}
 				/>
 				<span className="text-pr-muted" data-testid="subtitles.summary">
-					{t('{0} subtitles · {1} · {2}', clips.length, templateIdName(group.templateId, (id) => findSubtitleTemplate(doc, id)), group.language)}
+					{t(
+						'{0} subtitles · {1} · {2}',
+						clips.length,
+						templateIdName(group.templateId, (id) => findSubtitleTemplate(doc, id)),
+						group.language,
+					)}
 				</span>
 				<span className="flex-1" />
 				<Button
 					disabled={readOnly}
-					onClick={() => apply('Align Subtitles to Cuts', [{ type: 'captions.alignToCuts', groupId: group.id }])}
+					onClick={() =>
+						apply('Align Subtitles to Cuts', [{ type: 'captions.alignToCuts', groupId: group.id }])
+					}
 					data-testid="subtitles.align"
 				>
 					Align to Cuts
@@ -177,14 +183,23 @@ export function SubtitlesTab({ session, seq }: Props) {
 				<Button
 					disabled={readOnly}
 					onClick={() => apply('Regenerate Subtitles', [{ type: 'captions.regenerate', groupId: group.id }])}
-					title={t('Make the subtitles again from the current transcript (clips that still match keep their edits)')}
+					title={t(
+						'Make the subtitles again from the current transcript (clips that still match keep their edits)',
+					)}
 					data-testid="subtitles.regenerate"
 				>
 					Regenerate
 				</Button>
 				<Button
 					disabled={readOnly}
-					onClick={() => session.select('timeline', clips.map((c) => c.id), 'replace', { linked: false })}
+					onClick={() =>
+						session.select(
+							'timeline',
+							clips.map((c) => c.id),
+							'replace',
+							{ linked: false },
+						)
+					}
 					data-testid="subtitles.select"
 				>
 					Select
@@ -218,8 +233,12 @@ export function SubtitlesTab({ session, seq }: Props) {
 				</Button>
 				<Button
 					disabled={readOnly}
-					onClick={() => apply('Convert Subtitles', [{ type: 'captions.convert', groupId: group.id, to: 'caption-track' }])}
-					title={t('Turn the group into a caption track (subtitle streams and files; effects and animation are not kept)')}
+					onClick={() =>
+						apply('Convert Subtitles', [{ type: 'captions.convert', groupId: group.id, to: 'caption-track' }])
+					}
+					title={t(
+						'Turn the group into a caption track (subtitle streams and files; effects and animation are not kept)',
+					)}
 					data-testid="subtitles.toCaptions"
 				>
 					To Caption Track
@@ -228,7 +247,8 @@ export function SubtitlesTab({ session, seq }: Props) {
 					disabled={readOnly}
 					onClick={async () => {
 						const name = globalThis.prompt?.(t('Subtitle group name'), group.name)?.trim();
-						if (name) apply('Subtitle Group Settings', [{ type: 'captions.updateGroup', groupId: group.id, name }]);
+						if (name)
+							apply('Subtitle Group Settings', [{ type: 'captions.updateGroup', groupId: group.id, name }]);
 					}}
 					data-testid="subtitles.rename"
 				>
@@ -285,7 +305,9 @@ export function SubtitleList(props: {
 		<div
 			ref={ref}
 			className="min-h-0 flex-1 overflow-auto"
-			onScroll={(e) => setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight || 400 })}
+			onScroll={(e) =>
+				setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight || 400 })
+			}
 			data-testid="subtitles.list"
 			data-rows={clips.length}
 		>

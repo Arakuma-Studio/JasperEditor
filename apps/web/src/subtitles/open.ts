@@ -7,7 +7,11 @@ export const CREATE_SUBTITLES_DIALOG = 'subtitles.create';
 export const SAVE_TEMPLATE_DIALOG = 'subtitles.saveTemplate';
 export const APPLY_TEMPLATE_DIALOG = 'subtitles.applyTemplate';
 
-export function openCreateSubtitles(session: EditorSession, sequenceId: string, source?: SubtitleSourceChoice): void {
+export function openCreateSubtitles(
+	session: EditorSession,
+	sequenceId: string,
+	source?: SubtitleSourceChoice,
+): void {
 	void openDialog(CREATE_SUBTITLES_DIALOG, { session, sequenceId, ...(source ? { source } : {}) });
 }
 

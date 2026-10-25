@@ -6,8 +6,8 @@ import {
 	applyTransaction,
 	BUILTIN_SUBTITLE_TEMPLATES,
 	type CommandInput,
-	createRandomIdSource,
 	type CutAwareInput,
+	createRandomIdSource,
 	defaultRegistries,
 	GENERIC_SUBTITLE_RULES,
 	GENERIC_SUBTITLE_TEXT,
@@ -77,7 +77,10 @@ export function loadCreateOptions(): CreateSubtitlesOptions {
 export function saveCreateOptions(o: CreateSubtitlesOptions): void {
 	try {
 		const { templateId, output, language, nest, inOutOnly } = o;
-		globalThis.localStorage?.setItem(OPTIONS_KEY, JSON.stringify({ templateId, output, language, nest, inOutOnly }));
+		globalThis.localStorage?.setItem(
+			OPTIONS_KEY,
+			JSON.stringify({ templateId, output, language, nest, inOutOnly }),
+		);
 	} catch {
 		/* storage unavailable */
 	}
@@ -86,7 +89,10 @@ export function saveCreateOptions(o: CreateSubtitlesOptions): void {
 export type TemplateEntry = { template: SubtitleTemplate; origin: 'built-in' | 'project' | 'library' };
 
 /** Every template the dialog offers: built-ins, then the project's copies, then the user library (by id, first wins). */
-export function availableTemplates(doc: ProjectDocument, library: readonly SubtitleTemplate[]): TemplateEntry[] {
+export function availableTemplates(
+	doc: ProjectDocument,
+	library: readonly SubtitleTemplate[],
+): TemplateEntry[] {
 	const out: TemplateEntry[] = [];
 	const seen = new Set<string>();
 	const add = (template: SubtitleTemplate, origin: TemplateEntry['origin']) => {
@@ -187,7 +193,12 @@ export function previewGeneration(doc: ProjectDocument, command: CommandInput): 
 	const { document, result } = applyTransaction(
 		doc,
 		{ label: 'Create Subtitles (preview)', origin: 'system', commands: [command] },
-		{ ids: createRandomIdSource(), now: () => new Date().toISOString(), revision: 0, registries: defaultRegistries() },
+		{
+			ids: createRandomIdSource(),
+			now: () => new Date().toISOString(),
+			revision: 0,
+			registries: defaultRegistries(),
+		},
 	);
 	if (!result.ok) {
 		const e = result.errors[0];
@@ -207,7 +218,12 @@ export function previewGeneration(doc: ProjectDocument, command: CommandInput): 
 		? {
 				clipId: c.kind === 'text' ? c.id : null,
 				// a few frames in: the pop-in of animated templates has settled after ~10 frames at 60 fps
-				frame: c.start + Math.min(c.duration - 1, Math.max(0, Math.round((seq!.settings.frameRate.num / seq!.settings.frameRate.den) * 0.2))),
+				frame:
+					c.start +
+					Math.min(
+						c.duration - 1,
+						Math.max(0, Math.round((seq!.settings.frameRate.num / seq!.settings.frameRate.den) * 0.2)),
+					),
 				text: c.kind === 'text' ? c.content.text : '',
 			}
 		: null;
