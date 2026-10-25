@@ -19,6 +19,8 @@ import {
 	type CommentSpan,
 	fillSocialParams,
 	resolveEmojiStyle,
+	SOCIAL_ADD_ANOTHER,
+	SOCIAL_IMPORT_HINTS,
 	SOCIAL_PARAM_NAMES,
 	SOCIAL_VARIANTS,
 	type SocialCommentParams,
@@ -355,7 +357,8 @@ export const SOCIAL_VARIANT_FONTS: Readonly<
 	'instagram-reel-reply': null,
 	'youtube-comment': null,
 	'youtube-shorts-reply': null,
-	'x-post': null,
+	// Chirp (X's UI font, remote manifest `chirp-*`): name 700; handle, time, post text and counts 400 (x.com 2026)
+	'x-post': { family: 'Chirp', weights: [400, 700] },
 };
 
 // ------------------------------------------------------------------------------------------------ assets
@@ -418,7 +421,11 @@ export function fillSocialCommentParams(
 const DEFAULTS = socialCommentParamsSchema.parse({});
 
 /** The variants with a card of their own (the others draw a "not available yet" card and get no preset). */
-export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = ['tiktok-reply', 'tiktok-comment'];
+export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
+	'tiktok-reply',
+	'tiktok-comment',
+	'x-post',
+];
 
 /**
  * The variant of social-comment params whose card this build does not draw yet (the clip shows a "not available" card
@@ -444,7 +451,10 @@ const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: 
 	},
 	'youtube-comment': { name: 'YouTube · Comment', description: 'A YouTube video comment.' },
 	'youtube-shorts-reply': { name: 'YouTube · Shorts reply', description: 'The YouTube Shorts comment card.' },
-	'x-post': { name: 'X · Post', description: 'An X post card.' },
+	'x-post': {
+		name: 'X · Post',
+		description: 'An X post with replies, reposts, likes and views.',
+	},
 };
 
 /** One preset per variant with a card: tokcomment's defaults of that variant (what differs from the schema's). */
@@ -524,5 +534,9 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			wordReveal: { label: 'Words One by One' },
 			likeTick: { label: 'Likes Tick Up', ...byVariant('likeTick') },
 		},
+		// "Add another" re-randomizes identity and stats (keeps look, text and animation); bulk-import column aliases
+		// (docs/wp-notes/social-comments.md "Add another & bulk import")
+		addAnother: SOCIAL_ADD_ANOTHER,
+		import: SOCIAL_IMPORT_HINTS,
 	},
 };

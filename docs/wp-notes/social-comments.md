@@ -825,6 +825,78 @@ frame.
   - Huge counts overflow the card; they now stay short.
 - **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
 
+### X card
+
+WP6d (`sc/v-x`): `x-post` in `packages/motion/src/templates/social-comment/x.tsx` (`X_POST`). Font: Chirp 400/700
+from the remote manifest (`SOCIAL_VARIANT_FONTS['x-post']`; the card draws no 500 or 800). Glyphs: `X_GLYPHS`. Emoji:
+Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
+
+- **Blueprint [tok]:** `ref/x-post`, copied in CSS px. 420 wide, padding 10/16/8, radius 1, 1 px border black/white
+  5 %, the comment row's `0 25px 50px -12px` shadow (same `bleed` as the TikTok comment), bg #FFF / #000. Avatar 52,
+  gap 12. Header row 21 px high, gap 4, 2 px below: name 14/700, badge, `@handle` 14/400, a 2 px dot with 2 px margins,
+  time 14/400, then (pushed right) the Grok mark and "More", 8 px apart. Post 16/20, 3 px above the action row. Action
+  row 30 px high: icon, count 8 px after it; bookmark and share 12 px apart at the right.
+- **x.com 2026 over tokcomment [M]** (`research/platform-measurements`, X):
+  - name and post #000 / #FFF (tokcomment #0F0F0F, dark name #DADADA);
+  - handle, time, dot, icons and counts rgba(0,0,0,.6) / rgba(255,255,255,.6) (`--x-fg-secondary`; tokcomment
+    #737479 / #71767B / #767779);
+  - counts 13 px / 400 with tabular figures (tokcomment 12.96 / 500);
+  - Grok and More in the primary colour (dark: white; tokcomment's dark ellipsis #71767B);
+  - mentions and hashtags #1D9BF0 in both themes;
+  - **action bar: four equal columns** (x.com's `flex-1` engagement columns) for replies, reposts, likes and views,
+    then bookmark and share. Each column clips its count, so no count can push bookmark and share out of the card
+    (tokcomment's space-between row overflows with raw counts, `07_…_BUG-share-icon-overflows`). Icons keep their
+    places whatever the counts; with tokcomment's default counts they sit up to 7 px from its space-between positions.
+  - **a 0 count is not shown** (x.com shows the icon alone) [E: x.com behaviour; the measured post had no zero count].
+- **`showReposts` / `showViews`** hide the count and keep the icon (the params' contract, "the icon stays"), so the
+  columns never move.
+- **Grok mark:** included. x.com puts the Grok "Explain this post" ghost button (`icon-logo-grok`) left of "More" for
+  signed-in viewers when the post allows Grok analysis (bundle code; not rendered logged out [M]); the reference layout
+  shows it, and a screenshot of a post is usually taken signed in. It is X's real mark (`X_GLYPHS.grok`), not
+  tokcomment's imitation. There is no param to hide it (the schema is shared; not added in WP6d).
+- **Verified badge:** X's blue badge with the cut-out tick (`X_GLYPHS.verifiedBlue`), 14 px = 1 em of the name as on
+  x.com. Gold (organisations) and grey (government) exist in `X_GLYPHS` but `verified` is a boolean, so only blue is
+  drawn; a colour choice would need a schema field (proposed, not added).
+- **Sizes against the captures' ink (2×):** action icons 15 px (X's 24-unit glyphs: 24–26 px ink, as tokcomment's 14 px
+  lucide icons with their strokes), Grok 15, More 15, badge 14 (24 px ink, same as tokcomment's).
+- **Text:** Chirp keeps the captures' cap heights at tokcomment's sizes (2×: name "D" 20 vs 19 px, post "W" 22 vs 22 px),
+  so no size was scaled. It sits about 1 px higher in its line box, so the header text moves 1 px down
+  (`HEADER_SHIFT`). Chirp is ≈ 3 % wider than the captures' Liberation Sans (post line 622 vs 605 px), so a long
+  post can wrap one word earlier.
+- **Emoji:** Apple images at 1.2 em, shift −0.22 em: 34 × 34 px box against the capture's 34 × 32 glyph, top within 1 px.
+- **Like tick:** the outline heart cross-fades to X's filled heart in #F91880 (`--x-magenta-500` [M-css]) and thumps;
+  the count's colour moves from the secondary colour to #F91880 with the fill, as x.com colours a liked count. The count
+  starts hidden (0) and appears as it ticks up.
+- **Avatars:** a picture (`mediaUrls`), a generated one (initials from `displayName`, as the Properties preview), or
+  X's default profile picture (`null`): the manifest image `REMOTE_IMAGE_IDS.xDefaultAvatar` from
+  `assets.imageUrls` when the engine resolved it, else its vector twin (a #CCD6DD field, a #657786 head and shoulders,
+  measured on the 400 px file sha256 6d34bedb…), so the card never shows a wrong platform's silhouette.
+- **Fit:** the name and the handle truncate with an ellipsis; the badge, dot, time, Grok and More never shrink; counts
+  stay short ("999.9B", "1,000B" at the 1e12 cap) and clip inside their columns.
+- **Grow from tail:** no tail; the card grows from the avatar corner (`0% 0%`).
+- **Inline editing (C5):** `displayName` (the name span), `handle` (a span inside `@…`, without the "@") and `text`
+  (marks) carry `editableParamProps`.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/x/index.html` (outside the repo): all 18
+  tokcomment captures side by side with our `renderStill` at 2× and a difference overlay, plus generated avatar, huge
+  and zero counts, hidden reposts / views, liked (light, dark), no profile, long names, mentions and entrance / extras
+  filmstrips. To rerun: the manifest's Chirp files (`Chirp-*.latin.woff2`) in a directory, Apple PNGs (`<cp>.png`),
+  X's default avatar as `x-default-avatar.png`, then `REMOTION_E2E=1 SOCIAL_CHIRP_DIR=<chirp> SOCIAL_EMOJI_DIR=<emoji>
+  SOCIAL_IMAGE_DIR=<images> SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER='^(x-post_|anim_x-)' pnpm
+  exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools (`crop.mjs`, `cmp.sh`,
+  `filmstrips.sh`, `page.mjs`) in that directory's `tools/`. The e2e entry takes remote images as `imageFiles`
+  (`imageUrls`).
+- **Measured matches (2×):** card 840 × 230 opaque px for the 840 × 232 capture (the half-covered edge rows fall
+  outside the opaque crop); header, post and action rows within 1 px vertically; name width 183 vs 181 px; badge,
+  time and More within 2 px horizontally.
+
+**Deliberate differences from tokcomment:**
+- **Font:** Chirp instead of the capture host's Liberation Sans (tokcomment asks for Roboto, which never loaded).
+- **Glyphs:** X's own reply, repost, like / liked, views, bookmark, share, More, blue badge and Grok mark instead of
+  lucide and a Grok imitation.
+- **The [M] values above,** the equal-column action bar and hidden zero counts.
+- **Emoji:** Apple images (x.com shows the viewer's OS emoji since 2026; tokcomment's capture host drew Noto).
+- **tokcomment bugs fixed:** raw counts ("1234567" → "1.2M") and the share icon pushed out of the card.
+
 ### Verification
 
 - **Commands run** (`--maxWorkers=2`):
@@ -849,7 +921,8 @@ frame.
 
 ### Limits
 
-- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Variants:** the Instagram and YouTube cards are not built (WP6b–c); the X card is ("X card" above). See
+  `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
@@ -1118,6 +1191,204 @@ The group wand fills every stat the clip's variant draws — `timeValue`, `timeU
 - The avatar resolution warning of design §7.11 (below 2× the drawn size) is not part of these controls.
 - In the markup view the mark buttons are disabled (the markup is edited as text there).
 
+## Add another & bulk import
+
+WP7c (`sc/bulk`), design §7.9 ("Add another", "Bulk import") and §7.10. Generic over motion-graphic templates;
+social comments are the main user.
+
+### Template hints (`MgTemplateUi`, `@jasper/project` `registry/mg.ts`)
+
+```ts
+ui.addAnother?: { reroll: readonly string[] }      // params "Add another" re-randomizes through the fill hook
+ui.import?: {
+  aliases?: Record<string, string | { byParam: string; map: Record<string, string>; otherwise: string }>;
+  ignored?: Record<string, string>;                 // column name → reason shown in the preview
+  trimPrefix?: Record<string, string>;              // param → prefix removed from its cells ("@")
+}
+```
+
+- `createMgRegistry` validates both: param names must exist; `addAnother` needs a `fill` hook; alias targets,
+  `byParam`, `map` values and `trimPrefix` keys must be params; reasons non-empty. Both travel in the catalogue JSON
+  (`@jasper/api` `MgTemplateUiSchema`) to MCP.
+- `social-comment@1` sets `addAnother: SOCIAL_ADD_ANOTHER` and `import: SOCIAL_IMPORT_HINTS`
+  (`packages/mg-templates/src/social/bulk.ts`).
+  - **Re-randomized** (`SOCIAL_REROLL_PARAMS`): `displayName`, `handle`, `avatar`, `timeValue`, `timeUnit`, `likes`,
+    `replies`, `reposts`, `views`. That is a different person and new stats.
+  - **Kept** (`SOCIAL_KEEP_PARAMS`): `variant`, `theme`, `emojiStyle`, `showProfile`, `verified`, `showReposts`,
+    `showViews`, `text`, `entrance`, `wordReveal`, `likeTick`.
+  - **Choice:** the text is kept, not cleared. The user edits the new card's text in place, and an empty card would
+    show the placeholder. `verified` is kept as a look toggle, as on tokcomment's panel.
+  - **Aliases:**
+    - `User` is the name the variant shows: `displayName` on TikTok and X, `handle` on Instagram and YouTube.
+    - `Username` / `User name` is the handle where the card draws one; on TikTok it is the nickname.
+    - Fixed aliases: `Name`, `Nickname`, `Author` → `displayName`; `Account` → `handle`; `Message`, `Body`,
+      `Content`, `Comment text` → `text`; `Like count`, `Hearts` → `likes`; `Reply count` → `replies`; `Retweets` →
+      `reposts`; `View count` → `views`; `Type` → `variant`; `Ago` → `timeValue`; `Time unit` → `timeUnit`;
+      `Blue check`, `Badge` → `verified`.
+    - Param names and Properties labels (`Comment`, `Display Name`, `Style`, `Verified`…) match without aliases.
+  - **Image columns** (`Image URL`, `Avatar URL`, `Profile picture`, `Photo`, …) are ignored with a visible reason:
+    remote images are not imported in v1. No existing import path takes a URL. An `avatar` column takes JSON
+    (`{"mediaId": "…"}` or `{"generated": 7}`).
+
+### Add another — `clip.duplicateMotionGraphic {clipId, seed, at?, track?, params?, ref?}`
+
+- **Copy:** the whole clip (transform, effects, masks, keyframes, name, label, canvas). Children get new ids; links
+  and groups are not copied.
+- **Placement:** the copy starts at `at` (default: the source's end) with the same duration. It goes on the first
+  free unlocked video track from `track` (default: the source's track) up, or on a new top track. It never
+  overwrites (`firstFreeTrack`).
+- **Params:** the source's params minus `reroll`, then `params` on top. The fill hook fills the omitted ones from
+  `seed`. A rerolled param the hook does not fill takes the template default.
+- **Validation:** the params schema and the template media checks run on the result (`validateTemplateParams`).
+- **Keyframes:** those of rerolled and given params are dropped (keys would override the new value). The others
+  are kept.
+- **Templates without the hint or a fill hook:** a plain copy after the clip.
+- **Refusals:**
+  - unknown clip: `E_NOT_FOUND`;
+  - not a motion graphic, template not installed, params the schema rejects, a refused fill, start < 0:
+    `E_INVALID_PARAM`;
+  - an audio `track`: `E_TRACK_KIND`;
+  - a seed outside uint32: `E_SCHEMA`.
+- **Result:** `{clipId, sourceClipId, sequenceId, trackId, track, createdTrack?, start, duration, params, rerolled,
+  seed}`. Refs chain copies in one transaction (`$a` → `$b`).
+- **UI** (`apps/web/src/panels/motionTemplates/add-another.ts`, one transaction, label "Add Another"):
+  - the UI command `mg.addAnother` (palette; agent-exposed with `{clipIds?, seed?}`);
+  - the timeline clip menu of motion-graphic clips;
+  - Properties ▸ Template;
+  - the Motion Templates panel button;
+  - Graphics ▸ Add Another.
+
+  Several selected motion graphics each get one copy (seeds `mgItemSeed(seed, i)`). The copies are selected
+  afterwards.
+- **No shortcut:** the free chord Ctrl+Alt+D is Cmd+Opt+D on macOS, which toggles the Dock.
+
+### Bulk import
+
+**Parser** (`packages/project/src/bulk/table.ts`, `parseTable`, `detectDelimiter`, `formatTable`):
+- RFC 4180 plus what spreadsheets write: quotes, `""`, CRLF / LF / CR, a BOM, line breaks inside quoted cells
+  (normalised to LF), ragged rows, a quote inside an unquoted cell kept literally.
+- Text after a closing quote is kept and reported. An unclosed quote takes the rest of the text and is reported on
+  its line.
+- Blank records are skipped.
+- **Delimiter:**
+  - tab when the first record has a tab outside quotes (pasted cells);
+  - else `;` when it has more semicolons than commas;
+  - else `,`.
+- **Caps** (AGENTS §0):
+  - 2 MiB of text (`TABLE_MAX_CHARS`; the dialog refuses larger files before reading them);
+  - 500 data rows (more refuses the table and stops parsing early);
+  - 64 columns (the rest are dropped, with an issue);
+  - 10 000 characters per cell (cut; that row is then an error).
+- **Speed:** 500 rows of 4 KB (≈ 2 MB) parse in well under a second (test).
+
+**Planner** (`packages/project/src/bulk/mg-import.ts`): `planMgImport(table, template, {preset?, rate})`.
+- **Column matching:** header names are compared ignoring case, spaces, `_ - . :` and a leading `@`/`#`, in this
+  order:
+  1. param name;
+  2. Properties label (`ui.params[name].label`);
+  3. template alias;
+  4. timing columns: `start` / `at` / `start time` / `in` / `clip start`, and `duration` / `length` / `dur` /
+     `clip duration`;
+  5. template-ignored column;
+  6. anything else: ignored, "Not a parameter of …".
+
+  A second column for the same param is ignored. A direct column wins over an alias on a row (with a warning).
+- **Cell coercion** follows the param's JSON Schema:
+  - Numbers: `1,234`, `1.2K`, `3.5M`, `2B`; integers must be whole; min / max are checked.
+  - Booleans: yes / no / true / false / 1 / 0 / y / n / on / off / ✓ / ✗ / sí.
+  - Enums: case and punctuation ignored (`TikTok Comment` → `tiktok-comment`).
+  - Strings: outer whitespace trimmed; length and pattern checked.
+  - Object / array params: JSON.
+- **Empty cells** are "not given": the preset, then the fill hook, then the defaults decide. A row cannot set an
+  empty text; the preview shows what the row gets.
+- **Time cells** (frames at the sequence rate): `3` and `1.5` are seconds; also `3s`, `250ms`, `90f`, `M:SS`,
+  `H:MM:SS` and timecode. Starts are capped at 100 h, lengths at 1 h; a length must be ≥ 1 frame.
+- **Presets:** every row starts from the preset's params except the ones the template re-randomizes
+  (`ui.addAnother.reroll`). Rows are new instances: with the TikTok comment preset each row still gets its own
+  identity and stats (the preset's are tokcomment's placeholders). `add_motion_graphic` keeps WP3b's layering, where
+  the preset wins over the fill.
+- **Messages** are codes with values (`MG_IMPORT_TEXT`, `mgImportText` for English). The web app translates the
+  templates; `pnpm i18n` lists them in the model strings, with the template-ignored reasons.
+- **Placement:** `scheduleMgImport` places included rows one after another from the start (a row's `start` resets
+  the cursor). `mgImportCommand` builds `clip.addMotionGraphic {placement: 'first-free', fill: {seed:
+  mgItemSeed(seed, rowIndex)}}`. The seed is per data row, so leaving a row out does not change the others.
+- **Preview = insert:** `resolveMgTemplateParams(info, given, {seed, media})`
+  (`packages/project/src/registry/mg-params.ts`) is the one resolution `clip.addMotionGraphic` uses too. The dialog
+  shows exactly what will be stored and catches schema and fill errors per row.
+
+**Dialog** (`BulkImportDialog.tsx` / `bulk-import.ts`, `mg.bulkImport`):
+- **Entry points:**
+  - File ▸ Import Motion Graphics from Spreadsheet…;
+  - Graphics ▸ the same;
+  - the Motion Templates panel button;
+  - a gallery card's context menu ▸ Import Spreadsheet as This… (template + preset);
+  - Properties ▸ Template ▸ Import Spreadsheet…;
+  - the palette.
+- **Inputs:** template / preset select (default: the given one, else the selected clip's, else the first with
+  presets), delimiter (Detect / Tab / Comma / Semicolon), a paste area, and Choose CSV File….
+- **Preview:**
+  - column chips: param, timing, per-row alias, or ignored with its reason;
+  - the table: row, start, length, and the imported and filled params in the template's order, with Properties
+    labels;
+  - values the template filled are dim, italic and titled "Random value";
+  - rows with errors are shaded and list their errors ("Left out: …"); they are excluded, never blocking;
+  - row warnings are listed under the table.
+- **New Random Values** picks another seed.
+- **Insert N:** one transaction labelled "Import N Motion Graphics" (one undo step) from the playhead at dialog
+  open. The first-free floor is the targeted video track. The new clips are selected.
+- Props are zod-validated and the body is inside a `PanelErrorBoundary`.
+
+### Agents (MCP, `apps/mcp/src/tools/bulk-motion-graphics.ts`)
+
+- **`duplicate_motion_graphic`** `{projectId, clipId, count? 1–50, seed?, at?, track?, params?, dryRun?,
+  sequenceId?}`:
+  - `count` chained `clip.duplicateMotionGraphic` commands in one transaction;
+  - copy i uses `mgItemSeed(seed, i)`;
+  - the result lists each copy's clip, track, times, resolved params, `rerolled` and seed.
+- **`import_motion_graphics_csv`** `{projectId, csv, template ("id", "id:preset", …), delimiter?, startAt?
+  (default 0: MCP has no playhead), track? (default V2), seed?, skipInvalid?, dryRun?, sequenceId?}`:
+  - runs the same parser, planner and command builder against the engine catalogue entry;
+  - row errors refuse the call with every bad row in `details.rows`, or are skipped with `skipInvalid`;
+  - a refused transaction names its CSV row and line.
+  - MCP has no zod schemas, so only the JSON Schema checks run before the transaction; fill and schema refusals
+    come back from the transaction (first failing row).
+- `TEMPLATES_GUIDE` and the server instructions mention both tools.
+
+### Tests
+
+- `packages/project/test/bulk-table.test.ts`: parser rules, caps, a 2 MB timing. fast-check: no throw on arbitrary
+  strings, `parse(format(records))` round trip for CSV / TSV / `;`, increasing record lines.
+- `packages/project/test/mg-import.test.ts`: mapping, aliases per variant, coercion errors, times, preset reroll
+  exclusion, schedule, preview = inserted params. fast-check: coercion and the planner never throw.
+- `packages/project/test/mg-duplicate.test.ts`: placement, reroll / keep, determinism, copy fidelity, first-free and
+  locked tracks, given params, keyframes, ref chains, refusals, dry run. fast-check: no overlap, invariants.
+- `packages/mg-templates/test/social-bulk.test.ts`: registry validation of the hints, catalogue JSON, social alias
+  mapping per variant, import and Add another through a social-shaped fixture
+  (`test/fixtures/social-bulk-template.ts`), and the real `social-comment@1` hints.
+- `apps/web/test/mg-add-another-bulk.test.tsx` (happy-dom):
+  - `mg.addAnother`: undo / redo, labels;
+  - clip menu, Properties, panel button, card context menu;
+  - dialog: preview marks, left-out rows, insert as one undo step, preview = stored, reroll, CSV file, size cap,
+    parse error, counter presets, read-only, hostile text.
+- `apps/mcp/test/bulk-motion-graphics.test.ts`: both tools, refusals, `skipInvalid`, row mapping of a refused
+  transaction, caps, advertised schemas.
+- `e2e/mg-add-another-bulk.spec.ts` (`pnpm e2e`, built app, Chrome), with screenshots in
+  `test-results/e2e-mg-add-another-bulk/`:
+  - Add Another from the clip menu and the panel (counter);
+  - bulk import of counter rows with a bad row;
+  - the real `social-comment` TikTok comment preset: Add Another keeps look and text and changes the identity and
+    likes (Program still checked by eye); a TSV with User / Comment / Likes / Verified / Image URL becomes 2 cards
+    plus 1 left-out row; one undo removes them.
+
+### Limitations
+
+- Remote image URLs are not imported (the column is reported as ignored).
+- XLSX is not read (design non-goal); the user copies cells or exports CSV.
+- MCP checks rows before the transaction only against the JSON Schema; template-level refusals (e.g. a handle the
+  fill rejects) fail the transaction at the first such row.
+- Empty cells cannot express "empty string"; they mean "not given".
+- Add another has no keyboard shortcut (see above).
+
 ## Remote fonts & emoji (WP2 `sc/assets`, design §7.8, §7.11)
 
 ### What it does
@@ -1295,3 +1566,192 @@ families (latin + latin-ext, every weight 300–900; the templates use 400/500/6
   Network downloaded the files, removed the banner without a reload and left "1 template asset not available" for the
   emoji the fixture CDN lacks; `POST /api/exports/plan` answered 409 `TEMPLATE_ASSETS_UNAVAILABLE` naming that emoji,
   its pack and the clip.
+
+## Program monitor editing
+
+WP7b `canvas-edit` (branch `sc/canvas-edit`), design §7.5 and §7.9 "Program monitor". A generic mechanism: any anime
+template can let the user edit its text params in place on the Program monitor; the social-comment template is one
+consumer. Composition clips keep their own editor (`mg-bundles/CanvasTextEditor.tsx`); this one is for anime templates.
+
+### Template contract
+
+- **Marking.** A template puts `data-template-param="<paramName>"` on the element that draws a string param, plus
+  `data-template-marks="true"` when the value is word-marks markup (`==highlight==`, `||blur||`, `~~remove~~`,
+  core § Word marks). Spread `editableParamProps(name, { marks? })` from `@jasper/motion/templates`
+  (`packages/motion/src/templates/editable.ts`) instead of writing the attributes by hand.
+- **Shared names.** The attribute names (`TEMPLATE_PARAM_ATTR`, `TEMPLATE_MARKS_ATTR`), the name schema
+  (`templateParamNameSchema`: an identifier of at most 64 characters) and `readEditableParam(el)` live in
+  `@jasper/mg-templates` (`packages/mg-templates/src/editable.ts`).
+- **The element.** It must be a box that wraps exactly that text: block, inline-block or inline (an inline box is
+  edited on one line), with no other param's text inside it.
+- **Copies.** A param may be marked more than once (e.g. a name shown twice); the copy that was double-clicked is
+  edited and every copy is hidden while the editor is open.
+- **Other params.** A mark on a param that is not a string is ignored, and the double-click goes to other handlers.
+- **Line breaks.** Multi-line editing follows `ui.params.<name>.multiline` (C3). No extra definition hint was needed:
+  discovery is by the rendered DOM, so the proposed `ui.params[name].canvasEdit` was not added.
+- **Shipped templates.** The anime templates mark their text with the helper (attributes only, pixels unchanged, no
+  `renderVersion` bump): Title Reveal `title` / `subtitle`, Lower Third (Animated) `name` / `role`, Callout `label`,
+  Counter `label`, and social-comment `displayName` (TikTok reply header and comment row) and `text` (with marks).
+
+### Double-click → target
+
+The Program's `TransformOverlay` passes a double-click to the `layerDoubleClickHandlers` registry. Additive changes
+to that registry:
+
+- the context now carries `scene`, `viewScale` and `surface`;
+- a handler registered with `anyPoint: true` also runs where no unlocked layer is under the pointer (`clip: null`);
+  the composition handler checks `clip` for null.
+
+`template-text` (order 50, before the composition editor's 100) runs `pickTemplateParam` (`apps/web/src/template-edit/hit.ts`)
+over the layers drawn at the playhead, from the top down:
+
+- **Anime-template layers** are hit on their marked text boxes, with 4 screen px of slack; the innermost box wins.
+  They block the layers below only on their painted boxes (backgrounds, pictures, SVG) and are transparent elsewhere.
+  A layer that cannot be measured is transparent.
+- **Any other layer** whose drawn geometry is under the point blocks everything below it (the same test as Program
+  clicks, `hitsLayerGeometry`). Layers that are hidden (opacity 0) or have no Motion are skipped.
+- **3D template layers** are not edited in place.
+- **Which hit wins.** The topmost hit, except that a hit on a selected clip beats unselected ones, so a card under
+  another card can be reached by selecting it in the Timeline.
+- **Locked tracks.** When the topmost hit is on a locked track it is chosen whatever is selected, and refused with
+  "The clip's track is locked". The first click of a double-click selects the unlocked layer under a locked one, so
+  without this rule the hidden card below would have been edited.
+- **Read-only projects** are refused with "The project is read-only".
+
+Both refusals show the monitor's text bubble (`template-text-message`). On success the clip is selected and the editor
+opens.
+
+### Measuring the rendered text (`apps/web/src/template-edit/measure.ts`)
+
+The Program draws templates as DOM in the Remotion Player, so the editor measures the browser's own layout. That
+covers font metrics, wrapping, the design-stage fit, CSS `zoom` (social-comment scales its card with `zoom`) and the
+template's own transforms.
+
+1. **Layer box coordinates.** `templateLayerRoot` finds the clip's `LayerBox` root (`data-clip-id`, holding
+   `data-mg-renderer="anime"`). Its transform (Motion, corner pin) is set to `none` for the measurement and restored
+   in the same task, so nothing is painted in between. With the transform off, `getBoundingClientRect` differs from
+   layer px by one uniform scale (Program zoom × Player scale), which is divided out.
+2. **Element scale and font size.** A hidden 100 px × 1 em probe is appended inside the element and removed again. It
+   gives the element's scale (layer px per element px) and its font size in its own px, whatever `zoom` does to the
+   computed values. Other lengths (line height, letter and word spacing, padding) are converted through the
+   computed-to-probe font-size ratio.
+3. **Background.** The nearest opaque ancestor background inside the layer becomes the editor's background, so the
+   editor sits on the card seamlessly.
+4. **Limits.** At most 4000 elements per layer are inspected. A malformed attribute is ignored.
+
+### Rest frame while editing
+
+`setTemplateEditHold(clipId)` (`packages/compositions/src/layers/template-edit-hold.ts`, exported from
+`@jasper/compositions`) makes `MotionGraphicLayer` draw that clip at `animeTemplateRestMs(timing)` in previews only:
+
+- **The rest frame** is the last frame before the outro, or the end of the intro when intro and outro fill the clip.
+- **Why that frame.** Every entrance tween and the extras that run after it (word reveal, like count-up) have settled
+  there, and the exit has not begun.
+- **Nothing else moves.** The playhead stays put and the other layers stay at the playhead.
+- **Renders never see it** (`options.isPreview` only), so exports are unaffected.
+- **Graded previews.** A held clip that has one (colour effects, layer bake) is drawn live while held, so its DOM can
+  be measured.
+- **The DOM attribute.** The layer's wrapper carries `data-template-hold="true"` while held. The editor measures two
+  frames after it appears, once the template's layout effects (fit passes) have settled.
+
+Seeking the playhead to the hold instead was rejected: it changes the user's frame and every other layer, and it
+needs restoring afterwards.
+
+### The editor (`apps/web/src/template-edit/TemplateTextEditor.tsx`)
+
+**Placement.** It is a Program overlay (`template-text-editor`) with the same mapping chain as the layer: view →
+layer CSS (`matrixToCss` / `mat3ToCss`) → the measured box → `scale(element scale)`. Rotation, scale, corner pin,
+Program zoom and both 9:16 and 16:9 sequences follow. The editor copies the element's typography:
+
+- font family, size, weight and style;
+- line height, letter and word spacing, padding;
+- alignment, transform, wrapping and direction;
+- colour.
+
+The original text is hidden by a scoped `<style>` while the editor is open.
+
+**Keys.** The double-clicked word is selected, through the caret position under the pointer mapped into the rest
+layout.
+
+- **Enter** or a click elsewhere (blur) applies the edit.
+- **Shift+Enter** inserts a line break when the param is multi-line. In a single-line param, line breaks typed or
+  pasted become spaces.
+- **Esc** cancels what was typed since the last applied step.
+- **Ctrl/Cmd+Z** and **Ctrl/Cmd+Shift+Z** (or **Y**) first undo and redo typing inside the editor, then the History
+  steps.
+
+The keymap never sees these keys: editable targets consume them first.
+
+**History.** Applying is one `param.set` on `['clip', id, 'params', name]`, labelled "Edit Text". The value is checked
+against the template schema first, so an invalid value shows "Not valid for this template: …" and the editor stays
+open with the text. A refused command keeps the editor open with the reason (`E_TRACK_LOCKED` → "The clip's track is
+locked").
+
+**Word marks.** Marks params are edited as their visible text, with the marks drawn as editor-only styled runs:
+highlight is tinted, blur has a wavy underline and remove is struck through. Each input is mapped back onto the markup
+with `replaceVisible` (`apps/web/src/social-comments/marks-edit.ts`, given the caret so repeated text is anchored at
+the edit), so marks stay on their words:
+
+- a character typed inside or at the end of a word takes that word's mark;
+- whitespace joins a mark only between two words that carry the same mark;
+- unchanged characters keep theirs.
+
+That module is WP7a's marks editing model (§ Properties controls), shared by the Properties text control and this
+editor.
+
+**The marks toolbar.** A non-empty selection in a marks param shows a floating **Highlight / Blur / Remove / Clear**
+toolbar above it. The buttons do not take focus, and the pressed state shows when every selected word already carries
+that mark.
+
+- Each button is `applyMark` (C4, whole words) over the draft and one History step: "Highlight Words", "Blur Words",
+  "Remove Words" or "Clear Word Marks".
+- Text typed since the last step goes into the same step.
+- The editor stays open, re-measured on the new layout.
+- The toolbar labels use catalogue keys with a `[word mark]` context, because "Highlight" and "Blur" already mean
+  colour-grading terms in the Spanish catalogue.
+
+Selecting words "in the rendered card when not editing" is done by the double-click itself: it opens the editor with
+the clicked word selected, so the toolbar is one gesture away. A separate word-selection mode on the bare card would
+have collided with the overlay's move and marquee gestures.
+
+**Closing without losing text.**
+
+- **Playback starts:** the text is applied first. If it is refused, playback stops and the editor stays open.
+- **The playhead leaves the clip** (or another sequence opens): the editor stays where it was, applies and closes, or
+  stays open with the reason.
+- **The clip is deleted:** the editor closes, since there is nothing to apply to.
+- **The document changes under the editor** (undo, an agent): the editor follows it while nothing is typed.
+
+**Robustness.**
+
+- An error boundary around the editor turns a render failure into a message, releases the hold and leaves the monitor
+  untouched.
+- A measurement failure becomes the message "This text is not drawn on the monitor here — edit it in Properties."
+- The double-click handler treats a layer that fails to measure as transparent.
+- IME composition is not interrupted: the DOM is rebuilt only after `compositionend`.
+
+**i18n.** UI strings are in `en.json`; the Spanish is in `es.json`.
+
+### Tests and checks
+
+| What | Where |
+|---|---|
+| Hit-testing (topmost, painted boxes block, other layers block, selected wins, locked topmost, rotation and scale with slack, nested boxes, fast-check never throws) | `apps/web/test/template-canvas-edit.test.tsx` |
+| DOM measurement (layer transform off and restored, probes removed, scale, font, background, malformed names) | same file |
+| Editor: open on the clicked word, hold, hidden original, typing keeps marks, Enter → one "Edit Text" step and undo / redo, Esc, Shift+Enter, blur, single-line breaks → spaces, toolbar (four buttons, one step each, typing folded in, undo / redo from inside), local undo, schema refusal keeps the text, playback and leaving the clip apply | same file |
+| Refusals: locked track (also with an unlocked card selected below), read-only, a double-click off every text, text not drawn after the hold, crash isolation | same file |
+| Test-only template with a multi-line marks `text` and a single-line `name` | `apps/web/test/fixtures/canvas-edit-template.ts` |
+| Rest time (table and fast-check); hold in previews only and only for the held clip; graded preview replaced by the live layer while held | `packages/compositions/test/template-edit-hold.test.tsx` (fixtures `hold-test-template.ts` / `hold-test-impl.tsx`) |
+| Contract: `editableParamProps`, `readEditableParam` (fast-check); every shipped template marks its text params | `packages/motion/test/editable-params.test.tsx`, `packages/mg-templates/test/editable.test.ts` |
+| Real Player in Chrome: mid-intro double-click opens on the rest layout, editor box within 3 px of the text, Enter and Esc, undo; rotated 12° and 140 % scale at 200 % zoom; topmost of two overlapping cards; locked track message; 9:16 sequence | `e2e/template-canvas-edit.spec.ts` (screenshots in `test-results/e2e-template-canvas-edit/`) |
+| Real social-comment@1 from its gallery presets (9:16, mid-entrance): TikTok comment — text box within 2 px, Blur from the toolbar, typing and Shift+Enter keep the marks, Enter, the name, undo of both steps; TikTok reply — the name inside "Reply to …'s comment", Highlight, Esc | same spec |
+
+### Limitations
+
+- **Rotation inside a template.** A rotation in the template's own markup is measured as the bounding box of the
+  rotated text. The shipped templates have none at rest; the layer's Motion rotation is exact.
+- **Inline elements** are edited on one line, even when the template lets them wrap.
+- **Emoji** that a template draws as pictures (social-comment) show as system emoji glyphs in the editor while typing.
+- **Templates inside nested sequences**, and 3D template layers, are edited in Properties, not on the canvas.
+- **Other Players** showing the same clip (the comparison view) also show the rest frame while the editor is open.
+- **A graded (colour-effected) template** shows ungraded while it is being edited.

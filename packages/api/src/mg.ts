@@ -39,6 +39,24 @@ export const MgTemplateUiSchema = z.object({
 			}),
 		)
 		.optional(),
+	/** "Add another": the params the copy re-randomizes through the template's fill hook. */
+	addAnother: z.object({ reroll: z.array(z.string()) }).optional(),
+	/** Bulk import: column aliases (fixed, or chosen per row by another param), ignored columns, value prefixes. */
+	import: z
+		.object({
+			aliases: z
+				.record(
+					z.string(),
+					z.union([
+						z.string(),
+						z.object({ byParam: z.string(), map: z.record(z.string(), z.string()), otherwise: z.string() }),
+					]),
+				)
+				.optional(),
+			ignored: z.record(z.string(), z.string()).optional(),
+			trimPrefix: z.record(z.string(), z.string()).optional(),
+		})
+		.optional(),
 });
 
 export const MgTemplateCatalogEntrySchema = z.object({

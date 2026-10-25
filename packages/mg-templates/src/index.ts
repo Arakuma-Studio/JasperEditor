@@ -5,6 +5,7 @@ import { createMgRegistry } from './registry.ts';
 export * from './assets.ts';
 export * from './catalog.ts';
 export * from './core.ts';
+export * from './editable.ts';
 export * from './emoji.ts';
 export * from './motion.ts';
 export { type MediaParamKind, type MediaParamValue, mediaParam } from './params.ts';

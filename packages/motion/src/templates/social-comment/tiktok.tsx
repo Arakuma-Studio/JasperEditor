@@ -4,6 +4,7 @@
 // tokcomment bugs fixed are listed in docs/wp-notes/social-comments.md "Template implementation".
 import { formatCount, formatRepliesLabel, formatTime, SOCIAL_VARIANT_FONTS } from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
+import { editableParamProps } from '../editable.ts';
 import { TIKTOK_GLYPHS } from '../social/glyphs.ts';
 import type { SocialCardProps, SocialVariantImpl } from './contract.ts';
 import { CommentText, type EmojiMetrics, Glyph, INK_RING, SocialAvatar, TextWithEmoji } from './parts.tsx';
@@ -82,7 +83,7 @@ function TikTokReplyCard({ params: p, text, anim, assets }: SocialCardProps) {
 						}}
 					>
 						{'Reply to '}
-						<span data-template-param="displayName">
+						<span {...editableParamProps('displayName')}>
 							<TextWithEmoji text={p.displayName} fontSize={HEADER_PX} emoji={EMOJI} assets={assets} />
 						</span>
 						{"'s"}
@@ -233,7 +234,7 @@ function TikTokCommentCard({ params: p, text, anim, assets }: SocialCardProps) {
 					<div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2, minWidth: 0 }}>
 						<span
 							data-part="name"
-							data-template-param="displayName"
+							{...editableParamProps('displayName')}
 							style={{
 								fontSize: 13,
 								lineHeight: '19.5px',

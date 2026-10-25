@@ -20,6 +20,7 @@ export {
 	TemplateAssetScopeContext,
 	useTemplateAssetEpoch,
 } from './assets.tsx';
+export { type EditableParamProps, editableParamProps } from './editable.ts';
 export { TemplateImage, TemplateImagePlaceholder, type TemplateImageProps } from './image.tsx';
 export type { AnimeTemplateProps } from './types.ts';
 

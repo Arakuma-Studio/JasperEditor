@@ -17,6 +17,7 @@ import {
 	SOCIAL_ENTRANCES,
 	SOCIAL_EXIT_SCALE,
 	SOCIAL_REVEAL_MAX_SPAN_MS,
+	SOCIAL_VARIANT_FONTS,
 	SOCIAL_WORD_STAGGER_MS,
 	type SocialScheduleInput,
 	socialCardScale,
@@ -25,6 +26,7 @@ import {
 	socialCommentRequiredAssets,
 	socialCommentSchedule,
 	socialCommentSegments,
+	socialCommentUnavailableVariant,
 	socialDefaults,
 	socialLikesTick,
 	socialTickCount,
@@ -265,7 +267,23 @@ describe('social-comment@1 presets and fill hook', () => {
 		expect(socialComment.presets?.map((p) => [p.id, p.name])).toEqual([
 			['tiktok-reply', 'TikTok · Comment reply'],
 			['tiktok-comment', 'TikTok · Comment'],
+			['x-post', 'X · Post'],
 		]);
+		// the X preset carries tokcomment's X defaults (2h, 45 replies, 12 reposts, 1.2K likes, 12K views)
+		const x = socialComment.presets!.find((p) => p.id === 'x-post')!;
+		expect({ ...socialComment.defaults, ...x.params }).toMatchObject({
+			variant: 'x-post',
+			displayName: 'Display Name',
+			handle: 'username',
+			timeValue: 2,
+			timeUnit: 'hour',
+			replies: 45,
+			reposts: 12,
+			likes: 1200,
+			views: 12_000,
+		});
+		expect(socialCommentUnavailableVariant({ variant: 'x-post' })).toBeNull();
+		expect(SOCIAL_VARIANT_FONTS['x-post']).toEqual({ family: 'Chirp', weights: [400, 700] });
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,
@@ -337,8 +355,19 @@ describe('social-comment@1 required assets', () => {
 	});
 
 	it('a variant whose card is not built yet declares nothing; the declaration passes the asset schema', () => {
-		expect(socialCommentRequiredAssets({ ...socialDefaults('x-post'), displayName: 'A 😀' })).toEqual({
-			fonts: [],
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('instagram-post'), handle: 'a', text: 'A 😀' }),
+		).toEqual({ fonts: [] });
+		// X: Chirp faces, the emoji of the text, the name and the handle, and the raster default avatar
+		expect(
+			socialCommentRequiredAssets({ ...socialDefaults('x-post'), displayName: 'A 😀', text: 'hi' }),
+		).toEqual({
+			fonts: [
+				{ family: 'Chirp', weight: 400, style: 'normal' },
+				{ family: 'Chirp', weight: 700, style: 'normal' },
+			],
+			emoji: { pack: 'apple', graphemes: ['😀'] },
+			images: ['x-default-avatar'],
 		});
 		const info = mgRegistry.getDefinition('social-comment', 1)!;
 		expect((info as { requiredAssets?: unknown }).requiredAssets).toBe(socialCommentRequiredAssets);

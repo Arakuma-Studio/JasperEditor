@@ -5,7 +5,11 @@
 // - the card fits every canvas (long comment, huge counts, marks): its painted box stays inside the frame;
 // - with SOCIAL_CALIBRATION_DIR set, writes the calibration stills (hold frame, card at 2× tokcomment's CSS px).
 // Fonts: TikTok Sans from @fontsource/tiktok-sans, bundled for the engine (SOCIAL_FONT_DIR overrides its `files/` dir);
-// emoji: Apple images from SOCIAL_EMOJI_DIR (`<codepoints>.png`), else flat stand-in squares.
+// emoji: Apple images from SOCIAL_EMOJI_DIR (`<codepoints>.png`), else flat stand-in squares (EmojiImage fails a render
+// without an image). X: Chirp from SOCIAL_CHIRP_DIR (the manifest's `Chirp-{Regular,Medium,Bold,Heavy}.<hash>.latin.woff2`
+// files; it is not redistributed, so without it the X card draws in a fallback face), remote images from
+// SOCIAL_IMAGE_DIR (`<manifest image id>.png`, e.g. `x-default-avatar.png`; without it the X default avatar is its
+// vector twin).
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -19,6 +23,7 @@ import {
 	socialComment,
 	socialCommentParamsSchema,
 	socialCommentSchedule,
+	socialDefaults,
 } from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -169,6 +174,129 @@ CALIBRATION.push(
 	},
 );
 
+// X: the post card (tokcomment `x-post` captures, named after them), from X's tokcomment defaults ("Display Name",
+// @username, 2h, 45 / 12 / 1.2K / 12K)
+const X_CASES: Case[] = [];
+for (const theme of ['light', 'dark'])
+	for (const verified of [false, true])
+		X_CASES.push({
+			name: `x-post_${theme}_verified-${verified ? 'on' : 'off'}`,
+			canvas: '1080x1920',
+			params: { theme, verified },
+		});
+for (const [unit, label] of [
+	['minute', 'mins'],
+	['hour', 'hrs'],
+	['day', 'days'],
+	['week', 'wks'],
+	['month', 'mth'],
+	['year', 'yrs'],
+] as const)
+	X_CASES.push({
+		name: `x-post_light_time-3-${label}`,
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: unit },
+	});
+X_CASES.push(
+	{ name: 'x-post_light_text-short', canvas: '1080x1920', params: { text: 'Love this! 🔥' } },
+	{ name: 'x-post_light_text-long', canvas: '1080x1920', params: { text: LONG } },
+	{
+		name: 'x-post_light_counts-raw',
+		canvas: '1080x1920',
+		params: { likes: 1_234_567, replies: 1_234_567, reposts: 1_234_567, views: 1_234_567 },
+	},
+	{
+		name: 'x-post_light_counts-KM',
+		canvas: '1080x1920',
+		params: { replies: 12_300, reposts: 45_600, likes: 1_200_000, views: 9_800_000 },
+	},
+	{
+		name: 'x-post_light_counts-huge',
+		canvas: '1080x1920',
+		params: { replies: 999_999_999_999, reposts: 1e12, likes: 987_654_321_000, views: 1e12, verified: true },
+	},
+	{
+		name: 'x-post_light_counts-zero',
+		canvas: '1080x1920',
+		params: { replies: 0, reposts: 0, likes: 0, views: 0 },
+	},
+	{
+		name: 'x-post_light_highlight',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', text: 'Write any ==comment== and see what happens 😊' },
+	},
+	{
+		name: 'x-post_light_blur',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', text: 'Write any ||comment|| and see what happens 😊' },
+	},
+	{
+		name: 'x-post_light_remove',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', text: 'Write any ~~comment~~ and see what happens 😊' },
+	},
+	{
+		name: 'x-post_light_avatar-uploaded',
+		canvas: '1080x1920',
+		params: { timeValue: 3, timeUnit: 'year', avatar: { mediaId: 'med_avatar' } },
+		media: true,
+	},
+	{
+		name: 'x-post_light_avatar-generated',
+		canvas: '1080x1920',
+		params: { avatar: { generated: 42 }, displayName: 'Luna Park', handle: 'lunapark' },
+	},
+	{
+		name: 'x-post_light_mentions',
+		canvas: '1080x1920',
+		params: { text: 'Write any comment @friend and see what happens #fyp 😊' },
+	},
+	{
+		name: 'x-post_dark_mentions',
+		canvas: '1080x1920',
+		params: { theme: 'dark', text: 'Write any comment @friend and see what happens #fyp 😊' },
+	},
+	{ name: 'x-post_light_no-profile', canvas: '1080x1920', params: { showProfile: false } },
+	{
+		name: 'x-post_light_no-reposts-views',
+		canvas: '1080x1920',
+		params: { showReposts: false, showViews: false },
+	},
+	{
+		name: 'x-post_light_long-name',
+		canvas: '1080x1920',
+		params: {
+			displayName: 'A very very long display name that goes on ✨',
+			handle: 'averyveryverylonghandle_123456',
+			verified: true,
+		},
+	},
+	{ name: 'x-post_light_liked', canvas: '1080x1920', params: { likeTick: true } },
+	{ name: 'x-post_dark_liked', canvas: '1080x1920', params: { theme: 'dark', likeTick: true } },
+);
+for (const [entrance, frames] of [
+	['classic-pop', [2, 4, 6, 8]],
+	['soft-spring', [2, 5, 8, 12]],
+	['grow-from-tail', [3, 6, 9, 13]],
+	['drop-bounce', [4, 8, 12, 16]],
+] as const)
+	for (const frame of frames)
+		X_CASES.push({
+			name: `anim_x-${entrance}_f${String(frame).padStart(3, '0')}`,
+			canvas: '1080x1920',
+			params: { entrance },
+			frame,
+		});
+for (const frame of [16, 22, 30, 40, 48, 146, 148])
+	X_CASES.push({
+		name: `anim_x-extras_f${String(frame).padStart(3, '0')}`,
+		canvas: '1080x1920',
+		params: { wordReveal: true, likeTick: true },
+		frame,
+	});
+for (const c of X_CASES) c.params = { ...socialDefaults('x-post'), ...c.params };
+CALIBRATION.push(...X_CASES);
+
 // animation frames (filmstrips on the calibration page): each entrance, the extras, the exit
 for (const [entrance, frames] of [
 	['classic-pop', [2, 4, 6, 8]],
@@ -199,6 +327,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 	const work = enabled ? mkdtempSync(join(tmpdir(), 'jasper-social-')) : '';
 	const fonts: CardProps['fonts'] = [];
 	const emojiFiles: Record<string, string> = {};
+	const imageFiles: Record<string, string> = {};
 
 	beforeAll(async () => {
 		r = await import('@remotion/renderer');
@@ -213,6 +342,29 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				if (!existsSync(join(dir, file))) continue;
 				copyFileSync(join(dir, file), join(pub, 'fonts', file));
 				fonts.push({ family: 'TikTok Sans', weight, file: `fonts/${file}` });
+			}
+		// Chirp (the X card): the manifest's latin subset files, when SOCIAL_CHIRP_DIR holds them
+		const chirp = process.env.SOCIAL_CHIRP_DIR;
+		if (chirp && existsSync(chirp))
+			for (const [name, weight] of [
+				['Regular', 400],
+				['Medium', 500],
+				['Bold', 700],
+				['Heavy', 800],
+			] as const) {
+				const file = readdirSync(chirp).find(
+					(f) => f.startsWith(`Chirp-${name}.`) && f.endsWith('.latin.woff2'),
+				);
+				if (!file) continue;
+				copyFileSync(join(chirp, file), join(pub, 'fonts', file));
+				fonts.push({ family: 'Chirp', weight, file: `fonts/${file}` });
+			}
+		// remote manifest images by id (X's default avatar)
+		const imageDir = process.env.SOCIAL_IMAGE_DIR;
+		if (imageDir && existsSync(imageDir))
+			for (const f of readdirSync(imageDir).filter((n) => /\.(png|jpe?g)$/.test(n))) {
+				copyFileSync(join(imageDir, f), join(pub, f));
+				imageFiles[f.replace(/\.[a-z]+$/, '')] = f;
 			}
 		const emojiDir = process.env.SOCIAL_EMOJI_DIR;
 		if (emojiDir && existsSync(emojiDir))
@@ -261,7 +413,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			join(pub, 'avatar.png'),
 		]);
 		console.log(
-			`[social-comment] fonts: ${fonts.length} faces, emoji: ${Object.keys(emojiFiles).length}; artifacts ${work}`,
+			`[social-comment] fonts: ${fonts.length} faces, emoji: ${Object.keys(emojiFiles).length}, images: ${Object.keys(imageFiles).length}; artifacts ${work}`,
 		);
 		serveUrl = await bundle({ entryPoint: join(here, 'social-comment-render', 'entry.tsx'), publicDir: pub });
 		browser = await r.openBrowser('chrome', { ...browserOpts });
@@ -275,6 +427,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		fonts,
 		mediaFiles: c.media ? { med_avatar: 'avatar.png' } : {},
 		emojiFiles,
+		imageFiles,
 	});
 	const still = async (c: Case, frame: number, scale = 1) => {
 		const composition = await r.selectComposition({
@@ -325,6 +478,18 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 					entrance: 'soft-spring',
 					likeTick: true,
 					avatar: { generated: 5 },
+				},
+			},
+			{
+				name: 'x-post-dark',
+				canvas: '1080x1080',
+				params: {
+					...socialDefaults('x-post'),
+					theme: 'dark',
+					verified: true,
+					likeTick: true,
+					wordReveal: true,
+					entrance: 'grow-from-tail',
 				},
 			},
 		];
@@ -394,6 +559,27 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				{ text: longest },
 				{ variant: 'tiktok-comment', text: longest, likes: 1e12, replies: 1e12 },
 				{ variant: 'tiktok-comment', likes: 999_999_999_999, replies: 999_999, displayName: 'x'.repeat(64) },
+				{
+					variant: 'x-post',
+					text: longest,
+					likes: 1e12,
+					replies: 1e12,
+					reposts: 1e12,
+					views: 1e12,
+					verified: true,
+				},
+				{
+					variant: 'x-post',
+					likes: 999_999_999_999,
+					replies: 999_999_999_999,
+					reposts: 999_999_999_999,
+					views: 999_999_999_999,
+					timeValue: 10000,
+					timeUnit: 'month',
+					displayName: 'W'.repeat(64),
+					handle: 'w'.repeat(64),
+					verified: true,
+				},
 			]) {
 				const png = await still({ name: 'fit', canvas, params }, 100);
 				const box = paintedBox(png);
@@ -411,7 +597,11 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 		const out = process.env.SOCIAL_CALIBRATION_DIR!;
 		mkdirSync(out, { recursive: true });
 		const manifest: Record<string, ReturnType<typeof paintedBox>> = {};
-		for (const c of CALIBRATION) {
+		// SOCIAL_CALIBRATION_FILTER: a regular expression of the case names to render (e.g. "^(x-post|anim_x-)")
+		const only = process.env.SOCIAL_CALIBRATION_FILTER
+			? new RegExp(process.env.SOCIAL_CALIBRATION_FILTER)
+			: null;
+		for (const c of CALIBRATION.filter((k) => !only || only.test(k.name))) {
 			// the hold frame; 9:16 zooms the 420 px card by 1.8 → scale 2 / 1.8 draws it at tokcomment's 2× (840 px)
 			const png = await still(c, c.frame ?? 100, 2 / 1.8);
 			writeFileSync(join(out, `${c.name}.png`), png);
