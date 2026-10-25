@@ -281,7 +281,20 @@ CALIBRATION.push(
 		params: { variant: 'youtube-comment', theme: 'dark', likeTick: true },
 	},
 );
-for (const frame of [16, 22, 30, 40, 48])
+for (const [entrance, frames] of [
+	['classic-pop', [2, 4, 6, 8]],
+	['soft-spring', [2, 5, 8, 12]],
+	['grow-from-tail', [3, 6, 9, 13]],
+	['drop-bounce', [4, 8, 12, 16]],
+] as const)
+	for (const frame of frames)
+		CALIBRATION.push({
+			name: `anim_youtube-${entrance}_f${String(frame).padStart(3, '0')}`,
+			canvas: '1080x1920',
+			params: { variant: 'youtube-comment', entrance },
+			frame,
+		});
+for (const frame of [16, 22, 30, 40, 48, 146, 148])
 	CALIBRATION.push({
 		name: `anim_youtube-extras_f${String(frame).padStart(3, '0')}`,
 		canvas: '1080x1920',

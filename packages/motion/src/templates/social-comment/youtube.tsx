@@ -13,10 +13,10 @@ const FONT = `"${SOCIAL_VARIANT_FONTS['youtube-comment']!.family}", sans-serif`;
 
 /**
  * Noto emoji images (YouTube's default pack) at 1.2 em, placed like the captures' Noto Color Emoji glyphs (2×: same
- * 32 px box, centre within 1 px of the reference on the comment and on the Shorts card).
+ * 31–32 px box, its top within 1 px of the reference on the comment and 2 px on the Shorts card).
  */
-const EMOJI: EmojiMetrics = { size: 1.2, shift: -0.16 };
-const SHORTS_EMOJI: EmojiMetrics = { size: 1.2, shift: -0.21 };
+const EMOJI: EmojiMetrics = { size: 1.2, shift: -0.29 };
+const SHORTS_EMOJI: EmojiMetrics = { size: 1.2, shift: -0.25 };
 
 /**
  * Mentions and hashtags: YouTube draws them as links in its call-to-action blue (`--yt-spec-call-to-action`,
