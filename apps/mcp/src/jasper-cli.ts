@@ -5,7 +5,7 @@
 //
 // Exit status: 0 ok, 1 the command failed, 2 usage error. --json prints one JSON document per result line.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { extname, isAbsolute, resolve } from 'node:path';
 import { AgentQueryNameSchema } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -42,7 +42,9 @@ Commands:
   ui <action> [k=v…] [--out f.png]    live UI of the open editor window: state, elements, screenshot,
                                       click, drag, scroll, key, type, set, locate, hit, commands, command
   tools                               list every MCP tool
-  call <tool> [k=v… | '<json>']       call any MCP tool
+  call <tool> [k=v… | '<json>'] [--out f.png]
+                                      call any MCP tool; --out writes the images it returns
+                                      (several: f-0.png, f-1.png… in result order)
 
 Options:
   --project <id|name>    project to work on (env JASPER_PROJECT; default: the project open in the editor
@@ -184,6 +186,29 @@ function jsonOf(r: CallToolResult): unknown {
 function imageOf(r: CallToolResult): Buffer | null {
 	const img = r.content.find((c) => c.type === 'image') as { data?: string } | undefined;
 	return img?.data ? Buffer.from(img.data, 'base64') : null;
+}
+
+/**
+ * `call … --out <file>`: writes every image of a tool result. One image goes to `<file>`; several (e.g. one preview
+ * per item of `add_motion_graphic {dryRun, preview}`) go to `<stem>-<i><ext>`, `i` = the image's index in the
+ * result (what `preview.image` names), so none is dropped. Returns the paths written.
+ */
+export function writeToolImages(r: CallToolResult, out: string): string[] {
+	const images = r.content
+		.filter((c) => c.type === 'image')
+		.map((c) => (c as { data?: string }).data)
+		.filter((d): d is string => typeof d === 'string' && d.length > 0);
+	if (images.length === 1) {
+		writeFileSync(out, Buffer.from(images[0]!, 'base64'));
+		return [out];
+	}
+	const ext = extname(out);
+	const stem = ext ? out.slice(0, -ext.length) : out;
+	return images.map((d, i) => {
+		const path = `${stem}-${i}${ext}`;
+		writeFileSync(path, Buffer.from(d, 'base64'));
+		return path;
+	});
 }
 
 export type CliSession = {
@@ -549,8 +574,8 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		const props = (def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
 		if ('projectId' in props && params.projectId === undefined) params.projectId = await c.projectId();
 		const r = await tool(c, args[0]!, params, true);
-		const png = imageOf(r);
-		if (png && typeof c.flags.out === 'string') writeFileSync(resolve(c.cwd, c.flags.out), png);
+		if (typeof c.flags.out === 'string')
+			for (const path of writeToolImages(r, resolve(c.cwd, c.flags.out))) c.out.stderr(`wrote ${path}\n`);
 		emit(c, jsonOf(r));
 	},
 };
