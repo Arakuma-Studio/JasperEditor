@@ -466,9 +466,9 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			avatar: { label: 'Avatar', control: 'social-avatar' },
 			showProfile: { label: 'Show Avatar' },
 			verified: { label: 'Verified', ...byVariant('verified') },
-			// value and unit are one row of the `social-time` control
+			// value and unit are one row of the `social-time` control (it edits timeUnit too and hides its row)
 			timeValue: { label: 'Posted', control: 'social-time', ...byVariant('timeValue') },
-			timeUnit: { label: 'Unit', control: 'social-time', ...byVariant('timeUnit') },
+			timeUnit: { label: 'Unit', ...byVariant('timeUnit') },
 			likes: { label: 'Likes', control: 'social-count', ...byVariant('likes') },
 			replies: { label: 'Replies', control: 'social-count', ...byVariant('replies') },
 			reposts: { label: 'Reposts', control: 'social-count', ...byVariant('reposts') },

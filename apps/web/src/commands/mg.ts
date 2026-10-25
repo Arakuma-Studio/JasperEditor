@@ -8,6 +8,7 @@ import { insertMotionTemplate } from '../panels/motionTemplates/insert.ts';
 import { MgTemplateSection } from '../panels/motionTemplates/TemplateSection.tsx';
 import { hasTemplateUpgrade, updateTemplates } from '../panels/motionTemplates/upgrades.ts';
 import { trackMgRenderJob } from '../panels/program/mg-render-state.tsx';
+import { registerSocialCommentControls } from '../social-comments/register.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const InsertArgs = z.object({
@@ -149,6 +150,9 @@ export const mgCommands: UiCommand[] = [
 		},
 	},
 ];
+
+// WP7a: the social-comment template's Properties controls (social-comment-text, social-count, social-time, social-avatar).
+registerSocialCommentControls();
 
 clipSections.register({
 	id: 'mg-template',

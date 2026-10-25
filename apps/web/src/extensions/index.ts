@@ -82,25 +82,85 @@ export type TemplateParamControlProps = {
 	value: unknown;
 	/** The clip's static params (siblings such as `variant`). */
 	params: Readonly<Record<string, unknown>>;
-	onChange(next: unknown, opts?: { coalesce?: boolean }): void;
+	/** Writes this param on every selected clip; false when the edit was refused (nothing changed). */
+	onChange(next: unknown, opts?: { coalesce?: boolean }): boolean;
 	/** True while the project is read-only. */
 	disabled: boolean;
+	/** Every selected clip the row edits (`clipId` first). */
+	clipIds: readonly string[];
+	/** The selected clips hold different values for this param (`value` is then the first clip's). */
+	mixed: boolean;
+	/**
+	 * WP7a (additive to C3): writes several params of every selected clip as ONE undoable step (Randomize identity,
+	 * Randomize stats). A function patch is called per clip with that clip's static params, so each clip can get its
+	 * own values. False when the edit was refused.
+	 */
+	onChangeParams(patch: TemplateParamPatchInput, opts?: TemplateParamWriteOptions): boolean;
 };
+
+/** Params to write, by name. */
+export type TemplateParamPatch = Readonly<Record<string, unknown>>;
+/** A patch for all clips, or one per clip (null/undefined = leave that clip alone). */
+export type TemplateParamPatchInput =
+	| TemplateParamPatch
+	| ((
+			params: Readonly<Record<string, unknown>>,
+			clipId: string,
+			index: number,
+	  ) => TemplateParamPatch | null | undefined);
+export type TemplateParamWriteOptions = {
+	/** History label (default: the row's label). */
+	label?: string;
+	/** Merge repeated writes of the same key within the session window into one History entry. */
+	coalesceKey?: string;
+};
+
+/**
+ * A button (or small widget) a custom control adds to the header of every template param group containing a param it
+ * renders (e.g. the social-comment "Randomize stats" wand). Rendered once per group even when several of the group's
+ * params use controls naming the same action id.
+ */
+export type TemplateGroupActionProps = {
+	/** The selected clips (`clipIds[0]` is the one whose `params` are given). */
+	clipIds: readonly string[];
+	params: Readonly<Record<string, unknown>>;
+	/** The group's params shown for the selection. */
+	paramNames: readonly string[];
+	onChangeParams(patch: TemplateParamPatchInput, opts?: TemplateParamWriteOptions): boolean;
+	disabled: boolean;
+};
+export type TemplateGroupAction = { id: string; component: ComponentType<TemplateGroupActionProps> };
+
 export type TemplateParamControlDef = {
 	/** The control name templates use in `ui.params.<name>.control`. */
 	id: string;
 	component: ComponentType<TemplateParamControlProps>;
+	/**
+	 * Sibling params this control edits too (e.g. a time control on `timeValue` that also edits `timeUnit`): their own
+	 * rows are hidden while a row with this control is shown for the same template.
+	 */
+	alsoEdits?: readonly string[];
+	/** `block`: the control is drawn under the row's label across the full panel width (text editors, pickers). */
+	layout?: 'inline' | 'block';
+	/** Group header actions (see `TemplateGroupAction`). */
+	groupActions?: readonly TemplateGroupAction[];
 	order?: number;
 };
 export const templateParamControls = createRegistry<TemplateParamControlDef>();
+
+export type TemplateParamControlOptions = Pick<
+	TemplateParamControlDef,
+	'alsoEdits' | 'layout' | 'groupActions'
+>;
 
 /** Registers a custom template-param control under `name` (C3); returns the unregister function. */
 export function registerTemplateParamControl(
 	name: string,
 	component: ComponentType<TemplateParamControlProps>,
+	options: TemplateParamControlOptions = {},
 ): () => void {
 	if (!name.trim()) throw new Error('A template param control needs a name');
-	return templateParamControls.register({ id: name, component });
+	return templateParamControls.register({ id: name, component, ...options });
 }
 
 /** Props an overlay receives: the same as the transform overlay (view mapping, viewport, transport…). */
