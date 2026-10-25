@@ -1,6 +1,6 @@
 // Properties of transcript cleanup (spec 14 TC-033, fast-check):
 // - planning: kept pieces are sorted and disjoint, never hold the sound of a removed word, never cut a kept word's
-//   loud core in two, and stay inside the analysed media;
+//   loud core in two (unless the timestamps give part of it to a removed word), and stay inside the analysed media;
 // - applying: one `cleanup.apply` (extract) gives the same timeline as one `range.extract` per range, right to left,
 //   on the same tracks (clips, sources, links, groups, markers; ids aside), and the invariants hold.
 import fc from 'fast-check';
@@ -100,6 +100,8 @@ describe('planning properties', () => {
 					if (lb <= la) return;
 					const a = la / 100;
 					const b = lb / 100;
+					// unless the transcript gives part of that sound to a removed word (no right answer then)
+					if (d.words.some((x, j) => removed[j] && x.s < b && x.e > a)) return;
 					const overlap = kept.filter(([x, y]) => x < b && y > a);
 					if (overlap.length === 0) return;
 					expect(overlap).toHaveLength(1);

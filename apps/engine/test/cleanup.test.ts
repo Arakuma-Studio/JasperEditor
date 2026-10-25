@@ -4,7 +4,7 @@
 // word mode; refusals become job errors; presets are stored atomically, survive a restart, keep unreadable entries
 // aside, and feed the analysis.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -152,10 +152,10 @@ describe.skipIf(!HAVE_FFMPEG)('cleanup-analysis job', () => {
 		expect((await analyze(app, { projectId: PROJECT, bogus: 1 })).statusCode).toBe(400);
 		const bad = await analyze(app, { projectId: PROJECT, document: b.envelope(), sequenceId: 'seq_nope' });
 		expect(bad.statusCode).toBe(422);
-		expect(bad.json().error.code).toBe('SEQUENCE_NOT_FOUND');
+		expect(bad.json()).toMatchObject({ code: 'SEQUENCE_NOT_FOUND' });
 		const missing = await app.inject({ method: 'GET', url: '/api/cleanup/analyses/cla_nope', headers: H });
 		expect(missing.statusCode).toBe(404);
-		expect(missing.json().error.code).toBe('CLEANUP_ANALYSIS_NOT_FOUND');
+		expect(missing.json()).toMatchObject({ code: 'CLEANUP_ANALYSIS_NOT_FOUND' });
 	});
 });
 
@@ -210,6 +210,7 @@ describe('cleanup presets', () => {
 		const appdir = app0.appdir;
 		await closeApps();
 		const file = join(appdir, 'presets', 'cleanup-presets.json');
+		mkdirSync(join(appdir, 'presets'), { recursive: true });
 		writeFileSync(
 			file,
 			JSON.stringify({
@@ -254,6 +255,6 @@ describe('cleanup presets', () => {
 		expect(file.analysis.settings.edges.mode).toBe('speech');
 		const nope = await analyze(app, { projectId: PROJECT, document: b.envelope(), presetId: 'cup_ZZZZZZZZZZZZZZZZ' });
 		expect(nope.statusCode).toBe(422);
-		expect(nope.json().error.code).toBe('PRESET_NOT_FOUND');
+		expect(nope.json()).toMatchObject({ code: 'PRESET_NOT_FOUND' });
 	});
 });
