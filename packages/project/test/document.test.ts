@@ -3,83 +3,17 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
-	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	createCounterIdSource,
 	defaultEffectRegistry,
 	loadProject,
-	migrate,
 	type ProjectDocument,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
-import type { MutationDocument, MutationEnvelope } from './project-mutation-fixtures.ts';
+import type { MutationEnvelope } from './project-mutation-fixtures.ts';
 
 const fixture = (): MutationEnvelope =>
 	JSON.parse(readFileSync(join(__dirname, 'fixtures/v1/basic.jasper'), 'utf8'));
-const fixtureV2 = (): MutationEnvelope =>
-	JSON.parse(readFileSync(join(__dirname, 'fixtures/v2/basic.jasper'), 'utf8'));
-
-describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () => {
-	it('the v1 fixture always loads without repairs', () => {
-		const r = loadProject(fixture(), { effects: defaultEffectRegistry });
-		expect(r.readOnly).toBe(false);
-		expect(r.repairs).toEqual([]);
-		expect(r.issues).toEqual([]);
-		expect(r.document.name).toBe('Basic fixture');
-		expect(Object.keys(Object.values(r.document.sequences)[0]!.clips)).toHaveLength(4);
-	});
-	it('v1 → v2 relabels default-labelled audio halves of A/V clips and nothing else', () => {
-		const env = fixture();
-		const m = migrate(env);
-		expect(m.readOnly).toBe(false);
-		expect(m.report).toEqual({
-			fromVersion: 1,
-			toVersion: CURRENT_SCHEMA_VERSION,
-			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5', 'v5→v6', 'v6→v7'],
-		});
-		expect(m.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-		const before = Object.values(env.document.sequences)[0]!;
-		const after = Object.values(m.document.sequences)[0]!;
-		for (const c of Object.values(before.clips)) {
-			expect(after.clips[c.id]!.label).toBe(c.kind === 'audio' ? 'caribbean' : c.label);
-		}
-		const strip = (d: MutationDocument) => {
-			const copy: MutationDocument = JSON.parse(JSON.stringify(d));
-			for (const s of Object.values(copy.sequences))
-				for (const c of Object.values(s.clips)) if (c.kind === 'audio') c.label = 'x';
-			copy.schemaVersion = 0;
-			return copy;
-		};
-		expect(strip(m.document)).toEqual(strip(env.document));
-		expect(Object.values(before.clips).find((c) => c.kind === 'audio')!.label).toBe('violet');
-	});
-	it('v1 → v2 keeps labels the user chose on audio clips', () => {
-		const env = fixture();
-		const seq = Object.values(env.document.sequences)[0]!;
-		const audio = Object.values(seq.clips).find((c) => c.kind === 'audio')!;
-		audio.label = 'rose';
-		const m = migrate(env);
-		expect(Object.values(m.document.sequences)[0]!.clips[audio.id]!.label).toBe('rose');
-	});
-	it('the v2 fixture loads unchanged (v2 → … → v6 change no data it holds) and newer versions open read-only', () => {
-		const env = fixtureV2();
-		const m = migrate(env);
-		expect(m.readOnly).toBe(false);
-		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4', 'v4→v5', 'v5→v6', 'v6→v7']);
-		expect(m.document).toEqual({ ...env.document, schemaVersion: CURRENT_SCHEMA_VERSION });
-		const r2 = loadProject(env, { effects: defaultEffectRegistry });
-		expect(r2.repairs).toEqual([]);
-		expect(r2.issues).toEqual([]);
-		const newer = {
-			...env,
-			schemaVersion: CURRENT_SCHEMA_VERSION + 1,
-			document: { ...env.document, schemaVersion: CURRENT_SCHEMA_VERSION + 1, futureField: { a: 1 } },
-		};
-		const r = loadProject(newer);
-		expect(r.readOnly).toBe(true);
-		expect((r.document as unknown as { futureField: unknown }).futureField).toEqual({ a: 1 });
-	});
-});
 
 describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 	it('AC-24: unknown effect id and unknown clip kind load, are bypassed, and survive edits and saves', () => {

@@ -88,9 +88,11 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 		const env = fixture(CURRENT_SCHEMA_VERSION);
 		const future = CURRENT_SCHEMA_VERSION + 1;
 		(env.document as Rec).schemaVersion = future;
+		(env.document as Rec).futureField = { a: 1 };
 		env.schemaVersion = future;
 		const r = loadProject(env, { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(true);
 		expect(r.migration).toEqual({ fromVersion: future, toVersion: future, steps: [] });
+		expect((r.document as unknown as Rec).futureField).toEqual({ a: 1 });
 	});
 });

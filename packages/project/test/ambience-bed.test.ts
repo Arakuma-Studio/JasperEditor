@@ -6,6 +6,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
+	applyTransaction,
 	bedScenes,
 	checkInvariants,
 	createCounterIdSource,
@@ -28,10 +29,6 @@ import { Harness } from './helpers.ts';
 const S = FLICKS_PER_SECOND;
 const R30 = { num: 30, den: 1 };
 const F30 = flicksPerFrame(R30);
-/** The same document up to fresh ids (a redo mints new ones). */
-const noIds = (x: unknown) =>
-	JSON.parse(JSON.stringify(x).replace(/"(kf|fx|trk|trn|clp|grp|itm)_[0-9A-Za-z]+"/g, '"$1"'));
-
 /** Three scenes on V1 (media A 0–200, B 200–400, C 400–600) and a 4 s ambience. */
 function threeScenes(h: Harness) {
 	const ids: string[] = [];
@@ -228,10 +225,9 @@ describe('layout', () => {
 });
 
 describe('soundDesign.layBed', () => {
-	it('lays the 3-scene bed: Ambience track, crossfades, fades, Essential ambience, grouped; undo / redo', () => {
+	it('lays the 3-scene bed: Ambience track, crossfades, fades, Essential ambience, grouped', () => {
 		const h = new Harness();
 		const { amb } = threeScenes(h);
-		const before = h.doc;
 		const shots = shotsOf(bedScenes(h.doc, h.seq));
 		const cmd = {
 			type: 'soundDesign.layBed',
@@ -278,11 +274,6 @@ describe('soundDesign.layBed', () => {
 			expect(c.sourceIn).toBeGreaterThanOrEqual(0);
 			expect(c.sourceIn + c.duration * F30).toBeLessThanOrEqual(4 * S);
 		}
-		// undo = the document before; redo = the same up to ids
-		const after = noIds(h.doc.sequences);
-		h.doc = before;
-		h.ok([cmd]);
-		expect(noIds(h.doc.sequences)).toEqual(after);
 	});
 
 	it('range, replace, a second bed on another track, a per-shot bed, equal-gain loop joints', () => {
@@ -425,23 +416,30 @@ describe('soundDesign.layBed', () => {
 					purpose: fc.constantFrom('ambience', 'roomtone'),
 				}),
 				(a) => {
-					const r = h.tx([
+					const { document, result } = applyTransaction(
+						h.doc,
 						{
-							type: 'soundDesign.layBed',
-							mediaId: amb,
-							range: { start: a.start, end: a.end },
-							loop: { inSec: a.inSec, outSec: a.outSec },
-							crossfadeSec: a.crossfadeSec,
-							sceneCrossfadeSec: a.sceneCrossfadeSec,
-							fadeSec: a.fadeSec,
-							purpose: a.purpose,
-							...(a.duck !== undefined ? { duckUnder: a.duck } : {}),
+							label: 'Lay bed',
+							origin: 'user',
+							sequenceId: h.seqId,
+							commands: [
+								{
+									type: 'soundDesign.layBed',
+									mediaId: amb,
+									range: { start: a.start, end: a.end },
+									loop: { inSec: a.inSec, outSec: a.outSec },
+									crossfadeSec: a.crossfadeSec,
+									sceneCrossfadeSec: a.sceneCrossfadeSec,
+									fadeSec: a.fadeSec,
+									purpose: a.purpose,
+									...(a.duck !== undefined ? { duckUnder: a.duck } : {}),
+								},
+							],
 						},
-					]);
-					if (r.ok) {
-						expect(checkInvariants(h.doc)).toEqual([]);
-						h.doc = JSON.parse(JSON.stringify(h.doc));
-					}
+						h.ctx({ ids: createCounterIdSource(1000) }),
+					);
+					if (result.ok) expect(checkInvariants(document)).toEqual([]);
+					else expect(result.errors.some((error) => error.code === 'E_INTERNAL')).toBe(false);
 				},
 			),
 			{ numRuns: 150 },

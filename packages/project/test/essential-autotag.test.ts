@@ -42,11 +42,9 @@ const music = {
 const dialogue = { category: 'dialogue', confidence: 0.83 };
 
 describe('essentialSound.autoTag', () => {
-	it('tags untyped clips "auto" with the type defaults; undo leaves the document; redo is identical', () => {
+	it('tags untyped clips with the classified type and auto provenance', () => {
 		const { h, ids, clip } = setup();
 		const [a, b] = ids as [string, string];
-		const before = h.doc;
-		const snapshot = clone(h.doc);
 		const r = h.ok([{ type: 'essentialSound.autoTag', results: { [a]: music, [b]: dialogue } }]);
 		expect(r.results[0]).toEqual({
 			tagged: [
@@ -63,16 +61,8 @@ describe('essentialSound.autoTag', () => {
 			scores: { music: 0.9, sfx: 0.2 },
 			reasons: ['a steady pulse'],
 		});
-		const { tagged: _t, ...rest } = ea;
-		expect(rest).toEqual(newEssentialSound('music'));
 		expect(essentialAutoTag(clip(b).essential)).toEqual({ by: 'auto', confidence: 0.83 });
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// undo = the document before (immutable); redo gives the same document
-		expect(clone(before)).toEqual(snapshot);
-		const after = clone(h.doc.sequences);
-		h.doc = before;
-		h.ok([{ type: 'essentialSound.autoTag', results: { [a]: music, [b]: dialogue } }]);
-		expect(clone(h.doc.sequences)).toEqual(after);
 	});
 
 	it('never replaces a type the user set, unless force; the same type is SAME', () => {

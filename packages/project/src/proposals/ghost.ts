@@ -141,18 +141,6 @@ export type PreviewOptions = {
 	clock?: () => number;
 };
 
-/**
- * Work done by previews since the last reset (tests and benchmarks read it; robust to the machine's load):
- * transactions applied, items they carried, batches applied one item at a time instead, and invariant checks.
- */
-export type PreviewStats = { transactions: number; items: number; fallbacks: number; checks: number };
-let stats: PreviewStats = { transactions: 0, items: 0, fallbacks: 0, checks: 0 };
-export function previewStats(reset = false): PreviewStats {
-	const out = stats;
-	if (reset) stats = { transactions: 0, items: 0, fallbacks: 0, checks: 0 };
-	return out;
-}
-
 /** Why a preview item failed when it breaks an invariant only together with the items before it (`{0}`: the issue). */
 export const PREVIEW_CONFLICT_TEMPLATE = 'conflicts with the items before it: {0}';
 /** Texts of the proposal model the editor translates (model strings; `{0}` is filled in, never translated). */
@@ -309,8 +297,6 @@ export function* previewProposalSteps(
 		let r: ReturnType<typeof applyTransaction>;
 		try {
 			const commands = commandsOf[k]!.map((c) => substituteKnownRefs(c, refs));
-			stats.transactions++;
-			stats.items++;
 			r = applyTransaction(cur, tx(it.label, commands), txCtx(opts.idsFor?.(it) ?? shared));
 		} catch (e) {
 			failed[it.id] = [
@@ -363,8 +349,6 @@ export function* previewProposalSteps(
 			}
 		};
 		let r: ReturnType<typeof applyTransaction>;
-		stats.transactions++;
-		stats.items += list.length;
 		try {
 			r = applyTransaction(cur, tx('Proposal preview', commands), txCtx(ids, onCommand));
 		} catch {
@@ -482,7 +466,6 @@ export function* previewProposalSteps(
 					}
 					if (r === null || attempt > list.length) {
 						// one by one: exact attribution and failures, as the reference behaviour
-						stats.fallbacks++;
 						next = doc0;
 						for (const k of list) {
 							const it = closure[k]!;
@@ -647,7 +630,6 @@ export function* previewProposalSteps(
 	};
 
 	function check(base: ProjectDocument, d: ProjectDocument): Issue[] {
-		stats.checks++;
 		try {
 			return checkTransactionInvariants(base, d, effects, mode);
 		} catch (e) {
@@ -673,8 +655,6 @@ export function* previewProposalSteps(
 			for (const k of list) {
 				const commands = commandsOf[k]!.map((c) => substituteKnownRefs(c, refs));
 				const it = closure[k]!;
-				stats.transactions++;
-				stats.items++;
 				const one = applyTransaction(d, tx(it.label, commands), txCtx(opts.idsFor?.(it) ?? shared));
 				if (!one.result.ok) return null;
 				for (const [key, v] of Object.entries(one.result.refs)) refs.set(key, v);

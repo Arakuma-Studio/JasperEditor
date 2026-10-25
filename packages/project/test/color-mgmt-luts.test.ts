@@ -79,12 +79,14 @@ describe('tetrahedral interpolation', () => {
 		};
 		for (const size of [2, 5, 17, 33]) {
 			const l = wild(size);
+			let maxError = 0;
 			for (let i = 0; i < 2000; i++) {
 				const c: Rgb = [rnd() * 1.1 - 0.05, rnd(), rnd()];
 				const a = at(l, c);
 				const b = bruteTetra(l, c);
-				for (let k = 0; k < 3; k++) expect(Math.abs(a[k]! - b[k]!)).toBeLessThan(2e-6);
+				for (let k = 0; k < 3; k++) maxError = Math.max(maxError, Math.abs(a[k]! - b[k]!));
 			}
+			expect(maxError, `LUT size ${size}`).toBeLessThan(2e-6);
 		}
 	});
 	it('is exact on affine LUTs and at lattice nodes', () => {

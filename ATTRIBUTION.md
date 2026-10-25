@@ -50,7 +50,6 @@ Hand-made `.jasper` projects (schema history, loader and migration tests; see [d
 | Asset | Author | Source | Licence |
 |---|---|---|---|
 | `packages/project/test/fixtures/v1/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
-| `packages/project/test/fixtures/v2/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/v3/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/v4/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/v5/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
