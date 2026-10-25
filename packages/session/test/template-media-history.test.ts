@@ -3,39 +3,12 @@
 import {
 	createCounterIdSource,
 	createEmptyProject,
-	createStaticMgRegistry,
-	defaultRegistries,
 	type MediaAsset,
-	type MgTemplateInfo,
 	type ProjectDocument,
-	TEMPLATE_MEDIA_KIND,
-	TEMPLATE_MEDIA_KINDS_KEY,
-	TEMPLATE_PARAM_KIND_KEY,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import { avatarRegistries } from '../../project/test/template-media-fixture.ts';
 import { EditorSession, MemoryProjectStore } from '../src/index.ts';
-
-const schema = z.strictObject({
-	name: z.string().default('Ada'),
-	avatar: z
-		.strictObject({ mediaId: z.string().min(1) })
-		.nullable()
-		.default(null)
-		.meta({ [TEMPLATE_PARAM_KIND_KEY]: TEMPLATE_MEDIA_KIND, [TEMPLATE_MEDIA_KINDS_KEY]: ['image'] }),
-});
-const card: MgTemplateInfo = {
-	id: 'avatar-card',
-	version: 1,
-	name: 'Avatar card',
-	category: 'Test',
-	paramsSchema: schema,
-	defaults: schema.parse({}),
-	introFrames: 0,
-	outroFrames: 0,
-	canvasDefault: 'sequence',
-	renderer: 'anime',
-};
 
 const image: Omit<MediaAsset, 'id'> = {
 	kind: 'image',
@@ -65,7 +38,7 @@ async function open() {
 	const s = await EditorSession.open({
 		store,
 		projectId: doc.projectId,
-		ctx: { ids, now, registries: defaultRegistries(createStaticMgRegistry([card])) },
+		ctx: { ids, now, registries: avatarRegistries() },
 		sessionId: 's1',
 	});
 	const reg = s.apply({
@@ -94,7 +67,8 @@ async function open() {
 }
 
 const avatarOf = (doc: ProjectDocument, clipId: string) =>
-	(Object.values(doc.sequences)[0]!.clips[clipId] as { params: { avatar: unknown } }).params.avatar;
+	(Object.values(doc.sequences)[0]!.clips[clipId] as unknown as { params: { avatar: unknown } }).params
+		.avatar;
 
 describe('template media params in the session history', () => {
 	it('param.set of an avatar and of None undo / redo exactly', async () => {
