@@ -627,6 +627,26 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		crossfadeSec: 0.2,
 		gainDb: -12,
 	},
+	// Spec 14 TC-031: transcript cleanup applies any number of ranges as ONE edit (one undo step): the speech clip, its
+	// linked picture and clip group are cut, sync-locked tracks follow; 4 ms equal-power micro-fades at every audio join.
+	// Ranges in sequence frames, or in the media time (flicks) of a clip. mode: extract | lift | mute | markers.
+	'cleanup.apply': {
+		type: 'cleanup.apply',
+		clipIds: [{ clipAt: { track: 'A1', at: 0 } }],
+		ranges: [
+			{ start: 30, end: 45 },
+			{ start: 90, end: 130 },
+		],
+		mode: 'extract',
+		fadeMs: 4,
+	},
+	// …and the sequence's cleanup state: preset + overrides, the script, edited word lists, rejected findings.
+	'cleanup.configure': {
+		type: 'cleanup.configure',
+		settings: { presetId: 'builtin.fast', overrides: { gaps: { maxGapS: 0.15 } } },
+		script: { name: 'Guion', text: 'Hoy vamos a crear un juego de carreras.' },
+		lists: { es: { markers: ['bueno', 'o sea', 'a ver'] } },
+	},
 	// Spec 12 P6-R3 (Auto Tag): the classified type per clip id, marked "auto" until the user confirms it (auto_tag_audio
 	// measures the clips with POST /api/audio/classify and applies this command; a type the user set is kept unless force).
 	'essentialSound.autoTag': {
