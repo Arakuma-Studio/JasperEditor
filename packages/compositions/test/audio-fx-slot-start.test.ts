@@ -26,7 +26,7 @@ function amplify(db: number, keyed = false): EffectInstance {
 			easeIn: { influence: 1 / 3, slope: 0 },
 			easeOut: { influence: 1 / 3, slope: 0 },
 		});
-		params.leftGain = { value: db, keyframes: [k('a', 0, db), k('b', 30 * F, 0)] };
+		params.leftGain = { value: 0, keyframes: [k('a', 0, db), k('b', 30 * F, 0)] };
 	}
 	return { id: 'fx1', effectId: 'jasper.audio.amplify', effectVersion: 1, enabled: true, params };
 }
@@ -45,10 +45,10 @@ describe('preview effect slot start', () => {
 		expect(quantum((i, o) => core.render(i, o))).toBeCloseTo(0.005, 4);
 	});
 
-	it('keyframed: the first quantum is at the keyframe value', () => {
+	it('keyframed: the first quantum uses the keyframe instead of the stored base value', () => {
 		const core = new FxSlotCore(SR, 2, null);
 		core.message({ type: 'effect', effect: amplify(-40, true), time: 0 });
-		expect(quantum((i, o) => core.render(i, o))).toBeLessThan(0.0051);
+		expect(quantum((i, o) => core.render(i, o))).toBeCloseTo(0.005, 4);
 	});
 
 	it('an edit while playing still glides (no click)', () => {
