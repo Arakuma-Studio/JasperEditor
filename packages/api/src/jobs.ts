@@ -57,6 +57,8 @@ export const JOB_KINDS = [
 	'audio-classify',
 	'sound-embed',
 	'sound-moment',
+
+	'voice-analysis',
 	/** spec 16 SG-006: the downloadable ONNX Runtime CUDA provider (Linux x64). */
 	'runtime-download',
 ] as const;

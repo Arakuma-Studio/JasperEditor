@@ -7,6 +7,7 @@
 // (95th percentile): 30 % of the way up, and at least 6 dB above the floor. A word keeps at least 60 ms.
 //
 // Times are 16 kHz sample indices.
+import { levelStats, speechThresholdDb } from '@jasper/audio-dsp';
 import { SAMPLE_RATE } from './mel.ts';
 
 export const VAD_FRAME = SAMPLE_RATE / 100;
@@ -45,17 +46,13 @@ export function frameDb(audio: Float32Array): Float32Array {
 	return out;
 }
 
-/** The speech/silence threshold in dBFS. */
+/**
+ * The speech/silence threshold in dBFS: the floor/speech-level rule shared with the voice analysis (spec 14 TC-002,
+ * `levelStats` / `speechThresholdDb` of @jasper/audio-dsp); −60 when every frame is digital silence.
+ */
 export function vadThreshold(db: ArrayLike<number>): number {
-	// digital silence (< −100 dBFS) would drag the floor far below the recording's own noise
-	const s: number[] = [];
-	for (let i = 0; i < db.length; i++) if (db[i] > -100) s.push(db[i]);
-	if (!s.length) return -60;
-	s.sort((a, b) => a - b);
-	const q = (p: number) => s[Math.floor((s.length - 1) * p)];
-	const floor = q(0.1);
-	const speech = q(0.95);
-	return Math.max(floor + 0.3 * (speech - floor), floor + 6);
+	const s = levelStats(db);
+	return s ? speechThresholdDb(s.floorDb, s.speechDb) : -60;
 }
 
 /** Moves word bounds (16 kHz samples) inward past silent frames (see the module docs). In place. */
