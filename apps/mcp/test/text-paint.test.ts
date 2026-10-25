@@ -28,12 +28,16 @@ async function connect() {
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
 		agentTx: async (req: { transaction: Record<string, unknown> }) => {
-			const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...req.transaction, origin: 'user' } as never, {
-				ids,
-				now: () => '2026-10-25T00:00:00.000Z',
-				revision,
-				registries: defaultRegistries(),
-			});
+			const r = applyTransaction(
+				doc,
+				{ protocol: 'jasper.tx/1', ...req.transaction, origin: 'user' } as never,
+				{
+					ids,
+					now: () => '2026-10-25T00:00:00.000Z',
+					revision,
+					registries: defaultRegistries(),
+				},
+			);
 			if (r.result.ok) {
 				doc = r.document;
 				revision++;
@@ -68,14 +72,16 @@ describe('add_text strokes and shadow (spec 13 SH-004)', () => {
 			text: 'Pixel Pop',
 			at: 0,
 			duration: 30,
-			strokes: [{ color: '#AE00FF', widthPx: 11.5 }, { color: '#00000080', widthPx: 4, position: 'inside' }],
+			strokes: [
+				{ color: '#AE00FF', widthPx: 11.5 },
+				{ color: '#00000080', widthPx: 4, position: 'inside' },
+			],
 			shadow: { color: '#221D58CC', distancePx: 0, blurPx: 250, spreadPx: 26.87 },
 		});
 		expect(r.isError, r.text).toBe(false);
-		const clip = Object.values(Object.values(doc().sequences)[0]!.clips).find((c) => c.kind === 'text') as Extract<
-			Clip,
-			{ kind: 'text' }
-		>;
+		const clip = Object.values(Object.values(doc().sequences)[0]!.clips).find(
+			(c) => c.kind === 'text',
+		) as Extract<Clip, { kind: 'text' }>;
 		expect(clip.content.style.strokes).toEqual([
 			{ color: [0xae / 255, 0, 1, 1], widthPx: 11.5, position: 'outside' },
 			{ color: [0, 0, 0, 0.502], widthPx: 4, position: 'inside' },
@@ -91,9 +97,19 @@ describe('add_text strokes and shadow (spec 13 SH-004)', () => {
 
 	it('refuses unknown keys and out-of-range values', async () => {
 		const { call } = await connect();
-		const bad = await call('add_text', { text: 'x', at: 0, duration: 30, shadow: { color: '#000000', size: 3 } });
+		const bad = await call('add_text', {
+			text: 'x',
+			at: 0,
+			duration: 30,
+			shadow: { color: '#000000', size: 3 },
+		});
 		expect(bad.isError).toBe(true);
-		const neg = await call('add_text', { text: 'x', at: 0, duration: 30, shadow: { color: '#000000', spreadPx: -1 } });
+		const neg = await call('add_text', {
+			text: 'x',
+			at: 0,
+			duration: 30,
+			shadow: { color: '#000000', spreadPx: -1 },
+		});
 		expect(neg.isError).toBe(true);
 		const many = await call('add_text', {
 			text: 'x',
