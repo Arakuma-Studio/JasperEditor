@@ -67,7 +67,9 @@ describe('parseTable', () => {
 	it('keeps text after a closing quote and reports it', () => {
 		const t = parseTable('a,b\n"x"y,2');
 		expect(t.ok && t.table.records[1]).toEqual(['xy', '2']);
-		expect(t.ok && t.table.issues.map((i) => [i.kind, i.record, i.column])).toEqual([['text-after-quote', 1, 0]]);
+		expect(t.ok && t.table.issues.map((i) => [i.kind, i.record, i.column])).toEqual([
+			['text-after-quote', 1, 0],
+		]);
 	});
 
 	it('an unclosed quote takes the rest of the text and is reported on its line', () => {
@@ -122,7 +124,9 @@ describe('parseTable', () => {
 		const r = parseTable(many);
 		expect(r).toMatchObject({ ok: false, code: 'E_TOO_LARGE' });
 		if (!r.ok) expect(mgImportText(r.message)).toContain(`${TABLE_MAX_ROWS} rows`);
-		expect(parseTable(['h', ...Array.from({ length: TABLE_MAX_ROWS }, (_, i) => `${i}`)].join('\n')).ok).toBe(true);
+		expect(parseTable(['h', ...Array.from({ length: TABLE_MAX_ROWS }, (_, i) => `${i}`)].join('\n')).ok).toBe(
+			true,
+		);
 		expect(parseTable('h\n1\n2\n3', { maxRows: 2 })).toMatchObject({ ok: false });
 	});
 
@@ -158,16 +162,20 @@ describe('parseTable', () => {
 
 		it('never throws and stays within the caps on arbitrary text', () => {
 			fc.assert(
-				fc.property(fc.string({ unit: 'binary', maxLength: 400 }), fc.constantFrom('auto', ',', '\t', ';'), (text, d) => {
-					const r = parseTable(text, { delimiter: d as ',' });
-					if (!r.ok) return;
-					expect(r.table.records.length).toBeLessThanOrEqual(TABLE_MAX_ROWS + 1);
-					expect(r.table.lines).toHaveLength(r.table.records.length);
-					for (const rec of r.table.records) {
-						expect(rec.length).toBeLessThanOrEqual(TABLE_MAX_COLUMNS);
-						expect(rec.some((c) => c.trim() !== '')).toBe(true);
-					}
-				}),
+				fc.property(
+					fc.string({ unit: 'binary', maxLength: 400 }),
+					fc.constantFrom('auto', ',', '\t', ';'),
+					(text, d) => {
+						const r = parseTable(text, { delimiter: d as ',' });
+						if (!r.ok) return;
+						expect(r.table.records.length).toBeLessThanOrEqual(TABLE_MAX_ROWS + 1);
+						expect(r.table.lines).toHaveLength(r.table.records.length);
+						for (const rec of r.table.records) {
+							expect(rec.length).toBeLessThanOrEqual(TABLE_MAX_COLUMNS);
+							expect(rec.some((c) => c.trim() !== '')).toBe(true);
+						}
+					},
+				),
 				{ numRuns: 600 },
 			);
 		});

@@ -17,7 +17,6 @@ export const MG_IMPORT_TEXT = {
 	'no-header': 'The first row must name the columns (parameter names of {0} such as {1})',
 	'no-data': 'There are no rows under the column names',
 	'extra-cells': '{0} cell(s) beyond the named columns ignored',
-	'header-issue': 'Header: {0}',
 	// columns
 	'column-unnamed': 'The column has no name',
 	'column-duplicate': 'Same column as "{0}"',

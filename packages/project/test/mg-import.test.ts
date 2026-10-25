@@ -32,7 +32,11 @@ const schema = z.strictObject({
 		.min(1)
 		.max(64)
 		.regex(/^[\p{L}\p{N}._-]+$/u),
-	avatar: z.union([z.strictObject({ mediaId: z.string() }), z.strictObject({ generated: z.number().int() }), z.null()]),
+	avatar: z.union([
+		z.strictObject({ mediaId: z.string() }),
+		z.strictObject({ generated: z.number().int() }),
+		z.null(),
+	]),
 	verified: z.boolean(),
 	likes: z.number().int().min(0).max(1e12),
 	scale: z.number().min(0.5).max(2),
@@ -115,7 +119,9 @@ const texts = (list: Parameters<typeof mgImportText>[0][]) => list.map(mgImportT
 
 describe('column mapping', () => {
 	it('matches param names and labels ignoring case and punctuation; aliases; timing; ignored with reasons', () => {
-		const p = plan('display_name,COMMENT,Likes,User,Image URL,Start,Duration,Mood,,likes\nA,b,1,u,x,1,2,m,,3');
+		const p = plan(
+			'display_name,COMMENT,Likes,User,Image URL,Start,Duration,Mood,,likes\nA,b,1,u,x,1,2,m,,3',
+		);
 		expect(
 			p.columns.map((c) =>
 				c.kind === 'param'
@@ -176,13 +182,20 @@ describe('cells', () => {
 			avatar: { generated: 7 },
 			text: 'keep   inner',
 		});
-		expect(p.rows[1]!.params).toMatchObject({ variant: 'ex-post', likes: 1200, verified: false, avatar: null });
+		expect(p.rows[1]!.params).toMatchObject({
+			variant: 'ex-post',
+			likes: 1200,
+			verified: false,
+			avatar: null,
+		});
 		expect(p.rows[2]!.params).toMatchObject({ likes: 3_500_000, verified: true });
 		expect('avatar' in p.rows[2]!.params).toBe(false);
 	});
 
 	it('reports bad cells per row with the column, keeping other rows', () => {
-		const p = plan('likes,verified,Style,scale,handle,avatar\nabc,maybe,facebook,9,"has space",{bad\n1.5,yes,,1,ok,');
+		const p = plan(
+			'likes,verified,Style,scale,handle,avatar\nabc,maybe,facebook,9,"has space",{bad\n1.5,yes,,1,ok,',
+		);
 		expect(texts(p.rows[0]!.errors)).toEqual([
 			'likes: "abc" is not a number',
 			'verified: "maybe" is not yes / no',
@@ -204,6 +217,15 @@ describe('cells', () => {
 		const g = plan('User\n@luna', { preset: 'gram-post' });
 		expect(g.rows[0]!.params).toEqual({ handle: 'luna' });
 		expect(g.presetParams).toEqual({ variant: 'gram-post', likes: 114 });
+	});
+
+	it('a preset does not fix the params the template varies per instance (ui.addAnother.reroll)', () => {
+		const varied = { ...template, ui: { ...ui, addAnother: { reroll: ['likes', 'handle'] } } };
+		const t = parseTable('Comment\nhi');
+		const r = t.ok ? planMgImport(t.table, varied, { rate, preset: 'gram-post' }) : null;
+		expect(r?.ok && r.plan.presetParams).toEqual({ variant: 'gram-post' });
+		const plain = t.ok ? planMgImport(t.table, template, { rate, preset: 'gram-post' }) : null;
+		expect(plain?.ok && plain.plan.presetParams).toEqual({ variant: 'gram-post', likes: 114 });
 	});
 
 	it('a direct column wins over an alias for the same param (warning)', () => {
@@ -239,12 +261,16 @@ describe('cells', () => {
 	it('parseCellNumber / coerceCell never throw (fast-check)', () => {
 		const props = (template.paramsSchema as { properties: Record<string, unknown> }).properties;
 		fc.assert(
-			fc.property(fc.string({ unit: 'binary', maxLength: 30 }), fc.constantFrom(...Object.keys(props)), (s, p) => {
-				const n = parseCellNumber(s);
-				expect(n === null || Number.isFinite(n)).toBe(true);
-				const c = coerceCell(s, props[p]);
-				expect(typeof c.ok).toBe('boolean');
-			}),
+			fc.property(
+				fc.string({ unit: 'binary', maxLength: 30 }),
+				fc.constantFrom(...Object.keys(props)),
+				(s, p) => {
+					const n = parseCellNumber(s);
+					expect(n === null || Number.isFinite(n)).toBe(true);
+					const c = coerceCell(s, props[p]);
+					expect(typeof c.ok).toBe('boolean');
+				},
+			),
 			{ numRuns: 1000 },
 		);
 		expect(parseCellNumber('12,34')).toBeNull();
@@ -267,7 +293,8 @@ describe('cells', () => {
 						issues: [],
 					};
 					const r = planMgImport(table, template, { rate, ...(preset ? { preset } : {}) });
-					if (r.ok) for (const row of r.plan.rows) for (const m of [...row.errors, ...row.warnings]) mgImportText(m);
+					if (r.ok)
+						for (const row of r.plan.rows) for (const m of [...row.errors, ...row.warnings]) mgImportText(m);
 				},
 			),
 			{ numRuns: 400 },
@@ -278,10 +305,10 @@ describe('cells', () => {
 describe('placement and commands', () => {
 	it('schedules rows one after another from the start, explicit times win', () => {
 		expect(
-			scheduleMgImport(
-				[{ index: 0 }, { index: 1, duration: 30 }, { index: 2, start: 1000 }, { index: 4 }],
-				{ startAt: 100, defaultDuration: 120 },
-			),
+			scheduleMgImport([{ index: 0 }, { index: 1, duration: 30 }, { index: 2, start: 1000 }, { index: 4 }], {
+				startAt: 100,
+				defaultDuration: 120,
+			}),
 		).toEqual([
 			{ row: 0, start: 100, duration: 120 },
 			{ row: 1, start: 220, duration: 30 },
@@ -294,23 +321,40 @@ describe('placement and commands', () => {
 		const registries = defaultRegistries(createStaticMgRegistry([info]));
 		const h = new Harness({ ctx: { registries } });
 		h.ok([{ type: 'clip.addSolid', at: 0, duration: 400, track: 'V2', color: [0, 0, 0, 1] }]);
-		const p = plan('User,Comment,Likes\nLuna,First!,1.2K\nBo,Second,oops\nCy,Third,\n', { preset: 'gram-post' });
+		const p = plan('User,Comment,Likes\nLuna,First!,1.2K\nBo,Second,oops\nCy,Third,\n', {
+			preset: 'gram-post',
+		});
 		const valid = p.rows.filter((r) => r.errors.length === 0);
 		expect(valid.map((r) => r.index)).toEqual([0, 2]);
 		const placements = scheduleMgImport(valid, { startAt: 60, defaultDuration: p.defaultDuration });
 		const seed = 1234;
 		const preview = valid.map((r) =>
-			resolveMgTemplateParams(info, { ...p.presetParams, ...r.params }, { seed: mgItemSeed(seed, r.index), media: {} }),
+			resolveMgTemplateParams(
+				info,
+				{ ...p.presetParams, ...r.params },
+				{ seed: mgItemSeed(seed, r.index), media: {} },
+			),
 		);
 		const commands = valid.map((r, i) => mgImportCommand(p, r, placements[i]!, { seed, track: 'V2' }));
 		const res = h.ok(commands);
-		const results = res.results as { clipId: string; track: string; start: number; params: unknown; filled: string[] }[];
+		const results = res.results as {
+			clipId: string;
+			track: string;
+			start: number;
+			params: unknown;
+			filled: string[];
+		}[];
 		expect(results.map((r) => [r.track, r.start])).toEqual([
 			['V3', 60],
 			['V3', 180],
 		]);
 		expect(results.map((r) => r.params)).toEqual(preview.map((x) => (x.ok ? x.params : null)));
-		expect(results[0]!.params).toMatchObject({ variant: 'gram-post', handle: 'Luna', text: 'First!', likes: 1200 });
+		expect(results[0]!.params).toMatchObject({
+			variant: 'gram-post',
+			handle: 'Luna',
+			text: 'First!',
+			likes: 1200,
+		});
 		// an empty cell is "not given": the preset's value (likes 114) stays, the fill only fills what both leave out
 		expect(results[1]!.params).toMatchObject({ handle: 'Cy', text: 'Third', likes: 114 });
 		expect(results[1]!.filled).toEqual(['displayName']);

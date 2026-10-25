@@ -7,8 +7,14 @@
 // (the template's fill hook or its defaults decide). Rows are placed one after another from a start frame, each on
 // the first free video track. Pure: the web dialog and the MCP tool share it, and `resolveMgTemplateParams` turns a
 // row into the exact params `clip.addMotionGraphic` will store.
+import { z } from 'zod';
 import type { Command } from '../commands/index.ts';
-import type { MgTemplateImportTarget, MgTemplateImportUi, MgTemplatePreset } from '../registry/mg.ts';
+import type {
+	MgTemplateImportTarget,
+	MgTemplateImportUi,
+	MgTemplateInfo,
+	MgTemplatePreset,
+} from '../registry/mg.ts';
 import { type Rational, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
 import { type MgImportMessage, type MgImportTextCode, shortValue as short } from './messages.ts';
@@ -27,8 +33,32 @@ export type MgImportTemplate = {
 	ui?: {
 		params?: Readonly<Record<string, { label?: string } | undefined>>;
 		import?: MgTemplateImportUi;
+		/** The params each new instance varies (`ui.addAnother.reroll`): rows get their own, not the preset's. */
+		addAnother?: { reroll: readonly string[] };
 	};
 };
+
+/** The import view of a registry template (its params schema as JSON Schema); null when it has no JSON Schema. */
+export function mgImportTemplateOf(info: MgTemplateInfo): MgImportTemplate | null {
+	let json: unknown;
+	try {
+		json = z.toJSONSchema(info.paramsSchema, { unrepresentable: 'any', io: 'input' });
+	} catch {
+		return null;
+	}
+	return {
+		id: info.id,
+		version: info.version,
+		name: info.name,
+		paramsSchema: json,
+		defaults: info.defaults,
+		...(info.defaultDurationSeconds !== undefined
+			? { defaultDurationSeconds: info.defaultDurationSeconds }
+			: {}),
+		...(info.presets ? { presets: info.presets } : {}),
+		...(info.ui ? { ui: info.ui } : {}),
+	};
+}
 
 export type MgImportColumn = { index: number; header: string } & (
 	| { kind: 'param'; param: string }
@@ -342,7 +372,7 @@ export function mapImportColumns(header: readonly string[], template: MgImportTe
 
 /**
  * Plans an import of `table` (first record = column names) as clips of `template`, optionally starting every row
- * from a preset's params. Refuses (ok: false) an unknown preset, a table without data rows, or a header that names
+ * from a preset's params (without the params the template re-randomizes per instance, `ui.addAnother.reroll`). Refuses (ok: false) an unknown preset, a table without data rows, or a header that names
  * no param or timing column. Row problems are kept on the rows (`errors`), never thrown.
  */
 export function planMgImport(
@@ -359,6 +389,10 @@ export function planMgImport(
 		const p = template.presets?.find((x) => x.id === opts.preset);
 		if (!p) return { ok: false, message: msg('no-preset', template.name, opts.preset) };
 		presetParams = { ...p.params };
+		// Every row is a new instance: the params the template varies per instance (a comment's identity and stats)
+		// come from the row or the fill hook, not from the preset (whose values are placeholders such as "username").
+		const reroll = template.ui?.addAnother?.reroll;
+		if (Array.isArray(reroll)) for (const name of reroll) delete presetParams[name];
 	}
 	const [header, ...data] = table.records;
 	if (!header) return { ok: false, message: msg('empty') };
@@ -442,7 +476,7 @@ export function planMgImport(
 		}
 		return row;
 	});
-	for (const i of headerIssues) if (rows[0]) rows[0].warnings.push({ ...i.message, column: 'Header' });
+	for (const i of headerIssues) if (rows[0]) rows[0].warnings.push(i.message);
 	return {
 		ok: true,
 		plan: {

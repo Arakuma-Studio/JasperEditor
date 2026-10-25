@@ -5,8 +5,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-	checkInvariants,
 	type Clip,
+	checkInvariants,
 	createStaticMgRegistry,
 	defaultRegistries,
 	type MgTemplateInfo,
@@ -291,7 +291,14 @@ describe('clip.duplicateMotionGraphic', () => {
 	it('property: copies never overlap other clips on their track and invariants hold', () => {
 		fc.assert(
 			fc.property(
-				fc.array(fc.record({ at: fc.integer({ min: 0, max: 400 }), len: fc.integer({ min: 1, max: 120 }), track: fc.constantFrom('V1', 'V2', 'V3') }), { maxLength: 8 }),
+				fc.array(
+					fc.record({
+						at: fc.integer({ min: 0, max: 400 }),
+						len: fc.integer({ min: 1, max: 120 }),
+						track: fc.constantFrom('V1', 'V2', 'V3'),
+					}),
+					{ maxLength: 8 },
+				),
 				fc.integer({ min: 0, max: 0xffff_ffff }),
 				(solids, seed) => {
 					const h = harness();
@@ -325,7 +332,14 @@ describe('mgRerollParams / resolveMgTemplateParams', () => {
 		const r = resolveMgTemplateParams(card, { text: 'Hi' }, { seed: 2, media: {} });
 		expect(r).toEqual({
 			ok: true,
-			params: { variant: 'a', handle: NAMES[2], text: 'Hi', likes: (2 * 7919) % 100_000, size: 100, glow: 0.2 },
+			params: {
+				variant: 'a',
+				handle: NAMES[2],
+				text: 'Hi',
+				likes: (2 * 7919) % 100_000,
+				size: 100,
+				glow: 0.2,
+			},
 			filled: ['handle', 'likes', 'glow'],
 		});
 		expect(resolveMgTemplateParams(card, { size: 0 }, { seed: 2, media: {} })).toMatchObject({

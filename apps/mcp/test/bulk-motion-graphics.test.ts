@@ -386,9 +386,11 @@ describe('import_motion_graphics_csv', () => {
 			likes: 1200,
 			verified: true,
 		});
-		// an empty cell is not given: the preset's likes (114) stay
-		expect(body.rows[1].params).toMatchObject({ handle: 'bo', likes: 114, verified: false });
-		expect(body.rows[1].filled).toEqual(['displayName']);
+		// an empty cell is not given: likes is a per-instance param (ui.addAnother.reroll), so the fill hook gives
+		// this row its own value instead of the preset's placeholder (114)
+		expect(body.rows[1].params).toMatchObject({ handle: 'bo', verified: false });
+		expect(body.rows[1].params.likes).not.toBe(114);
+		expect([...body.rows[1].filled].sort()).toEqual(['displayName', 'likes']);
 		expect(body.rows[2].params.text).toBe('Line 1\nLine 2');
 		expect(Object.keys(seqOf(engine.doc()).clips)).toHaveLength(3);
 	});

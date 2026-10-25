@@ -111,6 +111,9 @@ import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
+export * from './bulk/messages.ts';
+export * from './bulk/mg-import.ts';
+export * from './bulk/table.ts';
 export { DEFAULT_CLEANUP_TOLERANCE } from './commands/handlers/ease.ts';
 export {
 	copyEase,
@@ -129,6 +132,3 @@ export { type PathFitPlan, planPathCleanup } from './ease/path-fit.ts';
 export * from './ease/presets.ts';
 export * from './ease/segments.ts';
 export * from './vector/index.ts';
-export * from './bulk/mg-import.ts';
-export * from './bulk/table.ts';
-export * from './bulk/messages.ts';

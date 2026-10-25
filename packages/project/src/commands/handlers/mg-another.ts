@@ -2,8 +2,9 @@
 // of a motion-graphic clip right after it, never overwriting, with fresh values for the params its template
 // re-randomizes (`ui.addAnother.reroll`, through the template's fill hook) — one command, so one undo step from the
 // timeline, Properties, the gallery, the palette and MCP alike.
-import type { Clip } from '../../schema/sequence.ts';
+
 import { fillTemplateParams, mgRerollParams, validateTemplateParams } from '../../registry/mg-params.ts';
+import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import {
 	assertKindFits,

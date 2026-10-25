@@ -2,7 +2,12 @@
 // "Add another & bulk import"). The template definition spreads them into its `ui`:
 //   ui: { …, addAnother: SOCIAL_ADD_ANOTHER, import: SOCIAL_IMPORT_HINTS }
 import type { MgTemplateImportUi } from '@jasper/project';
-import { SOCIAL_PARAM_NAMES, type SocialParamName, SOCIAL_VARIANTS, VARIANT_CAPABILITIES } from './variants.ts';
+import {
+	SOCIAL_PARAM_NAMES,
+	SOCIAL_VARIANTS,
+	type SocialParamName,
+	VARIANT_CAPABILITIES,
+} from './variants.ts';
 
 /**
  * What "Add another" re-randomizes (through `fillSocialParams`): a different person (name, handle, avatar) and new

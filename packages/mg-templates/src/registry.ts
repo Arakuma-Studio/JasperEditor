@@ -310,7 +310,12 @@ function checkUi(d: AnyMgTemplate, k: string, names: ReadonlySet<string>): void 
 	const ui = d.ui as unknown;
 	if (ui === undefined) return;
 	if (!isPlainObject(ui)) throw new Error(`The ui hints of ${k} must be an object`);
-	const { groups, params, addAnother, import: importHints } = ui as {
+	const {
+		groups,
+		params,
+		addAnother,
+		import: importHints,
+	} = ui as {
 		groups?: unknown;
 		params?: unknown;
 		addAnother?: unknown;
@@ -383,7 +388,11 @@ function checkImportHints(k: string, names: ReadonlySet<string>, v: unknown): vo
 		if (typeof name !== 'string' || !names.has(name))
 			throw new Error(`${where} of ${k} names an unknown param ${JSON.stringify(name)}`);
 	};
-	const { aliases, ignored, trimPrefix } = v as { aliases?: unknown; ignored?: unknown; trimPrefix?: unknown };
+	const { aliases, ignored, trimPrefix } = v as {
+		aliases?: unknown;
+		ignored?: unknown;
+		trimPrefix?: unknown;
+	};
 	if (aliases !== undefined) {
 		if (!isPlainObject(aliases)) throw new Error(`ui.import.aliases of ${k} must be an object`);
 		for (const [column, target] of Object.entries(aliases)) {
