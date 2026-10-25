@@ -51,9 +51,9 @@ export const MultiEaseSchema = z
 		const pts = curve.points;
 		const first = pts[0];
 		const last = pts[pts.length - 1];
-		if (!first || first.x !== 0 || first.y !== 0)
+		if (first?.x !== 0 || first.y !== 0)
 			ctx.addIssue({ code: 'custom', path: ['points', 0], message: 'the first point must be (0, 0)' });
-		if (!last || last.x !== 1 || last.y !== 1)
+		if (last?.x !== 1 || last.y !== 1)
 			ctx.addIssue({
 				code: 'custom',
 				path: ['points', pts.length - 1],

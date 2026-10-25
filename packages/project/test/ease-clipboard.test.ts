@@ -33,10 +33,14 @@ describe('copyEase / keyframe.pasteEase', () => {
 			},
 		]);
 		const c = copyEase(h.doc, [src[1]!]);
+		// keyframe-sides: the key's two sides, each with its type (the segment into it is per side: key 0's Linear
+		// side does not make it linear, so its incoming ease is the one set).
 		expect(c.ok && c.clip).toEqual({
 			kind: 'key',
 			easeIn: { influence: 0.6, slope: 0.2 },
 			easeOut: { influence: 0.25, slope: 1.5 },
+			inInterpolation: 'bezier',
+			interpolation: 'bezier',
 		});
 		const dst = key('opacity', [
 			[0, 0],

@@ -160,7 +160,10 @@ the server instructions and `jasper://guide`.
 parameters) now carries, per key, the segment **leaving** it as the evaluator draws it: `ease` = `"hold"`,
 `"linear"` or `"cubic-bezier(x1, y1, x2, y2)"` (four decimals; auto-bezier eases derived from the neighbours), plus
 `easePreset` when a shaped segment matches a built-in preset (`matchEasePreset`, 1e-3) and `roving: true` on roving
-keys (their run is one segment, reported on its first key). The last key has no `ease`. Linear and hold segments do
+keys (their run is one segment, reported on its first key). The last key has no `ease`. The shape is the
+evaluator's `segmentShape` (keyframe-sides: the key's outgoing side and the next key's incoming side, listed as
+`inInterpolation` when explicit — linear only when both are Linear, a Linear side of a curved segment ⅙·1), with
+effect points' auto-bezier eases in their layer-box metric (`resolvePropertyAt`'s `metric`). Linear and hold segments do
 not run the matcher, so tracking data and plain fades cost nothing extra; matches are memoised per curve within a
 listing. Speeds and influences are left to `get_keyframe_eases` to keep the listing small.
 
@@ -172,13 +175,13 @@ listing. Speeds and influences are left to `get_keyframe_eases` to keep the list
 | Tool | Arguments | Command / notes |
 |---|---|---|
 | `list_ease_presets` | `{group?}` | groups; per preset `id, name, group, kind` and `cubicBezier` or `points` |
-| `get_keyframe_eases` | selection (≤ 2000 keys, else `E_LIMIT`) | `keyframeEasesView`: per property `path, label, clipId, spatial`, keys `{id, frame, timecode, value, interpolation, roving?, in/out: {influence %, speed, slope}}`, segments `{fromId, toId, section, ease, preset?, roving?, averageSpeed}`, `span.preset` for 3+ keys whose run matches a preset (2e-3) |
+| `get_keyframe_eases` | selection (≤ 2000 keys, else `E_LIMIT`) | `keyframeEasesView`: per property `path, label, clipId, spatial`, keys `{id, frame, timecode, value, interpolation, inInterpolation?, roving?, in/out: {interpolation, influence %, speed, slope}}`, segments `{fromId, toId, section, ease, outInterpolation, inInterpolation, preset?, roving?, averageSpeed}` (side types: the outgoing type of the first key, the type the last key's incoming side acts as), `span.preset` for 3+ keys whose run matches a preset (2e-3); speeds in layer px/s for effect points |
 | `apply_ease` | selection, `curve`, `sections?` | `keyframe.applyEase`; result `{affected, created, removed}` + the read-back of the resulting keys |
-| `transfer_ease` | `fromKeyframeIds, toKeyframeIds, sections?, mode?` | `copyEase` on the current document, then `keyframe.pasteEase` (one step; returns what was copied) |
+| `transfer_ease` | `fromKeyframeIds, toKeyframeIds, sections?, mode?` | `copyEase` on the current document, then `keyframe.pasteEase` (one step; returns what was copied — one key: both sides with their `interpolation`, influence %, slope) |
 | `transfer_keyframe_values` | `fromKeyframeIds, toKeyframeIds` | `copyValues` + `keyframe.pasteValues` |
 | `set_keyframe_velocity` | `keyframeId, side, speed?, influence? %` | `keyframe.setVelocity` (one of speed / influence required) |
 | `create_path_controller` | selection, `replaceExpression?` | `keyframe.createPathController`; also returns the slider's `param.set` target |
-| `cleanup_motion_path` | selection, `tolerance?` | `keyframes.cleanupPath` |
+| `cleanup_motion_path` | selection, `tolerance?` | `keyframes.cleanupPath` (tolerance in sequence px for Motion, layer px for effect points) |
 | `animate_trim_paths` | `clipIds, style, reverse?, animateOffset?, duration?, offsetDegrees?, copies?, inOutLag?, at?, curve?, tracer?, sequenceId?` | `shape.animateTrim` (+ `shape.addTrimTracer` per animated clip); returns per clip `trimId`, its Start / End / Offset keys with frames and eases, parts, tracer |
 | `reverse_path_direction` | `clipIds` | `shape.reversePathDirection` |
 | `add_line` | `orientation, length?, strokeWidth?, color? "#RRGGBB(AA)", at?, duration?, track?, name?, sequenceId?` | `shape.addLine` |
