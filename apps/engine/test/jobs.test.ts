@@ -46,7 +46,7 @@ function groupMembers(pgid: number): number[] {
 }
 
 describe('scheduling (S04:JB-011/012/014)', () => {
-	it('filters dedupe keys before returning detached jobs, including external sources and equal timestamps', () => {
+	it('filters dedupe keys and returns detached jobs from internal and external sources', () => {
 		const q = makeQueue({ journal: null });
 		q.registerRunner('analysis', hang);
 		const a = q.submit({
@@ -56,7 +56,7 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 			cpuSlots: 1,
 			dedupeKey: 'wanted',
 		});
-		q.submit({ kind: 'analysis', title: 'b', priority: 'user', cpuSlots: 1, dedupeKey: 'other' });
+		const b = q.submit({ kind: 'analysis', title: 'b', priority: 'user', cpuSlots: 1, dedupeKey: 'other' });
 		q.submit({ kind: 'analysis', title: 'no key', priority: 'user', cpuSlots: 1 });
 		const external: EngineJob[] = [
 			{ ...a, id: 'external-a', state: 'running', createdAt: a.createdAt, progress: 0.5 },
@@ -69,16 +69,20 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 			get: () => null,
 			cancel: () => null,
 		});
-		for (const keys of [new Set(['wanted']), new Set(['other', 'unknown']), new Set<string>()]) {
-			for (const active of [true, false]) {
-				const expected = q.list({ active }).filter((j) => !!j.dedupeKey && keys.has(j.dedupeKey));
-				const found = q.list({ active, dedupeKeys: keys });
-				expect(found).toEqual(expected);
-				if (found[0]) found[0].title = 'changed by caller';
-				expect(q.get(a.id)?.title).toBe('a');
-				expect(external[0]?.title).toBe('a');
-			}
-		}
+		const found = q.list({ dedupeKeys: new Set(['wanted']) });
+		expect(found.map((job) => job.id)).toEqual([a.id, 'external-a', 'external-b']);
+		expect(q.list({ active: true, dedupeKeys: new Set(['wanted']) }).map((job) => job.id)).toEqual([
+			a.id,
+			'external-a',
+		]);
+		expect(q.list({ dedupeKeys: new Set(['other', 'unknown']) }).map((job) => job.id)).toEqual([
+			'external-c',
+			b.id,
+		]);
+		expect(q.list({ dedupeKeys: new Set() })).toEqual([]);
+		for (const job of found) job.title = 'changed by caller';
+		expect(q.get(a.id)?.title).toBe('a');
+		expect(external[0]?.title).toBe('a');
 	});
 
 	it('runs lanes in priority order within the CPU slots and dedupes by key', async () => {

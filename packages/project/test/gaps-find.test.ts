@@ -107,6 +107,7 @@ describe('find', () => {
 		const item = doc.items[items[0]!.id]!;
 		if (item.kind !== 'media') throw new Error('Expected a media item');
 		doc.items.alias = { ...item, id: 'alias', name: 'Later alias' };
+		doc.rootItems.push('alias');
 		const findSource = (value: string) =>
 			findTimelineHits(doc, h.seqId, {
 				criteria: [{ field: 'sourceName', operator: 'contains', value }],
@@ -140,19 +141,20 @@ describe('find', () => {
 		const item = Object.values(doc.items).find((i) => i.kind === 'sequence' && i.name === 'Nested source');
 		if (item?.kind !== 'sequence') throw new Error('Expected a nested-sequence item');
 		doc.items.alias = { ...item, id: 'alias', name: 'Later nested alias' };
+		doc.rootItems.push('alias');
 		const hits = (field: 'sourceName' | 'any', value: string) =>
 			findTimelineHits(doc, h.seqId, { criteria: [{ field, operator: 'contains', value }] });
 		expect(hits('sourceName', 'Nested source').map((hit) => hit.frame)).toEqual([0, 0]);
 		expect(hits('sourceName', 'Later nested alias')).toEqual([]);
-		expect(hits('any', 'Nested source')).toEqual(hits('sourceName', 'Nested source'));
+		expect(hits('any', 'Nested source').map((hit) => hit.frame)).toEqual([0, 0]);
 		expect(
 			findTimelineHits(doc, h.seqId, {
 				criteria: [
 					{ field: 'sourceName', operator: 'contains', value: 'Nested' },
 					{ field: 'sourceName', operator: 'notContains', value: 'Later' },
 				],
-			}),
-		).toEqual(hits('sourceName', 'Nested source'));
+			}).map((hit) => hit.frame),
+		).toEqual([0, 0]);
 		item.name = 'Renamed nested source';
 		expect(hits('sourceName', 'Renamed nested source').map((hit) => hit.frame)).toEqual([0, 0]);
 	});

@@ -14,9 +14,30 @@ const ORIGIN = 'http://127.0.0.1:47900';
 function worker(optional: string[] = []) {
 	const handlers = new Map<string, (event: unknown) => void>();
 	const fetch = vi.fn().mockRejectedValue(new Error('Offline'));
+	const stores = new Map<string, Map<string, Response>>();
+	const cacheKey = (request: Request | string) =>
+		new URL(typeof request === 'string' ? request : request.url, ORIGIN).href;
 	const caches = {
-		match: vi.fn().mockResolvedValue(undefined),
-		open: vi.fn().mockResolvedValue({ put: vi.fn(), keys: vi.fn().mockResolvedValue([]) }),
+		match: async (request: Request | string) => {
+			for (const store of stores.values()) {
+				const response = store.get(cacheKey(request));
+				if (response) return response.clone();
+			}
+		},
+		open: vi.fn(async (name: string) => {
+			let store = stores.get(name);
+			if (!store) {
+				store = new Map();
+				stores.set(name, store);
+			}
+			return {
+				put: async (request: Request | string, response: Response) => {
+					store.set(cacheKey(request), response.clone());
+				},
+				keys: async () => [...store.keys()].map((url) => new Request(url)),
+				delete: async (request: Request | string) => store.delete(cacheKey(request)),
+			};
+		}),
 	};
 	const self = {
 		addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
@@ -39,15 +60,20 @@ describe('service worker fetch contract (S05:PWA-004)', () => {
 		const sw = worker(['/assets/vendor-pdf-a.js', '/assets/vendor-quickjs-b.js']);
 		sw.fetch.mockImplementation(async (url: string) => {
 			if (url.endsWith('vendor-pdf-a.js')) throw new Error('Unavailable');
-			return new Response('source');
+			return new Response(url === '/' || url === '/index.html' ? '<main>Editor</main>' : 'runtime source');
 		});
 		const waitUntil = vi.fn();
 		sw.handlers.get('install')!({ waitUntil });
 		await waitUntil.mock.calls[0]![0];
-		const assets = await sw.caches.open('jasper-assets-v2');
-		expect(assets.put).toHaveBeenCalledWith('/assets/vendor-quickjs-b.js', expect.any(Response));
-		expect(assets.put).not.toHaveBeenCalledWith('/assets/vendor-pdf-a.js', expect.anything());
-		expect(assets.put).toHaveBeenCalledWith('/index.html', expect.any(Response));
+		sw.fetch.mockRejectedValue(new Error('Offline'));
+		const fetchOffline = async (path: string) => {
+			const respondWith = vi.fn();
+			sw.handlers.get('fetch')!({ request: new Request(`${ORIGIN}${path}`), respondWith });
+			return (await respondWith.mock.calls[0]![0]) as Response;
+		};
+		expect(await (await fetchOffline('/assets/vendor-quickjs-b.js')).text()).toBe('runtime source');
+		expect((await fetchOffline('/assets/vendor-pdf-a.js')).type).toBe('error');
+		expect(await (await fetchOffline('/index.html')).text()).toBe('<main>Editor</main>');
 	});
 
 	it.each([
