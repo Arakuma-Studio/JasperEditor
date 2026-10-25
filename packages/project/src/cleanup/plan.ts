@@ -291,6 +291,18 @@ function subtractRemoved<R extends { a: number; b: number; k: number; minA: numb
 		}
 		if (cur.b - cur.a > 1e-9) out.push(cur);
 	}
+	// edges never move into removed sound next to a piece either (the in point searches 80 ms back, the out point
+	// walks forward through loud frames)
+	let r = 0;
+	for (const p of out) {
+		while (r < rem.length && rem[r]![1] <= p.a + 1e-9) r++;
+		const before = r > 0 ? rem[r - 1]![1] : Number.NEGATIVE_INFINITY;
+		p.minA = Math.max(p.minA, Math.min(before, p.a));
+		let q = r;
+		while (q < rem.length && rem[q]![0] < p.b - 1e-9) q++;
+		const after = q < rem.length ? rem[q]![0] : Number.POSITIVE_INFINITY;
+		p.maxB = Math.min(p.maxB, Math.max(after, p.b));
+	}
 	return out;
 }
 

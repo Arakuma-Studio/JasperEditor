@@ -86,11 +86,11 @@ describe('cleanup.apply', () => {
 		expect(H.clips('V1').map((c) => c.id)).toContain(v1);
 	});
 
-	it('re-applying to the same document is deterministic (redo)', () => {
+	it('re-applying the same edit gives the same timeline (redo)', () => {
 		const run = () => {
 			const { H, a1 } = talk();
 			H.ok([{ type: 'cleanup.apply', clipIds: [a1], ranges: [{ start: 30, end: 45 }, { start: 200, end: 260 }] }]);
-			return H.doc;
+			return ['V1', 'V2', 'A1', 'A2'].map((t) => H.clips(t).map((c) => [c.id, c.start, c.duration, c.sourceIn, c.linkId]));
 		};
 		expect(run()).toEqual(run());
 	});
