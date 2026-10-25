@@ -62,7 +62,7 @@ describe('EngineClient cleanup', () => {
 			id: 'job_1',
 			kind: 'cleanup-analysis',
 			title: 'Clean Up Voice – analysis',
-			origin: 'user',
+			origin: { type: 'user' },
 			state: 'queued',
 			progress: null,
 			createdAt: '2026-10-26T00:00:00.000Z',
