@@ -118,6 +118,15 @@ fields of later phases are added to v7 until `feat/sound-design` merges to `main
 | `Sequence.master.loudness.analysis.delivery` (`targetLufs`, `truePeakDbtp`, `gainDb`, `limiterCeilingDbtp`, `passes`, `ceilingLimited?`, `deliveredLufs?`) | sound design (fix "preview loudness parity, codec-aware Sound Check, delivery speed"; still v7) | any value accepted in the document (`z.custom`), read with `readLoudnessDelivery` (`LoudnessDeliverySchema`); `mixer.setLoudness` / `soundDesign.applyDelivery` validate it strictly (`E_SCHEMA`). Absent (analyses stored before) or solved for another target / ceiling than the Mix's: the preview plays the one-pass gain `target − integrated` at the target ceiling, as before. Older builds keep it (the analysis is a loose object). Not part of `mixFingerprint` | INV-MIX reports an unreadable one; `drop-loudness-delivery` removes it (the analysis stays). Idempotent |
 | `Sequence.soundDesign.lastCheck.exportAudio` (`codec` aac / opus / pcm, `bitrateKbps?`, `sampleRate?`) | sound design (same fix; still v7) | inside the `z.custom<SoundDesign>` value, read with `readSoundCheckAudio`; absent = checked for the PCM master (summaries stored before). Part of `inputsHash` only when present (older hashes stay valid); `soundCheckStatus(…, {checkFor})` adds the stale reason `codec` | as the other summary fields (`readSoundDesign`) |
 
+### Fields added in v8
+
+Optional fields of the Premiere port, read leniently with read-time defaults (MIG-005); the v8 bump (above) makes
+v7 builds open these files read-only.
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `Keyframe.inInterpolation` (`linear` / `bezier` / `auto-bezier` / `continuous-bezier`) | keyframe-sides ([wp-notes/keyframe-sides.md](wp-notes/keyframe-sides.md)) | any value loads (`z.custom`). Absent = the key is read the legacy way (its `interpolation` for both sides; a segment leaving a Linear key is linear), so existing documents evaluate exactly as before. Present = the segment arriving at the key is evaluated per side (After Effects: a Linear side is influence ⅙ at the average speed). INV-011 reports an unknown value and Auto / Continuous Bezier on a key whose sides differ | `repair-key-sides` (`normalizeKeySides`): an unknown value is dropped (legacy reading); one-sided Auto / Continuous Bezier becomes Bezier with the stored ease. Also on motion-graphic `paramKeyframes`; pastes and presets are normalized the same way. Idempotent |
+
 ## Saving
 
 - **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp
