@@ -856,10 +856,16 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
   [M-css].
 - **Default avatar** (`avatar: null`): Instagram has no stable public source (WP5), and the only unsigned image of its
   web bundle (`/images/instagram/xig/anonymousUser.jpg`) is the pre-2018 blue-grey bust. The card draws the current
-  look as a vector: a #C7C7C7 disc with a white head (r 8.4 at 24/18.6 in a 48 box) and shoulders cut by the disc
-  [E: Instagram's grey `#C7C7C7` and the figure's proportions are chosen to match the platform's default, not measured
-  from it]. `INSTAGRAM_DEFAULT_AVATAR` exports the colours and path. Generated avatars take their initials from the
-  handle (the name the card shows).
+  look as a vector: a #C7C7C7 disc with a white head (r 8.4 at 24/18.6 in a 48 box) and shoulders (a radius-17 dome
+  whose foot follows the disc) [E: Instagram's grey `#C7C7C7` and the figure's proportions are chosen to match the
+  platform's default, not measured from it]. `INSTAGRAM_DEFAULT_AVATAR` exports the colours and paths.
+  - The disc is SVG geometry, not a CSS `border-radius` clip over a background: that first version made `renderStill`
+    and `renderFrames` differ on a few edge pixels in 3 of 6 runs (Chrome rasterised the clipped edge differently); the
+    SVG version was identical in 12 of 12.
+  - Generated avatars take their initials from the handle (the name the card shows); pictures and generated avatars
+    go through the shared `SocialAvatar`.
+- **Editing on the Program monitor:** the handle (name on the post, "Replying to" on the Reel card) carries
+  `editableParamProps('handle')`; the comment is `CommentText`'s (`text`, marks).
 - **Emoji:** Apple images at 1.2 em, shift −0.22 em (TikTok's metrics): 31 px tall at 2× against the capture's 29 px
   Noto glyph, centre within 2 px of it on the post, 0.5 px on the Reel card.
 - **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/instagram/index.html` (outside the
@@ -868,8 +874,12 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
   reveal and like tick. Rerun with `REMOTION_E2E=1 SOCIAL_SF_PRO_DIR=<SF-Pro-Text-{Regular,Semibold}.otf>
   SOCIAL_EMOJI_DIR=<cp>.png dir SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER=instagram pnpm exec
   vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`, then that directory's
-  `tools/crop.mjs` and `tools/page.mjs`. The e2e test's cases now start from their variant's `socialDefaults`, as the
-  captures do.
+  `tools/crop.mjs` and `tools/page.mjs`. Additions to the e2e test:
+  - every case starts from its variant's `socialDefaults`, as the captures do (unchanged for TikTok, whose defaults
+    are the schema's);
+  - `SOCIAL_SF_PRO_DIR` loads SF Pro Text 400/600; without it the Instagram cases render in the host's fallback font;
+  - `SOCIAL_CALIBRATION_FILTER` (comma-separated name parts) renders only matching calibration cases;
+  - a parity failure leaves the differing still / frames PNG pair in the run's artifact directory.
 - **Measured matches (2× px):** post card 235 px high against 238, Reel card 191 against 192 (dark, with its border:
   193 against 196); the rest is the 1 px border, which Chrome snaps to whole device pixels under the card's zoom; comment and "Reply" baselines within
   1 px; "View 5 more replies" within 1 px; heart ink box 30 × 26 at the same place; Reel card 509 px wide against 510.
@@ -891,6 +901,20 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
 - **Like tick:** the count ticks up, then the heart thumps and fills in #FF3040; the Reel card has no likes, so its
   like tick is ignored (`socialLikesTick`).
 - **Grow from tail:** both cards grow from the avatar corner (`0% 0%`).
+
+**Verification (WP6b, `--maxWorkers=2`):**
+- `packages/motion/test/social-comment.test.tsx`: both cards in both themes; handle, time per unit ("now" … "56w"),
+  badge only when verified, counts and the singular / hidden replies row, no count at 0 likes, huge counts with a fixed
+  like column, the dark username and `--ig-link` mentions, the default / generated / uploaded avatar, `showProfile`,
+  the like tick ending on the red filled heart, the Reel card (no stats or badge, ≤ 255 px), the grow corner.
+- `packages/motion/test/mg-cue-timing.test.ts`: Instagram rows (classic pop and grow from tail × word reveal + like
+  tick on both cards, a short 1.5 s clip at 25 fps): the model equals anime.js frame by frame, cues within ±1 frame.
+- `packages/mg-templates/test/social-comment-template.test.ts`: the four presets, the Instagram preset params, the
+  export blocker lifted, the font entry.
+- `REMOTION_E2E=1 social-comment-render.e2e.test.ts` (Chrome 156, SF Pro and Apple emoji loaded): `renderStill` =
+  `renderFrames` byte for byte for an Instagram post (1:1, dark, verified, classic pop, word reveal, like tick) and a
+  Reel card (9:16, word reveal); the fit loop keeps both cards inside every canvas with a 1,400-character marked
+  comment, 1e12 counts and 64-character handles.
 
 ### Verification
 
