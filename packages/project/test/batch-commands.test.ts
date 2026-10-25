@@ -18,6 +18,7 @@ import { Harness } from './helpers.ts';
 const F30 = flicksPerFrame({ num: 30, den: 1 });
 
 const errorsOf = (r: TransactionResult) => (r.ok ? [] : r.errors);
+const fxOf = (c: Clip) => (c as { effects: EffectInstance[] }).effects;
 const valid = (h: Harness) => expect(checkInvariants(h.doc)).toEqual([]);
 
 /** A kit: blur 0 → 40 eased into the cut and back, Transform scale 100 → 180 over the first half. */
@@ -32,14 +33,14 @@ const kit = (start: number, length = 20, name?: string) => ({
 			keyframes: {
 				radius: [
 					{ frame: 0, value: 0, interpolation: 'bezier', easeOut: { influence: 0.8, slope: 0 } },
-					{ frame: length / 2, value: 40 },
+					{ frame: Math.floor(length / 2), value: 40 },
 					{ frame: length, value: 0 },
 				],
 			},
 		},
 		{
 			effectId: 'jasper.transform',
-			keyframes: { scaleHeight: [{ frame: 0, value: 100 }, { frame: length / 2, value: 180 }] },
+			keyframes: { scaleHeight: [{ frame: 0, value: 100 }, { frame: Math.floor(length / 2), value: 180 }] },
 		},
 	],
 });
@@ -236,7 +237,7 @@ describe('keyframe.addBatch', () => {
 		const h = new Harness();
 		const clips = clipsOnV1(h, 3);
 		h.ok([{ type: 'effect.add', target: { clipId: clips[0]!.id }, effectId: 'jasper.gaussian-blur', ref: '$fx' }]);
-		const fxId = (h.clips('V1')[0]!.effects as EffectInstance[])[0]!.id;
+		const fxId = fxOf(h.clips('V1')[0]!)[0]!.id;
 		const before = h.doc;
 		const r = h.ok([
 			{
@@ -264,7 +265,7 @@ describe('keyframe.addBatch', () => {
 			// frames from the clip's start: 30 frames into the clip, at its source time
 			expect(scale.keyframes[0]!.time).toBe(c.sourceIn + 30 * F30);
 		}
-		const blur = (h.clips('V1')[0]!.effects as EffectInstance[])[0]!;
+		const blur = fxOf(h.clips('V1')[0]!)[0]!;
 		expect((blur.params.radius as Animatable<number>).keyframes.map((k) => k.value)).toEqual([5]);
 		h.doc = before;
 		expect((h.clips('V1')[1] as { transform: { scale: Animatable<number> } }).transform.scale.keyframes).toEqual([]);
@@ -281,7 +282,7 @@ describe('keyframe.addBatch', () => {
 			},
 		]);
 		valid(h);
-		const blur = (h.clips('V1')[0]!.effects as EffectInstance[])[0]!;
+		const blur = fxOf(h.clips('V1')[0]!)[0]!;
 		expect((blur.params.radius as Animatable<number>).keyframes).toHaveLength(1);
 	});
 

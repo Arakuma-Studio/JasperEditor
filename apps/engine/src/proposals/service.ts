@@ -1,14 +1,18 @@
-// Proposal service (spec 12 §2.5, P3-R2): creates proposals validated against the project's live document, accepts
-// items as ONE transaction through the agent service (live into the open editor, or headless), records decisions,
-// and publishes `proposal.changed`. The accept policy gate: a request without the editor key (an agent) may accept
-// only where the feature allows it (sound design: the sequence's `soundDesign.settings.agentsMayApply`); other
-// features default to refusing. Destructive commands inside the accepted items still need the user's approval
-// card when an agent accepts (the transaction goes through the usual classification).
+// Proposal service (spec 12 §2.5, P3-R2; spec 15 §2.1): creates proposals validated against the project's live
+// document, accepts items as ONE transaction through the agent service (live into the open editor, or headless),
+// records decisions, re-plans stale items through the feature's producer ("Refresh proposal", EA-003), and publishes
+// `proposal.changed`. The accept policy gate: a request without the editor key (an agent) may accept only where the
+// feature allows it — sound design: the sequence's `soundDesign.settings.agentsMayApply` (default off); edit
+// automation, subtitles and transcript cleanup: Project Settings ▸ Agent Proposals (default on, EA-001); any other
+// feature: refused. Destructive commands inside the accepted items still need the user's approval card when an agent
+// accepts (the transaction goes through the usual classification). A draft over the transaction caps is refused with
+// 413 PROPOSAL_TOO_LARGE (E_TOO_LARGE, with the range that fits; EA-004).
 import { randomBytes } from 'node:crypto';
-import type { ProposalChangedEvent, ProposalCountsJson } from '@jasper/api';
+import type { ProposalChangedEvent, ProposalCountsJson, ProposalFeature } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Author,
+	agentProposalsAllowed,
 	anchorFingerprint,
 	CROCKFORD_ALPHABET,
 	createProposal,
@@ -21,8 +25,16 @@ import {
 	type Proposal,
 	type ProposalContext,
 	type ProposalIssue,
+	PROPOSAL_FEATURES,
+	type ProposalItemInput,
+	type ProposalPolicyDecision,
 	planAccept,
+	projectFeaturePolicy,
+	projectSettingFeatures,
 	proposalCounts,
+	REFRESHABLE_STATES,
+	readAgentProposals,
+	refreshProposalItems,
 	type Registries,
 	rejectItems,
 	reopenItems,
@@ -33,6 +45,7 @@ import {
 	selectedCommands,
 	setItemNote,
 	settleSetupItems,
+	soundAgentAcceptBySequence,
 	soundDesignSettingsOf,
 	type TransactionResult,
 } from '@jasper/project';
@@ -45,7 +58,7 @@ import { type ProposalStore, proposalNotFound } from './store.ts';
 /** Who asks: the editor window (editor key) or anything else (an agent), with the agent's display name. */
 export type Requester = { editor: boolean; agent: string };
 
-export type PolicyDecision = { allowed: true } | { allowed: false; reason: string };
+export type PolicyDecision = ProposalPolicyDecision;
 /** Whether an agent may accept a feature's proposals in this document. */
 export type ProposalPolicy = (doc: ProjectDocument, proposal: Proposal) => PolicyDecision;
 
@@ -63,6 +76,22 @@ export const soundDesignPolicy: ProposalPolicy = (doc, proposal) => {
 			: 'Agents may not apply this sound proposal: it names no sequence whose settings allow it; the user applies it in the editor',
 	};
 };
+
+/**
+ * A producer's re-plan of stale items ("Refresh proposal", spec 15 EA-003): given the stored proposal (its `report`
+ * carries the pass's parameters), the items to re-plan and the live document, it returns a replacement per item it
+ * could re-plan (same id, same temp refs), the items that no longer apply (`dropped`) and optionally a new report.
+ * Pure planners in `@jasper/project` run here; never applies anything. A throw is reported, never fatal.
+ */
+export type ProposalRefresher = (input: {
+	projectId: string;
+	proposal: Proposal;
+	itemIds: string[];
+	doc: ProjectDocument;
+	revision: number;
+}) =>
+	| Promise<{ items: ProposalItemInput[]; dropped?: { itemId: string; reason: string }[]; report?: unknown }>
+	| { items: ProposalItemInput[]; dropped?: { itemId: string; reason: string }[]; report?: unknown };
 
 const ID_BYTES = 10;
 function newAcceptId(): string {
@@ -96,6 +125,7 @@ type Publish = (type: string, payload: unknown, projectId?: string) => void;
 export class ProposalService {
 	readonly store: ProposalStore;
 	private readonly policies = new Map<string, ProposalPolicy>([[SOUND_DESIGN_FEATURE, soundDesignPolicy]]);
+	private readonly refreshers = new Map<string, ProposalRefresher>();
 	/** Serializes read-modify-write of one proposal (accept holds it across the transaction). */
 	private readonly locks = new KeyedMutex();
 	private readonly registries: Registries;
@@ -114,6 +144,8 @@ export class ProposalService {
 		this.store = opts.store;
 		this.registries = opts.registries ?? defaultRegistries(mgRegistry);
 		this.now = opts.now ?? (() => new Date());
+		// spec 15 EA-001: edit automation, subtitles, transcript cleanup — Project Settings ▸ Agent Proposals
+		for (const f of projectSettingFeatures()) this.registerPolicy(f.id, projectFeaturePolicy(f.id));
 	}
 
 	/** An accept or decision on the proposal is running (the store does not expire or evict it meanwhile). */
@@ -127,6 +159,44 @@ export class ProposalService {
 		return () => {
 			if (this.policies.get(feature) === policy) this.policies.delete(feature);
 		};
+	}
+
+	/**
+	 * Lets a feature's producer re-plan stale items on request ("Refresh proposal", spec 15 EA-003). Without one, a
+	 * refresh is refused with 409 PROPOSAL_NOT_REFRESHABLE (the Review panel disables the button with that reason).
+	 */
+	registerRefresher(feature: string, refresher: ProposalRefresher): () => void {
+		this.refreshers.set(feature, refresher);
+		return () => {
+			if (this.refreshers.get(feature) === refresher) this.refreshers.delete(feature);
+		};
+	}
+
+	/** The proposal features with this project's agent-accept state and whether their producer refreshes. */
+	async features(projectId: string): Promise<ProposalFeature[]> {
+		await this.ensureProject(projectId);
+		const { doc } = await this.liveDocument(projectId);
+		const stored = readAgentProposals(doc.settings);
+		return PROPOSAL_FEATURES.map(
+			(f): ProposalFeature => ({
+				id: f.id,
+				name: f.name,
+				description: f.description,
+				itemNoun: { ...f.itemNoun },
+				groups: f.groups.map((g) => ({ ...g })),
+				producers: [...f.producers],
+				agentAccept:
+					f.agentAccept.setting === 'project'
+						? {
+								setting: 'project',
+								allowed: agentProposalsAllowed(doc, f.id) === true,
+								default: f.agentAccept.default,
+								explicit: stored === null || Object.hasOwn(stored, f.id),
+							}
+						: { setting: 'sound-sequence', sequences: soundAgentAcceptBySequence(doc) },
+				refreshable: this.refreshers.has(f.id),
+			}),
+		);
 	}
 
 	private ctx(revision: number): ProposalContext {
@@ -317,13 +387,20 @@ export class ProposalService {
 			{ id: newProposalId(), projectId, author, now: this.now().toISOString(), revision },
 			this.ctx(revision),
 		);
-		if (!r.ok)
+		if (!r.ok) {
+			const first = r.errors[0];
+			if (first?.code === 'E_TOO_LARGE')
+				throw new HttpError(413, 'PROPOSAL_TOO_LARGE', first.message, {
+					code: 'E_TOO_LARGE',
+					...(first.detail ?? {}),
+				});
 			throw new HttpError(
 				400,
 				'VALIDATION_FAILED',
-				`The proposal is malformed: ${r.errors[0]?.message ?? 'invalid'}`,
-				issuesDetail(r.errors[0]?.code ?? 'E_SCHEMA', r.errors),
+				`The proposal is malformed: ${first?.message ?? 'invalid'}`,
+				issuesDetail(first?.code ?? 'E_SCHEMA', r.errors),
 			);
+		}
 		// Setup items only invalid items need are settled at once (nothing would ever apply them).
 		const proposal = settleSetupItems(r.proposal, r.proposal.updatedAt).proposal;
 		const { evicted } = await this.store.create(projectId, proposal);
@@ -542,7 +619,7 @@ export class ProposalService {
 						return {
 							...rest,
 							state: i.state === 'invalid' ? ('pending' as const) : i.state,
-							anchors: itemAnchors(doc, selectedCommands(i)),
+							anchors: itemAnchors(doc, selectedCommands(i), i.meta),
 						};
 					}),
 				};
@@ -673,6 +750,98 @@ export class ProposalService {
 			await this.store.put(projectId, next);
 			this.publish(projectId, next, 'checked');
 			return next;
+		});
+	}
+
+	/**
+	 * "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans items on the live document — `'stale'` =
+	 * the items stale after re-validation — and the replacements come back pending (validated by dry runs, fresh
+	 * anchors). Nothing is applied: the reviewer (or an allowed agent) accepts them like any item. The editor and the
+	 * proposal's agent may ask; accepted and rejected items are never replaced.
+	 */
+	async refresh(projectId: string, proposalId: string, req: { itemIds: string[] | 'stale' }, _who: Requester) {
+		await this.ensureProject(projectId);
+		return this.locks.run(`${projectId}/${proposalId}`, async () => {
+			const p0 = await this.load(projectId, proposalId);
+			const refresher = this.refreshers.get(p0.feature);
+			if (!refresher)
+				throw new HttpError(
+					409,
+					'PROPOSAL_NOT_REFRESHABLE',
+					`The producer of "${p0.feature}" proposals does not re-plan items: make a new proposal instead`,
+					{ code: 'E_NOT_REFRESHABLE', feature: p0.feature },
+				);
+			const { doc, revision } = await this.liveDocument(projectId);
+			const rv = revalidate(doc, p0, this.ctx(revision));
+			const p = rv.proposal;
+			const byId = new Map(p.items.map((it) => [it.id, it]));
+			let ids: string[];
+			if (req.itemIds === 'stale') ids = p.items.filter((it) => it.state === 'stale').map((it) => it.id);
+			else {
+				const unknown = req.itemIds.filter((id) => !byId.has(id));
+				if (unknown.length)
+					throw new HttpError(404, 'NOT_FOUND', `No item ${unknown[0]} in the proposal`, {
+						code: 'E_NOT_FOUND',
+					});
+				const decided = req.itemIds.filter((id) => !REFRESHABLE_STATES.includes(byId.get(id)!.state));
+				if (decided.length)
+					throw new HttpError(
+						400,
+						'VALIDATION_FAILED',
+						`Item ${decided[0]} is ${byId.get(decided[0]!)!.state}: only pending, stale or invalid items are refreshed`,
+						{ code: 'E_INVALID_PARAM' },
+					);
+				ids = [...new Set(req.itemIds)];
+			}
+			const save = async (next: Proposal, change: ProposalChangedEvent['change'], itemIds: string[]) => {
+				if (next === p0) return p0;
+				const stamped = { ...next, updatedAt: this.now().toISOString() };
+				await this.store.put(projectId, stamped);
+				this.publish(projectId, stamped, change, { itemIds });
+				return stamped;
+			};
+			if (ids.length === 0) {
+				const kept = await save(p, 'revalidated', rv.stale.map((x) => x.itemId));
+				return { proposal: kept, refreshed: [], dropped: [], unchanged: [], stale: rv.stale, revision };
+			}
+			let planned: Awaited<ReturnType<ProposalRefresher>>;
+			try {
+				planned = await refresher({ projectId, proposal: p, itemIds: ids, doc, revision });
+			} catch (e) {
+				if (e instanceof HttpError) throw e;
+				throw new HttpError(
+					422,
+					'VALIDATION_FAILED',
+					`The producer could not re-plan the items: ${(e as Error).message}`,
+					{ code: 'E_REFRESH_FAILED' },
+				);
+			}
+			const r = refreshProposalItems(doc, p, ids, planned, this.ctx(revision), this.now().toISOString());
+			if (!r.ok) {
+				const first = r.errors[0];
+				if (first?.code === 'E_TOO_LARGE')
+					throw new HttpError(413, 'PROPOSAL_TOO_LARGE', first.message, {
+						code: 'E_TOO_LARGE',
+						...(first.detail ?? {}),
+					});
+				throw new HttpError(
+					422,
+					'VALIDATION_FAILED',
+					`The producer's re-plan is malformed: ${first?.message ?? 'invalid'}`,
+					issuesDetail(first?.code ?? 'E_SCHEMA', r.errors),
+				);
+			}
+			// the rest of the proposal on the same document (items requiring a refreshed one may hold again)
+			const after = revalidate(doc, settleSetupItems(r.proposal, this.now().toISOString()).proposal, this.ctx(revision));
+			const out = await save(after.proposal, 'refreshed', [...r.refreshed, ...r.dropped]);
+			return {
+				proposal: out,
+				refreshed: r.refreshed,
+				dropped: r.dropped,
+				unchanged: r.unchanged,
+				stale: after.stale,
+				revision,
+			};
 		});
 	}
 
