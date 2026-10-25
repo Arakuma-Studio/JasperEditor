@@ -23,9 +23,9 @@ import { buildVoiceAnalysis, decodeVoiceAnalysis, encodeVoiceAnalysis } from '@j
 import { build } from 'esbuild';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath } from '../src/cache/layout.ts';
+import { fingerprintHex } from '../src/media/fingerprint.ts';
 import { VoiceActivityService } from '../src/sound-design/voice.ts';
 import { VoiceAnalysisService } from '../src/voice/service.ts';
-import { fingerprintHex } from '../src/media/fingerprint.ts';
 import {
 	closeApps,
 	H,
