@@ -53,6 +53,18 @@ describe('replaceVisible', () => {
 		expect(del('==hello world== x', 5, 11)).toBe('==hello== x');
 	});
 
+	it('places an edit in repeated text where the caret is', () => {
+		// "aa" + blurred "a": deleting the FIRST "a" (caret 0 afterwards) keeps the blur on the last one
+		expect(replaceVisible('aa||a||', 'aa', 0)).toBe('a||a||');
+		// without the caret the diff cannot tell which "a" went
+		expect(stripMarks(replaceVisible('aa||a||', 'aa'))).toBe('aa');
+		// typing "a" before a highlighted "a"
+		expect(replaceVisible('x ==a==', 'x aa', 3)).toBe('x ==aa==');
+		// an "a" typed after the highlighted "a" joins it, not the plain "a" further on
+		expect(replaceVisible('==a== a', 'aa a', 2)).toBe('==aa== a');
+		expect(replaceVisible('==a== a', 'a aa', 4)).toBe('==a== aa');
+	});
+
 	it('handles emoji and surrogate pairs without splitting them', () => {
 		const m = 'hi ==😀😃== yo';
 		const v = stripMarks(m);
@@ -102,7 +114,8 @@ describe('replaceVisible', () => {
 				const from = Math.min(a % (n + 1), b % (n + 1));
 				const to = Math.max(a % (n + 1), b % (n + 1));
 				const next = before.visible.slice(0, from) + ins + before.visible.slice(to);
-				const after = decodeMarkup(replaceVisible(m, next));
+				// the editor passes the caret after the edit, which anchors it in repeated text
+				const after = decodeMarkup(replaceVisible(m, next, from + ins.length));
 				// non-space characters well before and after the edit keep their mark
 				for (let k = 0; k < from - 1; k++)
 					if (before.visible[k] !== ' ' && before.visible[k + 1] !== ' ')

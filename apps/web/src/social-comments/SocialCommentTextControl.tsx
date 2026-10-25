@@ -128,12 +128,12 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 		}
 	};
 
-	const onVisibleChange = (v: string) => {
+	const onVisibleChange = (v: string, caret?: number) => {
 		if (v.length > SOCIAL_TEXT_MAX) {
 			setProblem('too-long');
 			return;
 		}
-		const next = replaceVisible(markupRef.current, v);
+		const next = replaceVisible(markupRef.current, v, caret);
 		if (next.length > SOCIAL_TEXT_MARKUP_MAX) {
 			setProblem('markup-too-long');
 			return;
@@ -345,7 +345,7 @@ export function SocialCommentTextControl(p: TemplateParamControlProps) {
 								'absolute inset-0 block h-full resize-none overflow-hidden bg-transparent text-transparent caret-pr-text outline-none',
 								'placeholder:text-pr-dim selection:bg-pr-accent-fill/40',
 							)}
-							onChange={(e) => onVisibleChange(e.target.value)}
+							onChange={(e) => onVisibleChange(e.target.value, e.target.selectionEnd)}
 							onSelect={trackSelection}
 							onKeyUp={trackSelection}
 							onMouseUp={trackSelection}

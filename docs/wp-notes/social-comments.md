@@ -627,7 +627,8 @@ type TemplateGroupActionProps = { clipIds; params; paramNames; onChangeParams; d
   screen-reader text are the browser's own. The raw markup is shown only with **Show markup**, where it can be edited
   directly (same limits).
 - **Marks survive typing** (`marks-edit.ts` `replaceVisible`): each change of the visible text is diffed against the
-  old one (common prefix/suffix, never splitting a surrogate pair); unchanged characters keep their marks; a typed
+  old one (common prefix/suffix, never splitting a surrogate pair; in repeated text such as "aa|a", where several
+  splits are valid, the caret after the edit picks the one the person made — found by the fuzz test); unchanged characters keep their marks; a typed
   non-space joins the mark of the word it is typed into (left neighbour, else the word it reaches on the right, else
   the mark around the insertion, else the mark of the first word it replaced); whitespace runs touching the edit are
   settled like `applyMark` does (inside a phrase with one mark → marked; at its edge → unmarked). Runs elsewhere are
