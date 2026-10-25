@@ -325,7 +325,7 @@ function AbDiagram(props: { session: EditorSession; geom: TransitionGeom; seq: S
 					data-testid="transition-cut"
 				/>
 			</div>
-			<p className="h-[16px] text-pr-small text-pr-muted" data-testid="transition-diagram-tip">
+			<p className="min-h-[16px] text-pr-small text-pr-muted" data-testid="transition-diagram-tip">
 				{tip ??
 					(g.oneSided
 						? g.oneSided === 'in'
