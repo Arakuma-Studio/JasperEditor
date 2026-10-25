@@ -670,7 +670,8 @@ function applyAttributes(
 		if (attrs.textStyle && style && t.kind === 'text') {
 			const s = clone(style.textStyle!) as { fontId?: string };
 			if (s.fontId) s.fontId = resolver.fontId(s.fontId);
-			applyClipPatch(doc, seq, t, { content: { style: s } } as never, h);
+			// The source's shadow / background objects are copied as they are (not merged into the target's).
+			applyClipPatch(doc, seq, t, { content: { style: s } } as never, h, 'objects');
 			done.push('textStyle');
 		}
 		const shape = first((s) => s.shape);

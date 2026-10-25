@@ -519,7 +519,7 @@ export function newKeyframe(
 	};
 }
 
-function upsertKeyframe(
+export function upsertKeyframe(
 	anim: Draft<Animatable<unknown>>,
 	kf: Keyframe<unknown>,
 	metric?: SpatialMetric,
