@@ -124,7 +124,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 |---|---|---|---|---|---|
 | KF-1 | Keyframes on Motion, Opacity, crop, volume and effect parameters; linear, Bezier, hold | P0 | done | S01 KF, wave1 native export | — |
 | KF-2 | Value and velocity graphs with Bezier handles | P1 | done | graph-editor.md | — |
-| KF-3 | Spatial motion paths in the Program monitor | P1 | done | spatial-motion-path.md | — |
+| KF-3 | Spatial motion paths in the Program monitor | P1 | done | spatial-motion-path.md; effect point params (Transform, Offset, …): spatial-points.md | — |
 | KF-4 | Blend modes (Premiere has 27) | P1 | done | `BLEND_MODES` holds Premiere's 27 in menu order, native in the sequence's own stack (wp-notes/keyframes-blend.md §7; `apps/web/test/keyframes-blend-ui.test.tsx`, `apps/engine/test/blend-export.test.ts`, `packages/compositions/test/blend-gl.test.ts`); inside nests through Remotion | keyframes-blend |
 | KF-5 | Effect presets | P2 | done | effect-presets.md | — |
 | KF-6 | Expressions (After Effects overlap) | P2 | done | QuickJS-wasm sandbox (D-41), AE object model, Expression Controls (wp-notes/expressions.md; `packages/expressions/test/*`, `e2e/expressions.spec.ts`); `sampleImage` exact on solids only | expressions |
