@@ -160,7 +160,7 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 				duration: b - a,
 				name: cmd.markerName ?? 'Clean Up',
 				comment: '',
-				color: 'red',
+				color: 'rose',
 				type: 'comment',
 				author: h.agentAuthor(),
 			});
