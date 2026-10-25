@@ -31,6 +31,7 @@ function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 		case 'sprite':
 		case 'peaks':
 		case 'proxy':
+		case 'playback-audio':
 		case 'analysis':
 		case 'transcription':
 			return 'media';

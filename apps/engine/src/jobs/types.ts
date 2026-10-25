@@ -68,6 +68,7 @@ export const ARTIFACT_JOB_KINDS: ReadonlySet<JobKind> = new Set([
 	'sprite',
 	'peaks',
 	'proxy',
+	'playback-audio',
 	'mg-render',
 ]);
 

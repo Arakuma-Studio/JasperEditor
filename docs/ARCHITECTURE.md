@@ -641,7 +641,7 @@ All JSON bodies validated with zod; errors `{code, message, detail?, retryable}`
 | `POST /api/media/status` | `{mediaKeys[]}` (≤ 1 000) → `{statuses: MediaStatus[], unknown: string[]}`: what project open asks instead of one request per medium (D-48) | polish |
 | `POST /api/media/:key/derivatives` | `{kinds: DerivativeKind[]}` → `{jobs: EngineJob[]}` | 2F |
 | `GET /api/browse/roots`, `/api/browse/list?path=&all=`, `/api/browse/info?path=`, `/api/browse/thumbnail?path=&width=`, `/api/browse/file?path=` | Media Browser: places, a folder's sub-folders and importable files, the ffprobe summary, a JPEG thumbnail and the bytes (Range) of a video / audio / picture file on the engine host; local mode only, path rules of D-47 | polish |
-| `GET /media/:key`, `/media/:key/proxy/:tier`, `/media/:key/poster.jpg`, `/media/:key/sprite.json`, `/media/:key/sprite/:n.jpg`, `/media/:key/peaks.json`, `/media/:key/peaks/:stream.bin` | Range, ETag, immutable caching for derivatives (S04:MS-002) | 2F |
+| `GET /media/:key`, `/media/:key/proxy/:tier`, `/media/:key/poster.jpg`, `/media/:key/sprite.json`, `/media/:key/sprite/:n.jpg`, `/media/:key/peaks.json`, `/media/:key/peaks/:stream.bin`, `/media/:key/playback-audio.json`, `/media/:key/playback-audio/:stream.wav` | Range, ETag, immutable caching for derivatives (S04:MS-002) | 2F |
 | `GET /api/jobs?active=1&projectId=`, `GET /api/jobs/:id`, `POST /api/jobs/:id/cancel`, `POST /api/jobs/:id/retry` | `EngineJob` (S04 §17.1) | 2F |
 | `POST /api/exports/plan` | `{envelope, sequenceId, settings: ExportSettings}` → `RenderPlan` (S04:RP-010) | 2F |
 | `POST /api/exports` | `{envelope, sequenceId, settings, planId?}` → `EngineJob` | 2F |
@@ -677,8 +677,11 @@ Events (`{id, type, createdAt, projectId?, payload}`): `engine.heartbeat`, `capa
 | `sprite` | adaptive interval (S04:TH-002), 160 px tiles, ≤100 per sheet | `sprite.json` + `sprite/<n>.jpg` |
 | `peaks` | `ffmpeg -vn -ac <ch> -ar 8000 -f f32le pipe:1` → max-abs 100/s per channel in a worker thread | `peaks.json` header + `peaks/<stream>.bin` |
 | `proxy-720` | H.264 GOP 15, `+faststart`, AAC 128k, rotation baked (S04:PX-001) | MP4; mandatory when `browserPlayable = no` |
+| `playback-audio` | every audio stream `-map 0:<index> -c:a pcm_f32le -rf64 auto -f wav`: FFmpeg's decode of the original, no resampling, channel change or filter (pp-wma-preview) | `playback-audio.json` header + `playback-audio/<stream>.wav`; when `needsPlaybackAudio` (WMA, AC-3, ALAC, MP2, AIFF…) |
 
-After `media/register` / upload completion, the engine queues `keyframes`, `poster`, `peaks` (if audio), `sprite`, and `proxy-720` (if required) (S04:IN-011).
+After `media/register` / upload completion, the engine queues `keyframes`, `poster`, `peaks` (if audio), `playback-audio` (if the browser cannot decode the audio), `sprite`, and `proxy-720` (if required) (S04:IN-011).
+
+Which audio the preview decodes is one table, `BROWSER_AUDIO_CODECS` in `packages/project/src/audio/browser-codecs.ts` (container family × ffprobe codec name: what mediabunny demuxes and Chromium / Electron WebCodecs or mediabunny's PCM decoder decode); the probe's `browserPlayable`, the derivatives, the preview's `MediaHandle.playbackAudio` (stream index → WAV URL, `null` = silent while it is made), the timeline badge and MCP `get_media_info` read it. Previews never play an undecodable original's audio; exports never read the playback copy: their clip decode of such streams is sample-exact (`atrim=start_sample`, no input seek) so it is on the copy's sample timeline. See docs/wp-notes/wma-preview.md.
 
 ### 9.5 Export planner and paths (M1)
 

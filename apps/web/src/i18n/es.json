@@ -10654,5 +10654,12 @@
   "The engine is not connected: fonts cannot be listed or added.": "El motor no está conectado: no se pueden listar ni añadir fuentes.",
   "The font is removed from your font library and from every project on this computer. This cannot be undone.": "La fuente se quita de su biblioteca de fuentes y de todos los proyectos de este ordenador. Esto no se puede deshacer.",
   "The font library was repaired when the engine started:": "La biblioteca de fuentes se reparó al iniciarse el motor:",
-  "This font library was written by a newer version of JasperEditor: it is read-only here.": "Esta biblioteca de fuentes la escribió una versión más reciente de JasperEditor: aquí es de solo lectura."
+  "This font library was written by a newer version of JasperEditor: it is read-only here.": "Esta biblioteca de fuentes la escribió una versión más reciente de JasperEditor: aquí es de solo lectura.",
+  "No playback audio": "Sin audio de reproducción",
+  "The preview cannot play this clip's audio: making its playback copy failed ({0}). Exports are not affected.": "La vista previa no puede reproducir el audio de este clip: no se pudo crear su copia de reproducción ({0}). Las exportaciones no se ven afectadas.",
+  "The preview cannot play this clip's audio: making its playback copy failed. Exports are not affected.": "La vista previa no puede reproducir el audio de este clip: no se pudo crear su copia de reproducción. Las exportaciones no se ven afectadas.",
+  "Audio {0}%": "Audio {0} %",
+  "Preparing audio the browser cannot decode for playback; the clip is silent in the preview until then": "Preparando para la reproducción un audio que el navegador no puede descodificar; hasta entonces el clip no suena en la vista previa",
+  "Audio queued": "Audio en cola",
+  "The clip’s audio is still being prepared for playback": "El audio del clip todavía se está preparando para la reproducción"
 }
