@@ -825,6 +825,66 @@ frame.
   - Huge counts overflow the card; they now stay short.
 - **Liked state:** with the like tick, the heart ends filled in TikTok's liked colour (#FE2C55 / #FF3B5C [M-css]).
 
+### YouTube cards
+
+WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
+`packages/motion/src/templates/social-comment/youtube.tsx` (`YOUTUBE_COMMENT`, `YOUTUBE_SHORTS_REPLY`). Font: Roboto
+400/500 (bundled, `SOCIAL_VARIANT_FONTS`). Glyphs: `YOUTUBE_GLYPHS`. Emoji: Noto (`emojiStyle: auto`).
+
+- **Blueprint [tok]:** `ref/youtube-video` and `ref/youtube-shorts`, copied in CSS px.
+  - Comment: 420 wide, padding 12/12/5, radius 6, 1 px border black/white 5 %, bg #FFF / #0F0F0F. Header: `@handle`
+    13/500, badge, a 3 px dot, time 12 px #606060 / #AAA, kebab on the right. Comment 15/21 with 19 px right padding.
+    Actions 9 px below: thumb up + count (12 px), thumb down, reply bubble in a 37 px button. "N replies" + chevron
+    22 px lower, in a 14/500 button pulled 12 px left. Thread line from 8 px under the avatar to just above the replies
+    text, with a quarter-circle corner.
+  - Shorts card: `fit-content`, at most 305 wide, padding 8/20/12, radius 16, avatar 34 at +8, gap 12. Header
+    "Comment from @handle" (one line, ellipsis); comment 17/500, line height 1.3, −0.025 em.
+- **youtube.com 2026 over tokcomment [M]** (`research/platform-measurements`, YouTube):
+  - avatar 36 instead of 34 (gap 12, so the text column stays at tokcomment's x = 61);
+  - "N replies" #0F0F0F / #F1F1F1 (tokcomment #606060 / #FFF); dark handle #F1F1F1 (tokcomment #AAA); dark count
+    #AAAAAA (tokcomment #FFF); icons #0F0F0F / #F1F1F1;
+  - thread line 1 px #E5E5E5 / #3F3F3F (tokcomment 2 px #0000001A / #363636); chevron pointing down.
+  - The mobile-app layout of tokcomment (the dot, the reply bubble instead of desktop's "Reply" text) is kept.
+- **Shorts header:** the captures' header is 155.5 px wide with an 8.5 px cap height whose top sits 17 px into the
+  card. That is 12 px tracked 0.025 em, on the baseline of tokcomment's 16 px / 24 px line; the card draws it at 12 px
+  and moves it down 1.4 px (Roboto's ascent/descent) so it can end in an ellipsis.
+- **Thumbs:** YouTube's 18-unit thumbs at 17 px match the ink of tokcomment's 16 px lucide thumbs (14 px wide); −0.5 px
+  margins keep tokcomment's 16 px slots. Kebab 15 px (dots 2.5 px, as tokcomment's), badge 13 px (a 12 px disc),
+  reply bubble 16 px, chevron 20 px.
+- **Like tick:** the outline thumb cross-fades to YouTube's filled thumb (same colour) and thumps.
+- **Mentions and hashtags:** YouTube's link blue #065FD4 / #3EA6FF [E]: the value of YouTube's
+  `--yt-spec-call-to-action`; no comment with a mention was captured.
+- **Emoji:** Noto images at 1.2 em, shifted −0.29 em (comment) and −0.25 em (Shorts). Measured on the 2× captures:
+  31–32 px boxes as tokcomment's Noto glyphs, tops within 1 px (comment) and 2 px (Shorts).
+- **Avatars:** the generated avatar takes its initials from the handle (YouTube does not show the display name). The
+  Properties `social-avatar` preview uses `displayName`, so its initials can differ on YouTube clips. The default
+  avatar is YouTube's `default-user` picture (`PLATFORM_DEFAULT_AVATARS.youtube`); until the engine delivers the
+  raster (`imageUrls`), the card draws it as vectors measured on the 240 px file: a #A0C2FF field, a #4474E0 head
+  (r 44.5 at 120, 92) and shoulders.
+- **Grow from tail:** neither card has a tail; both grow from the avatar corner (`0% 0%`).
+- **Fit:** the handle truncates (comment) or ends in an ellipsis (Shorts); counts stay short (`formatCount`: "987B",
+  "4.8M replies"), the actions and the time never shrink.
+- **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/youtube/index.html` (outside the
+  repo): every tokcomment capture side by side with our `renderStill` at 2× and a difference overlay, plus long
+  names, huge counts, no replies, one reply, liked, no profile, mentions, generated avatar and entrance filmstrips. To
+  rerun: Noto PNGs (`<cp>.png`) under `<dir>/noto/`, then `REMOTION_E2E=1 SOCIAL_EMOJI_DIR=<dir>
+  SOCIAL_CALIBRATION_DIR=<out> SOCIAL_CALIBRATION_FILTER='^(youtube-|anim_youtube)' pnpm exec vitest run
+  packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools in that directory's `tools/`
+  (`filmstrips.sh` added).
+- **Measured matches (2×):** comment card 297 × 840 px (tokcomment 299; the 0.5 px edge rows of a 149.5 px card fall
+  outside the opaque crop), header, comment and action rows within 1 px, thread end within 2 px; Shorts card 609 × 175
+  (610 × 176), header cap within 0 px, comment lines within 1 px.
+
+**Deliberate differences from tokcomment:**
+- **Font:** Roboto, as tokcomment specifies but its capture host never loaded (Liberation Sans in the captures).
+  Widths are within 1 % at the same sizes, so no size was scaled. The Shorts comment is 500 as specified; the capture
+  fell back to a 400 face.
+- **Glyphs:** YouTube's own instead of lucide / react-icons; the chevron points down.
+- **The [M] values above,** and `@handle` instead of the bare "Username".
+- **Default avatar:** YouTube's own instead of the hot-linked Twitter default. **Emoji:** Noto images.
+- **tokcomment bugs fixed:** months printed as hours; raw counts ("1234567"); "View 0 replies" (0 hides the row and the
+  thread line); huge counts overflowing.
+
 ### Verification
 
 - **Commands run** (`--maxWorkers=2`):
@@ -849,7 +909,7 @@ frame.
 
 ### Limits
 
-- **Variants:** the Instagram, YouTube and X cards are not built (WP6b–d). See `docs/gaps.md` "social-comment".
+- **Variants:** the Instagram and X cards are not built (WP6b, WP6d). See `docs/gaps.md` "social-comment".
 - **Unverified:**
   - The reply sticker's mention colour [E].
   - TikTok's in-app sticker uses a variable TikTok Sans with optical sizes; the bundled static faces are the opsz-14
