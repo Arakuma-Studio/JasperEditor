@@ -1059,6 +1059,12 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   Roboto faces, Noto emoji image, the default avatar image resolved or missing); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
   `e2e/social-youtube.spec.ts` (`pnpm e2e`: gallery insert of both presets, the card in the Program in Roboto with the
   downloaded default avatar, in-place edit of the handle and a highlight, variant switch).
+- **Render e2e results (`REMOTION_E2E=1`, Chrome 156, this host):** the YouTube parity cases (1:1 dark comment with
+  grow-from-tail, word reveal, like tick and badge; 9:16 Shorts card with classic pop and word reveal) passed 4 of 4
+  single runs and three full runs; the fit loop keeps both cards inside every canvas (1,400-character marked comment,
+  1e12 counts, 64-character handles, 10,000 months). One framework case, the TikTok comment `comment-light-spring`,
+  exceeded its 1/255 entrance tolerance (max 2/255, frame 12) in 2 of 9 runs on this branch and 0 of 4 at the
+  integration base; it is independent of the render harness change (also seen with the base `entry.tsx`).
 **Deliberate differences from tokcomment:**
 - **Font:** Roboto, as tokcomment specifies but its capture host never loaded (Liberation Sans in the captures).
   Widths are within 1 % at the same sizes, so no size was scaled. The Shorts comment is 500 as specified; the capture
