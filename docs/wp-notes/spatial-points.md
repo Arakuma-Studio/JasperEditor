@@ -34,7 +34,7 @@ Offset motion paths could not be represented.
 
 **Decision.** Every `fxParam.point` (the params with an on-canvas crosshair: Transform Position / Anchor Point, Offset
 Shift Center To, Mirror Reflection Center, Spherize / lens / zoom / light / gradient centres, Lightning control points,
-simulation producer positions, …, 71 params) is a spatial point, `spatial: 'auto-bezier'` for new keys like Motion's
+simulation producer positions, …: 182 params in the default registry) is a spatial point, `spatial: 'auto-bezier'` for new keys like Motion's
 Position. Corner Pin corners stay `spatial: 'linear'` (tracker output) and gain the same units. Non-position vec2s
 (Lumetri colour wheels, offsets in px) are not spatial. Transition params built with `fxParam.point` are stripped of
 the flag (`shaderTransitionParams`): transitions have no motion path.
@@ -123,6 +123,15 @@ swaps (tested).
   agents' jobs running): a Transform with a curved Position path on 1280 × 720 exported through the hybrid path;
   export vs Remotion stills of the composition: 100 % of channel values within 3/255 at 9 frames; square centroid vs
   the evaluator: ≤ 0.31 px; a metric-free reading would be up to 43.9 px away.
+
+- **In the running app** (VM dev stack, ports 47916 / 5186, 2026-10-25): an orange solid with a Transform effect,
+  Scale 20 %, Position keys (0.2, 0.75) → (0.5, 0.25) → (0.8, 0.75) at frames 0 / 60 / 120. Focusing the Position row in
+  Effect Controls drew the arched effect path over the Program monitor (key squares, Auto Bezier handles on the middle
+  key). Dragging the middle key moved it to (0.5, 0.55) and reshaped the path; dragging its out handle made it
+  Continuous Bezier with the in handle opposite (the stored tangents are exactly collinear, in normalised units).
+  Right-click ▸ Spatial Interpolation showed Continuous Bezier checked; Linear straightened the path; Ctrl+Z restored
+  the curve. At frame 30 Effect Controls read (0.3587, 0.6868), and the engine's `render_frame` put the square's
+  centroid at (0.3594, 0.6861) of the frame (0.4 px at 640 × 360).
 
 ## 7. Limits
 
