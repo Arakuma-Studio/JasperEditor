@@ -331,6 +331,8 @@ export const ICONS = {
 	'action.reshuffle': Shuffle,
 	'action.randomIdentity': Dices,
 	'media.avatar': UserRound,
+	// social-comment store reviews: the star of the rating control (filled with `fill-current` when on)
+	'rating.star': Star,
 	'panel.menu': g('M4 6.5h16', 'M4 12h16', 'M4 17.5h16'),
 	'panel.overflow': g('M6 7l5 5-5 5', 'M13 7l5 5-5 5'),
 } satisfies Record<string, IconSource>;

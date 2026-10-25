@@ -1,6 +1,7 @@
 // Platform icons, badges and default avatars for the social-comment templates (social-comment design §7.8a): the
 // real glyphs as inline SVG path data, captured from the platforms' own web apps (the live DOM, their JavaScript
-// icon bundles or their icon CDN) on 2026-10-25. Proprietary marks of their owners, used under the
+// icon bundles or their icon CDN; the legacy App Store web review stars from an archived copy of apps.apple.com) on
+// 2026-10-25. Proprietary marks of their owners, used under the
 // platform-template exception of AGENTS.md §3 item 1; per-glyph source URLs, capture date and method are in
 // licenses/platform-assets.md. Raster default avatars are referenced by URL only (fetched at runtime, never
 // committed). Pure data: no React, no DOM.
@@ -45,9 +46,11 @@ export interface GlyphLinearGradient {
  * - `live-bundle`: an icon component of the platform's own web JavaScript bundle (a state the logged-out page does
  *   not render, e.g. "liked");
  * - `live-cdn`: the platform's icon CDN file, byte-identical to what its page renders;
+ * - `archived`: the platform's own asset file from an archived copy of its page (web.archive.org), for a design the
+ *   live site no longer serves (the legacy App Store web review card);
  * - `derived`: transformed from a live glyph because the platform shows it only in its native app.
  */
-export type GlyphOrigin = 'live-dom' | 'live-bundle' | 'live-cdn' | 'derived';
+export type GlyphOrigin = 'live-dom' | 'live-bundle' | 'live-cdn' | 'archived' | 'derived';
 
 export interface PlatformGlyph {
 	/** SVG `viewBox` (`"minX minY width height"`). */
@@ -76,7 +79,7 @@ export type PlatformDefaultAvatar =
 	| { readonly kind: 'remote'; readonly image: RemoteAvatarImage }
 	| { readonly kind: 'none'; readonly reason: string };
 
-export type SocialPlatform = 'tiktok' | 'instagram' | 'youtube' | 'x';
+export type SocialPlatform = 'tiktok' | 'instagram' | 'youtube' | 'x' | 'play-store' | 'app-store';
 
 /** TikTok comment-list glyphs (tiktok.com video page, comments panel; TikTok Sans UI). */
 export const TIKTOK_GLYPHS = {
@@ -528,12 +531,90 @@ export const X_GLYPHS = {
 	},
 } as const satisfies Readonly<Record<string, PlatformGlyph>>;
 
+/** Google Play review glyphs (play.google.com app page, review cards; Roboto UI). */
+export const PLAY_STORE_GLYPHS = {
+	/** Review rating star (inline SVG of the review card); filled and empty stars are the same path in two colours. */
+	star: {
+		viewBox: '0 0 24 24',
+		paths: [
+			{ d: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z' },
+		],
+		defaultColor: { light: '#01875F', dark: '#00A173' },
+		origin: 'live-dom',
+	},
+	/** Review "More review actions" kebab: the `more_vert` outline of Play's Material Icons Extended font file. */
+	more: {
+		viewBox: '0 0 24 24',
+		paths: [
+			{
+				d: 'M10.59 16.59Q10.59 16.59 10.9 16.29Q11.2 15.98 12 15.98Q12.8 15.98 13.41 16.59Q14.02 17.2 14.02 18Q14.02 18.8 13.41 19.41Q12.8 20.02 12 20.02Q11.2 20.02 10.59 19.41Q9.98 18.8 9.98 18Q9.98 17.2 10.59 16.59ZM10.59 10.59Q10.59 10.59 10.9 10.29Q11.2 9.98 12 9.98Q12.8 9.98 13.41 10.59Q14.02 11.2 14.02 12Q14.02 12.8 13.41 13.41Q12.8 14.02 12 14.02Q11.2 14.02 10.59 13.41Q9.98 12.8 9.98 12Q9.98 11.2 10.59 10.59ZM13.41 7.41Q13.41 7.41 13.1 7.71Q12.8 8.02 12 8.02Q11.2 8.02 10.59 7.41Q9.98 6.8 9.98 6Q9.98 5.2 10.59 4.59Q11.2 3.98 12 3.98Q12.8 3.98 13.41 4.59Q14.02 5.2 14.02 6Q14.02 6.8 13.41 7.41Z',
+			},
+		],
+		defaultColor: { light: '#5F6368', dark: '#9AA0A6' },
+		origin: 'live-cdn',
+	},
+} as const satisfies Readonly<Record<string, PlatformGlyph>>;
+
+/** App Store review glyphs (apps.apple.com app page, "Ratings & Reviews"; the legacy design from web.archive.org). */
+export const APP_STORE_GLYPHS = {
+	/** Rating star, filled (current apps.apple.com review card; the iPhone app's layout). */
+	star: {
+		viewBox: '0 0 64 64',
+		paths: [
+			{
+				d: 'M13.559 60.051c1.102.86 2.5.565 4.166-.645l14.218-10.455L46.19 59.406c1.666 1.21 3.037 1.505 4.166.645 1.102-.833 1.344-2.204.672-4.166l-5.618-16.718 14.353-10.32c1.666-1.183 2.338-2.42 1.908-3.764-.43-1.29-1.693-1.935-3.763-1.908l-17.605.108-5.348-16.8C34.308 4.496 33.34 3.5 31.944 3.5c-1.372 0-2.34.995-2.984 2.984L23.61 23.283l-17.605-.108c-2.07-.027-3.333.618-3.763 1.908-.457 1.344.242 2.58 1.909 3.763l14.352 10.321-5.617 16.718c-.672 1.962-.43 3.333.672 4.166',
+			},
+		],
+		defaultColor: { light: '#FF9500', dark: '#FF9F0A' },
+		origin: 'live-dom',
+	},
+	/** Rating star, empty: the outline star in the same orange (outer and inner contour, nonzero). */
+	starOutline: {
+		viewBox: '0 0 64 64',
+		paths: [
+			{
+				d: 'M13.559 60.051c1.102.86 2.5.565 4.166-.645l14.218-10.455L46.19 59.406c1.666 1.21 3.037 1.505 4.166.645 1.102-.833 1.344-2.204.672-4.166l-5.618-16.718 14.353-10.32c1.666-1.183 2.338-2.42 1.908-3.764-.43-1.29-1.693-1.935-3.763-1.908l-17.605.108-5.348-16.8C34.308 4.496 33.34 3.5 31.944 3.5c-1.372 0-2.34.995-2.984 2.984L23.61 23.283l-17.605-.108c-2.07-.027-3.333.618-3.763 1.908-.457 1.344.242 2.58 1.909 3.763l14.352 10.321-5.617 16.718c-.672 1.962-.43 3.333.672 4.166m3.87-5.321c-.054-.054-.027-.081 0-.242l5.349-15.374c.376-1.049.161-1.882-.78-2.527L8.613 27.341c-.134-.08-.161-.134-.134-.215s.08-.08.242-.08l16.26.295c1.103.027 1.802-.43 2.151-1.532l4.677-15.562c.027-.162.08-.215.134-.215.08 0 .135.053.162.215l4.676 15.562c.35 1.102 1.048 1.559 2.15 1.532l16.261-.296c.162 0 .216 0 .243.081.027.08-.027.134-.135.215l-13.385 9.246c-.94.645-1.156 1.478-.78 2.527l5.35 15.374c.026.161.053.188 0 .242-.055.08-.135.026-.243-.054l-12.928-9.864c-.86-.672-1.855-.672-2.715 0l-12.928 9.864c-.107.08-.188.134-.242.054',
+				fillRule: 'nonzero',
+			},
+		],
+		defaultColor: { light: '#FF9500', dark: '#FF9F0A' },
+		origin: 'live-dom',
+	},
+	/**
+	 * Legacy web review star (2019–2025 apps.apple.com, `stars-lg` sprite, top half): drawn 24 × 25 px per star,
+	 * stretched (the sprite's CSS `background-size: 24px 50px`).
+	 */
+	legacyStar: {
+		viewBox: '0 0 13 14',
+		paths: [
+			{
+				d: 'M6.496.173L4.521 5.251H.007l3.738 2.751-1.481 5.149 4.232-3.386 4.232 3.386-1.482-5.149 3.739-2.751H8.471z',
+			},
+		],
+		defaultColor: { light: '#FF9500', dark: '#FF9F0A' },
+		origin: 'archived',
+	},
+	/** Legacy empty star (the sprite's bottom half, moved up by its 14.15 offset into the same 13 × 14 box). */
+	legacyStarEmpty: {
+		viewBox: '0 0 13 14',
+		paths: [
+			{
+				d: 'M6.5.2l-1.978 5.087H0l3.745 2.755-1.484 5.158L6.5 9.809l4.239 3.391-1.484-5.158L13 5.287H8.478z',
+			},
+		],
+		defaultColor: { light: '#BFBFBF', dark: '#5A5A5E' },
+		origin: 'archived',
+	},
+} as const satisfies Readonly<Record<string, PlatformGlyph>>;
+
 /** Every platform's glyph set, by platform. */
 export const PLATFORM_GLYPHS = {
 	tiktok: TIKTOK_GLYPHS,
 	instagram: INSTAGRAM_GLYPHS,
 	youtube: YOUTUBE_GLYPHS,
 	x: X_GLYPHS,
+	'play-store': PLAY_STORE_GLYPHS,
+	'app-store': APP_STORE_GLYPHS,
 } as const;
 
 /** TikTok's default avatar (grey disc, white head and shoulders at 75 %): the `Icon_Color-Default_Avatar` of its bundle. */
@@ -582,6 +663,15 @@ export const PLATFORM_DEFAULT_AVATARS: Readonly<Record<SocialPlatform, PlatformD
 		kind: 'none',
 		reason:
 			'Instagram serves its anonymous avatar only through signed, expiring fbcdn URLs; no stable public source exists.',
+	},
+	'play-store': {
+		kind: 'none',
+		reason:
+			"Google Play shows each reviewer's Google account picture (googleusercontent URLs per account); there is no single public default image.",
+	},
+	'app-store': {
+		kind: 'none',
+		reason: 'App Store review cards show no avatar.',
 	},
 };
 

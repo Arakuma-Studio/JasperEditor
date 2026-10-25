@@ -1,6 +1,7 @@
 // Per-platform number, time and replies formatting for social-comment cards (design 2026-10-25 §7.4). Pure,
 // deterministic and locale-independent: no `Intl` (its output differs between the preview browser and the render
 // Chrome). Rules and their sources: docs/wp-notes/social-comments.md "Social comment core".
+import { reviewAgeDays, weekdayBeforeAnchor } from './review.ts';
 import {
 	SOCIAL_TIME_UNITS,
 	type SocialCountField,
@@ -70,6 +71,10 @@ export function formatCount(variant: SocialVariant, n: number, _field: SocialCou
 			return c < 1000 ? String(c) : abbreviated(c, 10);
 		case 'x':
 			return c < 1000 ? String(c) : abbreviated(c, 1000);
+		// store reviews draw no counts (Play's "N people found this review helpful" is left out); grouped like Play
+		case 'play-store':
+		case 'app-store':
+			return grouped(c);
 	}
 }
 
@@ -88,12 +93,16 @@ const NOW: Readonly<Record<SocialPlatform, string>> = {
 	instagram: 'now',
 	youtube: 'Just now',
 	x: 'now',
+	'play-store': 'now',
+	// the iPhone App Store's TIME_AGO_JUST_NOW
+	'app-store': 'Just now',
 };
 
 /**
  * How long ago a comment was posted, as the platform shows it: compact "3m", "3h", "3d", "3w", "3mo", "3y" on
- * TikTok, Instagram and X; "1 minute ago", "10 months ago" on YouTube. 0 shows "Just now" (TikTok, YouTube) or "now"
- * (Instagram, X). `value` is floored and clamped to 0…10000; an unknown unit reads as days. Never throws.
+ * TikTok, Instagram and X; "1 minute ago", "10 months ago" on YouTube; the iPhone App Store's "3h ago", "2d ago",
+ * "3w ago", "4mo ago", "1y ago" ("Just now" under an hour) on App Store reviews. 0 shows "Just now" (TikTok, YouTube,
+ * App Store) or "now" (Instagram, X). `value` is floored and clamped to 0…10000; an unknown unit reads as days. Never throws.
  */
 export function formatTime(variant: SocialVariant, value: number, unit: SocialTimeUnit): string {
 	const v = Math.min(10_000, toCount(value));
@@ -101,6 +110,8 @@ export function formatTime(variant: SocialVariant, value: number, unit: SocialTi
 	const platform = platformOf(variant);
 	if (v === 0) return NOW[platform];
 	if (platform === 'youtube') return `${v} ${u}${v === 1 ? '' : 's'} ago`;
+	// the iPhone App Store's review age (TIME_AGO_*_AGO of iOS 15–26: no minutes label, so under an hour is "Just now")
+	if (platform === 'app-store') return u === 'minute' ? NOW[platform] : `${v}${COMPACT[u]} ago`;
 	return `${v}${COMPACT[u]}`;
 }
 
@@ -123,6 +134,34 @@ export function formatRepliesLabel(variant: SocialVariant, n: number): string {
 		case 'youtube':
 			return `${num} ${word}`;
 		case 'x':
+		case 'play-store':
+		case 'app-store':
 			return '';
 	}
+}
+
+/** How the iPhone card prints recent ages (`iosAgeStyle`). */
+export type IosAgeStyle = 'weekday' | 'relative';
+
+/**
+ * The age of an iPhone App Store review as its card prints it.
+ * - `weekday` (default; the requester's screenshot, the iOS 14-era App Store): an age under 7 days prints the weekday
+ *   of the review — `SOCIAL_REVIEW_DATE_ANCHOR` minus the age ("Sun", "Fri"); older ages the relative form.
+ * - `relative` (the App Store of iOS 15–26, TIME_AGO_* strings): "Just now" under an hour, "5h ago", "2d ago".
+ * Relative ages: "3w ago", "4mo ago", "1y ago" (`formatTime`). An edited review gets the "edited " prefix ("edited Sun",
+ * "edited 1y ago"; under an hour in the relative form "edited just now", TIME_AGO_EDITED_JUST_NOW). Never throws.
+ */
+export function formatReviewAge(
+	value: number,
+	unit: SocialTimeUnit,
+	edited: boolean,
+	style: IosAgeStyle = 'weekday',
+): string {
+	const days = reviewAgeDays(value, unit);
+	const age =
+		style !== 'relative' && days < 7
+			? weekdayBeforeAnchor(days)
+			: formatTime('app-store-review-ios', value, unit);
+	if (!edited) return age;
+	return age === NOW['app-store'] ? 'edited just now' : `edited ${age}`;
 }

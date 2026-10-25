@@ -229,6 +229,9 @@ importers:
         specifier: ^4.1.0
         version: 4.6.5
     devDependencies:
+      '@jasper/mg-templates':
+        specifier: workspace:*
+        version: link:../../packages/mg-templates
       '@jasper/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit

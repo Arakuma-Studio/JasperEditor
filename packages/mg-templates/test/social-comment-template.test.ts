@@ -275,6 +275,9 @@ describe('social-comment@1 presets and fill hook', () => {
 			['youtube-comment', 'YouTube · Comment'],
 			['youtube-shorts-reply', 'YouTube · Shorts reply'],
 			['x-post', 'X · Post'],
+			['play-store-review', 'Play Store · Review'],
+			['app-store-review', 'App Store · Review'],
+			['app-store-review-ios', 'App Store · Review (iPhone app)'],
 		]);
 		// a preset carries its variant's tokcomment defaults
 		expect(templatePresetParams(socialComment, 'instagram-post')).toMatchObject({
@@ -330,6 +333,18 @@ describe('social-comment@1 presets and fill hook', () => {
 		});
 		expect(socialCommentUnavailableVariant({ variant: 'x-post' })).toBeNull();
 		expect(SOCIAL_VARIANT_FONTS['x-post']).toEqual({ family: 'Chirp', weights: [400, 700] });
+		// the store presets carry what differs from the schema defaults: the variant, its neutral name and review text
+		const play = socialComment.presets!.find((p) => p.id === 'play-store-review')!;
+		expect(play.params).toEqual({
+			variant: 'play-store-review',
+			displayName: 'Display Name',
+			timeUnit: 'year',
+			text: 'Write any review and see what happens 😊',
+		});
+		for (const p of socialComment.presets!)
+			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
+				true,
+			);
 		for (const p of socialCommentPresets(['x-post', 'youtube-comment']))
 			expect(socialComment.paramsSchema.safeParse({ ...socialComment.defaults, ...p.params }).success).toBe(
 				true,

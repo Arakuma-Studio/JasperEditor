@@ -4,6 +4,7 @@
 import {
 	animeTemplateTiming,
 	generatedAvatar,
+	isReviewVariant,
 	REMOTE_IMAGE_IDS,
 	SOCIAL_VARIANTS,
 	socialComment,
@@ -86,7 +87,8 @@ describe('social-comment@1 cards', () => {
 					variant.startsWith('tiktok') ||
 					variant.startsWith('instagram') ||
 					variant.startsWith('youtube') ||
-					variant === 'x-post'
+					variant === 'x-post' ||
+					isReviewVariant(variant)
 				) {
 					expect(socialVariantAvailable(variant)).toBe(true);
 					expect(card.hasAttribute('data-social-unavailable')).toBe(false);

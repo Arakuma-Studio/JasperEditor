@@ -1,20 +1,22 @@
 # Platform assets of the social-comment templates
 
-The social-comment templates replicate TikTok, Instagram, YouTube and X comment UIs. They use those platforms'
+The social-comment templates replicate TikTok, Instagram, YouTube and X comment UIs and Google Play / App Store
+review cards. They use those platforms'
 own icons, badges, logos, fonts and emoji artwork under the platform-template exception of
 AGENTS.md §3 item 1 ("Templates that replicate a platform's UI may use that platform's names,
 logos, icons and fonts"). This record gives the provenance of every such asset (§3 item 5).
 
 - **Licence of every platform glyph below:** proprietary; used under AGENTS.md §3 item 1 platform-template
   exception. The marks belong to their owners: TikTok (ByteDance Ltd.), Instagram (Meta Platforms, Inc.),
-  YouTube (Google LLC), X and Grok (X Corp. / xAI). JasperEditor is not affiliated with or endorsed by them.
+  YouTube and Google Play (Google LLC), X and Grok (X Corp. / xAI), App Store (Apple Inc.). JasperEditor is not affiliated with or endorsed by them.
 - **Committed:** only vector path data, in `packages/motion/src/templates/social/glyphs.ts` (export names below).
 - **Not committed:** fonts, emoji images and raster avatars. The app downloads them at runtime from the URLs in
   `apps/engine/src/remote-assets/manifest.json` (sha256-pinned where the file is fixed) and never redistributes them.
 - **Capture:** 2026-10-25, logged out, public pages only, desktop Chrome 141 user agent, en-US. Method per glyph:
   `live-dom` = inline SVG the page rendered; `live-bundle` = icon component in the page's own JavaScript bundle (a
   state a logged-out page does not render); `live-cdn` = the platform's icon CDN file, identical to the rendered
-  path; `derived` = transformed from a live glyph.
+  path; `archived` = the platform's own asset file from an archived copy of its page on web.archive.org (a design the
+  live site no longer serves); `derived` = transformed from a live glyph.
 - **Fallbacks:** none. No tokcomment or lucide stand-in is used; every glyph comes from the platform itself.
 
 ## TikTok — `TIKTOK_GLYPHS`, `TIKTOK_DEFAULT_AVATAR`
@@ -97,6 +99,39 @@ signed-in viewer).
 Default avatar (raster, not committed):
 `https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png` (PNG 400×400, sha256
 `6d34bedb72ec3f2dc15085747d365fbb3f34319d5b549a8776438b92853344b6`).
+
+## Google Play — `PLAY_STORE_GLYPHS`
+
+Page: https://play.google.com/store/apps/details?id=com.spotify.music&hl=en_US&gl=US (review cards, captured
+2026-10-25, logged out). Icon font: Material Icons Extended v154,
+`https://fonts.gstatic.com/s/materialiconsextended/v154/kJEjBvgX7BgnkSrUwT8UnLVc38YydejYY-oE_LvJ.woff2` (sha256
+`7f80c4c91054b3d6c80721939242c2d4f68f15e41f251e12641f695d78eb2f35`), loaded by that page.
+
+| Export | Source | Method |
+|---|---|---|
+| `star` | review rating star, inline SVG (filled and empty stars share the path) | live-dom |
+| `more` | "More review actions" button: the `more_vert` ligature glyph outline of the icon font above, scaled from 512 font units to 24 | live-cdn |
+
+Default avatar: none (`PLATFORM_DEFAULT_AVATARS['play-store']` is `kind: 'none'`): Play shows each reviewer's
+Google account picture; there is no single public default image.
+
+## App Store — `APP_STORE_GLYPHS`
+
+Pages: https://apps.apple.com/us/app/spotify-music-and-podcasts/id324684580 and its `?see-all=reviews` view
+(current review cards, captured 2026-10-25). Legacy design (2019–2025 web review card, the requester's reference):
+the star sprite `https://apps.apple.com/assets/images/stars-lg-bc4f4bfdd931e007ab096dd1c209c689.svg` as archived at
+https://web.archive.org/web/20210107152751id_/https://apps.apple.com/assets/images/stars-lg-bc4f4bfdd931e007ab096dd1c209c689.svg
+(sha256 of the gunzipped file `03b3a7317370504145583eb221372d6c19c060f84f10cf391459e7441e95c381`), loaded by the
+archived page https://web.archive.org/web/20210107151857if_/https://apps.apple.com/us/app/spotify-music-and-podcasts/id324684580.
+
+| Export | Source | Method |
+|---|---|---|
+| `star` | review card rating star, filled | live-dom |
+| `starOutline` | review card rating star, empty (outline contour), see-all view | live-dom |
+| `legacyStar` | top half of the legacy `stars-lg` sprite (filled, #FF9500) | archived |
+| `legacyStarEmpty` | bottom half of the same sprite (empty, #BFBFBF); its `translate(0 -.15)` and the 14-unit offset folded into the path coordinates | archived |
+
+App Store review cards show no avatar (`PLATFORM_DEFAULT_AVATARS['app-store']` is `kind: 'none'`).
 
 ## Fonts downloaded at runtime (`manifest.json` → `fonts`)
 
