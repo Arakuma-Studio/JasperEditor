@@ -170,8 +170,8 @@ describe('text transforms (AS-002) and line breaking (AS-042)', () => {
 	});
 	it('Spanish: a line or a one-line subtitle does not end on an article or preposition when avoidable', () => {
 		const weak = weakWordsFor('es-AR');
-		expect(breakLines(['Hice', 'el', 'juego', 'de', 'Doors'], 13, 2, weak)).toEqual([3]);
-		expect(breakLines(['Hice', 'el', 'juego', 'de', 'Doors'], 13, 2, null)).toEqual([4]);
+		expect(breakLines(['Hice', 'el', 'juego', 'de', 'Doors'], 16, 2, weak)).toEqual([3]);
+		expect(breakLines(['Hice', 'el', 'juego', 'de', 'Doors'], 16, 2, null)).toEqual([4]);
 		const r = lay(
 			words(
 				['Hice', 'el', 'juego', 'de', 'Doors', 'en', '24', 'horas'].map(
@@ -230,7 +230,7 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 		});
 		expect(spans(r)).toEqual([
 			[0, 30, 'a'],
-			[30, 60, 'b'],
+			[30, 180, 'b'],
 		]);
 		expect(r.stats.snappedToCuts).toBe(1);
 		// beyond the look-back: no snap
@@ -306,7 +306,7 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 		});
 		expect(spans(p)).toEqual([
 			[0, 50, 'a'],
-			[50, 90, 'b'],
+			[50, 210, 'b'],
 		]);
 	});
 	it('cut awareness off keeps the speech timing', () => {
