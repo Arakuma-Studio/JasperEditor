@@ -60,4 +60,10 @@ describe('mediaParam()', () => {
 			defaultValue: null,
 		});
 	});
+
+	it('is refused on fframes templates (the native renderer draws no images)', () => {
+		const { renderer: _r, renderVersion: _v, ...rest } = def;
+		const fframes = { ...rest, id: 'media-ff', renderSvg: () => '' };
+		expect(() => createMgRegistry([fframes])).toThrow(/only anime templates/);
+	});
 });

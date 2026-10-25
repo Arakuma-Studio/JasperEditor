@@ -1,8 +1,10 @@
-import type {
-	MgTemplateInfo,
-	MgTemplateMotionTiming,
-	MgTemplateRegistry,
-	MgTemplateUpgrade,
+import {
+	type MgTemplateInfo,
+	type MgTemplateMotionTiming,
+	type MgTemplateRegistry,
+	type MgTemplateUpgrade,
+	TEMPLATE_MEDIA_KIND,
+	TEMPLATE_PARAM_KIND_KEY,
 } from '@jasper/project';
 import { z } from 'zod';
 import { svgTemplateSpeed } from './motion.ts';
@@ -39,6 +41,23 @@ export type MgCatalogEntryJson = {
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
+
+/** True when the template's params schema declares a media param (`x-jasper-kind: "media"`) anywhere. */
+function hasMediaParams(d: AnyMgTemplate): boolean {
+	let json: unknown;
+	try {
+		json = z.toJSONSchema(d.paramsSchema, { unrepresentable: 'any', io: 'input' });
+	} catch {
+		return false;
+	}
+	const walk = (v: unknown, depth: number): boolean =>
+		!!v &&
+		typeof v === 'object' &&
+		depth < 32 &&
+		((v as Record<string, unknown>)[TEMPLATE_PARAM_KIND_KEY] === TEMPLATE_MEDIA_KIND ||
+			Object.values(v as Record<string, unknown>).some((x) => walk(x, depth + 1)));
+	return walk(json, 0);
+}
 
 /** Measured picture speeds kept per registry (sound design derives and resolves anchors repeatedly). */
 const MOTION_CACHE_SIZE = 32;
@@ -163,6 +182,9 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 		if (map.has(k)) throw new Error(`Duplicate motion-graphic template ${k}`);
 		const check = d.paramsSchema.safeParse(d.defaults);
 		if (!check.success) throw new Error(`Defaults of ${k} do not match its params schema`);
+		// Media params (`mediaParam()`) are drawn by anime templates only: the native fframes renderer has no images.
+		if (!isAnimeTemplate(d) && hasMediaParams(d))
+			throw new Error(`${k} has media params, which only anime templates can draw`);
 		map.set(k, d);
 	}
 	const cache = motionCache();
