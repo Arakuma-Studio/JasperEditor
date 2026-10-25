@@ -64,7 +64,8 @@ function kindOf(c: RenderVisualClip, fps: RenderSnapshot['settings']['fps']): Ki
 			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
 			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
 		};
-		if (needsSubpixel(c, props, box) || maskExportRoute(c) === 'stream') return memberBase ? 'member' : 'stream';
+		if (needsSubpixel(c, props, box) || maskExportRoute(c) === 'stream')
+			return memberBase ? 'member' : 'stream';
 		return c.kind === 'still' ? 'still' : 'none';
 	}
 	return 'media';

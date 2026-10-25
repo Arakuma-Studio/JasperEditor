@@ -2,7 +2,7 @@
 // how its frames are drawn, all in sequence pixels.
 import type { Rational, RenderVisualClip } from '@jasper/project';
 import { isFeatheredCrop } from '../crop.ts';
-import { type LoweredPicture, planLoweredFrames, singleTap, shiftProgram, type TapFrame } from './lowered.ts';
+import { type LoweredPicture, planLoweredFrames, shiftProgram, singleTap, type TapFrame } from './lowered.ts';
 import type { StreamLayerPlan } from './plan.ts';
 import type { TapMember, TapPicture } from './taps.ts';
 

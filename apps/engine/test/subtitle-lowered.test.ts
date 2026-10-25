@@ -163,8 +163,21 @@ describe('multi-tap kernel (AS-070)', () => {
 					const a = new Uint8Array(dw * dh * 4);
 					const b = new Uint8Array(dw * dh * 4);
 					drawLayer(src, cw, cw, ch, clip, a, dw, dh, inv, opacity, rect);
-					drawTaps(src, cw, cw, ch, b, dw, dh, singleTap(inv, clip), opacity, rect, new Float32Array(dw * dh * 4));
-					for (let i = 0; i < a.length; i++) expect(Math.abs(a[i]! - b[i]!), `byte ${i}`).toBeLessThanOrEqual(1);
+					drawTaps(
+						src,
+						cw,
+						cw,
+						ch,
+						b,
+						dw,
+						dh,
+						singleTap(inv, clip),
+						opacity,
+						rect,
+						new Float32Array(dw * dh * 4),
+					);
+					for (let i = 0; i < a.length; i++)
+						expect(Math.abs(a[i]! - b[i]!), `byte ${i}`).toBeLessThanOrEqual(1);
 				},
 			),
 			{ numRuns: 200 },
@@ -224,7 +237,15 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 		const c = clipOf(snapOf(d), clip);
 		const pic = layerStill(c)!;
 		expect(pic).not.toBeNull();
-		const { frames } = planLoweredFrames({ clip: c, f0: 10, f1: 40, fps: FPS, picture: pic, W: 1080, H: 1920 });
+		const { frames } = planLoweredFrames({
+			clip: c,
+			f0: 10,
+			f1: 40,
+			fps: FPS,
+			picture: pic,
+			W: 1080,
+			H: 1920,
+		});
 		expect(frames).toHaveLength(30);
 		for (const [k, f] of frames.entries()) {
 			const taps = tapsOf(f.prog);
@@ -255,7 +276,15 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 		const c = clipOf(snapOf(d), clip);
 		expect(loweredRefusal(c)).toBeNull();
 		const pic = layerStill(c)!;
-		const { frames } = planLoweredFrames({ clip: c, f0: 10, f1: 40, fps: FPS, picture: pic, W: 1080, H: 1920 });
+		const { frames } = planLoweredFrames({
+			clip: c,
+			f0: 10,
+			f1: 40,
+			fps: FPS,
+			picture: pic,
+			W: 1080,
+			H: 1920,
+		});
 		const shake = defaultEffectRegistry.get('jasper.s.shake')!;
 		const transform = defaultEffectRegistry.get('jasper.transform')!;
 		let blurred = 0;
@@ -277,8 +306,8 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 				progress: 0,
 				seed: fxSeed(c.clipId, ids.sh, sp),
 			};
-			const pose = (shake.gpu!.uniforms!(sp, ctx) as unknown as { u_shakeNow: { vec4s: number[] } }).u_shakeNow
-				.vec4s;
+			const pose = (shake.gpu!.uniforms!(sp, ctx) as unknown as { u_shakeNow: { vec4s: number[] } })
+				.u_shakeNow.vec4s;
 			const taps = tapsOf(f.prog);
 			if (taps.length > 1) {
 				blurred++;
@@ -346,11 +375,22 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 		};
 		expect(loweredRefusal(shaken({ wrapX: 'no', wrapY: 'no' }))).toBeNull();
 		expect(loweredRefusal(shaken({}))).toBe('S_Shake wrap');
-		expect(loweredRefusal(shaken({ wrapX: 'no', wrapY: 'no', motionBlur: true }))).toBe('S_Shake motion blur');
+		expect(loweredRefusal(shaken({ wrapX: 'no', wrapY: 'no', motionBlur: true }))).toBe(
+			'S_Shake motion blur',
+		);
 		expect(loweredRefusal(shaken({ wrapX: 'no', wrapY: 'no', redAmplitude: 1.4 }))).toBe('S_Shake RGB split');
-		expect(loweredRefusal(shaken({ wrapX: 'no', wrapY: 'no', rgbRandomness: 0.5 }))).toBe('S_Shake RGB split');
+		expect(loweredRefusal(shaken({ wrapX: 'no', wrapY: 'no', rgbRandomness: 0.5 }))).toBe(
+			'S_Shake RGB split',
+		);
 		const { d, clip } = subtitle((dd, c) =>
-			dd.tx([{ type: 'effect.add', target: { clipId: c }, effectId: 'jasper.gaussian-blur', params: { radius: 3 } }]),
+			dd.tx([
+				{
+					type: 'effect.add',
+					target: { clipId: c },
+					effectId: 'jasper.gaussian-blur',
+					params: { radius: 3 },
+				},
+			]),
 		);
 		expect(loweredRefusal(clipOf(snapOf(d), clip))).toBe('effect jasper.gaussian-blur');
 	});

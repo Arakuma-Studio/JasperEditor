@@ -32,9 +32,9 @@ import {
 } from '@jasper/project';
 import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
-import { encodePng } from '../export/synthetic.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
+import { encodePng } from '../export/synthetic.ts';
 import { importsArtifactsOf, withImportsUrls } from '../imports/extension.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
@@ -1248,7 +1248,8 @@ export class LayerBakeService {
 				{ width: plan.picture.w + 2, height: plan.picture.h + 2 },
 				ctx,
 			));
-		if (clipped) ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
+		if (clipped)
+			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
 		if (rect && plan.fullDoc && (await this.clippedAtBorder(ff, tmp, rect, seq, ctx))) {
 			// The layer drew past the planned crop (LBK-005 safety net): render the whole frame instead.
 			ctx.log(`layer-bake: ${plan.clipId} touches the crop border; re-rendering full frame`);
@@ -1331,7 +1332,10 @@ export class LayerBakeService {
 	}
 
 	/** A `sheet` child job (spec 13 AS-071): its stills, then every still the sheet could not hold alone. */
-	private async runSheet(ctx: JobContext, input: Extract<LayerBakeJobInput, { op: 'sheet' }>): Promise<unknown> {
+	private async runSheet(
+		ctx: JobContext,
+		input: Extract<LayerBakeJobInput, { op: 'sheet' }>,
+	): Promise<unknown> {
 		const release = this.lease(input.bakes.map((b) => b.key));
 		try {
 			const browser = await this.sharedBrowser(input.browserGroup);
@@ -1348,7 +1352,11 @@ export class LayerBakeService {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (e instanceof JobError) throw e;
 			const msg = String((e as Error)?.message ?? e);
-			throw new JobError('LAYER_BAKE_FAILED', `Baking ${input.bakes.length} stills failed: ${msg.slice(0, 1200)}`, true);
+			throw new JobError(
+				'LAYER_BAKE_FAILED',
+				`Baking ${input.bakes.length} stills failed: ${msg.slice(0, 1200)}`,
+				true,
+			);
 		} finally {
 			release();
 			void this.refreshBytes();
@@ -1430,7 +1438,8 @@ export class LayerBakeService {
 				`The sheet render wrote ${files.length} stills, expected ${plans.length}`,
 				true,
 			);
-		for (const f of files) await rename(join(dir, f), join(dir, `s${gradedFrameName(Number.parseInt(f, 10))}`));
+		for (const f of files)
+			await rename(join(dir, f), join(dir, `s${gradedFrameName(Number.parseInt(f, 10))}`));
 		ctx.progress(0.8, { stage: 'Cropping stills' });
 		const redo: BakePlan[] = [];
 		const frameBytes = W * H * 4;
@@ -1464,7 +1473,13 @@ export class LayerBakeService {
 			child.on('close', (code, sig) =>
 				code === 0
 					? resolve()
-					: reject(new JobError('TOOL_FAILED', `ffmpeg exited ${code ?? sig}: ${stderr.trim().slice(-1500)}`, true)),
+					: reject(
+							new JobError(
+								'TOOL_FAILED',
+								`ffmpeg exited ${code ?? sig}: ${stderr.trim().slice(-1500)}`,
+								true,
+							),
+						),
 			);
 		});
 		closed.catch(() => undefined);
@@ -1484,7 +1499,11 @@ export class LayerBakeService {
 		}
 		await closed;
 		if (i !== plans.length)
-			throw new JobError('FRAME_COUNT_MISMATCH', `The sheet decode gave ${i} stills, expected ${plans.length}`, true);
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`The sheet decode gave ${i} stills, expected ${plans.length}`,
+				true,
+			);
 		await rm(dir, { recursive: true, force: true });
 		return redo;
 	}
@@ -1524,7 +1543,8 @@ export class LayerBakeService {
 			// Rendered alone, with the full-frame fallback of `renderBake`.
 			if (inner.some(edge)) return true;
 		}
-		if (clipped) ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
+		if (clipped)
+			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
 		const dir = this.entryDir(plan.key);
 		await mkdir(dir, { recursive: true });
 		const scratch = await ctx.scratchDir();

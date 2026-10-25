@@ -287,8 +287,7 @@ export function drawTaps(
 				const a = a00 + a10 + a01 + a11;
 				if (a <= 0) continue;
 				const k = w * cover;
-				acc[o] +=
-					(k * ((t00 & 255) * a00 + (t10 & 255) * a10 + (t01 & 255) * a01 + (t11 & 255) * a11)) / 255;
+				acc[o] += (k * ((t00 & 255) * a00 + (t10 & 255) * a10 + (t01 & 255) * a01 + (t11 & 255) * a11)) / 255;
 				acc[o + 1] +=
 					(k *
 						(((t00 >> 8) & 255) * a00 +

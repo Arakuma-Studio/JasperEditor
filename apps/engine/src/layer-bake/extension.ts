@@ -171,7 +171,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			// render; the rest (masters, single frames, spans, graded entries) one render each, as before.
 			const isSheet = (g: typeof items) => {
 				const { plan, grade } = g[0]!;
-				return !grade && !plan.span && (plan.variant.recipe === 'still' || plan.variant.recipe === 'layer-still');
+				return (
+					!grade && !plan.span && (plan.variant.recipe === 'still' || plan.variant.recipe === 'layer-still')
+				);
 			};
 			const sheetGroups = renders.filter(isSheet);
 			const singles = renders.filter((g) => !isSheet(g));
@@ -182,7 +184,8 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			};
 			sheetGroups.sort((a, b) => area(a) - area(b));
 			const sheets: (typeof items)[][] = [];
-			for (let i = 0; i < sheetGroups.length; i += SHEET_MAX) sheets.push(sheetGroups.slice(i, i + SHEET_MAX));
+			for (let i = 0; i < sheetGroups.length; i += SHEET_MAX)
+				sheets.push(sheetGroups.slice(i, i + SHEET_MAX));
 			// Side by side, the masters split the budget by length; one after the other, each takes all of it (as before).
 			const masters = singles.filter(isMaster);
 			const masterShares = pageShares(

@@ -128,7 +128,11 @@ export function loweredRefusal(c: RenderVisualClip): string | null {
 	if (c.kind !== 'text' || !('text' in c.source)) return 'not a text layer';
 	if (c.threeD) return '3D layer';
 	if (c.masks?.length) return 'masks';
-	if (deepExpression(c.transform) || deepExpression(c.opacity) || c.effects.some((fx) => deepExpression(fx.params)))
+	if (
+		deepExpression(c.transform) ||
+		deepExpression(c.opacity) ||
+		c.effects.some((fx) => deepExpression(fx.params))
+	)
 		return 'expressions';
 	const fxs = c.effects.filter((fx) => fx.enabled);
 	for (const fx of fxs) {
@@ -419,7 +423,11 @@ function transformPoses(
  * S_Shake (Wrap No, one channel) as an inverse map in layer px from its `u_shakeNow` pose (dx, dy, cos θ / zoom,
  * sin θ / zoom), frame units of the layer width centred on the box: src = zDist · R⁻¹ · (f − d).
  */
-function shakeInverse(u: Record<string, unknown>, box: { width: number; height: number }, zDist: number): Affine {
+function shakeInverse(
+	u: Record<string, unknown>,
+	box: { width: number; height: number },
+	zDist: number,
+): Affine {
 	const v = (u.u_shakeNow as { vec4s: number[] }).vec4s;
 	// The green channel's pose (the single-channel path of `sh_render`).
 	const dx = v[4]!;

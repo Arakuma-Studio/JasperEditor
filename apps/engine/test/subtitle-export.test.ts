@@ -56,8 +56,18 @@ async function stillsDoc(app: TestApp, n: number) {
 	for (let i = 0; i < n; i++) {
 		const t = (p: string) => ['clip', refs[`$c${i}`], 'transform', p];
 		keys.push(
-			{ type: 'keyframe.add', target: t('position'), at: { sequenceFrame: i * 8 }, value: [700.37 + i, 500.2] },
-			{ type: 'keyframe.add', target: t('position'), at: { sequenceFrame: i * 8 + 7 }, value: [760.9, 530.6] },
+			{
+				type: 'keyframe.add',
+				target: t('position'),
+				at: { sequenceFrame: i * 8 },
+				value: [700.37 + i, 500.2],
+			},
+			{
+				type: 'keyframe.add',
+				target: t('position'),
+				at: { sequenceFrame: i * 8 + 7 },
+				value: [760.9, 530.6],
+			},
 			{ type: 'keyframe.add', target: t('scale'), at: { sequenceFrame: i * 8 }, value: 75 },
 			{ type: 'keyframe.add', target: t('scale'), at: { sequenceFrame: i * 8 + 4 }, value: 108 },
 			{ type: 'keyframe.add', target: t('scale'), at: { sequenceFrame: i * 8 + 7 }, value: 100 },
@@ -85,12 +95,18 @@ const settings = (seqId: string, frames: number, engine: 'auto' | 'native' = 'au
 });
 
 function decodeAll(file: string): Buffer[] {
-	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], {
-		maxBuffer: 1 << 30,
-	});
+	const r = spawnSync(
+		TEST_FFMPEG,
+		['-v', 'error', '-i', file, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'],
+		{
+			maxBuffer: 1 << 30,
+		},
+	);
 	if (r.status !== 0) throw new Error(`decode failed: ${r.stderr}`);
 	const size = W * H * 3;
-	return Array.from({ length: r.stdout.length / size }, (_, i) => r.stdout.subarray(i * size, (i + 1) * size));
+	return Array.from({ length: r.stdout.length / size }, (_, i) =>
+		r.stdout.subarray(i * size, (i + 1) * size),
+	);
 }
 
 let app: TestApp;
@@ -212,10 +228,7 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 	async function wrappedEngine(wrap: string): Promise<TestApp> {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-oom-'));
 		const bin = join(dir, 'ffmpeg');
-		writeFileSync(
-			bin,
-			`#!/bin/sh\ncase " $* " in *overlay=*) ${wrap} ;; esac\nexec "${TEST_FFMPEG}" "$@"\n`,
-		);
+		writeFileSync(bin, `#!/bin/sh\ncase " $* " in *overlay=*) ${wrap} ;; esac\nexec "${TEST_FFMPEG}" "$@"\n`);
 		chmodSync(bin, 0o755);
 		return makeApp({ env: { ...FWD_ENV, JASPER_FFMPEG: bin } });
 	}

@@ -58,7 +58,12 @@ export function tapStreamBytes(o: { outW: number; outH: number; picture: number;
  * The stream of `members` (non-overlapping, any order) in a `W × H` sequence: the union of their drawn rectangles,
  * frame programs moved into it. Throws when two members overlap in time (callers group by track).
  */
-export function planTapStream(members: readonly TapMember[], W: number, H: number, fps: Rational): TapStreamPlan {
+export function planTapStream(
+	members: readonly TapMember[],
+	W: number,
+	H: number,
+	fps: Rational,
+): TapStreamPlan {
 	const sorted = [...members].sort((a, b) => a.f0 - b.f0);
 	for (let i = 1; i < sorted.length; i++)
 		if (sorted[i]!.f0 < sorted[i - 1]!.f1)
@@ -185,7 +190,10 @@ async function decodePicture(
 					);
 				if (off < bytes)
 					return reject(
-						new StreamLayerError('TOOL_FAILED', `picture decoder gave ${off} of ${bytes} bytes (${pic.w}×${pic.h})`),
+						new StreamLayerError(
+							'TOOL_FAILED',
+							`picture decoder gave ${off} of ${bytes} bytes (${pic.w}×${pic.h})`,
+						),
 					);
 				resolve();
 			});
