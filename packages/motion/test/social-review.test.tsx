@@ -15,6 +15,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
 import { APP_STORE_GLYPHS, PLAY_STORE_GLYPHS } from '../src/templates/social/glyphs.ts';
 import { INK_RING } from '../src/templates/social-comment/parts.tsx';
+import { vectorMarkupOf } from '../src/templates/social-comment/vector.tsx';
+
+/** The vector images inside `el` (stars, icons, avatars: `VectorImage`). */
+const vectors = (el: ParentNode) => [...el.querySelectorAll<HTMLImageElement>('img[data-vector]')];
+/** The SVG document a vector image draws. */
+const markup = (img: Element) => vectorMarkupOf(img) ?? '';
+/** `[d, fill]` of each path a vector image draws. */
+const pathsOf = (img: Element): [string, string][] =>
+	[...markup(img).matchAll(/<path d="([^"]*)" fill="([^"]*)"/g)].map((m) => [m[1]!, m[2]!]);
 
 const Impl = ANIME_TEMPLATE_IMPLS['social-comment@1']!;
 
@@ -67,10 +76,14 @@ describe('store review cards', () => {
 		expect(part(c, 'date')!.textContent).toBe('11/6/18');
 		expect(stars(c)).toEqual(['filled', 'filled', 'filled', 'filled', 'empty']);
 		// the kebab is Play's more_vert, the stars Play's star path, in the screenshot's green / grey
-		const paths = [...c.querySelectorAll('path')].map((p) => p.getAttribute('d'));
+		const paths = vectors(c)
+			.flatMap(pathsOf)
+			.map(([d]) => d);
 		expect(paths).toContain(PLAY_STORE_GLYPHS.more.paths[0].d);
 		expect(paths).toContain(PLAY_STORE_GLYPHS.star.paths[0].d);
-		const fills = [...c.querySelectorAll('[data-part="stars"] path')].map((p) => p.getAttribute('fill'));
+		const fills = vectors(part(c, 'stars')!)
+			.flatMap(pathsOf)
+			.map(([, fill]) => fill);
 		expect(new Set(fills)).toEqual(new Set(['#479B5F', '#BABABA']));
 		// review text is plain: no mention / hashtag colour; the emoji is a Noto image (Play = Android)
 		const text = c.querySelector<HTMLElement>('[data-template-param="text"]')!;
@@ -97,10 +110,12 @@ describe('store review cards', () => {
 		expect(part(c, 'title')!.textContent).toBe('Poor UX');
 		expect(part(c, 'title')!.getAttribute('data-template-param')).toBe('title');
 		expect(stars(c)).toEqual(['filled', 'filled', 'empty', 'empty', 'empty']);
-		const svg = c.querySelector('[data-part="stars"] svg')!;
-		expect(svg.getAttribute('preserveAspectRatio')).toBe('none');
-		expect([svg.getAttribute('width'), svg.getAttribute('height')]).toEqual(['24', '25']);
-		const d = [...c.querySelectorAll('[data-part="stars"] path')].map((p) => p.getAttribute('d'));
+		const svg = markup(vectors(part(c, 'stars')!)[0]!);
+		expect(svg).toContain('preserveAspectRatio="none"');
+		expect(svg).toContain('width="24" height="25"');
+		const d = vectors(part(c, 'stars')!)
+			.flatMap(pathsOf)
+			.map(([path]) => path);
 		expect(d).toContain(APP_STORE_GLYPHS.legacyStar.paths[0].d);
 		expect(d).toContain(APP_STORE_GLYPHS.legacyStarEmpty.paths[0].d);
 		r.unmount();
@@ -138,7 +153,9 @@ describe('store review cards', () => {
 		expect(part(c, 'title')!.textContent).toBe('Review title');
 		expect(part(c, 'name')!.textContent).toBe('Display Name');
 		expect(stars(c)).toEqual(['filled', 'empty', 'empty', 'empty', 'empty']);
-		const d = [...c.querySelectorAll('[data-part="stars"] path')].map((p) => p.getAttribute('d'));
+		const d = vectors(part(c, 'stars')!)
+			.flatMap(pathsOf)
+			.map(([path]) => path);
 		expect(d).toContain(APP_STORE_GLYPHS.starOutline.paths[0].d);
 		// App Store emoji are Apple's
 		r.unmount();
@@ -175,7 +192,8 @@ describe('star fill (likes tick up on store reviews)', () => {
 				const r = render(at(p, f));
 				seen.add(stars(r.container).join(','));
 				const row = part(r.container, 'stars')!;
-				expect(row.style.boxShadow, `${variant} ${f}`).toBe(INK_RING);
+				// animation styles only while the stars pulse (paint determinism: the un-animated DOM otherwise)
+				expect(row.style.boxShadow, `${variant} ${f}`).toBe(row.style.transform ? INK_RING : '');
 				r.unmount();
 			}
 			// empty → partial stars in order → all four filled
@@ -199,7 +217,7 @@ describe('star fill (likes tick up on store reviews)', () => {
 			});
 			expect(pulse, variant).toBe(true);
 			const rest = render(at(p, 100));
-			expect(part(rest.container, 'stars')!.style.transform).toBe('none');
+			expect(part(rest.container, 'stars')!.style.transform).toBe('');
 			expect(stars(rest.container)).toEqual(['filled', 'filled', 'filled', 'filled', 'empty']);
 			rest.unmount();
 		}
