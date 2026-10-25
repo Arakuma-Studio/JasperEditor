@@ -1,4 +1,9 @@
-import type { EngineJob, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
+import type {
+	EngineJob,
+	MgTemplateCatalogEntry,
+	MgTemplatePresetEntry,
+	MgTemplatesResponse,
+} from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -11,6 +16,7 @@ import {
 	type MotionGraphicClip,
 	makeSequenceSettings,
 	type ProjectDocument,
+	parseMgTemplateRef,
 	type Sequence,
 	validateJsonSchema,
 } from '@jasper/project';
@@ -34,6 +40,7 @@ import { jsonResult, type RenderCapsHint, renderHint, ToolError } from '../error
 
 export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - list_motion_templates shows every template with renderer ("fframes" = native jasper-mg renderer, "anime" = drawn by Remotion), its params (type, range, default, keyframable) and the full paramsSchema.
+- Templates may declare presets (named param sets, e.g. one per look): list_motion_templates lists them with a ready-made ref. Pass "<id>:<preset>" (or "<id>@<version>:<preset>") as template to add_motion_graphic or render_motion_graphic_preview: the preset's params apply over the defaults and your params over the preset.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
 - set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.`;
 
@@ -92,9 +99,13 @@ type ParamSummary = {
 	default: unknown;
 	keyframable: boolean;
 	description?: string;
+	/** UI hints: the label the editor shows, its group and when the editor shows the param. */
+	label?: string;
+	group?: string;
+	visibleWhen?: { param: string; in: unknown[] };
 };
 
-type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | 'renderer'>;
+type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | 'renderer' | 'ui'>;
 
 /**
  * Compact params of a template. keyframable = anime template and a non-integer number or an RGBA colour
@@ -103,14 +114,21 @@ type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | '
 function paramsSummary(t: TemplateLike): ParamSummary[] {
 	const props = ((t.paramsSchema as JsonSchemaNode).properties ?? {}) as Record<string, JsonSchemaNode>;
 	const anime = t.renderer === 'anime';
+	const groupOf = new Map<string, string>();
+	for (const g of t.ui?.groups ?? []) for (const p of g.params) if (!groupOf.has(p)) groupOf.set(p, g.label);
 	return Object.entries(props).map(([name, s]) => {
 		const { kind, type } = paramKind(s ?? {});
+		const hint = t.ui?.params?.[name];
+		const description = hint?.description ?? s?.description;
 		return {
 			name,
 			type,
 			default: t.defaults[name] !== undefined ? t.defaults[name] : s?.default,
 			keyframable: anime && (kind === 'number' || kind === 'rgba'),
-			...(typeof s?.description === 'string' ? { description: s.description } : {}),
+			...(typeof description === 'string' ? { description } : {}),
+			...(hint?.label ? { label: hint.label } : {}),
+			...(groupOf.has(name) ? { group: groupOf.get(name) } : {}),
+			...(hint?.visibleWhen ? { visibleWhen: hint.visibleWhen } : {}),
 		};
 	});
 }
@@ -126,17 +144,42 @@ export function templateSummary(t: MgTemplateCatalogEntry) {
 		native: t.native ?? false,
 		...(t.description ? { description: t.description } : {}),
 		...(t.defaultDurationSeconds ? { defaultDurationSeconds: t.defaultDurationSeconds } : {}),
+		...(t.presets?.length
+			? {
+					presets: t.presets.map((p) => ({
+						ref: `${t.id}:${p.id}`,
+						id: p.id,
+						name: p.name,
+						...(p.description ? { description: p.description } : {}),
+						params: p.params,
+					})),
+				}
+			: {}),
 		params: paramsSummary(t),
 		defaults: t.defaults,
 		paramsSchema: t.paramsSchema,
 	};
 }
 
-/** The newest catalogue entry for "id" or "id@version" (E_NOT_FOUND listing what exists). */
-export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''): MgTemplateCatalogEntry {
-	const [id, v] = spec.split('@');
+/**
+ * The catalogue entry and preset a template ref names: `"<id>"`, `"<id>@<version>"`, `"<id>:<preset>"` or
+ * `"<id>@<version>:<preset>"` (the newest version without `@`). E_INVALID_PARAM for a malformed ref, E_NOT_FOUND
+ * (listing what exists) for an unknown template, version or preset.
+ */
+export function resolveTemplateRef(
+	cat: MgTemplatesResponse,
+	spec: string,
+	hint = '',
+): { template: MgTemplateCatalogEntry; preset: MgTemplatePresetEntry | null } {
+	const ref = parseMgTemplateRef(spec);
+	if (!ref)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`Malformed template reference "${spec}"`,
+			'Use "<id>", "<id>@<version>", "<id>:<preset>" or "<id>@<version>:<preset>" (list_motion_templates).',
+		);
 	const t = cat.templates
-		.filter((x) => x.id === id && (v === undefined || x.version === Number(v)))
+		.filter((x) => x.id === ref.id && (ref.version === undefined || x.version === ref.version))
 		.sort((x, y) => y.version - x.version)[0];
 	if (!t)
 		throw new ToolError(
@@ -144,7 +187,17 @@ export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''):
 			`Unknown motion template "${spec}"`,
 			`Available: ${cat.templates.map((x) => `${x.id}@${x.version}`).join(', ')}${hint}.`,
 		);
-	return t;
+	if (ref.preset === undefined) return { template: t, preset: null };
+	const preset = t.presets?.find((p) => p.id === ref.preset);
+	if (!preset)
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`Template ${t.id}@${t.version} has no preset "${ref.preset}"`,
+			t.presets?.length
+				? `Presets: ${t.presets.map((p) => `${t.id}:${p.id}`).join(', ')}.`
+				: `${t.id} has no presets; pass "${t.id}" and set params instead.`,
+		);
+	return { template: t, preset };
 }
 
 /** Engine errors that are not render failures (their own hints in errors.ts apply). */

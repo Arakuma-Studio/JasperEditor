@@ -26,7 +26,7 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
 import { AnimateArg, textAnimationOf } from './animation.ts';
-
+import { resolveTemplateRef } from './templates.ts';
 import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
@@ -609,13 +609,15 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add motion graphic',
 			description:
-				'Adds an animated motion-graphic template clip (clip.addMotionGraphic), e.g. a lower third or title card. See list_motion_templates for template ids and their params (omitted params use the template defaults).',
+				'Adds an animated motion-graphic template clip (clip.addMotionGraphic), e.g. a lower third or title card. See list_motion_templates for template ids, presets and their params (omitted params use the preset, then the template defaults).',
 			input: {
 				projectId: ProjectIdArg,
 				template: z
 					.string()
 					.min(1)
-					.describe('Template id, optionally with version: "lower-third" or "lower-third@1"'),
+					.describe(
+						'Template id, optionally with version and preset: "lower-third", "lower-third@1", "counter:percentage" or "counter@1:percentage"',
+					),
 				params: z.record(z.string(), z.unknown()).optional().describe('Template parameters'),
 				at: timeArg('Start time'),
 				duration: timeArg('Length (default: the template default, else 5 s)').optional(),
@@ -625,16 +627,10 @@ export function registerEditingTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (a, extra) => {
-			const [id, v] = a.template.split('@');
-			const { templates } = await ctx.engine((c) => c.mgTemplates());
-			const matches = templates.filter((t) => t.id === id && (v === undefined || t.version === Number(v)));
-			const t = matches.sort((x, y) => y.version - x.version)[0];
-			if (!t)
-				throw new ToolError(
-					'E_NOT_FOUND',
-					`Unknown motion template "${a.template}"`,
-					`Available: ${templates.map((x) => `${x.id}@${x.version}`).join(', ')} (list_motion_templates).`,
-				);
+			const cat = await ctx.engine((c) => c.mgTemplates());
+			const { template: t, preset } = resolveTemplateRef(cat, a.template, ' (list_motion_templates)');
+			// A preset's params apply over the defaults (filled in by the command), the given params over the preset.
+			const params = preset ? { ...preset.params, ...(a.params ?? {}) } : a.params;
 			return applyHelper(
 				ctx,
 				a.projectId,
@@ -646,7 +642,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 						duration: a.duration ?? { seconds: t.defaultDurationSeconds ?? 5 },
 						track: a.track ?? 'V2',
 						template: { id: t.id, version: t.version },
-						...(a.params ? { params: a.params } : {}),
+						...(params ? { params } : {}),
 						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
 					},
 				],

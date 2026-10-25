@@ -69,6 +69,40 @@ export type ClipSectionDef = {
 };
 export const clipSections = createRegistry<ClipSectionDef>();
 
+/**
+ * Props of a custom control for a motion-graphic template param (C3): rendered in place of the default editor of
+ * every Properties / Effect Controls row whose template names it (`ui.params.<name>.control`). `onChange` writes
+ * through the normal undoable param commands (a keyframe at the playhead when the param is animated);
+ * `coalesce: true` merges repeated edits (a drag, typing) into one undo step.
+ */
+export type TemplateParamControlProps = {
+	clipId: string;
+	paramName: string;
+	/** The param's value at the playhead (the first selected clip's when several are selected). */
+	value: unknown;
+	/** The clip's static params (siblings such as `variant`). */
+	params: Readonly<Record<string, unknown>>;
+	onChange(next: unknown, opts?: { coalesce?: boolean }): void;
+	/** True while the project is read-only. */
+	disabled: boolean;
+};
+export type TemplateParamControlDef = {
+	/** The control name templates use in `ui.params.<name>.control`. */
+	id: string;
+	component: ComponentType<TemplateParamControlProps>;
+	order?: number;
+};
+export const templateParamControls = createRegistry<TemplateParamControlDef>();
+
+/** Registers a custom template-param control under `name` (C3); returns the unregister function. */
+export function registerTemplateParamControl(
+	name: string,
+	component: ComponentType<TemplateParamControlProps>,
+): () => void {
+	if (!name.trim()) throw new Error('A template param control needs a name');
+	return templateParamControls.register({ id: name, component });
+}
+
 /** Props an overlay receives: the same as the transform overlay (view mapping, viewport, transport…). */
 export type ProgramOverlayHostProps = Omit<
 	ComponentProps<typeof TransformOverlay>,
