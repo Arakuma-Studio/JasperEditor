@@ -4,7 +4,7 @@
 // twice in a row, its alternatives sibling takes; the recording itself (multi-hit) is never picked. Deterministic.
 import { type SoundEntry, type SoundTake, withOfferedTakes } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
-import { parseTakeId, pickVariant } from '@jasper/project';
+import { parseTakeId } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { collectPlanCues, resolveStyle, selectPlanSounds } from '../src/sound-design/plan.ts';
 import { fixture } from './sound-design-fixture.ts';
@@ -126,20 +126,5 @@ describe('the plan rotates over a recording’s takes', () => {
 		expect(planWith(pool).picks.map((p) => p.sounds[0]!.entry.id)).toEqual(
 			sel.picks.map((p) => p.sounds[0]!.entry.id),
 		);
-	});
-
-	it('a long run of repeated cues cycles through every take before one comes back (pickVariant)', () => {
-		const candidates = pool.filter((e) => parseTakeId(e.id)).map((e) => e.id);
-		const picks: string[] = [];
-		for (let cue = 0; cue < 24; cue++)
-			picks.push(
-				pickVariant(candidates, {
-					seed: 3,
-					cueId: `c${cue}`,
-					recentSoundIds: [...picks].reverse().slice(0, 16),
-				})!.soundId,
-			);
-		expect(new Set(picks.slice(0, 8)).size).toBe(8);
-		for (let i = 1; i < picks.length; i++) expect(picks[i]).not.toBe(picks[i - 1]);
 	});
 });

@@ -11,7 +11,6 @@ import {
 	BeatsResultSchema,
 	type EngineJob,
 	type EnvelopeJson,
-	type MotionAnalysisResult,
 	MotionAnalysisResultSchema,
 	type SoundCheckResult,
 	SoundCuesResponseSchema,
@@ -157,10 +156,7 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		await closeApps();
 	});
 
-	let analysed: MotionAnalysisResult;
-	let analysedProject = '';
-
-	it('motion-analysis: the box starts moving at frame 31 and stops at 60 (±2), cached the second time', async () => {
+	it('measures the moving box, caches it, and exposes the curve through the visual API', async () => {
 		const { b } = boxDoc();
 		const projectId = seed(b.doc);
 		const t0 = Date.now();
@@ -169,8 +165,7 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 		const job = await wait((r.body as { id: string }).id);
 		timings.box4s = Date.now() - t0;
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		analysed = MotionAnalysisResultSchema.parse(job.result);
-		analysedProject = projectId;
+		const analysed = MotionAnalysisResultSchema.parse(job.result);
 		expect(analysed).toMatchObject({ projectId, cached: false, frames: 120, range: { start: 0, end: 120 } });
 		expect(analysed.renderPath).toBeTruthy();
 		expect(analysed.curve.speed).toHaveLength(120);
@@ -199,11 +194,6 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			cached: true,
 			fingerprint: analysed.fingerprint,
 		});
-	}, 180_000);
-
-	it('the visual route (view_sound_timeline) carries the measured curve once analysed, null before and after an edit', async () => {
-		// the project analysed above: its cached curve over the whole range and over a part of it
-		const projectId = analysedProject;
 		const whole = await post('/api/sound-design/visual', { projectId, range: { start: 0, end: 120 } });
 		expect(whole.status, JSON.stringify(whole.body).slice(0, 400)).toBe(200);
 		const pm = whole.body.pixelMotion as { startFrame: number; speed: (number | null)[] } | null;
@@ -581,9 +571,7 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			{ projectId, range: { start: 5, end: 2 } },
 			{ projectId, extra: true },
 		])
-			expect((await post('/api/sound-design/motion', bad)).status, JSON.stringify(bad)).toBe(
-				bad.projectId === '../x' ? 400 : 400,
-			);
+			expect((await post('/api/sound-design/motion', bad)).status, JSON.stringify(bad)).toBe(400);
 		expect((await post('/api/sound-design/motion', { projectId: 'prj_9999999999999999' })).status).toBe(404);
 		expect((await post('/api/sound-design/motion', { projectId, sequenceId: 'seq_nope' })).status).toBe(404);
 		expect(
@@ -597,32 +585,4 @@ describe.skipIf(!HAVE_FFMPEG)('engine cue sources (generated media)', () => {
 			code: 'RANGE_TOO_LONG',
 		});
 	}, 120_000);
-
-	it.skipIf(!process.env.SOUND_PERF)(
-		'perf: one minute of 1080p footage',
-		async () => {
-			boxVideo(join(dir, 'box-1080.mp4'), 60);
-			const m = await register(app, join(dir, 'box-1080.mp4'));
-			const b = new DocBuilder('hd-1080p-30', 900);
-			const id = b.addMedia(m);
-			b.tx([{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' } }]);
-			const projectId = seed(b.doc);
-			const t0 = Date.now();
-			const job = await wait(
-				((await post('/api/sound-design/motion', { projectId })).body as { id: string }).id,
-			);
-			timings.footage1080p60s = Date.now() - t0;
-			expect(job.state).toBe('succeeded');
-			const res = MotionAnalysisResultSchema.parse(job.result);
-			timings.render = res.timings.renderMs;
-			timings.measure = res.timings.analyseMs;
-			timings.frames = res.frames;
-			if (process.env.SOUND_PERF_OUT)
-				writeFileSync(
-					process.env.SOUND_PERF_OUT,
-					JSON.stringify({ ...timings, path: res.renderPath, events: res.events.length }),
-				);
-		},
-		600_000,
-	);
 });

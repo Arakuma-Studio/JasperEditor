@@ -91,7 +91,7 @@ export const DELIVERY_CEILING_STEPS_DB: readonly number[] = [0.5, 1];
  * Headroom (dB) between the delivery true-peak target and the limiter ceiling in front of the encoder, by codec and
  * bit rate per channel pair (the wp-note's table, with its sources). Lossless delivery: 0.
  */
-export const CODEC_HEADROOM_TABLE: readonly {
+const CODEC_HEADROOM_TABLE: readonly {
 	codec: 'aac' | 'libopus';
 	/** Bit rate per two channels at or above which the row applies (kb/s). */
 	minKbps: number;
@@ -250,7 +250,7 @@ export async function runDeliveryPass(o: {
  * The per-sample gain of a correction: each hop's attenuation held over ±`holdHops`, interpolated linearly between hop
  * starts (10 ms ramps: no click; the hold keeps the corrected hop itself fully down), as `sample → linear gain ≤ 1`.
  */
-export function correctionGains(correctionDb: Float32Array, sampleRate: number): (sample: number) => number {
+function correctionGains(correctionDb: Float32Array, sampleRate: number): (sample: number) => number {
 	const held = holdMax(correctionDb, DELIVERY_LIMITS.holdHops);
 	const lin = Float32Array.from(held, (d) => 10 ** (-d / 20));
 	const hop = sampleRate * DELIVERY_LIMITS.hopSec;
@@ -416,10 +416,10 @@ type CachedDelivery = { params: DeliveryParams; aim: number; limited: boolean };
  * recently used first out, at most `DELIVERY_CACHE_SIZE` entries in this engine process. A hit still writes and (lossy)
  * encodes and checks the decoded audio; only the search is skipped.
  */
-export const DELIVERY_CACHE = new Map<string, CachedDelivery>();
-export const DELIVERY_CACHE_SIZE = 32;
+const DELIVERY_CACHE = new Map<string, CachedDelivery>();
+const DELIVERY_CACHE_SIZE = 32;
 
-export function deliveryCacheKey(o: {
+function deliveryCacheKey(o: {
 	contentHash: string;
 	sampleRate: number;
 	channels: number;

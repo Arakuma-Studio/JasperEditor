@@ -75,7 +75,7 @@ export const BED_TAIL_SEC = 0.2;
 /** Local-peak margin by weight (seconds each side; spec 12 §2.4 / WP4.1a `BED_PEAK_MARGIN_SEC`). */
 export const CLUSTER_MARGIN_SEC = { hero: 1, support: 0.15, ambient: 0.15 } as const;
 /** Seconds rendered after a sound's clip (effect tails on its track). */
-export const SOLO_TAIL_SEC = 0.5;
+const SOLO_TAIL_SEC = 0.5;
 /** Voiced frames are at least this loud (dBFS) besides being over the clip's adaptive threshold. */
 export const VAD_FLOOR_DBFS = -50;
 /** Renders running at once. */
@@ -494,7 +494,7 @@ function mixKey(
 }
 
 /** Longest tail a solo render waits for (s). */
-export const MAX_TAIL_SEC = 6;
+const MAX_TAIL_SEC = 6;
 
 /** Seconds of the Convolution Reverb's generated impulses (`irLength` of audio-fx `IR_SPECS`: 1.1 · RT60 + ER). */
 const CONVOLUTION_TAIL_SEC: Record<string, number> = {

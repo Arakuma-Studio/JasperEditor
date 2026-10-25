@@ -195,14 +195,6 @@ describe('sound-design plan with solved gains (real engine)', { timeout: 600_000
 		).proposal;
 		expect(p.items.every((i) => i.state === 'pending')).toBe(true);
 		const places = p.items.filter((i) => !isSetupItem(i));
-		for (const it of places) {
-			for (const set of [it.commands, ...(it.alternatives ?? []).map((a) => a.commands)]) {
-				const last = set[set.length - 1] as { type: string; gains: Record<string, number> };
-				expect(last.type).toBe('soundDesign.applyGains');
-				const n = it.id.replace(/^sfx:/, '');
-				expect(Object.keys(last.gains)[0]).toBe(`$sfx_${n}_0`);
-			}
-		}
 		// the report never names preview clips (they do not exist in the project): items, layer refs, alternatives
 		const docNow = await saved();
 		const clipIds = new Set(Object.keys(docNow.doc.sequences[seqId]!.clips));

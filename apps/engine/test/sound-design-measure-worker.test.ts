@@ -7,11 +7,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MeasureCache, type MeasureDeps, measureSfxEvents } from '../src/sound-design/bed.ts';
 import type { MeasureOp } from '../src/sound-design/measure-core.ts';
 import {
-	type MeasureWorker,
 	type MeasureWorkerRequest,
 	type MeasureWorkerResponse,
 	resolveMeasureWorker,
@@ -51,6 +50,7 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 	let doc: DocBuilder;
 	const ids: Record<string, string> = {};
 	let worker: SoundDesignMeasurer;
+	const warnings: string[] = [];
 
 	beforeAll(async () => {
 		app = await makeApp();
@@ -81,8 +81,14 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 		place(150, click, 'support', 'inSpeech');
 		place(270, click, 'support', 'clear', { gainDb: -6 });
 		doc = b;
-		worker = new SoundDesignMeasurer(pathToFileURL(await bundleWorker()));
+		worker = new SoundDesignMeasurer(pathToFileURL(await bundleWorker()), (message) =>
+			warnings.push(message),
+		);
 	}, 300_000);
+	afterEach(() => {
+		// A failed worker startup falls back successfully; parity alone must not hide a broken worker bundle.
+		expect(warnings).toEqual([]);
+	});
 	afterAll(async () => {
 		await worker?.close();
 		await closeApps();
@@ -97,9 +103,7 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 		const input = { bedDoc: doc.doc, sequenceId: doc.seqId, targets };
 		const thread = new SoundDesignMeasurer(null);
 		const a = await measureSfxEvents(input, { ...base, cache: new MeasureCache(), measurer: thread });
-		expect(thread.lastMode).toBe('thread');
 		const b = await measureSfxEvents(input, { ...base, cache: new MeasureCache(), measurer: worker });
-		expect(worker.lastMode).toBe('worker');
 		expect(a.sounds.size).toBe(4);
 		// Object.is on every number (toStrictEqual): bands, peaks, windows, true peaks
 		expect([...b.sounds.entries()]).toStrictEqual([...a.sounds.entries()]);
@@ -157,7 +161,7 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 });
 
 /** A scripted fake worker: answers `ready` (unless told not to) and each request per `behave`. */
-class FakeWorker implements MeasureWorker {
+class FakeWorker {
 	static made: FakeWorker[] = [];
 	terminated = false;
 	posted: MeasureWorkerRequest[] = [];
@@ -196,6 +200,7 @@ const reply = (w: FakeWorker, m: MeasureWorkerRequest, result: unknown = []) => 
 };
 
 describe('measurement pool lifecycle (fake workers)', () => {
+	afterEach(() => vi.useRealTimers());
 	it('resolves the worker module: env, bundle, tsx source, or none', () => {
 		expect(resolveMeasureWorker({ JASPER_SD_MEASURE_WORKER: 'off' })).toBeNull();
 		expect(resolveMeasureWorker({ JASPER_SD_MEASURE_WORKER: '/x/w.mjs' })?.href).toBe('file:///x/w.mjs');
@@ -213,7 +218,6 @@ describe('measurement pool lifecycle (fake workers)', () => {
 			},
 		});
 		expect(await m.run(BANDS, { ff: FF })).toEqual([]);
-		expect(m.lastMode).toBe('thread');
 	});
 
 	it('a worker that crashes: its requests fail with MEASURE_FAILED (retryable), the next one gets a new worker', async () => {
@@ -264,11 +268,11 @@ describe('measurement pool lifecycle (fake workers)', () => {
 				}),
 		});
 		await expect(m.run(BANDS, { ff: FF })).rejects.toMatchObject({ code: 'TOOL_FAILED' });
-		expect(m.workers).toBe(1);
 		await m.close();
 	});
 
 	it('a timeout ends the worker; its other requests move to a new one and complete', async () => {
+		vi.useFakeTimers();
 		FakeWorker.made = [];
 		const m = new SoundDesignMeasurer(URL_, () => {}, {
 			size: 1,
@@ -280,7 +284,9 @@ describe('measurement pool lifecycle (fake workers)', () => {
 		});
 		const slow = m.run(BANDS, { ff: FF }, { timeoutMs: 50 });
 		const other = m.run(BANDS, { ff: FF }, { timeoutMs: 5_000 });
-		await expect(slow).rejects.toMatchObject({ code: 'MEASURE_TIMEOUT', retryable: true });
+		const timedOut = expect(slow).rejects.toMatchObject({ code: 'MEASURE_TIMEOUT', retryable: true });
+		await vi.advanceTimersByTimeAsync(52);
+		await timedOut;
 		expect(await other).toEqual(['ok']);
 		expect(FakeWorker.made[0]!.terminated).toBe(true);
 		expect(FakeWorker.made.length).toBe(2);
@@ -288,6 +294,7 @@ describe('measurement pool lifecycle (fake workers)', () => {
 	});
 
 	it('cancel rejects at once; a worker that does not stop within the grace is ended', async () => {
+		vi.useFakeTimers();
 		FakeWorker.made = [];
 		const m = new SoundDesignMeasurer(URL_, () => {}, {
 			cancelGraceMs: 30,
@@ -295,13 +302,13 @@ describe('measurement pool lifecycle (fake workers)', () => {
 		});
 		const ac = new AbortController();
 		const p = m.run(BANDS, { ff: FF, signal: ac.signal });
-		await new Promise((r) => setTimeout(r, 10));
+		await vi.advanceTimersByTimeAsync(1);
 		ac.abort();
 		await expect(p).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
 		const w = FakeWorker.made[0]!;
 		expect(w.posted.some((x) => 'cancel' in x)).toBe(true);
 		expect(w.terminated).toBe(false);
-		await new Promise((r) => setTimeout(r, 80));
+		await vi.advanceTimersByTimeAsync(30);
 		expect(w.terminated).toBe(true);
 		await expect(m.run(BANDS, { ff: FF, signal: ac.signal })).rejects.toMatchObject({
 			code: 'JOB_CANCELLED',
@@ -310,31 +317,35 @@ describe('measurement pool lifecycle (fake workers)', () => {
 	});
 
 	it('a worker that never starts: in-thread after the start timeout', async () => {
+		vi.useFakeTimers();
 		const m = new SoundDesignMeasurer(URL_, () => {}, {
 			startTimeoutMs: 30,
 			createWorker: () => new FakeWorker(() => {}, false),
 		});
-		expect(await m.run(BANDS, { ff: FF })).toEqual([]);
-		expect(m.lastMode).toBe('thread');
+		const pending = m.run(BANDS, { ff: FF });
+		await vi.advanceTimersByTimeAsync(30);
+		expect(await pending).toEqual([]);
 	});
 
 	it('at most `size` workers; idle ones are stopped; close interrupts what runs', async () => {
+		vi.useFakeTimers();
 		FakeWorker.made = [];
 		const m = new SoundDesignMeasurer(URL_, () => {}, {
 			size: 2,
 			idleMs: 30,
 			createWorker: () => new FakeWorker((w, msg) => setTimeout(() => reply(w, msg), 20)),
 		});
-		await Promise.all(Array.from({ length: 6 }, () => m.run(BANDS, { ff: FF })));
+		const pending = Promise.all(Array.from({ length: 6 }, () => m.run(BANDS, { ff: FF })));
+		await vi.advanceTimersByTimeAsync(22);
+		await pending;
 		expect(FakeWorker.made.length).toBe(2);
-		expect(m.workers).toBe(2);
-		await new Promise((r) => setTimeout(r, 120));
-		expect(m.workers).toBe(0);
+		await vi.advanceTimersByTimeAsync(30);
 		expect(FakeWorker.made.every((w) => w.terminated)).toBe(true);
 		const hung = new SoundDesignMeasurer(URL_, () => {}, { createWorker: () => new FakeWorker(() => {}) });
 		const p = hung.run(BANDS, { ff: FF });
-		await new Promise((r) => setTimeout(r, 10));
+		await vi.advanceTimersByTimeAsync(1);
+		const interrupted = expect(p).rejects.toMatchObject({ code: 'INTERRUPTED' });
 		await hung.close();
-		await expect(p).rejects.toMatchObject({ code: 'INTERRUPTED' });
+		await interrupted;
 	});
 });

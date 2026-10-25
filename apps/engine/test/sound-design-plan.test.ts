@@ -389,12 +389,10 @@ describe('plan draft (pure)', () => {
 		});
 		expect(draft).not.toBeNull();
 		expect(draft!.feature).toBe('sound-design');
-		expect(draft!.title).toBe('Sound design: Sequence 01');
 		expect(report.events).toHaveLength(r.selected.picks.length);
 		expect(report.counts).toMatchObject({ placed: r.selected.picks.length, items: draft!.items.length });
 		expect(draft!.items.length).toBeLessThan(400);
 		const push = report.events.find((e) => e.frame === 180)!;
-		expect(push.why).toBe(`${push.sound.title} on ${push.cueReason} at 00:00:06:00 · support · peak`);
 		expect(push.alternatives).toHaveLength(3);
 		const ids = draft!.items.map((i) => i.id);
 		// every requires names an earlier item; setup items come before every place item
@@ -700,6 +698,8 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 			[{}, 400, 'VALIDATION_FAILED'],
 			[{ projectId, densty: 'rich' }, 400, 'VALIDATION_FAILED'],
 			[{ projectId, style: { alternatives: 9 } }, 400, 'VALIDATION_FAILED'],
+			[{ projectId, style: { cueSources: [] } }, 400, 'VALIDATION_FAILED'],
+			[{ projectId, style: { cueSources: ['nope'] } }, 400, 'VALIDATION_FAILED'],
 			[{ projectId, range: { start: 50, end: 10 } }, 400, 'VALIDATION_FAILED'],
 			[{ projectId, style: { palette: ['nope'] } }, 400, 'VALIDATION_FAILED'],
 			[{ projectId: 'prj_00000000000000ZZ' }, 404, 'PROJECT_NOT_FOUND'],

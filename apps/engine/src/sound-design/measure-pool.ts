@@ -63,7 +63,7 @@ function tsxBootstrap(url: URL): string {
 }
 
 /** What the measurer needs of a worker thread (a seam: tests inject fakes). */
-export type MeasureWorker = {
+type MeasureWorker = {
 	postMessage(message: MeasureWorkerRequest): void;
 	terminate(): unknown;
 	unref?(): void;
@@ -71,7 +71,7 @@ export type MeasureWorker = {
 	on(event: 'error', fn: (e: Error) => void): unknown;
 	on(event: 'exit', fn: (code: number) => void): unknown;
 };
-export type MeasureWorkerFactory = (url: URL) => MeasureWorker;
+type MeasureWorkerFactory = (url: URL) => MeasureWorker;
 
 const defaultWorkerFactory: MeasureWorkerFactory = (url) =>
 	(url.pathname.endsWith('.ts')
@@ -116,8 +116,6 @@ export class SoundDesignMeasurer {
 	private readonly idleMs: number;
 	private readonly timeoutMs: number;
 	private readonly cancelGraceMs: number;
-	/** Where the last op ran (tests, benchmarks). */
-	lastMode: 'worker' | 'thread' | null = null;
 
 	constructor(
 		private readonly url: URL | null,
@@ -137,11 +135,6 @@ export class SoundDesignMeasurer {
 		this.idleMs = opts.idleMs ?? IDLE_MS;
 		this.timeoutMs = opts.timeoutMs ?? OP_TIMEOUT_MS;
 		this.cancelGraceMs = opts.cancelGraceMs ?? CANCEL_GRACE_MS;
-	}
-
-	/** Workers alive now (tests). */
-	get workers(): number {
-		return this.slots.filter((s) => !s.dead).length;
 	}
 
 	/**
@@ -205,7 +198,6 @@ export class SoundDesignMeasurer {
 	}
 
 	private async inThread<O extends MeasureOp>(op: O, env: RenderEnv): Promise<MeasureOpResult<O['kind']>> {
-		this.lastMode = 'thread';
 		return runMeasureOp(op, env);
 	}
 
@@ -242,7 +234,6 @@ export class SoundDesignMeasurer {
 		if (slot.idle) clearTimeout(slot.idle);
 		slot.idle = null;
 		slot.pending.set(p.id, p);
-		this.lastMode = 'worker';
 		// copied, not transferred: the request can be posted again if this worker is ended
 		slot.worker.postMessage({ id: p.id, op: p.op, bins: p.bins });
 	}

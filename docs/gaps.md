@@ -542,7 +542,7 @@ it with the CHANCE level of each share; MCP `listen_to_sequence` (text first, co
 the Sound Check panel's Log tab (the same lines; a line jumps and selects its clip; Copy log; the mix spectrogram),
 Sequence ▸ Sound Design ▸ Listen to Sequence; `view_sound_timeline` became the annotated sheet (frames rendered at the
 cuts / cues / accents, the mix spectrogram, sections, answer marks by shape and colour). Rerun
-`packages/audio-fx/test/events.test.ts`, `apps/engine/test/sound-listen.test.ts` (`JASPER_LISTEN_BENCH=1` for the
+`packages/audio-fx/test/events.test.ts`, `apps/engine/test/sound-listen.test.ts` (historical benchmark at `8b4c8936` for the
 10-minute timing), `apps/mcp/test/sound-listen.test.ts`, `apps/web/test/sound-listen-log.test.tsx`,
 `e2e/sound-listen.spec.ts`. Limits left: a 10-minute listen takes ≈ 100 s on the build server (measured; the renders
 dominate); the onset detector is earshot's, so a busy bed flickers into low-prominence onsets (they answer no cut: only

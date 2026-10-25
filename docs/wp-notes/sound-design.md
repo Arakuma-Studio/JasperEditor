@@ -3115,9 +3115,10 @@ Review of the cue route, the MCP cue tools and model-string i18n. Each fix has a
 - **Arguments:** `set_sound_cues` refuses an inverted `window` (it was silently dropped), `storedCueId` ≤ 128;
   `find_sound_cues` refuses a range past `maxFrame` with the time hint (was the route's raw zod dump).
 - **i18n (model strings, the existing mechanism):** `@jasper/project` exports `SOUND_LABELS` (MCP builds its History
-  labels from them) and `SOUND_MESSAGES` (refusal templates; `test/sound-messages.test.ts` checks every refusal written
-  in the sound handlers and planners has one, except `peakAlignedStart`'s developer input checks). `model-strings.ts`
-  lists them plus "Agent"; `translateName` now also matches templated model names (whole text, or a part between
+  labels from them) and `SOUND_MESSAGES` (refusal templates). The mandatory lint i18n check validates extracted
+  sources, catalogue keys and placeholders; `apps/web/test/sound-i18n.test.tsx` owns runtime translation behavior.
+  `model-strings.ts` lists the templates plus "Agent"; `translateName` now also matches templated model names (whole
+  text, or a part between
   separators, so "Agent: Sound Cues (add 2, edit 1)" → "Agente: Señales de sonido (añadir 2, editar 1)"); the filled
   values (ids, titles, numbers) are kept. The web's own labels (Fill Cue, Add Layer, Swap Sound ×n, Suggest Cues (n),
   Fill Unfilled Cues (n), Add Sound) were already translated by `t()` / the build transform at commit.
@@ -5305,8 +5306,8 @@ Preview (lead, `packages/compositions`):
   (`audio-preview-mix-oracle.test.ts`, the graph with the anchor): **1.4·10⁻⁵** for both scenes; with the picture
   frame's time instead of the anchor (≤ one render quantum early in the harness) 2.6·10⁻² / 6.4·10⁻³, which is why the
   anchor matters. `audio-fx-slot-clock.test.ts`: a slot with frame-rate time messages equals the export's `EffectSlot`
-  to < 10⁻⁶ (without the clock > 10⁻³); `audio-automation.test.ts` (curve pieces within tolerance, corners on keys,
-  hostile values). The Phase 0 preview / transport e2e still pass (10 of 10, `e2e/sound-p0-preview.spec.ts`,
+  to < 10⁻⁶ (without the clock > 10⁻³). Automation and pan behavior are covered by the sample-level preview/export
+  comparisons in `audio-preview-mix-oracle.test.ts`. The Phase 0 preview / transport e2e still pass (10 of 10, `e2e/sound-p0-preview.spec.ts`,
   `sound-p0-transport.spec.ts`, load ≈ 45–55).
 
 Project model (`feat/sd-p4v-model`; regression tests in `packages/project/test/sound-p4v-mix.test.ts`, each failed
@@ -6925,7 +6926,7 @@ ARCHITECTURE §4.3 (`sounds/analysis/`), gaps.
   has `pixel:` cues; the analysis is cached for the route); Sound Check after analysis: a derived cue at the landing
   passes NO_PICTURE_EVENT, one at frame 100 (still) does not — and on a picture never analysed both are flagged;
   cancellation → `cancelled`; refusals 400 / 404 / RANGE_EMPTY / RANGE_TOO_LONG.
-- **Performance** (`SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts -t perf`):
+- **Performance** (historical benchmark at `8b4c8936`):
   one minute of 1080p30 footage (1 800 frames), native path: **46.8 s** (render 46.1 s, measure 0.52 s) at load 11–12 with
   2 slots, **41.0 s** (render 40.4 s, measure 0.42 s) at load 7–13 with half the slots (8). The render composites at the
   sequence's 1920×1080 before scaling to 128 px (the job log's filter graph) — that is the cost, not the measurement.
@@ -7591,14 +7592,14 @@ compute rule (said there). Before = the branch point `5d80ed30` (a detached work
   placement reads were the larger part. Longest task 18–23 ms → 65–79 ms: the one end-of-preview invariant check
   (84 ms measured alone), item 14's price; p95 15–17 ms both. In the session test: batched 180–205 ms CPU vs 285–311 ms
   one transaction per item (0.63–0.66, process CPU); on the main thread's CPU 142 vs 222 ms (0.64), the final budget.
-- **Item 7, plan job** — `SD_PLAN_BENCH=thread|worker SD_PLAN_BENCH_OUT=… pnpm vitest run
-  apps/engine/test/sound-design-plan-bench.test.ts` (the plan-mix fixture, the first plan with every style option, cold
-  caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s, event-loop
+- **Item 7, plan job** — historical benchmark at `8b4c8936` (the plan-mix fixture, the first plan with every style
+  option, cold caches, 67 solo + 2 bed renders), two runs each, alternating, load 2–8: main thread **wall 15.5 / 13.8 s,
+  event-loop
   delay p90 125 ms, p99 418 / 390 ms, mean 47 / 44 ms, levels stage 9.3 / 8.4 s** → workers **wall 12.3 / 12.0 s, p90
   16 ms, p99 98 / 122 ms, mean 16 ms, levels 6.3 / 6.2 s**; the same placements and levels. The maximum delay stays
   ≈ 1 s in both modes (935–1 141 ms → 979–1 013 ms): a stall outside the measurements (not identified in this pass).
-- **Item 12, motion analysis** — `SOUND_PERF=1 SOUND_PERF_OUT=… pnpm vitest run apps/engine/test/sound-design-motion.test.ts
-  -t perf` (one minute of generated 1080p30 footage, untouched), before / after alternating, load 1–4: **31.7 s and
+- **Item 12, motion analysis** — historical benchmark at `8b4c8936` (one minute of generated 1080p30 footage, untouched),
+  before / after alternating, load 1–4: **31.7 s and
   24.9 s (render 31.1 / 24.1 s, native path) → 3.6 s and 3.8 s (decode 3.1 / 3.2 s, source path)**; the same 2 events.
   The equivalence test: the 4 s box at 1080p, source decode 553–695 ms vs render 2 405–3 240 ms, every frame on the
   same side of MOVE_ON / MOVE_OFF, per-frame speeds within 10.3 % (the rendered reference's own H.264 noise), the same
@@ -8454,7 +8455,8 @@ strings, es.json complete); README (356 tools, the HTTP list), security review (
   **6 dB under the music:** ten hits whose loudest momentary sits 6 dB under the music's (gain −15.3 dB; music −26.2 LUFS,
   hit −16.8 LUFS max momentary, measured with `LoudnessMeter`) → **10/10 heard** (8 by the onset curve, 2 at their own
   onset, `guided`), each attributed to its clip.
-- **Time for a 10-minute sequence** (`JASPER_LISTEN_BENCH=1`, 60 × 10 s of pink-noise music and 196 clicks, 3 lanes):
+- **Time for a 10-minute sequence** (historical benchmark at `8b4c8936`, 60 × 10 s of pink-noise music and 196 clicks,
+  3 lanes):
   **102.2 s** (renders and detection 101.5 s, attribution and transcript 0.5 s; 2 775 events; 199/199 placed heard).
   Before the stem curves came from the lanes: 117.5 s. A `ListenMeter` alone costs 1.74 s per minute of stereo noise
   (0.39 s of silence; `CurveMeter` 0.18 s) — measured with a scratch script, not committed; the mixers are the rest.
@@ -10013,9 +10015,6 @@ a copy of the integration tip this branch started from (1fcdbcf6), built and run
   earlier anchor (picture ahead of the audio clock) is taken; (c) a new strip no longer rebuilds every strip
   (`rebuild` keeps strips of the same shape with their inserts, delay lines and routes: adding a track while playing lost
   up to the read-ahead of audio in flight).
-- `globalThis.__jasperTransportLog` (an array set by a test) receives the graph's transport events (anchors as kept,
-  refusals, catch-ups, primed starts, restarts, the buffering gate, context states): the e2e measures every click
-  against the anchor from it.
 
 #### The rare transport cases (item 5)
 
@@ -10044,7 +10043,6 @@ Failing first: each row's "before" is the same test against base (or, for unit t
 | Item | Test | Before | After |
 |---|---|---|---|
 | 1 pan | `audio-preview-mix-oracle.test.ts` "pan sweeps" (strip pan of a mono track, clip pan, the 5.1 puck of a track and of a send, a 5.1 submix's pan; bezier and linear keys, whooshes) | max \|preview − export\| 0.34 | 1.8 · 10⁻⁵ (three runs); the Phase 4 scenes stay 1.4 · 10⁻⁵ |
-| 1 pan | `audio-automation.test.ts` "pieces end on sample frames…"; `channels.test.ts` `pan51MatrixInto` | — | pass |
 | 6 rebuild | `audio-preview-transport.test.ts` "a track added during playback" | a 748-sample gap (both limiters' audio in flight lost) | no gap, = the export (< 10⁻⁴) |
 | 6 guard | `audio-anchor-guard.test.ts` (4: a late commit refused; a picture behind for real caught up by 6 frames after 0.3 s, the audio unmoved; refused only while frames come late; an earlier anchor taken) | — (base dispatches every re-anchor) | pass |
 | 6 edits while playing | `sound-p6-transport` "a big edit…": 3 transactions of four `track.add` 0.7 / 1.5 / 2.3 s into a play, every click 0.25 s apart ± 2 samples | 6 of 6 plays broken (jumps of 9 000–22 900 samples, lost clicks) | 6 of 6 clean, no re-anchor asked for; 30 of 30 in the campaign |
