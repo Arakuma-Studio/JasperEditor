@@ -92,12 +92,26 @@ test('a video with a cut and its transcript', async () => {
 	cut = Math.round(3 * rate);
 	// shot A (picture + its sound) for 6 s, shot B's picture from 3 s: a picture cut with continuous speech
 	const r = await transact(page, [
-		{ type: 'clip.place', source: { mediaId: idOf('shot-a.mp4') }, at: 0, tracks: { video: 'V1', audio: ['A1'] } },
-		{ type: 'clip.place', source: { mediaId: idOf('shot-b.mp4') }, at: cut, tracks: { video: 'V1' }, audio: false },
+		{
+			type: 'clip.place',
+			source: { mediaId: idOf('shot-a.mp4') },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+		},
+		{
+			type: 'clip.place',
+			source: { mediaId: idOf('shot-b.mp4') },
+			at: cut,
+			tracks: { video: 'V1' },
+			audio: false,
+		},
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	// the transcript of shot A (Text ▸ Transcript ▸ Import…): a phrase whose first word starts 0.2 s after the cut
-	await page.getByTestId('text.tab.Transcript').click().catch(() => undefined);
+	await page
+		.getByTestId('text.tab.Transcript')
+		.click()
+		.catch(() => undefined);
 	const json = join(OUT, 'shot-a.transcript.json');
 	const F = 705_600_000;
 	writeFileSync(
@@ -114,7 +128,11 @@ test('a video with a cut and its transcript', async () => {
 				['juego', 3.3, 3.7],
 				['de', 3.7, 3.8],
 				['Doors.', 3.8, 4.3],
-			].map(([text, x, y]) => ({ text, start: Math.round((x as number) * F), end: Math.round((y as number) * F) })),
+			].map(([text, x, y]) => ({
+				text,
+				start: Math.round((x as number) * F),
+				end: Math.round((y as number) * F),
+			})),
 		}),
 	);
 	await page.getByTestId('text.transcript.import').click();
@@ -132,7 +150,9 @@ test('Create Subtitles with Pixel Pop: one History entry, cut-aligned subtitles'
 	await expect(page.getByTestId('subtitles-font-notice')).toBeVisible();
 	await expect(page.getByTestId('subtitles-count')).not.toHaveText('0', { timeout: 30_000 });
 	await expect(page.getByTestId('subtitles-preview-frame')).toBeVisible();
-	await test.info().attach('create-subtitles-dialog', { body: await dialog.screenshot(), contentType: 'image/png' });
+	await test
+		.info()
+		.attach('create-subtitles-dialog', { body: await dialog.screenshot(), contentType: 'image/png' });
 	const count = Number(await page.getByTestId('subtitles-count').textContent());
 	await dialog.getByRole('button', { name: 'Create' }).click();
 	await expect(dialog).toBeHidden();
@@ -142,7 +162,8 @@ test('Create Subtitles with Pixel Pop: one History entry, cut-aligned subtitles'
 		.filter((c) => c.caption)
 		.sort((x, y) => x.start - y.start);
 	// never across the cut; the phrase after it starts on the cut frame (look-back 0.5 s)
-	for (const c of subs) expect(c.start >= cut || c.start + c.duration <= cut, `${c.content?.text}`).toBe(true);
+	for (const c of subs)
+		expect(c.start >= cut || c.start + c.duration <= cut, `${c.content?.text}`).toBe(true);
 	const onCut = subs.find((c) => c.start === cut);
 	expect(onCut?.content?.text).toBe('el juego');
 	expect(subs.find((c) => c.start + c.duration === cut)).toBeTruthy();
@@ -177,5 +198,16 @@ test('the exported frames show the subtitles on both sides of the cut', async ({
 		['before-cut', cut - 2],
 		['after-cut', cut + 10],
 	] as const)
-		execFileSync(FFMPEG, ['-v', 'error', '-y', '-ss', String((f + 0.5) / rate), '-i', out.file, '-frames:v', '1', join(OUT, `${name}.png`)]);
+		execFileSync(FFMPEG, [
+			'-v',
+			'error',
+			'-y',
+			'-ss',
+			String((f + 0.5) / rate),
+			'-i',
+			out.file,
+			'-frames:v',
+			'1',
+			join(OUT, `${name}.png`),
+		]);
 });
