@@ -699,7 +699,9 @@ function CaptionsTool(p: {
 }
 
 function ImportTranscript(p: { media: Array<[string, string]>; apply: ApplyFn; onDone?(): void }) {
-	const [mediaId, setMediaId] = useState(p.media[0]?.[0] ?? '');
+	const [chosen, setMediaId] = useState(p.media[0]?.[0] ?? '');
+	// the media list changes while the tool is open (clips placed after it mounted): keep the choice valid
+	const mediaId = p.media.some(([id]) => id === chosen) ? chosen : (p.media[0]?.[0] ?? '');
 	const fileRef = useRef<HTMLInputElement>(null);
 	if (!p.media.length)
 		return (
