@@ -661,3 +661,170 @@ comments; every motion-graphic template (and the other generator clips) gets it.
   disjointness.
 - `e2e/mg-insert-placement.spec.ts` (`pnpm e2e e2e/mg-insert-placement.spec.ts`): two gallery double-clicks at one
   playhead land on V1 and V2 in the built app; Ctrl+Z removes the second.
+
+## Properties controls
+
+WP7a (`sc/controls`), design §7.3, §7.5, §7.9. The custom Properties / Effect Controls controls of the
+social-comment template and the Randomize actions. Code: `apps/web/src/social-comments/`; registered at start-up by
+`registerSocialCommentControls()` (`register.ts`, called from `apps/web/src/commands/mg.ts`). The UX blueprint is
+tokcomment's left panel (`research/tokcomment-recon/ref/index.md`), with its bugs fixed.
+
+### Control names (what the template's `ui.params.<name>.control` hints use)
+
+| Control | Params | Layout | What it does |
+|---|---|---|---|
+| `social-comment-text` | `text` | block (under the label, full width) | marks-aware comment editor |
+| `social-count` | `likes`, `replies`, `reposts`, `views` | inline | count field with platform preview and a per-field wand |
+| `social-time` | `timeValue` (also edits `timeUnit`) | inline | value + unit in one row with the platform preview |
+| `social-avatar` | `avatar` | block | image / generated / default picker and Randomize identity |
+
+`social-count` and `social-time` also put a **Randomize stats** wand in the header of the group they are in. The test
+template the tests use (`apps/web/test/social-test-template.ts`) shows the expected hints: the groups of design §7.3,
+`visibleWhen: { param: 'variant', in: variantsWithParam(p) }` for params not every variant draws, `multiline` on
+`text`, and the four control names. `timeUnit` needs no hint: its row is hidden while the time control is shown.
+
+### Contract additions to C3 (`apps/web/src/extensions/index.ts`, additive)
+
+```ts
+type TemplateParamControlProps = {
+  clipId; paramName; value; params; disabled;           // unchanged
+  onChange(next, opts?: { coalesce?: boolean }): boolean;   // now reports whether the write was applied
+  clipIds: readonly string[];                               // every selected clip (clipId first)
+  mixed: boolean;                                           // the selected clips hold different values
+  onChangeParams(patch: TemplateParamPatchInput, opts?: { label?: string; coalesceKey?: string }): boolean;
+};
+type TemplateParamPatchInput = Record<string, unknown>
+  | ((params, clipId, index) => Record<string, unknown> | null | undefined);   // one patch per clip
+registerTemplateParamControl(name, component, options?: {
+  alsoEdits?: readonly string[];     // sibling params whose own rows are hidden while this control is shown
+  layout?: 'inline' | 'block';       // block: drawn under the label row across the panel
+  groupActions?: readonly { id: string; component: ComponentType<TemplateGroupActionProps> }[];
+}): () => void
+type TemplateGroupActionProps = { clipIds; params; paramNames; onChangeParams; disabled };
+```
+
+- `onChangeParams` plans each param through the same `param.set` path as a row edit (a keyframe at the playhead when the
+  param is animated, `planTemplateParamPatch` in `panels/properties/lib/template-params.ts`) and applies everything as
+  **one** History entry. A function patch is called per selected clip with that clip's params, so Randomize gives every
+  clip its own values; a clip whose patch is null is left alone.
+- Group actions are drawn once per group header in Properties (`TemplateGroupActions`) and Effect Controls, isolated
+  by an error boundary like the controls.
+- Object and union template params (the avatar `{mediaId} | {generated} | null`) were mapped to `string` property
+  specs, so `param.set` refused every object and no UI or agent could change them. They are now `json` specs validated
+  whole by the template schema (`jsonSchemaPropertySpecs`, regression test
+  `packages/project/test/template-object-params.test.ts`). Without a custom control such a row shows its JSON value
+  read-only instead of a blank editor.
+
+### `social-comment-text`
+
+- **Editor:** a native textarea holding the *visible* text (marks stripped) over a backdrop drawn with the same box
+  metrics. The textarea text is transparent; the backdrop shows highlight as a pill, blur blurred, remove dimmed and
+  struck through (the card makes it invisible; the editor must keep it findable), @mentions and #hashtags in the
+  accent colour (`tokenizeComment` for the clip's variant). Caret, selection, IME, emoji input, spell check and
+  screen-reader text are the browser's own. The raw markup is shown only with **Show markup**, where it can be edited
+  directly (same limits).
+- **Marks survive typing** (`marks-edit.ts` `replaceVisible`): each change of the visible text is diffed against the
+  old one (common prefix/suffix, never splitting a surrogate pair; in repeated text such as "aa|a", where several
+  splits are valid, the caret after the edit picks the one the person made — found by the fuzz test); unchanged characters keep their marks; a typed
+  non-space joins the mark of the word it is typed into (left neighbour, else the word it reaches on the right, else
+  the mark around the insertion, else the mark of the first word it replaced); whitespace runs touching the edit are
+  settled like `applyMark` does (inside a phrase with one mark → marked; at its edge → unmarked). Runs elsewhere are
+  untouched. The markup is written in `serializeMarks`' canonical form (visible text never changes).
+- **Mark buttons:** Highlight, Blur, Remove, Clear Marks act on the selection grown to whole words (`applyMark`); a
+  mark button on words that all carry that mark removes it (shown pressed). Buttons don't take the focus, so the
+  selection stays. Shortcuts in the editor: **Ctrl+Shift+1 / 2 / 3 / 0** (physical Control on macOS too, ⌃⇧1…;
+  ⌘⇧3/4 are macOS screenshots). None of them is in the default keymap or the presets; at every press the editor checks
+  the *active* keymap and leaves a chord to the app if the user bound it, and the tooltips then omit it.
+- **Undo steps:** a typing burst is one History entry (`coalesce`, the session's 750 ms window); each mark action is
+  its own entry labelled "Highlight", "Blur", "Remove" or "Clear Marks"; nothing is written while an IME composition
+  is open (the composed text is written at `compositionend`). Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y inside the
+  editor run the project's undo/redo, so the field and the document never disagree. An outside change (undo, an agent)
+  replaces the editor text and keeps the caret where it can.
+- **Limits:** the counter shows grapheme clusters (`Intl.Segmenter`: "👍🏽", "🇪🇸", "👨‍👩‍👧" count as one) against
+  the schema's 2000 visible characters; the schema counts UTF-16 code units, so the textarea's `maxLength` and the
+  checks use code units and the counter's tooltip says emoji may count twice. Text over 2000 visible characters or
+  markup over 4000 is refused with a message; nothing is written.
+- **Several clips:** differing texts show an empty editor with a "Multiple values" placeholder; typing replaces every
+  selected clip's text (as the default text field does). Mark buttons need a selection, so they stay disabled there.
+
+### `social-count`
+
+- Accepts what people type (`count-input.ts` `parseCountInput`, fast-checked): digits; groups with `,`, `.`, spaces,
+  `_` or `'`; K/M/B suffixes in any case with `.` or `,` decimals (`12.3K`, `1,5k`, `3.4M`, `2B`); full-width digits
+  (NFKC); a leading `+`. A single separator followed by exactly three digits groups (`1,234` = `1.234` = 1234), also
+  before a suffix for a comma (`1,000B`, as the card prints the cap) but not for a dot (`1.234K` = 1234). Suffixed values
+  round to the nearest integer; plain fractions, negatives, values over 1e12 and anything else are refused with a
+  message under the field (`role="alert"`, `aria-invalid`), the stored value unchanged. Escape restores the stored
+  value; ↑/↓ step by 1 (Shift: 10). The card's own text always reads back (property test over every variant).
+- Next to the field: the count as the card prints it (`formatCount` for the clip's variant).
+- The wand writes one believable value consistent with the others (one undo step): replies, reposts and views follow
+  the current likes (`fillSocialParams` ratios: 1–5 %, 10–30 %, 10–50×); likes are drawn so the current replies stay
+  1–5 % of them (tokcomment's distribution when there are no replies). A clip whose variant hides the field is left
+  alone.
+
+### `social-time`
+
+- Value (0…10000) and unit (Minutes … Years, singular for 1) in one row; the unit is written to `timeUnit`, whose own row
+  is hidden (`alsoEdits`). The preview is `formatTime` for the clip's variant ("3h", "3 months ago"). Months stay months
+  on every platform (tokcomment printed YouTube months as hours; test "months stay months").
+- A wand draws a plausible age for the platform (`randomStats` time). Differing units across selected clips show "–".
+
+### `social-avatar`
+
+- Three sources as a segmented control: **Image** (a project image), **Generated** (`{ generated: seed }`, drawn with
+  `generatedAvatar(seed, displayName)` like the template; **Reshuffle** draws a new seed) and **Default** (`null`, the
+  platform silhouette). A value the control does not understand is shown as the default and replaced by the next pick.
+- Image: WP1's `MediaParamPicker` (still images only, "None" = default, drops on the field) plus a drop zone over the
+  whole control for Project panel items (`droppedMediaId`) and desktop image files, and **Import an image…** (the
+  tokcomment upload button), which imports the file into the project root bin through the import service and then
+  sets it (two History entries: the import and the avatar). Video, animated images and other files are refused with
+  "Only still images can be avatars". A media id no longer in the project is flagged ("The image is no longer in the
+  project"). The preview shows the engine poster, then the original file. The media part is isolated in
+  `AvatarMediaPicker.tsx`.
+- **Randomize identity** writes `displayName`, `handle` and `avatar` (`randomIdentity`: a made-up name, matching handle,
+  generated avatar) as one History entry "Randomize Identity", with a different identity per selected clip.
+
+### Randomize stats
+
+The group wand fills every stat the clip's variant draws — `timeValue`, `timeUnit`, `likes`, `replies`, and `reposts` /
+`views` on X — from `randomStats(variant, seed)` with a fresh seed per selected clip, as one History entry
+"Randomize Stats". Stats a variant hides (`VARIANT_CAPABILITIES`) keep their values. Seeds come from
+`crypto.getRandomValues`; the document only receives the concrete values, so it stays deterministic.
+
+### Robustness, accessibility, strings
+
+- Every control reads its value and siblings defensively (`params.ts`: unknown variant → `tiktok-reply`, non-integer or
+  out-of-range counts → "–", unknown avatar shapes → default) and is tested with garbage values (numbers, objects, NaN,
+  wrong shapes); a refused write shows "The change was refused" and restores the stored value. The host's error boundary
+  remains the last line.
+- Labels: every input, select, toolbar (`role="toolbar"`, `aria-controls`) and icon button has an accessible name; mark
+  buttons expose `aria-pressed`; errors are `role="alert"` and linked with `aria-describedby`; the segmented avatar
+  source is a radio group. Read-only projects: the editor is `readOnly` (selectable), everything else disabled.
+- Strings go through i18n (`pnpm i18n`; Spanish in `es.json`). The mark labels use context keys
+  (`Highlight [word mark]` …) because "Highlight" already means Lumetri's highlights in the catalogue.
+- Icons (`@jasper/ui` registry, lucide): `text.highlight`, `text.blur`, `text.remove`, `text.clearMarks`,
+  `text.markup`, `action.randomize`, `action.reshuffle`, `action.randomIdentity`, `media.avatar`.
+
+### Tests
+
+- `apps/web/test/social-count-input.test.ts`: parser cases and fast-check (never throws; round trip of plain and
+  grouped counts; the card's `formatCount` text reads back within its truncation for every variant).
+- `apps/web/test/social-marks-edit.test.ts`: typing, deleting, replacing and emoji around marks; fast-check that the
+  visible text is always the target and that marks outside the edit are preserved; selection state vs `applyMark`;
+  grapheme counts.
+- `apps/web/test/social-params.test.ts`: Randomize patches respect capabilities, stay consistent and parse.
+- `apps/web/test/social-controls.test.tsx`: the controls in the real Properties and Effect Controls panels (layout,
+  hidden time unit, group wand), typing/marks/undo/redo through the session, coalescing, IME composition, limits,
+  shortcuts, Show markup, multi-selection (mixed values, per-clip randomization), drops, read-only, garbage values,
+  refusals, and the fallback when the controls are not registered.
+- `packages/project/test/template-object-params.test.ts`: object/union params are writable and validated (fails
+  without the `json` mapping).
+
+### Limitations
+
+- The template itself (`social-comment@1`, WP6a) was not on this branch: the controls were built and exercised against
+  the test template above. WP6a's template needs the hints listed above for them to appear.
+- The generated-avatar preview passes `displayName` for the initials; if the template draws initials from another
+  name (e.g. the handle on Instagram), the small preview can differ from the card.
+- The avatar resolution warning of design §7.11 (below 2× the drawn size) is not part of these controls.
+- In the markup view the mark buttons are disabled (the markup is edited as text there).

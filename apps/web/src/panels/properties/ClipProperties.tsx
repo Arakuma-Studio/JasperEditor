@@ -18,13 +18,14 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
 import { type ReactNode, useEffect, useState } from 'react';
-import { clipSections } from '../../extensions/index.ts';
+import { clipSections, templateParamControls } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { formatTimecode } from '../../gaps/time-display.ts';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
 import { Section } from './controls/Section.tsx';
+import { TemplateGroupActions } from './controls/TemplateGroupActions.tsx';
 import {
 	bindCrop,
 	bindProperty,
@@ -36,6 +37,7 @@ import {
 	rowValue,
 	templateOf,
 } from './lib/model.ts';
+import { absorbedTemplateParams } from './lib/template-params.ts';
 
 const CROP_PARAMS = ['left', 'top', 'right', 'bottom', 'feather'] as const;
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
@@ -451,6 +453,7 @@ function TextSections(props: {
 /** Motion-graphic parameters: an auto-generated form from the template schema (S05:ECP-008, PRP-001). */
 function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: EditorSession }) {
 	const { visual, ctx, session } = props;
+	const controls = useRegistry(templateParamControls);
 	const mg = session.ctx.registries.mgTemplates;
 	const tpl = templateOf(visual[0]!, mg);
 	const same = visual.every(
@@ -467,9 +470,12 @@ function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: Edit
 	}
 	// C3: the template's ui hints — params that apply to none of the selected clips are hidden (`visibleWhen`), the
 	// others are grouped in its sections (in order; params in no group first).
-	const specs = paramsPropertySpecs(tpl).filter((s) =>
+	const shown = paramsPropertySpecs(tpl).filter((s) =>
 		visual.some((c) => templateParamVisible(s, (c as { params?: Record<string, unknown> }).params)),
 	);
+	// WP7a: rows edited by another row's custom control (`alsoEdits`, e.g. the time unit) are not drawn twice.
+	const absorbed = absorbedTemplateParams(shown, controls);
+	const specs = shown.filter((s) => !absorbed.has(s.key.slice('params.'.length)));
 	const renderSpec = (s: PropertySpec, indent: boolean) => {
 		const row = makeRow(
 			s.key,
@@ -490,6 +496,9 @@ function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: Edit
 						title={sec.section.label}
 						variant="group"
 						className="pl-2"
+						actions={
+							<TemplateGroupActions ctx={ctx} clips={visual} specs={sec.specs} label={sec.section.label} />
+						}
 					>
 						<div data-template-group={sec.section.id}>{sec.specs.map((s) => renderSpec(s, true))}</div>
 					</Section>
