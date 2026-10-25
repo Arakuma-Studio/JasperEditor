@@ -111,7 +111,9 @@ Reads and writes `project`/`bin`/`children`/master `clip`s (bins mirror the proj
 markers), `sequence` (rate, timecode, in/out, labels), `media/video|audio/track` (enabled, locked), `clipitem`
 (start/end/in/out plus `pproTicksIn/Out`, enabled, `masterclipid`, `file` by id, `sourcetrack`, labels, markers,
 links), nested `sequence`s (inline, by id), `generatoritem` (Slug/Black, Color, Bars and Tone, Transparent Video,
-Universal Counting Leader), `transitionitem` (alignment, Premiere names, start/end black), and the filters Basic
+Universal Counting Leader), `transitionitem` (alignment, Premiere names, start/end black; third-party transitions
+matched by their MatchName `effectid` with converted `parameter`s — `premiere-transitions.ts`, the eased slide
+plug-in → Smooth Slide, [smooth-slide.md](smooth-slide.md)), and the filters Basic
 Motion (scale, rotation, center, anchor — uniform scale), Opacity, Crop, Time Remap (constant speed, reverse,
 freeze), Audio Levels and Audio Pan with keyframes; `compositemode` blend modes. Values are written with the
 shortest exact decimal (`exactNum`) and read with 9-digit rounding so property round trips are exact.
