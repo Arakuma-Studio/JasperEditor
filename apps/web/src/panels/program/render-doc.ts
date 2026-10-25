@@ -1,6 +1,7 @@
 // Builds the Player's inputProps from the session (ARCHITECTURE §8): the drawn document (committed or
 // gesture transient) → buildRenderSnapshot with media URLs from MediaRuntime (`/media/<key>`, or the
 // proxy when proxies are on and ready, S04:PX-004) → structural sharing with the previous doc.
+import { resolveCatalogFont } from '@jasper/api';
 import { type RenderDoc, type RenderOptions, stabilizeRenderDoc } from '@jasper/compositions';
 import {
 	browserPictureNeed,
@@ -91,13 +92,12 @@ export function resolveMediaHandle(
 	};
 }
 
-type FontCatalogLike = {
-	fonts: { family: string; files: { weight: number; style: 'normal' | 'italic'; url: string }[] }[];
-};
+type FontCatalogLike = Parameters<typeof resolveCatalogFont>[0];
 
 /**
- * Font file URL from the engine catalog (`GET /api/fonts`, S04 §18): exact weight/style, else the
- * nearest weight of the same style, else null (the text layer falls back to the default sans).
+ * Font file URL from the engine catalog (`GET /api/fonts`, S04 §18): the same choice the engine's exports make
+ * (`resolveCatalogFont`: family, then a library face's PostScript / full / legacy family name; latin subset, italic
+ * when there is one, nearest weight), else null (the text layer falls back to the default sans).
  */
 function fontUrlFromCatalog(
 	catalog: FontCatalogLike | null,
@@ -105,14 +105,7 @@ function fontUrlFromCatalog(
 	weight: number,
 	italic: boolean,
 ): string | null {
-	const fam = catalog?.fonts.find((f) => f.family.toLowerCase() === font.family.toLowerCase());
-	if (!fam || fam.files.length === 0) return null;
-	const style = italic ? 'italic' : 'normal';
-	const same = fam.files.filter((f) => f.style === style);
-	const pool = same.length ? same : fam.files;
-	let best = pool[0]!;
-	for (const f of pool) if (Math.abs(f.weight - weight) < Math.abs(best.weight - weight)) best = f;
-	return best.url;
+	return resolveCatalogFont(catalog, font.family, weight, italic)?.file.url ?? null;
 }
 
 type RenderDocInput = {

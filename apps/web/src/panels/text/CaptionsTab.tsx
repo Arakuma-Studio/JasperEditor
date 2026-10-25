@@ -34,6 +34,8 @@ import {
 	toast,
 } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
+import { FontPicker } from '../../fonts/FontPicker.tsx';
 import { bytesToBase64, downloadBytes } from './state.ts';
 
 type Props = { session: EditorSession; seq: Sequence; reveal?: string };
@@ -317,6 +319,24 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 				>
 					Save Style…
 				</Button>
+				<FontPicker
+					label="Caption font"
+					value={style.fontId || null}
+					docFonts={doc.fonts}
+					disabled={!track}
+					onPickFont={(fontId) => setStyle({ fontId })}
+					onPickFamily={(family) =>
+						track &&
+						apply('Caption Style', [
+							{ type: 'font.add', family, ref: '$font' },
+							{ type: 'caption.setStyle', trackId: track.id, style: { fontId: '$font' } },
+						])
+					}
+					onResolveFonts={() => openResolveFonts(session)}
+					onManageFonts={() => openFontPreferences(session)}
+					className="w-36 flex-none"
+					data-testid="text.captions.style.font"
+				/>
 				<span className="flex items-center gap-1">
 					Size
 					<TextField

@@ -2,7 +2,6 @@
 // transport, zoom/pan, overlays and on-canvas transform. The Player is sized at the composition size
 // and scaled by one CSS transform (S03:PGM-002) so overlays share its geometry exactly.
 
-import type { FontCatalog } from '@jasper/api';
 import {
 	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
@@ -11,7 +10,6 @@ import {
 	type RenderOptions,
 	SequenceComposition,
 } from '@jasper/compositions';
-import type { EngineClient } from '@jasper/engine-client';
 import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
 import {
 	useGestureFrameDocument,
@@ -40,6 +38,8 @@ import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
 import { useExpressionsFor } from '../../expressions/engine.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
+import { useFonts } from '../../fonts/hooks.ts';
+import { useMissingFontsNotice } from '../../fonts/notice.ts';
 import { buildMulticamViewDoc, multicamClipAt, multicamTrack } from '../../multicam/logic.ts';
 import { MulticamOverlay } from '../../multicam/MulticamOverlay.tsx';
 import { installMulticamRecorder } from '../../multicam/recorder.ts';
@@ -115,22 +115,6 @@ export function ProgramMonitor(props: PanelProps) {
 	return <ProgramMonitorBody session={session} instanceId={props.instanceId} />;
 }
 
-function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
-	const [catalog, setCatalog] = useState<FontCatalog | null>(null);
-	useEffect(() => {
-		if (!engine) return;
-		let cancelled = false;
-		engine
-			.listFonts()
-			.then((c) => !cancelled && setCatalog(c))
-			.catch(() => undefined); // engine without the fonts route: text uses the fallback stack
-		return () => {
-			cancelled = true;
-		};
-	}, [engine]);
-	return catalog;
-}
-
 /** Resolution of GPU shader-effect canvases per playback resolution (RenderOptions.fxPreviewScale). */
 const FX_PREVIEW_SCALE: Record<PlaybackResolution, number> = {
 	full: 1,
@@ -159,7 +143,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const attachedProxies = useSessionState((s) => !!s.toggles.attachedProxies);
 	const useProxies = autoProxies || attachedProxies;
 	const monitor = useStoreSelector(monitorStores.program, (s) => s);
-	const fontCatalog = useFontCatalog(engine);
+	// wp fonts: the catalog follows `fonts.changed`, so installing a font redraws text set in it.
+	const fontCatalog = useFonts().catalog;
+	useMissingFontsNotice(session, fontCatalog);
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;

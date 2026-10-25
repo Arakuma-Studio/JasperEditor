@@ -19,6 +19,8 @@ export type TestFontOptions = {
 	seed?: number;
 	/** Extra (unread) table bytes, to vary the file size. */
 	padBytes?: number;
+	/** Custom glyph outlines: rectangles `[x0, y0, x1, y1]` in font units (1000 / em) per character code. */
+	glyphRects?: (code: number) => [number, number, number, number][];
 };
 
 const UPEM = 1000;
@@ -83,19 +85,25 @@ function cells(code: number, seed: number): [number, number][] {
 const CELL = 160;
 const ADVANCE = 600;
 
-function glyph(code: number | null, seed: number): Uint8Array {
+function glyph(
+	code: number | null,
+	seed: number,
+	custom?: (code: number) => [number, number, number, number][],
+): Uint8Array {
 	// .notdef: one hollow-less box; space: empty
 	const rects: [number, number, number, number][] =
 		code === null
 			? [[50, 0, 450, 700]]
-			: code === 32
-				? []
-				: cells(code, seed).map(([cx, cy]) => [
-						60 + cx * CELL,
-						cy * CELL,
-						60 + cx * CELL + CELL,
-						cy * CELL + CELL,
-					]);
+			: custom
+				? custom(code)
+				: code === 32
+					? []
+					: cells(code, seed).map(([cx, cy]) => [
+							60 + cx * CELL,
+							cy * CELL,
+							60 + cx * CELL + CELL,
+							cy * CELL + CELL,
+						]);
 	if (rects.length === 0) return new Uint8Array(0);
 	const b = new Buf();
 	const xMin = Math.min(...rects.map((r) => r[0]));
@@ -190,7 +198,9 @@ export function testFontTables(o: TestFontOptions = {}): Record<string, Uint8Arr
 	const fullName = o.fullName ?? `${family} ${subfamily}`;
 	const ps = o.postscriptName ?? `${family}-${subfamily}`.replace(/\s+/g, '');
 	const glyphs = [glyph(null, seed)];
-	for (let c = FIRST; c <= LAST; c++) glyphs.push(glyph(c, seed));
+	for (let c = FIRST; c <= LAST; c++) glyphs.push(glyph(c, seed, o.glyphRects));
+	const contours = glyphs.map((g) => (g.length ? new DataView(g.buffer).getInt16(0) : 0));
+	const maxContours = Math.max(16, ...contours);
 	const numGlyphs = glyphs.length;
 	const loca = new Buf();
 	const glyf = new Buf();
@@ -234,7 +244,16 @@ export function testFontTables(o: TestFontOptions = {}): Record<string, Uint8Arr
 		.i16(0)
 		.u16(numGlyphs)
 		.done();
-	const maxp = new Buf().u32(0x00010000).u16(numGlyphs).u16(64).u16(16).u16(0).u16(0).u16(2).zeros(16).done();
+	const maxp = new Buf()
+		.u32(0x00010000)
+		.u16(numGlyphs)
+		.u16(maxContours * 4)
+		.u16(maxContours)
+		.u16(0)
+		.u16(0)
+		.u16(2)
+		.zeros(16)
+		.done();
 	const fsSelection = (italic ? 0x1 : 0) | (weight >= 700 ? 0x20 : 0) | (!italic && weight < 700 ? 0x40 : 0);
 	const os2 = new Buf()
 		.u16(4)
@@ -402,10 +421,16 @@ export function toWoff2(sfnt: Uint8Array): Uint8Array {
 	const n = v.getUint16(4);
 	const dir = new Buf();
 	const chunks: Uint8Array[] = [];
+	const recs: { t: string; data: Uint8Array }[] = [];
 	for (let i = 0; i < n; i++) {
 		const at = 12 + i * 16;
 		const t = String.fromCharCode(...sfnt.subarray(at, at + 4));
-		const data = sfnt.subarray(v.getUint32(at + 8), v.getUint32(at + 8) + v.getUint32(at + 12));
+		recs.push({ t, data: sfnt.subarray(v.getUint32(at + 8), v.getUint32(at + 8) + v.getUint32(at + 12)) });
+	}
+	// WOFF 2.0 §5.3: loca follows glyf in the table directory
+	const loca = recs.find((r) => r.t === 'loca');
+	const ordered = recs.filter((r) => r !== loca).flatMap((r) => (r.t === 'glyf' && loca ? [r, loca] : [r]));
+	for (const { t, data } of ordered) {
 		const known = WOFF2_KNOWN.indexOf(t);
 		const nullT = t === 'glyf' || t === 'loca' ? 3 << 6 : 0;
 		if (known >= 0) dir.u8(nullT | known);
