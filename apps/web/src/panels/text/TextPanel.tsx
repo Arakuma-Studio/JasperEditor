@@ -1,9 +1,10 @@
-// the Text panel (Premiere Window ▸ Text): Transcript and Captions tabs.
+// the Text panel (Premiere Window ▸ Text): Transcript, Captions and Subtitles (spec 13) tabs.
 import type { Sequence } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { EmptyState, Tabs } from '@jasper/ui';
 import { useEffect, useState } from 'react';
+import { SubtitlesTab } from '../../subtitles/SubtitlesTab.tsx';
 import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
 import { CaptionsTab } from './CaptionsTab.tsx';
@@ -42,7 +43,7 @@ export function TextPanel(_props: PanelProps) {
 			<Tabs
 				className="h-full"
 				value={tab}
-				onValueChange={(v) => setTab(v as 'transcript' | 'captions')}
+				onValueChange={(v) => setTab(v as 'transcript' | 'captions' | 'subtitles')}
 				items={[
 					{
 						value: 'transcript',
@@ -53,6 +54,11 @@ export function TextPanel(_props: PanelProps) {
 						value: 'captions',
 						label: <span data-testid="text.tab.Captions">Captions</span>,
 						content: <CaptionsTab session={session} seq={seq} reveal={reveal} />,
+					},
+					{
+						value: 'subtitles',
+						label: <span data-testid="text.tab.Subtitles">Subtitles</span>,
+						content: <SubtitlesTab session={session} seq={seq} />,
 					},
 				]}
 			/>
