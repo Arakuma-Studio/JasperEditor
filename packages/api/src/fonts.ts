@@ -107,7 +107,7 @@ export type FontUsageResponse = z.infer<typeof FontUsageResponseSchema>;
 // ── Resolution (shared by the engine's exports and the web Player, so both pick the same file) ──────────────────
 
 /** A name compared loosely: case, spaces, hyphens and underscores ignored ("CircularStd-Medium" = "Circular Std Medium"). */
-export function normalizeFontName(name: string): string {
+function normalizeFontName(name: string): string {
 	return name.toLowerCase().replace(/[\s\-_]+/g, '');
 }
 

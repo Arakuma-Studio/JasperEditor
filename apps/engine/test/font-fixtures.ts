@@ -17,8 +17,6 @@ export type TestFontOptions = {
 	italic?: boolean;
 	/** Changes the glyph patterns (two fonts with different seeds draw differently). */
 	seed?: number;
-	/** Extra (unread) table bytes, to vary the file size. */
-	padBytes?: number;
 	/** Custom glyph outlines: rectangles `[x0, y0, x1, y1]` in font units (1000 / em) per character code. */
 	glyphRects?: (code: number) => [number, number, number, number][];
 };
@@ -339,7 +337,6 @@ export function testFontTables(o: TestFontOptions = {}): Record<string, Uint8Arr
 		glyf: glyf.done(),
 		loca: loca.done(),
 	};
-	if (o.padBytes) tables.zzzz = new Uint8Array(o.padBytes);
 	return tables;
 }
 

@@ -1,6 +1,6 @@
 // wp fonts: catalog font resolution shared by the engine's exports and the web Player.
 import { describe, expect, it } from 'vitest';
-import { type FontCatalog, normalizeFontName, resolveCatalogFont } from '../src/index.ts';
+import { type FontCatalog, resolveCatalogFont } from '../src/index.ts';
 
 const catalog: FontCatalog = {
 	fonts: [
@@ -87,6 +87,7 @@ describe('resolveCatalogFont', () => {
 
 	it('matches families loosely, then a face by PostScript, full or legacy family name (that face, any weight)', () => {
 		expect(url('CircularStd')).toBe('/fonts/library/fb.otf');
+		expect(url(' CIRCULAR_STD ')).toBe('/fonts/library/fb.otf');
 		expect(url('Pixel12x10')).toBe('/fonts/library/fd.ttf');
 		expect(url('CircularStd-Bold', 400)).toBe('/fonts/library/fc.otf');
 		expect(url('circular std medium', 900)).toBe('/fonts/library/fb.otf');
@@ -97,9 +98,5 @@ describe('resolveCatalogFont', () => {
 		expect(url('Minion Pro')).toBeNull();
 		expect(url('  ')).toBeNull();
 		expect(resolveCatalogFont(null, 'Inter', 400, false)).toBeNull();
-	});
-
-	it('normalizes names by case, spaces, hyphens and underscores', () => {
-		expect(normalizeFontName('Earthbound-Condensed_Bold  X')).toBe('earthboundcondensedboldx');
 	});
 });

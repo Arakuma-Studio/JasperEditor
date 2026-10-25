@@ -26,8 +26,6 @@ export const FONT_LIBRARY_LIMITS = {
 	maxTotalBytes: 2 * 1024 * 1024 * 1024,
 } as const;
 
-export type FontLibraryLimits = { maxFileBytes: number; maxFonts: number; maxTotalBytes: number };
-
 const FORMAT = 'jasper-font-library';
 const VERSION = 1;
 const FILE_RE = /^(f[0-9a-f]{24})\.(ttf|otf|woff|woff2)$/;
@@ -41,10 +39,8 @@ type IndexFile = {
 };
 
 export type FontLibraryOptions = {
-	now?: () => string;
 	onChange?: (revision: number) => void;
 	log?: (m: string) => void;
-	limits?: Partial<FontLibraryLimits>;
 };
 
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -67,7 +63,7 @@ export function fontParseHttpError(e: FontParseError): HttpError {
 export class FontLibrary {
 	private state: IndexFile;
 	private chain: Promise<unknown> = Promise.resolve();
-	private readonly limits: FontLibraryLimits;
+	private readonly limits = FONT_LIBRARY_LIMITS;
 	readonly repairs: string[] = [];
 	readOnly = false;
 
@@ -75,7 +71,6 @@ export class FontLibrary {
 		readonly dir: string,
 		private readonly opts: FontLibraryOptions,
 	) {
-		this.limits = { ...FONT_LIBRARY_LIMITS, ...opts.limits };
 		this.state = { format: FORMAT, version: VERSION, revision: 0, fonts: [] };
 	}
 
@@ -91,10 +86,6 @@ export class FontLibrary {
 		const lib = new FontLibrary(dir, opts);
 		await lib.load();
 		return lib;
-	}
-
-	private now(): string {
-		return this.opts.now?.() ?? new Date().toISOString();
 	}
 
 	private note(m: string): void {
@@ -174,7 +165,7 @@ export class FontLibrary {
 			const m = FILE_RE.exec(name);
 			if (!m || seen.has(m[1]!) || this.readOnly) continue;
 			if (fonts.length >= this.limits.maxFonts) break;
-			const face = await this.readFace(join(this.filesDir, name), name, this.now());
+			const face = await this.readFace(join(this.filesDir, name), name, new Date().toISOString());
 			if (face && face.id === m[1] && `${face.id}.${face.format}` === name) {
 				fonts.push(face);
 				seen.add(face.id);
@@ -313,7 +304,7 @@ export class FontLibrary {
 				throw e;
 			}
 			const name = cleanFileName(originalName);
-			const addedAt = this.now();
+			const addedAt = new Date().toISOString();
 			const installed: LibraryFont[] = [];
 			const existing: LibraryFont[] = [];
 			const existingIds = new Set<string>();
