@@ -255,13 +255,14 @@ const WHIP: KitFamily = {
 	weight: 249,
 	before: 20,
 	after: 20,
-	variants: WHIP_DIRS.map((d) => ({
+	variants: WHIP_DIRS.map(
+		(d): KitVariant => ({
 		id: d.id,
 		label: d.label,
 		weight: d.weight,
 		segments: [
 			{
-				span: 'whole' as const,
+				span: 'whole',
 				effects: [
 					{
 						effectId: 'jasper.offset',
