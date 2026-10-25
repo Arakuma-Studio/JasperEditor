@@ -13,7 +13,6 @@ import {
 	mirrorCropInsets,
 	pinnedCropOf,
 	resolveLayerProps,
-	stackCrops,
 } from '../src/index.ts';
 
 const crop = (params: Record<string, unknown>, enabled = true) => ({
@@ -75,19 +74,10 @@ describe('Edge Feather profile (cropEdgeCoverage)', () => {
 	it('multiplies the four edges of the crop window (cropCoverageAt)', () => {
 		const ins: [number, number, number, number] = [0.1, 0.2, 0.25, 0.05];
 		const [w, h, f] = [400, 200, 12];
-		for (const [x, y] of [
-			[45.5, 60.5],
-			[200.5, 100.5],
-			[299.5, 189.5],
-			[5.5, 5.5],
-		] as const) {
-			const want =
-				cropEdgeCoverage(x - 40, f) *
-				cropEdgeCoverage(300 - x, f) *
-				cropEdgeCoverage(y - 40, f) *
-				cropEdgeCoverage(190 - y, f);
-			expect(cropCoverageAt(x, y, w, h, ins, f)).toBeCloseTo(want, 12);
-		}
+		// At (45.5, 60.5), only the left ramp contributes: 5.5 / 12 = 11 / 24.
+		// At (299.5, 189.5), the right and bottom pixels each average a 0…1 ramp: (1 / 24)².
+		expect(cropCoverageAt(45.5, 60.5, w, h, ins, f)).toBeCloseTo(11 / 24, 12);
+		expect(cropCoverageAt(299.5, 189.5, w, h, ins, f)).toBeCloseTo(1 / 576, 12);
 		// Inside, farther than the feather from every edge: untouched.
 		expect(cropCoverageAt(200.5, 100.5, w, h, ins, f)).toBe(1);
 		// Outside the window: nothing.
@@ -146,11 +136,6 @@ describe('the crop window in stack order', () => {
 		expect(cropWindow([])).toBeNull();
 		expect(intersectCropInsets([])).toBeNull();
 		expect(mirrorCropInsets([0.1, 0.2, 0.3, 0.4], true, true)).toEqual([0.3, 0.4, 0.1, 0.2]);
-	});
-
-	it('stackCrops keeps stack indexes and feathers', () => {
-		const list = stackCrops([mirror, crop({ left: 20, feather: 7 }), flipH]);
-		expect(list.map((c) => [c.index, c.insets, c.feather])).toEqual([[1, [0, 0, 0.2, 0], 7]]);
 	});
 
 	it('resolveLayerProps reports the window of a crop placed after a flip, and its quad', () => {

@@ -30,7 +30,7 @@ Aspect / Motion Blur / Edge Smoothing, the reflection opacity, what fills the ex
 
 ## 2. Model and parameters
 
-| Control (param) | Range, default | Behaviour (TS: `smoothSlidePoses`, `smoothSlideContributions`; GLSL mirrors them) |
+| Control (param) | Range, default | Behaviour (TS: `smoothSlidePoses` and the compositing shader) |
 |---|---|---|
 | Direction (`direction`) | Right, Left, Up, Down; **Left** | Both pictures travel that way; B enters from the opposite edge (S3 preset thumbnails: "Push Left" shows B entering from the right). A at offset `dir·e`, B at `dir·(e − 1)` frame units. |
 | Animation (`animation`) | 22 curves; **Ease In Out Quad** | `e = ease(p)`: Linear, Ease In ×7, Ease Out ×7, Ease In Out ×7 over Sine, Quad, Cubic, Quart, Quint, Expo, Circ (S2, S5). |
@@ -102,16 +102,14 @@ and `#10` ignored.
 
 ## 5. Validation
 
-- `packages/project/test/transition-smooth-slide.test.ts`: param schema; curves (ends, monotonic, closed forms,
-  mirror symmetry, fallback); poses (counts, shutter width 90…720°, end shrink, frame step); dolly; reflection blur σ;
-  planned uniforms / passes; CPU reference geometry (directions, dolly, reflection mapping / fade / vertical rule,
-  edge smoothing, coverage ≤ 1 by fast-check); document commands with refusals (`E_INVALID_PARAM`), clamping,
-  keyframes, one-sided head / tail, invariants.
-- `packages/compositions/test/transition-smooth-slide-gl.test.ts` (WebGL2, SwiftShader): whole frames equal the CPU
-  reference (≥ 98 % of pixels within 4/255) for five parameter sets (directions, easings, dolly, reflection, motion
-  blur levels and shutters, edge smoothing, one-sided head / tail, Reverse); exact A / B at progress 0 / 1 with heavy
-  settings; motion-blur smear grows with the shutter; Blurriness changes only the reflection. Golden fingerprints in
-  `transition-gl.test.ts`.
+- `packages/project/test/transition-smooth-slide.test.ts`: independent easing laws (ends, monotonicity, closed forms,
+  mirror symmetry and fallback); literal exposure sample counts/shutter widths, end shrink and frame step; dolly and
+  reflection blur scaling; public document commands with `E_INVALID_PARAM`, clamping, keyframes and invariants.
+  Registry inventories, packed-uniform/pass counts and the unused CPU shader duplicate were removed.
+- `packages/compositions/test/transition-smooth-slide-gl.test.ts` (WebGL2, SwiftShader): actual rendered pixels have
+  independent physical witnesses for directions, missing head/tail transparency, Reverse, dolly/reflection and edge
+  smoothing; motion-blur smear grows with shutter angle and Blurriness affects the reflection. No expected pixel
+  comes from a parallel production CPU shader. Generic transition goldens own the default fingerprints.
 - `packages/compositions/test/transition-smooth-slide-parity.e2e.test.ts` (REMOTION_E2E=1): Player (preview) vs
   `renderStill` (export) per pixel.
 - `apps/engine/test/smooth-slide-export.test.ts`: the planner bakes the span (hybrid) or routes to Remotion with a
@@ -122,8 +120,9 @@ and `#10` ignored.
   the span frames (the transition adds no path-specific error; the test requires span frames within 3 points of
   share and 1 level of mean of that baseline).
 - `packages/interchange/test/premiere-transitions.test.ts`: MatchName mapping, parameter conversion (fuzzed),
-  FCP7 XML import into a valid document; `apps/mcp/test/transitions.test.ts`: list / add / update over MCP;
-  `packages/session/test/smooth-slide-history.test.ts`: undo / redo of adding and editing it.
+  FCP7 XML import into a valid document; `apps/mcp/test/transitions.test.ts`: list / add / update over MCP. Generic
+  `packages/session/test/session.test.ts` and `integrity-property.test.ts` own exact document undo/redo and refusal
+  history; feature-specific replays of the same history path were consolidated there.
 
 ## 6. Limitations
 

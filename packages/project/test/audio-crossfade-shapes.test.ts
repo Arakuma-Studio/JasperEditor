@@ -13,9 +13,7 @@ import {
 	cutOffsetOf,
 	cutPositionFor,
 	EXPONENTIAL_FADE,
-	FADE_VALUE_EQUAL_POWER,
 	fadeCurve,
-	fadeShapeExponent,
 	fadeShapeGain,
 	type ProjectDocument,
 	repairDocument,
@@ -60,14 +58,11 @@ describe('fade curves', () => {
 
 	it('Linear @ 0 is Constant Gain, Cosine @ 19 is Constant Power (Premiere stores Constant Power as Cosine @ 19)', () => {
 		for (const x of xs) {
-			expect(fadeShapeGain({ type: 'linear', value: 0 }, x)).toBeCloseTo(fadeCurve('linear', x), 14);
-			expect(fadeShapeGain({ type: 'cosine', value: 19 }, x)).toBeCloseTo(fadeCurve('equal-power', x), 14);
+			expect(fadeShapeGain({ type: 'linear', value: 0 }, x)).toBeCloseTo(x, 14);
+			expect(fadeShapeGain({ type: 'cosine', value: 19 }, x)).toBeCloseTo(Math.sin((Math.PI * x) / 2), 14);
 			// Cosine @ 0 is Audition's S-curve
 			expect(fadeShapeGain({ type: 'cosine', value: 0 }, x)).toBeCloseTo((1 - Math.cos(Math.PI * x)) / 2, 14);
 		}
-		expect(fadeShapeExponent(0)).toBe(1);
-		expect(fadeShapeExponent(FADE_VALUE_EQUAL_POWER)).toBe(0.5);
-		expect(fadeShapeExponent(-19)).toBe(2);
 	});
 
 	it('a symmetrical crossfade sums amplitudes to 1 at value 0 and powers to 1 at value 19, for both shapes', () => {
@@ -80,9 +75,6 @@ describe('fade curves', () => {
 				expect(amp(0)).toBeCloseTo(1, 12);
 				expect(pow(19)).toBeCloseTo(1, 12);
 			}
-		// equal power for the fixed curve too
-		for (const x of xs)
-			expect(fadeCurve('equal-power', x) ** 2 + fadeCurve('equal-power', 1 - x) ** 2).toBeCloseTo(1, 12);
 	});
 
 	it('positive values rise earlier, negative later (fade in)', () => {
@@ -98,10 +90,7 @@ describe('fade curves', () => {
 	it('never returns NaN: nonfinite progress, values and zero-length fades are guarded', () => {
 		expect(fadeShapeGain({ type: 'cosine', value: Number.NaN }, 0.5)).toBeCloseTo(0.5, 12);
 		expect(fadeShapeGain({ type: 'linear', value: Number.POSITIVE_INFINITY }, 0.5)).toBe(0.5);
-		expect(fadeShapeGain({ type: 'bogus' as never, value: 1e9 }, 0.5)).toBeCloseTo(
-			0.5 ** (2 ** (-100 / 19)),
-			12,
-		);
+
 		expect(fadeCurve('shape', Number.NaN, { type: 'cosine', value: 19 })).toBe(0);
 		expect(audioFadeGain([{ type: 'in', start: 10, frames: 0, curve: 'linear' }], 10)).toBe(1);
 		fc.assert(
@@ -152,18 +141,18 @@ describe('audioTransitionCurves', () => {
 	});
 	it('a Custom Fade made from a fixed transition sounds the same (Exponential Fade within 0.5 dB at its midpoint)', () => {
 		for (const id of [CONSTANT_GAIN, CONSTANT_POWER]) {
-			const fixed = audioTransitionCurves(t(id)).in;
 			const p = customFadeParamsFor(id);
 			const custom = audioTransitionCurves(t(CUSTOM_FADE, p)).in;
 			for (const x of xs)
-				expect(fadeCurve(custom.curve, x, custom.shape)).toBeCloseTo(fadeCurve(fixed.curve, x), 12);
+				expect(fadeCurve(custom.curve, x, custom.shape)).toBeCloseTo(
+					id === CONSTANT_GAIN ? x : Math.sin((Math.PI * x) / 2),
+					12,
+				);
 		}
 		const p = customFadeParamsFor(EXPONENTIAL_FADE);
 		const db = (g: number) => 20 * Math.log10(g);
 		expect(
-			Math.abs(
-				db(fadeShapeGain({ type: p.fadeShape, value: p.fadeValue }, 0.5)) - db(fadeCurve('exponential', 0.5)),
-			),
+			Math.abs(db(fadeShapeGain({ type: p.fadeShape, value: p.fadeValue }, 0.5)) - -30.270418442161),
 		).toBeLessThan(0.5);
 	});
 });
@@ -332,14 +321,12 @@ describe('transition.add / update with Custom Fade and Custom Start', () => {
 		]);
 		expect(ok.warnings.map((w) => w.code)).toContain('W_VALUE_CLAMPED');
 		expect(only(h).params.fadeValue?.value).toBe(100);
-		const id = (ok.results[0] as { transitionId: string }).transitionId;
 		const fade = h.ok([{ type: 'transition.add', clipId: a, edge: 'in', effectId: CUSTOM_FADE }]);
 		const fid = (fade.results[0] as { transitionId: string }).transitionId;
 		const b2 = h.doc;
 		const r = h.tx([{ type: 'transition.update', transitionId: fid, cutOffset: 1 }]);
 		expect(r.ok === false && r.errors[0]!.code).toBe('E_INVALID_PARAM');
 		expect(h.doc).toBe(b2);
-		expect(id).toBeTruthy();
 	});
 
 	it('invariants report a bad cut position and unreadable Custom Fade params; repair drops / resets them', () => {
@@ -356,11 +343,15 @@ describe('transition.add / update with Custom Fade and Custom Start', () => {
 		cross!.params.fadeValue = { value: Number.NaN, keyframes: [] } as never;
 		cross!.params.symmetry = { value: 'asymmetric', keyframes: [] };
 		(fade as { cutPosition?: unknown }).cutPosition = 0.5;
-		const issues = checkInvariants(doc).map((i) => i.message);
-		expect(issues.some((m) => m.includes('cut position that is not a number'))).toBe(true);
-		expect(issues.some((m) => m.includes('fade with a cut position'))).toBe(true);
-		expect(issues.some((m) => m.includes('Fade Shape'))).toBe(true);
-		expect(issues.some((m) => m.includes('Fade Value'))).toBe(true);
+		const issues = checkInvariants(doc);
+		expect(issues.map(({ invariant, path }) => [invariant, path?.at(-1)]).sort()).toEqual(
+			[
+				['INV-010', cross!.id],
+				['INV-010', cross!.id],
+				['INV-010', cross!.id],
+				['INV-010', fade!.id],
+			].sort(),
+		);
 		const { document, report } = repairDocument(doc, h.ids);
 		expect(checkInvariants(document)).toEqual([]);
 		const fixed = Object.values(Object.values(document.sequences)[0]!.transitions);

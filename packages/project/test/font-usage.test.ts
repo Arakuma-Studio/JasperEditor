@@ -9,7 +9,7 @@ import {
 } from '../src/index.ts';
 
 describe('documentFontUsage', () => {
-	it('counts text clips (style and styled runs), captions clips and caption tracks per font id', () => {
+	it('counts each text font once per clip, including styled runs', () => {
 		const ids = createCounterIdSource(1);
 		let doc = createEmptyProject({ ids, name: 'Fonts', preset: 'hd-1080p-30' });
 		const seqId = Object.keys(doc.sequences)[0]!;
