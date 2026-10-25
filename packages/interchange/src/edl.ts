@@ -20,7 +20,7 @@ import { Builder, describeClip, frameOf, newClip, scaled } from './build.ts';
 import { CONSTANT_POWER, CROSS_DISSOLVE, transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IMedia, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import { DEFAULT_EDL_OPTIONS, type EdlOptions, type ExportOptions, type ImportOptions } from './options.ts';
-import { fileName, fileStem, relativePath, resolvePath } from './paths.ts';
+import { fileName, fileStem, relativePath, relativeReference, resolvePath } from './paths.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
 	flicksToFrames,
@@ -339,7 +339,11 @@ class EdlImporter {
 		};
 		if (file) {
 			const path = resolvePath(file, this.opts.baseDir);
-			return this.b.media(`file:${path}`, { ...spec, name: fileName(path), path }, this.b.p.root);
+			return this.b.media(
+				`file:${path}`,
+				{ ...spec, name: fileName(path), path, relativePath: relativeReference(file) },
+				this.b.p.root,
+			);
 		}
 		const name = clip || reel;
 		this.report.info(

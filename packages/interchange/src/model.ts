@@ -81,6 +81,12 @@ export type IMedia = {
 	path: string | null;
 	/** A non-file URL from the document (`https://…`), kept verbatim. */
 	url?: string | null;
+	/**
+	 * The reference as the document wrote it when it was relative (`Footage/a.mov`, `..\\Media\\a.mov`): relative to
+	 * the document's folder. Link Media tries it when the media moved with its project (MediaLocator
+	 * `relativeToProject`).
+	 */
+	relativePath?: string | null;
 	/** Length of the media (flicks), null when unknown. Readers grow it to cover every use. */
 	duration: number | null;
 	video?: { width: number; height: number; rate: Rate; pixelAspect?: Rate; alpha?: boolean; codec?: string };

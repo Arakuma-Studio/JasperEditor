@@ -59,7 +59,14 @@ import type {
 	Rate,
 } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
-import { fileName, isAbsolutePath, kindFromExtension, pathToFileUrl, resolvePath } from './paths.ts';
+import {
+	fileName,
+	isAbsolutePath,
+	kindFromExtension,
+	pathToFileUrl,
+	relativeReference,
+	resolvePath,
+} from './paths.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
 	flicksPerFrame,
@@ -364,7 +371,17 @@ class Fcp7Importer {
 		if (pathUrl) {
 			const isUrl = /^(https?|s3|gs):/i.test(pathUrl);
 			const path = isUrl ? null : resolvePath(pathUrl, this.opts.baseDir);
-			id = this.b.media(`file:${path ?? pathUrl}`, { ...init, kind, path, url: isUrl ? pathUrl : null }, bin);
+			id = this.b.media(
+				`file:${path ?? pathUrl}`,
+				{
+					...init,
+					kind,
+					path,
+					url: isUrl ? pathUrl : null,
+					relativePath: isUrl ? null : relativeReference(pathUrl),
+				},
+				bin,
+			);
 		} else {
 			this.report.warn(`file "${name}" has no pathurl; imported offline`, {
 				subject: { kind: 'media', name },

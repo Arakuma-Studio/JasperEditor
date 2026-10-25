@@ -166,7 +166,7 @@ export function placeholderAsset(
 			variableFrameRate: false,
 		},
 		locators: [
-			...(m.path ? [{ type: 'path' as const, path: m.path, relativeToProject: null }] : []),
+			...(m.path ? [{ type: 'path' as const, path: m.path, relativeToProject: m.relativePath ?? null }] : []),
 			...(m.url ? [{ type: 'url' as const, url: m.url }] : []),
 		],
 		derivation: null,
