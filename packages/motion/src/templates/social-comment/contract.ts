@@ -23,6 +23,12 @@ export type SocialCardAnim = {
 	likes: number;
 	/** Like tick: the heart's thump scale `s` and fill `f` (0 outline … 1 liked); null when the likes don't tick. */
 	heart: Readonly<{ s: number; f: number }> | null;
+	/**
+	 * Progress of the like tick, 0 → 1 (eased like the count; 1 at rest and when the likes don't tick). Store review
+	 * cards fill their stars from it (`socialStarFill(rating, tick)`) and pulse them with `heart.s`. Optional for
+	 * cards and callers written before it (read it as 1 when absent).
+	 */
+	tick?: number;
 };
 
 /** Resolved pictures and the emoji pack of the clip. */

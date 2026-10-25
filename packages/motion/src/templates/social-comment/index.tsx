@@ -58,6 +58,7 @@ export function SocialComment(props: AnimeTemplateProps) {
 	const anim: SocialCardAnim = {
 		words: schedule.units > 0 ? (values.slice(1, 1 + schedule.units) as SocialWordValues[]) : null,
 		likes: tick ? socialTickCount(p.likes, progress) : p.likes,
+		tick: tick ? progress : 1,
 		heart:
 			schedule.heartTarget !== null
 				? (values[schedule.heartTarget] as Readonly<{ s: number; f: number }>)

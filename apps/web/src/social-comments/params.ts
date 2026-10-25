@@ -8,6 +8,8 @@ import {
 	randomStats,
 	SOCIAL_COUNT_FIELDS,
 	SOCIAL_COUNT_MAX,
+	SOCIAL_RATING_MAX,
+	SOCIAL_RATING_MIN,
 	SOCIAL_TIME_UNITS,
 	SOCIAL_TIME_VALUE_MAX,
 	type SocialCountField,
@@ -36,6 +38,13 @@ export function timeValueOf(v: unknown): number | null {
 export function timeUnitOf(v: unknown): SocialTimeUnit | null {
 	return typeof v === 'string' && (SOCIAL_TIME_UNITS as readonly string[]).includes(v)
 		? (v as SocialTimeUnit)
+		: null;
+}
+
+/** A stored star rating (1–5), or null when the value is not one. */
+export function ratingOf(v: unknown): number | null {
+	return typeof v === 'number' && Number.isInteger(v) && v >= SOCIAL_RATING_MIN && v <= SOCIAL_RATING_MAX
+		? v
 		: null;
 }
 
@@ -71,9 +80,21 @@ function rng(seed: number): () => number {
 	};
 }
 
-const STAT_PARAMS = ['timeValue', 'timeUnit', 'likes', 'replies', 'reposts', 'views'] as const;
+const STAT_PARAMS = [
+	'timeValue',
+	'timeUnit',
+	'likes',
+	'replies',
+	'reposts',
+	'views',
+	'rating',
+	'date',
+] as const;
 
-/** Randomize stats: every stat the clip's variant draws (time and counts, consistent with each other). */
+/**
+ * Randomize stats: every stat the clip's variant draws (time and counts, consistent with each other; on store reviews
+ * the star rating, the date and the age that goes with it).
+ */
 export function statsPatch(params: Params, seed: number): Record<string, unknown> {
 	const stats = randomStats(variantOf(params), seed) as Record<(typeof STAT_PARAMS)[number], unknown>;
 	const out: Record<string, unknown> = {};
