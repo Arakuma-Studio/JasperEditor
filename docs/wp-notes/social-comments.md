@@ -2156,3 +2156,20 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
   Why: names are what the asset chip and the export blockers list; a name left at "X post · Display Name" after the
   user typed the real name would identify the wrong card. Keyframed params do not rename (the static value counts).
 
+### X action bar spacing (N6)
+
+- The four engagement columns still share the bar equally (x.com's `flex-1`), but each has a minimum width
+  (`xActionLayout` in `x.tsx`): icon 15 + icon → count 8 + the count + `X_COUNT_GAP` (6 px) before the next icon.
+  The count's width is bounded by `xCountEm` (em advances measured in Chrome for Chirp 400: digits 0.62, "." 0.27,
+  "," 0.28, K / B 0.66, M 0.87; bounds 0.63 / 0.3 / 0.68 / 0.88; DejaVu Sans fallback within them).
+- The bar is 280 px with the avatar (420 − 2 border − 32 padding − 64 avatar column − 42 bookmark / share). One
+  six-character count ("321.3K", "999.9M") in any column keeps x.com's 13 px counts and 8 px inset; when all four are
+  long the inset tightens to 4 px, then the counts shrink uniformly (≥ 10 px; four "999.9M" → 12.2 px).
+- The likes column is sized for the widest count its tick passes ("999.9M" on the way to "1,000B"), so the bar does
+  not move while the count ticks; every frame stays a pure function of params and time.
+- Tests: `packages/motion/test/social-x-fit.test.tsx` — the budget for the longest counts per column, all four, and
+  fast-check over all counts; in Chrome (runs when a Chrome is found, like the GL tests) the em bounds of the face
+  drawn and the laid-out card: every count unclipped and ≥ 6 px before the next icon, with the fallback face and
+  with Chirp when `SOCIAL_CHIRP_DIR` holds its Regular woff2. The test fails on the previous layout (3.9 px for
+  "999.9M" in the fallback face; 0.4 px in Chirp).
+

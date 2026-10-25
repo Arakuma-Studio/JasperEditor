@@ -217,24 +217,101 @@ function LikeHeart({ heart, color }: { heart: SocialCardProps['anim']['heart']; 
 	);
 }
 
+/** Least space between a count and the next icon (App QA N6: a six-character repost count touched the heart). */
+export const X_COUNT_GAP = 6;
+/** Icon → count space: 8 px (tokcomment's `p-[0.5em]` icon box), 4 px when long counts need the room. */
+const COUNT_INSET = 8;
+const COUNT_INSET_TIGHT = 4;
+/** Smallest count size when four long counts share the bar (x.com's 13 px otherwise). */
+const COUNT_PX_MIN = 10;
+/** The card's outer width (tokcomment), its border and side padding. */
+const CARD_W = 420;
+const CARD_INSET = 2 * 1 + 2 * 16;
+/** The bookmark and share group after the four columns: two icons 12 px apart. */
+const END_GROUP_GAP = 12;
+
+/** Width of the four engagement columns: the text column minus the bookmark and share group. */
+export function xActionsWidth(showProfile: boolean): number {
+	return CARD_W - CARD_INSET - (showProfile ? AVATAR + AVATAR_GAP : 0) - (2 * ICON + END_GROUP_GAP);
+}
+
 /**
- * One engagement column: the icon and its count (8 px after it, tokcomment's `p-[0.5em]` icon box). x.com hides a
- * zero count (the icon stays). The column takes an equal share of the row (x.com's `flex-1` columns) and clips its
- * count, so no count can push the bookmark and share icons out of the card.
+ * Upper bound of a count's advance in em: Chirp 400 measured in Chrome (digits 0.62 — tabular, "." 0.27, "," 0.28,
+ * K 0.66, B 0.66, M 0.87) and the fallback face within the same bounds (test/social-x-fit.test.tsx measures both).
  */
-function Engagement(p: { part: string; icon: ReactNode; count: string; color: string }) {
+export function xCountEm(text: string): number {
+	let em = 0;
+	for (const ch of text)
+		em += /[0-9]/.test(ch)
+			? 0.63
+			: ch === '.' || ch === ','
+				? 0.3
+				: ch === 'M'
+					? 0.88
+					: ch === 'K' || ch === 'B'
+						? 0.68
+						: 0.9;
+	return em;
+}
+
+export type XActionLayout = { countPx: number; inset: number; minWidths: number[] };
+
+/**
+ * Room of the four engagement columns for the widest count each can show (`''` = none): every column keeps its
+ * icon, the icon → count space, the count and `X_COUNT_GAP` before the next icon (`minWidths`, CSS px; the columns
+ * still share the bar equally when that is wider, as on x.com). When the counts need more than the bar, the
+ * icon → count space tightens to 4 px, then the counts get smaller (never below 10 px) until they fit.
+ */
+export function xActionLayout(counts: readonly string[], showProfile: boolean): XActionLayout {
+	const width = xActionsWidth(showProfile);
+	const ems = counts.map(xCountEm);
+	const totalEm = ems.reduce((a, b) => a + b, 0);
+	const fixed = (inset: number) =>
+		counts.reduce((a, c) => a + ICON + X_COUNT_GAP + (c === '' ? 0 : inset), 0);
+	let inset = COUNT_INSET;
+	let countPx = COUNT_PX;
+	if (fixed(inset) + totalEm * countPx > width) inset = COUNT_INSET_TIGHT;
+	if (fixed(inset) + totalEm * countPx > width && totalEm > 0)
+		countPx = Math.max(COUNT_PX_MIN, Math.floor(((width - fixed(inset)) / totalEm) * 100) / 100);
+	const minWidths = counts.map(
+		(c, i) => Math.ceil((ICON + X_COUNT_GAP + (c === '' ? 0 : inset + ems[i]! * countPx)) * 100) / 100,
+	);
+	return { countPx, inset, minWidths };
+}
+
+/**
+ * One engagement column: the icon and its count. x.com hides a zero count (the icon stays). The columns share the
+ * row equally (x.com's `flex-1` columns) but never get narrower than their count needs (`xActionLayout`), so a
+ * count keeps `X_COUNT_GAP` from the next icon; the column still clips as a last guard, so no count can push the
+ * bookmark and share icons out of the card.
+ */
+function Engagement(p: {
+	part: string;
+	icon: ReactNode;
+	count: string;
+	color: string;
+	minWidth: number;
+	countPx: number;
+	inset: number;
+}) {
 	return (
 		<div
 			data-part={`${p.part}-action`}
-			style={{ flex: '1 1 0', minWidth: 0, display: 'flex', alignItems: 'center', overflow: 'hidden' }}
+			style={{
+				flex: '1 1 0',
+				minWidth: p.minWidth,
+				display: 'flex',
+				alignItems: 'center',
+				overflow: 'hidden',
+			}}
 		>
 			{p.icon}
 			{p.count !== '' ? (
 				<span
 					data-part={p.part}
 					style={{
-						marginLeft: 8,
-						fontSize: COUNT_PX,
+						marginLeft: p.inset,
+						fontSize: p.countPx,
 						lineHeight: '19.5px',
 						fontWeight: 400,
 						fontVariantNumeric: 'tabular-nums',
@@ -256,6 +333,19 @@ function Engagement(p: { part: string; icon: ReactNode; count: string; color: st
 const shownCount = (n: number, field: 'likes' | 'replies' | 'reposts' | 'views') =>
 	n >= 1 ? formatCount('x-post', n, field) : '';
 
+/**
+ * The widest like count the clip shows: the like tick runs 0 → `likes` through "999", "999.9K" and "999.9M" when
+ * the final count is past them, so the bar is laid out for the widest (it does not move while the count ticks).
+ */
+function widestLikes(likes: number): string {
+	let widest = '';
+	for (const n of [999, 999_999, 999_999_999, likes]) {
+		const text = shownCount(Math.min(n, likes), 'likes');
+		if (xCountEm(text) > xCountEm(widest)) widest = text;
+	}
+	return widest;
+}
+
 // ---------------------------------------------------------------------------------------------------- card
 
 function XPostCard({ params: p, text, anim, assets }: SocialCardProps) {
@@ -264,6 +354,16 @@ function XPostCard({ params: p, text, anim, assets }: SocialCardProps) {
 	const icon = (glyph: (typeof X_GLYPHS)[keyof typeof X_GLYPHS]) => (
 		<Glyph glyph={glyph} size={ICON} color={theme.secondary} />
 	);
+	const counts = {
+		replies: shownCount(p.replies, 'replies'),
+		reposts: p.showReposts ? shownCount(p.reposts, 'reposts') : '',
+		views: p.showViews ? shownCount(p.views, 'views') : '',
+	};
+	const bar = xActionLayout(
+		[counts.replies, counts.reposts, widestLikes(p.likes), counts.views],
+		p.showProfile,
+	);
+	const column = (i: number) => ({ minWidth: bar.minWidths[i]!, countPx: bar.countPx, inset: bar.inset });
 	const secondary: CSSProperties = {
 		fontSize: NAME_PX,
 		lineHeight: '21px',
@@ -390,30 +490,37 @@ function XPostCard({ params: p, text, anim, assets }: SocialCardProps) {
 						<Engagement
 							part="replies"
 							icon={icon(X_GLYPHS.reply)}
-							count={shownCount(p.replies, 'replies')}
+							count={counts.replies}
 							color={theme.secondary}
+							{...column(0)}
 						/>
 						{/* showReposts off hides the count; the icon stays (the param's contract) */}
 						<Engagement
 							part="reposts"
 							icon={icon(X_GLYPHS.repost)}
-							count={p.showReposts ? shownCount(p.reposts, 'reposts') : ''}
+							count={counts.reposts}
 							color={theme.secondary}
+							{...column(1)}
 						/>
 						<Engagement
 							part="likes"
 							icon={<LikeHeart heart={anim.heart} color={theme.secondary} />}
 							count={shownCount(anim.likes, 'likes')}
 							color={mixColor(theme.secondary, LIKED, liked)}
+							{...column(2)}
 						/>
 						{/* showViews off hides the count; the icon stays (the param's contract) */}
 						<Engagement
 							part="views"
 							icon={icon(X_GLYPHS.views)}
-							count={p.showViews ? shownCount(p.views, 'views') : ''}
+							count={counts.views}
 							color={theme.secondary}
+							{...column(3)}
 						/>
-						<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+						<div
+							data-part="end-actions"
+							style={{ display: 'flex', alignItems: 'center', gap: END_GROUP_GAP, flexShrink: 0 }}
+						>
 							{icon(X_GLYPHS.bookmark)}
 							{icon(X_GLYPHS.share)}
 						</div>
