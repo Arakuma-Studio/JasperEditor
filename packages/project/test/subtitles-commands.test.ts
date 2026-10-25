@@ -176,6 +176,15 @@ describe('captions.generate (AS-001, AS-003)', () => {
 		).toContain('Hola');
 		valid(H.doc);
 	});
+	it('caption-track output into an existing caption track without a stored style (regression)', () => {
+		const { H } = shot();
+		H.ok([{ type: 'track.add', kind: 'caption' }]);
+		const t = H.seq.captionTracks[0]!;
+		expect(t.styleDefaults).toBeUndefined();
+		H.ok([{ type: 'captions.generate', output: 'caption-track', trackId: t.id }]);
+		expect(H.seq.captionTracks[0]!.styleDefaults?.boxWidthPct).toBe(80);
+		valid(H.doc);
+	});
 	it('refusals: locked track, wrong track kind, no transcript, unknown or invalid template', () => {
 		const { H } = shot();
 		H.ok([{ type: 'track.update', trackId: H.seq.videoTracks[0]!.id, patch: { locked: true } }]);
