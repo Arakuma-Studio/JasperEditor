@@ -2,7 +2,13 @@
 // Randomize identity / Randomize stats actions, mounted in the real Properties and Effect Controls panels against a
 // test template with the social-comment params schema and ui hints. Writes go through the session: undo/redo,
 // coalescing, multi-selection, read-only and refusals are checked on the document.
-import { createMgRegistry, MG_CATALOG, socialDefaults } from '@jasper/mg-templates';
+import {
+	createMgRegistry,
+	generatedAvatar,
+	MG_CATALOG,
+	type SocialVariant,
+	socialDefaults,
+} from '@jasper/mg-templates';
 import { type Clip, createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession, MemoryProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -601,6 +607,52 @@ describe('social-avatar', () => {
 		);
 		expect(screen.getByTestId('social-avatar-missing')).toBeTruthy();
 		expect((screen.getByTestId('social-avatar-media') as HTMLSelectElement).value).toBe('__missing__');
+		await session.close();
+	});
+});
+
+describe('social-avatar initials', () => {
+	it('come from the name the card shows: the handle on Instagram / YouTube, the display name on TikTok / X', async () => {
+		const { session, clipIds } = await openSession();
+		// a seed whose generated avatar draws initials for both names
+		const seed = Array.from({ length: 200 }, (_, i) => i + 1).find(
+			(n) =>
+				generatedAvatar(n, 'luna.park').style === 'initials' &&
+				generatedAvatar(n, 'Zed Alpha').style === 'initials',
+		)!;
+		const initials = (variant: SocialVariant) => {
+			const view = render(
+				<SessionProvider session={session}>
+					<SocialAvatarControl
+						clipId={clipIds[0]!}
+						clipIds={clipIds}
+						paramName="avatar"
+						value={{ generated: seed }}
+						params={{
+							...socialDefaults(variant),
+							displayName: 'Zed Alpha',
+							handle: 'luna.park',
+							avatar: { generated: seed },
+						}}
+						onChange={() => true}
+						onChangeParams={() => true}
+						disabled={false}
+						mixed={false}
+					/>
+				</SessionProvider>,
+			);
+			const text = view.getByTestId('social-avatar-preview').textContent;
+			view.unmount();
+			return text;
+		};
+		for (const v of [
+			'instagram-post',
+			'instagram-reel-reply',
+			'youtube-comment',
+			'youtube-shorts-reply',
+		] as const)
+			expect(initials(v), v).toBe('L');
+		for (const v of ['tiktok-reply', 'tiktok-comment', 'x-post'] as const) expect(initials(v), v).toBe('ZA');
 		await session.close();
 	});
 });

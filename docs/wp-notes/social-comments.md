@@ -1158,8 +1158,11 @@ type TemplateGroupActionProps = { clipIds; params; paramNames; onChangeParams; d
 ### `social-avatar`
 
 - Three sources as a segmented control: **Image** (a project image), **Generated** (`{ generated: seed }`, drawn with
-  `generatedAvatar(seed, displayName)` like the template; **Reshuffle** draws a new seed) and **Default** (`null`, the
-  platform silhouette). A value the control does not understand is shown as the default and replaced by the next pick.
+  `generatedAvatar(seed, avatarNameFor(variant, params))`; **Reshuffle** draws a new seed) and **Default** (`null`, the
+  platform silhouette). `avatarNameFor` (`@jasper/mg-templates` social core, `variants.ts`, with `shownNameParam`) is
+  the name the card shows first — TikTok and X the display name, Instagram and YouTube the handle — so the initials
+  match the card's; the cards should take their generated-avatar name from it too (TikTok and X pass `displayName`
+  today, which is the same). A value the control does not understand is shown as the default and replaced by the next pick.
 - Image: WP1's `MediaParamPicker` (still images only, "None" = default, drops on the field) plus a drop zone over the
   whole control for Project panel items (`droppedMediaId`) and desktop image files, and **Import an image…** (the
   tokcomment upload button), which imports the file into the project root bin through the import service and then
