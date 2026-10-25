@@ -105,18 +105,27 @@ describe.skipIf(!FF)(
 		const bandNoise = (seed: number, n: number, lo: number, hi: number): Float32Array => {
 			// flat band: white noise through a brick-wall in the frequency domain, built from random-phase bins
 			const r = new Prng(seed);
-			const x = new Float32Array(n);
-			const bins: [number, number, number][] = [];
-			for (let f = lo; f <= hi; f += 4) bins.push([f, r.unit() * 2 * Math.PI, 1]);
-			for (let i = 0; i < n; i++) {
-				let s = 0;
-				for (const [f, ph] of bins) s += Math.sin((2 * Math.PI * f * i) / SR + ph);
-				x[i] = s;
+			const x = new Float64Array(n);
+			// Independent sinusoidal synthesis: a second-order oscillator avoids repeating sin() for
+			// every sample of every frequency. Preserve the original Float32 rounding before normalisation.
+			for (let f = lo; f <= hi; f += 4) {
+				const phase = r.unit() * 2 * Math.PI;
+				const step = (2 * Math.PI * f) / SR;
+				const coefficient = 2 * Math.cos(step);
+				let previous = Math.sin(phase - step);
+				let value = Math.sin(phase);
+				for (let i = 0; i < n; i++) {
+					x[i] += value;
+					const next = coefficient * value - previous;
+					previous = value;
+					value = next;
+				}
 			}
+			const out = Float32Array.from(x);
 			let p = 0;
-			for (const v of x) p = Math.max(p, Math.abs(v));
-			for (let i = 0; i < n; i++) x[i] = (0.5 * x[i]!) / p;
-			return x;
+			for (const v of out) p = Math.max(p, Math.abs(v));
+			for (let i = 0; i < n; i++) out[i] = (0.5 * out[i]!) / p;
+			return out;
 		};
 
 		const twoTone = (n: number): Float32Array => {

@@ -30,13 +30,16 @@ describe('primitives', () => {
 		const a = new Prng(42);
 		const b = new Prng(42);
 		let sum = 0;
+		let mismatch = -1;
+		let outOfRange = -1;
 		for (let i = 0; i < 100000; i++) {
 			const v = a.uniform();
-			expect(v).toBe(b.uniform());
-			expect(v).toBeGreaterThanOrEqual(-1);
-			expect(v).toBeLessThan(1);
+			if (!Object.is(v, b.uniform()) && mismatch < 0) mismatch = i;
+			if (!(v >= -1 && v < 1) && outOfRange < 0) outOfRange = i;
 			sum += v;
 		}
+		expect(mismatch, 'first mismatched sample').toBe(-1);
+		expect(outOfRange, 'first out-of-range sample').toBe(-1);
 		expect(Math.abs(sum / 100000)).toBeLessThan(0.01);
 	});
 });

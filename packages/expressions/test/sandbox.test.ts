@@ -76,6 +76,7 @@ describe('expression realm isolation', () => {
 		expect(run('new Date().constructor.now()')).toEqual({ value: 0, error: null });
 		expect(run('new (new Date(0).constructor)().getTime()')).toEqual({ value: 0, error: null });
 		expect(run('Date.now() + new Date().getTime()')).toEqual({ value: 0, error: null });
+		expect(run('new Date(2020, 0, 1).getFullYear()')).toEqual({ value: 2020, error: null });
 	});
 
 	it('overriding inherited methods on own objects still works (no override mistake)', () => {

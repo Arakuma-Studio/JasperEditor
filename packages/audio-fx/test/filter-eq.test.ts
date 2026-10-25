@@ -429,7 +429,7 @@ describe('Notch Filter (premiere_tests)', () => {
 		const x = noise(1, 24000, 0.25);
 		const y = x.slice();
 		e.process([y, y.slice()], 0, y.length);
-		for (let i = 0; i < x.length; i++) expect(y[i]).toBe(x[i]);
+		expect(y.every((v, i) => Object.is(v, x[i]))).toBe(true);
 		const h = fx('notch-filter', {
 			n1On: true,
 			n1Freq: 60,

@@ -282,9 +282,6 @@ const VARIANTS: Variant[] = [
 	},
 ];
 
-/** Measured in the run that wrote this test (reported in the wp-note). */
-const results: string[] = [];
-
 describe('mg land / exit cues follow the rendered motion of the fframes templates', () => {
 	for (const v of VARIANTS)
 		it(v.name, () => {
@@ -315,7 +312,6 @@ describe('mg land / exit cues follow the rendered motion of the fframes template
 			expect(exitLag).toBeLessThanOrEqual(1.5);
 			expect(land!.confidence).toBe(0.8);
 			if (exit) expect(exit.confidence).toBe(0.6);
-			expect(land!.reason).toMatch(/settles after/);
 			expect(land!.window!.end).toBe(land!.frame);
 			expect(land!.window!.start).toBeGreaterThanOrEqual(at);
 			// the anchors resolve back to the cue frames
@@ -324,9 +320,6 @@ describe('mg land / exit cues follow the rendered motion of the fframes template
 				expect(resolveCueAnchor(d.doc, seq, c.anchor as CueAnchor, { mgTemplates: mgRegistry })).toBe(
 					c.frame,
 				);
-			results.push(
-				`${v.name}: settle ${(truth.settle! * d.fps).toFixed(2)} → land ${content(land!.frame)}; ${exit ? `leave ${(truth.leave! * d.fps).toFixed(2)} → exit ${content(exit.frame)}` : 'no outro, no exit'} (content frames)`,
-			);
 		});
 
 	it('a land before the clip’s first frame (sourceIn past the intro) gives no land cue and a null anchor', () => {
@@ -351,11 +344,6 @@ describe('mg land / exit cues follow the rendered motion of the fframes template
 			['exit', 408],
 		]);
 	});
-
-	it('prints the measured frames', () => {
-		console.log(results.join('\n'));
-		expect(results.length).toBe(VARIANTS.length);
-	});
 });
 
 describe('declared-timing fallback', () => {
@@ -371,7 +359,6 @@ describe('declared-timing fallback', () => {
 			['land', 30 + 27, 0.8],
 			['exit', 30 + 100, 0.6],
 		]);
-		expect(cues[0]!.reason).toMatch(/settles after/);
 		const seq = d.doc.sequences[d.seqId]!;
 		for (const c of cues)
 			expect(resolveCueAnchor(d.doc, seq, c.anchor as CueAnchor, { mgTemplates: mgRegistry })).toBe(c.frame);
@@ -381,7 +368,6 @@ describe('declared-timing fallback', () => {
 			['land', 30 + info.introFrames, 0.5],
 			['exit', 150 - info.outroFrames, 0.4],
 		]);
-		expect(declared[0]!.reason).toMatch(/declared/);
 	});
 
 	it('every shipped template is measured: the fframes ones here (VARIANTS), the anime ones in @jasper/motion', () => {

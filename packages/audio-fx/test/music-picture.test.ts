@@ -4,7 +4,7 @@
 // drop, plus hostile inputs.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { analyzeKey, chromaOf, estimateKey, KK_MAJOR, keyScale, MAJOR_SCALE } from '../src/analysis/key.ts';
+import { analyzeKey, chromaOf, estimateKey, KK_MAJOR, keyScale } from '../src/analysis/key.ts';
 import {
 	analyzeBeats,
 	analyzeMusic,
@@ -21,18 +21,18 @@ const ms = (samples: number, sr = SR) => (1000 * samples) / sr;
 
 describe('estimateKey / chromaOf', () => {
 	it('finds the scale of generated music in C major, E♭ major and A minor with a clear confidence', () => {
-		for (const [tonic, mode] of [
-			[0, 'major'],
-			[3, 'major'],
-			[9, 'minor'],
-			[7, 'major'],
+		for (const [tonic, mode, scale] of [
+			[0, 'major', [0, 2, 4, 5, 7, 9, 11]],
+			[3, 'major', [0, 2, 3, 5, 7, 8, 10]],
+			[9, 'minor', [0, 2, 4, 5, 7, 9, 11]],
+			[7, 'major', [0, 2, 4, 6, 7, 9, 11]],
 		] as const) {
 			const { audio } = dropMusic(SR, 120, 16, 9, { tonic, mode });
 			const k = analyzeKey(audio, SR)!;
 			console.info(
 				`key of ${tonic} ${mode}: ${k.name} r ${k.correlation} margin ${k.margin} confidence ${k.confidence}`,
 			);
-			expect(k.scale).toEqual(keyScale(tonic, mode));
+			expect(k.scale).toEqual(scale);
 			expect(k.confidence).toBeGreaterThanOrEqual(0.6);
 		}
 		// the remix test music (C, Am, F, G / Dm, G, Em, Am): the C major scale
@@ -40,7 +40,7 @@ describe('estimateKey / chromaOf', () => {
 		console.info(
 			`key of the test music: ${k.name} r ${k.correlation} margin ${k.margin} confidence ${k.confidence}`,
 		);
-		expect(k.scale).toEqual(keyScale(0, 'major'));
+		expect(k.scale).toEqual([0, 2, 4, 5, 7, 9, 11]);
 	});
 
 	it('a profile itself is its key; rotating the chroma rotates the tonic (property)', () => {
@@ -105,8 +105,8 @@ describe('estimateKey / chromaOf', () => {
 	});
 
 	it('the scales', () => {
-		expect(keyScale(0, 'major')).toEqual([...MAJOR_SCALE]);
-		expect(keyScale(9, 'minor')).toEqual(keyScale(0, 'major'));
+		expect(keyScale(0, 'major')).toEqual([0, 2, 4, 5, 7, 9, 11]);
+		expect(keyScale(9, 'minor')).toEqual([0, 2, 4, 5, 7, 9, 11]);
 		expect(keyScale(7, 'major')).toEqual([0, 2, 4, 6, 7, 9, 11]);
 	});
 });

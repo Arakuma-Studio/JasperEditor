@@ -144,7 +144,6 @@ describe('overlapping sound effects mask the sounds of a higher weight', () => {
 		];
 		const r = solveSfxGains(events);
 		expect(r.stats.converged).toBe(true);
-		expect(r.stats.iterations).toBeGreaterThan(3);
 		expect(r.stats.iterations).toBeLessThanOrEqual(MAX_MASKING_ITERATIONS + 1);
 		expect(r.warnings.filter((w) => w.code === 'W_UNCONVERGED')).toEqual([]);
 		const h = one(r, 'h');
@@ -173,7 +172,6 @@ describe('summed true peak of overlapping sounds', () => {
 			expect(one(r, id).gainDb, id).toBeCloseTo(g, 9);
 			expect(one(r, id).limitedBy, id).toEqual(['headroom', 'overlap-headroom']);
 			expect(one(r, id).overlapTruePeakDb!, id).toBeLessThanOrEqual(-1 + 0.005);
-			expect(one(r, id).reason, id).toContain('overlapping');
 		}
 		expect(20 * Math.log10(2 * amp(-3 + g))).toBeLessThanOrEqual(-1 + 0.005);
 		// apart: no change

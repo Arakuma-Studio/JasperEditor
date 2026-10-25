@@ -127,7 +127,7 @@ describe('modulation', () => {
 			const x = noise(2, 4800, 0.4);
 			const y = x.slice();
 			fx(id, { mix: 0 }).process([y], 0, y.length);
-			for (let i = 0; i < x.length; i++) expect(y[i]).toBeCloseTo(x[i]!, 6);
+			expect(y.every((v, i) => Math.abs(v - x[i]!) < 5e-7)).toBe(true);
 		}
 	});
 });

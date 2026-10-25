@@ -54,7 +54,7 @@ describe('DeNoise', () => {
 		const lat = d.latency();
 		const x = noise(9, 20000, 0.5);
 		const y = run1(d, x);
-		for (let i = lat; i < x.length; i++) expect(Math.abs(y[i]! - x[i - lat]!)).toBeLessThan(1e-4);
+		expect(y.subarray(lat).every((v, i) => Math.abs(v - x[i]!) < 1e-4)).toBe(true);
 	});
 
 	for (const model of ['adaptive', 'print'] as const)
@@ -129,7 +129,7 @@ describe('DeReverb, click remover, Enhance Speech', () => {
 		const lat = d0.latency();
 		const x = noise(2, 12000, 0.3);
 		const y0 = run1(d0, x);
-		for (let i = lat; i < x.length; i++) expect(Math.abs(y0[i]! - x[i - lat]!)).toBeLessThan(1e-4);
+		expect(y0.subarray(lat).every((v, i) => Math.abs(v - x[i]!) < 1e-4)).toBe(true);
 		// Noise bursts with an exponential (RT60 = 1 s) tail.
 		const n = SR * 4;
 		const r = new Prng(5);
@@ -170,7 +170,7 @@ describe('DeReverb, click remover, Enhance Speech', () => {
 	it('Enhance Speech: mix 0 is identity, the EQ shapes a voice band, and noise between words is pushed down', () => {
 		const x = noise(3, 9600, 0.2);
 		const y0 = run1(fx('enhance-speech', { mix: 0 }), x);
-		for (let i = 0; i < x.length; i++) expect(y0[i]).toBeCloseTo(x[i]!, 6);
+		expect(y0.every((v, i) => Math.abs(v - x[i]!) < 5e-7)).toBe(true);
 		const n = SR * 2;
 		const quiet = noise(8, n, 0.002);
 		const y = run1(fx('enhance-speech'), quiet);

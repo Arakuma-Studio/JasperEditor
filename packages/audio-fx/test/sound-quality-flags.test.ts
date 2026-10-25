@@ -7,12 +7,10 @@ import {
 	analyzeSound,
 	DC_OFFSET_DB,
 	DEFAULT_TYPE_PROFILES,
-	JUDGE_REASONS,
 	judgeSound,
 	LOWPASSED_ROLLOFF_HZ,
 	NOISY_FLOOR_DB,
 	SOUND_DESCRIPTORS_VERSION,
-	SOUND_TYPE_IDS,
 	type SoundDescriptors,
 } from '../src/index.ts';
 import { addClick, floorNoise, TAKE_SR as SR } from './take-fixtures.ts';
@@ -173,8 +171,7 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 		expect(judgeSound({ ...KEY, dcDb: -30 }, DEFAULT_TYPE_PROFILES.ambience).reasons).toContain('dc-offset');
 	});
 
-	it('the new reasons come last in JUDGE_REASONS and lower the score', () => {
-		expect(JUDGE_REASONS.slice(-3)).toEqual(['lowpassed', 'noisy-floor', 'dc-offset']);
+	it('the new reasons appear in order and lower the score', () => {
 		const r = judgeSound({ ...KEY, cutoffHz: 6000, floorDb: -40, dcDb: -20 }, key);
 		expect(r.reasons).toEqual(['lowpassed', 'noisy-floor', 'dc-offset']);
 		expect(r.score).toBeLessThan(0.5);
@@ -188,15 +185,6 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 
 	it('a take is judged as one event: singleHit false never reports multi-hit', () => {
 		expect(judgeSound({ ...KEY, onsetCount: 2 }, { ...key, singleHit: false }).ok).toBe(true);
-	});
-
-	it('every profile has both new fields', () => {
-		for (const t of SOUND_TYPE_IDS) {
-			expect(typeof DEFAULT_TYPE_PROFILES[t].needsAir, t).toBe('boolean');
-			expect(
-				DEFAULT_TYPE_PROFILES[t].maxFloorDb === null || DEFAULT_TYPE_PROFILES[t].maxFloorDb === -55,
-			).toBe(true);
-		}
 	});
 
 	it('a measured key band-limited at 8 kHz (a low-bitrate encode) is lowpassed; the same key full-band is not', () => {

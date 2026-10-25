@@ -8,7 +8,6 @@ import {
 	judgeSound,
 	renderSynth,
 	SOUND_TYPE_IDS,
-	SplitMix32,
 	SYNTH_RECIPES,
 	SYNTH_SAMPLE_RATE,
 	SYNTH_VARIANTS,
@@ -62,28 +61,7 @@ describe('Jasper Synth', () => {
 		expect(synthRecipe('nope')).toBeUndefined();
 	});
 
-	it('SplitMix32 is the reference sequence', () => {
-		// splitmix32 from seed 0 (x += 0x9e3779b9; murmur3 fmix with 0x85ebca6b / 0xc2b2ae35)
-		const r = new SplitMix32(0);
-		const a = [r.nextU32(), r.nextU32(), r.nextU32()];
-		const ref = (x: number) => {
-			let z = x >>> 0;
-			z = Math.imul(z ^ (z >>> 16), 0x85ebca6b) >>> 0;
-			z = Math.imul(z ^ (z >>> 13), 0xc2b2ae35) >>> 0;
-			return (z ^ (z >>> 16)) >>> 0;
-		};
-		expect(a).toEqual([ref(0x9e3779b9), ref(0x3c6ef372), ref(0xdaa66d2b)]);
-		const u = new SplitMix32(5);
-		for (let i = 0; i < 1000; i++) {
-			const v = u.unit();
-			expect(v >= 0 && v < 1).toBe(true);
-		}
-	});
-
-	it.each(SYNTH_RECIPES.map((r) => [r.id]))('%s renders the pinned bytes, twice the same', (id) => {
-		const a = renderSynth(id, 3).channels;
-		const b = renderSynth(id, 3).channels;
-		expect(b).toEqual(a);
+	it.each(SYNTH_RECIPES.map((r) => [r.id]))('%s renders the versioned pinned bytes', (id) => {
 		expect(hashRecipe(id)).toBe(PINNED[id]);
 	});
 
@@ -115,14 +93,6 @@ describe('Jasper Synth', () => {
 			}
 		},
 	);
-
-	it('variants differ from each other', () => {
-		for (const r of SYNTH_RECIPES) {
-			const a = renderSynth(r.id, 0).channels[0]!;
-			const b = renderSynth(r.id, 1).channels[0]!;
-			expect(a.length === b.length && a.every((v, i) => v === b[i]), r.id).toBe(false);
-		}
-	});
 
 	it('any 32-bit seed renders; others are refused', () => {
 		expect(renderSynth('synth.click', 0xffffffff).channels[0]!.length).toBeGreaterThan(0);

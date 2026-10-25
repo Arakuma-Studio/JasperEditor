@@ -98,7 +98,7 @@ describe('channel utilities', () => {
 			expect(Math.abs(b[i]! + l[i]!)).toBeLessThan(1e-6);
 		}
 		const [m1, m2] = run(fx('stereo-expander', { expand: 0 }), l, r);
-		for (let i = 0; i < n; i++) expect(Math.abs(m1[i]! - m2[i]!)).toBeLessThan(1e-6);
+		expect(m1.every((v, i) => Math.abs(v - m2[i]!) < 1e-6)).toBe(true);
 		const [w1, w2] = run(fx('stereo-expander', { expand: 200, centerPan: 100 }), l, l);
 		for (let i = 0; i < n; i++) {
 			expect(Math.abs(w1[i]!)).toBeLessThan(1e-6);
@@ -117,16 +117,16 @@ describe('channel utilities', () => {
 		const l = noise(1, n, 0.3);
 		const r = noise(2, n, 0.3);
 		const [a, b] = run(fx('stereo-width', { width: 0 }), l, r);
-		for (let i = 0; i < n; i++) expect(a[i]).toBeCloseTo(b[i]!, 6);
+		expect(a.every((v, i) => Math.abs(v - b[i]!) < 5e-7)).toBe(true);
 		const [c, d] = run(fx('stereo-width'), l, r);
 		for (let i = 0; i < n; i++) {
 			expect(c[i]).toBeCloseTo(l[i]!, 6);
 			expect(d[i]).toBeCloseTo(r[i]!, 6);
 		}
 		const [e, f] = run(fx('stereo-width', { width: 200 }), l, r);
-		for (let i = 0; i < n; i++) expect(e[i]! - f[i]!).toBeCloseTo(2 * (l[i]! - r[i]!), 5);
+		expect(e.every((v, i) => Math.abs(v - f[i]! - 2 * (l[i]! - r[i]!)) < 5e-6)).toBe(true);
 		const [g, h] = run(fx('stereo-width', { width: 200 }), l, l);
-		for (let i = 0; i < n; i++) expect(g[i]).toBeCloseTo(h[i]!, 6);
+		expect(g.every((v, i) => Math.abs(v - h[i]!) < 5e-7)).toBe(true);
 	});
 });
 
@@ -141,7 +141,7 @@ describe('Mono Maker', () => {
 			expect(b[i]).toBe(a[i]);
 		}
 		const [c] = run(fx('mono-maker', { amount: 0 }), l, r);
-		for (let i = 0; i < n; i++) expect(c[i]).toBeCloseTo(l[i]!, 6);
+		expect(c.every((v, i) => Math.abs(v - l[i]!) < 5e-7)).toBe(true);
 	});
 
 	it('below mode: the crossover sums flat; lows become mono, highs keep their stereo', () => {

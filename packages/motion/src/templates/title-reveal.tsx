@@ -32,7 +32,7 @@ import type { AnimeTemplateProps } from './types.ts';
 
 type Values = { o: number; y: number; d: number };
 
-export type TitleRevealBuildInput = TemplateTiming & {
+type TitleRevealBuildInput = TemplateTiming & {
 	units: number;
 	order: TitleRevealParams['order'];
 	stagger: number;
@@ -49,7 +49,7 @@ function titleSegments(title: string): TextSegment[] {
  * The timeline: targets `[...units, subtitle, underline]`. Units: `o` opacity, `y` rise in em of the title size;
  * subtitle: `o`, `y` (em of its size); underline: `d` drawn fraction.
  */
-export function buildTitleReveal(input: TitleRevealBuildInput): {
+function buildTitleReveal(input: TitleRevealBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
