@@ -23,8 +23,11 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * later M3 additions may share v5 (older builds open v5 files read-only).
  * v6 (parity program, D-36…D-48): additive; version bump only.
  * v7 (sound design, spec 12): Essential Sound SFX Pan is an offset (`panOffset`, `residual`) and media carry library
- * provenance (`MediaAsset.library`); version bump only, so v6 builds open v7 files read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 7;
+ * provenance (`MediaAsset.library`); version bump only, so v6 builds open v7 files read-only (docs/project-files.md).
+ * v8 (social comments): motion-graphic template params may reference media (`{mediaId}`, e.g. avatars); version bump
+ * only, so v7 builds — whose orphan collection, Project Manager and item delete ignore those references and would
+ * drop the media — open v8 files read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 8;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

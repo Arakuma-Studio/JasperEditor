@@ -1,6 +1,8 @@
 // Template media params (social comments: avatars; docs/wp-notes/social-comments.md "Template media params"):
 // reference integrity (regression tests for the data-loss paths: each failed before the fix), validation, render
 // snapshot and the bounded `collectParamMediaIds` walk.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { collectOrphans } from '../src/commands/handlers/project.ts';
@@ -322,6 +324,23 @@ describe('validation of template media params (validateMgParams, param.set)', ()
 			ui: { control: 'media' },
 		});
 		expect(specs.find((s) => s.key === 'params.gallery')?.kind).not.toBe('media');
+	});
+});
+
+describe('schema v8 (template media params)', () => {
+	it('the v8 fixture keeps its template media references through the load pipeline', () => {
+		const raw = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'schema-v8.jasper'), 'utf8'));
+		const r = loadProject(raw, { mgTemplates: avatarRegistries().mgTemplates });
+		expect(r.readOnly).toBe(false);
+		expect(r.repairs).toEqual([]);
+		expect(r.issues).toEqual([]);
+		const clip = r.document.sequences.seq_000000000000SEQ1!.clips.clp_00000000000MG001 as Mg;
+		expect(clip.params.avatar).toEqual({ mediaId: 'med_00000000000AVA01' });
+		expect(clip.params.gallery).toEqual([null, { mediaId: 'med_00000000000AVA01' }]);
+		expect(mediaUsage(r.document).med_00000000000AVA01).toEqual({
+			clips: 1,
+			sequences: ['seq_000000000000SEQ1'],
+		});
 	});
 });
 
