@@ -303,6 +303,20 @@ describe('duplicate_motion_graphic', () => {
 		expect(new Set(b.items.map((i: Json) => i.seed)).size).toBe(3);
 	});
 
+	it('repeated calls on the same source continue the sequence after the last consecutive copy', async () => {
+		const engine = fakeEngine();
+		const src = addComment(engine);
+		const { call } = await connect(engine);
+		const a = ok(await call('duplicate_motion_graphic', { clipId: src, count: 2, seed: 4 }));
+		expect(a.items.map((i: Json) => [i.track, i.start])).toEqual([
+			['V2', 150],
+			['V2', 270],
+		]);
+		const b = ok(await call('duplicate_motion_graphic', { clipId: src, seed: 5 }));
+		expect(b.items.map((i: Json) => [i.track, i.start, i.end])).toEqual([['V2', 390, 510]]);
+		expect(b.items[0].sourceClipId).toBe(src);
+	});
+
 	it('takes at, track and params (which win and are not re-randomized); never overwrites', async () => {
 		const engine = fakeEngine();
 		const src = addComment(engine);

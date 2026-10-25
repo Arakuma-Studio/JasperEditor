@@ -244,6 +244,58 @@ describe('clip.duplicateMotionGraphic', () => {
 		]);
 	});
 
+	it('repeated Add another from the same source builds a sequence after the last consecutive copy', () => {
+		const h = harness();
+		const src = addCard(h);
+		// three separate transactions (three undo steps), each from the original clip, each adding one clip
+		const starts = [1, 2, 3].map((seed) => {
+			const r = h.ok([dup(src, { seed })]);
+			expect(r.created.filter((id) => h.seq.clips[id])).toHaveLength(1);
+			return (r.results[0] as DupResult).start;
+		});
+		expect(starts).toEqual([90, 150, 210]);
+		expect(h.spans('V2')).toEqual([
+			[30, 90],
+			[90, 150],
+			[150, 210],
+			[210, 270],
+		]);
+		expect(h.spans('V3')).toEqual([]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('the chain follows copies that went to a higher track and stops at a gap or another clip', () => {
+		const h = harness();
+		const src = addCard(h);
+		// V2 is busy right after the source: the first copy goes up to V3, the second follows it on V2 when free
+		h.ok([{ type: 'clip.addSolid', at: 90, duration: 40, track: 'V2', color: [1, 0, 0, 1] }]);
+		const a = h.ok([dup(src, { seed: 1 })]).results[0] as DupResult;
+		expect(a).toMatchObject({ track: 'V3', start: 90 });
+		const b = h.ok([dup(src, { seed: 2 })]).results[0] as DupResult;
+		expect(b).toMatchObject({ track: 'V2', start: 150 });
+		// a clip of another kind (or another template) right after the source does not extend the chain
+		const g = harness();
+		const s2 = addCard(g);
+		g.ok([
+			{
+				type: 'clip.addMotionGraphic',
+				at: 90,
+				duration: 60,
+				track: 'V2',
+				template: { id: 'nohint', version: 1 },
+			},
+		]);
+		expect(g.ok([dup(s2)]).results[0] as DupResult).toMatchObject({ track: 'V3', start: 90 });
+		// a copy the user moved away (a gap) ends the chain
+		const k = harness();
+		const s3 = addCard(k);
+		const moved = k.ok([dup(s3, { ref: '$m' })]).refs.$m!;
+		k.ok([{ type: 'clip.move', clipIds: [moved], deltaFrames: 110 }]);
+		expect(k.ok([dup(s3)]).results[0] as DupResult).toMatchObject({ track: 'V2', start: 90 });
+		// an explicit at is used as given
+		expect(h.ok([dup(src, { at: 90 })]).results[0] as DupResult).toMatchObject({ start: 90, track: 'V4' });
+	});
+
 	describe('refusals (nothing changes)', () => {
 		const refused = (h: Harness, cmd: Record<string, unknown>, code: string) => {
 			const before = h.doc;

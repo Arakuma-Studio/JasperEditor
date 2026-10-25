@@ -1506,9 +1506,16 @@ ui.import?: {
 
 - **Copy:** the whole clip (transform, effects, masks, keyframes, name, label, canvas). Children get new ids; links
   and groups are not copied.
-- **Placement:** the copy starts at `at` (default: the source's end) with the same duration. It goes on the first
-  free unlocked video track from `track` (default: the source's track) up, or on a new top track. It never
-  overwrites (`firstFreeTrack`).
+- **Placement:** the copy starts at `at` (default: the end of the source's chain, below) with the same duration. It
+  goes on the first free unlocked video track from `track` (default: the source's track) up, or on a new top track.
+  It never overwrites (`firstFreeTrack`).
+- **Chain (sc/polish, App QA N2):** without `at`, the start is the source's end moved past every motion graphic of
+  the same template that starts exactly there on the floor track or above, repeatedly (`chainEnd` in
+  `handlers/mg-another.ts`). So Add another twice from the same clip (the clip menu targets the clicked clip, not the
+  newest copy) puts the second copy after the first instead of at the same time on the track above, where it hid the
+  first. A gap, another template or another clip kind ends the chain. Copies that went up a track still extend it, so
+  the next copy can come back down to the source's track. MCP `count` copies chain through refs and give the same
+  layout as `count` separate calls on the source.
 - **Params:** the source's params minus `reroll`, then `params` on top. The fill hook fills the omitted ones from
   `seed`. A rerolled param the hook does not fill takes the template default.
 - **Validation:** the params schema and the template media checks run on the result (`validateTemplateParams`).
