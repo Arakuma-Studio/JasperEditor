@@ -10575,5 +10575,19 @@
   "Sound Check delivers the mix through this encoding before it judges loudness and true peak (the decoded audio, as the export writes it)": "Sound Check entrega la mezcla con esta codificación antes de juzgar la sonoridad y el pico real (el audio decodificado, como lo escribe la exportación)",
   "The limiter cannot make the mix louder under this ceiling.": "El limitador no puede hacer la mezcla más fuerte bajo este techo.",
   "AAC {0} kb/s": "AAC {0} kb/s",
-  "Opus {0} kb/s": "Opus {0} kb/s"
+  "Opus {0} kb/s": "Opus {0} kb/s",
+  "Asymmetrical": "Asimétrico",
+  "Cosine": "Coseno",
+  "Crossfade Symmetry": "Simetría del fundido cruzado",
+  "Custom Fade": "Fundido personalizado",
+  "Custom Start": "Inicio personalizado",
+  "Drag the curve to change the fade value": "Arrastre la curva para cambiar el valor del fundido",
+  "Drag the curve to make a Custom Fade": "Arrastre la curva para crear un fundido personalizado",
+  "Drag up or down to change the fade value (Shift: one side of a crossfade)": "Arrastre hacia arriba o abajo para cambiar el valor del fundido (Mayús: un lado del fundido cruzado)",
+  "Fade curve: drag up or down to change the fade value": "Curva del fundido: arrastre hacia arriba o abajo para cambiar el valor del fundido",
+  "Fade Out Shape": "Forma del fundido de salida",
+  "Fade Out Value": "Valor del fundido de salida",
+  "Fade Shape": "Forma del fundido",
+  "Fade Value": "Valor del fundido",
+  "Symmetrical": "Simétrico"
 }
