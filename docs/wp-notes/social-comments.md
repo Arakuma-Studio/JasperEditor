@@ -119,6 +119,12 @@ headless, MCP or CLI renders are announced in the next editor that connects.
   `remoteAssets.changed` (settings or manifest).
 - Strings are in the i18n catalogue with Spanish translations.
 
+### For the gallery and other Players
+
+`MgTemplatePreview` takes `assets={catalogAssetResolver(catalog)}` (`apps/web/src/remote-assets/resolve.ts`, stable per
+catalogue object) to load a declaring template's fonts, emoji and images in gallery posters and hover previews;
+without it the poster shows the markers.
+
 ### Bundled fonts
 
 TikTok Sans (`@fontsource/tiktok-sans` 5.3.0, OFL-1.1, Copyright 2024 TikTok Inc.) is bundled like the other catalogue
@@ -138,3 +144,33 @@ families (latin + latin-ext, every weight 300–900; the templates use 400/500/6
   © or ☺ without VS16 stay text). An emoji a pack lacks is a blocker naming it.
 - A template face of the variable Inter family (`Inter Variable`) loads its latin file only (no subset ranges are read
   for variable families).
+
+### Verification (2026-10-25, this host: 8 cores shared with other agents)
+
+- Unit / integration (vitest, `--maxWorkers=2`): `packages/mg-templates/test/emoji-assets.test.ts` (segmentation,
+  codepoint keys, fully-qualified lookup, fast-check round trips and key fuzzing, `requiredAssets` collection);
+  `packages/project/test/template-assets-snapshot.test.ts` (declared faces load without a text clip, emoji / image
+  tables, warnings, nested merge); `packages/motion/test/template-assets.test.tsx` (EmojiImage, marker, retry, render
+  failure); `packages/compositions/test/template-assets-layer.test.tsx` (emojiUrls / imageUrls, markers, reports, render
+  failure, exact face gating, subset files with unicode ranges, failed-face retry); `apps/engine/test/remote-assets.test.ts`
+  (local fixture server: download, pinned hash, damaged cache, HTML pages, policy off, offline, timeout, size caps,
+  bounded retries, concurrent dedup, per-host limit, emoji pin index, try-both / fully-qualified / `{name}` /
+  `cpJoin`+`cpMinDigits` mappings in the platform-glyphs manifest's shape, override reload, prefetch, notice, images,
+  subset font entries, fast-check over manifests); `apps/engine/test/remote-assets-routes.test.ts` (catalogue incl.
+  TikTok Sans and Roboto 400/500/700, routes with session token / signed URL / anonymous 401, settings and agent
+  approval, status / notice, planner blocker for font, emoji, pack and image, bake key covers font hashes, emoji pack
+  version and image hashes); `apps/web/test/remote-assets.test.tsx` (catalogue resolution, Program warning and Retry,
+  Privacy & Network page, one-time notice).
+- `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/template-assets.e2e.test.ts` — **ran** with
+  `/usr/bin/google-chrome`: a test-only template (aliased into the test bundle, never shipped) declaring a font and an
+  emoji renders byte-identical PNGs with `renderStill` per frame and `renderFrames` at concurrency 1 and 3; the emoji
+  image is drawn; serving another file for the same declared face changes the glyphs (ink differs > 10 %); a missing
+  emoji or font fails the render. An engine layer-bake e2e with a declaring template needs a shipped declaring
+  template (WP4's) inside the engine's Remotion bundle and was not run here.
+- Running app (built engine + web on port 48120, appdir `/tmp/jasper-assets`, a local fixture CDN, Title Reveal
+  patched locally — not committed — to declare `Chirp` 700 and its emoji): the first download raised the notice toast
+  once; with the setting off and an empty cache the card showed the "Font "Chirp" 700 is not available" banner and the
+  Program monitor "3 template assets not available" with reasons; switching the setting on in Preferences ▸ Privacy &
+  Network downloaded the files, removed the banner without a reload and left "1 template asset not available" for the
+  emoji the fixture CDN lacks; `POST /api/exports/plan` answered 409 `TEMPLATE_ASSETS_UNAVAILABLE` naming that emoji,
+  its pack and the clip.
