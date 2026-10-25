@@ -28,21 +28,16 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-	animeTemplateTiming,
 	emojiGraphemes,
 	isSocialVariant,
 	SOCIAL_DEFAULT_TEXT,
 	SOCIAL_VARIANT_FONTS,
-	socialComment,
-	socialCommentParamsSchema,
-	socialCommentSchedule,
-	socialCommentSegments,
 	socialDefaults,
-	socialLikesTick,
 } from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CardProps } from './social-comment-render/types.ts';
+import { type ParityRow, parityIssue, parityRow, restWindow } from './social-parity.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const here = dirname(fileURLToPath(import.meta.url));
@@ -103,27 +98,6 @@ function paintedBox(png: Buffer) {
 				y1 = Math.max(y1, y);
 			}
 	return { x0, y0, x1, y1, width, height };
-}
-
-/**
- * Content ms of the clip's rest: from the end of its entrance and every extra (words popping, the like count ticking,
- * the heart thumping) to the start of its exit. The schedule the implementation builds.
- */
-function restWindow(c: { params: Record<string, unknown> }): { from: number; to: number } {
-	const variant = isSocialVariant(c.params.variant) ? c.params.variant : 'tiktok-reply';
-	const p = socialCommentParamsSchema.parse({ ...socialDefaults(variant), ...c.params });
-	const t = animeTemplateTiming(socialComment, { fps: 30, localFrame: 0, durationFrames: 150 });
-	const s = socialCommentSchedule({
-		...t,
-		entrance: p.entrance,
-		units: p.wordReveal ? socialCommentSegments(p.text, p.variant).units : 0,
-		tick: socialLikesTick(p),
-	});
-	let end = s.entranceEnd;
-	for (const tr of s.tracks)
-		for (const tw of tr.tweens) if (tw.start < s.exitStart) end = Math.max(end, tw.start + tw.dur);
-	if (s.tick) end = Math.max(end, s.tick.start + s.tick.dur);
-	return { from: end, to: s.exitStart };
 }
 
 const LONG =
@@ -845,14 +819,7 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 			},
 		];
 		const issues: string[] = [];
-		const parity: {
-			case: string;
-			frame: number;
-			pixels: number;
-			max: number;
-			within3: number;
-			atRest: boolean;
-		}[] = [];
+		const parity: ParityRow[] = [];
 		// SC_CASE=<name> runs one case (debugging)
 		for (const c of cases.filter((x) => !process.env.SC_CASE || x.name === process.env.SC_CASE)) {
 			const frames = [0, 2, 4, 6, 8, 10, 12, 14, 17, 22, 30, 45, 146];
@@ -887,32 +854,13 @@ describe.runIf(enabled)('social-comment@1 renders (REMOTION_E2E=1)', { timeout: 
 				writeFileSync(join(work, `${c.name}-still-${f}.png`), stills.get(f)!);
 				writeFileSync(join(work, `${c.name}-frames-${f}.png`), out.get(f)!);
 			}
-			// At rest (the entrance and every extra over, the exit not begun) a frame is the same bytes however it is
-			// reached. While the card animates, Chrome may paint it slightly differently depending on the frames it painted
-			// before (measured: sub-pixel anti-aliasing of icons while the like count ticks, a 1/64 px offset on ≤ 51 px,
-			// ≤ 43/255; see docs/wp-notes/social-comments.md "Paint determinism"): those frames are held to the project's
-			// parity standard for Chrome-painted layers (≥ 99 % of the pixels within 3/255, like the layer-bake and
-			// determinism tests).
-			const rest = restWindow(c);
+			// the shared policy (social-parity.ts): byte-identical at rest, the project's parity standard while animating
+			const rest = restWindow(c.params);
 			for (const f of differing) {
-				const a = rgba(stills.get(f)!).data;
-				const b = rgba(out.get(f)!).data;
-				let n = 0;
-				let over3 = 0;
-				let max = 0;
-				for (let i = 0; i < a.length; i += 4) {
-					let d = 0;
-					for (let k = 0; k < 4; k++) d = Math.max(d, Math.abs(a[i + k]! - b[i + k]!));
-					if (d > 0) n++;
-					if (d > 3) over3++;
-					max = Math.max(max, d);
-				}
-				const ms = (f * 1000) / 30;
-				const atRest = ms >= rest.from && ms < rest.to;
-				const within3 = 1 - over3 / (a.length / 4);
-				parity.push({ case: c.name, frame: f, pixels: n, max, within3, atRest });
-				if (atRest || within3 < 0.99)
-					issues.push(`${c.name} frame ${f}: ${n} px differ, max ${max}/255${atRest ? ' (at rest)' : ''}`);
+				const row = parityRow(c.name, f, rgba(stills.get(f)!).data, rgba(out.get(f)!).data, rest);
+				parity.push(row);
+				const issue = parityIssue(row);
+				if (issue) issues.push(issue);
 			}
 			expect(stills.get(0)!.equals(stills.get(45)!)).toBe(false);
 		}

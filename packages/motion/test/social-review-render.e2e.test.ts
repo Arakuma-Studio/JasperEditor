@@ -12,6 +12,7 @@
 // Emoji: SOCIAL_EMOJI_APPLE_DIR / SOCIAL_EMOJI_NOTO_DIR (`<codepoints>.png`), else flat stand-in squares.
 import { spawnSync } from 'node:child_process';
 import {
+	appendFileSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
@@ -25,19 +26,17 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-	animeTemplateTiming,
 	emojiGraphemes,
 	resolveEmojiStyle,
 	SOCIAL_DEFAULT_REVIEW_TEXT,
 	type SocialVariant,
-	socialComment,
 	socialCommentParamsSchema,
-	socialCommentSchedule,
 	socialDefaults,
 } from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CardProps } from './social-comment-render/types.ts';
+import { parityIssue, parityRow, restWindow } from './social-parity.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const here = dirname(fileURLToPath(import.meta.url));
@@ -74,12 +73,6 @@ function paintedBox(png: Buffer) {
 				y1 = Math.max(y1, y);
 			}
 	return { x0, y0, x1, y1, width, height };
-}
-
-function schedule(params: Record<string, unknown>) {
-	const p = socialCommentParamsSchema.parse(params);
-	const t = animeTemplateTiming(socialComment, { fps: 30, localFrame: 0, durationFrames: 150 });
-	return socialCommentSchedule({ ...t, entrance: p.entrance, units: 0, tick: false });
 }
 
 const LONG_REVIEW =
@@ -296,7 +289,7 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 		}
 	});
 
-	it('renderStill = renderFrames while the entrance, the word reveal and the star fill run', async () => {
+	it('renderStill = renderFrames: byte-identical at rest, the parity standard while the card animates', async () => {
 		const cases: Case[] = [
 			{
 				name: 'play-light',
@@ -367,26 +360,17 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 				writeFileSync(join(work, `${c.name}-still-${f}.png`), stills.get(f)!);
 				writeFileSync(join(work, `${c.name}-frames-${f}.png`), out.get(f)!);
 			}
-			// as social-comment-render: at rest byte-identical; while the entrance scales the card, at most 1/255 on a
-			// handful of pixels (Chrome's path cache anti-aliasing an SVG edge)
-			const rest = schedule(c.params).entranceEnd;
-			for (const f of differing) {
-				const a = rgba(stills.get(f)!).data;
-				const b = rgba(out.get(f)!).data;
-				let n = 0;
-				let max = 0;
-				for (let i = 0; i < a.length; i++)
-					if (a[i] !== b[i]) {
-						n++;
-						max = Math.max(max, Math.abs(a[i]! - b[i]!));
-					}
-				expect((f * 1000) / 30, `${c.name} frame ${f} differs at rest`).toBeLessThan(rest);
-				expect({ frame: f, max: Math.min(max, 2), few: n <= 64 }, c.name).toEqual({
-					frame: f,
-					max: 1,
-					few: true,
-				});
-			}
+			// the shared policy (social-parity.ts, as social-comment-render): byte-identical at rest (entrance and star fill
+			// over, exit not begun), the project's parity standard while the card animates
+			const rest = restWindow(c.params);
+			const rows = differing.map((f) =>
+				parityRow(c.name, f, rgba(stills.get(f)!).data, rgba(out.get(f)!).data, rest),
+			);
+			const issues = rows.map(parityIssue).filter((x): x is string => x !== null);
+			// SOCIAL_PARITY_LOG=<file>: one JSON line per case with every differing frame (flake-rate measurements)
+			if (process.env.SOCIAL_PARITY_LOG)
+				appendFileSync(process.env.SOCIAL_PARITY_LOG, `${JSON.stringify({ issues, parity: rows })}\n`);
+			expect(issues, c.name).toEqual([]);
 			// the stars fill: the frame in the middle of the tick differs from the rest frame
 			expect(stills.get(30)!.equals(stills.get(60)!), c.name).toBe(false);
 		}
