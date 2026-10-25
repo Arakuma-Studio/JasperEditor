@@ -169,8 +169,7 @@ describe('layout', () => {
 					});
 					if (!r.ok) {
 						// only a loop under 4 frames is refused
-						expect(Math.floor((loopLen * S) / F30 + 1e-9)).toBeLessThan(4);
-						return;
+						return Math.floor((loopLen * S) / F30 + 1e-9) < 4;
 					}
 					const a = Math.round(loopIn * S);
 					const W = Math.floor((Math.round((loopIn + loopLen) * S) - a) / F30 + 1e-9);
@@ -178,32 +177,28 @@ describe('layout', () => {
 					for (const run of r.layout.runs) {
 						for (const j of run.joins) {
 							const span = transitionSpan(j.at, j.frames, 'center');
-							const out = run.pieces.find((p) => p.start + p.frames === j.at)!;
-							const inc = run.pieces.find((p) => p.start === j.at)!;
-							expect(out && inc).toBeTruthy();
-							// inside both clips
-							expect(span.start).toBeGreaterThanOrEqual(out.start);
-							expect(span.end).toBeLessThanOrEqual(inc.start + inc.frames);
+							const out = run.pieces.find((p) => p.start + p.frames === j.at);
+							const inc = run.pieces.find((p) => p.start === j.at);
+							if (!out || !inc) return false;
+							// inside both clips (positive comparisons also reject NaN)
+							if (!(span.start >= out.start && span.end <= inc.start + inc.frames)) return false;
 							// the handles: the outgoing piece's source runs on past its Out, the incoming one's before its In
 							const outEnd = out.sourceInFlicks + out.frames * F30 + (span.end - j.at) * F30;
 							const incStart = inc.sourceInFlicks - (j.at - span.start) * F30;
-							expect(outEnd).toBeLessThanOrEqual(bEnd + 1);
-							expect(incStart).toBeGreaterThanOrEqual(a - 1);
+							if (!(outEnd <= bEnd + 1 && incStart >= a - 1)) return false;
 							if (j.kind === 'loop') {
 								// the matched joint: the outgoing tail ends at the loop's end, the incoming head starts at its start
-								expect(Math.abs(outEnd - bEnd)).toBeLessThanOrEqual(1);
-								expect(Math.abs(incStart - a)).toBeLessThanOrEqual(1);
+								if (!(Math.abs(outEnd - bEnd) <= 1 && Math.abs(incStart - a) <= 1)) return false;
 							}
 						}
 						for (const p of run.pieces) {
-							expect(p.sourceInFlicks).toBeGreaterThanOrEqual(a - 1);
-							expect(p.sourceInFlicks + p.frames * F30).toBeLessThanOrEqual(bEnd + 1);
+							if (!(p.sourceInFlicks >= a - 1 && p.sourceInFlicks + p.frames * F30 <= bEnd + 1)) return false;
 						}
-						const first = run.pieces[0]!;
-						const last = run.pieces[run.pieces.length - 1]!;
-						expect(run.fadeIn).toBeLessThanOrEqual(first.frames);
-						expect(run.fadeOut).toBeLessThanOrEqual(last.frames);
+						const first = run.pieces[0];
+						const last = run.pieces[run.pieces.length - 1];
+						if (!first || !last || !(run.fadeIn <= first.frames && run.fadeOut <= last.frames)) return false;
 					}
+					return true;
 				},
 			),
 			{ numRuns: 250 },
@@ -407,11 +402,11 @@ describe('soundDesign.layBed', () => {
 				fc.record({
 					start: fc.oneof(fc.integer({ min: -10, max: 700 }), fc.constant('00:00:01:00')),
 					end: fc.integer({ min: -10, max: 900 }),
-					inSec: fc.double({ min: -1, max: 6, noNaN: true }),
-					outSec: fc.double({ min: -1, max: 6, noNaN: true }),
-					crossfadeSec: fc.double({ min: 0, max: 10, noNaN: true }),
-					sceneCrossfadeSec: fc.double({ min: 0, max: 3, noNaN: true }),
-					fadeSec: fc.double({ min: 0, max: 5, noNaN: true }),
+					inSec: fc.integer({ min: -1000, max: 6000 }).map((ms) => ms / 1000),
+					outSec: fc.integer({ min: -1000, max: 6000 }).map((ms) => ms / 1000),
+					crossfadeSec: fc.integer({ min: 0, max: 10_000 }).map((ms) => ms / 1000),
+					sceneCrossfadeSec: fc.integer({ min: 0, max: 3000 }).map((ms) => ms / 1000),
+					fadeSec: fc.integer({ min: 0, max: 5000 }).map((ms) => ms / 1000),
 					duck: fc.constantFrom('dialogue', 'heroes', null, undefined),
 					purpose: fc.constantFrom('ambience', 'roomtone'),
 				}),
@@ -442,7 +437,24 @@ describe('soundDesign.layBed', () => {
 					else expect(result.errors.some((error) => error.code === 'E_INTERNAL')).toBe(false);
 				},
 			),
-			{ numRuns: 150 },
+			{
+				numRuns: 150,
+				examples: [
+					[
+						{
+							start: 0,
+							end: 300,
+							inSec: 0,
+							outSec: 4,
+							crossfadeSec: 1.5,
+							sceneCrossfadeSec: 0.5,
+							fadeSec: 1,
+							duck: null,
+							purpose: 'ambience',
+						},
+					],
+				],
+			},
 		);
 	});
 });

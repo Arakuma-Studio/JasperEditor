@@ -6,7 +6,7 @@ This maps every named declaration and parser-fuzz target in the current project-
 
 For each retained row: (1) the named file source independently specifies the contract; (2) violating its named result is the recognizable caller-visible failure; (3) the quoted fixed-data/property oracle can disagree with production; (4) it observes the public/format/command/render/invariant seam identified by its source; (5) output-based assertions tolerate behavior-preserving helper and algorithm changes; (6) the row owns its named input/transition/format edge, while other rows own different inputs or boundaries. Fresh detailed rows make additional ownership/deletion reasoning explicit. A source/contract inventory is separate from execution: validation and measurements appear in project-core.md and the root report.
 
-Disposition families: DELETE 8, REWRITE 13, OPTIMIZE 1, CONSOLIDATE 5, KEEP 846.
+Disposition families: DELETE 8, REWRITE 13, OPTIMIZE 2, CONSOLIDATE 5, KEEP 845.
 
 ## packages/project/test/agent-mcp-cli.test.ts
 
@@ -46,7 +46,7 @@ S03 Essential Sound; S12 §2.1 / §4 / P6-R3 / P6-E12; sound-design Phase 0 and 
 | 54: a cut to other footage starts a scene; a cut inside one media does not; markers and shot changes do | KEEP | [Fresh six-bar decision](project-core.md); `expect(sc.map((s) => [s.start, s.end, s.reason])).toEqual([ [0, 200, 'start'], [200, 400, 'edit'], [400, 600, 'edit'], ])` |
 | 105: never throws on hostile documents | KEEP | [Fresh six-bar decision](project-core.md); `expect(bedScenes(h.doc, h.seq)).toEqual([])` |
 | 122: 3 scenes over 20 s of a 4 s loop: pieces of the loop, 1.5 s crossfades at the loop joints, 0.5 s at scene changes | KEEP | [Fresh six-bar decision](project-core.md); `expect(r.layout.shortened).toEqual([])` |
-| 148: property: every piece and every handle stays in its loop; every loop joint is the matched one; crossfades fit | KEEP | [Fresh six-bar decision](project-core.md); `expect(Math.floor((loopLen * S) / F30 + 1e-9)).toBeLessThan(4)` |
+| 148: property: every piece and every handle stays in its loop; every loop joint is the matched one; crossfades fit | OPTIMIZE | [Fresh six-bar decision](project-core.md); `expect(Math.floor((loopLen * S) / F30 + 1e-9)).toBeLessThan(4)` |
 | 216: refuses overlapping shots, too-short shots and loops | KEEP | [Fresh six-bar decision](project-core.md); `expect(planBedLayout([shotIn(0, 100, [0, 4]), shotIn(50, 150, [0, 4])], o)).toMatchObject({ ok: false })` |
 | 231: lays the 3-scene bed: Ambience track, crossfades, fades, Essential ambience, grouped; undo / redo | REWRITE | [Fresh six-bar decision](project-core.md); `expect(r.warnings.filter((w) => w.code === 'W_TRANSITION_SHORTENED')).toEqual([])` |
 | 288: range, replace, a second bed on another track, a per-shot bed, equal-gain loop joints | KEEP | [Fresh six-bar decision](project-core.md); `expect(r3.beds.map((b) => b.mediaId)).toEqual([amb, amb2])` |

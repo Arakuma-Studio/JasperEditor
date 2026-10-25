@@ -8,10 +8,10 @@ production owners. The table below supersedes earlier decisions for those files.
 It does not claim a new line-by-line audit of every other model test.
 
 Counting declarations, including a parameterized declaration as one family:
-91 audited; 8 DELETE, 13 REWRITE, 1 OPTIMIZE, 5 surviving CONSOLIDATE owners,
-64 KEEP. Seven schema load cases and six migration-step cases expand four schema
+91 audited; 8 DELETE, 13 REWRITE, 2 OPTIMIZE, 5 surviving CONSOLIDATE owners,
+63 KEEP. Seven schema load cases and six migration-step cases expand four schema
 history declarations into fifteen runtime tests, so this scope originally contains
-102 runtime tests and retains 94. No replacement test scenarios were added.
+102 runtime tests and retains 94. No named test scenarios were added; the existing command property now includes a known-valid seed.
 
 ## Contract and ownership evidence
 
@@ -147,13 +147,13 @@ independent expected result and the unique recognizable failure.
 | `ambience-bed.test.ts`: a cut to other footage starts a scene; a cut inside one media does not; markers and shot changes do | KEEP | Bed: independent scene spans [0,200], [200,400], [400,600], authored chapter/scene markers, range edges and shot cuts pin scene merging. Detects splitting a continuous source into false scenes or missing real boundaries; layout tests start from already derived shots. |
 | `ambience-bed.test.ts`: never throws on hostile documents | KEEP | Bed: empty/malformed/null documents produce empty scenes. Detects crashing a panel on missing saved data; valid scene fixtures do not cover malformed entry values. |
 | `ambience-bed.test.ts`: 3 scenes over 20 s of a 4 s loop: pieces of the loop, 1.5 s crossfades at the loop joints, 0.5 s at scene changes | KEEP | Bed: fixed layout covers 600 frames, has 45-frame loop/15-frame scene joins and 30-frame outer fades. Detects wrong planner timing before commands are involved; command test owns actual resulting document wiring. |
-| `ambience-bed.test.ts`: property: every piece and every handle stays in its loop; every loop joint is the matched one; crossfades fit | KEEP | Bed: independent interval containment, contiguous matched loop endpoints and fade-within-piece laws hold across generated loop and shot lengths. Detects reading outside a loop at short/uneven joins; fixed layout uses one long regular loop. |
+| `ambience-bed.test.ts`: property: every piece and every handle stays in its loop; every loop joint is the matched one; crossfades fit | OPTIMIZE | Bed: independent interval containment, contiguous matched loop endpoints and fade-within-piece laws hold across generated loop and shot lengths. Detects reading outside a loop at short/uneven joins; fixed layout uses one long regular loop. All250 generated cases and all original inequalities/1-flick tolerances remain; their conjunction is returned to fast-check instead of constructing a Vitest assertion for every piece/join. Positive comparisons continue to reject NaN, and missing pieces still fail. |
 | `ambience-bed.test.ts`: refuses overlapping shots, too-short shots and loops | KEEP | Bed: literal overlapping/one-frame/short-loop layouts refuse, and a valid one-second loop reports its shortened crossfade. Detects invalid geometry accepted at the pure layout boundary; command schema cannot prove planner behavior. |
 | `ambience-bed.test.ts`: lays the 3-scene bed: Ambience track, crossfades, fades, Essential ambience, grouped; undo / redo | REWRITE | Bed: retains resulting clips, -18 dB gain, ambience type/metadata, group, legal source spans and constant-power joins. Removes h.doc assignment/replay masquerading as undo and its noIds JSON/regex helper. Real undo is owned by EditorSession; no command/result assertion is lost. |
 | `ambience-bed.test.ts`: range, replace, a second bed on another track, a per-shot bed, equal-gain loop joints | KEEP | Bed: second bed uses a distinct track, replace removes earlier IDs and reuses a free track, a custom shot's audio remains in 5…25 s, and equal-gain joins select constant-gain. Detects destructive unintended replacement or ignored per-shot source/range; ordinary initial placement has neither case. |
 | `ambience-bed.test.ts`: ducks under the dialogue with Volume keyframes (−10 dB) | KEEP | Bed: literal dialogue interval yields -10 dB at frame 195; absence of dialogue yields W_BED_NOTHING_TO_DUCK. Detects failure to wire planner ducking into real volume keyframes; the DSP/keyframe evaluator alone never lays a bed. |
 | `ambience-bed.test.ts`: refusals change nothing | KEEP | Bed: exact E_INVALID_PARAM/NOT_FOUND/TRACK_KIND/SCHEMA/OVERLAP/TRACK_LOCKED on authored invalid commands and unchanged prior document. Detects wrong refusal reason or partial destructive edits; pure layout has no tracks/media/authored document. |
-| `ambience-bed.test.ts`: never throws on hostile arguments (property): a refusal or a valid document | REWRITE | Bed: every generated command now starts from the same immutable fixture and fresh ID source, checks returned document invariants and rejects E_INTERNAL. Previously successful samples accumulated beds and JSON clones between samples, and internal crashes reported as E_INTERNAL counted as valid refusals. This removes hidden order dependence and a false-positive negative path without reducing generated cases. |
+| `ambience-bed.test.ts`: never throws on hostile arguments (property): a refusal or a valid document | REWRITE | Bed: every generated command now starts from the same immutable fixture and fresh ID source, checks returned document invariants and rejects E_INTERNAL. Previously successful samples accumulated beds and JSON clones between samples, and internal crashes reported as E_INTERNAL counted as valid refusals. Millisecond-valued generated settings and a known-valid seed also prevent fc.double bias from making every sample fail schema validation before reaching the handler. It still runs150 random samples, drawn from millisecond-valued settings, plus the known-valid seed. This removes hidden order dependence and two false-positive negative paths. |
 | `ambience-bed.test.ts`: dialogue regions, the gaps between dialogue clips, the padded fill, the level | KEEP | Bed: literal dialogue groups/gap [90,120], padded fill [82,128], -7 dB gain and 8-frame fades pin room tone. Detects filling a scene break, missing dialogue overlap or wrong floor/gain; ambience loop cases do not exercise room tone. |
 | `ambience-bed.test.ts`: a malformed bed or one on another kind of clip is reported and dropped by repair | KEEP | Bed/storage: two deliberately invalid beds produce INV-SFX, only invalid metadata is removed, and repair is idempotent. Detects corrupt project metadata left active or valid beds discarded; successful command tests never load corrupt saved metadata. |
 | `proposals-preview-ids.test.ts`: gives the same well-formed ids for the same seed and different ones for another | REWRITE | Proposal/ID: retains deterministic ordered IDs, explicit Crockford prefix/body regex and within-stream uniqueness. Removes an undocumented all-distinct-seeds injection guarantee: the public source explicitly permits seeds to meet. The regex replaces calling production isValidId as the oracle. Detects nondeterministic or malformed preview IDs independently of the production validator. |
@@ -197,5 +197,64 @@ API remains used by the editor; no production result or command behavior changes
 
 ## Verification and measurements
 
-Focused validation and timing results are appended after the parent finishes the
-unmodified suite baseline, to avoid introducing CPU contention into its measurement.
+All checks used Node20.19.0 and pnpm10.34.5. The shared host has8 AMD EPYC-Genoa
+vCPUs and15GiB RAM. Baseline/after isolated profiles used the same worktree,
+`--maxWorkers=2`, required oracles and Chrome path. Browser preparation ran
+concurrently, so these are local paired measurements with contention; no CI or
+whole-repository speedup is inferred. Root's integrated full gate is authoritative.
+
+Passed checks:
+
+- `JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run packages/project/test/{ambience-bed,color-mgmt-luts,derive-draft-index,document,essential-autotag,m2-contracts,proposals-preview-batch,proposals-preview-ids,proposals,schema-history,split-children-ids}.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-cleanup/project-core/focused.json`:94/94 cases,11 files, zero skips/failures;18.23s wall. This preceded the subsequently measured bed property optimization/generator correction.
+- `pnpm exec vitest run packages/project/test/ambience-bed.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-cleanup/project-core/final-bed.json` with the same environment:12/12 final bed cases, zero skips/failures.
+- `pnpm --filter @jasper/project typecheck`: passed before profiling and after final test changes.
+- `pnpm exec biome check` on the ten changed TypeScript files passed before profiling; the subsequently changed bed file was formatted with Biome. `git diff --check` passed.
+
+No product bug or unmodified baseline failure was found in this focused scope.
+The full suite, rendering/browser suites and integrated build are owned by the root
+validation run; this subtask does not claim those gates passed.
+
+Three alternating baseline/optimized trials selected only the named test; the
+baseline file came from8b4c8936. Commands were `pnpm exec vitest run
+packages/project/test/color-mgmt-luts.test.ts --maxWorkers=2 -t 'matches the
+brute-force simplex reference' --reporter=json --outputFile=<trial.json>` and
+`FC_SEED=424242 pnpm exec vitest run packages/project/test/ambience-bed.test.ts
+--maxWorkers=2 -t 'property: every piece and every handle stays in its loop'
+--reporter=json --outputFile=<trial.json>`. Existing test/production content was
+restored after each series. The layout seed and250 generated cases were identical.
+
+| Selected contract | Baseline body ms (3 trials) | Final body ms (3 trials) | Median body change | Median entire process wall |
+| --- | --- | --- | --- | --- |
+| Nonlinear LUT simplex reference |218.609,238.685,212.163 |61.419,51.016,57.396 |218.609→57.396ms;161.214ms /73.75% less |11.380→11.396s; no measured wall improvement |
+| Bed piece/handle/loop/fade containment |2755.825,2765.201,2797.593 |85.958,68.487,77.474 |2765.201→77.474ms;2687.727ms /97.20% less |14.309→11.823s;2.485s /17.37% less |
+
+The process timings include startup/import costs and contention. LUT body work is
+cheaper, but its process wall variance hides that saving. An attempted boundary
+lookup Map showed no repeatable gain and was discarded. In the original focused
+profile, the layout property was the slowest retained core case (2436ms); the
+random batched-preview parity case was next (417ms). Both remain because they
+uniquely guard legal audio handles and interacting proposal dependencies/ghosts.
+After the layout optimization, the preview property remains the largest body in
+this focused set; source-wide import/setup cost still dominates isolated launches.
+
+Intended-regression checks each selected one existing test and temporarily changed
+its production owner, then restored it. All seven final mutants failed the intended
+assertion, not collection/setup:
+
+| Temporary regression | Selected existing test |
+| --- | --- |
+| Shift each bed source in-point by one frame | optimized layout property returns false on corrupt matched/out-of-loop handles |
+| Add0.001 to3D LUT red output | optimized simplex test rejects max error0.001 against2e-6 |
+| Memoize an in-place Immer draft index | derive-draft-index rejects missing later clips/transition |
+| Reuse the original copied animator ID | split-children-ids rejects the invalid split |
+| Drop a future schema's unknown field | schema-history detects lost `{futureField:{a:1}}` |
+| Return E_INTERNAL from proposal creation | proposal fuzz property rejects internal failure masquerading as typed refusal |
+| Throw inside layBed | corrected hostile-command property rejects E_INTERNAL on its known-valid seed |
+
+The last mutation initially survived, exposing the old property's ineffective
+input distribution. Millisecond-valued settings and an explicit valid seed fixed
+that test flaw; the repeated mutation then failed. The optimized layout's
+corrupted-handle mutant also failed after one generated case and shrank to a
+small two-shot counterexample. Evidence is in
+`/tmp/jasper-test-cleanup/project-core/{measurements,bed-measurements,verified-mutations}.json`
+and the corresponding per-run logs/JSON files. No mutation remains in production.
