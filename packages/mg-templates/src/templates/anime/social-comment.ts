@@ -99,9 +99,11 @@ const ENTRANCES: Readonly<Record<SocialEntrance, readonly NominalTween[]>> = {
 		{ prop: 's', start: 150, dur: 120, from: 1.3, to: 1, ease: 'inOutQuad' },
 		{ prop: 'o', start: 0, dur: 60, from: 0, to: 1, ease: 'linear' },
 	],
-	// scale 60 % → 100 % on a soft spring (one ≈ 7 % overshoot)
+	// scale 60 % → 100 % with one soft bounce: out to a 3.5 % overshoot, then in-out back to rest (zero speed at the
+	// turn and at the end: an underdamped spring's slow tail would keep the card moving below the cue threshold)
 	'soft-spring': [
-		{ prop: 's', start: 0, dur: 450, from: 0.6, to: 1, ease: 'jasper.spring' },
+		{ prop: 's', start: 0, dur: 260, from: 0.6, to: 1.035, ease: 'outCubic' },
+		{ prop: 's', start: 260, dur: 190, from: 1.035, to: 1, ease: 'inOutQuad' },
 		{ prop: 'o', start: 0, dur: 150, from: 0, to: 1, ease: 'out' },
 	],
 	// grows out of the tail corner (outBack) while the −8° tilt settles on the spring
@@ -142,7 +144,9 @@ export function socialCommentSchedule(input: SocialScheduleInput): SocialComment
 	};
 	let entranceEnd = 0;
 	for (const tw of ENTRANCES[input.entrance] ?? ENTRANCES['soft-spring']) {
-		const start = tw.start * k;
+		// a compressed window keeps the tweens of one value in sequence (their 1 ms minimum must not overlap)
+		const prev = byProp.get(tw.prop)?.at(-1);
+		const start = Math.max(tw.start * k, prev ? prev.start + prev.dur : 0);
 		const dur = Math.max(MIN_TWEEN_MS, tw.dur * k);
 		push(tw.prop, { start, dur, from: tw.from, to: tw.to, ease: tw.ease });
 		entranceEnd = Math.max(entranceEnd, start + dur);
@@ -166,16 +170,19 @@ export function socialCommentSchedule(input: SocialScheduleInput): SocialComment
 	const needed = Math.max(revealSpan, tickSpan);
 	const available = Math.max(0, exitStart - entranceEnd);
 	const c = needed > available ? available / needed : 1;
-	const at = (ms: number) => entranceEnd + ms * c;
 	const len = (ms: number) => Math.max(MIN_TWEEN_MS, ms * c);
+	/** Start of an extra `ms` after the entrance, moved earlier when its 1 ms minimum would reach the exit. */
+	const at = (ms: number, span: number) =>
+		Math.max(entranceEnd, Math.min(entranceEnd + ms * c, exitStart - span));
 	for (let i = 0; i < units; i++) {
-		const start = at(i * stagger);
+		const dur = len(SOCIAL_WORD_POP_MS);
+		const start = at(i * stagger, dur);
 		tracks.push(
 			{
 				target: 1 + i,
 				prop: 's',
 				initial: 0.5,
-				tweens: [{ start, dur: len(SOCIAL_WORD_POP_MS), from: 0.5, to: 1, ease: 'outBack' }],
+				tweens: [{ start, dur, from: 0.5, to: 1, ease: 'outBack' }],
 			},
 			{
 				target: 1 + i,
@@ -188,11 +195,12 @@ export function socialCommentSchedule(input: SocialScheduleInput): SocialComment
 	let tick: SocialCommentSchedule['tick'] = null;
 	let heartTarget: number | null = null;
 	if (input.tick) {
-		tick = { start: at(0), dur: len(SOCIAL_TICK_MS), ease: 'outCubic' };
-		heartTarget = 1 + units;
 		const up = len(SOCIAL_THUMP_MS * 0.4);
-		const thump = at(SOCIAL_TICK_MS);
-		const down = thump + up;
+		const down = len(SOCIAL_THUMP_MS * 0.6);
+		const thump = at(SOCIAL_TICK_MS, up + down);
+		// the count runs from the entrance end up to the thump
+		tick = { start: entranceEnd, dur: Math.max(MIN_TWEEN_MS, thump - entranceEnd), ease: 'outCubic' };
+		heartTarget = 1 + units;
 		tracks.push(
 			{
 				target: heartTarget,
@@ -200,7 +208,7 @@ export function socialCommentSchedule(input: SocialScheduleInput): SocialComment
 				initial: 1,
 				tweens: [
 					{ start: thump, dur: up, from: 1, to: SOCIAL_THUMP_SCALE, ease: 'out' },
-					{ start: down, dur: len(SOCIAL_THUMP_MS * 0.6), from: SOCIAL_THUMP_SCALE, to: 1, ease: 'inOut' },
+					{ start: thump + up, dur: down, from: SOCIAL_THUMP_SCALE, to: 1, ease: 'inOut' },
 				],
 			},
 			{

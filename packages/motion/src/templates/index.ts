@@ -4,6 +4,7 @@ import type { ComponentType } from 'react';
 import { Callout } from './callout.tsx';
 import { Counter } from './counter.tsx';
 import { LowerThirdAnim } from './lower-third-anim.tsx';
+import { SocialComment } from './social-comment/index.tsx';
 import { TitleReveal } from './title-reveal.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
@@ -15,4 +16,5 @@ export const ANIME_TEMPLATE_IMPLS: Readonly<Record<string, ComponentType<AnimeTe
 		'lower-third-anim@1': LowerThirdAnim,
 		'callout@1': Callout,
 		'counter@1': Counter,
+		'social-comment@1': SocialComment,
 	});

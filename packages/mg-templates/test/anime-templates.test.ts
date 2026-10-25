@@ -17,7 +17,9 @@ describe('shipped anime parameters (ATP-003/006)', () => {
 			expect(d.paramsSchema.safeParse({}).success, d.id).toBe(true);
 			expect(d.paramsSchema.safeParse({ bogus: 1 }).success, d.id).toBe(false);
 			const colours = Object.keys(d.defaults).filter((key) => key.endsWith('Color'));
-			expect(colours.length, d.id).toBeGreaterThan(0);
+			// social-comment draws the platform's own colours, chosen by its `theme` (no free colour params)
+			if (d.id === 'social-comment') expect(d.paramsSchema.safeParse({ theme: 'sepia' }).success).toBe(false);
+			else expect(colours.length, d.id).toBeGreaterThan(0);
 			for (const name of colours) {
 				expect(d.paramsSchema.safeParse({ [name]: [0, 0.5, 1, 0.25] }).success, `${d.id}.${name}`).toBe(true);
 				expect(d.paramsSchema.safeParse({ [name]: [2, 0, 0, 1] }).success, `${d.id}.${name}`).toBe(false);
