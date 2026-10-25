@@ -80,7 +80,7 @@ describe('variants and capabilities', () => {
 		expect(resolveEmojiStyle('tiktok-reply', 'auto')).toBe('apple');
 		expect(resolveEmojiStyle('instagram-post', 'auto')).toBe('apple');
 		expect(resolveEmojiStyle('youtube-comment', 'auto')).toBe('noto');
-		expect(resolveEmojiStyle('x-post', 'auto')).toBe('twemoji');
+		expect(resolveEmojiStyle('x-post', 'auto')).toBe('apple');
 		expect(resolveEmojiStyle('x-post', 'apple')).toBe('apple');
 	});
 });

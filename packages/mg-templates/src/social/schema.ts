@@ -88,7 +88,7 @@ const FIELDS = {
 	emojiStyle: z
 		.enum(SOCIAL_EMOJI_STYLES)
 		.describe(
-			"Emoji image set: 'auto' (the platform's own: Apple for TikTok and Instagram, Twemoji for X, Noto for YouTube), " +
+			"Emoji image set: 'auto' (the platform's own: Apple for TikTok, Instagram and X, Noto for YouTube; 'twemoji' gives the older X / Windows look), " +
 				"'apple', 'twemoji' or 'noto'. Emoji are drawn as images so preview and export match. All variants.",
 		),
 	displayName: z

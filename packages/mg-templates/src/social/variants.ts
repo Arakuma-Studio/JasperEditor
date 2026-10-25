@@ -47,12 +47,15 @@ export const SOCIAL_EMOJI_STYLES = ['auto', 'apple', 'twemoji', 'noto'] as const
 export type SocialEmojiStyle = (typeof SOCIAL_EMOJI_STYLES)[number];
 export type SocialEmojiPack = Exclude<SocialEmojiStyle, 'auto'>;
 
-/** The pack `auto` stands for: Apple for TikTok and Instagram, Twemoji for X, Noto for YouTube (design §7.3). */
+/**
+ * The pack `auto` stands for: Apple for TikTok, Instagram and X (x.com renders OS emoji, so an iPhone screenshot shows
+ * Apple's; see docs/wp-notes/social-comments.md "Platform assets & sources"), Noto for YouTube.
+ */
 export const PLATFORM_EMOJI_PACK: Readonly<Record<SocialPlatform, SocialEmojiPack>> = {
 	tiktok: 'apple',
 	instagram: 'apple',
 	youtube: 'noto',
-	x: 'twemoji',
+	x: 'apple',
 };
 
 /** The emoji pack a card draws with: `style` itself, or the platform's pack for `auto`. */
