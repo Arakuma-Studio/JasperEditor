@@ -111,9 +111,9 @@ every effect (D-27), on every path alike, so a Crop listed after a Corner Pin cu
 
 ## 5. Migration interplay
 
-`packages/compositions/test/crop-order.test.ts` loads the v7 fixture with a clip listing Flip → Blur → Crop: after
-`loadProject` the stack is Crop → Flip → Blur (no repairs), the CSS stages and the chain plan put the crop first and
-the visible window is mirrored (as v7 drew it).
+`packages/project/test/migration-v8-crop.test.ts` owns the v7 → v8 stack-order migration. Rendered Crop → Flip /
+Flip → Crop, Mirror, Blur and feathered adjustment-layer witnesses live in the native and preview/export parity
+suites below; intermediate CSS stages and chain plans are free to change while those pixels stay correct.
 
 ## 6. Evidence (measured on the shared VM, 16 vCPU, load ≈ 9–13 from other agents)
 
@@ -134,7 +134,7 @@ the visible window is mirrored (as v7 drew it).
   is unchanged.
 - Regression suites rerun unchanged (REMOTION_E2E=1): all 61 `golden-scenes.e2e` scenes (only `crop-corner-pin`
   re-blessed, above), `golden-parity.e2e`, `edit-structure-render.e2e`.
-- Unit tests: `packages/project/test/crop-stack.test.ts`, `packages/compositions/test/crop-order.test.ts`,
+- Model and UI tests: `packages/project/test/crop-stack.test.ts`, `packages/project/test/migration-v8-crop.test.ts`,
   `apps/web/test/crop-order-ui.test.tsx`.
 
 ## 7. Limitations

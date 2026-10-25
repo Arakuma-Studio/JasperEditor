@@ -45,6 +45,9 @@ function mount(name: string, doc: RenderDoc) {
 for (const [name, doc] of Object.entries(docs)) mount(name, doc);
 
 (window as unknown as { __fxPlayer: unknown }).__fxPlayer = {
+	frame(name: string) {
+		return refs[name]?.current?.getCurrentFrame() ?? null;
+	},
 	seek(name: string, frame: number) {
 		refs[name]?.current?.seekTo(frame);
 	},

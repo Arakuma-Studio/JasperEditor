@@ -91,7 +91,7 @@ const NO_CHAIN_GEOMETRY: ReadonlySet<string> = new Set([
  * Feathered crop: alpha × the product of the four edge coverages of `render/crop.ts` (`cropEdgeCoverage`: the linear
  * ramp's average over the pixel, so feather 0 is the hard edge's area coverage). Edges and feather in canvas pixels.
  */
-export const CROP_FEATHER_GPU: GpuEffect = {
+const CROP_FEATHER_GPU: GpuEffect = {
 	timeInvariant: true,
 	uniforms: (p, ctx) => {
 		const [l, t, r, b] = cropInsets(p);

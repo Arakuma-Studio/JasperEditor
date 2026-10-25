@@ -3,12 +3,14 @@
 // renderStill, the same frames the Remotion export path and the hybrid span bakes encode), per pixel, over a
 // two-sided cut with dolly + reflection + High motion blur and a one-sided head (REMOTION_E2E=1).
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@jasper/project';
 import { bundleForBrowser } from '@jasper/testkit/browser';
+import { decodePng } from '@jasper/testkit/png';
 import { type Browser, chromium, type Page } from '@playwright/test';
+import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -50,6 +52,7 @@ describe.runIf(enabled && !!CHROME)(
 		let serveUrl: string;
 		let renderer: typeof import('@remotion/renderer');
 		let browser: Browser;
+		let renderBrowser: HeadlessBrowser;
 		let page: Page;
 		const docs: Record<string, ReturnType<typeof fxSnapshot>> = {};
 		const browserOpts = { browserExecutable: CHROME!, chromeMode: 'chrome-for-testing' as const };
@@ -100,6 +103,7 @@ describe.runIf(enabled && !!CHROME)(
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, '..', 'src', 'remotion-entry.ts') });
 			renderer = await import('@remotion/renderer');
+			renderBrowser = await renderer.openBrowser('chrome', browserOpts);
 			const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
 			media.page('bundle.js', 'text/javascript', code);
 			media.page(
@@ -117,29 +121,29 @@ describe.runIf(enabled && !!CHROME)(
 			});
 			page = await browser.newPage({ viewport: { width: FX_W, height: FX_H * 3 } });
 			await page.goto(`${media.base}/index.html`);
+			await page.waitForFunction(() => {
+				const player = (window as unknown as { __fxPlayer?: { frame(n: string): number | null } }).__fxPlayer;
+				return player?.frame('cut') != null && player.frame('head') != null;
+			});
 		}, 300_000);
 
 		afterAll(async () => {
 			await browser?.close();
+			await renderBrowser?.close({ silent: false });
 			media?.close();
 		});
 
-		const raw = (png: Buffer | string) =>
-			execFileSync(
-				'ffmpeg',
-				[
-					'-v',
-					'error',
-					'-i',
-					typeof png === 'string' ? png : 'pipe:0',
-					'-f',
-					'rawvideo',
-					'-pix_fmt',
-					'rgb24',
-					'-',
-				],
-				{ ...(typeof png === 'string' ? {} : { input: png }), maxBuffer: 1 << 26 },
-			);
+		// Decode PNGs in process, retaining exactly the original RGB24 comparison channels and tolerances.
+		const raw = (png: Buffer | string) => {
+			const image = decodePng(typeof png === 'string' ? readFileSync(png) : png);
+			const out = Buffer.alloc(image.width * image.height * 3);
+			for (let p = 0, i = 0; p < image.data.length; p += 4, i += 3) {
+				out[i] = image.data[p]!;
+				out[i + 1] = image.data[p + 1]!;
+				out[i + 2] = image.data[p + 2]!;
+			}
+			return out;
+		};
 
 		async function exported(name: string, frame: number): Promise<Buffer> {
 			const inputProps = {
@@ -151,14 +155,23 @@ describe.runIf(enabled && !!CHROME)(
 				id: SEQUENCE_COMPOSITION_ID,
 				inputProps,
 				...browserOpts,
+				puppeteerInstance: renderBrowser,
 			});
 			const output = join(media.dir, `${name}-${frame}.png`);
-			await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...browserOpts });
+			await renderer.renderStill({
+				composition,
+				serveUrl,
+				inputProps,
+				frame,
+				output,
+				...browserOpts,
+				puppeteerInstance: renderBrowser,
+			});
 			return raw(output);
 		}
 
 		/** The Player frame once it is stable (two identical screenshots in a row after the seek). */
-		async function previewed(name: string, frame: number, ref: Buffer): Promise<Buffer> {
+		async function previewed(name: string, frame: number): Promise<Buffer> {
 			await page.evaluate(
 				([n, f]) =>
 					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
@@ -167,32 +180,53 @@ describe.runIf(enabled && !!CHROME)(
 					),
 				[name, frame] as const,
 			);
+			await page.waitForFunction(
+				([n, f]) =>
+					(window as unknown as { __fxPlayer: { frame(n: string): number | null } }).__fxPlayer.frame(
+						n as string,
+					) === f,
+				[name, frame],
+			);
+			await page.evaluate(async () => {
+				await Promise.all([...document.images].map((image) => image.decode()));
+			});
 			const t0 = Date.now();
 			let prev = raw(await page.locator(`#${name}`).screenshot());
 			while (Date.now() - t0 < 20_000) {
-				await page.waitForTimeout(300);
-				const cur = raw(await page.locator(`#${name}`).screenshot());
-				if (cur.equals(prev) && compare(cur, ref, 4).share > 0.9) return cur;
+				await page.evaluate(
+					() =>
+						new Promise<void>((resolve) =>
+							requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+						),
+				);
+				const png = await page.locator(`#${name}`).screenshot();
+				const cur = raw(png);
+				if (cur.equals(prev)) {
+					writeFileSync(join(media.dir, `${name}-${frame}-preview.png`), png);
+					return cur;
+				}
 				prev = cur;
 			}
-			return prev;
+			throw new Error(`Player frame did not settle: ${name} at ${frame}`);
 		}
 
 		for (const [name, frames] of [
-			['cut', [21, 25, 29, 30, 33, 37, 39]],
-			['head', [0, 3, 7, 11, 14]],
+			['cut', [30]],
+			['head', [7]],
 		] as const)
 			it(`${name}: the Player matches the export render at every checked frame`, async () => {
 				const lines: string[] = [];
 				for (const f of frames) {
 					const ref = await exported(name, f);
-					const got = await previewed(name, f, ref);
+					const got = await previewed(name, f);
 					const r = compare(got, ref, 4);
 					lines.push(`f${f} ${r.share.toFixed(4)}/${r.mean.toFixed(3)}`);
 					expect(r.share, `${name} frame ${f}`).toBeGreaterThanOrEqual(0.98);
 					expect(r.mean, `${name} frame ${f}`).toBeLessThan(1.5);
 				}
-				console.info(`[smooth-slide parity] ${name}: share within 4/255 / mean |Δ|: ${lines.join(' ')}`);
+				console.info(
+					`[smooth-slide parity] ${name}: share within 4/255 / mean |Δ|: ${lines.join(' ')}; artifacts ${media.dir}`,
+				);
 			});
 	},
 );

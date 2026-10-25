@@ -78,7 +78,7 @@ function commutesWithCrop(fx: ResolvedEffect): boolean {
  * them), except that a crop placed before an effect that mixes pixels stays at its place as a hard cut (feather 0,
  * id suffixed so it never takes the feathered path: the feather is the region's).
  */
-export function adjustmentChainEffects(effects: readonly ResolvedEffect[]): ResolvedEffect[] {
+function adjustmentChainEffects(effects: readonly ResolvedEffect[]): ResolvedEffect[] {
 	const out: ResolvedEffect[] = [];
 	effects.forEach((fx, i) => {
 		if (fx.effectId !== CROP) {
@@ -96,7 +96,7 @@ export function adjustmentChainEffects(effects: readonly ResolvedEffect[]): Reso
  * crop-order: the region an adjustment layer replaces — the intersection of its hard crops' windows and the
  * feathered crops' windows with their Edge Feather (each window mirrored by the flips after its crop).
  */
-export function adjustmentCropRegion(effects: readonly ResolvedEffect[]): {
+function adjustmentCropRegion(effects: readonly ResolvedEffect[]): {
 	insets: CropInsets | null;
 	feather: { insets: CropInsets; feather: number }[];
 } {
