@@ -63,7 +63,7 @@ import { installSerialAudioContext } from './audio/serial-audio-context.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
-import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { EmojiTableContext, FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import { type FrameSpan, FrameWindow } from './frame-window.tsx';
 import { CanvasOwnerContext } from './fx/canvas-scope.tsx';
 import { installCaptureSafeCanvases } from './fx/capture-safe-canvas.ts';
@@ -1322,66 +1322,68 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 		<TextExpressionContext.Provider value={textExpressions}>
 			<MixGraphContext.Provider value={graph}>
 				<FontsReadyContext.Provider value={fontsReady}>
-					<ColorDocContext.Provider value={color}>
-						<NestTracksContext.Provider value={VideoTracks}>
-							<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
-								{/* color-mgmt: the monitor shows the working signal through the display transform. */}
-								<DisplayStage
-									working={doc.settings.color}
-									enabled={options.isPreview && options.displayColor !== false}
-									width={doc.settings.width}
-									height={doc.settings.height}
-									flat={displayFlat}
-								>
-									<VideoTracks doc={live} options={options} offset={offset} />
-									{/* previews: rendered segments (the export's picture of the working signal) */}
-									<PreviewLayers
-										video={previewed.video}
-										audio={previewed.audio}
-										offset={offset}
-										premount={premountFrames(fps)}
-										options={options}
-										epoch={graphEpoch}
-									/>
-								</DisplayStage>
-								{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}
-								{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
-								{options.isPreview ? (
-									<FrameWindow
-										items={live.audioClips}
-										span={audioSpan}
-										render={(clip) => {
-											// An audio crossfade plays the clip's handles (S10:TUI-052).
-											const head = clip.headHandle ?? 0;
-											const from = clip.start - head - offset;
-											return (
-												<Sequence
-													key={clip.clipId}
-													from={from}
-													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-													premountFor={audioPremount(clip)}
-													name={clip.clipId}
-													style={AUDIO_SEQUENCE_STYLE}
-												>
-													<AudioLayer
-														clip={clip}
-														media={doc.media[clip.mediaId] ?? null}
-														fps={fps}
-														fpsRational={doc.settings.fps}
-														options={options}
-														master={doc.master}
-														sequenceFrom={from}
-													/>
-												</Sequence>
-											);
-										}}
-									/>
-								) : null}
-								{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
-								<FrameRepaint target={root} deps={[doc, options]} />
-							</AbsoluteFill>
-						</NestTracksContext.Provider>
-					</ColorDocContext.Provider>
+					<EmojiTableContext.Provider value={doc.emoji}>
+						<ColorDocContext.Provider value={color}>
+							<NestTracksContext.Provider value={VideoTracks}>
+								<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
+									{/* color-mgmt: the monitor shows the working signal through the display transform. */}
+									<DisplayStage
+										working={doc.settings.color}
+										enabled={options.isPreview && options.displayColor !== false}
+										width={doc.settings.width}
+										height={doc.settings.height}
+										flat={displayFlat}
+									>
+										<VideoTracks doc={live} options={options} offset={offset} />
+										{/* previews: rendered segments (the export's picture of the working signal) */}
+										<PreviewLayers
+											video={previewed.video}
+											audio={previewed.audio}
+											offset={offset}
+											premount={premountFrames(fps)}
+											options={options}
+											epoch={graphEpoch}
+										/>
+									</DisplayStage>
+									{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}
+									{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
+									{options.isPreview ? (
+										<FrameWindow
+											items={live.audioClips}
+											span={audioSpan}
+											render={(clip) => {
+												// An audio crossfade plays the clip's handles (S10:TUI-052).
+												const head = clip.headHandle ?? 0;
+												const from = clip.start - head - offset;
+												return (
+													<Sequence
+														key={clip.clipId}
+														from={from}
+														durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+														premountFor={audioPremount(clip)}
+														name={clip.clipId}
+														style={AUDIO_SEQUENCE_STYLE}
+													>
+														<AudioLayer
+															clip={clip}
+															media={doc.media[clip.mediaId] ?? null}
+															fps={fps}
+															fpsRational={doc.settings.fps}
+															options={options}
+															master={doc.master}
+															sequenceFrom={from}
+														/>
+													</Sequence>
+												);
+											}}
+										/>
+									) : null}
+									{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
+									<FrameRepaint target={root} deps={[doc, options]} />
+								</AbsoluteFill>
+							</NestTracksContext.Provider>
+						</ColorDocContext.Provider>
+					</EmojiTableContext.Provider>
 				</FontsReadyContext.Provider>
 			</MixGraphContext.Provider>
 		</TextExpressionContext.Provider>

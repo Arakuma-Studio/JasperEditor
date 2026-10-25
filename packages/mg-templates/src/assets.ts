@@ -27,7 +27,12 @@ export const TemplateRequiredAssetsSchema = z.object({
 		.object({
 			pack: z.enum(EMOJI_PACK_IDS),
 			graphemes: z
-				.array(z.string().min(1).max(MAX_EMOJI_CODEPOINTS * 2))
+				.array(
+					z
+						.string()
+						.min(1)
+						.max(MAX_EMOJI_CODEPOINTS * 2),
+				)
 				.max(MAX_TEMPLATE_EMOJI * 4),
 		})
 		.optional(),
@@ -100,9 +105,7 @@ export function templateRequiredAssets(
 	}
 	const out: RenderTemplateAssets = {
 		fonts: [...fonts.values()],
-		emoji: [...emoji]
-			.filter(([, set]) => set.size > 0)
-			.map(([pack, set]) => ({ pack, graphemes: [...set] })),
+		emoji: [...emoji].filter(([, set]) => set.size > 0).map(([pack, set]) => ({ pack, graphemes: [...set] })),
 	};
 	return out.fonts.length || out.emoji.length ? out : null;
 }

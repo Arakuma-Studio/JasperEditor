@@ -136,12 +136,6 @@ import {
 	PreviewStatusSchema,
 } from './previews.ts';
 import {
-	NetworkSettingsSchema,
-	RemoteAssetPrefetchRequestSchema,
-	RemoteAssetPrefetchResponseSchema,
-	RemoteAssetsStatusSchema,
-} from './remote-assets.ts';
-import {
 	ProcessingModelsResponseSchema,
 	ProcessingSettingsSchema,
 	ProcessRequestSchema,
@@ -183,6 +177,12 @@ import {
 	ProposalResponseSchema,
 	ProposalSelectRequestSchema,
 } from './proposals.ts';
+import {
+	NetworkSettingsSchema,
+	RemoteAssetPrefetchRequestSchema,
+	RemoteAssetPrefetchResponseSchema,
+	RemoteAssetsStatusSchema,
+} from './remote-assets.ts';
 import {
 	RotoSegmentRequestSchema,
 	RotoStoreInfoSchema,

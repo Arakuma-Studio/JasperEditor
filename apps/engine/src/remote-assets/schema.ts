@@ -90,7 +90,8 @@ export const RemoteManifestSchema = z
 		const dup = (ids: string[], path: string) => {
 			const seen = new Set<string>();
 			ids.forEach((id, i) => {
-				if (seen.has(id)) ctx.addIssue({ code: 'custom', path: [path, i, 'id'], message: `duplicate id ${id}` });
+				if (seen.has(id))
+					ctx.addIssue({ code: 'custom', path: [path, i, 'id'], message: `duplicate id ${id}` });
 				seen.add(id);
 			});
 		};

@@ -55,10 +55,10 @@ import {
 } from '../color/output.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
-import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
+import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';

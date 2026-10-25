@@ -194,9 +194,24 @@ describe('templateRequiredAssets', () => {
 				{},
 			),
 		).toBeNull();
-		expect(templateRequiredAssets(fakeTemplate(() => ({ fonts: [{ family: '', weight: 400 }] })), {})).toBeNull();
-		expect(templateRequiredAssets(fakeTemplate(() => ({ fonts: [], emoji: { pack: 'x', graphemes: [] } })), {})).toBeNull();
-		expect(templateRequiredAssets(fakeTemplate(() => ({ fonts: [] })), {})).toBeNull();
+		expect(
+			templateRequiredAssets(
+				fakeTemplate(() => ({ fonts: [{ family: '', weight: 400 }] })),
+				{},
+			),
+		).toBeNull();
+		expect(
+			templateRequiredAssets(
+				fakeTemplate(() => ({ fonts: [], emoji: { pack: 'x', graphemes: [] } })),
+				{},
+			),
+		).toBeNull();
+		expect(
+			templateRequiredAssets(
+				fakeTemplate(() => ({ fonts: [] })),
+				{},
+			),
+		).toBeNull();
 	});
 
 	it('drops non-emoji graphemes and bounds the emoji list', () => {

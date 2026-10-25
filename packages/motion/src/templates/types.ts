@@ -18,4 +18,10 @@ export type AnimeTemplateProps = {
 	/** `hash32(clipId, 'template')`. */
 	seed: number;
 	isPreview: boolean;
+	/**
+	 * social-comment §7.8: image URL of every emoji the template declared (`requiredAssets`) that is available, keyed
+	 * `${pack}:${grapheme}` (`emojiUrlOf`); a missing one is absent — draw it with `EmojiImage`, which shows
+	 * `MissingAssetMarker` for it. Empty when the template declares none.
+	 */
+	emojiUrls: Readonly<Record<string, string>>;
 };

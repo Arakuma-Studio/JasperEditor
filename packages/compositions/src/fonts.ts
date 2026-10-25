@@ -11,7 +11,11 @@
 // with a fallback font and the Player shows nothing rather than a fallback-font flash; renders and stills are
 // held by a `delayRender` handle created in a layout effect (never in a state initializer, which StrictMode and
 // concurrent rendering may run more than once and leak) and continued only after the commit that mounts them.
-import type { RenderVisualClip } from '@jasper/project';
+// social-comment §7.8: the faces an anime template declares (`requiredAssets`, fontId `template:<family>`) gate its layer
+// exactly; a face that fails to load is remembered as failed (the layer shows a marker instead of a fallback font) until
+// `retryTemplateAssets` asks for it again.
+import { onTemplateAssetRetry, useTemplateAssetEpoch } from '@jasper/motion/templates';
+import { type RenderVisualClip, templateFontId } from '@jasper/project';
 import { createContext, useContext, useLayoutEffect, useMemo, useReducer } from 'react';
 import { useDelayRender } from 'remotion';
 import type { RenderDoc } from './types.ts';
@@ -25,6 +29,15 @@ const faceKey = (f: FontFaceSpec) => `${f.family}|${f.weight}|${f.style}|${f.url
 const loaded = new Map<string, Promise<boolean>>();
 /** Faces whose load has finished on this page (loaded, or failed → fallback stack). */
 const settledFaces = new Set<string>();
+/** Settled faces that failed to load. */
+const failedFaces = new Set<string>();
+onTemplateAssetRetry(() => {
+	for (const k of failedFaces) {
+		loaded.delete(k);
+		settledFaces.delete(k);
+	}
+	failedFaces.clear();
+});
 
 /** CSS `format()` hint from the URL extension, or undefined when unknown. */
 function fontFormatFromUrl(url: string): string | undefined {
@@ -62,6 +75,7 @@ function loadFontFace(f: FontFaceSpec): Promise<boolean> {
 		}
 	})().then((ok) => {
 		settledFaces.add(key);
+		if (!ok) failedFaces.add(key);
 		return ok;
 	});
 	loaded.set(key, p);
@@ -84,6 +98,8 @@ export type FontsReadyState = {
 	 * has settled; true for faces the document does not load. Falls back to `allLoaded` when absent.
 	 */
 	isLoaded?(family: string, weight?: number, style?: 'normal' | 'italic'): boolean;
+	/** social-comment §7.8: the face (exact family / weight / style) settled as failed. */
+	isFailed?(family: string, weight: number, style: 'normal' | 'italic'): boolean;
 };
 export const FontsReadyContext = createContext<FontsReadyState>({ allLoaded: true });
 
@@ -161,6 +177,12 @@ function layerFontFaces(
 	} else if ('mg' in src && src.mg.renderer === 'anime') {
 		const named = stringsIn(src.mg.params, new Set());
 		for (const f of fonts ?? []) if (named.has(f.fontId) || named.has(f.family)) add(f);
+		// The template's declared faces: exactly those (a missing one is the layer's marker, not a wait).
+		for (const face of src.mg.assets?.fonts ?? []) {
+			const fontId = templateFontId(face.family);
+			for (const f of fonts ?? [])
+				if (f.fontId === fontId && f.weight === face.weight && f.style === face.style) add(f);
+		}
 	}
 	return [...faces.values()];
 }
@@ -185,6 +207,8 @@ export function useLayerFontsReady(
 export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadyState {
 	const { delayRender, continueRender } = useDelayRender();
 	const [version, bump] = useReducer((n: number) => n + 1, 0);
+	// A retry forgets the failed faces: render again so they load again.
+	const retry = useTemplateAssetEpoch();
 	const allLoaded = fonts.every((f) => settledFaces.has(faceKey(f)));
 	// Re-run when the rendered readiness flips: the commit that renders `allLoaded` (and mounts the gated
 	// layers) releases the handle in this effect's cleanup.
@@ -202,7 +226,7 @@ export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadySt
 			continueRender(handle);
 		};
 	}, [fonts, allLoaded, delayRender, continueRender]);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `version` changes when a face settles
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `version` changes when a face settles, `retry` on a retry
 	return useMemo<FontsReadyState>(
 		() => ({
 			allLoaded: fonts.every((f) => settledFaces.has(faceKey(f))),
@@ -215,7 +239,18 @@ export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadySt
 							(style === undefined || f.style === style),
 					)
 					.every((f) => settledFaces.has(faceKey(f))),
+			isFailed: (family, weight, style) =>
+				fonts.some(
+					(f) =>
+						f.family === family && f.weight === weight && f.style === style && failedFaces.has(faceKey(f)),
+				),
 		}),
-		[fonts, version],
+		[fonts, version, retry],
 	);
 }
+
+/**
+ * social-comment §7.8: the snapshot's emoji table (`RenderSnapshot.emoji`), provided by SequenceComposition for the
+ * template layers (`AnimeTemplateProps.emojiUrls`).
+ */
+export const EmojiTableContext = createContext<Readonly<Record<string, string>> | undefined>(undefined);

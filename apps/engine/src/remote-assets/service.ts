@@ -182,7 +182,11 @@ export class RemoteAssetService {
 			if (!fam.weights.includes(f.weight)) fam.weights.push(f.weight);
 			if (!fam.styles.includes(f.style)) fam.styles.push(f.style);
 			fam.files = fam.files.filter((x) => !(x.weight === f.weight && x.style === f.style));
-			fam.files.push({ weight: f.weight, style: f.style, url: `${REMOTE_FONT_PREFIX}${RemoteAssetService.fontFileName(f)}` });
+			fam.files.push({
+				weight: f.weight,
+				style: f.style,
+				url: `${REMOTE_FONT_PREFIX}${RemoteAssetService.fontFileName(f)}`,
+			});
 		}
 		for (const fam of byFamily.values()) fam.weights.sort((a, b) => a - b);
 		return [...byFamily.values()];
@@ -236,7 +240,11 @@ export class RemoteAssetService {
 				return path;
 			}
 			await this.requireNetwork(`font "${faceLabel(f)}"`);
-			const got = await fetchCapped(f.url, { limits: this.fontLimits, hosts: this.hosts, fetchImpl: this.o.fetchImpl });
+			const got = await fetchCapped(f.url, {
+				limits: this.fontLimits,
+				hosts: this.hosts,
+				fetchImpl: this.o.fetchImpl,
+			});
 			const hash = sha256(got.bytes);
 			if (hash !== f.sha256)
 				throw new RemoteAssetError(
@@ -339,11 +347,16 @@ export class RemoteAssetService {
 		const m = /^([0-9a-f-]+)\.(png|svg)$/.exec(file);
 		const grapheme = m ? graphemeOfEmojiKey(m[1]!) : null;
 		if (!p || p.version !== version || !m || m[2] !== p.format || !grapheme)
-			throw new RemoteAssetError('REMOTE_ASSET_UNKNOWN', `No emoji image is served as ${packId}/${version}/${file}`, false, {
-				pack: packId,
-				version,
-				file,
-			});
+			throw new RemoteAssetError(
+				'REMOTE_ASSET_UNKNOWN',
+				`No emoji image is served as ${packId}/${version}/${file}`,
+				false,
+				{
+					pack: packId,
+					version,
+					file,
+				},
+			);
 		const path = await this.ensureEmoji(p, grapheme);
 		return { path, contentType: p.format === 'png' ? 'image/png' : 'image/svg+xml' };
 	}
@@ -353,9 +366,14 @@ export class RemoteAssetService {
 		const p = this.pack(packId);
 		if (!p)
 			return Promise.reject(
-				new RemoteAssetError('REMOTE_ASSET_UNKNOWN', `The ${packId} emoji pack is not in the remote-asset manifest`, false, {
-					pack: packId,
-				}),
+				new RemoteAssetError(
+					'REMOTE_ASSET_UNKNOWN',
+					`The ${packId} emoji pack is not in the remote-asset manifest`,
+					false,
+					{
+						pack: packId,
+					},
+				),
 			);
 		if (!isEmojiGrapheme(grapheme))
 			return Promise.reject(
@@ -387,14 +405,23 @@ export class RemoteAssetService {
 			await this.requireNetwork(`emoji ${grapheme} (${p.name})`);
 			const urls = RemoteAssetService.emojiSourceUrls(p, grapheme);
 			if (urls.length === 0)
-				throw new RemoteAssetError('DOWNLOAD_NOT_FOUND', `Emoji ${grapheme} is not in the ${p.name} pack`, false, {
-					pack: p.id,
-					grapheme,
-				});
+				throw new RemoteAssetError(
+					'DOWNLOAD_NOT_FOUND',
+					`Emoji ${grapheme} is not in the ${p.name} pack`,
+					false,
+					{
+						pack: p.id,
+						grapheme,
+					},
+				);
 			let last: RemoteAssetError | null = null;
 			for (const url of urls) {
 				try {
-					const got = await fetchCapped(url, { limits: this.emojiLimits, hosts: this.hosts, fetchImpl: this.o.fetchImpl });
+					const got = await fetchCapped(url, {
+						limits: this.emojiLimits,
+						hosts: this.hosts,
+						fetchImpl: this.o.fetchImpl,
+					});
 					checkImage(got, p.format);
 					const hash = sha256(got.bytes);
 					if (pinned && pinned.sha256 !== hash)
@@ -407,7 +434,12 @@ export class RemoteAssetService {
 					await this.write(path, got.bytes);
 					await this.recordEmoji(p, key, { sha256: hash, size: got.bytes.length, url });
 					this.verified.set(path, hash);
-					this.fetched({ kind: 'emoji', label: `${grapheme} (${p.name})`, host: hostOf(url), licence: p.licence });
+					this.fetched({
+						kind: 'emoji',
+						label: `${grapheme} (${p.name})`,
+						host: hostOf(url),
+						licence: p.licence,
+					});
 					return path;
 				} catch (e) {
 					last = asRemoteAssetError(e);
@@ -415,15 +447,24 @@ export class RemoteAssetService {
 					if (last.code !== 'DOWNLOAD_NOT_FOUND') throw last;
 				}
 			}
-			throw new RemoteAssetError('DOWNLOAD_NOT_FOUND', `Emoji ${grapheme} is not available in the ${p.name} pack`, false, {
-				pack: p.id,
-				grapheme,
-				...(last ? { cause: last.toJSON() } : {}),
-			});
+			throw new RemoteAssetError(
+				'DOWNLOAD_NOT_FOUND',
+				`Emoji ${grapheme} is not available in the ${p.name} pack`,
+				false,
+				{
+					pack: p.id,
+					grapheme,
+					...(last ? { cause: last.toJSON() } : {}),
+				},
+			);
 		});
 	}
 
-	private async recordEmoji(p: RemoteEmojiPack, key: string, entry: EmojiIndex['entries'][string]): Promise<void> {
+	private async recordEmoji(
+		p: RemoteEmojiPack,
+		key: string,
+		entry: EmojiIndex['entries'][string],
+	): Promise<void> {
 		const file = join(this.emojiDir(p), 'index.json');
 		await this.mutex.run(file, async () => {
 			const idx = await this.index(p);
@@ -570,9 +611,14 @@ export class RemoteAssetService {
 		try {
 			await atomicWriteFile(path, bytes);
 		} catch (e) {
-			throw new RemoteAssetError('ASSET_CACHE_WRITE', `Could not write ${path}: ${(e as Error).message}`, true, {
-				path,
-			});
+			throw new RemoteAssetError(
+				'ASSET_CACHE_WRITE',
+				`Could not write ${path}: ${(e as Error).message}`,
+				true,
+				{
+					path,
+				},
+			);
 		}
 	}
 
@@ -585,7 +631,8 @@ export class RemoteAssetService {
 			const items = this.pendingItems.splice(0);
 			void (async () => {
 				let pending = false;
-				for (const i of items) pending = (await this.settings.recordFetch(i, this.o.now?.() ?? new Date())) || pending;
+				for (const i of items)
+					pending = (await this.settings.recordFetch(i, this.o.now?.() ?? new Date())) || pending;
 				this.o.onChanged?.({ reason: 'fetched', notice: pending, items });
 			})().catch(() => undefined);
 		}, 200);
@@ -599,7 +646,8 @@ export class RemoteAssetService {
 		this.flushTimer = null;
 		const items = this.pendingItems.splice(0);
 		let pending = false;
-		for (const i of items) pending = (await this.settings.recordFetch(i, this.o.now?.() ?? new Date())) || pending;
+		for (const i of items)
+			pending = (await this.settings.recordFetch(i, this.o.now?.() ?? new Date())) || pending;
 		this.o.onChanged?.({ reason: 'fetched', notice: pending, items });
 	}
 }

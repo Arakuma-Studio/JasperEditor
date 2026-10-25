@@ -35,7 +35,11 @@ export type KeyFont = { family: string; weight: number; style: string; fileSha25
  * social-comment §7.8: the emoji images a template layer draws — pack id and version, and each image's SHA-256 (its
  * first verified fetch; null when not cached).
  */
-export type KeyEmoji = { pack: string; version: string | null; files: { key: string; sha256: string | null }[] };
+export type KeyEmoji = {
+	pack: string;
+	version: string | null;
+	files: { key: string; sha256: string | null }[];
+};
 export type KeyMedia = {
 	mediaId: string;
 	fingerprint: string | null;

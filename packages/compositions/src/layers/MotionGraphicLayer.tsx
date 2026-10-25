@@ -14,19 +14,39 @@ import {
 	isAnimeTemplate,
 	isSvgTemplate,
 	mgRegistry,
+	resolveTemplateParams,
+	templateRequiredAssets,
 } from '@jasper/mg-templates';
 import { hash32 } from '@jasper/motion';
-import { ANIME_TEMPLATE_IMPLS } from '@jasper/motion/templates';
 import {
+	ANIME_TEMPLATE_IMPLS,
+	MissingAssetMarker,
+	MissingAssetReporterContext,
+	type MissingTemplateAsset,
+	missingAssetLabel,
+	TemplateAssetScopeContext,
+} from '@jasper/motion/templates';
+import {
+	emojiTableKey,
 	evaluateTemplateParams,
 	FLICKS_PER_SECOND,
 	type Keyframe,
+	type RenderTemplateAssets,
 	type RenderVisualClip,
+	templateFontId,
 } from '@jasper/project';
-import { type CSSProperties, createContext, type ReactNode, useContext, useMemo } from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
-import { FontsReadyContext } from '../fonts.ts';
-import type { LayerProps } from '../types.ts';
+import {
+	type CSSProperties,
+	createContext,
+	type ReactNode,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+} from 'react';
+import { AbsoluteFill, getRemotionEnvironment, useCurrentFrame, useVideoConfig } from 'remotion';
+import { EmojiTableContext, FontsReadyContext, useFontsReadyState } from '../fonts.ts';
+import type { LayerProps, RenderDoc } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
 /** Engine render state of a motion-graphic clip (S03:KND-060 badge: none | rendering n% | ready). */
@@ -46,17 +66,117 @@ export const MgRenderStateContext = createContext<(clipId: string) => MgRenderSt
 
 type MgSource = Extract<RenderVisualClip['source'], { mg: unknown }>['mg'];
 
-function resolveParams(def: AnyMgTemplate, params: Record<string, unknown>): Record<string, unknown> {
-	const parsed = def.paramsSchema.safeParse(params);
-	if (parsed.success) return parsed.data as Record<string, unknown>;
-	// Invalid or partial params (e.g. a newer document): fall back field by field to the defaults.
-	const merged: Record<string, unknown> = { ...def.defaults };
-	for (const [k, v] of Object.entries(params)) {
-		if (!(k in merged)) continue;
-		const probe = def.paramsSchema.safeParse({ ...def.defaults, [k]: v });
-		if (probe.success) merged[k] = v;
+/**
+ * social-comment §7.8: the missing assets of a template clip — its declared faces absent from the document's fonts or
+ * failed to load, and its declared emoji absent from the emoji table.
+ */
+function missingTemplateAssets(
+	assets: RenderTemplateAssets | undefined,
+	fonts: RenderDoc['fonts'] | undefined,
+	emoji: Readonly<Record<string, string>> | undefined,
+	isFailed: ((family: string, weight: number, style: 'normal' | 'italic') => boolean) | undefined,
+): MissingTemplateAsset[] {
+	const out: MissingTemplateAsset[] = [];
+	for (const face of assets?.fonts ?? []) {
+		const fontId = templateFontId(face.family);
+		const have = (fonts ?? []).some(
+			(f) => f.fontId === fontId && f.weight === face.weight && f.style === face.style,
+		);
+		if (!have || isFailed?.(face.family, face.weight, face.style)) out.push({ kind: 'font', ...face });
 	}
-	return merged;
+	for (const { pack, graphemes } of assets?.emoji ?? [])
+		for (const g of graphemes)
+			if (!emoji?.[emojiTableKey(pack, g)]) out.push({ kind: 'emoji', pack, grapheme: g });
+	return out;
+}
+
+/**
+ * Collects what a template clip could not draw (the layer's own checks and every `EmojiImage` inside) and reports it
+ * to the editor (MissingAssetReporterContext, the Program monitor's panel warning).
+ */
+function useClipAssetScope(clipId: string) {
+	const reporter = useContext(MissingAssetReporterContext);
+	const state = useRef<{ entries: Map<string, MissingTemplateAsset>; sent: string; timer: number | null }>({
+		entries: new Map(),
+		sent: '[]',
+		timer: null,
+	});
+	const scope = useMemo(() => {
+		const flush = () => {
+			state.current.timer = null;
+			const seen = new Map<string, MissingTemplateAsset>();
+			for (const a of state.current.entries.values()) seen.set(JSON.stringify(a), a);
+			const key = JSON.stringify([...seen.keys()].sort());
+			if (key === state.current.sent) return;
+			state.current.sent = key;
+			reporter?.(clipId, [...seen.values()]);
+		};
+		return {
+			report(id: string, asset: MissingTemplateAsset | null) {
+				if (asset) state.current.entries.set(id, asset);
+				else state.current.entries.delete(id);
+				if (reporter && state.current.timer === null) state.current.timer = window.setTimeout(flush, 0);
+			},
+		};
+	}, [reporter, clipId]);
+	useEffect(
+		() => () => {
+			if (state.current.timer !== null) window.clearTimeout(state.current.timer);
+			state.current.timer = null;
+			if (state.current.sent !== '[]') reporter?.(clipId, []);
+			state.current.sent = '[]';
+		},
+		[reporter, clipId],
+	);
+	return scope;
+}
+
+/** Reports the layer's own missing assets (declared but unresolved / failed) to the clip scope. */
+function LayerMissingReport({ missing }: { missing: readonly MissingTemplateAsset[] }) {
+	const scope = useContext(TemplateAssetScopeContext);
+	const key = JSON.stringify(missing);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for `missing`
+	useEffect(() => {
+		if (!scope) return;
+		missing.forEach((a, i) => {
+			scope.report(`layer:${i}`, a);
+		});
+		return () => {
+			for (let i = 0; i < missing.length; i++) scope.report(`layer:${i}`, null);
+		};
+	}, [scope, key]);
+	return null;
+}
+
+/** The striped "font not available" banners over a template card (preview only). */
+function FontMarkers({ missing, height }: { missing: readonly MissingTemplateAsset[]; height: number }) {
+	const fonts = missing.filter((a) => a.kind === 'font');
+	if (fonts.length === 0) return null;
+	const size = Math.max(12, Math.round(height / 40));
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				left: size / 2,
+				top: size / 2,
+				display: 'flex',
+				flexDirection: 'column',
+				alignItems: 'flex-start',
+				gap: size / 3,
+				pointerEvents: 'none',
+				zIndex: 1,
+			}}
+		>
+			{fonts.map((a) => (
+				<MissingAssetMarker
+					key={missingAssetLabel(a)}
+					kind="font"
+					label={`${missingAssetLabel(a)} is not available`}
+					size={size}
+				/>
+			))}
+		</div>
+	);
 }
 
 function badgeText(state: MgRenderState | undefined): string {
@@ -135,6 +255,7 @@ function AnimeTemplate(p: {
 	def: AnyMgTemplate;
 	mg: Pick<MgSource, 'template' | 'params' | 'canvas'> & {
 		paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+		assets?: RenderTemplateAssets;
 	};
 	clipId: string;
 	localFrame: number;
@@ -143,18 +264,45 @@ function AnimeTemplate(p: {
 	sourceInFrames: number;
 	fps: number;
 	isPreview: boolean;
+	/** The document's font faces (template-declared faces are checked against them). */
+	fonts?: RenderDoc['fonts'];
 }) {
-	const fontsReady = useContext(FontsReadyContext).allLoaded;
+	const fontsState = useContext(FontsReadyContext);
+	const fontsReady = fontsState.allLoaded;
+	const emojiTable = useContext(EmojiTableContext);
 	const key = `${p.def.id}@${p.def.version}`;
 	const Impl = ANIME_TEMPLATE_IMPLS[key];
 	const info = useMemo(() => mgRegistry.get(p.def.id, p.def.version), [p.def]);
 	const evaluated = evaluateTemplateParams(info, p.mg.params, p.mg.paramKeyframes, p.contentTime);
-	const params = useMemo(() => resolveParams(p.def, evaluated), [p.def, evaluated]);
+	const params = useMemo(() => resolveTemplateParams(p.def, evaluated), [p.def, evaluated]);
+	// social-comment §7.8: the template's emoji URLs and whatever it declared that is not available.
+	const assets = p.mg.assets;
+	const emojiUrls = useMemo(() => {
+		const out: Record<string, string> = {};
+		for (const { pack, graphemes } of assets?.emoji ?? [])
+			for (const g of graphemes) {
+				const k = emojiTableKey(pack, g);
+				const url = emojiTable?.[k];
+				if (url) out[k] = url;
+			}
+		return out;
+	}, [assets, emojiTable]);
+	const missing = useMemo(
+		() => (fontsReady ? missingTemplateAssets(assets, p.fonts, emojiTable, fontsState.isFailed) : []),
+		[fontsReady, assets, p.fonts, emojiTable, fontsState],
+	);
+	const scope = useClipAssetScope(p.clipId);
 	if (!Impl)
 		return (
 			<PlaceholderCard text={`Anime template ${key} has no implementation`} height={p.mg.canvas.height} />
 		);
 	if (!fontsReady) return null;
+	// A render never draws a template without its declared assets (the planner blocks such exports; this catches a
+	// file that broke after planning): the render fails with the reason instead of substituting.
+	if (missing.length > 0 && (!p.isPreview || getRemotionEnvironment().isRendering))
+		throw new Error(
+			`Template ${key} cannot be drawn: ${missing.map(missingAssetLabel).join(', ')} not available`,
+		);
 	const t = animeTemplateTiming(p.def, {
 		fps: p.fps,
 		localFrame: p.localFrame,
@@ -162,17 +310,22 @@ function AnimeTemplate(p: {
 		sourceInFrames: p.sourceInFrames,
 	});
 	return (
-		<Impl
-			params={params}
-			timeMs={t.timeMs}
-			totalMs={t.totalMs}
-			introMs={t.introMs}
-			outroMs={t.outroMs}
-			fps={p.fps}
-			canvas={p.mg.canvas}
-			seed={hash32(p.clipId, 'template')}
-			isPreview={p.isPreview}
-		/>
+		<TemplateAssetScopeContext.Provider value={scope}>
+			<Impl
+				params={params}
+				timeMs={t.timeMs}
+				totalMs={t.totalMs}
+				introMs={t.introMs}
+				outroMs={t.outroMs}
+				fps={p.fps}
+				canvas={p.mg.canvas}
+				seed={hash32(p.clipId, 'template')}
+				isPreview={p.isPreview}
+				emojiUrls={emojiUrls}
+			/>
+			<LayerMissingReport missing={missing} />
+			<FontMarkers missing={missing} height={p.mg.canvas.height} />
+		</TemplateAssetScopeContext.Provider>
 	);
 }
 
@@ -181,7 +334,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 	const mg = 'mg' in clip.source ? clip.source.mg : null;
 	const def = mg ? mgRegistry.getDefinition(mg.template.id, mg.template.version) : undefined;
 	const svgParams = useMemo(
-		() => (def && mg && isSvgTemplate(def) ? resolveParams(def, mg.params) : null),
+		() => (def && mg && isSvgTemplate(def) ? resolveTemplateParams(def, mg.params) : null),
 		[def, mg],
 	);
 	const renderState = useContext(MgRenderStateContext)(clip.clipId);
@@ -209,6 +362,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				sourceInFrames={sourceInFrames}
 				fps={fps}
 				isPreview={options.isPreview}
+				fonts={layer.fonts}
 			/>
 		);
 	else {
@@ -247,6 +401,15 @@ export type MgTemplatePreviewProps = {
 	params?: Record<string, unknown>;
 	/** Backdrop behind the template (default: transparent). */
 	background?: string;
+	/**
+	 * social-comment §7.8: URLs of the template's declared fonts and emoji (null = unavailable), e.g. from the engine's
+	 * font catalogue (`catalogFaceUrl`, `emojiImagePath` of `@jasper/api`). Without it a template that declares assets
+	 * shows its "not available" markers. Keep its identity stable.
+	 */
+	assets?: {
+		font(face: RenderTemplateAssets['fonts'][number]): string | null;
+		emoji(pack: string, grapheme: string): string | null;
+	};
 };
 
 /**
@@ -260,9 +423,27 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	const def = mgRegistry.getDefinition(props.templateId, props.version);
 	const canvas = { width, height };
 	const params = useMemo(
-		() => (def ? resolveParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
+		() => (def ? resolveTemplateParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
 		[def, props.params],
 	);
+	// social-comment §7.8: the template's declared fonts (loaded here: a gallery poster has no document) and emoji.
+	const resolver = props.assets;
+	const declared = useMemo(() => {
+		const assets = def && params ? templateRequiredAssets(def, params) : null;
+		const fonts: RenderDoc['fonts'] = [];
+		const emoji: Record<string, string> = {};
+		for (const face of assets?.fonts ?? []) {
+			const url = resolver?.font(face);
+			if (url) fonts.push({ fontId: templateFontId(face.family), ...face, url });
+		}
+		for (const { pack, graphemes } of assets?.emoji ?? [])
+			for (const g of graphemes) {
+				const url = resolver?.emoji(pack, g);
+				if (url) emoji[emojiTableKey(pack, g)] = url;
+			}
+		return { assets: assets ?? undefined, fonts, emoji };
+	}, [def, params, resolver]);
+	const fontsReady = useFontsReadyState(declared.fonts);
 	let content: ReactNode = null;
 	if (!def || !params)
 		content = (
@@ -273,17 +454,27 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 		);
 	else if (isAnimeTemplate(def))
 		content = (
-			<AnimeTemplate
-				def={def}
-				mg={{ template: { id: def.id, version: def.version }, params, canvas }}
-				clipId={`preview:${def.id}@${def.version}`}
-				localFrame={frame}
-				contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
-				durationFrames={durationInFrames}
-				sourceInFrames={0}
-				fps={fps}
-				isPreview
-			/>
+			<FontsReadyContext.Provider value={fontsReady}>
+				<EmojiTableContext.Provider value={declared.emoji}>
+					<AnimeTemplate
+						def={def}
+						mg={{
+							template: { id: def.id, version: def.version },
+							params,
+							canvas,
+							...(declared.assets ? { assets: declared.assets } : {}),
+						}}
+						clipId={`preview:${def.id}@${def.version}`}
+						localFrame={frame}
+						contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
+						durationFrames={durationInFrames}
+						sourceInFrames={0}
+						fps={fps}
+						isPreview
+						fonts={declared.fonts}
+					/>
+				</EmojiTableContext.Provider>
+			</FontsReadyContext.Provider>
 		);
 	else {
 		const markup = def.renderSvg(params, frame, fps, canvas, {

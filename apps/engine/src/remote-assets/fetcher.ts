@@ -112,12 +112,22 @@ async function attempt(url: string, limits: FetchLimits, fetchImpl: typeof fetch
 			res = await fetchImpl(url, { redirect: 'follow', signal: ac.signal, headers: { accept: '*/*' } });
 		} catch (e) {
 			if (ac.signal.aborted)
-				throw new RemoteAssetError('DOWNLOAD_TIMEOUT', `${url} did not answer within ${limits.timeoutMs} ms`, true, {
+				throw new RemoteAssetError(
+					'DOWNLOAD_TIMEOUT',
+					`${url} did not answer within ${limits.timeoutMs} ms`,
+					true,
+					{
+						url,
+					},
+				);
+			throw new RemoteAssetError(
+				'DOWNLOAD_FAILED',
+				`${url} could not be reached (${(e as Error).message})`,
+				true,
+				{
 					url,
-				});
-			throw new RemoteAssetError('DOWNLOAD_FAILED', `${url} could not be reached (${(e as Error).message})`, true, {
-				url,
-			});
+				},
+			);
 		}
 		if (!res.ok) {
 			await res.body?.cancel().catch(() => undefined);
@@ -136,10 +146,17 @@ async function attempt(url: string, limits: FetchLimits, fetchImpl: typeof fetch
 		} catch (e) {
 			if (e instanceof RemoteAssetError) throw e;
 			if (ac.signal.aborted)
-				throw new RemoteAssetError('DOWNLOAD_TIMEOUT', `${url} did not finish within ${limits.timeoutMs} ms`, true, {
-					url,
-				});
-			throw new RemoteAssetError('DOWNLOAD_FAILED', `${url} broke off (${(e as Error).message})`, true, { url });
+				throw new RemoteAssetError(
+					'DOWNLOAD_TIMEOUT',
+					`${url} did not finish within ${limits.timeoutMs} ms`,
+					true,
+					{
+						url,
+					},
+				);
+			throw new RemoteAssetError('DOWNLOAD_FAILED', `${url} broke off (${(e as Error).message})`, true, {
+				url,
+			});
 		}
 	} finally {
 		clearTimeout(timer);
@@ -191,7 +208,8 @@ export function checkFont(f: Fetched, format: 'woff2' | 'woff' | 'ttf' | 'otf'):
 }
 
 /** SVG markup that could run code or load other resources is refused (the engine serves these files). */
-const SVG_ACTIVE = /<script|<foreignobject|\son[a-z]+\s*=|javascript:|<iframe|<embed|<object|xlink:href\s*=\s*["']\s*(?!#)|\shref\s*=\s*["']\s*(?!#)/i;
+const SVG_ACTIVE =
+	/<script|<foreignobject|\son[a-z]+\s*=|javascript:|<iframe|<embed|<object|xlink:href\s*=\s*["']\s*(?!#)|\shref\s*=\s*["']\s*(?!#)/i;
 
 /** Refuses a body that is not an image of `format` (magic number / root element; active SVG content). */
 export function checkImage(f: Fetched, format: 'png' | 'svg'): void {
