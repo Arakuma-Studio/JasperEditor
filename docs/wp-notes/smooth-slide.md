@@ -115,8 +115,12 @@ and `#10` ignored.
 - `packages/compositions/test/transition-smooth-slide-parity.e2e.test.ts` (REMOTION_E2E=1): Player (preview) vs
   `renderStill` (export) per pixel.
 - `apps/engine/test/smooth-slide-export.test.ts`: the planner bakes the span (hybrid) or routes to Remotion with a
-  blocker naming Smooth Slide; with REMOTION_E2E=1 the hybrid and Remotion exports match Remotion stills frame by
-  frame.
+  blocker naming Smooth Slide; with REMOTION_E2E=1 the hybrid and Remotion exports are compared with Remotion stills
+  frame by frame. Measured (2026-10-25, shared 16-vCPU build VM, `REMOTION_E2E=1`, 1280×720 ProRes 4444): hybrid
+  ≥ 99.93 % of samples within 3/255 (mean |Δ| ≤ 0.155) on every span frame; the Remotion export path's ProRes 422 HQ
+  intermediate costs 84.9–85.3 % / mean 2.11–2.26 on frames without a transition and 84.1–89.8 % / mean 1.50–1.95 on
+  the span frames (the transition adds no path-specific error; the test requires span frames within 3 points of
+  share and 1 level of mean of that baseline).
 - `packages/interchange/test/premiere-transitions.test.ts`: MatchName mapping, parameter conversion (fuzzed),
   FCP7 XML import into a valid document; `apps/mcp/test/transitions.test.ts`: list / add / update over MCP;
   `packages/session/test/smooth-slide-history.test.ts`: undo / redo of adding and editing it.
