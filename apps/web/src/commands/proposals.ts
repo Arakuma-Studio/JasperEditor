@@ -18,6 +18,7 @@ import {
 	openReview,
 	playReviewItem,
 	playReviewRange,
+	refreshReview,
 	rejectAll,
 	stepReviewItem,
 } from '../proposals/actions.ts';
@@ -79,6 +80,9 @@ const onItem = (ctx: CommandCtx) => writableReview(ctx) && itemsOf(ctx).some((it
 const reveal = (ctx: CommandCtx) => (f: number) => ctx.services.get('timelineViewport')?.scrollToFrame(f);
 const notReviewing = () => t('No proposal is under review');
 
+const hasStale = (ctx: CommandCtx) =>
+	writableReview(ctx) && itemsOf(ctx).some((it) => !it.setup && it.state === 'stale');
+
 export const proposalCommands: UiCommand[] = [
 	{
 		id: 'proposals.review',
@@ -109,6 +113,24 @@ export const proposalCommands: UiCommand[] = [
 				return;
 			}
 			await openReview(session, id);
+		},
+	},
+	{
+		id: 'proposals.refresh',
+		label: 'Refresh Proposal',
+		description:
+			'Ask the proposal’s producer to re-plan its stale items on the current edit ("Refresh proposal"): they come back pending for review; nothing is applied. Disabled when no item is stale; refused when the producer cannot re-plan.',
+		scope: 'global',
+		agentExposed: true,
+		when: hasStale,
+		disabledReason: (ctx) =>
+			!reviewing(ctx)
+				? notReviewing()
+				: ctx.session?.getState().readOnly
+					? t('The project is read-only')
+					: t('No item changed since it was proposed'),
+		run: async (ctx) => {
+			if (ctx.session) await refreshReview(ctx.session);
 		},
 	},
 	{

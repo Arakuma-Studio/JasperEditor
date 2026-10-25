@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LabelColorSchema } from '../../schema/common.ts';
-import { ProjectSettingsSchema } from '../../schema/document.ts';
+import { ProjectAgentProposalsSchema, ProjectSettingsSchema } from '../../schema/document.ts';
 import {
 	LutInfoSchema,
 	MediaAssetSchema,
@@ -17,7 +17,13 @@ import { ContentTimeInputSchema, cmd, IdListSchema, IdRefSchema, RefDeclSchema }
 
 export const ProjectRenameCmd = cmd('project.rename', { name: z.string().min(1) });
 export const ProjectUpdateSettingsCmd = cmd('project.updateSettings', {
-	settings: ProjectSettingsSchema.partial(),
+	/**
+	 * Fields replace the stored ones, except `agentProposals` (spec 15 EA-001), which is merged per feature: features
+	 * not named keep their setting. An agent turning a feature on needs the user's approval.
+	 */
+	settings: ProjectSettingsSchema.partial().extend({
+		agentProposals: ProjectAgentProposalsSchema.optional(),
+	}),
 });
 
 export const BinCreateCmd = cmd('bin.create', {

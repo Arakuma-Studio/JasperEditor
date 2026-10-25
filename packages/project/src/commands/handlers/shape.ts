@@ -168,6 +168,8 @@ export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>
 	'param.set',
 	'param.setAnimated',
 	'keyframe.add',
+	// spec 15 EA-031: keys on many clips (a shape's size among them) in one command
+	'keyframe.addBatch',
 	'keyframe.update',
 	'keyframe.remove',
 	'keyframe.move',

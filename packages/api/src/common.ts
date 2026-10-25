@@ -75,6 +75,13 @@ export const ENGINE_ERROR_CODES = [
 	'PROPOSAL_STILL_APPLIED',
 	/** Redo record refused: the document does not have what the accept created (detail.code E_NOT_APPLIED). */
 	'PROPOSAL_NOT_APPLIED',
+	/**
+	 * Spec 15 EA-004: the proposal would not fit one accept transaction (detail.code E_TOO_LARGE, with `fit` and the
+	 * `suggestedRange` of frames that fits): run the pass on a shorter range.
+	 */
+	'PROPOSAL_TOO_LARGE',
+	/** "Refresh proposal": the feature's producer does not re-plan items (detail.code E_NOT_REFRESHABLE). */
+	'PROPOSAL_NOT_REFRESHABLE',
 ] as const;
 export const EngineErrorCodeSchema = z.enum(ENGINE_ERROR_CODES);
 export type EngineErrorCode = z.infer<typeof EngineErrorCodeSchema>;
