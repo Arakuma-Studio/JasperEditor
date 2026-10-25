@@ -472,6 +472,9 @@ export type RenderTemplateAssets = {
 	emoji: { pack: string; graphemes: string[] }[];
 };
 
+/** A file of a template face: one URL, or one subset file per unicode range. */
+export type TemplateFaceFile = { url: string; unicodeRange?: string };
+
 /** Font id of a template-declared face in `RenderSnapshot.fonts` (no document font has this form). */
 export function templateFontId(family: string): string {
 	return `template:${family}`;
@@ -527,7 +530,18 @@ export type RenderSnapshot = {
 	audioMix?: RenderAudioMix;
 	/** null = offline. */
 	media: Record<string, MediaHandle | null>;
-	fonts: { fontId: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }[];
+	/**
+	 * `unicodeRange` (social-comment §7.8): the face is split into subset files (latin, latin-ext…); each entry loads
+	 * one with its CSS unicode-range, together they are the face.
+	 */
+	fonts: {
+		fontId: string;
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+		url: string;
+		unicodeRange?: string;
+	}[];
 	/**
 	 * social-comment §7.8: emoji image URLs of the anime templates' required emoji, keyed `emojiTableKey(pack,
 	 * grapheme)`; an unavailable image is absent. Absent = no template draws emoji.
@@ -557,8 +571,9 @@ export type SnapshotOptions = {
 	resolveRoto?(key: string): string;
 	/**
 	 * social-comment §7.8: fonts and emoji of anime templates. `required` gives a clip's template assets
-	 * (`@jasper/mg-templates` `templateAssetOptions` binds it to the template registry); `font` the URL of a face
-	 * (exact family / weight / style, never a fallback; null = unavailable) and `emoji` the URL of an emoji image of a
+	 * (`@jasper/mg-templates` `templateAssetOptions` binds it to the template registry); `font` the URL of a face, or its
+	 * subset files with their unicode ranges (exact family / weight / style, never a fallback; null or empty =
+	 * unavailable) and `emoji` the URL of an emoji image of a
 	 * pack (null = unavailable). Unavailable assets become snapshot warnings (`TEMPLATE_FONT_UNAVAILABLE`,
 	 * `TEMPLATE_EMOJI_UNAVAILABLE`) that export planners turn into blockers. Absent = template assets are not resolved.
 	 */
@@ -568,7 +583,7 @@ export type SnapshotOptions = {
 			params: Record<string, unknown>;
 			paramKeyframes?: Record<string, Keyframe<unknown>[]>;
 		}): RenderTemplateAssets | null;
-		font(face: RenderTemplateAssets['fonts'][number]): string | null;
+		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
 		emoji(pack: string, grapheme: string): string | null;
 	};
 	/** Pre-render URLs known to the consumer. */
@@ -774,10 +789,23 @@ export function buildRenderSnapshot(
 		for (const face of assets.fonts) {
 			const fontId = templateFontId(face.family);
 			const key = `${fontId}:${face.weight}:${face.style === 'italic'}`;
-			if (fontKeys.has(key)) continue;
-			const url = resolver.font(face);
-			if (url) fontKeys.set(key, { fontId, ...face, url });
-			else
+			if (
+				[...fontKeys.values()].some(
+					(f) => f.fontId === fontId && f.weight === face.weight && f.style === face.style,
+				)
+			)
+				continue;
+			const found = resolver.font(face);
+			const files = typeof found === 'string' ? [{ url: found }] : (found ?? []).filter((f) => !!f.url);
+			// One entry per subset file (keyed by its unicode range, like the nested snapshots' entries).
+			for (const f of files)
+				fontKeys.set(`${key}${f.unicodeRange ? `:${f.unicodeRange}` : ''}`, {
+					fontId,
+					...face,
+					url: f.url,
+					...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
+				});
+			if (files.length === 0)
 				warnings.push({
 					clipId,
 					code: 'TEMPLATE_FONT_UNAVAILABLE',
@@ -854,7 +882,8 @@ export function buildRenderSnapshot(
 		);
 		for (const [id, h] of Object.entries(sub.media)) if (!(id in media)) media[id] = h;
 		for (const f of sub.fonts) {
-			const key = `${f.fontId}:${f.weight}:${f.style === 'italic'}`;
+			// subset files of a face share its key: tell them apart by their unicode range
+			const key = `${f.fontId}:${f.weight}:${f.style === 'italic'}${f.unicodeRange ? `:${f.unicodeRange}` : ''}`;
 			if (!fontKeys.has(key)) fontKeys.set(key, f);
 		}
 		for (const [k, url] of Object.entries(sub.emoji ?? {})) if (!(k in emojiTable)) emojiTable[k] = url;

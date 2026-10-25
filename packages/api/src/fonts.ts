@@ -5,6 +5,8 @@ export const FontFileSchema = z.object({
 	style: z.enum(['normal', 'italic']),
 	url: z.string(),
 	subset: z.string().optional(),
+	/** CSS unicode-range of the subset file (bundled families with subsets). */
+	unicodeRange: z.string().optional(),
 });
 export const FontFamilySchema = z.object({
 	family: z.string(),
@@ -52,31 +54,42 @@ export function emojiImagePath(pack: string, version: string, key: string, forma
 }
 
 /**
- * URL of a template font face in a catalogue: the family (case-insensitive; bundled families before remote ones) with
- * exactly this weight and style, its `latin` file when it has subsets. Null when the catalogue has no such face — a
- * template face is never replaced by another family, weight or style (AGENTS §4).
+ * Files of a template font face in a catalogue: the family (case-insensitive; bundled families before remote ones) with
+ * exactly this weight and style — every subset file with its unicode range (latin, latin-ext…), or the face's one
+ * file. Null when the catalogue has no such face: a template face is never replaced by another family, weight or style
+ * (AGENTS §4).
  */
-export function catalogFaceUrl(
+export function catalogFaceFiles(
 	catalog:
 		| {
 				fonts: readonly {
 					family: string;
 					source?: string;
-					files: readonly { weight: number; style: string; url: string; subset?: string }[];
+					files: readonly {
+						weight: number;
+						style: string;
+						url: string;
+						subset?: string;
+						unicodeRange?: string;
+					}[];
 				}[];
 		  }
 		| null
 		| undefined,
 	face: { family: string; weight: number; style: 'normal' | 'italic' },
-): string | null {
+): { url: string; unicodeRange?: string }[] | null {
 	const name = face.family.trim().toLowerCase();
 	const families = (catalog?.fonts ?? [])
 		.filter((f) => f.family.toLowerCase() === name)
 		.sort((a, b) => Number(a.source === 'remote') - Number(b.source === 'remote'));
 	for (const fam of families) {
 		const files = fam.files.filter((f) => f.weight === face.weight && f.style === face.style);
-		const file = files.find((f) => f.subset === 'latin') ?? files.find((f) => !f.subset) ?? files[0];
-		if (file) return file.url;
+		if (files.length === 0) continue;
+		// Subset files need their ranges to combine; without ranges only one file can be the face (latin first).
+		if (files.length > 1 && files.every((f) => f.unicodeRange))
+			return files.map((f) => ({ url: f.url, unicodeRange: f.unicodeRange! }));
+		const one = files.find((f) => f.subset === 'latin') ?? files.find((f) => !f.subset) ?? files[0]!;
+		return [{ url: one.url }];
 	}
 	return null;
 }

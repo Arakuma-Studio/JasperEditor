@@ -539,8 +539,11 @@ export class LayerBakeService {
 				fileSha256: await this.hashes.hash(file),
 			});
 		}
-		return out.sort((a, b) =>
-			`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`),
+		return out.sort(
+			(a, b) =>
+				`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`) ||
+				// subset files of one face (social-comment §7.8)
+				(a.fileSha256 ?? '').localeCompare(b.fileSha256 ?? ''),
 		);
 	}
 

@@ -1,7 +1,7 @@
 // Template assets (social-comment design §7.8): the fonts and emoji an anime template declares through
 // `requiredAssets`, collected for the render snapshot (`SnapshotOptions.templateAssets`), validated and bounded
 // (template code must never crash or flood a snapshot).
-import type { Keyframe, RenderTemplateAssets, SnapshotOptions } from '@jasper/project';
+import type { Keyframe, RenderTemplateAssets, SnapshotOptions, TemplateFaceFile } from '@jasper/project';
 import { z } from 'zod';
 import { EMOJI_PACK_IDS, isEmojiGrapheme, MAX_EMOJI_CODEPOINTS } from './emoji.ts';
 import type { MgRegistry } from './registry.ts';
@@ -118,7 +118,7 @@ export function templateRequiredAssets(
 export function templateAssetOptions(
 	registry: Pick<MgRegistry, 'getDefinition'>,
 	resolve: {
-		font(face: RenderTemplateAssets['fonts'][number]): string | null;
+		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
 		emoji(pack: string, grapheme: string): string | null;
 	},
 ): NonNullable<SnapshotOptions['templateAssets']> {

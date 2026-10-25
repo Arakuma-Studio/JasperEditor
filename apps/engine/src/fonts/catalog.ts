@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { FontCatalog, FontFamily } from '@jasper/api';
+import { catalogFaceFiles, type FontCatalog, type FontFamily } from '@jasper/api';
 import type { RemoteAssetService } from '../remote-assets/service.ts';
 
 const CATALOG_IDS = [
@@ -46,6 +46,20 @@ type Metadata = {
 };
 
 type ResolvedFamily = FontFamily & { id: string; dir: string };
+
+/** CSS unicode-range of each subset (`unicode.json` of a @fontsource package; {} when absent or unreadable). */
+function unicodeRanges(dir: string): Record<string, string> {
+	try {
+		const raw = JSON.parse(readFileSync(join(dir, 'unicode.json'), 'utf8')) as unknown;
+		if (!raw || typeof raw !== 'object') return {};
+		const out: Record<string, string> = {};
+		for (const [k, v] of Object.entries(raw))
+			if (typeof v === 'string' && /^[U+0-9A-Fa-f?, -]+$/.test(v)) out[k] = v;
+		return out;
+	} catch {
+		return {};
+	}
+}
 
 function packageDir(
 	id: string,
@@ -87,6 +101,7 @@ export class FontCatalogService {
 			} catch {
 				continue;
 			}
+			const ranges = unicodeRanges(dir);
 			const files: FontFamily['files'] = [];
 			for (const subset of SUBSETS) {
 				if (!meta.subsets.includes(subset)) continue;
@@ -94,7 +109,13 @@ export class FontCatalogService {
 					for (const style of meta.styles) {
 						const file = `${id}-${subset}-${weight}-${style}.woff2`;
 						if (!existsSync(join(dir, 'files', file))) continue;
-						files.push({ weight, style, subset, url: `/fonts/${id}/${file}` });
+						files.push({
+							weight,
+							style,
+							subset,
+							url: `/fonts/${id}/${file}`,
+							...(ranges[subset] ? { unicodeRange: ranges[subset] } : {}),
+						});
 					}
 				}
 			}
@@ -163,12 +184,15 @@ export class FontCatalogService {
 		return { fonts: [...bundled, ...this.remote.catalogFamilies()], emojiPacks: this.remote.emojiPacks() };
 	}
 
-	/** The bundled file of exactly this face (`latin` subset), or null. */
-	private bundledFace(face: { family: string; weight: number; style: 'normal' | 'italic' }): string | null {
+	/** The bundled files of exactly this face (latin and latin-ext with their unicode ranges), or null. */
+	private bundledFace(face: {
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+	}): { url: string; unicodeRange?: string }[] | null {
 		const fam = this.byFamily(face.family);
 		if (!fam || fam.family.toLowerCase() !== face.family.trim().toLowerCase()) return null;
-		const files = fam.files.filter((f) => f.weight === face.weight && f.style === face.style);
-		return (files.find((f) => f.subset === 'latin') ?? files[0])?.url ?? null;
+		return catalogFaceFiles({ fonts: [fam] }, face);
 	}
 
 	/** Whether exactly this face is bundled (no download needed). */
@@ -177,12 +201,19 @@ export class FontCatalogService {
 	}
 
 	/**
-	 * social-comment §7.8: engine-relative URL of a template face — the bundled catalogue first, then the remote
-	 * manifest — or null. Exact family, weight and style: never a fallback (AGENTS §4). Remote files may still need
-	 * downloading (`remote.prefetch`).
+	 * social-comment §7.8: engine-relative URLs of a template face — the bundled catalogue first (every subset file with
+	 * its unicode range), then the remote manifest (one file) — or null. Exact family, weight and style: never a
+	 * fallback (AGENTS §4). Remote files may still need downloading (`remote.prefetch`).
 	 */
-	templateFaceUrl(face: { family: string; weight: number; style: 'normal' | 'italic' }): string | null {
-		return this.bundledFace(face) ?? this.remote?.fontUrl(face) ?? null;
+	templateFaceFiles(face: {
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+	}): { url: string; unicodeRange?: string }[] | null {
+		const bundled = this.bundledFace(face);
+		if (bundled) return bundled;
+		const url = this.remote?.fontUrl(face);
+		return url ? [{ url }] : null;
 	}
 
 	byFamily(family: string): ResolvedFamily | null {

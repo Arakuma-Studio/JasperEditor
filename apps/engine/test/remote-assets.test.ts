@@ -7,10 +7,15 @@ import { EMOJI_PACK_IDS } from '@jasper/mg-templates';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkImage, RemoteAssetError } from '../src/remote-assets/fetcher.ts';
-import { loadManifest, mergeManifests, parseOverride, shippedManifest } from '../src/remote-assets/manifest.ts';
+import shipped from '../src/remote-assets/manifest.json' with { type: 'json' };
+import {
+	loadManifest,
+	mergeManifests,
+	parseOverride,
+	shippedManifest,
+} from '../src/remote-assets/manifest.ts';
 import { RemoteManifestSchema } from '../src/remote-assets/schema.ts';
 import { RemoteAssetService } from '../src/remote-assets/service.ts';
-import shipped from '../src/remote-assets/manifest.json' with { type: 'json' };
 import { FixtureServer, FONT_BYTES, fixtureManifest, pngBytes, sha256 } from './remote-assets-fixture.ts';
 import { tempAppdir } from './temp.ts';
 
@@ -97,9 +102,9 @@ describe('manifest', () => {
 		expect(bad((x) => ({ ...x, fonts: [{ ...x.fonts[0], url: 'file:///etc/passwd' }] }))).toBe(false);
 		expect(bad((x) => ({ ...x, fonts: [{ ...x.fonts[0], url: 'https://u:p@cdn.example/a' }] }))).toBe(false);
 		expect(bad((x) => ({ ...x, fonts: [{ ...x.fonts[0], sha256: 'abc' }] }))).toBe(false);
-		expect(bad((x) => ({ ...x, emojiPacks: [{ ...x.emojiPacks[0], urlTemplate: 'https://cdn/x.png' }] }))).toBe(
-			false,
-		);
+		expect(
+			bad((x) => ({ ...x, emojiPacks: [{ ...x.emojiPacks[0], urlTemplate: 'https://cdn/x.png' }] })),
+		).toBe(false);
 		expect(
 			bad((x) => ({ ...x, emojiPacks: [{ ...x.emojiPacks[0], urlTemplate: 'https://cdn/{name}.png' }] })),
 		).toBe(false);
@@ -137,16 +142,23 @@ describe('manifest', () => {
 			emojiPacks: fc.uniqueArray(pack, { selector: (p) => p.id, maxLength: 3 }),
 		});
 		fc.assert(
-			fc.property(fc.oneof(manifest.map((m) => JSON.stringify(m)), fc.json(), fc.string()), (text) => {
-				const r = parseOverride(text);
-				if ('manifest' in r) {
-					expect(RemoteManifestSchema.safeParse(r.manifest).success).toBe(true);
-					// merging is idempotent and keeps every override entry
-					const merged = mergeManifests(EMPTY, r.manifest);
-					expect(mergeManifests(merged, r.manifest)).toEqual(merged);
-					expect(merged.fonts.map((f) => f.id).sort()).toEqual(r.manifest.fonts.map((f) => f.id).sort());
-				} else expect(typeof r.error).toBe('string');
-			}),
+			fc.property(
+				fc.oneof(
+					manifest.map((m) => JSON.stringify(m)),
+					fc.json(),
+					fc.string(),
+				),
+				(text) => {
+					const r = parseOverride(text);
+					if ('manifest' in r) {
+						expect(RemoteManifestSchema.safeParse(r.manifest).success).toBe(true);
+						// merging is idempotent and keeps every override entry
+						const merged = mergeManifests(EMPTY, r.manifest);
+						expect(mergeManifests(merged, r.manifest)).toEqual(merged);
+						expect(merged.fonts.map((f) => f.id).sort()).toEqual(r.manifest.fonts.map((f) => f.id).sort());
+					} else expect(typeof r.error).toBe('string');
+				},
+			),
 			{ numRuns: 300 },
 		);
 		// every generated valid manifest parses
@@ -262,7 +274,11 @@ describe('download failures', () => {
 	it('caps sizes (declared and streamed)', async () => {
 		const small = { maxBytes: 1000 };
 		const e = await rejects(
-			service({ fontLimits: { ...fast, ...small } }).ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }),
+			service({ fontLimits: { ...fast, ...small } }).ensureFace({
+				family: 'Chirp',
+				weight: 700,
+				style: 'normal',
+			}),
 		);
 		expect(e.code).toBe('DOWNLOAD_TOO_LARGE');
 		server.routes.set('/emoji/1f600.png', { body: RED, declaredLength: 10_000_000 });
@@ -283,7 +299,9 @@ describe('download failures', () => {
 	it('shares one download between concurrent requests and limits downloads per host', async () => {
 		server.routes.set('/fonts/chirp-700.woff2', { body: FONT_BYTES, delayMs: 50 });
 		const s = service({ perHost: 2 });
-		const faces = Array.from({ length: 10 }, () => s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }));
+		const faces = Array.from({ length: 10 }, () =>
+			s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }),
+		);
 		const paths = await Promise.all(faces);
 		expect(new Set(paths).size).toBe(1);
 		expect(server.hits.get('/fonts/chirp-700.woff2')).toBe(1);
@@ -308,8 +326,13 @@ describe('emoji', () => {
 		expect(readFileSync(path).equals(BLUE)).toBe(true);
 		expect(server.hits.get('/emoji/2764-fe0f.png')).toBe(1);
 		expect(await s.emojiHash('apple', HEART)).toBe(sha256(BLUE));
-		const index = JSON.parse(readFileSync(join(dir, 'assets', 'remote', 'emoji', 'apple', '1', 'index.json'), 'utf8'));
-		expect(index.entries['2764-fe0f']).toMatchObject({ sha256: sha256(BLUE), url: `${server.url}/emoji/2764.png` });
+		const index = JSON.parse(
+			readFileSync(join(dir, 'assets', 'remote', 'emoji', 'apple', '1', 'index.json'), 'utf8'),
+		);
+		expect(index.entries['2764-fe0f']).toMatchObject({
+			sha256: sha256(BLUE),
+			url: `${server.url}/emoji/2764.png`,
+		});
 		expect(s.emojiUrl('apple', HEART)).toBe('/fonts/emoji/apple/1/2764-fe0f.png');
 		expect(s.emojiUrl('apple', 'a')).toBeNull();
 		expect(s.emojiUrl('noto', GRIN)).toBeNull();
@@ -350,7 +373,9 @@ describe('emoji', () => {
 
 	it('serves only canonical keys of the current pack version', async () => {
 		const s = service();
-		await expect(s.ensureEmojiFile('apple', '1', '1f600.png')).resolves.toMatchObject({ contentType: 'image/png' });
+		await expect(s.ensureEmojiFile('apple', '1', '1f600.png')).resolves.toMatchObject({
+			contentType: 'image/png',
+		});
 		for (const [pack, version, file] of [
 			['apple', '2', '1f600.png'],
 			['apple', '1', '1F600.png'],
@@ -375,7 +400,9 @@ describe('emoji', () => {
 				},
 			],
 		}).emojiPacks[0]!;
-		expect(RemoteAssetService.emojiSourceUrls(p, GRIN)).toEqual(['https://em.example/apple/grinning-face_1f600.png']);
+		expect(RemoteAssetService.emojiSourceUrls(p, GRIN)).toEqual([
+			'https://em.example/apple/grinning-face_1f600.png',
+		]);
 		expect(RemoteAssetService.emojiSourceUrls(p, HEART)).toEqual([]);
 	});
 });
@@ -386,7 +413,10 @@ describe('override manifest, prefetch and notice', () => {
 		const e = await rejects(s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }));
 		expect(e.code).toBe('DOWNLOAD_FAILED');
 		mkdirSync(join(dir, 'assets'), { recursive: true });
-		writeFileSync(join(dir, 'assets', 'remote-manifest.override.json'), JSON.stringify(fixtureManifest(server.url)));
+		writeFileSync(
+			join(dir, 'assets', 'remote-manifest.override.json'),
+			JSON.stringify(fixtureManifest(server.url)),
+		);
 		await expect(s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' })).resolves.toBeTruthy();
 		expect((await s.status()).manifest.override.status).toBe('loaded');
 	});
@@ -395,14 +425,17 @@ describe('override manifest, prefetch and notice', () => {
 		const events: unknown[] = [];
 		const s = service({ onChanged: (e) => events.push(e) });
 		expect((await s.status()).notice).toEqual({ pending: false, firstFetchAt: null, items: [] });
-		const r = await s.prefetch({
-			fonts: [
-				{ family: 'Chirp', weight: 700, style: 'normal' },
-				{ family: 'Inter', weight: 400, style: 'normal' },
-				{ family: 'Nope', weight: 400, style: 'normal' },
-			],
-			emoji: [{ pack: 'apple', graphemes: [GRIN, GRIN, '\u{1FAE8}'] }],
-		}, (f) => f.family === 'Inter');
+		const r = await s.prefetch(
+			{
+				fonts: [
+					{ family: 'Chirp', weight: 700, style: 'normal' },
+					{ family: 'Inter', weight: 400, style: 'normal' },
+					{ family: 'Nope', weight: 400, style: 'normal' },
+				],
+				emoji: [{ pack: 'apple', graphemes: [GRIN, GRIN, '\u{1FAE8}'] }],
+			},
+			(f) => f.family === 'Inter',
+		);
 		expect(r.available).toBe(3);
 		expect(r.missing.map((m) => [m.kind, m.error.code])).toEqual([
 			['font', 'REMOTE_ASSET_UNKNOWN'],

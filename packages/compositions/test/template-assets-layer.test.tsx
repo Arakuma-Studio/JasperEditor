@@ -1,7 +1,11 @@
 // social-comment §7.8: a template's declared fonts and emoji in the layer — emojiUrls, the visible marker and the panel
 // report in preview, a failed render on export, failed-face tracking and retry, exact face gating.
 import { type AnyMgTemplate, emojiGraphemes, mgRegistry, templateAssetOptions } from '@jasper/mg-templates';
-import { MissingAssetReporterContext, type MissingTemplateAsset, retryTemplateAssets } from '@jasper/motion/templates';
+import {
+	MissingAssetReporterContext,
+	type MissingTemplateAsset,
+	retryTemplateAssets,
+} from '@jasper/motion/templates';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -161,10 +165,42 @@ describe('template assets in the motion-graphic layer', () => {
 			},
 		};
 		const { result } = renderHook(() => useLayerFontsReady(l.props.clip, l.snap.fonts), {
-			wrapper: ({ children }) => <FontsReadyContext.Provider value={state}>{children}</FontsReadyContext.Provider>,
+			wrapper: ({ children }) => (
+				<FontsReadyContext.Provider value={state}>{children}</FontsReadyContext.Provider>
+			),
 		});
 		expect(result.current).toBe(false);
 		expect(asked).toEqual(['Chirp|700|normal']);
+	});
+});
+
+describe('subset files', () => {
+	it('loads every subset file of a template face with its unicode range', async () => {
+		const made: { family: string; desc: Record<string, string> }[] = [];
+		class RecordingFontFace {
+			constructor(family: string, _src: string, desc: Record<string, string>) {
+				made.push({ family, desc });
+			}
+			load() {
+				return Promise.resolve(this);
+			}
+		}
+		vi.stubGlobal('FontFace', RecordingFontFace);
+		Object.defineProperty(document, 'fonts', { configurable: true, value: { add: () => {} } });
+		const face = {
+			fontId: 'template:Subset Sans',
+			family: 'Subset Sans',
+			weight: 400,
+			style: 'normal' as const,
+		};
+		const fonts = [
+			{ ...face, url: '/fonts/s/latin.woff2', unicodeRange: 'U+0000-00FF' },
+			{ ...face, url: '/fonts/s/latin-ext.woff2', unicodeRange: 'U+0100-02BA' },
+		];
+		const { result } = renderHook(() => useFontsReadyState(fonts));
+		await waitFor(() => expect(result.current.allLoaded).toBe(true));
+		expect(made.map((m) => m.desc.unicodeRange)).toEqual(['U+0000-00FF', 'U+0100-02BA']);
+		expect(made.every((m) => m.family === 'Subset Sans' && m.desc.weight === '400')).toBe(true);
 	});
 });
 

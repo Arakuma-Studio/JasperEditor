@@ -66,7 +66,12 @@ function loadFontFace(f: FontFaceSpec): Promise<boolean> {
 		try {
 			const format = fontFormatFromUrl(f.url);
 			const src = format ? `url('${f.url}') format('${format}')` : `url('${f.url}')`;
-			const face = new FontFace(f.family, src, { weight: String(f.weight), style: f.style });
+			const face = new FontFace(f.family, src, {
+				weight: String(f.weight),
+				style: f.style,
+				// a subset file of the face (social-comment §7.8: template faces load latin + latin-ext)
+				...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
+			});
 			await face.load();
 			document.fonts.add(face);
 			return true;

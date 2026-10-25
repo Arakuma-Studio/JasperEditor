@@ -3,8 +3,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 
@@ -12,7 +12,11 @@ const require = createRequire(import.meta.url);
 
 /** A real woff2 (TikTok Sans 700, OFL-1.1) to download and verify. */
 export const FONT_BYTES = readFileSync(
-	join(dirname(require.resolve('@fontsource/tiktok-sans/metadata.json')), 'files', 'tiktok-sans-latin-700-normal.woff2'),
+	join(
+		dirname(require.resolve('@fontsource/tiktok-sans/metadata.json')),
+		'files',
+		'tiktok-sans-latin-700-normal.woff2',
+	),
 );
 export const sha256 = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 
@@ -125,7 +129,10 @@ export class FixtureServer {
 }
 
 /** A manifest with one font (TikTok-Sans bytes served as "Chirp" 700) and one emoji pack on `base`. */
-export function fixtureManifest(base: string, o: { fe0f?: 'keep' | 'strip' | 'try-both'; version?: string } = {}) {
+export function fixtureManifest(
+	base: string,
+	o: { fe0f?: 'keep' | 'strip' | 'try-both'; version?: string } = {},
+) {
 	return {
 		version: 1 as const,
 		fonts: [

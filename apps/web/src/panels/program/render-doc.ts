@@ -96,7 +96,13 @@ type FontCatalogLike = CatalogForAssets & {
 	fonts: {
 		family: string;
 		source?: string;
-		files: { weight: number; style: 'normal' | 'italic'; url: string; subset?: string }[];
+		files: {
+			weight: number;
+			style: 'normal' | 'italic';
+			url: string;
+			subset?: string;
+			unicodeRange?: string;
+		}[];
 	}[];
 };
 

@@ -2,21 +2,27 @@
 // catalogue (`GET /api/fonts`: bundled families, then the remote-asset manifest's `source: 'remote'` families and its
 // emoji packs). URLs are the engine's font routes (`/fonts/remote/…`, `/fonts/emoji/…`), which download on first
 // request when Settings ▸ Privacy & Network allows it; the export planner resolves the same faces engine-side.
-import { catalogFaceUrl, type EmojiPackInfo, emojiImagePath } from '@jasper/api';
+import { catalogFaceFiles, type EmojiPackInfo, emojiImagePath } from '@jasper/api';
 import { emojiKey, isEmojiGrapheme, mgRegistry, templateAssetOptions } from '@jasper/mg-templates';
-import type { RenderTemplateAssets, SnapshotOptions } from '@jasper/project';
+import type { RenderTemplateAssets, SnapshotOptions, TemplateFaceFile } from '@jasper/project';
 
 export type CatalogForAssets = {
 	fonts: readonly {
 		family: string;
 		source?: string;
-		files: readonly { weight: number; style: string; url: string; subset?: string }[];
+		files: readonly {
+			weight: number;
+			style: string;
+			url: string;
+			subset?: string;
+			unicodeRange?: string;
+		}[];
 	}[];
 	emojiPacks?: readonly EmojiPackInfo[];
 };
 
 export type TemplateAssetResolver = {
-	font(face: RenderTemplateAssets['fonts'][number]): string | null;
+	font(face: RenderTemplateAssets['fonts'][number]): readonly TemplateFaceFile[] | null;
 	emoji(pack: string, grapheme: string): string | null;
 };
 
@@ -29,7 +35,7 @@ export function catalogAssetResolver(catalog: CatalogForAssets | null): Template
 	let r = resolvers.get(catalog);
 	if (!r) {
 		r = {
-			font: (face) => catalogFaceUrl(catalog, face),
+			font: (face) => catalogFaceFiles(catalog, face),
 			emoji: (pack, grapheme) => {
 				const p = catalog.emojiPacks?.find((x) => x.id === pack);
 				return p && isEmojiGrapheme(grapheme)

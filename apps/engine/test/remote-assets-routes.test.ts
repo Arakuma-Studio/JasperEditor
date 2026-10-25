@@ -28,7 +28,13 @@ const TOKEN = 'tok-remote-assets';
 const AUTH = { ...H, authorization: `Bearer ${TOKEN}` };
 const JSON_AUTH = { ...AUTH, 'content-type': 'application/json' };
 const FONT_FILE = `chirp-700-${sha256(FONT_BYTES).slice(0, 16)}.woff2`;
-const ENV: BakeEnvironment = { bundleId: 'b1', animejs: '4.5.0', remotion: '4.0.499', browser: 'chrome', gl: 'swiftshader' };
+const ENV: BakeEnvironment = {
+	bundleId: 'b1',
+	animejs: '4.5.0',
+	remotion: '4.0.499',
+	browser: 'chrome',
+	gl: 'swiftshader',
+};
 
 let server: FixtureServer;
 
@@ -67,9 +73,14 @@ describe('catalogue and routes', () => {
 		expect(tiktok).toMatchObject({ source: 'bundled' });
 		for (const w of [400, 500, 600, 700])
 			for (const subset of ['latin', 'latin-ext'])
-				expect(tiktok!.files.some((f) => f.weight === w && f.subset === subset && f.style === 'normal')).toBe(true);
+				expect(
+					tiktok!.files.some(
+						(f) => f.weight === w && f.subset === subset && f.style === 'normal' && !!f.unicodeRange,
+					),
+				).toBe(true);
 		const roboto = cat.fonts.find((f) => f.family === 'Roboto')!;
-		for (const w of [400, 500, 700]) expect(roboto.files.some((f) => f.weight === w && f.subset === 'latin')).toBe(true);
+		for (const w of [400, 500, 700])
+			expect(roboto.files.some((f) => f.weight === w && f.subset === 'latin')).toBe(true);
 		expect(cat.fonts.find((f) => f.family === 'Chirp')).toMatchObject({
 			source: 'remote',
 			files: [{ weight: 700, style: 'normal', url: `/fonts/remote/${FONT_FILE}` }],
@@ -104,7 +115,11 @@ describe('catalogue and routes', () => {
 		expect(img.headers['x-content-type-options']).toBe('nosniff');
 		// a signature never authorises a write, and does not cover other paths
 		const sig = core.signer.signUrl('', '/fonts/emoji/apple/1/1f600.png').split('?')[1];
-		const other = await app.inject({ method: 'GET', url: `/fonts/emoji/apple/1/1f680.png?${sig}`, headers: H });
+		const other = await app.inject({
+			method: 'GET',
+			url: `/fonts/emoji/apple/1/1f680.png?${sig}`,
+			headers: H,
+		});
 		expect(other.statusCode).toBe(401);
 	});
 
@@ -115,7 +130,11 @@ describe('catalogue and routes', () => {
 		const missing = await app.inject({ method: 'GET', url: '/fonts/emoji/apple/1/1fae8.png', headers: AUTH });
 		expect(missing.statusCode).toBe(404);
 		expect(missing.headers['cache-control']).toBe('no-store');
-		const badKey = await app.inject({ method: 'GET', url: '/fonts/emoji/apple/1/..%2F..%2Fx.png', headers: AUTH });
+		const badKey = await app.inject({
+			method: 'GET',
+			url: '/fonts/emoji/apple/1/..%2F..%2Fx.png',
+			headers: AUTH,
+		});
 		expect(badKey.statusCode).toBe(404);
 	});
 
@@ -138,7 +157,10 @@ describe('catalogue and routes', () => {
 			headers: JSON_AUTH,
 			payload: { emoji: [{ pack: 'apple', graphemes: ['\u{1F680}', GRIN] }] },
 		});
-		expect(pre.json()).toMatchObject({ available: 1, missing: [{ kind: 'emoji', error: { code: 'REMOTE_ASSETS_OFF' } }] });
+		expect(pre.json()).toMatchObject({
+			available: 1,
+			missing: [{ kind: 'emoji', error: { code: 'REMOTE_ASSETS_OFF' } }],
+		});
 		const invalid = await app.inject({
 			method: 'PUT',
 			url: '/api/settings/network',
@@ -262,7 +284,11 @@ describe('export planner and layer-bake keys', () => {
 	function plan(doc: ProjectDocument, seqId: string) {
 		const core = coreServices(app);
 		return planExport(
-			{ envelope: makeEnvelope(doc, { revision: 1, savedAt: 't', platform: 'test' }), sequenceId: seqId, settings: settings(seqId) },
+			{
+				envelope: makeEnvelope(doc, { revision: 1, savedAt: 't', platform: 'test' }),
+				sequenceId: seqId,
+				settings: settings(seqId),
+			},
 			{
 				registry: core.registry,
 				fonts: core.fonts,
@@ -289,9 +315,11 @@ describe('export planner and layer-bake keys', () => {
 		const b = build(`Hello ${GRIN}`);
 		const p = await plan(b.doc, b.seqId);
 		const faces = p.snapshot.fonts.filter((f) => f.fontId.startsWith('template:'));
-		expect(faces.map((f) => [f.family, f.weight, f.url])).toEqual([
-			['Chirp', 700, `/fonts/remote/${FONT_FILE}`],
-			['Inter', 400, expect.stringMatching(/^\/fonts\/inter\/inter-latin-400-normal\.woff2$/)],
+		// a remote face is one file; a bundled face is every subset file with its unicode range
+		expect(faces.map((f) => [f.family, f.weight, f.url, f.unicodeRange ?? null])).toEqual([
+			['Chirp', 700, `/fonts/remote/${FONT_FILE}`, null],
+			['Inter', 400, '/fonts/inter/inter-latin-400-normal.woff2', expect.stringContaining('U+0000-00FF')],
+			['Inter', 400, '/fonts/inter/inter-latin-ext-400-normal.woff2', expect.stringContaining('U+0100-02BA')],
 		]);
 		expect(p.snapshot.emoji).toEqual({ [`apple:${GRIN}`]: '/fonts/emoji/apple/1/1f600.png' });
 		const mg = clipOf(p.snapshot, b.clipId).source as { mg: { assets?: unknown } };
@@ -312,7 +340,9 @@ describe('export planner and layer-bake keys', () => {
 		expect(e1.status).toBe(409);
 		expect(e1.message).toContain('emoji \u{1FAE8} of the apple pack');
 		expect(e1.message).toContain('Title Reveal');
-		expect(e1.detail).toMatchObject({ assets: [{ kind: 'emoji', code: 'DOWNLOAD_NOT_FOUND', clipIds: [missingEmoji.clipId] }] });
+		expect(e1.detail).toMatchObject({
+			assets: [{ kind: 'emoji', code: 'DOWNLOAD_NOT_FOUND', clipIds: [missingEmoji.clipId] }],
+		});
 
 		def.requiredAssets = () => ({ fonts: [{ family: 'SF Pro', weight: 400, style: 'normal' }] });
 		const unknown = build('x');
@@ -350,7 +380,11 @@ describe('export planner and layer-bake keys', () => {
 			{ family: 'Chirp', weight: 700, style: 'normal', fileSha256: sha256(FONT_BYTES) },
 		]);
 		expect(k0.material.emoji).toEqual([
-			{ pack: 'apple', version: '1', files: [{ key: '1f600', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) }] },
+			{
+				pack: 'apple',
+				version: '1',
+				files: [{ key: '1f600', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) }],
+			},
 		]);
 		// the bake document carries signed URLs of the clip's font and emoji
 		expect(k0.doc.fonts[0]!.url).toMatch(/\/fonts\/remote\/.*\?sig=/);

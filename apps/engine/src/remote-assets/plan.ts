@@ -19,10 +19,7 @@ export function engineTemplateAssets(
 	sign: (path: string) => string = (p) => p,
 ): NonNullable<SnapshotOptions['templateAssets']> {
 	return templateAssetOptions(mgRegistry, {
-		font: (face) => {
-			const url = fonts.templateFaceUrl(face);
-			return url ? sign(url) : null;
-		},
+		font: (face) => fonts.templateFaceFiles(face)?.map((f) => ({ ...f, url: sign(f.url) })) ?? null,
 		emoji: (pack, grapheme) => {
 			const url = fonts.remote?.emojiUrl(pack, grapheme) ?? null;
 			return url ? sign(url) : null;
@@ -91,8 +88,8 @@ export async function checkTemplateAssets(
 				});
 				continue;
 			}
-			const url = fonts.templateFaceUrl(face);
-			if (url?.startsWith(REMOTE_FONT_PREFIX) && use(key, c.clipId)) req.fonts.push(face);
+			const remote = fonts.templateFaceFiles(face)?.some((f) => f.url.startsWith(REMOTE_FONT_PREFIX));
+			if (remote && use(key, c.clipId)) req.fonts.push(face);
 		}
 		for (const { pack, graphemes } of assets.emoji) {
 			for (const g of graphemes) {

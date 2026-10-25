@@ -109,7 +109,9 @@ describe('MissingAssetMarker and helpers', () => {
 		expect(missingAssetLabel({ kind: 'font', family: 'Chirp', weight: 700, style: 'italic' })).toBe(
 			'Font "Chirp" 700 italic',
 		);
-		expect(missingAssetLabel({ kind: 'emoji', pack: 'twemoji', grapheme: GRIN })).toBe(`Emoji ${GRIN} (twemoji)`);
+		expect(missingAssetLabel({ kind: 'emoji', pack: 'twemoji', grapheme: GRIN })).toBe(
+			`Emoji ${GRIN} (twemoji)`,
+		);
 		expect(emojiUrlOf({ [`apple:${GRIN}`]: '/x.png' }, 'apple', GRIN)).toBe('/x.png');
 		expect(emojiUrlOf({ [`apple:${GRIN}`]: '/x.png' }, 'noto', GRIN)).toBeUndefined();
 	});

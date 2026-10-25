@@ -33,6 +33,7 @@ import {
 	type Keyframe,
 	type RenderTemplateAssets,
 	type RenderVisualClip,
+	type TemplateFaceFile,
 	templateFontId,
 } from '@jasper/project';
 import {
@@ -402,12 +403,13 @@ export type MgTemplatePreviewProps = {
 	/** Backdrop behind the template (default: transparent). */
 	background?: string;
 	/**
-	 * social-comment §7.8: URLs of the template's declared fonts and emoji (null = unavailable), e.g. from the engine's
-	 * font catalogue (`catalogFaceUrl`, `emojiImagePath` of `@jasper/api`). Without it a template that declares assets
-	 * shows its "not available" markers. Keep its identity stable.
+	 * social-comment §7.8: URLs of the template's declared fonts (one URL, or subset files with unicode ranges) and emoji
+	 * (null = unavailable), e.g. from the engine's font catalogue (`catalogFaceFiles`, `emojiImagePath` of
+	 * `@jasper/api`). Without it a template that declares assets shows its "not available" markers. Keep its identity
+	 * stable.
 	 */
 	assets?: {
-		font(face: RenderTemplateAssets['fonts'][number]): string | null;
+		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
 		emoji(pack: string, grapheme: string): string | null;
 	};
 };
@@ -433,8 +435,15 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 		const fonts: RenderDoc['fonts'] = [];
 		const emoji: Record<string, string> = {};
 		for (const face of assets?.fonts ?? []) {
-			const url = resolver?.font(face);
-			if (url) fonts.push({ fontId: templateFontId(face.family), ...face, url });
+			const found = resolver?.font(face);
+			for (const f of typeof found === 'string' ? [{ url: found }] : (found ?? []))
+				if (f.url)
+					fonts.push({
+						fontId: templateFontId(face.family),
+						...face,
+						url: f.url,
+						...('unicodeRange' in f && f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
+					});
 		}
 		for (const { pack, graphemes } of assets?.emoji ?? [])
 			for (const g of graphemes) {

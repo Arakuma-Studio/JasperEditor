@@ -53,12 +53,35 @@ const catalog: FontCatalog = {
 describe('catalogue resolution', () => {
 	it('resolves exact faces (bundled latin file first, then remote) and pack emoji paths', () => {
 		const r = catalogAssetResolver(catalog);
-		expect(r.font({ family: 'roboto', weight: 400, style: 'normal' })).toBe(
-			'/fonts/roboto/roboto-latin-400-normal.woff2',
-		);
-		expect(r.font({ family: 'Chirp', weight: 700, style: 'normal' })).toBe(
-			'/fonts/remote/chirp-700-0123456789abcdef.woff2',
-		);
+		expect(r.font({ family: 'roboto', weight: 400, style: 'normal' })).toEqual([
+			{ url: '/fonts/roboto/roboto-latin-400-normal.woff2' },
+		]);
+		expect(r.font({ family: 'Chirp', weight: 700, style: 'normal' })).toEqual([
+			{ url: '/fonts/remote/chirp-700-0123456789abcdef.woff2' },
+		]);
+		// subset files with unicode ranges are loaded together
+		const ranged = catalogAssetResolver({
+			fonts: [
+				{
+					family: 'TikTok Sans',
+					source: 'bundled',
+					files: [
+						{ weight: 700, style: 'normal', subset: 'latin', unicodeRange: 'U+0000-00FF', url: '/a.woff2' },
+						{
+							weight: 700,
+							style: 'normal',
+							subset: 'latin-ext',
+							unicodeRange: 'U+0100-02BA',
+							url: '/b.woff2',
+						},
+					],
+				},
+			],
+		});
+		expect(ranged.font({ family: 'TikTok Sans', weight: 700, style: 'normal' })).toEqual([
+			{ url: '/a.woff2', unicodeRange: 'U+0000-00FF' },
+			{ url: '/b.woff2', unicodeRange: 'U+0100-02BA' },
+		]);
 		// never another weight, style or family
 		expect(r.font({ family: 'Chirp', weight: 400, style: 'normal' })).toBeNull();
 		expect(r.font({ family: 'Roboto', weight: 400, style: 'italic' })).toBeNull();
