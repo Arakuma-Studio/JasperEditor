@@ -1,5 +1,6 @@
-import type { Draft } from 'immer';
+import { current, type Draft, isDraft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
+import { clipParamMediaIds, rewriteParamMedia } from '../../param-media.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import type { MediaItem, ProjectDocument, ProjectItem, SourceMarks } from '../../schema/document.ts';
@@ -40,6 +41,8 @@ function clipRefs(clips: Record<string, Clip>): ClipRefs {
 		for (const cid of peekKeys(clips)) {
 			const r = peek<Record<string, unknown>>(clips, cid)!;
 			if (typeof r.mediaId === 'string') out.media.push(r.mediaId);
+			// template media params (avatars) keep their media like the clip's own source.
+			out.media.push(...clipParamMediaIds(r as Pick<Clip, 'kind'>));
 			if (typeof r.syntheticId === 'string') out.synthetics.push(r.syntheticId);
 			if (typeof r.transcriptId === 'string') out.transcripts.push(r.transcriptId);
 		}
@@ -135,6 +138,8 @@ export const projectHandlers = {
 				(it) => !toDelete.has(it.id) && (it as Record<string, unknown>)[field] === value,
 			);
 		const clipRemovals: { seqId: string; clipId: string }[] = [];
+		/** Media whose last item goes away: template params referencing them are cleared (the clip stays). */
+		const goneMedia = new Set<string>();
 		const deletedSequences = new Set<string>();
 		for (const id of toDelete) {
 			const it = doc.items[id]!;
@@ -146,6 +151,7 @@ export const projectHandlers = {
 			if (!field) continue;
 			const value = (it as Record<string, unknown>)[field] as string;
 			if (remainingRefs(field, value)) continue;
+			if (field === 'mediaId') goneMedia.add(value);
 			for (const seq of Object.values(doc.sequences)) {
 				if (deletedSequences.has(seq.id)) continue;
 				for (const c of Object.values(seq.clips)) {
@@ -162,11 +168,38 @@ export const projectHandlers = {
 					clipRemovals.push({ seqId: seq.id, clipId: c.id });
 			}
 		}
-		if (clipRemovals.length > 0 && !cmd.force) {
-			const seqs = new Set(clipRemovals.map((r) => r.seqId));
-			h.fail('E_IN_USE', `${clipRemovals.length} clips in ${seqs.size} sequences use this media`, {
-				blocking: clipRemovals.map((r) => r.clipId),
+		// Template media params (avatars) that use a medium losing its last item: in use like a clip's source; with
+		// `force` the param is cleared (set to none) and the clip stays.
+		const removed = new Set(clipRemovals.map((r) => r.clipId));
+		const paramUsers: { seqId: string; clipId: string }[] = [];
+		if (goneMedia.size > 0)
+			for (const seq of Object.values(doc.sequences)) {
+				if (deletedSequences.has(seq.id)) continue;
+				for (const c of Object.values(seq.clips))
+					if (!removed.has(c.id) && clipParamMediaIds(c).some((m) => goneMedia.has(m)))
+						paramUsers.push({ seqId: seq.id, clipId: c.id });
+			}
+		if ((clipRemovals.length > 0 || paramUsers.length > 0) && !cmd.force) {
+			const users = [...clipRemovals, ...paramUsers];
+			const seqs = new Set(users.map((r) => r.seqId));
+			h.fail('E_IN_USE', `${users.length} clips in ${seqs.size} sequences use this media`, {
+				blocking: users.map((r) => r.clipId),
 			});
+		}
+		const clearedParams: { clipId: string; params: string[]; mediaIds: string[] }[] = [];
+		for (const u of paramUsers) {
+			const seq = doc.sequences[u.seqId]!;
+			const c = seq.clips[u.clipId] as Draft<Extract<Clip, { kind: 'motion-graphic' }>>;
+			const track = seq.videoTracks.find((t) => t.id === c.trackId);
+			if (track?.locked)
+				h.fail('E_TRACK_LOCKED', `Clip ${u.clipId} is on a locked track`, { blocking: [track.id] });
+			const plain = (isDraft(c.params) ? current(c.params) : c.params) as Record<string, unknown>;
+			const mediaIds = clipParamMediaIds({ kind: 'motion-graphic', params: plain } as Clip).filter((m) =>
+				goneMedia.has(m),
+			);
+			const next = rewriteParamMedia(plain, (m) => (goneMedia.has(m) ? null : undefined));
+			c.params = next.value as typeof c.params;
+			clearedParams.push({ clipId: u.clipId, params: next.changed, mediaIds });
 		}
 		for (const r of clipRemovals) {
 			const seq = doc.sequences[r.seqId]!;
@@ -190,7 +223,11 @@ export const projectHandlers = {
 			if (it.kind === 'subclip' && it.parentItemId && toDelete.has(it.parentItemId)) it.parentItemId = null;
 		for (const seq of Object.values(doc.sequences)) cleanupSequence(seq, h);
 		collectOrphans(doc);
-		return { deletedItems: [...toDelete], removedClips: clipRemovals.map((r) => r.clipId) };
+		return {
+			deletedItems: [...toDelete],
+			removedClips: clipRemovals.map((r) => r.clipId),
+			...(clearedParams.length ? { clearedParams } : {}),
+		};
 	},
 	// Set / Clear Poster Frame (the thumbnail frame of a media item).
 	'item.setPoster': (doc, cmd, h: HandlerContext) => {

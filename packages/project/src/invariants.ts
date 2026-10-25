@@ -33,6 +33,7 @@ import {
 	multicamSourceOf,
 	pruneMulticamAngles,
 } from './multicam/model.ts';
+import { clipParamMediaIds, rewriteParamMedia, templateMediaRefs } from './param-media.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
@@ -935,6 +936,18 @@ export function invariantCheckers(
 		if (c.kind === 'motion-graphic') {
 			const stamp = templateStampIssue(c, opts.mgTemplates);
 			if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
+			// Template media params (avatars): uses of their media (INV-014) that must exist (INV-006).
+			for (const ref of templateMediaRefs(c.params)) {
+				usedMedia.add(ref.mediaId);
+				if (!doc.media[ref.mediaId])
+					issues.push(
+						inv('INV-006', `Clip ${c.id} params.${ref.path} references missing media ${ref.mediaId}`, [
+							...cw,
+							'params',
+							...ref.path.split('.'),
+						]),
+					);
+			}
 			for (const [name, list] of Object.entries(c.paramKeyframes ?? {})) {
 				const path = [...cw, 'paramKeyframes', name];
 				const shape = valueShape((c.params as Record<string, unknown>)[name]);
@@ -1653,6 +1666,20 @@ export function repairDocument(
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'motion-graphic') continue;
+			// Template media params (avatars) whose media is gone become "none" (the template draws without it).
+			const fixed = rewriteParamMedia(c.params as Record<string, unknown>, (m) =>
+				doc.media[m] ? undefined : null,
+			);
+			if (fixed.changed.length) {
+				const gone = new Map(templateMediaRefs(c.params).map((r) => [r.path, r.mediaId]));
+				c.params = fixed.value as typeof c.params;
+				for (const path of fixed.changed)
+					note(
+						'clear-template-media',
+						c.id,
+						`params.${path} referenced missing media ${gone.get(path)}: cleared`,
+					);
+			}
 			const info = opts.mgTemplates?.get(c.template.id, c.template.version);
 			if (info && templateStampIssue(c, opts.mgTemplates)) {
 				if (info.renderer === 'anime') c.template.renderer = 'anime';
@@ -2197,6 +2224,7 @@ export function repairDocument(
 			if (typeof r.mediaId === 'string') usedMedia.add(r.mediaId);
 			const comp = r.composition as { mediaId?: unknown } | undefined;
 			if (typeof comp?.mediaId === 'string') usedMedia.add(comp.mediaId);
+			for (const id of clipParamMediaIds(c)) usedMedia.add(id);
 			if (typeof r.syntheticId === 'string') usedSyn.add(r.syntheticId);
 		}
 	}

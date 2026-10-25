@@ -18,4 +18,10 @@ export type AnimeTemplateProps = {
 	/** `hash32(clipId, 'template')`. */
 	seed: number;
 	isPreview: boolean;
+	/**
+	 * Template media params (`mediaParam()`, e.g. avatars): the URL of every medium the clip's params reference, by
+	 * media id (the render snapshot's media handle: an engine URL, signed in renders). A medium that is missing or
+	 * offline is absent; empty when the params reference none. Draw them with `TemplateImage`.
+	 */
+	mediaUrls: Readonly<Record<string, string>>;
 };

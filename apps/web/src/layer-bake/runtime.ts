@@ -53,16 +53,17 @@ function mediaRefs(v: unknown, out: Set<string>): Set<string> {
 /**
  * Identity of a layer's graded preview: the clip with its times relative to its first drawn frame (handles and
  * fades included), without name/track, the clip id only when it seeds the drawing, plus the sequence frame and
- * the fingerprints of the LUT assets it references.
+ * the fingerprints of the LUT assets and template media (avatars) it references.
  */
-function layerIdentity(
+export function layerIdentity(
 	clip: RenderVisualClip,
 	seq: { width: number; height: number; fps: { num: number; den: number } },
 	media: ProjectDocument['media'],
 ): string {
 	const spanStart = clip.start - (clip.headHandle ?? 0);
 	const { clipId, name: _n, trackId: _t, start, fades, baked: _b, ...rest } = clip;
-	const luts = [...mediaRefs(clip.effects, new Set())]
+	// LUT assets of the grade and template media params (avatars): a relinked or replaced file is a new preview.
+	const luts = [...mediaRefs([clip.effects, 'mg' in clip.source ? clip.source.mg.params : null], new Set())]
 		.sort()
 		.map((id) => [id, media[id]?.fingerprint ?? null]);
 	return canonicalJson({

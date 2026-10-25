@@ -231,6 +231,7 @@ export function PropertyRow(props: {
 			}
 			case 'media':
 				// fx framework: picture inputs (image/video kinds) get the generic picker; LUT params keep LutPicker.
+				// Template media params (avatars): "None" is null; Project panel items can be dropped on the field.
 				if (spec.mediaKinds && !spec.mediaKinds.includes('lut'))
 					return (
 						<MediaParamPicker
@@ -238,7 +239,11 @@ export function PropertyRow(props: {
 							value={mixed ? null : value}
 							kinds={spec.mediaKinds}
 							label={row.label}
-							onChange={(mediaId) => commitFn(() => ({ mediaId }))}
+							nullable={spec.mediaNullable}
+							onChange={(mediaId) =>
+								commitFn(() => (mediaId === '' && spec.mediaNullable ? null : { mediaId }))
+							}
+							onRefusedDrop={ctx.hint}
 							data-testid={`prop-${row.id}`}
 						/>
 					);
