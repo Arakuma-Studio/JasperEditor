@@ -570,7 +570,8 @@ function placedBlocks(caps: readonly WorkCaption[]): PlacedBlock[] {
 function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const template = resolveTemplate(doc, cmd.template, h);
-	const output = cmd.output ?? template.output ?? 'text-clips';
+	// AS-003: text clips by default; a template chosen explicitly may default to a caption track (Subtitles)
+	const output = cmd.output ?? (cmd.template !== undefined ? template.output : undefined) ?? 'text-clips';
 	const rules = resolveSubtitleRules(cmd.rules, template.rules ?? {});
 	const text = resolveSubtitleText(cmd.text, (template.text ?? {}) as never);
 	const cutAware = resolveCutAware(cmd.cutAware, (template.cutAware ?? {}) as never);
