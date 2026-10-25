@@ -40,7 +40,8 @@ Later instructions:
   tests, typechecks, builds, dev stacks, e2e. NVIDIA box (vast.ai RTX 3060 12 GB, driver 580 / CUDA 13) = Whisper
   CUDA work only. User's Mac (M4 Max, 36 GB) = all raw-footage analysis, Mac GPU (CoreML) benchmarks.
 - Locks: one heavy job at a time on the Mac (`~/JasperAnalysis/locks/heavy`); one benchmark at a time on the VM
-  (`/home/builder/locks/bench`), yielding ≥ 5 s between runs so agents alternate.
+  (`/home/builder/locks/bench`); a waiting agent touches `locks/want-<name>` and a releasing agent doesn't re-acquire while
+  another agent's want file exists (strict alternation).
 - No raw footage leaves the Mac; the user's fonts (Pixel12x10, unknown licence) and the user's assets (emotes, SFX,
   music) are never committed or bundled — user-installed only.
 - Git: `main` fast-forwarded to `origin/main` 71c86ba2 at start. Pushing requires the user's go-ahead (last
@@ -138,4 +139,5 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
 ## 8. Log
 - 2026-10-25 — ff main; VM provisioned; Mac workspace; scripts exported; research agents launched (codemap, subs,
   auto, whisper, edits, textperf, cutsurvey); NVIDIA box rented; codemap, auto, subs, cutsurvey finished; lock
-  fairness rules set on the Mac and the VM; ledgers created.
+  fairness rules set on the Mac and the VM; ledgers created; VM lock switched to a want-file queue
+  after starvation in both directions.
