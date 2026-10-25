@@ -881,6 +881,21 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   outside the opaque crop), header, comment and action rows within 1 px, thread end within 2 px; Shorts card 609 × 175
   (610 × 176), header cap within 0 px, comment lines within 1 px.
 
+- **Tests:** `packages/motion/test/social-comment.test.tsx` "YouTube cards" (header, badge, time, counts, replies and
+  thread line rules, months stay months, 0 replies, huge counts, showProfile, default / raster / picture / generated
+  avatars, link colours, Noto emoji, like tick, Shorts card); `mg-cue-timing.test.ts` VARIANTS rows (each entrance
+  with both extras, the tick alone at 25 fps, the Shorts card with reveal and an ignored tick);
+  `social-comment-template.test.ts` (presets, fonts, required images); `social-comment-layer.test.tsx` (layer path,
+  snapshot image table); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
+  `e2e/social-youtube.spec.ts` (`pnpm e2e`: gallery insert of both presets, the card in the Program in Roboto with the
+  downloaded default avatar, in-place edit of the handle and a highlight, variant switch).
+- **Known flakiness (framework, not the cards):** the render e2e's byte-identical `renderStill` = `renderFrames` check
+  sometimes differs by a few edge pixels (alpha 2–7, one column) on frames where the card is scaled or tilted. It
+  happens on the TikTok reply case at the integration base too (1 of 5 runs at `30a4b1b7`); the YouTube cases add more
+  frames, so the check fails more often (about half the runs). The differences are anti-aliasing of the card's
+  transformed edge, consistent with Chrome keeping a layer's raster scale while its transform changes from frame to
+  frame [E]; the fix belongs to the stage (`stage.tsx`, WP6a).
+
 **Deliberate differences from tokcomment:**
 - **Font:** Roboto, as tokcomment specifies but its capture host never loaded (Liberation Sans in the captures).
   Widths are within 1 % at the same sizes, so no size was scaled. The Shorts comment is 500 as specified; the capture
