@@ -116,6 +116,11 @@ auto-ducking work as in Essential Sound.
 **Done when:** caption tracks can be created, edited and styled in the timeline and Program monitor, import and export
 SRT and WebVTT (round-trip tests), burn in on every export path, and are drivable over MCP.
 **Status (merged):** done — see [wp-notes/captions.md](wp-notes/captions.md) (`e2e/captions.spec.ts`, `apps/engine/test/captions-export.test.ts`). Limits: burn-in needs the layer bake (no libass in the LGPL build), CEA-608 in H.264 SEI is not written.
+**Automatic subtitles (spec 13 AS-001…AS-061):** subtitles as editable text clips (or caption tracks) in one command
+with Premiere-like rules plus max words, hold until next, text transforms and Spanish line breaks; cut-aware timing on
+the picture cut map; conversion both ways; SRT / VTT from text-clip groups; templates (Pixel Pop and seven others,
+user library, linked project text styles) — see [wp-notes/auto-subtitles.md](wp-notes/auto-subtitles.md) §2–§11 for
+measurements and limits (montage zones may be run through; weak-word lists for Spanish and English only).
 
 ### speech
 **Done when:** a local speech-to-text model (permissive licence, on-demand download) transcribes clips into
