@@ -269,14 +269,12 @@ describe.runIf(!!CHROME)(
 			await browser?.close();
 		});
 
-		async function preview(c: Case, clock: 'anchor' | 'frame' = 'anchor') {
+		async function preview(c: Case) {
 			const fps = c.snapshot.settings.fps;
 			return page.evaluate(
 				(spec) =>
 					(window as unknown as { __mix: { played: (s: unknown) => Promise<unknown> } }).__mix.played(spec),
 				{
-					playing: true,
-					clock,
 					workletUrl,
 					mix: c.snapshot.audioMix,
 					clips: c.snapshot.audioClips.map((clip) => ({
@@ -289,7 +287,7 @@ describe.runIf(!!CHROME)(
 					fpsValue: fps.num / fps.den,
 					length: LEN,
 				},
-			) as Promise<{ channels: number[][]; latency: number; leads: number[] }>;
+			) as Promise<{ channels: number[][]; latency: number }>;
 		}
 
 		function exported(c: Case) {
@@ -348,10 +346,7 @@ describe.runIf(!!CHROME)(
 					dip: worst(p.channels, e, T - 0.3 * SR, T + 0.05 * SR),
 					after: worst(p.channels, e, T + 0.05 * SR, LEN),
 				};
-				// Without the anchor the graph trusts the picture frame's time, here up to one render quantum (1.3 ms)
-				// before the audio it renders: the automation is that much early (informational).
-				const framed = worst((await preview(c, 'frame')).channels, e, 0, LEN);
-				Object.assign(report, { all, regions, latency: p.latency, frameClock: framed });
+				Object.assign(report, { all, regions, latency: p.latency });
 				console.log(JSON.stringify(report));
 				expect(all.peak).toBeGreaterThan(0.05);
 				expect(Math.abs(dipped - music0 + 24)).toBeLessThan(0.5);

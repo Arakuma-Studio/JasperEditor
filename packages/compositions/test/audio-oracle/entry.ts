@@ -24,7 +24,7 @@ type Spec = {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-async function render(spec: Spec): Promise<{ channels: number[][]; latency: number; leads: number[] }> {
+async function render(spec: Spec): Promise<{ channels: number[][]; latency: number }> {
 	setMixWorkletUrl(spec.workletUrl);
 	installAudioFxPreview();
 	const sr = spec.mix.sampleRate;
@@ -42,7 +42,6 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 	graph.update(spec.mix, clips, 0, spec.fps);
 	// slots added by this update create their worklet nodes a microtask later
 	await tick();
-	const leads: number[] = [];
 	spec.clips.forEach((c, i) => {
 		const buf = ctx.createBuffer(c.data.length, c.data[0]!.length, sr);
 		for (const [k, ch] of c.data.entries()) buf.copyToChannel(Float32Array.from(ch), k);
@@ -53,16 +52,15 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 		src.connect(remotionGain).connect(inputs[i]!);
 		// AudioLayer: the source starts `clipLead` early (past start times trim the offset, as `compensate` does)
 		const lead = graph.clipLead(c.clip);
-		leads.push(lead);
 		const when = c.s0 / sr - lead;
 		if (when >= 0) src.start(when);
 		else src.start(0, -when);
 	});
 	const out = await ctx.startRendering();
+	graph.dispose();
 	return {
 		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
-		latency: graph.latencyPlan.total,
-		leads,
+		latency: Math.round(graph.latency * sr),
 	};
 }
 
@@ -84,7 +82,6 @@ type TransportSpec = Omit<Spec, 'before'> & {
 async function transport(spec: TransportSpec): Promise<{
 	channels: number[][];
 	readAhead: { before: number; after: number; paused: number };
-	plan: { before: number; after: number };
 }> {
 	setMixWorkletUrl(spec.workletUrl);
 	installAudioFxPreview();
@@ -99,7 +96,7 @@ async function transport(spec: TransportSpec): Promise<{
 	await tick();
 	await tick();
 	if (spec.action === 'live') graph.setPlaying(true);
-	const before = { readAhead: graph.latency * sr, plan: graph.latencyPlan.total };
+	const before = graph.latency * sr;
 	spec.clips.forEach((c, i) => {
 		const buf = ctx.createBuffer(c.data.length, c.data[0]!.length, sr);
 		for (const [k, ch] of c.data.entries()) buf.copyToChannel(Float32Array.from(ch), k);
@@ -113,7 +110,7 @@ async function transport(spec: TransportSpec): Promise<{
 		else src.start(0, -when);
 		if (spec.action !== 'live') src.stop(spec.at / sr);
 	});
-	const after = { readAhead: 0, plan: 0 };
+	let after = 0;
 	void ctx.suspend(spec.at / sr).then(async () => {
 		if (spec.action === 'flush') graph.flush();
 		if (spec.action === 'live' && spec.next) {
@@ -122,16 +119,15 @@ async function transport(spec: TransportSpec): Promise<{
 			// slots added by the update create their worklet nodes a microtask later
 			await tick();
 		}
-		after.readAhead = graph.latency * sr;
-		after.plan = graph.latencyPlan.total;
+		after = graph.latency * sr;
 		await ctx.resume();
 	});
 	const out = await ctx.startRendering();
 	graph.setPlaying(false);
+	graph.dispose();
 	return {
 		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
-		readAhead: { before: before.readAhead, after: after.readAhead, paused: graph.latency * sr },
-		plan: { before: before.plan, after: after.plan },
+		readAhead: { before, after, paused: graph.latency * sr },
 	};
 }
 
@@ -140,15 +136,6 @@ async function transport(spec: TransportSpec): Promise<{
 type PlayedSpec = Spec & {
 	/** Sequence frames per second as a number (frame boundaries of the simulated picture clock). */
 	fpsValue: number;
-	/** `graph.setPlaying(true)` before the start (the transport state while playing). */
-	playing?: boolean;
-	/**
-	 * `anchor` (the player): each update carries the picture frame's time and the composition clock, and the graph has
-	 * Remotion's sync anchor (context time 0 = sequence time 0 here), from which it reads the time of the audio it
-	 * renders; `frame`: the frame's time only (no anchor: the graph trusts the picture time, ≤ one quantum off here);
-	 * `exact`: no anchor, the update carries the audio's own time.
-	 */
-	clock?: 'anchor' | 'exact' | 'frame';
 };
 
 /**
@@ -158,7 +145,7 @@ type PlayedSpec = Spec & {
  * a step per frame, read `graphLatency` ahead). Rendered offline with the context suspended at each frame boundary
  * (rounded to the 128-sample render quantum, like a main-thread change between two quanta).
  */
-async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency: number; leads: number[] }> {
+async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency: number }> {
 	setMixWorkletUrl(spec.workletUrl);
 	installAudioFxPreview();
 	const sr = spec.mix.sampleRate;
@@ -175,16 +162,13 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	// start (moves the anchor later by its wait); this harness plays from its own clock, as an unprimed run, so the anchor
 	// is put back (the wait's silence at the output ends long before the first clip, at 0.1 s).
 	const sync = { anchor: { value: 0 }, subscribe: () => () => {} };
-	if (spec.clock === 'anchor') {
-		graph.attachSync(sync);
-		sync.anchor.value = 0;
-	}
-	if (spec.playing) graph.setPlaying(true);
+	graph.attachSync(sync);
+	sync.anchor.value = 0;
+	graph.setPlaying(true);
 	graph.update(spec.mix, clips, 0, spec.fps);
 	await tick();
 	const F = 705_600_000 / spec.fpsValue;
 	const gains: GainNode[] = [];
-	const leads: number[] = [];
 	const levelAt = (i: number, frame: number) => {
 		// Remotion's callback for picture frame `frame`: the clip's level `graphLatency` ahead (AudioLayer's leadFrames)
 		const c = spec.clips[i]!.clip;
@@ -201,7 +185,6 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 		gains.push(remotionGain);
 		src.connect(remotionGain).connect(inputs[i]!);
 		const lead = graph.clipLead(c.clip);
-		leads.push(lead);
 		const when = c.s0 / sr - lead;
 		if (when >= 0) src.start(when);
 		else src.start(0, -when);
@@ -211,25 +194,17 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 		const at = Math.round((k * sr) / spec.fpsValue / 128) * 128;
 		if (at <= 0 || at >= spec.length) continue;
 		void ctx.suspend(at / sr).then(async () => {
-			if (spec.clock === 'exact') graph.update(spec.mix, clips, (at / sr) * 705_600_000, spec.fps);
-			else
-				graph.update(
-					spec.mix,
-					clips,
-					k * F,
-					spec.fps,
-					spec.clock === 'anchor' ? { compositionFlicks: k * F, rate: 1 } : undefined,
-				);
+			graph.update(spec.mix, clips, k * F, spec.fps, { compositionFlicks: k * F, rate: 1 });
 			for (const [i, g] of gains.entries()) g.gain.value = levelAt(i, k);
 			await ctx.resume();
 		});
 	}
 	const out = await ctx.startRendering();
-	if (spec.playing) graph.setPlaying(false);
+	graph.setPlaying(false);
+	graph.dispose();
 	return {
 		channels: [Array.from(out.getChannelData(0)), Array.from(out.getChannelData(1))],
-		latency: graph.latencyPlan.total,
-		leads,
+		latency: Math.round(graph.latency * sr),
 	};
 }
 
@@ -315,6 +290,7 @@ async function guard(spec: GuardSpec): Promise<{
 	}
 	await ctx.startRendering();
 	graph.setPlaying(false);
+	graph.dispose();
 	return { anchors, changed, advanced };
 }
 

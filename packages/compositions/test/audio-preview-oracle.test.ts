@@ -199,7 +199,7 @@ describe.runIf(!!CHROME)(
 					fps,
 					length: LEN,
 				},
-			) as Promise<{ channels: number[][]; latency: number; leads: number[] }>;
+			) as Promise<{ channels: number[][]; latency: number }>;
 		}
 
 		async function exported(c: Case) {
@@ -224,11 +224,17 @@ describe.runIf(!!CHROME)(
 					worst = Math.max(worst, Math.abs(p[c]![i]! - e[c]![i]!));
 					peak = Math.max(peak, Math.abs(e[c]![i]!));
 				}
-			let best = { lag: 0, err: Number.POSITIVE_INFINITY };
 			const w0 = 3000 + AT * 1600;
-			for (let lag = -3000; lag <= 3000; lag++) {
+			const errorAt = (lag: number, ceiling = Number.POSITIVE_INFINITY) => {
 				let err = 0;
-				for (let i = w0; i < w0 + 4096; i++) err += Math.abs(p[0]![i + lag]! - e[0]![i]!);
+				for (let i = w0; i < w0 + 4096 && err <= ceiling; i++) err += Math.abs(p[0]![i + lag]! - e[0]![i]!);
+				return err;
+			};
+			// Error terms are nonnegative: once a candidate is worse than the best, its remaining samples cannot win.
+			let best = { lag: 0, err: errorAt(0) };
+			for (let lag = -3000; lag <= 3000; lag++) {
+				if (lag === 0) continue;
+				const err = errorAt(lag, best.err);
 				if (err < best.err) best = { lag, err };
 			}
 			return { worst, peak, lag: best.lag };

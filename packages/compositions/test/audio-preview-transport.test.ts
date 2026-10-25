@@ -179,7 +179,6 @@ describe.runIf(!!CHROME)(
 		type Result = {
 			channels: number[][];
 			readAhead: { before: number; after: number; paused: number };
-			plan: { before: number; after: number };
 		};
 
 		async function run(c: Case, action: 'flush' | 'none' | 'live', next?: RenderAudioMix): Promise<Result> {
@@ -243,7 +242,6 @@ describe.runIf(!!CHROME)(
 			const c = scene([limiter('fx_a')]);
 			const next = edited(c.snapshot.audioMix!, [limiter('fx_a'), limiter('fx_b')]);
 			const [p, e1] = await Promise.all([run(c, 'live', next), exported(c, next)]);
-			expect(p.plan).toEqual({ before: HL, after: 2 * HL });
 			// held while playing; the plan's once paused
 			expect(p.readAhead).toEqual({ before: HL, after: HL, paused: 2 * HL });
 			// the limiter already in A1 keeps running and A2's delay line keeps its audio: the gap is the added latency
@@ -270,7 +268,6 @@ describe.runIf(!!CHROME)(
 				inserts: [],
 			});
 			const [p, e] = await Promise.all([run(c, 'live', next), exported(c, c.snapshot.audioMix!)]);
-			expect(p.plan).toEqual({ before: 2 * HL, after: 2 * HL });
 			expect(longestGap(p.channels, AT, AT + 8 * HL)).toBe(0);
 			expect(worst(p.channels, e, 0)).toBeLessThan(1e-4);
 		});
@@ -279,7 +276,6 @@ describe.runIf(!!CHROME)(
 			const c = scene([limiter('fx_a'), limiter('fx_b')]);
 			const next = edited(c.snapshot.audioMix!, [limiter('fx_a')]);
 			const [p, e1] = await Promise.all([run(c, 'live', next), exported(c, next)]);
-			expect(p.plan).toEqual({ before: 2 * HL, after: HL });
 			expect(p.readAhead).toEqual({ before: 2 * HL, after: 2 * HL, paused: HL });
 			// what the removed limiter held is gone (one gap of it), then the new mix, aligned with the picture
 			expect(longestGap(p.channels, AT, AT + 4 * HL)).toBeLessThanOrEqual(HL + 128);

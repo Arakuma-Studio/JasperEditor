@@ -273,14 +273,14 @@ export function primedAnchor(
  * samples). Any plausible effect chain waits less (one FFT-based or look-ahead effect adds 20–43 ms at 48 kHz; it takes
  * some 70 of them in series to reach this); only a longer, pathological read-ahead starts unprimed.
  */
-export const MAX_PRIMED_WAIT = 3;
+const MAX_PRIMED_WAIT = 3;
 /** A primed wait at least this long (s) is shown as buffering on the Program monitor (`MixGraph.onStartWait`). */
 export const VISIBLE_START_WAIT = 0.2;
 /**
  * How long (context seconds) Remotion must keep asking for a later audio anchor while playing before the graph lets it
  * re-anchor (`MixGraph` anchor guard): a late frame commit asks once or twice, a real drift keeps asking.
  */
-export const ANCHOR_CONFIRM = 0.3;
+const ANCHOR_CONFIRM = 0.3;
 /** A picture update this long (s) after the one before came late (≈ 3 frames at 30 fps): the main thread was busy. */
 const LATE_UPDATE = 0.1;
 /** Most Remotion's anchor may differ from the picture (s) after a paused seek before the graph re-anchors (`afterSeek`). */
@@ -290,14 +290,14 @@ const STALE_SETTLE_MS = 150;
 /** Longest hold (ms) for the sources to start again after a schedule epoch (`bumpEpoch`). */
 const GATE_TIMEOUT_MS = 1500;
 /** Fade-out (s) of the graph's stale audio at a seek during playback, before its delay lines and effects are reset. */
-export const FLUSH_FADE = 0.003;
+const FLUSH_FADE = 0.003;
 /**
  * Frames a primed start waits beyond the read-ahead (`MixGraph.prime`): Chrome renders in device callbacks of several
  * quanta (640 frames measured) and its `currentTime` can stay behind where the audio thread stopped by up to one.
  */
-export const START_MARGIN = 1024;
+const START_MARGIN = 1024;
 /** Fade-in (s) at the start of a primed playback: Remotion's own resume fade, moved to where the program starts. */
-export const START_FADE = 0.03;
+const START_FADE = 0.03;
 
 /**
  * What the graph needs from Remotion's shared audio context to follow the transport: the audio sync anchor and its
@@ -312,35 +312,6 @@ export type RemotionAudioSync = {
 	 */
 	emitter?: { dispatch(event: string): void };
 };
-
-/** A transport event of the graph, for diagnostics (`globalThis.__jasperTransportLog`, when it is an array). */
-export type TransportLogEntry = {
-	/** Context time. */
-	t: number;
-	kind:
-		| 'anchor'
-		| 'refused'
-		| 'confirmed'
-		| 'caught-up'
-		| 'primed'
-		| 'restart'
-		| 'gate'
-		| 'gate-open'
-		| 'stale'
-		| 'running'
-		| 'suspended'
-		| 'play'
-		| 'pause';
-	/** The anchor after the event (context time of composition time 0). */
-	anchor: number;
-	/** The anchor Remotion asked for (`refused`) or the shift written (`primed`: the wait). */
-	value?: number;
-};
-
-function transportLog(e: TransportLogEntry): void {
-	const log = (globalThis as { __jasperTransportLog?: unknown }).__jasperTransportLog;
-	if (Array.isArray(log)) log.push(e);
-}
 
 let workletUrl: string | null = null;
 const workletLoads = new WeakMap<BaseAudioContext, Promise<boolean>>();
@@ -365,7 +336,7 @@ export function mixWorkletReady(ctx: BaseAudioContext): Promise<boolean> {
 }
 
 /** Look-ahead of the preview loudness limiter (`jasper-limiter`), as the export's normalisation limiter. */
-export const LIMITER_LOOKAHEAD_MS = 5;
+const LIMITER_LOOKAHEAD_MS = 5;
 
 const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** (db / 20));
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
@@ -670,7 +641,7 @@ export function clipHasEffects(clip: Pick<RenderAudioClip, 'effects'>): boolean 
 }
 
 /** Whether a clip's level changes over time: Volume keyframes, fades or a nested sequence's gain. */
-export function clipLevelsAnimated(clip: Pick<RenderAudioClip, 'volumeDb' | 'fades' | 'nestGain'>): boolean {
+function clipLevelsAnimated(clip: Pick<RenderAudioClip, 'volumeDb' | 'fades' | 'nestGain'>): boolean {
 	return isAnimated(clip.volumeDb) || (clip.fades?.length ?? 0) > 0 || (clip.nestGain?.length ?? 0) > 0;
 }
 
@@ -1160,15 +1131,14 @@ export class MixGraph {
 	 */
 	private guardAnchor(old: number, v: number): boolean {
 		const t = this.ctx.currentTime;
-		const take = (kind: TransportLogEntry['kind']) => {
+		const take = () => {
 			this.refused = null;
-			transportLog({ t, kind, anchor: v });
 			return true;
 		};
 		// paused or suspending (a seek while paused, the forced write at a suspend): Remotion's anchor stands
-		if (!this.playing || this.ctx.state !== 'running' || this.disposed) return take('anchor');
+		if (!this.playing || this.ctx.state !== 'running' || this.disposed) return take();
 		// the picture ahead of the audio clock (a seek forward without a restart, an audio clock that fell behind)
-		if (!(v > old)) return take('anchor');
+		if (!(v > old)) return take();
 		const r = this.refused && t - this.refused.last < 0.15 ? this.refused : { since: t, last: t };
 		r.last = t;
 		this.refused = r;
@@ -1184,13 +1154,11 @@ export class MixGraph {
 			if (ahead && frames > 0 && ahead(frames)) {
 				this.refused = null;
 				this.swallowChanged = true;
-				transportLog({ t, kind: 'caught-up', anchor: old, value: frames });
 				return false;
 			}
-			return take('confirmed');
+			return take();
 		}
 		this.swallowChanged = true;
-		transportLog({ t, kind: 'refused', anchor: old, value: v });
 		return false;
 	}
 
@@ -1272,11 +1240,6 @@ export class MixGraph {
 			this.staleTimer = null;
 			this.checkPausedSeek();
 		}
-		transportLog({
-			t: this.ctx.currentTime,
-			kind: playing ? 'play' : 'pause',
-			anchor: this.sync?.anchor.value ?? 0,
-		});
 		this.playing = playing;
 		if (playing) {
 			// a run starts: whatever was primed is in use now (also when the context's own events come late)
@@ -1316,8 +1279,6 @@ export class MixGraph {
 
 	private onContextState(): void {
 		const s = this.ctx.state;
-		if (s === 'running' || s === 'suspended')
-			transportLog({ t: this.ctx.currentTime, kind: s, anchor: this.sync?.anchor.value ?? 0 });
 		if (s === 'running') {
 			// a run starts: whatever was primed is in use now
 			this.fresh = false;
@@ -1388,9 +1349,7 @@ export class MixGraph {
 		if (!sync || this.disposed || this.ctx.state !== 'suspended' || this.pictureTime === null) return;
 		const expected = (this.frozenAt ?? this.ctx.currentTime) - this.pictureTime / this.pictureRate;
 		if (!Number.isFinite(expected)) return;
-		const was = sync.anchor.value;
 		this.writeAnchor(expected);
-		transportLog({ t: this.ctx.currentTime, kind: 'stale', anchor: expected, value: was });
 		this.shift = null;
 		this.fresh = true;
 		this.flushed = false;
@@ -1441,7 +1400,6 @@ export class MixGraph {
 		const a = primedAnchor(sync.anchor.value, this.shift, wait);
 		const changed = !this.shift || a.base !== this.shift.base || wait !== this.shift.shift;
 		this.writeAnchor(a.value);
-		transportLog({ t: this.ctx.currentTime, kind: 'primed', anchor: a.value, value: wait });
 		this.shift = { base: a.base, shift: wait };
 		// The context's time is frozen while suspended. The sources start at the play position at `startAt` — the anchor's
 		// base plus the picture's position: Remotion's anchor relation, which holds even when the time it read was not the
@@ -1482,38 +1440,24 @@ export class MixGraph {
 				if (a <= t + FLICKS_PER_SECOND && b > t) this.awaiting.add(id);
 			}
 			if (this.awaiting.size > 0) {
-				transportLog({
-					t: this.ctx.currentTime,
-					kind: 'gate',
-					anchor: this.sync?.anchor.value ?? 0,
-					value: this.awaiting.size,
-				});
 				this.gateHandle ??= this.bufferGate();
 				// Remotion raises its flag a render after the block; a Play in this very commit (a Play right after a
 				// short paused seek, `setPlaying`) must already see it, or the context resumes before the new players
 				// have scheduled anything and their first samples are lost.
 				if (this.bufferFlag) this.bufferFlag.current = true;
 				if (this.gateTimer) clearTimeout(this.gateTimer);
-				this.gateTimer = setTimeout(() => this.releaseGate(true), GATE_TIMEOUT_MS);
+				this.gateTimer = setTimeout(() => this.releaseGate(), GATE_TIMEOUT_MS);
 			} else this.releaseGate();
 		}
 		this.notify();
 	}
 
-	private releaseGate(timedOut = false): void {
+	private releaseGate(): void {
 		if (this.gateTimer) clearTimeout(this.gateTimer);
 		this.gateTimer = null;
-		const left = this.awaiting.size;
 		this.awaiting.clear();
 		const h = this.gateHandle;
 		this.gateHandle = null;
-		if (h)
-			transportLog({
-				t: this.ctx.currentTime,
-				kind: 'gate-open',
-				anchor: this.sync?.anchor.value ?? 0,
-				value: timedOut ? -left : 0,
-			});
 		h?.unblock();
 	}
 
@@ -1570,7 +1514,6 @@ export class MixGraph {
 			this.shift && Math.abs(cur - (this.shift.base + this.shift.shift)) < 1e-9 ? this.shift.base : cur;
 		if (!Number.isFinite(expected) || Math.abs(base - expected) <= ANCHOR_STALE) return;
 		this.writeAnchor(expected);
-		transportLog({ t: this.ctx.currentTime, kind: 'stale', anchor: expected, value: base });
 		this.shift = null;
 		this.fresh = true;
 		this.flushed = false;
@@ -1672,11 +1615,6 @@ export class MixGraph {
 		return { time, rate };
 	}
 
-	/** The latency plan in use (route delays, stage latencies, read-ahead). */
-	get latencyPlan(): MixLatencyPlan {
-		return this.plan;
-	}
-
 	/** Sequence time (flicks) of the samples the clip nodes process now: the picture time plus the read-ahead. */
 	private aheadTime(): number {
 		return this.time + (this.readAhead * FLICKS_PER_SECOND) / this.ctx.sampleRate;
@@ -1738,7 +1676,6 @@ export class MixGraph {
 			// Ask for a restart (primed with the new read-ahead); the held read-ahead keeps the audio going meanwhile.
 			if (plan.total > this.readAhead && !this.restartAsked && this.restartListeners.size > 0) {
 				this.restartAsked = true;
-				transportLog({ t: this.ctx.currentTime, kind: 'restart', anchor: this.sync?.anchor.value ?? 0 });
 				const listeners = [...this.restartListeners];
 				setTimeout(() => {
 					for (const cb of listeners) cb();

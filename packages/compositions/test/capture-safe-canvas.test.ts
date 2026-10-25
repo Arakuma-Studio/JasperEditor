@@ -32,9 +32,12 @@ const probe = async () => {
 		ctx.drawElementImage(host.captureElementImage ? host.captureElementImage(root) : root, 0, 0);
 		last = [50, 150].map((x) => Array.from(ctx.getImageData(x, 50, 1, 1).data));
 	});
-	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-	host.requestPaint();
-	await sleep(200);
+	const paint = () =>
+		new Promise<void>((resolve) => {
+			host.addEventListener('paint', () => resolve(), { once: true });
+			host.requestPaint();
+		});
+	await paint();
 	const low = (document.getElementById('low') as HTMLCanvasElement).getContext('2d', {
 		alpha: true,
 		desynchronized: true,
@@ -44,9 +47,9 @@ const probe = async () => {
 	const plain = (document.getElementById('plain') as HTMLCanvasElement).getContext('2d')!;
 	plain.fillStyle = 'rgb(255,0,255)';
 	plain.fillRect(0, 0, 100, 100);
-	await sleep(300);
-	host.requestPaint();
-	await sleep(300);
+	// Let the child canvases reach a compositor frame before requesting the host's next capture.
+	await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+	await paint();
 	return last;
 };
 
