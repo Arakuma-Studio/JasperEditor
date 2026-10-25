@@ -4,14 +4,7 @@
 import { TransportStore } from '@jasper/session';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auditionMeter } from '../src/audio/audition-meter.ts';
-import {
-	type AuditionAudio,
-	type AuditionMediaElement,
-	AuditionPlayer,
-	CACHE_BUDGET_BYTES,
-	DECODE_MAX_BYTES,
-	LOOP_GAP_SEC,
-} from '../src/sound/audition.ts';
+import { type AuditionAudio, type AuditionMediaElement, AuditionPlayer } from '../src/sound/audition.ts';
 import { auditionPlaysAlone } from '../src/sound/controller.ts';
 
 type FakeSource = {
@@ -183,7 +176,7 @@ describe('AuditionPlayer', () => {
 		await p.play(sound);
 		audio.sources[0]!.onended!();
 		expect(p.state.phase).toBe('playing');
-		vi.advanceTimersByTime(LOOP_GAP_SEC * 1000 - 1);
+		vi.advanceTimersByTime(249);
 		expect(audio.sources).toHaveLength(1);
 		vi.advanceTimersByTime(1);
 		expect(audio.sources).toHaveLength(2);
@@ -250,7 +243,7 @@ describe('AuditionPlayer', () => {
 		// loop: starts again from 0 after the 250 ms gap
 		el.currentTime = 1800;
 		(el.onended as () => void)();
-		vi.advanceTimersByTime(LOOP_GAP_SEC * 1000);
+		vi.advanceTimersByTime(250);
 		expect(el.plays).toBe(2);
 		expect(el.currentTime).toBe(0);
 		p.stop();
@@ -266,38 +259,35 @@ describe('AuditionPlayer', () => {
 		expect(p.state.error).toMatch(/could not be loaded/);
 	});
 
-	it('keeps the decoded cache within its total byte budget (least recently used dropped)', async () => {
-		// 30 MB sounds (≈ 82 s of stereo 48 kHz float): decoded, cached until the 160 MB budget
+	it('evicts the oldest decoded sound at the byte budget and does not cache oversized buffers', async () => {
+		// The documented 160 MiB budget fits five 30 MiB buffers; the sixth evicts the oldest.
+		// Objects describe buffer size without allocating PCM (docs/wp-notes/sound-design.md, Review fixes).
 		const bytes = 30 * 1024 * 1024;
-		const { p, audio } = player();
+		const { p, audio, fetchBytes } = player();
 		(audio.ctx as { decodeAudioData: unknown }).decodeAudioData = async () =>
 			({ length: bytes / 8, numberOfChannels: 2 }) as AudioBuffer;
-		const durationSec = bytes / (2 * 48000 * 4);
-		for (let i = 0; i < 24; i++) {
-			await p.play({
-				id: `snd_${String(i).padStart(16, '0')}`,
-				title: `S${i}`,
-				url: `/s${i}`,
-				format: { durationSec, channels: 2, sampleRate: 48000 },
-			});
-			expect(p.cacheBytes).toBeLessThanOrEqual(CACHE_BUDGET_BYTES);
-		}
-		expect(p.cacheBytes).toBeGreaterThan(CACHE_BUDGET_BYTES - bytes);
-		// 60 MB decoded buffers whose format understated them: played, never kept
+		const request = (i: number) => ({
+			id: `snd_${String(i).padStart(16, '0')}`,
+			title: `S${i}`,
+			url: `/s${i}`,
+			format: { durationSec: bytes / (2 * 48000 * 4), channels: 2, sampleRate: 48000 },
+		});
+		for (let i = 0; i < 6; i++) await p.play(request(i));
+		await p.play(request(1));
+		expect(fetchBytes).toHaveBeenCalledTimes(6);
+		await p.play(request(0));
+		expect(fetchBytes).toHaveBeenCalledTimes(7);
+
+		// A decoder may return more PCM than the format promised: still playable, never retained.
 		const big = player();
 		(big.audio.ctx as { decodeAudioData: unknown }).decodeAudioData = async () =>
 			({ length: (60 * 1024 * 1024) / 8, numberOfChannels: 2 }) as AudioBuffer;
-		for (let i = 0; i < 24; i++) {
-			await big.p.play({
-				id: `snd_${String(i).padStart(16, '0')}`,
-				title: `B${i}`,
-				url: `/b${i}`,
-				format: FORMAT,
-			});
-			expect(big.p.state.phase).toBe('playing');
-		}
-		expect(big.p.cacheBytes).toBe(0);
-		// 60 MB by format: streamed, nothing decoded
+		await big.p.play(sound);
+		await big.p.play(sound);
+		expect(big.p.state.phase).toBe('playing');
+		expect(big.fetchBytes).toHaveBeenCalledTimes(2);
+
+		// A large size estimate must stream even when the duration is short.
 		const sixty = player();
 		await sixty.p.play({
 			id: 'snd_00000000000000ff',
@@ -306,8 +296,6 @@ describe('AuditionPlayer', () => {
 			format: { durationSec: (60 * 1024 * 1024) / (2 * 48000 * 4), channels: 2, sampleRate: 48000 },
 		});
 		expect(sixty.audio.decode).not.toHaveBeenCalled();
-		expect(sixty.p.cacheBytes).toBe(0);
-		expect(DECODE_MAX_BYTES).toBeLessThan(60 * 1024 * 1024);
 	});
 
 	it('plays alone: starting an audition pauses the Program; the Program starting stops the audition', async () => {

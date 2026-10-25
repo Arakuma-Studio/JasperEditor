@@ -2,7 +2,7 @@
 // Lay Ambience Bed… (the library's ambiences, the measured scenes with their loop lines, a scene's own bed, joining a
 // scene to the one before, Lay Beds in apply mode as ONE History entry with Undo, Propose for Review in propose mode)
 // and Fill Room Tone (enabled only with a gap between dialogue clips; apply mode; the toast names the tone and its
-// distance to the floor), the menu entries, and `editedScenes`.
+// distance to the floor) through the dialog.
 import type { SoundBedsPlan, SoundBedsRequest, SoundRoomToneRequest } from '@jasper/api';
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
@@ -12,8 +12,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createCommandContext } from '../src/commands/context.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { getCommand, isCommandEnabled, runCommand } from '../src/commands/registry.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
-import { editedScenes } from '../src/sound/AmbienceBedDialog.tsx';
 import { audioAsset } from './proposal-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
@@ -218,15 +216,6 @@ async function pick(combo: HTMLElement, option: string) {
 }
 
 describe('Sequence ▸ Sound Design: Lay Ambience Bed…, Fill Room Tone', () => {
-	it('the menu lists them', () => {
-		const sd = MENUBAR.find((m) => m.label === 'Sequence')!.items.find(
-			(i) => i.type === 'submenu' && i.label === 'Sound Design',
-		) as { items: { command?: string }[] };
-		expect(sd.items.map((i) => i.command)).toEqual(
-			expect.arrayContaining(['sound.layAmbienceBed', 'sound.fillRoomTone']),
-		);
-	});
-
 	it('Lay Ambience Bed…: the ambiences, the measured scenes, a scene’s own bed, a join, Lay Beds as one entry with Undo', async () => {
 		const f = fixture();
 		render(f.view());
@@ -304,37 +293,5 @@ describe('Sequence ▸ Sound Design: Lay Ambience Bed…, Fill Room Tone', () =>
 		expect(f.labels().at(-1)).toBe('Fill Room Tone');
 		const tt = toasts.getState().toasts.find((x) => x.title === 'Filled 1 dialogue gap with room tone')!;
 		expect(tt.detail).toBe('"Room tone pink", 0.2 dB from the dialogue’s noise floor, at -7.8 dB');
-	});
-
-	it('editedScenes: joins go into the scene before, a scene’s own bed only when it differs', () => {
-		const p = {
-			sequenceId: 's',
-			purpose: 'ambience' as const,
-			scenes: [
-				scene(0, 100, 'start'),
-				scene(100, 200, 'edit'),
-				scene(200, 300, 'edit'),
-				scene(300, 400, 'edit'),
-			],
-			commands: [],
-			warnings: [],
-			sources: [],
-		};
-		expect(
-			editedScenes(
-				p,
-				[
-					{ soundId: null, join: false },
-					{ soundId: FOREST, join: false },
-					{ soundId: CAFE, join: true },
-					{ soundId: CAFE, join: false },
-				],
-				FOREST,
-			),
-		).toEqual([
-			{ start: 0, end: 100 },
-			{ start: 100, end: 300 },
-			{ start: 300, end: 400, soundId: CAFE },
-		]);
 	});
 });

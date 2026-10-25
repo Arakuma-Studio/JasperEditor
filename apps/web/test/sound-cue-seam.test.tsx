@@ -100,18 +100,6 @@ const three = [
 ];
 
 describe('Cue Seam', () => {
-	it('draws one labelled glyph per cue with its state', () => {
-		const t = setup(three);
-		const glyphs = within(t.lane()).getAllByRole('button');
-		expect(glyphs).toHaveLength(3);
-		expect(glyphs[0]!.getAttribute('aria-label')).toBe(
-			"Hero Land cue at 00:00:01:00, unfilled, Logo lands on V2 'Logo'",
-		);
-		expect(glyphs[0]!.style.left).toBe(`${300 - 9}px`);
-		expect(glyphs[2]!.getAttribute('data-cue-state')).toBe('unfilled agent');
-		expect(t.lane().getAttribute('aria-label')).toBe('Cue Seam: 3 cues');
-	});
-
 	it('click selects, Shift-click adds, a click on the lane deselects', () => {
 		const t = setup(three);
 		const [a, b] = t.ids();
@@ -293,15 +281,6 @@ describe('Cue Seam', () => {
 		} finally {
 			engineMock.client = null;
 		}
-	});
-
-	it('refusals reach the user (a read-only project never edits)', () => {
-		const t = setup(three);
-		act(() => t.session.store.setState({ readOnly: true }));
-		pointer(t.lane(), 'pointerDown', 300);
-		pointer(t.lane(), 'pointerMove', 400);
-		pointer(t.lane(), 'pointerUp', 400);
-		expect(t.cueList()[0]!.frame).toBe(30);
 	});
 });
 

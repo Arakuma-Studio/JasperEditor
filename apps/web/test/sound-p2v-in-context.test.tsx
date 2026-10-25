@@ -18,7 +18,7 @@ import {
 } from '../src/commands/index.ts';
 import { setLanguage } from '../src/i18n/runtime.ts';
 import { installKeyboardDispatcher } from '../src/shell/keymap/dispatcher.ts';
-import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
+import { AuditionPlayer } from '../src/sound/audition.ts';
 import {
 	cancelLibraryMode,
 	clipSoundTarget,
@@ -30,7 +30,7 @@ import { fillCueWithSound } from '../src/sound/fill.ts';
 import { auditionInContext, inContextStore, stopInContext } from '../src/sound/in-context.ts';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
 import { cycleVariation, resetVariationRun } from '../src/sound/swap.ts';
-import { fakeSoundEngine, soundEntry } from './sound-helpers.ts';
+import { fakeSoundEngine, mockAuditionPlayer, soundEntry } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => ({ client: null as unknown, status: 'connected' }));
@@ -43,11 +43,12 @@ vi.mock('../src/state/engine.tsx', () => ({
 const { SoundLibraryPanel } = await import('../src/panels/soundLibrary/SoundLibraryPanel.tsx');
 
 beforeAll(() => registerAllCommands());
+let restoreAudition = () => {};
 beforeEach(() => {
 	localStorage.clear();
 	soundLibraryPrefs.reload();
 	soundLibraryPrefs.set({ auditionOnSwap: false, inContext: false, preRollSec: 2 });
-	setAuditionPlayer(
+	restoreAudition = mockAuditionPlayer(
 		new AuditionPlayer({
 			createContext: () => null,
 			fetchBytes: async () => new ArrayBuffer(4),
@@ -64,7 +65,7 @@ afterEach(() => {
 	cancelLibraryMode();
 	requestCueFill(null);
 	resetVariationRun();
-	setAuditionPlayer(null);
+	restoreAudition();
 });
 
 const tick = () => new Promise((r) => setTimeout(r, 0));

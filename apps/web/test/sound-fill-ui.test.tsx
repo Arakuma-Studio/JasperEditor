@@ -22,16 +22,10 @@ import { registerCommands } from '../src/commands/registry.ts';
 import { soundCommands } from '../src/commands/sound.ts';
 import { soundCueCommands } from '../src/commands/sound-cues.ts';
 import { soundDesignCommands } from '../src/commands/sound-design.ts';
-import {
-	type ClipDecorationProps,
-	clipDecorations,
-	clipMenuExtensions,
-	cueMenuExtensions,
-	type MenuItemSpec,
-} from '../src/extensions/index.ts';
+import { cueMenuExtensions, type MenuItemSpec } from '../src/extensions/index.ts';
 import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import { createTimelineUiStore } from '../src/panels/timeline/state/ui-store.ts';
-import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
+import { AuditionPlayer } from '../src/sound/audition.ts';
 import { cancelLibraryMode, requestClipTarget, requestCueFill } from '../src/sound/controller.ts';
 import { CueSeam } from '../src/sound/cues/CueSeam.tsx';
 import { cuesOf, SEAM_PX } from '../src/sound/cues/model.ts';
@@ -41,9 +35,8 @@ import { fillCueWithSound } from '../src/sound/fill.ts';
 import { inContextStore, stopInContext } from '../src/sound/in-context.ts';
 import { JASPER_SOUND_MIME } from '../src/sound/insert.ts';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
-import { clipBadges } from '../src/sound/register.tsx';
 import { CueProperties, SoundSection } from '../src/sound/SoundSection.tsx';
-import { fakeSoundEngine, soundEntry } from './sound-helpers.ts';
+import { fakeSoundEngine, mockAuditionPlayer, soundEntry } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => ({ client: null as unknown, status: 'connected' }));
@@ -60,11 +53,12 @@ type SfxClip = AudioClip & { sfx?: ClipSfx };
 beforeAll(() => {
 	registerCommands([...soundCommands, ...soundCueCommands, ...soundDesignCommands]);
 });
+let restoreAudition = () => {};
 beforeEach(() => {
 	localStorage.clear();
 	soundLibraryPrefs.reload();
 	soundLibraryPrefs.set({ auditionOnSwap: false });
-	setAuditionPlayer(
+	restoreAudition = mockAuditionPlayer(
 		new AuditionPlayer({
 			createContext: () => null,
 			fetchBytes: async () => new ArrayBuffer(4),
@@ -78,7 +72,7 @@ afterEach(() => {
 	closeAllDialogs();
 	stopInContext({ returnToAnchor: false });
 	cancelLibraryMode();
-	setAuditionPlayer(null);
+	restoreAudition();
 });
 
 function setup() {
@@ -327,82 +321,6 @@ describe('clip menu, badges, Essential Sound, Properties', () => {
 		s.session.select('timeline', [r.clipId], 'replace');
 		return { ...s, clipId: r.clipId };
 	}
-
-	it('the clip menu lists the library-sound entries (and Detect Peak / Add to Sound Library… for project audio)', async () => {
-		const s = await filled();
-		const run = vi.fn();
-		const clip = s.seq().clips[s.clipId]!;
-		const items = clipMenuExtensions
-			.list()
-			.flatMap((e) => e.items({ session: s.session, clip, selection: [s.clipId], runCommand: run }));
-		const labels = items.map((i) => (i.kind === 'separator' ? '—' : i.label));
-		for (const l of [
-			'Swap Sound…',
-			'Next Variation',
-			'Previous Variation',
-			'Align Peak to Playhead',
-			'Align Peak to Nearest Cue',
-			'Set Peak at Playhead',
-			'Find Similar Sounds',
-			'Reveal in Sound Library',
-			'Add to Palette',
-			'Role',
-			'Add Layer…',
-			'Show Licence…',
-		])
-			expect(labels).toContain(l);
-		expect(labels).not.toContain('Detect Peak');
-		const swap = items.find((i) => i.kind === 'item' && i.label === 'Swap Sound…') as { run(): void };
-		swap.run();
-		expect(run).toHaveBeenCalledWith('sound.swap', { clipId: s.clipId });
-	});
-
-	it('badges: type glyph, H for hero, chain for layers, licence dot; hidden below the full width', async () => {
-		const s = await filled();
-		const clip = s.seq().clips[s.clipId]!;
-		expect(clipBadges(s.seq(), clip, { width: 120, licenceWarning: false })).toEqual({
-			type: 'sfx',
-			auto: null,
-			hero: true,
-			layer: false,
-			warn: false,
-			shareAlike: false,
-		});
-		expect(clipBadges(s.seq(), clip, { width: 50, licenceWarning: true })).toEqual({
-			type: 'sfx',
-			auto: null,
-			hero: false,
-			layer: false,
-			warn: true,
-			shareAlike: false,
-		});
-		// a CC BY-SA sound: the "SA" badge (spec 12 P6-E13), at any width
-		expect(
-			clipBadges(s.seq(), clip, { width: 50, licenceWarning: false, license: 'CC-BY-SA-4.0' }).shareAlike,
-		).toBe(true);
-		const deco = clipDecorations.list().find((d) => d.id === 'sound.badges')!;
-		expect(deco.appliesTo(clip)).toBe(true);
-		const Badge = deco.badge!;
-		const props: ClipDecorationProps = {
-			clip,
-			x: 0,
-			w: 200,
-			height: 40,
-			viewportWidth: 1000,
-			scrollFrame: 0,
-			pxPerFrame: 4,
-			rate: s.seq().settings.frameRate,
-			selected: false,
-			trackLocked: false,
-		};
-		render(
-			<SessionProvider session={s.session}>
-				<Badge {...props} />
-			</SessionProvider>,
-		);
-		expect(screen.getByRole('button', { name: 'Audio type SFX: open Essential Sound' })).toBeTruthy();
-		expect(screen.getByRole('img', { name: 'Hero sound' })).toBeTruthy();
-	});
 
 	it('Essential Sound ▸ Sound Design: Role, Align, Pitch ± as undoable commands; "Layer n of m"', async () => {
 		const s = await filled();

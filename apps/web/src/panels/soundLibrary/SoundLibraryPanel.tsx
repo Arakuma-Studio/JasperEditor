@@ -1738,8 +1738,3 @@ function PaletteChip(props: {
 		</li>
 	);
 }
-
-/** For tests: forget fetched entries. */
-export function clearSoundEntryCache(): void {
-	entryCache.clear();
-}

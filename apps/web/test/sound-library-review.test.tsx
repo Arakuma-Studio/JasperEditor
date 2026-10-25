@@ -12,10 +12,10 @@ import { createCommandContext } from '../src/commands/context.ts';
 import { registerCommands, runCommand } from '../src/commands/registry.ts';
 import { soundCommands } from '../src/commands/sound.ts';
 import { setLanguage } from '../src/i18n/runtime.ts';
-import { AuditionPlayer, auditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
+import { AuditionPlayer, auditionPlayer } from '../src/sound/audition.ts';
 import { DEFAULT_FILTERS, licenseBadge, searchRequest, soundAccessibleName } from '../src/sound/model.ts';
 import { MAX_FAVOURITES, soundLibraryPrefs } from '../src/sound/prefs.ts';
-import { fakeSoundEngine, soundEntry, soundId } from './sound-helpers.ts';
+import { fakeSoundEngine, mockAuditionPlayer, soundEntry, soundId } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => {
@@ -37,9 +37,7 @@ const soundsChanged = () =>
 		await new Promise((r) => setTimeout(r, 20));
 	});
 
-const { SoundLibraryPanel, clearSoundEntryCache } = await import(
-	'../src/panels/soundLibrary/SoundLibraryPanel.tsx'
-);
+const { SoundLibraryPanel } = await import('../src/panels/soundLibrary/SoundLibraryPanel.tsx');
 
 const LIST_HEIGHT = 360;
 let restoreHeight: (() => void) | null = null;
@@ -62,10 +60,10 @@ let played: string[] = [];
 beforeAll(() => {
 	registerCommands(soundCommands);
 });
+let restoreAudition = () => {};
 beforeEach(() => {
 	localStorage.clear();
 	soundLibraryPrefs.reload();
-	clearSoundEntryCache();
 	toasts.dismissAll();
 	toasts.clearLog();
 	played = [];
@@ -81,7 +79,7 @@ beforeEach(() => {
 		createChannelSplitter: () => ({ connect() {}, disconnect() {} }),
 		createAnalyser: () => ({ connect() {}, disconnect() {}, fftSize: 2048, getFloatTimeDomainData() {} }),
 	};
-	setAuditionPlayer(
+	restoreAudition = mockAuditionPlayer(
 		new AuditionPlayer({
 			createContext: () => audio as never,
 			fetchBytes: async (url) => {
@@ -96,7 +94,7 @@ beforeEach(() => {
 afterEach(async () => {
 	cleanup();
 	closeAllDialogs();
-	setAuditionPlayer(null);
+	restoreAudition();
 	restoreHeight?.();
 	restoreHeight = null;
 	await setLanguage('en');
@@ -128,10 +126,13 @@ async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 }
 
 async function search(q: string) {
-	fireEvent.change(screen.getByTestId('sound-search'), { target: { value: q } });
-	await act(async () => {
-		await new Promise((r) => setTimeout(r, 200));
-	});
+	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+	try {
+		fireEvent.change(screen.getByTestId('sound-search'), { target: { value: q } });
+		await act(async () => vi.runOnlyPendingTimersAsync());
+	} finally {
+		vi.useRealTimers();
+	}
 }
 
 const titled = (prefix: string, n: number, over: Partial<SoundEntry> = {}) =>

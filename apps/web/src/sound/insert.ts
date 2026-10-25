@@ -14,10 +14,8 @@ import {
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
-	audioTrackIsFree,
 	type Command,
 	chooseSoundTrack,
-	nextSfxTrackName,
 	planMomentPlacement,
 	planSoundInsert,
 	type Rational,
@@ -102,7 +100,6 @@ export function readSoundDrag(dt: Pick<DataTransfer, 'getData'> | null): SoundDr
 // Placement (pure): the rules are @jasper/project's (`planSoundInsert`, `chooseSoundTrack`), shared with MCP insert_sound.
 
 export type { SoundTiming };
-export { chooseSoundTrack, nextSfxTrackName };
 export type TrackChoice = SoundTrackChoice;
 
 /**
@@ -125,11 +122,6 @@ export function timingOf(e: Pick<SoundEntry, 'descriptors' | 'format'>): SoundTi
 }
 
 export type SoundPlacement = SoundInsertPlacement & { track: TrackChoice };
-
-/** Whether an audio track is unlocked and has no clip over `[start, start + frames)`. */
-export function trackIsFree(seq: Sequence, trackId: string, start: number, frames: number): boolean {
-	return audioTrackIsFree(seq, trackId, start, frames);
-}
 
 /**
  * Where a sound goes so that its `align` point (peak, start = onset, end) lands on `cueFrame`, and on which track.

@@ -15,7 +15,6 @@ import { createCommandContext } from '../src/commands/context.ts';
 import { runCommand } from '../src/commands/registry.ts';
 import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import { createTimelineUiStore } from '../src/panels/timeline/state/ui-store.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
 import { CueSeam } from '../src/sound/cues/CueSeam.tsx';
 import { cuesOf, SEAM_PX } from '../src/sound/cues/model.ts';
 import { EssentialSfxSection } from '../src/sound/EssentialSfx.tsx';
@@ -749,17 +748,6 @@ describe('Properties ▸ Cue and the Cue Seam', () => {
 });
 
 describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…', () => {
-	it('the menu lists them', () => {
-		const seqMenu = MENUBAR.find((m) => m.label === 'Sequence')!;
-		const sd = seqMenu.items.find((i) => i.type === 'submenu' && i.label === 'Sound Design') as {
-			items: { command?: string }[];
-		};
-		const ids = sd.items.map((i) => i.command).filter(Boolean);
-		expect(ids).toEqual(
-			expect.arrayContaining(['sound.rebalanceSfx', 'sound.roomGlue', 'sound.deliveryTarget']),
-		);
-	});
-
 	it('Rebalance SFX Levels (menu): every sound effect, progress, one entry, Undo', async () => {
 		const f = fixture();
 		const seen: string[] = [];

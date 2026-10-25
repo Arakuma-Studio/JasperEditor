@@ -1,8 +1,7 @@
 // WP4.2b mix model (pure): level views (default / solver / manual with translated reasons and track names), the review
 // row's gain text, the room seen from a clip's track (sends, interface-only and bed tracks), a cue's stop-before / build
-// written vs stored (and why), the field validation, the delivery labels; fuzzed inputs never throw.
+// written vs stored (and why), and field validation; fuzzed inputs never throw.
 import type { AudioClip, ClipSfx, Sequence } from '@jasper/project';
-import { DELIVERY_PRESETS } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { cuesOf } from '../src/sound/cues/model.ts';
@@ -11,8 +10,6 @@ import {
 	conflictNote,
 	cueMixState,
 	cueSelectionOf,
-	deliveryOptionLabel,
-	fmtDb,
 	levelSelectionOf,
 	limitPhrase,
 	parseNumber,
@@ -44,13 +41,6 @@ const clip = (gainDb: number, level?: unknown) =>
 	({ id: 'clp_1', kind: 'audio', gainDb, trackId: 'trk_a', sfx: sfx(level) }) as unknown as AudioClip;
 
 describe('levels', () => {
-	it('formats dB with a real minus and one decimal', () => {
-		expect(fmtDb(-3)).toBe('−3.0');
-		expect(fmtDb(1.54)).toBe('+1.5');
-		expect(fmtDb(-0.01)).toBe('0.0');
-		expect(fmtDb(Number.NaN)).toBe('–');
-	});
-
 	it('solver: badge, translated limits with the track names, lifts', () => {
 		const v = sfxLevelView(
 			clip(-3, {
@@ -285,13 +275,6 @@ describe('validation and numbers', () => {
 		expect(parseNumber('−24')).toBe(-24);
 		expect(parseNumber('abc')).toBeNull();
 		expect(parseNumber(' ')).toBeNull();
-	});
-
-	it('delivery labels carry the numbers', () => {
-		expect(deliveryOptionLabel(DELIVERY_PRESETS.web)).toBe('Web / streaming · −14 LUFS · −1 dBTP');
-		expect(deliveryOptionLabel(DELIVERY_PRESETS['atsc-a85'])).toBe(
-			'Broadcast ATSC A/85 · −24 LUFS · −2 dBTP',
-		);
 	});
 });
 

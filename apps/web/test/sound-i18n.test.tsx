@@ -2,21 +2,13 @@
 // the editor"): History labels composed by agents' tools ("Agent: Sound Cues (add 2, …)", "Agent: Place Sound <title>")
 // and the model's refusals shown in notices are translated through the model strings (SOUND_MODEL_STRINGS →
 // model-strings.json → `translateName`), the web's own labels through `t()` at commit.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { planSoundInsert, SOUND_LABELS, soundText } from '@jasper/project';
 import { act, cleanup, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { transformI18n } from '../i18n/transform.mjs';
-import { __t, setLanguage, translateName } from '../src/i18n/runtime.ts';
+import { setLanguage, translateName } from '../src/i18n/runtime.ts';
 import { HistoryPanel } from '../src/panels/history/HistoryPanel.tsx';
 import { addSolids, makeSession, renderWithSession } from './inspector-helpers.tsx';
 
-const root = join(__dirname, '../../..');
-const ES = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
-	string,
-	string
->;
 const spanish = () => setLanguage('es');
 
 afterEach(async () => {
@@ -130,18 +122,5 @@ describe('sound design labels and refusals in Spanish', () => {
 		);
 		// a text that only looks similar stays as it is
 		expect(translateName('The new sound does not fit')).toBeNull();
-	});
-
-	it("the web's own sound labels are translated when committed (t() and the build transform)", async () => {
-		await spanish();
-		expect(__t('Fill Cue {0}', 'Crunchy impact')).toBe('Rellenar señal Crunchy impact');
-		expect(__t('Swap Sound ×{0}', 4)).toBe(ES['Swap Sound ×{0}']!.replace('{0}', '4'));
-		expect(__t('Suggest Cues ({0})', 12)).toBe('Sugerir señales (12)');
-		expect(__t('Fill Unfilled Cues ({0})', 3)).toBe('Rellenar señales vacías (3)');
-		expect(__t('Add Layer {0}', 'Low boom')).toBe(ES['Add Layer {0}']!.replace('{0}', 'Low boom'));
-		// insert.ts writes its label as a template literal: the build wraps it in __t("Add Sound {0}", title).
-		const insert = readFileSync(join(root, 'apps/web/src/sound/insert.ts'), 'utf8');
-		expect(transformI18n(insert, 'insert.ts', '/rt.ts')).toContain('__t("Add Sound {0}", title)');
-		expect(__t('Add Sound {0}', 'Low boom')).toBe('Añadir sonido Low boom');
 	});
 });

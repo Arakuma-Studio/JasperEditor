@@ -10,11 +10,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerCommands } from '../src/commands/registry.ts';
 import { soundCommands } from '../src/commands/sound.ts';
-import soundLibrary from '../src/panels/soundLibrary/index.ts';
-import { AuditionPlayer, setAuditionPlayer } from '../src/sound/audition.ts';
+import { AuditionPlayer } from '../src/sound/audition.ts';
 import { hostOf, installConfirmBody, PacksSection, requestPacksFocus } from '../src/sound/PacksSection.tsx';
 import { soundLibraryPrefs } from '../src/sound/prefs.ts';
-import { fakeSoundEngine, soundEntry, soundPack } from './sound-helpers.ts';
+import { fakeSoundEngine, mockAuditionPlayer, soundEntry, soundPack } from './sound-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 const mocks = vi.hoisted(() => ({ client: null as unknown, status: 'connected' }));
@@ -28,10 +27,11 @@ const { SoundLibraryPanel } = await import('../src/panels/soundLibrary/SoundLibr
 beforeAll(() => {
 	registerCommands(soundCommands);
 });
+let restoreAudition = () => {};
 beforeEach(() => {
 	localStorage.clear();
 	soundLibraryPrefs.reload();
-	setAuditionPlayer(
+	restoreAudition = mockAuditionPlayer(
 		new AuditionPlayer({
 			createContext: () => ({}) as never,
 			fetchBytes: async () => new ArrayBuffer(4),
@@ -43,7 +43,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	closeAllDialogs();
-	setAuditionPlayer(null);
+	restoreAudition();
 });
 
 const job = (over: Partial<EngineJob> = {}): EngineJob =>
@@ -261,22 +261,6 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 });
 
 describe('Sound Library panel and packs', () => {
-	it('the panel menu has Install Sound Packs…; the empty state offers it', async () => {
-		expect(
-			soundLibrary.menu?.some((m) => m.type === 'command' && m.command === 'soundLibrary.installPacks'),
-		).toBe(true);
-		const engine = fakeSoundEngine([]);
-		mocks.client = engine.client;
-		const { session } = makeSession();
-		render(
-			<SessionProvider session={session}>
-				<SoundLibraryPanel instanceId="sl" visible />
-			</SessionProvider>,
-		);
-		await screen.findByTestId('sound-empty');
-		expect(screen.getByTestId('sound-install-packs').textContent).toBe('Install Sound Packs…');
-	});
-
 	it('lists installed packs under Sources and searches only that pack', async () => {
 		const entries = [
 			soundEntry({

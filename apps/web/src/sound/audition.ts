@@ -13,16 +13,16 @@ import { auditionMeter } from '../audio/audition-meter.ts';
 import { t } from '../i18n/runtime.ts';
 
 /** Silence between loop repetitions (spec 12 §2.7). */
-export const LOOP_GAP_SEC = 0.25;
+const LOOP_GAP_SEC = 0.25;
 /** Decoded sounds kept (most recently used). */
 const CACHE_ENTRIES = 24;
 /**
  * Largest decoded sound (bytes of float PCM: duration × channels × sample rate × 4). Longer sounds stream. 32 MB is
  * ≈ 87 s of stereo 48 kHz: every effect of the library decodes; beds and long folder files stream.
  */
-export const DECODE_MAX_BYTES = 32 * 1024 * 1024;
+const DECODE_MAX_BYTES = 32 * 1024 * 1024;
 /** Total bytes of decoded PCM the cache keeps (least recently used dropped first). */
-export const CACHE_BUDGET_BYTES = 160 * 1024 * 1024;
+const CACHE_BUDGET_BYTES = 160 * 1024 * 1024;
 
 export type AuditionState = {
 	soundId: string | null;
@@ -171,11 +171,6 @@ export class AuditionPlayer {
 
 	get state(): AuditionState {
 		return this.store.getState();
-	}
-
-	/** Bytes of decoded PCM held by the cache (tests, diagnostics). */
-	get cacheBytes(): number {
-		return this.cachedBytes;
 	}
 
 	/** Plays a sound (stopping whatever plays); `url` is the engine's audio URL of the sound. */
@@ -483,9 +478,4 @@ let shared: AuditionPlayer | null = null;
 export function auditionPlayer(): AuditionPlayer {
 	shared ??= new AuditionPlayer();
 	return shared;
-}
-/** Tests: replace the shared player. */
-export function setAuditionPlayer(p: AuditionPlayer | null): void {
-	shared?.dispose();
-	shared = p;
 }
