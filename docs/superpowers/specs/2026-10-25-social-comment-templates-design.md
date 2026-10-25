@@ -1,6 +1,6 @@
 # Animated social-comment templates — design
 
-Status: draft for approval · 2026-10-25
+Status: approved and implemented (2026-10-25) — implementation notes, measured results and limitations: `docs/wp-notes/social-comments.md`
 
 ## 1. Intent
 
