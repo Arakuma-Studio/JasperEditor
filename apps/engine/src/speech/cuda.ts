@@ -7,7 +7,7 @@
 // directory; tools/ort.ts `JASPER_ORT_DIR`). The NVIDIA runtime (driver ≥ 580, CUDA 13, cuDNN 9) is proprietary and
 // large: it is detected, never shipped, and the user is told what to install when it is missing.
 import { execFileSync } from 'node:child_process';
-import { createReadStream, createWriteStream, existsSync, readdirSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { cp, mkdir, open, rm, stat, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -241,10 +241,9 @@ export class CudaProvider {
 					return !m || (m[1] === 'linux' && m[2] === 'x64');
 				},
 			});
-			const commonDir = dirname(
-				(await import('node:module'))
-					.createRequire(join(pkgDir, 'package.json'))
-					.resolve('onnxruntime-common/package.json'),
+			const commonDir = packageRoot(
+				(await import('node:module')).createRequire(join(pkgDir, 'package.json')).resolve('onnxruntime-common'),
+				'onnxruntime-common',
 			);
 			await cp(commonDir, join(nm, 'onnxruntime-common'), { recursive: true, dereference: true });
 			await writeFile(join(staging, 'package.json'), '{"private":true,"name":"jasper-onnxruntime-cuda"}\n');
@@ -307,6 +306,25 @@ export class CudaError extends Error {
 		super(message);
 		this.name = 'CudaError';
 	}
+}
+
+/** The directory of the package `name` that contains `file` (its `exports` may hide `package.json`). */
+function packageRoot(file: string, name: string): string {
+	let d = dirname(file);
+	for (let i = 0; i < 12; i++) {
+		const pj = join(d, 'package.json');
+		if (existsSync(pj)) {
+			try {
+				if ((JSON.parse(readFileSync(pj, 'utf8')) as { name?: string }).name === name) return d;
+			} catch {
+				// not a package manifest
+			}
+		}
+		const up = dirname(d);
+		if (up === d) break;
+		d = up;
+	}
+	throw new CudaError('INSTALL_FAILED', `cannot find the ${name} package`);
 }
 
 type Entry = { method: number; compressedSize: number; size: number; offset: number };
