@@ -15,7 +15,7 @@ parentPort?.on('message', (m: VoiceWorkerRequest) => {
 	} catch (e) {
 		out = { id: m.id, ok: false, message: String((e as Error)?.message ?? 'feature extraction failed') };
 	}
-	if (out.ok) parentPort?.postMessage(out, [out.level.buffer, out.voicing.buffer, out.flatness.buffer]);
+	if (out.ok) parentPort?.postMessage(out, [out.level.buffer as ArrayBuffer, out.voicing.buffer as ArrayBuffer, out.flatness.buffer as ArrayBuffer]);
 	else parentPort?.postMessage(out);
 });
 parentPort?.postMessage({ id: 0, ready: true } satisfies VoiceWorkerResponse);

@@ -43,7 +43,7 @@ describe('EngineClient voice analysis', () => {
 	it('fetches and decodes the analysis file of a stream', async () => {
 		const bytes = encodeVoiceAnalysis(analysis);
 		const { c, urls } = client(
-			() => new Response(bytes, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
+			() => new Response(bytes as Uint8Array<ArrayBuffer>, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
 		);
 		const a = await c.getVoiceAnalysis('mk_1', 1);
 		expect(urls).toEqual(['http://e/api/media/mk_1/voice-analysis?streamIndex=1']);
@@ -66,7 +66,7 @@ describe('EngineClient voice analysis', () => {
 		expect(notFound.urls).toEqual(['http://e/api/media/mk_1/voice-analysis']);
 		const broken = encodeVoiceAnalysis(analysis);
 		broken[20] = (broken[20] ?? 0) ^ 1;
-		const bad = client(() => new Response(broken, { status: 200 }));
+		const bad = client(() => new Response(broken as Uint8Array<ArrayBuffer>, { status: 200 }));
 		const e = await bad.c.getVoiceAnalysis('mk_1').catch((x: unknown) => x);
 		expect(e).toBeInstanceOf(EngineError);
 		expect((e as EngineError).code).toBe('INVALID_RESPONSE');
