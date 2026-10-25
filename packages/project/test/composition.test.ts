@@ -131,6 +131,32 @@ describe('clip.addComposition (S08:MGC-003/004/007, §8 test 3)', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
+	it("placement 'first-free' stacks compositions instead of overwriting (social-comments §7.9)", () => {
+		const { h, mediaId } = setup();
+		const a = addTitle(h, mediaId);
+		const b = addTitle(h, mediaId, { placement: 'first-free' });
+		const c = addTitle(h, mediaId, { placement: 'first-free', track: 'V1' });
+		const label = (id: string) => h.seq.videoTracks.findIndex((t) => t.id === clipOf(h, id).trackId) + 1;
+		expect([label(a), label(b), label(c)]).toEqual([2, 3, 1]);
+		expect([clipOf(h, a).start, clipOf(h, a).duration]).toEqual([30, 90]);
+		const d = addTitle(h, mediaId, { placement: 'first-free' });
+		expect(label(d)).toBe(4);
+		expect(
+			errCode(
+				h.tx([
+					{
+						type: 'clip.addComposition',
+						composition: { mediaId, id: 'Title' },
+						at: 0,
+						track: 'A1',
+						placement: 'first-free',
+					},
+				]),
+			),
+		).toBe('E_TRACK_KIND');
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
 	it('fits a larger composition into a smaller sequence and keeps overrides', () => {
 		const { h, mediaId } = setup('hd-720p-30');
 		const id = addTitle(h, mediaId, { props: { title: 'Hola' }, duration: 45 });

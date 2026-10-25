@@ -1,3 +1,9 @@
+import {
+	applyTransaction,
+	createCounterIdSource,
+	createEmptyProject,
+	defaultRegistries,
+} from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -46,6 +52,49 @@ describe('@jasper/mg-templates registry', () => {
 			type: 'object',
 			additionalProperties: false,
 			properties: { title: { type: 'string', minLength: 1 } },
+		});
+	});
+
+	it('passes the optional fill hook to the command layer (clip.addMotionGraphic {fill})', () => {
+		const fillable: MgTemplateDefinition<z.infer<typeof params>> = {
+			...sample,
+			id: 'fillable',
+			fill(partial, seed) {
+				if (partial.title !== undefined) return { ok: true, params: partial, filled: [] };
+				return { ok: true, params: { ...partial, title: `Seed ${seed}` }, filled: ['title'] };
+			},
+		};
+		const registry = createMgRegistry([sample, fillable]);
+		expect(registry.get('test-card', 1)?.fill).toBeUndefined();
+		expect(registry.get('fillable', 1)?.fill?.({}, 4)).toEqual({
+			ok: true,
+			params: { title: 'Seed 4' },
+			filled: ['title'],
+		});
+		const ids = createCounterIdSource(1);
+		const doc = createEmptyProject({ ids, name: 'Fill' });
+		const { result } = applyTransaction(
+			doc,
+			{
+				label: 'fill',
+				origin: 'user',
+				commands: [
+					{
+						type: 'clip.addMotionGraphic',
+						at: 0,
+						duration: 30,
+						track: 'V1',
+						placement: 'first-free',
+						template: { id: 'fillable', version: 1 },
+						fill: { seed: 7 },
+					},
+				],
+			},
+			{ ids, now: () => 't', revision: 0, registries: defaultRegistries(registry) },
+		);
+		expect(result).toMatchObject({
+			ok: true,
+			results: [{ track: 'V1', params: { title: 'Seed 7' }, filled: ['title'], seed: 7 }],
 		});
 	});
 

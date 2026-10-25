@@ -10,11 +10,10 @@ import {
 	TEXT_ANIMATION_REFERENCE_FPS,
 	TEXT_ANIMATION_SIDES,
 	type TextAnimationSide,
-	TimeInputSchema,
 	toJsonSchema,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg } from '../arguments.ts';
+import { ProjectIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	captureStill,
 	defineTool,
@@ -261,7 +260,7 @@ function sheetCellWidth(width: number, columns: number, rows: number, aspect: nu
 	return Math.max(64, Math.min(width, byWidth, byHeight));
 }
 
-const TIMES = 'Sequence time as frames (integer), {"frames": n}, {"seconds": x} or timecode "HH:MM:SS:FF"';
+const TIMES = TIME_FORMATS;
 
 export function registerAnimationTools(ctx: ToolContext): void {
 	defineTool(
@@ -366,7 +365,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 			input: {
 				projectId: ProjectIdArg,
 				times: z
-					.array(TimeInputSchema)
+					.array(TimeArgSchema)
 					.min(1)
 					.max(MAX_SHEET_FRAMES)
 					.optional()
@@ -383,8 +382,8 @@ export function registerAnimationTools(ctx: ToolContext): void {
 					.min(1)
 					.optional()
 					.describe('Spread the frames over this clip (default: the whole sequence)'),
-				from: TimeInputSchema.optional().describe(`Start of the range for count. ${TIMES}`),
-				to: TimeInputSchema.optional().describe(`End of the range for count (exclusive). ${TIMES}`),
+				from: TimeArgSchema.optional().describe(`Start of the range for count. ${TIMES}`),
+				to: TimeArgSchema.optional().describe(`End of the range for count (exclusive). ${TIMES}`),
 				width: z.number().int().min(64).max(640).optional().describe('Cell width in pixels (default 320)'),
 				columns: z.number().int().min(1).max(8).optional().describe('Cells per row (default up to 4)'),
 				sequenceId: z

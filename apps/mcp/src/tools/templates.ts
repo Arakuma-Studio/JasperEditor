@@ -46,7 +46,12 @@ export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - Templates may declare presets (named param sets, e.g. one per look): list_motion_templates lists them with a ready-made ref. Pass "<id>:<preset>" (or "<id>@<version>:<preset>") as template to add_motion_graphic or render_motion_graphic_preview: the preset's params apply over the defaults and your params over the preset.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
 - set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.
-- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays).`;
+- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays).
+- add_motion_graphic adds one graphic (template, params, at, duration, track) or many with items: [...] (up to 200) in ONE transaction — one undo step, all or nothing. Placement never overwrites: without track each clip goes on the first free unlocked video track from V2 up for its time range (a new top track when all are busy), and the items of one call never collide. track: "V3" keeps the old behaviour (overwrite on exactly that track); add placement: "first-free" to start the search there instead.
+- Every param is optional. Params layer as defaults → preset ("<id>:<preset>") → the template's fill hook → your params: templates with a fill hook fill what you and the preset leave out with believable values from seed (deterministic; a random seed is used and returned when you give none), the others take their defaults. The result lists per item clipId, track, start/end (frames + timecode), the fully resolved params and which ones were filled.
+- dryRun: true returns that result without changing the project; add preview: true for a still of each item at the middle of its hold (up to 10 items). Errors name the failing item (details.items[].index).
+- Times also accept "3s", "1.5s", "250ms", "00:03" (M:SS) and "1:02:03" (H:MM:SS); four fields stay timecode HH:MM:SS:FF.
+- Example: add_motion_graphic {projectId, seed: 7, items: [{template: "lower-third-anim", at: "2s", params: {name: "Ana Ruiz"}}, {template: "lower-third-anim", at: "00:04", duration: "3s"}]}.`;
 
 /**
  * Bounds at or beyond the safe-integer range are no bounds (zod's `.int()` writes ±MAX_SAFE_INTEGER into the JSON
@@ -487,6 +492,94 @@ export async function animeTemplatePreview(
 		},
 		images,
 	);
+}
+
+type TemplatePreviewArgs = {
+	params?: Record<string, unknown>;
+	width?: number;
+	height?: number;
+	durationSeconds?: number;
+	fps?: number;
+	frames?: number;
+};
+
+/**
+ * render_motion_graphic_preview for an fframes template: the native renderer's preview job (animated WebM with
+ * alpha) and its poster (the middle frame) as the image.
+ */
+export async function fframesTemplatePreview(
+	ctx: ToolContext,
+	cat: MgTemplatesResponse,
+	t: MgTemplateCatalogEntry,
+	a: TemplatePreviewArgs,
+	extra?: Extra,
+): Promise<CallToolResult> {
+	if (cat.renderer.status !== 'ready')
+		throw new ToolError(
+			'RENDERER_UNAVAILABLE',
+			`The native motion-graphics renderer is unavailable${cat.renderer.reason ? `: ${cat.renderer.reason}` : ''}`,
+			'Build it with `pnpm mg:build`; add_motion_graphic still works (the editor previews with its SVG twin). Use render_frame on a timeline with the graphic instead. Anime templates (renderer "anime" in list_motion_templates) preview without it.',
+		);
+	const fps = a.fps ?? 30;
+	const job = await ctx.engine((c) =>
+		c.mgRender({
+			quality: 'preview',
+			spec: {
+				template: { id: t.id, version: t.version },
+				params: { ...t.defaults, ...(a.params ?? {}) },
+				width: a.width ?? 960,
+				height: a.height ?? 540,
+				fps: { num: fps, den: 1 },
+				durationFrames: Math.max(1, Math.round((a.durationSeconds ?? t.defaultDurationSeconds ?? 5) * fps)),
+			},
+		}),
+	);
+	const { job: done } = await waitJob(ctx, job.id, 120_000, extra);
+	if (done.state !== 'succeeded')
+		throw new ToolError(
+			done.error?.code ?? 'RENDER_FAILED',
+			done.error?.message ?? `The render ${done.state}`,
+			'Check the params against the template paramsSchema (list_motion_templates).',
+		);
+	const result = done.result as { key: string; url: string };
+	const base = ctx.link.target?.url ?? '';
+	const poster = await ctx
+		.engine((c) => c.fetchBytes(c.mgFileUrl(result.key, 'poster.png')))
+		.catch(() => null);
+	return {
+		content: [
+			{
+				type: 'text',
+				text: JSON.stringify({
+					template: `${t.id}@${t.version}`,
+					jobId: done.id,
+					previewUrl: `${base}${result.url}`,
+				}),
+			},
+			...(poster
+				? [
+						{
+							type: 'image' as const,
+							data: Buffer.from(poster.bytes).toString('base64'),
+							mimeType: 'image/png',
+						},
+					]
+				: []),
+		],
+	};
+}
+
+/** A template preview by renderer: Remotion stills for anime templates (S11:ANA-003), else the fframes renderer. */
+export function templatePreview(
+	ctx: ToolContext,
+	cat: MgTemplatesResponse,
+	t: MgTemplateCatalogEntry,
+	a: TemplatePreviewArgs,
+	extra?: Extra,
+): Promise<CallToolResult> {
+	return t.renderer === 'anime'
+		? animeTemplatePreview(ctx, t, a, extra)
+		: fframesTemplatePreview(ctx, cat, t, a, extra);
 }
 
 function findMgClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: MotionGraphicClip } {

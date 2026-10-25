@@ -32,10 +32,9 @@ import {
 	soundCheckFixOrder,
 	soundCheckHumanVerdicts,
 	soundDesignSettingsOf,
-	TimeInputSchema,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	defineTool,
@@ -62,7 +61,7 @@ const STRIP_PAD_SEC = 2;
 const MAX_STRIPS = 3;
 
 const RangeArg = z
-	.object({ start: TimeInputSchema, end: TimeInputSchema })
+	.object({ start: TimeArgSchema, end: TimeArgSchema })
 	.describe(`Sequence range [start, end). ${TIME_FORMATS}`);
 
 const SOUND_CHECK_HINTS: Record<string, string> = {
