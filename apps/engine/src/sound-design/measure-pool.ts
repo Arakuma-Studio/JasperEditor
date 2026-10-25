@@ -22,7 +22,7 @@ import { JobError } from '../jobs/types.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { type MeasureOp, type MeasureOpResult, type RenderEnv, runMeasureOp } from './measure-core.ts';
 
-export const SD_MEASURE_WORKER_ENV = 'JASPER_SD_MEASURE_WORKER';
+const SD_MEASURE_WORKER_ENV = 'JASPER_SD_MEASURE_WORKER';
 const IDLE_MS = 30_000;
 const START_TIMEOUT_MS = 120_000;
 const OP_TIMEOUT_MS = 600_000;
@@ -39,18 +39,14 @@ export type MeasureWorkerResponse =
 	| { id: 0; ready: true };
 
 /** The worker module to use, or null to measure in-thread. */
-export function resolveMeasureWorker(
-	env: Record<string, string | undefined> = process.env,
-	base: string = import.meta.url,
-	execArgv: readonly string[] = process.execArgv,
-): URL | null {
-	const o = env[SD_MEASURE_WORKER_ENV];
+function resolveMeasureWorker(): URL | null {
+	const o = process.env[SD_MEASURE_WORKER_ENV];
 	if (o === 'off' || o === '0') return null;
 	if (o) return o.startsWith('file:') ? new URL(o) : pathToFileURL(o);
-	const bundled = new URL('./sd-measure-worker.mjs', base);
+	const bundled = new URL('./sd-measure-worker.mjs', import.meta.url);
 	if (existsSync(fileURLToPath(bundled))) return bundled;
-	if (execArgv.some((a) => a.includes('tsx'))) {
-		const ts = new URL('./measure-worker.ts', base);
+	if (process.execArgv.some((a) => a.includes('tsx'))) {
+		const ts = new URL('./measure-worker.ts', import.meta.url);
 		if (existsSync(fileURLToPath(ts))) return ts;
 	}
 	return null;

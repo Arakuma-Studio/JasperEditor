@@ -4,7 +4,7 @@ Scope: all 40 original engine test files whose basenames start audio/sound/music
 
 The source of the independent contracts below is `docs/specs/12-sound-design.md`, the referenced requirement/work package in `docs/wp-notes/sound-design.md`, architecture D-51/D-52, and the cited external audio standards. Production owners are relative to `apps/engine/`. Each row inherits its file’s explicit six-bar evidence, with the named scenario identifying the unique failure. DELETE and removed CONSOLIDATE rows state their failed bar and surviving owner instead.
 
-No DSP algorithms, schema, migrations, persisted data, public package exports, authentication, or command behavior changed. A real-worker failure probe exposed a decoder bug: a failed or missing child produced silent success. The bounded reader fix now propagates typed failures; the fail-before evidence and new contract regression are recorded below. Removed exports are private engine-module internals with no non-test external consumer: delivery table/cache/cache size/cache key/correction helper; measurement mode/count diagnostics and test-only Worker interface/factory type exports; PCM byte helper; solo-tail bounds. Production entry points continue using the same code. Worker factory/scheduling injection and per-call timeout overrides are removed. Real Worker URL fixtures provide fault isolation, and stale-mix race synchronization remains because its data-preservation behavior has unique protection.
+No DSP algorithms, schema, migrations, persisted data, public package exports, authentication, or command behavior changed. A real-worker failure probe exposed a decoder bug: a failed or missing child produced silent success. The bounded reader fix now propagates typed failures; the fail-before evidence and new contract regression are recorded below. Removed exports are private engine-module internals with no non-test external consumer: delivery table/cache/cache size/cache key/correction helper; measurement mode/count diagnostics and test-only Worker interface/factory type exports; PCM byte helper; solo-tail bounds. Production entry points continue using the same code. Worker factory/scheduling injection and per-call timeout overrides are removed. The private module resolver and its environment-key constant are no longer exported, and unused environment/base/startup-argument parameters are removed; genuine environment configuration goes through the production factory. Real Worker URL fixtures provide fault isolation, and stale-mix race synchronization remains because its data-preservation behavior has unique protection.
 
 ## `apps/engine/test/audio-beats-metre.test.ts`
 
@@ -288,8 +288,8 @@ Six-bar evidence for surviving rows: **1 Independent contract:** the requirement
 | measureSfxEvents: every measurement and the bed clusters are equal, bit for bit | REWRITE | Retains the named independently specified behavior; removes incidental prose/private shape or copied formulas. Corrections read WAV bytes, TOO_SHORT uses HTTP422/code, request-source negatives move to HTTP, and retargeted cached delivery is verified on decoded audio. |
 | a bed render: the PCM is the same, sample for sample (transferred back) | CONSOLIDATE (owner) | Keeps actual nonzero PCM/true-peak parity and absorbs TOOL_FAILED propagation/recovery using a real failing executable followed by the actual bundled DSP. Removes the fake failed-op reply owner. |
 | cancelling a render on the worker rejects at once and leaves the pool usable | DELETE | Fails stable synchronization/unique protection: a5ms abort does not establish receipt or in-flight work. The real Worker URL cancellation owner waits for receipt, verifies JOB_CANCELLED, advances the documented five-second grace, and verifies actual DSP recovery. |
-| resolves the worker module: env, bundle, tsx source, or none | KEEP | Uniquely exercises this named scenario at the stated seam: resolves the worker module: env, bundle, tsx source, or none. Its oracle and distinct failure are listed above; narrower units do not own this integration/configuration/range. |
-| no worker can start: measures in-thread | CONSOLIDATE (owner) | Missing-module and never-ready Worker URL fixtures verify real in-thread octave-band output. Covers startup failure plus the documented120s deadline without a constructor throw stub or custom start-time option. |
+| resolves the worker module: env, bundle, tsx source, or none | CONSOLIDATE (removed) | Private lookup results and synthetic module-base/startup-argument inputs fail the stable-seam/refactor bar. The existing fallback owner now configures the actual production factory with `off` and `0`, requires literal silence-band output and no failed-worker warning, and closes/restores the shared instance and environment. The real rebalance crash workflow owns custom-path configuration through actual jobs, typed failures and unchanged revision. Source/bundle lookup details need no dedicated unit. The resolver/key exports and unused env/base/argv parameters are removed. |
+| no worker can start: measures in-thread | CONSOLIDATE (owner) | The real production factory honors `off` and `0` without startup warnings and returns literal silence bands. Missing-module and never-ready Worker URL fixtures verify the same real DSP fallback plus the documented120s deadline, without constructor throw stubs or timing options. Public factory shutdown and environment restoration keep cases isolated; the separate HTTP crash owner verifies custom-path selection and queue/error/revision propagation. |
 | a worker that crashes: its requests fail with MEASURE_FAILED (retryable), the next one gets a new worker | DELETE | Fails unique protection/stable seam: fake factory/count assertions duplicate the real crashing-rebalance HTTP regression. Real uncaught-error URL fixture additionally verifies a succeeding actual-DSP request after restart. |
 | an uncaught error in the worker: the same (never a hung request) | REWRITE | Real Node Worker throws after receiving its operation; expect MEASURE_FAILED/retryable, then independently specified silent-PCM output from a replacement production worker. No factory, lastMode or canned success response. |
 | a failed op keeps its code (an ffmpeg failure is a TOOL_FAILED), the worker stays | CONSOLIDATE (removed) | Moved to the real bed-render parity owner: a real executable fails the FFmpeg invocation and yields TOOL_FAILED, then a real render succeeds with exact PCM parity. Deletes the mock error payload that supplied its asserted code. |
@@ -706,6 +706,40 @@ Full-suite baseline wall is2,111.47s; final full-suite wall and CI impact belong
 
 ### Scope totals
 
-All188 original static declarations are dispositioned:144 KEEP,26 REWRITE,1 OPTIMIZE,9 CONSOLIDATE (4 owners/5 removed),8 DELETE. Two existing generated fuzz declarations remain KEEP. One genuinely new table declaration (2 runtime cases) protects the verified decoder-failure bug; it is separate from original dispositions. One original40-file test (`sound-design-plan-bench.test.ts`) is removed. Test LOC265 added/770 removed, net **−505** versus8b4c8936. No snapshots/dependencies/configuration/fixture assets became orphaned. Removed dead production seams are listed above; the bounded decoder change is the only changed production behavior. No remote actions are performed by this workstream.
+All188 original static declarations are dispositioned:143 KEEP,26 REWRITE,1 OPTIMIZE,10 CONSOLIDATE (4 owners/6 removed),8 DELETE. Two existing generated fuzz declarations remain KEEP. One genuinely new table declaration (2 runtime cases) protects the verified decoder-failure bug; it is separate from original dispositions. One original40-file test (`sound-design-plan-bench.test.ts`) is removed. Test LOC281 added/775 removed, net **−494** versus8b4c8936. No snapshots/dependencies/configuration/fixture assets became orphaned. Removed dead production seams are listed above; the bounded decoder change is the only changed production behavior. No remote actions are performed by this workstream.
 
-Direct static declaration dispositions (the two generated fuzz tests above add two KEEP decisions): CONSOLIDATE (owner)=4, CONSOLIDATE (removed)=5, DELETE=8, KEEP=144, OPTIMIZE=1, REWRITE=26.
+Direct static declaration dispositions (the two generated fuzz tests above add two KEEP decisions): CONSOLIDATE (owner)=4, CONSOLIDATE (removed)=6, DELETE=8, KEEP=143, OPTIMIZE=1, REWRITE=26.
+
+
+### Final resolver consolidation
+
+A final caller census found that only the dedicated resolver unit supplied fake
+module-base/startup arguments; the production singleton called the resolver with
+its defaults. Remove those overrides and the now-unused environment-map argument,
+internalize the helper/key, and delete that implementation-facing declaration.
+The existing fallback owner exercises the actual production factory with both
+`JASPER_SD_MEASURE_WORKER=off` and `0`, requiring literal silence-band values and
+no worker-start failure warning. It closes the shared instance before/after each
+configuration and restores the prior environment in `finally`. The separate real
+rebalance crash workflow supplies an actual custom worker path, observes typed
+job failures and verifies no revision/data change. These public outcomes survive
+lookup refactors without asserting filenames, fake startup arrays or helper URLs.
+
+Validation used Node20.19.0/pnpm10.34.5, two workers and required oracles:
+
+- `env -u NODE_OPTIONS JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm exec vitest run apps/engine/test/sound-design-measure-worker.test.ts apps/engine/test/sound-design-measure-crash.test.ts --maxWorkers=2`: **8/8 passed**, 20.36s runner; seven worker cases plus the real HTTP crash/revision workflow.
+- Removing the actual off guard produced the intended failure: DSP still returned
+  silence, but the public factory logged a failed attempt to start an `off` file.
+  The surviving owner failed its empty-warning assertion, rather than a private
+  resolver-shape assertion. Source was restored in `finally`; the selected
+  fallback owner then passed. Reports: `/tmp/jasper-test-cleanup/measure-resolver/factory-off-{mutant,restored}.{log,json}`.
+- `env NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/engine typecheck`: **passed**, 31.71s using the repository's actual TypeScript compiler. The heap argument also replaces the host's unrelated compiler-interception preload for this command; no type checks are suppressed.
+- A one-off real tsx process discovered the source worker, computed the literal
+  seven-band silence result through it and emitted no fallback warnings (3.43s).
+  This checked genuine dev startup while removing the synthetic arguments; no
+  permanent child-process startup test or new production hook was added.
+
+No whole-suite or scoped speedup is inferred from this follow-up. It removes one
+named/runtime execution while moving its unique configuration assertions to an
+existing behavioral owner. The extra explicit singleton/environment cleanup is
+included in the final test LOC total above.

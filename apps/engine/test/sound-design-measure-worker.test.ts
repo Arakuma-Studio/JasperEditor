@@ -9,7 +9,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MeasureCache, type MeasureDeps, measureSfxEvents } from '../src/sound-design/bed.ts';
 import type { MeasureOp } from '../src/sound-design/measure-core.ts';
-import { resolveMeasureWorker, SoundDesignMeasurer } from '../src/sound-design/measure-pool.ts';
+import {
+	closeSoundDesignMeasurer,
+	SoundDesignMeasurer,
+	soundDesignMeasurer,
+} from '../src/sound-design/measure-pool.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
@@ -223,17 +227,24 @@ afterEach(async () => {
 });
 
 describe('measurement worker URL and lifecycle', () => {
-	it('resolves the worker module: env, bundle, tsx source, or none', () => {
-		expect(resolveMeasureWorker({ JASPER_SD_MEASURE_WORKER: 'off' })).toBeNull();
-		expect(resolveMeasureWorker({ JASPER_SD_MEASURE_WORKER: '/x/w.mjs' })?.href).toBe('file:///x/w.mjs');
-		const src = pathToFileURL(join(HERE, '..', 'src', 'sound-design', 'measure-pool.ts')).href;
-		expect(resolveMeasureWorker({}, src, ['--import', 'file:///x/tsx/dist/loader.mjs'])?.pathname).toMatch(
-			/measure-worker\.ts$/,
-		);
-		expect(resolveMeasureWorker({}, src, [])).toBeNull();
-	});
-
-	it('missing and never-ready workers fall back to the real in-thread measurement', async () => {
+	it('explicit off, missing and never-ready workers use the real in-thread measurement', async () => {
+		const previous = process.env.JASPER_SD_MEASURE_WORKER;
+		await closeSoundDesignMeasurer();
+		try {
+			for (const disabled of ['off', '0']) {
+				process.env.JASPER_SD_MEASURE_WORKER = disabled;
+				const warnings: string[] = [];
+				expect(await soundDesignMeasurer((message) => warnings.push(message)).run(BANDS, { ff: FF })).toEqual(
+					SILENCE,
+				);
+				expect(warnings).toEqual([]);
+				await closeSoundDesignMeasurer();
+			}
+		} finally {
+			await closeSoundDesignMeasurer();
+			if (previous === undefined) delete process.env.JASPER_SD_MEASURE_WORKER;
+			else process.env.JASPER_SD_MEASURE_WORKER = previous;
+		}
 		const missingDir = mkdtempSync(join(tmpdir(), 'jasper-no-measure-worker-'));
 		fixtureDirs.push(missingDir);
 		const missing = new SoundDesignMeasurer(pathToFileURL(join(missingDir, 'missing.mjs')));
