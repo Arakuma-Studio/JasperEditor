@@ -661,6 +661,14 @@ export const TextClipSchema = z.looseObject({
 	moreOptions: TextMoreOptionsSchema.optional(),
 	perCharacter3d: z.boolean().optional(),
 	sourceTextKeyframes: z.array(keyframeSchema(TextContentSchema)).optional(),
+	/**
+	 * spec 13 SH-002 (schema v9): the project text style (`ProjectDocument.textStyles`) the clip is linked to; absent =
+	 * not linked. Read leniently (any value loads; INV-TEXTSTYLE checks it; a style that is gone reads as not linked).
+	 * `content.style` stays the effective style.
+	 */
+	styleId: z.custom<string>(() => true).optional(),
+	/** spec 13 SH-002: where a linked clip deviates from its style (a `TextStyleOverrides` patch; absent = none). */
+	styleOverrides: z.custom<Record<string, unknown>>(() => true).optional(),
 });
 export const SolidClipSchema = z.looseObject({
 	...commonShape,

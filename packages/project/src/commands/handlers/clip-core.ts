@@ -8,6 +8,8 @@ import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
+import type { ProjectTextStyle } from '../../text-styles/model.ts';
+import { diffStyle } from '../../text-styles/patch.ts';
 import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -53,7 +55,7 @@ import { markMulticamClips } from './multicam-placement.ts';
 import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { type HandlerMap, idList, peek } from './util.ts';
 
 type PlaceOptions = {
 	source: { mediaId?: string; syntheticId?: string; sequenceId?: string; projectItemId?: string };
@@ -799,8 +801,65 @@ export const clipCoreHandlers = {
 	},
 } satisfies HandlerMap;
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+	typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function writeTextStyle(
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	fields: Partial<TextStyle>,
+	mode: StyleWriteMode,
+): void {
+	if (mode === 'whole') {
+		clip.content.style = JSON.parse(JSON.stringify(fields)) as never;
+		return;
+	}
+	const st = clip.content.style as unknown as Record<string, unknown>;
+	for (const [k, v] of Object.entries(fields as Record<string, unknown>)) {
+		if (v === undefined) continue;
+		if (
+			mode === 'merge' &&
+			(k === 'shadow' || k === 'background') &&
+			isPlainObject(v) &&
+			isPlainObject(st[k])
+		)
+			Object.assign(st[k] as object, v);
+		else st[k] = v;
+	}
+}
+
+/**
+ * spec 13 SH-002: a clip linked to a project text style records where its effective style now deviates from it
+ * (whichever command wrote the style), so later edits of the style keep them.
+ */
+export function syncStyleOverrides(doc: DDoc, clip: DClip): void {
+	if (clip.kind !== 'text') return;
+	const r = clip as unknown as { styleId?: unknown; styleOverrides?: unknown };
+	if (typeof r.styleId !== 'string') return;
+	const styles = peek<Record<string, ProjectTextStyle>>(doc, 'textStyles');
+	const style = styles && typeof styles === 'object' ? peek<ProjectTextStyle>(styles, r.styleId) : undefined;
+	if (!style || !isPlainObject(style) || !isPlainObject(style.style)) return;
+	const dev = diffStyle(style.style as TextStyle, clip.content.style as TextStyle);
+	if (Object.keys(dev).length) r.styleOverrides = dev;
+	else delete r.styleOverrides;
+}
+
+/**
+ * How a patch's `content.style` is written: `merge` (clip.update): fields replace, a shadow / background object merges
+ * into the existing one (fields it does not name, like `spreadPx`, survive); `objects`: every field given replaces
+ * (Paste Attributes copies the source's objects exactly); `whole`: the patch is the complete new style (text.setStyle
+ * and linked text styles, which also remove fields).
+ */
+export type StyleWriteMode = 'merge' | 'objects' | 'whole';
+
 /** Applies one clip.update patch to a clip (also used by param.set on `clip.update`-written text properties). */
-export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: HandlerContext): void {
+export function applyClipPatch(
+	doc: DDoc,
+	seq: DSeq,
+	clip: DClip,
+	p: ClipPatch,
+	h: HandlerContext,
+	styleMode: StyleWriteMode = 'merge',
+): void {
 	const caps = kindCapabilities(clip.kind);
 	function refuse(field: string): never {
 		return h.fail('E_INVALID_PARAM', `${field} does not apply to ${clip.kind} clips`);
@@ -812,7 +871,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 	if (p.content !== undefined || p.box !== undefined) {
 		if (clip.kind !== 'text') refuse(p.content ? 'content' : 'box');
 		if (p.content?.text !== undefined) clip.content.text = p.content.text;
-		if (p.content?.style) Object.assign(clip.content.style, p.content.style);
+		if (p.content?.style) writeTextStyle(clip, p.content.style as Partial<TextStyle>, styleMode);
 		if (p.content?.runs !== undefined) clip.content.runs = p.content.runs;
 		if (p.content?.paragraphs !== undefined) {
 			if (p.content.paragraphs.length) clip.content.paragraphs = p.content.paragraphs;
@@ -828,6 +887,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 			h.fail('E_NOT_FOUND', `Font not found: ${clip.content.style.fontId}`);
 		if (p.box) Object.assign(clip.box, p.box);
 		layoutText(clip, h, seq.settings.width);
+		if (p.content?.style) syncStyleOverrides(doc, clip);
 	}
 	// Params in the same patch must target the upgraded template version.
 	applyTemplatePatch(seq, clip, p, h);

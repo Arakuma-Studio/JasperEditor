@@ -20,6 +20,7 @@ import { useRegistry } from '../../extensions/react.ts';
 import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
 import { FontPicker } from '../../fonts/FontPicker.tsx';
 import { formatTimecode } from '../../gaps/time-display.ts';
+import { TextStyleSection } from '../../text-styles/TextStyleSection.tsx';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
@@ -35,6 +36,7 @@ import {
 	rowValue,
 	templateOf,
 } from './lib/model.ts';
+import { SHADOW_KEYS, StrokeList } from './TextLookRows.tsx';
 
 const CROP_PARAMS = ['left', 'top', 'right', 'bottom', 'feather'] as const;
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
@@ -295,14 +297,14 @@ function TextSections(props: {
 			'text.sizePx',
 			'text.align',
 			'text.fill',
-			'text.strokeWidth',
-			'text.strokeColor',
 			'text.trackingEm',
 			'text.lineHeight',
 			'text.allCaps',
 		],
 		visual,
 	);
+	const textClips = visual.filter((c): c is Extract<Clip, { kind: 'text' }> => c.kind === 'text');
+	const rowFor = (key: string) => rows([key], visual)[0] ?? null;
 	const setRow = (row: Row, v: unknown) => {
 		// picking a catalog family registers it and sets it on the selected clips in one step.
 		if (row.spec.key === 'text.fontId' && typeof v === 'string' && v.startsWith('catalog:')) {
@@ -322,8 +324,19 @@ function TextSections(props: {
 		const plan = planSet(row, ctx.frame, () => v);
 		ctx.ops.apply(row.label, plan.commands as Command[]);
 	};
+	const primary = ctx.seq.clips[session.getState().selection.timeline.primaryClip ?? ''] ?? null;
 	return (
 		<>
+			{/* spec 13 AS-032: the linked project text style of the selection. */}
+			<Section id="properties.textStyle" title="Text Style">
+				<TextStyleSection
+					session={session}
+					doc={ctx.doc}
+					clips={visual}
+					primary={primary}
+					readOnly={session.getState().readOnly}
+				/>
+			</Section>
 			<Section id="properties.text" title="Text">
 				{render(content ?? null)}
 				{fontRow
@@ -356,10 +369,19 @@ function TextSections(props: {
 					: null}
 				{rest.map((r) => render(r))}
 			</Section>
+			{/* spec 13 AS-030: every stroke (not only the first) and the shadow with its spread. */}
+			<Section id="properties.textStrokes" title="Strokes">
+				<StrokeList clips={textClips} ctx={ctx} rowFor={rowFor} render={render} />
+			</Section>
+			<Section id="properties.textShadow" title="Shadow" defaultOpen={false}>
+				{rows([...SHADOW_KEYS], visual).map((r) => render(r))}
+			</Section>
 			<Section id="properties.textBox" title="Box" defaultOpen={false}>
 				{rows(
 					[
+						'text.background',
 						'text.backgroundColor',
+						'text.backgroundOpacity',
 						'text.backgroundPadding',
 						'text.backgroundRadius',
 						'text.boxWidth',

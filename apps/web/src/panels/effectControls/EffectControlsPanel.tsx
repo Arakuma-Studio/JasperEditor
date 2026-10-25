@@ -64,7 +64,7 @@ import { useNotices } from '../properties/controls/Notices.tsx';
 import { PropertyRow, type RowContext } from '../properties/controls/PropertyRow.tsx';
 import { inspectorFocus } from '../properties/lib/focus.ts';
 import { useInspectorData } from '../properties/lib/hooks.ts';
-import { exactFrameOf, planReset, type Row } from '../properties/lib/model.ts';
+import { exactFrameOf, isAudioClip, isVisualClip, planReset, type Row } from '../properties/lib/model.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
@@ -82,6 +82,7 @@ import {
 	snapDelta,
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
+import { MultiClipEffects } from './MultiClipEffects.tsx';
 import { presetSelection } from './presets.ts';
 import { RoveAcrossTimeItem } from './RovingMenu.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
@@ -265,6 +266,26 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		hint: notices.hint,
 		confirmStopwatchOff: notices.confirmStopwatchOff,
 	};
+	// spec 13 AS-031: several clips of the primary's medium selected → "N clips" mode (shared effects, keys relative
+	// to each clip's In, no mini-timeline). A clip and its linked partner of the other medium stay single-clip.
+	const sameMedium = sel.clips.filter(
+		(c) => isAudioClip(c) === isAudioClip(primary) && (isAudioClip(c) || isVisualClip(c)),
+	);
+	if (sameMedium.length > 1)
+		return (
+			<>
+				<MultiClipEffects
+					session={session}
+					doc={data.doc}
+					seq={seq}
+					clips={sameMedium}
+					anchor={primary}
+					frame={frame}
+					ctx={ctx}
+				/>
+				{notices.element}
+			</>
+		);
 	const seqName =
 		Object.values(data.doc.items).find(
 			(i) =>

@@ -739,6 +739,18 @@ sample grid. Limits left: on Chrome 142 five HTML-in-Canvas specs fail (they tes
 153.0.8010.12) captured only the first child canvas of an HTML-in-Canvas host in a probe, which `capture-safe-canvas.test.ts`
 shows; the desktop smoke and packaged-app checks were not run (no xvfb on the server).
 
+### edit-automation
+
+Spec 15 §2.1 / EA-031 shared mechanics (wp-note [edit-automation.md](wp-notes/edit-automation.md) "Proposals for new
+features"): built — feature table and agent policies for `edit-automation`, `subtitles`, `transcript-cleanup` (Project
+Settings ▸ Agent Proposals, default on), per-feature Review vocabulary, ghosts of adjustment / text clips, keyframe
+ranges and transitions, `meta.anchorOn` (decorated clips, cut frames), Refresh proposal, `E_TOO_LARGE`, the batch
+commands, `list_proposal_features` / `refresh_proposal`. Not yet: the producers themselves (Decorate Cuts, punch-ins,
+Ken Burns, reactions, slides, music beds, stingers, style recipes, automatic subtitles, transcript cleanup — later work
+packages of specs 13–15); until a producer registers a refresher, **Refresh proposal** is disabled with the reason
+"Its producer cannot re-plan items" (sound design has no refresher either: run the pass again). A keyframe-only change
+of a clip is drawn as the changed clip (wash + ghost) plus its key band, not as the band alone.
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build

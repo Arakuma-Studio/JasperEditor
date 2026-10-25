@@ -1,11 +1,15 @@
 // Generated-media location belongs to the project. Preview, cache, and autosave locations are engine-owned;
-// the dialog displays them without persisting them as project settings.
+// the dialog displays them without persisting them as project settings. General ▸ Agent Proposals (spec 15 EA-001):
+// "Allow agents to apply <feature> proposals" per workflow feature (default on), saved with the project; sound design
+// keeps its per-sequence setting (Preferences ▸ Sound Library).
 import type { ScratchInfo, ScratchLocation } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	AUDIO_DISPLAY_FORMATS,
+	agentProposalsAllowed,
 	INGEST_ACTIONS,
 	PROXY_PRESETS,
+	projectSettingFeatures,
 	projectSettingsOf,
 	VIDEO_DISPLAY_FORMATS,
 } from '@jasper/project';
@@ -21,7 +25,9 @@ import {
 	TextField,
 } from '@jasper/ui';
 import { type ReactNode, useEffect, useId, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { errorText, formatBytes } from '../processing/engine-jobs.ts';
+import { featureName } from '../proposals/vocabulary.ts';
 
 export const PROJECT_SETTINGS_DIALOG = 'gaps.projectSettings';
 
@@ -112,6 +118,15 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 		free?: number | null;
 	} | null>(null);
 	const [ing, setIng] = useState(start.ingest);
+	// spec 15 EA-001: what the project stores now, and the dialog's choices (saved with OK, one undoable edit)
+	const agentStart = () =>
+		Object.fromEntries(
+			projectSettingFeatures().map((f) => [
+				f.id,
+				agentProposalsAllowed(session.getCommitted(), f.id) === true,
+			]),
+		) as Record<string, boolean>;
+	const [agents, setAgents] = useState<Record<string, boolean>>(agentStart);
 	const [ingFolder, setIngFolder] = useState<'media' | 'custom'>(
 		start.ingest.destination ? 'custom' : 'media',
 	);
@@ -203,6 +218,23 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 				</Row>
 				<p className="text-pr-small text-pr-dim">
 					Audio units show in the timeline ruler with Timeline Display Settings ▸ Show Audio Time Units.
+				</p>
+			</Group>
+			<Group title="Agent Proposals">
+				{projectSettingFeatures().map((f) => (
+					<Checkbox
+						key={f.id}
+						checked={agents[f.id] === true}
+						onCheckedChange={(c) => setAgents((a) => ({ ...a, [f.id]: c }))}
+						label={t('Allow agents to apply {0} proposals', featureName(f.id))}
+						id={`agent-proposals-${f.id}`}
+					/>
+				))}
+				<p className="text-pr-small text-pr-dim">
+					On (the default): an agent may apply these proposals itself, each as one undoable History step;
+					edits that need your approval still ask. Off: agents only propose and you apply in the Review panel.
+					An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence
+					(Preferences ▸ Sound Library).
 				</p>
 			</Group>
 		</div>
@@ -377,6 +409,11 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 					setTab('ingest');
 					return false;
 				}
+				// only what the user changed here is written (the per-feature entries merge)
+				const was = agentStart();
+				const agentChanges = Object.fromEntries(
+					Object.entries(agents).filter(([id, on]) => was[id] !== on),
+				) as Record<string, boolean>;
 				const r = session.apply({
 					label: 'Project Settings',
 					origin: 'user',
@@ -384,6 +421,7 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 						{
 							type: 'project.updateSettings',
 							settings: {
+								...(Object.keys(agentChanges).length ? { agentProposals: agentChanges } : {}),
 								display: { video, audio },
 								scratch: { media: scratchMode === 'custom' ? scratchPath.trim() : null },
 								ingest: {

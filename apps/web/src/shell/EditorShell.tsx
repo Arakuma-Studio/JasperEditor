@@ -26,6 +26,7 @@ import { listPanels } from '../panels/registry.ts';
 import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.tsx';
 import type { PanelDefinition, PanelKind } from '../panels/types.ts';
 import { ensureAutosaver, flushAutosaver } from '../runtime/save.ts';
+import { selectionHelpers } from '../selection/helpers.ts';
 import { AgentApprovals } from './AgentApprovals.tsx';
 import { type ShellController, type ShellMode, ShellRuntimeProvider, useShellRuntime } from './context.tsx';
 import { DIALOGS, registerShellDialogs } from './dialogs.tsx';
@@ -337,6 +338,16 @@ function ShellBody() {
 						args: { id: w.id },
 						checked: w.id === store.getState().activeId,
 						shortcut: store.shortcutNumber(w.id) ? `Alt+Shift+${store.shortcutNumber(w.id)}` : null,
+					}),
+				),
+			// spec 13 AS-032: Edit ▸ Select ▸ helpers (Same Style, and those other features register).
+			selectionHelpers: () =>
+				selectionHelpers.list().map(
+					(h): ShellMenuItem => ({
+						type: 'command',
+						command: 'select.byHelper',
+						label: h.label(),
+						args: { helper: h.id },
 					}),
 				),
 			panels: () =>

@@ -176,10 +176,13 @@ import {
 	ProposalCreateResponseSchema,
 	ProposalDecisionResponseSchema,
 	ProposalDeleteResponseSchema,
+	ProposalFeaturesResponseSchema,
 	ProposalGetQuerySchema,
 	ProposalListResponseSchema,
 	ProposalMarkAppliedRequestSchema,
 	ProposalNoteRequestSchema,
+	ProposalRefreshRequestSchema,
+	ProposalRefreshResponseSchema,
 	ProposalRejectRequestSchema,
 	ProposalReopenRequestSchema,
 	ProposalResponseSchema,
@@ -1560,6 +1563,19 @@ export const ROUTES = {
 		method: 'DELETE',
 		path: '/api/projects/:projectId/proposals/:proposalId',
 		response: ProposalDeleteResponseSchema,
+	},
+	/** Spec 15 EA-003 "Refresh proposal": the feature's producer re-plans stale items (nothing is applied). */
+	proposalRefresh: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/refresh',
+		body: ProposalRefreshRequestSchema,
+		response: ProposalRefreshResponseSchema,
+	},
+	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
+	proposalFeatures: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposal-features',
+		response: ProposalFeaturesResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 

@@ -114,6 +114,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('edit.removeUnused', 'Remove Unused'),
 			c('edit.selectAll', 'Select All'),
 			c('edit.deselectAll', 'Deselect All'),
+			// spec 13 AS-032: Same Style and the helpers features register (Subtitle Group, Same Template).
+			sub('Select', [{ type: 'dynamic', provider: 'selectionHelpers' }]),
 			sep,
 			c('edit.find', 'Find…'),
 			c('edit.editOriginal', 'Edit Original'),

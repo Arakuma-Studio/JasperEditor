@@ -54,7 +54,9 @@ export type ProposalsEngine = Pick<
 	| 'selectProposalAlternative'
 	| 'markProposalApplied'
 	| 'deleteProposal'
->;
+> &
+	// spec 15 EA-003 "Refresh proposal" (optional: an engine without it refuses the action with a reason)
+	Partial<Pick<EngineClient, 'refreshProposal'>>;
 
 /** What an item shows in review: the engine's state, refined by the local re-validation and decisions. */
 export type ReviewItemState = 'pending' | 'accepted' | 'rejected' | 'stale' | 'invalid' | 'applied';
@@ -619,6 +621,25 @@ export class ProposalsController {
 		if (!it) return Promise.resolve(fail('E_NOT_FOUND', `No item ${itemId} in the proposal`));
 		const n = (it.alternatives?.length ?? 0) + 1;
 		return this.selectAlternative(itemId, ((((it.selectedAlternative ?? 0) + dir) % n) + n) % n);
+	}
+
+	/**
+	 * "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans the stale items (or `itemIds`) on the current
+	 * document; they come back pending for review (nothing is applied). Refused with the engine's reason when the
+	 * feature's producer does not refresh (E_NOT_REFRESHABLE).
+	 */
+	async refreshItems(itemIds: readonly string[] | 'stale' = 'stale'): Promise<ActionResult> {
+		const engine = this.engine;
+		const id = this.store.getState().activeId;
+		if (!engine || !id) return fail('E_NO_ENGINE', 'No proposal is under review');
+		if (!engine.refreshProposal) return fail('E_NOT_REFRESHABLE', 'This engine cannot refresh proposals');
+		const refresh = engine.refreshProposal.bind(engine);
+		return this.call(async () => {
+			const r = await refresh(this.session.projectId, id, {
+				itemIds: itemIds === 'stale' ? 'stale' : [...itemIds],
+			});
+			return { proposal: r.proposal, changed: [...r.refreshed, ...r.dropped] };
+		});
 	}
 
 	/** The reviewer's note on an item (null / "" clears it); returned to agents. */
