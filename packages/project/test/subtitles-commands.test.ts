@@ -242,7 +242,7 @@ describe('editing integrity (AS-006)', () => {
 describe('regenerate, align to cuts (AS-006, AS-012)', () => {
 	it('regenerate keeps clips that still match and rebuilds the rest', () => {
 		const { H, a } = shot({ cut: false });
-		const r = gen(H);
+		const r = gen(H, { rules: { maxWords: 3 } });
 		const first = subs(H)[0]!;
 		const trs = Object.values(H.doc.transcripts).find((t) => t.mediaId === a)!;
 		const last = trs.words.length - 1;
@@ -342,7 +342,7 @@ describe('groups and templates (AS-020)', () => {
 describe('load repair (schema v9 fields)', () => {
 	it('repairs damaged subtitle fields conservatively and idempotently', () => {
 		const { H } = shot({ cut: false });
-		const r = gen(H);
+		const r = gen(H, { rules: { maxWords: 3 } });
 		const doc = JSON.parse(JSON.stringify(H.doc)) as ProjectDocument;
 		const seq = doc.sequences[H.seqId]! as Sequence & { captionGroups: Record<string, unknown> };
 		const [c1, c2] = Object.values(seq.clips).filter((c) => captionOf(c));
