@@ -760,6 +760,9 @@ editing, randomize, bulk import and agent batches.
 [wp-notes/social-comments.md](wp-notes/social-comments.md) "Template implementation". The Instagram, YouTube and X
 cards are not built yet: a clip set to one of them shows a striped "not available yet" card in preview, has no
 gallery preset, and every export path refuses it (`TEMPLATE_NOT_INSTALLED`, "social-comment@1 (X post card)").
+Add another and bulk import (CSV / pasted TSV, MCP `import_motion_graphics_csv`) are built — "Add another & bulk
+import". Their gaps: an `Image URL` column is reported as ignored (no remote picture import), XLSX is not read, and
+Add another has no keyboard shortcut (the free chord collides with macOS's Dock toggle).
 
 ## For agents choosing work
 

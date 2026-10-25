@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mgRegistry } from '@jasper/mg-templates';
+import { mgRegistry, SOCIAL_IMPORT_HINTS } from '@jasper/mg-templates';
 import * as project from '@jasper/project';
 import { COMMAND_CATALOG, defaultRegistries, PROPERTY_SPECS, TRANSITION_SPECS } from '@jasper/project';
 
@@ -100,7 +100,13 @@ for (const def of mgRegistry.definitions()) {
 		add(s.label);
 		add(s.description);
 	}
+	// bulk import: the reasons a template gives for the columns it ignores
+	for (const reason of Object.values(def.ui?.import?.ignored ?? {})) add(reason);
 }
+// bulk import (docs/wp-notes/social-comments.md "Add another & bulk import"): parser / planner messages and the
+// social-comment hints (also listed when no installed template uses them yet)
+for (const s of Object.values(project.MG_IMPORT_TEXT)) add(s);
+for (const reason of Object.values(SOCIAL_IMPORT_HINTS.ignored ?? {})) add(reason);
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
 writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);

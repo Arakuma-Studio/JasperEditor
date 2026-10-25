@@ -16,6 +16,8 @@ import { CANVASES } from '../../core.ts';
 import {
 	type CommentSpan,
 	fillSocialParams,
+	SOCIAL_ADD_ANOTHER,
+	SOCIAL_IMPORT_HINTS,
 	SOCIAL_PARAM_NAMES,
 	SOCIAL_VARIANTS,
 	type SocialCommentParams,
@@ -480,5 +482,9 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 			wordReveal: { label: 'Words One by One' },
 			likeTick: { label: 'Likes Tick Up', ...byVariant('likeTick') },
 		},
+		// "Add another" re-randomizes identity and stats (keeps look, text and animation); bulk-import column aliases
+		// (docs/wp-notes/social-comments.md "Add another & bulk import")
+		addAnother: SOCIAL_ADD_ANOTHER,
+		import: SOCIAL_IMPORT_HINTS,
 	},
 };
