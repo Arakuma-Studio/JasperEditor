@@ -8,7 +8,7 @@
 // serialisers convert to and from edit units (frames for picture, samples for sound, so audio edits are exact).
 //
 // Port of FilmCraft `crates/interchange/src/comp.rs` (MIT OR Apache-2.0).
-import { type Animatable, type Keyframe, transitionSpec } from '@jasper/project';
+import { type Animatable, type Keyframe, segmentShape, transitionSpec } from '@jasper/project';
 import { Builder, dbToGain, describeClip, frameOf, gainToDb, newClip, reportVisualLoss } from './build.ts';
 import { transitionFromName } from './effects.ts';
 import type { IClip, IMarker, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
@@ -271,7 +271,12 @@ export function fromProject(
 		const v = c.volumeDb;
 		if (v?.keyframes.length) {
 			const linear = !v.keyframes.every((k) => k.interpolation === 'hold');
-			if (v.keyframes.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold'))
+			// keyframe-sides: any curved segment (also a Linear key into an eased incoming side).
+			if (
+				v.keyframes.some(
+					(_, i) => i < v.keyframes.length - 1 && typeof segmentShape(v.keyframes, i) === 'object',
+				)
+			)
 				report.info('Bezier volume keyframes were exported as linear');
 			const sp = Math.abs(c.speed) > 1e-9 ? Math.abs(c.speed) : 1;
 			return {

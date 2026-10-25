@@ -10,10 +10,19 @@
 // are kept verbatim and only flagged (`presetIssues`), so presets made with a newer build stay intact.
 import { z } from 'zod';
 import { utf8Length } from '../clipboard/payload.ts';
-import type { Ease, Expression, Interpolation, ParamValue, RationalT, Vec2 } from '../schema/common.ts';
+import type {
+	Ease,
+	Expression,
+	InInterpolation,
+	Interpolation,
+	ParamValue,
+	RationalT,
+	Vec2,
+} from '../schema/common.ts';
 import {
 	EaseSchema,
 	ExpressionSchema,
+	InInterpolationSchema,
 	InterpolationSchema,
 	ParamValueSchema,
 	RationalSchema,
@@ -48,6 +57,8 @@ export const PresetKeyframeSchema = z.looseObject({
 	time: z.number().int(),
 	value: z.unknown(),
 	interpolation: InterpolationSchema.optional(),
+	/** keyframe-sides: the key's incoming side (absent = read the legacy way). */
+	inInterpolation: InInterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
 });
@@ -56,6 +67,7 @@ export type PresetKeyframe<T = unknown> = {
 	time: number;
 	value: T;
 	interpolation?: Interpolation;
+	inInterpolation?: InInterpolation;
 	easeIn?: Ease;
 	easeOut?: Ease;
 };

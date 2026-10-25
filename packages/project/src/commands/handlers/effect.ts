@@ -2,7 +2,7 @@
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';
 import { resolveStripRef } from '../../audio/strip.ts';
-import { EASE_PRESETS, retimeRoving } from '../../keyframes.ts';
+import { EASE_PRESETS, keySidesIssue, retimeRoving } from '../../keyframes.ts';
 import { refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
@@ -12,6 +12,7 @@ import {
 	EaseSchema,
 	type Expression,
 	ExpressionSchema,
+	InInterpolationSchema,
 	InterpolationSchema,
 	type Keyframe,
 	type ParamValue,
@@ -69,6 +70,13 @@ export function buildParams(
 					(k as { interpolation?: unknown }).interpolation ?? 'linear',
 				);
 				if (!interp.success) h.fail('E_INVALID_PARAM', `${where}: unknown interpolation`);
+				// keyframe-sides: an explicit incoming side must be readable and consistent with the outgoing one.
+				const rawIn = (k as { inInterpolation?: unknown }).inInterpolation;
+				const inInterp = rawIn === undefined ? undefined : InInterpolationSchema.safeParse(rawIn);
+				if (inInterp && !inInterp.success)
+					h.fail('E_INVALID_PARAM', `${where}: unknown incoming interpolation`);
+				const sides = keySidesIssue({ interpolation: interp.data, inInterpolation: inInterp?.data });
+				if (sides) h.fail('E_INVALID_PARAM', `${where}: ${sides}`);
 				const ease = (e: unknown) => {
 					if (e === undefined) return { ...EASE_PRESETS.linear };
 					const r = EaseSchema.safeParse(e);
@@ -92,6 +100,7 @@ export function buildParams(
 					time: time as number,
 					value: v,
 					interpolation: rule.holdOnly ? ('hold' as const) : interp.data!,
+					...(inInterp?.data && !rule.holdOnly ? { inInterpolation: inInterp.data } : {}),
 					easeIn: ease((k as { easeIn?: unknown }).easeIn),
 					easeOut: ease((k as { easeOut?: unknown }).easeOut),
 					...(spatial ? { spatial } : {}),

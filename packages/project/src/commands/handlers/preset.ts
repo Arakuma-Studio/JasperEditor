@@ -11,7 +11,7 @@
 import type { Draft } from 'immer';
 import { type PresetAnim, parseEffectPreset } from '../../effect-presets/schema.ts';
 import { presetKeyTime } from '../../effect-presets/time.ts';
-import { EASE_PRESETS } from '../../keyframes.ts';
+import { EASE_PRESETS, normalizeKeySides } from '../../keyframes.ts';
 import { CROP_EFFECT, type EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { intrinsicBoxOf, resolvePropertySpec } from '../../registry/properties.ts';
@@ -83,18 +83,24 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			const byTime = new Map<number, Keyframe<T>>();
 			for (const k of [...(a.keyframes ?? [])].sort((x, y) => x.time - y.time)) {
 				const time = keyTime(k.time);
-				byTime.set(time, {
+				const key: Keyframe<T> = {
 					id: h.ids.next('kf'),
 					time,
 					value: val(k.value),
 					interpolation: rule.holdOnly ? 'hold' : (k.interpolation ?? 'linear'),
+					// keyframe-sides: the incoming side travels with the preset (made consistent below).
+					...(k.inInterpolation !== undefined && !rule.holdOnly
+						? { inInterpolation: k.inInterpolation }
+						: {}),
 					easeIn: k.easeIn
 						? { influence: k.easeIn.influence, slope: k.easeIn.slope }
 						: { ...EASE_PRESETS.linear },
 					easeOut: k.easeOut
 						? { influence: k.easeOut.influence, slope: k.easeOut.slope }
 						: { ...EASE_PRESETS.linear },
-				});
+				};
+				normalizeKeySides(key);
+				byTime.set(time, key);
 			}
 			const expression = validExpression(a.expression, label, h);
 			const anim: Animatable<T> = {
@@ -142,6 +148,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 							time: keyTime(k.time),
 							value: clone(k.value),
 							interpolation: k.interpolation ?? 'linear',
+							...(k.inInterpolation !== undefined ? { inInterpolation: k.inInterpolation } : {}),
 							easeIn: k.easeIn ?? { ...EASE_PRESETS.linear },
 							easeOut: k.easeOut ?? { ...EASE_PRESETS.linear },
 						}))

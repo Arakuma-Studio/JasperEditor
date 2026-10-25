@@ -12,6 +12,7 @@ import {
 	type LaneTime,
 	mergeDips,
 	SEQUENCE_LANE,
+	segmentShape,
 	unwriteCurve,
 } from '../src/index.ts';
 
@@ -138,7 +139,10 @@ export function checkCurvedDips(
 		if (last && w[0] <= last[1]) last[1] = Math.max(last[1], w[1]);
 		else w0.push([w[0], w[1]]);
 	}
-	const curved = kfs.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold');
+	// keyframe-sides: a Linear key into an eased incoming side curves too.
+	const curved =
+		kfs.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold') ||
+		kfs.some((_, j) => j < kfs.length - 1 && typeof segmentShape(kfs, j) === 'object');
 	// rebuilt curves: within sampling (1 ms samples at most 0.001 dB off; steeper bends a little more);
 	// straight ones: exact (to rounding)
 	const tolOut = curved ? 0.05 : 1e-6;
