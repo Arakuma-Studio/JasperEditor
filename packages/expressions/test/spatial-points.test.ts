@@ -51,8 +51,8 @@ describe('expressions on effect points', () => {
 			const got = evaluate(fx.params.position as Animatable<Vec2>, t) as Vec2;
 			expect(got[0]).toBeCloseTo(want[0], 9);
 			expect(got[1]).toBeCloseTo(want[1], 9);
-			// The keyframed path itself is curved and differs from the metric-free reading.
-			expect(evaluate(raw(), t, M)).not.toEqual(evaluate(raw(), t));
+			// Between the keys the keyframed path is curved and differs from the metric-free reading.
+			if (frame === 45 || frame === 75) expect(evaluate(raw(), t, M)).not.toEqual(evaluate(raw(), t));
 		}
 		// Render snapshots (preview, Remotion, export) resolve the same values.
 		const snap = bindSnapshotExpressions(
