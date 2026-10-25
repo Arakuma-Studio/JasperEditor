@@ -407,7 +407,7 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 		expect(baked.effects).toEqual([]);
 		expect(baked).toMatchObject({ start: 0, duration: 1, opacity: { value: 100, keyframes: [] } });
 		const m = resolveLayerProps(baked, 0).matrix;
-		expect([m.a, m.b, m.c, m.d, m.e, m.f]).toEqual([1, 0, 0, 1, -pic.x, -pic.y]);
+		expect([m.a, m.b, m.c, m.d, m.e, m.f].map((v) => v + 0)).toEqual([1, 0, 0, 1, -pic.x, -pic.y]);
 		// A static subtitle keeps the ordinary still recipe.
 		const s = subtitle();
 		expect(layerStill(clipOf(snapOf(s.d), s.clip))).toBeNull();
