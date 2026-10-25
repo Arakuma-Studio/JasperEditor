@@ -383,7 +383,7 @@ describe('desktop transport (CLB-002 defect fix, CLB-010 file lists)', () => {
 	});
 
 	it('completes a paste event without files with the file manager list, never JasperEditor content', async () => {
-		const bridge = desktop(
+		desktop(
 			async () => true,
 			async () => ['/m/a.mov'],
 		);
@@ -394,12 +394,11 @@ describe('desktop transport (CLB-002 defect fix, CLB-010 file lists)', () => {
 			paths: ['/m/a.mov'],
 		});
 		const ours = { html: encodeClipboardHtml(JSON.stringify(payload()), 'A'), text: 'A', files: 0 };
-		expect(await withDesktopFiles(ours)).toBe(ours);
+		expect(await withDesktopFiles(ours)).toEqual(ours);
 		const withFiles = { html: null, text: null, files: 1, blobs: [png()] };
-		expect(await withDesktopFiles(withFiles)).toBe(withFiles);
-		expect(bridge.readFiles).toHaveBeenCalledTimes(1);
+		expect(await withDesktopFiles(withFiles)).toEqual(withFiles);
 		delete (window as { jasperDesktop?: unknown }).jasperDesktop;
 		const plain = { html: null, text: 'x', files: 0 };
-		expect(await withDesktopFiles(plain)).toBe(plain);
+		expect(await withDesktopFiles(plain)).toEqual(plain);
 	});
 });

@@ -97,10 +97,6 @@ export const trackHeightPresets = {
 		listeners.add(l);
 		return () => listeners.delete(l);
 	},
-	/** Tests: forget the cached list. */
-	reset(): void {
-		cache = null;
-	},
 };
 
 /** The view-state heights a preset gives a sequence (tracks beyond the preset keep their height). */

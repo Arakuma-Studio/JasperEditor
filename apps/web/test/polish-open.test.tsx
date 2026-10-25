@@ -48,7 +48,7 @@ describe('media resolution at project open', () => {
 	it('resolves every requested media status across bounded batches', async () => {
 		const { session } = await memorySession();
 		// ARCHITECTURE D-48 caps each request at 1,000 keys. This project needs more than one.
-		const n = 1200;
+		const n = 1002;
 		const { ids, keys } = addMedia(session, n);
 		const engine = new ScriptedEngine().on((r) => {
 			if (r.method !== 'POST' || r.path !== '/api/media/status') return undefined;

@@ -10,8 +10,8 @@ import {
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clipboardMemory, pasteSourceOf, writeClipboard } from '../src/clipboard/system.ts';
 import {
 	type CommandCtx,
@@ -305,6 +305,7 @@ describe('Paste Attributes dialog (CLB-005, FX-012)', () => {
 
 describe('keyboard: native paste (CLB-002) and text fields', () => {
 	it('Ctrl+V on the timeline is left to the browser (no preventDefault); in a text field it is never taken', async () => {
+		vi.useFakeTimers();
 		const p = project(12);
 		const t = p.apply([text(0, 'V1', '$t')]);
 		p.session.select('timeline', [t.refs.$t!]);
@@ -321,7 +322,7 @@ describe('keyboard: native paste (CLB-002) and text fields', () => {
 			const key = new KeyboardEvent('keydown', { code: 'KeyV', key: 'v', ctrlKey: true, cancelable: true });
 			document.body.dispatchEvent(key);
 			expect(key.defaultPrevented).toBe(false);
-			await waitFor(() => expect(ran).toEqual(['timeline.paste']));
+			await vi.waitFor(() => expect(ran).toEqual(['timeline.paste']));
 			const input = document.createElement('input');
 			document.body.append(input);
 			const inField = new KeyboardEvent('keydown', {
@@ -332,7 +333,7 @@ describe('keyboard: native paste (CLB-002) and text fields', () => {
 				bubbles: true,
 			});
 			input.dispatchEvent(inField);
-			await new Promise((r) => setTimeout(r, 200));
+			await vi.advanceTimersByTimeAsync(200);
 			expect(ran).toEqual(['timeline.paste']);
 			const copy = new KeyboardEvent('keydown', { code: 'KeyC', key: 'c', ctrlKey: true, cancelable: true });
 			document.body.dispatchEvent(copy);
@@ -340,6 +341,7 @@ describe('keyboard: native paste (CLB-002) and text fields', () => {
 			input.remove();
 		} finally {
 			off();
+			vi.useRealTimers();
 		}
 	});
 });

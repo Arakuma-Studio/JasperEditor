@@ -280,12 +280,21 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 	});
 
 	it('throttles playhead.changed to ≤ 10 Hz with a trailing update', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000);
 		const { bridge, session } = makeBridge();
-		const frames: number[] = [];
-		bridge.on('playhead.changed', (p) => frames.push((p as { frame: number }).frame));
-		for (let f = 1; f <= 30; f++) session.transport.seek(f);
-		expect(frames).toEqual([1]);
-		await new Promise((r) => setTimeout(r, 130));
-		expect(frames).toEqual([1, 30]);
+		try {
+			const frames: number[] = [];
+			bridge.on('playhead.changed', (p) => frames.push((p as { frame: number }).frame));
+			for (let f = 1; f <= 30; f++) session.transport.seek(f);
+			expect(frames).toEqual([1]);
+			await vi.advanceTimersByTimeAsync(99);
+			expect(frames).toEqual([1]);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(frames).toEqual([1, 30]);
+		} finally {
+			bridge.dispose();
+			vi.useRealTimers();
+		}
 	});
 });

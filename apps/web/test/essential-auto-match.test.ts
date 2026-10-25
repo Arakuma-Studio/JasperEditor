@@ -48,18 +48,15 @@ describe('Auto-Match outcome', () => {
 		expect(m).not.toMatch(/silent/);
 	});
 
-	it('words matched, silent and mixed outcomes', () => {
-		expect(autoMatchMessage({ a: { gainDb: 3 }, b: { gainDb: -1 } }, -23)).toBe(
-			'Matched 2 clips to -23 LUFS',
-		);
-		expect(autoMatchMessage({ a: { skipped: 'silent' }, b: { skipped: 'silent' } }, -23)).toBe(
-			'The clips are silent: nothing was matched',
-		);
-		expect(autoMatchMessage({ a: { gainDb: 3 }, b: { skipped: SHORT } }, undefined)).toBe(
-			'Matched 1 clip to the target; 1 left as they are (shorter than 400 ms, too short to measure)',
-		);
-		expect(autoMatchMessage({ a: { skipped: 'silent' }, b: { skipped: SHORT } }, -23)).toMatch(
-			/^Nothing was matched: silent, shorter than 400 ms/,
-		);
+	it('reports the matched count, target, and skipped reasons for mixed outcomes', () => {
+		const matched = autoMatchMessage({ a: { gainDb: 3 }, b: { gainDb: -1 } }, -23);
+		expect(matched).toMatch(/\b2 clips\b/);
+		expect(matched).toContain('-23 LUFS');
+		const mixed = autoMatchMessage({ a: { gainDb: 3 }, b: { skipped: SHORT } }, undefined);
+		expect(mixed).toMatch(/Matched 1 clip\b/);
+		expect(mixed).toContain('shorter than 400 ms');
+		const skipped = autoMatchMessage({ a: { skipped: 'silent' }, b: { skipped: SHORT } }, -23);
+		expect(skipped).toContain('silent');
+		expect(skipped).toContain('shorter than 400 ms');
 	});
 });

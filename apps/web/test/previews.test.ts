@@ -49,24 +49,30 @@ describe('preview status store', () => {
 				};
 			},
 		} as unknown as EngineClient;
+		vi.useFakeTimers();
 		previewStatusStore.connect(client);
-		previewStatusStore.ensure(settings, ['a', 'b'], []);
-		await vi.waitFor(() => expect(previewStatusStore.get(settings)).not.toBeNull());
-		expect([...previewStatusStore.get(settings)!.video]).toEqual(['a']);
-		previewStatusStore.onEvent({
-			id: 1,
-			createdAt: '',
-			type: 'previews.changed',
-			payload: { formatKey: 'ffffffffffffffff', hash: 'b', kind: 'video' },
-		} as never);
-		expect(previewStatusStore.get(settings)!.video.has('b')).toBe(true);
-		previewStatusStore.onEvent({
-			id: 2,
-			createdAt: '',
-			type: 'previews.changed',
-			payload: { deleted: 2 },
-		} as never);
-		expect(previewStatusStore.get(settings)).toBeNull();
-		previewStatusStore.connect(null);
+		try {
+			previewStatusStore.ensure(settings, ['a', 'b'], []);
+			await vi.runAllTimersAsync();
+			expect(previewStatusStore.get(settings)).not.toBeNull();
+			expect([...previewStatusStore.get(settings)!.video]).toEqual(['a']);
+			previewStatusStore.onEvent({
+				id: 1,
+				createdAt: '',
+				type: 'previews.changed',
+				payload: { formatKey: 'ffffffffffffffff', hash: 'b', kind: 'video' },
+			} as never);
+			expect(previewStatusStore.get(settings)!.video.has('b')).toBe(true);
+			previewStatusStore.onEvent({
+				id: 2,
+				createdAt: '',
+				type: 'previews.changed',
+				payload: { deleted: 2 },
+			} as never);
+			expect(previewStatusStore.get(settings)).toBeNull();
+		} finally {
+			previewStatusStore.connect(null);
+			vi.useRealTimers();
+		}
 	});
 });

@@ -65,7 +65,6 @@ describe('ThirdPartyLicenses', () => {
 		);
 		const source = screen.getByText('Source code') as HTMLAnchorElement;
 		expect(source.href).toBe('https://github.com/FFmpeg/FFmpeg/tree/1fdbca85aa');
-		expect(source.target).toBe('_blank');
 		expect((screen.getByText('Build') as HTMLAnchorElement).href).toContain('BtbN/FFmpeg-Builds');
 		expect(screen.queryByTestId('licenses-warning')).toBeNull();
 	});

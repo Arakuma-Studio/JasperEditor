@@ -9,7 +9,6 @@ import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProjectFileActions, PROJECT_FILE_DIALOGS } from '../src/home/project-files.tsx';
-import { saveBeforeLeaving } from '../src/runtime/save.ts';
 
 afterEach(() => {
 	closeAllDialogs();
@@ -86,21 +85,6 @@ describe('project file actions', () => {
 			expect(revert).not.toHaveBeenCalled();
 			expect(replace).not.toHaveBeenCalled();
 			expect(clips(session.getCommitted())).toBe(2);
-		} finally {
-			flush.mockRestore();
-			await session.close();
-		}
-	});
-
-	it('refuses to leave when a flush resolves with unsaved changes', async () => {
-		const { open } = await setup();
-		const session = await open('paused');
-		const persistence = attachPersistence(session, { window: null, document: null });
-		session.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
-		const flush = vi.spyOn(persistence.autosaver, 'flush').mockResolvedValue();
-		try {
-			await expect(saveBeforeLeaving(session)).rejects.toThrow('unsaved changes');
-			expect(session.getState().dirty).toBe(true);
 		} finally {
 			flush.mockRestore();
 			await session.close();

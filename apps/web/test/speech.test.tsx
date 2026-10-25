@@ -365,13 +365,13 @@ describe('automatic transcription on import', () => {
 		const { session, seqId } = makeSession();
 		const { client, calls } = fakeEngine({ models: [model('whisper-base', true)] });
 		saveAuto({ enabled: true, model: 'whisper-base', language: 'fr' });
-		render(
-			<EngineProvider client={client}>
-				<AutoTranscribeHost session={session} />
-			</EngineProvider>,
-		);
-		await waitFor(() => expect(calls.some((c) => c.url === '/health')).toBe(true));
-		await new Promise((r) => setTimeout(r, 50));
+		await act(async () => {
+			render(
+				<EngineProvider client={client}>
+					<AutoTranscribeHost session={session} />
+				</EngineProvider>,
+			);
+		});
 		const asset = JSON.parse(JSON.stringify(Object.values(session.getCommitted().media)[0])) as Record<
 			string,
 			unknown
@@ -392,9 +392,10 @@ describe('automatic transcription on import', () => {
 		);
 		const post = calls.find((c) => c.url === `/api/media/${KEY}/transcribe`)!;
 		expect(post.body).toMatchObject({ model: 'whisper-base', language: 'fr' });
-		session.undo();
-		session.redo();
-		await new Promise((r) => setTimeout(r, 50));
+		await act(async () => {
+			session.undo();
+			session.redo();
+		});
 		expect(calls.filter((c) => c.url === `/api/media/${KEY}/transcribe`)).toHaveLength(1);
 		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
 	});

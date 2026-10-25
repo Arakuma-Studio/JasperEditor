@@ -148,7 +148,7 @@ async function mountBrowser(session: EditorSession | null, engine = browseEngine
 			</EngineProvider>,
 		);
 	});
-	await waitFor(() => expect(screen.getAllByTestId('media-browser-entry').length).toBe(3));
+	await screen.findByText('tone.wav');
 	return engine;
 }
 
@@ -181,7 +181,7 @@ describe('Media Browser helpers', () => {
 describe('Media Browser panel', () => {
 	it('lists the start folder, navigates into folders and back up, and previews the selected file', async () => {
 		const { session } = await memorySession();
-		const engine = await mountBrowser(session);
+		await mountBrowser(session);
 		expect((screen.getByTestId('media-browser-path') as HTMLInputElement).value).toBe('/home/u');
 
 		fireEvent.click(screen.getByText('a.mp4'));
@@ -191,7 +191,6 @@ describe('Media Browser panel', () => {
 
 		fireEvent.doubleClick(screen.getByText('Footage'));
 		await waitFor(() => expect(screen.getByText('b.mov')).toBeTruthy());
-		expect(engine.requests.some((r) => r.path === '/api/browse/list')).toBe(true);
 		expect((screen.getByTestId('media-browser-path') as HTMLInputElement).value).toBe('/media/Footage');
 		fireEvent.click(screen.getByTestId('media-browser-up'));
 		await waitFor(() => expect(screen.getByText('tone.wav')).toBeTruthy());

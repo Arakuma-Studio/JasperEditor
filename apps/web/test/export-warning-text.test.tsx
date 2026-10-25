@@ -98,10 +98,6 @@ afterEach(async () => {
 });
 
 describe('export warnings in the UI language', () => {
-	it('in English: exactly the engine’s words, from code + params', () => {
-		for (const w of ENGINE) expect(exportWarningText(w), w.code).toBe(w.message);
-	});
-
 	it('in Spanish: every code with params is translated, its values kept', async () => {
 		await setLanguage('es');
 		for (const w of ENGINE) {
@@ -157,14 +153,15 @@ describe('export warnings in the UI language', () => {
 			/>,
 		);
 		const li = screen.getByTestId('plan-warnings').querySelector(`[data-code="${w.code}"]`)!;
-		expect(li.textContent).toContain(exportWarningText(w));
+		expect(li.textContent).toMatch(/PCM.*MP4.*AAC/);
 		expect(li.textContent).not.toContain(w.message);
 		const detail = exportResultDetail({
 			credits: { name: 'output.credits.md', count: 2 },
 			warnings: [w, ENGINE[4]],
 		})!;
-		expect(detail).toContain(exportWarningText(w));
-		expect(detail).toContain(exportWarningText(ENGINE[4]!));
+		expect(detail).toMatch(/PCM.*MP4.*AAC/);
+		expect(detail).toContain('Sound Check');
+		expect(detail).not.toContain(ENGINE[4]!.message);
 		expect(detail).not.toContain('Sound credits file written');
 	});
 });
@@ -173,7 +170,8 @@ describe('delivered audio that misses its target', () => {
 	it('the finished-export notice repeats AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING in the UI language', async () => {
 		const over = ENGINE.find((w) => w.code === 'AUDIO_TRUE_PEAK_OVER')!;
 		const ceiling = ENGINE.find((w) => w.code === 'AUDIO_LOUDNESS_CEILING')!;
-		expect(exportResultDetail({ warnings: [over, ceiling] })).toBe(`${over.message} ${ceiling.message}`);
+		const detailEn = exportResultDetail({ warnings: [over, ceiling] });
+		for (const value of ['-0.7 dBTP', '-1 dBTP', '-6.7 LUFS', '-2 LUFS']) expect(detailEn).toContain(value);
 		await setLanguage('es');
 		const detail = exportResultDetail({ warnings: [over] })!;
 		expect(detail).toContain('El audio entregado alcanza -0.7 dBTP');

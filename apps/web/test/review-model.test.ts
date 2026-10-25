@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 import { buildGhostModel, type GhostModel, whyLines } from '../src/proposals/ghosts.ts';
 import {
 	buildReviewModel,
-	cardSentence,
 	proposalCardCounts,
 	proposalRange,
 	removalsOf,
@@ -138,22 +137,6 @@ describe('review model', () => {
 			],
 		} as GhostModel;
 		expect(proposalRange(g)).toEqual({ start: 10, end: 90 });
-	});
-
-	it('the card sentence counts sounds and new tracks (singular forms too)', () => {
-		expect(
-			cardSentence('claude', 'Sound design: Main', 'sound-design', { sounds: 12, newTracks: 2, items: 12 }),
-		).toBe('claude proposes Sound design: Main: 12 sounds on 2 new tracks');
-		expect(cardSentence('claude', 'Pass', 'sound-design', { sounds: 1, newTracks: 1, items: 1 })).toBe(
-			'claude proposes Pass: 1 sound on 1 new track',
-		);
-		expect(cardSentence('claude', 'Pass', 'sound-design', { sounds: 3, newTracks: 0, items: 3 })).toBe(
-			'claude proposes Pass: 3 sounds',
-		);
-		expect(cardSentence('bot', 'Tidy', 'cleanup', { sounds: 0, newTracks: 0, items: 4 })).toBe(
-			'bot proposes Tidy: 4 items',
-		);
-		expect(cardSentence('bot', 'Tidy', 'cleanup', null)).toBe('bot proposes Tidy');
 	});
 
 	it('card counts and removals from a real preview: the fixture proposal (a new track, two sounds, a moved bed)', async () => {

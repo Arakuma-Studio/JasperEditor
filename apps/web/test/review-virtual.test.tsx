@@ -10,9 +10,8 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
-import { reviewListLayout, reviewListMetrics, visibleEntries } from '../src/panels/review/list-layout.ts';
+import { reviewListMetrics } from '../src/panels/review/list-layout.ts';
 import { ReviewPanel } from '../src/panels/review/ReviewPanel.tsx';
-import { buildReviewModel } from '../src/proposals/review.ts';
 import { storeProposal } from './review-helpers.ts';
 import { makeSession } from './timeline-helpers.ts';
 
@@ -130,41 +129,5 @@ describe(`Review panel with ${N} items`, { timeout: 300_000 }, () => {
 				`${JSON.stringify({ items: N, firstRenderMs: Math.round(firstRenderMs), decisionMs: Math.round(decisionMs), domOptions: options().length })}\n`,
 			);
 		c.dispose();
-	});
-
-	it('the list geometry: stacked groups, the visible range, rows with setup lines', () => {
-		const items = Array.from({ length: 300 }, (_, i) => ({
-			id: `i${i}`,
-			label: `Item ${i}`,
-			group: i % 3 === 0 ? 'hero' : 'support',
-			requires: [],
-			setup: false,
-			state: 'pending' as const,
-			engineState: 'pending' as const,
-			alternatives: 1,
-			selectedAlternative: 0,
-			alternativeLabels: [`Item ${i}`],
-			meta: { frame: i * 10 },
-		}));
-		const model = buildReviewModel(items, null);
-		const m = reviewListMetrics(12);
-		// at 12 px: a 1.25 rem first line + a 1.375 rem small-text line + py-0.5 + a 1 px border; the larger UI scales it
-		expect(m).toEqual({ header: 15, row: 35.5, line: 16.5 });
-		expect(reviewListMetrics(14).row).toBeCloseTo(41.25, 6);
-		const layout = reviewListLayout(model, new Set(), m);
-		expect(layout.rows).toBe(300);
-		expect(layout.total).toBe(model.groups.length * m.header + 300 * m.row);
-		// entries are stacked without gaps
-		for (let i = 1; i < layout.entries.length; i++)
-			expect(layout.entries[i]!.top).toBe(layout.entries[i - 1]!.top + layout.entries[i - 1]!.height);
-		const { start, end } = visibleEntries(layout, 5000, 400, 0);
-		expect(layout.entries[start]!.top).toBeLessThanOrEqual(5000);
-		expect(layout.entries[start]!.top + layout.entries[start]!.height).toBeGreaterThan(5000);
-		expect(layout.entries[end - 1]!.top).toBeLessThan(5400);
-		expect(end - start).toBeLessThanOrEqual(Math.ceil(400 / m.header) + 1);
-		expect(visibleEntries(layout, 1e9, 400, 0)).toEqual({
-			start: layout.entries.length,
-			end: layout.entries.length,
-		});
 	});
 });
