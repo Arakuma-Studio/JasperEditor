@@ -1,6 +1,6 @@
 // spec 13 AS-070…073 (REMOTION_E2E=1): subtitle templates exported on the native path (layer stills drawn by the
 // kernel through Motion, the Transform effect with its 360° shutter and S_Shake; static stills; all baked in sheet
-// renders and drawn by one kernel stream per track) against the composition's own frames (Remotion stills of the
+// renders and drawn by one kernel stream per track; motion-blurred shakes baked as one run master) against the composition's own frames (Remotion stills of the
 // same document: the Program preview's renderer). Per template and frame: SSIM of the subtitle region (FX-040:
 // ≥ 0.98) and the share of pixels within 3/255.
 import { spawnSync } from 'node:child_process';
@@ -169,6 +169,21 @@ const TEMPLATES: Template[] = [
 			]);
 		},
 	},
+	{
+		// S_Shake with its motion blur: not lowered (the kernel draws no shake blur) — the three words of the track
+		// bake as ONE run master (AS-073).
+		name: 'shake blur',
+		apply: (d, c) => {
+			d.tx([
+				{
+					type: 'effect.add',
+					target: { clipId: c },
+					effectId: 'jasper.s.shake',
+					params: { amplitude: 6, frequency: 6, wrapX: 'no', wrapY: 'no', motionBlur: true },
+				},
+			]);
+		},
+	},
 ];
 const WORDS = ['HOLA', 'MUNDO', 'PIXEL ARTE'];
 
@@ -286,8 +301,12 @@ describe.runIf(enabled)(
 			const bakes = queue()
 				.list({})
 				.filter((j) => j.parentId === done.id && j.kind === 'layer-bake');
-			// Every subtitle is a still (static or layer still); identical words share one; one sheet render for them all.
-			expect(bakes.map((j) => j.title)).toEqual([expect.stringMatching(/Bake graphics – \d+ stills/)]);
+			// Every lowered or static subtitle is a still (identical words share one), all in one sheet render; the
+			// motion-blurred shakes are one run master.
+			expect(bakes.map((j) => j.title).sort()).toEqual([
+				expect.stringMatching(/Bake graphics – 3 layers from /),
+				expect.stringMatching(/Bake graphics – \d+ stills/),
+			]);
 			const out = join(coreServices(engine.app).config.paths.rendersDir, done.id, 'output.mov');
 
 			const core = coreServices(engine.app);
