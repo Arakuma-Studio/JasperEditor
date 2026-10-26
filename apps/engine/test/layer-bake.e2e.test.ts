@@ -274,9 +274,12 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(first.done.state, JSON.stringify(first.done.error)).toBe('succeeded');
 		expect(first.plan.path).toBe('hybrid');
 		expect(first.done.result).toMatchObject({ renderPath: 'hybrid', frames: 60 });
-		expect(first.bakes).toHaveLength(4);
-		const stills = first.bakes.filter((job) => (job.result as { still: boolean }).still);
-		expect(stills).toHaveLength(2);
+		// spec 13 AS-070/071: the static title, the shape and the moving title (static content, keyframed Motion: a
+		// layer still) render as one sheet; the anime template is a master.
+		expect(first.bakes).toHaveLength(2);
+		const sheets = first.bakes.filter((job) => /– \d+ stills$/.test(job.title));
+		expect(sheets).toHaveLength(1);
+		expect(sheets[0]!.result).toMatchObject({ stills: 3, rerendered: 0 });
 		const usageLog = join(coreServices(engine.app).config.paths.logsDir, 'remotion-usage.jsonl');
 		const usage = readFileSync(usageLog, 'utf8')
 			.trim()

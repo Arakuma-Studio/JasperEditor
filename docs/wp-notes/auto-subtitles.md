@@ -160,57 +160,102 @@ Guide text: `STRUCTURE_GUIDE`.
 
 ## Subtitle-scale export and preview (spec 13 §4: AS-050, AS-070…AS-076)
 
-Owner: work package `subexport`. Measured baseline: the private textperf benchmark (spec 13 §4): one ffmpeg input
-per caption (≈ 205–230 MB RSS per animated caption master, ≈ 40 MB per looped still, 17 fps overlay chain at
-1 000 inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), 99 animated captions in a 50 s short
-peaking at 19–25 GB, the long video impossible on the Hybrid path, and one run that killed the engine itself.
+Owner: work package `subexport`. Baseline: the private textperf measurements behind spec 13 §4 — one ffmpeg input per
+caption (≈ 205–230 MB RSS per animated caption master, ≈ 40 MB per looped still, overlay chain at 17 fps with 1 000
+inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 s short with 99 animated captions taking
+183 s and 19–25 GB, the 9-minute video impossible on the Hybrid path, and one run that killed the engine itself.
 
-### S.1 What is built
+### S.1 Lowered layers: still + native motion (AS-070, AS-073)
 
-- **Lowered layers — still + native motion (AS-070, AS-073).** `layerStill(c)` (`apps/engine/src/layer-bake/layer.ts`)
-  accepts a text layer whose content is static (`isStaticLayer` of the clip without its Motion keys and effects) and
-  whose picture moves: keyframed Motion / Opacity, the Transform effect (any keys, with or without its Shutter Angle
-  motion blur; at most one blurred Transform) and S_Shake with Motion Blur off, Wrap X/Y **No** and no RGB split
-  (`loweredRefusal`, `apps/engine/src/export/stream/lowered.ts`, names what it refuses). No masks, effect masks,
-  expressions or other effects (they keep the master bake). The layer bake renders it once as recipe `layer-still`:
-  its layer box grown by `contentBleed` (+2 px), Motion a translation into that region, Opacity 100 %, effects
-  removed, one frame (`layerStillClip`). The still is then **trimmed to its pixels + 2 transparent px** (sheet path)
-  and its region recorded in the cache meta (`picture`). A still whose pixels touch its border (text overflowing an
-  estimated box, a wrapped line) is baked again with the region grown by a quarter of the box + two font sizes, then,
-  still clipped, as an ordinary master (bake rounds in `extension.ts`; never silently cut).
-- **The multi-tap kernel** (`drawTaps`, `export/stream/kernel.ts`) draws a lowered layer per frame from its still:
-  `planLoweredFrames` composes, per output frame and shutter tap, the affine maps of Motion⁻¹, then each lowered
-  effect from the last to the first (S_Shake's pose, the Transform's inverse) into one map from sequence px to still
-  px, plus **coverage stages** for what the shaders sample: the effect canvas the browser draws (box + the GPU
-  effects' padding, `gpuPadding`), S_Shake's input canvas (Wrap No samples the whole canvas), the Transform's input
-  box (it samples inside the layer box only). Every per-frame value comes from the registered effect's own
-  `gpu.uniforms` hook with the compositions' frame context (layer box, pxScale 1, fps, clip-local frame, `fxSeed`
-  seed rules, `fxParamsAtFn` with the box metric): `u_shakeNow` (green channel pose), `u_tfA/u_tfT`, and with
-  motion blur the shader's plan (`u_mbPlan` taps, `u_mbKeys` key poses interpolated linearly, `u_mbWarp` time warp,
-  tap weight `t.y × clamp(opacity / 100)`, normalised by Σ t.y). Mip levels follow the Motion scale like the
-  sub-pixel kernel. Per row, coverage is computed only where it is partial (row spans).
-- **Kernel streams (AS-072).** In the main graph, the constant-picture layers of a track — baked static stills
-  (`sequence` overrides without colour runs), lowered layers, still images / solids with sub-pixel Motion — without
-  transition handles, fades, masks or blend modes become **members of one stream** (`stream/taps.ts`,
-  `stream/members.ts`, grouping in `native.ts`): one raw RGBA pipe and one overlay for the whole track, covering the
-  members' union rectangle. Members never overlap in time, so each frame draws at most one; its pictures are decoded
-  (one ffmpeg frame per mip level) a few members ahead and dropped after its last frame. One member alone (or a
-  lowered layer with fades / handles / a blend mode) is a stream of its own with the transition fades applied by
-  ffmpeg as before. `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer (comparison path of the tests).
-- **Batched still rendering (AS-071).** Every still bake of an export (static layers and layer stills) is rendered in
-  **sheets** (`ensureSheet`, child job `Bake graphics – N stills`): up to 64 one-frame clips back to back in one
-  document of the largest still's size, rendered by one Remotion `renderFrames` (`renderStillSheet`, transparent PNG
-  frames, the export's page budget shared between sheets by size), decoded by one ffmpeg, cropped, border-checked and
-  stored per key. Identical words share a key (a layer still's key has no Motion or effects in it). Cached keys are
-  reused, keys in flight joined; one missing still renders alone. Static layers that touch their crop border are
-  rendered alone with the full-frame fallback, as before.
-- **Preflight and robustness (AS-074).** `estimateComposite` (`export/memory.ts`) models the composite's peak memory
-  from the layers the builder will draw (textperf's per-input costs scaled by the sequence's pixels; one kernel stream
-  per track with members) and the planner adds a named native blocker when it exceeds `compositeMemoryBudget()`
-  (60 % of RAM or of the cgroup limit; `JASPER_EXPORT_MEMORY_BUDGET_MB`): Auto goes to the Remotion path, a forced
-  Native export is refused (`PATH_NOT_ELIGIBLE`) with the estimate. A compositor that dies of SIGKILL the job did not
-  send becomes `OUT_OF_MEMORY` (`killedComposite`; a pipe error it caused in a stream no longer masks it). Every tool
-  process gets `oom_score_adj` 900 on Linux (`preferOomKill`), so the OOM killer picks ffmpeg before the engine.
-  The engine's own stream memory is bounded (one stream per track: output slots and a few pictures).
+- `isLoweredLayer(c)` (`packages/project/src/render/lowered.ts`, shared by the export and the preview): a text layer
+  whose glyphs stay still (`loweredContentStatic`: no In/Out animation, no time-varying animator, no keyframes or
+  expressions in its text) while its picture moves: keyframed Motion / Opacity, the **Transform** effect (any keys,
+  with or without its Shutter Angle motion blur; at most one blurred Transform) and **S_Shake** with Motion Blur off,
+  Wrap X/Y **No** and no RGB split. `loweredRefusal` names what it refuses: masks, effect masks, expressions, other
+  effects, S_Shake wrap / motion blur / RGB split (those layers keep the master bake, exact as before).
+- The layer bake renders it once as recipe `layer-still` (`layerStill`, `layerStillClip` in
+  `apps/engine/src/layer-bake/layer.ts`): its layer box grown by `contentBleed` + 2 px, Motion a translation into that
+  region, Opacity 100 %, no effects, one frame. Its key holds no Motion or effects, so identical words share it. From a
+  sheet (S.3) the still is **trimmed to its pixels + 2 transparent px** (`alphaBounds`), its region stored in the
+  cache meta (`picture`), so the kernel, the stream and the overlay only touch the glyphs, stroke and shadow. A still
+  whose pixels touch its border (text overflowing an estimated box, a wrapped line) is baked again with the region
+  grown by a quarter of the box + two font sizes, then, still clipped, as an ordinary master (bake rounds in
+  `extension.ts`; nothing is cut silently).
+- Per frame, `loweredLayerTaps` gives the taps in layer space and `planLoweredFrames` (`export/stream/lowered.ts`)
+  adds Motion⁻¹, the mip level (from the Motion scale, like the sub-pixel kernel) and the drawn rectangle. Every value
+  comes from the registered effect's own `gpu.uniforms` hook with the compositions' frame context (layer box,
+  pxScale 1, fps, clip-local frame, `fxSeed` seed rules, `fxParamsAtFn` with the box metric): S_Shake's `u_shakeNow`
+  (green-channel pose: `src = zDist · R⁻¹ · (f − d)` in frame units of the box width), the Transform's `u_tfA/u_tfT`,
+  and with motion blur the shader's plan (`u_mbPlan` taps, `u_mbKeys` key poses interpolated linearly, `u_mbWarp`
+  time warp; tap weight `t.y × clamp(opacity / 100)`, normalised by Σ t.y). What the shaders sample becomes coverage
+  stages: the effect canvas the browser draws (box + the GPU effects' padding, `gpuPadding`), S_Shake's input canvas
+  (Wrap No samples the canvas with an anti-aliased edge), the Transform's input box (it samples inside the layer box
+  only).
+- The multi-tap kernel `drawTaps` (`export/stream/kernel.ts`) sums the taps (bilinear, premultiplied, clamp to edge)
+  times the anti-aliased coverage of the still and of each stage; per row it computes coverage only where it is
+  partial (row spans); one tap without stages uses `drawLayer` unchanged.
+- Differences to the composition (measured in S.6): one resample instead of one per GPU pass plus the browser's
+  composite; capped shutters take the stratum centres instead of the shader's per-pixel jitter; stage edges are
+  ½ px ramps instead of the Transform's hard box test. Assumption (not verified against Premiere): the Transform
+  effect clips its input to the layer box — this is the shader's behaviour, which a box tighter than the stroke and
+  shadow makes visible in every renderer alike.
+
+### S.2 Kernel streams: memory follows what is on screen (AS-072)
+
+- In the main graph, the constant-picture layers of a track — baked static stills (`sequence` overrides without colour
+  runs), lowered layers, still images / solids with sub-pixel Motion — without transition handles, fades, masks or
+  blend modes are **members of one stream** (`stream/tap-plan.ts`, `stream/members.ts`, grouping in `native.ts`
+  `memberOf`): one raw RGBA pipe and one overlay per track over the members' union rectangle, drawn by `streamTaps`
+  (`stream/taps.ts`). Members never overlap in time (one track, no handles), so a frame draws at most one; pictures
+  are decoded (one ffmpeg frame per mip level, `PREFETCH_MEMBERS` ahead) and dropped after the member's last frame.
+  A member alone, or a lowered layer with fades / handles / a blend mode, is a stream of its own with the transition
+  fades applied by ffmpeg as before. `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer (the comparison path
+  of the tests). The composite's inputs no longer grow with the clip count (300 stills on a track: one input, one
+  overlay, test in `subtitle-export.test.ts`).
+- At most 8 kernel threads per stream (`MAX_TAP_WORKERS`): a stream is paced by the composite reading it.
+
+### S.3 Batched still rendering, pipelined (AS-071, AS-076)
+
+- Every still bake of an export (static layers and layer stills) is rendered in **sheets** (`ensureSheet`, child job
+  `Bake graphics – N stills`): up to 128 one-frame clips back to back in one document as large as its largest still,
+  rendered by one Remotion `renderFrames` (`renderStillSheet`: transparent PNG frames), decoded by one ffmpeg,
+  cropped, border-checked (sequence stills: the edges inside the frame, re-rendered alone with the full-frame fallback
+  when touched; layer stills: every edge) and stored per key with the PNG deflate in the libuv pool. Sheets render one
+  at a time on 4 pages (2 pages when there are more than two: Chrome's memory, S.6). Cached keys are reused, keys in
+  flight joined, one missing still renders alone.
+- **Pipelined:** a native export does not wait for the still bakes its kernel streams draw. Missing stills get
+  provisional entries (the planned file and region) with a `ready` promise (`LayerOverride.ready`) and are rendered in
+  the background in time order — a first sheet of 16, so the first subtitles are ready soon — while the composite
+  runs (`NativePrepareContext.background`). A stream waits for a member's still before decoding it and re-plans a
+  trimmed layer still inside its frame; stills opened as ffmpeg inputs are awaited before the composite starts
+  (`NativeGraph.waitFor`). A still that comes out different from its plan (clipped, re-cropped) stops the composite
+  (`BakeChangedError`) and the export restarts without the pipeline (the bakes are then cached). The mixdown runs while
+  the layers prepare. Stills exports (one frame) and nested sequences do not pipeline.
+
+### S.4 Preflight and robustness (AS-074)
+
+- `estimateComposite` (`export/memory.ts`) models the composite's peak memory from the layers the builder will draw
+  (textperf's per-input costs scaled by the sequence's pixels; one kernel stream per track with members) and the
+  planner adds a named native blocker when it exceeds `compositeMemoryBudget()` (60 % of the RAM or of the engine's
+  cgroup limit; `JASPER_EXPORT_MEMORY_BUDGET_MB`): Auto goes to the Remotion path, a forced Native export is refused
+  (`PATH_NOT_ELIGIBLE`) with the estimate ("the native composite needs ≈ 232.4 GB of memory (1080 animated graphics
+  masters as separate inputs), more than the 18.0 GB this machine allows").
+- A compositor that dies of a SIGKILL the job did not send fails the export with `OUT_OF_MEMORY`
+  (`killedComposite`; a pipe error it caused in a stream no longer masks it). On Linux every tool process gets
+  `oom_score_adj` 900 (`preferOomKill`, `tools/process.ts`): the OOM killer picks ffmpeg before the engine, which
+  textperf saw killed. The engine's own stream memory is bounded (S.2). Regression tests: a compositor killed by
+  SIGKILL and one under a 150 MB address-space cap (wrapper ffmpeg) fail the job while the engine keeps serving.
 - The plan's estimate counts still bakes as sheets (≈ 3.4 s per sheet of ≤ 128 + 0.1 s per still, textperf).
+
+### S.5 Program monitor (AS-075, AS-050)
+
+- The composition already mounts only clips near the playhead (`FrameWindow`, pages of 60 frames, one before and two
+  after), so the clip count does not reach the per-frame work: playback of 1 080 subtitles with keyframed Motion only
+  measures like video alone (S.6).
+- The remaining cost was the GPU chain of lowered layers in the preview: DOM capture → WebGL passes → read back every
+  frame (`GLES2::ReadPixels`, `WaitForCmd` in the trace). The preview now draws lowered layers with **Canvas 2D** from
+  the same taps the export uses (`fx/lowered.ts`: `loweredCanvasProgram`, `fxLowered`): one `drawImage` per shutter
+  tap of the captured picture, clipped to each stage rectangle, summed with `lighter` at weight w / Σw. Renders keep
+  the GPU chain (the reference the native export is compared with). Static subtitles stay DOM text: Chrome keeps their
+  raster between frames (no per-frame cost measured).
 

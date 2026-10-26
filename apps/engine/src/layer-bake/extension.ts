@@ -248,7 +248,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					i += n;
 				}
 				const sheetBudget = Math.min(budget, sheets.length > 2 ? SHEET_PAGES_LARGE : SHEET_PAGES);
-				const work = runPagePool(
+				const pool = runPagePool(
 					sheets.map((sheet) => ({
 						want: sheetBudget,
 						weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
@@ -276,14 +276,17 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						},
 					})),
 					{ budget: sheetBudget, maxInFlight: 1, signal: ctx.backgroundSignal ?? ctx.signal },
-				).then(
+				);
+				// The export hears of a failure before the streams waiting for these stills do (reactions run in
+				// registration order), so it fails as a preparation does.
+				ctx.background!(pool.then(() => undefined));
+				pool.then(
 					() => undefined,
 					(e) => {
 						for (const d of deferred.values()) d.reject(e);
-						throw e;
 					},
 				);
-				ctx.background!(work.finally(() => release?.()));
+				pool.finally(() => release?.()).catch(() => undefined);
 			};
 			/** One round: one render per entry (identical layers share a bake key; graded entries have their own). */
 			const round = async (list: typeof items) => {

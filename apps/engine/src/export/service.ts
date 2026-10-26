@@ -1120,10 +1120,13 @@ export class ExportService {
 		const bgAbort = new AbortController();
 		const onAbortBg = () => bgAbort.abort();
 		ctx.signal.addEventListener('abort', onAbortBg, { once: true });
+		let bgError: unknown = null;
 		const abandon = async () => {
 			bgAbort.abort();
 			await settle();
 		};
+		/** `e`, or the background failure that caused it (a preparation error). */
+		const failure = (e: unknown) => (bgError !== null ? new NativePrepareError(bgError) : e);
 		/** A pipelined still came out different: everything again without the pipeline (its bakes are cached). */
 		const restart = async (why: string): Promise<number> => {
 			ctx.log(`native: ${why}; preparing again without pipelined stills`);
@@ -1146,7 +1149,11 @@ export class ExportService {
 				pipeline: pipeline && !still,
 				backgroundSignal: bgAbort.signal,
 				background: (work: Promise<void>) => {
-					work.catch(() => undefined);
+					// A failure of the work itself (not our abort): the export fails as a preparation does (LBK-023
+					// fallback to the Remotion path for `auto`).
+					work.catch((e) => {
+						if (!bgAbort.signal.aborted) bgError ??= e;
+					});
 					background.push(work);
 				},
 			};
@@ -1218,7 +1225,8 @@ export class ExportService {
 		if (graph.waitFor) {
 			const ready = await Promise.all(graph.waitFor).catch(async (e) => {
 				await abandon();
-				throw e;
+				// Only a failed background bake rejects these.
+				throw new NativePrepareError(bgError ?? e);
 			});
 			const changed = ready.find((r) => !r.ok);
 			if (changed && !changed.ok) return restart(changed.reason);
@@ -1322,6 +1330,7 @@ export class ExportService {
 			const se = streamError as Error | null;
 			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
 			await abandon();
+			if (bgError !== null && !ctx.signal.aborted) throw failure(e);
 			const consequence = !se || /^layer stream:/.test(se.message);
 			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted, se) : se;
 		} finally {
@@ -1331,7 +1340,9 @@ export class ExportService {
 		streamAbort.abort();
 		await Promise.all(producers);
 		// Pipelined work ends with the composite (its errors fail the export).
-		await Promise.all(background);
+		await Promise.all(background).catch((e) => {
+			throw failure(e);
+		});
 		ctx.signal.removeEventListener('abort', onAbortBg);
 		if (still) return 1;
 		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
