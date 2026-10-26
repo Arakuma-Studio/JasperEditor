@@ -215,6 +215,46 @@ describe('kernel streams (spec 13 AS-072)', () => {
 		// The solid below and the one stream.
 		expect((g.filter.match(/overlay=/g) ?? []).length).toBe(2);
 	}, 300_000);
+
+	it('layers baked as one run master (AS-073) are drawn once, as one input over the run', async () => {
+		const d = await stillsDoc(app, 6);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId, 48) as never,
+		});
+		const v2 = planned.snapshot.videoTracks[1]!.clips;
+		const run = { id: 'run-key', f0: 8, f1: 40 };
+		const inRun = new Set(v2.slice(1, 5).map((c) => c.clipId));
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mov',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+			extensions: {
+				list: [
+					{
+						id: 'runs',
+						override: (clip) =>
+							inRun.has(clip.clipId)
+								? { path: '/tmp/run.mov', space: 'sequence', startFrame: 8, includesFades: true, run }
+								: null,
+					} as never,
+				],
+				prepared: new Map(),
+			},
+		});
+		const runInputs = g.inputs.filter((a) => a.includes('/tmp/run.mov'));
+		expect(runInputs, JSON.stringify(g.inputs)).toHaveLength(1);
+		// Seeks to the range start inside the run master (frame 8 of the run = sequence frame 8 → 0 s).
+		const ss = runInputs[0]!.indexOf('-ss');
+		expect(ss).toBeGreaterThanOrEqual(0);
+		expect(Number(runInputs[0]![ss + 1])).toBe(0);
+		// The other two stills of the track still share one kernel stream.
+		expect(g.streams).toHaveLength(1);
+		expect((g.filter.match(/overlay=/g) ?? []).length).toBe(3);
+	}, 300_000);
 });
 
 describe('memory preflight and killed compositors (spec 13 AS-074)', () => {

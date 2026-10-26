@@ -24,6 +24,7 @@ import {
 } from '../src/export/stream/lowered.ts';
 import { planTapStream, type TapMember } from '../src/export/stream/tap-plan.ts';
 import { layerStill, layerStillClip } from '../src/layer-bake/layer.ts';
+import { runEligible, shakeRuns } from '../src/layer-bake/runs.ts';
 import { alphaBounds, cropRgba } from '../src/layer-bake/service.ts';
 import { DocBuilder } from './helpers.ts';
 
@@ -632,6 +633,46 @@ describe('kernel streams and the memory preflight (AS-072, AS-074)', () => {
 		const reason = compositeMemoryBlocker(big, 6 * 1024 ** 3);
 		expect(reason).toMatch(/needs ≈ \d+\.\d GB of memory \(1080 animated graphics masters/);
 		expect(reason).toMatch(/Remotion path/);
+	});
+
+	it('memory: shaken subtitles the kernel cannot draw count one master per run of the track (AS-073)', () => {
+		const d = new DocBuilder('hd-1080p-59.94');
+		const cmds: unknown[] = [];
+		for (let i = 0; i < 200; i++)
+			cmds.push({
+				type: 'clip.addText',
+				at: i * 30,
+				duration: 30,
+				track: 'V2',
+				content: { text: `W${i}` },
+				box: { width: 600, height: 120, autoSize: 'none' },
+				ref: `$t${i}`,
+			});
+		// A lone one far away (beyond the run gap): a master of its own.
+		cmds.push({
+			type: 'clip.addText',
+			at: 200 * 30 + 500,
+			duration: 30,
+			track: 'V2',
+			content: { text: 'END' },
+			box: { width: 600, height: 120, autoSize: 'none' },
+			ref: '$end',
+		});
+		const refs = d.tx(cmds).refs;
+		d.tx(
+			Object.values(refs).map((clipId) => ({
+				type: 'effect.add',
+				target: { clipId },
+				effectId: 'jasper.s.shake',
+				params: { amplitude: 2, frequency: 1, wrapX: 'no', wrapY: 'no', motionBlur: true },
+			})),
+		);
+		const snap = snapOf(d);
+		const shaken = snap.videoTracks.flatMap((t) => t.clips).filter((c) => 'text' in c.source);
+		expect(shaken.every((c) => loweredRefusal(c) === 'S_Shake motion blur')).toBe(true);
+		expect(shakeRuns(shaken.filter(runEligible), (c) => c).map((r) => r.length)).toEqual([120, 80]);
+		const est = estimateComposite(snap, { start: 0, end: 200 * 30 + 600 });
+		expect(est.inputs.masters).toBe(3);
 	});
 });
 

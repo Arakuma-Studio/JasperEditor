@@ -19,6 +19,7 @@ import {
 	resolveLayerProps,
 } from '@jasper/project';
 import { bakeClip, isStaticLayer, layerStill, needsBake } from '../layer-bake/layer.ts';
+import { runEligible, shakeRuns } from '../layer-bake/runs.ts';
 import { tapStreamBytes } from './stream/limits.ts';
 import { needsSubpixel } from './stream/plan.ts';
 
@@ -93,6 +94,7 @@ export function estimateComposite(
 	let bytes = COST.base * scale;
 	for (const t of snap.videoTracks) {
 		let members = 0;
+		const masters: RenderVisualClip[] = [];
 		for (const c of t.clips) {
 			const f0 = c.start - (c.headHandle ?? 0);
 			const f1 = c.start + c.duration + (c.tailHandle ?? 0);
@@ -102,11 +104,16 @@ export function estimateComposite(
 				members++;
 				continue;
 			}
-			if (k === 'master') inputs.masters++;
+			if (k === 'master') {
+				inputs.masters++;
+				masters.push(c);
+			}
 			else if (k === 'still') inputs.stills++;
 			else if (k === 'stream') inputs.streams++;
 			else if (k === 'media') inputs.media++;
 		}
+		// A run of shaken masters is one input (AS-073).
+		for (const run of shakeRuns(masters.filter(runEligible), (c) => c)) inputs.masters -= run.length - 1;
 		// One member alone is drawn as a stream of its own; two or more share a kernel stream (AS-072).
 		if (members === 1) inputs.streams++;
 		else if (members > 1) inputs.kernelStreams++;
