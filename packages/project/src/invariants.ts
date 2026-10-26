@@ -12,6 +12,7 @@ import {
 	repairSubtitleSequence,
 	sequenceSubtitleIssues,
 } from './captions/subtitles/model.ts';
+import { repairStyleRecipes, styleRecipesIssues } from './automation/recipes.ts';
 import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
@@ -1382,6 +1383,8 @@ export function runInvariants(
 	for (const [message, path] of textStylesRecordIssues(doc)) issues.push(inv('INV-TEXTSTYLE', message, path));
 	// spec 13 AS-020: subtitle templates copied into the project.
 	for (const [message, path] of subtitleTemplatesIssues(doc)) issues.push(inv('INV-SUBTITLE', message, path));
+	// spec 15 EA-010: style recipes copied into the project.
+	for (const [message, path] of styleRecipesIssues(doc)) issues.push(inv('INV-STYLE-RECIPE', message, path));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1763,6 +1766,8 @@ export function repairDocument(
 	// spec 13 SH-002: project text styles and the clips' links to them.
 	// spec 13 AS-003 / AS-020: subtitle groups, subtitle words on clips, project subtitle templates.
 	repairSubtitleTemplates(doc, note);
+	// spec 15 EA-010: project style recipes.
+	repairStyleRecipes(doc, note);
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		repairSubtitleSequence(seq, () => ids.next('cgp'), note);
 	repairTextStyles(

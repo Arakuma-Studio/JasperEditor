@@ -31,6 +31,7 @@ import { SOUND_BED_COMMANDS } from './sound-beds.ts';
 import { SOUND_MIX_COMMANDS } from './sound-mix.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
+import { STYLE_RECIPE_COMMANDS } from './style-recipes.ts';
 import { SUBTITLE_COMMANDS } from './subtitles.ts';
 import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
 import { TEXT_STYLE_COMMANDS } from './text-style.ts';
@@ -118,6 +119,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...SUBTITLE_COMMANDS,
 	...BATCH_COMMANDS,
 	...CLEANUP_COMMANDS,
+	...STYLE_RECIPE_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

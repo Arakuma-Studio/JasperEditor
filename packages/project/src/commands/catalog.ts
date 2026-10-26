@@ -40,6 +40,7 @@ import { soundMixHandlers } from './handlers/sound-mix.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
+import { STYLE_RECIPES_OWNER, styleRecipeHandlers } from './handlers/style-recipes.ts';
 import { SUBTITLES_OWNER, subtitleHandlers } from './handlers/subtitles.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
@@ -88,7 +89,8 @@ export type CommandOwner =
 	| 'text-styles'
 	| 'subtitles'
 	| 'edit-automation'
-	| 'transcript-cleanup';
+	| 'transcript-cleanup'
+	| 'style-recipes';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -422,6 +424,9 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.addBatch': 'Add Keyframes',
 	'cleanup.apply': 'Clean Up Voice',
 	'cleanup.configure': 'Clean Up Settings',
+	'styleRecipe.add': 'Add Style Recipe',
+	'styleRecipe.remove': 'Remove Style Recipe',
+	'styleRecipe.setActive': 'Set Active Style Recipe',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -472,6 +477,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[subtitleHandlers, SUBTITLES_OWNER],
 	[batchHandlers, BATCH_OWNER],
 	[cleanupHandlers, CLEANUP_OWNER],
+	[styleRecipeHandlers, STYLE_RECIPES_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -512,7 +518,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === TEXT_STYLE_OWNER ||
 				owner === SUBTITLES_OWNER ||
 				owner === BATCH_OWNER ||
-				owner === CLEANUP_OWNER
+				owner === CLEANUP_OWNER ||
+				owner === STYLE_RECIPES_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

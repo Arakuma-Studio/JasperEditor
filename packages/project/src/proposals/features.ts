@@ -79,6 +79,8 @@ export const PROPOSAL_FEATURES: readonly ProposalFeatureInfo[] = [
 		itemNoun: { one: '1 edit', other: '{0} edits' },
 		agentAccept: { setting: 'project', default: true },
 		groups: [
+			{ id: 'cleanup', label: 'Voice cleanup' },
+			{ id: 'subtitles', label: 'Subtitles' },
 			{ id: 'cut-kits', label: 'Cut kits' },
 			{ id: 'punch-ins', label: 'Punch-ins' },
 			{ id: 'ken-burns', label: 'Ken Burns' },
@@ -181,15 +183,30 @@ export type ProposalPolicyDecision = { allowed: true } | { allowed: false; reaso
  * The engine registers one per feature (`ProposalService.registerPolicy`).
  */
 export function projectFeaturePolicy(feature: string) {
-	return (doc: ProjectDocument, _proposal: Proposal): ProposalPolicyDecision => {
-		const f = BY_ID.get(feature);
-		if (agentProposalsAllowed(doc, feature) === true) return { allowed: true };
-		const name = f?.name.toLowerCase() ?? feature;
-		return {
-			allowed: false,
-			reason: `Agents may not apply ${name} proposals in this project: the user turned off "Allow agents to apply ${name} proposals" (Project Settings ▸ General ▸ Agent Proposals); they review and apply them in the editor`,
-		};
+	return (doc: ProjectDocument, proposal: Proposal): ProposalPolicyDecision => {
+		// a combined proposal (Apply Style, spec 15 EA-012) carries items of other features (`meta.feature`: its voice
+		// cleanup, its subtitles): every one of those features must allow agents too
+		const features = [feature, ...embeddedFeatures(proposal).filter((x) => x !== feature)];
+		for (const id of features) {
+			if (agentProposalsAllowed(doc, id) === true) continue;
+			const name = BY_ID.get(id)?.name.toLowerCase() ?? id;
+			return {
+				allowed: false,
+				reason: `Agents may not apply ${name} proposals in this project: the user turned off "Allow agents to apply ${name} proposals" (Project Settings ▸ General ▸ Agent Proposals); they review and apply them in the editor`,
+			};
+		}
+		return { allowed: true };
 	};
+}
+
+/** Project-setting features named by items of a proposal (`meta.feature`), in first-seen order. */
+export function embeddedFeatures(proposal: Pick<Proposal, 'items'>): string[] {
+	const out: string[] = [];
+	for (const it of proposal.items ?? []) {
+		const f = (it.meta as { feature?: unknown } | undefined)?.feature;
+		if (typeof f === 'string' && BY_ID.get(f)?.agentAccept.setting === 'project' && !out.includes(f)) out.push(f);
+	}
+	return out;
 }
 
 /** Per sequence of the document, whether agents may apply sound proposals there (spec 12). */
