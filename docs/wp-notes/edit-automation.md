@@ -305,7 +305,8 @@ GL (SwiftShader in headless Chrome), bench lock held, but load average 6.5 → 1
 | 100 shorts shake kits (S_Shake with Motion Blur) | Remotion | 1 392.3 s (23.2 min) | 6.9 × | ≈ 13.6 s |
 
 The kits send the whole export through the Remotion renderer, so the cost is not proportional to the kit frames alone:
-the 4 000 kit frames are 66 % of this edit (2 s clips), and every frame is rendered in the browser. In the dry run the
+the kits cover 3 080 of the 6 060 frames (51 %, long pack) or 2 000 (33 %, shake), yet every frame is rendered in the
+browser. In the dry run the
 cost class says it ("the export renders through the Remotion path"); a hybrid route that renders only the kit spans of
 the composite would cut this to the kit frames and is not built (docs/gaps.md).
 
