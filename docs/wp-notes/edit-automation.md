@@ -386,8 +386,8 @@ default.
 - The whoosh is cut to the kit's span with hard edges (like the user's slices of a compilation); no fade is added.
 - `subject` targets need a faces roto or the engine's Reframe analysis; headless refresh of subject punch-ins
   re-measures the refreshed clips only.
-- Style recipes, `apply_style` and Style Check are a later work package (`AUTOMATE_MENU`, `AUTOMATION_PASSES` are
-  where they plug in); reactions, overlay slides, music beds and stingers are below.
+- Style recipes, `apply_style` and Style Check: see "Style recipes, Apply Style and Style Check" below; reactions,
+  overlay slides, music beds and stingers are below.
 - Punch-in F1 below the spec's target (above).
 
 ## Reactions, overlay slides, music beds, stingers (EA-023…EA-026, EA-030, EA-032, EA-033, EA-040…EA-042, EA-051)

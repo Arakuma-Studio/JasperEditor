@@ -4,9 +4,8 @@
 // → Propose (the engine's voice analysis and cleanup analysis run in the job) → the Review panel with the Voice
 // cleanup, Subtitles and Cut kits groups → Accept all → Apply (ONE History entry) → the clip is cut (shorter), the
 // subtitles and the kits sit on the cleaned-up timeline (each kit on a cut of the new timeline) → export through the
-// Remotion path; the reference is the same edit with the FX track's output off (exported natively with baked
-// subtitles): the frames around the kits differ, the frames away from them match (the picture's top half, away from
-// the subtitles). Screenshots and frames: test-results/e2e-apply-style.
+// Remotion path; the reference is the same edit with the FX track's output off, through the same renderer: the frames
+// around the kits differ, the frames away from them match (the picture's top half, away from the subtitles). Screenshots and frames: test-results/e2e-apply-style.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -197,10 +196,11 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 		jobTimeoutMs: 1_200_000,
 	});
 	expectTransaction(await transact(page, [{ type: 'track.update', trackId: fx.id, patch: { output: false } }] as never));
+	// the reference goes through the same (Remotion) renderer: only the kits differ, not the path's own encode
 	const plain = await exportViaUi(page, request, {
-		engine: 'auto',
+		engine: 'remotion',
 		fileName: 'apply-style-no-kits.mp4',
-		expectPath: /hybrid|native|remotion/i,
+		expectPath: /remotion/i,
 		outDir,
 		jobTimeoutMs: 1_200_000,
 	});
