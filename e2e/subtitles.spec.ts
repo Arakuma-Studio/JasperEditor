@@ -26,7 +26,8 @@ const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 /** H.264 through OpenH264, the encoder an LGPL-only FFmpeg has (AGENTS §2; `pnpm e2e` provides that build). */
 function h264Args(): string[] {
 	const enc = spawnSync(FFMPEG, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '';
-	if (!/\blibopenh264\b/.test(enc)) throw new Error(`${FFMPEG} has no libopenh264 encoder; set JASPER_FFMPEG to the LGPL build`);
+	if (!/\blibopenh264\b/.test(enc))
+		throw new Error(`${FFMPEG} has no libopenh264 encoder; set JASPER_FFMPEG to the LGPL build`);
 	return ['-c:v', 'libopenh264', '-b:v', '1M', '-allow_skip_frames', '0', '-pix_fmt', 'yuv420p', '-g', '30'];
 }
 
