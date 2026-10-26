@@ -27,6 +27,18 @@ import {
 } from './audio-fx.ts';
 import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
+	ApplyStyleRequestSchema,
+	ApplyStyleResultSchema,
+	StyleCheckRequestSchema,
+	StyleCheckResponseSchema,
+	StyleRecipeCreateRequestSchema,
+	StyleRecipeDeleteResponseSchema,
+	StyleRecipeDuplicateRequestSchema,
+	StyleRecipeEntrySchema,
+	StyleRecipeLibraryResponseSchema,
+	StyleRecipeUpdateRequestSchema,
+} from './style.ts';
+import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
 	CacheLocationCheckSchema,
@@ -1656,6 +1668,55 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/automation/:pass',
 		body: AutomationPassRequestSchema,
 		response: z.union([AutomationPassResultSchema, EngineJobSchema]),
+	},
+	/** Spec 15 EA-010: the style recipes (built-ins and the user library). */
+	styleRecipesList: {
+		method: 'GET',
+		path: '/api/style-recipes',
+		response: StyleRecipeLibraryResponseSchema,
+	},
+	styleRecipeGet: {
+		method: 'GET',
+		path: '/api/style-recipes/:recipeId',
+		response: StyleRecipeEntrySchema,
+	},
+	styleRecipeCreate: {
+		method: 'POST',
+		path: '/api/style-recipes',
+		body: StyleRecipeCreateRequestSchema,
+		response: StyleRecipeEntrySchema,
+	},
+	styleRecipeUpdate: {
+		method: 'PUT',
+		path: '/api/style-recipes/:recipeId',
+		body: StyleRecipeUpdateRequestSchema,
+		response: StyleRecipeEntrySchema,
+	},
+	styleRecipeDuplicate: {
+		method: 'POST',
+		path: '/api/style-recipes/:recipeId/duplicate',
+		body: StyleRecipeDuplicateRequestSchema,
+		response: StyleRecipeEntrySchema,
+	},
+	/** Deleting needs the user's approval when an agent asks (the library has no undo). */
+	styleRecipeDelete: {
+		method: 'DELETE',
+		path: '/api/style-recipes/:recipeId',
+		response: StyleRecipeDeleteResponseSchema,
+	},
+	/** Spec 15 EA-012: Apply Style — `dryRun` answers at once, `propose` starts an `apply-style` job. */
+	applyStyle: {
+		method: 'POST',
+		path: '/api/projects/:projectId/style/apply',
+		body: ApplyStyleRequestSchema,
+		response: z.union([ApplyStyleResultSchema, EngineJobSchema]),
+	},
+	/** Spec 15 EA-013: Style Check of a sequence against a recipe's targets. */
+	styleCheck: {
+		method: 'POST',
+		path: '/api/projects/:projectId/style/check',
+		body: StyleCheckRequestSchema,
+		response: StyleCheckResponseSchema,
 	},
 	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
 	proposalFeatures: {

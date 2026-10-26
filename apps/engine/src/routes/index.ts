@@ -4,6 +4,7 @@ import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
 import audioFxRoutes from './audio-fx.ts';
 import automationRoutes from './automation.ts';
+import styleRoutes from './style.ts';
 import browseRoutes from './browse.ts';
 import cacheRoutes from './cache.ts';
 import camtrackRoutes from './camtrack.ts';
@@ -96,6 +97,8 @@ const ROUTE_PLUGINS = [
 	proposalRoutes,
 	// Editing automation (spec 15) registers its refresher on the proposals service and places sounds from the library.
 	automationRoutes,
+	// Style recipes, Apply Style and Style Check (spec 15 EA-010…EA-013) use the automation, cleanup and template services.
+	styleRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

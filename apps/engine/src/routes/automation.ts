@@ -7,7 +7,7 @@
 // The job kind's runner and the refresher of feature `edit-automation` (Refresh proposal, Reroll) are registered here;
 // this plugin runs after the proposal routes (they create the proposals service).
 import { type AutomationPassId, AutomationPassIdSchema, AutomationPassRequestSchema } from '@jasper/api';
-import { EDIT_AUTOMATION_FEATURE } from '@jasper/project';
+import { EDIT_AUTOMATION_FEATURE, styleReportOf } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
 import { agentNameOf } from '../agent/user-approval.ts';
@@ -21,6 +21,7 @@ import {
 	runAutomationJob,
 	validParams,
 } from '../automation/run.ts';
+import { refreshStyle } from '../automation/style.ts';
 import { isLoopbackHost } from '../context.ts';
 import type { ReframeService } from '../gaps/reframe.ts';
 import { replyWithJob } from '../jobs/reply.ts';
@@ -61,7 +62,11 @@ export default async function automationRoutes(app: FastifyInstance): Promise<vo
 	core.queue.registerRunner('edit-automation', (ctx) => runAutomationJob(ctx, deps));
 	const proposals = deps.proposals();
 	if (proposals) {
-		const off = proposals.registerRefresher(EDIT_AUTOMATION_FEATURE, automationRefresher(deps));
+		const passes = automationRefresher(deps);
+		// an Apply Style proposal (spec 15 EA-012) re-plans through its stages; a single pass through its planner
+		const off = proposals.registerRefresher(EDIT_AUTOMATION_FEATURE, (input) =>
+			styleReportOf(input.proposal) ? refreshStyle(deps, input) : passes(input),
+		);
 		app.addHook('onClose', async () => off());
 	}
 

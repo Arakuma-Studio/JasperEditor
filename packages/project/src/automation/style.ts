@@ -480,6 +480,19 @@ export function pictureEnd(seq: Sequence): number {
 	return end;
 }
 
+/** Effects the native export draws (crop, flips): anything else on a clip is baked by the layer bake. */
+const NATIVE_CLIP_EFFECTS = new Set(['jasper.crop', 'jasper.flip-horizontal', 'jasper.flip-vertical']);
+
+/** Export cost of subtitles made with a template: text clips with GPU effects → `hybrid`; caption tracks native. */
+function subtitleCost(
+	t: { output?: string; animation?: { preset?: { effects?: { effectId?: string }[] } | null } } | null,
+	output: string | undefined,
+): AutomationCost['class'] {
+	if ((output ?? t?.output) === 'caption-track') return 'native';
+	const fx = t?.animation?.preset?.effects ?? [];
+	return fx.some((e) => typeof e.effectId === 'string' && !NATIVE_CLIP_EFFECTS.has(e.effectId)) ? 'hybrid' : 'native';
+}
+
 const COST_ORDER: Record<AutomationCost['class'], number> = { native: 0, hybrid: 1, remotion: 2 };
 const maxCost = (a: AutomationCost['class'], b: AutomationCost['class']) => (COST_ORDER[b] > COST_ORDER[a] ? b : a);
 
@@ -789,11 +802,15 @@ export async function planStyle(
 				continue;
 			}
 			const res = (r.results.get(STYLE_SUBTITLES_ITEM)?.[0] ?? {}) as { count?: number; stats?: { warnings?: string[] } };
+			// text clips with the template's GPU effects (Pixel Pop's Transform + S_Shake) are baked by the layer bake
+			const t = typeof template === 'string' ? findSubtitleTemplate(sim.doc, template) : (template as Parameters<typeof subtitleCost>[0]);
+			const subCost = subtitleCost(t, s.output);
+			if ((res.count ?? 0) > 0) cost = maxCost(cost, subCost);
 			report(s, {
 				status: (res.count ?? 0) > 0 ? 'planned' : 'empty',
 				count: res.count ?? 0,
 				items: 1,
-				cost: null,
+				cost: subCost,
 				warnings: (res.stats?.warnings ?? []).slice(0, 20).map((m) => ({ code: 'W_SUBTITLES', message: String(m).slice(0, 300) })),
 			});
 			continue;
