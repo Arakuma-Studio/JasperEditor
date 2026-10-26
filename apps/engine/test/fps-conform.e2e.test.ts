@@ -28,6 +28,7 @@ import {
 	R2997,
 	readCodes,
 	SOURCE_PATCHES,
+	TIMING_EXTRA_CASES,
 } from './fps-conform-support.ts';
 import type { DocBuilder, register } from './helpers.ts';
 import { tempAppdir } from './temp.ts';
@@ -174,7 +175,7 @@ describe.runIf(enabled)(
 			appendFileSync(join(out(), 'report.txt'), `${line}\n`);
 		};
 
-		for (const c of CONFORM_CASES)
+		for (const c of [...CONFORM_CASES, ...TIMING_EXTRA_CASES])
 			it(`${c.name}: native, hybrid, Remotion and the preview show the model's source frame`, async () => {
 				const codes: Record<string, number[]> = {};
 				let want: number[] = [];
