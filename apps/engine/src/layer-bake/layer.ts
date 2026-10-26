@@ -20,7 +20,7 @@ import {
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';
-import { loweredMoves, loweredRefusal } from '../export/stream/lowered.ts';
+import { isLoweredLayer } from '../export/stream/lowered.ts';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
 const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic', 'captions']);
@@ -300,7 +300,7 @@ export function layerStill(
 	registry: EffectRegistry = defaultEffectRegistry,
 	grow = false,
 ): { x: number; y: number; w: number; h: number } | null {
-	if (!isDomLayer(c) || c.threeD || loweredRefusal(c) || !loweredMoves(c)) return null;
+	if (!isDomLayer(c) || c.threeD || !isLoweredLayer(c)) return null;
 	const bare: RenderVisualClip = {
 		...c,
 		effects: [],

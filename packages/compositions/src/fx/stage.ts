@@ -53,6 +53,7 @@ import { ColorDocContext, colorOpsContext, referencedMedia, useLutAssets } from 
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
+import { type FxLoweredParams, loweredCanvasProgram } from './lowered.ts';
 import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
 import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
 import { fxPixelsOf, useFxPixels } from './pixels.ts';
@@ -166,6 +167,11 @@ export type FxStage = {
 	trackMattes: string[];
 	/** Track mattes must use the same sequence frame as the stage. */
 	seqFrame: number;
+	/**
+	 * spec 13 AS-075 (preview only): the layer is lowered (Transform / S_Shake on static text): its effects are drawn by
+	 * Canvas 2D from these per-frame maps (`fx/lowered.ts`) instead of the GPU chain.
+	 */
+	lowered?: FxLoweredParams;
 };
 
 export type LayerFx =
@@ -684,12 +690,32 @@ export function useLayerFx(
 		doc.working,
 	]);
 
+	// spec 13 AS-075: the Program preview draws lowered layers with Canvas 2D (no WebGL passes or read-back per frame).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a cache per clip
+	const loweredCache = useMemo(() => new Map(), [clip]);
+	const lowered = useMemo(() => {
+		if (!doc.isPreview || !stage || tap || matte || opts.extraSteps) return null;
+		try {
+			return loweredCanvasProgram({
+				clip,
+				props,
+				frame: clip.start + realFrame,
+				fps,
+				layout: stage.layout,
+				paramsAtCache: loweredCache,
+			});
+		} catch {
+			return null;
+		}
+	}, [doc.isPreview, stage, tap, matte, opts.extraSteps, clip, props, realFrame, fps, loweredCache]);
+	const drawn = lowered && stage ? { ...stage, lowered } : stage;
+
 	if (!plan) return NONE;
 	// A layer that cannot run shader effects at all (DOM layer without HTML-in-Canvas) says so in its chip.
 	const bypassed = canRun
 		? plan.bypassed
 		: plan.bypassed.map((b) => ({ ...b, reason: 'layer-unsupported' as const }));
 	const chip = doc.isPreview ? chipText(bypassed, gpu) : null;
-	if (!plan.active || !stage) return { mode: 'bypass', chip: chip ?? 'GPU effects unavailable', bypassed };
-	return { mode: 'active', stage, cssEffects: plan.cssEffects, chip };
+	if (!plan.active || !drawn) return { mode: 'bypass', chip: chip ?? 'GPU effects unavailable', bypassed };
+	return { mode: 'active', stage: drawn, cssEffects: plan.cssEffects, chip };
 }

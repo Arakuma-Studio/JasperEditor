@@ -1,5 +1,6 @@
 export * from './crop.ts';
 export * from './homography.ts';
+export * from './lowered.ts';
 export * from './plan.ts';
 export * from './previews.ts';
 export * from './scene.ts';
