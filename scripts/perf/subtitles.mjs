@@ -119,6 +119,7 @@ function tree(rootPid) {
 			const s = readFileSync(`/proc/${n}/stat`, 'utf8');
 			const r = s.slice(s.lastIndexOf(')') + 2).split(' ');
 			stats.set(Number(n), {
+				pid: Number(n),
 				ppid: Number(r[1]),
 				cpu: Number(r[11]) + Number(r[12]) + Number(r[13]) + Number(r[14]),
 				rss: Number(r[21]) * 4096,
@@ -139,8 +140,19 @@ function tree(rootPid) {
 	}
 	return out;
 }
+/** Proportional set size (bytes) of a process: shared pages split between their users (Chrome's processes). */
+function pss(pid) {
+	try {
+		const m = /Pss:\s+(\d+) kB/.exec(readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8'));
+		return m ? Number(m[1]) * 1024 : 0;
+	} catch {
+		return 0;
+	}
+}
 function sampler(rootPid) {
 	let peak = 0;
+	let peakPss = 0;
+	let tick = 0;
 	const byComm = new Map();
 	const cpu = (t) => t.reduce((a, p) => a + p.cpu, 0);
 	const c0 = cpu(tree(rootPid));
@@ -153,12 +165,19 @@ function sampler(rootPid) {
 		const m = new Map();
 		for (const p of t) m.set(p.comm, (m.get(p.comm) ?? 0) + p.rss);
 		for (const [k, v] of m) byComm.set(k, Math.max(byComm.get(k) ?? 0, v));
+		// RSS sums count shared pages once per process (Chrome); the PSS sum is the memory actually used.
+		if (tick++ % 4 === 0)
+			peakPss = Math.max(
+				peakPss,
+				t.reduce((a, p) => a + pss(p.pid), 0),
+			);
 	}, 250);
 	return () => {
 		clearInterval(h);
 		return {
 			cpuSec: (cpu(tree(rootPid)) - c0) / 100,
 			peakRssMB: Math.round(peak / 1e6),
+			peakPssMB: Math.round(peakPss / 1e6),
 			peakRssByCommMB: Object.fromEntries(
 				[...byComm]
 					.sort((a, b) => b[1] - a[1])
