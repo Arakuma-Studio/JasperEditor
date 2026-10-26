@@ -2,6 +2,7 @@ import { type EngineJob, TERMINAL_JOB_STATES } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import { defaultRegistries } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
+import type { HeadlessTextMeasurer } from '../fonts/text-measure.ts';
 import { AgentApiError, AgentService, type StillCaptureRequest } from './service.ts';
 import type { AgentProjectStore } from './store.ts';
 
@@ -51,10 +52,13 @@ export function createAgentService(app: FastifyInstance): AgentService {
 		host: `127.0.0.1:${config.port}`,
 		...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
 	});
+	const measurer = (services.core as { textMeasurer?: HeadlessTextMeasurer } | undefined)?.textMeasurer;
 	const service = new AgentService({
 		engineVersion: config.version,
 		registries: defaultRegistries(mgRegistry),
 		store: () => services.agentStore as AgentProjectStore,
+		// spec 13 SH-004: headless text boxes are measured in the render browser.
+		...(measurer ? { textMeasurer: measurer } : {}),
 		publish: (type, payload, projectId) => {
 			const events = services.events as { publish(type: string, payload: unknown, projectId?: string): void };
 			events.publish(type, payload, projectId);

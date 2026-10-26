@@ -6,6 +6,7 @@ import { audioFxCommands } from '../audio-fx/commands.ts';
 import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
+import { automationCommands } from './automation.ts';
 import { cacheCommands } from './cache.ts';
 import { captionCommands } from './captions.ts';
 import { clipboardCommands } from './clipboard.ts';
@@ -108,6 +109,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCommands,
 	soundCueCommands,
 	soundDesignCommands,
+	automationCommands,
 	soundMixCommands,
 	soundBedCommands,
 	soundCheckCommands,

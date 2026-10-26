@@ -886,7 +886,11 @@ class ClipNodes {
 			const breaks = clipLevelBreaks(clip, t, rate).map((b) => b / followRate);
 			// A Custom Fade whose exponent is under 1 starts with an infinite slope (base^e near 0): one-sample pieces
 			// where the curve needs them, as the 5.1 panner's square-root centre gain (matrix-node.ts).
-			const cusp = clip.fades?.some((f) => f.curve === 'shape' && (f.shape?.value ?? 0) > 0);
+			// Spec 14 TC-024: an edge micro-fade is a whole quarter sine within a few ms (192 samples at 48 kHz for 4 ms):
+			// the default 8-sample pieces miss it by 4.5e-4 (measured), one-sample pieces follow it.
+			const cusp = clip.fades?.some(
+				(f) => (f.curve === 'shape' && (f.shape?.value ?? 0) > 0) || f.edge === true,
+			);
 			followCurve(
 				this.level.gain,
 				this.ctx,

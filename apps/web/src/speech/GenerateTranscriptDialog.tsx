@@ -3,7 +3,7 @@
 // speakers), and for a sequence the audio analysis (clip media, or the sequence mix with "only In to Out"). A model
 // that is not downloaded shows its size, source and licence and downloads in place (sha256-verified `model-download`
 // job). Transcribe submits the jobs; the transcripts arrive through the watcher (jobs.ts).
-import type { EngineJob, SpeechModel } from '@jasper/api';
+import type { EngineJob, SpeechModel, SpeechSettings } from '@jasper/api';
 import type { EditorSession } from '@jasper/session';
 import { Button, Checkbox, Dialog, type HostedDialogProps, Select, toast } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -15,9 +15,11 @@ import {
 	languageName,
 	loadOptions,
 	requestOptions,
+	runsOnText,
 	saveOptions,
 	sequenceMedia,
 	sequenceName,
+	speedText,
 	WHISPER_LANGUAGES,
 } from './model.ts';
 
@@ -45,6 +47,40 @@ export function useSpeechModels(): { models: SpeechModel[] | null; error: string
 	}, [client]);
 	useEffect(reload, [reload]);
 	return { models, error, reload };
+}
+
+/** The engine's Transcription preferences (Processor, Accuracy, NVIDIA GPU); null while loading or unavailable. */
+export function useSpeechSettings(): {
+	settings: SpeechSettings | null;
+	save(patch: Partial<SpeechSettings>): Promise<void>;
+	error: string | null;
+} {
+	const { client } = useEngine();
+	const [settings, setSettings] = useState<SpeechSettings | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	useEffect(() => {
+		let live = true;
+		client
+			.call('speechSettings')
+			.then((s) => live && setSettings(s as SpeechSettings))
+			.catch((e) => live && setError(errorText(e)));
+		return () => {
+			live = false;
+		};
+	}, [client]);
+	const save = useCallback(
+		async (patch: Partial<SpeechSettings>) => {
+			try {
+				setSettings((await client.call('speechSettingsUpdate', { body: patch })) as SpeechSettings);
+				setError(null);
+			} catch (e) {
+				setError(errorText(e));
+				toast({ kind: 'error', title: 'The Transcription preferences were not saved', detail: errorText(e) });
+			}
+		},
+		[client],
+	);
+	return { settings, save, error };
 }
 
 /** Download one model through the engine, reporting progress text. */
@@ -95,7 +131,8 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 	const { session, target } = props;
 	const { client } = useEngine();
 	const { models, error, reload } = useSpeechModels();
-	const defaultModel = models?.find((m) => m.default)?.id ?? 'whisper-base';
+	const { settings } = useSpeechSettings();
+	const defaultModel = models?.find((m) => m.default)?.id ?? 'whisper-small';
 	const [opts, setOpts] = useState<GenerateOptions | null>(null);
 	const [downloading, setDownloading] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -266,6 +303,23 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 						) : model ? (
 							<p className="text-pr-small text-pr-muted">{model.description}</p>
 						) : null}
+						{model && (model.runsOn || model.speed) ? (
+							<p className="text-pr-small text-pr-dim" data-testid="speech-runs-on">
+								{[runsOnText(model), speedText(model)].filter(Boolean).join(' · ')}
+							</p>
+						) : null}
+						<Row label="Accuracy">
+							<Select
+								label="Accuracy"
+								className="w-56"
+								value={opts.accuracy ?? settings?.accuracy ?? 'standard'}
+								onValueChange={(v) => set({ accuracy: v as 'standard' | 'best' })}
+								options={[
+									{ value: 'standard', label: 'Standard' },
+									{ value: 'best', label: 'Best (slower)' },
+								]}
+							/>
+						</Row>
 						<Row label="Language">
 							<Select
 								label="Language"
@@ -285,6 +339,13 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 								disabled={!model?.multilingual}
 								onCheckedChange={(v) => set({ task: v ? 'translate' : 'transcribe' })}
 								label="Translate to English"
+							/>
+						</Row>
+						<Row label="">
+							<Checkbox
+								checked={opts.verbatim}
+								onCheckedChange={(v) => set({ verbatim: v })}
+								label="Keep filler words (verbatim: eh, um, so…)"
 							/>
 						</Row>
 						<Row label="Speaker labels">

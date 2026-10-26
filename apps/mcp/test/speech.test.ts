@@ -168,8 +168,20 @@ function fakeEngine() {
 					])
 				: words([['Second', 12, 12.5]]),
 		speakers: {},
-		segments: [],
+		segments: [
+			{ start: 1, end: 2, text: 'Hello world.', avgLogprob: -0.3, noSpeechProb: 0.02, compressionRatio: 1.3 },
+		],
 		timings: { decodeMs: 1, loadMs: 1, transcribeMs: 1200 },
+		device: {
+			encoder: 'cpu',
+			decoder: 'cpu',
+			label: 'CPU',
+			threads: 8,
+			fallbacks: [{ stage: 'job', part: 'both', from: 'webgpu', to: 'cpu', reason: 'device lost' }],
+		},
+		guard: { skippedWindows: 0, droppedWords: 1, removed: [], frames: 'voice-analysis' },
+		accuracy: 'best',
+		beamSize: 5,
 	});
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
@@ -322,6 +334,44 @@ describe('speech MCP tools', () => {
 			['Hello', 25],
 			['world.', 40],
 		]);
+	});
+
+	it('passes device, accuracy, verbatim and prompt options; reports where it ran and keeps segment scores (spec 16 SG-031)', async () => {
+		const { call, engine } = await connect();
+		const r = await call('transcribe', {
+			mediaId: engine.a,
+			device: 'gpu',
+			accuracy: 'best',
+			verbatim: true,
+			initialPrompt: ' JasperEditor ',
+			conditionOnPreviousText: false,
+		});
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		const post = engine.posts.find((p) => p.name === 'mediaTranscribe')!;
+		expect(post.opts.body).toEqual({
+			device: 'gpu',
+			accuracy: 'best',
+			verbatim: true,
+			initialPrompt: 'JasperEditor',
+			conditionOnPreviousText: false,
+			projectId: 'prj_test',
+		});
+		const job = (r.body as { jobs: Array<Record<string, unknown>> }).jobs[0]!;
+		expect(job.device).toMatchObject({
+			label: 'CPU',
+			fallbacks: [expect.objectContaining({ from: 'webgpu' })],
+		});
+		expect(job.accuracy).toBe('best');
+		expect(job.guard).toMatchObject({ droppedWords: 1, frames: 'voice-analysis' });
+		const t = Object.values(engine.doc().transcripts)[0]!;
+		expect(t.segments).toEqual([
+			{ start: S, end: 2 * S, avgLogprob: -0.3, noSpeechProb: 0.02, compressionRatio: 1.3 },
+		]);
+		// device 'auto' is the default: not sent
+		await call('transcribe', { mediaId: engine.b, device: 'auto' });
+		expect(engine.posts.filter((p) => p.name === 'mediaTranscribe')[1]!.opts.body).toEqual({
+			projectId: 'prj_test',
+		});
 	});
 
 	it('a sequence in media mode transcribes only untranscribed clip media; wait: false then jobIds commits', async () => {

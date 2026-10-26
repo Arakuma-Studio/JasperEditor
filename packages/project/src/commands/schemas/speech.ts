@@ -1,5 +1,6 @@
 // Recognition jobs attach transcripts here; text corrections and caption edits use transcript.* commands.
 import { z } from 'zod';
+import { MAX_TRANSCRIPT_SEGMENTS, TranscriptSegmentSchema } from '../../schema/media.ts';
 import { cmd, IdRefSchema, RefDeclSchema } from './common.ts';
 
 export const TranscriptAttachWordSchema = z.object({
@@ -23,6 +24,8 @@ export const TranscriptAttachCmd = cmd('transcript.attach', {
 	sourceLanguage: z.string().optional(),
 	/** Media ranges (flicks) the words cover when not the whole media (a sequence-mix transcription). */
 	coverage: z.array(z.tuple([z.number().int().min(0), z.number().int().min(0)])).optional(),
+	/** spec 14 TC-003: the recogniser's segments with decoder scores (media time, flicks). */
+	segments: z.array(TranscriptSegmentSchema).max(MAX_TRANSCRIPT_SEGMENTS).optional(),
 	/**
 	 * `replace` (default): the media's transcript becomes this one (same id, so references keep working);
 	 * `merge`: only the words inside `coverage` are replaced; `keep`: nothing happens when the media already has

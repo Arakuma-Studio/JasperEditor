@@ -83,6 +83,22 @@ export function engineBadge(job: AnyJob): string {
 	return 'N';
 }
 
+/**
+ * spec 16 SG-003: where a transcription ran ("NVIDIA GeForce RTX 3060 (CUDA) encoder · CPU decoder") and why it
+ * fell back to the CPU, from the job result.
+ */
+export function transcriptionDevice(
+	job: Pick<EngineJob, 'kind' | 'result'>,
+): { label: string; fallback: string | null } | null {
+	if (job.kind !== 'transcription') return null;
+	const d = (job.result as { device?: { label?: unknown; fallbacks?: unknown } } | undefined)?.device;
+	if (!d || typeof d.label !== 'string') return null;
+	const fb = Array.isArray(d.fallbacks)
+		? (d.fallbacks as Array<{ reason?: unknown; stage?: unknown }>).find((f) => typeof f?.reason === 'string')
+		: undefined;
+	return { label: d.label, fallback: fb ? String(fb.reason) : null };
+}
+
 export function formatEta(sec: number | undefined): string {
 	if (sec === undefined || !Number.isFinite(sec) || sec < 0) return '';
 	const s = Math.round(sec);

@@ -1,4 +1,9 @@
-import { EffectPresetFolderSchema, EffectPresetSchema, SubtitleTemplateSchema } from '@jasper/project';
+import {
+	CleanupPresetSchema,
+	EffectPresetFolderSchema,
+	EffectPresetSchema,
+	SubtitleTemplateSchema,
+} from '@jasper/project';
 import { z } from 'zod';
 import {
 	AgentMcpInfoSchema,
@@ -20,6 +25,7 @@ import {
 	RemixPlanRequestSchema,
 	RemixPlanResultSchema,
 } from './audio-fx.ts';
+import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -32,6 +38,14 @@ import {
 import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
+import {
+	CleanupAnalysisFileSchema,
+	CleanupAnalyzeRequestSchema,
+	CleanupPresetCreateRequestSchema,
+	CleanupPresetDeleteResponseSchema,
+	CleanupPresetLibraryResponseSchema,
+	CleanupPresetUpdateRequestSchema,
+} from './cleanup.ts';
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
@@ -254,8 +268,12 @@ import {
 	SoundVisualSchema,
 } from './sounds.ts';
 import {
+	SpeechCudaStatusSchema,
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
+	SpeechProbeSchema,
+	SpeechSettingsPatchSchema,
+	SpeechSettingsSchema,
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
@@ -851,6 +869,46 @@ export const ROUTES = {
 		path: '/api/speech/models/:modelId',
 		response: SpeechModelDeleteResponseSchema,
 	},
+	/** spec 16: Transcription preferences (Processor, Accuracy, Enable NVIDIA GPU). */
+	speechSettings: {
+		method: 'GET',
+		path: '/api/speech/settings',
+		response: SpeechSettingsSchema,
+	},
+	speechSettingsUpdate: {
+		method: 'PUT',
+		path: '/api/speech/settings',
+		body: SpeechSettingsPatchSchema,
+		response: SpeechSettingsSchema,
+	},
+	/** The cached execution-provider probe (SG-001); POST probes again. */
+	speechProbe: {
+		method: 'GET',
+		path: '/api/speech/probe',
+		response: SpeechProbeSchema,
+	},
+	speechReprobe: {
+		method: 'POST',
+		path: '/api/speech/probe',
+		response: SpeechProbeSchema,
+	},
+	/** Linux x64: the downloadable ONNX Runtime CUDA provider (SG-006). */
+	speechCudaStatus: {
+		method: 'GET',
+		path: '/api/speech/cuda',
+		response: SpeechCudaStatusSchema,
+	},
+	/** Downloads the pinned CUDA provider package (a `model-download` job; resumable, sha256-verified). */
+	speechCudaInstall: {
+		method: 'POST',
+		path: '/api/speech/cuda/install',
+		response: EngineJobSchema,
+	},
+	speechCudaRemove: {
+		method: 'DELETE',
+		path: '/api/speech/cuda',
+		response: z.object({ freedBytes: z.number().int().min(0) }),
+	},
 	/** A `transcription` job for one audio stream of a media (result: `TranscriptionResult`, media time). */
 	mediaTranscribe: {
 		method: 'POST',
@@ -1034,6 +1092,44 @@ export const ROUTES = {
 		path: '/api/effect-presets/import',
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
+	},
+	/** Spec 14: a `cleanup-analysis` job (result `CleanupAnalysisJobResult`; the analysis at its `url`). */
+	cleanupAnalyze: {
+		method: 'POST',
+		path: '/api/cleanup/analyze',
+		body: CleanupAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** The full analysis of a finished `cleanup-analysis` job; 404 `CLEANUP_ANALYSIS_NOT_FOUND` once evicted. */
+	cleanupAnalysisGet: {
+		method: 'GET',
+		path: '/api/cleanup/analyses/:analysisId',
+		response: CleanupAnalysisFileSchema,
+	},
+	/** Spec 14 TC-030: the user's cleanup presets (built-ins are not stored). */
+	cleanupPresetsList: {
+		method: 'GET',
+		path: '/api/cleanup-presets',
+		response: CleanupPresetLibraryResponseSchema,
+	},
+	cleanupPresetCreate: {
+		method: 'POST',
+		path: '/api/cleanup-presets',
+		body: CleanupPresetCreateRequestSchema,
+		response: CleanupPresetSchema,
+	},
+	cleanupPresetUpdate: {
+		method: 'PUT',
+		path: '/api/cleanup-presets/:presetId',
+		body: CleanupPresetUpdateRequestSchema,
+		response: CleanupPresetSchema,
+	},
+	/** Deleting needs the user's approval when an agent asks (the library has no undo). */
+	cleanupPresetDelete: {
+		method: 'DELETE',
+		path: '/api/cleanup-presets/:presetId',
+		response: CleanupPresetDeleteResponseSchema,
 	},
 
 	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */
@@ -1549,6 +1645,17 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/proposals/:proposalId/refresh',
 		body: ProposalRefreshRequestSchema,
 		response: ProposalRefreshResponseSchema,
+	},
+	/**
+	 * Spec 15 EA-020…EA-022: an editing-automation pass (`:pass` = decorate-cuts | punch-ins | ken-burns). `mode:
+	 * 'dryRun'` answers 200 with an `AutomationPassResult` (nothing stored); `propose` (default) answers 202 with an
+	 * `edit-automation` job whose result is an `AutomationPassResult` naming the stored proposal.
+	 */
+	automationPass: {
+		method: 'POST',
+		path: '/api/projects/:projectId/automation/:pass',
+		body: AutomationPassRequestSchema,
+		response: z.union([AutomationPassResultSchema, EngineJobSchema]),
 	},
 	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
 	proposalFeatures: {

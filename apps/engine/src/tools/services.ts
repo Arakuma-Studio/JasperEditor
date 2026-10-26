@@ -13,6 +13,7 @@ import type { PlanCapabilities } from '../export/planner.ts';
 import { ExportService, type MgMasterProvider } from '../export/service.ts';
 import { FontCatalogService } from '../fonts/catalog.ts';
 import { FontLibrary } from '../fonts/library.ts';
+import { HeadlessTextMeasurer, headlessTextMeasureEnabled } from '../fonts/text-measure.ts';
 import { JobQueue } from '../jobs/queue.ts';
 import { MediaRegistry } from '../media/registry.ts';
 import { MediaService } from '../media/service.ts';
@@ -47,6 +48,8 @@ export type CoreServices = {
 	/** wp fonts: the user font library (`<appdir>/fonts`), part of `fonts`' catalog. */
 	fontLibrary: FontLibrary;
 	remotion: RemotionService;
+	/** spec 13 SH-004: measures text boxes of headless transactions in the render browser. */
+	textMeasurer: HeadlessTextMeasurer;
 	exports: ExportService;
 	capabilities: CapabilityService;
 	/** M3 (wp-m3-cachegc): the cache registry and garbage collector (S04 §7.5). */
@@ -161,6 +164,12 @@ export async function createCoreServices(
 		log: opts.log,
 	});
 	await remotion.init(!config.dev);
+	const textMeasurer = new HeadlessTextMeasurer({
+		remotion,
+		fonts,
+		enabled: headlessTextMeasureEnabled(env),
+		log: opts.log,
+	});
 	const capabilities = new CapabilityService({
 		config,
 		selfCheck: check,
@@ -231,6 +240,7 @@ export async function createCoreServices(
 		fonts,
 		fontLibrary,
 		remotion,
+		textMeasurer,
 		exports: exportsSvc,
 		capabilities,
 		cache,
@@ -253,6 +263,7 @@ export async function createCoreServices(
 			uploads.stop();
 			await queue.shutdown();
 			await cache.stop();
+			await textMeasurer.close();
 		},
 	};
 }

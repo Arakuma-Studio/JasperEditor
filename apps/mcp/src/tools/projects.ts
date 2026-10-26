@@ -50,7 +50,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Engine status',
 			description:
-				'Shows which JasperEditor engine this server talks to (URL, how it was found, version) and what it can render (native ffmpeg export, fframes motion graphics, Remotion, available encoders). Call it first when other tools report that the engine is unreachable.',
+				'Shows which JasperEditor engine this server talks to (URL, how it was found, version), what it can render (native ffmpeg export, fframes motion graphics, Remotion, available encoders) and where speech-to-text runs (the GPU provider probe: providers with reasons, chosen encoder/decoder, threads, recommended model, NVIDIA CUDA provider state). Call it first when other tools report that the engine is unreachable.',
 			input: {},
 			annotations: READ_ONLY,
 		},
@@ -75,6 +75,18 @@ export function registerProjectTools(ctx: ToolContext): void {
 						}
 					: undefined,
 				pathImport: caps.engine.pathRegistration,
+				// spec 16 SG-031: the speech-to-text provider probe (where transcription runs)
+				speech: caps.features?.speech
+					? {
+							status: caps.features.speech.status,
+							...(caps.features.speech.reason ? { reason: caps.features.speech.reason } : {}),
+							providers: caps.features.speech.providers ?? 'not probed yet (list_speech_models probes)',
+							chosen: caps.features.speech.chosen ?? null,
+							threads: caps.features.speech.threads ?? null,
+							recommendedModel: caps.features.speech.recommendedModel ?? null,
+							cuda: caps.features.speech.cuda ?? null,
+						}
+					: undefined,
 			});
 		},
 	);

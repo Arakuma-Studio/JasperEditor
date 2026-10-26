@@ -62,7 +62,7 @@ estimate still moves by far less than breadth, because what limits real use is n
 | Real-user experience | unknown | No outside users yet. The October audits were internal (no longer kept in the repository; `docs/slop-audit.md` records the latest code audit) |
 | Performance | internal numbers only, CPU-only host | [performance.md](performance.md): a command on 1 000 clips 1.7–2.8 ms and a 50-clip gesture update 3.6–6.5 ms (§13 budgets met, `perf-core`); a drag on 1 000 clips 11.5–12.4 ms of main-thread work per frame, 5 000 clips scroll at 56–60 fps (`ui-perf`); a 2 000-item project opens in 2.0–2.9 s at host load ≈ 18, down from 8–14 s (target < 2 s not demonstrated at that load, `polish`); first export ≈ 2× the warp stage and 9–14× Remotion (D-34); render previews and a perf monitor (`previews`). Nothing at 4K with long timelines, nothing on GPUs |
 | Media formats | ≈ 75% | Everything the LGPL FFmpeg 7.1 decodes, plus image sequences, layered PSD, PDF / Illustrator, SVG, Lottie, EXR / DPX / HEIC / JPEG XL stills (`docs/wp-notes/imports.md`); export H.264 (OpenH264 or hardware), VP9, AV1, ProRes, 10/12-bit HDR. No software HEVC export; camera RAW not supported |
-| AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`); Warp Stabilizer with background analysis (Subspace Warp included), Auto Reframe Sequence (face model when installed, else saliency) and Morph Cut on optical flow (`docs/wp-notes/gaps.md`). No enhance speech; all models run on the CPU |
+| AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`); Warp Stabilizer with background analysis (Subspace Warp included), Auto Reframe Sequence (face model when installed, else saliency) and Morph Cut on optical flow (`docs/wp-notes/gaps.md`). No enhance speech; models run on the CPU except speech to text, whose encoder uses WebGPU or (Linux, downloaded on request) CUDA when available — the GPU paths are tested with a fake runtime only here, no GPU on the build VM (`docs/wp-notes/speech.md` §10–12) |
 | Platforms | Linux only | Web, PWA and Electron on Linux (M1-STATUS); macOS / Windows packaging written, never run |
 | Maturity | early | First commit 29 September 2026. ≈ 586,000 lines of TypeScript and scripts (tests included), almost entirely agent-written; 526 test files and 54 Playwright specs at the 10 October 2026 polish assessment (historical counts from `git ls-files`) |
 
@@ -126,7 +126,7 @@ measurements and limits (montage zones may be run through; weak-word lists for S
 **Done when:** a local speech-to-text model (permissive licence, on-demand download) transcribes clips into
 transcripts with word timings, captions can be generated from them, and text-based editing (delete words → ripple
 the timeline) works as one undoable step.
-**Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Limits: CPU only, Linux only checked, classical diarization.
+**Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Spec 16: GPU providers (WebGPU on macOS/Linux/Windows, CUDA on Linux x64 downloaded on request; Core ML and DirectML deliberately unused), large-v3-turbo, hallucination guards, resumable downloads. Limits: GPU paths unverified on real GPUs in this checkout's tests (fake runtime; WebGPU probe on the VM finds no adapter), Linux only checked, classical diarization.
 
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,
@@ -750,10 +750,17 @@ Spec 15 §2.1 / EA-031 shared mechanics (wp-note [edit-automation.md](wp-notes/e
 features"): built — feature table and agent policies for `edit-automation`, `subtitles`, `transcript-cleanup` (Project
 Settings ▸ Agent Proposals, default on), per-feature Review vocabulary, ghosts of adjustment / text clips, keyframe
 ranges and transitions, `meta.anchorOn` (decorated clips, cut frames), Refresh proposal, `E_TOO_LARGE`, the batch
-commands, `list_proposal_features` / `refresh_proposal`. Not yet: the producers themselves (Decorate Cuts, punch-ins,
-Ken Burns, reactions, slides, music beds, stingers, style recipes, automatic subtitles, transcript cleanup — later work
-packages of specs 13–15); until a producer registers a refresher, **Refresh proposal** is disabled with the reason
-"Its producer cannot re-plan items" (sound design has no refresher either: run the pass again). A keyframe-only change
+commands, `list_proposal_features` / `refresh_proposal`. Producers built (spec 15 EA-020…EA-022, wp-note "Decorate
+Cuts, punch-ins, Ken Burns"): **Decorate Cuts**, **Punch-ins** and **Ken Burns** — pure planners, the `edit-automation`
+job and dry run, Sequence ▸ Automate dialogs, MCP `decorate_cuts` / `add_punch_ins` / `add_ken_burns`, Refresh proposal
+and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: cut kits export through the
+Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note); the punch-in
+accuracy on the user's projects is F1 0.62 at the default density 0.7 (0.71 at 1.0) against the spec's ≥ 0.75 target,
+which the stripped edit cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed
+whooshes have hard edges. Not yet: reactions, slides, music beds, stingers, style recipes, `apply_style`, Style Check,
+automatic subtitles, transcript cleanup (later work packages of specs 13–15); Refresh proposal stays disabled with the
+reason "Its producer cannot re-plan items" for features without a refresher (sound design: run the pass again). A
+keyframe-only change
 of a clip is drawn as the changed clip (wash + ghost) plus its key band, not as the band alone.
 
 ### Not covered by any workstream yet

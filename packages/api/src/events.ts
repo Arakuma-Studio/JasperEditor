@@ -69,6 +69,8 @@ export const EVENT_PAYLOADS = {
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
 	/** spec 13 AS-020: the user subtitle template library changed (Create Subtitles and the Subtitles tab refresh). */
 	'subtitleTemplates.changed': z.object({ revision: z.number().int() }),
+	/** Spec 14 TC-030: the user's transcript cleanup presets changed (the Clean Up preset picker refreshes). */
+	'cleanupPresets.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */
 	'sounds.changed': z.object({ snapshotHash: z.string(), sounds: z.number().int().min(0) }),
 	/** A reference sound profile was built, imported, renamed or deleted (P6-E8); Preferences and Sound Check refresh. */

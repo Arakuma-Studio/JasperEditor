@@ -378,9 +378,9 @@ function templateLayout(t: SubtitleTemplate, seq: DSeq, content: TextContent): L
 }
 
 /** Sets a text clip's box and position from a layout (anchor = box centre), then lays the text out. */
-function setLayout(clip: DText, l: Layout, seq: DSeq, h: HandlerContext): void {
+function setLayout(doc: DDoc, clip: DText, l: Layout, seq: DSeq, h: HandlerContext): void {
 	clip.box = { ...l.box } as DText['box'];
-	layoutText(clip, h, seq.settings.width);
+	layoutText(doc, clip, h, seq.settings.width);
 	clip.transform.position.value = [l.position[0], l.position[1]];
 	clip.transform.anchor.value = [clip.box.width / 2, clip.box.height / 2];
 }
@@ -394,6 +394,7 @@ type PlaceOpts = {
 
 /** Creates one text clip per subtitle (overwrite on the track) with words in content time. Returns their ids. */
 function placeTextSubtitles(
+	doc: DDoc,
 	seq: DSeq,
 	track: DTrack,
 	caps: readonly WorkCaption[],
@@ -438,7 +439,7 @@ function placeTextSubtitles(
 			...visualFields(transform),
 			caption,
 		} as DClip;
-		setLayout(seq.clips[id] as DText, l, seq, h);
+		setLayout(doc, seq.clips[id] as DText, l, seq, h);
 		ids.push(id);
 	}
 	return ids;
@@ -692,6 +693,7 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 	// content time of a subtitle's In: one hour, like caption clips (room to extend heads by trims and alignment)
 	const origin = CAPTION_CONTENT_ORIGIN;
 	const ids = placeTextSubtitles(
+		doc,
 		seq,
 		track,
 		layout.captions,
@@ -845,6 +847,7 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 		const style = templateStyle(template, fontId, seq.settings.width, seq.settings.height);
 		const hl = group.highlight ?? NO_HIGHLIGHT;
 		created = placeTextSubtitles(
+			doc,
 			seq,
 			track,
 			fresh,
@@ -1286,7 +1289,7 @@ function convertToTextClips(doc: DDoc, cmd: CommandOf<'captions.convert'>, h: Ha
 					...(p.speaker ? { speaker: p.speaker } : {}),
 				},
 			} as DClip;
-			setLayout(seq.clips[id] as DText, layout, seq, h);
+			setLayout(doc, seq.clips[id] as DText, layout, seq, h);
 			ids.push(id);
 		});
 	}
@@ -1423,8 +1426,8 @@ function applyTemplate(doc: DDoc, cmd: CommandOf<'subtitleTemplate.apply'>, h: H
 	for (const id of ids) {
 		const c = seq.clips[id] as DText;
 		if (parts.style) c.content.style = clone(linked) as never;
-		if (parts.layout) setLayout(c, templateLayout(template, seq, latest(c.content) as TextContent), seq, h);
-		else layoutText(c, h, seq.settings.width);
+		if (parts.layout) setLayout(doc, c, templateLayout(template, seq, latest(c.content) as TextContent), seq, h);
+		else layoutText(doc, c, h, seq.settings.width);
 		if (parts.animation) removeTemplateEffects(c);
 	}
 	if (parts.animation) applyTemplateMotion(doc, seq, ids, template, h);

@@ -447,7 +447,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add text',
 			description:
-				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations).',
+				"Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour's alpha. The box follows the glyph metrics of the font (measured in the editor or the engine's render browser; `layoutPending` marks an estimate). Preview and every export draw the same.",
 			input: {
 				projectId: ProjectIdArg,
 				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
@@ -463,6 +463,33 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Font family or PostScript name (list_fonts; default Source Sans 3)'),
 				color: z.string().optional().describe('Text color "#RRGGBB" or "#RRGGBBAA" (default white)'),
+				// spec 13 SH-004
+				strokes: z
+					.array(
+						z.object({
+							color: z.string().describe('"#RRGGBB" or "#RRGGBBAA" (alpha = opacity)'),
+							widthPx: z.number().min(0).max(1000),
+							position: z.enum(['outside', 'center', 'inside']).optional().describe('Default outside'),
+						}),
+					)
+					.max(16)
+					.optional()
+					.describe('Strokes, the first drawn on top'),
+				shadow: z
+					.object({
+						color: z.string().describe('"#RRGGBB" or "#RRGGBBAA" (alpha = opacity)'),
+						angleDeg: z.number().min(-3600).max(3600).optional().describe('Default 90 (down)'),
+						distancePx: z.number().min(0).max(10000).optional().describe('Default 0'),
+						blurPx: z.number().min(0).max(10000).optional().describe('Default 0'),
+						spreadPx: z
+							.number()
+							.min(0)
+							.max(10000)
+							.optional()
+							.describe('Growth before the blur (Premiere Size); default 0'),
+					})
+					.optional()
+					.describe('Drop shadow of the glyphs and strokes'),
 				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence pixels'),
 				// M2 (wp-m2-text-anim, S11:ANA-002): text animators of the new clip (see list_text_animations).
 				animateIn: AnimateArg.optional().describe(
@@ -480,6 +507,20 @@ export function registerEditingTools(ctx: ToolContext): void {
 			if (a.sizePx) style.sizePx = a.sizePx;
 			if (a.color) style.fill = hexToRgba(a.color);
 			if (a.font) style.fontId = '$font';
+			if (a.strokes)
+				style.strokes = a.strokes.map((st) => ({
+					color: hexToRgba(st.color),
+					widthPx: st.widthPx,
+					position: st.position ?? 'outside',
+				}));
+			if (a.shadow)
+				style.shadow = {
+					color: hexToRgba(a.shadow.color),
+					angleDeg: a.shadow.angleDeg ?? 90,
+					distancePx: a.shadow.distancePx ?? 0,
+					blurPx: a.shadow.blurPx ?? 0,
+					...(a.shadow.spreadPx ? { spreadPx: a.shadow.spreadPx } : {}),
+				};
 			// M2 (wp-m2-text-anim, S11:ANA-002)
 			const textAnimation = await textAnimationOf(
 				ctx,

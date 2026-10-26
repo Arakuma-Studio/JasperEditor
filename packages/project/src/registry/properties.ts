@@ -1163,11 +1163,24 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 			via: 'clip.update',
 			patch: (v, clip) => {
 				const cur = firstStroke(clip);
+				const rest = otherStrokes(clip);
 				const w = Number(v);
-				return { content: { style: { strokes: w > 0 ? [{ ...cur, widthPx: w }] : [] } } };
+				// spec 13 SH-004: the other strokes stay; 0 removes the only stroke, or hides the first of several.
+				return {
+					content: {
+						style: {
+							strokes:
+								w > 0
+									? [{ ...cur, widthPx: w }, ...rest]
+									: rest.length
+										? [{ ...cur, widthPx: 0 }, ...rest]
+										: [],
+						},
+					},
+				};
 			},
 		},
-		description: 'Outside stroke (0 = no stroke).',
+		description: 'Width of the first stroke (0 = none; the other strokes keep theirs).',
 	},
 	{
 		key: 'text.strokeColor',
@@ -1184,7 +1197,14 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 			patch: (v, clip) => {
 				const cur = firstStroke(clip);
 				return {
-					content: { style: { strokes: [{ ...cur, widthPx: cur.widthPx > 0 ? cur.widthPx : 4, color: v }] } },
+					content: {
+						style: {
+							strokes: [
+								{ ...cur, widthPx: cur.widthPx > 0 ? cur.widthPx : 4, color: v },
+								...otherStrokes(clip),
+							],
+						},
+					},
 				};
 			},
 		},
@@ -1354,6 +1374,11 @@ function firstStroke(clip: Clip): {
 	return s
 		? { color: [...s.color] as RGBA, widthPx: s.widthPx, position: s.position }
 		: { color: [...BLACK] as RGBA, widthPx: 0, position: 'outside' };
+}
+
+/** The strokes after the first (kept by the first stroke's rows). */
+function otherStrokes(clip: Clip): TextStyle['strokes'] {
+	return (textStyleOf(clip)?.strokes ?? []).slice(1).map((s) => ({ ...s, color: [...s.color] as RGBA }));
 }
 
 const BY_KEY = new Map(PROPERTY_SPECS.map((s) => [s.key, s]));

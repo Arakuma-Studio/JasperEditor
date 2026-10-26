@@ -43,8 +43,13 @@ function fontFormatFromUrl(url: string): string | undefined {
 	}
 }
 
+/** True when a face's load has finished on this page (loaded, or failed → fallback stack). */
+export function isFontFaceSettled(f: FontFaceSpec): boolean {
+	return settledFaces.has(faceKey(f));
+}
+
 /** Loads one face once per page; resolves false (never rejects) when it cannot be loaded. */
-function loadFontFace(f: FontFaceSpec): Promise<boolean> {
+export function loadFontFace(f: FontFaceSpec): Promise<boolean> {
 	const key = faceKey(f);
 	const existing = loaded.get(key);
 	if (existing) return existing;

@@ -396,11 +396,15 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 						onBlur={(e) => {
 							const w = Number(e.currentTarget.value);
 							if (!Number.isFinite(w) || w === (style.strokes[0]?.widthPx ?? 0)) return;
+							// spec 13 SH-004: the outline is the first stroke; the other strokes stay.
+							const rest = style.strokes.slice(1);
+							const first = {
+								color: style.strokes[0]?.color ?? ([0, 0, 0, 1] as [number, number, number, number]),
+								widthPx: w,
+								position: style.strokes[0]?.position ?? ('outside' as const),
+							};
 							setStyle({
-								strokes:
-									w > 0
-										? [{ color: style.strokes[0]?.color ?? [0, 0, 0, 1], widthPx: w, position: 'outside' }]
-										: [],
+								strokes: w > 0 ? [first, ...rest] : rest.length ? [{ ...first, widthPx: 0 }, ...rest] : [],
 							});
 						}}
 						data-testid="text.captions.style.outline"

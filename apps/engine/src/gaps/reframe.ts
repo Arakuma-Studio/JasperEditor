@@ -206,7 +206,8 @@ export class ReframeService {
 		this.core.queue.registerRunner('reframe', (ctx) => this.run(ctx));
 	}
 
-	async submit(r: ReframeRequest): Promise<EngineJob> {
+	/** The job input of a request (the media's file, display size and rate); 404 / 400 for unusable media. */
+	private async inputOf(r: ReframeRequest): Promise<Input> {
 		const rec = this.core.registry.get(r.mediaKey);
 		if (!rec) throw new HttpError(404, 'ASSET_NOT_FOUND', `Unknown media key ${r.mediaKey}`);
 		const file = await this.core.registry.resolvePath(r.mediaKey);
@@ -217,7 +218,11 @@ export class ReframeService {
 		if (!(fps.num > 0 && fps.den > 0))
 			throw new HttpError(400, 'VALIDATION_FAILED', 'The video has no frame rate');
 		const display = rec.display ?? { width: vs.width, height: vs.height };
-		const input: Input = { request: r, file, display, fps };
+		return { request: r, file, display, fps };
+	}
+
+	async submit(r: ReframeRequest): Promise<EngineJob> {
+		const input = await this.inputOf(r);
 		return this.core.queue.submit({
 			kind: 'reframe',
 			title: `Auto Reframe: analyse ${r.frameCount} frames`,
@@ -229,6 +234,23 @@ export class ReframeService {
 			input,
 			stage: 'Analyzing',
 		});
+	}
+
+	/**
+	 * The same analysis inside another job (spec 15 EA-021: a punch-in's subject), on that job's signal and slots: a job
+	 * never waits for a queue slot of its own.
+	 */
+	async analyze(
+		r: ReframeRequest,
+		ctx: Pick<JobContext, 'signal' | 'trackChild'> & { progress?: JobContext['progress'] },
+	): Promise<ReframeResult> {
+		const input = await this.inputOf(r);
+		return this.run({
+			input,
+			signal: ctx.signal,
+			trackChild: ctx.trackChild,
+			progress: ctx.progress ?? (() => undefined),
+		} as unknown as JobContext);
 	}
 
 	private async run(ctx: JobContext): Promise<ReframeResult> {

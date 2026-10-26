@@ -14,7 +14,8 @@
     "./image": "./src/image.ts",
     "./env": "./src/env.ts",
     "./fixture-video": "./src/fixture-video.ts",
-    "./tiny-clap": "./src/tiny-clap.ts"
+    "./tiny-clap": "./src/tiny-clap.ts",
+    "./fonts": "./src/fonts.ts"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

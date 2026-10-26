@@ -23,6 +23,7 @@ import { SoundModelStore, soundModelsDir } from '../sounds/semantic/models.ts';
 import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
 import { safeFileName, sha256File } from '../tools/fs.ts';
 import { nodeExecPath } from '../tools/node-runtime.ts';
+import { ortPackageDir } from '../tools/ort.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
 import { loadCatalog, ModelError, ModelStore } from './models.ts';
@@ -61,9 +62,9 @@ export class ProcessingService {
 	) {
 		const paths = core.config.paths;
 		this.settings = new ProcessingSettingsStore(paths.engineConfig);
-		const { entries, bundledDir, speech, vision, sound } = loadCatalog(env);
+		const { entries, bundledDir, speech, speechErrors, vision, sound } = loadCatalog(env);
 		this.models = new ModelStore({ modelsDir: join(paths.root, 'models'), entries, bundledDir });
-		this.speechModels = new SpeechModelStore(speechModelsDir(paths.root), speech);
+		this.speechModels = new SpeechModelStore(speechModelsDir(paths.root), speech, speechErrors);
 		this.visionModels = new VisionModelStore(visionModelsDir(paths.root), vision);
 		this.soundModels = new SoundModelStore(soundModelsDir(paths.root), sound, bundledDir);
 	}
@@ -149,13 +150,36 @@ export class ProcessingService {
 		return 'wasm';
 	}
 
+	/**
+	 * Spec 16 SG-008: ONNX Runtime providers for the upscaler come from the speech-to-text provider probe (one probe
+	 * implementation, run in a worker — the engine process never loads ONNX Runtime); `env` = what jasper-proc needs
+	 * to use the downloaded CUDA provider. Without the speech service: the CPU when ONNX Runtime is installed.
+	 */
+	/** Spec 16 SG-006: the downloaded CUDA provider (for Help ▸ About ▸ Licenses), set by the speech routes. */
+	cudaRuntimeInfo: (() => Promise<{ dir: string; installed: boolean }>) | null = null;
+
+	private ortSource:
+		| ((probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>)
+		| null = null;
+
+	setOrtProviderSource(
+		fn: (probe: boolean) => Promise<{ providers: string[]; env: Record<string, string> }>,
+	): void {
+		this.ortSource = fn;
+	}
+
+	/** `probe`: run the probe when none is cached (jobs); capabilities read only the cache. */
+	async ortProviders(probe = false): Promise<{ providers: string[]; env: Record<string, string> }> {
+		const cpuOnly = { providers: ortPackageDir({}) ? ['cpu'] : [], env: {} };
+		if (this.ortSource) return this.ortSource(probe).catch(() => cpuOnly);
+		return cpuOnly;
+	}
+
 	async features(): Promise<NonNullable<M2Features['processing']>> {
 		const filters = await this.ffmpegFilters();
 		const native = await this.nativeVidstabAllowed();
 		const wasm = await this.vidstabWasmAvailable();
-		const providers: string[] = await import('./proc/upscale.ts')
-			.then((m) => m.ortProviders())
-			.catch(() => []);
+		const providers = (await this.ortProviders()).providers;
 		const s = await this.settings.get();
 		const probe = await this.settings.lastProbe();
 		const installed = (await this.models.list()).filter((m) => m.installed).length;
@@ -342,6 +366,9 @@ export class ProcessingService {
 		output: string,
 	): Promise<string[]> {
 		const scratch = await ctx.scratchDir();
+		const ortUse = input.steps.some((st) => st.op === 'upscale')
+			? await this.ortProviders(true)
+			: { providers: [] as string[], env: {} as Record<string, string> };
 		const spec: ProcSpec = {
 			input: src,
 			output,
@@ -351,7 +378,7 @@ export class ProcessingService {
 			ffprobe: this.ffprobePath,
 			models: await this.modelSpecs(input.steps),
 			threads: Math.max(1, ctx.slots),
-			device: 'cpu',
+			device: ortUse.providers.includes('cuda') ? 'cuda' : 'cpu',
 			scratch: join(scratch, 'proc'),
 			vidstabEngine: input.steps.some((s) => s.op === 'stabilize') ? await this.vidstabEngine() : 'auto',
 		};
@@ -365,7 +392,7 @@ export class ProcessingService {
 				stdio: ['ignore', 'pipe', 'pipe'],
 				detached: process.platform !== 'win32',
 				windowsHide: true,
-				env: { ...process.env, ...this.procEnv() },
+				env: { ...process.env, ...this.procEnv(), ...ortUse.env },
 			});
 			ctx.trackChild(child);
 			const parse = createEventParser(

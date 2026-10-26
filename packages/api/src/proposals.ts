@@ -193,10 +193,12 @@ export type ProposalDecisionResponse = z.infer<typeof ProposalDecisionResponseSc
  * `POST …/:proposalId/refresh` (spec 15 EA-003, "Refresh proposal"): the feature's producer re-plans items on the
  * current document — `"stale"` = every stale item (re-validated first), or ids (pending, stale or invalid ones).
  * Nothing is applied; re-planned items come back pending for review. `409 PROPOSAL_NOT_REFRESHABLE` when the feature
- * has no producer that refreshes.
+ * has no producer that refreshes. `reroll: true` (spec 15 EA-032 "Reroll") re-plans the items with the next seed of
+ * each one (another draw of the same pass), for producers whose items carry seeds; the others re-plan as a refresh.
  */
 export const ProposalRefreshRequestSchema = z.strictObject({
 	itemIds: z.union([z.literal('stale'), z.array(ProposalItemIdSchema).min(1).max(PROPOSAL_LIMITS.maxItems)]),
+	reroll: z.boolean().optional(),
 });
 export type ProposalRefreshRequest = z.infer<typeof ProposalRefreshRequestSchema>;
 

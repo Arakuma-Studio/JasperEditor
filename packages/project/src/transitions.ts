@@ -17,6 +17,7 @@ import {
 	type FadeShape,
 	type FadeShapeType,
 	type RenderAudioFade,
+	readEdgeFades,
 } from './audio-fade.ts';
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
 import type { ParamSpec } from './registry/effects.ts';
@@ -737,6 +738,31 @@ export function resolveAudioTransitions(
 		} else if (o) {
 			const d = Math.min(t.duration, o.duration);
 			entry(o.id).fades.push({ type: 'out', start: clipEnd(o) - d, frames: d, ...curves.in });
+		}
+	}
+	// spec 14 TC-024: edge micro-fades of audio clips (declick at cleanup joins), equal power, inside the clip. An edge
+	// with a transition fade keeps that fade only.
+	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
+	for (const c of Object.values(seq.clips)) {
+		if (c.kind !== 'audio' || !audioTracks.has(c.trackId)) continue;
+		const raw = (c as { edgeFades?: unknown }).edgeFades;
+		if (raw === undefined) continue;
+		const ef = readEdgeFades(raw);
+		const has = (type: 'in' | 'out') =>
+			clips.get(c.id)?.fades.some((f) => f.type === type && !f.edge) ?? false;
+		if (ef.inMs && !has('in')) {
+			const frames = Math.min(c.duration, (ef.inMs / 1000) * fps);
+			entry(c.id).fades.push({ type: 'in', start: c.start, frames, curve: 'equal-power', edge: true });
+		}
+		if (ef.outMs && !has('out')) {
+			const frames = Math.min(c.duration, (ef.outMs / 1000) * fps);
+			entry(c.id).fades.push({
+				type: 'out',
+				start: clipEnd(c) - frames,
+				frames,
+				curve: 'equal-power',
+				edge: true,
+			});
 		}
 	}
 	return { clips, skipped };

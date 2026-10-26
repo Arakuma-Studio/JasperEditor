@@ -22,6 +22,7 @@ import {
 	type JobGroupId,
 	statusOf,
 	summarizeJobs,
+	transcriptionDevice,
 } from './model.ts';
 
 /** Engine + client jobs of the current project (or all when no project is open). */
@@ -229,6 +230,7 @@ function JobRow(props: {
 	const { job } = props;
 	const status = statusOf(job, props.connected);
 	const terminal = TERMINAL_JOB_STATES.has(job.state);
+	const device = transcriptionDevice(job);
 	const pct = job.progress === null ? null : Math.round(job.progress * 100);
 	const statusTone =
 		status === 'Failed' || status === 'Interrupted'
@@ -318,6 +320,13 @@ function JobRow(props: {
 				{!terminal && job.etaSec !== undefined ? <span>{formatEta(job.etaSec)}</span> : null}
 				<span>{formatElapsed(job, props.now)}</span>
 				{job.speed ? <span>{job.speed.toFixed(1)}×</span> : null}
+				{device ? (
+					<span data-testid="job-device" title={device.fallback ?? undefined}>
+						{device.fallback
+							? `Ran on: ${device.label} (fell back: ${device.fallback})`
+							: `Ran on: ${device.label}`}
+					</span>
+				) : null}
 			</div>
 			{props.expanded ? (
 				<div className="mt-1 flex flex-col gap-1 pl-5 text-pr-small" data-testid="job-details">

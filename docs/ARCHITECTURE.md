@@ -416,7 +416,7 @@ export type Issue = { commandIndex: number; code: string; message: string; path?
 export interface CommandContext {
   ids: IdSource; now(): string; revision: number;
   registries: { effects: EffectRegistry; mgTemplates: MgTemplateRegistry; presets: PresetRegistry };
-  textMeasurer?: TextMeasurer;             // browser only; headless sets layoutPending (S01:KND-006)
+  textMeasurer?: TextMeasurer;             // editor page or the engine's render browser; none/null → layoutPending (S01:KND-006, spec 13 SH-004)
   selection?: { clips: string[]; primaryClip: string | null };  // for "$selection" resolution only
 }
 export function applyTransaction(doc: ProjectDocument, tx: Transaction, ctx: CommandContext):
@@ -754,7 +754,7 @@ MCP client ──Streamable HTTP /mcp──▶ engine (same tools)      └─ n
 - **Document surface:** transactions (`jasper.tx/1`, S01:CMD-005) + queries (`doc.get`, `doc.revision`, `sequence.summary`, `sequence.clipsInRange`, `sequence.at`, `media.list`, `selection.get`, `playhead.get`, `playhead.set`, `history.list`, `validate`; `frame.capture` via `POST /api/stills`) + events (`doc.changed`, `selection.changed`, `playhead.changed` ≤ 10 Hz, `job.*`). Schemas from `@jasper/project/agent/schema-export` (`GET /api/agent/schema`).
 - **In-page bridge** (`apps/web/src/agent-bridge`, kept): `window.jasper = {schema(), query(name, args), transact(tx), on(event, cb)}` in dev and Electron builds; the session applies with `origin: {agent}`; `expectedRevision` optimistic concurrency with fast-forward (S01:AGT-010).
 - **Engine relay:** when an editor opens a project it connects `WS /agent` and sends `{type:'hello', projectId, sessionId, leaseId}`. `POST /api/agent/tx|query` for that project is forwarded as `{type:'request', id, kind, payload}`; the session replies `{type:'response', id, result}` (timeout 30 s → `E_NO_SESSION` fallback to headless only if the lease expired). The session also forwards `doc.changed` to the engine for `/events` subscribers.
-- **Headless:** no lease holder → the engine loads the project, applies the transaction with `@jasper/project` (text layout marked `layoutPending`), saves with a new revision (S01:AGT-020).
+- **Headless:** no lease holder → the engine loads the project, applies the transaction with `@jasper/project` (text boxes measured in the render browser by `HeadlessTextMeasurer`, else an estimate marked `layoutPending` that the editor measures later; spec 13 SH-004, wp-note `text-render`), saves with a new revision (S01:AGT-020).
 - **Guard rails (S01:AGT-011):** transactions containing `item.delete`, `sequence.delete`, `track.remove`, `media.removeUnused` or any `force: true` need the user's approval. The editor shell shows a sticky **approval card** at the top of the window (`apps/web/src/shell/AgentApprovals.tsx`: label, "<agent> wants to run N commands: <summary>", the reasons, a countdown, Show commands, **Approve** / **Deny**); 60 s without an answer → `E_APPROVAL_TIMEOUT`; headless mode rejects with `E_APPROVAL_DENIED`. Limits: 5 000 commands, 20 MB.
 - **What the user sees:** each agent transaction is one `Agent: <label>` History entry (`history.undo` for agents only if the top entry is theirs, S01:UND-008), the changed clips flash (S01:AGT-012), and the shell shows a toast `Agent: <label>` with an Undo action for every change an external agent applied.
 
@@ -789,7 +789,11 @@ finer anchors (`meta.anchorOn`: decorated clips and cut frames), producer refres
 `PROPOSAL_TOO_LARGE` / `E_TOO_LARGE` with the range that fits), batch commands (`clip.addAdjustmentBatch`,
 `keyframe.addBatch`), `GET /api/projects/:id/proposal-features` / `list_proposal_features`, and the editor's per-feature
 Review vocabulary (`apps/web/src/proposals/vocabulary.ts`) and ghosts of adjustment / text clips, keyframe ranges and
-transitions.
+transitions. The editing-automation passes (spec 15 EA-020…EA-022: Decorate Cuts, punch-ins, Ken Burns) are pure
+planners in `packages/project/src/automation/` (deterministic per seed, kit packs as data, plain-data parameters for
+style recipes); the engine's `edit-automation` job (`POST /api/projects/:projectId/automation/:pass`, dry run or
+propose) adds what needs I/O — the live document, sounds from the library through sound design's cues and placement,
+the Reframe subject analysis — and registers the feature's refresher (Refresh proposal, Reroll).
 
 **Sound design (built, D-50…D-53; spec 12).** Agents cannot hear, so every audible property has a
 measured or visual proxy, and every surface the editor has has an MCP twin (spec 12 §1): the library (`sound_library_status`,

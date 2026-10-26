@@ -2,6 +2,7 @@ import type { IdSource } from '../ids.ts';
 import type { PresetRegistry } from '../presets.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
 import type { MgTemplateRegistry } from '../registry/mg.ts';
+import type { FontRef } from '../schema/media.ts';
 import type { TextBox, TextContent } from '../schema/sequence.ts';
 
 export const TX_PROTOCOL = 'jasper.tx/1';
@@ -39,6 +40,8 @@ export const ERROR_CODES = [
 	'E_NO_SESSION',
 	'E_INVARIANT',
 	'E_INTERNAL',
+	/** The edit cannot work on this material (spec 14: a cleanup source range on a reversed / remapped clip). */
+	'E_UNSUPPORTED',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -116,9 +119,19 @@ export type TransactionResult =
 	  }
 	| { ok: false; revision: number; errors: Issue[] };
 
-/** Measures text in the browser (S01:ARC-002, KND-006). Headless contexts omit it (layoutPending). */
+/**
+ * Measures laid-out text (S01:ARC-002, KND-006, spec 13 SH-004): the size the text block of `content` takes with the
+ * faces the renderers draw it with (`fonts` = the document's font table, which `content.style.fontId` and the runs'
+ * fonts name). Point text (`box.autoSize: 'width'`) never wraps; other boxes wrap at `box.width`. The editor session
+ * measures in its page, the engine in its headless browser (the same Chromium layout as every renderer).
+ * `null` = cannot measure now (fonts loading, no browser): the clip keeps an estimated box and stays `layoutPending`.
+ */
 export interface TextMeasurer {
-	measure(content: TextContent, box: TextBox): { width: number; height: number };
+	measure(
+		content: TextContent,
+		box: TextBox,
+		fonts: Readonly<Record<string, FontRef>>,
+	): { width: number; height: number } | null;
 }
 
 export type Registries = {
