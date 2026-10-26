@@ -51,7 +51,7 @@ import {
 import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
 import { chainMember, constantSource, loweredMember, stillMember } from './stream/members.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
-import { planTapStream, type TapMember, type TapStreamPlan } from './stream/taps.ts';
+import { planTapStream, type TapMember, type TapStreamPlan } from './stream/tap-plan.ts';
 
 /** What feeds one pipe of the composite: a sub-pixel layer, or a kernel stream of constant pictures (spec 13 AS-072). */
 export type StreamPlan = StreamLayerPlan | TapStreamPlan;

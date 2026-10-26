@@ -22,7 +22,7 @@ import {
 	shiftProgram,
 	singleTap,
 } from '../src/export/stream/lowered.ts';
-import { planTapStream, type TapMember } from '../src/export/stream/taps.ts';
+import { planTapStream, type TapMember } from '../src/export/stream/tap-plan.ts';
 import { layerStill, layerStillClip } from '../src/layer-bake/layer.ts';
 import { alphaBounds, cropRgba } from '../src/layer-bake/service.ts';
 import { DocBuilder } from './helpers.ts';

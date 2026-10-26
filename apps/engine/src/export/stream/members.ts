@@ -4,7 +4,7 @@ import type { Rational, RenderVisualClip } from '@jasper/project';
 import { isFeatheredCrop } from '../crop.ts';
 import { type LoweredPicture, planLoweredFrames, shiftProgram, singleTap, type TapFrame } from './lowered.ts';
 import type { StreamLayerPlan } from './plan.ts';
-import type { TapMember, TapPicture } from './taps.ts';
+import type { TapMember, TapPicture } from './tap-plan.ts';
 
 /** The decode chain of a layer (`layerSourceChain`), for the level pictures of a constant source. */
 export type MemberChain = {
