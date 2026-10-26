@@ -24,7 +24,10 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 ## 3. Task board
 - ✅ Build/test VM rented and provisioned (Hetzner cpx51, shared vCPU).
 - 🔄 Spike on the user's Mac (alignment, audio verification, false-correction tests, glossary prompting, cost).
-- 🔄 Code map of every affected surface + proposed work-package split.
+- ✅ Code map of every affected surface + proposed work-package split (private research folder): no schema bump needed
+  if the script stays in `Sequence.cleanup.script` and fixes are commands on existing word fields; needs an index-free
+  transcript fix command, an in-place subtitle patch, a worker scoring pass (the existing word-alignment pass already
+  decodes a given text once), a new proposal feature, and the UI never sends a Whisper prompt today.
 - ⏳ Spec 17 (`docs/specs/17-script-correction.md`).
 - ⏳ Implementation work packages (parallel, worktrees `.claude/worktrees/sc-<name>`, integration branch
   `feat/script-correction`).
@@ -43,4 +46,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - Prompting Whisper with script text can make it output script words that were not said; the spike measures it.
 
 ## 7. Log
-- 2026-10-27 — programme started; VM rented; spike and code-map research launched.
+- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done.
