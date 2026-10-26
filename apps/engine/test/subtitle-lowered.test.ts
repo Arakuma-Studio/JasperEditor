@@ -419,10 +419,11 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 		expect(baked).toMatchObject({ start: 0, duration: 1, opacity: { value: 100, keyframes: [] } });
 		const m = resolveLayerProps(baked, 0).matrix;
 		expect([m.a, m.b, m.c, m.d, m.e, m.f].map((v) => v + 0)).toEqual([1, 0, 0, 1, -pic.x, -pic.y]);
-		// Grown (the layer drew past its bleed): the box size more on every side.
+		// Grown (the layer drew past its bleed): a quarter of the box and two font sizes more on every side.
 		const grown = layerStill(c, undefined, true)!;
-		expect(grown.x).toBe(pic.x - 810);
-		expect(grown.w).toBe(pic.w + 2 * 810);
+		const more = Math.ceil(0.25 * 810 + 2 * 98);
+		expect(grown.x).toBe(pic.x - more);
+		expect(grown.w).toBe(pic.w + 2 * more);
 		// A static subtitle keeps the ordinary still recipe.
 		const s = subtitle();
 		expect(layerStill(clipOf(snapOf(s.d), s.clip))).toBeNull();

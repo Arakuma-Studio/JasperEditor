@@ -225,11 +225,16 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					budget,
 				);
 				const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
+				// Sheets side by side split the pages by their still counts (their fixed costs overlap).
+				const sheetShares = pageShares(
+					sheets.map((sh) => sh.length),
+					budget,
+				);
 				await runPagePool(
 					[
-						...sheets.map((sheet) => ({
+						...sheets.map((sheet, i) => ({
 							// A sheet spreads its frames over every page it is granted.
-							want: budget,
+							want: maxInFlight === 1 ? budget : sheetShares[i]!,
 							weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
 							run: async (g: PageGrant) => {
 								const bakes = await svc.ensureSheet(

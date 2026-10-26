@@ -195,8 +195,8 @@ export type BakeVariant =
 	| { recipe: 'frame'; frame: number }
 	/**
 	 * spec 13 AS-070: a lowered layer (`layerStill`): one frame of its layer region without Motion, Opacity and the
-	 * lowered effects (the native kernel draws them per frame); no fades. `grow`: the region grown by the box size
-	 * on every side (the layer drew past its content bleed, e.g. text overflowing an estimated box).
+	 * lowered effects (the native kernel draws them per frame); no fades. `grow`: the region grown on every side (the
+	 * layer drew past its content bleed, e.g. text overflowing an estimated box, see `layerStill`).
 	 */
 	| { recipe: 'layer-still'; grow?: true };
 
@@ -321,10 +321,12 @@ export function layerStill(
 	if (!isStaticLayer(bare, registry)) return null;
 	const bleed = contentBleed(bare, registry);
 	if (bleed === null || !Number.isFinite(bleed)) return null;
+	// Grown: a quarter of the box and two font sizes more (an estimated box the glyphs overflow, a line that wraps).
+	const size = 'text' in c.source ? Math.max(0, c.source.text.style.sizePx ?? 0) : 0;
 	const e =
 		Math.ceil(Math.max(0, bleed)) +
 		2 +
-		(grow ? Math.ceil(Math.max(c.intrinsicBox.width, c.intrinsicBox.height)) : 0);
+		(grow ? Math.ceil(0.25 * Math.max(c.intrinsicBox.width, c.intrinsicBox.height) + 2 * size) : 0);
 	const w = Math.ceil(c.intrinsicBox.width) + 2 * e;
 	const h = Math.ceil(c.intrinsicBox.height) + 2 * e;
 	if (!(w > 0 && h > 0) || w > MAX_LAYER_STILL_SIDE || h > MAX_LAYER_STILL_SIDE) return null;
