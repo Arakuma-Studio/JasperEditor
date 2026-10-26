@@ -307,6 +307,25 @@ function mapItem<T extends ProposalItemInput>(
 	return { item: out as T, unmapped: [...unmapped], refs };
 }
 
+/** An item with some temp refs renamed (every string equal to one, wherever it is: declarations and uses). */
+function renameRefs<T>(v: T, names: ReadonlyMap<string, string>, depth = 0): T {
+	if (depth > 64) return v;
+	if (typeof v === 'string') return (names.get(v) ?? v) as T;
+	if (Array.isArray(v)) return v.map((x) => renameRefs(x, names, depth + 1)) as T;
+	if (v && typeof v === 'object') {
+		const out: Record<string, unknown> = {};
+		for (const [k, x] of Object.entries(v))
+			Object.defineProperty(out, k, {
+				value: renameRefs(x, names, depth + 1),
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
+		return out as T;
+	}
+	return v;
+}
+
 /** The reverse view: refs and tokens of earlier stages spelled as the ids the simulation has for them. */
 function viewItem(item: ProposalItem, simOfRef: ReadonlyMap<string, string>): ProposalItem {
 	if (!simOfRef.size) return item;
@@ -638,7 +657,14 @@ export async function planStyle(
 	const baseRequires = () => [STYLE_RECIPE_ITEM, ...(cleanupItem ? [cleanupItem] : [])];
 
 	/** Adds a stage's items (proposal form) and applies them to the simulation. */
-	const commit = (stageItems: ProposalItemInput[], dropped: { itemId: string; reason: string }[]) => {
+	const commit = (input: ProposalItemInput[], dropped: { itemId: string; reason: string }[], stage: string) => {
+		// a pass names its setup refs by a counter (`$snd0`, `$sfxBin`…): one another step declared already is renamed
+		// throughout this step's items (they share one transaction with the earlier ones)
+		const clash = new Map<string, string>();
+		for (const it of input)
+			for (const r of declaredRefs(it.commands))
+				if (declared.has(r) && !clash.has(r)) clash.set(r, `${r}_${stage}`.slice(0, 120));
+		const stageItems = clash.size ? input.map((it) => renameRefs(it, clash)) : input;
 		const mapped: ProposalItemInput[] = [];
 		for (const raw of stageItems) {
 			const m = mapItem(raw, sim.maps);
@@ -789,7 +815,7 @@ export async function planStyle(
 				},
 			};
 			const dropped: { itemId: string; reason: string }[] = [];
-			const r = commit([item], dropped);
+			const r = commit([item], dropped, 'cleanup');
 			if (!r.applied.length) {
 				report(s, {
 					status: 'skipped',
@@ -892,7 +918,7 @@ export async function planStyle(
 				},
 			};
 			const dropped: { itemId: string; reason: string }[] = [];
-			const r = commit([item], dropped);
+			const r = commit([item], dropped, 'subtitles');
 			if (!r.applied.length) {
 				const why = dropped[0]?.reason ?? 'the subtitles do not apply';
 				const noWords = /transcri|words/i.test(why);
@@ -1018,7 +1044,7 @@ export async function planStyle(
 			continue;
 		}
 		const dropped: { itemId: string; reason: string }[] = [];
-		const r = commit(pi.items, dropped);
+		const r = commit(pi.items, dropped, pass);
 		const planned = nonSetup(r.applied).length;
 		if (planned) cost = maxCost(cost, pi.cost.class);
 		report(s, {

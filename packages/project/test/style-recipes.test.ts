@@ -13,6 +13,8 @@ import {
 	checkInvariants,
 	clipRect,
 	createCounterIdSource,
+	type LibraryProvenance,
+	type SoundProposalMedia,
 	createProposal,
 	defaultRegistries,
 	flicksPerFrame,
@@ -42,6 +44,7 @@ import {
 	subtitleRegions,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
+import { LIB } from './sound-fixtures.ts';
 
 const NOW = '2026-10-26T10:00:00.000Z';
 const CTX: ProposalContext = { registries: defaultRegistries(), now: () => NOW };
@@ -686,6 +689,47 @@ describe('Apply Style (EA-012)', () => {
 		// the cleanup's refresh is a re-run of Apply Style
 		const c = await refreshStyleItems(t.h.doc, p, ['cleanup'], OPTS);
 		expect(c.ok && c.dropped[0]?.reason).toMatch(/Apply Style again/);
+	});
+
+	it('regression: passes that each import their own sounds rename the setup refs they share ($snd0) instead of dropping items', async () => {
+		const t = talk([150, 120, 200, 180]);
+		let n = 0;
+		const sound = (title: string): SoundProposalMedia => {
+			n++;
+			const soundId = `snd_${n.toString(16).padStart(16, '0')}`;
+			const library: LibraryProvenance = { ...LIB, soundId, title, types: ['whoosh'] };
+			const asset = videoAsset({ kind: 'audio', seconds: 0.6 }) as Record<string, unknown>;
+			return {
+				soundId,
+				title,
+				fingerprint: asset.fingerprint as string,
+				kind: 'audio',
+				existingMediaId: null,
+				library,
+				register: { type: 'media.register', asset, name: title, ref: '$x', itemRef: '$xi' },
+			};
+		};
+		const hooks: StyleHooks = {
+			sounds: async (pass, _doc, _plan, needs) => {
+				const m = sound(pass === 'decorate-cuts' ? 'Kit whoosh' : 'Zoom whoosh');
+				const assign = new Map(needs.items.map((it) => [it.id, { soundId: m.soundId, gainOffsetDb: 0 }]));
+				return {
+					sfx: { media: [m], assign, type: 'whoosh' },
+					report: { enabled: true, type: 'whoosh', available: 1, placed: assign.size, sounds: 1, unsounded: 0 },
+					warnings: [],
+				};
+			},
+		};
+		const plan = await planStyle(t.h.doc, { recipe: recipe('builtin:fast-long-form'), seed: 1, passes: { subtitles: false, music: false } }, hooks, OPTS);
+		const kits = plan.stages.find((x) => x.stage === 'decorate-cuts')!;
+		const punch = plan.stages.find((x) => x.stage === 'punch-ins')!;
+		expect(kits.dropped).toEqual([]);
+		expect(punch.dropped).toEqual([]);
+		expect(punch.count).toBe(punch.summary!.count);
+		const p = propose(t.h, styleDraft(plan)!);
+		expect(p.items.filter((it) => it.state === 'invalid')).toEqual([]);
+		accept(t.h, p);
+		expect(Object.values(t.h.doc.media).filter((m) => (m as { library?: unknown }).library)).toHaveLength(2);
 	});
 
 	it('agents need every embedded feature allowed: a combined proposal with a cleanup is refused when cleanup is off', async () => {
