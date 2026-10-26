@@ -14,9 +14,13 @@ import { TEST_FFMPEG } from './helpers.ts';
 const dir = mkdtempSync(join(tmpdir(), 'jasper-png-'));
 
 function ffDecode(file: string): Buffer {
-	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'], {
-		maxBuffer: 1 << 26,
-	});
+	const r = spawnSync(
+		TEST_FFMPEG,
+		['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'],
+		{
+			maxBuffer: 1 << 26,
+		},
+	);
 	if (r.status !== 0) throw new Error(r.stderr.toString());
 	return r.stdout;
 }
@@ -52,17 +56,21 @@ const image = fc
 describe('kernel stream PNG decode (AS-072)', () => {
 	it('equals ffmpeg for the bake’s own PNGs and for filtered RGBA and RGB PNGs', async () => {
 		await fc.assert(
-			fc.asyncProperty(image, fc.constantFrom('none', 'sub', 'up', 'avg', 'paeth', 'mixed'), async (im, pred) => {
-				const own = join(dir, 'own.png');
-				writeFileSync(own, encodePng(im.px, im.w, im.h));
-				expect(Buffer.from((await decodePngRgba(readFileSync(own), im.w, im.h))!)).toEqual(ffDecode(own));
-				for (const fmt of ['rgba', 'rgb24']) {
-					const f = ffEncode(im.px, im.w, im.h, fmt, pred);
-					const got = await decodePngRgba(readFileSync(f), im.w, im.h);
-					expect(got, `${fmt} ${pred}`).not.toBeNull();
-					expect(Buffer.from(got!)).toEqual(ffDecode(f));
-				}
-			}),
+			fc.asyncProperty(
+				image,
+				fc.constantFrom('none', 'sub', 'up', 'avg', 'paeth', 'mixed'),
+				async (im, pred) => {
+					const own = join(dir, 'own.png');
+					writeFileSync(own, encodePng(im.px, im.w, im.h));
+					expect(Buffer.from((await decodePngRgba(readFileSync(own), im.w, im.h))!)).toEqual(ffDecode(own));
+					for (const fmt of ['rgba', 'rgb24']) {
+						const f = ffEncode(im.px, im.w, im.h, fmt, pred);
+						const got = await decodePngRgba(readFileSync(f), im.w, im.h);
+						expect(got, `${fmt} ${pred}`).not.toBeNull();
+						expect(Buffer.from(got!)).toEqual(ffDecode(f));
+					}
+				},
+			),
 			{ numRuns: 25 },
 		);
 	}, 120_000);

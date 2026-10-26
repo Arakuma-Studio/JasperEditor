@@ -52,25 +52,25 @@ export async function decodePngRgba(buf: Buffer, w: number, h: number): Promise<
 		// Unfiltered rows (the layer bake's encoder writes only these) are copied as they are.
 		if (f === 0) cur.set(raw.subarray(base + 1, base + 1 + stride));
 		else
-		for (let i = 0; i < stride; i++) {
-			const x = raw[base + 1 + i]!;
-			const a = i >= channels ? cur[i - channels]! : 0;
-			const b = prev[i]!;
-			let v: number;
-			if (f === 0) v = x;
-			else if (f === 1) v = x + a;
-			else if (f === 2) v = x + b;
-			else if (f === 3) v = x + ((a + b) >> 1);
-			else if (f === 4) {
-				const c = i >= channels ? prev[i - channels]! : 0;
-				const p = a + b - c;
-				const pa = Math.abs(p - a);
-				const pb = Math.abs(p - b);
-				const pc = Math.abs(p - c);
-				v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-			} else throw new Error(`PNG row filter ${f}`);
-			cur[i] = v & 0xff;
-		}
+			for (let i = 0; i < stride; i++) {
+				const x = raw[base + 1 + i]!;
+				const a = i >= channels ? cur[i - channels]! : 0;
+				const b = prev[i]!;
+				let v: number;
+				if (f === 0) v = x;
+				else if (f === 1) v = x + a;
+				else if (f === 2) v = x + b;
+				else if (f === 3) v = x + ((a + b) >> 1);
+				else if (f === 4) {
+					const c = i >= channels ? prev[i - channels]! : 0;
+					const p = a + b - c;
+					const pa = Math.abs(p - a);
+					const pb = Math.abs(p - b);
+					const pc = Math.abs(p - c);
+					v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+				} else throw new Error(`PNG row filter ${f}`);
+				cur[i] = v & 0xff;
+			}
 		const o = y * w * 4;
 		if (channels === 4) out.set(cur, o);
 		else
