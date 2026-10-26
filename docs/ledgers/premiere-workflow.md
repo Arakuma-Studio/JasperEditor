@@ -116,8 +116,8 @@ Legend: ✅ done · 🔄 in progress · ⏳ queued · ⛔ blocked
   (medium/turbo/quantised), defaults per device class, measured evaluation table.
 
 ### Phase 3 — implementation (queue ≤ 6 agents, worktrees `.claude/worktrees/<name>`, VM-only testing)
-- ✅ Foundation (coordinator): integration branch `feat/workflow`, schema v9 bump (13d0a095; 2,287 project tests
-  pass on the VM).
+- ✅ Foundation (coordinator): integration branch `feat/workflow`, schema bump (13d0a095 as v9; renumbered v10 at the
+  origin/main merge, D5; 2,287 project tests pass on the VM).
 Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids):
 | WP | Scope | Depends on | State |
 |---|---|---|---|
@@ -147,6 +147,9 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   export, with conversion both ways (from subs research; to confirm in spec 13).
 - D4 Every automation (subtitles generation, cleanup cuts, editing passes) is reviewable and one undo step; editing
   passes are proposals with agent accept policies.
+- D5 (2026-10-26) origin/main shipped schema v9 (social-comment template media params) while the workflow v9 was unpublished:
+  the shipped v9 keeps its number; the workflow bump is renumbered v10 (`v9→v10`, version bump only, fixture
+  `schema-v10.jasper`, "Fields added in v10").
 
 ## 6. Costs (estimated from provider rates)
 | Machine | Rate | Since | Note |
@@ -179,4 +182,6 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   rounding to 0.9999999999999996, regression test fails before; subtitles e2e named libx264 → OpenH264 only; e2e 3/3
   with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged (suite on 6fb5bd71: typecheck, lint, i18n pass; 8,223 passed, only the 7 known failures); recipes launched; recipes merged; fpsmap launched (export fidelity); suite on c14e4fdd: 8,275 passed, 7 known + 2 easing fuzz failures = real crash on
   the curve keyword "__proto__" (MCP parseCurveArg, web parseCubicBezier; predates the programme) fixed in 4ddf21f9 with
-  regression tests that fail before (the "occasionally flaky easing fuzz" was this bug); subexport merged.
+  regression tests that fail before (the "occasionally flaky easing fuzz" was this bug); subexport merged (suite: 8,315 passed, only the 7 known failures); origin/main merged into feat/workflow (299f4d2f,
+  191 commits: social comments shipped their own schema v9 → the workflow bump is now v10, see D5; upstream had also fixed
+  the easing `__proto__` crash, its version kept).
