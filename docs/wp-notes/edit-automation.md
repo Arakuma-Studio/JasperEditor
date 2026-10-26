@@ -360,9 +360,21 @@ default.
   share of channels within 4/255 0.9955–1.0000 at 7 frames per kit (mean |Δ| ≤ 0.075), and the kit visibly changes the
   picture (mean |Δ| vs the undecorated edit up to 0.7 shake, 1.4 jolt, 12.1 whip, 9.1 zoom blur, 13.0 zoom through,
   16.8 spin).
-- `apps/mcp/test/automation.test.ts` (6); `apps/web/test/automation-dialog.test.tsx` (7: Automate submenu, dialog dry
+- `apps/mcp/test/automation.test.ts` (6); `apps/web/test/automation-dialog.test.tsx` (8: Automate submenu, dialog dry
   run, parameters, Propose → review, budget, recipe starting values, Reroll through the session).
-- Whole suites on the VM: `packages/project` 2 405 tests, `packages/session` 80, `apps/mcp` 283 (8 skipped, existing),
+- `e2e/automation.spec.ts` (`pnpm e2e`, VM, LGPL FFmpeg): Sequence ▸ Automate ▸ Decorate Cuts… → dry run (2 of 2
+  cuts, Remotion) → Propose → Review (Cut kits, ghosts) → ⟳ Reroll → Accept all → Apply (one History entry) → export
+  through Remotion; frames around both cuts differ from the undecorated export (whip blur and spin seen in extracted
+  frames), frames away from the cuts match — passed (1.2 min).
+- In the running dev stack (VM, pairing flow): the dialog, the dry-run summary, Propose → Review with three kits and
+  their whooshes, Reroll (Whip → Zoom blur → Jolt, the why-line, ghosts and the whoosh re-trimmed to the new kit),
+  Accept all + Ctrl+Enter → "Applied 3 of 3", FX and SFX tracks with the kits. This found a session defect, fixed:
+  the preview memo keyed items by id and alternative only, so a Reroll (same id, same document) kept the old ghosts
+  and details; `previewKey` now fingerprints the item's command set (`packages/session/test/proposals.test.ts`
+  "a Reroll re-planning an item in place…", fails before the fix). Without Chrome's HTML-in-Canvas flag the live
+  Program shows adjustment layers unadjusted with the existing notice (docs/gaps.md); render previews and export
+  render them.
+- Whole suites on the VM: `packages/project` 2 405 tests, `packages/session` 81, `apps/mcp` 283 (8 skipped, existing),
   `apps/web` 1 085, engine proposals / sound-design plan / beds / fx-routing / automation 88 — all pass; typecheck of
   project, session, api, engine-client, engine, mcp, web; biome on the changed files; check-tokens, check-layers,
   check-anime; `pnpm i18n` + `pnpm i18n:check` (11 266 strings).
