@@ -750,9 +750,9 @@ function drawStack(ctx: StackContext): string {
 	const T = (R1 - R0) * frameSec;
 	// Background: sequence-sized, sequence colour, one extra frame of margin (the final trim is exact).
 	const bgLabel = `${P}bg`;
-	ctx.chains.push(
-		`color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${bgLabel}]`,
-	);
+	const bgChain = `color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${bgLabel}]`;
+	const bgChains = ctx.chains;
+	bgChains.push(bgChain);
 	let last = bgLabel;
 	let li = 0;
 
@@ -1216,7 +1216,9 @@ function drawStack(ctx: StackContext): string {
 				(motion.resize
 					? !motion.resize.perFrame && motion.resize.w === String(W) && motion.resize.h === String(H)
 					: source.width === W && source.height === H);
-			if (covers) {
+			if (covers && bgChains.includes(bgChain)) {
+				// The background is not drawn at all.
+				bgChains.splice(bgChains.indexOf(bgChain), 1);
 				const frames = R1 - R0 + 1;
 				ctx.chains.push(
 					`[${label}]tpad=stop=${frames}:stop_mode=add:color=${colorHex(snap.settings.backgroundColor)},trim=end_frame=${frames}[${next}]`,

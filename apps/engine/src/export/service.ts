@@ -1333,7 +1333,7 @@ export class ExportService {
 			await abandon();
 			if (bgError !== null && !ctx.signal.aborted) throw failure(e);
 			const consequence = !se || /^layer stream:/.test(se.message);
-			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted, se) : se;
+			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted) : se;
 		} finally {
 			ctx.signal.removeEventListener('abort', onJobAbort);
 		}
@@ -2281,13 +2281,8 @@ export class ExportService {
  * spec 13 AS-074: a composite killed by the system (SIGKILL that the job did not send: the OOM killer, a memory
  * limit) becomes an `OUT_OF_MEMORY` job error naming the cause, never a crash; other errors pass unchanged.
  */
-export function killedComposite(
-	e: unknown,
-	inputs: number,
-	cancelled: boolean,
-	streamError: Error | null = null,
-): unknown {
-	if (cancelled || !(e instanceof Error) || !/exited SIGKILL/.test(e.message)) return streamError ?? e;
+export function killedComposite(e: unknown, inputs: number, cancelled: boolean): unknown {
+	if (cancelled || !(e instanceof Error) || !/exited SIGKILL/.test(e.message)) return e;
 	return new JobError(
 		'OUT_OF_MEMORY',
 		`The export's compositor (ffmpeg, ${inputs} inputs) was killed by the system, most likely because the machine ran out of memory; close other applications or export a shorter range`,

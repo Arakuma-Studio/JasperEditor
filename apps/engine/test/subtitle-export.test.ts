@@ -470,7 +470,10 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 	}, 300_000);
 
 	it('a compositor that fails on its own reports its error, not the pipe error of the stream it fed', async () => {
-		const failing = await wrappedEngine('echo "graph: Filter has an unconnected output" >&2; exit 3');
+		// It reads part of the stream's pipe first, so the stream is writing when it dies (EPIPE / ECONNRESET there).
+		const failing = await wrappedEngine(
+			'head -c 300000 <&3 >/dev/null; echo "graph: Filter has an unconnected output" >&2; exit 3',
+		);
 		const d = await stillsDoc(failing, 3);
 		const job = await startExport(failing, d, settings(d.seqId, 24, 'native'));
 		expect(job.state).toBe('failed');
