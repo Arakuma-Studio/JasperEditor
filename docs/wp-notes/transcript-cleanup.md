@@ -181,10 +181,9 @@ Target ≤ 2 min per hour: met with margin. File: 360,000 frames, 1,446,302 byte
 - The stream is downmixed to mono before analysis: speech on one channel of a stereo pair is measured 6 dB lower (the
   thresholds are relative, so the classes hold unless the other channel carries loud unrelated sound).
 - Classes use file-level thresholds; per-window levels are reported but not used for classes (see above).
-- The thresholds come from one user's microphone and room (prototype calibration); the calibration report on their
-  material (TC-071) belongs to the detector work.
-- No UI yet: the Clean Up panel (TC-040 …) is the `cleanupui` package's work; the analysis runs from the MCP tool,
-  the client and the route.
+- The thresholds come from one user's microphone and room (prototype calibration); the calibration on their material
+  is in "Calibration on the user's material (TC-071)" below.
+- The Clean Up UI and the cleanup MCP tools are described in "Clean Up UI and MCP" below.
 
 ## Detector, planner and commands (TC-010 … TC-033, TC-060 pure half)
 
@@ -425,11 +424,8 @@ A1 and music on a sync-locked A2. Build VM (AMD EPYC-Rome, 16 vCPU, Node 24.22.1
 
 ### Limitations
 
-- The UI (TC-040 … TC-044) and the MCP tools (TC-050, TC-051) are the next package (`cleanupui`); this package exposes
-  the pure APIs, the commands, the engine job and the preset library they call.
-- The calibration report on the user's own material (TC-071, Mac) is not part of this package; the shipped detector
-  differs from the measured prototype only as listed above (strict removal, untranscribed voice kept, Natural values,
-  the added rules), so its numbers on that material are expected close to FINDINGS §6.5 but are **not measured**.
+- The UI (TC-040 … TC-044) and the MCP tools (TC-050, TC-051): "Clean Up UI and MCP" below.
+- Calibration on the user's material (TC-071): below; it found and fixed the head / tail rule (tail side).
 - Edge placement uses the file's noise floor (as the prototype); the per-60 s window levels are not used yet.
 - "Quietest sample region" snapping works on the 10 ms frames of the voice analysis, not on samples.
 - Mute mode ramps in dB (exponential-like), not equal power; at least 1 ms.
