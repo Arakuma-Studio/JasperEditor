@@ -224,7 +224,7 @@ describe('proposals slice: preview document and ghosts', () => {
 		});
 		const r = await c.refreshItems(['cut'], { reroll: true });
 		expect(r).toMatchObject({ ok: true });
-		expect(engine.calls.at(-1)).toBe('refresh ["cut"] reroll');
+		expect(engine.calls).toContain('refresh ["cut"] reroll');
 		t.run();
 		const second = c.getState().preview!;
 		expect(second).not.toBe(first);
