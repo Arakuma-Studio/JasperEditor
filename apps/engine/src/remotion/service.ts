@@ -915,7 +915,8 @@ export class RemotionService {
 		browser?: SharedRenderBrowser;
 		log?: (line: string) => void;
 		onProgress?: (p: { renderedFrames: number; totalFrames: number }) => void;
-	}): Promise<{ frames: number }> {
+	}): Promise<{ frames: number; selectMs: number; renderMs: number }> {
+		const t0 = performance.now();
 		const { r, serveUrl, composition, browser } = await this.composition(
 			input.inputProps,
 			input.signal,
@@ -925,6 +926,7 @@ export class RemotionService {
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
 		const total = composition.durationInFrames;
+		const selectMs = Math.round(performance.now() - t0);
 		const concurrency = Math.max(1, Math.min(input.concurrency ?? renderParallelism(), total));
 		let instance: RenderBrowser | null = null;
 		try {
@@ -951,7 +953,7 @@ export class RemotionService {
 					...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
 				});
 			});
-			return { frames: total };
+			return { frames: total, selectMs, renderMs: Math.round(performance.now() - t0) - selectMs };
 		} catch (e) {
 			throw mapRenderError(e, input.signal);
 		} finally {

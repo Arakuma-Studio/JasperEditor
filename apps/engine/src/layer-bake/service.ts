@@ -586,11 +586,12 @@ export class LayerBakeService {
 		if (!isStatic && !o.master && layerStill(clip)) {
 			if (!o.grow) {
 				const ls = await this.plan(planned, clip, { recipe: 'layer-still' }, o.env);
-				if (!(await this.lookup(ls.key))?.clipped) return ls;
+				// The cache entry's meta only (a read, not a use: `ensureSheet` marks it used).
+				if (!(await this.meta(ls.key))?.clipped) return ls;
 			}
 			// Clipped at its border: the region grown by the box size, then a master.
 			const grown = await this.plan(planned, clip, { recipe: 'layer-still', grow: true }, o.env);
-			if (!(await this.lookup(grown.key))?.clipped) return grown;
+			if (!(await this.meta(grown.key))?.clipped) return grown;
 		}
 		const full = await this.plan(planned, clip, isStatic ? { recipe: 'still' } : { recipe: 'master' }, o.env);
 		if (o.frame === undefined || o.frame === null || isStatic) return full;
@@ -1349,7 +1350,8 @@ export class LayerBakeService {
 		const release = this.lease(input.bakes.map((b) => b.key));
 		try {
 			const browser = await this.sharedBrowser(input.browserGroup);
-			const redo = await this.renderSheet(ctx, input.bakes, { concurrency: input.concurrency, browser });
+			const sheet = await this.renderSheet(ctx, input.bakes, { concurrency: input.concurrency, browser });
+			const redo = sheet.redo;
 			// Stills that drew past their crop are rendered alone (full frame when needed, LBK-005).
 			for (const [i, plan] of redo.entries()) {
 				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
@@ -1357,7 +1359,7 @@ export class LayerBakeService {
 				await this.renderBake(ctx, plan, { concurrency: input.concurrency, weight: 0, browser });
 			}
 			ctx.progress(1, { stage: 'Baked' });
-			return { stills: input.bakes.length, rerendered: redo.length };
+			return { stills: input.bakes.length, rerendered: redo.length, timing: sheet.timing };
 		} catch (e) {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (e instanceof JobError) throw e;
@@ -1384,7 +1386,7 @@ export class LayerBakeService {
 		ctx: JobContext,
 		plans: readonly BakePlan[],
 		o: { concurrency: number | undefined; browser: SharedRenderBrowser | null },
-	): Promise<BakePlan[]> {
+	): Promise<{ redo: BakePlan[]; timing: { selectMs: number; renderMs: number; storeMs: number } }> {
 		const reason = this.unavailableReason();
 		if (reason)
 			throw new JobError(
@@ -1420,7 +1422,7 @@ export class LayerBakeService {
 		const dir = join(scratch, `sheet-${Date.now().toString(36)}`);
 		await mkdir(dir, { recursive: true });
 		ctx.progress(0, { stage: `Rendering 0/${plans.length} stills` });
-		await this.core.remotion.renderStillSheet({
+		const rendered = await this.core.remotion.renderStillSheet({
 			inputProps: {
 				doc,
 				options: {
@@ -1440,6 +1442,7 @@ export class LayerBakeService {
 					stage: `Rendering ${p.renderedFrames}/${p.totalFrames} stills`,
 				}),
 		});
+		const t1 = performance.now();
 		// `<frame>.png` → `%06d.png` (one image2 input).
 		const files = (await readdir(dir)).filter((f) => /^\d+\.png$/.test(f));
 		if (files.length !== plans.length)
@@ -1515,7 +1518,14 @@ export class LayerBakeService {
 				true,
 			);
 		await rm(dir, { recursive: true, force: true });
-		return redo;
+		return {
+			redo,
+			timing: {
+				selectMs: rendered.selectMs,
+				renderMs: rendered.renderMs,
+				storeMs: Math.round(performance.now() - t1),
+			},
+		};
 	}
 
 	/**
