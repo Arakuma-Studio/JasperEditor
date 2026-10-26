@@ -24,11 +24,13 @@ import { editAnchor, placedSpan, type SfxMediaInfo, sfxCommands, sfxMediaInfo } 
 /** Export cost class of a pass's output (EA-033). */
 export type AutomationCost = {
 	/**
-	 * `native`: Motion keys, drawn by the native ffmpeg export; `remotion`: adjustment clips with GPU effects — the
-	 * export planner sends the whole export through the Remotion renderer (no native or layer-bake route draws an
-	 * adjustment layer's shader effects).
+	 * `native`: Motion keys, clips and audio the native ffmpeg export draws; `hybrid`: the export stays native with the
+	 * decorated layers or transition spans pre-rendered by the layer bake (Remotion) — clips with GPU effects (S_Shake,
+	 * Noise) and GPU transitions (Smooth Slide); without the layer bake the export takes the Remotion path; `remotion`:
+	 * adjustment clips with GPU effects — the export planner sends the whole export through the Remotion renderer (no
+	 * native or layer-bake route draws an adjustment layer's shader effects).
 	 */
-	class: 'native' | 'remotion';
+	class: 'native' | 'hybrid' | 'remotion';
 	/** Frames the decorations cover. */
 	frames: number;
 	/** Effects that need the Remotion path. */
@@ -70,7 +72,7 @@ export type PassItems = {
 
 const binName = 'Sound Effects';
 
-function soundSetup(doc: ProjectDocument, sfx: PassSfx | undefined, order: readonly string[]) {
+export function soundSetup(doc: ProjectDocument, sfx: PassSfx | undefined, order: readonly string[]) {
 	if (!sfx)
 		return { items: [] as ProposalItemInput[], mediaOf: new Map<string, string>(), setupOf: new Map() };
 	const ids: string[] = [];
@@ -217,7 +219,7 @@ export function kitItem(
 }
 
 /** The sound of an item from the pass's picks and the setup items that import them. */
-function itemSound(
+export function itemSound(
 	doc: ProjectDocument,
 	sfx: PassSfx | undefined,
 	sounds: ReturnType<typeof soundSetup>,
@@ -505,6 +507,10 @@ export const AUTOMATION_PASS_TITLES: Record<AutomationPass, string> = {
 	'decorate-cuts': 'Decorate Cuts',
 	'punch-ins': 'Punch-ins',
 	'ken-burns': 'Ken Burns',
+	reactions: 'Reactions',
+	slides: 'Slide Overlays',
+	music: 'Music Bed',
+	stingers: 'Stingers',
 };
 
 /** The proposal draft of a pass (feature `edit-automation`); `report` carries the parameters for the refresher. */

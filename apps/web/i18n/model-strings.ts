@@ -85,6 +85,8 @@ for (const t of project.TEXT_STROKE_MODEL_STRINGS) add(t);
 for (const t of project.PROPOSAL_FEATURE_MODEL_STRINGS) add(t);
 // spec 15: kit packs, families and variants (Decorate Cuts)
 for (const t of project.KIT_MODEL_STRINGS) add(t);
+// spec 15 EA-023: the measured reaction slots
+for (const t of project.REACTION_MODEL_STRINGS) add(t);
 // The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
 add('Agent');
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));

@@ -3,10 +3,10 @@
 // (`{type: 'synth', recipe, seed}`); any 32-bit seed renders.
 import type { SoundTypeId } from '../analysis/sound-judge.ts';
 import { hashString, SplitMix32 } from './kit.ts';
-import { SYNTH_RECIPES, type SynthRecipe } from './recipes.ts';
+import { SYNTH_EXTRA_RECIPES, SYNTH_RECIPES, type SynthRecipe } from './recipes.ts';
 
 export { SplitMix32 } from './kit.ts';
-export { SYNTH_RECIPES, type SynthRecipe } from './recipes.ts';
+export { SYNTH_EXTRA_RECIPES, SYNTH_RECIPES, type SynthRecipe } from './recipes.ts';
 
 /** Every synth sound is rendered at this rate. */
 export const SYNTH_SAMPLE_RATE = 48_000;
@@ -35,7 +35,7 @@ export class SynthError extends Error {
 }
 
 const BY_ID = /* @__PURE__ */ new Map<string, SynthRecipe>(
-	/* @__PURE__ */ SYNTH_RECIPES.map((r) => [r.id, r]),
+	/* @__PURE__ */ [...SYNTH_RECIPES, ...SYNTH_EXTRA_RECIPES].map((r) => [r.id, r]),
 );
 
 /** The recipe with this id, or undefined. */
@@ -61,9 +61,12 @@ export function renderSynth(recipeId: string, seed: number): SynthSound {
 	};
 }
 
-/** The indexed synth variants: every recipe × seeds 0 … SYNTH_VARIANTS − 1 (without rendering). */
+/**
+ * The indexed synth variants: every recipe (the one per type, then the extra ones such as TV static) × seeds
+ * 0 … SYNTH_VARIANTS − 1 (without rendering).
+ */
 export function synthCatalogue(): { recipe: string; type: SoundTypeId; seed: number; title: string }[] {
-	return SYNTH_RECIPES.flatMap((r) =>
+	return [...SYNTH_RECIPES, ...SYNTH_EXTRA_RECIPES].flatMap((r) =>
 		Array.from({ length: SYNTH_VARIANTS }, (_, seed) => ({
 			recipe: r.id,
 			type: r.type,

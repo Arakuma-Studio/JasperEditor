@@ -584,7 +584,10 @@ Tools (use MCP `listTools` for the current catalog and schemas):
 - Editing automation (spec 15; each a proposal of feature `edit-automation`, `mode: "dryRun"` for counts, coverage and
   export cost): `decorate_cuts` (a cut kit centred on every picture cut + a whoosh of its length through sound design)
   `add_punch_ins` (Motion zooms from the clip midpoint, held to the cut) `add_ken_burns` (slow zooms over a share of the
-  A-roll clips) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
+  A-roll clips) `place_reactions` (your reaction pictures from a bin or folder at markers, calls to action and
+  exclamations, on a cut, wobbling) `slide_overlays` (one-sided Smooth Slides at overlay heads and tails)
+  `lay_music_bed` (your songs end to end at −33 dB, switching on cuts) `add_stingers` (generated TV static after
+  shouted punchlines) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
@@ -604,6 +607,9 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `get_transcript` (`docs/wp-notes/speech.md`).
 - Voice analysis (10 ms levels, voicing, speech / breath / silence frames of a media's audio stream; a cached engine
   job): `get_voice_analysis` (`docs/wp-notes/transcript-cleanup.md`).
+- Clean Up Voice (retakes, restarts, fillers, off-script talk, pauses and breaths found in transcribed speech and cut
+  at the audio level in one undo step; guide resource `jasper://guide/cleanup` "Cleaning up speech"): `analyze_voice`
+  `plan_cleanup` `apply_cleanup` `set_cleanup_settings` `attach_script` (`docs/wp-notes/transcript-cleanup.md`).
 - Timeline interchange (Final Cut Pro 7 XML, FCPXML, OpenTimelineIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media:
   `import_timeline` `export_timeline` `list_offline_media` `link_media` (`docs/wp-notes/interchange.md`).
 - Imports and Interpret Footage (Lottie, SVG, PDF/AI, PSD, image sequences, EXR/TIFF/TGA/BMP/DPX/HEIC/JPEG XL through

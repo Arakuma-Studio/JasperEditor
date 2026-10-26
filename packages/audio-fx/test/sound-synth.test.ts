@@ -8,6 +8,7 @@ import {
 	judgeSound,
 	renderSynth,
 	SOUND_TYPE_IDS,
+	SYNTH_EXTRA_RECIPES,
 	SYNTH_RECIPES,
 	SYNTH_SAMPLE_RATE,
 	SYNTH_VARIANTS,
@@ -40,7 +41,10 @@ const PINNED: Record<string, string> = {
 	'synth.chime': 'ff684d0e051f540033f3eccc2dd9c194',
 	'synth.shimmer': '6c99841fc37c437f8944e55a8ae77ef5',
 	'synth.zap': '240dc8e63b55e670a594fe5e3f2a0edc',
+	'synth.static': '2fbc9135652f9e45601d527a5b46e5e7',
 };
+
+const ALL_RECIPES = [...SYNTH_RECIPES, ...SYNTH_EXTRA_RECIPES];
 
 const hashRecipe = (id: string): string => {
 	const h = createHash('sha256');
@@ -56,16 +60,20 @@ describe('Jasper Synth', () => {
 		expect(SYNTH_RECIPES.map((r) => r.type)).toEqual(effectTypes);
 		expect(new Set(SYNTH_RECIPES.map((r) => r.id)).size).toBe(19);
 		for (const r of SYNTH_RECIPES) expect(r.id).toBe(`synth.${r.type}`);
-		expect(synthCatalogue()).toHaveLength(19 * SYNTH_VARIANTS);
+		expect(synthCatalogue()).toHaveLength((19 + SYNTH_EXTRA_RECIPES.length) * SYNTH_VARIANTS);
 		expect(synthRecipe('synth.hit')?.type).toBe('hit');
+		// spec 15 EA-026: the stingers' generated TV static, a glitch-type sound asked for by its recipe id
+		expect(SYNTH_EXTRA_RECIPES.map((r) => r.id)).toEqual(['synth.static']);
+		expect(synthRecipe('synth.static')?.type).toBe('glitch');
+		expect(synthCatalogue().filter((e) => e.recipe === 'synth.static')).toHaveLength(SYNTH_VARIANTS);
 		expect(synthRecipe('nope')).toBeUndefined();
 	});
 
-	it.each(SYNTH_RECIPES.map((r) => [r.id]))('%s renders the versioned pinned bytes', (id) => {
+	it.each(ALL_RECIPES.map((r) => [r.id]))('%s renders the versioned pinned bytes', (id) => {
 		expect(hashRecipe(id)).toBe(PINNED[id]);
 	});
 
-	it.each(SYNTH_RECIPES.map((r) => [r.id, r.type] as const))(
+	it.each(ALL_RECIPES.map((r) => [r.id, r.type] as const))(
 		'every variant of %s passes the judge as %s',
 		(id, type) => {
 			for (let seed = 0; seed < SYNTH_VARIANTS; seed++) {

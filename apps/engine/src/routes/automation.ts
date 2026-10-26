@@ -1,5 +1,6 @@
-// Editing automation routes (spec 15 EA-020…EA-022, EA-033, EA-041):
-//   POST /api/projects/:projectId/automation/:pass   pass = decorate-cuts | punch-ins | ken-burns
+// Editing automation routes (spec 15 EA-020…EA-026, EA-033, EA-041):
+//   POST /api/projects/:projectId/automation/:pass   pass = decorate-cuts | punch-ins | ken-burns | reactions |
+//                                                    slides | music | stingers
 //     `mode: 'dryRun'`   200 AutomationPassResult: counts, coverage, skips, export cost, budget, sounds available
 //     `mode: 'propose'`  202 an `edit-automation` job (automation/run.ts) whose result names the stored proposal
 //                        (`?wait=1` waits for it); invalid parameters, an unknown sequence or track are refused at once.
@@ -10,19 +11,23 @@ import { EDIT_AUTOMATION_FEATURE } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
 import { agentNameOf } from '../agent/user-approval.ts';
+import type { AudioService } from '../audio/service.ts';
 import {
 	type AutomationDeps,
 	automationRefresher,
+	checkFolder,
 	dryRunPass,
 	planOrThrow,
 	runAutomationJob,
 	validParams,
 } from '../automation/run.ts';
+import { isLoopbackHost } from '../context.ts';
 import type { ReframeService } from '../gaps/reframe.ts';
 import { replyWithJob } from '../jobs/reply.ts';
 import { isProjectId } from '../projects/store.ts';
 import type { ProposalService } from '../proposals/service.ts';
 import { liveDocument } from '../sound-design/plan.ts';
+import type { VoiceActivityService } from '../sound-design/voice.ts';
 import type { SoundService } from '../sounds/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -31,6 +36,10 @@ const TITLES: Record<AutomationPassId, string> = {
 	'decorate-cuts': 'Decorate Cuts',
 	'punch-ins': 'Punch-ins',
 	'ken-burns': 'Ken Burns',
+	reactions: 'Reactions',
+	slides: 'Slide Overlays',
+	music: 'Music Bed',
+	stingers: 'Stingers',
 };
 
 type R = { Params: { projectId: string; pass: string }; Querystring: { wait?: string } };
@@ -43,6 +52,11 @@ export default async function automationRoutes(app: FastifyInstance): Promise<vo
 		proposals: () => services.proposals as ProposalService | undefined,
 		sounds: () => services.sounds as SoundService | undefined,
 		reframe: () => services.reframe as ReframeService | undefined,
+		media: () => core.media,
+		// Path reads are a local / desktop feature (S04:SC-002), as for /api/media/register.
+		localPaths: () => core.config.dev || isLoopbackHost(core.config.host),
+		voice: () => services.voice as VoiceActivityService | undefined,
+		audio: () => services.audio as AudioService | undefined,
 	};
 	core.queue.registerRunner('edit-automation', (ctx) => runAutomationJob(ctx, deps));
 	const proposals = deps.proposals();
@@ -78,9 +92,13 @@ export default async function automationRoutes(app: FastifyInstance): Promise<vo
 				params,
 			};
 			if (body.mode === 'dryRun') return dryRunPass(deps, input);
-			// Refused at once rather than as a failed job: an unknown sequence or track, invalid parameters.
+			// Refused at once rather than as a failed job: an unknown sequence, track or bin, invalid parameters (folder
+			// files are read by the job).
 			const { doc } = await liveDocument(agent, projectId);
-			planOrThrow(doc, pass, body.sequenceId, params);
+			const folder = (params.assets as { folder?: unknown } | undefined)?.folder;
+			const folderPass = (pass === 'reactions' || pass === 'music') && typeof folder === 'string';
+			if (folderPass) await checkFolder(deps, folder as string);
+			planOrThrow(doc, pass, body.sequenceId, params, folderPass ? { folder: [] } : {});
 			const editor = req.jasperEditor === true;
 			const who = { editor, agent: agentNameOf(req) };
 			const job = await core.queue.submit({

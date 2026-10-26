@@ -1,5 +1,5 @@
-// Editing automation passes (spec 15 EA-020…EA-022, EA-033, EA-041): `POST /api/projects/:projectId/automation/:pass`
-// with `pass` = decorate-cuts | punch-ins | ken-burns. `mode: 'dryRun'` answers at once with what the pass would do
+// Editing automation passes (spec 15 EA-020…EA-026, EA-033, EA-041): `POST /api/projects/:projectId/automation/:pass`
+// with `pass` = decorate-cuts | punch-ins | ken-burns | reactions | slides | music | stingers. `mode: 'dryRun'` answers at once with what the pass would do
 // (counts, coverage, why cuts / clips were left out, export cost, whether it fits one proposal, the sounds available);
 // `mode: 'propose'` (default) starts an `edit-automation` job (202) that plans, registers the pass's sounds and stores
 // a proposal of feature `edit-automation` (nothing applied: review it, or an allowed agent accepts it). The pass
@@ -42,8 +42,13 @@ export const AutomationSummarySchema = z.object({
 		first: z.array(SkipSchema),
 	}),
 	families: z.record(z.string(), z.number()).optional(),
+	/** Pass-specific counts (reaction triggers, slide heads / tails / directions, bed switches, stinger sources). */
+	detail: z.record(z.string(), z.number()).optional(),
+	/** Reactions / music: the user's assets the pass draws from. */
+	assets: z.object({ count: z.number().int(), names: z.array(z.string()) }).optional(),
 	cost: z.object({
-		class: z.enum(['native', 'remotion']),
+		/** `native`; `hybrid` = native with layers / transition spans baked by the Remotion renderer; `remotion`. */
+		class: z.enum(['native', 'hybrid', 'remotion']),
 		frames: z.number(),
 		effects: z.array(z.string()),
 	}),

@@ -7,14 +7,20 @@
 // (a malformed proposal gives an error result the engine reports).
 import type { Proposal, ProposalItem, ProposalItemInput } from '../proposals/schema.ts';
 import type { ProjectDocument } from '../schema/document.ts';
-import { AutomationInputError, automationSequence } from './common.ts';
+import { AutomationInputError, automationSequence, frameGeometry } from './common.ts';
 import { replanKits } from './decorate-cuts.ts';
 import { replanKenBurns } from './ken-burns.ts';
+import { replanBeds, resolveMusicParams } from './music.ts';
+import { bedItem, reactionItem, slideItem, stingerItem } from './overlay-items.ts';
 import { AUTOMATION_PASSES, type AutomationPass } from './params.ts';
+import type { PassContext } from './pass.ts';
 import { type ItemSound, kenBurnsItem, kitItem, punchItem } from './proposal.ts';
 import { type ClipSubject, replanPunchIns } from './punch-ins.ts';
+import { replanReactions, resolveReactionParams } from './reactions.ts';
 import { nextSeed } from './rng.ts';
 import { resolveSfx, sfxMediaInfo } from './sfx.ts';
+import { replanSlides, resolveSlideParams } from './slides.ts';
+import { replanStingers, resolveStingerParams } from './stingers.ts';
 
 export type AutomationRefresh =
 	| { ok: true; items: ProposalItemInput[]; dropped: { itemId: string; reason: string }[] }
@@ -72,6 +78,15 @@ function soundOf(
 	};
 }
 
+/** The track an item's first command of `type` names (`track`, `trackId`, `tracks.video` / `tracks.audio`). */
+function placeTrackOf(it: ProposalItem, type: string, key: 'video' | 'audio' | 'track'): string | null {
+	const c = (it.commands as Record<string, unknown>[]).find((x) => x.type === type);
+	if (!c) return null;
+	if (key === 'track') return typeof c.track === 'string' ? c.track : null;
+	const t = (c.tracks as Record<string, unknown> | undefined)?.[key];
+	return typeof t === 'string' ? t : null;
+}
+
 /** The track an item's adjustment clips go on (its first `clip.addAdjustmentBatch`). */
 function trackRefOf(it: ProposalItem): string | null {
 	const c = (it.commands as Record<string, unknown>[]).find((x) => x.type === 'clip.addAdjustmentBatch');
@@ -97,7 +112,7 @@ export function refreshAutomationItems(
 	doc: ProjectDocument,
 	p: Proposal,
 	itemIds: readonly string[],
-	opts: { reroll?: boolean; subjects?: Readonly<Record<string, ClipSubject>> } = {},
+	opts: { reroll?: boolean; subjects?: Readonly<Record<string, ClipSubject>>; ctx?: PassContext } = {},
 ): AutomationRefresh {
 	const rep = automationReportOf(p);
 	if (!rep)
@@ -184,6 +199,167 @@ export function refreshAutomationItems(
 						trackRef: method === 'adjustment' ? trackRefOf(old) : null,
 						requires: old.requires ?? [],
 						sound: soundOf(doc, p, old, sfx.type, sfx.gainDb),
+					}),
+				);
+			}
+		} else if (rep.pass === 'reactions') {
+			const ids = new Set(wanted.map((w) => w.id));
+			const neighbours = p.items
+				.filter(
+					(it) =>
+						!ids.has(it.id) &&
+						metaOf(it).kind === 'reaction' &&
+						it.state !== 'rejected' &&
+						it.state !== 'invalid',
+				)
+				.map(spanOf)
+				.filter((x): x is NonNullable<typeof x> => !!x);
+			const targets = wanted.map((it) => {
+				const m = metaOf(it);
+				const tr = (m.trigger ?? {}) as { key?: unknown; frame?: unknown };
+				return {
+					itemId: it.id,
+					seed: seedOf(it),
+					key: str(tr.key) ?? '',
+					frame: num(tr.frame) ?? num(m.frame) ?? 0,
+				};
+			});
+			const params = resolveReactionParams(rep.params, frameGeometry(seq));
+			const known = new Set(p.items.map((it) => it.id));
+			for (const r of replanReactions(
+				doc,
+				seq.id,
+				rep.params,
+				targets,
+				neighbours,
+				opts.ctx?.folder ? { folder: opts.ctx.folder } : {},
+			)) {
+				if (!r.ok) {
+					dropped.push({ itemId: r.itemId, reason: r.reason });
+					continue;
+				}
+				const old = byId.get(r.itemId)!;
+				const trackRef = placeTrackOf(old, 'clip.place', 'video');
+				// the pictures must be in the project or imported by a setup item of this proposal
+				const reaction = {
+					...r.reaction,
+					alternatives: r.reaction.alternatives.filter((a) => !a.asset.setup || known.has(a.asset.setup)),
+				};
+				if (!trackRef || (reaction.choice.asset.setup && !known.has(reaction.choice.asset.setup))) {
+					dropped.push({ itemId: r.itemId, reason: 'its picture is not part of this proposal any more' });
+					continue;
+				}
+				items.push(
+					reactionItem(seq, reaction, {
+						trackRef,
+						requires: (old.requires ?? []).filter((x) => !x.startsWith('react-asset-')),
+						wobble: params.wobble,
+					}),
+				);
+			}
+		} else if (rep.pass === 'slides') {
+			const params = resolveSlideParams(rep.params);
+			const targets = wanted
+				.map((it) => {
+					const m = metaOf(it);
+					return {
+						itemId: it.id,
+						clipId: str(m.clipId) ?? '',
+						edge: m.edge === 'out' ? ('out' as const) : ('in' as const),
+						seed: seedOf(it),
+					};
+				})
+				.filter((t) => t.clipId);
+			for (const r of replanSlides(doc, seq.id, rep.params, targets)) {
+				if (!r.ok) dropped.push({ itemId: r.itemId, reason: r.reason });
+				else
+					items.push(
+						slideItem(seq, r.slide, {
+							params: { motionBlur: params.motionBlur, shutterAngle: params.shutterAngle },
+						}),
+					);
+			}
+		} else if (rep.pass === 'music') {
+			const params = resolveMusicParams(rep.params, frameGeometry(seq));
+			const known = new Set(p.items.map((it) => it.id));
+			const targets = wanted.map((it) => {
+				const m = metaOf(it);
+				const r = (m.range ?? {}) as { end?: unknown };
+				const song = (m.song ?? {}) as { key?: unknown };
+				return {
+					itemId: it.id,
+					seed: seedOf(it),
+					frame: num(m.frame) ?? 0,
+					end: num(r.end) ?? 0,
+					songKey: str(song.key) ?? '',
+					reroll: opts.reroll === true,
+				};
+			});
+			const ctx = {
+				...(opts.ctx?.folder ? { folder: opts.ctx.folder } : {}),
+				...(opts.ctx?.voice !== undefined ? { voice: opts.ctx.voice } : {}),
+			};
+			for (const r of replanBeds(doc, seq.id, rep.params, targets, ctx)) {
+				if (!r.ok) {
+					dropped.push({ itemId: r.itemId, reason: r.reason });
+					continue;
+				}
+				const old = byId.get(r.itemId)!;
+				const trackRef = placeTrackOf(old, 'clip.place', 'audio');
+				const bed = {
+					...r.bed,
+					alternatives: r.bed.alternatives.filter((a) => !a.song.setup || known.has(a.song.setup)),
+				};
+				if (!trackRef || (bed.song.setup && !known.has(bed.song.setup))) {
+					dropped.push({ itemId: r.itemId, reason: 'its song is not part of this proposal any more' });
+					continue;
+				}
+				items.push(
+					bedItem(seq, bed, {
+						trackRef,
+						requires: (old.requires ?? []).filter((x) => !x.startsWith('music-asset-')),
+						duck: params.duck,
+					}),
+				);
+			}
+		} else if (rep.pass === 'stingers') {
+			const params = resolveStingerParams(rep.params, frameGeometry(seq));
+			const targets = wanted.map((it) => {
+				const m = metaOf(it);
+				const tr = (m.trigger ?? {}) as { text?: unknown };
+				return { itemId: it.id, seed: seedOf(it), frame: num(m.frame) ?? 0, text: str(tr.text) ?? null };
+			});
+			for (const r of replanStingers(
+				doc,
+				seq.id,
+				rep.params,
+				targets,
+				opts.ctx?.loudness !== undefined ? { loudness: opts.ctx.loudness } : {},
+			)) {
+				if (!r.ok) {
+					dropped.push({ itemId: r.itemId, reason: r.reason });
+					continue;
+				}
+				const old = byId.get(r.itemId)!;
+				const trackRef = placeTrackOf(old, 'clip.addSolid', 'track');
+				if (!trackRef) {
+					dropped.push({ itemId: r.itemId, reason: 'the item has no stinger track' });
+					continue;
+				}
+				const sfxType =
+					params.sound === 'library' ? resolveSfx({ type: 'glitch', ...params.sfx }, true).type : 'glitch';
+				items.push(
+					stingerItem(seq, r.stinger, {
+						trackRef,
+						requires: old.requires ?? [],
+						sound: soundOf(
+							doc,
+							p,
+							old,
+							sfxType,
+							params.sound === 'library' ? (params.sfx?.gainDb ?? params.gainDb) : params.gainDb,
+						),
+						frames: params.frames,
 					}),
 				);
 			}

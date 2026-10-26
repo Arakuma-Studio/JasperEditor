@@ -169,10 +169,14 @@ describe('Sequence ▸ Automate', () => {
 		const automate = seq.items.find((i) => i.type === 'submenu' && i.label === 'Automate') as {
 			items: { command?: string; label: string }[];
 		};
-		expect(automate.items.map((i) => [i.command, i.label])).toEqual([
+		expect(automate.items.filter((i) => i.command).map((i) => [i.command, i.label])).toEqual([
 			['automation.decorateCuts', 'Decorate Cuts…'],
 			['automation.punchIns', 'Punch-ins…'],
 			['automation.kenBurns', 'Ken Burns…'],
+			['automation.reactions', 'Reactions…'],
+			['automation.slides', 'Slide Overlays…'],
+			['automation.musicBed', 'Music Bed…'],
+			['automation.stingers', 'Stingers…'],
 		]);
 		const ids = new Set(automationCommands.map((c) => c.id));
 		for (const e of AUTOMATE_MENU) expect(ids.has(e.command)).toBe(true);
@@ -296,6 +300,150 @@ describe('the pass dialog', () => {
 		);
 		expect(screen.getByTestId('automation-summary-sfx').textContent).toContain('No whoosh sounds');
 		expect(screen.getByText('! 2 punch-in(s) zoom to the centre')).toBeTruthy();
+	});
+});
+
+describe('the overlay pass dialogs (EA-023…EA-026)', () => {
+	it('Reactions: without a bin or folder nothing is counted and Propose is disabled; choosing a bin runs the dry run', async () => {
+		const t = setup('reactions');
+		t.setDry(
+			result('dryRun', 'reactions', t.seqId, {
+				summary: {
+					...result('dryRun', 'reactions', t.seqId).summary,
+					detail: { cta: 2, marker: 1, onCut: 2 },
+					assets: { count: 3, names: ['Happy', 'Surprised', 'Thinking'] },
+					cost: { class: 'hybrid', frames: 150, effects: ['jasper.s.shake'] },
+					track: 'new track Reactions',
+				},
+				sfx: null,
+			}),
+		);
+		const dialog = await screen.findByTestId('automation-dialog-reactions');
+		await settle();
+		expect(t.calls).toEqual([]);
+		expect(within(dialog).getByTestId('automation-needs-assets').textContent).toContain('reaction pictures');
+		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(
+			true,
+		);
+		// a folder of the user's pictures (typed; the desktop app offers Browse…)
+		await chooseOption(screen.getByRole('combobox', { name: 'Pictures from' }), 'A folder');
+		const path = within(dialog).getByTestId('automation-assets-path') as HTMLInputElement;
+		await act(async () => {
+			fireEvent.change(path, { target: { value: '/home/me/reactions' } });
+			fireEvent.blur(path);
+		});
+		await settle();
+		expect(t.calls.at(-1)!.req.params).toEqual({ seed: 1, assets: { folder: '/home/me/reactions' } });
+		const summary = within(dialog).getByTestId('automation-summary');
+		expect(within(summary).getByTestId('automation-summary-count').textContent).toBe(
+			'2 of 3 triggers get a reaction',
+		);
+		expect(within(summary).getByTestId('automation-summary-detail').textContent).toBe(
+			'Calls to action 2 · Markers 1 · On a cut 2',
+		);
+		expect(within(summary).getByTestId('automation-summary-assets').textContent).toBe(
+			'3 files: Happy, Surprised, Thinking',
+		);
+		expect(within(summary).getByTestId('automation-summary-cost').textContent).toContain(
+			'baked by the Remotion renderer',
+		);
+		fireEvent.click(screen.getByRole('checkbox', { name: /face tracking sees no face/ }));
+		const cta = within(dialog).getByTestId('automation-words-cta') as HTMLTextAreaElement;
+		await act(async () => {
+			fireEvent.change(cta, { target: { value: 'suscríbete\n\ndale like ' } });
+			fireEvent.blur(cta);
+		});
+		await settle();
+		expect(t.calls.at(-1)!.req.params).toMatchObject({
+			triggers: { speakerNotVisible: true },
+			words: { cta: ['suscríbete', 'dale like'] },
+		});
+		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(
+			false,
+		);
+	});
+
+	it('Reactions and Music Bed start from a bin named for them', async () => {
+		const { session, seqId } = makeSession();
+		session.apply({
+			label: 'bins',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0, 0, 1] },
+				{ type: 'bin.create', name: 'Música' },
+			] as never[],
+		});
+		const calls: { req: { params?: Record<string, unknown> } }[] = [];
+		const engine = {
+			async automationPass(_p: string, pass: string, req: { params?: Record<string, unknown> }) {
+				calls.push({ req });
+				return result('dryRun', pass as never, seqId);
+			},
+			async getJob() {
+				return {} as never;
+			},
+			async cancelJob() {},
+		};
+		render(
+			<SessionProvider session={session}>
+				<AutomationDialog
+					session={session}
+					engine={engine as never}
+					sequenceId={seqId}
+					pass="music"
+					close={() => {}}
+				/>
+			</SessionProvider>,
+		);
+		await screen.findByTestId('automation-dialog-music');
+		await settle();
+		expect(calls[0]!.req.params).toEqual({ seed: 1, assets: { bin: 'Música' } });
+		fireEvent.click(screen.getByRole('checkbox', { name: /Duck/ }));
+		await settle();
+		expect(calls.at(-1)!.req.params).toMatchObject({ duck: { enabled: true } });
+	});
+
+	it('Stingers: an unmeasured dry run (count 0) still lets the user propose; slides and the hybrid export text', async () => {
+		const t = setup('stingers');
+		t.setDry(
+			result('dryRun', 'stingers', t.seqId, {
+				count: 0,
+				sfx: null,
+				warnings: [
+					{ code: 'W_NO_LOUDNESS', message: 'Loudness peaks are measured when the proposal is made' },
+				],
+			}),
+		);
+		const dialog = await screen.findByTestId('automation-dialog-stingers');
+		await settle();
+		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(
+			false,
+		);
+		await chooseOption(screen.getByRole('combobox', { name: 'Punchlines are' }), 'Loud or written with “!”');
+		await chooseOption(screen.getByRole('combobox', { name: 'Noise sound' }), 'None');
+		await settle();
+		expect(t.calls.at(-1)!.req.params).toEqual({ seed: 1, match: 'either', sound: 'none' });
+		cleanup();
+		render(
+			<DryRunSummary
+				result={result('dryRun', 'slides', 's', {
+					summary: {
+						...result('dryRun', 'slides', 's').summary,
+						detail: { heads: 3, tails: 1, down: 2, up: 2 },
+						cost: { class: 'hybrid', frames: 120, effects: ['jasper.smooth-slide'] },
+					},
+					sfx: null,
+				})}
+			/>,
+		);
+		expect(screen.getByTestId('automation-summary-count').textContent).toBe(
+			'2 of 3 overlay edges get a slide',
+		);
+		expect(screen.getByTestId('automation-summary-detail').textContent).toBe(
+			'Heads 3 · Tails 1 · Down 2 · Up 2',
+		);
+		expect(screen.getByTestId('automation-summary-cost').textContent).toContain('jasper.smooth-slide');
 	});
 });
 

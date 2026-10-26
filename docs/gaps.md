@@ -127,6 +127,15 @@ measurements and limits (montage zones may be run through; weak-word lists for S
 transcripts with word timings, captions can be generated from them, and text-based editing (delete words → ripple
 the timeline) works as one undoable step.
 **Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Spec 16: GPU providers (WebGPU on macOS/Linux/Windows, CUDA on Linux x64 downloaded on request; Core ML and DirectML deliberately unused), large-v3-turbo, hallucination guards, resumable downloads. Limits: GPU paths unverified on real GPUs in this checkout's tests (fake runtime; WebGPU probe on the VM finds no adapter), Linux only checked, classical diarization.
+**Transcript cleanup (spec 14 TC-001…TC-071):** voice analysis, the "probably wrong" detector (retakes with take
+groups, restarts, false starts, Spanish / English fillers, off-script and head / tail with a script, pauses, breaths,
+voice without words, transcription suspects) and the level-referenced auto-cut as one undo step; Text panel ▸
+Transcript ▸ Clean Up (Sequence ▸ Clean Up Voice…: presets, every setting, script, review with live statistics, Play
+result, Apply) and MCP `analyze_voice` / `plan_cleanup` / `apply_cleanup` / `set_cleanup_settings` / `attach_script` —
+see [wp-notes/transcript-cleanup.md](wp-notes/transcript-cleanup.md). Measured on the user's 16 recordings (Fast,
+shipped code): removed-word precision / recall 0.89 / 0.81 (shorts), 0.88 / 0.82 (long); user edit points within
+50 ms 0.64 / 0.70 (the prototype 0.72, deliberate differences documented). Limits: English lists not measured; the
+Timeline does not draw the derived timeline during Play result.
 
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,
@@ -757,7 +766,12 @@ and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound de
 Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note); the punch-in
 accuracy on the user's projects is F1 0.62 at the default density 0.7 (0.71 at 1.0) against the spec's ≥ 0.75 target,
 which the stripped edit cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed
-whooshes have hard edges. Not yet: reactions, slides, music beds, stingers, style recipes, `apply_style`, Style Check,
+whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
+beds, stingers"): **Reactions**, **Slide Overlays**, **Music Bed**, **Stingers** (Sequence ▸ Automate, MCP
+`place_reactions` / `slide_overlays` / `lay_music_bed` / `add_stingers`); limits: reactions skip animated images and
+avoid only spec 13 subtitle text clips, their word triggers reproduce few of the user's placements (harness in the
+wp-note), music beds switch without crossfades, stinger dry runs count loudness peaks only after a measurement of the
+same mix. Not yet: style recipes, `apply_style`, Style Check,
 automatic subtitles, transcript cleanup (later work packages of specs 13–15); Refresh proposal stays disabled with the
 reason "Its producer cannot re-plan items" for features without a refresher (sound design: run the pass again). A
 keyframe-only change

@@ -6,8 +6,16 @@
 import { z } from 'zod';
 import { KitPackSchema } from './kits.ts';
 
-/** The passes this module plans (the overlays / recipes work packages add theirs). */
-export const AUTOMATION_PASSES = ['decorate-cuts', 'punch-ins', 'ken-burns'] as const;
+/** The passes this module plans (the recipes work package combines them). */
+export const AUTOMATION_PASSES = [
+	'decorate-cuts',
+	'punch-ins',
+	'ken-burns',
+	'reactions',
+	'slides',
+	'music',
+	'stingers',
+] as const;
 export type AutomationPass = (typeof AUTOMATION_PASSES)[number];
 
 /** Review group of each pass's items (declared by feature `edit-automation`, `PROPOSAL_FEATURES`). */
@@ -15,6 +23,10 @@ export const AUTOMATION_PASS_GROUP: Record<AutomationPass, string> = {
 	'decorate-cuts': 'cut-kits',
 	'punch-ins': 'punch-ins',
 	'ken-burns': 'ken-burns',
+	reactions: 'reactions',
+	slides: 'slides',
+	music: 'music',
+	stingers: 'stingers',
 };
 
 const Seed = z.number().int().min(0).max(0xffff_ffff);
@@ -126,10 +138,187 @@ export const KenBurnsParamsSchema = z.strictObject({
 });
 export type KenBurnsParams = z.infer<typeof KenBurnsParamsSchema>;
 
+/**
+ * An asset role's source (spec 15 EA-011, EA-023, EA-025): the user's own files, never shipped — a project bin (its id
+ * or name: recipes store the name), an engine-local folder (absolute path; its files are added to the project when
+ * the proposal is made) and / or explicit project media. Several sources add up (bin, then folder, then media).
+ */
+export const AutomationAssetsSchema = z
+	.strictObject({
+		bin: z.string().min(1).max(256).optional(),
+		folder: z.string().min(1).max(4096).optional(),
+		mediaIds: z.array(z.string().min(1).max(128)).min(1).max(256).optional(),
+	})
+	.refine((a) => a.bin !== undefined || a.folder !== undefined || a.mediaIds !== undefined, {
+		message: 'choose a bin, a folder or media',
+	});
+export type AutomationAssets = z.infer<typeof AutomationAssetsSchema>;
+
+/** A reaction slot: the picture's centre (0…1 of the frame), flipped horizontally (left slots) and its weight. */
+export const ReactionSlotSchema = z.strictObject({
+	x: z.number().min(0).max(1),
+	y: z.number().min(0).max(1),
+	flip: z.boolean().optional(),
+	weight: z.number().min(0).max(1e6).optional(),
+	name: z.string().min(1).max(40).optional(),
+});
+export type ReactionSlot = z.infer<typeof ReactionSlotSchema>;
+
+const WordList = z.array(z.string().min(1).max(80)).max(500);
+/** Editable trigger word lists (per language; a phrase of several words matches consecutive words). */
+export const ReactionWordsSchema = z.strictObject({
+	/** `auto` (default): the transcript's language; else a language code whose built-in lists are used. */
+	language: z.string().min(2).max(16).optional(),
+	cta: WordList.optional(),
+	exclamations: WordList.optional(),
+});
+
+export const ReactionParamsSchema = z.strictObject({
+	/** The reaction images (asset role "reaction images"): a bin, a folder or media of the user's. */
+	assets: AutomationAssetsSchema,
+	/** The A-roll track (cuts to snap to, the speaker's faces); default the video track carrying most picture. */
+	track: TrackRef.optional(),
+	range: AutomationRangeSchema.optional(),
+	/** The video track for the reactions; default a "Reactions" track at the top, created when needed. */
+	reactionTrack: TrackRef.optional(),
+	/** Where reactions sit; default the measured slots of the aspect (shorts bottom, long form mid height). */
+	slots: z.array(ReactionSlotSchema).min(1).max(12).optional(),
+	/** How long a reaction stays (default 2.1 s vertical, 2.6 s landscape: the measured medians). */
+	durationSeconds: z.number().min(0.2).max(60).optional(),
+	/** A reaction starts on a cut this close to its trigger (default 0.5 s). */
+	snapSeconds: z.number().min(0).max(5).optional(),
+	/** Motion scale in % of the picture's own size, drawn per item in [min, max] (default 60…65). */
+	scale: z
+		.strictObject({ min: z.number().min(1).max(1000), max: z.number().min(1).max(1000) })
+		.refine((s) => s.max >= s.min, 'scale.max must be at least scale.min')
+		.optional(),
+	/** At most this share of the frame height (large pictures are scaled down to it; default 0.45). */
+	maxHeight: z.number().min(0.02).max(1).optional(),
+	/** S_Shake wobble (default on, Amplitude 0.8, Frequency 2). */
+	wobble: z
+		.strictObject({
+			enabled: z.boolean().optional(),
+			amplitude: z.number().min(0).max(5).optional(),
+			frequency: z.number().min(0).max(30).optional(),
+		})
+		.optional(),
+	triggers: z
+		.strictObject({
+			/** Transcript words: calls to action and exclamations (default on). */
+			words: z.boolean().optional(),
+			/** Sequence markers whose name contains `markerMatch` or names a reaction picture (default on). */
+			markers: z.boolean().optional(),
+			/** Where face tracking finds no face on the A-roll (default off; needs Track Faces). */
+			speakerNotVisible: z.boolean().optional(),
+		})
+		.optional(),
+	words: ReactionWordsSchema.optional(),
+	/** Markers whose name contains this (case-insensitive) are triggers (default "reaction"). */
+	markerMatch: z.string().min(1).max(80).optional(),
+	/** A face-less stretch at least this long triggers a reaction (default 1.5 s). */
+	notVisibleSeconds: z.number().min(0.2).max(60).optional(),
+	/** At most this many reactions in any minute (default 12 vertical, 1 landscape). */
+	maxPerMinute: z.number().min(0).max(120).optional(),
+	/** At least this long between two reactions (default 0.5 s). */
+	minGapSeconds: z.number().min(0).max(600).optional(),
+	/** Other pictures offered per item in review (default 3). */
+	alternatives: z.number().int().min(0).max(3).optional(),
+	seed: Seed.optional(),
+});
+export type ReactionParams = z.infer<typeof ReactionParamsSchema>;
+
+export const SLIDE_DIRECTIONS = ['down', 'up', 'left', 'right'] as const;
+export const SLIDE_EASINGS = ['easeInOutQuad', 'easeInOutCubic'] as const;
+
+export const SlideParamsSchema = z.strictObject({
+	/** The A-roll track; overlays are the picture clips on the video tracks above it. */
+	track: TrackRef.optional(),
+	range: AutomationRangeSchema.optional(),
+	/** Only overlays on these video tracks (default every video track above the A-roll). */
+	overlayTracks: z.array(TrackRef).min(1).max(64).optional(),
+	/** Length of each slide in frames (default 30). */
+	frames: z.number().int().min(2).max(600).optional(),
+	/** Share of overlay heads that slide in (default 0.53) and of tails that slide out (default 0.18). */
+	heads: z.number().min(0).max(1).optional(),
+	tails: z.number().min(0).max(1).optional(),
+	/** Direction weights (default down 47, up 33, left 13, right 8). */
+	directions: z.record(z.enum(SLIDE_DIRECTIONS), z.number().min(0).max(1e6)).optional(),
+	/** Easing weights (default ease in-out quad 68, cubic 32). */
+	easings: z.record(z.enum(SLIDE_EASINGS), z.number().min(0).max(1e6)).optional(),
+	/** Smooth Slide motion blur (default high, 360° shutter). */
+	motionBlur: z.enum(['off', 'low', 'medium', 'high']).optional(),
+	shutterAngle: z.number().min(90).max(720).optional(),
+	seed: Seed.optional(),
+});
+export type SlideParams = z.infer<typeof SlideParamsSchema>;
+
+export const MusicParamsSchema = z.strictObject({
+	/** The playlist (asset role "music folder"): a bin, a folder or media of the user's. */
+	assets: AutomationAssetsSchema,
+	range: AutomationRangeSchema.optional(),
+	/** `playlist` (default): in the source's order; `shuffle`: a seeded order. */
+	order: z.enum(['playlist', 'shuffle']).optional(),
+	/** Switch to the next bed at the first cut after this long (default 52 s landscape; vertical: null = one bed per song). */
+	bedSeconds: z.number().min(5).max(3600).nullable().optional(),
+	/** Wait at most this long after `bedSeconds` for a cut (default 15 s); no cut → the switch is at `bedSeconds`. */
+	maxSwitchDelaySeconds: z.number().min(0).max(600).optional(),
+	/** The A-roll track whose cuts the beds switch on (default every picture cut). */
+	track: TrackRef.optional(),
+	/** Clip gain of the beds (default −33 dB). */
+	gainDb: z.number().min(-60).max(12).optional(),
+	/** Shorts intro step: the first bed at `gainDb` (−25) until the first cut (default on for vertical sequences). */
+	intro: z
+		.strictObject({ enabled: z.boolean().optional(), gainDb: z.number().min(-60).max(12).optional() })
+		.optional(),
+	/** Duck the beds under dialogue with the Essential Sound ducking (default off; 18 dB, 800 ms fades). */
+	duck: z
+		.strictObject({
+			enabled: z.boolean().optional(),
+			amountDb: z.number().min(0).max(48).optional(),
+			fadeMs: z.number().min(0).max(10_000).optional(),
+		})
+		.optional(),
+	/** The audio track for the beds; default a "Music" track, created when needed. */
+	musicTrack: TrackRef.optional(),
+	seed: Seed.optional(),
+});
+export type MusicParams = z.infer<typeof MusicParamsSchema>;
+
+export const StingerParamsSchema = z.strictObject({
+	/** The A-roll track (cuts to snap to). */
+	track: TrackRef.optional(),
+	range: AutomationRangeSchema.optional(),
+	/** What marks a shouted punchline: a loudness peak, a "!" phrase, both (default) or either. */
+	match: z.enum(['both', 'either', 'loudness', 'exclamation']).optional(),
+	/** A peak is at least this many LU over the local median of the momentary loudness (default 6). */
+	thresholdLu: z.number().min(1).max(40).optional(),
+	/** Width of the local median window (default 10 s). */
+	medianWindowSeconds: z.number().min(1).max(120).optional(),
+	/** Length of a stinger in frames (default 29). */
+	frames: z.number().int().min(1).max(600).optional(),
+	/** A stinger starts on a cut this close after the punchline (default 0.5 s). */
+	snapSeconds: z.number().min(0).max(5).optional(),
+	maxPerMinute: z.number().min(0).max(60).optional(),
+	minGapSeconds: z.number().min(0).max(600).optional(),
+	/** Clip gain of the noise sound (default −18 dB). */
+	gainDb: z.number().min(-60).max(12).optional(),
+	/** `generated` (default): Jasper Synth's TV static; `library`: sounds of `sfx` from the library. */
+	sound: z.enum(['generated', 'library', 'none']).optional(),
+	sfx: AutomationSfxSchema.optional(),
+	/** The video track for the noise pictures; default a "Stingers" track at the top, created when needed. */
+	stingerTrack: TrackRef.optional(),
+	seed: Seed.optional(),
+});
+export type StingerParams = z.infer<typeof StingerParamsSchema>;
+
 export const AUTOMATION_PARAM_SCHEMAS = {
 	'decorate-cuts': DecorateCutsParamsSchema,
 	'punch-ins': PunchInParamsSchema,
 	'ken-burns': KenBurnsParamsSchema,
+	reactions: ReactionParamsSchema,
+	slides: SlideParamsSchema,
+	music: MusicParamsSchema,
+	stingers: StingerParamsSchema,
 } as const;
 
 /** Defaults (the measured values). */
@@ -147,4 +336,38 @@ export const AUTOMATION_DEFAULTS = {
 	kenBurnsScaleLandscape: 130,
 	kenBurnsInOutRatio: 2,
 	kenBurnsMinClipSeconds: 1,
+	reactionSecondsVertical: 2.1,
+	reactionSecondsLandscape: 2.6,
+	reactionSnapSeconds: 0.5,
+	reactionScaleMin: 60,
+	reactionScaleMax: 65,
+	reactionMaxHeight: 0.45,
+	reactionWobbleAmplitude: 0.8,
+	reactionWobbleFrequency: 2,
+	reactionMarkerMatch: 'reaction',
+	reactionNotVisibleSeconds: 1.5,
+	reactionMaxPerMinuteVertical: 12,
+	reactionMaxPerMinuteLandscape: 1,
+	reactionMinGapSeconds: 0.5,
+	reactionAlternatives: 3,
+	slideFrames: 30,
+	slideHeads: 0.53,
+	slideTails: 0.18,
+	slideDirections: { down: 47, up: 33, left: 13, right: 8 },
+	slideEasings: { easeInOutQuad: 68, easeInOutCubic: 32 },
+	slideMotionBlur: 'high',
+	slideShutterAngle: 360,
+	musicBedSeconds: 52,
+	musicMaxSwitchDelaySeconds: 15,
+	musicGainDb: -33,
+	musicIntroGainDb: -25,
+	musicDuckDb: 18,
+	musicDuckFadeMs: 800,
+	stingerThresholdLu: 6,
+	stingerMedianWindowSeconds: 10,
+	stingerFrames: 29,
+	stingerSnapSeconds: 0.5,
+	stingerMaxPerMinute: 1,
+	stingerMinGapSeconds: 10,
+	stingerGainDb: -18,
 } as const;

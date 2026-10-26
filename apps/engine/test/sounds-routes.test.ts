@@ -675,12 +675,12 @@ describe('search, audio, visual and register', { timeout: 300_000 }, () => {
 		const job = await waitJob(app, (put.json() as { job: EngineJob }).job.id);
 		const result = SoundIndexResultSchema.parse(job.result);
 		expect(result.errors.filter((e) => e.source !== 'starter')).toEqual([]);
-		// 4 starter + 2 folder + 19 synth (one seed per recipe).
-		expect(result.sounds).toBe(25);
+		// 4 starter + 2 folder + 20 synth (one seed per recipe: the 19 types and the stingers' TV static).
+		expect(result.sounds).toBe(26);
 		const status = SoundLibraryStatusSchema.parse((await get(app, '/api/sounds/status')).body);
-		expect(status.bySource).toEqual({ starter: 4, pack: 0, folder: 2, synth: 19 });
+		expect(status.bySource).toEqual({ starter: 4, pack: 0, folder: 2, synth: 20 });
 		const synth = (await search(app, 'sources=synth&limit=100')).results.map((r) => r.sound);
-		expect(synth).toHaveLength(19);
+		expect(synth).toHaveLength(20);
 		for (const s of synth) {
 			expect(s).toMatchObject({
 				license: 'LicenseRef-JasperEditor',
