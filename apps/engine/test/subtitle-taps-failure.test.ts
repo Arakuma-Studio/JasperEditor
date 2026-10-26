@@ -89,4 +89,28 @@ describe('kernel stream failure (AS-074)', () => {
 			process.off('unhandledRejection', onUnhandled);
 		}
 	}, 60_000);
+
+	it('a sink that fails while the stream waits for the next member’s still: no unhandled rejection', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (e: unknown) => unhandled.push(e);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			// The second member's still is still baking (pipelined, AS-076) when the first one's frames are written.
+			const late = member('b', 3, 60);
+			late.ready = new Promise((r) => setTimeout(() => r({ ok: true }), 400));
+			const plan = planTapStream([member('a', 0, 3), late], 1920, 1080, FPS);
+			const sink = new Writable({
+				write(_chunk, _enc, cb) {
+					setTimeout(() => cb(new Error('This socket has been ended by the other party')), 20);
+				},
+			});
+			sink.on('error', () => undefined);
+			const ac = new AbortController();
+			await expect(streamTaps(ff, plan, sink, { workers: 2, signal: ac.signal })).rejects.toThrow(/layer stream/);
+			await new Promise((r) => setTimeout(r, 800));
+			expect(unhandled.map(String)).toEqual([]);
+		} finally {
+			process.off('unhandledRejection', onUnhandled);
+		}
+	}, 60_000);
 });
