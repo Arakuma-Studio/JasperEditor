@@ -391,11 +391,17 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 		expect(r.captions.map((c) => [c.start, c.end])).toEqual([[1, 7]]);
 		expect(r.stats.crossing).toBe(0);
 		// a hard cut inside a zone, after its start: the piece after it starts inside the transition
-		const inside = lay(words([['aa', 0, 6], ['bb', 30, 50]]), {
-			cuts: [{ frame: 20 }, { frame: 40, zone: { start: 10, end: 60 } }],
-			rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
-			cutAware: ca,
-		});
+		const inside = lay(
+			words([
+				['aa', 0, 6],
+				['bb', 30, 50],
+			]),
+			{
+				cuts: [{ frame: 20 }, { frame: 40, zone: { start: 10, end: 60 } }],
+				rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
 		for (const c of inside.captions) expect(c.start >= 40 || c.end <= 40 || c.start < 10).toBe(true);
 		expect(inside.stats.crossing).toBe(0);
 	});
