@@ -239,7 +239,8 @@ function clipCommands(it, i, fontId) {
 			track: 'V2',
 			ref,
 			content: { text: it.text, style },
-			...(pixel ? { box: { width: Math.round(0.75 * C.w), height: 160, autoSize: 'none' } } : {}),
+			// The subtitle templates' box: 75 % of the frame width, height following the text.
+			...(pixel ? { box: { width: Math.round(0.75 * C.w), height: 160, autoSize: 'height' } } : {}),
 			transform: { position: [C.w / 2, Math.round(C.y * C.h)] },
 		},
 	];
