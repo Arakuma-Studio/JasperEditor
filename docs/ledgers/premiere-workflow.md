@@ -134,7 +134,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | kits | EA-020…022, EA-030, EA-032, EA-033 Decorate Cuts, punch-ins, Ken Burns | cutmap, proposals | ✅ merged (kits on exact cut 94.6–97.6 %; punch-in F1 0.62–0.71 < 0.75 target) |
 | overlays | EA-023…026 reactions, overlay slides, music bed, stingers | cutmap, proposals | ✅ merged (503259a7; music beds median 53 s vs user's 52.5 s, 92 % of switches on a cut vs 86 %; reactions from words reach 2.6/min vs 6.9/min on shorts, recall within 1 s 16 % — words explain ≤ 30 % of placements) |
 | recipes | EA-010…013, EA-040…042, EA-050/051 style recipes, apply_style, Style Check, Automate menu, MCP, accuracy harness | kits, overlays, subtitles, cleanup | ✅ merged (c14e4fdd; kits exact recall 94.4 % shorts / 97.6 % long; punch-in F1 0.622 → 0.678, still < 0.75, in-sample tuning; e2e apply-style passes) |
-| fpsmap | native vs Remotion export map 29.97 fps sources into 30 fps sequences differently + slight colour difference (found by recipes; predates the programme) — reproduce, fix every path to match Program preview, regression tests | — | 🔄 |
+| fpsmap | native vs Remotion export map 29.97 fps sources into 30 fps sequences differently + slight colour difference (found by recipes; predates the programme) — reproduce, fix every path to match Program preview, regression tests | — | ✅ merged (947d33f4; frames off the model, before → after, 29.97→30 over 1,040 frames: native 537 → 0, hybrid/Remotion 60 → 0; same for 23.976→24, 25→30, 30→29.97, speed and holds; untagged video decoded BT.709 on every path; remaining: Chrome's software YUV→RGB blue coefficient (≤ ≈12.5 levels on saturated blue, Remotion/hybrid only), untagged BT.601 SD now shown as BT.709 without a matrix override, Program-monitor cost of converted-rate clips not benchmarked) |
 
 ### Phase 4 — integration
 - ⏳ Merge branches, fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`, ask the
@@ -188,4 +188,4 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   48 social/template-control web tests pass), typecheck + lint pass; full suite 9,049 passed — besides the 7 known and
   the planSet fallout, a subtitles-layout property counterexample (zone starting on a hard cut) sent back to subtitles → real layout bug (zone run-through judged
   from the subtitle's start instead of the split piece's), fixed with a regression test that fails before (0df88311); full `pnpm e2e` on 4775e410 with
-  `JASPER_FFMPEG_LGPL_ONLY=1`: 137 passed, 2 skipped (30 min); build + Remotion suites running.
+  `JASPER_FFMPEG_LGPL_ONLY=1`: 137 passed, 2 skipped (30 min); build + Remotion suites restarted after fpsmap merged; final gate running on 947d33f4.
