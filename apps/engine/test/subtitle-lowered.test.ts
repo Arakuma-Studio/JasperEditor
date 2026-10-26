@@ -185,6 +185,117 @@ describe('multi-tap kernel (AS-070)', () => {
 		);
 	});
 
+	it('matches a per-pixel reference for random taps and stages (row spans skip only full coverage)', () => {
+		/** The kernel's formula pixel by pixel, without spans (test oracle). */
+		const reference = (
+			src: Uint8Array,
+			cw: number,
+			ch: number,
+			dw: number,
+			dh: number,
+			prog: number[],
+			opacity: number,
+		): Uint8Array => {
+			const out = new Uint8Array(dw * dh * 4);
+			const n = prog[0]!;
+			const acc = new Float64Array(dw * dh * 4);
+			let p = 2;
+			for (let t = 0; t < n; t++) {
+				const [w, m0, m1, m2, m3, m4, m5, c0, c1, c2, c3, ns] = prog.slice(p, p + 12) as number[];
+				const stages = Array.from({ length: ns! }, (_, k) => prog.slice(p + 12 + k * 10, p + 22 + k * 10));
+				p += 12 + ns! * 10;
+				for (let y = 0; y < dh; y++)
+					for (let x = 0; x < dw; x++) {
+						const X = x + 0.5;
+						const Y = y + 0.5;
+						const u = m0! * X + m1! * Y + m2!;
+						const v = m3! * X + m4! * Y + m5!;
+						const term = (d1: number, d2: number, g: number) => Math.min(1, 0.5 + Math.min(d1, d2) * g);
+						let cover =
+							Math.max(0, term(u - c0!, c2! - u, 1 / Math.hypot(m0!, m1!))) *
+							Math.max(0, term(v - c1!, c3! - v, 1 / Math.hypot(m3!, m4!)));
+						for (const st of stages) {
+							const su = st[0]! * X + st[1]! * Y + st[2]!;
+							const sv = st[3]! * X + st[4]! * Y + st[5]!;
+							cover *=
+								Math.max(0, term(su - st[6]!, st[8]! - su, 1 / Math.hypot(st[0]!, st[1]!))) *
+								Math.max(0, term(sv - st[7]!, st[9]! - sv, 1 / Math.hypot(st[3]!, st[4]!)));
+						}
+						if (!(cover > 0)) continue;
+						const lu = Math.min(c0! + 0.5, (c0! + c2!) / 2);
+						const hu = Math.max(c2! - 0.5, (c0! + c2!) / 2);
+						const lv = Math.min(c1! + 0.5, (c1! + c3!) / 2);
+						const hv = Math.max(c3! - 0.5, (c1! + c3!) / 2);
+						const su = Math.min(cw - 1, Math.max(0, Math.min(hu, Math.max(lu, u)) - 0.5));
+						const sv = Math.min(ch - 1, Math.max(0, Math.min(hv, Math.max(lv, v)) - 0.5));
+						const iu = Math.floor(su);
+						const iv = Math.floor(sv);
+						const fx = su - iu;
+						const fy = sv - iv;
+						const iu1 = Math.min(cw - 1, iu + 1);
+						const iv1 = Math.min(ch - 1, iv + 1);
+						const px = (i: number, j: number, c: number) => src[(j * cw + i) * 4 + c]!;
+						const ws: [number, number, number][] = [
+							[iu, iv, (1 - fx) * (1 - fy)],
+							[iu1, iv, fx * (1 - fy)],
+							[iu, iv1, (1 - fx) * fy],
+							[iu1, iv1, fx * fy],
+						];
+						const a = ws.reduce((s, [i, j, k]) => s + px(i, j, 3) * k, 0);
+						if (a <= 0) continue;
+						const o = (y * dw + x) * 4;
+						for (let c = 0; c < 3; c++)
+							acc[o + c]! += (w! * cover * ws.reduce((s, [i, j, k]) => s + px(i, j, c) * px(i, j, 3) * k, 0)) / 255;
+						acc[o + 3]! += w! * cover * a;
+					}
+			}
+			for (let i = 0; i < dw * dh; i++) {
+				const a = acc[i * 4 + 3]!;
+				if (!(a > 0)) continue;
+				for (let c = 0; c < 3; c++) out[i * 4 + c] = Math.min(255, (acc[i * 4 + c]! * 255) / a) + 0.5;
+				out[i * 4 + 3] = Math.min(255, (a * opacity) / prog[1]!) + 0.5;
+			}
+			return out;
+		};
+		fc.assert(
+			fc.property(fc.integer({ min: 0, max: 2 ** 31 - 1 }), (seed) => {
+				let s = seed | 1;
+				const r = () => {
+					s ^= s << 13;
+					s ^= s >>> 17;
+					s ^= s << 5;
+					return ((s >>> 0) % 100000) / 100000;
+				};
+				const cw = 5 + Math.floor(r() * 6);
+				const ch = 5 + Math.floor(r() * 6);
+				const src = new Uint8Array(cw * ch * 4).map(() => Math.floor(r() * 256));
+				const dw = 18;
+				const dh = 15;
+				const taps = 1 + Math.floor(r() * 3);
+				const prog: number[] = [taps, 0];
+				for (let t = 0; t < taps; t++) {
+					const w = 0.2 + r();
+					prog[1] += w;
+					const a = (r() - 0.5) * 1.5;
+					const k = 0.5 + r();
+					const map = [Math.cos(a) * k, Math.sin(a) * k, -r() * 6, -Math.sin(a) * k, Math.cos(a) * k, -r() * 6];
+					const ns = Math.floor(r() * 3);
+					prog.push(w, ...map, r(), r(), cw - r(), ch - r(), ns);
+					for (let q = 0; q < ns; q++) {
+						const b = (r() - 0.5) * 2;
+						prog.push(Math.cos(b), Math.sin(b), -r() * 4, -Math.sin(b), Math.cos(b), -r() * 4);
+						prog.push(r() * 3, r() * 3, 6 + r() * 10, 6 + r() * 10);
+					}
+				}
+				const got = new Uint8Array(dw * dh * 4);
+				drawTaps(src, cw, cw, ch, got, dw, dh, prog, 0.9, [0, 0, dw, dh], new Float32Array(dw * dh * 4));
+				const want = reference(src, cw, ch, dw, dh, prog, 0.9);
+				for (let i = 0; i < got.length; i++) expect(Math.abs(got[i]! - want[i]!), `byte ${i}`).toBeLessThanOrEqual(1);
+			}),
+			{ numRuns: 300 },
+		);
+	});
+
 	it('equal taps average to the single tap; a stage rectangle cuts with an anti-aliased edge', () => {
 		const cw = 8;
 		const src = new Uint8Array(cw * cw * 4).fill(255);

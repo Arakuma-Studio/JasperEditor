@@ -234,20 +234,68 @@ export function drawTaps(
 		const hv = Math.max(cv1 - 0.5, (cv0 + cv1) / 2);
 		const gu = 1 / Math.hypot(m0, m1);
 		const gv = 1 / Math.hypot(m3, m4);
+		// Per row, every coverage term is linear in x: the pixels where it can be > 0 (`xa…xb`) and where every term is
+		// 1 (`fa…fb`, coverage computations skipped) are intervals. `edge(a, b, g)` narrows them for one edge
+		// distance a·X + b (X = x + ½, in the term's units; g its output-px gradient). Same pixels as the full test.
+		let xa = 0;
+		let xb = 0;
+		let fa = 0;
+		let fb = 0;
+		const edge = (a: number, b: number, g: number) => {
+			// Visible: a·X + b > −½ / g; full: a·X + b ≥ ½ / g (the ramp is ½ px on each side of the edge).
+			const vis = -0.5 / g;
+			const full = 0.5 / g;
+			if (a === 0) {
+				if (!(b > vis)) xb = xa;
+				if (!(b >= full)) fb = fa;
+				return;
+			}
+			const xv = (vis - b) / a - 0.5;
+			const xf = (full - b) / a - 0.5;
+			if (a > 0) {
+				xa = Math.max(xa, Math.floor(xv));
+				fa = Math.max(fa, Math.ceil(xf) + 1);
+			} else {
+				xb = Math.min(xb, Math.ceil(xv) + 1);
+				fb = Math.min(fb, Math.floor(xf) - 1);
+			}
+		};
 		for (let y = y0; y < y1; y++) {
 			const Y = y + 0.5;
-			const X0 = x0 + 0.5;
+			xa = x0;
+			xb = x1;
+			fa = x0;
+			fb = x1;
+			edge(m0, m1 * Y + m2 - cu0, gu);
+			edge(-m0, cu1 - m1 * Y - m2, gu);
+			edge(m3, m4 * Y + m5 - cv0, gv);
+			edge(-m3, cv1 - m4 * Y - m5, gv);
+			for (let s = 0; s < ns; s++) {
+				const q = s * 12;
+				edge(stg[q]!, stg[q + 1]! * Y + stg[q + 2]! - stg[q + 6]!, stg[q + 10]!);
+				edge(-stg[q]!, stg[q + 8]! - stg[q + 1]! * Y - stg[q + 2]!, stg[q + 10]!);
+				edge(stg[q + 3]!, stg[q + 4]! * Y + stg[q + 5]! - stg[q + 7]!, stg[q + 11]!);
+				edge(-stg[q + 3]!, stg[q + 9]! - stg[q + 4]! * Y - stg[q + 5]!, stg[q + 11]!);
+			}
+			if (xa < x0) xa = x0;
+			if (xb > x1) xb = x1;
+			if (xb <= xa) continue;
+			if (fa < xa) fa = xa;
+			if (fb > xb) fb = xb;
+			const X0 = xa + 0.5;
 			let u = m0 * X0 + m1 * Y + m2;
 			let v = m3 * X0 + m4 * Y + m5;
-			let o = (y - y0) * rw * 4;
-			for (let x = x0; x < x1; x++, u += m0, v += m3, o += 4) {
+			let o = ((y - y0) * rw + (xa - x0)) * 4;
+			for (let x = xa; x < xb; x++, u += m0, v += m3, o += 4) {
+				let cover = 1;
+				if (x < fa || x >= fb) {
 				let cu = 0.5 + Math.min(u - cu0, cu1 - u) * gu;
 				if (cu <= 0) continue;
 				let cv = 0.5 + Math.min(v - cv0, cv1 - v) * gv;
 				if (cv <= 0) continue;
 				if (cu > 1) cu = 1;
 				if (cv > 1) cv = 1;
-				let cover = cu * cv;
+				cover = cu * cv;
 				for (let s = 0; s < ns; s++) {
 					const q = s * 12;
 					const X = x + 0.5;
@@ -264,6 +312,7 @@ export function drawTaps(
 					cover *= ku * kv;
 				}
 				if (!(cover > 0)) continue;
+				}
 				let su = (u < lu ? lu : u > hu ? hu : u) - 0.5;
 				let sv = (v < lv ? lv : v > hv ? hv : v) - 0.5;
 				if (su < 0) su = 0;
