@@ -287,8 +287,13 @@ describe('speech catalogue validation (SG-020, SG-023)', () => {
 
 describe('CUDA runtime guidance (SG-006; found on the RTX 4060 Ti box: CUDA 12.8 toolkit, no CUDA 13)', () => {
 	it('names the CUDA 13 libraries a CUDA 12 install lacks, with NVIDIA package names that exist', () => {
-		const g = cudaGuidance({ missing: ['libcudart.so.13', 'libcublas.so.13', 'libcublasLt.so.13'], olderCuda: 12 });
-		expect(g).toMatch(/CUDA 12 is installed, but ONNX Runtime 1\.30\.0's CUDA provider needs the CUDA 13 runtime/);
+		const g = cudaGuidance({
+			missing: ['libcudart.so.13', 'libcublas.so.13', 'libcublasLt.so.13'],
+			olderCuda: 12,
+		});
+		expect(g).toMatch(
+			/CUDA 12 is installed, but ONNX Runtime 1\.30\.0's CUDA provider needs the CUDA 13 runtime/,
+		);
 		expect(g).toContain('cuda-cudart-13-0');
 		expect(g).toContain('libcudnn9-cuda-13');
 		expect(g).toContain('nvidia-cuda-runtime');

@@ -364,12 +364,22 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		process.env.JASPER_SPEECH_GPU_FAULT_AFTER = '1';
 		try {
 			const out = await runSpeechJob(
-				{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
+				{
+					modelDir: dir,
+					modelId: 'fake',
+					input: { f32: '' },
+					language: 'en',
+					device: { encoder: 'webgpu', decoder: 'cpu' },
+				},
 				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 			);
 			expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 			expect(out.device.fallbacks).toContainEqual(
-				expect.objectContaining({ stage: 'job', from: 'webgpu', reason: 'injected GPU fault (webgpu, run 1)' }),
+				expect.objectContaining({
+					stage: 'job',
+					from: 'webgpu',
+					reason: 'injected GPU fault (webgpu, run 1)',
+				}),
 			);
 		} finally {
 			delete process.env.JASPER_SPEECH_GPU_FAULT_AFTER;

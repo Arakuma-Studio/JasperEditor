@@ -204,7 +204,15 @@ export class CudaProvider {
 		const state = await this.state();
 		const rt: CudaRuntime = this.supported
 			? this.runtime()
-			: { ok: false, missing: [], driverVersion: null, gpu: null, vramMb: null, libDirs: [], olderCuda: null };
+			: {
+					ok: false,
+					missing: [],
+					driverVersion: null,
+					gpu: null,
+					vramMb: null,
+					libDirs: [],
+					olderCuda: null,
+				};
 		return {
 			state,
 			ortVersion: ORT_CUDA_PACKAGE.ortVersion,

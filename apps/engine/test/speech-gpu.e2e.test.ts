@@ -75,8 +75,12 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 		const r = await app.inject({ method: 'POST', url: '/api/speech/cuda/install', headers: H });
 		const done = await job((r.json() as EngineJob).id);
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
-		const probe = (await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })).json() as SpeechProbe;
-		console.log(`probe: ${JSON.stringify({ providers: probe.providers, chosen: probe.chosen, gpu: probe.gpu, threads: probe.threads })}`);
+		const probe = (
+			await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })
+		).json() as SpeechProbe;
+		console.log(
+			`probe: ${JSON.stringify({ providers: probe.providers, chosen: probe.chosen, gpu: probe.gpu, threads: probe.threads })}`,
+		);
 		expect(probe.cuda.state).toBe('installed');
 		expect(probe.providers.find((p) => p.id === 'cuda')).toMatchObject({ available: true });
 		expect(probe.chosen.encoder).toBe('cuda');
@@ -111,7 +115,9 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 			const r = await transcribe({ model: 'whisper-tiny.en', device: 'gpu' });
 			console.log(`fault: ${JSON.stringify(r.device)}`);
 			expect(r.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
-			expect(r.device?.fallbacks).toContainEqual(expect.objectContaining({ stage: 'job', from: 'cuda', to: 'cpu' }));
+			expect(r.device?.fallbacks).toContainEqual(
+				expect.objectContaining({ stage: 'job', from: 'cuda', to: 'cpu' }),
+			);
 			expect(wordErrorRate(reference, text(r))).toBeLessThanOrEqual(0.04);
 		} finally {
 			delete process.env.JASPER_SPEECH_GPU_FAULT_AFTER;
@@ -121,11 +127,20 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 	it('large-v3-turbo on CUDA (greedy, beam 5, fp16) vs the CPU: WER, RTF and text parity', async () => {
 		const runs: Array<[string, TranscriptionResult]> = [];
 		runs.push(['gpu standard', await transcribe({ model: 'whisper-large-v3-turbo', device: 'gpu' })]);
-		runs.push(['gpu standard (calibrated)', await transcribe({ model: 'whisper-large-v3-turbo', device: 'gpu' })]);
-		runs.push(['gpu best', await transcribe({ model: 'whisper-large-v3-turbo', device: 'gpu', accuracy: 'best' })]);
+		runs.push([
+			'gpu standard (calibrated)',
+			await transcribe({ model: 'whisper-large-v3-turbo', device: 'gpu' }),
+		]);
+		runs.push([
+			'gpu best',
+			await transcribe({ model: 'whisper-large-v3-turbo', device: 'gpu', accuracy: 'best' }),
+		]);
 		runs.push(['cpu standard', await transcribe({ model: 'whisper-large-v3-turbo', device: 'cpu' })]);
 		if (existsSync(join(MODELS, 'whisper-large-v3-turbo-fp16')))
-			runs.push(['gpu fp16 standard', await transcribe({ model: 'whisper-large-v3-turbo-fp16', device: 'gpu' })]);
+			runs.push([
+				'gpu fp16 standard',
+				await transcribe({ model: 'whisper-large-v3-turbo-fp16', device: 'gpu' }),
+			]);
 		const cal = (
 			(await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })).json() as SpeechProbe
 		).calibrations;
@@ -137,7 +152,9 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 		const gpu = runs[0]![1];
 		const cpu = runs.find(([n]) => n === 'cpu standard')![1];
 		const parity = wordErrorRate(text(cpu), text(gpu));
-		console.log(`turbo CPU-vs-GPU word difference ${(parity * 100).toFixed(2)} %, identical ${text(cpu) === text(gpu)}`);
+		console.log(
+			`turbo CPU-vs-GPU word difference ${(parity * 100).toFixed(2)} %, identical ${text(cpu) === text(gpu)}`,
+		);
 		for (const [name, r] of runs) {
 			expect(wordErrorRate(reference, text(r)), name).toBeLessThanOrEqual(0.04);
 			if (name.startsWith('gpu')) expect(r.device?.encoder, name).toBe('cuda');
@@ -146,9 +163,18 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 	}, 3_600_000);
 
 	it('WebGPU (NVIDIA GPU support off): encoder on WebGPU, device-resident decoder calibrated, CPU parity', async () => {
-		await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { nvidiaGpu: false } });
-		const probe = (await app.inject({ method: 'POST', url: '/api/speech/probe', headers: H })).json() as SpeechProbe;
-		console.log(`probe without CUDA: ${JSON.stringify({ providers: probe.providers, chosen: probe.chosen })}`);
+		await app.inject({
+			method: 'PUT',
+			url: '/api/speech/settings',
+			headers: JSON_H,
+			payload: { nvidiaGpu: false },
+		});
+		const probe = (
+			await app.inject({ method: 'POST', url: '/api/speech/probe', headers: H })
+		).json() as SpeechProbe;
+		console.log(
+			`probe without CUDA: ${JSON.stringify({ providers: probe.providers, chosen: probe.chosen })}`,
+		);
 		const webgpu = probe.providers.find((p) => p.id === 'webgpu');
 		if (!webgpu?.available) {
 			console.log(`WebGPU unavailable here: ${webgpu?.reason}`);
@@ -173,7 +199,9 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 			const gpu = runs.find(([n]) => n === `${model} gpu (calibrated)`)![1];
 			const cpu = runs.find(([n]) => n === `${model} cpu`)![1];
 			const parity = wordErrorRate(text(cpu), text(gpu));
-			console.log(`${model} WebGPU-vs-CPU word difference ${(parity * 100).toFixed(2)} %, identical ${text(cpu) === text(gpu)}`);
+			console.log(
+				`${model} WebGPU-vs-CPU word difference ${(parity * 100).toFixed(2)} %, identical ${text(cpu) === text(gpu)}`,
+			);
 			expect(gpu.device?.encoder).toBe('webgpu');
 			expect(gpu.device?.fallbacks).toEqual([]);
 			expect(parity).toBeLessThanOrEqual(0.02);
