@@ -8,6 +8,9 @@ import {
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
 	type AudioClassifyRequest,
+	type AutomationPassId,
+	type AutomationPassRequest,
+	type AutomationPassResult,
 	type AutoToneRequest,
 	type BeatsRequest,
 	type BeatsResult,
@@ -596,6 +599,22 @@ export class EngineClient {
 	/** "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans stale items; nothing is applied. */
 	refreshProposal(projectId: string, proposalId: string, req: ProposalRefreshRequest) {
 		return this.call('proposalRefresh', { params: { projectId, proposalId }, body: req });
+	}
+	/**
+	 * An editing-automation pass (spec 15 EA-020…EA-022): `dryRun` → the `AutomationPassResult` at once; `propose`
+	 * (default) → an `edit-automation` job (202) whose result is the `AutomationPassResult` naming the proposal.
+	 */
+	automationPass(
+		projectId: string,
+		pass: AutomationPassId,
+		req: AutomationPassRequest,
+		signal?: AbortSignal,
+	) {
+		return this.call('automationPass', {
+			params: { projectId, pass },
+			body: req,
+			...(signal ? { signal } : {}),
+		}) as Promise<AutomationPassResult | EngineJob>;
 	}
 	/** Proposal features of a project: Review groups, producers, whether agents may accept (spec 15 EA-001). */
 	proposalFeatures(projectId: string) {

@@ -11,6 +11,7 @@ import {
 	planAccept,
 	proposalCounts,
 	proposalDecided,
+	refreshProposalItems,
 	rejectItems,
 	reopenItems,
 	reopenRefusals,
@@ -28,6 +29,8 @@ export class FakeEngine implements ProposalsEngine {
 	private t = Date.parse('2026-10-16T10:00:00.000Z');
 	private n = 0;
 	failNext: string | null = null;
+	/** The feature producer's re-plan behind `refreshProposal` (the test sets it; null: not refreshable). */
+	replan: ((p: Proposal, itemIds: string[], reroll: boolean) => unknown) | null = null;
 	constructor(private readonly session: () => EditorSession) {}
 	now = () => new Date((this.t += 1000)).toISOString();
 	subscribe = (cb: (e: ProposalChangedEvent) => void) => {
@@ -233,6 +236,36 @@ export class FakeEngine implements ProposalsEngine {
 			...(req.created ? { created: req.created } : {}),
 		});
 		return { proposal: this.put(next, 'accepted', ids, { revision: req.revision }), changed: ids };
+	}
+	async refreshProposal(_pid: string, id: string, req: { itemIds: string[] | 'stale'; reroll?: boolean }) {
+		this.calls.push(`refresh ${JSON.stringify(req.itemIds)}${req.reroll ? ' reroll' : ''}`);
+		const p = this.get(id);
+		if (!this.replan)
+			throw Object.assign(new Error('not refreshable'), {
+				code: 'PROPOSAL_NOT_REFRESHABLE',
+				status: 409,
+				detail: { code: 'E_NOT_REFRESHABLE' },
+			});
+		const ids = req.itemIds === 'stale' ? [] : req.itemIds;
+		const s = this.session();
+		const r = refreshProposalItems(
+			s.getCommitted(),
+			p,
+			ids,
+			this.replan(p, ids, req.reroll === true),
+			{ registries: REG, revision: s.revision },
+			this.now(),
+		);
+		if (!r.ok) throw new Error(JSON.stringify(r.errors));
+		const out = this.put(r.proposal, 'refreshed', [...r.refreshed, ...r.dropped]);
+		return {
+			proposal: out,
+			refreshed: r.refreshed,
+			dropped: r.dropped,
+			unchanged: r.unchanged,
+			stale: [],
+			revision: s.revision,
+		};
 	}
 	async deleteProposal(_pid: string, id: string) {
 		this.calls.push(`delete ${id}`);

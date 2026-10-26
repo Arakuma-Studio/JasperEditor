@@ -207,6 +207,33 @@ describe('proposals slice: preview document and ghosts', () => {
 		expect(second.document.sequences[seqId]!.markers.map((m) => m.name)).toContain('Later');
 	});
 
+	it('a Reroll re-planning an item in place (same id, same document) rebuilds its ghosts', async () => {
+		const { c, engine, t, seqId, draft } = await setup();
+		const p = engine.create(draft);
+		await c.setActive(p.id);
+		t.run();
+		const first = c.getState().preview!;
+		expect(first.document.sequences[seqId]!.markers.map((m) => m.name)).toContain('Whoosh');
+		engine.replan = (_p, ids, reroll) => ({
+			items: ids.map((id) => ({
+				id,
+				label: 'Marker at 40',
+				group: 'hero',
+				commands: [{ type: 'marker.add', frame: 40, name: reroll ? 'Zap' : 'Whoosh' }],
+			})),
+		});
+		const r = await c.refreshItems(['cut'], { reroll: true });
+		expect(r).toMatchObject({ ok: true });
+		expect(engine.calls).toContain('refresh ["cut"] reroll');
+		t.run();
+		const second = c.getState().preview!;
+		expect(second).not.toBe(first);
+		const markers = second.document.sequences[seqId]!.markers;
+		expect(markers.map((m) => m.name)).toContain('Zap');
+		expect(markers.map((m) => m.name)).not.toContain('Whoosh');
+		expect(markers.find((m) => m.name === 'Zap')?.frame).toBe(40);
+	});
+
 	it('flags stale items when their anchors move, and revives them when moved back', async () => {
 		const { c, engine, t, session, seqId, markerId, draft } = await setup();
 		const p = engine.create(draft);

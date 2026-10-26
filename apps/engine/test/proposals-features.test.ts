@@ -244,8 +244,21 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 			explicit: true,
 		});
 		expect(by['transcript-cleanup']!.groups.map((g) => g.id)).toContain('retakes');
-		expect(features.every((f) => f.refreshable === false)).toBe(true);
+		// editing automation's producer (spec 15 EA-020…EA-022) refreshes; the others do not (yet)
+		expect(features.filter((f) => f.refreshable).map((f) => f.id)).toEqual(['edit-automation']);
 		const svc = app.jasper.services.proposals as ProposalService;
+		// without its refresher the feature is not refreshable
+		svc.registerRefresher('edit-automation', () => ({ items: [] }))();
+		const none = ProposalFeaturesResponseSchema.parse(
+			(
+				await app.inject({
+					method: 'GET',
+					url: `/api/projects/${projectId}/proposal-features`,
+					headers: AGENT_H,
+				})
+			).json(),
+		);
+		expect(none.features.every((f) => f.refreshable === false)).toBe(true);
 		const off = svc.registerRefresher('edit-automation', () => ({ items: [] }));
 		const again = ProposalFeaturesResponseSchema.parse(
 			(
@@ -300,7 +313,9 @@ describe('Refresh proposal (EA-003)', { timeout: TIMEOUT }, () => {
 			]),
 			AGENT_H,
 		);
-		// no producer yet: refused with a reason
+		// no producer (the built-in one taken off): refused with a reason
+		const svc = app.jasper.services.proposals as ProposalService;
+		svc.registerRefresher('edit-automation', () => ({ items: [] }))();
 		const none = await post(app, `${base(projectId)}/${p.id}/refresh`, { itemIds: 'stale' }, EDITOR_H);
 		expect([none.statusCode, none.json().code, none.json().detail.code]).toEqual([
 			409,
@@ -312,7 +327,6 @@ describe('Refresh proposal (EA-003)', { timeout: TIMEOUT }, () => {
 			{ type: 'clip.trim', clipId: a.id, edge: 'out', deltaFrames: -10 },
 			{ type: 'clip.move', clipIds: [b.id], deltaFrames: -10 },
 		]);
-		const svc = app.jasper.services.proposals as ProposalService;
 		const calls: string[][] = [];
 		svc.registerRefresher('edit-automation', ({ itemIds, doc, proposal }) => {
 			calls.push(itemIds);

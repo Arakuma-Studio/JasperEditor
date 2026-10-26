@@ -10,6 +10,7 @@ export * from './agent/strict.ts';
 export * from './animation/index.ts';
 export * from './audio/index.ts';
 export * from './audio-fade.ts';
+export * from './automation/index.ts';
 export * from './blend-modes.ts';
 export * from './captions/index.ts';
 export * from './cleanup/index.ts';

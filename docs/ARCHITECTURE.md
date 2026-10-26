@@ -789,7 +789,11 @@ finer anchors (`meta.anchorOn`: decorated clips and cut frames), producer refres
 `PROPOSAL_TOO_LARGE` / `E_TOO_LARGE` with the range that fits), batch commands (`clip.addAdjustmentBatch`,
 `keyframe.addBatch`), `GET /api/projects/:id/proposal-features` / `list_proposal_features`, and the editor's per-feature
 Review vocabulary (`apps/web/src/proposals/vocabulary.ts`) and ghosts of adjustment / text clips, keyframe ranges and
-transitions.
+transitions. The editing-automation passes (spec 15 EA-020…EA-022: Decorate Cuts, punch-ins, Ken Burns) are pure
+planners in `packages/project/src/automation/` (deterministic per seed, kit packs as data, plain-data parameters for
+style recipes); the engine's `edit-automation` job (`POST /api/projects/:projectId/automation/:pass`, dry run or
+propose) adds what needs I/O — the live document, sounds from the library through sound design's cues and placement,
+the Reframe subject analysis — and registers the feature's refresher (Refresh proposal, Reroll).
 
 **Sound design (built, D-50…D-53; spec 12).** Agents cannot hear, so every audible property has a
 measured or visual proxy, and every surface the editor has has an MCP twin (spec 12 §1): the library (`sound_library_status`,

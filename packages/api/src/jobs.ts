@@ -62,6 +62,7 @@ export const JOB_KINDS = [
 	'cleanup-analysis',
 	/** spec 16 SG-006: the downloadable ONNX Runtime CUDA provider (Linux x64). */
 	'runtime-download',
+	'edit-automation',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

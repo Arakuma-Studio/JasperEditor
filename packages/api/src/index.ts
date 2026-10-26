@@ -1,6 +1,7 @@
 export * from './agent.ts';
 export * from './audio.ts';
 export * from './audio-fx.ts';
+export * from './automation.ts';
 export * from './cache.ts';
 export * from './camtrack.ts';
 export * from './capabilities.ts';

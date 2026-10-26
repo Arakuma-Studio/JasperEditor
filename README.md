@@ -579,7 +579,12 @@ Tools (use MCP `listTools` for the current catalog and schemas):
 - Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposal_features` (features, their
   Review groups and whether agents may apply them here) `list_proposals` `get_proposal` (with a ghost table and its last
   Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents)
-  `reject_proposal` `refresh_proposal` (the producer re-plans stale items; nothing is applied).
+  `reject_proposal` `refresh_proposal` (the producer re-plans stale items, or with `reroll` draws an item again with
+  its next seed; nothing is applied).
+- Editing automation (spec 15; each a proposal of feature `edit-automation`, `mode: "dryRun"` for counts, coverage and
+  export cost): `decorate_cuts` (a cut kit centred on every picture cut + a whoosh of its length through sound design)
+  `add_punch_ins` (Motion zooms from the clip midpoint, held to the cut) `add_ken_burns` (slow zooms over a share of the
+  A-roll clips) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`

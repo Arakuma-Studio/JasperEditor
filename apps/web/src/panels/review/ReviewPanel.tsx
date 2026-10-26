@@ -28,11 +28,13 @@ import {
 	cycleAlternative,
 	decide,
 	focusItem,
+	isRerollable,
 	openReview,
 	playReviewItem,
 	REVIEW_STATE_LABELS,
 	refreshReview,
 	rejectAll,
+	rerollReviewItem,
 } from '../../proposals/actions.ts';
 import { useProposalFeature } from '../../proposals/feature-state.ts';
 import { whyLines } from '../../proposals/ghosts.ts';
@@ -478,6 +480,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							noteRequest={noteFor === currentRow.item.id}
 							onNoteHandled={() => setNoteFor(null)}
 							idPrefix={idPrefix}
+							refreshable={!!featureInfo?.refreshable}
 						/>
 					) : null}
 					<div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-pr-border px-2 py-1.5">
@@ -857,6 +860,8 @@ function Details(p: {
 	noteRequest: boolean;
 	onNoteHandled(): void;
 	idPrefix: string;
+	/** The feature's producer re-plans items (Refresh proposal, Reroll). */
+	refreshable: boolean;
 }) {
 	const it = p.row.item;
 	const c = useProposalsController(p.session);
@@ -930,6 +935,29 @@ function Details(p: {
 				>
 					▶
 				</Button>
+				{isRerollable(p.row.item) ? (
+					<Button
+						variant="secondary"
+						disabled={
+							p.readOnly ||
+							!p.refreshable ||
+							!['pending', 'stale', 'invalid'].includes(p.row.item.engineState) ||
+							it.state === 'accepted'
+						}
+						disabledReason={
+							!p.refreshable
+								? t('Its producer cannot re-plan items')
+								: it.state === 'accepted' || it.state === 'applied'
+									? t('Only items still under review can be rerolled')
+									: undefined
+						}
+						onClick={() => void rerollReviewItem(p.session, it.id)}
+						aria-label={t('Reroll: plan this item again with its next seed')}
+						data-review-detail="reroll"
+					>
+						⟳ {t('Reroll')}
+					</Button>
+				) : null}
 			</div>
 			{editing ? (
 				<div className="flex flex-col gap-1">

@@ -167,13 +167,34 @@ const DEBOUNCE_MS = 150;
 const SLICE_MS = 8;
 const SYNC_ITEMS = 64;
 
-/** What a preview depends on in a proposal: which items it applies, with which command set and recorded refs. */
+/** Fingerprints of command lists (by identity: a proposal fetched again brings new lists). */
+const commandPrints = new WeakMap<readonly unknown[], string>();
+/** FNV-1a and length of a command list's JSON: a refresh or Reroll replaces it under the same item id. */
+function commandsPrint(commands: readonly unknown[]): string {
+	let s = commandPrints.get(commands);
+	if (s === undefined) {
+		const json = JSON.stringify(commands);
+		let h = 0x811c9dc5;
+		for (let i = 0; i < json.length; i++) h = Math.imul(h ^ json.charCodeAt(i), 0x01000193);
+		s = `${(h >>> 0).toString(36)}.${json.length}`;
+		commandPrints.set(commands, s);
+	}
+	return s;
+}
+
+/**
+ * What a preview depends on in a proposal: which items it applies, with which command set (its content: a refresh or
+ * Reroll re-plans an item in place) and recorded refs.
+ */
 function previewKey(p: Proposal, itemIds: readonly string[]): string {
 	const want = new Set(itemIds);
 	const parts: string[] = [p.id];
 	for (const it of p.items) {
-		if (want.has(it.id)) parts.push(`${it.id}#${it.selectedAlternative ?? 0}`);
-		else if (it.state === 'accepted') parts.push(`${it.id}=${JSON.stringify(it.applied?.refs ?? {})}`);
+		if (want.has(it.id)) {
+			const k = it.selectedAlternative ?? 0;
+			const commands = k >= 1 ? (it.alternatives?.[k - 1]?.commands ?? []) : it.commands;
+			parts.push(`${it.id}#${k}:${commandsPrint(commands)}`);
+		} else if (it.state === 'accepted') parts.push(`${it.id}=${JSON.stringify(it.applied?.refs ?? {})}`);
 	}
 	return parts.join('|');
 }
@@ -626,9 +647,13 @@ export class ProposalsController {
 	/**
 	 * "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans the stale items (or `itemIds`) on the current
 	 * document; they come back pending for review (nothing is applied). Refused with the engine's reason when the
-	 * feature's producer does not refresh (E_NOT_REFRESHABLE).
+	 * feature's producer does not refresh (E_NOT_REFRESHABLE). `reroll` (spec 15 EA-032 "Reroll"): re-plan the items with
+	 * the next seed of each (another draw of the same pass).
 	 */
-	async refreshItems(itemIds: readonly string[] | 'stale' = 'stale'): Promise<ActionResult> {
+	async refreshItems(
+		itemIds: readonly string[] | 'stale' = 'stale',
+		opts: { reroll?: boolean } = {},
+	): Promise<ActionResult> {
 		const engine = this.engine;
 		const id = this.store.getState().activeId;
 		if (!engine || !id) return fail('E_NO_ENGINE', 'No proposal is under review');
@@ -637,6 +662,7 @@ export class ProposalsController {
 		return this.call(async () => {
 			const r = await refresh(this.session.projectId, id, {
 				itemIds: itemIds === 'stale' ? 'stale' : [...itemIds],
+				...(opts.reroll ? { reroll: true } : {}),
 			});
 			return { proposal: r.proposal, changed: [...r.refreshed, ...r.dropped] };
 		});
