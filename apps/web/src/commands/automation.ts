@@ -4,14 +4,21 @@
 // add_stingers); these UI commands are exposed to them too (`ui_command`) with optional starting
 // parameters (`params`: the pass's plain-data parameters, e.g. a style recipe's).
 import type { AutomationPassId } from '@jasper/api';
+import { activeStyleRecipe, recipePassParams } from '@jasper/project';
 import { z } from 'zod';
+import { APPLY_STYLE_DIALOG, registerApplyStyleDialog } from '../automation/ApplyStyleDialog.tsx';
 import { AUTOMATION_DIALOG, registerAutomationDialog } from '../automation/AutomationDialog.tsx';
+import { registerStyleCheckDialog, STYLE_CHECK_DIALOG } from '../automation/StyleCheckDialog.tsx';
+import { registerStyleRecipesDialog, STYLE_RECIPES_DIALOG } from '../automation/StyleRecipesDialog.tsx';
 import { t } from '../i18n/runtime.ts';
 import { runCommand } from './registry.ts';
 import { sequenceContext } from './sequence-context.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerAutomationDialog();
+registerApplyStyleDialog();
+registerStyleCheckDialog();
+registerStyleRecipesDialog();
 
 const PassArgs = z
 	.object({ params: z.record(z.string(), z.unknown()).optional() })
@@ -37,16 +44,37 @@ function passCommand(pass: AutomationPassId): Omit<UiCommand, 'id' | 'label'> {
 			const e = sequenceContext(ctx);
 			if (!e) return;
 			const a = args as z.infer<typeof PassArgs>;
+			// the pass's parameters of the project's active style recipe (EA-040), unless the caller gives some
+			const active = activeStyleRecipe(e.session.getCommitted());
+			const fromRecipe = active ? recipePassParams(active, pass) : null;
+			const initial = a?.params ?? fromRecipe;
 			ctx.ui.openDialog(AUTOMATION_DIALOG, {
 				session: e.session,
 				engine: ctx.engine,
 				sequenceId: e.seq.id,
 				pass,
-				...(a?.params ? { initialParams: a.params } : {}),
+				...(initial ? { initialParams: initial } : {}),
 				toast: ctx.ui.toast,
 				onReview: () => void runCommand('panel.focus.review', ctx),
 			});
 		},
+	};
+}
+
+const RecipeArgs = z
+	.object({ recipeId: z.string().min(1).max(80).optional() })
+	.strict()
+	.optional();
+
+/** What the style commands share (open a dialog on the active sequence). */
+function styleCommand(engine: boolean): Omit<UiCommand, 'id' | 'label' | 'description' | 'run'> {
+	return {
+		scope: 'global',
+		...(engine ? { capability: 'engine' as const } : {}),
+		agentExposed: true,
+		argsSchema: RecipeArgs,
+		when: (ctx: CommandCtx) => !!sequenceContext(ctx),
+		disabledReason: () => t('Open a sequence first'),
 	};
 }
 
@@ -99,5 +127,62 @@ export const automationCommands: UiCommand[] = [
 		label: 'Stingers…',
 		description:
 			'Put a short burst of generated TV static (picture and sound) after the shouted punchlines of the active sequence, found by loudness peaks and "!" phrases: match rule, threshold, length, rate, gain and sound, with a dry-run summary; Propose stores a proposal and opens review',
+	},
+	{
+		...styleCommand(true),
+		when: (ctx: CommandCtx) => {
+			const e = sequenceContext(ctx);
+			return !!e && !e.session.getState().readOnly;
+		},
+		disabledReason: (ctx: CommandCtx) =>
+			sequenceContext(ctx)?.session.getState().readOnly ? t('The project is read-only') : t('Open a sequence first'),
+		id: 'automation.applyStyle',
+		label: 'Apply Style…',
+		description:
+			'Run a style recipe on the active sequence (voice cleanup, subtitles, cut kits, punch-ins, Ken Burns, reactions, overlay slides, music beds, stingers), each step planned on what the earlier ones planned: the recipe, its steps for this run, range and seed, with a dry run per step (what is planned, why a step is skipped, export cost); Propose stores one proposal and opens review',
+		run: (ctx, args) => {
+			const e = sequenceContext(ctx);
+			if (!e) return;
+			const a = args as z.infer<typeof RecipeArgs>;
+			ctx.ui.openDialog(APPLY_STYLE_DIALOG, {
+				session: e.session,
+				engine: ctx.engine,
+				sequenceId: e.seq.id,
+				...(a?.recipeId ? { recipeId: a.recipeId } : {}),
+				toast: ctx.ui.toast,
+				onReview: () => void runCommand('panel.focus.review', ctx),
+			});
+		},
+	},
+	{
+		...styleCommand(true),
+		id: 'automation.styleCheck',
+		label: 'Style Check',
+		description:
+			'Compare the active sequence with a style recipe’s targets (cuts per minute, cuts with a kit, punch-ins, Ken Burns share, dead air, subtitles on the cuts, music level); each deviation lists timecodes that move the playhead there',
+		run: (ctx, args) => {
+			const e = sequenceContext(ctx);
+			if (!e) return;
+			const a = args as z.infer<typeof RecipeArgs>;
+			ctx.ui.openDialog(STYLE_CHECK_DIALOG, {
+				session: e.session,
+				engine: ctx.engine,
+				sequenceId: e.seq.id,
+				...(a?.recipeId ? { recipeId: a.recipeId } : {}),
+			});
+		},
+	},
+	{
+		...styleCommand(false),
+		argsSchema: z.object({}).strict().optional(),
+		id: 'automation.styleRecipes',
+		label: 'Style Recipes…',
+		description:
+			'The style recipes (built in, your library, this project’s copies): use one as the project’s active recipe, duplicate, rename, delete, or save the settings last used in the Automate dialogs as a new recipe',
+		run: (ctx) => {
+			const e = sequenceContext(ctx);
+			if (!e) return;
+			ctx.ui.openDialog(STYLE_RECIPES_DIALOG, { session: e.session, sequenceId: e.seq.id });
+		},
 	},
 ];

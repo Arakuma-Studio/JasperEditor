@@ -47,6 +47,7 @@ import {
 	proposePass,
 	reviewPassResult,
 } from './run.ts';
+import { rememberPassParams } from './style-store.ts';
 
 export const AUTOMATION_DIALOG = 'automation.pass';
 
@@ -131,10 +132,10 @@ const DETAIL_LABELS: Record<string, string> = {
 	loudness: 'Loud',
 };
 
-type RangeChoice = 'sequence' | 'inout';
+export type RangeChoice = 'sequence' | 'inout';
 const name = (s: string) => translateName(s) ?? s;
 
-function SeedRow(p: { value: number; onChange(v: number): void }) {
+export function SeedRow(p: { value: number; onChange(v: number): void }) {
 	return (
 		<Row label={t('Seed')} testId="automation-seed">
 			<ScrubbyNumber
@@ -645,6 +646,7 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 				signal: ac.signal,
 				onJob: (j) => setRunning({ progress: j.progress, stage: j.stage ?? j.title }),
 			});
+			rememberPassParams(session.projectId, pass, request);
 			const out = await reviewPassResult(session, r);
 			if (!r.proposalId) {
 				setRunning(null);

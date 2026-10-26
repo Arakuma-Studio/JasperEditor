@@ -17,4 +17,7 @@ export const AUTOMATE_MENU: AutomateMenuEntry[] = [
 	{ command: 'automation.slides', label: 'Slide Overlays…' },
 	{ command: 'automation.musicBed', label: 'Music Bed…' },
 	{ command: 'automation.stingers', label: 'Stingers…' },
+	{ command: 'automation.applyStyle', label: 'Apply Style…', separatorBefore: true },
+	{ command: 'automation.styleCheck', label: 'Style Check' },
+	{ command: 'automation.styleRecipes', label: 'Style Recipes…' },
 ];
