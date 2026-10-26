@@ -133,7 +133,8 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | cleanupui | TC-040…051, TC-060, TC-070/071 review UI, derived preview, MCP, calibration on the Mac | cleanup, speech | ✅ merged (a6128f6c; Mac calibration on 16 recordings, Fast preset: word precision 0.89 / recall 0.81 shorts, 0.88 / 0.82 long; edit points within 50 ms 0.64–0.70 < prototype 0.72; detector tail-rule bug found and fixed) |
 | kits | EA-020…022, EA-030, EA-032, EA-033 Decorate Cuts, punch-ins, Ken Burns | cutmap, proposals | ✅ merged (kits on exact cut 94.6–97.6 %; punch-in F1 0.62–0.71 < 0.75 target) |
 | overlays | EA-023…026 reactions, overlay slides, music bed, stingers | cutmap, proposals | ✅ merged (503259a7; music beds median 53 s vs user's 52.5 s, 92 % of switches on a cut vs 86 %; reactions from words reach 2.6/min vs 6.9/min on shorts, recall within 1 s 16 % — words explain ≤ 30 % of placements) |
-| recipes | EA-010…013, EA-040…042, EA-050/051 style recipes, apply_style, Style Check, Automate menu, MCP, accuracy harness | kits, overlays, subtitles, cleanup | 🔄 launched on 6fb5bd71 |
+| recipes | EA-010…013, EA-040…042, EA-050/051 style recipes, apply_style, Style Check, Automate menu, MCP, accuracy harness | kits, overlays, subtitles, cleanup | ✅ merged (c14e4fdd; kits exact recall 94.4 % shorts / 97.6 % long; punch-in F1 0.622 → 0.678, still < 0.75, in-sample tuning; e2e apply-style passes) |
+| fpsmap | native vs Remotion export map 29.97 fps sources into 30 fps sequences differently + slight colour difference (found by recipes; predates the programme) — reproduce, fix every path to match Program preview, regression tests | — | 🔄 |
 
 ### Phase 4 — integration
 - ⏳ Merge branches, fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`, ask the
@@ -176,4 +177,4 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   merges (2760136a); subtitles merged; integrated full suite on the VM (1243bcb7): 8,151 passed, 9 failed — 7 known
   (5 Jasper Synth hashes, ZIP-1 memory, Electron needs libgtk on the VM) + 2 fixed in ebdeb1bb (crop edge coverage
   rounding to 0.9999999999999996, regression test fails before; subtitles e2e named libx264 → OpenH264 only; e2e 3/3
-  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged (suite on 6fb5bd71: typecheck, lint, i18n pass; 8,223 passed, only the 7 known failures); recipes launched.
+  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged (suite on 6fb5bd71: typecheck, lint, i18n pass; 8,223 passed, only the 7 known failures); recipes launched; recipes merged; fpsmap launched (export fidelity).
