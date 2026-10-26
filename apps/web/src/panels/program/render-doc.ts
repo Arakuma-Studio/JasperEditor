@@ -19,6 +19,7 @@ import {
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from '../../import/assets.ts';
+import { type CatalogForAssets, catalogTemplateAssets } from '../../remote-assets/resolve.ts';
 
 type ProxyTier = '720' | '540';
 type MediaUrlFn = (mediaKey: string, variant?: 'original' | { proxy: ProxyTier }) => string;
@@ -113,7 +114,8 @@ export function resolveMediaHandle(
 	};
 }
 
-type FontCatalogLike = Parameters<typeof resolveCatalogFont>[0];
+/** The engine catalogue as text clips (`resolveCatalogFont`) and template assets (`catalogTemplateAssets`) read it. */
+type FontCatalogLike = CatalogForAssets & NonNullable<Parameters<typeof resolveCatalogFont>[0]>;
 
 /**
  * Font file URL from the engine catalog (`GET /api/fonts`, S04 §18): the same choice the engine's exports make
@@ -126,6 +128,8 @@ function fontUrlFromCatalog(
 	weight: number,
 	italic: boolean,
 ): string | null {
+	// social-comment §7.8: remote platform families are for the templates that declare them; `resolveCatalogFont`
+	// skips them, like the engine's export (unknown → the default sans), so preview and export agree.
 	return resolveCatalogFont(catalog, font.family, weight, italic)?.file.url ?? null;
 }
 
@@ -156,6 +160,8 @@ export function buildProgramDoc(input: RenderDocInput, prev: RenderDoc | null): 
 			}),
 		resolveFont: (font, weight, italic) =>
 			fontUrlFromCatalog(input.fontCatalog ?? null, font, weight, italic),
+		// social-comment §7.8: the fonts and emoji anime templates declare
+		templateAssets: catalogTemplateAssets(input.fontCatalog ?? null),
 	});
 	return stabilizeRenderDoc(prev, next);
 }

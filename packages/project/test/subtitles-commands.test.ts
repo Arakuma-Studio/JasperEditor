@@ -423,7 +423,7 @@ describe('groups and templates (AS-020)', () => {
 	});
 });
 
-describe('load repair (schema v9 fields)', () => {
+describe('load repair (schema v10 fields)', () => {
 	it('repairs damaged subtitle fields conservatively and idempotently', () => {
 		const { H } = shot({ cut: false });
 		const r = gen(H, { rules: { maxWords: 3 } });

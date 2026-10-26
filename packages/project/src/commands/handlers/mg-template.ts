@@ -2,8 +2,10 @@
 // Animated template params split their static values and keys between params[name] and paramKeyframes[name].
 import type { Draft } from 'immer';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
+import { templateMediaIssue } from '../../registry/mg-params.ts';
 import { paramsPropertySpecs } from '../../registry/properties.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
+import type { MediaAsset } from '../../schema/media.ts';
 import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
@@ -80,6 +82,20 @@ export function templateParamsValidator(
 		if (!template.paramsSchema.safeParse(next).success)
 			h.fail('E_INVALID_PARAM', `Invalid value for ${label}`);
 	};
+}
+
+/**
+ * Template media params (avatars, `mediaParam()`): every `{mediaId}` in `params` names a medium of the project
+ * (else E_NOT_FOUND) of a kind its param takes (else E_INVALID_PARAM).
+ */
+export function assertTemplateMedia(
+	media: Readonly<Record<string, Pick<MediaAsset, 'kind'> | undefined>>,
+	template: MgTemplateInfo,
+	params: Record<string, unknown>,
+	h: HandlerContext,
+): void {
+	const issue = templateMediaIssue(media, template, params);
+	if (issue) h.fail(issue.code, issue.message, issue.path ? { path: issue.path } : undefined);
 }
 
 /** Keyframes of params that stay keyframable (same value shape) in `info`; the others are dropped. */

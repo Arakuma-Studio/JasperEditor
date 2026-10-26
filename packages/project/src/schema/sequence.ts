@@ -61,7 +61,7 @@ export const EffectInstanceSchema = z.looseObject({
 	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
 	/**
-	 * spec 13 AS-020 (schema v9): the subtitle template (id) that added this instance; its keys follow the clip's In
+	 * spec 13 AS-020 (schema v10): the subtitle template (id) that added this instance; its keys follow the clip's In
 	 * after trims and razor cuts, and applying another template replaces it. Absent = the user's own. Read leniently.
 	 */
 	subtitleTemplate: z.custom<string>(() => true).optional(),
@@ -133,7 +133,7 @@ export const TextStyleSchema = z.looseObject({
 			distancePx: z.number(),
 			blurPx: z.number().min(0),
 			/**
-			 * schema v9 (spec 13 SH-004): the text silhouette (glyphs + strokes) grows by this many pixels before
+			 * schema v10 (spec 13 SH-004): the text silhouette (glyphs + strokes) grows by this many pixels before
 			 * the blur (Premiere's shadow Size; absent = 0). Read leniently: invariants want 0…MAX_SHADOW_SPREAD_PX.
 			 */
 			spreadPx: z.number().optional(),
@@ -640,7 +640,7 @@ export const AudioClipSchema = z.looseObject({
 	 */
 	bed: z.custom<ClipBed>(() => true).optional(),
 	/**
-	 * spec 14 TC-024 (v9): equal-power micro-fades at the clip's edges (ms, 0 < x ≤ 30) — the declick of a cleanup
+	 * spec 14 TC-024 (v10): equal-power micro-fades at the clip's edges (ms, 0 < x ≤ 30) — the declick of a cleanup
 	 * join, rendered as audio fades by every path (`resolveAudioTransitions`). Accepted as any value; INV-CLEANUP checks it
 	 * (`edgeFadesProblem`) and `repairDocument` drops an unreadable one.
 	 */
@@ -677,7 +677,7 @@ export const TextClipSchema = z.looseObject({
 	perCharacter3d: z.boolean().optional(),
 	sourceTextKeyframes: z.array(keyframeSchema(TextContentSchema)).optional(),
 	/**
-	 * spec 13 SH-002 (schema v9): the project text style (`ProjectDocument.textStyles`) the clip is linked to; absent =
+	 * spec 13 SH-002 (schema v10): the project text style (`ProjectDocument.textStyles`) the clip is linked to; absent =
 	 * not linked. Read leniently (any value loads; INV-TEXTSTYLE checks it; a style that is gone reads as not linked).
 	 * `content.style` stays the effective style.
 	 */
@@ -685,7 +685,7 @@ export const TextClipSchema = z.looseObject({
 	/** spec 13 SH-002: where a linked clip deviates from its style (a `TextStyleOverrides` patch; absent = none). */
 	styleOverrides: z.custom<Record<string, unknown>>(() => true).optional(),
 	/**
-	 * spec 13 AS-003 (schema v9): a subtitle — its group, words (clip content time) and template anchoring. Read
+	 * spec 13 AS-003 (schema v10): a subtitle — its group, words (clip content time) and template anchoring. Read
 	 * leniently (any value loads; INV-SUBTITLE checks it, `repairSubtitleSequence` fixes it on load).
 	 */
 	caption: z.custom<TextClipCaption>(() => true).optional(),
@@ -1121,12 +1121,12 @@ export const SequenceSchema = z.looseObject({
 	 */
 	soundDesign: z.custom<SoundDesign>(() => true).optional(),
 	/**
-	 * spec 13 AS-003 (schema v9): the subtitle groups made by Create Subtitles, by id (`cgp_…`). Read leniently
+	 * spec 13 AS-003 (schema v10): the subtitle groups made by Create Subtitles, by id (`cgp_…`). Read leniently
 	 * (INV-SUBTITLE checks it, `repairSubtitleSequence` repairs it on load); absent = none.
 	 */
 	captionGroups: z.custom<Record<string, CaptionGroup>>(() => true).optional(),
 	/**
-	 * spec 14 TC-030 (v9): transcript cleanup settings (preset + overrides), the attached script, rejected finding
+	 * spec 14 TC-030 (v10): transcript cleanup settings (preset + overrides), the attached script, rejected finding
 	 * fingerprints and edited word lists. Accepted as any value so a malformed one never fails a load; INV-CLEANUP
 	 * checks it (`sequenceCleanupIssue`) and `repairDocument` keeps its readable parts (`repairSequenceCleanup`).
 	 */

@@ -19,6 +19,7 @@ import {
 } from '@jasper/project';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { TIME_HINT } from './arguments.ts';
 
 export { OPEN_OBJECT } from '@jasper/project';
 
@@ -136,7 +137,7 @@ function invalidArgumentsError(tool: string, schema: AnySchema, error: z.ZodErro
 		message: `${tool}: ${issues.map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)).join('; ')}`,
 		hint: `Check the tool's input schema (tools/list). ${tool} accepts: ${shape.join(', ') || '(no arguments)'}${
 			required.length ? `; required: ${required.join(', ')}` : ''
-		}. Times accept frames, {"seconds": x} or "HH:MM:SS:FF".`,
+		}. ${TIME_HINT}`,
 		details: { issues },
 	};
 }

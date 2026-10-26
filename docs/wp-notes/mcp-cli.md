@@ -130,7 +130,8 @@ Properties/Lumetri section toggles, job rows, dockview tab strips and floating t
 Commands: `status`, `projects`, `describe [type…]`, `exec <type> k=v… | '<json>'`, `run <file.jsonl|->`, `get
 <path>`, `set <path> <value>`, `props <clip>`, `inspect [seq]`, `import <file…>`, `render-frame --at --out
 [--width]`, `export --out [--preset --range --engine]`, `query <name> k=v…`, `ui <action> k=v…`, `tools`, `call
-<tool> k=v…`. It runs the very same tools in process (`createJasperMcpServer` + an in-memory MCP client), so the
+<tool> k=v… [--out f.png]` (`--out` writes every image the tool returns: one to the path, several — e.g. the
+previews of an `add_motion_graphic {dryRun, preview}` batch — to `f-0.png`, `f-1.png`… in result order). It runs the very same tools in process (`createJasperMcpServer` + an in-memory MCP client), so the
 CLI, MCP and HTTP behave identically (strict arguments, live editor targeting, approvals, progress on stderr,
 Ctrl+C = MCP cancellation → the export is cancelled and its file deleted). Project: `--project <id|name>`,
 `JASPER_PROJECT`, the project open in an editor window, or the only project. `--json` = one JSON document per

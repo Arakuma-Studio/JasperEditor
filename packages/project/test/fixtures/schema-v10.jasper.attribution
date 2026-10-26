@@ -1,0 +1,8 @@
+asset:        schema-v10.jasper
+title:        Schema history fixture, v10
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-26 by the workflow-automation schema bump
+notes:        Derived from schema-v9.jasper for packages/project/test/schema-history.test.ts: v10 (workflow automation, specs 13–16) is a version bump for new optional fields (subtitle text clips, linked text styles and templates, cleanup settings, style recipes, automation provenance); the fixture keeps the v9 content. References no media bytes.

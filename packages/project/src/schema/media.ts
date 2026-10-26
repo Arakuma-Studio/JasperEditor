@@ -551,7 +551,7 @@ export const TranscriptSchema = z.looseObject({
 	 */
 	coverage: z.array(z.tuple([nonNegInt(), nonNegInt()])).optional(),
 	/**
-	 * spec 14 TC-003 / spec 16 (optional, v9): the recogniser's segments with their decoder scores (media time,
+	 * spec 14 TC-003 / spec 16 (optional, v10): the recogniser's segments with their decoder scores (media time,
 	 * flicks, sorted by start) — what transcript cleanup reads to judge improbable or hallucinated text. Read
 	 * leniently (`z.unknown`): `transcriptSegmentsProblem` checks them and `repairDocument` drops malformed entries.
 	 */

@@ -1,7 +1,13 @@
-import type { EngineJob, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
+import type {
+	EngineJob,
+	MgTemplateCatalogEntry,
+	MgTemplatePresetEntry,
+	MgTemplatesResponse,
+} from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
+	collectParamMediaIds,
 	createEmptyProject,
 	createRandomIdSource,
 	createStaticMgRegistry,
@@ -11,7 +17,11 @@ import {
 	type MotionGraphicClip,
 	makeSequenceSettings,
 	type ProjectDocument,
+	parseMgTemplateRef,
 	type Sequence,
+	TEMPLATE_MEDIA_KIND,
+	TEMPLATE_MEDIA_KINDS_KEY,
+	TEMPLATE_PARAM_KIND_KEY,
 	validateJsonSchema,
 } from '@jasper/project';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -34,8 +44,21 @@ import { jsonResult, type RenderCapsHint, renderHint, ToolError } from '../error
 
 export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - list_motion_templates shows every template with renderer ("fframes" = native jasper-mg renderer, "anime" = drawn by Remotion), its params (type, range, default, keyframable) and the full paramsSchema.
+- Templates may declare presets (named param sets, e.g. one per look): list_motion_templates lists them with a ready-made ref. Pass "<id>:<preset>" (or "<id>@<version>:<preset>") as template to add_motion_graphic or render_motion_graphic_preview: the preset's params apply over the defaults and your params over the preset.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
-- set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.`;
+- set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.
+- Media params (type "media image" / "media image|video", e.g. an avatar) take {mediaId} of a medium in the project (import or register it first) or null for none. A missing medium is refused (E_NOT_FOUND), so is one of another kind (E_INVALID_PARAM). Deleting a medium a template shows clears the param (the clip stays). render_motion_graphic_preview draws such media only with projectId (the project holding them); add_motion_graphic previews use the call's project.
+- add_motion_graphic adds one graphic (template, params, at, duration, track) or many with items: [...] (up to 200) in ONE transaction — one undo step, all or nothing. Placement never overwrites: without track each clip goes on the first free unlocked video track from V2 up for its time range (a new top track when all are busy), and the items of one call never collide. track: "V3" keeps the old behaviour (overwrite on exactly that track); add placement: "first-free" to start the search there instead.
+- Every param is optional. Params layer as defaults → preset ("<id>:<preset>") → the template's fill hook → your params: templates with a fill hook fill what you and the preset leave out with believable values from seed (deterministic; a random seed is used and returned when you give none), the others take their defaults. Presets set the look: the per-instance params a template re-randomizes (ui.addAnother.reroll in list_motion_templates; social-comment: the identity and stats) never come from the preset — give them, or the fill hook picks them (the same rule as import_motion_graphics_csv and duplicate_motion_graphic). The result lists per item clipId, track, start/end (frames + timecode), the fully resolved params and which ones were filled.
+- dryRun: true returns that result without changing the project; add preview: true for a still of each item at the middle of its hold (up to 10 items). Errors name the failing item (details.items[].index).
+- Times also accept "3s", "1.5s", "250ms", "00:03" (M:SS) and "1:02:03" (H:MM:SS); four fields stay timecode HH:MM:SS:FF.
+- Example: add_motion_graphic {projectId, seed: 7, items: [{template: "lower-third-anim", at: "2s", params: {name: "Ana Ruiz"}}, {template: "lower-third-anim", at: "00:04", duration: "3s"}]}.
+- Social comments (social-comment): a platform comment card that pops on screen. Pick the look with a preset: "social-comment:tiktok-reply" (TikTok "Reply to name's comment" bubble) or "social-comment:tiktok-comment" (TikTok comment row with likes and replies), "social-comment:instagram-post" (Instagram post comment: username, age, like heart and count, "View N more replies"), "social-comment:instagram-reel-reply" (Instagram "Replying to username" Reel card, no stats; Instagram cards show handle, not displayName), "social-comment:youtube-comment" (YouTube comment: @handle, "3 months ago", thumbs-up count, "N replies"), "social-comment:youtube-shorts-reply" (YouTube "Comment from @handle" Shorts card, no stats) or "social-comment:x-post" (X post: displayName, @handle, verified badge, age, replies, reposts, likes and views; showReposts / showViews false hide those counts, a 0 count is not shown); other platforms are listed as their presets appear. Every field is optional: name, handle, avatar ({generated: seed}) and stats are filled with believable made-up values from seed and returned. text takes word marks inline: ==highlighted words== (yellow pill), ||blurred||, ~~removed~~ (invisible, gap kept), \\ escapes a literal =, | or ~. emojiStyle: "auto" (the platform's set), "apple", "twemoji" or "noto". entrance: "classic-pop" | "soft-spring" | "grow-from-tail" | "drop-bounce"; wordReveal and likeTick add the word-by-word reveal and the like count tick. Counts are raw integers (likes: 12300 shows "12.3K"); timeValue + timeUnit give the age ("3h").
+- Example (3 comments, one undo step): add_motion_graphic {projectId, seed: 11, items: [{template: "social-comment:tiktok-reply", at: "0s", duration: "4s", params: {displayName: "Luna Park", text: "Can you do a ==part two==? 🔥", entrance: "grow-from-tail"}}, {template: "social-comment:tiktok-comment", at: "4s", params: {text: "This is ||not|| what I expected 😂", likes: 12300, likeTick: true, emojiStyle: "apple"}}, {template: "social-comment:tiktok-comment", at: "8s", params: {theme: "dark", text: "@luna.makes ~~first~~ best tutorial #fyp", wordReveal: true}}]}.
+- Store reviews (same template): "social-comment:play-store-review" (Google Play: avatar, name, green stars, date "11/6/18", long text fading out after 3 lines), "social-comment:app-store-review" (App Store web / Mac card: orange stars, "name, 09/24/2021", bold title, 4 lines then a blue "more") and "social-comment:app-store-review-ios" (iPhone App Store Ratings & Reviews: title and age, stars and name, text; under a week the age is a weekday, "Sun", as in the iOS 14-era App Store, else "3w ago" / "edited 1y ago"; iosAgeStyle: "relative" gives today's "2d ago"). Their fields: rating (1–5 whole stars), date ("YYYY-MM-DD", a real date; Play and App Store web), title (one line, App Store cards; "" hides it), edited (iPhone: "edited 1y ago"), timeValue + timeUnit (the iPhone card's age), truncate (store line clamp, default on; off by default on the iPhone card, which shows whole reviews), displayName (the reviewer). Omitted ones are filled from seed (a store-like rating mix, a date in the last two years with the matching age, a title that suits the rating). likeTick fills the stars one by one. Emoji: Noto on Play, Apple on the App Store (emojiStyle "auto"). Example: add_motion_graphic {projectId, items: [{template: "social-comment:app-store-review", at: "0s", params: {displayName: "Luna Park", rating: 5, title: "Great so far", date: "2026-09-24", text: "I like how it ==syncs everything== 😍", likeTick: true}}, {template: "social-comment:play-store-review", at: "5s", params: {rating: 2, text: "Crashes every time I open the camera."}}]}.
+- Transparent overlay: start_export {preset: "overlay-prores-4444-alpha"} writes straight-alpha ProRes 4444 (MOV, no audio) of the sequence, for laying the comments over footage elsewhere; disable the footage clips first (apply_commands clip.update {enabled: false}) so only the graphics are in it.
+- Add another: duplicate_motion_graphic {clipId, count?} copies a placed graphic after itself — after the last consecutive copy already there, so calling it again on the same clip continues the sequence (count: 3 = three copies, one after another) — never overwriting, in one undo step. Params the template re-randomizes (social-comment: identity and stats) get fresh values from seed; the rest (look, text, animation) is kept; params win. Example: duplicate_motion_graphic {projectId, clipId: "clp_…", count: 3}.
+- Bulk import: import_motion_graphics_csv {template, csv} adds one graphic per row (CSV, TSV or ";" CSV; header row first; at most 500 rows, 2 MB), one after another from startAt on the first free tracks from V2, in one undo step. Columns are param names or labels plus the template's aliases (social-comment: User, Username, Comment, Verified yes/no, an age column Time / Age / Ago / Posted such as "3h", "2 weeks" or "just now"; store reviews: Rating / Stars, Title, Date as YYYY-MM-DD, Edited) and optional start / duration; unknown columns and Image URL (remote images are not imported) are ignored and reported. An empty cell is not given (preset → fill → defaults). Rows with errors (cells that do not fit, or rows the template refuses, e.g. an avatar {mediaId} not in the project) refuse the call (details.rows lists all of them) unless skipInvalid: true skips them. Example: import_motion_graphics_csv {projectId, template: "social-comment:tiktok-comment", csv: "User,Comment,Likes\\nLuna Park,This is ==so good== 🔥,1.2K\\nJake,||spoiler|| ending,"}.`;
 
 /**
  * Bounds at or beyond the safe-integer range are no bounds (zod's `.int()` writes ±MAX_SAFE_INTEGER into the JSON
@@ -61,10 +84,17 @@ function range(min: number | undefined, max: number | undefined): string {
 	return '';
 }
 
-type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json';
+type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json' | 'media';
 
 /** Kind of one params-schema property (mirrors the property specs of @jasper/project `paramsPropertySpecs`). */
 function paramKind(s0: JsonSchemaNode): { kind: ParamKind; type: string } {
+	// Template media params (`mediaParam()`): `{mediaId} | null` of the listed media kinds.
+	if (s0[TEMPLATE_PARAM_KIND_KEY] === TEMPLATE_MEDIA_KIND) {
+		const kinds = Array.isArray(s0[TEMPLATE_MEDIA_KINDS_KEY])
+			? (s0[TEMPLATE_MEDIA_KINDS_KEY] as unknown[])
+			: [];
+		return { kind: 'media', type: `media ${kinds.map(String).join('|') || 'any'}` };
+	}
 	const s = unwrapNullable(s0);
 	const t = Array.isArray(s.type) ? (s.type as string[]).find((x) => x !== 'null') : s.type;
 	const options = Array.isArray(s.enum)
@@ -92,9 +122,13 @@ type ParamSummary = {
 	default: unknown;
 	keyframable: boolean;
 	description?: string;
+	/** UI hints: the label the editor shows, its group and when the editor shows the param. */
+	label?: string;
+	group?: string;
+	visibleWhen?: { param: string; in: unknown[] };
 };
 
-type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | 'renderer'>;
+type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | 'renderer' | 'ui'>;
 
 /**
  * Compact params of a template. keyframable = anime template and a non-integer number or an RGBA colour
@@ -103,14 +137,21 @@ type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | '
 function paramsSummary(t: TemplateLike): ParamSummary[] {
 	const props = ((t.paramsSchema as JsonSchemaNode).properties ?? {}) as Record<string, JsonSchemaNode>;
 	const anime = t.renderer === 'anime';
+	const groupOf = new Map<string, string>();
+	for (const g of t.ui?.groups ?? []) for (const p of g.params) if (!groupOf.has(p)) groupOf.set(p, g.label);
 	return Object.entries(props).map(([name, s]) => {
 		const { kind, type } = paramKind(s ?? {});
+		const hint = t.ui?.params?.[name];
+		const description = hint?.description ?? s?.description;
 		return {
 			name,
 			type,
 			default: t.defaults[name] !== undefined ? t.defaults[name] : s?.default,
 			keyframable: anime && (kind === 'number' || kind === 'rgba'),
-			...(typeof s?.description === 'string' ? { description: s.description } : {}),
+			...(typeof description === 'string' ? { description } : {}),
+			...(hint?.label ? { label: hint.label } : {}),
+			...(groupOf.has(name) ? { group: groupOf.get(name) } : {}),
+			...(hint?.visibleWhen ? { visibleWhen: hint.visibleWhen } : {}),
 		};
 	});
 }
@@ -126,17 +167,42 @@ export function templateSummary(t: MgTemplateCatalogEntry) {
 		native: t.native ?? false,
 		...(t.description ? { description: t.description } : {}),
 		...(t.defaultDurationSeconds ? { defaultDurationSeconds: t.defaultDurationSeconds } : {}),
+		...(t.presets?.length
+			? {
+					presets: t.presets.map((p) => ({
+						ref: `${t.id}:${p.id}`,
+						id: p.id,
+						name: p.name,
+						...(p.description ? { description: p.description } : {}),
+						params: p.params,
+					})),
+				}
+			: {}),
 		params: paramsSummary(t),
 		defaults: t.defaults,
 		paramsSchema: t.paramsSchema,
 	};
 }
 
-/** The newest catalogue entry for "id" or "id@version" (E_NOT_FOUND listing what exists). */
-export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''): MgTemplateCatalogEntry {
-	const [id, v] = spec.split('@');
+/**
+ * The catalogue entry and preset a template ref names: `"<id>"`, `"<id>@<version>"`, `"<id>:<preset>"` or
+ * `"<id>@<version>:<preset>"` (the newest version without `@`). E_INVALID_PARAM for a malformed ref, E_NOT_FOUND
+ * (listing what exists) for an unknown template, version or preset.
+ */
+export function resolveTemplateRef(
+	cat: MgTemplatesResponse,
+	spec: string,
+	hint = '',
+): { template: MgTemplateCatalogEntry; preset: MgTemplatePresetEntry | null } {
+	const ref = parseMgTemplateRef(spec);
+	if (!ref)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`Malformed template reference "${spec}"`,
+			'Use "<id>", "<id>@<version>", "<id>:<preset>" or "<id>@<version>:<preset>" (list_motion_templates).',
+		);
 	const t = cat.templates
-		.filter((x) => x.id === id && (v === undefined || x.version === Number(v)))
+		.filter((x) => x.id === ref.id && (ref.version === undefined || x.version === ref.version))
 		.sort((x, y) => y.version - x.version)[0];
 	if (!t)
 		throw new ToolError(
@@ -144,7 +210,17 @@ export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''):
 			`Unknown motion template "${spec}"`,
 			`Available: ${cat.templates.map((x) => `${x.id}@${x.version}`).join(', ')}${hint}.`,
 		);
-	return t;
+	if (ref.preset === undefined) return { template: t, preset: null };
+	const preset = t.presets?.find((p) => p.id === ref.preset);
+	if (!preset)
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`Template ${t.id}@${t.version} has no preset "${ref.preset}"`,
+			t.presets?.length
+				? `Presets: ${t.presets.map((p) => `${t.id}:${p.id}`).join(', ')}.`
+				: `${t.id} has no presets; pass "${t.id}" and set params instead.`,
+		);
+	return { template: t, preset };
 }
 
 /** Engine errors that are not render failures (their own hints in errors.ts apply). */
@@ -215,7 +291,53 @@ type AnimePreviewSpec = {
 	height: number;
 	fps: number;
 	durationFrames: number;
+	/** The project whose media the params reference (template media params such as an avatar). */
+	project?: ProjectDocument;
 };
+
+/** Longest `derivation` chain followed when copying a medium into a preview document. */
+const MAX_DERIVATION_DEPTH = 32;
+
+/**
+ * `media.register` commands copying every medium `params` reference (and the media they derive from, sources first)
+ * from `project` into a preview document, ids kept, so the still shows the project's picture. Refuses media
+ * references without a project (E_INVALID_PARAM) and media the project does not hold (E_NOT_FOUND).
+ */
+export function previewMediaCommands(
+	params: Record<string, unknown>,
+	project: ProjectDocument | undefined,
+): Record<string, unknown>[] {
+	const ids = collectParamMediaIds(params);
+	if (ids.length === 0) return [];
+	if (!project)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`The params reference project media (${ids.join(', ')}) and no project was given`,
+			'Pass projectId: the preview draws the media of that project (list_media lists their ids).',
+		);
+	const order: string[] = [];
+	const seen = new Set<string>();
+	const visit = (id: string, depth: number, via: string): void => {
+		if (seen.has(id)) return;
+		const asset = project.media[id];
+		if (!asset)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`Media not found: ${id}${via}`,
+				'Use the {mediaId} of a medium in the project (list_media), import_media first, or pass null for none.',
+			);
+		seen.add(id);
+		const from = asset.derivation?.fromMediaId;
+		if (from && depth < MAX_DERIVATION_DEPTH) visit(from, depth + 1, ` (the source of ${id})`);
+		order.push(id);
+	};
+	for (const id of ids) visit(id, 0, '');
+	return order.map((id) => {
+		const { library: _library, ...asset } = project.media[id]!;
+		const item = Object.values(project.items).find((it) => it.kind === 'media' && it.mediaId === id);
+		return { type: 'media.register', asset, ...(item ? { name: item.name } : {}) };
+	});
+}
 
 /** Validates params against the template's JSON Schema (E_INVALID_PARAM listing the issues). */
 function checkParams(t: MgTemplateCatalogEntry, params: Record<string, unknown>): void {
@@ -263,6 +385,7 @@ function animePreviewDocument(
 			label: 'Preview',
 			origin: 'user',
 			commands: [
+				...previewMediaCommands(spec.params, spec.project),
 				{
 					type: 'clip.addMotionGraphic',
 					at: 0,
@@ -283,7 +406,7 @@ function animePreviewDocument(
 			`Could not build the preview: ${result.errors.map((e) => e.message).join('; ')}`,
 			'Check the params against list_motion_templates.',
 		);
-	return { doc: document, sequenceId: seq.id, clipId: result.refs.$mg ?? result.created[0]! };
+	return { doc: document, sequenceId: seq.id, clipId: result.refs.$mg! };
 }
 
 /** `introFrames`/`outroFrames` of the catalogue are written at this rate (`ANIME_REFERENCE_FPS`, @jasper/mg-templates). */
@@ -362,6 +485,7 @@ export async function animeTemplatePreview(
 		durationSeconds?: number;
 		fps?: number;
 		frames?: number;
+		project?: ProjectDocument;
 	},
 	extra?: Extra,
 ): Promise<CallToolResult> {
@@ -371,7 +495,14 @@ export async function animeTemplatePreview(
 	const width = evenSize(a.width ?? 960);
 	const height = evenSize(a.height ?? 540);
 	const durationFrames = Math.max(1, Math.round((a.durationSeconds ?? t.defaultDurationSeconds ?? 5) * fps));
-	const { doc, sequenceId } = animePreviewDocument(t, { params, width, height, fps, durationFrames });
+	const { doc, sequenceId } = animePreviewDocument(t, {
+		params,
+		width,
+		height,
+		fps,
+		durationFrames,
+		...(a.project ? { project: a.project } : {}),
+	});
 	const envelope = toolEnvelope(doc, 0);
 	const frames = previewFrames(durationFrames, a.frames ?? 1, {
 		introFrames: t.introFrames,
@@ -423,6 +554,96 @@ export async function animeTemplatePreview(
 		},
 		images,
 	);
+}
+
+type TemplatePreviewArgs = {
+	params?: Record<string, unknown>;
+	width?: number;
+	height?: number;
+	durationSeconds?: number;
+	fps?: number;
+	frames?: number;
+	/** Anime templates: the project whose media the params reference (copied into the preview document). */
+	project?: ProjectDocument;
+};
+
+/**
+ * render_motion_graphic_preview for an fframes template: the native renderer's preview job (animated WebM with
+ * alpha) and its poster (the middle frame) as the image.
+ */
+export async function fframesTemplatePreview(
+	ctx: ToolContext,
+	cat: MgTemplatesResponse,
+	t: MgTemplateCatalogEntry,
+	a: TemplatePreviewArgs,
+	extra?: Extra,
+): Promise<CallToolResult> {
+	if (cat.renderer.status !== 'ready')
+		throw new ToolError(
+			'RENDERER_UNAVAILABLE',
+			`The native motion-graphics renderer is unavailable${cat.renderer.reason ? `: ${cat.renderer.reason}` : ''}`,
+			'Build it with `pnpm mg:build`; add_motion_graphic still works (the editor previews with its SVG twin). Use render_frame on a timeline with the graphic instead. Anime templates (renderer "anime" in list_motion_templates) preview without it.',
+		);
+	const fps = a.fps ?? 30;
+	const job = await ctx.engine((c) =>
+		c.mgRender({
+			quality: 'preview',
+			spec: {
+				template: { id: t.id, version: t.version },
+				params: { ...t.defaults, ...(a.params ?? {}) },
+				width: a.width ?? 960,
+				height: a.height ?? 540,
+				fps: { num: fps, den: 1 },
+				durationFrames: Math.max(1, Math.round((a.durationSeconds ?? t.defaultDurationSeconds ?? 5) * fps)),
+			},
+		}),
+	);
+	const { job: done } = await waitJob(ctx, job.id, 120_000, extra);
+	if (done.state !== 'succeeded')
+		throw new ToolError(
+			done.error?.code ?? 'RENDER_FAILED',
+			done.error?.message ?? `The render ${done.state}`,
+			'Check the params against the template paramsSchema (list_motion_templates).',
+		);
+	const result = done.result as { key: string; url: string };
+	const base = ctx.link.target?.url ?? '';
+	const poster = await ctx
+		.engine((c) => c.fetchBytes(c.mgFileUrl(result.key, 'poster.png')))
+		.catch(() => null);
+	return {
+		content: [
+			{
+				type: 'text',
+				text: JSON.stringify({
+					template: `${t.id}@${t.version}`,
+					jobId: done.id,
+					previewUrl: `${base}${result.url}`,
+				}),
+			},
+			...(poster
+				? [
+						{
+							type: 'image' as const,
+							data: Buffer.from(poster.bytes).toString('base64'),
+							mimeType: 'image/png',
+						},
+					]
+				: []),
+		],
+	};
+}
+
+/** A template preview by renderer: Remotion stills for anime templates (S11:ANA-003), else the fframes renderer. */
+export function templatePreview(
+	ctx: ToolContext,
+	cat: MgTemplatesResponse,
+	t: MgTemplateCatalogEntry,
+	a: TemplatePreviewArgs,
+	extra?: Extra,
+): Promise<CallToolResult> {
+	return t.renderer === 'anime'
+		? animeTemplatePreview(ctx, t, a, extra)
+		: fframesTemplatePreview(ctx, cat, t, a, extra);
 }
 
 function findMgClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: MotionGraphicClip } {

@@ -134,11 +134,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// and relink metadata. v7 stacks listing a Crop after another effect are reordered so they render as before;
 	// the bump makes v7 builds open v8 files read-only (they would apply Crop first and misread the new fields).
 	{ from: 7, to: 8, migrate: migrateV7ToV8 },
-	// v9 (workflow automation, specs 13–16): subtitle text clips with words and caption groups, linked project text
-	// styles and subtitle templates, voice-cleanup settings and scripts, style recipes, automation provenance and text
-	// shadow spread. Existing data needs no changes; the bump makes v8 builds open v9 files read-only instead of
-	// dropping or misreading the new fields on their next save.
+	// v9 (social comments): motion-graphic template params may hold media references (`{mediaId}`: avatars). Existing
+	// data needs no changes; the bump makes v8 builds open v9 files read-only, because their orphan collection, item
+	// delete and Project Manager ignore such references and would drop the media (data loss) on their next save.
 	{ from: 8, to: 9, migrate: (doc) => doc },
+	// v10 (workflow automation, specs 13–16): subtitle text clips with words and caption groups, linked project text
+	// styles and subtitle templates, voice-cleanup settings and scripts, style recipes, automation provenance and text
+	// shadow spread. Existing data needs no changes; the bump makes v9 builds open v10 files read-only instead of
+	// dropping or misreading the new fields on their next save.
+	{ from: 9, to: 10, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

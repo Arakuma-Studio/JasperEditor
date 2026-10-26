@@ -18,6 +18,8 @@ type ExportPreset = {
 	videoKbps?: number;
 	/** gaps (EX-2): bits per component (HEVC Main10). */
 	bitDepth?: 10;
+	/** social-comment §7.11: a transparent background — straight-alpha ProRes 4444, no audio (Remotion path). */
+	alpha?: true;
 };
 
 export const EXPORT_PRESETS: readonly ExportPreset[] = [
@@ -78,6 +80,19 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
 		speed: 'best',
 		maxWidth: null,
 		audioKbps: 1536,
+	},
+	{
+		id: 'overlay-prores-4444-alpha',
+		label: 'Overlay – ProRes 4444 with alpha',
+		description:
+			'Transparent background: straight-alpha ProRes 4444 in MOV at the sequence size, no audio (graphics such as social comments or titles to lay over footage in another editor; disable the footage clips you do not want in it). Rendered on the Remotion path.',
+		container: 'mov',
+		codec: 'prores',
+		crf: 0,
+		speed: 'best',
+		maxWidth: null,
+		audioKbps: 1536,
+		alpha: true,
 	},
 	{
 		id: 'match-sequence-hevc',
@@ -159,6 +174,7 @@ export function buildExportSettings(
 			encoderSpeed: preset.speed,
 			...(videoKbps ? { bitrateKbps: videoKbps } : {}),
 			...(preset.bitDepth ? { bitDepth: preset.bitDepth } : {}),
+			...(preset.alpha ? { proresProfile: '4444' as const, alpha: true } : {}),
 		},
 		audio: {
 			// The container's audio: Opus in WebM, 24-bit PCM in MOV, AAC in MP4 (the engine names any change it has to
@@ -176,5 +192,6 @@ export function buildExportSettings(
 		},
 		engine: opts.engine,
 		destination: opts.outputPath ? { type: 'path', path: opts.outputPath } : { type: 'download' },
+		...(preset.alpha ? { videoOnly: true } : {}),
 	};
 }

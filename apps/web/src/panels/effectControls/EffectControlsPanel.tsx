@@ -30,7 +30,8 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { effectEditorFor } from '../../extensions/index.ts';
+import { effectEditorFor, templateParamControls } from '../../extensions/index.ts';
+import { useRegistry } from '../../extensions/react.ts';
 import { formatTimecode } from '../../gaps/time-display.ts';
 import { MaskList } from '../../masks/MaskList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
@@ -62,10 +63,12 @@ import { MiniButton, SelectField } from '../properties/controls/fields.tsx';
 import { CaretGlyph, FxGlyph, GripGlyph, ResetGlyph, TrashGlyph } from '../properties/controls/glyphs.tsx';
 import { useNotices } from '../properties/controls/Notices.tsx';
 import { PropertyRow, type RowContext } from '../properties/controls/PropertyRow.tsx';
+import { TemplateGroupActions } from '../properties/controls/TemplateGroupActions.tsx';
 import { inspectorFocus } from '../properties/lib/focus.ts';
 import { useInspectorData } from '../properties/lib/hooks.ts';
 import { exactFrameOf, isAudioClip, isVisualClip, planReset, type Row } from '../properties/lib/model.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
+import { absorbedTemplateParams } from '../properties/lib/template-params.ts';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
@@ -158,6 +161,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const frame = useTransportFrame(50).frame;
 	const ops = useInspectorOps(session);
 	const notices = useNotices();
+	const paramControls = useRegistry(templateParamControls);
 	const registries = session.ctx.registries;
 	const [showTimeline, setShowTimeline] = usePersisted(`jasper.ec.${instanceId}.timeline`, true);
 	const [leftPct, setLeftPct] = usePersisted(`jasper.ec.${instanceId}.split`, 55);
@@ -712,6 +716,62 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	// keyframe-sides: the Temporal Interpolation item the right-clicked keys share (checked in the key menu).
 	const menuPreset = menu ? commonPreset(keysWithIds(menu.ids)) : null;
 
+	/**
+	 * A section's visible rows; C3: template params in `rowGroups` under a collapsible sub-header per group (rows in no
+	 * group first). A group whose rows are all filtered out is not drawn.
+	 */
+	const renderSectionRows = (s: FxSection, all: Row[]): ReactNode => {
+		// WP7a: rows edited by another row's custom control (`alsoEdits`, e.g. the time unit) are not drawn twice.
+		const absorbed = s.id.endsWith(':template')
+			? absorbedTemplateParams(
+					all.map((r) => r.spec),
+					paramControls,
+				)
+			: null;
+		const rows = absorbed?.size ? all.filter((r) => !absorbed.has(r.id.slice('params.'.length))) : all;
+		if (!s.rowGroups) return rows.map((r) => renderRow(r));
+		const byId = new Map(rows.map((r) => [r.id, r]));
+		const grouped = new Set(s.rowGroups.flatMap((g) => g.rowIds));
+		return (
+			<>
+				{rows.filter((r) => !grouped.has(r.id)).map((r) => renderRow(r))}
+				{s.rowGroups.map((g) => {
+					const groupRows = g.rowIds.map((id) => byId.get(id)).filter((r): r is Row => !!r);
+					if (groupRows.length === 0) return null;
+					const key = `${s.id}:group:${g.id}`;
+					const groupOpen = !collapsed[key];
+					return (
+						<div key={key} data-ec-param-group={g.id}>
+							<div className="flex items-stretch">
+								<div
+									style={left}
+									className="flex h-[var(--pr-row-h)] min-w-0 shrink-0 items-center gap-1 pl-4 pr-1"
+								>
+									<MiniButton
+										label={groupOpen ? `Collapse ${g.label}` : `Expand ${g.label}`}
+										onClick={() => setCollapsed({ ...collapsed, [key]: groupOpen })}
+										data-testid={`ec-group-toggle-${g.id}`}
+									>
+										<CaretGlyph open={groupOpen} size={11} />
+									</MiniButton>
+									<span className="min-w-0 flex-1 truncate text-pr-ui text-pr-text">{g.label}</span>
+									<TemplateGroupActions
+										ctx={ctx}
+										clips={[s.clip]}
+										specs={groupRows.map((r) => r.spec)}
+										label={g.label}
+									/>
+								</div>
+								{lane(<SummaryLane rows={groupRows} seq={seq} range={range} />)}
+							</div>
+							{groupOpen ? groupRows.map((r) => renderRow(r)) : null}
+						</div>
+					);
+				})}
+			</>
+		);
+	};
+
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard shortcuts (Delete) and drops
 		<div
@@ -954,7 +1014,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												/>
 											</div>
 										) : null}
-										{open ? rows.map((r) => renderRow(r)) : null}
+										{open ? renderSectionRows(s, rows) : null}
 										{open && s.textAnimators ? (
 											<TextAnimatorList
 												session={session}

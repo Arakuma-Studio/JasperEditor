@@ -270,7 +270,7 @@ describe('style recipes (EA-010, EA-011)', () => {
 	});
 });
 
-describe('the project copy (ProjectDocument.styleRecipes, schema v9)', () => {
+describe('the project copy (ProjectDocument.styleRecipes, schema v10)', () => {
 	it('styleRecipe.add / setActive / remove: one undo step each, invariants hold, undo is the document before', () => {
 		const h = new Harness();
 		const before = h.doc;

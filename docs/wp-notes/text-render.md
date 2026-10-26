@@ -1,7 +1,7 @@
 # text-render — spec 13 SH-004: strokes, shadow spread and the text measurer
 
 Workstream `textrender` (spec 13 §2 SH-004). Every `TextStyle.strokes[]` entry is drawn (outside / centre / inside,
-colour, width, opacity), the shadow gains a spread (`TextStyle.shadow.spreadPx`, schema v9) and is drawn as a blurred,
+colour, width, opacity), the shadow gains a spread (`TextStyle.shadow.spreadPx`, schema v10) and is drawn as a blurred,
 grown silhouette, and text boxes follow glyph metrics: a real text measurer in the editor session and in the engine
 (headless), replacing the 0.55 em estimate and clearing `layoutPending`. One implementation draws the plain text
 block, the In/Out animation overlay, the typeset (animator) renderer and caption clips, in the Program monitor and on

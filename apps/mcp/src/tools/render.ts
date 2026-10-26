@@ -29,11 +29,11 @@ import {
 import { pickSequence, timelineTable } from '../format.ts';
 
 import {
-	animeTemplatePreview,
 	failedJobError,
-	findTemplate,
 	renderErrorHint,
 	renderToolError,
+	resolveTemplateRef,
+	templatePreview,
 	templateSummary,
 } from './templates.ts';
 
@@ -162,7 +162,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'List motion-graphic templates',
 			description:
-				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, renderer ("fframes" = the native jasper-mg renderer; "anime" = drawn by Remotion, previewable and exportable without the fframes renderer), native (rendered by jasper-mg), a compact params list (type with range or options, default, keyframable = numeric/colour params of anime templates, animatable with set_motion_graphic_params), the defaults and the full JSON Schema of the params. Also reports whether the native fframes renderer is ready.',
+				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, renderer ("fframes" = the native jasper-mg renderer; "anime" = drawn by Remotion, previewable and exportable without the fframes renderer), native (rendered by jasper-mg), a compact params list (type with range or options, default, keyframable = numeric/colour params of anime templates, animatable with set_motion_graphic_params; label, group and visibleWhen = how the editor shows it), presets (named param sets; pass their ref, e.g. "counter:percentage", as template to add_motion_graphic), the defaults and the full JSON Schema of the params. Also reports whether the native fframes renderer is ready.',
 			input: {},
 			annotations: READ_ONLY,
 		},
@@ -179,9 +179,17 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Preview motion graphic',
 			description:
-				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle of the hold (the settled design); frames: 2 adds the middle of the intro, frames: 3 the middle of the outro, more frames go to the intro and outro; renderedBy tells which still path drew them (native, hybrid or remotion). Invalid params fail with E_INVALID_PARAM listing the issues.',
+				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. Params that reference project media (an avatar {mediaId}) need projectId: the still draws that project\'s media. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle of the hold (the settled design); frames: 2 adds the middle of the intro, frames: 3 the middle of the outro, more frames go to the intro and outro; renderedBy tells which still path drew them (native, hybrid or remotion). Invalid params fail with E_INVALID_PARAM listing the issues.',
 			input: {
-				template: z.string().min(1).describe('Template id, optionally "@version" ("lower-third@1")'),
+				template: z
+					.string()
+					.min(1)
+					.describe(
+						'Template id, optionally "@version" and ":preset" ("lower-third@1", "counter:percentage"; presets in list_motion_templates)',
+					),
+				projectId: ProjectIdArg.optional().describe(
+					'The project whose media the params reference (media params such as an avatar {mediaId}); needed only then',
+				),
 				params: z
 					.record(z.string(), z.unknown())
 					.optional()
@@ -211,65 +219,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const cat = await ctx.engine((c) => c.mgTemplates());
-			const t = findTemplate(cat, a.template);
-			// wp-m2-anime-templates (S11:ANA-003): anime templates are drawn by Remotion (engine still path).
-			if (t.renderer === 'anime') return animeTemplatePreview(ctx, t, a, extra);
-			if (cat.renderer.status !== 'ready')
-				throw new ToolError(
-					'RENDERER_UNAVAILABLE',
-					`The native motion-graphics renderer is unavailable${cat.renderer.reason ? `: ${cat.renderer.reason}` : ''}`,
-					'Build it with `pnpm mg:build`; add_motion_graphic still works (the editor previews with its SVG twin). Use render_frame on a timeline with the graphic instead. Anime templates (renderer "anime" in list_motion_templates) preview without it.',
-				);
-			const fps = a.fps ?? 30;
-			const job = await ctx.engine((c) =>
-				c.mgRender({
-					quality: 'preview',
-					spec: {
-						template: { id: t.id, version: t.version },
-						params: { ...t.defaults, ...(a.params ?? {}) },
-						width: a.width ?? 960,
-						height: a.height ?? 540,
-						fps: { num: fps, den: 1 },
-						durationFrames: Math.max(
-							1,
-							Math.round((a.durationSeconds ?? t.defaultDurationSeconds ?? 5) * fps),
-						),
-					},
-				}),
-			);
-			const { job: done } = await waitJob(ctx, job.id, 120_000, extra);
-			if (done.state !== 'succeeded')
-				throw new ToolError(
-					done.error?.code ?? 'RENDER_FAILED',
-					done.error?.message ?? `The render ${done.state}`,
-					'Check the params against the template paramsSchema (list_motion_templates).',
-				);
-			const result = done.result as { key: string; url: string };
-			const base = ctx.link.target?.url ?? '';
-			const poster = await ctx
-				.engine((c) => c.fetchBytes(c.mgFileUrl(result.key, 'poster.png')))
-				.catch(() => null);
-			return {
-				content: [
-					{
-						type: 'text',
-						text: JSON.stringify({
-							template: `${t.id}@${t.version}`,
-							jobId: done.id,
-							previewUrl: `${base}${result.url}`,
-						}),
-					},
-					...(poster
-						? [
-								{
-									type: 'image' as const,
-									data: Buffer.from(poster.bytes).toString('base64'),
-									mimeType: 'image/png',
-								},
-							]
-						: []),
-				],
-			};
+			const { template: t, preset } = resolveTemplateRef(cat, a.template);
+			// A preset's params apply over the defaults, the given params over the preset.
+			const given = preset || a.params ? { ...(preset?.params ?? {}), ...(a.params ?? {}) } : undefined;
+			const { projectId, ...args } = a;
+			const project = projectId ? (await loadDoc(ctx, projectId)).doc : undefined;
+			return templatePreview(ctx, cat, t, { ...args, params: given, ...(project ? { project } : {}) }, extra);
 		},
 	);
 

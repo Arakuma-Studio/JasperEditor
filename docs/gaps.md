@@ -805,6 +805,27 @@ of a clip is drawn as the changed clip (wash + ghost) plus its key band, not as 
 - **Reach**: user documentation; localisation beyond English and Spanish; a screen-reader pass with real assistive
   technology (the axe audit in `e2e/gaps.spec.ts` checks markup, not the spoken experience).
 
+### social-comment
+Animated platform comment cards (`social-comment@1`, design `docs/superpowers/specs/2026-10-25-social-comment-templates-design.md`).
+**Done when:** all seven comment variants and the three store review cards are drawn faithfully in light and dark, with presets, Properties controls, canvas
+editing, randomize, bulk import and agent batches.
+**Status (in progress):** the template, its animation framework and all ten cards are built: TikTok (comment reply,
+comment), Instagram (post comment, Reel reply), YouTube (comment, Shorts reply), X (post) and the three store reviews (Google Play, App Store web / Mac, iPhone App Store) — see
+[wp-notes/social-comments.md](wp-notes/social-comments.md) "Template implementation", "Instagram cards: calibration",
+"YouTube cards", "X card" and "Store reviews". X card limits: only the blue verified badge (gold / grey need a schema field); the Grok
+mark is always drawn; Chirp is the latin subset, so other scripts fall back to the next font of the stack. Instagram
+card limit: the default avatar is drawn in Instagram's style, not from Instagram's own image (no stable public source).
+YouTube card limits: the layout is the mobile app's (tokcomment's blueprint) with youtube.com's 2026 colours; the
+mention / hashtag blue is assumed (no captured comment had one).
+Store review limits: the iPhone card's age follows the requester's iOS 14-era screenshot by default (a weekday such
+as "Sun" under a week, else "2d ago"-style relative ages, "edited …"), with `iosAgeStyle: "relative"` for today's iOS
+("2d ago"); the App Store web and Play dark themes use the platforms' current dark tokens (the screenshots have no
+dark mode); Play has no default-avatar image (a grey silhouette is drawn); date cells in bulk import must be year
+first (`2025-09-24`, `2025/9/24`), as month-first and day-first dates are ambiguous.
+Add another and bulk import (CSV / pasted TSV, MCP `import_motion_graphics_csv`) are built — "Add another & bulk
+import". Their gaps: an `Image URL` column is reported as ignored (no remote picture import), XLSX is not read, and
+Add another has no keyboard shortcut (the free chord collides with macOS's Dock toggle).
+
 ## For agents choosing work
 
 1. Read [CLAUDE.md](../CLAUDE.md), then this file. Prefer a gap in a feature parity.md marks as done over a new

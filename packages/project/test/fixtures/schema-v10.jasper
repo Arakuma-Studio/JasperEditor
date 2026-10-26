@@ -1,0 +1,1622 @@
+{
+	"format": "jasper-project",
+	"schemaVersion": 10,
+	"savedAt": "2026-10-26T12:00:00.000Z",
+	"savedBy": {
+		"app": "JasperEditor",
+		"version": "0.1.0",
+		"platform": "web"
+	},
+	"revision": 2,
+	"document": {
+		"schemaVersion": 10,
+		"projectId": "prj_00000000000SCHV6",
+		"name": "Schema v10 fixture",
+		"settings": {
+			"defaultSequencePreset": "hd-1080p-29.97",
+			"mediaPolicy": {
+				"copyOnImport": false
+			},
+			"proxyPolicy": {
+				"mode": "auto",
+				"preset": "h264-720p",
+				"autoWhen": {
+					"minHeight": 2160,
+					"codecs": [
+						"prores",
+						"dnxhd",
+						"hevc"
+					],
+					"bitDepthAbove": 8
+				}
+			},
+			"defaultStillDurationFrames": 150,
+			"defaultTransitionFrames": 30,
+			"defaultScaling": "fit-if-larger"
+		},
+		"rootItems": [
+			"itm_000000000000SQ01",
+			"itm_000000000000MD01",
+			"itm_00000000000LUT01",
+			"itm_00000000000MGB01",
+			"itm_000000000000PR01",
+			"itm_000000000000SC01",
+			"itm_00000000000006TZ",
+			"itm_00000000000AVA01"
+		],
+		"items": {
+			"itm_000000000000SQ01": {
+				"id": "itm_000000000000SQ01",
+				"kind": "sequence",
+				"name": "Sequence 01",
+				"sequenceId": "seq_000000000000SEQ1",
+				"label": "forest"
+			},
+			"itm_000000000000MD01": {
+				"id": "itm_000000000000MD01",
+				"kind": "media",
+				"name": "interview.mov",
+				"mediaId": "med_00000000000V1DE0",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_00000000000LUT01": {
+				"id": "itm_00000000000LUT01",
+				"kind": "media",
+				"name": "look.cube",
+				"mediaId": "med_00000000000000C1",
+				"label": "iris",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_00000000000MGB01": {
+				"id": "itm_00000000000MGB01",
+				"kind": "media",
+				"name": "mg",
+				"mediaId": "med_00000000000000M1",
+				"label": "iris",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_000000000000PR01": {
+				"id": "itm_000000000000PR01",
+				"kind": "media",
+				"name": "interview [Denoised].mov",
+				"mediaId": "med_00000000000PR0C1",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_000000000000SC01": {
+				"id": "itm_000000000000SC01",
+				"kind": "media",
+				"name": "interview_T02.mov",
+				"mediaId": "med_00000000000SDC01",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_00000000000006TZ": {
+				"id": "itm_00000000000006TZ",
+				"kind": "media",
+				"name": "Metal hit",
+				"mediaId": "med_0000000000SFX001",
+				"label": "caribbean",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_00000000000AVA01": {
+				"id": "itm_00000000000AVA01",
+				"kind": "media",
+				"name": "avatar.png",
+				"mediaId": "med_00000000000AVA01",
+				"label": "lavender",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			}
+		},
+		"media": {
+			"med_00000000000V1DE0": {
+				"id": "med_00000000000V1DE0",
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000001",
+				"originalName": "interview.mov",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 7056000000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 1920,
+							"height": 1080,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_interview"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-09-30T10:00:00.000Z"
+			},
+			"med_00000000000000C1": {
+				"id": "med_00000000000000C1",
+				"kind": "lut",
+				"fingerprint": "q1:lutfp",
+				"originalName": "look.cube",
+				"sizeBytes": 1024,
+				"container": "cube",
+				"probe": {
+					"durationFlicks": null,
+					"startTimecode": null,
+					"streams": [],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_lut00000001"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-10-01T00:00:00.000Z",
+				"lut": {
+					"format": "cube",
+					"dimensions": 3,
+					"size": 33,
+					"title": "Look",
+					"domainMin": [
+						0,
+						0,
+						0
+					],
+					"domainMax": [
+						1,
+						1,
+						1
+					]
+				}
+			},
+			"med_00000000000000M1": {
+				"id": "med_00000000000000M1",
+				"kind": "mg-bundle",
+				"fingerprint": "q1:bundlefp",
+				"originalName": "mg",
+				"sizeBytes": 4096,
+				"container": "remotion-bundle",
+				"probe": {
+					"durationFlicks": null,
+					"startTimecode": null,
+					"streams": [],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_mgb00000001"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-10-01T00:00:00.000Z",
+				"mgBundle": {
+					"remotionVersion": "4.0.499",
+					"bundleHash": "abc",
+					"builtAt": "2026-10-01T00:00:00.000Z",
+					"source": {
+						"type": "project-dir",
+						"path": "/tmp/mg",
+						"name": "mg"
+					},
+					"compositions": [
+						{
+							"id": "Title",
+							"width": 1920,
+							"height": 1080,
+							"fps": 30,
+							"durationInFrames": 90,
+							"defaultProps": {
+								"title": "Hi"
+							},
+							"propsSchema": {
+								"type": "object",
+								"properties": {
+									"title": {
+										"type": "string"
+									}
+								}
+							},
+							"schemaSource": "inferred"
+						}
+					]
+				}
+			},
+			"med_00000000000PR0C1": {
+				"id": "med_00000000000PR0C1",
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000009",
+				"originalName": "interview [Denoised].mov",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 7056000000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 1920,
+							"height": 1080,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_processed"
+					}
+				],
+				"derivation": {
+					"fromMediaId": "med_00000000000V1DE0",
+					"recipe": {
+						"op": "process",
+						"steps": [
+							{
+								"op": "denoise",
+								"method": "atadenoise",
+								"strength": 0.25
+							}
+						]
+					},
+					"recipeVersion": 1,
+					"recipeHash": "sha256:abababababababababababababababababababababababababababababababab"
+				},
+				"importedAt": "2026-09-30T10:00:00.000Z",
+				"sourceRange": {
+					"mediaId": "med_00000000000V1DE0",
+					"sourceName": "interview.mov",
+					"firstFrame": 0,
+					"frames": 300,
+					"frameRate": {
+						"num": 30,
+						"den": 1
+					},
+					"origin": "process"
+				}
+			},
+			"med_00000000000SDC01": {
+				"id": "med_00000000000SDC01",
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000003",
+				"originalName": "interview_T02.mov",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 2822400000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 1920,
+							"height": 1080,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_3"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-09-30T10:00:00.000Z",
+				"sourceRange": {
+					"mediaId": "med_00000000000V1DE0",
+					"sourceName": "interview.mov",
+					"firstFrame": 60,
+					"frames": 120,
+					"frameRate": {
+						"num": 30,
+						"den": 1
+					},
+					"origin": "sidecar"
+				}
+			},
+			"med_0000000000SFX001": {
+				"id": "med_0000000000SFX001",
+				"kind": "audio",
+				"fingerprint": "q1:5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+				"originalName": "hit-metal-01.wav",
+				"sizeBytes": 132044,
+				"container": "wav",
+				"probe": {
+					"durationFlicks": 225156960,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "audio",
+							"codec": "pcm_f32le",
+							"sampleRate": 48000,
+							"channels": 1,
+							"channelLayout": "mono"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-10-15T10:00:00.000Z",
+				"library": {
+					"soundId": "snd_5f5f5f5f5f5f5f5f",
+					"title": "Metal hit",
+					"types": [
+						"hit"
+					],
+					"source": {
+						"type": "starter",
+						"packId": "kenney-impact-sounds",
+						"file": "hit-metal-01.ogg"
+					},
+					"license": "CC0-1.0",
+					"licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+					"author": "Kenney (www.kenney.nl)",
+					"sourceUrl": "https://kenney.nl/assets/impact-sounds",
+					"attribution": null,
+					"descriptors": {
+						"peakSec": 0.051,
+						"onsetSec": 0.0505,
+						"headQuietSec": 0.05,
+						"durationSec": 0.3191,
+						"octaveBandsDb": [
+							-31.2,
+							-25.4,
+							-22.9,
+							-24.1,
+							-29.8,
+							-38.5,
+							-51.7
+						],
+						"centroidHz": 1210,
+						"maxMomentaryLufs": -20.1
+					},
+					"leadSilenceSec": 0.05,
+					"snapshotHash": "0123456789abcdef"
+				}
+			},
+			"med_00000000000AVA01": {
+				"id": "med_00000000000AVA01",
+				"kind": "image",
+				"fingerprint": "q1:a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7",
+				"originalName": "avatar.png",
+				"sizeBytes": 20480,
+				"container": "png_pipe",
+				"probe": {
+					"durationFlicks": null,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "png",
+							"width": 400,
+							"height": 400,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 25,
+								"den": 1
+							},
+							"pixelFormat": "rgba",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "pc"
+							},
+							"browserDecodable": true
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": true,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_avatar0000001"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-10-25T10:00:00.000Z"
+			}
+		},
+		"synthetics": {},
+		"transcripts": {
+			"trs_00000000000005VN": {
+				"id": "trs_00000000000005VN",
+				"mediaId": null,
+				"language": "und",
+				"origin": "manual",
+				"words": [
+					{
+						"text": "Schema",
+						"start": 2540160000000,
+						"end": 2540725044480,
+						"confidence": null,
+						"speaker": null,
+						"breakBefore": "none"
+					},
+					{
+						"text": "v6",
+						"start": 2540725044480,
+						"end": 2540913392640,
+						"confidence": null,
+						"speaker": null,
+						"breakBefore": "none"
+					},
+					{
+						"text": "caption",
+						"start": 2540913392640,
+						"end": 2541572611200,
+						"confidence": null,
+						"speaker": null,
+						"breakBefore": "none"
+					}
+				],
+				"speakers": {}
+			}
+		},
+		"fonts": {
+			"fnt_000000000000003C": {
+				"id": "fnt_000000000000003C",
+				"family": "Source Sans 3",
+				"source": {
+					"type": "bundled"
+				}
+			}
+		},
+		"sequences": {
+			"seq_000000000000SEQ1": {
+				"id": "seq_000000000000SEQ1",
+				"settings": {
+					"frameRate": {
+						"num": 30000,
+						"den": 1001
+					},
+					"width": 1920,
+					"height": 1080,
+					"pixelAspect": {
+						"num": 1,
+						"den": 1
+					},
+					"dropFrame": true,
+					"startTimecodeFrames": 0,
+					"audioSampleRate": 48000,
+					"masterLayout": "stereo",
+					"backgroundColor": [
+						0,
+						0,
+						0,
+						1
+					],
+					"workingColorSpace": "rec709"
+				},
+				"videoTracks": [
+					{
+						"id": "trk_0000000000000V01",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_0000000000000V02",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_0000000000000V03",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					}
+				],
+				"audioTracks": [
+					{
+						"id": "trk_0000000000000A01",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					},
+					{
+						"id": "trk_0000000000000A02",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					}
+				],
+				"captionTracks": [
+					{
+						"id": "trk_00000000000005VM",
+						"kind": "caption",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"captionFormat": "open",
+						"visible": true,
+						"styleDefaults": {
+							"fontId": "fnt_000000000000003C",
+							"weight": 600,
+							"italic": false,
+							"sizePx": 48,
+							"lineHeight": 1.25,
+							"trackingEm": 0,
+							"align": "center",
+							"direction": "auto",
+							"fill": [
+								1,
+								1,
+								1,
+								1
+							],
+							"strokes": [],
+							"background": {
+								"color": [
+									0,
+									0,
+									0,
+									0.6
+								],
+								"paddingPx": 12,
+								"radiusPx": 0
+							},
+							"shadow": null,
+							"allCaps": false,
+							"highlight": {
+								"mode": "none",
+								"color": [
+									1,
+									0.84,
+									0,
+									1
+								]
+							},
+							"maxLines": 2,
+							"maxCharsPerLine": 42,
+							"maxSegmentMs": 7000,
+							"minGapMs": 80,
+							"boxWidthPct": 80,
+							"placement": "bottom",
+							"marginPct": 0,
+							"linePct": null,
+							"positionPct": null
+						}
+					}
+				],
+				"master": {
+					"volumeDb": {
+						"value": 0,
+						"keyframes": []
+					},
+					"effects": []
+				},
+				"clips": {
+					"clp_00000000000VC001": {
+						"id": "clp_00000000000VC001",
+						"trackId": "trk_0000000000000V01",
+						"start": 0,
+						"duration": 299,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "interview.mov",
+						"label": "violet",
+						"enabled": true,
+						"linkId": "lnk_0000000000000L01",
+						"groupId": null,
+						"markers": [],
+						"kind": "video",
+						"mediaId": "med_00000000000V1DE0",
+						"videoStreamIndex": 0,
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": [],
+							"expression": {
+								"text": "value * 0.9",
+								"enabled": true
+							}
+						},
+						"blendMode": "normal",
+						"effects": [
+							{
+								"id": "fx_000000000000MR01",
+								"effectId": "jasper.mirror",
+								"effectVersion": 1,
+								"enabled": true,
+								"params": {
+									"reflectionCenter": {
+										"value": [
+											0.5,
+											0.5
+										],
+										"keyframes": []
+									},
+									"reflectionAngle": {
+										"value": 90,
+										"keyframes": []
+									}
+								}
+							},
+							{
+								"id": "fx_000000000000CR01",
+								"effectId": "jasper.crop",
+								"effectVersion": 1,
+								"enabled": true,
+								"params": {
+									"left": {
+										"value": 10,
+										"keyframes": []
+									},
+									"top": {
+										"value": 0,
+										"keyframes": []
+									},
+									"right": {
+										"value": 10,
+										"keyframes": []
+									},
+									"bottom": {
+										"value": 0,
+										"keyframes": []
+									},
+									"feather": {
+										"value": 12,
+										"keyframes": []
+									}
+								}
+							}
+						],
+						"masks": [
+							{
+								"id": "msk_00000000000005VG",
+								"name": "Mask (1)",
+								"shape": "ellipse",
+								"mode": "add",
+								"inverted": false,
+								"path": {
+									"value": {
+										"closed": true,
+										"vertices": [
+											{
+												"p": [
+													0.5,
+													0.3
+												],
+												"in": [
+													-0.06213203435596429,
+													0
+												],
+												"out": [
+													0.06213203435596429,
+													0
+												]
+											},
+											{
+												"p": [
+													0.6125,
+													0.5
+												],
+												"in": [
+													0,
+													-0.11045694996615872
+												],
+												"out": [
+													0,
+													0.11045694996615872
+												]
+											},
+											{
+												"p": [
+													0.5,
+													0.7
+												],
+												"in": [
+													0.06213203435596429,
+													0
+												],
+												"out": [
+													-0.06213203435596429,
+													0
+												]
+											},
+											{
+												"p": [
+													0.38749999999999996,
+													0.5
+												],
+												"in": [
+													0,
+													0.11045694996615872
+												],
+												"out": [
+													0,
+													-0.11045694996615872
+												]
+											}
+										]
+									},
+									"keyframes": []
+								},
+								"feather": {
+									"value": 20,
+									"keyframes": []
+								},
+								"opacity": {
+									"value": 100,
+									"keyframes": []
+								},
+								"expansion": {
+									"value": 0,
+									"keyframes": []
+								}
+							}
+						]
+					},
+					"clp_00000000000AC001": {
+						"id": "clp_00000000000AC001",
+						"trackId": "trk_0000000000000A01",
+						"start": 0,
+						"duration": 299,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "interview.mov",
+						"label": "caribbean",
+						"enabled": true,
+						"linkId": "lnk_0000000000000L01",
+						"groupId": null,
+						"markers": [],
+						"kind": "audio",
+						"mediaId": "med_00000000000V1DE0",
+						"channels": {
+							"streamIndex": 1,
+							"map": [
+								0,
+								1
+							]
+						},
+						"gainDb": 0,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"effects": []
+					},
+					"clp_00000000000AC002": {
+						"id": "clp_00000000000AC002",
+						"trackId": "trk_0000000000000A02",
+						"start": 0,
+						"duration": 60,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "interview.mov (room tone)",
+						"label": "rose",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "audio",
+						"mediaId": "med_00000000000V1DE0",
+						"channels": {
+							"streamIndex": 1,
+							"map": [
+								0,
+								1
+							]
+						},
+						"gainDb": 0,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"effects": []
+					},
+					"clp_00000000000TX001": {
+						"id": "clp_00000000000TX001",
+						"trackId": "trk_0000000000000V02",
+						"start": 60,
+						"duration": 30,
+						"sourceIn": 1412611200,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "Animated Title",
+						"label": "lavender",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "text",
+						"content": {
+							"text": "Animated Title",
+							"style": {
+								"fontId": "fnt_000000000000003C",
+								"weight": 400,
+								"italic": false,
+								"sizePx": 100,
+								"lineHeight": 1.2,
+								"trackingEm": 0,
+								"align": "center",
+								"direction": "auto",
+								"fill": [
+									1,
+									1,
+									1,
+									1
+								],
+								"strokes": [],
+								"background": null,
+								"shadow": null,
+								"allCaps": false
+							}
+						},
+						"box": {
+							"width": 1200,
+							"height": 140,
+							"autoSize": "none"
+						},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									600,
+									70
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": [],
+						"textAnimation": {
+							"in": {
+								"preset": "slide-up",
+								"version": 1,
+								"durationFrames": 20,
+								"params": {
+									"unit": "word",
+									"stagger": 0.4
+								}
+							},
+							"out": {
+								"preset": "fade",
+								"version": 1,
+								"durationFrames": 15,
+								"params": {}
+							}
+						}
+					},
+					"clp_00000000000SH001": {
+						"id": "clp_00000000000SH001",
+						"trackId": "trk_0000000000000V03",
+						"start": 0,
+						"duration": 90,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": false
+						},
+						"name": "Rectangle",
+						"label": "magenta",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "shape",
+						"shape": {
+							"type": "rect",
+							"size": {
+								"value": [
+									600,
+									300
+								],
+								"keyframes": []
+							},
+							"fill": {
+								"value": [
+									0.2,
+									0.4,
+									0.9,
+									1
+								],
+								"keyframes": []
+							},
+							"stroke": {
+								"color": {
+									"value": [
+										1,
+										1,
+										1,
+										1
+									],
+									"keyframes": []
+								},
+								"width": {
+									"value": 8,
+									"keyframes": []
+								},
+								"position": "outside"
+							},
+							"cornerRadius": {
+								"value": 24,
+								"keyframes": []
+							}
+						},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									308,
+									158
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					},
+					"clp_00000000000005VK": {
+						"id": "clp_00000000000005VK",
+						"trackId": "trk_0000000000000V02",
+						"start": 0,
+						"duration": 60,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "Shape",
+						"label": "magenta",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "shape",
+						"shape": {
+							"type": "vector",
+							"contents": [
+								{
+									"id": "shp_00000000000005VH",
+									"name": "Polystar Path 1",
+									"type": "polystar",
+									"starType": "star",
+									"points": {
+										"value": 5,
+										"keyframes": []
+									},
+									"position": {
+										"value": [
+											0,
+											0
+										],
+										"keyframes": []
+									},
+									"rotation": {
+										"value": 0,
+										"keyframes": []
+									},
+									"innerRadius": {
+										"value": 90,
+										"keyframes": []
+									},
+									"outerRadius": {
+										"value": 200,
+										"keyframes": []
+									},
+									"innerRoundness": {
+										"value": 0,
+										"keyframes": []
+									},
+									"outerRoundness": {
+										"value": 0,
+										"keyframes": []
+									}
+								},
+								{
+									"id": "shp_00000000000005VJ",
+									"name": "Fill 1",
+									"type": "fill",
+									"color": {
+										"value": [
+											1,
+											0.78,
+											0.15,
+											1
+										],
+										"keyframes": []
+									},
+									"opacity": {
+										"value": 100,
+										"keyframes": []
+									}
+								}
+							]
+						},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					},
+					"clp_00000000000005VP": {
+						"id": "clp_00000000000005VP",
+						"trackId": "trk_00000000000005VM",
+						"start": 0,
+						"duration": 60,
+						"sourceIn": 2540160000000,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "Schema v6 caption",
+						"label": "mango",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "captions",
+						"transcriptId": "trs_00000000000005VN",
+						"style": {},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						}
+					},
+					"clp_00000000000006V0": {
+						"id": "clp_00000000000006V0",
+						"trackId": "trk_0000000000000A02",
+						"start": 120,
+						"duration": 9,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "hit-metal-01.wav",
+						"label": "caribbean",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "audio",
+						"mediaId": "med_0000000000SFX001",
+						"channels": {
+							"streamIndex": 0,
+							"map": [
+								0
+							]
+						},
+						"gainDb": 0,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 30,
+							"keyframes": []
+						},
+						"effects": [],
+						"essential": {
+							"type": "sfx",
+							"preset": "",
+							"loudness": {
+								"enabled": true,
+								"measuredLufs": null,
+								"targetLufs": null,
+								"gainDb": 0
+							},
+							"repair": {
+								"enabled": true,
+								"noise": {
+									"on": false,
+									"amount": 5
+								},
+								"rumble": {
+									"on": false,
+									"amount": 5
+								},
+								"dehum": {
+									"on": false,
+									"amount": 5
+								},
+								"humHz": 60,
+								"deess": {
+									"on": false,
+									"amount": 5
+								},
+								"reverb": {
+									"on": false,
+									"amount": 5
+								}
+							},
+							"clarity": {
+								"enabled": true,
+								"dynamics": {
+									"on": false,
+									"amount": 5
+								},
+								"eq": {
+									"on": false,
+									"amount": 5
+								},
+								"eqPreset": "Balanced Voice",
+								"enhance": {
+									"on": false,
+									"amount": 10
+								},
+								"enhanceTone": "low"
+							},
+							"creative": {
+								"enabled": true,
+								"reverb": {
+									"on": false,
+									"amount": 5
+								},
+								"reverbPreset": "Small Room",
+								"width": {
+									"on": false,
+									"amount": 5
+								}
+							},
+							"duration": {
+								"method": "remix",
+								"targetSeconds": null,
+								"segments": 50,
+								"variations": 50
+							},
+							"ducking": {
+								"enabled": false,
+								"against": [
+									"dialogue"
+								],
+								"againstUntyped": false,
+								"sensitivity": 6,
+								"reduceDb": -15,
+								"fadeSeconds": 0.8
+							},
+							"pan": {
+								"enabled": true,
+								"value": 30
+							},
+							"volume": {
+								"on": false,
+								"levelDb": 0
+							},
+							"mute": false,
+							"panOffset": true
+						}
+					},
+					"clp_00000000000MG001": {
+						"id": "clp_00000000000MG001",
+						"trackId": "trk_0000000000000V03",
+						"start": 120,
+						"duration": 120,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": false
+						},
+						"name": "Comment",
+						"label": "purple",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "motion-graphic",
+						"template": {
+							"id": "avatar-card",
+							"version": 1,
+							"renderer": "anime"
+						},
+						"params": {
+							"name": "Ada",
+							"avatar": {
+								"mediaId": "med_00000000000AVA01"
+							},
+							"gallery": [
+								null,
+								{
+									"mediaId": "med_00000000000AVA01"
+								}
+							]
+						},
+						"canvas": "sequence",
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					}
+				},
+				"transitions": {},
+				"links": {
+					"lnk_0000000000000L01": {
+						"id": "lnk_0000000000000L01",
+						"members": [
+							"clp_00000000000VC001",
+							"clp_00000000000AC001"
+						]
+					}
+				},
+				"groups": {},
+				"markers": [],
+				"inPoint": null,
+				"outPoint": null,
+				"workArea": null,
+				"activeCaptionTrackId": "trk_00000000000005VM"
+			}
+		},
+		"extensions": {}
+	}
+}

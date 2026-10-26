@@ -8,7 +8,6 @@ import {
 	type ProjectDocument,
 	type Sequence,
 	sequenceTimecode,
-	TimeInputSchema,
 	TRANSITION_SPECS,
 	type Transition,
 	type TransitionSpec,
@@ -16,7 +15,7 @@ import {
 	transitionSpec,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -370,8 +369,8 @@ export function registerTransitionTools(ctx: ToolContext): void {
 				sequenceId: SequenceIdArg,
 				range: z
 					.object({
-						from: TimeInputSchema.optional().describe('Only transitions ending after this time'),
-						to: TimeInputSchema.optional().describe('Only transitions starting before this time'),
+						from: TimeArgSchema.optional().describe('Only transitions ending after this time'),
+						to: TimeArgSchema.optional().describe('Only transitions starting before this time'),
 					})
 					.optional()
 					.describe(`Time range [from, to). ${TIME_FORMATS}`),

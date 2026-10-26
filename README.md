@@ -346,8 +346,66 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   frame number); native exports bake them through the layer-bake extension. They are never sent to `jasper-mg`.
 - A clip whose template is not installed shows a placeholder card and blocks every export ("template id@vN is
   not installed").
-- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
+- Inserting never overwrites: a double-click, Enter or a drop on the Program monitor puts the clip on the first
+  free video track from the targeted one (else V1) up, adding a track on top when all are busy (one undo step); a
+  drop onto a video track of the timeline still overwrites there.
+- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic` (one or many graphics per call,
+  first-free placement, seeded fill, `dryRun` + `preview`), `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
+- **Store reviews** (`social-comment@1` presets Play Store · Review, App Store · Review and App Store · Review
+  (iPhone app)): a Google Play, App Store web / Mac or iPhone App Store review card with star rating (Properties:
+  click or arrow-key the stars), date (date picker; the card prints it the store's way, "11/6/18" / "09/24/2021"),
+  title, "edited" and the iPhone age ("Sun" under a week as in the iOS 14-era App Store, else "1y ago"; **Recent
+  Dates** switches to today's "2d ago"); long reviews are clamped like the store (Play's fade, the App Store's
+  "more"; **Truncate Long Text** off shows all). **Likes Tick Up / Stars Fill** fills the stars one by one. Bulk import
+  takes `Rating` / `Stars`, `Title`, `Date` (YYYY-MM-DD) and `Edited` columns (`docs/wp-notes/social-comments.md`
+  "Store reviews").
+- **Platform fonts and emoji** (social-comment templates, `docs/wp-notes/social-comments.md` "Remote fonts &
+  emoji"): a template declares the faces and emoji it draws; bundled faces (TikTok Sans, Roboto, …) load from the
+  catalogue, the others (Chirp, SF Pro, Apple / Twemoji / Noto emoji images) are downloaded by the engine on first
+  need from the remote-asset manifest (`apps/engine/src/remote-assets/manifest.json`, fixed or overridden without a
+  release in `<appdir>/assets/remote-manifest.override.json`) into `<appdir>/assets/remote/`, verified and served at
+  `/fonts/remote/…` and `/fonts/emoji/…`; remote images of the manifest (X's and YouTube's default avatars) the same
+  way at `/fonts/images/…`. Downloads are a named network use, **Preferences ▸ Privacy & Network ▸
+  Platform fonts & emoji for social templates** (on by default; headless, MCP and CLI renders follow it too). A
+  missing font or emoji shows a striped marker on the card and a warning in the Program monitor (**Retry
+  download**), and blocks exports with `TEMPLATE_ASSETS_UNAVAILABLE`, naming the font, or the emoji and its pack —
+  never a substitute.
+- **Presets:** a template may declare named param presets (e.g. Counter ▸ Subscribers / Percentage / Money Raised).
+  The gallery then shows one card per preset instead of one for the template (search matches preset names; insert,
+  drag and the hover preview use the preset's params over the defaults). Agents pass `"<id>:<preset>"` or
+  `"<id>@<version>:<preset>"` as `template` to `add_motion_graphic` / `render_motion_graphic_preview`;
+  `list_motion_templates` lists each preset with its ref.
+- **UI hints:** a template's `ui` groups its params into ordered sub-sections of Properties ▸ Parameters and Effect
+  Controls ▸ Template, sets labels, tooltips and multi-line text, hides params that do not apply to the current value
+  of another param (`visibleWhen`, e.g. per variant) and can name a custom control registered by the web app
+  (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
+  labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
+  Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
+- **Clip names:** social comments are named from their content ("X post · Luna Park", "Instagram post comment ·
+  @luna.makes"), so the timeline, the asset chip and export messages tell the cards apart; the name follows edits of
+  the variant and the name until you rename the clip yourself.
+- **Add Another:** on a motion-graphic clip (timeline clip menu, Properties ▸ Template, Motion Templates, Graphics
+  menu, palette `mg.addAnother`) adds a copy right after it — after the last consecutive copy already there, so
+  pressing it again on the same clip builds a sequence — same length, on the first free video track, one undo
+  step. The params the template re-randomizes (`ui.addAnother.reroll`; social comments: name, handle, avatar and
+  stats) get fresh values; look, text and animation are kept.
+- **Import from a spreadsheet:** Motion Templates ▸ Import Spreadsheet… (also File / Graphics menus, a card's
+  context menu, Properties ▸ Template) takes rows pasted from a spreadsheet (TSV) or a `.csv` / `.tsv` file (header
+  row = param names or labels, template aliases such as `User` / `Comment` / `Verified`, an age in one `Time` /
+  `Age` / `Ago` / `Posted` cell such as `3h`, `2 weeks`, `1y` or `just now`, optional `start` / `duration`; at most
+  500 rows and 2 MB). The preview shows each row as it will be inserted (random values marked,
+  rows with errors left out); Insert adds the rows one after another from the playhead as one undo step. Details:
+  `docs/wp-notes/social-comments.md` § Add another & bulk import.
+- **Edit text on the Program monitor:** double-click a template's text (Title Reveal title and subtitle, Lower Third
+  name and role, Callout label, Counter label, social comment name and text) to edit it in place. The clip shows
+  its settled frame (entrance finished, exit not started) while you type; the playhead does not move. The double-
+  clicked word is selected. **Enter** (or a click elsewhere) applies one undo step, **Shift+Enter** starts a new line
+  in multi-line texts, **Esc** cancels. In texts with word marks (social comments) highlights, blurs and removals
+  stay on their words as you type, and selecting words shows a **Highlight / Blur / Remove / Clear** toolbar (one
+  undo step per button). Overlapping templates: the topmost text under the pointer is edited (a card selected in the
+  Timeline wins). Locked tracks and read-only projects say so instead of opening the editor. Template authors opt
+  in with `editableParamProps` (`docs/wp-notes/social-comments.md` § Program monitor editing).
 
 ## PWA (installable web app)
 
@@ -666,6 +724,23 @@ once before enabling a project-scoped server; start it from the repository root 
 - **Property reads.** `get_clip_properties` / `get_param` return `value` (the keyframed value at a time, as
   Effect Controls shows it) next to `evaluated` (what the renderer draws then), keyframes in sequence frames and
   the `param.set` target; `rendered: false` + `why` when that frame draws nothing.
+- **Times.** Every time argument of a tool takes frames, `{"frames": n}`, `{"seconds": x}`, `"3s"` / `"1.5s"`,
+  `"250ms"`, a clock `"00:03"` (M:SS) or `"1:02:03"` (H:MM:SS), or timecode `"HH:MM:SS:FF"`. The shape decides:
+  a unit suffix is seconds / milliseconds, one or two `:` a clock (whole seconds — use `"3.5s"` for fractions),
+  three separators always timecode. Commands inside `apply_commands` / `POST /api/agent/tx` keep the command
+  forms (frames, `{frames}`, `{seconds}`, timecode).
+- **Graphics never overwrite.** `add_motion_graphic` places each clip on the first free unlocked video track from
+  V2 up for its time range (a new top track when all are busy); one call adds one graphic or `items: [...]` (up to
+  200) as one transaction (one undo step, all or nothing), fills omitted params with the template's fill hook from
+  a `seed` (returned), and returns per item the clip id, track, start/end and the fully resolved params. An
+  explicit `track` keeps the older behaviour (overwrite on exactly that track) unless `placement: "first-free"`.
+  `dryRun: true` resolves the same without changing the project; `preview: true` adds a still per item (up to 10).
+  Raw commands get the same placement with `placement: "first-free"` on `clip.addText` / `addSolid` / `addShape` /
+  `addMotionGraphic` (`docs/wp-notes/social-comments.md` "Placement & agent API").
+- **Add another / bulk import.** `duplicate_motion_graphic {clipId, count?}` copies a graphic right after itself
+  or its last consecutive copy (`count` copies in a row, one undo step; re-randomized params from `seed`); `import_motion_graphics_csv
+  {template, csv}` adds one graphic per CSV / TSV row through the same parser and column mapping as the editor's
+  import dialog (row errors refuse the call unless `skipInvalid: true`). Raw command: `clip.duplicateMotionGraphic`.
 
 ### Live UI: look at and operate the editor window
 
@@ -992,6 +1067,10 @@ graphics)** and lists one graphics group per baked layer.
   Remotion path (warning `NATIVE_FALLBACK` in the job result); a forced **Native** export fails with the error.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
+- **Transparent background:** Export mode ▸ Format **ProRes 422 HQ** ▸ Background **Transparent** (MCP: `start_export
+  {preset: "overlay-prores-4444-alpha"}`) writes straight-alpha ProRes 4444 in MOV without audio, rendered on the
+  Remotion path — e.g. social comments to lay over footage in another editor. Disable the footage clips first.
+  Opaque pixels decode with alpha 1020/1023 (10-bit), not 1023 (measured; the Remotion ProRes path's alpha scaling).
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
   test/layer-bake-parallel.e2e.test.ts test/subtitle-parity.e2e.test.ts` (the second compares parallel and sequential
   bakes byte for byte, the third the subtitle templates with the composition's own frames); subtitle-scale timing and

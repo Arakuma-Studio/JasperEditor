@@ -90,7 +90,8 @@ export function registerFontTools(ctx: ToolContext): void {
 				FontLibraryResponse,
 			];
 			const bundled = catalog.fonts
-				.filter((f) => f.source !== 'custom' && matches(query, f.family))
+				// remote platform fonts (social-comment templates) are template faces, not text fonts
+				.filter((f) => f.source !== 'custom' && f.source !== 'remote' && matches(query, f.family))
 				.map((f) => ({
 					family: f.family,
 					weights: f.weights,

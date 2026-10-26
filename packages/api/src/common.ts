@@ -100,6 +100,11 @@ export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
 	'INTERNAL',
 	'NO_SESSION',
 	'LEASE_HELD',
+	// social-comment §7.8: remote-asset downloads that may succeed later
+	'DOWNLOAD_FAILED',
+	'DOWNLOAD_TIMEOUT',
+	'ASSET_CACHE_WRITE',
+	'REMOTE_ASSET_FAILED',
 ]);
 
 export function errorBody(code: string, message: string, detail?: unknown): ErrorShape {

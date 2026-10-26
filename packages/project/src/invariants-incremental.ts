@@ -37,6 +37,7 @@ import {
 	type SeqScope,
 } from './invariants.ts';
 import { TRACK_MATTE_EFFECT_ID } from './masks/track-matte.ts';
+import { clipParamMediaIds } from './param-media.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
@@ -350,6 +351,8 @@ function refsOf(c: Clip): string[] {
 	if (typeof r.syntheticId === 'string') out.push(r.syntheticId);
 	const comp = r.composition as { mediaId?: unknown } | undefined;
 	if (c.kind === 'composition' && typeof comp?.mediaId === 'string') out.push(comp.mediaId);
+	// template media params (avatars) are uses like the clip's own source.
+	out.push(...clipParamMediaIds(c));
 	return out;
 }
 

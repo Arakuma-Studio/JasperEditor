@@ -1,7 +1,7 @@
 # Multi-clip text styling, batch effects and linked text styles (spec 13 SH-003, AS-030…033)
 
 Spec: [`docs/specs/13-auto-subtitles.md`](../specs/13-auto-subtitles.md) §2 SH-002/SH-003, §3.4. Schema fields:
-[`docs/project-files.md`](../project-files.md) "Fields added in v9". Problem this solves (spec 13 §0, measured on the
+[`docs/project-files.md`](../project-files.md) "Fields added in v10". Problem this solves (spec 13 §0, measured on the
 user's projects): Premiere cannot restyle many graphics at once; the user applied saved effect presets to every
 caption graphic one by one.
 

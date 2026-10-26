@@ -25,9 +25,9 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
     window, `ProposalService.accept` reads the live or saved document), the choice belongs with the project the agent
     edits (like sound design's, which is in the document), and it is undoable and visible in History. Editor
     preferences are per user and machine and are not available headless (ARCHITECTURE §11, D-51).
-  - Persistence: schema v9 optional field, read leniently (`agentProposalsAllowed`: absent entry → default; unreadable
+  - Persistence: schema v10 optional field, read leniently (`agentProposalsAllowed`: absent entry → default; unreadable
     value → off for every feature, never a load failure), invariant `INV-PROJECT-SETTINGS`, repair keeps readable
-    entries and rewrites the rest as `false` (reported). Row in `docs/project-files.md` "Fields added in v9".
+    entries and rewrites the rest as `false` (reported). Row in `docs/project-files.md` "Fields added in v10".
   - Command: `project.updateSettings {settings: {agentProposals: {subtitles: false}}}` — merged per feature (other
     settings keep their replace semantics), validated strictly. The agent guard (`approvalReasons`) asks the user's
     approval for any entry set to `true` (an agent may turn a feature off, never on, by itself); the editor's Apply
@@ -643,7 +643,7 @@ and the seven passes above into one named, versioned set of parameters; **Apply 
   file and the index), unreadable file → moved aside (`….invalid-<time>`), never deleted; newer recipe formats listed
   read-only (refused for use with the reason), a newer library index makes the library read-only. Write order: new
   file then index; deletion: unlink then index (a crash never resurrects a deleted recipe).
-- **Project copy** `ProjectDocument.styleRecipes {active?, recipes}` (schema v9, read leniently; row in
+- **Project copy** `ProjectDocument.styleRecipes {active?, recipes}` (schema v10, read leniently; row in
   `docs/project-files.md`): accepting an Apply Style proposal copies the recipe used and makes it active (its setup
   item `styleRecipe.add {recipe, activate: true}` that every other item requires); Style Recipes… ▸ Use makes a recipe
   active (`styleRecipe.setActive` / `add`), one undo step each. A library recipe wins over the project's copy of the same id

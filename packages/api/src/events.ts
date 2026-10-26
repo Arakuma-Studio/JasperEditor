@@ -7,6 +7,7 @@ import { EngineJobSchema } from './jobs.ts';
 import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
 import { MgBundleRebuiltEventSchema } from './mg-bundles.ts';
 import { ProposalChangedEventSchema } from './proposals.ts';
+import { RemoteAssetsChangedEventSchema } from './remote-assets.ts';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -93,6 +94,8 @@ export const EVENT_PAYLOADS = {
 		sequenceId: z.string().optional(),
 		deleted: z.number().int().optional(),
 	}),
+	/** social-comment §7.8: a remote font / emoji was downloaded, or the network settings or manifest changed. */
+	'remoteAssets.changed': RemoteAssetsChangedEventSchema,
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runCli } from '../src/jasper-cli.ts';
+import { runCli, writeToolImages } from '../src/jasper-cli.ts';
 import { decodePng } from '../src/png.ts';
 import { cleanEnv, testPort, waitFor } from './helpers.ts';
 
@@ -31,6 +31,35 @@ describe('argument parsing', () => {
 		expect(await runCli(['--version'], d)).toBe(0);
 		const e = io();
 		expect(await runCli(['query', 'not-a-query'], e)).toBe(2);
+	});
+});
+
+describe('call --out', () => {
+	it('writes every image of a result: one to the path, several to <stem>-<i><ext> (none dropped)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-cli-out-'));
+		try {
+			const img = (b: number) => ({
+				type: 'image' as const,
+				mimeType: 'image/png',
+				data: Buffer.from([b]).toString('base64'),
+			});
+			const text = { type: 'text' as const, text: '{}' };
+			expect(writeToolImages({ content: [text, img(1)] }, join(dir, 'one.png'))).toEqual([
+				join(dir, 'one.png'),
+			]);
+			expect([...readFileSync(join(dir, 'one.png'))]).toEqual([1]);
+			const many = writeToolImages({ content: [text, img(1), img(2), img(3)] }, join(dir, 'p.png'));
+			expect(many).toEqual([join(dir, 'p-0.png'), join(dir, 'p-1.png'), join(dir, 'p-2.png')]);
+			expect(many.map((f) => [...readFileSync(f)])).toEqual([[1], [2], [3]]);
+			expect(writeToolImages({ content: [img(4), img(5)] }, join(dir, 'noext'))).toEqual([
+				join(dir, 'noext-0'),
+				join(dir, 'noext-1'),
+			]);
+			expect(writeToolImages({ content: [text] }, join(dir, 'none.png'))).toEqual([]);
+			expect(existsSync(join(dir, 'none.png'))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 

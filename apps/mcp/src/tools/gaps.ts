@@ -27,7 +27,7 @@ import {
 	warpRequestFor,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_HINT, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -662,11 +662,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 			try {
 				frame = resolveFrameInput(seq, at);
 			} catch (e) {
-				throw new ToolError(
-					'E_INVALID_PARAM',
-					(e as Error).message,
-					'Use frames, {"seconds": x} or "HH:MM:SS:FF".',
-				);
+				throw new ToolError('E_INVALID_PARAM', (e as Error).message, TIME_HINT);
 			}
 			const item = Object.values(loaded.doc.items).find(
 				(i) => i.kind === 'sequence' && i.sequenceId === seq.id,

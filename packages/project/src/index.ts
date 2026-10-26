@@ -66,6 +66,7 @@ export * from './lottie/index.ts';
 export * from './masks/index.ts';
 export * from './migrations.ts';
 export * from './multicam/index.ts';
+export * from './param-media.ts';
 export * from './path/index.ts';
 export * from './presets.ts';
 export * from './process/index.ts';
@@ -79,6 +80,7 @@ export * from './registry/fx/index.ts';
 export * from './registry/kinds.ts';
 export * from './registry/lumetri-spatial.ts';
 export * from './registry/mg.ts';
+export * from './registry/mg-params.ts';
 export { mediaParamId } from './registry/param-values.ts';
 export * from './registry/properties.ts';
 export * from './registry/text-animator-properties.ts';
@@ -118,6 +120,10 @@ import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
+export * from './bulk/age.ts';
+export * from './bulk/messages.ts';
+export * from './bulk/mg-import.ts';
+export * from './bulk/table.ts';
 export { DEFAULT_CLEANUP_TOLERANCE } from './commands/handlers/ease.ts';
 export {
 	copyEase,

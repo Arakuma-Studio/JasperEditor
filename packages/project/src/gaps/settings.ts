@@ -81,7 +81,7 @@ registerGapsCheck({
 		bad('display', ProjectDisplaySchema);
 		bad('scratch', ProjectScratchSchema);
 		bad('ingest', ProjectIngestSchema);
-		// v9 (spec 15 EA-001): Project Settings ▸ Agent Proposals
+		// v10 (spec 15 EA-001): Project Settings ▸ Agent Proposals
 		bad('agentProposals', ProjectAgentProposalsSchema);
 		return out;
 	},
