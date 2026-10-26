@@ -336,7 +336,7 @@ describe('the overlay pass dialogs (EA-023…EA-026)', () => {
 		expect(t.calls.at(-1)!.req.params).toEqual({ seed: 1, assets: { folder: '/home/me/reactions' } });
 		const summary = within(dialog).getByTestId('automation-summary');
 		expect(within(summary).getByTestId('automation-summary-count').textContent).toBe(
-			'2 reactions from 3 triggers',
+			'2 of 3 triggers get a reaction',
 		);
 		expect(within(summary).getByTestId('automation-summary-detail').textContent).toBe(
 			'Calls to action 2 · Markers 1 · On a cut 2',
@@ -437,7 +437,9 @@ describe('the overlay pass dialogs (EA-023…EA-026)', () => {
 				})}
 			/>,
 		);
-		expect(screen.getByTestId('automation-summary-count').textContent).toBe('2 slides on 3 overlay edges');
+		expect(screen.getByTestId('automation-summary-count').textContent).toBe(
+			'2 of 3 overlay edges get a slide',
+		);
 		expect(screen.getByTestId('automation-summary-detail').textContent).toBe(
 			'Heads 3 · Tails 1 · Down 2 · Up 2',
 		);

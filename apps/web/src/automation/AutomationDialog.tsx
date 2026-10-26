@@ -469,12 +469,12 @@ export function DryRunSummary(p: { result: AutomationPassResult }) {
 				: r.pass === 'ken-burns'
 					? t('{0} of {1} candidate clips get a Ken Burns move ({2})', s.count, s.considered, pct(s.coverage))
 					: r.pass === 'reactions'
-						? t('{0} reactions from {1} triggers', s.count, s.considered)
+						? t('{0} of {1} triggers get a reaction', s.count, s.considered)
 						: r.pass === 'slides'
-							? t('{0} slides on {1} overlay edges', s.count, s.considered)
+							? t('{0} of {1} overlay edges get a slide', s.count, s.considered)
 							: r.pass === 'music'
 								? t('{0} beds from {1} songs', s.count, s.considered)
-								: t('{0} stingers after {1} punchlines', s.count, s.considered);
+								: t('{0} of {1} punchlines get a stinger', s.count, s.considered);
 	const detail = Object.entries(s.detail ?? {}).filter(([, n]) => n > 0);
 	const skips = Object.entries(s.skipped.byCode).sort((a, b) => b[1] - a[1]);
 	return (

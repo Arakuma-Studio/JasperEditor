@@ -303,7 +303,9 @@ export function ReactionFields(p: FieldsProps) {
 			</div>
 			<Row label={t('Slots')} testId="automation-slots">
 				<span className="text-pr-small text-pr-muted">
-					{slots.map((s, i) => (s.name ? (translateName(s.name) ?? s.name) : t('Slot {0}', i + 1))).join(' · ')}
+					{slots
+						.map((s, i) => (s.name ? (translateName(s.name) ?? s.name) : t('Slot {0}', i + 1)))
+						.join(' · ')}
 				</span>
 			</Row>
 			<NumberRow
