@@ -61,7 +61,9 @@ export function fakeCleanupEngine(): FakeCleanupEngine {
 		}) as EngineJob;
 	const client = {
 		analyzeCleanup: async (req: CleanupAnalyzeRequest) => {
-			calls.push(`analyze ${JSON.stringify({ clipIds: req.clipIds, range: req.range, decisions: req.decisions })}`);
+			calls.push(
+				`analyze ${JSON.stringify({ clipIds: req.clipIds, range: req.range, decisions: req.decisions })}`,
+			);
 			const id = `job_${++n}`;
 			if (state.failNext) {
 				const error = { ...state.failNext, retryable: false };
@@ -77,10 +79,19 @@ export function fakeCleanupEngine(): FakeCleanupEngine {
 				voice: () => REC.voice,
 				settings: sequenceCleanupSettings(seq),
 				...(req.decisions ? { decisions: req.decisions } : {}),
-				scope: { ...(req.clipIds ? { clipIds: req.clipIds } : {}), ...(req.range ? { range: req.range } : {}) },
+				scope: {
+					...(req.clipIds ? { clipIds: req.clipIds } : {}),
+					...(req.range ? { range: req.range } : {}),
+				},
 			});
 			if (!a.ok) {
-				jobs.set(id, job(id, { state: 'failed', error: { code: a.code, message: a.message, retryable: false } } as never));
+				jobs.set(
+					id,
+					job(id, {
+						state: 'failed',
+						error: { code: a.code, message: a.message, retryable: false },
+					} as never),
+				);
 				return jobs.get(id)!;
 			}
 			const analysisId = `cla_${n}`;
@@ -190,4 +201,5 @@ export function cleanupSession(engine: EngineClient, opts: { script?: boolean } 
 }
 
 export const seqOf = (session: EditorSession, id: string) => session.getCommitted().sequences[id] as Sequence;
-export const seqLength = (seq: Sequence) => Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));
+export const seqLength = (seq: Sequence) =>
+	Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));

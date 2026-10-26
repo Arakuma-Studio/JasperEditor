@@ -33,7 +33,11 @@ import {
 	visibleEntries,
 	wordMarks,
 } from '../src/panels/text/cleanup/model.ts';
-import { parseFieldValue, SETTING_FIELDS, showFieldValue } from '../src/panels/text/cleanup/settings-fields.ts';
+import {
+	parseFieldValue,
+	SETTING_FIELDS,
+	showFieldValue,
+} from '../src/panels/text/cleanup/settings-fields.ts';
 import { cleanupSession, fakeCleanupEngine, REC, seqOf } from './cleanup-helpers.ts';
 
 function analysed(decisions = EMPTY_DECISIONS) {
@@ -86,7 +90,7 @@ describe('Clean Up review model', () => {
 		expect(removed.length).toBeGreaterThan(5);
 		expect(removed.every((m) => m.kind !== null)).toBe(true);
 		const kinds = new Set(removed.map((m) => m.kind));
-		for (const k of ['retake', 'false-start', 'filler-vocalic', 'off-script']) expect(kinds).toContain(k);
+		for (const k of ['restart', 'false-start', 'filler-vocalic', 'off-script']) expect(kinds).toContain(k);
 		// the truth of the synthetic recording: words to keep are not struck
 		const kept = words.map((w, i) => ({ w, m: marks[i]! })).filter(({ w }) => REC.words[w.index]!.keep);
 		expect(kept.filter(({ m }) => m.removed).length).toBeLessThanOrEqual(1);
@@ -101,7 +105,8 @@ describe('Clean Up review model', () => {
 		const groups = groupFindings(a, EMPTY_DECISIONS, new Set());
 		expect(groups.map((g) => g.kind)).toEqual(KIND_ORDER.filter((k) => a.findings.some((f) => f.kind === k)));
 		expect(groups.reduce((s, g) => s + g.findings.length, 0)).toBe(a.findings.length);
-		for (const g of groups) expect(g.accepted).toBe(g.findings.filter((f) => f.suggested === 'remove').length);
+		for (const g of groups)
+			expect(g.accepted).toBe(g.findings.filter((f) => f.suggested === 'remove').length);
 		const layout = listLayout(groups, new Set([groups[0]!.kind]), { header: 24, row: 33 });
 		expect(layout.order).toHaveLength(a.findings.length - groups[0]!.findings.length);
 		expect(layout.total).toBe(groups.length * 24 + layout.order.length * 33);
@@ -117,7 +122,10 @@ describe('Clean Up review model', () => {
 
 	it('visible entries cover the viewport for any scroll position (fast-check)', () => {
 		const { a } = analysed();
-		const layout = listLayout(groupFindings(a, EMPTY_DECISIONS, new Set()), new Set(), { header: 20, row: 30 });
+		const layout = listLayout(groupFindings(a, EMPTY_DECISIONS, new Set()), new Set(), {
+			header: 20,
+			row: 30,
+		});
 		fc.assert(
 			fc.property(fc.integer({ min: 0, max: layout.total }), fc.integer({ min: 1, max: 400 }), (top, h) => {
 				const { start, end } = visibleEntries(layout, top, h, 0);
@@ -163,7 +171,10 @@ describe('Clean Up review model', () => {
 		const { session, seq, doc } = analysed();
 		expect(scopeOf(seq, 'sequence', [])).toEqual({ ok: true, scope: {} });
 		expect(scopeOf(seq, 'inout', []).ok).toBe(false);
-		expect(scopeOf({ inPoint: 10, outPoint: 50 }, 'inout', [])).toEqual({ ok: true, scope: { range: { from: 10, to: 50 } } });
+		expect(scopeOf({ inPoint: 10, outPoint: 50 }, 'inout', [])).toEqual({
+			ok: true,
+			scope: { range: { from: 10, to: 50 } },
+		});
 		expect(scopeOf(seq, 'clips', []).ok).toBe(false);
 		expect(scopeOf(seq, 'clips', ['clp_x'])).toEqual({ ok: true, scope: { clipIds: ['clp_x'] } });
 		// settings changes are not staleness; clip edits are
@@ -199,7 +210,9 @@ describe('Clean Up review model', () => {
 		}
 		for (const f of SETTING_FIELDS) {
 			const value = (FAST_SETTINGS[f.group] as Record<string, unknown>)[f.key];
-			const schema = (shapes[f.group] as Record<string, { safeParse(v: unknown): { success: boolean } }>)[f.key]!;
+			const schema = (shapes[f.group] as Record<string, { safeParse(v: unknown): { success: boolean } }>)[
+				f.key
+			]!;
 			if (f.type === 'choice') {
 				for (const o of f.options) expect(schema.safeParse(o).success, `${f.key}=${o}`).toBe(true);
 				expect(f.options).toContain(value);
@@ -209,10 +222,15 @@ describe('Clean Up review model', () => {
 				expect(schema.safeParse(parseFieldValue(f, String(f.max))).success, `${f.key} max`).toBe(true);
 				expect(parseFieldValue(f, String(f.max + 1))).toBeNull();
 				expect(parseFieldValue(f, showFieldValue(f, value as number))).toBeCloseTo(value as number, 6);
-				expect(f.unit === '' ? /\((words|letters|frames)\)$/.test(f.label) : f.unit.length > 0, f.key).toBe(true);
+				expect(f.unit === '' ? /\((words|letters|frames)\)$/.test(f.label) : f.unit.length > 0, f.key).toBe(
+					true,
+				);
 			} else expect(typeof value).toBe('boolean');
 		}
-		const fade = SETTING_FIELDS.find((f) => f.key === 'fadeMs')! as Extract<(typeof SETTING_FIELDS)[number], { type: 'number' }>;
+		const fade = SETTING_FIELDS.find((f) => f.key === 'fadeMs')! as Extract<
+			(typeof SETTING_FIELDS)[number],
+			{ type: 'number' }
+		>;
 		expect(parseFieldValue(fade, 'abc')).toBeNull();
 		expect(parseFieldValue(fade, '4,5')).toBe(4.5);
 	});

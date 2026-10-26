@@ -6,9 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeSequenceCleanup, type CleanupAnalysis } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
+import { GOLDEN_EVENTS, goldenSequence } from './cleanup-golden-fixture.ts';
 import { scoreKept, synthRecording } from './cleanup-synth.ts';
-import { GOLDEN_EVENTS, GOLDEN_SCRIPT, goldenSequence } from './cleanup-golden-fixture.ts';
-
 
 function keptSeconds(a: CleanupAnalysis): Array<[number, number]> {
 	return a.plan.kept.map((k) => [k.start / 30, k.end / 30]);

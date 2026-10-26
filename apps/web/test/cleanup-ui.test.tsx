@@ -17,6 +17,7 @@ import {
 	cleanupFor,
 	setCleanupControllerForTest,
 } from '../src/panels/text/cleanup/controller.ts';
+import { KIND_ORDER } from '../src/panels/text/cleanup/model.ts';
 import { textPanelRequests } from '../src/panels/text/state.ts';
 import { cleanupSession, fakeCleanupEngine, seqLength, seqOf } from './cleanup-helpers.ts';
 
@@ -64,8 +65,11 @@ describe('Clean Up mode', () => {
 		expect(screen.getByTestId('text.cleanup.stat.cuts').textContent).toBe(String(a.plan.ranges.length));
 		expect(screen.getByTestId('text.cleanup.apply').textContent).toContain(String(a.plan.ranges.length));
 		// grouped by kind with counts
-		const kinds = new Set(a.findings.map((f) => f.kind));
-		for (const k of kinds) expect(screen.getByTestId(`text.cleanup.kind.${k}.count`)).toBeTruthy();
+		// (the list is virtualised: the first group is in view, the others below it)
+		const firstKind = KIND_ORDER.find((k) => a.findings.some((f) => f.kind === k))!;
+		const count = screen.getByTestId(`text.cleanup.kind.${firstKind}.count`).textContent!;
+		const n = a.findings.filter((f) => f.kind === firstKind).length;
+		expect(count).toContain(String(n));
 		// transcript view: struck words carry their kind
 		fireEvent.click(screen.getByTestId('text.cleanup.view.transcript'));
 		const struck = screen.getByTestId('text.cleanup.transcript').querySelectorAll('[data-removed="true"]');
@@ -74,7 +78,9 @@ describe('Clean Up mode', () => {
 		// retake groups side by side, the kept take ticked
 		fireEvent.click(screen.getByTestId('text.cleanup.view.retakes'));
 		const g = a.groups[0]!;
-		expect(screen.getByTestId(`text.cleanup.group.${g.id}.take.${g.chosen}`).getAttribute('data-kept')).toBe('true');
+		expect(screen.getByTestId(`text.cleanup.group.${g.id}.take.${g.chosen}`).getAttribute('data-kept')).toBe(
+			'true',
+		);
 	});
 
 	it('decisions, retake choices and settings re-plan the live statistics', async () => {
@@ -107,8 +113,10 @@ describe('Clean Up mode', () => {
 		});
 		await waitFor(() => expect(c.getState().analysis!.settings.gaps.maxGapS).toBe(2));
 		expect(c.getState().stale).toBe(false);
-		expect(c.getState().analysis!.plan.stats.outputDuration).toBeGreaterThanOrEqual(out1);
-		expect(seqOf(session, seqId).cleanup).toMatchObject({ settings: { overrides: { gaps: { maxGapS: 2 } } } });
+		expect(c.getState().analysis!.plan.stats.outputDuration).not.toBe(out1);
+		expect(seqOf(session, seqId).cleanup).toMatchObject({
+			settings: { overrides: { gaps: { maxGapS: 2 } } },
+		});
 	});
 
 	it('Play result plays a derived timeline without touching the document; Stop maps the playhead back', async () => {
@@ -176,7 +184,7 @@ describe('Clean Up mode', () => {
 		expect(screen.getByTestId('text.cleanup.stale')).toBeTruthy();
 		expect(c.apply()).toMatchObject({ ok: false });
 		expect(c.playResult()).toMatchObject({ ok: false });
-		expect((screen.getByTestId('text.cleanup.apply') as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByTestId('text.cleanup.apply').getAttribute('aria-disabled')).toBe('true');
 	});
 
 	it('shows engine failures and refusals without crashing; Cancel cancels the job', async () => {
@@ -218,7 +226,11 @@ describe('Clean Up mode', () => {
 			'cleanup.playResult',
 			'cleanup.apply',
 		];
-		for (const id of ids) expect(DEFAULT_KEYMAP.some((b) => b.command === id && b.scope === 'text'), id).toBe(true);
+		for (const id of ids)
+			expect(
+				DEFAULT_KEYMAP.some((b) => b.command === id && b.scope === 'text'),
+				id,
+			).toBe(true);
 		const ctx = ctxOf(session);
 		const enabled = (id: string) => isCommandEnabled(getCommand(id)!, ctx);
 		expect(enabled('cleanup.nextFinding')).toBe(false);
@@ -251,7 +263,9 @@ describe('Clean Up mode', () => {
 		const ctx = {
 			...ctxOf(session),
 			engine: engine.client,
-			services: { get: (k: string) => (k === 'shell' ? { focusPanel: (p: string) => focused.push(p) } : undefined) },
+			services: {
+				get: (k: string) => (k === 'shell' ? { focusPanel: (p: string) => focused.push(p) } : undefined),
+			},
 		} as never as CommandCtx;
 		const cmd = getCommand('transcript.cleanUpVoice')!;
 		expect(isCommandEnabled(cmd, ctx)).toBe(true);

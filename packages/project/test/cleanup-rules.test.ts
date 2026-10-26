@@ -183,10 +183,9 @@ describe('rules (Spanish)', () => {
 		expect(r.byWord.slice(17, 22).every((k) => k === 'off-script')).toBe(true);
 		expect(r.byWord.slice(22)).toEqual(['head-tail', 'head-tail']);
 		// the head side stays strict: on-topic pre-roll before the first scripted line is still head (the user cuts it)
-		const h = kinds(
-			'vale ya | vamos allá que hoy hay juego nuevo | hoy vamos a crear un juego de carreras',
-			{ script },
-		);
+		const h = kinds('vale ya | vamos allá que hoy hay juego nuevo | hoy vamos a crear un juego de carreras', {
+			script,
+		});
 		expect(h.byWord.slice(0, 9).every((k) => k === 'head-tail')).toBe(true);
 		expect(h.byWord.slice(9).every((k) => k === null)).toBe(true);
 	});

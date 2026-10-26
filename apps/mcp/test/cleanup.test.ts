@@ -40,12 +40,16 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 	let revision = 1;
 	const seqId = Object.keys(doc.sequences)[0]!;
 	const apply = (tx: Record<string, unknown>) => {
-		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', origin: 'user', sequenceId: seqId, ...tx } as never, {
-			ids,
-			now: () => '2026-10-26T00:00:00.000Z',
-			revision,
-			registries: defaultRegistries(),
-		});
+		const r = applyTransaction(
+			doc,
+			{ protocol: 'jasper.tx/1', origin: 'user', sequenceId: seqId, ...tx } as never,
+			{
+				ids,
+				now: () => '2026-10-26T00:00:00.000Z',
+				revision,
+				registries: defaultRegistries(),
+			},
+		);
 		if (r.result.ok && !tx.dryRun) {
 			doc = r.document;
 			revision++;
@@ -56,7 +60,14 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 		label: 'setup',
 		commands: [
 			{ type: 'media.register', asset: videoAsset({ seconds: REC.durationS, kind: 'audio' }), ref: '$m' },
-			{ type: 'clip.place', source: { mediaId: '$m' }, at: 0, tracks: { audio: ['A1'] }, mode: 'overwrite', ref: '$c' },
+			{
+				type: 'clip.place',
+				source: { mediaId: '$m' },
+				at: 0,
+				tracks: { audio: ['A1'] },
+				mode: 'overwrite',
+				ref: '$c',
+			},
 		],
 	});
 	if (!setup.ok) throw new Error(JSON.stringify(setup.errors));
@@ -72,7 +83,9 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 				origin: 'manual',
 				words: REC.words.map((w) => ({ text: w.text, start: w.start, end: w.end, confidence: w.confidence })),
 			},
-			...(opts.script === false ? [] : [{ type: 'cleanup.configure', script: { name: 'Guion', text: GOLDEN_SCRIPT } }]),
+			...(opts.script === false
+				? []
+				: [{ type: 'cleanup.configure', script: { name: 'Guion', text: GOLDEN_SCRIPT } }]),
 		],
 	});
 	if (!t.ok) throw new Error(JSON.stringify(t.errors));
@@ -88,7 +101,11 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 			if (typeof exp === 'number' && exp !== revision)
 				return {
 					appliedBy: 'headless',
-					result: { ok: false, revision, errors: [{ commandIndex: -1, code: 'E_REVISION', message: 'stale' }] },
+					result: {
+						ok: false,
+						revision,
+						errors: [{ commandIndex: -1, code: 'E_REVISION', message: 'stale' }],
+					},
 				};
 			return { result: apply(req.transaction), appliedBy: 'headless' };
 		},
@@ -99,7 +116,12 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 			const seq = d.sequences[req.sequenceId!] as Sequence;
 			let settings = req.presetId ? builtinCleanupSettings(req.presetId) : sequenceCleanupSettings(seq);
 			if (!settings)
-				return { id, kind: 'cleanup-analysis', state: 'failed', error: { code: 'PRESET_NOT_FOUND', message: 'no preset', retryable: false } } as unknown as EngineJob;
+				return {
+					id,
+					kind: 'cleanup-analysis',
+					state: 'failed',
+					error: { code: 'PRESET_NOT_FOUND', message: 'no preset', retryable: false },
+				} as unknown as EngineJob;
 			if (req.overrides) settings = mergeCleanupSettings(settings, req.overrides);
 			const a = analyzeSequenceCleanup({
 				doc: d,
@@ -108,10 +130,18 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 				settings,
 				...(req.script !== undefined ? { script: req.script } : {}),
 				...(req.decisions ? { decisions: req.decisions } : {}),
-				scope: { ...(req.clipIds ? { clipIds: req.clipIds } : {}), ...(req.range ? { range: req.range } : {}) },
+				scope: {
+					...(req.clipIds ? { clipIds: req.clipIds } : {}),
+					...(req.range ? { range: req.range } : {}),
+				},
 			});
 			if (!a.ok)
-				return { id, kind: 'cleanup-analysis', state: 'failed', error: { code: a.code, message: a.message, retryable: false } } as unknown as EngineJob;
+				return {
+					id,
+					kind: 'cleanup-analysis',
+					state: 'failed',
+					error: { code: a.code, message: a.message, retryable: false },
+				} as unknown as EngineJob;
 			const analysisId = `cla_${n}`;
 			files.set(analysisId, {
 				format: 'jasper-cleanup-analysis',
@@ -184,10 +214,13 @@ async function connect(opts: { script?: boolean } = {}) {
 	await client.connect(y);
 	open.push(client);
 	const call = async (name: string, args: Record<string, unknown>) =>
-		readToolResponse((await client.callTool({ name, arguments: { projectId: 'prj_test', ...args } })) as CallToolResult);
+		readToolResponse(
+			(await client.callTool({ name, arguments: { projectId: 'prj_test', ...args } })) as CallToolResult,
+		);
 	return { engine, call, client };
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: tool bodies are read loosely here; their shape is asserted value by value
 type Body = Record<string, any>;
 
 describe('Clean Up MCP tools', () => {
@@ -195,9 +228,11 @@ describe('Clean Up MCP tools', () => {
 		const { client } = await connect();
 		const tools = (await client.listTools()).tools;
 		const by = (n: string) => tools.find((t) => t.name === n)!;
-		for (const n of ['analyze_voice', 'plan_cleanup']) expect(by(n).annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+		for (const n of ['analyze_voice', 'plan_cleanup'])
+			expect(by(n).annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
 		expect(by('apply_cleanup').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
-		for (const n of ['set_cleanup_settings', 'attach_script']) expect(by(n).annotations).toMatchObject({ readOnlyHint: false, idempotentHint: true });
+		for (const n of ['set_cleanup_settings', 'attach_script'])
+			expect(by(n).annotations).toMatchObject({ readOnlyHint: false, idempotentHint: true });
 		expect(client.getInstructions()).toContain('Cleaning up speech');
 		const res = await client.readResource({ uri: 'jasper://guide/cleanup' });
 		const text = (res.contents[0] as { text: string }).text;
@@ -217,16 +252,32 @@ describe('Clean Up MCP tools', () => {
 		expect(b.findings.items).toHaveLength(5);
 		expect(b.findings.nextOffset).toBe(5);
 		const f = b.findings.items[0];
-		expect(f).toMatchObject({ id: expect.stringMatching(/^f\d+$/), fingerprint: expect.any(String), reason: expect.any(String) });
-		expect(f.start).toMatchObject({ frame: expect.any(Number), timecode: expect.stringMatching(/^\d\d:\d\d:\d\d:\d\d$/) });
+		expect(f).toMatchObject({
+			id: expect.stringMatching(/^f\d+$/),
+			fingerprint: expect.any(String),
+			reason: expect.any(String),
+		});
+		expect(f.start).toMatchObject({
+			frame: expect.any(Number),
+			timecode: expect.stringMatching(/^\d\d:\d\d:\d\d:\d\d$/),
+		});
 		expect(b.groups.items[0].takes.some((t: Body) => t.kept)).toBe(true);
 		expect(b.script.said).toBe(4);
-		const p2 = (await call('analyze_voice', { offset: 5, limit: 5, include: ['findings'], kinds: ['pause'] })).body as Body;
+		const p2 = (await call('analyze_voice', { offset: 5, limit: 5, include: ['findings'], kinds: ['pause'] }))
+			.body as Body;
 		expect(p2.groups).toBeUndefined();
 		expect(p2.findings.items.every((x: Body) => x.kind === 'pause')).toBe(true);
 		// clip and media targets, presets and overrides reach the engine
-		await call('analyze_voice', { clipId: engine.clipId, preset: 'natural', settings: { gaps: { maxGapS: 0.3 } } });
-		expect(engine.requests.at(-1)).toMatchObject({ clipIds: [engine.clipId], presetId: 'builtin.natural', overrides: { gaps: { maxGapS: 0.3 } } });
+		await call('analyze_voice', {
+			clipId: engine.clipId,
+			preset: 'natural',
+			settings: { gaps: { maxGapS: 0.3 } },
+		});
+		expect(engine.requests.at(-1)).toMatchObject({
+			clipIds: [engine.clipId],
+			presetId: 'builtin.natural',
+			overrides: { gaps: { maxGapS: 0.3 } },
+		});
 		const m = (await call('analyze_voice', { mediaId: engine.mediaId, include: ['ranges'] })).body as Body;
 		expect(m.mediaOnly).toBe(true);
 		expect(engine.requests.at(-1)!.document).toBeDefined();
@@ -250,16 +301,24 @@ describe('Clean Up MCP tools', () => {
 		const { call, engine } = await connect();
 		const a = (await call('analyze_voice', { include: ['findings'], limit: 1000 })).body as Body;
 		const rm = a.findings.items.find((f: Body) => f.suggested === 'remove' && f.words);
-		const p = (await call('plan_cleanup', { decisions: { reject: [rm.id] }, include: ['findings'], limit: 1000 })).body as Body;
+		const p = (
+			await call('plan_cleanup', { decisions: { reject: [rm.id] }, include: ['findings'], limit: 1000 })
+		).body as Body;
 		expect(p.findings.items.find((f: Body) => f.id === rm.id).accepted).toBe(false);
 		expect(p.stats.outputDuration).toBeGreaterThan(a.stats.outputDuration);
 		const before = engine.doc().sequences[engine.seqId]!;
-		const r = await call('apply_cleanup', { decisions: { reject: [rm.fingerprint] }, analysisId: p.analysisId });
+		const r = await call('apply_cleanup', {
+			decisions: { reject: [rm.fingerprint] },
+			analysisId: p.analysisId,
+		});
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
 		const b = r.body as Body;
 		expect(b.label).toBe(`Clean Up Voice: ${b.cuts} cuts`);
 		expect(engine.txs).toHaveLength(1);
-		expect((engine.txs[0]!.commands as Body[]).map((c) => c.type)).toEqual(['cleanup.configure', 'cleanup.apply']);
+		expect((engine.txs[0]!.commands as Body[]).map((c) => c.type)).toEqual([
+			'cleanup.configure',
+			'cleanup.apply',
+		]);
 		const after = engine.doc().sequences[engine.seqId]!;
 		expect(after.cleanup).toMatchObject({ rejected: [rm.fingerprint] });
 		const len = (s: Sequence) => Math.max(...Object.values(s.clips).map((c) => c.start + c.duration));
@@ -295,7 +354,9 @@ describe('Clean Up MCP tools', () => {
 		writeFileSync(file, GOLDEN_SCRIPT);
 		r = await call('attach_script', { path: file });
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
-		expect(engine.doc().sequences[engine.seqId]!.cleanup).toMatchObject({ script: { name: 'guion', text: GOLDEN_SCRIPT } });
+		expect(engine.doc().sequences[engine.seqId]!.cleanup).toMatchObject({
+			script: { name: 'guion', text: GOLDEN_SCRIPT },
+		});
 		expect((await call('attach_script', { path: 'relative.txt' })).isError).toBe(true);
 		r = await call('attach_script', { detach: true });
 		expect((engine.doc().sequences[engine.seqId]!.cleanup as Body).script).toBeUndefined();

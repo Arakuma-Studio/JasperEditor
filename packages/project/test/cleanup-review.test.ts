@@ -36,7 +36,9 @@ describe('cleanup review helpers', () => {
 			expect(at.start).toBe(Math.floor(f.range.start / F));
 		}
 		expect(cleanupFindingMedia(a, { fingerprint: 'med_other~1~pause~0~1~x' })).toBeNull();
-		expect(cleanupFindingFrames(H.seq, a, { fingerprint: 'med_other~1~x', range: { start: 0, end: 1 } })).toBeNull();
+		expect(
+			cleanupFindingFrames(H.seq, a, { fingerprint: 'med_other~1~x', range: { start: 0, end: 1 } }),
+		).toBeNull();
 	});
 
 	it('remembers explicit rejections, never suggestions, and forgets remembered ones accepted again', () => {
@@ -48,20 +50,33 @@ describe('cleanup review helpers', () => {
 		// an item rejection and a kind rejection
 		const kind = a.findings.find((f) => f.kind !== rm.kind && f.suggested === 'remove')!.kind;
 		const ofKind = a.findings.filter((f) => f.kind === kind);
-		const r = cleanupRejectionChanges(a, { reject: [rm.id], rejectKinds: [kind], accept: [ofKind[0]!.id] }, new Set());
+		const r = cleanupRejectionChanges(
+			a,
+			{ reject: [rm.id], rejectKinds: [kind], accept: [ofKind[0]!.id] },
+			new Set(),
+		);
 		expect(r.reject).toContain(rm.fingerprint);
 		for (const f of ofKind.slice(1)) expect(r.reject).toContain(f.fingerprint);
 		expect(r.reject).not.toContain(ofKind[0]!.fingerprint);
 		expect(r.unreject).toEqual([]);
 		// already remembered: not again; accepted now: forgotten
-		const again = cleanupRejectionChanges(a, { reject: [rm.id], accept: [review.id] }, new Set([rm.fingerprint, review.fingerprint]));
+		const again = cleanupRejectionChanges(
+			a,
+			{ reject: [rm.id], accept: [review.id] },
+			new Set([rm.fingerprint, review.fingerprint]),
+		);
 		expect(again).toEqual({ reject: [], unreject: [review.fingerprint] });
 	});
 
 	it('builds one transaction: the remembered rejections and one cleanup.apply over the plan', () => {
 		const { a, H } = analyse();
 		const rm = a.findings.find((f) => f.suggested === 'remove' && f.words)!;
-		const b = analyzeSequenceCleanup({ doc: H.doc, seq: H.seq, voice: () => rec.voice, decisions: { reject: [rm.id] } });
+		const b = analyzeSequenceCleanup({
+			doc: H.doc,
+			seq: H.seq,
+			voice: () => rec.voice,
+			decisions: { reject: [rm.id] },
+		});
 		if (!b.ok) throw new Error(b.message);
 		const cmds = cleanupApplyCommands(H.seq.id, b, { reject: [rm.id] }, new Set());
 		expect(cmds.map((c) => c.type)).toEqual(['cleanup.configure', 'cleanup.apply']);
@@ -79,8 +94,7 @@ describe('cleanup review helpers', () => {
 		expect(r.ok).toBe(true);
 		// one transaction: the rejection is stored and the sequence got shorter by the removed frames
 		expect((H.seq.cleanup as { rejected?: string[] }).rejected).toEqual([rm.fingerprint]);
-		const len = (s: typeof before) =>
-			Math.max(...Object.values(s.clips).map((c) => c.start + c.duration));
+		const len = (s: typeof before) => Math.max(...Object.values(s.clips).map((c) => c.start + c.duration));
 		const removed = b.plan.ranges.reduce((n, x) => n + x.end - x.start, 0);
 		expect(len(before) - len(H.seq)).toBe(removed);
 		// a later analysis keeps the rejected finding without any decision
@@ -95,8 +109,10 @@ describe('cleanup review helpers', () => {
 			mode: 'markers',
 			jlFrames: 0,
 		});
-		expect(cleanupApplyCommands(H.seq.id, b, { reject: [rm.id] }, new Set(), { rememberRejections: false }).map((x) => x.type)).toEqual([
-			'cleanup.apply',
-		]);
+		expect(
+			cleanupApplyCommands(H.seq.id, b, { reject: [rm.id] }, new Set(), { rememberRejections: false }).map(
+				(x) => x.type,
+			),
+		).toEqual(['cleanup.apply']);
 	});
 });

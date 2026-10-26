@@ -1,8 +1,9 @@
 // The golden recording of the Fast preset (spec 14 TC-070): its events (head chatter, an abandoned take, a false start,
 // a filler between pauses, off-script chatter, an in-line restart, a standalone marker, breaths, long pauses, a cough),
 // its script and a 30 fps sequence holding it. Shared by the golden, review and command tests and the UI tests.
-import { Harness, videoAsset } from './helpers.ts';
+
 import type { SynthEvent, SynthRecording } from './cleanup-synth.ts';
+import { Harness, videoAsset } from './helpers.ts';
 
 export const GOLDEN_SCRIPT = [
 	'Hoy vamos a crear un juego de carreras en tres días.',
