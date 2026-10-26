@@ -124,7 +124,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | cutmap | SH-001 `pictureCuts` + MCP `list_cuts` | — | ✅ merged (31 ms on 5,000 clips; 2,588 tests) |
 | styling | SH-003 batch styling commands, linked text styles (SH-002 textStyles/styleId), AS-030…033 multi-clip Properties + Effect Controls N-clips mode + selection helpers + MCP | — | ✅ merged (100-clip e2e: one History entry, one undo) |
 | textrender | SH-004 all strokes, shadow spread, real text measurer, tighter bake crop | — | ✅ merged (Remotion e2e 86/86) |
-| speech | spec 16 (providers, catalogue, downloads, decoding, guards, UI, MCP) + TC-003/TC-004 | — | ✅ merged (CPU-verified; real-NVIDIA check pending a working GPU box) |
+| speech | spec 16 (providers, catalogue, downloads, decoding, guards, UI, MCP) + TC-003/TC-004 | — | ✅ merged (real NVIDIA verified 2026-10-26 on an RTX 4060 Ti: turbo CUDA greedy RTF 0.076 vs CPU 0.354, GPU text = CPU text, GPU-fault → CPU retry, resumable provider download; guidance bug fixed; e43566e7) |
 | voice | TC-001/002 voice-analysis job + derivative + `VoiceAnalysis` contract + MCP `get_voice_analysis` | — | ✅ merged (1 h of audio in 9.4 s on the VM; 253 tests) |
 | proposals | EA-001…004 proposals for new features (policies, review vocabulary, ghosts, anchors) + EA-031 batch commands | — | ✅ merged (1,000 adjustment items in ≈0.5 s, one command) |
 | subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | ✅ merged (1243bcb7; start on cut 98.8 % shorts / 99.8 % long vs user's 59.6 / 30.3 %; e2e subtitles 3/3) |
@@ -157,10 +157,14 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | Build VM (Hetzner cpx51) | $0.44/h | 2026-10-25 17:44 UTC | lifetime 24 h |
 | GTX 1650 (vast.ai) | $0.056/h | minutes | destroyed (insufficient VRAM) |
 | RTX 3060 (vast.ai) | $0.084/h | 2026-10-25 18:23 UTC | destroyed after the CUDA eval (≈ $0.17 total) |
+| RTX 3060 (vast.ai, 2nd) | $0.064/h | 2026-10-26 | provider start failure (CDI), ≈ $0.01 |
+| RTX 4060 Ti (vast.ai) | $0.138/h | 2026-10-26 14:19 UTC | real-CUDA verification, destroyed (≈ $0.06) |
 
 ## 7. Open questions / risks
 - Real-NVIDIA CUDA verification: first new GPU box failed on the provider (host CDI device error); the user approved
-  another box on 2026-10-26 (RTX 4060 Ti) — verification running.
+  another box on 2026-10-26 (RTX 4060 Ti) — verified. Untested on hardware: Windows D3D12 WebGPU, macOS Metal with
+  this code, AMD/Intel GPUs, packaged desktop, distro-packaged CUDA 13. Engine-generated guidance text (e.g. CUDA install
+  guidance) is shown untranslated, like other engine messages.
 - Session rate limit stopped all agents once (resumed from saved state).
 - DirectML DLL licence terms (Windows GPU path); CoreML unusable until the Node binding can cache compiled models.
 - Export cost of ~900–1,200 animated text clips per long video (textperf research) — decides the subtitle export
@@ -194,4 +198,4 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   `REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG_LGPL_ONLY=1`: compositions 157/157, motion 14 (+2 skipped),
   engine 53 (+9 skipped); `pnpm e2e` (LGPL-only, full build): 137 passed, 2 skipped; `pnpm notices --check` current;
   `pnpm ffmpeg:check` all LGPL. User approved (2026-10-26) a new GPU box and a VM replacement; GPU box rented (RTX 4060 Ti,
-  driver 580.173, a different vast.ai host); speech agent running the real-CUDA verification on the integrated code.
+  driver 580.173, a different vast.ai host); speech agent verified real CUDA (e43566e7, box destroyed, ≈ $0.06); full gate re-run on e43566e7.
