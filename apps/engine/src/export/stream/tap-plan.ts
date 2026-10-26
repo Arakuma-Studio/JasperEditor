@@ -5,7 +5,14 @@ import type { OverrideReady } from '../native-ext.ts';
 import { shiftProgram, type TapFrame } from './lowered.ts';
 
 /** A picture of a member: `inputs` + `filter` (ending in a `w × h` RGBA stream) decoded for one frame. */
-export type TapPicture = { w: number; h: number; inputs: string[][]; filter: string };
+export type TapPicture = {
+	w: number;
+	h: number;
+	inputs: string[][];
+	filter: string;
+	/** A PNG that is this picture when it decodes to `w × h` (no scaling): decoded in-process (png.ts). */
+	png?: string;
+};
 
 export type TapMember = {
 	clipId: string;

@@ -10,6 +10,7 @@
 // sub-pixel kernel (`drawLayer`, one tap) or the multi-tap kernel (`drawTaps`, lowered effects). Frames between
 // members are transparent. The stream covers the members' union rectangle over `[g0, g1)`.
 import type { ChildProcess } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import type { Writable } from 'node:stream';
 import { Worker } from 'node:worker_threads';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
@@ -18,6 +19,7 @@ import { decoderArgs } from '../warp/render.ts';
 import { ExportWorkerPool, framePoolSize } from '../worker-pool.ts';
 import { drawLayer, drawTaps } from './kernel.ts';
 import { DECODES_IN_FLIGHT, MAX_TAP_WORKERS, PREFETCH_MEMBERS } from './limits.ts';
+import { decodePngRgba } from './png.ts';
 import { StreamLayerError } from './run.ts';
 import { type TapPicture, type TapStreamPlan, toStreamFrames } from './tap-plan.ts';
 
@@ -76,6 +78,18 @@ async function decodePicture(
 	const bytes = pic.w * pic.h * 4;
 	const buf = new SharedArrayBuffer(bytes);
 	const view = new Uint8Array(buf);
+	if (pic.png) {
+		let px: Uint8Array | null;
+		try {
+			px = await decodePngRgba(await readFile(pic.png), pic.w, pic.h);
+		} catch (e) {
+			throw new StreamLayerError('TOOL_FAILED', `picture ${pic.png}: ${(e as Error).message}`);
+		}
+		if (px) {
+			view.set(px);
+			return buf;
+		}
+	}
 	let off = 0;
 	let stderr = '';
 	const child = ff.spawnRaw(decoderArgs(pic.inputs, pic.filter, 1), {

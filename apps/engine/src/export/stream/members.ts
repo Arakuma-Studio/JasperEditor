@@ -114,6 +114,7 @@ export function stillMember(
 				h: r.h,
 				inputs: [['-i', still.path]],
 				filter: `[0:v:0]scale=${r.w}:${r.h}:${seq.swsFlags},setsar=1,format=rgba`,
+				...(/\.png$/i.test(still.path) ? { png: still.path } : {}),
 			},
 		],
 		frames: Array.from({ length: f1 - f0 }, () => frame),
@@ -147,6 +148,7 @@ export function loweredMember(
 				lv.w === picture.w && lv.h === picture.h
 					? '[0:v:0]format=rgba'
 					: `[0:v:0]format=rgba,scale=${lv.w}:${lv.h}:${seq.swsFlags},format=rgba`,
+			...(lv.w === picture.w && lv.h === picture.h && /\.png$/i.test(still.path) ? { png: still.path } : {}),
 		}));
 		return { pictures, frames };
 	};
