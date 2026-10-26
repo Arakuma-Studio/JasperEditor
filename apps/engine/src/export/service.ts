@@ -1224,6 +1224,9 @@ export class ExportService {
 		}
 		// Pipelined stills the composite opens as inputs are written first.
 		if (graph.waitFor) {
+			ctx.progress(0, {
+				stage: `Waiting for ${graph.waitFor.length} baked graphic${graph.waitFor.length === 1 ? '' : 's'}`,
+			});
 			const ready = await Promise.all(graph.waitFor).catch(async (e) => {
 				await abandon();
 				// Only a failed background bake rejects these.
