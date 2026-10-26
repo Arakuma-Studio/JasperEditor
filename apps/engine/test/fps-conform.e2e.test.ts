@@ -248,6 +248,13 @@ describe.runIf(enabled)(
 					log(
 						`  ${k}: largest patch error vs source R,G ${maxPatchError(means[k]!, SOURCE_PATCHES, [0, 1]).toFixed(2)}, B ${maxPatchError(means[k]!, SOURCE_PATCHES, [2]).toFixed(2)}`,
 					);
+				// Whole frames, both 4:2:0 encodes: BROWSER's PSNR and largest difference (its p99 of 6 is exceeded at this
+				// chart's sharp saturated edges, where Chrome's and swscale's chroma upsampling differ, and by the B
+				// deviation below: recorded in the report, docs/wp-notes/time.md §15).
+				for (const dd of [nr, nh]) {
+					expect(dd.psnr, formatDiff(dd)).toBeGreaterThanOrEqual(36);
+					expect(dd.maxAbs, formatDiff(dd)).toBeLessThanOrEqual(64);
+				}
 				// Hybrid and Remotion are the preview's renderer: the same colour.
 				for (const p of ['hybrid', 'remotion'] as const)
 					expect(maxPatchError(means[p]!, means.preview!), p).toBeLessThanOrEqual(3);
