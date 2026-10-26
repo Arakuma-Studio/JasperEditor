@@ -167,6 +167,22 @@ describe('lowered layers in the preview (spec 13 AS-075)', () => {
 				expect(st.rect[2]).toBeGreaterThanOrEqual(box.width + cp);
 				expect(st.rect[3]).toBeGreaterThanOrEqual(box.height + cp);
 			}
+		// The Canvas 2D taps draw only the part of the capture that holds paint: the box and the text's paint.
+		const cw = Math.ceil(box.width + withPaint.left + withPaint.right);
+		const chh = Math.ceil(box.height + withPaint.top + withPaint.bottom);
+		const p2 = loweredCanvasProgram({
+			clip,
+			props,
+			frame: 20,
+			fps,
+			layout: { padding: { left: withPaint.left, top: withPaint.top }, pxScale: 1, width: cw, height: chh },
+		})!;
+		expect(p2.src).toEqual([
+			Math.floor(withPaint.left - cp),
+			Math.floor(withPaint.top - cp),
+			Math.ceil(withPaint.left + box.width + cp),
+			Math.ceil(withPaint.top + box.height + cp),
+		]);
 		expect(lt.canvas).toEqual([
 			-withPaint.left,
 			-withPaint.top,

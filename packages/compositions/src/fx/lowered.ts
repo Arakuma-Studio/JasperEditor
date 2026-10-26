@@ -12,6 +12,7 @@ import {
 	loweredLayerTaps,
 	type RenderVisualClip,
 	type ResolvedLayerProps,
+	textContentPad,
 } from '@jasper/project';
 import { createEffect } from 'remotion';
 
@@ -19,6 +20,11 @@ export type FxLoweredParams = {
 	key: string;
 	/** `drawTaps` program in canvas px: `[n, wsum, …taps]`, a tap = w, map (6), clip (4), nStages, stages × 10. */
 	prog: number[];
+	/**
+	 * The part of the captured picture that can hold paint (canvas px `[x0, y0, x1, y1]`: the box and the text's own
+	 * paint, not the effects' padding, which is transparent before the effects): the only part each tap draws.
+	 */
+	src: [number, number, number, number];
 };
 
 /**
@@ -51,7 +57,17 @@ export function loweredCanvasProgram(o: {
 		prog.push(t.w, ...map, 0, 0, o.layout.width, o.layout.height, t.stages.length);
 		for (const st of t.stages) prog.push(...composeAffine(st.map, toLayer), ...st.rect);
 	}
-	return { key: prog.map((x) => Math.round(x * 1e4) / 1e4).join(','), prog };
+	// The text's paint pads the canvas by whole pixels (fx/plan.ts `planLayerFx` `contentPadding`).
+	const cp = 'text' in o.clip.source ? Math.ceil(Math.max(0, textContentPad(o.clip.source.text))) : 0;
+	const W = o.layout.width;
+	const H = o.layout.height;
+	const src: [number, number, number, number] = [
+		Math.max(0, Math.floor((o.layout.padding.left - cp) * s)),
+		Math.max(0, Math.floor((o.layout.padding.top - cp) * s)),
+		Math.min(W, Math.ceil((o.layout.padding.left + o.props.box.width + cp) * s)),
+		Math.min(H, Math.ceil((o.layout.padding.top + o.props.box.height + cp) * s)),
+	];
+	return { key: `${prog.map((x) => Math.round(x * 1e4) / 1e4).join(',')}|${src.join(',')}`, prog, src };
 }
 
 /** Canvas 2D `setTransform` arguments of an affine `[m0…m5]` (x' = m0·x + m1·y + m2, y' = m3·x + m4·y + m5). */
@@ -106,7 +122,9 @@ export const fxLowered = createEffect<FxLoweredParams, null>({
 			ctx.rect(clip[0]!, clip[1]!, clip[2]! - clip[0]!, clip[3]! - clip[1]!);
 			ctx.clip();
 			ctx.globalAlpha = Math.min(1, w / wsum);
-			ctx.drawImage(source, 0, 0);
+			const [sx0, sy0, sx1, sy1] = params.src ?? [0, 0, width, height];
+			if (sx1 > sx0 && sy1 > sy0)
+				ctx.drawImage(source, sx0, sy0, sx1 - sx0, sy1 - sy0, sx0, sy0, sx1 - sx0, sy1 - sy0);
 			ctx.restore();
 		}
 	},
