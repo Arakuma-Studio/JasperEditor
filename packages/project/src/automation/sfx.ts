@@ -166,7 +166,7 @@ export function sfxCommands(o: {
 	cueRef: string;
 	clipRef: string;
 	mediaId: string;
-	kind: 'cut' | 'move';
+	kind: 'cut' | 'move' | 'emphasis';
 	type: string;
 	align: 'peak' | 'start';
 	window: { start: number; end: number };
