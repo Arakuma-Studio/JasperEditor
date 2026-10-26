@@ -222,10 +222,10 @@ export async function streamTaps(
 	const onAbort = () => fail(new StreamLayerError('JOB_CANCELLED', 'cancelled'));
 	opts.signal.addEventListener('abort', onAbort, { once: true });
 	sink.on('error', (e) => fail(new StreamLayerError('TOOL_FAILED', `layer stream: ${e.message}`)));
+	let writeChain = Promise.resolve();
 	try {
 		// Frame j's draw (in order of j), written once it is done; at most `slots` frames in flight.
 		const inflight: Promise<{ slot: number | null }>[] = [];
-		let writeChain = Promise.resolve();
 		let mi = 0;
 		for (let j = 0; j < total; j++) {
 			if (failed) throw failed;
@@ -288,9 +288,16 @@ export async function streamTaps(
 		}
 		await writeChain;
 		sink.end();
+	} catch (e) {
+		// Stop the writes still chained (they check `failed`) before the pool's close rejects the draws they await.
+		fail(e);
+		throw e;
 	} finally {
 		opts.signal.removeEventListener('abort', onAbort);
 		pictures.clear();
+		// The chain's last link may have no handler yet (the loop stopped between links): its rejection is this
+		// stream's failure, already thrown — never an unhandled rejection (the engine would exit).
+		writeChain.catch(() => undefined);
 		await pool.close();
 	}
 }
