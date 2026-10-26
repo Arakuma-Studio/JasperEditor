@@ -208,8 +208,8 @@ describe('style recipes (EA-010, EA-011)', () => {
 		]);
 		const kits = s.find((x) => x.stage === 'decorate-cuts') as { params: Record<string, unknown> };
 		expect(kits.params.sfx).toEqual({ type: 'whoosh', packId: 'pk1' });
-		expect((s.find((x) => x.stage === 'reactions') as { params: { assets: unknown } }).params.assets).toEqual({ bin: 'Reactions' });
-		expect((s.find((x) => x.stage === 'music') as { params: { assets: unknown } }).params.assets).toEqual({ bin: 'Music' });
+		expect((s.find((x) => x.stage === 'reactions') as { params: Record<string, unknown> }).params.assets).toEqual({ bin: 'Reactions' });
+		expect((s.find((x) => x.stage === 'music') as { params: Record<string, unknown> }).params.assets).toEqual({ bin: 'Music' });
 		expect(s.find((x) => x.stage === 'stingers')).toMatchObject({ enabled: true, params: { sound: 'generated' } });
 	});
 });
