@@ -1,6 +1,7 @@
 import { produce } from 'immer';
 import { z } from 'zod';
 import { normalizeCaptionData } from '../captions/model.ts';
+import { normalizeSubtitleClips } from '../captions/subtitles/normalize.ts';
 import { looksLikeId } from '../ids.ts';
 import { checkTransactionInvariants } from '../invariants-incremental.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -169,6 +170,8 @@ function applyTransactionUnchecked(
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);
 			});
+			// spec 13 AS-006 / AS-020: subtitle text clips — re-time edited words, re-anchor template keys, highlight.
+			normalizeSubtitleClips(draft, () => ctx.ids.next('kf'));
 			// A caption transcript belongs to one clip (splits, duplicates and pastes get copies).
 			normalizeCaptionData(draft, () => ctx.ids.next('trs'));
 			// Sources whose last reference disappeared (e.g. a solid's color matte) are collected (INV-014).

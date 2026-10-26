@@ -4,7 +4,7 @@
 // view returns to Edit and the Jobs panel shows progress (completion toast with Download: ProjectLifecycle).
 import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import { defaultCreditsSidecar, type Sequence, soundCredits } from '@jasper/project';
+import { captionGroupsOf, defaultCreditsSidecar, type Sequence, soundCredits } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, IconButton, registerModal, TimecodeText } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -105,6 +105,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [colorChoice, setColorChoice] = useState<ExportColorChoice>(
 		remembered?.color ?? DEFAULT_COLOR_CHOICE,
 	);
+	// spec 13 AS-005: subtitle groups of text clips export as subtitle files / streams like caption tracks
+	const subtitleGroups = seq ? Object.values(captionGroupsOf(seq)) : [];
 	const [captionChoice, setCaptionChoice] = useState<CaptionExportChoice>(
 		remembered?.captions ?? DEFAULT_CAPTION_CHOICE,
 	);
@@ -696,7 +698,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							Copy untouched H.264 sources
 						</label>
 					</Field>
-					{seq?.captionTracks.length ? (
+					{seq?.captionTracks.length || subtitleGroups.length ? (
 						<div
 							className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2"
 							data-testid="export-captions"
@@ -722,7 +724,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 										data-testid="export-captions-embed"
 									/>
 									{chosenEncoder?.container === 'webm' ? 'WebVTT' : 'mov_text'} subtitle streams (every
-									caption track)
+									caption track and subtitle group)
 								</label>
 							</Field>
 							<Field label="Sidecar">
@@ -755,12 +757,22 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 										onChange={(e) =>
 											setCaptionChoice({
 												...captionChoice,
-												sidecarTracks: e.target.value === 'all' ? 'all' : 'active',
+												sidecarTracks:
+													e.target.value === 'all'
+														? 'all'
+														: e.target.value.startsWith('cgp_')
+															? (e.target.value as `cgp_${string}`)
+															: 'active',
 											})
 										}
 									>
 										<option value="active">Active track</option>
 										<option value="all">All tracks</option>
+										{subtitleGroups.map((g) => (
+											<option key={g.id} value={g.id}>
+												{g.name}
+											</option>
+										))}
 									</select>
 								</div>
 							</Field>

@@ -45,6 +45,13 @@ describe('Edge Feather profile (cropEdgeCoverage)', () => {
 		expect(cropEdgeCoverage(20, 40)).toBeCloseTo(0.5, 12);
 	});
 
+	it('is exactly 1 past the ramp and exactly 0 outside the edge (regression: rounding left 0.9999999999999996)', () => {
+		expect(cropEdgeCoverage(3.8531058409266046, 0)).toBe(1);
+		expect(cropEdgeCoverage(1e6 + 0.3, 0)).toBe(1);
+		expect(cropEdgeCoverage(40.5, 40)).toBe(1);
+		expect(cropEdgeCoverage(-0.5, 40)).toBe(0);
+	});
+
 	it('stays in [0, 1], is monotone in the distance, falls with the feather and is continuous at feather 0', () => {
 		fc.assert(
 			fc.property(

@@ -4,6 +4,7 @@
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
 import { type Draft, isDraft, original } from 'immer';
 import { readEdgeFades } from '../audio-fade.ts';
+import { splitCaptionWords } from '../captions/subtitles/clips.ts';
 import { clipsInRange } from '../derive/index.ts';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
@@ -266,6 +267,9 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	seq.clips[right.id] = right as DClip;
 	// the left part keeps the In animator, the right part the Out animator.
 	splitTextAnimation(clip, seq.clips[right.id]!);
+	// spec 13 AS-006: a subtitle's words go to the piece holding their midpoint, each piece keeps its own text.
+	if (clip.kind === 'text' && (clip as { caption?: unknown }).caption !== undefined)
+		splitCaptionWords(clip as never, seq.clips[right.id] as never, r);
 	if (clip.groupId && seq.groups[clip.groupId]) seq.groups[clip.groupId]!.members.push(right.id);
 	for (const t of valuesOf(seq.transitions)) {
 		if (t.outgoingClipId === clip.id) seq.transitions[t.id]!.outgoingClipId = right.id;

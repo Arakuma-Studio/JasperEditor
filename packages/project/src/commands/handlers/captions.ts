@@ -71,7 +71,7 @@ function setActive(seq: DSeq, id: string | null): void {
 	(seq as { activeCaptionTrackId?: string | null }).activeCaptionTrackId = id;
 }
 
-function addCaptionTrack(
+export function addCaptionTrack(
 	doc: DDoc,
 	seq: DSeq,
 	h: HandlerContext,
@@ -94,7 +94,7 @@ function addCaptionTrack(
 }
 
 /** A caption track for new captions: a ref, `"new"`, or the active track (created when there is none). */
-function targetCaptionTrack(
+export function targetCaptionTrack(
 	doc: DDoc,
 	seq: DSeq,
 	ref: string | undefined,
@@ -145,7 +145,7 @@ function plainName(text: string): string {
 }
 
 /** A block to place as one caption clip: sequence frames and words in sequence time (flicks). */
-type PlacedBlock = {
+export type PlacedBlock = {
 	start: number;
 	end: number;
 	words: Array<Omit<TranscriptWord, 'speaker'> & { speakerName: string | null }>;
@@ -157,7 +157,7 @@ type PlacedBlock = {
  * Places caption clips on a caption track (overwrite: captions under them are cut), each owning a new transcript
  * whose words are in clip content time starting at CAPTION_CONTENT_ORIGIN. Returns the clip ids.
  */
-function placeCaptionClips(
+export function placeCaptionClips(
 	doc: DDoc,
 	seq: DSeq,
 	track: DTrack,

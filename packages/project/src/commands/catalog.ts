@@ -40,6 +40,7 @@ import { soundMixHandlers } from './handlers/sound-mix.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
+import { SUBTITLES_OWNER, subtitleHandlers } from './handlers/subtitles.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
@@ -85,6 +86,7 @@ export type CommandOwner =
 	| 'keyframe-ease'
 	| 'sound-design'
 	| 'text-styles'
+	| 'subtitles'
 	| 'edit-automation'
 	| 'transcript-cleanup';
 
@@ -405,6 +407,17 @@ const LABELS: Record<CommandType, string> = {
 	'textStyle.apply': 'Apply Text Style',
 	'textStyle.detach': 'Detach From Text Style',
 	'textStyle.reset': 'Reset to Text Style',
+	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
+	'captions.generate': 'Create Subtitles',
+	'captions.regenerate': 'Regenerate Subtitles',
+	'captions.alignToCuts': 'Align Subtitles to Cuts',
+	'captions.convert': 'Convert Subtitles',
+	'captions.updateGroup': 'Subtitle Group Settings',
+	'captions.deleteGroup': 'Delete Subtitle Group',
+	'subtitleTemplate.save': 'Save as Template',
+	'subtitleTemplate.add': 'Add Subtitle Template',
+	'subtitleTemplate.delete': 'Delete Subtitle Template',
+	'subtitleTemplate.apply': 'Apply Subtitle Template',
 	'clip.addAdjustmentBatch': 'New Adjustment Layers',
 	'keyframe.addBatch': 'Add Keyframes',
 	'cleanup.apply': 'Clean Up Voice',
@@ -456,6 +469,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundMixHandlers, SOUND_DESIGN_OWNER],
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
 	[textStyleHandlers, TEXT_STYLE_OWNER],
+	[subtitleHandlers, SUBTITLES_OWNER],
 	[batchHandlers, BATCH_OWNER],
 	[cleanupHandlers, CLEANUP_OWNER],
 ];
@@ -496,6 +510,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === EASE_OWNER ||
 				owner === SOUND_DESIGN_OWNER ||
 				owner === TEXT_STYLE_OWNER ||
+				owner === SUBTITLES_OWNER ||
 				owner === BATCH_OWNER ||
 				owner === CLEANUP_OWNER
 					? 'M3'

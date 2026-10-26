@@ -95,6 +95,8 @@ export * from './sound/proposal-draft.ts';
 export * from './sound/repair.ts';
 export * from './sound/variant.ts';
 export * from './speech/index.ts';
+// cleanup/index.ts has its own `transcriptSegments` (segments as the cleanup reads them); the package name is speech's.
+export { transcriptSegments } from './speech/index.ts';
 export * from './structure/index.ts';
 export * from './text-animations.ts';
 export * from './text-animators/index.ts';
