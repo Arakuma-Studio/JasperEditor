@@ -12,8 +12,8 @@ import {
 	type CleanupScope,
 	type CleanupVoice,
 	type Command,
-	FLICKS_PER_SECOND,
 	type FindingKind,
+	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	isAccepted,
 	type ProjectDocument,
@@ -169,7 +169,7 @@ export function findingFrames(
 	const F = flicksPerFrame(seq.settings.frameRate);
 	for (const id of m.clipIds) {
 		const c = seq.clips[id];
-		if (!c || c.kind !== 'audio') continue;
+		if (c?.kind !== 'audio') continue;
 		const mediaEnd = c.sourceIn + c.duration * F;
 		if (f.range.end <= c.sourceIn || f.range.start >= mediaEnd) continue;
 		const a = Math.max(f.range.start, c.sourceIn);
@@ -523,14 +523,18 @@ export function overlayBands(
 	analysis: CleanupAnalysis,
 	voiceOf: (mediaId: string, stream: number) => CleanupVoice | null,
 ): OverlayBands {
-	const cuts: OverlayBand[] = analysis.plan.ranges.map((r) => ({ trackId: null, start: r.start, end: r.end }));
+	const cuts: OverlayBand[] = analysis.plan.ranges.map((r) => ({
+		trackId: null,
+		start: r.start,
+		end: r.end,
+	}));
 	const pauses: OverlayBand[] = [];
 	const padding: OverlayBand[] = [];
 	const F = flicksPerFrame(seq.settings.frameRate);
 	const minRun = Math.max(1, Math.round(KEPT_PAUSE_MIN_S * 100));
 	for (const k of analysis.plan.kept) {
 		const c = seq.clips[k.clipId];
-		if (!c || c.kind !== 'audio') continue;
+		if (c?.kind !== 'audio') continue;
 		const voice = voiceOf(c.mediaId, c.channels.streamIndex);
 		if (!voice || voice.frameCount === 0) continue;
 		// 10 ms voice frames of the piece
@@ -551,7 +555,8 @@ export function overlayBands(
 			continue;
 		}
 		if (first > a) padding.push({ trackId: c.trackId, start: k.start, end: Math.min(k.end, toSeq(first)) });
-		if (last + 1 < b) padding.push({ trackId: c.trackId, start: Math.max(k.start, toSeq(last + 1)), end: k.end });
+		if (last + 1 < b)
+			padding.push({ trackId: c.trackId, start: Math.max(k.start, toSeq(last + 1)), end: k.end });
 		let run = -1;
 		for (let i = first; i <= last + 1; i++) {
 			const speech = i > last || voice.classes[i] === 2;
@@ -593,7 +598,13 @@ export function reasonText(f: CleanupFinding): string {
 		case 'retake':
 			return p.kept !== undefined
 				? p.line !== undefined
-					? t('Earlier take “{0}” of script line {1} ({2} takes; keeping “{3}”)', text, p.line, p.takes, p.kept)
+					? t(
+							'Earlier take “{0}” of script line {1} ({2} takes; keeping “{3}”)',
+							text,
+							p.line,
+							p.takes,
+							p.kept,
+						)
 					: t('Earlier take “{0}” ({1} takes; keeping “{2}”)', text, p.takes, p.kept)
 				: t('Earlier take “{0}”', text);
 		case 'stutter':

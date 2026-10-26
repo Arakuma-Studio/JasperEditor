@@ -3,12 +3,26 @@
 // findings left for review, lexical fillers lighter, pauses / breaths / voice without words as small chips where
 // they sit. A click selects the finding (and seeks). Virtualised: the words are cut into blocks (paragraphs of at
 // most 80 words) and only the blocks in view are rendered, measured as they come into view.
-import { type CleanupFinding, flicksPerFrame, paragraphs, type Sequence, sequenceWords } from '@jasper/project';
+import {
+	type CleanupFinding,
+	readSequenceCleanup,
+	flicksPerFrame,
+	paragraphs,
+	type Sequence,
+	sequenceWords,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../../i18n/runtime.ts';
 import { type CleanupUiState, cleanupFor } from './controller.ts';
-import { findingAccepted, inlineFindings, KIND_COLOR, KIND_LABELS, mediaOfFinding, wordMarks } from './model.ts';
+import {
+	findingAccepted,
+	inlineFindings,
+	KIND_COLOR,
+	KIND_LABELS,
+	mediaOfFinding,
+	wordMarks,
+} from './model.ts';
 
 const S = 705_600_000;
 const BLOCK_WORDS = 80;
@@ -23,8 +37,11 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 		return sequenceWords(base, seq).filter((w) => clips.has(w.clipId));
 	}, [base, seq, a.plan.clipIds]);
 	const live = session.getCommitted().sequences[seq.id] as Sequence | undefined;
-	const remembered = useMemo(() => c.rememberedRejections(), [c, live]);
-	const marks = useMemo(() => wordMarks(words, seq, a, st.decisions, remembered), [words, seq, a, st.decisions, remembered]);
+	const remembered = useMemo(() => new Set(live ? (readSequenceCleanup(live).rejected ?? []) : []), [live]);
+	const marks = useMemo(
+		() => wordMarks(words, seq, a, st.decisions, remembered),
+		[words, seq, a, st.decisions, remembered],
+	);
 	const inline = useMemo(() => inlineFindings(words, seq, a), [words, seq, a]);
 	const blocks = useMemo(() => {
 		const out: Array<[number, number]> = [];
@@ -87,7 +104,11 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 						className={`cursor-pointer rounded-[2px] px-[1px] ${currentWords.has(i) ? 'bg-pr-selected text-pr-strong' : ''} ${mk.removed ? 'text-pr-muted' : mk.lexical ? 'text-pr-muted opacity-70' : 'text-pr-text'}`}
 						style={
 							mk.removed
-								? { textDecorationLine: 'line-through', textDecorationColor: color, textDecorationThickness: '2px' }
+								? {
+										textDecorationLine: 'line-through',
+										textDecorationColor: color,
+										textDecorationThickness: '2px',
+									}
 								: mk.review
 									? {
 											textDecorationLine: 'underline',
@@ -117,7 +138,9 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 	};
 
 	if (!words.length)
-		return <p className="m-0 px-2 py-2 text-pr-small text-pr-muted">{t('No transcribed words in the scope')}</p>;
+		return (
+			<p className="m-0 px-2 py-2 text-pr-small text-pr-muted">{t('No transcribed words in the scope')}</p>
+		);
 	return (
 		<VirtualBlocks
 			count={blocks.length}
@@ -177,6 +200,7 @@ function VirtualBlocks(p: {
 	const tops: number[] = new Array(p.count + 1);
 	tops[0] = 0;
 	for (let i = 0; i < p.count; i++) tops[i + 1] = tops[i]! + (heights.current[i] ?? p.estimate);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only a new block to reveal scrolls
 	useEffect(() => {
 		const el = ref.current;
 		if (!el || p.reveal < 0 || p.reveal >= p.count) return;
@@ -184,7 +208,6 @@ function VirtualBlocks(p: {
 		const bottom = tops[p.reveal + 1]!;
 		if (top < el.scrollTop || bottom > el.scrollTop + el.clientHeight)
 			el.scrollTop = Math.max(0, top - el.clientHeight / 3);
-		// biome-ignore lint/correctness/useExhaustiveDependencies: only a new block to reveal scrolls
 	}, [p.reveal]);
 	const overscan = 400;
 	const from = view.top - overscan;

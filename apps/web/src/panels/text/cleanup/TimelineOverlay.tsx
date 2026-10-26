@@ -6,7 +6,7 @@ import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { useMemo } from 'react';
 import { t } from '../../../i18n/runtime.ts';
-import { type TrackAreaLayout, rowOf } from '../../timeline/model/layout.ts';
+import { rowOf, type TrackAreaLayout } from '../../timeline/model/layout.ts';
 import { frameToX, type Viewport } from '../../timeline/model/viewport.ts';
 import { cleanupFor } from './controller.ts';
 import { type OverlayBand, overlayBands } from './model.ts';
@@ -28,9 +28,14 @@ export function CleanupTimelineOverlay(p: {
 		c.store,
 		(s) => ({ analysis: s.analysis, mode: s.mode, seqId: s.sequenceId, stale: s.stale, phase: s.phase }),
 		(a, b) =>
-			a.analysis === b.analysis && a.mode === b.mode && a.seqId === b.seqId && a.stale === b.stale && a.phase === b.phase,
+			a.analysis === b.analysis &&
+			a.mode === b.mode &&
+			a.seqId === b.seqId &&
+			a.stale === b.stale &&
+			a.phase === b.phase,
 	);
-	const active = st.phase === 'review' && st.mode === 'cleanup' && !st.stale && st.seqId === p.seq.id && !!st.analysis;
+	const active =
+		st.phase === 'review' && st.mode === 'cleanup' && !st.stale && st.seqId === p.seq.id && !!st.analysis;
 	const bands = useMemo(
 		() => (active && st.analysis ? overlayBands(p.seq, st.analysis, (m, s) => c.voiceOf(m, s)) : null),
 		[active, st.analysis, p.seq, c],
@@ -52,7 +57,13 @@ export function CleanupTimelineOverlay(p: {
 			y = row.y;
 			h = row.height;
 		}
-		return <div key={key} className="absolute" style={{ left: x, top: y, width: w, height: h, background: color }} />;
+		return (
+			<div
+				key={key}
+				className="absolute"
+				style={{ left: x, top: y, width: w, height: h, background: color }}
+			/>
+		);
 	};
 	return (
 		<div

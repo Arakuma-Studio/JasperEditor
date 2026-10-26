@@ -106,7 +106,10 @@ function Toolbar(p: {
 	const presetId = stored.settings?.presetId ?? 'builtin.fast';
 	const edited = !!stored.settings?.overrides && Object.keys(stored.settings.overrides).length > 0;
 	const presets = [
-		...BUILTIN_CLEANUP_PRESETS.map((x) => ({ id: x.id, name: x.id === 'builtin.fast' ? t('Fast') : t('Natural') })),
+		...BUILTIN_CLEANUP_PRESETS.map((x) => ({
+			id: x.id,
+			name: x.id === 'builtin.fast' ? t('Fast') : t('Natural'),
+		})),
 		...p.st.userPresets.map((x) => ({ id: x.id, name: x.name })),
 	];
 	if (!presets.some((x) => x.id === presetId)) presets.push({ id: presetId, name: t('Missing preset') });
@@ -202,7 +205,10 @@ function Progress({ st, onCancel }: { st: CleanupUiState; onCancel(): void }) {
 
 function Intro({ busy, otherSeq }: { busy: boolean; otherSeq: boolean }) {
 	return (
-		<div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-pr-small text-pr-muted" data-testid="text.cleanup.intro">
+		<div
+			className="min-h-0 flex-1 overflow-auto px-3 py-2 text-pr-small text-pr-muted"
+			data-testid="text.cleanup.intro"
+		>
 			{otherSeq ? (
 				<p className="m-0 mb-2 text-pr-text">
 					The review in progress belongs to another sequence: open it to continue, or Analyze this one.
@@ -217,8 +223,8 @@ function Intro({ busy, otherSeq }: { busy: boolean; otherSeq: boolean }) {
 			</p>
 			{busy ? null : (
 				<p className="m-0">
-					Choose a preset (Fast = tight jump cuts, Natural = calmer pacing), attach the script if you have one, then
-					Analyze.
+					Choose a preset (Fast = tight jump cuts, Natural = calmer pacing), attach the script if you have
+					one, then Analyze.
 				</p>
 			)}
 		</div>
@@ -243,7 +249,12 @@ function Review({ session, seq, st }: { session: EditorSession; seq: Sequence; s
 	const blocker = c.applyBlocker();
 	const apply = () => {
 		const r = c.apply();
-		if (r.ok) toast({ kind: 'success', title: t('Clean Up applied'), detail: t('Edit ▸ Undo reverts it in one step.') });
+		if (r.ok)
+			toast({
+				kind: 'success',
+				title: t('Clean Up applied'),
+				detail: t('Edit ▸ Undo reverts it in one step.'),
+			});
 		else toast({ kind: 'warning', title: t('Clean Up Voice'), detail: r.reason });
 	};
 	const play = (which: 'result' | 'removed') => {
@@ -323,14 +334,20 @@ function Review({ session, seq, st }: { session: EditorSession; seq: Sequence; s
 				</Button>
 			</div>
 			{st.stale ? (
-				<p className="m-0 shrink-0 border-b border-pr-border-subtle bg-pr-panel-alt px-2 py-1 text-pr-small text-pr-warning" role="status" data-testid="text.cleanup.stale">
+				<p
+					className="m-0 shrink-0 border-b border-pr-border-subtle bg-pr-panel-alt px-2 py-1 text-pr-small text-pr-warning"
+					role="status"
+					data-testid="text.cleanup.stale"
+				>
 					The sequence changed since the analysis: Analyze again before applying.
 				</p>
 			) : null}
 			<Notes st={st} />
 			{wide ? (
 				<div className="flex min-h-0 flex-1">
-					<div className="flex min-h-0 w-[45%] min-w-0 flex-col border-r border-pr-border-subtle">{findings}</div>
+					<div className="flex min-h-0 w-[45%] min-w-0 flex-col border-r border-pr-border-subtle">
+						{findings}
+					</div>
 					<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 						{tabs(
 							[
@@ -385,7 +402,11 @@ function Stats({ st }: { st: CleanupUiState }) {
 			data-testid="text.cleanup.stats"
 			data-planning={st.planning ? 'true' : undefined}
 		>
-			<Stat label={t('Length')} value={`${clockText(s.inputDuration)} → ${clockText(s.outputDuration)}`} testId="text.cleanup.stat.length" />
+			<Stat
+				label={t('Length')}
+				value={`${clockText(s.inputDuration)} → ${clockText(s.outputDuration)}`}
+				testId="text.cleanup.stat.length"
+			/>
 			<Stat label={t('Cuts')} value={st.analysis!.plan.ranges.length} testId="text.cleanup.stat.cuts" />
 			<Stat label={t('Cuts / min')} value={s.cutsPerMinute.toFixed(1)} testId="text.cleanup.stat.cpm" />
 			<Stat
@@ -400,7 +421,11 @@ function Stats({ st }: { st: CleanupUiState }) {
 			/>
 			{removed.map((k) => (
 				<span key={k} className="flex items-center gap-1 whitespace-nowrap text-pr-muted">
-					<span className="inline-block h-2 w-2 rounded-pr-pill" style={{ background: KIND_COLOR[k] }} aria-hidden="true" />
+					<span
+						className="inline-block h-2 w-2 rounded-pr-pill"
+						style={{ background: KIND_COLOR[k] }}
+						aria-hidden="true"
+					/>
 					{KIND_LABELS[k]} {(s.removedByKind[k] ?? 0).toFixed(1)} s
 				</span>
 			))}
@@ -421,14 +446,22 @@ function Notes({ st }: { st: CleanupUiState }) {
 			),
 		);
 	if (a.plan.skipped.length)
-		lines.push(t('{0} fillers are kept because their cut would land on loud sound (avoid harsh cuts)', a.plan.skipped.length));
+		lines.push(
+			t(
+				'{0} fillers are kept because their cut would land on loud sound (avoid harsh cuts)',
+				a.plan.skipped.length,
+			),
+		);
 	if (a.script) {
 		const unsaid = a.script.filter((l) => !l.said).length;
 		lines.push(t('Script: {0} of {1} lines said', a.script.length - unsaid, a.script.length));
 	}
 	if (!lines.length) return null;
 	return (
-		<ul className="m-0 shrink-0 list-none border-b border-pr-border-subtle px-2 py-[2px] text-pr-small text-pr-muted" data-testid="text.cleanup.notes">
+		<ul
+			className="m-0 shrink-0 list-none border-b border-pr-border-subtle px-2 py-[2px] text-pr-small text-pr-muted"
+			data-testid="text.cleanup.notes"
+		>
 			{lines.map((l) => (
 				<li key={l}>{l}</li>
 			))}

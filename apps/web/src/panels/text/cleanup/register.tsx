@@ -14,7 +14,7 @@ function CleanupChip() {
 
 function CleanupChipBody({ session }: { session: EditorSession }) {
 	const active = useStoreSelector(derivedPreviewFor(session).store, (s) => s.active);
-	if (!active || !active.kind.startsWith('cleanup.')) return null;
+	if (!active?.kind.startsWith('cleanup.')) return null;
 	return (
 		<div className="absolute top-2 right-2 z-10" data-testid="cleanup-preview-chip">
 			<span
@@ -42,5 +42,10 @@ let done = false;
 export function registerCleanupUi(): void {
 	if (done) return;
 	done = true;
-	programOverlays.register({ id: 'cleanup.previewChip', active: () => true, component: CleanupChip, order: 92 });
+	programOverlays.register({
+		id: 'cleanup.previewChip',
+		active: () => true,
+		component: CleanupChip,
+		order: 92,
+	});
 }

@@ -32,8 +32,10 @@ function setup() {
 	return { session, seqId };
 }
 
-const seqEnd = (doc: { sequences: Record<string, { clips: Record<string, { start: number; duration: number }> }> }, id: string) =>
-	Math.max(...Object.values(doc.sequences[id]!.clips).map((c) => c.start + c.duration));
+const seqEnd = (
+	doc: { sequences: Record<string, { clips: Record<string, { start: number; duration: number }> }> },
+	id: string,
+) => Math.max(...Object.values(doc.sequences[id]!.clips).map((c) => c.start + c.duration));
 
 describe('derived preview', () => {
 	it('plays a derived document without touching the session, its History or dirty state', () => {

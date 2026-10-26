@@ -2,9 +2,9 @@
 // current finding highlighted and kept in view; virtualised (fixed row heights: only the rows in view are in the DOM,
 // so an hour of speech with thousands of findings scrolls freely). Keyboard: the Text panel's Clean Up commands
 // (↑ ↓ move, Enter accept, Backspace reject, Shift+Enter / Shift+Backspace the whole kind, Space ±1 s preview).
-import type { CleanupFinding, FindingKind, Sequence } from '@jasper/project';
+import { type CleanupFinding, type FindingKind, readSequenceCleanup, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../../i18n/runtime.ts';
 import { type CleanupUiState, cleanupFor } from './controller.ts';
 import {
@@ -28,10 +28,18 @@ function metrics(): { header: number; row: number } {
 	return { header: Math.round(rem * 2), row: Math.round(rem * 2.75) };
 }
 
-export function FindingsList({ session, seq, st }: { session: EditorSession; seq: Sequence; st: CleanupUiState }) {
+export function FindingsList({
+	session,
+	seq,
+	st,
+}: {
+	session: EditorSession;
+	seq: Sequence;
+	st: CleanupUiState;
+}) {
 	const c = cleanupFor(session);
 	const a = st.analysis!;
-	const remembered = useMemo(() => c.rememberedRejections(), [c, seq]);
+	const remembered = useMemo(() => new Set(readSequenceCleanup(seq).rejected ?? []), [seq]);
 	const groups = useMemo(() => groupFindings(a, st.decisions, remembered), [a, st.decisions, remembered]);
 	const [collapsed, setCollapsed] = useState<ReadonlySet<FindingKind>>(new Set());
 	const m = useMemo(metrics, []);
@@ -79,18 +87,16 @@ export function FindingsList({ session, seq, st }: { session: EditorSession; seq
 			ref={ref}
 			className="relative min-h-0 flex-1 overflow-auto"
 			onScroll={(e) => setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}
-			role="list"
-			aria-label="Clean Up findings"
 			data-testid="text.cleanup.findings"
 		>
-			<div className="relative" style={{ height: layout.total }}>
+			<ul className="relative m-0 list-none p-0" style={{ height: layout.total }} aria-label="Clean Up findings">
 				{shown.map((e) => {
 					if (e.type === 'header') {
 						const g = e.group;
 						const kindOn = st.decisions.acceptKinds.includes(g.kind);
 						const kindOff = st.decisions.rejectKinds.includes(g.kind);
 						return (
-							<div
+							<li
 								key={`h-${g.kind}`}
 								className="absolute inset-x-0 flex items-center gap-1 border-b border-pr-border-subtle bg-pr-panel-alt px-2 text-pr-small"
 								style={{ top: e.top, height: layout.header }}
@@ -110,9 +116,16 @@ export function FindingsList({ session, seq, st }: { session: EditorSession; seq
 									aria-expanded={!collapsed.has(g.kind)}
 								>
 									<span aria-hidden="true">{collapsed.has(g.kind) ? '▸' : '▾'}</span>
-									<span className="inline-block h-2 w-2 shrink-0 rounded-pr-pill" style={{ background: KIND_COLOR[g.kind] }} aria-hidden="true" />
+									<span
+										className="inline-block h-2 w-2 shrink-0 rounded-pr-pill"
+										style={{ background: KIND_COLOR[g.kind] }}
+										aria-hidden="true"
+									/>
 									<span className="truncate">{KIND_LABELS[g.kind]}</span>
-									<span className="pr-tabular font-normal text-pr-muted" data-testid={`text.cleanup.kind.${g.kind}.count`}>
+									<span
+										className="pr-tabular font-normal text-pr-muted"
+										data-testid={`text.cleanup.kind.${g.kind}.count`}
+									>
 										{t('{0} of {1} cut', g.accepted, g.findings.length)}
 									</span>
 								</button>
@@ -136,45 +149,62 @@ export function FindingsList({ session, seq, st }: { session: EditorSession; seq
 								>
 									Keep all
 								</button>
-							</div>
+							</li>
 						);
 					}
 					const f = e.finding;
 					const on = findingAccepted(f, st.decisions, remembered);
-					const item = st.decisions.accept.includes(f.id) ? 'accept' : st.decisions.reject.includes(f.id) ? 'reject' : null;
+					const item = st.decisions.accept.includes(f.id)
+						? 'accept'
+						: st.decisions.reject.includes(f.id)
+							? 'reject'
+							: null;
 					const current = st.current === f.id;
 					const skipped = a.plan.skipped.some((s) => s.findingId === f.id);
 					return (
-						// biome-ignore lint/a11y/useKeyWithClickEvents: the list's keys are the Text panel's Clean Up commands (↑ ↓ Enter Backspace Space)
-						<div
+						<li
 							key={f.id}
 							id={`cleanup-finding-${f.id}`}
-							role="listitem"
 							aria-current={current ? 'true' : undefined}
 							aria-setsize={layout.order.length}
 							aria-posinset={e.position + 1}
 							className={`absolute inset-x-0 flex items-center gap-1 border-b border-pr-border-subtle px-2 text-pr-small ${current ? 'bg-pr-selected' : 'hover:bg-pr-hover'}`}
 							style={{ top: e.top, height: layout.row }}
-							onClick={() => c.select(f.id)}
-							onDoubleClick={() => c.previewFinding(f.id)}
 							data-testid={`text.cleanup.finding.${f.id}`}
 							data-state={on ? 'cut' : 'kept'}
 						>
+							<button
+								type="button"
+								className="flex min-w-0 flex-1 items-center gap-1 text-left"
+								onClick={() => c.select(f.id)}
+								onDoubleClick={() => c.previewFinding(f.id)}
+								data-testid={`text.cleanup.finding.${f.id}.select`}
+							>
 							<span
 								className="w-4 shrink-0 text-center"
 								style={{ color: on ? KIND_COLOR[f.kind] : undefined }}
-								title={on ? t('Cut') : f.suggested === 'review' ? t('For review: kept unless you cut it') : t('Kept')}
+								title={
+									on
+										? t('Cut')
+										: f.suggested === 'review'
+											? t('For review: kept unless you cut it')
+											: t('Kept')
+								}
 							>
 								{on ? '✂' : f.suggested === 'review' ? '?' : '○'}
 							</span>
 							<span className="pr-tabular w-12 shrink-0 text-pr-muted">{timeOf(f)}</span>
-							<span className={`min-w-0 flex-1 truncate ${on ? 'text-pr-text line-through' : 'text-pr-text'}`} title={reasonText(f)}>
+							<span
+								className={`min-w-0 flex-1 truncate ${on ? 'text-pr-text line-through' : 'text-pr-text'}`}
+								title={reasonText(f)}
+							>
 								{reasonText(f)}
 								{skipped ? <span className="ml-1 text-pr-warning">{t('(kept: harsh cut)')}</span> : null}
 							</span>
 							<span className="pr-tabular w-9 shrink-0 text-right text-pr-muted" title={t('Confidence')}>
 								{Math.round(f.confidence * 100)} %
 							</span>
+							</button>
 							<button
 								type="button"
 								className={`shrink-0 rounded-pr-control px-1 ${item === 'accept' ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted hover:text-pr-text'}`}
@@ -216,10 +246,10 @@ export function FindingsList({ session, seq, st }: { session: EditorSession; seq
 							>
 								▶
 							</button>
-						</div>
+						</li>
 					);
 				})}
-			</div>
+			</ul>
 		</div>
 	);
 }

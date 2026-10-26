@@ -3,25 +3,20 @@
 // values are marked against the preset; "Reset to preset" drops the overrides. Word lists per language (fillers,
 // discourse markers, emphasis repeats that are never stutters) replace the built-in ones; user presets are saved to
 // and deleted from the engine's library.
-import {
-	builtinLists,
-	type CleanupLanguage,
-	readSequenceCleanup,
-	type Sequence,
-} from '@jasper/project';
+import { builtinLists, type CleanupLanguage, readSequenceCleanup, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, Checkbox, Select, TextField, toast } from '@jasper/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { t } from '../../../i18n/runtime.ts';
 import { cleanupFor } from './controller.ts';
 import {
 	CHOICE_LABELS,
 	GROUP_LABELS,
 	parseFieldValue,
+	SETTING_FIELDS,
 	type SettingField,
 	type SettingGroup,
-	SETTING_FIELDS,
 	showFieldValue,
 } from './settings-fields.ts';
 
@@ -126,7 +121,11 @@ function FieldRow(p: { field: SettingField; value: unknown; edited: boolean; onC
 	const id = `cleanup-setting-${f.group}-${f.key}`;
 	const label = (
 		<label htmlFor={id} className={`truncate ${p.edited ? 'text-pr-text' : 'text-pr-muted'}`} title={f.label}>
-			{p.edited ? <span className="mr-1 text-pr-accent" title={t('Edited')}>•</span> : null}
+			{p.edited ? (
+				<span className="mr-1 text-pr-accent" title={t('Edited')}>
+					•
+				</span>
+			) : null}
 			{f.label}
 		</label>
 	);
@@ -271,6 +270,7 @@ function ListField(p: {
 	testId: string;
 	onChange(list: string[] | null): void;
 }) {
+	const id = useId();
 	const shown = (p.value ?? p.builtin).join(', ');
 	const [text, setText] = useState(shown);
 	useEffect(() => setText(shown), [shown]);
@@ -287,12 +287,13 @@ function ListField(p: {
 		p.onChange(same ? null : list);
 	};
 	return (
-		<label className="flex flex-col gap-[2px]">
-			<span className="text-pr-text">
+		<div className="flex flex-col gap-[2px]">
+			<label htmlFor={id} className="text-pr-text">
 				{p.label}
 				{p.value ? <span className="ml-1 text-pr-accent">{t('(edited)')}</span> : null}
-			</span>
+			</label>
 			<TextField
+				id={id}
 				value={text}
 				onChange={(e) => setText(e.currentTarget.value)}
 				onBlur={commit}
@@ -314,7 +315,6 @@ function ListField(p: {
 					Use the built-in list
 				</button>
 			) : null}
-		</label>
+		</div>
 	);
 }
-

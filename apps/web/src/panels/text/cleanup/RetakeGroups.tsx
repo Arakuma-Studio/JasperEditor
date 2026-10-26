@@ -39,7 +39,7 @@ export function RetakeGroups({ session, st }: { session: EditorSession; st: Clea
 								return (
 									// biome-ignore lint/a11y/useSemanticElements: a take card is a radio of its group (it holds several lines of text)
 									<button
-										key={`${g.id}-${ti}`}
+										key={`${g.id}-${take.range.start}-${take.words[0]}`}
 										type="button"
 										role="radio"
 										aria-checked={kept}
@@ -56,10 +56,14 @@ export function RetakeGroups({ session, st }: { session: EditorSession; st: Clea
 											{t('Take {0}', ti + 1)} · {clockText(take.range.start / S)}
 											{take.meanProb !== null ? ` · ${Math.round(take.meanProb * 100)} %` : ''}
 										</span>
-										<span className={`line-clamp-3 ${kept ? 'text-pr-text' : 'text-pr-muted line-through'}`}>{take.text}</span>
+										<span className={`line-clamp-3 ${kept ? 'text-pr-text' : 'text-pr-muted line-through'}`}>
+											{take.text}
+										</span>
 										<span className={take.complete ? 'text-pr-muted' : 'text-pr-warning'}>
 											{take.complete ? t('Complete') : t('Cut off')}
-											{take.coverage !== undefined ? ` · ${t('{0} % of the line', Math.round(take.coverage * 100))}` : ''}
+											{take.coverage !== undefined
+												? ` · ${t('{0} % of the line', Math.round(take.coverage * 100))}`
+												: ''}
 										</span>
 									</button>
 								);

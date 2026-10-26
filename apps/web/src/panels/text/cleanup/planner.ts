@@ -33,7 +33,10 @@ export type PlanRequest = {
 	scope: CleanupScope;
 };
 
-export type PlanResult = CleanupAnalysis | CleanupRefusal | { ok: false; code: 'E_INTERNAL'; message: string };
+export type PlanResult =
+	| CleanupAnalysis
+	| CleanupRefusal
+	| { ok: false; code: 'E_INTERNAL'; message: string };
 
 export const voiceKey = (mediaId: string, stream: number) => `${mediaId}\u0000${stream}`;
 

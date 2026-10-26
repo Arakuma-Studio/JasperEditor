@@ -30,7 +30,9 @@ const reviewOpen = (ctx: CommandCtx) => {
 };
 const reviewKeys = (ctx: CommandCtx) => reviewOpen(ctx) && notTyping();
 const reason = (ctx: CommandCtx) =>
-	!ctx.session ? t('Open a project first') : t('Open Clean Up (Sequence ▸ Clean Up Voice…) and Analyze first');
+	!ctx.session
+		? t('Open a project first')
+		: t('Open Clean Up (Sequence ▸ Clean Up Voice…) and Analyze first');
 
 const FindingArgs = z
 	.object({
@@ -65,7 +67,7 @@ function review(
 	};
 }
 
-const findingOf = (args: unknown) => (FindingArgs.parse(args) ?? {}).findingId;
+const findingOf = (args: unknown) => FindingArgs.parse(args)?.findingId;
 
 export const cleanupCommands: UiCommand[] = [
 	{
@@ -94,7 +96,8 @@ export const cleanupCommands: UiCommand[] = [
 	{
 		id: 'cleanup.analyze',
 		label: 'Analyze Speech for Clean Up',
-		description: 'Run the Clean Up analysis of the active sequence with its preset, script and the chosen scope',
+		description:
+			'Run the Clean Up analysis of the active sequence with its preset, script and the chosen scope',
 		scope: 'global',
 		when: (ctx) => {
 			if (!ctx.session || !sequenceContext(ctx)) return false;
@@ -128,12 +131,24 @@ export const cleanupCommands: UiCommand[] = [
 		},
 		agentExposed: true,
 	},
-	review('cleanup.nextFinding', 'Next Clean Up Finding', 'Move to the next finding in the list', (ctx) => {
-		cleanupFor(ctx.session!).step(1);
-	}, { repeat: true }),
-	review('cleanup.prevFinding', 'Previous Clean Up Finding', 'Move to the previous finding in the list', (ctx) => {
-		cleanupFor(ctx.session!).step(-1);
-	}, { repeat: true }),
+	review(
+		'cleanup.nextFinding',
+		'Next Clean Up Finding',
+		'Move to the next finding in the list',
+		(ctx) => {
+			cleanupFor(ctx.session!).step(1);
+		},
+		{ repeat: true },
+	),
+	review(
+		'cleanup.prevFinding',
+		'Previous Clean Up Finding',
+		'Move to the previous finding in the list',
+		(ctx) => {
+			cleanupFor(ctx.session!).step(-1);
+		},
+		{ repeat: true },
+	),
 	review(
 		'cleanup.acceptFinding',
 		'Cut Finding',
@@ -166,7 +181,7 @@ export const cleanupCommands: UiCommand[] = [
 		'Cut Every Finding of This Kind',
 		'Cut all findings of the current finding’s kind',
 		(ctx, args) => {
-			const k = (KindArgs.parse(args) ?? {}).kind;
+			const k = KindArgs.parse(args)?.kind;
 			cleanupFor(ctx.session!).decideKind('accept', k as never);
 		},
 		{ argsSchema: KindArgs },
@@ -176,7 +191,7 @@ export const cleanupCommands: UiCommand[] = [
 		'Keep Every Finding of This Kind',
 		'Keep all findings of the current finding’s kind',
 		(ctx, args) => {
-			const k = (KindArgs.parse(args) ?? {}).kind;
+			const k = KindArgs.parse(args)?.kind;
 			cleanupFor(ctx.session!).decideKind('reject', k as never);
 		},
 		{ argsSchema: KindArgs },
@@ -191,14 +206,24 @@ export const cleanupCommands: UiCommand[] = [
 		},
 		{ argsSchema: FindingArgs },
 	),
-	review('cleanup.playResult', 'Play Clean Up Result', 'Play the timeline with the cuts applied (nothing changes)', (ctx) => {
-		const r = cleanupFor(ctx.session!).playResult();
-		if (!r.ok) ctx.ui.toast({ kind: 'info', message: r.reason });
-	}),
-	review('cleanup.playRemoved', 'Play What Clean Up Removes', 'Play only the parts the cuts remove', (ctx) => {
-		const r = cleanupFor(ctx.session!).playRemoved();
-		if (!r.ok) ctx.ui.toast({ kind: 'info', message: r.reason });
-	}),
+	review(
+		'cleanup.playResult',
+		'Play Clean Up Result',
+		'Play the timeline with the cuts applied (nothing changes)',
+		(ctx) => {
+			const r = cleanupFor(ctx.session!).playResult();
+			if (!r.ok) ctx.ui.toast({ kind: 'info', message: r.reason });
+		},
+	),
+	review(
+		'cleanup.playRemoved',
+		'Play What Clean Up Removes',
+		'Play only the parts the cuts remove',
+		(ctx) => {
+			const r = cleanupFor(ctx.session!).playRemoved();
+			if (!r.ok) ctx.ui.toast({ kind: 'info', message: r.reason });
+		},
+	),
 	{
 		id: 'cleanup.stopPreview',
 		label: 'Stop Clean Up Preview',
@@ -216,13 +241,21 @@ export const cleanupCommands: UiCommand[] = [
 			const r = cleanupFor(ctx.session!).apply();
 			ctx.ui.toast(
 				r.ok
-					? { kind: 'success', message: t('Clean Up applied'), detail: t('Edit ▸ Undo reverts it in one step.') }
+					? {
+							kind: 'success',
+							message: t('Clean Up applied'),
+							detail: t('Edit ▸ Undo reverts it in one step.'),
+						}
 					: { kind: 'warning', message: t('Clean Up Voice'), detail: r.reason },
 			);
 		},
 		{
-			when: (ctx) => reviewKeys(ctx) && !ctx.session!.getState().readOnly && cleanupFor(ctx.session!).applyBlocker() === null,
-			disabledReason: (ctx) => (ctx.session ? (cleanupFor(ctx.session).applyBlocker() ?? reason(ctx)) : reason(ctx)),
+			when: (ctx) =>
+				reviewKeys(ctx) &&
+				!ctx.session!.getState().readOnly &&
+				cleanupFor(ctx.session!).applyBlocker() === null,
+			disabledReason: (ctx) =>
+				ctx.session ? (cleanupFor(ctx.session).applyBlocker() ?? reason(ctx)) : reason(ctx),
 		},
 	),
 ];

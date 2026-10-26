@@ -79,7 +79,9 @@ export function ScriptDrawer({ session, seq }: { session: EditorSession; seq: Se
 				<Button
 					variant="primary"
 					disabled={!text.trim() || tooLong || !changed}
-					disabledReason={tooLong ? t('The script is longer than 256 KB') : t('Paste or load the script first')}
+					disabledReason={
+						tooLong ? t('The script is longer than 256 KB') : t('Paste or load the script first')
+					}
 					onClick={attach}
 					data-testid="text.cleanup.script.attach"
 				>

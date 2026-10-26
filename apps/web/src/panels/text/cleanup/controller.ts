@@ -32,12 +32,7 @@ import {
 	sequenceCleanupSettings,
 	speechClipsOf,
 } from '@jasper/project';
-import {
-	derivedPreviewFor,
-	type EditorSession,
-	toDerivedFrame,
-	toOriginalFrame,
-} from '@jasper/session';
+import { derivedPreviewFor, type EditorSession, toDerivedFrame, toOriginalFrame } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { t } from '../../../i18n/runtime.ts';
 import { mediaKeyOf } from '../../../import/assets.ts';
@@ -497,7 +492,10 @@ export class CleanupController {
 			if (job.state !== 'succeeded' || !res.success) {
 				this.set({
 					planning: false,
-					error: { code: job.error?.code ?? 'E_INTERNAL', message: job.error?.message ?? t('Re-planning failed') },
+					error: {
+						code: job.error?.code ?? 'E_INTERNAL',
+						message: job.error?.message ?? t('Re-planning failed'),
+					},
 				});
 				return;
 			}
@@ -693,12 +691,14 @@ export class CleanupController {
 	stopPreview(): void {
 		const dp = derivedPreviewFor(this.session);
 		const active = dp.getState().active;
-		if (!active || !active.kind.startsWith('cleanup.')) return;
+		if (!active?.kind.startsWith('cleanup.')) return;
 		const transport = this.session.transport;
 		transport.pause();
 		const frame = transport.getState().frame;
 		dp.stop();
-		transport.seek(active.kind === 'cleanup.result' ? toOriginalFrame(active.omitted, frame) : this.previewStartFrame);
+		transport.seek(
+			active.kind === 'cleanup.result' ? toOriginalFrame(active.omitted, frame) : this.previewStartFrame,
+		);
 		this.set({ preview: null });
 	}
 
@@ -755,4 +755,3 @@ export function cleanupFor(session: EditorSession): CleanupController {
 export function setCleanupControllerForTest(session: EditorSession, c: CleanupController): void {
 	controllers.set(session, c);
 }
-
