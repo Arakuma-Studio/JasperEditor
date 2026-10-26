@@ -1,4 +1,5 @@
-// Editing automation tools (spec 15 EA-041): decorate_cuts, add_punch_ins, add_ken_burns — conventions (titles,
+// Editing automation tools (spec 15 EA-041): decorate_cuts, add_punch_ins, add_ken_burns, place_reactions,
+// slide_overlays, lay_music_bed, add_stingers — conventions (titles,
 // annotations, strict arguments), parameters passed as the pass's plain data (times as frames / seconds /
 // timecode), dry runs answered at once, proposals waited for, E_TOO_LARGE as a tool error with the range, the guide,
 // and refresh_proposal's reroll.
@@ -44,7 +45,10 @@ const result = (
 			],
 		},
 		families: { jolt: 2, whip: 1 },
-		cost: { class: 'remotion', frames: 80, effects: ['jasper.transform'] },
+		cost:
+			pass === 'slides'
+				? { class: 'hybrid', frames: 60, effects: ['jasper.smooth-slide'] }
+				: { class: 'remotion', frames: 80, effects: ['jasper.transform'] },
 		track: 'new track FX',
 		warnings: [],
 	},
@@ -134,7 +138,15 @@ describe('editing automation tools', () => {
 	it('are listed with titles and edit annotations', async () => {
 		const t = await connect();
 		const { tools } = await t.client.listTools();
-		for (const name of ['decorate_cuts', 'add_punch_ins', 'add_ken_burns']) {
+		for (const name of [
+			'decorate_cuts',
+			'add_punch_ins',
+			'add_ken_burns',
+			'place_reactions',
+			'slide_overlays',
+			'lay_music_bed',
+			'add_stingers',
+		]) {
 			const tool = tools.find((x) => x.name === name)!;
 			expect(tool, name).toBeDefined();
 			expect(tool.annotations).toMatchObject({
@@ -244,7 +256,83 @@ describe('editing automation tools', () => {
 		expect(t.engine.calls.at(-1)!.args[2]).toEqual({ itemIds: ['kit:120'], reroll: true });
 		const g = await t.client.readResource({ uri: 'jasper://guide' });
 		const text = (g.contents[0] as { text: string }).text;
-		for (const s of ['Editing automation', 'decorate_cuts', 'add_punch_ins', 'add_ken_burns', 'reroll: true'])
+		for (const s of [
+			'Editing automation',
+			'decorate_cuts',
+			'add_punch_ins',
+			'add_ken_burns',
+			'place_reactions',
+			'slide_overlays',
+			'lay_music_bed',
+			'add_stingers',
+			'reroll: true',
+		])
 			expect(text).toContain(s);
+	});
+
+	it('the overlay passes: plain-data parameters to their engine pass, dry run and propose', async () => {
+		const t = await connect();
+		const a = await t.call('place_reactions', {
+			projectId: P,
+			mode: 'dryRun',
+			assets: { bin: 'Reactions' },
+			triggers: { speakerNotVisible: true },
+			words: { language: 'es', cta: ['suscríbete'] },
+			slots: [{ x: 0.2, y: 0.8, flip: true }],
+			maxPerMinute: 6,
+			range: { start: 0, end: { seconds: 20 } },
+		});
+		expect(a.r.isError).toBeFalsy();
+		expect(t.engine.calls[0]!.args.slice(1)).toEqual([
+			'reactions',
+			{
+				sequenceId: SEQ,
+				mode: 'dryRun',
+				params: {
+					assets: { bin: 'Reactions' },
+					slots: [{ x: 0.2, y: 0.8, flip: true }],
+					triggers: { speakerNotVisible: true },
+					words: { language: 'es', cta: ['suscríbete'] },
+					maxPerMinute: 6,
+					range: { start: 0, end: 600 },
+				},
+			},
+		]);
+		expect(a.json.next).toContain('place_reactions with mode "propose"');
+		const s = await t.call('slide_overlays', { projectId: P, heads: 1, directions: { down: 1 } });
+		expect(s.r.isError).toBeFalsy();
+		expect(s.json.proposalId).toBe('prp_0000000000000009');
+		expect(t.engine.calls[1]!.args[1]).toBe('slides');
+		const m = await t.call('lay_music_bed', {
+			projectId: P,
+			assets: { folder: '/music' },
+			bedSeconds: null,
+			duck: { enabled: true },
+		});
+		expect(m.r.isError).toBeFalsy();
+		expect(t.engine.calls[2]!.args.slice(1)).toEqual([
+			'music',
+			{
+				sequenceId: SEQ,
+				mode: 'propose',
+				params: { assets: { folder: '/music' }, bedSeconds: null, duck: { enabled: true } },
+			},
+		]);
+		const g = await t.call('add_stingers', { projectId: P, mode: 'dryRun', match: 'either', sound: 'none' });
+		expect(g.r.isError).toBeFalsy();
+		expect(t.engine.calls[3]!.args[1]).toBe('stingers');
+		// strict: unknown keys at any depth, out-of-range values
+		const bad = await t.call('place_reactions', { projectId: P, assets: { bin: 'x', nope: 1 } });
+		expect(bad.r.isError).toBe(true);
+		const bad2 = await t.call('add_stingers', { projectId: P, frames: 0 });
+		expect(bad2.r.isError).toBe(true);
+		expect(t.engine.calls).toHaveLength(4);
+	});
+
+	it('the export note names the hybrid route', async () => {
+		const t = await connect();
+		const { json } = await t.call('slide_overlays', { projectId: P, mode: 'dryRun' });
+		expect(json.export).toMatchObject({ cost: 'hybrid', effects: ['jasper.smooth-slide'] });
+		expect(json.export.note).toMatch(/stays native.*layer bake/);
 	});
 });
