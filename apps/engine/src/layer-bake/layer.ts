@@ -506,7 +506,8 @@ export function contentBleed(
 	let px = 0;
 	// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
 	// boxes, and the background padding (shared with the compositions' effect canvas).
-	if ('text' in c.source) px = textContentPad(c.source.text);
+	const src = 'text' in c.source ? c.source : undefined;
+	if (src) px = textContentPad(src.text);
 	// A vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
 	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
 	const vshape = 'shape' in c.source ? c.source.shape : undefined;
