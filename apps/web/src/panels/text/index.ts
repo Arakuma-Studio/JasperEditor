@@ -11,7 +11,7 @@ const text: PanelDefinition = {
 	keymapScope: 'text',
 	touch: 'sheet',
 	agentDescription:
-		'Text panel: the sequence transcript (search, select words to mark In/Out, extract, lift, remove fillers and pauses, speakers, create captions) and the caption list of the active caption track (edit text and timecodes, search/replace, style).',
+		'Text panel: the sequence transcript (search, select words to mark In/Out, extract, lift, remove fillers and pauses, speakers, create captions), its Clean Up mode (Sequence ▸ Clean Up Voice…: analyze the speech, review retakes / fillers / pauses with the cleanup.* commands, play the result, apply in one undo step) and the caption list of the active caption track (edit text and timecodes, search/replace, style).',
 	menu: [
 		{ type: 'command', command: 'timeline.addCaptionTrack', label: 'Add New Caption Track…' },
 		{ type: 'command', command: 'timeline.addCaptionAtPlayhead', label: 'Add Caption at Playhead' },
@@ -20,6 +20,7 @@ const text: PanelDefinition = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'transcript.import', label: 'Import Transcript…' },
 		{ type: 'command', command: 'transcript.createCaptions', label: 'Create Captions…' },
+		{ type: 'command', command: 'transcript.cleanUpVoice', label: 'Clean Up Voice…' },
 	],
 	component: lazyPanel(() => import('./TextPanel.tsx'), 'TextPanel'),
 };

@@ -22,13 +22,24 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
-import { Button, EmptyState, PointMenu, SearchField, Select, TextField, toast } from '@jasper/ui';
+import {
+	Button,
+	EmptyState,
+	PointMenu,
+	SearchField,
+	SegmentedControl,
+	Select,
+	TextField,
+	toast,
+} from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GenerateTranscriptButton, TranscriptionStatus } from '../../speech/TextPanelHooks.tsx';
+import { CleanupMode } from './cleanup/CleanupMode.tsx';
+import { cleanupFor } from './cleanup/controller.ts';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
 
 type Props = { session: EditorSession; seq: Sequence; request?: { tool?: TranscriptTool; seq: number } };
-type Tool = null | 'fillers' | 'pauses' | 'captions' | 'import';
+type Tool = null | Exclude<TranscriptTool, 'cleanup'>;
 
 const S = 705_600_000;
 
@@ -48,9 +59,17 @@ export function TranscriptTab({ session, seq, request }: Props) {
 	const dragging = useRef<number | null>(null);
 	const requestSeq = request?.seq;
 	const requestTool = request?.tool;
+	// spec 14 TC-040: the tab's Clean Up mode (Sequence ▸ Clean Up Voice… opens it)
+	const cleanup = cleanupFor(session);
+	const mode = useStoreSelector(cleanup.store, (s) => s.mode);
 	useEffect(() => {
-		if (requestSeq !== undefined && requestTool) setTool(requestTool);
-	}, [requestSeq, requestTool]);
+		if (requestSeq === undefined || !requestTool) return;
+		if (requestTool === 'cleanup') cleanup.setMode('cleanup');
+		else {
+			cleanup.setMode('edit');
+			setTool(requestTool);
+		}
+	}, [requestSeq, requestTool, cleanup]);
 
 	const apply = (label: string, commands: Command[]) => {
 		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
@@ -101,6 +120,30 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					<GenerateTranscriptButton session={session} seq={seq} variant="primary" />
 				</div>
 				<ImportTranscript media={audioMedia} apply={apply} />
+			</div>
+		);
+
+	const modeSwitch = (
+		<div className="flex shrink-0 items-center gap-2 border-b border-pr-border-subtle px-2 py-1">
+			<SegmentedControl
+				label="Transcript mode"
+				value={mode}
+				onChange={(m) => cleanup.setMode(m)}
+				options={[
+					{ value: 'edit', label: 'Edit', testId: 'text.transcript.mode.edit' },
+					{ value: 'cleanup', label: 'Clean Up', testId: 'text.transcript.mode.cleanup' },
+				]}
+				data-testid="text.transcript.mode"
+			/>
+		</div>
+	);
+	if (mode === 'cleanup')
+		return (
+			<div className="flex h-full min-h-0 flex-col" data-testid="text-transcript">
+				{modeSwitch}
+				<div className="flex min-h-0 flex-1 flex-col">
+					<CleanupMode session={session} seq={seq} />
+				</div>
 			</div>
 		);
 
@@ -157,6 +200,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 			onPointerUp={() => (dragging.current = null)}
 			onClick={() => setMenu(null)}
 		>
+			{modeSwitch}
 			<div className="flex shrink-0 items-center gap-1 border-b border-pr-border-subtle px-2 py-1">
 				<SearchField
 					value={query}

@@ -345,6 +345,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('sound.toggleCueSeam', 'Show Cue Seam'),
 				c('sound.clearUnfilledCues', 'Clear Unfilled Cues'),
 			]),
+			c('transcript.cleanUpVoice', 'Clean Up Voice…'),
 			c('sequence.loudness', 'Loudness Normalization…'),
 			c('audio.voiceoverRecord', 'Record Voice-over'),
 			c('audio.voiceoverSettings', 'Voice-Over Record Settings…'),

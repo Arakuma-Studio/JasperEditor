@@ -9,6 +9,7 @@ import { audioCommands } from './audio.ts';
 import { automationCommands } from './automation.ts';
 import { cacheCommands } from './cache.ts';
 import { captionCommands } from './captions.ts';
+import { cleanupCommands } from './cleanup.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { colorMgmtCommands } from './color-mgmt.ts';
@@ -92,6 +93,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	maskCommands,
 	captionCommands,
 	speechCommands,
+	// spec 14: Clean Up Voice (Text panel ▸ Transcript ▸ Clean Up)
+	cleanupCommands,
 	rotoCommands,
 	multicamCommands,
 	interchangeCommands,
