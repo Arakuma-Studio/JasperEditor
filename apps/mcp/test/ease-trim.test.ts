@@ -567,6 +567,18 @@ describe('curve argument parser', () => {
 		expect(() => parseCubicCurveArg('elastic.out-3-soft')).toThrowError(/multi-point/);
 	});
 
+	it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
+		'refuses the Object.prototype name %j with E_INVALID_PARAM (regression: id.trim is not a function)',
+		(s) => {
+			expect(() => parseCurveArg(s)).toThrowError(ToolError);
+			try {
+				parseCurveArg(s);
+			} catch (e) {
+				expect((e as ToolError).code).toBe('E_INVALID_PARAM');
+			}
+		},
+	);
+
 	it('fuzz: any string either parses to a valid curve or is an E_INVALID_PARAM ToolError', () => {
 		fc.assert(
 			fc.property(
