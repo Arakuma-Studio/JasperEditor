@@ -228,10 +228,9 @@ Differences (decided):
 
 ## 10. Limits
 
-- GPU paths (WebGPU, CUDA, the decoder calibration, device-resident decoding) are implemented and tested with a fake
-  ONNX Runtime binding only: the build VM has no GPU (its WebGPU probe answers "Failed to get a WebGPU adapter: No
-  supported adapters" — no Vulkan driver), so CPU-vs-GPU text parity was **not run** (SG-040; skipped, not passed).
-  Verified on Linux x64 only; macOS/Windows use the same `onnxruntime-node` package and code but were not run here.
+- GPU paths were verified on one Linux NVIDIA machine (RTX 4060 Ti: CUDA and WebGPU, §11.8); the build VM has no
+  GPU, so its runs use a fake ONNX Runtime binding for the GPU paths. macOS/Windows use the same `onnxruntime-node`
+  package and code but were not run here.
 - Windows: DirectML is not used (licence, §11.2); the DirectX shader compiler DLLs are left out of the desktop
   package, so WebGPU's D3D12 backend must compile with the system's FXC — untested on Windows (the probe falls
   back to the CPU when WebGPU cannot start).
@@ -430,5 +429,34 @@ CUDA delivery on the build VM (Linux x64, no NVIDIA driver; `SPEECH_CUDA_PACKAGE
 apps/engine/test/speech-cuda.e2e.test.ts`): the pinned 236 MB package downloaded through a server that dropped the
 first transfer at 20 MB, resumed with a Range request, verified, extracted and installed in 6.4 s (local server);
 the worker loaded ONNX Runtime 1.30.0 from the app-directory copy; CUDA was reported unavailable ("Failed to load
-shared library") with the missing NVIDIA libraries listed. **Not verified on real NVIDIA hardware** in this
-workstream; WebGPU not verified either (no adapter on the VM). CPU-vs-GPU text parity: skipped (no GPU).
+shared library") with the missing NVIDIA libraries listed.
+
+#### 11.8 Real NVIDIA hardware (SG-040/041, measured 2026-10-26)
+
+Machine: vast.ai container (Ubuntu 24.04.5, host kernel 6.8), **RTX 4060 Ti 16 GB**, driver 580.173.02, 36 vCPU
+Xeon E5-2696 v3 @ 2.3 GHz, 62 GB; dedicated to this run (load average 0.4–4.3). Code: `feat/wf-speech` = integration
+`feat/workflow` 947d33f4 + the commits of this verification; Node 24.11.1, onnxruntime-node 1.30.0, the CUDA provider
+downloaded by the engine (NuGet 1.30.0, sha256 pinned). The host had the CUDA **12.8** toolkit and cuDNN 9.8 for
+CUDA 12 only. Fixture: the LJ composite (71.6 s, English); 8 threads. Rerunnable:
+`SPEECH_GPU_E2E=1 JASPER_SPEECH_MODELS_DIR=<dir> vitest run apps/engine/test/speech-gpu.e2e.test.ts` (and
+`speech-cuda.e2e.test.ts` with `SPEECH_CUDA_PACKAGE`).
+
+| Check | Result |
+|---|---|
+| NVIDIA runtime detection with only CUDA 12.8 | missing `libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13` (driver, GPU, VRAM, cuDNN 9, cuRAND 10 found); the probe reports CUDA unavailable with that reason. The guidance named nonexistent package names and did not say why CUDA 12 is not enough — fixed (`cudaGuidance`, regression test): it now says the CUDA 13 runtime can sit next to CUDA 12 and names NVIDIA's apt packages and pip wheels |
+| CUDA 13 runtime added (pip `nvidia-cuda-runtime` 13.4.92, `nvidia-cublas` 13.8.1.7, `LD_LIBRARY_PATH`) | runtime ok; cuDNN 9.8 built for CUDA 12 loaded with it (assumption confirmed only for these models) |
+| Enable NVIDIA GPU (engine route) | provider downloaded from NuGet, verified, installed in 14 s; resume after a dropped transfer verified with the real package (`speech-cuda.e2e`) |
+| Provider probe | CUDA available (RTX 4060 Ti), WebGPU available (Dawn on Vulkan), CPU; chosen encoder CUDA |
+| tiny.en, encoder on CUDA | calibration 7.78 (CPU) vs 7.0–7.15 ms/token (CUDA): < 10 % faster → decoder stays on the CPU; RTF 0.056 vs 0.051 on the CPU (tiny is too small for the GPU to help); WER 1.92 %; **text identical to the CPU run** |
+| large-v3-turbo, CUDA + greedy | calibration 31.9 (CPU) vs 15.5 ms/token (CUDA) → decoder on CUDA; RTF **0.076** (0.094 for the first job, which calibrates) vs **0.354** on the CPU = 4.7× faster; WER 1.92 %; **text identical to the CPU run**; model load 3.7 s |
+| large-v3-turbo, beam 5 ("Best") | encoder CUDA, decoder CPU (beam search): RTF 0.209, WER 1.92 % |
+| large-v3-turbo-fp16, CUDA | decoder calibrated 151.7 (CPU, fp16) vs 15.1 ms/token → CUDA; RTF 0.134, WER 1.92 % (fp32 is faster on this GPU) |
+| WebGPU (NVIDIA GPU support off) | encoder WebGPU; tiny.en: calibration 7.49 vs 19.7 ms/token → CPU decoder, RTF 0.049; turbo: 31.3 vs **9.9 ms/token → device-resident WebGPU decoder** (SG-004 two-session path), RTF **0.079**; both **identical to the CPU text**; turbo beam 5 on WebGPU encoder 0.22 |
+| GPU error mid-job (`JASPER_SPEECH_GPU_FAULT_AFTER=2`, a test hook that fails the 2nd run of a GPU session) | job reran on the CPU; result `fallbacks: [{stage: job, from: cuda, to: cpu, reason: "injected GPU fault (cuda, run 2)"}]`, WER 1.92 % |
+| Speech suites on the box (CPU real-model e2e included) | 108 tests pass; the e2e "unconditioned job" asserted a CPU device and failed where `auto` picks the GPU — fixed by asking for the CPU |
+
+Observations: the WebGPU-resident decoder beat both the CPU and the CUDA decoder for turbo here (9.9 vs 15.5 ms/token:
+CUDA copies the key/value cache every step, research §0); with CUDA available the engine still prefers CUDA for the
+encoder (probe order) — per-machine, the calibration only chooses the decoder. Not run on real hardware: Windows
+(WebGPU via D3D12, the DirectML exclusion), macOS (WebGPU on Metal; research measured it), AMD/Intel GPUs, a desktop
+package; the CUDA provider with a distribution-installed CUDA 13 (here pip wheels via `LD_LIBRARY_PATH`).
