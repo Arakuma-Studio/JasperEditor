@@ -854,6 +854,19 @@ function drawStack(ctx: StackContext): string {
 			}
 			if (f1 > f0) trackLayers.push({ clip: c, f0, f1 });
 		}
+		// spec 13 AS-073: layers baked together as one run master are drawn once, as one input over the run's span.
+		const runs = new Map<string, LayerOverride>();
+		for (let i = trackLayers.length - 1; i >= 0; i--) {
+			const ov = exts ? pickOverride(exts.list, exts.prepared, trackLayers[i]!.clip) : null;
+			if (!ov?.run) continue;
+			runs.set(ov.run.id, ov);
+			trackLayers.splice(i, 1);
+		}
+		for (const ov of runs.values()) {
+			const f0 = Math.max(ov.run!.f0, R0);
+			const f1 = Math.min(ov.run!.f1, R1);
+			if (f1 > f0) layers.push({ span: ov, f0, f1 });
+		}
 		// spec 13 AS-072: two or more constant-picture layers of the track → one kernel stream in their place.
 		const members = new Map<string, TapMember>();
 		for (const l of trackLayers) {

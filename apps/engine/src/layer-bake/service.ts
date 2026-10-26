@@ -688,6 +688,90 @@ export class LayerBakeService {
 	}
 
 	/**
+	 * spec 13 AS-073 — plans ONE master for a run of baked layers of track `trackId` that follow each other (shaken
+	 * subtitles the kernel cannot draw: S_Shake with motion blur, RGB split or wrap): the clips, shifted so the run
+	 * starts at frame 0, drawn together on a transparent frame for `[start, end)` — one render and one composite input
+	 * instead of one each. The key holds the clips (ids included: shaders seed by clip id), not the run's position.
+	 */
+	async planRun(
+		planned: Pick<PlannedExport, 'document' | 'media' | 'snapshot'>,
+		trackId: string,
+		run: readonly RenderVisualClip[],
+		o: { env: BakeEnvironment },
+	): Promise<BakePlan> {
+		const snap = planned.snapshot;
+		const seq = snap.settings;
+		const start = Math.min(...run.map((c) => drawnSpan(c).start));
+		const end = Math.max(...run.map((c) => drawnSpan(c).end));
+		const clips = run.map((c): RenderVisualClip => {
+			const effects = c.effects.filter((fx) => fx.enabled);
+			return {
+				...c,
+				effects,
+				start: c.start - start,
+				...(c.fades?.length ? { fades: c.fades.map((f) => ({ ...f, start: f.start - start })) } : {}),
+			};
+		});
+		const frames = end - start;
+		const fonts = [...new Set(clips.flatMap((c) => clipFonts(c, snap.fonts)))];
+		const mediaIds = referencedMediaIds(clips.map((c) => [c.source, c.effects]));
+		const media: RenderSnapshot['media'] = {};
+		for (const id of mediaIds) media[id] = this.signedHandle(planned, id);
+		const signedFonts = fonts.map((f) => ({
+			...f,
+			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
+		}));
+		const material: KeyMaterial = {
+			v: LAYER_BAKE_VERSION,
+			recipe: 'master',
+			clip: { run: clips.map(({ name: _n, trackId: _t, ...c }) => c) },
+			span: frames,
+			width: seq.width,
+			height: seq.height,
+			fps: { num: seq.fps.num, den: seq.fps.den },
+			fonts: await this.keyFonts(fonts),
+			media: this.keyMedia(planned, mediaIds),
+			bundleId: o.env.bundleId,
+			animejs: o.env.animejs,
+			remotion: o.env.remotion,
+			browser: o.env.browser,
+			gl: o.env.gl,
+			still: false,
+			rect: null,
+			graded: false,
+		};
+		const doc: RenderSnapshot = {
+			version: 1,
+			sequenceId: snap.sequenceId,
+			settings: { ...seq, backgroundColor: [0, 0, 0, 0] },
+			range: { start: 0, end: frames },
+			durationFrames: frames,
+			videoTracks: [{ trackId, clips: clips.map((c) => this.signedRotos(c)) }],
+			audioClips: [],
+			media,
+			fonts: signedFonts,
+			master: { volumeDb: { value: 0, keyframes: [] } },
+			warnings: [],
+			...(snap.expressions ? { expressions: snap.expressions } : {}),
+		};
+		return {
+			clipId: `run:${run[0]!.clipId}`,
+			clipName: `${run.length} layers from "${run[0]!.name}"`,
+			key: keyOf(material),
+			variant: { recipe: 'master' },
+			rect: null,
+			doc,
+			fullDoc: null,
+			frames,
+			startFrame: start,
+			colorRuns: false,
+			material,
+			// Draws every clip of its document (no layer filter), like a transition span.
+			span: true,
+		};
+	}
+
+	/**
 	 * wave1c — plans the bake of a GPU transition's span: the sides A and B of track `trackId` (whole clips, handles,
 	 * every enabled effect) and the transition stage, over `[t.start, t.start + t.duration)` on a transparent
 	 * background — what the composition draws for that track there. Times are shifted so the span starts at frame 0

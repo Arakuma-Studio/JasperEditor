@@ -36,6 +36,10 @@ type LayerBakePrepared = Map<string, PreparedLayer>;
 const SPANS = Symbol('spans');
 type Prepared = LayerBakePrepared & { [SPANS]?: Map<string, LayerOverride> };
 
+const SHAKE = 'jasper.s.shake';
+/** A run master of shaken layers spans clips at most this far apart (frames) and this long in all. */
+const RUN_GAP = 60;
+const RUN_MAX_FRAMES = 3600;
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
 const RENDER_FIXED_COST_FRAMES = 30;
 /** spec 13 AS-071: stills per sheet render at most (bounds a sheet's frame size spread and a failed sheet's retry). */
@@ -140,7 +144,13 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			const par = svc.parallelism;
 			const maxInFlight = Math.max(1, par.maxInFlight ?? Math.min(budget, MAX_RENDERS_IN_FLIGHT));
 			// Plans first (keys, documents, grades: cheap, in clip order), then the renders side by side.
-			const items: { clip: RenderVisualClip | null; plan: BakePlan; grade: GradePlan | null }[] = [];
+			const items: {
+				clip: RenderVisualClip | null;
+				plan: BakePlan;
+				grade: GradePlan | null;
+				/** spec 13 AS-073: the layers a run master (`planRun`) draws. */
+				run?: RenderVisualClip[];
+			}[] = [];
 			for (const { trackId, t } of spans) {
 				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 				let plan = await svc.planSpan(planned, trackId, t, { env });
@@ -163,6 +173,55 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						})
 					: null;
 				items.push({ clip, plan, grade });
+			}
+			// spec 13 AS-073: shaken layers the kernel cannot draw (S_Shake with motion blur, RGB split or wrap) are
+			// masters; those of a track that follow each other render as ONE master per run (one render's fixed cost and
+			// one composite input instead of one each).
+			if (!remotion && single === null) {
+				const byTrack = new Map<string, typeof items>();
+				for (const it of items) {
+					const c = it.clip;
+					if (!c || it.grade || it.plan.span || it.plan.variant.recipe !== 'master') continue;
+					if (!c.effects.some((fx) => fx.enabled && fx.effectId === SHAKE)) continue;
+					if ((c.blendMode ?? 'normal') !== 'normal' || c.headHandle || c.tailHandle || c.fades?.length) continue;
+					const list = byTrack.get(c.trackId) ?? [];
+					list.push(it);
+					byTrack.set(c.trackId, list);
+				}
+				const inRun = new Set<(typeof items)[number]>();
+				const runs: (typeof items)[number][] = [];
+				for (const [trackId, list] of byTrack) {
+					list.sort((a, b) => a.clip!.start - b.clip!.start);
+					let cur: typeof items = [];
+					const flush = async () => {
+						if (cur.length >= 2) {
+							for (const it of cur) inRun.add(it);
+							const clipsOfRun = cur.map((it) => it.clip!);
+							const plan = await svc.planRun(planned, trackId, clipsOfRun, { env });
+							runs.push({ clip: null, plan, grade: null, run: clipsOfRun });
+						}
+						cur = [];
+					};
+					for (const it of list) {
+						const c = it.clip!;
+						const prev = cur[cur.length - 1]?.clip;
+						const first = cur[0]?.clip;
+						if (
+							prev &&
+							(c.start < prev.start + prev.duration ||
+								c.start - (prev.start + prev.duration) > RUN_GAP ||
+								c.start + c.duration - first!.start > RUN_MAX_FRAMES)
+						)
+							await flush();
+						cur.push(it);
+					}
+					await flush();
+				}
+				if (runs.length) {
+					const kept = items.filter((it) => !inRun.has(it));
+					items.length = 0;
+					items.push(...kept, ...runs);
+				}
 			}
 			const isMaster = (g: typeof items) => g[0]!.plan.variant.recipe === 'master';
 			// spec 13 AS-071: still bakes (static layers, lowered layers' layer stills) render together, many per sheet
@@ -197,6 +256,21 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				for (const it of group) {
 					if (bake.clipped && it.clip) {
 						clipped.push(it);
+						continue;
+					}
+					if (it.run) {
+						// One input for the run: every clip points at it; the builder draws it once.
+						const run = { id: it.plan.key, f0: it.plan.startFrame, f1: it.plan.startFrame + it.plan.frames };
+						for (const c of it.run)
+							out.set(c.clipId, {
+								override: {
+									path: bake.path,
+									space: 'sequence',
+									startFrame: it.plan.startFrame,
+									includesFades: true,
+									run,
+								},
+							});
 						continue;
 					}
 					const entry = entryOf(it.plan, bake, it.grade, graded);

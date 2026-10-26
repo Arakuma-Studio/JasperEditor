@@ -66,6 +66,11 @@ export type LayerOverride = {
 	 * opens `path` as an ffmpeg input awaits it before the composite starts.
 	 */
 	ready?: Promise<OverrideReady>;
+	/**
+	 * spec 13 AS-073: this `sequence` override is a master of several layers of the clip's track (`id`), covering
+	 * sequence frames `[f0, f1)`: the builder draws it once for all of them (one input), not once per clip.
+	 */
+	run?: { id: string; f0: number; f1: number };
 };
 
 export type OverrideReady =

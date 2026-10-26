@@ -102,6 +102,8 @@ export type KeyMaterial = {
 	clip: (
 		| ReturnType<typeof normalisedClip>
 		| { span: { transition: RenderTransition; sides: Omit<RenderVisualClip, 'name'>[] } }
+		/** spec 13 AS-073: a run of layers of one track baked as one master (`planRun`). */
+		| { run: Omit<RenderVisualClip, 'name' | 'trackId'>[] }
 	) &
 		Partial<
 			Pick<RenderVisualClip, 'duration' | 'headHandle' | 'tailHandle' | 'fades' | 'sourceIn' | 'speed'>
