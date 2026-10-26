@@ -10,6 +10,7 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
+	textContentPad,
 } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -452,16 +453,21 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 				u_tfT: number[];
 			};
 			const tap = taps[0]!;
-			// Stages: the canvas the browser draws, S_Shake's canvas, the Transform's box.
+			// Stages: the canvas the browser draws (the box grown by the text's paint, then by the effects' padding);
+			// S_Shake and the Transform both sample that whole canvas (spec 13 AS-070: stroke and shadow move along).
+			const cp = textContentPad((c.source as { text: Parameters<typeof textContentPad>[0] }).text);
+			expect(cp).toBeGreaterThan(0);
 			const pad = gpuPadding(shake, sp, ctx);
+			const canvas = [
+				-(cp + pad.left),
+				-(cp + pad.top),
+				Math.ceil(box.width + 2 * cp + pad.left + pad.right) - (cp + pad.left),
+				Math.ceil(box.height + 2 * cp + pad.top + pad.bottom) - (cp + pad.top),
+			];
 			expect(tap.stages).toHaveLength(3);
-			expect(tap.stages[0]!.rect).toEqual([
-				-pad.left,
-				-pad.top,
-				Math.ceil(box.width + pad.left + pad.right) - pad.left,
-				Math.ceil(box.height + pad.top + pad.bottom) - pad.top,
-			]);
-			expect(tap.stages[2]!.rect).toEqual([0, 0, box.width, box.height]);
+			expect(tap.stages[0]!.rect).toEqual(canvas);
+			expect(tap.stages[1]!.rect).toEqual(canvas);
+			expect(tap.stages[2]!.rect).toEqual(canvas);
 			const m = props.matrix;
 			const minv = invertAffine([m.a, m.c, m.e, m.b, m.d, m.f])!;
 			for (const [sx, sy] of [

@@ -219,16 +219,16 @@ describe.runIf(enabled)(
 			return queue().get(id)!;
 		};
 
-		function subtitlesDoc() {
+		function subtitlesDoc(templates: Template[] = TEMPLATES, words: string[] = WORDS) {
 			const d = new DocBuilder('hd-1080p-59.94');
 			d.tx([{ type: 'sequence.updateSettings', sequenceId: d.seqId, settings: { width: W, height: H } }]);
 			const font = d.tx([{ type: 'font.add', family: 'JetBrains Mono', ref: '$f' }]).refs.$f!;
-			const total = TEMPLATES.length * WORDS.length * CLIP;
+			const total = templates.length * words.length * CLIP;
 			d.tx([{ type: 'clip.addSolid', at: 0, duration: total, track: 'V1', color: [0.16, 0.2, 0.28, 1] }]);
 			const spans: { template: string; f0: number }[] = [];
 			let at = 0;
-			for (const t of TEMPLATES)
-				for (const word of WORDS) {
+			for (const t of templates)
+				for (const word of words) {
 					const clip = d.tx([
 						{
 							type: 'clip.addText',
@@ -372,5 +372,105 @@ describe.runIf(enabled)(
 				expect(q.ssim, `${t} SSIM`).toBeGreaterThanOrEqual(0.98);
 			}
 		}, 3_600_000);
+
+		it('template effects keep the stroke and shadow beyond the text box: native export and composition (AS-070)', async () => {
+			// The box (810 × 140 at y 890…1030) is tighter than the paint: the 11.5 px outside stroke and the 12 px shadow
+			// blur reach past its top and bottom. An identity Transform and a still S_Shake must not cut them off.
+			const SAME: Template[] = [
+				{ name: 'static', apply: () => {} },
+				{
+					name: 'identity transform',
+					apply: (dd, c) =>
+						dd.tx([{ type: 'effect.add', target: { clipId: c }, effectId: 'jasper.transform', params: {} }]),
+				},
+				{
+					name: 'still shake',
+					apply: (dd, c) =>
+						dd.tx([
+							{
+								type: 'effect.add',
+								target: { clipId: c },
+								effectId: 'jasper.s.shake',
+								params: { amplitude: 0, wrapX: 'no', wrapY: 'no', tiltRandAmp: 0, xRandAmp: 0, yRandAmp: 0 },
+							},
+						]),
+				},
+			];
+			const { d, spans } = subtitlesDoc(SAME, ['PIXEL ARTE']);
+			const settings = {
+				sequenceId: d.seqId,
+				range: { type: 'entire' },
+				container: 'mov',
+				engine: 'auto',
+				video: {
+					codec: 'prores',
+					proresProfile: '4444',
+					width: W,
+					height: H,
+					frameRate: { num: 60000, den: 1001 },
+					scaling: 'fit',
+					quality: { mode: 'crf', value: 10 },
+					encoderSpeed: 'fast',
+				},
+			};
+			const r = await engine.app.inject({
+				method: 'POST',
+				url: '/api/exports',
+				headers: { ...JSON_H, ...hostH() },
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+			});
+			expect(r.statusCode, r.body).toBeLessThan(300);
+			const done = await wait(r.json().id);
+			expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+			const core = coreServices(engine.app);
+			const out = join(core.config.paths.rendersDir, done.id, 'output.mov');
+			const referenceDoc = buildRenderSnapshot(d.doc, d.seqId, {
+				resolveMedia: () => null,
+				resolveFont: (font, weight, italic) => {
+					const face = core.fonts.resolve(font.family, weight, italic);
+					return face ? core.signer.signUrl(`http://127.0.0.1:${engine.port}`, face.url) : null;
+				},
+			});
+			const composition = async (f: number) => {
+				const ref = join(tempAppdir('jasper-sub-same-'), 'ref.png');
+				await core.remotion.renderStill({
+					inputProps: { doc: referenceDoc, options: { isPreview: false, useProxies: false, transparentBackground: false } },
+					output: ref,
+					frame: f,
+					signal: new AbortController().signal,
+				});
+				return decodeRegion(ref, null);
+			};
+			const k = 8;
+			const nat = spans.map((sp) => decodeRegion(out, sp.f0 + k));
+			const comp: Buffer[] = [];
+			for (const sp of spans) comp.push(await composition(sp.f0 + k));
+			// The paint does reach past the box: the static subtitle has stroke / shadow pixels above the box's top.
+			const above = (buf: Buffer) => {
+				let n = 0;
+				const bg = [buf[0]!, buf[1]!, buf[2]!];
+				for (let y = 0; y < 890 - REGION.y; y++)
+					for (let x = 0; x < REGION.w; x++) {
+						const i = (y * REGION.w + x) * 3;
+						if (Math.abs(buf[i]! - bg[0]!) + Math.abs(buf[i + 1]! - bg[1]!) + Math.abs(buf[i + 2]! - bg[2]!) > 24) n++;
+					}
+				return n;
+			};
+			expect(above(comp[0]!)).toBeGreaterThan(200);
+			for (let i = 1; i < spans.length; i++) {
+				const t = spans[i]!.template;
+				for (const [path, set] of [
+					['native', nat],
+					['composition', comp],
+				] as const) {
+					const q = { ssim: ssim(set[i]!, set[0]!), share: within(set[i]!, set[0]!, 3), above: above(set[i]!) };
+					report(
+						`[subtitle paint] ${t} vs static (${path}): SSIM ${q.ssim.toFixed(4)}, within 3/255 ${q.share.toFixed(4)}, paint above the box ${q.above} px vs ${above(set[0]!)}`,
+					);
+					expect(q.ssim, `${t} ${path}`).toBeGreaterThanOrEqual(0.995);
+					expect(q.above, `${t} ${path}: paint above the box`).toBeGreaterThan(0.9 * above(set[0]!));
+				}
+			}
+		}, 1_800_000);
 	},
 );
