@@ -766,12 +766,12 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const pixels = output.width * output.height;
 	const pixelFactor = Math.max(0.25, pixels / (1920 * 1080));
 	// Baked layers (uncached): masters at ~8 fps over each layer's drawn span (S04:RP-009 seed); stills in sheet
-	// renders of up to 64 (spec 13 AS-071, textperf: ≈ 3.4 s fixed per render, ≈ 0.1 s per still).
+	// renders of up to 128 (spec 13 AS-071, textperf: ≈ 3.4 s fixed per render, ≈ 0.1 s per still).
 	const stillBakes = baked.filter((b) => b.still).length;
 	const bakeSeconds =
 		path === 'hybrid'
 			? (baked.reduce((s, b) => s + (b.still ? 0 : b.frames / 8), 0) +
-					Math.ceil(stillBakes / 64) * 3.4 +
+					Math.ceil(stillBakes / 128) * 3.4 +
 					stillBakes * 0.1) *
 				pixelFactor
 			: 0;

@@ -212,5 +212,5 @@ peaking at 19–25 GB, the long video impossible on the Hybrid path, and one run
   send becomes `OUT_OF_MEMORY` (`killedComposite`; a pipe error it caused in a stream no longer masks it). Every tool
   process gets `oom_score_adj` 900 on Linux (`preferOomKill`), so the OOM killer picks ffmpeg before the engine.
   The engine's own stream memory is bounded (one stream per track: output slots and a few pictures).
-- The plan's estimate counts still bakes as sheets (≈ 3.4 s per sheet + 0.1 s per still, textperf).
+- The plan's estimate counts still bakes as sheets (≈ 3.4 s per sheet of ≤ 128 + 0.1 s per still, textperf).
 

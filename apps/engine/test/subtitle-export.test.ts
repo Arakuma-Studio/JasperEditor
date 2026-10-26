@@ -245,6 +245,64 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 		}
 	}, 300_000);
 
+	it('plans subtitle-scale text as hybrid with still bakes: the estimate counts sheets, not per-clip masters', async () => {
+		const d = new DocBuilder('hd-1080p-59.94');
+		d.tx([{ type: 'clip.addSolid', at: 0, duration: 200 * 30, track: 'V1', color: [0.1, 0.1, 0.1, 1] }]);
+		const add: unknown[] = [];
+		for (let i = 0; i < 200; i++)
+			add.push({
+				type: 'clip.addText',
+				at: i * 30,
+				duration: 30,
+				track: 'V2',
+				content: { text: `W${i % 37}` },
+				box: { width: 1440, height: 140, autoSize: 'height' },
+				ref: `$t${i}`,
+			});
+		const refs = d.tx(add).refs;
+		const keys: unknown[] = [];
+		for (let i = 0; i < 200; i++)
+			for (const [f, v] of [
+				[0, 75],
+				[6, 108],
+				[10, 100],
+			] as const)
+				keys.push({
+					type: 'keyframe.add',
+					target: ['clip', refs[`$t${i}`], 'transform', 'scale'],
+					at: { sequenceFrame: i * 30 + f },
+					value: v,
+				});
+		d.tx(keys);
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: { ...settings(d.seqId, 6000), video: { ...settings(d.seqId, 6000).video, frameRate: { num: 60000, den: 1001 } } },
+			},
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const p = r.json() as {
+			path: string;
+			blockers: unknown[];
+			estimate: { seconds: number };
+			segments: { graphicsGroups: unknown[] }[];
+		};
+		// Remotion bakes need the renderer: without it the plan says so (then nothing about memory).
+		if (p.path !== 'hybrid') {
+			expect(JSON.stringify(p.blockers)).toMatch(/Remotion/);
+			return;
+		}
+		expect(p.blockers).toEqual([]);
+		expect(p.segments[0]!.graphicsGroups).toHaveLength(200);
+		// Masters at 8 fps would be ≥ 200 × 30 / 8 = 750 s of bake alone; two sheets of stills are seconds.
+		const encode = (6000 / (60000 / 1001) / 1.5) * 1;
+		expect(p.estimate.seconds).toBeLessThan(encode + 30);
+	}, 300_000);
+
 	/** An engine whose ffmpeg runs the composite (the call with an overlay) through `wrap`. */
 	async function wrappedEngine(wrap: string): Promise<TestApp> {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-oom-'));
