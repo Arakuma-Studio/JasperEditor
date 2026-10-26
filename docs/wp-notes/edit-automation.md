@@ -289,6 +289,26 @@ adjustment punch-ins — the export planner has no native or layer-bake route fo
 the whole export goes through the Remotion renderer (tested in `apps/engine/test/automation.test.ts`: kits → path
 `remotion` with the blocker; punch-ins + Ken Burns → `native`).
 
+### Export cost of 100 kits (EA-033, measured)
+
+`KITS_BENCH=1 pnpm exec vitest run apps/engine/test/automation-kits-bench.test.ts` (results in
+`apps/engine/bench/automation-kits.results.json`): a 1080p 30 fps edit of 101 flat pictures of 2 s with a small square
+over them (100 cuts, 6 060 frames = 202 s), H.264 CRF 20 "fast", exported as it is and with 100 kits from Decorate
+Cuts (seed 1, no sounds), same settings, wall time of the export job. Build VM: AMD EPYC-Rome, 16 vCPU, 31 GB, software
+GL (SwiftShader in headless Chrome), bench lock held, but load average 6.5 → 15.6 from other agents' jobs (2026-10-26
+00:26–01:21 UTC), one run each.
+
+| Export | Path | Wall time | × real time | Per kit (vs native) |
+|---|---|---|---|---|
+| No kits | native | 35.9 s | 0.18 × | — |
+| 100 long-form kits (Jolt 46, Zoom blur 24, Whip 15, Spin 9, Zoom through 6) | Remotion | 1 853.6 s (30.9 min) | 9.2 × | ≈ 18.2 s |
+| 100 shorts shake kits (S_Shake with Motion Blur) | Remotion | 1 392.3 s (23.2 min) | 6.9 × | ≈ 13.6 s |
+
+The kits send the whole export through the Remotion renderer, so the cost is not proportional to the kit frames alone:
+the 4 000 kit frames are 66 % of this edit (2 s clips), and every frame is rendered in the browser. In the dry run the
+cost class says it ("the export renders through the Remotion path"); a hybrid route that renders only the kit spans of
+the composite would cut this to the kit frames and is not built (docs/gaps.md).
+
 ### Accuracy harness (EA-051, private)
 
 `.prproj-analysis/research/automation-harness/` (not committed): `prepare.py` (host) strips every decoration from the

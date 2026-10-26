@@ -1,0 +1,43 @@
+{
+  "machine": {
+    "cpus": 16,
+    "model": "AMD EPYC-Rome Processor",
+    "memGB": 31
+  },
+  "loadBefore": [
+    6.5,
+    7.53,
+    9.44
+  ],
+  "frames": 6060,
+  "at": "2026-10-26T00:26:49.729Z",
+  "plain": {
+    "seconds": 35.929996195,
+    "path": "native"
+  },
+  "long-pack": {
+    "seconds": 1853.597063694,
+    "path": "remotion",
+    "families": {
+      "jolt": 46,
+      "spin": 9,
+      "zoom-blur": 24,
+      "zoom-through": 6,
+      "whip": 15
+    },
+    "perKitSeconds": 18.17667067499
+  },
+  "shorts-shake": {
+    "seconds": 1392.337885076,
+    "path": "remotion",
+    "families": {
+      "shake": 100
+    },
+    "perKitSeconds": 13.56407888881
+  },
+  "loadAfter": [
+    15.58,
+    13.35,
+    11.52
+  ]
+}
