@@ -300,7 +300,8 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					sheets.push(groups.slice(i, i + n));
 					i += n;
 				}
-				const sheetBudget = Math.min(budget, sheets.length > 2 ? SHEET_PAGES_LARGE : SHEET_PAGES);
+				// Pages by still count (more than two full sheets), not by the count of the doubling sheets.
+				const sheetBudget = Math.min(budget, groups.length > 2 * SHEET_MAX ? SHEET_PAGES_LARGE : SHEET_PAGES);
 				const pool = runPagePool(
 					sheets.map((sheet, i) => ({
 						want: sheetBudget,
