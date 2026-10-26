@@ -176,4 +176,4 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   merges (2760136a); subtitles merged; integrated full suite on the VM (1243bcb7): 8,151 passed, 9 failed — 7 known
   (5 Jasper Synth hashes, ZIP-1 memory, Electron needs libgtk on the VM) + 2 fixed in ebdeb1bb (crop edge coverage
   rounding to 0.9999999999999996, regression test fails before; subtitles e2e named libx264 → OpenH264 only; e2e 3/3
-  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged; recipes launched.
+  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged (suite on 6fb5bd71: typecheck, lint, i18n pass; 8,223 passed, only the 7 known failures); recipes launched.
