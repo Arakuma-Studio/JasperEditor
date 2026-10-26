@@ -210,6 +210,11 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 											autoFocus
 											onChange={(e) => setRenaming({ id: c.id, value: e.target.value })}
 											onKeyDown={(e) => {
+												// Enter / Escape belong to the field here, not to the dialog (which would close)
+												if (e.key === 'Enter' || e.key === 'Escape') {
+													e.preventDefault();
+													e.stopPropagation();
+												}
 												if (e.key === 'Escape') setRenaming(null);
 												if (e.key === 'Enter' && renaming.value.trim())
 													void run(t('Rename'), async () => {
@@ -285,6 +290,13 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 							value={saving.name}
 							autoFocus
 							onChange={(e) => setSaving({ ...saving, name: e.target.value })}
+							onKeyDown={(e) => {
+								if (e.key !== 'Enter' && e.key !== 'Escape') return;
+								e.preventDefault();
+								e.stopPropagation();
+								if (e.key === 'Escape') setSaving(null);
+								else if (saving.name.trim() && base && !busy) saveCurrent();
+							}}
 							data-testid="style-recipes-save-name"
 						/>
 						<Checkbox
