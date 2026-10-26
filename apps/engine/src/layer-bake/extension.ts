@@ -294,7 +294,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				);
 				const sheets: (typeof items)[][] = [];
 				for (let i = 0; i < groups.length; ) {
-					const n = sheets.length === 0 ? FIRST_SHEET : SHEET_MAX;
+					// Doubling sizes (16, 32, 64, 128…): each sheet's stills arrive before the composite reaches them,
+					// at one sheet's fixed cost more per doubling.
+					const n = Math.min(SHEET_MAX, FIRST_SHEET * 2 ** sheets.length);
 					sheets.push(groups.slice(i, i + n));
 					i += n;
 				}
