@@ -442,7 +442,10 @@ describe.runIf(enabled)(
 			const composition = async (f: number) => {
 				const ref = join(tempAppdir('jasper-sub-same-'), 'ref.png');
 				await core.remotion.renderStill({
-					inputProps: { doc: referenceDoc, options: { isPreview: false, useProxies: false, transparentBackground: false } },
+					inputProps: {
+						doc: referenceDoc,
+						options: { isPreview: false, useProxies: false, transparentBackground: false },
+					},
 					output: ref,
 					frame: f,
 					signal: new AbortController().signal,
@@ -461,7 +464,11 @@ describe.runIf(enabled)(
 					if (y + REGION.y >= 890 && y + REGION.y < 1030) continue;
 					for (let x = 0; x < REGION.w; x++) {
 						const i = (y * REGION.w + x) * 3;
-						if (Math.abs(buf[i]! - bg[0]!) + Math.abs(buf[i + 1]! - bg[1]!) + Math.abs(buf[i + 2]! - bg[2]!) > 24) n++;
+						if (
+							Math.abs(buf[i]! - bg[0]!) + Math.abs(buf[i + 1]! - bg[1]!) + Math.abs(buf[i + 2]! - bg[2]!) >
+							24
+						)
+							n++;
 					}
 				}
 				return n;
@@ -473,7 +480,11 @@ describe.runIf(enabled)(
 					['native', nat],
 					['composition', comp],
 				] as const) {
-					const q = { ssim: ssim(set[i]!, set[0]!), share: within(set[i]!, set[0]!, 3), above: above(set[i]!) };
+					const q = {
+						ssim: ssim(set[i]!, set[0]!),
+						share: within(set[i]!, set[0]!, 3),
+						above: above(set[i]!),
+					};
 					report(
 						`[subtitle paint] ${t} vs static (${path}): SSIM ${q.ssim.toFixed(4)}, within 3/255 ${q.share.toFixed(4)}, paint outside the box ${q.above} px vs ${above(set[0]!)}`,
 					);

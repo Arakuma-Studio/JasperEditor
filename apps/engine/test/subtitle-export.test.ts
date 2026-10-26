@@ -68,8 +68,7 @@ async function stillsDoc(app: TestApp, n: number, video?: string) {
 				tracks: { video: 'V1' },
 			},
 		]);
-	} else
-		d.tx([{ type: 'clip.addSolid', at: 0, duration: n * 8, track: 'V1', color: [0.08, 0.08, 0.08, 1] }]);
+	} else d.tx([{ type: 'clip.addSolid', at: 0, duration: n * 8, track: 'V1', color: [0.08, 0.08, 0.08, 1] }]);
 	const cmds: unknown[] = [];
 	for (let i = 0; i < n; i++)
 		cmds.push({

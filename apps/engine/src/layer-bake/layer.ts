@@ -331,7 +331,9 @@ export function layerStill(
 	const e =
 		Math.ceil(Math.max(0, bleed)) +
 		2 +
-		(grow || pending ? Math.ceil(0.25 * Math.max(c.intrinsicBox.width, c.intrinsicBox.height) + 2 * size) : 0);
+		(grow || pending
+			? Math.ceil(0.25 * Math.max(c.intrinsicBox.width, c.intrinsicBox.height) + 2 * size)
+			: 0);
 	const w = Math.ceil(c.intrinsicBox.width) + 2 * e;
 	const h = Math.ceil(c.intrinsicBox.height) + 2 * e;
 	if (!(w > 0 && h > 0) || w > MAX_LAYER_STILL_SIDE || h > MAX_LAYER_STILL_SIDE) return null;

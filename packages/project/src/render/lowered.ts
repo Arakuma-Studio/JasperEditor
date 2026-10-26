@@ -220,7 +220,8 @@ export function loweredLayerTaps(o: {
 	};
 	// The effect canvas: the box grown by the text's own paint (stroke, shadow, ink: `textContentPad`) and the GPU
 	// effects' padding (compositions fx/plan.ts `planLayerFx`, `fxCanvasLayout`).
-	const cp = 'text' in c.source ? Math.min(FX_MAX_PADDING, Math.max(0, Math.ceil(textContentPad(c.source.text)))) : 0;
+	const cp =
+		'text' in c.source ? Math.min(FX_MAX_PADDING, Math.max(0, Math.ceil(textContentPad(c.source.text)))) : 0;
 	let pl = cp;
 	let pt = cp;
 	let pr = cp;

@@ -286,7 +286,10 @@ export function useLayerFx(
 		[clip],
 	);
 	// spec 13 AS-070: a text layer's stroke, shadow and glyph ink reach beyond its box; its effects see them.
-	const contentPadding = useMemo(() => ('text' in clip.source ? textContentPad(clip.source.text) : 0), [clip]);
+	const contentPadding = useMemo(
+		() => ('text' in clip.source ? textContentPad(clip.source.text) : 0),
+		[clip],
+	);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>

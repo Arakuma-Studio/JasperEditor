@@ -106,7 +106,9 @@ describe('kernel stream failure (AS-074)', () => {
 			});
 			sink.on('error', () => undefined);
 			const ac = new AbortController();
-			await expect(streamTaps(ff, plan, sink, { workers: 2, signal: ac.signal })).rejects.toThrow(/layer stream/);
+			await expect(streamTaps(ff, plan, sink, { workers: 2, signal: ac.signal })).rejects.toThrow(
+				/layer stream/,
+			);
 			await new Promise((r) => setTimeout(r, 800));
 			expect(unhandled.map(String)).toEqual([]);
 		} finally {
