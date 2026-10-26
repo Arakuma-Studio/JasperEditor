@@ -10,6 +10,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react';
+import { derivedPreviewDocument, derivedPreviewFor } from '../derived-preview.ts';
 import { gestureFrames } from '../gesture-frames.ts';
 import type { EditorSession } from '../session.ts';
 import type { TransportState, TransportStore } from '../transport.ts';
@@ -132,4 +133,15 @@ export function useTransportFrame(throttleMs = 100): TransportState {
 		};
 	}, [transport, throttleMs]);
 	return state;
+}
+
+/**
+ * The derived preview the Program monitor plays instead of the sequence (spec 14 "Play result"), or null: none
+ * running, or a gesture draws its own transient.
+ */
+export function useDerivedPreviewDocument(session: EditorSession): ProjectDocument | null {
+	const active = useStoreSelector(derivedPreviewFor(session).store, (s) => s.active);
+	const gesture = useStoreSelector(session.store, (s) => s.gesture !== null);
+	void gesture; // re-render when a gesture starts or ends
+	return derivedPreviewDocument({ active }, session);
 }

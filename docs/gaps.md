@@ -127,6 +127,15 @@ measurements and limits (montage zones may be run through; weak-word lists for S
 transcripts with word timings, captions can be generated from them, and text-based editing (delete words → ripple
 the timeline) works as one undoable step.
 **Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Spec 16: GPU providers (WebGPU on macOS/Linux/Windows, CUDA on Linux x64 downloaded on request; Core ML and DirectML deliberately unused), large-v3-turbo, hallucination guards, resumable downloads. Limits: GPU paths unverified on real GPUs in this checkout's tests (fake runtime; WebGPU probe on the VM finds no adapter), Linux only checked, classical diarization.
+**Transcript cleanup (spec 14 TC-001…TC-071):** voice analysis, the "probably wrong" detector (retakes with take
+groups, restarts, false starts, Spanish / English fillers, off-script and head / tail with a script, pauses, breaths,
+voice without words, transcription suspects) and the level-referenced auto-cut as one undo step; Text panel ▸
+Transcript ▸ Clean Up (Sequence ▸ Clean Up Voice…: presets, every setting, script, review with live statistics, Play
+result, Apply) and MCP `analyze_voice` / `plan_cleanup` / `apply_cleanup` / `set_cleanup_settings` / `attach_script` —
+see [wp-notes/transcript-cleanup.md](wp-notes/transcript-cleanup.md). Measured on the user's 16 recordings (Fast,
+shipped code): removed-word precision / recall 0.89 / 0.81 (shorts), 0.88 / 0.82 (long); user edit points within
+50 ms 0.64 / 0.70 (the prototype 0.72, deliberate differences documented). Limits: English lists not measured; the
+Timeline does not draw the derived timeline during Play result.
 
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,

@@ -13,7 +13,7 @@ import {
 } from '../src/index.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import { resolveAudioTransitions } from '../src/transitions.ts';
-import { GOLDEN_EVENTS, goldenSequence } from './cleanup-golden.test.ts';
+import { GOLDEN_EVENTS, goldenSequence } from './cleanup-golden-fixture.ts';
 import { synthRecording } from './cleanup-synth.ts';
 import { Harness, videoAsset } from './helpers.ts';
 

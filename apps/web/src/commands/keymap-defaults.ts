@@ -377,6 +377,23 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('soundCheck.openSyncStrip', 'ArrowRight', 'soundCheck'),
 	b('soundCheck.closeSyncStrip', 'ArrowLeft', 'soundCheck'),
 	b('soundCheck.playFinding', 'Space', 'soundCheck'),
+	// spec 14 TC-041 (Text panel ▸ Transcript ▸ Clean Up review; enabled only during a review, never while typing): ↑ ↓
+	// move, Enter cut, Backspace / Delete keep, U clear, Shift+Enter / Shift+Backspace the whole kind, Space ±1 s, Shift+Space
+	// the result, Esc stop a preview, Ctrl+Enter (mac Cmd+Enter) Apply
+	b('cleanup.prevFinding', 'ArrowUp', 'text', R),
+	b('cleanup.nextFinding', 'ArrowDown', 'text', R),
+	b('cleanup.acceptFinding', 'Enter', 'text'),
+	b('cleanup.acceptFinding', 'NumpadEnter', 'text'),
+	b('cleanup.rejectFinding', 'Backspace', 'text'),
+	b('cleanup.rejectFinding', 'Delete', 'text'),
+	b('cleanup.clearFinding', 'KeyU', 'text'),
+	b('cleanup.acceptKind', 'Shift+Enter', 'text'),
+	b('cleanup.rejectKind', 'Shift+Backspace', 'text'),
+	b('cleanup.previewFinding', 'Space', 'text'),
+	b('cleanup.playResult', 'Shift+Space', 'text'),
+	b('cleanup.stopPreview', 'Escape', 'text'),
+	b('cleanup.apply', 'Ctrl+Enter', 'text'),
+	b('cleanup.apply', 'Ctrl+NumpadEnter', 'text'),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

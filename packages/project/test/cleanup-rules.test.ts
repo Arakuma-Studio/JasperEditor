@@ -169,6 +169,27 @@ describe('rules (Spanish)', () => {
 		expect(none.byWord.some((k) => k === 'off-script' || k === 'head-tail')).toBe(false);
 	});
 
+	it('a paraphrased closing line is not tail chatter (TC-071 calibration regression)', () => {
+		// The user rewords the last script line when recording; the head / tail rule used to cut everything after the
+		// last unit that matched a line, i.e. the closing sentences the user kept (head / tail precision 0.17 on shorts).
+		const script = 'Hoy vamos a crear un juego de carreras.\nAl final añadí música y efectos de sonido.';
+		const r = kinds(
+			'hoy vamos a crear un juego de carreras | y para terminar le puse música chula al juego | madre mía qué calor hace | adiós amigos',
+			{ script },
+		);
+		expect(r.r.script?.map((l) => l.said)).toEqual([true, false]);
+		expect(r.byWord.slice(0, 17).every((k) => k === null)).toBe(true);
+		// chatter after it is still removed: off-script (≥ 3 content words), else tail
+		expect(r.byWord.slice(17, 22).every((k) => k === 'off-script')).toBe(true);
+		expect(r.byWord.slice(22)).toEqual(['head-tail', 'head-tail']);
+		// the head side stays strict: on-topic pre-roll before the first scripted line is still head (the user cuts it)
+		const h = kinds('vale ya | vamos allá que hoy hay juego nuevo | hoy vamos a crear un juego de carreras', {
+			script,
+		});
+		expect(h.byWord.slice(0, 9).every((k) => k === 'head-tail')).toBe(true);
+		expect(h.byWord.slice(9).every((k) => k === null)).toBe(true);
+	});
+
 	it('marker phrases alone between pauses go; inside a sentence they stay; at a clause start they are reviewed', () => {
 		const r = kinds('bueno | a ver | este video es genial | pero bueno funciona');
 		expect(r.byWord.slice(0, 3)).toEqual(['filler-phrase', 'filler-phrase', 'filler-phrase']);

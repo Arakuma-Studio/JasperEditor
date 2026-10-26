@@ -604,6 +604,9 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `get_transcript` (`docs/wp-notes/speech.md`).
 - Voice analysis (10 ms levels, voicing, speech / breath / silence frames of a media's audio stream; a cached engine
   job): `get_voice_analysis` (`docs/wp-notes/transcript-cleanup.md`).
+- Clean Up Voice (retakes, restarts, fillers, off-script talk, pauses and breaths found in transcribed speech and cut
+  at the audio level in one undo step; guide resource `jasper://guide/cleanup` "Cleaning up speech"): `analyze_voice`
+  `plan_cleanup` `apply_cleanup` `set_cleanup_settings` `attach_script` (`docs/wp-notes/transcript-cleanup.md`).
 - Timeline interchange (Final Cut Pro 7 XML, FCPXML, OpenTimelineIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media:
   `import_timeline` `export_timeline` `list_offline_media` `link_media` (`docs/wp-notes/interchange.md`).
 - Imports and Interpret Footage (Lottie, SVG, PDF/AI, PSD, image sequences, EXR/TIFF/TGA/BMP/DPX/HEIC/JPEG XL through

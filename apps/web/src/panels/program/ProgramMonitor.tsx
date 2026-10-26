@@ -12,6 +12,7 @@ import {
 } from '@jasper/compositions';
 import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
 import {
+	useDerivedPreviewDocument,
 	useGestureFrameDocument,
 	useSessionOrNull,
 	useSessionState,
@@ -136,7 +137,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	// committed; the session's document and History are untouched). Toggling swaps the Player's document in place:
 	// unchanged clips keep their players, so playback goes on.
 	const heard = useHeardDocument(session);
-	const drawn = heard ?? gestureDrawn;
+	// spec 14 TC-042: "Play result" / "Play removed" of Clean Up play a derived timeline (never committed) the same way.
+	const derived = useDerivedPreviewDocument(session);
+	const drawn = heard ?? derived ?? gestureDrawn;
 	const media = useSessionState((s) => s.media);
 	const autoProxies = useSessionState((s) => s.toggles.useProxies);
 	// gaps (PRJ-8): Toggle Proxies plays attached proxies.

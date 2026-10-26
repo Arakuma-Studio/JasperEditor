@@ -1,0 +1,88 @@
+{
+  "machine": {
+    "cpu": "AMD EPYC-Rome Processor",
+    "cores": 16,
+    "memoryBytes": 32859295744,
+    "node": "v24.22.1"
+  },
+  "loadAtStart": [
+    10.77,
+    9.76,
+    10.29
+  ],
+  "loadAtEnd": [
+    10.77,
+    9.76,
+    10.29
+  ],
+  "results": [
+    {
+      "case": "worker: re-plan after one decision (analyzeSequenceCleanup), 1 h",
+      "words": 7148,
+      "findings": 1277,
+      "ranges": 883,
+      "medianMs": 151.6,
+      "samplesMs": [
+        151.6,
+        156,
+        144.7,
+        137.5,
+        158.6,
+        142.7,
+        166.3
+      ]
+    },
+    {
+      "case": "main thread: transcript marks (wordMarks), 1 h",
+      "medianMs": 6.1,
+      "samplesMs": [
+        9.9,
+        9.1,
+        6.5,
+        6.1,
+        4.8,
+        4.8,
+        4.6
+      ]
+    },
+    {
+      "case": "main thread: findings list (groupFindings + listLayout), 1 h",
+      "medianMs": 1.2,
+      "samplesMs": [
+        1.2,
+        1.2,
+        1.2,
+        2.8,
+        1,
+        0.9,
+        0.9
+      ]
+    },
+    {
+      "case": "main thread: inline chips (inlineFindings), 1 h",
+      "medianMs": 0.8,
+      "samplesMs": [
+        1.1,
+        0.8,
+        0.8,
+        0.8,
+        0.7,
+        1.7,
+        0.6
+      ]
+    },
+    {
+      "case": "main thread: timeline bands (overlayBands), 1 h",
+      "medianMs": 2.3,
+      "samplesMs": [
+        2.5,
+        2.4,
+        2.5,
+        2.3,
+        2.2,
+        2.2,
+        2.2
+      ]
+    }
+  ]
+}

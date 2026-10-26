@@ -14,6 +14,7 @@ import { AUDIO_FX_GUIDE, registerAudioFxTools } from './tools/audio-fx.ts';
 import { AUTOMATION_GUIDE, registerAutomationTools } from './tools/automation.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
+import { CLEANUP_GUIDE, registerCleanupTools } from './tools/cleanup.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
@@ -130,6 +131,7 @@ const FULL_GUIDE = [
 	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
 	VOICE_GUIDE,
+	CLEANUP_GUIDE,
 	ROTO_GUIDE,
 	SIM_WARP_GUIDE,
 	INTERCHANGE_GUIDE,
@@ -208,6 +210,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTextStyleTools(ctx);
 	registerSpeechTools(ctx);
 	registerVoiceTools(ctx);
+	registerCleanupTools(ctx);
 	registerRotoTools(ctx);
 	registerSimWarpTools(ctx);
 	registerInterchangeTools(ctx);
@@ -273,6 +276,25 @@ function registerResources(ctx: ToolContext): void {
 				],
 			};
 		},
+	);
+	ctx.server.registerResource(
+		'cleanup-guide',
+		'jasper://guide/cleanup',
+		{
+			title: 'Cleaning up speech',
+			description:
+				'How to remove retakes, fillers, pauses and breaths from recorded speech with analyze_voice / plan_cleanup / apply_cleanup, and the recommended agent policy.',
+			mimeType: 'text/markdown',
+		},
+		async (uri) => ({
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `# Cleaning up speech\n\n${CLEANUP_GUIDE}\n\n${VOICE_GUIDE}`,
+				},
+			],
+		}),
 	);
 	ctx.server.registerResource(
 		'editing-guide',

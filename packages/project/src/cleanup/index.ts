@@ -30,6 +30,12 @@ export {
 } from './lists.ts';
 export { isHarshCut, type MediaPlan, type MediaPlanInput, planMediaCuts } from './plan.ts';
 export {
+	cleanupApplyCommands,
+	cleanupFindingFrames,
+	cleanupFindingMedia,
+	cleanupRejectionChanges,
+} from './review.ts';
+export {
 	BUILTIN_CLEANUP_PRESETS,
 	builtinCleanupSettings,
 	CLEANUP_MAX_LIST_ENTRIES,
