@@ -197,7 +197,10 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 		doc: () => doc,
 		bump: () => apply({ label: 'marker', commands: [{ type: 'marker.add', frame: 1 }] }),
 		setAgentProposals: (v: Record<string, boolean>) =>
-			apply({ label: 'settings', commands: [{ type: 'project.updateSettings', settings: { agentProposals: v } }] }),
+			apply({
+				label: 'settings',
+				commands: [{ type: 'project.updateSettings', settings: { agentProposals: v } }],
+			}),
 	};
 }
 
