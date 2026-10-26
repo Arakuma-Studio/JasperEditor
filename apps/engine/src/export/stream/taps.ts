@@ -265,6 +265,9 @@ export async function streamTaps(
 					})
 					.then(() => ({ slot }));
 			}
+			// A stream that fails stops writing: draws still in flight are rejected by the pool's close, and nothing
+			// awaits them any more — their rejections must not become unhandled (the engine would exit).
+			job.catch(() => undefined);
 			inflight.push(job);
 			const mine = job;
 			writeChain = writeChain.then(async () => {
