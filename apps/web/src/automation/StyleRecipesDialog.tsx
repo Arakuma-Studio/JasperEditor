@@ -239,7 +239,7 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 								</span>
 								<Button
 									variant="quiet"
-									disabled={readOnly || !c.recipe || isActive || busy}
+									disabled={readOnly || !c.recipe || (isActive && c.projectRevision === undefined) || busy}
 									onClick={() => use(c)}
 									data-testid="style-recipe-use"
 								>
