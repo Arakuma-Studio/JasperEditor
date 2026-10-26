@@ -469,6 +469,15 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 		expect(again.statusCode).toBe(200);
 	}, 300_000);
 
+	it('a compositor that fails on its own reports its error, not the pipe error of the stream it fed', async () => {
+		const failing = await wrappedEngine('echo "graph: Filter has an unconnected output" >&2; exit 3');
+		const d = await stillsDoc(failing, 3);
+		const job = await startExport(failing, d, settings(d.seqId, 24, 'native'));
+		expect(job.state).toBe('failed');
+		expect(job.error?.message).toMatch(/unconnected output/);
+		expect(job.error?.message).not.toMatch(/layer stream/);
+	}, 300_000);
+
 	it('a compositor under a memory cap fails the job with its error; the engine lives', async () => {
 		const capped = await wrappedEngine('ulimit -v 150000');
 		const d = await stillsDoc(capped, 3);
