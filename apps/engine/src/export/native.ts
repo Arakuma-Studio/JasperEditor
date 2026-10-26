@@ -20,6 +20,7 @@ import {
 	dissolveSeed,
 	type EffectRegistry,
 	FLICKS_PER_SECOND,
+	FRAME_TIME_EPS,
 	flicksPerFrame,
 	isAnimated,
 	maskExportRoute,
@@ -174,22 +175,23 @@ function rate(r: Rational): string {
 	return `${r.num}/${r.den}`;
 }
 
-/** Matrix of `in_color_matrix` for a probed stream (untagged HD is BT.709 like browsers assume). */
+/**
+ * `in_color_matrix` / `in_range` for a probed stream: its matrix tag, and BT.709 when it has none, at every size. That is
+ * what the Program preview does (Chrome decodes untagged H.264 with BT.709, measured for 640×360 and 1280×720 in
+ * docs/wp-notes/time.md §15), so every path shows an untagged file the same way; the previous rule (BT.601 below 720
+ * lines, ffmpeg's habit) exported untagged SD footage with other colours than the preview drew.
+ */
 export function inColor(m: LocalMedia | null): string {
 	const vs = m?.record.probe.streams.find((s) => s.type === 'video');
 	if (vs?.type !== 'video') return '';
 	const matrix = vs.color.matrix;
 	// color-mgmt: BT.2020 (HDR / wide-gamut) media decode with the BT.2020 non-constant-luminance matrix.
 	const cm =
-		matrix === 'bt709'
-			? 'bt709'
-			: matrix === 'bt2020nc' || matrix === 'bt2020c'
-				? 'bt2020'
-				: matrix === 'bt470bg' || matrix === 'smpte170m'
-					? 'bt601'
-					: vs.height >= 720
-						? 'bt709'
-						: 'bt601';
+		matrix === 'bt2020nc' || matrix === 'bt2020c'
+			? 'bt2020'
+			: matrix === 'bt470bg' || matrix === 'smpte170m'
+				? 'bt601'
+				: 'bt709';
 	return `:in_color_matrix=${cm}:in_range=${vs.color.range === 'pc' ? 'pc' : 'tv'}`;
 }
 
@@ -336,6 +338,50 @@ type LayerSourceChain = {
 	opaque: boolean;
 };
 
+/** Least media decoded before a layer's first media time (see `seekWindow`). */
+const MIN_SEEK_LEAD_SEC = 0.25;
+
+/**
+ * Where to seek the input so that the frame containing media time `startSec` survives ffmpeg's accurate seek (which
+ * drops every frame before the seek point): two frames of the media earlier, at least `MIN_SEEK_LEAD_SEC`, never
+ * before the file's start. `seek` is the value written to `-ss` (whole microseconds, as `sec` prints it) and `lead`
+ * = `startSec − seek`, the media time between the input's pts 0 and `startSec`.
+ */
+export function seekWindow(startSec: number, mediaFps: number | null): { seek: number; lead: number } {
+	const want = Math.max(MIN_SEEK_LEAD_SEC, mediaFps && mediaFps > 0 ? 2 / mediaFps : 0);
+	const seek = Number(sec(Math.max(0, startSec - want)));
+	return { seek, lead: Math.max(0, startSec - seek) };
+}
+
+/**
+ * Exact source frame timing (docs/wp-notes/time.md §15, S01:CLP-004): output frame j (pts 0 = the layer's first
+ * frame) shows the last media frame whose timestamp is ≤ `startSec + j·speed/fps` (within `FRAME_TIME_EPS`), the frame
+ * `frameIndexAt` picks for the preview's retime pipeline. The input's pts 0 is media time `startSec − lead`
+ * (`seekWindow`). In microseconds (`settb=AVTB`): `setpts` truncates to its time base, and `fps` with `round=up`
+ * assigns each frame to the first output slot at or after its timestamp, so a slot shows the latest frame at or before
+ * it (the nested-sequence mapping uses the same filter). The old chain (`PTS-STARTPTS`, `fps` rounding to the nearest
+ * slot) showed the nearest frame from the first frame after the seek point: one frame late after a seek, and the
+ * nearest instead of the containing frame when the rates differ.
+ */
+export function sourceTimingFilters(o: { lead: number; speed: number; fps: Rational; frames: number }): string[] {
+	const leadUs = Math.round(o.lead * 1e6);
+	const epsUs = Math.round(FRAME_TIME_EPS * 1e6);
+	return [
+		'settb=AVTB',
+		`setpts=(PTS-${leadUs})/${fmt(o.speed)}-${epsUs}`,
+		`fps=fps=${rate(o.fps)}:round=up:start_time=0`,
+		`trim=end_frame=${o.frames}`,
+	];
+}
+
+/** Nominal frame rate of a media's video stream (null when unknown). */
+function mediaFps(m: LocalMedia | null): number | null {
+	const vs = m?.record.probe.streams.find((s) => s.type === 'video');
+	return vs?.type === 'video' && vs.frameRate.num > 0 && vs.frameRate.den > 0
+		? vs.frameRate.num / vs.frameRate.den
+		: null;
+}
+
 /**
  * A layer's picture up to, not including, Motion (ARCHITECTURE §19.5, S09:TRK-032): input seeking, speed,
  * frame rate conform, scale to the intrinsic box, `rgba`, then its effects in stack order (built-in crop/flips,
@@ -411,20 +457,21 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		resizeAt(`:${SWS_FLAGS}`);
 	} else if (override && override.contentOrigin !== undefined) {
 		// edit-structure: the intermediate holds the clip's content from `contentOrigin` (counting leader): seek and
-		// play it like media (speed, frame hold).
+		// play it like media (speed, frame hold), with the media's exact source frame timing.
 		const startSec = Math.max(0, pictureSec(f0) - override.contentOrigin / FLICKS_PER_SECOND);
+		const { seek, lead } = seekWindow(startSec, mediaFps(local));
 		const k = addInput([
 			...(override.decoder ? ['-c:v', override.decoder] : []),
 			'-ss',
-			sec(startSec),
+			sec(seek),
 			'-t',
-			sec(c.frameHold ? margin : n * frameSec * c.speed.rate + margin),
+			sec(lead + (c.frameHold ? margin : n * frameSec * c.speed.rate + margin)),
 			'-i',
 			override.path,
 		]);
 		src = `[${k}:v:0]`;
-		if (c.frameHold) f.push(...holdFilters());
-		else f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
+		if (c.frameHold) f.push(...sourceTimingFilters({ lead, speed: 1, fps, frames: 1 }), ...holdFilters());
+		else f.push(...sourceTimingFilters({ lead, speed: c.speed.rate, fps, frames: n }));
 		resizeAt(`:${SWS_FLAGS}`);
 	} else if (override) {
 		// A held clip shows the master's frame at its held local frame (a retimed intermediate already holds it).
@@ -494,18 +541,23 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		// every packet ("Bitstream not supported", seen with VP8). Such inputs are decoded from their start
 		// and trimmed in the graph (overlays are short).
 		const decodeFromStart = dec !== null && startSec > 0;
+		// Exact source frame timing (frame-rate conform, speed, frame holds): see `sourceTimingFilters`.
+		const win = seekWindow(startSec, mediaFps(local));
+		const lead = decodeFromStart ? startSec : win.lead;
 		const k = addInput([
 			...(dec ? ['-c:v', dec] : []),
 			...decoderArgs(local.record),
-			...(decodeFromStart ? ['-t', sec(startSec + srcDur)] : ['-ss', sec(startSec), '-t', sec(srcDur)]),
+			...(decodeFromStart
+				? ['-t', sec(startSec + srcDur)]
+				: ['-ss', sec(win.seek), '-t', sec(win.lead + srcDur)]),
 			'-i',
 			local.path,
 		]);
 		src = `[${k}:v:0]`;
 		f.push(...interp);
-		if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
-		if (c.frameHold) f.push(...holdFilters());
-		else f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
+		if (decodeFromStart) f.push(`trim=start=${fmt(win.seek)}`);
+		if (c.frameHold) f.push(...sourceTimingFilters({ lead, speed: 1, fps, frames: 1 }), ...holdFilters());
+		else f.push(...sourceTimingFilters({ lead, speed: c.speed.rate, fps, frames: n }));
 		resizeAt(`${inColor(local)}:${SWS_FLAGS}`);
 		opaque = !variantHasAlpha(local.record, local.pixel ?? null);
 	} else if (c.kind === 'still' && local) {

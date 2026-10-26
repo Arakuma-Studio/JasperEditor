@@ -254,7 +254,7 @@ export class MediaJobService {
 		const rate = vs.frameRate.num > 0 && vs.frameRate.den > 0 ? vs.frameRate : { num: 30, den: 1 };
 		const dur = rec.durationSec ?? 0;
 		// The proxy keeps the file's R'G'B' signal: decoded with the matrix every export path assumes for the original
-		// (`inColor`: its tag, else BT.709 from 720 lines up, BT.601 below) and re-encoded as BT.709 limited range;
+		// (`inColor`: its tag, else BT.709, as the Program preview decodes it) and re-encoded as BT.709 limited range;
 		// primaries and transfer keep the original's tags (untagged stays unspecified), so the proxy decodes to the
 		// same picture as the original on every path.
 		const known = (v: string | undefined): v is string => !!v && v !== 'unknown' && v !== 'unspecified';
