@@ -130,7 +130,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | ✅ merged (1243bcb7; start on cut 98.8 % shorts / 99.8 % long vs user's 59.6 / 30.3 %; e2e subtitles 3/3) |
 | subexport | AS-050, AS-070…076 still + native motion, batched stills, bounded composite, native shake, preflight, preview windowing | textrender | 🔄 9-min/1,080 subtitles 302 s (1.20×), ≤ 3.9 GB PSS; cold short 1.83× (target 1.3×) — finishing on top of textrender + stroke-clipping fix |
 | cleanup | TC-010…033 detector, script alignment, plan + edges, presets, `cleanup.apply` | voice | ✅ merged (1 h detector 42 ms; 1,500 ranges 453 ms, one undo) |
-| cleanupui | TC-040…051, TC-060, TC-070/071 review UI, derived preview, MCP, calibration on the Mac | cleanup, speech | 🔄 |
+| cleanupui | TC-040…051, TC-060, TC-070/071 review UI, derived preview, MCP, calibration on the Mac | cleanup, speech | ✅ merged (a6128f6c; Mac calibration on 16 recordings, Fast preset: word precision 0.89 / recall 0.81 shorts, 0.88 / 0.82 long; edit points within 50 ms 0.64–0.70 < prototype 0.72; detector tail-rule bug found and fixed) |
 | kits | EA-020…022, EA-030, EA-032, EA-033 Decorate Cuts, punch-ins, Ken Burns | cutmap, proposals | ✅ merged (kits on exact cut 94.6–97.6 %; punch-in F1 0.62–0.71 < 0.75 target) |
 | overlays | EA-023…026 reactions, overlay slides, music bed, stingers | cutmap, proposals | 🔄 |
 | recipes | EA-010…013, EA-040…042, EA-050/051 style recipes, apply_style, Style Check, Automate menu, MCP, accuracy harness | kits, overlays, subtitles, cleanup | ⏳ |
@@ -176,4 +176,4 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   merges (2760136a); subtitles merged; integrated full suite on the VM (1243bcb7): 8,151 passed, 9 failed — 7 known
   (5 Jasper Synth hashes, ZIP-1 memory, Electron needs libgtk on the VM) + 2 fixed in ebdeb1bb (crop edge coverage
   rounding to 0.9999999999999996, regression test fails before; subtitles e2e named libx264 → OpenH264 only; e2e 3/3
-  with `JASPER_FFMPEG_LGPL_ONLY=1`).
+  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged.
