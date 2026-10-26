@@ -115,7 +115,13 @@ export function resolveSlideParams(raw: unknown): ResolvedSlideParams {
 	};
 }
 
-/** The tracks whose picture clips are overlays: the given ones, else every video track above the A-roll. */
+/** Tracks the other passes create (reactions, cut kits, punch-ins, stingers): their clips are not overlays. */
+const PASS_TRACK_NAME = /^(reactions|fx|zoom|stingers)(?: \d+)?$/i;
+
+/**
+ * The tracks whose picture clips are overlays: the given ones, else every video track above the A-roll except the
+ * tracks of the other automation passes ("Reactions", "FX", "ZOOM", "Stingers").
+ */
 export function overlayTracksOf(
 	seq: Sequence,
 	p: Pick<ResolvedSlideParams, 'track' | 'overlayTracks'>,
@@ -123,7 +129,7 @@ export function overlayTracksOf(
 	if (p.overlayTracks) return p.overlayTracks.map((r) => videoTrackOf(seq, r));
 	const a = p.track !== undefined ? passTrack(seq, p.track) : basePictureTrack(seq);
 	const ai = a ? seq.videoTracks.findIndex((t) => t.id === a.id) : -1;
-	return seq.videoTracks.filter((_, i) => i > ai);
+	return seq.videoTracks.filter((t, i) => i > ai && !PASS_TRACK_NAME.test((t.name ?? '').trim()));
 }
 
 /** Whether a clip edge is free: no clip of its track abuts it there and no transition sits on it. */

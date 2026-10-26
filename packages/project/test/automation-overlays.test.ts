@@ -659,6 +659,15 @@ describe('overlay slides (EA-024)', () => {
 		// a second pass finds no free edge
 		expect(planSlides(h.doc, null, { heads: 1, tails: 1 }).slides).toEqual([]);
 	});
+
+	it('the other passes’ tracks (Reactions, FX, ZOOM, Stingers) hold no overlays unless named', () => {
+		const { h, ids } = overlays([[100, 200]]);
+		const v2 = h.seq.videoTracks[1]!.id;
+		h.ok([{ type: 'track.update', trackId: v2, patch: { name: 'Reactions' } }]);
+		expect(planSlides(h.doc, null, { heads: 1, tails: 1 }).overlays).toBe(0);
+		const named = planSlides(h.doc, null, { heads: 1, tails: 1, overlayTracks: ['V2'] });
+		expect(named.slides.map((s) => s.clipId)).toEqual([ids[0], ids[0]]);
+	});
 });
 
 describe('music beds (EA-025)', () => {

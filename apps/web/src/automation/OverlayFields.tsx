@@ -66,7 +66,9 @@ export function AssetSourceFields(p: {
 			? 'folder'
 			: Array.isArray(v.mediaIds) && v.bin === undefined
 				? 'media'
-				: 'bin';
+				: v.bin !== undefined || bins.length
+					? 'bin'
+					: 'folder';
 	// the choice stays while its value is still empty (a folder not typed yet)
 	const [chosen, setChosen] = useState<'bin' | 'folder' | 'media' | null>(null);
 	const mode = p.value ? given : (chosen ?? given);
