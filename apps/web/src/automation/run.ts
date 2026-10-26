@@ -108,7 +108,18 @@ export async function reviewPassResult(
 	session: EditorSession,
 	r: AutomationPassResult,
 ): Promise<{ ok: boolean; message: string }> {
-	if (!r.proposalId) return { ok: false, message: t('Nothing to propose: no cut or clip qualifies here') };
+	if (!r.proposalId)
+		return {
+			ok: false,
+			message:
+				r.pass === 'reactions' || r.pass === 'stingers'
+					? t('Nothing to propose: nothing here triggers one')
+					: r.pass === 'music'
+						? t('Nothing to propose: the source has no songs')
+						: r.pass === 'slides'
+							? t('Nothing to propose: no free overlay edge here')
+							: t('Nothing to propose: no cut or clip qualifies here'),
+		};
 	const ok = await openReview(session, r.proposalId);
 	const n = r.summary.count;
 	const message =
@@ -120,8 +131,24 @@ export async function reviewPassResult(
 				? n === 1
 					? t('Proposed 1 punch-in')
 					: t('Proposed {0} punch-ins', n)
-				: n === 1
-					? t('Proposed 1 Ken Burns move')
-					: t('Proposed {0} Ken Burns moves', n);
+				: r.pass === 'ken-burns'
+					? n === 1
+						? t('Proposed 1 Ken Burns move')
+						: t('Proposed {0} Ken Burns moves', n)
+					: r.pass === 'reactions'
+						? n === 1
+							? t('Proposed 1 reaction')
+							: t('Proposed {0} reactions', n)
+						: r.pass === 'slides'
+							? n === 1
+								? t('Proposed 1 overlay slide')
+								: t('Proposed {0} overlay slides', n)
+							: r.pass === 'music'
+								? n === 1
+									? t('Proposed 1 music bed')
+									: t('Proposed {0} music beds', n)
+								: n === 1
+									? t('Proposed 1 stinger')
+									: t('Proposed {0} stingers', n);
 	return { ok, message };
 }

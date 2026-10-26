@@ -1,4 +1,5 @@
-// Sequence ▸ Automate ▸ Decorate Cuts… / Punch-ins… / Ken Burns… (spec 15 EA-020…EA-022, EA-040): the pass's
+// Sequence ▸ Automate ▸ Decorate Cuts… / Punch-ins… / Ken Burns… / Reactions… / Slide Overlays… / Music Bed… /
+// Stingers… (spec 15 EA-020…EA-026, EA-040; the overlay passes' fields are in OverlayFields.tsx): the pass's
 // parameters with their defaults (the measured values; `initialParams` = a style recipe's), a dry-run summary that
 // follows every change (how many cuts / clips get a decoration, coverage, why the others are left out, kit families,
 // the export cost and the sounds it will use), and Propose: the engine's `edit-automation` job stores a proposal and
@@ -10,7 +11,6 @@ import {
 	repeatProbability,
 	type Sequence,
 	sequenceDuration,
-	trackLabel,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
@@ -23,10 +23,23 @@ import {
 	Select,
 	Slider,
 } from '@jasper/ui';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ToastRequest } from '../commands/types.ts';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t, translateName } from '../i18n/runtime.ts';
+import {
+	bool,
+	NumberRow,
+	num,
+	type Params,
+	pct,
+	Row,
+	SfxFields,
+	ShareSlider,
+	str,
+	trackOptions,
+} from './fields.tsx';
+import { guessBin, MusicFields, ReactionFields, SlideFields, StingerFields } from './OverlayFields.tsx';
 import {
 	type AutomationEngine,
 	AutomationRunError,
@@ -48,7 +61,14 @@ export const AUTOMATION_PASS_TITLES: Record<AutomationPassId, string> = {
 	'decorate-cuts': 'Decorate Cuts',
 	'punch-ins': 'Punch-ins',
 	'ken-burns': 'Ken Burns',
+	reactions: 'Reactions',
+	slides: 'Slide Overlays',
+	music: 'Music Bed',
+	stingers: 'Stingers',
 };
+
+/** Passes that need the user's files (a bin or folder) before anything can be counted. */
+const ASSET_PASSES: ReadonlySet<AutomationPassId> = new Set(['reactions', 'music']);
 
 const PASS_INTRO_TEXT: Record<AutomationPassId, string> = {
 	'decorate-cuts':
@@ -56,6 +76,14 @@ const PASS_INTRO_TEXT: Record<AutomationPassId, string> = {
 	'punch-ins':
 		'Zooms into the A-roll clips: from the clip midpoint, a short linear ramp to a larger scale, held to the cut. "!" and "?" phrases come first.',
 	'ken-burns': 'Gives some of the remaining A-roll clips a slow zoom in or out over the whole clip.',
+	reactions:
+		'Puts your reaction pictures over the picture at markers, calls to action and exclamations (and where no face is seen): on a cut close by, at a slot, with a wobble.',
+	slides:
+		'Slides overlay pictures in at their heads and out at their tails with one-sided Smooth Slide transitions where nothing else touches the edge.',
+	music:
+		'Lays your songs end to end on a Music track, quiet under the voice, switching to the next song on a cut.',
+	stingers:
+		'Adds a short burst of generated TV static, picture and sound, after shouted punchlines. Review each one: this pass only suggests.',
 };
 
 /** Why a cut or clip got nothing (the planners' skip codes). */
@@ -76,127 +104,35 @@ export const SKIP_LABELS: Record<string, string> = {
 	density: 'Left out (density)',
 	share: 'Left out (share)',
 	kind: 'Not a picture clip',
+	overlap: 'Another reaction is on screen',
+	rate: 'Over the rate per minute',
+	subtitles: 'Subtitles cover every slot',
+	locked: 'Track locked',
+	'not-free': 'Another clip or transition touches it',
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-	starter: 'Starter kit',
-	pack: 'Sound packs',
-	folder: 'Your folders',
-	synth: 'Jasper Synth',
+const DETAIL_LABELS: Record<string, string> = {
+	marker: 'Markers',
+	cta: 'Calls to action',
+	exclamation: 'Exclamations',
+	hidden: 'Speaker not visible',
+	onCut: 'On a cut',
+	overlays: 'Overlays',
+	heads: 'Heads',
+	tails: 'Tails',
+	down: 'Down',
+	up: 'Up',
+	left: 'Left',
+	right: 'Right',
+	switches: 'Switches',
+	intro: 'Intro step',
+	ducked: 'Ducked beds',
+	both: 'Loud and “!”',
+	loudness: 'Loud',
 };
-const SOURCES = ['starter', 'pack', 'folder', 'synth'] as const;
 
-type Params = Record<string, unknown>;
 type RangeChoice = 'sequence' | 'inout';
-
-const pct = (x: number) => `${Math.round(x * 100)} %`;
 const name = (s: string) => translateName(s) ?? s;
-
-function Row(p: { label: string; children: ReactNode; testId?: string }) {
-	return (
-		<div className="flex items-center gap-2" data-testid={p.testId}>
-			<span className="w-[132px] shrink-0 text-pr-muted">{p.label}</span>
-			<div className="flex min-w-0 flex-1 items-center gap-2">{p.children}</div>
-		</div>
-	);
-}
-
-function ShareSlider(p: {
-	label: string;
-	value: number;
-	defaultValue: number;
-	onChange(v: number): void;
-	testId?: string;
-	max?: number;
-}) {
-	return (
-		<Row label={p.label} testId={p.testId}>
-			<Slider
-				className="min-w-0 flex-1"
-				label={p.label}
-				valueText={pct(p.value)}
-				value={Math.round(p.value * 100)}
-				min={0}
-				max={(p.max ?? 1) * 100}
-				step={1}
-				defaultValue={Math.round(p.defaultValue * 100)}
-				onChange={(v) => p.onChange(v / 100)}
-			/>
-			<span className="w-[48px] shrink-0 text-right text-pr-small pr-tabular">{pct(p.value)}</span>
-		</Row>
-	);
-}
-
-function NumberRow(p: {
-	label: string;
-	value: number;
-	min: number;
-	max: number;
-	precision?: number;
-	unit?: string;
-	onCommit(v: number): void;
-	testId?: string;
-}) {
-	return (
-		<Row label={p.label} testId={p.testId}>
-			<ScrubbyNumber
-				label={p.label}
-				value={p.value}
-				min={p.min}
-				max={p.max}
-				precision={p.precision ?? 0}
-				{...(p.unit ? { unit: p.unit } : {})}
-				onCommit={p.onCommit}
-				onScrubEnd={(v) => p.onCommit(v)}
-			/>
-		</Row>
-	);
-}
-
-function trackOptions(seq: Sequence, automatic: string) {
-	return [
-		{ value: 'auto', label: automatic },
-		...seq.videoTracks.map((tr) => {
-			const lb = trackLabel(seq, tr.id) ?? tr.id;
-			return { value: lb, label: tr.name ? `${lb} · ${tr.name}` : lb };
-		}),
-	];
-}
-
-const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
-const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d);
-
-/** The sound fields shared by Decorate Cuts and punch-ins. */
-function SfxFields(p: { value: Params | undefined; label: string; onChange(v: Params): void }) {
-	const v = p.value ?? {};
-	const on = bool(v.enabled, true);
-	const sources = new Set<string>(Array.isArray(v.sources) ? (v.sources as string[]) : SOURCES);
-	return (
-		<fieldset className="flex flex-col gap-1" data-testid="automation-sfx">
-			<legend className="mb-1 text-pr-muted">{t('Sound')}</legend>
-			<Checkbox checked={on} onCheckedChange={(c) => p.onChange({ ...v, enabled: c })} label={p.label} />
-			<div className="flex flex-wrap items-center gap-3 pl-6">
-				{SOURCES.map((s) => (
-					<Checkbox
-						key={s}
-						disabled={!on}
-						checked={sources.has(s)}
-						onCheckedChange={(c) => {
-							const next = new Set(sources);
-							if (c) next.add(s);
-							else next.delete(s);
-							const list = SOURCES.filter((x) => next.has(x));
-							const { sources: _drop, ...rest } = v;
-							p.onChange(list.length === SOURCES.length || !list.length ? rest : { ...rest, sources: list });
-						}}
-						label={SOURCE_LABELS[s]}
-					/>
-				))}
-			</div>
-		</fieldset>
-	);
-}
 
 function SeedRow(p: { value: number; onChange(v: number): void }) {
 	return (
@@ -530,7 +466,16 @@ export function DryRunSummary(p: { result: AutomationPassResult }) {
 			? t('{0} of {1} cuts get a kit ({2})', s.count, s.considered, pct(s.coverage))
 			: r.pass === 'punch-ins'
 				? t('{0} of {1} candidate clips get a punch-in ({2})', s.count, s.considered, pct(s.coverage))
-				: t('{0} of {1} candidate clips get a Ken Burns move ({2})', s.count, s.considered, pct(s.coverage));
+				: r.pass === 'ken-burns'
+					? t('{0} of {1} candidate clips get a Ken Burns move ({2})', s.count, s.considered, pct(s.coverage))
+					: r.pass === 'reactions'
+						? t('{0} reactions from {1} triggers', s.count, s.considered)
+						: r.pass === 'slides'
+							? t('{0} slides on {1} overlay edges', s.count, s.considered)
+							: r.pass === 'music'
+								? t('{0} beds from {1} songs', s.count, s.considered)
+								: t('{0} stingers after {1} punchlines', s.count, s.considered);
+	const detail = Object.entries(s.detail ?? {}).filter(([, n]) => n > 0);
 	const skips = Object.entries(s.skipped.byCode).sort((a, b) => b[1] - a[1]);
 	return (
 		<div className="flex flex-col gap-1 text-pr-small" data-testid="automation-summary">
@@ -547,6 +492,18 @@ export function DryRunSummary(p: { result: AutomationPassResult }) {
 						.join(' · ')}
 				</span>
 			) : null}
+			{detail.length ? (
+				<span className="text-pr-muted" data-testid="automation-summary-detail">
+					{detail.map(([k, n]) => `${DETAIL_LABELS[k] ?? k} ${n}`).join(' · ')}
+				</span>
+			) : null}
+			{s.assets ? (
+				<span className="text-pr-muted" data-testid="automation-summary-assets">
+					{s.assets.count === 0
+						? t('No usable files in the chosen source')
+						: t('{0} files: {1}', s.assets.count, s.assets.names.slice(0, 6).join(', '))}
+				</span>
+			) : null}
 			{skips.length ? (
 				<span className="text-pr-muted" data-testid="automation-summary-skipped">
 					{t('Left out: {0}', skips.map(([code, n]) => `${SKIP_LABELS[code] ?? code} ${n}`).join(' · '))}
@@ -554,8 +511,15 @@ export function DryRunSummary(p: { result: AutomationPassResult }) {
 			) : null}
 			<span className="text-pr-muted" data-testid="automation-summary-cost">
 				{s.cost.class === 'native'
-					? t('Export: native (Motion keyframes)')
-					: t('Export: rendered through the Remotion path ({0})', s.cost.effects.join(', '))}
+					? r.pass === 'punch-ins' || r.pass === 'ken-burns'
+						? t('Export: native (Motion keyframes)')
+						: t('Export: native')
+					: s.cost.class === 'hybrid'
+						? t(
+								'Export: native, with these layers baked by the Remotion renderer ({0})',
+								s.cost.effects.join(', '),
+							)
+						: t('Export: rendered through the Remotion path ({0})', s.cost.effects.join(', '))}
 			</span>
 			{s.track ? (
 				<span className="text-pr-muted">
@@ -619,7 +583,15 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 	const { open, finish } = useDialogClose(props.close);
 	const { session, sequenceId, engine, pass } = props;
 	const seq = session.getCommitted().sequences[sequenceId];
-	const [params, setParams] = useState<Params>(() => ({ seed: 1, ...(props.initialParams ?? {}) }));
+	const [params, setParams] = useState<Params>(() => {
+		const init: Params = { seed: 1, ...(props.initialParams ?? {}) };
+		// the reaction pictures / songs: a bin named for them, when the project has one
+		if (ASSET_PASSES.has(pass) && !init.assets) {
+			const bin = guessBin(session.getCommitted(), pass === 'reactions' ? 'image' : 'audio');
+			if (bin) init.assets = { bin };
+		}
+		return init;
+	});
 	const hasInOut = !!seq && (seq.inPoint !== null || seq.outPoint !== null);
 	const [range, setRange] = useState<RangeChoice>('sequence');
 	const [dry, setDry] = useState<AutomationPassResult | null>(null);
@@ -629,7 +601,11 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 	const abort = useRef<AbortController | null>(null);
 	const readOnly = session.getState().readOnly;
 	const set = (k: string, v: unknown) => setParams((cur) => ({ ...cur, [k]: v }));
-	const request = useMemo(() => (seq ? dialogParams(seq, params, range) : null), [seq, params, range]);
+	const needsAssets = ASSET_PASSES.has(pass) && !params.assets;
+	const request = useMemo(
+		() => (seq && !needsAssets ? dialogParams(seq, params, range) : null),
+		[seq, params, range, needsAssets],
+	);
 	const key = JSON.stringify(request);
 
 	// the dry run follows the parameters (debounced; a newer one supersedes an older one)
@@ -695,7 +671,9 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 	};
 
 	const progress = running?.progress != null ? Math.round(running.progress * 100) : null;
-	const nothing = !!dry && dry.summary.count === 0;
+	// stingers: the dry run cannot count loudness peaks it has not measured yet (Propose measures them)
+	const unmeasured = !!dry?.warnings.some((w) => w.code === 'W_NO_LOUDNESS');
+	const nothing = !!dry && dry.summary.count === 0 && !unmeasured;
 	return (
 		<Dialog
 			open={open}
@@ -709,7 +687,7 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 			title={AUTOMATION_PASS_TITLES[pass]}
 			size="medium"
 			primaryLabel={running ? t('Proposing…') : t('Propose')}
-			primaryDisabled={readOnly || !seq || !!running || nothing || (!!dry && !dry.budget.fits)}
+			primaryDisabled={readOnly || !seq || needsAssets || !!running || nothing || (!!dry && !dry.budget.fits)}
 			onPrimary={propose}
 			data-testid={`automation-dialog-${pass}`}
 		>
@@ -734,8 +712,16 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 						<DecorateFields seq={seq} params={params} set={set} />
 					) : pass === 'punch-ins' ? (
 						<PunchFields seq={seq} params={params} set={set} />
-					) : (
+					) : pass === 'ken-burns' ? (
 						<KenBurnsFields seq={seq} params={params} set={set} />
+					) : pass === 'reactions' ? (
+						<ReactionFields seq={seq} doc={session.getCommitted()} params={params} set={set} />
+					) : pass === 'slides' ? (
+						<SlideFields seq={seq} doc={session.getCommitted()} params={params} set={set} />
+					) : pass === 'music' ? (
+						<MusicFields seq={seq} doc={session.getCommitted()} params={params} set={set} />
+					) : (
+						<StingerFields seq={seq} doc={session.getCommitted()} params={params} set={set} />
 					)}
 					<SeedRow value={num(params.seed, 1)} onChange={(v) => set('seed', v)} />
 					<div aria-live="polite" className="flex flex-col gap-1">
@@ -749,7 +735,13 @@ export function AutomationDialog(props: HostedDialogProps<AutomationDialogProps>
 								{message}
 							</span>
 						) : null}
-						{dry ? (
+						{needsAssets ? (
+							<span className="text-pr-small text-pr-muted" data-testid="automation-needs-assets">
+								{pass === 'reactions'
+									? t('Choose the bin or folder that holds your reaction pictures')
+									: t('Choose the bin or folder that holds your songs')}
+							</span>
+						) : dry ? (
 							<DryRunSummary result={dry} />
 						) : dryError ? (
 							<span className="text-pr-small text-pr-warning" data-testid="automation-dry-error">
