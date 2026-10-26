@@ -76,9 +76,13 @@ test('Clean Up mode on a generated clip: analyze, review, play the result, apply
 	const before = await clips(page);
 	const end0 = await sequenceEnd();
 
-	await page.getByTestId('text.tab.Transcript').click();
-	await page.getByTestId('text.transcript.mode.cleanup').click();
+	// Sequence ▸ Clean Up Voice… opens Text ▸ Transcript in Clean Up mode
+	await focusTimeline(page);
+	const menubar = page.getByTestId('title-bar').getByRole('menubar');
+	await menubar.getByRole('menuitem', { name: 'Sequence', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Clean Up Voice…' }).click();
 	await expect(page.getByTestId('text.cleanup.intro')).toBeVisible();
+	await expect(page.getByTestId('text.transcript.mode.cleanup')).toHaveAttribute('aria-checked', 'true');
 	await page.getByTestId('text.cleanup.analyze').click();
 	await expect(page.getByTestId('text.cleanup.review')).toBeVisible({ timeout: 120_000 });
 	await test
