@@ -4,11 +4,7 @@
     "model": "AMD EPYC-Rome Processor",
     "memGB": 31
   },
-  "loadBefore": [
-    6.5,
-    7.53,
-    9.44
-  ],
+  "loadBefore": [6.5, 7.53, 9.44],
   "frames": 6060,
   "at": "2026-10-26T00:26:49.729Z",
   "plain": {
@@ -35,9 +31,5 @@
     },
     "perKitSeconds": 13.56407888881
   },
-  "loadAfter": [
-    15.58,
-    13.35,
-    11.52
-  ]
+  "loadAfter": [15.58, 13.35, 11.52]
 }
