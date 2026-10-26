@@ -12,7 +12,17 @@ function renderTemplate(id: string, frame: number, params?: Record<string, unkno
 	const at = (f: number) => {
 		const t = animeTemplateTiming(def, { fps, localFrame: f, durationFrames: 150 });
 		return (
-			<Impl params={params ?? def.defaults} {...t} fps={fps} canvas={canvas} seed={7} isPreview={false} />
+			<Impl
+				params={params ?? def.defaults}
+				{...t}
+				fps={fps}
+				canvas={canvas}
+				seed={7}
+				isPreview={false}
+				emojiUrls={{}}
+				imageUrls={{}}
+				mediaUrls={{}}
+			/>
 		);
 	};
 	const view = render(at(frame));

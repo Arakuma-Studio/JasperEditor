@@ -102,7 +102,7 @@ provider is registered. Masters are requested at export time (job stage "Renderi
   and audio effects, animated levels.
 - **Remotion path (M1):** renders at the sequence frame rate and aspect (warnings `FRAME_RATE_IGNORED`,
   `SIZE_IGNORED`); audio comes from Remotion (S04:RP-006 native mix is M2).
-- **Colour:** layers are composited in RGB; untagged HD sources are read as BT.709 (browser behaviour), output
+- **Colour:** layers are composited in RGB; untagged sources are read as BT.709 at every size (browser behaviour; SD since time.md §15), output
   is BT.709 TV range, tagged.
 - **Media URLs for renders:** `http://127.0.0.1:<port>/media/<key>?sig=…&exp=…` (6 h TTL).
 - Review hardening: signed URLs (`?sig=&exp=`) only authorize GET/HEAD/OPTIONS; `settings.destination

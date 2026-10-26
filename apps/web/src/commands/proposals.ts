@@ -11,14 +11,18 @@ import { t } from '../i18n/runtime.ts';
 import {
 	acceptAll,
 	applyReview,
+	currentItemId,
 	cycleAlternative,
 	decide,
 	discardReview,
 	exitReview,
+	isRerollable,
 	openReview,
 	playReviewItem,
 	playReviewRange,
+	refreshReview,
 	rejectAll,
+	rerollReviewItem,
 	stepReviewItem,
 } from '../proposals/actions.ts';
 import { registerProposalUi } from '../proposals/register.tsx';
@@ -79,6 +83,9 @@ const onItem = (ctx: CommandCtx) => writableReview(ctx) && itemsOf(ctx).some((it
 const reveal = (ctx: CommandCtx) => (f: number) => ctx.services.get('timelineViewport')?.scrollToFrame(f);
 const notReviewing = () => t('No proposal is under review');
 
+const hasStale = (ctx: CommandCtx) =>
+	writableReview(ctx) && itemsOf(ctx).some((it) => !it.setup && it.state === 'stale');
+
 export const proposalCommands: UiCommand[] = [
 	{
 		id: 'proposals.review',
@@ -109,6 +116,24 @@ export const proposalCommands: UiCommand[] = [
 				return;
 			}
 			await openReview(session, id);
+		},
+	},
+	{
+		id: 'proposals.refresh',
+		label: 'Refresh Proposal',
+		description:
+			'Ask the proposal’s producer to re-plan its stale items on the current edit ("Refresh proposal"): they come back pending for review; nothing is applied. Disabled when no item is stale; refused when the producer cannot re-plan.',
+		scope: 'global',
+		agentExposed: true,
+		when: hasStale,
+		disabledReason: (ctx) =>
+			!reviewing(ctx)
+				? notReviewing()
+				: ctx.session?.getState().readOnly
+					? t('The project is read-only')
+					: t('No item changed since it was proposed'),
+		run: async (ctx) => {
+			if (ctx.session) await refreshReview(ctx.session);
 		},
 	},
 	{
@@ -245,6 +270,28 @@ export const proposalCommands: UiCommand[] = [
 		run: async (ctx, args) => {
 			const a = args as z.infer<typeof AltArgs>;
 			if (ctx.session) await cycleAlternative(ctx.session, a?.dir ?? 1, a?.itemId);
+		},
+	},
+	{
+		id: 'proposals.rerollItem',
+		label: 'Reroll Proposal Item',
+		description:
+			'Plan an item of the proposal under review again with its next seed ("Reroll", spec 15: another kit family for a cut, the other direction for a Ken Burns move; default: the current item); it comes back pending, nothing is applied. Only items their producer marks rerollable.',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: ItemArgs,
+		when: (ctx) => {
+			if (!writableReview(ctx)) return false;
+			const id = (ctx.session && currentItemId(ctx.session)) ?? null;
+			return itemsOf(ctx).some(
+				(it) => it.id === id && isRerollable(it) && it.state !== 'accepted' && it.state !== 'applied',
+			);
+		},
+		disabledReason: (ctx) => (!reviewing(ctx) ? notReviewing() : t('The current item cannot be rerolled')),
+		run: async (ctx, args) => {
+			const id =
+				(args as z.infer<typeof ItemArgs>)?.itemId ?? (ctx.session ? currentItemId(ctx.session) : null);
+			if (ctx.session && id) await rerollReviewItem(ctx.session, id);
 		},
 	},
 	{

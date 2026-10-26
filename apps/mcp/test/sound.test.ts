@@ -35,7 +35,8 @@ const KIT_FILES = [
 	'click-ui-02.ogg',
 	'chime-bell-01.ogg',
 ];
-const SYNTH = 19;
+// one seed per Jasper Synth recipe: the 19 types and the stingers’ TV static (spec 15 EA-026)
+const SYNTH = 20;
 
 const textOf = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';

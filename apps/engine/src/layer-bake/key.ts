@@ -31,6 +31,15 @@ export type BakeEnvironment = {
 };
 
 export type KeyFont = { family: string; weight: number; style: string; fileSha256: string | null };
+/**
+ * social-comment §7.8: the emoji images a template layer draws — pack id and version, and each image's SHA-256 (its
+ * first verified fetch; null when not cached).
+ */
+export type KeyEmoji = {
+	pack: string;
+	version: string | null;
+	files: { key: string; sha256: string | null }[];
+};
 export type KeyMedia = {
 	mediaId: string;
 	fingerprint: string | null;
@@ -102,6 +111,8 @@ export type KeyMaterial = {
 	clip: (
 		| ReturnType<typeof normalisedClip>
 		| { span: { transition: RenderTransition; sides: Omit<RenderVisualClip, 'name'>[] } }
+		/** spec 13 AS-073: a run of layers of one track baked as one master (`planRun`). */
+		| { run: Omit<RenderVisualClip, 'name' | 'trackId'>[] }
 	) &
 		Partial<
 			Pick<RenderVisualClip, 'duration' | 'headHandle' | 'tailHandle' | 'fades' | 'sourceIn' | 'speed'>
@@ -113,6 +124,10 @@ export type KeyMaterial = {
 	fps: { num: number; den: number };
 	fonts: KeyFont[];
 	media: KeyMedia[];
+	/** social-comment §7.8: template emoji (absent when the layer draws none). */
+	emoji?: KeyEmoji[];
+	/** social-comment §7.8: remote images by id with their pinned SHA-256 (absent when the layer draws none). */
+	images?: { id: string; sha256: string | null }[];
 	bundleId: string;
 	animejs: string;
 	remotion: string;
@@ -120,6 +135,8 @@ export type KeyMaterial = {
 	gl: string;
 	still: boolean;
 	rect: Rect | null;
+	/** spec 13 AS-070: the layer region of a `layer-still` (layer px). */
+	picture?: Rect;
 	/**
 	 * Anime templates (S11:ATP-001): the implementation's `renderVersion` from the template registry — a template
 	 * whose drawing changes without a params change bumps it. Absent for other layers.

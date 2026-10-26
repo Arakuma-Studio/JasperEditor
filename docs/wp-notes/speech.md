@@ -22,7 +22,8 @@ builds and the desktop app (`apps/engine/scripts/build.mjs`, `apps/desktop/scrip
 ## 2. Models (processing-model catalogue, `speech`)
 
 `apps/engine/src/processing/models.json` gained a `speech` list (the same catalogue file, `JASPER_MODEL_CATALOG` in
-tests). Six models: `whisper-tiny`, `whisper-tiny.en`, `whisper-base` (default), `whisper-base.en`, `whisper-small`,
+tests). Spec 16 added `whisper-large-v3-turbo` (fp32, external data) and `whisper-large-v3-turbo-fp16` (§11); the
+default follows the recommendation for the computer (§11.4). The original six models: `whisper-tiny`, `whisper-tiny.en`, `whisper-base`, `whisper-base.en`, `whisper-small`,
 `whisper-small.en` — 147 MB, 147 MB, 280 MB, 280 MB, 926 MB, 926 MB. Each has five files (config, generation config
 with the alignment heads, tokenizer, encoder, merged decoder), every one pinned to a Hugging Face revision of
 `onnx-community/whisper-*_timestamped` and checked against its SHA-256. Licence: MIT (OpenAI Whisper code and weights;
@@ -51,7 +52,8 @@ the Hugging Face release is labelled Apache-2.0), shown before every download an
    word between the previous word and the window end).
 4. **Decoding** (`core/decode.ts`, OpenAI `decoding.py`): suppress blank/non-speech/special tokens, timestamp rules
    (first token a timestamp ≤ 1 s, pairs, monotonic, timestamps win when their total probability beats every text
-   token), **beam search with 5 beams** (batched, one decoder call per step; `beamSize` 1 = greedy), conditioning on
+   token), **greedy decoding by default** since spec 16 (Accuracy *Standard*; *Best* = beam search with 5 beams,
+   batched, one decoder call per step), conditioning on
    the previous text (`<|startofprev|>`), **temperature fallback** 0 → 0.2 … 1.0 (compression ratio > 2.4 or mean
    log-probability < −1; no-speech > 0.6 skips the window); when every temperature fails, the most likely non-looping
    result is kept (OpenAI keeps the temperature-1.0 sample, which turned German → English translation into noise in
@@ -226,11 +228,235 @@ Differences (decided):
 
 ## 10. Limits
 
-- CPU only (ONNX Runtime CPU provider); no GPU path. Verified on Linux x64 only; macOS/Windows use the same
-  `onnxruntime-node` package and code but were not run here.
-- Models are fp32; `small` is about 3× slower than `base` (measured 40 s for 72 s of audio on this loaded machine).
+- GPU paths were verified on one Linux NVIDIA machine (RTX 4060 Ti: CUDA and WebGPU, §11.8); the build VM has no
+  GPU, so its runs use a fake ONNX Runtime binding for the GPU paths. macOS/Windows use the same `onnxruntime-node`
+  package and code but were not run here.
+- Windows: DirectML is not used (licence, §11.2); the DirectX shader compiler DLLs are left out of the desktop
+  package, so WebGPU's D3D12 backend must compile with the system's FXC — untested on Windows (the probe falls
+  back to the CPU when WebGPU cannot start).
+- fp16 models run on the CPU too, 2–4× slower (research); they are recommended only for CUDA with ≥ 6 GB.
 - Diarization is classical (no model): overlapping speech, similar voices or music beds confuse it; speakers who say
-  less than 1.5 s in total merge into a neighbour.
+  less than 1.5 s in total merge into a neighbour. With speaker labels on, the samples are kept in a scratch file and
+  read back for the MFCCs (4 bytes per sample: ≈ 230 MB per hour of audio) — recognition itself is memory-bounded.
 - A sequence-mix transcript covers only what the sequence plays (coverage) and drops words heard through nested
-  sequences or non-audio clips (counted in the result).
+  sequences or non-audio clips (counted in the result); its word bounds use the energy VAD (no per-mix voice analysis).
 - Word timing of translations aligns English words to foreign speech (as OpenAI); it is approximate.
+- The known-phrase filter only removes phrases over frames the voice analysis (or, without it, the energy VAD)
+  calls non-speech; an outro over music is kept when no voice analysis exists.
+
+## 11. Spec 16: speech on the GPU, model catalogue, robustness
+
+Spec: [docs/specs/16-speech-gpu-models.md](../specs/16-speech-gpu-models.md). Research behind it: the private
+whisper evaluation (53 configurations; the numbers of spec 16 §0). This section records what was built and measured.
+
+### 11.1 Execution providers (SG-001…SG-005, SG-008)
+
+- **One probe** (`apps/engine/src/tools/ort.ts` `probeOrtProviders`): a session of the tiny test model
+  (`processing/proc/tiny-onnx.ts`) is created with exactly one provider and run once; failures become the reason. It
+  runs in the worker (`jasper-speech probe`), killed after 60 s, so a GPU driver crash or hang never touches the
+  engine — the engine process no longer loads ONNX Runtime at all (the processing capabilities used to). The upscaler
+  (jasper-proc `--version`, capabilities and local jobs) reads the same probe (SG-008); a downloaded CUDA provider is
+  used by local upscales too.
+- **Order** (`speech/providers.ts`): macOS WebGPU → CPU; Linux x64 CUDA → WebGPU → CPU; Windows WebGPU → CPU. Core ML
+  is listed as unavailable ("recompiles at every load", research: 410–844 s; re-evaluate on ORT upgrades), DirectML
+  as unavailable (licence, §11.2).
+- **Cache**: `<appdir>/engine/speech.json` (zod-validated, atomic writes) keyed by ORT version, platform, arch, CUDA
+  provider state and the NVIDIA setting; probed at the first speech use (model list, transcription), again on
+  *Check the GPUs again* / `POST /api/speech/probe` (which also clears the decoder calibrations).
+- **Per session** (`planDevices`): encoder on the best GPU provider; decoder on the CPU, except — greedy only — a
+  GPU decoder that the calibration of that model measured ≥ 10 % faster per token. The calibration runs on the first
+  window of the first greedy job of a model on a GPU (24 steps of each decoder, median of the last 20; ≈ 0.2–1 s) and
+  is stored. Extension of the spec (decision): WebGPU decoders are calibrated as well (the spec names CUDA only);
+  research measured them slower on the M4 Max (turbo 10.6 vs 7.5 ms/token), so there the calibration keeps the CPU.
+- **Device-resident decoding (SG-004)**: a WebGPU decoder keeps its key/value cache on the GPU
+  (`preferredOutputLocation: 'gpu-buffer'`); because onnxruntime-node 1.30.0 keeps such outputs bound, cached steps
+  run on a second session and uncached passes (language detection, alignment) on the CPU decoder; replaced cache
+  tensors are disposed. Beam search refuses a device-resident decoder (rows are gathered on the CPU).
+- **Cached steps without the encoder output**: the merged decoder's cache branch ignores `encoder_hidden_states`, so
+  cached steps pass a [B, 1, d_model] placeholder instead of the 1500-frame output. Measured on the build VM (turbo,
+  LJ fixture, greedy, 8 threads, not under the bench lock): identical words and times for tiny and turbo, decoder time
+  3.31 s vs 3.67 s for 189 runs; on a GPU decoder it saves a 7.7 MB host→device copy per step.
+- **Fallbacks (SG-003)**: a session that cannot be created on the GPU is created on the CPU (`stage: session`, with the
+  reason); a GPU error during recognition runs the job once more on the CPU inside the worker, and a worker that dies
+  on the GPU (signal, crash) is run again on the CPU by the engine (`stage: job`); when the CPU run fails too, the job
+  fails with the original error. Processor *GPU* without a usable GPU runs on the CPU with `stage: unavailable` and the
+  probe's reasons. The result's `device` (`label`, providers, threads, fallbacks) shows in the Jobs panel ("Ran on: …
+  (fell back: …)"), the job log and MCP.
+- **Threads (SG-005)**: performance cores (macOS `hw.perflevel0.physicalcpu`, Linux hybrid `cpu_core/cpus`, else the
+  logical CPUs), at most 8; the job asks for that many CPU slots.
+
+### 11.2 Packaging and licences (SG-006, SG-007)
+
+- **CUDA on Linux x64**: *Enable NVIDIA GPU* downloads `Microsoft.ML.OnnxRuntime.Gpu.Linux` 1.30.0 from NuGet (MIT;
+  236,037,232 bytes, sha256 `77ca2368…a3d6`, the version onnxruntime-node's own install script pins) with the
+  resumable downloader, extracts `libonnxruntime_providers_cuda.so` and `libonnxruntime_providers_shared.so` (and the
+  package's LICENSE / ThirdPartyNotices) next to a copy of the installed onnxruntime-node package in
+  `<appdir>/runtimes/onnxruntime-cuda/1.30.0/` (ONNX Runtime loads providers from its own library's directory), writes
+  `install.json` atomically and deletes the package. Workers then load ONNX Runtime from there (`JASPER_ORT_DIR`) with
+  `LD_LIBRARY_PATH` set to the directories where the NVIDIA libraries were found. Nothing is bundled or committed; pnpm
+  settings are unchanged. Help ▸ About ▸ Licenses lists the provider when installed.
+- **NVIDIA runtime detection** (`speech/cuda.ts`): `libcuda.so.1`, `libcudart.so.13`, `libcublas.so.13`,
+  `libcublasLt.so.13`, `libcurand.so.10` (the provider's `readelf -d` NEEDED list) and `libcudnn.so.9` (loaded at run
+  time), searched in `LD_LIBRARY_PATH`, `ldconfig -p`, `/usr/local/cuda*/…`, `/usr/lib/x86_64-linux-gnu`, `/usr/lib64`,
+  WSL; driver ≥ 580 and the GPU from `nvidia-smi`. Missing pieces are listed with install guidance (Preferences, the
+  probe reason). Not shipped: proprietary NVIDIA licences (AGENTS §2.5).
+- **DirectML (SG-007)**: `DirectML.dll` in onnxruntime-node is the Microsoft.AI.DirectML redistributable under the
+  "Microsoft Software License Terms — DirectML" (proprietary; redistribution only inside applications, no
+  modification; source: nuget.org Microsoft.AI.DirectML 1.15.4 licence page) — outside the licence allowlist, so
+  Windows uses WebGPU → CPU and the desktop package leaves `DirectML.dll` out. `dxcompiler.dll` (DirectX Shader
+  Compiler, University of Illinois/NCSA) and `dxil.dll` (its validator; licence not established from the sources we
+  could read) are left out too (`apps/desktop/scripts/package.mjs`, AGENTS §3.6). Assumption (unverified, no Windows
+  machine): Dawn falls back to FXC without them. Nothing new is shipped, so `THIRD_PARTY_NOTICES.md` gains no entry.
+
+### 11.3 Decoding and hallucination guards (SG-010…SG-012, spec 14 TC-003/TC-004)
+
+- Default greedy with temperature fallback (OpenAI thresholds: compression 2.4, log-probability −1, no-speech 0.6);
+  *Best (slower)* = beam 5 (Preferences, the dialog, `accuracy` in the API and MCP; `beamSize` still overrides).
+- Guards, in order: a window with fewer than 3 voiced 10 ms frames is not decoded (`guard.skippedWindows`); the
+  previous text is not carried over ≥ 2 s of silence before a window's first voice; runs of ≥ 4 identical text
+  tokens are removed; OpenAI's `hallucination_silence_threshold` (2 s) heuristic drops anomalous segments surrounded by
+  silence and resumes at them (port record `licenses/ported/speech-openai-whisper.md`); `splitAtPauses` snaps a word
+  found in silence onto voice only when it is closer than a pause (200 ms) — it never moves a word across a silence
+  (the measured failure: "Gracias por ver el vídeo" moved onto speech) — and the others are dropped; words with
+  < 20 % speech/breath frames are dropped; known phrases (Spanish "Subtítulos realizados por la comunidad de
+  Amara.org", "Gracias por ver el video/vídeo", "Gracias.", English "Thanks for watching!"…, `core/hallucination.ts`)
+  are removed when they form a sentence of their own over < 50 % speech frames. The result lists what was removed.
+- Verbatim prompts (TC-003): `verbatim` puts the language's filler prompt (Spanish `Eh... em, bueno, o sea, este...
+  mmm, ¿vale? Ah, eh, pues...`, English `Um, uh, so, like, you know... hmm, okay? Ah, er, well...` — the English one is
+  our assumption) and `initialPrompt` at the start of the running text, OpenAI semantics: it conditions the first
+  window and the following ones through the previous text until a prompt reset. Encoding is byte-level BPE from the
+  model's `tokenizer.json` (`core/tokenizer.ts encode`, round-trip tested on the real tokenizer). Observed: carrying
+  the prompt into every window (our first version) derailed tiny.en into "Oh, oh, oh…" loops, hence OpenAI's
+  semantics. `conditionOnPreviousText: false` is the OpenAI option.
+- Segment scores (TC-003): `avgLogprob`, `noSpeechProb`, `compressionRatio` (and `temperature`) per segment in the
+  result; stored as `Transcript.segments` (media-time flicks, project-files.md v10 table), merged inside a mix's coverage.
+- Word bounds against speech frames (TC-004): bounds snap (split at pauses, grow ≤ 250 ms into voice, tighten) to the
+  energy VAD; when the media's voice analysis (`voice-analysis` job, spec 14 TC-001) exists by the end of
+  recognition — the engine starts it next to the transcription — its speech/breath frames decide which words lie in
+  silence and which known phrases are over non-speech (`guard.frames: "voice-analysis"`). Decision from a
+  measurement (LJ fixture, tiny.en, build VM): snapping to the voice analysis' speech class moved the end of
+  "unchecked." 0.28 s early (boundary error max 280 ms vs 40 ms with the energy VAD) and split the single reader into
+  2 speakers; with energy snapping and voice-analysis presence: max 40 ms, 1 speaker, WER unchanged.
+
+### 11.4 Catalogue, recommendation, downloads (SG-020…SG-023)
+
+- `whisper-large-v3-turbo`: `onnx-community/whisper-large-v3-turbo_timestamped` @ `b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a`,
+  six files (3.24 GB incl. `encoder_model.onnx_data` 2.55 GB), MIT upstream (the card has no licence field);
+  `whisper-large-v3-turbo-fp16`: the fp16 encoder/decoder of the same revision (1.62 GB), `gpuOnly`. Per-file sha256
+  from the research manifest (LFS ids) and, for the JSON files, hashed from the downloaded files of that revision.
+  No medium, no int8/q8 exports (research: broken or slower). fp16 tensors are converted at the session boundary
+  (`worker/sessions.ts`).
+- Validation (SG-023): `validateSpeechCatalog` (zod, strict) refuses entries with bad ids, hashes, sizes, file names
+  (no paths), duplicate files or ids, or without config/encoder/decoder; the others load; refusals show in the
+  capability reason (Preferences) — fuzzed with fast-check.
+- Recommendation (SG-021, `recommendModel`): a usable GPU → turbo (fp16 only with CUDA and ≥ 6 GB VRAM — deviation:
+  the spec also lists WebGPU, but with WebGPU the decoder stays on the CPU where fp16 is 2–4× slower); CPU only with
+  ≥ 16 GB (≥ 15.5 GiB reported) and ≥ 8 cores → turbo fp32; else small. The engine default follows it.
+- Downloads (SG-022, `tools/download.ts`, shared by the speech, vision and Describe-it stores and the CUDA provider):
+  `.partial` files resumed with HTTP Range after a transient error (network, 408/425/429/5xx) with exponential
+  backoff (1 s, 2 s, … 5 retries), a server that ignores Range restarts the file (the only restart), the sha256 covers
+  the whole file, cancellation keeps the partial file for the next attempt, a checksum mismatch deletes it,
+  `install.json` written atomically. Tested against a server that drops connections mid-body.
+
+### 11.5 Streaming and JS hot spots (SG-013, SG-014)
+
+- Audio streams from ffmpeg into the log-mel front end (`LogMelStream`, equal to the batch spectrogram — property
+  test), the 10 ms levels and, with speaker labels, a scratch file. The raw spectrogram stays in memory up to 64 MB
+  (≈ 21 min of 128-band frames) and then moves to a scratch file; windows are read back 1.5 MB at a time. No whole-file
+  sample array or spectrogram is held for recognition.
+- Hot spots: the timestamp rule compares log Σ exp over timestamps with the best text logit (no full log-softmax per
+  step); the chosen token's log-probability from one log-sum-exp; beam top-k in one pass (`topK`); the FFT with
+  precomputed per-level twiddles and no allocation per frame/call; `fill` instead of loops in the filters; identity
+  beam gathers not copied. Each is tested equal to the previous implementation (property tests).
+
+### 11.6 UI and MCP (SG-030…SG-032)
+
+- Preferences ▸ Transcription: Processor (Automatic / CPU / GPU, with the GPU reasons), Accuracy (Standard / Best),
+  *Check the GPUs again*, the providers with reasons, NVIDIA GPU (CUDA) on Linux (Enable NVIDIA GPU: licence +
+  size confirmation, download progress, provider and runtime status, guidance, Remove — the engine asks the user to
+  approve removals requested by agents), and per model "Runs on: <device> · N threads", "≈ x min per 10 min of audio
+  (estimated)" / "(measured, last run)" and *Recommended for this computer*.
+- Generate Transcript dialog: Accuracy, *Keep filler words (verbatim)*, the Runs-on/speed line.
+- Jobs panel: "Ran on: … (fell back: …)" for transcriptions.
+- MCP: `list_speech_models` (recommended, runsOn, speed), `transcribe {device, accuracy, verbatim, initialPrompt,
+  conditionOnPreviousText}` (results carry device, accuracy, guard), `engine_status` (`speech`: providers, chosen,
+  threads, recommended model, CUDA state). English + Spanish strings.
+
+### 11.7 Measurements (SG-041)
+
+
+Research numbers (before this work, spec 16 §0 — M4 Max, build VM, RTX 3060): turbo is the most accurate (Spanish
+voice-over WER 3.4 % vs small 6.8 %), RTF 0.256 on the M4 Max CPU, 0.215 with the WebGPU encoder, 0.155 on the RTX
+3060 with CUDA + greedy. Post-implementation reruns, all **measured** on the build VM (16 shared EPYC-Rome vCPU,
+30 GB, Node 24.22.1, onnxruntime-node 1.30.0, CPU only — no GPU), the LJ fixture (71.6 s, English, language given),
+8 threads, with the VM bench lock held; the VM was shared with other agents' test suites, so the load average is
+given per run. Rerunnable: the private harness (`research/whisper/harness/bench.ts`, copied with paths to the two
+checkouts) and `pnpm exec vitest run apps/engine/test/speech-model.e2e.test.ts` with
+`JASPER_SPEECH_MODELS_DIR` / `JASPER_SPEECH_TURBO_DIR`.
+
+| Run (load average) | Config | RTF before (85e1bc76) | RTF after | JS ms per decoder run before → after |
+|---|---|---|---|---|
+| round 1 (2.0 → 7.3) | tiny greedy | 0.046 | 0.045 | 6.96 → 5.87 |
+| | tiny beam 5 | 0.096 | 0.090 | 19.27 → 13.11 |
+| | turbo greedy | 0.238 | 0.241 | 8.26 → 6.66 |
+| | turbo beam 5 | 0.317 | 0.328 | 25.58 → 17.09 |
+| round 2 (11.6 → 12.1) | tiny greedy / beam 5 | 0.051 / 0.122 | 0.043 / 0.105 | 7.50 → 5.86 / 21.98 → 13.24 |
+| | turbo greedy / beam 5 | 0.280 / 0.349 | 0.251 / 0.344 | 9.38 → 6.94 / 28.16 → 17.13 |
+
+"JS per decoder run" = recognition time minus ONNX Runtime run time, divided by the decoder runs: it also contains
+the log-mel front end, alignment (DTW), word timing and refinement, which do not scale with tokens. The per-token hot
+spots alone (`micro.mts`: the same random 51,866-token logits through the old and the new functions, single thread,
+interleaved, load ≈ 20): greedy step 1.39–1.59 → 0.52 ms (**2.7–3.0×**), beam-5 step (5 rows: filters,
+normalisation, top-6) 8.36–8.38 → 3.06–3.36 ms (**2.5–2.7×**), log-mel of 30 s + 30 s padding (128 bands)
+430–467 → 294–312 ms (1.45×) — SG-013's ≥ 2× per token is met for the per-token work; end to end the JS share falls
+by 1.2–1.5×, and recognition time is dominated by ONNX Runtime (turbo's encoder: 12 s of 17 s). Greedy is now the
+default: turbo 0.24 vs 0.32 RTF for beam 5 on this machine.
+
+| Check (engine job, `speech-model.e2e.test.ts`) | Result |
+|---|---|
+| tiny.en greedy | WER 1.92 %, boundary error mean 18 ms / max 40 ms, no word outside the speech (historical beam 5: 1.9 %, 18 / 40 ms) |
+| tiny (auto) + speaker labels | en p 0.999, WER 8.33 %, 1 speaker |
+| sequence mix (trimmed, offset) | WER 6.15 % |
+| silence gap (30 s of digital silence inserted at a pause) | 0 words in the gap; WER 5.56 % before it, 2.50 % after it |
+| tiny.en without previous text | WER 1.92 % |
+| turbo greedy / beam 5 / verbatim | WER 1.92 % / 1.92 % / 2.56 %; RTF 0.307 / 0.374 / 1.01 (4 threads, job slots; the verbatim prompt triggered temperature fallbacks on this English fixture) |
+
+Memory (SG-014), one hour (LJ fixture × 50 = 59.7 min WAV), tiny greedy, 8 threads, `/usr/bin/time -v` of the
+worker: before 1.81 GB peak RSS, 3 min 56 s; after **1.25 GB**, 2 min 40 s (the 71.6 s clip alone peaks at ≈ 1.1 GB
+— model and runtime); 7,900 vs 7,882 words (the guard dropped 18 words lying in silence between the repeated clips).
+
+CUDA delivery on the build VM (Linux x64, no NVIDIA driver; `SPEECH_CUDA_PACKAGE=… vitest run
+apps/engine/test/speech-cuda.e2e.test.ts`): the pinned 236 MB package downloaded through a server that dropped the
+first transfer at 20 MB, resumed with a Range request, verified, extracted and installed in 6.4 s (local server);
+the worker loaded ONNX Runtime 1.30.0 from the app-directory copy; CUDA was reported unavailable ("Failed to load
+shared library") with the missing NVIDIA libraries listed.
+
+#### 11.8 Real NVIDIA hardware (SG-040/041, measured 2026-10-26)
+
+Machine: vast.ai container (Ubuntu 24.04.5, host kernel 6.8), **RTX 4060 Ti 16 GB**, driver 580.173.02, 36 vCPU
+Xeon E5-2696 v3 @ 2.3 GHz, 62 GB; dedicated to this run (load average 0.4–4.3). Code: `feat/wf-speech` = integration
+`feat/workflow` 947d33f4 + the commits of this verification; Node 24.11.1, onnxruntime-node 1.30.0, the CUDA provider
+downloaded by the engine (NuGet 1.30.0, sha256 pinned). The host had the CUDA **12.8** toolkit and cuDNN 9.8 for
+CUDA 12 only. Fixture: the LJ composite (71.6 s, English); 8 threads. Rerunnable:
+`SPEECH_GPU_E2E=1 JASPER_SPEECH_MODELS_DIR=<dir> vitest run apps/engine/test/speech-gpu.e2e.test.ts` (and
+`speech-cuda.e2e.test.ts` with `SPEECH_CUDA_PACKAGE`).
+
+| Check | Result |
+|---|---|
+| NVIDIA runtime detection with only CUDA 12.8 | missing `libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13` (driver, GPU, VRAM, cuDNN 9, cuRAND 10 found); the probe reports CUDA unavailable with that reason. The guidance named nonexistent package names and did not say why CUDA 12 is not enough — fixed (`cudaGuidance`, regression test): it now says the CUDA 13 runtime can sit next to CUDA 12 and names NVIDIA's apt packages and pip wheels |
+| CUDA 13 runtime added (pip `nvidia-cuda-runtime` 13.4.92, `nvidia-cublas` 13.8.1.7, `LD_LIBRARY_PATH`) | runtime ok; cuDNN 9.8 built for CUDA 12 loaded with it (assumption confirmed only for these models) |
+| Enable NVIDIA GPU (engine route) | provider downloaded from NuGet, verified, installed in 14 s; resume after a dropped transfer verified with the real package (`speech-cuda.e2e`) |
+| Provider probe | CUDA available (RTX 4060 Ti), WebGPU available (Dawn on Vulkan), CPU; chosen encoder CUDA |
+| tiny.en, encoder on CUDA | calibration 7.78 (CPU) vs 7.0–7.15 ms/token (CUDA): < 10 % faster → decoder stays on the CPU; RTF 0.056 vs 0.051 on the CPU (tiny is too small for the GPU to help); WER 1.92 %; **text identical to the CPU run** |
+| large-v3-turbo, CUDA + greedy | calibration 31.9 (CPU) vs 15.5 ms/token (CUDA) → decoder on CUDA; RTF **0.076** (0.094 for the first job, which calibrates) vs **0.354** on the CPU = 4.7× faster; WER 1.92 %; **text identical to the CPU run**; model load 3.7 s |
+| large-v3-turbo, beam 5 ("Best") | encoder CUDA, decoder CPU (beam search): RTF 0.209, WER 1.92 % |
+| large-v3-turbo-fp16, CUDA | decoder calibrated 151.7 (CPU, fp16) vs 15.1 ms/token → CUDA; RTF 0.134, WER 1.92 % (fp32 is faster on this GPU) |
+| WebGPU (NVIDIA GPU support off) | encoder WebGPU; tiny.en: calibration 7.49 vs 19.7 ms/token → CPU decoder, RTF 0.049; turbo: 31.3 vs **9.9 ms/token → device-resident WebGPU decoder** (SG-004 two-session path), RTF **0.079**; both **identical to the CPU text**; turbo beam 5 on WebGPU encoder 0.22 |
+| GPU error mid-job (`JASPER_SPEECH_GPU_FAULT_AFTER=2`, a test hook that fails the 2nd run of a GPU session) | job reran on the CPU; result `fallbacks: [{stage: job, from: cuda, to: cpu, reason: "injected GPU fault (cuda, run 2)"}]`, WER 1.92 % |
+| Speech suites on the box (CPU real-model e2e included) | 108 tests pass; the e2e "unconditioned job" asserted a CPU device and failed where `auto` picks the GPU — fixed by asking for the CPU |
+
+Observations: the WebGPU-resident decoder beat both the CPU and the CUDA decoder for turbo here (9.9 vs 15.5 ms/token:
+CUDA copies the key/value cache every step, research §0); with CUDA available the engine still prefers CUDA for the
+encoder (probe order) — per-machine, the calibration only chooses the decoder. Not run on real hardware: Windows
+(WebGPU via D3D12, the DirectML exclusion), macOS (WebGPU on Metal; research measured it), AMD/Intel GPUs, a desktop
+package; the CUDA provider with a distribution-installed CUDA 13 (here pip wheels via `LD_LIBRARY_PATH`).

@@ -91,6 +91,8 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		textAnimation: { in: { preset: 'slide-up' }, out: { preset: 'fade' } },
 		ref: '$title',
 	},
+	// spec 13 SH-004: measures every text box still marked layoutPending (or clipIds).
+	'text.relayout': { type: 'text.relayout' },
 	'clip.addMotionGraphic': {
 		type: 'clip.addMotionGraphic',
 		at: 0,
@@ -221,6 +223,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		value: 0.5,
 	},
 	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	// spec 15 EA-031: a cut kit (adjustment clip 10 + 10 frames around the cut at 00:00:02:00 with a blur and a
+	// Transform zoom keyed relative to the item's start) — one command per decoration; on V3 (created when missing).
+	'clip.addAdjustmentBatch': {
+		type: 'clip.addAdjustmentBatch',
+		trackId: 'V3',
+		items: [
+			{
+				start: 50,
+				length: 20,
+				name: 'Zoom-blur',
+				effects: [
+					{
+						effectId: 'jasper.gaussian-blur',
+						keyframes: {
+							radius: [
+								{ frame: 0, value: 0, interpolation: 'bezier', easeOut: { influence: 0.75, slope: 0 } },
+								{ frame: 10, value: 40 },
+								{ frame: 20, value: 0 },
+							],
+						},
+					},
+					{
+						effectId: 'jasper.transform',
+						params: { shutterAngle: 360 },
+						keyframes: {
+							scaleHeight: [
+								{ frame: 0, value: 100 },
+								{ frame: 10, value: 170 },
+								{ frame: 20, value: 100 },
+							],
+						},
+					},
+				],
+				ref: '$kit',
+			},
+		],
+	},
+	// spec 15 EA-031: punch-in keys on clips (Motion scale 100 → 180 % over 7 frames from the clip's midpoint), here
+	// on the clip of the clip.place example ("$clip").
+	'keyframe.addBatch': {
+		type: 'keyframe.addBatch',
+		targets: [
+			{
+				clipId: '$clip',
+				path: ['transform', 'scale'],
+				keys: [
+					{ at: { frames: 30 }, value: 100 },
+					{ at: { frames: 37 }, value: 180 },
+				],
+			},
+		],
+	},
 	'keyframe.add': {
 		type: 'keyframe.add',
 		target: ['clip', '$clip', 'transform', 'position'],
@@ -575,6 +629,26 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		crossfadeSec: 0.2,
 		gainDb: -12,
 	},
+	// Spec 14 TC-031: transcript cleanup applies any number of ranges as ONE edit (one undo step): the speech clip, its
+	// linked picture and clip group are cut, sync-locked tracks follow; 4 ms equal-power micro-fades at every audio join.
+	// Ranges in sequence frames, or in the media time (flicks) of a clip. mode: extract | lift | mute | markers.
+	'cleanup.apply': {
+		type: 'cleanup.apply',
+		clipIds: [{ clipAt: { track: 'A1', at: 0 } }],
+		ranges: [
+			{ start: 30, end: 45 },
+			{ start: 90, end: 130 },
+		],
+		mode: 'extract',
+		fadeMs: 4,
+	},
+	// …and the sequence's cleanup state: preset + overrides, the script, edited word lists, rejected findings.
+	'cleanup.configure': {
+		type: 'cleanup.configure',
+		settings: { presetId: 'builtin.fast', overrides: { gaps: { maxGapS: 0.15 } } },
+		script: { name: 'Guion', text: 'Hoy vamos a crear un juego de carreras.' },
+		lists: { es: { markers: ['bueno', 'o sea', 'a ver'] } },
+	},
 	// Spec 12 P6-R3 (Auto Tag): the classified type per clip id, marked "auto" until the user confirms it (auto_tag_audio
 	// measures the clips with POST /api/audio/classify and applies this command; a type the user set is kept unless force).
 	'essentialSound.autoTag': {
@@ -584,6 +658,73 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		minConfidence: 0.5,
 	},
+	// spec 13 SH-003 / AS-032: many text clips at once ("$title" from the clip.addText example; "$selection" in the
+	// open editor): a deep style patch, effects with keys timed from each clip's In, and linked project text styles.
+	'text.setStyle': {
+		type: 'text.setStyle',
+		clipIds: ['$title'],
+		patch: {
+			sizePx: 98,
+			strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
+			shadow: { color: [0.13, 0.11, 0.35, 0.8], angleDeg: 90, distancePx: 0, blurPx: 12 },
+		},
+	},
+	'effect.addMany': {
+		type: 'effect.addMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		keyframes: {
+			radius: [
+				{ offset: { frames: 0 }, value: 30 },
+				{ offset: { seconds: 0.1 }, value: 0 },
+			],
+		},
+	},
+	'effect.setParamMany': {
+		type: 'effect.setParamMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		param: 'radius',
+		value: 12,
+		at: { frames: 1 },
+	},
+	'effect.removeMany': {
+		type: 'effect.removeMany',
+		clipIds: ['$title'],
+		effectId: 'jasper.gaussian-blur',
+		occurrence: 0,
+	},
+	'textStyle.create': { type: 'textStyle.create', name: 'Pixel Pop', fromClipId: '$title', ref: '$style' },
+	'textStyle.apply': { type: 'textStyle.apply', styleId: '$style', clipIds: ['$title'] },
+	'textStyle.update': {
+		type: 'textStyle.update',
+		styleId: '$style',
+		patch: { sizePx: 110, fill: [1, 1, 1, 1] },
+	},
+	'textStyle.rename': { type: 'textStyle.rename', styleId: '$style', name: 'Pixel Pop 2025' },
+	'textStyle.reset': { type: 'textStyle.reset', clipIds: ['$title'], fields: ['sizePx'] },
+	'textStyle.detach': { type: 'textStyle.detach', clipIds: ['$title'] },
+	'textStyle.delete': { type: 'textStyle.delete', styleId: '$style' },
+	// spec 13 AS-001…AS-020: automatic subtitles as text clips ("$subs" = the new subtitle group).
+	'captions.generate': {
+		type: 'captions.generate',
+		template: 'builtin:pixel-pop',
+		rules: { maxWords: 3, holdSeconds: 0.5 },
+		cutAware: { lookBackSeconds: 0.5 },
+		ref: '$subs',
+	},
+	'captions.alignToCuts': { type: 'captions.alignToCuts', groupId: '$subs' },
+	'captions.regenerate': { type: 'captions.regenerate', groupId: '$subs', rules: { maxWords: 2 } },
+	'subtitleTemplate.apply': {
+		type: 'subtitleTemplate.apply',
+		template: 'builtin:bold-pop',
+		groupId: '$subs',
+		parts: { style: true, animation: true },
+	},
+	'captions.updateGroup': { type: 'captions.updateGroup', groupId: '$subs', name: 'Spanish subtitles' },
+	'captions.convert': { type: 'captions.convert', groupId: '$subs', to: 'caption-track', keepSource: true },
+	'captions.deleteGroup': { type: 'captions.deleteGroup', groupId: '$subs', clips: 'keep' },
+	'subtitleTemplate.save': { type: 'subtitleTemplate.save', clipId: '$title', name: 'My subtitles' },
 };
 
 /** A multi-command transaction showing temp refs. */

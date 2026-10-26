@@ -3,11 +3,13 @@ import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
 import audioFxRoutes from './audio-fx.ts';
+import automationRoutes from './automation.ts';
 import browseRoutes from './browse.ts';
 import cacheRoutes from './cache.ts';
 import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
+import cleanupRoutes from './cleanup.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
@@ -28,15 +30,19 @@ import previewsRoutes from './previews.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import proposalRoutes from './proposals.ts';
+import remoteAssetRoutes from './remote-assets.ts';
 import rotoRoutes from './roto.ts';
 import soundDesignRoutes from './sound-design.ts';
 import soundRoutes from './sounds.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
+import styleRoutes from './style.ts';
+import subtitleTemplateRoutes from './subtitle-templates.ts';
 import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
+import voiceRoutes from './voice.ts';
 
 const ROUTE_PLUGINS = [
 	capabilitiesRoutes,
@@ -48,12 +54,14 @@ const ROUTE_PLUGINS = [
 	exportsRoutes,
 	stillsRoutes,
 	fontsRoutes,
+	remoteAssetRoutes,
 	mgRoutes,
 	agentRoutes,
 	mcpRoutes,
 	// The agent relay supplies references to open projects for cache protection.
 	cacheRoutes,
 	effectPresetRoutes,
+	subtitleTemplateRoutes,
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,
@@ -71,6 +79,10 @@ const ROUTE_PLUGINS = [
 	captionRoutes,
 	// Speech and roto require the processing model catalogue.
 	speechRoutes,
+	// Spec 14 TC-001: voice analysis (levels, voicing, frame classes) of media audio streams.
+	voiceRoutes,
+	// Spec 14: transcript cleanup analysis (needs voice analysis and the agent service) and the cleanup presets.
+	cleanupRoutes,
 	rotoRoutes,
 	camtrackRoutes,
 	interchangeRoutes,
@@ -85,6 +97,10 @@ const ROUTE_PLUGINS = [
 	soundDesignRoutes,
 	// Proposals validate against and apply to the live document through the agent service.
 	proposalRoutes,
+	// Editing automation (spec 15) registers its refresher on the proposals service and places sounds from the library.
+	automationRoutes,
+	// Style recipes, Apply Style and Style Check (spec 15 EA-010…EA-013) use the automation, cleanup and template services.
+	styleRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

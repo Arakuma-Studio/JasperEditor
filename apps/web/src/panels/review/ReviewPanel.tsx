@@ -28,11 +28,15 @@ import {
 	cycleAlternative,
 	decide,
 	focusItem,
+	isRerollable,
 	openReview,
 	playReviewItem,
 	REVIEW_STATE_LABELS,
+	refreshReview,
 	rejectAll,
+	rerollReviewItem,
 } from '../../proposals/actions.ts';
+import { useProposalFeature } from '../../proposals/feature-state.ts';
 import { whyLines } from '../../proposals/ghosts.ts';
 import { isOwnKey, runScopedKey } from '../../proposals/keys.ts';
 import {
@@ -131,7 +135,10 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const seq = useSessionState((s) => s.document.sequences[seqId] as Sequence | undefined);
 	const ghost = useGhostModel(session, seqId);
 	const previewSeq = useProposals(session, (s) => s.preview?.result.document.sequences[seqId]);
-	const model = useMemo(() => buildReviewModel(items, ghost), [items, ghost]);
+	const feature = proposal?.feature;
+	const model = useMemo(() => buildReviewModel(items, ghost, feature), [items, ghost, feature]);
+	// spec 15 EA-003: whether the feature's producer re-plans stale items ("Refresh proposal")
+	const featureInfo = useProposalFeature(engine, session.projectId, feature);
 	// P6-E5: the proposal's Sound Check — the newer of the one kept on it and the last one run here
 	const checkLast = useStoreSelector(proposalCheckStore(session), (s) => s.last);
 	const check = useMemo((): SoundCheckProposalSummary | null => {
@@ -329,6 +336,25 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 									! {t('{0} stale or invalid', counts.stale + counts.invalid)}
 								</span>
 							) : null}
+							{counts.stale ? (
+								<Button
+									variant="quiet"
+									busy={busy}
+									disabled={readOnly || !featureInfo?.refreshable}
+									disabledReason={
+										readOnly
+											? t('The project is read-only')
+											: !featureInfo?.refreshable
+												? t('Its producer cannot re-plan items: ask for a new proposal instead')
+												: undefined
+									}
+									title={t('Re-plan the stale items on the current edit (nothing is applied)')}
+									onClick={() => void refreshReview(session)}
+									data-testid="review-refresh"
+								>
+									↻ {t('Refresh proposal')}
+								</Button>
+							) : null}
 							{counts.applied ? <span>{t('{0} applied', counts.applied)}</span> : null}
 							{previewing ? (
 								<span role="status" data-testid="review-previewing">
@@ -454,6 +480,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							noteRequest={noteFor === currentRow.item.id}
 							onNoteHandled={() => setNoteFor(null)}
 							idPrefix={idPrefix}
+							refreshable={!!featureInfo?.refreshable}
 						/>
 					) : null}
 					<div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-pr-border px-2 py-1.5">
@@ -833,6 +860,8 @@ function Details(p: {
 	noteRequest: boolean;
 	onNoteHandled(): void;
 	idPrefix: string;
+	/** The feature's producer re-plans items (Refresh proposal, Reroll). */
+	refreshable: boolean;
 }) {
 	const it = p.row.item;
 	const c = useProposalsController(p.session);
@@ -906,6 +935,29 @@ function Details(p: {
 				>
 					▶
 				</Button>
+				{isRerollable(p.row.item) ? (
+					<Button
+						variant="secondary"
+						disabled={
+							p.readOnly ||
+							!p.refreshable ||
+							!['pending', 'stale', 'invalid'].includes(p.row.item.engineState) ||
+							it.state === 'accepted'
+						}
+						disabledReason={
+							!p.refreshable
+								? t('Its producer cannot re-plan items')
+								: it.state === 'accepted' || it.state === 'applied'
+									? t('Only items still under review can be rerolled')
+									: undefined
+						}
+						onClick={() => void rerollReviewItem(p.session, it.id)}
+						aria-label={t('Reroll: plan this item again with its next seed')}
+						data-review-detail="reroll"
+					>
+						⟳ {t('Reroll')}
+					</Button>
+				) : null}
 			</div>
 			{editing ? (
 				<div className="flex flex-col gap-1">

@@ -2,12 +2,16 @@ import '../layer-bake/commands.ts';
 import '../fx/register.ts';
 import '../simwarp/register.ts';
 import '../audio-fx/register.ts';
+import '../template-edit/register.ts';
+import '../remote-assets/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
 import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
+import { automationCommands } from './automation.ts';
 import { cacheCommands } from './cache.ts';
 import { captionCommands } from './captions.ts';
+import { cleanupCommands } from './cleanup.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { colorMgmtCommands } from './color-mgmt.ts';
@@ -45,7 +49,9 @@ import { soundDesignCommands } from './sound-design.ts';
 import { soundMixCommands } from './sound-mix.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
+import { subtitleCommands } from './subtitles.ts';
 import { textAnimationCommands } from './text-animation.ts';
+import { textStyleCommands } from './text-styles.ts';
 import { threeDCommands } from './three-d.ts';
 import { timeCommands } from './time.ts';
 import { timelineCommands } from './timeline.ts';
@@ -90,6 +96,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	maskCommands,
 	captionCommands,
 	speechCommands,
+	// spec 14: Clean Up Voice (Text panel ▸ Transcript ▸ Clean Up)
+	cleanupCommands,
 	rotoCommands,
 	multicamCommands,
 	interchangeCommands,
@@ -106,6 +114,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	soundCommands,
 	soundCueCommands,
 	soundDesignCommands,
+	automationCommands,
 	soundMixCommands,
 	soundBedCommands,
 	soundCheckCommands,
@@ -113,6 +122,10 @@ const COMMAND_MODULES: UiCommand[][] = [
 	proposalCommands,
 	// wp fonts: the user font library (Preferences ▸ Fonts, Resolve Fonts)
 	fontCommands,
+	// spec 13 AS-032: Select ▸ Same Style, linked text styles
+	textStyleCommands,
+	// spec 13 AS-040: Create Subtitles, Align Subtitles to Cuts, Select ▸ Subtitle Group / Same Template
+	subtitleCommands,
 ];
 
 let registered = false;

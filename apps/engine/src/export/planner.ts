@@ -11,6 +11,7 @@ import {
 	blendModeInfo,
 	buildRenderSnapshot,
 	clipContentTime,
+	collectParamMediaIds,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	hasAudioProcessor,
@@ -41,6 +42,7 @@ import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
+import { layerStill } from '../layer-bake/layer.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 // wp-m2-anime-templates (S11:ATP-002/008/010)
@@ -50,6 +52,13 @@ import {
 	missingTemplatesMessage,
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
+// social-comment §7.8: template fonts / emoji (bundled or remote), downloaded before rendering or blocking by name
+import {
+	checkTemplateAssets,
+	engineTemplateAssets,
+	TEMPLATE_ASSETS_UNAVAILABLE,
+	templateAssetsMessage,
+} from '../remote-assets/plan.ts';
 import {
 	type EncoderRequest,
 	fitOutputFormat,
@@ -57,6 +66,7 @@ import {
 	outputFormatChanges,
 } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
+import { bakeRecipeOf, compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
@@ -252,6 +262,8 @@ type PlanDeps = {
 	effects?: EffectRegistry;
 	/** parity (roto): frames a matte set holds on this engine (null = gone, e.g. cleaned from the cache). */
 	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
+	/** spec 13 AS-074: memory the native composite may use (bytes); default `compositeMemoryBudget()`. */
+	memoryBudget?: number;
 };
 
 /** Font ids a text or captions layer draws with: its style, styled runs and Source Text keys. */
@@ -348,6 +360,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			if (r?.fallback) fontFallbacks.set(font.id, font.family);
 			return r?.url ?? null;
 		},
+		templateAssets: engineTemplateAssets(deps.fonts),
 	});
 
 	// Frame buffers are sized by these numbers (`width × height × 4` per layer in the
@@ -375,6 +388,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			missingTemplatesMessage(missing),
 			missingTemplatesDetail(missing),
 		);
+	// Template fonts and emoji block every path too: the preview's marker card must never be exported, and a host
+	// font never stands in for a template's (downloads happen here, before anything renders).
+	{
+		const clips = allVisualClips(snapshot);
+		const issues = await checkTemplateAssets(snapshot, clips, deps.fonts);
+		if (issues.length > 0)
+			throw new PlanError(TEMPLATE_ASSETS_UNAVAILABLE, 409, templateAssetsMessage(issues, clips), {
+				assets: issues,
+			});
+	}
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
 	{
@@ -446,7 +469,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const mgClips: string[] = [];
 	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
 	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
-	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
+	const baked: { clipId: string; engine: 'remotion'; frames: number; still?: boolean }[] = [];
 	for (const reason of nestBlockers(snapshot))
 		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
 	// color-mgmt: linear-light compositing (Blend using 1.0 gamma / Linearize Working Space) is drawn by the GPU
@@ -465,6 +488,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				clipId: c.clipId,
 				engine: bakeEngine,
 				frames: c.duration + (c.headHandle ?? 0) + (c.tailHandle ?? 0),
+				...(bakeRecipeOf(c) === 'still' ? { still: true } : {}),
 			});
 		else if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) mgClips.push(c.clipId);
 		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
@@ -541,6 +565,42 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			itemIds: [...offlineUsed],
 		});
 	}
+	// Template media params (avatars) that are offline: the template draws its placeholder there, so the export says so.
+	const templateOffline = new Set<string>();
+	for (const c of visual)
+		if ('mg' in c.source)
+			for (const id of collectParamMediaIds(c.source.mg.params))
+				if (!snapshot.media[id]) templateOffline.add(c.clipId);
+	if (templateOffline.size > 0)
+		warnings.push({
+			code: 'OFFLINE_TEMPLATE_MEDIA',
+			message: `${templateOffline.size} motion graphic(s) show offline media; those pictures render as placeholders`,
+			itemIds: [...templateOffline],
+		});
+	// Template pictures are drawn as browser images (`TemplateImage`): stills the browser cannot decode get their display
+	// picture (imports extension); media no <img> can show (video, Lottie, PDF pages) block every path by name.
+	const undrawable: { clipId: string; name: string; mediaId: string; what: string }[] = [];
+	for (const c of visual)
+		if ('mg' in c.source)
+			for (const id of collectParamMediaIds(c.source.mg.params)) {
+				const asset = document.media[id];
+				const what = asset && snapshot.media[id] ? templatePictureProblem(asset) : null;
+				if (what) undrawable.push({ clipId: c.clipId, name: c.name, mediaId: id, what });
+			}
+	if (undrawable.length > 0)
+		throw new PlanError(
+			TEMPLATE_MEDIA_UNDRAWABLE,
+			409,
+			`Motion graphics show media templates cannot draw: ${[...new Set(undrawable.map((u) => `${u.mediaId} (${u.what})`))].join(', ')}`,
+			{
+				blockers: undrawable.map((u) => ({
+					itemId: u.clipId,
+					path: 'native' as const,
+					reason: `template picture ${u.mediaId} of clip "${u.name}" is ${u.what}; templates draw still pictures only`,
+				})),
+				hint: 'Pick a still picture (PNG, JPEG, WebP…) for the template param, or None.',
+			},
+		);
 	// LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
 	// offline: those steps are skipped (the clips render ungraded / uninterpreted there), so the export says so.
 	const lutOffline = new Set<string>();
@@ -583,6 +643,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
+	// spec 13 SH-004: estimated text boxes export as the Program monitor shows them; the editor measures them.
+	const pendingText = visual.filter((c) => 'text' in c.source && c.source.layoutPending).map((c) => c.clipId);
+	if (pendingText.length)
+		warnings.push({
+			code: 'TEXT_LAYOUT_PENDING',
+			message: `${pendingText.length === 1 ? 'A text box is' : `${pendingText.length} text boxes are`} not measured yet (made without an editor window or a render browser): boxes, anchors and backgrounds use an estimate until the project is opened in the editor`,
+			itemIds: pendingText,
+		});
 	warnings.push(...captionWarnings);
 	for (const ext of deps.extensions ?? []) {
 		if (!ext.warnings) continue;
@@ -673,6 +741,15 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 
+	// spec 13 AS-074: a composite that cannot fit in memory is refused before anything runs (a bake of an hour that
+	// ends in an OOM kill, or the engine killed with it), with what it would need.
+	if (blockers.length === 0 && !video?.alpha && settings.engine !== 'remotion') {
+		const reason = compositeMemoryBlocker(
+			estimateComposite(snapshot, range),
+			deps.memoryBudget ?? compositeMemoryBudget(),
+		);
+		if (reason) blockers.push({ path: 'native', reason });
+	}
 	const nativeEligible = blockers.length === 0;
 	// `hybrid` = the native composite with baked graphics layers (S04 §11.2, S11:LBK-002).
 	const nativePath = baked.length > 0 ? 'hybrid' : 'native';
@@ -751,8 +828,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const frames = range.end - range.start;
 	const pixels = output.width * output.height;
 	const pixelFactor = Math.max(0.25, pixels / (1920 * 1080));
-	// Baked layers (uncached): Remotion at ~8 fps over each layer's drawn span (S04:RP-009 seed).
-	const bakeSeconds = path === 'hybrid' ? baked.reduce((s, b) => s + b.frames / 8, 0) * pixelFactor : 0;
+	// Baked layers (uncached): masters at ~8 fps over each layer's drawn span (S04:RP-009 seed); stills in sheet
+	// renders of up to 128 (spec 13 AS-071, textperf: ≈ 3.4 s fixed per render, ≈ 0.1 s per still).
+	const stillBakes = baked.filter((b) => b.still).length;
+	const bakeSeconds =
+		path === 'hybrid'
+			? (baked.reduce((s, b) => s + (b.still ? 0 : b.frames / 8), 0) +
+					Math.ceil(stillBakes / 128) * 3.4 +
+					stillBakes * 0.1) *
+				pixelFactor
+			: 0;
 	const estimateSeconds =
 		path !== 'remotion' ? (durationSec / 1.5) * pixelFactor + bakeSeconds : (frames / 8) * pixelFactor;
 	const bpp = 0.1 * 2 ** ((18 - output.crf) / 6);
@@ -892,6 +977,22 @@ export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 		rotation: r.probe.rotationDegrees,
 		...mediaDecodeHints(r.probe),
 	};
+}
+
+/** Plan error code for template media params holding media a template cannot draw as a picture. */
+export const TEMPLATE_MEDIA_UNDRAWABLE = 'TEMPLATE_MEDIA_UNDRAWABLE';
+
+/**
+ * Why a medium cannot be a template picture (`TemplateImage` draws still images: an <img>, or its display picture when
+ * the browser cannot decode the original), else null.
+ */
+export function templatePictureProblem(
+	asset: Pick<MediaAsset, 'kind'> & { lottie?: unknown; vector?: { format?: string } | null },
+): string | null {
+	if (asset.kind !== 'image') return `a ${asset.kind} medium`;
+	if (asset.lottie) return 'a Lottie animation';
+	if (asset.vector && asset.vector.format !== 'svg') return `a ${asset.vector.format ?? 'vector'} page`;
+	return null;
 }
 
 /** A motion-graphic clip rendered by Remotion (`renderer: 'anime'`, S11:ATP-002), not by fframes. */
@@ -1052,8 +1153,8 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 }
 
 function subpixelIn(snap: RenderSnapshot, c: RenderVisualClip): boolean {
-	// wp masks: layers with Opacity masks are kernel streams too.
-	if (maskExportRoute(c) === 'stream') return true;
+	// wp masks: layers with Opacity masks are kernel streams too; so are lowered layers (spec 13 AS-070).
+	if (maskExportRoute(c) === 'stream' || layerStill(c)) return true;
 	const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
 	return needsSubpixel(c, props, {
 		bw: Math.max(1, Math.round(c.intrinsicBox.width)),

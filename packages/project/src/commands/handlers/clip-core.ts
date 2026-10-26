@@ -4,10 +4,18 @@ import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
+import {
+	fillTemplateParams,
+	isMgAutoClipName,
+	mgClipName,
+	validateTemplateParams,
+} from '../../registry/mg-params.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
-import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
+import type { FontRef, MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
+import type { ProjectTextStyle } from '../../text-styles/model.ts';
+import { diffStyle } from '../../text-styles/patch.ts';
 import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -53,7 +61,7 @@ import { markMulticamClips } from './multicam-placement.ts';
 import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { clone, type HandlerMap, idList, peek } from './util.ts';
 
 type PlaceOptions = {
 	source: { mediaId?: string; syntheticId?: string; sequenceId?: string; projectItemId?: string };
@@ -434,7 +442,7 @@ export function placeSource(
 	return { clipIds, linkId };
 }
 
-function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
+export function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
 	const s = content.style;
 	const lines = content.text.split('\n');
 	const longest = Math.max(1, ...lines.map((l) => l.length));
@@ -442,16 +450,38 @@ function estimateTextBox(content: TextContent, frameW: number): { width: number;
 	return { width, height: Math.ceil(lines.length * s.sizePx * s.lineHeight) };
 }
 
-/** Applies measurement (browser) or marks layout pending (headless) (S01:KND-006). */
-function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerContext, frameW: number): void {
+/** Largest measured box side kept (px); a measurer reporting more (or a non-finite size) counts as unmeasured. */
+const MAX_MEASURED_SIDE = 65_536;
+
+/**
+ * Sizes an auto-size text box from the measurer (S01:KND-006, spec 13 SH-004): point text (`autoSize: 'width'`)
+ * takes the measured width and height, paragraph text (`'height'`) the measured height; a fixed box (`'none'`) is
+ * left alone. Without a measurer, or when it cannot measure now (fonts loading, no browser), the box keeps an
+ * estimate and the clip is marked `layoutPending` (`text.relayout` measures it later). An anchor at the old box
+ * centre (the default anchor, not keyframed) moves to the new centre, so the text stays centred on it.
+ */
+export function layoutText(
+	doc: Pick<DDoc, 'fonts'>,
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	h: HandlerContext,
+	frameW: number,
+): void {
 	const content = clip.content as TextContent;
 	const box = clip.box as TextBox;
 	if (box.autoSize === 'none') {
 		delete clip.layoutPending;
 		return;
 	}
-	if (h.ctx.textMeasurer) {
-		const m = h.ctx.textMeasurer.measure(content, box);
+	const before = { width: box.width, height: box.height };
+	let m: { width: number; height: number } | null = null;
+	try {
+		m = h.ctx.textMeasurer?.measure(content, box, doc.fonts as Readonly<Record<string, FontRef>>) ?? null;
+	} catch {
+		m = null;
+	}
+	const ok = (v: unknown): v is number =>
+		typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_MEASURED_SIDE;
+	if (m && ok(m.width) && ok(m.height)) {
 		if (box.autoSize === 'width') {
 			clip.box.width = m.width;
 			clip.box.height = m.height;
@@ -465,19 +495,45 @@ function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerCont
 		}
 		clip.layoutPending = true;
 	}
+	followBoxCentre(clip, before);
 }
 
+/** The default anchor (the box centre, not keyframed) follows the box when its size changes. */
+function followBoxCentre(
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	before: { width: number; height: number },
+): void {
+	const a = clip.transform?.anchor;
+	if (!a || a.keyframes.length || (a as { expression?: unknown }).expression) return;
+	const [x, y] = a.value as [number, number];
+	if (Math.abs(x - before.width / 2) > 0.5 || Math.abs(y - before.height / 2) > 0.5) return;
+	if (before.width === clip.box.width && before.height === clip.box.height) return;
+	a.value = [clip.box.width / 2, clip.box.height / 2];
+}
+
+/** Runs the template's fill hook (MgTemplateInfo.fill) on the given params; none = the params unchanged. */
+/** The fill step of `clip.addMotionGraphic` (`fillTemplateParams`), refusals as command errors. */
+function fillMgParams(
+	info: MgTemplateInfo,
+	given: Record<string, unknown>,
+	seed: number,
+	h: HandlerContext,
+): { params: Record<string, unknown>; filled: string[] } {
+	const r = fillTemplateParams(info, given, seed);
+	if (!r.ok) return h.fail(r.code, r.message, r.path ? { path: r.path } : undefined);
+	return { params: r.params, filled: r.filled };
+}
+
+/** Params schema + template media checks (`validateTemplateParams`), refusals as command errors. */
 function validateMgParams(
+	doc: DDoc,
 	info: MgTemplateInfo,
 	params: Record<string, unknown>,
 	h: HandlerContext,
 ): Record<string, unknown> {
-	const parsed = info.paramsSchema.safeParse(params);
-	if (!parsed.success) {
-		const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
-		h.fail('E_INVALID_PARAM', `Invalid params for ${info.id}@${info.version}: ${msg}`);
-	}
-	return parsed.data as Record<string, unknown>;
+	const r = validateTemplateParams(info, params, doc.media);
+	if (!r.ok) return h.fail(r.code, r.message, r.path ? { path: r.path } : undefined);
+	return r.params;
 }
 
 function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) {
@@ -604,7 +660,7 @@ export const clipCoreHandlers = {
 			...visualFields(transform),
 		} as DClip;
 		const clip = seq.clips[id] as Draft<Extract<Clip, { kind: 'text' }>>;
-		layoutText(clip, h, seq.settings.width);
+		layoutText(doc, clip, h, seq.settings.width);
 		if (!cmd.transform?.anchor) clip.transform.anchor.value = [clip.box.width / 2, clip.box.height / 2];
 
 		applyInitialTextAnimation(seq, clip as DClip, cmd.textAnimation, h);
@@ -630,12 +686,21 @@ export const clipCoreHandlers = {
 		const info = h.registries.mgTemplates.get(cmd.template.id, cmd.template.version);
 		if (!info)
 			h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${cmd.template.id}@${cmd.template.version}`);
-		const params = validateMgParams(info, { ...info.defaults, ...(cmd.params ?? {}) }, h);
-		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'motion-graphic');
+		// Layering: defaults → (preset, already merged into cmd.params by the caller) → fill → given params; the
+		// fill only fills what the given params leave out, and WP1's media checks see the final params.
+		const given = cmd.params ?? {};
+		const fill = cmd.fill ? fillMgParams(info, given, cmd.fill.seed, h) : { params: given, filled: [] };
+		const params = validateMgParams(doc, info, { ...info.defaults, ...fill.params }, h);
+		const { seq, track, trackIndex, createdTrack, at, duration, id } = newGeneratorClip(
+			doc,
+			cmd,
+			h,
+			'motion-graphic',
+		);
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
 		const box = canvas === 'sequence' ? frameBox(seq) : canvas;
 		seq.clips[id] = {
-			...commonFields(id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
+			...commonFields(id, track.id, at, duration, 0, cmd.name ?? mgClipName(info, params), 'purple'),
 			kind: 'motion-graphic',
 			// anime templates are stamped; absent = fframes.
 			template: {
@@ -649,7 +714,18 @@ export const clipCoreHandlers = {
 		} as DClip;
 		cleanupSequence(seq, h);
 		h.defineRef(cmd.ref, id);
-		return { clipId: id };
+		// The placement and the resolved params, so agents need no second read (dry runs included).
+		return {
+			clipId: id,
+			sequenceId: seq.id,
+			trackId: track.id,
+			track: `${track.kind === 'video' ? 'V' : track.kind === 'audio' ? 'A' : 'C'}${trackIndex + 1}`,
+			...(createdTrack ? { createdTrack: true } : {}),
+			start: at,
+			duration,
+			params: clone(params),
+			...(cmd.fill ? { filled: fill.filled, seed: cmd.fill.seed } : {}),
+		};
 	},
 	'clip.move': (doc, cmd, h: HandlerContext) => {
 		const ids = idList(cmd.clipIds);
@@ -788,6 +864,39 @@ export const clipCoreHandlers = {
 		cleanupSequence(seq, h);
 		return { removed: clips.map((c) => c.id), ranges: spans.map((r) => ({ start: r.start, end: r.end })) };
 	},
+	'text.relayout': (doc, cmd: CommandOf<'text.relayout'>, h: HandlerContext) => {
+		// spec 13 SH-004: the listed text clips (one sequence), or every pending text clip of the document.
+		const targets: { seq: DSeq; clip: Draft<Extract<Clip, { kind: 'text' }>> }[] = [];
+		if (cmd.clipIds !== undefined) {
+			const ids = idList(cmd.clipIds);
+			if (ids.length === 0)
+				h.fail('E_INVALID_PARAM', 'text.relayout needs at least one clip', { path: ['clipIds'] });
+			for (const id of ids) {
+				const { seq, clip } = h.clip(doc, id);
+				if (clip.kind !== 'text')
+					h.fail('E_INVALID_PARAM', `${id} is not a text clip`, { path: ['clipIds'] });
+				// Measuring derives the box from the content: it is not an edit, locked tracks included.
+				targets.push({ seq, clip: clip as Draft<Extract<Clip, { kind: 'text' }>> });
+			}
+		} else
+			for (const seq of Object.values(doc.sequences))
+				for (const clip of Object.values(seq.clips))
+					if (clip.kind === 'text' && clip.layoutPending) targets.push({ seq, clip });
+		if (!h.ctx.textMeasurer && targets.length)
+			h.warn(
+				'W_LAYOUT_PENDING',
+				'No text measurer here: the boxes stay estimated until the editor measures them',
+			);
+		const pending: string[] = [];
+		for (const { seq, clip } of targets) {
+			if (!h.ctx.textMeasurer) continue;
+			layoutText(doc, clip, h, seq.settings.width);
+			if (clip.layoutPending) pending.push(clip.id);
+		}
+		if (pending.length && h.ctx.textMeasurer)
+			h.warn('W_LAYOUT_PENDING', `Not measured yet (fonts loading): ${pending.slice(0, 10).join(', ')}`);
+		return { measured: targets.length - pending.length, pending };
+	},
 	'clip.update': (doc, cmd, h: HandlerContext) => {
 		const ids = cmd.clipId ? [cmd.clipId] : idList(cmd.clipIds);
 		if (ids.length === 0) h.fail('E_INVALID_PARAM', 'clip.update needs clipId or clipIds');
@@ -799,8 +908,65 @@ export const clipCoreHandlers = {
 	},
 } satisfies HandlerMap;
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+	typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function writeTextStyle(
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	fields: Partial<TextStyle>,
+	mode: StyleWriteMode,
+): void {
+	if (mode === 'whole') {
+		clip.content.style = JSON.parse(JSON.stringify(fields)) as never;
+		return;
+	}
+	const st = clip.content.style as unknown as Record<string, unknown>;
+	for (const [k, v] of Object.entries(fields as Record<string, unknown>)) {
+		if (v === undefined) continue;
+		if (
+			mode === 'merge' &&
+			(k === 'shadow' || k === 'background') &&
+			isPlainObject(v) &&
+			isPlainObject(st[k])
+		)
+			Object.assign(st[k] as object, v);
+		else st[k] = v;
+	}
+}
+
+/**
+ * spec 13 SH-002: a clip linked to a project text style records where its effective style now deviates from it
+ * (whichever command wrote the style), so later edits of the style keep them.
+ */
+export function syncStyleOverrides(doc: DDoc, clip: DClip): void {
+	if (clip.kind !== 'text') return;
+	const r = clip as unknown as { styleId?: unknown; styleOverrides?: unknown };
+	if (typeof r.styleId !== 'string') return;
+	const styles = peek<Record<string, ProjectTextStyle>>(doc, 'textStyles');
+	const style = styles && typeof styles === 'object' ? peek<ProjectTextStyle>(styles, r.styleId) : undefined;
+	if (!style || !isPlainObject(style) || !isPlainObject(style.style)) return;
+	const dev = diffStyle(style.style as TextStyle, clip.content.style as TextStyle);
+	if (Object.keys(dev).length) r.styleOverrides = dev;
+	else delete r.styleOverrides;
+}
+
+/**
+ * How a patch's `content.style` is written: `merge` (clip.update): fields replace, a shadow / background object merges
+ * into the existing one (fields it does not name, like `spreadPx`, survive); `objects`: every field given replaces
+ * (Paste Attributes copies the source's objects exactly); `whole`: the patch is the complete new style (text.setStyle
+ * and linked text styles, which also remove fields).
+ */
+export type StyleWriteMode = 'merge' | 'objects' | 'whole';
+
 /** Applies one clip.update patch to a clip (also used by param.set on `clip.update`-written text properties). */
-export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: HandlerContext): void {
+export function applyClipPatch(
+	doc: DDoc,
+	seq: DSeq,
+	clip: DClip,
+	p: ClipPatch,
+	h: HandlerContext,
+	styleMode: StyleWriteMode = 'merge',
+): void {
 	const caps = kindCapabilities(clip.kind);
 	function refuse(field: string): never {
 		return h.fail('E_INVALID_PARAM', `${field} does not apply to ${clip.kind} clips`);
@@ -812,7 +978,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 	if (p.content !== undefined || p.box !== undefined) {
 		if (clip.kind !== 'text') refuse(p.content ? 'content' : 'box');
 		if (p.content?.text !== undefined) clip.content.text = p.content.text;
-		if (p.content?.style) Object.assign(clip.content.style, p.content.style);
+		if (p.content?.style) writeTextStyle(clip, p.content.style as Partial<TextStyle>, styleMode);
 		if (p.content?.runs !== undefined) clip.content.runs = p.content.runs;
 		if (p.content?.paragraphs !== undefined) {
 			if (p.content.paragraphs.length) clip.content.paragraphs = p.content.paragraphs;
@@ -827,7 +993,8 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		if (!doc.fonts[clip.content.style.fontId])
 			h.fail('E_NOT_FOUND', `Font not found: ${clip.content.style.fontId}`);
 		if (p.box) Object.assign(clip.box, p.box);
-		layoutText(clip, h, seq.settings.width);
+		layoutText(doc, clip, h, seq.settings.width);
+		if (p.content?.style) syncStyleOverrides(doc, clip);
 	}
 	// Params in the same patch must target the upgraded template version.
 	applyTemplatePatch(seq, clip, p, h);
@@ -841,7 +1008,12 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 					'E_INVALID_PARAM',
 					`Unknown motion-graphic template ${clip.template.id}@${clip.template.version}`,
 				);
-			clip.params = validateMgParams(info, { ...clip.params, ...p.params }, h);
+			const before = clip.params as Record<string, unknown>;
+			const autoName = p.name === undefined && isMgAutoClipName(info, clip.name, before);
+			clip.params = validateMgParams(doc, info, { ...before, ...p.params }, h);
+			// a clip that still has its automatic name follows its content ("X post · Luna Park"); a renamed one keeps
+			// the user's name
+			if (autoName) clip.name = mgClipName(info, clip.params as Record<string, unknown>);
 		}
 		if (p.canvas !== undefined) clip.canvas = p.canvas;
 	}

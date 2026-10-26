@@ -77,6 +77,22 @@ export const M2FeaturesSchema = z.object({
 			runtime: z.literal('onnxruntime'),
 			modelsInstalled: z.number().int().min(0),
 			defaultModel: z.string(),
+			/** spec 16 SG-001: the cached provider probe (absent until speech was first used). */
+			providers: z
+				.array(
+					z.object({
+						id: z.string(),
+						available: z.boolean(),
+						reason: z.string().optional(),
+						device: z.string().optional(),
+					}),
+				)
+				.optional(),
+			chosen: z.object({ encoder: z.string(), decoder: z.string() }).optional(),
+			threads: z.number().int().optional(),
+			recommendedModel: z.string().optional(),
+			/** Linux x64: state of the downloadable NVIDIA CUDA provider. */
+			cuda: z.enum(['unsupported', 'not-installed', 'installed', 'damaged']).optional(),
 		})
 		.optional(),
 	layerBake: z

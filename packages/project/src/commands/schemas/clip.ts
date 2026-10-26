@@ -137,11 +137,22 @@ export const ShapePatchSchema = z.strictObject({
 });
 export type ShapePatch = z.infer<typeof ShapePatchSchema>;
 
+/**
+ * Where a generator clip goes (social-comments design §7.9). `overwrite` (default): on `track`, clearing
+ * `[at, at + duration)` there. `first-free`: on the lowest unlocked track of the same kind at or above `track`
+ * that is empty for that range, adding a track on top when none is; no other clip is touched. Locked tracks are
+ * skipped, never refused; a track of the wrong kind is refused (E_TRACK_KIND), an unknown id too (E_NOT_FOUND).
+ */
+export const PlacementModeSchema = z.enum(['overwrite', 'first-free']);
+export type PlacementMode = z.infer<typeof PlacementModeSchema>;
+
 const placementTarget = {
 	sequenceId: IdRefSchema.optional(),
 	at: TimeInputSchema,
 	duration: TimeInputSchema,
+	/** The target track (`placement: 'first-free'`: the lowest track considered). */
 	track: TrackRefSchema,
+	placement: PlacementModeSchema.optional(),
 	name: z.string().optional(),
 	ref: RefDeclSchema.optional(),
 	id: z.string().optional(),
@@ -193,7 +204,27 @@ export const ClipAddMotionGraphicCmd = cmd('clip.addMotionGraphic', {
 	...placementTarget,
 	template: z.strictObject({ id: z.string().min(1), version: z.number().int() }),
 	params: z.record(z.string(), z.unknown()).optional(),
+	/**
+	 * Fill the params `params` omits with the template's `fill` hook (deterministic for `seed`), before the
+	 * defaults are merged; templates without a hook just merge the defaults. The result lists the filled names.
+	 */
+	fill: z.strictObject({ seed: z.number().int().min(0).max(0xffff_ffff) }).optional(),
 	canvas: canvas.optional(),
+});
+/**
+ * "Add another" (social-comments design §7.9): a copy of a motion-graphic clip (transform, effects, keyframes, name,
+ * label) right after it — at `at`, default the source's end — with the same duration, on the first free unlocked
+ * video track from `track` (default the source's track) up, so it never overwrites. The params the template lists
+ * in `ui.addAnother.reroll` get fresh values from its fill hook (deterministic for `seed`); the others are copied.
+ * `params` (validated by the template) win over both. Keyframes of re-randomized or given params are dropped.
+ */
+export const ClipDuplicateMotionGraphicCmd = cmd('clip.duplicateMotionGraphic', {
+	clipId: IdRefSchema,
+	seed: z.number().int().min(0).max(0xffff_ffff),
+	at: TimeInputSchema.optional(),
+	track: TrackRefSchema.optional(),
+	params: z.record(z.string(), z.unknown()).optional(),
+	ref: RefDeclSchema.optional(),
 });
 export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	...placementTarget,
@@ -424,6 +455,7 @@ export const CLIP_COMMANDS = [
 	ClipAddShapeCmd,
 	ClipAddCaptionsCmd,
 	ClipAddAdjustmentCmd,
+	ClipDuplicateMotionGraphicCmd,
 	ClipMoveCmd,
 	ClipTrimCmd,
 	ClipSlipCmd,

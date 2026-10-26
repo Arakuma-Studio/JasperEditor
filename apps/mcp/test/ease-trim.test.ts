@@ -553,6 +553,10 @@ describe('curve argument parser', () => {
 			'cubic-bezier(Infinity, 0, 1, 1)',
 			'cubic-bezier(NaN, 0, 1, 1)',
 			'no-such-preset',
+			// Object.prototype names are not CSS keywords (they crashed with a TypeError)
+			'__proto__',
+			'constructor',
+			'toString',
 		])
 			expect(() => parseCurveArg(bad), bad).toThrowError(ToolError);
 		expect(() =>

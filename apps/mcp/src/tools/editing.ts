@@ -25,8 +25,9 @@ import {
 import { jsonResult, ToolError } from '../errors.ts';
 import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
+import { registerAddMotionGraphic } from './add-motion-graphic.ts';
 import { AnimateArg, textAnimationOf } from './animation.ts';
-
+import { registerBulkMotionGraphics } from './bulk-motion-graphics.ts';
 import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
@@ -34,7 +35,8 @@ const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
 
 const TIME_NOTES = [
-	'Times on the timeline are sequence frames; every time argument also accepts {"seconds": x} or a timecode string "HH:MM:SS:FF".',
+	'Times on the timeline are sequence frames; every time argument of a command also accepts {"frames": n}, {"seconds": x} or a timecode string "HH:MM:SS:FF" (the helper tools also take "3s", "250ms", "00:03" and "1:02:03").',
+	'Generator clips (clip.addText / addSolid / addShape / addMotionGraphic) take placement: "first-free" to land on the lowest unlocked track at or above `track` that is empty for their range (a new top track when none is) instead of overwriting; clip.addMotionGraphic {fill: {seed}} fills omitted params with the template\'s fill hook.',
 	'Tracks are addressed by label: "V1" is the lowest video track, "A1" the first audio track (or by track id).',
 	'Creating commands may declare "ref": "$name"; later commands in the same transaction can use "$name" as an id.',
 	'Instead of ids you can write {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}}, {"markerByName": "Intro"} or {"itemByName": "Cam A.mp4"} (a project item).',
@@ -447,7 +449,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add text',
 			description:
-				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations).',
+				"Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour's alpha. The box follows the glyph metrics of the font (measured in the editor or the engine's render browser; `layoutPending` marks an estimate). Preview and every export draw the same.",
 			input: {
 				projectId: ProjectIdArg,
 				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
@@ -463,6 +465,33 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Font family or PostScript name (list_fonts; default Source Sans 3)'),
 				color: z.string().optional().describe('Text color "#RRGGBB" or "#RRGGBBAA" (default white)'),
+				// spec 13 SH-004
+				strokes: z
+					.array(
+						z.object({
+							color: z.string().describe('"#RRGGBB" or "#RRGGBBAA" (alpha = opacity)'),
+							widthPx: z.number().min(0).max(1000),
+							position: z.enum(['outside', 'center', 'inside']).optional().describe('Default outside'),
+						}),
+					)
+					.max(16)
+					.optional()
+					.describe('Strokes, the first drawn on top'),
+				shadow: z
+					.object({
+						color: z.string().describe('"#RRGGBB" or "#RRGGBBAA" (alpha = opacity)'),
+						angleDeg: z.number().min(-3600).max(3600).optional().describe('Default 90 (down)'),
+						distancePx: z.number().min(0).max(10000).optional().describe('Default 0'),
+						blurPx: z.number().min(0).max(10000).optional().describe('Default 0'),
+						spreadPx: z
+							.number()
+							.min(0)
+							.max(10000)
+							.optional()
+							.describe('Growth before the blur (Premiere Size); default 0'),
+					})
+					.optional()
+					.describe('Drop shadow of the glyphs and strokes'),
 				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence pixels'),
 				// M2 (wp-m2-text-anim, S11:ANA-002): text animators of the new clip (see list_text_animations).
 				animateIn: AnimateArg.optional().describe(
@@ -480,6 +509,20 @@ export function registerEditingTools(ctx: ToolContext): void {
 			if (a.sizePx) style.sizePx = a.sizePx;
 			if (a.color) style.fill = hexToRgba(a.color);
 			if (a.font) style.fontId = '$font';
+			if (a.strokes)
+				style.strokes = a.strokes.map((st) => ({
+					color: hexToRgba(st.color),
+					widthPx: st.widthPx,
+					position: st.position ?? 'outside',
+				}));
+			if (a.shadow)
+				style.shadow = {
+					color: hexToRgba(a.shadow.color),
+					angleDeg: a.shadow.angleDeg ?? 90,
+					distancePx: a.shadow.distancePx ?? 0,
+					blurPx: a.shadow.blurPx ?? 0,
+					...(a.shadow.spreadPx ? { spreadPx: a.shadow.spreadPx } : {}),
+				};
 			// M2 (wp-m2-text-anim, S11:ANA-002)
 			const textAnimation = await textAnimationOf(
 				ctx,
@@ -622,55 +665,9 @@ export function registerEditingTools(ctx: ToolContext): void {
 		},
 	);
 
-	defineTool(
-		ctx,
-		'add_motion_graphic',
-		{
-			title: 'Add motion graphic',
-			description:
-				'Adds an animated motion-graphic template clip (clip.addMotionGraphic), e.g. a lower third or title card. See list_motion_templates for template ids and their params (omitted params use the template defaults).',
-			input: {
-				projectId: ProjectIdArg,
-				template: z
-					.string()
-					.min(1)
-					.describe('Template id, optionally with version: "lower-third" or "lower-third@1"'),
-				params: z.record(z.string(), z.unknown()).optional().describe('Template parameters'),
-				at: timeArg('Start time'),
-				duration: timeArg('Length (default: the template default, else 5 s)').optional(),
-				track: TrackRefSchema.optional().describe('Video track (default V2)'),
-				sequenceId: SequenceIdArg,
-			},
-			annotations: EDIT,
-		},
-		async (a, extra) => {
-			const [id, v] = a.template.split('@');
-			const { templates } = await ctx.engine((c) => c.mgTemplates());
-			const matches = templates.filter((t) => t.id === id && (v === undefined || t.version === Number(v)));
-			const t = matches.sort((x, y) => y.version - x.version)[0];
-			if (!t)
-				throw new ToolError(
-					'E_NOT_FOUND',
-					`Unknown motion template "${a.template}"`,
-					`Available: ${templates.map((x) => `${x.id}@${x.version}`).join(', ')} (list_motion_templates).`,
-				);
-			return applyHelper(
-				ctx,
-				a.projectId,
-				t.name,
-				[
-					{
-						type: 'clip.addMotionGraphic',
-						at: a.at,
-						duration: a.duration ?? { seconds: t.defaultDurationSeconds ?? 5 },
-						track: a.track ?? 'V2',
-						template: { id: t.id, version: t.version },
-						...(a.params ? { params: a.params } : {}),
-						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
-					},
-				],
-				extra,
-			);
-		},
-	);
+	// add_motion_graphic: single item or items[], presets, first-free placement, fill, dry run + preview (its own
+	// module, add-motion-graphic.ts).
+	registerAddMotionGraphic(ctx);
+	// duplicate_motion_graphic ("Add another") and import_motion_graphics_csv (bulk-motion-graphics.ts).
+	registerBulkMotionGraphics(ctx);
 }

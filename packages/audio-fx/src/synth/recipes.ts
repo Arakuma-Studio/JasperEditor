@@ -560,6 +560,40 @@ const zap: SynthRecipe = {
 	},
 };
 
+/**
+ * TV static (spec 15 EA-026: the generated noise under a stinger, never a recording): white noise with a fast random
+ * level flutter, band-limited to the hiss band (high-pass ≈ 250 Hz, two-stage low-pass ≈ 5.5 kHz), the right channel
+ * slightly decorrelated; 1.6–2 s so a 29-frame stinger fits at any frame rate (the placement trims it).
+ */
+const tvStatic: SynthRecipe = {
+	id: 'synth.static',
+	type: 'glitch',
+	title: 'Synth TV static',
+	render(rng, sr) {
+		const T = rng.range(1.6, 2);
+		const x = buffer(sr, T);
+		const hold = Math.max(1, Math.round(sr / rng.range(25, 60)));
+		let g = 1;
+		for (let i = 0; i < x.length; i++) {
+			if (i % hold === 0) g = 1 + rng.range(-0.25, 0.25);
+			x[i] = rng.bipolar() * g;
+		}
+		const lp = rng.range(4500, 6500);
+		const hp = rng.range(180, 320);
+		filter(x, sr, 'lowPass', lp, Math.SQRT1_2, 2);
+		filter(x, sr, 'highPass', hp, Math.SQRT1_2, 1);
+		const side = buffer(sr, T);
+		addNoise(side, sr, rng, () => 1);
+		filter(side, sr, 'lowPass', lp, Math.SQRT1_2, 2);
+		filter(side, sr, 'highPass', hp, Math.SQRT1_2, 1);
+		const chs = [Float64Array.from(x), mixInto(Float64Array.from(x), side, 0.35)];
+		return finish(chs, sr, { fadeIn: 0.003, fadeOut: 0.03 });
+	},
+};
+
+/** Recipes beyond the one per type (named sounds other passes ask for by recipe id). */
+export const SYNTH_EXTRA_RECIPES: readonly SynthRecipe[] = /* @__PURE__ */ Object.freeze([tvStatic]);
+
 /** Every recipe, one per type of the 19 sound-effect types, in taxonomy order. */
 export const SYNTH_RECIPES: readonly SynthRecipe[] = /* @__PURE__ */ Object.freeze([
 	hit,

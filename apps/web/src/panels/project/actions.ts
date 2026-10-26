@@ -103,10 +103,21 @@ export function deleteItems(session: EditorSession, itemIds: string[]): void {
 		fail('Could not delete', err?.message);
 		return;
 	}
+	// Motion graphics that only show the media in a template param (avatars) keep their clip: the picture is cleared.
+	const seqs = Object.values(session.getCommitted().sequences);
+	const shows = (id: string) => seqs.some((s) => s.clips[id]?.kind === 'motion-graphic');
+	const blocking = err.blocking ?? [];
+	const cleared = blocking.filter(shows).length;
+	const removed = blocking.length - cleared;
 	projectDialogs.open({
 		kind: 'confirm',
 		title: 'Delete media in use?',
-		message: `${err.message}. Deleting removes those clips too.`,
+		message:
+			cleared === 0
+				? `${err.message}. Deleting removes those clips too.`
+				: removed === 0
+					? `${err.message}. Deleting clears it from those motion graphics (the clips stay).`
+					: `${err.message}. Deleting removes the clips made from it and clears it from the motion graphics that show it.`,
 		confirmLabel: 'Delete',
 		danger: true,
 		onConfirm: () => {

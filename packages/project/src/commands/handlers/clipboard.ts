@@ -22,6 +22,7 @@ import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
 import { isHoldOnlyValue, normalizeKeySides, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
+import { rewriteParamMedia } from '../../param-media.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import { dropForeignRotoRefs } from '../../roto/index.ts';
@@ -271,6 +272,11 @@ class Resolver {
 		const style = c.style as { fontId?: string } | undefined;
 		if (c.kind === 'captions' && style?.fontId) style.fontId = this.fontId(style.fontId);
 		this.remapEffectMedia(c.effects as EffectInstance[] | undefined);
+		// template media params (avatars) follow their media like the clip's own source.
+		if (c.kind === 'motion-graphic' && c.params && typeof c.params === 'object') {
+			const next = rewriteParamMedia(c.params, (id) => this.mediaId(id));
+			if (next.changed.length) c.params = next.value;
+		}
 		return true;
 	}
 }
@@ -670,7 +676,8 @@ function applyAttributes(
 		if (attrs.textStyle && style && t.kind === 'text') {
 			const s = clone(style.textStyle!) as { fontId?: string };
 			if (s.fontId) s.fontId = resolver.fontId(s.fontId);
-			applyClipPatch(doc, seq, t, { content: { style: s } } as never, h);
+			// The source's shadow / background objects are copied as they are (not merged into the target's).
+			applyClipPatch(doc, seq, t, { content: { style: s } } as never, h, 'objects');
 			done.push('textStyle');
 		}
 		const shape = first((s) => s.shape);

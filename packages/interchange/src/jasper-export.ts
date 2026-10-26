@@ -6,6 +6,7 @@ import {
 	type Clip,
 	captionClipSpeaker,
 	captionClipText,
+	clipParamMediaIds,
 	cueMarkers,
 	flicksPerFrame,
 	isEnabledMulticamClip,
@@ -690,6 +691,17 @@ export function fromJasper(
 					instead: 'the keyframed values without the expressions (pre-render it to keep them)',
 				});
 		}
+		// spec 14 TC-024: sub-frame edge micro-fades (the declick of a cleanup join) have no equivalent in any format
+		const ef =
+			c.kind === 'audio' ? (c as { edgeFades?: { inMs?: number; outMs?: number } }).edgeFades : undefined;
+		if (ef && (ef.inMs || ef.outMs))
+			report.warn(
+				`the ${ef.inMs && ef.outMs ? 'edge micro-fades' : 'edge micro-fade'} of clip "${c.name}" at frame ${c.start} ${ef.inMs && ef.outMs ? 'are' : 'is'} not carried`,
+				{
+					subject: { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start },
+					instead: 'hard cuts at its edges (a 1-frame audio transition is the closest equivalent)',
+				},
+			);
 		if (pre) {
 			const mid = prerenderMedia(c, pre);
 			return {
@@ -866,6 +878,8 @@ export function fromJasper(
 					synthetics.set(c.syntheticId, clone(doc.synthetics[c.syntheticId]));
 				addMedia((c.composition as { mediaId?: string } | undefined)?.mediaId);
 				scan(c.effects);
+				// template media params (avatars) of motion graphics.
+				for (const id of clipParamMediaIds(c)) addMedia(id);
 			}
 			for (const t of [...s.videoTracks, ...s.audioTracks, ...s.captionTracks]) {
 				scan(t.effects);

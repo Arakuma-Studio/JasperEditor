@@ -65,8 +65,11 @@ export function createAutosaver(
 	let firstDirtyAt: number | null = null;
 	let inFlight: Promise<void> | null = null;
 	let disposed = false;
-	/** Server revision our next save is based on (If-Match). */
-	let savedBase = session.store.getState().revision;
+	/**
+	 * Server revision our next save is based on (If-Match): the revision the session was opened at — edits the
+	 * session made before autosave attached (spec 13 SH-004: measuring pending text) are unsaved, not saved.
+	 */
+	let savedBase = Math.min(session.openedRevision, session.store.getState().revision);
 	let status: AutosaveStatus = {
 		saving: false,
 		lastSavedRevision: savedBase,
@@ -222,6 +225,7 @@ export function createAutosaver(
 		}, viewMs);
 	});
 	syncPause();
+	schedule();
 
 	return {
 		async flush() {

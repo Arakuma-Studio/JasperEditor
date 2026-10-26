@@ -1,4 +1,9 @@
-import { EffectPresetFolderSchema, EffectPresetSchema } from '@jasper/project';
+import {
+	CleanupPresetSchema,
+	EffectPresetFolderSchema,
+	EffectPresetSchema,
+	SubtitleTemplateSchema,
+} from '@jasper/project';
 import { z } from 'zod';
 import {
 	AgentMcpInfoSchema,
@@ -20,6 +25,7 @@ import {
 	RemixPlanRequestSchema,
 	RemixPlanResultSchema,
 } from './audio-fx.ts';
+import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -32,6 +38,14 @@ import {
 import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
+import {
+	CleanupAnalysisFileSchema,
+	CleanupAnalyzeRequestSchema,
+	CleanupPresetCreateRequestSchema,
+	CleanupPresetDeleteResponseSchema,
+	CleanupPresetLibraryResponseSchema,
+	CleanupPresetUpdateRequestSchema,
+} from './cleanup.ts';
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
@@ -176,15 +190,24 @@ import {
 	ProposalCreateResponseSchema,
 	ProposalDecisionResponseSchema,
 	ProposalDeleteResponseSchema,
+	ProposalFeaturesResponseSchema,
 	ProposalGetQuerySchema,
 	ProposalListResponseSchema,
 	ProposalMarkAppliedRequestSchema,
 	ProposalNoteRequestSchema,
+	ProposalRefreshRequestSchema,
+	ProposalRefreshResponseSchema,
 	ProposalRejectRequestSchema,
 	ProposalReopenRequestSchema,
 	ProposalResponseSchema,
 	ProposalSelectRequestSchema,
 } from './proposals.ts';
+import {
+	NetworkSettingsSchema,
+	RemoteAssetPrefetchRequestSchema,
+	RemoteAssetPrefetchResponseSchema,
+	RemoteAssetsStatusSchema,
+} from './remote-assets.ts';
 import {
 	RotoSegmentRequestSchema,
 	RotoStoreInfoSchema,
@@ -251,13 +274,35 @@ import {
 	SoundVisualSchema,
 } from './sounds.ts';
 import {
+	SpeechCudaStatusSchema,
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
+	SpeechProbeSchema,
+	SpeechSettingsPatchSchema,
+	SpeechSettingsSchema,
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
+import {
+	ApplyStyleRequestSchema,
+	ApplyStyleResultSchema,
+	StyleCheckRequestSchema,
+	StyleCheckResponseSchema,
+	StyleRecipeCreateRequestSchema,
+	StyleRecipeDeleteResponseSchema,
+	StyleRecipeDuplicateRequestSchema,
+	StyleRecipeEntrySchema,
+	StyleRecipeLibraryResponseSchema,
+	StyleRecipeUpdateRequestSchema,
+} from './style.ts';
+import {
+	SubtitleTemplateDeleteResponseSchema,
+	SubtitleTemplateLibraryResponseSchema,
+	SubtitleTemplateSaveRequestSchema,
+} from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
+import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -560,6 +605,28 @@ export const ROUTES = {
 	fontDelete: { method: 'DELETE', path: '/api/fonts/library/:fontId', response: FontDeleteResponseSchema },
 	/** Saved projects that use the face. */
 	fontUsage: { method: 'GET', path: '/api/fonts/library/:fontId/usage', response: FontUsageResponseSchema },
+	/** social-comment §7.8: Settings ▸ Privacy & Network (network uses, spec 04 OF-002). */
+	networkSettingsGet: { method: 'GET', path: '/api/settings/network', response: NetworkSettingsSchema },
+	networkSettingsPut: {
+		method: 'PUT',
+		path: '/api/settings/network',
+		body: NetworkSettingsSchema,
+		response: NetworkSettingsSchema,
+	},
+	/** Remote platform fonts / emoji: manifest, cache and first-fetch notice. */
+	remoteAssetsStatus: { method: 'GET', path: '/api/remote-assets', response: RemoteAssetsStatusSchema },
+	/** Downloads (policy on) or checks the given fonts / emoji; what is still missing, with why. */
+	remoteAssetsPrefetch: {
+		method: 'POST',
+		path: '/api/remote-assets/prefetch',
+		body: RemoteAssetPrefetchRequestSchema,
+		response: RemoteAssetPrefetchResponseSchema,
+	},
+	remoteAssetsNoticeAck: {
+		method: 'POST',
+		path: '/api/remote-assets/notice/ack',
+		response: RemoteAssetsStatusSchema,
+	},
 
 	mgTemplates: {
 		method: 'GET',
@@ -842,12 +909,67 @@ export const ROUTES = {
 		path: '/api/speech/models/:modelId',
 		response: SpeechModelDeleteResponseSchema,
 	},
+	/** spec 16: Transcription preferences (Processor, Accuracy, Enable NVIDIA GPU). */
+	speechSettings: {
+		method: 'GET',
+		path: '/api/speech/settings',
+		response: SpeechSettingsSchema,
+	},
+	speechSettingsUpdate: {
+		method: 'PUT',
+		path: '/api/speech/settings',
+		body: SpeechSettingsPatchSchema,
+		response: SpeechSettingsSchema,
+	},
+	/** The cached execution-provider probe (SG-001); POST probes again. */
+	speechProbe: {
+		method: 'GET',
+		path: '/api/speech/probe',
+		response: SpeechProbeSchema,
+	},
+	speechReprobe: {
+		method: 'POST',
+		path: '/api/speech/probe',
+		response: SpeechProbeSchema,
+	},
+	/** Linux x64: the downloadable ONNX Runtime CUDA provider (SG-006). */
+	speechCudaStatus: {
+		method: 'GET',
+		path: '/api/speech/cuda',
+		response: SpeechCudaStatusSchema,
+	},
+	/** Downloads the pinned CUDA provider package (a `model-download` job; resumable, sha256-verified). */
+	speechCudaInstall: {
+		method: 'POST',
+		path: '/api/speech/cuda/install',
+		response: EngineJobSchema,
+	},
+	speechCudaRemove: {
+		method: 'DELETE',
+		path: '/api/speech/cuda',
+		response: z.object({ freedBytes: z.number().int().min(0) }),
+	},
 	/** A `transcription` job for one audio stream of a media (result: `TranscriptionResult`, media time). */
 	mediaTranscribe: {
 		method: 'POST',
 		path: '/api/media/:key/transcribe',
 		body: TranscribeMediaRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** Spec 14 TC-001: a `voice-analysis` job for one audio stream of a media (result `VoiceAnalysisJobResult`). */
+	voiceAnalyze: {
+		method: 'POST',
+		path: '/api/media/:key/voice-analysis',
+		body: VoiceAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** The cached voice analysis file of a stream (`decodeVoiceAnalysis`); 404 `VOICE_ANALYSIS_NOT_FOUND` when none. */
+	voiceAnalysisGet: {
+		method: 'GET',
+		path: '/api/media/:key/voice-analysis',
+		query: VoiceAnalysisQuerySchema,
+		response: 'binary',
 	},
 	/** A `transcription` job for the mixed audio of a sequence (result in sequence time). */
 	speechTranscribeSequence: {
@@ -944,6 +1066,26 @@ export const ROUTES = {
 		response: CacheSettingsSchema,
 	},
 
+	/** spec 13 AS-020: the user subtitle template library. */
+	subtitleTemplatesList: {
+		method: 'GET',
+		path: '/api/subtitle-templates',
+		response: SubtitleTemplateLibraryResponseSchema,
+	},
+	/** Saves (creates or replaces) a template by its id; built-in ids are refused. */
+	subtitleTemplateSave: {
+		method: 'PUT',
+		path: '/api/subtitle-templates/:templateId',
+		body: SubtitleTemplateSaveRequestSchema,
+		response: SubtitleTemplateSchema,
+	},
+	/** Deletes a template of the library (agents: the user approves it in the editor). */
+	subtitleTemplateDelete: {
+		method: 'DELETE',
+		path: '/api/subtitle-templates/:templateId',
+		response: SubtitleTemplateDeleteResponseSchema,
+	},
+
 	effectPresetsList: {
 		method: 'GET',
 		path: '/api/effect-presets',
@@ -990,6 +1132,44 @@ export const ROUTES = {
 		path: '/api/effect-presets/import',
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
+	},
+	/** Spec 14: a `cleanup-analysis` job (result `CleanupAnalysisJobResult`; the analysis at its `url`). */
+	cleanupAnalyze: {
+		method: 'POST',
+		path: '/api/cleanup/analyze',
+		body: CleanupAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** The full analysis of a finished `cleanup-analysis` job; 404 `CLEANUP_ANALYSIS_NOT_FOUND` once evicted. */
+	cleanupAnalysisGet: {
+		method: 'GET',
+		path: '/api/cleanup/analyses/:analysisId',
+		response: CleanupAnalysisFileSchema,
+	},
+	/** Spec 14 TC-030: the user's cleanup presets (built-ins are not stored). */
+	cleanupPresetsList: {
+		method: 'GET',
+		path: '/api/cleanup-presets',
+		response: CleanupPresetLibraryResponseSchema,
+	},
+	cleanupPresetCreate: {
+		method: 'POST',
+		path: '/api/cleanup-presets',
+		body: CleanupPresetCreateRequestSchema,
+		response: CleanupPresetSchema,
+	},
+	cleanupPresetUpdate: {
+		method: 'PUT',
+		path: '/api/cleanup-presets/:presetId',
+		body: CleanupPresetUpdateRequestSchema,
+		response: CleanupPresetSchema,
+	},
+	/** Deleting needs the user's approval when an agent asks (the library has no undo). */
+	cleanupPresetDelete: {
+		method: 'DELETE',
+		path: '/api/cleanup-presets/:presetId',
+		response: CleanupPresetDeleteResponseSchema,
 	},
 
 	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */
@@ -1498,6 +1678,79 @@ export const ROUTES = {
 		method: 'DELETE',
 		path: '/api/projects/:projectId/proposals/:proposalId',
 		response: ProposalDeleteResponseSchema,
+	},
+	/** Spec 15 EA-003 "Refresh proposal": the feature's producer re-plans stale items (nothing is applied). */
+	proposalRefresh: {
+		method: 'POST',
+		path: '/api/projects/:projectId/proposals/:proposalId/refresh',
+		body: ProposalRefreshRequestSchema,
+		response: ProposalRefreshResponseSchema,
+	},
+	/**
+	 * Spec 15 EA-020…EA-022: an editing-automation pass (`:pass` = decorate-cuts | punch-ins | ken-burns). `mode:
+	 * 'dryRun'` answers 200 with an `AutomationPassResult` (nothing stored); `propose` (default) answers 202 with an
+	 * `edit-automation` job whose result is an `AutomationPassResult` naming the stored proposal.
+	 */
+	automationPass: {
+		method: 'POST',
+		path: '/api/projects/:projectId/automation/:pass',
+		body: AutomationPassRequestSchema,
+		response: z.union([AutomationPassResultSchema, EngineJobSchema]),
+	},
+	/** Spec 15 EA-010: the style recipes (built-ins and the user library). */
+	styleRecipesList: {
+		method: 'GET',
+		path: '/api/style-recipes',
+		response: StyleRecipeLibraryResponseSchema,
+	},
+	styleRecipeGet: {
+		method: 'GET',
+		path: '/api/style-recipes/:recipeId',
+		response: StyleRecipeEntrySchema,
+	},
+	styleRecipeCreate: {
+		method: 'POST',
+		path: '/api/style-recipes',
+		body: StyleRecipeCreateRequestSchema,
+		response: StyleRecipeEntrySchema,
+	},
+	styleRecipeUpdate: {
+		method: 'PUT',
+		path: '/api/style-recipes/:recipeId',
+		body: StyleRecipeUpdateRequestSchema,
+		response: StyleRecipeEntrySchema,
+	},
+	styleRecipeDuplicate: {
+		method: 'POST',
+		path: '/api/style-recipes/:recipeId/duplicate',
+		body: StyleRecipeDuplicateRequestSchema,
+		response: StyleRecipeEntrySchema,
+	},
+	/** Deleting needs the user's approval when an agent asks (the library has no undo). */
+	styleRecipeDelete: {
+		method: 'DELETE',
+		path: '/api/style-recipes/:recipeId',
+		response: StyleRecipeDeleteResponseSchema,
+	},
+	/** Spec 15 EA-012: Apply Style — `dryRun` answers at once, `propose` starts an `apply-style` job. */
+	applyStyle: {
+		method: 'POST',
+		path: '/api/projects/:projectId/style/apply',
+		body: ApplyStyleRequestSchema,
+		response: z.union([ApplyStyleResultSchema, EngineJobSchema]),
+	},
+	/** Spec 15 EA-013: Style Check of a sequence against a recipe's targets. */
+	styleCheck: {
+		method: 'POST',
+		path: '/api/projects/:projectId/style/check',
+		body: StyleCheckRequestSchema,
+		response: StyleCheckResponseSchema,
+	},
+	/** Spec 15 EA-001: the proposal features, their Review groups and whether agents may accept them here. */
+	proposalFeatures: {
+		method: 'GET',
+		path: '/api/projects/:projectId/proposal-features',
+		response: ProposalFeaturesResponseSchema,
 	},
 } as const satisfies Record<string, RouteDef>;
 

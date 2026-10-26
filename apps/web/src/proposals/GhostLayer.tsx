@@ -55,6 +55,9 @@ export function useHighContrast(): boolean {
 	return useSyncExternalStore(subscribeContrast, readContrast, () => false);
 }
 
+/** Marks of the clip kinds a ghost names (spec 15 EA-002): adjustment layers and text clips. */
+const KIND_MARK: Record<string, string> = { adjustment: '◐', text: 'T' };
+
 const HOVER_MS = 350;
 const LEAVE_MS = 250;
 
@@ -280,10 +283,16 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 								data-ghost-border={`${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`}
 								data-ghost-agent={model.agent || undefined}
 								data-ghost-new-track={x.newTrack || undefined}
+								data-ghost-kind={x.kind}
 								data-selected={sel || undefined}
 								aria-hidden="true"
 							>
 								<span className="absolute top-0 left-1 truncate text-pr-small whitespace-nowrap text-pr-text">
+									{KIND_MARK[x.kind] ? (
+										<span className="mr-1 font-semibold text-pr-muted" data-ghost-kind-mark={x.kind}>
+											{KIND_MARK[x.kind]}
+										</span>
+									) : null}
 									{x.name}
 								</span>
 								{glyph ? (
@@ -295,6 +304,99 @@ export function ProposalGhostLayer(p: GhostLayerProps) {
 										{glyph}
 									</span>
 								) : null}
+							</div>
+						);
+					})}
+				{placed.transitions
+					.filter((x) => x.region === r)
+					.map((x) => {
+						const it = model.byItem[x.itemId];
+						if (!it) return null;
+						const sel = selected.has(x.itemId);
+						const paint = ghostPaint(it.state, { highContrast: hc, selected: sel });
+						const border = `${paint.borderWidth}px ${paint.borderStyle} ${paint.borderColor}`;
+						return (
+							<div
+								key={x.key}
+								className="pointer-events-auto absolute cursor-pointer overflow-hidden"
+								style={{
+									left: x.x,
+									width: x.w,
+									top: x.y - box.top + 1,
+									height: Math.max(8, Math.round((x.h - 2) / 2)),
+									background: 'var(--pr-ghost-fill)',
+									backgroundImage: paint.hatch
+										? 'repeating-linear-gradient(135deg, var(--pr-ghost-stroke) 0 1px, transparent 1px 6px)'
+										: 'linear-gradient(to top right, transparent calc(50% - 1px), var(--pr-ghost-stroke) 50%, transparent calc(50% + 1px))',
+									border,
+									borderRadius: 'var(--pr-radius-clip)',
+									opacity: paint.opacity,
+									outline: focused && active === x.itemId ? '2px solid var(--pr-focus-ring)' : undefined,
+									outlineOffset: 1,
+								}}
+								title={x.name}
+								onPointerDown={(e) => onGhostDown(e, x.itemId)}
+								onPointerEnter={(e) => onGhostEnter(e, x.itemId)}
+								onPointerLeave={onGhostLeave}
+								onDoubleClick={(e) => e.stopPropagation()}
+								data-ghost-item={x.itemId}
+								data-ghost-transition={x.transitionId}
+								data-ghost-change={x.change}
+								data-ghost-state={it.state}
+								data-selected={sel || undefined}
+								aria-hidden="true"
+							/>
+						);
+					})}
+				{placed.keys
+					.filter((x) => x.region === r)
+					.map((x) => {
+						const it = model.byItem[x.itemId];
+						if (!it) return null;
+						const sel = selected.has(x.itemId);
+						const paint = ghostPaint(it.state, { highContrast: hc, selected: sel });
+						const rowTop = x.y - box.top;
+						const bandTop = rowTop + Math.max(2, x.h - 12);
+						return (
+							<div
+								key={x.key}
+								className="pointer-events-auto absolute cursor-pointer"
+								style={{ left: 0, top: bandTop, width: 0, height: 10, opacity: paint.opacity }}
+								onPointerDown={(e) => onGhostDown(e, x.itemId)}
+								onPointerEnter={(e) => onGhostEnter(e, x.itemId)}
+								onPointerLeave={onGhostLeave}
+								data-ghost-item={x.itemId}
+								data-ghost-keys={x.clipId}
+								data-ghost-key-count={x.count}
+								data-ghost-state={it.state}
+								aria-hidden="true"
+							>
+								<div
+									className="absolute"
+									style={{
+										left: x.xs[0] ?? x.x,
+										width: Math.max(1, (x.xs.at(-1) ?? x.x) - (x.xs[0] ?? x.x)),
+										top: 4,
+										height: 2,
+										background: paint.borderColor,
+									}}
+								/>
+								{x.xs.map((kx, i) => (
+									<div
+										key={x.frames[i]}
+										className="absolute"
+										style={{
+											left: kx - 4,
+											top: 1,
+											width: 8,
+											height: 8,
+											transform: 'rotate(45deg)',
+											background: 'var(--pr-ghost-fill)',
+											border: `${paint.borderWidth}px solid ${paint.borderColor}`,
+										}}
+										data-ghost-key-frame={x.frames[i]}
+									/>
+								))}
 							</div>
 						);
 					})}

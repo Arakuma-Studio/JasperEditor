@@ -1,3 +1,4 @@
+import { AUTOMATE_MENU } from '../../automation/menu.ts';
 import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
 import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
 import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
@@ -62,6 +63,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('mg.importRemotionProject', 'Import Remotion Project…'),
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
 			c('captions.import', 'Import Captions…'),
+			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),
 			c('project.importSvgAsShape', 'Import SVG as Shape Layer…'),
 			c('project.linkMedia', 'Link Media…'),
 			c('project.mediaProperties', 'Get Properties for Selection…'),
@@ -114,6 +116,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('edit.removeUnused', 'Remove Unused'),
 			c('edit.selectAll', 'Select All'),
 			c('edit.deselectAll', 'Deselect All'),
+			// spec 13 AS-032: Same Style and the helpers features register (Subtitle Group, Same Template).
+			sub('Select', [{ type: 'dynamic', provider: 'selectionHelpers' }]),
 			sep,
 			c('edit.find', 'Find…'),
 			c('edit.editOriginal', 'Edit Original'),
@@ -322,6 +326,10 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			c('sequence.makeSubsequence', 'Make Subsequence'),
 			sep,
+			sub(
+				'Automate',
+				AUTOMATE_MENU.flatMap((e) => [...(e.separatorBefore ? [sep] : []), c(e.command, () => e.label)]),
+			),
 			sub('Sound Design', [
 				c('sound.suggestCues', 'Suggest Cues…'),
 				c('sound.autoSoundPass', 'Auto Sound Pass…'),
@@ -338,6 +346,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('sound.toggleCueSeam', 'Show Cue Seam'),
 				c('sound.clearUnfilledCues', 'Clear Unfilled Cues'),
 			]),
+			c('transcript.cleanUpVoice', 'Clean Up Voice…'),
 			c('sequence.loudness', 'Loudness Normalization…'),
 			c('audio.voiceoverRecord', 'Record Voice-over'),
 			c('audio.voiceoverSettings', 'Voice-Over Record Settings…'),
@@ -356,6 +365,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('transcript.openPanel', 'Transcript'),
 				c('transcript.generate', 'Generate Transcript…'),
 				c('transcript.createCaptions', 'Create Captions from Transcript…'),
+				c('subtitles.create', 'Create Subtitles…'),
+				c('subtitles.alignToCuts', 'Align Subtitles to Cuts'),
+				c('subtitles.openPanel', 'Subtitles'),
 				c('transcript.removeFillers', 'Remove Filler Words…'),
 				c('transcript.removePauses', 'Remove Pauses…'),
 			]),
@@ -432,6 +444,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('threeD.newLight', 'Light…'),
 			]),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
+			c('mg.addAnother', 'Add Another'),
+			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),
 			sub('Arrange', ARRANGE_MENU),
 			sub('Stroke Animation', [
 				c('strokeAnimation.drawIn', 'Draw In'),

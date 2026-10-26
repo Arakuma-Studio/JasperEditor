@@ -6,9 +6,9 @@
 // (the same lines the editor's Sound Check ▸ Log tab shows), then compact JSON, and with images: true the annotated
 // sound sheet (view_sound_timeline's lanes: frames, spectrogram, sections, answer marks).
 import { SOUND_LISTEN_DETAILS, SOUND_LISTEN_LIMITS, type SoundListenResult } from '@jasper/api';
-import { type Rational, sequenceDuration, sequenceTimecode, TimeInputSchema } from '@jasper/project';
+import { type Rational, sequenceDuration, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import { defineTool, frameOf, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
@@ -133,7 +133,7 @@ export function registerSoundListenTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				range: z
-					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.object({ start: TimeArgSchema, end: TimeArgSchema })
 					.optional()
 					.describe(`Sequence range [start, end) (default the whole sequence; ≤ 10 min). ${TIME_FORMATS}`),
 				detail: z

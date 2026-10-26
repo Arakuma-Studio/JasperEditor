@@ -346,8 +346,66 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
   frame number); native exports bake them through the layer-bake extension. They are never sent to `jasper-mg`.
 - A clip whose template is not installed shows a placeholder card and blocks every export ("template id@vN is
   not installed").
-- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
+- Inserting never overwrites: a double-click, Enter or a drop on the Program monitor puts the clip on the first
+  free video track from the targeted one (else V1) up, adding a track on top when all are busy (one undo step); a
+  drop onto a video track of the timeline still overwrites there.
+- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic` (one or many graphics per call,
+  first-free placement, seeded fill, `dryRun` + `preview`), `set_motion_graphic_params`,
   `render_motion_graphic_preview` (a Remotion still for anime templates).
+- **Store reviews** (`social-comment@1` presets Play Store · Review, App Store · Review and App Store · Review
+  (iPhone app)): a Google Play, App Store web / Mac or iPhone App Store review card with star rating (Properties:
+  click or arrow-key the stars), date (date picker; the card prints it the store's way, "11/6/18" / "09/24/2021"),
+  title, "edited" and the iPhone age ("Sun" under a week as in the iOS 14-era App Store, else "1y ago"; **Recent
+  Dates** switches to today's "2d ago"); long reviews are clamped like the store (Play's fade, the App Store's
+  "more"; **Truncate Long Text** off shows all). **Likes Tick Up / Stars Fill** fills the stars one by one. Bulk import
+  takes `Rating` / `Stars`, `Title`, `Date` (YYYY-MM-DD) and `Edited` columns (`docs/wp-notes/social-comments.md`
+  "Store reviews").
+- **Platform fonts and emoji** (social-comment templates, `docs/wp-notes/social-comments.md` "Remote fonts &
+  emoji"): a template declares the faces and emoji it draws; bundled faces (TikTok Sans, Roboto, …) load from the
+  catalogue, the others (Chirp, SF Pro, Apple / Twemoji / Noto emoji images) are downloaded by the engine on first
+  need from the remote-asset manifest (`apps/engine/src/remote-assets/manifest.json`, fixed or overridden without a
+  release in `<appdir>/assets/remote-manifest.override.json`) into `<appdir>/assets/remote/`, verified and served at
+  `/fonts/remote/…` and `/fonts/emoji/…`; remote images of the manifest (X's and YouTube's default avatars) the same
+  way at `/fonts/images/…`. Downloads are a named network use, **Preferences ▸ Privacy & Network ▸
+  Platform fonts & emoji for social templates** (on by default; headless, MCP and CLI renders follow it too). A
+  missing font or emoji shows a striped marker on the card and a warning in the Program monitor (**Retry
+  download**), and blocks exports with `TEMPLATE_ASSETS_UNAVAILABLE`, naming the font, or the emoji and its pack —
+  never a substitute.
+- **Presets:** a template may declare named param presets (e.g. Counter ▸ Subscribers / Percentage / Money Raised).
+  The gallery then shows one card per preset instead of one for the template (search matches preset names; insert,
+  drag and the hover preview use the preset's params over the defaults). Agents pass `"<id>:<preset>"` or
+  `"<id>@<version>:<preset>"` as `template` to `add_motion_graphic` / `render_motion_graphic_preview`;
+  `list_motion_templates` lists each preset with its ref.
+- **UI hints:** a template's `ui` groups its params into ordered sub-sections of Properties ▸ Parameters and Effect
+  Controls ▸ Template, sets labels, tooltips and multi-line text, hides params that do not apply to the current value
+  of another param (`visibleWhen`, e.g. per variant) and can name a custom control registered by the web app
+  (`registerTemplateParamControl`). Template names, categories, descriptions, preset names, group labels and param
+  labels are translated through the model-string catalogue (`pnpm i18n`, Spanish in `apps/web/src/i18n/es.json`).
+  Details: `docs/wp-notes/social-comments.md` § Presets & UI hints.
+- **Clip names:** social comments are named from their content ("X post · Luna Park", "Instagram post comment ·
+  @luna.makes"), so the timeline, the asset chip and export messages tell the cards apart; the name follows edits of
+  the variant and the name until you rename the clip yourself.
+- **Add Another:** on a motion-graphic clip (timeline clip menu, Properties ▸ Template, Motion Templates, Graphics
+  menu, palette `mg.addAnother`) adds a copy right after it — after the last consecutive copy already there, so
+  pressing it again on the same clip builds a sequence — same length, on the first free video track, one undo
+  step. The params the template re-randomizes (`ui.addAnother.reroll`; social comments: name, handle, avatar and
+  stats) get fresh values; look, text and animation are kept.
+- **Import from a spreadsheet:** Motion Templates ▸ Import Spreadsheet… (also File / Graphics menus, a card's
+  context menu, Properties ▸ Template) takes rows pasted from a spreadsheet (TSV) or a `.csv` / `.tsv` file (header
+  row = param names or labels, template aliases such as `User` / `Comment` / `Verified`, an age in one `Time` /
+  `Age` / `Ago` / `Posted` cell such as `3h`, `2 weeks`, `1y` or `just now`, optional `start` / `duration`; at most
+  500 rows and 2 MB). The preview shows each row as it will be inserted (random values marked,
+  rows with errors left out); Insert adds the rows one after another from the playhead as one undo step. Details:
+  `docs/wp-notes/social-comments.md` § Add another & bulk import.
+- **Edit text on the Program monitor:** double-click a template's text (Title Reveal title and subtitle, Lower Third
+  name and role, Callout label, Counter label, social comment name and text) to edit it in place. The clip shows
+  its settled frame (entrance finished, exit not started) while you type; the playhead does not move. The double-
+  clicked word is selected. **Enter** (or a click elsewhere) applies one undo step, **Shift+Enter** starts a new line
+  in multi-line texts, **Esc** cancels. In texts with word marks (social comments) highlights, blurs and removals
+  stay on their words as you type, and selecting words shows a **Highlight / Blur / Remove / Clear** toolbar (one
+  undo step per button). Overlapping templates: the topmost text under the pointer is edited (a card selected in the
+  Timeline wins). Locked tracks and read-only projects say so instead of opening the editor. Template authors opt
+  in with `editableParamProps` (`docs/wp-notes/social-comments.md` § Program monitor editing).
 
 ## PWA (installable web app)
 
@@ -502,7 +560,7 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   (`docs/wp-notes/previews.md`).
 - Edit structure: `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips`
   `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
-  `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
+  `list_through_edits` `join_through_edits` `list_cuts` `find_gaps` `make_subsequence` `add_frame_hold`
   `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
 - Time remapping, time interpolation, Scene Edit Detection: `get_time_remap` `set_time_remap` `set_segment_speed`
   `add_speed_keyframe` `remove_speed_keyframes` `move_speed_keyframe` `set_speed_transition` `add_freeze_segment`
@@ -576,16 +634,44 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `rename_sound_profile` `delete_sound_profile` (approval card) `export_sound_profile` `import_sound_profile`
   `set_sound_profile` (the sequence's; `sound_check {profileId}` adds the Reference rows)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
-- Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
-  ghost table and its last Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal`
-  (policy-gated for agents) `reject_proposal`.
+- Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposal_features` (features, their
+  Review groups and whether agents may apply them here) `list_proposals` `get_proposal` (with a ghost table and its last
+  Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents)
+  `reject_proposal` `refresh_proposal` (the producer re-plans stale items, or with `reroll` draws an item again with
+  its next seed; nothing is applied).
+- Editing automation (spec 15; each a proposal of feature `edit-automation`, `mode: "dryRun"` for counts, coverage and
+  export cost): `decorate_cuts` (a cut kit centred on every picture cut + a whoosh of its length through sound design)
+  `add_punch_ins` (Motion zooms from the clip midpoint, held to the cut) `add_ken_burns` (slow zooms over a share of the
+  A-roll clips) `place_reactions` (your reaction pictures from a bin or folder at markers, calls to action and
+  exclamations, on a cut, wobbling) `slide_overlays` (one-sided Smooth Slides at overlay heads and tails)
+  `lay_music_bed` (your songs end to end at −33 dB, switching on cuts) `add_stingers` (generated TV static after
+  shouted punchlines) · style recipes: `list_style_recipes` `get_style_recipe` `save_style_recipe` (the built-ins Fast
+  Shorts / Fast Long-form / Clean and your library in `<appdir>/style-recipes/`) `apply_style` (a recipe's cleanup,
+  subtitles and passes in order as ONE proposal, later passes planned on the cleaned-up timeline) `style_check` (the
+  sequence against the recipe's targets, with look-here timecodes) (`docs/specs/15-edit-automation.md`,
+  `docs/wp-notes/edit-automation.md`).
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
   `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
   (`docs/wp-notes/captions.md`).
-- Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
+- Automatic subtitles as text clips (spec 13): `captions_from_transcript` (output, template, rules, text, cutAware,
+  dryRun: one undo step) `list_caption_groups` `align_captions_to_cuts` `regenerate_captions` `convert_captions`
+  (subtitle group ↔ caption track) `export_captions {groupId}` (SRT / VTT of a group) · templates
+  `list_subtitle_templates` `save_subtitle_template` `apply_subtitle_template` `delete_subtitle_template`
+  (`docs/wp-notes/auto-subtitles.md`).
+- Many text clips at once and linked text styles: `style_text` (a deep style patch and effects with keys timed from
+  each clip's In, on clip ids, `"$selection"` or a subtitle group, one undo step) `list_text_styles`
+  `create_text_style` `apply_text_style` (apply / detach / reset) `update_text_style` `delete_text_style`
+  (`docs/wp-notes/text-styles.md`).
+- Speech to text (local Whisper; GPU when it helps — `engine_status` shows the provider probe, `transcribe`
+  takes `device` and `accuracy`): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
   `get_transcript` (`docs/wp-notes/speech.md`).
+- Voice analysis (10 ms levels, voicing, speech / breath / silence frames of a media's audio stream; a cached engine
+  job): `get_voice_analysis` (`docs/wp-notes/transcript-cleanup.md`).
+- Clean Up Voice (retakes, restarts, fillers, off-script talk, pauses and breaths found in transcribed speech and cut
+  at the audio level in one undo step; guide resource `jasper://guide/cleanup` "Cleaning up speech"): `analyze_voice`
+  `plan_cleanup` `apply_cleanup` `set_cleanup_settings` `attach_script` (`docs/wp-notes/transcript-cleanup.md`).
 - Timeline interchange (Final Cut Pro 7 XML, FCPXML, OpenTimelineIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media:
   `import_timeline` `export_timeline` `list_offline_media` `link_media` (`docs/wp-notes/interchange.md`).
 - Imports and Interpret Footage (Lottie, SVG, PDF/AI, PSD, image sequences, EXR/TIFF/TGA/BMP/DPX/HEIC/JPEG XL through
@@ -638,6 +724,23 @@ once before enabling a project-scoped server; start it from the repository root 
 - **Property reads.** `get_clip_properties` / `get_param` return `value` (the keyframed value at a time, as
   Effect Controls shows it) next to `evaluated` (what the renderer draws then), keyframes in sequence frames and
   the `param.set` target; `rendered: false` + `why` when that frame draws nothing.
+- **Times.** Every time argument of a tool takes frames, `{"frames": n}`, `{"seconds": x}`, `"3s"` / `"1.5s"`,
+  `"250ms"`, a clock `"00:03"` (M:SS) or `"1:02:03"` (H:MM:SS), or timecode `"HH:MM:SS:FF"`. The shape decides:
+  a unit suffix is seconds / milliseconds, one or two `:` a clock (whole seconds — use `"3.5s"` for fractions),
+  three separators always timecode. Commands inside `apply_commands` / `POST /api/agent/tx` keep the command
+  forms (frames, `{frames}`, `{seconds}`, timecode).
+- **Graphics never overwrite.** `add_motion_graphic` places each clip on the first free unlocked video track from
+  V2 up for its time range (a new top track when all are busy); one call adds one graphic or `items: [...]` (up to
+  200) as one transaction (one undo step, all or nothing), fills omitted params with the template's fill hook from
+  a `seed` (returned), and returns per item the clip id, track, start/end and the fully resolved params. An
+  explicit `track` keeps the older behaviour (overwrite on exactly that track) unless `placement: "first-free"`.
+  `dryRun: true` resolves the same without changing the project; `preview: true` adds a still per item (up to 10).
+  Raw commands get the same placement with `placement: "first-free"` on `clip.addText` / `addSolid` / `addShape` /
+  `addMotionGraphic` (`docs/wp-notes/social-comments.md` "Placement & agent API").
+- **Add another / bulk import.** `duplicate_motion_graphic {clipId, count?}` copies a graphic right after itself
+  or its last consecutive copy (`count` copies in a row, one undo step; re-randomized params from `seed`); `import_motion_graphics_csv
+  {template, csv}` adds one graphic per CSV / TSV row through the same parser and column mapping as the editor's
+  import dialog (row errors refuse the call unless `skipInvalid: true`). Raw command: `clip.duplicateMotionGraphic`.
 
 ### Live UI: look at and operate the editor window
 
@@ -715,7 +818,11 @@ alternatives?, meta?}]}` validates every item by a dry run (failing ones are sto
 `GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
 the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
 and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
-allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`; it may withdraw items
+allowed it ("Allow agents to apply sound proposals"), and edit-automation, subtitles and transcript-cleanup proposals
+while Project Settings ▸ Agent Proposals allows them (on by default), otherwise `403 APPROVAL_REQUIRED`;
+`GET /api/projects/<id>/proposal-features` says which; a draft too large for one accept transaction is refused with
+`413 PROPOSAL_TOO_LARGE` (`detail.suggestedRange`); `POST …/<proposalId>/refresh {itemIds: "stale" | [...]}` asks the
+feature's producer to re-plan stale items (`409 PROPOSAL_NOT_REFRESHABLE` when it cannot); it may withdraw items
 (`reject`) or delete a proposal, while `reopen`, `note` and `select` are the reviewer's (editor key only). An accepted
 item is reopened only once its accept is undone (`409 PROPOSAL_STILL_APPLIED` while what it created is in the
 document). Every accept is journalled (an intent file next to the proposal, with the ids its transaction creates its
@@ -929,6 +1036,23 @@ graphics)** and lists one graphics group per baked layer.
   for its span; animated layers bake a ProRes 4444 master of their drawn span (transition handles included). Small
   layers are rendered only in their region of the frame (union of their per-frame bounds plus a margin; a layer
   that draws past it is re-rendered full frame).
+- Text whose glyphs stay still but whose picture moves — keyframed Motion / Opacity, the **Transform** effect
+  (Shutter Angle motion blur included) and **S_Shake** without motion blur, RGB split or wrap (the subtitle
+  templates' pop-in and shake) — bakes **one PNG of its layer box** and the native kernel draws it frame by frame
+  through Motion, the Transform and the shake (spec 13 AS-070/073). Every still of an export (static layers and these)
+  is rendered in **sheets**: up to 128 stills per Remotion render, identical words sharing one; a native export
+  starts its composite while they render. Shaken text with S_Shake's motion blur, RGB split or wrap stays an animated
+  master, one per run of such clips on a track.
+- The constant pictures of a track (those stills, still images with sub-pixel Motion) are drawn into **one input of
+  the composite per track**, so memory and speed follow what is on screen, not the clip count (thousands of subtitles
+  export on a laptop). `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer instead, and
+  `JASPER_EXPORT_COVER_BASE=0` blends a full-frame opaque video over the background instead of using it as the base
+  (diagnostics).
+- Before an export starts, the planner estimates the composite's memory; one that would not fit (60 % of the RAM or
+  of the engine's cgroup limit, or `JASPER_EXPORT_MEMORY_BUDGET_MB`) is refused on the native path with the estimate
+  and goes through the Remotion path (a forced **Native** export is not eligible). A compositor killed by the system
+  fails the export with `OUT_OF_MEMORY`; on Linux, tool processes are the OOM killer's preferred victims, not the
+  engine.
 - Bakes run as child jobs of the export ("Baking graphics 1/3 · 40 %"), several at a time: they share the export's
   Remotion page budget (its Remotion concurrency, at most half the cores; a still takes one page, a long animated
   title more) and one render browser; two exports needing the same bake render it once.
@@ -943,8 +1067,14 @@ graphics)** and lists one graphics group per baked layer.
   Remotion path (warning `NATIVE_FALLBACK` in the job result); a forced **Native** export fails with the error.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
+- **Transparent background:** Export mode ▸ Format **ProRes 422 HQ** ▸ Background **Transparent** (MCP: `start_export
+  {preset: "overlay-prores-4444-alpha"}`) writes straight-alpha ProRes 4444 in MOV without audio, rendered on the
+  Remotion path — e.g. social comments to lay over footage in another editor. Disable the footage clips first.
+  Opaque pixels decode with alpha 1020/1023 (10-bit), not 1023 (measured; the Remotion ProRes path's alpha scaling).
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
-  test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte);
+  test/layer-bake-parallel.e2e.test.ts test/subtitle-parity.e2e.test.ts` (the second compares parallel and sequential
+  bakes byte for byte, the third the subtitle templates with the composition's own frames); subtitle-scale timing and
+  memory: `node scripts/perf/subtitles.mjs --case short|long9m --variant pixelpop --warm`;
   preview request timing and stale-result handling: `apps/web/test/layer-bake-runtime.test.ts`.
 
 ## Media cache

@@ -89,18 +89,18 @@ export function applyEffectToClips(
 	const targets = clipsAccepting(session, effectId, clipIds);
 	if (targets.length === 0) return null;
 	const spec = session.ctx.registries.effects.get(effectId)!;
+	// spec 13 SH-003: one effect.addMany for any number of clips (one command, one undo step).
 	return session.apply({
 		label: targets.length > 1 ? `Apply ${spec.label} (${targets.length} clips)` : `Apply ${spec.label}`,
 		origin: 'user',
-		commands: targets.map(
-			(clipId) =>
-				({
-					type: 'effect.add',
-					target: { clipId },
-					effectId,
-					...(index !== undefined ? { index } : {}),
-				}) as Command,
-		),
+		commands: [
+			{
+				type: 'effect.addMany',
+				clipIds: targets,
+				effectId,
+				...(index !== undefined ? { index } : {}),
+			} as Command,
+		],
 	});
 }
 

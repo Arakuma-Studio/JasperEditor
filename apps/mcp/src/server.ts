@@ -11,8 +11,10 @@ import { installStrictValidation } from './strict.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
 import { AUDIO_FX_GUIDE, registerAudioFxTools } from './tools/audio-fx.ts';
+import { AUTOMATION_GUIDE, registerAutomationTools } from './tools/automation.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
+import { CLEANUP_GUIDE, registerCleanupTools } from './tools/cleanup.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
@@ -52,8 +54,11 @@ import { registerSoundSemanticTools } from './tools/sound-semantic.ts';
 import { registerSoundTimelineTools } from './tools/sound-timeline.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
+import { registerStyleTools, STYLE_GUIDE } from './tools/style.ts';
+import { registerSubtitleTools, SUBTITLES_GUIDE } from './tools/subtitles.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
+import { registerTextStyleTools, TEXT_STYLES_GUIDE } from './tools/text-styles.ts';
 import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
@@ -61,6 +66,7 @@ import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.t
 import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
 import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
+import { registerVoiceTools, VOICE_GUIDE } from './tools/voice.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
@@ -76,7 +82,8 @@ Workflow:
 5. start_export → wait_for_job → the output file.
 
 Rules:
-- Times are sequence frames; every time argument also accepts {"seconds": x} or timecode "HH:MM:SS:FF". Results give both frames and timecode.
+- Times are sequence frames; every time argument of these tools also accepts {"seconds": x}, "3s" / "1.5s" / "250ms", a clock "00:03" (M:SS) or "1:02:03" (H:MM:SS), or timecode "HH:MM:SS:FF" (four fields are always timecode). Commands inside apply_commands take frames, {"frames": n}, {"seconds": x} or timecode. Results give both frames and timecode.
+- add_motion_graphic never overwrites unless you name a track: graphics go on the first free video track for their time range (one call can add many: items[], one undo step). duplicate_motion_graphic adds another after an existing graphic (fresh random identity and stats for social comments); import_motion_graphics_csv adds one graphic per CSV / TSV row.
 - Tracks are "V1", "V2"… (video, V1 lowest) and "A1", "A2"… (audio). A video file placed with add_clip creates a linked video+audio pair.
 - Deleting tracks/items or anything with force: true needs the user's approval in an open editor window; if they deny it (E_APPROVAL_DENIED), do not retry without asking.
 - The same goes for destructive operations outside the timeline: deleting an effect preset, removing a downloaded model, cleaning cache that saved projects use, deleting all render files, moving the cache, restoring a version over a project, changing processing settings. The user answers on a card in the editor; only they can (you cannot approve or deny through any tool).
@@ -120,8 +127,14 @@ const FULL_GUIDE = [
 	AUDIO_FX_GUIDE,
 	SOUND_GUIDE,
 	PROPOSALS_GUIDE,
+	AUTOMATION_GUIDE,
+	STYLE_GUIDE,
 	CAPTIONS_GUIDE,
+	SUBTITLES_GUIDE,
+	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
+	VOICE_GUIDE,
+	CLEANUP_GUIDE,
 	ROTO_GUIDE,
 	SIM_WARP_GUIDE,
 	INTERCHANGE_GUIDE,
@@ -194,8 +207,14 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundSemanticTools(ctx);
 	registerSoundProfileTools(ctx);
 	registerProposalTools(ctx);
+	registerAutomationTools(ctx);
+	registerStyleTools(ctx);
 	registerCaptionTools(ctx);
+	registerSubtitleTools(ctx);
+	registerTextStyleTools(ctx);
 	registerSpeechTools(ctx);
+	registerVoiceTools(ctx);
+	registerCleanupTools(ctx);
 	registerRotoTools(ctx);
 	registerSimWarpTools(ctx);
 	registerInterchangeTools(ctx);
@@ -261,6 +280,44 @@ function registerResources(ctx: ToolContext): void {
 				],
 			};
 		},
+	);
+	ctx.server.registerResource(
+		'cleanup-guide',
+		'jasper://guide/cleanup',
+		{
+			title: 'Cleaning up speech',
+			description:
+				'How to remove retakes, fillers, pauses and breaths from recorded speech with analyze_voice / plan_cleanup / apply_cleanup, and the recommended agent policy.',
+			mimeType: 'text/markdown',
+		},
+		async (uri) => ({
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `# Cleaning up speech\n\n${CLEANUP_GUIDE}\n\n${VOICE_GUIDE}`,
+				},
+			],
+		}),
+	);
+	ctx.server.registerResource(
+		'automation-guide',
+		'jasper://guide/editing-automation',
+		{
+			title: 'Editing automation',
+			description:
+				'How to decorate an edit with the spec 15 passes (cut kits, punch-ins, Ken Burns, reactions, slides, music beds, stingers), style recipes, apply_style and style_check, with the recommended agent workflow: cleanup → subtitles → apply_style → review → accept → style_check.',
+			mimeType: 'text/markdown',
+		},
+		async (uri) => ({
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `# Editing automation\n\n${AUTOMATION_GUIDE}\n\n## Style recipes\n\n${STYLE_GUIDE}`,
+				},
+			],
+		}),
 	);
 	ctx.server.registerResource(
 		'editing-guide',

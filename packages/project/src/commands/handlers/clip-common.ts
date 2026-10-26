@@ -6,12 +6,14 @@ import {
 	assertKindFits,
 	assertUnlocked,
 	clearRange,
+	firstFreeTrack,
 	insertShift,
 	relinkSplits,
 	resolveOrCreateTrack,
 	type SplitRecord,
 	shiftMarkers,
 	syncFollowerTracks,
+	trackSlotOf,
 } from '../placement.ts';
 import type { TransformPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -114,18 +116,38 @@ export function newGeneratorClip(
 		at: CommandOf<'clip.addText'>['at'];
 		duration: CommandOf<'clip.addText'>['duration'];
 		track: string;
+		placement?: CommandOf<'clip.addText'>['placement'];
 		id?: string;
 	},
 	h: HandlerContext,
 	kind: 'text' | 'solid' | 'motion-graphic' | 'shape' | 'adjustment' | 'camera' | 'light' | 'model',
-): { seq: DSeq; track: DTrack; at: number; duration: number; id: string } {
+): {
+	seq: DSeq;
+	track: DTrack;
+	trackIndex: number;
+	createdTrack: boolean;
+	at: number;
+	duration: number;
+	id: string;
+} {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const at = h.frame(seq, cmd.at);
 	const duration = h.durationFrames(seq, cmd.duration);
 	if (at < 0) h.fail('E_INVALID_PARAM', 'Clip start must be >= 0');
 	if (duration < 1) h.fail('E_INVALID_PARAM', 'Clip duration must be >= 1 frame');
+	if (cmd.placement === 'first-free') {
+		// `track` is the lowest track considered; the clip lands on an empty range, so nothing is cleared.
+		const slot = trackSlotOf(seq, cmd.track, h);
+		assertKindFits(kind, { kind: slot.kind, id: cmd.track }, h);
+		const id = h.newId(doc, 'clp', cmd.id);
+		const free = firstFreeTrack(seq, slot.kind, slot.index, at, duration, h);
+		return { seq, track: free.track, trackIndex: free.index, createdTrack: free.created, at, duration, id };
+	}
+	const before = seq.videoTracks.length + seq.audioTracks.length + seq.captionTracks.length;
 	const track = prepareTrack(seq, cmd.track, kind, h, true);
 	const id = h.newId(doc, 'clp', cmd.id);
 	makeRoom(seq, h, [track], at, duration, 'overwrite');
-	return { seq, track, at, duration, id };
+	const slot = trackSlotOf(seq, track.id, h);
+	const createdTrack = seq.videoTracks.length + seq.audioTracks.length + seq.captionTracks.length > before;
+	return { seq, track, trackIndex: slot.index, createdTrack, at, duration, id };
 }

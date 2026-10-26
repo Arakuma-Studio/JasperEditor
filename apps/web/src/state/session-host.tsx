@@ -5,6 +5,8 @@ import { createEmptyProject, createRandomIdSource, defaultRegistries } from '@ja
 import { EditorSession, EngineProjectStore, MemoryProjectStore, type ProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { type ReactNode, useEffect, useState } from 'react';
+import { connectFonts } from '../fonts/store.ts';
+import { editorTextMeasurer, followFontCatalog } from '../fonts/text-measure.ts';
 import { useEngineClient } from './engine.tsx';
 
 export const DEMO_PROJECT_ID = 'demo';
@@ -28,11 +30,15 @@ function useProjectSession(projectId: string): SessionHostState {
 	useEffect(() => {
 		let session: EditorSession | null = null;
 		let cancelled = false;
+		let unfollow: (() => void) | null = null;
 		setState({ status: 'opening' });
-		const target =
-			projectId === DEMO_PROJECT_ID
-				? demoStore()
-				: { store: new EngineProjectStore(engine, { mgTemplates: mgRegistry }), projectId };
+		const demo = projectId === DEMO_PROJECT_ID;
+		const target = demo
+			? demoStore()
+			: { store: new EngineProjectStore(engine, { mgTemplates: mgRegistry }), projectId };
+		// spec 13 SH-004: text boxes follow the glyph metrics of the faces the Program monitor draws.
+		if (!demo) connectFonts(engine);
+		const textMeasurer = editorTextMeasurer(!demo);
 		EditorSession.open({
 			store: target.store,
 			projectId: target.projectId,
@@ -41,18 +47,23 @@ function useProjectSession(projectId: string): SessionHostState {
 				ids: createRandomIdSource(),
 				now: () => new Date().toISOString(),
 				registries: defaultRegistries(mgRegistry),
+				textMeasurer,
 			},
 		})
 			.then((s) => {
 				session = s;
 				if (cancelled) void s.close();
-				else setState({ status: 'open', session: s });
+				else {
+					unfollow = followFontCatalog(s, textMeasurer);
+					setState({ status: 'open', session: s });
+				}
 			})
 			.catch((e) => {
 				if (!cancelled) setState({ status: 'error', message: e instanceof Error ? e.message : String(e) });
 			});
 		return () => {
 			cancelled = true;
+			unfollow?.();
 			void session?.close();
 		};
 	}, [engine, projectId]);

@@ -1228,8 +1228,11 @@ defined in the data-model spec, as labelled undoable steps.
   graphics (fframes) and all export paths except cloud. This is an automated test (QA-010).
 - **OF-002 (P0)** No feature may call the network implicitly. Network use is limited to: model downloads, headless
   browser download (only if not bundled), update checks, optional cloud providers, the online font CDN fallback in
-  profile W, and Remotion web-render telemetry (RW-006). Each is visible in Settings ▸ Privacy & Network, and all but
-  telemetry required by the license can be disabled.
+  profile W, Remotion web-render telemetry (RW-006), and **platform fonts & emoji for social templates** (the fonts
+  and emoji images of the remote-asset manifest that a social-comment template declares, downloaded by the engine on
+  first need and cached; on by default, the user's choice in the social-comment design §7.8; when off, missing ones
+  block exports by name). Each is visible in Settings ▸ Privacy & Network, and all but telemetry required by the
+  license can be disabled.
 - **OF-003 (P0)** Missing credentials disable only the features of that provider (RC-001) and never produce errors in
   unrelated features.
 

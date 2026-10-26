@@ -36,9 +36,13 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 	E_APPROVAL_DENIED:
 		'The user denied this, or no editor window was open to ask in. Destructive commands (track.remove, item.delete, force: true…) and destructive operations (deleting presets, models, all render files or referenced cache, restoring a version over a project, changing settings) need the user to approve them in an open JasperEditor window. Do not retry without asking the user.',
 	E_APPROVAL_REQUIRED:
-		'Only the user can do this. A proposal: ask them to review and apply it in the editor (Review panel), or to turn on "Allow agents to apply sound proposals" for the sequence; wait_for_proposal tells you their decisions. A Sound Check error you wanted to acknowledge: fix it, or ask the user to acknowledge it in the Sound Check panel. Do not retry.',
+		'Only the user can do this. A proposal: ask them to review and apply it in the editor (Review panel), or to turn on "Allow agents to apply sound proposals" for the sequence (sound design) or "Allow agents to apply <feature> proposals" in Project Settings (editing automation, subtitles, transcript cleanup; list_proposal_features shows which are on); wait_for_proposal tells you their decisions. A Sound Check error you wanted to acknowledge: fix it, or ask the user to acknowledge it in the Sound Check panel. Do not retry.',
 	E_PROPOSAL_STALE:
 		'Some proposal items no longer fit the edit. Nothing was applied: accept again with partial: true to apply the rest, or make a new proposal.',
+	E_TOO_LARGE:
+		'The result would not fit one accept transaction (5 000 commands / 20 MB; 2 000 items). Nothing was stored: run the pass on the suggested range (details.suggestedRange, in sequence frames), then on the rest — or use the batch commands (clip.addAdjustmentBatch, keyframe.addBatch) so each item is one command.',
+	E_NOT_REFRESHABLE:
+		'This feature’s producer does not re-plan items. Make a new proposal for the changed part instead (and reject_proposal the stale items).',
 	E_PROPOSAL_LIMIT:
 		'The project already holds 50 proposals still under review. Ask the user to finish or discard some (or reject_proposal your own) before proposing again.',
 	E_APPROVAL_TIMEOUT:
@@ -64,6 +68,8 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 		'Agents may only undo/redo their own history entries; the top entry was made by the user or another agent.',
 	E_NOT_IMPLEMENTED:
 		"This operation is unavailable in the current engine or editor session. Check engine_status and the requested tool's requirements.",
+	E_UNSUPPORTED:
+		'The edit does not work on this material (for example a reversed, retimed or time-remapped clip). The message names the clips; set them to 100 % speed or leave them out.',
 	E_LIMIT: 'Too many commands or too large a payload (5 000 commands / 20 MB per transaction). Split it up.',
 };
 
@@ -143,6 +149,11 @@ const BROWSER_DOWNLOAD_NOTE =
 	'No browser is installed yet: the first Remotion render downloads a headless Chrome (needs network access and can take a minute); if that fails, install Google Chrome or set JASPER_BROWSER_EXECUTABLE.';
 const TEMPLATE_NOT_INSTALLED_HINT =
 	'A clip uses a motion-graphic template this JasperEditor build lacks: update JasperEditor, or replace or delete that clip (get_timeline shows it; details.blockers name the clips).';
+// social-comment §7.8: a template's platform font, emoji or image is not available (details.assets names each).
+const TEMPLATE_ASSETS_HINT =
+	'A template needs a platform font, emoji or image that is not available; details.assets names each one, its clips and why. REMOTE_ASSETS_OFF: the user has to turn on Preferences ▸ Privacy & Network ▸ "Platform fonts & emoji for social templates" (an agent turning it on is asked about in the editor). DOWNLOAD_NOT_FOUND / REMOTE_ASSET_UNKNOWN: switch the clip\'s emojiStyle or remove that emoji. DOWNLOAD_FAILED / DOWNLOAD_TIMEOUT: retry later. PREFETCH_LIMIT: the render uses more different emoji of one pack than one export fetches (4,096): use fewer.';
+const TEMPLATE_MEDIA_HINT =
+	'A template media param (e.g. an avatar) holds a medium that is not a still picture (a video, Lottie or PDF page; details.blockers name the clips): set it to {mediaId} of a still image with set_motion_graphic_params, or to null.';
 const WEBGL_HINT =
 	'The render browser has no WebGL2 (colour grading on the Remotion path needs it): set JASPER_REMOTION_GL to angle, swangle, egl or swiftshader, install Google Chrome, or export with engine "native" when the sequence allows it.';
 
@@ -191,6 +202,8 @@ export function renderHint(
 	detail?: unknown,
 ): string | undefined {
 	if (code === 'TEMPLATE_NOT_INSTALLED') return TEMPLATE_NOT_INSTALLED_HINT;
+	if (code === 'TEMPLATE_ASSETS_UNAVAILABLE') return TEMPLATE_ASSETS_HINT;
+	if (code === 'TEMPLATE_MEDIA_UNDRAWABLE') return TEMPLATE_MEDIA_HINT;
 	if (code === 'WEBGL_UNAVAILABLE') return WEBGL_HINT;
 	const parts: string[] = [];
 	if (code === 'PATH_NOT_ELIGIBLE') {

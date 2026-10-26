@@ -197,16 +197,16 @@ describe('createProposal', () => {
 		expect(
 			codes({ items: [item('a', [marker(1)], { meta: 'x'.repeat(PROPOSAL_LIMITS.maxMetaBytes) })] }),
 		).toEqual(['E_SCHEMA']);
-		// limits: items and commands
+		// limits: items and commands — spec 15 EA-004: over the caps a creator learns what fits (E_TOO_LARGE)
 		const many = Array.from({ length: PROPOSAL_LIMITS.maxItems + 1 }, (_, i) => item(`i${i}`, [marker(i)]));
-		expect(codes({ items: many })).toEqual(['E_SCHEMA']);
+		expect(codes({ items: many })).toEqual(['E_TOO_LARGE']);
 		const heavy = Array.from({ length: 3 }, (_, i) =>
 			item(
 				`i${i}`,
 				Array.from({ length: 2000 }, (_, k) => marker(k)),
 			),
 		);
-		expect(codes({ items: heavy })).toEqual(['E_LIMIT']);
+		expect(codes({ items: heavy })).toEqual(['E_TOO_LARGE']);
 		for (const junk of [null, 1, 'x', [], { items: 'x' }, { feature: 'a', title: 'b', items: [{}] }])
 			expect(
 				createProposal(

@@ -241,6 +241,37 @@ it('caller quality overrides take precedence over export preset defaults', () =>
 	expect(settings.video).toMatchObject({ quality: { mode: 'crf', value: 12 }, bitrateKbps: 16000 });
 });
 
+it('the overlay preset exports a transparent background: straight-alpha ProRes 4444 in MOV, no audio (social-comment §7.11)', () => {
+	const doc = createEmptyProject({
+		ids: createCounterIdSource(7),
+		name: 'Overlay',
+		preset: 'vertical-1080x1920-30',
+	});
+	const seq = Object.values(doc.sequences)[0]!;
+	const settings = buildExportSettings(seq, findExportPreset('overlay-prores-4444-alpha')!, {
+		range: { type: 'entire' },
+		engine: 'auto',
+	});
+	expect(settings.container).toBe('mov');
+	expect(settings.video).toMatchObject({
+		codec: 'prores',
+		proresProfile: '4444',
+		alpha: true,
+		width: 1080,
+		height: 1920,
+	});
+	expect(settings.videoOnly).toBe(true);
+	const master = buildExportSettings(seq, findExportPreset('master-prores-422hq')!, {
+		range: { type: 'entire' },
+		engine: 'auto',
+	});
+	expect([master.video?.alpha, master.video?.proresProfile, master.videoOnly]).toEqual([
+		undefined,
+		undefined,
+		undefined,
+	]);
+});
+
 it('the --version CLI reports the package version', () => {
 	const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
 	const result = spawnSync(

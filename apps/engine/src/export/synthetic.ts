@@ -8,7 +8,8 @@
 // The builder then applies effects, Motion, opacity, speed, frame holds and fades like any picture or sound.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { crc32, deflateSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { crc32, deflate, deflateSync } from 'node:zlib';
 import {
 	clipPictureTime,
 	encodeWavStereo16,
@@ -27,13 +28,28 @@ import type { LocalMedia, PlannedExport } from './planner.ts';
 
 const SAMPLE_RATE = 48000;
 
+/** `encodePng` with the deflate in the libuv pool (does not block the event loop; several run in parallel). */
+export async function encodePngAsync(
+	px: Uint8ClampedArray | Uint8Array,
+	w: number,
+	h: number,
+): Promise<Buffer> {
+	const raw = Buffer.alloc((w * 4 + 1) * h);
+	for (let y = 0; y < h; y++) raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
+	return pngFile(w, h, await deflateAsync(raw, { level: 1 }));
+}
+
 /** A PNG (RGBA 8-bit, unfiltered rows, zlib) of straight-alpha pixels. */
 export function encodePng(px: Uint8ClampedArray | Uint8Array, w: number, h: number): Buffer {
 	const raw = Buffer.alloc((w * 4 + 1) * h);
-	for (let y = 0; y < h; y++) {
-		raw[y * (w * 4 + 1)] = 0;
-		raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
-	}
+	for (let y = 0; y < h; y++) raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
+	return pngFile(w, h, deflateSync(raw, { level: 1 }));
+}
+
+const deflateAsync = promisify(deflate);
+
+/** The PNG file of RGBA 8-bit rows (filter 0 each) already deflated into `idat`. */
+function pngFile(w: number, h: number, idat: Buffer): Buffer {
 	const chunk = (type: string, data: Buffer) => {
 		const len = Buffer.alloc(4);
 		len.writeUInt32BE(data.length);
@@ -50,7 +66,7 @@ export function encodePng(px: Uint8ClampedArray | Uint8Array, w: number, h: numb
 	return Buffer.concat([
 		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
 		chunk('IHDR', ihdr),
-		chunk('IDAT', deflateSync(raw, { level: 1 })),
+		chunk('IDAT', idat),
 		chunk('IEND', Buffer.alloc(0)),
 	]);
 }

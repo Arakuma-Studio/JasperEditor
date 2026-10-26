@@ -1,8 +1,10 @@
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
+import { BATCH_OWNER, batchHandlers } from './handlers/batch.ts';
 import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
+import { CLEANUP_OWNER, cleanupHandlers } from './handlers/cleanup.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
@@ -18,6 +20,7 @@ import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.t
 import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
+import { mgAnotherHandlers } from './handlers/mg-another.ts';
 import { multicamHandlers } from './handlers/multicam.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
@@ -38,7 +41,10 @@ import { soundMixHandlers } from './handlers/sound-mix.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
+import { STYLE_RECIPES_OWNER, styleRecipeHandlers } from './handlers/style-recipes.ts';
+import { SUBTITLES_OWNER, subtitleHandlers } from './handlers/subtitles.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
+import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { timeHandlers } from './handlers/time.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
@@ -80,7 +86,12 @@ export type CommandOwner =
 	| 'previews'
 	| 'gaps'
 	| 'keyframe-ease'
-	| 'sound-design';
+	| 'sound-design'
+	| 'text-styles'
+	| 'subtitles'
+	| 'edit-automation'
+	| 'transcript-cleanup'
+	| 'style-recipes';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -128,6 +139,7 @@ const LABELS: Record<CommandType, string> = {
 	'clip.addText': 'New Text',
 	'clip.addSolid': 'New Color Matte',
 	'clip.addMotionGraphic': 'New Motion Graphic',
+	'clip.duplicateMotionGraphic': 'Add Another',
 	'clip.addComposition': 'New Composition',
 	'clip.addShape': 'New Shape',
 	'clip.addCaptions': 'Add Captions',
@@ -219,6 +231,7 @@ const LABELS: Record<CommandType, string> = {
 	'textAnimator.convertLegacy': 'Convert Text Animation to Animators',
 	'text.setPathOptions': 'Text Path Options',
 	'text.setPerCharacter3d': 'Per-character 3D',
+	'text.relayout': 'Measure Text',
 	'project.importTimeline': 'Import Timeline',
 	'clip.synchronize': 'Synchronize',
 	'item.mergeClips': 'Merge Clips',
@@ -386,6 +399,36 @@ const LABELS: Record<CommandType, string> = {
 	'soundDesign.removeBus': 'Remove SFX Room Glue',
 	'soundDesign.applyDelivery': 'Apply Delivery Preset',
 	'soundDesign.layBed': 'Lay Ambience Bed',
+	// spec 13 SH-003 / AS-032: batch styling and linked text styles.
+	'text.setStyle': 'Text Style',
+	'effect.setParamMany': 'Effect Parameter',
+	'effect.addMany': 'Apply Effect',
+	'effect.removeMany': 'Remove Effect',
+	'textStyle.create': 'New Text Style',
+	'textStyle.update': 'Update Text Style',
+	'textStyle.rename': 'Rename Text Style',
+	'textStyle.delete': 'Delete Text Style',
+	'textStyle.apply': 'Apply Text Style',
+	'textStyle.detach': 'Detach From Text Style',
+	'textStyle.reset': 'Reset to Text Style',
+	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
+	'captions.generate': 'Create Subtitles',
+	'captions.regenerate': 'Regenerate Subtitles',
+	'captions.alignToCuts': 'Align Subtitles to Cuts',
+	'captions.convert': 'Convert Subtitles',
+	'captions.updateGroup': 'Subtitle Group Settings',
+	'captions.deleteGroup': 'Delete Subtitle Group',
+	'subtitleTemplate.save': 'Save as Template',
+	'subtitleTemplate.add': 'Add Subtitle Template',
+	'subtitleTemplate.delete': 'Delete Subtitle Template',
+	'subtitleTemplate.apply': 'Apply Subtitle Template',
+	'clip.addAdjustmentBatch': 'New Adjustment Layers',
+	'keyframe.addBatch': 'Add Keyframes',
+	'cleanup.apply': 'Clean Up Voice',
+	'cleanup.configure': 'Clean Up Settings',
+	'styleRecipe.add': 'Add Style Recipe',
+	'styleRecipe.remove': 'Remove Style Recipe',
+	'styleRecipe.setActive': 'Set Active Style Recipe',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -401,6 +444,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[transitionHandlers, 'WP-TR'],
 	[processHandlers, 'wp-m2-process'],
 	[compositionHandlers, 'wp-m2-mg'],
+	[mgAnotherHandlers, 'wp-m2-mg'],
 	[trackerHandlers, 'wp-m2-track'],
 	[simplifyHandlers, 'wp-m3-trackui'],
 	[shapeHandlers, SHAPE_OWNER],
@@ -432,6 +476,11 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundHandlers, SOUND_DESIGN_OWNER],
 	[soundMixHandlers, SOUND_DESIGN_OWNER],
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
+	[textStyleHandlers, TEXT_STYLE_OWNER],
+	[subtitleHandlers, SUBTITLES_OWNER],
+	[batchHandlers, BATCH_OWNER],
+	[cleanupHandlers, CLEANUP_OWNER],
+	[styleRecipeHandlers, STYLE_RECIPES_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -468,7 +517,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === PREVIEWS_OWNER ||
 				owner === GAPS_OWNER ||
 				owner === EASE_OWNER ||
-				owner === SOUND_DESIGN_OWNER
+				owner === SOUND_DESIGN_OWNER ||
+				owner === TEXT_STYLE_OWNER ||
+				owner === SUBTITLES_OWNER ||
+				owner === BATCH_OWNER ||
+				owner === CLEANUP_OWNER ||
+				owner === STYLE_RECIPES_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

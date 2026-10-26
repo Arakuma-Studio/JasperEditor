@@ -13,8 +13,15 @@ import { mergeRanges } from '../captions/sequence-transcript.ts';
 import { normalizeWords } from '../captions/words.ts';
 import type { TranscriptAttachCmd } from '../commands/schemas/speech.ts';
 import type { ProjectDocument } from '../schema/document.ts';
-import type { Transcript, TranscriptWord } from '../schema/media.ts';
+import {
+	MAX_TRANSCRIPT_SEGMENTS,
+	type Transcript,
+	type TranscriptSegment,
+	TranscriptSegmentSchema,
+	type TranscriptWord,
+} from '../schema/media.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
+import { FLICKS_PER_SECOND } from '../time.ts';
 
 /** A recognised word (flicks). */
 export type RecognizedWord = {
@@ -146,6 +153,62 @@ export function mergeTranscriptWords(
 	return { words, coverage: union };
 }
 
+/** spec 14 TC-003: why stored segments are malformed (null when absent or well formed). */
+export function transcriptSegmentsProblem(segments: unknown): string | null {
+	if (segments === undefined) return null;
+	if (!Array.isArray(segments)) return 'segments is not a list';
+	if (segments.length > MAX_TRANSCRIPT_SEGMENTS) return `more than ${MAX_TRANSCRIPT_SEGMENTS} segments`;
+	let prev = -1;
+	for (const x of segments) {
+		const r = TranscriptSegmentSchema.safeParse(x);
+		if (!r.success) return 'a segment is malformed (start/end integer flicks, finite scores)';
+		if (r.data.end < r.data.start) return 'a segment ends before it starts';
+		if (r.data.start < prev) return 'segments are not sorted by start';
+		prev = r.data.start;
+	}
+	return null;
+}
+
+/** The well-formed stored segments, sorted (repair and readers). */
+export function normalizeTranscriptSegments(segments: unknown): TranscriptSegment[] {
+	if (!Array.isArray(segments)) return [];
+	const out: TranscriptSegment[] = [];
+	for (const x of segments) {
+		const r = TranscriptSegmentSchema.safeParse(x);
+		if (r.success && r.data.end >= r.data.start) out.push(r.data);
+	}
+	return out.sort((a, b) => a.start - b.start || a.end - b.end).slice(0, MAX_TRANSCRIPT_SEGMENTS);
+}
+
+/** A transcript's segments with decoder scores (empty when none were stored). */
+export function transcriptSegments(t: Pick<Transcript, 'segments'>): TranscriptSegment[] {
+	return normalizeTranscriptSegments(t.segments);
+}
+
+/** Segments of `existing` outside `coverage` plus `incoming` (by midpoint, like `mergeTranscriptWords`). */
+export function mergeTranscriptSegments(
+	existing: readonly TranscriptSegment[],
+	incoming: readonly TranscriptSegment[],
+	coverage: ReadonlyArray<readonly [number, number]>,
+): TranscriptSegment[] {
+	const kept = existing.filter((s) => !inRanges(coverage, s.start + Math.floor((s.end - s.start) / 2)));
+	return normalizeTranscriptSegments([...kept, ...incoming]);
+}
+
+/** A recognised segment (seconds of media/sequence time) → stored segment (flicks). */
+function segmentOf(s: RecognizedSegment, offset = 0): TranscriptSegment | null {
+	if (!Number.isFinite(s.start) || !Number.isFinite(s.end)) return null;
+	const start = Math.max(0, Math.round(s.start * FLICKS_PER_SECOND) + offset);
+	const end = Math.max(start, Math.round(s.end * FLICKS_PER_SECOND) + offset);
+	const seg: TranscriptSegment = { start, end };
+	if (s.avgLogprob !== undefined && Number.isFinite(s.avgLogprob)) seg.avgLogprob = s.avgLogprob;
+	if (s.noSpeechProb !== undefined && Number.isFinite(s.noSpeechProb))
+		seg.noSpeechProb = Math.min(1, Math.max(0, s.noSpeechProb));
+	if (s.compressionRatio !== undefined && Number.isFinite(s.compressionRatio))
+		seg.compressionRatio = Math.max(0, s.compressionRatio);
+	return seg;
+}
+
 /** `en` when translating, else the recognised language. */
 export function transcriptLanguage(language: string, task: 'transcribe' | 'translate' | undefined): string {
 	return task === 'translate' ? 'en' : language;
@@ -166,6 +229,17 @@ export type RecognitionResult = {
 	task: 'transcribe' | 'translate';
 	words: readonly RecognizedWord[];
 	speakers: Record<string, { name: string }>;
+	/** Segments with decoder scores (seconds, the time base of the words). */
+	segments?: readonly RecognizedSegment[];
+};
+
+/** A recognised segment (seconds) with the decoder's scores (TC-003). */
+export type RecognizedSegment = {
+	start: number;
+	end: number;
+	avgLogprob?: number;
+	noSpeechProb?: number;
+	compressionRatio?: number;
 };
 
 type TranscriptAttachCommand = z.input<typeof TranscriptAttachCmd>;
@@ -200,6 +274,7 @@ export function transcriptAttachPlan(
 	if (res.target.type === 'media') {
 		const mediaId = opts.mediaId;
 		if (!mediaId || !doc.media[mediaId]) return { error: 'The media is no longer in the project' };
+		const segments = (res.segments ?? []).map((s) => segmentOf(s)).filter((s): s is TranscriptSegment => !!s);
 		return {
 			commands: [
 				{
@@ -208,6 +283,7 @@ export function transcriptAttachPlan(
 					...meta,
 					words: res.words.map((w) => ({ ...w })),
 					speakers: res.speakers,
+					...(segments.length ? { segments: normalizeTranscriptSegments(segments) } : {}),
 					mode: opts.replace ? 'replace' : 'keep',
 				},
 			],
@@ -219,21 +295,29 @@ export function transcriptAttachPlan(
 	if (!seq) return { error: 'The sequence is no longer in the project' };
 	if (opts.currentMixHash !== undefined && opts.currentMixHash !== res.target.mixHash)
 		return { error: 'The sequence changed while its mix was being transcribed; transcribe it again' };
-	const r = distributeSequenceWords(doc, seq.id, res.words, {
-		start: res.target.range.startFrame,
-		end: res.target.range.endFrame,
-	});
+	const range = { start: res.target.range.startFrame, end: res.target.range.endFrame };
+	const r = distributeSequenceWords(doc, seq.id, res.words, range);
+	// segments go to the clip media they are heard through by the same rule as the words (midpoint)
+	const segs = (res.segments ?? []).map((s) => segmentOf(s)).filter((s): s is TranscriptSegment => !!s);
+	const segWords = segs.map((s, i) => ({ text: String(i), start: s.start, end: s.end }));
+	const segMedia = segWords.length ? distributeSequenceWords(doc, seq.id, segWords, range).media : [];
 	const commands: TranscriptAttachCommand[] = [];
 	const media: Array<{ mediaId: string; words: number }> = [];
 	for (const m of r.media) {
 		const existing = Object.values(doc.transcripts).some((t) => t.mediaId === m.mediaId);
 		if (existing && !opts.replace) continue;
+		const mediaSegs = (segMedia.find((x) => x.mediaId === m.mediaId)?.words ?? []).map((w) => {
+			const src = segs[Number(w.text)] as TranscriptSegment;
+			const { start: _s, end: _e, ...scores } = src;
+			return { ...scores, start: w.start, end: w.end };
+		});
 		commands.push({
 			type: 'transcript.attach',
 			mediaId: m.mediaId,
 			...meta,
 			words: m.words,
 			speakers: res.speakers,
+			...(mediaSegs.length ? { segments: normalizeTranscriptSegments(mediaSegs) } : {}),
 			coverage: m.coverage,
 			mode: existing ? 'merge' : 'replace',
 		});

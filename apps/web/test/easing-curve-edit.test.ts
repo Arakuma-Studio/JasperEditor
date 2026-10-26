@@ -154,6 +154,10 @@ describe('cubic-bezier text', () => {
 		['cubic-bezier(0x1, 0, 1, 1)', /four numbers/],
 		['steps(4)', /four numbers|Enter/],
 		['x'.repeat(500), /too long/],
+		// Object.prototype names are not keywords (a plain-object lookup returned the prototype and crashed: fuzz seed -120620085)
+		['__proto__', /four numbers/],
+		['constructor', /four numbers/],
+		['__proto__;', /four numbers/],
 	])('refuses %j', (text, msg) => {
 		const r = parseCubicBezier(text);
 		expect(r.ok).toBe(false);

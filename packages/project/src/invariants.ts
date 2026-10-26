@@ -4,9 +4,18 @@
 
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
+import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
+import { repairStyleRecipes, styleRecipesIssues } from './automation/recipes.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
+import {
+	clipCaptionProblem,
+	repairSubtitleSequence,
+	sequenceSubtitleIssues,
+} from './captions/subtitles/model.ts';
+import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
+import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
@@ -33,6 +42,7 @@ import {
 	multicamSourceOf,
 	pruneMulticamAngles,
 } from './multicam/model.ts';
+import { clipParamMediaIds, rewriteParamMedia, templateMediaRefs } from './param-media.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry, ParamSpec } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
@@ -63,9 +73,12 @@ import {
 	repairSoundDesign,
 	sequenceSoundDesignIssue,
 } from './sound/repair.ts';
+import { normalizeTranscriptSegments, transcriptSegmentsProblem } from './speech/index.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
+import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
+import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
 	contentSpanFlicks,
@@ -888,6 +901,16 @@ export function invariantCheckers(
 		if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
 			issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
 		}
+		// spec 13 SH-004: stroke lists and shadow spreads of the clip's text styles.
+		for (const st of clipTextStyles(c, cw))
+			for (const m of textStyleIssues(st.style))
+				issues.push(inv('INV-012', `Clip ${c.id} text style ${m}`, st.path));
+		// spec 13 SH-002: link fields to a project text style (a link to a missing style is soft).
+		const styleLink = clipTextStyleIssue(c);
+		if (styleLink) issues.push(inv('INV-TEXTSTYLE', `Clip ${c.id}: ${styleLink}`, [...cw, 'styleId']));
+		// spec 13 AS-003: a subtitle's words and group reference (only on text clips).
+		const captionBad = clipCaptionProblem(c);
+		if (captionBad) issues.push(inv('INV-SUBTITLE', `Clip ${c.id}: ${captionBad}`, [...cw, 'caption']));
 		// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
 		// presets are preserved and skipped by the renderers).
 		const ta = r.textAnimation as Record<string, { durationFrames?: unknown } | null | undefined> | undefined;
@@ -934,6 +957,12 @@ export function invariantCheckers(
 		if (r.bed !== undefined) {
 			const bad = clipBedProblem(c as Clip & { bed?: unknown });
 			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'bed']));
+		}
+		// spec 14 TC-024: edge micro-fades must be readable, on audio clips only (INV-CLEANUP).
+		if (r.edgeFades !== undefined) {
+			const bad =
+				c.kind === 'audio' ? edgeFadesProblem(r.edgeFades) : `a ${c.kind} clip cannot carry edge fades`;
+			if (bad) issues.push(inv('INV-CLEANUP', `Clip ${c.id}: ${bad}`, [...cw, 'edgeFades']));
 		}
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
 		if (r.threeD !== undefined && !canBe3d(c.kind))
@@ -993,6 +1022,18 @@ export function invariantCheckers(
 		if (c.kind === 'motion-graphic') {
 			const stamp = templateStampIssue(c, opts.mgTemplates);
 			if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
+			// Template media params (avatars): uses of their media (INV-014) that must exist (INV-006).
+			for (const ref of templateMediaRefs(c.params)) {
+				usedMedia.add(ref.mediaId);
+				if (!doc.media[ref.mediaId])
+					issues.push(
+						inv('INV-006', `Clip ${c.id} params.${ref.path} references missing media ${ref.mediaId}`, [
+							...cw,
+							'params',
+							...ref.path.split('.'),
+						]),
+					);
+			}
 			for (const [name, list] of Object.entries(c.paramKeyframes ?? {})) {
 				const path = [...cw, 'paramKeyframes', name];
 				const shape = valueShape((c.params as Record<string, unknown>)[name]);
@@ -1335,10 +1376,28 @@ export function runInvariants(
 		if (seqItems.get(s) !== 1)
 			issues.push(inv('INV-008', `Sequence ${s} must have exactly one project item`, ['sequences', s]));
 	}
+	// spec 13 SH-004: caption style presets keep valid stroke lists and shadow spreads.
+	(doc.settings.captionStylePresets ?? []).forEach((p, i) => {
+		for (const m of textStyleIssues(p.style))
+			issues.push(
+				inv('INV-012', `Caption style preset ${p.id} ${m}`, [
+					'settings',
+					'captionStylePresets',
+					String(i),
+					'style',
+				]),
+			);
+	});
 	for (const f of Object.values(doc.fonts)) {
 		if (f.source.type === 'asset' && !doc.media[f.source.mediaId])
 			issues.push(inv('INV-006', `Font ${f.id} references missing media`, ['fonts', f.id]));
 	}
+	// spec 13 SH-002: project text styles (readable, keyed by id, fonts present).
+	for (const [message, path] of textStylesRecordIssues(doc)) issues.push(inv('INV-TEXTSTYLE', message, path));
+	// spec 13 AS-020: subtitle templates copied into the project.
+	for (const [message, path] of subtitleTemplatesIssues(doc)) issues.push(inv('INV-SUBTITLE', message, path));
+	// spec 15 EA-010: style recipes copied into the project.
+	for (const [message, path] of styleRecipesIssues(doc)) issues.push(inv('INV-STYLE-RECIPE', message, path));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1366,6 +1425,9 @@ export function runInvariants(
 		// wp speech: coverage ranges sorted, disjoint, non-empty
 		const cov = coverageProblem(t.coverage);
 		if (cov) issues.push(inv('INV-012', `Transcript ${t.id}: ${cov}`, ['transcripts', t.id, 'coverage']));
+		// spec 14 TC-003: decoder scores per segment, read leniently
+		const segs = transcriptSegmentsProblem(t.segments);
+		if (segs) issues.push(inv('INV-012', `Transcript ${t.id}: ${segs}`, ['transcripts', t.id, 'segments']));
 	}
 	const captionTrsUsers = new TouchedMap<string, number>();
 
@@ -1450,6 +1512,10 @@ export function runInvariants(
 							t.id,
 						]),
 					);
+				for (const m of textStyleIssues(t.styleDefaults))
+					issues.push(
+						inv('INV-012', `Track ${t.id} caption style ${m}`, [...where, 'tracks', t.id, 'styleDefaults']),
+					);
 				effects(t.effects, [...where, 'tracks', t.id, 'effects']);
 				anims(t, [...where, 'tracks', t.id]);
 			}
@@ -1476,12 +1542,19 @@ export function runInvariants(
 					inv('INV-SOUND', `Marker ${m.id}: ${verdictBad}`, [...where, 'markers', m.id, 'soundCheck']),
 				);
 		}
+		// spec 13 AS-003: subtitle groups readable, keyed by id; every subtitle's group present (INV-SUBTITLE).
+		for (const [message, path] of sequenceSubtitleIssues(seq as Sequence))
+			issues.push(inv('INV-SUBTITLE', message, [...where, ...path]));
 		// sound-design (spec 12 §2.2): cues and settings must be readable, cue ids well-formed (INV-SOUND).
 		const soundBad = sequenceSoundDesignIssue(seq as { soundDesign?: unknown });
 		if (soundBad)
 			issues.push(
 				inv('INV-SOUND', `Sequence ${seq.id} sound design: ${soundBad}`, [...where, 'soundDesign']),
 			);
+		// spec 14 TC-030: transcript cleanup state must be readable (INV-CLEANUP).
+		const cleanupBad = sequenceCleanupIssue((seq as { cleanup?: unknown }).cleanup);
+		if (cleanupBad)
+			issues.push(inv('INV-CLEANUP', `Sequence ${seq.id} cleanup: ${cleanupBad}`, [...where, 'cleanup']));
 		// wp-multicam: a multi-camera source's angles reference its own tracks.
 		const mcSource = (seq as Sequence).multicam;
 		if (mcSource)
@@ -1703,6 +1776,28 @@ export function repairDocument(
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
+	// spec 13 SH-002: project text styles and the clips' links to them.
+	// spec 13 AS-003 / AS-020: subtitle groups, subtitle words on clips, project subtitle templates.
+	repairSubtitleTemplates(doc, note);
+	// spec 15 EA-010: project style recipes.
+	repairStyleRecipes(doc, note);
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		repairSubtitleSequence(seq, () => ids.next('cgp'), note);
+	repairTextStyles(
+		doc,
+		{
+			defaultFontId: () => {
+				let font = Object.values(doc.fonts).find((f) => f.family === DEFAULT_FONT_FAMILY);
+				if (!font) {
+					font = createFontRef(ids);
+					doc.fonts[font.id] = font;
+				}
+				return font.id;
+			},
+			newStyleId: () => ids.next('tsy'),
+		},
+		note,
+	);
 
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		const r = seq as { previews?: unknown };
@@ -1710,12 +1805,48 @@ export function repairDocument(
 			delete r.previews;
 			note('reset-preview-settings', seq.id, 'invalid preview settings replaced by the defaults');
 		}
+		// spec 14 TC-030 / TC-024: keep the readable parts of cleanup state; drop unreadable edge fades.
+		const sc = seq as { cleanup?: unknown };
+		if (sequenceCleanupIssue(sc.cleanup)) {
+			const fixed = repairSequenceCleanup(sc.cleanup);
+			if (fixed) sc.cleanup = fixed;
+			else delete sc.cleanup;
+			note(
+				'repair-cleanup',
+				seq.id,
+				fixed ? 'unreadable cleanup settings dropped, the rest kept' : 'unreadable cleanup state removed',
+			);
+		}
+		for (const c of Object.values(seq.clips)) {
+			const cr = c as { edgeFades?: unknown };
+			if (cr.edgeFades === undefined) continue;
+			const bad = c.kind === 'audio' ? edgeFadesProblem(cr.edgeFades) : 'not an audio clip';
+			if (!bad) continue;
+			const kept = c.kind === 'audio' ? readEdgeFades(cr.edgeFades) : {};
+			if (kept.inMs !== undefined || kept.outMs !== undefined) cr.edgeFades = kept;
+			else delete cr.edgeFades;
+			note('repair-edge-fades', c.id, `edge fades: ${bad}`);
+		}
 	}
 
 	// Keep static params when discarding invalid animation, and use the registry's renderer for known templates.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'motion-graphic') continue;
+			// Template media params (avatars) whose media is gone become "none" (the template draws without it).
+			const fixed = rewriteParamMedia(c.params as Record<string, unknown>, (m) =>
+				doc.media[m] ? undefined : null,
+			);
+			if (fixed.changed.length) {
+				const gone = new Map(templateMediaRefs(c.params).map((r) => [r.path, r.mediaId]));
+				c.params = fixed.value as typeof c.params;
+				for (const path of fixed.changed)
+					note(
+						'clear-template-media',
+						c.id,
+						`params.${path} referenced missing media ${gone.get(path)}: cleared`,
+					);
+			}
 			const info = opts.mgTemplates?.get(c.template.id, c.template.version);
 			if (info && templateStampIssue(c, opts.mgTemplates)) {
 				if (info.renderer === 'anime') c.template.renderer = 'anime';
@@ -1839,6 +1970,10 @@ export function repairDocument(
 			});
 		}
 	}
+	// spec 13 SH-004: stroke lists beyond the limit are cut, shadow spreads clamped to 0…MAX_SHADOW_SPREAD_PX.
+	for (const st of storedTextStyles(doc))
+		for (const n of repairTextStyle(st.style))
+			note('repair-text-style', st.entity, `${st.path.join('.')}: ${n}`);
 	// malformed animator data is dropped, out-of-range values clamped.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		for (const c of Object.values(seq.clips))
@@ -1927,6 +2062,13 @@ export function repairDocument(
 			);
 			t.coverage = mergeRanges(ok);
 			note('normalize-coverage', t.id, 'transcript coverage ranges sorted and merged');
+		}
+		// spec 14 TC-003: malformed segments dropped, the rest sorted
+		if (transcriptSegmentsProblem(t.segments)) {
+			const segs = normalizeTranscriptSegments(t.segments);
+			if (segs.length) t.segments = segs;
+			else delete t.segments;
+			note('normalize-segments', t.id, 'transcript segments: malformed entries dropped, sorted by start');
 		}
 	}
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
@@ -2271,6 +2413,7 @@ export function repairDocument(
 			if (typeof r.mediaId === 'string') usedMedia.add(r.mediaId);
 			const comp = r.composition as { mediaId?: unknown } | undefined;
 			if (typeof comp?.mediaId === 'string') usedMedia.add(comp.mediaId);
+			for (const id of clipParamMediaIds(c)) usedMedia.add(id);
 			if (typeof r.syntheticId === 'string') usedSyn.add(r.syntheticId);
 		}
 	}

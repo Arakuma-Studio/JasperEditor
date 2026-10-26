@@ -143,7 +143,8 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
 
 `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips` `ungroup_clips`
 `duplicate_sequence` `delete_sequence` (approval) `remove_unused_media` (approval) `create_synthetic`
-`update_synthetic` `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
+`update_synthetic` `list_through_edits` `join_through_edits` `list_cuts` (the picture cut map, see
+[auto-subtitles.md § Cut map](auto-subtitles.md#1-cut-map-spec-13-sh-001)) `find_gaps` `make_subsequence` `add_frame_hold`
 `insert_frame_hold_segment` `frame_hold_options`; guide text `STRUCTURE_GUIDE`. Every command is also available via
 `describe_commands` / `apply_commands`.
 

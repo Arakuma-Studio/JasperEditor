@@ -39,10 +39,18 @@ const CONTENT_TYPES: Record<string, string> = {
 	'.wav': 'audio/wav',
 };
 
-/** A loopback static server for one bundle directory, under `/<random>/`; `index.html` gets the host bootstrap. */
-export async function serveBundleForMeasuring(dir: string): Promise<{ url: string; close(): Promise<void> }> {
+/**
+ * A loopback static server for one bundle directory, under `/<random>/`; `index.html` gets the host bootstrap
+ * (unless `bootstrap: false`). `files` serves extra files by their path under the prefix (spec 13 SH-004: the
+ * text measurer's font faces).
+ */
+export async function serveBundleForMeasuring(
+	dir: string,
+	opts: { bootstrap?: boolean; files?: ReadonlyMap<string, string> } = {},
+): Promise<{ url: string; base: string; close(): Promise<void> }> {
 	const prefix = `/${randomBytes(16).toString('hex')}/`;
 	const root = await realpath(dir);
+	const bootstrap = opts.bootstrap ?? true;
 	const serve = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 		const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
 		if (!path.startsWith(prefix)) {
@@ -50,8 +58,9 @@ export async function serveBundleForMeasuring(dir: string): Promise<{ url: strin
 			return;
 		}
 		const rel = path.slice(prefix.length) || 'index.html';
-		const file = normalize(join(root, rel));
-		if (!file.startsWith(root + sep) || !(await stat(file)).isFile()) {
+		const extra = opts.files?.get(rel);
+		const file = extra ?? normalize(join(root, rel));
+		if ((!extra && !file.startsWith(root + sep)) || !(await stat(file)).isFile()) {
 			res.writeHead(404).end();
 			return;
 		}
@@ -62,9 +71,11 @@ export async function serveBundleForMeasuring(dir: string): Promise<{ url: strin
 				res.writeHead(404).end();
 				return;
 			}
-			if (rel === 'index.html') {
+			if (rel === 'index.html' && !extra) {
 				const html = await handle.readFile('utf8');
-				res.writeHead(200, { 'content-type': CONTENT_TYPES['.html']! }).end(injectHostBootstrap(html));
+				res
+					.writeHead(200, { 'content-type': CONTENT_TYPES['.html']! })
+					.end(bootstrap ? injectHostBootstrap(html) : html);
 				return;
 			}
 			res.writeHead(200, {
@@ -105,6 +116,7 @@ export async function serveBundleForMeasuring(dir: string): Promise<{ url: strin
 	const port = (server.address() as AddressInfo).port;
 	return {
 		url: `http://127.0.0.1:${port}${prefix}index.html`,
+		base: `http://127.0.0.1:${port}${prefix}`,
 		close: () =>
 			new Promise<void>((resolve) => {
 				server.closeAllConnections?.();

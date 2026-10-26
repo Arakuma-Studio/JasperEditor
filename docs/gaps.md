@@ -62,7 +62,7 @@ estimate still moves by far less than breadth, because what limits real use is n
 | Real-user experience | unknown | No outside users yet. The October audits were internal (no longer kept in the repository; `docs/slop-audit.md` records the latest code audit) |
 | Performance | internal numbers only, CPU-only host | [performance.md](performance.md): a command on 1 000 clips 1.7–2.8 ms and a 50-clip gesture update 3.6–6.5 ms (§13 budgets met, `perf-core`); a drag on 1 000 clips 11.5–12.4 ms of main-thread work per frame, 5 000 clips scroll at 56–60 fps (`ui-perf`); a 2 000-item project opens in 2.0–2.9 s at host load ≈ 18, down from 8–14 s (target < 2 s not demonstrated at that load, `polish`); first export ≈ 2× the warp stage and 9–14× Remotion (D-34); render previews and a perf monitor (`previews`). Nothing at 4K with long timelines, nothing on GPUs |
 | Media formats | ≈ 75% | Everything the LGPL FFmpeg 7.1 decodes, plus image sequences, layered PSD, PDF / Illustrator, SVG, Lottie, EXR / DPX / HEIC / JPEG XL stills (`docs/wp-notes/imports.md`); export H.264 (OpenH264 or hardware), VP9, AV1, ProRes, 10/12-bit HDR. No software HEVC export; camera RAW not supported |
-| AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`); Warp Stabilizer with background analysis (Subspace Warp included), Auto Reframe Sequence (face model when installed, else saliency) and Morph Cut on optical flow (`docs/wp-notes/gaps.md`). No enhance speech; all models run on the CPU |
+| AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`); Warp Stabilizer with background analysis (Subspace Warp included), Auto Reframe Sequence (face model when installed, else saliency) and Morph Cut on optical flow (`docs/wp-notes/gaps.md`). No enhance speech; models run on the CPU except speech to text, whose encoder uses WebGPU or (Linux, downloaded on request) CUDA when available — verified on an RTX 4060 Ti (Linux): turbo RTF 0.076 vs 0.354 on the CPU, identical text (`docs/wp-notes/speech.md` §11.8) |
 | Platforms | Linux only | Web, PWA and Electron on Linux (M1-STATUS); macOS / Windows packaging written, never run |
 | Maturity | early | First commit 29 September 2026. ≈ 586,000 lines of TypeScript and scripts (tests included), almost entirely agent-written; 526 test files and 54 Playwright specs at the 10 October 2026 polish assessment (historical counts from `git ls-files`) |
 
@@ -116,12 +116,26 @@ auto-ducking work as in Essential Sound.
 **Done when:** caption tracks can be created, edited and styled in the timeline and Program monitor, import and export
 SRT and WebVTT (round-trip tests), burn in on every export path, and are drivable over MCP.
 **Status (merged):** done — see [wp-notes/captions.md](wp-notes/captions.md) (`e2e/captions.spec.ts`, `apps/engine/test/captions-export.test.ts`). Limits: burn-in needs the layer bake (no libass in the LGPL build), CEA-608 in H.264 SEI is not written.
+**Automatic subtitles (spec 13 AS-001…AS-061):** subtitles as editable text clips (or caption tracks) in one command
+with Premiere-like rules plus max words, hold until next, text transforms and Spanish line breaks; cut-aware timing on
+the picture cut map; conversion both ways; SRT / VTT from text-clip groups; templates (Pixel Pop and seven others,
+user library, linked project text styles) — see [wp-notes/auto-subtitles.md](wp-notes/auto-subtitles.md) §2–§11 for
+measurements and limits (montage zones may be run through; weak-word lists for Spanish and English only).
 
 ### speech
 **Done when:** a local speech-to-text model (permissive licence, on-demand download) transcribes clips into
 transcripts with word timings, captions can be generated from them, and text-based editing (delete words → ripple
 the timeline) works as one undoable step.
-**Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Limits: CPU only, Linux only checked, classical diarization.
+**Status (merged):** done — see [wp-notes/speech.md](wp-notes/speech.md): local Whisper (ONNX, CPU) with word timings, diarization, captions from transcripts, text-based editing (`apps/engine/test/speech.test.ts`, `apps/web/test/speech.test.tsx`). Spec 16: GPU providers (WebGPU on macOS/Linux/Windows, CUDA on Linux x64 downloaded on request; Core ML and DirectML deliberately unused), large-v3-turbo, hallucination guards, resumable downloads. Verified on a Linux RTX 4060 Ti (CUDA and WebGPU, CPU-identical text). Limits: macOS/Windows GPU paths not run here, classical diarization.
+**Transcript cleanup (spec 14 TC-001…TC-071):** voice analysis, the "probably wrong" detector (retakes with take
+groups, restarts, false starts, Spanish / English fillers, off-script and head / tail with a script, pauses, breaths,
+voice without words, transcription suspects) and the level-referenced auto-cut as one undo step; Text panel ▸
+Transcript ▸ Clean Up (Sequence ▸ Clean Up Voice…: presets, every setting, script, review with live statistics, Play
+result, Apply) and MCP `analyze_voice` / `plan_cleanup` / `apply_cleanup` / `set_cleanup_settings` / `attach_script` —
+see [wp-notes/transcript-cleanup.md](wp-notes/transcript-cleanup.md). Measured on the user's 16 recordings (Fast,
+shipped code): removed-word precision / recall 0.89 / 0.81 (shorts), 0.88 / 0.82 (long); user edit points within
+50 ms 0.64 / 0.70 (the prototype 0.72, deliberate differences documented). Limits: English lists not measured; the
+Timeline does not draw the derived timeline during Play result.
 
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,
@@ -151,7 +165,7 @@ switched live in the Program monitor's multi-camera view, recorded as cuts, flat
 ### time
 **Done when:** Speed/Duration (with ripple and reverse), time remapping with speed keyframes, frame hold, and frame
 sampling / frame blending / optical flow render identically in preview and export.
-**Status (merged):** done — see [wp-notes/time.md](wp-notes/time.md): time remapping with speed keyframes, Frame Sampling / Blending / Optical Flow, reverse playback, scene edit detection (`apps/engine/test/time-export.test.ts`, `e2e/time.spec.ts`). Limits: remapped nests export through Remotion; nests support Frame Sampling only.
+**Status (merged):** done — see [wp-notes/time.md](wp-notes/time.md): time remapping with speed keyframes, Frame Sampling / Blending / Optical Flow, reverse playback, scene edit detection (`apps/engine/test/time-export.test.ts`, `e2e/time.spec.ts`). Frame-rate conform (29.97 → 30, 23.976 → 24, 25 → 30, 30 → 29.97, speeds, in-points between frames) shows the same source frame on every export path and in the preview (§15 of the note, `fps-conform.e2e.test.ts`). Limits: remapped nests export through Remotion; nests support Frame Sampling only.
 
 ### masks
 **Done when:** ellipse, 4-point polygon and pen masks with feather, opacity, expansion and invert apply to effects and
@@ -225,6 +239,10 @@ Remaining limits:
 - no HEVC Main10 in the LGPL build;
 - the composite is 8-bit encoded;
 - linear-light compositing renders on the Remotion path only;
+- no YUV matrix override in Interpret Footage: an untagged SD file encoded with BT.601 is shown with BT.709 in the
+  preview and every export (as Chrome decodes it; [wp-notes/time.md](wp-notes/time.md) §15);
+- Remotion and hybrid exports carry headless Chrome's software YUV → RGB deviation in blue (≤ 0.112·|Cb − 128|
+  levels; native exports are exact);
 
 ### color-grade
 **Done when:** Lumetri's HSL secondary, hue-vs curves, vignette, comparison view and Color Match exist, each with
@@ -739,6 +757,39 @@ sample grid. Limits left: on Chrome 142 five HTML-in-Canvas specs fail (they tes
 153.0.8010.12) captured only the first child canvas of an HTML-in-Canvas host in a probe, which `capture-safe-canvas.test.ts`
 shows; the desktop smoke and packaged-app checks were not run (no xvfb on the server).
 
+### edit-automation
+
+Spec 15 §2.1 / EA-031 shared mechanics (wp-note [edit-automation.md](wp-notes/edit-automation.md) "Proposals for new
+features"): built — feature table and agent policies for `edit-automation`, `subtitles`, `transcript-cleanup` (Project
+Settings ▸ Agent Proposals, default on), per-feature Review vocabulary, ghosts of adjustment / text clips, keyframe
+ranges and transitions, `meta.anchorOn` (decorated clips, cut frames), Refresh proposal, `E_TOO_LARGE`, the batch
+commands, `list_proposal_features` / `refresh_proposal`. Producers built (spec 15 EA-020…EA-022, wp-note "Decorate
+Cuts, punch-ins, Ken Burns"): **Decorate Cuts**, **Punch-ins** and **Ken Burns** — pure planners, the `edit-automation`
+job and dry run, Sequence ▸ Automate dialogs, MCP `decorate_cuts` / `add_punch_ins` / `add_ken_burns`, Refresh proposal
+and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: cut kits export through the
+Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note); the punch-in
+accuracy on the user's projects is F1 0.62 at the pass's default density 0.7 (0.68 with Fast Long-form's tuned
+parameters, 0.71 at density 1.0 with every clip ≥ 1.5 s) against the spec's ≥ 0.75 target, which the stripped edit
+cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
+beds, stingers"): **Reactions**, **Slide Overlays**, **Music Bed**, **Stingers** (Sequence ▸ Automate, MCP
+`place_reactions` / `slide_overlays` / `lay_music_bed` / `add_stingers`); limits: reactions skip animated images and
+avoid only spec 13 subtitle text clips, their word triggers reproduce few of the user's placements (harness in the
+wp-note), music beds switch without crossfades, stinger dry runs count loudness peaks only after a measurement of the
+same mix. Style recipes built (spec 15 EA-010…EA-013, wp-note "Style recipes, Apply Style and Style Check"): the
+user library (`<appdir>/style-recipes/`), the built-ins **Fast Shorts**, **Fast Long-form** and **Clean**, the project's
+copies and active recipe (the pass dialogs start from it), **Apply Style** (one proposal: cleanup → subtitles → kits →
+punch-ins → Ken Burns → reactions → slides → music → stingers, each planned on what the earlier ones planned) and
+**Style Check** (Sequence ▸ Automate, MCP `apply_style` / `style_check` / `list_style_recipes` / `get_style_recipe` /
+`save_style_recipe`); limits: a decoration of a combined proposal requires its voice cleanup (accepting it applies
+the cuts too; to decorate without them, run Apply Style with the cleanup off), a stale cleanup item is not
+re-planned by Refresh (run Apply Style again), after accepting the cleanup alone later timeline edits do not make the
+decorations planned on it stale (their anchors are the cleanup's), review ghosts of those decorations are drawn
+where they land after the cuts, Style Check's dead air needs the dialogue's voice analysis and its targets'
+tolerances are assumptions. Refresh proposal stays disabled with the reason "Its producer cannot re-plan items" for
+features without a refresher (sound design: run the pass again). A
+keyframe-only change
+of a clip is drawn as the changed clip (wash + ghost) plus its key band, not as the band alone.
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs; build
@@ -753,6 +804,27 @@ shows; the desktop smoke and packaged-app checks were not run (no xvfb on the se
   ([security-review.md](security-review.md) §6.1).
 - **Reach**: user documentation; localisation beyond English and Spanish; a screen-reader pass with real assistive
   technology (the axe audit in `e2e/gaps.spec.ts` checks markup, not the spoken experience).
+
+### social-comment
+Animated platform comment cards (`social-comment@1`, design `docs/superpowers/specs/2026-10-25-social-comment-templates-design.md`).
+**Done when:** all seven comment variants and the three store review cards are drawn faithfully in light and dark, with presets, Properties controls, canvas
+editing, randomize, bulk import and agent batches.
+**Status (in progress):** the template, its animation framework and all ten cards are built: TikTok (comment reply,
+comment), Instagram (post comment, Reel reply), YouTube (comment, Shorts reply), X (post) and the three store reviews (Google Play, App Store web / Mac, iPhone App Store) — see
+[wp-notes/social-comments.md](wp-notes/social-comments.md) "Template implementation", "Instagram cards: calibration",
+"YouTube cards", "X card" and "Store reviews". X card limits: only the blue verified badge (gold / grey need a schema field); the Grok
+mark is always drawn; Chirp is the latin subset, so other scripts fall back to the next font of the stack. Instagram
+card limit: the default avatar is drawn in Instagram's style, not from Instagram's own image (no stable public source).
+YouTube card limits: the layout is the mobile app's (tokcomment's blueprint) with youtube.com's 2026 colours; the
+mention / hashtag blue is assumed (no captured comment had one).
+Store review limits: the iPhone card's age follows the requester's iOS 14-era screenshot by default (a weekday such
+as "Sun" under a week, else "2d ago"-style relative ages, "edited …"), with `iosAgeStyle: "relative"` for today's iOS
+("2d ago"); the App Store web and Play dark themes use the platforms' current dark tokens (the screenshots have no
+dark mode); Play has no default-avatar image (a grey silhouette is drawn); date cells in bulk import must be year
+first (`2025-09-24`, `2025/9/24`), as month-first and day-first dates are ambiguous.
+Add another and bulk import (CSV / pasted TSV, MCP `import_motion_graphics_csv`) are built — "Add another & bulk
+import". Their gaps: an `Image URL` column is reported as ignored (no remote picture import), XLSX is not read, and
+Add another has no keyboard shortcut (the free chord collides with macOS's Dock toggle).
 
 ## For agents choosing work
 

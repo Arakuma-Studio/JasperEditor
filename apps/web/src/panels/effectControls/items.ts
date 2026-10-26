@@ -30,6 +30,8 @@ import {
 	type TextAnimatorGroup,
 	type TextClip,
 	type TextSelector,
+	templateParamSections,
+	templateParamVisible,
 	textAnimatorPropertySpecs,
 	walkItems,
 } from '@jasper/project';
@@ -67,6 +69,11 @@ export type FxSection = {
 	threeDSwitch?: { clipId: string; enabled: boolean };
 	/** a Puppet effect's meshes and pins (their property rows). */
 	puppet?: PuppetListModel;
+	/**
+	 * C3: the template section's `ui.groups`, in order: each group's row ids (rows in no group are drawn first, without
+	 * a header).
+	 */
+	rowGroups?: { id: string; label: string; rowIds: string[] }[];
 };
 
 /** what a Puppet section shows below its params. */
@@ -468,12 +475,21 @@ export function buildGroups(
 			}
 			const tpl = templateOf(clip, registries.mgTemplates);
 			if (tpl) {
+				// C3: params that do not apply to the clip are hidden (`visibleWhen`); the others in the template's groups.
+				const params = (clip as { params?: Record<string, unknown> }).params;
+				const specs = paramsPropertySpecs(tpl).filter((s) => templateParamVisible(s, params));
+				const groups = templateParamSections(specs).flatMap((sec) =>
+					sec.section
+						? [{ id: sec.section.id, label: sec.section.label, rowIds: sec.specs.map((s) => s.key) }]
+						: [],
+				);
 				sections.push({
 					id: `${clip.id}:template`,
 					title: `Template · ${tpl.name}`,
 					clip,
 					intrinsic: true,
-					rows: rows(paramsPropertySpecs(tpl).map((s) => s.key)),
+					rows: rows(specs.map((s) => s.key)),
+					...(groups.length ? { rowGroups: groups } : {}),
 				});
 			}
 		} else if (isAudioClip(clip)) {

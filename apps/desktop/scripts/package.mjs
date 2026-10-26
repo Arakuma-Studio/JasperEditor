@@ -7,7 +7,7 @@
 //
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,6 +74,7 @@ for (const f of [
 	'jasper-camtrack.mjs',
 	'sound-worker.mjs',
 	'sd-measure-worker.mjs',
+	'voice-worker.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
 	'VIDSTAB-WASM.json',
@@ -130,7 +131,9 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 			cpSync(src, target, {
 				recursive: true,
 				dereference: true,
-				filter: (p) => !p.startsWith(join(src, 'node_modules')),
+				filter: (p) =>
+					!p.startsWith(join(src, 'node_modules')) &&
+					!(pkg.name === 'onnxruntime-node' && ORT_EXCLUDED_DLLS.has(basename(p).toLowerCase())),
 			});
 			count++;
 		}
@@ -144,6 +147,12 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 	}
 	return count;
 }
+
+// Spec 16 SG-007: onnxruntime-node's Windows binaries include DirectML.dll (proprietary Microsoft licence, outside
+// the licence allowlist) and the DirectX shader compiler pair dxcompiler.dll / dxil.dll (dxil.dll's licence could not
+// be established). JasperEditor does not use DirectML (Windows runs WebGPU → CPU) and does not ship them; WebGPU's
+// D3D12 backend then compiles shaders with the system's FXC (docs/wp-notes/speech.md §11; untested on Windows here).
+const ORT_EXCLUDED_DLLS = new Set(['directml.dll', 'dxil.dll', 'dxcompiler.dll']);
 
 // onnxruntime-node (MIT): the super-resolution runtime of jasper-proc and the speech-to-text runtime of
 // jasper-speech (native binding, loaded lazily). pdfjs-dist (Apache-2.0): PDF / Illustrator page sizes (imports), kept

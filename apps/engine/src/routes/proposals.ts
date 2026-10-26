@@ -5,7 +5,9 @@
 //   POST   …/:proposalId/accept      ONE transaction, live into the open editor or headless; policy-gated for agents
 //   POST   …/:proposalId/reject | reopen | note | select
 //   POST   …/:proposalId/applied     editor only: a Redo in the editor re-applied an undone accept (records it)
+//   POST   …/:proposalId/refresh     the feature's producer re-plans stale items (spec 15 EA-003; nothing applied)
 //   DELETE …/:proposalId
+//   GET    /api/projects/:projectId/proposal-features   features, Review groups, agent accept here (spec 15 EA-001)
 // Every change publishes `proposal.changed`. An agent reading a proposal again and again without revalidating (MCP
 // `wait_for_proposal`) is "waiting for the review": announced as `proposal.changed` `waiting` and listed as `waiting`.
 import {
@@ -15,10 +17,13 @@ import {
 	type ProposalCreateResponse,
 	type ProposalDecisionResponse,
 	type ProposalDeleteResponse,
+	type ProposalFeaturesResponse,
 	ProposalGetQuerySchema,
 	type ProposalListResponse,
 	ProposalMarkAppliedRequestSchema,
 	ProposalNoteRequestSchema,
+	ProposalRefreshRequestSchema,
+	type ProposalRefreshResponse,
 	ProposalRejectRequestSchema,
 	ProposalReopenRequestSchema,
 	type ProposalResponse,
@@ -190,6 +195,24 @@ export default async function proposalRoutes(app: FastifyInstance): Promise<void
 				body,
 				requester(req),
 			);
+			return out;
+		}),
+	);
+
+	app.post<PP>(
+		'/api/projects/:projectId/proposals/:proposalId/refresh',
+		guarded<PP>(async (req) => {
+			const { projectId, proposalId } = ids(req);
+			const body = parseOr400(ProposalRefreshRequestSchema, req.body ?? {});
+			const out: ProposalRefreshResponse = await svc.refresh(projectId, proposalId, body, requester(req));
+			return out;
+		}),
+	);
+
+	app.get<P>(
+		'/api/projects/:projectId/proposal-features',
+		guarded<P>(async (req) => {
+			const out: ProposalFeaturesResponse = { features: await svc.features(projectIdOf(req)) };
 			return out;
 		}),
 	);

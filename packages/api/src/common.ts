@@ -75,6 +75,13 @@ export const ENGINE_ERROR_CODES = [
 	'PROPOSAL_STILL_APPLIED',
 	/** Redo record refused: the document does not have what the accept created (detail.code E_NOT_APPLIED). */
 	'PROPOSAL_NOT_APPLIED',
+	/**
+	 * Spec 15 EA-004: the proposal would not fit one accept transaction (detail.code E_TOO_LARGE, with `fit` and the
+	 * `suggestedRange` of frames that fits): run the pass on a shorter range.
+	 */
+	'PROPOSAL_TOO_LARGE',
+	/** "Refresh proposal": the feature's producer does not re-plan items (detail.code E_NOT_REFRESHABLE). */
+	'PROPOSAL_NOT_REFRESHABLE',
 ] as const;
 export const EngineErrorCodeSchema = z.enum(ENGINE_ERROR_CODES);
 export type EngineErrorCode = z.infer<typeof EngineErrorCodeSchema>;
@@ -93,6 +100,11 @@ export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
 	'INTERNAL',
 	'NO_SESSION',
 	'LEASE_HELD',
+	// social-comment §7.8: remote-asset downloads that may succeed later
+	'DOWNLOAD_FAILED',
+	'DOWNLOAD_TIMEOUT',
+	'ASSET_CACHE_WRITE',
+	'REMOTE_ASSET_FAILED',
 ]);
 
 export function errorBody(code: string, message: string, detail?: unknown): ErrorShape {

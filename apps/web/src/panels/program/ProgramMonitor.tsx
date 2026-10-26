@@ -5,6 +5,7 @@
 import {
 	activeMixGraph,
 	DEFAULT_RENDER_OPTIONS,
+	MissingAssetReporterContext,
 	type MixGraph,
 	type RenderDoc,
 	type RenderOptions,
@@ -12,6 +13,7 @@ import {
 } from '@jasper/compositions';
 import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
 import {
+	useDerivedPreviewDocument,
 	useGestureFrameDocument,
 	useSessionOrNull,
 	useSessionState,
@@ -47,6 +49,12 @@ import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { registerProgramPerf } from '../../previews/perf.ts';
 import { useHeardDocument } from '../../proposals/state.ts';
+import { useRemoteAssetsEpoch } from '../../remote-assets/font-catalog.ts';
+import {
+	TemplateAssetWarning,
+	useLayerAssetReports,
+	useTemplateAssetPrefetch,
+} from '../../remote-assets/issues.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
@@ -136,16 +144,20 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	// committed; the session's document and History are untouched). Toggling swaps the Player's document in place:
 	// unchanged clips keep their players, so playback goes on.
 	const heard = useHeardDocument(session);
-	const drawn = heard ?? gestureDrawn;
+	// spec 14 TC-042: "Play result" / "Play removed" of Clean Up play a derived timeline (never committed) the same way.
+	const derived = useDerivedPreviewDocument(session);
+	const drawn = heard ?? derived ?? gestureDrawn;
 	const media = useSessionState((s) => s.media);
 	const autoProxies = useSessionState((s) => s.toggles.useProxies);
 	// gaps (PRJ-8): Toggle Proxies plays attached proxies.
 	const attachedProxies = useSessionState((s) => !!s.toggles.attachedProxies);
 	const useProxies = autoProxies || attachedProxies;
 	const monitor = useStoreSelector(monitorStores.program, (s) => s);
-	// wp fonts: the catalog follows `fonts.changed`, so installing a font redraws text set in it.
+	// wp fonts: the catalog follows `fonts.changed`, so installing a font redraws text set in it; social-comment §7.8:
+	// it also follows `remoteAssets.changed` (platform fonts, emoji and images of the templates), counted by the epoch.
 	const fontCatalog = useFonts().catalog;
 	useMissingFontsNotice(session, fontCatalog);
+	const assetEpoch = useRemoteAssetsEpoch();
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;
@@ -224,6 +236,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		prevDoc.current = d;
 		return d;
 	}, [drawn, seqId, seq, media, tier, fontCatalog, expressionsReady, mcView, attachedProxies, autoProxies]);
+	// social-comment §7.8: template fonts / emoji — downloaded ahead of drawing, failures reported by the layers.
+	const assetReports = useLayerAssetReports();
+	const assetPrefetch = useTemplateAssetPrefetch(engine, doc, assetEpoch);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();
@@ -536,30 +551,32 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					data-testid="program-player-wrapper"
 				>
 					<MgRenderStateProvider>
-						<Player
-							ref={playerRef}
-							component={LiveSequenceComposition}
-							inputProps={inputProps}
-							durationInFrames={duration}
-							compositionWidth={frameSize.width}
-							compositionHeight={frameSize.height}
-							fps={fps}
-							style={playerStyle}
-							controls={false}
-							clickToPlay={false}
-							doubleClickToFullscreen={false}
-							spaceKeyToPlayOrPause={false}
-							moveToBeginningWhenEnded={false}
-							loop={false}
-							playbackRate={playerRate}
-							numberOfSharedAudioTags={8}
-							acknowledgeRemotionLicense
-							errorFallback={({ error }: { error: Error }) => (
-								<div className="flex h-full items-center justify-center bg-pr-app p-8 text-center text-pr-ui text-pr-danger">
-									Preview error: {error.message}
-								</div>
-							)}
-						/>
+						<MissingAssetReporterContext.Provider value={assetReports.reporter}>
+							<Player
+								ref={playerRef}
+								component={LiveSequenceComposition}
+								inputProps={inputProps}
+								durationInFrames={duration}
+								compositionWidth={frameSize.width}
+								compositionHeight={frameSize.height}
+								fps={fps}
+								style={playerStyle}
+								controls={false}
+								clickToPlay={false}
+								doubleClickToFullscreen={false}
+								spaceKeyToPlayOrPause={false}
+								moveToBeginningWhenEnded={false}
+								loop={false}
+								playbackRate={playerRate}
+								numberOfSharedAudioTags={8}
+								acknowledgeRemotionLicense
+								errorFallback={({ error }: { error: Error }) => (
+									<div className="flex h-full items-center justify-center bg-pr-app p-8 text-center text-pr-ui text-pr-danger">
+										Preview error: {error.message}
+									</div>
+								)}
+							/>
+						</MissingAssetReporterContext.Provider>
 					</MgRenderStateProvider>
 				</div>
 				{mcView ? (
@@ -626,6 +643,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					</span>
 				) : null}
 				<BufferingDot graph={mixGraph} buffering={buffering} playing={playing} />
+				{/* social-comment §7.8: template fonts / emoji that are not available (panel warning, Retry). */}
+				<TemplateAssetWarning doc={doc} reported={assetReports.reported} engine={assetPrefetch} />
 			</div>
 			<div className="flex h-[28px] shrink-0 items-center gap-2 px-2">
 				<TimecodeDisplay transport={transport} format={format} onSeek={seek} testId="program-timecode" />

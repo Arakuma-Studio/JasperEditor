@@ -17,6 +17,7 @@ import {
 	type EffectParams,
 	type EffectRegistry,
 	type EffectSpec,
+	FX_MAX_PADDING,
 	type FxClipInfo,
 	type FxPadding,
 	type FxParamsAt,
@@ -107,6 +108,11 @@ export type PlanLayerFxOptions = {
 	 * (`cropMayFeather` on the Animatable): they take the feathered path on every frame, also where it evaluates to 0.
 	 */
 	featheredCrops?: ReadonlySet<string>;
+	/**
+	 * spec 13 AS-070: how far the layer's own picture reaches beyond its box (a text layer's stroke, shadow and glyph
+	 * ink: `textContentPad`), layer px. The effect canvas starts grown by it, so effects see that paint.
+	 */
+	contentPadding?: number;
 };
 
 export function effectMasks(fx: Pick<ResolvedEffect, 'masks'>): ResolvedMask[] {
@@ -181,7 +187,9 @@ export function planLayerFx(
 	const steps: FxStep[] = [];
 	const cssEffects: ResolvedEffect[] = [];
 	const reordered: string[] = [];
-	let padding: FxPadding = ZERO_PADDING;
+	// Whole pixels: the DOM picture is placed at the padding, and text there snaps to the pixel grid.
+	const cp = Math.min(FX_MAX_PADDING, Math.max(0, Math.ceil(num(opts.contentPadding))));
+	let padding: FxPadding = cp > 0 ? { left: cp, top: cp, right: cp, bottom: cp } : ZERO_PADDING;
 	let timeDependent = false;
 	runnable.forEach((fx, i) => {
 		const spec = specOf(fx)!;

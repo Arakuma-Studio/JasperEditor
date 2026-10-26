@@ -22,7 +22,6 @@
       "name": "Whisper tiny",
       "parameters": 39,
       "multilingual": true,
-      "default": false,
       "description": "Fastest; fine for clear speech, rough on noisy audio. 99 languages; translate to English.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
@@ -30,6 +29,7 @@
       "sourceUrl": "https://huggingface.co/onnx-community/whisper-tiny_timestamped/tree/517244293732ee2d58139af5814231b7e6830a0d",
       "upstreamUrl": "https://huggingface.co/openai/whisper-tiny",
       "revision": "517244293732ee2d58139af5814231b7e6830a0d",
+      "precision": "fp32",
       "files": [
         {
           "path": "config.json",
@@ -68,7 +68,6 @@
       "name": "Whisper tiny (English)",
       "parameters": 39,
       "multilingual": false,
-      "default": false,
       "description": "English only; a little more accurate than tiny on English.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
@@ -76,6 +75,7 @@
       "sourceUrl": "https://huggingface.co/onnx-community/whisper-tiny.en_timestamped/tree/aeaa13760958b03fac5062f457d317d3319c3168",
       "upstreamUrl": "https://huggingface.co/openai/whisper-tiny.en",
       "revision": "aeaa13760958b03fac5062f457d317d3319c3168",
+      "precision": "fp32",
       "files": [
         {
           "path": "config.json",
@@ -114,14 +114,14 @@
       "name": "Whisper base",
       "parameters": 74,
       "multilingual": true,
-      "default": true,
-      "description": "The default: a good balance of speed and accuracy. 99 languages; translate to English.",
+      "description": "A good balance of speed and accuracy on slower computers. 99 languages; translate to English.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
       "attribution": "OpenAI Whisper base (Radford et al. 2022, MIT); ONNX export with cross-attention outputs by onnx-community (Hugging Face) from openai/whisper-base",
       "sourceUrl": "https://huggingface.co/onnx-community/whisper-base_timestamped/tree/608c49e61301901684bc36cac8f74b95ff6b5a8e",
       "upstreamUrl": "https://huggingface.co/openai/whisper-base",
       "revision": "608c49e61301901684bc36cac8f74b95ff6b5a8e",
+      "precision": "fp32",
       "files": [
         {
           "path": "config.json",
@@ -160,7 +160,6 @@
       "name": "Whisper base (English)",
       "parameters": 74,
       "multilingual": false,
-      "default": false,
       "description": "English only; a little more accurate than base on English.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
@@ -168,6 +167,7 @@
       "sourceUrl": "https://huggingface.co/onnx-community/whisper-base.en_timestamped/tree/fa239a41836c3305f6beec180e5940f3823ff5b8",
       "upstreamUrl": "https://huggingface.co/openai/whisper-base.en",
       "revision": "fa239a41836c3305f6beec180e5940f3823ff5b8",
+      "precision": "fp32",
       "files": [
         {
           "path": "config.json",
@@ -206,7 +206,6 @@
       "name": "Whisper small",
       "parameters": 244,
       "multilingual": true,
-      "default": false,
       "description": "Most accurate here; about 3× slower than base. 99 languages; translate to English.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
@@ -214,6 +213,8 @@
       "sourceUrl": "https://huggingface.co/onnx-community/whisper-small_timestamped/tree/65caa70f294b46e1c33ff820aae6b16d048ab818",
       "upstreamUrl": "https://huggingface.co/openai/whisper-small",
       "revision": "65caa70f294b46e1c33ff820aae6b16d048ab818",
+      "precision": "fp32",
+      "recommend": "small",
       "files": [
         {
           "path": "config.json",
@@ -252,7 +253,6 @@
       "name": "Whisper small (English)",
       "parameters": 244,
       "multilingual": false,
-      "default": false,
       "description": "English only; the most accurate English model here.",
       "license": "MIT (OpenAI Whisper code and weights); Hugging Face release Apache-2.0",
       "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
@@ -260,6 +260,7 @@
       "sourceUrl": "https://huggingface.co/onnx-community/whisper-small.en_timestamped/tree/8085393831131554ad978a4e438295a734d3d2c0",
       "upstreamUrl": "https://huggingface.co/openai/whisper-small.en",
       "revision": "8085393831131554ad978a4e438295a734d3d2c0",
+      "precision": "fp32",
       "files": [
         {
           "path": "config.json",
@@ -290,6 +291,107 @@
           "url": "https://huggingface.co/onnx-community/whisper-small.en_timestamped/resolve/8085393831131554ad978a4e438295a734d3d2c0/onnx/decoder_model_merged.onnx",
           "sha256": "da766219ec35addf8309c3eedfe7e167ce6c063c82d73d1c91bafe87e9d70fcf",
           "sizeBytes": 615653127
+        }
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "name": "Whisper large-v3 turbo",
+      "parameters": 809,
+      "multilingual": true,
+      "description": "Most accurate and, on a GPU or a fast CPU, as fast as small. 99 languages; translate to English. Recommended with a GPU, or 16 GB of memory and 8 cores.",
+      "license": "MIT (OpenAI Whisper code and weights)",
+      "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
+      "attribution": "OpenAI Whisper large-v3-turbo (Radford et al. 2022; OpenAI 2024, MIT); ONNX export with cross-attention outputs by onnx-community (Hugging Face) from openai/whisper-large-v3-turbo",
+      "sourceUrl": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/tree/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a",
+      "upstreamUrl": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "revision": "b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a",
+      "precision": "fp32",
+      "recommend": "turbo",
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/config.json",
+          "sha256": "32c02d1dfb9a93ff236cdcf0f741f8f3a4cedb437c407a361a022451ac009131",
+          "sizeBytes": 1330
+        },
+        {
+          "path": "generation_config.json",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/generation_config.json",
+          "sha256": "8568ddf83476167b4607014956b87142763fa6923e71259a606734beb39bdfc8",
+          "sizeBytes": 3797
+        },
+        {
+          "path": "tokenizer.json",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/tokenizer.json",
+          "sha256": "b3c8202bbf06d8ee4232c5984baa563784ac4737e2e7fdc42fa180200d3cfcdb",
+          "sizeBytes": 2480645
+        },
+        {
+          "path": "encoder_model.onnx",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/onnx/encoder_model.onnx",
+          "sha256": "5f17ad18cf466d382b1544f94c9c22d28360302461dda74a2d64d2f37bdcc60f",
+          "sizeBytes": 500418
+        },
+        {
+          "path": "encoder_model.onnx_data",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/onnx/encoder_model.onnx_data",
+          "sha256": "c87f74d17ea85478cd563a614215868eff35a8a7ec4ff692d1edd49413f56f86",
+          "sizeBytes": 2547875840
+        },
+        {
+          "path": "decoder_model_merged.onnx",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/onnx/decoder_model_merged.onnx",
+          "sha256": "a266a7ea5896e41846751a8e94f7b4993e0c24856789b99bcf534a86660366ea",
+          "sizeBytes": 688091953
+        }
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo-fp16",
+      "name": "Whisper large-v3 turbo (GPU, half precision)",
+      "parameters": 809,
+      "multilingual": true,
+      "description": "The turbo model in half precision for NVIDIA GPUs: half the download and memory; 2–4× slower than turbo on a CPU.",
+      "license": "MIT (OpenAI Whisper code and weights)",
+      "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
+      "attribution": "OpenAI Whisper large-v3-turbo (Radford et al. 2022; OpenAI 2024, MIT); fp16 ONNX export with cross-attention outputs by onnx-community (Hugging Face) from openai/whisper-large-v3-turbo",
+      "sourceUrl": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/tree/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a",
+      "upstreamUrl": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "revision": "b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a",
+      "precision": "fp16",
+      "recommend": "turbo-fp16",
+      "gpuOnly": true,
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/config.json",
+          "sha256": "32c02d1dfb9a93ff236cdcf0f741f8f3a4cedb437c407a361a022451ac009131",
+          "sizeBytes": 1330
+        },
+        {
+          "path": "generation_config.json",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/generation_config.json",
+          "sha256": "8568ddf83476167b4607014956b87142763fa6923e71259a606734beb39bdfc8",
+          "sizeBytes": 3797
+        },
+        {
+          "path": "tokenizer.json",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/tokenizer.json",
+          "sha256": "b3c8202bbf06d8ee4232c5984baa563784ac4737e2e7fdc42fa180200d3cfcdb",
+          "sizeBytes": 2480645
+        },
+        {
+          "path": "encoder_model.onnx",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/onnx/encoder_model_fp16.onnx",
+          "sha256": "45ff31e8776048fe802d293375060f3b801763c33393066a7e997c77604b5d10",
+          "sizeBytes": 1274403767
+        },
+        {
+          "path": "decoder_model_merged.onnx",
+          "url": "https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped/resolve/b3f77bf9a8c4d5ea3415827033d1ffea7955fd9a/onnx/decoder_model_merged_fp16.onnx",
+          "sha256": "4ed6335ca4c12afe33390a228615c7ca50449f953dddb2d41eb12e875504c621",
+          "sizeBytes": 344288457
         }
       ]
     }

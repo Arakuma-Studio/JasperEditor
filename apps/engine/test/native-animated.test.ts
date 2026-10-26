@@ -600,10 +600,11 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		for (const name of GPL_FILTERS)
 			expect(g.filter, name).not.toMatch(new RegExp(`(^|[\\[\\],;\\s])${name}(=|[,;\\[\\s]|$)`, 'm'));
 		for (const stream of g.streams)
-			for (const name of GPL_FILTERS)
-				expect(stream.plan.filter, name).not.toMatch(
-					new RegExp(`(^|[\\[\\],;\\s])${name}(=|[,;\\[\\s]|$)`, 'm'),
-				);
+			for (const filter of 'kind' in stream.plan
+				? stream.plan.members.flatMap((m) => m.pictures.map((p) => p.filter))
+				: [stream.plan.filter])
+				for (const name of GPL_FILTERS)
+					expect(filter, name).not.toMatch(new RegExp(`(^|[\\[\\],;\\s])${name}(=|[,;\\[\\s]|$)`, 'm'));
 
 		const started = Date.now();
 		const { done, out } = await runExport(d, settings);

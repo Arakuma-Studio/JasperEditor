@@ -29,7 +29,7 @@ type Props = {
 };
 
 /** Caret offset (characters of the raw value) of a DOM position inside `root`. */
-function offsetOf(root: HTMLElement, node: Node, off: number): number {
+export function offsetOf(root: HTMLElement, node: Node, off: number): number {
 	let n = 0;
 	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 	let t: Node | null;

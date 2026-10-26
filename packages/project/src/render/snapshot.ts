@@ -31,6 +31,7 @@ import {
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { multicamView } from '../multicam/model.ts';
+import { clipParamMediaIds } from '../param-media.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { expandLumetriSpatial } from '../registry/lumetri-spatial.ts';
@@ -207,6 +208,8 @@ export type RenderVisualSource =
 			moreOptions?: TextMoreOptions;
 			perCharacter3d?: boolean;
 			sourceTextKeyframes?: Keyframe<TextContent>[];
+			/** spec 13 SH-004: the box is an estimate (not measured yet); renderers and bakes leave room around it. */
+			layoutPending?: true;
 	  }
 	| { color: RGBA }
 	| {
@@ -221,6 +224,12 @@ export type RenderVisualSource =
 				 * unevaluated like shapes, RND-001); the layer evaluates them with the shared evaluator. Anime only.
 				 */
 				paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+				/**
+				 * social-comment §7.8: the font faces and emoji the anime template draws (its `requiredAssets` over the
+				 * params and every param keyframe). The faces are in `RenderSnapshot.fonts` (fontId `template:<family>`)
+				 * and the emoji URLs in `RenderSnapshot.emoji` when available. Absent = the template declares none.
+				 */
+				assets?: RenderTemplateAssets;
 			};
 	  }
 	/** Shape Animatables remain unevaluated until the layer renders each frame. */
@@ -465,6 +474,28 @@ export type RenderAudioClip = {
 	nestGain?: { start: number; end: number; db: number }[];
 };
 
+/** social-comment §7.8: what an anime template draws besides its params (see `SnapshotOptions.templateAssets`). */
+export type RenderTemplateAssets = {
+	fonts: { family: string; weight: number; style: 'normal' | 'italic' }[];
+	/** Emoji graphemes per image pack (one entry per pack). */
+	emoji: { pack: string; graphemes: string[] }[];
+	/** Remote images of the remote-asset manifest by id (absent = none). */
+	images?: string[];
+};
+
+/** A file of a template face: one URL, or one subset file per unicode range. */
+export type TemplateFaceFile = { url: string; unicodeRange?: string };
+
+/** Font id of a template-declared face in `RenderSnapshot.fonts` (no document font has this form). */
+export function templateFontId(family: string): string {
+	return `template:${family}`;
+}
+
+/** Key of an emoji image in `RenderSnapshot.emoji` / `AnimeTemplateProps.emojiUrls`. */
+export function emojiTableKey(pack: string, grapheme: string): string {
+	return `${pack}:${grapheme}`;
+}
+
 export type RenderSnapshot = {
 	version: 1;
 	sequenceId: string;
@@ -510,7 +541,25 @@ export type RenderSnapshot = {
 	audioMix?: RenderAudioMix;
 	/** null = offline. */
 	media: Record<string, MediaHandle | null>;
-	fonts: { fontId: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }[];
+	/**
+	 * `unicodeRange` (social-comment §7.8): the face is split into subset files (latin, latin-ext…); each entry loads
+	 * one with its CSS unicode-range, together they are the face.
+	 */
+	fonts: {
+		fontId: string;
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+		url: string;
+		unicodeRange?: string;
+	}[];
+	/**
+	 * social-comment §7.8: emoji image URLs of the anime templates' required emoji, keyed `emojiTableKey(pack,
+	 * grapheme)`; an unavailable image is absent. Absent = no template draws emoji.
+	 */
+	emoji?: Record<string, string>;
+	/** social-comment §7.8: remote image URLs of the anime templates' required images by id (unavailable ones absent). */
+	images?: Record<string, string>;
 	master: { volumeDb: Animatable<number> };
 	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
 	warnings: { clipId: string; code: string; message: string }[];
@@ -533,6 +582,25 @@ export type SnapshotOptions = {
 	 * `rotoStorePath(key)`); default the unsigned same-origin path.
 	 */
 	resolveRoto?(key: string): string;
+	/**
+	 * social-comment §7.8: fonts and emoji of anime templates. `required` gives a clip's template assets
+	 * (`@jasper/mg-templates` `templateAssetOptions` binds it to the template registry); `font` the URL of a face, or its
+	 * subset files with their unicode ranges (exact family / weight / style, never a fallback; null or empty =
+	 * unavailable) and `emoji` the URL of an emoji image of a
+	 * pack (null = unavailable). Unavailable assets become snapshot warnings (`TEMPLATE_FONT_UNAVAILABLE`,
+	 * `TEMPLATE_EMOJI_UNAVAILABLE`) that export planners turn into blockers. Absent = template assets are not resolved.
+	 */
+	templateAssets?: {
+		required(mg: {
+			template: { id: string; version: number };
+			params: Record<string, unknown>;
+			paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+		}): RenderTemplateAssets | null;
+		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
+		emoji(pack: string, grapheme: string): string | null;
+		/** URL of a remote image by manifest id (absent or null = unavailable). */
+		image?(id: string): string | null;
+	};
 	/** Pre-render URLs known to the consumer. */
 	resolveComposition?(clip: {
 		clipId: string;
@@ -726,6 +794,73 @@ export function buildRenderSnapshot(
 	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
+	const emojiTable: Record<string, string> = {};
+	const imageTable: Record<string, string> = {};
+	// social-comment §7.8: a template's declared faces join the document's fonts; its emoji join the emoji table.
+	const useTemplateAssets = (clipId: string, mg: Extract<RenderVisualSource, { mg: unknown }>['mg']) => {
+		const resolver = opts.templateAssets;
+		const assets = resolver?.required(mg);
+		if (
+			!resolver ||
+			!assets ||
+			(assets.fonts.length === 0 && assets.emoji.length === 0 && !assets.images?.length)
+		)
+			return;
+		mg.assets = assets;
+		for (const face of assets.fonts) {
+			const fontId = templateFontId(face.family);
+			const key = `${fontId}:${face.weight}:${face.style === 'italic'}`;
+			if (
+				[...fontKeys.values()].some(
+					(f) => f.fontId === fontId && f.weight === face.weight && f.style === face.style,
+				)
+			)
+				continue;
+			const found = resolver.font(face);
+			const files = typeof found === 'string' ? [{ url: found }] : (found ?? []).filter((f) => !!f.url);
+			// One entry per subset file (keyed by its unicode range, like the nested snapshots' entries).
+			for (const f of files)
+				fontKeys.set(`${key}${f.unicodeRange ? `:${f.unicodeRange}` : ''}`, {
+					fontId,
+					...face,
+					url: f.url,
+					...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
+				});
+			if (files.length === 0)
+				warnings.push({
+					clipId,
+					code: 'TEMPLATE_FONT_UNAVAILABLE',
+					message: `Font "${face.family}" ${face.weight}${face.style === 'italic' ? ' italic' : ''} is not available`,
+				});
+		}
+		for (const { pack, graphemes } of assets.emoji) {
+			const missing: string[] = [];
+			for (const g of graphemes) {
+				const key = emojiTableKey(pack, g);
+				if (key in emojiTable) continue;
+				const url = resolver.emoji(pack, g);
+				if (url) emojiTable[key] = url;
+				else missing.push(g);
+			}
+			if (missing.length)
+				warnings.push({
+					clipId,
+					code: 'TEMPLATE_EMOJI_UNAVAILABLE',
+					message: `Emoji ${missing.slice(0, 8).join(' ')}${missing.length > 8 ? ` (+${missing.length - 8})` : ''} of the ${pack} pack ${missing.length === 1 ? 'is' : 'are'} not available`,
+				});
+		}
+		for (const id of assets.images ?? []) {
+			if (id in imageTable) continue;
+			const url = resolver.image?.(id) ?? null;
+			if (url) imageTable[id] = url;
+			else
+				warnings.push({
+					clipId,
+					code: 'TEMPLATE_IMAGE_UNAVAILABLE',
+					message: `Image "${id}" is not available`,
+				});
+		}
+	};
 	let itemNames: Map<string, string> | null = null;
 	const sourceInfoOf = (mediaId: string): RenderVisualClip['sourceInfo'] => {
 		if (!itemNames) {
@@ -779,9 +914,12 @@ export function buildRenderSnapshot(
 		);
 		for (const [id, h] of Object.entries(sub.media)) if (!(id in media)) media[id] = h;
 		for (const f of sub.fonts) {
-			const key = `${f.fontId}:${f.weight}:${f.style === 'italic'}`;
+			// subset files of a face share its key: tell them apart by their unicode range
+			const key = `${f.fontId}:${f.weight}:${f.style === 'italic'}${f.unicodeRange ? `:${f.unicodeRange}` : ''}`;
 			if (!fontKeys.has(key)) fontKeys.set(key, f);
 		}
+		for (const [k, url] of Object.entries(sub.emoji ?? {})) if (!(k in emojiTable)) emojiTable[k] = url;
+		for (const [k, url] of Object.entries(sub.images ?? {})) if (!(k in imageTable)) imageTable[k] = url;
 		for (const w of sub.warnings) warnings.push({ ...w, message: `In nested sequence: ${w.message}` });
 		return { snap: sub, nestedFps };
 	};
@@ -880,7 +1018,11 @@ export function buildRenderSnapshot(
 					break;
 				}
 				case 'text': {
-					source = { text: c.content, box: c.box };
+					source = {
+						text: c.content,
+						box: c.box,
+						...(c.layoutPending ? { layoutPending: true as const } : {}),
+					};
 					if (c.textAnimation && (c.textAnimation.in || c.textAnimation.out)) {
 						const w = resolveTextAnimationWindows(c);
 						source.animation = {
@@ -956,6 +1098,8 @@ export function buildRenderSnapshot(
 				}
 				case 'motion-graphic': {
 					const { renderer, ...template } = c.template;
+					// Template media params (avatars) resolve like effect media: handles (signed URLs in renders) in `media`.
+					for (const id of clipParamMediaIds(c)) if (doc.media[id]) useMedia(id);
 					source = {
 						mg: {
 							template,
@@ -967,6 +1111,7 @@ export function buildRenderSnapshot(
 								: {}),
 						},
 					};
+					if (renderer === 'anime') useTemplateAssets(c.id, source.mg);
 					break;
 				}
 				case 'shape': {
@@ -1289,6 +1434,8 @@ export function buildRenderSnapshot(
 		audioClips,
 		media,
 		fonts: [...fontKeys.values()],
+		...(Object.keys(emojiTable).length ? { emoji: emojiTable } : {}),
+		...(Object.keys(imageTable).length ? { images: imageTable } : {}),
 		master: { volumeDb: seq.master.volumeDb },
 		audioMix,
 		warnings,
@@ -1360,12 +1507,28 @@ export function flattenNestAudio(
 		const contentOfA = (x: number) => contentTimeAt(a, x, rate);
 		const sourceIn = Math.max(0, Math.round(contentOfA(g(pieceRev ? p1 - 1 : p0))));
 		const db = new Float64Array(p1 - p0);
+		// spec 14 TC-024: edge micro-fades are shorter than a frame: they stay fades of the piece (mapped to the outer
+		// timeline) instead of being sampled per frame into `nestGain`.
+		const innerFades = a.fades?.filter((x) => !x.edge);
+		const edgeFades: RenderAudioFade[] = [];
+		for (const x of a.fades ?? []) {
+			if (!x.edge) continue;
+			const sIn = n.sourceIn / F;
+			if (!rev) edgeFades.push({ ...x, start: n.start + (x.start - g(n.start)) / r, frames: x.frames / r });
+			else
+				edgeFades.push({
+					...x,
+					type: x.type === 'in' ? 'out' : 'in',
+					start: n.start + n.duration - (x.start + x.frames - sIn) / r,
+					frames: x.frames / r,
+				});
+		}
 		for (let f = p0; f < p1; f++) {
 			const x = g(f);
 			const inner =
 				evaluate(a.track.volumeDb, x * F) +
 				evaluate(sub.master.volumeDb, x * F) +
-				gainToDb(audioFadeGain(a.fades, x)) +
+				gainToDb(audioFadeGain(innerFades, x)) +
 				nestGainDbAt(a.nestGain, Math.floor(x + 1e-6));
 			const fc = Math.min(n.start + n.duration - 1, Math.max(n.start, f));
 			const outer =
@@ -1398,6 +1561,7 @@ export function flattenNestAudio(
 			track: { volumeDb: track.volumeDb ?? ZERO, pan: track.pan ?? ZERO },
 			...(a.generator ? { generator: a.generator } : {}),
 			...(runs.length === 1 && runs[0]!.db === 0 ? {} : { nestGain: runs }),
+			...(edgeFades.length ? { fades: edgeFades } : {}),
 		});
 	}
 	return out;

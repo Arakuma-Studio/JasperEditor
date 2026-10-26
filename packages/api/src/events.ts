@@ -7,6 +7,7 @@ import { EngineJobSchema } from './jobs.ts';
 import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
 import { MgBundleRebuiltEventSchema } from './mg-bundles.ts';
 import { ProposalChangedEventSchema } from './proposals.ts';
+import { RemoteAssetsChangedEventSchema } from './remote-assets.ts';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -67,6 +68,12 @@ export const EVENT_PAYLOADS = {
 	'fonts.changed': z.object({ revision: z.number().int() }),
 	/** The user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
+	/** spec 13 AS-020: the user subtitle template library changed (Create Subtitles and the Subtitles tab refresh). */
+	'subtitleTemplates.changed': z.object({ revision: z.number().int() }),
+	/** Spec 14 TC-030: the user's transcript cleanup presets changed (the Clean Up preset picker refreshes). */
+	'cleanupPresets.changed': z.object({ revision: z.number().int() }),
+	/** Spec 15 EA-010: the user's style recipe library changed (Apply Style and Style Recipes refresh). */
+	'styleRecipes.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */
 	'sounds.changed': z.object({ snapshotHash: z.string(), sounds: z.number().int().min(0) }),
 	/** A reference sound profile was built, imported, renamed or deleted (P6-E8); Preferences and Sound Check refresh. */
@@ -87,6 +94,8 @@ export const EVENT_PAYLOADS = {
 		sequenceId: z.string().optional(),
 		deleted: z.number().int().optional(),
 	}),
+	/** social-comment §7.8: a remote font / emoji was downloaded, or the network settings or manifest changed. */
+	'remoteAssets.changed': RemoteAssetsChangedEventSchema,
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];

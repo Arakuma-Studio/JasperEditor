@@ -122,7 +122,7 @@ describe('VAD word bounds (FilmCraft vad.rs test + additions)', () => {
 		expect(tight[0].end).toBeLessThanOrEqual(tight[1].start);
 	});
 
-	it('repairs a word straddling a pause and moves a word found in silence onto unassigned voice', () => {
+	it('repairs a word straddling a pause; a word in silence snaps onto voice only closer than a pause (SG-011)', () => {
 		const a = fixture();
 		const w = [
 			{ start: s(0.5), end: s(0.9) },
@@ -131,15 +131,24 @@ describe('VAD word bounds (FilmCraft vad.rs test + additions)', () => {
 		splitAtPauses(a, w);
 		expect(w[1].start).toBe(s(2));
 		expect(w[0].end).toBeGreaterThanOrEqual(s(0.98));
+		// 400 ms into the pause: never moved across the silence onto speech — reported for dropping
 		const orphan = [
 			{ start: s(0.5), end: s(0.7) },
 			{ start: s(1.4), end: s(1.4) },
 			{ start: s(2.0), end: s(2.5) },
 		];
-		splitAtPauses(a, orphan);
-		expect(orphan[1].start).toBeGreaterThanOrEqual(s(0.7));
-		expect(orphan[1].end).toBe(s(1.0));
+		expect(splitAtPauses(a, orphan)).toEqual([1]);
+		expect(orphan[1]).toEqual({ start: s(1.4), end: s(1.4) });
 		expect(orphan[0]).toEqual({ start: s(0.5), end: s(0.7) });
+		// 100 ms after the voice that no word covers: alignment jitter, snapped onto it
+		const jitter = [
+			{ start: s(0.5), end: s(0.7) },
+			{ start: s(1.1), end: s(1.15) },
+			{ start: s(2.0), end: s(2.5) },
+		];
+		expect(splitAtPauses(a, jitter)).toEqual([]);
+		expect(jitter[1].start).toBeGreaterThanOrEqual(s(0.7));
+		expect(jitter[1].end).toBe(s(1.0));
 	});
 
 	it('endOfVoice stops at the first silent frame or the limit', () => {

@@ -15,9 +15,10 @@
 // per export, and a bake already being rendered for another export (or another clip) is joined, not rendered twice.
 // Every render is logged for licence reporting (LBK-026).
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
+import { emojiKey } from '@jasper/mg-templates';
 import {
 	contentTimeAt,
 	interpretMediaHandle,
@@ -34,6 +35,7 @@ import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
+import { encodePngAsync } from '../export/synthetic.ts';
 import { importsArtifactsOf, withImportsUrls } from '../imports/extension.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
@@ -48,6 +50,7 @@ import {
 	expressionKeyPart,
 	FileHashCache,
 	KEY_RE,
+	type KeyEmoji,
 	type KeyFont,
 	type KeyMaterial,
 	type KeyMedia,
@@ -60,12 +63,15 @@ import {
 	type BakeVariant,
 	bakeClip,
 	bakeDoc,
+	clipEmoji,
 	clipFonts,
+	clipImages,
 	cropRect,
 	drawnSpan,
 	hasColorEffects,
 	isColorEffect,
 	isStaticLayer,
+	layerStill,
 	type Rect,
 	referencedMediaIds,
 	variantFrames,
@@ -80,6 +86,10 @@ const GRADE_VERSION = 2;
 const GRADED_FRAMES_DIR = 'graded';
 /** File name of graded frame `n`. */
 const gradedFrameName = (n: number) => `${String(n).padStart(6, '0')}.png`;
+/** Sheet stills encoded and written at the same time (zlib runs in the libuv pool). */
+const STORES_IN_FLIGHT = 4;
+/** `lastUsedAt` is rewritten at most this often per entry (the GC removes entries unused for 14 days). */
+const MARK_USED_EVERY_MS = 3_600_000;
 /** Border alpha (0…255) above which a cropped bake counts as clipped and is rendered full frame instead. */
 const RECT_CLIP_ALPHA = 2;
 
@@ -105,6 +115,13 @@ export type LayerMeta = {
 	lastUsedAt: string;
 	/** Graded entries: the ungraded bake they were made from. */
 	source?: string;
+	/**
+	 * spec 13 AS-070: a `layer-still` whose picture touches its border (the layer draws past its content bleed): the
+	 * layer is baked as a master instead.
+	 */
+	clipped?: boolean;
+	/** spec 13 AS-070: the layer region the stored layer still covers (layer px; trimmed to its pixels). */
+	picture?: Rect;
 	material: unknown;
 };
 
@@ -130,6 +147,8 @@ export type BakePlan = {
 	 * and the transition stage (no layer filter).
 	 */
 	span?: boolean;
+	/** spec 13 AS-070 (`layer-still`): the layer region the still covers (layer px, see `layerStill`). */
+	picture?: { x: number; y: number; w: number; h: number };
 };
 
 /** A graded entry (Remotion path / preview, LBK-010): bake + colour runs. */
@@ -154,6 +173,10 @@ export type BakeResult = {
 	frames: number;
 	width: number;
 	height: number;
+	/** spec 13 AS-070: the `layer-still` touches its border (bake the layer as a master instead). */
+	clipped?: boolean;
+	/** spec 13 AS-070: the layer region the file covers (layer px), when it differs from the plan's. */
+	picture?: Rect;
 };
 
 /**
@@ -162,6 +185,8 @@ export type BakeResult = {
  */
 export type LayerBakeJobInput =
 	| { op: 'bake'; bake: BakePlan; concurrency?: number; browserGroup?: string }
+	/** spec 13 AS-071: still bakes (`still`, `layer-still`) rendered together as the frames of one sheet render. */
+	| { op: 'sheet'; bakes: BakePlan[]; concurrency?: number; browserGroup?: string }
 	| {
 			op: 'grade';
 			bake: BakePlan;
@@ -390,6 +415,11 @@ export class LayerBakeService {
 		return KEY_RE.test(key) && existsSync(p) ? p : null;
 	}
 
+	/** Where the still of `key` is (or will be) stored. */
+	stillFile(key: string): string {
+		return join(this.entryDir(key), 'still.png');
+	}
+
 	async meta(key: string): Promise<LayerMeta | null> {
 		if (!KEY_RE.test(key)) return null;
 		const m = await readJsonOrNull<LayerMeta>(join(this.entryDir(key), 'meta.json'));
@@ -410,11 +440,25 @@ export class LayerBakeService {
 		await this.markUsed(key, meta);
 		const path = this.removing.has(key) ? null : this.filePath(key, file);
 		if (!path) return null;
-		return { key, path, still, rect: meta.rect, frames: meta.frames, width: meta.width, height: meta.height };
+		return {
+			key,
+			path,
+			still,
+			rect: meta.rect,
+			frames: meta.frames,
+			width: meta.width,
+			height: meta.height,
+			...(meta.clipped ? { clipped: true } : {}),
+			...(meta.picture ? { picture: meta.picture } : {}),
+		};
 	}
 
 	private async markUsed(key: string, meta: LayerMeta): Promise<void> {
 		this.core.cache.touch(this.entryDir(key));
+		// The GC keeps entries used in the last 14 days: a use within the hour need not rewrite the meta (an export of
+		// 1 000 cached subtitles otherwise wrote 1 000 files before its composite).
+		const last = Date.parse(meta.lastUsedAt);
+		if (Number.isFinite(last) && this.now().getTime() - last < MARK_USED_EVERY_MS) return;
 		await atomicWriteJson(join(this.entryDir(key), 'meta.json'), {
 			...meta,
 			lastUsedAt: this.now().toISOString(),
@@ -536,9 +580,53 @@ export class LayerBakeService {
 				fileSha256: await this.hashes.hash(file),
 			});
 		}
-		return out.sort((a, b) =>
-			`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`),
+		return out.sort(
+			(a, b) =>
+				`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`) ||
+				// subset files of one face (social-comment §7.8)
+				(a.fileSha256 ?? '').localeCompare(b.fileSha256 ?? ''),
 		);
+	}
+
+	/** Signed absolute URLs of an emoji or image table (headless renders cannot send the session cookie). */
+	private signedEmoji(emoji: Record<string, string> | undefined): Record<string, string> | undefined {
+		if (!emoji) return undefined;
+		const out: Record<string, string> = {};
+		for (const [k, url] of Object.entries(emoji))
+			out[k] = url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), url) : url;
+		return out;
+	}
+
+	/** social-comment §7.8: key part of the remote images the clips draw (manifest id + pinned hash). */
+	private keyImages(clips: readonly RenderVisualClip[]): { id: string; sha256: string | null }[] | undefined {
+		const ids = new Set<string>();
+		for (const c of clips)
+			for (const id of ('mg' in c.source ? c.source.mg.assets?.images : undefined) ?? []) ids.add(id);
+		if (ids.size === 0) return undefined;
+		return [...ids].sort().map((id) => ({ id, sha256: this.core.remoteAssets.image(id)?.sha256 ?? null }));
+	}
+
+	/** social-comment §7.8: key part of the template emoji the clips draw (pack id + version, image hashes). */
+	private async keyEmoji(clips: readonly RenderVisualClip[]): Promise<KeyEmoji[] | undefined> {
+		const byPack = new Map<string, Set<string>>();
+		for (const c of clips) {
+			const assets = 'mg' in c.source ? c.source.mg.assets : undefined;
+			for (const { pack, graphemes } of assets?.emoji ?? []) {
+				const set = byPack.get(pack) ?? new Set<string>();
+				for (const g of graphemes) set.add(g);
+				byPack.set(pack, set);
+			}
+		}
+		if (byPack.size === 0) return undefined;
+		const remote = this.core.remoteAssets;
+		const out: KeyEmoji[] = [];
+		for (const [pack, set] of [...byPack].sort(([a], [b]) => a.localeCompare(b))) {
+			const files: KeyEmoji['files'] = [];
+			for (const g of set) files.push({ key: emojiKey(g), sha256: await remote.emojiHash(pack, g) });
+			files.sort((a, b) => a.key.localeCompare(b.key));
+			out.push({ pack, version: remote.pack(pack)?.version ?? null, files });
+		}
+		return out;
 	}
 
 	/**
@@ -549,11 +637,23 @@ export class LayerBakeService {
 	async planBake(
 		planned: Pick<PlannedExport, 'document' | 'media' | 'snapshot'>,
 		clip: RenderVisualClip,
-		o: { env: BakeEnvironment; frame?: number | null },
+		o: { env: BakeEnvironment; frame?: number | null; master?: boolean; grow?: boolean },
 	): Promise<BakePlan> {
 		const asBaked = bakeClip(clip, { variant: { recipe: 'master' }, stripColor: true });
 		const isStatic = isStaticLayer(asBaked);
 		const span = drawnSpan(clip);
+		// spec 13 AS-070: static content whose picture moves → one still of the layer region (native motion), unless
+		// that still was found clipped (`master`).
+		if (!isStatic && !o.master && layerStill(clip)) {
+			if (!o.grow) {
+				const ls = await this.plan(planned, clip, { recipe: 'layer-still' }, o.env);
+				// The cache entry's meta only (a read, not a use: `ensureSheet` marks it used).
+				if (!(await this.meta(ls.key))?.clipped) return ls;
+			}
+			// Clipped at its border: the region grown by the box size, then a master.
+			const grown = await this.plan(planned, clip, { recipe: 'layer-still', grow: true }, o.env);
+			if (!(await this.meta(grown.key))?.clipped) return grown;
+		}
 		const full = await this.plan(planned, clip, isStatic ? { recipe: 'still' } : { recipe: 'master' }, o.env);
 		if (o.frame === undefined || o.frame === null || isStatic) return full;
 		if (await this.lookup(full.key)) return full;
@@ -573,8 +673,15 @@ export class LayerBakeService {
 		const f0 = variant.recipe === 'frame' ? span.start + variant.frame : span.start;
 		const f1 = variant.recipe === 'master' ? span.end : f0 + 1;
 		const unshifted = bakeClip(clip, { variant, stripColor: true });
-		const rect = cropRect(clip, { f0, f1 }, { width: seq.width, height: seq.height, fps: seq.fps });
-		const shiftedClip = rect ? bakeClip(clip, { variant, stripColor: true, shift: rect }) : unshifted;
+		// spec 13 AS-070: a layer-still's frame is its layer region (the clip translated into it by `bakeClip`).
+		const picture = variant.recipe === 'layer-still' ? layerStill(clip, undefined, !!variant.grow) : null;
+		if (variant.recipe === 'layer-still' && !picture)
+			throw new JobError('LAYER_BAKE_FAILED', `"${clip.name}" cannot be baked as a layer still`, false);
+		const rect = picture
+			? { x: 0, y: 0, w: picture.w, h: picture.h }
+			: cropRect(clip, { f0, f1 }, { width: seq.width, height: seq.height, fps: seq.fps });
+		const shiftedClip =
+			rect && !picture ? bakeClip(clip, { variant, stripColor: true, shift: rect }) : unshifted;
 		const fonts = clipFonts(unshifted, snap.fonts);
 		const mediaIds = referencedMediaIds([unshifted.source, unshifted.effects]);
 		const media: RenderSnapshot['media'] = {};
@@ -583,6 +690,10 @@ export class LayerBakeService {
 			...f,
 			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
 		}));
+		const emoji = this.signedEmoji(clipEmoji(unshifted, snap.emoji));
+		const images = this.signedEmoji(clipImages(unshifted, snap.images));
+		const keyEmoji = await this.keyEmoji([unshifted]);
+		const keyImages = this.keyImages([unshifted]);
 		const material: KeyMaterial = {
 			v: LAYER_BAKE_VERSION,
 			recipe: variant.recipe,
@@ -594,6 +705,8 @@ export class LayerBakeService {
 			fps: { num: seq.fps.num, den: seq.fps.den },
 			fonts: await this.keyFonts(fonts),
 			media: this.keyMedia(planned, mediaIds),
+			...(keyEmoji ? { emoji: keyEmoji } : {}),
+			...(keyImages ? { images: keyImages } : {}),
 			bundleId: env.bundleId,
 			animejs: env.animejs,
 			remotion: env.remotion,
@@ -601,6 +714,7 @@ export class LayerBakeService {
 			gl: env.gl,
 			still: variant.recipe !== 'master',
 			rect,
+			...(picture ? { picture } : {}),
 			...(clip.kind === 'motion-graphic' ? { renderVersion: templateRenderVersion(clip) } : {}),
 			...(() => {
 				const e = expressionKeyPart(clip, snap.expressions);
@@ -610,7 +724,14 @@ export class LayerBakeService {
 			graded: false,
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>
-			bakeDoc(snap, this.signedRotos(c), { variant, rect: r, media, fonts: signedFonts });
+			bakeDoc(snap, this.signedRotos(c), {
+				variant,
+				rect: r,
+				media,
+				fonts: signedFonts,
+				...(emoji ? { emoji } : {}),
+				...(images ? { images } : {}),
+			});
 		return {
 			clipId: clip.clipId,
 			clipName: clip.name,
@@ -618,11 +739,96 @@ export class LayerBakeService {
 			variant,
 			rect,
 			doc: docOf(shiftedClip, rect),
-			fullDoc: rect ? docOf(unshifted, null) : null,
+			fullDoc: rect && !picture ? docOf(unshifted, null) : null,
+			...(picture ? { picture } : {}),
 			frames,
 			startFrame: f0,
 			colorRuns: hasColorEffects(clip),
 			material,
+		};
+	}
+
+	/**
+	 * spec 13 AS-073 — plans ONE master for a run of baked layers of track `trackId` that follow each other (shaken
+	 * subtitles the kernel cannot draw: S_Shake with motion blur, RGB split or wrap): the clips, shifted so the run
+	 * starts at frame 0, drawn together on a transparent frame for `[start, end)` — one render and one composite input
+	 * instead of one each. The key holds the clips (ids included: shaders seed by clip id), not the run's position.
+	 */
+	async planRun(
+		planned: Pick<PlannedExport, 'document' | 'media' | 'snapshot'>,
+		trackId: string,
+		run: readonly RenderVisualClip[],
+		o: { env: BakeEnvironment },
+	): Promise<BakePlan> {
+		const snap = planned.snapshot;
+		const seq = snap.settings;
+		const start = Math.min(...run.map((c) => drawnSpan(c).start));
+		const end = Math.max(...run.map((c) => drawnSpan(c).end));
+		const clips = run.map((c): RenderVisualClip => {
+			const effects = c.effects.filter((fx) => fx.enabled);
+			return {
+				...c,
+				effects,
+				start: c.start - start,
+				...(c.fades?.length ? { fades: c.fades.map((f) => ({ ...f, start: f.start - start })) } : {}),
+			};
+		});
+		const frames = end - start;
+		const fonts = [...new Set(clips.flatMap((c) => clipFonts(c, snap.fonts)))];
+		const mediaIds = referencedMediaIds(clips.map((c) => [c.source, c.effects]));
+		const media: RenderSnapshot['media'] = {};
+		for (const id of mediaIds) media[id] = this.signedHandle(planned, id);
+		const signedFonts = fonts.map((f) => ({
+			...f,
+			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
+		}));
+		const material: KeyMaterial = {
+			v: LAYER_BAKE_VERSION,
+			recipe: 'master',
+			clip: { run: clips.map(({ name: _n, trackId: _t, ...c }) => c) },
+			span: frames,
+			width: seq.width,
+			height: seq.height,
+			fps: { num: seq.fps.num, den: seq.fps.den },
+			fonts: await this.keyFonts(fonts),
+			media: this.keyMedia(planned, mediaIds),
+			bundleId: o.env.bundleId,
+			animejs: o.env.animejs,
+			remotion: o.env.remotion,
+			browser: o.env.browser,
+			gl: o.env.gl,
+			still: false,
+			rect: null,
+			graded: false,
+		};
+		const doc: RenderSnapshot = {
+			version: 1,
+			sequenceId: snap.sequenceId,
+			settings: { ...seq, backgroundColor: [0, 0, 0, 0] },
+			range: { start: 0, end: frames },
+			durationFrames: frames,
+			videoTracks: [{ trackId, clips: clips.map((c) => this.signedRotos(c)) }],
+			audioClips: [],
+			media,
+			fonts: signedFonts,
+			master: { volumeDb: { value: 0, keyframes: [] } },
+			warnings: [],
+			...(snap.expressions ? { expressions: snap.expressions } : {}),
+		};
+		return {
+			clipId: `run:${run[0]!.clipId}`,
+			clipName: `${run.length} layers from "${run[0]!.name}"`,
+			key: keyOf(material),
+			variant: { recipe: 'master' },
+			rect: null,
+			doc,
+			fullDoc: null,
+			frames,
+			startFrame: start,
+			colorRuns: false,
+			material,
+			// Draws every clip of its document (no layer filter), like a transition span.
+			span: true,
 		};
 	}
 
@@ -672,6 +878,20 @@ export class LayerBakeService {
 			...f,
 			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
 		}));
+		const spanEmoji = this.signedEmoji(
+			sides.reduce<Record<string, string> | undefined>((acc, c) => {
+				const e = clipEmoji(c, snap.emoji);
+				return e ? { ...(acc ?? {}), ...e } : acc;
+			}, undefined),
+		);
+		const spanKeyEmoji = await this.keyEmoji(sides);
+		const spanImages = this.signedEmoji(
+			sides.reduce<Record<string, string> | undefined>((acc, c) => {
+				const e = clipImages(c, snap.images);
+				return e ? { ...(acc ?? {}), ...e } : acc;
+			}, undefined),
+		);
+		const spanKeyImages = this.keyImages(sides);
 		const material: KeyMaterial = {
 			v: LAYER_BAKE_VERSION,
 			recipe: variant.recipe,
@@ -683,6 +903,8 @@ export class LayerBakeService {
 			fps: { num: seq.fps.num, den: seq.fps.den },
 			fonts: await this.keyFonts(uniqueFonts),
 			media: this.keyMedia(planned, mediaIds),
+			...(spanKeyEmoji ? { emoji: spanKeyEmoji } : {}),
+			...(spanKeyImages ? { images: spanKeyImages } : {}),
 			bundleId: o.env.bundleId,
 			animejs: o.env.animejs,
 			remotion: o.env.remotion,
@@ -702,6 +924,8 @@ export class LayerBakeService {
 			audioClips: [],
 			media,
 			fonts: signedFonts,
+			...(spanEmoji ? { emoji: spanEmoji } : {}),
+			...(spanImages ? { images: spanImages } : {}),
 			master: { volumeDb: { value: 0, keyframes: [] } },
 			warnings: [],
 		};
@@ -845,6 +1069,52 @@ export class LayerBakeService {
 		return done;
 	}
 
+	/**
+	 * spec 13 AS-071: the bakes of still plans (`still`, `layer-still`), the missing ones rendered together in ONE
+	 * child job as the frames of one sheet render (one browser page set and bundle load for all of them, instead of one
+	 * render each: textperf measured ≈ 3.4 s fixed cost per still render, ≈ 0.1 s per frame of a sheet). Keys already
+	 * cached are reused; keys another caller is rendering are joined (`ensureBake`). Results by key.
+	 */
+	async ensureSheet(plans: readonly BakePlan[], meta: EnsureMeta): Promise<Map<string, BakeResult>> {
+		const out = new Map<string, BakeResult>();
+		this.leaseUntilDone(
+			plans.map((p) => p.key),
+			meta.parentId,
+		);
+		const missing: BakePlan[] = [];
+		const joined: BakePlan[] = [];
+		for (const p of plans) {
+			if (out.has(p.key) || missing.some((m) => m.key === p.key)) continue;
+			const hit = await this.lookup(p.key);
+			if (hit) {
+				this.stats.reused++;
+				out.set(p.key, hit);
+			} else if (this.inflight.has(p.key)) joined.push(p);
+			else missing.push(p);
+		}
+		if (meta.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+		if (missing.length === 1) joined.push(missing.pop()!);
+		if (missing.length > 0) {
+			const input: LayerBakeJobInput = { op: 'sheet', bakes: missing, ...this.childOptions(meta) };
+			const job = this.submitChild(input, missing[0]!, meta);
+			const entry: InFlight = { jobId: job.id, done: this.childDone(job.id, missing[0]!) };
+			entry.done.catch(() => undefined);
+			for (const p of missing) this.inflight.set(p.key, entry);
+			try {
+				await this.follow(entry, meta, () => this.core.queue.cancel(job.id));
+			} finally {
+				for (const p of missing) if (this.inflight.get(p.key) === entry) this.inflight.delete(p.key);
+			}
+			for (const p of missing) {
+				const r = await this.lookup(p.key);
+				if (!r) throw new JobError('LAYER_BAKE_FAILED', `The bake of "${p.clipName}" is missing`, true);
+				out.set(p.key, r);
+			}
+		}
+		for (const p of joined) out.set(p.key, await this.ensureBake(p, meta));
+		return out;
+	}
+
 	/** The graded master (frame sequence, `graded/`) of a planned grade, rendered in a child job when missing. */
 	async ensureGraded(
 		bake: BakePlan,
@@ -929,7 +1199,10 @@ export class LayerBakeService {
 		const key = input.op === 'grade' ? input.grade.key : plan.key;
 		return this.core.queue.submit({
 			kind: 'layer-bake',
-			title: `${input.op === 'grade' ? 'Grade graphics' : 'Bake graphics'} – ${plan.clipName}`,
+			title:
+				input.op === 'sheet'
+					? `Bake graphics – ${input.bakes.length} stills`
+					: `${input.op === 'grade' ? 'Grade graphics' : 'Bake graphics'} – ${plan.clipName}`,
 			priority: 'user',
 			// No slots of its own: its Remotion pages are a share of the page budget of the parent, which holds the
 			// CPU slots (S11:LBK-022).
@@ -1054,6 +1327,7 @@ export class LayerBakeService {
 
 	private async run(ctx: JobContext): Promise<unknown> {
 		const input = ctx.input as LayerBakeJobInput;
+		if (input.op === 'sheet') return this.runSheet(ctx, input);
 		// The bake (and the graded entry) are written and read for the whole job.
 		const release = this.lease(input.op === 'grade' ? [input.bake.key, input.grade.key] : [input.bake.key]);
 		try {
@@ -1151,6 +1425,18 @@ export class LayerBakeService {
 		await render(plan.doc);
 		let rect = plan.rect;
 		const seq = { width: plan.material.width, height: plan.material.height };
+		// spec 13 AS-070: every edge of a layer-still is inside the layer's drawing: content there was cut.
+		const clipped =
+			!!plan.picture &&
+			(await this.clippedAtBorder(
+				ff,
+				tmp,
+				{ x: 1, y: 1, w: plan.picture.w, h: plan.picture.h },
+				{ width: plan.picture.w + 2, height: plan.picture.h + 2 },
+				ctx,
+			));
+		if (clipped)
+			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked larger, then as a master`);
 		if (rect && plan.fullDoc && (await this.clippedAtBorder(ff, tmp, rect, seq, ctx))) {
 			// The layer drew past the planned crop (LBK-005 safety net): render the whole frame instead.
 			ctx.log(`layer-bake: ${plan.clipId} touches the crop border; re-rendering full frame`);
@@ -1170,6 +1456,7 @@ export class LayerBakeService {
 			clipName: plan.clipName,
 			createdAt: t,
 			lastUsedAt: t,
+			...(clipped ? { clipped: true } : {}),
 			material: plan.material,
 		};
 		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
@@ -1183,6 +1470,7 @@ export class LayerBakeService {
 			frames: plan.frames,
 			width: meta.width,
 			height: meta.height,
+			...(clipped ? { clipped: true } : {}),
 		};
 	}
 
@@ -1227,6 +1515,288 @@ export class LayerBakeService {
 			await rm(stats, { force: true });
 			for (const m of text.matchAll(/YMAX=(\d+(?:\.\d+)?)/g)) if (Number(m[1]) > RECT_CLIP_ALPHA) return true;
 		}
+		return false;
+	}
+
+	/** A `sheet` child job (spec 13 AS-071): its stills, then every still the sheet could not hold alone. */
+	private async runSheet(
+		ctx: JobContext,
+		input: Extract<LayerBakeJobInput, { op: 'sheet' }>,
+	): Promise<unknown> {
+		const release = this.lease(input.bakes.map((b) => b.key));
+		try {
+			const browser = await this.sharedBrowser(input.browserGroup);
+			const sheet = await this.renderSheet(ctx, input.bakes, { concurrency: input.concurrency, browser });
+			const redo = sheet.redo;
+			// Stills that drew past their crop are rendered alone (full frame when needed, LBK-005).
+			for (const [i, plan] of redo.entries()) {
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				ctx.progress(0.9 + (0.1 * i) / redo.length, { stage: `Re-rendering ${plan.clipName}` });
+				await this.renderBake(ctx, plan, { concurrency: input.concurrency, weight: 0, browser });
+			}
+			ctx.progress(1, { stage: 'Baked' });
+			return { stills: input.bakes.length, rerendered: redo.length, timing: sheet.timing };
+		} catch (e) {
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			if (e instanceof JobError) throw e;
+			const msg = String((e as Error)?.message ?? e);
+			throw new JobError(
+				'LAYER_BAKE_FAILED',
+				`Baking ${input.bakes.length} stills failed: ${msg.slice(0, 1200)}`,
+				true,
+			);
+		} finally {
+			release();
+			void this.refreshBytes();
+		}
+	}
+
+	/**
+	 * spec 13 AS-071 — renders still plans as the frames of one document (frame i = plan i's one-frame clip, every
+	 * clip translated into the top-left of a frame as large as the largest of them), decodes the PNG frames with one
+	 * ffmpeg, crops each to its own size, checks its crop border like `clippedAtBorder` (sequence stills: the edges
+	 * inside the frame; layer stills: every edge) and writes each cache entry. Returns the sequence stills that touched
+	 * their crop border (re-rendered alone by the caller); a clipped layer still is stored with `clipped`.
+	 */
+	private async renderSheet(
+		ctx: JobContext,
+		plans: readonly BakePlan[],
+		o: { concurrency: number | undefined; browser: SharedRenderBrowser | null },
+	): Promise<{ redo: BakePlan[]; timing: { selectMs: number; renderMs: number; storeMs: number } }> {
+		const reason = this.unavailableReason();
+		if (reason)
+			throw new JobError(
+				'LAYER_BAKE_UNAVAILABLE',
+				`Graphics layers need the Remotion renderer to bake: ${reason}`,
+				false,
+			);
+		const sizeOf = (p: BakePlan) => ({ w: p.rect?.w ?? p.material.width, h: p.rect?.h ?? p.material.height });
+		const W = Math.max(2, ...plans.map((p) => sizeOf(p).w));
+		const H = Math.max(2, ...plans.map((p) => sizeOf(p).h));
+		const first = plans[0]!.doc;
+		const fonts = new Map<string, RenderSnapshot['fonts'][number]>();
+		const media: RenderSnapshot['media'] = {};
+		const clips: RenderVisualClip[] = [];
+		for (const [i, p] of plans.entries()) {
+			const c = p.doc.videoTracks[0]?.clips[0];
+			if (!c) throw new JobError('LAYER_BAKE_FAILED', `The bake of "${p.clipName}" has no layer`, false);
+			clips.push({ ...c, trackId: 'sheet', start: i, duration: 1 });
+			for (const f of p.doc.fonts) fonts.set(`${f.family}|${f.weight}|${f.style}|${f.url}`, f);
+			Object.assign(media, p.doc.media);
+		}
+		const doc: RenderSnapshot = {
+			...first,
+			settings: { ...first.settings, width: W, height: H, backgroundColor: [0, 0, 0, 0] },
+			range: { start: 0, end: plans.length },
+			durationFrames: plans.length,
+			videoTracks: [{ trackId: 'sheet', clips }],
+			audioClips: [],
+			media,
+			fonts: [...fonts.values()],
+		};
+		const scratch = await ctx.scratchDir();
+		const dir = join(scratch, `sheet-${Date.now().toString(36)}`);
+		await mkdir(dir, { recursive: true });
+		ctx.progress(0, { stage: `Rendering 0/${plans.length} stills` });
+		const rendered = await this.core.remotion.renderStillSheet({
+			inputProps: {
+				doc,
+				options: {
+					isPreview: false,
+					useProxies: false,
+					transparentBackground: true,
+					layerFilter: clips.map((c) => c.clipId),
+				},
+			},
+			outputDir: dir,
+			signal: ctx.signal,
+			...(o.concurrency ? { concurrency: o.concurrency } : {}),
+			...(o.browser ? { browser: o.browser } : {}),
+			log: ctx.log,
+			onProgress: (p) =>
+				ctx.progress((0.8 * p.renderedFrames) / p.totalFrames, {
+					stage: `Rendering ${p.renderedFrames}/${p.totalFrames} stills`,
+				}),
+		});
+		const t1 = performance.now();
+		// `<frame>.png` → `%06d.png` (one image2 input).
+		const files = (await readdir(dir)).filter((f) => /^\d+\.png$/.test(f));
+		if (files.length !== plans.length)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`The sheet render wrote ${files.length} stills, expected ${plans.length}`,
+				true,
+			);
+		for (const f of files)
+			await rename(join(dir, f), join(dir, `s${gradedFrameName(Number.parseInt(f, 10))}`));
+		ctx.progress(0.8, { stage: 'Cropping stills' });
+		const redo: BakePlan[] = [];
+		const frameBytes = W * H * 4;
+		const ff = this.ffmpeg();
+		const child = ff.spawnRaw(
+			[
+				'-f',
+				'image2',
+				'-framerate',
+				'25',
+				'-start_number',
+				'0',
+				'-i',
+				join(dir, 's%06d.png'),
+				'-frames:v',
+				String(plans.length),
+				'-f',
+				'rawvideo',
+				'-pix_fmt',
+				'rgba',
+				'pipe:1',
+			],
+			{ signal: ctx.signal, onSpawn: ctx.trackChild },
+		);
+		let stderr = '';
+		child.stderr!.setEncoding('utf8').on('data', (c: string) => {
+			stderr = (stderr + c).slice(-4000);
+		});
+		const closed = new Promise<void>((resolve, reject) => {
+			child.on('error', reject);
+			child.on('close', (code, sig) =>
+				code === 0
+					? resolve()
+					: reject(
+							new JobError(
+								'TOOL_FAILED',
+								`ffmpeg exited ${code ?? sig}: ${stderr.trim().slice(-1500)}`,
+								true,
+							),
+						),
+			);
+		});
+		closed.catch(() => undefined);
+		let i = 0;
+		// One frame buffer, filled chunk by chunk; `storeSheetStill` copies its still out of it before its first await,
+		// so up to STORES_IN_FLIGHT stills are encoded and written side by side while the decode goes on.
+		const frame = Buffer.allocUnsafe(frameBytes);
+		let filled = 0;
+		const stores = new Set<Promise<void>>();
+		const store = async (plan: BakePlan) => {
+			if (await this.storeSheetStill(plan, frame, W, ctx)) redo.push(plan);
+		};
+		for await (const chunk of child.stdout! as AsyncIterable<Buffer>) {
+			let off = 0;
+			while (off < chunk.length && i < plans.length) {
+				const k = Math.min(frameBytes - filled, chunk.length - off);
+				chunk.copy(frame, filled, off, off + k);
+				filled += k;
+				off += k;
+				if (filled < frameBytes) continue;
+				const p = store(plans[i]!);
+				stores.add(p);
+				p.finally(() => stores.delete(p)).catch(() => undefined);
+				filled = 0;
+				i++;
+				ctx.progress(0.8 + (0.1 * i) / plans.length, { stage: `Cropping stills ${i}/${plans.length}` });
+				if (stores.size >= STORES_IN_FLIGHT) await Promise.race(stores);
+			}
+		}
+		await Promise.all(stores);
+		await closed;
+		if (i !== plans.length)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`The sheet decode gave ${i} stills, expected ${plans.length}`,
+				true,
+			);
+		await rm(dir, { recursive: true, force: true });
+		return {
+			redo,
+			timing: {
+				selectMs: rendered.selectMs,
+				renderMs: rendered.renderMs,
+				storeMs: Math.round(performance.now() - t1),
+			},
+		};
+	}
+
+	/**
+	 * One frame of a sheet (`W` px rows, RGBA): its plan's still cropped from the top-left, checked at its crop border
+	 * and stored. True when a sequence still touched its border (to be rendered alone); a clipped layer still is
+	 * stored with `clipped` (the layer is then baked as a master).
+	 */
+	private async storeSheetStill(plan: BakePlan, frame: Buffer, W: number, ctx: JobContext): Promise<boolean> {
+		const w = plan.rect?.w ?? plan.material.width;
+		const h = plan.rect?.h ?? plan.material.height;
+		const px = new Uint8Array(w * h * 4);
+		for (let y = 0; y < h; y++) px.set(frame.subarray(y * W * 4, y * W * 4 + w * 4), y * w * 4);
+		const alphaAt = (x: number, y: number) => px[(y * w + x) * 4 + 3]!;
+		const edge = (side: 'top' | 'bottom' | 'left' | 'right') => {
+			if (side === 'top' || side === 'bottom') {
+				const y = side === 'top' ? 0 : h - 1;
+				for (let x = 0; x < w; x++) if (alphaAt(x, y) > RECT_CLIP_ALPHA) return true;
+				return false;
+			}
+			const x = side === 'left' ? 0 : w - 1;
+			for (let y = 0; y < h; y++) if (alphaAt(x, y) > RECT_CLIP_ALPHA) return true;
+			return false;
+		};
+		let clipped = false;
+		if (plan.picture) clipped = (['top', 'bottom', 'left', 'right'] as const).some(edge);
+		else if (plan.rect && plan.fullDoc) {
+			const r = plan.rect;
+			const seq = { width: plan.material.width, height: plan.material.height };
+			const inner = [
+				r.y > 0 ? ('top' as const) : null,
+				r.y + r.h < seq.height ? ('bottom' as const) : null,
+				r.x > 0 ? ('left' as const) : null,
+				r.x + r.w < seq.width ? ('right' as const) : null,
+			].filter((s): s is 'top' | 'bottom' | 'left' | 'right' => s !== null);
+			// Rendered alone, with the full-frame fallback of `renderBake`.
+			if (inner.some(edge)) return true;
+		}
+		if (clipped)
+			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked larger, then as a master`);
+		// spec 13 AS-070: a layer still is trimmed to its pixels (+ 2 transparent px, so the kernel's anti-aliased
+		// picture edge and its clamp-to-edge samples only ever see transparency): the kernel draws, streams and
+		// overlays only the glyphs, stroke and shadow, not the empty margin of the bleed estimate.
+		let out: { px: Uint8Array; w: number; h: number } = { px, w, h };
+		let picture: Rect | undefined;
+		if (plan.picture && !clipped) {
+			const t = alphaBounds(px, w, h);
+			if (!t) {
+				picture = { x: plan.picture.x, y: plan.picture.y, w: 2, h: 2 };
+				out = { px: new Uint8Array(16), w: 2, h: 2 };
+			} else {
+				const x0 = Math.max(0, t.x0 - 2);
+				const y0 = Math.max(0, t.y0 - 2);
+				const x1 = Math.min(w, t.x1 + 2);
+				const y1 = Math.min(h, t.y1 + 2);
+				picture = { x: plan.picture.x + x0, y: plan.picture.y + y0, w: x1 - x0, h: y1 - y0 };
+				out = { px: cropRgba(px, w, x0, y0, x1 - x0, y1 - y0), w: x1 - x0, h: y1 - y0 };
+			}
+		}
+		const dir = this.entryDir(plan.key);
+		await mkdir(dir, { recursive: true });
+		const scratch = await ctx.scratchDir();
+		const tmp = join(scratch, `sheet-${plan.key}.png`);
+		await writeFile(tmp, await encodePngAsync(out.px, out.w, out.h));
+		await rename(tmp, join(dir, 'still.png'));
+		const t = this.now().toISOString();
+		const meta: LayerMeta = {
+			kind: 'layer',
+			key: plan.key,
+			recipe: plan.variant.recipe,
+			rect: plan.rect,
+			frames: plan.frames,
+			width: out.w,
+			height: out.h,
+			clipName: plan.clipName,
+			createdAt: t,
+			lastUsedAt: t,
+			...(clipped ? { clipped: true } : {}),
+			...(picture ? { picture } : {}),
+			material: plan.material,
+		};
+		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
+		this.stats.rendered++;
 		return false;
 	}
 
@@ -1380,4 +1950,40 @@ export class LayerBakeService {
 			};
 		return { key: grade.key, path: join(dir, GRADED_FRAMES_DIR) };
 	}
+}
+
+/** The bounding box `[x0, y0, x1, y1)` of the pixels of an RGBA image with alpha > 0, or null when it is empty. */
+export function alphaBounds(
+	px: Uint8Array,
+	w: number,
+	h: number,
+): { x0: number; y0: number; x1: number; y1: number } | null {
+	let x0 = w;
+	let y0 = h;
+	let x1 = -1;
+	let y1 = -1;
+	for (let y = 0; y < h; y++)
+		for (let x = 0; x < w; x++)
+			if (px[(y * w + x) * 4 + 3]! > 0) {
+				if (x < x0) x0 = x;
+				if (x > x1) x1 = x;
+				if (y < y0) y0 = y;
+				y1 = y;
+			}
+	return x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
+}
+
+/** The `cw × ch` region at `(x, y)` of an RGBA image `w` px wide. */
+export function cropRgba(
+	px: Uint8Array,
+	w: number,
+	x: number,
+	y: number,
+	cw: number,
+	ch: number,
+): Uint8Array {
+	const out = new Uint8Array(cw * ch * 4);
+	for (let r = 0; r < ch; r++)
+		out.set(px.subarray(((y + r) * w + x) * 4, ((y + r) * w + x + cw) * 4), r * cw * 4);
+	return out;
 }

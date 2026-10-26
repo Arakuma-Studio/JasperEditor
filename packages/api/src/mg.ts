@@ -13,6 +13,60 @@ export const MgRenderSpecSchema = z.object({
 });
 export type MgRenderSpec = z.infer<typeof MgRenderSpecSchema>;
 
+/** A named param preset of a template: `params` holds what it changes (the defaults fill the rest). */
+export const MgTemplatePresetSchema = z.object({
+	id: z.string().min(1).max(64),
+	name: z.string().min(1),
+	description: z.string().optional(),
+	params: z.record(z.string(), z.unknown()),
+});
+export type MgTemplatePresetEntry = z.infer<typeof MgTemplatePresetSchema>;
+
+/** UI hints of a template's params (groups, labels, tooltips, multi-line, visibility, custom controls). */
+export const MgTemplateUiSchema = z.object({
+	groups: z
+		.array(z.object({ id: z.string().min(1), label: z.string().min(1), params: z.array(z.string()) }))
+		.optional(),
+	params: z
+		.record(
+			z.string(),
+			z.object({
+				label: z.string().optional(),
+				description: z.string().optional(),
+				multiline: z.boolean().optional(),
+				visibleWhen: z.object({ param: z.string(), in: z.array(z.unknown()) }).optional(),
+				control: z.string().optional(),
+				/** Enum params: the menu label of each value. */
+				options: z.record(z.string(), z.string()).optional(),
+			}),
+		)
+		.optional(),
+	/** "Add another": the params the copy re-randomizes through the template's fill hook. */
+	addAnother: z.object({ reroll: z.array(z.string()) }).optional(),
+	/** Bulk import: column aliases (fixed, or chosen per row by another param), ignored columns, value prefixes, ages. */
+	import: z
+		.object({
+			aliases: z
+				.record(
+					z.string(),
+					z.union([
+						z.string(),
+						z.object({ byParam: z.string(), map: z.record(z.string(), z.string()), otherwise: z.string() }),
+					]),
+				)
+				.optional(),
+			ignored: z.record(z.string(), z.string()).optional(),
+			trimPrefix: z.record(z.string(), z.string()).optional(),
+			/** An age in one cell ("3h", "2 weeks") → a count param and a unit param. */
+			age: z
+				.object({ value: z.string(), unit: z.string(), columns: z.array(z.string()).optional() })
+				.optional(),
+		})
+		.optional(),
+	/** Gallery preview framing: the canvas the poster draws the template on (covering the thumbnail). */
+	preview: z.object({ canvas: z.object({ width: z.number(), height: z.number() }) }).optional(),
+});
+
 export const MgTemplateCatalogEntrySchema = z.object({
 	id: z.string(),
 	version: z.number().int(),
@@ -31,6 +85,10 @@ export const MgTemplateCatalogEntrySchema = z.object({
 	native: z.boolean().optional(),
 	/** `anime` templates are drawn by `@jasper/motion` and baked by layer-bake; absent = fframes. */
 	renderer: z.enum(['fframes', 'anime']).optional(),
+	/** Named param presets (gallery cards; `"<id>:<preset>"` in add_motion_graphic). */
+	presets: z.array(MgTemplatePresetSchema).optional(),
+	/** UI hints of the params (Properties / Effect Controls). */
+	ui: MgTemplateUiSchema.optional(),
 });
 export type MgTemplateCatalogEntry = z.infer<typeof MgTemplateCatalogEntrySchema>;
 

@@ -1,7 +1,9 @@
 // Semantics follow Premiere Pro and S01 (SEQ-010/011, CLP-012, AST-010, KND-011/012); the algorithms port FilmCraft
 // `crates/edit/src/{lib,through,multicam}.rs` and `crates/engine/src/{commands,clip_ops,sequence_tools}.rs`
 // (MIT OR Apache-2.0, see licenses/ported/edit-structure.md).
+
 import type { Draft } from 'immer';
+import { reidCaptionGroups } from '../../captions/subtitles/model.ts';
 import { clipEnd, contentTimeAt, isThroughEdit } from '../../derive/index.ts';
 import { anim, createSequence, defaultTransform } from '../../factories.ts';
 import { TRACK_MATTE_EFFECT_ID } from '../../masks/track-matte.ts';
@@ -23,6 +25,7 @@ import {
 	ensureTrackAt,
 	findTrackIn,
 	insertShift,
+	joinEdgeFades,
 	reidentifyClipChildren,
 	relinkSplits,
 	removeClip,
@@ -891,6 +894,8 @@ function joinThroughEdits(doc: DDoc, cmd: CommandOf<'sequence.joinThroughEdits'>
 			const markers = plain(b.markers);
 			a.duration += b.duration;
 			if (reverse) a.sourceIn = bIn;
+			// spec 14 TC-024: the joined clip keeps the left piece's fade in and the right piece's fade out
+			joinEdgeFades(a, b);
 			for (const m of markers) if (!a.markers.some((x) => x.id === m.id)) a.markers.push(m);
 			a.markers.sort((x, y) => x.flicks - y.flicks);
 			removeClip(seq, b.id, h);
@@ -1234,6 +1239,8 @@ export const structureHandlers = {
 		const src = doc.sequences[cmd.sequenceId] as Sequence | undefined;
 		if (!src) h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
 		const copy = duplicateSequence(src, h);
+		// spec 13 AS-003: the copy's subtitle groups get their own ids (group ids name one sequence's subtitles).
+		reidCaptionGroups(copy, () => h.ids.next('cgp'));
 		const { itemId: srcItem, binId } = sequenceItem(doc, src.id);
 		const name = cmd.name ?? `${sequenceName(doc, src.id)} Copy`;
 		const itemId = newSequenceItem(doc, h, copy, name, binId, srcItem);

@@ -73,6 +73,7 @@ import {
 import { setDefaultTransition, TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { projectItemOf } from '../program/layer-ops.ts';
+import { CleanupTimelineOverlay } from '../text/cleanup/TimelineOverlay.tsx';
 import type { PanelProps } from '../types.ts';
 import { CaptionLanes } from './components/CaptionLanes.tsx';
 import { ContextMenu, GestureTooltip, SequenceTabs, Toolbar, ZoomBar } from './components/Chrome.tsx';
@@ -1790,6 +1791,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						showThroughEdits={showThroughEdits}
 						lanes={lanes}
 					/>
+					<CleanupTimelineOverlay session={session} seq={seq} layout={layout} viewport={viewport} />
 					{ghostModel ? (
 						<ProposalGhostLayer
 							session={session}

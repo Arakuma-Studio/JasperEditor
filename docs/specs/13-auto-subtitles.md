@@ -56,12 +56,12 @@ animation, words-per-line, emoji.
   text, shape and caption clips, and one-sided transitions; a two-sided transition contributes its edit point and its
   span as a cut zone. Rational frame rates (60000/1001). Property tests: cuts sorted, unique, inside the sequence.
   MCP `list_cuts`.
-- SH-002 **Schema v9** (one coordinated bump, done first by the coordinator): optional, lenient fields with invariants
-  and `repairDocument`, documented under "Fields added in v9" in `docs/project-files.md`: `TextClip.caption?`,
+- SH-002 **Schema v10** (one coordinated bump, done first by the coordinator): optional, lenient fields with invariants
+  and `repairDocument`, documented under "Fields added in v10" in `docs/project-files.md`: `TextClip.caption?`,
   `Sequence.captionGroups?`, `ProjectDocument.textStyles?` + `TextClip.styleId?` + `styleOverrides?`,
   `ProjectDocument.subtitleTemplates?`, `Sequence.cleanup?` (spec 14), `ProjectDocument.styleRecipes?` (spec 15),
   `TextStyle.shadow.spreadPx?`, `TextStyle.strokes[]` fully honoured, `Clip.automation?: {feature, pass, seed}`
-  provenance. Older builds open v9 read-only.
+  provenance. Older builds open v10 read-only.
 - SH-003 **Batch styling commands**: `text.setStyle {clipIds | groupId, patch (deep, per field), runs: 'keep' |
   'clear-overridden'}` (atomic, re-layout, refuses non-text clips naming them); `effect.setParamMany {targets:[{clipId,
   effectInstanceId}] | {clipIds, effectId, occurrence}, param, value | keyframes(relative to each clip's In)}`;
@@ -168,7 +168,7 @@ animation, words-per-line, emoji.
 
 ### 3.7 Validation
 - AS-060 Unit/property tests (rules, cut algorithm, conversion round trips, template application, linked styles),
-  command tests (undo/redo/refusals/invariants), schema v9 fixtures and repair tests, renderer parity tests for strokes
+  command tests (undo/redo/refusals/invariants), schema v10 fixtures and repair tests, renderer parity tests for strokes
   and shadow spread (preview vs every export path), e2e: Create Subtitles with Pixel Pop on a generated video with cuts
   → verify cut alignment frames and export frames; multi-clip styling e2e (select 100 subtitles → change stroke →
   one undo step).

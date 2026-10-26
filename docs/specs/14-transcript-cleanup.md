@@ -123,7 +123,7 @@ LLM-based content judgement (agents may layer it on the MCP tools).
   removedByKind, cutsPerMinute, deadAirPerMinute, largestSilenceLeft, joins}}`; dry run never changes the document.
 
 ### 2.4 Applying (commands, `packages/project`)
-- TC-030 Persisted (schema v9, optional, lenient; invariants + `repairDocument`): `Sequence.cleanup?: {settings (preset
+- TC-030 Persisted (schema v10, optional, lenient; invariants + `repairDocument`): `Sequence.cleanup?: {settings (preset
   id + overrides), script?: {name, text ≤ 256 KB}, rejected: fingerprint[] (≤ 20,000), lists?: {fillers, markers,
   allow} per language}`; user-level presets in the user library (like effect presets).
 - TC-031 `cleanup.apply {sequenceId, clipIds?, ranges:[{start,end}] (sequence frames or source flicks + clipId), mode:

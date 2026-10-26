@@ -1,0 +1,8 @@
+asset:        schema-v9.jasper
+title:        Schema history fixture, v9
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-25 by the social-comment template media params schema bump
+notes:        Derived from schema-v8.jasper for packages/project/test/schema-history.test.ts: v9 (social comments) lets motion-graphic template params reference media, so the fixture adds an avatar image and a motion-graphic clip whose params reference it (directly and inside a list). References no media bytes.

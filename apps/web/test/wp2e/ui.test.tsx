@@ -361,6 +361,31 @@ describe('Export mode (S05:EX-001…031, S04:EX-005)', () => {
 		expect(localStorage.getItem(`jasper.export.${session.projectId}.${seqId}`)).toContain('"engine":"auto"');
 	});
 
+	it('ProRes offers a transparent background: 4444 + alpha, no audio, remembered per sequence (social-comment §7.11)', async () => {
+		const { planned, started, session, seqId } = await setupExport();
+		await waitFor(() => expect(planned.length).toBeGreaterThan(0));
+		expect(screen.queryByTestId('export-alpha')).toBeNull();
+		fireEvent.change(screen.getByTestId('export-codec'), { target: { value: 'prores' } });
+		const box = await screen.findByTestId('export-alpha');
+		fireEvent.click(box);
+		await waitFor(() =>
+			expect((planned.at(-1) as { settings: Record<string, unknown> }).settings).toMatchObject({
+				container: 'mov',
+				videoOnly: true,
+				video: { codec: 'prores', proresProfile: '4444', alpha: true },
+			}),
+		);
+		await waitFor(() =>
+			expect((screen.getByTestId('export-start') as HTMLButtonElement).disabled).toBe(false),
+		);
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('export-start'));
+		});
+		await waitFor(() => expect(started).toHaveLength(1));
+		expect(started[0]).toMatchObject({ settings: { video: { alpha: true } } });
+		expect(localStorage.getItem(`jasper.export.${session.projectId}.${seqId}`)).toContain('"alpha":true');
+	});
+
 	it('uses an available codec when H.264 is unavailable (ARCHITECTURE D-13)', async () => {
 		const av1: EncoderChoice = {
 			codec: 'av1',

@@ -3,6 +3,8 @@
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized; scans read the drafts'
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
 import { type Draft, isDraft, original } from 'immer';
+import { readEdgeFades } from '../audio-fade.ts';
+import { splitCaptionWords } from '../captions/subtitles/clips.ts';
 import { clipsInRange } from '../derive/index.ts';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
@@ -71,6 +73,53 @@ export function resolveOrCreateTrack(seq: DSeq, ref: string, h: HandlerContext, 
 	const parsed = parseTrackLabel(ref);
 	if (parsed && create) return ensureTrackAt(seq, parsed.kind, parsed.index, h);
 	return h.fail(parsed ? 'E_TRACK_KIND' : 'E_NOT_FOUND', `Track not found: ${ref}`);
+}
+
+/**
+ * First-free placement (social-comments design §7.9, "insertion never overwrites"): the lowest unlocked, visible
+ * (output on) track of `kind` at or above `floorIndex` (0-based) that has no clip in `[at, at + n)`; when every such
+ * track is locked, hidden or busy, a new track of that kind is added on top (or the missing tracks up to `floorIndex` are added, as an
+ * overwrite to a missing `V5` label does). Deterministic: tracks are tried in order and only the track list grows.
+ * The caller places on an empty range, so no clip is trimmed, split or shifted and sync-locked tracks never move.
+ */
+export function firstFreeTrack(
+	seq: DSeq,
+	kind: TrackKind,
+	floorIndex: number,
+	at: number,
+	n: number,
+	h: HandlerContext,
+): { track: DTrack; index: number; created: boolean } {
+	const busy = new Set<string>();
+	const raw = latest(seq.clips) as Record<string, Clip>;
+	for (const key in raw) {
+		if (!Object.hasOwn(raw, key)) continue;
+		const c = latest(raw[key]!);
+		if (c.start < at + n && end(c) > at) busy.add(c.trackId);
+	}
+	const list = tracksOfKind(seq, kind);
+	const current = latest(list);
+	const floor = Math.max(0, Math.floor(floorIndex));
+	for (let i = floor; i < current.length; i++) {
+		const t = latest(current[i]!);
+		// a locked track refuses edits and a track with its output off is not drawn (the graphic would be invisible)
+		if (!t.locked && t.output !== false && !busy.has(t.id))
+			return { track: list[i]!, index: i, created: false };
+	}
+	const index = Math.max(current.length, floor);
+	return { track: ensureTrackAt(seq, kind, index, h), index, created: true };
+}
+
+/** Kind and 0-based index of a track ref (id or label); a missing label resolves to where it would be created. */
+export function trackSlotOf(seq: DSeq, ref: string, h: HandlerContext): { kind: TrackKind; index: number } {
+	const id = resolveTrackIn(seq, ref);
+	if (id) {
+		const found = findTrackIn(seq, id)!;
+		return { kind: found.kind, index: found.index };
+	}
+	const parsed = parseTrackLabel(ref);
+	if (parsed) return parsed;
+	return h.fail('E_NOT_FOUND', `Track not found: ${ref}`);
 }
 
 export function assertUnlocked(track: { locked: boolean; id: string }, h: HandlerContext): void {
@@ -261,9 +310,13 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 		right.sourceIn = clip.sourceIn + contentSpanFlicks(at - clip.start, r, clip.speed.rate);
 	}
 	clip.duration = at - clip.start;
+	splitEdgeFades(clip, right);
 	seq.clips[right.id] = right as DClip;
 	// the left part keeps the In animator, the right part the Out animator.
 	splitTextAnimation(clip, seq.clips[right.id]!);
+	// spec 13 AS-006: a subtitle's words go to the piece holding their midpoint, each piece keeps its own text.
+	if (clip.kind === 'text' && (clip as { caption?: unknown }).caption !== undefined)
+		splitCaptionWords(clip as never, seq.clips[right.id] as never, r);
 	if (clip.groupId && seq.groups[clip.groupId]) seq.groups[clip.groupId]!.members.push(right.id);
 	for (const t of valuesOf(seq.transitions)) {
 		if (t.outgoingClipId === clip.id) seq.transitions[t.id]!.outgoingClipId = right.id;
@@ -322,6 +375,30 @@ export function removeClip(seq: DSeq, clipId: string, h: HandlerContext): void {
 			h.warn('W_TRANSITION_REMOVED', `Transition ${t.id} removed with clip ${clipId}`);
 		}
 	}
+}
+
+/**
+ * spec 14 TC-024: edge micro-fades follow their edge when a clip is split — the left part keeps the fade in, the
+ * right part the fade out.
+ */
+export function splitEdgeFades(left: DClip | Clip, right: DClip | Clip): void {
+	const l = left as { edgeFades?: unknown };
+	if (l.edgeFades === undefined) return;
+	const ef = readEdgeFades(l.edgeFades);
+	const r = right as { edgeFades?: unknown };
+	if (ef.outMs) r.edgeFades = { outMs: ef.outMs };
+	else delete r.edgeFades;
+	if (ef.inMs) l.edgeFades = { inMs: ef.inMs };
+	else delete l.edgeFades;
+}
+
+/** spec 14 TC-024: `a` absorbs the clip after it (`b`): it keeps its own fade in and takes `b`'s fade out. */
+export function joinEdgeFades(a: DClip | Clip, b: DClip | Clip): void {
+	const ea = readEdgeFades((a as { edgeFades?: unknown }).edgeFades);
+	const eb = readEdgeFades((b as { edgeFades?: unknown }).edgeFades);
+	const next = { ...(ea.inMs ? { inMs: ea.inMs } : {}), ...(eb.outMs ? { outMs: eb.outMs } : {}) };
+	if (next.inMs || next.outMs) (a as { edgeFades?: unknown }).edgeFades = next;
+	else delete (a as { edgeFades?: unknown }).edgeFades;
 }
 
 export type SplitRecord = { originalLinkId: string | null; rightId: string };

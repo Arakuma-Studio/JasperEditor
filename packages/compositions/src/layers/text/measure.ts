@@ -375,7 +375,8 @@ function buildFlow(
 }
 
 let measureHost: HTMLElement | null = null;
-function host(): HTMLElement {
+/** The off-screen, untransformed host the measurements lay text out in (attached to `document.body`). */
+export function textMeasureHost(): HTMLElement {
 	if (measureHost?.isConnected) return measureHost;
 	const h = document.createElement('div');
 	h.setAttribute('data-text-measure-host', '');
@@ -404,7 +405,7 @@ const layoutCache = new Map<string, TypesetLayout>();
 export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayout {
 	const hit = layoutCache.get(cacheKey);
 	if (hit) return hit;
-	const h = host();
+	const h = textMeasureHost();
 	const inner = document.createElement('div');
 	applyCss(inner, {
 		position: 'absolute',
@@ -485,7 +486,7 @@ export function measureAdvance(text: string, css: CSSProperties): number {
 	const key = `${fontKey(css)}|${css.letterSpacing}|${css.textTransform}|${text}`;
 	const hit = advanceCache.get(key);
 	if (hit !== undefined) return hit;
-	const h = host();
+	const h = textMeasureHost();
 	const span = document.createElement('span');
 	applyCss(span, { ...css, position: 'absolute', whiteSpace: 'pre', top: 0, left: 0 });
 	span.textContent = text;
@@ -508,7 +509,7 @@ export function drawnBaseline(css: CSSProperties, height: number): number {
 	const key = `${fontKey(css)}|${height.toFixed(3)}`;
 	const hit = drawnBaselineCache.get(key);
 	if (hit !== undefined) return hit;
-	const h = host();
+	const h = textMeasureHost();
 	const span = document.createElement('span');
 	applyCss(span, {
 		...css,

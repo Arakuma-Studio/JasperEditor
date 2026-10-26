@@ -40,6 +40,7 @@ import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxTextureInput } from './host.ts';
 import { fxImageFailed, loadedFxImage, loadFxImage, useFxImages } from './images.ts';
+import { fxLowered } from './lowered.ts';
 import { fxMaskApply, fxMasked } from './mask.ts';
 import { fxMatteTap, useTrackMattes } from './matte.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
@@ -473,6 +474,8 @@ export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage, the loaded images and the mattes
 	return useMemo(() => {
 		if (!stage) return [];
+		// spec 13 AS-075: a lowered layer's effects are one Canvas 2D pass (fx/lowered.ts).
+		if (stage.lowered) return [fxLowered(stage.lowered)];
 		const media = new Map<string, FxTextureInput>(mattes.media);
 		for (const m of stage.media) {
 			if (m.kind === 'lut') {

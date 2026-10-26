@@ -9,21 +9,26 @@ import {
 	type EffectInstance,
 	isKnownClipKind,
 	kindCapabilities,
+	type PropertySpec,
 	paramsPropertySpecs,
 	type Sequence,
+	templateParamSections,
+	templateParamVisible,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
 import type { ReactNode } from 'react';
-import { clipSections } from '../../extensions/index.ts';
+import { clipSections, templateParamControls } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
 import { FontPicker } from '../../fonts/FontPicker.tsx';
 import { formatTimecode } from '../../gaps/time-display.ts';
+import { TextStyleSection } from '../../text-styles/TextStyleSection.tsx';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
 import { Section } from './controls/Section.tsx';
+import { TemplateGroupActions } from './controls/TemplateGroupActions.tsx';
 import {
 	bindCrop,
 	bindProperty,
@@ -35,6 +40,8 @@ import {
 	rowValue,
 	templateOf,
 } from './lib/model.ts';
+import { absorbedTemplateParams } from './lib/template-params.ts';
+import { SHADOW_KEYS, StrokeList } from './TextLookRows.tsx';
 
 const CROP_PARAMS = ['left', 'top', 'right', 'bottom', 'feather'] as const;
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
@@ -295,14 +302,14 @@ function TextSections(props: {
 			'text.sizePx',
 			'text.align',
 			'text.fill',
-			'text.strokeWidth',
-			'text.strokeColor',
 			'text.trackingEm',
 			'text.lineHeight',
 			'text.allCaps',
 		],
 		visual,
 	);
+	const textClips = visual.filter((c): c is Extract<Clip, { kind: 'text' }> => c.kind === 'text');
+	const rowFor = (key: string) => rows([key], visual)[0] ?? null;
 	const setRow = (row: Row, v: unknown) => {
 		// picking a catalog family registers it and sets it on the selected clips in one step.
 		if (row.spec.key === 'text.fontId' && typeof v === 'string' && v.startsWith('catalog:')) {
@@ -322,8 +329,19 @@ function TextSections(props: {
 		const plan = planSet(row, ctx.frame, () => v);
 		ctx.ops.apply(row.label, plan.commands as Command[]);
 	};
+	const primary = ctx.seq.clips[session.getState().selection.timeline.primaryClip ?? ''] ?? null;
 	return (
 		<>
+			{/* spec 13 AS-032: the linked project text style of the selection. */}
+			<Section id="properties.textStyle" title="Text Style">
+				<TextStyleSection
+					session={session}
+					doc={ctx.doc}
+					clips={visual}
+					primary={primary}
+					readOnly={session.getState().readOnly}
+				/>
+			</Section>
 			<Section id="properties.text" title="Text">
 				{render(content ?? null)}
 				{fontRow
@@ -356,10 +374,19 @@ function TextSections(props: {
 					: null}
 				{rest.map((r) => render(r))}
 			</Section>
+			{/* spec 13 AS-030: every stroke (not only the first) and the shadow with its spread. */}
+			<Section id="properties.textStrokes" title="Strokes">
+				<StrokeList clips={textClips} ctx={ctx} rowFor={rowFor} render={render} />
+			</Section>
+			<Section id="properties.textShadow" title="Shadow" defaultOpen={false}>
+				{rows([...SHADOW_KEYS], visual).map((r) => render(r))}
+			</Section>
 			<Section id="properties.textBox" title="Box" defaultOpen={false}>
 				{rows(
 					[
+						'text.background',
 						'text.backgroundColor',
+						'text.backgroundOpacity',
 						'text.backgroundPadding',
 						'text.backgroundRadius',
 						'text.boxWidth',
@@ -420,6 +447,7 @@ function TextSections(props: {
 /** Motion-graphic parameters: an auto-generated form from the template schema (S05:ECP-008, PRP-001). */
 function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: EditorSession }) {
 	const { visual, ctx, session } = props;
+	const controls = useRegistry(templateParamControls);
 	const mg = session.ctx.registries.mgTemplates;
 	const tpl = templateOf(visual[0]!, mg);
 	const same = visual.every(
@@ -434,19 +462,44 @@ function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: Edit
 			</Section>
 		);
 	}
-	const specs = paramsPropertySpecs(tpl);
+	// C3: the template's ui hints — params that apply to none of the selected clips are hidden (`visibleWhen`), the
+	// others are grouped in its sections (in order; params in no group first).
+	const shown = paramsPropertySpecs(tpl).filter((s) =>
+		visual.some((c) => templateParamVisible(s, (c as { params?: Record<string, unknown> }).params)),
+	);
+	// WP7a: rows edited by another row's custom control (`alsoEdits`, e.g. the time unit) are not drawn twice.
+	const absorbed = absorbedTemplateParams(shown, controls);
+	const specs = shown.filter((s) => !absorbed.has(s.key.slice('params.'.length)));
+	const renderSpec = (s: PropertySpec, indent: boolean) => {
+		const row = makeRow(
+			s.key,
+			visual.map((c) => bindProperty(ctx.doc, ctx.seq, c, s.key, ctx.frame, mg)),
+		);
+		return row ? <PropertyRow key={row.id} row={row} ctx={ctx} indent={indent} /> : null;
+	};
 	return (
 		<Section id="properties.template" title={`Parameters · ${tpl.name}`}>
 			<p className="px-2 pb-1 text-pr-small text-pr-muted">
 				{tpl.id}@{tpl.version} · {tpl.category}
 			</p>
-			{specs.map((s) => {
-				const row = makeRow(
-					s.key,
-					visual.map((c) => bindProperty(ctx.doc, ctx.seq, c, s.key, ctx.frame, mg)),
-				);
-				return row ? <PropertyRow key={row.id} row={row} ctx={ctx} /> : null;
-			})}
+			{templateParamSections(specs).map((sec) =>
+				sec.section ? (
+					<Section
+						key={sec.section.id}
+						id={`properties.template.${tpl.id}.${sec.section.id}`}
+						title={sec.section.label}
+						variant="group"
+						className="pl-2"
+						actions={
+							<TemplateGroupActions ctx={ctx} clips={visual} specs={sec.specs} label={sec.section.label} />
+						}
+					>
+						<div data-template-group={sec.section.id}>{sec.specs.map((s) => renderSpec(s, true))}</div>
+					</Section>
+				) : (
+					sec.specs.map((s) => renderSpec(s, false))
+				),
+			)}
 		</Section>
 	);
 }

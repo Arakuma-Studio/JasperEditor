@@ -61,6 +61,9 @@ function rampIntegral(t: number, f: number): number {
  */
 export function cropEdgeCoverage(d: number, f: number): number {
 	const ff = Math.max(0, f);
+	// Exact outside the ramp: the difference of the two integrals rounds (3.85 px in, no feather: 0.9999999999999996).
+	if (d <= -0.5) return 0;
+	if (d >= ff + 0.5) return 1;
 	return Math.min(1, Math.max(0, rampIntegral(d + 0.5, ff) - rampIntegral(d - 0.5, ff)));
 }
 

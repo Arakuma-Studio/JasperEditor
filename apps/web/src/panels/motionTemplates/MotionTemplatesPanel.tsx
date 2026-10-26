@@ -4,8 +4,10 @@
 // 50 %; the engine catalog tells whether the native renderer jasper-mg is ready for them) and, since M2, anime
 // templates (S11:ATP-007: badge "R", label "anime · Remotion", poster = a Remotion <Thumbnail> at `posterAt`).
 // Both kinds get the shared hover <Player> (PreviewThumb) over `MgTemplatePreview` from @jasper/compositions.
+// C3: a template with presets shows one card per preset (its params over the defaults in the poster, the hover
+// preview, insert and drag) instead of one card for the template; search also matches the preset names.
 import type { MgTemplateCatalogEntry } from '@jasper/api';
-import { MgTemplatePreview } from '@jasper/compositions';
+import { MgTemplatePreview, type MgTemplatePreviewProps } from '@jasper/compositions';
 import {
 	type AnyMgTemplate,
 	type AnySvgMgTemplate,
@@ -15,12 +17,17 @@ import {
 } from '@jasper/mg-templates';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
-import { cx, Icon, openDialog, Tabs } from '@jasper/ui';
+import { Button, ContextMenu, cx, Icon, openDialog, type ResolvedMenuItem, Tabs } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { t } from '../../i18n/runtime.ts';
 import { MG_IMPORT_DIALOG } from '../../mg-bundles/ImportDialog.tsx';
+import { useFontCatalog } from '../../remote-assets/font-catalog.ts';
+import { catalogAssetResolver, type TemplateAssetResolver } from '../../remote-assets/resolve.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { TextAnimationsTab } from '../../text-animation/TextAnimationsTab.tsx';
 import type { PanelProps } from '../types.ts';
+import { addAnotherDisabledReason, addAnotherMotionGraphics } from './add-another.ts';
+import { MG_BULK_IMPORT_DIALOG } from './BulkImportDialog.tsx';
 import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
 import { PreviewThumb } from './PreviewThumb.tsx';
 import { RemotionTab } from './RemotionTab.tsx';
@@ -29,8 +36,12 @@ import { RemotionTab } from './RemotionTab.tsx';
 type EngineFilter = 'all' | 'fframes' | 'anime';
 
 type GalleryEntry = {
+	/** Unique card key: `id@version` or `id@version:preset`. */
+	key: string;
 	ref: MgTemplateRef;
+	/** Card title: the preset name, else the template name. */
 	name: string;
+	templateName: string;
 	category: string;
 	description: string;
 	engine: 'fframes' | 'anime';
@@ -41,6 +52,10 @@ type GalleryEntry = {
 	durationSeconds: number;
 	aspects: string[];
 	def: AnyMgTemplate;
+	/** The preset's params (empty for template cards); the defaults fill the rest. */
+	params: Record<string, unknown>;
+	/** Input props of the poster and hover preview (`MgTemplatePreview`), stable per entry. */
+	preview: MgTemplatePreviewProps;
 };
 
 /** Frame rate of the gallery previews. */
@@ -52,23 +67,52 @@ const NO_SESSION_STORE = { getState: (): SessionState | null => null, subscribe:
 
 const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:16', '1080x1080': '1:1' };
 
-/** Merges the TS catalog with the engine's native flags for fframes templates. */
-function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
-	return mgRegistry.definitions().map((def) => {
+const NO_PARAMS: Record<string, unknown> = {};
+
+/**
+ * Merges the TS catalog with the engine's native flags for fframes templates; one entry per preset (C3).
+ * social-comment §7.8: `assets` resolves the fonts, emoji and images anime templates declare (the engine's font
+ * catalogue), so posters and hover previews draw them instead of "not available" markers.
+ */
+function galleryEntries(
+	engineTemplates: MgTemplateCatalogEntry[] | null,
+	assets: TemplateAssetResolver,
+): GalleryEntry[] {
+	return mgRegistry.definitions().flatMap((def) => {
 		const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
 		const anime = isAnimeTemplate(def);
-		return {
-			ref: { id: def.id, version: def.version },
-			name: def.name,
+		const base = {
+			templateName: def.name,
 			category: def.category,
-			description: def.description ?? '',
-			engine: anime ? 'anime' : 'fframes',
+			engine: anime ? ('anime' as const) : ('fframes' as const),
 			engineLabel: anime ? 'anime · Remotion' : 'fframes',
 			native: !anime && remote?.native === true,
 			durationSeconds: def.defaultDurationSeconds,
 			aspects: def.canvases.map((c) => ASPECTS[`${c.width}x${c.height}`] ?? `${c.width}x${c.height}`),
 			def,
 		};
+		const key = `${def.id}@${def.version}`;
+		if (!def.presets?.length)
+			return [
+				{
+					...base,
+					key,
+					ref: { id: def.id, version: def.version },
+					name: def.name,
+					description: def.description ?? '',
+					params: NO_PARAMS,
+					preview: { templateId: def.id, version: def.version, assets },
+				},
+			];
+		return def.presets.map((p) => ({
+			...base,
+			key: `${key}:${p.id}`,
+			ref: { id: def.id, version: def.version, preset: p.id },
+			name: p.name,
+			description: p.description ?? def.description ?? '',
+			params: p.params,
+			preview: { templateId: def.id, version: def.version, params: p.params, assets },
+		}));
 	});
 }
 
@@ -90,22 +134,26 @@ function filterEntries(
 			(f.engine === 'all' || e.engine === f.engine) &&
 			(!f.category || e.category === f.category) &&
 			(!q ||
-				`${e.name} ${e.category} ${e.description} ${e.ref.id} ${e.engineLabel}`.toLowerCase().includes(q)),
+				`${e.name} ${e.templateName} ${e.category} ${e.description} ${e.ref.id} ${e.ref.preset ?? ''} ${e.engineLabel}`
+					.toLowerCase()
+					.includes(q)),
 	);
 }
 
-/** Static preview: the twin at 50 % of the default duration, 16:9 canvas. */
-function previewSvg(def: AnySvgMgTemplate): string {
+/** Static preview: the twin at 50 % of the default duration, 16:9 canvas (a preset's params over the defaults). */
+function previewSvg(def: AnySvgMgTemplate, params: Record<string, unknown>, idPrefix: string): string {
 	const fps = 30;
 	const duration = Math.max(1, Math.round(def.defaultDurationSeconds * fps));
+	// Presets were validated by the registry; a failure still only costs the poster, never the gallery.
+	const parsed = def.paramsSchema.safeParse({ ...def.defaults, ...params });
 	return def.renderSvg(
-		def.defaults,
+		parsed.success ? parsed.data : def.defaults,
 		Math.floor(duration / 2),
 		fps,
 		{ width: 1920, height: 1080 },
 		{
 			durationFrames: duration,
-			idPrefix: `mgt-${def.id}-${def.version}`,
+			idPrefix,
 		},
 	);
 }
@@ -172,74 +220,90 @@ function TemplateCard({
 	entry,
 	svg,
 	onInsert,
+	onBulkImport,
 	disabled,
 }: {
 	entry: GalleryEntry;
 	/** fframes poster (the SVG twin); null for anime templates (Remotion <Thumbnail> poster). */
 	svg: string | null;
 	onInsert(): void;
+	/** Opens the spreadsheet import with this card's template (and preset). */
+	onBulkImport(): void;
 	disabled: boolean;
 }) {
+	// Right-click / Shift+F10 (social-comments design §7.9): insert, or import a spreadsheet as this card.
+	const menu = (): ResolvedMenuItem[] => [
+		{ type: 'item', id: 'insert', label: 'Insert at Playhead', disabled, onSelect: onInsert },
+		{ type: 'item', id: 'bulk', label: 'Import Spreadsheet as This…', disabled, onSelect: onBulkImport },
+	];
 	return (
-		<li
-			// biome-ignore lint/a11y/noNoninteractiveTabindex: grid cells are focusable (Enter inserts)
-			tabIndex={0}
-			draggable
-			data-template={`${entry.ref.id}@${entry.ref.version}`}
-			aria-label={`${entry.name} (${entry.category})`}
-			title={`${entry.name} — ${entry.description}\nDouble-click or drag to the timeline to insert`}
-			className={cx(
-				'group flex cursor-pointer flex-col gap-1 rounded-pr-control border border-pr-border-subtle bg-pr-panel-alt p-1 outline-none',
-				'hover:border-pr-border-strong focus-visible:border-pr-focus',
-			)}
-			onDoubleClick={() => !disabled && onInsert()}
-			onKeyDown={(e) => {
-				if (e.key === 'Enter' && !disabled) {
-					e.preventDefault();
-					onInsert();
+		<ContextMenu items={menu}>
+			<li
+				// biome-ignore lint/a11y/noNoninteractiveTabindex: grid cells are focusable (Enter inserts)
+				tabIndex={0}
+				draggable
+				data-template={`${entry.ref.id}@${entry.ref.version}`}
+				data-preset={entry.ref.preset}
+				aria-label={
+					entry.ref.preset
+						? `${entry.name} · ${entry.templateName} (${entry.category})`
+						: `${entry.name} (${entry.category})`
 				}
-			}}
-			onDragStart={(e) => writeMgTemplateDrag(e.dataTransfer, entry.ref)}
-		>
-			<div
-				className="relative aspect-video w-full overflow-hidden rounded-pr-control bg-pr-field-deep"
-				data-mg-preview={entry.engine}
-			>
-				<PreviewThumb
-					component={MgTemplatePreview}
-					inputProps={{ templateId: entry.ref.id, version: entry.ref.version }}
-					durationInFrames={Math.max(1, Math.round(entry.durationSeconds * PREVIEW_FPS))}
-					fps={PREVIEW_FPS}
-					width={PREVIEW_SIZE.width}
-					height={PREVIEW_SIZE.height}
-					posterFrame={posterFrameOf(entry.def)}
-					label={`${entry.name} preview`}
-					className="absolute inset-0"
-					poster={
-						svg === null ? undefined : (
-							<div
-								className="absolute inset-0 [&>svg]:h-full [&>svg]:w-full"
-								// Twin output: params are XML-escaped by @jasper/mg-templates.
-								// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
-								dangerouslySetInnerHTML={{ __html: svg }}
-							/>
-						)
+				title={`${entry.name} — ${entry.description}\nDouble-click or drag to the timeline to insert`}
+				className={cx(
+					'group flex cursor-pointer flex-col gap-1 rounded-pr-control border border-pr-border-subtle bg-pr-panel-alt p-1 outline-none',
+					'hover:border-pr-border-strong focus-visible:border-pr-focus',
+				)}
+				onDoubleClick={() => !disabled && onInsert()}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter' && !disabled) {
+						e.preventDefault();
+						onInsert();
 					}
-				/>
-				<EngineBadge entry={entry} />
-			</div>
-			<div className="flex items-baseline justify-between gap-1 px-0.5">
-				<span className="truncate text-pr-ui text-pr-text">{entry.name}</span>
-				<span className="shrink-0 text-pr-small text-pr-dim">{entry.durationSeconds.toFixed(1)} s</span>
-			</div>
-			<div className="flex gap-1 px-0.5 text-pr-small text-pr-muted">
-				<span className="truncate">{entry.category}</span>
-				<span className="ml-auto shrink-0">{entry.aspects.join(' · ')}</span>
-			</div>
-			<div className="truncate px-0.5 text-pr-small text-pr-dim" data-engine-label={entry.engine}>
-				{entry.engineLabel}
-			</div>
-		</li>
+				}}
+				onDragStart={(e) => writeMgTemplateDrag(e.dataTransfer, entry.ref)}
+			>
+				<div
+					className="relative aspect-video w-full overflow-hidden rounded-pr-control bg-pr-field-deep"
+					data-mg-preview={entry.engine}
+				>
+					<PreviewThumb
+						component={MgTemplatePreview}
+						inputProps={entry.preview}
+						durationInFrames={Math.max(1, Math.round(entry.durationSeconds * PREVIEW_FPS))}
+						fps={PREVIEW_FPS}
+						width={PREVIEW_SIZE.width}
+						height={PREVIEW_SIZE.height}
+						posterFrame={posterFrameOf(entry.def)}
+						label={`${entry.name} preview`}
+						className="absolute inset-0"
+						poster={
+							svg === null ? undefined : (
+								<div
+									className="absolute inset-0 [&>svg]:h-full [&>svg]:w-full"
+									// Twin output: params are XML-escaped by @jasper/mg-templates.
+									// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
+									dangerouslySetInnerHTML={{ __html: svg }}
+								/>
+							)
+						}
+					/>
+					<EngineBadge entry={entry} />
+				</div>
+				<div className="flex items-baseline justify-between gap-1 px-0.5">
+					<span className="truncate text-pr-ui text-pr-text">{entry.name}</span>
+					<span className="shrink-0 text-pr-small text-pr-dim">{entry.durationSeconds.toFixed(1)} s</span>
+				</div>
+				<div className="flex gap-1 px-0.5 text-pr-small text-pr-muted">
+					{/* preset cards: the template name (the category is in the filter and the accessible name) */}
+					<span className="truncate">{entry.ref.preset ? entry.templateName : entry.category}</span>
+					<span className="ml-auto shrink-0">{entry.aspects.join(' · ')}</span>
+				</div>
+				<div className="truncate px-0.5 text-pr-small text-pr-dim" data-engine-label={entry.engine}>
+					{entry.engineLabel}
+				</div>
+			</li>
+		</ContextMenu>
 	);
 }
 
@@ -269,14 +333,34 @@ export function MotionTemplatesPanel(props: PanelProps) {
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
 	const [tab, setTab] = useState<MotionTemplatesTab>(() => initialTab());
 	const { client } = useEngine();
-	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
+	const { catalog: fontCatalog } = useFontCatalog(client);
+	const entries = useMemo(
+		() => galleryEntries(catalog.templates, catalogAssetResolver(fontCatalog)),
+		[catalog.templates, fontCatalog],
+	);
 	const previews = useMemo(
-		() => new Map(entries.map((e) => [e.def, isSvgTemplate(e.def) ? previewSvg(e.def) : null])),
+		() =>
+			new Map(
+				entries.map((e) => [
+					e.key,
+					isSvgTemplate(e.def)
+						? previewSvg(e.def, e.params, `mgt-${e.key.replace(/[^A-Za-z0-9_-]/g, '-')}`)
+						: null,
+				]),
+			),
 		[entries],
 	);
 	const categories = useMemo(() => [...new Set(entries.map((e) => e.category))].sort(), [entries]);
 	const visible = filterEntries(entries, { query, category, engine });
 	const canInsert = !!session && hasSequence;
+	const readOnly = useStoreSelector(
+		session?.store ?? NO_SESSION_STORE,
+		(s: SessionState | null) => !!s?.readOnly,
+	);
+	// recomputed when the selection or the document changes (the selector returns the reason string)
+	const addAnotherReason = useStoreSelector(session?.store ?? NO_SESSION_STORE, (s: SessionState | null) =>
+		s && session ? (addAnotherDisabledReason(session) ?? null) : 'Open a project first',
+	);
 
 	const insert = (entry: GalleryEntry) => {
 		if (!session) return;
@@ -331,6 +415,37 @@ export function MotionTemplatesPanel(props: PanelProps) {
 					</button>
 				))}
 			</div>
+			<div className="flex flex-wrap items-center gap-1" data-testid="motion-templates-actions">
+				<Button
+					variant="quiet"
+					disabled={!canInsert || !!addAnotherReason}
+					title={
+						addAnotherReason ??
+						'Add a copy right after each selected motion-graphic clip with fresh random values'
+					}
+					data-testid="motion-templates-add-another"
+					onClick={() => {
+						if (!session) return;
+						const r = addAnotherMotionGraphics(session);
+						setMessage(
+							r.ok
+								? { kind: 'info', text: t('Added {0} after the selection', r.clipIds.length) }
+								: { kind: 'error', text: r.message },
+						);
+					}}
+				>
+					Add Another
+				</Button>
+				<Button
+					variant="quiet"
+					disabled={!canInsert || readOnly}
+					title="Add one motion graphic per row of a spreadsheet or CSV file"
+					data-testid="motion-templates-bulk-import"
+					onClick={() => void openDialog(MG_BULK_IMPORT_DIALOG, { session })}
+				>
+					Import Spreadsheet…
+				</Button>
+			</div>
 			<div className="min-h-0 flex-1 overflow-auto">
 				{visible.length === 0 ? (
 					<p className="p-2 text-center text-pr-small text-pr-muted">No templates match.</p>
@@ -341,11 +456,12 @@ export function MotionTemplatesPanel(props: PanelProps) {
 					>
 						{visible.map((e) => (
 							<TemplateCard
-								key={`${e.ref.id}@${e.ref.version}`}
+								key={e.key}
 								entry={e}
-								svg={previews.get(e.def) ?? null}
+								svg={previews.get(e.key) ?? null}
 								disabled={!canInsert}
 								onInsert={() => insert(e)}
+								onBulkImport={() => void openDialog(MG_BULK_IMPORT_DIALOG, { session, template: e.ref })}
 							/>
 						))}
 					</ul>

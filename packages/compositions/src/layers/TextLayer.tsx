@@ -1,5 +1,6 @@
-// Text layer (S03:TXT-001…005 subset, KND-050): DOM text inside the clip's text box. Fill, one
-// stroke, background box, shadow, alignment, tracking, leading, caps and the box modes of S01
+// Text layer (S03:TXT-001…005 subset, KND-050): DOM text inside the clip's text box. Fill, every
+// stroke and the shadow (spec 13 SH-004, `text/paint.tsx`), background box, alignment, tracking, leading, caps and
+// the box modes of S01
 // (`autoSize: 'width'` = point text that never wraps; `'height'`/`'none'` = paragraph text that wraps
 // at the box width). Fonts are loaded by the composition (fonts.ts) before the frame renders; until the
 // layer's faces are ready it renders hidden (S11:FIX-003). Styled `runs` are inline spans.
@@ -25,143 +26,72 @@ import {
 	textAnimationUnit,
 	type UnitValues,
 } from '@jasper/motion/text';
-import { sourceTextAt, type TextContent, type TextStyle } from '@jasper/project';
+import { sourceTextAt, type TextStyle } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FALLBACK_FONT_STACK, fontFaceFor, useFontsReady } from '../fonts.ts';
+import { fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { blockStyles, type RunStyle, runLayoutCss, styledSpans, textBlockStyle } from './text/block.ts';
+import { PaintedText, type PaintMode, paintCss, planTextPaint } from './text/paint.tsx';
 import { type TypesetSourceProps, TypesetText } from './text/TypesetText.tsx';
 import { needsTypeset } from './text/typography.ts';
 
 type TextSource = Extract<LayerProps['clip']['source'], { text: unknown }>;
 type Fonts = LayerProps['fonts'];
-type TextRun = NonNullable<TextContent['runs']>[number];
-type RunStyle = TextRun['style'];
-
-function textFontFamily(fontId: string, fonts: Fonts, weight?: number, italic?: boolean): string {
-	const face = fontFaceFor(fonts, fontId, weight, italic);
-	return face ? `"${face.family.replace(/"/g, '')}", ${FALLBACK_FONT_STACK}` : FALLBACK_FONT_STACK;
-}
 
 /** The family a style renders with (the loaded face's family), or null for the fallback stack. */
 function faceFamily(s: Pick<TextStyle, 'fontId' | 'weight' | 'italic'>, fonts: Fonts): string | null {
 	return fontFaceFor(fonts, s.fontId, s.weight, s.italic)?.family ?? null;
 }
 
-function strokeCss(s: Pick<TextStyle, 'strokes'>): CSSProperties {
-	const stroke = s.strokes[0];
-	if (!stroke || stroke.widthPx <= 0) return {};
-	// S03:TXT-003: outside strokes are drawn at double width under the fill (paint-order), so they
-	// never eat into glyphs; centered strokes straddle the outline; inside strokes fall back to
-	// centered in M1 (SVG text path is P1).
-	const outside = stroke.position === 'outside';
-	return {
-		WebkitTextStroke: `${outside ? stroke.widthPx * 2 : stroke.widthPx}px ${rgbaCss(stroke.color)}`,
-		...(outside ? { paintOrder: 'stroke fill' } : {}),
-	};
+/** Attributes of one painted copy: the fill copy is the text block, the others are decoration. */
+function copyAttrs(mode: PaintMode, block: string): Record<string, string | boolean> {
+	return mode.kind === 'fill' ? { [block]: '' } : { 'data-text-copy': mode.kind, 'aria-hidden': true };
 }
 
-function shadowCss(shadow: TextStyle['shadow']): string | undefined {
-	if (!shadow) return undefined;
-	const rad = (shadow.angleDeg * Math.PI) / 180;
-	const dx = Math.cos(rad) * shadow.distancePx;
-	const dy = Math.sin(rad) * shadow.distancePx;
-	return `${dx}px ${dy}px ${shadow.blurPx}px ${rgbaCss(shadow.color)}`;
-}
-
-/** Inline style of the text block. */
-function textBlockStyle(source: TextSource, fonts: Fonts): CSSProperties {
-	const s = source.text.style;
-	const pointText = source.box.autoSize === 'width';
-	const style: CSSProperties = {
-		position: 'absolute',
-		left: 0,
-		top: 0,
-		width: '100%',
-		minHeight: '100%',
-		margin: 0,
-		boxSizing: 'border-box',
-		fontFamily: textFontFamily(s.fontId, fonts, s.weight, s.italic),
-		fontWeight: s.weight,
-		fontStyle: s.italic ? 'italic' : 'normal',
-		fontSize: s.sizePx,
-		lineHeight: s.lineHeight,
-		letterSpacing: s.trackingEm ? `${s.trackingEm}em` : undefined,
-		textAlign: s.align,
-		direction: s.direction === 'auto' ? undefined : s.direction,
-		unicodeBidi: s.direction === 'auto' ? 'plaintext' : undefined,
-		textTransform: s.allCaps ? 'uppercase' : undefined,
-		color: rgbaCss(s.fill),
-		whiteSpace: pointText ? 'pre' : 'pre-wrap',
-		overflowWrap: pointText ? undefined : 'break-word',
-		fontKerning: 'normal',
-		...strokeCss(s),
-	};
-	const shadow = shadowCss(s.shadow);
-	if (shadow) style.textShadow = shadow;
-	return style;
-}
-
-/** Inline overrides of a styled run over the block style (only the fields the run sets). */
-function runStyleCss(run: RunStyle, base: TextStyle, fonts: Fonts): CSSProperties {
-	const s = { ...base, ...run } as TextStyle;
-	const css: CSSProperties = {};
-	if (run.fontId !== undefined || run.weight !== undefined || run.italic !== undefined)
-		css.fontFamily = textFontFamily(s.fontId, fonts, s.weight, s.italic);
-	if (run.weight !== undefined) css.fontWeight = s.weight;
-	if (run.italic !== undefined) css.fontStyle = s.italic ? 'italic' : 'normal';
-	if (run.sizePx !== undefined) css.fontSize = s.sizePx;
-	if (run.lineHeight !== undefined) css.lineHeight = s.lineHeight;
-	if (run.trackingEm !== undefined) css.letterSpacing = `${s.trackingEm}em`;
-	if (run.fill !== undefined) css.color = rgbaCss(s.fill);
-	if (run.allCaps !== undefined) css.textTransform = s.allCaps ? 'uppercase' : 'none';
-	if (run.strokes !== undefined) Object.assign(css, { WebkitTextStroke: '0px transparent' }, strokeCss(s));
-	if (run.shadow !== undefined) css.textShadow = shadowCss(s.shadow) ?? 'none';
-	return css;
-}
-
-type StyledSpan = { from: number; to: number; style: RunStyle | null };
-
-/** The text cut at run boundaries; each piece carries the merged style of the runs covering it (later win). */
-function styledSpans(text: string, runs: readonly TextRun[] | undefined): StyledSpan[] {
-	if (!runs?.length) return text ? [{ from: 0, to: text.length, style: null }] : [];
-	const clampI = (i: number) => Math.min(text.length, Math.max(0, i));
-	const cuts = [...new Set([0, text.length, ...runs.flatMap((r) => [clampI(r.from), clampI(r.to)])])].sort(
-		(a, b) => a - b,
-	);
-	const out: StyledSpan[] = [];
-	for (let i = 0; i + 1 < cuts.length; i++) {
-		const from = cuts[i]!;
-		const to = cuts[i + 1]!;
-		const covering = runs.filter((r) => r.from <= from && r.to >= to && r.to > r.from);
-		out.push({
-			from,
-			to,
-			style: covering.length ? Object.assign({}, ...covering.map((r) => r.style)) : null,
-		});
-	}
-	return out;
-}
+const maxSize = (styles: readonly TextStyle[]) => Math.max(1, ...styles.map((s) => s.sizePx));
 
 function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts; hidden: boolean }) {
 	const { text, style, runs } = source.text;
 	const block = textBlockStyle(source, fonts);
-	let content: ReactNode = text;
-	if (runs?.length)
-		content = styledSpans(text, runs).map((s) =>
-			s.style ? (
-				<span key={s.from} style={runStyleCss(s.style, style, fonts)}>
-					{text.slice(s.from, s.to)}
-				</span>
-			) : (
-				text.slice(s.from, s.to)
-			),
-		);
-	return (
-		<p data-text-block="" style={hidden ? { ...block, visibility: 'hidden' } : block}>
-			{content}
+	const styles = useMemo(() => blockStyles(source.text), [source.text]);
+	const plan = useMemo(() => planTextPaint(styles), [styles]);
+	const spans = runs?.length ? styledSpans(text, runs) : null;
+	const render = (mode: PaintMode) => (
+		<p
+			{...copyAttrs(mode, 'data-text-block')}
+			style={{ ...block, ...paintCss(style, mode), ...(hidden ? { visibility: 'hidden' } : {}) }}
+		>
+			{spans
+				? spans.map((s) =>
+						s.style ? (
+							<span
+								key={s.from}
+								style={{
+									...runLayoutCss(s.style, style, fonts),
+									...paintCss({ ...style, ...s.style } as TextStyle, mode),
+								}}
+							>
+								{text.slice(s.from, s.to)}
+							</span>
+						) : (
+							text.slice(s.from, s.to)
+						),
+					)
+				: text}
 		</p>
+	);
+	// Until the faces are ready the block is laid out hidden (one copy is enough).
+	if (hidden) return render({ kind: 'fill' });
+	return (
+		<PaintedText
+			plan={plan}
+			render={render}
+			width={source.box.width}
+			height={source.box.height}
+			maxSizePx={maxSize(styles)}
+		/>
 	);
 }
 
@@ -385,7 +315,7 @@ function AnimatedText({
 		active.ms,
 	);
 
-	const cssOf = (i: number) => (i < 0 ? undefined : runStyleCss(flow.styles[i]!, source.text.style, fonts));
+	const cssOf = (i: number) => (i < 0 ? undefined : runLayoutCss(flow.styles[i]!, source.text.style, fonts));
 	const flowNodes = flow.pieces.map((pc, i) =>
 		pc.unit < 0 ? (
 			pc.style < 0 ? (
@@ -477,6 +407,9 @@ function TextOverlay({
 	const lineMode = flow.unit === 'line';
 	const masks = !!impl.lineMasks;
 	const styleOf = (i: number) => (i < 0 ? base : ({ ...base, ...flow.styles[i] } as TextStyle));
+	const allStyles = [base, ...flow.styles.map((st) => ({ ...base, ...st }) as TextStyle)];
+	const plan = planTextPaint(allStyles);
+	const sizeMax = maxSize(allStyles);
 	// Pieces of every segment unit with their boxes (by unit index), and the units of every line.
 	const unitPieces: Placed[][] = Array.from({ length: flow.units }, () => []);
 	flow.pieces.forEach((piece, index) => {
@@ -492,13 +425,14 @@ function TextOverlay({
 		em === 0
 			? 0
 			: -pieces.reduce((s, p) => s + em * styleOf(p.piece.style).sizePx * graphemes(p.piece.text), 0) / 2;
-	const pieceNode = (p: Placed, origin: Box, em: number) => {
+	const pieceNode = (p: Placed, origin: Box, em: number, mode: PaintMode) => {
 		const st = styleOf(p.piece.style);
 		return (
 			<span
 				key={p.piece.at}
 				style={{
-					...(p.piece.style < 0 ? {} : runStyleCss(flow.styles[p.piece.style]!, base, fonts)),
+					...(p.piece.style < 0 ? {} : runLayoutCss(flow.styles[p.piece.style]!, base, fonts)),
+					...paintCss(st, mode),
 					position: 'absolute',
 					left: p.box.left - origin.left,
 					top: p.box.top - origin.top,
@@ -512,7 +446,17 @@ function TextOverlay({
 			</span>
 		);
 	};
-	const strokeW = Math.max(0, ...[base, ...flow.styles].map((s) => s.strokes?.[0]?.widthPx ?? 0));
+	/** A unit's (or line's) pieces with every paint pass (spec 13 SH-004), inside its animated box. */
+	const painted = (pieces: Placed[], origin: Box, em: number) => (
+		<PaintedText
+			plan={plan}
+			render={(mode) => <>{pieces.map((p) => pieceNode(p, origin, em, mode))}</>}
+			width={origin.width}
+			height={origin.height}
+			maxSizePx={sizeMax}
+		/>
+	);
+	const strokeW = plan.strokeExtent;
 	const out: ReactNode[] = [];
 	lines.forEach((units, line) => {
 		if (!units.length) return;
@@ -547,7 +491,7 @@ function TextOverlay({
 						...valuesCss(v, spacingShift(all, v.letterSpacing), rise(v), !masks),
 					}}
 				>
-					{all.map((p) => pieceNode(p, lineBox, v.letterSpacing))}
+					{painted(all, lineBox, v.letterSpacing)}
 				</div>,
 			];
 		} else {
@@ -568,7 +512,7 @@ function TextOverlay({
 							...valuesCss(v, spacingShift(pieces, v.letterSpacing), rise(v), !masks),
 						}}
 					>
-						{pieces.map((p) => pieceNode(p, ub, v.letterSpacing))}
+						{painted(pieces, ub, v.letterSpacing)}
 					</div>
 				);
 			});

@@ -10,8 +10,11 @@ export * from './agent/strict.ts';
 export * from './animation/index.ts';
 export * from './audio/index.ts';
 export * from './audio-fade.ts';
+export * from './automation/index.ts';
 export * from './blend-modes.ts';
 export * from './captions/index.ts';
+export * from './cleanup/index.ts';
+export * from './cleanup/voice-analysis.ts';
 export * from './clipboard/index.ts';
 export * from './color/analysis.ts';
 export * from './color/auto-tone.ts';
@@ -63,6 +66,7 @@ export * from './lottie/index.ts';
 export * from './masks/index.ts';
 export * from './migrations.ts';
 export * from './multicam/index.ts';
+export * from './param-media.ts';
 export * from './path/index.ts';
 export * from './presets.ts';
 export * from './process/index.ts';
@@ -76,6 +80,7 @@ export * from './registry/fx/index.ts';
 export * from './registry/kinds.ts';
 export * from './registry/lumetri-spatial.ts';
 export * from './registry/mg.ts';
+export * from './registry/mg-params.ts';
 export { mediaParamId } from './registry/param-values.ts';
 export * from './registry/properties.ts';
 export * from './registry/text-animator-properties.ts';
@@ -92,9 +97,13 @@ export * from './sound/proposal-draft.ts';
 export * from './sound/repair.ts';
 export * from './sound/variant.ts';
 export * from './speech/index.ts';
+// cleanup/index.ts has its own `transcriptSegments` (segments as the cleanup reads them); the package name is speech's.
+export { transcriptSegments } from './speech/index.ts';
 export * from './structure/index.ts';
 export * from './text-animations.ts';
 export * from './text-animators/index.ts';
+export * from './text-style.ts';
+export * from './text-styles/index.ts';
 export * from './three-d/index.ts';
 export * from './time.ts';
 export * from './time-remap/index.ts';
@@ -111,6 +120,10 @@ import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }
+export * from './bulk/age.ts';
+export * from './bulk/messages.ts';
+export * from './bulk/mg-import.ts';
+export * from './bulk/table.ts';
 export { DEFAULT_CLEANUP_TOLERANCE } from './commands/handlers/ease.ts';
 export {
 	copyEase,

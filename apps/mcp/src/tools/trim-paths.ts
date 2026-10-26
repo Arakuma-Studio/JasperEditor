@@ -13,7 +13,7 @@ import {
 	TrackRefSchema,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_HINT, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	defineTool,
@@ -61,12 +61,7 @@ function durationFrames(seq: Sequence, input: unknown): number {
 		const f = parseTimecode(input, seq.settings.frameRate as Rational, {
 			dropFrame: input.includes(';') || seq.settings.dropFrame,
 		});
-		if (f === null)
-			throw new ToolError(
-				'E_INVALID_PARAM',
-				`Invalid timecode: ${input}`,
-				'Use frames, {"seconds": x} or "HH:MM:SS:FF".',
-			);
+		if (f === null) throw new ToolError('E_INVALID_PARAM', `Invalid timecode: ${input}`, TIME_HINT);
 		frames = f;
 	} else frames = frameOf(seq, input);
 	if (frames < 1)

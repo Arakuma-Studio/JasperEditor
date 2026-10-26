@@ -129,6 +129,8 @@ export function appdirPaths(appdir: string) {
 		root: appdir,
 		engineDir,
 		engineConfig: join(engineDir, 'engine.json'),
+		/** social-comment §7.8: network-use preferences (Settings ▸ Privacy & Network). */
+		networkSettings: join(engineDir, 'network.json'),
 		/** Written by a running engine (0600): origin, port, pid and token for local tools (jasper-mcp). */
 		runtimeFile: join(engineDir, 'runtime.json'),
 		/**
@@ -167,6 +169,12 @@ export function appdirPaths(appdir: string) {
 		/** User libraries shared by every project and by agents (S03:FX-030 effect presets). */
 		presetsDir: join(appdir, 'presets'),
 		effectPresetsFile: join(appdir, 'presets', 'effect-presets.json'),
+		/** spec 13 AS-020: the user subtitle template library. */
+		subtitleTemplatesFile: join(appdir, 'presets', 'subtitle-templates.json'),
+		/** Spec 14 TC-030: the user's transcript cleanup presets. */
+		cleanupPresetsFile: join(appdir, 'presets', 'cleanup-presets.json'),
+		/** Spec 15 EA-010: the user's style recipes (`index.json` + one `<id>.json` per recipe). */
+		styleRecipesDir: join(appdir, 'style-recipes'),
 		/** wp fonts: the user font library (`library.json` + `files/<fontId>.<ext>`), shared by every project. */
 		fontsDir: join(appdir, 'fonts'),
 		/** Sound library (spec 12 §2.1), shared by every project. */
@@ -185,6 +193,10 @@ export function appdirPaths(appdir: string) {
 		projectProposalsDir: (projectId: string) =>
 			join(appdir, 'projects', segment(projectId, 'project id'), 'proposals'),
 		tmpDir: join(appdir, 'tmp'),
+		/** social-comment §7.8: downloaded platform fonts and emoji images (verified, atomic writes). */
+		remoteAssetsDir: join(appdir, 'assets', 'remote'),
+		/** The user's remote-asset manifest override (same schema as the shipped manifest; entries replace by id). */
+		remoteManifestOverride: join(appdir, 'assets', 'remote-manifest.override.json'),
 	};
 }
 export type AppdirPaths = ReturnType<typeof appdirPaths>;

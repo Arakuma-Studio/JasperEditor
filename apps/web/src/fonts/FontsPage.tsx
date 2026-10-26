@@ -134,7 +134,10 @@ export function FontsPreferencesPage() {
 				faces: faces.sort((a, b) => a.weight - b.weight || Number(a.italic) - Number(b.italic)),
 			}));
 	}, [library, query]);
-	const bundled = (catalog?.fonts ?? []).filter((f) => f.source !== 'custom').map((f) => f.family);
+	// remote platform fonts (social-comment templates) are not text fonts: not listed
+	const bundled = (catalog?.fonts ?? [])
+		.filter((f) => f.source !== 'custom' && f.source !== 'remote')
+		.map((f) => f.family);
 	const bundledSet = new Set(bundled.map((f) => f.toLowerCase()));
 	const readOnly = library?.readOnly ?? false;
 	const add = async (files?: File[]) => {

@@ -10,6 +10,9 @@
 // - Changed clips → the ghost at the new place over a `--pr-ghost-remove` wash on the clip as it is; deleted clips →
 //   the wash only.
 // - Created / changed sound cues → ghost cues on the Cue Seam.
+// - spec 15 EA-002: the clip's kind (adjustment and text clips get their own mark), keyframe ranges on clips (the
+//   span and the frames of the keys an item adds or changes, also inside a clip it creates), and created / changed
+//   transitions (at their span on the track).
 // - Item states: pending dashed; accepted solid + ✓ (`--pr-success`); rejected 35 % opacity, hatched, ✕;
 //   stale / invalid `--pr-warning` outline + "!". High contrast: 2 px solid strokes, the state by its glyph only.
 import {
@@ -20,6 +23,10 @@ import {
 	type Rational,
 	type Sequence,
 	type SoundCue,
+	sequenceFrameOfContentTime,
+	type Transition,
+	transitionSpec,
+	transitionStartFrame,
 } from '@jasper/project';
 import type { ProposalPreviewState, ReviewItem, ReviewItemState } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
@@ -52,7 +59,46 @@ export type GhostClip = {
 	/** On a track the proposal creates. */
 	newTrack: boolean;
 	gainDb: number | null;
+	/** The clip's kind (`adjustment`, `text`, `video`, …): adjustment and text clips are marked as such. */
+	kind: string;
 };
+
+/** Keys an item adds or changes on a clip (spec 15 EA-002): the span they cover and each key's sequence frame. */
+export type GhostKeys = {
+	key: string;
+	itemId: string;
+	sourceItemId: string;
+	clipId: string;
+	trackId: string;
+	region: 'video' | 'audio';
+	/** First and last key frame (sequence frames, inside the clip). */
+	start: number;
+	end: number;
+	/** Frames of the keys (sorted, distinct, at most `MAX_GHOST_KEYS`). */
+	frames: number[];
+	/** How many keys (all of them, also beyond `frames`). */
+	count: number;
+	/** The clip's name. */
+	name: string;
+};
+
+/** A transition an item creates or changes (spec 15 EA-002), at its span on the track. */
+export type GhostTransition = {
+	key: string;
+	itemId: string;
+	sourceItemId: string;
+	transitionId: string;
+	trackId: string;
+	region: 'video' | 'audio';
+	start: number;
+	duration: number;
+	/** The transition's name ("Cross Dissolve"; the effect id when unknown). */
+	name: string;
+	change: 'created' | 'changed';
+};
+
+/** Most key frames drawn per clip ghost (the count says how many there are). */
+export const MAX_GHOST_KEYS = 256;
 
 export type GhostRemoval = {
 	key: string;
@@ -89,6 +135,9 @@ export type GhostItem = {
 	tracks: number;
 	cues: number;
 	removals: number;
+	/** Clips whose keys it adds or changes, and transitions it creates or changes. */
+	keys: number;
+	transitions: number;
 };
 
 export type GhostModel = {
@@ -100,6 +149,8 @@ export type GhostModel = {
 	removals: GhostRemoval[];
 	tracks: GhostTrack[];
 	cues: GhostCue[];
+	keys: GhostKeys[];
+	transitions: GhostTransition[];
 	/** Items with something to show in this sequence, in time order. */
 	items: GhostItem[];
 	byItem: Record<string, GhostItem>;
@@ -122,6 +173,27 @@ function clipGain(c: Clip): number | null {
 
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 
+/** Keyframes inside a clip (anything in a `keyframes` array with an id and a numeric time), bounded. */
+function clipKeyframes(root: unknown): { id: string; time: number }[] {
+	const out: { id: string; time: number }[] = [];
+	let seen = 0;
+	const walk = (v: unknown, depth: number, inKeys: boolean) => {
+		if (out.length >= 5000 || seen++ > 20_000 || depth > 10 || !v || typeof v !== 'object') return;
+		if (Array.isArray(v)) {
+			for (const x of v) walk(x, depth + 1, inKeys);
+			return;
+		}
+		const o = v as Record<string, unknown>;
+		if (inKeys && typeof o.id === 'string' && finite(o.time)) {
+			out.push({ id: o.id, time: o.time });
+			return;
+		}
+		for (const [k, x] of Object.entries(o)) walk(x, depth + 1, k === 'keyframes');
+	};
+	walk(root, 0, false);
+	return out;
+}
+
 /**
  * The ghosts of the proposal under review in one sequence. `committed` is the session's document (what is there now),
  * `preview.result.document` what the proposal would make of it. Never throws: unreadable entities are skipped.
@@ -142,6 +214,8 @@ export function buildGhostModel(input: {
 		removals: [],
 		tracks: [],
 		cues: [],
+		keys: [],
+		transitions: [],
 		items: [],
 		byItem: {},
 	};
@@ -153,8 +227,18 @@ export function buildGhostModel(input: {
 	const owner = setupOwners(input.items);
 	const cuesAfter = new Map(cuesOf(after).map((c) => [c.id, c]));
 	const cuesBefore = new Map(cuesOf(before).map((c) => [c.id, c]));
-	const span = new Map<string, { start: number; end: number; c: number; t: number; q: number; r: number }>();
-	const touch = (itemId: string, start: number, end: number, what: 'c' | 't' | 'q' | 'r') => {
+	type Span = {
+		start: number;
+		end: number;
+		c: number;
+		t: number;
+		q: number;
+		r: number;
+		k: number;
+		x: number;
+	};
+	const span = new Map<string, Span>();
+	const touch = (itemId: string, start: number, end: number, what: 'c' | 't' | 'q' | 'r' | 'k' | 'x') => {
 		const s = span.get(itemId) ?? {
 			start: Number.POSITIVE_INFINITY,
 			end: Number.NEGATIVE_INFINITY,
@@ -162,6 +246,8 @@ export function buildGhostModel(input: {
 			t: 0,
 			q: 0,
 			r: 0,
+			k: 0,
+			x: 0,
 		};
 		if (finite(start)) s.start = Math.min(s.start, start);
 		if (finite(end)) s.end = Math.max(s.end, end);
@@ -184,8 +270,67 @@ export function buildGhostModel(input: {
 			change,
 			newTrack: !findTrack(before, c.trackId),
 			gainDb: clipGain(c),
+			kind: typeof c.kind === 'string' ? c.kind : 'unknown',
 		});
 		touch(itemId, c.start, c.start + c.duration, 'c');
+	};
+	const rate = after.settings?.frameRate as Rational | undefined;
+	/** The keys of `c` the item adds or changes (`ids`; null = all of them, a clip it creates). */
+	const ghostKeys = (itemId: string, sourceItemId: string, c: Clip, ids: ReadonlySet<string> | null) => {
+		const r = region(after, c.trackId);
+		if (!r || !rate || !finite(c.start) || !finite(c.duration) || c.duration <= 0) return;
+		const keys = clipKeyframes(c).filter((k) => !ids || ids.has(k.id));
+		if (!keys.length) return;
+		const last = c.start + c.duration - 1;
+		const frames = new Set<number>();
+		for (const k of keys) {
+			let f: number;
+			try {
+				f = sequenceFrameOfContentTime(c, k.time, rate);
+			} catch {
+				continue;
+			}
+			if (finite(f)) frames.add(Math.min(last, Math.max(c.start, f)));
+		}
+		if (!frames.size) return;
+		const sorted = [...frames].sort((a, b) => a - b);
+		out.keys.push({
+			key: `${itemId}:${c.id}:keys`,
+			itemId,
+			sourceItemId,
+			clipId: c.id,
+			trackId: c.trackId,
+			region: r,
+			start: sorted[0]!,
+			end: sorted[sorted.length - 1]!,
+			frames: sorted.slice(0, MAX_GHOST_KEYS),
+			count: keys.length,
+			name: typeof c.name === 'string' ? c.name : '',
+		});
+		touch(itemId, sorted[0]!, sorted[sorted.length - 1]! + 1, 'k');
+	};
+	const ghostTransition = (
+		itemId: string,
+		sourceItemId: string,
+		tr: Transition,
+		change: 'created' | 'changed',
+	) => {
+		const r = region(after, tr.trackId);
+		const start = transitionStartFrame(after, tr);
+		if (!r || start === null || !finite(start) || !finite(tr.duration) || tr.duration <= 0) return;
+		out.transitions.push({
+			key: `${itemId}:${tr.id}`,
+			itemId,
+			sourceItemId,
+			transitionId: tr.id,
+			trackId: tr.trackId,
+			region: r,
+			start,
+			duration: tr.duration,
+			name: transitionSpec(tr.effectId)?.label ?? tr.effectId,
+			change,
+		});
+		touch(itemId, start, start + tr.duration, 'x');
 	};
 	const removal = (itemId: string, sourceItemId: string, c: Clip, change: 'changed' | 'deleted') => {
 		if (!finite(c.start) || !finite(c.duration)) return;
@@ -203,10 +348,17 @@ export function buildGhostModel(input: {
 	};
 	for (const [rawId, g] of Object.entries(preview.result.items)) {
 		const itemId = owner.get(rawId) ?? rawId;
+		const nested = new Set([...g.created, ...g.changed]);
 		for (const id of g.created) {
 			const c = after.clips[id] as Clip | undefined;
 			if (c && !before.clips[id]) {
 				ghostClip(itemId, rawId, c, 'created');
+				ghostKeys(itemId, rawId, c, null);
+				continue;
+			}
+			const trn = after.transitions?.[id] as Transition | undefined;
+			if (trn && !before.transitions?.[id]) {
+				ghostTransition(itemId, rawId, trn, 'created');
 				continue;
 			}
 			const tr = findTrack(after, id);
@@ -235,6 +387,13 @@ export function buildGhostModel(input: {
 			if (a && b) {
 				removal(itemId, rawId, a, 'changed');
 				ghostClip(itemId, rawId, b, 'changed');
+				ghostKeys(itemId, rawId, b, nested);
+				continue;
+			}
+			const ta = before.transitions?.[id] as Transition | undefined;
+			const tb = after.transitions?.[id] as Transition | undefined;
+			if (ta && tb) {
+				ghostTransition(itemId, rawId, tb, 'changed');
 				continue;
 			}
 			const ca = cuesBefore.get(id);
@@ -265,6 +424,8 @@ export function buildGhostModel(input: {
 			tracks: s.t,
 			cues: s.q,
 			removals: s.r,
+			keys: s.k,
+			transitions: s.x,
 		};
 		out.byItem[itemId] = item;
 		out.items.push(item);
@@ -276,6 +437,8 @@ export function buildGhostModel(input: {
 	out.removals = out.removals.filter(keep);
 	out.tracks = out.tracks.filter(keep);
 	out.cues = out.cues.filter(keep);
+	out.keys = out.keys.filter(keep);
+	out.transitions = out.transitions.filter(keep);
 	return out;
 }
 
@@ -362,7 +525,7 @@ export function ghostItemRow(
 	layout: TrackAreaLayout,
 	itemId: string,
 ): { trackId: string; kind: 'video' | 'audio'; index: number; y: number; height: number } | null {
-	const first = model.clips
+	const first = [...model.clips, ...model.transitions, ...model.keys]
 		.filter((c) => c.itemId === itemId)
 		.sort((a, b) => a.start - b.start || (a.trackId < b.trackId ? -1 : 1))[0];
 	const trackId = first?.trackId ?? model.tracks.find((tr) => tr.itemId === itemId)?.trackId;
@@ -386,6 +549,9 @@ export function layoutGhosts(
 	clips: (GhostClip & GhostRect)[];
 	removals: (GhostRemoval & GhostRect)[];
 	rows: GhostRow[];
+	/** Key ranges with each key's x (track-area px). */
+	keys: (GhostKeys & GhostRect & { xs: number[] })[];
+	transitions: (GhostTransition & GhostRect)[];
 } {
 	const rows = ghostTrackRows(model, layout);
 	const ghostRow = new Map(rows.map((r) => [r.trackId, r]));
@@ -408,7 +574,17 @@ export function layoutGhosts(
 		const r = place(c.trackId, c.start, c.duration);
 		if (r) removals.push({ ...c, ...r });
 	}
-	return { clips, removals, rows };
+	const keys: (GhostKeys & GhostRect & { xs: number[] })[] = [];
+	for (const k of model.keys ?? []) {
+		const r = place(k.trackId, k.start, k.end - k.start + 1);
+		if (r) keys.push({ ...k, ...r, xs: k.frames.map((f) => frameToX(v, f) + v.pxPerFrame / 2) });
+	}
+	const transitions: (GhostTransition & GhostRect)[] = [];
+	for (const tr of model.transitions ?? []) {
+		const r = place(tr.trackId, tr.start, tr.duration);
+		if (r) transitions.push({ ...tr, ...r });
+	}
+	return { clips, removals, rows, keys, transitions };
 }
 
 /** The next item in time order (keyboard), wrapping at neither end. */
@@ -537,6 +713,26 @@ export function whyLines(
 			const name = (seq.clips[r.clipId] as Clip | undefined)?.name ?? t('Clip');
 			facts.push(t('Removes {0} at {1}', name, tc(r.start)));
 		}
+	for (const tr of model.transitions ?? [])
+		if (tr.itemId === item.id && tr.sourceItemId === item.id && facts.length < 4)
+			facts.push(
+				tr.change === 'created'
+					? t(
+							'{0} on {1} at {2} ({3} frames)',
+							tr.name,
+							trackDisplay(lookup, tr.trackId, false),
+							tc(tr.start),
+							tr.duration,
+						)
+					: t('{0} changes on {1} at {2}', tr.name, trackDisplay(lookup, tr.trackId, false), tc(tr.start)),
+			);
+	for (const k of model.keys ?? [])
+		if (k.itemId === item.id && k.sourceItemId === item.id && facts.length < 4)
+			facts.push(
+				k.count === 1
+					? t('1 keyframe on {0} at {1}', k.name || t('Clip'), tc(k.start))
+					: t('{0} keyframes on {1} from {2} to {3}', k.count, k.name || t('Clip'), tc(k.start), tc(k.end)),
+			);
 	for (const tr of model.tracks)
 		if (tr.itemId === item.id) facts.push(t('New track {0} · {1}', tr.label, tr.name));
 	for (const q of model.cues)

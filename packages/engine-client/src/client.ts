@@ -5,16 +5,24 @@ import {
 	type AgentUiRequest,
 	API_HEADER,
 	API_VERSION,
+	type ApplyStyleRequest,
+	type ApplyStyleResult,
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
 	type AudioClassifyRequest,
+	type AutomationPassId,
+	type AutomationPassRequest,
+	type AutomationPassResult,
 	type AutoToneRequest,
 	type BeatsRequest,
 	type BeatsResult,
 	buildPath,
 	type CaptionFileReadRequest,
+	type CleanupAnalysisFile,
+	type CleanupAnalyzeRequest,
 	type ColorMatchRequest,
 	type DerivativeKind,
+	decodeVoiceAnalysis,
 	type EngineJob,
 	type EnvelopeJson,
 	ErrorShapeSchema,
@@ -43,6 +51,7 @@ import {
 	type ProposalCreateRequest,
 	type ProposalMarkAppliedRequest,
 	type ProposalNoteRequest,
+	type ProposalRefreshRequest,
 	type ProposalRejectRequest,
 	type ProposalReopenRequest,
 	type ProposalSelectRequest,
@@ -75,11 +84,18 @@ import {
 	type SoundSearchRequest,
 	type SoundVisualRequest,
 	type StillRequest,
+	type StyleCheckRequest,
+	type StyleRecipeCreateRequest,
+	type StyleRecipeDuplicateRequest,
+	type StyleRecipeUpdateRequest,
 	soundSearchParams,
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
 	type VersionRestoreRequest,
+	VOICE_ANALYSIS_MAX_FILE_BYTES,
+	type VoiceAnalysis,
+	type VoiceAnalyzeRequest,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
@@ -586,6 +602,61 @@ export class EngineClient {
 	deleteProposal(projectId: string, proposalId: string) {
 		return this.call('proposalDelete', { params: { projectId, proposalId } });
 	}
+	/** "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans stale items; nothing is applied. */
+	refreshProposal(projectId: string, proposalId: string, req: ProposalRefreshRequest) {
+		return this.call('proposalRefresh', { params: { projectId, proposalId }, body: req });
+	}
+	/**
+	 * An editing-automation pass (spec 15 EA-020…EA-022): `dryRun` → the `AutomationPassResult` at once; `propose`
+	 * (default) → an `edit-automation` job (202) whose result is the `AutomationPassResult` naming the proposal.
+	 */
+	automationPass(
+		projectId: string,
+		pass: AutomationPassId,
+		req: AutomationPassRequest,
+		signal?: AbortSignal,
+	) {
+		return this.call('automationPass', {
+			params: { projectId, pass },
+			body: req,
+			...(signal ? { signal } : {}),
+		}) as Promise<AutomationPassResult | EngineJob>;
+	}
+	/** Style recipes (spec 15 EA-010): the built-ins and the user library, with what loading it repaired. */
+	styleRecipes() {
+		return this.call('styleRecipesList', {});
+	}
+	styleRecipe(recipeId: string) {
+		return this.call('styleRecipeGet', { params: { recipeId } });
+	}
+	createStyleRecipe(req: StyleRecipeCreateRequest) {
+		return this.call('styleRecipeCreate', { body: req });
+	}
+	updateStyleRecipe(recipeId: string, req: StyleRecipeUpdateRequest) {
+		return this.call('styleRecipeUpdate', { params: { recipeId }, body: req });
+	}
+	duplicateStyleRecipe(recipeId: string, req: StyleRecipeDuplicateRequest = {}) {
+		return this.call('styleRecipeDuplicate', { params: { recipeId }, body: req });
+	}
+	deleteStyleRecipe(recipeId: string) {
+		return this.call('styleRecipeDelete', { params: { recipeId } });
+	}
+	/** Apply Style (spec 15 EA-012): `dryRun` → the result at once; `propose` → an `apply-style` job (202). */
+	applyStyle(projectId: string, req: ApplyStyleRequest, signal?: AbortSignal) {
+		return this.call('applyStyle', {
+			params: { projectId },
+			body: req,
+			...(signal ? { signal } : {}),
+		}) as Promise<ApplyStyleResult | EngineJob>;
+	}
+	/** Style Check (spec 15 EA-013) of a sequence against a recipe's targets. */
+	styleCheck(projectId: string, req: StyleCheckRequest, signal?: AbortSignal) {
+		return this.call('styleCheck', { params: { projectId }, body: req, ...(signal ? { signal } : {}) });
+	}
+	/** Proposal features of a project: Review groups, producers, whether agents may accept (spec 15 EA-001). */
+	proposalFeatures(projectId: string) {
+		return this.call('proposalFeatures', { params: { projectId } });
+	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
 	}
@@ -722,6 +793,67 @@ export class EngineClient {
 			throw error;
 		}
 		return session.uploadId;
+	}
+	/**
+	 * Spec 14 TC-001: a `voice-analysis` job for one audio stream of a media (default: its first audio stream; result
+	 * `VoiceAnalysisJobResult`). Finishes at once when the analysis is cached.
+	 */
+	analyzeVoice(mediaKey: string, req: VoiceAnalyzeRequest = {}, wait = false): Promise<EngineJob> {
+		return this.call('voiceAnalyze', {
+			params: { key: mediaKey },
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+	/**
+	 * The cached voice analysis of a stream, decoded and validated (`decodeVoiceAnalysis`). Throws EngineError
+	 * `VOICE_ANALYSIS_NOT_FOUND` (404) when there is none yet — run `analyzeVoice` — and `INVALID_RESPONSE` for a file
+	 * that does not validate.
+	 */
+	async getVoiceAnalysis(
+		mediaKey: string,
+		streamIndex?: number,
+		signal?: AbortSignal,
+	): Promise<VoiceAnalysis> {
+		const path = buildPath(ROUTES.voiceAnalysisGet.path, { key: mediaKey });
+		const res = await this.fetchResponse(
+			this.url(path, streamIndex === undefined ? undefined : { streamIndex }),
+			{ headers: this.authorizationHeaders(), signal, credentials: 'include' },
+		);
+		if (!res.ok) {
+			let json: unknown = null;
+			try {
+				json = JSON.parse(await res.text());
+			} catch {
+				json = null;
+			}
+			const shape = ErrorShapeSchema.safeParse(json);
+			if (shape.success) throw EngineError.fromShape(shape.data, res.status);
+			throw new EngineError(res.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR', `HTTP ${res.status}`, {
+				status: res.status,
+				retryable: res.status >= 500,
+			});
+		}
+		const len = Number(res.headers.get('content-length') ?? '0');
+		if (len > VOICE_ANALYSIS_MAX_FILE_BYTES)
+			throw new EngineError('INVALID_RESPONSE', 'Voice analysis file too large', { status: res.status });
+		const r = decodeVoiceAnalysis(new Uint8Array(await res.arrayBuffer()));
+		if (!r.ok)
+			throw new EngineError('INVALID_RESPONSE', `Invalid voice analysis from the engine: ${r.error}`, {
+				status: res.status,
+			});
+		return r.analysis;
+	}
+	/**
+	 * Spec 14: a `cleanup-analysis` job — voice analyses of the sequence's speech media (cached or computed), the
+	 * detector and the planner (result `CleanupAnalysisJobResult`; the full analysis via `getCleanupAnalysis`).
+	 */
+	analyzeCleanup(req: CleanupAnalyzeRequest, wait = false): Promise<EngineJob> {
+		return this.call('cleanupAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** The analysis of a finished `cleanup-analysis` job (validated); EngineError `CLEANUP_ANALYSIS_NOT_FOUND` once evicted. */
+	getCleanupAnalysis(analysisId: string): Promise<CleanupAnalysisFile> {
+		return this.call('cleanupAnalysisGet', { params: { analysisId } });
 	}
 	/** Scene Edit Detection of a media range (job; result SceneDetectResult). */
 	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {

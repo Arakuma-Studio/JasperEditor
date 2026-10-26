@@ -28,6 +28,7 @@ import {
 	type TemplateTiming,
 	templateFit,
 } from './common.tsx';
+import { editableParamProps } from './editable.ts';
 import type { AnimeTemplateProps } from './types.ts';
 
 type Values = { o: number; y: number; d: number };
@@ -119,6 +120,7 @@ export function TitleReveal(props: AnimeTemplateProps) {
 			<div style={block}>
 				<div
 					data-part="title"
+					{...editableParamProps('title')}
 					style={{
 						fontSize: size,
 						fontWeight: 700,
@@ -169,6 +171,7 @@ export function TitleReveal(props: AnimeTemplateProps) {
 				)}
 				{p.subtitle ? (
 					<div
+						{...editableParamProps('subtitle')}
 						style={{
 							fontSize: subSize,
 							fontWeight: 400,

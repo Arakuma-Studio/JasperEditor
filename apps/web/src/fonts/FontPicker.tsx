@@ -77,11 +77,16 @@ export function FontPicker(props: FontPickerProps) {
 			}));
 		const inDoc = new Set(Object.values(props.docFonts).map((f) => f.family.toLowerCase()));
 		const bundled = new Set(
-			(catalog?.fonts ?? []).filter((f) => f.source !== 'custom').map((f) => f.family.toLowerCase()),
+			(catalog?.fonts ?? [])
+				.filter((f) => f.source !== 'custom' && f.source !== 'remote')
+				.map((f) => f.family.toLowerCase()),
 		);
 		const catalogRows = (source: 'custom' | 'bundled'): Row[] =>
 			(catalog?.fonts ?? [])
-				.filter((f) => (source === 'custom' ? f.source === 'custom' : f.source !== 'custom'))
+				// remote platform fonts (social-comment templates) are template faces: not offered for text
+				.filter((f) =>
+					source === 'custom' ? f.source === 'custom' : f.source !== 'custom' && f.source !== 'remote',
+				)
 				// a library family with a bundled family's name renders with the bundled one: listed once
 				.filter((f) => source !== 'custom' || !bundled.has(f.family.toLowerCase()))
 				.filter((f) => !inDoc.has(f.family.toLowerCase()) && match(f.family))
@@ -139,7 +144,9 @@ export function FontPicker(props: FontPickerProps) {
 					{current ? (
 						<FamilyName family={current.family} url={currentUrl} missing={currentMissing} />
 					) : (
-						<span className="min-w-0 flex-1 truncate text-pr-muted">–</span>
+						<span className="min-w-0 flex-1 truncate text-pr-muted">
+							{props.value === null ? 'Mixed' : '–'}
+						</span>
 					)}
 					<ChevronDown size={12} className="shrink-0 text-pr-muted" aria-hidden />
 				</button>

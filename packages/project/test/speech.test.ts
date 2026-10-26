@@ -5,9 +5,13 @@ import {
 	coverageProblem,
 	distributeSequenceWords,
 	mergeTranscriptWords,
+	normalizeTranscriptSegments,
 	repairDocument,
 	sequenceWords,
 	type Transcript,
+	transcriptAttachPlan,
+	transcriptSegments,
+	transcriptSegmentsProblem,
 } from '../src/index.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import { Harness } from './helpers.ts';
@@ -254,5 +258,149 @@ describe('coverage invariant and repair', () => {
 			[s(5), s(8)],
 		]);
 		expect(checkInvariants(fixed)).toEqual([]);
+	});
+});
+
+describe('segment scores in transcripts (spec 14 TC-003, v10)', () => {
+	const seg = (a: number, b: number, avgLogprob: number, noSpeechProb = 0.01, compressionRatio = 1.2) => ({
+		start: s(a),
+		end: s(b),
+		avgLogprob,
+		noSpeechProb,
+		compressionRatio,
+	});
+
+	it('attach stores sorted segments; replace swaps them; merge keeps those outside the coverage; undo/redo', () => {
+		const { H, mediaId } = setup();
+		const before = H.doc;
+		const cmd = {
+			type: 'transcript.attach',
+			mediaId,
+			language: 'es',
+			words: [w('hola', 0.2, 0.8), w('adiós', 6, 6.5)],
+			segments: [seg(5.9, 6.6, -0.8), seg(0.1, 1, -0.2)],
+		};
+		const r = H.ok([cmd]);
+		const id = (r.results[0] as { transcriptId: string }).transcriptId;
+		expect(transcriptSegments(H.doc.transcripts[id]!)).toEqual([seg(0.1, 1, -0.2), seg(5.9, 6.6, -0.8)]);
+		expect(checkInvariants(H.doc)).toEqual([]);
+		// undo = the previous document; redo = the same command again gives the same transcript
+		expect(before.transcripts).toEqual({});
+		const H2 = setup().H;
+		const r2 = H2.ok([{ ...cmd, mediaId: Object.keys(H2.doc.media)[0]! }]);
+		const id2 = (r2.results[0] as { transcriptId: string }).transcriptId;
+		expect(H2.doc.transcripts[id2]!.segments).toEqual(H.doc.transcripts[id]!.segments);
+		// merge inside [5 s, 10 s): the segment at 0.1 s stays, the one at 5.9 s is replaced
+		H.ok([
+			{
+				type: 'transcript.attach',
+				mediaId,
+				language: 'es',
+				words: [w('otra', 7, 7.5)],
+				segments: [seg(6.9, 7.6, -0.4)],
+				coverage: [[s(5), s(10)]],
+				mode: 'merge',
+			},
+		]);
+		expect(transcriptSegments(H.doc.transcripts[id]!).map((x) => x.avgLogprob)).toEqual([-0.2, -0.4]);
+		// replace without segments drops them
+		H.ok([{ type: 'transcript.attach', mediaId, language: 'es', words: [w('x', 1, 2)] }]);
+		expect(H.doc.transcripts[id]!.segments).toBeUndefined();
+	});
+
+	it('refuses malformed segments in the command', () => {
+		const { H, mediaId } = setup();
+		for (const bad of [
+			{ start: -1, end: 5 },
+			{ start: 1.5, end: 2 },
+			{ start: 0, end: 1, noSpeechProb: 2 },
+		]) {
+			const r = H.tx([{ type: 'transcript.attach', mediaId, language: 'en', words: [], segments: [bad] }]);
+			expect(r.ok).toBe(false);
+		}
+	});
+
+	it('malformed stored segments break INV-012 and repair drops them (lenient read)', () => {
+		const { H, mediaId } = setup();
+		H.ok([
+			{
+				type: 'transcript.attach',
+				mediaId,
+				language: 'en',
+				words: [w('a', 0, 1)],
+				segments: [seg(0, 1, -0.1)],
+			},
+		]);
+		const doc = structuredClone(H.doc);
+		const t = Object.values(doc.transcripts)[0] as Transcript;
+		t.segments = [
+			seg(3, 4, -0.5),
+			'junk',
+			{ start: 2, end: 1 },
+			seg(0, 1, -0.1),
+			{ start: 0, end: 1, avgLogprob: 'x' },
+		];
+		expect(transcriptSegmentsProblem(t.segments)).toBeTruthy();
+		expect(checkInvariants(doc).some((i) => (i as { invariant?: string }).invariant === 'INV-012')).toBe(
+			true,
+		);
+		const fixed = repairDocument(doc, H.ids);
+		expect((Object.values(fixed.document.transcripts)[0] as Transcript).segments).toEqual([
+			seg(0, 1, -0.1),
+			seg(3, 4, -0.5),
+		]);
+		expect(checkInvariants(fixed.document)).toEqual([]);
+		fc.assert(
+			fc.property(fc.anything(), (x) => {
+				const segs = normalizeTranscriptSegments(x);
+				return transcriptSegmentsProblem(segs) === null;
+			}),
+			{ numRuns: 200 },
+		);
+	});
+
+	it('the attach plan converts result segments (seconds) and distributes mix segments to the clip media', () => {
+		const { H, mediaId } = setup();
+		const media = transcriptAttachPlan(
+			H.doc,
+			{
+				target: { type: 'media' },
+				model: 'whisper-large-v3-turbo',
+				language: 'es',
+				task: 'transcribe',
+				words: [w('hola', 0.2, 0.8)],
+				speakers: {},
+				segments: [{ start: 0.1, end: 1, avgLogprob: -0.3, noSpeechProb: 0.02, compressionRatio: 1.4 }],
+			},
+			{ mediaId, replace: true },
+		);
+		if ('error' in media) throw new Error(media.error);
+		expect(media.commands[0]!.segments).toEqual([seg(0.1, 1, -0.3, 0.02, 1.4)]);
+		// a mix: the clip plays media 0–20 s at sequence 0 s, so times stay; outside every clip → dropped
+		const mix = transcriptAttachPlan(
+			H.doc,
+			{
+				target: {
+					type: 'sequence',
+					sequenceId: H.seqId,
+					range: { startFrame: 0, endFrame: 750 },
+					mixHash: 'h',
+				},
+				model: 'm',
+				language: 'es',
+				task: 'transcribe',
+				words: [w('hola', 2, 2.5)],
+				speakers: {},
+				segments: [
+					{ start: 1.9, end: 2.6, avgLogprob: -0.1 },
+					{ start: 25, end: 26, avgLogprob: -2 },
+				],
+			},
+			{ replace: true },
+		);
+		if ('error' in mix) throw new Error(mix.error);
+		expect(mix.commands[0]!.segments).toEqual([{ start: s(1.9), end: s(2.6), avgLogprob: -0.1 }]);
+		H.ok(mix.commands);
+		expect(checkInvariants(H.doc)).toEqual([]);
 	});
 });
