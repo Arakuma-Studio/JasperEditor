@@ -139,7 +139,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 ### Phase 4 — integration
 - ✅ Merge branches, fetch/merge `origin/main` (no newer upstream commits at integration), full gate + e2e + render
   suites on the VM, merged to local `main` (26b68f57; tree = verified e43566e7 + this ledger).
-- ⏳ Push `main` to origin — waiting for the user's authorization.
+- ✅ Pushed `main` to origin with the user's authorization (2026-10-26, 923ab550..7074a355).
 
 ## 5. Decisions
 - D1 (2026-10-25) Footage analysis on the user's Mac only; results back as small derived files.
