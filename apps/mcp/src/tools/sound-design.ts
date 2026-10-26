@@ -72,7 +72,6 @@ import {
 	soundText,
 	stopBeforeFor,
 	synonymType,
-	TimeInputSchema,
 	trackLabel,
 	VISUAL_KINDS,
 	type VisualKind,
@@ -80,7 +79,7 @@ import {
 	voiceFor,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	defineTool,
@@ -114,7 +113,7 @@ const MAX_CYCLE_TRIES = 4;
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 
 /** `at` of a tool: a sequence time or "playhead". */
-const AtArg = z.union([z.literal('playhead'), TimeInputSchema]);
+const AtArg = z.union([z.literal('playhead'), TimeArgSchema]);
 
 /** Resolves a time argument (or "playhead") to a sequence frame. */
 async function resolveAt(
@@ -272,7 +271,7 @@ async function transactFresh<T>(
 
 /** A cue to add: a find_sound_cues suggestion as returned, or a manual cue ({at, kind, weight, types…}). */
 const CueAddArg = z.object({
-	frame: TimeInputSchema.optional().describe(`Cue frame (a suggestion's frame). ${TIME_FORMATS}`),
+	frame: TimeArgSchema.optional().describe(`Cue frame (a suggestion's frame). ${TIME_FORMATS}`),
 	at: AtArg.optional().describe('Or where the cue is: "playhead" or a sequence time'),
 	timecode: z.string().max(32).optional().describe('Informational (a suggestion carries it); frame wins'),
 	seconds: z.number().optional().describe('Informational (a suggestion carries it)'),
@@ -337,7 +336,7 @@ const buildOf = (v: true | { seconds: number; fromHz: number; toHz: number }) =>
 const nullable = <T extends z.ZodType>(s: T) => s.nullable().optional();
 const CueUpdateArg = z.object({
 	cueId: z.string().min(1).max(128),
-	frame: TimeInputSchema.optional().describe('New frame: the cue’s placed sounds move with it (moveClips)'),
+	frame: TimeArgSchema.optional().describe('New frame: the cue’s placed sounds move with it (moveClips)'),
 	at: AtArg.optional(),
 	kind: z.enum(CUE_KINDS).optional(),
 	weight: z.enum(CUE_WEIGHTS).optional(),
@@ -520,7 +519,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				range: z
-					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.object({ start: TimeArgSchema, end: TimeArgSchema })
 					.optional()
 					.describe(`Only this part of the sequence [start, end). ${TIME_FORMATS}`),
 				sources: z
@@ -1420,7 +1419,7 @@ export function registerSoundDesignTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(128),
 				to: z
-					.union([z.enum(['playhead', 'cue']), TimeInputSchema])
+					.union([z.enum(['playhead', 'cue']), TimeArgSchema])
 					.describe(`"cue", "playhead", or ${TIME_FORMATS}`),
 				align: z
 					.enum(CUE_ALIGNS)
@@ -2056,7 +2055,7 @@ function registerPlanSoundDesign(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				range: z
-					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.object({ start: TimeArgSchema, end: TimeArgSchema })
 					.optional()
 					.describe(`Only cues in [start, end). ${TIME_FORMATS}`),
 				cues: z
@@ -2368,7 +2367,7 @@ function registerRebalanceSfx(ctx: ToolContext): void {
 					.optional()
 					.describe('Only these sound effect clips (default every sound effect of the sequence)'),
 				range: z
-					.object({ start: TimeInputSchema, end: TimeInputSchema })
+					.object({ start: TimeArgSchema, end: TimeArgSchema })
 					.optional()
 					.describe(`Only sound effects overlapping [start, end). ${TIME_FORMATS}`),
 				delivery: z

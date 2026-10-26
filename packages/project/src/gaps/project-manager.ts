@@ -6,8 +6,10 @@
 //   clips are re-based so every edit, keyframe and marker stays where it was (Replace Footage with Keep Source
 //   Timing over a declared source range — the mechanism of processed versions).
 // "Exclude Unused Clips" drops the sequences that were not chosen and the media items no kept clip uses (LUTs, fonts,
-// motion-graphics bundles and colour configs are always kept: effects and clips reference them by id).
+// motion-graphics bundles and colour configs are always kept: effects and clips reference them by id; media a
+// template param of a kept clip shows, e.g. an avatar, count as used).
 import { contentTimeAt } from '../derive/index.ts';
+import { clipParamMediaIds } from '../param-media.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
@@ -60,6 +62,11 @@ export function usedMedia(doc: ProjectDocument, sequenceIds: readonly string[]):
 		if (!seq) continue;
 		const rate = seq.settings.frameRate;
 		for (const c of Object.values(seq.clips) as Clip[]) {
+			// template media params (avatars): the whole medium is used (pictures are drawn whole).
+			for (const id of clipParamMediaIds(c)) {
+				const a = doc.media[id];
+				if (a) add(id, 0, a.probe.durationFlicks ?? 0, true);
+			}
 			const mediaId = (c as { mediaId?: unknown }).mediaId;
 			if (typeof mediaId !== 'string' || !doc.media[mediaId]) continue;
 			const asset = doc.media[mediaId]!;

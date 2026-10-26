@@ -30,6 +30,7 @@ import previewsRoutes from './previews.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import proposalRoutes from './proposals.ts';
+import remoteAssetRoutes from './remote-assets.ts';
 import rotoRoutes from './roto.ts';
 import soundDesignRoutes from './sound-design.ts';
 import soundRoutes from './sounds.ts';
@@ -53,6 +54,7 @@ const ROUTE_PLUGINS = [
 	exportsRoutes,
 	stillsRoutes,
 	fontsRoutes,
+	remoteAssetRoutes,
 	mgRoutes,
 	agentRoutes,
 	mcpRoutes,

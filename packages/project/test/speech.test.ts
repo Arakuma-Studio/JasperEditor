@@ -261,7 +261,7 @@ describe('coverage invariant and repair', () => {
 	});
 });
 
-describe('segment scores in transcripts (spec 14 TC-003, v9)', () => {
+describe('segment scores in transcripts (spec 14 TC-003, v10)', () => {
 	const seg = (a: number, b: number, avgLogprob: number, noSpeechProb = 0.01, compressionRatio = 1.2) => ({
 		start: s(a),
 		end: s(b),

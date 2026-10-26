@@ -9,13 +9,16 @@ import {
 	type EffectInstance,
 	isKnownClipKind,
 	kindCapabilities,
+	type PropertySpec,
 	paramsPropertySpecs,
 	type Sequence,
+	templateParamSections,
+	templateParamVisible,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
 import type { ReactNode } from 'react';
-import { clipSections } from '../../extensions/index.ts';
+import { clipSections, templateParamControls } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
 import { FontPicker } from '../../fonts/FontPicker.tsx';
@@ -25,6 +28,7 @@ import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
 import { Section } from './controls/Section.tsx';
+import { TemplateGroupActions } from './controls/TemplateGroupActions.tsx';
 import {
 	bindCrop,
 	bindProperty,
@@ -36,6 +40,7 @@ import {
 	rowValue,
 	templateOf,
 } from './lib/model.ts';
+import { absorbedTemplateParams } from './lib/template-params.ts';
 import { SHADOW_KEYS, StrokeList } from './TextLookRows.tsx';
 
 const CROP_PARAMS = ['left', 'top', 'right', 'bottom', 'feather'] as const;
@@ -442,6 +447,7 @@ function TextSections(props: {
 /** Motion-graphic parameters: an auto-generated form from the template schema (S05:ECP-008, PRP-001). */
 function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: EditorSession }) {
 	const { visual, ctx, session } = props;
+	const controls = useRegistry(templateParamControls);
 	const mg = session.ctx.registries.mgTemplates;
 	const tpl = templateOf(visual[0]!, mg);
 	const same = visual.every(
@@ -456,19 +462,44 @@ function TemplateSection(props: { visual: Clip[]; ctx: RowContext; session: Edit
 			</Section>
 		);
 	}
-	const specs = paramsPropertySpecs(tpl);
+	// C3: the template's ui hints — params that apply to none of the selected clips are hidden (`visibleWhen`), the
+	// others are grouped in its sections (in order; params in no group first).
+	const shown = paramsPropertySpecs(tpl).filter((s) =>
+		visual.some((c) => templateParamVisible(s, (c as { params?: Record<string, unknown> }).params)),
+	);
+	// WP7a: rows edited by another row's custom control (`alsoEdits`, e.g. the time unit) are not drawn twice.
+	const absorbed = absorbedTemplateParams(shown, controls);
+	const specs = shown.filter((s) => !absorbed.has(s.key.slice('params.'.length)));
+	const renderSpec = (s: PropertySpec, indent: boolean) => {
+		const row = makeRow(
+			s.key,
+			visual.map((c) => bindProperty(ctx.doc, ctx.seq, c, s.key, ctx.frame, mg)),
+		);
+		return row ? <PropertyRow key={row.id} row={row} ctx={ctx} indent={indent} /> : null;
+	};
 	return (
 		<Section id="properties.template" title={`Parameters · ${tpl.name}`}>
 			<p className="px-2 pb-1 text-pr-small text-pr-muted">
 				{tpl.id}@{tpl.version} · {tpl.category}
 			</p>
-			{specs.map((s) => {
-				const row = makeRow(
-					s.key,
-					visual.map((c) => bindProperty(ctx.doc, ctx.seq, c, s.key, ctx.frame, mg)),
-				);
-				return row ? <PropertyRow key={row.id} row={row} ctx={ctx} /> : null;
-			})}
+			{templateParamSections(specs).map((sec) =>
+				sec.section ? (
+					<Section
+						key={sec.section.id}
+						id={`properties.template.${tpl.id}.${sec.section.id}`}
+						title={sec.section.label}
+						variant="group"
+						className="pl-2"
+						actions={
+							<TemplateGroupActions ctx={ctx} clips={visual} specs={sec.specs} label={sec.section.label} />
+						}
+					>
+						<div data-template-group={sec.section.id}>{sec.specs.map((s) => renderSpec(s, true))}</div>
+					</Section>
+				) : (
+					sec.specs.map((s) => renderSpec(s, false))
+				),
+			)}
 		</Section>
 	);
 }

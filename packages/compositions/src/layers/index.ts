@@ -38,6 +38,8 @@ export {
 	MgRenderStateContext,
 	MgTemplatePreview,
 	type MgTemplatePreviewProps,
+	mgPreviewFraming,
+	templateContentBox,
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export {
@@ -60,6 +62,12 @@ export {
 	shadowKey,
 	type TextPaintPlan,
 } from './text/paint.tsx';
+export {
+	animeTemplateRestMs,
+	setTemplateEditHold,
+	templateEditHold,
+	useTemplateEditHold,
+} from './template-edit-hold.ts';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
 export { drawPdfPage, pdfPagePicture } from './VectorLayer.tsx';
 export {

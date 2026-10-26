@@ -19,6 +19,7 @@ import { useFxImages } from '../fx/images.ts';
 import { blendModeCss } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
+import { useTemplateEditHold } from './template-edit-hold.ts';
 
 /** A graded preview of a DOM layer: frame 0 = the clip's first drawn frame (`start − headHandle`). */
 export type BakedLayerPreview = {
@@ -209,8 +210,12 @@ export function withBakedLayer(Component: ComponentType<LayerProps>): ComponentT
 	function Baked(layer: LayerProps) {
 		const { clip, options } = layer;
 		const runtime = useBakedLayerRuntime();
+		const held = useTemplateEditHold(clip.clipId);
 		if (clip.baked) return layer.composite ? <BakedMasterTap layer={layer} /> : <BakedMaster layer={layer} />;
 		if (!options.isPreview || !hasDomColorEffects(clip)) return <Component {...layer} />;
+		// Program-monitor text editing (template-edit-hold.ts): the edited template is drawn live (its DOM is what the
+		// editor measures and replaces); the graded preview returns when the edit ends.
+		if (held) return <Component {...layer} />;
 		// three-d: a 3D layer's whole stack (colour runs included) runs in its capture chain for the 3D renderer.
 		if (layer.composite && clip.threeD) return <Component {...layer} />;
 		// keyframes-blend: inside the GL compositor's group the Player captures the DOM layer itself (its graded

@@ -203,6 +203,12 @@ import {
 	ProposalSelectRequestSchema,
 } from './proposals.ts';
 import {
+	NetworkSettingsSchema,
+	RemoteAssetPrefetchRequestSchema,
+	RemoteAssetPrefetchResponseSchema,
+	RemoteAssetsStatusSchema,
+} from './remote-assets.ts';
+import {
 	RotoSegmentRequestSchema,
 	RotoStoreInfoSchema,
 	RotoTraceRequestSchema,
@@ -599,6 +605,28 @@ export const ROUTES = {
 	fontDelete: { method: 'DELETE', path: '/api/fonts/library/:fontId', response: FontDeleteResponseSchema },
 	/** Saved projects that use the face. */
 	fontUsage: { method: 'GET', path: '/api/fonts/library/:fontId/usage', response: FontUsageResponseSchema },
+	/** social-comment §7.8: Settings ▸ Privacy & Network (network uses, spec 04 OF-002). */
+	networkSettingsGet: { method: 'GET', path: '/api/settings/network', response: NetworkSettingsSchema },
+	networkSettingsPut: {
+		method: 'PUT',
+		path: '/api/settings/network',
+		body: NetworkSettingsSchema,
+		response: NetworkSettingsSchema,
+	},
+	/** Remote platform fonts / emoji: manifest, cache and first-fetch notice. */
+	remoteAssetsStatus: { method: 'GET', path: '/api/remote-assets', response: RemoteAssetsStatusSchema },
+	/** Downloads (policy on) or checks the given fonts / emoji; what is still missing, with why. */
+	remoteAssetsPrefetch: {
+		method: 'POST',
+		path: '/api/remote-assets/prefetch',
+		body: RemoteAssetPrefetchRequestSchema,
+		response: RemoteAssetPrefetchResponseSchema,
+	},
+	remoteAssetsNoticeAck: {
+		method: 'POST',
+		path: '/api/remote-assets/notice/ack',
+		response: RemoteAssetsStatusSchema,
+	},
 
 	mgTemplates: {
 		method: 'GET',

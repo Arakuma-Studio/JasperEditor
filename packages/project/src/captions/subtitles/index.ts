@@ -1,4 +1,4 @@
-// Spec 13: automatic subtitles as text clips — rules, layout and cut awareness, the v9 fields, templates, clip upkeep.
+// Spec 13: automatic subtitles as text clips — rules, layout and cut awareness, the v10 fields, templates, clip upkeep.
 export * from './clips.ts';
 export * from './cuts.ts';
 export * from './layout.ts';

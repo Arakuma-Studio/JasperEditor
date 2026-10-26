@@ -1,7 +1,7 @@
 {
 	"format": "jasper-project",
 	"schemaVersion": 9,
-	"savedAt": "2026-10-25T21:00:00.000Z",
+	"savedAt": "2026-10-25T12:00:00.000Z",
 	"savedBy": {
 		"app": "JasperEditor",
 		"version": "0.1.0",
@@ -41,7 +41,8 @@
 			"itm_00000000000MGB01",
 			"itm_000000000000PR01",
 			"itm_000000000000SC01",
-			"itm_00000000000006TZ"
+			"itm_00000000000006TZ",
+			"itm_00000000000AVA01"
 		],
 		"items": {
 			"itm_000000000000SQ01": {
@@ -112,6 +113,17 @@
 				"name": "Metal hit",
 				"mediaId": "med_0000000000SFX001",
 				"label": "caribbean",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_00000000000AVA01": {
+				"id": "itm_00000000000AVA01",
+				"kind": "media",
+				"name": "avatar.png",
+				"mediaId": "med_00000000000AVA01",
+				"label": "lavender",
 				"marks": {
 					"in": null,
 					"out": null
@@ -495,6 +507,56 @@
 					"leadSilenceSec": 0.05,
 					"snapshotHash": "0123456789abcdef"
 				}
+			},
+			"med_00000000000AVA01": {
+				"id": "med_00000000000AVA01",
+				"kind": "image",
+				"fingerprint": "q1:a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7",
+				"originalName": "avatar.png",
+				"sizeBytes": 20480,
+				"container": "png_pipe",
+				"probe": {
+					"durationFlicks": null,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "png",
+							"width": 400,
+							"height": 400,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 25,
+								"den": 1
+							},
+							"pixelFormat": "rgba",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "pc"
+							},
+							"browserDecodable": true
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": true,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_avatar0000001"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-10-25T10:00:00.000Z"
 			}
 		},
 		"synthetics": {},
@@ -1461,6 +1523,80 @@
 							"mute": false,
 							"panOffset": true
 						}
+					},
+					"clp_00000000000MG001": {
+						"id": "clp_00000000000MG001",
+						"trackId": "trk_0000000000000V03",
+						"start": 120,
+						"duration": 120,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": false
+						},
+						"name": "Comment",
+						"label": "purple",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "motion-graphic",
+						"template": {
+							"id": "avatar-card",
+							"version": 1,
+							"renderer": "anime"
+						},
+						"params": {
+							"name": "Ada",
+							"avatar": {
+								"mediaId": "med_00000000000AVA01"
+							},
+							"gallery": [
+								null,
+								{
+									"mediaId": "med_00000000000AVA01"
+								}
+							]
+						},
+						"canvas": "sequence",
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
 					}
 				},
 				"transitions": {},

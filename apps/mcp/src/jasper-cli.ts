@@ -5,11 +5,12 @@
 //
 // Exit status: 0 ok, 1 the command failed, 2 usage error. --json prints one JSON document per result line.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { extname, isAbsolute, resolve } from 'node:path';
 import { AgentQueryNameSchema } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { parseFriendlyTime } from './arguments.ts';
 import { type EngineConnection, EngineLink } from './link.ts';
 import { createJasperMcpServer } from './server.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -41,13 +42,15 @@ Commands:
   ui <action> [k=v…] [--out f.png]    live UI of the open editor window: state, elements, screenshot,
                                       click, drag, scroll, key, type, set, locate, hit, commands, command
   tools                               list every MCP tool
-  call <tool> [k=v… | '<json>']       call any MCP tool
+  call <tool> [k=v… | '<json>'] [--out f.png]
+                                      call any MCP tool; --out writes the images it returns
+                                      (several: f-0.png, f-1.png… in result order)
 
 Options:
   --project <id|name>    project to work on (env JASPER_PROJECT; default: the project open in the editor
                          window, else the only project)
   --sequence <id>        sequence (default: the project's first / the editor's active one)
-  --at <time>            time for get / props / render-frame: frames, 2.5s, or HH:MM:SS:FF
+  --at <time>            time for get / props / render-frame: frames, 2.5s, 250ms, 00:03, 1:02:03 or HH:MM:SS:FF
   --label <text>         History label for exec (default: the command type)
   --dry-run              validate exec / run / set without applying
   --keep-going           run: continue after a failed line
@@ -149,15 +152,15 @@ function kvArgs(items: readonly string[]): Record<string, unknown> {
 	return out;
 }
 
-/** `--at`: 30 (frames), 2.5s (seconds), HH:MM:SS:FF, or JSON. */
+/** `--at`: 30 (frames), 2.5s / 250ms / 00:03 / 1:02:03 (friendly times, arguments.ts), HH:MM:SS:FF, or JSON. */
 function timeValue(s: string): unknown {
-	const sec = /^(-?\d+(?:\.\d+)?)s$/.exec(s.trim());
-	if (sec) return { seconds: Number(sec[1]) };
+	const sec = parseFriendlyTime(s.trim());
+	if (sec !== null) return { seconds: sec };
 	if (/^-?\d+$/.test(s.trim())) return Number(s);
 	if (/^\d{1,3}[:;]\d{1,2}[:;]\d{1,2}[:;.]\d{1,3}$/.test(s.trim())) return s.trim();
 	const v = looseValue(s);
 	if (v && typeof v === 'object') return v;
-	throw new UsageError(`Not a time: "${s}" (use frames, 2.5s or HH:MM:SS:FF)`);
+	throw new UsageError(`Not a time: "${s}" (use frames, 2.5s, 250ms, 00:03, 1:02:03 or HH:MM:SS:FF)`);
 }
 
 type Out = { stdout(s: string): void; stderr(s: string): void };
@@ -183,6 +186,29 @@ function jsonOf(r: CallToolResult): unknown {
 function imageOf(r: CallToolResult): Buffer | null {
 	const img = r.content.find((c) => c.type === 'image') as { data?: string } | undefined;
 	return img?.data ? Buffer.from(img.data, 'base64') : null;
+}
+
+/**
+ * `call … --out <file>`: writes every image of a tool result. One image goes to `<file>`; several (e.g. one preview
+ * per item of `add_motion_graphic {dryRun, preview}`) go to `<stem>-<i><ext>`, `i` = the image's index in the
+ * result (what `preview.image` names), so none is dropped. Returns the paths written.
+ */
+export function writeToolImages(r: CallToolResult, out: string): string[] {
+	const images = r.content
+		.filter((c) => c.type === 'image')
+		.map((c) => (c as { data?: string }).data)
+		.filter((d): d is string => typeof d === 'string' && d.length > 0);
+	if (images.length === 1) {
+		writeFileSync(out, Buffer.from(images[0]!, 'base64'));
+		return [out];
+	}
+	const ext = extname(out);
+	const stem = ext ? out.slice(0, -ext.length) : out;
+	return images.map((d, i) => {
+		const path = `${stem}-${i}${ext}`;
+		writeFileSync(path, Buffer.from(d, 'base64'));
+		return path;
+	});
 }
 
 export type CliSession = {
@@ -548,8 +574,8 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		const props = (def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
 		if ('projectId' in props && params.projectId === undefined) params.projectId = await c.projectId();
 		const r = await tool(c, args[0]!, params, true);
-		const png = imageOf(r);
-		if (png && typeof c.flags.out === 'string') writeFileSync(resolve(c.cwd, c.flags.out), png);
+		if (typeof c.flags.out === 'string')
+			for (const path of writeToolImages(r, resolve(c.cwd, c.flags.out))) c.out.stderr(`wrote ${path}\n`);
 		emit(c, jsonOf(r));
 	},
 };

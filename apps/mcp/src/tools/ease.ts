@@ -160,8 +160,8 @@ export function parseCurveArg(input: unknown): ParsedCurve {
 			const c = parsed.data as CubicEase;
 			return { curve: c, name: formatCubicBezier(c) };
 		}
-		const key = text.toLowerCase();
-		const keyword = Object.hasOwn(CSS_KEYWORDS, key) ? CSS_KEYWORDS[key] : undefined;
+		const lower = text.toLowerCase();
+		const keyword = Object.hasOwn(CSS_KEYWORDS, lower) ? CSS_KEYWORDS[lower] : undefined;
 		const preset = presetById(keyword ?? text);
 		if (!preset) {
 			const needle = text.toLowerCase();

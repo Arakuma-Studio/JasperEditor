@@ -63,6 +63,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('mg.importRemotionProject', 'Import Remotion Project…'),
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
 			c('captions.import', 'Import Captions…'),
+			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),
 			c('project.importSvgAsShape', 'Import SVG as Shape Layer…'),
 			c('project.linkMedia', 'Link Media…'),
 			c('project.mediaProperties', 'Get Properties for Selection…'),
@@ -443,6 +444,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('threeD.newLight', 'Light…'),
 			]),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
+			c('mg.addAnother', 'Add Another'),
+			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),
 			sub('Arrange', ARRANGE_MENU),
 			sub('Stroke Animation', [
 				c('strokeAnimation.drawIn', 'Draw In'),

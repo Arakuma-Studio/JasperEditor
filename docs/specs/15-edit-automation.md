@@ -2,7 +2,7 @@
 
 Status: specified 2026-10-25; implementation tracked in [`docs/ledgers/premiere-workflow.md`](../ledgers/premiere-workflow.md).
 Owner wp-note: `docs/wp-notes/edit-automation.md` (created by the implementation). [`ARCHITECTURE.md`](../ARCHITECTURE.md)
-and [`AGENTS.md`](../../AGENTS.md) win over this spec. Shared services (cut map, batch styling, schema v9) are defined
+and [`AGENTS.md`](../../AGENTS.md) win over this spec. Shared services (cut map, batch styling, schema v10) are defined
 in [spec 13 §2](13-auto-subtitles.md); voice cleanup in [spec 14](14-transcript-cleanup.md).
 
 ## 0. Background
@@ -71,7 +71,7 @@ the user's decorations follow a near-fixed recipe placed **on the cut frame** wi
 - EA-010 A **style recipe** = named, versioned set of pass parameters (cut kits incl. families/weights, punch-ins, Ken
   Burns, reactions incl. asset set + slots, slides, music, stingers, subtitle template from spec 13, cleanup preset from
   spec 14). Stored in the user library (`<appdir>/style-recipes/`, atomic writes, zod index, repair) with a copy in the
-  project when used (schema v9: `ProjectDocument.styleRecipes?`, optional, lenient, invariants + repair).
+  project when used (schema v10: `ProjectDocument.styleRecipes?`, optional, lenient, invariants + repair).
 - EA-011 Built-in recipes (neutral names): **Fast Shorts** (shorts shake kit, Ken Burns 15 %, reactions slots bottom,
   music intro step) and **Fast Long-form** (five-family transition pack, punch-ins, Ken Burns 15 %, slides, beds) with
   the measured parameters; **Clean** (no decorations, Natural cleanup, Subtitles template) for general users.

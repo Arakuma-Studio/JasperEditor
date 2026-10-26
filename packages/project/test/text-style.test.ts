@@ -85,7 +85,7 @@ describe('paint geometry', () => {
 	});
 });
 
-describe('invariants and repair (schema v9: shadow.spreadPx, strokes[])', () => {
+describe('invariants and repair (schema v10: shadow.spreadPx, strokes[])', () => {
 	it('flags spreads out of range and stroke lists over the limit', () => {
 		expect(textStyleIssues({ shadow: { spreadPx: -1 } })).toHaveLength(1);
 		expect(textStyleIssues({ shadow: { spreadPx: MAX_SHADOW_SPREAD_PX + 1 } })).toHaveLength(1);

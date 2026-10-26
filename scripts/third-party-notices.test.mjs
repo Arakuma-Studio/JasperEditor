@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
 	collectNotices,
+	collectPlatformAssets,
 	collectPorted,
 	packagesInSourcemaps,
 	portedLicenseTexts,
@@ -260,5 +261,49 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		expect(section).toContain(fc);
 		for (const license of portedLicenseTexts(root, records))
 			expect([...license.copyrights].sort()).toEqual([ec, fc]);
+	});
+});
+
+describe('platform-asset record (licenses/platform-assets.md, AGENTS.md §3 items 1 and 5)', () => {
+	function tree(text) {
+		const root = tempDir('jasper-platform-assets-');
+		mkdirSync(join(root, 'licenses'), { recursive: true });
+		if (text !== undefined) writeFileSync(join(root, 'licenses', 'platform-assets.md'), text);
+		return root;
+	}
+
+	it('copies the record last, between its markers, after the ported-source part', () => {
+		const record = collectPlatformAssets(
+			tree(
+				'# Platform assets\r\n\n- Twemoji graphics, CC-BY 4.0\n\n| Export | Method |\n|---|---|\n| `like` | live-dom |\n',
+			),
+		);
+		expect(record).toEqual({
+			file: 'licenses/platform-assets.md',
+			title: 'Platform assets',
+			body: '- Twemoji graphics, CC-BY 4.0\n\n| Export | Method |\n|---|---|\n| `like` | live-dom |',
+		});
+		const text = renderNotices([], [], [], record);
+		const start = text.indexOf('<!-- platform-assets:start -->');
+		expect(start).toBeGreaterThan(0);
+		const section = text.slice(start, text.indexOf('<!-- platform-assets:end -->'));
+		expect(section).toContain('# Platform assets');
+		expect(section).toContain('Twemoji graphics, CC-BY 4.0');
+		expect(section).toContain('| `like` | live-dom |');
+		expect(text.trimEnd().endsWith('<!-- platform-assets:end -->')).toBe(true);
+		expect(text.indexOf('licenses/platform-assets.md')).toBeLessThan(start);
+	});
+
+	it('is optional, and refuses a record without a title', () => {
+		expect(collectPlatformAssets(tree(undefined))).toBeNull();
+		expect(renderNotices([], [], [], null)).not.toContain('<!-- platform-assets:start -->');
+		expect(() => collectPlatformAssets(tree('no title\n'))).toThrow(
+			/platform-assets\.md: missing its "# Title" line/,
+		);
+	});
+
+	it('is present in this repository and covers the Twemoji attribution', () => {
+		const record = collectPlatformAssets(repo);
+		expect(record?.body).toContain('licensed under CC-BY 4.0');
 	});
 });

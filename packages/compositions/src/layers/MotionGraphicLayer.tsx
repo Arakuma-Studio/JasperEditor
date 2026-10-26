@@ -14,20 +14,48 @@ import {
 	isAnimeTemplate,
 	isSvgTemplate,
 	mgRegistry,
+	resolveTemplateParams,
+	templateRequiredAssets,
 } from '@jasper/mg-templates';
 import { hash32 } from '@jasper/motion';
-import { ANIME_TEMPLATE_IMPLS } from '@jasper/motion/templates';
 import {
+	ANIME_TEMPLATE_IMPLS,
+	MissingAssetMarker,
+	MissingAssetReporterContext,
+	type MissingTemplateAsset,
+	missingAssetLabel,
+	TemplateAssetScopeContext,
+	TemplateMediaIdsContext,
+} from '@jasper/motion/templates';
+import {
+	collectParamMediaIds,
+	emojiTableKey,
 	evaluateTemplateParams,
 	FLICKS_PER_SECOND,
 	type Keyframe,
+	type RenderTemplateAssets,
 	type RenderVisualClip,
+	type TemplateFaceFile,
+	templateFontId,
 } from '@jasper/project';
-import { type CSSProperties, createContext, type ReactNode, useContext, useMemo } from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
-import { FontsReadyContext } from '../fonts.ts';
-import type { LayerProps } from '../types.ts';
+import {
+	type CSSProperties,
+	createContext,
+	type ReactNode,
+	useContext,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
+import { AbsoluteFill, getRemotionEnvironment, useCurrentFrame, useVideoConfig } from 'remotion';
+import { ColorDocContext } from '../color/chain.ts';
+import { EmojiTableContext, FontsReadyContext, ImageTableContext, useFontsReadyState } from '../fonts.ts';
+import { mediaSrc } from '../pipeline.ts';
+import type { LayerProps, RenderDoc, RenderOptions } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { animeTemplateRestMs, useTemplateEditHold } from './template-edit-hold.ts';
 
 /** Engine render state of a motion-graphic clip (S03:KND-060 badge: none | rendering n% | ready). */
 export type MgRenderState =
@@ -46,17 +74,196 @@ export const MgRenderStateContext = createContext<(clipId: string) => MgRenderSt
 
 type MgSource = Extract<RenderVisualClip['source'], { mg: unknown }>['mg'];
 
-function resolveParams(def: AnyMgTemplate, params: Record<string, unknown>): Record<string, unknown> {
-	const parsed = def.paramsSchema.safeParse(params);
-	if (parsed.success) return parsed.data as Record<string, unknown>;
-	// Invalid or partial params (e.g. a newer document): fall back field by field to the defaults.
-	const merged: Record<string, unknown> = { ...def.defaults };
-	for (const [k, v] of Object.entries(params)) {
-		if (!(k in merged)) continue;
-		const probe = def.paramsSchema.safeParse({ ...def.defaults, [k]: v });
-		if (probe.success) merged[k] = v;
+/**
+ * social-comment §7.8: the missing assets of a template clip — its declared faces absent from the document's fonts or
+ * failed to load, and its declared emoji absent from the emoji table.
+ */
+function missingTemplateAssets(
+	assets: RenderTemplateAssets | undefined,
+	fonts: RenderDoc['fonts'] | undefined,
+	emoji: Readonly<Record<string, string>> | undefined,
+	images: Readonly<Record<string, string>> | undefined,
+	isFailed: ((family: string, weight: number, style: 'normal' | 'italic') => boolean) | undefined,
+): MissingTemplateAsset[] {
+	const out: MissingTemplateAsset[] = [];
+	for (const face of assets?.fonts ?? []) {
+		const fontId = templateFontId(face.family);
+		const have = (fonts ?? []).some(
+			(f) => f.fontId === fontId && f.weight === face.weight && f.style === face.style,
+		);
+		if (!have || isFailed?.(face.family, face.weight, face.style)) out.push({ kind: 'font', ...face });
 	}
-	return merged;
+	for (const { pack, graphemes } of assets?.emoji ?? [])
+		for (const g of graphemes)
+			if (!emoji?.[emojiTableKey(pack, g)]) out.push({ kind: 'emoji', pack, grapheme: g });
+	for (const id of assets?.images ?? []) if (!images?.[id]) out.push({ kind: 'image', id });
+	return out;
+}
+
+/**
+ * Collects what a template clip could not draw (the layer's own checks and every `EmojiImage` inside) and reports it
+ * to the editor (MissingAssetReporterContext, the Program monitor's panel warning).
+ */
+function useClipAssetScope(clipId: string) {
+	const reporter = useContext(MissingAssetReporterContext);
+	// Reports of one commit are batched into one call (a microtask after the commit's effects; no timers: S11:ANM-006).
+	const state = useRef<{ entries: Map<string, MissingTemplateAsset>; sent: string; queued: number }>({
+		entries: new Map(),
+		sent: '[]',
+		queued: 0,
+	});
+	const scope = useMemo(() => {
+		const flush = (ticket: number) => {
+			if (ticket !== state.current.queued) return; // superseded or unmounted
+			state.current.queued = 0;
+			const seen = new Map<string, MissingTemplateAsset>();
+			for (const a of state.current.entries.values()) seen.set(JSON.stringify(a), a);
+			const key = JSON.stringify([...seen.keys()].sort());
+			if (key === state.current.sent) return;
+			state.current.sent = key;
+			reporter?.(clipId, [...seen.values()]);
+		};
+		let tickets = 0;
+		return {
+			report(id: string, asset: MissingTemplateAsset | null) {
+				if (asset) state.current.entries.set(id, asset);
+				else state.current.entries.delete(id);
+				if (!reporter || state.current.queued !== 0) return;
+				const ticket = ++tickets;
+				state.current.queued = ticket;
+				queueMicrotask(() => flush(ticket));
+			},
+		};
+	}, [reporter, clipId]);
+	useEffect(
+		() => () => {
+			state.current.queued = 0;
+			if (state.current.sent !== '[]') reporter?.(clipId, []);
+			state.current.sent = '[]';
+		},
+		[reporter, clipId],
+	);
+	return scope;
+}
+
+/** Reports the layer's own missing assets (declared but unresolved / failed) to the clip scope. */
+function LayerMissingReport({ missing }: { missing: readonly MissingTemplateAsset[] }) {
+	const scope = useContext(TemplateAssetScopeContext);
+	const key = JSON.stringify(missing);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for `missing`
+	useEffect(() => {
+		if (!scope) return;
+		missing.forEach((a, i) => {
+			scope.report(`layer:${i}`, a);
+		});
+		return () => {
+			for (let i = 0; i < missing.length; i++) scope.report(`layer:${i}`, null);
+		};
+	}, [scope, key]);
+	return null;
+}
+
+/** A box in the layer's own (unscaled) px. */
+type ContentBox = { left: number; top: number; width: number; height: number };
+
+/** Most elements `templateContentBox` looks at (a template's DOM is small; this bounds a pathological one). */
+const MAX_CONTENT_ELEMENTS = 2000;
+
+/**
+ * Where a template drew its content inside `host` (the layer element), in the host's unscaled px: the union of the
+ * outermost descendants smaller than the host — full-size wrappers (a template's `AbsoluteFill`, a stage) are looked
+ * through, the first element inside them that is not full size counts with its whole box. `skip` (the banners) is
+ * left out. Null without layout (zero size) or when nothing smaller than the host is drawn. Generic: any template
+ * whose content is a card gets its box; one that fills the canvas gets null.
+ */
+export function templateContentBox(host: Element, skip: Element | null): ContentBox | null {
+	const h = host.getBoundingClientRect();
+	if (!(h.width > 0) || !(h.height > 0)) return null;
+	const scale = host instanceof HTMLElement && host.offsetWidth > 0 ? h.width / host.offsetWidth : 1;
+	if (!(scale > 0) || !Number.isFinite(scale)) return null;
+	let left = Number.POSITIVE_INFINITY;
+	let top = Number.POSITIVE_INFINITY;
+	let right = Number.NEGATIVE_INFINITY;
+	let bottom = Number.NEGATIVE_INFINITY;
+	let seen = 0;
+	const stack: Element[] = [...host.children].reverse();
+	while (stack.length > 0 && seen < MAX_CONTENT_ELEMENTS) {
+		const el = stack.pop()!;
+		seen++;
+		if (el === skip) continue;
+		const r = el.getBoundingClientRect();
+		if (!(r.width > 0) || !(r.height > 0)) {
+			stack.push(...[...el.children].reverse());
+			continue;
+		}
+		if (r.width >= h.width * 0.98 && r.height >= h.height * 0.98) {
+			stack.push(...[...el.children].reverse());
+			continue;
+		}
+		left = Math.min(left, r.left);
+		top = Math.min(top, r.top);
+		right = Math.max(right, r.right);
+		bottom = Math.max(bottom, r.bottom);
+	}
+	if (!(right > left) || !(bottom > top)) return null;
+	const px = (n: number) => Math.round(n * 2) / 2;
+	return {
+		left: px((left - h.left) / scale),
+		top: px((top - h.top) / scale),
+		width: px((right - left) / scale),
+		height: px((bottom - top) / scale),
+	};
+}
+
+const sameBox = (a: ContentBox | null, b: ContentBox | null) =>
+	a === b ||
+	(!!a && !!b && a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height);
+
+/**
+ * The striped "font / image not available" banners of a template (preview only), anchored inside the top-left
+ * corner of what the template drew (`templateContentBox`, measured after each render, so they follow an animated
+ * card) and sized to it; at the canvas corner when there is no layout or no card.
+ */
+function FontMarkers({ missing, height }: { missing: readonly MissingTemplateAsset[]; height: number }) {
+	const fonts = missing.filter((a) => a.kind !== 'emoji');
+	const ref = useRef<HTMLDivElement>(null);
+	const [box, setBox] = useState<ContentBox | null>(null);
+	useLayoutEffect(() => {
+		const el = ref.current;
+		const next = el?.parentElement ? templateContentBox(el.parentElement, el) : null;
+		setBox((prev) => (sameBox(prev, next) ? prev : next));
+	});
+	if (fonts.length === 0) return null;
+	const canvasSize = Math.max(12, Math.round(height / 40));
+	const size = box ? Math.max(10, Math.min(Math.round(height / 40), Math.round(box.width / 40))) : canvasSize;
+	return (
+		<div
+			ref={ref}
+			data-missing-asset-markers=""
+			data-anchor={box ? 'content' : 'canvas'}
+			style={{
+				position: 'absolute',
+				left: (box?.left ?? 0) + size / 2,
+				top: (box?.top ?? 0) + size / 2,
+				...(box ? { maxWidth: Math.max(size * 4, box.width - size) } : {}),
+				display: 'flex',
+				flexDirection: 'column',
+				alignItems: 'flex-start',
+				gap: size / 3,
+				pointerEvents: 'none',
+				zIndex: 1,
+			}}
+		>
+			{fonts.map((a) => (
+				<MissingAssetMarker
+					key={missingAssetLabel(a)}
+					kind={a.kind === 'image' || a.kind === 'media' ? 'image' : 'font'}
+					label={`${missingAssetLabel(a)} is not available`}
+					size={size}
+				/>
+			))}
+		</div>
+	);
 }
 
 function badgeText(state: MgRenderState | undefined): string {
@@ -126,6 +333,49 @@ function SvgTwin({ markup }: { markup: string }) {
 	);
 }
 
+const NO_MEDIA: Readonly<Record<string, string>> = Object.freeze({});
+const NO_MEDIA_MISSING: readonly TemplateMediaMissing[] = Object.freeze([]);
+
+/** A medium template params reference that the template cannot draw: offline, or not decodable by the browser. */
+type TemplateMediaMissing = { mediaId: string; reason: 'offline' | 'undecodable' };
+
+/**
+ * `AnimeTemplateProps.mediaUrls`: the URL of every medium the template params reference (avatars), from the
+ * document's media handles exactly like effect media (engine URLs, signed in renders; the proxy or display picture
+ * where the original is not browser-decodable), the inverse map (URL → media id, for `TemplateImage`'s reports) and
+ * the media left out: offline, or not browser-decodable without a proxy / display picture.
+ */
+function useTemplateMediaUrls(
+	params: Record<string, unknown>,
+	options: Pick<RenderOptions, 'useProxies'>,
+): {
+	urls: Readonly<Record<string, string>>;
+	ids: Readonly<Record<string, string>>;
+	missing: readonly TemplateMediaMissing[];
+} {
+	const media = useContext(ColorDocContext).media;
+	const ids = collectParamMediaIds(params);
+	const key = ids.join('\n');
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the referenced ids
+	return useMemo(() => {
+		if (ids.length === 0) return { urls: NO_MEDIA, ids: NO_MEDIA, missing: NO_MEDIA_MISSING };
+		const urls: Record<string, string> = {};
+		const byUrl: Record<string, string> = {};
+		const missing: TemplateMediaMissing[] = [];
+		for (const id of ids) {
+			const h = media[id];
+			if (!h) missing.push({ mediaId: id, reason: 'offline' });
+			else if (h.browserDecodable === false && !h.proxyUrl)
+				missing.push({ mediaId: id, reason: 'undecodable' });
+			else {
+				urls[id] = mediaSrc(h, options);
+				byUrl[urls[id]] = id;
+			}
+		}
+		return { urls, ids: byUrl, missing };
+	}, [key, media, options.useProxies]);
+}
+
 /**
  * An anime template for one frame: keyframed params evaluated at `contentTime` (shared evaluator, S11:ATP-006),
  * schema-resolved, responsive time from the clip (S11:ATP-004), seed `hash32(clipId, 'template')`. Rendered only
@@ -135,6 +385,7 @@ function AnimeTemplate(p: {
 	def: AnyMgTemplate;
 	mg: Pick<MgSource, 'template' | 'params' | 'canvas'> & {
 		paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+		assets?: RenderTemplateAssets;
 	};
 	clipId: string;
 	localFrame: number;
@@ -143,18 +394,77 @@ function AnimeTemplate(p: {
 	sourceInFrames: number;
 	fps: number;
 	isPreview: boolean;
+	/** The document's font faces (template-declared faces are checked against them). */
+	fonts?: RenderDoc['fonts'];
+	/** Proxy choice of the media URLs (absent: originals). */
+	useProxies?: boolean;
+	/** Held at its rest frame for Program-monitor text editing (template-edit-hold.ts; previews only). */
+	held?: boolean;
 }) {
-	const fontsReady = useContext(FontsReadyContext).allLoaded;
+	const fontsState = useContext(FontsReadyContext);
+	const fontsReady = fontsState.allLoaded;
+	const emojiTable = useContext(EmojiTableContext);
+	const imageTable = useContext(ImageTableContext);
 	const key = `${p.def.id}@${p.def.version}`;
 	const Impl = ANIME_TEMPLATE_IMPLS[key];
 	const info = useMemo(() => mgRegistry.get(p.def.id, p.def.version), [p.def]);
 	const evaluated = evaluateTemplateParams(info, p.mg.params, p.mg.paramKeyframes, p.contentTime);
-	const params = useMemo(() => resolveParams(p.def, evaluated), [p.def, evaluated]);
+	const params = useMemo(() => resolveTemplateParams(p.def, evaluated), [p.def, evaluated]);
+	// social-comment §7.8: the template's emoji URLs and whatever it declared that is not available.
+	const assets = p.mg.assets;
+	const emojiUrls = useMemo(() => {
+		const out: Record<string, string> = {};
+		for (const { pack, graphemes } of assets?.emoji ?? [])
+			for (const g of graphemes) {
+				const k = emojiTableKey(pack, g);
+				const url = emojiTable?.[k];
+				if (url) out[k] = url;
+			}
+		return out;
+	}, [assets, emojiTable]);
+	const imageUrls = useMemo(() => {
+		const out: Record<string, string> = {};
+		for (const id of assets?.images ?? []) {
+			const url = imageTable?.[id];
+			if (url) out[id] = url;
+		}
+		return out;
+	}, [assets, imageTable]);
+	const missing = useMemo(
+		() =>
+			fontsReady ? missingTemplateAssets(assets, p.fonts, emojiTable, imageTable, fontsState.isFailed) : [],
+		[fontsReady, assets, p.fonts, emojiTable, imageTable, fontsState],
+	);
+	const media = useTemplateMediaUrls(params, { useProxies: p.useProxies ?? false });
+	// Pictures the template cannot draw are reported and marked like its other assets (the Player draws its
+	// placeholder there); offline ones are reported by the export planner (OFFLINE_TEMPLATE_MEDIA).
+	const shown = useMemo(
+		() => [
+			...missing,
+			...media.missing.map((m): MissingTemplateAsset => ({ kind: 'media', mediaId: m.mediaId })),
+		],
+		[missing, media.missing],
+	);
+	const scope = useClipAssetScope(p.clipId);
 	if (!Impl)
 		return (
 			<PlaceholderCard text={`Anime template ${key} has no implementation`} height={p.mg.canvas.height} />
 		);
 	if (!fontsReady) return null;
+	// A render never draws a template without its declared assets (the planner blocks such exports; this catches a
+	// file that broke after planning): the render fails with the reason instead of substituting.
+	const rendering = !p.isPreview || getRemotionEnvironment().isRendering;
+	if (missing.length > 0 && rendering)
+		throw new Error(
+			`Template ${key} cannot be drawn: ${missing.map(missingAssetLabel).join(', ')} not available`,
+		);
+	// A picture the browser cannot decode and that has no display picture never renders as the placeholder (the
+	// export prepares display pictures for every template picture; this catches anything that slipped through).
+	const undecodable = media.missing.filter((m) => m.reason === 'undecodable');
+	if (undecodable.length > 0 && rendering)
+		throw new Error(
+			`Template ${key} cannot be drawn: ${undecodable.map((m) => `picture ${m.mediaId}`).join(', ')} cannot be decoded by the browser and has no display picture`,
+		);
 	const t = animeTemplateTiming(p.def, {
 		fps: p.fps,
 		localFrame: p.localFrame,
@@ -162,17 +472,27 @@ function AnimeTemplate(p: {
 		sourceInFrames: p.sourceInFrames,
 	});
 	return (
-		<Impl
-			params={params}
-			timeMs={t.timeMs}
-			totalMs={t.totalMs}
-			introMs={t.introMs}
-			outroMs={t.outroMs}
-			fps={p.fps}
-			canvas={p.mg.canvas}
-			seed={hash32(p.clipId, 'template')}
-			isPreview={p.isPreview}
-		/>
+		<TemplateAssetScopeContext.Provider value={scope}>
+			<TemplateMediaIdsContext.Provider value={media.ids}>
+				<Impl
+					params={params}
+					timeMs={p.held ? animeTemplateRestMs(t) : t.timeMs}
+					totalMs={t.totalMs}
+					introMs={t.introMs}
+					outroMs={t.outroMs}
+					fps={p.fps}
+					canvas={p.mg.canvas}
+					seed={hash32(p.clipId, 'template')}
+					isPreview={p.isPreview}
+					emojiUrls={emojiUrls}
+					imageUrls={imageUrls}
+					mediaUrls={media.urls}
+				/>
+			</TemplateMediaIdsContext.Provider>
+			<LayerMissingReport missing={shown} />
+			{/* renders: an offline picture is the planner's OFFLINE_TEMPLATE_MEDIA warning, never a banner */}
+			<FontMarkers missing={rendering ? missing : shown} height={p.mg.canvas.height} />
+		</TemplateAssetScopeContext.Provider>
 	);
 }
 
@@ -181,10 +501,11 @@ export function MotionGraphicLayer(layer: LayerProps) {
 	const mg = 'mg' in clip.source ? clip.source.mg : null;
 	const def = mg ? mgRegistry.getDefinition(mg.template.id, mg.template.version) : undefined;
 	const svgParams = useMemo(
-		() => (def && mg && isSvgTemplate(def) ? resolveParams(def, mg.params) : null),
+		() => (def && mg && isSvgTemplate(def) ? resolveTemplateParams(def, mg.params) : null),
 		[def, mg],
 	);
 	const renderState = useContext(MgRenderStateContext)(clip.clipId);
+	const held = useTemplateEditHold(clip.clipId) && options.isPreview;
 	const sourceInFrames = Math.max(0, Math.round((clip.sourceIn * fps) / FLICKS_PER_SECOND));
 	// The registry decides when the template is installed; the stamp only for unknown templates (S11:ATP-002).
 	const renderer = def ? (isAnimeTemplate(def) ? 'anime' : 'fframes') : (mg?.renderer ?? 'fframes');
@@ -209,6 +530,9 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				sourceInFrames={sourceInFrames}
 				fps={fps}
 				isPreview={options.isPreview}
+				fonts={layer.fonts}
+				useProxies={options.useProxies}
+				held={held}
 			/>
 		);
 	else {
@@ -229,6 +553,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				data-mg-template={mg ? `${mg.template.id}@${mg.template.version}` : undefined}
 				data-mg-renderer={renderer}
 				data-mg-installed={def ? 'true' : 'false'}
+				data-template-hold={held && renderer === 'anime' ? 'true' : undefined}
 				style={FILL}
 			>
 				{content}
@@ -247,6 +572,17 @@ export type MgTemplatePreviewProps = {
 	params?: Record<string, unknown>;
 	/** Backdrop behind the template (default: transparent). */
 	background?: string;
+	/**
+	 * social-comment §7.8: URLs of the template's declared fonts (one URL, or subset files with unicode ranges) and emoji
+	 * (null = unavailable), e.g. from the engine's font catalogue (`catalogFaceFiles`, `emojiImagePath` of
+	 * `@jasper/api`). Without it a template that declares assets shows its "not available" markers. Keep its identity
+	 * stable.
+	 */
+	assets?: {
+		font(face: RenderTemplateAssets['fonts'][number]): string | readonly TemplateFaceFile[] | null;
+		emoji(pack: string, grapheme: string): string | null;
+		image?(id: string): string | null;
+	};
 };
 
 /**
@@ -258,11 +594,42 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	const frame = useCurrentFrame();
 	const { fps, width, height, durationInFrames } = useVideoConfig();
 	const def = mgRegistry.getDefinition(props.templateId, props.version);
-	const canvas = { width, height };
+	const framing = mgPreviewFraming(def?.ui?.preview, { width, height });
+	const canvas = framing?.canvas ?? { width, height };
 	const params = useMemo(
-		() => (def ? resolveParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
+		() => (def ? resolveTemplateParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
 		[def, props.params],
 	);
+	// social-comment §7.8: the template's declared fonts (loaded here: a gallery poster has no document) and emoji.
+	const resolver = props.assets;
+	const declared = useMemo(() => {
+		const assets = def && params ? templateRequiredAssets(def, params) : null;
+		const fonts: RenderDoc['fonts'] = [];
+		const emoji: Record<string, string> = {};
+		for (const face of assets?.fonts ?? []) {
+			const found = resolver?.font(face);
+			for (const f of typeof found === 'string' ? [{ url: found }] : (found ?? []))
+				if (f.url)
+					fonts.push({
+						fontId: templateFontId(face.family),
+						...face,
+						url: f.url,
+						...('unicodeRange' in f && f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
+					});
+		}
+		for (const { pack, graphemes } of assets?.emoji ?? [])
+			for (const g of graphemes) {
+				const url = resolver?.emoji(pack, g);
+				if (url) emoji[emojiTableKey(pack, g)] = url;
+			}
+		const images: Record<string, string> = {};
+		for (const id of assets?.images ?? []) {
+			const url = resolver?.image?.(id);
+			if (url) images[id] = url;
+		}
+		return { assets: assets ?? undefined, fonts, emoji, images };
+	}, [def, params, resolver]);
+	const fontsReady = useFontsReadyState(declared.fonts);
 	let content: ReactNode = null;
 	if (!def || !params)
 		content = (
@@ -273,17 +640,29 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 		);
 	else if (isAnimeTemplate(def))
 		content = (
-			<AnimeTemplate
-				def={def}
-				mg={{ template: { id: def.id, version: def.version }, params, canvas }}
-				clipId={`preview:${def.id}@${def.version}`}
-				localFrame={frame}
-				contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
-				durationFrames={durationInFrames}
-				sourceInFrames={0}
-				fps={fps}
-				isPreview
-			/>
+			<FontsReadyContext.Provider value={fontsReady}>
+				<EmojiTableContext.Provider value={declared.emoji}>
+					<ImageTableContext.Provider value={declared.images}>
+						<AnimeTemplate
+							def={def}
+							mg={{
+								template: { id: def.id, version: def.version },
+								params,
+								canvas,
+								...(declared.assets ? { assets: declared.assets } : {}),
+							}}
+							clipId={`preview:${def.id}@${def.version}`}
+							localFrame={frame}
+							contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
+							durationFrames={durationInFrames}
+							sourceInFrames={0}
+							fps={fps}
+							isPreview
+							fonts={declared.fonts}
+						/>
+					</ImageTableContext.Provider>
+				</EmojiTableContext.Provider>
+			</FontsReadyContext.Provider>
 		);
 	else {
 		const markup = def.renderSvg(params, frame, fps, canvas, {
@@ -295,10 +674,43 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 	}
 	return (
 		<AbsoluteFill
-			style={{ background: props.background ?? 'transparent' }}
+			style={{ background: props.background ?? 'transparent', overflow: 'hidden' }}
 			data-mg-preview-template={props.templateId}
 		>
-			{content}
+			{framing ? (
+				<div
+					data-mg-preview-frame={`${canvas.width}x${canvas.height}`}
+					style={{
+						position: 'absolute',
+						left: (width - canvas.width) / 2,
+						top: (height - canvas.height) / 2,
+						width: canvas.width,
+						height: canvas.height,
+						transform: `scale(${framing.scale})`,
+						transformOrigin: '50% 50%',
+					}}
+				>
+					{content}
+				</div>
+			) : (
+				content
+			)}
 		</AbsoluteFill>
 	);
+}
+
+/**
+ * The framing of a template's gallery preview (`ui.preview`): drawn on `canvas` (e.g. the 1080×1920 a small card is
+ * designed for), scaled to cover the preview, centred. Null without the hint (the template is drawn on the preview's
+ * own canvas) or for an unusable one. Previews only: clips and exports never read it.
+ */
+export function mgPreviewFraming(
+	hint: { canvas?: { width?: unknown; height?: unknown } } | undefined,
+	preview: { width: number; height: number },
+): { canvas: { width: number; height: number }; scale: number } | null {
+	const c = hint?.canvas;
+	const ok = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 8192;
+	if (!c || !ok(c.width) || !ok(c.height) || !(preview.width > 0) || !(preview.height > 0)) return null;
+	const canvas = { width: Math.round(c.width), height: Math.round(c.height) };
+	return { canvas, scale: Math.max(preview.width / canvas.width, preview.height / canvas.height) };
 }

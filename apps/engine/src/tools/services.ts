@@ -21,6 +21,8 @@ import { prerenderKey } from '../mg-bundles/service.ts';
 import { LeaseManager } from '../projects/leases.ts';
 import { RecoveryJournal } from '../projects/recovery.ts';
 import { ProjectStoreFs } from '../projects/store.ts';
+import { baseManifest } from '../remote-assets/manifest.ts';
+import { RemoteAssetService } from '../remote-assets/service.ts';
 import { RemotionService } from '../remotion/service.ts';
 import { UploadService } from '../uploads/service.ts';
 import { type CapabilityProvider, CapabilityService } from './capabilities.ts';
@@ -47,6 +49,8 @@ export type CoreServices = {
 	fonts: FontCatalogService;
 	/** wp fonts: the user font library (`<appdir>/fonts`), part of `fonts`' catalog. */
 	fontLibrary: FontLibrary;
+	/** social-comment §7.8: remote platform fonts / emoji (download, cache, network policy). */
+	remoteAssets: RemoteAssetService;
 	remotion: RemotionService;
 	/** spec 13 SH-004: measures text boxes of headless transactions in the render browser. */
 	textMeasurer: HeadlessTextMeasurer;
@@ -155,7 +159,16 @@ export async function createCoreServices(
 		onChange: (revision) => broadcaster.publish('fonts.changed', { revision }),
 		log: opts.log,
 	});
-	const fonts = new FontCatalogService(env, fontLibrary);
+	const remoteBase = baseManifest(env);
+	if (remoteBase.error) opts.log?.(`[remote-assets] base manifest ignored: ${remoteBase.error}`);
+	const remoteAssets = new RemoteAssetService({
+		manifest: remoteBase.manifest,
+		dir: paths.remoteAssetsDir,
+		overridePath: paths.remoteManifestOverride,
+		settingsPath: paths.networkSettings,
+		onChanged: (e) => broadcaster.publish('remoteAssets.changed', e),
+	});
+	const fonts = new FontCatalogService(env, fontLibrary, remoteAssets);
 	const remotion = new RemotionService({
 		bundleCacheDir: paths.remotionBundleDir,
 		usageLog: join(paths.logsDir, 'remotion-usage.jsonl'),
@@ -239,6 +252,7 @@ export async function createCoreServices(
 		recovery,
 		fonts,
 		fontLibrary,
+		remoteAssets,
 		remotion,
 		textMeasurer,
 		exports: exportsSvc,
@@ -261,6 +275,7 @@ export async function createCoreServices(
 		},
 		async stop() {
 			uploads.stop();
+			await remoteAssets.flush().catch(() => undefined);
 			await queue.shutdown();
 			await cache.stop();
 			await textMeasurer.close();

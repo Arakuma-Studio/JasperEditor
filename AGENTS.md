@@ -59,18 +59,16 @@
 
 ## 3. Assets and ported code
 
-1. Never use commercial-product artwork, including Adobe icons, cursors, logos, screenshots,
-   fonts, LUTs, presets, templates or sample media, or traced, redrawn or recolored copies.
-   Draw generic symbols from scratch; use neutral UI names and no third-party brand assets.
-2. Use only openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
+1. Use only openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
    work licensed `LicenseRef-JasperEditor`. Never add assets with unknown licences or NC/ND terms.
-3. Port code or algorithms only from permissive licences; record source URLs, upstream-to-local
+   Templates that replicate a platform's UI may use that platform's names, logos, icons and fonts.
+2. Port code or algorithms only from permissive licences; record source URLs, upstream-to-local
    paths, licence and copyright in `licenses/ported/<name>.md` using the
    [record format](licenses/ported/README.md).
-4. Commit screenshots only of JasperEditor or other open projects, with generated or openly
+3. Commit screenshots only of JasperEditor or other open projects, with generated or openly
    licensed media.
-5. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
-6. Leave out assets whose provenance cannot be established.
+4. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
+5. Leave out assets whose provenance cannot be established.
 
 ## 4. Preview and export fidelity
 

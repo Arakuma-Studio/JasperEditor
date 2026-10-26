@@ -3,8 +3,8 @@
 // and reset ⟲. Every numeric scrub is one gesture = one undo step; discrete edits are one transaction.
 // In Effect Controls a twirl opens the row's Value / Velocity graphs (S05:ECP-005, S03:KF-022).
 import { type Command, dropdownItems, type ProjectDocument, type Sequence } from '@jasper/project';
-import type { TransportStore } from '@jasper/session';
-import { useSessionOrNull } from '@jasper/session/react';
+import type { SessionState, TransportStore } from '@jasper/session';
+import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { Fragment, type ReactNode, useMemo, useRef, useState } from 'react';
 import { browseForLut } from '../../../color/actions.ts';
@@ -20,6 +20,8 @@ import {
 	rowStatus,
 	setExpressionCommand,
 } from '../../../expressions/row.ts';
+import { templateParamControls } from '../../../extensions/index.ts';
+import { useRegistry } from '../../../extensions/react.ts';
 import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
@@ -32,10 +34,12 @@ import {
 	vecComponent,
 } from '../lib/model.ts';
 import type { InspectorOps } from '../lib/ops.ts';
+import { applyTemplateParamPatch, clipParams } from '../lib/template-params.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from './fields.tsx';
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { MediaParamPicker } from './MediaParamPicker.tsx';
 import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
+import { TemplateParamControlHost } from './TemplateParamControl.tsx';
 
 export type RowContext = {
 	doc: ProjectDocument;
@@ -54,6 +58,8 @@ export type RowContext = {
 };
 
 const OUTSIDE_HINT = 'Move the playhead over the clip to add a keyframe';
+
+const NO_SESSION_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 /** spec 13 AS-030: the different colours of a mixed colour row, in binding order (for the split swatch). */
 function distinctColors(row: Row): [number, number, number, number][] {
@@ -90,6 +96,16 @@ export function PropertyRow(props: {
 	const label = editLabel(row, clips);
 	const scrubRow = useRef<Row | null>(null);
 	const session = useSessionOrNull();
+	const readOnly = useStoreSelector(
+		session?.store ?? NO_SESSION_STORE,
+		(st: SessionState | null) => st?.readOnly === true,
+	);
+	// C3: a template param whose template names a registered custom control.
+	const controls = useRegistry(templateParamControls);
+	const customControl =
+		spec.ui.customControl && spec.key.startsWith('params.')
+			? controls.find((c) => c.id === spec.ui.customControl)
+			: undefined;
 	const anim = animState(row);
 	const animatable = spec.animatable !== 'no';
 	const outside = row.bindings.every((b) => b.resolved.outside);
@@ -230,6 +246,7 @@ export function PropertyRow(props: {
 			}
 			case 'media':
 				// fx framework: picture inputs (image/video kinds) get the generic picker; LUT params keep LutPicker.
+				// Template media params (avatars): "None" is null; Project panel items can be dropped on the field.
 				if (spec.mediaKinds && !spec.mediaKinds.includes('lut'))
 					return (
 						<MediaParamPicker
@@ -237,7 +254,11 @@ export function PropertyRow(props: {
 							value={mixed ? null : value}
 							kinds={spec.mediaKinds}
 							label={row.label}
-							onChange={(mediaId) => commitFn(() => ({ mediaId }))}
+							nullable={spec.mediaNullable}
+							onChange={(mediaId) =>
+								commitFn(() => (mediaId === '' && spec.mediaNullable ? null : { mediaId }))
+							}
+							onRefusedDrop={ctx.hint}
 							data-testid={`prop-${row.id}`}
 						/>
 					);
@@ -354,6 +375,24 @@ export function PropertyRow(props: {
 						</span>
 					);
 				}
+				// WP7a: an object-valued template param without its custom control: its value, read-only.
+				if (spec.key.startsWith('params.')) {
+					let text = '–';
+					try {
+						text = mixed ? '–' : (JSON.stringify(value) ?? '–');
+					} catch {
+						text = '?';
+					}
+					return (
+						<span
+							className="min-w-0 truncate font-pr-mono text-pr-small text-pr-muted"
+							title={text}
+							data-testid={`prop-${row.id}`}
+						>
+							{text}
+						</span>
+					);
+				}
 				return null;
 			case 'wheel':
 				return <WheelField row={row} ctx={writeCtx} title="" data-testid={`prop-${row.id}`} />;
@@ -364,6 +403,45 @@ export function PropertyRow(props: {
 
 	const editor = (() => {
 		if (props.editor) return props.editor;
+		if (customControl) {
+			const first = row.bindings[0]!;
+			const { mixed, value } = shown();
+			const clips = row.bindings.map((b) => b.clip);
+			const clipIds = clips.map((c) => c.id);
+			return (
+				<TemplateParamControlHost
+					def={customControl}
+					clipId={first.clip.id}
+					paramName={spec.key.slice('params.'.length)}
+					value={mixed ? first.resolved.value : value}
+					params={clipParams(first.clip)}
+					disabled={readOnly}
+					clipIds={clipIds}
+					mixed={mixed}
+					onChange={(next, opts) => {
+						const plan = planSet(row, live(), () => next);
+						report(plan.skipped);
+						if (plan.commands.length === 0) return plan.skipped.length === 0;
+						const r = ctx.ops.apply(
+							label,
+							plan.commands,
+							opts?.coalesce ? { coalesceKey: `template-param:${row.id}:${clipIds.join(',')}` } : undefined,
+						);
+						return r?.ok === true;
+					}}
+					onChangeParams={(patch, opts) =>
+						applyTemplateParamPatch(
+							{ doc: ctx.doc, seq: ctx.seq, ops: ctx.ops, frame: live, hint: ctx.hint },
+							clips,
+							session?.ctx.registries.mgTemplates,
+							patch,
+							label,
+							opts,
+						)
+					}
+				/>
+			);
+		}
 		const custom = controlEditor();
 		if (custom) return custom;
 		const { mixed, value } = shown();
@@ -468,6 +546,10 @@ export function PropertyRow(props: {
 	};
 	const canReset = spec.defaultValue !== undefined && row.bindings.some((b) => b.path !== null);
 	const ec = ctx.mode === 'effectControls';
+	// WP7a: a custom control with `layout: 'block'` is drawn under the label row across the panel width.
+	const block = !props.editor && customControl?.layout === 'block';
+	const focusRow = () =>
+		inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id });
 
 	return (
 		<Fragment>
@@ -476,20 +558,12 @@ export function PropertyRow(props: {
 				className={cx(
 					'group flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1',
 					props.indent ? (ctx.mode === 'effectControls' ? 'pl-[3px]' : 'pl-5') : 'pl-2',
-					spec.ui.multiline && 'items-start py-1',
+					spec.ui.multiline && !block && 'items-start py-1',
 					props.className,
 				)}
 				data-row={row.id}
-				onPointerDownCapture={() =>
-					inspectorFocus.set({
-						source: ctx.mode,
-						clipIds: row.bindings.map((b) => b.clip.id),
-						rowId: row.id,
-					})
-				}
-				onFocusCapture={() =>
-					inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id })
-				}
+				onPointerDownCapture={focusRow}
+				onFocusCapture={focusRow}
 			>
 				{ec && props.indent ? (
 					<span className="flex w-[13px] shrink-0 justify-center">
@@ -543,7 +617,7 @@ export function PropertyRow(props: {
 					data-expression={rx?.expression ? (exprActive ? 'active' : 'inactive') : undefined}
 					title={exprActive ? 'Value set by an expression' : undefined}
 				>
-					{editor}
+					{block ? null : editor}
 				</span>
 				{animatable && (!ec || anim !== 'none') ? (
 					<span className="flex shrink-0 items-center">
@@ -595,6 +669,20 @@ export function PropertyRow(props: {
 					) : null}
 				</span>
 			</div>
+			{block ? (
+				<div
+					className={cx(
+						'flex min-w-0 pr-1 pb-1',
+						props.indent && !ec ? 'pl-5' : 'pl-2',
+						outside && 'opacity-60',
+					)}
+					data-row-block={row.id}
+					onPointerDownCapture={focusRow}
+					onFocusCapture={focusRow}
+				>
+					{editor}
+				</div>
+			) : null}
 			{ec && rx?.expression ? (
 				<ExpressionRow
 					doc={ctx.doc}

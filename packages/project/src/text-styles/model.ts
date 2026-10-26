@@ -4,7 +4,7 @@
 // `styleOverrides` (a patch over the style). The clip's `content.style` always holds the effective style (the
 // renderers and older builds read only that); editing a project style rewrites every linked clip's effective style as
 // `applyStylePatch(newStyle, deviations)`, the deviations taken from the clip itself, so a deviation is never lost
-// whichever command made it. Stored leniently (schema v9 fields): a dangling `styleId` (pasted from another project)
+// whichever command made it. Stored leniently (schema v10 fields): a dangling `styleId` (pasted from another project)
 // reads as "not linked", INV-TEXTSTYLE checks what is stored, `repairTextStyles` makes it readable on load.
 import { z } from 'zod';
 import { ID_PREFIXES, idPrefixOf, isValidId } from '../ids.ts';

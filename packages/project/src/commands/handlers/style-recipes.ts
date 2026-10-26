@@ -1,4 +1,4 @@
-// Spec 15 EA-010: project copies of style recipes and the active recipe (`ProjectDocument.styleRecipes`; schema v9,
+// Spec 15 EA-010: project copies of style recipes and the active recipe (`ProjectDocument.styleRecipes`; schema v10,
 // read leniently by `projectStyleRecipes`, checked by INV-STYLE-RECIPE). docs/wp-notes/edit-automation.md "Style recipes".
 import {
 	builtinStyleRecipe,

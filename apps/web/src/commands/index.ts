@@ -2,6 +2,8 @@ import '../layer-bake/commands.ts';
 import '../fx/register.ts';
 import '../simwarp/register.ts';
 import '../audio-fx/register.ts';
+import '../template-edit/register.ts';
+import '../remote-assets/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
 import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';

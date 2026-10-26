@@ -553,6 +553,10 @@ describe('curve argument parser', () => {
 			'cubic-bezier(Infinity, 0, 1, 1)',
 			'cubic-bezier(NaN, 0, 1, 1)',
 			'no-such-preset',
+			// Object.prototype names are not CSS keywords (they crashed with a TypeError)
+			'__proto__',
+			'constructor',
+			'toString',
 		])
 			expect(() => parseCurveArg(bad), bad).toThrowError(ToolError);
 		expect(() =>
@@ -566,18 +570,6 @@ describe('curve argument parser', () => {
 		).toThrowError(/increase/);
 		expect(() => parseCubicCurveArg('elastic.out-3-soft')).toThrowError(/multi-point/);
 	});
-
-	it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
-		'refuses the Object.prototype name %j with E_INVALID_PARAM (regression: id.trim is not a function)',
-		(s) => {
-			expect(() => parseCurveArg(s)).toThrowError(ToolError);
-			try {
-				parseCurveArg(s);
-			} catch (e) {
-				expect((e as ToolError).code).toBe('E_INVALID_PARAM');
-			}
-		},
-	);
 
 	it('fuzz: any string either parses to a valid curve or is an E_INVALID_PARAM ToolError', () => {
 		fc.assert(

@@ -1,4 +1,4 @@
-// Spec 13 SH-002 / AS-003: subtitles as text clips — the schema v9 fields.
+// Spec 13 SH-002 / AS-003: subtitles as text clips — the schema v10 fields.
 //
 // - `TextClip.caption` = {groupId, words, speaker?, anchorIn?}: the words a subtitle shows with
 //   their timing in the clip's CONTENT time (flicks, the keyframe axis: sequence time t ↔ content

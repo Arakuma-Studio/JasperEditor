@@ -3,18 +3,27 @@ import { isSvgTemplate, mgRegistry, resolveSpecParams } from '@jasper/mg-templat
 import type { Clip, ProjectDocument } from '@jasper/project';
 import { FLICKS_PER_SECOND } from '@jasper/project';
 import { z } from 'zod';
-import { clipSections } from '../extensions/index.ts';
+import { clipMenuExtensions, clipSections } from '../extensions/index.ts';
+import { addAnotherDisabledReason, addAnotherMotionGraphics } from '../panels/motionTemplates/add-another.ts';
+import {
+	MG_BULK_IMPORT_DIALOG,
+	registerBulkImportDialog,
+} from '../panels/motionTemplates/BulkImportDialog.tsx';
 import { insertMotionTemplate } from '../panels/motionTemplates/insert.ts';
 import { MgTemplateSection } from '../panels/motionTemplates/TemplateSection.tsx';
 import { hasTemplateUpgrade, updateTemplates } from '../panels/motionTemplates/upgrades.ts';
 import { trackMgRenderJob } from '../panels/program/mg-render-state.tsx';
+import { registerSocialCommentControls } from '../social-comments/register.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const InsertArgs = z.object({
 	templateId: z.string().min(1),
 	version: z.number().int().positive().default(1),
+	/** C3: a preset id of the template (its params over the defaults). */
+	preset: z.string().min(1).max(64).optional(),
 	/** Sequence frame; default the playhead. */
 	at: z.number().int().min(0).optional(),
+	/** Track id or label to overwrite on; default: the first free video track from the targeted one up. */
 	trackId: z.string().optional(),
 });
 
@@ -69,12 +78,85 @@ const UpdateArgs = z
 	})
 	.optional();
 
+const AddAnotherArgs = z
+	.object({
+		/** Motion-graphic clips to add another of; default: the selected ones. */
+		clipIds: z.array(z.string().min(1)).min(1).max(100).optional(),
+		/** Seed of the re-randomized params (uint32); default: random. */
+		seed: z.number().int().min(0).max(0xffff_ffff).optional(),
+	})
+	.optional();
+
+const BulkImportArgs = z
+	.object({
+		templateId: z.string().min(1).optional(),
+		version: z.number().int().positive().optional(),
+		preset: z.string().min(1).max(64).optional(),
+	})
+	.optional();
+
 export const mgCommands: UiCommand[] = [
+	{
+		id: 'mg.addAnother',
+		label: 'Add Another',
+		description:
+			'Adds a copy of each selected motion-graphic clip right after it on the timeline (same length, first free video track, never overwriting), with fresh random values for what its template re-randomizes — for social comments a new name, handle, avatar and stats; the look and the text are kept. One undo step.',
+		icon: 'panel.motionTemplates',
+		scope: 'editing',
+		argsSchema: AddAnotherArgs,
+		agentExposed: true,
+		when: (ctx) =>
+			!!ctx.session && !ctx.session.getState().readOnly && !!ctx.session.getState().activeSequenceId,
+		disabledReason: (ctx) => addAnotherDisabledReason(ctx.session),
+		run: (ctx, args) => {
+			if (!ctx.session) throw new Error('No project is open');
+			const a = args as z.infer<typeof AddAnotherArgs>;
+			const r = addAnotherMotionGraphics(ctx.session, {
+				...(a?.clipIds ? { clipIds: a.clipIds } : {}),
+				...(a?.seed !== undefined ? { seed: a.seed } : {}),
+			});
+			if (!r.ok) throw new Error(r.message);
+		},
+	},
+	{
+		id: 'mg.bulkImport',
+		label: 'Import Motion Graphics from Spreadsheet…',
+		description:
+			'Pastes rows from a spreadsheet or reads a CSV file and adds one motion graphic per row (e.g. a social comment per row), one after another from the playhead, after a preview of every row.',
+		icon: 'panel.motionTemplates',
+		scope: 'editing',
+		argsSchema: BulkImportArgs,
+		when: (ctx) =>
+			!!ctx.session && !ctx.session.getState().readOnly && !!ctx.session.getState().activeSequenceId,
+		disabledReason: (ctx) =>
+			!ctx.session
+				? 'Open a project first'
+				: ctx.session.getState().readOnly
+					? 'The project is read-only'
+					: !ctx.session.getState().activeSequenceId
+						? 'Open a sequence first'
+						: undefined,
+		run: (ctx, args) => {
+			const a = args as z.infer<typeof BulkImportArgs>;
+			ctx.ui.openDialog(MG_BULK_IMPORT_DIALOG, {
+				session: ctx.session,
+				...(a?.templateId
+					? {
+							template: {
+								id: a.templateId,
+								version: a.version ?? 1,
+								...(a.preset ? { preset: a.preset } : {}),
+							},
+						}
+					: {}),
+			});
+		},
+	},
 	{
 		id: 'mg.insert',
 		label: 'Insert Motion Template',
 		description:
-			'Adds a motion-graphic template at the playhead on the targeted video track (default duration and params).',
+			'Adds a motion-graphic template at the playhead (default duration and params; with preset, that preset of the template) without overwriting: on the first free video track from the targeted one up (a new track on top when all are busy); with trackId, on that track (overwriting its range).',
 		icon: 'panel.motionTemplates',
 		scope: 'editing',
 		argsSchema: InsertArgs,
@@ -85,7 +167,7 @@ export const mgCommands: UiCommand[] = [
 			if (!ctx.session) throw new Error('No project is open');
 			insertMotionTemplate(
 				ctx.session,
-				{ id: a.templateId, version: a.version },
+				{ id: a.templateId, version: a.version, ...(a.preset ? { preset: a.preset } : {}) },
 				{ at: a.at, trackId: a.trackId },
 			);
 		},
@@ -147,6 +229,9 @@ export const mgCommands: UiCommand[] = [
 	},
 ];
 
+// WP7a: the social-comment template's Properties controls (social-comment-text, social-count, social-time, social-avatar).
+registerSocialCommentControls();
+
 clipSections.register({
 	id: 'mg-template',
 	title: 'Template',
@@ -154,4 +239,29 @@ clipSections.register({
 	component: MgTemplateSection,
 	defaultOpen: true,
 	order: 5,
+});
+
+registerBulkImportDialog();
+
+// Timeline clip menu (social-comments design §7.9): Add Another on motion-graphic clips.
+clipMenuExtensions.register({
+	id: 'mg-add-another',
+	order: 5,
+	items: ({ session, clip, runCommand }) => {
+		if (clip.kind !== 'motion-graphic') return [];
+		const readOnly = session.getState().readOnly;
+		return [
+			{
+				kind: 'item',
+				label: 'Add Another',
+				disabled: readOnly,
+				run: () => {
+					const sel = session.getState().selection.timeline.clips;
+					const clipIds = sel.includes(clip.id) ? sel : [clip.id];
+					if (runCommand) runCommand('mg.addAnother', { clipIds });
+					else addAnotherMotionGraphics(session, { clipIds });
+				},
+			},
+		];
+	},
 });

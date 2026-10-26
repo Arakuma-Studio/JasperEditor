@@ -3,7 +3,7 @@
 // objects of the seven editing-automation passes as they are (`AUTOMATION_PARAM_SCHEMAS`: composed, not forked) —
 // plus the asset roles the passes draw from (whoosh sounds, reaction pictures, songs, static noise) and the targets
 // Style Check compares a sequence with. Stored in the user library (`<appdir>/style-recipes/`, the engine) and copied
-// into a project that uses one (`ProjectDocument.styleRecipes`, schema v9, read leniently: `projectStyleRecipes`,
+// into a project that uses one (`ProjectDocument.styleRecipes`, schema v10, read leniently: `projectStyleRecipes`,
 // INV-STYLE-RECIPE, `repairStyleRecipes`). Built-ins are code (`BUILTIN_STYLE_RECIPES`, neutral names, the measured
 // parameters). Pure.
 import { z } from 'zod';
@@ -454,7 +454,7 @@ export function recipeWithPassParams(
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The project copy (`ProjectDocument.styleRecipes`, schema v9)
+// The project copy (`ProjectDocument.styleRecipes`, schema v10)
 
 /** What `ProjectDocument.styleRecipes` holds: the recipes the project used and the active one. */
 export type ProjectStyleRecipes = {

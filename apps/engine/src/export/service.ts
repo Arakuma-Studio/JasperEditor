@@ -58,6 +58,7 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
+import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
@@ -1741,6 +1742,8 @@ export class ExportService {
 			},
 			// parity (roto): object-matte sets for the headless browser
 			resolveRoto: (key) => sign(rotoStorePath(key)),
+			// social-comment §7.8: template fonts and emoji (the planner made them available)
+			templateAssets: engineTemplateAssets(this.deps.fonts, sign),
 		});
 		const nested = NESTED_REMOTION.get(prepared);
 		const adapt = (d: typeof doc, prep: ReadonlyMap<string, unknown>, path: string): typeof doc => {

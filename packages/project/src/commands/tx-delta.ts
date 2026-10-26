@@ -3,6 +3,7 @@
 // transaction started from a document a transaction produced (already normalized, `markNormalized`), only what it
 // changed can create an orphan or a shared caption transcript, so these checks prove "nothing to do" from the
 // changed clips alone and the full pass runs only when they cannot.
+import { clipParamMediaIds } from '../param-media.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { latest, normalizedBase, recordDelta } from './draft-read.ts';
@@ -62,6 +63,8 @@ function orphanRefs(c: Clip | undefined): string[] {
 	const out: string[] = [];
 	for (const k of ['mediaId', 'syntheticId', 'transcriptId'] as const)
 		if (typeof r[k] === 'string') out.push(r[k]);
+	// template media params (avatars): counted like the clip's own source.
+	for (const id of clipParamMediaIds(c)) if (id !== r.mediaId) out.push(id);
 	return out;
 }
 

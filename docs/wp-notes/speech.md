@@ -330,7 +330,7 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   the prompt into every window (our first version) derailed tiny.en into "Oh, oh, oh…" loops, hence OpenAI's
   semantics. `conditionOnPreviousText: false` is the OpenAI option.
 - Segment scores (TC-003): `avgLogprob`, `noSpeechProb`, `compressionRatio` (and `temperature`) per segment in the
-  result; stored as `Transcript.segments` (media-time flicks, project-files.md v9 table), merged inside a mix's coverage.
+  result; stored as `Transcript.segments` (media-time flicks, project-files.md v10 table), merged inside a mix's coverage.
 - Word bounds against speech frames (TC-004): bounds snap (split at pauses, grow ≤ 250 ms into voice, tighten) to the
   energy VAD; when the media's voice analysis (`voice-analysis` job, spec 14 TC-001) exists by the end of
   recognition — the engine starts it next to the transcription — its speech/breath frames decide which words lie in

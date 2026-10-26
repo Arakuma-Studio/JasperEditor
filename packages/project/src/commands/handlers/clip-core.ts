@@ -4,6 +4,12 @@ import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
+import {
+	fillTemplateParams,
+	isMgAutoClipName,
+	mgClipName,
+	validateTemplateParams,
+} from '../../registry/mg-params.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { FontRef, MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
@@ -55,7 +61,7 @@ import { markMulticamClips } from './multicam-placement.ts';
 import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
-import { type HandlerMap, idList, peek } from './util.ts';
+import { clone, type HandlerMap, idList, peek } from './util.ts';
 
 type PlaceOptions = {
 	source: { mediaId?: string; syntheticId?: string; sequenceId?: string; projectItemId?: string };
@@ -505,17 +511,29 @@ function followBoxCentre(
 	a.value = [clip.box.width / 2, clip.box.height / 2];
 }
 
+/** Runs the template's fill hook (MgTemplateInfo.fill) on the given params; none = the params unchanged. */
+/** The fill step of `clip.addMotionGraphic` (`fillTemplateParams`), refusals as command errors. */
+function fillMgParams(
+	info: MgTemplateInfo,
+	given: Record<string, unknown>,
+	seed: number,
+	h: HandlerContext,
+): { params: Record<string, unknown>; filled: string[] } {
+	const r = fillTemplateParams(info, given, seed);
+	if (!r.ok) return h.fail(r.code, r.message, r.path ? { path: r.path } : undefined);
+	return { params: r.params, filled: r.filled };
+}
+
+/** Params schema + template media checks (`validateTemplateParams`), refusals as command errors. */
 function validateMgParams(
+	doc: DDoc,
 	info: MgTemplateInfo,
 	params: Record<string, unknown>,
 	h: HandlerContext,
 ): Record<string, unknown> {
-	const parsed = info.paramsSchema.safeParse(params);
-	if (!parsed.success) {
-		const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
-		h.fail('E_INVALID_PARAM', `Invalid params for ${info.id}@${info.version}: ${msg}`);
-	}
-	return parsed.data as Record<string, unknown>;
+	const r = validateTemplateParams(info, params, doc.media);
+	if (!r.ok) return h.fail(r.code, r.message, r.path ? { path: r.path } : undefined);
+	return r.params;
 }
 
 function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) {
@@ -668,12 +686,21 @@ export const clipCoreHandlers = {
 		const info = h.registries.mgTemplates.get(cmd.template.id, cmd.template.version);
 		if (!info)
 			h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${cmd.template.id}@${cmd.template.version}`);
-		const params = validateMgParams(info, { ...info.defaults, ...(cmd.params ?? {}) }, h);
-		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'motion-graphic');
+		// Layering: defaults → (preset, already merged into cmd.params by the caller) → fill → given params; the
+		// fill only fills what the given params leave out, and WP1's media checks see the final params.
+		const given = cmd.params ?? {};
+		const fill = cmd.fill ? fillMgParams(info, given, cmd.fill.seed, h) : { params: given, filled: [] };
+		const params = validateMgParams(doc, info, { ...info.defaults, ...fill.params }, h);
+		const { seq, track, trackIndex, createdTrack, at, duration, id } = newGeneratorClip(
+			doc,
+			cmd,
+			h,
+			'motion-graphic',
+		);
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
 		const box = canvas === 'sequence' ? frameBox(seq) : canvas;
 		seq.clips[id] = {
-			...commonFields(id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
+			...commonFields(id, track.id, at, duration, 0, cmd.name ?? mgClipName(info, params), 'purple'),
 			kind: 'motion-graphic',
 			// anime templates are stamped; absent = fframes.
 			template: {
@@ -687,7 +714,18 @@ export const clipCoreHandlers = {
 		} as DClip;
 		cleanupSequence(seq, h);
 		h.defineRef(cmd.ref, id);
-		return { clipId: id };
+		// The placement and the resolved params, so agents need no second read (dry runs included).
+		return {
+			clipId: id,
+			sequenceId: seq.id,
+			trackId: track.id,
+			track: `${track.kind === 'video' ? 'V' : track.kind === 'audio' ? 'A' : 'C'}${trackIndex + 1}`,
+			...(createdTrack ? { createdTrack: true } : {}),
+			start: at,
+			duration,
+			params: clone(params),
+			...(cmd.fill ? { filled: fill.filled, seed: cmd.fill.seed } : {}),
+		};
 	},
 	'clip.move': (doc, cmd, h: HandlerContext) => {
 		const ids = idList(cmd.clipIds);
@@ -970,7 +1008,12 @@ export function applyClipPatch(
 					'E_INVALID_PARAM',
 					`Unknown motion-graphic template ${clip.template.id}@${clip.template.version}`,
 				);
-			clip.params = validateMgParams(info, { ...clip.params, ...p.params }, h);
+			const before = clip.params as Record<string, unknown>;
+			const autoName = p.name === undefined && isMgAutoClipName(info, clip.name, before);
+			clip.params = validateMgParams(doc, info, { ...before, ...p.params }, h);
+			// a clip that still has its automatic name follows its content ("X post · Luna Park"); a renamed one keeps
+			// the user's name
+			if (autoName) clip.name = mgClipName(info, clip.params as Record<string, unknown>);
 		}
 		if (p.canvas !== undefined) clip.canvas = p.canvas;
 	}

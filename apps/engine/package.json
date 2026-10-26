@@ -29,6 +29,7 @@
     "@fontsource/poppins": "^5.3.0",
     "@fontsource/roboto": "^5.3.0",
     "@fontsource/source-sans-3": "^5.3.0",
+    "@fontsource/tiktok-sans": "^5.3.0",
     "@jasper/api": "workspace:*",
     "@jasper/audio-dsp": "workspace:*",
     "@jasper/audio-fx": "workspace:*",

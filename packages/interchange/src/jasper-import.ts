@@ -25,6 +25,7 @@ import {
 	nearestAllowedRate,
 	type ProjectItem,
 	remapFitDuration,
+	rewriteParamMedia,
 	type Sequence,
 	type SyntheticSource,
 	type TimedClip,
@@ -1241,6 +1242,19 @@ function validateReferences(frag: JasperFragment, report: Report): void {
 						},
 					);
 					c.effects = keep;
+				}
+			}
+			// template media params (avatars) whose media the document does not carry become "none".
+			if (c.kind === 'motion-graphic' && c.params && typeof c.params === 'object') {
+				const fixed = rewriteParamMedia(c.params, (id) => (media.has(id) ? undefined : null));
+				if (fixed.changed.length) {
+					report.warn(
+						`motion graphic "${c.name}" shows media the document does not carry (${fixed.changed
+							.map((p) => `params.${p}`)
+							.join(', ')}); cleared`,
+						{ subject: { kind: 'clip', name: c.name, frame: c.start } },
+					);
+					c.params = fixed.value;
 				}
 			}
 		}

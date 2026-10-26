@@ -1,4 +1,5 @@
-// wp fonts: keeps the font store connected to this window's engine and current with `fonts.changed`.
+// wp fonts: keeps the font store connected to this window's engine and current with `fonts.changed` (and
+// `remoteAssets.changed`, social-comment §7.8).
 import { useStoreSelector } from '@jasper/session/react';
 import { useEffect } from 'react';
 import { useEngineOrNull } from '../state/engine.tsx';
@@ -17,6 +18,9 @@ export function useFonts(): FontsState {
 		() =>
 			subscribe?.((e) => {
 				if (e?.type === 'fonts.changed') void refreshFonts();
+				// social-comment §7.8: the remote-asset manifest / settings change the catalogue's remote families,
+				// emoji packs and images (downloads alone do not)
+				else if (e?.type === 'remoteAssets.changed' && e.payload.reason !== 'fetched') void refreshFonts();
 			}),
 		[subscribe],
 	);
