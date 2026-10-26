@@ -32,9 +32,11 @@ const VARIANTS = String(flag('variants', 'none,static,pixelpop')).split(',');
 const PROFILE = !!flag('profile', false);
 const TRACE = !!flag('trace', false);
 const MEDIA = flag('media', null);
+/** `--solid`: a colour matte instead of the video under the subtitles (isolates their cost from video decoding). */
+const SOLID = !!flag('solid', false);
 const OUT = flag('out', join(root, 'test-results', 'subtitles'));
 const LABEL = flag('label', `${W}x${H}-${CLIPS}`);
-if (!MEDIA) throw new Error('--media <video file> is required');
+if (!MEDIA && !SOLID) throw new Error('--media <video file> (or --solid) is required');
 mkdirSync(OUT, { recursive: true });
 const base = process.env.BASE_URL;
 const secrets = { token: process.env.E2E_TOKEN, editorKey: process.env.E2E_EDITOR_KEY };
@@ -136,12 +138,14 @@ await page.getByTestId('new-project-name').fill(`subtitle-preview-${LABEL}`);
 await page.getByTestId('new-project-create').click();
 await page.getByTestId('timeline-track-area').waitFor({ timeout: 120_000 });
 await page.waitForFunction(() => !!window.jasper, null, { timeout: 60_000 });
-await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
-const chooser = page.waitForEvent('filechooser');
-await page.keyboard.press('Control+KeyI');
-await (await chooser).setFiles([MEDIA]);
-const mediaName = MEDIA.split('/').pop();
-await page.getByTestId('project-row').filter({ hasText: mediaName }).waitFor({ timeout: 180_000 });
+const mediaName = MEDIA ? MEDIA.split('/').pop() : null;
+if (!SOLID) {
+	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
+	const chooser = page.waitForEvent('filechooser');
+	await page.keyboard.press('Control+KeyI');
+	await (await chooser).setFiles([MEDIA]);
+	await page.getByTestId('project-row').filter({ hasText: mediaName }).waitFor({ timeout: 180_000 });
+}
 await page.waitForFunction(() => !!window.__jasperMonitor, null, { timeout: 240_000 });
 const tx = (commands, label = 'subtitle preview') =>
 	page.evaluate((a) => window.jasper.transact({ protocol: 'jasper.tx/1', label: a.label, commands: a.c }), {
@@ -175,7 +179,16 @@ async function measure(name) {
 		async ({ secs, from }) => {
 			const { session, driver } = window.__jasperMonitor;
 			const t = session.transport;
+			const raf = () => new Promise((res) => requestAnimationFrame(() => res()));
+			// Scrub: 60 single-frame steps, each shown (two animation frames) before the next.
 			t.pause();
+			const s0 = performance.now();
+			for (let i = 0; i < 60; i++) {
+				t.seek(from + 300 + i);
+				await raf();
+				await raf();
+			}
+			const scrubFps = Math.round((60 / ((performance.now() - s0) / 1000)) * 10) / 10;
 			t.seek(from);
 			await new Promise((res) => setTimeout(res, 1500));
 			t.play(1);
@@ -204,6 +217,7 @@ async function measure(name) {
 			t.pause();
 			po.disconnect();
 			return {
+				scrubFps,
 				fps: Math.round(((driver.stats.framesShown - f0) / dt) * 10) / 10,
 				dropped: driver.stats.framesDropped - d0,
 				uiFps: Math.round((raf / dt) * 10) / 10,
@@ -256,7 +270,11 @@ for (const v of VARIANTS) {
 		return Object.keys(s.getCommitted().sequences[s.getState().activeSequenceId].clips);
 	});
 	if (ids.length) await tx([{ type: 'clip.lift', clipIds: ids }]);
-	await tx([{ type: 'clip.place', source: { mediaByName: mediaName }, at: 0, tracks: { video: 'V1' } }]);
+	await tx([
+		SOLID
+			? { type: 'clip.addSolid', at: 0, duration: Math.round(items.at(-1).start + items.at(-1).duration), track: 'V1', color: [0.15, 0.2, 0.3, 1] }
+			: { type: 'clip.place', source: { mediaByName: mediaName }, at: 0, tracks: { video: 'V1' } },
+	]);
 	if (v !== 'none') {
 		const cmds = commands(v, fontId);
 		let cur = [];
