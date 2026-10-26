@@ -182,15 +182,13 @@ describe('rules (Spanish)', () => {
 		// chatter after it is still removed: off-script (≥ 3 content words), else tail
 		expect(r.byWord.slice(17, 22).every((k) => k === 'off-script')).toBe(true);
 		expect(r.byWord.slice(22)).toEqual(['head-tail', 'head-tail']);
-		// the same on the head side: a paraphrased opening line stays, pre-roll chatter before it goes
+		// the head side stays strict: on-topic pre-roll before the first scripted line is still head (the user cuts it)
 		const h = kinds(
-			'vale ya | para empezar vamos a crear un juego de coches | al final añadí música y efectos de sonido',
-			{
-				script,
-			},
+			'vale ya | vamos allá que hoy hay juego nuevo | hoy vamos a crear un juego de carreras',
+			{ script },
 		);
-		expect(h.byWord.slice(0, 2)).toEqual(['head-tail', 'head-tail']);
-		expect(h.byWord.slice(2).every((k) => k === null)).toBe(true);
+		expect(h.byWord.slice(0, 9).every((k) => k === 'head-tail')).toBe(true);
+		expect(h.byWord.slice(9).every((k) => k === null)).toBe(true);
 	});
 
 	it('marker phrases alone between pauses go; inside a sentence they stay; at a clause start they are reviewed', () => {

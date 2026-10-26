@@ -411,12 +411,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	ruleOffScript(ctx, phs);
 	ruleMarkerPhrases(ctx, phs, markers);
 	ruleStutters(ctx);
-	// head / tail: before the first / after the last unit on script — one that says a script line, or (outside the
-	// lines said) one whose words come from the script by the off-script test: opening and closing lines are often
-	// paraphrased, and cutting them as chatter was the largest error on the user's material (TC-071 calibration).
+	// head / tail: before the first unit that says a script line / after the last unit on script — one that says a line
+	// or, after it, one whose words come from the script by the off-script test: closing lines are often paraphrased,
+	// and cutting them as tail chatter was the largest error on the user's material (TC-071 calibration). The head side
+	// stays strict: pre-roll talk before the first line is usually on topic, and the user cuts it (measured: a
+	// symmetric rule left 25 s of pre-roll on 13 shorts against 10 s).
 	if (index && settings.rules.headTail !== 'off') {
 		const said = units.map((_, u) => unitLine[u] !== null);
-		let first = said.indexOf(true);
+		const first = said.indexOf(true);
 		let lastU = said.lastIndexOf(true);
 		const vocab = new Set(sTokens);
 		const onScript = (u: number) => {
@@ -427,11 +429,6 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			);
 		};
 		if (first >= 0) {
-			for (let u = 0; u < first; u++)
-				if (onScript(u)) {
-					first = u;
-					break;
-				}
 			for (let u = units.length - 1; u > lastU; u--)
 				if (onScript(u)) {
 					lastU = u;
