@@ -23,6 +23,7 @@ import { pictureCuts } from '../structure/cuts.ts';
 import { flicksPerFrame } from '../time.ts';
 import { aRollTrack, automationSequence, fpsValue, frameGeometry, timecodeOf } from './common.ts';
 import type { RecipeTargets, StyleRecipe, StyleTargetId } from './recipes.ts';
+import { pictureEnd } from './style.ts';
 
 /** Look-here frames listed per metric at most. */
 export const STYLE_CHECK_LOOK_HERE = 50;
@@ -181,11 +182,14 @@ export function styleCheck(
 	const pictureTracks = seq.videoTracks
 		.filter((t) => !PASS_TRACKS.test((t.name ?? '').trim()))
 		.map((t) => t.id);
+	const end = pictureEnd(seq);
 	let cuts: number[] = [];
 	try {
 		cuts = pictureCuts(doc, seq.id, { includeOverlays: false, trackIds: pictureTracks })
 			.filter((c) => c.kind === 'cut' || c.kind === 'jump')
 			.map((c) => c.frame)
+			// where the picture ends (subtitles may hold a little longer) is no cut
+			.filter((f) => f < end)
 			.sort((a, b) => a - b);
 	} catch {
 		cuts = [];
