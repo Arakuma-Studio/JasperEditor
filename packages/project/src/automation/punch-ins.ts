@@ -16,9 +16,9 @@ import type { Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame } from '../time.ts';
+import { trackLabel } from '../derive/index.ts';
 import {
 	AutomationInputError,
-	adjustmentTrackFor,
 	automationSequence,
 	type ClipSkip,
 	type FrameGeometry,
@@ -26,7 +26,9 @@ import {
 	frameGeometry,
 	motionCandidates,
 	passTrack,
+	spanFree,
 	timecodeOf,
+	trackSpans,
 } from './common.ts';
 import { AUTOMATION_DEFAULTS, type PunchInParams, PunchInParamsSchema, type PunchTarget } from './params.ts';
 import { itemSeed, seededRandom } from './rng.ts';
@@ -497,16 +499,16 @@ export function planPunchIns(
 	};
 }
 
-/** The ZOOM track: a free track named "ZOOM" directly above the A-roll, else a new one inserted there. */
+/** The ZOOM track: a free, unlocked track named "ZOOM" directly above the A-roll, else a new one inserted there. */
 function zoomTrackOf(seq: Sequence, aRollIndex: number, spans: [number, number][]): PunchPlan['zoomTrack'] {
 	const above = seq.videoTracks[aRollIndex + 1];
-	if (above && /^zoom( \d+)?$/i.test((above.name ?? '').trim()) && !above.locked) {
-		const r = adjustmentTrackFor(seq, spans, { name: 'ZOOM', minIndex: aRollIndex + 1 });
-		if (!r.create && r.trackId === above.id) return r;
+	if (above && !above.locked && /^zoom( \d+)?$/i.test((above.name ?? '').trim())) {
+		const taken = trackSpans(seq, above.id);
+		if (spans.every(([a, b]) => spanFree(taken, a, b)))
+			return { trackId: above.id, label: trackLabel(seq, above.id) ?? above.id, create: false };
 	}
-	const r = adjustmentTrackFor({ ...seq, videoTracks: [] } as Sequence, spans, { name: 'ZOOM' });
 	const names = new Set(seq.videoTracks.map((t) => (t.name ?? '').trim().toLowerCase()));
-	let name = r.create ? r.name : 'ZOOM';
+	let name = 'ZOOM';
 	for (let n = 2; names.has(name.toLowerCase()) && n < 1000; n++) name = `ZOOM ${n}`;
 	return { create: true, name, index: aRollIndex + 1 };
 }

@@ -532,3 +532,95 @@ describe('Ken Burns planner', () => {
 		expect(planKenBurns(h.doc, h.seqId, { share: 1 }).moves.map((m) => m.clipId)).toEqual([ids[0]]);
 	});
 });
+
+describe('robustness (fuzz)', () => {
+	const { h } = aroll([60, 75, 40, 90, 120, 30, 66]);
+	it('any parameters: a plan or AutomationInputError, never another error', () => {
+		fc.assert(
+			fc.property(
+				fc.constantFrom('decorate-cuts' as const, 'punch-ins' as const, 'ken-burns' as const),
+				fc.oneof(fc.jsonValue(), fc.dictionary(fc.constantFrom('seed', 'coverage', 'density', 'share', 'scale', 'track', 'range', 'pack', 'families', 'sfx', 'target', 'method', 'rampFrames', 'minClipSeconds', 'repeatPenalty', 'fxTrack', 'start'), fc.jsonValue(), { maxKeys: 6 })),
+				(pass, raw) => {
+					try {
+						const plan =
+							pass === 'decorate-cuts'
+								? planDecorateCuts(h.doc, h.seqId, raw)
+								: pass === 'punch-ins'
+									? planPunchIns(h.doc, h.seqId, raw)
+									: planKenBurns(h.doc, h.seqId, raw);
+						expect(plan.sequenceId).toBe(h.seqId);
+					} catch (e) {
+						expect(e).toBeInstanceOf(AutomationInputError);
+					}
+				},
+			),
+			{ numRuns: 400 },
+		);
+	});
+
+	it('a custom kit pack is validated: bad keys and eases are refused by name', () => {
+		const pack = {
+			id: 'mine',
+			label: 'Mine',
+			repeatPenalty: 1,
+			families: [
+				{
+					id: 'pop',
+					label: 'Pop',
+					weight: 1,
+					before: 5,
+					after: 5,
+					variants: [
+						{
+							id: 'a',
+							label: 'Pop',
+							weight: 1,
+							segments: [
+								{
+									span: 'before',
+									effects: [
+										{
+											effectId: 'jasper.transform',
+											keyframes: { scaleHeight: [{ at: -5, value: 100 }, { at: 3, value: 120, ease: 'penner.nope-in' }] },
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			],
+		};
+		expect(() => planDecorateCuts(h.doc, h.seqId, { pack })).toThrow(/outside its before segment|unknown ease/);
+		const ok = structuredClone(pack);
+		ok.families[0]!.variants[0]!.segments[0]!.effects[0]!.keyframes.scaleHeight[1] = { at: 0, value: 120, ease: 'penner.cubic-in' };
+		const plan = planDecorateCuts(h.doc, h.seqId, { pack: ok });
+		expect(plan.pack.id).toBe('mine');
+		expect(plan.kits.every((k) => k.family === 'pop' && k.end === k.frame + 5)).toBe(true);
+	});
+
+	it('refresh of a malformed or foreign proposal is an error result, never a throw', () => {
+		const fake = (report: unknown) =>
+			({
+				version: 1,
+				id: 'prp_0000000000000001',
+				projectId: h.doc.projectId,
+				sequenceId: h.seqId,
+				feature: 'edit-automation',
+				title: 'x',
+				summary: '',
+				author: 'user',
+				createdAt: NOW,
+				updatedAt: NOW,
+				baseRevision: 0,
+				docHash: 'x',
+				items: [{ id: 'kit:60', label: 'k', group: 'cut-kits', commands: [{ type: 'marker.add', frame: 1 }], requires: [], state: 'stale', meta: { pass: 'decorate-cuts', kind: 'kit', frame: 'nope', seed: -3 } }],
+				report,
+			}) as unknown as Proposal;
+		expect(refreshAutomationItems(h.doc, fake(undefined), ['kit:60'])).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
+		expect(refreshAutomationItems(h.doc, fake({ pass: 'decorate-cuts', params: { covrage: 2 } }), ['kit:60'])).toMatchObject({ ok: false });
+		const r = refreshAutomationItems(h.doc, fake({ pass: 'decorate-cuts', params: {} }), ['kit:60', 'nope']);
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.items.length + r.dropped.length).toBeLessThanOrEqual(1);
+	});
+});

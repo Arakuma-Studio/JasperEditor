@@ -3,7 +3,7 @@
 // cost, sounds, budget), Propose: the pass's job runs, review opens on the stored proposal and nothing is applied;
 // Reroll of a review item through the session (the producer's next seed).
 import type { AutomationPassResult, EngineJob, ProposalRefreshResponse } from '@jasper/api';
-import type { Proposal } from '@jasper/project';
+import { parsePassParams, passDraft, passItems, planDecorateCuts, type Proposal } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -14,6 +14,8 @@ import { AUTOMATE_MENU } from '../src/automation/menu.ts';
 import { automationCommands } from '../src/commands/automation.ts';
 import { proposalCommands } from '../src/commands/proposals.ts';
 import { isRerollable, rerollReviewItem } from '../src/proposals/actions.ts';
+import { buildGhostModel } from '../src/proposals/ghosts.ts';
+import { buildReviewModel } from '../src/proposals/review.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
 
@@ -350,6 +352,53 @@ describe('Reroll in review', () => {
 		const r = await rerollReviewItem(session, 'kit:60');
 		expect(r).toEqual({ ok: true, message: 'Rerolled: Whip left at 00:00:02:00' });
 		expect(seen).toEqual([{ itemIds: ['kit:60'], reroll: true }]);
+		c.exit();
+	});
+});
+
+describe('review of a real Decorate Cuts proposal', () => {
+	it('groups the kits under Cut kits and draws each kit’s adjustment clips and key bands at its range', async () => {
+		const { session, seqId } = makeSession();
+		session.apply({
+			label: 'setup',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [1, 0, 0, 1] },
+				{ type: 'clip.addSolid', at: 90, duration: 90, track: 'V1', color: [0, 0, 1, 1] },
+				{ type: 'clip.addSolid', at: 180, duration: 90, track: 'V1', color: [0, 1, 0, 1] },
+			] as never[],
+		});
+		const doc = session.getCommitted();
+		const params = parsePassParams('decorate-cuts', { seed: 4 });
+		const plan = planDecorateCuts(doc, seqId, params);
+		const draft = passDraft(plan, passItems(doc, plan), params)!;
+		const engine = new FakeEngine(() => session);
+		const timers: (() => void)[] = [];
+		const c = proposalsFor(session, { engine, setTimer: (fn) => timers.push(fn), clearTimer: () => undefined });
+		const p = engine.create(draft as never, 'user');
+		await c.setActive(p.id);
+		while (timers.length) timers.shift()!();
+		const st = c.getState();
+		const model = buildReviewModel(st.items, null, 'edit-automation');
+		expect(model.groups.map((g) => g.id)).toEqual(['cut-kits']);
+		const m = buildGhostModel({
+			preview: st.preview!,
+			committed: st.preview!.base,
+			sequenceId: seqId,
+			items: st.items,
+			agent: false,
+		});
+		for (const k of plan.kits) {
+			const ghosts = m.clips.filter((x) => x.itemId === k.id);
+			expect(ghosts.every((g) => g.kind === 'adjustment')).toBe(true);
+			expect(Math.min(...ghosts.map((g) => g.start))).toBe(k.start);
+			expect(Math.max(...ghosts.map((g) => g.start + g.duration))).toBe(k.end);
+			expect(m.keys.some((b) => b.itemId === k.id)).toBe(true);
+		}
+		const kitItem = st.items.find((i) => i.id === plan.kits[0]!.id)!;
+		expect((kitItem.meta as { why: string }).why).toContain('kit on the cut at');
+		expect(isRerollable(kitItem)).toBe(true);
 		c.exit();
 	});
 });
