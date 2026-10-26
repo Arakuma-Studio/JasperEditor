@@ -68,8 +68,6 @@ export const SWS_FLAGS = 'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma
  */
 export const BT709_FRAME_TAGS = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv';
 const OFFLINE_RGBA: [number, number, number, number] = [0.55, 0.05, 0.08, 1];
-/** Input queue (frames) of a kernel stream's pipe in the composite. */
-const TAP_QUEUE = 32;
 
 type NativeSourceResolver = {
 	/** Online local media for a mediaId (null = offline). */
@@ -942,8 +940,7 @@ function drawStack(ctx: StackContext): string {
 				const label = `${P}l${li++}`;
 				const fd = ctx.addStream(pl);
 				const k = ctx.addInput([
-					// A deeper input queue decouples the kernel's pipe from the composite (frames come in bursts).
-					...['-thread_queue_size', String(TAP_QUEUE), '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${pl.outW}x${pl.outH}`],
+					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${pl.outW}x${pl.outH}`],
 					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
 				]);
 				ctx.chains.push(
@@ -983,8 +980,8 @@ function drawStack(ctx: StackContext): string {
 				);
 				const fd = ctx.addStream(plan);
 				const k = ctx.addInput([
-					...['-thread_queue_size', String(TAP_QUEUE), '-f', 'rawvideo', '-pix_fmt', 'rgba'],
-					...['-s', `${plan.outW}x${plan.outH}`, '-framerate', rate(fps), '-i', `pipe:${fd}`],
+					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
+					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
 				]);
 				ctx.chains.push(
 					`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
