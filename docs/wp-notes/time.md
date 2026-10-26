@@ -76,7 +76,11 @@ A video layer is *retimed* when its frames are not linear playback:
 - reverse;
 - an active remap;
 - Frame Blending or Optical Flow with a speed or frame-rate change;
-- VFR media.
+- VFR media;
+- Frame Sampling whose pictures do not start on media frames (`samplesOnFrameGrid`): a media frame rate other than
+  the sequence's that is not a whole-frame step (29.97 → 30, 23.976 → 24, 25 → 30, 30 → 29.97; 60 → 30 stays
+  linear), a speed that is not a whole number of media frames per sequence frame, an in-point or a frame hold between
+  media frames (§15).
 
 The render snapshot marks it with `retime: {interpolation, mediaRate, vfr}`. Each composition frame works the same
 way:
@@ -117,6 +121,8 @@ The `retime` native extension keeps retimed layers on the native path.
   - VFR frame times come from the ffprobe packet pts (cached).
 - **override** hands the intermediate to the builder as the clip's `layer` source (`retimed: true`). Effects,
   Motion, opacity, masks and transitions then apply as for any video layer.
+- Linear Frame Sampling (`isLinearFrameSampling`: retimed only because its pictures fall between media frames, §15) is
+  not claimed: the builder draws it from the media with exact source timing, without an intermediate.
 
 The planner refuses with a named blocker (`retimeBlocker`) only where the stage cannot help:
 
@@ -270,6 +276,7 @@ transition and reports `approximated`.
 | Native export | `apps/engine/test/time-export.test.ts`: reverse, remap (50 % + freeze + palindrome), VFR, Frame Blending at 50 %, Optical Flow, scene job |
 | Native and Remotion exports, same sequence | `apps/engine/scripts/verify-time.ts` against a live engine (720p sequence: reversed clip 0–29, remapped 30–101 with 50 % / freeze / reverse, VFR clip 102–151; every frame's code read with ffmpeg): native **152/152**, Remotion **152/152** (`cd apps/engine && pnpm exec tsx scripts/verify-time.ts --engine http://127.0.0.1:<port>`) |
 | Real app | `e2e/time.spec.ts` (built app, Chrome): band drag → slower, one undo step; Time Interpolation menu; Effect Controls section; Program monitor shows `floor(t·0.5)`-th source frames; native export shows the same frames; Scene Edit Detection dialog cuts scenes.mp4 at its 4 cuts in one undo step. **5/5 pass** (`E2E_PORT=<port> pnpm e2e e2e/time.spec.ts`). |
+| Frame-rate conform (§15) | `packages/project/test/fps-conform.test.ts` (the rule per rate pair, fast-check against rational floor, `samplesOnFrameGrid`, the snapshot); `apps/engine/test/fps-conform-native.test.ts` (native frame codes = rule for 29.97 → 30, 23.976 → 24, 25 → 30, 60 → 30, 30 → 29.97, an in-point, 70 %, a hold; filters; untagged matrix); `apps/engine/test/fps-conform.e2e.test.ts` (REMOTION_E2E=1: native, hybrid, Remotion and preview stills, and the colour of four colour encodings) |
 | MCP / web / interchange | `apps/mcp/test/time.test.ts`, `apps/web/test/time.test.ts`, `packages/interchange/test/time.test.ts` (FCPXML / FCP7 / Jasper round trips, OTIO metadata, EDL loss report) |
 
 ## 12. Comparison with the references
@@ -337,3 +344,127 @@ transition and reports `approximated`.
 - Not tested on Windows or macOS.
 - Optical flow cannot follow motion beyond the pyramid's search reach (≈ 60 px per frame at analysis scale: radius 4
   over 4 levels), as in effectcraft; such motion shows interpolation artefacts.
+
+## 15. Frame-rate conform: which source frame each sequence frame shows
+
+**Rule** (the time model; nothing else defines it): sequence frame `f` of a clip shows content time
+`content(f) = sourceIn + (f − start)·F·speed` (S01:CLP-004; the held time under a frame hold), and the picture is
+*the source frame that contains it* — nearest-earlier sampling (CLP-004), the last frame whose timestamp is ≤ the media
+time within `FRAME_TIME_EPS` = 2 µs (`frameIndexAt` / `pickFrames`, §3, `time-remap/sampling.ts`). It is not ambiguous,
+and it is what the preview's retime pipeline already drew, so no choice had to be made; the consequences for the
+common pairs (`packages/project/test/fps-conform.test.ts`, plus a fast-check property against exact rational floor
+over all allowed rates):
+
+| Media → sequence | Frames shown |
+|---|---|
+| 29.97 → 30 | 0, 0, 1, 2 … (f − 1), 1000 twice at 1001–1002, then f − 2 … |
+| 23.976 → 24 | the same shape |
+| 30 → 29.97 | f until 999, then 1001: one frame in 1000 skipped |
+| 25 → 30 | 0, 0, 1, 2, 3, 4, 5, 5, 6 … (every fifth frame twice, at the containing frame) |
+| 60 → 30 | 0, 2, 4 … |
+
+**What was wrong** (reproduced on the build VM with `scripts/fixtures/fpsmap.mjs`: 640 × 360 H.264 sources at 23.976,
+24, 25, 29.97, 30 and 60 fps carrying a 12-bit frame code and 16 colour patches, exported at crf 12 and read back with
+ffmpeg; `apps/engine/test/fps-conform.e2e.test.ts`):
+
+- **Native**: input seek to `content(f0)`, `setpts=PTS-STARTPTS`, `fps` rounding to the *nearest* slot. Accurate seek
+  drops the frame that contains the seek point, so after a seek the layer started one frame late, and rate changes
+  showed the nearest frame instead of the containing one.
+- **Remotion / hybrid / Program preview** (`<Video>` of `@remotion/media`): linear playback picks a frame with a
+  millisecond-scale tolerance (≈ 1–2 ms in 4.0.499), so where `content(f)` lies just before a frame (29.97 → 30 for
+  f ≤ 60, 30 → 29.97 for 970 ≤ f mod 1000) it showed the next frame.
+
+Before (frames that differ from the rule; native = the builder before the fix, the others = what Remotion drew):
+
+| Case (frames) | native | hybrid | Remotion | preview still |
+|---|---|---|---|---|
+| 29.97 → 30 (1040) | 537 (first 1, 2, 3…) | 60 (1…60) | 60 (1…60) | frames 1–6 showed f, not f − 1 |
+| 29.97 → 30, in-point 37 at frame 5 (90) | 90 (every frame one late) | 0 | 0 | = model |
+| 23.976 → 24 (850) | 499 | 24 | 24 | — |
+| 25 → 30 (120) | 40 (1, 2, 7, 8, 13, 14 …) | 0 | 0 | = model |
+| 60 → 30 (120) | 0 | 0 | 0 | = model |
+| 30 → 29.97 (1040) | 500 (from 500) | 30 (970…999) | 30 (970…999) | — |
+| 30 → 30, in-point 11 at frame 3 (60) | 0 | 0 | 0 | = model |
+| 30 → 30 at 70 % (90, native only) | 27 | | | |
+| 29.97 → 30 held at frame 7 (30, native only) | 30 (showed 7, rule 6) | | | |
+
+Sample (29.97 → 30, frame: rule / native / hybrid / Remotion / preview): 1: 0/1/1/1/1, 2: 1/2/2/2/2,
+1002: 1000/1001/1000/1000/–. 30 → 29.97 at 500: 500/501/500/500/500.
+
+**Fix.**
+
+- *Model* (`time-remap/model.ts`): `samplesOnFrameGrid` and a new branch in `needsRetime`. Frame Sampling clips whose
+  pictures do not start on media frames get `retime` in the render snapshot. Linear playback is exact only on the
+  grid (same rate or whole-frame steps, in-point and hold on a frame). The compositions (Program monitor, Remotion
+  exports, layer bakes) then pick the frame with `frameIndexAt` through the existing retime pipeline (§3). The render
+  bar counts these layers as "retimed frames" (+5 ms per megapixel in `previews.ts`'s cost model, an estimate).
+- *Native* (`export/native.ts`): `seekWindow` seeks two media frames early (at least 0.25 s, so the frame containing
+  the start survives the accurate seek). `sourceTimingFilters` (`settb=AVTB`, `setpts=(PTS − lead)/speed − 2 µs`,
+  `fps=…:round=up:start_time=0`) shows each slot's latest frame at or before it, the nested-sequence mapping already
+  in the builder. It is used for media, processed intermediates with a content origin, and frame holds; the
+  VP8-alpha decode-from-start path too. The retime stage does not claim these clips (`isLinearFrameSampling`), so they
+  need no FFV1 intermediate.
+- After: **0 frames differ** on every path and in every preview still for all the cases above, native, hybrid and
+  Remotion (`fps-conform.e2e.test.ts`, 11/11, REMOTION_E2E=1; `fps-conform-native.test.ts`, 12/12 in the default
+  suite, which fails 9 of its cases and both filter tests on the old builder).
+
+**In the running app** (dev stack on the VM, the editor in a separate SwiftShader Chrome): a 720p 30 fps sequence with
+`rate-code-2997.mp4` at 200 %. The Program monitor drew the layer through the retime pipeline (`canvas[data-retimed]`).
+Its codes at frames 0, 1, 2, 3, 30, 31, 60, 61, 1001, 1002, 1003 were 0, 0, 1, 2, 29, 30, 59, 60, 1000, 1000, 1001,
+the rule's frames. Playback advanced 144 frames in 5.0 s (≈ 29 fps, indicative only: not a benchmark, shared host).
+The patch colours equal the headless renderer's, including the blue deviation below (green patch 40,201,47).
+
+**Colour.** Patch means at frame 10 (8-bit R'G'B', patch interiors), before:
+
+| Source | preview (Chrome) | native | Cause |
+|---|---|---|---|
+| BT.709 tagged (SD or HD) | B off by up to 9 on saturated patches (green 40,200,40 → B 47; blue → 191) | within 1.7 of the source | Chrome's software YUV → RGB (libyuv): B = … + 2.0·(Cb − 128) instead of BT.709's 2.112; predicted −0.112·(Cb − 128) matches every patch within 1 level |
+| BT.601 encoded, **untagged**, 640 × 360 | decoded with **BT.709**: red 200,40,40 → 213,55,39 (25 levels) | decoded with BT.601 (the old rule below 720 lines) | matrix assumption |
+| BT.601 tagged (SMPTE 170M) | within 2 | within 3 | none |
+| BT.709 untagged 1280 × 720 | as tagged BT.709 | within 2 | none |
+
+Range, transfer and chroma siting were ruled out: the grey wedge (0…255) is within 1 level on every path (no
+limited/full or curve error), and the differences sit in flat patch interiors (no siting effect).
+
+- *Untagged media* now decode with BT.709 at every size on the native path (`inColor`, also the gaps proxy job that
+  shares it) — what Chrome does, so preview and export agree. It is a choice: ffmpeg and many NLEs assume BT.601 below
+  720 lines. The preview cannot be made to decode untagged SD as BT.601 (the matrix is the browser decoder's), and the
+  WP-2F note already took "browser behaviour" as the rule for untagged HD.
+- *The libyuv blue deviation* is not reproduced in the export. It belongs to Chrome's software conversion: measured
+  in headless renders and in the Program monitor of a SwiftShader Chrome; a GPU Chrome may convert exactly (not
+  measured). Native stays exact; Remotion and hybrid inherit it.
+
+After (`fps-conform.e2e.test.ts` asserts these):
+
+- hybrid and Remotion are within 3 levels of the preview on every patch;
+- native is within 3 levels of the preview in R and G, and in B within the predicted libyuv offset + 3;
+- native is within 3 levels of the source for the tagged files and untagged HD.
+
+Whole frames, native export against the Remotion / hybrid export (both 4:2:0):
+
+| Source | PSNR (dB) | max | p99 |
+|---|---|---|---|
+| BT.709 | 41.9 / 41.2 | 29 / 28 | 11 / 12 |
+| untagged BT.601 SD | 41.1 / 40.8 | 25 | 11 / 12 |
+| BT.601 tagged | 44.0 / 43.4 | 24 / 30 | 9 / 11 |
+| untagged HD | 39.8 / 40.1 | 35 / 33 | 15 / 14 |
+
+These are within `Tolerance.BROWSER`'s PSNR ≥ 36 dB and max ≤ 64 (asserted). Its p99 ≤ 6 is exceeded on this chart:
+the 1 % worst pixels are the sharp saturated patch and code edges, where Chrome's and swscale's 4:2:0 chroma
+upsampling differ, plus the blue deviation. Measured on this chart only; natural footage has far fewer such edges,
+and `e2e/apply-style.spec.ts` compares a native reference with a Remotion export again.
+
+**Conditions.** Build VM `6b922ed28e39`: 16 vCPU AMD EPYC-Rome, 30 GB, shared with other agents (load average
+5–18 during the runs). LGPL FFmpeg n7.1.5 (`JASPER_FFMPEG_LGPL_ONLY=1`; Remotion exports are a ProRes intermediate
+encoded with OpenH264), Remotion 4.0.499, headless Chrome for Testing (Playwright's build). No timing claims. The
+conform e2e took 380 s of wall time for 21 exports and 52 stills.
+
+**Limits.**
+
+- Frame-rate-converted, sped-up / slowed-down, off-grid and off-grid-held clips now play through the retime pipeline
+  in the Program monitor: frame-exact, but they decode through mediabunny instead of `<Video>`. Playback cost was not
+  benchmarked; the render bar's estimate rises (+5 ms/MP).
+- An untagged SD file that was encoded with BT.601 is shown with BT.709 everywhere, and there is no matrix override
+  in Interpret Footage ([gaps.md](../gaps.md) color-mgmt).
+- Saturated blue/yellow content in Remotion and hybrid exports carries Chrome's B deviation (≤ 0.112·|Cb − 128|,
+  ≤ 12.5 levels at full saturation); native exports don't.

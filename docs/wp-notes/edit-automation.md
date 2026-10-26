@@ -837,6 +837,6 @@ were already at the measured figures, so they were left unchanged.
 - The editor loads the library when a recipe dialog first opens and refreshes it on `styleRecipes.changed`.
 - "Save Current Settings as Recipe…" uses the parameters the Automate dialogs last proposed with in this window. They
   are not persisted.
-- Observed, already present before this branch, not fixed here: the Remotion and native export paths map a 29.97 fps
-  source frame into a 30 fps sequence differently, and their colour differs slightly. The e2e therefore exports its
-  reference through the same Remotion path.
+- Fixed since (wp-note [time.md](time.md) §15): the Remotion and native export paths showed different source frames
+  where a clip's frames fall between source frames (frame-rate conform, the cleanup's in-points), and untagged SD
+  footage was decoded with BT.601 natively but BT.709 by the preview. The e2e exports its reference natively again.

@@ -165,7 +165,7 @@ switched live in the Program monitor's multi-camera view, recorded as cuts, flat
 ### time
 **Done when:** Speed/Duration (with ripple and reverse), time remapping with speed keyframes, frame hold, and frame
 sampling / frame blending / optical flow render identically in preview and export.
-**Status (merged):** done — see [wp-notes/time.md](wp-notes/time.md): time remapping with speed keyframes, Frame Sampling / Blending / Optical Flow, reverse playback, scene edit detection (`apps/engine/test/time-export.test.ts`, `e2e/time.spec.ts`). Limits: remapped nests export through Remotion; nests support Frame Sampling only.
+**Status (merged):** done — see [wp-notes/time.md](wp-notes/time.md): time remapping with speed keyframes, Frame Sampling / Blending / Optical Flow, reverse playback, scene edit detection (`apps/engine/test/time-export.test.ts`, `e2e/time.spec.ts`). Frame-rate conform (29.97 → 30, 23.976 → 24, 25 → 30, 30 → 29.97, speeds, in-points between frames) shows the same source frame on every export path and in the preview (§15 of the note, `fps-conform.e2e.test.ts`). Limits: remapped nests export through Remotion; nests support Frame Sampling only.
 
 ### masks
 **Done when:** ellipse, 4-point polygon and pen masks with feather, opacity, expansion and invert apply to effects and
@@ -239,6 +239,10 @@ Remaining limits:
 - no HEVC Main10 in the LGPL build;
 - the composite is 8-bit encoded;
 - linear-light compositing renders on the Remotion path only;
+- no YUV matrix override in Interpret Footage: an untagged SD file encoded with BT.601 is shown with BT.709 in the
+  preview and every export (as Chrome decodes it; [wp-notes/time.md](wp-notes/time.md) §15);
+- Remotion and hybrid exports carry headless Chrome's software YUV → RGB deviation in blue (≤ 0.112·|Cb − 128|
+  levels; native exports are exact);
 
 ### color-grade
 **Done when:** Lumetri's HSL secondary, hue-vs curves, vignette, comparison view and Color Match exist, each with
