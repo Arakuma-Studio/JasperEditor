@@ -408,6 +408,12 @@ Sample (29.97 → 30, frame: rule / native / hybrid / Remotion / preview): 1: 0/
   Remotion (`fps-conform.e2e.test.ts`, 11/11, REMOTION_E2E=1; `fps-conform-native.test.ts`, 12/12 in the default
   suite, which fails 9 of its cases and both filter tests on the old builder).
 
+**In the running app** (dev stack on the VM, the editor in a separate SwiftShader Chrome): a 720p 30 fps sequence with
+`rate-code-2997.mp4` at 200 %. The Program monitor drew the layer through the retime pipeline (`canvas[data-retimed]`).
+Its codes at frames 0, 1, 2, 3, 30, 31, 60, 61, 1001, 1002, 1003 were 0, 0, 1, 2, 29, 30, 59, 60, 1000, 1000, 1001,
+the rule's frames. Playback advanced 144 frames in 5.0 s (≈ 29 fps, indicative only: not a benchmark, shared host).
+The patch colours equal the headless renderer's, including the blue deviation below (green patch 40,201,47).
+
 **Colour.** Patch means at frame 10 (8-bit R'G'B', patch interiors), before:
 
 | Source | preview (Chrome) | native | Cause |
@@ -424,8 +430,9 @@ limited/full or curve error), and the differences sit in flat patch interiors (n
   shares it) — what Chrome does, so preview and export agree. It is a choice: ffmpeg and many NLEs assume BT.601 below
   720 lines. The preview cannot be made to decode untagged SD as BT.601 (the matrix is the browser decoder's), and the
   WP-2F note already took "browser behaviour" as the rule for untagged HD.
-- *The libyuv blue deviation* is not reproduced in the export. It belongs to the headless renderer: a GPU Chrome may
-  convert exactly. Native stays exact; Remotion and hybrid inherit it.
+- *The libyuv blue deviation* is not reproduced in the export. It belongs to Chrome's software conversion: measured
+  in headless renders and in the Program monitor of a SwiftShader Chrome; a GPU Chrome may convert exactly (not
+  measured). Native stays exact; Remotion and hybrid inherit it.
 
 After (`fps-conform.e2e.test.ts` asserts these):
 
