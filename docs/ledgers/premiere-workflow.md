@@ -127,7 +127,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | speech | spec 16 (providers, catalogue, downloads, decoding, guards, UI, MCP) + TC-003/TC-004 | — | ✅ merged (CPU-verified; real-NVIDIA check pending a working GPU box) |
 | voice | TC-001/002 voice-analysis job + derivative + `VoiceAnalysis` contract + MCP `get_voice_analysis` | — | ✅ merged (1 h of audio in 9.4 s on the VM; 253 tests) |
 | proposals | EA-001…004 proposals for new features (policies, review vocabulary, ghosts, anchors) + EA-031 batch commands | — | ✅ merged (1,000 adjustment items in ≈0.5 s, one command) |
-| subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | 🔄 done on branch (start on cut 98.8 % shorts / 99.8 % long vs user's 59.6 / 30.3 %); resolving merge conflicts with feat/workflow |
+| subtitles | AS-001…022, AS-040…042, AS-060/061 generation, cut-aware timing, templates, conversion, dialog, MCP | cutmap, styling | ✅ merged (1243bcb7; start on cut 98.8 % shorts / 99.8 % long vs user's 59.6 / 30.3 %; e2e subtitles 3/3) |
 | subexport | AS-050, AS-070…076 still + native motion, batched stills, bounded composite, native shake, preflight, preview windowing | textrender | 🔄 9-min/1,080 subtitles 302 s (1.20×), ≤ 3.9 GB PSS; cold short 1.83× (target 1.3×) — finishing on top of textrender + stroke-clipping fix |
 | cleanup | TC-010…033 detector, script alignment, plan + edges, presets, `cleanup.apply` | voice | ✅ merged (1 h detector 42 ms; 1,500 ranges 453 ms, one undo) |
 | cleanupui | TC-040…051, TC-060, TC-070/071 review UI, derived preview, MCP, calibration on the Mac | cleanup, speech | 🔄 |
@@ -172,4 +172,5 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   cleanup, subtitles, subexport launched; proposals merged; kits launched; 2026-10-26 — agents resumed after a
   rate limit; textrender, cleanup, speech, kits merged; cleanupui and overlays launched; note: mcp grading.test.ts failed 3×
   under full-suite load, passes alone before and after the styling merge (recheck in the final gate); VM lock switched to a want-file queue
-  after starvation in both directions.
+  after starvation in both directions; fix: ambiguous `transcriptSegments` package export after the cleanup and speech
+  merges (2760136a); subtitles merged.
