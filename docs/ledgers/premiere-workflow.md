@@ -186,4 +186,5 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   191 commits: social comments shipped their own schema v9 → the workflow bump is now v10, see D5; upstream had also fixed
   the easing `__proto__` crash, its version kept); after the merge: one lost call (`planSet` → the row planner, c04f8e9a;
   48 social/template-control web tests pass), typecheck + lint pass; full suite 9,049 passed — besides the 7 known and
-  the planSet fallout, a subtitles-layout property counterexample (zone starting on a hard cut) sent back to subtitles.
+  the planSet fallout, a subtitles-layout property counterexample (zone starting on a hard cut) sent back to subtitles → real layout bug (zone run-through judged
+  from the subtitle's start instead of the split piece's), fixed with a regression test that fails before (0df88311).
