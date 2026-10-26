@@ -200,6 +200,14 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   effect clips its input to the layer box — this is the shader's behaviour, which a box tighter than the stroke and
   shadow makes visible in every renderer alike.
 
+- **Run masters (AS-073):** shaken layers the kernel does not draw (S_Shake with Motion Blur, RGB split or Wrap) stay
+  masters, but those of one track that follow each other (no overlap, gaps ≤ 60 frames, a run ≤ 3 600 frames,
+  normal blend, no fades or handles, no colour grade: `layer-bake/runs.ts`) bake as **one master per run**
+  (`planRun`: the clips shifted to the run's start in one transparent document, child job `Bake graphics – N layers
+  from "…"`). Every clip of the run points at it (`LayerOverride.run`) and the builder draws it once, one input over
+  the run's span; the memory preflight counts a run as one master. The shake keeps the shader's own blur, so these
+  frames are the composition's.
+
 ### S.2 Kernel streams: memory follows what is on screen (AS-072)
 
 - In the main graph, the constant-picture layers of a track — baked static stills (`sequence` overrides without colour
@@ -245,6 +253,9 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   `oom_score_adj` 900 (`preferOomKill`, `tools/process.ts`): the OOM killer picks ffmpeg before the engine, which
   textperf saw killed. The engine's own stream memory is bounded (S.2). Regression tests: a compositor killed by
   SIGKILL and one under a 150 MB address-space cap (wrapper ffmpeg) fail the job while the engine keeps serving.
+- A kernel stream that fails (its pipe closed by a composite that stopped, a restart, a cancel) rejects with its error;
+  the draws still in flight are settled, not left as unhandled rejections — one such rejection ended the engine
+  process during a pipelined restart in a benchmark (regression test `subtitle-taps-failure.test.ts`).
 - The plan's estimate counts still bakes as sheets (≈ 3.4 s per sheet of ≤ 128 + 0.1 s per still, textperf).
 
 ### S.5 Program monitor (AS-075, AS-050)

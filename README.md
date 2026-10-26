@@ -939,7 +939,9 @@ graphics)** and lists one graphics group per baked layer.
   (Shutter Angle motion blur included) and **S_Shake** without motion blur, RGB split or wrap (the subtitle
   templates' pop-in and shake) — bakes **one PNG of its layer box** and the native kernel draws it frame by frame
   through Motion, the Transform and the shake (spec 13 AS-070/073). Every still of an export (static layers and these)
-  is rendered in **sheets**: up to 64 stills per Remotion render, identical words sharing one.
+  is rendered in **sheets**: up to 128 stills per Remotion render, identical words sharing one; a native export
+  starts its composite while they render. Shaken text with S_Shake's motion blur, RGB split or wrap stays an animated
+  master, one per run of such clips on a track.
 - The constant pictures of a track (those stills, still images with sub-pixel Motion) are drawn into **one input of
   the composite per track**, so memory and speed follow what is on screen, not the clip count (thousands of subtitles
   export on a laptop). `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer instead (diagnostics).
