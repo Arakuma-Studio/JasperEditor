@@ -6,7 +6,12 @@ import type { Command } from '../commands/schemas/index.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import { flicksPerFrame } from '../time.ts';
 import type { CleanupFinding } from './schema.ts';
-import { type CleanupAnalysis, type CleanupDecisions, type CleanupMediaReport, isAccepted } from './sequence.ts';
+import {
+	type CleanupAnalysis,
+	type CleanupDecisions,
+	type CleanupMediaReport,
+	isAccepted,
+} from './sequence.ts';
 
 /** The fingerprint prefix of a media's findings (`findingFingerprint`: sanitised media id, `~`, stream, `~`). */
 const mediaPrefix = (m: Pick<CleanupMediaReport, 'mediaId' | 'stream'>) =>

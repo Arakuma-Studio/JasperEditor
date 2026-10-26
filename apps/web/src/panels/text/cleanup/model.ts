@@ -6,13 +6,13 @@
 // Apply and of the two derived previews ("Play result", "Play removed").
 import {
 	type CleanupAnalysis,
-	cleanupFindingFrames,
-	cleanupFindingMedia,
 	type CleanupDecisions,
 	type CleanupFinding,
 	type CleanupScope,
 	type CleanupVoice,
 	type Command,
+	cleanupFindingFrames,
+	cleanupFindingMedia,
 	type FindingKind,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,

@@ -16,13 +16,7 @@ import type { EditorSession } from '@jasper/session';
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../../i18n/runtime.ts';
 import { type CleanupUiState, cleanupFor } from './controller.ts';
-import {
-	findingAccepted,
-	inlineFindings,
-	KIND_COLOR,
-	KIND_LABELS,
-	wordMarks,
-} from './model.ts';
+import { findingAccepted, inlineFindings, KIND_COLOR, KIND_LABELS, wordMarks } from './model.ts';
 
 const S = 705_600_000;
 const BLOCK_WORDS = 80;

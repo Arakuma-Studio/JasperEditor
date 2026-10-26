@@ -112,8 +112,10 @@ const TargetShape = {
 		.string()
 		.min(1)
 		.optional()
-		.describe('A whole media file, analysed on its own (times = media time); analyze_voice / plan_cleanup only'),
-	preset: PresetArg.optional().describe('Default: the sequence\'s preset (Fast when none)'),
+		.describe(
+			'A whole media file, analysed on its own (times = media time); analyze_voice / plan_cleanup only',
+		),
+	preset: PresetArg.optional().describe("Default: the sequence's preset (Fast when none)"),
 	settings: CleanupOverridesSchema.optional().describe(
 		'Overrides over the preset: {rules?, thresholds?, edges?, gaps?, guards?, joins?} — see set_cleanup_settings',
 	),
@@ -123,10 +125,15 @@ const TargetShape = {
 		.nullable()
 		.optional()
 		.describe('Script text for this run; null = analyse without a script; default the attached script'),
-	language: z.string().min(1).max(35).optional().describe('Override the transcripts\' language ("es", "en"…)'),
+	language: z
+		.string()
+		.min(1)
+		.max(35)
+		.optional()
+		.describe('Override the transcripts\' language ("es", "en"…)'),
 	from: timeArg('Only from this sequence time').optional(),
 	to: timeArg('Only up to this sequence time').optional(),
-	inOut: z.boolean().optional().describe('Only between the sequence\'s In and Out marks'),
+	inOut: z.boolean().optional().describe("Only between the sequence's In and Out marks"),
 };
 
 const PageShape = {
@@ -195,7 +202,10 @@ async function resolveTarget(
 			},
 		);
 		if (!r.result.ok)
-			throw new ToolError(r.result.errors[0]?.code ?? 'E_INVALID_PARAM', r.result.errors[0]?.message ?? 'Bad media');
+			throw new ToolError(
+				r.result.errors[0]?.code ?? 'E_INVALID_PARAM',
+				r.result.errors[0]?.message ?? 'Bad media',
+			);
 		const seq = r.document.sequences[r.result.refs.$s!]!;
 		return { doc: r.document, revision, seq, scratch: true };
 	}
@@ -209,7 +219,11 @@ async function resolveTarget(
 	let range: { from: number; to: number } | undefined;
 	if (a.inOut) {
 		if (seq.inPoint === null || seq.outPoint === null || seq.outPoint <= seq.inPoint)
-			throw new ToolError('E_INVALID_PARAM', 'The sequence has no In and Out marks', 'Set them, or pass from / to.');
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				'The sequence has no In and Out marks',
+				'Set them, or pass from / to.',
+			);
 		range = { from: seq.inPoint, to: seq.outPoint };
 	} else if (a.from !== undefined || a.to !== undefined) {
 		const from = a.from === undefined ? 0 : frameOf(seq, a.from);
@@ -340,7 +354,11 @@ function analysisBody(
 	const limit = opts.limit ?? 200;
 	const want = new Set(opts.include ?? ['findings', 'groups', 'ranges', 'script']);
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
-	const at = (frame: number) => ({ frame, timecode: sequenceTimecode(seq, frame), seconds: Math.round((frame / fps) * 1000) / 1000 });
+	const at = (frame: number) => ({
+		frame,
+		timecode: sequenceTimecode(seq, frame),
+		seconds: Math.round((frame / fps) * 1000) / 1000,
+	});
 	const byKind: Record<string, { found: number; suggestedRemove: number; accepted: number }> = {};
 	const accepted = (f: CleanupFinding) => isAccepted(f, decisions, remembered);
 	for (const f of a.findings) {
@@ -361,7 +379,11 @@ function analysisBody(
 				confidence: Math.round(f.confidence * 1000) / 1000,
 				...(typeof f.reason.params.text === 'string' ? { text: f.reason.params.text } : {}),
 				reason: findingReasonText(f),
-				media: { mediaId: cleanupFindingMedia(a, f)?.mediaId ?? null, start: sec(f.range.start), end: sec(f.range.end) },
+				media: {
+					mediaId: cleanupFindingMedia(a, f)?.mediaId ?? null,
+					start: sec(f.range.start),
+					end: sec(f.range.end),
+				},
 				...(fr ? { start: at(fr.start), end: at(fr.end), clipId: fr.clipId } : {}),
 				...(f.words ? { words: f.words } : {}),
 				...(f.group ? { group: f.group } : {}),
@@ -388,7 +410,9 @@ function analysisBody(
 	const ranges = a.plan.ranges.map((r) => ({ start: at(r.start), end: at(r.end), reasons: r.reasons }));
 	return {
 		analysisId: file.analysisId,
-		...(t.scratch ? { mediaOnly: true, note: 'Media time: the media was analysed on its own (apply needs a sequence)' } : { sequenceId: seq.id }),
+		...(t.scratch
+			? { mediaOnly: true, note: 'Media time: the media was analysed on its own (apply needs a sequence)' }
+			: { sequenceId: seq.id }),
 		revision: file.revision,
 		settings: {
 			edges: a.settings.edges,
@@ -397,7 +421,14 @@ function analysisBody(
 			joins: a.settings.joins,
 			rules: a.settings.rules,
 		},
-		media: a.media.map((m) => ({ mediaId: m.mediaId, stream: m.stream, language: m.language, voice: m.voice, edgeMode: m.edgeMode, clipIds: m.clipIds })),
+		media: a.media.map((m) => ({
+			mediaId: m.mediaId,
+			stream: m.stream,
+			language: m.language,
+			voice: m.voice,
+			edgeMode: m.edgeMode,
+			clipIds: m.clipIds,
+		})),
 		stats: a.plan.stats,
 		cuts: a.plan.ranges.length,
 		byKind,
@@ -406,7 +437,16 @@ function analysisBody(
 		...(want.has('groups') ? { groups: page(groups, offset, limit) } : {}),
 		...(want.has('ranges') ? { ranges: page(ranges, offset, limit) } : {}),
 		...(want.has('script') && a.script
-			? { script: { said: a.script.filter((l) => l.said).length, lines: page(a.script.map((l) => ({ line: l.index + 1, text: l.text, said: l.said, takes: l.takes })), offset, limit) } }
+			? {
+					script: {
+						said: a.script.filter((l) => l.said).length,
+						lines: page(
+							a.script.map((l) => ({ line: l.index + 1, text: l.text, said: l.said, takes: l.takes })),
+							offset,
+							limit,
+						),
+					},
+				}
 			: {}),
 	};
 }
@@ -457,7 +497,12 @@ export function registerCleanupTools(ctx: ToolContext): void {
 			input: {
 				...TargetShape,
 				decisions: DecisionsArg.optional(),
-				analysisId: z.string().min(1).max(64).optional().describe('The analyze_voice / plan_cleanup analysis the decisions refer to'),
+				analysisId: z
+					.string()
+					.min(1)
+					.max(64)
+					.optional()
+					.describe('The analyze_voice / plan_cleanup analysis the decisions refer to'),
 				mode: z.enum(['extract', 'lift', 'mute', 'markers']).optional(),
 				rememberRejections: z.boolean().optional().describe('Remember rejected findings (default true)'),
 			},
@@ -500,7 +545,12 @@ export function registerCleanupTools(ctx: ToolContext): void {
 			});
 			const cuts = analysis.plan.ranges.length;
 			if (!commands.length)
-				return jsonResult({ ok: true, cuts: 0, note: 'Nothing to cut or remember', stats: analysis.plan.stats });
+				return jsonResult({
+					ok: true,
+					cuts: 0,
+					note: 'Nothing to cut or remember',
+					stats: analysis.plan.stats,
+				});
 			const label = `Clean Up Voice: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`;
 			const res = await transact(
 				ctx,
@@ -520,7 +570,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 				cuts,
 				analysisId: file.analysisId,
 				stats: analysis.plan.stats,
-				removedSeconds: Math.round((analysis.plan.stats.inputDuration - analysis.plan.stats.outputDuration) * 1000) / 1000,
+				removedSeconds:
+					Math.round((analysis.plan.stats.inputDuration - analysis.plan.stats.outputDuration) * 1000) / 1000,
 				note: 'One undo step: undo reverts the whole clean up.',
 			});
 		},
@@ -532,7 +583,7 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		{
 			title: 'Set clean up settings',
 			description:
-				'Stores a sequence\'s Clean Up settings (Sequence.cleanup; what analyze_voice and the editor\'s Clean Up mode use by default), one undoable edit: preset (fast / natural / a user preset id), settings overrides {rules: {retake, restart, falseStart, stutter, fillerVocalic, fillerPhrase, fillerLexical, offScript, headTail, pause, breath, untranscribed, asrSuspect, hallucination: remove|review|off}, thresholds {…}, edges {mode level|speech|word, reference floor|speech, outDb, inDb, padBeforeS, padAfterS, snapWindowS}, gaps {maxGapS, keepGapS, keepGapSentenceS, breath remove|keep, breathKeepMaxS}, guards {minPieceS, minCutFrames, minSliverFrames, avoidHarshCuts, harshWindowS}, joins {fadeMs 0–30, jlFrames}} merged into the stored ones (merge: false replaces them; reset: true drops them), word lists per language {es|en: {fillers, markers, allow} | null}, clearRejected / unreject (remembered rejections).',
+				"Stores a sequence's Clean Up settings (Sequence.cleanup; what analyze_voice and the editor's Clean Up mode use by default), one undoable edit: preset (fast / natural / a user preset id), settings overrides {rules: {retake, restart, falseStart, stutter, fillerVocalic, fillerPhrase, fillerLexical, offScript, headTail, pause, breath, untranscribed, asrSuspect, hallucination: remove|review|off}, thresholds {…}, edges {mode level|speech|word, reference floor|speech, outDb, inDb, padBeforeS, padAfterS, snapWindowS}, gaps {maxGapS, keepGapS, keepGapSentenceS, breath remove|keep, breathKeepMaxS}, guards {minPieceS, minCutFrames, minSliverFrames, avoidHarshCuts, harshWindowS}, joins {fadeMs 0–30, jlFrames}} merged into the stored ones (merge: false replaces them; reset: true drops them), word lists per language {es|en: {fillers, markers, allow} | null}, clearRejected / unreject (remembered rejections).",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -545,7 +596,11 @@ export function registerCleanupTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Word lists replacing the built-in ones; null = back to the built-in lists'),
 				clearRejected: z.boolean().optional().describe('Forget every remembered rejection'),
-				unreject: z.array(z.string().min(1).max(200)).max(20_000).optional().describe('Fingerprints to forget'),
+				unreject: z
+					.array(z.string().min(1).max(200))
+					.max(20_000)
+					.optional()
+					.describe('Fingerprints to forget'),
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -554,7 +609,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, a.sequenceId);
 			const stored = readSequenceCleanup(seq);
 			const cmd: Record<string, unknown> = { type: 'cleanup.configure', sequenceId: seq.id };
-			if (a.reset) cmd.settings = { presetId: presetId(a.preset) ?? stored.settings?.presetId ?? 'builtin.fast' };
+			if (a.reset)
+				cmd.settings = { presetId: presetId(a.preset) ?? stored.settings?.presetId ?? 'builtin.fast' };
 			else if (a.preset !== undefined || a.settings !== undefined) {
 				cmd.settings = {
 					...(a.preset !== undefined ? { presetId: presetId(a.preset) } : {}),
@@ -567,8 +623,17 @@ export function registerCleanupTools(ctx: ToolContext): void {
 			if (a.clearRejected) cmd.clearRejected = true;
 			if (a.unreject?.length) cmd.unreject = a.unreject;
 			if (Object.keys(cmd).length === 2)
-				throw new ToolError('E_INVALID_PARAM', 'Nothing to set', 'Pass preset, settings, reset, lists, clearRejected or unreject.');
-			const res = await transact(ctx, a.projectId, { label: 'Clean Up Settings', commands: [cmd], sequenceId: seq.id }, extra);
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Nothing to set',
+					'Pass preset, settings, reset, lists, clearRejected or unreject.',
+				);
+			const res = await transact(
+				ctx,
+				a.projectId,
+				{ label: 'Clean Up Settings', commands: [cmd], sequenceId: seq.id },
+				extra,
+			);
 			const r = requireOk(res);
 			return jsonResult(txBody(res, r));
 		},
@@ -593,8 +658,7 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const n = [a.text !== undefined, a.path !== undefined, a.detach === true].filter(Boolean).length;
-			if (n !== 1)
-				throw new ToolError('E_INVALID_PARAM', 'Give exactly one of text, path and detach: true');
+			if (n !== 1) throw new ToolError('E_INVALID_PARAM', 'Give exactly one of text, path and detach: true');
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const seq = pickSequence(doc, a.sequenceId);
 			let script: { name: string; text: string } | null = null;
@@ -608,10 +672,17 @@ export function registerCleanupTools(ctx: ToolContext): void {
 					if (st.size > 4 * CLEANUP_SCRIPT_MAX_BYTES)
 						throw new ToolError('E_LIMIT', 'The script file is larger than 256 KB of text');
 					text = await readFile(a.path, 'utf8');
-					name ??= a.path.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '');
+					name ??= a.path
+						.split(/[\\/]/)
+						.pop()!
+						.replace(/\.[^.]+$/, '');
 				}
 				if (Buffer.byteLength(text, 'utf8') > CLEANUP_SCRIPT_MAX_BYTES)
-					throw new ToolError('E_LIMIT', 'The script is longer than 256 KB', 'Attach the part this sequence covers.');
+					throw new ToolError(
+						'E_LIMIT',
+						'The script is longer than 256 KB',
+						'Attach the part this sequence covers.',
+					);
 				if (!text.trim()) throw new ToolError('E_INVALID_PARAM', 'The script is empty');
 				script = { name: (name ?? 'Script').slice(0, 500), text };
 			}
@@ -628,7 +699,13 @@ export function registerCleanupTools(ctx: ToolContext): void {
 			const r = requireOk(res);
 			return jsonResult({
 				...txBody(res, r),
-				...(script ? { name: script.name, bytes: Buffer.byteLength(script.text, 'utf8'), lines: script.text.split(/[.!?…\n]+/).filter((x) => x.trim()).length } : { detached: true }),
+				...(script
+					? {
+							name: script.name,
+							bytes: Buffer.byteLength(script.text, 'utf8'),
+							lines: script.text.split(/[.!?…\n]+/).filter((x) => x.trim()).length,
+						}
+					: { detached: true }),
 			});
 		},
 	);

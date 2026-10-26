@@ -284,7 +284,13 @@ function registerResources(ctx: ToolContext): void {
 			mimeType: 'text/markdown',
 		},
 		async (uri) => ({
-			contents: [{ uri: uri.href, mimeType: 'text/markdown', text: `# Cleaning up speech\n\n${CLEANUP_GUIDE}\n\n${VOICE_GUIDE}` }],
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `# Cleaning up speech\n\n${CLEANUP_GUIDE}\n\n${VOICE_GUIDE}`,
+				},
+			],
 		}),
 	);
 	ctx.server.registerResource(

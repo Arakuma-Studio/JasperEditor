@@ -183,9 +183,12 @@ describe('rules (Spanish)', () => {
 		expect(r.byWord.slice(17, 22).every((k) => k === 'off-script')).toBe(true);
 		expect(r.byWord.slice(22)).toEqual(['head-tail', 'head-tail']);
 		// the same on the head side: a paraphrased opening line stays, pre-roll chatter before it goes
-		const h = kinds('vale ya | para empezar vamos a crear un juego de coches | al final añadí música y efectos de sonido', {
-			script,
-		});
+		const h = kinds(
+			'vale ya | para empezar vamos a crear un juego de coches | al final añadí música y efectos de sonido',
+			{
+				script,
+			},
+		);
 		expect(h.byWord.slice(0, 2)).toEqual(['head-tail', 'head-tail']);
 		expect(h.byWord.slice(2).every((k) => k === null)).toBe(true);
 	});
