@@ -1,4 +1,8 @@
-import { TranscribeMediaRequestSchema, TranscribeSequenceRequestSchema } from '@jasper/api';
+import {
+	SpeechSettingsPatchSchema,
+	TranscribeMediaRequestSchema,
+	TranscribeSequenceRequestSchema,
+} from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { requireUserApproval } from '../agent/user-approval.ts';
 import { replyWithJob } from '../jobs/reply.ts';
@@ -8,6 +12,7 @@ import type { ProcessingService } from '../processing/service.ts';
 import { SpeechService } from '../speech/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
+import type { VoiceAnalysisService } from '../voice/service.ts';
 
 type Wait = { Querystring: { wait?: string } };
 type ModelParams = { Params: { modelId: string } };
@@ -18,7 +23,9 @@ function httpOf(e: unknown): never {
 			? 404
 			: e.code === 'SPEECH_MODEL_NOT_INSTALLED'
 				? 409
-				: 422;
+				: e.code === 'UNSUPPORTED_PLATFORM'
+					? 501
+					: 422;
 		throw new HttpError(status, e.code, e.message);
 	}
 	throw e;
@@ -28,14 +35,85 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 	const core = coreServices(app);
 	const processing = app.jasper.services.processing as ProcessingService | undefined;
 	if (!processing) throw new Error('speech routes need the processing routes (model catalogue) first');
-	const svc = new SpeechService(core, processing);
+	const svc = new SpeechService(
+		core,
+		processing,
+		process.env,
+		undefined,
+		undefined,
+		() => app.jasper.services.voiceAnalysis as VoiceAnalysisService | undefined,
+	);
 	app.jasper.services.speech = svc;
 	svc.registerRunners();
+	await svc.init();
+	// spec 16 SG-008: the upscaler reads the same provider probe
+	processing.setOrtProviderSource((probe) => svc.upscalerProviders(probe));
+	processing.cudaRuntimeInfo = async () => ({
+		dir: svc.cuda.dir,
+		installed: (await svc.cuda.state()) === 'installed',
+	});
 	core.registerCapabilityProvider(async () => ({ features: { speech: await svc.features() } }));
 
 	app.get(
 		'/api/speech/models',
-		guarded(async () => ({ models: await svc.models.list() })),
+		guarded(async () => ({ models: await svc.listModels() })),
+	);
+
+	app.get(
+		'/api/speech/settings',
+		guarded(async () => svc.settings()),
+	);
+
+	app.put(
+		'/api/speech/settings',
+		guarded(async (req) => svc.updateSettings(parseOr400(SpeechSettingsPatchSchema, req.body ?? {}))),
+	);
+
+	app.get(
+		'/api/speech/probe',
+		guarded(async () => svc.probeReport()),
+	);
+
+	app.post(
+		'/api/speech/probe',
+		guarded(async () => svc.probeReport(await svc.probe(true))),
+	);
+
+	app.get(
+		'/api/speech/cuda',
+		guarded(async () => svc.cudaStatus()),
+	);
+
+	app.post(
+		'/api/speech/cuda/install',
+		guarded(async () => {
+			try {
+				return svc.submitCudaInstall();
+			} catch (e) {
+				return httpOf(e);
+			}
+		}),
+	);
+
+	app.delete(
+		'/api/speech/cuda',
+		guarded(async (req) => {
+			const active = core.queue.list({ active: true }).some((j) => j.kind === 'runtime-download');
+			if (active)
+				throw new HttpError(
+					409,
+					'SPEECH_CUDA_BUSY',
+					'The CUDA provider is being downloaded; cancel the job first',
+				);
+			await requireUserApproval(app, req, {
+				label: 'Remove the NVIDIA GPU provider',
+				summary: 'remove the downloaded ONNX Runtime CUDA provider from this computer',
+				reasons: ['transcription and upscaling use the CPU until it is downloaded again'],
+			});
+			const r = await svc.removeCuda();
+			await svc.updateSettings({ nvidiaGpu: false });
+			return r;
+		}),
 	);
 
 	app.post<ModelParams>(

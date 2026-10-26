@@ -60,6 +60,8 @@ export const JOB_KINDS = [
 
 	'voice-analysis',
 	'cleanup-analysis',
+	/** spec 16 SG-006: the downloadable ONNX Runtime CUDA provider (Linux x64). */
+	'runtime-download',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

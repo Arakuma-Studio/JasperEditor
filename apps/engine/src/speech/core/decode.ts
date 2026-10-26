@@ -9,16 +9,51 @@ import type { WhisperTokenizer } from './tokenizer.ts';
 
 export const NEG_INF = Number.NEGATIVE_INFINITY;
 
-export function logSoftmax(x: Float32Array): Float32Array {
+/** log Σ exp(x[i]) over [from, to) (−∞ when every value is −∞). One pass for the maximum, one for the sum. */
+export function logSumExp(x: Float32Array, from = 0, to = x.length): number {
 	let m = NEG_INF;
-	for (let i = 0; i < x.length; i++) if (x[i] > m) m = x[i];
-	if (!Number.isFinite(m)) return new Float32Array(x.length).fill(NEG_INF);
+	for (let i = from; i < to; i++) if (x[i] > m) m = x[i];
+	if (!Number.isFinite(m)) return NEG_INF;
 	let s = 0;
-	for (let i = 0; i < x.length; i++) s += Math.exp(x[i] - m);
-	const lse = m + Math.log(s);
-	const out = new Float32Array(x.length);
+	for (let i = from; i < to; i++) s += Math.exp(x[i] - m);
+	return m + Math.log(s);
+}
+
+/** log-softmax of `x` into `out` (may be `x` itself). SG-013: no allocation per decoding step. */
+export function logSoftmaxInto(x: Float32Array, out: Float32Array): Float32Array {
+	const lse = logSumExp(x);
+	if (!Number.isFinite(lse)) return out.fill(NEG_INF);
 	for (let i = 0; i < x.length; i++) out[i] = x[i] - lse;
 	return out;
+}
+
+export function logSoftmax(x: Float32Array): Float32Array {
+	return logSoftmaxInto(x, new Float32Array(x.length));
+}
+
+/**
+ * The `k` largest finite values of `x` (indices, best first) in one pass with an insertion buffer (SG-013: no sort
+ * of the vocabulary, no allocation besides the result).
+ */
+export function topK(x: Float32Array, k: number): number[] {
+	const idx: number[] = [];
+	if (k <= 0) return idx;
+	let worst = NEG_INF;
+	for (let t = 0; t < x.length; t++) {
+		const v = x[t];
+		if (!(v > NEG_INF) || !Number.isFinite(v)) continue;
+		if (idx.length === k && v <= worst) continue;
+		// insert keeping descending order (ties: lower index first)
+		let p = idx.length < k ? idx.length : k - 1;
+		if (idx.length < k) idx.push(t);
+		while (p > 0 && x[idx[p - 1]] < v) {
+			idx[p] = idx[p - 1];
+			p--;
+		}
+		idx[p] = t;
+		worst = x[idx[idx.length - 1]];
+	}
+	return idx;
 }
 
 export function softmaxAt(x: Float32Array, i: number): number {
@@ -57,15 +92,15 @@ export function applyFilters(
 	if (seq.length === 0) for (const s of cfg.beginSuppress) if (s < logits.length) logits[s] = NEG_INF;
 	for (const s of cfg.suppress) if (s < logits.length) logits[s] = NEG_INF;
 	if (!cfg.timestamps) {
-		for (let i = tb; i < logits.length; i++) logits[i] = NEG_INF;
+		logits.fill(NEG_INF, tb);
 		return;
 	}
 	logits[tok.noTimestamps] = NEG_INF;
 	const lastTs = seq.length >= 1 && seq[seq.length - 1] >= tb;
 	const penultTs = seq.length < 2 || seq[seq.length - 2] >= tb;
 	if (lastTs) {
-		if (penultTs) for (let i = tb; i < logits.length; i++) logits[i] = NEG_INF;
-		else for (let i = 0; i < tok.eot; i++) logits[i] = NEG_INF;
+		if (penultTs) logits.fill(NEG_INF, tb);
+		else logits.fill(NEG_INF, 0, tok.eot);
 	}
 	let lastTimestamp = -1;
 	for (let k = seq.length - 1; k >= 0; k--)
@@ -75,24 +110,23 @@ export function applyFilters(
 		}
 	if (lastTimestamp >= 0) {
 		const lim = Math.min(logits.length, lastTs && !penultTs ? lastTimestamp : lastTimestamp + 1);
-		for (let i = tb; i < lim; i++) logits[i] = NEG_INF;
+		if (lim > tb) logits.fill(NEG_INF, tb, lim);
 	}
 	if (seq.length === 0) {
-		for (let i = 0; i < tb; i++) logits[i] = NEG_INF;
-		if (cfg.maxInitialTimestampIndex !== null)
-			for (let i = tb + cfg.maxInitialTimestampIndex + 1; i < logits.length; i++) logits[i] = NEG_INF;
+		logits.fill(NEG_INF, 0, tb);
+		if (cfg.maxInitialTimestampIndex !== null) {
+			const from = tb + cfg.maxInitialTimestampIndex + 1;
+			if (from < logits.length) logits.fill(NEG_INF, from);
+		}
 	}
-	// sample a timestamp when the timestamps' total probability beats every text token
-	const lp = logSoftmax(logits);
-	let m = NEG_INF;
-	for (let i = tb; i < lp.length; i++) if (lp[i] > m) m = lp[i];
-	if (Number.isFinite(m)) {
-		let s = 0;
-		for (let i = tb; i < lp.length; i++) s += Math.exp(lp[i] - m);
-		const tsLogprob = m + Math.log(s);
+	// sample a timestamp when the timestamps' total probability beats every text token. Both sides share the
+	// log-softmax normaliser, so comparing log Σ exp over the timestamps with the best text logit is the same test
+	// without normalising the vocabulary (SG-013).
+	const tsLse = logSumExp(logits, tb, logits.length);
+	if (Number.isFinite(tsLse)) {
 		let maxText = NEG_INF;
-		for (let i = 0; i < tb; i++) if (lp[i] > maxText) maxText = lp[i];
-		if (tsLogprob > maxText) for (let i = 0; i < tb; i++) logits[i] = NEG_INF;
+		for (let i = 0; i < tb; i++) if (logits[i] > maxText) maxText = logits[i];
+		if (tsLse > maxText) logits.fill(NEG_INF, 0, tb);
 	}
 }
 

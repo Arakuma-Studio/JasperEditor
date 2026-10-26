@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LicenseComponent } from '@jasper/api';
+import { ORT_CUDA_PACKAGE } from '../speech/cuda.ts';
 import type { ProcessingService } from './service.ts';
 import { VIDSTAB_PIN } from './vidstab-pin.ts';
 
@@ -102,6 +103,21 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			sourceUrl: m.sourceUrl,
 			notice: `Attribution: ${m.attribution}. Licence: ${m.licenseUrl}`,
 			texts: [],
+		});
+	}
+	// spec 16 SG-006: the downloaded ONNX Runtime CUDA provider (Linux x64), with the licence and notices it ships with
+	const speech = (await svc.cudaRuntimeInfo?.().catch(() => null)) ?? null;
+	if (speech?.installed) {
+		const lic = readFirst([join(speech.dir, 'LICENSE-onnxruntime-gpu.txt')]);
+		out.push({
+			id: 'runtime:onnxruntime-cuda',
+			name: 'ONNX Runtime CUDA execution provider (downloaded)',
+			version: ORT_CUDA_PACKAGE.ortVersion,
+			license: 'MIT',
+			bundled: false,
+			sourceUrl: ORT_CUDA_PACKAGE.url,
+			notice: `${ORT_CUDA_PACKAGE.name} ${ORT_CUDA_PACKAGE.ortVersion}, sha256 ${ORT_CUDA_PACKAGE.sha256}. Third-party notices: ThirdPartyNotices-onnxruntime-gpu.txt in ${speech.dir}. The NVIDIA CUDA and cuDNN libraries it loads are installed separately and are not part of JasperEditor.`,
+			texts: lic ? [{ title: 'MIT License (ONNX Runtime)', text: lic }] : [],
 		});
 	}
 	// WP-E9: the Describe-it search model (CLAP), with its Apache-2.0 text

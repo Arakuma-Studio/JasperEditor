@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { ProcessingModel } from '@jasper/api';
 import type { VisionCatalogEntry } from '../roto/models.ts';
 import type { SoundCatalogEntry } from '../sounds/semantic/models.ts';
-import type { SpeechCatalogEntry } from '../speech/models.ts';
+import { type SpeechCatalogEntry, validateSpeechCatalog } from '../speech/models.ts';
 import { sha256File } from '../tools/fs.ts';
 import builtin from './models.json' with { type: 'json' };
 
@@ -45,8 +45,10 @@ function bundledModelsDir(env: Record<string, string | undefined> = process.env)
 export function loadCatalog(env: Record<string, string | undefined> = process.env): {
 	entries: CatalogEntry[];
 	bundledDir: string;
-	/** wp speech: the speech-to-text models of the same catalogue (`speech`, see speech/models.ts). */
+	/** wp speech: the speech-to-text models of the same catalogue (`speech`, see speech/models.ts), validated. */
 	speech: SpeechCatalogEntry[];
+	/** spec 16 SG-023: speech entries refused by validation. */
+	speechErrors: string[];
 	/** parity (roto): segmentation and face models (`vision`, see roto/models.ts). */
 	vision: VisionCatalogEntry[];
 	/** WP-E9: the Describe-it search (audio-text) models (`sound`, see sounds/semantic/models.ts). */
@@ -57,7 +59,7 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 		const json = JSON.parse(readFileSync(file, 'utf8')) as {
 			models: CatalogEntry[];
 			bundledDir?: string;
-			speech?: SpeechCatalogEntry[];
+			speech?: unknown;
 			vision?: VisionCatalogEntry[];
 			sound?: SoundCatalogEntry[];
 		};
@@ -67,24 +69,28 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 				? json.bundledDir
 				: join(base, json.bundledDir)
 			: base;
+		const speech = validateSpeechCatalog(json.speech);
 		return {
 			entries: json.models,
 			bundledDir: dir,
-			speech: json.speech ?? [],
+			speech: speech.entries,
+			speechErrors: speech.errors,
 			vision: json.vision ?? [],
 			sound: json.sound ?? [],
 		};
 	}
 	const b = builtin as unknown as {
 		models: CatalogEntry[];
-		speech?: SpeechCatalogEntry[];
+		speech?: unknown;
 		vision?: VisionCatalogEntry[];
 		sound?: SoundCatalogEntry[];
 	};
+	const speech = validateSpeechCatalog(b.speech);
 	return {
 		entries: b.models,
 		bundledDir: bundledModelsDir(env),
-		speech: b.speech ?? [],
+		speech: speech.entries,
+		speechErrors: speech.errors,
 		vision: b.vision ?? [],
 		sound: b.sound ?? [],
 	};

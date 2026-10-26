@@ -262,8 +262,12 @@ import {
 	SoundVisualSchema,
 } from './sounds.ts';
 import {
+	SpeechCudaStatusSchema,
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
+	SpeechProbeSchema,
+	SpeechSettingsPatchSchema,
+	SpeechSettingsSchema,
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
@@ -853,6 +857,46 @@ export const ROUTES = {
 		method: 'DELETE',
 		path: '/api/speech/models/:modelId',
 		response: SpeechModelDeleteResponseSchema,
+	},
+	/** spec 16: Transcription preferences (Processor, Accuracy, Enable NVIDIA GPU). */
+	speechSettings: {
+		method: 'GET',
+		path: '/api/speech/settings',
+		response: SpeechSettingsSchema,
+	},
+	speechSettingsUpdate: {
+		method: 'PUT',
+		path: '/api/speech/settings',
+		body: SpeechSettingsPatchSchema,
+		response: SpeechSettingsSchema,
+	},
+	/** The cached execution-provider probe (SG-001); POST probes again. */
+	speechProbe: {
+		method: 'GET',
+		path: '/api/speech/probe',
+		response: SpeechProbeSchema,
+	},
+	speechReprobe: {
+		method: 'POST',
+		path: '/api/speech/probe',
+		response: SpeechProbeSchema,
+	},
+	/** Linux x64: the downloadable ONNX Runtime CUDA provider (SG-006). */
+	speechCudaStatus: {
+		method: 'GET',
+		path: '/api/speech/cuda',
+		response: SpeechCudaStatusSchema,
+	},
+	/** Downloads the pinned CUDA provider package (a `model-download` job; resumable, sha256-verified). */
+	speechCudaInstall: {
+		method: 'POST',
+		path: '/api/speech/cuda/install',
+		response: EngineJobSchema,
+	},
+	speechCudaRemove: {
+		method: 'DELETE',
+		path: '/api/speech/cuda',
+		response: z.object({ freedBytes: z.number().int().min(0) }),
 	},
 	/** A `transcription` job for one audio stream of a media (result: `TranscriptionResult`, media time). */
 	mediaTranscribe: {
