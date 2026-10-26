@@ -40,6 +40,7 @@ import {
 	runAgentQuery,
 	SESSION_ONLY_QUERIES,
 	summarizeTransaction,
+	type TextMeasurer,
 	type TransactionResult,
 	unknownCommandKeyIssues,
 } from '@jasper/project';
@@ -87,6 +88,11 @@ type AgentServiceOptions = {
 	heartbeatMs?: number;
 	ids?: IdSource;
 	now?(): Date;
+	/**
+	 * spec 13 SH-004: runs a headless transaction with a text measurer (the engine's render browser), so text boxes
+	 * follow glyph metrics without an editor window. Absent = estimated boxes marked `layoutPending`.
+	 */
+	textMeasurer?: { apply<R>(run: (m: TextMeasurer) => R): Promise<R> };
 };
 
 const fail = (revision: number, code: string, message: string, extra: object = {}): TransactionResult => ({
@@ -546,12 +552,17 @@ export class AgentService {
 				const addr = resolveAgentAddresses(doc, tx.commands, { sequenceId: tx.sequenceId });
 				if (!addr.ok) return { ok: false, revision, errors: addr.errors };
 				const ctx = this.context(revision, projectId, tx.expectedRevision);
-				const { document, result } = applyTransaction(
-					doc,
-					{ ...tx, commands: addr.commands, ...(asUser ? { origin: 'user' } : {}) },
-					// every attempt starts from the first journalled id (only one attempt's result is saved)
-					presetIds?.length ? { ...ctx, ids: createPresetIdSource(presetIds, ctx.ids) } : ctx,
-				);
+				const run = (textMeasurer?: TextMeasurer) =>
+					applyTransaction(
+						doc,
+						{ ...tx, commands: addr.commands, ...(asUser ? { origin: 'user' } : {}) },
+						// every attempt (and measuring round) starts from the first journalled id (only one result is saved)
+						{
+							...(presetIds?.length ? { ...ctx, ids: createPresetIdSource(presetIds, ctx.ids) } : ctx),
+							...(textMeasurer ? { textMeasurer } : {}),
+						},
+					);
+				const { document, result } = this.opts.textMeasurer ? await this.opts.textMeasurer.apply(run) : run();
 				if (!result.ok || tx.dryRun || document === doc) return result;
 				const envelope = makeEnvelope(document, {
 					revision: result.revision,

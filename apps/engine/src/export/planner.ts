@@ -583,6 +583,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
+	// spec 13 SH-004: estimated text boxes export as the Program monitor shows them; the editor measures them.
+	const pendingText = visual.filter((c) => 'text' in c.source && c.source.layoutPending).map((c) => c.clipId);
+	if (pendingText.length)
+		warnings.push({
+			code: 'TEXT_LAYOUT_PENDING',
+			message: `${pendingText.length === 1 ? 'A text box is' : `${pendingText.length} text boxes are`} not measured yet (made without an editor window or a render browser): boxes, anchors and backgrounds use an estimate until the project is opened in the editor`,
+			itemIds: pendingText,
+		});
 	warnings.push(...captionWarnings);
 	for (const ext of deps.extensions ?? []) {
 		if (!ext.warnings) continue;

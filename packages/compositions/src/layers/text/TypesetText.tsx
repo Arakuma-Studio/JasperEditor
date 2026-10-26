@@ -23,6 +23,7 @@ import {
 	placeGlyphs,
 	presetForLegacy,
 	type RenderTextAnimation,
+	type ResolvedTextShadow,
 	type RGBA,
 	resolveMask,
 	sourceTextContentAt,
@@ -34,13 +35,21 @@ import {
 	type TextSelectorExpressionHost,
 	type TextStyle,
 } from '@jasper/project';
-import { type CSSProperties, type ReactNode, useContext, useId, useMemo } from 'react';
+import { type ReactNode, useContext, useId, useMemo } from 'react';
 import { useVideoConfig } from 'remotion';
 import { FALLBACK_FONT_STACK, fontFaceFor } from '../../fonts.ts';
-import { rgbaCss } from '../../metadata.ts';
 import type { LayerProps } from '../../types.ts';
 import { TextExpressionContext } from './expression-context.ts';
 import { drawnBaseline, measureAdvance, measureTypeset, type TypesetLayout } from './measure.ts';
+import {
+	type PaintBand,
+	type PaintMode,
+	paintCss,
+	planTextPaint,
+	ShadowLayer,
+	type TextPaintPlan,
+	TileFilter,
+} from './paint.tsx';
 import { charFlowCss, FAUX_ITALIC_SLANT, fauxBoldWidth, glyphSize, variationSettings } from './typography.ts';
 
 type Fonts = LayerProps['fonts'];
@@ -249,31 +258,83 @@ export function TypesetText({
 		: [source.box.width / 2, source.box.height / 2];
 	const fillAndStroke = more?.fillAndStroke ?? 'perCharacter';
 	const blend = more?.interCharacterBlending ?? 'normal';
-	type Pass = { g: PlacedGlyph; stroke: boolean };
-	const passesOf = (g: PlacedGlyph): Pass[] => {
+	// spec 13 SH-004: every stroke of the glyph's style (the animators' stroke colour / width drive the first one,
+	// After Effects' single text stroke), cut to its side of the outline (`paint.tsx`).
+	const paintStyleOf = (g: PlacedGlyph): TextStyle => {
 		const s = styleOf(g.index);
-		const hasStroke = g.strokeWidth > 0 && g.stroke[3] > 0;
-		const strokeUnder = (s.strokes?.[0]?.position ?? 'outside') === 'outside';
-		const fill: Pass = { g, stroke: false };
-		if (!hasStroke) return [fill];
-		const st: Pass = { g, stroke: true };
-		return strokeUnder ? [st, fill] : [fill, st];
+		const strokes = [...(s.strokes ?? [])];
+		const first = strokes[0];
+		if (g.strokeWidth > 0 && g.stroke[3] > 0)
+			strokes[0] = { color: g.stroke, widthPx: g.strokeWidth, position: first?.position ?? 'outside' };
+		else if (first) strokes[0] = { ...first, widthPx: 0 };
+		return { ...s, fill: g.fill, strokes };
+	};
+	type Pass =
+		| { g: PlacedGlyph; kind: 'fill' }
+		| { g: PlacedGlyph; kind: 'band'; band: PaintBand }
+		| { g: PlacedGlyph; kind: 'tiles'; output: 'all' | 'strokes' }
+		| { g: PlacedGlyph; kind: 'shadow'; key: string };
+	const info = new Map<number, { style: TextStyle; plan: TextPaintPlan; fauxBold: number }>();
+	const infoOf = (g: PlacedGlyph) => {
+		let v = info.get(g.index);
+		if (!v) {
+			const st = paintStyleOf(g);
+			const fb = st.fauxBold ? fauxBoldWidth(glyphSize(st)) : 0;
+			v = { style: st, plan: planTextPaint([st], fb), fauxBold: fb };
+			info.set(g.index, v);
+		}
+		return v;
+	};
+	/**
+	 * Stroke passes of a glyph for the fill-and-stroke orders that draw all strokes apart from all fills: whole
+	 * centred strokes when exact (fast path; under the fills any outside stroke is, over them only centre strokes
+	 * are), else the stroke regions cut by the tile filter.
+	 */
+	const strokePasses = (g: PlacedGlyph, underFills: boolean): Pass[] => {
+		const { plan } = infoOf(g);
+		if (!plan.bands.length) return [];
+		if (plan.filter || (!underFills && plan.bands.some((b) => b.position !== 'center')))
+			return [{ g, kind: 'tiles', output: 'strokes' }];
+		return plan.bands.map((band) => ({ g, kind: 'band' as const, band }));
+	};
+	const passesOf = (g: PlacedGlyph): Pass[] => {
+		const { plan } = infoOf(g);
+		const fill: Pass = { g, kind: 'fill' };
+		if (!plan.bands.length) return [fill];
+		if (plan.filter) return [{ g, kind: 'tiles', output: 'all' }];
+		return [
+			...plan.bands
+				.filter((b) => b.position === 'outside')
+				.map((band) => ({ g, kind: 'band' as const, band })),
+			fill,
+			...plan.bands
+				.filter((b) => b.position === 'center')
+				.map((band) => ({ g, kind: 'band' as const, band })),
+		];
 	};
 	const visible = placed.filter((g) => g.xf.opacity > 0);
 	let passes: Pass[];
 	if (fillAndStroke === 'allFillsOverAllStrokes')
 		passes = [
-			...visible.flatMap((g) => passesOf(g).filter((p) => p.stroke)),
-			...visible.map((g) => ({ g, stroke: false })),
+			...visible.flatMap((g) => strokePasses(g, true)),
+			...visible.map((g) => ({ g, kind: 'fill' }) as Pass),
 		];
 	else if (fillAndStroke === 'allStrokesOverAllFills')
 		passes = [
-			...visible.map((g) => ({ g, stroke: false })),
-			...visible.flatMap((g) => passesOf(g).filter((p) => p.stroke)),
+			...visible.map((g) => ({ g, kind: 'fill' }) as Pass),
+			...visible.flatMap((g) => strokePasses(g, false)),
 		];
 	else passes = visible.flatMap(passesOf);
+	// Shadows: one layer per distinct shadow under all the glyphs (the union of their silhouettes is blurred once).
+	const shadowGroups = new Map<string, { shadow: ResolvedTextShadow; glyphs: PlacedGlyph[] }>();
+	for (const g of visible)
+		for (const sh of infoOf(g).plan.shadows) {
+			const grp = shadowGroups.get(sh.key) ?? { shadow: sh.shadow, glyphs: [] };
+			grp.glyphs.push(g);
+			shadowGroups.set(sh.key, grp);
+		}
 	const svgFilters: ReactNode[] = [];
-	const nodes = passes.map((p, k) => {
+	const passNode = (p: Pass, k: number) => {
 		const g = p.g;
 		const lg = lay.glyphs[g.index]!;
 		const s = styleOf(g.index);
@@ -314,21 +375,65 @@ export function TypesetText({
 				filter = `url(#${id})`;
 			}
 		}
-		const fauxBold = s.fauxBold ? fauxBoldWidth(glyphSize(s)) : 0;
-		const paint: CSSProperties = p.stroke
-			? {
-					color: 'transparent',
-					WebkitTextStroke: `${(((s.strokes?.[0]?.position ?? 'outside') === 'outside' ? 2 : 1) * g.strokeWidth).toFixed(3)}px ${rgbaCss(g.stroke)}`,
-				}
-			: {
-					color: rgbaCss(g.fill),
-					...(fauxBold > 0 ? { WebkitTextStroke: `${fauxBold.toFixed(3)}px ${rgbaCss(g.fill)}` } : {}),
-					...(s.shadow ? { textShadow: shadowCss(s.shadow) } : {}),
-				};
+		const { style: ps, plan, fauxBold } = infoOf(g);
 		const baseline = drawnBaseline({ ...css, position: 'absolute', top: 0 }, height);
+		const left = g.local[0] + dx;
+		const top = g.local[1] - baseline;
+		const span = (mode: PaintMode, at: { left: number; top: number }) => (
+			<span
+				style={{
+					...css,
+					position: 'absolute',
+					left: at.left,
+					top: at.top,
+					height,
+					lineHeight: `${height}px`,
+					whiteSpace: 'pre',
+					letterSpacing: 'normal',
+					fontKerning: 'none',
+					direction: 'ltr',
+					unicodeBidi: 'isolate',
+					...(s.fauxItalic
+						? {
+								transform: `skewX(${(-Math.atan(FAUX_ITALIC_SLANT) * 180) / Math.PI}deg)`,
+								transformOrigin: `0 ${baseline}px`,
+							}
+						: {}),
+					...(variationSettings(s, g.xf.axes)
+						? { fontVariationSettings: variationSettings(s, g.xf.axes) }
+						: {}),
+					...paintCss(ps, mode, fauxBold),
+				}}
+			>
+				{text}
+			</span>
+		);
+		let content: ReactNode;
+		if (p.kind === 'tiles')
+			content = (
+				<TileFilter
+					plan={plan}
+					render={(mode) => span(mode, { left: 0, top: 0 })}
+					left={left}
+					top={top}
+					width={lg.rect?.width ?? glyphSize(s)}
+					height={height}
+					maxSizePx={glyphSize(s)}
+					output={p.output}
+				/>
+			);
+		else
+			content = span(
+				p.kind === 'fill'
+					? { kind: 'fill' }
+					: p.kind === 'band'
+						? { kind: 'band', ...p.band }
+						: { kind: 'shadow', key: p.key },
+				{ left, top },
+			);
 		return (
 			<div
-				key={`${g.index}-${p.stroke ? 's' : 'f'}`}
+				key={`${g.index}-${p.kind}${p.kind === 'band' ? `${p.band.slot}${p.band.position}` : p.kind === 'tiles' ? p.output : ''}`}
 				data-text-char={g.index}
 				style={{
 					position: 'absolute',
@@ -342,7 +447,7 @@ export function TypesetText({
 						: {}),
 					...(filter ? { filter } : {}),
 					...(g.xf.opacity < 100 ? { opacity: Math.max(0, Math.min(1, g.xf.opacity / 100)) } : {}),
-					...(blend !== 'normal' ? { mixBlendMode: blend } : {}),
+					...(blend !== 'normal' && p.kind !== 'shadow' ? { mixBlendMode: blend } : {}),
 				}}
 			>
 				<div
@@ -355,37 +460,17 @@ export function TypesetText({
 						...(threeD ? { backfaceVisibility: 'visible' } : {}),
 					}}
 				>
-					<span
-						style={{
-							...css,
-							position: 'absolute',
-							left: g.local[0] + dx,
-							top: g.local[1] - baseline,
-							height,
-							lineHeight: `${height}px`,
-							whiteSpace: 'pre',
-							letterSpacing: 'normal',
-							fontKerning: 'none',
-							direction: 'ltr',
-							unicodeBidi: 'isolate',
-							...(s.fauxItalic
-								? {
-										transform: `skewX(${(-Math.atan(FAUX_ITALIC_SLANT) * 180) / Math.PI}deg)`,
-										transformOrigin: `0 ${baseline}px`,
-									}
-								: {}),
-							...(variationSettings(s, g.xf.axes)
-								? { fontVariationSettings: variationSettings(s, g.xf.axes) }
-								: {}),
-							...paint,
-						}}
-					>
-						{text}
-					</span>
+					{content}
 				</div>
 			</div>
 		);
-	});
+	};
+	const shadows = [...shadowGroups].map(([key, grp]) => (
+		<ShadowLayer key={`sh${key}`} shadow={grp.shadow}>
+			{grp.glyphs.map((g, k) => passNode({ g, kind: 'shadow', key }, k))}
+		</ShadowLayer>
+	));
+	const nodes = passes.map((p, k) => passNode(p, k + visible.length));
 	return (
 		<div
 			data-text-block=""
@@ -405,12 +490,8 @@ export function TypesetText({
 					<defs>{svgFilters}</defs>
 				</svg>
 			) : null}
+			{shadows}
 			{nodes}
 		</div>
 	);
-}
-
-function shadowCss(shadow: NonNullable<TextStyle['shadow']>): string {
-	const rad = (shadow.angleDeg * Math.PI) / 180;
-	return `${Math.cos(rad) * shadow.distancePx}px ${Math.sin(rad) * shadow.distancePx}px ${shadow.blurPx}px ${rgbaCss(shadow.color)}`;
 }

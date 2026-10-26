@@ -17,6 +17,7 @@ import {
 	resolveLayerProps,
 	type Transform,
 	textAnimatorsTimeVarying,
+	textPaintExtent,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';
@@ -374,6 +375,35 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 	return fonts.filter((f) => used.has(f));
 }
 
+/**
+ * How far glyph ink can leave the line boxes of a style (px): accents and descenders beyond a tight line height,
+ * italic overhangs. A generous share of the size (spec 13 SH-004 bake crop; measured boxes hold the line boxes).
+ */
+export function textInkPad(s: { sizePx?: number; lineHeight?: number }): number {
+	const size = typeof s.sizePx === 'number' && Number.isFinite(s.sizePx) ? Math.max(0, s.sizePx) : 0;
+	const lh = typeof s.lineHeight === 'number' && Number.isFinite(s.lineHeight) ? s.lineHeight : 1.2;
+	return Math.ceil(size * (0.35 + Math.max(0, 1.25 - lh) / 2)) + 2;
+}
+
+/**
+ * spec 13 SH-004 (textperf: a 130 px caption baked 1080×760): a text layer whose box is measured (not pending,
+ * auto-size) and whose glyphs stay in place (no In/Out animation, animators, text path or per-character 3D) is
+ * cropped to its box grown by `contentBleed` (glyph ink, strokes, shadow) — without the 10 % frame bleed.
+ */
+export function tightTextCrop(c: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
+	if (c.kind !== 'text' || !('text' in c.source)) return false;
+	const s = c.source;
+	return (
+		!s.layoutPending &&
+		s.box.autoSize !== 'none' &&
+		!s.animation?.in &&
+		!s.animation?.out &&
+		!s.animators?.length &&
+		!s.pathOptions &&
+		!s.perCharacter3d
+	);
+}
+
 /** Share of the frame below which a crop rect is used (a rect covering more renders the full frame). */
 const RECT_MAX_AREA_SHARE = 0.85;
 /** Bleed around the layer's per-frame bounds, as a share of the sequence height (S11:LBK-005). */
@@ -391,11 +421,12 @@ export function contentBleed(
 	let px = 0;
 	const src = 'text' in c.source ? c.source : undefined;
 	const st = src?.text.style;
-	if (st) {
-		for (const s of st.strokes ?? [])
-			px = Math.max(px, (s.widthPx ?? 0) * (s.position === 'outside' ? 2 : 1));
-		if (st.shadow) px += (st.shadow.distancePx ?? 0) + 3 * (st.shadow.blurPx ?? 0);
-		if (st.background) px += st.background.paddingPx ?? 0;
+	if (st && src) {
+		// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
+		// boxes, and the background padding.
+		const styles = [st, ...(src.text.runs ?? []).map((r) => ({ ...st, ...r.style }))];
+		for (const s of styles) px = Math.max(px, textPaintExtent(s) + textInkPad(s));
+		if (st.background) px = Math.max(px, st.background.paddingPx ?? 0);
 	}
 	// A vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
 	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
@@ -470,7 +501,8 @@ export function cropRect(
 			y1 = Math.max(y1, y);
 		}
 	}
-	const bleed = RECT_BLEED_SHARE * seq.height;
+	// Measured, unanimated text: 2 px for anti-aliasing and rounding; else the 10 % frame bleed.
+	const bleed = tightTextCrop(c) ? 2 : RECT_BLEED_SHARE * seq.height;
 	const W = seq.width;
 	const H = seq.height;
 	let left = Math.max(0, Math.floor((x0 - bleed) / 2) * 2);

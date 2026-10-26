@@ -16,9 +16,11 @@ import {
 	type TextStyle,
 	TextStyleSchema,
 } from '../schema/sequence.ts';
+// MAX_TEXT_STROKES (spec 13 SH-004): the renderers draw at most this many strokes; the invariants refuse longer lists.
+import { MAX_TEXT_STROKES } from '../text-style.ts';
 
-/** Most strokes a text style may carry (bounds what an untrusted patch allocates). */
-export const MAX_TEXT_STROKES = 16;
+export { MAX_TEXT_STROKES };
+
 /** Most project text styles in one document. */
 export const MAX_TEXT_STYLES = 1000;
 export const MAX_TEXT_STYLE_NAME = 120;

@@ -269,7 +269,9 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 
 	it('stroke, fill & stroke order, blur and inter-character blending render', async () => {
 		const doc = snapshotOf(media, () => [
-			...text('STROKE', { strokes: [{ color: [1, 0, 0, 1], widthPx: 6, position: 'outside' }] }),
+			// After Effects strokes are centred on the outline (spec 13 SH-004: an outside stroke paints only outside its
+			// glyph, so only a centred stroke can cover its own fill when strokes are drawn over fills).
+			...text('STROKE', { strokes: [{ color: [1, 0, 0, 1], widthPx: 12, position: 'center' }] }),
 			{ type: 'textAnimator.add', clipId: '$t', properties: ['blur', 'strokeWidth'], ref: '$a' } as Command,
 			{
 				type: 'param.set',

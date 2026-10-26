@@ -5730,6 +5730,7 @@
   "Measure",
   "Measure film size",
   "Measure Loudness",
+  "Measure Text",
   "Measure the peak of the selected audio clip (project audio, not a library sound) in the browser and set it: the clip gets a peak handle and peak snapping",
   "Measure your own reference media: the profile keeps numbers only, never audio.",
   "Measured in the media",

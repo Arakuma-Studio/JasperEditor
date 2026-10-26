@@ -70,7 +70,7 @@ const ClipIdsArg = z
 const StyleArg = z
 	.record(z.string(), z.unknown())
 	.describe(
-		'Caption style fields: fontId, weight, italic, sizePx, lineHeight, trackingEm, align (left/center/right), fill [r,g,b,a 0..1], strokes [{color, widthPx, position}], background {color, paddingPx, radiusPx} | null, shadow {color, angleDeg, distancePx, blurPx} | null, allCaps, highlight {mode none|word|karaoke, color}, maxLines, maxCharsPerLine, maxSegmentMs, boxWidthPct, placement bottom|middle|top, marginPct, linePct, positionPct',
+		'Caption style fields: fontId, weight, italic, sizePx, lineHeight, trackingEm, align (left/center/right), fill [r,g,b,a 0..1], strokes [{color, widthPx, position outside|center|inside}] (all drawn, the first on top), background {color, paddingPx, radiusPx} | null, shadow {color, angleDeg, distancePx, blurPx, spreadPx} | null (spreadPx grows the glyphs + strokes before the blur, σ = blurPx / 2), allCaps, highlight {mode none|word|karaoke, color}, maxLines, maxCharsPerLine, maxSegmentMs, boxWidthPct, placement bottom|middle|top, marginPct, linePct, positionPct',
 	);
 const WordArg = (what: string) =>
 	z.number().int().min(0).describe(`${what} (sequence word index from transcript_inspect)`);

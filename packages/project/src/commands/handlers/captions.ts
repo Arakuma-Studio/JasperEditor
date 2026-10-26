@@ -1259,6 +1259,7 @@ export const captionHandlers = {
 					...style.shadow,
 					distancePx: style.shadow.distancePx * k,
 					blurPx: style.shadow.blurPx * k,
+					...(style.shadow.spreadPx !== undefined ? { spreadPx: style.shadow.spreadPx * k } : {}),
 				};
 		}
 		if (style.fontId && !doc.fonts[style.fontId]) delete style.fontId;
