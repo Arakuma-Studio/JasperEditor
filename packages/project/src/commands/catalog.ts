@@ -4,6 +4,7 @@ import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
 import { BATCH_OWNER, batchHandlers } from './handlers/batch.ts';
 import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
+import { CLEANUP_OWNER, cleanupHandlers } from './handlers/cleanup.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
@@ -84,7 +85,8 @@ export type CommandOwner =
 	| 'keyframe-ease'
 	| 'sound-design'
 	| 'text-styles'
-	| 'edit-automation';
+	| 'edit-automation'
+	| 'transcript-cleanup';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -405,6 +407,8 @@ const LABELS: Record<CommandType, string> = {
 	'textStyle.reset': 'Reset to Text Style',
 	'clip.addAdjustmentBatch': 'New Adjustment Layers',
 	'keyframe.addBatch': 'Add Keyframes',
+	'cleanup.apply': 'Clean Up Voice',
+	'cleanup.configure': 'Clean Up Settings',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -453,6 +457,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
 	[textStyleHandlers, TEXT_STYLE_OWNER],
 	[batchHandlers, BATCH_OWNER],
+	[cleanupHandlers, CLEANUP_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -491,7 +496,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === EASE_OWNER ||
 				owner === SOUND_DESIGN_OWNER ||
 				owner === TEXT_STYLE_OWNER ||
-				owner === BATCH_OWNER
+				owner === BATCH_OWNER ||
+				owner === CLEANUP_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

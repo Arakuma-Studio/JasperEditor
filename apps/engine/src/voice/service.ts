@@ -134,6 +134,7 @@ export class VoiceAnalysisService {
 		mediaKey: string,
 		req: { streamIndex?: number; projectId?: string },
 		origin?: EngineJob['origin'],
+		parentId?: string,
 	): EngineJob {
 		const { rec, streamIndex } = this.target(mediaKey, req.streamIndex);
 		return this.core.queue.submit({
@@ -145,6 +146,7 @@ export class VoiceAnalysisService {
 			...(origin ? { origin } : {}),
 			assetId: rec.mediaKey,
 			...(req.projectId ? { projectId: req.projectId } : {}),
+			...(parentId ? { parentId } : {}),
 			dedupeKey: `voice-analysis:${fingerprintHex(rec.fingerprint)}:${streamIndex}`,
 			input: { mediaKey: rec.mediaKey, streamIndex } satisfies VoiceJobInput,
 			stage: 'Waiting',

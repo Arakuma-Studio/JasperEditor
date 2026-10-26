@@ -4,9 +4,11 @@
 
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
+import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
+import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
@@ -944,6 +946,12 @@ export function invariantCheckers(
 			const bad = clipBedProblem(c as Clip & { bed?: unknown });
 			if (bad) issues.push(inv('INV-SFX', `Clip ${c.id}: ${bad}`, [...cw, 'bed']));
 		}
+		// spec 14 TC-024: edge micro-fades must be readable, on audio clips only (INV-CLEANUP).
+		if (r.edgeFades !== undefined) {
+			const bad =
+				c.kind === 'audio' ? edgeFadesProblem(r.edgeFades) : `a ${c.kind} clip cannot carry edge fades`;
+			if (bad) issues.push(inv('INV-CLEANUP', `Clip ${c.id}: ${bad}`, [...cw, 'edgeFades']));
+		}
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
 		if (r.threeD !== undefined && !canBe3d(c.kind))
 			issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
@@ -1509,6 +1517,10 @@ export function runInvariants(
 			issues.push(
 				inv('INV-SOUND', `Sequence ${seq.id} sound design: ${soundBad}`, [...where, 'soundDesign']),
 			);
+		// spec 14 TC-030: transcript cleanup state must be readable (INV-CLEANUP).
+		const cleanupBad = sequenceCleanupIssue((seq as { cleanup?: unknown }).cleanup);
+		if (cleanupBad)
+			issues.push(inv('INV-CLEANUP', `Sequence ${seq.id} cleanup: ${cleanupBad}`, [...where, 'cleanup']));
 		// wp-multicam: a multi-camera source's angles reference its own tracks.
 		const mcSource = (seq as Sequence).multicam;
 		if (mcSource)
@@ -1752,6 +1764,28 @@ export function repairDocument(
 		if (r.previews !== undefined && !SequencePreviewSettingsSchema.safeParse(r.previews).success) {
 			delete r.previews;
 			note('reset-preview-settings', seq.id, 'invalid preview settings replaced by the defaults');
+		}
+		// spec 14 TC-030 / TC-024: keep the readable parts of cleanup state; drop unreadable edge fades.
+		const sc = seq as { cleanup?: unknown };
+		if (sequenceCleanupIssue(sc.cleanup)) {
+			const fixed = repairSequenceCleanup(sc.cleanup);
+			if (fixed) sc.cleanup = fixed;
+			else delete sc.cleanup;
+			note(
+				'repair-cleanup',
+				seq.id,
+				fixed ? 'unreadable cleanup settings dropped, the rest kept' : 'unreadable cleanup state removed',
+			);
+		}
+		for (const c of Object.values(seq.clips)) {
+			const cr = c as { edgeFades?: unknown };
+			if (cr.edgeFades === undefined) continue;
+			const bad = c.kind === 'audio' ? edgeFadesProblem(cr.edgeFades) : 'not an audio clip';
+			if (!bad) continue;
+			const kept = c.kind === 'audio' ? readEdgeFades(cr.edgeFades) : {};
+			if (kept.inMs !== undefined || kept.outMs !== undefined) cr.edgeFades = kept;
+			else delete cr.edgeFades;
+			note('repair-edge-fades', c.id, `edge fades: ${bad}`);
 		}
 	}
 

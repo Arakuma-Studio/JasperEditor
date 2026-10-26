@@ -8,6 +8,7 @@ import cacheRoutes from './cache.ts';
 import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
+import cleanupRoutes from './cleanup.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
@@ -74,6 +75,8 @@ const ROUTE_PLUGINS = [
 	speechRoutes,
 	// Spec 14 TC-001: voice analysis (levels, voicing, frame classes) of media audio streams.
 	voiceRoutes,
+	// Spec 14: transcript cleanup analysis (needs voice analysis and the agent service) and the cleanup presets.
+	cleanupRoutes,
 	rotoRoutes,
 	camtrackRoutes,
 	interchangeRoutes,

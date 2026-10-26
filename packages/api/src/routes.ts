@@ -1,4 +1,4 @@
-import { EffectPresetFolderSchema, EffectPresetSchema } from '@jasper/project';
+import { CleanupPresetSchema, EffectPresetFolderSchema, EffectPresetSchema } from '@jasper/project';
 import { z } from 'zod';
 import {
 	AgentMcpInfoSchema,
@@ -32,6 +32,14 @@ import {
 import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
+import {
+	CleanupAnalysisFileSchema,
+	CleanupAnalyzeRequestSchema,
+	CleanupPresetCreateRequestSchema,
+	CleanupPresetDeleteResponseSchema,
+	CleanupPresetLibraryResponseSchema,
+	CleanupPresetUpdateRequestSchema,
+} from './cleanup.ts';
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
@@ -1009,6 +1017,44 @@ export const ROUTES = {
 		path: '/api/effect-presets/import',
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
+	},
+	/** Spec 14: a `cleanup-analysis` job (result `CleanupAnalysisJobResult`; the analysis at its `url`). */
+	cleanupAnalyze: {
+		method: 'POST',
+		path: '/api/cleanup/analyze',
+		body: CleanupAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+	},
+	/** The full analysis of a finished `cleanup-analysis` job; 404 `CLEANUP_ANALYSIS_NOT_FOUND` once evicted. */
+	cleanupAnalysisGet: {
+		method: 'GET',
+		path: '/api/cleanup/analyses/:analysisId',
+		response: CleanupAnalysisFileSchema,
+	},
+	/** Spec 14 TC-030: the user's cleanup presets (built-ins are not stored). */
+	cleanupPresetsList: {
+		method: 'GET',
+		path: '/api/cleanup-presets',
+		response: CleanupPresetLibraryResponseSchema,
+	},
+	cleanupPresetCreate: {
+		method: 'POST',
+		path: '/api/cleanup-presets',
+		body: CleanupPresetCreateRequestSchema,
+		response: CleanupPresetSchema,
+	},
+	cleanupPresetUpdate: {
+		method: 'PUT',
+		path: '/api/cleanup-presets/:presetId',
+		body: CleanupPresetUpdateRequestSchema,
+		response: CleanupPresetSchema,
+	},
+	/** Deleting needs the user's approval when an agent asks (the library has no undo). */
+	cleanupPresetDelete: {
+		method: 'DELETE',
+		path: '/api/cleanup-presets/:presetId',
+		response: CleanupPresetDeleteResponseSchema,
 	},
 
 	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */

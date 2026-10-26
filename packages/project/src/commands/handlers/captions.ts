@@ -25,7 +25,6 @@ import {
 	type CaptionRules,
 	captionBlocks,
 	DEFAULT_CAPTION_RULES,
-	DEFAULT_FILLERS,
 	fillerRanges,
 	findFillers,
 	findPauses,
@@ -36,6 +35,7 @@ import {
 	wordRangeFrames,
 } from '../../captions/sequence-transcript.ts';
 import { normalizeWords, replaceWordRange, spreadTokens, tokenizeText } from '../../captions/words.ts';
+import { languageFillerHits } from '../../cleanup/fillers.ts';
 import { buildClipsPayload } from '../../clipboard/build.ts';
 import { anim, createTrack, defaultTransform } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
@@ -44,7 +44,9 @@ import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../../sc
 import { CaptionStyleSchema } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational, secondsToFlicks } from '../../time.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { cutRanges } from '../multi-range.ts';
 import {
+	allTracksIn,
 	assertUnlocked,
 	cleanupSequence,
 	clearRange,
@@ -57,6 +59,7 @@ import {
 	trackClips,
 } from '../placement.ts';
 import type { CaptionRulesInput, CommandOf, TimeInput } from '../schemas/index.ts';
+import { levelPauseRanges, voiceArgument } from './cleanup.ts';
 import { commonFields, ensureDefaultFont } from './clip-common.ts';
 import { clipEditHandlers } from './clip-edit.ts';
 import { clipboardHandlers } from './clipboard.ts';
@@ -280,20 +283,26 @@ function wordSpan(words: readonly SeqWord[], from: number, to: number, h: Handle
 	return [from, to];
 }
 
-/** Ripple-delete frame ranges on every unlocked track, right to left (FilmCraft `ripple_delete_ranges`). */
+/**
+ * Ripple-delete frame ranges on every unlocked track (FilmCraft `ripple_delete_ranges`): the result of one
+ * `range.extract` per range, right to left, computed in one pass (`cutRanges`, spec 14 TC-031), with optional edge
+ * micro-fades on the audio cuts.
+ */
 function rippleDeleteRanges(
 	doc: DDoc,
 	seq: DSeq,
 	ranges: Array<[number, number]>,
 	h: HandlerContext,
+	fadeMs = 0,
 ): number {
-	let total = 0;
-	for (const [a, b] of mergeRanges(ranges).reverse()) {
-		if (b <= a) continue;
-		clipEditHandlers['range.extract']!(doc, { type: 'range.extract', sequenceId: seq.id, from: a, to: b }, h);
-		total += b - a;
-	}
-	return total;
+	const merged = mergeRanges(ranges).filter(([a, b]) => b > a);
+	if (!merged.length) return 0;
+	const tracks = new Set(
+		allTracksIn(seq)
+			.filter((t) => !t.locked)
+			.map((t) => t.id),
+	);
+	return cutRanges(doc, seq, h, { ranges: merged, trackIds: tracks, ripple: true, fadeMs }).frames;
 }
 
 function cueWords(c: Cue, F: number, offsetFrames: number): PlacedBlock['words'] {
@@ -1156,11 +1165,12 @@ export const captionHandlers = {
 		const words = seqWordsOf(doc, seq);
 		const lo = cmd.fromWord ?? 0;
 		const hi = Math.min(cmd.toWord ?? words.length - 1, words.length - 1);
-		const hits = findFillers(words, cmd.fillers ?? DEFAULT_FILLERS).filter(
-			([a, b]) => a >= lo && b - 1 <= hi,
-		);
+		const all = cmd.fillers
+			? findFillers(words, cmd.fillers)
+			: languageFillerHits(doc, seq, words, cmd.language);
+		const hits = all.filter(([a, b]) => a >= lo && b - 1 <= hi);
 		const ranges = fillerRanges(words, hits, seq.settings.frameRate);
-		const removed = rippleDeleteRanges(doc, seq, ranges, h);
+		const removed = rippleDeleteRanges(doc, seq, ranges, h, cmd.fadeMs);
 		return { fillers: hits.length, ranges: mergeRanges(ranges).length, frames: removed };
 	},
 	'transcript.removePauses': (doc, cmd, h) => {
@@ -1169,13 +1179,35 @@ export const captionHandlers = {
 		const lo = cmd.fromWord ?? 0;
 		const hi = Math.min(cmd.toWord ?? all.length - 1, all.length - 1);
 		const words = all.slice(lo, hi + 1);
-		const ranges = findPauses(
-			words,
-			secondsToFlicks(cmd.minSeconds ?? 1),
-			secondsToFlicks(cmd.keepSeconds ?? 0.1),
-			seq.settings.frameRate,
-		);
-		const removed = rippleDeleteRanges(doc, seq, ranges, h);
+		const mode = cmd.mode ?? 'transcript';
+		const keep = cmd.keepSeconds ?? 0.1;
+		let ranges: Array<[number, number]>;
+		if (mode === 'level') {
+			ranges = levelPauseRanges(
+				seq,
+				words,
+				voiceArgument(cmd.voice, h),
+				{
+					minSeconds: cmd.minSeconds ?? 1,
+					padBefore: cmd.padBefore ?? 0,
+					padAfter: cmd.padAfter ?? 0,
+					outDb: cmd.outDb ?? 20,
+					inDb: cmd.inDb ?? 25,
+				},
+				h,
+			);
+		} else {
+			if (cmd.voice || cmd.outDb !== undefined || cmd.inDb !== undefined)
+				h.fail('E_INVALID_PARAM', 'voice, outDb and inDb are for mode "level"');
+			ranges = findPauses(
+				words,
+				secondsToFlicks(cmd.minSeconds ?? 1),
+				secondsToFlicks(cmd.padAfter ?? keep),
+				seq.settings.frameRate,
+				secondsToFlicks(cmd.padBefore ?? keep),
+			);
+		}
+		const removed = rippleDeleteRanges(doc, seq, ranges, h, cmd.fadeMs);
 		return { pauses: ranges.length, frames: removed };
 	},
 	'transcript.createCaptions': createCaptionsFromTranscript,

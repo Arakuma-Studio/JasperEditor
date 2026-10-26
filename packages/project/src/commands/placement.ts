@@ -3,6 +3,7 @@
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized; scans read the drafts'
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
 import { type Draft, isDraft, original } from 'immer';
+import { readEdgeFades } from '../audio-fade.ts';
 import { clipsInRange } from '../derive/index.ts';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
@@ -261,6 +262,7 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 		right.sourceIn = clip.sourceIn + contentSpanFlicks(at - clip.start, r, clip.speed.rate);
 	}
 	clip.duration = at - clip.start;
+	splitEdgeFades(clip, right);
 	seq.clips[right.id] = right as DClip;
 	// the left part keeps the In animator, the right part the Out animator.
 	splitTextAnimation(clip, seq.clips[right.id]!);
@@ -322,6 +324,30 @@ export function removeClip(seq: DSeq, clipId: string, h: HandlerContext): void {
 			h.warn('W_TRANSITION_REMOVED', `Transition ${t.id} removed with clip ${clipId}`);
 		}
 	}
+}
+
+/**
+ * spec 14 TC-024: edge micro-fades follow their edge when a clip is split — the left part keeps the fade in, the
+ * right part the fade out.
+ */
+export function splitEdgeFades(left: DClip | Clip, right: DClip | Clip): void {
+	const l = left as { edgeFades?: unknown };
+	if (l.edgeFades === undefined) return;
+	const ef = readEdgeFades(l.edgeFades);
+	const r = right as { edgeFades?: unknown };
+	if (ef.outMs) r.edgeFades = { outMs: ef.outMs };
+	else delete r.edgeFades;
+	if (ef.inMs) l.edgeFades = { inMs: ef.inMs };
+	else delete l.edgeFades;
+}
+
+/** spec 14 TC-024: `a` absorbs the clip after it (`b`): it keeps its own fade in and takes `b`'s fade out. */
+export function joinEdgeFades(a: DClip | Clip, b: DClip | Clip): void {
+	const ea = readEdgeFades((a as { edgeFades?: unknown }).edgeFades);
+	const eb = readEdgeFades((b as { edgeFades?: unknown }).edgeFades);
+	const next = { ...(ea.inMs ? { inMs: ea.inMs } : {}), ...(eb.outMs ? { outMs: eb.outMs } : {}) };
+	if (next.inMs || next.outMs) (a as { edgeFades?: unknown }).edgeFades = next;
+	else delete (a as { edgeFades?: unknown }).edgeFades;
 }
 
 export type SplitRecord = { originalLinkId: string | null; rightId: string };

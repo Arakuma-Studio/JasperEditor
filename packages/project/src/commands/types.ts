@@ -40,6 +40,8 @@ export const ERROR_CODES = [
 	'E_NO_SESSION',
 	'E_INVARIANT',
 	'E_INTERNAL',
+	/** The edit cannot work on this material (spec 14: a cleanup source range on a reversed / remapped clip). */
+	'E_UNSUPPORTED',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

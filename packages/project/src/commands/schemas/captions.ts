@@ -207,8 +207,16 @@ export const TranscriptInsertIntoCmd = cmd('transcript.insertInto', {
 
 export const TranscriptRemoveFillersCmd = cmd('transcript.removeFillers', {
 	sequenceId: IdRefSchema.optional(),
-	/** Words or phrases ("you know"); default um, uh, umm, uhm, erm, er, ah, hmm, mm, mhm. */
+	/**
+	 * Words or phrases ("you know"). Default: per word, the vocalic fillers of its transcript's language — the
+	 * sequence's edited list (`cleanup.configure lists`), else Spanish eh, em, emm, ehm, mm, mmm, hmm, mhm, ah, aah, eeh,
+	 * ehh, uh, um, eee, ee, aa, m, e; English and other languages um, uh, umm, uhm, erm, er, ah, hmm, mm, mhm.
+	 */
 	fillers: z.array(z.string().min(1)).optional(),
+	/** Use this language's list for every word (`es`, `en`…) instead of each transcript's language. */
+	language: z.string().min(1).max(35).optional(),
+	/** Equal-power micro-fade at every audio cut edge (ms, default 0 = none). */
+	fadeMs: z.number().min(0).max(30).optional(),
 	/** Only these sequence word index ranges (inclusive) — default the whole sequence. */
 	fromWord: z.number().int().min(0).optional(),
 	toWord: z.number().int().min(0).optional(),
@@ -220,6 +228,25 @@ export const TranscriptRemovePausesCmd = cmd('transcript.removePauses', {
 	keepSeconds: z.number().min(0).max(10).optional().describe('Air kept next to each word (default 0.1)'),
 	fromWord: z.number().int().min(0).optional(),
 	toWord: z.number().int().min(0).optional(),
+	/**
+	 * `transcript` (default): gaps between the words' timestamps. `level`: gaps in the voice analysis (spec 14), with
+	 * edit points from the audio level — the out point where the word's decay falls below floor + `outDb`, the in point
+	 * where the onset reaches floor + `inDb` — so no air is left and no word edge is clipped. Needs `voice`.
+	 */
+	mode: z.enum(['transcript', 'level']).optional(),
+	/** Air kept after the previous word / before the next word (s). Default: `keepSeconds` (transcript), 0 (level). */
+	padAfter: z.number().min(0).max(10).optional(),
+	padBefore: z.number().min(0).max(10).optional(),
+	/** Level mode: dB above the noise floor of the out / in points (default 20 / 25). */
+	outDb: z.number().min(0).max(80).optional(),
+	inDb: z.number().min(0).max(80).optional(),
+	/** Level mode: the voice analyses (`voice-analysis` job files, base64) of the clips' media. */
+	voice: z
+		.array(z.strictObject({ mediaId: IdRefSchema, analysis: z.string().min(1).max(50_000_000) }))
+		.max(64)
+		.optional(),
+	/** Equal-power micro-fade at every audio cut edge (ms, default 0 = none). */
+	fadeMs: z.number().min(0).max(30).optional(),
 });
 
 export const TranscriptCreateCaptionsCmd = cmd('transcript.createCaptions', {
