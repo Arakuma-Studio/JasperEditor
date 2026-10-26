@@ -419,7 +419,7 @@ export function PropertyRow(props: {
 					clipIds={clipIds}
 					mixed={mixed}
 					onChange={(next, opts) => {
-						const plan = planSet(row, live(), () => next);
+						const plan = P.set(row, live(), () => next);
 						report(plan.skipped);
 						if (plan.commands.length === 0) return plan.skipped.length === 0;
 						const r = ctx.ops.apply(
