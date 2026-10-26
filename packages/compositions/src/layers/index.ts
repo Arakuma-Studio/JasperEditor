@@ -40,6 +40,26 @@ export {
 	type MgTemplatePreviewProps,
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
+export {
+	contentFaces,
+	createDomTextMeasurer,
+	type DomTextMeasurer,
+	type FaceUrlResolver,
+	facesFor,
+	installTextMeasureHook,
+	type MeasuredBox,
+	type MeasureFace,
+	measureTextBox,
+	type TextMeasureJob,
+} from './text/box-measure.ts';
+export {
+	type PaintBand,
+	type PaintMode,
+	paintCss,
+	planTextPaint,
+	shadowKey,
+	type TextPaintPlan,
+} from './text/paint.tsx';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
 export { drawPdfPage, pdfPagePicture } from './VectorLayer.tsx';
 export {

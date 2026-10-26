@@ -576,9 +576,15 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `rename_sound_profile` `delete_sound_profile` (approval card) `export_sound_profile` `import_sound_profile`
   `set_sound_profile` (the sequence's; `sound_check {profileId}` adds the Reference rows)
   (`docs/specs/12-sound-design.md`, `docs/wp-notes/sound-design.md`).
-- Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposals` `get_proposal` (with a
-  ghost table and its last Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal`
-  (policy-gated for agents) `reject_proposal`.
+- Proposals (reviewed and applied by the user in the editor; one undo step): `list_proposal_features` (features, their
+  Review groups and whether agents may apply them here) `list_proposals` `get_proposal` (with a ghost table and its last
+  Sound Check: fixes · introduces) `wait_for_proposal` (decisions and notes) `accept_proposal` (policy-gated for agents)
+  `reject_proposal` `refresh_proposal` (the producer re-plans stale items, or with `reroll` draws an item again with
+  its next seed; nothing is applied).
+- Editing automation (spec 15; each a proposal of feature `edit-automation`, `mode: "dryRun"` for counts, coverage and
+  export cost): `decorate_cuts` (a cut kit centred on every picture cut + a whoosh of its length through sound design)
+  `add_punch_ins` (Motion zooms from the clip midpoint, held to the cut) `add_ken_burns` (slow zooms over a share of the
+  A-roll clips) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
@@ -588,7 +594,8 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   each clip's In, on clip ids, `"$selection"` or a subtitle group, one undo step) `list_text_styles`
   `create_text_style` `apply_text_style` (apply / detach / reset) `update_text_style` `delete_text_style`
   (`docs/wp-notes/text-styles.md`).
-- Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
+- Speech to text (local Whisper; GPU when it helps — `engine_status` shows the provider probe, `transcribe`
+  takes `device` and `accuracy`): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
   `get_transcript` (`docs/wp-notes/speech.md`).
 - Voice analysis (10 ms levels, voicing, speech / breath / silence frames of a media's audio stream; a cached engine
   job): `get_voice_analysis` (`docs/wp-notes/transcript-cleanup.md`).
@@ -721,7 +728,11 @@ alternatives?, meta?}]}` validates every item by a dry run (failing ones are sto
 `GET …/proposals[/<proposalId>]` reads them; `POST …/<proposalId>/accept {itemIds: [...] | "all", partial?}` applies
 the items and what they require as one transaction ("Accept <title> (n of m)"); `reject`, `reopen`, `note`, `select`
 and `DELETE` record the review. A client with only the token may accept sound-design proposals only where the user
-allowed it ("Allow agents to apply sound proposals"), otherwise `403 APPROVAL_REQUIRED`; it may withdraw items
+allowed it ("Allow agents to apply sound proposals"), and edit-automation, subtitles and transcript-cleanup proposals
+while Project Settings ▸ Agent Proposals allows them (on by default), otherwise `403 APPROVAL_REQUIRED`;
+`GET /api/projects/<id>/proposal-features` says which; a draft too large for one accept transaction is refused with
+`413 PROPOSAL_TOO_LARGE` (`detail.suggestedRange`); `POST …/<proposalId>/refresh {itemIds: "stale" | [...]}` asks the
+feature's producer to re-plan stale items (`409 PROPOSAL_NOT_REFRESHABLE` when it cannot); it may withdraw items
 (`reject`) or delete a proposal, while `reopen`, `note` and `select` are the reviewer's (editor key only). An accepted
 item is reopened only once its accept is undone (`409 PROPOSAL_STILL_APPLIED` while what it created is in the
 document). Every accept is journalled (an intent file next to the proposal, with the ids its transaction creates its

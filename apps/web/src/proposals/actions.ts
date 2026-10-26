@@ -2,8 +2,8 @@
 // Timeline, the ghost card, the proposal card and the `proposals.*` UI commands (the Review keymap scope):
 // entering review (its sequence opens, the Timeline zooms to it), moving between items (the ghost is selected and the
 // playhead goes to the item's anchor), decisions, Accept all / Reject all, ▶ in context and the range, Apply (a trusted
-// user gesture only; destructive items are named in a confirmation, which IS the approval) with its toast "Applied n of
-// m sounds from <author>" offering Undo and Reopen review, and Discard (the proposal is deleted, after a confirmation).
+// user gesture only; destructive items are named in a confirmation, which IS the approval) with its toast in the
+// feature's words ("Applied n of m sounds from <author>", `vocabulary.ts`) offering Undo and Reopen review, and Discard (the proposal is deleted, after a confirmation).
 // Every outcome is announced (aria-live) through `reviewAnnouncer`.
 import type { Sequence } from '@jasper/project';
 import type { EditorSession, ProposalsController, ReviewItem } from '@jasper/session';
@@ -24,6 +24,7 @@ import {
 } from './review.ts';
 import { describeProblem, problemText } from './stale-text.ts';
 import { proposalsFor } from './state.ts';
+import { featureName, reviewVocabulary } from './vocabulary.ts';
 
 /** The last thing the review did, for screen readers (the panel and the bar render it in an aria-live region). */
 export const reviewAnnouncer = createStore<{ message: string; n: number }>(() => ({ message: '', n: 0 }));
@@ -65,7 +66,8 @@ export function currentGhostModel(session: EditorSession): GhostModel | null {
 }
 
 export function currentReviewModel(session: EditorSession): ReviewModel {
-	return buildReviewModel(proposalsFor(session).getState().items, currentGhostModel(session));
+	const st = proposalsFor(session).getState();
+	return buildReviewModel(st.items, currentGhostModel(session), st.proposal?.feature);
 }
 
 /** The item the review is on: the last selected one. */
@@ -363,7 +365,10 @@ export async function applyReview(
 					: t('Also removes {0} of your clips: {1}', removals.length, `${names}${more}`),
 			);
 		}
-		const commands = needs.filter((x) => x.kind !== 'agentsMayApply') as { label: string; kind: string }[];
+		const commands = needs.filter((x) => x.kind === 'command' || x.kind === 'force') as {
+			label: string;
+			kind: string;
+		}[];
 		if (commands.length)
 			lines.push(
 				t(
@@ -373,6 +378,14 @@ export async function applyReview(
 			);
 		if (needs.some((x) => x.kind === 'agentsMayApply'))
 			lines.push(t('Also allows agents to apply sound proposals in this sequence without your review'));
+		for (const x of needs)
+			if (x.kind === 'agentProposals')
+				lines.push(
+					t(
+						'Also allows agents to apply {0} proposals in this project without your review',
+						x.features.map((f) => featureName(f)).join(', '),
+					),
+				);
 		const ok = await (opts.confirm ?? confirmDialog)({
 			title: t('Apply {0} of {1}?', n, counts.total),
 			body: lines.join(' '),
@@ -403,10 +416,8 @@ export async function applyReview(
 			? session.getState().history.entries.find((e) => e.revisionAfter === r.revision && e.origin === 'user')
 			: undefined;
 	const entryId = entry?.id ?? null;
-	const sounds = p.feature === 'sound-design';
-	const title = sounds
-		? t('Applied {0} of {1} sounds from {2}', appliedNow, total, author)
-		: t('Applied {0} of {1} items from {2}', appliedNow, total, author);
+	// the feature's sentence (spec 15 EA-002): "Applied n of m sounds" (sound design), "Applied n of m cut kits"…
+	const title = reviewVocabulary(p.feature).applyToast(appliedNow, total, author);
 	const stillApplied = () => entryId !== null && topEntry(session)?.id === entryId;
 	toast({
 		kind: 'success',
@@ -449,6 +460,73 @@ export async function applyReview(
 	announce(title);
 	// the review stays open (rejected items stay visible; Ctrl+Z brings the applied ones back here): Exit ends it
 	return { ok: true, applied: appliedNow, total, stale: r.stale.length, entryId };
+}
+
+/** The item may be drawn again with its next seed (spec 15 EA-032 "Reroll": the producer marks it `meta.rerollable`). */
+export function isRerollable(it: { meta?: unknown; setup?: boolean }): boolean {
+	return !it.setup && (it.meta as { rerollable?: unknown } | undefined)?.rerollable === true;
+}
+
+/**
+ * "Reroll" (spec 15 EA-032): the producer re-plans the item with its next seed — another draw of the same pass (another
+ * kit family for a cut, the other direction for a Ken Burns move) — and it comes back pending; nothing is applied.
+ */
+export async function rerollReviewItem(
+	session: EditorSession,
+	itemId: string,
+): Promise<{ ok: boolean; message: string }> {
+	const c = proposalsFor(session);
+	const r = await c.refreshItems([itemId], { reroll: true });
+	if (!r.ok) {
+		const message =
+			r.code === 'E_NOT_REFRESHABLE'
+				? t('Its producer cannot re-plan items: ask for a new proposal instead')
+				: r.message;
+		toast({ kind: 'warning', title: t('The item could not be rerolled'), detail: message });
+		announce(message);
+		return { ok: false, message };
+	}
+	const it = c.getState().items.find((x) => x.id === itemId);
+	const message = it ? t('Rerolled: {0}', it.label) : t('The item no longer applies');
+	toast({ kind: 'info', title: message });
+	announce(message);
+	return { ok: true, message };
+}
+
+/**
+ * "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans the stale items (or `itemIds`) on the current
+ * edit; they come back pending for review — nothing is applied. Announced and toasted; a producer that cannot
+ * refresh is said so (the button is disabled with that reason when the engine reports it).
+ */
+export async function refreshReview(
+	session: EditorSession,
+	itemIds: readonly string[] | 'stale' = 'stale',
+): Promise<{ ok: boolean; message: string }> {
+	const c = proposalsFor(session);
+	const before = c.getState().items.filter((it) => !it.setup && it.state === 'stale').length;
+	const r = await c.refreshItems(itemIds);
+	if (!r.ok) {
+		const message =
+			r.code === 'E_NOT_REFRESHABLE'
+				? t('Its producer cannot re-plan items: ask for a new proposal instead')
+				: r.message;
+		toast({ kind: 'warning', title: t('The proposal could not be refreshed'), detail: message });
+		announce(message);
+		return { ok: false, message };
+	}
+	const after = c.getState().items.filter((it) => !it.setup && it.state === 'stale').length;
+	const n = r.changed.length;
+	const message =
+		n === 0
+			? t('Nothing to refresh')
+			: after > 0
+				? t('Re-planned {0} items; {1} still changed since they were proposed', n, after)
+				: n === 1
+					? t('Re-planned 1 item: review it again')
+					: t('Re-planned {0} items: review them again', n);
+	toast({ kind: n > 0 && after < before ? 'success' : 'info', title: message });
+	announce(message);
+	return { ok: true, message };
 }
 
 /** Discard: the proposal is deleted (after a confirmation); nothing in the sequence changes. */

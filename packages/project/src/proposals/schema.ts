@@ -181,4 +181,6 @@ export type ProposalIssue = {
 	message: string;
 	itemId?: string;
 	path?: (string | number)[];
+	/** Structured detail (E_TOO_LARGE: what fits, the suggested range; `proposalBudget`). */
+	detail?: Record<string, unknown>;
 };

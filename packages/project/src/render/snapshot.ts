@@ -207,6 +207,8 @@ export type RenderVisualSource =
 			moreOptions?: TextMoreOptions;
 			perCharacter3d?: boolean;
 			sourceTextKeyframes?: Keyframe<TextContent>[];
+			/** spec 13 SH-004: the box is an estimate (not measured yet); renderers and bakes leave room around it. */
+			layoutPending?: true;
 	  }
 	| { color: RGBA }
 	| {
@@ -880,7 +882,11 @@ export function buildRenderSnapshot(
 					break;
 				}
 				case 'text': {
-					source = { text: c.content, box: c.box };
+					source = {
+						text: c.content,
+						box: c.box,
+						...(c.layoutPending ? { layoutPending: true as const } : {}),
+					};
 					if (c.textAnimation && (c.textAnimation.in || c.textAnimation.out)) {
 						const w = resolveTextAnimationWindows(c);
 						source.animation = {
@@ -1360,12 +1366,28 @@ export function flattenNestAudio(
 		const contentOfA = (x: number) => contentTimeAt(a, x, rate);
 		const sourceIn = Math.max(0, Math.round(contentOfA(g(pieceRev ? p1 - 1 : p0))));
 		const db = new Float64Array(p1 - p0);
+		// spec 14 TC-024: edge micro-fades are shorter than a frame: they stay fades of the piece (mapped to the outer
+		// timeline) instead of being sampled per frame into `nestGain`.
+		const innerFades = a.fades?.filter((x) => !x.edge);
+		const edgeFades: RenderAudioFade[] = [];
+		for (const x of a.fades ?? []) {
+			if (!x.edge) continue;
+			const sIn = n.sourceIn / F;
+			if (!rev) edgeFades.push({ ...x, start: n.start + (x.start - g(n.start)) / r, frames: x.frames / r });
+			else
+				edgeFades.push({
+					...x,
+					type: x.type === 'in' ? 'out' : 'in',
+					start: n.start + n.duration - (x.start + x.frames - sIn) / r,
+					frames: x.frames / r,
+				});
+		}
 		for (let f = p0; f < p1; f++) {
 			const x = g(f);
 			const inner =
 				evaluate(a.track.volumeDb, x * F) +
 				evaluate(sub.master.volumeDb, x * F) +
-				gainToDb(audioFadeGain(a.fades, x)) +
+				gainToDb(audioFadeGain(innerFades, x)) +
 				nestGainDbAt(a.nestGain, Math.floor(x + 1e-6));
 			const fc = Math.min(n.start + n.duration - 1, Math.max(n.start, f));
 			const outer =
@@ -1398,6 +1420,7 @@ export function flattenNestAudio(
 			track: { volumeDb: track.volumeDb ?? ZERO, pan: track.pan ?? ZERO },
 			...(a.generator ? { generator: a.generator } : {}),
 			...(runs.length === 1 && runs[0]!.db === 0 ? {} : { nestGain: runs }),
+			...(edgeFades.length ? { fades: edgeFades } : {}),
 		});
 	}
 	return out;

@@ -1,10 +1,12 @@
 export * from './agent.ts';
 export * from './audio.ts';
 export * from './audio-fx.ts';
+export * from './automation.ts';
 export * from './cache.ts';
 export * from './camtrack.ts';
 export * from './capabilities.ts';
 export * from './captions.ts';
+export * from './cleanup.ts';
 export * from './common.ts';
 export type * from './desktop.ts';
 export * from './effect-presets.ts';

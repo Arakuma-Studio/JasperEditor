@@ -8,11 +8,16 @@ import {
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
 	type AudioClassifyRequest,
+	type AutomationPassId,
+	type AutomationPassRequest,
+	type AutomationPassResult,
 	type AutoToneRequest,
 	type BeatsRequest,
 	type BeatsResult,
 	buildPath,
 	type CaptionFileReadRequest,
+	type CleanupAnalysisFile,
+	type CleanupAnalyzeRequest,
 	type ColorMatchRequest,
 	type DerivativeKind,
 	decodeVoiceAnalysis,
@@ -44,6 +49,7 @@ import {
 	type ProposalCreateRequest,
 	type ProposalMarkAppliedRequest,
 	type ProposalNoteRequest,
+	type ProposalRefreshRequest,
 	type ProposalRejectRequest,
 	type ProposalReopenRequest,
 	type ProposalSelectRequest,
@@ -590,6 +596,30 @@ export class EngineClient {
 	deleteProposal(projectId: string, proposalId: string) {
 		return this.call('proposalDelete', { params: { projectId, proposalId } });
 	}
+	/** "Refresh proposal" (spec 15 EA-003): the feature's producer re-plans stale items; nothing is applied. */
+	refreshProposal(projectId: string, proposalId: string, req: ProposalRefreshRequest) {
+		return this.call('proposalRefresh', { params: { projectId, proposalId }, body: req });
+	}
+	/**
+	 * An editing-automation pass (spec 15 EA-020…EA-022): `dryRun` → the `AutomationPassResult` at once; `propose`
+	 * (default) → an `edit-automation` job (202) whose result is the `AutomationPassResult` naming the proposal.
+	 */
+	automationPass(
+		projectId: string,
+		pass: AutomationPassId,
+		req: AutomationPassRequest,
+		signal?: AbortSignal,
+	) {
+		return this.call('automationPass', {
+			params: { projectId, pass },
+			body: req,
+			...(signal ? { signal } : {}),
+		}) as Promise<AutomationPassResult | EngineJob>;
+	}
+	/** Proposal features of a project: Review groups, producers, whether agents may accept (spec 15 EA-001). */
+	proposalFeatures(projectId: string) {
+		return this.call('proposalFeatures', { params: { projectId } });
+	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
 	}
@@ -776,6 +806,17 @@ export class EngineClient {
 				status: res.status,
 			});
 		return r.analysis;
+	}
+	/**
+	 * Spec 14: a `cleanup-analysis` job — voice analyses of the sequence's speech media (cached or computed), the
+	 * detector and the planner (result `CleanupAnalysisJobResult`; the full analysis via `getCleanupAnalysis`).
+	 */
+	analyzeCleanup(req: CleanupAnalyzeRequest, wait = false): Promise<EngineJob> {
+		return this.call('cleanupAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** The analysis of a finished `cleanup-analysis` job (validated); EngineError `CLEANUP_ANALYSIS_NOT_FOUND` once evicted. */
+	getCleanupAnalysis(analysisId: string): Promise<CleanupAnalysisFile> {
+		return this.call('cleanupAnalysisGet', { params: { analysisId } });
 	}
 	/** Scene Edit Detection of a media range (job; result SceneDetectResult). */
 	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {

@@ -17,6 +17,7 @@ import {
 	fillerRanges,
 	findFillers,
 	findPauses,
+	languageFillerHits,
 	mergeRanges,
 	type ProjectDocument,
 	paragraphs,
@@ -57,7 +58,7 @@ export const CAPTIONS_GUIDE = `Captions and transcripts:
 - list_captions shows tracks, track styles and every caption (timecodes, text, speaker). add_caption / edit_caption (text, speaker, in/out, per-caption style) / split_captions / merge_captions / delete_captions (ripple) / style_captions (track style or per-caption overrides, built-in presets: ${BUILTIN_CAPTION_PRESETS.map((p) => p.id).join(', ')}) / caption_track (add, rename, language, show/hide, lock, active).
 - Caption text: lines separated by "\\n", a blank line starts a new page within one caption; <i>, <b>, <u> are kept and drawn. Word timings (for the karaoke highlight) follow the text; unchanged words keep their times.
 - Transcripts: import_transcript attaches a transcript to a media item (JSON: our {words:[{text,start,end}]} in flicks, Whisper / whisper.cpp JSON, @remotion/captions Caption[] or {text,start,end} in seconds; or any caption file), so text-based editing works without speech recognition. transcript_inspect lists the sequence transcript (words heard through the audio clips, top track first, with indices, times and speakers, and paragraphs); transcript_search finds phrases (case and punctuation ignored, last word may be a prefix).
-- Text-based edits take sequence word indices (inclusive): transcript_select marks In/Out around words (snapped outward to frames), transcript_extract (ripple) / transcript_lift (gap) remove them from every unlocked track, insert_transcript_selection copies them into another sequence. remove_fillers (default um, uh, umm, uhm, erm, er, ah, hmm, mm, mhm; phrases like "you know" win over single words) and remove_pauses (pauses ≥ minSeconds, keepSeconds of air on each side) ripple-delete in one undo step; dryRun lists what would go. rename_speaker renames across transcripts.
+- Text-based edits take sequence word indices (inclusive): transcript_select marks In/Out around words (snapped outward to frames), transcript_extract (ripple) / transcript_lift (gap) remove them from every unlocked track, insert_transcript_selection copies them into another sequence. remove_fillers (default: the vocalic fillers of each transcript's language — Spanish eh, em, mm, mmm, ah, uh, um…; English um, uh, umm, uhm, erm, er, ah, hmm, mm, mhm; phrases like "you know" win over single words) and remove_pauses (pauses ≥ minSeconds, keepSeconds of air on each side) ripple-delete in one undo step; dryRun lists what would go. rename_speaker renames across transcripts.
 - captions_from_transcript lays the sequence transcript out as captions on a new track (Premiere defaults: 42 characters × 2 lines, 1–7 s, a new caption at a 1 s pause, a speaker change or sentence end once half full; frame-snapped, never overlapping).
 - start_export captions: {burnIn, embed (mov_text in MP4/MOV, WebVTT in WebM), sidecar: ["srt", "vtt", …], sidecarTracks}.`;
 
@@ -70,7 +71,7 @@ const ClipIdsArg = z
 const StyleArg = z
 	.record(z.string(), z.unknown())
 	.describe(
-		'Caption style fields: fontId, weight, italic, sizePx, lineHeight, trackingEm, align (left/center/right), fill [r,g,b,a 0..1], strokes [{color, widthPx, position}], background {color, paddingPx, radiusPx} | null, shadow {color, angleDeg, distancePx, blurPx} | null, allCaps, highlight {mode none|word|karaoke, color}, maxLines, maxCharsPerLine, maxSegmentMs, boxWidthPct, placement bottom|middle|top, marginPct, linePct, positionPct',
+		'Caption style fields: fontId, weight, italic, sizePx, lineHeight, trackingEm, align (left/center/right), fill [r,g,b,a 0..1], strokes [{color, widthPx, position outside|center|inside}] (all drawn, the first on top), background {color, paddingPx, radiusPx} | null, shadow {color, angleDeg, distancePx, blurPx, spreadPx} | null (spreadPx grows the glyphs + strokes before the blur, σ = blurPx / 2), allCaps, highlight {mode none|word|karaoke, color}, maxLines, maxCharsPerLine, maxSegmentMs, boxWidthPct, placement bottom|middle|top, marginPct, linePct, positionPct',
 	);
 const WordArg = (what: string) =>
 	z.number().int().min(0).describe(`${what} (sequence word index from transcript_inspect)`);
@@ -813,7 +814,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		'remove_fillers',
 		{
 			title: 'Remove filler words',
-			description: `Ripple-deletes filler words in one undo step (default ${DEFAULT_FILLERS.join(', ')}; phrases such as "you know" allowed and matched before single words). Cuts snap to the nearest frames without reaching into neighbouring words. dryRun lists the hits only.`,
+			description: `Ripple-deletes filler words in one undo step (default: the vocalic fillers of each transcript's language — Spanish eh, em, mm, mmm, ah, uh, um, e, ee…; English and others ${DEFAULT_FILLERS.join(', ')}; phrases such as "you know" allowed and matched before single words). Cuts snap to the nearest frames without reaching into neighbouring words. dryRun lists the hits only.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -826,7 +827,9 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
 			if (a.dryRun) {
 				const words = sequenceWords(doc, seq);
-				const hits = findFillers(words, a.fillers ?? DEFAULT_FILLERS);
+				const hits = a.fillers
+					? findFillers(words, a.fillers)
+					: languageFillerHits(doc, seq, words, undefined);
 				const ranges = mergeRanges(fillerRanges(words, hits, seq.settings.frameRate));
 				return jsonResult({
 					hits: hits.map(([s, e]) => ({

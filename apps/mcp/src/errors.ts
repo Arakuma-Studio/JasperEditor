@@ -36,9 +36,13 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 	E_APPROVAL_DENIED:
 		'The user denied this, or no editor window was open to ask in. Destructive commands (track.remove, item.delete, force: true…) and destructive operations (deleting presets, models, all render files or referenced cache, restoring a version over a project, changing settings) need the user to approve them in an open JasperEditor window. Do not retry without asking the user.',
 	E_APPROVAL_REQUIRED:
-		'Only the user can do this. A proposal: ask them to review and apply it in the editor (Review panel), or to turn on "Allow agents to apply sound proposals" for the sequence; wait_for_proposal tells you their decisions. A Sound Check error you wanted to acknowledge: fix it, or ask the user to acknowledge it in the Sound Check panel. Do not retry.',
+		'Only the user can do this. A proposal: ask them to review and apply it in the editor (Review panel), or to turn on "Allow agents to apply sound proposals" for the sequence (sound design) or "Allow agents to apply <feature> proposals" in Project Settings (editing automation, subtitles, transcript cleanup; list_proposal_features shows which are on); wait_for_proposal tells you their decisions. A Sound Check error you wanted to acknowledge: fix it, or ask the user to acknowledge it in the Sound Check panel. Do not retry.',
 	E_PROPOSAL_STALE:
 		'Some proposal items no longer fit the edit. Nothing was applied: accept again with partial: true to apply the rest, or make a new proposal.',
+	E_TOO_LARGE:
+		'The result would not fit one accept transaction (5 000 commands / 20 MB; 2 000 items). Nothing was stored: run the pass on the suggested range (details.suggestedRange, in sequence frames), then on the rest — or use the batch commands (clip.addAdjustmentBatch, keyframe.addBatch) so each item is one command.',
+	E_NOT_REFRESHABLE:
+		'This feature’s producer does not re-plan items. Make a new proposal for the changed part instead (and reject_proposal the stale items).',
 	E_PROPOSAL_LIMIT:
 		'The project already holds 50 proposals still under review. Ask the user to finish or discard some (or reject_proposal your own) before proposing again.',
 	E_APPROVAL_TIMEOUT:
@@ -64,6 +68,8 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 		'Agents may only undo/redo their own history entries; the top entry was made by the user or another agent.',
 	E_NOT_IMPLEMENTED:
 		"This operation is unavailable in the current engine or editor session. Check engine_status and the requested tool's requirements.",
+	E_UNSUPPORTED:
+		'The edit does not work on this material (for example a reversed, retimed or time-remapped clip). The message names the clips; set them to 100 % speed or leave them out.',
 	E_LIMIT: 'Too many commands or too large a payload (5 000 commands / 20 MB per transaction). Split it up.',
 };
 

@@ -550,8 +550,29 @@ export const TranscriptSchema = z.looseObject({
 	 * whole media — a transcript made from a sequence's mix covers only the parts the sequence plays.
 	 */
 	coverage: z.array(z.tuple([nonNegInt(), nonNegInt()])).optional(),
+	/**
+	 * spec 14 TC-003 / spec 16 (optional, v9): the recogniser's segments with their decoder scores (media time,
+	 * flicks, sorted by start) — what transcript cleanup reads to judge improbable or hallucinated text. Read
+	 * leniently (`z.unknown`): `transcriptSegmentsProblem` checks them and `repairDocument` drops malformed entries.
+	 */
+	segments: z.array(z.unknown()).optional(),
 });
 export type Transcript = DeepStrip<z.infer<typeof TranscriptSchema>>;
+
+/** A recognised segment with its decoder scores (TC-003). Times are media-time flicks. */
+export const TranscriptSegmentSchema = z.object({
+	start: nonNegInt(),
+	end: nonNegInt(),
+	/** Mean log-probability of the decoded tokens (OpenAI `avg_logprob`; < −1 = improbable). */
+	avgLogprob: z.number().finite().optional(),
+	/** Probability of `<|nospeech|>` (> 0.6 = probably no speech). */
+	noSpeechProb: z.number().finite().min(0).max(1).optional(),
+	/** gzip compression ratio of the text (> 2.4 = repetitive). */
+	compressionRatio: z.number().finite().min(0).optional(),
+});
+export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>;
+/** Most segments kept per transcript (≈ 1 per 2–5 s of speech: 100 000 covers days of audio). */
+export const MAX_TRANSCRIPT_SEGMENTS = 100_000;
 
 export const FontSourceSchema = z.discriminatedUnion('type', [
 	z.looseObject({ type: z.literal('bundled') }),

@@ -91,6 +91,8 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		textAnimation: { in: { preset: 'slide-up' }, out: { preset: 'fade' } },
 		ref: '$title',
 	},
+	// spec 13 SH-004: measures every text box still marked layoutPending (or clipIds).
+	'text.relayout': { type: 'text.relayout' },
 	'clip.addMotionGraphic': {
 		type: 'clip.addMotionGraphic',
 		at: 0,
@@ -221,6 +223,58 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		value: 0.5,
 	},
 	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	// spec 15 EA-031: a cut kit (adjustment clip 10 + 10 frames around the cut at 00:00:02:00 with a blur and a
+	// Transform zoom keyed relative to the item's start) — one command per decoration; on V3 (created when missing).
+	'clip.addAdjustmentBatch': {
+		type: 'clip.addAdjustmentBatch',
+		trackId: 'V3',
+		items: [
+			{
+				start: 50,
+				length: 20,
+				name: 'Zoom-blur',
+				effects: [
+					{
+						effectId: 'jasper.gaussian-blur',
+						keyframes: {
+							radius: [
+								{ frame: 0, value: 0, interpolation: 'bezier', easeOut: { influence: 0.75, slope: 0 } },
+								{ frame: 10, value: 40 },
+								{ frame: 20, value: 0 },
+							],
+						},
+					},
+					{
+						effectId: 'jasper.transform',
+						params: { shutterAngle: 360 },
+						keyframes: {
+							scaleHeight: [
+								{ frame: 0, value: 100 },
+								{ frame: 10, value: 170 },
+								{ frame: 20, value: 100 },
+							],
+						},
+					},
+				],
+				ref: '$kit',
+			},
+		],
+	},
+	// spec 15 EA-031: punch-in keys on clips (Motion scale 100 → 180 % over 7 frames from the clip's midpoint), here
+	// on the clip of the clip.place example ("$clip").
+	'keyframe.addBatch': {
+		type: 'keyframe.addBatch',
+		targets: [
+			{
+				clipId: '$clip',
+				path: ['transform', 'scale'],
+				keys: [
+					{ at: { frames: 30 }, value: 100 },
+					{ at: { frames: 37 }, value: 180 },
+				],
+			},
+		],
+	},
 	'keyframe.add': {
 		type: 'keyframe.add',
 		target: ['clip', '$clip', 'transform', 'position'],
@@ -574,6 +628,26 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		loop: { inSec: 0.1, outSec: 0.9 },
 		crossfadeSec: 0.2,
 		gainDb: -12,
+	},
+	// Spec 14 TC-031: transcript cleanup applies any number of ranges as ONE edit (one undo step): the speech clip, its
+	// linked picture and clip group are cut, sync-locked tracks follow; 4 ms equal-power micro-fades at every audio join.
+	// Ranges in sequence frames, or in the media time (flicks) of a clip. mode: extract | lift | mute | markers.
+	'cleanup.apply': {
+		type: 'cleanup.apply',
+		clipIds: [{ clipAt: { track: 'A1', at: 0 } }],
+		ranges: [
+			{ start: 30, end: 45 },
+			{ start: 90, end: 130 },
+		],
+		mode: 'extract',
+		fadeMs: 4,
+	},
+	// …and the sequence's cleanup state: preset + overrides, the script, edited word lists, rejected findings.
+	'cleanup.configure': {
+		type: 'cleanup.configure',
+		settings: { presetId: 'builtin.fast', overrides: { gaps: { maxGapS: 0.15 } } },
+		script: { name: 'Guion', text: 'Hoy vamos a crear un juego de carreras.' },
+		lists: { es: { markers: ['bueno', 'o sea', 'a ver'] } },
 	},
 	// Spec 12 P6-R3 (Auto Tag): the classified type per clip id, marked "auto" until the user confirms it (auto_tag_audio
 	// measures the clips with POST /api/audio/classify and applies this command; a type the user set is kept unless force).

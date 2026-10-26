@@ -57,8 +57,30 @@ export function approvalReasons(tx: Pick<AgentTxInput, 'commands' | 'dryRun'>): 
 			reasons.push(
 				`agentsMayApply: true in soundDesign.setSettings (command ${i + 1}) lets agents apply sound proposals`,
 			);
+		// Spec 15 EA-001: the same for Project Settings ▸ Agent Proposals (turning a feature on is the user's call).
+		else if (type === 'project.updateSettings') {
+			const granted = agentProposalGrants(c);
+			if (granted.length)
+				reasons.push(
+					`agentProposals ${granted.map((f) => `${f}: true`).join(', ')} in project.updateSettings (command ${i + 1}) lets agents apply ${granted.join(', ')} proposals`,
+				);
+		}
 	});
 	return reasons;
+}
+
+/** Features a `project.updateSettings` command turns on for agents (`settings.agentProposals[f] === true`). */
+export function agentProposalGrants(command: unknown): string[] {
+	const settings = (command as { settings?: unknown } | null)?.settings;
+	const ap =
+		settings && typeof settings === 'object'
+			? (settings as { agentProposals?: unknown }).agentProposals
+			: null;
+	if (!ap || typeof ap !== 'object' || Array.isArray(ap)) return [];
+	return Object.entries(ap as Record<string, unknown>)
+		.filter(([, v]) => v === true)
+		.map(([k]) => k)
+		.slice(0, 64);
 }
 
 /** Command-count and payload-size limits (S01:AGT-011). Returns the E_LIMIT issue, or null. */
