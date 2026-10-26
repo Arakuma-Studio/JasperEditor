@@ -250,6 +250,9 @@ export async function streamTaps(
 				writeChain = writeChain.then(() => {
 					pictures.delete(done);
 				});
+				// Every link is handled at once: the loop may await (a picture) before the next link is chained, and a
+				// write failing meanwhile must not surface as an unhandled rejection.
+				writeChain.catch(fail);
 				mi++;
 			}
 			for (let k = mi; k < Math.min(members.length, mi + 1 + PREFETCH_MEMBERS); k++) void picturesOf(k);
