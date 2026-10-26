@@ -25,6 +25,7 @@ import { EDIT_AUTOMATION_FEATURE, SUBTITLES_FEATURE, TRANSCRIPT_CLEANUP_FEATURE 
 import type { Proposal, ProposalItem, ProposalItemInput } from '../proposals/schema.ts';
 import { declaredRefs } from '../proposals/structure.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Sequence } from '../schema/sequence.ts';
 import { SOUND_PROPOSAL_SETUP_GROUP } from '../sound/proposal-draft.ts';
 import { findSubtitleTemplate } from '../captions/subtitles/templates.ts';
 import { findBin } from './assets.ts';
@@ -466,6 +467,19 @@ function roleProblem(doc: ProjectDocument, stage: 'reactions' | 'music', params:
 	return null;
 }
 
+/** Tracks the passes put their own output on (never the picture they decorate). */
+const PASS_TRACK_NAMES = /^(fx|zoom|reactions|stingers|subtitles)(?: \d+)?$/i;
+const PICTURE_KINDS = new Set(['video', 'nest-video', 'still', 'animated-image', 'solid']);
+
+/** The last frame + 1 of the picture (picture clips of the video tracks other than the passes' own). */
+export function pictureEnd(seq: Sequence): number {
+	const own = new Set(seq.videoTracks.filter((t) => PASS_TRACK_NAMES.test((t.name ?? '').trim())).map((t) => t.id));
+	let end = 0;
+	for (const c of Object.values(seq.clips ?? {}))
+		if (PICTURE_KINDS.has(c.kind) && c.enabled !== false && !own.has(c.trackId)) end = Math.max(end, c.start + c.duration);
+	return end;
+}
+
 const COST_ORDER: Record<AutomationCost['class'], number> = { native: 0, hybrid: 1, remotion: 2 };
 const maxCost = (a: AutomationCost['class'], b: AutomationCost['class']) => (COST_ORDER[b] > COST_ORDER[a] ? b : a);
 
@@ -788,8 +802,14 @@ export async function planStyle(
 		const pass = s.stage as AutomationPass;
 		const raw: Record<string, unknown> = { ...(s as { params: Record<string, unknown> }).params };
 		if (req.seed !== undefined) raw.seed = req.seed;
-		if (range) raw.range = range;
-		else delete raw.range;
+		// the passes decorate the picture: never past its end (subtitles may hold a little longer, the end is no cut)
+		const end = pictureEnd(automationSequence(sim.doc, seq.id));
+		const passRange = end > 0 ? { start: Math.min(range?.start ?? 0, end), end: Math.min(range?.end ?? end, end) } : range;
+		if (passRange && passRange.end > passRange.start) raw.range = passRange;
+		else if (passRange) {
+			report(s, { status: 'empty', reason: 'No picture in the range' });
+			continue;
+		} else delete raw.range;
 		delete raw.excludeClipIds;
 		let params: Record<string, unknown>;
 		try {
