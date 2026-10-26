@@ -188,7 +188,9 @@ describe.runIf(enabled)(
 				// The preview at the first frames (where Remotion's linear player used to differ), every repeated or
 				// skipped source frame, and the last frame.
 				const step = Math.round((c.media.num * c.seq.den) / (c.media.den * c.seq.num));
-				const near = want.map((w, f) => (f > c.at && w - want[f - 1]! !== step ? f : -1)).filter((f) => f >= 0);
+				const near = want
+					.map((w, f) => (f > c.at && w - want[f - 1]! !== step ? f : -1))
+					.filter((f) => f >= 0);
 				const probe = [
 					...new Set([c.at, c.at + 1, c.at + 2, c.at + 30, ...near.slice(0, 4), want.length - 1]),
 				]
@@ -199,18 +201,30 @@ describe.runIf(enabled)(
 				log(`\n[fps-conform] ${c.name}: ${want.length - c.at} frames`);
 				for (const p of PATHS) {
 					const bad = mismatches(want, codes[p]!);
-					log(`  ${p}: ${bad.length} frames differ from the model${bad.length ? ` (first: ${bad.slice(0, 8).join(', ')})` : ''}`);
+					log(
+						`  ${p}: ${bad.length} frames differ from the model${bad.length ? ` (first: ${bad.slice(0, 8).join(', ')})` : ''}`,
+					);
 				}
 				log('  frame | model | native | hybrid | remotion | preview still');
 				for (const f of probe)
-					log(`  ${f} | ${want[f]} | ${codes.native![f]} | ${codes.hybrid![f]} | ${codes.remotion![f]} | ${stills[f]}`);
+					log(
+						`  ${f} | ${want[f]} | ${codes.native![f]} | ${codes.hybrid![f]} | ${codes.remotion![f]} | ${stills[f]}`,
+					);
 				for (const f of probe) expect(stills[f], `preview still at ${f}`).toBe(want[f]);
 				for (const p of PATHS) expect(mismatches(want, codes[p]!), `${p}: frames that differ`).toEqual([]);
 			});
 
 		for (const file of COLOUR_FILES)
 			it(`colour of ${file}: every path matches the preview`, async () => {
-				const c: ConformCase = { name: file, file, media: R2997, seq: { num: 30, den: 1 }, inFrame: 0, at: 0, frames: 30 };
+				const c: ConformCase = {
+					name: file,
+					file,
+					media: R2997,
+					seq: { num: 30, den: 1 },
+					inFrame: 0,
+					at: 0,
+					frames: 30,
+				};
 				const frame = 10;
 				const means: Record<string, number[][]> = {};
 				const frames: Record<string, Rgba8> = {};
@@ -222,28 +236,28 @@ describe.runIf(enabled)(
 				}
 				log(`\n[fps-conform] colour of ${file} (frame ${frame}); patch means R,G,B`);
 				log('  patch | source | preview | native | hybrid | remotion');
-				SOURCE_PATCHES.forEach((s, i) =>
+				for (const [i, s] of SOURCE_PATCHES.entries())
 					log(
 						`  ${i} | ${s.join(',')} | ${['preview', ...PATHS].map((k) => means[k]![i]!.map((v) => v.toFixed(1)).join(',')).join(' | ')}`,
-					),
-				);
+					);
 				const nr = diffImages(frames.native!, frames.remotion!);
 				const nh = diffImages(frames.native!, frames.hybrid!);
 				log(`  native vs Remotion export: ${formatDiff(nr)}`);
 				log(`  native vs hybrid export: ${formatDiff(nh)}`);
 				for (const k of ['preview', ...PATHS])
-					log(`  ${k}: largest patch error vs source R,G ${maxPatchError(means[k]!, SOURCE_PATCHES, [0, 1]).toFixed(2)}, B ${maxPatchError(means[k]!, SOURCE_PATCHES, [2]).toFixed(2)}`);
+					log(
+						`  ${k}: largest patch error vs source R,G ${maxPatchError(means[k]!, SOURCE_PATCHES, [0, 1]).toFixed(2)}, B ${maxPatchError(means[k]!, SOURCE_PATCHES, [2]).toFixed(2)}`,
+					);
 				// Hybrid and Remotion are the preview's renderer: the same colour.
 				for (const p of ['hybrid', 'remotion'] as const)
 					expect(maxPatchError(means[p]!, means.preview!), p).toBeLessThanOrEqual(3);
 				// Native: the same matrix and range as the preview (R and G within 3 levels); B within Chrome's own decoder
 				// deviation (libyuvBlueBound) of the exact decode.
 				expect(maxPatchError(means.native!, means.preview!, [0, 1]), 'native R,G').toBeLessThanOrEqual(3);
-				means.native!.forEach((n, i) =>
+				for (const [i, n] of means.native!.entries())
 					expect(Math.abs(n[2]! - means.preview![i]![2]!), `native B of patch ${i}`).toBeLessThanOrEqual(
 						libyuvBlueBound(n),
-					),
-				);
+					);
 				// Tagged files and untagged HD decode to the source values natively (an untagged BT.601 SD file is shown with
 				// BT.709 on every path, as the preview shows it).
 				if (!file.endsWith('sd601.mp4'))

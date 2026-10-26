@@ -61,7 +61,9 @@ describe('the frame each sequence frame shows (S01:CLP-004, frameIndexAt)', () =
 				fc.integer({ min: 0, max: 20_000 }),
 				(media, seq, inFrames, f) => {
 					// source frame = floor((in/mr + f/sr)·mr) = floor(in + f·mr/sr), exactly in integers
-					const num = BigInt(inFrames) * BigInt(seq.num) * BigInt(media.den) + BigInt(f) * BigInt(media.num) * BigInt(seq.den);
+					const num =
+						BigInt(inFrames) * BigInt(seq.num) * BigInt(media.den) +
+						BigInt(f) * BigInt(media.num) * BigInt(seq.den);
 					const den = BigInt(seq.num) * BigInt(media.den);
 					expect(shown(media, seq, f, inFrames)).toBe(Number(num / den));
 				},
@@ -97,7 +99,9 @@ describe('samplesOnFrameGrid / needsRetime: Frame Sampling goes frame-exact wher
 			[RATES.r25, RATES.r30],
 			[RATES.r30, RATES.r60],
 		] as const)
-			expect(needsRetime(clip(), { sequenceRate: s, mediaRate: m }), `${m.num}/${m.den} → ${s.num}`).toBe(true);
+			expect(needsRetime(clip(), { sequenceRate: s, mediaRate: m }), `${m.num}/${m.den} → ${s.num}`).toBe(
+				true,
+			);
 		const o = { sequenceRate: RATES.r30, mediaRate: RATES.r30 };
 		expect(needsRetime(clip({ rate: 0.7 }), o)).toBe(true);
 		expect(needsRetime(clip({ sourceIn: F30 / 2 }), o)).toBe(true);
@@ -108,22 +112,32 @@ describe('samplesOnFrameGrid / needsRetime: Frame Sampling goes frame-exact wher
 		expect(needsRetime(clip({ sourceIn: F30 / 2 }), { sequenceRate: RATES.r30 })).toBe(false);
 	});
 	it('isLinearFrameSampling: the builder draws plain Frame Sampling; reverse, remaps, VFR, blending and time maps are the stage’s', () => {
-		const base = { retime: { interpolation: 'frame-sampling' as const, vfr: false }, speed: { reverse: false } };
+		const base = {
+			retime: { interpolation: 'frame-sampling' as const, vfr: false },
+			speed: { reverse: false },
+		};
 		expect(isLinearFrameSampling(base)).toBe(true);
 		expect(isLinearFrameSampling({ ...base, retime: undefined })).toBe(false);
 		expect(isLinearFrameSampling({ ...base, speed: { reverse: true } })).toBe(false);
-		expect(isLinearFrameSampling({ ...base, retime: { interpolation: 'frame-blending', vfr: false } })).toBe(false);
-		expect(isLinearFrameSampling({ ...base, retime: { interpolation: 'frame-sampling', vfr: true } })).toBe(false);
+		expect(isLinearFrameSampling({ ...base, retime: { interpolation: 'frame-blending', vfr: false } })).toBe(
+			false,
+		);
+		expect(isLinearFrameSampling({ ...base, retime: { interpolation: 'frame-sampling', vfr: true } })).toBe(
+			false,
+		);
 		expect(isLinearFrameSampling({ ...base, mediaTime: { scale: 0.5 } })).toBe(false);
-		expect(
-			isLinearFrameSampling({ ...base, timeRemap: { enabled: true, keyframes: [] } as never }),
-		).toBe(false);
+		expect(isLinearFrameSampling({ ...base, timeRemap: { enabled: true, keyframes: [] } as never })).toBe(
+			false,
+		);
 	});
 	it('the render snapshot marks a 29.97 fps clip in a 30 fps sequence retimed (Frame Sampling), a 30 fps one not', () => {
 		const h = new Harness();
 		const ids = (fps: Rational) =>
-			(h.ok([{ type: 'media.register', asset: videoAsset({ fps, audio: false }) }]).results[0] as { mediaId: string })
-				.mediaId;
+			(
+				h.ok([{ type: 'media.register', asset: videoAsset({ fps, audio: false }) }]).results[0] as {
+					mediaId: string;
+				}
+			).mediaId;
 		const ntsc = ids(RATES.r29_97);
 		const plain = ids(RATES.r30);
 		h.ok([
@@ -143,7 +157,11 @@ describe('samplesOnFrameGrid / needsRetime: Frame Sampling goes frame-exact wher
 		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: resolve, resolveFont: () => null });
 		const clips = snap.videoTracks[0]!.clips;
 		const byMedia = (id: string) => clips.find((c) => 'mediaId' in c.source && c.source.mediaId === id)!;
-		expect(byMedia(ntsc).retime).toEqual({ interpolation: 'frame-sampling', mediaRate: RATES.r29_97, vfr: false });
+		expect(byMedia(ntsc).retime).toEqual({
+			interpolation: 'frame-sampling',
+			mediaRate: RATES.r29_97,
+			vfr: false,
+		});
 		expect(isLinearFrameSampling(byMedia(ntsc))).toBe(true);
 		expect(byMedia(plain).retime).toBeUndefined();
 	});

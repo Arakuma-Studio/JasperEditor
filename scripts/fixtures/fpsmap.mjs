@@ -72,7 +72,12 @@ export function fixtures({ h264 }) {
 		name: `rate-code-${id}.mp4`,
 		steps: (file) => [
 			[
-				...['-f', 'lavfi', '-i', `${picture(rate)},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv`],
+				...[
+					'-f',
+					'lavfi',
+					'-i',
+					`${picture(rate)},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv`,
+				],
 				...h264,
 				...BT709_TAGS,
 				...['-an', '-movflags', '+faststart', '-f', 'mp4', file],

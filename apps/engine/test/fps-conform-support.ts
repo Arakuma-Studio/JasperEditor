@@ -32,7 +32,15 @@ export const R2997 = r(30000, 1001);
 
 /** The conversions of the brief, a slipped clip that starts later, and same-rate controls. */
 export const CONFORM_CASES: ConformCase[] = [
-	{ name: '29.97 → 30', file: 'rate-code-2997.mp4', media: R2997, seq: r(30), inFrame: 0, at: 0, frames: 1040 },
+	{
+		name: '29.97 → 30',
+		file: 'rate-code-2997.mp4',
+		media: R2997,
+		seq: r(30),
+		inFrame: 0,
+		at: 0,
+		frames: 1040,
+	},
 	{
 		name: '29.97 → 30 (in-point 37, at frame 5)',
 		file: 'rate-code-2997.mp4',
@@ -58,7 +66,16 @@ export const CONFORM_CASES: ConformCase[] = [
 ];
 /** Further Frame Sampling cases of the same timing rule (native path). */
 export const TIMING_EXTRA_CASES: ConformCase[] = [
-	{ name: '30 → 30 at 70 %', file: 'rate-code-30.mp4', media: r(30), seq: r(30), inFrame: 0, at: 0, frames: 90, speed: 0.7 },
+	{
+		name: '30 → 30 at 70 %',
+		file: 'rate-code-30.mp4',
+		media: r(30),
+		seq: r(30),
+		inFrame: 0,
+		at: 0,
+		frames: 90,
+		speed: 0.7,
+	},
 	{
 		name: '29.97 → 30 held at frame 7',
 		file: 'rate-code-2997.mp4',

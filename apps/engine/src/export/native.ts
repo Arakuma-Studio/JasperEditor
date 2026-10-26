@@ -387,7 +387,12 @@ export function seekWindow(startSec: number, mediaFps: number | null): { seek: n
  * slot) showed the nearest frame from the first frame after the seek point: one frame late after a seek, and the
  * nearest instead of the containing frame when the rates differ.
  */
-export function sourceTimingFilters(o: { lead: number; speed: number; fps: Rational; frames: number }): string[] {
+export function sourceTimingFilters(o: {
+	lead: number;
+	speed: number;
+	fps: Rational;
+	frames: number;
+}): string[] {
 	const leadUs = Math.round(o.lead * 1e6);
 	const epsUs = Math.round(FRAME_TIME_EPS * 1e6);
 	return [

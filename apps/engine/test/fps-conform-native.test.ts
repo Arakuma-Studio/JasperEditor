@@ -16,7 +16,16 @@ import {
 	readCodes,
 	TIMING_EXTRA_CASES,
 } from './fps-conform-support.ts';
-import { closeApps, DocBuilder, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+} from './helpers.ts';
 
 describe('source timing filters (pure)', () => {
 	it('seeks two media frames (at least 0.25 s) early, never before the start, in whole microseconds', () => {
@@ -41,7 +50,13 @@ describe('source timing filters (pure)', () => {
 				record: {
 					probe: {
 						streams: [
-							{ type: 'video', width: (height * 16) / 9, height, color: { matrix, range }, frameRate: { num: 30, den: 1 } },
+							{
+								type: 'video',
+								width: (height * 16) / 9,
+								height,
+								color: { matrix, range },
+								frameRate: { num: 30, den: 1 },
+							},
 						],
 					},
 				},
@@ -105,8 +120,12 @@ describe('native export shows the time model’s source frame', () => {
 			const want = modelFrames(d, clipId, c);
 			const got = readCodes(await exportNative(d, c), c.at, want.length);
 			const bad = mismatches(want, got);
-			expect(bad, `first wrong frames ${bad.slice(0, 8).map((f) => `${f}: ${got[f]} ≠ ${want[f]}`).join(', ')}`).toEqual(
-				[],
-			);
+			expect(
+				bad,
+				`first wrong frames ${bad
+					.slice(0, 8)
+					.map((f) => `${f}: ${got[f]} ≠ ${want[f]}`)
+					.join(', ')}`,
+			).toEqual([]);
 		}, 240_000);
 });
