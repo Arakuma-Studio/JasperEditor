@@ -164,7 +164,13 @@ export async function streamTaps(
 			p = (async () => {
 				// spec 13 AS-076: a pipelined still — wait until it is written; a trimmed one re-plans the member.
 				if (m.ready) {
-					const r = await m.ready;
+					// Raced with the stream's end: a composite that stopped must not wait for a still.
+					const r = await new Promise<Awaited<NonNullable<typeof m.ready>>>((resolve, reject) => {
+						const stop = () => reject(new StreamLayerError('JOB_CANCELLED', 'cancelled'));
+						if (opts.signal.aborted) return stop();
+						opts.signal.addEventListener('abort', stop, { once: true });
+						m.ready!.then(resolve, reject).finally(() => opts.signal.removeEventListener('abort', stop));
+					});
 					if (!r.ok) throw new BakeChangedError(r.reason);
 					if (r.picture && m.refresh) {
 						const next = m.refresh(r.picture);

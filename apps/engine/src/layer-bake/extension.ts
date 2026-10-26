@@ -249,9 +249,10 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				}
 				const sheetBudget = Math.min(budget, sheets.length > 2 ? SHEET_PAGES_LARGE : SHEET_PAGES);
 				const pool = runPagePool(
-					sheets.map((sheet) => ({
+					sheets.map((sheet, i) => ({
 						want: sheetBudget,
-						weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
+						// The pool starts heavier tasks first: decreasing weights keep the time order.
+						weight: sheets.length - i,
 						run: async (g: PageGrant) => {
 							const bakes = await svc.ensureSheet(
 								sheet.map((group) => group[0]!.plan),
