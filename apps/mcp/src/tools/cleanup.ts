@@ -15,6 +15,7 @@ import {
 	type EngineJob,
 } from '@jasper/api';
 import {
+	agentProposalsAllowed,
 	applyTransaction,
 	CLEANUP_SCRIPT_MAX_BYTES,
 	type CleanupAnalysis,
@@ -516,6 +517,13 @@ export function registerCleanupTools(ctx: ToolContext): void {
 					'Place the media in a sequence first (add_clip), then analyse and apply there.',
 				);
 			const t = await resolveTarget(ctx, a);
+			// spec 15 EA-001: the user's "Allow agents to apply transcript-cleanup proposals" (default on) covers this too
+			if (agentProposalsAllowed(t.doc, 'transcript-cleanup') === false)
+				throw new ToolError(
+					'E_APPROVAL_DENIED',
+					'The user does not let agents apply Clean Up here (Project Settings ▸ Agent Proposals ▸ transcript cleanup)',
+					'Use plan_cleanup and tell the user what to apply in Text ▸ Transcript ▸ Clean Up, or ask them to allow it.',
+				);
 			const decisions = (a.decisions ?? {}) as CleanupDecisions;
 			if (a.analysisId) {
 				let before: CleanupAnalysisFile;

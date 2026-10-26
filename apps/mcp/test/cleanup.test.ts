@@ -196,6 +196,8 @@ function fakeEngine(opts: { script?: boolean } = {}) {
 		seqId,
 		doc: () => doc,
 		bump: () => apply({ label: 'marker', commands: [{ type: 'marker.add', frame: 1 }] }),
+		setAgentProposals: (v: Record<string, boolean>) =>
+			apply({ label: 'settings', commands: [{ type: 'project.updateSettings', settings: { agentProposals: v } }] }),
 	};
 }
 
@@ -323,6 +325,15 @@ describe('Clean Up MCP tools', () => {
 		expect(after.cleanup).toMatchObject({ rejected: [rm.fingerprint] });
 		const len = (s: Sequence) => Math.max(...Object.values(s.clips).map((c) => c.start + c.duration));
 		expect(len(after)).toBeLessThan(len(before));
+	});
+
+	it('apply_cleanup respects "Allow agents to apply transcript-cleanup proposals"', async () => {
+		const { call, engine } = await connect();
+		engine.setAgentProposals({ 'transcript-cleanup': false });
+		const r = await call('apply_cleanup', {});
+		expect(r.isError).toBe(true);
+		expect((r.body as Body).error.code).toBe('E_APPROVAL_DENIED');
+		expect(engine.txs).toHaveLength(0);
 	});
 
 	it('apply_cleanup refuses an analysis of an older document (E_STALE)', async () => {
