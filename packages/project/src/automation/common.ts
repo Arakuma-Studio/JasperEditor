@@ -108,15 +108,17 @@ export function aRollTrack(seq: Sequence): Track | null {
 }
 
 /**
- * The base picture of the overlay passes (reactions, slides): the lowest video track whose enabled picture clips cover
- * at least half of the sequence — a single full-length take included, which `aRollTrack` leaves out as a possible
+ * The base picture of the overlay passes (reactions, slides): the lowest video track whose enabled picture clips
+ * (and colour mattes) cover at least half of the sequence — a single full-length take included, which `aRollTrack` leaves out as a possible
  * pre-render — else `aRollTrack`, else the lowest video track with a picture clip; null without picture.
  */
 export function basePictureTrack(seq: Sequence): Track | null {
 	const total = sequenceDuration(seq);
 	const per = new Map<string, number>();
 	for (const c of Object.values(seq.clips ?? {}))
-		if (isPicture(c)) per.set(c.trackId, (per.get(c.trackId) ?? 0) + c.duration);
+		// colour mattes count as base picture too (a background under the overlays)
+		if (isPicture(c) || (c.kind === 'solid' && c.enabled !== false))
+			per.set(c.trackId, (per.get(c.trackId) ?? 0) + c.duration);
 	if (total > 0) for (const t of seq.videoTracks) if ((per.get(t.id) ?? 0) >= 0.5 * total) return t;
 	const a = aRollTrack(seq);
 	if (a) return a;

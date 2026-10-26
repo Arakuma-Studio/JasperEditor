@@ -660,6 +660,27 @@ describe('overlay slides (EA-024)', () => {
 		expect(planSlides(h.doc, null, { heads: 1, tails: 1 }).slides).toEqual([]);
 	});
 
+	it('a colour-matte base counts as the picture under the overlays', () => {
+		const h = new Harness();
+		const m = (h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image', width: 400, height: 300 }) }]).results[0] as {
+			mediaId: string;
+		}).mediaId;
+		const F = flicksPerFrame(h.seq.settings.frameRate);
+		h.ok([
+			{ type: 'clip.addSolid', at: 0, duration: 900, track: 'V1', color: [0, 0, 1, 1] },
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 100,
+				tracks: { video: 'V2' },
+				video: true,
+				audio: false,
+				sourceRange: { in: { flicks: 0 }, out: { flicks: 200 * F } },
+			},
+		]);
+		expect(planSlides(h.doc, null, { heads: 1, tails: 1 }).slides).toHaveLength(2);
+	});
+
 	it('the other passes’ tracks (Reactions, FX, ZOOM, Stingers) hold no overlays unless named', () => {
 		const { h, ids } = overlays([[100, 200]]);
 		const v2 = h.seq.videoTracks[1]!.id;
