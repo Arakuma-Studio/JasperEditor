@@ -159,8 +159,8 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | RTX 3060 (vast.ai) | $0.084/h | 2026-10-25 18:23 UTC | destroyed after the CUDA eval (≈ $0.17 total) |
 
 ## 7. Open questions / risks
-- Real-NVIDIA CUDA verification: first new GPU box failed on the provider (host CDI device error), the retry was
-  denied by the user — pending the user's decision.
+- Real-NVIDIA CUDA verification: first new GPU box failed on the provider (host CDI device error); the user approved
+  another box on 2026-10-26 (RTX 4060 Ti) — verification running.
 - Session rate limit stopped all agents once (resumed from saved state).
 - DirectML DLL licence terms (Windows GPU path); CoreML unusable until the Node binding can cache compiled models.
 - Export cost of ~900–1,200 animated text clips per long video (textperf research) — decides the subtitle export
@@ -192,4 +192,6 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   `JASPER_REQUIRE_ORACLES=1 pnpm test`: 9,091 passed, 7 failed — all 7 also fail on the VM's old main checkout (71c86ba2:
   5 Jasper Synth pinned hashes, ZIP-1 peak 70.3 MB > 64 MiB) or need libgtk (Electron); Remotion suites with
   `REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG_LGPL_ONLY=1`: compositions 157/157, motion 14 (+2 skipped),
-  engine 53 (+9 skipped); `pnpm e2e` running. User approved (2026-10-26) a new GPU box and a VM replacement.
+  engine 53 (+9 skipped); `pnpm e2e` (LGPL-only, full build): 137 passed, 2 skipped; `pnpm notices --check` current;
+  `pnpm ffmpeg:check` all LGPL. User approved (2026-10-26) a new GPU box and a VM replacement; GPU box rented (RTX 4060 Ti,
+  driver 580.173, a different vast.ai host); speech agent running the real-CUDA verification on the integrated code.
