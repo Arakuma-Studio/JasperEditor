@@ -1107,7 +1107,7 @@ export class ExportService {
 		output: string,
 		ctx: JobContext,
 		still = false,
-		audio: MixdownResult | null = null,
+		audioIn: MixdownResult | null | Promise<MixdownResult | null> = null,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
@@ -1131,6 +1131,8 @@ export class ExportService {
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		}
+		// The mixdown (started before the preparation) is an input of the composite.
+		const audio = await audioIn;
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
 		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
 			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
@@ -1811,7 +1813,8 @@ export class ExportService {
 		const alongside = path === 'native' && this.deliveryEncodes(planned);
 		const audioP = planned.output.videoOnly ? Promise.resolve(null) : this.renderAudio(planned, ctx);
 		audioP.catch(() => {});
-		let audio = alongside ? null : await audioP;
+		// The mixdown runs while the native path prepares (bakes) its layers; the composite waits for it.
+		let audio: MixdownResult | null = null;
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -1827,8 +1830,8 @@ export class ExportService {
 					frames = await this.runNativeAlongside(planned, masters, output, ctx, audioP);
 					audio = await audioP;
 				} else {
-					audio ??= await audioP;
-					frames = await this.runNative(planned, masters, output, ctx, false, audio);
+					frames = await this.runNative(planned, masters, output, ctx, false, audioP);
+					audio = await audioP;
 				}
 			} catch (e) {
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
