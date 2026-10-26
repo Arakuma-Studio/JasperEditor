@@ -405,6 +405,39 @@ describe('Style Recipes…', () => {
 		expect(projectStyleRecipes(session.getCommitted()).active).toBeNull();
 	});
 
+	it('regression: Enter in the rename field renames the recipe and keeps the dialog open', async () => {
+		const { session, seqId } = makeSession();
+		const lib = libEngine();
+		const renamed: unknown[] = [];
+		(lib.engine as { updateStyleRecipe: unknown }).updateStyleRecipe = async (id: string, req: unknown) => {
+			renamed.push([id, req]);
+			return { id, name: 'Renamed', source: 'library', readOnly: false };
+		};
+		await lib.engine.createStyleRecipe({ recipe: { ...builtinStyleRecipe('builtin:clean')!, name: 'Mine' } });
+		connectStyleLibrary(lib.engine as never);
+		const closed: unknown[] = [];
+		render(
+			<SessionProvider session={session}>
+				<StyleRecipesDialog session={session} sequenceId={seqId} close={(x) => closed.push(x)} />
+			</SessionProvider>,
+		);
+		const dialog = await screen.findByTestId('style-recipes-dialog');
+		await settle(50);
+		const row = within(dialog).getByTestId('style-recipe-rcp_0000000000000011');
+		await act(async () => {
+			fireEvent.click(within(row).getByTestId('style-recipe-rename'));
+		});
+		const field = within(row).getByRole('textbox', { name: 'Name' });
+		await act(async () => {
+			fireEvent.change(field, { target: { value: 'Renamed' } });
+			fireEvent.keyDown(field, { key: 'Enter' });
+		});
+		await settle(50);
+		expect(renamed).toEqual([['rcp_0000000000000011', { name: 'Renamed' }]]);
+		expect(closed).toEqual([]);
+		expect(screen.getByTestId('style-recipes-dialog')).toBeTruthy();
+	});
+
 	it('saves the Automate dialogs’ last settings as a new library recipe and uses it in the project', async () => {
 		const { session, seqId } = makeSession();
 		const lib = libEngine();

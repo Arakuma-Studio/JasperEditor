@@ -443,7 +443,11 @@ function subtitleMetric(
 	const trackId = subs[0]!.trackId;
 	let events: { frame: number; zone?: { start: number; end: number } }[] = [];
 	try {
-		events = subtitleCutEvents(doc, seq, trackId, DEFAULT_CUT_AWARE as CutAwareOptions).events;
+		// where the picture ends is no cut (a subtitle may hold a little past it)
+		const end = pictureEnd(seq);
+		events = subtitleCutEvents(doc, seq, trackId, DEFAULT_CUT_AWARE as CutAwareOptions).events.filter(
+			(e) => e.frame < end,
+		);
 	} catch {
 		events = [];
 	}
