@@ -200,7 +200,8 @@ describe('style recipes (EA-010, EA-011)', () => {
 		expect(long.passes['punch-ins']?.params).toMatchObject({
 			scale: 180,
 			rampFrames: 7,
-			minClipSeconds: 1.5,
+			minClipSeconds: 2.3,
+			density: 1,
 		});
 		expect(long.passes['ken-burns']?.params).toMatchObject({ scale: 130 });
 		expect(recipe('builtin:clean').passes.cleanup).toEqual({ enabled: true, preset: 'builtin.natural' });

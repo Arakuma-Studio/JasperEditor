@@ -528,6 +528,27 @@ function subtitleCost(
 		: 'native';
 }
 
+const CONSIDERED: Record<AutomationPass, string> = {
+	'decorate-cuts': 'picture cuts',
+	'punch-ins': 'candidate clips',
+	'ken-burns': 'candidate clips',
+	reactions: 'triggers',
+	slides: 'overlay edges',
+	music: 'songs',
+	stingers: 'punchlines',
+};
+
+/** Why a pass planned nothing: what it considered and why each was left out (the planner's own reasons). */
+function emptyReason(s: AutomationSummary): string {
+	if (!s.considered) return `Nothing to decorate: no ${CONSIDERED[s.pass]} here`;
+	const why = Object.entries(s.skipped.byCode)
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 3)
+		.map(([code, n]) => `${n} ${s.skipped.first.find((x) => x.code === code)?.reason ?? code}`)
+		.join('; ');
+	return `Nothing planned on ${s.considered} ${CONSIDERED[s.pass]}${why ? `: ${why}` : ''}`.slice(0, 500);
+}
+
 const COST_ORDER: Record<AutomationCost['class'], number> = { native: 0, hybrid: 1, remotion: 2 };
 const maxCost = (a: AutomationCost['class'], b: AutomationCost['class']) =>
 	COST_ORDER[b] > COST_ORDER[a] ? b : a;
@@ -986,6 +1007,7 @@ export async function planStyle(
 		if (!nonSetup(pi.items).length) {
 			report(s, {
 				status: 'empty',
+				reason: emptyReason(summary),
 				summary: { ...summary, warnings: allWarnings },
 				sfx: sfxReport,
 				warnings: allWarnings,

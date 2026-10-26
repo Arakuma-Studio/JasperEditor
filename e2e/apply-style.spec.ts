@@ -83,7 +83,13 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 		path: ['items'],
 	});
 	const item = Object.values(items).find((i) => i.kind === 'media' && i.mediaId === mediaId)!;
-	expectTransaction(await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]));
+	// the 640 × 360 test pattern fills the 1920 × 1080 frame (so its cuts are picture cuts of the whole frame)
+	const placed = await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]);
+	expectTransaction(placed);
+	const vid = (placed as { results: { clipIds: string[] }[] }).results[0]!.clipIds[0]!;
+	expectTransaction(
+		await transact(page, [{ type: 'param.set', target: ['clip', vid, 'transform', 'scale'], value: 300 }] as never),
+	);
 	expectTransaction(
 		await transact(page, [
 			{

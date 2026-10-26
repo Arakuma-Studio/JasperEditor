@@ -319,9 +319,11 @@ export const BUILTIN_STYLE_RECIPES: readonly StyleRecipe[] = [
 				cleanup: { enabled: true, preset: 'builtin.fast' },
 				subtitles: { enabled: true, template: 'builtin:pixel-pop' },
 				'decorate-cuts': { enabled: true, params: { pack: 'long-pack' } },
+				// density 1 and clips from 2.3 s: tuned on the accuracy harness (punch-in F1 0.622 → 0.678 at 11.9 / min,
+				// the user's 9.0 / min within Style Check's tolerance; docs/wp-notes/edit-automation.md "Apply Style")
 				'punch-ins': {
 					enabled: true,
-					params: { density: 0.7, scale: 180, rampFrames: 7, minClipSeconds: 1.5, start: 'midpoint' },
+					params: { density: 1, scale: 180, rampFrames: 7, minClipSeconds: 2.3, start: 'midpoint' },
 				},
 				'ken-burns': { enabled: true, params: { share: 0.15, scale: 130 } },
 				reactions: { enabled: false },
