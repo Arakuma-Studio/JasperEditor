@@ -507,7 +507,8 @@ describe('Ken Burns planner', () => {
 		const many = Array.from({ length: 600 }, (_, i) => 40 + ((i * 29) % 100));
 		const { h } = aroll(many);
 		const plan = planKenBurns(h.doc, h.seqId, {});
-		expect(plan.moves.length).toBe(Math.round(0.15 * plan.candidates));
+		// 15 % of all the A-roll's clips (here every clip is a candidate)
+		expect(plan.moves.length).toBe(Math.round(0.15 * many.length));
 		const ins = plan.moves.filter((m) => m.direction === 'in').length;
 		expect(ins / plan.moves.length).toBeGreaterThan(0.58);
 		expect(ins / plan.moves.length).toBeLessThan(0.75);

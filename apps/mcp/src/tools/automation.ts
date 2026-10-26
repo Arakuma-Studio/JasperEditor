@@ -381,14 +381,19 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		{
 			title: 'Add Ken Burns moves (propose)',
 			description:
-				'Spec 15 Ken Burns: share (0.15) of the A-roll clips whose Motion is not keyed get a slow zoom over the whole clip — keys on its first and last frame, linear, 100 → scale (default 118 % vertical, 130 % landscape) about the frame centre, zoom-in : zoom-out = inOutRatio (2) : 1 by each clip\'s seed. Motion keys: native export. As a PROPOSAL (mode "propose") or a dry run. Run add_punch_ins first (keyed clips are skipped) or pass excludeClipIds.',
+				'Spec 15 Ken Burns: share (0.15) of the A-roll clips (counted over all of them, chosen among those whose Motion is not keyed) get a slow zoom over the whole clip — keys on its first and last frame, linear, 100 → scale (default 118 % vertical, 130 % landscape) about the frame centre, zoom-in : zoom-out = inOutRatio (2) : 1 by each clip\'s seed. Motion keys: native export. As a PROPOSAL (mode "propose") or a dry run. Run add_punch_ins first (keyed clips are skipped) or pass excludeClipIds.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				mode: ModeArg,
 				track: TrackArg('The A-roll video track (default: the track carrying most of the picture)'),
 				range: RangeArg,
-				share: z.number().min(0).max(1).optional().describe('Share of the candidate clips (default 0.15)'),
+				share: z
+					.number()
+					.min(0)
+					.max(1)
+					.optional()
+					.describe('Share of the A-roll clips that get one (default 0.15; chosen among the undecorated clips)'),
 				scale: z.number().min(101).max(400).optional().describe('End scale in % (default by aspect)'),
 				inOutRatio: z.number().min(0).max(100).optional().describe('Zoom-ins per zoom-out (default 2)'),
 				minClipSeconds: z

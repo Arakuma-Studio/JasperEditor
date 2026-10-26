@@ -113,7 +113,7 @@ export type PunchInParams = z.infer<typeof PunchInParamsSchema>;
 export const KenBurnsParamsSchema = z.strictObject({
 	track: TrackRef.optional(),
 	range: AutomationRangeSchema.optional(),
-	/** Share of the candidate clips that get a move (default 0.15). */
+	/** Share of the A-roll's clips that get a move (default 0.15), chosen among the undecorated ones. */
 	share: z.number().min(0).max(1).optional(),
 	/** End scale in % (default 118 for vertical sequences, 130 otherwise). */
 	scale: z.number().min(101).max(400).optional(),

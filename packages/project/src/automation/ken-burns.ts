@@ -1,5 +1,5 @@
-// Ken Burns planner (spec 15 EA-022, EA-030, EA-032): `share` (15 %) of the A-roll clips that no move or zoom
-// decorates get a slow zoom over the whole clip — keys on its first and last frame, linear, 100 → 118 % on vertical
+// Ken Burns planner (spec 15 EA-022, EA-030, EA-032): `share` (15 %) of the A-roll's clips, chosen among those no
+// move or zoom decorates yet, get a slow zoom over the whole clip — keys on its first and last frame, linear, 100 → 118 % on vertical
 // sequences / 130 % on landscape ones (measured: 13–16 % of A-roll clips, 100 → 115–122 % shorts, ≈ 130 % long), zoom-in
 // and zoom-out 2 : 1 by each clip's seed — about the frame centre (a centred clip keeps its position). Motion keys:
 // exported natively. Pure.
@@ -154,7 +154,10 @@ export function planKenBurns(
 			return { c, seed, draw: seededRandom(seed)() };
 		})
 		.sort((a, b) => a.draw - b.draw || a.c.start - b.c.start);
-	const count = Math.round(params.share * ranked.length);
+	// `share` of all the A-roll's picture clips in the range (the measured 13–16 % are of every A-roll clip), chosen
+	// among the clips no punch-in or move decorates yet
+	const pictureClips = cand.clips.length + cand.skipped.filter((s) => s.code !== 'kind').length;
+	const count = Math.min(ranked.length, Math.round(params.share * pictureClips));
 	const moves = ranked
 		.slice(0, count)
 		.sort((a, b) => a.c.start - b.c.start)
