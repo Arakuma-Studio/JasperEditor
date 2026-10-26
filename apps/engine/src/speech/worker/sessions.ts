@@ -202,11 +202,17 @@ function wrap(
 ): PartSession {
 	const runMain = withHalf(ort, main);
 	const runSteps = steps ? withHalf(ort, steps) : null;
+	// Test hook (real-GPU verification of SG-003): `JASPER_SPEECH_GPU_FAULT_AFTER=<n>` makes the n-th run of a GPU
+	// session throw like a lost device. Unset in normal use.
+	const faultAfter = Number(process.env.JASPER_SPEECH_GPU_FAULT_AFTER ?? 0);
+	let runs = 0;
 	return {
 		provider,
 		fallback,
 		deviceResident,
 		run(feeds, fetches) {
+			if (provider !== 'cpu' && faultAfter > 0 && ++runs >= faultAfter)
+				return Promise.reject(new Error(`injected GPU fault (${provider}, run ${runs})`));
 			// cached decoder steps (use_cache_branch = true) go to the second session in device-resident mode
 			const flag = feeds.use_cache_branch?.data as ArrayLike<unknown> | undefined;
 			const cachedStep = !!runSteps && !!flag && Number(flag[0]) === 1;

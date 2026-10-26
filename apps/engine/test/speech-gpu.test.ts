@@ -358,6 +358,24 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		).rejects.toThrow('device lost');
 	});
 
+	it('the GPU fault hook fails a GPU session mid-job and only GPU sessions', async () => {
+		const dir = fakeModelDir();
+		const f = fakeOrt();
+		process.env.JASPER_SPEECH_GPU_FAULT_AFTER = '1';
+		try {
+			const out = await runSpeechJob(
+				{ modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', device: { encoder: 'webgpu', decoder: 'cpu' } },
+				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
+			);
+			expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
+			expect(out.device.fallbacks).toContainEqual(
+				expect.objectContaining({ stage: 'job', from: 'webgpu', reason: 'injected GPU fault (webgpu, run 1)' }),
+			);
+		} finally {
+			delete process.env.JASPER_SPEECH_GPU_FAULT_AFTER;
+		}
+	});
+
 	it('a CPU failure is not retried', async () => {
 		const dir = fakeModelDir();
 		let runs = 0;
