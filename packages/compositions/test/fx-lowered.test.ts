@@ -140,7 +140,7 @@ describe('lowered layers in the preview (spec 13 AS-075)', () => {
 			shadow: { color: [0, 0, 0, 1], angleDeg: 90, distancePx: 70, blurPx: 2 },
 		};
 		const clip = pixelPopClip(true, style);
-		const cp = textContentPad((clip.source as { text: Parameters<typeof textContentPad>[0] }).text);
+		const cp = Math.ceil(textContentPad((clip.source as { text: Parameters<typeof textContentPad>[0] }).text));
 		expect(cp).toBeGreaterThan(70);
 		const fps = 60000 / 1001;
 		const props = resolveLayerProps(clip, clipContentTime(clip, 20, { num: 60000, den: 1001 }));

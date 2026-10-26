@@ -187,7 +187,8 @@ export function planLayerFx(
 	const steps: FxStep[] = [];
 	const cssEffects: ResolvedEffect[] = [];
 	const reordered: string[] = [];
-	const cp = Math.min(FX_MAX_PADDING, Math.max(0, num(opts.contentPadding)));
+	// Whole pixels: the DOM picture is placed at the padding, and text there snaps to the pixel grid.
+	const cp = Math.min(FX_MAX_PADDING, Math.max(0, Math.ceil(num(opts.contentPadding))));
 	let padding: FxPadding = cp > 0 ? { left: cp, top: cp, right: cp, bottom: cp } : ZERO_PADDING;
 	let timeDependent = false;
 	runnable.forEach((fx, i) => {

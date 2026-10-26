@@ -455,7 +455,7 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 			const tap = taps[0]!;
 			// Stages: the canvas the browser draws (the box grown by the text's paint, then by the effects' padding);
 			// S_Shake and the Transform both sample that whole canvas (spec 13 AS-070: stroke and shadow move along).
-			const cp = textContentPad((c.source as { text: Parameters<typeof textContentPad>[0] }).text);
+			const cp = Math.ceil(textContentPad((c.source as { text: Parameters<typeof textContentPad>[0] }).text));
 			expect(cp).toBeGreaterThan(0);
 			const pad = gpuPadding(shake, sp, ctx);
 			const canvas = [
