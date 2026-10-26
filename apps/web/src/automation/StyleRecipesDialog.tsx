@@ -229,6 +229,9 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 											<span className="ml-2 text-pr-small text-pr-muted">
 												{SOURCE_TEXT[c.source]}
 												{c.recipe ? ` · ${t('version {0}', c.recipe.revision)}` : ''}
+												{c.projectRevision !== undefined
+													? ` · ${t('this project uses version {0}', c.projectRevision)}`
+													: ''}
 												{c.newer ? ` · ${t('newer version')}` : ''}
 											</span>
 										</>

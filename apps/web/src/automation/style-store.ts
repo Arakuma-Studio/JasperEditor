@@ -147,6 +147,8 @@ export type RecipeChoice = {
 	readOnly: boolean;
 	newer?: boolean;
 	recipe: StyleRecipe | null;
+	/** The project keeps another version of this library recipe (the one it last used). */
+	projectRevision?: number;
 };
 
 /** Built-ins, the library, then the project's copies the library does not have (same id: the project's copy wins). */
@@ -154,14 +156,17 @@ export function recipeChoices(doc: ProjectDocument | null, lib: StyleLibraryStat
 	const out: RecipeChoice[] = [];
 	const project = doc ? projectStyleRecipes(doc) : { recipes: {}, newer: [] as string[], active: null };
 	for (const e of lib.entries) {
+		// the library's version is the user's latest; the project keeps the one it last used (offline, other machines)
 		const copy = project.recipes[e.id];
+		const own = (e.recipe as unknown as StyleRecipe | undefined) ?? null;
 		out.push({
 			id: e.id,
-			name: copy?.name ?? e.name,
+			name: own ? e.name : (copy?.name ?? e.name),
 			source: e.source,
 			readOnly: e.readOnly,
 			...(e.newer ? { newer: true } : {}),
-			recipe: copy ?? (e.recipe as unknown as StyleRecipe | undefined) ?? null,
+			recipe: own ?? copy ?? null,
+			...(copy && own && copy.revision !== own.revision ? { projectRevision: copy.revision } : {}),
 		});
 	}
 	for (const r of Object.values(project.recipes))

@@ -11851,5 +11851,6 @@
   "Your library is read-only": "Tu biblioteca es de solo lectura",
   "Your recipe library was repaired when it was opened:": "Tu biblioteca de recetas se reparó al abrirla:",
   "Your recipe library was written by a newer JasperEditor: it is read-only here.": "Tu biblioteca de recetas la escribió un JasperEditor más reciente: aquí es de solo lectura.",
-  "Target: {0}": "Objetivo: {0}"
+  "Target: {0}": "Objetivo: {0}",
+  "this project uses version {0}": "este proyecto usa la versión {0}"
 }

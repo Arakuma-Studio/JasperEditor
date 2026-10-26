@@ -101,9 +101,17 @@ export async function resolveRecipe(
 		return r.recipe;
 	}
 	if (req.recipeId) {
+		// a library recipe's latest version wins over the copy the project kept; the copy serves without the library
+		const lib = deps.recipes();
+		if (lib && !req.recipeId.startsWith('builtin:')) {
+			const fromLib = await lib.get(req.recipeId).catch((e: unknown) => {
+				if (e instanceof HttpError && e.status === 404) return null;
+				throw e;
+			});
+			if (fromLib) return fromLib;
+		}
 		const local = findStyleRecipe(doc, req.recipeId);
 		if (local) return local;
-		const lib = deps.recipes();
 		if (!lib) throw new HttpError(503, 'NOT_AVAILABLE', 'The style recipe library is not running');
 		return lib.get(req.recipeId);
 	}
