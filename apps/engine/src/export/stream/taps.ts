@@ -18,6 +18,7 @@ import { terminateTree } from '../../tools/process.ts';
 import { decoderArgs } from '../warp/render.ts';
 import { ExportWorkerPool, framePoolSize } from '../worker-pool.ts';
 import { drawLayer, drawTaps } from './kernel.ts';
+import { DECODES_IN_FLIGHT, PREFETCH_MEMBERS } from './limits.ts';
 import { shiftProgram, type TapFrame } from './lowered.ts';
 import { StreamLayerError } from './run.ts';
 
@@ -47,12 +48,6 @@ export type TapStreamPlan = {
 	g1: number;
 	fps: Rational;
 };
-
-/** Bytes the engine holds for a stream at most (output slots + pictures in flight), for the memory preflight. */
-export function tapStreamBytes(o: { outW: number; outH: number; picture: number; workers: number }): number {
-	const slots = o.workers + 3;
-	return slots * o.outW * o.outH * 4 + (PREFETCH_MEMBERS + 1) * o.picture * 4;
-}
 
 /**
  * The stream of `members` (non-overlapping, any order) in a `W × H` sequence: the union of their drawn rectangles,
@@ -110,10 +105,6 @@ export function planTapStream(
 	};
 }
 
-/** Members whose pictures are decoded ahead of the one being drawn. */
-const PREFETCH_MEMBERS = 3;
-/** One-frame picture decodes at the same time. */
-const DECODES_IN_FLIGHT = 3;
 
 const WORKER_SOURCE = `
 // Functions are inlined by their source text: under tsx (dev engine) esbuild's keepNames wraps them in __name().

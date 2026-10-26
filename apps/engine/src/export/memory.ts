@@ -20,7 +20,7 @@ import {
 } from '@jasper/project';
 import { bakeClip, isStaticLayer, layerStill, needsBake } from '../layer-bake/layer.ts';
 import { needsSubpixel } from './stream/plan.ts';
-import { tapStreamBytes } from './stream/taps.ts';
+import { tapStreamBytes } from './stream/limits.ts';
 
 const MB = 1024 * 1024;
 /** Measured at 1080×1920 (2.07 Mpx). */
