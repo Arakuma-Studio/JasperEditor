@@ -221,6 +221,11 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   of the tests). The composite's inputs no longer grow with the clip count (300 stills on a track: one input, one
   overlay, test in `subtitle-export.test.ts`).
 - At most 8 kernel threads per stream (`MAX_TAP_WORKERS`): a stream is paced by the composite reading it.
+- Member stills are decoded in-process (`stream/png.ts`: 8-bit RGBA / RGB PNGs, inflate in the libuv pool, rows
+  unfiltered as PNG specifies; equal to ffmpeg's `format=rgba` decode, property test `subtitle-png.test.ts`); scaled
+  mip levels and other files keep the one-frame ffmpeg decode. One ffmpeg spawn per picture held the event loop for
+  ≈ 9 ms each (a fork of the engine; CPU profile of the short benchmark: 5.2 s in `spawn`), which stalled the stream
+  feeding the composite.
 
 ### S.3 Batched still rendering, pipelined (AS-071, AS-076)
 

@@ -1203,6 +1203,7 @@ export class ExportService {
 				threads: ctx.slots,
 				still,
 				trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
+				coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
 				extensions: { list: exts, prepared },
 				...(audio?.path
 					? {

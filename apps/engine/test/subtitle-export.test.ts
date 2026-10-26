@@ -36,12 +36,39 @@ function makePicture(): string {
 	return out;
 }
 
-/** `n` stills back to back on V2 (8 frames each) over a dark solid, each with sub-pixel keyframed Motion. */
-async function stillsDoc(app: TestApp, n: number) {
+/** A W × H video (30 fps, LGPL mpeg4) of `frames` frames. */
+function makeVideo(frames: number): string {
+	const dir = mkdtempSync(join(tmpdir(), 'jasper-subexp-'));
+	const out = join(dir, 'plate.mp4');
+	const r = spawnSync(TEST_FFMPEG, [
+		...['-v', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=s=${W}x${H}:r=30`, '-frames:v', String(frames)],
+		...['-c:v', 'mpeg4', '-q:v', '3', '-pix_fmt', 'yuv420p', out],
+	]);
+	if (r.status !== 0) throw new Error(r.stderr.toString());
+	return out;
+}
+
+/**
+ * `n` stills back to back on V2 (8 frames each) over a dark solid (or a full-frame video), each with sub-pixel
+ * keyframed Motion.
+ */
+async function stillsDoc(app: TestApp, n: number, video?: string) {
 	const card = await register(app, makePicture());
 	const d = new DocBuilder();
 	const media = d.addMedia(card);
-	d.tx([{ type: 'clip.addSolid', at: 0, duration: n * 8, track: 'V1', color: [0.08, 0.08, 0.08, 1] }]);
+	if (video) {
+		const plate = d.addMedia(await register(app, video));
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: plate },
+				at: 0,
+				sourceRange: { in: { flicks: 0 }, out: { flicks: n * 8 * 23_520_000 } },
+				tracks: { video: 'V1' },
+			},
+		]);
+	} else
+		d.tx([{ type: 'clip.addSolid', at: 0, duration: n * 8, track: 'V1', color: [0.08, 0.08, 0.08, 1] }]);
 	const cmds: unknown[] = [];
 	for (let i = 0; i < n; i++)
 		cmds.push({
@@ -255,6 +282,75 @@ describe('kernel streams (spec 13 AS-072)', () => {
 		// The other two stills of the track still share one kernel stream.
 		expect(g.streams).toHaveLength(1);
 		expect((g.filter.match(/overlay=/g) ?? []).length).toBe(3);
+	}, 300_000);
+});
+
+describe('composite base (spec 13 AS-076)', () => {
+	it('an opaque full-frame video under the subtitles is the base: one blend fewer, the same frames', async () => {
+		const n = 6;
+		const d = await stillsDoc(app, n, makeVideo(n * 8 + 4));
+		const s = settings(d.seqId, n * 8);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: s as never,
+		});
+		expect(planned.plan.path).toBe('native');
+		const graph = (coverBase: boolean) =>
+			buildNativeGraph({
+				snapshot: planned.snapshot,
+				output: planned.output,
+				outputFile: '/tmp/x.mov',
+				sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+				threads: 2,
+				extensions: { list: [], prepared: new Map() },
+				coverBase,
+			});
+		const overlays = (g: { filter: string }) => (g.filter.match(/overlay=/g) ?? []).length;
+		expect(overlays(graph(true))).toBe(overlays(graph(false)) - 1);
+		expect(graph(true).filter).toMatch(/tpad=stop=\d+:stop_mode=add/);
+
+		const a = await startExport(app, d, s);
+		expect(a.error, JSON.stringify(a.error)).toBeUndefined();
+		process.env.JASPER_EXPORT_COVER_BASE = '0';
+		let b: Awaited<ReturnType<typeof startExport>>;
+		try {
+			b = await startExport(app, d, s);
+		} finally {
+			delete process.env.JASPER_EXPORT_COVER_BASE;
+		}
+		expect(b.error, JSON.stringify(b.error)).toBeUndefined();
+		const fa = decodeAll((await coreServices(app).exports.outputFile(a.id))!);
+		const fb = decodeAll((await coreServices(app).exports.outputFile(b.id))!);
+		expect(fa).toHaveLength(n * 8);
+		expect(fb).toHaveLength(n * 8);
+		for (let f = 0; f < fa.length; f++) expect(fa[f]!.equals(fb[f]!), `frame ${f}`).toBe(true);
+	}, 600_000);
+
+	it('a video that does not cover the frame (scaled down) keeps the blend over the background', async () => {
+		const d = await stillsDoc(app, 2, makeVideo(20));
+		const plan = () =>
+			coreServices(app).exports.plan({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, 16) as never,
+			});
+		const plateId = (await plan()).snapshot.videoTracks[0]!.clips[0]!.clipId;
+		d.tx([{ type: 'param.set', target: ['clip', plateId, 'transform', 'scale'], value: 50 }]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId, 16) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mov',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+			extensions: { list: [], prepared: new Map() },
+		});
+		expect(g.filter).not.toMatch(/tpad=stop=\d+:stop_mode=add/);
 	}, 300_000);
 });
 

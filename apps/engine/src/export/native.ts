@@ -103,6 +103,12 @@ type NativeBuildOptions = {
 	 */
 	trackStreams?: boolean;
 	/**
+	 * spec 13 AS-076: an opaque first layer covering the frame is the composite's base instead of a blend over the
+	 * background colour (default true; false = the blend, the comparison path of the tests and
+	 * `JASPER_EXPORT_COVER_BASE=0`).
+	 */
+	coverBase?: boolean;
+	/**
 	 * color-mgmt: the working → output (exports) or working → display (stills) LUT filter (`lut3d=…`), null when the
 	 * output is the working space. The tags, matrix and bit depth come from `output.color`.
 	 */
@@ -713,6 +719,8 @@ type StackContext = {
 	path: string;
 	/** spec 13 AS-072: group constant-picture layers into kernel streams. */
 	trackStreams?: boolean;
+	/** spec 13 AS-076: an opaque full-frame first layer is the base (no blend over the background). */
+	coverBase?: boolean;
 	/** spec 13 AS-076: pipelined stills the composite opens as inputs (awaited before it starts). */
 	waitFor?: Promise<OverrideReady>[];
 	/**
@@ -1179,9 +1187,44 @@ function drawStack(ctx: StackContext): string {
 
 			const { x, y } = motion;
 			const next = `o${label}`;
-			ctx.chains.push(
-				`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`,
-			);
+			// The first layer of the stack is an opaque picture covering the whole frame for the whole range: it IS the
+			// composite so far — no blend of 1920×1080 RGBA over the background colour every frame (≈ 20 % of a
+			// subtitled export's composite, measured). Frames after its source ends show the background, as before.
+			const covers =
+				ctx.coverBase === true &&
+				last === bgLabel &&
+				f0 <= R0 &&
+				f1 >= R1 &&
+				!override &&
+				c.kind === 'video' &&
+				source.opaque &&
+				blendMode === 'normal' &&
+				(c.blendMode ?? 'normal') === 'normal' &&
+				!c.threeD &&
+				!c.fades?.length &&
+				maskExportRoute(c) === 'none' &&
+				c.effects.every(
+					(fx) =>
+						!fx.enabled ||
+						fx.effectId === 'jasper.flip-horizontal' ||
+						fx.effectId === 'jasper.flip-vertical' ||
+						!!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color,
+				) &&
+				x === '0' &&
+				y === '0' &&
+				motion.post.length === 0 &&
+				(motion.resize
+					? !motion.resize.perFrame && motion.resize.w === String(W) && motion.resize.h === String(H)
+					: source.width === W && source.height === H);
+			if (covers) {
+				const frames = R1 - R0 + 1;
+				ctx.chains.push(
+					`[${label}]tpad=stop=${frames}:stop_mode=add:color=${colorHex(snap.settings.backgroundColor)},trim=end_frame=${frames}[${next}]`,
+				);
+			} else
+				ctx.chains.push(
+					`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`,
+				);
 			last = next;
 		};
 		drawLayer();
@@ -1265,6 +1308,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(o.nested ? { nested: o.nested } : {}),
 		path: '',
 		trackStreams: o.trackStreams !== false,
+		coverBase: o.coverBase !== false,
 		waitFor,
 		blend: {
 			cut: (backdrop, layer, plan, mode) => {
