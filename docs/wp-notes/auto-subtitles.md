@@ -256,6 +256,14 @@ Cuts come from the cut map (§1) below the subtitles' track (`cuts.ts` `subtitle
    the edit point (`snap`) or to the nearer zone edge (`avoid`) when that takes no words from either side.
    **Interpretation** (spec text "a caption may run through a zone only if it started before the transition"):
    applied to montage zones too, so a subtitle may run through flash cuts closer than the minimum duration.
+   "Started before" is judged for the *piece* that reaches the zone, after the earlier splits: a subtitle split at a
+   hard cut lying on or inside a zone (a transition starting on a cut, or a hard cut inside a montage / transition
+   span) starts with the zone, not before it, so it may not run through the zone's edit point and is split there too.
+   Starts moved by look-back (step 2) and by zone snapping are checked the same way (the split step runs again after
+   them). Found by the layout property test (fast-check seed 428871206: one word over frames 0–8, a hard cut at 1, a
+   zone [1, 13) with its edit point at 7 gave a subtitle [1, 8) across the edit point); the property's rule — a zone's
+   edit point is crossed only by a subtitle that started before the zone — is the spec's and stays as written;
+   regression test "a piece that starts on (or inside) a zone after a split does not run through it".
 6. Timing (§2 step 4).
 
 `captions.alignToCuts {groupId | clipIds, options?, dryRun?}` (AS-012) re-runs steps 0–5 (and the minimum-duration
