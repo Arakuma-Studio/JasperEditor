@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import type { RenderVisualClip } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
+import { killedComposite } from '../src/export/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -480,6 +481,12 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 		expect(job.state).toBe('failed');
 		expect(job.error?.message).toMatch(/unconnected output/);
 		expect(job.error?.message).not.toMatch(/layer stream/);
+		// The decision itself: the compositor's error, OUT_OF_MEMORY only for a SIGKILL nobody asked for.
+		const own = new Error('ffmpeg exited 234: graph error');
+		expect(killedComposite(own, 3, false)).toBe(own);
+		expect((killedComposite(new Error('ffmpeg exited SIGKILL'), 3, false) as { code: string }).code).toBe(
+			'OUT_OF_MEMORY',
+		);
 	}, 300_000);
 
 	it('a compositor under a memory cap fails the job with its error; the engine lives', async () => {
