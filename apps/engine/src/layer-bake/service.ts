@@ -1775,8 +1775,16 @@ export function alphaBounds(
 }
 
 /** The `cw × ch` region at `(x, y)` of an RGBA image `w` px wide. */
-export function cropRgba(px: Uint8Array, w: number, x: number, y: number, cw: number, ch: number): Uint8Array {
+export function cropRgba(
+	px: Uint8Array,
+	w: number,
+	x: number,
+	y: number,
+	cw: number,
+	ch: number,
+): Uint8Array {
 	const out = new Uint8Array(cw * ch * 4);
-	for (let r = 0; r < ch; r++) out.set(px.subarray(((y + r) * w + x) * 4, ((y + r) * w + x + cw) * 4), r * cw * 4);
+	for (let r = 0; r < ch; r++)
+		out.set(px.subarray(((y + r) * w + x) * 4, ((y + r) * w + x + cw) * 4), r * cw * 4);
 	return out;
 }

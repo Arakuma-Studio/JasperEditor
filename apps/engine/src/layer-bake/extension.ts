@@ -292,7 +292,11 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					await round(again);
 				}
 				if (clipped.length)
-					throw new JobError('LAYER_BAKE_FAILED', `The master of "${clipped[0]!.plan.clipName}" is clipped`, true);
+					throw new JobError(
+						'LAYER_BAKE_FAILED',
+						`The master of "${clipped[0]!.plan.clipName}" is clipped`,
+						true,
+					);
 			} finally {
 				await release?.();
 			}

@@ -262,7 +262,11 @@ const constant = <T>(value: T) => ({ value, keyframes: [] });
  * the region's origin at (0, 0) of the bake frame: Motion is a translation by the bleed (no scale, rotation or flips),
  * Opacity 100 %, no lowered effects, no keyframes on what is left, no handles or fades.
  */
-export function layerStillClip(c: RenderVisualClip, registry?: EffectRegistry, grow = false): RenderVisualClip {
+export function layerStillClip(
+	c: RenderVisualClip,
+	registry?: EffectRegistry,
+	grow = false,
+): RenderVisualClip {
 	const pic = layerStill(c, registry, grow);
 	const e = pic ? -pic.x : 0;
 	const { headHandle: _h, tailHandle: _t, fades: _f, expressionPositionShift: _s, ...rest } = c;

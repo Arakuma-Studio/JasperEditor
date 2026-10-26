@@ -77,7 +77,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function api(method, path, body) {
 	const res = await fetch(ENGINE + path, {
 		method,
-		headers: { authorization: `Bearer ${TOKEN}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+		headers: {
+			authorization: `Bearer ${TOKEN}`,
+			...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+		},
 		body: body !== undefined ? JSON.stringify(body) : undefined,
 	});
 	const text = await res.text();
@@ -87,7 +90,12 @@ async function api(method, path, body) {
 async function tx(projectId, commands, label = 'subtitle bench') {
 	const out = await api('POST', '/api/agent/tx', {
 		projectId,
-		transaction: { protocol: 'jasper.tx/1', label, origin: { agent: 'subtitle-bench', runId: TAG }, commands },
+		transaction: {
+			protocol: 'jasper.tx/1',
+			label,
+			origin: { agent: 'subtitle-bench', runId: TAG },
+			commands,
+		},
 	});
 	if (!out.result?.ok) throw new Error(`tx "${label}" failed: ${JSON.stringify(out.result).slice(0, 3000)}`);
 	return out.result;
@@ -138,7 +146,10 @@ function sampler(rootPid) {
 	const c0 = cpu(tree(rootPid));
 	const h = setInterval(() => {
 		const t = tree(rootPid);
-		peak = Math.max(peak, t.reduce((a, p) => a + p.rss, 0));
+		peak = Math.max(
+			peak,
+			t.reduce((a, p) => a + p.rss, 0),
+		);
 		const m = new Map();
 		for (const p of t) m.set(p.comm, (m.get(p.comm) ?? 0) + p.rss);
 		for (const [k, v] of m) byComm.set(k, Math.max(byComm.get(k) ?? 0, v));
@@ -149,7 +160,10 @@ function sampler(rootPid) {
 			cpuSec: (cpu(tree(rootPid)) - c0) / 100,
 			peakRssMB: Math.round(peak / 1e6),
 			peakRssByCommMB: Object.fromEntries(
-				[...byComm].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [k, Math.round(v / 1e6)]),
+				[...byComm]
+					.sort((a, b) => b[1] - a[1])
+					.slice(0, 8)
+					.map(([k, v]) => [k, Math.round(v / 1e6)]),
 			),
 		};
 	};
@@ -157,7 +171,10 @@ function sampler(rootPid) {
 function enginePid() {
 	if (engineProc) return engineProc.pid;
 	const port = new URL(ENGINE).port;
-	const out = execFileSync('bash', ['-c', `ss -ltnp 'sport = :${port}' | grep -o 'pid=[0-9]*' | head -1`]).toString();
+	const out = execFileSync('bash', [
+		'-c',
+		`ss -ltnp 'sport = :${port}' | grep -o 'pid=[0-9]*' | head -1`,
+	]).toString();
 	return Number(out.replace('pid=', '').trim());
 }
 
@@ -184,7 +201,9 @@ function schedule() {
 		const d = Math.max(12, Math.round(raw[i] * k * FPS));
 		if (f + d > totalFrames) break;
 		const n = 1 + Math.floor(rnd() * 4);
-		const text = Array.from({ length: n }, () => WORDS[Math.floor(rnd() * WORDS.length)]).join(' ').toUpperCase();
+		const text = Array.from({ length: n }, () => WORDS[Math.floor(rnd() * WORDS.length)])
+			.join(' ')
+			.toUpperCase();
 		out.push({ start: f, duration: d, text, shake: rnd() < 0.2 });
 		f += d;
 	}
@@ -224,16 +243,31 @@ function clipCommands(it, i, fontId) {
 			transform: { position: [C.w / 2, Math.round(C.y * C.h)] },
 		},
 	];
-	const key = (target, sec, value) => ({ type: 'keyframe.add', target, at: { frames: Math.round(sec * FPS) }, value });
+	const key = (target, sec, value) => ({
+		type: 'keyframe.add',
+		target,
+		at: { frames: Math.round(sec * FPS) },
+		value,
+	});
 	if (VARIANT === 'pop' || VARIANT === 'pop-shake')
 		for (const [f, v] of [
 			[0, 75],
 			[3, 108],
 			[6, 100],
 		])
-			cmds.push({ type: 'keyframe.add', target: ['clip', ref, 'transform', 'scale'], at: { frames: f }, value: v });
+			cmds.push({
+				type: 'keyframe.add',
+				target: ['clip', ref, 'transform', 'scale'],
+				at: { frames: f },
+				value: v,
+			});
 	if (VARIANT === 'pop-shake' && it.shake)
-		cmds.push({ type: 'effect.add', target: { clipId: ref }, effectId: 'jasper.s.shake', params: { amplitude: 1.5, frequency: 10 } });
+		cmds.push({
+			type: 'effect.add',
+			target: { clipId: ref },
+			effectId: 'jasper.s.shake',
+			params: { amplitude: 1.5, frequency: 10 },
+		});
 	if (pixel) {
 		const tf = `$tf${i}`;
 		cmds.push(
@@ -297,20 +331,46 @@ const report = {
 const save = () => writeFileSync(join(OUT, `${TAG}.json`), JSON.stringify(report, null, 2));
 try {
 	const bg = backgroundMedia();
-	const { projectId } = await api('POST', '/api/projects', { name: `subtitle bench ${TAG}`, preset: 'hd-1080p-59.94' });
+	const { projectId } = await api('POST', '/api/projects', {
+		name: `subtitle bench ${TAG}`,
+		preset: 'hd-1080p-59.94',
+	});
 	let env = (await api('GET', `/api/projects/${projectId}`)).envelope;
 	const seqId = Object.keys(env.document.sequences)[0];
 	if (C.w !== 1920 || C.h !== 1080)
-		await tx(projectId, [{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: C.w, height: C.h } }]);
+		await tx(projectId, [
+			{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: C.w, height: C.h } },
+		]);
 	const imp = JSON.parse(
 		execFileSync(
 			process.execPath,
-			['--import', 'tsx', 'apps/mcp/src/jasper.ts', '--engine-url', ENGINE, '--token', TOKEN, '--project', projectId, '--json', 'import', bg],
+			[
+				'--import',
+				'tsx',
+				'apps/mcp/src/jasper.ts',
+				'--engine-url',
+				ENGINE,
+				'--token',
+				TOKEN,
+				'--project',
+				projectId,
+				'--json',
+				'import',
+				bg,
+			],
 			{ cwd: root },
 		).toString(),
 	);
-	await tx(projectId, [{ type: 'clip.place', source: { mediaId: imp.imported[0].mediaId }, at: 0, tracks: { video: 'V1', audio: 'A1' } }]);
-	const fontId = (await tx(projectId, [{ type: 'font.add', family: 'JetBrains Mono', ref: '$font' }])).refs.$font;
+	await tx(projectId, [
+		{
+			type: 'clip.place',
+			source: { mediaId: imp.imported[0].mediaId },
+			at: 0,
+			tracks: { video: 'V1', audio: 'A1' },
+		},
+	]);
+	const fontId = (await tx(projectId, [{ type: 'font.add', family: 'JetBrains Mono', ref: '$font' }])).refs
+		.$font;
 	const items = VARIANT === 'none' ? [] : schedule();
 	let batch = [];
 	for (const [i, it] of items.entries()) {
@@ -345,7 +405,10 @@ try {
 	rmSync(join(APPDIR, 'cache', 'layers'), { recursive: true, force: true });
 	report.exports = [];
 	for (let pass = 0; pass < (WARM ? 2 : 1); pass++) {
-		const run = { pass: pass === 0 ? 'cold' : 'warm', loadBefore: loadavg().map((x) => Math.round(x * 100) / 100) };
+		const run = {
+			pass: pass === 0 ? 'cold' : 'warm',
+			loadBefore: loadavg().map((x) => Math.round(x * 100) / 100),
+		};
 		const stop = sampler(enginePid());
 		const stages = [];
 		const t0 = performance.now();
