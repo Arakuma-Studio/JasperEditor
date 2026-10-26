@@ -35,7 +35,8 @@ function pixelPopClip(withShake = true): RenderVisualClip {
 			ref: '$t',
 		},
 	]);
-	const clip = a.result.refs.$t!;
+	const refsOf = (r: { result: unknown }) => (r.result as { refs: Record<string, string> }).refs;
+	const clip = refsOf(a).$t!;
 	const b = tx(a.document, [
 		{
 			type: 'effect.add',
@@ -55,7 +56,7 @@ function pixelPopClip(withShake = true): RenderVisualClip {
 				]
 			: []),
 	]);
-	const tf = b.result.refs.$tf!;
+	const tf = refsOf(b).$tf!;
 	const c = tx(b.document, [
 		{ type: 'keyframe.add', target: ['effect', tf, 'scaleHeight'], at: { sequenceFrame: 0 }, value: 75 },
 		{ type: 'keyframe.add', target: ['effect', tf, 'scaleHeight'], at: { sequenceFrame: 6 }, value: 108 },

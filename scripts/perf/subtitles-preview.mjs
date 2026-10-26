@@ -195,9 +195,9 @@ async function measure(name) {
 			const f0 = driver.stats.framesShown;
 			const d0 = driver.stats.framesDropped;
 			const p0 = performance.now();
-			let raf = 0;
+			let rafs = 0;
 			const tick = () => {
-				raf++;
+				rafs++;
 				if (performance.now() - p0 < secs * 1000) requestAnimationFrame(tick);
 			};
 			requestAnimationFrame(tick);
@@ -220,7 +220,7 @@ async function measure(name) {
 				scrubFps,
 				fps: Math.round(((driver.stats.framesShown - f0) / dt) * 10) / 10,
 				dropped: driver.stats.framesDropped - d0,
-				uiFps: Math.round((raf / dt) * 10) / 10,
+				uiFps: Math.round((rafs / dt) * 10) / 10,
 				longTasks,
 				longTaskMs: Math.round(longMs),
 				heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : null,

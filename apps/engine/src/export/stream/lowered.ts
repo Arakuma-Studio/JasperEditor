@@ -66,9 +66,6 @@ export function shiftProgram(prog: readonly number[], dx: number, dy: number): n
 	return out;
 }
 
-type Stage = { map: Affine; rect: [number, number, number, number] };
-type Tap = { w: number; map: Affine; stages: Stage[] };
-
 const mipLevel = (s: number) => (s >= 0.5 || s <= 0 ? 0 : Math.min(12, Math.floor(Math.log2(1 / s) + 1e-9)));
 
 /**
