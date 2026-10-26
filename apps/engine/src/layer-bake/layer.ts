@@ -195,9 +195,10 @@ export type BakeVariant =
 	| { recipe: 'frame'; frame: number }
 	/**
 	 * spec 13 AS-070: a lowered layer (`layerStill`): one frame of its layer region without Motion, Opacity and the
-	 * lowered effects (the native kernel draws them per frame); no fades.
+	 * lowered effects (the native kernel draws them per frame); no fades. `grow`: the region grown by the box size
+	 * on every side (the layer drew past its content bleed, e.g. text overflowing an estimated box).
 	 */
-	| { recipe: 'layer-still' };
+	| { recipe: 'layer-still'; grow?: true };
 
 /**
  * The clip as the bake renders it: only enabled effects, colour effects removed when ffmpeg applies them
@@ -220,7 +221,7 @@ export function bakeClip(
 	const effects = c.effects.filter((fx) => fx.enabled && !(strip && isColorEffect(fx, o.registry)));
 	const { headHandle, tailHandle, fades, ...rest } = c;
 	let out: RenderVisualClip;
-	if (o.variant.recipe === 'layer-still') return layerStillClip(c, o.registry);
+	if (o.variant.recipe === 'layer-still') return layerStillClip(c, o.registry, !!o.variant.grow);
 	if (o.variant.recipe === 'still') out = { ...rest, effects, start: 0, duration: 1 };
 	else
 		out = {
@@ -261,8 +262,8 @@ const constant = <T>(value: T) => ({ value, keyframes: [] });
  * the region's origin at (0, 0) of the bake frame: Motion is a translation by the bleed (no scale, rotation or flips),
  * Opacity 100 %, no lowered effects, no keyframes on what is left, no handles or fades.
  */
-export function layerStillClip(c: RenderVisualClip, registry?: EffectRegistry): RenderVisualClip {
-	const pic = layerStill(c, registry);
+export function layerStillClip(c: RenderVisualClip, registry?: EffectRegistry, grow = false): RenderVisualClip {
+	const pic = layerStill(c, registry, grow);
 	const e = pic ? -pic.x : 0;
 	const { headHandle: _h, tailHandle: _t, fades: _f, expressionPositionShift: _s, ...rest } = c;
 	return {
@@ -293,6 +294,7 @@ export function layerStillClip(c: RenderVisualClip, registry?: EffectRegistry): 
 export function layerStill(
 	c: RenderVisualClip,
 	registry: EffectRegistry = defaultEffectRegistry,
+	grow = false,
 ): { x: number; y: number; w: number; h: number } | null {
 	if (!isDomLayer(c) || c.threeD || loweredRefusal(c) || !loweredMoves(c)) return null;
 	const bare: RenderVisualClip = {
@@ -315,7 +317,10 @@ export function layerStill(
 	if (!isStaticLayer(bare, registry)) return null;
 	const bleed = contentBleed(bare, registry);
 	if (bleed === null || !Number.isFinite(bleed)) return null;
-	const e = Math.ceil(Math.max(0, bleed)) + 2;
+	const e =
+		Math.ceil(Math.max(0, bleed)) +
+		2 +
+		(grow ? Math.ceil(Math.max(c.intrinsicBox.width, c.intrinsicBox.height)) : 0);
 	const w = Math.ceil(c.intrinsicBox.width) + 2 * e;
 	const h = Math.ceil(c.intrinsicBox.height) + 2 * e;
 	if (!(w > 0 && h > 0) || w > MAX_LAYER_STILL_SIDE || h > MAX_LAYER_STILL_SIDE) return null;

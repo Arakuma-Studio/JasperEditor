@@ -112,6 +112,8 @@ export type LayerMeta = {
 	 * layer is baked as a master instead.
 	 */
 	clipped?: boolean;
+	/** spec 13 AS-070: the layer region the stored layer still covers (layer px; trimmed to its pixels). */
+	picture?: Rect;
 	material: unknown;
 };
 
@@ -165,6 +167,8 @@ export type BakeResult = {
 	height: number;
 	/** spec 13 AS-070: the `layer-still` touches its border (bake the layer as a master instead). */
 	clipped?: boolean;
+	/** spec 13 AS-070: the layer region the file covers (layer px), when it differs from the plan's. */
+	picture?: Rect;
 };
 
 /**
@@ -432,6 +436,7 @@ export class LayerBakeService {
 			width: meta.width,
 			height: meta.height,
 			...(meta.clipped ? { clipped: true } : {}),
+			...(meta.picture ? { picture: meta.picture } : {}),
 		};
 	}
 
@@ -571,7 +576,7 @@ export class LayerBakeService {
 	async planBake(
 		planned: Pick<PlannedExport, 'document' | 'media' | 'snapshot'>,
 		clip: RenderVisualClip,
-		o: { env: BakeEnvironment; frame?: number | null; master?: boolean },
+		o: { env: BakeEnvironment; frame?: number | null; master?: boolean; grow?: boolean },
 	): Promise<BakePlan> {
 		const asBaked = bakeClip(clip, { variant: { recipe: 'master' }, stripColor: true });
 		const isStatic = isStaticLayer(asBaked);
@@ -579,8 +584,13 @@ export class LayerBakeService {
 		// spec 13 AS-070: static content whose picture moves → one still of the layer region (native motion), unless
 		// that still was found clipped (`master`).
 		if (!isStatic && !o.master && layerStill(clip)) {
-			const ls = await this.plan(planned, clip, { recipe: 'layer-still' }, o.env);
-			if (!(await this.lookup(ls.key))?.clipped) return ls;
+			if (!o.grow) {
+				const ls = await this.plan(planned, clip, { recipe: 'layer-still' }, o.env);
+				if (!(await this.lookup(ls.key))?.clipped) return ls;
+			}
+			// Clipped at its border: the region grown by the box size, then a master.
+			const grown = await this.plan(planned, clip, { recipe: 'layer-still', grow: true }, o.env);
+			if (!(await this.lookup(grown.key))?.clipped) return grown;
 		}
 		const full = await this.plan(planned, clip, isStatic ? { recipe: 'still' } : { recipe: 'master' }, o.env);
 		if (o.frame === undefined || o.frame === null || isStatic) return full;
@@ -602,7 +612,7 @@ export class LayerBakeService {
 		const f1 = variant.recipe === 'master' ? span.end : f0 + 1;
 		const unshifted = bakeClip(clip, { variant, stripColor: true });
 		// spec 13 AS-070: a layer-still's frame is its layer region (the clip translated into it by `bakeClip`).
-		const picture = variant.recipe === 'layer-still' ? layerStill(clip) : null;
+		const picture = variant.recipe === 'layer-still' ? layerStill(clip, undefined, !!variant.grow) : null;
 		if (variant.recipe === 'layer-still' && !picture)
 			throw new JobError('LAYER_BAKE_FAILED', `"${clip.name}" cannot be baked as a layer still`, false);
 		const rect = picture
@@ -1249,7 +1259,7 @@ export class LayerBakeService {
 				ctx,
 			));
 		if (clipped)
-			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
+			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked larger, then as a master`);
 		if (rect && plan.fullDoc && (await this.clippedAtBorder(ff, tmp, rect, seq, ctx))) {
 			// The layer drew past the planned crop (LBK-005 safety net): render the whole frame instead.
 			ctx.log(`layer-bake: ${plan.clipId} touches the crop border; re-rendering full frame`);
@@ -1544,12 +1554,31 @@ export class LayerBakeService {
 			if (inner.some(edge)) return true;
 		}
 		if (clipped)
-			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked as a master instead`);
+			ctx.log(`layer-bake: ${plan.clipId} touches the layer-still border; baked larger, then as a master`);
+		// spec 13 AS-070: a layer still is trimmed to its pixels (+ 2 transparent px, so the kernel's anti-aliased
+		// picture edge and its clamp-to-edge samples only ever see transparency): the kernel draws, streams and
+		// overlays only the glyphs, stroke and shadow, not the empty margin of the bleed estimate.
+		let out = { px, w, h };
+		let picture: Rect | undefined;
+		if (plan.picture && !clipped) {
+			const t = alphaBounds(px, w, h);
+			if (!t) {
+				picture = { x: plan.picture.x, y: plan.picture.y, w: 2, h: 2 };
+				out = { px: new Uint8Array(16), w: 2, h: 2 };
+			} else {
+				const x0 = Math.max(0, t.x0 - 2);
+				const y0 = Math.max(0, t.y0 - 2);
+				const x1 = Math.min(w, t.x1 + 2);
+				const y1 = Math.min(h, t.y1 + 2);
+				picture = { x: plan.picture.x + x0, y: plan.picture.y + y0, w: x1 - x0, h: y1 - y0 };
+				out = { px: cropRgba(px, w, x0, y0, x1 - x0, y1 - y0), w: x1 - x0, h: y1 - y0 };
+			}
+		}
 		const dir = this.entryDir(plan.key);
 		await mkdir(dir, { recursive: true });
 		const scratch = await ctx.scratchDir();
 		const tmp = join(scratch, `sheet-${plan.key}.png`);
-		await writeFile(tmp, encodePng(px, w, h));
+		await writeFile(tmp, encodePng(out.px, out.w, out.h));
 		await rename(tmp, join(dir, 'still.png'));
 		const t = this.now().toISOString();
 		const meta: LayerMeta = {
@@ -1558,12 +1587,13 @@ export class LayerBakeService {
 			recipe: plan.variant.recipe,
 			rect: plan.rect,
 			frames: plan.frames,
-			width: w,
-			height: h,
+			width: out.w,
+			height: out.h,
 			clipName: plan.clipName,
 			createdAt: t,
 			lastUsedAt: t,
 			...(clipped ? { clipped: true } : {}),
+			...(picture ? { picture } : {}),
 			material: plan.material,
 		};
 		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
@@ -1721,4 +1751,32 @@ export class LayerBakeService {
 			};
 		return { key: grade.key, path: join(dir, GRADED_FRAMES_DIR) };
 	}
+}
+
+/** The bounding box `[x0, y0, x1, y1)` of the pixels of an RGBA image with alpha > 0, or null when it is empty. */
+export function alphaBounds(
+	px: Uint8Array,
+	w: number,
+	h: number,
+): { x0: number; y0: number; x1: number; y1: number } | null {
+	let x0 = w;
+	let y0 = h;
+	let x1 = -1;
+	let y1 = -1;
+	for (let y = 0; y < h; y++)
+		for (let x = 0; x < w; x++)
+			if (px[(y * w + x) * 4 + 3]! > 0) {
+				if (x < x0) x0 = x;
+				if (x > x1) x1 = x;
+				if (y < y0) y0 = y;
+				y1 = y;
+			}
+	return x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
+}
+
+/** The `cw × ch` region at `(x, y)` of an RGBA image `w` px wide. */
+export function cropRgba(px: Uint8Array, w: number, x: number, y: number, cw: number, ch: number): Uint8Array {
+	const out = new Uint8Array(cw * ch * 4);
+	for (let r = 0; r < ch; r++) out.set(px.subarray(((y + r) * w + x) * 4, ((y + r) * w + x + cw) * 4), r * cw * 4);
+	return out;
 }

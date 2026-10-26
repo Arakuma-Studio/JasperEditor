@@ -24,6 +24,7 @@ import {
 } from '../src/export/stream/lowered.ts';
 import { planTapStream, type TapMember } from '../src/export/stream/taps.ts';
 import { layerStill, layerStillClip } from '../src/layer-bake/layer.ts';
+import { alphaBounds, cropRgba } from '../src/layer-bake/service.ts';
 import { DocBuilder } from './helpers.ts';
 
 const FPS = { num: 60000, den: 1001 };
@@ -418,6 +419,10 @@ describe('lowered maps against the shaders (AS-070, AS-073)', () => {
 		expect(baked).toMatchObject({ start: 0, duration: 1, opacity: { value: 100, keyframes: [] } });
 		const m = resolveLayerProps(baked, 0).matrix;
 		expect([m.a, m.b, m.c, m.d, m.e, m.f].map((v) => v + 0)).toEqual([1, 0, 0, 1, -pic.x, -pic.y]);
+		// Grown (the layer drew past its bleed): the box size more on every side.
+		const grown = layerStill(c, undefined, true)!;
+		expect(grown.x).toBe(pic.x - 810);
+		expect(grown.w).toBe(pic.w + 2 * 810);
 		// A static subtitle keeps the ordinary still recipe.
 		const s = subtitle();
 		expect(layerStill(clipOf(snapOf(s.d), s.clip))).toBeNull();
@@ -506,5 +511,22 @@ describe('kernel streams and the memory preflight (AS-072, AS-074)', () => {
 		const reason = compositeMemoryBlocker(big, 6 * 1024 ** 3);
 		expect(reason).toMatch(/needs ≈ \d+\.\d GB of memory \(1080 animated graphics masters/);
 		expect(reason).toMatch(/Remotion path/);
+	});
+});
+
+describe('layer still trimming (AS-070)', () => {
+	it('finds the pixels’ bounds and crops them', () => {
+		const w = 6;
+		const h = 5;
+		const px = new Uint8Array(w * h * 4);
+		expect(alphaBounds(px, w, h)).toBeNull();
+		px[(1 * w + 2) * 4 + 3] = 9;
+		px[(3 * w + 4) * 4 + 3] = 200;
+		px[(3 * w + 4) * 4] = 77;
+		expect(alphaBounds(px, w, h)).toEqual({ x0: 2, y0: 1, x1: 5, y1: 4 });
+		const c = cropRgba(px, w, 2, 1, 3, 3);
+		expect(c[(0 * 3 + 0) * 4 + 3]).toBe(9);
+		expect(c[(2 * 3 + 2) * 4]).toBe(77);
+		expect(c[(2 * 3 + 2) * 4 + 3]).toBe(200);
 	});
 });

@@ -62,7 +62,7 @@ function entryOf(
 				space: 'layer',
 				startFrame: plan.startFrame,
 				still: true,
-				lowered: plan.picture,
+				lowered: bake.picture ?? plan.picture,
 			},
 		};
 	return {
@@ -157,15 +157,6 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					: null;
 				items.push({ clip, plan, grade });
 			}
-			// One render per entry (identical layers share a bake key; graded entries have their own keys).
-			const groups = new Map<string, typeof items>();
-			for (const it of items) {
-				const k = it.grade?.key ?? it.plan.key;
-				const group = groups.get(k);
-				if (group) group.push(it);
-				else groups.set(k, [it]);
-			}
-			const renders = [...groups.values()];
 			const isMaster = (g: typeof items) => g[0]!.plan.variant.recipe === 'master';
 			// spec 13 AS-071: still bakes (static layers, lowered layers' layer stills) render together, many per sheet
 			// render; the rest (masters, single frames, spans, graded entries) one render each, as before.
@@ -175,24 +166,10 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					!grade && !plan.span && (plan.variant.recipe === 'still' || plan.variant.recipe === 'layer-still')
 				);
 			};
-			const sheetGroups = renders.filter(isSheet);
-			const singles = renders.filter((g) => !isSheet(g));
-			// Similar sizes share a sheet (its frames are as large as its largest still).
 			const area = (g: typeof items) => {
 				const r = g[0]!.plan.rect;
 				return r ? r.w * r.h : g[0]!.plan.material.width * g[0]!.plan.material.height;
 			};
-			sheetGroups.sort((a, b) => area(a) - area(b));
-			const sheets: (typeof items)[][] = [];
-			for (let i = 0; i < sheetGroups.length; i += SHEET_MAX)
-				sheets.push(sheetGroups.slice(i, i + SHEET_MAX));
-			// Side by side, the masters split the budget by length; one after the other, each takes all of it (as before).
-			const masters = singles.filter(isMaster);
-			const masterShares = pageShares(
-				masters.map((m) => m[0]!.plan.frames),
-				budget,
-			);
-			const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
 			const release = par.sharedBrowser && maxInFlight > 1 ? svc.browserSession(ctx.jobId) : null;
 			const metaOf = (g: PageGrant) => ({
 				parentId: ctx.jobId,
@@ -202,18 +179,17 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				...(release ? { browserGroup: ctx.jobId } : {}),
 				onProgress: g.progress,
 			});
-			/** The entries of a group from its bake (a clipped layer still → a master of each clip, AS-070). */
-			const finish = async (
+			/** spec 13 AS-070: layer stills that drew past their border (baked again: grown, then as masters). */
+			const clipped: typeof items = [];
+			/** The entries of a group from its bake. */
+			const finish = (
 				group: typeof items,
 				bake: BakeResult,
 				graded: { key: string; path: string; rect: Rect | null } | null,
-				meta: ReturnType<typeof metaOf>,
 			) => {
 				for (const it of group) {
 					if (bake.clipped && it.clip) {
-						const master = await svc.planBake(planned, it.clip, { env, frame: single, master: true });
-						const mb = await svc.ensureBake(master, meta);
-						out.set(it.clip.clipId, entryOf(master, mb, null, null));
+						clipped.push(it);
 						continue;
 					}
 					const entry = entryOf(it.plan, bake, it.grade, graded);
@@ -224,7 +200,31 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					}
 				}
 			};
-			try {
+			let renderCount = 0;
+			/** One round: one render per entry (identical layers share a bake key; graded entries have their own). */
+			const round = async (list: typeof items) => {
+				const groups = new Map<string, typeof items>();
+				for (const it of list) {
+					const k = it.grade?.key ?? it.plan.key;
+					const group = groups.get(k);
+					if (group) group.push(it);
+					else groups.set(k, [it]);
+				}
+				renderCount += groups.size;
+				const renders = [...groups.values()];
+				const sheetGroups = renders.filter(isSheet).sort((a, b) => area(a) - area(b));
+				const singles = renders.filter((g) => !isSheet(g));
+				// Similar sizes share a sheet (its frames are as large as its largest still).
+				const sheets: (typeof items)[][] = [];
+				for (let i = 0; i < sheetGroups.length; i += SHEET_MAX)
+					sheets.push(sheetGroups.slice(i, i + SHEET_MAX));
+				// Side by side, the masters split the budget by length; one after the other, each takes all of it.
+				const masters = singles.filter(isMaster);
+				const masterShares = pageShares(
+					masters.map((m) => m[0]!.plan.frames),
+					budget,
+				);
+				const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
 				await runPagePool(
 					[
 						...sheets.map((sheet) => ({
@@ -232,10 +232,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 							want: budget,
 							weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
 							run: async (g: PageGrant) => {
-								const meta = metaOf(g);
 								const bakes = await svc.ensureSheet(
 									sheet.map((group) => group[0]!.plan),
-									meta,
+									metaOf(g),
 								);
 								for (const group of sheet) {
 									const bake = bakes.get(group[0]!.plan.key);
@@ -245,7 +244,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 											`The bake of "${group[0]!.plan.clipName}" is missing`,
 											true,
 										);
-									await finish(group, bake, null, meta);
+									finish(group, bake, null);
 								}
 							},
 						})),
@@ -258,7 +257,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 									const meta = metaOf(g);
 									const bake = await svc.ensureBake(plan, meta);
 									const graded = grade ? await svc.ensureGraded(plan, grade, meta) : null;
-									await finish(group, bake, graded, meta);
+									finish(group, bake, graded);
 								},
 							};
 						}),
@@ -273,6 +272,27 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 							),
 					},
 				);
+			};
+			try {
+				await round(items);
+				// spec 13 AS-070: a layer still that touched its border is baked with a grown region (sheets again),
+				// then, still clipped, as a master.
+				for (const master of [false, true]) {
+					if (clipped.length === 0) break;
+					const again: typeof items = [];
+					for (const it of clipped.splice(0)) {
+						if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+						const plan = await svc.planBake(planned, it.clip!, {
+							env,
+							frame: single,
+							...(master ? { master: true } : { grow: true }),
+						});
+						again.push({ clip: it.clip, plan, grade: null });
+					}
+					await round(again);
+				}
+				if (clipped.length)
+					throw new JobError('LAYER_BAKE_FAILED', `The master of "${clipped[0]!.plan.clipName}" is clipped`, true);
 			} finally {
 				await release?.();
 			}
@@ -281,7 +301,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			for (const clip of clips) ordered.set(clip.clipId, out.get(clip.clipId)!);
 			if (out[SPANS]) ordered[SPANS] = out[SPANS];
 			ctx.log(
-				`layer-bake: ${ordered.size} layer(s) and ${out[SPANS]?.size ?? 0} transition span(s) ready (${groups.size} render(s), budget ${budget} pages, ≤ ${maxInFlight} at once${release ? ', shared browser' : ''}; engine totals ${svc.stats.rendered} rendered, ${svc.stats.reused} reused, ${svc.stats.joined} joined)`,
+				`layer-bake: ${ordered.size} layer(s) and ${out[SPANS]?.size ?? 0} transition span(s) ready (${renderCount} render(s), budget ${budget} pages, ≤ ${maxInFlight} at once${release ? ', shared browser' : ''}; engine totals ${svc.stats.rendered} rendered, ${svc.stats.reused} reused, ${svc.stats.joined} joined)`,
 			);
 			return ordered;
 		},
