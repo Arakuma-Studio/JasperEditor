@@ -419,6 +419,20 @@ describe('reactions (EA-023)', () => {
 		expect(plan.reactions.map((r) => [r.frame, r.trigger.kind])).toEqual([[90, 'hidden']]);
 	});
 
+	it('a large picture at an edge slot is moved just inside the frame (and keeps its scale cap)', () => {
+		const { h } = edit([600]);
+		reactionBin(h, ['Big'], { width: 1920, height: 1080 });
+		markers(h, [[100, 'reaction']]);
+		for (let seed = 1; seed < 8; seed++) {
+			const r = planReactions(h.doc, null, { assets: { bin: 'Reactions' }, seed }).reactions[0]!;
+			// 45 % of the frame height at most: 1080 × 0.45 / 1080 = 45 %
+			expect(r.choice.scale).toBe(45);
+			expect(r.choice.rect.x0).toBeGreaterThanOrEqual(0);
+			expect(r.choice.rect.x1).toBeLessThanOrEqual(1920);
+			expect(r.position).toEqual([(r.choice.rect.x0 + r.choice.rect.x1) / 2, (r.choice.rect.y0 + r.choice.rect.y1) / 2]);
+		}
+	});
+
 	it('refuses bad requests: no assets, unknown bin, unknown keys', () => {
 		const { h } = edit([300]);
 		expect(() => planReactions(h.doc, null, {})).toThrow(/assets/);

@@ -757,7 +757,12 @@ and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound de
 Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note); the punch-in
 accuracy on the user's projects is F1 0.62 at the default density 0.7 (0.71 at 1.0) against the spec's ≥ 0.75 target,
 which the stripped edit cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed
-whooshes have hard edges. Not yet: reactions, slides, music beds, stingers, style recipes, `apply_style`, Style Check,
+whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
+beds, stingers"): **Reactions**, **Slide Overlays**, **Music Bed**, **Stingers** (Sequence ▸ Automate, MCP
+`place_reactions` / `slide_overlays` / `lay_music_bed` / `add_stingers`); limits: reactions skip animated images and
+avoid only spec 13 subtitle text clips, their word triggers reproduce few of the user's placements (harness in the
+wp-note), music beds switch without crossfades, stinger dry runs count loudness peaks only after a measurement of the
+same mix. Not yet: style recipes, `apply_style`, Style Check,
 automatic subtitles, transcript cleanup (later work packages of specs 13–15); Refresh proposal stays disabled with the
 reason "Its producer cannot re-plan items" for features without a refresher (sound design: run the pass again). A
 keyframe-only change

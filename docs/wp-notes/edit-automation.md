@@ -386,6 +386,213 @@ default.
 - The whoosh is cut to the kit's span with hard edges (like the user's slices of a compilation); no fade is added.
 - `subject` targets need a faces roto or the engine's Reframe analysis; headless refresh of subject punch-ins
   re-measures the refreshed clips only.
-- Reactions, overlay slides, music beds, stingers, style recipes, `apply_style` and Style Check are later work packages
-  (`AUTOMATE_MENU`, `AUTOMATION_PASSES` are where they plug in).
+- Style recipes, `apply_style` and Style Check are a later work package (`AUTOMATE_MENU`, `AUTOMATION_PASSES` are
+  where they plug in); reactions, overlay slides, music beds and stingers are below.
 - Punch-in F1 below the spec's target (above).
+
+## Reactions, overlay slides, music beds, stingers (EA-023…EA-026, EA-030, EA-032, EA-033, EA-040…EA-042, EA-051)
+
+Built on branch `feat/wf-overlays`. Four more passes of feature `edit-automation`, made like the three above: a pure
+planner in `packages/project/src/automation/`, the `edit-automation` job / dry run of `POST
+/api/projects/:projectId/automation/:pass` (`reactions`, `slides`, `music`, `stingers`), the refresher (Refresh /
+Reroll), an MCP tool, a Sequence ▸ Automate dialog and Review groups Reactions / Overlay slides / Music beds /
+Stingers. Parameters are strict plain JSON (`ReactionParamsSchema`, `SlideParamsSchema`, `MusicParamsSchema`,
+`StingerParamsSchema` in `AUTOMATION_PARAM_SCHEMAS`) so the recipes work package can store them as they are; defaults
+are in `AUTOMATION_DEFAULTS`.
+
+### Code map
+
+| Layer | Files |
+|---|---|
+| Model (pure) | `automation/signals.ts` (picture cuts to snap to, trigger word lists per language, markers, face-less stretches from a faces roto, subtitle regions of spec 13 caption groups read defensively, "!" phrases, loudness peaks over the local median), `assets.ts` (asset roles: a bin by id or name, an engine folder's probed files → setup items that import them into a bin, media ids), `reactions.ts`, `slides.ts`, `music.ts`, `stingers.ts`, `overlay-items.ts` (proposal items), `common.ts` `basePictureTrack`, `params.ts`, `pass.ts` (`PassContext`: folder files, voice activity, loudness), `summary.ts`, `refresh.ts` |
+| Synth | `packages/audio-fx/src/synth/recipes.ts` `SYNTH_EXTRA_RECIPES`: `synth.static` "Synth TV static" (glitch type, 8 seeded variants, indexed with the library's Jasper Synth sounds) |
+| API / engine | `packages/api/src/automation.ts` (cost class `hybrid`, `summary.detail`, `summary.assets`), `apps/engine/src/automation/run.ts` (`passInputs`: folder listing + probing, `VoiceActivityService.forSequence`, the loudness curve with a small memory cache; `checkFolder`; the stingers' sound filtered to the recipe), `apps/engine/src/audio/service.ts` `momentaryCurve` (the offline mixer's PCM of the dialogue tracks through a BS.1770 `LoudnessMeter`, momentary loudness every 100 ms), `routes/automation.ts` (path reads only in local mode, like `/api/media/register`; folders checked at once) |
+| MCP | `apps/mcp/src/tools/automation.ts`: `place_reactions`, `slide_overlays`, `lay_music_bed`, `add_stingers`; `AUTOMATION_GUIDE` extended |
+| Editor | `apps/web/src/automation/OverlayFields.tsx` (fields of the four passes, the asset source: bin or folder with Browse… in the desktop app), `fields.tsx` (shared rows, moved out of `AutomationDialog.tsx`), `menu.ts`, `commands/automation.ts` (`automation.reactions` / `slides` / `musicBed` / `stingers`), `run.ts` |
+
+### Measured defaults (FINDINGS §3; derived for this package from the research's events.csv, rerunnable)
+
+| Pass | Default | Source |
+|---|---|---|
+| Reactions | length 2.1 s (vertical) / 2.6 s; start on a cut within 0.5 s; S_Shake Amplitude 0.8, Frequency 2; Motion scale drawn in 60…65 %, capped at 45 % of the frame height (large pictures); Horizontal Flip on the left slots; at most 12 / min (vertical; 2025's 11–15) or 1 / min (landscape, 0.9 measured) | spec, FINDINGS |
+| Reaction slots | vertical: bottom left (0.39, 0.87, flipped) 41 %, bottom centre (0.47, 0.83) 49 %, bottom right (0.63, 0.85) 10 %; landscape: (0.15, 0.523, flipped) 32 %, (0.5, 0.523) 41 %, (0.83, 0.523) 27 % | cluster medians of the user's reaction centres (108 shorts / 78 long placements; position rounded to 0.1 for clustering), shares = cluster counts |
+| Overlay slides | 30 frames, one-sided; heads 0.53 / tails 0.18 of the overlays (166 / 57 of 312 overlay clips); directions down 47 / up 33 / left 13 / right 8; Ease In Out Quad 68 % / Cubic 32 % (154 / 71 of the 225 Slides); motion blur High, 360° shutter; no dolly / reflection | events.csv `premiere_transition` Slide params (Direction 0–3 = right / left / up / down; Animation 16 / 17 = in-out quad / cubic; Motion Blur 3 = High) |
+| Music | bed 52 s, switch at the first cut after it (waiting ≤ 15 s), −33 dB clip gain, no ducking; vertical: one bed per song, −25 dB until the first cut | FINDINGS |
+| Stingers | 29 frames; noise −18 dB; ≥ 6 LU over the median of a 10 s window; 1 / min, ≥ 10 s apart (15 in 30 videos) | spec, FINDINGS; rate and spacing assumed (labelled) |
+
+### Reactions (EA-023)
+
+- Pictures (asset role "reaction images", never shipped): `assets: {bin}` (id or name; sub-bins included), `{folder}`
+  (absolute path on the engine computer: its png / jpg / webp / bmp / tiff files by name, ≤ 256, each probed and
+  registered in the engine media store; setup items `react-asset-<n>` import the ones the proposal uses into a
+  "Reactions" bin, reusing a project media of the same fingerprint) or `{mediaIds}`. GIFs (animated images) are left
+  out (their length bounds the placement).
+- Triggers, in budget order: markers whose name contains `markerMatch` ("reaction") or equals a picture's name (that
+  picture is used); calls to action and exclamations of the sequence transcript — built-in Spanish and English lists
+  (generic vocabulary, `REACTION_WORD_LISTS`; the transcript's language picks one, unknown → both), editable
+  (`words.cta`, `words.exclamations`, one phrase per line in the dialog), matched accent- and case-insensitively on
+  consecutive words, plus any word written with "!" / "¡"; optionally (`triggers.speakerNotVisible`) stretches of at
+  least 1.5 s where the A-roll's faces roto (Track Faces) shows no face, sampled every ⅕ s — without face tracking a
+  warning `W_NO_FACES` asks to run it.
+- Timing: start on the nearest picture cut within `snapSeconds` of the trigger, else on it; `durationSeconds` long;
+  no two reactions overlap (plus `minGapSeconds`); every 60 s window holds at most `maxPerMinute` (`rate` skips).
+- Look: slot by weight (not the previous reaction's slot when another fits), picture preferred by the trigger
+  (marker name, then name hints: "subscri / suscri / follow…" for calls to action, "surpris / wow / happy / xd…" for
+  exclamations, then a seeded shuffle; not the previous reaction's picture when another fits), scale drawn per item,
+  the first slot whose picture rectangle stays clear of every subtitle on screen meanwhile (`subtitleRegions`: text
+  clips with `caption.groupId`, rectangle from the text box and static Motion; empty without caption groups);
+  `subtitles` skip when none is.
+- Commands per item: `clip.place` (still, `sourceRange` of the length) on the reaction track, `param.set` scale and
+  position, `effect.add` `jasper.flip-horizontal` (left slots) then `jasper.s.shake` (wobble). Alternatives: up to 3
+  other pictures at the same slot (⇄); the item `requires` the setup items of all of them (alternatives cannot carry
+  requires). Track: an explicit `reactionTrack`, a free "Reactions" track above the A-roll, else a new one created
+  right below the first "FX" track above the A-roll (cut kits then shake the reactions, as in the user's stacks) or
+  at the top.
+- Base picture (`basePictureTrack`): the lowest video track whose picture clips and colour mattes cover half the
+  sequence — a single full-length take included (the kits' `aRollTrack` leaves those out as possible pre-renders).
+
+### Overlay slides (EA-024)
+
+- `transition.add` already supported one-sided transitions at free clip edges (`{clipId, edge}` with no clip of the
+  track touching that edge → the other side null, alignment start-at-cut / end-at-cut; a GPU transition then renders
+  from / to transparent over the clip's own frames, no handles). Verified with command tests
+  (`packages/project/test/transition-one-sided.test.ts`: Smooth Slide at the free head and tail of a still and a video
+  clip, the stages `in` / `out`, no handles, clamped to a short clip, two-sided where a clip abuts, one transition per
+  edge, undo = the document before and redo identical, refusals: not an edit point, no edge, an audio transition on
+  video, a locked track) — no command change was needed.
+- Overlays: picture clips (video, still, animated image, nest) on the video tracks above the base picture, except
+  tracks named "Reactions", "FX", "ZOOM", "Stingers" (other passes' output; `overlayTracks` names tracks explicitly),
+  not full-length layers. Each free edge draws (its own seed) whether it slides (heads / tails shares), the
+  direction and the easing; both slides must fit on the clip. Command: `transition.add {clipId, edge, effectId:
+  'jasper.smooth-slide', duration, params: {direction, animation, motionBlur, shutterAngle}}`; alternatives = the
+  other directions; Reroll redraws direction and easing.
+
+### Music beds (EA-025)
+
+- Songs (asset role "music folder"): a bin, a folder (mp3 / wav / m4a / aac / flac / ogg / opus / aiff / caf, by file
+  name) or media; order as listed or shuffled by the seed; songs without a readable length are left out.
+- Beds end end-to-end from the range start: a bed switches at the first picture cut at least `bedSeconds` after it
+  started, waiting at most `maxSwitchDelaySeconds` (else exactly at `bedSeconds`); a song that ends earlier hands over
+  at its last cut within that delay before its end, else where it ends; the last bed runs to the end; vertical
+  sequences default to one bed per song. Each bed starts at the song's beginning.
+- Gain: `clip.update {gainDb}` (−33). Intro step (vertical default): the first bed is split at the first cut — the
+  same song continuing, the first part at −25 dB — rather than volume keyframes, so the optional ducking
+  (`audio.autoDuck`, which rewrites the targets' volume keyframes in its span) cannot erase it; audibly the same step.
+  Ducking (`duck.enabled`, Essential Sound defaults 18 dB / 800 ms): regions = the dialogue stretches
+  (`dialogueSpans` with the engine's voice activity; transcribed words or dialogue clips) under each bed.
+- Item per bed `bed:<n>`; alternatives = 3 other songs for the same span (cut to their length); Reroll = another song.
+
+### Stingers (EA-026; off unless asked)
+
+- Picture: a mid-grey colour matte (`clip.addSolid`, a synthetic generator) with `jasper.noise` Amount 100 %,
+  monochrome — uniform grey noise, new every frame — on a "Stingers" track at the top. Sound: Jasper Synth "TV
+  static" (`synth.static`, band-limited flutter noise; registered from the library like any sound, licence
+  `LicenseRef-JasperEditor`), placed through sound design (cue kind `emphasis`, start-aligned, trimmed to the
+  stinger) at −18 dB; `sound: 'library'` uses library sounds of `sfx` (type glitch by default), `none` no sound.
+- Punchlines: peaks of the dialogue tracks' momentary loudness at least `thresholdLu` over the median of the
+  measurable values (> −70 LUFS) within ±5 s (`loudPeaks`), "!" phrases (transcript words, subtitle text clips and
+  caption clips), paired when the peak lies within 0.5 s of the phrase (`match`: both — default —, either, loudness,
+  exclamation). The stinger starts where the punchline ends, on a cut within `snapSeconds` after it; loudest first,
+  `maxPerMinute` and `minGapSeconds` apply.
+- The loudness is measured when proposing (and on Refresh) by `AudioService.momentaryCurve`; a dry run reuses a
+  measurement of the same mix (memory cache keyed by `mixFingerprint`) or says `W_NO_LOUDNESS` (the dialog then still
+  allows Propose with a count of 0).
+
+### Export cost (EA-033)
+
+`summary.cost.class` gains `hybrid`: the export stays native and the layer-bake extension renders only the layers
+or spans that need the browser — reactions with S_Shake (still clips with a GPU effect), stingers (the matte with
+Noise) and Smooth Slide spans (`bakesTransition`); without the layer bake the planner sends the export through
+Remotion (existing rule). Music beds are `native`. The engine tests check the planner's route for each
+(`apps/engine/test/automation-overlays.test.ts`: reactions, slides, stingers → `hybrid`; music → `native`).
+
+### Determinism, Refresh, Reroll
+
+Every item stores its seed; ids are stable keys (`react:<trigger key>` — `word:<clip>:<index>`, `marker:<id>`,
+`hidden:<clip>:<frame>` —, `slide:<clip>:in|out`, `bed:<n>`, `sting:<frame>`). The refresher re-reads the pass's
+inputs on the live document (folder, voice activity, loudness — in a scratch directory it removes) and re-plans:
+reactions find their trigger again by key and re-time between the proposal's other reactions; slides need the edge
+still free; beds keep their span (Reroll draws another song); stingers re-detect and take the nearest punchline within
+2 s (`rerollable: false`).
+
+### Accuracy harness (EA-051, private)
+
+`.prproj-analysis/research/automation-harness/`: `prepare_overlays.py` (host; after `prepare.py`) adds to each
+stripped edit the caption phrases' flags (call to action / exclamation, matched on the host against the planner's
+Spanish lists — no words leave the host) and the overlay clips above the A-roll, and writes the user's reactions,
+Slides at overlay edges and music clips as truth; `run-overlays.ts` (build VM) rebuilds each edit and runs the real
+planners with their defaults (nine placeholder reaction pictures, five 180 s placeholder songs); `compare_overlays.py`
+(host) aggregates. Measured 2026-10-26 on this branch (planning 0.98 s for all 30 videos on the VM under load):
+
+| Measure | Shorts (19) | Long form (11) |
+|---|---|---|
+| Reactions / min, planned (user) | 2.64 (6.94) | 0.44 (0.94) |
+| Reactions starting on a cut, planned (user) | 49 % (80 %) | 27 % (63 %) |
+| Median length, planned (user) | 2.10 s (2.11 s) | 2.60 s (2.58 s) |
+| User reactions matched within 0.5 s / 1 s (recall); planned on a user one within 1 s (precision) | 10 % / 16 %; 29 % | 0 % / 0 %; 0 % |
+| Left reactions flipped, planned (user) | 100 % (77 %) | 100 % (75 %) |
+| Overlay heads slid, planned (user) of 172 / 70 overlays; both | 53 (40); 15 | 24 (28); 14 |
+| Overlay tails slid, planned (user); both | 16 (8); 3 | 5 (5); 0 |
+| Beds per video, planned (user) | 1.0 (1.37) | 9.27 (7.36) |
+| Median bed length, planned (user) | 61 s (33 s) | 53.1 s (52.5 s) |
+| Bed switches on a cut, planned (user) | — (29 %) | 92 % (86 %) |
+
+Reading: the music rule reproduces the long-form bed length and switching on cuts (the user's songs are not on the
+drive, so the switch frames themselves cannot match: 10 % within 1 s). Reaction placement from words is weak, as the
+research predicted (words explain ≤ 30 % of short-form placements, none of the long form's; the inferred trigger is a
+hidden speaker, which the stripped edits cannot carry — face tracking needs the footage): the planned rate is about
+40 % of the user's and few placements coincide. Slides match the measured shares by construction; which overlays get
+one is the user's choice per overlay (agreement near chance). The speaker-not-visible trigger is tested on synthetic
+face data only.
+
+### Verification (VM `wt-overlays`)
+
+- `packages/project/test/automation-overlays.test.ts` (25): signals (word lists, accents, multi-word phrases, "!"
+  words, markers, `nearestCut` property, loudness peaks), reactions (snapping to a cut within 0.5 s, slots, flip,
+  scale, alternatives, determinism and reroll variety, marker budget and picture choice, rate cap and no overlap
+  (example and fast-check property over triggers, caps, aspects), subtitle regions with and without caption groups and
+  junk values, face-less stretches, refusals, proposal accept as one transaction with invariants, folder setup items
+  and reuse, Refresh / Reroll / dropped trigger), slides (free edges only, shares / directions / easings over 2 000
+  edges, accept → one-sided transitions and their stages, colour-matte base, other passes' tracks), music (switch on
+  the first cut ≥ 52 s, short songs, no cut, vertical intro split, accept with contiguous source and ducking keys,
+  shuffle, Reroll), stingers (pairing, snapping, rate, spacing, unmeasured warning, accept: matte + Noise on a
+  Stingers track and the generated sound's needs); `transition-one-sided.test.ts` (4).
+- `apps/engine/test/automation-overlays.test.ts` (5, real engine with an indexed kit and Jasper Synth): reactions from
+  a folder of generated PNGs (dry run stores nothing, proposal, agent accept as one revision, Reactions bin, hybrid
+  export route, Refresh after a ripple re-times to the moved cut), folder refusals (relative 400, missing 404, unknown
+  bin 404), music from a folder of generated WAVs (beds at 0 / 1 650 / 3 300 at −33 dB, native), slides (two one-sided
+  Smooth Slides, hybrid), stingers (a measured 0.6 s shout + "¡no!" → a stinger on the next cut, the matte with Noise,
+  the `synth.static` sound at −18 dB trimmed to 29 frames, hybrid).
+- `apps/mcp/test/automation.test.ts` (8): the four tools listed with annotations and strict schemas, parameters as
+  plain data with ranges in frames, the hybrid export note, the guide. `apps/web/test/automation-dialog.test.tsx`
+  (11): the Automate submenu (seven entries), Reactions without a source (Propose disabled, nothing counted), a typed
+  folder, triggers and word lists in the request, the bin guessed by name for Music Bed, the stinger dialog allowing an
+  unmeasured Propose, the summary texts.
+- `packages/audio-fx/test/sound-synth.test.ts`: the TV static recipe pinned and judged as glitch for all 8 variants.
+  The pinned bytes of five older recipes (riser, transition, pop, shimmer, zap) differ on the VM (Node 24.22) on the
+  base branch too, without this change — environment-dependent, not touched here.
+- Updated: `apps/engine/test/sounds-routes.test.ts`, `apps/mcp/test/sound.test.ts` (20 synth recipes indexed).
+- Whole suites on the VM after merging `feat/workflow` (subtitles): `@jasper/project`, `@jasper/session`,
+  `@jasper/mcp`, `@jasper/audio-fx`, `@jasper/web` 4 632 passed, 8 skipped, 5 failed (the five pinned synth hashes
+  above); engine automation / overlays / proposals / sounds / sound-design suites 77 passed; typecheck of project, api,
+  audio-fx, engine, mcp, web, session; biome on the changed files; check-layers, check-tokens; `pnpm i18n` +
+  `pnpm i18n:check` (11 528 strings).
+- In the running dev stack (VM, ports 47932 / 5202, pairing-free dev mode): Sequence ▸ Automate lists the seven
+  passes; Reactions… from a folder of three generated pictures → dry run "2 of 2 triggers get a reaction · Markers 2 ·
+  On a cut 1", Propose → Review (Reactions group) → Apply = one History entry "Accept Reactions (7 of 7)" (the
+  reaction track, the bin and three imports), the reaction picture at the right slot in the Program monitor; Music
+  Bed… from a folder of two generated songs → two beds (0–1 558 at −33 dB, then the second song); Slide Overlays… on an
+  overlay picture → one Smooth Slide in from the right, seen mid-move with its motion blur in the Program monitor;
+  Stingers… → the unmeasured warning with Propose enabled. This found and fixed two defects: slides treated the
+  reactions' track as overlays (now the other passes' tracks are excluded), and a colour-matte base was not counted as
+  the base picture (then every overlay track above it was missed).
+
+### Limits
+
+- Reactions do not use animated images (GIF); "speaker not visible" needs a faces roto on the A-roll (Track Faces);
+  subtitle avoidance covers spec 13 subtitle text clips (caption groups), not caption-track captions.
+- Word triggers are a weak stand-in for the user's choices (harness above); markers are the reliable trigger.
+- Music beds cut between songs without crossfades (the user's switch on cuts); the intro step is a split, not keys.
+- Stingers' loudness is measured on the dialogue tracks (the dialogue stretches' tracks, else every audio track) when
+  proposing and refreshing (a mixdown of the sequence); a dry run counts "!" phrases unless the same mix was measured.
+- The overlay passes' Refresh re-reads folders and re-measures loudness: slower than the kits' refresh.

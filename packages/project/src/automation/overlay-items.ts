@@ -20,7 +20,13 @@ import {
 	refKey,
 	soundSetup,
 } from './proposal.ts';
-import type { ReactionChoice, ReactionPlacement, ReactionPlan, ReactionTrigger } from './reactions.ts';
+import {
+	type ReactionChoice,
+	type ReactionPlacement,
+	type ReactionPlan,
+	type ReactionTrigger,
+	reactionPosition,
+} from './reactions.ts';
 import { placedSpan, sfxCommands } from './sfx.ts';
 import { type SlideChoice, type SlidePlacement, type SlidePlan, SMOOTH_SLIDE_ID } from './slides.ts';
 import { STINGER_MATTE, STINGER_NOISE, type StingerPlacement, type StingerPlan } from './stingers.ts';
@@ -92,7 +98,7 @@ function reactionCommands(
 			ref,
 		},
 		{ type: 'param.set', target: ['clip', ref, 'transform', 'scale'], value: c.scale },
-		{ type: 'param.set', target: ['clip', ref, 'transform', 'position'], value: r.position },
+		{ type: 'param.set', target: ['clip', ref, 'transform', 'position'], value: reactionPosition(c.rect) },
 		...(r.flip ? [{ type: 'effect.add', target: { clipId: ref }, effectId: 'jasper.flip-horizontal' }] : []),
 		...(wobble.enabled
 			? [

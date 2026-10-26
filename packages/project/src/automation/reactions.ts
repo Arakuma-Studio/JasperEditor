@@ -121,7 +121,7 @@ export type ReactionPlacement = {
 	/** The cut it starts on (snapped), or null. */
 	cut: { trackId: string; frame: number } | null;
 	slot: ReactionSlot & { index: number };
-	/** Sequence pixels of the picture's centre. */
+	/** Sequence pixels of the chosen picture's centre (the slot's, kept inside the frame). */
 	position: [number, number];
 	flip: boolean;
 	choice: ReactionChoice;
@@ -309,10 +309,18 @@ function rectFor(asset: PassAsset, slot: ReactionSlot, scale: number, geo: Frame
 	const side = Math.min(geo.width, geo.height) / 4;
 	const w = asset.width && asset.width > 0 ? (asset.width * scale) / 100 : side;
 	const h = asset.height && asset.height > 0 ? (asset.height * scale) / 100 : side;
-	const cx = slot.x * geo.width;
-	const cy = slot.y * geo.height;
+	// the slot's centre, moved just enough to keep a picture that fits the frame inside it
+	const inside = (c: number, half: number, size: number) => (2 * half <= size ? Math.min(Math.max(c, half), size - half) : size / 2);
+	const cx = inside(slot.x * geo.width, w / 2, geo.width);
+	const cy = inside(slot.y * geo.height, h / 2, geo.height);
 	return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 };
 }
+
+/** The Motion position (picture centre, sequence px) of a choice's rectangle. */
+export const reactionPosition = (r: ScreenRect): [number, number] => [
+	Math.round(((r.x0 + r.x1) / 2) * 100) / 100,
+	Math.round(((r.y0 + r.y1) / 2) * 100) / 100,
+];
 
 /** Pictures in the order a trigger prefers them: a marker naming one, then name hints of the kind, then the others. */
 function preferred(assets: readonly PassAsset[], t: ReactionTrigger, rng: () => number): PassAsset[] {
@@ -398,7 +406,7 @@ function chooseAt(
 				trigger: t.trigger,
 				cut: t.cut,
 				slot: { ...slot, index: si },
-				position: [Math.round(slot.x * geo.width * 100) / 100, Math.round(slot.y * geo.height * 100) / 100],
+				position: reactionPosition(rect),
 				flip: slot.flip === true,
 				choice: { asset, scale, rect },
 				alternatives,
