@@ -23,11 +23,10 @@ const OUT = join(ROOT, 'test-results', 'e2e-subtitles');
 mkdirSync(OUT, { recursive: true });
 const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 
-/** The fixture recipes' H.264 encoder choice (libopenh264 under JASPER_FFMPEG_LGPL_ONLY=1). */
+/** H.264 through OpenH264, the encoder an LGPL-only FFmpeg has (AGENTS §2; `pnpm e2e` provides that build). */
 function h264Args(): string[] {
 	const enc = spawnSync(FFMPEG, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '';
-	if (process.env.JASPER_FFMPEG_LGPL_ONLY !== '1' && /\blibx264\b/.test(enc))
-		return ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', '30'];
+	if (!/\blibopenh264\b/.test(enc)) throw new Error(`${FFMPEG} has no libopenh264 encoder; set JASPER_FFMPEG to the LGPL build`);
 	return ['-c:v', 'libopenh264', '-b:v', '1M', '-allow_skip_frames', '0', '-pix_fmt', 'yuv420p', '-g', '30'];
 }
 
