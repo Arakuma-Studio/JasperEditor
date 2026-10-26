@@ -439,7 +439,9 @@ are in `AUTOMATION_DEFAULTS`.
 - Look: slot by weight (not the previous reaction's slot when another fits), picture preferred by the trigger
   (marker name, then name hints: "subscri / suscri / follow…" for calls to action, "surpris / wow / happy / xd…" for
   exclamations, then a seeded shuffle; not the previous reaction's picture when another fits), scale drawn per item,
-  the first slot whose picture rectangle stays clear of every subtitle on screen meanwhile (`subtitleRegions`: text
+  the slot's centre moved just enough to keep a picture that fits the frame inside it (found in the e2e's extracted
+  frame: a 45 % full-HD picture at the left slot hung off the edge), the first slot whose picture rectangle stays
+  clear of every subtitle on screen meanwhile (`subtitleRegions`: text
   clips with `caption.groupId`, rectangle from the text box and static Motion; empty without caption groups);
   `subtitles` skip when none is.
 - Commands per item: `clip.place` (still, `sourceRange` of the length) on the reaction track, `param.set` scale and
@@ -568,6 +570,12 @@ face data only.
   (11): the Automate submenu (seven entries), Reactions without a source (Propose disabled, nothing counted), a typed
   folder, triggers and word lists in the request, the bin guessed by name for Music Bed, the stinger dialog allowing an
   unmeasured Propose, the summary texts.
+- `e2e/automation-overlays.spec.ts` (`pnpm e2e`, VM, LGPL FFmpeg): Sequence ▸ Automate ▸ Reactions… on three colour
+  mattes with a "reaction" marker 4 frames after the first cut and the generated `still.png` in a "Reactions" bin →
+  dry run (the bin found by name, one reaction, hybrid cost) → Propose → Review (Reactions) → Accept all → Ctrl+Enter
+  (one History entry "Accept Reactions …") → the still on a new Reactions track at the cut (frame 60), 78 frames, with
+  S_Shake → export: frames under the reaction differ from the undecorated export, frame 30 matches; the extracted
+  frame 90 shows the picture flipped at the left slot, inside the frame — passed (40 s).
 - `packages/audio-fx/test/sound-synth.test.ts`: the TV static recipe pinned and judged as glitch for all 8 variants.
   The pinned bytes of five older recipes (riser, transition, pop, shimmer, zap) differ on the VM (Node 24.22) on the
   base branch too, without this change — environment-dependent, not touched here.
