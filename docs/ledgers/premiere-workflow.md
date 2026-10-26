@@ -173,4 +173,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   rate limit; textrender, cleanup, speech, kits merged; cleanupui and overlays launched; note: mcp grading.test.ts failed 3×
   under full-suite load, passes alone before and after the styling merge (recheck in the final gate); VM lock switched to a want-file queue
   after starvation in both directions; fix: ambiguous `transcriptSegments` package export after the cleanup and speech
-  merges (2760136a); subtitles merged.
+  merges (2760136a); subtitles merged; integrated full suite on the VM (1243bcb7): 8,151 passed, 9 failed — 7 known
+  (5 Jasper Synth hashes, ZIP-1 memory, Electron needs libgtk on the VM) + 2 fixed in ebdeb1bb (crop edge coverage
+  rounding to 0.9999999999999996, regression test fails before; subtitles e2e named libx264 → OpenH264 only; e2e 3/3
+  with `JASPER_FFMPEG_LGPL_ONLY=1`).
