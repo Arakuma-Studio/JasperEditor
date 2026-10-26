@@ -47,6 +47,7 @@ import { soundDesignCommands } from './sound-design.ts';
 import { soundMixCommands } from './sound-mix.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
+import { subtitleCommands } from './subtitles.ts';
 import { textAnimationCommands } from './text-animation.ts';
 import { textStyleCommands } from './text-styles.ts';
 import { threeDCommands } from './three-d.ts';
@@ -121,6 +122,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	fontCommands,
 	// spec 13 AS-032: Select ▸ Same Style, linked text styles
 	textStyleCommands,
+	// spec 13 AS-040: Create Subtitles, Align Subtitles to Cuts, Select ▸ Subtitle Group / Same Template
+	subtitleCommands,
 ];
 
 let registered = false;

@@ -167,6 +167,8 @@ export function appdirPaths(appdir: string) {
 		/** User libraries shared by every project and by agents (S03:FX-030 effect presets). */
 		presetsDir: join(appdir, 'presets'),
 		effectPresetsFile: join(appdir, 'presets', 'effect-presets.json'),
+		/** spec 13 AS-020: the user subtitle template library. */
+		subtitleTemplatesFile: join(appdir, 'presets', 'subtitle-templates.json'),
 		/** Spec 14 TC-030: the user's transcript cleanup presets. */
 		cleanupPresetsFile: join(appdir, 'presets', 'cleanup-presets.json'),
 		/** wp fonts: the user font library (`library.json` + `files/<fontId>.<ext>`), shared by every project. */

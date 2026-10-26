@@ -590,6 +590,11 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
   `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
   (`docs/wp-notes/captions.md`).
+- Automatic subtitles as text clips (spec 13): `captions_from_transcript` (output, template, rules, text, cutAware,
+  dryRun: one undo step) `list_caption_groups` `align_captions_to_cuts` `regenerate_captions` `convert_captions`
+  (subtitle group ↔ caption track) `export_captions {groupId}` (SRT / VTT of a group) · templates
+  `list_subtitle_templates` `save_subtitle_template` `apply_subtitle_template` `delete_subtitle_template`
+  (`docs/wp-notes/auto-subtitles.md`).
 - Many text clips at once and linked text styles: `style_text` (a deep style patch and effects with keys timed from
   each clip's In, on clip ids, `"$selection"` or a subtitle group, one undo step) `list_text_styles`
   `create_text_style` `apply_text_style` (apply / detach / reset) `update_text_style` `delete_text_style`

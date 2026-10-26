@@ -34,6 +34,7 @@ import {
 } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GenerateTranscriptButton, TranscriptionStatus } from '../../speech/TextPanelHooks.tsx';
+import { openCreateSubtitles } from '../../subtitles/open.ts';
 import { CleanupMode } from './cleanup/CleanupMode.tsx';
 import { cleanupFor } from './cleanup/controller.ts';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
@@ -340,6 +341,14 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					data-testid="text.transcript.createCaptions"
 				>
 					Create Captions…
+				</Button>
+				<Button
+					variant="quiet"
+					onClick={() => openCreateSubtitles(session, seq.id)}
+					title="Subtitles as editable text clips with a template, more rules and cut-aware timing"
+					data-testid="text.transcript.createSubtitles"
+				>
+					Create Subtitles…
 				</Button>
 				<Button
 					variant={tool === 'import' ? 'secondary' : 'quiet'}
@@ -734,7 +743,9 @@ function CaptionsTool(p: {
 }
 
 function ImportTranscript(p: { media: Array<[string, string]>; apply: ApplyFn; onDone?(): void }) {
-	const [mediaId, setMediaId] = useState(p.media[0]?.[0] ?? '');
+	const [chosen, setMediaId] = useState(p.media[0]?.[0] ?? '');
+	// the media list changes while the tool is open (clips placed after it mounted): keep the choice valid
+	const mediaId = p.media.some(([id]) => id === chosen) ? chosen : (p.media[0]?.[0] ?? '');
 	const fileRef = useRef<HTMLInputElement>(null);
 	if (!p.media.length)
 		return (
