@@ -178,7 +178,8 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				const byTrack = new Map<string, typeof items>();
 				for (const it of items) {
 					const c = it.clip;
-					if (!c || it.grade || it.plan.span || it.plan.variant.recipe !== 'master' || !runEligible(c)) continue;
+					if (!c || it.grade || it.plan.span || it.plan.variant.recipe !== 'master' || !runEligible(c))
+						continue;
 					const list = byTrack.get(c.trackId) ?? [];
 					list.push(it);
 					byTrack.set(c.trackId, list);

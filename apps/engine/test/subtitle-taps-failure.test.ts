@@ -18,7 +18,9 @@ function member(id: string, f0: number, f1: number, source = 'color=c=red'): Tap
 		clipId: id,
 		f0,
 		f1,
-		pictures: [{ w, h: w, inputs: [['-f', 'lavfi', '-i', `${source}:s=${w}x${w}:r=1`]], filter: '[0:v]format=rgba' }],
+		pictures: [
+			{ w, h: w, inputs: [['-f', 'lavfi', '-i', `${source}:s=${w}x${w}:r=1`]], filter: '[0:v]format=rgba' },
+		],
 		frames: Array.from({ length: f1 - f0 }, () => ({
 			rect: [0, 0, 512, 512] as [number, number, number, number],
 			opacity: 1,
@@ -50,7 +52,9 @@ describe('kernel stream failure (AS-074)', () => {
 			});
 			sink.on('error', () => undefined);
 			const ac = new AbortController();
-			await expect(streamTaps(ff, plan, sink, { workers: 4, signal: ac.signal })).rejects.toThrow(/layer stream/);
+			await expect(streamTaps(ff, plan, sink, { workers: 4, signal: ac.signal })).rejects.toThrow(
+				/layer stream/,
+			);
 			// Let the closed pool's rejections settle.
 			await new Promise((r) => setTimeout(r, 200));
 			expect(unhandled.map(String)).toEqual([]);

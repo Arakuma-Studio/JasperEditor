@@ -107,8 +107,7 @@ export function estimateComposite(
 			if (k === 'master') {
 				inputs.masters++;
 				masters.push(c);
-			}
-			else if (k === 'still') inputs.stills++;
+			} else if (k === 'still') inputs.stills++;
 			else if (k === 'stream') inputs.streams++;
 			else if (k === 'media') inputs.media++;
 		}
