@@ -5,7 +5,7 @@
 // from the document as it is (hand edits included), with the passes' own definitions:
 //   - cuts: picture cuts and jump cuts of the cut map (spec 13 SH-001) on the picture tracks (the FX, ZOOM,
 //     Reactions, Stingers and Subtitles tracks of the passes left out);
-//   - a kit: an enabled adjustment clip over the cut (it starts before the cut frame and ends after it);
+//   - a kit: an enabled adjustment clip on the frame before the cut or on the cut frame (a kit or its before / after pair);
 //   - a punch-in: an A-roll clip whose Motion scale rises ≥ 15 % within 15 frames from a key after its first frame, or a
 //     Transform adjustment clip on a ZOOM track; its start = that key;
 //   - a Ken Burns move: scale keys on (about) the clip's first and last frame, changing by 5–60 %;
@@ -214,7 +214,9 @@ export function styleCheck(
 	// ---- kit coverage
 	{
 		const adj = Object.values(seq.clips).filter((c) => c.kind === 'adjustment' && c.enabled !== false);
-		const covered = (f: number) => adj.some((c) => c.start < f && c.start + c.duration > f);
+		// a kit covers the frame before the cut or the cut frame (one clip around it, or a before + after pair)
+		const covered = (f: number) =>
+			adj.some((c) => (c.start <= f - 1 && c.start + c.duration > f - 1) || (c.start <= f && c.start + c.duration > f));
 		const bare = cuts.filter((f) => !covered(f));
 		const v = cuts.length ? (cuts.length - bare.length) / cuts.length : null;
 		const m = targetMetric('kitCoverage', 'share', v, T.kitCoverage, {

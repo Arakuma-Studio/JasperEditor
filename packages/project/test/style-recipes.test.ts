@@ -94,7 +94,7 @@ function talk(
 	const placed = r.results.map((x) => (x as { clipIds: string[] }).clipIds);
 	for (const o of opts.overlays ?? []) {
 		const img = (h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image', width: 800, height: 600 }) }]).results[0] as { mediaId: string }).mediaId;
-		h.ok([{ type: 'clip.place', source: { mediaId: img }, at: o, tracks: { video: 'V2' }, duration: 60 }]);
+		h.ok([{ type: 'clip.place', source: { mediaId: img }, at: o, tracks: { video: 'V2' }, sourceRange: { in: { flicks: 0 }, out: { flicks: 60 * F } } }]);
 	}
 	if (opts.reactions)
 		h.ok([
@@ -410,14 +410,14 @@ describe('Apply Style (EA-012)', () => {
 		expect(rest.r.ok).toBe(true);
 		const shape = (d: typeof together) =>
 			Object.values(Object.values(d.sequences)[0]!.clips)
-				.map((c) => `${c.kind}:${c.start}:${c.duration}:${JSON.stringify((c as { transform?: { scale?: unknown } }).transform?.scale ?? null)}`)
+				.map((c) => `${c.kind}:${c.start}:${c.duration}:${JSON.stringify((c as { transform?: { scale?: unknown } }).transform?.scale ?? null).replace(/"id":"[^"]+",/g, '')}`)
 				.sort();
 		expect(shape(t.h.doc)).toEqual(shape(together));
 		expect(all.r.ok).toBe(true);
 	});
 
 	it('reports missing roles and a missing transcript with actionable messages, never silently', async () => {
-		const t = talk([150, 120, 200], { vertical: true, transcript: false });
+		const t = talk([150, 120, 200, 90, 160, 120, 100, 140, 150, 90], { vertical: true, transcript: false });
 		const plan = await planStyle(t.h.doc, { recipe: recipe('builtin:fast-shorts') }, {}, OPTS);
 		const by = Object.fromEntries(plan.stages.map((s) => [s.stage, s]));
 		expect(by.cleanup!.status).toBe('skipped');
