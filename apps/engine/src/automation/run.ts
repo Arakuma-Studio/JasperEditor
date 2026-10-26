@@ -4,10 +4,17 @@
 //   1. the live document (the open editor's when one holds the project, else the saved one);
 //   2. punch-ins toward the subject: clips without a faces roto get the subject from the Auto Reframe analysis (the
 //      face model when installed, else saliency), measured inline on the frames where the zoom starts;
-//   3. the pass's sounds through the sound-design system: the library's sounds of the role (`whoosh`), from the allowed
-//      sources / pack / folder, ranked and rotated by the pure helpers, registered for the project (setup items);
-//   4. the budget (E_TOO_LARGE with a range that fits), then the proposal through the proposals service.
+//   3. the overlay passes' inputs: the user's files of a folder (reaction images, songs), probed and registered in the
+//      engine's media store (the proposal's setup items add them to the project), the dialogue's voice activity (music
+//      ducking) and the dialogue's momentary loudness (stinger punchlines, rendered by the offline mixer);
+//   4. the pass's sounds through the sound-design system: the library's sounds of the role (`whoosh`; the stingers'
+//      generated TV static), from the allowed sources / pack / folder, ranked and rotated by the pure helpers,
+//      registered for the project (setup items);
+//   5. the budget (E_TOO_LARGE with a range that fits), then the proposal through the proposals service.
 // Nothing is applied: the user reviews the proposal (or an allowed agent accepts it).
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import {
 	type AutomationPassId,
 	type AutomationPassResult,
@@ -22,7 +29,13 @@ import {
 	automationReportOf,
 	automationSequence,
 	type ClipSubject,
+	dialogueSpans,
 	FLICKS_PER_SECOND,
+	type FolderAsset,
+	type LoudnessCurve,
+	MAX_PASS_ASSETS,
+	mixFingerprint,
+	type PassContext,
 	type PassSfx,
 	type ProjectDocument,
 	type Proposal,
@@ -41,10 +54,13 @@ import {
 	sfxPool,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
+import type { AudioService } from '../audio/service.ts';
 import type { ReframeService } from '../gaps/reframe.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
+import type { MediaService } from '../media/service.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import { liveDocument } from '../sound-design/plan.ts';
+import type { VoiceActivityService } from '../sound-design/voice.ts';
 import type { SoundService } from '../sounds/service.ts';
 import { HttpError } from '../tools/reply.ts';
 
@@ -53,6 +69,13 @@ export type AutomationDeps = {
 	proposals: () => ProposalService | undefined;
 	sounds: () => SoundService | undefined;
 	reframe: () => ReframeService | undefined;
+	/** Folder sources (reactions, music): the engine's media service, and whether paths may be read (local mode). */
+	media?: () => MediaService | undefined;
+	localPaths?: () => boolean;
+	/** Music ducking: the dialogue's voice activity. */
+	voice?: () => VoiceActivityService | undefined;
+	/** Stingers: the dialogue's momentary loudness. */
+	audio?: () => AudioService | undefined;
 };
 
 export type AutomationJobInput = {
@@ -90,13 +113,207 @@ export function planOrThrow(
 	pass: AutomationPassId,
 	sequenceId: string | undefined,
 	params: Record<string, unknown>,
-	subjects?: Readonly<Record<string, ClipSubject>>,
+	ctx: PassContext = {},
 ): AutomationPlan {
 	try {
-		return planPass(doc, pass, sequenceId, params, subjects ? { subjects } : {});
+		return planPass(doc, pass, sequenceId, params, ctx);
 	} catch (e) {
 		return inputError(e);
 	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Overlay pass inputs (folders, voice activity, loudness)
+
+const IMAGE_FILES = /\.(png|jpe?g|webp|bmp|tiff?)$/i;
+const AUDIO_FILES = /\.(mp3|wav|m4a|aac|flac|ogg|oga|opus|aiff?|caf)$/i;
+const FOLDER_CONCURRENCY = 4;
+const stripExt = (n: string) => n.replace(/\.[^.]+$/, '') || n;
+
+/** A folder source may be read: local mode, an absolute path, an existing directory (else an HttpError). */
+export async function checkFolder(deps: AutomationDeps, folder: string): Promise<void> {
+	if (deps.localPaths && !deps.localPaths())
+		throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Folders can only be read in local mode', {
+			code: 'E_LOCAL_ONLY',
+		});
+	if (!isAbsolute(folder))
+		throw new HttpError(400, 'VALIDATION_FAILED', 'assets.folder must be an absolute path', {
+			code: 'E_INVALID_PARAM',
+		});
+	const st = await stat(folder).catch(() => null);
+	if (!st?.isDirectory())
+		throw new HttpError(404, 'NOT_FOUND', `Folder not found: ${folder.slice(0, 300)}`, {
+			code: 'E_NOT_FOUND',
+		});
+}
+
+/**
+ * The image or audio files of an engine-local folder (not recursive, by name, at most MAX_PASS_ASSETS), each probed and
+ * registered in the engine's media store (not the project: the proposal's setup items add the ones it uses).
+ */
+export async function folderAssets(
+	deps: AutomationDeps,
+	folder: string,
+	role: 'image' | 'audio',
+	opts: { projectId?: string; signal?: AbortSignal } = {},
+): Promise<{ files: FolderAsset[]; warnings: { code: string; message: string }[] }> {
+	await checkFolder(deps, folder);
+	const media = deps.media?.();
+	if (!media) throw new HttpError(503, 'NOT_AVAILABLE', 'The media service is not running');
+	const re = role === 'image' ? IMAGE_FILES : AUDIO_FILES;
+	const names = (await readdir(folder, { withFileTypes: true }))
+		.filter((d) => d.isFile() && re.test(d.name) && !d.name.startsWith('.'))
+		.map((d) => d.name)
+		.sort((a, b) => a.localeCompare(b))
+		.slice(0, MAX_PASS_ASSETS);
+	const out: (FolderAsset | null)[] = names.map(() => null);
+	const warnings: { code: string; message: string }[] = [];
+	let next = 0;
+	const worker = async () => {
+		while (next < names.length && !opts.signal?.aborted) {
+			const i = next++;
+			const name = names[i]!;
+			try {
+				const reg = await media.registerPath(
+					join(folder, name),
+					opts.projectId ? { projectId: opts.projectId } : {},
+				);
+				out[i] = {
+					name,
+					fingerprint: reg.fingerprint,
+					register: mediaRegisterCommand(reg, '$x', '$xi', stripExt(name)) as FolderAsset['register'],
+				};
+			} catch (e) {
+				warnings.push({
+					code: 'W_ASSET_UNREADABLE',
+					message: `${name}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300),
+				});
+			}
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(FOLDER_CONCURRENCY, Math.max(1, names.length)) }, worker));
+	return { files: out.filter((x): x is FolderAsset => !!x), warnings };
+}
+
+/** Audio tracks carrying the dialogue (the stretches' tracks), else every audio track. */
+function dialogueTrackIds(doc: ProjectDocument, sequenceId: string): string[] {
+	const seq = automationSequence(doc, sequenceId);
+	const ids = new Set<string>();
+	for (const s of dialogueSpans(doc, seq)) for (const t of s.trackIds) ids.add(t);
+	const audio = new Set(seq.audioTracks.map((t) => t.id));
+	const list = [...ids].filter((t) => audio.has(t));
+	return list.length ? list : seq.audioTracks.map((t) => t.id);
+}
+
+/** Recent loudness curves (dry runs reuse a proposal's or an earlier run's measurement of the same mix). */
+const CURVES = new Map<string, LoudnessCurve>();
+const MAX_CURVES = 8;
+function rememberCurve(key: string, c: LoudnessCurve) {
+	CURVES.delete(key);
+	CURVES.set(key, c);
+	while (CURVES.size > MAX_CURVES) CURVES.delete(CURVES.keys().next().value!);
+}
+
+type InputMode =
+	| { mode: 'dry' }
+	| { mode: 'job'; ctx: Pick<JobContext, 'signal' | 'trackChild' | 'scratchDir' | 'progress'> };
+
+/**
+ * What the overlay passes need from the engine (see the file comment). Dry runs probe folders but measure nothing new:
+ * voice activity from the caches only, loudness only when a curve of the same mix is remembered.
+ */
+export async function passInputs(
+	deps: AutomationDeps,
+	input: { projectId: string; pass: AutomationPassId; sequenceId?: string; params: Record<string, unknown> },
+	doc: ProjectDocument,
+	revision: number,
+	m: InputMode,
+): Promise<{ ctx: PassContext; warnings: { code: string; message: string }[] }> {
+	const ctx: PassContext = {};
+	const warnings: { code: string; message: string }[] = [];
+	const p = input.params as {
+		assets?: { folder?: string };
+		duck?: { enabled?: boolean };
+		match?: string;
+	};
+	if ((input.pass === 'reactions' || input.pass === 'music') && typeof p.assets?.folder === 'string') {
+		const r = await folderAssets(deps, p.assets.folder, input.pass === 'reactions' ? 'image' : 'audio', {
+			...(m.mode === 'job' ? { projectId: input.projectId, signal: m.ctx.signal } : {}),
+		});
+		ctx.folder = r.files;
+		warnings.push(...r.warnings);
+	}
+	let seqId: string;
+	try {
+		seqId = automationSequence(doc, input.sequenceId).id;
+	} catch (e) {
+		return inputError(e);
+	}
+	if (input.pass === 'music' && p.duck?.enabled === true) {
+		const voice = deps.voice?.();
+		if (voice) {
+			try {
+				const v = await voice.forSequence(doc, doc.sequences[seqId]!, {
+					mode: m.mode === 'dry' ? 'cached' : 'compute',
+					...(m.mode === 'job' ? { signal: m.ctx.signal } : {}),
+				});
+				ctx.voice = v.voice;
+				if (v.state === 'partial' || v.state === 'failed')
+					warnings.push({
+						code: 'W_VOICE_PARTIAL',
+						message: `Voice activity was measured for ${v.measured} of ${v.measured + v.missing} dialogue clips (the others duck over their whole span)`,
+					});
+			} catch {
+				if (m.mode === 'job' && m.ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				warnings.push({
+					code: 'W_VOICE_PARTIAL',
+					message: 'Voice activity could not be measured: the beds duck over the whole dialogue clips',
+				});
+			}
+		}
+	}
+	if (input.pass === 'stingers' && p.match !== 'exclamation') {
+		const tracks = dialogueTrackIds(doc, seqId);
+		const key = `${input.projectId}:${seqId}:${mixFingerprint(doc, seqId)}:${tracks.join(',')}`;
+		const known = CURVES.get(key);
+		if (known) ctx.loudness = known;
+		else if (m.mode === 'job') {
+			const audio = deps.audio?.();
+			if (!audio)
+				warnings.push({
+					code: 'W_NO_LOUDNESS',
+					message: 'The audio analysis is not running: loudness peaks were not measured',
+				});
+			else {
+				m.ctx.progress(0.05, { stage: 'Measuring the loudness of the dialogue' });
+				try {
+					const c = await audio.momentaryCurve(
+						{ document: doc, revision, sequenceId: seqId, trackIds: tracks },
+						{
+							signal: m.ctx.signal,
+							trackChild: m.ctx.trackChild,
+							scratchDir: m.ctx.scratchDir,
+							onProgress: (f) =>
+								m.ctx.progress(0.05 + 0.3 * f, { stage: 'Measuring the loudness of the dialogue' }),
+						},
+					);
+					rememberCurve(key, c);
+					ctx.loudness = c;
+				} catch (e) {
+					if (m.ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+					warnings.push({
+						code: 'W_LOUDNESS_FAILED',
+						message:
+							`The loudness could not be measured (${e instanceof Error ? e.message : String(e)})`.slice(
+								0,
+								300,
+							),
+					});
+				}
+			}
+		}
+	}
+	return { ctx, warnings };
 }
 
 export function validParams(pass: AutomationPassId, raw: unknown): Record<string, unknown> {
@@ -196,7 +413,10 @@ async function pickSounds(
 ): Promise<SfxPick | null> {
 	if (!needs || !sounds) return null;
 	const pool = await sounds.rankingPool(needs.sfx.sources as never);
-	const usable = sfxPool(pool.entries as (SoundEntry & { source: { type: string } })[], needs.sfx);
+	const usable = sfxPool(
+		pool.entries as (SoundEntry & { source: { type: string; recipe?: string } })[],
+		needs.sfx,
+	).filter((e) => !needs.recipe || (e.source as { recipe?: string }).recipe === needs.recipe);
 	const ranked = rankSfx(usable, needs.sfx, { windowSec: needs.windowSec, visualKind: needs.visualKind });
 	const assign = assignSfx(needs.items, ranked, { sequenceId, variety: needs.sfx.variety });
 	return {
@@ -278,7 +498,8 @@ export async function dryRunPass(
 	const agent = deps.agent();
 	if (!agent) throw new HttpError(503, 'NOT_AVAILABLE', 'The agent service is not running');
 	const { doc, revision } = await liveDocument(agent, input.projectId);
-	const plan = planOrThrow(doc, input.pass, input.sequenceId, input.params);
+	const inputs = await passInputs(deps, input, doc, revision ?? 0, { mode: 'dry' });
+	const plan = planOrThrow(doc, input.pass, input.sequenceId, input.params, inputs.ctx);
 	const needs = sfxNeeds(doc, plan, input.params as { sfx?: never });
 	const pick = await pickSounds(deps.sounds(), needs, plan.sequenceId);
 	// Sound commands counted as if placed (the budget of the real proposal); the picture items are exact.
@@ -287,7 +508,7 @@ export async function dryRunPass(
 	const extra = pick ? pick.assign.size * 4 : 0;
 	const budget = budgetOf(items.items);
 	const fits = budget.fits && budget.commands + extra <= 5000;
-	const warnings = [...summary.warnings];
+	const warnings = [...summary.warnings, ...inputs.warnings];
 	if (needs && !pick?.available)
 		warnings.push({
 			code: 'W_NO_SOUNDS',
@@ -363,10 +584,12 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 	if (!agent || !proposals)
 		throw new JobError('NOT_AVAILABLE', 'The agent or proposal service is not running', true);
 	ctx.progress(0.02, { stage: 'Reading the edit' });
-	const { doc } = await liveDocument(agent, input.projectId);
+	const { doc, revision } = await liveDocument(agent, input.projectId);
 	const params = validParams(input.pass, input.params);
-	let plan = planOrThrow(doc, input.pass, input.sequenceId, params);
-	const warnings: { code: string; message: string }[] = [];
+	const inputs = await passInputs(deps, { ...input, params }, doc, revision ?? 0, { mode: 'job', ctx });
+	if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+	let plan = planOrThrow(doc, input.pass, input.sequenceId, params, inputs.ctx);
+	const warnings: { code: string; message: string }[] = [...inputs.warnings];
 	if (
 		plan.pass === 'punch-ins' &&
 		params.target === 'subject' &&
@@ -375,7 +598,7 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 		ctx.progress(0.05, { stage: 'Finding the subject' });
 		const m = await measureSubjects(doc, plan, deps.reframe(), ctx, input.projectId);
 		if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-		plan = planOrThrow(doc, input.pass, input.sequenceId, params, m.subjects);
+		plan = planOrThrow(doc, input.pass, input.sequenceId, params, { ...inputs.ctx, subjects: m.subjects });
 	}
 	ctx.progress(0.35, { stage: 'Choosing sounds' });
 	const needs = sfxNeeds(doc, plan, params as { sfx?: never });
@@ -510,9 +733,44 @@ export function automationRefresher(deps: AutomationDeps) {
 				)
 			).subjects;
 		}
+		// the overlay passes re-read their folder, the dialogue's voice activity and loudness on the live document
+		let passCtx: PassContext = {};
+		if (rep.pass === 'reactions' || rep.pass === 'music' || rep.pass === 'stingers') {
+			const ac = new AbortController();
+			let scratch: string | null = null;
+			try {
+				const r = await passInputs(
+					deps,
+					{
+						projectId: input.projectId,
+						pass: rep.pass,
+						...(input.proposal.sequenceId ? { sequenceId: input.proposal.sequenceId } : {}),
+						params: rep.params,
+					},
+					input.doc,
+					input.revision,
+					{
+						mode: 'job',
+						ctx: {
+							signal: ac.signal,
+							trackChild: () => undefined,
+							progress: () => undefined,
+							scratchDir: async () => {
+								scratch ??= await mkdtemp(join(tmpdir(), 'jasper-automation-'));
+								return scratch;
+							},
+						},
+					},
+				);
+				passCtx = r.ctx;
+			} finally {
+				if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+			}
+		}
 		const r = refreshAutomationItems(input.doc, input.proposal, input.itemIds, {
 			...(input.reroll ? { reroll: true } : {}),
 			...(subjects ? { subjects } : {}),
+			ctx: passCtx,
 		});
 		if (!r.ok)
 			throw new HttpError(r.code === 'E_NOT_FOUND' ? 404 : 422, 'VALIDATION_FAILED', r.message, {
