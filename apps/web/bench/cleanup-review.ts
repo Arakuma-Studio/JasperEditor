@@ -102,7 +102,10 @@ function time(fn: () => unknown, runs = 7) {
 		fn();
 		samples.push(performance.now() - t0);
 	}
-	return { medianMs: Math.round(median(samples) * 10) / 10, samplesMs: samples.map((x) => Math.round(x * 10) / 10) };
+	return {
+		medianMs: Math.round(median(samples) * 10) / 10,
+		samplesMs: samples.map((x) => Math.round(x * 10) / 10),
+	};
 }
 
 const loadAtStart = loadavg();
@@ -110,7 +113,8 @@ const h1 = hour();
 const H = new Harness({ preset: 'hd-1080p-30' });
 const media = H.registerVideo({ seconds: h1.seconds });
 const music = (
-	H.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio', seconds: h1.seconds }) }]).results[0] as {
+	H.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio', seconds: h1.seconds }) }])
+		.results[0] as {
 		mediaId: string;
 	}
 ).mediaId;

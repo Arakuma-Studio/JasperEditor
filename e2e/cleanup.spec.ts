@@ -85,12 +85,10 @@ test('Clean Up mode on a generated clip: analyze, review, play the result, apply
 	await expect(page.getByTestId('text.transcript.mode.cleanup')).toHaveAttribute('aria-checked', 'true');
 	await page.getByTestId('text.cleanup.analyze').click();
 	await expect(page.getByTestId('text.cleanup.review')).toBeVisible({ timeout: 120_000 });
-	await test
-		.info()
-		.attach('review', {
-			body: await page.getByTestId('text.cleanup').screenshot(),
-			contentType: 'image/png',
-		});
+	await test.info().attach('review', {
+		body: await page.getByTestId('text.cleanup').screenshot(),
+		contentType: 'image/png',
+	});
 
 	// findings by kind; the abandoned take and the filler are struck in the transcript
 	const findings = page.getByTestId('text.cleanup.findings');
