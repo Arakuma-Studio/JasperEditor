@@ -584,7 +584,10 @@ Tools (use MCP `listTools` for the current catalog and schemas):
 - Editing automation (spec 15; each a proposal of feature `edit-automation`, `mode: "dryRun"` for counts, coverage and
   export cost): `decorate_cuts` (a cut kit centred on every picture cut + a whoosh of its length through sound design)
   `add_punch_ins` (Motion zooms from the clip midpoint, held to the cut) `add_ken_burns` (slow zooms over a share of the
-  A-roll clips) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
+  A-roll clips) `place_reactions` (your reaction pictures from a bin or folder at markers, calls to action and
+  exclamations, on a cut, wobbling) `slide_overlays` (one-sided Smooth Slides at overlay heads and tails)
+  `lay_music_bed` (your songs end to end at −33 dB, switching on cuts) `add_stingers` (generated TV static after
+  shouted punchlines) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`

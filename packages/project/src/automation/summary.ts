@@ -3,9 +3,13 @@
 // without creating anything. The same summary is the proposal's report (with the parameters for the refresher). Pure.
 import type { DecoratePlan } from './decorate-cuts.ts';
 import type { KenBurnsPlan } from './ken-burns.ts';
+import type { MusicPlan } from './music.ts';
 import type { AutomationPass } from './params.ts';
 import type { AutomationCost } from './proposal.ts';
 import type { PunchPlan } from './punch-ins.ts';
+import type { ReactionPlan } from './reactions.ts';
+import type { SlidePlan } from './slides.ts';
+import type { StingerPlan } from './stingers.ts';
 
 /** Skips listed in a summary (the rest are counted). */
 export const SUMMARY_SKIP_LIST = 200;
@@ -27,6 +31,14 @@ export type AutomationSummary = {
 	};
 	/** Decorate Cuts: kits per family. */
 	families?: Record<string, number>;
+	/**
+	 * Pass-specific counts: reactions by trigger kind (`marker`, `cta`, `exclamation`, `hidden`), slides `heads` /
+	 * `tails` and per direction, beds `onCut` / `intro` / `ducked`, stingers by source (`both`, `loudness`,
+	 * `exclamation`).
+	 */
+	detail?: Record<string, number>;
+	/** Reactions / music: the assets the pass draws from (count and the first names). */
+	assets?: { count: number; names: string[] };
 	cost: AutomationCost;
 	/** Where the new adjustment clips go (a track label, or "new track <name>"). */
 	track?: string;
@@ -90,15 +102,114 @@ export function kenBurnsSummary(plan: KenBurnsPlan, cost: AutomationCost): Autom
 	};
 }
 
+const trackOf = (t: { create: true; name: string } | { create: false; label: string }) =>
+	t.create ? `new track ${t.name}` : t.label;
+const countBy = <T>(list: readonly T[], key: (x: T) => string) => {
+	const out: Record<string, number> = {};
+	for (const x of list) out[key(x)] = (out[key(x)] ?? 0) + 1;
+	return out;
+};
+const assetsOf = (list: readonly { name: string }[]) => ({
+	count: list.length,
+	names: list.slice(0, 20).map((a) => a.name),
+});
+
+export function reactionSummary(plan: ReactionPlan, cost: AutomationCost): AutomationSummary {
+	return {
+		pass: 'reactions',
+		sequenceId: plan.sequenceId,
+		seed: plan.seed,
+		count: plan.reactions.length,
+		considered: plan.considered,
+		coverage: ratio(plan.reactions.length, plan.considered),
+		skipped: skips(plan.skipped),
+		detail: { ...plan.triggers, onCut: plan.reactions.filter((r) => r.cut).length },
+		assets: assetsOf(plan.assets),
+		cost,
+		track: trackOf(plan.reactionTrack),
+		warnings: plan.warnings,
+	};
+}
+
+export function slideSummary(plan: SlidePlan, cost: AutomationCost): AutomationSummary {
+	return {
+		pass: 'slides',
+		sequenceId: plan.sequenceId,
+		seed: plan.seed,
+		count: plan.slides.length,
+		considered: plan.considered,
+		coverage: ratio(plan.slides.length, plan.considered),
+		skipped: skips(plan.skipped),
+		detail: {
+			overlays: plan.overlays,
+			heads: plan.slides.filter((s) => s.edge === 'in').length,
+			tails: plan.slides.filter((s) => s.edge === 'out').length,
+			...countBy(plan.slides, (s) => s.choice.direction),
+		},
+		cost,
+		warnings: plan.warnings,
+	};
+}
+
+export function musicSummary(plan: MusicPlan, cost: AutomationCost): AutomationSummary {
+	return {
+		pass: 'music',
+		sequenceId: plan.sequenceId,
+		seed: plan.seed,
+		count: plan.beds.length,
+		considered: plan.considered,
+		coverage: ratio(Math.min(plan.beds.length, plan.considered), plan.considered),
+		skipped: skips(plan.skipped),
+		detail: {
+			onCut: plan.beds.filter((b) => b.switchAt === 'cut').length,
+			switches: Math.max(0, plan.beds.length - 1),
+			intro: plan.beds.some((b) => b.parts.some((p) => p.intro)) ? 1 : 0,
+			ducked: plan.duck.enabled ? plan.beds.filter((b) => b.duckRegions.length).length : 0,
+		},
+		assets: assetsOf(plan.songs),
+		cost,
+		track: trackOf(plan.musicTrack),
+		warnings: plan.warnings,
+	};
+}
+
+export function stingerSummary(plan: StingerPlan, cost: AutomationCost): AutomationSummary {
+	return {
+		pass: 'stingers',
+		sequenceId: plan.sequenceId,
+		seed: plan.seed,
+		count: plan.stingers.length,
+		considered: plan.considered,
+		coverage: ratio(plan.stingers.length, plan.considered),
+		skipped: skips(plan.skipped),
+		detail: countBy(plan.stingers, (s) => s.trigger.source),
+		cost,
+		track: trackOf(plan.stingerTrack),
+		warnings: plan.warnings,
+	};
+}
+
+const NOUNS: Record<AutomationPass, [string, string]> = {
+	'decorate-cuts': ['cut kits', 'cuts'],
+	'punch-ins': ['punch-ins', 'candidate clips'],
+	'ken-burns': ['Ken Burns moves', 'candidate clips'],
+	reactions: ['reactions', 'triggers'],
+	slides: ['overlay slides', 'overlay edges'],
+	music: ['music beds', 'songs'],
+	stingers: ['stingers', 'punchlines'],
+};
+
 /** "214 cut kits on 225 cuts (95 %); 11 left out; export: Remotion path" — the proposal's summary line (English). */
 export function summaryLine(s: AutomationSummary): string {
-	const noun =
-		s.pass === 'decorate-cuts' ? 'cut kits' : s.pass === 'punch-ins' ? 'punch-ins' : 'Ken Burns moves';
-	const of = s.pass === 'decorate-cuts' ? 'cuts' : 'candidate clips';
+	const [noun, of] = NOUNS[s.pass];
 	const pct = Math.round(s.coverage * 100);
 	const cost =
 		s.cost.class === 'native'
 			? 'exports natively'
-			: `the export renders through the Remotion path (${s.cost.effects.join(', ')})`;
+			: s.cost.class === 'hybrid'
+				? `the export stays native with the decorated layers baked by the Remotion renderer (${s.cost.effects.join(', ')})`
+				: `the export renders through the Remotion path (${s.cost.effects.join(', ')})`;
+	if (s.pass === 'music')
+		return `${s.count} ${noun} from ${s.considered} ${of}${s.detail?.switches ? `, ${s.detail.onCut ?? 0} of ${s.detail.switches} switches on a cut` : ''}; ${cost}`;
 	return `${s.count} ${noun} on ${s.considered} ${of} (${pct} %)${s.skipped.count ? `; ${s.skipped.count} left out` : ''}; ${cost}`;
 }

@@ -30,7 +30,15 @@ import {
 	sensitivityThresholdDb,
 	TruePeakLimiter,
 } from '@jasper/audio-dsp';
-import { type AudioStream, FLICKS_PER_SECOND, frameToSample, mixFingerprint } from '@jasper/project';
+import {
+	type AudioStream,
+	FLICKS_PER_SECOND,
+	frameToSample,
+	type LoudnessCurve,
+	makeEnvelope,
+	mixFingerprint,
+	type ProjectDocument,
+} from '@jasper/project';
 import { PlanError, type PlannedExport } from '../export/planner.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { CoreServices } from '../tools/services.ts';
@@ -316,6 +324,86 @@ export class AudioService {
 					}
 				: {}),
 		};
+	}
+
+	/**
+	 * Momentary loudness (BS.1770, 400 ms window) of a sequence's mix — or of some audio tracks (the dialogue) — every
+	 * `hopSec` (default 0.1 s) over the whole sequence, rendered by the export's offline mixer without the Mix
+	 * normalisation (spec 15 EA-026: stinger punchlines). Silence (below −70 LUFS, or before the first 400 ms) is null.
+	 * Runs inside the caller's job (its signal, scratch directory and child tracking).
+	 */
+	async momentaryCurve(
+		input: {
+			document: ProjectDocument;
+			revision: number;
+			sequenceId: string;
+			trackIds?: string[];
+			hopSec?: number;
+		},
+		ctx: Pick<JobContext, 'signal' | 'trackChild' | 'scratchDir'> & { onProgress?: (f: number) => void },
+	): Promise<LoudnessCurve> {
+		const envelope = makeEnvelope(input.document, {
+			revision: input.revision,
+			savedAt: new Date().toISOString(),
+			platform: 'engine',
+		});
+		let planned: PlannedExport;
+		try {
+			planned = await this.core.exports.plan({
+				envelope: envelope as never,
+				sequenceId: input.sequenceId,
+				settings: {
+					sequenceId: input.sequenceId,
+					range: { type: 'entire' },
+					container: 'mp4',
+					engine: 'auto',
+					destination: { type: 'download' },
+				},
+			});
+		} catch (e) {
+			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
+			throw e;
+		}
+		const snap = planned.snapshot;
+		const sr = snap.audioMix?.sampleRate ?? 48000;
+		const hopSec = input.hopSec && input.hopSec > 0 ? input.hopSec : 0.1;
+		const hop = Math.max(1, Math.round(sr * hopSec));
+		let meter: LoudnessMeter | null = null;
+		let acc = 0;
+		const lufs: (number | null)[] = [];
+		const MAX_POINTS = 2_000_000;
+		await renderMixdown({
+			ff: this.core.ffmpeg,
+			snapshot: snap,
+			media: this.media(planned),
+			scratchDir: await ctx.scratchDir(),
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			measureOnly: true,
+			withoutLoudness: true,
+			range: planned.range,
+			...(input.trackIds?.length ? { onlyTracks: new Set(input.trackIds) } : {}),
+			onBlock: (p: Float32Array[], n: number) => {
+				meter ??= new LoudnessMeter(sr, p.length, { weights: defaultChannelWeights(p.length) });
+				let off = 0;
+				while (off < n && lufs.length < MAX_POINTS) {
+					const k = Math.min(n - off, hop - acc);
+					meter.process(p, off, k);
+					off += k;
+					acc += k;
+					if (acc >= hop) {
+						const v = meter.momentary();
+						lufs.push(Number.isFinite(v) && v > -70 ? Math.round(v * 100) / 100 : null);
+						acc = 0;
+					}
+				}
+			},
+			...(ctx.onProgress ? { onProgress: (f: number) => ctx.onProgress!(f) } : {}),
+		});
+		const fps = snap.settings.fps;
+		const startSec = frameToSample(planned.range.start, fps, sr) / sr;
+		// the meter's value at the end of hop k describes the 400 ms ending there: centre it on the window
+		return { startSec: Math.max(0, startSec + hopSec - 0.2), hopSec, lufs };
 	}
 
 	/** The target of an analysis's delivery: the request's, else the sequence's Mix normalisation when it is on. */
