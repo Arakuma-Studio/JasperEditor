@@ -427,6 +427,24 @@ describe('punch-ins planner', () => {
 		expect(planPunchIns(h.doc, h.seqId, {}).punches.map((x) => x.clipId)).not.toContain(p.clipId);
 	});
 
+	it('leaves reframed clips (their own static scale or position) alone unless asked', () => {
+		const { h, ids } = aroll([90, 90, 90]);
+		h.ok([
+			{ type: 'param.set', target: ['clip', ids[0]!, 'transform', 'scale'], value: 150 },
+			{ type: 'param.set', target: ['clip', ids[1]!, 'transform', 'position'], value: [700, 540] },
+		]);
+		const plan = planPunchIns(h.doc, h.seqId, { density: 1 });
+		expect(plan.punches.map((p) => p.clipId)).toEqual([ids[2]]);
+		expect(plan.skipped.filter((s) => s.code === 'reframed').map((s) => s.clipId)).toEqual([ids[0], ids[1]]);
+		const all = planPunchIns(h.doc, h.seqId, { density: 1, skipReframed: false });
+		expect(all.punches).toHaveLength(3);
+		// a reframed clip zooms from its own scale and about the frame centre (its position moves with the zoom)
+		const p0 = all.punches.find((p) => p.clipId === ids[0])!;
+		expect(p0.motion.scale).toEqual({ from: 150, to: 270 });
+		const p1 = all.punches.find((p) => p.clipId === ids[1])!;
+		expect(p1.motion.position).toEqual({ from: [700, 540], to: [960 + 1.8 * (700 - 960), 540] });
+	});
+
 	it('zooming in about any point of the frame keeps a covering picture covering the frame', () => {
 		fc.assert(
 			fc.property(

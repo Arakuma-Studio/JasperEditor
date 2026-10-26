@@ -102,6 +102,8 @@ export const PunchInParamsSchema = z.strictObject({
 	method: z.enum(['motion', 'adjustment']).optional(),
 	/** Whoosh with the zoom (default on). */
 	sfx: AutomationSfxSchema.optional(),
+	/** Leave clips with a static reframing (scale / position of their own) alone (default true). */
+	skipReframed: z.boolean().optional(),
 	/** Clips the pass must leave alone (a style recipe's other passes). */
 	excludeClipIds: z.array(z.string().min(1).max(128)).max(10_000).optional(),
 	seed: Seed.optional(),

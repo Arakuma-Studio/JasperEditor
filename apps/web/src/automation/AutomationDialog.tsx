@@ -72,6 +72,7 @@ export const SKIP_LABELS: Record<string, string> = {
 	motion: 'Motion already keyed',
 	effect: 'An effect moves the picture',
 	excluded: 'Left to another pass',
+	reframed: 'Reframed (its own scale or position)',
 	density: 'Left out (density)',
 	share: 'Left out (share)',
 	kind: 'Not a picture clip',
@@ -452,6 +453,13 @@ function PunchFields(p: { seq: Sequence; params: Params; set(k: string, v: unkno
 					]}
 				/>
 			</Row>
+			<div className="flex flex-col gap-1 pl-[140px]">
+				<Checkbox
+					checked={bool(p.params.skipReframed, true)}
+					onCheckedChange={(c) => p.set('skipReframed', c ? undefined : false)}
+					label={t('Skip clips reframed with their own scale or position')}
+				/>
+			</div>
 			<SfxFields
 				value={p.params.sfx as Params | undefined}
 				label={t('A whoosh when the zoom starts')}

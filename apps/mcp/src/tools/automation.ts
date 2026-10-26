@@ -342,6 +342,10 @@ export function registerAutomationTools(ctx: ToolContext): void {
 						'"motion" (default: Motion keys, native export) or "adjustment" (Transform adjustment clip)',
 					),
 				sfx: SfxArg,
+				skipReframed: z
+					.boolean()
+					.optional()
+					.describe('Leave clips with a static scale / position of their own alone (default true)'),
 				excludeClipIds: ExcludeArg,
 				seed: SeedArg,
 				timeoutSeconds: TimeoutArg,
@@ -363,6 +367,7 @@ export function registerAutomationTools(ctx: ToolContext): void {
 					'target',
 					'method',
 					'sfx',
+					'skipReframed',
 					'excludeClipIds',
 					'seed',
 				]),

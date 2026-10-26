@@ -2,6 +2,7 @@
 // the new adjustment clips, frame geometry and errors. Pure; never throws for damaged documents except the typed
 // `AutomationInputError` for what the caller asked (an unknown sequence or track).
 import { clipsOnTrack, resolveTrackRef, sequenceDuration, trackLabel } from '../derive/index.ts';
+import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
@@ -136,6 +137,38 @@ export function hasMovingEffect(c: Clip): boolean {
 	return fx.some((e) => e.enabled !== false && MOVING_EFFECTS.has(e.effectId));
 }
 
+/**
+ * The clip has a static reframing of its own: a scale other than 100 % or the scale that fits / fills the frame with
+ * its picture, a position off the frame centre, or a rotation (the user's "static framing": a punch-in on such a
+ * clip is rare, 17 % vs 66 %, FINDINGS §3 / simulate.py). Keyframed Motion is `hasMotionKeys`.
+ */
+export function isReframed(doc: ProjectDocument, seq: Sequence, c: Clip): boolean {
+	const tr = (c as { transform?: Record<string, { value?: unknown } | boolean | undefined> }).transform;
+	if (!tr) return false;
+	const val = (k: string) => {
+		const x = tr[k];
+		return x && typeof x === 'object' ? x.value : undefined;
+	};
+	const geo = frameGeometry(seq);
+	const scale = typeof val('scale') === 'number' ? (val('scale') as number) : 100;
+	const rot = typeof val('rotation') === 'number' ? (val('rotation') as number) : 0;
+	const pos = Array.isArray(val('position')) ? (val('position') as number[]) : [geo.width / 2, geo.height / 2];
+	if (Math.abs(rot) > 0.01) return true;
+	if (Math.abs((pos[0] ?? 0) - geo.width / 2) > 1 || Math.abs((pos[1] ?? 0) - geo.height / 2) > 1) return true;
+	let box: { width: number; height: number } | null = null;
+	try {
+		box = intrinsicBoxOf({ clip: c, doc, seq } as never);
+	} catch {
+		box = null;
+	}
+	const ok = [100];
+	if (box && box.width > 0 && box.height > 0) {
+		ok.push((Math.min(geo.width / box.width, geo.height / box.height) * 100));
+		ok.push((Math.max(geo.width / box.width, geo.height / box.height) * 100));
+	}
+	return !ok.some((s) => Math.abs(s - scale) <= Math.max(0.5, s * 0.005));
+}
+
 export type ClipSkip = { clipId: string; frame: number; code: string; reason: string };
 
 /**
@@ -146,7 +179,13 @@ export type ClipSkip = { clipId: string; frame: number; code: string; reason: st
 export function motionCandidates(
 	seq: Sequence,
 	track: Track,
-	opts: { range?: AutomationRange; minFrames: number; exclude?: ReadonlySet<string> },
+	opts: {
+		range?: AutomationRange;
+		minFrames: number;
+		exclude?: ReadonlySet<string>;
+		/** Leave clips with a static reframing alone (`isReframed`; `doc` needed). */
+		skipReframed?: ProjectDocument;
+	},
 ): { clips: Clip[]; skipped: ClipSkip[] } {
 	const clips: Clip[] = [];
 	const skipped: ClipSkip[] = [];
@@ -163,6 +202,8 @@ export function motionCandidates(
 		else if (c.duration < opts.minFrames) skip('short', 'shorter than the minimum length');
 		else if (hasMotionKeys(c)) skip('motion', 'its Motion is already keyframed (Ken Burns or a zoom)');
 		else if (hasMovingEffect(c)) skip('effect', 'an effect already moves its picture');
+		else if (opts.skipReframed && isReframed(opts.skipReframed, seq, c))
+			skip('reframed', 'it has a static reframing of its own (scale or position)');
 		else clips.push(c);
 	}
 	return { clips, skipped };

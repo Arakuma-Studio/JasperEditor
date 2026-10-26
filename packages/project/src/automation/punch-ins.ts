@@ -83,6 +83,7 @@ export type ResolvedPunchParams = {
 	target: PunchTarget;
 	method: 'motion' | 'adjustment';
 	exclude: Set<string>;
+	skipReframed: boolean;
 	seed: number;
 	track?: string;
 	range?: { start: number; end: number };
@@ -127,6 +128,7 @@ export function resolvePunchParams(raw: unknown, geo: Pick<FrameGeometry, 'fps'>
 		target: p.target ?? 'center',
 		method: p.method ?? 'motion',
 		exclude: new Set(p.excludeClipIds ?? []),
+		skipReframed: p.skipReframed ?? true,
 		seed: p.seed ?? AUTOMATION_DEFAULTS.seed,
 		...(p.track !== undefined ? { track: p.track } : {}),
 		...(p.range ? { range: p.range } : {}),
@@ -436,6 +438,7 @@ export function planPunchIns(
 	const cand = motionCandidates(seq, track, {
 		minFrames,
 		exclude: params.exclude,
+		...(params.skipReframed ? { skipReframed: doc } : {}),
 		...(params.range ? { range: params.range } : {}),
 	});
 	const emph = emphasisClips(doc, seq, cand.clips);
@@ -523,6 +526,7 @@ export function replanPunchIns(
 	const cand = motionCandidates(seq, track, {
 		minFrames: Math.max(params.minFrames, params.rampFrames + 2),
 		exclude: params.exclude,
+		...(params.skipReframed ? { skipReframed: doc } : {}),
 	});
 	const byId = new Map(cand.clips.map((c) => [c.id, c]));
 	const why = new Map(cand.skipped.map((s) => [s.clipId, s.reason]));

@@ -11292,5 +11292,7 @@
   "Zoom to": "Zoom hasta",
   "Zoom-ins per zoom-out": "Acercamientos por alejamiento",
   "Zooms into the A-roll clips: from the clip midpoint, a short linear ramp to a larger scale, held to the cut. \"!\" and \"?\" phrases come first.": "Hace zoom en los clips de A-roll: desde la mitad del clip, una rampa lineal corta hasta una escala mayor, mantenida hasta el corte. Las frases con «!» y «?» van primero.",
-  "Zooms toward": "Zoom hacia"
+  "Zooms toward": "Zoom hacia",
+  "Reframed (its own scale or position)": "Reencuadrado (escala o posición propias)",
+  "Skip clips reframed with their own scale or position": "Omitir los clips reencuadrados con su propia escala o posición"
 }
