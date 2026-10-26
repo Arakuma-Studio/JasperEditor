@@ -89,7 +89,11 @@ export function FindingsList({
 			onScroll={(e) => setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}
 			data-testid="text.cleanup.findings"
 		>
-			<ul className="relative m-0 list-none p-0" style={{ height: layout.total }} aria-label="Clean Up findings">
+			<ul
+				className="relative m-0 list-none p-0"
+				style={{ height: layout.total }}
+				aria-label="Clean Up findings"
+			>
 				{shown.map((e) => {
 					if (e.type === 'header') {
 						const g = e.group;
@@ -180,30 +184,30 @@ export function FindingsList({
 								onDoubleClick={() => c.previewFinding(f.id)}
 								data-testid={`text.cleanup.finding.${f.id}.select`}
 							>
-							<span
-								className="w-4 shrink-0 text-center"
-								style={{ color: on ? KIND_COLOR[f.kind] : undefined }}
-								title={
-									on
-										? t('Cut')
-										: f.suggested === 'review'
-											? t('For review: kept unless you cut it')
-											: t('Kept')
-								}
-							>
-								{on ? '✂' : f.suggested === 'review' ? '?' : '○'}
-							</span>
-							<span className="pr-tabular w-12 shrink-0 text-pr-muted">{timeOf(f)}</span>
-							<span
-								className={`min-w-0 flex-1 truncate ${on ? 'text-pr-text line-through' : 'text-pr-text'}`}
-								title={reasonText(f)}
-							>
-								{reasonText(f)}
-								{skipped ? <span className="ml-1 text-pr-warning">{t('(kept: harsh cut)')}</span> : null}
-							</span>
-							<span className="pr-tabular w-9 shrink-0 text-right text-pr-muted" title={t('Confidence')}>
-								{Math.round(f.confidence * 100)} %
-							</span>
+								<span
+									className="w-4 shrink-0 text-center"
+									style={{ color: on ? KIND_COLOR[f.kind] : undefined }}
+									title={
+										on
+											? t('Cut')
+											: f.suggested === 'review'
+												? t('For review: kept unless you cut it')
+												: t('Kept')
+									}
+								>
+									{on ? '✂' : f.suggested === 'review' ? '?' : '○'}
+								</span>
+								<span className="pr-tabular w-12 shrink-0 text-pr-muted">{timeOf(f)}</span>
+								<span
+									className={`min-w-0 flex-1 truncate ${on ? 'text-pr-text line-through' : 'text-pr-text'}`}
+									title={reasonText(f)}
+								>
+									{reasonText(f)}
+									{skipped ? <span className="ml-1 text-pr-warning">{t('(kept: harsh cut)')}</span> : null}
+								</span>
+								<span className="pr-tabular w-9 shrink-0 text-right text-pr-muted" title={t('Confidence')}>
+									{Math.round(f.confidence * 100)} %
+								</span>
 							</button>
 							<button
 								type="button"

@@ -5,9 +5,9 @@
 // most 80 words) and only the blocks in view are rendered, measured as they come into view.
 import {
 	type CleanupFinding,
-	readSequenceCleanup,
 	flicksPerFrame,
 	paragraphs,
+	readSequenceCleanup,
 	type Sequence,
 	sequenceWords,
 } from '@jasper/project';
