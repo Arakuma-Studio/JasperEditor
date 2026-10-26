@@ -152,9 +152,12 @@ export function isReframed(doc: ProjectDocument, seq: Sequence, c: Clip): boolea
 	const geo = frameGeometry(seq);
 	const scale = typeof val('scale') === 'number' ? (val('scale') as number) : 100;
 	const rot = typeof val('rotation') === 'number' ? (val('rotation') as number) : 0;
-	const pos = Array.isArray(val('position')) ? (val('position') as number[]) : [geo.width / 2, geo.height / 2];
+	const pos = Array.isArray(val('position'))
+		? (val('position') as number[])
+		: [geo.width / 2, geo.height / 2];
 	if (Math.abs(rot) > 0.01) return true;
-	if (Math.abs((pos[0] ?? 0) - geo.width / 2) > 1 || Math.abs((pos[1] ?? 0) - geo.height / 2) > 1) return true;
+	if (Math.abs((pos[0] ?? 0) - geo.width / 2) > 1 || Math.abs((pos[1] ?? 0) - geo.height / 2) > 1)
+		return true;
 	let box: { width: number; height: number } | null = null;
 	try {
 		box = intrinsicBoxOf({ clip: c, doc, seq } as never);
@@ -163,8 +166,8 @@ export function isReframed(doc: ProjectDocument, seq: Sequence, c: Clip): boolea
 	}
 	const ok = [100];
 	if (box && box.width > 0 && box.height > 0) {
-		ok.push((Math.min(geo.width / box.width, geo.height / box.height) * 100));
-		ok.push((Math.max(geo.width / box.width, geo.height / box.height) * 100));
+		ok.push(Math.min(geo.width / box.width, geo.height / box.height) * 100);
+		ok.push(Math.max(geo.width / box.width, geo.height / box.height) * 100);
 	}
 	return !ok.some((s) => Math.abs(s - scale) <= Math.max(0.5, s * 0.005));
 }

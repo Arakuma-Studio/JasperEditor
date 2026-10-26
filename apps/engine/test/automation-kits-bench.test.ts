@@ -76,7 +76,14 @@ describe.runIf(enabled)('cut kit export cost (KITS_BENCH=1)', () => {
 				color: colours[i % 3],
 			})),
 			{ type: 'track.add', kind: 'video' },
-			{ type: 'clip.addSolid', at: 0, duration: CLIPS * CLIP, track: 'V2', color: [0.95, 0.8, 0.1, 1], ref: '$sq' },
+			{
+				type: 'clip.addSolid',
+				at: 0,
+				duration: CLIPS * CLIP,
+				track: 'V2',
+				color: [0.95, 0.8, 0.1, 1],
+				ref: '$sq',
+			},
 			{ type: 'param.set', target: ['clip', '$sq', 'transform', 'scale'], value: 20 },
 		]);
 		return d;
@@ -93,7 +100,10 @@ describe.runIf(enabled)('cut kit export cost (KITS_BENCH=1)', () => {
 		expect(r.statusCode, r.body).toBe(202);
 		const done = await services.coreServices(engine.app).queue.wait(r.json().id);
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
-		return { seconds: (performance.now() - t0) / 1000, path: (done.result as { renderPath?: string }).renderPath };
+		return {
+			seconds: (performance.now() - t0) / 1000,
+			path: (done.result as { renderPath?: string }).renderPath,
+		};
 	}
 
 	it('100 kits: native vs Remotion export time', async () => {
@@ -116,6 +126,9 @@ describe.runIf(enabled)('cut kit export cost (KITS_BENCH=1)', () => {
 		}
 		out.loadAfter = loadavg();
 		console.info(`[kits bench] ${JSON.stringify(out)}`);
-		writeFileSync(join(process.cwd(), 'bench', 'automation-kits.results.json'), `${JSON.stringify(out, null, 2)}\n`);
+		writeFileSync(
+			join(process.cwd(), 'bench', 'automation-kits.results.json'),
+			`${JSON.stringify(out, null, 2)}\n`,
+		);
 	}, 7_200_000);
 });

@@ -119,7 +119,9 @@ test('Decorate Cuts: dialog → proposal → review (reroll, accept) → apply �
 	await page.getByTestId('review-accept-all').click();
 	await kit(60).click();
 	await page.keyboard.press('Control+Enter');
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 }).toBe(before.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 })
+		.toBe(before.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toMatch(/^Accept Decorate Cuts/);
 	await page.screenshot({ path: join(outDir, 'applied.png') });
 	const seq = await sequence(page);
@@ -144,7 +146,8 @@ test('Decorate Cuts: dialog → proposal → review (reroll, accept) → apply �
 		jobTimeoutMs: 900_000,
 	});
 	let moved = 0;
-	for (const f of [56, 59, 60, 63, 116, 119, 120, 123]) moved = Math.max(moved, meanDiff(thumb(plain.file, f), thumb(decorated.file, f)));
+	for (const f of [56, 59, 60, 63, 116, 119, 120, 123])
+		moved = Math.max(moved, meanDiff(thumb(plain.file, f), thumb(decorated.file, f)));
 	expect(moved).toBeGreaterThan(6);
 	// far from the cuts the picture is the same (both paths' encodes)
 	expect(meanDiff(thumb(plain.file, 30), thumb(decorated.file, 30))).toBeLessThan(3);

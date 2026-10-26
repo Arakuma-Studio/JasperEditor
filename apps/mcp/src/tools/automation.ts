@@ -393,7 +393,9 @@ export function registerAutomationTools(ctx: ToolContext): void {
 					.min(0)
 					.max(1)
 					.optional()
-					.describe('Share of the A-roll clips that get one (default 0.15; chosen among the undecorated clips)'),
+					.describe(
+						'Share of the A-roll clips that get one (default 0.15; chosen among the undecorated clips)',
+					),
 				scale: z.number().min(101).max(400).optional().describe('End scale in % (default by aspect)'),
 				inOutRatio: z.number().min(0).max(100).optional().describe('Zoom-ins per zoom-out (default 2)'),
 				minClipSeconds: z

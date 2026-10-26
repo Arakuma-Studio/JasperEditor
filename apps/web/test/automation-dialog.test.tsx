@@ -3,7 +3,7 @@
 // cost, sounds, budget), Propose: the pass's job runs, review opens on the stored proposal and nothing is applied;
 // Reroll of a review item through the session (the producer's next seed).
 import type { AutomationPassResult, EngineJob, ProposalRefreshResponse } from '@jasper/api';
-import { parsePassParams, passDraft, passItems, planDecorateCuts, type Proposal } from '@jasper/project';
+import { type Proposal, parsePassParams, passDraft, passItems, planDecorateCuts } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -375,7 +375,11 @@ describe('review of a real Decorate Cuts proposal', () => {
 		const draft = passDraft(plan, passItems(doc, plan), params)!;
 		const engine = new FakeEngine(() => session);
 		const timers: (() => void)[] = [];
-		const c = proposalsFor(session, { engine, setTimer: (fn) => timers.push(fn), clearTimer: () => undefined });
+		const c = proposalsFor(session, {
+			engine,
+			setTimer: (fn) => timers.push(fn),
+			clearTimer: () => undefined,
+		});
 		const p = engine.create(draft as never, 'user');
 		await c.setActive(p.id);
 		while (timers.length) timers.shift()!();

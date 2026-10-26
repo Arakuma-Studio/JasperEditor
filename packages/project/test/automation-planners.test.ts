@@ -539,7 +539,32 @@ describe('robustness (fuzz)', () => {
 		fc.assert(
 			fc.property(
 				fc.constantFrom('decorate-cuts' as const, 'punch-ins' as const, 'ken-burns' as const),
-				fc.oneof(fc.jsonValue(), fc.dictionary(fc.constantFrom('seed', 'coverage', 'density', 'share', 'scale', 'track', 'range', 'pack', 'families', 'sfx', 'target', 'method', 'rampFrames', 'minClipSeconds', 'repeatPenalty', 'fxTrack', 'start'), fc.jsonValue(), { maxKeys: 6 })),
+				fc.oneof(
+					fc.jsonValue(),
+					fc.dictionary(
+						fc.constantFrom(
+							'seed',
+							'coverage',
+							'density',
+							'share',
+							'scale',
+							'track',
+							'range',
+							'pack',
+							'families',
+							'sfx',
+							'target',
+							'method',
+							'rampFrames',
+							'minClipSeconds',
+							'repeatPenalty',
+							'fxTrack',
+							'start',
+						),
+						fc.jsonValue(),
+						{ maxKeys: 6 },
+					),
+				),
 				(pass, raw) => {
 					try {
 						const plan =
@@ -581,7 +606,12 @@ describe('robustness (fuzz)', () => {
 									effects: [
 										{
 											effectId: 'jasper.transform',
-											keyframes: { scaleHeight: [{ at: -5, value: 100 }, { at: 3, value: 120, ease: 'penner.nope-in' }] },
+											keyframes: {
+												scaleHeight: [
+													{ at: -5, value: 100 },
+													{ at: 3, value: 120, ease: 'penner.nope-in' },
+												],
+											},
 										},
 									],
 								},
@@ -591,9 +621,15 @@ describe('robustness (fuzz)', () => {
 				},
 			],
 		};
-		expect(() => planDecorateCuts(h.doc, h.seqId, { pack })).toThrow(/outside its before segment|unknown ease/);
+		expect(() => planDecorateCuts(h.doc, h.seqId, { pack })).toThrow(
+			/outside its before segment|unknown ease/,
+		);
 		const ok = structuredClone(pack);
-		ok.families[0]!.variants[0]!.segments[0]!.effects[0]!.keyframes.scaleHeight[1] = { at: 0, value: 120, ease: 'penner.cubic-in' };
+		ok.families[0]!.variants[0]!.segments[0]!.effects[0]!.keyframes.scaleHeight[1] = {
+			at: 0,
+			value: 120,
+			ease: 'penner.cubic-in',
+		};
 		const plan = planDecorateCuts(h.doc, h.seqId, { pack: ok });
 		expect(plan.pack.id).toBe('mine');
 		expect(plan.kits.every((k) => k.family === 'pop' && k.end === k.frame + 5)).toBe(true);
@@ -614,11 +650,26 @@ describe('robustness (fuzz)', () => {
 				updatedAt: NOW,
 				baseRevision: 0,
 				docHash: 'x',
-				items: [{ id: 'kit:60', label: 'k', group: 'cut-kits', commands: [{ type: 'marker.add', frame: 1 }], requires: [], state: 'stale', meta: { pass: 'decorate-cuts', kind: 'kit', frame: 'nope', seed: -3 } }],
+				items: [
+					{
+						id: 'kit:60',
+						label: 'k',
+						group: 'cut-kits',
+						commands: [{ type: 'marker.add', frame: 1 }],
+						requires: [],
+						state: 'stale',
+						meta: { pass: 'decorate-cuts', kind: 'kit', frame: 'nope', seed: -3 },
+					},
+				],
 				report,
 			}) as unknown as Proposal;
-		expect(refreshAutomationItems(h.doc, fake(undefined), ['kit:60'])).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
-		expect(refreshAutomationItems(h.doc, fake({ pass: 'decorate-cuts', params: { covrage: 2 } }), ['kit:60'])).toMatchObject({ ok: false });
+		expect(refreshAutomationItems(h.doc, fake(undefined), ['kit:60'])).toMatchObject({
+			ok: false,
+			code: 'E_INVALID_PARAM',
+		});
+		expect(
+			refreshAutomationItems(h.doc, fake({ pass: 'decorate-cuts', params: { covrage: 2 } }), ['kit:60']),
+		).toMatchObject({ ok: false });
 		const r = refreshAutomationItems(h.doc, fake({ pass: 'decorate-cuts', params: {} }), ['kit:60', 'nope']);
 		expect(r.ok).toBe(true);
 		if (r.ok) expect(r.items.length + r.dropped.length).toBeLessThanOrEqual(1);

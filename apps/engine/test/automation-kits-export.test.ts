@@ -52,7 +52,16 @@ function decodeFrames(file: string, frames: number[]): Buffer[] {
 		[
 			...['-v', 'error', '-i', file, '-vf'],
 			`select=${frames.map((f) => `eq(n\\,${f})`).join('+')}`,
-			...['-fps_mode', 'passthrough', '-frames:v', String(frames.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo'],
+			...[
+				'-fps_mode',
+				'passthrough',
+				'-frames:v',
+				String(frames.length),
+				'-pix_fmt',
+				'rgb24',
+				'-f',
+				'rawvideo',
+			],
 			'pipe:1',
 		],
 		{ maxBuffer: 1 << 28 },
@@ -127,7 +136,14 @@ describe.runIf(enabled)('cut kits export like the Program composition (REMOTION_
 			{ type: 'clip.addSolid', at: 0, duration: CUT, track: 'V1', color: [0.1, 0.2, 0.8, 1] },
 			{ type: 'clip.addSolid', at: CUT, duration: CUT, track: 'V1', color: [0.15, 0.6, 0.2, 1] },
 			{ type: 'track.add', kind: 'video' },
-			{ type: 'clip.addSolid', at: 0, duration: 2 * CUT, track: 'V2', color: [0.95, 0.3, 0.1, 1], ref: '$sq' },
+			{
+				type: 'clip.addSolid',
+				at: 0,
+				duration: 2 * CUT,
+				track: 'V2',
+				color: [0.95, 0.3, 0.1, 1],
+				ref: '$sq',
+			},
 			{ type: 'param.set', target: ['clip', '$sq', 'transform', 'scale'], value: 20 },
 			{ type: 'param.set', target: ['clip', '$sq', 'transform', 'position'], value: [W * 0.35, H * 0.4] },
 		]);
@@ -148,7 +164,10 @@ describe.runIf(enabled)('cut kits export like the Program composition (REMOTION_
 	}
 
 	async function still(d: DocBuilder, frame: number, tag: string): Promise<Uint8Array> {
-		const doc = project.buildRenderSnapshot(d.doc, d.seqId, { resolveFont: () => null, resolveMedia: () => null });
+		const doc = project.buildRenderSnapshot(d.doc, d.seqId, {
+			resolveFont: () => null,
+			resolveMedia: () => null,
+		});
 		const output = join(referenceDir, `${tag}-${frame}.png`);
 		await services.coreServices(engine.app).remotion.renderStill({
 			inputProps: { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } },

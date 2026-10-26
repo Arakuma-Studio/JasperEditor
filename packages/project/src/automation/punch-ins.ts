@@ -9,6 +9,7 @@
 // natively; option: a Transform adjustment clip on a "ZOOM" track right above the A-roll. Pure.
 import { sequenceWords } from '../captions/sequence-transcript.ts';
 import type { BatchEffect } from '../commands/schemas/batch.ts';
+import { trackLabel } from '../derive/index.ts';
 import { evaluate } from '../keyframes.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import { layerMatrix } from '../render/transform.ts';
@@ -16,7 +17,6 @@ import type { Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame } from '../time.ts';
-import { trackLabel } from '../derive/index.ts';
 import {
 	AutomationInputError,
 	automationSequence,
