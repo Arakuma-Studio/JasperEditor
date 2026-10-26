@@ -13,14 +13,15 @@
 //   - subtitles: the text clips of the sequence's subtitle groups; a speech cut = a cut with a subtitle word starting
 //     within 0.5 s after it; aligned = a subtitle starts on the cut frame; crossing = a subtitle running over a hard cut.
 // Pure.
-import { type CutAwareOptions, DEFAULT_CUT_AWARE } from '../captions/subtitles/rules.ts';
+
 import { subtitleCutEvents } from '../captions/subtitles/cuts.ts';
+import { type CutAwareOptions, DEFAULT_CUT_AWARE } from '../captions/subtitles/rules.ts';
 import { clipsOnTrack, sequenceDuration } from '../derive/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { pictureCuts } from '../structure/cuts.ts';
 import { flicksPerFrame } from '../time.ts';
-import { aRollTrack, automationSequence, frameGeometry, fpsValue, timecodeOf } from './common.ts';
+import { aRollTrack, automationSequence, fpsValue, frameGeometry, timecodeOf } from './common.ts';
 import type { RecipeTargets, StyleRecipe, StyleTargetId } from './recipes.ts';
 
 /** Look-here frames listed per metric at most. */
@@ -177,7 +178,9 @@ export function styleCheck(
 	const perMin = (n: number) => (minutes > 0 ? n / minutes : null);
 
 	// ---- cuts
-	const pictureTracks = seq.videoTracks.filter((t) => !PASS_TRACKS.test((t.name ?? '').trim())).map((t) => t.id);
+	const pictureTracks = seq.videoTracks
+		.filter((t) => !PASS_TRACKS.test((t.name ?? '').trim()))
+		.map((t) => t.id);
 	let cuts: number[] = [];
 	try {
 		cuts = pictureCuts(doc, seq.id, { includeOverlays: false, trackIds: pictureTracks })
@@ -216,7 +219,10 @@ export function styleCheck(
 		const adj = Object.values(seq.clips).filter((c) => c.kind === 'adjustment' && c.enabled !== false);
 		// a kit covers the frame before the cut or the cut frame (one clip around it, or a before + after pair)
 		const covered = (f: number) =>
-			adj.some((c) => (c.start <= f - 1 && c.start + c.duration > f - 1) || (c.start <= f && c.start + c.duration > f));
+			adj.some(
+				(c) =>
+					(c.start <= f - 1 && c.start + c.duration > f - 1) || (c.start <= f && c.start + c.duration > f),
+			);
 		const bare = cuts.filter((f) => !covered(f));
 		const v = cuts.length ? (cuts.length - bare.length) / cuts.length : null;
 		const m = targetMetric('kitCoverage', 'share', v, T.kitCoverage, {
@@ -248,7 +254,8 @@ export function styleCheck(
 		for (const a of clipsOnTrack(seq, t.id)) {
 			if (a.kind !== 'adjustment' || a.enabled === false) continue;
 			const under = arollClips.find((c) => c.start <= a.start && c.start + c.duration > a.start);
-			if (under && !punches.some((p) => p.clip.id === under.id)) punches.push({ clip: under, start: a.start });
+			if (under && !punches.some((p) => p.clip.id === under.id))
+				punches.push({ clip: under, start: a.start });
 		}
 	punches.sort((a, b) => a.start - b.start);
 	const undecorated = () =>
@@ -282,9 +289,15 @@ export function styleCheck(
 		});
 		if (t)
 			m.lookHere = punches
-				.filter((p, i) => Math.abs(fr[i]! - t.value) > t.tolerance)
+				.filter((_p, i) => Math.abs(fr[i]! - t.value) > t.tolerance)
 				.slice(0, STYLE_CHECK_LOOK_HERE)
-				.map((p) => look(seq, p.start, `starts at ${Math.round(((p.start - p.clip.start) / Math.max(1, p.clip.duration)) * 100)} % of its clip`));
+				.map((p) =>
+					look(
+						seq,
+						p.start,
+						`starts at ${Math.round(((p.start - p.clip.start) / Math.max(1, p.clip.duration)) * 100)} % of its clip`,
+					),
+				);
 		metrics.push(m);
 	}
 	{
@@ -309,7 +322,13 @@ export function styleCheck(
 		const t = T.deadAirPerMinute;
 		const d = opts.deadAir ?? null;
 		const v = d?.perMinute ?? null;
-		const status: StyleCheckStatus = !t ? 'unchecked' : v === null ? 'unmeasured' : v <= t.max + 1e-9 ? 'ok' : 'off';
+		const status: StyleCheckStatus = !t
+			? 'unchecked'
+			: v === null
+				? 'unmeasured'
+				: v <= t.max + 1e-9
+					? 'ok'
+					: 'off';
 		metrics.push({
 			id: 'deadAirPerMinute',
 			label: STYLE_CHECK_LABELS.deadAirPerMinute,
@@ -319,7 +338,8 @@ export function styleCheck(
 			status,
 			message:
 				v === null
-					? (d?.note ?? 'Not measured: the voice analysis of the dialogue is needed (Sequence ▸ Clean Up Voice… analyses it)')
+					? (d?.note ??
+						'Not measured: the voice analysis of the dialogue is needed (Sequence ▸ Clean Up Voice… analyses it)')
 					: `${round(v, 2)} s of non-speech per minute`,
 			...(d ? { count: d.pauses.length } : {}),
 			lookHere:
@@ -339,16 +359,26 @@ export function styleCheck(
 	// ---- music
 	{
 		const tracks = seq.audioTracks.filter((t) => /^music(?: \d+)?$/i.test((t.name ?? '').trim()));
-		const clips = tracks.flatMap((t) => clipsOnTrack(seq, t.id)).filter((c) => c.kind === 'audio' && c.enabled !== false);
-		const gains = clips.map((c) => (c as { gainDb?: number }).gainDb).filter((g): g is number => typeof g === 'number' && Number.isFinite(g));
+		const clips = tracks
+			.flatMap((t) => clipsOnTrack(seq, t.id))
+			.filter((c) => c.kind === 'audio' && c.enabled !== false);
+		const gains = clips
+			.map((c) => (c as { gainDb?: number }).gainDb)
+			.filter((g): g is number => typeof g === 'number' && Number.isFinite(g));
 		// the shorts' intro step (a first part until the first cut) is not the bed's level
 		const firstCut = cuts[0] ?? Number.POSITIVE_INFINITY;
-		const body = clips.filter((c) => !(c.start === 0 && c.start + c.duration <= firstCut && clips.length > 1));
-		const bodyGains = body.map((c) => (c as { gainDb?: number }).gainDb).filter((g): g is number => typeof g === 'number' && Number.isFinite(g));
+		const body = clips.filter(
+			(c) => !(c.start === 0 && c.start + c.duration <= firstCut && clips.length > 1),
+		);
+		const bodyGains = body
+			.map((c) => (c as { gainDb?: number }).gainDb)
+			.filter((g): g is number => typeof g === 'number' && Number.isFinite(g));
 		const v = median(bodyGains.length ? bodyGains : gains);
 		const t = T.musicGainDb;
 		const m = targetMetric('musicGainDb', 'db', v, t, {
-			message: clips.length ? `${clips.length} music clips, median clip gain ${round(v ?? 0, 1)} dB` : 'No music bed (a track named “Music”)',
+			message: clips.length
+				? `${clips.length} music clips, median clip gain ${round(v ?? 0, 1)} dB`
+				: 'No music bed (a track named “Music”)',
 			count: clips.length,
 		});
 		if (t)
@@ -382,7 +412,8 @@ function subtitleMetric(
 		unit: 'share' as const,
 		target: t ? { min: t.min, max: t.maxCrossing } : null,
 	};
-	const groups = (seq as { captionGroups?: Record<string, { trackId?: string; cutAware?: unknown }> }).captionGroups;
+	const groups = (seq as { captionGroups?: Record<string, { trackId?: string; cutAware?: unknown }> })
+		.captionGroups;
 	const subs = Object.values(seq.clips).filter((c) => {
 		const cap = (c as { caption?: { groupId?: unknown } }).caption;
 		return c.kind === 'text' && c.enabled !== false && cap && typeof cap.groupId === 'string';
@@ -398,8 +429,11 @@ function subtitleMetric(
 	const F = flicksPerFrame(seq.settings.frameRate);
 	const words: number[] = [];
 	for (const c of subs) {
-		const ws = ((c as { caption?: { words?: { start: number }[] } }).caption?.words ?? []) as { start: number }[];
-		for (const w of ws) if (Number.isFinite(w.start)) words.push(c.start + Math.floor((w.start - c.sourceIn) / F));
+		const ws = ((c as { caption?: { words?: { start: number }[] } }).caption?.words ?? []) as {
+			start: number;
+		}[];
+		for (const w of ws)
+			if (Number.isFinite(w.start)) words.push(c.start + Math.floor((w.start - c.sourceIn) / F));
 	}
 	words.sort((a, b) => a - b);
 	const trackId = subs[0]!.trackId;
@@ -413,7 +447,9 @@ function subtitleMetric(
 	const half = Math.round(0.5 * fps);
 	const speech = events.filter((e) => words.some((w) => w >= e.frame && w < e.frame + half));
 	const off = speech.filter((e) => !starts.has(e.frame));
-	const crossing = events.filter((e) => !e.zone && subs.some((c) => c.start < e.frame && c.start + c.duration > e.frame));
+	const crossing = events.filter(
+		(e) => !e.zone && subs.some((c) => c.start < e.frame && c.start + c.duration > e.frame),
+	);
 	const v = speech.length ? (speech.length - off.length) / speech.length : null;
 	const status: StyleCheckStatus = !t
 		? 'unchecked'

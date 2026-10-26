@@ -185,7 +185,10 @@ describe('Sequence ▸ Automate', () => {
 		for (const e of AUTOMATE_MENU) expect(ids.has(e.command)).toBe(true);
 		// Style Recipes… also works without an engine (the built-ins and the project's copies)
 		for (const c of automationCommands)
-			expect(c).toMatchObject({ agentExposed: true, ...(c.id === 'automation.styleRecipes' ? {} : { capability: 'engine' }) });
+			expect(c).toMatchObject({
+				agentExposed: true,
+				...(c.id === 'automation.styleRecipes' ? {} : { capability: 'engine' }),
+			});
 		expect(proposalCommands.some((c) => c.id === 'proposals.rerollItem')).toBe(true);
 	});
 });

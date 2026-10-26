@@ -135,7 +135,9 @@ export const automationCommands: UiCommand[] = [
 			return !!e && !e.session.getState().readOnly;
 		},
 		disabledReason: (ctx: CommandCtx) =>
-			sequenceContext(ctx)?.session.getState().readOnly ? t('The project is read-only') : t('Open a sequence first'),
+			sequenceContext(ctx)?.session.getState().readOnly
+				? t('The project is read-only')
+				: t('Open a sequence first'),
 		id: 'automation.applyStyle',
 		label: 'Apply Style…',
 		description:

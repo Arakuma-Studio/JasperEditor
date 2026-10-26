@@ -68,7 +68,9 @@ export type RecipeListEntry = {
 type State = { index: Index; recipes: Map<string, LibraryRecipe> };
 
 const notFound = (id: string) =>
-	new HttpError(404, 'RECIPE_NOT_FOUND', `Style recipe not found: ${String(id).slice(0, 80)}`, { code: 'E_NOT_FOUND' });
+	new HttpError(404, 'RECIPE_NOT_FOUND', `Style recipe not found: ${String(id).slice(0, 80)}`, {
+		code: 'E_NOT_FOUND',
+	});
 const builtInReadOnly = () =>
 	new HttpError(409, 'RECIPE_READ_ONLY', 'Built-in style recipes are read-only: duplicate one to change it', {
 		code: 'E_READ_ONLY',
@@ -118,7 +120,8 @@ export class StyleRecipeLibrary {
 		const path = join(this.dir, file);
 		const raw = await readJsonOrNull<unknown>(path);
 		if (raw === null) {
-			if (await exists(path)) this.note('set-aside', id, await this.setAside(path, 'unreadable JSON', 'invalid'));
+			if (await exists(path))
+				this.note('set-aside', id, await this.setAside(path, 'unreadable JSON', 'invalid'));
 			return null;
 		}
 		if (isNewerRecipe(raw)) {
@@ -128,7 +131,12 @@ export class StyleRecipeLibrary {
 		const r = parseStyleRecipe(raw);
 		if (!r.ok || r.recipe.id !== id) {
 			const why = r.ok ? `its id ${r.recipe.id} is not its file name` : r.message;
-			if (!this.readOnly) this.note('set-aside', id, await this.setAside(path, `not a readable recipe (${why})`.slice(0, 300), 'invalid'));
+			if (!this.readOnly)
+				this.note(
+					'set-aside',
+					id,
+					await this.setAside(path, `not a readable recipe (${why})`.slice(0, 300), 'invalid'),
+				);
 			else this.note('skip', id, `not a readable recipe (${why})`.slice(0, 300));
 			return null;
 		}
@@ -149,7 +157,11 @@ export class StyleRecipeLibrary {
 		const raw = await readJsonOrNull<unknown>(this.indexFile);
 		if (raw === null) {
 			if (await exists(this.indexFile)) {
-				this.note('rebuild-index', 'index.json', await this.setAside(this.indexFile, 'unreadable index', 'corrupt'));
+				this.note(
+					'rebuild-index',
+					'index.json',
+					await this.setAside(this.indexFile, 'unreadable index', 'corrupt'),
+				);
 				dirty = true;
 			}
 		} else {
@@ -167,7 +179,11 @@ export class StyleRecipeLibrary {
 				this.note(
 					'rebuild-index',
 					'index.json',
-					await this.setAside(this.indexFile, `index not readable (${p.error.issues[0]?.message ?? 'schema'})`, 'corrupt'),
+					await this.setAside(
+						this.indexFile,
+						`index not readable (${p.error.issues[0]?.message ?? 'schema'})`,
+						'corrupt',
+					),
 				);
 				dirty = true;
 			}
@@ -248,10 +264,17 @@ export class StyleRecipeLibrary {
 	}
 
 	/** Built-ins first, then the library (by name). */
-	async list(): Promise<{ revision: number; recipes: RecipeListEntry[]; repairs: LibraryRepair[]; readOnly: boolean }> {
+	async list(): Promise<{
+		revision: number;
+		recipes: RecipeListEntry[];
+		repairs: LibraryRepair[];
+		readOnly: boolean;
+	}> {
 		await this.chain;
 		const s = await this.load();
-		const lib = [...s.recipes.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+		const lib = [...s.recipes.values()].sort(
+			(a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
+		);
 		return {
 			revision: s.index.revision,
 			recipes: [
@@ -313,7 +336,12 @@ export class StyleRecipeLibrary {
 	private async writeRecipe(s: State, recipe: StyleRecipe): Promise<void> {
 		await atomicWriteJson(join(this.dir, `${recipe.id}.json`), recipe, true);
 		s.recipes.set(recipe.id, { id: recipe.id, name: recipe.name, recipe });
-		const entry = { id: recipe.id, file: `${recipe.id}.json`, name: recipe.name, updatedAt: recipe.updatedAt };
+		const entry = {
+			id: recipe.id,
+			file: `${recipe.id}.json`,
+			name: recipe.name,
+			updatedAt: recipe.updatedAt,
+		};
 		const i = s.index.recipes.findIndex((e) => e.id === recipe.id);
 		const list = [...s.index.recipes];
 		if (i >= 0) list[i] = entry;
@@ -335,9 +363,14 @@ export class StyleRecipeLibrary {
 	create(raw: Record<string, unknown>): Promise<RecipeListEntry> {
 		return this.mutate(async (s) => {
 			if (s.recipes.size >= MAX_LIBRARY_RECIPES)
-				throw new HttpError(409, 'LIBRARY_FULL', `The library holds at most ${MAX_LIBRARY_RECIPES} style recipes`, {
-					code: 'E_LIMIT',
-				});
+				throw new HttpError(
+					409,
+					'LIBRARY_FULL',
+					`The library holds at most ${MAX_LIBRARY_RECIPES} style recipes`,
+					{
+						code: 'E_LIMIT',
+					},
+				);
 			const now = this.now();
 			const from = typeof raw.id === 'string' ? raw.id : undefined;
 			const { builtIn: _b, ...rest } = raw;
@@ -368,9 +401,14 @@ export class StyleRecipeLibrary {
 			const cur = s.recipes.get(id);
 			if (!cur) throw notFound(id);
 			if (cur.newer)
-				throw new HttpError(409, 'RECIPE_NEWER', `“${cur.name}” was made by a newer JasperEditor and is read-only`, {
-					code: 'E_NEWER_VERSION',
-				});
+				throw new HttpError(
+					409,
+					'RECIPE_NEWER',
+					`“${cur.name}” was made by a newer JasperEditor and is read-only`,
+					{
+						code: 'E_NEWER_VERSION',
+					},
+				);
 			const base = patch.recipe ? { ...patch.recipe } : { ...cur.recipe };
 			const recipe = this.checked({
 				...base,

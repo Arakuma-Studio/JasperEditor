@@ -33,9 +33,13 @@ export const styleRecipeHandlers = {
 	'styleRecipe.add': (doc, cmd, h) => {
 		const p = parseStyleRecipe(cmd.recipe);
 		if (!p.ok)
-			return h.fail(p.code === 'E_TOO_LARGE' ? 'E_LIMIT' : 'E_INVALID_PARAM', `Invalid style recipe: ${p.message}`, {
-				path: ['recipe'],
-			});
+			return h.fail(
+				p.code === 'E_TOO_LARGE' ? 'E_LIMIT' : 'E_INVALID_PARAM',
+				`Invalid style recipe: ${p.message}`,
+				{
+					path: ['recipe'],
+				},
+			);
 		const rec = record(doc, h);
 		const recipes = latest(rec.recipes) as Record<string, unknown>;
 		const existing = recipes[p.recipe.id];
@@ -82,7 +86,10 @@ export const styleRecipeHandlers = {
 		const rec = record(doc, h);
 		const stored = (latest(rec.recipes) as Record<string, unknown>)[cmd.recipeId];
 		if (stored !== undefined && isNewerRecipe(stored))
-			h.fail('E_INVALID_PARAM', `Recipe ${cmd.recipeId} was made by a newer JasperEditor and cannot be used here`);
+			h.fail(
+				'E_INVALID_PARAM',
+				`Recipe ${cmd.recipeId} was made by a newer JasperEditor and cannot be used here`,
+			);
 		rec.active = cmd.recipeId;
 		return { active: cmd.recipeId };
 	},

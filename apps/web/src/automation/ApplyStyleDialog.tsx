@@ -56,17 +56,23 @@ export type ApplyStyleDialogProps = {
 /** One stage's line of the dry run. */
 function StageLine(p: { s: StyleStageReportDto }) {
 	const s = p.s;
-	const tone = s.status === 'skipped' ? 'text-pr-warning' : s.status === 'planned' ? 'text-pr-text' : 'text-pr-muted';
+	const tone =
+		s.status === 'skipped' ? 'text-pr-warning' : s.status === 'planned' ? 'text-pr-text' : 'text-pr-muted';
 	return (
 		<li className="flex flex-col" data-testid={`apply-style-stage-${s.stage}`} data-status={s.status}>
 			<span className={`flex gap-2 text-pr-small ${tone}`}>
 				<span className="w-[120px] shrink-0">{name(s.name)}</span>
 				<span className="w-[96px] shrink-0">{t(STATUS_TEXT[s.status])}</span>
 				{s.status === 'planned' ? <span className="pr-tabular">{s.count}</span> : null}
-				{s.status === 'planned' && s.cost ? <span className="text-pr-muted">· {t(COST_TEXT[s.cost])}</span> : null}
+				{s.status === 'planned' && s.cost ? (
+					<span className="text-pr-muted">· {t(COST_TEXT[s.cost])}</span>
+				) : null}
 			</span>
 			{s.reason && s.status !== 'off' ? (
-				<span className="pl-[128px] text-pr-small text-pr-muted" data-testid={`apply-style-reason-${s.stage}`}>
+				<span
+					className="pl-[128px] text-pr-small text-pr-muted"
+					data-testid={`apply-style-reason-${s.stage}`}
+				>
 					{s.reason}
 				</span>
 			) : null}
@@ -93,12 +99,19 @@ function DrySummary(p: { r: ApplyStyleResult }) {
 			{!r.budget.fits ? (
 				<span className="text-pr-small text-pr-warning" data-testid="apply-style-too-big">
 					{r.budget.suggestedRange
-						? t('Too big for one proposal: choose In to Out up to frame {0}, then the rest', r.budget.suggestedRange.end)
+						? t(
+								'Too big for one proposal: choose In to Out up to frame {0}, then the rest',
+								r.budget.suggestedRange.end,
+							)
 						: t('Too big for one proposal: choose a shorter range')}
 				</span>
 			) : null}
 			{roles.map((w) => (
-				<span key={w.code + w.message} className="text-pr-small text-pr-warning" data-apply-style-warning={w.code}>
+				<span
+					key={w.code + w.message}
+					className="text-pr-small text-pr-warning"
+					data-apply-style-warning={w.code}
+				>
 					! {w.message}
 				</span>
 			))}
@@ -128,7 +141,8 @@ export function ApplyStyleDialog(props: HostedDialogProps<ApplyStyleDialogProps>
 	const [message, setMessage] = useState<string | null>(null);
 	const abort = useRef<AbortController | null>(null);
 	const hasInOut = !!seq && (seq.inPoint !== null || seq.outPoint !== null);
-	const enabledOf = (s: StyleStage) => switches[s] ?? recipeStages.find((x) => x.stage === s)?.enabled ?? false;
+	const enabledOf = (s: StyleStage) =>
+		switches[s] ?? recipeStages.find((x) => x.stage === s)?.enabled ?? false;
 	const request = useMemo(() => {
 		if (!seq || !recipe) return null;
 		const r = dialogParams(seq, {}, range).range as { start: number; end: number } | undefined;
@@ -187,7 +201,10 @@ export function ApplyStyleDialog(props: HostedDialogProps<ApplyStyleDialogProps>
 				return false;
 			}
 			await openReview(session, r.proposalId);
-			props.toast?.({ kind: 'success', message: t('Proposed {0} with {1} items', name(r.recipe.name), r.itemCount) });
+			props.toast?.({
+				kind: 'success',
+				message: t('Proposed {0} with {1} items', name(r.recipe.name), r.itemCount),
+			});
 			props.onReview?.();
 			return true;
 		} catch (e) {

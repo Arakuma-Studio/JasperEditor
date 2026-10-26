@@ -22,8 +22,8 @@ import {
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	loadProject,
-	makeEnvelope,
 	type MediaAsset,
+	makeEnvelope,
 	type ProjectDocument,
 	type Proposal,
 	projectStyleRecipes,
@@ -34,7 +34,11 @@ import { coreServices } from '../src/tools/services.ts';
 import { closeApps, makeApp, tempAppdir } from './helpers.ts';
 import { PACK, writeWav } from './sound-fixtures.ts';
 
-const ENV_KEYS = ['JASPER_SOUND_STARTER_DIR', 'JASPER_SOUND_SYNTH_VARIANTS', 'JASPER_SOUND_AUTO_INDEX'] as const;
+const ENV_KEYS = [
+	'JASPER_SOUND_STARTER_DIR',
+	'JASPER_SOUND_SYNTH_VARIANTS',
+	'JASPER_SOUND_AUTO_INDEX',
+] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 const HOST = { host: '127.0.0.1:47900' };
 const TOKEN = 'tok_styl_0123456789abcdef012345';
@@ -130,10 +134,15 @@ function seed(lengths: number[]) {
 	const places: Record<string, unknown>[] = [];
 	let at = 0;
 	lengths.forEach((len, i) => {
-		const pause = i % 2 === 0 && len >= 90 ? { from: Math.floor(len / 2) - 18, to: Math.floor(len / 2) + 18 } : null;
+		const pause =
+			i % 2 === 0 && len >= 90 ? { from: Math.floor(len / 2) - 18, to: Math.floor(len / 2) + 18 } : null;
 		for (let f = 0; f + 9 <= len; f += 12) {
 			if (pause && f + 9 > pause.from && f < pause.to) continue;
-			words.push({ text: words.length % 7 === 6 ? '¡genial!' : `palabra${words.length}`, start: (src + f) * F, end: (src + f + 9) * F });
+			words.push({
+				text: words.length % 7 === 6 ? '¡genial!' : `palabra${words.length}`,
+				start: (src + f) * F,
+				end: (src + f + 9) * F,
+			});
 		}
 		places.push({
 			type: 'clip.place',
@@ -163,7 +172,10 @@ function seed(lengths: number[]) {
 	doc = r.document;
 	const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
-	writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 3, savedAt: '2026-10-26T00:00:00.000Z', platform: 'test' })));
+	writeFileSync(
+		file,
+		JSON.stringify(makeEnvelope(doc, { revision: 3, savedAt: '2026-10-26T00:00:00.000Z', platform: 'test' })),
+	);
 	return { projectId: doc.projectId, seqId, total: at, file };
 }
 
@@ -174,10 +186,24 @@ function userEdit(file: string, seqId: string, commands: unknown[]) {
 	const r = applyTransaction(
 		doc,
 		{ label: 'user edit', origin: 'user', sequenceId: seqId, commands },
-		{ ids: createCounterIdSource(900), now: () => '2026-10-26T01:00:00.000Z', revision: env.revision, registries: defaultRegistries() },
+		{
+			ids: createCounterIdSource(900),
+			now: () => '2026-10-26T01:00:00.000Z',
+			revision: env.revision,
+			registries: defaultRegistries(),
+		},
 	);
 	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
-	writeFileSync(file, JSON.stringify(makeEnvelope(r.document, { revision: env.revision + 1, savedAt: '2026-10-26T01:00:00.000Z', platform: 'test' })));
+	writeFileSync(
+		file,
+		JSON.stringify(
+			makeEnvelope(r.document, {
+				revision: env.revision + 1,
+				savedAt: '2026-10-26T01:00:00.000Z',
+				platform: 'test',
+			}),
+		),
+	);
 }
 
 const post = (u: string, body: unknown, headers: Record<string, string> = AGENT_H) =>
@@ -198,7 +224,11 @@ async function proposeStyle(projectId: string, body: unknown, headers = AGENT_H)
 	return ApplyStyleResultSchema.parse(job.result);
 }
 async function getProposal(projectId: string, id: string): Promise<Proposal> {
-	const r = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposals/${id}`, headers: AGENT_H });
+	const r = await app.inject({
+		method: 'GET',
+		url: `/api/projects/${projectId}/proposals/${id}`,
+		headers: AGENT_H,
+	});
 	expect(r.statusCode, r.body).toBe(200);
 	return (r.json() as { proposal: Proposal }).proposal;
 }
@@ -208,7 +238,11 @@ async function exportPath(doc: ProjectDocument, seqId: string) {
 	const core = coreServices(app);
 	const plan = await planExport(
 		{
-			envelope: makeEnvelope(doc, { revision: 1, savedAt: '2026-10-26T00:00:00.000Z', platform: 'test' }) as never,
+			envelope: makeEnvelope(doc, {
+				revision: 1,
+				savedAt: '2026-10-26T00:00:00.000Z',
+				platform: 'test',
+			}) as never,
 			sequenceId: seqId,
 			settings: {
 				sequenceId: seqId,
@@ -227,7 +261,12 @@ async function exportPath(doc: ProjectDocument, seqId: string) {
 				engine: 'auto',
 			} as never,
 		},
-		{ registry: core.registry, fonts: core.fonts, capabilities: CAPS, extensions: core.exports.nativeExtensions.all() },
+		{
+			registry: core.registry,
+			fonts: core.fonts,
+			capabilities: CAPS,
+			extensions: core.exports.nativeExtensions.all(),
+		},
 	);
 	return plan.plan;
 }
@@ -256,7 +295,12 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 	it('dry run: every stage reported (cleanup cuts, subtitles, kits with whooshes, missing roles), nothing stored', async () => {
 		const { projectId, seqId } = seed(LENGTHS);
 		const before = await savedDoc(projectId);
-		const r = await post(styleUrl(projectId, 'apply'), { sequenceId: seqId, mode: 'dryRun', recipeId: 'builtin:fast-long-form', seed: 2 });
+		const r = await post(styleUrl(projectId, 'apply'), {
+			sequenceId: seqId,
+			mode: 'dryRun',
+			recipeId: 'builtin:fast-long-form',
+			seed: 2,
+		});
 		expect(r.statusCode, r.body).toBe(200);
 		const d = ApplyStyleResultSchema.parse(r.json());
 		const by = Object.fromEntries(d.stages.map((s) => [s.stage, s]));
@@ -275,20 +319,30 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 		expect(d.budget.fits).toBe(true);
 		const after = await savedDoc(projectId);
 		expect(after.revision).toBe(before.revision);
-		const list = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/proposals`, headers: AGENT_H });
+		const list = await app.inject({
+			method: 'GET',
+			url: `/api/projects/${projectId}/proposals`,
+			headers: AGENT_H,
+		});
 		expect((list.json() as { proposals: unknown[] }).proposals).toEqual([]);
 	});
 
 	it('propose → ONE proposal; an agent accepts it as ONE transaction; the export route is the dry run’s cost class', async () => {
 		const { projectId, seqId, total } = seed(LENGTHS);
-		const res = await proposeStyle(projectId, { sequenceId: seqId, recipeId: 'builtin:fast-long-form', seed: 2 });
+		const res = await proposeStyle(projectId, {
+			sequenceId: seqId,
+			recipeId: 'builtin:fast-long-form',
+			seed: 2,
+		});
 		expect(res.proposalId).toBeTruthy();
 		expect(res.invalid).toEqual([]);
 		const p = await getProposal(projectId, res.proposalId!);
 		expect(p.feature).toBe('edit-automation');
 		expect(p.title).toBe('Apply Style: Fast Long-form');
 		const groups = new Set(p.items.map((it) => (it.meta as { group?: string }).group).filter(Boolean));
-		expect([...groups]).toEqual(expect.arrayContaining(['cleanup', 'subtitles', 'cut-kits', 'punch-ins', 'ken-burns']));
+		expect([...groups]).toEqual(
+			expect.arrayContaining(['cleanup', 'subtitles', 'cut-kits', 'punch-ins', 'ken-burns']),
+		);
 		const before = await savedDoc(projectId);
 		const acc = await post(`/api/projects/${projectId}/proposals/${p.id}/accept`, { itemIds: 'all' });
 		expect(acc.statusCode, acc.body).toBe(200);
@@ -319,26 +373,43 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 
 	it('Reroll of a decoration re-plans it through the Apply Style refresher; a stale cleanup means run it again', async () => {
 		const { projectId, seqId } = seed(LENGTHS);
-		const res = await proposeStyle(projectId, { sequenceId: seqId, recipeId: 'builtin:fast-long-form', seed: 3, passes: { subtitles: false } }, EDITOR_H);
+		const res = await proposeStyle(
+			projectId,
+			{ sequenceId: seqId, recipeId: 'builtin:fast-long-form', seed: 3, passes: { subtitles: false } },
+			EDITOR_H,
+		);
 		const p = await getProposal(projectId, res.proposalId!);
 		const kit = p.items.find((it) => (it.meta as { kind?: string }).kind === 'kit')!;
 		const seed0 = (kit.meta as { seed: number }).seed;
-		const rr = await post(`/api/projects/${projectId}/proposals/${p.id}/refresh`, { itemIds: [kit.id], reroll: true }, EDITOR_H);
+		const rr = await post(
+			`/api/projects/${projectId}/proposals/${p.id}/refresh`,
+			{ itemIds: [kit.id], reroll: true },
+			EDITOR_H,
+		);
 		expect(rr.statusCode, rr.body).toBe(200);
 		const out = ProposalRefreshResponseSchema.parse(rr.json());
 		const k2 = out.proposal.items.find((it) => it.id === kit.id)!;
 		expect(k2.state).toBe('pending');
 		expect((k2.meta as { seed: number }).seed).toBe(seed0 + 1);
-		const rc = await post(`/api/projects/${projectId}/proposals/${p.id}/refresh`, { itemIds: ['cleanup'] }, EDITOR_H);
+		const rc = await post(
+			`/api/projects/${projectId}/proposals/${p.id}/refresh`,
+			{ itemIds: ['cleanup'] },
+			EDITOR_H,
+		);
 		expect(rc.statusCode, rc.body).toBe(200);
-		const c = ProposalRefreshResponseSchema.parse(rc.json()).proposal.items.find((it) => it.id === 'cleanup')!;
+		const c = ProposalRefreshResponseSchema.parse(rc.json()).proposal.items.find(
+			(it) => it.id === 'cleanup',
+		)!;
 		expect(c.state).toBe('invalid');
 		expect(c.reason).toMatch(/Apply Style again/);
 	});
 
 	it('refusals: unknown recipe, no active recipe, newer recipe, bad stage names, unknown sequence', async () => {
 		const { projectId, seqId } = seed([90, 90, 90]);
-		const unknown = await post(styleUrl(projectId, 'apply'), { mode: 'dryRun', recipeId: 'rcp_0000000000000000' });
+		const unknown = await post(styleUrl(projectId, 'apply'), {
+			mode: 'dryRun',
+			recipeId: 'rcp_0000000000000000',
+		});
 		expect(unknown.statusCode).toBe(404);
 		const none = await post(styleUrl(projectId, 'apply'), { mode: 'dryRun' });
 		expect(none.statusCode).toBe(400);
@@ -348,22 +419,40 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 			recipe: { format: 'jasper-style-recipe', version: 4, id: 'rcp_0000000000000001', name: 'x' },
 		});
 		expect(newer.statusCode).toBe(409);
-		const bad = await post(styleUrl(projectId, 'apply'), { mode: 'dryRun', recipeId: 'builtin:clean', passes: { nope: true } });
+		const bad = await post(styleUrl(projectId, 'apply'), {
+			mode: 'dryRun',
+			recipeId: 'builtin:clean',
+			passes: { nope: true },
+		});
 		expect(bad.statusCode).toBe(400);
-		const seq = await post(styleUrl(projectId, 'apply'), { mode: 'dryRun', recipeId: 'builtin:clean', sequenceId: 'seq_0000000000000099' });
+		const seq = await post(styleUrl(projectId, 'apply'), {
+			mode: 'dryRun',
+			recipeId: 'builtin:clean',
+			sequenceId: 'seq_0000000000000099',
+		});
 		expect(seq.statusCode).toBe(404);
-		const ok = await post(styleUrl(projectId, 'check'), { sequenceId: seqId, recipeId: 'builtin:clean', deadAir: false });
+		const ok = await post(styleUrl(projectId, 'check'), {
+			sequenceId: seqId,
+			recipeId: 'builtin:clean',
+			deadAir: false,
+		});
 		expect(ok.statusCode, ok.body).toBe(200);
 	});
 
 	it('an agent may not accept a combined proposal whose cleanup the project keeps for the user', async () => {
 		const { projectId, seqId, file } = seed(LENGTHS);
-		const res = await proposeStyle(projectId, { sequenceId: seqId, recipeId: 'builtin:clean', passes: { subtitles: false } });
+		const res = await proposeStyle(projectId, {
+			sequenceId: seqId,
+			recipeId: 'builtin:clean',
+			passes: { subtitles: false },
+		});
 		expect(res.proposalId).toBeTruthy();
 		userEdit(file, seqId, [
 			{ type: 'project.updateSettings', settings: { agentProposals: { 'transcript-cleanup': false } } },
 		]);
-		const acc = await post(`/api/projects/${projectId}/proposals/${res.proposalId}/accept`, { itemIds: 'all' });
+		const acc = await post(`/api/projects/${projectId}/proposals/${res.proposalId}/accept`, {
+			itemIds: 'all',
+		});
 		expect(acc.statusCode).toBe(403);
 		expect(acc.body).toMatch(/transcript cleanup/);
 	});

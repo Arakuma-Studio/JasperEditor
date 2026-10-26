@@ -48,7 +48,10 @@ export function formatTarget(m: StyleCheckMetricDto): string {
 	if (tg.max !== undefined && tg.value === undefined) return t('≤ {0}', formatValue(m, tg.max));
 	if (tg.value !== undefined) {
 		const tol = tg.tolerance ?? 0;
-		const tolText = m.unit === 'share' || m.unit === 'fraction' ? `${Math.round(tol * 100)} %` : String(Math.round(tol * 10) / 10);
+		const tolText =
+			m.unit === 'share' || m.unit === 'fraction'
+				? `${Math.round(tol * 100)} %`
+				: String(Math.round(tol * 10) / 10);
 		return `${formatValue(m, tg.value)} ± ${tolText}`;
 	}
 	return '—';
@@ -126,7 +129,12 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 							onValueChange={setRecipeId}
 							options={choices.map((c) => ({ value: c.id, label: name(c.name), disabled: !c.recipe }))}
 						/>
-						<Button variant="quiet" disabled={busy} onClick={() => void check()} data-testid="style-check-again">
+						<Button
+							variant="quiet"
+							disabled={busy}
+							onClick={() => void check()}
+							data-testid="style-check-again"
+						>
 							{busy ? t('Checking…') : t('Check Again')}
 						</Button>
 					</Row>
@@ -138,7 +146,12 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 					{result ? (
 						<>
 							<span className="text-pr-small text-pr-text" data-testid="style-check-counts">
-								{t('{0} on target · {1} off · {2} not measured', result.counts.ok, result.counts.off, result.counts.unmeasured)}
+								{t(
+									'{0} on target · {1} off · {2} not measured',
+									result.counts.ok,
+									result.counts.off,
+									result.counts.unmeasured,
+								)}
 							</span>
 							<ul className="flex flex-col gap-2" data-testid="style-check-metrics">
 								{result.metrics
@@ -146,7 +159,12 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 									.map((m) => {
 										const st = STATUS[m.status];
 										return (
-											<li key={m.id} className="flex flex-col gap-0.5" data-testid={`style-check-${m.id}`} data-status={m.status}>
+											<li
+												key={m.id}
+												className="flex flex-col gap-0.5"
+												data-testid={`style-check-${m.id}`}
+												data-status={m.status}
+											>
 												<span className={`flex gap-2 text-pr-small ${st.tone}`}>
 													<span className="w-[14px] shrink-0 text-center" aria-hidden="true">
 														{st.mark}
@@ -160,7 +178,10 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 												</span>
 												<span className="pl-[22px] text-pr-small text-pr-muted">{m.message}</span>
 												{m.lookHere.length ? (
-													<span className="flex flex-wrap gap-1 pl-[22px]" data-testid={`style-check-look-${m.id}`}>
+													<span
+														className="flex flex-wrap gap-1 pl-[22px]"
+														data-testid={`style-check-look-${m.id}`}
+													>
 														{m.lookHere.slice(0, 12).map((l) => (
 															<Button
 																key={`${l.frame}-${l.note}`}
@@ -173,7 +194,9 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 															</Button>
 														))}
 														{m.lookHere.length > 12 ? (
-															<span className="text-pr-small text-pr-dim">{t('+{0} more', m.lookHere.length - 12)}</span>
+															<span className="text-pr-small text-pr-dim">
+																{t('+{0} more', m.lookHere.length - 12)}
+															</span>
 														) : null}
 													</span>
 												) : null}

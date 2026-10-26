@@ -24,13 +24,13 @@ import type {
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	AutomationInputError,
+	activeStyleRecipe,
 	automationSequence,
 	cleanupFindingFrames,
 	defaultRegistries,
 	FINDING_KINDS,
-	makeEnvelope,
 	findStyleRecipe,
-	activeStyleRecipe,
+	makeEnvelope,
 	type PassContext,
 	type PassSfx,
 	type ProjectDocument,
@@ -39,8 +39,8 @@ import {
 	parseStyleRecipe,
 	planStyle,
 	proposalBudget,
-	refreshStyleItems,
 	type Registries,
+	refreshStyleItems,
 	type StyleCheckDeadAir,
 	type StyleHooks,
 	type StyleRecipe,
@@ -49,12 +49,12 @@ import {
 } from '@jasper/project';
 import type { CleanupAnalysisService } from '../cleanup/service.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
-import type { JobQueue } from '../jobs/queue.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import { liveDocument } from '../sound-design/plan.ts';
 import type { StyleRecipeLibrary } from '../style-recipes/library.ts';
 import type { SubtitleTemplateLibrary } from '../subtitle-templates/library.ts';
 import { HttpError } from '../tools/reply.ts';
+import type { CoreServices } from '../tools/services.ts';
 import {
 	type AutomationDeps,
 	budgetOf,
@@ -69,7 +69,7 @@ export type StyleDeps = AutomationDeps & {
 	recipes: () => StyleRecipeLibrary | undefined;
 	cleanup: () => CleanupAnalysisService | undefined;
 	templates: () => SubtitleTemplateLibrary | undefined;
-	queue: () => JobQueue;
+	queue: () => CoreServices['queue'];
 	registries?: Registries;
 };
 
@@ -90,9 +90,14 @@ export async function resolveRecipe(
 	if (req.recipe) {
 		const r = parseStyleRecipe(req.recipe);
 		if (!r.ok)
-			throw new HttpError(r.code === 'E_NEWER_VERSION' ? 409 : 400, 'VALIDATION_FAILED', `recipe: ${r.message}`, {
-				code: r.code === 'E_TOO_LARGE' ? 'E_LIMIT' : r.code,
-			});
+			throw new HttpError(
+				r.code === 'E_NEWER_VERSION' ? 409 : 400,
+				'VALIDATION_FAILED',
+				`recipe: ${r.message}`,
+				{
+					code: r.code === 'E_TOO_LARGE' ? 'E_LIMIT' : r.code,
+				},
+			);
 		return r.recipe;
 	}
 	if (req.recipeId) {
@@ -124,9 +129,18 @@ async function runCleanupAnalysis(
 	req: CleanupAnalyzeRequest,
 	origin: EngineJob['origin'] | undefined,
 	signal?: AbortSignal,
-): Promise<{ result: CleanupAnalysisJobResult; analysis: NonNullable<ReturnType<CleanupAnalysisService['get']>>['analysis'] } | { error: Warning }> {
+): Promise<
+	| {
+			result: CleanupAnalysisJobResult;
+			analysis: NonNullable<ReturnType<CleanupAnalysisService['get']>>['analysis'];
+	  }
+	| { error: Warning }
+> {
 	const svc = deps.cleanup();
-	if (!svc) return { error: { code: 'W_CLEANUP_UNAVAILABLE', message: 'The voice cleanup is not available in this engine' } };
+	if (!svc)
+		return {
+			error: { code: 'W_CLEANUP_UNAVAILABLE', message: 'The voice cleanup is not available in this engine' },
+		};
 	const queue = deps.queue();
 	const job = svc.submit(req, origin);
 	const onAbort = () => queue.cancel(job.id);
@@ -142,14 +156,23 @@ async function runCleanupAnalysis(
 				error: {
 					code: noSpeech ? 'W_NO_TRANSCRIPT' : 'W_CLEANUP_FAILED',
 					message: noSpeech
-						? `The voice cleanup needs transcribed dialogue: transcribe the sequence first (Transcript ▸ Transcribe…), or turn the cleanup off for this run (${msg})`.slice(0, 600)
+						? `The voice cleanup needs transcribed dialogue: transcribe the sequence first (Transcript ▸ Transcribe…), or turn the cleanup off for this run (${msg})`.slice(
+								0,
+								600,
+							)
 						: `The voice cleanup analysis failed: ${msg}`.slice(0, 600),
 				},
 			};
 		}
 		const result = fin.result as CleanupAnalysisJobResult;
 		const file = svc.get(result.analysisId);
-		if (!file) return { error: { code: 'W_CLEANUP_FAILED', message: 'The voice cleanup analysis was evicted before it was read' } };
+		if (!file)
+			return {
+				error: {
+					code: 'W_CLEANUP_FAILED',
+					message: 'The voice cleanup analysis was evicted before it was read',
+				},
+			};
 		return { result, analysis: file.analysis };
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
@@ -197,7 +220,10 @@ function styleHooks(
 					message:
 						m.mode === 'dry'
 							? `${r.result.voice.missing.length} media have no voice analysis yet: the dry run cuts them at word timings (Propose analyses them)`
-							: `${r.result.voice.missing.length} media could not be analysed: they are cut at word timings (${r.result.voice.missing[0]!.reason})`.slice(0, 500),
+							: `${r.result.voice.missing.length} media could not be analysed: they are cut at word timings (${r.result.voice.missing[0]!.reason})`.slice(
+									0,
+									500,
+								),
 				});
 			return {
 				ranges: r.analysis.plan.ranges.map((x) => ({ start: x.start, end: x.end })),
@@ -216,7 +242,13 @@ function styleHooks(
 			return t ? (t as unknown as Record<string, unknown>) : null;
 		},
 		passInputs: async (pass, doc, sequenceId, params) => {
-			const r = await passInputs(deps, { projectId: input.projectId, pass, sequenceId, params }, doc, revision, inputMode);
+			const r = await passInputs(
+				deps,
+				{ projectId: input.projectId, pass, sequenceId, params },
+				doc,
+				revision,
+				inputMode,
+			);
 			return r;
 		},
 		refine: async (pass, doc, plan, params) => {
@@ -226,18 +258,37 @@ function styleHooks(
 			const r = await measureSubjects(doc, p, deps.reframe(), m.ctx, input.projectId);
 			return { subjects: r.subjects } as PassContext;
 		},
-		sounds: async (pass, doc, plan, needs) => {
+		sounds: async (pass, _doc, plan, needs) => {
 			const sounds = deps.sounds();
 			const warnings: Warning[] = [];
 			if (!sounds)
 				return {
-					report: { enabled: true, type: needs.sfx.type, available: 0, placed: 0, sounds: 0, unsounded: needs.items.length },
-					warnings: [{ code: 'W_NO_LIBRARY', message: 'The sound library is not running: the decorations have no sound' }],
+					report: {
+						enabled: true,
+						type: needs.sfx.type,
+						available: 0,
+						placed: 0,
+						sounds: 0,
+						unsounded: needs.items.length,
+					},
+					warnings: [
+						{
+							code: 'W_NO_LIBRARY',
+							message: 'The sound library is not running: the decorations have no sound',
+						},
+					],
 				};
 			const pick = await pickSounds(sounds, needs, plan.sequenceId);
 			if (!pick?.assign.size)
 				return {
-					report: { enabled: true, type: needs.sfx.type, available: pick?.available ?? 0, placed: 0, sounds: 0, unsounded: needs.items.length },
+					report: {
+						enabled: true,
+						type: needs.sfx.type,
+						available: pick?.available ?? 0,
+						placed: 0,
+						sounds: 0,
+						unsounded: needs.items.length,
+					},
 					warnings,
 				};
 			if (m.mode === 'dry')
@@ -285,9 +336,14 @@ function styleHooks(
 
 const asInput = (e: unknown): never => {
 	if (e instanceof AutomationInputError)
-		throw new HttpError(e.code === 'E_NOT_FOUND' ? 404 : 400, e.code === 'E_NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_FAILED', e.message, {
-			code: e.code,
-		});
+		throw new HttpError(
+			e.code === 'E_NOT_FOUND' ? 404 : 400,
+			e.code === 'E_NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_FAILED',
+			e.message,
+			{
+				code: e.code,
+			},
+		);
 	throw e;
 };
 
@@ -308,7 +364,10 @@ function resultOf(
 		stages: plan.stages as ApplyStyleResult['stages'],
 		cost: plan.cost,
 		budget: { ...b, fits, commands },
-		warnings: [...plan.warnings, ...plan.stages.flatMap((s) => s.warnings.filter((w) => !plan.warnings.includes(w)))].slice(0, 200),
+		warnings: [
+			...plan.warnings,
+			...plan.stages.flatMap((s) => s.warnings.filter((w) => !plan.warnings.includes(w))),
+		].slice(0, 200),
 	};
 }
 
@@ -369,7 +428,8 @@ async function runJob(ctx: JobContext, deps: StyleDeps): Promise<ApplyStyleResul
 	if (!parsed.ok) throw new JobError('VALIDATION_FAILED', parsed.message, false);
 	const agent = deps.agent();
 	const proposals = deps.proposals();
-	if (!agent || !proposals) throw new JobError('NOT_AVAILABLE', 'The agent or proposal service is not running', true);
+	if (!agent || !proposals)
+		throw new JobError('NOT_AVAILABLE', 'The agent or proposal service is not running', true);
 	ctx.progress(0.02, { stage: 'Reading the edit' });
 	const { doc, revision } = await liveDocument(agent, input.projectId);
 	const hooks = styleHooks(deps, input, revision ?? 0, { mode: 'job', ctx }, ctx.job.origin, new Map());
@@ -400,7 +460,11 @@ async function runJob(ctx: JobContext, deps: StyleDeps): Promise<ApplyStyleResul
 		return { ...base, proposalId: null, revision: null, itemCount: 0, invalid: [] };
 	}
 	ctx.progress(0.94, { stage: `Checking ${draft.items.length} proposal items` });
-	const created = await proposals.create(input.projectId, draft as unknown as Record<string, unknown>, input.who);
+	const created = await proposals.create(
+		input.projectId,
+		draft as unknown as Record<string, unknown>,
+		input.who,
+	);
 	if (ctx.signal.aborted) {
 		await proposals.delete(input.projectId, created.proposal.id).catch(() => undefined);
 		throw new JobError('JOB_CANCELLED', 'Cancelled');
@@ -421,7 +485,14 @@ async function runJob(ctx: JobContext, deps: StyleDeps): Promise<ApplyStyleResul
 /** Refresh / Reroll of an Apply Style proposal (the `edit-automation` refresher dispatches here). */
 export async function refreshStyle(
 	deps: StyleDeps | AutomationDeps,
-	input: { projectId: string; proposal: Proposal; itemIds: string[]; doc: ProjectDocument; revision: number; reroll?: boolean },
+	input: {
+		projectId: string;
+		proposal: Proposal;
+		itemIds: string[];
+		doc: ProjectDocument;
+		revision: number;
+		reroll?: boolean;
+	},
 ) {
 	let scratch: string | null = null;
 	const ac = new AbortController();
@@ -439,13 +510,22 @@ export async function refreshStyle(
 			input.doc,
 			input.proposal,
 			input.itemIds,
-			{ registries: (deps as StyleDeps).registries ?? defaultRegistries(mgRegistry), ...(input.reroll ? { reroll: true } : {}) },
+			{
+				registries: (deps as StyleDeps).registries ?? defaultRegistries(mgRegistry),
+				...(input.reroll ? { reroll: true } : {}),
+			},
 			{
 				passInputs: (pass, d, sequenceId, params) =>
-					passInputs(deps, { projectId: input.projectId, pass, sequenceId, params }, d, input.revision, { mode: 'job', ctx }),
+					passInputs(deps, { projectId: input.projectId, pass, sequenceId, params }, d, input.revision, {
+						mode: 'job',
+						ctx,
+					}),
 			},
 		);
-		if (!r.ok) throw new HttpError(r.code === 'E_NOT_FOUND' ? 404 : 422, 'VALIDATION_FAILED', r.message, { code: r.code });
+		if (!r.ok)
+			throw new HttpError(r.code === 'E_NOT_FOUND' ? 404 : 422, 'VALIDATION_FAILED', r.message, {
+				code: r.code,
+			});
 		return { items: r.items, dropped: r.dropped };
 	} finally {
 		if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
@@ -463,15 +543,20 @@ async function deadAirOf(
 	sequenceId: string,
 	preset: string,
 ): Promise<{ deadAir: StyleCheckDeadAir; warnings: Warning[] }> {
-	const r = await runCleanupAnalysis(deps, {
-		projectId,
-		sequenceId,
-		document: envelopeOf(doc, 0),
-		presetId: preset,
-		analyzeVoice: false,
-		decisions: { rejectKinds: [...FINDING_KINDS] },
-	}, undefined);
-	if ('error' in r) return { deadAir: { perMinute: null, pauses: [], note: r.error.message }, warnings: [r.error] };
+	const r = await runCleanupAnalysis(
+		deps,
+		{
+			projectId,
+			sequenceId,
+			document: envelopeOf(doc, 0),
+			presetId: preset,
+			analyzeVoice: false,
+			decisions: { rejectKinds: [...FINDING_KINDS] },
+		},
+		undefined,
+	);
+	if ('error' in r)
+		return { deadAir: { perMinute: null, pauses: [], note: r.error.message }, warnings: [r.error] };
 	const seq = automationSequence(doc, sequenceId);
 	const pauses = r.analysis.findings
 		.filter((f) => f.kind === 'pause')
@@ -484,7 +569,9 @@ async function deadAirOf(
 			perMinute: per,
 			pauses,
 			...(per === null
-				? { note: 'Not measured: the dialogue has no voice analysis yet (Sequence ▸ Clean Up Voice… ▸ Analyze makes it)' }
+				? {
+						note: 'Not measured: the dialogue has no voice analysis yet (Sequence ▸ Clean Up Voice… ▸ Analyze makes it)',
+					}
 				: {}),
 		},
 		warnings: [],

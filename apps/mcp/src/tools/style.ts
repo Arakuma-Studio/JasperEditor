@@ -56,25 +56,46 @@ async function libraryList(ctx: ToolContext) {
 }
 
 /** A recipe by id: the project's copy (when `projectId`), else the engine's (built-in or library). */
-async function recipeById(ctx: ToolContext, id: string, projectId?: string): Promise<{ recipe: StyleRecipe; source: string }> {
+async function recipeById(
+	ctx: ToolContext,
+	id: string,
+	projectId?: string,
+): Promise<{ recipe: StyleRecipe; source: string }> {
 	if (projectId) {
 		const { doc } = await loadDoc(ctx, projectId);
 		const p = projectStyleRecipes(doc);
 		if (p.recipes[id]) return { recipe: p.recipes[id]!, source: 'project' };
 		if (p.newer.includes(id))
-			throw new ToolError('E_NEWER_VERSION', `The project's recipe ${id} was made by a newer JasperEditor`, 'Update JasperEditor to use it.');
+			throw new ToolError(
+				'E_NEWER_VERSION',
+				`The project's recipe ${id} was made by a newer JasperEditor`,
+				'Update JasperEditor to use it.',
+			);
 	}
-	const e = (await ctx.engine((c) => c.styleRecipe(id)).catch((err: Error & { code?: string }) => {
-		if (err.code === 'RECIPE_NOT_FOUND' || /not found/i.test(err.message))
-			throw new ToolError('E_NOT_FOUND', `No style recipe ${id}`, 'list_style_recipes lists them.');
-		throw err;
-	})) as Entry;
+	const e = (await ctx
+		.engine((c) => c.styleRecipe(id))
+		.catch((err: Error & { code?: string }) => {
+			if (err.code === 'RECIPE_NOT_FOUND' || /not found/i.test(err.message))
+				throw new ToolError('E_NOT_FOUND', `No style recipe ${id}`, 'list_style_recipes lists them.');
+			throw err;
+		})) as Entry;
 	if (!e.recipe)
-		throw new ToolError('E_NEWER_VERSION', `The recipe ${id} was made by a newer JasperEditor`, 'Update JasperEditor to use it.');
+		throw new ToolError(
+			'E_NEWER_VERSION',
+			`The recipe ${id} was made by a newer JasperEditor`,
+			'Update JasperEditor to use it.',
+		);
 	return { recipe: e.recipe as unknown as StyleRecipe, source: e.source };
 }
 
-const brief = (r: { id: string; name: string; source?: string; readOnly?: boolean; newer?: boolean; recipe?: unknown }) => {
+const brief = (r: {
+	id: string;
+	name: string;
+	source?: string;
+	readOnly?: boolean;
+	newer?: boolean;
+	recipe?: unknown;
+}) => {
 	const rec = r.recipe as StyleRecipe | undefined;
 	return {
 		id: r.id,
@@ -114,7 +135,9 @@ function compact(r: ApplyStyleResult) {
 									skipped: {
 										count: s.summary.skipped.count,
 										byCode: s.summary.skipped.byCode,
-										first: s.summary.skipped.first.slice(0, 10).map((x) => ({ timecode: x.timecode, reason: x.reason })),
+										first: s.summary.skipped.first
+											.slice(0, 10)
+											.map((x) => ({ timecode: x.timecode, reason: x.reason })),
 									},
 								}
 							: {}),
@@ -161,7 +184,10 @@ async function applyStyle(ctx: ToolContext, a: ApplyArgs, extra: Extra) {
 	if (a.range) {
 		range = { start: frameOf(seq, a.range.start), end: frameOf(seq, a.range.end) };
 		if (range.end <= range.start)
-			throw new ToolError('E_INVALID_PARAM', `range.end (${range.end}) must be after range.start (${range.start})`);
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				`range.end (${range.end}) must be after range.start (${range.start})`,
+			);
 	}
 	const body = {
 		sequenceId: seq.id,
@@ -236,7 +262,12 @@ export function registerStyleTools(ctx: ToolContext): void {
 			return jsonResult({
 				revision: lib.revision,
 				recipes: lib.recipes.map(brief),
-				...(lib.readOnly ? { readOnly: true, note: 'The library was written by a newer JasperEditor: nothing can be saved to it.' } : {}),
+				...(lib.readOnly
+					? {
+							readOnly: true,
+							note: 'The library was written by a newer JasperEditor: nothing can be saved to it.',
+						}
+					: {}),
 				...(lib.repairs.length ? { repairs: lib.repairs } : {}),
 				...(project ? { project } : {}),
 			});
@@ -249,7 +280,7 @@ export function registerStyleTools(ctx: ToolContext): void {
 		{
 			title: 'Get a style recipe',
 			description:
-				'One style recipe as data (passes with their parameters, asset roles, Style Check targets): with projectId the project\'s copy first, else the built-in or library recipe.',
+				"One style recipe as data (passes with their parameters, asset roles, Style Check targets): with projectId the project's copy first, else the built-in or library recipe.",
 			input: { recipeId: RecipeIdArg, projectId: ProjectIdArg.optional() },
 			annotations: READ_ONLY,
 		},
@@ -287,9 +318,18 @@ export function registerStyleTools(ctx: ToolContext): void {
 				const { doc } = await loadDoc(ctx, a.projectId);
 				const p = projectStyleRecipes(doc);
 				if (!p.active)
-					throw new ToolError('E_INVALID_PARAM', 'The project has no active recipe', 'Pass basedOn (list_style_recipes).');
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'The project has no active recipe',
+						'Pass basedOn (list_style_recipes).',
+					);
 				base = (await recipeById(ctx, p.active, a.projectId)).recipe;
-			} else throw new ToolError('E_INVALID_PARAM', 'Say which recipe to start from', 'Pass basedOn (list_style_recipes) or projectId.');
+			} else
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Say which recipe to start from',
+					'Pass basedOn (list_style_recipes) or projectId.',
+				);
 			const recipe: Record<string, unknown> = {
 				...base,
 				name: a.name,
@@ -337,8 +377,17 @@ export function registerStyleTools(ctx: ToolContext): void {
 				sequenceId: SequenceIdArg,
 				mode: ModeArg,
 				recipeId: RecipeIdArg.optional(),
-				recipe: z.record(z.string(), z.unknown()).optional().describe('A whole recipe (format "jasper-style-recipe")'),
-				seed: z.number().int().min(0).max(0xffff_ffff).optional().describe('Seed of every pass (default each pass\'s, else 1)'),
+				recipe: z
+					.record(z.string(), z.unknown())
+					.optional()
+					.describe('A whole recipe (format "jasper-style-recipe")'),
+				seed: z
+					.number()
+					.int()
+					.min(0)
+					.max(0xffff_ffff)
+					.optional()
+					.describe("Seed of every pass (default each pass's, else 1)"),
 				range: z
 					.object({ start: TimeInputSchema, end: TimeInputSchema })
 					.optional()
@@ -347,7 +396,13 @@ export function registerStyleTools(ctx: ToolContext): void {
 					.partialRecord(z.enum(STYLE_STAGES), z.boolean())
 					.optional()
 					.describe('Stages on / off for this run, e.g. {"cleanup": false, "stingers": true}'),
-				timeoutSeconds: z.number().int().min(1).max(1800).optional().describe('Wait for the proposal (default 600 s)'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(1800)
+					.optional()
+					.describe('Wait for the proposal (default 600 s)'),
 			},
 			annotations: EDIT,
 		},
@@ -376,7 +431,11 @@ export function registerStyleTools(ctx: ToolContext): void {
 				await ctx.engine((c) =>
 					c.styleCheck(
 						a.projectId,
-						{ sequenceId: seq.id, ...(a.recipeId ? { recipeId: a.recipeId } : {}), ...(a.deadAir !== undefined ? { deadAir: a.deadAir } : {}) },
+						{
+							sequenceId: seq.id,
+							...(a.recipeId ? { recipeId: a.recipeId } : {}),
+							...(a.deadAir !== undefined ? { deadAir: a.deadAir } : {}),
+						},
 						extra.signal,
 					),
 				),
@@ -393,7 +452,13 @@ export function registerStyleTools(ctx: ToolContext): void {
 					value: m.value,
 					target: m.target,
 					message: m.message,
-					...(m.lookHere.length ? { lookHere: m.lookHere.slice(0, 20).map((x) => ({ timecode: x.timecode, frame: x.frame, note: x.note })) } : {}),
+					...(m.lookHere.length
+						? {
+								lookHere: m.lookHere
+									.slice(0, 20)
+									.map((x) => ({ timecode: x.timecode, frame: x.frame, note: x.note })),
+							}
+						: {}),
 				})),
 				...(r.warnings.length ? { warnings: r.warnings } : {}),
 				next: r.counts.off

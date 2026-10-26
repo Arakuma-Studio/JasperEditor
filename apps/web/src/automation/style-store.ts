@@ -29,11 +29,7 @@ export type StyleLibraryState = {
 
 type StyleEngine = Pick<
 	EngineClient,
-	| 'styleRecipes'
-	| 'createStyleRecipe'
-	| 'updateStyleRecipe'
-	| 'duplicateStyleRecipe'
-	| 'deleteStyleRecipe'
+	'styleRecipes' | 'createStyleRecipe' | 'updateStyleRecipe' | 'duplicateStyleRecipe' | 'deleteStyleRecipe'
 >;
 
 const builtinEntries = (): StyleRecipeEntry[] =>
@@ -102,7 +98,9 @@ function engine(): StyleEngine {
 	return client;
 }
 
-export async function createLibraryRecipe(recipe: StyleRecipe | Record<string, unknown>): Promise<StyleRecipeEntry> {
+export async function createLibraryRecipe(
+	recipe: StyleRecipe | Record<string, unknown>,
+): Promise<StyleRecipeEntry> {
 	const e = await engine().createStyleRecipe({ recipe: recipe as Record<string, unknown> });
 	await refreshStyleLibrary();
 	return e;
@@ -163,14 +161,15 @@ export function recipeChoices(doc: ProjectDocument | null, lib: StyleLibraryStat
 			source: e.source,
 			readOnly: e.readOnly,
 			...(e.newer ? { newer: true } : {}),
-			recipe: copy ?? ((e.recipe as unknown as StyleRecipe | undefined) ?? null),
+			recipe: copy ?? (e.recipe as unknown as StyleRecipe | undefined) ?? null,
 		});
 	}
 	for (const r of Object.values(project.recipes))
 		if (!out.some((x) => x.id === r.id))
 			out.push({ id: r.id, name: r.name, source: 'project', readOnly: false, recipe: r });
 	for (const id of project.newer)
-		if (!out.some((x) => x.id === id)) out.push({ id, name: id, source: 'project', readOnly: true, newer: true, recipe: null });
+		if (!out.some((x) => x.id === id))
+			out.push({ id, name: id, source: 'project', readOnly: true, newer: true, recipe: null });
 	return out;
 }
 
@@ -189,13 +188,19 @@ export const isBuiltin = (id: string) => builtinStyleRecipe(id) !== null;
 const lastParams = new Map<string, Partial<Record<AutomationPassId, Record<string, unknown>>>>();
 
 /** Remembers what a pass dialog proposed with (the seed and range are run settings, not style). */
-export function rememberPassParams(projectId: string, pass: AutomationPassId, params: Record<string, unknown>): void {
+export function rememberPassParams(
+	projectId: string,
+	pass: AutomationPassId,
+	params: Record<string, unknown>,
+): void {
 	const { range: _r, excludeClipIds: _x, ...kept } = params;
 	const cur = lastParams.get(projectId) ?? {};
 	cur[pass] = JSON.parse(JSON.stringify(kept)) as Record<string, unknown>;
 	lastParams.set(projectId, cur);
 }
 
-export function lastPassParams(projectId: string): Partial<Record<AutomationPassId, Record<string, unknown>>> {
+export function lastPassParams(
+	projectId: string,
+): Partial<Record<AutomationPassId, Record<string, unknown>>> {
 	return { ...(lastParams.get(projectId) ?? {}) };
 }

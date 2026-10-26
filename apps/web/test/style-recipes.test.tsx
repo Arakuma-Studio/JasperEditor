@@ -31,21 +31,63 @@ function dryResult(seqId: string, o: Partial<ApplyStyleResult> = {}): ApplyStyle
 		sequenceId: seqId,
 		recipe: { id: 'builtin:fast-long-form', name: 'Fast Long-form', revision: 1 },
 		stages: [
-			{ stage: 'cleanup', name: 'Voice cleanup', status: 'planned', count: 12, items: 1, dropped: [], cost: 'native', warnings: [] },
-			{ stage: 'subtitles', name: 'Subtitles', status: 'planned', count: 40, items: 1, dropped: [], cost: 'hybrid', warnings: [] },
-			{ stage: 'decorate-cuts', name: 'Cut kits', status: 'planned', count: 30, items: 34, dropped: [], cost: 'remotion', warnings: [] },
+			{
+				stage: 'cleanup',
+				name: 'Voice cleanup',
+				status: 'planned',
+				count: 12,
+				items: 1,
+				dropped: [],
+				cost: 'native',
+				warnings: [],
+			},
+			{
+				stage: 'subtitles',
+				name: 'Subtitles',
+				status: 'planned',
+				count: 40,
+				items: 1,
+				dropped: [],
+				cost: 'hybrid',
+				warnings: [],
+			},
+			{
+				stage: 'decorate-cuts',
+				name: 'Cut kits',
+				status: 'planned',
+				count: 30,
+				items: 34,
+				dropped: [],
+				cost: 'remotion',
+				warnings: [],
+			},
 			{
 				stage: 'music',
 				name: 'Music beds',
 				status: 'skipped',
 				count: 0,
 				items: 0,
-				reason: '“Fast Long-form” places music beds from your songs, but the project has no bin named “Music”',
+				reason:
+					'“Fast Long-form” places music beds from your songs, but the project has no bin named “Music”',
 				dropped: [],
 				cost: null,
-				warnings: [{ code: 'W_ROLE_MISSING', message: 'no bin named “Music”: import your songs into a bin with that name' }],
+				warnings: [
+					{
+						code: 'W_ROLE_MISSING',
+						message: 'no bin named “Music”: import your songs into a bin with that name',
+					},
+				],
 			},
-			{ stage: 'stingers', name: 'Stingers', status: 'off', count: 0, items: 0, dropped: [], cost: null, warnings: [] },
+			{
+				stage: 'stingers',
+				name: 'Stingers',
+				status: 'off',
+				count: 0,
+				items: 0,
+				dropped: [],
+				cost: null,
+				warnings: [],
+			},
 		],
 		cost: 'remotion',
 		budget: { fits: true, items: 37, commands: 160 },
@@ -53,7 +95,12 @@ function dryResult(seqId: string, o: Partial<ApplyStyleResult> = {}): ApplyStyle
 		revision: 3,
 		itemCount: 37,
 		invalid: [],
-		warnings: [{ code: 'W_ROLE_MISSING', message: 'no bin named “Music”: import your songs into a bin with that name' }],
+		warnings: [
+			{
+				code: 'W_ROLE_MISSING',
+				message: 'no bin named “Music”: import your songs into a bin with that name',
+			},
+		],
 		...o,
 	};
 }
@@ -71,13 +118,30 @@ function libEngine() {
 		calls,
 		engine: {
 			async styleRecipes() {
-				return { revision: 1, recipes: entries, repairs: [{ action: 'adopt', entity: 'rcp_1', detail: 'A recipe file was added back' }], readOnly: false };
+				return {
+					revision: 1,
+					recipes: entries,
+					repairs: [{ action: 'adopt', entity: 'rcp_1', detail: 'A recipe file was added back' }],
+					readOnly: false,
+				};
 			},
 			async createStyleRecipe(req: { recipe: Record<string, unknown> }) {
 				calls.push({ name: 'create', args: [req] });
 				const recipe = { ...req.recipe, id: 'rcp_0000000000000011', revision: 1 };
-				entries.push({ id: recipe.id, name: String(req.recipe.name), source: 'library', readOnly: false, recipe });
-				return { id: recipe.id, name: String(req.recipe.name), source: 'library' as const, readOnly: false, recipe };
+				entries.push({
+					id: recipe.id,
+					name: String(req.recipe.name),
+					source: 'library',
+					readOnly: false,
+					recipe,
+				});
+				return {
+					id: recipe.id,
+					name: String(req.recipe.name),
+					source: 'library' as const,
+					readOnly: false,
+					recipe,
+				};
 			},
 			async updateStyleRecipe() {
 				throw new Error('x');
@@ -101,7 +165,12 @@ function setupApply(initial?: (seqId: string) => ApplyStyleResult) {
 		async applyStyle(_p: string, req: Record<string, unknown>) {
 			calls.push(req);
 			if (req.mode === 'dryRun') return dry;
-			return { id: 'job_s', state: 'queued', kind: 'apply-style', title: 'Apply Style' } as unknown as EngineJob;
+			return {
+				id: 'job_s',
+				state: 'queued',
+				kind: 'apply-style',
+				title: 'Apply Style',
+			} as unknown as EngineJob;
 		},
 		async getJob() {
 			const id = proposals.create(
@@ -109,11 +178,25 @@ function setupApply(initial?: (seqId: string) => ApplyStyleResult) {
 					feature: 'edit-automation',
 					title: 'Apply Style: Fast Long-form',
 					sequenceId: seqId,
-					items: [{ id: 'kit:60', label: 'Jolt', group: 'cut-kits', commands: [{ type: 'marker.add', frame: 60 }], meta: { group: 'cut-kits', frame: 60 } }],
+					items: [
+						{
+							id: 'kit:60',
+							label: 'Jolt',
+							group: 'cut-kits',
+							commands: [{ type: 'marker.add', frame: 60 }],
+							meta: { group: 'cut-kits', frame: 60 },
+						},
+					],
 				},
 				'user',
 			).id;
-			return { id: 'job_s', state: 'succeeded', kind: 'apply-style', title: 'x', result: { ...dryResult(seqId), mode: 'propose', proposalId: id } } as unknown as EngineJob;
+			return {
+				id: 'job_s',
+				state: 'succeeded',
+				kind: 'apply-style',
+				title: 'x',
+				result: { ...dryResult(seqId), mode: 'propose', proposalId: id },
+			} as unknown as EngineJob;
 		},
 		async cancelJob() {},
 		async styleCheck() {
@@ -123,7 +206,13 @@ function setupApply(initial?: (seqId: string) => ApplyStyleResult) {
 	const reviewed: number[] = [];
 	render(
 		<SessionProvider session={session}>
-			<ApplyStyleDialog session={session} engine={engine as never} sequenceId={seqId} close={() => {}} onReview={() => reviewed.push(1)} />
+			<ApplyStyleDialog
+				session={session}
+				engine={engine as never}
+				sequenceId={seqId}
+				close={() => {}}
+				onReview={() => reviewed.push(1)}
+			/>
 		</SessionProvider>,
 	);
 	return { session, seqId, calls, reviewed, setDry: (d: ApplyStyleResult) => (dry = d) };
@@ -134,14 +223,24 @@ describe('Apply Style…', () => {
 		const t = setupApply();
 		const dialog = await screen.findByTestId('apply-style-dialog');
 		await settle();
-		expect(t.calls[0]).toEqual({ sequenceId: t.seqId, recipeId: 'builtin:fast-long-form', seed: 1, mode: 'dryRun' });
-		expect(within(dialog).getByTestId('apply-style-stage-cleanup').getAttribute('data-status')).toBe('planned');
+		expect(t.calls[0]).toEqual({
+			sequenceId: t.seqId,
+			recipeId: 'builtin:fast-long-form',
+			seed: 1,
+			mode: 'dryRun',
+		});
+		expect(within(dialog).getByTestId('apply-style-stage-cleanup').getAttribute('data-status')).toBe(
+			'planned',
+		);
 		expect(within(dialog).getByTestId('apply-style-stage-music').getAttribute('data-status')).toBe('skipped');
-		expect(within(dialog).getByTestId('apply-style-reason-music').textContent).toContain('no bin named “Music”');
+		expect(within(dialog).getByTestId('apply-style-reason-music').textContent).toContain(
+			'no bin named “Music”',
+		);
 		expect(within(dialog).getByTestId('apply-style-cost').textContent).toContain('Remotion');
 		expect(dialog.querySelector('[data-apply-style-warning="W_ROLE_MISSING"]')).toBeTruthy();
 		// turn the stingers on and the cleanup off for this run
-		const sw = (s: string) => within(within(dialog).getByTestId(`apply-style-switch-${s}`)).getByRole('checkbox');
+		const sw = (s: string) =>
+			within(within(dialog).getByTestId(`apply-style-switch-${s}`)).getByRole('checkbox');
 		await act(async () => {
 			fireEvent.click(sw('stingers'));
 			fireEvent.click(sw('cleanup'));
@@ -172,15 +271,30 @@ describe('Apply Style…', () => {
 	it('Propose is disabled when no step plans anything', async () => {
 		setupApply((seqId) =>
 			dryResult(seqId, {
-				stages: [{ stage: 'cleanup', name: 'Voice cleanup', status: 'off', count: 0, items: 0, dropped: [], cost: null, warnings: [] }],
+				stages: [
+					{
+						stage: 'cleanup',
+						name: 'Voice cleanup',
+						status: 'off',
+						count: 0,
+						items: 0,
+						dropped: [],
+						cost: null,
+						warnings: [],
+					},
+				],
 				itemCount: 0,
 				warnings: [],
 			}),
 		);
 		const dialog = await screen.findByTestId('apply-style-dialog');
 		await settle();
-		expect(within(dialog).getByTestId('apply-style-cost').textContent).toBe('Nothing to propose with this recipe here');
-		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(true);
+		expect(within(dialog).getByTestId('apply-style-cost').textContent).toBe(
+			'Nothing to propose with this recipe here',
+		);
+		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(
+			true,
+		);
 	});
 });
 
@@ -193,16 +307,59 @@ describe('Style Check', () => {
 			recipe: { id: 'builtin:fast-long-form', name: 'Fast Long-form' },
 			durationSeconds: 60,
 			metrics: [
-				{ id: 'kitCoverage', label: 'Cuts with a kit', unit: 'share', value: 0.5, target: { value: 0.951, tolerance: 0.06 }, status: 'off', message: '9 of 18 cuts have a kit', count: 9, of: 18, lookHere: [{ frame: 90, timecode: '00:00:03:00', note: 'a cut without a kit' }] },
-				{ id: 'musicGainDb', label: 'Music level', unit: 'db', value: -33, target: { value: -33, tolerance: 2 }, status: 'ok', message: 'ok', lookHere: [] },
-				{ id: 'deadAirPerMinute', label: 'Dead air', unit: 'seconds-per-minute', value: null, target: { max: 1 }, status: 'unmeasured', message: 'Not measured', lookHere: [] },
-				{ id: 'cutsPerMinute', label: 'Cuts per minute', unit: 'per-minute', value: 12, target: null, status: 'unchecked', message: '', lookHere: [] },
+				{
+					id: 'kitCoverage',
+					label: 'Cuts with a kit',
+					unit: 'share',
+					value: 0.5,
+					target: { value: 0.951, tolerance: 0.06 },
+					status: 'off',
+					message: '9 of 18 cuts have a kit',
+					count: 9,
+					of: 18,
+					lookHere: [{ frame: 90, timecode: '00:00:03:00', note: 'a cut without a kit' }],
+				},
+				{
+					id: 'musicGainDb',
+					label: 'Music level',
+					unit: 'db',
+					value: -33,
+					target: { value: -33, tolerance: 2 },
+					status: 'ok',
+					message: 'ok',
+					lookHere: [],
+				},
+				{
+					id: 'deadAirPerMinute',
+					label: 'Dead air',
+					unit: 'seconds-per-minute',
+					value: null,
+					target: { max: 1 },
+					status: 'unmeasured',
+					message: 'Not measured',
+					lookHere: [],
+				},
+				{
+					id: 'cutsPerMinute',
+					label: 'Cuts per minute',
+					unit: 'per-minute',
+					value: 12,
+					target: null,
+					status: 'unchecked',
+					message: '',
+					lookHere: [],
+				},
 			],
 			counts: { ok: 1, off: 1, unmeasured: 1, unchecked: 1 },
 			warnings: [],
 		};
 		const calls: unknown[] = [];
-		const engine = { async styleCheck(_p: string, req: unknown) { calls.push(req); return res; } };
+		const engine = {
+			async styleCheck(_p: string, req: unknown) {
+				calls.push(req);
+				return res;
+			},
+		};
 		render(
 			<SessionProvider session={session}>
 				<StyleCheckDialog session={session} engine={engine as never} sequenceId={seqId} close={() => {}} />
@@ -215,7 +372,9 @@ describe('Style Check', () => {
 		expect(within(dialog).getByTestId('style-check-kitCoverage').textContent).toContain('50 %');
 		expect(within(dialog).getByTestId('style-check-kitCoverage').textContent).toContain('95 % ± 6 %');
 		expect(within(dialog).queryByTestId('style-check-cutsPerMinute')).toBeNull();
-		expect(within(dialog).getByTestId('style-check-counts').textContent).toBe('1 on target · 1 off · 1 not measured');
+		expect(within(dialog).getByTestId('style-check-counts').textContent).toBe(
+			'1 on target · 1 off · 1 not measured',
+		);
 		await act(async () => {
 			fireEvent.click(within(dialog).getByRole('button', { name: '00:00:03:00' }));
 		});
@@ -250,7 +409,12 @@ describe('Style Recipes…', () => {
 		const { session, seqId } = makeSession();
 		const lib = libEngine();
 		connectStyleLibrary(lib.engine as never);
-		rememberPassParams(session.projectId, 'ken-burns', { share: 0.4, scale: 125, seed: 9, range: { start: 0, end: 10 } });
+		rememberPassParams(session.projectId, 'ken-burns', {
+			share: 0.4,
+			scale: 125,
+			seed: 9,
+			range: { start: 0, end: 10 },
+		});
 		render(
 			<SessionProvider session={session}>
 				<StyleRecipesDialog session={session} sequenceId={seqId} close={() => {}} />
@@ -263,15 +427,21 @@ describe('Style Recipes…', () => {
 		});
 		expect(within(dialog).getByTestId('style-recipes-save').textContent).toContain('Ken Burns');
 		await act(async () => {
-			fireEvent.change(within(dialog).getByTestId('style-recipes-save-name'), { target: { value: 'My long form' } });
+			fireEvent.change(within(dialog).getByTestId('style-recipes-save-name'), {
+				target: { value: 'My long form' },
+			});
 		});
 		await act(async () => {
 			fireEvent.click(within(dialog).getByTestId('style-recipes-save-confirm'));
 		});
 		await settle(50);
+		// biome-ignore lint/suspicious/noExplicitAny: the recipe JSON is read loosely by the assertions
 		const made = lib.calls.find((c) => c.name === 'create')!.args[0] as { recipe: Record<string, any> };
 		expect(made.recipe.name).toBe('My long form');
-		expect(made.recipe.passes['ken-burns']).toEqual({ enabled: true, params: { share: 0.4, scale: 125, seed: 9 } });
+		expect(made.recipe.passes['ken-burns']).toEqual({
+			enabled: true,
+			params: { share: 0.4, scale: 125, seed: 9 },
+		});
 		expect(made.recipe.passes['punch-ins'].params.scale).toBe(180);
 		const p = projectStyleRecipes(session.getCommitted());
 		expect(p.active).toBe('rcp_0000000000000011');
@@ -282,7 +452,11 @@ describe('Style Recipes…', () => {
 describe('the pass dialogs start from the active recipe', () => {
 	it('Ken Burns… opens with the active recipe’s parameters (its asset roles filled in)', () => {
 		const { session } = makeSession();
-		const r = session.apply({ label: 'use', origin: 'user', commands: [{ type: 'styleRecipe.setActive', recipeId: 'builtin:fast-shorts' }] as never });
+		const r = session.apply({
+			label: 'use',
+			origin: 'user',
+			commands: [{ type: 'styleRecipe.setActive', recipeId: 'builtin:fast-shorts' }] as never,
+		});
 		expect(r.ok).toBe(true);
 		const opened: { kind: string; props: Record<string, unknown> }[] = [];
 		const ctx = {
@@ -291,10 +465,15 @@ describe('the pass dialogs start from the active recipe', () => {
 			capabilities: new Set(['engine']),
 			services: { get: () => undefined },
 			engine: {},
-			ui: { toast() {}, openDialog: (kind: string, props: Record<string, unknown>) => opened.push({ kind, props }) },
+			ui: {
+				toast() {},
+				openDialog: (kind: string, props: Record<string, unknown>) => opened.push({ kind, props }),
+			},
 		} as unknown as CommandCtx;
 		automationCommands.find((c) => c.id === 'automation.kenBurns')!.run(ctx, undefined);
-		expect(opened[0]!.props.initialParams).toEqual(builtinStyleRecipe('builtin:fast-shorts')!.passes['ken-burns']!.params);
+		expect(opened[0]!.props.initialParams).toEqual(
+			builtinStyleRecipe('builtin:fast-shorts')!.passes['ken-burns']!.params,
+		);
 		automationCommands.find((c) => c.id === 'automation.reactions')!.run(ctx, undefined);
 		expect(opened[1]!.props.initialParams).toMatchObject({ assets: { bin: 'Reactions' } });
 		// explicit parameters win

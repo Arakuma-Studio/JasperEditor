@@ -11,6 +11,8 @@ import {
 	builtinStyleRecipe,
 	type Clip,
 	checkInvariants,
+	clipRect,
+	createCounterIdSource,
 	createProposal,
 	defaultRegistries,
 	flicksPerFrame,
@@ -25,6 +27,7 @@ import {
 	planStyle,
 	projectFeaturePolicy,
 	projectStyleRecipes,
+	rectsOverlap,
 	refreshProposalItems,
 	refreshStyleItems,
 	repairDocument,
@@ -37,9 +40,6 @@ import {
 	styleDraft,
 	styleRecipesIssues,
 	subtitleRegions,
-	createCounterIdSource,
-	clipRect,
-	rectsOverlap,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
@@ -61,7 +61,13 @@ const recipe = (id: string): StyleRecipe => {
  */
 function talk(
 	lengths: number[],
-	opts: { vertical?: boolean; overlays?: number[]; reactions?: number; songs?: number; transcript?: boolean } = {},
+	opts: {
+		vertical?: boolean;
+		overlays?: number[];
+		reactions?: number;
+		songs?: number;
+		transcript?: boolean;
+	} = {},
 ) {
 	const h = new Harness(opts.vertical ? { preset: 'vertical-1080x1920-30' } : {});
 	const size = opts.vertical ? { width: 1080, height: 1920 } : {};
@@ -93,8 +99,19 @@ function talk(
 	);
 	const placed = r.results.map((x) => (x as { clipIds: string[] }).clipIds);
 	for (const o of opts.overlays ?? []) {
-		const img = (h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image', width: 800, height: 600 }) }]).results[0] as { mediaId: string }).mediaId;
-		h.ok([{ type: 'clip.place', source: { mediaId: img }, at: o, tracks: { video: 'V2' }, sourceRange: { in: { flicks: 0 }, out: { flicks: 60 * F } } }]);
+		const img = (
+			h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image', width: 800, height: 600 }) }])
+				.results[0] as { mediaId: string }
+		).mediaId;
+		h.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: img },
+				at: o,
+				tracks: { video: 'V2' },
+				sourceRange: { in: { flicks: 0 }, out: { flicks: 60 * F } },
+			},
+		]);
 	}
 	if (opts.reactions)
 		h.ok([
@@ -143,17 +160,27 @@ function propose(h: Harness, draft: unknown): Proposal {
 
 function accept(h: Harness, p: Proposal, ids: string[] | 'all' = 'all') {
 	const plan = planAccept(h.doc, p, ids, { agent: 'test' }, { ...CTX, revision: h.revision });
-	if (!plan.ok || !plan.composed) throw new Error(JSON.stringify(plan.ok ? 'nothing' : plan.errors).slice(0, 3000));
+	if (!plan.ok || !plan.composed)
+		throw new Error(JSON.stringify(plan.ok ? 'nothing' : plan.errors).slice(0, 3000));
 	const r = h.ok(plan.composed.tx.commands, { label: plan.composed.tx.label });
 	return {
 		r,
-		proposal: markAccepted(plan.proposal, plan.composed.itemIds, { revision: r.revision, refs: r.refs, at: NOW, created: r.created }),
+		proposal: markAccepted(plan.proposal, plan.composed.itemIds, {
+			revision: r.revision,
+			refs: r.refs,
+			at: NOW,
+			created: r.created,
+		}),
 	};
 }
 
 const byTrackName = (h: Harness, name: string) => {
 	const t = h.seq.videoTracks.find((x) => x.name === name);
-	return t ? Object.values(h.seq.clips).filter((c) => c.trackId === t.id).sort((a, b) => a.start - b.start) : [];
+	return t
+		? Object.values(h.seq.clips)
+				.filter((c) => c.trackId === t.id)
+				.sort((a, b) => a.start - b.start)
+		: [];
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -170,31 +197,49 @@ describe('style recipes (EA-010, EA-011)', () => {
 		expect(shorts.passes['ken-burns']?.params).toMatchObject({ share: 0.15, scale: 118 });
 		expect(shorts.passes.music?.params).toMatchObject({ intro: { enabled: true, gainDb: -25 } });
 		const long = recipe('builtin:fast-long-form');
-		expect(long.passes['punch-ins']?.params).toMatchObject({ scale: 180, rampFrames: 7, minClipSeconds: 1.5 });
+		expect(long.passes['punch-ins']?.params).toMatchObject({
+			scale: 180,
+			rampFrames: 7,
+			minClipSeconds: 1.5,
+		});
 		expect(long.passes['ken-burns']?.params).toMatchObject({ scale: 130 });
 		expect(recipe('builtin:clean').passes.cleanup).toEqual({ enabled: true, preset: 'builtin.natural' });
-		expect(STYLE_RECIPE_MODEL_STRINGS).toEqual(expect.arrayContaining(['Fast Shorts', 'Clean', 'Voice cleanup']));
+		expect(STYLE_RECIPE_MODEL_STRINGS).toEqual(
+			expect.arrayContaining(['Fast Shorts', 'Clean', 'Voice cleanup']),
+		);
 	});
 
 	it('parses strictly: unknown keys, bad pass parameters, newer formats and oversized recipes are refused', () => {
 		const r = recipe('builtin:fast-shorts');
 		expect(parseStyleRecipe({ ...r, extra: 1 })).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
 		expect(
-			parseStyleRecipe({ ...r, passes: { ...r.passes, 'ken-burns': { enabled: true, params: { share: 2 } } } }),
+			parseStyleRecipe({
+				...r,
+				passes: { ...r.passes, 'ken-burns': { enabled: true, params: { share: 2 } } },
+			}),
 		).toMatchObject({ ok: false, code: 'E_INVALID_PARAM' });
 		expect(
-			parseStyleRecipe({ ...r, passes: { ...r.passes, reactions: { enabled: true, params: { nope: true } } } }),
+			parseStyleRecipe({
+				...r,
+				passes: { ...r.passes, reactions: { enabled: true, params: { nope: true } } },
+			}),
 		).toMatchObject({ ok: false });
 		expect(parseStyleRecipe({ ...r, version: 2 })).toMatchObject({ ok: false, code: 'E_NEWER_VERSION' });
-		expect(parseStyleRecipe({ ...r, description: 'x'.repeat(600_000) })).toMatchObject({ ok: false, code: 'E_TOO_LARGE' });
+		expect(parseStyleRecipe({ ...r, description: 'x'.repeat(600_000) })).toMatchObject({
+			ok: false,
+			code: 'E_TOO_LARGE',
+		});
 		expect(parseStyleRecipe({ ...r, id: 'rcp_bad' })).toMatchObject({ ok: false });
 	});
 
 	it('resolves the stages in run order with the asset roles filled in', () => {
 		const r = recipe('builtin:fast-shorts');
-		const s = resolveRecipeStages({ ...r, assets: { ...r.assets, whoosh: { type: 'whoosh', packId: 'pk1' } } }, {
-			stingers: true,
-		});
+		const s = resolveRecipeStages(
+			{ ...r, assets: { ...r.assets, whoosh: { type: 'whoosh', packId: 'pk1' } } },
+			{
+				stingers: true,
+			},
+		);
 		expect(s.map((x) => x.stage)).toEqual([
 			'cleanup',
 			'subtitles',
@@ -208,9 +253,16 @@ describe('style recipes (EA-010, EA-011)', () => {
 		]);
 		const kits = s.find((x) => x.stage === 'decorate-cuts') as { params: Record<string, unknown> };
 		expect(kits.params.sfx).toEqual({ type: 'whoosh', packId: 'pk1' });
-		expect((s.find((x) => x.stage === 'reactions') as { params: Record<string, unknown> }).params.assets).toEqual({ bin: 'Reactions' });
-		expect((s.find((x) => x.stage === 'music') as { params: Record<string, unknown> }).params.assets).toEqual({ bin: 'Music' });
-		expect(s.find((x) => x.stage === 'stingers')).toMatchObject({ enabled: true, params: { sound: 'generated' } });
+		expect(
+			(s.find((x) => x.stage === 'reactions') as { params: Record<string, unknown> }).params.assets,
+		).toEqual({ bin: 'Reactions' });
+		expect((s.find((x) => x.stage === 'music') as { params: Record<string, unknown> }).params.assets).toEqual(
+			{ bin: 'Music' },
+		);
+		expect(s.find((x) => x.stage === 'stingers')).toMatchObject({
+			enabled: true,
+			params: { sound: 'generated' },
+		});
 	});
 });
 
@@ -218,7 +270,12 @@ describe('the project copy (ProjectDocument.styleRecipes, schema v9)', () => {
 	it('styleRecipe.add / setActive / remove: one undo step each, invariants hold, undo is the document before', () => {
 		const h = new Harness();
 		const before = h.doc;
-		const mine: StyleRecipe = { ...recipe('builtin:fast-shorts'), id: 'rcp_0000000000000001', name: 'Mine', builtIn: undefined };
+		const mine: StyleRecipe = {
+			...recipe('builtin:fast-shorts'),
+			id: 'rcp_0000000000000001',
+			name: 'Mine',
+			builtIn: undefined,
+		};
 		h.ok([{ type: 'styleRecipe.add', recipe: mine, activate: true }]);
 		expect(projectStyleRecipes(h.doc).active).toBe('rcp_0000000000000001');
 		expect(activeStyleRecipe(h.doc)?.name).toBe('Mine');
@@ -247,7 +304,9 @@ describe('the project copy (ProjectDocument.styleRecipes, schema v9)', () => {
 		expect(h.tx([{ type: 'styleRecipe.remove', recipeId: 'builtin:clean' }])).toMatchObject({ ok: false });
 		const newer = { ...recipe('builtin:clean'), id: 'rcp_0000000000000002', version: 3 };
 		expect(h.tx([{ type: 'styleRecipe.add', recipe: newer }])).toMatchObject({ ok: false });
-		expect(h.tx([{ type: 'styleRecipe.add', recipe: { ...recipe('builtin:clean'), unknown: 1 } }])).toMatchObject({ ok: false });
+		expect(
+			h.tx([{ type: 'styleRecipe.add', recipe: { ...recipe('builtin:clean'), unknown: 1 } }]),
+		).toMatchObject({ ok: false });
 	});
 
 	it('reads leniently and repairs on load: junk dropped, keys fixed, a dangling active cleared, newer recipes kept', () => {
@@ -282,10 +341,19 @@ describe('the project copy (ProjectDocument.styleRecipes, schema v9)', () => {
 		expect(r.document.styleRecipes!.recipes.rcp_0000000000000004).toEqual(newer);
 		expect(styleRecipesIssues(r.document)).toEqual([]);
 		// idempotent
-		expect(repairDocument(r.document, createCounterIdSource(950)).report.filter((x) => x.action.includes('style'))).toEqual([]);
+		expect(
+			repairDocument(r.document, createCounterIdSource(950)).report.filter((x) => x.action.includes('style')),
+		).toEqual([]);
 		// a load of junk never fails
 		for (const junk of [42, 'x', [], { recipes: 5 }, { active: 3, recipes: {} }]) {
-			const env = { format: 'jasper-project', schemaVersion: h.doc.schemaVersion, savedAt: NOW, savedBy: { app: 't', version: '0', platform: 'x' }, revision: 1, document: { ...h.doc, styleRecipes: junk } };
+			const env = {
+				format: 'jasper-project',
+				schemaVersion: h.doc.schemaVersion,
+				savedAt: NOW,
+				savedBy: { app: 't', version: '0', platform: 'x' },
+				revision: 1,
+				document: { ...h.doc, styleRecipes: junk },
+			};
 			const l = loadProject(env);
 			expect(styleRecipesIssues(l.document)).toEqual([]);
 			expect(l.repairs.some((x) => x.action.includes('style-recipe'))).toBe(true);
@@ -298,10 +366,27 @@ describe('cleanup.apply piece refs', () => {
 		const t = talk([90, 90]);
 		const [v0, v1] = t.video;
 		const r = t.h.ok([
-			{ type: 'cleanup.apply', clipIds: t.audio, ranges: [{ start: 30, end: 40 }, { start: 120, end: 130 }], pieceRefs: '$c' },
+			{
+				type: 'cleanup.apply',
+				clipIds: t.audio,
+				ranges: [
+					{ start: 30, end: 40 },
+					{ start: 120, end: 130 },
+				],
+				pieceRefs: '$c',
+			},
 			{
 				type: 'keyframe.addBatch',
-				targets: [{ clipId: `$c_${v0}_1`, path: ['transform', 'scale'], keys: [{ at: { frames: 0 }, value: 100 }, { at: { frames: 5 }, value: 150 }] }],
+				targets: [
+					{
+						clipId: `$c_${v0}_1`,
+						path: ['transform', 'scale'],
+						keys: [
+							{ at: { frames: 0 }, value: 100 },
+							{ at: { frames: 5 }, value: 150 },
+						],
+					},
+				],
 			},
 		]);
 		expect(r.refs[`$c_${v0}_0`]).toBe(v0);
@@ -309,7 +394,9 @@ describe('cleanup.apply piece refs', () => {
 		const piece = t.h.seq.clips[r.refs[`$c_${v0}_1`]!]!;
 		expect(piece.start).toBe(30);
 		expect(piece.duration).toBe(50);
-		expect((piece as { transform: { scale: { keyframes: unknown[] } } }).transform.scale.keyframes).toHaveLength(2);
+		expect(
+			(piece as { transform: { scale: { keyframes: unknown[] } } }).transform.scale.keyframes,
+		).toHaveLength(2);
 		// the sound pieces too
 		expect(r.refs[`$c_${t.audio[0]}_1`]).toBeTruthy();
 	});
@@ -321,7 +408,9 @@ describe('frameAfterCuts', () => {
 			{ start: 10, end: 20 },
 			{ start: 50, end: 55 },
 		];
-		expect([0, 10, 15, 20, 49, 50, 60].map((f) => frameAfterCuts(cuts, f))).toEqual([0, 10, 10, 10, 39, 40, 45]);
+		expect([0, 10, 15, 20, 49, 50, 60].map((f) => frameAfterCuts(cuts, f))).toEqual([
+			0, 10, 10, 10, 39, 40, 45,
+		]);
 	});
 });
 
@@ -333,7 +422,13 @@ describe('Apply Style (EA-012)', () => {
 		const plan = await planStyle(
 			t.h.doc,
 			{ recipe: recipe('builtin:fast-long-form'), seed: 3 },
-			{ cleanup: cleanupHook(t, [[30, 45], [300, 310], [700, 720]]) },
+			{
+				cleanup: cleanupHook(t, [
+					[30, 45],
+					[300, 310],
+					[700, 720],
+				]),
+			},
 			OPTS,
 		);
 		const status = Object.fromEntries(plan.stages.map((s) => [s.stage, s.status]));
@@ -374,8 +469,11 @@ describe('Apply Style (EA-012)', () => {
 		// kits sit on the cuts of the cleaned-up timeline (35 frames removed: the A-roll ends 45 frames earlier)
 		const fx = byTrackName(t.h, 'FX');
 		expect(fx.length).toBeGreaterThan(0);
-		for (let i = 1; i < fx.length; i++) expect(fx[i]!.start).toBeGreaterThanOrEqual(fx[i - 1]!.start + fx[i - 1]!.duration);
-		const aroll = Object.values(t.h.seq.clips).filter((c) => c.kind === 'video' && c.trackId === t.h.seq.videoTracks[0]!.id);
+		for (let i = 1; i < fx.length; i++)
+			expect(fx[i]!.start).toBeGreaterThanOrEqual(fx[i - 1]!.start + fx[i - 1]!.duration);
+		const aroll = Object.values(t.h.seq.clips).filter(
+			(c) => c.kind === 'video' && c.trackId === t.h.seq.videoTracks[0]!.id,
+		);
 		const end = Math.max(...aroll.map((c) => c.start + c.duration));
 		expect(end).toBe(t.total - 45);
 		const cutFrames = new Set(aroll.map((c) => c.start).filter((f) => f > 0));
@@ -390,15 +488,34 @@ describe('Apply Style (EA-012)', () => {
 		const music = t.h.seq.audioTracks.find((x) => x.name === 'Music');
 		expect(music).toBeTruthy();
 		// determinism: the same inputs give the same proposal
-		const again = await planStyle(before, { recipe: recipe('builtin:fast-long-form'), seed: 3 }, { cleanup: cleanupHook(t, [[30, 45], [300, 310], [700, 720]]) }, OPTS);
+		const again = await planStyle(
+			before,
+			{ recipe: recipe('builtin:fast-long-form'), seed: 3 },
+			{
+				cleanup: cleanupHook(t, [
+					[30, 45],
+					[300, 310],
+					[700, 720],
+				]),
+			},
+			OPTS,
+		);
 		expect(JSON.stringify(again.items)).toBe(JSON.stringify(plan.items));
 	});
 
 	it('accepting the cleanup alone, then the decorations, gives the same edit as accepting everything', async () => {
 		const t = talk([150, 120, 200, 180]);
-		const cuts: [number, number][] = [[40, 50], [200, 215]];
+		const cuts: [number, number][] = [
+			[40, 50],
+			[200, 215],
+		];
 		const r0 = recipe('builtin:fast-long-form');
-		const plan = await planStyle(t.h.doc, { recipe: r0, seed: 2, passes: { subtitles: false, music: false, slides: false } }, { cleanup: cleanupHook(t, cuts) }, OPTS);
+		const plan = await planStyle(
+			t.h.doc,
+			{ recipe: r0, seed: 2, passes: { subtitles: false, music: false, slides: false } },
+			{ cleanup: cleanupHook(t, cuts) },
+			OPTS,
+		);
 		const start = t.h.doc;
 		const p = propose(t.h, styleDraft(plan)!);
 		const all = accept(t.h, p);
@@ -410,7 +527,10 @@ describe('Apply Style (EA-012)', () => {
 		expect(rest.r.ok).toBe(true);
 		const shape = (d: typeof together) =>
 			Object.values(Object.values(d.sequences)[0]!.clips)
-				.map((c) => `${c.kind}:${c.start}:${c.duration}:${JSON.stringify((c as { transform?: { scale?: unknown } }).transform?.scale ?? null).replace(/"id":"[^"]+",/g, '')}`)
+				.map(
+					(c) =>
+						`${c.kind}:${c.start}:${c.duration}:${JSON.stringify((c as { transform?: { scale?: unknown } }).transform?.scale ?? null).replace(/"id":"[^"]+",/g, '')}`,
+				)
 				.sort();
 		expect(shape(t.h.doc)).toEqual(shape(together));
 		expect(all.r.ok).toBe(true);
@@ -426,15 +546,25 @@ describe('Apply Style (EA-012)', () => {
 		expect(by.reactions).toMatchObject({ status: 'skipped' });
 		expect(by.reactions!.reason).toMatch(/no bin named “Reactions”/);
 		expect(by.music!.reason).toMatch(/no bin named “Music”/);
-		expect(plan.warnings.map((w) => w.code)).toEqual(expect.arrayContaining(['W_ROLE_MISSING', 'W_NO_TRANSCRIPT']));
+		expect(plan.warnings.map((w) => w.code)).toEqual(
+			expect.arrayContaining(['W_ROLE_MISSING', 'W_NO_TRANSCRIPT']),
+		);
 		expect(by['decorate-cuts']!.status).toBe('planned');
 		expect(by['ken-burns']!.status).toBe('planned');
 	});
 
 	it('Fast Shorts: reactions avoid the subtitles, the shake kits sit above them, music has the intro step', async () => {
 		const t = talk([90, 60, 120, 90, 60, 150, 90, 120], { vertical: true, reactions: 3, songs: 1 });
-		t.h.ok([{ type: 'marker.add', frame: 100, name: 'reaction' }, { type: 'marker.add', frame: 400, name: 'reaction' }]);
-		const plan = await planStyle(t.h.doc, { recipe: recipe('builtin:fast-shorts'), seed: 5, passes: { cleanup: false } }, {}, OPTS);
+		t.h.ok([
+			{ type: 'marker.add', frame: 100, name: 'reaction' },
+			{ type: 'marker.add', frame: 400, name: 'reaction' },
+		]);
+		const plan = await planStyle(
+			t.h.doc,
+			{ recipe: recipe('builtin:fast-shorts'), seed: 5, passes: { cleanup: false } },
+			{},
+			OPTS,
+		);
 		const p = propose(t.h, styleDraft(plan)!);
 		expect(p.items.filter((it) => it.state === 'invalid')).toEqual([]);
 		accept(t.h, p);
@@ -445,7 +575,9 @@ describe('Apply Style (EA-012)', () => {
 		expect(names.indexOf('FX')).toBeGreaterThan(names.indexOf('Subtitles'));
 		expect(names.indexOf('FX')).toBeGreaterThan(names.indexOf('Reactions'));
 		const music = seq.audioTracks.find((x) => x.name === 'Music')!;
-		const beds = Object.values(seq.clips).filter((c) => c.trackId === music.id).sort((a, b) => a.start - b.start);
+		const beds = Object.values(seq.clips)
+			.filter((c) => c.trackId === music.id)
+			.sort((a, b) => a.start - b.start);
 		expect((beds[0] as { gainDb: number }).gainDb).toBe(-25);
 		expect((beds[1] as { gainDb: number }).gainDb).toBe(-33);
 	});
@@ -456,7 +588,9 @@ describe('Apply Style (EA-012)', () => {
 				fc.array(fc.integer({ min: 20, max: 240 }), { minLength: 3, maxLength: 12 }),
 				fc.integer({ min: 0, max: 1000 }),
 				fc.boolean(),
-				fc.array(fc.tuple(fc.integer({ min: 0, max: 600 }), fc.integer({ min: 2, max: 25 })), { maxLength: 4 }),
+				fc.array(fc.tuple(fc.integer({ min: 0, max: 600 }), fc.integer({ min: 2, max: 25 })), {
+					maxLength: 4,
+				}),
 				async (lengths, seed, vertical, rawCuts) => {
 					const t = talk(lengths, { vertical, reactions: 2, songs: 2, overlays: [lengths[0]!] });
 					t.h.ok([{ type: 'marker.add', frame: lengths[0]! + 2, name: 'reaction' }]);
@@ -467,12 +601,21 @@ describe('Apply Style (EA-012)', () => {
 						.sort((x, y) => x[0] - y[0])
 						.filter((c, i, list) => i === 0 || c[0] >= list[i - 1]![1]);
 					const r0 = recipe(vertical ? 'builtin:fast-shorts' : 'builtin:fast-long-form');
-					const plan = await planStyle(t.h.doc, { recipe: r0, seed, passes: { reactions: true } }, { cleanup: cleanupHook(t, cuts) }, OPTS);
+					const plan = await planStyle(
+						t.h.doc,
+						{ recipe: r0, seed, passes: { reactions: true } },
+						{ cleanup: cleanupHook(t, cuts) },
+						OPTS,
+					);
 					const draft = styleDraft(plan);
 					if (!draft) return;
 					// a punch-in never lands on a Ken Burns clip (and the reverse)
 					const clipsOf = (kind: string) =>
-						new Set(plan.items.filter((it) => (it.meta as { kind?: string }).kind === kind).map((it) => (it.meta as { clipId: string }).clipId));
+						new Set(
+							plan.items
+								.filter((it) => (it.meta as { kind?: string }).kind === kind)
+								.map((it) => (it.meta as { clipId: string }).clipId),
+						);
 					const punched = clipsOf('punch-in');
 					for (const c of clipsOf('ken-burns')) expect(punched.has(c)).toBe(false);
 					const p = propose(t.h, draft);
@@ -483,11 +626,14 @@ describe('Apply Style (EA-012)', () => {
 					const fx = byTrackName(t.h, 'FX');
 					for (let i = 1; i < fx.length; i++)
 						expect(fx[i]!.start).toBeGreaterThanOrEqual(fx[i - 1]!.start + fx[i - 1]!.duration);
-					const aroll = Object.values(seq.clips).filter((c) => c.kind === 'video' && c.trackId === seq.videoTracks[0]!.id);
+					const aroll = Object.values(seq.clips).filter(
+						(c) => c.kind === 'video' && c.trackId === seq.videoTracks[0]!.id,
+					);
 					for (const c of aroll) {
 						const k = motionKindOf(seq, c);
 						// a clip is decorated by at most one of them (keyed once)
-						const keys = (c as { transform?: { scale?: { keyframes?: unknown[] } } }).transform?.scale?.keyframes ?? [];
+						const keys =
+							(c as { transform?: { scale?: { keyframes?: unknown[] } } }).transform?.scale?.keyframes ?? [];
 						if (k) expect(keys.length).toBe(2);
 					}
 					const regions = subtitleRegions(t.h.doc, seq);
@@ -495,7 +641,8 @@ describe('Apply Style (EA-012)', () => {
 						const rect = clipRect(t.h.doc, seq, rc);
 						expect(rect).not.toBeNull();
 						for (const g of regions)
-							if (g.start < rc.start + rc.duration && g.end > rc.start) expect(rectsOverlap(g.rect, rect!)).toBe(false);
+							if (g.start < rc.start + rc.duration && g.end > rc.start)
+								expect(rectsOverlap(g.rect, rect!)).toBe(false);
 					}
 				},
 			),
@@ -505,7 +652,12 @@ describe('Apply Style (EA-012)', () => {
 
 	it('Reroll of a decoration planned on the cleaned-up timeline keeps its id and refs and re-plans on that timeline', async () => {
 		const t = talk([150, 120, 200, 180, 150]);
-		const plan = await planStyle(t.h.doc, { recipe: recipe('builtin:fast-long-form'), seed: 4, passes: { subtitles: false, music: false } }, { cleanup: cleanupHook(t, [[60, 80]]) }, OPTS);
+		const plan = await planStyle(
+			t.h.doc,
+			{ recipe: recipe('builtin:fast-long-form'), seed: 4, passes: { subtitles: false, music: false } },
+			{ cleanup: cleanupHook(t, [[60, 80]]) },
+			OPTS,
+		);
 		const p = propose(t.h, styleDraft(plan)!);
 		const kb = p.items.find((it) => (it.meta as { kind?: string }).kind === 'ken-burns');
 		const kit = p.items.find((it) => (it.meta as { kind?: string }).kind === 'kit')!;
@@ -515,10 +667,19 @@ describe('Apply Style (EA-012)', () => {
 		if (!r.ok) return;
 		expect(r.items.map((it) => it.id).sort()).toEqual([...ids].sort());
 		expect(JSON.stringify(r.items)).not.toMatch(/[a-z]{2,3}_ZS[0-9A-Z]{14}/);
-		const out = refreshProposalItems(t.h.doc, p, ids, { items: r.items, dropped: r.dropped }, { ...CTX, revision: t.h.revision }, NOW);
+		const out = refreshProposalItems(
+			t.h.doc,
+			p,
+			ids,
+			{ items: r.items, dropped: r.dropped },
+			{ ...CTX, revision: t.h.revision },
+			NOW,
+		);
 		expect(out.ok).toBe(true);
 		if (!out.ok) return;
-		expect(out.proposal.items.filter((it) => ids.includes(it.id)).map((it) => it.state)).toEqual(ids.map(() => 'pending'));
+		expect(out.proposal.items.filter((it) => ids.includes(it.id)).map((it) => it.state)).toEqual(
+			ids.map(() => 'pending'),
+		);
 		accept(t.h, out.proposal);
 		expect(checkInvariants(t.h.doc)).toEqual([]);
 		// the cleanup's refresh is a re-run of Apply Style
@@ -528,12 +689,22 @@ describe('Apply Style (EA-012)', () => {
 
 	it('agents need every embedded feature allowed: a combined proposal with a cleanup is refused when cleanup is off', async () => {
 		const t = talk([150, 120, 200]);
-		const plan = await planStyle(t.h.doc, { recipe: recipe('builtin:fast-long-form'), passes: { subtitles: false } }, { cleanup: cleanupHook(t, [[20, 30]]) }, OPTS);
+		const plan = await planStyle(
+			t.h.doc,
+			{ recipe: recipe('builtin:fast-long-form'), passes: { subtitles: false } },
+			{ cleanup: cleanupHook(t, [[20, 30]]) },
+			OPTS,
+		);
 		const p = propose(t.h, styleDraft(plan)!);
 		const policy = projectFeaturePolicy('edit-automation');
 		expect(policy(t.h.doc, p)).toEqual({ allowed: true });
-		t.h.ok([{ type: 'project.updateSettings', settings: { agentProposals: { 'transcript-cleanup': false } } }]);
-		expect(policy(t.h.doc, p)).toMatchObject({ allowed: false, reason: expect.stringContaining('transcript cleanup') });
+		t.h.ok([
+			{ type: 'project.updateSettings', settings: { agentProposals: { 'transcript-cleanup': false } } },
+		]);
+		expect(policy(t.h.doc, p)).toMatchObject({
+			allowed: false,
+			reason: expect.stringContaining('transcript cleanup'),
+		});
 	});
 });
 
@@ -564,15 +735,44 @@ describe('Style Check (EA-013)', () => {
 	it('Clean checks only dead air and subtitles', () => {
 		const t = talk([90, 90]);
 		const r = styleCheck(t.h.doc, null, recipe('builtin:clean'));
-		expect(r.metrics.filter((m) => m.status !== 'unchecked').map((m) => m.id).sort()).toEqual(['deadAirPerMinute', 'subtitleOnCut']);
+		expect(
+			r.metrics
+				.filter((m) => m.status !== 'unchecked')
+				.map((m) => m.id)
+				.sort(),
+		).toEqual(['deadAirPerMinute', 'subtitleOnCut']);
 	});
 
 	it('motionKindOf tells a punch-in from a Ken Burns move', () => {
 		const t = talk([120, 120]);
 		const [a, b] = t.video;
 		t.h.ok([
-			{ type: 'keyframe.addBatch', targets: [{ clipId: a, path: ['transform', 'scale'], keys: [{ at: { frames: 60 }, value: 100 }, { at: { frames: 67 }, value: 180 }] }] },
-			{ type: 'keyframe.addBatch', targets: [{ clipId: b, path: ['transform', 'scale'], keys: [{ at: { frames: 0 }, value: 100 }, { at: { frames: 119 }, value: 130 }] }] },
+			{
+				type: 'keyframe.addBatch',
+				targets: [
+					{
+						clipId: a,
+						path: ['transform', 'scale'],
+						keys: [
+							{ at: { frames: 60 }, value: 100 },
+							{ at: { frames: 67 }, value: 180 },
+						],
+					},
+				],
+			},
+			{
+				type: 'keyframe.addBatch',
+				targets: [
+					{
+						clipId: b,
+						path: ['transform', 'scale'],
+						keys: [
+							{ at: { frames: 0 }, value: 100 },
+							{ at: { frames: 119 }, value: 130 },
+						],
+					},
+				],
+			},
 		]);
 		expect(motionKindOf(t.h.seq, t.h.seq.clips[a] as Clip)).toEqual({ kind: 'punch-in', start: 60 });
 		expect(motionKindOf(t.h.seq, t.h.seq.clips[b] as Clip)).toEqual({ kind: 'ken-burns' });

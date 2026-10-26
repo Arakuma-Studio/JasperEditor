@@ -9,9 +9,10 @@
 //   POST   /api/projects/:projectId/style/check       Style Check of a sequence against a recipe's targets
 // Recipes are `@jasper/project`'s `StyleRecipeSchema` (strict); a recipe made by a newer JasperEditor is listed as
 // read-only (`newer`) and refused for use.
-import { AutomationSummarySchema, AutomationSfxReportSchema, AutomationBudgetSchema } from './automation.ts';
+
 import { STYLE_STAGES, STYLE_TARGETS } from '@jasper/project';
 import { z } from 'zod';
+import { AutomationBudgetSchema, AutomationSfxReportSchema, AutomationSummarySchema } from './automation.ts';
 
 const Warning = z.object({ code: z.string(), message: z.string() });
 
@@ -31,7 +32,11 @@ export const StyleRecipeEntrySchema = z.object({
 });
 export type StyleRecipeEntry = z.infer<typeof StyleRecipeEntrySchema>;
 
-export const StyleRecipeRepairSchema = z.object({ action: z.string(), entity: z.string(), detail: z.string() });
+export const StyleRecipeRepairSchema = z.object({
+	action: z.string(),
+	entity: z.string(),
+	detail: z.string(),
+});
 
 export const StyleRecipeLibraryResponseSchema = z.object({
 	/** Bumped on every change (the `styleRecipes.changed` event carries it). */

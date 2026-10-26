@@ -14,7 +14,13 @@ import type { AgentService } from '../agent/service.ts';
 import { agentNameOf, requireUserApproval } from '../agent/user-approval.ts';
 import type { AudioService } from '../audio/service.ts';
 import type { AutomationDeps } from '../automation/run.ts';
-import { dryRunStyle, resolveRecipe, runStyleCheck, runStyleJob, type StyleDeps } from '../automation/style.ts';
+import {
+	dryRunStyle,
+	resolveRecipe,
+	runStyleCheck,
+	runStyleJob,
+	type StyleDeps,
+} from '../automation/style.ts';
 import type { CleanupAnalysisService } from '../cleanup/service.ts';
 import { isLoopbackHost } from '../context.ts';
 import type { ReframeService } from '../gaps/reframe.ts';
@@ -123,7 +129,9 @@ export default async function styleRoutes(app: FastifyInstance): Promise<void> {
 			const { doc } = await liveDocument(agent, projectId);
 			const recipe = await resolveRecipe(deps, doc, body);
 			if (body.sequenceId && !doc.sequences[body.sequenceId])
-				throw new HttpError(404, 'NOT_FOUND', `Sequence not found: ${body.sequenceId}`, { code: 'E_NOT_FOUND' });
+				throw new HttpError(404, 'NOT_FOUND', `Sequence not found: ${body.sequenceId}`, {
+					code: 'E_NOT_FOUND',
+				});
 			const input = {
 				projectId,
 				recipe,

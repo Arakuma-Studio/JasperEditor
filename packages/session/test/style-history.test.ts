@@ -41,7 +41,14 @@ const camera = {
 				color: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' },
 				browserDecodable: true,
 			},
-			{ index: 1, type: 'audio' as const, codec: 'aac', sampleRate: 48000, channels: 2, channelLayout: 'stereo' },
+			{
+				index: 1,
+				type: 'audio' as const,
+				codec: 'aac',
+				sampleRate: 48000,
+				channels: 2,
+				channelLayout: 'stereo',
+			},
 		],
 		rotationDegrees: 0 as const,
 		hasAlpha: false,
@@ -58,7 +65,11 @@ describe('Apply Style in the session', () => {
 		const doc = createEmptyProject({ ids, name: 'Style', preset: 'hd-1080p-30' });
 		let session!: EditorSession;
 		const engine = new FakeEngine(() => session);
-		session = new EditorSession({ projectId: doc.projectId, document: doc, ctx: { ids, now: () => NOW, registries: REG } });
+		session = new EditorSession({
+			projectId: doc.projectId,
+			document: doc,
+			ctx: { ids, now: () => NOW, registries: REG },
+		});
 		const seqId = Object.keys(doc.sequences)[0]!;
 		const F = FLICKS_PER_SECOND / 30;
 		const lengths = [150, 120, 180, 90, 210, 150];
@@ -67,7 +78,8 @@ describe('Apply Style in the session', () => {
 		let at = 0;
 		let src = 0;
 		for (const len of lengths) {
-			for (let f = 0; f + 9 <= len; f += 12) words.push({ text: `w${words.length}`, start: (src + f) * F, end: (src + f + 9) * F });
+			for (let f = 0; f + 9 <= len; f += 12)
+				words.push({ text: `w${words.length}`, start: (src + f) * F, end: (src + f + 9) * F });
 			places.push({
 				type: 'clip.place',
 				source: { mediaId: '$cam' },
@@ -94,7 +106,11 @@ describe('Apply Style in the session', () => {
 			.map((c) => c.id);
 		const plan = await planStyle(
 			session.getCommitted(),
-			{ recipe: builtinStyleRecipe('builtin:fast-long-form')!, seed: 2, passes: { slides: false, music: false } },
+			{
+				recipe: builtinStyleRecipe('builtin:fast-long-form')!,
+				seed: 2,
+				passes: { slides: false, music: false },
+			},
 			{
 				cleanup: async () => ({
 					ranges: [
@@ -114,7 +130,10 @@ describe('Apply Style in the session', () => {
 		c.connect(engine.subscribe);
 		const p = engine.create(draft as never, 'user');
 		await c.setActive(p.id);
-		await c.setItemDecision(p.items.map((it) => it.id), 'accept');
+		await c.setItemDecision(
+			p.items.map((it) => it.id),
+			'accept',
+		);
 		const before = session.getCommitted();
 		const entries = session.getState().history.entries.length;
 		const r = await c.apply({ trusted: true });
@@ -123,7 +142,9 @@ describe('Apply Style in the session', () => {
 		expect(h).toHaveLength(entries + 1);
 		expect(h.at(-1)!.label).toMatch(/^Accept Apply Style: Fast Long-form/);
 		const after = session.getCommitted();
-		expect(Object.keys((after.sequences[seqId] as { captionGroups?: object }).captionGroups ?? {})).toHaveLength(1);
+		expect(
+			Object.keys((after.sequences[seqId] as { captionGroups?: object }).captionGroups ?? {}),
+		).toHaveLength(1);
 		expect(after.styleRecipes?.active).toBe('builtin:fast-long-form');
 		expect(session.undo().ok).toBe(true);
 		await setImmediate();

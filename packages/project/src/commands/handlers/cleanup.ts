@@ -217,7 +217,7 @@ function definePieceRefs(
 	}
 	for (const [origin, pieces] of byOrigin) {
 		pieces.sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
-		pieces.forEach((c, k) => h.defineRef(`${prefix}_${origin}_${k}`, c.id));
+		for (const [k, c] of pieces.entries()) h.defineRef(`${prefix}_${origin}_${k}`, c.id);
 	}
 }
 

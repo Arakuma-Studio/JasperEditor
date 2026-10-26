@@ -204,7 +204,8 @@ export function embeddedFeatures(proposal: Pick<Proposal, 'items'>): string[] {
 	const out: string[] = [];
 	for (const it of proposal.items ?? []) {
 		const f = (it.meta as { feature?: unknown } | undefined)?.feature;
-		if (typeof f === 'string' && BY_ID.get(f)?.agentAccept.setting === 'project' && !out.includes(f)) out.push(f);
+		if (typeof f === 'string' && BY_ID.get(f)?.agentAccept.setting === 'project' && !out.includes(f))
+			out.push(f);
 	}
 	return out;
 }

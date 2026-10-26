@@ -17,22 +17,36 @@
 // sounds); tests and the accuracy harness call the same function with fewer hooks. Accepting everything is one
 // transaction (one undo step). Refresh / Reroll (`refreshStyleItems`) re-simulate the earlier stages' pending items
 // and re-plan the requested ones with their pass's refresher. Pure apart from the hooks.
+
+import { findSubtitleTemplate } from '../captions/subtitles/templates.ts';
 import { applyTransaction } from '../commands/apply.ts';
 import { substituteKnownRefs } from '../commands/context.ts';
 import type { Registries } from '../commands/types.ts';
 import { CROCKFORD_ALPHABET, type IdPrefix, type IdSource } from '../ids.ts';
-import { EDIT_AUTOMATION_FEATURE, SUBTITLES_FEATURE, TRANSCRIPT_CLEANUP_FEATURE } from '../proposals/features.ts';
+import {
+	EDIT_AUTOMATION_FEATURE,
+	SUBTITLES_FEATURE,
+	TRANSCRIPT_CLEANUP_FEATURE,
+} from '../proposals/features.ts';
 import type { Proposal, ProposalItem, ProposalItemInput } from '../proposals/schema.ts';
 import { declaredRefs } from '../proposals/structure.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import { SOUND_PROPOSAL_SETUP_GROUP } from '../sound/proposal-draft.ts';
-import { findSubtitleTemplate } from '../captions/subtitles/templates.ts';
 import { findBin } from './assets.ts';
-import { AutomationInputError, automationSequence, frameGeometry, fpsValue, timecodeOf } from './common.ts';
+import { AutomationInputError, automationSequence, fpsValue, frameGeometry, timecodeOf } from './common.ts';
 import type { AutomationPass, AutomationRange } from './params.ts';
 import { AUTOMATION_PASS_GROUP } from './params.ts';
-import { type AutomationPlan, type PassContext, parsePassParams, passItems, passSummary, planPass, type SfxNeeds, sfxNeeds } from './pass.ts';
+import {
+	type AutomationPlan,
+	type PassContext,
+	parsePassParams,
+	passItems,
+	passSummary,
+	planPass,
+	type SfxNeeds,
+	sfxNeeds,
+} from './pass.ts';
 import type { AutomationCost, PassSfx } from './proposal.ts';
 import {
 	type ResolvedStage,
@@ -236,7 +250,11 @@ function mapItem<T extends ProposalItemInput>(
 			if (isSimId(id)) unmapped.add(id);
 			return id;
 		});
-	const walk = (v: unknown, ctx: { inCommands: boolean; id: boolean; decl: boolean }, depth: number): unknown => {
+	const walk = (
+		v: unknown,
+		ctx: { inCommands: boolean; id: boolean; decl: boolean },
+		depth: number,
+	): unknown => {
 		if (depth > 64) return v;
 		if (typeof v === 'string') {
 			if (!ctx.decl) {
@@ -352,7 +370,11 @@ function applyToSim(
 	sim: Sim,
 	items: ProposalItemInput[],
 	refItemOf: (ref: string, itemId: string) => boolean,
-): { applied: ProposalItemInput[]; failed: { itemId: string; reason: string }[]; results: Map<string, unknown[]> } {
+): {
+	applied: ProposalItemInput[];
+	failed: { itemId: string; reason: string }[];
+	results: Map<string, unknown[]>;
+} {
 	const failed: { itemId: string; reason: string }[] = [];
 	let todo = [...items];
 	for (let attempt = 0; attempt < 64 && todo.length; attempt++) {
@@ -390,7 +412,10 @@ function applyToSim(
 		if (!hit) {
 			// a transaction-level failure (an invariant): nothing of this batch can be told apart
 			for (const it of todo)
-				failed.push({ itemId: it.id, reason: e ? `${e.code}: ${e.message}`.slice(0, 300) : 'the commands fail' });
+				failed.push({
+					itemId: it.id,
+					reason: e ? `${e.code}: ${e.message}`.slice(0, 300) : 'the commands fail',
+				});
 			return { applied: [], failed, results: new Map() };
 		}
 		const out = new Set([hit.id]);
@@ -451,7 +476,12 @@ const ROLE_TEXT = {
 } as const;
 
 /** A role a stage cannot resolve: an actionable message (never a silent skip). */
-function roleProblem(doc: ProjectDocument, stage: 'reactions' | 'music', params: Record<string, unknown>, recipe: string): Warning | null {
+function roleProblem(
+	doc: ProjectDocument,
+	stage: 'reactions' | 'music',
+	params: Record<string, unknown>,
+	recipe: string,
+): Warning | null {
 	const a = params.assets as { bin?: string; folder?: string; mediaIds?: string[] } | undefined;
 	const t = ROLE_TEXT[stage];
 	if (!a)
@@ -473,10 +503,13 @@ const PICTURE_KINDS = new Set(['video', 'nest-video', 'still', 'animated-image',
 
 /** The last frame + 1 of the picture (picture clips of the video tracks other than the passes' own). */
 export function pictureEnd(seq: Sequence): number {
-	const own = new Set(seq.videoTracks.filter((t) => PASS_TRACK_NAMES.test((t.name ?? '').trim())).map((t) => t.id));
+	const own = new Set(
+		seq.videoTracks.filter((t) => PASS_TRACK_NAMES.test((t.name ?? '').trim())).map((t) => t.id),
+	);
 	let end = 0;
 	for (const c of Object.values(seq.clips ?? {}))
-		if (PICTURE_KINDS.has(c.kind) && c.enabled !== false && !own.has(c.trackId)) end = Math.max(end, c.start + c.duration);
+		if (PICTURE_KINDS.has(c.kind) && c.enabled !== false && !own.has(c.trackId))
+			end = Math.max(end, c.start + c.duration);
 	return end;
 }
 
@@ -490,11 +523,14 @@ function subtitleCost(
 ): AutomationCost['class'] {
 	if ((output ?? t?.output) === 'caption-track') return 'native';
 	const fx = t?.animation?.preset?.effects ?? [];
-	return fx.some((e) => typeof e.effectId === 'string' && !NATIVE_CLIP_EFFECTS.has(e.effectId)) ? 'hybrid' : 'native';
+	return fx.some((e) => typeof e.effectId === 'string' && !NATIVE_CLIP_EFFECTS.has(e.effectId))
+		? 'hybrid'
+		: 'native';
 }
 
 const COST_ORDER: Record<AutomationCost['class'], number> = { native: 0, hybrid: 1, remotion: 2 };
-const maxCost = (a: AutomationCost['class'], b: AutomationCost['class']) => (COST_ORDER[b] > COST_ORDER[a] ? b : a);
+const maxCost = (a: AutomationCost['class'], b: AutomationCost['class']) =>
+	COST_ORDER[b] > COST_ORDER[a] ? b : a;
 
 const nonSetup = (items: readonly ProposalItemInput[]) =>
 	items.filter((it) => (it.meta as { setup?: unknown } | undefined)?.setup !== true);
@@ -558,7 +594,10 @@ export async function planStyle(
 	{
 		const r = applyToSim(sim, [items[0]!], () => false);
 		if (r.failed.length)
-			throw new AutomationInputError('E_INVALID_PARAM', `The recipe cannot be stored in the project: ${r.failed[0]!.reason}`);
+			throw new AutomationInputError(
+				'E_INVALID_PARAM',
+				`The recipe cannot be stored in the project: ${r.failed[0]!.reason}`,
+			);
 	}
 
 	const report = (s: ResolvedStage, rest: Partial<StyleStageReport> & { status: StyleStageStatus }) => {
@@ -651,7 +690,12 @@ export async function planStyle(
 				report(s, {
 					status: 'skipped',
 					reason: 'The voice cleanup needs the engine (its voice analysis)',
-					warnings: [{ code: 'W_CLEANUP_UNAVAILABLE', message: 'The voice cleanup needs the engine (its voice analysis)' }],
+					warnings: [
+						{
+							code: 'W_CLEANUP_UNAVAILABLE',
+							message: 'The voice cleanup needs the engine (its voice analysis)',
+						},
+					],
 				});
 				continue;
 			}
@@ -672,7 +716,12 @@ export async function planStyle(
 					status: 'empty',
 					reason: 'Nothing to cut: the voice is clean already',
 					warnings: got.warnings ?? [],
-					cleanup: { ranges: 0, removedFrames: 0, findings: got.findings ?? 0, ...(got.stats ? { stats: got.stats } : {}) },
+					cleanup: {
+						ranges: 0,
+						removedFrames: 0,
+						findings: got.findings ?? 0,
+						...(got.stats ? { stats: got.stats } : {}),
+					},
 				});
 				continue;
 			}
@@ -680,7 +729,10 @@ export async function planStyle(
 			const fps = fpsValue(frameGeometry(seq).fps);
 			const item: ProposalItemInput = {
 				id: STYLE_CLEANUP_ITEM,
-				label: `Clean up the voice: ${ranges.length} cuts, ${(removed / fps).toFixed(1)} s removed`.slice(0, 200),
+				label: `Clean up the voice: ${ranges.length} cuts, ${(removed / fps).toFixed(1)} s removed`.slice(
+					0,
+					200,
+				),
 				group: 'cleanup',
 				commands: [
 					{
@@ -703,7 +755,10 @@ export async function planStyle(
 					frame: ranges[0]!.start,
 					timecode: timecodeOf(seq, ranges[0]!.start),
 					range: { start: ranges[0]!.start, end: ranges[ranges.length - 1]!.end },
-					why: `Clean Up Voice (${s.preset === 'builtin.natural' ? 'Natural' : s.preset === 'builtin.fast' ? 'Fast' : s.preset}): ${ranges.length} cuts remove ${(removed / fps).toFixed(1)} s. The decorations of this proposal are planned on the cleaned-up timeline: accepting any of them applies these cuts too.`.slice(0, 600),
+					why: `Clean Up Voice (${s.preset === 'builtin.natural' ? 'Natural' : s.preset === 'builtin.fast' ? 'Fast' : s.preset}): ${ranges.length} cuts remove ${(removed / fps).toFixed(1)} s. The decorations of this proposal are planned on the cleaned-up timeline: accepting any of them applies these cuts too.`.slice(
+						0,
+						600,
+					),
 					rerollable: false,
 					cuts: ranges.length,
 					removedFrames: removed,
@@ -714,7 +769,12 @@ export async function planStyle(
 			const dropped: { itemId: string; reason: string }[] = [];
 			const r = commit([item], dropped);
 			if (!r.applied.length) {
-				report(s, { status: 'skipped', reason: dropped[0]?.reason ?? 'the cuts do not apply', dropped, warnings: got.warnings ?? [] });
+				report(s, {
+					status: 'skipped',
+					reason: dropped[0]?.reason ?? 'the cuts do not apply',
+					dropped,
+					warnings: got.warnings ?? [],
+				});
 				continue;
 			}
 			cleanupItem = STYLE_CLEANUP_ITEM;
@@ -724,7 +784,12 @@ export async function planStyle(
 				count: ranges.length,
 				items: 1,
 				cost: 'native',
-				cleanup: { ranges: ranges.length, removedFrames: removed, findings: got.findings ?? 0, ...(got.stats ? { stats: got.stats } : {}) },
+				cleanup: {
+					ranges: ranges.length,
+					removedFrames: removed,
+					findings: got.findings ?? 0,
+					...(got.stats ? { stats: got.stats } : {}),
+				},
 				warnings: got.warnings ?? [],
 			});
 			continue;
@@ -742,12 +807,19 @@ export async function planStyle(
 		}
 		// ---- subtitles
 		if (s.stage === 'subtitles') {
-			const existing = (automationSequence(sim.doc, seq.id) as { captionGroups?: Record<string, unknown> }).captionGroups;
+			const existing = (automationSequence(sim.doc, seq.id) as { captionGroups?: Record<string, unknown> })
+				.captionGroups;
 			if (existing && Object.keys(existing).length) {
 				report(s, {
 					status: 'skipped',
 					reason: 'The sequence has subtitles already (Text ▸ Subtitles): they are kept as they are',
-					warnings: [{ code: 'W_HAS_SUBTITLES', message: 'The sequence has subtitles already: Apply Style keeps them (regenerate them in Text ▸ Subtitles)' }],
+					warnings: [
+						{
+							code: 'W_HAS_SUBTITLES',
+							message:
+								'The sequence has subtitles already: Apply Style keeps them (regenerate them in Text ▸ Subtitles)',
+						},
+					],
 				});
 				continue;
 			}
@@ -772,7 +844,10 @@ export async function planStyle(
 				...(s.language ? { language: s.language } : {}),
 				...(range ? { range: { start: range.start, end: range.end } } : {}),
 			};
-			const name = typeof template === 'string' ? (findSubtitleTemplate(sim.doc, template)?.name ?? template) : String((template as { name?: unknown }).name ?? 'template');
+			const name =
+				typeof template === 'string'
+					? (findSubtitleTemplate(sim.doc, template)?.name ?? template)
+					: String((template as { name?: unknown }).name ?? 'template');
 			const item: ProposalItemInput = {
 				id: STYLE_SUBTITLES_ITEM,
 				label: `Subtitles (${name})`.slice(0, 200),
@@ -785,7 +860,10 @@ export async function planStyle(
 					kind: 'subtitles',
 					feature: SUBTITLES_FEATURE,
 					frame: range?.start ?? 0,
-					why: `Subtitles from the transcript with the template “${name}”, aligned to the cuts of the cleaned-up timeline`.slice(0, 600),
+					why: `Subtitles from the transcript with the template “${name}”, aligned to the cuts of the cleaned-up timeline`.slice(
+						0,
+						600,
+					),
 					rerollable: false,
 					template: typeof template === 'string' ? template : (template as { id?: unknown }).id,
 				},
@@ -798,12 +876,22 @@ export async function planStyle(
 				const message = noWords
 					? 'Subtitles need a transcript of the dialogue: transcribe the sequence first (Transcript ▸ Transcribe…), or turn Subtitles off for this run'
 					: `The subtitles could not be made: ${why}`;
-				report(s, { status: 'skipped', reason: message, warnings: [{ code: noWords ? 'W_NO_TRANSCRIPT' : 'W_SUBTITLES_FAILED', message }] });
+				report(s, {
+					status: 'skipped',
+					reason: message,
+					warnings: [{ code: noWords ? 'W_NO_TRANSCRIPT' : 'W_SUBTITLES_FAILED', message }],
+				});
 				continue;
 			}
-			const res = (r.results.get(STYLE_SUBTITLES_ITEM)?.[0] ?? {}) as { count?: number; stats?: { warnings?: string[] } };
+			const res = (r.results.get(STYLE_SUBTITLES_ITEM)?.[0] ?? {}) as {
+				count?: number;
+				stats?: { warnings?: string[] };
+			};
 			// text clips with the template's GPU effects (Pixel Pop's Transform + S_Shake) are baked by the layer bake
-			const t = typeof template === 'string' ? findSubtitleTemplate(sim.doc, template) : (template as Parameters<typeof subtitleCost>[0]);
+			const t =
+				typeof template === 'string'
+					? findSubtitleTemplate(sim.doc, template)
+					: (template as Parameters<typeof subtitleCost>[0]);
 			const subCost = subtitleCost(t, s.output);
 			if ((res.count ?? 0) > 0) cost = maxCost(cost, subCost);
 			report(s, {
@@ -811,7 +899,9 @@ export async function planStyle(
 				count: res.count ?? 0,
 				items: 1,
 				cost: subCost,
-				warnings: (res.stats?.warnings ?? []).slice(0, 20).map((m) => ({ code: 'W_SUBTITLES', message: String(m).slice(0, 300) })),
+				warnings: (res.stats?.warnings ?? [])
+					.slice(0, 20)
+					.map((m) => ({ code: 'W_SUBTITLES', message: String(m).slice(0, 300) })),
 			});
 			continue;
 		}
@@ -821,7 +911,8 @@ export async function planStyle(
 		if (req.seed !== undefined) raw.seed = req.seed;
 		// the passes decorate the picture: never past its end (subtitles may hold a little longer, the end is no cut)
 		const end = pictureEnd(automationSequence(sim.doc, seq.id));
-		const passRange = end > 0 ? { start: Math.min(range?.start ?? 0, end), end: Math.min(range?.end ?? end, end) } : range;
+		const passRange =
+			end > 0 ? { start: Math.min(range?.start ?? 0, end), end: Math.min(range?.end ?? end, end) } : range;
 		if (passRange && passRange.end > passRange.start) raw.range = passRange;
 		else if (passRange) {
 			report(s, { status: 'empty', reason: 'No picture in the range' });
@@ -846,15 +937,22 @@ export async function planStyle(
 		const stageWarnings: Warning[] = [];
 		let plan: AutomationPlan;
 		try {
-			const inputs = hooks.passInputs ? await hooks.passInputs(pass, sim.doc, seq.id, params) : { ctx: {}, warnings: [] };
+			const inputs = hooks.passInputs
+				? await hooks.passInputs(pass, sim.doc, seq.id, params)
+				: { ctx: {}, warnings: [] };
 			stageWarnings.push(...inputs.warnings);
 			plan = planPass(sim.doc, pass, seq.id, params, inputs.ctx);
 			const more = hooks.refine ? await hooks.refine(pass, sim.doc, plan, params) : null;
 			if (more) plan = planPass(sim.doc, pass, seq.id, params, { ...inputs.ctx, ...more });
 		} catch (e) {
-			if (!(e instanceof AutomationInputError) && !(e instanceof Error && (e as { status?: number }).status)) throw e;
+			if (!(e instanceof AutomationInputError) && !(e instanceof Error && (e as { status?: number }).status))
+				throw e;
 			const message = `${STYLE_STAGE_NAMES[pass]}: ${(e as Error).message}`;
-			report(s, { status: 'skipped', reason: message, warnings: [{ code: 'W_STAGE_SKIPPED', message }, ...stageWarnings] });
+			report(s, {
+				status: 'skipped',
+				reason: message,
+				warnings: [{ code: 'W_STAGE_SKIPPED', message }, ...stageWarnings],
+			});
 			continue;
 		}
 		const needs = sfxNeeds(sim.doc, plan, params as { sfx?: never });
@@ -874,7 +972,11 @@ export async function planStyle(
 		const pi = passItems(sim.doc, plan, sfx);
 		const summary = passSummary(plan, pi);
 		const allWarnings = [...summary.warnings, ...stageWarnings];
-		if ((pass === 'reactions' || pass === 'music') && summary.count === 0 && allWarnings.some((w) => w.code === 'W_NO_ASSETS')) {
+		if (
+			(pass === 'reactions' || pass === 'music') &&
+			summary.count === 0 &&
+			allWarnings.some((w) => w.code === 'W_NO_ASSETS')
+		) {
 			const t = ROLE_TEXT[pass];
 			allWarnings.unshift({
 				code: 'W_ROLE_MISSING',
@@ -882,7 +984,13 @@ export async function planStyle(
 			});
 		}
 		if (!nonSetup(pi.items).length) {
-			report(s, { status: 'empty', summary: { ...summary, warnings: allWarnings }, sfx: sfxReport, warnings: allWarnings, cost: pi.cost.class });
+			report(s, {
+				status: 'empty',
+				summary: { ...summary, warnings: allWarnings },
+				sfx: sfxReport,
+				warnings: allWarnings,
+				cost: pi.cost.class,
+			});
 			continue;
 		}
 		const dropped: { itemId: string; reason: string }[] = [];
@@ -900,12 +1008,19 @@ export async function planStyle(
 			warnings: [
 				...allWarnings,
 				...(dropped.length
-					? [{ code: 'W_STYLE_DROPPED', message: `${dropped.length} planned ${STYLE_STAGE_NAMES[pass].toLowerCase()} were left out (${dropped[0]!.reason})` }]
+					? [
+							{
+								code: 'W_STYLE_DROPPED',
+								message: `${dropped.length} planned ${STYLE_STAGE_NAMES[pass].toLowerCase()} were left out (${dropped[0]!.reason})`,
+							},
+						]
 					: []),
 			],
 		});
 	}
-	for (const r of reports) for (const w of r.warnings) if (w.code === 'W_ROLE_MISSING' || w.code === 'W_NO_TRANSCRIPT') warnings.push(w);
+	for (const r of reports)
+		for (const w of r.warnings)
+			if (w.code === 'W_ROLE_MISSING' || w.code === 'W_NO_TRANSCRIPT') warnings.push(w);
 	hooks.progress?.(0.92, 'Proposal');
 	const planned = reports.filter((r) => r.status === 'planned');
 	const parts = planned.map((r) => `${r.count} ${r.name.toLowerCase()}`);
@@ -927,7 +1042,14 @@ export async function planStyle(
 				status: r.status,
 				count: r.count,
 				...(params ? { params } : {}),
-				...(r.summary ? { summary: { ...r.summary, skipped: { ...r.summary.skipped, first: r.summary.skipped.first.slice(0, 20) } } } : {}),
+				...(r.summary
+					? {
+							summary: {
+								...r.summary,
+								skipped: { ...r.summary.skipped, first: r.summary.skipped.first.slice(0, 20) },
+							},
+						}
+					: {}),
 			};
 		}),
 		warnings,
@@ -1006,7 +1128,8 @@ export async function refreshStyleItems(
 	hooks: Pick<StyleHooks, 'passInputs' | 'refine'> = {},
 ): Promise<StyleRefresh> {
 	const rep = styleReportOf(p);
-	if (!rep) return { ok: false, code: 'E_INVALID_PARAM', message: 'The proposal is not an Apply Style proposal' };
+	if (!rep)
+		return { ok: false, code: 'E_INVALID_PARAM', message: 'The proposal is not an Apply Style proposal' };
 	let seqId: string;
 	try {
 		seqId = automationSequence(doc, p.sequenceId).id;
@@ -1016,7 +1139,8 @@ export async function refreshStyleItems(
 	const wanted = new Set(itemIds);
 	const applied = new Map<string, string>();
 	for (const it of p.items)
-		if (it.state === 'accepted' && it.applied) for (const [k, v] of Object.entries(it.applied.refs)) applied.set(k, v);
+		if (it.state === 'accepted' && it.applied)
+			for (const [k, v] of Object.entries(it.applied.refs)) applied.set(k, v);
 	const sim: Sim = {
 		doc,
 		ids: styleSimIds(),
@@ -1057,14 +1181,23 @@ export async function refreshStyleItems(
 			for (const it of requested)
 				dropped.push({
 					itemId: it.id,
-					reason: 'the voice cleanup is planned from an analysis of the whole sequence: run Apply Style again',
+					reason:
+						'the voice cleanup is planned from an analysis of the whole sequence: run Apply Style again',
 				});
 			if (!requested.length) simulate(list);
 			continue;
 		}
 		if (stage === 'subtitles') {
 			for (const it of requested) {
-				const { state: _s, reason: _r, anchors: _a, applied: _ap, note: _n, selectedAlternative: _sa, ...input } = it as ProposalItem & { anchors?: unknown };
+				const {
+					state: _s,
+					reason: _r,
+					anchors: _a,
+					applied: _ap,
+					note: _n,
+					selectedAlternative: _sa,
+					...input
+				} = it as ProposalItem & { anchors?: unknown };
 				out.push(input as ProposalItemInput);
 			}
 			simulate(list);
@@ -1073,7 +1206,11 @@ export async function refreshStyleItems(
 		const pass = stage as AutomationPass;
 		const st = rep.stages.find((x) => x.stage === pass);
 		if (requested.length && st?.params) {
-			const view = { ...p, report: { pass, params: st.params }, items: p.items.map((it) => viewItem(it, sim.simOfRef)) } as Proposal;
+			const view = {
+				...p,
+				report: { pass, params: st.params },
+				items: p.items.map((it) => viewItem(it, sim.simOfRef)),
+			} as Proposal;
 			let ctx: PassContext = {};
 			if (hooks.passInputs) {
 				try {
@@ -1082,13 +1219,19 @@ export async function refreshStyleItems(
 					ctx = {};
 				}
 			}
-			const r = refreshAutomationItems(sim.doc, view, requested.map((it) => viewItem(it, sim.simOfRef).id), {
-				...(opts.reroll ? { reroll: true } : {}),
-				ctx,
-			});
+			const r = refreshAutomationItems(
+				sim.doc,
+				view,
+				requested.map((it) => viewItem(it, sim.simOfRef).id),
+				{
+					...(opts.reroll ? { reroll: true } : {}),
+					ctx,
+				},
+			);
 			if (!r.ok) return r;
 			const viewIds = new Map(requested.map((it) => [viewItem(it, sim.simOfRef).id, it.id]));
-			for (const d of r.dropped) dropped.push({ itemId: viewIds.get(d.itemId) ?? d.itemId, reason: d.reason });
+			for (const d of r.dropped)
+				dropped.push({ itemId: viewIds.get(d.itemId) ?? d.itemId, reason: d.reason });
 			const replaced = new Map<string, ProposalItemInput>();
 			for (const raw of r.items) {
 				const m = mapItem(raw, sim.maps);
@@ -1109,13 +1252,16 @@ export async function refreshStyleItems(
 				out.push(it);
 			}
 			// the stage as it will be: the replacements in place of the old items
-			const next = list.map((it) => {
-				const rep2 = replaced.get(it.id);
-				return rep2 ? ({ ...it, ...rep2, state: 'pending' } as ProposalItem) : it;
-			}).filter((it) => !dropped.some((d) => d.itemId === it.id));
+			const next = list
+				.map((it) => {
+					const rep2 = replaced.get(it.id);
+					return rep2 ? ({ ...it, ...rep2, state: 'pending' } as ProposalItem) : it;
+				})
+				.filter((it) => !dropped.some((d) => d.itemId === it.id));
 			simulate(next);
 		} else {
-			for (const it of requested) dropped.push({ itemId: it.id, reason: 'the proposal has no parameters for its pass' });
+			for (const it of requested)
+				dropped.push({ itemId: it.id, reason: 'the proposal has no parameters for its pass' });
 			simulate(list);
 		}
 	}

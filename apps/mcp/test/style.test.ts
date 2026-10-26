@@ -4,7 +4,12 @@
 // project copy through one transaction, and the "Editing automation" guide resource with the recommended workflow.
 import type { ApplyStyleResult, EngineJob, StyleCheckResponse } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { builtinStyleRecipe, createCounterIdSource, createEmptyProject, type ProjectDocument } from '@jasper/project';
+import {
+	builtinStyleRecipe,
+	createCounterIdSource,
+	createEmptyProject,
+	type ProjectDocument,
+} from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -13,7 +18,11 @@ import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
 const P = 'prj_style';
-const doc: ProjectDocument = createEmptyProject({ ids: createCounterIdSource(3), name: 'S', preset: 'hd-1080p-30' });
+const doc: ProjectDocument = createEmptyProject({
+	ids: createCounterIdSource(3),
+	name: 'S',
+	preset: 'hd-1080p-30',
+});
 const SEQ = Object.keys(doc.sequences)[0]!;
 
 const applyResult = (mode: 'propose' | 'dryRun', proposalId: string | null): ApplyStyleResult => ({
@@ -22,8 +31,27 @@ const applyResult = (mode: 'propose' | 'dryRun', proposalId: string | null): App
 	sequenceId: SEQ,
 	recipe: { id: 'builtin:fast-long-form', name: 'Fast Long-form', revision: 1 },
 	stages: [
-		{ stage: 'cleanup', name: 'Voice cleanup', status: 'planned', count: 12, items: 1, dropped: [], cost: 'native', warnings: [], cleanup: { ranges: 12, removedFrames: 240, findings: 20 } },
-		{ stage: 'subtitles', name: 'Subtitles', status: 'planned', count: 80, items: 1, dropped: [], cost: 'hybrid', warnings: [] },
+		{
+			stage: 'cleanup',
+			name: 'Voice cleanup',
+			status: 'planned',
+			count: 12,
+			items: 1,
+			dropped: [],
+			cost: 'native',
+			warnings: [],
+			cleanup: { ranges: 12, removedFrames: 240, findings: 20 },
+		},
+		{
+			stage: 'subtitles',
+			name: 'Subtitles',
+			status: 'planned',
+			count: 80,
+			items: 1,
+			dropped: [],
+			cost: 'hybrid',
+			warnings: [],
+		},
 		{
 			stage: 'music',
 			name: 'Music beds',
@@ -87,7 +115,19 @@ function fakeEngine(opts: { jobState?: 'succeeded' | 'failed'; error?: EngineJob
 		agentQuery: async () => ({ result: doc, revision: 3, via: 'headless' }),
 		agentTx: async (req: unknown) => {
 			calls.push({ name: 'agentTx', args: [req] });
-			return { result: { ok: true, revision: 4, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [{ recipeId: 'rcp_0000000000000007' }] }, via: 'headless' };
+			return {
+				result: {
+					ok: true,
+					revision: 4,
+					refs: {},
+					created: [],
+					changed: [],
+					deleted: [],
+					warnings: [],
+					results: [{ recipeId: 'rcp_0000000000000007' }],
+				},
+				via: 'headless',
+			};
 		},
 		styleRecipes: async () => ({
 			revision: 2,
@@ -105,7 +145,13 @@ function fakeEngine(opts: { jobState?: 'succeeded' | 'failed'; error?: EngineJob
 		},
 		createStyleRecipe: async (req: { recipe: Record<string, unknown> }) => {
 			calls.push({ name: 'createStyleRecipe', args: [req] });
-			return { id: 'rcp_0000000000000007', name: req.recipe.name, source: 'library', readOnly: false, recipe: { ...req.recipe, id: 'rcp_0000000000000007', revision: 1 } };
+			return {
+				id: 'rcp_0000000000000007',
+				name: req.recipe.name,
+				source: 'library',
+				readOnly: false,
+				recipe: { ...req.recipe, id: 'rcp_0000000000000007', revision: 1 },
+			};
 		},
 		updateStyleRecipe: async () => {
 			throw new Error('not expected');
@@ -122,7 +168,9 @@ function fakeEngine(opts: { jobState?: 'succeeded' | 'failed'; error?: EngineJob
 		getJob: async () =>
 			job(
 				opts.jobState ?? 'succeeded',
-				(opts.jobState ?? 'succeeded') === 'succeeded' ? applyResult('propose', 'prp_0000000000000009') : undefined,
+				(opts.jobState ?? 'succeeded') === 'succeeded'
+					? applyResult('propose', 'prp_0000000000000009')
+					: undefined,
 			),
 	};
 	const link: EngineConnection = {
@@ -164,7 +212,11 @@ describe('style recipe tools', () => {
 			const tool = tools.find((x) => x.name === name)!;
 			expect(tool, name).toBeDefined();
 			expect(tool.title).toBeTruthy();
-			expect(tool.annotations).toMatchObject({ readOnlyHint: readOnly, destructiveHint: false, openWorldHint: false });
+			expect(tool.annotations).toMatchObject({
+				readOnlyHint: readOnly,
+				destructiveHint: false,
+				openWorldHint: false,
+			});
 			expect(tool.inputSchema.additionalProperties).toBe(false);
 		};
 		expectHints('list_style_recipes', true);
@@ -200,7 +252,10 @@ describe('style recipe tools', () => {
 			],
 		});
 		expect(json).toMatchObject({ export: { cost: 'remotion' }, proposalId: null, budget: { fits: true } });
-		expect(json.stages.find((s: { stage: string }) => s.stage === 'music')).toMatchObject({ status: 'skipped', reason: expect.stringContaining('Music') });
+		expect(json.stages.find((s: { stage: string }) => s.stage === 'music')).toMatchObject({
+			status: 'skipped',
+			reason: expect.stringContaining('Music'),
+		});
 		expect(json.next).toContain('mode "propose"');
 	});
 
@@ -212,7 +267,11 @@ describe('style recipe tools', () => {
 		expect(p.json.next).toContain('style_check');
 		const big = await connect({
 			jobState: 'failed',
-			error: { code: 'PROPOSAL_TOO_LARGE', message: 'too big', detail: { code: 'E_TOO_LARGE', suggestedRange: { start: 0, end: 900 } } } as never,
+			error: {
+				code: 'PROPOSAL_TOO_LARGE',
+				message: 'too big',
+				detail: { code: 'E_TOO_LARGE', suggestedRange: { start: 0, end: 900 } },
+			} as never,
 		});
 		const f = await big.call('apply_style', { projectId: P, recipeId: 'builtin:fast-long-form' });
 		expect(f.r.isError).toBe(true);
@@ -221,12 +280,20 @@ describe('style recipe tools', () => {
 
 	it('strict arguments at any depth: unknown keys and stage names are refused before the engine is called', async () => {
 		const t = await connect();
-		const a = await t.call('apply_style', { projectId: P, recipeID: 'x' }).catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
+		const a = await t
+			.call('apply_style', { projectId: P, recipeID: 'x' })
+			.catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
 		expect(a.r.isError).toBe(true);
-		const b = await t.call('apply_style', { projectId: P, passes: { kits: true } }).catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
+		const b = await t
+			.call('apply_style', { projectId: P, passes: { kits: true } })
+			.catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
 		expect(b.r.isError).toBe(true);
 		const c = await t
-			.call('save_style_recipe', { name: 'x', basedOn: 'builtin:fast-long-form', passes: { 'ken-burns': { enabled: true, params: { shre: 1 } } } })
+			.call('save_style_recipe', {
+				name: 'x',
+				basedOn: 'builtin:fast-long-form',
+				passes: { 'ken-burns': { enabled: true, params: { shre: 1 } } },
+			})
 			.catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
 		expect(c.r.isError).toBe(true);
 		expect(t.engine.calls.filter((x) => x.name !== 'styleRecipe')).toEqual([]);
@@ -236,7 +303,9 @@ describe('style recipe tools', () => {
 		const t = await connect();
 		const l = await t.call('list_style_recipes', { projectId: P });
 		expect(l.json.recipes.map((r: { name: string }) => r.name)).toEqual(['Fast Long-form', 'Future']);
-		expect(l.json.recipes[0].stages).toEqual(expect.arrayContaining(['cleanup', 'subtitles', 'decorate-cuts', 'punch-ins']));
+		expect(l.json.recipes[0].stages).toEqual(
+			expect.arrayContaining(['cleanup', 'subtitles', 'decorate-cuts', 'punch-ins']),
+		);
 		expect(l.json.recipes[1]).toMatchObject({ newer: true, readOnly: true });
 		expect(l.json.repairs).toHaveLength(1);
 		expect(l.json.project).toMatchObject({ active: null, recipes: [] });
@@ -253,19 +322,38 @@ describe('style recipe tools', () => {
 		});
 		expect(s.r.isError).toBeFalsy();
 		expect(s.json).toMatchObject({ recipeId: 'rcp_0000000000000007', name: 'Mine', revision: 1 });
-		const created = t.engine.calls.find((x) => x.name === 'createStyleRecipe')!.args[0] as { recipe: Record<string, any> };
+		const created = t.engine.calls.find((x) => x.name === 'createStyleRecipe')!.args[0] as {
+			// biome-ignore lint/suspicious/noExplicitAny: the recipe JSON is read loosely by the assertions
+			recipe: Record<string, any>;
+		};
 		expect(created.recipe.passes['ken-burns']).toEqual({ enabled: true, params: { share: 0.2 } });
 		expect(created.recipe.passes['punch-ins'].params.scale).toBe(180);
 		expect(created.recipe.id).toBe('builtin:fast-long-form');
-		const tx = t.engine.calls.find((x) => x.name === 'agentTx')!.args[0] as { transaction: { commands: { type: string; activate?: boolean }[] } };
-		expect(tx.transaction.commands).toEqual([expect.objectContaining({ type: 'styleRecipe.add', activate: true })]);
+		const tx = t.engine.calls.find((x) => x.name === 'agentTx')!.args[0] as {
+			transaction: { commands: { type: string; activate?: boolean }[] };
+		};
+		expect(tx.transaction.commands).toEqual([
+			expect.objectContaining({ type: 'styleRecipe.add', activate: true }),
+		]);
 	});
 
 	it('style_check: measures with look-here timecodes', async () => {
 		const t = await connect();
-		const { json } = await t.call('style_check', { projectId: P, recipeId: 'builtin:fast-long-form', deadAir: false });
-		expect(t.engine.calls[0]!.args[1]).toEqual({ sequenceId: SEQ, recipeId: 'builtin:fast-long-form', deadAir: false });
-		expect(json.metrics[0]).toMatchObject({ id: 'kitCoverage', status: 'off', lookHere: [{ timecode: '00:00:03:00', frame: 90 }] });
+		const { json } = await t.call('style_check', {
+			projectId: P,
+			recipeId: 'builtin:fast-long-form',
+			deadAir: false,
+		});
+		expect(t.engine.calls[0]!.args[1]).toEqual({
+			sequenceId: SEQ,
+			recipeId: 'builtin:fast-long-form',
+			deadAir: false,
+		});
+		expect(json.metrics[0]).toMatchObject({
+			id: 'kitCoverage',
+			status: 'off',
+			lookHere: [{ timecode: '00:00:03:00', frame: 90 }],
+		});
 		expect(json.next).toContain('set_playhead');
 	});
 

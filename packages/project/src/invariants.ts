@@ -5,6 +5,7 @@
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
+import { repairStyleRecipes, styleRecipesIssues } from './automation/recipes.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
 import {
@@ -12,7 +13,6 @@ import {
 	repairSubtitleSequence,
 	sequenceSubtitleIssues,
 } from './captions/subtitles/model.ts';
-import { repairStyleRecipes, styleRecipesIssues } from './automation/recipes.ts';
 import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';

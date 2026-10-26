@@ -15,8 +15,8 @@ import type { ProjectDocument } from '../schema/document.ts';
 import {
 	AUTOMATION_PASSES,
 	AutomationAssetsSchema,
-	AutomationSfxSchema,
 	type AutomationPass,
+	AutomationSfxSchema,
 	DecorateCutsParamsSchema,
 	KenBurnsParamsSchema,
 	MusicParamsSchema,
@@ -55,7 +55,9 @@ export const STYLE_STAGE_NAMES: Record<StyleStage, string> = {
 };
 
 export const STYLE_RECIPE_ID_RE = /^(?:builtin:[a-z0-9-]{1,40}|rcp_[0-9A-HJKMNP-TV-Z]{16})$/;
-const RecipeIdSchema = z.string().regex(STYLE_RECIPE_ID_RE, 'a recipe id is builtin:<name> or rcp_<16 characters>');
+const RecipeIdSchema = z
+	.string()
+	.regex(STYLE_RECIPE_ID_RE, 'a recipe id is builtin:<name> or rcp_<16 characters>');
 
 const Enabled = z.boolean();
 
@@ -215,7 +217,11 @@ export function parseStyleRecipe(v: unknown): RecipeParse {
 			message: `The recipe was made by a newer JasperEditor (format version ${(v as { version: number }).version}; this build reads ${STYLE_RECIPE_VERSION}): update JasperEditor to use it`,
 		};
 	if (byteLength(v) > MAX_STYLE_RECIPE_BYTES)
-		return { ok: false, code: 'E_TOO_LARGE', message: `A recipe holds at most ${MAX_STYLE_RECIPE_BYTES} bytes` };
+		return {
+			ok: false,
+			code: 'E_TOO_LARGE',
+			message: `A recipe holds at most ${MAX_STYLE_RECIPE_BYTES} bytes`,
+		};
 	const r = StyleRecipeSchema.safeParse(v);
 	if (!r.success)
 		return {
@@ -240,7 +246,9 @@ export function styleRecipeIdFrom(bytes: ArrayLike<number>): string {
 // Built-in recipes (EA-011): the measured parameters (FINDINGS §3; the kits / overlays work packages' defaults)
 
 /** Default asset roles of the built-ins: bins named for the role, the library's whooshes, generated noise. */
-export const DEFAULT_RECIPE_ASSETS: Required<Pick<RecipeAssets, 'reactionImages' | 'musicFolder' | 'staticNoise'>> & {
+export const DEFAULT_RECIPE_ASSETS: Required<
+	Pick<RecipeAssets, 'reactionImages' | 'musicFolder' | 'staticNoise'>
+> & {
 	whoosh: NonNullable<RecipeAssets['whoosh']>;
 } = {
 	whoosh: { type: 'whoosh' },
@@ -498,7 +506,8 @@ export function styleRecipesIssues(doc: ProjectDocument): [string, string[]][] {
 	if (!isPlain(raw)) return [['styleRecipes must be an object {active?, recipes}', ['styleRecipes']]];
 	const out: [string, string[]][] = [];
 	for (const k of Object.keys(raw))
-		if (k !== 'active' && k !== 'recipes') out.push([`styleRecipes has an unknown field ${k}`, ['styleRecipes', k]]);
+		if (k !== 'active' && k !== 'recipes')
+			out.push([`styleRecipes has an unknown field ${k}`, ['styleRecipes', k]]);
 	if (!isPlain(raw.recipes)) {
 		out.push(['styleRecipes.recipes must be an object of recipes by id', ['styleRecipes', 'recipes']]);
 		return out;
@@ -512,7 +521,10 @@ export function styleRecipesIssues(doc: ProjectDocument): [string, string[]][] {
 		const r = parseStyleRecipe(v);
 		if (!r.ok) out.push([`Style recipe ${k}: ${r.message}`, ['styleRecipes', 'recipes', k]]);
 		else if (r.recipe.id !== k)
-			out.push([`Style recipe ${k}: record key differs from id ${r.recipe.id}`, ['styleRecipes', 'recipes', k]]);
+			out.push([
+				`Style recipe ${k}: record key differs from id ${r.recipe.id}`,
+				['styleRecipes', 'recipes', k],
+			]);
 	}
 	if (raw.active !== undefined) {
 		const a = raw.active;
@@ -544,7 +556,8 @@ export function repairStyleRecipes(
 			note('repair-style-recipes', 'styleRecipes', `unknown field ${k} removed`);
 		}
 	if (!isPlain(sr.recipes)) {
-		if (sr.recipes !== undefined) note('repair-style-recipes', 'styleRecipes', 'unreadable recipe list removed');
+		if (sr.recipes !== undefined)
+			note('repair-style-recipes', 'styleRecipes', 'unreadable recipe list removed');
 		sr.recipes = {};
 	}
 	const rec = sr.recipes as Record<string, unknown>;
@@ -578,7 +591,11 @@ export function repairStyleRecipes(
 		const a = sr.active;
 		if (typeof a !== 'string' || !(Object.hasOwn(rec, a) || builtinStyleRecipe(a))) {
 			delete sr.active;
-			note('repair-style-recipes', 'styleRecipes', 'the active recipe names no recipe of the project: cleared');
+			note(
+				'repair-style-recipes',
+				'styleRecipes',
+				'the active recipe names no recipe of the project: cleared',
+			);
 		}
 	}
 	if (Object.keys(rec).length === 0 && sr.active === undefined) delete d.styleRecipes;

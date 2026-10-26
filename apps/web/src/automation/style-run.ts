@@ -30,7 +30,9 @@ export async function dryRunStyle(
 	signal?: AbortSignal,
 ): Promise<ApplyStyleResult> {
 	try {
-		return ApplyStyleResultSchema.parse(await engine.applyStyle(projectId, { ...req, mode: 'dryRun' }, signal));
+		return ApplyStyleResultSchema.parse(
+			await engine.applyStyle(projectId, { ...req, mode: 'dryRun' }, signal),
+		);
 	} catch (e) {
 		throw asRunError(e);
 	}
@@ -77,7 +79,8 @@ export async function proposeStyle(
 		);
 	}
 	const parsed = ApplyStyleResultSchema.safeParse(job.result);
-	if (!parsed.success) throw new AutomationRunError('E_BAD_RESULT', t('The engine returned an unreadable result'));
+	if (!parsed.success)
+		throw new AutomationRunError('E_BAD_RESULT', t('The engine returned an unreadable result'));
 	return parsed.data;
 }
 

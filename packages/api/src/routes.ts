@@ -27,18 +27,6 @@ import {
 } from './audio-fx.ts';
 import { AutomationPassRequestSchema, AutomationPassResultSchema } from './automation.ts';
 import {
-	ApplyStyleRequestSchema,
-	ApplyStyleResultSchema,
-	StyleCheckRequestSchema,
-	StyleCheckResponseSchema,
-	StyleRecipeCreateRequestSchema,
-	StyleRecipeDeleteResponseSchema,
-	StyleRecipeDuplicateRequestSchema,
-	StyleRecipeEntrySchema,
-	StyleRecipeLibraryResponseSchema,
-	StyleRecipeUpdateRequestSchema,
-} from './style.ts';
-import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
 	CacheLocationCheckSchema,
@@ -289,6 +277,18 @@ import {
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
+import {
+	ApplyStyleRequestSchema,
+	ApplyStyleResultSchema,
+	StyleCheckRequestSchema,
+	StyleCheckResponseSchema,
+	StyleRecipeCreateRequestSchema,
+	StyleRecipeDeleteResponseSchema,
+	StyleRecipeDuplicateRequestSchema,
+	StyleRecipeEntrySchema,
+	StyleRecipeLibraryResponseSchema,
+	StyleRecipeUpdateRequestSchema,
+} from './style.ts';
 import {
 	SubtitleTemplateDeleteResponseSchema,
 	SubtitleTemplateLibraryResponseSchema,

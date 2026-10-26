@@ -22,4 +22,8 @@ export const StyleRecipeSetActiveCmd = cmd('styleRecipe.setActive', {
 	recipeId: RecipeId.nullable(),
 });
 
-export const STYLE_RECIPE_COMMANDS = [StyleRecipeAddCmd, StyleRecipeRemoveCmd, StyleRecipeSetActiveCmd] as const;
+export const STYLE_RECIPE_COMMANDS = [
+	StyleRecipeAddCmd,
+	StyleRecipeRemoveCmd,
+	StyleRecipeSetActiveCmd,
+] as const;

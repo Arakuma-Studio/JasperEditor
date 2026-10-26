@@ -7,13 +7,21 @@
 // dialogs last proposed with in this window.
 import {
 	type AutomationPass,
+	projectStyleRecipes,
 	recipeWithPassParams,
 	type StyleRecipe,
-	projectStyleRecipes,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
-import { Button, Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField, toast } from '@jasper/ui';
+import {
+	Button,
+	Checkbox,
+	Dialog,
+	type HostedDialogProps,
+	registerDialog,
+	TextField,
+	toast,
+} from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t, translateName } from '../i18n/runtime.ts';
@@ -74,7 +82,8 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 
 	const apply = (label: string, commands: Record<string, unknown>[]) => {
 		const r = session.apply({ label, origin: 'user', commands: commands as never });
-		if (!r.ok) toast({ kind: 'warning', title: t('{0}: not possible', t(label)), detail: r.errors[0]?.message });
+		if (!r.ok)
+			toast({ kind: 'warning', title: t('{0}: not possible', t(label)), detail: r.errors[0]?.message });
 		return r.ok;
 	};
 	const run = async (what: string, fn: () => Promise<unknown>) => {
@@ -82,14 +91,19 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 		try {
 			await fn();
 		} catch (e) {
-			toast({ kind: 'warning', title: t('{0}: not possible', what), detail: (e as Error)?.message ?? String(e) });
+			toast({
+				kind: 'warning',
+				title: t('{0}: not possible', what),
+				detail: (e as Error)?.message ?? String(e),
+			});
 		} finally {
 			setBusy(false);
 		}
 	};
 	const use = (c: RecipeChoice) => {
 		if (!c.recipe) return;
-		if (c.source === 'library') apply('Set Active Style Recipe', [{ type: 'styleRecipe.add', recipe: c.recipe, activate: true }]);
+		if (c.source === 'library')
+			apply('Set Active Style Recipe', [{ type: 'styleRecipe.add', recipe: c.recipe, activate: true }]);
 		else apply('Set Active Style Recipe', [{ type: 'styleRecipe.setActive', recipeId: c.id }]);
 	};
 	const remove = (c: RecipeChoice) => {
@@ -97,12 +111,18 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 			apply('Remove Style Recipe', [{ type: 'styleRecipe.remove', recipeId: c.id }]);
 			return;
 		}
-		if (!window.confirm(t('Delete the recipe “{0}” from your library? Projects keep their own copies.', name(c.name)))) return;
+		if (
+			!window.confirm(
+				t('Delete the recipe “{0}” from your library? Projects keep their own copies.', name(c.name)),
+			)
+		)
+			return;
 		void run(t('Delete'), () => deleteLibraryRecipe(c.id));
 	};
 	const duplicate = (c: RecipeChoice) =>
 		void run(t('Duplicate'), async () => {
-			if (c.source === 'project' && c.recipe) await createLibraryRecipe({ ...c.recipe, name: `${c.recipe.name} copy`.slice(0, 120) });
+			if (c.source === 'project' && c.recipe)
+				await createLibraryRecipe({ ...c.recipe, name: `${c.recipe.name} copy`.slice(0, 120) });
 			else await duplicateLibraryRecipe(c.id);
 		});
 	const saveCurrent = () =>
@@ -145,7 +165,9 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 					<span className="text-pr-small text-pr-muted" data-testid="style-recipes-offline">
 						{lib.status === 'loading'
 							? t('Loading your library…')
-							: t('Your library is kept by the engine, which is not connected: only the built-in recipes and the project’s copies are shown.')}
+							: t(
+									'Your library is kept by the engine, which is not connected: only the built-in recipes and the project’s copies are shown.',
+								)}
 					</span>
 				) : null}
 				{lib.readOnly ? (
@@ -155,7 +177,9 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 				) : null}
 				{showRepairs ? (
 					<div className="flex flex-col gap-0.5" data-testid="style-recipes-repairs">
-						<span className="text-pr-small text-pr-warning">{t('Your recipe library was repaired when it was opened:')}</span>
+						<span className="text-pr-small text-pr-warning">
+							{t('Your recipe library was repaired when it was opened:')}
+						</span>
 						{lib.repairs.slice(0, 8).map((r) => (
 							<span key={r.action + r.entity} className="pl-3 text-pr-small text-pr-muted">
 								{r.detail}
@@ -174,9 +198,10 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 								data-testid={`style-recipe-${c.id}`}
 								data-active={isActive || undefined}
 							>
-								<span className="w-[14px] shrink-0 text-center text-pr-text" aria-label={isActive ? t('Active') : undefined}>
+								<span className="w-[14px] shrink-0 text-center text-pr-text" aria-hidden="true">
 									{isActive ? '●' : ''}
 								</span>
+								{isActive ? <span className="sr-only">{t('Active')}</span> : null}
 								<span className="min-w-0 flex-1 truncate">
 									{renaming?.id === c.id ? (
 										<TextField
@@ -249,7 +274,10 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 										name(base?.name ?? ''),
 										lastPasses.map((p) => t(AUTOMATION_PASS_TITLES[p])).join(', '),
 									)
-								: t('A new recipe from “{0}” (no Automate dialog was used in this project yet).', name(base?.name ?? ''))}
+								: t(
+										'A new recipe from “{0}” (no Automate dialog was used in this project yet).',
+										name(base?.name ?? ''),
+									)}
 						</span>
 						<TextField
 							aria-label={t('Recipe name')}
@@ -283,7 +311,13 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 					<Button
 						variant="secondary"
 						disabled={offline || lib.readOnly || !base}
-						disabledReason={offline ? t('The engine is not connected') : lib.readOnly ? t('Your library is read-only') : undefined}
+						disabledReason={
+							offline
+								? t('The engine is not connected')
+								: lib.readOnly
+									? t('Your library is read-only')
+									: undefined
+						}
 						onClick={() => setSaving({ name: '', use: true })}
 						data-testid="style-recipes-save-current"
 					>
