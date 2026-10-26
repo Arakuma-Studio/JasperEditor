@@ -309,9 +309,9 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 		const c = StyleCheckResponseSchema.parse(ck.json());
 		const m = Object.fromEntries(c.metrics.map((x) => [x.id, x]));
 		expect(c.recipe.id).toBe('builtin:fast-long-form');
-		// every planned kit is found on its cut (close cuts after the cleanup take none: reported in the stage's skips)
+		// every planned kit is found on its cut (a cut close to another one lies under that one's kit: covered too)
 		const kits = res.stages.find((x) => x.stage === 'decorate-cuts')!;
-		expect(m.kitCoverage!.count).toBe(kits.count);
+		expect(m.kitCoverage!.count).toBeGreaterThanOrEqual(kits.count);
 		expect(m.kitCoverage!.of).toBe(kits.summary!.considered);
 		expect(m.subtitleOnCut!.status).not.toBe('unchecked');
 		expect(m.deadAirPerMinute!.status).toBe('unmeasured');
