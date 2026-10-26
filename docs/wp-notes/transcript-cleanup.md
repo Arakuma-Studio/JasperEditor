@@ -234,7 +234,7 @@ Deliberate differences from the prototype (labelled):
   loud sound more often; the harsh-cut guard below skips them when no quiet frame is near.
 - Spec rules the prototype did not have: drawn-out single vowels > 0.95 s (voiced frames), stutters (1–3 words repeated
   with < 0.3 s gap, or a cut-off word "jue- juego"; allow-list "no no", "sí sí", "ta ta ta"…), lexical markers at a
-  clause start followed by a comma or ≥ 150 ms (review, confidence 0.3), head / tail (with a script), ASR suspects
+  clause start followed by a comma or ≥ 150 ms (review, confidence 0.3), head / tail (with a script; the tail ends at the last unit on script — a said line or, after it, a unit passing the off-script vocabulary test — see "Calibration"), ASR suspects
   (confidence < 0.4, words < 40 ms or > 2.5 s, segment scores: compression ratio > 2.4, mean log-probability < −1,
   no-speech probability > 0.6 — read from the speech worker's `Transcript.segments` when present, ignored when absent),
   known hallucination phrases over non-speech (share of speech frames < 0.5).
@@ -430,3 +430,187 @@ A1 and music on a sync-locked A2. Build VM (AMD EPYC-Rome, 16 vCPU, Node 24.22.1
 - "Quietest sample region" snapping works on the 10 ms frames of the voice analysis, not on samples.
 - Mute mode ramps in dB (exponential-like), not equal power; at least 1 ms.
 - English word lists are an assumption (not measured on English material).
+
+## Clean Up UI and MCP (TC-040 … TC-044, TC-050, TC-051, TC-060 UI side, TC-070, TC-071)
+
+Branch `feat/wf-cleanupui`. The editor's review of a cleanup and the agent tools, on the core above.
+
+### Where the code lives
+
+| Layer | File | What |
+|---|---|---|
+| Review helpers (pure) | `packages/project/src/cleanup/review.ts` | `cleanupFindingMedia` (a finding's media, by its fingerprint prefix), `cleanupFindingFrames` (where it plays in the sequence), `cleanupRejectionChanges`, `cleanupApplyCommands` (the Apply transaction) — shared by the editor and MCP so both apply the same edit |
+| Derived preview | `packages/session/src/derived-preview.ts`, `react/index.ts` `useDerivedPreviewDocument` | a temporary timeline the Program monitor plays (never committed, saved or in History); frame maps `toDerivedFrame` / `toOriginalFrame` |
+| Web | `apps/web/src/panels/text/cleanup/` | `controller.ts` (per-session state: analyze, review, decisions, re-plan, apply, previews), `model.ts` (pure UI model), `planner.ts` + `plan.worker.ts` (live re-planning off the main thread), `CleanupMode.tsx`, `SettingsDrawer.tsx` + `settings-fields.ts`, `ScriptDrawer.tsx`, `FindingsList.tsx`, `CleanupTranscript.tsx`, `RetakeGroups.tsx`, `TimelineOverlay.tsx`, `register.tsx` (Program chip) |
+| Web wiring | `panels/text/TranscriptTab.tsx` (Edit / Clean Up switch), `commands/cleanup.ts`, `commands/keymap-defaults.ts`, `shell/menus/model.ts`, `panels/program/ProgramMonitor.tsx`, `panels/timeline/TimelinePanel.tsx` | menu, commands, keys, Program and Timeline hooks |
+| MCP | `apps/mcp/src/tools/cleanup.ts`, `server.ts` | `analyze_voice`, `plan_cleanup`, `apply_cleanup`, `set_cleanup_settings`, `attach_script`; `CLEANUP_GUIDE` in the server instructions and the resource `jasper://guide/cleanup` |
+
+### The Clean Up mode (TC-040)
+
+Text panel ▸ Transcript has an **Edit / Clean Up** switch; **Sequence ▸ Clean Up Voice…** (and the Text panel menu, UI
+command `transcript.cleanUpVoice`) opens it. Its toolbar: **preset** (Fast, Natural, the user presets of the engine
+library; "(edited)" when the sequence overrides it — choosing one is an undoable `cleanup.configure` that drops the
+overrides), **Settings…**, **Script…**, **scope** (whole sequence, In to Out, selected clips — a missing In / Out or
+selection refuses with a reason) and **Analyze** / **Analyze Again**.
+
+- Settings drawer: every value of `CleanupSettings` (14 rules remove / review / off, 22 detection thresholds, 7
+  edit-point values, 5 gap / breath values, 5 guards, 2 join values) with its unit — s, ms, dB, %, words, letters,
+  frames (`settings-fields.ts`; a test checks the drawer covers the schema key for key and that the shown bounds map
+  inside the schema's). Each change is one undoable `cleanup.configure {mergeOverrides}` (repeated edits of one field
+  coalesce); edited fields are marked; **Reset to preset**; **Save as Preset** (engine library, `basedOn` the current
+  built-in, the user preset's values plus the overrides) and **Delete Preset** (user presets); **Word lists** per
+  language (Spanish, English): fillers, discourse markers, emphasis repeats — empty = the built-in list.
+- Script drawer: paste or load a text file (≤ 256 KB, the size shown), attach / update / detach (`cleanup.configure
+  script`, undoable); after an analysis it lists the script lines never said.
+- Analyze sends the committed document (an envelope) to the engine's `cleanup-analysis` job, so the analysis is of
+  exactly what the editor holds; progress and stage come from the job (polled every 300 ms) with **Cancel** (cancels the
+  job and its voice-analysis children). The editor stays usable: the long part runs in the engine.
+
+### Review (TC-041, TC-042)
+
+- **Statistics** (live, `plan.stats`): length before → after, cuts, cuts per minute, dead air per minute, longest
+  silence left, the four largest removed kinds; notes for media without a voice analysis (cut at word timings),
+  fillers kept by "avoid harsh cuts", script lines said.
+- **Findings list**, grouped by kind in a fixed order (retakes, restarts, false starts, repeats, fillers, filler
+  phrases, discourse markers, off-script, head / tail, pauses, breaths, voice without words, transcription suspects,
+  hallucinations) with "n of m cut" per kind, **Cut all / Keep all** per kind (clears the item decisions of the kind),
+  and per row ✂ cut / ↺ keep / ▶ play 1 s around it, the time, the reason in the user's language, the confidence.
+  Virtualised: fixed row heights, only the rows in view (± 240 px) are in the DOM; the current row is kept in view.
+- **Transcript** (the analysed words, virtualised in blocks of ≤ 80 words measured as they render): what the plan
+  removes is struck through — exactly the words whose midpoint lies in a removed range, i.e. what Apply cuts — in the
+  colour of the accepted finding's kind (retake red, restart orange, false start mango, repeat rose, filler purple,
+  filler phrase violet, discourse marker lavender, off-script cyan, head / tail teal, pause blue, breath cerulean, voice
+  without words yellow, suspect warning, hallucination magenta; design tokens); review findings not accepted have a
+  dotted warning underline; lexical fillers are lighter; pauses, breaths and voice without words are chips where they
+  sit. A click selects the finding and seeks.
+- **Retake groups**: each group's takes side by side (time, mean probability, complete / cut off, share of the script
+  line), the kept one ticked; a click keeps another take (`decisions.retakes`).
+- **Keys** (Text panel scope; enabled only while a review is open in Clean Up mode and no text field, list box or
+  dialog has the focus, so they never take a key from another panel or from typing; the Text panel had no bindings
+  before): ↑ / ↓ previous / next finding, Enter cut, Backspace / Delete keep, U clear, Shift+Enter / Shift+Backspace the
+  whole kind, Space ±1 s, Shift+Space play the result, Esc stop a preview, Ctrl+Enter (mac Cmd+Enter) Apply.
+  **Auto-advance** (default on) moves to the next finding after a decision.
+- **Timeline overlay** while reviewing: every removed range across the tracks (danger tint), and on the speech clips'
+  tracks the padding at the edges of each kept piece (non-speech before its first / after its last speech frame,
+  success tint) and the kept pauses inside it (non-speech runs ≥ 100 ms, warning tint). Hidden once stale or in Edit
+  mode.
+- **Re-planning**: every decision and every settings / script / list change re-runs `analyzeSequenceCleanup` with
+  the analysed document and the voice analyses (fetched once after the job) in a worker (`plan.worker.ts`; main
+  thread after a yield where workers are unavailable; the engine job again if a voice analysis could not be fetched).
+  Only the newest answer is used. A change of what the analysis read — the sequence's clips, tracks, links, groups,
+  frame rate, or the transcripts or media — marks the review **stale**: Apply and the previews refuse with "The
+  sequence changed since the analysis: Analyze again".
+- **Play result** builds the plan applied (the same `cleanup.apply` Apply would run) as a derived preview: the Program
+  monitor plays it (chip "Playing the Clean Up result (not applied)" with Stop), the session's document, History and
+  saved state are untouched; the playhead is mapped into the shorter timeline and back on Stop (re-seeked after the
+  Player has the sequence back). **Play removed** plays only the removed ranges. A preview ends on Stop, Esc, any
+  committed edit (stale), a gesture, or closing.
+
+### Apply (TC-043)
+
+One transaction labelled "Clean Up Voice: N cuts" (N = removed ranges; localised): `cleanup.configure` with the
+rejections to remember (findings rejected by item or by kind that the sequence does not remember yet) and to forget
+(remembered ones accepted now), then one `cleanup.apply` (extract, the plan's fade and J / L offset). One undo step;
+Redo re-applies it. Later analyses keep remembered rejections unless accepted again.
+
+### MCP (TC-050, TC-051)
+
+| Tool | Annotations | What |
+|---|---|---|
+| `analyze_voice {projectId, sequenceId? \| clipId? \| mediaId?, preset?, settings?, script?, language?, from?, to?, inOut?, offset?, limit?, include?, kinds?}` | read-only | the engine job (progress notifications; cancelling the request cancels it); summary (`analysisId`, revision, settings, media, stats, cuts, per-kind found / suggested / accepted, skipped) and pages (≤ 1000 per list, `nextOffset`) of findings (id, kind, suggestion, accepted, confidence, text, English reason, media seconds, sequence frames + timecode, words, group, fingerprint), retake groups, removed ranges and script lines. `mediaId` analyses the whole media on a scratch sequence sent with the request (media time; not applicable) |
+| `plan_cleanup {… , decisions?}` | read-only | the same with decisions: accept / reject (ids of the same analysis or fingerprints), acceptKinds / rejectKinds, retakes `{groupId: takeIndex}` |
+| `apply_cleanup {… , decisions?, analysisId?, mode?, rememberRejections?}` | destructive | plans on the live document and applies `cleanupApplyCommands` as one transaction "Agent: Clean Up Voice: N cuts" with `expectedRevision` = the revision planned; `E_STALE` when `analysisId` is of an older document; refused (`E_APPROVAL_DENIED`) when the project turned off "Allow agents to apply transcript-cleanup proposals" (spec 15 EA-001, default on); no approval card otherwise (no command of it needs one, AGENTS / `approvalReasons`) |
+| `set_cleanup_settings {preset?, settings?, merge?, reset?, lists?, clearRejected?, unreject?}` | edit, idempotent | `cleanup.configure` |
+| `attach_script {text \| path \| detach, name?}` | edit, idempotent | `cleanup.configure script` (absolute UTF-8 file ≤ 256 KB of text) |
+
+Arguments are strict (unknown keys are errors at any depth); failures are tool errors with a code and a hint. The
+guide (server instructions and `jasper://guide/cleanup` "Cleaning up speech") gives the recommended policy: accept the
+removals; review retake groups — last complete take unless cut off, much less probable or further from the script;
+never cut "untranscribed" findings without listening; decide review findings; check `largestSilenceLeft` (≤ ≈ 0.25 s)
+and cuts per minute (Fast ≈ 17–23) before applying.
+
+### Responsiveness (TC-060, UI side) — measured
+
+`pnpm exec tsx apps/web/bench/cleanup-review.ts` (results `apps/web/bench/cleanup-review.results.json`): the hour of
+`packages/project/bench/cleanup.ts` (7,148 words, 1,277 findings, 883 removed ranges), one decision. Build VM (AMD
+EPYC-Rome, 16 vCPU, Node 24.22.1), 2026-10-26, under the shared bench lock, load average 10.8 (other agents' test
+runs; the bench is single-threaded); 1 warm-up + 7 runs, medians.
+
+| Work per decision, 1 h | Where | Median |
+|---|---|---|
+| re-plan (`analyzeSequenceCleanup` with the decision) | planner worker | 151.6 ms (137.5–166.3) |
+| transcript marks (`wordMarks`) | main thread | 6.1 ms |
+| findings list (`groupFindings` + `listLayout`) | main thread | 1.2 ms |
+| inline chips (`inlineFindings`) | main thread | 0.8 ms |
+| timeline bands (`overlayBands`) | main thread | 2.3 ms |
+
+The main thread's share is ≈ 10 ms per decision for an hour, plus rendering what is in view (both lists are
+virtualised). On the dev stack (VM, Chromium, the generated 17 s clip) a second Analyze with the voice analysis cached
+took 1.2 s from the click to the review.
+
+### Calibration on the user's material (TC-071) — measured
+
+The research prototype's scoring (`.prproj-analysis/research/edits/mac/autocut.py` `score`, unchanged) run on the
+**shipped** code: a Node harness bundled from the branch (`VoiceFeatureExtractor` → `buildVoiceAnalysis` →
+`analyzeSequenceCleanup` with the Fast preset, the item's script attached, one audio clip at 100 % on a 59.94 fps
+sequence; private harness `.prproj-analysis/box/cleanup-calib/calib-shipped.ts`) on the 16 items of the edits research
+(13 shorts, 3 long: the raw mic recordings decoded to 16 kHz, mlx-whisper turbo word timings, the user's real cuts as
+ground truth), on the user's Mac (Mac16,6, M4 Max, macOS 26, Node 22.21.1; load average 1.0–2.1 from other activity;
+the shared heavy-compute lock held for the 60 s analysis pass over ≈ 6.5 h of audio). Scored inside the user's range
+(their first to last kept piece); P / R and edges are means over items, output / user and dead air medians.
+
+| Run | Removed words P / R | Removed time P / R | User edit points ≤ 50 / ≤ 150 ms | Output / user (range) | Dead air s/min |
+|---|---|---|---|---|---|
+| prototype `fast`, shorts | 0.901 / 0.778 | 0.982 / 0.952 | 0.719 / 0.826 | 1.085 (1.05–1.57) | 0.61 |
+| shipped Fast before the fix, shorts | 0.795 / 0.820 | 0.960 / 0.955 | 0.605 / 0.776 | 1.007 (0.91–1.90) | 0.68 |
+| **shipped Fast, shorts** | **0.890 / 0.808** | **0.979 / 0.954** | **0.642 / 0.824** | **1.082 (1.00–1.90)** | **0.68** |
+| shipped Fast at 30 fps, shorts | 0.889 / 0.806 | 0.979 / 0.953 | 0.651 / 0.815 | 1.082 (1.00–1.91) | 0.73 |
+| prototype `fast`, long | 0.909 / 0.794 | 0.991 / 0.980 | 0.719 / 0.845 | 1.088 (1.01–1.19) | 0.42 |
+| **shipped Fast, long** | **0.880 / 0.821** | **0.990 / 0.977** | **0.696 / 0.848** | **1.101 (1.06–1.20)** | **0.51** |
+
+Findings and fix:
+- **Fixed — the head / tail rule cut paraphrased closing lines.** It cut everything after the last speech unit that
+  matched a script line at ≥ 60 %; the user rewords the outro, so in 12 of 13 shorts the last line never matched and
+  the closing sentences were cut (head / tail precision 0.17: 31 of 187 flagged words were removed by the user). The
+  tail now ends at the last unit on script — one that says a line or, after it, one that passes the off-script
+  vocabulary test (≥ `offScriptMinTokens` content tokens, ≥ `offScriptSimilarity` of them in the script). Head / tail
+  precision on shorts 0.42 (8 of 19); time kept outside the user's range over the 13 shorts 10.0 s (prototype 30.1 s,
+  before the fix 3.1 s), long 1.8 s. Regression test `cleanup-rules.test.ts` "a paraphrased closing line is not tail
+  chatter" (fails before the fix). A symmetric head side was measured and rejected: it kept 24.9 s of the pre-roll the
+  user cuts, for +0.003 shorts precision.
+- **Edit points ≤ 50 ms: 0.64 / 0.70 against the prototype's 0.72**, by the deliberate differences listed in "Port of
+  the research prototype" (ablation on shorts, one change at a time, relative to the code before the head / tail fix): strict removal (+0.027 at ≤ 50 ms when off; also
+  long precision 0.880 → 0.902, recall 0.821 → 0.792), the centred 25 ms analysis window (edges ≈ 7 ms later than the
+  prototype's window, signed out-point median +17 ms vs +9 ms; +0.024 at ≤ 50 ms with the prototype's window, no
+  change in precision / recall). The ≤ 150 ms share equals the prototype's. Frame grid (30 / 59.94 / 1000 fps), the
+  frame guards, the harsh-cut guard, the added rules (stutter, drawn vowels, lexical review, hallucination phrases),
+  keeping voice without words for review and an engine-style float decode instead of the int16 WAV changed nothing
+  or ≤ 0.003 on the aggregates.
+- **Output / user up to 1.90 (one chatty dev-session short)**: speech without words that the spec keeps for review
+  (48 findings, 30 s on that item); accepting them (or the agent policy after listening) removes it.
+
+Conditions and limits: the same 16 items the prototype was tuned on (no held-out set); raw Whisper word timings
+without the engine's word-bound refinement or segment scores; only aggregates are recorded here (the per-item results
+stay on the Mac, `~/JasperAnalysis/work/edits/cleanup-calib/out/fast`).
+
+### Validation (rerunnable, build VM)
+
+| Check | Where | Result |
+|---|---|---|
+| Derived preview: never touches the document / History, ends on edits / gestures / close, refusals; frame maps inverse (fast-check) | `packages/session/test/derived-preview.test.ts` | pass |
+| Review helpers: media and frames of findings, rejections remembered / forgotten, the Apply transaction (one transaction, the sequence shorter by the removed frames, rejection persists in a re-run) | `packages/project/test/cleanup-review.test.ts` | pass |
+| Head / tail regression (paraphrased closing line kept; chatter after it removed; strict head) | `packages/project/test/cleanup-rules.test.ts` | pass; fails on the previous detector |
+| UI model: decisions, word marks = plan ranges, grouping / virtual geometry (fast-check), navigation, timeline bands, previews, scope, staleness, the settings drawer covers the schema with valid bounds | `apps/web/test/cleanup-model.test.ts` | pass |
+| UI: Analyze through the job, stats, findings, struck words, retakes; decisions / retake / settings re-plan; Play result (derived, nothing committed, playhead mapped back) and Play removed; Apply = one entry "Clean Up Voice: N cuts", rejection remembered, Undo / Redo; staleness; failures shown, Cancel; review keys enabled only in review and not while typing; Sequence ▸ Clean Up Voice… | `apps/web/test/cleanup-ui.test.tsx` | pass |
+| MCP: strict, annotated tools, guide and resource; pages; clip / media targets, presets and overrides; refusals; plan with decisions; apply in one transaction with the rejection; agent-proposals setting; `E_STALE`; settings and script | `apps/mcp/test/cleanup.test.ts` | pass |
+| Browser e2e on a generated clip (`scripts/fixtures/cleanup.mjs`): analyze, review, keep / re-cut a finding, overlay, Play result, Apply (picture and sound cut together), Undo | `e2e/cleanup.spec.ts` | see the final report of the branch |
+| Dev stack (VM, Chromium): menu → Clean Up → Analyze → keys ↓ / Backspace re-plan → Play result chip → Stop → Apply → History "Clean Up Voice: 5 cuts" → Ctrl+Z | manual, screenshots inspected | as described |
+
+### Limitations
+
+- The Timeline keeps drawing the sequence while "Play result" plays the shorter derived timeline (as "Hear proposal"
+  does): its playhead follows the derived frames until Stop maps them back.
+- "Cuts" in the History label counts removed ranges (head and tail included), not joins.
+- The analysis job's progress has no ETA; a first voice analysis of an hour takes ≈ 10 s on the build VM (measured in
+  "Voice analysis").
+- The review of a sequence ends when another sequence is analysed (one review per editor session).
