@@ -214,7 +214,7 @@ function rememberCurve(key: string, c: LoudnessCurve) {
 	while (CURVES.size > MAX_CURVES) CURVES.delete(CURVES.keys().next().value!);
 }
 
-type InputMode =
+export type InputMode =
 	| { mode: 'dry' }
 	| { mode: 'job'; ctx: Pick<JobContext, 'signal' | 'trackChild' | 'scratchDir' | 'progress'> };
 
@@ -337,7 +337,7 @@ function engineKeyOf(doc: ProjectDocument, mediaId: string): string | null {
  * The subject of each punch-in that fell back to the centre (no faces roto on its clip): the Auto Reframe analysis
  * of 3 frames from where the zoom starts. Failures leave the clip on the centre (counted in the warning).
  */
-async function measureSubjects(
+export async function measureSubjects(
 	doc: ProjectDocument,
 	plan: PunchPlan,
 	reframe: ReframeService | undefined,
@@ -399,14 +399,14 @@ async function measureSubjects(
 // ---------------------------------------------------------------------------------------------------------------
 // Sounds
 
-type SfxPick = {
+export type SfxPick = {
 	needs: SfxNeeds;
 	available: number;
 	assign: Map<string, { soundId: string; gainOffsetDb: number }>;
 	entries: Map<string, SoundEntry>;
 };
 
-async function pickSounds(
+export async function pickSounds(
 	sounds: SoundService | undefined,
 	needs: SfxNeeds | null,
 	sequenceId: string,
@@ -427,7 +427,7 @@ async function pickSounds(
 	};
 }
 
-async function registerSounds(
+export async function registerSounds(
 	sounds: SoundService,
 	projectId: string,
 	pick: SfxPick,
@@ -483,7 +483,7 @@ async function registerSounds(
 // ---------------------------------------------------------------------------------------------------------------
 // Dry run and job
 
-function budgetOf(items: Parameters<typeof proposalBudget>[0]) {
+export function budgetOf(items: Parameters<typeof proposalBudget>[0]) {
 	const b = proposalBudget(items);
 	return b.fits
 		? { fits: true, items: b.items, commands: b.commands }

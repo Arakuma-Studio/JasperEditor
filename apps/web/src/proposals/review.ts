@@ -115,7 +115,9 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 	const m = metaOf(item.meta);
 	const g = ghost?.byItem[item.id];
 	const frame = finite(m.frame) ? Math.max(0, Math.floor(m.frame)) : g ? g.start : null;
-	const gain = gainOf(item.id) ?? (finite(m.gainOffsetDb) ? m.gainOffsetDb : null);
+	// a producer may say the gain of what an item changes is not what it is about (a voice cleanup's cut sound clips)
+	const gain =
+		m.showGain === false ? null : (gainOf(item.id) ?? (finite(m.gainOffsetDb) ? m.gainOffsetDb : null));
 	return {
 		item,
 		frame,

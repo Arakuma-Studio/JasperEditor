@@ -587,7 +587,11 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   A-roll clips) `place_reactions` (your reaction pictures from a bin or folder at markers, calls to action and
   exclamations, on a cut, wobbling) `slide_overlays` (one-sided Smooth Slides at overlay heads and tails)
   `lay_music_bed` (your songs end to end at −33 dB, switching on cuts) `add_stingers` (generated TV static after
-  shouted punchlines) (`docs/specs/15-edit-automation.md`, `docs/wp-notes/edit-automation.md`).
+  shouted punchlines) · style recipes: `list_style_recipes` `get_style_recipe` `save_style_recipe` (the built-ins Fast
+  Shorts / Fast Long-form / Clean and your library in `<appdir>/style-recipes/`) `apply_style` (a recipe's cleanup,
+  subtitles and passes in order as ONE proposal, later passes planned on the cleaned-up timeline) `style_check` (the
+  sequence against the recipe's targets, with look-here timecodes) (`docs/specs/15-edit-automation.md`,
+  `docs/wp-notes/edit-automation.md`).
 - Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
   `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`

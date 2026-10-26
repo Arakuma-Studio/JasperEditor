@@ -87,6 +87,9 @@ for (const t of project.PROPOSAL_FEATURE_MODEL_STRINGS) add(t);
 for (const t of project.KIT_MODEL_STRINGS) add(t);
 // spec 15 EA-023: the measured reaction slots
 for (const t of project.REACTION_MODEL_STRINGS) add(t);
+// spec 15 EA-010…EA-013: the built-in style recipes, the stage names and the Style Check measures
+for (const t of project.STYLE_RECIPE_MODEL_STRINGS) add(t);
+for (const t of Object.values(project.STYLE_CHECK_LABELS)) add(t);
 // The prefix of agents' History entries ("Agent: Sound Cues (add 2)", @jasper/session `agentLabel`).
 add('Agent');
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));

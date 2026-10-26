@@ -177,10 +177,18 @@ describe('Sequence ▸ Automate', () => {
 			['automation.slides', 'Slide Overlays…'],
 			['automation.musicBed', 'Music Bed…'],
 			['automation.stingers', 'Stingers…'],
+			['automation.applyStyle', 'Apply Style…'],
+			['automation.styleCheck', 'Style Check'],
+			['automation.styleRecipes', 'Style Recipes…'],
 		]);
 		const ids = new Set(automationCommands.map((c) => c.id));
 		for (const e of AUTOMATE_MENU) expect(ids.has(e.command)).toBe(true);
-		for (const c of automationCommands) expect(c).toMatchObject({ agentExposed: true, capability: 'engine' });
+		// Style Recipes… also works without an engine (the built-ins and the project's copies)
+		for (const c of automationCommands)
+			expect(c).toMatchObject({
+				agentExposed: true,
+				...(c.id === 'automation.styleRecipes' ? {} : { capability: 'engine' }),
+			});
 		expect(proposalCommands.some((c) => c.id === 'proposals.rerollItem')).toBe(true);
 	});
 });

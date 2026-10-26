@@ -5,6 +5,8 @@ import {
 	type AgentUiRequest,
 	API_HEADER,
 	API_VERSION,
+	type ApplyStyleRequest,
+	type ApplyStyleResult,
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
 	type AudioClassifyRequest,
@@ -82,6 +84,10 @@ import {
 	type SoundSearchRequest,
 	type SoundVisualRequest,
 	type StillRequest,
+	type StyleCheckRequest,
+	type StyleRecipeCreateRequest,
+	type StyleRecipeDuplicateRequest,
+	type StyleRecipeUpdateRequest,
 	soundSearchParams,
 	type UploadCreateRequest,
 	type UploadCreateResponse,
@@ -615,6 +621,37 @@ export class EngineClient {
 			body: req,
 			...(signal ? { signal } : {}),
 		}) as Promise<AutomationPassResult | EngineJob>;
+	}
+	/** Style recipes (spec 15 EA-010): the built-ins and the user library, with what loading it repaired. */
+	styleRecipes() {
+		return this.call('styleRecipesList', {});
+	}
+	styleRecipe(recipeId: string) {
+		return this.call('styleRecipeGet', { params: { recipeId } });
+	}
+	createStyleRecipe(req: StyleRecipeCreateRequest) {
+		return this.call('styleRecipeCreate', { body: req });
+	}
+	updateStyleRecipe(recipeId: string, req: StyleRecipeUpdateRequest) {
+		return this.call('styleRecipeUpdate', { params: { recipeId }, body: req });
+	}
+	duplicateStyleRecipe(recipeId: string, req: StyleRecipeDuplicateRequest = {}) {
+		return this.call('styleRecipeDuplicate', { params: { recipeId }, body: req });
+	}
+	deleteStyleRecipe(recipeId: string) {
+		return this.call('styleRecipeDelete', { params: { recipeId } });
+	}
+	/** Apply Style (spec 15 EA-012): `dryRun` → the result at once; `propose` → an `apply-style` job (202). */
+	applyStyle(projectId: string, req: ApplyStyleRequest, signal?: AbortSignal) {
+		return this.call('applyStyle', {
+			params: { projectId },
+			body: req,
+			...(signal ? { signal } : {}),
+		}) as Promise<ApplyStyleResult | EngineJob>;
+	}
+	/** Style Check (spec 15 EA-013) of a sequence against a recipe's targets. */
+	styleCheck(projectId: string, req: StyleCheckRequest, signal?: AbortSignal) {
+		return this.call('styleCheck', { params: { projectId }, body: req, ...(signal ? { signal } : {}) });
 	}
 	/** Proposal features of a project: Review groups, producers, whether agents may accept (spec 15 EA-001). */
 	proposalFeatures(projectId: string) {

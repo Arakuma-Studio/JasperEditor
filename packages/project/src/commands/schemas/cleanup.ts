@@ -44,6 +44,15 @@ export const CleanupApplyCmd = cmd('cleanup.apply', {
 	jlFrames: z.number().int().min(-30).max(30).optional(),
 	/** Name of the markers of `markers` mode (default "Clean Up"). */
 	markerName: z.string().max(200).optional(),
+	/**
+	 * Temp refs to the clips after the cut (extract / lift; spec 15 EA-012, Apply Style plans on the cleaned-up
+	 * timeline): `<pieceRefs>_<clipId>_<k>` names the k-th piece, in time order, of every clip that is left on the
+	 * edited tracks (k = 0: the leftmost piece, which keeps the clip's id; a clip that is only moved has piece 0).
+	 */
+	pieceRefs: z
+		.string()
+		.regex(/^\$[A-Za-z][A-Za-z0-9]{0,15}$/, 'pieceRefs is a short temp ref prefix such as "$c"')
+		.optional(),
 });
 
 export const CleanupConfigureCmd = cmd('cleanup.configure', {

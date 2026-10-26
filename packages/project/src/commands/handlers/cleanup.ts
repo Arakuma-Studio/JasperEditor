@@ -137,7 +137,11 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 		merged: ranges.length,
 		clipIds: [...speech],
 	};
-	if (!ranges.length) return { ...base, frames: 0, joins: 0, tracks: [], fades: 0 };
+	if (!ranges.length) {
+		if (cmd.pieceRefs && (mode === 'extract' || mode === 'lift'))
+			definePieceRefs(seq, [...trackIds], new Map(), cmd.pieceRefs, h);
+		return { ...base, frames: 0, joins: 0, tracks: [], fades: 0 };
+	}
 	if (mode === 'extract' || mode === 'lift') {
 		const r = cutRanges(doc, seq, h, {
 			ranges,
@@ -146,6 +150,7 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 			fadeMs: cmd.fadeMs ?? 0,
 			jlFrames: cmd.jlFrames ?? 0,
 		});
+		if (cmd.pieceRefs) definePieceRefs(seq, r.tracks, r.origins, cmd.pieceRefs, h);
 		return { ...base, frames: r.frames, joins: r.joins, tracks: r.tracks, fades: r.fades, jl: r.jl };
 	}
 	if (mode === 'markers') {
@@ -188,6 +193,32 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 			},
 		);
 	return { ...base, frames: 0, joins: 0, tracks: [...trackIds], fades: 0, mutedClips: muted };
+}
+
+/**
+ * `<prefix>_<clipId>_<k>` for the k-th piece (time order) of every clip left on the edited tracks after the cut (see
+ * the command's `pieceRefs`): later commands of the transaction address the cleaned-up timeline by these names.
+ */
+function definePieceRefs(
+	seq: DSeq,
+	trackIds: readonly string[],
+	origins: ReadonlyMap<string, string>,
+	prefix: string,
+	h: HandlerContext,
+) {
+	const tracks = new Set(trackIds);
+	const byOrigin = new Map<string, DClip[]>();
+	for (const c of Object.values(seq.clips)) {
+		if (!tracks.has(c.trackId)) continue;
+		const o = origins.get(c.id) ?? c.id;
+		const list = byOrigin.get(o);
+		if (list) list.push(c);
+		else byOrigin.set(o, [c]);
+	}
+	for (const [origin, pieces] of byOrigin) {
+		pieces.sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
+		for (const [k, c] of pieces.entries()) h.defineRef(`${prefix}_${origin}_${k}`, c.id);
+	}
 }
 
 /** Volume keys holding −96 dB over each range, ramping over `fadeS` (content seconds × speed) on both sides. */

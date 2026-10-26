@@ -43,6 +43,8 @@ export type CutRangesResult = {
 	fades: number;
 	/** Joins whose J / L offset was applied / skipped (no media handles or too short a piece). */
 	jl: { applied: number; skipped: number };
+	/** Clip id → the clip it was cut from, for every piece the cut created. */
+	origins: Map<string, string>;
 };
 
 /** Index of the first range whose end is after `x`. */
@@ -68,6 +70,7 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 		tracks: [...tracks],
 		fades: 0,
 		jl: { applied: 0, skipped: 0 },
+		origins: new Map(),
 	};
 	if (!ranges.length) return result;
 	// prefix sums: removed[k] = frames of ranges[0..k)
@@ -106,6 +109,7 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 					cur = null;
 				} else if (a > s0 && b < e0) {
 					const right = splitClipAt(seq, cur, b, h);
+					result.origins.set(right.id, c0.id);
 					inCut.add(right.id);
 					if (outCut.delete(cur.id)) outCut.add(right.id);
 					if (linkId) {

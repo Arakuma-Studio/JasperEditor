@@ -35,6 +35,7 @@ import soundDesignRoutes from './sound-design.ts';
 import soundRoutes from './sounds.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
+import styleRoutes from './style.ts';
 import subtitleTemplateRoutes from './subtitle-templates.ts';
 import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
@@ -96,6 +97,8 @@ const ROUTE_PLUGINS = [
 	proposalRoutes,
 	// Editing automation (spec 15) registers its refresher on the proposals service and places sounds from the library.
 	automationRoutes,
+	// Style recipes, Apply Style and Style Check (spec 15 EA-010…EA-013) use the automation, cleanup and template services.
+	styleRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

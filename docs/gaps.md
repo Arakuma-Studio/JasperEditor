@@ -764,16 +764,25 @@ Cuts, punch-ins, Ken Burns"): **Decorate Cuts**, **Punch-ins** and **Ken Burns**
 job and dry run, Sequence ▸ Automate dialogs, MCP `decorate_cuts` / `add_punch_ins` / `add_ken_burns`, Refresh proposal
 and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: cut kits export through the
 Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note); the punch-in
-accuracy on the user's projects is F1 0.62 at the default density 0.7 (0.71 at 1.0) against the spec's ≥ 0.75 target,
-which the stripped edit cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed
-whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
+accuracy on the user's projects is F1 0.62 at the pass's default density 0.7 (0.68 with Fast Long-form's tuned
+parameters, 0.71 at density 1.0 with every clip ≥ 1.5 s) against the spec's ≥ 0.75 target, which the stripped edit
+cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
 beds, stingers"): **Reactions**, **Slide Overlays**, **Music Bed**, **Stingers** (Sequence ▸ Automate, MCP
 `place_reactions` / `slide_overlays` / `lay_music_bed` / `add_stingers`); limits: reactions skip animated images and
 avoid only spec 13 subtitle text clips, their word triggers reproduce few of the user's placements (harness in the
 wp-note), music beds switch without crossfades, stinger dry runs count loudness peaks only after a measurement of the
-same mix. Not yet: style recipes, `apply_style`, Style Check,
-automatic subtitles, transcript cleanup (later work packages of specs 13–15); Refresh proposal stays disabled with the
-reason "Its producer cannot re-plan items" for features without a refresher (sound design: run the pass again). A
+same mix. Style recipes built (spec 15 EA-010…EA-013, wp-note "Style recipes, Apply Style and Style Check"): the
+user library (`<appdir>/style-recipes/`), the built-ins **Fast Shorts**, **Fast Long-form** and **Clean**, the project's
+copies and active recipe (the pass dialogs start from it), **Apply Style** (one proposal: cleanup → subtitles → kits →
+punch-ins → Ken Burns → reactions → slides → music → stingers, each planned on what the earlier ones planned) and
+**Style Check** (Sequence ▸ Automate, MCP `apply_style` / `style_check` / `list_style_recipes` / `get_style_recipe` /
+`save_style_recipe`); limits: a decoration of a combined proposal requires its voice cleanup (accepting it applies
+the cuts too; to decorate without them, run Apply Style with the cleanup off), a stale cleanup item is not
+re-planned by Refresh (run Apply Style again), after accepting the cleanup alone later timeline edits do not make the
+decorations planned on it stale (their anchors are the cleanup's), review ghosts of those decorations are drawn
+where they land after the cuts, Style Check's dead air needs the dialogue's voice analysis and its targets'
+tolerances are assumptions. Refresh proposal stays disabled with the reason "Its producer cannot re-plan items" for
+features without a refresher (sound design: run the pass again). A
 keyframe-only change
 of a clip is drawn as the changed clip (wash + ghost) plus its key band, not as the band alone.
 

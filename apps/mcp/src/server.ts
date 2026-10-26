@@ -54,6 +54,7 @@ import { registerSoundSemanticTools } from './tools/sound-semantic.ts';
 import { registerSoundTimelineTools } from './tools/sound-timeline.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
+import { registerStyleTools, STYLE_GUIDE } from './tools/style.ts';
 import { registerSubtitleTools, SUBTITLES_GUIDE } from './tools/subtitles.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
@@ -126,6 +127,7 @@ const FULL_GUIDE = [
 	SOUND_GUIDE,
 	PROPOSALS_GUIDE,
 	AUTOMATION_GUIDE,
+	STYLE_GUIDE,
 	CAPTIONS_GUIDE,
 	SUBTITLES_GUIDE,
 	TEXT_STYLES_GUIDE,
@@ -205,6 +207,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSoundProfileTools(ctx);
 	registerProposalTools(ctx);
 	registerAutomationTools(ctx);
+	registerStyleTools(ctx);
 	registerCaptionTools(ctx);
 	registerSubtitleTools(ctx);
 	registerTextStyleTools(ctx);
@@ -292,6 +295,25 @@ function registerResources(ctx: ToolContext): void {
 					uri: uri.href,
 					mimeType: 'text/markdown',
 					text: `# Cleaning up speech\n\n${CLEANUP_GUIDE}\n\n${VOICE_GUIDE}`,
+				},
+			],
+		}),
+	);
+	ctx.server.registerResource(
+		'automation-guide',
+		'jasper://guide/editing-automation',
+		{
+			title: 'Editing automation',
+			description:
+				'How to decorate an edit with the spec 15 passes (cut kits, punch-ins, Ken Burns, reactions, slides, music beds, stingers), style recipes, apply_style and style_check, with the recommended agent workflow: cleanup → subtitles → apply_style → review → accept → style_check.',
+			mimeType: 'text/markdown',
+		},
+		async (uri) => ({
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `# Editing automation\n\n${AUTOMATION_GUIDE}\n\n## Style recipes\n\n${STYLE_GUIDE}`,
 				},
 			],
 		}),
