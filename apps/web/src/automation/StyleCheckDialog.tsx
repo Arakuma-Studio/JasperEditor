@@ -177,9 +177,7 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 													</span>
 													<span className="w-[180px] shrink-0">{name(m.label)}</span>
 													<span className="w-[90px] shrink-0 pr-tabular">{formatValue(m, m.value)}</span>
-													<span className="text-pr-muted">
-														{t('Target')} {formatTarget(m)}
-													</span>
+													<span className="text-pr-muted">{t('Target: {0}', formatTarget(m))}</span>
 													<span className="sr-only">{STATUS_TEXT[m.status]}</span>
 												</span>
 												<span className="pl-[22px] text-pr-small text-pr-muted">{m.message}</span>
