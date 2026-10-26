@@ -33,7 +33,7 @@ function pixelPopClip(withShake = true, style: Record<string, unknown> = {}): Re
 			at: 0,
 			duration: 30,
 			track: 'V2',
-			content: { text: 'HOLA' },
+			content: { text: 'HOLA', style },
 			box: { width: 600, height: 120, autoSize: 'none' },
 			ref: '$t',
 		},
