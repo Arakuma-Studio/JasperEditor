@@ -7,6 +7,12 @@ import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
+import {
+	clipCaptionProblem,
+	repairSubtitleSequence,
+	sequenceSubtitleIssues,
+} from './captions/subtitles/model.ts';
+import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
 import { colorIssues, repairColor } from './color/model.ts';
@@ -900,6 +906,9 @@ export function invariantCheckers(
 		// spec 13 SH-002: link fields to a project text style (a link to a missing style is soft).
 		const styleLink = clipTextStyleIssue(c);
 		if (styleLink) issues.push(inv('INV-TEXTSTYLE', `Clip ${c.id}: ${styleLink}`, [...cw, 'styleId']));
+		// spec 13 AS-003: a subtitle's words and group reference (only on text clips).
+		const captionBad = clipCaptionProblem(c);
+		if (captionBad) issues.push(inv('INV-SUBTITLE', `Clip ${c.id}: ${captionBad}`, [...cw, 'caption']));
 		// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
 		// presets are preserved and skipped by the renderers).
 		const ta = r.textAnimation as Record<string, { durationFrames?: unknown } | null | undefined> | undefined;
@@ -1371,6 +1380,8 @@ export function runInvariants(
 	}
 	// spec 13 SH-002: project text styles (readable, keyed by id, fonts present).
 	for (const [message, path] of textStylesRecordIssues(doc)) issues.push(inv('INV-TEXTSTYLE', message, path));
+	// spec 13 AS-020: subtitle templates copied into the project.
+	for (const [message, path] of subtitleTemplatesIssues(doc)) issues.push(inv('INV-SUBTITLE', message, path));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1515,6 +1526,9 @@ export function runInvariants(
 					inv('INV-SOUND', `Marker ${m.id}: ${verdictBad}`, [...where, 'markers', m.id, 'soundCheck']),
 				);
 		}
+		// spec 13 AS-003: subtitle groups readable, keyed by id; every subtitle's group present (INV-SUBTITLE).
+		for (const [message, path] of sequenceSubtitleIssues(seq as Sequence))
+			issues.push(inv('INV-SUBTITLE', message, [...where, ...path]));
 		// sound-design (spec 12 §2.2): cues and settings must be readable, cue ids well-formed (INV-SOUND).
 		const soundBad = sequenceSoundDesignIssue(seq as { soundDesign?: unknown });
 		if (soundBad)
@@ -1747,6 +1761,10 @@ export function repairDocument(
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
 	// spec 13 SH-002: project text styles and the clips' links to them.
+	// spec 13 AS-003 / AS-020: subtitle groups, subtitle words on clips, project subtitle templates.
+	repairSubtitleTemplates(doc, note);
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		repairSubtitleSequence(seq, () => ids.next('cgp'), note);
 	repairTextStyles(
 		doc,
 		{

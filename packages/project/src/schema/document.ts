@@ -1,5 +1,6 @@
 // Project document root, project items and the persistence envelope (S01 §4, §5, PER-002).
 import { z } from 'zod';
+import type { SubtitleTemplate } from '../captions/subtitles/templates.ts';
 import type { ProjectTextStyle } from '../text-styles/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, LabelColorSchema, nonNegInt } from './common.ts';
@@ -233,6 +234,11 @@ export const ProjectDocumentSchema = z.looseObject({
 	 * Read leniently (any value loads; INV-TEXTSTYLE checks it, `repairTextStyles` fixes it on load); absent = none.
 	 */
 	textStyles: z.custom<Record<string, ProjectTextStyle>>(() => true).optional(),
+	/**
+	 * spec 13 AS-020 (schema v9): subtitle templates copied into the project when used, by id. Read leniently
+	 * (INV-SUBTITLE checks it, `repairSubtitleTemplates` drops unreadable ones on load); absent = none.
+	 */
+	subtitleTemplates: z.custom<Record<string, SubtitleTemplate>>(() => true).optional(),
 });
 
 export type ProjectDocument = {
@@ -250,6 +256,8 @@ export type ProjectDocument = {
 	extensions: Record<string, unknown>;
 	/** spec 13 SH-002: named project text styles by id (absent = none; see `text-styles/model.ts`). */
 	textStyles?: Record<string, ProjectTextStyle>;
+	/** spec 13 AS-020: subtitle templates used in the project (absent = none; see `captions/subtitles/templates.ts`). */
+	subtitleTemplates?: Record<string, SubtitleTemplate>;
 };
 
 export type ProjectEnvelope = {

@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import type { AudioEdgeFades } from '../audio-fade.ts';
+import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { SequenceCleanup } from '../cleanup/schema.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
@@ -59,6 +60,11 @@ export const EffectInstanceSchema = z.looseObject({
 	essential: z.string().optional(),
 	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
+	/**
+	 * spec 13 AS-020 (schema v9): the subtitle template (id) that added this instance; its keys follow the clip's In
+	 * after trims and razor cuts, and applying another template replaces it. Absent = the user's own. Read leniently.
+	 */
+	subtitleTemplate: z.custom<string>(() => true).optional(),
 	/** sim-warp: the Puppet effect's meshes and pins (absent = none). */
 	puppet: PuppetSchema.optional(),
 	/**
@@ -678,6 +684,11 @@ export const TextClipSchema = z.looseObject({
 	styleId: z.custom<string>(() => true).optional(),
 	/** spec 13 SH-002: where a linked clip deviates from its style (a `TextStyleOverrides` patch; absent = none). */
 	styleOverrides: z.custom<Record<string, unknown>>(() => true).optional(),
+	/**
+	 * spec 13 AS-003 (schema v9): a subtitle — its group, words (clip content time) and template anchoring. Read
+	 * leniently (any value loads; INV-SUBTITLE checks it, `repairSubtitleSequence` fixes it on load).
+	 */
+	caption: z.custom<TextClipCaption>(() => true).optional(),
 });
 export const SolidClipSchema = z.looseObject({
 	...commonShape,
@@ -1109,6 +1120,11 @@ export const SequenceSchema = z.looseObject({
 	 * malformed one never fails a load; INV-SOUND checks it and `repairDocument` repairs it (`readSoundDesign`).
 	 */
 	soundDesign: z.custom<SoundDesign>(() => true).optional(),
+	/**
+	 * spec 13 AS-003 (schema v9): the subtitle groups made by Create Subtitles, by id (`cgp_…`). Read leniently
+	 * (INV-SUBTITLE checks it, `repairSubtitleSequence` repairs it on load); absent = none.
+	 */
+	captionGroups: z.custom<Record<string, CaptionGroup>>(() => true).optional(),
 	/**
 	 * spec 14 TC-030 (v9): transcript cleanup settings (preset + overrides), the attached script, rejected finding
 	 * fingerprints and edited word lists. Accepted as any value so a malformed one never fails a load; INV-CLEANUP

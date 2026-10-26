@@ -35,6 +35,7 @@ import soundDesignRoutes from './sound-design.ts';
 import soundRoutes from './sounds.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
+import subtitleTemplateRoutes from './subtitle-templates.ts';
 import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
@@ -57,6 +58,7 @@ const ROUTE_PLUGINS = [
 	// The agent relay supplies references to open projects for cache protection.
 	cacheRoutes,
 	effectPresetRoutes,
+	subtitleTemplateRoutes,
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,

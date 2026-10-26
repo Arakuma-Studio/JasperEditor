@@ -42,6 +42,10 @@ export const ID_PREFIXES = {
 	soundCue: 'cue',
 	/** spec 13 SH-002: project text styles (`ProjectDocument.textStyles`). */
 	textStyle: 'tsy',
+	/** spec 13 AS-003: subtitle groups of a sequence (`Sequence.captionGroups`). */
+	captionGroup: 'cgp',
+	/** spec 13 AS-020: subtitle templates saved in a project (`ProjectDocument.subtitleTemplates`). */
+	subtitleTemplate: 'stm',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);
