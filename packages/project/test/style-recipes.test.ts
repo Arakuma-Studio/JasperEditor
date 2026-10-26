@@ -13,12 +13,11 @@ import {
 	checkInvariants,
 	clipRect,
 	createCounterIdSource,
-	type LibraryProvenance,
-	type SoundProposalMedia,
 	createProposal,
 	defaultRegistries,
 	flicksPerFrame,
 	frameAfterCuts,
+	type LibraryProvenance,
 	loadProject,
 	markAccepted,
 	motionKindOf,
@@ -34,6 +33,7 @@ import {
 	refreshStyleItems,
 	repairDocument,
 	resolveRecipeStages,
+	type SoundProposalMedia,
 	STYLE_RECIPE_ITEM,
 	STYLE_RECIPE_MODEL_STRINGS,
 	type StyleHooks,
@@ -715,12 +715,24 @@ describe('Apply Style (EA-012)', () => {
 				const assign = new Map(needs.items.map((it) => [it.id, { soundId: m.soundId, gainOffsetDb: 0 }]));
 				return {
 					sfx: { media: [m], assign, type: 'whoosh' },
-					report: { enabled: true, type: 'whoosh', available: 1, placed: assign.size, sounds: 1, unsounded: 0 },
+					report: {
+						enabled: true,
+						type: 'whoosh',
+						available: 1,
+						placed: assign.size,
+						sounds: 1,
+						unsounded: 0,
+					},
 					warnings: [],
 				};
 			},
 		};
-		const plan = await planStyle(t.h.doc, { recipe: recipe('builtin:fast-long-form'), seed: 1, passes: { subtitles: false, music: false } }, hooks, OPTS);
+		const plan = await planStyle(
+			t.h.doc,
+			{ recipe: recipe('builtin:fast-long-form'), seed: 1, passes: { subtitles: false, music: false } },
+			hooks,
+			OPTS,
+		);
 		const kits = plan.stages.find((x) => x.stage === 'decorate-cuts')!;
 		const punch = plan.stages.find((x) => x.stage === 'punch-ins')!;
 		expect(kits.dropped).toEqual([]);

@@ -646,7 +646,9 @@ and the seven passes above into one named, versioned set of parameters; **Apply 
 - **Project copy** `ProjectDocument.styleRecipes {active?, recipes}` (schema v9, read leniently; row in
   `docs/project-files.md`): accepting an Apply Style proposal copies the recipe used and makes it active (its setup
   item `styleRecipe.add {recipe, activate: true}` that every other item requires); Style Recipes… ▸ Use makes a recipe
-  active (`styleRecipe.setActive` / `add`), one undo step each. The pass dialogs (Decorate Cuts… … Stingers…) start
+  active (`styleRecipe.setActive` / `add`), one undo step each. A library recipe wins over the project's copy of the same id
+  (the engine's `resolveRecipe` and the editor's `recipeChoices`): a rename or edit in the library shows and is used
+  at once; Use on an active recipe whose copy is an older revision updates the copy ("this project uses version n"). The pass dialogs (Decorate Cuts… … Stingers…) start
   from the active recipe's parameters for that pass (`recipePassParams`, roles filled in); explicit `params` of the UI
   command win.
 
@@ -748,3 +750,93 @@ the editor's dialog moves the playhead to one on click; `style_check` returns th
   an agent for the user's approval).
 - i18n: every UI string and the built-ins' names / descriptions, stage names and measure labels (model strings) in
   English and Spanish.
+
+### Accuracy harness (EA-051, private)
+
+`.prproj-analysis/research/automation-harness/run-style.ts` (build VM) rebuilds each of the 30 stripped edits and runs
+the real `planStyle` with the built-in recipe of its format (Fast Shorts for the 19 shorts, Fast Long-form for the 11
+long videos): subtitles from the caption phrases, then kits, punch-ins and Ken Burns, each planned on the earlier
+stages' result. Cleanup is off (the stripped edits are the user's finished cuts, no audio). Reactions and music have
+no assets (reported as missing roles). Slides have no overlays. The output uses `run.ts`'s format and goes through the
+kits package's comparison. Measured on the VM on this branch (shared load; planning all 30 videos took 6.8 s):
+
+| Measure | Shorts (19) | Long form (11) |
+|---|---|---|
+| Kits: user kits matched exactly / ±1 frame (recall) | 94.4 % / 95.5 % | 97.6 % |
+| Kits: user kits on an A-roll cut that got a kit | 99.4 % | 98.4 % |
+| Kits: planned on a user kit (precision) | 85.2 % | 95.7 % |
+| Kit families jolt / zoom-blur / whip / zoom-through / spin, planned (user) | — | .491 / .165 / .163 / .091 / .089 (.489 / .169 / .174 / .086 / .081) |
+| P(same family as the previous kit), planned (user) | — | 0.241 (0.231) |
+| Ken Burns share of A-roll clips, planned (user) | 0.158 (0.159) | 0.150 (0.134) |
+| Punch-ins: F1 / precision / recall, rate planned (user) | — (off in Fast Shorts) | 0.678 / 0.592 / 0.792, 11.9 /min (8.95 /min) |
+
+**Punch-in tuning (long form; same harness, same 11 videos)**. Before, the punch-ins pass defaults (density 0.7,
+shortest clip 1.5 s) gave F1 0.622 (precision 0.577, recall 0.674, 10.4 /min). After, Fast Long-form uses density 1 and
+a 2.3 s shortest clip: F1 0.678 (precision 0.592, recall 0.792, 11.9 /min). Density 1 with a 1.5 s shortest clip gave
+F1 0.708 at 14.8 /min. It was rejected because the rate is 65 % over the user's and the Style Check target is
+9 ± 3 /min. **Assumption**: the tuning is in-sample (chosen and measured on the same 11 videos). Kits and Ken Burns
+were already at the measured figures, so they were left unchanged.
+
+### Verification (VM `wt-recipes`)
+
+- Unit and command tests:
+  - `packages/project/test/style-recipes.test.ts` (19): recipe schema and built-ins; the project copy, its commands
+    with undo / redo and refusals; load repair; `pieceRefs`; `frameAfterCuts`; Apply Style plans (decorations on the
+    cleaned-up timeline, requires, anchors stripped, picture end); partial accept; missing roles; Fast Shorts; a
+    fast-check property over random clips, cleanup cuts, seeds and aspects (25 runs: every item valid after the
+    cleanup, invariants hold after accept, no kit overlap, no clip both punched in and Ken Burns'd, no reaction over a
+    subtitle region); Reroll; the
+    clashing-temp-ref regression; the agent policy with embedded features; Style Check; `motionKindOf`.
+  - `packages/session/test/style-history.test.ts` (1): one History entry; undo and redo give the exact documents.
+- Engine tests:
+  - `apps/engine/test/style-recipes-library.test.ts` (6): atomic writes; the repairs (index, missing, unlisted and
+    invalid files); newer formats read-only; revisions.
+  - `apps/engine/test/apply-style.test.ts` (5): dry run, then job, then accept; the export planner's route equals the
+    dry run's class; Style Check on the result; Reroll and the stale cleanup; roles.
+- `apps/mcp/test/style.test.ts` (7) and `apps/web/test/style-recipes.test.tsx` (8). The web tests include the Enter
+  regression in the rename field.
+- Full suites with `--maxWorkers=2`:
+  - `@jasper/project`: 2596 passed.
+  - `@jasper/session`: 92 passed.
+  - `@jasper/mcp`: 309 passed, 8 skipped (the existing opt-in skips).
+  - `packages/api` + `packages/engine-client`: 47 passed.
+  - `@jasper/web`: 1121 passed.
+  - Engine subset of 8 files (apply-style, style-recipes-library, automation, automation-overlays,
+    proposals-features, cleanup, subtitle-templates, route-client-gone): 47 passed. The rest of the engine suite was not
+    run.
+- Other checks: typecheck of project, api, config, engine-client, session, engine, mcp and web; biome on the changed
+  files; `check-layers`, `check-tokens`, `check-anime`; `pnpm i18n` and `pnpm i18n:check`.
+- `e2e/apply-style.spec.ts` passed (5.0 min). It runs Apply Style with cleanup, subtitles and kits on the generated
+  talking clip, then review, Accept all, Apply as one History entry, and a Remotion export. The kit frames differ from
+  a reference with the FX track off; frames away from the kits match.
+- Checked by hand in the dev stack on the VM: the Automate entries; Style Recipes (duplicate, rename, Use, version
+  info); the Apply Style dry run per step; Propose, then Review (7 items), then Apply 7 of 7 (16:26 → 7:19 with
+  subtitles, kits, a punch-in and beds); Style Check (6 on target, 2 off, look-here seek); the pass dialog defaults from
+  the active recipe. Bugs found this way and fixed, each with a regression test:
+  - Enter in a name field closed the dialog.
+  - A punch-in was dropped because two stages declared the same setup ref (refs are now renamed per stage).
+  - The cleanup row showed "0.0 dB".
+  - A library rename did not show while the project copy was active (the library now wins).
+
+### Limits
+
+- Every decoration requires the cleanup item: accepting a decoration applies the cleanup's cuts too. To decorate
+  without them, run Apply Style with the cleanup step off.
+- If the sequence changes, the cleanup item goes stale: Refresh drops it with "run Apply Style again". It is not
+  re-planned alone.
+- After the cleanup alone is accepted, later timeline edits do not make the decorations planned on it stale (their
+  anchors are the cleanup's, stripped).
+- Review ghosts of decorations are drawn where they land after the cuts, so they are offset from the live timeline
+  until the cleanup is accepted.
+- Style Check's dead air needs a cached voice analysis per media; without one the measure is "not measured" with the
+  reason. The dry run plans the cleanup with cached analyses only (Propose runs them).
+- The Style Check tolerances and Clean's dead-air bound are chosen, not measured (assumption, above).
+- Punch-in F1 is 0.678, below 0.75, and the tuning is in-sample. A tuned short-form punch-in recipe is not in scope
+  (Fast Shorts has punch-ins off, as measured).
+- Subtitles can hold past the picture end (spec 13 behaviour). Kits and the other passes stop at `pictureEnd`.
+- The editor loads the library when a recipe dialog first opens and refreshes it on `styleRecipes.changed`.
+- "Save Current Settings as Recipe…" uses the parameters the Automate dialogs last proposed with in this window. They
+  are not persisted.
+- Observed, already present before this branch, not fixed here: the Remotion and native export paths map a 29.97 fps
+  source frame into a 30 fps sequence differently, and their colour differs slightly. The e2e therefore exports its
+  reference through the same Remotion path.

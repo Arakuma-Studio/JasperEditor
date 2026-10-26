@@ -87,7 +87,9 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 	expectTransaction(placed);
 	const vid = (placed as { results: { clipIds: string[] }[] }).results[0]!.clipIds[0]!;
 	expectTransaction(
-		await transact(page, [{ type: 'param.set', target: ['clip', vid, 'transform', 'scale'], value: 300 }] as never),
+		await transact(page, [
+			{ type: 'param.set', target: ['clip', vid, 'transform', 'scale'], value: 300 },
+		] as never),
 	);
 	expectTransaction(
 		await transact(page, [
@@ -144,7 +146,10 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 		timeout: 60_000,
 	});
 	await expect(dialog.getByTestId('apply-style-stage-subtitles')).toHaveAttribute('data-status', 'planned');
-	await expect(dialog.getByTestId('apply-style-stage-decorate-cuts')).toHaveAttribute('data-status', 'planned');
+	await expect(dialog.getByTestId('apply-style-stage-decorate-cuts')).toHaveAttribute(
+		'data-status',
+		'planned',
+	);
 	await expect(dialog.getByTestId('apply-style-stage-music')).toHaveAttribute('data-status', 'off');
 	await expect(dialog.getByTestId('apply-style-cost')).toContainText('Remotion');
 	await dialog.screenshot({ path: join(outDir, 'dialog.png') });
@@ -195,7 +200,9 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 		outDir,
 		jobTimeoutMs: 1_200_000,
 	});
-	expectTransaction(await transact(page, [{ type: 'track.update', trackId: fx.id, patch: { output: false } }] as never));
+	expectTransaction(
+		await transact(page, [{ type: 'track.update', trackId: fx.id, patch: { output: false } }] as never),
+	);
 	// the reference goes through the same (Remotion) renderer: only the kits differ, not the path's own encode
 	const plain = await exportViaUi(page, request, {
 		engine: 'remotion',
@@ -206,17 +213,29 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 	});
 	let moved = 0;
 	const kitFrames: number[] = [];
-	for (const k of kits) for (const f of [k.start + 2, k.start + Math.floor(k.duration / 2), k.start + k.duration - 3]) kitFrames.push(f);
-	for (const f of kitFrames) moved = Math.max(moved, meanDiff(topThumb(plain.file, f), topThumb(decorated.file, f)));
+	for (const k of kits)
+		for (const f of [k.start + 2, k.start + Math.floor(k.duration / 2), k.start + k.duration - 3])
+			kitFrames.push(f);
+	for (const f of kitFrames)
+		moved = Math.max(moved, meanDiff(topThumb(plain.file, f), topThumb(decorated.file, f)));
 	expect(moved).toBeGreaterThan(4);
 	// a frame away from every kit is the same picture
 	const free = Array.from({ length: end }, (_, f) => f).find(
 		(f) => f > 5 && kits.every((k) => f < k.start - 5 || f > k.start + k.duration + 5),
 	);
-	if (free !== undefined) expect(meanDiff(topThumb(plain.file, free), topThumb(decorated.file, free))).toBeLessThan(3);
+	if (free !== undefined)
+		expect(meanDiff(topThumb(plain.file, free), topThumb(decorated.file, free))).toBeLessThan(3);
 	const k0 = kits[0]!;
 	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
-		...['-v', 'error', '-y', '-i', decorated.file, '-vf', `select=eq(n\\,${k0.start + Math.floor(k0.duration / 2)})`],
+		...[
+			'-v',
+			'error',
+			'-y',
+			'-i',
+			decorated.file,
+			'-vf',
+			`select=eq(n\\,${k0.start + Math.floor(k0.duration / 2)})`,
+		],
 		...['-frames:v', '1', join(outDir, 'kit-frame.png')],
 	]);
 });

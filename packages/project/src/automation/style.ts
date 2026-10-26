@@ -657,7 +657,11 @@ export async function planStyle(
 	const baseRequires = () => [STYLE_RECIPE_ITEM, ...(cleanupItem ? [cleanupItem] : [])];
 
 	/** Adds a stage's items (proposal form) and applies them to the simulation. */
-	const commit = (input: ProposalItemInput[], dropped: { itemId: string; reason: string }[], stage: string) => {
+	const commit = (
+		input: ProposalItemInput[],
+		dropped: { itemId: string; reason: string }[],
+		stage: string,
+	) => {
 		// a pass names its setup refs by a counter (`$snd0`, `$sfxBin`…): one another step declared already is renamed
 		// throughout this step's items (they share one transaction with the earlier ones)
 		const clash = new Map<string, string>();
