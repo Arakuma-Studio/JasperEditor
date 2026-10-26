@@ -1558,7 +1558,7 @@ export class LayerBakeService {
 		// spec 13 AS-070: a layer still is trimmed to its pixels (+ 2 transparent px, so the kernel's anti-aliased
 		// picture edge and its clamp-to-edge samples only ever see transparency): the kernel draws, streams and
 		// overlays only the glyphs, stroke and shadow, not the empty margin of the bleed estimate.
-		let out = { px, w, h };
+		let out: { px: Uint8Array; w: number; h: number } = { px, w, h };
 		let picture: Rect | undefined;
 		if (plan.picture && !clipped) {
 			const t = alphaBounds(px, w, h);
