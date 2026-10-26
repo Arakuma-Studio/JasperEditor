@@ -245,7 +245,8 @@ describe('multi-tap kernel (AS-070)', () => {
 						if (a <= 0) continue;
 						const o = (y * dw + x) * 4;
 						for (let c = 0; c < 3; c++)
-							acc[o + c]! += (w! * cover * ws.reduce((s, [i, j, k]) => s + px(i, j, c) * px(i, j, 3) * k, 0)) / 255;
+							acc[o + c]! +=
+								(w! * cover * ws.reduce((s, [i, j, k]) => s + px(i, j, c) * px(i, j, 3) * k, 0)) / 255;
 						acc[o + 3]! += w! * cover * a;
 					}
 			}
@@ -278,7 +279,14 @@ describe('multi-tap kernel (AS-070)', () => {
 					prog[1] += w;
 					const a = (r() - 0.5) * 1.5;
 					const k = 0.5 + r();
-					const map = [Math.cos(a) * k, Math.sin(a) * k, -r() * 6, -Math.sin(a) * k, Math.cos(a) * k, -r() * 6];
+					const map = [
+						Math.cos(a) * k,
+						Math.sin(a) * k,
+						-r() * 6,
+						-Math.sin(a) * k,
+						Math.cos(a) * k,
+						-r() * 6,
+					];
 					const ns = Math.floor(r() * 3);
 					prog.push(w, ...map, r(), r(), cw - r(), ch - r(), ns);
 					for (let q = 0; q < ns; q++) {
@@ -290,7 +298,8 @@ describe('multi-tap kernel (AS-070)', () => {
 				const got = new Uint8Array(dw * dh * 4);
 				drawTaps(src, cw, cw, ch, got, dw, dh, prog, 0.9, [0, 0, dw, dh], new Float32Array(dw * dh * 4));
 				const want = reference(src, cw, ch, dw, dh, prog, 0.9);
-				for (let i = 0; i < got.length; i++) expect(Math.abs(got[i]! - want[i]!), `byte ${i}`).toBeLessThanOrEqual(1);
+				for (let i = 0; i < got.length; i++)
+					expect(Math.abs(got[i]! - want[i]!), `byte ${i}`).toBeLessThanOrEqual(1);
 			}),
 			{ numRuns: 300 },
 		);

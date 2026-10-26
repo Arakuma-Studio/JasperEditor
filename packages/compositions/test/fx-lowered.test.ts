@@ -67,7 +67,10 @@ function pixelPopClip(withShake = true): RenderVisualClip {
 	return snap.videoTracks.flatMap((t) => t.clips).find((x) => x.clipId === clip)!;
 }
 
-const apply = (m: readonly number[], x: number, y: number) => [m[0]! * x + m[1]! * y + m[2]!, m[3]! * x + m[4]! * y + m[5]!];
+const apply = (m: readonly number[], x: number, y: number) => [
+	m[0]! * x + m[1]! * y + m[2]!,
+	m[3]! * x + m[4]! * y + m[5]!,
+];
 
 describe('lowered layers in the preview (spec 13 AS-075)', () => {
 	it('moves the shared layer-space taps into the effect canvas (padding, pxScale)', () => {

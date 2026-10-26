@@ -322,26 +322,26 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					);
 				await runPagePool(
 					sheets.map((sheet) => ({
-							// A sheet spreads its frames over every page it is granted.
-							want: maxInFlight === 1 ? sheetBudget : perSheet,
-							weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
-							run: async (g: PageGrant) => {
-								const bakes = await svc.ensureSheet(
-									sheet.map((group) => group[0]!.plan),
-									metaOf(g),
-								);
-								for (const group of sheet) {
-									const bake = bakes.get(group[0]!.plan.key);
-									if (!bake)
-										throw new JobError(
-											'LAYER_BAKE_FAILED',
-											`The bake of "${group[0]!.plan.clipName}" is missing`,
-											true,
-										);
-									finish(group, bake, null);
-								}
-							},
-						})),
+						// A sheet spreads its frames over every page it is granted.
+						want: maxInFlight === 1 ? sheetBudget : perSheet,
+						weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
+						run: async (g: PageGrant) => {
+							const bakes = await svc.ensureSheet(
+								sheet.map((group) => group[0]!.plan),
+								metaOf(g),
+							);
+							for (const group of sheet) {
+								const bake = bakes.get(group[0]!.plan.key);
+								if (!bake)
+									throw new JobError(
+										'LAYER_BAKE_FAILED',
+										`The bake of "${group[0]!.plan.clipName}" is missing`,
+										true,
+									);
+								finish(group, bake, null);
+							}
+						},
+					})),
 					{
 						budget: sheetBudget,
 						maxInFlight: Math.min(maxInFlight, SHEET_IN_FLIGHT),

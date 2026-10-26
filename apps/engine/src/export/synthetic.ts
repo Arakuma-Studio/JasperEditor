@@ -29,7 +29,11 @@ import type { LocalMedia, PlannedExport } from './planner.ts';
 const SAMPLE_RATE = 48000;
 
 /** `encodePng` with the deflate in the libuv pool (does not block the event loop; several run in parallel). */
-export async function encodePngAsync(px: Uint8ClampedArray | Uint8Array, w: number, h: number): Promise<Buffer> {
+export async function encodePngAsync(
+	px: Uint8ClampedArray | Uint8Array,
+	w: number,
+	h: number,
+): Promise<Buffer> {
 	const raw = Buffer.alloc((w * 4 + 1) * h);
 	for (let y = 0; y < h; y++) raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
 	return pngFile(w, h, await deflateAsync(raw, { level: 1 }));

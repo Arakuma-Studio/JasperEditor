@@ -20,7 +20,10 @@ export type TapMember = {
 	 * trimmed layer still re-plans the member (`refresh`, sequence px) inside the stream's frame.
 	 */
 	ready?: Promise<OverrideReady>;
-	refresh?(picture: { x: number; y: number; w: number; h: number }): { pictures: TapPicture[]; frames: TapFrame[] };
+	refresh?(picture: { x: number; y: number; w: number; h: number }): {
+		pictures: TapPicture[];
+		frames: TapFrame[];
+	};
 };
 
 export type TapStreamPlan = {

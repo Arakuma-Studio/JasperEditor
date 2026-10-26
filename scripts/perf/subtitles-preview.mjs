@@ -49,14 +49,21 @@ const rnd = () => {
 	seed ^= seed << 5;
 	return ((seed >>> 0) % 1_000_000) / 1_000_000;
 };
-const WORDS = 'hoy vamos a hacer un juego en solo siete dias mira este nivel que locura el jefe final tiene mil vidas'.split(
-	' ',
-);
+const WORDS =
+	'hoy vamos a hacer un juego en solo siete dias mira este nivel que locura el jefe final tiene mil vidas'.split(
+		' ',
+	);
 const items = [];
 for (let i = 0, f = 0; i < CLIPS; i++) {
 	const d = Math.max(12, Math.round((0.3 + rnd() * 0.5) * FPS));
 	const n = 1 + Math.floor(rnd() * 3);
-	items.push({ start: f, duration: d, text: Array.from({ length: n }, () => WORDS[Math.floor(rnd() * WORDS.length)]).join(' ').toUpperCase() });
+	items.push({
+		start: f,
+		duration: d,
+		text: Array.from({ length: n }, () => WORDS[Math.floor(rnd() * WORDS.length)])
+			.join(' ')
+			.toUpperCase(),
+	});
 	f += d;
 }
 const hex = (h, a = 1) => [1, 3, 5].map((i) => Number.parseInt(h.slice(i, i + 2), 16) / 255).concat(a);
@@ -89,10 +96,20 @@ function commands(variant, fontId) {
 				[6, 108],
 				[10, 100],
 			])
-				out.push({ type: 'keyframe.add', target: ['clip', ref, 'transform', 'scale'], at: { frames: f }, value: v });
+				out.push({
+					type: 'keyframe.add',
+					target: ['clip', ref, 'transform', 'scale'],
+					at: { frames: f },
+					value: v,
+				});
 		if (variant === 'pixelpop') {
 			const tf = `$tf${i}`;
-			const key = (target, sec, value) => ({ type: 'keyframe.add', target, at: { frames: Math.round(sec * FPS) }, value });
+			const key = (target, sec, value) => ({
+				type: 'keyframe.add',
+				target,
+				at: { frames: Math.round(sec * FPS) },
+				value,
+			});
 			out.push(
 				{
 					type: 'effect.add',
@@ -110,7 +127,15 @@ function commands(variant, fontId) {
 					type: 'effect.add',
 					target: { clipId: ref },
 					effectId: 'jasper.s.shake',
-					params: { amplitude: 0.6, frequency: 1, wrapX: 'no', wrapY: 'no', xRandAmp: 0.889, yRandAmp: 0.444, tiltRandAmp: 1 },
+					params: {
+						amplitude: 0.6,
+						frequency: 1,
+						wrapX: 'no',
+						wrapY: 'no',
+						xRandAmp: 0.889,
+						yRandAmp: 0.444,
+						tiltRandAmp: 1,
+					},
 				},
 			);
 		}
@@ -154,7 +179,11 @@ const tx = (commands, label = 'subtitle preview') =>
 	});
 const seqId = await page.evaluate(() => window.__jasperMonitor.session.getState().activeSequenceId);
 await tx([
-	{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: W, height: H, frameRate: { num: 60000, den: 1001 } } },
+	{
+		type: 'sequence.updateSettings',
+		sequenceId: seqId,
+		settings: { width: W, height: H, frameRate: { num: 60000, den: 1001 } },
+	},
 ]);
 const font = await tx([{ type: 'font.add', family: 'JetBrains Mono', ref: '$font' }]);
 const fontId = font?.refs?.$font ?? font?.result?.refs?.$font;
@@ -272,7 +301,13 @@ for (const v of VARIANTS) {
 	if (ids.length) await tx([{ type: 'clip.lift', clipIds: ids }]);
 	await tx([
 		SOLID
-			? { type: 'clip.addSolid', at: 0, duration: Math.round(items.at(-1).start + items.at(-1).duration), track: 'V1', color: [0.15, 0.2, 0.3, 1] }
+			? {
+					type: 'clip.addSolid',
+					at: 0,
+					duration: Math.round(items.at(-1).start + items.at(-1).duration),
+					track: 'V1',
+					color: [0.15, 0.2, 0.3, 1],
+				}
 			: { type: 'clip.place', source: { mediaByName: mediaName }, at: 0, tracks: { video: 'V1' } },
 	]);
 	if (v !== 'none') {

@@ -289,29 +289,29 @@ export function drawTaps(
 			for (let x = xa; x < xb; x++, u += m0, v += m3, o += 4) {
 				let cover = 1;
 				if (x < fa || x >= fb) {
-				let cu = 0.5 + Math.min(u - cu0, cu1 - u) * gu;
-				if (cu <= 0) continue;
-				let cv = 0.5 + Math.min(v - cv0, cv1 - v) * gv;
-				if (cv <= 0) continue;
-				if (cu > 1) cu = 1;
-				if (cv > 1) cv = 1;
-				cover = cu * cv;
-				for (let s = 0; s < ns; s++) {
-					const q = s * 12;
-					const X = x + 0.5;
-					const su = stg[q]! * X + stg[q + 1]! * Y + stg[q + 2]!;
-					const sv = stg[q + 3]! * X + stg[q + 4]! * Y + stg[q + 5]!;
-					let ku = 0.5 + Math.min(su - stg[q + 6]!, stg[q + 8]! - su) * stg[q + 10]!;
-					let kv = 0.5 + Math.min(sv - stg[q + 7]!, stg[q + 9]! - sv) * stg[q + 11]!;
-					if (ku <= 0 || kv <= 0) {
-						cover = 0;
-						break;
+					let cu = 0.5 + Math.min(u - cu0, cu1 - u) * gu;
+					if (cu <= 0) continue;
+					let cv = 0.5 + Math.min(v - cv0, cv1 - v) * gv;
+					if (cv <= 0) continue;
+					if (cu > 1) cu = 1;
+					if (cv > 1) cv = 1;
+					cover = cu * cv;
+					for (let s = 0; s < ns; s++) {
+						const q = s * 12;
+						const X = x + 0.5;
+						const su = stg[q]! * X + stg[q + 1]! * Y + stg[q + 2]!;
+						const sv = stg[q + 3]! * X + stg[q + 4]! * Y + stg[q + 5]!;
+						let ku = 0.5 + Math.min(su - stg[q + 6]!, stg[q + 8]! - su) * stg[q + 10]!;
+						let kv = 0.5 + Math.min(sv - stg[q + 7]!, stg[q + 9]! - sv) * stg[q + 11]!;
+						if (ku <= 0 || kv <= 0) {
+							cover = 0;
+							break;
+						}
+						if (ku > 1) ku = 1;
+						if (kv > 1) kv = 1;
+						cover *= ku * kv;
 					}
-					if (ku > 1) ku = 1;
-					if (kv > 1) kv = 1;
-					cover *= ku * kv;
-				}
-				if (!(cover > 0)) continue;
+					if (!(cover > 0)) continue;
 				}
 				let su = (u < lu ? lu : u > hu ? hu : u) - 0.5;
 				let sv = (v < lv ? lv : v > hv ? hv : v) - 0.5;

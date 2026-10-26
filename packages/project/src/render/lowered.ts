@@ -13,9 +13,20 @@
 // Motion matrix. Motion blur taps are the shader's: tap times through the plan's time warp at the strata centres,
 // key poses interpolated linearly, weights `t.y × clamp(opacity / 100)`, normalised by Σ t.y.
 import { hasActiveExpression, isAnimated } from '../keyframes.ts';
-import { defaultEffectRegistry, type EffectParams, type EffectRegistry, effectParamMetric } from '../registry/effects.ts';
+import {
+	defaultEffectRegistry,
+	type EffectParams,
+	type EffectRegistry,
+	effectParamMetric,
+} from '../registry/effects.ts';
 import { FX_MB_WARP_SIZE } from '../registry/fx/glsl/motion-blur.ts';
-import { type FxFrameContext, fxClipProgress, fxParamsAtFn, fxSeed, gpuPadding } from '../registry/fx/shader.ts';
+import {
+	type FxFrameContext,
+	fxClipProgress,
+	fxParamsAtFn,
+	fxSeed,
+	gpuPadding,
+} from '../registry/fx/shader.ts';
 import { textAnimatorsTimeVarying } from '../text-animators/evaluate.ts';
 import type { ResolvedEffect, ResolvedLayerProps } from './scene.ts';
 import type { RenderVisualClip } from './snapshot.ts';
@@ -242,7 +253,11 @@ export function loweredLayerTaps(o: {
 				for (const q of poses.list) {
 					if (!(q.w > 0)) continue;
 					const map = composeAffine(q.inv, tap.map);
-					next.push({ w: tap.w * q.w, map, stages: [...tap.stages, { map, rect: [0, 0, box.width, box.height] }] });
+					next.push({
+						w: tap.w * q.w,
+						map,
+						stages: [...tap.stages, { map, rect: [0, 0, box.width, box.height] }],
+					});
 				}
 			taps = next;
 		} else if (fx.effectId === SHAKE) {

@@ -281,7 +281,10 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 			payload: {
 				envelope: d.envelope(),
 				sequenceId: d.seqId,
-				settings: { ...settings(d.seqId, 6000), video: { ...settings(d.seqId, 6000).video, frameRate: { num: 60000, den: 1001 } } },
+				settings: {
+					...settings(d.seqId, 6000),
+					video: { ...settings(d.seqId, 6000).video, frameRate: { num: 60000, den: 1001 } },
+				},
 			},
 		});
 		expect(r.statusCode, r.body).toBe(200);

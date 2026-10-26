@@ -2,9 +2,9 @@
 // how its frames are drawn, all in sequence pixels.
 import type { Rational, RenderVisualClip } from '@jasper/project';
 import { isFeatheredCrop } from '../crop.ts';
+import type { OverrideReady } from '../native-ext.ts';
 import { type LoweredPicture, planLoweredFrames, shiftProgram, singleTap, type TapFrame } from './lowered.ts';
 import type { StreamLayerPlan } from './plan.ts';
-import type { OverrideReady } from '../native-ext.ts';
 import type { TapMember, TapPicture } from './tap-plan.ts';
 
 /** The decode chain of a layer (`layerSourceChain`), for the level pictures of a constant source. */
@@ -130,7 +130,15 @@ export function loweredMember(
 	seq: { W: number; H: number; fps: Rational; swsFlags: string },
 ): TapMember {
 	const plan = (picture: LoweredPicture) => {
-		const { frames, levels } = planLoweredFrames({ clip: c, f0, f1, fps: seq.fps, picture, W: seq.W, H: seq.H });
+		const { frames, levels } = planLoweredFrames({
+			clip: c,
+			f0,
+			f1,
+			fps: seq.fps,
+			picture,
+			W: seq.W,
+			H: seq.H,
+		});
 		const pictures: TapPicture[] = levels.map((lv) => ({
 			w: lv.w,
 			h: lv.h,
