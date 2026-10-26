@@ -49,7 +49,7 @@ import {
 } from '@jasper/project';
 import type { CleanupAnalysisService } from '../cleanup/service.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
-import type { ProposalService, Requester } from '../proposals/service.ts';
+import type { Requester } from '../proposals/service.ts';
 import { liveDocument } from '../sound-design/plan.ts';
 import type { StyleRecipeLibrary } from '../style-recipes/library.ts';
 import type { SubtitleTemplateLibrary } from '../subtitle-templates/library.ts';

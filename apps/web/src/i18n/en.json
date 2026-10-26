@@ -10735,6 +10735,7 @@
   "This panel crashed",
   "This project",
   "This project has no store to save to",
+  "this project uses version {0}",
   "This project was repaired when it was opened (",
   "This project was saved from somewhere else (revision",
   "This recipe was made by a newer JasperEditor: update JasperEditor to use it",
