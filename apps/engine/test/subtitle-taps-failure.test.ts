@@ -12,13 +12,13 @@ import { TEST_FFMPEG, TEST_FFPROBE } from './helpers.ts';
 const FPS = { num: 30, den: 1 };
 const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
 
-function member(id: string, f0: number, f1: number): TapMember {
+function member(id: string, f0: number, f1: number, source = 'color=c=red'): TapMember {
 	const w = 256;
 	return {
 		clipId: id,
 		f0,
 		f1,
-		pictures: [{ w, h: w, inputs: [['-f', 'lavfi', '-i', `color=c=red:s=${w}x${w}:r=1`]], filter: '[0:v]format=rgba' }],
+		pictures: [{ w, h: w, inputs: [['-f', 'lavfi', '-i', `${source}:s=${w}x${w}:r=1`]], filter: '[0:v]format=rgba' }],
 		frames: Array.from({ length: f1 - f0 }, () => ({
 			rect: [0, 0, 512, 512] as [number, number, number, number],
 			opacity: 1,
@@ -53,6 +53,33 @@ describe('kernel stream failure (AS-074)', () => {
 			await expect(streamTaps(ff, plan, sink, { workers: 4, signal: ac.signal })).rejects.toThrow(/layer stream/);
 			// Let the closed pool's rejections settle.
 			await new Promise((r) => setTimeout(r, 200));
+			expect(unhandled.map(String)).toEqual([]);
+		} finally {
+			process.off('unhandledRejection', onUnhandled);
+		}
+	}, 60_000);
+
+	it('a member whose picture fails to decode rejects the stream; frames in flight are not unhandled rejections', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (e: unknown) => unhandled.push(e);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			const plan = planTapStream(
+				[member('a', 0, 40), member('b', 40, 80, 'nosuchsource=c=red')],
+				1920,
+				1080,
+				FPS,
+			);
+			const sink = new Writable({
+				write(_chunk, _enc, cb) {
+					setTimeout(cb, 20);
+				},
+			});
+			const ac = new AbortController();
+			await expect(streamTaps(ff, plan, sink, { workers: 4, signal: ac.signal })).rejects.toThrow(
+				/picture decoder/,
+			);
+			await new Promise((r) => setTimeout(r, 1500));
 			expect(unhandled.map(String)).toEqual([]);
 		} finally {
 			process.off('unhandledRejection', onUnhandled);
