@@ -636,7 +636,8 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   flight joined, one missing still renders alone.
 - **Pipelined:** a native export does not wait for the still bakes its kernel streams draw. Missing stills get
   provisional entries (the planned file and region) with a `ready` promise (`LayerOverride.ready`) and are rendered in
-  the background in time order — a first sheet of 16, so the first subtitles are ready soon — while the composite
+  the background in time order — sheets of 16, 32, 64, 128… stills, so each sheet is ready before the composite
+  reaches its subtitles — while the composite
   runs (`NativePrepareContext.background`). A stream waits for a member's still before decoding it and re-plans a
   trimmed layer still inside its frame; stills opened as ffmpeg inputs are awaited before the composite starts
   (`NativeGraph.waitFor`). A still that comes out different from its plan (clipped, re-cropped) stops the composite
@@ -671,8 +672,12 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   the same taps the export uses (`fx/lowered.ts`: `loweredCanvasProgram`, `fxLowered`): one `drawImage` per shutter
   tap of the captured picture, clipped to each stage rectangle, summed with `lighter` at weight w / Σw. Renders keep
   the GPU chain (the reference the native export is compared with). Static subtitles stay DOM text.
-- Measured (S.6): with 1 200 subtitles over a solid, playback holds ≈ 58 fps for every variant (Pixel Pop 57.6 fps
-  vs 58.0–58.1 fps without subtitles, two runs in opposite orders: within 1 %). Over a 1080p H.264 video the headless
+- Measured (S.6): with 1 200 subtitles over a solid, static and Motion-animated subtitles play like no subtitles
+  (58.2–58.9 fps vs 58.5–58.9). Pixel Pop played at 57.6 fps vs 58.0 before the text-paint fix (S.1, effects then
+  saw a picture cut at the box); with the stroke and shadow inside the effect canvas it measured 46–48 fps, and
+  52.3–53.1 fps (−9.6 % / −10.6 % of 58.5, two runs in opposite orders) once each Canvas 2D tap draws only the part
+  of the capture that can hold paint (`FxLoweredParams.src`). The rest is the pop-in's shutter taps (one
+  `drawImage` each, software canvas). Over a 1080p H.264 video the headless
   software-GL player itself varies from 7 to 30 fps between runs without subtitles, so that comparison is not
   resolvable on the VM; Pixel Pop measured 7.9–9.5 fps there (3.2 fps before the Canvas 2D path) and the CPU
   profiles with and without subtitles are the same (video `drawImage` ≈ 20 %, nothing from the subtitles in the top
@@ -691,44 +696,58 @@ Workload (`--case short`: 1080 × 1920, 50 s at 59.94 fps, 99 subtitles of 1–4
 Pop recipe, Transform pop-in with 360° shutter + S_Shake, stroke and shadow; `none` = the same video without
 subtitles). Cold = empty layer cache; warm = the same export again.
 
-| Run (round r11, all changes, VM otherwise quiet) | Wall | vs none | Peak PSS / RSS sum |
+Final code (round r15, after the text-render, subtitles, cleanup-UI and overlays merges; `loadBefore` 3–9 from
+other agents' work, 15.7 before the last row):
+
+| Run | Wall | vs none | Peak PSS / RSS sum |
 | --- | --- | --- | --- |
-| short, none | 23.8 s | — | 1.1 / 1.1 GB |
-| short, Pixel Pop, cold | 43.5 s | 1.83× (target ≤ 1.3×: **not met**, see below) | 3.2 / 5.3 GB |
-| short, Pixel Pop, warm | 27.6 s | +16 % (target ≤ +20 %: met) | 1.6 / 1.7 GB |
-| 9 min, none | 251.1 s | — | 1.1 / 1.1 GB |
-| 9 min, 1 080 Pixel Pop, cold | 301.8 s | 1.20× (target ≤ 10 min: met) | 3.9 / 6.2 GB (target ≤ 6 GB: met as PSS) |
-| 9 min, 1 080 Pixel Pop, warm | 292.4 s | +16 % (met) | 2.1 / 2.2 GB |
+| short, none | 24.1 s | — | 1.0 / 1.3 GB |
+| short, Pixel Pop, cold | 37.0 s | 1.54× (target ≤ 1.3×: **not met**, see below) | 4.5 / 8.0 GB |
+| short, Pixel Pop, warm | 28.0 s | +16 % (target ≤ +20 %: met) | 2.1 / 2.8 GB |
+| 9 min, none | 224.7 s | — | 1.3 / 1.3 GB |
+| 9 min, 1 080 Pixel Pop, cold | 304.7 s | 1.36× (target ≤ 10 min: met) | 4.4 / 7.7 GB (target ≤ 6 GB: met as PSS) |
+| 9 min, 1 080 Pixel Pop, warm | 331.8 s | (load 15.7: not comparable) | 2.4 / 2.4 GB |
+
+Round r11 (before those merges, VM otherwise quiet): short none 23.8 s, cold 43.5 s (with the restart below), warm
+27.6 s (+16 %); 9 min none 251.1 s, cold 301.8 s (1.20×, PSS 3.9 GB), warm 292.4 s (+16 %). Round r14 (final code
+less the doubling sheets, load 2–9): 9 min none 256.9 s, cold 323.1 s, warm 313.8 s (+22 %, load 16 before it).
 
 - Before (textperf, same recipes): short cold 183 s and 19–25 GB; the 9-minute export did not finish. Intermediate
   rounds on this branch: r6 (before pipelining) short cold 39.2 s / warm +20.6 %, 9 min cold 374.9 s, warm +23.5 %;
   r9 (pipelined, before the composite base) 9 min cold 335.6 s, warm +22.2 %; run-to-run spread of the same export
   ≈ 5–8 % (9 min, none: 251.1 / 254.8 / 274.2 s).
-- The short cold export restarts once: five 4-word subtitles wrap to two lines in a box whose height is estimated
-  (made through the HTTP API, no text measurer), their layer stills come out clipped, and a pipelined still that
-  changes stops the composite (S.3) at ≈ 13 s; the first composite had started at 5.9 s. Measured boxes (the text
-  measurer of the text-render work package) remove the cause; until then cold short exports with wrapping text pay
-  the restart.
+- Cold short: before the text measurer, five wrapped subtitles came out clipped and restarted the composite at
+  ≈ 13 s (r11). With measured boxes (and grown stills for boxes still `layoutPending`) there is no restart; what
+  remains (child-job timings recorded by the bench): the first sheet's latency (≈ 4 s: Remotion composition
+  selection ≈ 1.2 s + render), Chrome rendering the later sheets beside the composite, and provisional regions —
+  a cold stream is planned from the layer stills' regions (the 1 440 px wide box of an auto-height subtitle + its
+  paint) and only learns the trimmed pictures as they arrive, so its frame is about twice the warm one. Doubling
+  sheet sizes (16, 32, 45 here) cut it from 42.2 s (r14) to 37.0 s.
 - Subtitle parity (`subtitle-parity.e2e.test.ts`, REMOTION_E2E=1, 1080 × 1920, worst region SSIM over the pop-in,
-  overshoot and hold): static 0.9998, motion pop 0.9887, Pixel Pop 0.9997, Pixel Pop classic 0.9995, shake 0.9998,
-  shake with motion blur (run master) 0.9996 — all ≥ 0.98 (FX-040); the side-by-side images were inspected.
+  overshoot and hold, final code): static 0.9997, motion pop 0.9873, Pixel Pop 0.9996, Pixel Pop classic 0.9994,
+  shake 0.9997, shake with motion blur (run master) 0.9995 — all ≥ 0.98 (FX-040); the side-by-side images were
+  inspected. Text paint under template effects: identity Transform and still S_Shake equal the plain subtitle
+  (SSIM 1.0000) natively and in the composition.
 - Preview (`scripts/perf/subtitles-preview.mjs`, built app on the VM, headless Chrome with software GL): S.5; the
   pop-in, overshoot and hold of a Pixel Pop subtitle in the Program monitor were inspected in screenshots (`--shots`).
 
-Verification on the VM: engine suite (`vitest run --maxWorkers=2`: 1 318 passed; two environment failures that
+Verification on the VM (final code): engine suite (`vitest run --maxWorkers=2`: 1 418 passed; two environment failures that
 also fail on the base branch — Electron without libgtk, the ZIP-1 peak-buffer bound under load), compositions and
 project suites, engine / compositions / project typecheck, `check-layers`, `check-tokens`, `check-anime`, Biome on
-the changed files, and with REMOTION_E2E=1 `layer-bake.e2e`, `layer-bake-parallel.e2e` and `subtitle-parity.e2e`.
+the changed files, the Transform / motion-blur GL suites, and with REMOTION_E2E=1 `layer-bake.e2e`,
+`layer-bake-parallel.e2e`, `text-paint-export.e2e`, `compositor-export.e2e` and `subtitle-parity.e2e`.
 New tests: `subtitle-lowered.test.ts` (kernel vs reference, maps vs shader formulas, refusals, memory estimate, run
 grouping), `subtitle-export.test.ts` (kernel streams, run masters, composite base, preflight, killed and failing
 compositors), `subtitle-taps-failure.test.ts` and `subtitle-png.test.ts` (regressions and in-process decode),
 `packages/compositions/test/fx-lowered.test.ts`.
 
 Limitations:
-- Cold short exports with estimated text boxes restart once (above).
+- Cold short exports are 1.54× (target 1.3×), above.
+- Program monitor: Pixel Pop with an outside stroke and a shadow plays ≈ 10 % below no subtitles over a solid on the
+  VM's software canvas (S.5), at the AS-075 limit.
 - The Program-monitor criterion over video (AS-075, within 10 % of video-only fps) cannot be resolved on the VM's
   software-GL player (spread larger than the criterion); it holds over a solid.
 - Lowered layers differ from the composition by one resample (S.1): capped shutters use stratum centres, stage edges
-  are ½ px ramps; motion pop is the lowest SSIM (0.9887).
+  are ½ px ramps; motion pop is the lowest SSIM (0.9873).
 - Run masters cover shaken layers on one track whose clips follow within 60 frames; graded, faded or blended shaken
   layers stay one master each. Nested sequences do not pipeline their stills.
