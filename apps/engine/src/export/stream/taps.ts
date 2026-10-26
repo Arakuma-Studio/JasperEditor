@@ -17,7 +17,7 @@ import { terminateTree } from '../../tools/process.ts';
 import { decoderArgs } from '../warp/render.ts';
 import { ExportWorkerPool, framePoolSize } from '../worker-pool.ts';
 import { drawLayer, drawTaps } from './kernel.ts';
-import { DECODES_IN_FLIGHT, PREFETCH_MEMBERS } from './limits.ts';
+import { DECODES_IN_FLIGHT, MAX_TAP_WORKERS, PREFETCH_MEMBERS } from './limits.ts';
 import { StreamLayerError } from './run.ts';
 import type { TapPicture, TapStreamPlan } from './tap-plan.ts';
 
@@ -126,7 +126,9 @@ export async function streamTaps(
 		return;
 	}
 	const frameBytes = plan.outW * plan.outH * 4;
-	const counts = framePoolSize({ workers: Math.max(1, opts.workers), slots: Math.max(1, opts.workers) + 3 });
+	// A stream is paced by the composite reading it; more threads than this only cost memory (a V8 heap each).
+	const threads = Math.max(1, Math.min(opts.workers, MAX_TAP_WORKERS));
+	const counts = framePoolSize({ workers: threads, slots: threads + 3 });
 	const slots = Array.from({ length: counts.slots }, () => new SharedArrayBuffer(frameBytes));
 	const zero = Buffer.alloc(frameBytes);
 	const pool = new ExportWorkerPool<TaskMsg, number>(

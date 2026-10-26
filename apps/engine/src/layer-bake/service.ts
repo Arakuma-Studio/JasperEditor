@@ -34,7 +34,7 @@ import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
-import { encodePng } from '../export/synthetic.ts';
+import { encodePngAsync } from '../export/synthetic.ts';
 import { importsArtifactsOf, withImportsUrls } from '../imports/extension.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
@@ -82,6 +82,8 @@ const GRADE_VERSION = 2;
 const GRADED_FRAMES_DIR = 'graded';
 /** File name of graded frame `n`. */
 const gradedFrameName = (n: number) => `${String(n).padStart(6, '0')}.png`;
+/** Sheet stills encoded and written at the same time (zlib runs in the libuv pool). */
+const STORES_IN_FLIGHT = 4;
 /** `lastUsedAt` is rewritten at most this often per entry (the GC removes entries unused for 14 days). */
 const MARK_USED_EVERY_MS = 3_600_000;
 /** Border alpha (0…255) above which a cropped bake counts as clipped and is rendered full frame instead. */
@@ -1503,19 +1505,32 @@ export class LayerBakeService {
 		});
 		closed.catch(() => undefined);
 		let i = 0;
-		let buf: Buffer = Buffer.alloc(0);
+		// One frame buffer, filled chunk by chunk; `storeSheetStill` copies its still out of it before its first await,
+		// so up to STORES_IN_FLIGHT stills are encoded and written side by side while the decode goes on.
+		const frame = Buffer.allocUnsafe(frameBytes);
+		let filled = 0;
+		const stores = new Set<Promise<void>>();
+		const store = async (plan: BakePlan) => {
+			if (await this.storeSheetStill(plan, frame, W, ctx)) redo.push(plan);
+		};
 		for await (const chunk of child.stdout! as AsyncIterable<Buffer>) {
-			buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
-			while (buf.length >= frameBytes && i < plans.length) {
-				const frame = buf.subarray(0, frameBytes);
-				const plan = plans[i]!;
-				const clippedSeq = await this.storeSheetStill(plan, frame, W, ctx);
-				if (clippedSeq) redo.push(plan);
+			let off = 0;
+			while (off < chunk.length && i < plans.length) {
+				const k = Math.min(frameBytes - filled, chunk.length - off);
+				chunk.copy(frame, filled, off, off + k);
+				filled += k;
+				off += k;
+				if (filled < frameBytes) continue;
+				const p = store(plans[i]!);
+				stores.add(p);
+				p.finally(() => stores.delete(p)).catch(() => undefined);
+				filled = 0;
 				i++;
-				buf = buf.subarray(frameBytes);
 				ctx.progress(0.8 + (0.1 * i) / plans.length, { stage: `Cropping stills ${i}/${plans.length}` });
+				if (stores.size >= STORES_IN_FLIGHT) await Promise.race(stores);
 			}
 		}
+		await Promise.all(stores);
 		await closed;
 		if (i !== plans.length)
 			throw new JobError(
@@ -1594,7 +1609,7 @@ export class LayerBakeService {
 		await mkdir(dir, { recursive: true });
 		const scratch = await ctx.scratchDir();
 		const tmp = join(scratch, `sheet-${plan.key}.png`);
-		await writeFile(tmp, encodePng(out.px, out.w, out.h));
+		await writeFile(tmp, await encodePngAsync(out.px, out.w, out.h));
 		await rename(tmp, join(dir, 'still.png'));
 		const t = this.now().toISOString();
 		const meta: LayerMeta = {

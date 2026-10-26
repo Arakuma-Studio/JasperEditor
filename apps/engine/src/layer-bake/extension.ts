@@ -39,10 +39,10 @@ type Prepared = LayerBakePrepared & { [SPANS]?: Map<string, LayerOverride> };
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
 const RENDER_FIXED_COST_FRAMES = 30;
 /** spec 13 AS-071: stills per sheet render at most (bounds a sheet's frame size spread and a failed sheet's retry). */
-const SHEET_MAX = 64;
+const SHEET_MAX = 128;
 /** Remotion pages all sheets of an export use together, and sheets rendered side by side (Chrome memory bound). */
 const SHEET_PAGES = 4;
-const SHEET_IN_FLIGHT = 2;
+const SHEET_IN_FLIGHT = 1;
 /** Progress weight of one sheet frame (a still costs ≈ 0.1 s in a sheet against ≈ 3.4 s alone, textperf). */
 const SHEET_FRAME_COST = 1;
 
