@@ -53,7 +53,9 @@ test('Clean Up mode on a generated clip: analyze, review, play the result, apply
 		path: ['items'],
 	});
 	const item = Object.values(items).find((i) => i.kind === 'media' && i.mediaId === mediaId)!;
-	expectTransaction(await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]));
+	expectTransaction(
+		await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]),
+	);
 	const words = cleanupVoiceWords();
 	expectTransaction(
 		await transact(page, [
@@ -79,21 +81,34 @@ test('Clean Up mode on a generated clip: analyze, review, play the result, apply
 	await expect(page.getByTestId('text.cleanup.intro')).toBeVisible();
 	await page.getByTestId('text.cleanup.analyze').click();
 	await expect(page.getByTestId('text.cleanup.review')).toBeVisible({ timeout: 120_000 });
-	await test.info().attach('review', { body: await page.getByTestId('text.cleanup').screenshot(), contentType: 'image/png' });
+	await test
+		.info()
+		.attach('review', {
+			body: await page.getByTestId('text.cleanup').screenshot(),
+			contentType: 'image/png',
+		});
 
 	// findings by kind; the abandoned take and the filler are struck in the transcript
 	const findings = page.getByTestId('text.cleanup.findings');
-	await expect(findings.locator('[data-testid^="text.cleanup.kind."][data-testid$=".count"]').first()).toBeVisible();
+	await expect(
+		findings.locator('[data-testid^="text.cleanup.kind."][data-testid$=".count"]').first(),
+	).toBeVisible();
 	const cuts0 = Number(await page.getByTestId('text.cleanup.stat.cuts').textContent());
 	expect(cuts0).toBeGreaterThanOrEqual(3);
-	await page.getByTestId('text.cleanup.view.transcript').click().catch(() => {});
+	await page
+		.getByTestId('text.cleanup.view.transcript')
+		.click()
+		.catch(() => {});
 	const struck = page.getByTestId('text.cleanup.transcript').locator('[data-removed="true"]');
 	await expect(struck.first()).toBeVisible();
 	const struckTexts = await struck.allTextContents();
 	expect(struckTexts).toContain('eh');
 
 	// keep one finding: the statistics follow
-	await page.getByTestId('text.cleanup.view.findings').click().catch(() => {});
+	await page
+		.getByTestId('text.cleanup.view.findings')
+		.click()
+		.catch(() => {});
 	const out0 = await page.getByTestId('text.cleanup.stat.length').textContent();
 	const firstCut = findings.locator('[data-state="cut"]').first();
 	const fid = (await firstCut.getAttribute('data-testid'))!.replace('text.cleanup.finding.', '');
