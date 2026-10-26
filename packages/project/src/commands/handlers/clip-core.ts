@@ -436,7 +436,7 @@ export function placeSource(
 	return { clipIds, linkId };
 }
 
-function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
+export function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
 	const s = content.style;
 	const lines = content.text.split('\n');
 	const longest = Math.max(1, ...lines.map((l) => l.length));

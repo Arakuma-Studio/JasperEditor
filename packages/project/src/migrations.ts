@@ -1,6 +1,7 @@
 // Schema versions and migrations (S01:MIG-001…005) and the load pipeline (S01:PER-004):
 // envelope → migrate → zod validate → invariants → conservative repair.
 
+import { subtitlesNeedRepair } from './captions/subtitles/model.ts';
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
 import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
@@ -243,7 +244,12 @@ export function loadProject(
 	let issues = checkInvariants(document, invOpts);
 	// sound-design: soft references (a cue's anchor or clips, a clip's cue) are tidied on load too (spec 12 §2.2).
 	// spec 13 SH-002: so do links to a project text style that is gone (pasted from another project).
-	if (issues.length > 0 || soundDesignNeedsRepair(document) || textStylesNeedRepair(document)) {
+	if (
+		issues.length > 0 ||
+		soundDesignNeedsRepair(document) ||
+		textStylesNeedRepair(document) ||
+		subtitlesNeedRepair(document)
+	) {
 		const r = repairDocument(document, opts.ids ?? createRandomIdSource(), { mgTemplates: opts.mgTemplates });
 		document = r.document;
 		repairs = r.report;
