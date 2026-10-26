@@ -30,6 +30,7 @@ const CLIPS = Number(flag('clips', 1080));
 const SECONDS = Number(flag('seconds', 8));
 const VARIANTS = String(flag('variants', 'none,static,pixelpop')).split(',');
 const PROFILE = !!flag('profile', false);
+const TRACE = !!flag('trace', false);
 const MEDIA = flag('media', null);
 const OUT = flag('out', join(root, 'test-results', 'subtitles'));
 const LABEL = flag('label', `${W}x${H}-${CLIPS}`);
@@ -80,6 +81,13 @@ function commands(variant, fontId) {
 			},
 			transform: { position: [W / 2, Math.round(0.83 * H)] },
 		});
+		if (variant === 'motion')
+			for (const [f, v] of [
+				[0, 75],
+				[6, 108],
+				[10, 100],
+			])
+				out.push({ type: 'keyframe.add', target: ['clip', ref, 'transform', 'scale'], at: { frames: f }, value: v });
 		if (variant === 'pixelpop') {
 			const tf = `$tf${i}`;
 			const key = (target, sec, value) => ({ type: 'keyframe.add', target, at: { frames: Math.round(sec * FPS) }, value });
@@ -146,11 +154,19 @@ await tx([
 ]);
 const font = await tx([{ type: 'font.add', family: 'JetBrains Mono', ref: '$font' }]);
 const fontId = font?.refs?.$font ?? font?.result?.refs?.$font;
-const cdp = PROFILE ? await page.context().newCDPSession(page) : null;
+const cdp = PROFILE || TRACE ? await page.context().newCDPSession(page) : null;
 
 async function measure(name) {
 	await page.waitForTimeout(3000);
-	if (cdp) {
+	const traceEvents = [];
+	if (cdp && TRACE) {
+		cdp.on('Tracing.dataCollected', (e) => traceEvents.push(...e.value));
+		await cdp.send('Tracing.start', {
+			categories: 'devtools.timeline,disabled-by-default-devtools.timeline,blink,cc,gpu,viz',
+			transferMode: 'ReportEvents',
+		});
+	}
+	if (cdp && PROFILE) {
 		await cdp.send('Profiler.enable');
 		await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
 		await cdp.send('Profiler.start');
@@ -199,7 +215,20 @@ async function measure(name) {
 		{ secs: SECONDS, from: Math.round(5 * FPS) },
 	);
 	const out = { scenario: name, ...r };
-	if (cdp) {
+	if (cdp && TRACE) {
+		const done = new Promise((r) => cdp.once('Tracing.tracingComplete', r));
+		await cdp.send('Tracing.end');
+		await done;
+		// Wall time per event name over the playback (complete events), renderer and GPU threads.
+		const by = new Map();
+		for (const e of traceEvents)
+			if (e.ph === 'X' && typeof e.dur === 'number') by.set(e.name, (by.get(e.name) ?? 0) + e.dur / 1000);
+		out.traceTopMs = [...by]
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, 30)
+			.map(([k, v]) => `${Math.round(v)} ms ${k}`);
+	}
+	if (cdp && PROFILE) {
 		const { profile } = await cdp.send('Profiler.stop');
 		const self = new Map();
 		const dt = profile.timeDeltas ?? [];
