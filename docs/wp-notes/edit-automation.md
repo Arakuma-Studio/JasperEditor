@@ -604,3 +604,147 @@ face data only.
 - Stingers' loudness is measured on the dialogue tracks (the dialogue stretches' tracks, else every audio track) when
   proposing and refreshing (a mixdown of the sequence); a dry run counts "!" phrases unless the same mix was measured.
 - The overlay passes' Refresh re-reads folders and re-measures loudness: slower than the kits' refresh.
+
+## Style recipes, Apply Style and Style Check (EA-010…EA-013, EA-040…EA-042, EA-050, EA-051)
+
+Built on branch `feat/wf-recipes`. A **style recipe** combines Clean Up Voice (spec 14), automatic subtitles (spec 13)
+and the seven passes above into one named, versioned set of parameters; **Apply Style** runs it into ONE proposal;
+**Style Check** compares a sequence with its targets.
+
+### Code map
+
+| Layer | Files |
+|---|---|
+| Model (pure) | `automation/recipes.ts` (`StyleRecipeSchema`, built-ins, roles, targets, `resolveRecipeStages`, project copy reader / INV-STYLE-RECIPE / `repairStyleRecipes`), `automation/style.ts` (`planStyle`, `styleDraft`, `refreshStyleItems`, `pictureEnd`), `automation/style-check.ts` (`styleCheck`, `motionKindOf`), `commands/{schemas,handlers}/style-recipes.ts` (`styleRecipe.add` / `remove` / `setActive`), `cleanup.apply {pieceRefs}` (`handlers/cleanup.ts`, `multi-range.ts` records each piece's origin), `proposals/features.ts` (Review groups Voice cleanup / Subtitles; `meta.feature` → `embeddedFeatures` in the agent policy), `schema/document.ts` (`styleRecipes?`) |
+| API / client | `packages/api/src/style.ts` (library, Apply Style, Style Check schemas), routes `styleRecipes*`, `applyStyle`, `styleCheck`, job kind `apply-style`, event `styleRecipes.changed`; `EngineClient.styleRecipes` / `createStyleRecipe` / `updateStyleRecipe` / `duplicateStyleRecipe` / `deleteStyleRecipe` / `applyStyle` / `styleCheck`; config `paths.styleRecipesDir` |
+| Engine | `style-recipes/library.ts` (the user library), `automation/style.ts` (hooks: the `cleanup-analysis` child job, the template library, `passInputs`, subjects, sounds; dry run, job, refresher, Style Check's dead air), `routes/style.ts`; `routes/automation.ts` dispatches the `edit-automation` refresher to `refreshStyle` for Apply Style proposals |
+| MCP | `apps/mcp/src/tools/style.ts` (`list_style_recipes`, `get_style_recipe`, `save_style_recipe`, `apply_style`, `style_check`, `STYLE_GUIDE`), resource `jasper://guide/editing-automation` ("Editing automation": `AUTOMATION_GUIDE` + `STYLE_GUIDE`) |
+| Editor | `apps/web/src/automation/ApplyStyleDialog.tsx`, `StyleCheckDialog.tsx`, `StyleRecipesDialog.tsx`, `style-store.ts` (library mirror, recipe choices, the pass dialogs' last parameters), `style-run.ts`; `menu.ts` (Apply Style…, Style Check, Style Recipes…), `commands/automation.ts` (`automation.applyStyle` / `styleCheck` / `styleRecipes`; the pass commands start from the active recipe) |
+
+### Recipes (EA-010)
+
+- Format `jasper-style-recipe` v1 (strict zod): `{id: builtin:<name> | rcp_<16>, name, description?, revision (the
+  recipe's own version, +1 per save), basedOn?, aspect?, passes, assets?, targets?, createdAt?, updatedAt?}`. `passes`
+  composes the existing schemas, nothing is forked: `cleanup {enabled, preset, overrides?}` (`CleanupOverridesSchema`,
+  a built-in or user preset id), `subtitles {enabled, template, rules?, text?, cutAware?, output?, language?}`
+  (`captions.generate`'s fields), and per pass `{enabled, params?}` with `AUTOMATION_PARAM_SCHEMAS` as they are
+  (reactions' and music's `assets` optional: they come from the roles). ≤ 512 KB.
+- **Asset roles** (EA-011): `whoosh` (`AutomationSfxSchema`: the library's sounds of a type from the starter kit,
+  installed CC0 packs or the user's sound folders), `reactionImages` / `musicFolder` (`AutomationAssetsSchema`: a bin by
+  name, an engine folder, media), `staticNoise` (`generated` Jasper Synth noise, `library` sounds, `none`).
+  `resolveRecipeStages` fills them into the pass parameters (a pass's own `sfx` / `assets` win). Built-in defaults:
+  whoosh sounds of the library, bins named "Reactions" and "Music", generated noise. Nothing of the user's is shipped.
+- **Targets** (Style Check, EA-013): `cutsPerMinute`, `kitCoverage`, `punchInsPerMinute`, `punchInStart`,
+  `kenBurnsShare`, `musicGainDb` as `{value, tolerance}`, `deadAirPerMinute {max}`, `subtitleOnCut {min, maxCrossing}`.
+- **User library** `<appdir>/style-recipes/` (engine): `index.json` (zod) + one `rcp_….json` per recipe; atomic writes
+  (temp, fsync, rename, directory fsync), serialised, revision per change; load repairs reported to the user once
+  (Style Recipes… shows them; `GET /api/style-recipes` `repairs`; MCP `list_style_recipes`): unreadable index moved
+  aside and rebuilt from the files, missing file → entry dropped, unlisted file → adopted (a crash between a recipe's
+  file and the index), unreadable file → moved aside (`….invalid-<time>`), never deleted; newer recipe formats listed
+  read-only (refused for use with the reason), a newer library index makes the library read-only. Write order: new
+  file then index; deletion: unlink then index (a crash never resurrects a deleted recipe).
+- **Project copy** `ProjectDocument.styleRecipes {active?, recipes}` (schema v9, read leniently; row in
+  `docs/project-files.md`): accepting an Apply Style proposal copies the recipe used and makes it active (its setup
+  item `styleRecipe.add {recipe, activate: true}` that every other item requires); Style Recipes… ▸ Use makes a recipe
+  active (`styleRecipe.setActive` / `add`), one undo step each. The pass dialogs (Decorate Cuts… … Stingers…) start
+  from the active recipe's parameters for that pass (`recipePassParams`, roles filled in); explicit `params` of the UI
+  command win.
+
+### Built-in recipes (EA-011)
+
+| Recipe | Cleanup | Subtitles | Kits | Punch-ins | Ken Burns | Reactions | Slides | Music | Stingers |
+|---|---|---|---|---|---|---|---|---|---|
+| Fast Shorts (vertical) | Fast | Pixel Pop | `shorts-shake` | off | 15 %, 118 % | on (vertical slots, bin "Reactions") | off | −33 dB, intro −25 dB until the first cut | off |
+| Fast Long-form (landscape) | Fast | Pixel Pop | `long-pack` (five families, P(same) 0.23) | density 1, ≥ 2.3 s, 180 %, 7 frames, midpoint | 15 %, 130 % | off | on (measured shares) | beds of 52 s switching on cuts, −33 dB | off |
+| Clean (any) | Natural | Subtitles (caption track) | off | off | off | off | off | off | off |
+
+Sources: FINDINGS §3 and the wp-notes above (kits, overlays), spec 13 (Pixel Pop, the user's measured template), spec 14
+(Fast measured on the user's edits, Natural the calm preset). Fast Long-form's punch-in density and shortest clip are
+tuned on the accuracy harness (below; in-sample on the 11 long videos — assumption labelled). Targets: the measured
+figures (cuts 23.8 / 17.9 per minute, kit coverage 85.7 / 95.1 %, punch-ins 9.0 / min starting at 0.50 of the clip, Ken
+Burns 15 %, music −33 dB; dead air ≤ 1 s/min for Fast — the shipped Fast output measured 0.51–0.68 s/min, the user's
+0.42–0.61 —, ≤ 3 s/min for Clean; subtitles ≥ 95 % of speech cuts, none crossing: spec 13's target). **Assumption**:
+the tolerances (≈ ±30 % of a rate, ±0.05–0.1 of a share, ±2 dB) and Clean's dead-air bound are chosen, not measured.
+
+### Apply Style (EA-012)
+
+- Stages in the spec's order: cleanup → subtitles → kits → punch-ins → Ken Burns → reactions → slides → music →
+  stingers. `planStyle(doc, {recipe, sequenceId, range, seed, passes}, hooks, {registries})` (pure; the engine's hooks do
+  the I/O) builds one item list: the recipe copy (setup), the cleanup item (one `cleanup.apply` over the analysis'
+  ranges, group Voice cleanup, `meta.feature: transcript-cleanup`), the subtitles item (one `captions.generate` with
+  the template, group Subtitles, `meta.feature: subtitles`), then each pass's items as the pass makes them.
+- **Later stages see earlier ones' planned results**: every stage's items are applied to a simulated copy of the
+  document (sim ids `<prefix>_ZS…`, never stored) before the next stage plans on it. Consequences, all tested:
+  decorations are planned on the cleaned-up timeline (kits sit on its cuts, including the jump cuts the cleanup makes),
+  the reactions avoid the subtitles' screen regions, the kits' FX track is created above the subtitles and reactions
+  (kits shake the whole composite, as in the user's stacks, FINDINGS §2), Ken Burns skips the clips punch-ins keyed,
+  kits never overlap (Decorate Cuts), the passes stop at the picture's end (`pictureEnd`: subtitles may hold past it; no
+  kit on a "cut to black").
+- **Addressing the cleaned-up timeline**: `cleanup.apply {pieceRefs: '$c'}` declares `$c_<clip>_<k>` for the k-th piece
+  (time order) of every clip left on the edited tracks (the left piece keeps the clip's id, cut pieces are new; a clip
+  only moved is piece 0). Later items name every such clip by its ref (also in `meta`), and any entity an earlier stage
+  creates by the ref of the command that creates it (FX / ZOOM / Reactions / Music / Stingers tracks, bins, media, cues);
+  a sim id inside a name (item ids `punch:<clip>`, ref names) is spelled with the ref's token. An item that would need an
+  entity no ref names is left out with the reason (`dropped`), never planned against an id that will not exist. Every
+  decoration `requires` the cleanup item (its frames are the cleaned-up timeline's) and the recipe item; cut anchors of
+  decorations are dropped when there is a cleanup (they would be read on the timeline before the cuts).
+- `range` is in the live sequence's frames; the cleanup analysis gets it as is, the later stages get it mapped through
+  the removed ranges (`frameAfterCuts`). A sequence that already has subtitle groups keeps them (the stage says so). The
+  seed of the request (if any) is every pass's seed.
+- **Roles and other blockers never skip silently**: a stage that cannot run is `skipped` with an actionable reason, and
+  role / transcript problems are repeated in the result's warnings (`W_ROLE_MISSING`: "… the project has no bin named
+  “Reactions”: import your reaction pictures into a bin with that name, or choose another bin or a folder for them
+  (assets.reactionImages)"; no whoosh in the library: "install a CC0 sound pack or the starter kit … or add a folder of
+  your sounds", the kits are planned without sound; `W_NO_TRANSCRIPT` for subtitles / cleanup without a transcript; an
+  unknown subtitle template). A stage with nothing to do is `empty` with what it considered and why each was left out.
+- **Dry run** (`mode: 'dryRun'`): per stage status, count, the pass summary (coverage, skips, families), sounds
+  available, the export cost class (cleanup native; subtitles `hybrid` when the template's animation has GPU effects —
+  Pixel Pop's Transform + S_Shake —, `native` on a caption track; passes as above) and the whole result's highest class,
+  and the budget (with the sound commands counted). The dry run's cleanup analysis uses only cached voice analyses
+  (media without one are planned at word timings: `W_VOICE_NOT_ANALYSED`); Propose analyses them (a `voice-analysis`
+  child job per media). The engine test checks the export planner's route of the accepted result equals the dry run's
+  class.
+- **Accept**: everything is one transaction (one History entry "Accept Apply Style: <recipe> (n of m)"; undo restores
+  the exact document, `packages/session/test/style-history.test.ts`). Agents may accept only when Project Settings ▸ Agent
+  Proposals allows editing automation **and** every feature an item names in `meta.feature` (the cleanup's
+  transcript-cleanup, the subtitles') — `projectFeaturePolicy` reads `embeddedFeatures`.
+- **Refresh / Reroll** (`refreshStyleItems`, the `edit-automation` refresher dispatches on `report.pass ===
+  'apply-style'`): the earlier stages' pending items are simulated on the live document (accepted ones are in it), then
+  the requested decorations are re-planned by their pass's refresher with their seed (Refresh) or the next (Reroll),
+  keeping ids and refs. A stale cleanup item is dropped with "run Apply Style again" (it comes from an analysis of the
+  whole sequence; re-planning it alone could rename the pieces the decorations address); the subtitles item is returned
+  unchanged (it is laid out when applied).
+
+### Style Check (EA-013)
+
+`styleCheck(doc, sequenceId, recipe, {deadAir})` measures the document as it is (hand edits included) with the passes'
+own definitions and compares each with the recipe's target (status ok / off / unmeasured / unchecked):
+cuts per minute (cut map cuts + jump cuts on the picture tracks, the passes' own tracks left out, before the picture's
+end); cuts with a kit (an enabled adjustment clip on the frame before the cut or on it: a kit or its before / after pair;
+a cut lying under a neighbour's kit counts as covered, like Decorate Cuts' `decorated`); punch-ins (an A-roll clip
+whose Motion scale rises ≥ 15 % within 15 frames from a key after its first frame, or a Transform adjustment on a ZOOM
+track) per minute and their median start in the clip; Ken Burns share (two scale keys on about the first and last frame,
+5–60 % change); dead air = spec 14's `deadAirPerMinute` of a cleanup analysis with the recipe's preset that rejects every
+finding (so it measures the edit as it is), with the pause findings as look-here frames — cached voice analyses only
+(unmeasured otherwise, with the reason); subtitles: speech cuts (a subtitle word starting within 0.5 s after the cut,
+spec 13's measure) that start a subtitle, and subtitles running over a hard cut; music: the median clip gain of the
+"Music" tracks' clips (the vertical intro part left out). Every deviation lists up to 50 look-here frames with a note;
+the editor's dialog moves the playhead to one on click; `style_check` returns them with timecodes.
+
+### Editor and agents (EA-040…EA-042)
+
+- Sequence ▸ Automate: Apply Style… (recipe — built-ins, the library, the project's copies; default the active recipe,
+  else the built-in for the aspect —, the nine steps switched on / off for this run, range, seed, the dry run per step
+  with reasons and the export class, Propose → the job → review), Style Check (recipe, the measures with value / target
+  / status, look-here timecodes, Check Again), Style Recipes… (Use, Duplicate, Rename, Delete — the library asks for
+  confirmation, a project-only copy is removed undoably —, "Save Current Settings as Recipe…" = a new library recipe from
+  the active one with the parameters the Automate dialogs last proposed with in this window; the library's repairs
+  and a read-only library are said). No new shortcuts.
+- MCP: `list_style_recipes`, `get_style_recipe` (read-only), `save_style_recipe` (library; `projectId` + `activate` keep
+  a copy in the project), `apply_style` (`mode`, `recipeId` | `recipe`, `passes`, `seed`, `range`), `style_check`
+  (read-only); strict schemas (recipe stages validated with the recipe schemas at any depth), annotations; the guide
+  resource "Editing automation" (`jasper://guide/editing-automation`) with the recommended workflow cleanup →
+  subtitles → apply_style → review → accept → style_check. Deleting a library recipe is an editor action (the route asks
+  an agent for the user's approval).
+- i18n: every UI string and the built-ins' names / descriptions, stage names and measure labels (model strings) in
+  English and Spanish.

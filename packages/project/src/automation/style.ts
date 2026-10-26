@@ -773,6 +773,7 @@ export async function planStyle(
 					pass: 'cleanup',
 					kind: 'cleanup',
 					feature: TRANSCRIPT_CLEANUP_FEATURE,
+					showGain: false,
 					frame: ranges[0]!.start,
 					timecode: timecodeOf(seq, ranges[0]!.start),
 					range: { start: ranges[0]!.start, end: ranges[ranges.length - 1]!.end },
@@ -880,6 +881,7 @@ export async function planStyle(
 					pass: 'subtitles',
 					kind: 'subtitles',
 					feature: SUBTITLES_FEATURE,
+					showGain: false,
 					frame: range?.start ?? 0,
 					why: `Subtitles from the transcript with the template “${name}”, aligned to the cuts of the cleaned-up timeline`.slice(
 						0,
