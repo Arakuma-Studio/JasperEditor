@@ -45,6 +45,7 @@ import {
 	rotoFrameUrl,
 	sideCompToCanvas,
 	TRACK_MATTE_EFFECT_ID,
+	textContentPad,
 	workingKey,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
@@ -284,6 +285,8 @@ export function useLayerFx(
 			),
 		[clip],
 	);
+	// spec 13 AS-070: a text layer's stroke, shadow and glyph ink reach beyond its box; its effects see them.
+	const contentPadding = useMemo(() => ('text' in clip.source ? textContentPad(clip.source.text) : 0), [clip]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
@@ -301,6 +304,7 @@ export function useLayerFx(
 						capture,
 						masks: props.masks,
 						featheredCrops,
+						contentPadding,
 					}),
 		[
 			enabled,
@@ -319,6 +323,7 @@ export function useLayerFx(
 			clipInfo,
 			props.masks,
 			featheredCrops,
+			contentPadding,
 		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))

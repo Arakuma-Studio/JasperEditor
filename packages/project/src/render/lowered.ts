@@ -21,6 +21,7 @@ import {
 } from '../registry/effects.ts';
 import { FX_MB_WARP_SIZE } from '../registry/fx/glsl/motion-blur.ts';
 import {
+	FX_MAX_PADDING,
 	type FxFrameContext,
 	fxClipProgress,
 	fxParamsAtFn,
@@ -28,6 +29,7 @@ import {
 	gpuPadding,
 } from '../registry/fx/shader.ts';
 import { textAnimatorsTimeVarying } from '../text-animators/evaluate.ts';
+import { textContentPad } from '../text-style.ts';
 import type { ResolvedEffect, ResolvedLayerProps } from './scene.ts';
 import type { RenderVisualClip } from './snapshot.ts';
 
@@ -216,11 +218,13 @@ export function loweredLayerTaps(o: {
 			...(at ? { paramsAt: at } : {}),
 		};
 	};
-	// The effect canvas: the box grown by the GPU effects' padding (compositions fx/plan.ts `fxCanvasLayout`).
-	let pl = 0;
-	let pt = 0;
-	let pr = 0;
-	let pb = 0;
+	// The effect canvas: the box grown by the text's own paint (stroke, shadow, ink: `textContentPad`) and the GPU
+	// effects' padding (compositions fx/plan.ts `planLayerFx`, `fxCanvasLayout`).
+	const cp = 'text' in c.source ? Math.min(FX_MAX_PADDING, Math.max(0, textContentPad(c.source.text))) : 0;
+	let pl = cp;
+	let pt = cp;
+	let pr = cp;
+	let pb = cp;
 	let gpu = false;
 	for (const fx of effects) {
 		const spec = registry.get(fx.effectId, fx.effectVersion);
@@ -256,7 +260,8 @@ export function loweredLayerTaps(o: {
 					next.push({
 						w: tap.w * q.w,
 						map,
-						stages: [...tap.stages, { map, rect: [0, 0, box.width, box.height] }],
+						// The Transform samples its whole input canvas (the box and the text's paint beyond it).
+						stages: [...tap.stages, { map, rect: canvas }],
 					});
 				}
 			taps = next;

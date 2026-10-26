@@ -17,7 +17,8 @@ import {
 	resolveLayerProps,
 	type Transform,
 	textAnimatorsTimeVarying,
-	textPaintExtent,
+	textContentPad,
+	textInkPad,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';
@@ -322,12 +323,15 @@ export function layerStill(
 	if (!isStaticLayer(bare, registry)) return null;
 	const bleed = contentBleed(bare, registry);
 	if (bleed === null || !Number.isFinite(bleed)) return null;
-	// Grown: a quarter of the box and two font sizes more (an estimated box the glyphs overflow, a line that wraps).
+	// Grown: a quarter of the box and two font sizes more (an estimated box the glyphs overflow, a line that wraps) —
+	// asked for after a clipped bake, and up front while the box is an estimate (`layoutPending`: made without a text
+	// measurer), so a pipelined export does not restart for it.
 	const size = 'text' in c.source ? Math.max(0, c.source.text.style.sizePx ?? 0) : 0;
+	const pending = 'text' in c.source && !!c.source.layoutPending;
 	const e =
 		Math.ceil(Math.max(0, bleed)) +
 		2 +
-		(grow ? Math.ceil(0.25 * Math.max(c.intrinsicBox.width, c.intrinsicBox.height) + 2 * size) : 0);
+		(grow || pending ? Math.ceil(0.25 * Math.max(c.intrinsicBox.width, c.intrinsicBox.height) + 2 * size) : 0);
 	const w = Math.ceil(c.intrinsicBox.width) + 2 * e;
 	const h = Math.ceil(c.intrinsicBox.height) + 2 * e;
 	if (!(w > 0 && h > 0) || w > MAX_LAYER_STILL_SIDE || h > MAX_LAYER_STILL_SIDE) return null;
@@ -464,15 +468,7 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 	return fonts.filter((f) => used.has(f));
 }
 
-/**
- * How far glyph ink can leave the line boxes of a style (px): accents and descenders beyond a tight line height,
- * italic overhangs. A generous share of the size (spec 13 SH-004 bake crop; measured boxes hold the line boxes).
- */
-export function textInkPad(s: { sizePx?: number; lineHeight?: number }): number {
-	const size = typeof s.sizePx === 'number' && Number.isFinite(s.sizePx) ? Math.max(0, s.sizePx) : 0;
-	const lh = typeof s.lineHeight === 'number' && Number.isFinite(s.lineHeight) ? s.lineHeight : 1.2;
-	return Math.ceil(size * (0.35 + Math.max(0, 1.25 - lh) / 2)) + 2;
-}
+export { textInkPad };
 
 /**
  * spec 13 SH-004 (textperf: a 130 px caption baked 1080×760): a text layer whose box is measured (not pending,
@@ -508,15 +504,9 @@ export function contentBleed(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): number | null {
 	let px = 0;
-	const src = 'text' in c.source ? c.source : undefined;
-	const st = src?.text.style;
-	if (st && src) {
-		// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
-		// boxes, and the background padding.
-		const styles = [st, ...(src.text.runs ?? []).map((r) => ({ ...st, ...r.style }))];
-		for (const s of styles) px = Math.max(px, textPaintExtent(s) + textInkPad(s));
-		if (st.background) px = Math.max(px, st.background.paddingPx ?? 0);
-	}
+	// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
+	// boxes, and the background padding (shared with the compositions' effect canvas).
+	if ('text' in c.source) px = textContentPad(c.source.text);
 	// A vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
 	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
 	const vshape = 'shape' in c.source ? c.source.shape : undefined;
