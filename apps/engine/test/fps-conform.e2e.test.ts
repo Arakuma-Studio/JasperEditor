@@ -243,12 +243,13 @@ describe.runIf(enabled)('frame-rate conform: every path shows the model frame (R
 			resolveMedia: (asset) => {
 				const key = asset.locators.find((l) => l.type === 'engine-store')?.key;
 				if (!key) throw new Error(`Missing engine-store locator for ${asset.id}`);
+				const vs = asset.probe.streams.find((x) => x.type === 'video');
 				return {
 					url: svc.signer.signUrl(`http://127.0.0.1:${engine.port}`, `/media/${encodeURIComponent(key)}`),
 					proxyUrl: null,
 					kind: asset.kind,
-					width: 640,
-					height: 360,
+					width: vs?.type === 'video' ? vs.width : 640,
+					height: vs?.type === 'video' ? vs.height : 360,
 					durationFlicks: asset.durationFlicks ?? null,
 					hasAudio: false,
 					rotation: 0,
