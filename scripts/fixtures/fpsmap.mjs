@@ -1,4 +1,4 @@
-// Frame-rate conform fixtures (docs/wp-notes/fps-conform.md), loaded by scripts/make-fixtures.mjs:
+// Frame-rate conform fixtures (docs/wp-notes/time.md §15), loaded by scripts/make-fixtures.mjs:
 //   rate-code-<rate>.mp4   640×360, 36 s at 23.976 / 24 / 25 / 29.97 / 30 / 60 fps, H.264 4:2:0, BT.709 tagged.
 //                          Source frame n carries a 12-bit code (bit b = white 40×40 box at x = 20 + 50·b, y = 20, on a
 //                          black strip), so every exported frame tells which source frame it shows. Under the code: 8
@@ -70,7 +70,7 @@ export function fixtures({ h264 }) {
 		name: `rate-code-${id}.mp4`,
 		steps: (file) => [
 			[
-				...['-f', 'lavfi', '-i', `${picture(rate)},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p`],
+				...['-f', 'lavfi', '-i', `${picture(rate)},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv`],
 				...h264,
 				...BT709_TAGS,
 				...['-an', '-movflags', '+faststart', '-f', 'mp4', file],
@@ -85,7 +85,7 @@ export function fixtures({ h264 }) {
 					'-f',
 					'lavfi',
 					'-i',
-					`${picture('30000/1001')},scale=out_color_matrix=bt601:out_range=tv,format=yuv420p`,
+					`${picture('30000/1001')},scale=out_color_matrix=bt601:out_range=tv,format=yuv420p,setparams=colorspace=unknown:color_primaries=unknown:color_trc=unknown`,
 				],
 				...h264,
 				...['-an', '-movflags', '+faststart', '-f', 'mp4', file],
