@@ -5,6 +5,7 @@
 // most 80 words) and only the blocks in view are rendered, measured as they come into view.
 import {
 	type CleanupFinding,
+	cleanupFindingMedia,
 	flicksPerFrame,
 	paragraphs,
 	readSequenceCleanup,
@@ -20,7 +21,6 @@ import {
 	inlineFindings,
 	KIND_COLOR,
 	KIND_LABELS,
-	mediaOfFinding,
 	wordMarks,
 } from './model.ts';
 
@@ -53,7 +53,7 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 		const f = a.findings.find((x) => x.id === st.current);
 		const out = new Set<number>();
 		if (!f?.words) return out;
-		const m = mediaOfFinding(a, f);
+		const m = cleanupFindingMedia(a, f);
 		if (!m) return out;
 		words.forEach((w, i) => {
 			if (w.transcriptId === m.transcriptId && w.index >= f.words![0] && w.index <= f.words![1]) out.add(i);

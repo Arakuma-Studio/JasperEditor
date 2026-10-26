@@ -18,6 +18,8 @@
 import { CleanupAnalysisJobResultSchema, type EngineJob, TERMINAL_JOB_STATES } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
+	cleanupApplyCommands,
+	cleanupFindingFrames,
 	type CleanupAnalysis,
 	type CleanupPreset,
 	type CleanupScope,
@@ -39,14 +41,12 @@ import { mediaKeyOf } from '../../../import/assets.ts';
 import { playTimelineWindow } from '../../../sound/in-context.ts';
 import {
 	analysisInputsChanged,
-	applyCommands,
 	applyLabel,
 	chooseTake as chooseTakeIn,
 	decideItem,
 	decideKind,
 	EMPTY_DECISIONS,
 	findingAccepted,
-	findingFrames,
 	groupFindings,
 	removedPreview,
 	resultPreview,
@@ -548,7 +548,7 @@ export class CleanupController {
 		const seq = this.seq();
 		const f = analysis?.findings.find((x) => x.id === id);
 		if (!f || !seq || !analysis || this.store.getState().preview) return;
-		const at = findingFrames(seq, analysis, f);
+		const at = cleanupFindingFrames(seq, analysis, f);
 		if (at) this.session.transport.seek(at.start);
 	}
 
@@ -618,7 +618,12 @@ export class CleanupController {
 		const st = this.store.getState();
 		const seq = this.seq();
 		if (!seq || !st.analysis) return { ok: false, reason: t('Open a sequence first') };
-		const commands = applyCommands(seq, st.analysis, st.decisions, this.rememberedRejections());
+		const commands = cleanupApplyCommands(
+			seq.id,
+			st.analysis,
+			toCleanupDecisions(st.decisions),
+			this.rememberedRejections(),
+		);
 		if (!commands.length) return { ok: false, reason: t('Nothing to cut or remember') };
 		this.stopPreview();
 		this.set({ phase: 'applying' });
@@ -708,7 +713,7 @@ export class CleanupController {
 		const seq = this.seq();
 		const f = st.analysis?.findings.find((x) => x.id === (id ?? st.current));
 		if (!f || !seq || !st.analysis) return { ok: false, reason: t('Select a finding first') };
-		const at = findingFrames(seq, st.analysis, f);
+		const at = cleanupFindingFrames(seq, st.analysis, f);
 		if (!at) return { ok: false, reason: t('The finding is not on the timeline') };
 		this.stopPreview();
 		const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;

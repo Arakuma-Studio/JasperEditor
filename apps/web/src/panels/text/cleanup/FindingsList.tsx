@@ -2,7 +2,13 @@
 // current finding highlighted and kept in view; virtualised (fixed row heights: only the rows in view are in the DOM,
 // so an hour of speech with thousands of findings scrolls freely). Keyboard: the Text panel's Clean Up commands
 // (↑ ↓ move, Enter accept, Backspace reject, Shift+Enter / Shift+Backspace the whole kind, Space ±1 s preview).
-import { type CleanupFinding, type FindingKind, readSequenceCleanup, type Sequence } from '@jasper/project';
+import {
+	type CleanupFinding,
+	cleanupFindingFrames,
+	type FindingKind,
+	readSequenceCleanup,
+	type Sequence,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../../i18n/runtime.ts';
@@ -10,7 +16,6 @@ import { type CleanupUiState, cleanupFor } from './controller.ts';
 import {
 	clockText,
 	findingAccepted,
-	findingFrames,
 	groupFindings,
 	KIND_COLOR,
 	KIND_LABELS,
@@ -73,7 +78,7 @@ export function FindingsList({
 	if (cur !== undefined && (cur < start || cur >= end)) shown.push(layout.entries[cur]!);
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
 	const timeOf = (f: CleanupFinding) => {
-		const at = findingFrames(seq, a, f);
+		const at = cleanupFindingFrames(seq, a, f);
 		return at ? clockText(at.start / fps) : '';
 	};
 	if (!a.findings.length)

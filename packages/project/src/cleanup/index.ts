@@ -67,6 +67,12 @@ export {
 	SequenceCleanupSchema,
 	sequenceCleanupIssue,
 } from './schema.ts';
+export {
+	cleanupApplyCommands,
+	cleanupFindingFrames,
+	cleanupFindingMedia,
+	cleanupRejectionChanges,
+} from './review.ts';
 export { scriptLines, scriptTokens } from './script.ts';
 export {
 	type AnalyzeSequenceInput,

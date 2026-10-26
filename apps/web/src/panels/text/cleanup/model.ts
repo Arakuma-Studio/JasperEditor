@@ -6,9 +6,10 @@
 // Apply and of the two derived previews ("Play result", "Play removed").
 import {
 	type CleanupAnalysis,
+	cleanupFindingFrames,
+	cleanupFindingMedia,
 	type CleanupDecisions,
 	type CleanupFinding,
-	type CleanupMediaReport,
 	type CleanupScope,
 	type CleanupVoice,
 	type Command,
@@ -149,38 +150,6 @@ export function chooseTake(d: UiDecisions, groupId: string, index: number): UiDe
 	return { ...d, retakes: { ...d.retakes, [groupId]: index } };
 }
 
-/** Fingerprint prefix of a media report (`findingFingerprint`: sanitised media id, `~`, stream, `~`). */
-const mediaPrefix = (m: Pick<CleanupMediaReport, 'mediaId' | 'stream'>) =>
-	`${m.mediaId.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120)}~${m.stream}~`;
-
-/** The media report a finding belongs to (findings are per media; the fingerprint names it). */
-export function mediaOfFinding(analysis: Pick<CleanupAnalysis, 'media'>, f: CleanupFinding) {
-	return analysis.media.find((m) => f.fingerprint.startsWith(mediaPrefix(m))) ?? null;
-}
-
-/** Where a finding plays in the sequence (frames, half-open), through the speech clip whose media covers it. */
-export function findingFrames(
-	seq: Sequence,
-	analysis: Pick<CleanupAnalysis, 'media'>,
-	f: CleanupFinding,
-): { start: number; end: number; clipId: string } | null {
-	const m = mediaOfFinding(analysis, f);
-	if (!m) return null;
-	const F = flicksPerFrame(seq.settings.frameRate);
-	for (const id of m.clipIds) {
-		const c = seq.clips[id];
-		if (c?.kind !== 'audio') continue;
-		const mediaEnd = c.sourceIn + c.duration * F;
-		if (f.range.end <= c.sourceIn || f.range.start >= mediaEnd) continue;
-		const a = Math.max(f.range.start, c.sourceIn);
-		const b = Math.min(f.range.end, mediaEnd);
-		const start = c.start + Math.floor((a - c.sourceIn) / F);
-		const end = Math.max(start + 1, c.start + Math.ceil((b - c.sourceIn) / F));
-		return { start, end, clipId: c.id };
-	}
-	return null;
-}
-
 /** Index of the range containing `frame` in sorted disjoint ranges, or −1. */
 export function rangeIndexAt(ranges: ReadonlyArray<{ start: number; end: number }>, frame: number): number {
 	let lo = 0;
@@ -221,7 +190,7 @@ export function wordMarks(
 	const byWord = new Map<string, CleanupFinding[]>();
 	for (const f of analysis.findings) {
 		if (!f.words) continue;
-		const m = mediaOfFinding(analysis, f);
+		const m = cleanupFindingMedia(analysis, f);
 		if (!m) continue;
 		for (let i = f.words[0]; i <= f.words[1]; i++) {
 			const k = `${m.transcriptId}:${i}`;
@@ -233,7 +202,7 @@ export function wordMarks(
 	const inTake = new Set<string>();
 	for (const g of analysis.groups) {
 		const f = analysis.findings.find((x) => x.group === g.id);
-		const m = f ? mediaOfFinding(analysis, f) : null;
+		const m = f ? cleanupFindingMedia(analysis, f) : null;
 		if (!m) continue;
 		g.takes.forEach((take, ti) => {
 			if (ti === g.chosen) return;
@@ -272,7 +241,7 @@ export function inlineFindings(
 	const starts = words.map((w) => w.start);
 	for (const f of analysis.findings) {
 		if (f.words) continue;
-		const at = findingFrames(seq, analysis, f);
+		const at = cleanupFindingFrames(seq, analysis, f);
 		if (!at) continue;
 		const fl = at.start * F;
 		let lo = 0;
@@ -396,57 +365,9 @@ export function stepFinding(order: readonly string[], current: string | null, di
 // ---------------------------------------------------------------------------------------------------------------
 // Apply and previews
 
-/** Rejections to remember (explicit rejections of findings that would go) and to forget (remembered, now accepted). */
-export function rejectionChanges(
-	analysis: Pick<CleanupAnalysis, 'findings'>,
-	d: UiDecisions,
-	remembered: ReadonlySet<string>,
-): { reject: string[]; unreject: string[] } {
-	const reject = new Set<string>();
-	const unreject = new Set<string>();
-	for (const f of analysis.findings) {
-		const itemReject = d.reject.includes(f.id);
-		const itemAccept = d.accept.includes(f.id);
-		const explicitReject = itemReject || (!itemAccept && d.rejectKinds.includes(f.kind));
-		if (explicitReject && !remembered.has(f.fingerprint)) reject.add(f.fingerprint);
-		if (remembered.has(f.fingerprint) && findingAccepted(f, d, remembered)) unreject.add(f.fingerprint);
-	}
-	return { reject: [...reject], unreject: [...unreject] };
-}
-
 /** The History label of an Apply ("Clean Up Voice: 214 cuts"). */
 export function applyLabel(cuts: number): string {
 	return cuts === 1 ? t('Clean Up Voice: 1 cut') : t('Clean Up Voice: {0} cuts', cuts);
-}
-
-/** The commands of Apply: the cuts (one `cleanup.apply`) and the remembered rejections, as one transaction. */
-export function applyCommands(
-	seq: Sequence,
-	analysis: CleanupAnalysis,
-	d: UiDecisions,
-	remembered: ReadonlySet<string>,
-): Command[] {
-	const plan = analysis.plan;
-	const { reject, unreject } = rejectionChanges(analysis, d, remembered);
-	const out: Command[] = [];
-	if (reject.length || unreject.length)
-		out.push({
-			type: 'cleanup.configure',
-			sequenceId: seq.id,
-			...(reject.length ? { reject } : {}),
-			...(unreject.length ? { unreject } : {}),
-		} as Command);
-	if (plan.ranges.length)
-		out.push({
-			type: 'cleanup.apply',
-			sequenceId: seq.id,
-			clipIds: plan.clipIds,
-			ranges: plan.ranges.map((r) => ({ start: r.start, end: r.end })),
-			mode: 'extract',
-			fadeMs: plan.fadeMs,
-			jlFrames: plan.jlFrames,
-		} as Command);
-	return out;
 }
 
 /** The derived timeline of "Play result": the plan applied exactly as Apply would cut it. */

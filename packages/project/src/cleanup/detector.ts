@@ -411,12 +411,32 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	ruleOffScript(ctx, phs);
 	ruleMarkerPhrases(ctx, phs, markers);
 	ruleStutters(ctx);
-	// head / tail: before the first / after the last unit that says a script line
+	// head / tail: before the first / after the last unit on script — one that says a script line, or (outside the
+	// lines said) one whose words come from the script by the off-script test: opening and closing lines are often
+	// paraphrased, and cutting them as chatter was the largest error on the user's material (TC-071 calibration).
 	if (index && settings.rules.headTail !== 'off') {
 		const said = units.map((_, u) => unitLine[u] !== null);
-		const first = said.indexOf(true);
-		const lastU = said.lastIndexOf(true);
+		let first = said.indexOf(true);
+		let lastU = said.lastIndexOf(true);
+		const vocab = new Set(sTokens);
+		const onScript = (u: number) => {
+			const c = unitContent[u]!;
+			return (
+				c.length >= T.offScriptMinTokens &&
+				c.filter((x) => vocab.has(x)).length / c.length >= T.offScriptSimilarity
+			);
+		};
 		if (first >= 0) {
+			for (let u = 0; u < first; u++)
+				if (onScript(u)) {
+					first = u;
+					break;
+				}
+			for (let u = units.length - 1; u > lastU; u--)
+				if (onScript(u)) {
+					lastU = u;
+					break;
+				}
 			for (let k = 0; k < units[first]![0]!; k++) claimWord(ctx, k, 'head-tail', settings.rules.headTail);
 			const end = units[lastU]![units[lastU]!.length - 1]!;
 			for (let k = end + 1; k < aw.length; k++) claimWord(ctx, k, 'head-tail', settings.rules.headTail);
