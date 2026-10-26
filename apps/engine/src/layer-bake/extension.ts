@@ -40,6 +40,9 @@ type Prepared = LayerBakePrepared & { [SPANS]?: Map<string, LayerOverride> };
 const RENDER_FIXED_COST_FRAMES = 30;
 /** spec 13 AS-071: stills per sheet render at most (bounds a sheet's frame size spread and a failed sheet's retry). */
 const SHEET_MAX = 64;
+/** Remotion pages all sheets of an export use together, and sheets rendered side by side (Chrome memory bound). */
+const SHEET_PAGES = 4;
+const SHEET_IN_FLIGHT = 2;
 /** Progress weight of one sheet frame (a still costs ≈ 0.1 s in a sheet against ≈ 3.4 s alone, textperf). */
 const SHEET_FRAME_COST = 1;
 
@@ -225,16 +228,21 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					budget,
 				);
 				const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
-				// Sheets side by side split the pages by their still counts (their fixed costs overlap).
-				const sheetShares = pageShares(
-					sheets.map((sh) => sh.length),
-					budget,
+				// Sheets run first, at most SHEET_IN_FLIGHT side by side on at most SHEET_PAGES pages (their fixed costs
+				// overlap; Chrome's memory stays bounded however many stills: spec 13 AS-076's 6 GB), then the rest.
+				const sheetBudget = Math.min(budget, SHEET_PAGES);
+				const perSheet = Math.max(
+					1,
+					Math.floor(sheetBudget / Math.min(SHEET_IN_FLIGHT, Math.max(1, sheets.length))),
 				);
+				const progress = (p: { done: number; total: number; fraction: number }) =>
+					ctx.stage(
+						`Baking graphics ${p.done}/${p.total}${p.done < p.total ? ` · ${Math.floor(p.fraction * 100)} %` : ''}`,
+					);
 				await runPagePool(
-					[
-						...sheets.map((sheet, i) => ({
+					sheets.map((sheet) => ({
 							// A sheet spreads its frames over every page it is granted.
-							want: maxInFlight === 1 ? budget : sheetShares[i]!,
+							want: maxInFlight === 1 ? sheetBudget : perSheet,
 							weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
 							run: async (g: PageGrant) => {
 								const bakes = await svc.ensureSheet(
@@ -253,6 +261,15 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 								}
 							},
 						})),
+					{
+						budget: sheetBudget,
+						maxInFlight: Math.min(maxInFlight, SHEET_IN_FLIGHT),
+						signal: ctx.signal,
+						onProgress: progress,
+					},
+				);
+				await runPagePool(
+					[
 						...singles.map((group) => {
 							const { plan, grade } = group[0]!;
 							return {
@@ -267,15 +284,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 							};
 						}),
 					],
-					{
-						budget,
-						maxInFlight,
-						signal: ctx.signal,
-						onProgress: (p) =>
-							ctx.stage(
-								`Baking graphics ${p.done}/${p.total}${p.done < p.total ? ` · ${Math.floor(p.fraction * 100)} %` : ''}`,
-							),
-					},
+					{ budget, maxInFlight, signal: ctx.signal, onProgress: progress },
 				);
 			};
 			try {
