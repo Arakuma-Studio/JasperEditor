@@ -961,6 +961,23 @@ graphics)** and lists one graphics group per baked layer.
   for its span; animated layers bake a ProRes 4444 master of their drawn span (transition handles included). Small
   layers are rendered only in their region of the frame (union of their per-frame bounds plus a margin; a layer
   that draws past it is re-rendered full frame).
+- Text whose glyphs stay still but whose picture moves — keyframed Motion / Opacity, the **Transform** effect
+  (Shutter Angle motion blur included) and **S_Shake** without motion blur, RGB split or wrap (the subtitle
+  templates' pop-in and shake) — bakes **one PNG of its layer box** and the native kernel draws it frame by frame
+  through Motion, the Transform and the shake (spec 13 AS-070/073). Every still of an export (static layers and these)
+  is rendered in **sheets**: up to 128 stills per Remotion render, identical words sharing one; a native export
+  starts its composite while they render. Shaken text with S_Shake's motion blur, RGB split or wrap stays an animated
+  master, one per run of such clips on a track.
+- The constant pictures of a track (those stills, still images with sub-pixel Motion) are drawn into **one input of
+  the composite per track**, so memory and speed follow what is on screen, not the clip count (thousands of subtitles
+  export on a laptop). `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer instead, and
+  `JASPER_EXPORT_COVER_BASE=0` blends a full-frame opaque video over the background instead of using it as the base
+  (diagnostics).
+- Before an export starts, the planner estimates the composite's memory; one that would not fit (60 % of the RAM or
+  of the engine's cgroup limit, or `JASPER_EXPORT_MEMORY_BUDGET_MB`) is refused on the native path with the estimate
+  and goes through the Remotion path (a forced **Native** export is not eligible). A compositor killed by the system
+  fails the export with `OUT_OF_MEMORY`; on Linux, tool processes are the OOM killer's preferred victims, not the
+  engine.
 - Bakes run as child jobs of the export ("Baking graphics 1/3 · 40 %"), several at a time: they share the export's
   Remotion page budget (its Remotion concurrency, at most half the cores; a still takes one page, a long animated
   title more) and one render browser; two exports needing the same bake render it once.
@@ -976,7 +993,9 @@ graphics)** and lists one graphics group per baked layer.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
-  test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte);
+  test/layer-bake-parallel.e2e.test.ts test/subtitle-parity.e2e.test.ts` (the second compares parallel and sequential
+  bakes byte for byte, the third the subtitle templates with the composition's own frames); subtitle-scale timing and
+  memory: `node scripts/perf/subtitles.mjs --case short|long9m --variant pixelpop --warm`;
   preview request timing and stale-result handling: `apps/web/test/layer-bake-runtime.test.ts`.
 
 ## Media cache

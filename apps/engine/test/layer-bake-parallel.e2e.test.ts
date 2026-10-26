@@ -254,11 +254,14 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 		// Warm-up (bundle, GL probe, fonts), then the sequential path on a cold cache: the reference.
 		await exportWith(layeredDoc(' warm-up'), PARALLEL);
 		clearCache();
+		// spec 13 AS-070/071: the three static titles, the shape and the moving title (a layer still) are one sheet;
+		// the two text animations and the anime template are masters.
 		const seq = await exportWith(d, SEQUENTIAL);
-		expect(seq.bakes).toHaveLength(8);
+		expect(seq.bakes).toHaveLength(4);
 		clearCache();
 		const par = await exportWith(d, PARALLEL);
-		expect(par.bakes).toHaveLength(8);
+		expect(par.bakes).toHaveLength(4);
+		expect(par.bakes.filter((k) => /– 5 stills$/.test(k.title))).toHaveLength(1);
 		const spans = par.bakes.map((k) => [t(k.startedAt), t(k.finishedAt)] as const);
 		const overlap = Math.max(...spans.map(([s]) => spans.filter(([a, b]) => a <= s && s < b).length));
 		expect(overlap).toBeGreaterThanOrEqual(2);

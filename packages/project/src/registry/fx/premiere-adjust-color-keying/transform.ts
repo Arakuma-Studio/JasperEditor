@@ -182,10 +182,14 @@ export const TRANSFORM = defineShaderEffect({
 			{
 				include: [GLSL_MB_POSES],
 				frag: /* glsl */ `
+// The layer's whole picture moves (its input canvas: the box and what draws beyond it — a text layer's stroke and
+// shadow, an effect above's glow), transparent outside it.
+vec4 tf_sample(vec2 s) {
+  vec2 uv = fx_uvOfLayerPx(s);
+  return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))) ? texture(u_source, uv) : vec4(0.0);
+}
 vec4 tf_at(vec4 A, vec2 T, vec2 q) {
-  vec2 s = vec2(A.x * q.x + A.z * q.y, A.y * q.x + A.w * q.y) + T;
-  vec2 n = s / (u_box.zw / u_pxScale);
-  return all(greaterThanEqual(n, vec2(0.0))) && all(lessThanEqual(n, vec2(1.0))) ? texture(u_source, fx_uvOfLayerNorm(n)) : vec4(0.0);
+  return tf_sample(vec2(A.x * q.x + A.z * q.y, A.y * q.x + A.w * q.y) + T);
 }
 void main() {
   if (fx_mbOn()) {
@@ -209,9 +213,7 @@ void main() {
   if (!u_tfValid) { fragColor = vec4(0.0); return; }
   vec2 q = fx_layerPx();
   vec2 s = vec2(u_tfA.x * q.x + u_tfA.z * q.y, u_tfA.y * q.x + u_tfA.w * q.y) + u_tfT;
-  vec2 n = s / (u_box.zw / u_pxScale);
-  vec4 c = all(greaterThanEqual(n, vec2(0.0))) && all(lessThanEqual(n, vec2(1.0))) ? texture(u_source, fx_uvOfLayerNorm(n)) : vec4(0.0);
-  fragColor = c * clamp(u_opacity / 100.0, 0.0, 1.0);
+  fragColor = tf_sample(s) * clamp(u_opacity / 100.0, 0.0, 1.0);
 }`,
 			},
 		],

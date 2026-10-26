@@ -110,7 +110,9 @@ import {
 	resultSoundWarnings,
 } from './sound-credits.ts';
 import { convertStill, stillCurveFor } from './still-formats.ts';
+import type { StreamLayerPlan } from './stream/plan.ts';
 import { streamLayer } from './stream/run.ts';
+import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
 
@@ -1105,11 +1107,34 @@ export class ExportService {
 		output: string,
 		ctx: JobContext,
 		still = false,
-		audio: MixdownResult | null = null,
+		audioIn: MixdownResult | null | Promise<MixdownResult | null> = null,
+		pipeline = true,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
 		let nested: Map<string, PreparedExtensions>;
+		// spec 13 AS-076: work the extensions continue during the composite (pipelined still bakes).
+		const background: Promise<void>[] = [];
+		const settle = () => Promise.allSettled(background);
+		// Stopped with the job, and when the export fails otherwise (nothing waits for the stills then).
+		const bgAbort = new AbortController();
+		const onAbortBg = () => bgAbort.abort();
+		ctx.signal.addEventListener('abort', onAbortBg, { once: true });
+		let bgError: unknown = null;
+		const abandon = async () => {
+			bgAbort.abort();
+			await settle();
+		};
+		/** `e`, or the background failure that caused it (a preparation error). */
+		const failure = (e: unknown) => (bgError !== null ? new NativePrepareError(bgError) : e);
+		/** A pipelined still came out different: everything again without the pipeline (its bakes are cached). */
+		const restart = async (why: string): Promise<number> => {
+			ctx.log(`native: ${why}; preparing again without pipelined stills`);
+			await settle();
+			ctx.signal.removeEventListener('abort', onAbortBg);
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			return this.runNative(planned, masters, output, ctx, still, audioIn, false);
+		};
 		try {
 			const pctx = {
 				signal: ctx.signal,
@@ -1121,14 +1146,31 @@ export class ExportService {
 				purpose: 'native' as const,
 				concurrency: remotionConcurrency(ctx.slots),
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
+				pipeline: pipeline && !still,
+				backgroundSignal: bgAbort.signal,
+				background: (work: Promise<void>) => {
+					// A failure of the work itself (not our abort): the export fails as a preparation does (LBK-023
+					// fallback to the Remotion path for `auto`).
+					work.catch((e) => {
+						if (!bgAbort.signal.aborted) bgError ??= e;
+					});
+					background.push(work);
+				},
 			};
 			prepared = await prepareExtensions(exts, planned, pctx);
-			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations.
-			nested = await prepareNestedExtensions(exts, planned, pctx);
+			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations
+			// (without pipelined stills: nested stacks have no kernel stream members of their own to wait).
+			nested = await prepareNestedExtensions(exts, planned, { ...pctx, pipeline: false });
 		} catch (e) {
+			await abandon();
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		}
+		// The mixdown (started before the preparation) is an input of the composite.
+		const audio = await Promise.resolve(audioIn).catch(async (e) => {
+			await abandon();
+			throw e;
+		});
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
 		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
 			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
@@ -1146,31 +1188,53 @@ export class ExportService {
 			: planned.output.color
 				? await outputLutFilter(planned.output.color, await ctx.scratchDir())
 				: null;
-		const graph = buildNativeGraph({
-			colorLut,
-			snapshot: planned.snapshot,
-			output: planned.output,
-			outputFile: output,
-			sources: {
-				media: (id) => planned.media[id] ?? null,
-				mgMaster: (id) => masters.get(id) ?? null,
-			},
-			threads: ctx.slots,
-			still,
-			extensions: { list: exts, prepared },
-			...(audio?.path
-				? {
-						audio: {
-							file: audio.path,
-							sampleRate: audio.sampleRate,
-							soxr: await hasSoxr(this.deps.ff),
-							// the delivery's checked encode: muxed by stream copy
-							...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
-						},
-					}
-				: {}),
-			nested,
-		});
+		ctx.progress(0, { stage: 'Planning layers' });
+		let graph: ReturnType<typeof buildNativeGraph>;
+		try {
+			graph = buildNativeGraph({
+				colorLut,
+				snapshot: planned.snapshot,
+				output: planned.output,
+				outputFile: output,
+				sources: {
+					media: (id) => planned.media[id] ?? null,
+					mgMaster: (id) => masters.get(id) ?? null,
+				},
+				threads: ctx.slots,
+				still,
+				trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
+				coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
+				extensions: { list: exts, prepared },
+				...(audio?.path
+					? {
+							audio: {
+								file: audio.path,
+								sampleRate: audio.sampleRate,
+								soxr: await hasSoxr(this.deps.ff),
+								// the delivery's checked encode: muxed by stream copy
+								...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
+							},
+						}
+					: {}),
+				nested,
+			});
+		} catch (e) {
+			await abandon();
+			throw e;
+		}
+		// Pipelined stills the composite opens as inputs are written first.
+		if (graph.waitFor) {
+			ctx.progress(0, {
+				stage: `Waiting for ${graph.waitFor.length} baked graphic${graph.waitFor.length === 1 ? '' : 's'}`,
+			});
+			const ready = await Promise.all(graph.waitFor).catch(async (e) => {
+				await abandon();
+				// Only a failed background bake rejects these.
+				throw new NativePrepareError(bgError ?? e);
+			});
+			const changed = ready.find((r) => !r.ok);
+			if (changed && !changed.ok) return restart(changed.reason);
+		}
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {
 			const script = join(await ctx.scratchDir(), 'graph.txt');
@@ -1207,12 +1271,12 @@ export class ExportService {
 		const runStreams = (child: ChildProcess, streams = graph.streams) => {
 			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
+				const run = { workers, signal: streamAbort.signal, onSpawn: ctx.trackChild };
 				producers.push(
-					streamLayer(this.deps.ff, s.plan, sink, {
-						workers,
-						signal: streamAbort.signal,
-						onSpawn: ctx.trackChild,
-					}).catch((e: Error) => {
+					('kind' in s.plan && s.plan.kind === 'taps'
+						? streamTaps(this.deps.ff, s.plan, sink, run)
+						: streamLayer(this.deps.ff, s.plan as StreamLayerPlan, sink, run)
+					).catch((e: Error) => {
 						if (streamAbort.signal.aborted) return;
 						streamError ??= e;
 						void terminateTree(child, 500);
@@ -1266,13 +1330,24 @@ export class ExportService {
 		} catch (e) {
 			streamAbort.abort();
 			await Promise.all(producers);
-			throw streamError ?? e;
+			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
+			const se = streamError as Error | null;
+			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
+			await abandon();
+			if (bgError !== null && !ctx.signal.aborted) throw failure(e);
+			const consequence = !se || /^layer stream:/.test(se.message);
+			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted) : se;
 		} finally {
 			ctx.signal.removeEventListener('abort', onJobAbort);
 		}
 		// The composite succeeded (and the frame count is checked below): a stream it stopped reading ends here.
 		streamAbort.abort();
 		await Promise.all(producers);
+		// Pipelined work ends with the composite (its errors fail the export).
+		await Promise.all(background).catch((e) => {
+			throw failure(e);
+		});
+		ctx.signal.removeEventListener('abort', onAbortBg);
 		if (still) return 1;
 		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 		if (count !== graph.outputFrames) {
@@ -1804,7 +1879,8 @@ export class ExportService {
 		const alongside = path === 'native' && this.deliveryEncodes(planned);
 		const audioP = planned.output.videoOnly ? Promise.resolve(null) : this.renderAudio(planned, ctx);
 		audioP.catch(() => {});
-		let audio = alongside ? null : await audioP;
+		// The mixdown runs while the native path prepares (bakes) its layers; the composite waits for it.
+		let audio: MixdownResult | null = null;
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -1820,8 +1896,8 @@ export class ExportService {
 					frames = await this.runNativeAlongside(planned, masters, output, ctx, audioP);
 					audio = await audioP;
 				} else {
-					audio ??= await audioP;
-					frames = await this.runNative(planned, masters, output, ctx, false, audio);
+					frames = await this.runNative(planned, masters, output, ctx, false, audioP);
+					audio = await audioP;
 				}
 			} catch (e) {
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
@@ -2204,6 +2280,20 @@ export class ExportService {
  * this export's audio stream (same codec, bit rate, rate, channels): every mux copies it instead of encoding the WAV
  * again — the delivered bits are the checked bits, and the export saves one audio encode.
  */
+/**
+ * spec 13 AS-074: a composite killed by the system (SIGKILL that the job did not send: the OOM killer, a memory
+ * limit) becomes an `OUT_OF_MEMORY` job error naming the cause, never a crash; other errors pass unchanged.
+ */
+export function killedComposite(e: unknown, inputs: number, cancelled: boolean): unknown {
+	if (cancelled || !(e instanceof Error) || !/exited SIGKILL/.test(e.message)) return e;
+	return new JobError(
+		'OUT_OF_MEMORY',
+		`The export's compositor (ffmpeg, ${inputs} inputs) was killed by the system, most likely because the machine ran out of memory; close other applications or export a shorter range`,
+		false,
+		{ inputs },
+	);
+}
+
 function deliveredEncode(p: PlannedExport, audio: MixdownResult | null): string | null {
 	const n = audio?.normalized;
 	const file = n?.delivery.encoded;

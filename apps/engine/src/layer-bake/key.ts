@@ -102,6 +102,8 @@ export type KeyMaterial = {
 	clip: (
 		| ReturnType<typeof normalisedClip>
 		| { span: { transition: RenderTransition; sides: Omit<RenderVisualClip, 'name'>[] } }
+		/** spec 13 AS-073: a run of layers of one track baked as one master (`planRun`). */
+		| { run: Omit<RenderVisualClip, 'name' | 'trackId'>[] }
 	) &
 		Partial<
 			Pick<RenderVisualClip, 'duration' | 'headHandle' | 'tailHandle' | 'fades' | 'sourceIn' | 'speed'>
@@ -120,6 +122,8 @@ export type KeyMaterial = {
 	gl: string;
 	still: boolean;
 	rect: Rect | null;
+	/** spec 13 AS-070: the layer region of a `layer-still` (layer px). */
+	picture?: Rect;
 	/**
 	 * Anime templates (S11:ATP-001): the implementation's `renderVersion` from the template registry — a template
 	 * whose drawing changes without a params change bumps it. Absent for other layers.

@@ -902,6 +902,66 @@ export class RemotionService {
 		return { frames };
 	}
 
+	/**
+	 * spec 13 AS-071: every frame of `inputProps` as a straight-alpha PNG in `outputDir` (`<frame>.png`, transparent
+	 * page like `renderStill` of a layer bake) in one render — many stills of an export (one per frame of a sheet
+	 * document) for the fixed cost of one. Returns the frame count.
+	 */
+	async renderStillSheet(input: {
+		inputProps: Record<string, unknown>;
+		outputDir: string;
+		signal: AbortSignal;
+		concurrency?: number;
+		browser?: SharedRenderBrowser;
+		log?: (line: string) => void;
+		onProgress?: (p: { renderedFrames: number; totalFrames: number }) => void;
+	}): Promise<{ frames: number; selectMs: number; renderMs: number }> {
+		const t0 = performance.now();
+		const { r, serveUrl, composition, browser } = await this.composition(
+			input.inputProps,
+			input.signal,
+			input.browser,
+		);
+		const { cancelSignal, cancel } = r.makeCancelSignal();
+		const onAbort = () => cancel();
+		input.signal.addEventListener('abort', onAbort, { once: true });
+		const total = composition.durationInFrames;
+		const selectMs = Math.round(performance.now() - t0);
+		const concurrency = Math.max(1, Math.min(input.concurrency ?? renderParallelism(), total));
+		let instance: RenderBrowser | null = null;
+		try {
+			if (!input.browser) instance = await this.renderBrowser(r, browser, concurrency);
+			const puppeteer = input.browser?.instance ?? instance;
+			await this.recordUsage('still', 'layer-bake');
+			await withSinglePageRetry(concurrency, input.signal, input.log, async (pages) => {
+				await r.renderFrames({
+					serveUrl,
+					composition,
+					inputProps: input.inputProps,
+					outputDir: input.outputDir,
+					imageFormat: 'png',
+					imageSequencePattern: '[frame].[ext]',
+					onStart: () => undefined,
+					onFrameUpdate: (rendered) => input.onProgress?.({ renderedFrames: rendered, totalFrames: total }),
+					concurrency: pages,
+					cancelSignal,
+					timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+					logLevel: 'error',
+					...this.binariesOption(),
+					...browserLogOption(),
+					...browser,
+					...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
+				});
+			});
+			return { frames: total, selectMs, renderMs: Math.round(performance.now() - t0) - selectMs };
+		} catch (e) {
+			throw mapRenderError(e, input.signal);
+		} finally {
+			input.signal.removeEventListener('abort', onAbort);
+			await instance?.close({ silent: true }).catch(() => undefined);
+		}
+	}
+
 	/** `renderStill` to PNG (S04:EX-030, ARCHITECTURE §9.2 stills). `frame` is composition-relative. */
 	async renderStill(input: {
 		inputProps: Record<string, unknown>;
