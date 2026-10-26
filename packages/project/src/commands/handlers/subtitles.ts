@@ -1426,7 +1426,8 @@ function applyTemplate(doc: DDoc, cmd: CommandOf<'subtitleTemplate.apply'>, h: H
 	for (const id of ids) {
 		const c = seq.clips[id] as DText;
 		if (parts.style) c.content.style = clone(linked) as never;
-		if (parts.layout) setLayout(doc, c, templateLayout(template, seq, latest(c.content) as TextContent), seq, h);
+		if (parts.layout)
+			setLayout(doc, c, templateLayout(template, seq, latest(c.content) as TextContent), seq, h);
 		else layoutText(doc, c, h, seq.settings.width);
 		if (parts.animation) removeTemplateEffects(c);
 	}

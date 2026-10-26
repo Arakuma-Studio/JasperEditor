@@ -1,8 +1,8 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 
 import { z } from 'zod';
-import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { AudioEdgeFades } from '../audio-fade.ts';
+import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { SequenceCleanup } from '../cleanup/schema.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
