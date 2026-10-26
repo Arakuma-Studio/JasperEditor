@@ -745,10 +745,17 @@ Spec 15 §2.1 / EA-031 shared mechanics (wp-note [edit-automation.md](wp-notes/e
 features"): built — feature table and agent policies for `edit-automation`, `subtitles`, `transcript-cleanup` (Project
 Settings ▸ Agent Proposals, default on), per-feature Review vocabulary, ghosts of adjustment / text clips, keyframe
 ranges and transitions, `meta.anchorOn` (decorated clips, cut frames), Refresh proposal, `E_TOO_LARGE`, the batch
-commands, `list_proposal_features` / `refresh_proposal`. Not yet: the producers themselves (Decorate Cuts, punch-ins,
-Ken Burns, reactions, slides, music beds, stingers, style recipes, automatic subtitles, transcript cleanup — later work
-packages of specs 13–15); until a producer registers a refresher, **Refresh proposal** is disabled with the reason
-"Its producer cannot re-plan items" (sound design has no refresher either: run the pass again). A keyframe-only change
+commands, `list_proposal_features` / `refresh_proposal`. Producers built (spec 15 EA-020…EA-022, wp-note "Decorate
+Cuts, punch-ins, Ken Burns"): **Decorate Cuts**, **Punch-ins** and **Ken Burns** — pure planners, the `edit-automation`
+job and dry run, Sequence ▸ Automate dialogs, MCP `decorate_cuts` / `add_punch_ins` / `add_ken_burns`, Refresh proposal
+and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: cut kits export through the
+Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note); the punch-in
+accuracy on the user's projects is F1 0.62 at the default density 0.7 (0.71 at 1.0) against the spec's ≥ 0.75 target,
+which the stripped edit cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed
+whooshes have hard edges. Not yet: reactions, slides, music beds, stingers, style recipes, `apply_style`, Style Check,
+automatic subtitles, transcript cleanup (later work packages of specs 13–15); Refresh proposal stays disabled with the
+reason "Its producer cannot re-plan items" for features without a refresher (sound design: run the pass again). A
+keyframe-only change
 of a clip is drawn as the changed clip (wash + ghost) plus its key band, not as the band alone.
 
 ### Not covered by any workstream yet
