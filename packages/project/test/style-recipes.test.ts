@@ -470,6 +470,11 @@ describe('Apply Style (EA-012)', () => {
 					const plan = await planStyle(t.h.doc, { recipe: r0, seed, passes: { reactions: true } }, { cleanup: cleanupHook(t, cuts) }, OPTS);
 					const draft = styleDraft(plan);
 					if (!draft) return;
+					// a punch-in never lands on a Ken Burns clip (and the reverse)
+					const clipsOf = (kind: string) =>
+						new Set(plan.items.filter((it) => (it.meta as { kind?: string }).kind === kind).map((it) => (it.meta as { clipId: string }).clipId));
+					const punched = clipsOf('punch-in');
+					for (const c of clipsOf('ken-burns')) expect(punched.has(c)).toBe(false);
 					const p = propose(t.h, draft);
 					expect(p.items.filter((it) => it.state === 'invalid').map((it) => it.reason)).toEqual([]);
 					accept(t.h, p);
