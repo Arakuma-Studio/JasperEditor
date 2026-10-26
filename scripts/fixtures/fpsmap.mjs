@@ -5,7 +5,9 @@
 //                          flat colour patches (rows y 90–210) and an 8-step grey wedge including 0 and 255 (y 220–340)
 //                          to tell matrix (BT.601 vs 709), range (limited vs full) and transfer differences apart.
 //   rate-code-2997-sd601.mp4  the 29.97 fps picture encoded with the BT.601 matrix and no colour tags (what untagged
-//                          SD sources, e.g. the lavfi-made talking clip of e2e/apply-style.spec.ts, look like).
+//                          SD sources, e.g. the lavfi-made talking clip of e2e/apply-style.spec.ts, look like);
+//   rate-code-2997-sd601-tagged.mp4  the same, tagged SMPTE 170M (BT.601);
+//   rate-code-2997-hd-untagged.mp4  1280×720 (every source pixel doubled), BT.709 matrix, no colour tags.
 export const FPSMAP_SIZE = { width: 640, height: 360 };
 export const FPSMAP_BITS = 12;
 export const FPSMAP_SECONDS = 36;
@@ -86,6 +88,37 @@ export function fixtures({ h264 }) {
 					'lavfi',
 					'-i',
 					`${picture('30000/1001')},scale=out_color_matrix=bt601:out_range=tv,format=yuv420p,setparams=colorspace=unknown:color_primaries=unknown:color_trc=unknown`,
+				],
+				...h264,
+				...['-an', '-movflags', '+faststart', '-f', 'mp4', file],
+			],
+		],
+	});
+	out.push({
+		name: 'rate-code-2997-sd601-tagged.mp4',
+		steps: (file) => [
+			[
+				...[
+					'-f',
+					'lavfi',
+					'-i',
+					`${picture('30000/1001')},scale=out_color_matrix=bt601:out_range=tv,format=yuv420p,setparams=colorspace=smpte170m:color_primaries=smpte170m:color_trc=smpte170m:range=tv`,
+				],
+				...h264,
+				...['-colorspace', 'smpte170m', '-color_primaries', 'smpte170m', '-color_trc', 'smpte170m'],
+				...['-color_range', 'tv', '-an', '-movflags', '+faststart', '-f', 'mp4', file],
+			],
+		],
+	});
+	out.push({
+		name: 'rate-code-2997-hd-untagged.mp4',
+		steps: (file) => [
+			[
+				...[
+					'-f',
+					'lavfi',
+					'-i',
+					`${picture('30000/1001')},scale=1280:720:flags=neighbor,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=colorspace=unknown:color_primaries=unknown:color_trc=unknown`,
 				],
 				...h264,
 				...['-an', '-movflags', '+faststart', '-f', 'mp4', file],

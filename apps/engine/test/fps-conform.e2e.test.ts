@@ -58,6 +58,13 @@ const CASES: Case[] = [
 	{ name: '30 → 30', file: 'rate-code-30.mp4', media: r(30), seq: r(30), inFrame: 11, at: 3, frames: 60 },
 ];
 const PATHS = ['native', 'hybrid', 'remotion'] as const;
+/** BT.709 tagged, BT.601 untagged SD, BT.601 tagged SD, BT.709 untagged HD (placed at 50 %). */
+const COLOUR_FILES = [
+	'rate-code-2997.mp4',
+	'rate-code-2997-sd601.mp4',
+	'rate-code-2997-sd601-tagged.mp4',
+	'rate-code-2997-hd-untagged.mp4',
+];
 type Path = (typeof PATHS)[number];
 
 const F = 705_600_000;
@@ -144,7 +151,7 @@ describe.runIf(enabled)('frame-rate conform: every path shows the model frame (R
 					: {}),
 			},
 		});
-		for (const f of new Set([...CASES.map((c) => c.file), 'rate-code-2997-sd601.mp4']))
+		for (const f of new Set([...CASES.map((c) => c.file), ...COLOUR_FILES]))
 			media.set(f, await helpers.register(engine.app, helpers.fixture(f), host()));
 		browser = await services.coreServices(engine.app).remotion.openSharedBrowser();
 		mkdirSync(out(), { recursive: true });
@@ -166,13 +173,18 @@ describe.runIf(enabled)('frame-rate conform: every path shows the model frame (R
 				type: 'clip.place',
 				source: { mediaId: m },
 				at: c.at,
-				sourceRange: { in: { sourceFrames: c.inFrame }, out: { sourceFrames: c.inFrame + c.frames * 3 } },
+				sourceRange: {
+					in: { sourceFrames: c.inFrame },
+					out: { sourceFrames: c.inFrame + Math.ceil((c.frames * c.media.num * c.seq.den) / (c.media.den * c.seq.num)) + 2 },
+				},
 				matchSequence: 'keep',
 				audio: false,
 			},
 		]);
 		const clipId = (placed.results[0] as { clipIds: string[] }).clipIds[0]!;
 		const clip = d.doc.sequences[d.seqId]!.clips[clipId]!;
+		if (c.file.includes('-hd-'))
+			d.tx([{ type: 'param.set', target: ['clip', clipId, 'transform', 'scale'], value: 50 }]);
 		d.tx([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: c.frames - clip.duration }]);
 		// hybrid: a browser-only effect that leaves the picture as it is (the mirror line is the right edge) bakes the
 		// whole layer through the compositions (S11 layer bake).
@@ -273,7 +285,10 @@ describe.runIf(enabled)('frame-rate conform: every path shows the model frame (R
 				);
 				const exp = await exportFile(d, c.seq, p === 'remotion' ? 'remotion' : 'native');
 				expect(exp.path).toBe(p);
-				results[p] = readCodes(exp.file).slice(0, expected.length);
+				// frames before the clip are the sequence background (not compared)
+				results[p] = readCodes(exp.file)
+					.slice(0, expected.length)
+					.map((code, f) => (f < c.at ? -1 : code));
 			}
 			// Program preview renderer: Remotion stills at the frames where the paths disagree, and a few others.
 			const disagree = expected
@@ -305,7 +320,7 @@ describe.runIf(enabled)('frame-rate conform: every path shows the model frame (R
 			for (const p of PATHS) expect(results[p], `${p} frame codes`).toEqual(expected);
 		});
 
-	for (const file of ['rate-code-2997.mp4', 'rate-code-2997-sd601.mp4'])
+	for (const file of COLOUR_FILES)
 		it(`colour of ${file}: every path matches the source values and the preview`, async () => {
 			const c: Case = { name: file, file, media: r(30000, 1001), seq: r(30), inFrame: 0, at: 0, frames: 30 };
 			const frame = 10;
