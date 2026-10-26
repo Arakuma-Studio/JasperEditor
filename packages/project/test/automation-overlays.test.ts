@@ -455,7 +455,7 @@ describe('reactions (EA-023)', () => {
 		);
 		for (const [i, c] of placed.entries()) {
 			const r = plan.reactions[i]!;
-			const tr = (c as { transform: Record<string, { value: unknown }> }).transform;
+			const tr = (c as unknown as { transform: Record<string, { value: unknown }> }).transform;
 			expect(tr.scale!.value).toBe(r.choice.scale);
 			expect(tr.position!.value).toEqual(r.position);
 			expect(fx(c)).toEqual([...(r.flip ? ['jasper.flip-horizontal'] : []), 'jasper.s.shake']);
