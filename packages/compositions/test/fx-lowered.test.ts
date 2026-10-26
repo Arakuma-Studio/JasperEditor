@@ -11,11 +11,14 @@ import {
 	loweredLayerTaps,
 	type RenderVisualClip,
 	resolveLayerProps,
+	textContentPad,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { loweredCanvasProgram } from '../src/fx/lowered.ts';
+import { planLayerFx } from '../src/fx/plan.ts';
+import { fxEffectRegistry } from '../src/fx/registry.ts';
 
-function pixelPopClip(withShake = true): RenderVisualClip {
+function pixelPopClip(withShake = true, style: Record<string, unknown> = {}): RenderVisualClip {
 	const ids = createCounterIdSource(3);
 	const base = createEmptyProject({ ids, name: 'L', preset: 'hd-1080p-59.94' });
 	const ctx = { ids, now: () => 't', revision: 0, registries: defaultRegistries() };
@@ -129,5 +132,44 @@ describe('lowered layers in the preview (spec 13 AS-075)', () => {
 				layout: { padding: { left: 0, top: 0 }, pxScale: 1, width: 600, height: 120 },
 			}),
 		).toBeNull();
+	});
+
+	it('a text layer’s stroke and shadow are inside the effect canvas and every stage (spec 13 AS-070)', () => {
+		const style = {
+			strokes: [{ color: [0.7, 0, 1, 1], widthPx: 24, position: 'outside' }],
+			shadow: { color: [0, 0, 0, 1], angleDeg: 90, distancePx: 70, blurPx: 2 },
+		};
+		const clip = pixelPopClip(true, style);
+		const cp = textContentPad((clip.source as { text: Parameters<typeof textContentPad>[0] }).text);
+		expect(cp).toBeGreaterThan(70);
+		const fps = 60000 / 1001;
+		const props = resolveLayerProps(clip, clipContentTime(clip, 20, { num: 60000, den: 1001 }));
+		const box = props.box;
+		const plan = (contentPadding: number) =>
+			planLayerFx(props.effects, {
+				registry: fxEffectRegistry(),
+				gpu: 'ok',
+				ctx: { width: box.width, height: box.height, pxScale: 1, fps, frame: 20 },
+				contentPadding,
+			})!;
+		const without = plan(0).padding;
+		const withPaint = plan(cp).padding;
+		expect(withPaint.left).toBeCloseTo(without.left + cp, 9);
+		expect(withPaint.bottom).toBeCloseTo(without.bottom + cp, 9);
+		// The shared taps (preview Canvas 2D path and native export) sample the same grown canvas at every stage.
+		const lt = loweredLayerTaps({ clip, props, frame: 20, fps });
+		for (const tap of lt.taps)
+			for (const st of tap.stages) {
+				expect(st.rect[0]).toBeLessThanOrEqual(-cp);
+				expect(st.rect[1]).toBeLessThanOrEqual(-cp);
+				expect(st.rect[2]).toBeGreaterThanOrEqual(box.width + cp);
+				expect(st.rect[3]).toBeGreaterThanOrEqual(box.height + cp);
+			}
+		expect(lt.canvas).toEqual([
+			-withPaint.left,
+			-withPaint.top,
+			Math.ceil(box.width + withPaint.left + withPaint.right) - withPaint.left,
+			Math.ceil(box.height + withPaint.top + withPaint.bottom) - withPaint.top,
+		]);
 	});
 });
