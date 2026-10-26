@@ -270,13 +270,20 @@ function cutAfter(events: readonly CutEvent[], f: number): number {
 	return lo;
 }
 
-/** The cut frames a subtitle `[s, e)` may not cross: hard cuts inside it, zone edit points unless it started before the zone. */
+/**
+ * The cut frames a subtitle `[s, e)` may not cross, in order: every hard cut inside it, and a zone's edit point unless
+ * the part of the subtitle reaching it started before the zone. That part starts at the last blocking cut before it
+ * (the subtitle is split there), so a zone that starts on or before an earlier blocking cut blocks too (spec 13
+ * AS-010 step 5: only a subtitle that started before the transition runs through it).
+ */
 function blockingCuts(events: readonly CutEvent[], s: number, e: number): number[] {
 	const out: number[] = [];
+	let from = s;
 	for (let i = cutAfter(events, s); i < events.length && events[i]!.frame < e; i++) {
 		const ev = events[i]!;
-		if (ev.zone && s < ev.zone.start) continue;
+		if (ev.zone && from < ev.zone.start) continue;
 		out.push(ev.frame);
+		from = ev.frame;
 	}
 	return out;
 }
@@ -298,23 +305,17 @@ function clampWords(c: WorkCaption, rate: Rational): void {
 }
 
 /**
- * AS-010 steps 1–3 and 5 on subtitles sorted by start: split at cuts (words by midpoint; a word straddling a cut
- * goes to the side holding most of it), look ahead / look back to start on cuts, end on cuts, cut zones. Mutates and
- * returns the list (re-sorted).
+ * AS-010 steps 1 and 3: every subtitle is split at the cuts it may not cross (words by midpoint; a straddling word goes
+ * to the side holding most of it); all words on one side moves the boundary to the cut; a first piece within
+ * `lookAhead` before the first cut joins the piece after it. Returns the pieces sorted by start.
  */
-export function alignToCutEvents(
-	caps: WorkCaption[],
+function splitAtCuts(
+	caps: readonly WorkCaption[],
 	events: readonly CutEvent[],
-	opts: CutAwareOptions,
+	lookAhead: number,
 	rate: Rational,
 	stats: LayoutStats,
 ): WorkCaption[] {
-	if (!events.length) return caps;
-	const fps = rate.num / rate.den;
-	const lookAhead = Math.round(opts.lookAheadSeconds * fps);
-	const lookBack = Math.round(opts.lookBackSeconds * fps);
-	const isCut = new Set(events.map((e) => e.frame));
-	// 1 + 3: split at cuts / move a boundary to the cut.
 	const out: WorkCaption[] = [];
 	for (const c of caps) {
 		const inner = blockingCuts(events, c.start, c.end);
@@ -360,6 +361,28 @@ export function alignToCutEvents(
 		if (!made) stats.dropped++;
 	}
 	out.sort((x, y) => x.start - y.start || x.end - y.end);
+	return out;
+}
+
+/**
+ * AS-010 steps 1–3 and 5 on subtitles sorted by start: split at cuts (words by midpoint; a word straddling a cut
+ * goes to the side holding most of it), look ahead / look back to start on cuts, end on cuts, cut zones. Mutates and
+ * returns the list (re-sorted).
+ */
+export function alignToCutEvents(
+	caps: WorkCaption[],
+	events: readonly CutEvent[],
+	opts: CutAwareOptions,
+	rate: Rational,
+	stats: LayoutStats,
+): WorkCaption[] {
+	if (!events.length) return caps;
+	const fps = rate.num / rate.den;
+	const lookAhead = Math.round(opts.lookAheadSeconds * fps);
+	const lookBack = Math.round(opts.lookBackSeconds * fps);
+	const isCut = new Set(events.map((e) => e.frame));
+	// 1 + 3: split at cuts / move a boundary to the cut.
+	let out = splitAtCuts(caps, events, lookAhead, rate, stats);
 	// 2: start on cuts — look back from each start (the previous subtitle ends there if it has no words after it).
 	for (let i = 0; i < out.length; i++) {
 		const c = out[i]!;
@@ -407,6 +430,8 @@ export function alignToCutEvents(
 			}
 		}
 	}
+	// starts moved by steps 2 and 5 can leave a piece starting on or inside a zone it then runs through: split again
+	out = splitAtCuts(out, events, 0, rate, stats);
 	for (const c of out) clampWords(c, rate);
 	return out;
 }
