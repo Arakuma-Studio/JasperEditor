@@ -1,6 +1,7 @@
 // spec 13 AS-072 — the plan of a kernel stream (what `streamTaps` in taps.ts writes): its members and the union
 // rectangle they are drawn in. Pure (no process plumbing), so the native graph builder imports it without the runner.
 import type { Rational } from '@jasper/project';
+import type { OverrideReady } from '../native-ext.ts';
 import { shiftProgram, type TapFrame } from './lowered.ts';
 
 /** A picture of a member: `inputs` + `filter` (ending in a `w × h` RGBA stream) decoded for one frame. */
@@ -14,6 +15,12 @@ export type TapMember = {
 	pictures: TapPicture[];
 	/** One per frame of `[f0, f1)`, in sequence px (`planTapStream` moves them into the stream's frame). */
 	frames: TapFrame[];
+	/**
+	 * spec 13 AS-076: the member's still is being baked (pipelined): the stream waits for it before decoding; a
+	 * trimmed layer still re-plans the member (`refresh`, sequence px) inside the stream's frame.
+	 */
+	ready?: Promise<OverrideReady>;
+	refresh?(picture: { x: number; y: number; w: number; h: number }): { pictures: TapPicture[]; frames: TapFrame[] };
 };
 
 export type TapStreamPlan = {
@@ -61,18 +68,7 @@ export function planTapStream(
 	y0 = Math.max(0, Math.min(H - 1, y0));
 	x1 = Math.max(x0 + 1, Math.min(W, x1));
 	y1 = Math.max(y0 + 1, Math.min(H, y1));
-	const out: TapMember[] = sorted.map((m) => ({
-		...m,
-		frames: m.frames.map((f) =>
-			f.rect
-				? {
-						...f,
-						rect: [f.rect[0] - x0, f.rect[1] - y0, f.rect[2] - x0, f.rect[3] - y0],
-						prog: shiftProgram(f.prog, x0, y0),
-					}
-				: f,
-		),
-	}));
+	const out: TapMember[] = sorted.map((m) => ({ ...m, frames: toStreamFrames(m.frames, x0, y0) }));
 	return {
 		kind: 'taps',
 		members: out,
@@ -86,4 +82,15 @@ export function planTapStream(
 	};
 }
 
-
+/** Frames in sequence px → frames of a stream whose frame sits at `(x0, y0)`. */
+export function toStreamFrames(frames: readonly TapFrame[], x0: number, y0: number): TapFrame[] {
+	return frames.map((f) =>
+		f.rect
+			? {
+					...f,
+					rect: [f.rect[0] - x0, f.rect[1] - y0, f.rect[2] - x0, f.rect[3] - y0],
+					prog: shiftProgram(f.prog, x0, y0),
+				}
+			: f,
+	);
+}

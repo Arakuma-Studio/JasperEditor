@@ -19,7 +19,15 @@ import { ExportWorkerPool, framePoolSize } from '../worker-pool.ts';
 import { drawLayer, drawTaps } from './kernel.ts';
 import { DECODES_IN_FLIGHT, MAX_TAP_WORKERS, PREFETCH_MEMBERS } from './limits.ts';
 import { StreamLayerError } from './run.ts';
-import type { TapPicture, TapStreamPlan } from './tap-plan.ts';
+import { type TapPicture, type TapStreamPlan, toStreamFrames } from './tap-plan.ts';
+
+/** spec 13 AS-076: a pipelined still came out different from its plan: the export restarts without the pipeline. */
+export class BakeChangedError extends Error {
+	constructor(reason: string) {
+		super(reason);
+		this.name = 'BakeChangedError';
+	}
+}
 
 const WORKER_SOURCE = `
 // Functions are inlined by their source text: under tsx (dev engine) esbuild's keepNames wraps them in __name().
@@ -154,6 +162,16 @@ export async function streamTaps(
 		if (!p) {
 			const m = members[i]!;
 			p = (async () => {
+				// spec 13 AS-076: a pipelined still — wait until it is written; a trimmed one re-plans the member.
+				if (m.ready) {
+					const r = await m.ready;
+					if (!r.ok) throw new BakeChangedError(r.reason);
+					if (r.picture && m.refresh) {
+						const next = m.refresh(r.picture);
+						m.pictures = next.pictures;
+						m.frames = toStreamFrames(next.frames, plan.x, plan.y);
+					}
+				}
 				const out: SharedArrayBuffer[] = [];
 				for (const pic of m.pictures) {
 					await acquire();
@@ -216,7 +234,10 @@ export async function streamTaps(
 			}
 			for (let k = mi; k < Math.min(members.length, mi + 1 + PREFETCH_MEMBERS); k++) void picturesOf(k);
 			const m = members[mi];
-			const fr = m && f >= m.f0 && f < m.f1 ? m.frames[f - m.f0]! : null;
+			const inMember = !!m && f >= m.f0 && f < m.f1;
+			// The member's pictures first: a pipelined member's frames are final only once its still is ready.
+			if (inMember) await picturesOf(mi);
+			const fr = inMember ? m!.frames[f - m!.f0]! : null;
 			let job: Promise<{ slot: number | null }>;
 			if (!fr?.rect) job = Promise.resolve({ slot: null });
 			else {

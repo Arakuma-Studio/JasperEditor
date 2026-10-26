@@ -4,6 +4,7 @@ import type { Rational, RenderVisualClip } from '@jasper/project';
 import { isFeatheredCrop } from '../crop.ts';
 import { type LoweredPicture, planLoweredFrames, shiftProgram, singleTap, type TapFrame } from './lowered.ts';
 import type { StreamLayerPlan } from './plan.ts';
+import type { OverrideReady } from '../native-ext.ts';
 import type { TapMember, TapPicture } from './tap-plan.ts';
 
 /** The decode chain of a layer (`layerSourceChain`), for the level pictures of a constant source. */
@@ -84,7 +85,11 @@ export function stillMember(
 	clipId: string,
 	f0: number,
 	f1: number,
-	still: { path: string; rect: { x: number; y: number; w: number; h: number } | null },
+	still: {
+		path: string;
+		rect: { x: number; y: number; w: number; h: number } | null;
+		ready?: Promise<OverrideReady>;
+	},
 	seq: { W: number; H: number; swsFlags: string },
 ): TapMember {
 	const r = still.rect ?? { x: 0, y: 0, w: seq.W, h: seq.H };
@@ -112,6 +117,7 @@ export function stillMember(
 			},
 		],
 		frames: Array.from({ length: f1 - f0 }, () => frame),
+		...(still.ready ? { ready: still.ready } : {}),
 	};
 }
 
@@ -120,31 +126,27 @@ export function loweredMember(
 	c: RenderVisualClip,
 	f0: number,
 	f1: number,
-	still: { path: string; picture: LoweredPicture },
+	still: { path: string; picture: LoweredPicture; ready?: Promise<OverrideReady> },
 	seq: { W: number; H: number; fps: Rational; swsFlags: string },
 ): TapMember {
-	const { frames, levels } = planLoweredFrames({
-		clip: c,
-		f0,
-		f1,
-		fps: seq.fps,
-		picture: still.picture,
-		W: seq.W,
-		H: seq.H,
-	});
-	return {
-		clipId: c.clipId,
-		f0,
-		f1,
-		pictures: levels.map((lv) => ({
+	const plan = (picture: LoweredPicture) => {
+		const { frames, levels } = planLoweredFrames({ clip: c, f0, f1, fps: seq.fps, picture, W: seq.W, H: seq.H });
+		const pictures: TapPicture[] = levels.map((lv) => ({
 			w: lv.w,
 			h: lv.h,
 			inputs: [['-i', still.path]],
 			filter:
-				lv.w === still.picture.w && lv.h === still.picture.h
+				lv.w === picture.w && lv.h === picture.h
 					? '[0:v:0]format=rgba'
 					: `[0:v:0]format=rgba,scale=${lv.w}:${lv.h}:${seq.swsFlags},format=rgba`,
-		})),
-		frames,
+		}));
+		return { pictures, frames };
+	};
+	return {
+		clipId: c.clipId,
+		f0,
+		f1,
+		...plan(still.picture),
+		...(still.ready ? { ready: still.ready, refresh: plan } : {}),
 	};
 }

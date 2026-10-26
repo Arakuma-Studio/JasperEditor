@@ -46,6 +46,7 @@ import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
 	type NativeExtension,
+	type OverrideReady,
 	type PreparedExtensions,
 } from './native-ext.ts';
 import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
@@ -127,6 +128,8 @@ type NativeGraph = {
 	 * (segment i + 1, or this graph: `backdropFd`; spawn it with `pipes: 1 + streams.length`, streams from fd 4).
 	 */
 	blend?: { segments: BlendSegment[]; backdropFd: number; width: number; height: number };
+	/** spec 13 AS-076: pipelined stills used as inputs: the caller awaits them before spawning the composite. */
+	waitFor?: Promise<OverrideReady>[];
 };
 
 /** BLEND_MODES indexes of Stencil Alpha … Silhouette Luma. */
@@ -710,6 +713,8 @@ type StackContext = {
 	path: string;
 	/** spec 13 AS-072: group constant-picture layers into kernel streams. */
 	trackStreams?: boolean;
+	/** spec 13 AS-076: pipelined stills the composite opens as inputs (awaited before it starts). */
+	waitFor?: Promise<OverrideReady>[];
 	/**
 	 * keyframes-blend (the sequence's own stack only): ends the current process of the pipeline at a blend layer —
 	 * `backdrop` (the composite below) and `layer` (the layer on transparency) go to the blend kernel — and returns the
@@ -757,7 +762,11 @@ function drawStack(ctx: StackContext): string {
 				c,
 				f0,
 				f1,
-				{ path: override.path, picture: override.lowered },
+				{
+					path: override.path,
+					picture: override.lowered,
+					...(override.ready ? { ready: override.ready } : {}),
+				},
 				{ W, H, fps, swsFlags: SWS_FLAGS },
 			);
 		if (override?.space === 'sequence') {
@@ -766,7 +775,11 @@ function drawStack(ctx: StackContext): string {
 				c.clipId,
 				f0,
 				f1,
-				{ path: override.path, rect: override.rect ?? null },
+				{
+					path: override.path,
+					rect: override.rect ?? null,
+					...(override.ready ? { ready: override.ready } : {}),
+				},
 				{ W, H, swsFlags: SWS_FLAGS },
 			);
 		}
@@ -970,7 +983,11 @@ function drawStack(ctx: StackContext): string {
 							c,
 							f0,
 							layer.f1,
-							{ path: override.path, picture: override.lowered },
+							{
+								path: override.path,
+								picture: override.lowered,
+								...(override.ready ? { ready: override.ready } : {}),
+							},
 							{ W, H, fps, swsFlags: SWS_FLAGS },
 						),
 					],
@@ -991,6 +1008,8 @@ function drawStack(ctx: StackContext): string {
 				return;
 			}
 			if (override?.space === 'sequence') {
+				// spec 13 AS-076: a pipelined still opened as an input must be written before the composite starts.
+				if (override.ready) ctx.waitFor?.push(override.ready);
 				// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
 				// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's
 				// colour runs are applied here, to the straight-alpha override stream.
@@ -1211,6 +1230,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		backdropFd: backdrop ? 3 : null,
 	});
 	let proc = newProc(false);
+	const waitFor: Promise<OverrideReady>[] = [];
 	const segments: BlendSegment[] = [];
 	const stackFrames = R1 - R0 + 1;
 	const ctx: StackContext = {
@@ -1232,6 +1252,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(o.nested ? { nested: o.nested } : {}),
 		path: '',
 		trackStreams: o.trackStreams !== false,
+		waitFor,
 		blend: {
 			cut: (backdrop, layer, plan, mode) => {
 				const label = `bk${segments.length}`;
@@ -1389,6 +1410,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		durationSec: output.durationSec,
 		streams,
 		...(segments.length > 0 ? { blend: { segments, backdropFd: 3, width: W, height: H } } : {}),
+		...(waitFor.length ? { waitFor } : {}),
 	};
 }
 /** edit-structure: the clip-local frame a frame hold shows (the composition's `pictureLocalFrame`). */

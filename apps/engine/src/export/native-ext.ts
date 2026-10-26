@@ -59,7 +59,18 @@ export type LayerOverride = {
 	 * clip's other effects are in the still.
 	 */
 	lowered?: { x: number; y: number; w: number; h: number };
+	/**
+	 * spec 13 AS-076 (pipelined stills): `path` is being rendered; this settles when it is written. `ok: false` = the
+	 * picture is not the planned one (clipped, re-cropped): the export restarts without the pipeline. `picture` = the
+	 * layer region of a trimmed layer still (replaces `lowered`). Kernel streams await it per member; anything that
+	 * opens `path` as an ffmpeg input awaits it before the composite starts.
+	 */
+	ready?: Promise<OverrideReady>;
 };
+
+export type OverrideReady =
+	| { ok: true; picture?: { x: number; y: number; w: number; h: number } }
+	| { ok: false; reason: string };
 
 type NativeEffectSupport = false | 'static' | 'animated';
 
@@ -111,6 +122,15 @@ export type NativePrepareContext = {
 	 * writing a cached file; absent (unit tests) = plain existence check.
 	 */
 	pin?(path: string): Promise<boolean>;
+	/**
+	 * spec 13 AS-076: work an extension continues after `prepare` returned (pipelined still bakes): the export awaits it
+	 * before it finishes (its errors fail the export). Absent = everything is done in `prepare`.
+	 */
+	background?(work: Promise<void>): void;
+	/** false = no pipelined work (a restart after a pipelined still changed). */
+	pipeline?: boolean;
+	/** Aborts the background work (the job ended, or the export failed and nothing waits for it). */
+	backgroundSignal?: AbortSignal;
 };
 
 export type NativeExtension = {

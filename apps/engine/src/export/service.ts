@@ -112,7 +112,7 @@ import {
 import { convertStill, stillCurveFor } from './still-formats.ts';
 import type { StreamLayerPlan } from './stream/plan.ts';
 import { streamLayer } from './stream/run.ts';
-import { streamTaps } from './stream/taps.ts';
+import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
 
@@ -1108,10 +1108,30 @@ export class ExportService {
 		ctx: JobContext,
 		still = false,
 		audioIn: MixdownResult | null | Promise<MixdownResult | null> = null,
+		pipeline = true,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
 		let nested: Map<string, PreparedExtensions>;
+		// spec 13 AS-076: work the extensions continue during the composite (pipelined still bakes).
+		const background: Promise<void>[] = [];
+		const settle = () => Promise.allSettled(background);
+		// Stopped with the job, and when the export fails otherwise (nothing waits for the stills then).
+		const bgAbort = new AbortController();
+		const onAbortBg = () => bgAbort.abort();
+		ctx.signal.addEventListener('abort', onAbortBg, { once: true });
+		const abandon = async () => {
+			bgAbort.abort();
+			await settle();
+		};
+		/** A pipelined still came out different: everything again without the pipeline (its bakes are cached). */
+		const restart = async (why: string): Promise<number> => {
+			ctx.log(`native: ${why}; preparing again without pipelined stills`);
+			await settle();
+			ctx.signal.removeEventListener('abort', onAbortBg);
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			return this.runNative(planned, masters, output, ctx, still, audioIn, false);
+		};
 		try {
 			const pctx = {
 				signal: ctx.signal,
@@ -1123,16 +1143,27 @@ export class ExportService {
 				purpose: 'native' as const,
 				concurrency: remotionConcurrency(ctx.slots),
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
+				pipeline: pipeline && !still,
+				backgroundSignal: bgAbort.signal,
+				background: (work: Promise<void>) => {
+					work.catch(() => undefined);
+					background.push(work);
+				},
 			};
 			prepared = await prepareExtensions(exts, planned, pctx);
-			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations.
-			nested = await prepareNestedExtensions(exts, planned, pctx);
+			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations
+			// (without pipelined stills: nested stacks have no kernel stream members of their own to wait).
+			nested = await prepareNestedExtensions(exts, planned, { ...pctx, pipeline: false });
 		} catch (e) {
+			await abandon();
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		}
 		// The mixdown (started before the preparation) is an input of the composite.
-		const audio = await audioIn;
+		const audio = await Promise.resolve(audioIn).catch(async (e) => {
+			await abandon();
+			throw e;
+		});
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
 		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
 			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
@@ -1151,32 +1182,47 @@ export class ExportService {
 				? await outputLutFilter(planned.output.color, await ctx.scratchDir())
 				: null;
 		ctx.progress(0, { stage: 'Planning layers' });
-		const graph = buildNativeGraph({
-			colorLut,
-			snapshot: planned.snapshot,
-			output: planned.output,
-			outputFile: output,
-			sources: {
-				media: (id) => planned.media[id] ?? null,
-				mgMaster: (id) => masters.get(id) ?? null,
-			},
-			threads: ctx.slots,
-			still,
-			trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
-			extensions: { list: exts, prepared },
-			...(audio?.path
-				? {
-						audio: {
-							file: audio.path,
-							sampleRate: audio.sampleRate,
-							soxr: await hasSoxr(this.deps.ff),
-							// the delivery's checked encode: muxed by stream copy
-							...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
-						},
-					}
-				: {}),
-			nested,
-		});
+		let graph: ReturnType<typeof buildNativeGraph>;
+		try {
+			graph = buildNativeGraph({
+				colorLut,
+				snapshot: planned.snapshot,
+				output: planned.output,
+				outputFile: output,
+				sources: {
+					media: (id) => planned.media[id] ?? null,
+					mgMaster: (id) => masters.get(id) ?? null,
+				},
+				threads: ctx.slots,
+				still,
+				trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
+				extensions: { list: exts, prepared },
+				...(audio?.path
+					? {
+							audio: {
+								file: audio.path,
+								sampleRate: audio.sampleRate,
+								soxr: await hasSoxr(this.deps.ff),
+								// the delivery's checked encode: muxed by stream copy
+								...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
+							},
+						}
+					: {}),
+				nested,
+			});
+		} catch (e) {
+			await abandon();
+			throw e;
+		}
+		// Pipelined stills the composite opens as inputs are written first.
+		if (graph.waitFor) {
+			const ready = await Promise.all(graph.waitFor).catch(async (e) => {
+				await abandon();
+				throw e;
+			});
+			const changed = ready.find((r) => !r.ok);
+			if (changed && !changed.ok) return restart(changed.reason);
+		}
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {
 			const script = join(await ctx.scratchDir(), 'graph.txt');
@@ -1274,6 +1320,8 @@ export class ExportService {
 			await Promise.all(producers);
 			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
 			const se = streamError as Error | null;
+			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
+			await abandon();
 			const consequence = !se || /^layer stream:/.test(se.message);
 			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted, se) : se;
 		} finally {
@@ -1282,6 +1330,9 @@ export class ExportService {
 		// The composite succeeded (and the frame count is checked below): a stream it stopped reading ends here.
 		streamAbort.abort();
 		await Promise.all(producers);
+		// Pipelined work ends with the composite (its errors fail the export).
+		await Promise.all(background);
+		ctx.signal.removeEventListener('abort', onAbortBg);
 		if (still) return 1;
 		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 		if (count !== graph.outputFrames) {

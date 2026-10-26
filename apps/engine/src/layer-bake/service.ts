@@ -411,6 +411,11 @@ export class LayerBakeService {
 		return KEY_RE.test(key) && existsSync(p) ? p : null;
 	}
 
+	/** Where the still of `key` is (or will be) stored. */
+	stillFile(key: string): string {
+		return join(this.entryDir(key), 'still.png');
+	}
+
 	async meta(key: string): Promise<LayerMeta | null> {
 		if (!KEY_RE.test(key)) return null;
 		const m = await readJsonOrNull<LayerMeta>(join(this.entryDir(key), 'meta.json'));

@@ -42,6 +42,10 @@ const RENDER_FIXED_COST_FRAMES = 30;
 const SHEET_MAX = 128;
 /** Remotion pages all sheets of an export use together, and sheets rendered side by side (Chrome memory bound). */
 const SHEET_PAGES = 4;
+/** Pages of the sheets of a large bake (more than two sheets: memory over speed, spec 13 AS-076's 6 GB). */
+const SHEET_PAGES_LARGE = 2;
+/** Stills of the first sheet of a pipelined export (ready soon: the composite starts with them). */
+const FIRST_SHEET = 16;
 const SHEET_IN_FLIGHT = 1;
 /** Progress weight of one sheet frame (a still costs ≈ 0.1 s in a sheet against ≈ 3.4 s alone, textperf). */
 const SHEET_FRAME_COST = 1;
@@ -204,6 +208,83 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				}
 			};
 			let renderCount = 0;
+			let backgroundStarted = false;
+			/** The background still bakes of a pipelined export (see below). */
+			const background = (pending: Map<string, typeof items>) => {
+				backgroundStarted = true;
+				type Ready = { ok: true; picture?: Rect } | { ok: false; reason: string };
+				const deferred = new Map<string, { resolve(r: Ready): void; reject(e: unknown): void }>();
+				for (const [key, group] of pending) {
+					const ready = new Promise<Ready>((resolve, reject) => deferred.set(key, { resolve, reject }));
+					ready.catch(() => undefined);
+					const plan = group[0]!.plan;
+					const file = svc.stillFile(key);
+					for (const it of group) {
+						const entry = entryOf(
+							it.plan,
+							{
+								key,
+								path: file,
+								still: true,
+								rect: plan.rect,
+								frames: 1,
+								width: plan.rect?.w ?? plan.material.width,
+								height: plan.rect?.h ?? plan.material.height,
+							},
+							null,
+							null,
+						);
+						out.set(it.clip!.clipId, { override: { ...entry.override!, ready } });
+					}
+				}
+				// Time order: the stream needs the earliest subtitles first.
+				const groups = [...pending.values()].sort(
+					(a, b) => Math.min(...a.map((x) => x.clip!.start)) - Math.min(...b.map((x) => x.clip!.start)),
+				);
+				const sheets: (typeof items)[][] = [];
+				for (let i = 0; i < groups.length; ) {
+					const n = sheets.length === 0 ? FIRST_SHEET : SHEET_MAX;
+					sheets.push(groups.slice(i, i + n));
+					i += n;
+				}
+				const sheetBudget = Math.min(budget, sheets.length > 2 ? SHEET_PAGES_LARGE : SHEET_PAGES);
+				const work = runPagePool(
+					sheets.map((sheet) => ({
+						want: sheetBudget,
+						weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
+						run: async (g: PageGrant) => {
+							const bakes = await svc.ensureSheet(
+								sheet.map((group) => group[0]!.plan),
+								metaOf(g),
+							);
+							for (const group of sheet) {
+								const { plan } = group[0]!;
+								const bake = bakes.get(plan.key);
+								const same =
+									!!bake &&
+									!bake.clipped &&
+									(plan.variant.recipe === 'layer-still' ||
+										JSON.stringify(bake.rect) === JSON.stringify(plan.rect));
+								deferred
+									.get(plan.key)!
+									.resolve(
+										same
+											? { ok: true, ...(bake!.picture ? { picture: bake!.picture } : {}) }
+											: { ok: false, reason: `the still of "${plan.clipName}" changed while baking` },
+									);
+							}
+						},
+					})),
+					{ budget: sheetBudget, maxInFlight: 1, signal: ctx.backgroundSignal ?? ctx.signal },
+				).then(
+					() => undefined,
+					(e) => {
+						for (const d of deferred.values()) d.reject(e);
+						throw e;
+					},
+				);
+				ctx.background!(work.finally(() => release?.()));
+			};
 			/** One round: one render per entry (identical layers share a bake key; graded entries have their own). */
 			const round = async (list: typeof items) => {
 				const groups = new Map<string, typeof items>();
@@ -230,7 +311,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
 				// Sheets run first, at most SHEET_IN_FLIGHT side by side on at most SHEET_PAGES pages (their fixed costs
 				// overlap; Chrome's memory stays bounded however many stills: spec 13 AS-076's 6 GB), then the rest.
-				const sheetBudget = Math.min(budget, SHEET_PAGES);
+				const sheetBudget = Math.min(budget, sheets.length > 2 ? SHEET_PAGES_LARGE : SHEET_PAGES);
 				const perSheet = Math.max(
 					1,
 					Math.floor(sheetBudget / Math.min(SHEET_IN_FLIGHT, Math.max(1, sheets.length))),
@@ -287,8 +368,34 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					{ budget, maxInFlight, signal: ctx.signal, onProgress: progress },
 				);
 			};
+			// spec 13 AS-076 — pipelined stills: a native export does not wait for the still bakes its kernel streams draw
+			// (they are decoded only when the stream reaches them): those missing from the cache get provisional entries
+			// (the planned file and region) with a `ready` promise, and are rendered in the background in time order
+			// (a small first sheet, so the first subtitles are ready early) while the composite runs. A still that comes
+			// out different (clipped, re-cropped) makes the export restart without the pipeline (`ready` → not ok).
+			const pipelined = !remotion && single === null && ctx.pipeline !== false && !!ctx.background;
+			let now = items;
+			if (pipelined) {
+				now = [];
+				const pending = new Map<string, typeof items>();
+				for (const it of items) {
+					const { plan, grade } = it;
+					const sheetable =
+						!!it.clip &&
+						!grade &&
+						!plan.span &&
+						(plan.variant.recipe === 'still' || plan.variant.recipe === 'layer-still');
+					if (!sheetable || pending.has(plan.key) || (await svc.lookup(plan.key))) {
+						if (sheetable && pending.has(plan.key)) pending.get(plan.key)!.push(it);
+						else now.push(it);
+						continue;
+					}
+					pending.set(plan.key, [it]);
+				}
+				if (pending.size > 0) background(pending);
+			}
 			try {
-				await round(items);
+				await round(now);
 				// spec 13 AS-070: a layer still that touched its border is baked with a grown region (sheets again),
 				// then, still clipped, as a master.
 				for (const master of [false, true]) {
@@ -312,7 +419,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						true,
 					);
 			} finally {
-				await release?.();
+				if (!backgroundStarted) await release?.();
 			}
 			// Clip order of the snapshot (the composite does not depend on it; logs and tests read it).
 			const ordered: Prepared = new Map();
