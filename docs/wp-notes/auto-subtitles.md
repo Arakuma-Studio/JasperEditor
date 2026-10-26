@@ -537,3 +537,217 @@ minimum duration), allowed by the spec's zone rule. Layout time for all 26 proje
   work (SH-004, AS-070) and is reported there.
 - Cut map: pictures covering less than the overlay threshold (e.g. a 720p clip unscaled in a 1080p sequence) are not
   base pictures, so a cut from such a shot to black gives no cut to align to.
+
+## Subtitle-scale export and preview (spec 13 §4: AS-050, AS-070…AS-076)
+
+Owner: work package `subexport`. Baseline: the private textperf measurements behind spec 13 §4 — one ffmpeg input per
+caption (≈ 205–230 MB RSS per animated caption master, ≈ 40 MB per looped still, overlay chain at 17 fps with 1 000
+inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 s short with 99 animated captions taking
+183 s and 19–25 GB, the 9-minute video impossible on the Hybrid path, and one run that killed the engine itself.
+
+### S.1 Lowered layers: still + native motion (AS-070, AS-073)
+
+- `isLoweredLayer(c)` (`packages/project/src/render/lowered.ts`, shared by the export and the preview): a text layer
+  whose glyphs stay still (`loweredContentStatic`: no In/Out animation, no time-varying animator, no keyframes or
+  expressions in its text) while its picture moves: keyframed Motion / Opacity, the **Transform** effect (any keys,
+  with or without its Shutter Angle motion blur; at most one blurred Transform) and **S_Shake** with Motion Blur off,
+  Wrap X/Y **No** and no RGB split. `loweredRefusal` names what it refuses: masks, effect masks, expressions, other
+  effects, S_Shake wrap / motion blur / RGB split (those layers keep the master bake, exact as before).
+- The layer bake renders it once as recipe `layer-still` (`layerStill`, `layerStillClip` in
+  `apps/engine/src/layer-bake/layer.ts`): its layer box grown by `contentBleed` + 2 px, Motion a translation into that
+  region, Opacity 100 %, no effects, one frame. Its key holds no Motion or effects, so identical words share it. From a
+  sheet (S.3) the still is **trimmed to its pixels + 2 transparent px** (`alphaBounds`), its region stored in the
+  cache meta (`picture`), so the kernel, the stream and the overlay only touch the glyphs, stroke and shadow. A still
+  whose pixels touch its border (text overflowing an estimated box, a wrapped line) is baked again with the region
+  grown by a quarter of the box + two font sizes, then, still clipped, as an ordinary master (bake rounds in
+  `extension.ts`; nothing is cut silently).
+- Per frame, `loweredLayerTaps` gives the taps in layer space and `planLoweredFrames` (`export/stream/lowered.ts`)
+  adds Motion⁻¹, the mip level (from the Motion scale, like the sub-pixel kernel) and the drawn rectangle. Every value
+  comes from the registered effect's own `gpu.uniforms` hook with the compositions' frame context (layer box,
+  pxScale 1, fps, clip-local frame, `fxSeed` seed rules, `fxParamsAtFn` with the box metric): S_Shake's `u_shakeNow`
+  (green-channel pose: `src = zDist · R⁻¹ · (f − d)` in frame units of the box width), the Transform's `u_tfA/u_tfT`,
+  and with motion blur the shader's plan (`u_mbPlan` taps, `u_mbKeys` key poses interpolated linearly, `u_mbWarp`
+  time warp; tap weight `t.y × clamp(opacity / 100)`, normalised by Σ t.y). What the shaders sample becomes coverage
+  stages: the effect canvas the browser draws (box + the text's paint + the GPU effects' padding, `gpuPadding`),
+  S_Shake's input canvas (Wrap No samples the canvas with an anti-aliased edge) and the Transform's input canvas.
+- The multi-tap kernel `drawTaps` (`export/stream/kernel.ts`) sums the taps (bilinear, premultiplied, clamp to edge)
+  times the anti-aliased coverage of the still and of each stage; per row it computes coverage only where it is
+  partial (row spans); one tap without stages uses `drawLayer` unchanged.
+- Differences to the composition (measured in S.6): one resample instead of one per GPU pass plus the browser's
+  composite; capped shutters take the stratum centres instead of the shader's per-pixel jitter; stage edges are
+  ½ px ramps instead of the shaders' hard canvas test.
+- **Text paint under effects (fix of the defect in §11):** a text layer's stroke, shadow and glyph ink reach beyond
+  its box. With GPU effects the effect canvas was the box + the effects' padding and the Transform sampled only
+  inside the box, so template effects cut the outside stroke and the shadow flat at the box (exports and the Program
+  monitor alike). Now the effect canvas of a text layer starts grown by `textContentPad` (`@jasper/project`
+  text-style.ts: strokes, shadow offset + spread + 3 σ, glyph ink, background padding — the same extent the layer
+  bake crops with, `contentBleed`; whole pixels, since the DOM picture snaps to the pixel grid), and the Transform
+  effect moves its whole input canvas (as Premiere moves the layer's whole picture), transparent outside it. The
+  lowered taps (Program monitor Canvas 2D path, native kernel) use the same canvas for every stage. Regression
+  tests: `subtitle-parity.e2e.test.ts` "template effects keep the stroke and shadow beyond the text box" (an
+  identity Transform and a still S_Shake equal the plain text, native and composition: SSIM 1.0000; before the fix
+  no paint outside the box), `fx-lowered.test.ts` (canvas and stages contain the paint).
+- Text boxes still marked `layoutPending` (made without a text measurer) bake their layer stills grown up front
+  (a quarter of the box + two font sizes), so a pipelined export does not restart for a wrapped line.
+
+- **Run masters (AS-073):** shaken layers the kernel does not draw (S_Shake with Motion Blur, RGB split or Wrap) stay
+  masters, but those of one track that follow each other (no overlap, gaps ≤ 60 frames, a run ≤ 3 600 frames,
+  normal blend, no fades or handles, no colour grade: `layer-bake/runs.ts`) bake as **one master per run**
+  (`planRun`: the clips shifted to the run's start in one transparent document, child job `Bake graphics – N layers
+  from "…"`). Every clip of the run points at it (`LayerOverride.run`) and the builder draws it once, one input over
+  the run's span; the memory preflight counts a run as one master. The shake keeps the shader's own blur, so these
+  frames are the composition's.
+
+### S.2 Kernel streams: memory follows what is on screen (AS-072)
+
+- In the main graph, the constant-picture layers of a track — baked static stills (`sequence` overrides without colour
+  runs), lowered layers, still images / solids with sub-pixel Motion — without transition handles, fades, masks or
+  blend modes are **members of one stream** (`stream/tap-plan.ts`, `stream/members.ts`, grouping in `native.ts`
+  `memberOf`): one raw RGBA pipe and one overlay per track over the members' union rectangle, drawn by `streamTaps`
+  (`stream/taps.ts`). Members never overlap in time (one track, no handles), so a frame draws at most one; pictures
+  are decoded (one ffmpeg frame per mip level, `PREFETCH_MEMBERS` ahead) and dropped after the member's last frame.
+  A member alone, or a lowered layer with fades / handles / a blend mode, is a stream of its own with the transition
+  fades applied by ffmpeg as before. `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer (the comparison path
+  of the tests). The composite's inputs no longer grow with the clip count (300 stills on a track: one input, one
+  overlay, test in `subtitle-export.test.ts`).
+- At most 8 kernel threads per stream (`MAX_TAP_WORKERS`): a stream is paced by the composite reading it.
+- Member stills are decoded in-process (`stream/png.ts`: 8-bit RGBA / RGB PNGs, inflate in the libuv pool, rows
+  unfiltered as PNG specifies; equal to ffmpeg's `format=rgba` decode, property test `subtitle-png.test.ts`); scaled
+  mip levels and other files keep the one-frame ffmpeg decode. One ffmpeg spawn per picture held the event loop for
+  ≈ 9 ms each (a fork of the engine; CPU profile of the short benchmark: 5.2 s in `spawn`), which stalled the stream
+  feeding the composite.
+
+- **Composite base:** when the first layer of the sequence is an opaque video covering the whole frame for the whole
+  range (no override, Motion an identity at W × H, Opacity 100 %, no fades, masks, blend mode, crop or alpha
+  effects), it is the composite's base instead of a blend over the background colour (`coverBase` in `native.ts`;
+  frames after its source ends are padded with the background colour, as the blend showed). An ffmpeg experiment on
+  the short benchmark's graph (VM, quiet): video + one subtitle input 25.4 s with the background blend, 20.9 s
+  without, 20.7 s for the video alone. Frames are identical to the blend path (test `subtitle-export.test.ts`;
+  `JASPER_EXPORT_COVER_BASE=0` keeps the blend).
+
+### S.3 Batched still rendering, pipelined (AS-071, AS-076)
+
+- Every still bake of an export (static layers and layer stills) is rendered in **sheets** (`ensureSheet`, child job
+  `Bake graphics – N stills`): up to 128 one-frame clips back to back in one document as large as its largest still,
+  rendered by one Remotion `renderFrames` (`renderStillSheet`: transparent PNG frames), decoded by one ffmpeg,
+  cropped, border-checked (sequence stills: the edges inside the frame, re-rendered alone with the full-frame fallback
+  when touched; layer stills: every edge) and stored per key with the PNG deflate in the libuv pool. Sheets render one
+  at a time on 4 pages (2 pages when there are more than two: Chrome's memory, S.6). Cached keys are reused, keys in
+  flight joined, one missing still renders alone.
+- **Pipelined:** a native export does not wait for the still bakes its kernel streams draw. Missing stills get
+  provisional entries (the planned file and region) with a `ready` promise (`LayerOverride.ready`) and are rendered in
+  the background in time order — sheets of 16, 32, 64, 128… stills, so each sheet is ready before the composite
+  reaches its subtitles — while the composite
+  runs (`NativePrepareContext.background`). A stream waits for a member's still before decoding it and re-plans a
+  trimmed layer still inside its frame; stills opened as ffmpeg inputs are awaited before the composite starts
+  (`NativeGraph.waitFor`). A still that comes out different from its plan (clipped, re-cropped) stops the composite
+  (`BakeChangedError`) and the export restarts without the pipeline (the bakes are then cached). The mixdown runs while
+  the layers prepare. Stills exports (one frame) and nested sequences do not pipeline.
+
+### S.4 Preflight and robustness (AS-074)
+
+- `estimateComposite` (`export/memory.ts`) models the composite's peak memory from the layers the builder will draw
+  (textperf's per-input costs scaled by the sequence's pixels; one kernel stream per track with members) and the
+  planner adds a named native blocker when it exceeds `compositeMemoryBudget()` (60 % of the RAM or of the engine's
+  cgroup limit; `JASPER_EXPORT_MEMORY_BUDGET_MB`): Auto goes to the Remotion path, a forced Native export is refused
+  (`PATH_NOT_ELIGIBLE`) with the estimate ("the native composite needs ≈ 232.4 GB of memory (1080 animated graphics
+  masters as separate inputs), more than the 18.0 GB this machine allows").
+- A compositor that dies of a SIGKILL the job did not send fails the export with `OUT_OF_MEMORY`
+  (`killedComposite`; a pipe error it caused in a stream no longer masks it). On Linux every tool process gets
+  `oom_score_adj` 900 (`preferOomKill`, `tools/process.ts`): the OOM killer picks ffmpeg before the engine, which
+  textperf saw killed. The engine's own stream memory is bounded (S.2). Regression tests: a compositor killed by
+  SIGKILL and one under a 150 MB address-space cap (wrapper ffmpeg) fail the job while the engine keeps serving.
+- A kernel stream that fails (its pipe closed by a composite that stopped, a restart, a cancel) rejects with its error;
+  the draws still in flight are settled, not left as unhandled rejections — one such rejection ended the engine
+  process during a pipelined restart in a benchmark (regression test `subtitle-taps-failure.test.ts`).
+- The plan's estimate counts still bakes as sheets (≈ 3.4 s per sheet of ≤ 128 + 0.1 s per still, textperf).
+
+### S.5 Program monitor (AS-075, AS-050)
+
+- The composition already mounts only clips near the playhead (`FrameWindow`, pages of 60 frames, one before and two
+  after), so the clip count does not reach the per-frame work: playback of 1 080 subtitles with keyframed Motion only
+  measures like video alone (S.6).
+- The remaining cost was the GPU chain of lowered layers in the preview: DOM capture → WebGL passes → read back every
+  frame (`GLES2::ReadPixels`, `WaitForCmd` in the trace). The preview now draws lowered layers with **Canvas 2D** from
+  the same taps the export uses (`fx/lowered.ts`: `loweredCanvasProgram`, `fxLowered`): one `drawImage` per shutter
+  tap of the captured picture, clipped to each stage rectangle, summed with `lighter` at weight w / Σw. Renders keep
+  the GPU chain (the reference the native export is compared with). Static subtitles stay DOM text.
+- Measured (S.6): with 1 200 subtitles over a solid, static and Motion-animated subtitles play like no subtitles
+  (58.2–58.9 fps vs 58.5–58.9). Pixel Pop played at 57.6 fps vs 58.0 before the text-paint fix (S.1, effects then
+  saw a picture cut at the box); with the stroke and shadow inside the effect canvas it measured 46–48 fps, and
+  52.3–53.1 fps (−9.6 % / −10.6 % of 58.5, two runs in opposite orders) once each Canvas 2D tap draws only the part
+  of the capture that can hold paint (`FxLoweredParams.src`). The rest is the pop-in's shutter taps (one
+  `drawImage` each, software canvas). Over a 1080p H.264 video the headless
+  software-GL player itself varies from 7 to 30 fps between runs without subtitles, so that comparison is not
+  resolvable on the VM; Pixel Pop measured 7.9–9.5 fps there (3.2 fps before the Canvas 2D path) and the CPU
+  profiles with and without subtitles are the same (video `drawImage` ≈ 20 %, nothing from the subtitles in the top
+  25).
+
+### S.6 Measurements, verification and limitations
+
+Machine: build VM (16 vCPU, 30 GB, no GPU, software GL), LGPL ffmpeg n7.1.5 (`libopenh264` for H.264). Benchmarks
+held the shared bench lock; other agents' load is reported as `loadBefore` in each JSON
+(`scripts/perf/subtitles.mjs`, results under `~builder/subexport-results/` on the VM). The engine ran in a systemd
+scope (MemoryMax 22 GB, no swap); memory is the peak over the engine process tree, sampled every 250 ms: RSS summed
+over processes (counts Chrome's shared pages once per process) and PSS summed (the memory actually used).
+
+Workload (`--case short`: 1080 × 1920, 50 s at 59.94 fps, 99 subtitles of 1–4 words; `--case long9m`: 1920 × 1080,
+9 min, 1 080 subtitles; both over an H.264 video, H.264 output with AAC; `pixelpop` = the subtitles agent's Pixel
+Pop recipe, Transform pop-in with 360° shutter + S_Shake, stroke and shadow; `none` = the same video without
+subtitles). Cold = empty layer cache; warm = the same export again.
+
+Final code (round r15, after the text-render, subtitles, cleanup-UI and overlays merges; `loadBefore` 3–9 from
+other agents' work, 15.7 before the last row):
+
+| Run | Wall | vs none | Peak PSS / RSS sum |
+| --- | --- | --- | --- |
+| short, none | 24.1 s | — | 1.0 / 1.3 GB |
+| short, Pixel Pop, cold | 37.0 s | 1.54× (target ≤ 1.3×: **not met**, see below) | 4.5 / 8.0 GB |
+| short, Pixel Pop, warm | 28.0 s | +16 % (target ≤ +20 %: met) | 2.1 / 2.8 GB |
+| 9 min, none | 224.7 s | — | 1.3 / 1.3 GB |
+| 9 min, 1 080 Pixel Pop, cold | 304.7 s | 1.36× (target ≤ 10 min: met) | 4.4 / 7.7 GB (target ≤ 6 GB: met as PSS) |
+| 9 min, 1 080 Pixel Pop, warm | 331.8 s | (load 15.7: not comparable) | 2.4 / 2.4 GB |
+
+Round r11 (before those merges, VM otherwise quiet): short none 23.8 s, cold 43.5 s (with the restart below), warm
+27.6 s (+16 %); 9 min none 251.1 s, cold 301.8 s (1.20×, PSS 3.9 GB), warm 292.4 s (+16 %). Round r14 (final code
+less the doubling sheets, load 2–9): 9 min none 256.9 s, cold 323.1 s, warm 313.8 s (+22 %, load 16 before it).
+
+- Before (textperf, same recipes): short cold 183 s and 19–25 GB; the 9-minute export did not finish. Intermediate
+  rounds on this branch: r6 (before pipelining) short cold 39.2 s / warm +20.6 %, 9 min cold 374.9 s, warm +23.5 %;
+  r9 (pipelined, before the composite base) 9 min cold 335.6 s, warm +22.2 %; run-to-run spread of the same export
+  ≈ 5–8 % (9 min, none: 251.1 / 254.8 / 274.2 s).
+- Cold short: before the text measurer, five wrapped subtitles came out clipped and restarted the composite at
+  ≈ 13 s (r11). With measured boxes (and grown stills for boxes still `layoutPending`) there is no restart; what
+  remains (child-job timings recorded by the bench): the first sheet's latency (≈ 4 s: Remotion composition
+  selection ≈ 1.2 s + render), Chrome rendering the later sheets beside the composite, and provisional regions —
+  a cold stream is planned from the layer stills' regions (the 1 440 px wide box of an auto-height subtitle + its
+  paint) and only learns the trimmed pictures as they arrive, so its frame is about twice the warm one. Doubling
+  sheet sizes (16, 32, 45 here) cut it from 42.2 s (r14) to 37.0 s.
+- Subtitle parity (`subtitle-parity.e2e.test.ts`, REMOTION_E2E=1, 1080 × 1920, worst region SSIM over the pop-in,
+  overshoot and hold, final code): static 0.9997, motion pop 0.9873, Pixel Pop 0.9996, Pixel Pop classic 0.9994,
+  shake 0.9997, shake with motion blur (run master) 0.9995 — all ≥ 0.98 (FX-040); the side-by-side images were
+  inspected. Text paint under template effects: identity Transform and still S_Shake equal the plain subtitle
+  (SSIM 1.0000) natively and in the composition.
+- Preview (`scripts/perf/subtitles-preview.mjs`, built app on the VM, headless Chrome with software GL): S.5; the
+  pop-in, overshoot and hold of a Pixel Pop subtitle in the Program monitor were inspected in screenshots (`--shots`).
+
+Verification on the VM (final code): engine suite (`vitest run --maxWorkers=2`: 1 418 passed; two environment failures that
+also fail on the base branch — Electron without libgtk, the ZIP-1 peak-buffer bound under load), compositions and
+project suites, engine / compositions / project typecheck, `check-layers`, `check-tokens`, `check-anime`, Biome on
+the changed files, the Transform / motion-blur GL suites, and with REMOTION_E2E=1 `layer-bake.e2e`,
+`layer-bake-parallel.e2e`, `text-paint-export.e2e`, `compositor-export.e2e` and `subtitle-parity.e2e`.
+New tests: `subtitle-lowered.test.ts` (kernel vs reference, maps vs shader formulas, refusals, memory estimate, run
+grouping), `subtitle-export.test.ts` (kernel streams, run masters, composite base, preflight, killed and failing
+compositors), `subtitle-taps-failure.test.ts` and `subtitle-png.test.ts` (regressions and in-process decode),
+`packages/compositions/test/fx-lowered.test.ts`.
+
+Limitations:
+- Cold short exports are 1.54× (target 1.3×), above.
+- Program monitor: Pixel Pop with an outside stroke and a shadow plays ≈ 10 % below no subtitles over a solid on the
+  VM's software canvas (S.5), at the AS-075 limit.
+- The Program-monitor criterion over video (AS-075, within 10 % of video-only fps) cannot be resolved on the VM's
+  software-GL player (spread larger than the criterion); it holds over a solid.
+- Lowered layers differ from the composition by one resample (S.1): capped shutters use stratum centres, stage edges
+  are ½ px ramps; motion pop is the lowest SSIM (0.9873).
+- Run masters cover shaken layers on one track whose clips follow within 60 frames; graded, faded or blended shaken
+  layers stay one master each. Nested sequences do not pipeline their stills.

@@ -41,6 +41,7 @@ import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
+import { layerStill } from '../layer-bake/layer.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 // wp-m2-anime-templates (S11:ATP-002/008/010)
@@ -57,6 +58,7 @@ import {
 	outputFormatChanges,
 } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
+import { bakeRecipeOf, compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
@@ -252,6 +254,8 @@ type PlanDeps = {
 	effects?: EffectRegistry;
 	/** parity (roto): frames a matte set holds on this engine (null = gone, e.g. cleaned from the cache). */
 	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
+	/** spec 13 AS-074: memory the native composite may use (bytes); default `compositeMemoryBudget()`. */
+	memoryBudget?: number;
 };
 
 /** Font ids a text or captions layer draws with: its style, styled runs and Source Text keys. */
@@ -446,7 +450,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const mgClips: string[] = [];
 	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
 	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
-	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
+	const baked: { clipId: string; engine: 'remotion'; frames: number; still?: boolean }[] = [];
 	for (const reason of nestBlockers(snapshot))
 		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
 	// color-mgmt: linear-light compositing (Blend using 1.0 gamma / Linearize Working Space) is drawn by the GPU
@@ -465,6 +469,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				clipId: c.clipId,
 				engine: bakeEngine,
 				frames: c.duration + (c.headHandle ?? 0) + (c.tailHandle ?? 0),
+				...(bakeRecipeOf(c) === 'still' ? { still: true } : {}),
 			});
 		else if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) mgClips.push(c.clipId);
 		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
@@ -681,6 +686,15 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 
+	// spec 13 AS-074: a composite that cannot fit in memory is refused before anything runs (a bake of an hour that
+	// ends in an OOM kill, or the engine killed with it), with what it would need.
+	if (blockers.length === 0 && !video?.alpha && settings.engine !== 'remotion') {
+		const reason = compositeMemoryBlocker(
+			estimateComposite(snapshot, range),
+			deps.memoryBudget ?? compositeMemoryBudget(),
+		);
+		if (reason) blockers.push({ path: 'native', reason });
+	}
 	const nativeEligible = blockers.length === 0;
 	// `hybrid` = the native composite with baked graphics layers (S04 §11.2, S11:LBK-002).
 	const nativePath = baked.length > 0 ? 'hybrid' : 'native';
@@ -759,8 +773,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const frames = range.end - range.start;
 	const pixels = output.width * output.height;
 	const pixelFactor = Math.max(0.25, pixels / (1920 * 1080));
-	// Baked layers (uncached): Remotion at ~8 fps over each layer's drawn span (S04:RP-009 seed).
-	const bakeSeconds = path === 'hybrid' ? baked.reduce((s, b) => s + b.frames / 8, 0) * pixelFactor : 0;
+	// Baked layers (uncached): masters at ~8 fps over each layer's drawn span (S04:RP-009 seed); stills in sheet
+	// renders of up to 128 (spec 13 AS-071, textperf: ≈ 3.4 s fixed per render, ≈ 0.1 s per still).
+	const stillBakes = baked.filter((b) => b.still).length;
+	const bakeSeconds =
+		path === 'hybrid'
+			? (baked.reduce((s, b) => s + (b.still ? 0 : b.frames / 8), 0) +
+					Math.ceil(stillBakes / 128) * 3.4 +
+					stillBakes * 0.1) *
+				pixelFactor
+			: 0;
 	const estimateSeconds =
 		path !== 'remotion' ? (durationSec / 1.5) * pixelFactor + bakeSeconds : (frames / 8) * pixelFactor;
 	const bpp = 0.1 * 2 ** ((18 - output.crf) / 6);
@@ -1060,8 +1082,8 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 }
 
 function subpixelIn(snap: RenderSnapshot, c: RenderVisualClip): boolean {
-	// wp masks: layers with Opacity masks are kernel streams too.
-	if (maskExportRoute(c) === 'stream') return true;
+	// wp masks: layers with Opacity masks are kernel streams too; so are lowered layers (spec 13 AS-070).
+	if (maskExportRoute(c) === 'stream' || layerStill(c)) return true;
 	const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
 	return needsSubpixel(c, props, {
 		bw: Math.max(1, Math.round(c.intrinsicBox.width)),

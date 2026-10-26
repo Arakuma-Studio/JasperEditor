@@ -94,6 +94,35 @@ export function textPaintExtent(s: Partial<Pick<TextStyle, 'strokes' | 'shadow'>
 	return Math.max(stroke, Math.hypot(sh.dx, sh.dy) + stroke + sh.spreadPx + SHADOW_SIGMAS * sh.sigma);
 }
 
+/**
+ * How far glyph ink can leave the line boxes of a style (px): accents and descenders beyond a tight line height,
+ * italic overhangs. A generous share of the size (spec 13 SH-004 bake crop; measured boxes hold the line boxes).
+ */
+export function textInkPad(s: { sizePx?: number; lineHeight?: number }): number {
+	const size = typeof s.sizePx === 'number' && Number.isFinite(s.sizePx) ? Math.max(0, s.sizePx) : 0;
+	const lh = typeof s.lineHeight === 'number' && Number.isFinite(s.lineHeight) ? s.lineHeight : 1.2;
+	return Math.ceil(size * (0.35 + Math.max(0, 1.25 - lh) / 2)) + 2;
+}
+
+/**
+ * How far a text layer's picture can reach beyond its box (px): the paint of every style (strokes, shadow offset +
+ * spread + 3 σ) plus glyph ink beyond the line boxes, or the background padding. The layer bake's crop
+ * (`contentBleed`) and the effect canvas of a text layer with GPU effects (compositions fx stage) use it, so effects
+ * see the stroke and shadow (spec 13 AS-070).
+ */
+export function textContentPad(text: {
+	style: Partial<TextStyle>;
+	runs?: readonly { style?: Partial<TextStyle> }[];
+}): number {
+	const st = text.style;
+	let px = 0;
+	for (const s of [st, ...(text.runs ?? []).map((r) => ({ ...st, ...r.style }))])
+		px = Math.max(px, textPaintExtent(s) + textInkPad(s));
+	const bg = st.background as { paddingPx?: number } | null | undefined;
+	if (bg) px = Math.max(px, finite(bg.paddingPx) ? Math.max(0, bg.paddingPx) : 0);
+	return px;
+}
+
 /** Problems of the stroke list and shadow of a stored (possibly partial) text style. */
 export function textStyleIssues(style: unknown): string[] {
 	if (!style || typeof style !== 'object') return [];

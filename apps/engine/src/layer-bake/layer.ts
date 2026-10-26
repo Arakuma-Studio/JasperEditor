@@ -17,10 +17,12 @@ import {
 	resolveLayerProps,
 	type Transform,
 	textAnimatorsTimeVarying,
-	textPaintExtent,
+	textContentPad,
+	textInkPad,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';
+import { isLoweredLayer } from '../export/stream/lowered.ts';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
 const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic', 'captions']);
@@ -192,7 +194,13 @@ export type BakeVariant =
 	/** Static layer: one frame for the whole span; no fades (the builder applies them). */
 	| { recipe: 'still' }
 	/** One frame of a non-static layer (stills, LBK-025): `frame` counted from the span start; fades baked. */
-	| { recipe: 'frame'; frame: number };
+	| { recipe: 'frame'; frame: number }
+	/**
+	 * spec 13 AS-070: a lowered layer (`layerStill`): one frame of its layer region without Motion, Opacity and the
+	 * lowered effects (the native kernel draws them per frame); no fades. `grow`: the region grown on every side (the
+	 * layer drew past its content bleed, e.g. text overflowing an estimated box, see `layerStill`).
+	 */
+	| { recipe: 'layer-still'; grow?: true };
 
 /**
  * The clip as the bake renders it: only enabled effects, colour effects removed when ffmpeg applies them
@@ -215,6 +223,7 @@ export function bakeClip(
 	const effects = c.effects.filter((fx) => fx.enabled && !(strip && isColorEffect(fx, o.registry)));
 	const { headHandle, tailHandle, fades, ...rest } = c;
 	let out: RenderVisualClip;
+	if (o.variant.recipe === 'layer-still') return layerStillClip(c, o.registry, !!o.variant.grow);
 	if (o.variant.recipe === 'still') out = { ...rest, effects, start: 0, duration: 1 };
 	else
 		out = {
@@ -247,6 +256,92 @@ function shifted(t: Transform, s: { x: number; y: number }): Transform {
 		},
 	};
 }
+
+const constant = <T>(value: T) => ({ value, keyframes: [] });
+
+/**
+ * spec 13 AS-070: the clip as a `layer-still` bake draws it — one frame, its layer region at 1 px per layer px with
+ * the region's origin at (0, 0) of the bake frame: Motion is a translation by the bleed (no scale, rotation or flips),
+ * Opacity 100 %, no lowered effects, no keyframes on what is left, no handles or fades.
+ */
+export function layerStillClip(
+	c: RenderVisualClip,
+	registry?: EffectRegistry,
+	grow = false,
+): RenderVisualClip {
+	const pic = layerStill(c, registry, grow);
+	const e = pic ? -pic.x : 0;
+	const { headHandle: _h, tailHandle: _t, fades: _f, expressionPositionShift: _s, ...rest } = c;
+	return {
+		...rest,
+		start: 0,
+		duration: 1,
+		effects: [],
+		opacity: constant(100),
+		transform: {
+			position: constant([e, e] as [number, number]),
+			anchor: constant([0, 0] as [number, number]),
+			scale: constant(100),
+			scaleWidth: constant(100),
+			uniformScale: true,
+			rotation: constant(0),
+			flipH: false,
+			flipV: false,
+		},
+	};
+}
+
+/**
+ * spec 13 AS-070 — the layer region a text layer is baked as when its content is static but its picture moves
+ * (keyframed Motion / Opacity, the Transform effect, S_Shake without motion blur or RGB split, `loweredRefusal`):
+ * its box grown by the content bleed (strokes, shadow, ink) on every side, whole pixels, in layer px. Null = not a
+ * lowered layer (static layers keep the `still` recipe, the rest a master).
+ */
+export function layerStill(
+	c: RenderVisualClip,
+	registry: EffectRegistry = defaultEffectRegistry,
+	grow = false,
+): { x: number; y: number; w: number; h: number } | null {
+	if (!isDomLayer(c) || c.threeD || !isLoweredLayer(c)) return null;
+	const bare: RenderVisualClip = {
+		...c,
+		effects: [],
+		opacity: constant(100),
+		...(c.transform
+			? {
+					transform: {
+						...c.transform,
+						position: constant(c.transform.position.value),
+						anchor: constant(c.transform.anchor.value),
+						scale: constant(c.transform.scale.value),
+						scaleWidth: constant(c.transform.scaleWidth.value),
+						rotation: constant(c.transform.rotation.value),
+					},
+				}
+			: {}),
+	};
+	if (!isStaticLayer(bare, registry)) return null;
+	const bleed = contentBleed(bare, registry);
+	if (bleed === null || !Number.isFinite(bleed)) return null;
+	// Grown: a quarter of the box and two font sizes more (an estimated box the glyphs overflow, a line that wraps) —
+	// asked for after a clipped bake, and up front while the box is an estimate (`layoutPending`: made without a text
+	// measurer), so a pipelined export does not restart for it.
+	const size = 'text' in c.source ? Math.max(0, c.source.text.style.sizePx ?? 0) : 0;
+	const pending = 'text' in c.source && !!c.source.layoutPending;
+	const e =
+		Math.ceil(Math.max(0, bleed)) +
+		2 +
+		(grow || pending
+			? Math.ceil(0.25 * Math.max(c.intrinsicBox.width, c.intrinsicBox.height) + 2 * size)
+			: 0);
+	const w = Math.ceil(c.intrinsicBox.width) + 2 * e;
+	const h = Math.ceil(c.intrinsicBox.height) + 2 * e;
+	if (!(w > 0 && h > 0) || w > MAX_LAYER_STILL_SIDE || h > MAX_LAYER_STILL_SIDE) return null;
+	return { x: -e, y: -e, w, h };
+}
+
+/** Largest side of a lowered layer's still (larger layers keep the master recipe). */
+const MAX_LAYER_STILL_SIDE = 4096;
 
 /** Frames of the render document of a variant: the drawn span, or one frame. */
 export function variantFrames(c: RenderVisualClip, v: BakeVariant): number {
@@ -375,15 +470,7 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 	return fonts.filter((f) => used.has(f));
 }
 
-/**
- * How far glyph ink can leave the line boxes of a style (px): accents and descenders beyond a tight line height,
- * italic overhangs. A generous share of the size (spec 13 SH-004 bake crop; measured boxes hold the line boxes).
- */
-export function textInkPad(s: { sizePx?: number; lineHeight?: number }): number {
-	const size = typeof s.sizePx === 'number' && Number.isFinite(s.sizePx) ? Math.max(0, s.sizePx) : 0;
-	const lh = typeof s.lineHeight === 'number' && Number.isFinite(s.lineHeight) ? s.lineHeight : 1.2;
-	return Math.ceil(size * (0.35 + Math.max(0, 1.25 - lh) / 2)) + 2;
-}
+export { textInkPad };
 
 /**
  * spec 13 SH-004 (textperf: a 130 px caption baked 1080×760): a text layer whose box is measured (not pending,
@@ -419,15 +506,10 @@ export function contentBleed(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): number | null {
 	let px = 0;
+	// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
+	// boxes, and the background padding (shared with the compositions' effect canvas).
 	const src = 'text' in c.source ? c.source : undefined;
-	const st = src?.text.style;
-	if (st && src) {
-		// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
-		// boxes, and the background padding.
-		const styles = [st, ...(src.text.runs ?? []).map((r) => ({ ...st, ...r.style }))];
-		for (const s of styles) px = Math.max(px, textPaintExtent(s) + textInkPad(s));
-		if (st.background) px = Math.max(px, st.background.paddingPx ?? 0);
-	}
+	if (src) px = textContentPad(src.text);
 	// A vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
 	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
 	const vshape = 'shape' in c.source ? c.source.shape : undefined;

@@ -160,6 +160,13 @@ describe('cubic-bezier text', () => {
 		if (!r.ok) expect(r.error).toMatch(msg);
 	});
 
+	it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
+		'refuses the Object.prototype name %j instead of throwing (regression: keyword is not iterable)',
+		(s) => {
+			expect(parseCubicBezier(s).ok).toBe(false);
+		},
+	);
+
 	it('never throws and round-trips what it writes (fuzz)', () => {
 		fc.assert(
 			fc.property(fc.string({ maxLength: 300 }), (s) => {
