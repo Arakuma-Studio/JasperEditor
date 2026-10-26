@@ -62,10 +62,10 @@ function StageLine(p: { s: StyleStageReportDto }) {
 		<li className="flex flex-col" data-testid={`apply-style-stage-${s.stage}`} data-status={s.status}>
 			<span className={`flex gap-2 text-pr-small ${tone}`}>
 				<span className="w-[120px] shrink-0">{name(s.name)}</span>
-				<span className="w-[96px] shrink-0">{t(STATUS_TEXT[s.status])}</span>
+				<span className="w-[96px] shrink-0">{STATUS_TEXT[s.status]}</span>
 				{s.status === 'planned' ? <span className="pr-tabular">{s.count}</span> : null}
 				{s.status === 'planned' && s.cost ? (
-					<span className="text-pr-muted">· {t(COST_TEXT[s.cost])}</span>
+					<span className="text-pr-muted">· {COST_TEXT[s.cost]}</span>
 				) : null}
 			</span>
 			{s.reason && s.status !== 'off' ? (
@@ -93,7 +93,7 @@ function DrySummary(p: { r: ApplyStyleResult }) {
 			</ul>
 			<span className="text-pr-small text-pr-text" data-testid="apply-style-cost">
 				{planned
-					? t('{0} proposal items · {1}', r.itemCount, t(COST_TEXT[r.cost]))
+					? t('{0} proposal items · {1}', r.itemCount, COST_TEXT[r.cost])
 					: t('Nothing to propose with this recipe here')}
 			</span>
 			{!r.budget.fits ? (

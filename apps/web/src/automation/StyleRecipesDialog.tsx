@@ -222,7 +222,7 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 										<>
 											{name(c.name)}
 											<span className="ml-2 text-pr-small text-pr-muted">
-												{t(SOURCE_TEXT[c.source])}
+												{SOURCE_TEXT[c.source]}
 												{c.recipe ? ` · ${t('version {0}', c.recipe.revision)}` : ''}
 												{c.newer ? ` · ${t('newer version')}` : ''}
 											</span>
@@ -272,7 +272,7 @@ export function StyleRecipesDialog(props: HostedDialogProps<StyleRecipesDialogPr
 								? t(
 										'A new recipe from “{0}” with the settings you last used in: {1}.',
 										name(base?.name ?? ''),
-										lastPasses.map((p) => t(AUTOMATION_PASS_TITLES[p])).join(', '),
+										lastPasses.map((p) => AUTOMATION_PASS_TITLES[p]).join(', '),
 									)
 								: t(
 										'A new recipe from “{0}” (no Automate dialog was used in this project yet).',

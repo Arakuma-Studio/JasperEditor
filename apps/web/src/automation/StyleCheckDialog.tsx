@@ -25,11 +25,17 @@ export function registerStyleCheckDialog(): void {
 
 const name = (s: string) => translateName(s) ?? s;
 
-const STATUS: Record<StyleCheckMetricDto['status'], { text: string; mark: string; tone: string }> = {
-	ok: { text: 'On target', mark: '✓', tone: 'text-pr-text' },
-	off: { text: 'Off target', mark: '!', tone: 'text-pr-warning' },
-	unmeasured: { text: 'Not measured', mark: '–', tone: 'text-pr-muted' },
-	unchecked: { text: 'No target', mark: '·', tone: 'text-pr-dim' },
+const STATUS_TEXT: Record<StyleCheckMetricDto['status'], string> = {
+	ok: 'On target',
+	off: 'Off target',
+	unmeasured: 'Not measured',
+	unchecked: 'No target',
+};
+const STATUS_LOOK: Record<StyleCheckMetricDto['status'], { mark: string; tone: string }> = {
+	ok: { mark: '✓', tone: 'text-pr-text' },
+	off: { mark: '!', tone: 'text-pr-warning' },
+	unmeasured: { mark: '–', tone: 'text-pr-muted' },
+	unchecked: { mark: '·', tone: 'text-pr-dim' },
 };
 
 /** "17.9 /min", "95 %", "−33 dB"… */
@@ -157,7 +163,7 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 								{result.metrics
 									.filter((m) => m.status !== 'unchecked')
 									.map((m) => {
-										const st = STATUS[m.status];
+										const st = STATUS_LOOK[m.status];
 										return (
 											<li
 												key={m.id}
@@ -174,7 +180,7 @@ export function StyleCheckDialog(props: HostedDialogProps<StyleCheckDialogProps>
 													<span className="text-pr-muted">
 														{t('Target')} {formatTarget(m)}
 													</span>
-													<span className="sr-only">{t(st.text)}</span>
+													<span className="sr-only">{STATUS_TEXT[m.status]}</span>
 												</span>
 												<span className="pl-[22px] text-pr-small text-pr-muted">{m.message}</span>
 												{m.lookHere.length ? (
