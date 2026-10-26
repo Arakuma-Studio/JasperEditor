@@ -144,4 +144,40 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 		}
 		expect(parity).toBeLessThanOrEqual(0.02);
 	}, 3_600_000);
+
+	it('WebGPU (NVIDIA GPU support off): encoder on WebGPU, device-resident decoder calibrated, CPU parity', async () => {
+		await app.inject({ method: 'PUT', url: '/api/speech/settings', headers: JSON_H, payload: { nvidiaGpu: false } });
+		const probe = (await app.inject({ method: 'POST', url: '/api/speech/probe', headers: H })).json() as SpeechProbe;
+		console.log(`probe without CUDA: ${JSON.stringify({ providers: probe.providers, chosen: probe.chosen })}`);
+		const webgpu = probe.providers.find((p) => p.id === 'webgpu');
+		if (!webgpu?.available) {
+			console.log(`WebGPU unavailable here: ${webgpu?.reason}`);
+			return;
+		}
+		expect(probe.chosen.encoder).toBe('webgpu');
+		const runs: Array<[string, TranscriptionResult]> = [];
+		for (const model of ['whisper-tiny.en', 'whisper-large-v3-turbo']) {
+			runs.push([`${model} gpu`, await transcribe({ model, device: 'gpu' })]);
+			runs.push([`${model} gpu (calibrated)`, await transcribe({ model, device: 'gpu' })]);
+			runs.push([`${model} cpu`, await transcribe({ model, device: 'cpu' })]);
+		}
+		const cal = (
+			(await app.inject({ method: 'GET', url: '/api/speech/probe', headers: H })).json() as SpeechProbe
+		).calibrations.filter((c) => c.provider === 'webgpu');
+		for (const [name, r] of runs)
+			console.log(
+				`webgpu run ${name}: ${r.device?.label} rtf ${r.timings.rtf} WER ${(wordErrorRate(reference, text(r)) * 100).toFixed(2)} % fallbacks ${JSON.stringify(r.device?.fallbacks)}`,
+			);
+		console.log(`webgpu calibrations: ${JSON.stringify(cal)}`);
+		for (const model of ['whisper-tiny.en', 'whisper-large-v3-turbo']) {
+			const gpu = runs.find(([n]) => n === `${model} gpu (calibrated)`)![1];
+			const cpu = runs.find(([n]) => n === `${model} cpu`)![1];
+			const parity = wordErrorRate(text(cpu), text(gpu));
+			console.log(`${model} WebGPU-vs-CPU word difference ${(parity * 100).toFixed(2)} %, identical ${text(cpu) === text(gpu)}`);
+			expect(gpu.device?.encoder).toBe('webgpu');
+			expect(gpu.device?.fallbacks).toEqual([]);
+			expect(parity).toBeLessThanOrEqual(0.02);
+		}
+		expect(cal.length).toBe(2);
+	}, 3_600_000);
 });

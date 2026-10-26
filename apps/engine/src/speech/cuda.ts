@@ -46,8 +46,24 @@ export const CUDA_RUNTIME_LIBS = [
 ];
 const MIN_DRIVER_MAJOR = 580;
 
-export const CUDA_GUIDANCE =
-	'Install the NVIDIA driver 580 or newer, the CUDA 13 runtime (cuBLAS, cuRAND) and cuDNN 9 from NVIDIA (for example the distribution packages cuda-runtime-13, libcublas-13, libcurand-10 and libcudnn9-cuda-13), then probe again. JasperEditor does not ship them (NVIDIA licence).';
+/**
+ * What to install when the NVIDIA runtime is incomplete. The CUDA provider of ONNX Runtime 1.30 is built for CUDA 13:
+ * a CUDA 12 toolkit (common on GPU hosts) does not satisfy it, so that case is named explicitly. Package names are
+ * those of NVIDIA's apt repository (`cuda-cudart-13-0`, `libcublas-13-0`, `libcurand-13-0`, `libcudnn9-cuda-13`) and
+ * NVIDIA's pip wheels (`nvidia-cuda-runtime`, `nvidia-cublas` 13.x, found through `LD_LIBRARY_PATH`).
+ */
+export function cudaGuidance(rt: Pick<CudaRuntime, 'missing' | 'olderCuda'>): string {
+	const parts: string[] = [];
+	if (rt.olderCuda !== null && rt.missing.some((m) => /\.so\.13$/.test(m)))
+		parts.push(
+			`CUDA ${rt.olderCuda} is installed, but ONNX Runtime ${ORT_CUDA_PACKAGE.ortVersion}'s CUDA provider needs the CUDA 13 runtime libraries (they can be installed next to CUDA ${rt.olderCuda}).`,
+		);
+	parts.push(
+		`Install the NVIDIA driver 580 or newer, the CUDA 13 runtime with cuBLAS and cuRAND, and cuDNN 9 for CUDA 13 — from NVIDIA's apt repository (cuda-cudart-13-0, libcublas-13-0, libcurand-13-0, libcudnn9-cuda-13) or NVIDIA's pip wheels (nvidia-cuda-runtime and nvidia-cublas 13.x, with their lib directory in LD_LIBRARY_PATH) — then check the GPUs again. JasperEditor does not ship them (NVIDIA licence).`,
+	);
+	if (rt.missing.length) parts.push(`Missing: ${rt.missing.join(', ')}.`);
+	return parts.join(' ');
+}
 
 const InstallSchema = z.object({
 	ortVersion: z.string(),
@@ -56,7 +72,11 @@ const InstallSchema = z.object({
 	installedAt: z.string(),
 });
 
-export type CudaRuntime = SpeechCudaStatus['runtime'] & { libDirs: string[] };
+export type CudaRuntime = SpeechCudaStatus['runtime'] & {
+	libDirs: string[];
+	/** Major version of an older CUDA runtime found instead (`libcudart.so.12` → 12), else null. */
+	olderCuda: number | null;
+};
 
 export class CudaProvider {
 	constructor(
@@ -118,6 +138,9 @@ export class CudaProvider {
 					break;
 				}
 		const missing = CUDA_RUNTIME_LIBS.filter((l) => !found.has(l));
+		let olderCuda: number | null = null;
+		for (const v of [12, 11])
+			if (olderCuda === null && dirs.some((d) => existsSync(join(d, `libcudart.so.${v}`)))) olderCuda = v;
 		let driverVersion: string | null = null;
 		let gpu: string | null = null;
 		let vramMb: number | null = null;
@@ -145,6 +168,7 @@ export class CudaProvider {
 			gpu,
 			vramMb,
 			libDirs: [...new Set(found.values())],
+			olderCuda,
 		};
 	}
 
@@ -180,7 +204,7 @@ export class CudaProvider {
 		const state = await this.state();
 		const rt: CudaRuntime = this.supported
 			? this.runtime()
-			: { ok: false, missing: [], driverVersion: null, gpu: null, vramMb: null, libDirs: [] };
+			: { ok: false, missing: [], driverVersion: null, gpu: null, vramMb: null, libDirs: [], olderCuda: null };
 		return {
 			state,
 			ortVersion: ORT_CUDA_PACKAGE.ortVersion,
@@ -192,7 +216,7 @@ export class CudaProvider {
 				gpu: rt.gpu,
 				vramMb: rt.vramMb,
 			},
-			...(this.supported && !rt.ok ? { guidance: CUDA_GUIDANCE } : {}),
+			...(this.supported && !rt.ok ? { guidance: cudaGuidance(rt) } : {}),
 			license: ORT_CUDA_PACKAGE.license,
 		};
 	}
