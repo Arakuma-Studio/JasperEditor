@@ -6,7 +6,7 @@ import type { ApplyStyleResult, EngineJob, StyleCheckResponse, StyleRecipeEntry 
 import { BUILTIN_STYLE_RECIPES, builtinStyleRecipe, projectStyleRecipes } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { ApplyStyleDialog } from '../src/automation/ApplyStyleDialog.tsx';
@@ -428,10 +428,13 @@ describe('Style Recipes…', () => {
 			fireEvent.click(within(row).getByTestId('style-recipe-rename'));
 		});
 		const field = within(row).getByRole('textbox', { name: 'Name' });
+		// the dialog is a form: Enter in a field would submit it (close) unless the field keeps the key
+		const enter = createEvent.keyDown(field, { key: 'Enter' });
 		await act(async () => {
 			fireEvent.change(field, { target: { value: 'Renamed' } });
-			fireEvent.keyDown(field, { key: 'Enter' });
+			fireEvent(field, enter);
 		});
+		expect(enter.defaultPrevented).toBe(true);
 		await settle(50);
 		expect(renamed).toEqual([['rcp_0000000000000011', { name: 'Renamed' }]]);
 		expect(closed).toEqual([]);
