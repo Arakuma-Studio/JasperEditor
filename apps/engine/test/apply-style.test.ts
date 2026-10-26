@@ -215,7 +215,11 @@ async function savedDoc(projectId: string): Promise<{ doc: ProjectDocument; revi
 	const b = r.json() as { result: ProjectDocument; revision: number };
 	return { doc: b.result, revision: b.revision };
 }
-async function proposeStyle(projectId: string, body: unknown, headers: Record<string, string> = AGENT_H): Promise<ApplyStyleResult> {
+async function proposeStyle(
+	projectId: string,
+	body: unknown,
+	headers: Record<string, string> = AGENT_H,
+): Promise<ApplyStyleResult> {
 	const r = await post(styleUrl(projectId, 'apply'), body, headers);
 	expect(r.statusCode, r.body).toBe(202);
 	const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
