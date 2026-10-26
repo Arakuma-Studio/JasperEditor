@@ -222,6 +222,9 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 					style: { sizePx: 56, shadow: { color: [0, 0, 0, 0.8], angleDeg: 45, distancePx: 6, blurPx: 8 } },
 				},
 				box: { width: 460, height: 80, autoSize: 'none' },
+				// A text animation keeps it a master (spec 13 AS-070 bakes text with only keyframed Motion as a layer
+				// still: subtitle-parity.e2e.test.ts); the straight-alpha check below needs a master.
+				textAnimation: { in: { preset: 'slide-up', durationFrames: 20 } },
 				ref: '$m',
 			},
 		]).refs.$m!;
@@ -274,12 +277,12 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(first.done.state, JSON.stringify(first.done.error)).toBe('succeeded');
 		expect(first.plan.path).toBe('hybrid');
 		expect(first.done.result).toMatchObject({ renderPath: 'hybrid', frames: 60 });
-		// spec 13 AS-070/071: the static title, the shape and the moving title (static content, keyframed Motion: a
-		// layer still) render as one sheet; the anime template is a master.
-		expect(first.bakes).toHaveLength(2);
+		// spec 13 AS-071: the static title and the shape render as one sheet; the moving title and the anime template
+		// are masters.
+		expect(first.bakes).toHaveLength(3);
 		const sheets = first.bakes.filter((job) => /– \d+ stills$/.test(job.title));
 		expect(sheets).toHaveLength(1);
-		expect(sheets[0]!.result).toMatchObject({ stills: 3, rerendered: 0 });
+		expect(sheets[0]!.result).toMatchObject({ stills: 2, rerendered: 0 });
 		const usageLog = join(coreServices(engine.app).config.paths.logsDir, 'remotion-usage.jsonl');
 		const usage = readFileSync(usageLog, 'utf8')
 			.trim()
