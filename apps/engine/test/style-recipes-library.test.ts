@@ -35,7 +35,7 @@ describe('StyleRecipeLibrary (persistence)', () => {
 		const a = await l.create({ ...base(), id: 'builtin:fast-shorts' });
 		expect(a.id).toMatch(/^rcp_[0-9A-Z]{16}$/);
 		expect(a.recipe).toMatchObject({ revision: 1, basedOn: 'builtin:fast-shorts', createdAt: NOW, name: 'Mine' });
-		expect(files(dir)).toEqual([`${a.id}.json`, 'index.json']);
+		expect(files(dir)).toEqual(['index.json', `${a.id}.json`]);
 		const b = await l.update(a.id, { name: 'Mine 2' });
 		expect(b.recipe).toMatchObject({ revision: 2, name: 'Mine 2' });
 		const c = await l.duplicate('builtin:clean');
@@ -45,7 +45,7 @@ describe('StyleRecipeLibrary (persistence)', () => {
 		expect(again.recipes.filter((r) => r.source === 'library').map((r) => r.name)).toEqual(['Clean copy', 'Mine 2']);
 		expect(again.repairs).toEqual([]);
 		await l.remove(c.id);
-		expect(files(dir)).toEqual([`${a.id}.json`, 'index.json']);
+		expect(files(dir)).toEqual(['index.json', `${a.id}.json`]);
 		expect(seen).toEqual([1, 2, 3, 4]);
 		// no temp files left behind
 		expect(files(dir).some((f) => f.endsWith('.tmp'))).toBe(false);
@@ -141,17 +141,18 @@ describe('style recipe routes', { timeout: 120_000 }, () => {
 	const HOST = { host: '127.0.0.1:47900' };
 	const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'style-agent', 'content-type': 'application/json' };
 	const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`, 'content-type': 'application/json' };
+	const noBody = (h: Record<string, string>) => Object.fromEntries(Object.entries(h).filter(([k]) => k !== 'content-type'));
 	afterAll(closeApps);
 
 	it('list / create / get / update / duplicate; deletes ask an agent for approval; built-ins are read-only', async () => {
 		const app = await makeApp({ token: TOKEN, editorKey: KEY });
-		const list = await app.inject({ method: 'GET', url: '/api/style-recipes', headers: AGENT_H });
+		const list = await app.inject({ method: 'GET', url: '/api/style-recipes', headers: noBody(AGENT_H) });
 		expect(list.statusCode).toBe(200);
 		expect(list.json()).toMatchObject({ revision: 0, repairs: [], readOnly: false });
 		const made = await app.inject({ method: 'POST', url: '/api/style-recipes', headers: AGENT_H, payload: JSON.stringify({ recipe: base() }) });
 		expect(made.statusCode, made.body).toBe(201);
 		const id = (made.json() as { id: string }).id;
-		const got = await app.inject({ method: 'GET', url: `/api/style-recipes/${id}`, headers: AGENT_H });
+		const got = await app.inject({ method: 'GET', url: `/api/style-recipes/${id}`, headers: noBody(AGENT_H) });
 		expect(got.json()).toMatchObject({ id, name: 'Mine', source: 'library' });
 		const up = await app.inject({ method: 'PUT', url: `/api/style-recipes/${id}`, headers: AGENT_H, payload: JSON.stringify({ name: 'Renamed' }) });
 		expect(up.json()).toMatchObject({ name: 'Renamed', recipe: { revision: 2 } });
@@ -160,12 +161,12 @@ describe('style recipe routes', { timeout: 120_000 }, () => {
 		expect(dup.json()).toMatchObject({ name: 'Fast Long-form copy' });
 		const bad = await app.inject({ method: 'POST', url: '/api/style-recipes', headers: AGENT_H, payload: JSON.stringify({ recipe: base(), extra: 1 }) });
 		expect(bad.statusCode).toBe(400);
-		const del = await app.inject({ method: 'DELETE', url: `/api/style-recipes/${id}`, headers: AGENT_H });
+		const del = await app.inject({ method: 'DELETE', url: `/api/style-recipes/${id}`, headers: noBody(AGENT_H) });
 		expect(del.statusCode).toBe(403);
 		expect(del.json()).toMatchObject({ code: 'APPROVAL_DENIED', detail: { code: 'E_APPROVAL_DENIED' } });
-		const builtin = await app.inject({ method: 'DELETE', url: '/api/style-recipes/builtin:clean', headers: EDITOR_H });
+		const builtin = await app.inject({ method: 'DELETE', url: '/api/style-recipes/builtin:clean', headers: noBody(EDITOR_H) });
 		expect(builtin.statusCode).toBe(409);
-		const ok = await app.inject({ method: 'DELETE', url: `/api/style-recipes/${id}`, headers: EDITOR_H });
+		const ok = await app.inject({ method: 'DELETE', url: `/api/style-recipes/${id}`, headers: noBody(EDITOR_H) });
 		expect(ok.json()).toEqual({ ok: true, removed: id });
 		expect(existsSync(join(app.appdir, 'style-recipes', `${id}.json`))).toBe(false);
 		mkdirSync(join(app.appdir, 'style-recipes'), { recursive: true });

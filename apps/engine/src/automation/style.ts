@@ -28,6 +28,7 @@ import {
 	cleanupFindingFrames,
 	defaultRegistries,
 	FINDING_KINDS,
+	makeEnvelope,
 	findStyleRecipe,
 	activeStyleRecipe,
 	type PassContext,
@@ -113,6 +114,10 @@ export async function resolveRecipe(
 
 type Warning = { code: string; message: string };
 
+/** The analysis job reads exactly the document planned on (an envelope: `loadProject` migrates and validates it). */
+const envelopeOf = (doc: ProjectDocument, revision: number) =>
+	makeEnvelope(doc, { revision, savedAt: new Date().toISOString(), platform: 'engine' });
+
 /** Runs a `cleanup-analysis` child job and waits for it (cancelled with `signal`). */
 async function runCleanupAnalysis(
 	deps: StyleDeps,
@@ -175,7 +180,7 @@ function styleHooks(
 				{
 					projectId: input.projectId,
 					sequenceId,
-					document: doc,
+					document: envelopeOf(doc, revision),
 					presetId: preset,
 					...(overrides ? { overrides: overrides as CleanupAnalyzeRequest['overrides'] } : {}),
 					...(range ? { range: { from: range.start, to: range.end } } : {}),
@@ -461,7 +466,7 @@ async function deadAirOf(
 	const r = await runCleanupAnalysis(deps, {
 		projectId,
 		sequenceId,
-		document: doc,
+		document: envelopeOf(doc, 0),
 		presetId: preset,
 		analyzeVoice: false,
 		decisions: { rejectKinds: [...FINDING_KINDS] },
