@@ -378,6 +378,33 @@ describe('cut awareness (AS-010 / AS-013)', () => {
 		expect(montage.stats.merged).toBe(2);
 		expect(montage.captions.length).toBeLessThanOrEqual(2);
 	});
+	it('a piece that starts on (or inside) a zone after a split does not run through it (fast-check seed 428871206)', () => {
+		// one word over frames 0–8; a hard cut at 1; a transition [1, 13) with its edit point at 7. The word goes to
+		// the piece after the hard cut, which starts with the transition, not before it: it ends on the edit point.
+		const rate = { num: 24000, den: 1001 };
+		const r = lay(words([['w0', 0, 8]], rate), {
+			rate,
+			cuts: [{ frame: 1 }, { frame: 7, zone: { start: 1, end: 13 } }],
+			rules: { minSeconds: 0.1 },
+			cutAware: ca,
+		});
+		expect(r.captions.map((c) => [c.start, c.end])).toEqual([[1, 7]]);
+		expect(r.stats.crossing).toBe(0);
+		// a hard cut inside a zone, after its start: the piece after it starts inside the transition
+		const inside = lay(
+			words([
+				['aa', 0, 6],
+				['bb', 30, 50],
+			]),
+			{
+				cuts: [{ frame: 20 }, { frame: 40, zone: { start: 10, end: 60 } }],
+				rules: { minSeconds: 0.1, breakPauseSeconds: 5 },
+				cutAware: ca,
+			},
+		);
+		for (const c of inside.captions) expect(c.start >= 40 || c.end <= 40 || c.start < 10).toBe(true);
+		expect(inside.stats.crossing).toBe(0);
+	});
 	it('transitions shorter than 3 frames are hard cuts', () => {
 		const r = lay(
 			words([
