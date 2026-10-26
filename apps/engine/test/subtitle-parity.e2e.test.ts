@@ -219,7 +219,11 @@ describe.runIf(enabled)(
 			return queue().get(id)!;
 		};
 
-		function subtitlesDoc(templates: Template[] = TEMPLATES, words: string[] = WORDS) {
+		function subtitlesDoc(
+			templates: Template[] = TEMPLATES,
+			words: string[] = WORDS,
+			style: Record<string, unknown> = {},
+		) {
 			const d = new DocBuilder('hd-1080p-59.94');
 			d.tx([{ type: 'sequence.updateSettings', sequenceId: d.seqId, settings: { width: W, height: H } }]);
 			const font = d.tx([{ type: 'font.add', family: 'JetBrains Mono', ref: '$f' }]).refs.$f!;
@@ -244,6 +248,7 @@ describe.runIf(enabled)(
 									fill: [1, 1, 1, 1],
 									strokes: [{ color: [0.68, 0, 1, 1], widthPx: 11.5, position: 'outside' }],
 									shadow: { color: [0.13, 0.11, 0.35, 0.8], angleDeg: 0, distancePx: 0, blurPx: 12 },
+									...style,
 								},
 							},
 							box: { width: 810, height: 140, autoSize: 'none' },
@@ -374,8 +379,8 @@ describe.runIf(enabled)(
 		}, 3_600_000);
 
 		it('template effects keep the stroke and shadow beyond the text box: native export and composition (AS-070)', async () => {
-			// The box (810 × 140 at y 890…1030) is tighter than the paint: the 11.5 px outside stroke and the 12 px shadow
-			// blur reach past its top and bottom. An identity Transform and a still S_Shake must not cut them off.
+			// The box (810 × 140 at y 890…1030) is tighter than the paint: a 24 px outside stroke and a shadow 70 px away
+			// reach past it. An identity Transform and a still S_Shake must not cut them off.
 			const SAME: Template[] = [
 				{ name: 'static', apply: () => {} },
 				{
@@ -396,7 +401,10 @@ describe.runIf(enabled)(
 						]),
 				},
 			];
-			const { d, spans } = subtitlesDoc(SAME, ['PIXEL ARTE']);
+			const { d, spans } = subtitlesDoc(SAME, ['PIXEL ARTE'], {
+				strokes: [{ color: [0.68, 0, 1, 1], widthPx: 24, position: 'outside' }],
+				shadow: { color: [0.05, 0.9, 0.3, 1], angleDeg: 90, distancePx: 70, blurPx: 2 },
+			});
 			const settings = {
 				sequenceId: d.seqId,
 				range: { type: 'entire' },
@@ -445,15 +453,17 @@ describe.runIf(enabled)(
 			const nat = spans.map((sp) => decodeRegion(out, sp.f0 + k));
 			const comp: Buffer[] = [];
 			for (const sp of spans) comp.push(await composition(sp.f0 + k));
-			// The paint does reach past the box: the static subtitle has stroke / shadow pixels above the box's top.
+			// The paint does reach past the box: the static subtitle has stroke / shadow pixels above or below it.
 			const above = (buf: Buffer) => {
 				let n = 0;
 				const bg = [buf[0]!, buf[1]!, buf[2]!];
-				for (let y = 0; y < 890 - REGION.y; y++)
+				for (let y = 0; y < REGION.h; y++) {
+					if (y + REGION.y >= 890 && y + REGION.y < 1030) continue;
 					for (let x = 0; x < REGION.w; x++) {
 						const i = (y * REGION.w + x) * 3;
 						if (Math.abs(buf[i]! - bg[0]!) + Math.abs(buf[i + 1]! - bg[1]!) + Math.abs(buf[i + 2]! - bg[2]!) > 24) n++;
 					}
+				}
 				return n;
 			};
 			expect(above(comp[0]!)).toBeGreaterThan(200);
@@ -465,10 +475,10 @@ describe.runIf(enabled)(
 				] as const) {
 					const q = { ssim: ssim(set[i]!, set[0]!), share: within(set[i]!, set[0]!, 3), above: above(set[i]!) };
 					report(
-						`[subtitle paint] ${t} vs static (${path}): SSIM ${q.ssim.toFixed(4)}, within 3/255 ${q.share.toFixed(4)}, paint above the box ${q.above} px vs ${above(set[0]!)}`,
+						`[subtitle paint] ${t} vs static (${path}): SSIM ${q.ssim.toFixed(4)}, within 3/255 ${q.share.toFixed(4)}, paint outside the box ${q.above} px vs ${above(set[0]!)}`,
 					);
 					expect(q.ssim, `${t} ${path}`).toBeGreaterThanOrEqual(0.995);
-					expect(q.above, `${t} ${path}: paint above the box`).toBeGreaterThan(0.9 * above(set[0]!));
+					expect(q.above, `${t} ${path}: paint outside the box`).toBeGreaterThan(0.9 * above(set[0]!));
 				}
 			}
 		}, 1_800_000);
