@@ -429,7 +429,10 @@ describe('reactions (EA-023)', () => {
 			expect(r.choice.scale).toBe(45);
 			expect(r.choice.rect.x0).toBeGreaterThanOrEqual(0);
 			expect(r.choice.rect.x1).toBeLessThanOrEqual(1920);
-			expect(r.position).toEqual([(r.choice.rect.x0 + r.choice.rect.x1) / 2, (r.choice.rect.y0 + r.choice.rect.y1) / 2]);
+			expect(r.position).toEqual([
+				(r.choice.rect.x0 + r.choice.rect.x1) / 2,
+				(r.choice.rect.y0 + r.choice.rect.y1) / 2,
+			]);
 		}
 	});
 
@@ -676,9 +679,12 @@ describe('overlay slides (EA-024)', () => {
 
 	it('a colour-matte base counts as the picture under the overlays', () => {
 		const h = new Harness();
-		const m = (h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image', width: 400, height: 300 }) }]).results[0] as {
-			mediaId: string;
-		}).mediaId;
+		const m = (
+			h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image', width: 400, height: 300 }) }])
+				.results[0] as {
+				mediaId: string;
+			}
+		).mediaId;
 		const F = flicksPerFrame(h.seq.settings.frameRate);
 		h.ok([
 			{ type: 'clip.addSolid', at: 0, duration: 900, track: 'V1', color: [0, 0, 1, 1] },

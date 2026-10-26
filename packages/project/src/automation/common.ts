@@ -115,8 +115,8 @@ export function aRollTrack(seq: Sequence): Track | null {
 export function basePictureTrack(seq: Sequence): Track | null {
 	const total = sequenceDuration(seq);
 	const per = new Map<string, number>();
+	// colour mattes count as base picture too (a background under the overlays)
 	for (const c of Object.values(seq.clips ?? {}))
-		// colour mattes count as base picture too (a background under the overlays)
 		if (isPicture(c) || (c.kind === 'solid' && c.enabled !== false))
 			per.set(c.trackId, (per.get(c.trackId) ?? 0) + c.duration);
 	if (total > 0) for (const t of seq.videoTracks) if ((per.get(t.id) ?? 0) >= 0.5 * total) return t;

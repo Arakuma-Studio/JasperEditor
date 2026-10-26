@@ -310,7 +310,8 @@ function rectFor(asset: PassAsset, slot: ReactionSlot, scale: number, geo: Frame
 	const w = asset.width && asset.width > 0 ? (asset.width * scale) / 100 : side;
 	const h = asset.height && asset.height > 0 ? (asset.height * scale) / 100 : side;
 	// the slot's centre, moved just enough to keep a picture that fits the frame inside it
-	const inside = (c: number, half: number, size: number) => (2 * half <= size ? Math.min(Math.max(c, half), size - half) : size / 2);
+	const inside = (c: number, half: number, size: number) =>
+		2 * half <= size ? Math.min(Math.max(c, half), size - half) : size / 2;
 	const cx = inside(slot.x * geo.width, w / 2, geo.width);
 	const cy = inside(slot.y * geo.height, h / 2, geo.height);
 	return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 };
