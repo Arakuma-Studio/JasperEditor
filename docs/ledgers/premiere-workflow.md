@@ -163,7 +163,7 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 - Export cost of ~900–1,200 animated text clips per long video (textperf research) — decides the subtitle export
   architecture.
 - S_Shake unit conversion from Premiere values (calibration needed).
-- 6 pre-existing test failures on `main` (Jasper Synth hashes, ZIP memory test) remain out of scope unless the user asks.
+- 7 pre-existing test failures on `main` on the VM (5 Jasper Synth pinned hashes, ZIP-1 memory, Electron without libgtk) remain out of scope unless the user asks.
 
 ## 8. Log
 - 2026-10-25 — ff main; VM provisioned; Mac workspace; scripts exported; research agents launched (codemap, subs,
@@ -177,4 +177,6 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   merges (2760136a); subtitles merged; integrated full suite on the VM (1243bcb7): 8,151 passed, 9 failed — 7 known
   (5 Jasper Synth hashes, ZIP-1 memory, Electron needs libgtk on the VM) + 2 fixed in ebdeb1bb (crop edge coverage
   rounding to 0.9999999999999996, regression test fails before; subtitles e2e named libx264 → OpenH264 only; e2e 3/3
-  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged (suite on 6fb5bd71: typecheck, lint, i18n pass; 8,223 passed, only the 7 known failures); recipes launched; recipes merged; fpsmap launched (export fidelity).
+  with `JASPER_FFMPEG_LGPL_ONLY=1`); cleanupui merged (suite: 8,181 passed, only the 7 known failures); overlays merged (suite on 6fb5bd71: typecheck, lint, i18n pass; 8,223 passed, only the 7 known failures); recipes launched; recipes merged; fpsmap launched (export fidelity); suite on c14e4fdd: 8,275 passed, 7 known + 2 easing fuzz failures = real crash on
+  the curve keyword "__proto__" (MCP parseCurveArg, web parseCubicBezier; predates the programme) fixed in 4ddf21f9 with
+  regression tests that fail before (the "occasionally flaky easing fuzz" was this bug).
