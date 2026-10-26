@@ -208,10 +208,10 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				}
 			};
 			let renderCount = 0;
-			let backgroundStarted = false;
 			/** The background still bakes of a pipelined export (see below). */
 			const background = (pending: Map<string, typeof items>) => {
-				backgroundStarted = true;
+				// Its own hold on the shared render browser (the masters of `prepare` may still be using it).
+				const releaseBackground = release ? svc.browserSession(ctx.jobId) : null;
 				type Ready = { ok: true; picture?: Rect } | { ok: false; reason: string };
 				const deferred = new Map<string, { resolve(r: Ready): void; reject(e: unknown): void }>();
 				for (const [key, group] of pending) {
@@ -287,7 +287,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						for (const d of deferred.values()) d.reject(e);
 					},
 				);
-				pool.finally(() => release?.()).catch(() => undefined);
+				pool.finally(() => releaseBackground?.()).catch(() => undefined);
 			};
 			/** One round: one render per entry (identical layers share a bake key; graded entries have their own). */
 			const round = async (list: typeof items) => {
@@ -423,7 +423,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						true,
 					);
 			} finally {
-				if (!backgroundStarted) await release?.();
+				await release?.();
 			}
 			// Clip order of the snapshot (the composite does not depend on it; logs and tests read it).
 			const ordered: Prepared = new Map();
