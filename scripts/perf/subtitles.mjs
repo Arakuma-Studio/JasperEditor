@@ -467,6 +467,19 @@ try {
 		run.renderPath = job.result?.renderPath;
 		run.frames = job.result?.frames;
 		run.stages = stages;
+		// The export's child jobs (layer bakes, sheets): when they ran, relative to the export's start.
+		const t0Ms = Date.parse(job.createdAt);
+		const all = (await api('GET', '/api/jobs')).jobs ?? [];
+		run.children = all
+			.filter((c) => c.parentId === job.id)
+			.map((c) => ({
+				title: c.title,
+				state: c.state,
+				startSec: c.startedAt ? (Date.parse(c.startedAt) - t0Ms) / 1000 : null,
+				endSec: c.finishedAt ? (Date.parse(c.finishedAt) - t0Ms) / 1000 : null,
+				timing: c.result?.timing,
+			}))
+			.sort((a, b) => (a.startSec ?? 0) - (b.startSec ?? 0));
 		report.exports.push(run);
 		save();
 		console.log(JSON.stringify({ tag: TAG, ...run, stages: undefined }));
