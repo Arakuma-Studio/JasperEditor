@@ -122,6 +122,7 @@ function tree(rootPid) {
 				pid: Number(n),
 				ppid: Number(r[1]),
 				cpu: Number(r[11]) + Number(r[12]) + Number(r[13]) + Number(r[14]),
+				own: Number(r[11]) + Number(r[12]),
 				rss: Number(r[21]) * 4096,
 				comm: s.slice(s.indexOf('(') + 1, s.lastIndexOf(')')),
 			});
@@ -155,9 +156,18 @@ function sampler(rootPid) {
 	let tick = 0;
 	const byComm = new Map();
 	const cpu = (t) => t.reduce((a, p) => a + p.cpu, 0);
-	const c0 = cpu(tree(rootPid));
+	const t0 = tree(rootPid);
+	const c0 = cpu(t0);
+	// CPU by process name (own time, children excluded): each process's last seen counter minus its first (0 when it
+	// started later); a process's last 250 ms before it exits are not counted.
+	const seen = new Map(t0.map((p) => [p.pid, { comm: p.comm, first: p.own, last: p.own }]));
 	const h = setInterval(() => {
 		const t = tree(rootPid);
+		for (const p of t) {
+			const s = seen.get(p.pid);
+			if (s) s.last = p.own;
+			else seen.set(p.pid, { comm: p.comm, first: 0, last: p.own });
+		}
 		peak = Math.max(
 			peak,
 			t.reduce((a, p) => a + p.rss, 0),
@@ -176,6 +186,17 @@ function sampler(rootPid) {
 		clearInterval(h);
 		return {
 			cpuSec: (cpu(tree(rootPid)) - c0) / 100,
+			cpuSecByComm: Object.fromEntries(
+				[
+					...[...seen.values()].reduce(
+						(m, s) => m.set(s.comm, (m.get(s.comm) ?? 0) + (s.last - s.first) / 100),
+						new Map(),
+					),
+				]
+					.sort((a, b) => b[1] - a[1])
+					.slice(0, 8)
+					.map(([k, v]) => [k, Math.round(v)]),
+			),
 			peakRssMB: Math.round(peak / 1e6),
 			peakPssMB: Math.round(peakPss / 1e6),
 			peakRssByCommMB: Object.fromEntries(
