@@ -188,4 +188,8 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   48 social/template-control web tests pass), typecheck + lint pass; full suite 9,049 passed — besides the 7 known and
   the planSet fallout, a subtitles-layout property counterexample (zone starting on a hard cut) sent back to subtitles → real layout bug (zone run-through judged
   from the subtitle's start instead of the split piece's), fixed with a regression test that fails before (0df88311); full `pnpm e2e` on 4775e410 with
-  `JASPER_FFMPEG_LGPL_ONLY=1`: 137 passed, 2 skipped (30 min); build + Remotion suites restarted after fpsmap merged; final gate running on 947d33f4.
+  `JASPER_FFMPEG_LGPL_ONLY=1`: 137 passed, 2 skipped (30 min); build + Remotion suites restarted after fpsmap merged; final gate on 947d33f4 (VM): fixtures, lint, typecheck, build pass;
+  `JASPER_REQUIRE_ORACLES=1 pnpm test`: 9,091 passed, 7 failed — all 7 also fail on the VM's old main checkout (71c86ba2:
+  5 Jasper Synth pinned hashes, ZIP-1 peak 70.3 MB > 64 MiB) or need libgtk (Electron); Remotion suites with
+  `REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG_LGPL_ONLY=1`: compositions 157/157, motion 14 (+2 skipped),
+  engine 53 (+9 skipped); `pnpm e2e` running. User approved (2026-10-26) a new GPU box and a VM replacement.
