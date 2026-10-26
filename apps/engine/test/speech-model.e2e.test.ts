@@ -286,7 +286,8 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 			method: 'POST',
 			url: `/api/media/${m.mediaKey}/transcribe?wait=1`,
 			headers: JSON_H,
-			payload: { model: 'whisper-tiny.en', language: 'en', conditionOnPreviousText: false },
+			// Processor CPU: on a machine with a GPU (the RTX 4060 Ti box) "auto" picks it
+			payload: { model: 'whisper-tiny.en', language: 'en', conditionOnPreviousText: false, device: 'cpu' },
 		});
 		expect(r.statusCode, r.body).toBe(200);
 		const res = (r.json() as EngineJob).result as TranscriptionResult;
