@@ -1148,6 +1148,7 @@ export class ExportService {
 			: planned.output.color
 				? await outputLutFilter(planned.output.color, await ctx.scratchDir())
 				: null;
+		ctx.progress(0, { stage: 'Planning layers' });
 		const graph = buildNativeGraph({
 			colorLut,
 			snapshot: planned.snapshot,

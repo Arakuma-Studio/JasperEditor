@@ -82,6 +82,8 @@ const GRADE_VERSION = 2;
 const GRADED_FRAMES_DIR = 'graded';
 /** File name of graded frame `n`. */
 const gradedFrameName = (n: number) => `${String(n).padStart(6, '0')}.png`;
+/** `lastUsedAt` is rewritten at most this often per entry (the GC removes entries unused for 14 days). */
+const MARK_USED_EVERY_MS = 3_600_000;
 /** Border alpha (0…255) above which a cropped bake counts as clipped and is rendered full frame instead. */
 const RECT_CLIP_ALPHA = 2;
 
@@ -442,6 +444,10 @@ export class LayerBakeService {
 
 	private async markUsed(key: string, meta: LayerMeta): Promise<void> {
 		this.core.cache.touch(this.entryDir(key));
+		// The GC keeps entries used in the last 14 days: a use within the hour need not rewrite the meta (an export of
+		// 1 000 cached subtitles otherwise wrote 1 000 files before its composite).
+		const last = Date.parse(meta.lastUsedAt);
+		if (Number.isFinite(last) && this.now().getTime() - last < MARK_USED_EVERY_MS) return;
 		await atomicWriteJson(join(this.entryDir(key), 'meta.json'), {
 			...meta,
 			lastUsedAt: this.now().toISOString(),
