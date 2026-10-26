@@ -184,4 +184,6 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   the curve keyword "__proto__" (MCP parseCurveArg, web parseCubicBezier; predates the programme) fixed in 4ddf21f9 with
   regression tests that fail before (the "occasionally flaky easing fuzz" was this bug); subexport merged (suite: 8,315 passed, only the 7 known failures); origin/main merged into feat/workflow (299f4d2f,
   191 commits: social comments shipped their own schema v9 → the workflow bump is now v10, see D5; upstream had also fixed
-  the easing `__proto__` crash, its version kept).
+  the easing `__proto__` crash, its version kept); after the merge: one lost call (`planSet` → the row planner, c04f8e9a;
+  48 social/template-control web tests pass), typecheck + lint pass; full suite 9,049 passed — besides the 7 known and
+  the planSet fallout, a subtitles-layout property counterexample (zone starting on a hard cut) sent back to subtitles.
