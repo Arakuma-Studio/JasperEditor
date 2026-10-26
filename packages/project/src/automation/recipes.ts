@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { CutAwareSchema, SubtitleRulesSchema, SubtitleTextSchema } from '../captions/subtitles/rules.ts';
 import { CleanupOverridesSchema } from '../cleanup/schema.ts';
+import { utf8Length } from '../clipboard/payload.ts';
 import { CROCKFORD_ALPHABET } from '../ids.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import {
@@ -181,11 +182,13 @@ export type StyleRecipe = z.infer<typeof StyleRecipeSchema>;
 
 const byteLength = (v: unknown): number => {
 	try {
-		return new TextEncoder().encode(JSON.stringify(v) ?? '').length;
+		return utf8Length(JSON.stringify(v) ?? '');
 	} catch {
 		return Number.POSITIVE_INFINITY;
 	}
 };
+/** A deep copy of plain JSON data. */
+const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 export type RecipeParse =
 	| { ok: true; recipe: StyleRecipe }
@@ -261,7 +264,7 @@ const builtin = (
 	revision: 1,
 	builtIn: true,
 	...body,
-	assets: structuredClone(DEFAULT_RECIPE_ASSETS),
+	assets: copy(DEFAULT_RECIPE_ASSETS),
 	createdAt: BUILTIN_TIME,
 	updatedAt: BUILTIN_TIME,
 });
@@ -354,7 +357,7 @@ export const BUILTIN_STYLE_RECIPES: readonly StyleRecipe[] = [
 
 export function builtinStyleRecipe(id: string): StyleRecipe | null {
 	const r = BUILTIN_STYLE_RECIPES.find((x) => x.id === id);
-	return r ? structuredClone(r) : null;
+	return r ? copy(r) : null;
 }
 
 /** Names and descriptions the editor translates (`pnpm i18n` model strings). */
@@ -391,25 +394,25 @@ export function resolveRecipeStages(recipe: StyleRecipe, switches: StageSwitches
 				stage,
 				enabled: sw ?? c?.enabled ?? false,
 				preset: c?.preset ?? 'builtin.fast',
-				...(c?.overrides ? { overrides: structuredClone(c.overrides) } : {}),
+				...(c?.overrides ? { overrides: copy(c.overrides) } : {}),
 			});
 			continue;
 		}
 		if (stage === 'subtitles') {
 			const s = recipe.passes.subtitles;
 			const { enabled, ...rest } = s ?? { enabled: false, template: 'builtin:subtitles' };
-			out.push({ stage, enabled: sw ?? enabled, ...structuredClone(rest) });
+			out.push({ stage, enabled: sw ?? enabled, ...copy(rest) });
 			continue;
 		}
 		const entry = recipe.passes[stage] as { enabled: boolean; params?: Record<string, unknown> } | undefined;
-		const params: Record<string, unknown> = structuredClone(entry?.params ?? {});
+		const params: Record<string, unknown> = copy(entry?.params ?? {});
 		if (stage === 'decorate-cuts' || stage === 'punch-ins')
 			params.sfx = { ...roles.whoosh, ...((params.sfx as object | undefined) ?? {}) };
-		if (stage === 'reactions' && params.assets === undefined) params.assets = structuredClone(roles.reactionImages);
-		if (stage === 'music' && params.assets === undefined) params.assets = structuredClone(roles.musicFolder);
+		if (stage === 'reactions' && params.assets === undefined) params.assets = copy(roles.reactionImages);
+		if (stage === 'music' && params.assets === undefined) params.assets = copy(roles.musicFolder);
 		if (stage === 'stingers' && params.sound === undefined) {
 			params.sound = roles.staticNoise.sound;
-			if (roles.staticNoise.sfx && params.sfx === undefined) params.sfx = structuredClone(roles.staticNoise.sfx);
+			if (roles.staticNoise.sfx && params.sfx === undefined) params.sfx = copy(roles.staticNoise.sfx);
 		}
 		out.push({ stage, enabled: sw ?? entry?.enabled ?? false, params });
 	}
@@ -430,7 +433,7 @@ export function recipeWithPassParams(
 	base: StyleRecipe,
 	params: Partial<Record<AutomationPass, Record<string, unknown>>>,
 ): StyleRecipe {
-	const next = structuredClone(base);
+	const next = copy(base);
 	for (const [pass, p] of Object.entries(params) as [AutomationPass, Record<string, unknown>][]) {
 		if (!p) continue;
 		const { range: _r, excludeClipIds: _x, ...kept } = p as Record<string, unknown>;

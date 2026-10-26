@@ -111,7 +111,7 @@ export type StyleHooks = {
 		needs: SfxNeeds,
 	) => Promise<{ sfx?: PassSfx; report: StyleSfxReport; warnings: Warning[] }>;
 	progress?: (fraction: number, stage: string) => void;
-	signal?: AbortSignal;
+	signal?: { readonly aborted: boolean };
 };
 
 export type StyleRequest = {
