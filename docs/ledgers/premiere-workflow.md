@@ -137,8 +137,9 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
 | fpsmap | native vs Remotion export map 29.97 fps sources into 30 fps sequences differently + slight colour difference (found by recipes; predates the programme) — reproduce, fix every path to match Program preview, regression tests | — | ✅ merged (947d33f4; frames off the model, before → after, 29.97→30 over 1,040 frames: native 537 → 0, hybrid/Remotion 60 → 0; same for 23.976→24, 25→30, 30→29.97, speed and holds; untagged video decoded BT.709 on every path; remaining: Chrome's software YUV→RGB blue coefficient (≤ ≈12.5 levels on saturated blue, Remotion/hybrid only), untagged BT.601 SD now shown as BT.709 without a matrix override, Program-monitor cost of converted-rate clips not benchmarked) |
 
 ### Phase 4 — integration
-- ⏳ Merge branches, fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`, ask the
-  user before pushing.
+- ✅ Merge branches, fetch/merge `origin/main` (no newer upstream commits at integration), full gate + e2e + render
+  suites on the VM, merged to local `main` (26b68f57; tree = verified e43566e7 + this ledger).
+- ⏳ Push `main` to origin — waiting for the user's authorization.
 
 ## 5. Decisions
 - D1 (2026-10-25) Footage analysis on the user's Mac only; results back as small derived files.
@@ -198,4 +199,5 @@ Work packages (branch `feat/wf-<name>` off `feat/workflow`; spec requirement ids
   `REMOTION_E2E=1 JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG_LGPL_ONLY=1`: compositions 157/157, motion 14 (+2 skipped),
   engine 53 (+9 skipped); `pnpm e2e` (LGPL-only, full build): 137 passed, 2 skipped; `pnpm notices --check` current;
   `pnpm ffmpeg:check` all LGPL. User approved (2026-10-26) a new GPU box and a VM replacement; GPU box rented (RTX 4060 Ti,
-  driver 580.173, a different vast.ai host); speech agent verified real CUDA (e43566e7, box destroyed, ≈ $0.06); full gate re-run on e43566e7.
+  driver 580.173, a different vast.ai host); speech agent verified real CUDA (e43566e7, box destroyed, ≈ $0.06); full gate re-run on e43566e7: lint, typecheck, build pass; 9,092 passed, 8 failed = the 7 known +
+  `lumetri-grade` 33³ bake < 30 ms timing budget under 4-worker load (passes 3/3 alone).
