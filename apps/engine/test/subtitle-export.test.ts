@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { RenderVisualClip } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -236,7 +237,7 @@ describe('kernel streams (spec 13 AS-072)', () => {
 				list: [
 					{
 						id: 'runs',
-						override: (clip) =>
+						override: (clip: RenderVisualClip) =>
 							inRun.has(clip.clipId)
 								? { path: '/tmp/run.mov', space: 'sequence', startFrame: 8, includesFades: true, run }
 								: null,
