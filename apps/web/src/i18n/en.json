@@ -10350,6 +10350,7 @@
   "Target Pan",
   "Target Size",
   "Target Tilt",
+  "Target: {0}",
   "target.frame must be inside the sequence (0–{0})",
   "Targets",
   "Teal",
