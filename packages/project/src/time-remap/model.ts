@@ -17,6 +17,7 @@
 import { contentTimeAt } from '../derive/index.ts';
 import type { RemapKeyframe, TimeInterpolation, TimeRemap } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
+import { FRAME_TIME_EPS } from './sampling.ts';
 
 /** Largest timeline speed of a remap segment (Premiere Pro 14.0+: 20,000 %). */
 export const MAX_REMAP_SPEED = 200;
@@ -287,9 +288,36 @@ export function clipMediaRange(clip: TimedClip, rate: Rational): { min: number; 
 }
 
 /**
+ * Whether every picture a linear (forward, unremapped) clip shows starts exactly at a media frame: the held content
+ * time is a frame timestamp, or the in-point is one and each sequence frame advances by a whole number of media frames
+ * (speed × media rate / sequence rate, e.g. 30 → 30 at 100 %, 60 → 30, 30 → 30 at 200 %). Within `FRAME_TIME_EPS`.
+ * Only then does linear playback (the compositions' `<Video>`, which picks a frame with a millisecond-scale tolerance)
+ * show the frame S01:CLP-004 / `frameIndexAt` defines; otherwise frames fall between media frames (29.97 → 30,
+ * 23.976 → 24, 25 → 30, 30 → 29.97, speeds, in-points between frames) and the frame is chosen by media time.
+ */
+export function samplesOnFrameGrid(
+	clip: Pick<TimedClip, 'sourceIn' | 'speed' | 'frameHold'>,
+	opts: { sequenceRate: Rational; mediaRate: Rational },
+): boolean {
+	const mr = opts.mediaRate;
+	const sr = opts.sequenceRate;
+	if (!(mr.num > 0 && mr.den > 0 && sr.num > 0 && sr.den > 0)) return true;
+	const fps = mr.num / mr.den;
+	const onGrid = (flicks: number) => {
+		const q = (flicks * fps) / FLICKS_PER_SECOND;
+		return Number.isFinite(q) && Math.abs(q - Math.round(q)) <= FRAME_TIME_EPS * fps;
+	};
+	if (clip.frameHold) return onGrid(clip.frameHold.flicks);
+	const step = (clip.speed.rate * mr.num * sr.den) / (mr.den * sr.num);
+	return Number.isFinite(step) && Math.abs(step - Math.round(step)) <= 1e-9 && onGrid(clip.sourceIn);
+}
+
+/**
  * The clip's picture needs the retimed (frame-exact, media-time driven) pipeline rather than a linear decode:
- * reverse, a time remap, or Frame Blending / Optical Flow where frames fall between source frames (speed ≠ 100 %, a
- * remap, or a media frame rate that differs from the sequence).
+ * reverse, a time remap, Frame Blending / Optical Flow where frames fall between source frames (speed ≠ 100 %, a
+ * remap, or a media frame rate that differs from the sequence), and Frame Sampling whose pictures do not start on
+ * media frames (`samplesOnFrameGrid`: frame-rate conform, speed changes, in-points or holds between frames), so that
+ * the preview shows the frame the time model picks (docs/wp-notes/time.md §15).
  */
 export function needsRetime(
 	clip: TimedClip,
@@ -297,13 +325,35 @@ export function needsRetime(
 ): boolean {
 	if (clip.kind !== undefined && clip.kind !== 'video') return false;
 	if (clip.speed.reverse || isRemapped(clip)) return true;
+	const mr = opts.mediaRate;
 	if (timeInterpolationOf(clip) !== 'frame-sampling') {
 		if (clip.speed.rate !== 1) return true;
-		const mr = opts.mediaRate;
 		if (opts.vfr) return true;
 		if (mr && mr.num * opts.sequenceRate.den !== opts.sequenceRate.num * mr.den) return true;
 	}
-	return false;
+	return !!mr && !samplesOnFrameGrid(clip, { sequenceRate: opts.sequenceRate, mediaRate: mr });
+}
+
+/**
+ * A retimed clip the native builder draws itself with exact source timing (`sourceTimingFilters` in the engine):
+ * Frame Sampling of constant-rate media, forward, at a constant speed, without a remap or an interpreted time map
+ * (frame-rate conform, speed changes, in-points between frames, frame holds). Everything else retimed goes through
+ * the retime stage's intermediate.
+ */
+export function isLinearFrameSampling(c: {
+	retime?: { interpolation: TimeInterpolation; vfr: boolean } | null;
+	timeRemap?: TimeRemap | null;
+	speed: { reverse: boolean };
+	mediaTime?: unknown;
+}): boolean {
+	return (
+		!!c.retime &&
+		c.retime.interpolation === 'frame-sampling' &&
+		!c.retime.vfr &&
+		!c.timeRemap?.enabled &&
+		!c.speed.reverse &&
+		!c.mediaTime
+	);
 }
 
 export type RemapSegmentKind = 'forward' | 'reverse' | 'hold';

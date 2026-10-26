@@ -1,6 +1,6 @@
 // Video layers whose frames are chosen by
 // media time — reverse, Time Remapping, Frame Blending / Optical Flow (speed changes, remaps, frame-rate conform) and
-// variable-frame-rate media (timestamp-exact) — stay on the native path. `prepare` renders each one into a
+// variable-frame-rate media (timestamp-exact) — stay on the native path (linear Frame Sampling is the builder's). `prepare` renders each one into a
 // layer-sized lossless intermediate (FFV1, cached under `<appdir>/cache/retime/<key>.mkv`) with exactly the frames
 // the preview shows (same frame choice, same optical flow algorithm), and `override` hands it to the builder as the
 // clip's `layer` source: effects, Motion, opacity, masks and transitions then apply as for any video layer.
@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
-import { pixelVariantKey, type RenderVisualClip } from '@jasper/project';
+import { isLinearFrameSampling, pixelVariantKey, type RenderVisualClip } from '@jasper/project';
 import { decoderArgs, sourceFilters } from '../../imports/decode.ts';
 import { JobError } from '../../jobs/types.ts';
 import { alphaDecoder } from '../../media/alpha.ts';
@@ -37,9 +37,13 @@ export type RetimeDeps = {
 	log?(msg: string): void;
 };
 
-/** Video layers this extension renders (the snapshot marks them `retime`). */
+/**
+ * Video layers this extension renders (the snapshot marks them `retime`). Linear Frame Sampling (frame-rate conform,
+ * speed changes, in-points or holds between frames) is drawn by the builder with exact source timing instead
+ * (`sourceTimingFilters`, the same frame choice, without an intermediate).
+ */
 function retimeClaims(c: RenderVisualClip): boolean {
-	return c.kind === 'video' && !!c.retime && 'mediaId' in c.source;
+	return c.kind === 'video' && !!c.retime && 'mediaId' in c.source && !isLinearFrameSampling(c);
 }
 
 function layerSpan(c: RenderVisualClip, range: { start: number; end: number }): [number, number] {
