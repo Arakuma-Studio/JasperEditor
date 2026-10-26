@@ -701,10 +701,19 @@ export class CleanupController {
 		transport.pause();
 		const frame = transport.getState().frame;
 		dp.stop();
-		transport.seek(
-			active.kind === 'cleanup.result' ? toOriginalFrame(active.omitted, frame) : this.previewStartFrame,
-		);
+		const target =
+			active.kind === 'cleanup.result' ? toOriginalFrame(active.omitted, frame) : this.previewStartFrame;
+		transport.seek(target);
 		this.set({ preview: null });
+		// The Player still holds the shorter derived document until the Program monitor re-renders: it clamps the seek
+		// to its own end and reports that frame back. Seek again once the sequence is back in the Player.
+		const again = () => {
+			if (!derivedPreviewFor(this.session).getState().active && transport.getState().frame !== target)
+				transport.seek(target);
+		};
+		if (typeof requestAnimationFrame === 'function')
+			requestAnimationFrame(() => requestAnimationFrame(again));
+		else setTimeout(again, 50);
 	}
 
 	/** Plays the timeline from 1 s before a finding to 1 s after it (default the current finding). */

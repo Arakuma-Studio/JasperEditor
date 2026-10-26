@@ -66,7 +66,7 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 	const chip = (f: CleanupFinding) => {
 		const on = findingAccepted(f, st.decisions, remembered);
 		const secs = typeof f.reason.params.seconds === 'number' ? f.reason.params.seconds : 0;
-		const glyph = f.kind === 'pause' ? '⏸' : f.kind === 'breath' ? '≈' : '♪';
+		const glyph = f.kind === 'pause' ? '‖' : f.kind === 'breath' ? '≈' : '♪';
 		return (
 			<button
 				key={f.id}
