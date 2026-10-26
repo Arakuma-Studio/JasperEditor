@@ -6,7 +6,7 @@
 //
 //   BASE_URL=http://127.0.0.1:5199 E2E_TOKEN=… E2E_EDITOR_KEY=… node scripts/perf/subtitles-preview.mjs \
 //        --media <video> [--width 1920 --height 1080] [--clips 1080] [--variants none,static,pixelpop]
-//        [--seconds 8] [--profile] [--out DIR]
+//        [--seconds 8] [--profile] [--shots] [--out DIR]
 //
 // `--profile` records a V8 CPU profile of each variant's playback (CDP Profiler) and prints the 25 functions with the
 // most self time. Results: <out>/preview-<label>.json.
@@ -31,6 +31,8 @@ const SECONDS = Number(flag('seconds', 8));
 const VARIANTS = String(flag('variants', 'none,static,pixelpop')).split(',');
 const PROFILE = !!flag('profile', false);
 const TRACE = !!flag('trace', false);
+/** `--shots`: after each variant, screenshots of the page paused in a subtitle's pop-in, overshoot and hold. */
+const SHOTS = !!flag('shots', false);
 const MEDIA = flag('media', null);
 /** `--solid`: a colour matte instead of the video under the subtitles (isolates their cost from video decoding). */
 const SOLID = !!flag('solid', false);
@@ -323,6 +325,14 @@ for (const v of VARIANTS) {
 		if (cur.length) await tx(cur);
 	}
 	await measure(`${v}${v === 'none' ? '' : ` (${CLIPS} subtitles)`}`);
+	if (SHOTS && v !== 'none') {
+		const it = items.find((x) => x.start >= Math.round(5 * FPS));
+		for (const k of [1, 3, 6, 20]) {
+			await page.evaluate((f) => window.__jasperMonitor.session.transport.seek(f), Math.round(it.start) + k);
+			await new Promise((r) => setTimeout(r, 1500));
+			await page.screenshot({ path: join(OUT, `preview-${LABEL}-${v}-${k}.png`) });
+		}
+	}
 }
 await page.screenshot({ path: join(OUT, `preview-${LABEL}.png`) });
 await browser.close();
