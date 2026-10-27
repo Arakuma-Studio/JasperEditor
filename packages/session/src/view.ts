@@ -1,7 +1,7 @@
 import type { Issue } from '@jasper/project';
 import { z } from 'zod';
 
-export const SequenceViewSchema = z.object({
+const SequenceViewSchema = z.object({
 	playhead: z.number().int().nonnegative(),
 	pxPerFrame: z.number().positive(),
 	scrollFrame: z.number(),
@@ -29,7 +29,7 @@ export const SequenceViewSchema = z.object({
 
 export type SequenceViewState = z.infer<typeof SequenceViewSchema>;
 
-export const ProjectViewStateSchema = z.object({
+const ProjectViewStateSchema = z.object({
 	version: z.literal(1),
 	views: z.record(z.string(), SequenceViewSchema.partial()),
 	tabs: z.object({ open: z.array(z.string()) }),

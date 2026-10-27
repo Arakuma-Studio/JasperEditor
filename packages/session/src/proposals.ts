@@ -39,8 +39,9 @@ import {
 	type StaleProblem,
 } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { combine } from './selection.ts';
 import type { EditorSession } from './session.ts';
-import type { Unsubscribe } from './types.ts';
+import type { HistoryEntryView, SelectMode, Unsubscribe } from './types.ts';
 
 /** The engine calls the slice makes (the editor's `EngineClient`; tests pass a fake). */
 export type ProposalsEngine = Pick<
@@ -484,23 +485,11 @@ export class ProposalsController {
 		this.schedule();
 	}
 
-	select(itemIds: readonly string[], mode: 'replace' | 'add' | 'toggle' | 'remove' = 'replace'): void {
+	select(itemIds: readonly string[], mode: SelectMode = 'replace'): void {
 		const s = this.store.getState();
 		const known = new Set(s.items.map((it) => it.id));
 		const ids = itemIds.filter((id) => known.has(id));
-		let next: string[];
-		if (mode === 'replace') next = [...new Set(ids)];
-		else if (mode === 'add') next = [...new Set([...s.selection, ...ids])];
-		else if (mode === 'remove') next = s.selection.filter((id) => !ids.includes(id));
-		else {
-			const set = new Set(s.selection);
-			for (const id of ids) {
-				if (set.has(id)) set.delete(id);
-				else set.add(id);
-			}
-			next = [...set];
-		}
-		this.store.setState({ selection: next });
+		this.store.setState({ selection: combine(s.selection, ids, mode) });
 	}
 
 	setHear(on: boolean): void {
@@ -718,18 +707,17 @@ export class ProposalsController {
 			return { ...fail(err.code, err.message), ...(stale ? { stale } : {}) };
 		}
 		this.store.setState({ busy: false, lastError: null });
-		const label = r.result?.ok ? this.entryLabel(r.revision) : null;
-		if (r.applied.length && r.result?.ok) {
-			const entry = this.entryAt(r.revision);
-			if (entry !== null)
-				this.track({
-					proposalId,
-					itemIds: [...r.applied],
-					entryId: entry,
-					refs: { ...r.result.refs },
-					created: [...r.result.created],
-					state: 'applied',
-				});
+		const entry = r.result?.ok ? this.entryAt(r.revision) : undefined;
+		const label = entry?.label ?? null;
+		if (r.applied.length && r.result?.ok && entry) {
+			this.track({
+				proposalId,
+				itemIds: [...r.applied],
+				entryId: entry.id,
+				refs: { ...r.result.refs },
+				created: [...r.result.created],
+				state: 'applied',
+			});
 		}
 		const cur = this.store.getState();
 		this.store.setState({
@@ -784,15 +772,9 @@ export class ProposalsController {
 	// ---- History: Undo of an applied accept reopens it, Redo records it again
 
 	/** The History entry a transaction made (by the revision after it), whoever's it was. */
-	private entryAt(revisionAfter: number | null): number | null {
-		if (revisionAfter === null) return null;
-		const h = this.session.getState().history;
-		const e = h.entries.find((x) => x.revisionAfter === revisionAfter);
-		return e ? e.id : null;
-	}
-	private entryLabel(revisionAfter: number | null): string | null {
-		const h = this.session.getState().history;
-		return h.entries.find((x) => x.revisionAfter === revisionAfter)?.label ?? null;
+	private entryAt(revisionAfter: number | null): HistoryEntryView | undefined {
+		if (revisionAfter === null) return undefined;
+		return this.session.getState().history.entries.find((e) => e.revisionAfter === revisionAfter);
 	}
 
 	private track(rec: AppliedRecord): void {
@@ -806,8 +788,8 @@ export class ProposalsController {
 	 * History entry too, so undoing it puts the items back into review and redoing it records them again.
 	 */
 	private async learnAccept(proposalId: string, revision: number): Promise<void> {
-		const entryId = this.entryAt(revision);
-		if (entryId === null || this.records.some((r) => r.entryId === entryId)) return;
+		const entryId = this.entryAt(revision)?.id;
+		if (entryId === undefined || this.records.some((r) => r.entryId === entryId)) return;
 		const p = await this.read(proposalId);
 		if (!p || this.disposed || this.records.some((r) => r.entryId === entryId)) return;
 		const items = p.items.filter((it) => it.state === 'accepted' && it.applied?.revision === revision);

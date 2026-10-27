@@ -104,6 +104,22 @@ const engineStates = (e: FakeEngine, id: string) =>
 	Object.fromEntries(e.proposals.get(id)!.items.map((it) => [it.id, it.state]));
 
 describe('proposals slice: sync with the engine', () => {
+	it('selects known items in order across replace, add, toggle and remove', async () => {
+		const { c, engine, draft } = await setup();
+		await c.setActive(engine.create(draft).id);
+
+		c.select(['cut', 'missing', 'cut', 'trk']);
+		expect(c.getState().selection).toEqual(['cut', 'trk']);
+		c.select(['mk', 'cut', 'missing'], 'add');
+		expect(c.getState().selection).toEqual(['cut', 'trk', 'mk']);
+		c.select(['cut', 'mute', 'mute', 'missing'], 'toggle');
+		expect(c.getState().selection).toEqual(['trk', 'mk']);
+		c.select(['missing', 'trk', 'trk'], 'remove');
+		expect(c.getState().selection).toEqual(['mk']);
+		c.select([]);
+		expect(c.getState().selection).toEqual([]);
+	});
+
 	it('lists the project proposals and follows proposal.changed (list, the active one, deletion)', async () => {
 		const { c, engine, t, draft } = await setup();
 		expect((await c.load()).ok).toBe(true);
