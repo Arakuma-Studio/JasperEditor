@@ -15,11 +15,10 @@ export class Fft {
 		this.n = n;
 		const bits = Math.log2(n);
 		this.rev = new Uint32Array(n);
-		for (let i = 0; i < n; i++) {
-			let r = 0;
-			for (let b = 0; b < bits; b++) r |= ((i >>> b) & 1) << (bits - 1 - b);
-			this.rev[i] = r >>> 0;
-		}
+		// Reversing i drops its low bit into the high position and shifts the already-reversed i/2.
+		// Build each exact integer permutation index once, including large uncached sync plans.
+		const highBit = 1 << (bits - 1);
+		for (let i = 1; i < n; i++) this.rev[i] = (this.rev[i >>> 1]! >>> 1) | ((i & 1) === 0 ? 0 : highBit);
 		this.twRe = new Float64Array(n / 2);
 		this.twIm = new Float64Array(n / 2);
 		for (let k = 0; k < n / 2; k++) {
