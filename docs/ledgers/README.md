@@ -8,7 +8,7 @@ updated as work progresses so nothing is lost between sessions or context resets
 |---|---|---|
 | [premiere-port.md](premiere-port.md) | Port the user's Premiere projects: Premiere feature gaps (fonts, Smooth Slide, pitch mapping, spatial effect points, per-side ease, Crop order/feather, Link Media, crossfades, WMA preview) | Done, merged and pushed |
 | [premiere-workflow.md](premiere-workflow.md) | Automate the user's Premiere workflow: GPU Whisper + model evaluation, Premiere-like auto-subtitles as editable text clips with templates and cut-aware timing, multi-clip styling, transcript "probably wrong" detector + configurable auto-cut, editing-pattern automation | Done, merged and pushed |
-| [script-correction.md](script-correction.md) | Correct transcription errors from the video's written script (align, verify against the audio, re-time) and propagate the fixes to every feature; name glossary prompts and a personal glossary | In progress |
+| [script-correction.md](script-correction.md) | Correct transcription errors from the video's written script (align, verify against the audio, re-time) and propagate the fixes to every feature; name glossary prompts and a personal glossary | Done, merged to local main (push pending) |
 
 Rules for these files:
 - Committed ledgers hold no private material of the user (no raw transcript text, private folder or video names,

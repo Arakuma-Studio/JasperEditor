@@ -45,7 +45,13 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 | scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | ✅ merged (f40cdebd; real-model LJ test: 10/10 fixes, times ≤ 100 ms, undo exact, corrupted script → 0 fixes; whole job 13.1 s per speech minute on a 10.6-min synthetic input at research density, VM CPU, turbo, load 7.0–7.7, measured — target ≤ 20 s met; 22/22 injected errors fixed, deviations kept; 24cd51d2) |
 | scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | ✅ merged (4bdd7fe3; web 1,307 tests, e2e `script-fix.spec.ts` passes with a full build and LGPL-only FFmpeg; every surface checked in the VM dev stack; confidence bands High ≥ 0 / Medium ≥ −1.5 / Low are an assumption) |
 | sccalib | accuracy harness on the Mac with the editor's own code (SC-105) | scalign, scscore | ✅ merged (6e1c2db2; Mac, ONNX fp32 turbo, Standard: false fixes 1/558 corrupted words (0.18 %), 0 audio fixes in off-script/head-tail/hallucination regions (1 no-audio name join in a head-tail slate), recognition errors fixed 38/52 (73 %) with 0/55 real deviations, injected 245/430 (57 %), proper splits/glues 5/10, 2.49 fixes per speech minute; cost 4.27 s CPU / 2.29 s WebGPU per speech minute; CPU = WebGPU decisions; fixed a scoring refusal on a 238-word hallucination loop; windows unpacked by default) |
-- ⏳ Integration: fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`.
+- ✅ Integration: `origin/main` had no new commits; final gate on b5041f1e (replacement VM): i18n current, fixtures,
+  lint, typecheck, build pass; `JASPER_REQUIRE_ORACLES=1 pnpm test`: 9,355 passed, 7 failed — the 7 that also fail on
+  `main` on these VMs (5 Jasper Synth pinned hashes, ZIP-1 memory peak, Electron without libgtk); notices current;
+  FFmpeg all LGPL; real speech-model suites (`SPEECH_E2E=1`, turbo + tiny.en + tiny): 12 passed, 3 opt-in benches
+  skipped; Remotion suites: compositions 157/157, motion 14 (+2 skipped), engine 53/53; `pnpm e2e` (LGPL-only, full
+  build, incl. `script-fix.spec.ts`): 138 passed, 2 skipped. Merged to local `main`.
+- ⏳ Push `main` to origin — waiting for the user's authorization.
 
 ## 4. Decisions
 - D5 Score windows are packed with the gap audio muted (SC-105: unmuted packing let readings use untranscribed speech
@@ -80,4 +86,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
   VM long bench 13.62 s per speech minute (22 encoder passes; same 66 decisions); Mac CPU 3.68 s per speech minute;
   muted WebGPU cost not measured (the Mac went onto battery). origin/main has no new commits; final gate next.
 - 2026-10-27 — Orquester session restart closed the build VM mid-gate (no code lost: all work is in local git);
-  replacement VM rented with the user's approval and provisioned; final gate re-run on b5041f1e.
+  replacement VM rented with the user's approval and provisioned; final gate re-run on b5041f1e: passed; merged to local `main`.
