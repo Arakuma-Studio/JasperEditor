@@ -144,14 +144,15 @@ describe('Add another', () => {
 	it('Add Another twice from the same clip menu builds a sequence (no stacked copies); one undo step each', async () => {
 		const s = await openSession();
 		const src = addComment(s);
-		const ext = clipMenuExtensions.list().find((e) => e.id === 'mg-add-another')!;
 		const clip = s.getCommitted().sequences[s.getState().activeSequenceId!]!.clips[src]!;
-		expect(
-			ext.items({ session: s, clip: { ...clip, kind: 'solid' } as unknown as Clip, selection: [] }),
-		).toEqual([]);
+		const menuFor = (target: Clip) =>
+			clipMenuExtensions.list().flatMap((e) => e.items({ session: s, clip: target, selection: [src] }));
+		const isAddAnother = (i: ReturnType<typeof menuFor>[number]) =>
+			i.kind === 'item' && i.label === 'Add Another';
+		expect(menuFor({ ...clip, kind: 'solid' } as unknown as Clip).some(isAddAnother)).toBe(false);
 		const runOnSource = () => {
-			const items = ext.items({ session: s, clip, selection: [src] });
-			act(() => (items[0] as { run(): void }).run());
+			const action = menuFor(clip).find(isAddAnother) as { run(): void };
+			act(() => action.run());
 		};
 		runOnSource();
 		const afterFirst = s.getCommitted();

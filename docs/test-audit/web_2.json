@@ -80,7 +80,7 @@
     "seam": "Registered mg commands, clip menu, template section, gallery and spreadsheet dialog → session",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Owns editor selection/placement, import preview parity, file cap and read-only gating; shared CSV/model tests do not drive these actions.",
-    "reason": "Surviving source-menu owner adds non-motion-graphic exclusion from deleted duplicate; existing three literal sequential spans and per-action undo protect stale source selection regression.",
+    "reason": "Surviving source-menu owner adds non-motion-graphic exclusion from deleted duplicate; existing three literal sequential spans and per-action undo protect stale source selection regression. Find the visible Add Another action across the real extension registry; do not depend on its private registration id.",
     "validation": "pnpm exec vitest run apps/web/test/mg-add-another-bulk.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
@@ -4944,7 +4944,7 @@
   {
     "path": "apps/web/test/sound-check-model.test.ts",
     "test": "fixWhyText translates the engine message (else its English text); unmeasured reasons are translated",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "fixWhyText translates the engine message (else its English text); unmeasured reasons are translated",
     "source": "docs/specs/12-sound-design.md §2.6/2.7; docs/wp-notes/sound-design.md WP5.2",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: fixWhyText translates the engine message (else its English text); unmeasured reasons are translated.",
@@ -4952,13 +4952,13 @@
     "seam": "Sound Check translation/fix-plan/target/verdict/codec-summary model outputs",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Mounted panel samples cannot enumerate malformed messages/fixes, target parsing, verdict rebinding/staleness or codec mapping vectors.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "Preserve nonempty translation, engine fallback and literal 6dB/5.2LU/A1 data; assert structured solver reasons replace the raw English speech-band phrase. Drop full Spanish connective-prose copies that reject harmless wording edits.",
     "validation": "pnpm exec vitest run apps/web/test/sound-check-model.test.ts --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
     "path": "apps/web/test/sound-check-model.test.ts",
     "test": "fills the template; cue kinds and densities become labels; Spanish translates the template",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "fills the template; cue kinds and densities become labels; Spanish translates the template",
     "source": "docs/specs/12-sound-design.md §2.6/2.7; docs/wp-notes/sound-design.md WP5.2",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: fills the template; cue kinds and densities become labels; Spanish translates the template.",
@@ -4966,7 +4966,7 @@
     "seam": "Sound Check translation/fix-plan/target/verdict/codec-summary model outputs",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Mounted panel samples cannot enumerate malformed messages/fixes, target parsing, verdict rebinding/staleness or codec mapping vectors.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "Keep independent Impact/66.7/cue-kind facts and translated-versus-English distinction; remove a redundant full English sentence copied from the message template.",
     "validation": "pnpm exec vitest run apps/web/test/sound-check-model.test.ts --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
