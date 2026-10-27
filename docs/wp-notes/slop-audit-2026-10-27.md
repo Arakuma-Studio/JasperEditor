@@ -1,7 +1,7 @@
 # Codebase simplification audit
 
 Baseline: `eb28696c` on `main`, initially identical to `origin/main`. Fifteen area reviewers used
-isolated branches/worktrees, followed by integration and two independent reviews. The audit covered
+isolated branches/worktrees, followed by integration and independent reviews. The audit covered
 application and package source, tests, scripts, E2E infrastructure, root configuration and the native
 renderer. The prohibited reference material was excluded. Our cleanup did not change dependency versions,
 project schemas, shipped migrations, golden images or synthesis recipes. Integration retains the incoming
@@ -11,6 +11,10 @@ Deletion evidence combines searches across explicit repository roots, import/exp
 registration and namespace-use checks, implementation comparison and existing tests. Explicit roots
 matter in ignored `.claude/worktrees`: an empty bare `rg` result there is not evidence of no callers.
 These are private workspace packages; undocumented consumers outside this repository cannot be ruled out.
+
+Measured against incoming `3213ec5c`, settled source `db8e5643` changes 145 files under
+`apps packages scripts native e2e`: 339 lines added and 1,423 removed, or 1,084 fewer lines.
+Rerun with `git diff --shortstat 3213ec5c db8e5643 -- apps packages scripts native e2e`.
 
 ## Changes, risk and evidence
 
@@ -74,7 +78,7 @@ These are private workspace packages; undocumented consumers outside this reposi
 | Audio unused `CurveMeter.hops`, `ClickDetector.samples`, synth callback wrapper | Getters had no reads; callback only called an existing envelope. | Affected audio suites and pinned synth bytes on Node 20. |
 | Five identical stereo processor test factories | Shared test setup preserves every assertion and mono-specific defaults. | Existing processor/restoration/dynamics suites. |
 | Resampler generic Kaiser-beta branches | Private helper only received fixed high/fast attenuation values above 50 dB. | Same formula for both supported specifications; passband, aliasing, phase and dense-ratio tests retained. |
-| Unavailable social card scaffold/private flag/helper | No imports; exhaustive variant map has real implementations for every variant. Test fallback branch was unreachable. | Every variant/theme still rendered by the test; engine-facing availability contract retained. |
+| Unavailable social card scaffold, duplicate ready catalogue, asset guard and availability helper/engine branch | The exhaustive variant map implements all ten variants, and the ready list exactly duplicated the authoritative catalogue without build substitutions or mutation. Both guards were unreachable. | Private unused-export risk. Presets use the original catalogue in the same order; asset declarations, all-variant/theme render tests and generic missing-template export refusal remain covered. Removed assertions covered only obsolete availability scaffolding. |
 | `isEmojiPackId`, `SocialTheme`, `SocialUnitProp`, `SocialHeartProp`, duplicate `SOCIAL_ENTRANCE_MS` | No consumers; live tween definitions retain entrance timings. | Motion/template typechecks, timing/schedule tests and anime gate. |
 | `clampRating` and isolated test | Test was the only caller; production uses schema/randomization/render validation. | Remaining review tests retained; no rendering/schema change. |
 
@@ -122,8 +126,47 @@ witness supersedes the claim in `engine_3.json` that the deleted oracle had no u
 
 ## Verification
 
-Before remote integration, the settled full run passed 940 files / 9,363 tests, with 52 files / 301 tests
-skipped and zero failures (2,298.33 seconds). The complete browser run passed 138 tests with two skips in
-31.0 minutes. These counts describe `00a6f197` and do not claim coverage of the incoming merge.
+Settled source `db8e5643`, including the incoming merge and final readiness cleanup, passes the full unit
+gate: **937 files / 9,031 tests**, with **49 files / 282 tests skipped**, zero failures and zero TODOs,
+in 2,146.18 seconds. Command: `pnpm test --maxWorkers=2 --testTimeout=60000 --hookTimeout=240000`.
+Real Chrome/SwiftShader GL checks execute, including all 393 GPU-host cases. All seven independent
+Python interchange-reader checks pass. Interrupted earlier runs are excluded from these counts.
 
-Integration verification results and limitations are recorded here after the settled-tree gate.
+The integrated tree passes `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck`,
+`pnpm ffmpeg:check`, `pnpm notices --check`, and `pnpm build`. The workspace build uses
+`NODE_OPTIONS=--max-old-space-size=6144`: the host's default Node 20 heap exhausted memory in an earlier
+attempt. The completed build retains nonblocking bundle-size and dependency-annotation warnings.
+`pnpm --filter @jasper/engine build:remotion` also passes; the regular build does not produce this bundle.
+
+Verification uses Node 20.20.2, pnpm 10.34.5, the manifest-pinned LGPL FFmpeg/ffprobe,
+`JASPER_REQUIRE_ORACLES=1`, Chrome 153 with SwiftShader, and at most two Vitest workers.
+The native renderer was actually built with Rust 1.96.0; its locked release workspace tests pass
+all 13 cases with none ignored. Python OpenTimelineIO, its format plugins and pyaaf2 are installed
+for independent interchange-reader checks. No test assertions, performance budgets or golden images
+were weakened to accommodate this host.
+
+The settled browser run passes **138 tests**, with **one skip**, in 24.5 minutes:
+`E2E_PORT=48279 E2E_SKIP_BUILD=1 pnpm e2e`. All workspace and Remotion outputs were freshly built before
+this invocation. The native motion-graphic export executes successfully. The sole skip requires
+`E2E_CLAP=1` and a local real-model catalogue. The server log contains a closed Remotion-page error;
+the browser continues and every enabled case passes.
+
+The selected optional Remotion run passes **three files / seven tests**, with none skipped, in
+483.37 seconds. It checks rendered mask coverage, color processing, social-card still/sequence parity
+and full-size canvas fit. Six of these cases were skipped by the default gate; its skip totals above
+remain the default-run totals. Command:
+
+`REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/masks-render.e2e.test.ts apps/engine/test/color-remotion.test.ts packages/motion/test/social-comment-render.e2e.test.ts --maxWorkers=1 --testTimeout=60000 --hookTimeout=240000`.
+
+The actual native export frame was visually inspected: the lower-third text and blue accent are
+legible over the intentional black interval before footage begins. Program-preview screenshots and
+the callout/export frame were also inspected during the UI cleanup. No golden output was blessed.
+The shared Linux host has eight logical CPUs and 15 GiB RAM; suite durations are wall times, not a
+performance comparison.
+
+The remaining skipped/default-omitted coverage comprises opt-in Remotion/MG rendering and parity matrices,
+MCP scenario QA, real model/CUDA/SAM suites, remote SSH integration, PowerShell-dependent opener checks,
+benchmarks, and three intentionally skipped random script-fix parity vectors. The complete extended
+`FUZZ=1`, strict `PERF=1`, desktop/packaged-app and other-platform matrices were not run. A real Electron
+AVC3 playback check passes after the host's GTK dependency was provided; this is not a full desktop smoke run.
+These limits do not count as successful tests. No unresolved failure remains in the completed enabled gates.
