@@ -111,11 +111,20 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	);
 
 	// the true words: the engine transcribes the fixture with the real model
-	const started = await page.request.post(`/api/media/${encodeURIComponent(key)}/transcribe`, {
-		data: { model: MODEL, language: 'en', projectId },
-	});
-	expect(started.ok(), await started.text()).toBe(true);
-	let job: EngineJob = EngineJobSchema.parse(await started.json());
+	// (from the page, like the editor's own client: same origin, the editor's session)
+	const started = await page.evaluate(
+		async ([k, body]) => {
+			const r = await fetch(`/api/media/${encodeURIComponent(k)}/transcribe`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			return { ok: r.ok, status: r.status, body: await r.text() };
+		},
+		[key, { model: MODEL, language: 'en', projectId }] as const,
+	);
+	expect(started.ok, started.body).toBe(true);
+	let job: EngineJob = EngineJobSchema.parse(JSON.parse(started.body));
 	job = await waitForJob(page.request, job.id, 300_000);
 	expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
 	const truth = (job.result as TranscriptionResult).words;
@@ -152,7 +161,8 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 		]),
 	);
 	const subs0 = await subtitleClips();
-	const styled = subs0.find((c) => /\bblack\b/i.test(c.content.text))!;
+	// "black books" (the fixture also says "a black stock", which is right)
+	const styled = subs0.find((c) => /\bblack\s+books\b/i.test(c.content.text))!;
 	expect(styled, 'a subtitle shows the corrupted word').toBeTruthy();
 
 	// Text ▸ Transcript ▸ Script…: paste the true text, attach
@@ -203,8 +213,8 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	const subs1 = await subtitleClips();
 	const after = subs1.find((c) => c.id === styled.id)!;
 	expect(after, 'the subtitle is patched in place (same clip)').toBeTruthy();
-	expect(after.content.text).toMatch(/\bblock\b/i);
-	expect(after.content.text).not.toMatch(/\bblack\b/i);
+	expect(after.content.text).toMatch(/\bblock\s+books\b/i);
+	expect(after.content.text).not.toMatch(/\bblack\s+books\b/i);
 	expect(after.content.style).toEqual(styled.content.style);
 	expect(after.effects).toEqual(styled.effects);
 	expect(subs1.map((c) => c.id).sort()).toEqual(subs0.map((c) => c.id).sort());

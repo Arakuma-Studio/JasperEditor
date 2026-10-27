@@ -491,7 +491,6 @@ export async function applyReview(
 			: {}),
 		durationMs: 15_000,
 		actions: [
-			...(fixReport?.action ? [fixReport.action] : []),
 			{
 				label: t('Undo'),
 				run: () => {
@@ -514,6 +513,8 @@ export async function applyReview(
 					void openReview(session, proposalId);
 				},
 			},
+			// the Review panel's report bar has it too (a toast shows its first actions)
+			...(fixReport?.action ? [fixReport.action] : []),
 		],
 	});
 	announce(title);

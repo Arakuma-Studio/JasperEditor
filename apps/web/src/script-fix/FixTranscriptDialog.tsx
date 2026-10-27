@@ -403,7 +403,9 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 								label={
 									glossary.entries === null
 										? t('Personal glossary')
-										: t('Personal glossary ({0} entries)', glossary.entries)
+										: glossary.entries === 1
+											? t('Personal glossary (1 entry)')
+											: t('Personal glossary ({0} entries)', glossary.entries)
 								}
 							/>
 						</span>
@@ -435,7 +437,7 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 					<Row label={t('Strictness')} testId="fix-strictness">
 						<Select
 							label={t('Strictness')}
-							className="w-72"
+							className="w-80"
 							disabled={!!running}
 							value={settings.strictness}
 							onValueChange={(v) => change({ strictness: v as FixStrictness })}

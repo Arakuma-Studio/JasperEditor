@@ -12369,5 +12369,6 @@
   "Your speech glossary is empty: add names in Preferences ▸ Transcription ▸ Glossary or use the script": "Su glosario de voz está vacío: añada nombres en Preferencias ▸ Transcripción ▸ Glosario o use el guion",
   "Δ {0} per token": "Δ {0} por token",
   "Play the recording": "Reproducir la grabación",
-  "Sequence ▸ Fix Transcript from Script…: the Fix Transcript dialog for the active sequence (the same as Text ▸ Fix Transcript…)": "Secuencia ▸ Corregir transcripción con el guion…: el cuadro Corregir transcripción de la secuencia activa (lo mismo que Texto ▸ Corregir transcripción…)"
+  "Sequence ▸ Fix Transcript from Script…: the Fix Transcript dialog for the active sequence (the same as Text ▸ Fix Transcript…)": "Secuencia ▸ Corregir transcripción con el guion…: el cuadro Corregir transcripción de la secuencia activa (lo mismo que Texto ▸ Corregir transcripción…)",
+  "Personal glossary (1 entry)": "Glosario personal (1 entrada)"
 }
