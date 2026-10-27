@@ -218,10 +218,7 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 			run('Hoy jugamos a Sunblob & Moonblob otra vez.', 'hoy jugamos a sunblob y moonblob otra vez')
 				.candidates,
 		).toEqual([]);
-		const r = run(
-			'Hoy jugamos a Sunblob & Moonblob otra vez.',
-			'hoy jugamos a sunblob en moonblob otra vez',
-		);
+		const r = run('Hoy jugamos a Sunblob & Moonblob otra vez.', 'hoy jugamos a sunblob en moonblob otra vez');
 		expect(r.candidates.map(brief)).toEqual(['sub:function:en→y']);
 	});
 
