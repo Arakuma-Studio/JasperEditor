@@ -4,6 +4,7 @@ import {
 	audioFadeGain,
 	type BlendMode,
 	blendModeInfo,
+	dbToGain,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	evaluate,
@@ -16,8 +17,6 @@ import {
 } from '@jasper/project';
 import type { CSSProperties } from 'react';
 import type { RenderOptions } from './types.ts';
-
-export const CROP_EFFECT_ID = 'jasper.crop';
 
 /**
  * CSS `mix-blend-mode` of a clip blend mode (keyframes-blend): the W3C modes, whose Chrome implementation equals the
@@ -76,11 +75,7 @@ export function effectStages(
 	return out;
 }
 
-/** dB → linear amplitude. `-Infinity` (and anything ≤ -96 dB) is silence. */
-export function dbToGain(db: number): number {
-	if (!Number.isFinite(db) || db <= -96) return 0;
-	return 10 ** (db / 20);
-}
+export { dbToGain };
 
 /** Remotion throws for volumes ≥ 100 (it assumes a percent mistake); stay well below. */
 export const MAX_PREVIEW_GAIN = 16;

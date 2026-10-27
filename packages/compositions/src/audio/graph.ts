@@ -34,7 +34,7 @@ import {
 	type RenderAudioMix,
 	type RenderStrip,
 } from '@jasper/project';
-import { audioGainAt, MAX_PREVIEW_GAIN, dbToGain as pipelineDbToGain } from '../pipeline.ts';
+import { audioGainAt, dbToGain, MAX_PREVIEW_GAIN } from '../pipeline.ts';
 import { type CurvePrecision, followCurve } from './automation.ts';
 import type { SlotClock } from './fx-processor.ts';
 import { discreteGain, MatrixNode, setParam } from './matrix-node.ts';
@@ -341,7 +341,6 @@ export function mixWorkletReady(ctx: BaseAudioContext): Promise<boolean> {
 /** Look-ahead of the preview loudness limiter (`jasper-limiter`), as the export's normalisation limiter. */
 const LIMITER_LOOKAHEAD_MS = 5;
 
-const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** (db / 20));
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
 
 /** Seconds after lane time `t` (flicks) of the lane's keyframes within `horizon` (break points of a followed curve). */
@@ -669,7 +668,7 @@ export function clipLevelAt(clip: RenderAudioClip, f: number, fps: Rational): nu
 	return (
 		audioGainAt(levels, f, fps, undefined, false) *
 		audioFadeGain(fades, clip.start + f) *
-		(nestGain ? pipelineDbToGain(nestGainDbAt(nestGain, clip.start + f)) : 1)
+		(nestGain ? dbToGain(nestGainDbAt(nestGain, clip.start + f)) : 1)
 	);
 }
 
@@ -688,7 +687,7 @@ export function clipGainExcess(
 	const content = clip.speed.reverse
 		? clip.sourceIn + (clip.duration - 1 - i) * F * clip.speed.rate
 		: clip.sourceIn + i * F * clip.speed.rate;
-	const g = pipelineDbToGain(clip.gainDb + evaluate(clip.volumeDb, content));
+	const g = dbToGain(clip.gainDb + evaluate(clip.volumeDb, content));
 	return Number.isFinite(g) && g > MAX_PREVIEW_GAIN ? g / MAX_PREVIEW_GAIN : 1;
 }
 

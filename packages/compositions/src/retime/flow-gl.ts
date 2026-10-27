@@ -308,11 +308,6 @@ type Target = { tex: WebGLTexture; fb: WebGLFramebuffer; w: number; h: number };
 
 export class RetimeGLError extends Error {}
 
-/** Whether this WebGL2 context can render the float targets optical flow needs. */
-export function canRunFlow(gl: WebGL2RenderingContext): boolean {
-	return !!gl.getExtension('EXT_color_buffer_float');
-}
-
 /**
  * GPU compositor of retimed frames. One per output canvas; keeps the last pair's flow so the in-between frames of a
  * slow motion (same two source frames, other fractions) only run the final pass.
@@ -338,7 +333,7 @@ export class RetimeCompositor {
 		}) as WebGL2RenderingContext | null;
 		if (!gl) throw new RetimeGLError('WebGL2 is not available');
 		this.gl = gl;
-		this.floatTargets = canRunFlow(gl);
+		this.floatTargets = !!gl.getExtension('EXT_color_buffer_float');
 		this.texA = this.newTex();
 		this.texB = this.newTex();
 	}
