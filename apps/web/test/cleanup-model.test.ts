@@ -1,6 +1,7 @@
 // Clean Up review model (spec 14 TC-040…TC-043): decisions per item / kind / retake, the word marks (what the plan
-// cuts, coloured by why; review; lexical fillers), timeline bands and request scope.
+// cuts, coloured by why; review; lexical fillers), viewport coverage, timeline bands and request scope.
 import { analyzeSequenceCleanup, type CleanupAnalysis, sequenceWords } from '@jasper/project';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	chooseTake,
@@ -8,10 +9,13 @@ import {
 	decideKind,
 	EMPTY_DECISIONS,
 	findingAccepted,
+	groupFindings,
 	inlineFindings,
+	listLayout,
 	overlayBands,
 	scopeOf,
 	toCleanupDecisions,
+	visibleEntries,
 	wordMarks,
 } from '../src/panels/text/cleanup/model.ts';
 import { cleanupSession, fakeCleanupEngine, REC, seqOf } from './cleanup-helpers.ts';
@@ -74,6 +78,26 @@ describe('Clean Up review model', () => {
 		const inline = inlineFindings(words, seq, a);
 		const n = [...inline.before.values()].flat().length + inline.after.length;
 		expect(n).toBe(a.findings.filter((f) => !f.words).length);
+	});
+
+	it('visible entries cover the viewport for any scroll position (fast-check)', () => {
+		const { a } = analysed();
+		const layout = listLayout(groupFindings(a, EMPTY_DECISIONS, new Set()), new Set(), {
+			header: 20,
+			row: 30,
+		});
+		fc.assert(
+			fc.property(fc.integer({ min: 0, max: layout.total }), fc.integer({ min: 1, max: 400 }), (top, h) => {
+				const { start, end } = visibleEntries(layout, top, h, 0);
+				for (let i = 0; i < layout.entries.length; i++) {
+					const e = layout.entries[i]!;
+					const height = e.type === 'header' ? 20 : 30;
+					const overlaps = e.top < top + h && e.top + height > top;
+					if (overlaps) expect(i >= start && i < end).toBe(true);
+				}
+			}),
+			{ numRuns: 200 },
+		);
 	});
 
 	it('timeline bands: every cut, and padding / kept pauses only inside kept pieces on the speech track', () => {
