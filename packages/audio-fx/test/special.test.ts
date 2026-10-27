@@ -1,15 +1,9 @@
 import { LoudnessMeter } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import { dbToGain } from '../src/core/math.ts';
-import { createProcessor } from '../src/registry.ts';
+import { fx } from './processor.ts';
 import { db, noise, rms, SR, sine, toneAmplitude } from './util.ts';
 
-function fx(id: string, params: Record<string, number | boolean | string> = {}, ch = 2) {
-	const e = createProcessor(`jasper.audio.${id}`, SR, ch)!;
-	for (const [k, v] of Object.entries(params)) expect(e.setParam(k, v), `${id}.${k}`).toBe(true);
-	e.reset();
-	return e;
-}
 const run = (e: ReturnType<typeof fx>, x: Float32Array) => {
 	const l = x.slice();
 	const r = x.slice();

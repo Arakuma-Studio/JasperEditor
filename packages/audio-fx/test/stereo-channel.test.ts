@@ -2,15 +2,9 @@
 // checks of the pan laws and the Mono Maker crossover).
 
 import { describe, expect, it } from 'vitest';
-import { createProcessor } from '../src/registry.ts';
+import { fx } from './processor.ts';
 import { noise, peak, rms, SR, sine, toneAmplitude } from './util.ts';
 
-function fx(id: string, params: Record<string, number | boolean | string> = {}) {
-	const e = createProcessor(`jasper.audio.${id}`, SR, 2)!;
-	for (const [k, v] of Object.entries(params)) expect(e.setParam(k, v), `${id}.${k}`).toBe(true);
-	e.reset();
-	return e;
-}
 function run(e: ReturnType<typeof fx>, l: Float32Array, r: Float32Array) {
 	const a = l.slice();
 	const b = r.slice();

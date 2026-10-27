@@ -118,11 +118,6 @@ export class ClickDetector {
 		this.last = new Array(this.channels).fill(Number.NEGATIVE_INFINITY);
 	}
 
-	/** Samples pushed so far. */
-	get samples(): number {
-		return this.total;
-	}
-
 	/** Feeds `frames` samples of every channel (missing channels are silence; non-finite samples count as 0). */
 	push(planar: readonly Float32Array[], frames: number): void {
 		if (this.finished) return;

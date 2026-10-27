@@ -1,16 +1,10 @@
 import { TruePeakDetector } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import { dbToGain } from '../src/core/math.ts';
-import { createProcessor } from '../src/registry.ts';
+import { fx } from './processor.ts';
 import { noise, SR, sine, toneAmplitude } from './util.ts';
 
 const lin = (x: number) => 20 * Math.log10(Math.max(Math.abs(x), 1e-12));
-function fx(id: string, params: Record<string, number | boolean | string> = {}, ch = 2) {
-	const e = createProcessor(`jasper.audio.${id}`, SR, ch)!;
-	for (const [k, v] of Object.entries(params)) expect(e.setParam(k, v), `${id}.${k}`).toBe(true);
-	e.reset();
-	return e;
-}
 
 /** Giannoulis, Massberg & Reiss 2012, eq. (4). */
 function gmr(x: number, T: number, R: number, W: number): number {
