@@ -207,6 +207,7 @@ const api = {
 	/** Observe the lowered Canvas 2D renderer's pixels, without depending on its tap encoding. */
 	async lowered() {
 		const ids = createCounterIdSource(1);
+		const context = { ids, now: () => 't', revision: 0, registries: defaultRegistries() };
 		const result = applyTransaction(
 			createEmptyProject({ ids, name: 'Lowered', preset: 'hd-1080p-30' }),
 			{
@@ -246,7 +247,7 @@ const api = {
 					},
 				],
 			},
-			{ ids, now: () => 't', revision: 0, registries: defaultRegistries() },
+			context,
 		);
 		if (!result.result.ok) throw new Error(JSON.stringify(result.result.errors));
 		const snap = buildRenderSnapshot(result.document, Object.keys(result.document.sequences)[0]!, {
@@ -254,7 +255,28 @@ const api = {
 			resolveFont: () => null,
 		});
 		const clip = snap.videoTracks[0]!.clips[0]!;
+		const transformed = applyTransaction(
+			result.document,
+			{
+				label: 'nonuniform scale and rotation',
+				origin: 'user',
+				commands: [
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'uniformScale'], value: false },
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'scaleWidth'], value: 50 },
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'scaleHeight'], value: 200 },
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'rotation'], value: 90 },
+				],
+			},
+			context,
+		);
+		if (!transformed.result.ok) throw new Error(JSON.stringify(transformed.result.errors));
+		const transformedClip = buildRenderSnapshot(
+			transformed.document,
+			Object.keys(transformed.document.sequences)[0]!,
+			{ resolveMedia: () => null, resolveFont: () => null },
+		).videoTracks[0]!.clips[0]!;
 		const samples = [];
+		const transformedSamples = [];
 		let blurred: Px | null = null;
 		for (const scale of [1, 0.5]) {
 			const width = 128 * scale;
@@ -296,8 +318,41 @@ const api = {
 				await blur.definition.apply({ source, target, params: blur.params, width, height } as never);
 				blurred = px(target, 32, 50);
 			}
+			const transformedSource = canvas(width, height, (ctx) => {
+				ctx.scale(scale, scale);
+				ctx.fillStyle = '#f00';
+				ctx.fillRect(30, 20, 64, 36);
+				ctx.fillStyle = '#00f';
+				ctx.fillRect(96, 28, 8, 8);
+			});
+			const transformedProgram = loweredCanvasProgram({
+				clip: transformedClip,
+				props: resolveLayerProps(
+					transformedClip,
+					clipContentTime(transformedClip, 15, { num: 30, den: 1 }),
+				),
+				frame: 15,
+				fps: 30,
+				layout: { padding: { left: 30, top: 20 }, pxScale: scale, width, height },
+			})!;
+			const transformedEffect = fxLowered(transformedProgram);
+			await transformedEffect.definition.apply({
+				source: transformedSource,
+				target,
+				params: transformedEffect.params,
+				width,
+				height,
+			} as never);
+			// Anchor (32,18), position (48,18), scale (0.5,2), clockwise 90°:
+			// layer (x,y) → canvas (114−2y,22+0.5x), before preview scaling.
+			// Thus red source (36,32) lands at (50,40); blue (70,12) at (90,57).
+			transformedSamples.push({
+				empty: px(target, 116 * scale, 40 * scale),
+				text: px(target, 50 * scale, 40 * scale),
+				shadow: px(target, 90 * scale, 57 * scale),
+			});
 		}
-		return { samples, blurred };
+		return { samples, transformedSamples, blurred };
 	},
 
 	/**

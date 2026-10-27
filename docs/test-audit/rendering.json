@@ -6933,14 +6933,14 @@
     "path": "packages/compositions/test/fx-gl.test.ts",
     "test": "fx GPU host in WebGL2 (headless Chrome) > lowered text moves its paint at full and reduced resolution, with shutter blur while moving",
     "disposition": "CONSOLIDATE",
-    "contract": "Lowered text translation carries paint beyond its box at full/half resolution, with shutter blur while moving.",
+    "contract": "Lowered text translation and nonuniform scale/rotation carry outside-box paint at full/half resolution, with independent asymmetric padding and shutter blur while moving.",
     "source": "docs/specs/13-auto-subtitles.md AS-070/075; docs/wp-notes/auto-subtitles.md S.1/S.5 (clipped shadow regression).",
-    "bug": "Dropped padding/scale conjugation leaves blue shadow missing or misplaced, wrong affine placement leaves red in vacated pixels, and lost shutter taps make the moving edge fully opaque/transparent.",
-    "oracle": "Literal empty [0,0,0,0], red [255,0,0,255], blue [0,0,255,255] pixels at independently selected translated points; moving edge alpha between 50 and 200.",
+    "bug": "Dropped padding/scale conjugation leaves blue shadow missing or misplaced, conflating top/left padding shifts the nonuniform rotated paint, and lost shutter taps make the moving edge fully opaque/transparent.",
+    "oracle": "Literal transparent/red/blue pixels for translation and asymmetric left 30/top 20 padding with scale (0.5,2), clockwise 90 degrees; independent canvas map (114-2y,22+0.5x) gives red (50,40), blue (90,57), transparent (116,40), before preview scaling. Moving-edge alpha remains between 50 and 200.",
     "seam": "Actual Canvas2D pixels after applying the production Remotion effect descriptor using a document-command-built clip, with no tap-encoding assertions.",
     "refactor": "Uses renderer input document and output pixels; encoded tap layout and internal matrix/tap implementations may change without touching expected pixels.",
     "unique": "Surviving owner of three removed fx-lowered private-array tests. Native/export parity does not exercise the distinct lowered Canvas2D preview path.",
-    "reason": "Consolidates named transform/paint/shutter contracts into one scenario in existing browser harness; no additional browser startup.",
+    "reason": "Consolidates transform/paint/shutter contracts into the existing browser harness with no extra test declaration or browser startup. The asymmetric-padding/nonidentity-transform extension awaits integration validation.",
     "validation": "pnpm exec vitest run packages/compositions/test/fx-gl.test.ts --maxWorkers=2 -t \"lowered text\""
   },
   {

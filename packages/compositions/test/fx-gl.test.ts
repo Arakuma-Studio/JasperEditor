@@ -90,8 +90,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('lowered text moves its paint at full and reduced resolution, with shutter blur while moving', async () => {
-			const result = await call<{ samples: { empty: Px; text: Px; shadow: Px }[]; blurred: Px }>('lowered');
-			for (const sample of result.samples) {
+			type Sample = { empty: Px; text: Px; shadow: Px };
+			const result = await call<{
+				samples: Sample[];
+				transformedSamples: Sample[];
+				blurred: Px;
+			}>('lowered');
+			for (const sample of [...result.samples, ...result.transformedSamples]) {
 				expect(sample.empty).toEqual([0, 0, 0, 0]);
 				expect(sample.text).toEqual([255, 0, 0, 255]);
 				expect(sample.shadow).toEqual([0, 0, 255, 255]);

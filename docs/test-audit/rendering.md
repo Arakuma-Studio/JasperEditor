@@ -11,7 +11,7 @@ comprise eight removed declarations and two surviving owners. There were 495 ori
 including the two new owners. Runtime instances differ: the removed transition catalogue template instantiated
 173 tests, while its 352 literal-endpoint/golden/feature tests remain.
 
-Net test/support-code change: 242 added lines, 873 removed lines (**−631 LOC**). Four test files and the private
+Net test/support-code change: 302 added lines, 873 removed lines (**−571 LOC**). Four test files and the private
 structure probe were removed; no committed snapshots or media fixtures were added.
 
 ## Changes and surviving ownership
@@ -21,7 +21,8 @@ structure probe were removed; no committed snapshots or media fixtures were adde
   `text-paint.e2e.test.ts`. Remove its structure-inspection helper and six unused paint barrel exports; make
   `shadowKey` internal while retaining the module exports consumed by production text layers.
 - Replace three lowered-preview array/tap-format tests with one Canvas 2D output case in the existing GL browser.
-  Literal pixels prove translation, outside-box paint, reduced-resolution coordinates and shutter blur. The test
+  Literal pixels prove translation, outside-box paint, reduced-resolution coordinates and shutter blur; an added
+  asymmetric-padding/nonuniform-scale/rotation witness also checks the independent canvas coordinate map. The test
   reads no encoded tap offsets or production-derived expected maps.
 - Replace five template definition/CSS checks with an actual Chromium gallery-card/warning-bounds witness in that
   same browser. It protects documented App QA N7/N8 without another browser launch. Pure framing/content-box
@@ -95,3 +96,15 @@ Expensive shader compilation/fingerprint suites, actual playback decoding and au
 they protect shader compilation freezes, catalog pixels, decoded source routing and sample/transport fidelity that
 cheap plan or mock tests cannot prove. Their setup/compilation costs remain a bottleneck; no such behavior was
 moved out of the existing gate.
+
+## Asymmetric transform follow-up: validation pending
+
+The existing lowered pixel case now additionally uses left 30/top 20 padding, anchor (32,18), position (48,18),
+nonuniform scale (0.5,2), and clockwise 90° rotation. Its independent forward map before preview scaling is
+`canvas(x,y) = (114−2y,22+0.5x)`: red source (36,32) reaches (50,40), and outside-box blue source (70,12) reaches
+(90,57). Both full and half preview resolution check those literal colors and transparency at (116,40). Existing
+translation, outside-paint and shutter assertions remain.
+
+Using left padding in place of top padding for `fromLayer` changes this mapping by (+20,+10), so the red and blue
+witnesses must fail. No tests, builds or mutations were run for this extension while the integration owner's
+isolated baseline was active; its targeted test and this padding-axis mutation await integration validation.
