@@ -48,8 +48,8 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - ⏳ Integration: fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`.
 
 ## 4. Decisions
-- D5 Score windows are not packed by default (SC-105: packing let readings use untranscribed speech in gaps and
-  caused every false fix found); packing remains an option.
+- D5 Score windows are packed with the gap audio muted (SC-105: unmuted packing let readings use untranscribed speech
+  in gaps and caused every false fix found; unpacked windows cost 24.7 s per speech minute on the VM, over target).
 - D1 No schema bump: the script stays in `Sequence.cleanup.script` (shared, called "Script"); fixes are commands on
   existing word fields; the only new persisted field is the optional `Sequence.scriptFix` (rejections, settings),
   which older v10 builds keep on save.
@@ -74,4 +74,7 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged; scweb merged; integrated suite on 4bdd7fe3: typecheck passes, 9,341 tests passed, only the 7 known failures; lint
   failed on the new e2e spec's formatting only (fixed in c008b648); sccalib merged (spec SC-030 updated: unpacked windows by default); re-measured SC-037 with unpacked windows: 24.67 s per speech minute (48 encoder passes; identical decisions) → over
   the 20 s target; follow-up: packed windows with the gap audio muted (keeps one encoder pass per packed window,
-  removes the untranscribed speech that caused the false fixes), to be validated on the Mac harness and the VM bench.
+  removes the untranscribed speech that caused the false fixes), validated and merged (b5041f1e): SC-105 targets hold
+  (false fixes 1/558, 0 audio fixes in cleanup regions, 38/52 recognition errors, 0/55 deviations, 247/430 injected),
+  VM long bench 13.62 s per speech minute (22 encoder passes; same 66 decisions); Mac CPU 3.68 s per speech minute;
+  muted WebGPU cost not measured (the Mac went onto battery). origin/main has no new commits; final gate next.
