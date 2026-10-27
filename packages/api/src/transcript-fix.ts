@@ -137,6 +137,25 @@ export const TranscriptFixReportSchema = z.object({
 		totalMs: z.number(),
 		/** Seconds of speech in scope (sum of the words' spans). */
 		speechSeconds: z.number(),
+		/**
+		 * The speech worker's split of the audio check (ms, summed over the media; one worker call per media): model load,
+		 * media decode, encoder and decoder time, the worker's scoring wall time, encoder passes, decoder runs, readings,
+		 * seconds of encoded audio.
+		 */
+		speech: z
+			.object({
+				loadMs: z.number(),
+				decodeMs: z.number(),
+				encoderMs: z.number(),
+				decoderMs: z.number(),
+				workerScoreMs: z.number(),
+				encoderPasses: z.number().int(),
+				decoderRuns: z.number().int(),
+				readings: z.number().int(),
+				windowSec: z.number(),
+				calls: z.number().int(),
+			})
+			.optional(),
 	}),
 	/** What the bounded-memory caps cut short (absent when nothing was). */
 	guard: z

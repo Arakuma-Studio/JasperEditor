@@ -422,10 +422,40 @@ export type PipelineResult = {
 	scoreWindows: number;
 	scoreReadings: number;
 	estimate?: TranscriptFixReport['estimate'];
-	timings: { alignMs: number; scoreMs: number; decideMs: number };
+	timings: { alignMs: number; scoreMs: number; decideMs: number; speech?: SpeechSplit };
 	unusedLines: number[];
 	warnings: { code: string; message: string }[];
 };
+
+/** Where the audio check's time went (the worker's timings, summed over media; SC-037). */
+export type SpeechSplit = NonNullable<TranscriptFixReport['timings']['speech']>;
+
+function addSplit(a: SpeechSplit | undefined, t: NonNullable<SpeechScoreResult['timings']>): SpeechSplit {
+	const z = a ?? {
+		loadMs: 0,
+		decodeMs: 0,
+		encoderMs: 0,
+		decoderMs: 0,
+		workerScoreMs: 0,
+		encoderPasses: 0,
+		decoderRuns: 0,
+		readings: 0,
+		windowSec: 0,
+		calls: 0,
+	};
+	return {
+		loadMs: z.loadMs + t.loadMs,
+		decodeMs: z.decodeMs + t.decodeMs,
+		encoderMs: z.encoderMs + t.encoderMs,
+		decoderMs: z.decoderMs + t.decoderMs,
+		workerScoreMs: z.workerScoreMs + t.scoreMs,
+		encoderPasses: z.encoderPasses + t.encoderPasses,
+		decoderRuns: z.decoderRuns + t.decoderRuns,
+		readings: z.readings + t.readings,
+		windowSec: z.windowSec + t.windowSec,
+		calls: z.calls + 1,
+	};
+}
 
 const itemIdOf = (c: FixCandidate) => transcriptFixItemId(c.id);
 const bump = (m: Record<string, number>, k: string, n = 1) => {
@@ -491,7 +521,7 @@ export async function runPipeline(
 	p: Prepared,
 	o: PipelineOptions,
 ): Promise<PipelineResult> {
-	const timings = { alignMs: 0, scoreMs: 0, decideMs: 0 };
+	const timings: PipelineResult['timings'] = { alignMs: 0, scoreMs: 0, decideMs: 0 };
 	const skipped: Record<string, number> = {};
 	const guard = { candidatesCapped: 0, itemsCapped: 0 };
 	const warnings: PipelineResult['warnings'] = [];
@@ -702,6 +732,7 @@ export async function runPipeline(
 					if (res.fallback) fallback ??= res.fallback;
 					for (const [k, v] of candidateScores(x.windows, res.windows)) scores.set(k, v);
 					const tm = res.timings;
+					if (tm) timings.speech = addSplit(timings.speech, tm);
 					if (tm && deps.costs && tm.encoderPasses > 0)
 						await deps.costs.record(model, {
 							loadSec: (tm.loadMs + tm.decodeMs) / 1000,
@@ -894,6 +925,7 @@ export function buildReport(
 			decideMs: r.timings.decideMs,
 			totalMs: t.totalMs,
 			speechSeconds: Math.round(p.media.reduce((n, m) => n + m.speechSeconds, 0) * 1000) / 1000,
+			...(r.timings.speech ? { speech: r.timings.speech } : {}),
 		},
 		...(guard ? { guard } : {}),
 		warnings: [...p.warnings, ...r.warnings].slice(0, 100),

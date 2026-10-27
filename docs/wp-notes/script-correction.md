@@ -734,7 +734,7 @@ engine-client `transcriptFix`, MCP `apps/mcp/src/tools/transcript-fix.ts`.
   AlignmentReport, SC-016), candidates, windows, readings, unscored?}], candidates: {total, byGroup (fix, spelling,
   maybe, keep; dry run: pending), byCategory, byKind}, decisions (≤ 2,000, `decisionsTruncated`), skipped (counts by
   reason), unusedLines (all media together), patch, speech {model, problem?}, device, fallback?, estimate? (dry run),
-  timings {readMs, alignMs, scoreMs, decideMs, totalMs, speechSeconds}, guard?, warnings}`.
+  timings {readMs, alignMs, scoreMs, decideMs, totalMs, speechSeconds, speech?}, guard?, warnings}`.
 - `dryRun` (agreed with the coordinator): steps 1–6 and 9 only — no audio check, nothing stored. `estimate` =
   Σ per media (load + windows × per-window + readings × per-reading) seconds with `basis: 'measured'` when every
   scored media's model has a measurement on this machine (`<appdir>/engine/transcript-fix-costs.json`, written
@@ -802,10 +802,38 @@ minutes by its utterance bounds), 10 candidates (≈ 10 per speech minute, the r
 | of which the audio check (`scoreMs`) / everything else | 29.9 s / 0.06 s |
 | Without the once-per-job load + decode (≈ 6.4 s, the scoring section's measurement) | ≈ 24.6 s per speech minute (estimate) |
 
-The SC-037 target (≤ 20 s per speech minute on the build VM CPU) is not met on this 1-minute clip: the model load
-dominates a short job, and this clip has ≈ 1.6× the research's candidate density. On long recordings the load is paid
-once per media; the scoring section's estimate for them is ≈ 13 s per speech minute. whisper-tiny.en (functional e2e)
-took 7.2 s for the same job. Mac and NVIDIA: not measured (SC-105 harness / a GPU box).
+This 1-minute clip is not representative: the once-per-job model load dominates a short job, and the clip has
+≈ 1.6× the research's candidate density. whisper-tiny.en (functional e2e) took 7.2 s for the same job.
+
+**Representative input (SC-037 measurement).** `pnpm fixtures` (recipe `scripts/fixtures/speech-long.mjs`:
+`fixtures/media/lj-long.flac`, the LJ composite played 11 times, FFmpeg's native LGPL `flac`, 788.04 s, sample-exact
+repeats) then `JASPER_SPEECH_MODELS_DIR=<dir> TRANSCRIPT_FIX_BENCH=1 pnpm exec vitest run
+apps/engine/test/transcript-fix.bench.test.ts --maxWorkers=1` (`FIX_LONG_BENCH` line), under the bench lock. Input:
+10.631 speech minutes in 11 takes read from ONE script (retakes); the composite's turbo transcript shifted per take;
+per take 2 transcript words corrupted (real recognition errors, a different pair each take: 22 in all = 2.07 per
+speech minute) and 4 script words corrupted (deviations the audio must keep) → 66 candidates = 6.21 per speech
+minute (the research: 6.3, of which 1.9 real fixes). Build VM: 16 AMD EPYC-Rome vCPU (shared), engine queue 16 slots,
+the speech worker on 8 threads (the speech thread cap), whisper-large-v3-turbo fp32, CPU; load average 3.4 before the
+first run, 7.0–7.7 during the runs (other agents). Three full `transcript-fix` jobs (propose: request → stored
+proposal), median:
+
+| Measure | Value |
+|---|---|
+| Job wall time (139.3 s; runs 138.9 / 139.3 / 143.8 s) | **13.1 s per speech minute** (target ≤ 20 s: met) |
+| model load (once per media) | 0.50 s per speech minute (5.3 s) |
+| media decode (once per media) | 0.44 s per speech minute (4.7 s) |
+| encoder (22 passes, one per packed window with candidates, 543.6 s of audio) | 9.41 s per speech minute (4.55 s per pass) |
+| decoder (22 runs, 88 readings: 22 ASR + 66 candidate readings) | 1.33 s per speech minute |
+| rest of the worker (mel, forced timing, I/O) / spawn and IPC | ≈ 1.2 / ≈ 0.1 s per speech minute |
+| alignment, candidates, decisions, patch report, proposal | < 0.01 s per speech minute (36 ms + 2 ms + …) |
+
+Decisions: 22 fix (every injected error), 11 Maybe (offered unselected; script deviations whose Δ_tok fell in the
+Standard Maybe band), 33 kept; 0 spelling. The encoder is 72 % of the job (zero-padded 30 s windows, one pass per
+window with a candidate: 2.07 passes per speech minute); reading 0 is already scored once per window and each
+distinct window encoded once, so the optimisations listed for SC-037 (reused model across jobs, batch / thread
+tuning) were not needed and not made. The report now carries this split (`timings.speech`: load, decode, encoder,
+decoder, worker scoring time, passes, runs, readings, encoded seconds). Mac and NVIDIA: not measured (SC-105 harness /
+a GPU box).
 
 ### Limitations
 
