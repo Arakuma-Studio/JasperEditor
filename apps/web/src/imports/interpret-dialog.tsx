@@ -65,10 +65,6 @@ export function registerInterpretSection(section: InterpretSection): () => void 
 	};
 }
 
-export function interpretSections(): readonly InterpretSection[] {
-	return SECTIONS;
-}
-
 /** The common value of `f` over the assets, or `null` when they differ. */
 function common<T>(assets: readonly MediaAsset[], f: (a: MediaAsset) => T): T | null {
 	const vals = assets.map((a) => JSON.stringify(f(a)));
