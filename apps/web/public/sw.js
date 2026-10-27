@@ -1,10 +1,10 @@
 // JasperEditor service worker (ARCHITECTURE §12, S05:PWA-004/005, R-OMS §3.5/§8.3).
 // Served as-is; pwa.test.ts exercises this script directly. Bump VERSION to invalidate the cached shell.
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `jasper-shell-${VERSION}`;
 const ASSETS_CACHE = `jasper-assets-${VERSION}`;
-const ASSETS_MAX_ENTRIES = 84;
+const ASSETS_MAX_ENTRIES = 88;
 
 // Generated at build time from the optional runtimes' static import closure. Registration happens after window
 // load: warm their source for offline use here without downloading or evaluating them on the page's critical path.

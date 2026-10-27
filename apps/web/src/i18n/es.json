@@ -1792,6 +1792,7 @@
   "Could not create the sequence": "No se pudo crear la secuencia",
   "Could not import the workspace": "No se pudo importar el espacio de trabajo",
   "Could not load the editor. Check your connection and reload.": "No se pudo cargar el editor. Compruebe la conexión y vuelva a cargar.",
+  "Could not load the expression editor.": "No se pudo cargar el editor de expresiones.",
   "Could not open project:": "No se pudo abrir el proyecto:",
   "Could not pick a screen color": "No se pudo seleccionar un color de la pantalla",
   "Could not start mask tracking": "No se pudo iniciar el seguimiento de máscara",

@@ -92,6 +92,7 @@ function vendorChunk(id: string): string | undefined {
 	if (/[\\/]@jitl[\\/]quickjs-singlefile-browser-release-sync[\\/]/.test(id)) return 'vendor-quickjs';
 	if (/[\\/]lottie-web[\\/]/.test(id)) return 'vendor-lottie';
 	if (/[\\/]modern-screenshot[\\/]/.test(id)) return 'vendor-screenshot';
+	if (/[\\/](@codemirror|@lezer)[\\/]/.test(id)) return 'vendor-codemirror';
 	if (/[\\/](remotion|@remotion)[\\/]/.test(id)) return 'vendor-remotion';
 	// S11:ANM-023: anime.js (reached through @jasper/compositions → @jasper/motion) in its own chunk.
 	if (/[\\/]animejs[\\/]/.test(id)) return 'vendor-anime';

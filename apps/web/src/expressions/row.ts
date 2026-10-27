@@ -17,6 +17,9 @@ import {
 } from '@jasper/project';
 import type { CompletionNames } from './ExpressionField.tsx';
 
+/** Element attribute that marks a property row as a pick-whip target (its ParamPath as JSON). */
+export const PICK_WHIP_ATTR = 'data-expr-path';
+
 /** Value kinds that take expressions (the `expression.set` handler refuses the others). */
 const EXPRESSION_KINDS = new Set(['number', 'vec2', 'vec3', 'color', 'boolean', 'enum', 'string']);
 

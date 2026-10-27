@@ -1,0 +1,55 @@
+{
+  "baseline": "eb28696c",
+  "machine": {
+    "cpu": "AMD EPYC-Genoa Processor",
+    "logicalCpus": 8,
+    "architecture": "x86_64",
+    "node": "v24.22.1",
+    "pnpm": "10.34.5"
+  },
+  "loadavgBefore": [6.86, 6.06, 2.73],
+  "loadavgAfter": [2.65869140625, 4.27294921875, 2.93603515625],
+  "method": "Two production Vite builds, identical frozen lockfile/Node/compression settings; initial is index.html scripts and recursive modulepreload imports; all emitted JavaScript includes root worker scripts. Source maps, CSS and fonts excluded. gzip Node defaults; Brotli quality 5. No startup latency claim.",
+  "before": {
+    "initial": {
+      "files": 11,
+      "bytes": 8800431,
+      "gzipBytes": 2775279,
+      "brotliBytes": 2508533
+    },
+    "all": {
+      "files": 66,
+      "bytes": 26697390,
+      "gzipBytes": 8407377,
+      "brotliBytes": 7626132
+    }
+  },
+  "after": {
+    "initial": {
+      "files": 11,
+      "bytes": 8367326,
+      "gzipBytes": 2630046,
+      "brotliBytes": 2370340
+    },
+    "all": {
+      "files": 70,
+      "bytes": 26699881,
+      "gzipBytes": 8410749,
+      "brotliBytes": 7628820
+    }
+  },
+  "onDemandChunks": [
+    {
+      "file": "assets/ExpressionRowEditor-D89T92L-.js",
+      "bytes": 9039,
+      "gzipBytes": 3753,
+      "brotliBytes": 3571
+    },
+    {
+      "file": "assets/vendor-codemirror-DAiFVBjh.js",
+      "bytes": 413241,
+      "gzipBytes": 139729,
+      "brotliBytes": 132316
+    }
+  ]
+}

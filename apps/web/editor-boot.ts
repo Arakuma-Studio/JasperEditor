@@ -168,8 +168,11 @@ function staticClosure(start: BundleChunk[], byFile: Map<string, BundleChunk>): 
 export function optionalEditorChunks(bundle: Record<string, BundleChunk>): string[] {
 	const chunks = Object.values(bundle).filter((c) => c.type === 'chunk');
 	const byFile = new Map(chunks.map((c) => [c.fileName, c]));
-	const optional = chunks.filter((c) =>
-		/\/vendor-(pdf|quickjs|lottie|screenshot)-[^/]+\.js$/.test(c.fileName),
+	const optional = chunks.filter(
+		(c) =>
+			/\/vendor-(pdf|quickjs|lottie|screenshot)-[^/]+\.js$/.test(c.fileName) ||
+			(c.isDynamicEntry &&
+				(c.facadeModuleId ?? '').replaceAll('\\', '/').endsWith('/src/expressions/ExpressionRowEditor.tsx')),
 	);
 	return [...staticClosure(optional, byFile)]
 		.filter((f) => f.endsWith('.js'))
