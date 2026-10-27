@@ -1,0 +1,30 @@
+[
+  {
+    "path": "packages/project/test/sound-rank-scale.test.ts",
+    "test": "takes < 50 ms of CPU time (min of 7 runs after a warm-up, a new query each run)",
+    "disposition": "OPTIMIZE",
+    "contract": "Ranking the complete 5,000-sound candidate library stays below 50 ms CPU after warm-up, using the minimum of 7 distinct-query runs.",
+    "source": "docs/wp-notes/sound-design.md: WP 1.2 engine library, Review fixes finding 10 and Benchmark assertion; docs/specs/12-sound-design.md §2.1.",
+    "bug": "Correct results can still freeze sound-selection planning when full-library ranking repeatedly tokenizes/sorts/allocates excessively; a CPU cost over 50 ms fails this test.",
+    "oracle": "Measured executing-JavaScript-thread CPU time is compared with the independently documented 50 ms limit; no rank result or operation count is used to compute that budget.",
+    "seam": "Public rankSounds function with four realistic requests over 5,000 authored entries; samples are collected outside rankSounds itself.",
+    "refactor": "Internal caches, tokenization, sorting and module organization can change while returned ranking and the same CPU budget remain valid. The private timer supports either Vitest pool without asserting worker identifiers.",
+    "unique": "Full rankSounds allocates/orders every candidate and is used by sound-design plan.selectPlanSounds. Engine search uses separate rankSoundsPage with page construction and facets; that budget cannot catch every full-result allocation/sorting regression.",
+    "reason": "Share the executing-thread CPU sampler with the color bake test, retaining 50 ms,7 runs,all queries and assertions. Linux thread-self replaces the old PID-based main-thread lookup. Worker-clock absence throws; only forked tests may use process CPU fallback. Supersedes project_3 KEEP for this exact test.",
+    "validation": "FC_SEED=20261027 JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run --project @jasper/project --pool=threads --maxWorkers=2 --no-cache; temporary 64 x correct-result ranking work must fail 50 ms assertion; missing thread clock must throw."
+  },
+  {
+    "path": "packages/project/test/color.test.ts",
+    "test": "a 33³ bake of a full grade takes < 15 ms (S06:CG-043; reported, fails above 2×)",
+    "disposition": "OPTIMIZE",
+    "contract": "A full 33³ Lumetri LUT bake meets CG-043:15 ms target, benchmark failing above twice that budget with the existing host calibration.",
+    "source": "docs/specs/06-color-grading.md CG-043 and §9.9 Performance; docs/performance.md §1–2.",
+    "bug": "A correctly colored LUT can still stall interactive grading if full grade baking becomes substantially slower; the retained CPU limit catches that cost regression.",
+    "oracle": "Actual executing-thread CPU delta is compared with the independent 30 ms fail threshold and the pre-existing load calibration. The full authored grade and 12 samples are unchanged.",
+    "seam": "Public bakeColorRun over the full documented 33³ grade; no private cache counters, collaborator calls or source-text expectations.",
+    "refactor": "Any behavior-preserving grade implementation can pass if it produces the same meaningfully tested output within its stated cost. CPU sampling no longer charges unrelated concurrent test workers.",
+    "unique": "This case applies the complete earlier Lumetri grade to a 33³ lattice; isolated color-math vectors do not measure full bake cost. Later lumetri-grade budget covers a different extended grade and threshold.",
+    "reason": "process.cpuUsage aggregated both simultaneous Vitest threads, reporting 34.05 ms CPU for 15.81 ms wall and falsely failing 30 ms. Reuse current-thread timer; preserve 12 samples,33³ lattice,all grade parameters and 30 ms limit. Supersedes project_1 KEEP for this exact test.",
+    "validation": "FC_SEED=20261027 JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run --project @jasper/project --pool=threads --maxWorkers=2 --no-cache; temporary 8 x correct-result bake work must fail the unchanged CPU assertion."
+  }
+]

@@ -1108,10 +1108,13 @@ Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packa
     returned `[Function Object]` before (measured in the scratch comparison: a `types: ['constructor']` filter matched
     every sound), now `[]`. `durationFit` guards its type with `isSoundTypeId`.
 
-**Benchmark assertion**: min of 7 runs after a warm-up (up to 3 batches when a load spike hits) < 50 ms; when the
-host's 1-minute load is above 2 per core, the budget grows to 50 ms × load / (2 × cores) (wall time then measures the
-wait for a core: at load 135–144 on this host the same code measured 20–59 ms minimum). Decision recorded here
-because the gate runs on a shared machine.
+**Benchmark assertion**: minimum CPU time of 7 new-query runs after a warm-up < 50 ms. Linux measures the executing
+JavaScript thread through `/proc/thread-self/schedstat`, excluding run-queue waits and other V8 threads: the
+[kernel scheduler documentation](https://www.kernel.org/doc/html/latest/scheduler/sched-stats.html) defines its
+first field as CPU runtime in nanoseconds, and [Linux man-pages](https://man7.org/linux/man-pages/man5/proc_thread-self.5.html)
+defines `thread-self` as the accessing thread. Thread workers refuse an unavailable clock; forked tests retain
+the process-CPU fallback on other hosts. The threshold and seven runs are unchanged; there are no load-scaled
+wall-clock retries. [Runner measurements and validation](../test-audit/runner.md).
 
 **Measured search speed** (16-core shared host; `pnpm vitest run apps/engine/test/sounds-search.test.ts
 --reporter=verbose`, load average ≈ 28–43 during the runs; a synthetic library of 5 000 entries with realistic titles,
