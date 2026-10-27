@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { cleanupNorm } from '../src/cleanup/lists.ts';
 import { ALIGN_DEFAULTS, type AlignStep, alignCore, alignTranscript } from '../src/script-fix/align.ts';
 import { findFixCandidates } from '../src/script-fix/candidates.ts';
+import { candidateScores, decideFix, replaceWordsEdit } from '../src/script-fix/decide.ts';
+import { buildScoreWindows, type ScoreWindowResult } from '../src/script-fix/windows.ts';
 import { psim } from '../src/script-fix/phonetic.ts';
 import { parseScript } from '../src/script-fix/script.ts';
 import { referenceAlign } from './script-fix-reference.ts';
@@ -207,6 +209,87 @@ describe('script-fix properties (SC-100)', () => {
 				if (a === b) expect(x).toBe(1);
 			}),
 			{ numRuns: 500 },
+		);
+	});
+
+	it('fix edits leave the transcript sorted and non-overlapping; new words last ≥ 1 flick when the span allows', () => {
+		const NAMES = 'casa perro gato mesa silla libro arbol nube fuego agua tierra viento luna'.split(' ');
+		fc.assert(
+			fc.property(
+				fc.array(
+					fc.record({
+						gap: fc.oneof(fc.constant(0), fc.integer({ min: 0, max: 60_000_000 }), fc.integer({ max: 900_000_000, min: 0 })),
+						dur: fc.integer({ min: 1, max: 400_000_000 }),
+					}),
+					{ minLength: 6, maxLength: 13 },
+				),
+				fc.integer({ min: 2, max: 12 }),
+				fc.constantFrom('del', 'sub', 'end'),
+				fc.array(fc.tuple(fc.integer({ min: -1e9, max: 2e10 }), fc.integer({ min: -1e9, max: 2e10 })), {
+					minLength: 16,
+					maxLength: 16,
+				}),
+				(layout, at, mode, dtw) => {
+					let t = 100_000_000;
+					const words = layout.map((x, k) => {
+						t += x.gap;
+						const w = { text: NAMES[k]!, start: t, end: t + x.dur, confidence: 0.5 };
+						t += x.dur;
+						return w;
+					});
+					const p = Math.min(at, words.length - 1);
+					const scriptWords = words.map((w) => w.text);
+					if (mode === 'del') scriptWords.splice(p, 0, 'zorro');
+					else if (mode === 'sub') scriptWords[p] = 'zorra';
+					else scriptWords.push('zorro'); // a word the speaker dropped at the very end: no right anchor
+					const script = parseScript(scriptWords.join(' '), { language: 'es' });
+					if (mode === 'sub') words[p]!.text = 'zorro';
+					const a = alignTranscript({ words, script, language: 'es' });
+					if (!a.ok) return;
+					const { candidates } = findFixCandidates({ mediaId: 'm', transcriptId: 't', words, script, alignment: a });
+					const { windows } = buildScoreWindows(words, candidates);
+					// fake scores: every candidate reading wins; forced times arbitrary (overlapping, outside, reversed)
+					const results: ScoreWindowResult[] = windows.map((w) => ({
+						id: w.id,
+						readings: w.readings.map((rd) => ({
+							id: rd.id,
+							logprob: rd.id === 'asr' ? -100 : -1,
+							tokens: rd.words.length,
+							words: rd.words.map((text, i) => ({
+								text,
+								tokens: 1,
+								logprob: -1,
+								probability: 0.5,
+								start: dtw[i % dtw.length]![0],
+								end: dtw[i % dtw.length]![1],
+							})),
+						})),
+					}));
+					const scores = candidateScores(windows, results);
+					for (const c of candidates) {
+						const d = decideFix(c, scores.get(c.id));
+						const edit = replaceWordsEdit(c, d);
+						if (!edit) continue;
+						// the transcript words the edit names: those overlapping [start, end)
+						const hit = words.filter((w) => w.start < edit.end && w.end > edit.start);
+						expect(hit.map((w) => w.text)).toEqual(edit.expect);
+						const after = [...words.filter((w) => !hit.includes(w)), ...edit.words].sort(
+							(x, y) => x.start - y.start || x.end - y.end,
+						);
+						for (let k = 1; k < after.length; k++) expect(after[k]!.start).toBeGreaterThanOrEqual(after[k - 1]!.end);
+						const room = edit.end - edit.start >= edit.words.length;
+						for (const w of edit.words) {
+							expect(w.text).not.toMatch(/\s/);
+							expect(Number.isInteger(w.start) && Number.isInteger(w.end)).toBe(true);
+							expect(w.start).toBeGreaterThanOrEqual(edit.start);
+							expect(w.end).toBeLessThanOrEqual(edit.end);
+							if (room) expect(w.end - w.start).toBeGreaterThanOrEqual(1);
+						}
+						if (c.anchor) expect(edit.words.map((w) => w.text)).toContain(c.anchor.text);
+					}
+				},
+			),
+			{ numRuns: 300 },
 		);
 	});
 });

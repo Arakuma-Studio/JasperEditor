@@ -55,8 +55,13 @@ export type FixCandidate = {
 	/** Media flicks of the region; for `del`, the gap from the previous word's end to the next word's start. */
 	start: number;
 	end: number;
-	/** Where re-timed words may go (SC-040): from the previous word's end to the next word's start. */
+	/**
+	 * Where re-timed words may go (SC-040): from the previous word's end to the next word's start. For a `del` with an
+	 * `anchor`, the gap widened by the anchor word (see `DelAnchor`).
+	 */
 	bounds: { start: number; end: number };
+	/** `del` into a gap under `DEL_MIN_GAP_SECONDS` only: the neighbour word the edit also re-times (else null). */
+	anchor: DelAnchor | null;
 	/** Transcript word indices [fromWord, toWord); for `del` both are the index of the word the insertion precedes. */
 	fromWord: number;
 	toWord: number;
@@ -78,6 +83,45 @@ export type FixCandidate = {
 	/** The fingerprint is in the rejected list (only present when `includeRejected` asked for them). */
 	rejected: boolean;
 };
+
+/**
+ * A `del` (dropped script words) whose neighbours are closer than this has no room for the inserted words: the edit
+ * widens to the following word (the previous one at the end of the transcript), and that word is re-timed with the
+ * inserted words — the one exception to SC-041's "words outside the fixed region keep their times".
+ */
+export const DEL_MIN_GAP_SECONDS = 0.06;
+
+/**
+ * The neighbour a `del` edit takes in: `after` = the following word (inserted words go before it; re-timed words stay
+ * within [previous word's end, its end]), `before` = the previous word when nothing follows (inserted words go after it;
+ * within [its start, its end + 0.35 s]). Its text and confidence are kept exactly.
+ */
+export type DelAnchor = { side: 'after' | 'before'; text: string; start: number; end: number; confidence: number | null };
+
+/** The anchor of a `del` inserted before word `at` (null when the gap is wide enough or there is no neighbour). */
+export function delAnchorOf(
+	words: readonly FixWord[],
+	at: number,
+): { anchor: DelAnchor; bounds: { start: number; end: number } } | null {
+	const prev = words[at - 1];
+	const next = words[at];
+	const gapStart = prev?.end ?? next?.start ?? 0;
+	const gapEnd = Math.max(gapStart, next?.start ?? gapStart);
+	if (gapEnd - gapStart >= DEL_MIN_GAP_SECONDS * FLICKS_PER_SECOND) return null;
+	const word = (w: FixWord, side: DelAnchor['side']): DelAnchor => ({
+		side,
+		text: textOf(w),
+		start: w.start,
+		end: w.end,
+		confidence: typeof w.confidence === 'number' && Number.isFinite(w.confidence) ? w.confidence : null,
+	});
+	// a zero-length neighbour cannot be named by a span, so it is never taken in
+	if (next && next.end > next.start)
+		return { anchor: word(next, 'after'), bounds: { start: Math.min(gapStart, next.start), end: next.end } };
+	if (!next && prev && prev.end > prev.start)
+		return { anchor: word(prev, 'before'), bounds: { start: prev.start, end: prev.end + END_PAD_FLICKS } };
+	return null;
+}
 
 /** Why a disagreement between anchors is not offered (SC-021, SC-022). */
 export type SkipReason =
@@ -262,6 +306,7 @@ function makeCandidate(
 	const a = asrNorms.map((n) => spokenForm(n, ctx.lang)).join('');
 	const b = o.scriptNorms.map((n) => spokenForm(n, ctx.lang)).join('');
 	const fingerprint = fingerprintOf(ctx, o.from, o.to, o.scriptNorms);
+	const widened = del ? delAnchorOf(words, o.from) : null;
 	return {
 		id: fingerprint,
 		fingerprint,
@@ -274,7 +319,8 @@ function makeCandidate(
 		scriptSource: o.scriptSource,
 		start,
 		end,
-		bounds: del ? { start, end } : boundsOf(ctx, o.from, o.to, start, end),
+		bounds: del ? (widened?.bounds ?? { start, end }) : boundsOf(ctx, o.from, o.to, start, end),
+		anchor: widened?.anchor ?? null,
 		fromWord: o.from,
 		toWord: o.to,
 		scriptFrom: o.scriptFrom,

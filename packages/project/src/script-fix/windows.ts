@@ -201,7 +201,8 @@ export function buildScoreWindows(
 		if (!c.needsAudio) continue;
 		const del = c.fromWord === c.toWord;
 		const k0 = del ? (winOf[c.fromWord - 1] ?? -1) : (winOf[c.fromWord] ?? -1);
-		const k1 = del ? (winOf[c.fromWord] ?? -1) : (winOf[c.toWord - 1] ?? -1);
+		// an insertion after the last word only needs the word before it
+		const k1 = del ? (c.fromWord < words.length ? (winOf[c.fromWord] ?? -1) : k0) : (winOf[c.toWord - 1] ?? -1);
 		if (k0 < 0 || k0 !== k1) {
 			unplaced.push({ candidateId: c.id, reason: del ? 'windowEdge' : 'spansWindows' });
 			continue;
