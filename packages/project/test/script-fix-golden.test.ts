@@ -550,14 +550,15 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 		expect(del.bounds).toEqual({ start: r.words[1]!.end, end: r.words[2]!.start });
 		const { windows } = buildScoreWindows(r.words, [del]);
 		const w = windows[0]!;
-		const reading = w.readings.find((x) => x.id === del.id)!;
+		const readingId = w.regions.find((g) => g.candidateId === del.id)!.readingId;
+		const reading = w.readings.find((x) => x.id === readingId)!;
 		// forced times that spill over both neighbours: clamped into the gap
 		const results: ScoreWindowResult[] = [
 			{
 				id: w.id,
 				readings: w.readings.map((rd) => ({
 					id: rd.id,
-					logprob: rd.id === del.id ? -10 : -11,
+					logprob: rd.id === readingId ? -10 : -11,
 					tokens: rd.words.length,
 					words: rd.words.map((text, i) => ({
 						text,
@@ -609,7 +610,7 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 				id: windows[0]!.id,
 				readings: windows[0]!.readings.map((rd) => ({
 					id: rd.id,
-					logprob: rd.id === del.id ? -5 : -6,
+					logprob: rd.id === windows[0]!.regions[0]!.readingId ? -5 : -6,
 					tokens: rd.words.length,
 					words: rd.words.map((text, i) => ({
 						text,
