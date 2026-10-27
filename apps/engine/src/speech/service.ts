@@ -8,24 +8,28 @@
 // (providers.ts, SG-002); a GPU failure mid-job runs the job again on the CPU (SG-003); the device, fallbacks,
 // calibration and measured speed are kept (state.ts) and reported in results, capabilities and the model list;
 // the NVIDIA CUDA provider downloads on request on Linux x64 (cuda.ts, SG-006).
-import { execFileSync, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, cpus, arch as osArch, platform as osPlatform, totalmem } from 'node:os';
 import { join } from 'node:path';
-import type {
-	EngineJob,
-	M2Features,
-	SpeechCudaStatus,
-	SpeechDeviceReport,
-	SpeechModel,
-	SpeechProbe,
-	SpeechSettings,
-	TranscribeMediaRequest,
-	TranscribeOptions,
-	TranscribeSequenceRequest,
-	TranscriptionResult,
+import {
+	type EngineJob,
+	type M2Features,
+	type SpeechCudaStatus,
+	type SpeechDeviceReport,
+	type SpeechFallback,
+	type SpeechModel,
+	type SpeechProbe,
+	type SpeechScoreRequest,
+	SpeechScoreRequestSchema,
+	type SpeechScoreResult,
+	type SpeechSettings,
+	type TranscribeMediaRequest,
+	type TranscribeOptions,
+	type TranscribeSequenceRequest,
+	type TranscriptionResult,
 } from '@jasper/api';
 import {
 	type AudioStream,
@@ -41,8 +45,10 @@ import type { MediaRecord } from '../media/registry.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import { DownloadError } from '../tools/download.ts';
 import { ortPackageDir, ortVersion, type ProviderId } from '../tools/ort.ts';
+import { terminateTree } from '../tools/process.ts';
 import type { CoreServices } from '../tools/services.ts';
 import type { VoiceAnalysisService } from '../voice/service.ts';
+import { normalizeGlossary } from './core/glossary.ts';
 import { CudaError, CudaProvider } from './cuda.ts';
 import { speechCommand } from './entry.ts';
 import { type SpeechCatalogEntry, SpeechModelError, type SpeechModelStore } from './models.ts';
@@ -62,6 +68,7 @@ import {
 import { SpeechStateStore, type StoredProbe } from './state.ts';
 import type { ProbeResponse } from './worker/probe.ts';
 import type { SpeechJobOutput, SpeechJobSpec } from './worker/run.ts';
+import type { ScoreJobOutput, ScoreJobSpec } from './worker/score.ts';
 
 /** Flicks per 16 kHz sample (exact). */
 export const FLICKS_PER_SAMPLE = FLICKS_PER_SECOND / 16_000;
@@ -77,12 +84,42 @@ type MediaInput = {
 };
 type SequenceInput = { target: 'sequence'; request: TranscribeSequenceRequest };
 
-type WorkerRun = {
-	out: SpeechJobOutput | null;
+type WorkerRun<T> = {
+	out: T | null;
 	error: string | null;
+	/** Exit 4: the worker refused the input (`SPEECH_*` code; never retried on another device). */
+	code: string | null;
 	/** The last `device` event (providers really used). */
 	device: { encoder: ProviderId; decoder: ProviderId; attempt: number } | null;
 };
+
+/** What a worker run reports to (a job context, or a `score` caller). */
+type WorkerHost = {
+	signal: AbortSignal;
+	progress(fraction: number, stage: string): void;
+	log(text: string): void;
+	trackChild?(child: ChildProcess): void;
+	/** Kill the worker this many ms after cancellation at the latest (scoring, SC-036). */
+	killGraceMs?: number;
+};
+
+/** Spec 17 SC-092: how `SpeechService.score` reports and where it keeps its files. */
+export type SpeechScoreOptions = {
+	/** 0..1 and a stage line (per scored reading). */
+	onProgress?(fraction: number, stage: string): void;
+	log?(text: string): void;
+	/** An engine job's `ctx.trackChild` (its cancellation kills the worker too). */
+	trackChild?(child: ChildProcess): void;
+	/** Directory for the spec and result files (an engine job's scratch dir); default a temporary one, removed. */
+	scratchDir?: string;
+	/** CPU threads (an engine job's slots); capped by the speech thread cap. */
+	threads?: number;
+	/** Readings per decoder pass (default 8, capped by memory in the worker). */
+	batch?: number;
+};
+
+/** SC-036: a cancelled scoring worker is killed this long after the request at the latest. */
+const SCORE_KILL_GRACE_MS = 1000;
 
 type Machine = { ramBytes: number; cores: number; performanceCores: number | null };
 
@@ -826,24 +863,22 @@ export class SpeechService {
 				to: 'cpu',
 				reason: plan.unavailableReason,
 			});
-		let run = await this.runWorker(ctx, spec, scratch, span, env, gpuName);
+		const host: WorkerHost = {
+			signal: ctx.signal,
+			progress: (f, stage) => ctx.progress(f, { stage }),
+			log: (t) => ctx.log(t),
+			trackChild: (c) => ctx.trackChild(c),
+		};
+		let run = await this.runWorker<SpeechJobOutput>(host, 'transcribe', spec, scratch, span, env, gpuName);
 		if (!run.out) {
 			// SG-003: a GPU failure the worker could not handle itself (it crashed, or failed before its own CPU
 			// retry) → the job once more on the CPU; the original error when that fails too
-			const gpuUsed = run.device
-				? run.device.attempt === 1 && (run.device.encoder !== 'cpu' || run.device.decoder !== 'cpu')
-				: [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].some((p) => p !== 'cpu');
 			const original = new JobError('TRANSCRIPTION_FAILED', run.error ?? 'jasper-speech failed', false);
-			if (!gpuUsed || ctx.signal.aborted) throw original;
+			const from = gpuOfFailedRun(run, plan);
+			if (!from || ctx.signal.aborted) throw original;
 			ctx.log(`GPU attempt failed (${run.error}); running again on the CPU`);
-			const from =
-				run.device && run.device.encoder !== 'cpu'
-					? run.device.encoder
-					: plan.encoder !== 'cpu'
-						? plan.encoder
-						: (plan.calibrate ?? plan.decoder);
 			const cpuSpec: SpeechJobSpec = { ...spec, device: { encoder: 'cpu', decoder: 'cpu', calibrate: null } };
-			run = await this.runWorker(ctx, cpuSpec, scratch, span, {}, gpuName);
+			run = await this.runWorker<SpeechJobOutput>(host, 'transcribe', cpuSpec, scratch, span, {}, gpuName);
 			if (!run.out) throw original;
 			fallbacks.push({ stage: 'job', part: 'both', from, to: 'cpu', reason: original.message.slice(0, 300) });
 		}
@@ -915,10 +950,215 @@ export class SpeechService {
 					.slice(0, 200)
 					.map((r) => ({ ...r, start: r.start + offsetSec, end: r.end + offsetSec })),
 				frames: out.guard.frames,
+				...(out.guard.glossary ? { glossary: out.guard.glossary } : {}),
 			},
 			accuracy,
 			beamSize,
 		};
+	}
+
+	/**
+	 * Spec 17 SC-092: teacher-forced scores of alternative readings of the same audio windows of a media, with forced
+	 * word times (SC-032, SC-040). Engine-internal (the `transcript-fix` job calls it with its context); one worker
+	 * run decodes the media once, loads the model once and encodes each distinct window once. Device plan as
+	 * transcription (SC-035): encoder on the best GPU, decoder where the transcription calibration put it, session
+	 * fallbacks, a GPU failure → one more run on the CPU with the reason recorded. Cancelling `signal` ends the call
+	 * within ≈ 1 s (SC-036). Failures are `JobError {code, message, retryable, detail?}`: `INVALID_SPEC`,
+	 * `ASSET_NOT_FOUND`, `NO_AUDIO`, `MEDIA_OFFLINE`, `SPEECH_MODEL_*`, `BINARY_MISSING`, the worker's refusals
+	 * (`SPEECH_TOKENIZER_CANNOT_ENCODE`, `SPEECH_READING_TOO_LONG`, `SPEECH_WINDOW_TOO_LONG`,
+	 * `SPEECH_WINDOW_OUT_OF_RANGE`, `SPEECH_LANGUAGE_UNKNOWN`, `SPEECH_LANGUAGE_UNSUPPORTED`), `SPEECH_SCORE_FAILED`
+	 * and `JOB_CANCELLED`.
+	 */
+	async score(
+		request: SpeechScoreRequest,
+		signal: AbortSignal,
+		opts: SpeechScoreOptions = {},
+	): Promise<SpeechScoreResult> {
+		const parsed = SpeechScoreRequestSchema.safeParse(request);
+		if (!parsed.success) {
+			const i = parsed.error.issues[0];
+			throw new JobError(
+				'INVALID_SPEC',
+				`Invalid scoring request: ${i ? `${i.path.join('.') || '(root)'}: ${i.message}` : 'invalid'}`,
+				false,
+				{ issues: parsed.error.issues.slice(0, 10) },
+			);
+		}
+		const req = parsed.data;
+		if (req.language === 'auto')
+			throw new JobError('INVALID_SPEC', 'Scoring needs the language of the speech (not "auto")', false);
+		if (signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+		const record = this.core.registry.get(req.mediaId);
+		if (!record) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
+		const stream = this.audioStreamOf(record, req.streamIndex);
+		const modelId = await this.checkModel({
+			...(req.model ? { model: req.model } : {}),
+			language: req.language,
+		});
+		let modelDir: string;
+		let entry: SpeechCatalogEntry;
+		try {
+			const r = await this.models.resolve(modelId);
+			modelDir = r.dir;
+			entry = r.entry;
+		} catch (e) {
+			if (e instanceof SpeechModelError) throw new JobError(e.code, e.message, false);
+			throw e;
+		}
+		const file = await this.core.registry.resolvePath(req.mediaId);
+		if (!file) throw new JobError('MEDIA_OFFLINE', 'The media file is not available on the engine', false);
+		const ffmpeg = this.core.ffmpeg.bins.ffmpeg;
+		if (!ffmpeg) throw new JobError('BINARY_MISSING', 'ffmpeg was not found', false);
+		const { request: processor } = await this.decodingOf({ ...(req.device ? { device: req.device } : {}) });
+		const { plan, env, gpuName } = await this.devicePlan(modelId, processor, 1);
+		const threads = Math.max(1, Math.min(opts.threads ?? this.threads(), this.threads()));
+		const owned = !opts.scratchDir;
+		const scratch =
+			opts.scratchDir ?? join(this.core.config.paths.tmpDir, `speech-score-${process.pid}-${randomUUID()}`);
+		await mkdir(scratch, { recursive: true });
+		const host: WorkerHost = {
+			signal,
+			progress: (f, stage) => opts.onProgress?.(Math.min(1, Math.max(0, f)), stage),
+			log: (t) => opts.log?.(t),
+			...(opts.trackChild ? { trackChild: opts.trackChild } : {}),
+			killGraceMs: SCORE_KILL_GRACE_MS,
+		};
+		try {
+			const duration = Number((record.probe as { duration?: unknown }).duration);
+			const voiceAnalysis = await this.existingVoiceAnalysis(record, stream);
+			const spec: ScoreJobSpec = {
+				modelDir,
+				modelId,
+				input: { path: file, ffmpeg, stream },
+				language: req.language,
+				threads,
+				// scoring runs no greedy steps, so no decoder calibration: the decoder stays where it was calibrated
+				device: { encoder: plan.encoder, decoder: plan.calibrate ? 'cpu' : plan.decoder, calibrate: null },
+				...(entry.encoderFile || entry.decoderFile
+					? {
+							files: {
+								...(entry.encoderFile ? { encoder: entry.encoderFile } : {}),
+								...(entry.decoderFile ? { decoder: entry.decoderFile } : {}),
+							},
+						}
+					: {}),
+				scratch,
+				...(Number.isFinite(duration) && duration > 0 ? { durationSec: duration } : {}),
+				...(voiceAnalysis ? { voiceAnalysis } : {}),
+				...(opts.batch ? { batch: Math.max(1, Math.min(32, Math.floor(opts.batch))) } : {}),
+				windows: req.windows.map((w) => {
+					const start = Math.floor(w.start / FLICKS_PER_SAMPLE);
+					return {
+						id: w.id,
+						start,
+						// ≤ 30 s after rounding too (the request allows exactly 30 s of flicks)
+						end: Math.min(start + 30 * 16_000, Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE))),
+						readings: w.readings.map((r) => ({ id: r.id, words: r.words })),
+					};
+				}),
+			};
+			const fallbacks: SpeechFallback[] = [];
+			if (plan.unavailableReason)
+				fallbacks.push({
+					stage: 'unavailable',
+					part: 'both',
+					from: 'cpu',
+					to: 'cpu',
+					reason: plan.unavailableReason,
+				});
+			const refused = (run: WorkerRun<ScoreJobOutput>) =>
+				new JobError(
+					run.code ?? 'SPEECH_REFUSED',
+					run.error ?? 'The speech worker refused the request',
+					false,
+				);
+			let run = await this.runWorker<ScoreJobOutput>(host, 'score', spec, scratch, [0, 1], env, gpuName);
+			if (!run.out) {
+				if (run.code) throw refused(run);
+				const original = new JobError('SPEECH_SCORE_FAILED', run.error ?? 'jasper-speech failed', false);
+				const from = gpuOfFailedRun(run, spec.device ?? plan);
+				if (!from || signal.aborted) throw original;
+				host.log(`GPU attempt failed (${run.error}); scoring again on the CPU`);
+				const cpuSpec: ScoreJobSpec = {
+					...spec,
+					device: { encoder: 'cpu', decoder: 'cpu', calibrate: null },
+				};
+				run = await this.runWorker<ScoreJobOutput>(host, 'score', cpuSpec, scratch, [0, 1], {}, gpuName);
+				if (!run.out) {
+					if (run.code) throw refused(run);
+					throw original;
+				}
+				fallbacks.push({
+					stage: 'job',
+					part: 'both',
+					from,
+					to: 'cpu',
+					reason: original.message.slice(0, 300),
+				});
+			}
+			const out = run.out;
+			if (!validScoreOutput(out, spec))
+				throw new JobError('SPEECH_SCORE_FAILED', 'The speech worker wrote an invalid scoring result', false);
+			fallbacks.push(...out.device.fallbacks);
+			const fallback =
+				fallbacks.find((f) => f.stage === 'job') ??
+				fallbacks.find((f) => f.stage === 'session') ??
+				fallbacks.find((f) => f.stage === 'unavailable');
+			const flicks = (samples: number) => Math.round(samples * FLICKS_PER_SAMPLE);
+			return {
+				device: {
+					encoder: out.device.encoder,
+					decoder: out.device.decoder,
+					label: deviceLabel(out.device, gpuName),
+					threads: out.device.threads,
+					fallbacks,
+				},
+				model: modelId,
+				...(fallback ? { fallback } : {}),
+				windows: out.windows.map((w) => ({
+					id: w.id,
+					readings: w.readings.map((r) => ({
+						id: r.id,
+						logprob: r.logprob,
+						tokens: r.tokens,
+						words: r.words.map((x) => ({
+							text: x.text,
+							tokens: x.tokens,
+							logprob: x.logprob,
+							probability: Math.min(1, Math.max(0, x.probability)),
+							start: flicks(x.start),
+							end: flicks(Math.max(x.start, x.end)),
+						})),
+					})),
+				})),
+				timings: {
+					...out.timings,
+					encoderMs: out.profile.encoderMs,
+					decoderMs: out.profile.decoderMs,
+					encoderPasses: out.profile.encoderPasses,
+					decoderRuns: out.profile.decoderRuns,
+					readings: out.profile.readings,
+					windowSec: out.profile.windowSec,
+				},
+			};
+		} finally {
+			if (owned) await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+		}
+	}
+
+	/** The stream's voice analysis when it already exists (scoring does not start one). */
+	private async existingVoiceAnalysis(
+		record: MediaRecord,
+		stream: number,
+	): Promise<ScoreJobSpec['voiceAnalysis']> {
+		const voice = this.voice();
+		if (!voice) return undefined;
+		try {
+			if (!(await voice.readBytes(record, stream))) return undefined;
+			return { path: voice.path(record, stream), fingerprint: record.fingerprint, stream };
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**
@@ -945,26 +1185,38 @@ export class SpeechService {
 		}
 	}
 
-	private async runWorker(
-		ctx: JobContext,
-		spec: SpeechJobSpec,
+	private async runWorker<T>(
+		host: WorkerHost,
+		mode: 'transcribe' | 'score',
+		spec: SpeechJobSpec | ScoreJobSpec,
 		scratch: string,
 		span: [number, number],
 		extraEnv: Record<string, string>,
 		gpuName: string | null,
-	): Promise<WorkerRun> {
-		const specPath = join(scratch, 'speech-spec.json');
-		const outPath = join(scratch, 'speech-out.json');
+	): Promise<WorkerRun<T>> {
+		const tag = mode === 'score' ? `score-${randomUUID().slice(0, 8)}` : 'speech';
+		const specPath = join(scratch, `${tag}-spec.json`);
+		const outPath = join(scratch, `${tag}-out.json`);
 		await writeFile(specPath, JSON.stringify(spec));
 		const cmd = speechCommand(this.env);
-		const child = spawn(cmd.command, [...cmd.args, specPath, outPath], {
-			stdio: ['ignore', 'pipe', 'pipe'],
-			env: { ...process.env, ...extraEnv, OMP_NUM_THREADS: String(spec.threads ?? 1) },
-		});
-		ctx.trackChild(child);
+		const child = spawn(
+			cmd.command,
+			[...cmd.args, ...(mode === 'score' ? ['score'] : []), specPath, outPath],
+			{
+				stdio: ['ignore', 'pipe', 'pipe'],
+				env: { ...process.env, ...extraEnv, OMP_NUM_THREADS: String(spec.threads ?? 1) },
+			},
+		);
+		host.trackChild?.(child);
+		const onAbort = () => void terminateTree(child, host.killGraceMs);
+		if (host.killGraceMs !== undefined) {
+			if (host.signal.aborted) onAbort();
+			else host.signal.addEventListener('abort', onAbort, { once: true });
+		}
 		let stderr = '';
 		let failure: string | null = null;
-		let device: WorkerRun['device'] = null;
+		let failureCode: string | null = null;
+		let device: WorkerRun<T>['device'] = null;
 		let deviceText = '';
 		let buf = '';
 		child.stdout.on('data', (c: Buffer) => {
@@ -981,49 +1233,114 @@ export class SpeechService {
 						fraction?: number;
 						stage?: string;
 						message?: string;
+						code?: string;
 						encoder?: ProviderId;
 						decoder?: ProviderId;
 						attempt?: number;
 					};
 					if (ev.type === 'progress' && typeof ev.fraction === 'number')
-						ctx.progress(span[0] + (span[1] - span[0]) * ev.fraction, {
-							stage: `${ev.stage ?? 'Transcribing'}${deviceText}`,
-						});
+						host.progress(
+							span[0] + (span[1] - span[0]) * ev.fraction,
+							`${ev.stage ?? (mode === 'score' ? 'Scoring' : 'Transcribing')}${deviceText}`,
+						);
 					else if (ev.type === 'device' && ev.encoder && ev.decoder) {
 						device = { encoder: ev.encoder, decoder: ev.decoder, attempt: ev.attempt ?? 1 };
 						deviceText = ` · ${deviceLabel(device, gpuName)}`;
-						ctx.log(
+						host.log(
 							`device: encoder ${PROVIDER_LABEL[ev.encoder]}, decoder ${PROVIDER_LABEL[ev.decoder]} (attempt ${device.attempt})`,
 						);
-					} else if (ev.type === 'error') failure = ev.message ?? 'failed';
+					} else if (ev.type === 'error') {
+						failure = ev.message ?? 'failed';
+						if (typeof ev.code === 'string') failureCode = ev.code.slice(0, 64);
+					}
 				} catch {
-					ctx.log(line);
+					host.log(line);
 				}
 			}
 		});
 		child.stderr.on('data', (c: Buffer) => {
 			const t = c.toString();
 			if (stderr.length < 8000) stderr += t;
-			ctx.log(t.trimEnd());
+			host.log(t.trimEnd());
 		});
 		const { code, signal } = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
 			(resolve, reject) => {
 				child.on('error', reject);
 				child.on('close', (c, s) => resolve({ code: c, signal: s }));
 			},
-		);
-		if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+		).finally(() => host.signal.removeEventListener('abort', onAbort));
+		if (host.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 		if (code !== 0)
 			return {
 				out: null,
 				device,
+				code: code === 4 ? (failureCode ?? 'SPEECH_REFUSED') : null,
 				error:
 					failure ??
 					(stderr.trim().split('\n').pop() ||
 						(signal ? `jasper-speech was killed (${signal})` : `jasper-speech exited with ${code}`)),
 			};
-		return { out: JSON.parse(await readFile(outPath, 'utf8')) as SpeechJobOutput, device, error: null };
+		let out: T;
+		try {
+			out = JSON.parse(await readFile(outPath, 'utf8')) as T;
+		} catch (e) {
+			return {
+				out: null,
+				device,
+				code: null,
+				error: `jasper-speech wrote no readable result: ${e instanceof Error ? e.message : String(e)}`,
+			};
+		}
+		return { out, device, error: null, code: null };
 	}
+}
+
+/**
+ * SG-003: the GPU provider of a failed first attempt that is worth one more run on the CPU, or null (CPU only, or
+ * the worker's own CPU retry failed).
+ */
+function gpuOfFailedRun(
+	run: { device: { encoder: ProviderId; decoder: ProviderId; attempt: number } | null },
+	plan: { encoder: ProviderId; decoder: ProviderId; calibrate?: ProviderId | null },
+): ProviderId | null {
+	const gpuUsed = run.device
+		? run.device.attempt === 1 && (run.device.encoder !== 'cpu' || run.device.decoder !== 'cpu')
+		: [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].some((p) => p !== 'cpu');
+	if (!gpuUsed) return null;
+	if (run.device && run.device.encoder !== 'cpu') return run.device.encoder;
+	if (run.device && run.device.decoder !== 'cpu') return run.device.decoder;
+	return plan.encoder !== 'cpu' ? plan.encoder : (plan.calibrate ?? plan.decoder);
+}
+
+/** The worker's scoring result has one entry per window and reading of the spec, with finite numbers. */
+function validScoreOutput(out: ScoreJobOutput, spec: ScoreJobSpec): boolean {
+	if (!out || !Array.isArray(out.windows) || out.windows.length !== spec.windows.length) return false;
+	if (!out.device || !Array.isArray(out.device.fallbacks) || !out.profile || !out.timings) return false;
+	return out.windows.every((w, i) => {
+		const sw = spec.windows[i]!;
+		if (!w || w.id !== sw.id || !Array.isArray(w.readings) || w.readings.length !== sw.readings.length)
+			return false;
+		return w.readings.every((r, j) => {
+			const sr = sw.readings[j]!;
+			return (
+				r &&
+				r.id === sr.id &&
+				Number.isFinite(r.logprob) &&
+				Number.isInteger(r.tokens) &&
+				Array.isArray(r.words) &&
+				r.words.length === sr.words.length &&
+				r.words.every(
+					(x) =>
+						Number.isFinite(x.logprob) &&
+						Number.isFinite(x.probability) &&
+						Number.isInteger(x.tokens) &&
+						Number.isFinite(x.start) &&
+						Number.isFinite(x.end) &&
+						x.start >= 0,
+				)
+			);
+		});
+	});
 }
 
 function pickOptions(o: TranscribeOptions): TranscribeOptions {
@@ -1040,6 +1357,9 @@ function pickOptions(o: TranscribeOptions): TranscribeOptions {
 	if (o.verbatim) out.verbatim = true;
 	if (o.initialPrompt?.trim()) out.initialPrompt = o.initialPrompt.trim();
 	if (o.conditionOnPreviousText === false) out.conditionOnPreviousText = false;
+	// SC-074: the glossary is part of the dedupe key (normalised, order kept: most frequent first)
+	const glossary = normalizeGlossary(o.glossary);
+	if (glossary.length) out.glossary = glossary;
 	return out;
 }
 
@@ -1047,8 +1367,9 @@ function specOptions(
 	o: TranscribeOptions,
 ): Pick<
 	SpeechJobSpec,
-	'language' | 'task' | 'speakers' | 'verbatim' | 'initialPrompt' | 'conditionOnPreviousText'
+	'language' | 'task' | 'speakers' | 'verbatim' | 'initialPrompt' | 'conditionOnPreviousText' | 'glossary'
 > {
+	const glossary = normalizeGlossary(o.glossary);
 	return {
 		language: o.language && o.language !== 'auto' ? o.language : null,
 		task: o.task ?? 'transcribe',
@@ -1060,6 +1381,7 @@ function specOptions(
 		...(o.verbatim ? { verbatim: true } : {}),
 		...(o.initialPrompt?.trim() ? { initialPrompt: o.initialPrompt.trim() } : {}),
 		...(o.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
+		...(glossary.length ? { glossary } : {}),
 	};
 }
 

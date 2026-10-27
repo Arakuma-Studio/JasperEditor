@@ -30,7 +30,7 @@ import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 
-export const SPEECH_GUIDE = `Speech to text (local Whisper on the engine; nothing is uploaded): list_speech_models shows the models (tiny / base / small, multilingual or English-only ".en", and large-v3-turbo — the most accurate; its half-precision variant is for NVIDIA GPUs) with size, licence, installed, recommended (for this computer), runsOn (encoder/decoder provider, device, threads) and speed (minutes per 10 min of audio, "measured" from the last run or "estimated"); install_speech_model downloads one (pinned revision, SHA-256 verified, resumable; the licence is MIT — say so to the user). transcribe makes transcripts: mediaId / clipId (that media), or sequenceId with mode "media" (default: every clip media heard in the sequence without a transcript, or all with replace: true) or "mix" (the sequence's mixed audio, optionally inOutOnly; the words go back to the clips' media in media time, covering only what the sequence plays). Options: model (default: the recommended model), language (ISO 639-1, default auto-detect), translate (English text of other languages), speakerLabels (+ speakerCount when known), accuracy ("standard" greedy, default; "best" beam 5, slower), device ("auto" default = the Transcription preference; "cpu"; "gpu" — falls back to the CPU with the reason), verbatim (keep filler words: um, eh…), initialPrompt (names, vocabulary), conditionOnPreviousText (default true). Results report where it ran (device, fallbacks) and what the hallucination guard removed (text over silence, loops, known phrases such as "Thanks for watching"). engine_status shows the GPU probe (speech.providers / chosen). Word times come from cross-attention alignment refined against the audio (pauses stay pauses; the media's voice analysis when it exists), with a confidence per word. With wait (default true) it commits ONE undo step "Generate Transcript"; with wait: false it returns the jobs — follow them with wait_for_job, then call transcribe {projectId, jobIds} to commit. get_transcript reads a media's transcript (media time) or a sequence's (sequence time, as heard through its audio clips). Then use the transcript_* / captions tools for text-based editing and captions.`;
+export const SPEECH_GUIDE = `Speech to text (local Whisper on the engine; nothing is uploaded): list_speech_models shows the models (tiny / base / small, multilingual or English-only ".en", and large-v3-turbo — the most accurate; its half-precision variant is for NVIDIA GPUs) with size, licence, installed, recommended (for this computer), runsOn (encoder/decoder provider, device, threads) and speed (minutes per 10 min of audio, "measured" from the last run or "estimated"); install_speech_model downloads one (pinned revision, SHA-256 verified, resumable; the licence is MIT — say so to the user). transcribe makes transcripts: mediaId / clipId (that media), or sequenceId with mode "media" (default: every clip media heard in the sequence without a transcript, or all with replace: true) or "mix" (the sequence's mixed audio, optionally inOutOnly; the words go back to the clips' media in media time, covering only what the sequence plays). Options: model (default: the recommended model), language (ISO 639-1, default auto-detect), translate (English text of other languages), speakerLabels (+ speakerCount when known), accuracy ("standard" greedy, default; "best" beam 5, slower), device ("auto" default = the Transcription preference; "cpu"; "gpu" — falls back to the CPU with the reason), verbatim (keep filler words: um, eh…), initialPrompt (names, vocabulary; conditions the first window and then fades with the previous text), glossary (≤ 40 names / English terms of up to 64 characters, script spelling, most frequent first — e.g. the proper nouns of the attached script: carried into EVERY window's prompt after the verbatim prompt, so names come out spelled right throughout; optional, it may drop some off-script chatter, and a window where a glossary term repeats ≥ 3 times within 10 s is decoded again without it and keeps that text when it differs), conditionOnPreviousText (default true). Results report where it ran (device, fallbacks), what the hallucination guard removed (text over silence, loops, known phrases such as "Thanks for watching") and, with a glossary, guard.glossary {terms carried, tokens, events, replaced}. engine_status shows the GPU probe (speech.providers / chosen). Word times come from cross-attention alignment refined against the audio (pauses stay pauses; the media's voice analysis when it exists), with a confidence per word. With wait (default true) it commits ONE undo step "Generate Transcript"; with wait: false it returns the jobs — follow them with wait_for_job, then call transcribe {projectId, jobIds} to commit. get_transcript reads a media's transcript (media time) or a sequence's (sequence time, as heard through its audio clips). Then use the transcript_* / captions tools for text-based editing and captions.`;
 
 const OptionsShape = {
 	model: z
@@ -76,6 +76,13 @@ const OptionsShape = {
 		.describe(
 			'Condition each 30 s window on the previous text (default true; false resists repetition loops)',
 		),
+	glossary: z
+		.array(z.string().trim().min(1).max(64))
+		.max(40)
+		.optional()
+		.describe(
+			"Names and terms (≤ 40, script spelling, most frequent first) carried into every window's prompt; a window where one repeats ≥ 3 times within 10 s is decoded again without them",
+		),
 };
 
 type Opts = {
@@ -90,6 +97,7 @@ type Opts = {
 	verbatim?: boolean;
 	initialPrompt?: string;
 	conditionOnPreviousText?: boolean;
+	glossary?: string[];
 };
 
 function requestOf(o: Opts) {
@@ -105,6 +113,7 @@ function requestOf(o: Opts) {
 		...(o.verbatim ? { verbatim: true } : {}),
 		...(o.initialPrompt?.trim() ? { initialPrompt: o.initialPrompt.trim() } : {}),
 		...(o.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
+		...(o.glossary?.length ? { glossary: o.glossary.map((t) => t.trim()).filter(Boolean) } : {}),
 	};
 }
 
@@ -220,6 +229,7 @@ async function commit(
 							droppedWords: res.guard.droppedWords,
 							removed: res.guard.removed.slice(0, 20),
 							...(res.guard.frames ? { frames: res.guard.frames } : {}),
+							...(res.guard.glossary ? { glossary: res.guard.glossary } : {}),
 						},
 					}
 				: {}),
@@ -299,7 +309,7 @@ export function registerSpeechTools(ctx: ToolContext): void {
 		{
 			title: 'Transcribe',
 			description:
-				'Speech to text on the engine (local Whisper) with word timestamps, optional language detection, translation to English and speaker labels. Target: mediaId, clipId (its media), or sequenceId (mode "media": each clip media heard in it — one transcript per media, reused by all its clips; mode "mix": the mixed audio, words mapped back to the clips\' media). With wait (default true) it waits (timeoutSeconds, default 600) and commits one undo step; with wait: false it returns the job ids — then call transcribe {projectId, jobIds} to commit.',
+				'Speech to text on the engine (local Whisper) with word timestamps, optional language detection, translation to English, speaker labels and an optional names glossary carried into every window (glossary). Target: mediaId, clipId (its media), or sequenceId (mode "media": each clip media heard in it — one transcript per media, reused by all its clips; mode "mix": the mixed audio, words mapped back to the clips\' media). With wait (default true) it waits (timeoutSeconds, default 600) and commits one undo step; with wait: false it returns the job ids — then call transcribe {projectId, jobIds} to commit.',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().optional().describe('Media id ("med_…")'),

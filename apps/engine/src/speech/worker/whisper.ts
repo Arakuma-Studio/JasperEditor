@@ -38,7 +38,13 @@ import {
 	type ProviderId,
 	type OrtTensor as Tensor,
 } from '../../tools/ort.ts';
-import { addWordTimestamps, alignTokens, type SegmentWords, wordTimings } from '../core/align.ts';
+import {
+	addWordTimestamps,
+	alignTokens,
+	type SegmentWords,
+	type WordTiming,
+	wordTimings,
+} from '../core/align.ts';
 import {
 	applyFilters,
 	argmax,
@@ -52,6 +58,7 @@ import {
 	softmaxAt,
 	topK,
 } from '../core/decode.ts';
+import { composePrompt, glossaryTokens, normalizeGlossary, repeatedGlossaryTerm } from '../core/glossary.ts';
 import { dropRepeatedTokenRuns, silenceThresholdCut } from '../core/hallucination.ts';
 import { HOP, SAMPLE_RATE } from '../core/mel.ts';
 import { type TokenizerJson, WhisperTokenizer } from '../core/tokenizer.ts';
@@ -108,6 +115,11 @@ export type WhisperOptions = {
 	verbatim?: boolean;
 	/** A custom initial prompt (after the verbatim prompt). */
 	initialPrompt?: string;
+	/**
+	 * Spec 17 SC-074: glossary terms carried into every window's prompt after the initial prompt (`core/glossary.ts`),
+	 * with the SC-075 guard (a term repeated ≥ 3 times within 10 s → the window is decoded again without it).
+	 */
+	glossary?: string[];
 	/** OpenAI's hallucination silence threshold (seconds; default 2, 0 = off). */
 	hallucinationSilence?: number;
 	/** 0..1 progress and stage; return false to cancel. */
@@ -142,10 +154,46 @@ export type WhisperResult = {
 	guard: {
 		skippedWindows: number;
 		removed: Array<{ text: string; start: number; end: number; reason: string }>;
+		/** SC-074/SC-075: terms carried, their prompt tokens, guard events and windows whose unprompted text was kept. */
+		glossary: GlossaryGuard | null;
 	};
 	/** Where time went (SG-013: JS time per token = jsMs / tokens). */
 	profile: { encoderMs: number; decoderMs: number; jsMs: number; decoderRuns: number; windows: number };
 };
+
+export type GlossaryGuard = { terms: number; tokens: number; events: number; replaced: number };
+
+/**
+ * A request the worker cannot score or transcribe as given (spec 17 SC-032 refusals): not a GPU or runtime failure,
+ * so it is never retried on the CPU. `code` is reported to the engine (`SPEECH_*`).
+ */
+export class SpeechRefusal extends Error {
+	constructor(
+		readonly code: string,
+		message: string,
+	) {
+		super(message);
+		this.name = 'SpeechRefusal';
+	}
+}
+
+/** Spec 17 SC-032: one word of a scored reading (samples from the start of the audio). */
+export type ScoredWord = {
+	text: string;
+	tokens: number;
+	/** Σ full-vocabulary log-softmax of the word's tokens (nats). */
+	logprob: number;
+	/** Mean probability of the word's tokens (full vocabulary). */
+	probability: number;
+	start: number;
+	end: number;
+};
+
+/** `logprob` = Σ over every text token and `<|endoftext|>`; `tokens` counts them (text tokens + 1). */
+export type ScoredReading = { logprob: number; tokens: number; words: ScoredWord[] };
+
+/** Logit + cross-attention values one batched scoring pass may hold (≈ 256 MB of float32). */
+const SCORE_BATCH_BUDGET = 64 * 1024 * 1024;
 
 export type DecoderCalibration = {
 	provider: ProviderId;
@@ -333,7 +381,7 @@ export class WhisperModel {
 		return out.last_hidden_state as Tensor;
 	}
 
-	private emptyPast(): Record<string, Tensor> {
+	private emptyPast(batch = 1): Record<string, Tensor> {
 		const h = this.cfg.decoder_attention_heads;
 		const dh = this.cfg.d_model / h;
 		const feeds: Record<string, Tensor> = {};
@@ -341,7 +389,7 @@ export class WhisperModel {
 			for (const kind of ['decoder', 'encoder'])
 				for (const kv of ['key', 'value'])
 					feeds[`past_key_values.${l}.${kind}.${kv}`] = new this.ort.Tensor('float32', new Float32Array(0), [
-						1,
+						batch,
 						h,
 						0,
 						dh,
@@ -731,6 +779,57 @@ export class WhisperModel {
 		return pool.reduce((best, r) => (r.avgLogprob > best.avgLogprob ? r : best));
 	}
 
+	/**
+	 * One decode result of a window → its segments (absolute times from `timeOffset`), the kept tokens of each, the
+	 * removed repeated-token runs (window-relative times) and the word alignment; `parsed` null = a no-speech window.
+	 */
+	private async analyseWindow(
+		r: DecodeResult,
+		xa: Tensor,
+		sotSeq: number[],
+		segmentFrames: number,
+		language: string,
+		timeOffset = 0,
+	): Promise<{
+		parsed: ReturnType<typeof parseSegments> | null;
+		segs: SegmentWords[];
+		segTokens: Map<SegmentWords, number[]>;
+		removedRuns: Array<{ text: string; start: number; end: number; reason: string }>;
+		alignment: WordTiming[] | null;
+		text: string;
+	}> {
+		const segs: SegmentWords[] = [];
+		const segTokens = new Map<SegmentWords, number[]>();
+		const removedRuns: Array<{ text: string; start: number; end: number; reason: string }> = [];
+		if (r.noSpeechProb > NO_SPEECH_THRESHOLD && r.avgLogprob < LOGPROB_THRESHOLD)
+			return { parsed: null, segs, segTokens, removedRuns, alignment: null, text: '' };
+		const parsed = parseSegments(r.tokens, this.tok, segmentFrames);
+		for (const s of parsed.segments) {
+			// TC-003: runs of ≥ 4 identical text tokens are a loop, not speech
+			const cleaned = dropRepeatedTokenRuns(s.tokens, this.tok.eot);
+			for (const run of cleaned.removed)
+				removedRuns.push({
+					text: this.tok.decode(run).trim(),
+					start: s.start,
+					end: s.end,
+					reason: 'repeated-tokens',
+				});
+			const textTokens = cleaned.tokens.filter((t) => t < this.tok.eot);
+			if (s.start === s.end || !this.tok.decode(textTokens).trim()) continue;
+			const seg: SegmentWords = {
+				start: timeOffset + s.start,
+				end: timeOffset + s.end,
+				textTokens,
+				words: [],
+			};
+			segs.push(seg);
+			segTokens.set(seg, cleaned.tokens);
+		}
+		const text = segs.flatMap((s) => s.textTokens);
+		const alignment = text.length ? await this.align(xa, sotSeq, text, segmentFrames, language) : null;
+		return { parsed, segs, segTokens, removedRuns, alignment, text: this.tok.decode(text).trim() };
+	}
+
 	/** Word timing for the text tokens of one window (seconds from the window start). */
 	private async align(xa: Tensor, sotSeq: number[], text: number[], segmentFrames: number, language: string) {
 		const tokens = [...sotSeq, this.tok.noTimestamps, ...text, this.tok.eot];
@@ -762,6 +861,228 @@ export class WhisperModel {
 		}
 		const words = this.tok.splitToWordTokens(text, language);
 		return wordTimings(words, jump, probs);
+	}
+
+	// ------------------------------------------------------------ spec 17 SC-032: teacher-forced scoring
+
+	/** Encoder and decoder time so far (scoring jobs report it). */
+	get timing(): { encoderMs: number; decoderMs: number; decoderRuns: number } {
+		return {
+			encoderMs: Math.round(this.profile.encoderMs),
+			decoderMs: Math.round(this.profile.decoderMs),
+			decoderRuns: this.profile.decoderRuns,
+		};
+	}
+
+	/**
+	 * Tokens of one reading: `encode(' ' + word)` per word, concatenated (= GPT-2 pre-tokenisation of the words joined
+	 * by spaces, so token spans map to words; not `splitToWordTokens`, which splits punctuation off). Refused when the
+	 * tokenizer cannot encode.
+	 */
+	readingTokens(words: readonly string[]): number[][] {
+		if (!this.tok.canEncode)
+			throw new SpeechRefusal(
+				'SPEECH_TOKENIZER_CANNOT_ENCODE',
+				"The speech model's tokenizer cannot encode text (tokenizer.json has no BPE merges)",
+			);
+		return words.map((w) => {
+			const ids = this.tok.encode(` ${w.trim()}`);
+			if (!ids.length)
+				throw new SpeechRefusal(
+					'SPEECH_TOKENIZER_CANNOT_ENCODE',
+					`The word "${w.slice(0, 64)}" encodes to no tokens`,
+				);
+			return ids;
+		});
+	}
+
+	/** The start-of-transcript sequence of a scored reading (`transcribe`, no timestamps follow). */
+	scoreSot(language: string): number[] {
+		if (this.tok.multilingual) {
+			if (this.tok.languageToken(language) === null)
+				throw new SpeechRefusal(
+					'SPEECH_LANGUAGE_UNKNOWN',
+					`The model does not know the language "${language}"`,
+				);
+		} else if (language !== 'en')
+			throw new SpeechRefusal(
+				'SPEECH_LANGUAGE_UNSUPPORTED',
+				`The model is English-only and cannot score "${language}" speech`,
+			);
+		return this.sotSequence(language, 'transcribe');
+	}
+
+	/**
+	 * The encoder output of samples [start, end) of the input: ≤ 30 s from the mel frame of `start`, zero-padded to
+	 * 30 s like a transcription window (the whole file's normalisation, as transcription).
+	 */
+	async encodeRange(
+		input: SpeechInput,
+		start: number,
+		end: number,
+	): Promise<{ xa: Tensor; frame0: number; frames: number }> {
+		const content = Math.max(0, input.mel.frames - N_FRAMES);
+		const frame0 = Math.max(0, Math.floor(start / HOP));
+		// a 30 s window that does not start on a frame boundary touches 3001 frames: its last partial frame is left out
+		const wanted = Math.min(N_FRAMES, Math.ceil(end / HOP) - frame0);
+		if (end - start > N_FRAMES * HOP)
+			throw new SpeechRefusal(
+				'SPEECH_WINDOW_TOO_LONG',
+				`A scoring window is at most 30 s (got ${(end - start) / SAMPLE_RATE} s)`,
+			);
+		const frames = Math.min(wanted, content - frame0);
+		if (!(frames > 0))
+			throw new SpeechRefusal(
+				'SPEECH_WINDOW_OUT_OF_RANGE',
+				`The window ${(start / SAMPLE_RATE).toFixed(2)}–${(end / SAMPLE_RATE).toFixed(2)} s lies outside the audio`,
+			);
+		const win = new Float32Array(this.cfg.num_mel_bins * N_FRAMES);
+		input.mel.window(frame0, frames, win, N_FRAMES);
+		return { xa: await this.encode(win), frame0, frames };
+	}
+
+	/**
+	 * SC-032: scores readings of one encoded window. Each reading is `[sot, lang, transcribe, notimestamps] +
+	 * Σ encode(' ' + word) + [eot]` (English-only models: `[sot, notimestamps] + …`), run through ONE uncached decoder
+	 * pass (no prompt, no autoregressive loop; readings batched, right-padded with eot — the decoder is causal, so
+	 * padding never changes earlier rows). LL = Σ full-vocabulary log-softmax of every text token and eot. The same
+	 * pass's cross-attention gives forced DTW word times (the alignment heads, z-score, median filter and DTW of
+	 * `align`, SC-040). Times are samples of the input, inside the window.
+	 */
+	async scoreReadings(
+		enc: { xa: Tensor; frame0: number; frames: number },
+		readings: ReadonlyArray<readonly string[]>,
+		opts: { language: string; batch?: number; signal?: AbortSignal },
+	): Promise<ScoredReading[]> {
+		const sotSeq = this.scoreSot(opts.language);
+		const prefix = [...sotSeq, this.tok.noTimestamps];
+		const max = this.cfg.max_target_positions;
+		const seqs = readings.map((words) => {
+			const wt = this.readingTokens(words);
+			const tokens = [...prefix, ...wt.flat(), this.tok.eot];
+			if (tokens.length > max)
+				throw new SpeechRefusal(
+					'SPEECH_READING_TOO_LONG',
+					`A reading of ${words.length} words has ${tokens.length} tokens; the model reads at most ${max}`,
+				);
+			return { words, wt, tokens };
+		});
+		const layers = [...new Set(this.alignmentHeads.map(([l]) => l))];
+		const perReading = (t: number) =>
+			t * this.cfg.vocab_size + layers.length * this.cfg.decoder_attention_heads * t * 1500;
+		const maxBatch = Math.max(1, Math.min(32, Math.floor(opts.batch ?? 8)));
+		const out: ScoredReading[] = [];
+		let i = 0;
+		while (i < seqs.length) {
+			if (opts.signal?.aborted) throw new CancelledError();
+			let b = 1;
+			let t = seqs[i]!.tokens.length;
+			while (b < maxBatch && i + b < seqs.length) {
+				const t2 = Math.max(t, seqs[i + b]!.tokens.length);
+				if ((b + 1) * perReading(t2) > SCORE_BATCH_BUDGET) break;
+				t = t2;
+				b++;
+			}
+			out.push(...(await this.scoreBatch(seqs.slice(i, i + b), enc, sotSeq.length, layers)));
+			i += b;
+		}
+		return out;
+	}
+
+	private async scoreBatch(
+		group: ReadonlyArray<{ words: readonly string[]; wt: number[][]; tokens: number[] }>,
+		enc: { xa: Tensor; frame0: number; frames: number },
+		sotLen: number,
+		layers: number[],
+	): Promise<ScoredReading[]> {
+		const B = group.length;
+		const T = Math.max(...group.map((g) => g.tokens.length));
+		const ids = new BigInt64Array(B * T).fill(BigInt(this.tok.eot));
+		group.forEach((g, b) => {
+			for (let t = 0; t < g.tokens.length; t++) ids[b * T + t] = BigInt(g.tokens[t]!);
+		});
+		const res = await this.timed('decoder', () =>
+			this.decoder.run(
+				{
+					input_ids: new this.ort.Tensor('int64', ids, [B, T]),
+					encoder_hidden_states: this.repeatBatch(enc.xa, B),
+					...this.emptyPast(B),
+					use_cache_branch: new this.ort.Tensor('bool', [false], [1]),
+				},
+				['logits', ...layers.map((l) => `cross_attentions.${l}`)],
+			),
+		);
+		const logits = res.logits as Tensor;
+		const V = (logits.dims as number[])[2] as number;
+		const L = logits.data as Float32Array;
+		const textStart = sotLen + 1;
+		const base = enc.frame0 * HOP;
+		const limit = base + enc.frames * HOP;
+		return group.map((g, b) => {
+			const n = g.tokens.length;
+			// lp[k]: log p(token textStart + k | everything before it), over the full vocabulary; the last one is eot
+			const lp: number[] = [];
+			for (let p = textStart; p < n; p++) {
+				const off = (b * T + p - 1) * V;
+				const v = L[off + g.tokens[p]!]! - logSumExp(L, off, off + V);
+				// a GPU (fp16) overflow, not a property of the reading: fail so the job reruns on the CPU
+				if (!Number.isFinite(v)) throw new Error('the decoder returned non-finite scores');
+				lp.push(v);
+			}
+			const attn: Float32Array[] = [];
+			let framesAll = 1500;
+			for (const [l, h] of this.alignmentHeads) {
+				const t = res[`cross_attentions.${l}`] as Tensor;
+				const [, H, Tt, F] = t.dims as number[];
+				framesAll = F as number;
+				if (h < (H as number))
+					attn.push(
+						(t.data as Float32Array).subarray(
+							(b * (H as number) + h) * (Tt as number) * framesAll,
+							(b * (H as number) + h + 1) * (Tt as number) * framesAll,
+						),
+					);
+			}
+			const textLen = n - textStart - 1;
+			const jump = alignTokens(
+				attn,
+				n,
+				framesAll,
+				Math.floor(enc.frames / 2),
+				sotLen,
+				textLen,
+				this.medianWidth,
+			);
+			const timings = wordTimings(
+				g.wt.map((tokens, k) => ({ word: g.words[k] ?? '', tokens })),
+				jump,
+				[],
+			);
+			let k = 0;
+			const words = g.wt.map((tokens, w): ScoredWord => {
+				let sum = 0;
+				let prob = 0;
+				for (let j = 0; j < tokens.length; j++) {
+					sum += lp[k]!;
+					prob += Math.exp(lp[k]!);
+					k++;
+				}
+				const tm = timings[w]!;
+				const start = Math.min(limit, Math.max(base, base + Math.round(tm.start * SAMPLE_RATE)));
+				const end = Math.min(limit, Math.max(start, base + Math.round(tm.end * SAMPLE_RATE)));
+				return {
+					text: (g.words[w] ?? '').trim(),
+					tokens: tokens.length,
+					logprob: sum,
+					probability: prob / tokens.length,
+					start,
+					end,
+				};
+			});
+			let total = 0;
+			for (const x of lp) total += x;
+			return { logprob: total, tokens: lp.length, words };
+		});
 	}
 
 	/** The initial prompt tokens (verbatim prompt of the language + custom prompt), OpenAI `" " + prompt.strip()`. */
@@ -815,6 +1136,8 @@ export class WhisperModel {
 		let skippedWindows = 0;
 		const allTokens: number[] = [];
 		let initial: number[] | null = null;
+		let gloss: { terms: string[]; tokens: number[] } | null = null;
+		let glossGuard: GlossaryGuard | null = null;
 		let promptResetSince = 0;
 		let lastSpeech = 0;
 		let seek = 0;
@@ -856,43 +1179,57 @@ export class WhisperModel {
 				initial = this.initialPromptTokens(language, opts);
 				allTokens.push(...initial);
 			}
-			const prompt = allTokens.slice(promptResetSince);
-			const r = await this.decodeWithFallback(xa, sotSeq, prompt, fallback, 1234 + windowIndex, beamSize);
+			if (gloss === null) {
+				// SC-074: the glossary fits after the initial prompt within the prompt cap
+				const terms = normalizeGlossary(opts.glossary);
+				gloss =
+					terms.length && this.tok.canEncode
+						? glossaryTokens(terms, (t) => this.tok.encode(t), this.maxPrompt - initial.length)
+						: { terms: [], tokens: [] };
+				if (opts.glossary?.length)
+					glossGuard = { terms: gloss.terms.length, tokens: gloss.tokens.length, events: 0, replaced: 0 };
+			}
+			const running = allTokens.slice(promptResetSince);
+			const initialKept = Math.max(0, initial.length - promptResetSince);
+			const plainPrompt = composePrompt(running, initialKept, [], this.maxPrompt);
+			const prompt = gloss.tokens.length
+				? composePrompt(running, initialKept, gloss.tokens, this.maxPrompt)
+				: plainPrompt;
+			const seed = 1234 + windowIndex;
+			let r = await this.decodeWithFallback(xa, sotSeq, prompt, fallback, seed, beamSize);
 			windowIndex++;
-			if (r.noSpeechProb > NO_SPEECH_THRESHOLD && r.avgLogprob < LOGPROB_THRESHOLD) {
+			let a = await this.analyseWindow(r, xa, sotSeq, segmentFrames, language, timeOffset);
+			if (gloss.tokens.length && a.alignment && glossGuard) {
+				// SC-075: a carried term repeated ≥ 3 times within 10 s → decode the window without the glossary and
+				// keep that text when it differs
+				const term = repeatedGlossaryTerm(
+					a.alignment.map((w) => ({ word: w.word, start: timeOffset + w.start })),
+					gloss.terms,
+				);
+				if (term) {
+					glossGuard.events++;
+					const r2 = await this.decodeWithFallback(xa, sotSeq, plainPrompt, fallback, seed, beamSize);
+					const a2 = await this.analyseWindow(r2, xa, sotSeq, segmentFrames, language, timeOffset);
+					if (a2.text !== a.text) {
+						r = r2;
+						a = a2;
+						glossGuard.replaced++;
+					}
+				}
+			}
+			if (!a.parsed) {
 				seek += segmentFrames;
 				continue;
 			}
-			const parsed = parseSegments(r.tokens, this.tok, segmentFrames);
+			removed.push(
+				...a.removedRuns.map((x) => ({ ...x, start: timeOffset + x.start, end: timeOffset + x.end })),
+			);
+			const { parsed, segs, segTokens } = a;
 			let nextSeek = seek + parsed.seekFrames;
-			const segs: SegmentWords[] = [];
-			/** The kept tokens (timestamps included) of each segment: the next windows' prompt (OpenAI `all_tokens`). */
-			const segTokens = new Map<SegmentWords, number[]>();
-			for (const s of parsed.segments) {
-				// TC-003: runs of ≥ 4 identical text tokens are a loop, not speech
-				const cleaned = dropRepeatedTokenRuns(s.tokens, this.tok.eot);
-				for (const run of cleaned.removed)
-					removed.push({
-						text: this.tok.decode(run).trim(),
-						start: timeOffset + s.start,
-						end: timeOffset + s.end,
-						reason: 'repeated-tokens',
-					});
-				const textTokens = cleaned.tokens.filter((t) => t < this.tok.eot);
-				if (s.start === s.end || !this.tok.decode(textTokens).trim()) continue;
-				const seg: SegmentWords = {
-					start: timeOffset + s.start,
-					end: timeOffset + s.end,
-					textTokens,
-					words: [],
-				};
-				segs.push(seg);
-				segTokens.set(seg, cleaned.tokens);
-			}
 			const text = segs.flatMap((s) => s.textTokens);
 			let kept = segs;
-			if (text.length) {
-				const alignment = await this.align(xa, sotSeq, text, segmentFrames, language);
+			if (text.length && a.alignment) {
+				const alignment = a.alignment;
 				const lastBefore = lastSpeech;
 				lastSpeech = addWordTimestamps(segs, alignment, timeOffset, lastSpeech);
 				const windowEnd = timeOffset + segmentFrames / 100;
@@ -973,7 +1310,7 @@ export class WhisperModel {
 			languageProbability,
 			words,
 			segments: segmentsOut,
-			guard: { skippedWindows, removed },
+			guard: { skippedWindows, removed, glossary: glossGuard },
 			profile: {
 				encoderMs: Math.round(this.profile.encoderMs),
 				decoderMs: Math.round(this.profile.decoderMs),
