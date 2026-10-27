@@ -6,18 +6,13 @@
 import type { ProcessStep } from '@jasper/project';
 import {
 	cudaProviderLibraryPresent,
-	loadOrt as loadSharedOrt,
+	loadOrt,
 	type Ort,
 	probeOrtProviders,
 	type OrtSession as Session,
 } from '../../tools/ort.ts';
 import { resampleRgb } from './resample.ts';
 import type { FrameStep, RgbFrame, StepContext } from './types.ts';
-
-/** Loads onnxruntime-node lazily (native binding; not needed by the other steps). */
-function loadOrt(): Ort {
-	return loadSharedOrt();
-}
 
 /**
  * Execution providers this runtime can really use (for `jasper-proc --version`, the remote probe and

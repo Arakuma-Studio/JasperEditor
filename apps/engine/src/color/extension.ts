@@ -79,11 +79,6 @@ type RunState = { effects: ColorRunEffect[]; key: string };
 const hasKeyframes = (fx: RenderVisualClip['effects'][number]) =>
 	Object.values(fx.params).some((a) => isAnimated(a));
 
-/** A file path as a filter-option value, escaped for both FFmpeg parsing levels (tools/filter-text.ts). */
-export function quoteFilterPath(path: string): string {
-	return filterPath(path);
-}
-
 /** Referenced `{mediaId}` values of a clip's colour effects (static values and keyframes). */
 export function lutRefs(clip: RenderVisualClip): string[] {
 	const out = new Set<string>();
@@ -342,7 +337,7 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 			}
 			const live = windows.filter((w) => w.file && w.end > ctx.f0 && w.start < ctx.f1);
 			if (live.length === 0) return '';
-			const lut3d = (file: string) => `lut3d=file=${quoteFilterPath(file)}:interp=tetrahedral`;
+			const lut3d = (file: string) => `lut3d=file=${filterPath(file)}:interp=tetrahedral`;
 			if (live.length === 1 && live[0]!.start <= ctx.f0 && live[0]!.end >= ctx.f1)
 				return lut3d(live[0]!.file!);
 			// Frame numbers `n` count from the layer's first drawn frame (f0).

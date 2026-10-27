@@ -5,7 +5,6 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
-import { quoteFilterPath } from '../src/color/extension.ts';
 import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
 import { assertFrameSize } from '../src/export/planner.ts';
 import { loadLottieFile } from '../src/imports/lottie.ts';
@@ -14,6 +13,7 @@ import { ModelStore } from '../src/processing/models.ts';
 import { ProcessingSettingsStore } from '../src/processing/settings.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
+import { filterPath } from '../src/tools/filter-text.ts';
 import { closeApps, DocBuilder, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
 
 /** An HTTP server whose every response is an endless body (stops after 256 MiB); counts the bytes it wrote. */
@@ -161,7 +161,7 @@ describe('ENG-3: file paths and text in filter text survive both FFmpeg parsing 
 				'-i',
 				'color=c=red:s=4x4',
 				'-filter_complex',
-				`[0:v]format=rgb24,lut3d=file=${quoteFilterPath(file)}:interp=tetrahedral[o]`,
+				`[0:v]format=rgb24,lut3d=file=${filterPath(file)}:interp=tetrahedral[o]`,
 				'-map',
 				'[o]',
 				'-frames:v',
