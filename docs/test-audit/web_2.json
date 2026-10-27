@@ -1878,7 +1878,7 @@
   {
     "path": "apps/web/test/project-files.test.tsx",
     "test": "offers the dead session’s changes; Recover applies them as one undoable step",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "offers the dead session’s changes; Recover applies them as one undoable step",
     "source": "docs/project-files.md; S01 PER-021/AC-18; AGENTS.md §0 data preservation",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: offers the dead session’s changes; Recover applies them as one undoable step.",
@@ -1886,13 +1886,13 @@
     "seam": "Project-file actions and recovery dialog over real MemoryProjectStore/persistence",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Lowest UI persistence coordinator; storage tests alone cannot detect dialogs discarding healthy work after save failure or treating damaged journals as discardable.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "The shared crashed-session fixture now transfers the writer lease with public acquireLease(...,{takeOver:true}) instead of a shipped test-only expireLease hook. Actual recovery/journal/document/undo assertions are unchanged; packages/session recovery owner separately covers real lease expiration.",
     "validation": "pnpm exec vitest run apps/web/test/project-files.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
     "path": "apps/web/test/project-files.test.tsx",
     "test": "preserves the original recovery journal when the recovered document cannot be saved",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "preserves the original recovery journal when the recovered document cannot be saved",
     "source": "docs/project-files.md; S01 PER-021/AC-18; AGENTS.md §0 data preservation",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: preserves the original recovery journal when the recovered document cannot be saved.",
@@ -1900,13 +1900,13 @@
     "seam": "Project-file actions and recovery dialog over real MemoryProjectStore/persistence",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Lowest UI persistence coordinator; storage tests alone cannot detect dialogs discarding healthy work after save failure or treating damaged journals as discardable.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "The shared crashed-session fixture now transfers the writer lease with public acquireLease(...,{takeOver:true}) instead of a shipped test-only expireLease hook. Actual recovery/journal/document/undo assertions are unchanged; packages/session recovery owner separately covers real lease expiration.",
     "validation": "pnpm exec vitest run apps/web/test/project-files.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
     "path": "apps/web/test/project-files.test.tsx",
     "test": "shows damaged-journal warnings while allowing a healthy session to be recovered",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "shows damaged-journal warnings while allowing a healthy session to be recovered",
     "source": "docs/project-files.md; S01 PER-021/AC-18; AGENTS.md §0 data preservation",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: shows damaged-journal warnings while allowing a healthy session to be recovered.",
@@ -1914,7 +1914,7 @@
     "seam": "Project-file actions and recovery dialog over real MemoryProjectStore/persistence",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Lowest UI persistence coordinator; storage tests alone cannot detect dialogs discarding healthy work after save failure or treating damaged journals as discardable.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "The shared crashed-session fixture now transfers the writer lease with public acquireLease(...,{takeOver:true}) instead of a shipped test-only expireLease hook. Actual recovery/journal/document/undo assertions are unchanged; packages/session recovery owner separately covers real lease expiration.",
     "validation": "pnpm exec vitest run apps/web/test/project-files.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
@@ -1934,7 +1934,7 @@
   {
     "path": "apps/web/test/project-files.test.tsx",
     "test": "Discard deletes the journal without touching the project",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "Discard deletes the journal without touching the project",
     "source": "docs/project-files.md; S01 PER-021/AC-18; AGENTS.md §0 data preservation",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: Discard deletes the journal without touching the project.",
@@ -1942,7 +1942,7 @@
     "seam": "Project-file actions and recovery dialog over real MemoryProjectStore/persistence",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Lowest UI persistence coordinator; storage tests alone cannot detect dialogs discarding healthy work after save failure or treating damaged journals as discardable.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "The shared crashed-session fixture now transfers the writer lease with public acquireLease(...,{takeOver:true}) instead of a shipped test-only expireLease hook. Actual recovery/journal/document/undo assertions are unchanged; packages/session recovery owner separately covers real lease expiration.",
     "validation": "pnpm exec vitest run apps/web/test/project-files.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
