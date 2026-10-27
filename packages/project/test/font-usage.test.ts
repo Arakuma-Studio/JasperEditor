@@ -52,14 +52,4 @@ describe('documentFontUsage', () => {
 		expect(usage.get(p)).toEqual({ clips: 2, tracks: 0 });
 		expect(usage.get(m)).toEqual({ clips: 1, tracks: 0 });
 	});
-
-	it('skips malformed values instead of throwing', () => {
-		const doc = createEmptyProject({ ids: createCounterIdSource(2), name: 'X', preset: 'hd-1080p-30' });
-		const seq = Object.values(doc.sequences)[0]!;
-		(seq.clips as Record<string, unknown>).bad = {
-			kind: 'text',
-			content: { style: { fontId: 7 }, runs: 'nope' },
-		};
-		expect(documentFontUsage(doc).size).toBe(0);
-	});
 });

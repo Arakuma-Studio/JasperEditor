@@ -348,7 +348,7 @@ default.
 
 ### Verification (VM `wt-kits`)
 
-- `packages/project/test/automation-planners.test.ts` (20): kit packs valid, eases resolve; repeat penalty keeps the
+- `packages/project/test/automation-planners.test.ts`: repeat penalty keeps the
   shares and gives 0.23; per-side eased batch keys; every kit centred on its cut exactly and disjoint (example and
   fast-check property over random edits, seeds and both aspects); determinism; shorts pack; close cuts → shorter
   family / `too-close`; edges, transitions, decorated cuts; coverage, spacing, range, track, refusals; family shares

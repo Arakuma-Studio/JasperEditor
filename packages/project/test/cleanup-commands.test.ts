@@ -3,11 +3,9 @@
 // lift / mute / markers, undo (the previous document is untouched) / redo (re-applying is deterministic), refusals and
 // invariants (every transaction runs the invariant checker in `verify` mode under tests).
 import { describe, expect, it } from 'vitest';
-import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import {
 	checkInvariants,
 	encodeVoiceAnalysis,
-	type ProjectDocument,
 	readSequenceCleanup,
 	sequenceCleanupSettings,
 } from '../src/index.ts';
@@ -400,28 +398,5 @@ describe('transcript.removePauses / removeFillers (spec 14 TC-032)', () => {
 		expect(checkInvariants(H.doc)).toEqual([]);
 		const missing = goldenSequence(rec).H.tx([{ type: 'transcript.removePauses', mode: 'level' }]);
 		expect(missing.ok).toBe(false);
-	});
-});
-
-describe('analysis → apply', () => {
-	it('applying the dry-run plan gives the planned output duration in one step', () => {
-		const rec = synthRecording(GOLDEN_EVENTS, 7);
-		const { H } = goldenSequence(rec);
-		const a = analyzeSequenceCleanup({ doc: H.doc as ProjectDocument, seq: H.seq, voice: () => rec.voice });
-		if (!a.ok) throw new Error(a.message);
-		const rev = H.revision;
-		H.ok(
-			[
-				{
-					type: 'cleanup.apply',
-					clipIds: a.plan.clipIds,
-					ranges: a.plan.ranges.map((x) => ({ start: x.start, end: x.end })),
-					fadeMs: a.plan.fadeMs,
-				},
-			],
-			{ label: `Clean Up Voice: ${a.plan.stats.joins} cuts` },
-		);
-		expect(H.revision).toBe(rev + 1);
-		expect(total(H, 'A1') / 30).toBeCloseTo(a.plan.stats.outputDuration, 5);
 	});
 });

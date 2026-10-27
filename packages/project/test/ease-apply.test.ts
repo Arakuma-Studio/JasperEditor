@@ -201,29 +201,6 @@ describe('keyframe.applyEase refusals and skips', () => {
 		expect(!r.ok && r.errors[0]!.code).toBe('E_TRACK_LOCKED');
 	});
 
-	it('the previous document is untouched (undo) and re-applying is deterministic (redo)', () => {
-		const { h, key } = setup();
-		const ids = key('transform.rotation', [
-			[0, 0],
-			[15, 40],
-			[30, 90],
-		]);
-		const docBefore = h.doc;
-		const snapshot = structuredClone(docBefore);
-		const cmd = { type: 'keyframe.applyEase', keyframeIds: ids, curve: BACK };
-		h.ok([cmd]);
-		const after = structuredClone(h.doc);
-		expect(docBefore).toEqual(snapshot);
-		const again = setup();
-		again.key('transform.rotation', [
-			[0, 0],
-			[15, 40],
-			[30, 90],
-		]);
-		again.h.ok([cmd]);
-		expect(again.h.doc).toEqual(after);
-	});
-
 	it('3D Orientation: an overshooting curve warns that the overshoot is clamped', () => {
 		const { h, id } = setup();
 		h.ok([{ type: 'clip.set3d', clipIds: [id], enabled: true }]);

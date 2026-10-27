@@ -6,7 +6,6 @@ import {
 	analyzePictureCuts,
 	type Clip,
 	CutMapError,
-	clipConvexPolygon,
 	contentTimeAt,
 	evaluate,
 	flicksPerFrame,
@@ -740,23 +739,5 @@ describe('pictureCuts: damaged data', () => {
 		seq.clips = { ...seq.clips, n1: nest };
 		const r = analyzePictureCuts(doc, h.seqId);
 		expect(r.warnings.map((w) => w.code)).toContain('nest-missing');
-	});
-});
-
-describe('clipConvexPolygon', () => {
-	it('intersects convex polygons of either orientation', () => {
-		const sq = (x: number, y: number, s: number): [number, number][] => [
-			[x, y],
-			[x + s, y],
-			[x + s, y + s],
-			[x, y + s],
-		];
-		const area = (p: [number, number][]) =>
-			Math.abs(
-				p.reduce((s, a, i) => s + a[0] * p[(i + 1) % p.length]![1] - p[(i + 1) % p.length]![0] * a[1], 0),
-			) / 2;
-		expect(area(clipConvexPolygon(sq(0, 0, 2), sq(1, 1, 2)))).toBeCloseTo(1);
-		expect(area(clipConvexPolygon(sq(0, 0, 2).reverse(), sq(1, 1, 2)))).toBeCloseTo(1);
-		expect(clipConvexPolygon(sq(0, 0, 1), sq(5, 5, 1))).toEqual([]);
 	});
 });

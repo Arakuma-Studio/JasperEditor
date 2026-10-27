@@ -1,6 +1,4 @@
-import { balanceGains } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
-import { contentTimeAt } from '../src/derive/index.ts';
 import {
 	buildAudioMix,
 	buildRenderSnapshot,
@@ -20,7 +18,6 @@ import {
 	resolveStripRef,
 	soloAudible,
 } from '../src/index.ts';
-import { evaluate } from '../src/keyframes.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
 const F30 = 705_600_000 / 30;
@@ -300,18 +297,18 @@ describe('offline mixer', () => {
 				thinning: { tolerance: 0 },
 			},
 		]);
-		const c = h.seq.clips[clip] as unknown as RenderAudioClip;
 		const [l, r] = await render(h, { [a]: [0.5, 0.5] }, 25);
-		for (const f of [12, 15, 18]) {
-			const i = f * 1600;
-			const content = contentTimeAt(c, f, { num: 30, den: 1 });
-			const g = 0.5 * 10 ** (evaluate(c.volumeDb, content) / 20);
-			const [gl, gr] = balanceGains(evaluate(c.pan, content) / 100);
-			expect(Math.abs(l![i]! - g * gl), `L at frame ${f}`).toBeLessThan(1e-5);
-			expect(Math.abs(r![i]! - g * gr), `R at frame ${f}`).toBeLessThan(1e-5);
+		// The authored ramps put frames 12 / 15 / 18 at −4 / −10 / −16 dB and balance 20 / 50 / 80.
+		// Independent vectors: right = 0.5 × 10^(dB/20), left = right × cos(balance × π/2).
+		for (const [frame, left, right] of [
+			[12, 0.300038046986, 0.31547867224],
+			[15, 0.111803398875, 0.158113883008],
+			[18, 0.024487946537, 0.079244659623],
+		] as const) {
+			const i = frame * 1600;
+			expect(l![i]!, `L at frame ${frame}`).toBeCloseTo(left, 5);
+			expect(r![i]!, `R at frame ${frame}`).toBeCloseTo(right, 5);
 		}
-		// frame 15 is half way: −10 dB, pan 50
-		expect(Math.abs(r![15 * 1600]! - 0.5 * 10 ** (-10 / 20))).toBeLessThan(1e-4);
 	});
 
 	it('inserts run registered processors (latency compensated) and report missing ones', async () => {

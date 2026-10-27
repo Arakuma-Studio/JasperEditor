@@ -4,7 +4,6 @@ import {
 	defaultEffectRegistry,
 	findUnknownKeys,
 	runAgentQuery,
-	suggestKey,
 	unknownCommandKeyIssues,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -12,17 +11,15 @@ import { Harness } from './helpers.ts';
 describe('unknown keys in agent commands', () => {
 	it('flags top-level and nested unknown keys with the accepted keys', () => {
 		const issues = unknownCommandKeyIssues([
-			{ type: 'marker.add', frame: 1, nmae: 'x' },
+			{ type: 'marker.add', frame: 1, NMAE: 'x' },
 			{ type: 'clip.update', clipIds: ['clp_1'], patch: { enabeld: false } },
 			{ type: 'not.a.command', whatever: 1 },
 		]);
 		expect(issues).toHaveLength(2);
 		expect(issues[0]).toMatchObject({ commandIndex: 0, code: 'E_SCHEMA' });
-		expect(issues[0]!.message).toContain('nmae');
-		expect(issues[0]!.message).toContain('name');
+		expect(issues[0]!.message).toContain('"NMAE" → "name"');
 		expect(issues[1]).toMatchObject({ commandIndex: 1, code: 'E_SCHEMA', path: ['patch'] });
-		expect(issues[1]!.message).toContain('enabeld');
-		expect(issues[1]!.message).toContain('enabled');
+		expect(issues[1]!.message).toContain('"enabeld" → "enabled"');
 	});
 
 	it('passes valid commands', () => {
@@ -46,7 +43,6 @@ describe('unknown keys in agent commands', () => {
 			{ path: 'r', keys: ['by'], accepted: ['from', 'to'] },
 			{ path: 'list[0]', keys: ['b'], accepted: ['a'] },
 		]);
-		expect(suggestKey('clipID', ['clipId', 'trackId'])).toBe('clipId');
 	});
 
 	it('an unknown temp ref names the refs declared so far', () => {

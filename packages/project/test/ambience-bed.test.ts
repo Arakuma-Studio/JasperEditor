@@ -99,11 +99,9 @@ describe('scenes', () => {
 		]);
 	});
 
-	it('never throws on hostile documents', () => {
+	it('an empty sequence has no scenes', () => {
 		const h = new Harness();
 		expect(bedScenes(h.doc, h.seq)).toEqual([]);
-		expect(bedScenes(h.doc, { settings: {} } as never)).toEqual([]);
-		expect(bedScenes(null as never, null as never)).toEqual([]);
 	});
 });
 

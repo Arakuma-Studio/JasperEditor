@@ -174,7 +174,7 @@ function signedArea(poly: readonly P[]): number {
 }
 
 /** `subject ∩ clip` for convex polygons (Sutherland–Hodgman); [] when they do not overlap or one is degenerate. */
-export function clipConvexPolygon(subject: readonly P[], clip: readonly P[]): P[] {
+function clipConvexPolygon(subject: readonly P[], clip: readonly P[]): P[] {
 	const orient = Math.sign(signedArea(clip));
 	if (!orient || subject.length < 3) return [];
 	let out: P[] = subject as P[];

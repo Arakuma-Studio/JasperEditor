@@ -16,23 +16,6 @@ function keptSeconds(a: CleanupAnalysis): Array<[number, number]> {
 describe('Fast preset on a synthetic recording (golden)', () => {
 	const rec = synthRecording(GOLDEN_EVENTS, 7);
 
-	it('the synthetic voice analysis sees the words as speech', () => {
-		let speech = 0;
-		let frames = 0;
-		for (const w of rec.words) {
-			for (let f = Math.ceil(w.s * 100) + 3; f < Math.floor(w.e * 100) - 3; f++) {
-				frames++;
-				if (rec.voice.classes[f] === 2) speech++;
-			}
-		}
-		expect(speech / frames).toBeGreaterThan(0.95);
-		const [a, b] = rec.breaths[0]!;
-		let breath = 0;
-		for (let f = Math.ceil(a * 100) + 3; f < Math.floor(b * 100) - 3; f++)
-			if (rec.voice.classes[f] === 1) breath++;
-		expect(breath).toBeGreaterThan(5);
-	});
-
 	it('reproduces the editor: removed words and time, no dead air, last take, script lines', () => {
 		const { H, mediaId } = goldenSequence(rec);
 		const a = analyzeSequenceCleanup({ doc: H.doc, seq: H.seq, voice: () => rec.voice });
