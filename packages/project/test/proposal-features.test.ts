@@ -32,6 +32,7 @@ import {
 	SOUND_DESIGN_FEATURE,
 	SUBTITLES_FEATURE,
 	TRANSCRIPT_CLEANUP_FEATURE,
+	TRANSCRIPT_CORRECTION_FEATURE,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -42,12 +43,13 @@ let idn = 0;
 const nextId = () => `prp_${String(++idn).padStart(16, '0')}`;
 
 describe('proposal features', () => {
-	it('lists sound design and the three workflow features with groups, nouns and producers', () => {
+	it('lists sound design and the four workflow features with groups, nouns and producers', () => {
 		expect(PROPOSAL_FEATURES.map((f) => f.id)).toEqual([
 			SOUND_DESIGN_FEATURE,
 			EDIT_AUTOMATION_FEATURE,
 			SUBTITLES_FEATURE,
 			TRANSCRIPT_CLEANUP_FEATURE,
+			TRANSCRIPT_CORRECTION_FEATURE,
 		]);
 		expect(proposalFeatureInfo(SOUND_DESIGN_FEATURE)!.agentAccept).toEqual({
 			setting: 'sound-sequence',
@@ -57,6 +59,7 @@ describe('proposal features', () => {
 			[EDIT_AUTOMATION_FEATURE, true],
 			[SUBTITLES_FEATURE, true],
 			[TRANSCRIPT_CLEANUP_FEATURE, true],
+			[TRANSCRIPT_CORRECTION_FEATURE, true],
 		]);
 		// sound design keeps its review order (Hero, Support, Bed, Layers)
 		expect(proposalFeatureInfo(SOUND_DESIGN_FEATURE)!.groups.map((g) => g.id)).toEqual([

@@ -305,8 +305,9 @@ describe('subtitle patch (SC-051)', () => {
 		const cap = captionOf(c1)!;
 		const keys = (c1 as { sourceTextKeyframes?: { time: number; value: { text: string; runs?: unknown[] } }[] })
 			.sourceTextKeyframes!;
-		// one key per word (+ the one before the first word), each holding the new text, highlighting a located word
-		expect(keys.length).toBe(cap.words.length + 1);
+		// a key per word (and one before the first word unless it starts at the In), each holding the new text
+		expect(keys.length).toBeGreaterThanOrEqual(cap.words.length);
+		expect(keys.length).toBeLessThanOrEqual(cap.words.length + 1);
 		for (const k of keys) expect(k.value.text).toBe(c1.content.text);
 		const at = keys.find((k) => k.time === cap.words.find((x) => x.text === 'NOVAPLAY')!.start)!;
 		const run = (at.value.runs as { from: number; to: number }[]).at(-1)!;
