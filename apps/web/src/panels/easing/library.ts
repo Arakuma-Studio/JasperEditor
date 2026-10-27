@@ -8,7 +8,6 @@ import {
 	EaseCurveSchema,
 	type EasePreset,
 	EasePresetSchema,
-	type EaseSection,
 	EaseSectionSchema,
 	LABEL_COLORS,
 	type LabelColor,
@@ -450,6 +449,3 @@ export const easeLibrary = {
 export function useEaseLibrary(): EaseLibraryState {
 	return useSyncExternalStore(easeLibrary.subscribe, easeLibrary.get, easeLibrary.get);
 }
-
-/** Section choice in the settings (re-exported for the commands, which apply with the panel's targeting). */
-export const storedSections = (): EaseSection[] => state.settings.sections;
