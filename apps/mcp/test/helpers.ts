@@ -49,7 +49,7 @@ export async function testPort(override?: string): Promise<number> {
 
 /** Reaps the fixture engine; exceeding its eight-second SIGTERM grace period is a test failure. */
 export async function stopEngine(child: ChildProcess | null): Promise<void> {
-	if (!child || child.exitCode !== null || child.signalCode !== null) return;
+	if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
 	let timeout: ReturnType<typeof setTimeout> | undefined;
 	let timedOut = false;
 	let onExit!: () => void;
