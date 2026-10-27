@@ -72,4 +72,6 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 
 ## 7. Log
 - 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged; scweb merged; integrated suite on 4bdd7fe3: typecheck passes, 9,341 tests passed, only the 7 known failures; lint
-  failed on the new e2e spec's formatting only (fixed in c008b648); sccalib merged (spec SC-030 updated: unpacked windows by default); re-measuring SC-037 on the VM with unpacked windows.
+  failed on the new e2e spec's formatting only (fixed in c008b648); sccalib merged (spec SC-030 updated: unpacked windows by default); re-measured SC-037 with unpacked windows: 24.67 s per speech minute (48 encoder passes; identical decisions) → over
+  the 20 s target; follow-up: packed windows with the gap audio muted (keeps one encoder pass per packed window,
+  removes the untranscribed speech that caused the false fixes), to be validated on the Mac harness and the VM bench.
