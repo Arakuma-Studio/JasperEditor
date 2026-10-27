@@ -6,7 +6,7 @@
 // JASPER_EDITOR_KEY and gives the browser the matching cookies. Started by hand without them, the engine makes its
 // own and prints the pairing link to open in a browser.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +28,16 @@ for (const [what, file] of [
 
 const appdir = process.env.E2E_APPDIR ?? mkdtempSync(join(tmpdir(), 'jasper-e2e-'));
 mkdirSync(appdir, { recursive: true });
+// Speech models provisioned by scripts/e2e-prepare.mjs (pinned, sha256-verified): linked into the appdir's models
+// directory, so the engine lists them installed without downloading anything during a spec.
+const speechCache = process.env.JASPER_SPEECH_MODELS_DIR ?? join(root, 'target', 'speech-models');
+if (existsSync(speechCache)) {
+	const into = join(appdir, 'models', 'speech');
+	mkdirSync(into, { recursive: true });
+	for (const id of readdirSync(speechCache, { withFileTypes: true }))
+		if (id.isDirectory() && !existsSync(join(into, id.name)))
+			symlinkSync(join(speechCache, id.name), join(into, id.name), 'dir');
+}
 // The specs read this file to find the appdir (e.g. to inspect the project store on disk).
 const infoFile = join(root, 'test-results', 'e2e-server.json');
 mkdirSync(dirname(infoFile), { recursive: true });

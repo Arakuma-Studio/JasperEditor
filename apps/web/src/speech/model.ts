@@ -136,6 +136,11 @@ export type GenerateOptions = Required<Pick<TranscribeOptions, 'model' | 'langua
 	accuracy: 'standard' | 'best' | null;
 	/** spec 14 TC-003: keep filler words (a verbatim prompt in the language). */
 	verbatim: boolean;
+	/**
+	 * spec 17 SC-074: names carried into the prompt of every window — off (default), the script's proper nouns and
+	 * English words, or those plus the personal glossary's spellings.
+	 */
+	namesFrom: 'off' | 'script' | 'script+glossary';
 };
 
 const KEY = 'jasper:speech-options';
@@ -152,6 +157,7 @@ export function defaultOptions(model = 'whisper-small'): GenerateOptions {
 		replace: true,
 		accuracy: null,
 		verbatim: false,
+		namesFrom: 'off',
 	};
 }
 
@@ -169,6 +175,7 @@ export function parseGenerateOptions(value: unknown, defaultModel: string): Gene
 			replace: z.boolean().catch(base.replace),
 			accuracy: z.enum(['standard', 'best']).nullable().catch(base.accuracy),
 			verbatim: z.boolean().catch(base.verbatim),
+			namesFrom: z.enum(['off', 'script', 'script+glossary']).catch(base.namesFrom),
 		})
 		.safeParse(value);
 	return parsed.success ? parsed.data : base;
@@ -192,8 +199,15 @@ export function saveOptions(o: GenerateOptions): void {
 	}
 }
 
-/** The engine request options of the dialog options. */
-export function requestOptions(o: GenerateOptions, multilingual: boolean): TranscribeOptions {
+/**
+ * The engine request options of the dialog options. `glossary`: the names to carry (SC-074, `promptTerms`; ≤ 40),
+ * sent only when the dialog's "Names from" is on.
+ */
+export function requestOptions(
+	o: GenerateOptions,
+	multilingual: boolean,
+	glossary: readonly string[] = [],
+): TranscribeOptions {
 	return {
 		model: o.model,
 		...(multilingual && o.language !== 'auto' ? { language: o.language } : {}),
@@ -203,6 +217,7 @@ export function requestOptions(o: GenerateOptions, multilingual: boolean): Trans
 		...(o.speakerLabels && o.speakerCount > 0 ? { speakerCount: o.speakerCount } : {}),
 		...(o.accuracy ? { accuracy: o.accuracy } : {}),
 		...(o.verbatim ? { verbatim: true } : {}),
+		...(o.namesFrom !== 'off' && glossary.length ? { glossary: glossary.slice(0, 40) } : {}),
 	};
 }
 

@@ -2,6 +2,8 @@ import {
 	CleanupPresetSchema,
 	EffectPresetFolderSchema,
 	EffectPresetSchema,
+	GlossaryEntrySchema,
+	GlossaryFileSchema,
 	SubtitleTemplateSchema,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -85,6 +87,16 @@ import {
 	ScratchInfoSchema,
 	WarpAnalysisRequestSchema,
 } from './gaps.ts';
+import {
+	GlossaryDeleteResponseSchema,
+	GlossaryEntryResponseSchema,
+	GlossaryImportRequestSchema,
+	GlossaryImportResponseSchema,
+	GlossaryLibraryResponseSchema,
+	GlossarySaveRequestSchema,
+	GlossarySaveResponseSchema,
+	GlossaryUpdateRequestSchema,
+} from './glossary.ts';
 import {
 	AutoToneRequestSchema,
 	AutoToneResponseSchema,
@@ -302,6 +314,7 @@ import {
 } from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
+import { TranscriptFixRequestSchema } from './transcript-fix.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -1171,6 +1184,56 @@ export const ROUTES = {
 		path: '/api/cleanup-presets/:presetId',
 		response: CleanupPresetDeleteResponseSchema,
 	},
+	/** Spec 17 SC-070: the personal speech glossary (`<appdir>/speech/glossary.json`) with read-only state and repairs. */
+	glossaryList: {
+		method: 'GET',
+		path: '/api/speech/glossary',
+		response: GlossaryLibraryResponseSchema,
+	},
+	/** The whole glossary as an importable file (`jasper-speech-glossary` v1). */
+	glossaryExport: {
+		method: 'GET',
+		path: '/api/speech/glossary/export',
+		response: GlossaryFileSchema,
+	},
+	glossaryGet: {
+		method: 'GET',
+		path: '/api/speech/glossary/:entryId',
+		response: GlossaryEntrySchema,
+	},
+	/** Adds an entry, or merges the spellings into the entry with the same `to` and `lang` (idempotent). */
+	glossarySave: {
+		method: 'POST',
+		path: '/api/speech/glossary',
+		body: GlossarySaveRequestSchema,
+		response: GlossarySaveResponseSchema,
+	},
+	/** SC-071 "Remember": the same as save, and the entry's `count` grows by one. */
+	glossaryRemember: {
+		method: 'POST',
+		path: '/api/speech/glossary/remember',
+		body: GlossarySaveRequestSchema,
+		response: GlossarySaveResponseSchema,
+	},
+	glossaryUpdate: {
+		method: 'PUT',
+		path: '/api/speech/glossary/:entryId',
+		body: GlossaryUpdateRequestSchema,
+		response: GlossaryEntryResponseSchema,
+	},
+	/** Deleting needs the user's approval when an agent asks (the glossary has no undo). */
+	glossaryDelete: {
+		method: 'DELETE',
+		path: '/api/speech/glossary/:entryId',
+		response: GlossaryDeleteResponseSchema,
+	},
+	/** Merges a glossary file into the library (additive: never removes or renames). */
+	glossaryImport: {
+		method: 'POST',
+		path: '/api/speech/glossary/import',
+		body: GlossaryImportRequestSchema,
+		response: GlossaryImportResponseSchema,
+	},
 
 	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */
 	interchangeImport: {
@@ -1738,6 +1801,18 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/style/apply',
 		body: ApplyStyleRequestSchema,
 		response: z.union([ApplyStyleResultSchema, EngineJobSchema]),
+	},
+	/**
+	 * Spec 17 SC-090: Fix Transcript — a `transcript-fix` job (`dryRun`: the fast pre-run; `propose`: the audio check and
+	 * one `transcript-correction` proposal); the job result is `TranscriptFixResult`.
+	 */
+	transcriptFix: {
+		method: 'POST',
+		path: '/api/projects/:projectId/sequences/:sequenceId/transcript-fix',
+		body: TranscriptFixRequestSchema,
+		/** `wait=1`: answer when the job ends (the finished job; a failed job is a 422 with its code). */
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
 	},
 	/** Spec 15 EA-013: Style Check of a sequence against a recipe's targets. */
 	styleCheck: {

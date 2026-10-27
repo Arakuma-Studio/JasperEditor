@@ -406,3 +406,44 @@ export function windowFromRaw(
 		}
 	}
 }
+
+/** Half the STFT window: frame `f` reads samples [f·HOP − FRAME_HALF, f·HOP + FRAME_HALF). */
+export const FRAME_HALF = N_FFT / 2;
+
+/**
+ * Raw log-mel rows of single frames from samples, exactly as `LogMelStream` computes them (same window, FFT, filters
+ * and float32 rounding), for frames whose samples were changed after streaming — spec 17 SC-030 muted gaps of a
+ * packed scoring window. `sampleAt(i)` gives the sample at absolute index i (the caller handles the reflect padding
+ * before 0 and the zeros after the audio).
+ */
+export class MelFrameComputer {
+	private readonly x = new Float64Array(N_FFT);
+	private readonly pow = new Float32Array(N_BINS);
+	private readonly filters: Float32Array;
+	private readonly ranges: Array<[number, number]> = [];
+
+	constructor(private readonly nMels: number) {
+		this.filters = melFilters(nMels);
+		for (let m = 0; m < nMels; m++) {
+			let a = 0;
+			while (a < N_BINS && this.filters[m * N_BINS + a] === 0) a++;
+			let b = N_BINS;
+			while (b > a && this.filters[m * N_BINS + b - 1] === 0) b--;
+			this.ranges.push([a, b]);
+		}
+	}
+
+	/** Frame `f`'s raw `log10(max(e, 1e-10))` mel values into `out` (length nMels). */
+	frame(f: number, sampleAt: (i: number) => number, out: Float32Array): void {
+		const base = f * HOP - FRAME_HALF;
+		for (let i = 0; i < N_FFT; i++) this.x[i] = sampleAt(base + i) * hann[i];
+		powerSpectrumFrame(this.x, this.pow);
+		for (let m = 0; m < this.nMels; m++) {
+			const [a, b] = this.ranges[m];
+			const fo = m * N_BINS;
+			let s = 0;
+			for (let k = a; k < b; k++) s += this.filters[fo + k] * this.pow[k];
+			out[m] = Math.log10(Math.max(Math.fround(s), 1e-10));
+		}
+	}
+}

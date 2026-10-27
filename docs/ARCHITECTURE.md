@@ -315,6 +315,7 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   renders/<jobId>/output.<ext>
   remotion/bundle/                           # cached Remotion serveUrl (dev); packaged builds ship a prebuilt bundle
   presets/effect-presets.json                # user effect preset library (S03:FX-030, wp-m3-presets; /api/effect-presets)
+  speech/glossary.json                       # personal speech glossary (spec 17 SC-070; atomic; /api/speech/glossary)
   projects/<projectId>/proposals/<id>.json   # proposals (spec 12 §2.5, D-51; engine-side, not in the document; ≤ 50, 30-day expiry)
   projects/<projectId>/proposals/<id>.accept-intent  # accept journal (written before the transaction, removed after; settled on read)
   projects/<projectId>/sound-check/<seqId>.json      # each sequence's last full Sound Check report (≤ 32 per project; kept across
@@ -787,8 +788,10 @@ Auto Sound Pass…). MCP: `plan_sound_design`, `place_sound` (propose mode), `li
 feature; another feature registers its accept policy (`ProposalService.registerPolicy`; default: agents refused).
 Spec 15 §2.1 adds the shared mechanics of the workflow features (`docs/wp-notes/edit-automation.md` "Proposals for new
 features"): the feature table `PROPOSAL_FEATURES` (`proposals/features.ts`: names, Review groups, item nouns, producers,
-where agent accept is decided) with project-level policies for `edit-automation`, `subtitles`, `transcript-cleanup`
+where agent accept is decided) with project-level policies for `edit-automation`, `subtitles`, `transcript-cleanup`, `transcript-correction`
 (Project Settings ▸ Agent Proposals, `settings.agentProposals`, default on; an agent turning one on needs approval),
+per-item default selection (spec 17 SC-061: `selected: false` items are left out of an accept of "all"; an agent's
+"all" never takes a feature's `agentAllExcludes` groups, e.g. Maybe transcript fixes — `acceptAllItemIds`),
 finer anchors (`meta.anchorOn`: decorated clips and cut frames), producer refreshes of stale items
 (`ProposalService.registerRefresher`, `POST …/refresh`, `refresh_proposal`), budgets (`proposalBudget`, 413
 `PROPOSAL_TOO_LARGE` / `E_TOO_LARGE` with the range that fits), batch commands (`clip.addAdjustmentBatch`,
@@ -798,7 +801,12 @@ transitions. The editing-automation passes (spec 15 EA-020…EA-022: Decorate Cu
 planners in `packages/project/src/automation/` (deterministic per seed, kit packs as data, plain-data parameters for
 style recipes); the engine's `edit-automation` job (`POST /api/projects/:projectId/automation/:pass`, dry run or
 propose) adds what needs I/O — the live document, sounds from the library through sound design's cues and placement,
-the Reframe subject analysis — and registers the feature's refresher (Refresh proposal, Reroll).
+the Reframe subject analysis — and registers the feature's refresher (Refresh proposal, Reroll). Fix Transcript
+(spec 17 SC-090) follows the same shape: the pure aligner and decisions in `@jasper/project/script-fix`, the engine's
+`transcript-fix` job (`POST /api/projects/:projectId/sequences/:sequenceId/transcript-fix`, dry run or propose; audio
+windows scored through `SpeechService.score`) and its refresher; a feature may also extend its accept transaction
+(`ProposalService.registerAcceptExtension`: History label and extra commands, here the remembered rejections) and react
+to the editor's rejections (`registerRejectListener`).
 
 **Sound design (built, D-50…D-53; spec 12).** Agents cannot hear, so every audible property has a
 measured or visual proxy, and every surface the editor has has an MCP twin (spec 12 §1): the library (`sound_library_status`,

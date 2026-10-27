@@ -16,7 +16,7 @@ import type { Transcript, TranscriptWord } from '../schema/media.ts';
 import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import type { Cue } from './formats/core.ts';
-import { plainCaptionText } from './formats/core.ts';
+import { decodeCaptionText, plainCaptionText } from './formats/core.ts';
 import { speakerName } from './sequence-transcript.ts';
 import { attachesToPrevious } from './words.ts';
 
@@ -180,6 +180,15 @@ export function findCaptionPreset(
 /** Whether a transcript belongs to the caption clips that show it (no media). */
 export function isCaptionTranscript(t: Pick<Transcript, 'mediaId'>): boolean {
 	return t.mediaId === null;
+}
+
+/** The name a caption clip gets from its text (markup removed, ≤ 40 characters; "Caption" when empty). */
+export function captionClipName(text: string): string {
+	const s = decodeCaptionText(text)
+		.replace(/<[^>]*>/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	return s.slice(0, 40) || 'Caption';
 }
 
 /** Content range `[a, b)` of a clip in flicks. */

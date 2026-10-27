@@ -25,7 +25,14 @@ import {
 	voicedMask,
 } from '../core/vad.ts';
 import { CancelledError, decodeToInput, inputFromSamples, type SpeechInput } from './audio.ts';
-import { type LoadOptions, WhisperModel, type WhisperResult, type WhisperSegment } from './whisper.ts';
+import {
+	type GlossaryGuard,
+	type LoadOptions,
+	SpeechRefusal,
+	WhisperModel,
+	type WhisperResult,
+	type WhisperSegment,
+} from './whisper.ts';
 
 export type SpeechDevicePlan = {
 	encoder: ProviderId;
@@ -52,6 +59,8 @@ export type SpeechJobSpec = {
 	verbatim?: boolean;
 	initialPrompt?: string;
 	conditionOnPreviousText?: boolean;
+	/** Spec 17 SC-074: glossary terms carried into every window's prompt (≤ 40, each ≤ 64 characters). */
+	glossary?: string[];
 	/** Where long-file spectrograms and kept samples go (default: a temporary directory). */
 	scratch?: string;
 	/** Audio duration hint (seconds) for decode progress. */
@@ -104,6 +113,8 @@ export type SpeechJobOutput = {
 		removed: Array<{ text: string; start: number; end: number; reason: string }>;
 		/** Which speech frames refined the word bounds (TC-004). */
 		frames: 'voice-analysis' | 'energy';
+		/** SC-074/SC-075 (only when a glossary was given). */
+		glossary?: GlossaryGuard;
 	};
 	profile: WhisperResult['profile'];
 };
@@ -190,6 +201,11 @@ type RefinableWord = { start: number; end: number; text?: string };
 export function refineWords<W extends RefinableWord>(
 	src: FrameSource,
 	words: W[],
+	/**
+	 * Keep every word (spec 17 scoring: one timed word per scored word): bounds are repaired, grown and tightened,
+	 * but words lying in silence and known phrases are not dropped.
+	 */
+	opts: { keepAll?: boolean } = {},
 ): {
 	words: W[];
 	dropped: number;
@@ -200,10 +216,11 @@ export function refineWords<W extends RefinableWord>(
 	const len = { length: samples };
 	const orphans = new Set(splitAtPauses(len, words, db, mask));
 	extendWordsIntoSpeech(len, words, db, 25, mask);
-	const drop = new Set<number>([...orphans, ...unvoicedWords(words, presence)]);
+	const drop = new Set<number>(opts.keepAll ? [] : [...orphans, ...unvoicedWords(words, presence)]);
 	const removed: Array<{ text: string; start: number; end: number; reason: string }> = [];
 	// known hallucination phrases over non-speech (TC-003), judged over the whole phrase
-	for (const [a, b] of knownPhraseRuns(words.map((w) => ({ text: w.text ?? '' })))) {
+	const phrases = opts.keepAll ? [] : knownPhraseRuns(words.map((w) => ({ text: w.text ?? '' })));
+	for (const [a, b] of phrases) {
 		const span = words.slice(a, b);
 		let voiced = 0;
 		let total = 0;
@@ -260,52 +277,40 @@ export type RunOptions = {
 
 const isGpu = (p: ProviderId) => p !== 'cpu';
 
-export async function runSpeechJob(spec: SpeechJobSpec, opts: RunOptions = {}): Promise<SpeechJobOutput> {
-	const t0 = Date.now();
-	opts.onProgress?.(0, 'Decoding audio');
-	const cfg = WhisperModel.readConfig(spec.modelDir);
-	const keepAudio = !!spec.speakers?.enabled;
-	let input: SpeechInput;
-	if (opts.audio) input = inputFromSamples(opts.audio, cfg.num_mel_bins);
-	else if ('f32' in spec.input) {
-		const b = await readFile(spec.input.f32);
-		input = inputFromSamples(
-			new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)),
-			cfg.num_mel_bins,
-		);
-	} else {
-		const expected = (spec.durationSec ?? 0) * SAMPLE_RATE;
-		input = await decodeToInput(spec.input, cfg.num_mel_bins, {
-			signal: opts.signal,
-			...(spec.scratch ? { scratch: spec.scratch } : {}),
-			keepAudio,
-			...(opts.onSpawn ? { onSpawn: opts.onSpawn } : {}),
-			onSamples: (n) => {
-				if (expected > 0) opts.onProgress?.(Math.min(0.02, (0.02 * n) / expected), 'Decoding audio');
-			},
-		});
-	}
-	try {
-		return await recognise(spec, input, opts, t0);
-	} finally {
-		input.dispose();
-	}
-}
+/** What loading a model needs (transcription and scoring specs). */
+type ModelSpec = {
+	modelDir: string;
+	threads?: number;
+	device?: SpeechDevicePlan;
+	files?: { encoder?: string; decoder?: string };
+};
 
-async function recognise(
-	spec: SpeechJobSpec,
-	input: SpeechInput,
-	opts: RunOptions,
-	t0: number,
-): Promise<SpeechJobOutput> {
-	const t1 = Date.now();
+/**
+ * Loads the model on the planned providers and runs `use` (spec 16 SG-003): session fallbacks are recorded; a GPU
+ * error during `use` runs it once more with a CPU-only model, and when that fails too the original error is thrown.
+ * Cancellation and refusals (`SpeechRefusal`) are never retried. The model is released after each attempt.
+ */
+export async function withDeviceFallback<T>(
+	spec: ModelSpec,
+	opts: Pick<RunOptions, 'onProgress' | 'onDevice' | 'signal' | 'ort'>,
+	use: (model: WhisperModel) => Promise<T>,
+	progressAt = 0.02,
+): Promise<{
+	value: T;
+	providers: { encoder: ProviderId; decoder: ProviderId };
+	multilingual: boolean;
+	calibration: WhisperModel['calibration'];
+	fallbacks: SpeechFallbackOut[];
+	loadMs: number;
+	threads: number;
+}> {
 	const threads = Math.max(1, spec.threads ?? 4);
 	const plan: SpeechDevicePlan = spec.device ?? { encoder: 'cpu', decoder: 'cpu' };
 	const fallbacks: SpeechFallbackOut[] = [];
 	let loadMs = 0;
 	const attempt = async (p: SpeechDevicePlan, n: number) => {
 		const tl = Date.now();
-		opts.onProgress?.(0.02, 'Loading the model');
+		opts.onProgress?.(progressAt, 'Loading the model');
 		const model = await WhisperModel.load(spec.modelDir, {
 			threads,
 			encoder: p.encoder,
@@ -320,26 +325,12 @@ async function recognise(
 			for (const f of model.fallbacks)
 				fallbacks.push({ stage: 'session', part: f.part, from: f.from, to: 'cpu', reason: f.reason });
 			opts.onDevice?.({ ...model.providers, attempt: n });
-			const r = await model.transcribe(input, {
-				language: spec.language ?? null,
-				task: spec.task ?? 'transcribe',
-				beamSize: spec.beamSize ?? 1,
-				...(spec.verbatim ? { verbatim: true } : {}),
-				...(spec.initialPrompt ? { initialPrompt: spec.initialPrompt } : {}),
-				...(spec.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
-				signal: opts.signal,
-				onProgress: (f, stage) => {
-					opts.onProgress?.(0.03 + f * 0.92, stage);
-					return true;
-				},
-			});
+			const value = await use(model);
 			return {
-				r,
-				model: {
-					providers: model.providers,
-					multilingual: model.multilingual,
-					calibration: model.calibration,
-				},
+				value,
+				providers: model.providers,
+				multilingual: model.multilingual,
+				calibration: model.calibration,
 			};
 		} finally {
 			await model.release();
@@ -349,7 +340,7 @@ async function recognise(
 	try {
 		result = await attempt(plan, 1);
 	} catch (e) {
-		if (e instanceof CancelledError || opts.signal?.aborted) throw e;
+		if (e instanceof CancelledError || e instanceof SpeechRefusal || opts.signal?.aborted) throw e;
 		const used = [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].filter(isGpu);
 		if (!used.length) throw e;
 		// SG-003: a GPU error mid-job → the job once more on the CPU, else the original error
@@ -363,7 +354,81 @@ async function recognise(
 		}
 		fallbacks.push({ stage: 'job', part: 'both', from: gpu, to: 'cpu', reason });
 	}
-	const { r, model } = result;
+	return { ...result, fallbacks, loadMs, threads };
+}
+
+/**
+ * The job's audio as a streamed input (decoded once per job): in-memory samples (tests), a raw f32 file, or
+ * ffmpeg. Decode progress goes to 0…`span` of the job.
+ */
+export async function openInput(
+	spec: { input: SpeechJobSpec['input']; scratch?: string; durationSec?: number },
+	nMels: number,
+	opts: Pick<RunOptions, 'audio' | 'signal' | 'onSpawn' | 'onProgress'>,
+	keepAudio = false,
+	span = 0.02,
+	/** Sample ranges to keep (`SpeechInput.samplesIn`; scoring's muted gaps). */
+	keepRanges?: ReadonlyArray<readonly [number, number]>,
+): Promise<SpeechInput> {
+	if (opts.audio) return inputFromSamples(opts.audio, nMels);
+	if ('f32' in spec.input) {
+		const b = await readFile(spec.input.f32);
+		return inputFromSamples(
+			new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)),
+			nMels,
+		);
+	}
+	const expected = (spec.durationSec ?? 0) * SAMPLE_RATE;
+	return decodeToInput(spec.input, nMels, {
+		signal: opts.signal,
+		...(spec.scratch ? { scratch: spec.scratch } : {}),
+		keepAudio,
+		...(keepRanges?.length ? { keepRanges } : {}),
+		...(opts.onSpawn ? { onSpawn: opts.onSpawn } : {}),
+		onSamples: (n) => {
+			if (expected > 0) opts.onProgress?.(Math.min(span, (span * n) / expected), 'Decoding audio');
+		},
+	});
+}
+
+export async function runSpeechJob(spec: SpeechJobSpec, opts: RunOptions = {}): Promise<SpeechJobOutput> {
+	const t0 = Date.now();
+	opts.onProgress?.(0, 'Decoding audio');
+	const cfg = WhisperModel.readConfig(spec.modelDir);
+	const input = await openInput(spec, cfg.num_mel_bins, opts, !!spec.speakers?.enabled);
+	try {
+		return await recognise(spec, input, opts, t0);
+	} finally {
+		input.dispose();
+	}
+}
+
+async function recognise(
+	spec: SpeechJobSpec,
+	input: SpeechInput,
+	opts: RunOptions,
+	t0: number,
+): Promise<SpeechJobOutput> {
+	const t1 = Date.now();
+	const ran = await withDeviceFallback(spec, opts, (model) =>
+		model.transcribe(input, {
+			language: spec.language ?? null,
+			task: spec.task ?? 'transcribe',
+			beamSize: spec.beamSize ?? 1,
+			...(spec.verbatim ? { verbatim: true } : {}),
+			...(spec.initialPrompt ? { initialPrompt: spec.initialPrompt } : {}),
+			...(spec.glossary?.length ? { glossary: spec.glossary } : {}),
+			...(spec.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
+			signal: opts.signal,
+			onProgress: (f, stage) => {
+				opts.onProgress?.(0.03 + f * 0.92, stage);
+				return true;
+			},
+		}),
+	);
+	const r = ran.value;
+	const { threads, fallbacks, loadMs } = ran;
+	const model = { providers: ran.providers, multilingual: ran.multilingual, calibration: ran.calibration };
 	const vaMask = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
 	const refined = refineWords(
 		// bounds snap to the energy VAD (measured on the LJ fixture: boundary error max 40 ms vs 280 ms with the
@@ -410,6 +475,7 @@ async function recognise(
 			droppedWords: refined.dropped,
 			removed,
 			frames: vaMask ? 'voice-analysis' : 'energy',
+			...(r.guard.glossary ? { glossary: r.guard.glossary } : {}),
 		},
 		profile: r.profile,
 	};

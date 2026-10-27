@@ -28,6 +28,9 @@ import {
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type GlossaryImportRequest,
+	type GlossarySaveRequest,
+	type GlossaryUpdateRequest,
 	type GradingScopesRequest,
 	type ImageSequenceRequest,
 	type InterchangeExportRequest,
@@ -89,6 +92,7 @@ import {
 	type StyleRecipeDuplicateRequest,
 	type StyleRecipeUpdateRequest,
 	soundSearchParams,
+	type TranscriptFixRequest,
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
@@ -649,6 +653,24 @@ export class EngineClient {
 			...(signal ? { signal } : {}),
 		}) as Promise<ApplyStyleResult | EngineJob>;
 	}
+	/**
+	 * Fix Transcript (spec 17 SC-090): a `transcript-fix` job (202). Its result (`TranscriptFixResultSchema`) names the
+	 * stored `transcript-correction` proposal (`propose`) or carries the pre-run report (`dryRun`). `wait: true` waits for
+	 * the job (a failed job is an EngineError with its code).
+	 */
+	transcriptFix(
+		projectId: string,
+		sequenceId: string,
+		req: TranscriptFixRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	) {
+		return this.call('transcriptFix', {
+			params: { projectId, sequenceId },
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
+			...(opts.signal ? { signal: opts.signal } : {}),
+		});
+	}
 	/** Style Check (spec 15 EA-013) of a sequence against a recipe's targets. */
 	styleCheck(projectId: string, req: StyleCheckRequest, signal?: AbortSignal) {
 		return this.call('styleCheck', { params: { projectId }, body: req, ...(signal ? { signal } : {}) });
@@ -919,6 +941,36 @@ export class EngineClient {
 	/** wp fonts: the saved projects that use a library face. */
 	fontUsage(fontId: string) {
 		return this.call('fontUsage', { params: { fontId } });
+	}
+	/** Spec 17 SC-070: the personal speech glossary (entries, read-only state, repairs made on open). */
+	listGlossary() {
+		return this.call('glossaryList');
+	}
+	getGlossaryEntry(entryId: string) {
+		return this.call('glossaryGet', { params: { entryId } });
+	}
+	/** Adds an entry, or merges its spellings into the entry with the same `to` and `lang` (idempotent). */
+	saveGlossaryEntry(req: GlossarySaveRequest) {
+		return this.call('glossarySave', { body: req });
+	}
+	/** SC-071 "Remember": add or merge like `saveGlossaryEntry`, and count one more teaching. */
+	rememberGlossaryEntry(req: GlossarySaveRequest) {
+		return this.call('glossaryRemember', { body: req });
+	}
+	updateGlossaryEntry(entryId: string, patch: GlossaryUpdateRequest) {
+		return this.call('glossaryUpdate', { params: { entryId }, body: patch });
+	}
+	/** Deletes an entry (an agent's request waits for the user's approval in an editor window). */
+	removeGlossaryEntry(entryId: string) {
+		return this.call('glossaryDelete', { params: { entryId } });
+	}
+	/** Merges a glossary file (an export, or a list of `{from, to, lang?}`) into the glossary. */
+	importGlossary(file: GlossaryImportRequest['file']) {
+		return this.call('glossaryImport', { body: { file } });
+	}
+	/** The whole glossary as an importable `jasper-speech-glossary` file. */
+	exportGlossary() {
+		return this.call('glossaryExport');
 	}
 	mgTemplates() {
 		return this.call('mgTemplates');

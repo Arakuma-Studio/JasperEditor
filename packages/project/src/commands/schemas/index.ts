@@ -20,6 +20,7 @@ import { PRESET_COMMANDS } from './preset.ts';
 import { PREVIEWS_COMMANDS } from './previews.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { ROTO_COMMANDS } from './roto.ts';
+import { SCRIPT_FIX_COMMANDS } from './script-fix.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SHAPE_COMMANDS } from './shape.ts';
 import { SHAPE_TRACER_COMMANDS } from './shape-tracer.ts';
@@ -61,6 +62,7 @@ export * from './preset.ts';
 export * from './previews.ts';
 export * from './project.ts';
 export * from './roto.ts';
+export * from './script-fix.ts';
 export * from './sequence.ts';
 export * from './shape.ts';
 export * from './shape-tracer.ts';
@@ -120,6 +122,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...BATCH_COMMANDS,
 	...CLEANUP_COMMANDS,
 	...STYLE_RECIPE_COMMANDS,
+	...SCRIPT_FIX_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

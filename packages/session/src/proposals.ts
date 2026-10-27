@@ -86,6 +86,11 @@ export type ReviewItem = {
 	meta: unknown;
 	/** The meta of the chosen command set: the selected alternative's when it has one, else the item's. */
 	selectedMeta?: unknown;
+	/**
+	 * Spec 17 SC-061: the item's default selection (false: offered unchecked, e.g. a Maybe transcript fix). Accept all
+	 * leaves unselected items out; accepting one explicitly (✓, Enter) takes it.
+	 */
+	selected: boolean;
 };
 
 export type ProposalPreviewState = {
@@ -149,6 +154,11 @@ export type ApplyResult =
 			/** The History label of the one transaction ("Accept <title> (n of m)"). */
 			label: string | null;
 			revision: number | null;
+			/**
+			 * The per-command results of the accept transaction, in order (empty when nothing was applied): a producer's
+			 * report after Apply (spec 17 SC-053: the subtitles a transcript fix patched or skipped).
+			 */
+			results: unknown[];
 	  }
 	| { ok: false; code: string; message: string; stale?: { itemId: string; reason: string }[] };
 
@@ -730,7 +740,14 @@ export class ProposalsController {
 		});
 		this.adopt(r.proposal);
 		this.followHistory();
-		return { ok: true, applied: r.applied, stale: r.stale, label, revision: r.revision };
+		return {
+			ok: true,
+			applied: r.applied,
+			stale: r.stale,
+			label,
+			revision: r.revision,
+			results: r.result?.ok ? [...r.result.results] : [],
+		};
 	}
 
 	/** Leaves the review rejecting every undecided item (the proposal stays, with its notes, for agents to read). */
@@ -995,6 +1012,7 @@ export class ProposalsController {
 						? (it.alternatives?.[(it.selectedAlternative ?? 0) - 1]?.meta ?? it.meta)
 						: it.meta,
 				meta: it.meta,
+				selected: it.selected !== false,
 			};
 		});
 		this.store.setState({ items });

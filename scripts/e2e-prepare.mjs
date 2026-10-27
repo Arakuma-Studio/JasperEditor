@@ -15,6 +15,22 @@ const run = (cmd, args) => {
 };
 
 run('node', ['scripts/make-fixtures.mjs']);
+// Speech models (spec 17 SC-104: e2e/script-fix.spec.ts transcribes and scores with a real model): whisper-tiny.en
+// from the engine's pinned catalogue, every file checked against its SHA-256, into target/speech-models (or
+// JASPER_SPEECH_MODELS_DIR); e2e/serve.mjs links them into its throwaway appdir. A failed download stops the run here;
+// with E2E_SKIP_SPEECH_MODELS=1 the step is skipped and a spec needing a missing model fails (never skips).
+const E2E_SPEECH_MODELS = ['whisper-tiny.en'];
+if (process.env.E2E_SKIP_SPEECH_MODELS !== '1')
+	run('pnpm', [
+		'--filter',
+		'@jasper/engine',
+		'exec',
+		'tsx',
+		'scripts/provision-speech-models.ts',
+		'--dir',
+		process.env.JASPER_SPEECH_MODELS_DIR ?? join(root, 'target', 'speech-models'),
+		...E2E_SPEECH_MODELS,
+	]);
 // D-13: the E2E engine is a built (non-dev) engine, which only renders through Remotion with the LGPL
 // FFmpeg directory. Fetch it when a pinned prebuilt exists for this platform (a no-op when it is current);
 // elsewhere (macOS) it has to be built once with `pnpm ffmpeg:lgpl`. E2E_SKIP_LGPL=1 skips this step.

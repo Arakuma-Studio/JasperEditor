@@ -70,6 +70,8 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 		"This operation is unavailable in the current engine or editor session. Check engine_status and the requested tool's requirements.",
 	E_UNSUPPORTED:
 		'The edit does not work on this material (for example a reversed, retimed or time-remapped clip). The message names the clips; set them to 100 % speed or leave them out.',
+	E_STALE:
+		'What the command was planned against changed (transcript.replaceWords: the words in an edit span are not the expected ones any more — someone edited the transcript). Nothing was applied: read the transcript again (get_transcript) and re-plan; never retry as is.',
 	E_LIMIT: 'Too many commands or too large a payload (5 000 commands / 20 MB per transaction). Split it up.',
 };
 

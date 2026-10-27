@@ -19,6 +19,14 @@ Heavy work runs in a child process (`jasper-speech`, D-07), started like `jasper
 tsx in a checkout, `dist/jasper-speech.mjs` (esbuild, `onnxruntime-node` external) next to the engine bundle in
 builds and the desktop app (`apps/engine/scripts/build.mjs`, `apps/desktop/scripts/package.mjs`).
 
+Worker protocol (`worker/cli.ts`): `jasper-speech <spec.json> <out.json>` (a transcription, `SpeechJobSpec` →
+`SpeechJobOutput`), `jasper-speech score <spec.json> <out.json>` (spec 17 teacher-forced scoring, `ScoreJobSpec` →
+`ScoreJobOutput`, §12) and `jasper-speech probe <request.json> <out.json>` (§11.1). Events on stdout as NDJSON:
+`{"type":"progress","fraction","stage"}`, `{"type":"device","encoder","decoder","attempt"}`,
+`{"type":"error","message","code?"}`. Exit codes: 0 done, 2 bad arguments, 3 failed, 4 refused (the input cannot be
+processed as given — a `SPEECH_*` code, never retried on another device), 130 cancelled (SIGTERM/SIGINT; `score`
+exits within 1 s even mid-ONNX-run).
+
 ## 2. Models (processing-model catalogue, `speech`)
 
 `apps/engine/src/processing/models.json` gained a `speech` list (the same catalogue file, `JASPER_MODEL_CATALOG` in
@@ -127,7 +135,8 @@ the Hugging Face release is labelled Apache-2.0), shown before every download an
 ## 6. MCP (`apps/mcp/src/tools/speech.ts`)
 
 `list_speech_models`, `install_speech_model`, `remove_speech_model`, `transcribe` (mediaId / clipId / sequenceId with
-mode media|mix, inOutOnly, language, translate, speakerLabels, speakerCount, beamSize, replace; wait + commit, or
+mode media|mix, inOutOnly, language, translate, speakerLabels, speakerCount, beamSize, replace, glossary (§12);
+wait + commit, or
 `wait: false` → `jobIds` commit later), `get_transcript` (a media's transcript in media time, or a sequence's as heard
 through its clips with frames and timecode). Guide text `SPEECH_GUIDE`; README tool list.
 
@@ -460,3 +469,25 @@ CUDA copies the key/value cache every step, research §0); with CUDA available t
 encoder (probe order) — per-machine, the calibration only chooses the decoder. Not run on real hardware: Windows
 (WebGPU via D3D12, the DirectML exclusion), macOS (WebGPU on Metal; research measured it), AMD/Intel GPUs, a desktop
 package; the CUDA provider with a distribution-installed CUDA 13 (here pip wheels via `LD_LIBRARY_PATH`).
+
+## 12. Spec 17: scoring readings and glossary prompts
+
+Spec: [docs/specs/17-script-correction.md](../specs/17-script-correction.md) SC-032…037, SC-040, SC-074, SC-075,
+SC-092; details, tests and measurements in [script-correction.md](script-correction.md) ("Speech scoring and glossary
+prompts").
+
+- **Scoring** (`worker/score.ts`, `WhisperModel.encodeRange` / `scoreReadings`): `jasper-speech score` decodes the
+  media once, loads the model once, encodes each distinct window (≤ 30 s, zero-padded like a transcription window)
+  once and runs one uncached, batched decoder pass per reading `[sot, lang, transcribe, notimestamps] + Σ encode(' ' +
+  word) + [eot]` (no prompt): LL = Σ full-vocabulary log-softmax of every text token and eot, per-word tokens /
+  log-probabilities / mean probability, and forced word times from the same pass's cross-attention (the alignment
+  heads, z-score, median filter and DTW of §3 step 6), refined by `refineWords` keeping every word. Engine:
+  `SpeechService.score(req, signal, opts)` (engine-internal; request in media flicks; JobErrors). Device plan,
+  session fallbacks and the GPU → CPU retry are shared with transcription (`withDeviceFallback` in `worker/run.ts`).
+- **Glossary prompts** (`core/glossary.ts`): `TranscribeOptions.glossary` (≤ 40 terms ≤ 64 characters, part of the
+  dedupe key) is carried into every window's prompt after the part of the verbatim / custom initial prompt still in
+  the running text, within the 223-token cap (the initial prompt itself keeps OpenAI's semantics of §11.3); when a
+  carried term occurs ≥ 3 times within 10 s, the window is decoded again without the glossary and the unprompted text
+  is kept when it differs; `guard.glossary {terms, tokens, events, replaced}` in the result and MCP.
+- Measured on the build VM (turbo, CPU, LJ fixture, packed windows): scoring 19.0 s per speech minute without the
+  once-per-job model load (27.1 s with it), transcription without previous text 35.4 s per speech minute.

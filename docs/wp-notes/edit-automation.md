@@ -35,6 +35,16 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
   - Policies: `ProposalService` registers `projectFeaturePolicy(f)` for each project-setting feature through
     `registerPolicy` in its constructor; refusals are `403 APPROVAL_REQUIRED` naming the setting. Destructive commands
     inside an accepted item still need the approval card (headless → `APPROVAL_DENIED`), as before.
+- Spec 17 (script-guided transcript correction, `docs/wp-notes/script-correction.md` "Applying fixes") adds a fifth
+  project-setting feature, `transcript-correction` ("Transcript fixes", "1 fix" / "{0} fixes", groups Fixes / Spelling /
+  Maybe, default on) and **per-item default selection**: an item input may carry `selected: false` (stored only when
+  false; absent = selected). An accept of `"all"` (`composeAcceptTx`, `planAccept`, the engine route, MCP
+  `accept_proposal`) takes the pending / stale items that are selected (`acceptAllItemIds`); explicit item ids take any
+  item. For an agent the engine and MCP also leave out the feature's `agentAllExcludes` groups (`maybe` for transcript
+  fixes) even when selected: an agent applies those only by naming their ids. The Review marks unselected rows "Not
+  selected" and Accept all leaves them pending (accepting one explicitly takes it); MCP `get_proposal` reports
+  `selected: false` and `accept_proposal` lists what "all" left out as `notSelected`. `transcript-cleanup` no longer
+  declares an unused "Transcript fixes" group.
 - Discovery: `GET /api/projects/:projectId/proposal-features` → `{features: [{id, name, description, itemNoun, groups,
   producers, agentAccept: {setting: 'project', allowed, default, explicit} | {setting: 'sound-sequence', sequences},
   refreshable}]}`; MCP `list_proposal_features {projectId}` (READ_ONLY). Client: `EngineClient.proposalFeatures`.

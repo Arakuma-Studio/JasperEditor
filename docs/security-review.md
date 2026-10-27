@@ -421,6 +421,8 @@ Every state-changing engine route and what an agent may do with it:
 |---|---|---|
 | `DELETE /api/effect-presets/:id`, `…/folders/:id` (`delete_effect_preset`) | **Gated** | The user's library, shared by all projects, no undo |
 | `POST /api/effect-presets`, `PUT …/:id`, `POST …/import`, `POST/PUT …/folders` (`save_effect_preset`) | Open | Add, rename, move: nothing is lost; import never overwrites |
+| `DELETE /api/speech/glossary/:id` (`remove_glossary_entry`; spec 17 SC-070), `PUT …/:id` dropping spellings or changing the right spelling | **Gated** | The user's personal glossary, shared by all projects, no undo |
+| `POST /api/speech/glossary`, `POST …/remember`, `POST …/import` (`save_glossary_entry`), `PUT …/:id` adding spellings or setting the language | Open | Add and merge only: bounded (2,000 entries, 20 spellings, 64 characters); import is additive and never removes |
 | `DELETE /api/fonts/library/:id` (`remove_font`; wp fonts) | **Gated** | The user's font library, shared by all projects, no undo; the card names the saved projects that use the font |
 | `POST /api/fonts/library`, `POST /api/fonts/library/install-path` (`install_font`) | Open | Adds fonts (validated, size- and count-bounded); never overwrites an installed face; path installs are local mode only |
 | `DELETE /api/roto/models/:id`, `DELETE /api/speech/models/:id` (`remove_roto_model`, `remove_speech_model`) | **Gated** | Gigabytes to download again; features stop working meanwhile |

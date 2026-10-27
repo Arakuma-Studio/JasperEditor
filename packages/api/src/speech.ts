@@ -97,6 +97,13 @@ export const TranscribeOptionsSchema = z.object({
 	initialPrompt: z.string().max(1000).optional(),
 	/** Condition each 30 s window on the previous window's text (default true; OpenAI `condition_on_previous_text`). */
 	conditionOnPreviousText: z.boolean().optional(),
+	/**
+	 * Spec 17 SC-074: names and terms (script spelling, most frequent first) carried into every window's prompt after
+	 * the verbatim / initial prompt, within the 223-token prompt cap (terms that do not fit are left out). A term
+	 * repeated ≥ 3 times within 10 s makes that window decode again without the glossary (SC-075). Part of the
+	 * transcription's dedupe key.
+	 */
+	glossary: z.array(z.string().trim().min(1).max(64)).max(40).optional(),
 });
 export type TranscribeOptions = z.infer<typeof TranscribeOptionsSchema>;
 
@@ -174,6 +181,19 @@ export const SpeechGuardReportSchema = z.object({
 		.max(200),
 	/** Speech frames the word bounds were refined against (spec 14 TC-004): the voice analysis, or the energy VAD. */
 	frames: z.enum(['voice-analysis', 'energy']).optional(),
+	/**
+	 * Spec 17 SC-074/SC-075, when a glossary was given: terms carried (those that fit the prompt), their prompt tokens,
+	 * windows where a carried term repeated ≥ 3 times within 10 s (decoded again without the glossary) and windows
+	 * whose unprompted text was kept because it differed.
+	 */
+	glossary: z
+		.object({
+			terms: z.number().int().min(0),
+			tokens: z.number().int().min(0),
+			events: z.number().int().min(0),
+			replaced: z.number().int().min(0),
+		})
+		.optional(),
 });
 export type SpeechGuardReport = z.infer<typeof SpeechGuardReportSchema>;
 
@@ -217,6 +237,113 @@ export const TranscriptionResultSchema = z.object({
 	beamSize: z.number().int().optional(),
 });
 export type TranscriptionResult = z.infer<typeof TranscriptionResultSchema>;
+
+/**
+ * Spec 17 SC-092: teacher-forced scoring of alternative readings of the same audio (engine-internal,
+ * `SpeechService.score`; the `transcript-fix` job uses it). Times are media flicks (the media's content time from 0).
+ */
+export const SpeechScoreRequestSchema = z.strictObject({
+	/** The engine media key (the asset's `engine-store` locator key). */
+	mediaId: z.string().min(1).max(256),
+	/** ISO 639-1 code of the speech (English-only models: `en`). */
+	language: z.string().min(1).max(16),
+	/** Catalogue id (default: the engine's default model); use the model that made the transcript. */
+	model: z.string().min(1).optional(),
+	/** Processor: `auto` (default: the Transcription preference), `cpu` or `gpu` (falls back to the CPU with a reason). */
+	device: z.enum(['auto', 'cpu', 'gpu']).optional(),
+	/** Absolute ffmpeg stream index (default: the first audio stream, as transcription). */
+	streamIndex: z.number().int().min(0).optional(),
+	windows: z
+		.array(
+			z
+				.strictObject({
+					id: z.string().min(1).max(128),
+					/** Flicks; end − start ≤ 30 s (the editor packs windows to ≤ 28 s, SC-030). */
+					start: z.number().int().min(0),
+					end: z.number().int().min(1),
+					readings: z
+						.array(
+							z.strictObject({
+								id: z.string().min(1).max(128),
+								/** The reading's words in order (punctuation attached as written). */
+								words: z.array(z.string().trim().min(1).max(128)).min(1).max(224),
+							}),
+						)
+						.min(1)
+						.max(64),
+					/**
+					 * Flicks ranges inside the window heard as silence (SC-030: the gaps between the parts of a packed
+					 * window, so a reading cannot take speech the transcript does not hold). Optional.
+					 */
+					mute: z
+						.array(z.strictObject({ start: z.number().int().min(0), end: z.number().int().min(1) }))
+						.max(64)
+						.optional(),
+				})
+				.refine((w) => w.end > w.start && w.end - w.start <= 30 * 705_600_000, {
+					message: 'end must be after start and the window at most 30 s long',
+				})
+				.refine((w) => (w.mute ?? []).every((m) => m.end > m.start && m.start >= w.start && m.end <= w.end), {
+					message: 'a muted range must lie inside its window and have end > start',
+					path: ['mute'],
+				}),
+		)
+		.min(1)
+		.max(20_000),
+});
+export type SpeechScoreRequest = z.infer<typeof SpeechScoreRequestSchema>;
+
+export const SpeechScoredWordSchema = z.object({
+	text: z.string(),
+	/** Tokens of `encode(' ' + text)`. */
+	tokens: z.number().int().min(1),
+	/** Σ full-vocabulary log-softmax of its tokens (nats). */
+	logprob: z.number(),
+	/** Mean token probability (the confidence of a fixed word, SC-041). */
+	probability: z.number().min(0).max(1),
+	/** Flicks (media time): forced cross-attention DTW, refined against the audio (SC-040). */
+	start: z.number().int().min(0),
+	end: z.number().int().min(0),
+});
+export type SpeechScoredWord = z.infer<typeof SpeechScoredWordSchema>;
+
+export const SpeechScoreResultSchema = z.object({
+	device: SpeechDeviceReportSchema,
+	model: z.string(),
+	/** The decisive fallback when one happened (also in `device.fallbacks`): job-level first, then session-level. */
+	fallback: SpeechFallbackSchema.optional(),
+	windows: z.array(
+		z.object({
+			id: z.string(),
+			readings: z.array(
+				z.object({
+					id: z.string(),
+					/** LL: Σ full-vocabulary log-softmax of every text token and `<|endoftext|>` (SC-032). */
+					logprob: z.number(),
+					/** Tokens scored: text tokens + 1 (end of text). */
+					tokens: z.number().int().min(1),
+					words: z.array(SpeechScoredWordSchema),
+				}),
+			),
+		}),
+	),
+	/** Milliseconds (decode, model load, scoring) and the work done (encoder passes = distinct windows). */
+	timings: z
+		.object({
+			decodeMs: z.number(),
+			loadMs: z.number(),
+			scoreMs: z.number(),
+			encoderMs: z.number(),
+			decoderMs: z.number(),
+			encoderPasses: z.number().int(),
+			decoderRuns: z.number().int(),
+			readings: z.number().int(),
+			/** Seconds of audio in the encoded windows. */
+			windowSec: z.number(),
+		})
+		.optional(),
+});
+export type SpeechScoreResult = z.infer<typeof SpeechScoreResultSchema>;
 
 /** Engine-side Transcription preferences (`GET/PUT /api/speech/settings`, SG-030). */
 export const SpeechSettingsSchema = z.object({

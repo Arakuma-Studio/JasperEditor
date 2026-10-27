@@ -16,6 +16,7 @@ import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
 import gapsRoutes from './gaps.ts';
+import glossaryRoutes from './glossary.ts';
 import gradingRoutes from './grading.ts';
 import importsRoutes from './imports.ts';
 import interchangeRoutes from './interchange.ts';
@@ -41,6 +42,7 @@ import subtitleTemplateRoutes from './subtitle-templates.ts';
 import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
+import transcriptFixRoutes from './transcript-fix.ts';
 import uploadsRoutes from './uploads.ts';
 import voiceRoutes from './voice.ts';
 
@@ -79,6 +81,8 @@ const ROUTE_PLUGINS = [
 	captionRoutes,
 	// Speech and roto require the processing model catalogue.
 	speechRoutes,
+	// Spec 17 SC-070: the personal speech glossary (app-dir library, no other dependency).
+	glossaryRoutes,
 	// Spec 14 TC-001: voice analysis (levels, voicing, frame classes) of media audio streams.
 	voiceRoutes,
 	// Spec 14: transcript cleanup analysis (needs voice analysis and the agent service) and the cleanup presets.
@@ -101,6 +105,8 @@ const ROUTE_PLUGINS = [
 	automationRoutes,
 	// Style recipes, Apply Style and Style Check (spec 15 EA-010…EA-013) use the automation, cleanup and template services.
 	styleRoutes,
+	// Fix Transcript (spec 17 SC-090) scores through the speech service and stores proposals (refresher, accept hooks).
+	transcriptFixRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

@@ -4,6 +4,10 @@ import type { Command } from '@jasper/project';
 // drag) → Mark In/Out, Extract, Lift, Insert into another sequence; Remove Fillers / Remove Pauses; speaker labels
 // (rename, filter); word corrections (`transcript.editText`) and caption breaks (`transcript.setBreak`); Create
 // Captions; Import Transcript (JSON or a caption file) for a media of the sequence.
+// Spec 17 (docs/wp-notes/script-correction.md "Editor UI"): "Script…" (the Script drawer: attach / replace / detach
+// the video script, with its summary) and "Fix Transcript…" (SC-080); while a fix proposal is under review the words
+// it would change are marked (dotted underline, before → after on hover; a click goes to its Review row, SC-083); after
+// a manual word fix an inline offer "Replace all N" / "Remember" (SC-071 / SC-085).
 import {
 	captionBlocks,
 	DEFAULT_CAPTION_RULES,
@@ -14,6 +18,7 @@ import {
 	mergeRanges,
 	type ProjectDocument,
 	paragraphs,
+	readSequenceCleanup,
 	type Sequence,
 	type SeqWord,
 	searchWords,
@@ -25,6 +30,7 @@ import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import {
 	Button,
 	EmptyState,
+	openDialog,
 	PointMenu,
 	SearchField,
 	SegmentedControl,
@@ -33,14 +39,30 @@ import {
 	toast,
 } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { t } from '../../i18n/runtime.ts';
+import { focusItem } from '../../proposals/actions.ts';
+import { useProposals } from '../../proposals/state.ts';
+import { EditOfferBar } from '../../script-fix/EditOffer.tsx';
+import { FIX_TRANSCRIPT_DIALOG } from '../../script-fix/FixTranscriptDialog.tsx';
+import {
+	type EditOffer,
+	editOffer,
+	FIX_FEATURE,
+	type FixMark,
+	fixMarks,
+	markedWords,
+} from '../../script-fix/model.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { GenerateTranscriptButton, TranscriptionStatus } from '../../speech/TextPanelHooks.tsx';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import { openCreateSubtitles } from '../../subtitles/open.ts';
 import { CleanupMode } from './cleanup/CleanupMode.tsx';
 import { cleanupFor } from './cleanup/controller.ts';
+import { ScriptDrawer } from './cleanup/ScriptDrawer.tsx';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
 
 type Props = { session: EditorSession; seq: Sequence; request?: { tool?: TranscriptTool; seq: number } };
-type Tool = null | Exclude<TranscriptTool, 'cleanup'>;
+type Tool = null | Exclude<TranscriptTool, 'cleanup' | 'script'>;
 
 const S = 705_600_000;
 
@@ -57,7 +79,12 @@ export function TranscriptTab({ session, seq, request }: Props) {
 	const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
 	const [editing, setEditing] = useState<number | null>(null);
 	const [target, setTarget] = useState('');
+	const [scriptOpen, setScriptOpen] = useState(false);
+	const [offer, setOffer] = useState<EditOffer | null>(null);
 	const dragging = useRef<number | null>(null);
+	const runtime = useShellRuntimeOrNull();
+	const engineState = useEngineOrNull();
+	const client = engineState?.client ?? null;
 	const requestSeq = request?.seq;
 	const requestTool = request?.tool;
 	// spec 14 TC-040: the tab's Clean Up mode (Sequence ▸ Clean Up Voice… opens it)
@@ -66,7 +93,10 @@ export function TranscriptTab({ session, seq, request }: Props) {
 	useEffect(() => {
 		if (requestSeq === undefined || !requestTool) return;
 		if (requestTool === 'cleanup') cleanup.setMode('cleanup');
-		else {
+		else if (requestTool === 'script') {
+			cleanup.setMode('edit');
+			setScriptOpen(true);
+		} else {
 			cleanup.setMode('edit');
 			setTool(requestTool);
 		}
@@ -89,6 +119,47 @@ export function TranscriptTab({ session, seq, request }: Props) {
 	const range = sel ? ([Math.min(sel[0], sel[1]), Math.max(sel[0], sel[1])] as const) : null;
 	const speakers = [...new Set(words.map((w) => w.speaker).filter((s): s is string => !!s))];
 	const paras = useMemo(() => paragraphs(words, Math.round(1.5 * S)), [words]);
+	// spec 17 SC-083: the words a fix proposal under review would change
+	const proposal = useProposals(session, (s) =>
+		s.activeId && s.proposal?.feature === FIX_FEATURE ? s.proposal : null,
+	);
+	const reviewItems = useProposals(session, (s) => s.items);
+	const marks = useMemo(() => {
+		const out = new Map<string, Map<number, FixMark>>();
+		if (!proposal) return out;
+		const states: Record<string, string> = {};
+		for (const it of reviewItems) states[it.id] = it.state;
+		for (const [tid, list] of fixMarks(proposal.items, states)) {
+			const tr = doc.transcripts[tid];
+			if (tr) out.set(tid, markedWords(tr.words, list));
+		}
+		return out;
+	}, [proposal, reviewItems, doc.transcripts]);
+	const readOnly = useStoreSelector(session.store, (s) => s.readOnly);
+	const openFix = () => {
+		void openDialog(FIX_TRANSCRIPT_DIALOG, {
+			session,
+			engine: client,
+			sequenceId: seq.id,
+			onReview: () => void runtime?.run('panel.focus.review'),
+		});
+	};
+	const jumpToFix = (m: FixMark) => {
+		focusItem(session, m.itemId);
+		void runtime?.run('panel.focus.review');
+	};
+	const scriptAttached = !!readSequenceCleanup(seq).script;
+	const scriptButton = (
+		<Button
+			variant={scriptOpen ? 'secondary' : 'quiet'}
+			aria-expanded={scriptOpen}
+			onClick={() => setScriptOpen((o) => !o)}
+			title={t('Attach, replace or detach the video script (Fix Transcript and Clean Up read it)')}
+			data-testid="text.transcript.script"
+		>
+			{scriptAttached ? t('Script ✓') : t('Script…')}
+		</Button>
+	);
 
 	const seek = (w: SeqWord) => session.transport.seek(Math.floor(w.start / F));
 	const goToMatch = (k: number) => {
@@ -117,9 +188,11 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					detail="Generate one with speech to text, or import a transcript (JSON or a caption file) for the media of an audio clip; text-based editing then follows every edit."
 				/>
 				<TranscriptionStatus session={session} seq={seq} />
-				<div className="flex justify-center px-2 pb-2">
+				<div className="flex justify-center gap-1 px-2 pb-2">
 					<GenerateTranscriptButton session={session} seq={seq} variant="primary" />
+					{scriptButton}
 				</div>
+				{scriptOpen ? <ScriptDrawer session={session} seq={seq} /> : null}
 				<ImportTranscript media={audioMedia} apply={apply} />
 			</div>
 		);
@@ -154,11 +227,30 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				.map((w) => w.text)
 				.join(' ')
 		: '';
+	/** After a manual fix: the "Replace all N" / "Remember" offer (SC-071), on the document after the edit. */
+	const offerAfter = (ws: SeqWord[], text: string) => {
+		const tr = (session.getCommitted() as ProjectDocument).transcripts[ws[0]!.transcriptId];
+		const before = doc.transcripts[ws[0]!.transcriptId];
+		const first = before?.words[ws[0]!.index];
+		const last = before?.words[ws.at(-1)!.index];
+		if (!tr || !first || !last) return setOffer(null);
+		setOffer(
+			editOffer(session.getCommitted() as ProjectDocument, seq.id, {
+				oldWords: ws.map((w) => w.text),
+				newText: text,
+				transcriptId: tr.id,
+				start: first.start,
+				end: Math.max(last.end, first.start),
+				language: tr.language ?? null,
+			}),
+		);
+	};
 	const editWord = (index: number, text: string) => {
 		const w = words[index]!;
-		apply('Edit Transcript', [
+		const r = apply('Edit Transcript', [
 			{ type: 'transcript.editText', transcriptId: w.transcriptId, fromWord: w.index, toWord: w.index, text },
 		]);
+		if (r.ok) offerAfter([w], text);
 	};
 	const correctSelection = () => {
 		if (!range) return;
@@ -172,16 +264,17 @@ export function TranscriptTab({ session, seq, request }: Props) {
 			return;
 		}
 		const text = window.prompt('Correct the text', selText);
-		if (text !== null)
-			apply('Edit Transcript', [
-				{
-					type: 'transcript.editText',
-					transcriptId: t,
-					fromWord: ws[0]!.index,
-					toWord: ws[ws.length - 1]!.index,
-					text,
-				},
-			]);
+		if (text === null) return;
+		const r = apply('Edit Transcript', [
+			{
+				type: 'transcript.editText',
+				transcriptId: t,
+				fromWord: ws[0]!.index,
+				toWord: ws[ws.length - 1]!.index,
+				text,
+			},
+		]);
+		if (r.ok) offerAfter(ws, text);
 	};
 	const textEdit = (type: 'transcript.select' | 'transcript.extract' | 'transcript.lift', label: string) =>
 		range &&
@@ -287,6 +380,19 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				>
 					Correct…
 				</Button>
+				{scriptButton}
+				<Button
+					variant="quiet"
+					disabled={readOnly}
+					disabledReason={t('The project is read-only')}
+					onClick={openFix}
+					title={t(
+						'Fix recognition errors from the script and your speech glossary; review the fixes before they apply',
+					)}
+					data-testid="text.transcript.fix"
+				>
+					{t('Fix Transcript…')}
+				</Button>
 				{otherSeqs.length ? (
 					<>
 						<Select
@@ -359,6 +465,17 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				</Button>
 			</div>
 			<TranscriptionStatus session={session} seq={seq} />
+			{scriptOpen ? <ScriptDrawer session={session} seq={seq} /> : null}
+			{offer ? (
+				<EditOfferBar
+					key={`${offer.from}→${offer.to}`}
+					session={session}
+					sequenceId={seq.id}
+					offer={offer}
+					engine={client}
+					onClose={() => setOffer(null)}
+				/>
+			) : null}
 			{tool === 'fillers' ? (
 				<FillersTool
 					words={words}
@@ -389,6 +506,8 @@ export function TranscriptTab({ session, seq, request }: Props) {
 			) : null}
 			<div
 				className="min-h-0 flex-1 overflow-auto px-2 py-1 font-pr text-pr-ui leading-[1.7]"
+				// the user's words: never translated as model names ("One" is not "Uno")
+				data-no-i18n
 				data-testid="text.transcript.words"
 			>
 				{paras.map(([a, b]) => {
@@ -415,13 +534,16 @@ export function TranscriptTab({ session, seq, request }: Props) {
 								{words.slice(a, b).map((w, k) => {
 									const i = a + k;
 									const inSel = range && i >= range[0] && i <= range[1];
+									const mark = marks.get(w.transcriptId)?.get(w.index) ?? null;
 									const cls = [
 										'cursor-text rounded-[2px] px-[1px]',
 										inSel ? 'bg-pr-accent-fill text-pr-on-accent' : matched.has(i) ? 'bg-pr-selected' : '',
 										current === i && !inSel ? 'text-pr-strong underline decoration-2' : '',
-										w.confidence !== null && w.confidence < 0.6
-											? 'decoration-pr-warning decoration-wavy underline'
-											: '',
+										mark
+											? 'underline decoration-pr-accent decoration-dotted decoration-2 underline-offset-2'
+											: w.confidence !== null && w.confidence < 0.6
+												? 'decoration-pr-warning decoration-wavy underline'
+												: '',
 									].join(' ');
 									if (editing === i)
 										return (
@@ -445,9 +567,18 @@ export function TranscriptTab({ session, seq, request }: Props) {
 									return (
 										<span key={i}>
 											{/* biome-ignore lint/a11y/noStaticElementInteractions: words are click targets; keyboard search and actions cover the same edits */}
+											{/* biome-ignore lint/a11y/useKeyWithClickEvents: a marked word's click is a shortcut to its Review row, which the Review panel's keys reach too */}
 											<span
 												className={cls}
-												title={`${(w.start / S).toFixed(2)} s${w.confidence !== null ? ` · ${Math.round(w.confidence * 100)} %` : ''}`}
+												title={
+													mark
+														? t('Proposed fix: {0} → {1}. Click to review it', mark.before, mark.after)
+														: `${(w.start / S).toFixed(2)} s${w.confidence !== null ? ` · ${Math.round(w.confidence * 100)} %` : ''}`
+												}
+												onClick={(e) => {
+													if (mark && !e.shiftKey && e.button === 0) jumpToFix(mark);
+												}}
+												data-fix-item={mark?.itemId}
 												onPointerDown={(e) => {
 													if (e.button !== 0) return;
 													if (e.shiftKey && sel) setSel([sel[0], i]);
