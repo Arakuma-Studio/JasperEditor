@@ -117,12 +117,7 @@ function EntryEditor(props: {
 	);
 }
 
-function EntryRow(props: {
-	entry: GlossaryEntry;
-	readOnly: boolean;
-	onEdit(): void;
-	onDelete(): void;
-}) {
+function EntryRow(props: { entry: GlossaryEntry; readOnly: boolean; onEdit(): void; onDelete(): void }) {
 	const e = props.entry;
 	return (
 		<li
@@ -222,7 +217,11 @@ export function GlossaryPreferencesPage() {
 				});
 				setNotice(null);
 			} else {
-				const r = await client.saveGlossaryEntry({ to: d.to, from, ...(d.lang === ANY ? {} : { lang: d.lang }) });
+				const r = await client.saveGlossaryEntry({
+					to: d.to,
+					from,
+					...(d.lang === ANY ? {} : { lang: d.lang }),
+				});
 				setNotice(
 					r.created
 						? null

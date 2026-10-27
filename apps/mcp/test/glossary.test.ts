@@ -21,14 +21,19 @@ function fakeEngine() {
 		entries: [] as GlossaryEntry[],
 		calls: [] as string[],
 	};
-	const ctx = () => ({ now: NOW, newId: () => glossaryIdFrom(Array.from({ length: 16 }, (_, i) => (i === 15 ? ++n : 0))) });
+	const ctx = () => ({
+		now: NOW,
+		newId: () => glossaryIdFrom(Array.from({ length: 16 }, (_, i) => (i === 15 ? ++n : 0))),
+	});
 	const client = {
 		listGlossary: async () => {
 			state.calls.push('list');
 			return {
 				revision: state.revision,
 				readOnly: state.readOnly,
-				repairs: state.readOnly ? ['the glossary was written by a newer JasperEditor (version 2); it is read-only here'] : [],
+				repairs: state.readOnly
+					? ['the glossary was written by a newer JasperEditor (version 2); it is read-only here']
+					: [],
 				limits: { maxEntries: 2000, maxSpellings: 20, maxChars: 64 },
 				entries: structuredClone(state.entries),
 			};
@@ -36,7 +41,9 @@ function fakeEngine() {
 		saveGlossaryEntry: async (req: { from: string[]; to: string; lang?: string }) => {
 			state.calls.push(`save ${JSON.stringify(req)}`);
 			if (state.readOnly)
-				throw new EngineError('GLOSSARY_READ_ONLY', 'The glossary was written by a newer JasperEditor', { status: 409 });
+				throw new EngineError('GLOSSARY_READ_ONLY', 'The glossary was written by a newer JasperEditor', {
+					status: 409,
+				});
 			try {
 				const u = upsertGlossaryEntry(state.entries, req, ctx());
 				if (u.changed) {
@@ -98,37 +105,61 @@ describe('glossary MCP tools (spec 17 SC-091)', () => {
 	it('annotations: list is read-only, save idempotent, remove destructive', async () => {
 		const { client } = await connect();
 		const tools = Object.fromEntries((await client.listTools()).tools.map((t) => [t.name, t.annotations]));
-		expect(tools.list_glossary).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
+		expect(tools.list_glossary).toMatchObject({
+			readOnlyHint: true,
+			destructiveHint: false,
+			idempotentHint: true,
+		});
 		expect(tools.save_glossary_entry).toMatchObject({
 			readOnlyHint: false,
 			destructiveHint: false,
 			idempotentHint: true,
 			openWorldHint: false,
 		});
-		expect(tools.remove_glossary_entry).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
+		expect(tools.remove_glossary_entry).toMatchObject({
+			readOnlyHint: false,
+			destructiveHint: true,
+			idempotentHint: true,
+		});
 	});
 
 	it('save merges by right spelling and is idempotent; list filters by text and language', async () => {
 		const { call, engine } = await connect();
-		const a = await call('save_glossary_entry', { to: 'NovaPlay Studio', from: ['nova play studio'], lang: 'es' });
+		const a = await call('save_glossary_entry', {
+			to: 'NovaPlay Studio',
+			from: ['nova play studio'],
+			lang: 'es',
+		});
 		expect(a.r.isError, JSON.stringify(a.json)).toBeFalsy();
-		expect(a.json).toMatchObject({ created: true, changed: true, entry: { to: 'NovaPlay Studio', count: 0 } });
-		const again = await call('save_glossary_entry', { to: 'NovaPlay Studio', from: ['nova play studio'], lang: 'es' });
+		expect(a.json).toMatchObject({
+			created: true,
+			changed: true,
+			entry: { to: 'NovaPlay Studio', count: 0 },
+		});
+		const again = await call('save_glossary_entry', {
+			to: 'NovaPlay Studio',
+			from: ['nova play studio'],
+			lang: 'es',
+		});
 		expect(again.json).toMatchObject({ created: false, changed: false });
-		const merged = await call('save_glossary_entry', { to: 'NovaPlay Studio', from: ['novaplei estudio'], lang: 'es' });
+		const merged = await call('save_glossary_entry', {
+			to: 'NovaPlay Studio',
+			from: ['novaplei estudio'],
+			lang: 'es',
+		});
 		expect(merged.json.entry.from).toEqual(['nova play studio', 'novaplei estudio']);
 		await call('save_glossary_entry', { to: 'Glimmerbox', from: ['glimer box'] });
 		expect(engine.state.revision).toBe(3);
 		const all = await call('list_glossary');
 		expect(all.json).toMatchObject({ readOnly: false, total: 2 });
 		expect(all.json.repairs).toBeUndefined();
-		expect((await call('list_glossary', { query: 'NOVAPLEI' })).json.entries.map((e: { to: string }) => e.to)).toEqual([
-			'NovaPlay Studio',
-		]);
+		expect(
+			(await call('list_glossary', { query: 'NOVAPLEI' })).json.entries.map((e: { to: string }) => e.to),
+		).toEqual(['NovaPlay Studio']);
 		// lang "en": entries for any language and for English only
-		expect((await call('list_glossary', { lang: 'en' })).json.entries.map((e: { to: string }) => e.to)).toEqual([
-			'Glimmerbox',
-		]);
+		expect(
+			(await call('list_glossary', { lang: 'en' })).json.entries.map((e: { to: string }) => e.to),
+		).toEqual(['Glimmerbox']);
 	});
 
 	it('remove needs the user: a denial is a tool error, an approval removes', async () => {

@@ -296,7 +296,8 @@ const isoOrUndefined = (v: unknown) =>
 function readImportEntry(v: unknown): GlossaryImportEntry | string {
 	if (!isObject(v)) return 'not an object';
 	if (typeof v.to !== 'string') return 'no right spelling (“to”)';
-	const rawFrom = typeof v.from === 'string' ? [v.from] : Array.isArray(v.from) ? v.from : v.from == null ? [] : null;
+	const rawFrom =
+		typeof v.from === 'string' ? [v.from] : Array.isArray(v.from) ? v.from : v.from == null ? [] : null;
 	if (!rawFrom) return '“from” is not a list of spellings';
 	if (rawFrom.length > GLOSSARY_LIMITS.maxSpellings * 4) return 'too many spellings';
 	if (rawFrom.some((f) => typeof f !== 'string')) return '“from” is not a list of spellings';
@@ -335,7 +336,10 @@ export function parseGlossaryImport(raw: unknown): GlossaryImportParse {
 	if (Array.isArray(raw)) list = raw;
 	else if (isObject(raw)) {
 		if (raw.format !== GLOSSARY_FORMAT)
-			return { ok: false, reason: 'This is not a JasperEditor glossary file (format jasper-speech-glossary)' };
+			return {
+				ok: false,
+				reason: 'This is not a JasperEditor glossary file (format jasper-speech-glossary)',
+			};
 		if (typeof raw.version !== 'number' || !Number.isInteger(raw.version) || raw.version < 1)
 			return { ok: false, reason: 'The glossary file has no valid version' };
 		if (raw.version > GLOSSARY_VERSION)
@@ -405,7 +409,8 @@ export function importGlossaryEntries(
 					...(e.lang ? { lang: e.lang } : {}),
 					count: e.count,
 					createdAt,
-					updatedAt: e.updatedAt && Date.parse(e.updatedAt) >= Date.parse(createdAt) ? e.updatedAt : createdAt,
+					updatedAt:
+						e.updatedAt && Date.parse(e.updatedAt) >= Date.parse(createdAt) ? e.updatedAt : createdAt,
 				}),
 			);
 			added++;

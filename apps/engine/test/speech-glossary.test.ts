@@ -37,7 +37,8 @@ afterEach(async () => {
 
 const NOW = '2026-10-27T10:00:00.000Z';
 const fileIn = (dir: string) => join(dir, 'speech', 'glossary.json');
-const id = (n: number) => glossaryIdFrom(Array.from({ length: 16 }, (_, i) => (i >= 13 ? n >> (5 * (15 - i)) : 0)));
+const id = (n: number) =>
+	glossaryIdFrom(Array.from({ length: 16 }, (_, i) => (i >= 13 ? n >> (5 * (15 - i)) : 0)));
 const entry = (n: number, extra: Record<string, unknown> = {}) => ({
 	id: id(n),
 	from: [`name ${n} wrong`],
@@ -170,7 +171,10 @@ describe('SpeechGlossary (library)', () => {
 	it('maps refusals of the rules to route errors', async () => {
 		const dir = tempAppdir('jasper-glossary-');
 		const g = new SpeechGlossary(fileIn(dir));
-		await expect(g.save({ from: [], to: '   ' })).rejects.toMatchObject({ status: 400, code: 'GLOSSARY_INVALID' });
+		await expect(g.save({ from: [], to: '   ' })).rejects.toMatchObject({
+			status: 400,
+			code: 'GLOSSARY_INVALID',
+		});
 		await expect(g.save({ from: [], to: 'x'.repeat(65) })).rejects.toMatchObject({ status: 400 });
 		await expect(
 			g.save({ from: Array.from({ length: 21 }, (_, i) => `w${i}`), to: 'Pixelforge' }),
@@ -182,7 +186,9 @@ describe('SpeechGlossary (library)', () => {
 			code: 'GLOSSARY_DUPLICATE',
 		});
 		await expect(g.remove('gle_0000000000000000')).rejects.toMatchObject({ status: 404 });
-		await expect(g.import({ format: 'jasper-speech-glossary', version: 3, entries: [] })).rejects.toMatchObject({
+		await expect(
+			g.import({ format: 'jasper-speech-glossary', version: 3, entries: [] }),
+		).rejects.toMatchObject({
 			status: 400,
 			code: 'GLOSSARY_IMPORT_INVALID',
 		});
@@ -197,13 +203,22 @@ describe('glossary routes', () => {
 				(await app.inject({ method: 'GET', url: '/api/speech/glossary', headers: H })).json(),
 			);
 		expect(await list()).toMatchObject({ revision: 0, readOnly: false, entries: [] });
-		const post = (url: string, payload: unknown) => app.inject({ method: 'POST', url, headers: JSON_H, payload: payload as object });
+		const post = (url: string, payload: unknown) =>
+			app.inject({ method: 'POST', url, headers: JSON_H, payload: payload as object });
 		const c = await post('/api/speech/glossary', { from: ['glimer box'], to: 'Glimmerbox', lang: 'es' });
 		expect(c.statusCode).toBe(201);
 		const created = GlossarySaveResponseSchema.parse(c.json());
-		const m = await post('/api/speech/glossary/remember', { from: ['glimerbox'], to: 'Glimmerbox', lang: 'es' });
+		const m = await post('/api/speech/glossary/remember', {
+			from: ['glimerbox'],
+			to: 'Glimmerbox',
+			lang: 'es',
+		});
 		expect(m.statusCode).toBe(200);
-		expect(m.json()).toMatchObject({ created: false, changed: true, entry: { count: 1, from: ['glimer box', 'glimerbox'] } });
+		expect(m.json()).toMatchObject({
+			created: false,
+			changed: true,
+			entry: { count: 1, from: ['glimer box', 'glimerbox'] },
+		});
 		for (const bad of [
 			{ to: 'x' },
 			{ from: ['a'], to: 'b', bogus: 1 },
@@ -218,10 +233,14 @@ describe('glossary routes', () => {
 		const blank = await post('/api/speech/glossary', { from: [], to: '  ' });
 		expect(blank.json()).toMatchObject({ code: 'GLOSSARY_INVALID' });
 		const eid = created.entry.id;
-		expect((await app.inject({ method: 'GET', url: `/api/speech/glossary/${eid}`, headers: H })).json()).toMatchObject({
+		expect(
+			(await app.inject({ method: 'GET', url: `/api/speech/glossary/${eid}`, headers: H })).json(),
+		).toMatchObject({
 			to: 'Glimmerbox',
 		});
-		expect((await app.inject({ method: 'GET', url: '/api/speech/glossary/gle_nope', headers: H })).statusCode).toBe(404);
+		expect(
+			(await app.inject({ method: 'GET', url: '/api/speech/glossary/gle_nope', headers: H })).statusCode,
+		).toBe(404);
 		const u = await app.inject({
 			method: 'PUT',
 			url: `/api/speech/glossary/${eid}`,
@@ -232,25 +251,43 @@ describe('glossary routes', () => {
 		expect(u.json().entry).toMatchObject({ from: ['glimer box'] });
 		expect(u.json().entry.lang).toBeUndefined();
 		expect(
-			(await app.inject({ method: 'PUT', url: `/api/speech/glossary/${eid}`, headers: JSON_H, payload: { name: 'x' } }))
-				.statusCode,
+			(
+				await app.inject({
+					method: 'PUT',
+					url: `/api/speech/glossary/${eid}`,
+					headers: JSON_H,
+					payload: { name: 'x' },
+				})
+			).statusCode,
 		).toBe(400);
 		// export → import into a fresh engine gives the same entries
-		const exported = (await app.inject({ method: 'GET', url: '/api/speech/glossary/export', headers: H })).json();
+		const exported = (
+			await app.inject({ method: 'GET', url: '/api/speech/glossary/export', headers: H })
+		).json();
 		expect(GlossaryFileSchema.parse(exported).entries).toHaveLength(1);
 		const app2 = await makeApp();
 		const imp = await app2.inject({
 			method: 'POST',
 			url: '/api/speech/glossary/import',
 			headers: JSON_H,
-			payload: { file: { ...exported, entries: [...exported.entries, { to: '' }, { to: 'Pixelforge', from: 'pixel forge' }] } },
+			payload: {
+				file: {
+					...exported,
+					entries: [...exported.entries, { to: '' }, { to: 'Pixelforge', from: 'pixel forge' }],
+				},
+			},
 		});
 		expect(GlossaryImportResponseSchema.parse(imp.json())).toMatchObject({
 			added: 2,
 			merged: 0,
 			skipped: [{ index: 1 }],
 		});
-		const again = await app2.inject({ method: 'POST', url: '/api/speech/glossary/import', headers: JSON_H, payload: { file: exported } });
+		const again = await app2.inject({
+			method: 'POST',
+			url: '/api/speech/glossary/import',
+			headers: JSON_H,
+			payload: { file: exported },
+		});
 		expect(again.json()).toMatchObject({ added: 0, merged: 0, unchanged: 1 });
 		const refused = await app2.inject({
 			method: 'POST',
@@ -272,7 +309,12 @@ describe('glossary routes', () => {
 		const app = await makeApp({ appdir });
 		const l = (await app.inject({ method: 'GET', url: '/api/speech/glossary', headers: H })).json();
 		expect(l).toMatchObject({ readOnly: true, entries: [{ to: 'Name 1' }] });
-		const r = await app.inject({ method: 'POST', url: '/api/speech/glossary', headers: JSON_H, payload: { from: [], to: 'X1' } });
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/speech/glossary',
+			headers: JSON_H,
+			payload: { from: [], to: 'X1' },
+		});
 		expect(r.statusCode).toBe(409);
 		expect(r.json().code).toBe('GLOSSARY_READ_ONLY');
 	});
@@ -286,7 +328,11 @@ describe('glossary and agents (approval gate, security review AGT-3)', { timeout
 	const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 	async function editorWindow(app: Awaited<ReturnType<typeof makeApp>>) {
-		const doc = createEmptyProject({ ids: createCounterIdSource(5), name: 'Glossary', preset: 'hd-1080p-30' });
+		const doc = createEmptyProject({
+			ids: createCounterIdSource(5),
+			name: 'Glossary',
+			preset: 'hd-1080p-30',
+		});
 		const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 		mkdirSync(join(file, '..'), { recursive: true });
 		writeFileSync(file, JSON.stringify(makeEnvelope(doc, { revision: 1, savedAt: NOW, platform: 'test' })));
@@ -303,7 +349,9 @@ describe('glossary and agents (approval gate, security review AGT-3)', { timeout
 				}
 			}),
 		);
-		ws.send(JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }));
+		ws.send(
+			JSON.stringify({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' }),
+		);
 		await welcome;
 		const card = async (n: number) => {
 			while (cards.length < n) await new Promise<void>((r) => (wake = r));

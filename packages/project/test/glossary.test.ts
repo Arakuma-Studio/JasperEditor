@@ -50,20 +50,27 @@ describe('glossary texts and entries', () => {
 
 	it('normalises input: dedupes spellings without case, drops the target, checks caps', () => {
 		expect(
-			normalizeGlossaryInput({ from: ['nova play', 'Nova Play', ' nova  play ', 'NovaPlay'], to: 'NovaPlay' }),
+			normalizeGlossaryInput({
+				from: ['nova play', 'Nova Play', ' nova  play ', 'NovaPlay'],
+				to: 'NovaPlay',
+			}),
 		).toEqual({ from: ['nova play'], to: 'NovaPlay' });
 		expect(refusal(() => normalizeGlossaryInput({ from: [], to: '   ' })).code).toBe('GLOSSARY_INVALID');
 		expect(refusal(() => normalizeGlossaryInput({ from: ['…'], to: 'Glimmerbox' })).code).toBe(
 			'GLOSSARY_INVALID',
 		);
-		expect(refusal(() => normalizeGlossaryInput({ from: [], to: 'x'.repeat(65) })).code).toBe('GLOSSARY_INVALID');
+		expect(refusal(() => normalizeGlossaryInput({ from: [], to: 'x'.repeat(65) })).code).toBe(
+			'GLOSSARY_INVALID',
+		);
 		// 64 characters are allowed, counted in code points (an emoji is one)
 		expect(normalizeGlossaryInput({ from: [], to: `${'x'.repeat(63)}😀` }).to).toHaveLength(65);
 		expect(refusal(() => normalizeGlossaryInput({ from: [], to: 'ok', lang: 'spanish' })).code).toBe(
 			'GLOSSARY_INVALID',
 		);
 		const many = Array.from({ length: 21 }, (_, i) => `spelling ${i}`);
-		expect(refusal(() => normalizeGlossaryInput({ from: many, to: 'Pixelforge' })).code).toBe('GLOSSARY_LIMIT');
+		expect(refusal(() => normalizeGlossaryInput({ from: many, to: 'Pixelforge' })).code).toBe(
+			'GLOSSARY_LIMIT',
+		);
 		expect(normalizeGlossaryInput({ from: many.slice(0, 20), to: 'Pixelforge' }).from).toHaveLength(20);
 	});
 
@@ -90,19 +97,31 @@ describe('save, remember and edit', () => {
 		const c = ctx();
 		const a = upsertGlossaryEntry([], { from: ['nova play'], to: 'NovaPlay', lang: 'es' }, c);
 		expect(a).toMatchObject({ created: true, changed: true, entry: { count: 0, from: ['nova play'] } });
-		const b = upsertGlossaryEntry(a.entries, { from: ['nova plei', 'Nova Play'], to: 'NovaPlay', lang: 'es' }, {
-			...ctx(LATER),
-		});
+		const b = upsertGlossaryEntry(
+			a.entries,
+			{ from: ['nova plei', 'Nova Play'], to: 'NovaPlay', lang: 'es' },
+			{
+				...ctx(LATER),
+			},
+		);
 		expect(b).toMatchObject({ created: false, changed: true });
 		expect(b.entries).toHaveLength(1);
 		expect(b.entry).toMatchObject({ id: a.entry.id, from: ['nova play', 'nova plei'], updatedAt: LATER });
 		const again = upsertGlossaryEntry(b.entries, { from: ['nova plei'], to: 'NovaPlay', lang: 'es' }, c);
 		expect(again.changed).toBe(false);
 		expect(again.entries).toEqual(b.entries);
-		const r1 = upsertGlossaryEntry(b.entries, { from: ['nova plei'], to: 'NovaPlay', lang: 'es' }, { ...c, remember: true });
+		const r1 = upsertGlossaryEntry(
+			b.entries,
+			{ from: ['nova plei'], to: 'NovaPlay', lang: 'es' },
+			{ ...c, remember: true },
+		);
 		expect(r1).toMatchObject({ changed: true, entry: { count: 1 } });
 		// the same target in another language is another entry
-		const en = upsertGlossaryEntry(r1.entries, { from: ['nova play'], to: 'NovaPlay' }, { ...c, remember: true });
+		const en = upsertGlossaryEntry(
+			r1.entries,
+			{ from: ['nova play'], to: 'NovaPlay' },
+			{ ...c, remember: true },
+		);
 		expect(en).toMatchObject({ created: true, entry: { count: 1 } });
 		expect(en.entries).toHaveLength(2);
 	});
@@ -142,8 +161,19 @@ describe('save, remember and edit', () => {
 		const a = upsertGlossaryEntry([], { from: ['pixel forge'], to: 'Pixelforge' }, c);
 		const b = upsertGlossaryEntry(a.entries, { from: ['glimer box'], to: 'Glimmerbox' }, c);
 		const id = a.entry.id;
-		const e = updateGlossaryEntry(b.entries, id, { to: 'PixelForge', from: ['pixel forge', 'pixelforch'], lang: 'en' }, LATER);
-		expect(e.entry).toMatchObject({ id, to: 'PixelForge', from: ['pixel forge', 'pixelforch'], lang: 'en', updatedAt: LATER });
+		const e = updateGlossaryEntry(
+			b.entries,
+			id,
+			{ to: 'PixelForge', from: ['pixel forge', 'pixelforch'], lang: 'en' },
+			LATER,
+		);
+		expect(e.entry).toMatchObject({
+			id,
+			to: 'PixelForge',
+			from: ['pixel forge', 'pixelforch'],
+			lang: 'en',
+			updatedAt: LATER,
+		});
 		const cleared = updateGlossaryEntry(e.entries, id, { lang: null }, LATER);
 		expect(cleared.entry.lang).toBeUndefined();
 		const same = updateGlossaryEntry(cleared.entries, id, { to: 'PixelForge' }, '2026-10-28T00:00:00.000Z');
@@ -180,7 +210,10 @@ describe('import', () => {
 		]);
 		expect(r.indices).toEqual([0, 5]);
 		expect(r.skipped.map((s) => s.index)).toEqual([1, 2, 3, 4]);
-		expect(parseGlossaryImport([{ to: 'A1', from: ['a one'] }])).toMatchObject({ ok: true, entries: [{ to: 'A1' }] });
+		expect(parseGlossaryImport([{ to: 'A1', from: ['a one'] }])).toMatchObject({
+			ok: true,
+			entries: [{ to: 'A1' }],
+		});
 		expect(parseGlossaryImport({ ...file, version: 2 })).toMatchObject({ ok: false });
 		expect(parseGlossaryImport({ ...file, format: 'jasper-effect-preset' })).toMatchObject({ ok: false });
 		expect(parseGlossaryImport('text')).toMatchObject({ ok: false });
@@ -189,7 +222,11 @@ describe('import', () => {
 
 	it('merges additively: new spellings, larger count, earlier creation; a full glossary skips with a reason', () => {
 		const c = ctx(LATER);
-		const base = upsertGlossaryEntry([], { from: ['nova play'], to: 'NovaPlay' }, { ...ctx(), remember: true });
+		const base = upsertGlossaryEntry(
+			[],
+			{ from: ['nova play'], to: 'NovaPlay' },
+			{ ...ctx(), remember: true },
+		);
 		const parsed = parseGlossaryImport([
 			{ to: 'NovaPlay', from: ['nova plei'], count: 5, createdAt: '2026-01-01T00:00:00.000Z' },
 			{ to: 'NovaPlay', from: ['nova play'] },
@@ -251,7 +288,12 @@ describe('import', () => {
 				const merged = importGlossaryEntries([], r.entries, ctx());
 				expect(merged.entries.length).toBeLessThanOrEqual(GLOSSARY_LIMITS.maxEntries);
 				// every merged entry is storable, and the library is a valid file
-				GlossaryFileSchema.parse({ format: 'jasper-speech-glossary', version: 1, revision: 0, entries: merged.entries });
+				GlossaryFileSchema.parse({
+					format: 'jasper-speech-glossary',
+					version: 1,
+					revision: 0,
+					entries: merged.entries,
+				});
 				// importing again changes nothing (idempotent)
 				const again = importGlossaryEntries(merged.entries, r.entries, ctx(LATER));
 				expect(again.added + again.merged).toBe(0);

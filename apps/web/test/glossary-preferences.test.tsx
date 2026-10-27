@@ -2,8 +2,9 @@
 // edit (with the engine's refusal shown), delete after a confirmation (cancel keeps it), import (summary and skipped
 // reasons, invalid JSON), export (download), the read-only state, the repair notice and a load failure; the page is a
 // sub-page of Transcription in the Preferences dialog.
-import type { GlossaryEntry } from '@jasper/project';
+
 import { EngineClient } from '@jasper/engine-client';
+import type { GlossaryEntry } from '@jasper/project';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,7 +83,11 @@ function fakeEngine(state: {
 		if (m && method === 'PUT') {
 			if (state.refusePut)
 				return json(
-					{ code: 'GLOSSARY_DUPLICATE', message: 'Another entry already corrects to “Glimmerbox”', retryable: false },
+					{
+						code: 'GLOSSARY_DUPLICATE',
+						message: 'Another entry already corrects to “Glimmerbox”',
+						retryable: false,
+					},
 					409,
 				);
 			const e = state.entries.find((x) => x.id === m[1])!;
@@ -126,7 +131,9 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 				entry(1, 'Pixelforge', ['pixel forge'], { count: 3, lang: 'es' }),
 				entry(2, 'Glimmerbox', ['glimer box', 'glimerbox']),
 			],
-			repairs: ['the glossary file was unreadable; it was moved aside as glossary.json.corrupt-1 and an empty glossary was started'],
+			repairs: [
+				'the glossary file was unreadable; it was moved aside as glossary.json.corrupt-1 and an empty glossary was started',
+			],
 		});
 		renderPage(engine);
 		await waitFor(() => expect(rows()).toEqual(['Glimmerbox', 'Pixelforge']));
@@ -134,13 +141,19 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 		const pixel = screen.getAllByTestId('glossary-entry')[1]!;
 		expect(pixel.textContent).toContain('Spanish');
 		expect(pixel.textContent).toContain('taught 3 times');
-		expect(within(screen.getAllByTestId('glossary-entry')[0]!).getByTestId('glossary-entry-from').textContent).toBe(
-			'Recognised as: glimer box · glimerbox',
+		expect(
+			within(screen.getAllByTestId('glossary-entry')[0]!).getByTestId('glossary-entry-from').textContent,
+		).toBe('Recognised as: glimer box · glimerbox');
+		expect(screen.getByTestId('glossary-repairs').textContent).toContain(
+			'moved aside as glossary.json.corrupt-1',
 		);
-		expect(screen.getByTestId('glossary-repairs').textContent).toContain('moved aside as glossary.json.corrupt-1');
-		fireEvent.change(screen.getByRole('searchbox', { name: 'Search the glossary' }), { target: { value: 'FORGE' } });
+		fireEvent.change(screen.getByRole('searchbox', { name: 'Search the glossary' }), {
+			target: { value: 'FORGE' },
+		});
 		expect(rows()).toEqual(['Pixelforge']);
-		fireEvent.change(screen.getByRole('searchbox', { name: 'Search the glossary' }), { target: { value: 'nothing' } });
+		fireEvent.change(screen.getByRole('searchbox', { name: 'Search the glossary' }), {
+			target: { value: 'nothing' },
+		});
 		expect(rows()).toEqual([]);
 		expect(screen.getByText('No entry matches the search.')).toBeTruthy();
 	});
@@ -185,7 +198,9 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Edit Pixelforge' }));
 		const form = screen.getByTestId('glossary-editor');
 		expect((within(form).getByTestId('glossary-edit-from') as HTMLTextAreaElement).value).toBe('pixel forge');
-		fireEvent.change(within(form).getByTestId('glossary-edit-from'), { target: { value: 'pixel forge, pixelforch' } });
+		fireEvent.change(within(form).getByTestId('glossary-edit-from'), {
+			target: { value: 'pixel forge, pixelforch' },
+		});
 		engine.state.refusePut = true;
 		await act(async () => {
 			fireEvent.click(within(form).getByTestId('glossary-edit-save'));
@@ -206,7 +221,9 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 			from: ['pixel forge', 'pixelforch'],
 			lang: 'es',
 		});
-		expect(screen.getByTestId('glossary-entry-from').textContent).toBe('Recognised as: pixel forge · pixelforch');
+		expect(screen.getByTestId('glossary-entry-from').textContent).toBe(
+			'Recognised as: pixel forge · pixelforch',
+		);
 	});
 
 	it('deletes only after the confirmation (Cancel keeps it)', async () => {
@@ -220,9 +237,13 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 		await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull());
 		expect(engine.calls.some((c) => c.method === 'DELETE')).toBe(false);
 		fireEvent.click(screen.getByRole('button', { name: 'Delete Glimmerbox' }));
-		fireEvent.click(within(await screen.findByTestId('confirm-dialog')).getByRole('button', { name: 'Delete Entry' }));
+		fireEvent.click(
+			within(await screen.findByTestId('confirm-dialog')).getByRole('button', { name: 'Delete Entry' }),
+		);
 		await waitFor(() => expect(rows()).toEqual([]));
-		expect(engine.calls.find((c) => c.method === 'DELETE')?.url).toBe('/api/speech/glossary/gle_0000000000000001');
+		expect(engine.calls.find((c) => c.method === 'DELETE')?.url).toBe(
+			'/api/speech/glossary/gle_0000000000000001',
+		);
 	});
 
 	it('imports a file with a summary, refuses invalid JSON, exports a download', async () => {

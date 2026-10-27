@@ -61,7 +61,11 @@ export type ReplaceAllOccurrence = {
 	after: string;
 };
 
-export type ReplaceAllCommand = { type: 'transcript.replaceWords'; transcriptId: string; edits: ReplaceAllEdit[] };
+export type ReplaceAllCommand = {
+	type: 'transcript.replaceWords';
+	transcriptId: string;
+	edits: ReplaceAllEdit[];
+};
 
 export type ReplaceAllPlan = {
 	occurrences: ReplaceAllOccurrence[];
@@ -99,8 +103,7 @@ function textsFor(tokens: readonly string[], first: string, last: string): strin
 	const lead = LEAD.exec(first.trim())?.[0] ?? '';
 	const trail = TRAIL.exec(last.trim())?.[0] ?? '';
 	const firstCore = first.trim().replace(LEAD, '');
-	if (capitalised(firstCore || first) && /^\P{L}*\p{Ll}/u.test(out[0]!))
-		out[0] = capitaliseFirst(out[0]!);
+	if (capitalised(firstCore || first) && /^\P{L}*\p{Ll}/u.test(out[0]!)) out[0] = capitaliseFirst(out[0]!);
 	out[0] = lead + out[0]!;
 	out[out.length - 1] = out[out.length - 1]! + trail;
 	return out;
@@ -111,7 +114,9 @@ function textsFor(tokens: readonly string[], first: string, last: string): strin
  * bounded by `REPLACE_ALL_LIMITS`.
  */
 export function findReplaceAll(transcripts: readonly Transcript[], query: ReplaceAllQuery): ReplaceAllPlan {
-	const q = query.oldWords.slice(0, REPLACE_ALL_LIMITS.maxQueryWords + 1).map((w) => normalizeWord(String(w)));
+	const q = query.oldWords
+		.slice(0, REPLACE_ALL_LIMITS.maxQueryWords + 1)
+		.map((w) => normalizeWord(String(w)));
 	if (!q.length || q.length > REPLACE_ALL_LIMITS.maxQueryWords || q.some((w) => !w)) return EMPTY;
 	const tokens = correctionTokens(String(query.newText ?? ''));
 	if (!tokens.length) return EMPTY;

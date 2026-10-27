@@ -50,7 +50,9 @@ describe('findReplaceAll', () => {
 			newText: 'Glimmerbox,',
 			exclude: { transcriptId: 'trs_a', start: edited.start, end: a.words[3]!.end },
 		});
-		expect(plan.occurrences.map((o) => [o.transcriptId, o.edit.expect, o.edit.words.map((w) => w.text)])).toEqual([
+		expect(
+			plan.occurrences.map((o) => [o.transcriptId, o.edit.expect, o.edit.words.map((w) => w.text)]),
+		).toEqual([
 			['trs_a', ['¿Glimer', 'box'], ['¿Glimmerbox']],
 			['trs_a', ['glimer', 'box!'], ['Glimmerbox!']],
 			['trs_b', ['glimer', 'box'], ['Glimmerbox']],
@@ -60,12 +62,24 @@ describe('findReplaceAll', () => {
 		const first = plan.occurrences[0]!;
 		expect(first.edit.start).toBe(a.words[first.fromWord]!.start);
 		expect(first.edit.end).toBe(a.words[first.toWord]!.end);
-		expect(first.edit.words[0]).toMatchObject({ start: first.edit.start, end: first.edit.end, confidence: null });
+		expect(first.edit.words[0]).toMatchObject({
+			start: first.edit.start,
+			end: first.edit.end,
+			confidence: null,
+		});
 		expect(first.before).toBe('box, la app.');
 		expect(first.after).toBe('funciona? Sí, glimer');
 		expect(plan.commands).toEqual([
-			{ type: 'transcript.replaceWords', transcriptId: 'trs_a', edits: [plan.occurrences[0]!.edit, plan.occurrences[1]!.edit] },
-			{ type: 'transcript.replaceWords', transcriptId: 'trs_b', edits: [plan.occurrences[2]!.edit, plan.occurrences[3]!.edit] },
+			{
+				type: 'transcript.replaceWords',
+				transcriptId: 'trs_a',
+				edits: [plan.occurrences[0]!.edit, plan.occurrences[1]!.edit],
+			},
+			{
+				type: 'transcript.replaceWords',
+				transcriptId: 'trs_b',
+				edits: [plan.occurrences[2]!.edit, plan.occurrences[3]!.edit],
+			},
 		]);
 		expect(plan.truncated).toBe(0);
 	});
@@ -97,10 +111,14 @@ describe('findReplaceAll', () => {
 
 	it('does not overlap matches and stops at the occurrence cap', () => {
 		const t = transcript('trs_e', 'med_e', 'la la la');
-		expect(findReplaceAll([t], { oldWords: ['la', 'la'], newText: 'lala' }).occurrences.map((o) => o.fromWord)).toEqual([
-			0,
-		]);
-		const many = transcript('trs_f', 'med_f', Array.from({ length: REPLACE_ALL_LIMITS.maxOccurrences + 7 }, () => 'glimer').join(' '));
+		expect(
+			findReplaceAll([t], { oldWords: ['la', 'la'], newText: 'lala' }).occurrences.map((o) => o.fromWord),
+		).toEqual([0]);
+		const many = transcript(
+			'trs_f',
+			'med_f',
+			Array.from({ length: REPLACE_ALL_LIMITS.maxOccurrences + 7 }, () => 'glimer').join(' '),
+		);
 		const plan = findReplaceAll([many], { oldWords: ['glimer'], newText: 'Glimmer' });
 		expect(plan.occurrences).toHaveLength(REPLACE_ALL_LIMITS.maxOccurrences);
 		expect(plan.truncated).toBe(7);

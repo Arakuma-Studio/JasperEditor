@@ -5,7 +5,13 @@
 // window).
 import type { GlossaryEntry } from '@jasper/project';
 import { z } from 'zod';
-import { DESTRUCTIVE_IDEMPOTENT, defineTool, EDIT_IDEMPOTENT, READ_ONLY, type ToolContext } from '../context.ts';
+import {
+	DESTRUCTIVE_IDEMPOTENT,
+	defineTool,
+	EDIT_IDEMPOTENT,
+	READ_ONLY,
+	type ToolContext,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 
 export const GLOSSARY_GUIDE = `Personal glossary (Edit ▸ Preferences ▸ Transcription ▸ Glossary): the user's own list of names and words the recogniser gets wrong — each entry is a right spelling ("to", e.g. "NovaPlay Studio") with the spellings Whisper writes for it ("from", e.g. ["nova play studio", "novaplei estudio"]) and optionally a language. It lives on this computer and is shared by every project; "count" says how often the user taught an entry. list_glossary reads it (query filters by spelling). save_glossary_entry {to, from, lang?} adds an entry, or merges the new spellings into the entry that already has that right spelling and language (calling it again changes nothing); texts are 1–64 characters, at most 20 spellings per entry and 2,000 entries. remove_glossary_entry {entryId} deletes one (not undoable; only when the user asks: they approve it in an open editor window). A glossary written by a newer JasperEditor is read-only (E_READ_ONLY).`;
@@ -63,7 +69,11 @@ export function registerGlossaryTools(ctx: ToolContext): void {
 			description:
 				"The user's personal speech glossary: entries {entryId, to (right spelling), from (spellings the recogniser writes), lang?, count (times taught), updatedAt}, whether it is read-only, and what the engine repaired when it opened it. query keeps entries whose spellings contain it (case-insensitive).",
 			input: {
-				query: z.string().max(64).optional().describe('Text to look for in the right spelling or the spellings'),
+				query: z
+					.string()
+					.max(64)
+					.optional()
+					.describe('Text to look for in the right spelling or the spellings'),
 				lang: z.string().max(3).optional().describe('Only entries for this language (and those for any)'),
 			},
 			annotations: READ_ONLY,
@@ -108,9 +118,7 @@ export function registerGlossaryTools(ctx: ToolContext): void {
 		},
 		async ({ to, from, lang }) => {
 			try {
-				const r = await ctx.engine((c) =>
-					c.saveGlossaryEntry({ to, from, ...(lang ? { lang } : {}) }),
-				);
+				const r = await ctx.engine((c) => c.saveGlossaryEntry({ to, from, ...(lang ? { lang } : {}) }));
 				return jsonResult({
 					created: r.created,
 					changed: r.changed,

@@ -47,7 +47,8 @@ describe('EngineClient glossary', () => {
 		const { c, calls } = client((method, url) => {
 			if (url.endsWith('/export'))
 				return json({ format: 'jasper-speech-glossary', version: 1, revision: 3, entries: [ENTRY] });
-			if (url.endsWith('/import')) return json({ revision: 5, added: 1, merged: 0, unchanged: 0, skipped: [] });
+			if (url.endsWith('/import'))
+				return json({ revision: 5, added: 1, merged: 0, unchanged: 0, skipped: [] });
 			if (method === 'DELETE') return json({ ok: true, removed: ENTRY.id, revision: 6 });
 			if (method === 'PUT') return json({ revision: 7, entry: ENTRY });
 			if (method === 'POST') return json(saved, url.endsWith('/remember') ? 200 : 201);
@@ -56,7 +57,9 @@ describe('EngineClient glossary', () => {
 		});
 		expect((await c.listGlossary()).entries[0]!.to).toBe('NovaPlay');
 		expect((await c.getGlossaryEntry(ENTRY.id)).id).toBe(ENTRY.id);
-		expect((await c.saveGlossaryEntry({ from: ['nova play'], to: 'NovaPlay', lang: 'es' })).changed).toBe(true);
+		expect((await c.saveGlossaryEntry({ from: ['nova play'], to: 'NovaPlay', lang: 'es' })).changed).toBe(
+			true,
+		);
 		expect((await c.rememberGlossaryEntry({ from: ['novaplei'], to: 'NovaPlay' })).entry.count).toBe(1);
 		expect((await c.updateGlossaryEntry(ENTRY.id, { lang: null })).revision).toBe(7);
 		expect(await c.removeGlossaryEntry(ENTRY.id)).toEqual({ ok: true, removed: ENTRY.id, revision: 6 });
@@ -70,7 +73,11 @@ describe('EngineClient glossary', () => {
 				url: 'http://e/api/speech/glossary',
 				body: { from: ['nova play'], to: 'NovaPlay', lang: 'es' },
 			},
-			{ method: 'POST', url: 'http://e/api/speech/glossary/remember', body: { from: ['novaplei'], to: 'NovaPlay' } },
+			{
+				method: 'POST',
+				url: 'http://e/api/speech/glossary/remember',
+				body: { from: ['novaplei'], to: 'NovaPlay' },
+			},
 			{ method: 'PUT', url: `http://e/api/speech/glossary/${ENTRY.id}`, body: { lang: null } },
 			{ method: 'DELETE', url: `http://e/api/speech/glossary/${ENTRY.id}` },
 			{ method: 'POST', url: 'http://e/api/speech/glossary/import', body: { file: [{ to: 'Glimmerbox' }] } },

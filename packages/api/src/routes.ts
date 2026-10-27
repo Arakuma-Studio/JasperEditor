@@ -59,16 +59,6 @@ import {
 	EffectPresetUpdateRequestSchema,
 } from './effect-presets.ts';
 import {
-	GlossaryDeleteResponseSchema,
-	GlossaryEntryResponseSchema,
-	GlossaryImportRequestSchema,
-	GlossaryImportResponseSchema,
-	GlossaryLibraryResponseSchema,
-	GlossarySaveRequestSchema,
-	GlossarySaveResponseSchema,
-	GlossaryUpdateRequestSchema,
-} from './glossary.ts';
-import {
 	ExportPlanRequestSchema,
 	ExportStartRequestSchema,
 	RenderPlanSchema,
@@ -97,6 +87,16 @@ import {
 	ScratchInfoSchema,
 	WarpAnalysisRequestSchema,
 } from './gaps.ts';
+import {
+	GlossaryDeleteResponseSchema,
+	GlossaryEntryResponseSchema,
+	GlossaryImportRequestSchema,
+	GlossaryImportResponseSchema,
+	GlossaryLibraryResponseSchema,
+	GlossarySaveRequestSchema,
+	GlossarySaveResponseSchema,
+	GlossaryUpdateRequestSchema,
+} from './glossary.ts';
 import {
 	AutoToneRequestSchema,
 	AutoToneResponseSchema,
