@@ -14,7 +14,7 @@
 // sole approximation; rows where it bit are counted in the report. Deterministic: ties resolve like the spike (first
 // move in the order diagonal, skip 1…8, jump, OFF; lowest script index).
 import type { ParsedScript } from './script.ts';
-import { cachedKey, psim, psimAtLeast } from './phonetic.ts';
+import { cachedKey, PSIM_MIN_INDEL, psim, psimAtLeast } from './phonetic.ts';
 import {
 	exactMatch,
 	functionWords,
@@ -207,22 +207,45 @@ class Grow<T extends Int32Array | Int16Array | Uint8Array | Float64Array> {
 }
 
 /** Bigram index of a vocabulary's phonetic keys. */
-type KeyIndex = { postings: Map<string, number[]>; sizes: Int32Array; grams: string[][] };
+/**
+ * Bigram index of a vocabulary's phonetic keys. Postings are sorted by key length so a lookup can visit only the
+ * lengths that can reach a psim threshold.
+ */
+type KeyIndex = {
+	/** Bigram → postings (vocabulary ids sorted by key length, then id) and their key lengths. */
+	postings: Map<string, { ids: Int32Array; lens: Int32Array }>;
+	sizes: Int32Array;
+};
 function keyIndex(keys: readonly string[]): KeyIndex {
-	const postings = new Map<string, number[]>();
+	const lists = new Map<string, number[]>();
 	const sizes = new Int32Array(keys.length);
-	const grams: string[][] = [];
 	keys.forEach((k, id) => {
 		const g = bigrams(k);
 		sizes[id] = g.length;
-		grams.push(g);
 		for (const x of g) {
-			let p = postings.get(x);
-			if (!p) postings.set(x, (p = []));
+			let p = lists.get(x);
+			if (!p) lists.set(x, (p = []));
 			p.push(id);
 		}
 	});
-	return { postings, sizes, grams };
+	const postings = new Map<string, { ids: Int32Array; lens: Int32Array }>();
+	for (const [x, ids] of lists) {
+		ids.sort((a, b) => keys[a]!.length - keys[b]!.length || a - b);
+		postings.set(x, { ids: Int32Array.from(ids), lens: Int32Array.from(ids, (id) => keys[id]!.length) });
+	}
+	return { postings, sizes };
+}
+
+/** First index in sorted `a` with a[i] ≥ v. */
+function lowerBound(a: Int32Array, v: number): number {
+	let lo = 0;
+	let hi = a.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (a[mid]! < v) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
 }
 
 type Vocab = { ids: Int32Array; words: string[]; positions: number[][] };
@@ -340,11 +363,15 @@ export function alignCore(
 		const found = new Map<number, [number, number]>();
 		const touched: number[] = [];
 		const g = bigrams(cachedKey(w, lang));
-		for (const x of g)
-			for (const s of sIndex.postings.get(x) ?? []) {
-				if (counts[s] === 0) touched.push(s);
-				counts[s]!++;
-			}
+		for (const x of g) {
+			const post = sIndex.postings.get(x);
+			if (post)
+				for (let q = 0; q < post.ids.length; q++) {
+					const s = post.ids[q]!;
+					if (counts[s] === 0) touched.push(s);
+					counts[s]!++;
+				}
+		}
 		for (const s of touched) {
 			const dice = (2 * counts[s]!) / (g.length + sIndex.sizes[s]! + 1e-9);
 			counts[s] = 0;
@@ -411,47 +438,48 @@ export function alignCore(
 	const sCounts = new Int32Array(sv.words.length);
 	const tCounts = new Int32Array(tv.words.length);
 	const found: number[] = [];
+	// psim ≥ mergeMinPsim needs |key length difference| × cheapest insertion ≤ (1 − mergeMinPsim) × longest key
+	const lenRatio = (1 - opt.mergeMinPsim) / PSIM_MIN_INDEL;
 	/**
-	 * Vocabulary entries sharing ≥ half of the bigrams of `s`'s key with psim ≥ mergeMinPsim. Candidates come from the
-	 * postings of the (|g| − need + 1) rarest bigrams only (any entry sharing `need` bigrams shares one of those), then
-	 * the shared count is verified exactly.
+	 * Vocabulary entries sharing ≥ half of the bigrams of `s`'s key (the spike's lookup) with psim ≥ mergeMinPsim.
+	 * Only postings whose key length can reach that psim are visited (exact pruning).
 	 */
 	function lookup(
 		s: string,
 		index: KeyIndex,
 		spoken: readonly string[],
 		cache: Map<string, Array<[number, number]>>,
-		mark: Int32Array,
+		cnt: Int32Array,
 	): Array<[number, number]> {
 		let hit = cache.get(s);
 		if (hit) return hit;
-		const g = bigrams(cachedKey(s, lang));
+		const key = cachedKey(s, lang);
+		const g = bigrams(key);
 		const need = Math.max(1, Math.floor(0.5 * g.length));
-		const df = (x: string) => index.postings.get(x)?.length ?? 0;
-		const order = [...g].sort((x, y) => df(x) - df(y) || (x < y ? -1 : x > y ? 1 : 0));
-		const gs = new Set(g);
+		const L = key.length;
+		const lo = lenRatio < 1 ? Math.ceil(L * (1 - lenRatio) - 1e-9) : 0;
+		const hi = lenRatio < 1 ? Math.floor(L / (1 - lenRatio) + 1e-9) : Number.MAX_SAFE_INTEGER;
 		found.length = 0;
-		for (let q = 0; q < order.length - need + 1; q++) {
-			const post = index.postings.get(order[q]!);
-			if (post)
-				for (let r = 0; r < post.length; r++) {
-					const id = post[r]!;
-					if (mark[id] === 0) {
-						mark[id] = 1;
-						found.push(id);
-					}
-				}
+		for (const x of g) {
+			const post = index.postings.get(x);
+			if (!post) continue;
+			const end = post.lens.length;
+			for (let q = lowerBound(post.lens, lo); q < end && post.lens[q]! <= hi; q++) {
+				const id = post.ids[q]!;
+				if (cnt[id] === 0) found.push(id);
+				cnt[id]!++;
+			}
 		}
-		found.sort((a, b) => a - b);
 		hit = [];
-		for (const id of found) {
-			mark[id] = 0;
-			let c = 0;
-			for (const x of index.grams[id]!) if (gs.has(x)) c++;
+		for (let q = 0; q < found.length; q++) {
+			const id = found[q]!;
+			const c = cnt[id]!;
+			cnt[id] = 0;
 			if (c < need) continue;
 			const ps = psimAtLeast(s, spoken[id]!, lang, opt.mergeMinPsim);
 			if (ps >= opt.mergeMinPsim) hit.push([id, ps]);
 		}
+		hit.sort((a, b) => a[0] - b[0]);
 		cache.set(s, hit);
 		return hit;
 	}
