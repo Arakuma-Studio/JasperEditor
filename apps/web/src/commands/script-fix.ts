@@ -19,6 +19,17 @@ const reason = (ctx: CommandCtx) =>
 			? t('Open a sequence first')
 			: t('The project is read-only');
 
+const openFix = (ctx: CommandCtx) => {
+	const e = sequenceContext(ctx);
+	if (!e) return;
+	ctx.ui.openDialog(FIX_TRANSCRIPT_DIALOG, {
+		session: e.session,
+		engine: ctx.engine ?? null,
+		sequenceId: e.seq.id,
+		onReview: () => void runCommand('panel.focus.review', ctx),
+	});
+};
+
 export const scriptFixCommands: UiCommand[] = [
 	{
 		id: 'transcript.fix',
@@ -29,16 +40,19 @@ export const scriptFixCommands: UiCommand[] = [
 		agentExposed: true,
 		when: writable,
 		disabledReason: reason,
-		run: (ctx) => {
-			const e = sequenceContext(ctx);
-			if (!e) return;
-			ctx.ui.openDialog(FIX_TRANSCRIPT_DIALOG, {
-				session: e.session,
-				engine: ctx.engine ?? null,
-				sequenceId: e.seq.id,
-				onReview: () => void runCommand('panel.focus.review', ctx),
-			});
-		},
+		run: openFix,
+	},
+	{
+		// the Sequence menu's name for the same dialog (menu entries show their command's label)
+		id: 'transcript.fixFromScript',
+		label: 'Fix Transcript from Script…',
+		description:
+			'Sequence ▸ Fix Transcript from Script…: the Fix Transcript dialog for the active sequence (the same as Text ▸ Fix Transcript…)',
+		scope: 'global',
+		agentExposed: true,
+		when: writable,
+		disabledReason: reason,
+		run: openFix,
 	},
 	{
 		id: 'transcript.script',

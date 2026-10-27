@@ -67,11 +67,12 @@ export function EditOfferBar(p: {
 	};
 	return (
 		<div
-			className="flex shrink-0 flex-wrap items-center gap-1 border-b border-pr-border-subtle bg-pr-panel-alt px-2 py-1 text-pr-small text-pr-muted"
+			className="flex shrink-0 flex-wrap items-center gap-2 border-b border-pr-border-subtle bg-pr-panel-alt px-2 py-1 text-pr-small text-pr-muted"
 			role="status"
 			data-testid="text.transcript.offer"
 		>
-			<span className="min-w-0 truncate text-pr-text" title={`${offer.from} → ${offer.to}`}>
+			<span className="min-w-0 truncate text-pr-text" title={`${offer.from} → ${offer.to}`}
+				data-no-i18n>
 				“{offer.from}” → “{offer.to}”
 			</span>
 			{n > 0 ? (

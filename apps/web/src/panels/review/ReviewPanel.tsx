@@ -384,17 +384,20 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 						) : null}
 					</div>
 					{fixRows ? <FixReportBar session={session} proposalId={proposal.id} /> : null}
-					<ProposalCheckBar
-						session={session}
-						engine={engine as ProposalCheckEngine | null}
-						connected={engineStatus === 'connected' || !engineState}
-						proposalId={proposal.id}
-						sequenceId={proposal.sequenceId}
-						check={check}
-						items={items}
-						labelOf={(id) => model.byId[id]?.item.label ?? id}
-						onItem={choose}
-					/>
+					{/* a transcript fix changes words, not the mix: no Sound Check bar for it */}
+					{fixRows ? null : (
+						<ProposalCheckBar
+							session={session}
+							engine={engine as ProposalCheckEngine | null}
+							connected={engineStatus === 'connected' || !engineState}
+							proposalId={proposal.id}
+							sequenceId={proposal.sequenceId}
+							check={check}
+							items={items}
+							labelOf={(id) => model.byId[id]?.item.label ?? id}
+							onItem={choose}
+						/>
+					)}
 					<div
 						ref={listRef}
 						role="listbox"
@@ -506,6 +509,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							onNoteHandled={() => setNoteFor(null)}
 							idPrefix={idPrefix}
 							refreshable={!!featureInfo?.refreshable}
+							playLabel={fixRows ? t('Play the recording') : undefined}
 						/>
 					) : null}
 					<div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-pr-border px-2 py-1.5">
@@ -948,6 +952,8 @@ function Details(p: {
 	idPrefix: string;
 	/** The feature's producer re-plans items (Refresh proposal, Reroll). */
 	refreshable: boolean;
+	/** The ▶ button's words (a transcript fix plays its recording, not the timeline). */
+	playLabel?: string;
 }) {
 	const it = p.row.item;
 	const c = useProposalsController(p.session);
@@ -991,7 +997,7 @@ function Details(p: {
 					onClick={() => playReviewItem(p.session, it.id)}
 					data-review-detail="play"
 				>
-					▶ {t('Play in context')}
+					▶ {p.playLabel ?? t('Play in context')}
 				</Button>
 				<Button
 					variant="secondary"

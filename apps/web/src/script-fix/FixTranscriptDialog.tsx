@@ -385,7 +385,7 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 					<Row label={t('Fix from')} testId="fix-sources">
 						<span data-testid="fix-source-script">
 							<Checkbox
-								checked={settings.sources.includes('script')}
+								checked={settings.sources.includes('script') && !!inputs.script}
 								disabled={!inputs.script || !!running}
 								onCheckedChange={(c) => toggleSource('script', c)}
 								label={
@@ -397,7 +397,7 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 						</span>
 						<span data-testid="fix-source-glossary">
 							<Checkbox
-								checked={settings.sources.includes('glossary')}
+								checked={settings.sources.includes('glossary') && !!glossary.entries}
 								disabled={!glossary.entries || !!running}
 								onCheckedChange={(c) => toggleSource('glossary', c)}
 								label={

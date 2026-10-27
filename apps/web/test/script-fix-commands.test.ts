@@ -29,7 +29,7 @@ const commandsIn = (items: readonly unknown[]): string[] =>
 
 describe('Fix Transcript entry points (SC-080)', () => {
 	it('registers the commands without default shortcuts', () => {
-		for (const id of ['transcript.fix', 'transcript.script']) {
+		for (const id of ['transcript.fix', 'transcript.fixFromScript', 'transcript.script']) {
 			const c = getCommand(id)!;
 			expect(c, id).toBeTruthy();
 			expect(c.scope).toBe('global');
@@ -38,15 +38,12 @@ describe('Fix Transcript entry points (SC-080)', () => {
 		}
 		expect(getCommand('transcript.fix')!.label).toBe('Fix Transcript…');
 		expect(getCommand('transcript.script')!.label).toBe('Script…');
+		expect(getCommand('transcript.fixFromScript')!.label).toBe('Fix Transcript from Script…');
 	});
 
 	it('is in Sequence ▸ and in the Text panel menu', () => {
 		const seq = MENUBAR.find((m) => m.id === 'sequence')!;
-		expect(commandsIn(seq.items)).toContain('transcript.fix');
-		const item = seq.items.find((i) => (i as { command?: string }).command === 'transcript.fix') as {
-			label: string;
-		};
-		expect(item.label).toBe('Fix Transcript from Script…');
+		expect(commandsIn(seq.items)).toContain('transcript.fixFromScript');
 		expect(commandsIn(textPanel.menu ?? [])).toEqual(
 			expect.arrayContaining(['transcript.fix', 'transcript.script']),
 		);

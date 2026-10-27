@@ -23,6 +23,7 @@ export function FixDiff(p: { meta: FixMeta; label: string }) {
 			className="min-w-0 flex-1 truncate"
 			title={`${d.contextBefore} ${title} ${d.contextAfter}`.trim()}
 			data-fix-diff
+			data-no-i18n
 		>
 			{d.contextBefore ? <span className="text-pr-muted">{d.contextBefore} </span> : null}
 			{before ? (

@@ -136,6 +136,14 @@ see [wp-notes/transcript-cleanup.md](wp-notes/transcript-cleanup.md). Measured o
 shipped code): removed-word precision / recall 0.89 / 0.81 (shorts), 0.88 / 0.82 (long); user edit points within
 50 ms 0.64 / 0.70 (the prototype 0.72, deliberate differences documented). Limits: English lists not measured; the
 Timeline does not draw the derived timeline during Play result.
+**Script-guided transcript correction (spec 17):** model, apply, scoring, glossary, job / route / MCP and the editor UI
+(Text ▸ Transcript ▸ Script… and Fix Transcript…, Text ▸ / Sequence ▸ entries, the Fix dialog with its dry run,
+text-diff rows in the Review panel, marks in the transcript, the patch report, "Replace all N" / "Remember", the
+Transcribe "Names from" option) — see [wp-notes/script-correction.md](wp-notes/script-correction.md). Fix Transcript is
+disabled, with the reason shown, without a transcript, without a script and a glossary, or without a speech model (the
+dry run still counts). Limits: ▶ of a fix streams the source file in the browser (a codec the browser cannot play is
+reported, not converted); the confidence bands of a row are an assumption (not measured); accuracy on the user's
+material is the SC-105 Mac harness's, not measured here.
 
 ### interchange
 **Done when:** FCP 7 XML, FCPXML, EDL (CMX 3600), AAF and OTIO import and export sequences with clips, tracks, transitions,

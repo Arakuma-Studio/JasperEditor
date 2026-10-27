@@ -506,6 +506,8 @@ export function TranscriptTab({ session, seq, request }: Props) {
 			) : null}
 			<div
 				className="min-h-0 flex-1 overflow-auto px-2 py-1 font-pr text-pr-ui leading-[1.7]"
+				// the user's words: never translated as model names ("One" is not "Uno")
+				data-no-i18n
 				data-testid="text.transcript.words"
 			>
 				{paras.map(([a, b]) => {
