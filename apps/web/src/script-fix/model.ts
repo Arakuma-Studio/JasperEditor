@@ -6,6 +6,7 @@
 // the engine or the DOM, and nothing throws on malformed input.
 import {
 	cleanGlossaryText,
+	cleanupNorm,
 	findReplaceAllInSequence,
 	flicksPerFrame,
 	type ProjectDocument,
@@ -639,7 +640,7 @@ export function promptTerms(
 			if (g.lang && lang && g.lang !== lang) continue;
 			const text = cleanGlossaryText(String(g.to ?? ''));
 			if (!text || [...text].length > MAX_TERM_CHARS) continue;
-			add(text.replace(/\s+/g, ''), text, Math.max(1, finite(g.count) ? g.count : 0));
+			add(cleanupNorm(text) || text.replace(/\s+/g, ''), text, Math.max(1, finite(g.count) ? g.count : 0));
 		}
 	}
 	return [...terms.values()]

@@ -185,6 +185,23 @@ function fakeEngine(state: {
 			return json(state.settings);
 		}
 		if (url === '/api/speech/probe') return json(PROBE);
+		if (url === '/api/speech/glossary')
+			return json({
+				revision: 1,
+				readOnly: false,
+				repairs: [],
+				limits: { maxEntries: 2000, maxSpellings: 20, maxChars: 64 },
+				entries: [
+					{
+						id: 'gle_0000000000000001',
+						from: ['pixel forge'],
+						to: 'Pixelforge',
+						count: 3,
+						createdAt: '2026-10-07T10:00:00.000Z',
+						updatedAt: '2026-10-07T10:00:00.000Z',
+					},
+				],
+			});
 		const install = /^\/api\/speech\/models\/([^/]+)\/install$/.exec(url);
 		if (install) {
 			state.models = state.models.map((m) =>
@@ -343,6 +360,59 @@ describe('Generate Transcript dialog', () => {
 			accuracy: 'best',
 			verbatim: true,
 		});
+	});
+
+	it('Names from: Script + glossary carries the script’s names and the glossary’s spellings (spec 17 SC-074)', async () => {
+		const { session, seqId } = makeSession();
+		const s = session.apply({
+			label: 'script',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{
+					type: 'cleanup.configure',
+					sequenceId: seqId,
+					script: {
+						name: 'Script',
+						text: 'Today we open Glimmerbox. Then Glimmerbox meets the team at Novaplay Studio.',
+					},
+				},
+			] as never[],
+		});
+		expect(s.ok).toBe(true);
+		const { client, calls } = fakeEngine({ models: [model('whisper-base', true)] });
+		render(
+			<EngineProvider client={client}>
+				<GenerateTranscriptDialog
+					session={session}
+					target={{ kind: 'sequence', sequenceId: seqId }}
+					close={() => {}}
+				/>
+			</EngineProvider>,
+		);
+		await screen.findByRole('combobox', { name: 'Names from' });
+		expect(screen.queryByTestId('speech-names')).toBeNull();
+		await chooseOption(screen.getByRole('combobox', { name: 'Language' }), 'English');
+		await chooseOption(screen.getByRole('combobox', { name: 'Names from' }), 'Script + glossary');
+		await waitFor(() => expect(screen.getByTestId('speech-names').textContent).toMatch(/Pixelforge/));
+		// ranked by use: the glossary entry taught 3 times, then the script's names by how often it says them
+		expect(screen.getByTestId('speech-names').textContent).toBe(
+			'4 names carried into the recognition prompt: Pixelforge, Glimmerbox, Novaplay, Studio',
+		);
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Transcribe' }));
+		});
+		await waitFor(() => expect(calls.some((c) => c.url === `/api/media/${KEY}/transcribe`)).toBe(true));
+		const body = calls.find((c) => c.url === `/api/media/${KEY}/transcribe`)?.body as { glossary?: string[] };
+		expect(body.glossary).toEqual(['Pixelforge', 'Glimmerbox', 'Novaplay', 'Studio']);
+	});
+
+	it('Names from is off by default: no glossary is sent', () => {
+		expect(defaultOptions('whisper-base').namesFrom).toBe('off');
+		expect(requestOptions(defaultOptions('whisper-base'), true, ['Glimmerbox'])).not.toHaveProperty('glossary');
+		expect(
+			requestOptions({ ...defaultOptions('whisper-base'), namesFrom: 'script' }, true, ['Glimmerbox']).glossary,
+		).toEqual(['Glimmerbox']);
 	});
 
 	it('English-only models fix the language and cannot translate', () => {
