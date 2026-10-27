@@ -16,8 +16,6 @@ import {
 	ROOT,
 } from '../support.ts';
 
-test.describe.configure({ mode: 'serial' });
-
 const DESKTOP = join(ROOT, 'apps/desktop');
 const electron = createRequire(join(DESKTOP, 'package.json'))('electron') as string;
 
@@ -162,7 +160,12 @@ async function external(kind: 'text' | 'image' | 'files', data: string): Promise
 test.beforeAll(async () => {
 	test.setTimeout(300_000);
 	[A, B] = await Promise.all([launch('a'), launch('b')]);
-	await Promise.all([newProject(A.page, 'Desktop A'), newProject(B.page, 'Desktop B')]);
+	await newProject(A.page, 'Desktop A');
+});
+
+test.beforeEach(async () => {
+	if (new URL(B.page.url()).pathname !== '/') await B.page.goto(new URL('/', B.page.url()).href);
+	await newProject(B.page, 'Desktop B');
 });
 
 test.afterEach(async () => {

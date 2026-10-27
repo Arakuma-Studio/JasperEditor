@@ -53,19 +53,18 @@ fn version_is_json() {
 
 #[test]
 fn lower_third_fixture_renders_every_frame_in_order() {
-    let spec: Value =
+    let mut spec: Value =
         serde_json::from_str(&std::fs::read_to_string(fixture("lower-third.json")).unwrap())
             .unwrap();
-    // Small output keeps the test fast; the frame count is what matters.
-    let mut small = spec.clone();
-    small["width"] = json!(384);
-    small["height"] = json!(216);
+    // The 150-frame protocol contract does not require a large raster.
+    spec["width"] = json!(64);
+    spec["height"] = json!(36);
     let (code, stdout, stderr) = run_stdin(
         &["render", "--spec", "-", "--raw-rgba", "--threads", "4"],
-        &small,
+        &spec,
     );
     assert_eq!(code, 0, "{stderr}");
-    assert_eq!(stdout.len(), 384 * 216 * 4 * 150);
+    assert_eq!(stdout.len(), 64 * 36 * 4 * 150);
     let ev = events(&stderr);
     assert_eq!(ev.first().unwrap()["event"], "start");
     assert_eq!(ev.first().unwrap()["frames"], 150);
@@ -76,7 +75,7 @@ fn lower_third_fixture_renders_every_frame_in_order() {
             .any(|e| e["event"] == "progress" && e["done"] == 150)
     );
     // frame 0 is fully transparent (nothing has grown yet), a mid frame is not
-    let frame = 384 * 216 * 4;
+    let frame = 64 * 36 * 4;
     assert!(stdout[..frame].chunks(4).all(|px| px[3] == 0));
     assert!(stdout[60 * frame..61 * frame].chunks(4).any(|px| px[3] > 0));
 }
