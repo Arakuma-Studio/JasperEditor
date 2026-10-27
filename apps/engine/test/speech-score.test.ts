@@ -221,6 +221,12 @@ describe('refusals, cancellation and devices (SC-032, SC-035, SC-036)', () => {
 			'INVALID_SPEC',
 		);
 		await refusal(runScoreJob(spec(dir, []), { ort: fakeOrt().ort, audio }), 'INVALID_SPEC');
+		// exactly 30 s off the frame grid is accepted
+		const full = await runScoreJob(spec(dir, [{ ...one[0]!, start: 100, end: 100 + 30 * SR }]), {
+			ort: fakeOrt().ort,
+			audio,
+		});
+		expect(full.profile.windowSec).toBe(30);
 		// a refusal on the GPU is not retried on the CPU
 		const f = fakeOrt();
 		await refusal(

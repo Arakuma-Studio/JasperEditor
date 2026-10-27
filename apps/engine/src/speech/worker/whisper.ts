@@ -923,8 +923,9 @@ export class WhisperModel {
 	): Promise<{ xa: Tensor; frame0: number; frames: number }> {
 		const content = Math.max(0, input.mel.frames - N_FRAMES);
 		const frame0 = Math.max(0, Math.floor(start / HOP));
-		const wanted = Math.ceil(end / HOP) - frame0;
-		if (wanted > N_FRAMES)
+		// a 30 s window that does not start on a frame boundary touches 3001 frames: its last partial frame is left out
+		const wanted = Math.min(N_FRAMES, Math.ceil(end / HOP) - frame0);
+		if (end - start > N_FRAMES * HOP)
 			throw new SpeechRefusal(
 				'SPEECH_WINDOW_TOO_LONG',
 				`A scoring window is at most 30 s (got ${(end - start) / SAMPLE_RATE} s)`,

@@ -1051,7 +1051,8 @@ export class SpeechService {
 					return {
 						id: w.id,
 						start,
-						end: Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE)),
+						// ≤ 30 s after rounding too (the request allows exactly 30 s of flicks)
+						end: Math.min(start + 30 * 16_000, Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE))),
 						readings: w.readings.map((r) => ({ id: r.id, words: r.words })),
 					};
 				}),
