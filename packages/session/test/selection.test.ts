@@ -63,6 +63,37 @@ describe('bulk selection', () => {
 		]);
 		expect(expandClipSelection(doc, ['clp_other', clip.id], false, false)).toEqual(['clp_other', clip.id]);
 	});
+
+	it('preserves first insertion order when many selected clips share links and groups', () => {
+		const { doc, seq, clip } = fixture();
+		seq.clips = {
+			a: { ...clip, id: 'a', linkId: 'link', groupId: 'group' },
+			b: { ...clip, id: 'b', linkId: 'link', groupId: 'group' },
+			c: { ...clip, id: 'c', linkId: null, groupId: 'group' },
+		};
+		seq.links = { link: { id: 'link', members: ['a', 'b'] } };
+		seq.groups = { group: { id: 'group', members: ['c', 'a', 'b'] } };
+		expect(expandClipSelection(doc, ['b', 'a', 'c', 'b'], true)).toEqual(['b', 'a', 'c']);
+		expect(expandClipSelection(doc, ['b', 'a'], false)).toEqual(['b', 'c', 'a']);
+		expect(expandClipSelection(doc, ['b', 'a'], true, false)).toEqual(['b', 'a']);
+		// Expansion must not recursively select links of members added by a group.
+		seq.clips.c!.linkId = 'other';
+		seq.links.other = { id: 'other', members: ['c', 'indirect'] };
+		expect(expandClipSelection(doc, ['a', 'b'], true)).toEqual(['a', 'b', 'c']);
+	});
+
+	it('does not share expansion state between sequences or selection calls', () => {
+		const { doc, seq, clip } = fixture();
+		seq.clips = { selected: { ...clip, id: 'selected', groupId: 'same-group' } };
+		seq.groups = { 'same-group': { id: 'same-group', members: ['selected', 'first'] } };
+		const other = structuredClone(seq);
+		other.id = 'seq_other';
+		other.groups['same-group']!.members = ['selected', 'second'];
+		doc.sequences[other.id] = other;
+		expect(expandClipSelection(doc, ['selected', 'selected'], true)).toEqual(['selected', 'first', 'second']);
+		seq.groups['same-group']!.members.push('added');
+		expect(expandClipSelection(doc, ['selected'], true)).toEqual(['selected', 'first', 'added', 'second']);
+	});
 });
 
 describe('selection pruning', () => {
