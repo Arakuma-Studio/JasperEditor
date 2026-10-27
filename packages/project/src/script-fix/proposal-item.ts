@@ -1,8 +1,9 @@
 // Spec 17 SC-061: one proposal item of the `transcript-correction` feature per decided candidate — commands
-// `[transcript.replaceWords]` (one edit: the candidate's ASR words → the decided words), the review meta and the
-// default selection (Maybe items start unselected). Inputs are plain data in the shapes of spec 17 §2.3–§2.5 (the
-// aligner and the speech decisions produce them); docs/wp-notes/script-correction.md "Applying fixes".
-import type { ReplaceWordsWord } from '../captions/replace-words.ts';
+// `[transcript.replaceWords]` with the edit the aligner built (`replaceWordsEdit`, used verbatim: audio-retimed fixes
+// span previous word end → next word start, a `del` edit may take in the following word), the review meta and the
+// default selection (Maybe items start unselected). Inputs are plain data in the shapes of spec 17 §2.3–§2.5;
+// docs/wp-notes/script-correction.md "Applying fixes".
+import { type ReplaceWordsEdit, replaceWordsEditsProblem } from '../captions/replace-words.ts';
 import { PROPOSAL_ITEM_ID_RE, PROPOSAL_LIMITS, type ProposalItemInput } from '../proposals/schema.ts';
 
 export type TranscriptFixKind = 'sub' | 'merge' | 'del' | 'join' | 'glossary';
@@ -19,7 +20,7 @@ export type TranscriptFixCandidate = {
 	asr: readonly string[];
 	/** The script words of the region. */
 	script: readonly string[];
-	/** Media-time span (flicks) of the region: the ASR words, or for `del` the gap between the neighbours. */
+	/** Media-time span (flicks) of the candidate's own words (the item's span is the edit's). */
 	start: number;
 	end: number;
 	contextBefore: readonly string[];
@@ -28,16 +29,19 @@ export type TranscriptFixCandidate = {
 	fingerprint: string;
 };
 
-/** What verification decided for a candidate (SC-034, SC-040…SC-042). */
+/** What verification decided for a candidate (SC-034). The new words are the edit's (SC-040…SC-042). */
 export type TranscriptFixDecision = {
 	group: TranscriptFixGroup;
 	/** The rule that decided it (`sub`, `spelling`, `del`, `join`, `glossary`, `maybe`…). */
 	rule: string;
 	/** Δ_tok (SC-033); null for decisions made without audio (joins, glossary spellings). */
 	deltaTok: number | null;
-	/** The new words, re-timed, inside `[start, end]`. */
-	words: readonly ReplaceWordsWord[];
 };
+
+/** Why a fix edit cannot be a valid `transcript.replaceWords` edit (words outside the span, spaces…), or null. */
+export function transcriptFixEditProblem(edit: ReplaceWordsEdit): string | null {
+	return replaceWordsEditsProblem([edit]);
+}
 
 export type TranscriptFixItemMeta = {
 	group: TranscriptFixGroup;
@@ -48,6 +52,7 @@ export type TranscriptFixItemMeta = {
 	deltaTok: number | null;
 	rule: string;
 	mediaId: string;
+	/** The edit's span (media flicks). */
 	start: number;
 	end: number;
 	contextBefore: string[];
@@ -73,16 +78,21 @@ export function transcriptFixItemId(fingerprint: string): string {
 }
 
 /**
- * The proposal item of a decided candidate: label "asr → new", group, one `transcript.replaceWords` command (subtitles
- * and caption tracks patched), the review meta, and `selected: false` for Maybe items (an "all" accept leaves them).
+ * The proposal item of a decided candidate: label "asr → new", group, one `transcript.replaceWords` command with `edit`
+ * as given (subtitles and caption tracks patched), the review meta (`start` / `end` = the edit's span), and
+ * `selected: false` for Maybe items (an "all" accept leaves them). Throws a RangeError naming the problem when the edit
+ * is malformed (`transcriptFixEditProblem`): a producer bug, never a document state.
  */
 export function transcriptFixItem(
 	candidate: TranscriptFixCandidate,
 	decision: TranscriptFixDecision,
+	edit: ReplaceWordsEdit,
 	opts: { id?: string } = {},
 ): ProposalItemInput {
-	const after = decision.words.map((w) => w.text);
-	const before = candidate.asr.length ? clip(candidate.asr) : '+';
+	const bad = transcriptFixEditProblem(edit);
+	if (bad) throw new RangeError(`Fix ${candidate.fingerprint}: ${bad.replace(/^Edit 0[,:]? ?/, '')}`);
+	const after = edit.words.map((w) => w.text);
+	const before = edit.expect.length ? clip(edit.expect) : '+';
 	const label = `${before} → ${after.length ? clip(after) : '∅'}`.slice(0, PROPOSAL_LIMITS.maxLabel);
 	const meta: TranscriptFixItemMeta = {
 		group: decision.group,
@@ -93,8 +103,8 @@ export function transcriptFixItem(
 		deltaTok: decision.deltaTok,
 		rule: decision.rule,
 		mediaId: candidate.mediaId,
-		start: candidate.start,
-		end: candidate.end,
+		start: edit.start,
+		end: edit.end,
 		contextBefore: [...candidate.contextBefore],
 		contextAfter: [...candidate.contextAfter],
 		fingerprint: candidate.fingerprint,
@@ -109,10 +119,10 @@ export function transcriptFixItem(
 				transcriptId: candidate.transcriptId,
 				edits: [
 					{
-						start: candidate.start,
-						end: candidate.end,
-						expect: [...candidate.asr],
-						words: decision.words.map((w) => ({
+						start: edit.start,
+						end: edit.end,
+						expect: [...edit.expect],
+						words: edit.words.map((w) => ({
 							text: w.text,
 							start: w.start,
 							end: w.end,

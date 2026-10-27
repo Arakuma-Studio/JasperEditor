@@ -112,11 +112,15 @@ coordinator so the aligner's format can evolve).
   `notSelected` (and refuses with a hint when nothing is selected). Engine proposal files with `selected` are read by
   this build only (the store is app state, not versioned with the project; an older engine moves such a file aside as
   unreadable — limitation).
-- Item builder `transcriptFixItem(candidate, decision, {id?})` (`script-fix/proposal-item.ts`): candidate `{transcriptId,
-  mediaId, kind, category, asr, script, start, end, contextBefore, contextAfter, fingerprint}`, decision `{group, rule,
-  deltaTok, words}` → item `{id: transcriptFixItemId(fingerprint), label "asr → new", group, commands:
-  [transcript.replaceWords (one edit, subtitles and caption tracks patched)], meta: {group, kind, category, asr,
-  script, deltaTok, rule, mediaId, start, end, contextBefore, contextAfter, fingerprint}, selected: false for maybe}`.
+- Item builder `transcriptFixItem(candidate, decision, edit, {id?})` (`script-fix/proposal-item.ts`): candidate
+  `{transcriptId, mediaId, kind, category, asr, script, start, end, contextBefore, contextAfter, fingerprint}`, decision
+  `{group, rule, deltaTok}`, `edit` = the aligner's `replaceWordsEdit` `{start, end, expect, words}`, used **verbatim**
+  (audio-retimed fixes span previous word end → next word start; a `del` edit may take in a neighbouring word, so the
+  edit is never rebuilt from the candidate's own span) → item `{id: transcriptFixItemId(fingerprint), label "expect →
+  words", group, commands: [transcript.replaceWords {transcriptId, edits: [edit]}] (subtitles and caption tracks
+  patched), meta: {group, kind, category, asr, script, deltaTok, rule, mediaId, start, end (= the edit's span),
+  contextBefore, contextAfter, fingerprint}, selected: false for maybe}`. A malformed edit (words outside the span,
+  spaces in a word, unsorted…; `transcriptFixEditProblem`, the command's own validator) throws a RangeError naming it.
 - Staleness (SC-062): an item whose `expect` no longer matches fails its dry run with `E_STALE` → `stale` with
   `problem: {type: 'conflict', issue: 'E_STALE: …'}`; all-or-nothing accepts refuse, `partial` applies the rest.
   Refresh (re-running alignment for the affected media) is the job package's refresher (`scengine`).

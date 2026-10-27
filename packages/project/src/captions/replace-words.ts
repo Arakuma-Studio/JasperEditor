@@ -161,7 +161,7 @@ export type ReplaceWordsWork = {
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 
 /** Why the edits are malformed (E_INVALID_PARAM), or null. */
-function editsProblem(edits: readonly ReplaceWordsEdit[]): string | null {
+export function replaceWordsEditsProblem(edits: readonly ReplaceWordsEdit[]): string | null {
 	if (!Array.isArray(edits) || edits.length === 0) return 'Give at least one edit';
 	if (edits.length > REPLACE_WORDS_LIMITS.maxEdits)
 		return `At most ${REPLACE_WORDS_LIMITS.maxEdits} edits per command (${edits.length} given)`;
@@ -280,7 +280,7 @@ export function computeReplaceWords(doc: ProjectDocument, input: ReplaceWordsInp
 				? doc.transcripts[tid]
 				: undefined;
 		if (!t) return fail('E_NOT_FOUND', `Transcript not found: ${String(tid)}`);
-		const bad = editsProblem(input.edits);
+		const bad = replaceWordsEditsProblem(input.edits);
 		if (bad) return fail('E_INVALID_PARAM', bad);
 		const words = t.words;
 		const ranges = input.edits.map((e) => spanRange(words, e.start, e.end));

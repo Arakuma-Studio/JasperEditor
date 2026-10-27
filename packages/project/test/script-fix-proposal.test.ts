@@ -20,6 +20,7 @@ import {
 	TRANSCRIPT_CORRECTION_FEATURE,
 	type TranscriptFixCandidate,
 	type TranscriptFixDecision,
+	transcriptFixEditProblem,
 	transcriptFixItem,
 	transcriptFixItemId,
 } from '../src/index.ts';
@@ -84,6 +85,11 @@ function candidates(mediaId: string, transcriptId: string) {
 		group: 'fix',
 		rule: 'merge',
 		deltaTok: -0.4,
+	};
+	const e1 = {
+		start: sec(1.0),
+		end: sec(1.7),
+		expect: ['Pixel', 'forch'],
 		words: [{ text: 'Pixelforge', start: sec(1.0), end: sec(1.69), confidence: 0.82 }],
 	};
 	const c2: TranscriptFixCandidate = {
@@ -100,6 +106,11 @@ function candidates(mediaId: string, transcriptId: string) {
 		group: 'maybe',
 		rule: 'maybe',
 		deltaTok: -3.5,
+	};
+	const e2 = {
+		start: sec(1.8),
+		end: sec(2.0),
+		expect: [],
 		words: [{ text: 'en', start: sec(1.82), end: sec(1.98), confidence: 0.2 }],
 	};
 	const c3: TranscriptFixCandidate = {
@@ -116,9 +127,14 @@ function candidates(mediaId: string, transcriptId: string) {
 		group: 'spelling',
 		rule: 'join',
 		deltaTok: null,
+	};
+	const e3 = {
+		start: sec(3.0),
+		end: sec(3.9),
+		expect: ['Glimer', 'box.'],
 		words: [{ text: 'Glimmerbox.', start: sec(3.0), end: sec(3.9), confidence: null }],
 	};
-	return [transcriptFixItem(c1, d1), transcriptFixItem(c2, d2), transcriptFixItem(c3, d3)];
+	return [transcriptFixItem(c1, d1, e1), transcriptFixItem(c2, d2, e2), transcriptFixItem(c3, d3, e3)];
 }
 
 function propose(H: Harness, items: unknown[]): Proposal {
@@ -190,6 +206,59 @@ describe('transcript fix items (SC-061)', () => {
 		expect(new Set(ids).size).toBe(3);
 		expect(transcriptFixItemId('x'.repeat(500))).toMatch(/^fix:x+:[0-9a-z]+$/);
 		expect(transcriptFixItemId('x'.repeat(500)).length).toBeLessThanOrEqual(64);
+	});
+
+	it('uses the aligner’s edit verbatim (a span wider than the candidate’s words); refuses a malformed edit', () => {
+		const { H, mediaId, transcriptId } = talk();
+		const candidate: TranscriptFixCandidate = {
+			transcriptId,
+			mediaId,
+			kind: 'sub',
+			category: 'proper',
+			asr: ['forch'],
+			script: ['forge'],
+			start: sec(1.3),
+			end: sec(1.7),
+			contextBefore: ['abrimos', 'Pixel'],
+			contextAfter: ['y', 'la'],
+			fingerprint: `${mediaId}~forch~forge`,
+		};
+		// re-timed by the audio inside previous word end → next word start
+		const edit = {
+			start: sec(1.3),
+			end: sec(1.7),
+			expect: ['forch'],
+			words: [{ text: 'forge', start: sec(1.32), end: sec(1.7), confidence: 0.7 }],
+		};
+		// the aligner's edit takes in the word before as well (its span is wider than the candidate's words)
+		const wide = {
+			start: sec(1.0),
+			end: sec(1.7),
+			expect: ['Pixel', 'forch'],
+			words: [
+				{ text: 'Pixel', start: sec(1.0), end: sec(1.25), confidence: 0.9 },
+				{ text: 'forge', start: sec(1.25), end: sec(1.7), confidence: 0.7 },
+			],
+		};
+		const it0 = transcriptFixItem(candidate, { group: 'fix', rule: 'sub', deltaTok: -0.8 }, wide);
+		expect((it0.commands[0] as { edits: unknown[] }).edits).toEqual([wide]);
+		expect(it0.meta).toMatchObject({ start: sec(1.0), end: sec(1.7), asr: ['forch'], script: ['forge'] });
+		expect(it0.label).toBe('Pixel forch → Pixel forge');
+		// the item applies as is
+		const p = propose(H, [it0]);
+		const plan = planAccept(H.doc, p, 'all', 'user', CTX);
+		if (!plan.ok || !plan.composed) throw new Error('no plan');
+		H.ok(plan.composed.tx.commands);
+		expect(H.doc.transcripts[transcriptId]!.words.map((w) => w.text).slice(1, 4)).toEqual(['abrimos', 'Pixel', 'forge']);
+		// a malformed edit is the producer's bug: refused with the reason
+		const d = { group: 'fix' as const, rule: 'sub', deltaTok: -0.8 };
+		expect(() => transcriptFixItem(candidate, d, { ...edit, words: [{ ...edit.words[0]!, end: sec(1.9) }] })).toThrow(
+			/outside the edit's span/,
+		);
+		expect(() => transcriptFixItem(candidate, d, { ...edit, words: [{ ...edit.words[0]!, text: 'for ge' }] })).toThrow(
+			/without spaces/,
+		);
+		expect(transcriptFixEditProblem(edit)).toBeNull();
 	});
 
 	it('stores the default selection; "all" takes the selected items; explicit ids take any; agents never maybe', () => {
