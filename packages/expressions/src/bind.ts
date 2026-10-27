@@ -66,7 +66,7 @@ export function bindWorld(data: ExpressionWorldData): Bound {
 	for (const [seqId, seq] of Object.entries(data.sequences)) {
 		let s = seq;
 		for (const loc of sequenceAnimatables(seqId, seq)) {
-			// Expression Selector amounts run per character (installTextSelectorExpressions).
+			// Expression Selector amounts run per character.
 			if (loc.kind === 'selector') continue;
 			if (!hasActiveExpression(loc.target as { expression?: { text: string; enabled: boolean } })) continue;
 			s = setIn(s, loc.at, withBinding(loc.target as object, binding(world, loc.ref)));

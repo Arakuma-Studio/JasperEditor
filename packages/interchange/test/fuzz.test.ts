@@ -10,7 +10,6 @@ function seeds(): Uint8Array[] {
 	addCaptions(h);
 	const out: Uint8Array[] = [];
 	for (const f of Object.keys(FORMAT_INFO) as Format[]) {
-		if (!FORMAT_INFO[f]?.write) continue;
 		for (const file of exportTimeline(h.doc, h.seqId, f).files) out.push(file.bytes);
 	}
 	// Seed malformed container graphs as well as valid exports to exercise bounded traversal and allocation.
@@ -34,11 +33,9 @@ describeFuzz('@jasper/interchange end to end', [
 	bytesTarget('any document (sniffed) → project', SEEDS, (b) => importAndApply(b, null), InterchangeError, {
 		iterations: 250,
 	}),
-	...(Object.keys(FORMAT_INFO) as Format[])
-		.filter((f) => FORMAT_INFO[f]?.read)
-		.map((f) =>
-			bytesTarget(`${f} → project`, SEEDS, (b) => importAndApply(b, f), InterchangeError, {
-				iterations: 120,
-			}),
-		),
+	...(Object.keys(FORMAT_INFO) as Format[]).map((f) =>
+		bytesTarget(`${f} → project`, SEEDS, (b) => importAndApply(b, f), InterchangeError, {
+			iterations: 120,
+		}),
+	),
 ]);

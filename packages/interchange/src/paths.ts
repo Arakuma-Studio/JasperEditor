@@ -1,13 +1,10 @@
 // Media paths and file URLs (POSIX, Windows drive and UNC paths), without any file-system access.
-import { classifyPath, isAbsoluteAnywhere } from '@jasper/project';
+import { classifyPath, isAbsoluteAnywhere as isAbsolutePath } from '@jasper/project';
+
+export { isAbsolutePath };
 
 function isWindowsAbs(p: string): boolean {
 	return classifyPath(p) === 'windows';
-}
-
-/** Absolute on some operating system (POSIX, Windows drive or UNC; see `classifyPath`). */
-export function isAbsolutePath(p: string): boolean {
-	return isAbsoluteAnywhere(p);
 }
 
 function percentDecode(s: string): string {

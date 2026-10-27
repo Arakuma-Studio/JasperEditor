@@ -7,6 +7,7 @@ import {
 	type CItem,
 	type CKind,
 	type CMarker,
+	dedupeMarkers,
 	flicksToUnits,
 	type Source,
 } from '../comp.ts';
@@ -288,10 +289,7 @@ export function writeAaf(doc: CDocument, version: CfbVersion, report: Report): U
 		const markerRate = pic ? sourceRate(pic) : sourceRate(first);
 		const markers = g.members.flatMap((i) => doc.sources[i]!.markers);
 		if (markers.length) {
-			const uniq = markers
-				.sort((a, b) => a.start - b.start || a.name.localeCompare(b.name))
-				.filter((m, i, l) => i === 0 || JSON.stringify(m) !== JSON.stringify(l[i - 1]));
-			masterSlots.push(eventSlot(w, g.members.length + 1, markerRate, uniq));
+			masterSlots.push(eventSlot(w, g.members.length + 1, markerRate, dedupeMarkers(markers)));
 		}
 		mobs.push(
 			new Obj(CLS.MASTER_MOB)
