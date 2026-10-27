@@ -14,6 +14,8 @@
 // cells (only reached by degenerate input such as one word repeated thousands of times; the cells nearest the previous
 // best cell are kept) are the sole approximation; rows where a cap bit are counted in the report. Deterministic: ties
 // resolve like the spike (first move in the order diagonal, skip 1…8, jump, OFF; lowest script index).
+
+import { cachedKey, PSIM_MIN_INDEL, psim, psimAtLeast } from './phonetic.ts';
 import type { ParsedScript } from './script.ts';
 import {
 	exactMatch,
