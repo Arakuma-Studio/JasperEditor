@@ -153,7 +153,8 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 			'bienvenidos a glimmerbox hoy os enseño como hacer un menu principal hoy os enseño cómo hacer un menú prinsipal con tres botones grandes',
 		);
 		expect(r.alignment.report.retakeJumps).toBe(1);
-		expect(r.candidates.map(brief)).toEqual([]); // "prinsipal" has the same key as "principal" but is not exact
+		// "menu" = "menú" (accents stripped); "prinsipal" sounds like "principal" but is a recognition error to verify
+		expect(r.candidates.map(brief)).toEqual(['sub:other:prinsipal→principal']);
 	});
 
 	it('retakes with a misrecognition in both takes offer it twice, with the same fingerprint', () => {
@@ -310,8 +311,8 @@ describe('glossary candidates (SC-073)', () => {
 		const d = decideFix(res.candidates[1]!, null);
 		expect(d).toMatchObject({ decision: 'fix', group: 'spelling', rule: 'glossary-spelling', deltaTok: null });
 		expect(d.words.map((w) => w.text)).toEqual(['Pixelforge']);
-		expect(d.words[0]!.start).toBe(words[5]!.start);
-		expect(d.words[0]!.end).toBe(words[6]!.end);
+		expect(d.words[0]!.start).toBe(words[6]!.start);
+		expect(d.words[0]!.end).toBe(words[7]!.end);
 	});
 
 	it('script candidates win over overlapping glossary candidates; glossary words count as proper', () => {
