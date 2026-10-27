@@ -8,7 +8,7 @@
 // serialisers convert to and from edit units (frames for picture, samples for sound, so audio edits are exact).
 //
 // Port of FilmCraft `crates/interchange/src/comp.rs` (MIT OR Apache-2.0).
-import { type Animatable, type Keyframe, segmentShape, transitionSpec } from '@jasper/project';
+import { type Animatable, type Keyframe, LABEL_COLORS, segmentShape, transitionSpec } from '@jasper/project';
 import { Builder, dbToGain, describeClip, frameOf, gainToDb, newClip, reportVisualLoss } from './build.ts';
 import { transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
@@ -512,7 +512,7 @@ export function fromProject(
 	return doc;
 }
 
-function dedupeMarkers(list: CMarker[]): CMarker[] {
+export function dedupeMarkers(list: CMarker[]): CMarker[] {
 	const sorted = [...list].sort((a, b) => a.start - b.start || a.name.localeCompare(b.name));
 	return sorted.filter((m, i) => i === 0 || JSON.stringify(m) !== JSON.stringify(sorted[i - 1]));
 }
@@ -521,24 +521,7 @@ function markerOut(m: IMarker): CMarker {
 	return { start: m.start, duration: m.duration, name: m.name, comment: m.comment, color: m.color };
 }
 
-const LABEL_SET = new Set([
-	'violet',
-	'iris',
-	'caribbean',
-	'lavender',
-	'cerulean',
-	'forest',
-	'rose',
-	'mango',
-	'purple',
-	'blue',
-	'teal',
-	'magenta',
-	'tan',
-	'green',
-	'brown',
-	'yellow',
-]);
+const LABEL_SET = new Set<string>(LABEL_COLORS);
 
 function markerIn(m: CMarker): IMarker {
 	const c = (m.color ?? '').toLowerCase();

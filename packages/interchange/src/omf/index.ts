@@ -16,14 +16,11 @@ import { fromProject, toProject } from '../comp.ts';
 import type { IProject } from '../model.ts';
 import { DEFAULT_MEDIA_OPTIONS, type ExportOptions, type ImportOptions } from '../options.ts';
 import { InterchangeError, parseError, type Report } from '../report.ts';
-import { BentoContainer, BentoError, sniffBento } from './bento.ts';
+import { BentoContainer, BentoError } from './bento.ts';
 import { readOmf } from './read.ts';
 import { writeOmf } from './write.ts';
 
-/** Whether `bytes` end with a Bento container label (OMF 2.0 files do). */
-export function sniffOmf(bytes: Uint8Array): boolean {
-	return sniffBento(bytes);
-}
+export { sniffBento as sniffOmf } from './bento.ts';
 
 export function importOmf(bytes: Uint8Array, opts: ImportOptions, report: Report): IProject {
 	try {
