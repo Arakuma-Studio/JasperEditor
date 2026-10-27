@@ -112,7 +112,11 @@ describe('score windows respect the SC-092 request limits', () => {
 		const F2 = (x: number) => Math.round(x * F);
 		// three stretches 0.5–2.0 s, 6.0–7.5 s (4 s gap), 9.0–10.0 s (1.5 s gap)
 		const at = (t0: number, n: number, d = 0.3, g = 0.0) =>
-			Array.from({ length: n }, (_, k) => ({ text: `p${t0}_${k}`, start: F2(t0 + k * (d + g)), end: F2(t0 + k * (d + g) + d) }));
+			Array.from({ length: n }, (_, k) => ({
+				text: `p${t0}_${k}`,
+				start: F2(t0 + k * (d + g)),
+				end: F2(t0 + k * (d + g) + d),
+			}));
 		const words: FixWord[] = [...at(0.5, 5), ...at(6, 5), ...at(9, 3, 0.3, 0.05)];
 		const cs = [cand('a', 1, 2, ['x']), cand('b', 7, 8, ['y']), cand('c', 11, 12, ['z'])];
 		const packed = buildScoreWindows(words, cs);

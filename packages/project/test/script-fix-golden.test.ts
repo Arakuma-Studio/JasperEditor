@@ -503,8 +503,19 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 		]);
 		expect(w.start).toBe(r.words[0]!.start - Math.round(0.25 * F));
 		expect(w.end).toBe(r.words[r.words.length - 1]!.end + Math.round(0.35 * F));
-		expect(Object.keys(scoreRequestWindows(windows)[0]!).sort()).toEqual(['end', 'id', 'mute', 'readings', 'start']);
-		expect(Object.keys(scoreRequestWindows(unpacked.windows)[0]!).sort()).toEqual(['end', 'id', 'readings', 'start']);
+		expect(Object.keys(scoreRequestWindows(windows)[0]!).sort()).toEqual([
+			'end',
+			'id',
+			'mute',
+			'readings',
+			'start',
+		]);
+		expect(Object.keys(scoreRequestWindows(unpacked.windows)[0]!).sort()).toEqual([
+			'end',
+			'id',
+			'readings',
+			'start',
+		]);
 		// fake SC-092 result: per-word tokens 1 (pixelforch 3, Pixelforge 2), LLs chosen for the test
 		const results: ScoreWindowResult[] = [
 			{

@@ -1049,7 +1049,10 @@ export class SpeechService {
 				windows: req.windows.map((w) => {
 					const start = Math.floor(w.start / FLICKS_PER_SAMPLE);
 					// ≤ 30 s after rounding too (the request allows exactly 30 s of flicks)
-					const end = Math.min(start + 30 * 16_000, Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE)));
+					const end = Math.min(
+						start + 30 * 16_000,
+						Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE)),
+					);
 					// SC-030 muted gaps, rounded inwards (never into the audio around them), inside the window
 					const mute = (w.mute ?? [])
 						.map((m) => ({

@@ -190,7 +190,13 @@ describe('muted gaps of a packed window (SC-030)', () => {
 	// off the 160-sample frame grid on both edges, so frames straddling an edge are recomputed from samples
 	const mute = [{ start: 3 * SR + 37, end: 6 * SR + 11 }];
 	const win = (m?: typeof mute) => [
-		{ id: 'w', start: SR, end: 9 * SR, readings: [{ id: 'r', words: ['ab', 'cd'] }], ...(m ? { mute: m } : {}) },
+		{
+			id: 'w',
+			start: SR,
+			end: 9 * SR,
+			readings: [{ id: 'r', words: ['ab', 'cd'] }],
+			...(m ? { mute: m } : {}),
+		},
 	];
 	const encoderInput = async (audio: Float32Array, m?: typeof mute) => {
 		const dir = fakeModelDir({ encodable: true });
@@ -236,7 +242,11 @@ describe('muted gaps of a packed window (SC-030)', () => {
 
 	it('refuses a muted range outside its window or empty', async () => {
 		const dir = fakeModelDir({ encodable: true });
-		for (const bad of [[{ start: 0, end: 2 * SR }], [{ start: 5 * SR, end: 5 * SR }], [{ start: 8 * SR, end: 10 * SR }]]) {
+		for (const bad of [
+			[{ start: 0, end: 2 * SR }],
+			[{ start: 5 * SR, end: 5 * SR }],
+			[{ start: 8 * SR, end: 10 * SR }],
+		]) {
 			const e = await runScoreJob(spec(dir, win(bad)), { ort: fakeOrt().ort, audio: loud }).then(
 				() => null,
 				(x: unknown) => x,

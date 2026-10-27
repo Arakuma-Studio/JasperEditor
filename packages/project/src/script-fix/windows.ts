@@ -223,8 +223,8 @@ function windowGroups(
 	const packed: Array<Array<[number, number]>> = [];
 	for (const r of split) {
 		const cur = packed[packed.length - 1];
-		const a0 = cur?.[0]![0] ?? 0;
-		const b0 = cur?.[cur.length - 1]![1] ?? -1;
+		const a0 = cur?.[0]?.[0] ?? 0;
+		const b0 = cur?.[cur.length - 1]?.[1] ?? -1;
 		if (
 			cur &&
 			b0 === r[0] &&
@@ -355,7 +355,16 @@ export function buildScoreWindows(
 				});
 			});
 			const id = p === 0 ? `w${a}` : `w${a}.${p / perWindow + 1}`;
-			windows.push({ id, start, end, readings, fromWord: a, toWord: b, regions, mute: mute.map((m) => ({ ...m })) });
+			windows.push({
+				id,
+				start,
+				end,
+				readings,
+				fromWord: a,
+				toWord: b,
+				regions,
+				mute: mute.map((m) => ({ ...m })),
+			});
 		}
 	}
 	return { windows, unplaced };

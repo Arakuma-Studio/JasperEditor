@@ -9,7 +9,9 @@ const F = 705_600_000;
 const base = (mute?: Array<{ start: number; end: number }>) => ({
 	mediaId: 'mk_1',
 	language: 'es',
-	windows: [{ id: 'w0', start: F, end: 9 * F, readings: [{ id: 'asr', words: ['hola'] }], ...(mute ? { mute } : {}) }],
+	windows: [
+		{ id: 'w0', start: F, end: 9 * F, readings: [{ id: 'asr', words: ['hola'] }], ...(mute ? { mute } : {}) },
+	],
 });
 
 describe('SpeechScoreRequestSchema muted gaps (SC-030)', () => {
@@ -42,10 +44,13 @@ describe('SpeechScoreRequestSchema muted gaps (SC-030)', () => {
 	it('property: the windows buildScoreWindows makes are valid requests', () => {
 		fc.assert(
 			fc.property(
-				fc.array(fc.tuple(fc.integer({ min: 1, max: 600_000_000 }), fc.integer({ min: 0, max: 2_500_000_000 })), {
-					minLength: 1,
-					maxLength: 200,
-				}),
+				fc.array(
+					fc.tuple(fc.integer({ min: 1, max: 600_000_000 }), fc.integer({ min: 0, max: 2_500_000_000 })),
+					{
+						minLength: 1,
+						maxLength: 200,
+					},
+				),
 				fc.array(fc.nat(), { maxLength: 40 }),
 				(spec, at) => {
 					let t = 0;
@@ -56,7 +61,13 @@ describe('SpeechScoreRequestSchema muted gaps (SC-030)', () => {
 					});
 					const cs = at.map(
 						(x, k) =>
-							({ id: `c${k}`, fromWord: x % words.length, toWord: (x % words.length) + 1, script: ['nuevo'], needsAudio: true }) as unknown as FixCandidate,
+							({
+								id: `c${k}`,
+								fromWord: x % words.length,
+								toWord: (x % words.length) + 1,
+								script: ['nuevo'],
+								needsAudio: true,
+							}) as unknown as FixCandidate,
 					);
 					const windows = scoreRequestWindows(buildScoreWindows(words, cs).windows);
 					if (!windows.length) return;

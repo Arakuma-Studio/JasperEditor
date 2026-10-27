@@ -149,8 +149,7 @@ function muteEdges(spec: ScoreJobSpec): Array<[number, number]> {
 	const out: Array<[number, number]> = [];
 	const r = 2 * FRAME_HALF;
 	for (const w of spec.windows)
-		for (const m of w.mute ?? [])
-			for (const x of [m.start, m.end]) out.push([Math.max(0, x - r), x + r]);
+		for (const m of w.mute ?? []) for (const x of [m.start, m.end]) out.push([Math.max(0, x - r), x + r]);
 	return out;
 }
 
