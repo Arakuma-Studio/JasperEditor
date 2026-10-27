@@ -16,7 +16,6 @@ import {
 import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
-import { repairSequenceScriptFix, sequenceScriptFixIssue } from './script-fix/sequence-state.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
@@ -66,6 +65,7 @@ import type {
 import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
+import { repairSequenceScriptFix, sequenceScriptFixIssue } from './script-fix/sequence-state.ts';
 import { libraryProvenanceIssue, readLibraryProvenance } from './sound/provenance.ts';
 import {
 	clipBedProblem,

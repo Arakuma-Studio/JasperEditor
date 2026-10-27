@@ -28,11 +28,15 @@ export const ReplaceWordsWordSchema = z.strictObject({
 /** One edit: the old words in `[start, end)` and their exact texts, and the new words (inside the span). */
 export const ReplaceWordsEditSchema = z.strictObject({
 	start: flicks.describe('Span start (media-time flicks) of the old words'),
-	end: flicks.describe('Span end (media-time flicks, exclusive); for an insertion, the gap between the neighbours'),
+	end: flicks.describe(
+		'Span end (media-time flicks, exclusive); for an insertion, the gap between the neighbours',
+	),
 	expect: z
 		.array(z.string().max(2000))
 		.max(REPLACE_WORDS_LIMITS.maxWordsPerEdit)
-		.describe('Exact texts of the transcript words in the span now ([] = an insertion); a mismatch refuses E_STALE'),
+		.describe(
+			'Exact texts of the transcript words in the span now ([] = an insertion); a mismatch refuses E_STALE',
+		),
 	words: z
 		.array(ReplaceWordsWordSchema)
 		.max(REPLACE_WORDS_LIMITS.maxWordsPerEdit)

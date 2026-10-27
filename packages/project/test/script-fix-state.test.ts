@@ -38,7 +38,9 @@ describe('scriptFix.configure (SC-055)', () => {
 		});
 		expect(stateOf(h)).toEqual({ settings: { strictness: 'careful' }, rejected: ['fp:a', 'fp:b'] });
 		expect((before.sequences[h.seqId] as { scriptFix?: unknown }).scriptFix).toBeUndefined();
-		h.ok([{ type: 'scriptFix.configure', settings: { scope: 'used', sources: ['script'] }, unreject: ['fp:a'] }]);
+		h.ok([
+			{ type: 'scriptFix.configure', settings: { scope: 'used', sources: ['script'] }, unreject: ['fp:a'] },
+		]);
 		expect(stateOf(h)).toEqual({
 			settings: { strictness: 'careful', scope: 'used', sources: ['script'] },
 			rejected: ['fp:b'],
@@ -146,7 +148,11 @@ describe('Sequence.scriptFix reading and repair (SC-055)', () => {
 			fc.property(
 				fc.record({
 					rejected: fc.array(fc.oneof(fc.string(), fc.integer()), { maxLength: 30 }),
-					settings: fc.record({ strictness: fc.string(), sources: fc.array(fc.string()), scope: fc.string() }),
+					settings: fc.record({
+						strictness: fc.string(),
+						sources: fc.array(fc.string()),
+						scope: fc.string(),
+					}),
 				}),
 				(v) => {
 					const fixed = repairSequenceScriptFix(v);

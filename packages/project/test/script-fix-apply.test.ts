@@ -11,8 +11,8 @@ import {
 	captionOf,
 	checkInvariants,
 	FLICKS_PER_SECOND,
-	planReplaceWords,
 	type ProjectDocument,
+	planReplaceWords,
 	type ReplaceWordsEdit,
 	type TranscriptWord,
 	wordsInSequence,
@@ -243,7 +243,9 @@ describe('transcript.replaceWords (SC-050)', () => {
 		]);
 		expect(planReplaceWords(H.doc, { transcriptId: 'x', edits: [merge] }).problem?.code).toBe('E_NOT_FOUND');
 		expect(planReplaceWords(H.doc, null as never).problem?.code).toBe('E_NOT_FOUND');
-		expect(planReplaceWords(H.doc, { transcriptId, edits: 'x' as never }).problem?.code).toBe('E_INVALID_PARAM');
+		expect(planReplaceWords(H.doc, { transcriptId, edits: 'x' as never }).problem?.code).toBe(
+			'E_INVALID_PARAM',
+		);
 	});
 });
 
@@ -289,7 +291,12 @@ describe('subtitle patch (SC-051)', () => {
 		expect((c1 as { styleId?: string }).styleId).toBe((c0 as { styleId?: string }).styleId);
 		expect(c1.content.style).toEqual(c0.content.style);
 		expect((r.results[0] as { patched: { clipId: string; kind: string }[] }).patched).toEqual([
-			expect.objectContaining({ clipId: c0.id, kind: 'subtitle', before: c0.content.text, after: c1.content.text }),
+			expect.objectContaining({
+				clipId: c0.id,
+				kind: 'subtitle',
+				before: c0.content.text,
+				after: c1.content.text,
+			}),
 		]);
 		valid(H.doc);
 	});
@@ -303,8 +310,9 @@ describe('subtitle patch (SC-051)', () => {
 		expect(c1.content.text).toContain('NOVAPLAY');
 		expect(c1.content.text).not.toContain('NOVA PLAY');
 		const cap = captionOf(c1)!;
-		const keys = (c1 as { sourceTextKeyframes?: { time: number; value: { text: string; runs?: unknown[] } }[] })
-			.sourceTextKeyframes!;
+		const keys = (
+			c1 as { sourceTextKeyframes?: { time: number; value: { text: string; runs?: unknown[] } }[] }
+		).sourceTextKeyframes!;
 		// a key per word (and one before the first word unless it starts at the In), each holding the new text
 		expect(keys.length).toBeGreaterThanOrEqual(cap.words.length);
 		expect(keys.length).toBeLessThanOrEqual(cap.words.length + 1);
@@ -343,7 +351,11 @@ describe('subtitle patch (SC-051)', () => {
 		};
 		H.ok([{ type: 'transcript.replaceWords', transcriptId, edits: [long] }]);
 		const c2 = H.seq.clips[c0.id] as TextClip;
-		expect(c2.content.text.split('\n')).toEqual(['Hoy probamos-mucho-hoy', 'Glimmerbox', 'en la Play Store.']);
+		expect(c2.content.text.split('\n')).toEqual([
+			'Hoy probamos-mucho-hoy',
+			'Glimmerbox',
+			'en la Play Store.',
+		]);
 		const r2 = c2.content.runs![0]!;
 		expect(c2.content.text.slice(r2.from, r2.to)).toBe('Glimmerbox');
 		valid(H.doc);
@@ -353,7 +365,10 @@ describe('subtitle patch (SC-051)', () => {
 		const { H, transcriptId } = talk(WORDS);
 		gen(H, { rules: { maxWords: 8, maxChars: 40, lines: 3 } });
 		const c0 = containing(H, 'Glimer');
-		const t = c0.content.text.replace(/\s+/g, ' ').replace('Glimer box', 'Glimer\nbox').replace(' la ', '\nla ');
+		const t = c0.content.text
+			.replace(/\s+/g, ' ')
+			.replace('Glimer box', 'Glimer\nbox')
+			.replace(' la ', '\nla ');
 		edit(H, c0.id, (c) => {
 			c.content.text = t;
 			c.content.paragraphs = [{ index: 2, style: { align: 'left' } }];
@@ -435,7 +450,12 @@ describe('subtitle patch (SC-051)', () => {
 		const b = containing(H, 'box');
 		H.ok([{ type: 'transcript.replaceWords', transcriptId, edits: [merge] }]);
 		const all = subs(H).map((c) => c.content.text);
-		expect(all.join(' ').split(/\s+/).filter((x) => x === 'Glimmerbox')).toHaveLength(1);
+		expect(
+			all
+				.join(' ')
+				.split(/\s+/)
+				.filter((x) => x === 'Glimmerbox'),
+		).toHaveLength(1);
 		expect(all.join(' ')).not.toMatch(/Glimer|\bbox\b/);
 		expect(H.seq.clips[a.id]).toBeTruthy();
 		expect(H.seq.clips[b.id]).toBeTruthy();
@@ -451,7 +471,9 @@ describe('caption-track patch (SC-052)', () => {
 		const { H, transcriptId } = talk(WORDS);
 		H.ok([{ type: 'transcript.createCaptions', sequenceId: H.seqId }]);
 		const caps = Object.values(H.seq.clips).filter((c): c is CaptionsClip => c.kind === 'captions');
-		const target = caps.find((c) => H.doc.transcripts[c.transcriptId]!.words.some((x) => x.text === 'Glimer'))!;
+		const target = caps.find((c) =>
+			H.doc.transcripts[c.transcriptId]!.words.some((x) => x.text === 'Glimer'),
+		)!;
 		const before = H.doc.transcripts[target.transcriptId]!.words;
 		const r = H.ok([{ type: 'transcript.replaceWords', transcriptId, edits: [merge, split] }]);
 		const after = H.doc.transcripts[target.transcriptId]!.words;
@@ -549,7 +571,10 @@ describe('replaceWords property', () => {
 					const expectTexts: string[] = [];
 					let cur = 0;
 					plan.edits.forEach((e, k) => {
-						expectTexts.push(...src.slice(cur, e.from).map((x) => x.text), ...edits[k]!.words.map((x) => x.text));
+						expectTexts.push(
+							...src.slice(cur, e.from).map((x) => x.text),
+							...edits[k]!.words.map((x) => x.text),
+						);
 						cur = e.to;
 					});
 					expectTexts.push(...src.slice(cur).map((x) => x.text));

@@ -4,10 +4,10 @@ import { z } from 'zod';
 import type { AudioEdgeFades } from '../audio-fade.ts';
 import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { SequenceCleanup } from '../cleanup/schema.ts';
-import type { SequenceScriptFix } from '../script-fix/sequence-state.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
 import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
+import type { SequenceScriptFix } from '../script-fix/sequence-state.ts';
 import {
 	AudioChannelFormatSchema,
 	LoudnessNormalizeSchema,

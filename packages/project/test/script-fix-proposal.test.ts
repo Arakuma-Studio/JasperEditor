@@ -144,7 +144,9 @@ describe('transcript-correction feature (SC-060)', () => {
 			{ id: 'maybe', label: 'Maybe' },
 		]);
 		expect(f.agentAllExcludes).toEqual(['maybe']);
-		expect(proposalFeatureInfo(TRANSCRIPT_CLEANUP_FEATURE)!.groups.map((g) => g.id)).not.toContain('transcript');
+		expect(proposalFeatureInfo(TRANSCRIPT_CLEANUP_FEATURE)!.groups.map((g) => g.id)).not.toContain(
+			'transcript',
+		);
 		for (const s of ['1 fix', '{0} fixes', 'Fixes', 'Spelling', 'Maybe', 'Transcript fixes'])
 			expect(PROPOSAL_FEATURE_MODEL_STRINGS).toContain(s);
 	});
@@ -275,7 +277,9 @@ describe('cleanup goes stale after a fix (SC-054)', () => {
 			},
 		]);
 		const a1 = analyse();
-		const f1 = a1.findings.find((f) => f.kind === f0.kind && f.range.start <= w.start && f.range.end >= w.end);
+		const f1 = a1.findings.find(
+			(f) => f.kind === f0.kind && f.range.start <= w.start && f.range.end >= w.end,
+		);
 		expect(f1).toBeTruthy();
 		expect(f1!.fingerprint).not.toBe(f0.fingerprint);
 		expect(a1.findings.map((f) => f.fingerprint)).not.toContain(f0.fingerprint);

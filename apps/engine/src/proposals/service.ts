@@ -11,8 +11,8 @@ import { randomBytes } from 'node:crypto';
 import type { ProposalChangedEvent, ProposalCountsJson, ProposalFeature } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
-	acceptAllItemIds,
 	type Author,
+	acceptAllItemIds,
 	agentProposalsAllowed,
 	anchorFingerprint,
 	CROCKFORD_ALPHABET,
@@ -446,7 +446,8 @@ export class ProposalService {
 			const origin: Origin = who.editor ? 'user' : { agent: who.agent, runId: proposalId };
 			// spec 17 SC-060 / SC-061: an agent's "all" takes the selected items, never those of the groups its feature
 			// keeps out of agent accepts (Maybe fixes); naming their ids is the only way for an agent to apply them
-			const itemIds = req.itemIds === 'all' && !who.editor ? acceptAllItemIds(p0, { agent: true }) : req.itemIds;
+			const itemIds =
+				req.itemIds === 'all' && !who.editor ? acceptAllItemIds(p0, { agent: true }) : req.itemIds;
 			const plan = planAccept(doc, p0, itemIds, origin, this.ctx(revision), {
 				partial: req.partial === true,
 				expectedRevision: req.expectedRevision ?? revision,

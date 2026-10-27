@@ -419,7 +419,12 @@ describe('per-item default selection (spec 17 SC-060 / SC-061)', { timeout: TIME
 		const named = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['m1'] }, AGENT_H);
 		expect(named.json().applied).toEqual(['m1']);
 		// the editor's "all" takes the selected ones (m2), not the unselected
-		const q = await create(app, projectId, { ...draft, items: draft.items.map((x) => ({ ...x, id: `q${x.id}` })) }, AGENT_H);
+		const q = await create(
+			app,
+			projectId,
+			{ ...draft, items: draft.items.map((x) => ({ ...x, id: `q${x.id}` })) },
+			AGENT_H,
+		);
 		const ed = await post(app, `${base(projectId)}/${q.id}/accept`, { itemIds: 'all' }, EDITOR_H);
 		expect(ed.statusCode, ed.body).toBe(200);
 		expect(ed.json().applied).toEqual(['qf1', 'qs1', 'qm2']);

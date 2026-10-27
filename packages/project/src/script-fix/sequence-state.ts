@@ -36,7 +36,9 @@ export const ScriptFixSettingsSchema = z.strictObject({
 	scope: z
 		.enum(SCRIPT_FIX_SCOPES)
 		.optional()
-		.describe('recordings (whole recordings, default) | used (what the sequence uses) | inOut (In–Out range)'),
+		.describe(
+			'recordings (whole recordings, default) | used (what the sequence uses) | inOut (In–Out range)',
+		),
 });
 export type ScriptFixSettings = z.infer<typeof ScriptFixSettingsSchema>;
 
@@ -86,11 +88,16 @@ export function repairSequenceScriptFix(value: unknown): SequenceScriptFix | nul
 	if (isObj(value.settings)) {
 		const s: ScriptFixSettings = {};
 		const shape = ScriptFixSettingsSchema.shape;
-		if (shape.strictness.safeParse(value.settings.strictness).success && value.settings.strictness !== undefined)
+		if (
+			shape.strictness.safeParse(value.settings.strictness).success &&
+			value.settings.strictness !== undefined
+		)
 			s.strictness = value.settings.strictness as ScriptFixStrictness;
 		if (Array.isArray(value.settings.sources)) {
 			const src = [
-				...new Set(value.settings.sources.filter((x): x is ScriptFixSource => SCRIPT_FIX_SOURCES.includes(x))),
+				...new Set(
+					value.settings.sources.filter((x): x is ScriptFixSource => SCRIPT_FIX_SOURCES.includes(x)),
+				),
 			];
 			if (src.length) s.sources = src;
 		}

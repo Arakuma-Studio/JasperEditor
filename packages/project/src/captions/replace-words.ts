@@ -15,9 +15,10 @@
 //   equal (the old word as the group's text transforms show it, or as it is);
 // - a clip whose words in that place no longer match (hand-edited), whose text no longer contains its words, or that
 //   carries hand-made Source Text keys holding a copy of its text is left unchanged and reported as skipped.
+
+import type { Keyframe } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Transcript, TranscriptWord } from '../schema/media.ts';
-import type { Keyframe } from '../schema/common.ts';
 import type { CaptionsClip, Clip, Sequence, TextContent } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { captionClipName } from './model.ts';
@@ -141,8 +142,20 @@ export type ReplaceWordsWork = {
 	/** Words after the edits whose break moved to them (a deleted first word of a line or segment). */
 	breaks: Array<{ index: number; breakBefore: WordBreak }>;
 	words: TranscriptWord[];
-	text: Array<{ sequenceId: string; clipId: string; content: TextContent; words: CaptionWord[]; name: string }>;
-	captions: Array<{ sequenceId: string; clipId: string; transcriptId: string; words: TranscriptWord[]; name: string }>;
+	text: Array<{
+		sequenceId: string;
+		clipId: string;
+		content: TextContent;
+		words: CaptionWord[];
+		name: string;
+	}>;
+	captions: Array<{
+		sequenceId: string;
+		clipId: string;
+		transcriptId: string;
+		words: TranscriptWord[];
+		name: string;
+	}>;
 };
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
@@ -158,9 +171,13 @@ function editsProblem(edits: readonly ReplaceWordsEdit[]): string | null {
 		if (!isInt(e.start) || !isInt(e.end) || e.start < 0 || e.end < e.start)
 			return `Edit ${i}: start and end are non-negative integer flicks with start ≤ end`;
 		if (!Array.isArray(e.expect) || !Array.isArray(e.words)) return `Edit ${i}: expect and words are lists`;
-		if ((e.expect as readonly unknown[]).some((x) => typeof x !== "string")) return `Edit ${i}: expect lists the old words' texts`;
+		if ((e.expect as readonly unknown[]).some((x) => typeof x !== 'string'))
+			return `Edit ${i}: expect lists the old words' texts`;
 		if (!e.expect.length && !e.words.length) return `Edit ${i} replaces nothing with nothing`;
-		if (e.expect.length > REPLACE_WORDS_LIMITS.maxWordsPerEdit || e.words.length > REPLACE_WORDS_LIMITS.maxWordsPerEdit)
+		if (
+			e.expect.length > REPLACE_WORDS_LIMITS.maxWordsPerEdit ||
+			e.words.length > REPLACE_WORDS_LIMITS.maxWordsPerEdit
+		)
 			return `Edit ${i}: at most ${REPLACE_WORDS_LIMITS.maxWordsPerEdit} old and new words`;
 		let prevEnd = e.start;
 		for (let k = 0; k < e.words.length; k++) {
@@ -174,7 +191,10 @@ function editsProblem(edits: readonly ReplaceWordsEdit[]): string | null {
 			if (w.start < e.start || w.end > e.end)
 				return `Edit ${i}, word ${k} lies outside the edit's span [${e.start}, ${e.end}]`;
 			if (w.start < prevEnd) return `Edit ${i}: the words are not sorted or overlap (word ${k})`;
-			if (w.confidence !== null && !(typeof w.confidence === 'number' && w.confidence >= 0 && w.confidence <= 1))
+			if (
+				w.confidence !== null &&
+				!(typeof w.confidence === 'number' && w.confidence >= 0 && w.confidence <= 1)
+			)
 				return `Edit ${i}, word ${k}: confidence is a number in 0…1 or null`;
 			prevEnd = w.end;
 		}
@@ -237,8 +257,16 @@ export function planReplaceWords(doc: ProjectDocument, input: ReplaceWordsInput)
 
 /** The plan and the data the command writes (`planReplaceWords` is its report). Never throws. */
 export function computeReplaceWords(doc: ProjectDocument, input: ReplaceWordsInput): ReplaceWordsWork {
-	const fail = (code: NonNullable<ReplaceWordsPlan['problem']>['code'], message: string, plan?: ReplaceWordsPlan) => ({
-		plan: { ...(plan ?? emptyPlan(String(input?.transcriptId ?? ''))), ok: false, problem: { code, message } },
+	const fail = (
+		code: NonNullable<ReplaceWordsPlan['problem']>['code'],
+		message: string,
+		plan?: ReplaceWordsPlan,
+	) => ({
+		plan: {
+			...(plan ?? emptyPlan(String(input?.transcriptId ?? ''))),
+			ok: false,
+			problem: { code, message },
+		},
 		splices: [],
 		breaks: [],
 		words: [],
@@ -296,7 +324,8 @@ export function computeReplaceWords(doc: ProjectDocument, input: ReplaceWordsInp
 			const m = e.words.length;
 			const speaker = old[0]?.speaker ?? words[from - 1]?.speaker ?? words[to]?.speaker ?? null;
 			// the first replaced word's break stays (or the break of a deleted word just before it)
-			const first: WordBreak = old[0] && old[0].breakBefore !== 'none' ? old[0].breakBefore : (carry ?? 'none');
+			const first: WordBreak =
+				old[0] && old[0].breakBefore !== 'none' ? old[0].breakBefore : (carry ?? 'none');
 			const fresh: TranscriptWord[] = e.words.map((w, k) => ({
 				text: w.text,
 				start: w.start,
@@ -336,7 +365,10 @@ export function computeReplaceWords(doc: ProjectDocument, input: ReplaceWordsInp
 			patchSequences(doc, t, next, input, ranges, newRanges, work);
 		return work;
 	} catch (e) {
-		return fail('E_INVALID_PARAM', `Cannot plan the replacement: ${e instanceof Error ? e.message : String(e)}`);
+		return fail(
+			'E_INVALID_PARAM',
+			`Cannot plan the replacement: ${e instanceof Error ? e.message : String(e)}`,
+		);
 	}
 }
 
@@ -432,7 +464,10 @@ function assign(
 	units: readonly Unit[],
 	occ: Occurrence,
 	prevOld: string | null,
-): { entries: Array<{ unit: Unit; entry: Entry }>; skip: Array<{ unit: Unit; reason: ReplaceWordsSkipReason }> } {
+): {
+	entries: Array<{ unit: Unit; entry: Entry }>;
+	skip: Array<{ unit: Unit; reason: ReplaceWordsSkipReason }>;
+} {
 	const entries: Array<{ unit: Unit; entry: Entry }> = [];
 	const skip: Array<{ unit: Unit; reason: ReplaceWordsSkipReason }> = [];
 	const { old, neu } = occ;
@@ -477,8 +512,7 @@ function assign(
 	}
 	if (!involved.length) return { entries, skip };
 	if (involved.some((x) => !x.ok)) {
-		for (const x of involved)
-			skip.push({ unit: x.unit, reason: x.ok ? 'split' : 'edited' });
+		for (const x of involved) skip.push({ unit: x.unit, reason: x.ok ? 'split' : 'edited' });
 		return { entries, skip };
 	}
 	const share: SeqWord[][] = involved.map(() => []);
@@ -502,12 +536,12 @@ function assign(
 		for (const x of involved) skip.push({ unit: x.unit, reason: 'split' });
 		return { entries, skip };
 	}
-	involved.forEach((x, i) =>
+	involved.forEach((x, i) => {
 		entries.push({
 			unit: x.unit,
 			entry: { edit: occ.edit, j0: x.hits[0]!, j1: x.hits[x.hits.length - 1]! + 1, neu: share[i]! },
-		}),
-	);
+		});
+	});
 	return { entries, skip };
 }
 
@@ -598,7 +632,10 @@ function patchSequences(
 				});
 			}
 		}
-		const perUnit = new Map<Unit, { entries: Entry[]; skip: ReplaceWordsSkipReason | null; edits: Set<number> }>();
+		const perUnit = new Map<
+			Unit,
+			{ entries: Entry[]; skip: ReplaceWordsSkipReason | null; edits: Set<number> }
+		>();
 		const note = (u: Unit) => {
 			let x = perUnit.get(u);
 			if (!x) {
@@ -686,13 +723,24 @@ function unitSkip(seq: Sequence, u: Unit, entries: readonly Entry[]): ReplaceWor
 		const cap = captionOf(c)!;
 		if (!locateWords(c.content.text, cap.words)) return 'edited';
 		const keys = (c as { sourceTextKeyframes?: Keyframe<TextContent>[] }).sourceTextKeyframes;
-		if (keys?.length && !isHighlightKeys(c) && keys.some((k) => !!locateWords(k.value?.text ?? '', cap.words)))
+		if (
+			keys?.length &&
+			!isHighlightKeys(c) &&
+			keys.some((k) => !!locateWords(k.value?.text ?? '', cap.words))
+		)
 			return 'source-text-keyframes';
 	}
 	return null;
 }
 
-type TextDone = { kind: 'text'; content: TextContent; words: CaptionWord[]; name: string; before: string; after: string };
+type TextDone = {
+	kind: 'text';
+	content: TextContent;
+	words: CaptionWord[];
+	name: string;
+	before: string;
+	after: string;
+};
 type CaptionDone = {
 	kind: 'caption';
 	transcriptId: string;
@@ -727,7 +775,8 @@ function patchSubtitle(
 			e.neu.map((w) => w.text),
 			prevNew(e.edit),
 		);
-		if (strip && shown.length && e.j1 === n) shown[shown.length - 1] = stripTrailing(shown[shown.length - 1]!);
+		if (strip && shown.length && e.j1 === n)
+			shown[shown.length - 1] = stripTrailing(shown[shown.length - 1]!);
 		// the new words in content time, with their display texts
 		const content = e.neu.map((w, k) => {
 			const a = contentOfSequenceTime(clip, w.start, rate);

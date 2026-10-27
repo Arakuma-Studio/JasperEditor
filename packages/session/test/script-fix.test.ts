@@ -57,7 +57,12 @@ function open() {
 	});
 	const seqId = Object.keys(doc.sequences)[0]!;
 	const ok = (commands: unknown[]) => {
-		const r = session.apply({ label: 'Setup', origin: 'user', sequenceId: seqId, commands: commands as never[] });
+		const r = session.apply({
+			label: 'Setup',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: commands as never[],
+		});
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		return r;
 	};
@@ -126,11 +131,15 @@ describe('script fixes in the session history', () => {
 			.join(' ');
 		expect(texts).toContain('Pixelforge');
 		expect(texts).not.toContain('forch');
-		step([{ type: 'scriptFix.configure', settings: { strictness: 'generous' }, reject: ['fp:1'] } as CommandInput]);
-		expect((Object.values(session.getCommitted().sequences)[0] as { scriptFix?: unknown }).scriptFix).toEqual({
-			settings: { strictness: 'generous' },
-			rejected: ['fp:1'],
-		});
+		step([
+			{ type: 'scriptFix.configure', settings: { strictness: 'generous' }, reject: ['fp:1'] } as CommandInput,
+		]);
+		expect((Object.values(session.getCommitted().sequences)[0] as { scriptFix?: unknown }).scriptFix).toEqual(
+			{
+				settings: { strictness: 'generous' },
+				rejected: ['fp:1'],
+			},
+		);
 	});
 });
 
@@ -183,7 +192,9 @@ describe('review items carry their default selection (SC-061)', () => {
 		const r = await c.apply({ trusted: true });
 		expect(r.ok, JSON.stringify(r)).toBe(true);
 		await setImmediate();
-		const words = (session.getCommitted() as ProjectDocument).transcripts[transcriptId]!.words.map((w) => w.text);
+		const words = (session.getCommitted() as ProjectDocument).transcripts[transcriptId]!.words.map(
+			(w) => w.text,
+		);
 		expect(words).toEqual(['Hoy', 'abrimos', 'Pixelforge', 'y', 'la', 'tienda.']);
 		c.dispose();
 	});

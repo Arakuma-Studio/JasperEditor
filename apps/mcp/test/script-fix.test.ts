@@ -114,7 +114,12 @@ describe('per-item default selection at MCP (SC-061)', () => {
 
 	it('accept_proposal "all" sends the selected non-maybe items and lists the rest as notSelected', async () => {
 		const t = await connect(
-			proposal([item('f1', 'fix'), item('s1', 'spelling'), item('m1', 'maybe', false), item('m2', 'maybe', true)]),
+			proposal([
+				item('f1', 'fix'),
+				item('s1', 'spelling'),
+				item('m1', 'maybe', false),
+				item('m2', 'maybe', true),
+			]),
 		);
 		const { r, json } = await t.call('accept_proposal', { projectId: P, proposalId: PRP, itemIds: 'all' });
 		expect(r.isError).toBeFalsy();
@@ -148,7 +153,9 @@ const AUDIO = {
 	probe: {
 		durationFlicks: 10 * FLICKS_PER_SECOND,
 		startTimecode: null,
-		streams: [{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48000, channels: 1, channelLayout: 'mono' }],
+		streams: [
+			{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: 48000, channels: 1, channelLayout: 'mono' },
+		],
 		rotationDegrees: 0,
 		hasAlpha: false,
 		variableFrameRate: false,

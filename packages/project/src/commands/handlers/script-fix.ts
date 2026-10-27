@@ -73,7 +73,8 @@ function configure(doc: DDoc, cmd: CommandOf<'scriptFix.configure'>, h: HandlerC
 	if (cmd.settings === null) delete next.settings;
 	else if (cmd.settings) {
 		const merged = { ...(next.settings ?? {}), ...clone(cmd.settings) };
-		for (const k of Object.keys(merged) as (keyof typeof merged)[]) if (merged[k] === undefined) delete merged[k];
+		for (const k of Object.keys(merged) as (keyof typeof merged)[])
+			if (merged[k] === undefined) delete merged[k];
 		if (Object.keys(merged).length) next.settings = merged;
 		else delete next.settings;
 	}
