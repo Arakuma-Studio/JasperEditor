@@ -178,6 +178,11 @@ function signed(n: number, rate: Rational, dropFrame: boolean): string {
 
 export class TimelineController {
 	private drag: Drag | null = null;
+	private snapTargetsCache: {
+		sequence: Sequence;
+		playhead: number | null;
+		targets: SnapTarget[];
+	} | null = null;
 
 	constructor(readonly env: ControllerEnv) {}
 
@@ -252,10 +257,19 @@ export class TimelineController {
 		if (!this.drag) this.env.ui.setState({ razor: null, cursor: 'default' });
 	}
 
+	/** Reuse sorted targets during pointer moves; immutable edits replace the sequence. */
+	private snapTargets(seq: Sequence, playhead: number | null): SnapTarget[] {
+		const cached = this.snapTargetsCache;
+		if (cached?.sequence === seq && cached.playhead === playhead) return cached.targets;
+		const targets = collectSnapTargets(seq, { playhead });
+		this.snapTargetsCache = { sequence: seq, playhead, targets };
+		return targets;
+	}
+
 	private razorFrame(seq: Sequence, v: Viewport, x: number): number {
 		const f = boundaryFrameAt(v, x);
 		const targets = this.snapping()
-			? collectSnapTargets(seq, { playhead: this.playhead() })
+			? this.snapTargets(seq, this.playhead())
 			: collectSnapTargets(seq, { playhead: this.playhead(), includeClips: false }).filter(
 					(t) => t.kind === 'playhead',
 				);
@@ -1255,7 +1269,7 @@ export class TimelineController {
 		const end = sequenceDuration(seq);
 		let f = seekFrameAt(v, x, end);
 		if (snap) {
-			const targets = collectSnapTargets(seq, { playhead: null });
+			const targets = this.snapTargets(seq, null);
 			const s = snapEdge(f, targets, v.pxPerFrame, true);
 			f = Math.max(0, Math.min(end, s.frame));
 			this.env.ui.setState({ snapFrame: s.snap ? s.frame : null });
