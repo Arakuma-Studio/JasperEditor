@@ -96,9 +96,13 @@ the accuracy harness (SC-105) re-measures them with the editor's own code.
   context words) used for rejections (SC-055) and staleness.
 
 ### 2.4 Audio verification
-- SC-030 Windows: the transcript is split at gaps ≥ 1 s; windows are packed to ≤ 28 s of audio and split at their
-  largest gap when longer; each candidate's window is padded 0.25 s before and 0.35 s after its words (≤ half the gap
-  to the neighbours). Only windows containing candidates are decoded; one encoder pass per window per job.
+- SC-030 Windows: the transcript is split at gaps ≥ 1 s and windows longer than 28 s are split at their largest gap;
+  each window is padded 0.25 s before and 0.35 s after its words (≤ half the gap to the neighbours). Windows are NOT
+  packed together by default: the SC-105 harness measured that packed windows let a reading use untranscribed speech
+  in the gaps (both real deviations, the hallucination-region fix and both corrupted-word fixes came from packing);
+  packing stays an option. Windows always fit the scoring request limits (split at 100 words, repeated over the same
+  audio above 63 candidates, short reading ids); candidates that cannot be scored are reported, never sent. Only
+  windows containing candidates are decoded; one encoder pass per window per job.
 - SC-031 Readings: reading 0 = the window's ASR words; reading k = the same words with candidate k replaced by its
   script words (script spelling; script casing only for `proper`; ASR punctuation: a region's leading ¿¡ and trailing
   .,?! are carried; first word capitalised when the ASR one was). Several candidates in one window are scored
