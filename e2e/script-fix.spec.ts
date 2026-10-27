@@ -8,7 +8,8 @@
 // kept), the patch report is shown; one undo restores both.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { type EngineJob, EngineJobSchema, type TranscriptionResult } from '@jasper/api';
+import { type EngineJob, EngineJobSchema } from '../packages/api/src/jobs.ts';
+import type { TranscriptionResult } from '../packages/api/src/speech.ts';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
