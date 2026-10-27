@@ -34,6 +34,7 @@ import {
 	register,
 	type TestApp,
 	tempAppdir,
+	until,
 } from './helpers.ts';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -670,14 +671,20 @@ describe('discarding a media removes its cache through the registry (wp-m3-inpoi
 		};
 		const del = (key: string) => app.inject({ method: 'DELETE', url: `/api/media/${key}`, headers: H });
 
-		// 1. A job reads the poster; it finishes after ~1 s: the discard waits for it, then everything goes.
+		// 1. Discard removes unpinned derivatives but waits for the poster while a reader holds it.
 		const a = await managed('discard-wait');
 		cache.pin('job:job_reader0000000001', a.poster);
-		setTimeout(() => cache.release('job:job_reader0000000001'), 1000);
-		const t0 = Date.now();
-		const r1 = await del(a.reg.mediaKey);
+		let completed = false;
+		const pending = del(a.reg.mediaKey).then((r) => {
+			completed = true;
+			return r;
+		});
+		await until(() => Promise.resolve(readdirSync(a.dir).length === 1));
+		expect(completed).toBe(false);
+		expect(existsSync(a.poster)).toBe(true);
+		cache.release('job:job_reader0000000001');
+		const r1 = await pending;
 		expect(r1.json()).toEqual({ deleted: true, reason: 'deleted' });
-		expect(Date.now() - t0).toBeGreaterThanOrEqual(900);
 		expect(existsSync(a.dir)).toBe(false);
 		expect(readdirSync(join(app.appdir, 'cache')).filter((n) => n.startsWith('.trash'))).toEqual([]);
 
@@ -685,7 +692,12 @@ describe('discarding a media removes its cache through the registry (wp-m3-inpoi
 		//    removed under the reader; once released, the next pass removes it (no project references it).
 		const b = await managed('discard-busy');
 		cache.pin('job:job_reader0000000002', b.poster);
-		const r2 = await del(b.reg.mediaKey);
+		vi.useFakeTimers({ toFake: ['Date'] });
+		const busy = del(b.reg.mediaKey);
+		await until(() => Promise.resolve(readdirSync(b.dir).length === 1));
+		// Advance the documented 10 s deadline after the first removal pass has retained the pinned poster.
+		vi.setSystemTime(Date.now() + 10_000);
+		const r2 = await busy;
 		expect(r2.json()).toEqual({ deleted: true, reason: 'deleted', cacheKept: 1 });
 		expect(existsSync(b.poster)).toBe(true);
 		expect(readdirSync(b.dir)).toEqual([basename(b.poster)]);

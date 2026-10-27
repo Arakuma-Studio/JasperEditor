@@ -371,7 +371,7 @@ const MIN_SEEK_LEAD_SEC = 0.25;
  * before the file's start. `seek` is the value written to `-ss` (whole microseconds, as `sec` prints it) and `lead`
  * = `startSec − seek`, the media time between the input's pts 0 and `startSec`.
  */
-export function seekWindow(startSec: number, mediaFps: number | null): { seek: number; lead: number } {
+function seekWindow(startSec: number, mediaFps: number | null): { seek: number; lead: number } {
 	const want = Math.max(MIN_SEEK_LEAD_SEC, mediaFps && mediaFps > 0 ? 2 / mediaFps : 0);
 	const seek = Number(sec(Math.max(0, startSec - want)));
 	return { seek, lead: Math.max(0, startSec - seek) };
@@ -387,12 +387,7 @@ export function seekWindow(startSec: number, mediaFps: number | null): { seek: n
  * slot) showed the nearest frame from the first frame after the seek point: one frame late after a seek, and the
  * nearest instead of the containing frame when the rates differ.
  */
-export function sourceTimingFilters(o: {
-	lead: number;
-	speed: number;
-	fps: Rational;
-	frames: number;
-}): string[] {
+function sourceTimingFilters(o: { lead: number; speed: number; fps: Rational; frames: number }): string[] {
 	const leadUs = Math.round(o.lead * 1e6);
 	const epsUs = Math.round(FRAME_TIME_EPS * 1e6);
 	return [

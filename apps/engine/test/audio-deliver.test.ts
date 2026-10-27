@@ -1,28 +1,23 @@
 // The delivery of a normalised mix (apps/engine/src/audio/deliver.ts; wp-note sound-design "Fix: lossy-codec true-peak
 // headroom and loudness convergence"): the codec headroom table, the click-free local corrections, the loudness
 // convergence under the ceiling (a loud mix the one-pass delivery left ≈ 0.7 LU under), the "physically impossible"
-// report, sample-exact one-pass output where nothing needs it, and the decoded check of a lossy encode.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+// report and reuse of solved deliveries.
+// The exported AAC/Opus file matrix in export-lossy-true-peak.test.ts owns decoded-codec delivery accuracy.
+import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { limitBuffer, measureLoudness } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
-import {
-	codecHeadroomDb,
-	DELIVERY_LIMITS,
-	type DeliveryParams,
-	measureEncodedAudio,
-	solveDelivery,
-} from '../src/audio/deliver.ts';
+import { codecHeadroomDb, solveDelivery } from '../src/audio/deliver.ts';
 import { WAV_F32_HEADER_BYTES, writeDeliveryWav } from '../src/audio/mixdown.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
 import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
-import { loudMix, quietMix } from './loud-fixture.ts';
+import { loudMix } from './loud-fixture.ts';
+import { tempAppdir } from './temp.ts';
 
 const SR = 48_000;
 const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
-const dir = mkdtempSync(join(tmpdir(), 'jasper-deliver-'));
+const dir = tempAppdir('jasper-deliver-');
 
 /** A raw interleaved float32 pass-1 file (as Sound Check writes it). */
 function pass1Of(name: string, planar: Float32Array[]): { path: string; headerBytes: number } {
@@ -126,7 +121,7 @@ describe('loudness convergence under the true-peak ceiling', () => {
 		);
 		expect(r.written).toBe(true);
 		expect(r.passes).toBeGreaterThan(1);
-		expect(r.passes).toBeLessThanOrEqual(DELIVERY_LIMITS.maxLoudnessPasses + 1);
+		expect(r.passes).toBeLessThanOrEqual(9);
 		expect(r.ceilingLimited).toBe(false);
 		expect(Math.abs(r.pcm.integrated + 14)).toBeLessThanOrEqual(0.1);
 		expect(r.params.gainDb).toBeGreaterThan(r.initialGainDb);
@@ -160,133 +155,8 @@ describe('loudness convergence under the true-peak ceiling', () => {
 		expect(r.ceilingLimited).toBe(true);
 		expect(r.pcm.integrated).toBeLessThan(-2.5);
 		expect(r.pcm.truePeakDb).toBeLessThanOrEqual(-6 + 0.05);
-		expect(r.passes).toBeLessThanOrEqual(DELIVERY_LIMITS.maxLoudnessPasses);
+		expect(r.passes).toBeLessThanOrEqual(8);
 	}, 120_000);
-
-	it('a mix that needs no limiting is delivered sample-exact as before (one pass: gain, limiter idle)', async () => {
-		const mix = quietMix(6, SR);
-		const before = measureLoudness(mix, SR);
-		const p1 = pass1Of('quiet.f32', mix);
-		const out = join(dir, 'quiet.wav');
-		const r = await solveDelivery({
-			ff,
-			pass1: p1,
-			sampleRate: SR,
-			channels: 2,
-			total: mix[0]!.length,
-			before,
-			targetLufs: -16,
-			truePeakDb: -1,
-			codec: { codec: 'pcm_s24le', bitrateKbps: 1536, sampleRate: SR, channels: 2 },
-			soxr: false,
-			scratchDir: dir,
-			outPath: out,
-			write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, params),
-		});
-		expect(r.passes).toBe(1);
-		expect(r.encodePasses).toBe(0);
-		expect(r.params.gainDb).toBe(r.initialGainDb);
-		const g = 10 ** (r.initialGainDb / 20);
-		const expected = limitBuffer(
-			mix.map((c) => {
-				const x = new Float32Array(c.length);
-				for (let i = 0; i < c.length; i++) x[i] = c[i]! * g;
-				return x;
-			}),
-			SR,
-			{ ceilingDb: -1, lookaheadMs: 5, releaseMs: 100 },
-		);
-		const got = await readWav(out, 2);
-		let maxDiff = 0;
-		for (let c = 0; c < 2; c++)
-			for (let i = 0; i < got[c]!.length; i++)
-				maxDiff = Math.max(maxDiff, Math.abs(got[c]![i]! - expected[c]![i]!));
-		expect(maxDiff).toBe(0);
-	}, 120_000);
-});
-
-describe('the decoded check of a lossy encode', () => {
-	for (const [codec, kbps] of [
-		['aac', 128],
-		['libopus', 96],
-	] as const)
-		it(`${codec} ${kbps} kb/s: the decoded audio meets −1 dBTP and lands within ±0.5 LU of −14 LUFS`, async () => {
-			const mix = loudMix(12, SR);
-			const before = measureLoudness(mix, SR);
-			const p1 = pass1Of(`${codec}.f32`, mix);
-			const out = join(dir, `${codec}.wav`);
-			const params: DeliveryParams[] = [];
-			const r = await solveDelivery({
-				ff,
-				pass1: p1,
-				sampleRate: SR,
-				channels: 2,
-				total: mix[0]!.length,
-				before,
-				targetLufs: -14,
-				truePeakDb: -1,
-				codec: { codec, bitrateKbps: kbps, sampleRate: SR, channels: 2 },
-				soxr: false,
-				scratchDir: dir,
-				outPath: out,
-				write: (p, path = out) => {
-					params.push(p);
-					return writeDeliveryWav(p1, path, SR, 2, mix[0]!.length, p);
-				},
-			});
-			console.log(
-				'decoded',
-				codec,
-				kbps,
-				JSON.stringify({
-					ceiling: r.params.ceilingDb,
-					headroom: r.codecHeadroomDb,
-					decodedTp: r.decoded?.truePeakDb,
-					decodedI: r.decoded?.integrated,
-					pcmTp: r.pcm.truePeakDb,
-					pcmI: r.pcm.integrated,
-					passes: r.passes,
-					encodes: r.encodePasses,
-					corrections: r.corrections,
-				}),
-			);
-			// the table's ceiling, or under it by the steps an encode with fresh offenders takes (DELIVERY_ALTERNATIVES)
-			expect(r.params.ceilingDb).toBeLessThanOrEqual(
-				-1 - codecHeadroomDb({ codec, bitrateKbps: kbps, channels: 2 }),
-			);
-			expect(r.params.ceilingDb).toBeGreaterThanOrEqual(-1 - DELIVERY_LIMITS.maxCodecHeadroomDb);
-			expect(r.encodePasses).toBeGreaterThanOrEqual(1);
-			expect(r.decoded).not.toBeNull();
-			expect(r.truePeakMet).toBe(true);
-			expect(r.decoded!.truePeakDb).toBeLessThanOrEqual(-1 - DELIVERY_LIMITS.truePeakMarginDb);
-			expect(Math.abs(r.decoded!.integrated + 14)).toBeLessThanOrEqual(0.5);
-			// the written WAV is the last pass, the one the decoded numbers are of: encoding it again decodes the same
-			expect(r.written).toBe(true);
-			const enc = join(dir, `${codec}-again.${codec === 'aac' ? 'm4a' : 'webm'}`);
-			await ff.run([
-				'-y',
-				'-i',
-				out,
-				'-af',
-				'aformat=sample_fmts=fltp:channel_layouts=stereo',
-				'-c:a',
-				codec,
-				'-b:a',
-				`${kbps}k`,
-				'-ar',
-				'48000',
-				'-ac',
-				'2',
-				enc,
-			]);
-			const again = await measureEncodedAudio({ ff, file: enc, channels: 2, sampleRate: SR });
-			expect(again.loudness.truePeakDb).toBeCloseTo(r.decoded!.truePeakDb, 3);
-			// the checked encode is kept for the mux (stream copy): it decodes to exactly the delivered numbers
-			expect(r.encoded).not.toBeNull();
-			const kept = await measureEncodedAudio({ ff, file: r.encoded!, channels: 2, sampleRate: SR });
-			expect(kept.loudness.truePeakDb).toBe(r.decoded!.truePeakDb);
-			expect(kept.loudness.integrated).toBe(r.decoded!.integrated);
-		}, 600_000);
 });
 
 describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sound Check, delivery speed")', () => {

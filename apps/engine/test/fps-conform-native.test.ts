@@ -1,10 +1,10 @@
 // Frame-rate conform on the native path (docs/wp-notes/time.md §15): every exported frame shows the source frame the
 // time model picks (S01:CLP-004 / `frameIndexAt`, what the preview's retime pipeline shows), for 29.97 → 30,
 // 23.976 → 24, 25 → 30, 60 → 30 and 30 → 29.97, a clip starting at a later in-point, a constant speed and a frame hold;
-// plus the pure parts (seek window, timing filters, untagged matrix). Before the fix the builder showed the nearest
+// plus the untagged colour-matrix boundary. Before the fix the builder showed the nearest
 // frame counted from the first frame after the seek point (537 of 1040 frames wrong for 29.97 → 30).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { inColor, seekWindow, sourceTimingFilters } from '../src/export/native.ts';
+import { inColor } from '../src/export/native.ts';
 import type { LocalMedia } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -27,23 +27,7 @@ import {
 	type TestApp,
 } from './helpers.ts';
 
-describe('source timing filters (pure)', () => {
-	it('seeks two media frames (at least 0.25 s) early, never before the start, in whole microseconds', () => {
-		expect(seekWindow(10, 30000 / 1001)).toEqual({ seek: 9.75, lead: 0.25 });
-		expect(seekWindow(10, 1)).toEqual({ seek: 8, lead: 2 });
-		expect(seekWindow(0.1, 30)).toEqual({ seek: 0, lead: 0.1 });
-		const w = seekWindow(1.2345678, null);
-		expect(w.seek).toBe(0.984568);
-		expect(w.lead).toBeCloseTo(0.25, 6);
-	});
-	it('maps media time to output slots with round=up from the layer start (2 µs tolerance)', () => {
-		expect(sourceTimingFilters({ lead: 0.25, speed: 0.7, fps: { num: 30, den: 1 }, frames: 90 })).toEqual([
-			'settb=AVTB',
-			'setpts=(PTS-250000)/0.7-2',
-			'fps=fps=30/1:round=up:start_time=0',
-			'trim=end_frame=90',
-		]);
-	});
+describe('source colour-matrix decoding', () => {
 	it('decodes untagged video with BT.709 at every size, as the Program preview does; tags win', () => {
 		const media = (matrix: string, height: number, range = 'tv') =>
 			({

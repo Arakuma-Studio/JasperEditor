@@ -221,7 +221,9 @@ describe('editing automation overlay passes (real engine)', { timeout: 600_000 }
 		process.env.JASPER_SOUND_STARTER_DIR = kit;
 		process.env.JASPER_SOUND_SYNTH_VARIANTS = '1';
 		process.env.JASPER_SOUND_AUTO_INDEX = '0';
-		app = await makeApp({ dev: false, token: TOKEN, editorKey: KEY });
+		// These cases plan hybrid effects; dev mode allows the installed renderer without an optional LGPL bundle.
+		// Explicit token/editor-key authentication still applies; strict binary refusal is owned by lgpl-binaries.
+		app = await makeApp({ dev: true, token: TOKEN, editorKey: KEY });
 		const r = await post('/api/sounds/index', {}, EDITOR_H);
 		expect(r.statusCode, r.body).toBe(202);
 		const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);

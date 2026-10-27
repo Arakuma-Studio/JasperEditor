@@ -25,7 +25,7 @@ describe('mg-bundle zip reader', () => {
 		await expect(extractZip(f, join(dir, 'out2'))).rejects.toThrow(ZipError);
 	});
 
-	it('corrupt deflate data and NUL bytes in names are ZipErrors', async () => {
+	it('NUL bytes in ZIP entry names are ZipErrors', async () => {
 		const zip = writeStoredZip([{ name: 'bun.js', data: Buffer.from('x') }]);
 		const nul = Buffer.from(zip);
 		const at = nul.lastIndexOf(Buffer.from('bun.js'));

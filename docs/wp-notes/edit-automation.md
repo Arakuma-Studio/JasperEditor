@@ -299,7 +299,7 @@ the whole export goes through the Remotion renderer (tested in `apps/engine/test
 
 ### Export cost of 100 kits (EA-033, measured)
 
-`KITS_BENCH=1 pnpm exec vitest run apps/engine/test/automation-kits-bench.test.ts` (results in
+`pnpm exec tsx apps/engine/bench/automation-kits.ts` (results in
 `apps/engine/bench/automation-kits.results.json`): a 1080p 30 fps edit of 101 flat pictures of 2 s with a small square
 over them (100 cuts, 6 060 frames = 202 s), H.264 CRF 20 "fast", exported as it is and with 100 kits from Decorate
 Cuts (seed 1, no sounds), same settings, wall time of the export job. Build VM: AMD EPYC-Rome, 16 vCPU, 31 GB, software
