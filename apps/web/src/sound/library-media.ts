@@ -161,8 +161,3 @@ export function soundMediaCommands(
 	}
 	return { commands, media };
 }
-
-/** The media id a placed `ref` became after the transaction (refs map to created ids). */
-export function resolvedMediaId(ref: string, refs: Readonly<Record<string, string>>): string {
-	return ref.startsWith('$') ? (refs[ref] ?? ref) : ref;
-}

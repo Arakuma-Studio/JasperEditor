@@ -22,11 +22,10 @@ import {
 import { createPortal } from 'react-dom';
 import { t } from '../i18n/runtime.ts';
 import type { TrackAreaLayout } from '../panels/timeline/model/layout.ts';
-import { frameToX, type Viewport } from '../panels/timeline/model/viewport.ts';
+import type { Viewport } from '../panels/timeline/model/viewport.ts';
 import { applyReview, playWithHear } from './actions.ts';
 import {
 	GHOST_STATE_LABELS,
-	type GhostItem,
 	type GhostModel,
 	type GhostRow,
 	ghostAriaLabel,
@@ -77,16 +76,6 @@ export type GhostLayerProps = {
 	/** Opens an item's card from outside (a ghost cue on the Cue Seam): set by the layer. */
 	cardRef?: { current: ((itemId: string, x: number, y: number) => void) | null };
 };
-
-/** Plays an item in context: "Hear proposal" on for the window (pre-roll before it, 1 s after it), then as it was. */
-export function playItem(
-	session: EditorSession,
-	controller: ProposalsController,
-	seq: Sequence,
-	item: Pick<GhostItem, 'start' | 'end' | 'label'>,
-): void {
-	playWithHear(session, controller, seq, item);
-}
 
 export function ProposalGhostLayer(p: GhostLayerProps) {
 	const { session, model, layout, viewport: v, seq } = p;
@@ -701,7 +690,7 @@ function GhostCard(props: {
 				<Button
 					variant="secondary"
 					disabled={!gi}
-					onClick={() => gi && playItem(props.session, controller, seq, gi)}
+					onClick={() => gi && playWithHear(props.session, controller, seq, gi)}
 					data-ghost-action="play"
 				>
 					▶ {t('Play')}
@@ -767,12 +756,6 @@ function GhostCard(props: {
 		</div>
 	);
 	return typeof document !== 'undefined' ? createPortal(body, document.body) : body;
-}
-
-/** Where the ghost of an item starts (x in track-area px), for cards opened from elsewhere. */
-export function ghostItemX(model: GhostModel, itemId: string, v: Viewport): number | null {
-	const it = model.byItem[itemId];
-	return it ? frameToX(v, it.start) : null;
 }
 
 export type { ReviewItem };

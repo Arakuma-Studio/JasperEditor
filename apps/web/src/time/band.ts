@@ -119,21 +119,6 @@ export function bandKeys(clip: TimedClip, rate: Rational, pxPerFrame: number): B
 	});
 }
 
-/** The keyframe within `tol` px of x (halves count), or null. */
-export function keyAt(keys: readonly BandKey[], x: number, tol = 5): BandKey | null {
-	let best: BandKey | null = null;
-	let d = tol;
-	for (const k of keys)
-		for (const kx of [k.x, k.xIn, k.xOut]) {
-			const dd = Math.abs(kx - x);
-			if (dd <= d) {
-				d = dd;
-				best = k;
-			}
-		}
-	return best;
-}
-
 /** Display text of a speed (Premiere's tooltip): "50.00%", "-100.00%", "0.00%". */
 export function speedLabel(speed: number): string {
 	return `${(Math.round(speed * 10000) / 100).toFixed(2)}%`;

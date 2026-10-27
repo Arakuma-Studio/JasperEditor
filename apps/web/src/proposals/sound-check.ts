@@ -132,20 +132,6 @@ export function proposalCheckStore(session: EditorSession): StoreApi<ProposalChe
 	return s;
 }
 
-/** The check to show for a proposal: the newer of the one kept on it and the last one run here. */
-export function shownProposalCheck(
-	session: EditorSession,
-	proposal: Pick<Proposal, 'id' | 'report'> | null,
-): SoundCheckProposalSummary | null {
-	if (!proposal) return null;
-	const kept = storedProposalCheck(proposal);
-	const last = proposalCheckStore(session).getState().last;
-	const here = last && last.proposalId === proposal.id ? last : null;
-	if (!kept) return here;
-	if (!here) return kept;
-	return here.at > kept.at ? here : kept;
-}
-
 /**
  * Runs the Sound Check of the proposal's preview (the engine's job; nothing applied). A check already running in this
  * window is cancelled first. Resolves the summary, or null (cancelled or failed: the store says why). Never rejects.

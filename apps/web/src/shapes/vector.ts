@@ -11,7 +11,6 @@ import {
 	layerMatrix,
 	type Sequence,
 	type ShapeClip,
-	type ShapeItem,
 	type ShapeItemInput,
 	type VectorShapeData,
 } from '@jasper/project';
@@ -163,6 +162,3 @@ export function drawnGroup(
 	if (opts.fill !== false) contents.push({ type: 'fill', color: [1, 1, 1, 1] });
 	return { type: 'group', name, contents };
 }
-
-/** Items of a vector clip (draft-safe read). */
-export const contentsOf = (c: ShapeClip & { shape: VectorShapeData }): ShapeItem[] => c.shape.contents;

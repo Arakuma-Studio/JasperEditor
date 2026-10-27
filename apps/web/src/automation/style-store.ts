@@ -8,7 +8,6 @@ import type { AutomationPassId, StyleRecipeEntry } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	BUILTIN_STYLE_RECIPES,
-	builtinStyleRecipe,
 	type ProjectDocument,
 	projectStyleRecipes,
 	type StyleRecipe,
@@ -184,8 +183,6 @@ export function defaultRecipeId(doc: ProjectDocument | null, vertical: boolean):
 	if (active) return active;
 	return vertical ? 'builtin:fast-shorts' : 'builtin:fast-long-form';
 }
-
-export const isBuiltin = (id: string) => builtinStyleRecipe(id) !== null;
 
 // ---------------------------------------------------------------------------------------------------------------
 // The pass dialogs' last parameters (per project, this window)

@@ -27,7 +27,8 @@ let listening = false;
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-function listen(): void {
+/** Starts noting real (trusted) user input early, so `userGestureActive` can answer for the first gesture. */
+export function trackUserInput(): void {
 	if (listening || typeof window === 'undefined') return;
 	listening = true;
 	const mark = (e: Event) => {
@@ -39,7 +40,7 @@ function listen(): void {
 
 /** Runs one live-UI input action as agent input. */
 export async function runAgentInput<T>(fn: () => Promise<T>): Promise<T> {
-	listen();
+	trackUserInput();
 	depth++;
 	lastAgentInputAt = now();
 	try {
@@ -59,18 +60,13 @@ export function agentInputActive(at = now()): boolean {
 /** How recent a real key press or click must be for a command it ran to count as the user's own gesture. */
 export const USER_GESTURE_MS = 1500;
 
-/** Starts noting real (trusted) user input early, so `userGestureActive` can answer for the first gesture. */
-export function trackUserInput(): void {
-	listen();
-}
-
 /**
  * Whether the command running now was started by the user's own key press or click (a keyboard shortcut, a menu, the
  * palette): a trusted input within `USER_GESTURE_MS` and no agent live-UI input in flight. Used where only a trusted
  * user gesture may act (Apply of a proposal, spec 12 §2.5): an agent's `ui_key` / `ui_command` never counts.
  */
 export function userGestureActive(at = now()): boolean {
-	listen();
+	trackUserInput();
 	if (agentInputActive(at)) return false;
 	return at - lastUserInputAt < USER_GESTURE_MS;
 }

@@ -8,13 +8,11 @@ import {
 	type Clip,
 	type ClipSfx,
 	clipPitchOf,
-	FLICKS_PER_SECOND,
 	formatTimecode,
 	isSoundTypeId,
 	type LibraryProvenance,
 	type LicenseClass,
 	licenseClass,
-	type MediaAsset,
 	type ProjectDocument,
 	type Rational,
 	readClipSfx,
@@ -343,21 +341,6 @@ export function familyRequest(types: readonly string[], limit = 12): SoundSearch
 export function licenceWarns(license: string | null | undefined): boolean {
 	const cls: LicenseClass = licenseClass(license ?? '');
 	return cls === 'nc' || cls === 'nd' || cls === 'unknown' || cls === 'user-provided';
-}
-
-/** The media ids whose library licence needs attention (badge dot). */
-export function warnMediaIds(media: Readonly<Record<string, MediaAsset>>): Set<string> {
-	const out = new Set<string>();
-	for (const [id, m] of Object.entries(media)) {
-		const lib = readLibraryProvenance((m as { library?: unknown }).library);
-		if (lib && licenceWarns(lib.license)) out.add(id);
-	}
-	return out;
-}
-
-/** Peak (seconds into the media) as text. */
-export function peakSecondsText(flicks: number): string {
-	return `${(flicks / FLICKS_PER_SECOND).toFixed(3)} s`;
 }
 
 /** The sequence's palette (preferred library sounds). */

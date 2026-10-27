@@ -1,13 +1,12 @@
 // Session reads shared by the social-comment controls: the static params of every selected clip (sibling values such
-// as `timeUnit` can differ between clips even when the row's own value does not) and the project's media.
-import type { MediaAsset, ProjectDocument } from '@jasper/project';
+// as `timeUnit` can differ between clips even when the row's own value does not) and the project document.
+import type { ProjectDocument } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import type { Params } from './params.ts';
 
 const NO_SESSION_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 const EMPTY: readonly Params[] = [];
-const NO_MEDIA: Readonly<Record<string, MediaAsset>> = {};
 
 const sameList = (a: readonly Params[], b: readonly Params[]) =>
 	a === b || (a.length === b.length && a.every((x, i) => x === b[i]));
@@ -55,14 +54,6 @@ export function shared(list: readonly Params[], name: string): { mixed: boolean;
 	};
 	const mixed = list.some((p) => !same(p[name], first));
 	return { mixed, value: mixed ? null : first };
-}
-
-/** The project's media assets (empty without a session). */
-export function useProjectMedia(): Readonly<Record<string, MediaAsset>> {
-	const session = useSessionOrNull();
-	return useStoreSelector(session?.store ?? NO_SESSION_STORE, (st: SessionState | null) =>
-		st ? st.document.media : NO_MEDIA,
-	);
 }
 
 /** The project document (null without a session). */

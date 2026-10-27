@@ -79,11 +79,6 @@ export async function saveToLibrary(t: SubtitleTemplate): Promise<SubtitleTempla
 	return saved as unknown as SubtitleTemplate;
 }
 
-export async function deleteFromLibrary(id: string): Promise<void> {
-	await engine().call('subtitleTemplateDelete', { params: { templateId: id } });
-	await refreshSubtitleLibrary();
-}
-
 /** Keeps the library connected to this window's engine and current with `subtitleTemplates.changed`. */
 export function useSubtitleLibrary(): SubtitleLibraryState {
 	const e = useEngineOrNull();

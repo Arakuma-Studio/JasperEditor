@@ -3,7 +3,6 @@ import { useSyncExternalStore } from 'react';
 import { createStore } from 'zustand/vanilla';
 
 export type RotoView = 'overlay' | 'boundary' | 'alpha' | 'off';
-export type RotoBrushKind = 'fg' | 'bg' | 'refine' | 'refineErase';
 
 export type RunningRoto = {
 	jobId: string | null;

@@ -15,7 +15,7 @@ import { type AudioClip, type Clip, essentialAutoTag, isShareAlike, type Sequenc
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Link2, Mic, Music, Wind, Zap } from 'lucide-react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { getCommand, isCommandEnabled, runCommand } from '../commands/registry.ts';
+import { runCommand } from '../commands/registry.ts';
 import {
 	type ClipDecorationProps,
 	clipDecorations,
@@ -439,15 +439,6 @@ export function registerSoundDesignUi(): void {
 			];
 		},
 	});
-}
-
-/** Whether a UI command is enabled for the shell's context (badges and sections use it for buttons). */
-export function commandEnabled(
-	id: string,
-	ctx: Parameters<typeof isCommandEnabled>[1] | null | undefined,
-): boolean {
-	const cmd = getCommand(id);
-	return !!cmd && !!ctx && isCommandEnabled(cmd, ctx);
 }
 
 export type { AudioClip };
