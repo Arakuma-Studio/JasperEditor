@@ -106,6 +106,16 @@ describe('script parsing (SC-002)', () => {
 		);
 		expect(s.properNorms).toEqual(['glimmerbox', 'ios']);
 	});
+
+	it('a name the script writes both ways is proper when capitalised mid-sentence in a third of its uses', () => {
+		const s = parseScript(
+			'Hoy llega Nova al juego. Con nova todo cambia. Ya ves, nova gana. Y luego Nova pierde. ' +
+				'El mapa es enorme. Un mapa nuevo, otro mapa y el Mapa final. Miramos el mapa otra vez.',
+			{ language: 'es' },
+		);
+		// nova: 2 capitalised mid-sentence, 2 lower case → proper; mapa: 1 capitalised, 4 lower case → not
+		expect(s.properNorms).toEqual(['nova']);
+	});
 });
 
 describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
@@ -469,9 +479,16 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 			'hoy probamos el motor de pixelforch con un nivel nuevo | ahora vamos guardar el proyecto en la carpeta',
 		);
 		expect(r.candidates.map((c) => c.kind)).toEqual(['sub', 'del']);
-		const { windows, unplaced } = buildScoreWindows(r.words, r.candidates);
+		// the 1.5 s pause splits the stretches: one window each by default (no packing)
+		const unpacked = buildScoreWindows(r.words, r.candidates);
+		expect(unpacked.unplaced).toEqual([]);
+		expect(unpacked.windows.map((w) => [w.fromWord, w.toWord])).toEqual([
+			[0, 10],
+			[10, 18],
+		]);
+		// with packing on, both fit one window of ≤ 28 s
+		const { windows, unplaced } = buildScoreWindows(r.words, r.candidates, { pack: true });
 		expect(unplaced).toEqual([]);
-		// the 1.5 s pause splits the stretches; both fit one packed window of ≤ 28 s
 		expect(windows).toHaveLength(1);
 		const w = windows[0]!;
 		expect(w.readings.map((x) => x.words.join(' '))).toEqual([
@@ -550,14 +567,15 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 		expect(del.bounds).toEqual({ start: r.words[1]!.end, end: r.words[2]!.start });
 		const { windows } = buildScoreWindows(r.words, [del]);
 		const w = windows[0]!;
-		const reading = w.readings.find((x) => x.id === del.id)!;
+		const readingId = w.regions.find((g) => g.candidateId === del.id)!.readingId;
+		const reading = w.readings.find((x) => x.id === readingId)!;
 		// forced times that spill over both neighbours: clamped into the gap
 		const results: ScoreWindowResult[] = [
 			{
 				id: w.id,
 				readings: w.readings.map((rd) => ({
 					id: rd.id,
-					logprob: rd.id === del.id ? -10 : -11,
+					logprob: rd.id === readingId ? -10 : -11,
 					tokens: rd.words.length,
 					words: rd.words.map((text, i) => ({
 						text,
@@ -609,7 +627,7 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 				id: windows[0]!.id,
 				readings: windows[0]!.readings.map((rd) => ({
 					id: rd.id,
-					logprob: rd.id === del.id ? -5 : -6,
+					logprob: rd.id === windows[0]!.regions[0]!.readingId ? -5 : -6,
 					tokens: rd.words.length,
 					words: rd.words.map((text, i) => ({
 						text,

@@ -31,7 +31,9 @@ difference is listed below.
 - `summary` gives the counts the drawer shows: sections, direction groups and tokens, heading lines and tokens.
 - Proper-noun evidence for SC-023 is collected per normalised word:
   - brand-like spelling, i.e. mixed case such as `iOS` or digits between letters;
-  - or capitalised in more mid-sentence occurrences than it is written in lower case.
+  - or capitalised in more mid-sentence occurrences than it is written in lower case;
+  - or capitalised mid-sentence in at least a third of its occurrences (names the script writes both ways, such as
+    "Nova" twice and "nova" four times; added after the SC-105 harness, see "Accuracy on real recordings").
   - Sentence starts and all-caps words (scripts contain random capitals, F§2.7) don't count.
 - Deliberate differences from `script_tokens`:
   - **Lines ending in `:`.** The spike only accepted such lines when they had no letters; the spec accepts any line
@@ -123,7 +125,13 @@ difference is listed below.
 ### Windows, scores, decisions, edits (SC-030 … SC-034, SC-040 … SC-042; F§2.5–2.6)
 - **Windows.**
   - Split at gaps ≥ 1 s. Stretches longer than 28 s split at their largest gap; ties go to the middle (`sfjobs.windows`).
-  - Consecutive stretches are packed into windows of ≤ 28 s (spec addition).
+  - Packing consecutive stretches into windows of ≤ 28 s (spec addition) is an option, off by default since the
+    SC-105 harness (see "Accuracy on real recordings").
+  - A stretch with more than 100 words is split at its largest gap too (`maxWords`; only loops reach it).
+  - Every window satisfies the SC-092 request limits (`SCORE_REQUEST_LIMITS`): reading ids are `r1`, `r2`… (regions
+    map them to candidates), a window with more than 63 candidates is repeated over the same audio, words the scorer
+    cannot read (empty or over 128 characters) are in no window, and a window over 30 s is never built. Candidates that
+    lose their window this way are `unplaced` (`unreadable`, `tooLong`).
   - Padding is 0.25 s before and 0.35 s after, at most half the gap and 20 ms clear of the neighbouring words
     (`sfjobs.bounds`, clamped so a window never starts after its first word).
   - Only windows with candidates are returned. A candidate spanning two windows, or an insertion at a window edge,
@@ -179,7 +187,7 @@ difference is listed below.
 | | live cells per token | 1,024 (≤ 30,000,000 stored) |
 | | merge cells per token | 512 |
 | Windows (`SCORE_WINDOW_DEFAULTS`) | split | gaps ≥ 1 s |
-| | length | ≤ 28 s, packed |
+| | length | ≤ 28 s and ≤ 100 words, not packed |
 | | pads | 0.25 s / 0.35 s, ≤ ½ gap, 20 ms clear |
 | Decisions (`DECISION_PRESETS`) | careful | audio −1.0, spelling −4 (psim ≥ 0.8), del 0, Maybe −3 |
 | | standard | audio −1.5, spelling −5, del 0, Maybe −4 |
@@ -222,7 +230,8 @@ difference is listed below.
   - Load average was 7.5–7.7 from other agents' work: the VM was shared, not quiet.
   - Synthetic input (`test/script-fix-synth.ts`): 20,000 transcript words (133 min) against 6,004 script tokens.
     Retakes, chatter, misrecognitions, drops and insertions; the script is read about 3 times.
-- Result: aligned 85.6 %, off-script 9.1 %, 214 retake jumps, 740,887 merge cells, 791 candidates, 307 windows.
+- Result: aligned 85.6 %, off-script 9.1 %, 214 retake jumps, 740,887 merge cells, 791 candidates, 307 windows
+  (measured with window packing, the default then; windows are unpacked by default since the SC-105 harness).
 - Time (median of 5 runs):
 
   | Step | Median |
@@ -242,14 +251,15 @@ difference is listed below.
 ### Limitations and assumptions
 - **Thresholds and margins.**
   - They are the spike's, tuned on 16 of the user's items with mlx fp16 (F§1, §10).
-  - They have not been re-measured with the editor's ONNX fp32 scorer; that is the SC-103 / SC-105 harnesses.
+  - Re-measured with the editor's ONNX fp32 scorer on the same items by the SC-105 harness ("Accuracy on real
+    recordings"): the margins stay; still in-sample.
 - **Score result times.** The SC-092 result word times are assumed to be absolute media flicks, like the request
   windows. If the scorer returns window-relative times, the engine must add the window start before calling
   `decideFix`.
 - **Assumptions (not measured):**
   - the English loanword list and spelling hints;
-  - proper-noun detection, i.e. mid-sentence capitals and brand-like spellings. The spike used a hand-pruned list of
-    the user's own names, which can't ship.
+  - proper-noun detection, i.e. mid-sentence capitals and brand-like spellings, beyond the 16 harness items. The
+    spike used a hand-pruned list of the user's own names, which can't ship.
 - **Numbers.** Number words without digits ("dos" vs "tos") are not treated as numbers. That rule is the spike's
   digit test.
 - **Glossary and the number rule.** The number rule also applies to glossary entries: an entry with digits is never
@@ -976,3 +986,116 @@ tokens only (`check-tokens` ok).
 - Right after Apply the rows show "Stale" for about a second until the engine's applied state arrives (the generic
   proposals preview revalidates against the new document first; not specific to this feature).
 - The Apply toast shows its first two actions; "Show skipped subtitles" stays in the Review bar.
+## Accuracy on real recordings (SC-105)
+
+Work package `sccalib`: the scriptfix spike's measurements repeated with the editor's own code — the TS model
+(`parseScript` → `alignTranscript` → `findFixCandidates` → `buildScoreWindows` / `scoreRequestWindows` →
+`candidateScores` → `decideFix`) and the `jasper-speech score` worker with ONNX fp32 turbo — on the spike's 16 raw
+recordings of the user (78 min of speech, 13,381 words), each aligned to its whole script file. The harness (private,
+not in the repo) bundles the TS with esbuild and runs on the user's Mac; transcripts, scripts and audio stayed there,
+only aggregates and text-only derived rows left it. Aggregates only below; no transcript text, names or items.
+
+### Conditions
+
+- Mac: Apple M4 Max (14 cores, 36 GB), macOS 26, Node 22.21.1 (the repo code needs nothing newer), onnxruntime-node
+  1.30.0, 8 threads (the engine's thread cap). On AC power (the 96 W charger; `pmset`: AC Power, battery 100 % charged), Low Power Mode off
+  (`pmset` `powermode 0` before and after every job, logged); the shared heavy-compute lock held for every scoring run;
+  the user's desktop apps open (load average 2.3–2.6 before the runs, up to ≈ 10 during CPU scoring including the
+  job itself).
+- Model: `whisper-large-v3-turbo` fp32, the pinned catalogue files (all six sha256 equal to
+  `apps/engine/src/processing/models.json`).
+- Audio: the recordings' 16 kHz mono extractions, decoded by the worker through ffmpeg like engine media; no voice
+  analysis (the energy VAD refines times, as when none exists).
+- Same inputs as the spike: its turbo transcripts; its corrupted scripts (558 corrupted words: 194 phonetic
+  neighbours, 174 same-category words, 190 random words) and injected transcripts (430 operations) rebuilt from its
+  job definitions; its blind text-only labels (179 candidates: 52 recognition errors A, 46 real deviations R,
+  9 no-fix-wanted N, 16 hallucinations H, 56 unclear U), mapped to the editor's candidates by region (same recording,
+  overlapping times, a shared script or ASR word); the cleanup calibration's off-script / head-tail / hallucination
+  labels.
+- Decisions with the Standard preset unless named; "fix" = the Fixes and Spelling groups (Maybe items are offered
+  unselected and are not counted as fixes).
+
+### Results (Standard; CPU and WebGPU give identical decisions)
+
+| SC-105 target | Measured | Met |
+|---|---|---|
+| Corrupted-script false fixes ≤ 0.5 % of corrupted words | 1 of 558 (0.18 %): phonetic neighbours 1 / 194, same category 0 / 174, random 0 / 190 | yes |
+| 0 fixes in the cleanup's off-script / head-tail / hallucination regions | 0 audio fixes (hallucination: 1 Maybe, 1 kept); 1 spelling-only join in a head-tail slate (a spoken name glued by the recogniser, same letters split as the script writes it) | audio fixes yes; strictly 1 join |
+| Adjudicated recognition errors fixed ≥ 70 % | 38 of 52 (73 %); 7 Maybe, 7 kept | yes |
+| … with 0 real deviations fixed | 0 of 55 (R + N); unclear: 15 of 56 fixed (agreement / homophone cases at Δ_tok ≈ 0, script wins) | yes |
+| Injected errors restored ≥ 50 % | 245 of 430 (57 %; 95 % of the 257 that got a candidate): phonetic 101 / 139, function swap 69 / 96, dropped word 68 / 99, glued 7 / 69, split 0 / 27 | yes |
+| … and ≥ 50 % of proper-noun splits / glues (the `join` rule) | 5 of 10 (50 %) whose script side is proper by SC-023; 3 of 4 by the spike's hand list (every one was a glue; no split hit a proper noun) | yes (at the limit) |
+| Natural fixes per speech minute | 2.49 (194 of 412 candidates: 96 audio, 37 spelling rule, 10 `del`, 51 joins); Maybe 0.82 | — |
+| Cost per speech minute, CPU | 4.27 s: encoder 3.95 s (1.24 s per window, 3.2 windows per speech minute), decoder 0.21 s (28 ms per reading), rest of the scoring 0.11 s, alignment 0.005 s; + model load 0.26 s and audio decode 0.92 s per job (amortised) | measured |
+| Cost per speech minute, WebGPU (encoder; decoder on the CPU, the scoring plan without calibration) | 2.29 s: encoder 1.96 s (0.61 s per window), decoder 0.21 s, rest 0.11 s, alignment 0.005 s; + model load 0.37 s and audio decode 0.91 s per job (amortised) | measured |
+
+- Alignment (TS): 79.7 % of transcript words exact, 14.0 % off-script, 428 retake jumps, no capped rows; parse 28 ms,
+  align 375 ms, candidates 6 ms, windows 1 ms for all 16 recordings (Node 22, median of 3).
+- Re-timed fixes (133 audio-decided `sub` / `merge`): new region start vs the old one p50 10 / p90 30 ms, end p50 10 /
+  p90 180 ms.
+- Margin sweep (same runs): Careful 0 false fixes, 32 / 52 A, 0 R + N; Generous 2 false fixes, 42 / 52 A, 1 R + N
+  fixed. Audio margin −2 with the spelling rule: 2 false fixes, 1 real deviation fixed; spelling margin −8: 2 false
+  fixes. The spike's margins (−1.5, spelling −5, `del` 0) stay.
+
+### Δ_tok: ONNX fp32 (editor) vs mlx fp16 (spike)
+
+| Readings | spike mlx fp16 | editor ONNX fp32 |
+|---|---|---|
+| corrupted phonetic neighbours: p50 / p99 / max | −9.75 / −2.34 / −1.82 (n 240) | −10.29 / −2.34 / −1.80 (n 235) |
+| corrupted same category | −12.64 / −3.69 / −2.54 | −14.00 / −3.64 / −2.38 |
+| corrupted random | −12.60 / −4.74 / −4.06 | −13.20 / −4.69 / −4.01 |
+| adjudicated A: p25 / p50 / p75 | −2.85 / −1.40 / −0.68 | −3.31 / −1.73 / −0.72 |
+| adjudicated R: p25 / p50 / p75 | −9.08 / −6.32 / −4.25 | −9.13 / −6.45 / −4.22 |
+
+Paired on the same corrupted word (n 328): editor − spike median −0.22 nats/token, p10 −1.70, p90 +1.11. The
+precision tail (corrupted p99 and max) is where the spike had it, so the −1.5 margin keeps its ≥ 0.3 nats/token gap;
+recognition errors score ≈ 0.3 lower in the median, which costs a few borderline fixes (Maybe) rather than adding false
+ones. WebGPU vs CPU: every decision of every preset equal (2,070 candidates), |ΔΔ_tok| ≤ 0.0007.
+
+### Changes made from these measurements (before → after, same harness)
+
+| Run (CPU, Standard) | false fixes | cleanup regions | A fixed | R + N fixed | injected | proper glues | fixes / min | CPU s / min |
+|---|---|---|---|---|---|---|---|---|
+| Code as merged (packed windows; C and J of one recording refused) | 2 / 544 | 1 audio + 1 join | 35 / 52 | 2 / 55 | 240 / 418 | 4 / 8 | 2.37 | 3.67 |
+| Windows not packed | 1 / 544 | 1 join | 35 / 52 | 0 / 55 | 237 / 418 | 4 / 8 | 2.43 | 4.31 |
+| + names written both ways count as proper (final) | 1 / 558 | 1 join | 38 / 52 | 0 / 55 | 245 / 430 | 5 / 10 | 2.49 | 4.27 |
+
+1. **Score windows always satisfy the SC-092 request limits (bug).** A hallucination loop ("cab cab cab …", 238 words
+   in 23 s) made one window exceed the 224-word reading limit, and the worker refused the whole scoring job of that
+   recording (the corrupted and injected runs of one recording failed). Now: stretches over `maxWords` (100) are split
+   at their largest gap, more than 63 candidates of one window go into further windows over the same audio, reading
+   ids are short (`r1`…; candidate ids carry the media id and could pass 128 characters), unreadable words (empty or
+   over 128 characters) are left out with their candidates `unplaced`, and no window exceeds 30 s
+   (`test/script-fix-windows.test.ts`, fails before the fix; fast-check property). Ordinary speech has ≤ 89 words and
+   ≤ 117 tokens per 28 s window here, so nothing else changed.
+2. **Windows are not packed by default.** The two real deviations, the hallucination-region fix and both corrupted
+   words fixed by the merged code sat in packed windows with few words for their length (4–32 words over 12–25 s,
+   largest gaps between stretches 3.6–17.6 s): speech the transcript missed in those gaps let a reading take that
+   audio (one candidate's forced times landed 15 s after its words, Δ_tok +0.80 where the spike had −3.59). Unpacked
+   windows (the spike's own windowing) fixed none of them, for 23 % more encoder passes (249 vs 204; 3.2 per speech
+   minute). The one false fix left (a corrupted English word, Δ_tok −4.91 in a 2 s window) is the spelling rule's
+   known loose end (F§5.1). `pack: true` stays available. Limiting Δ to the region plus a few following words instead
+   was tried and did worse (more real deviations fixed).
+3. **Names the script writes both ways are proper (SC-023).** A word capitalised mid-sentence in at least a third of
+   its occurrences now counts as proper even when it is also written in lower case (the vote rule needed a majority).
+   It gave a misrecognised channel name the spelling rule: recognition errors fixed 35 → 38, no new false fix, natural
+   fixes 2.43 → 2.49 per speech minute.
+
+### Limitations
+
+- Labels are text-only (the spike agent's blind judgement without listening); "unclear" cases are not counted either
+  way; there is no verbatim ground truth.
+- In-sample: the margins, both rule changes and the label mapping were judged on the same 16 recordings (no held-out
+  set); expect somewhat lower figures on new videos. The proper-noun change rests on one name.
+- The proper-noun split/glue target is met at the limit on n = 10 (all glues; injected splits never fell on a proper
+  noun), so it is weak evidence.
+- Corrupted and injected errors are synthetic and easier than natural ones.
+- One join changed the spelling of a name in a head-tail slate: joins are decided without audio and cannot know about
+  cleanup regions (it did not rewrite what was said).
+- SC-030 / SC-037: the spec's packing is off by default now; the VM cost on real recordings is estimated at ≈ 17.5 s
+  per speech minute unpacked (basis: the VM's measured 5.05 s per window and 0.17 s per reading × this corpus's 3.2
+  windows and 7.7 readings per speech minute), under the 20 s target; the lj-composite VM figure (19.0 s packed,
+  49.6 s unpacked) is for dense read speech with a pause every sentence.
+- Audio came from 16 kHz extractions, not the original media containers; no voice analysis was available to the
+  re-timing.
+- Rerun: harness in the private research folder `sccalib` (`mkinputs.py`, `sccalib.ts`, `run.sh`, `scfinal.py`).
