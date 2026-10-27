@@ -27,6 +27,7 @@ import {
 	applyReview,
 	cycleAlternative,
 	decide,
+	decideGroup,
 	focusItem,
 	isRerollable,
 	openReview,
@@ -61,6 +62,15 @@ import {
 } from '../../proposals/sound-check.ts';
 import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
+import { FixDiff, FixFacts, fixAriaText } from '../../script-fix/FixRow.tsx';
+import { type FixMeta, fixMetaOf } from '../../script-fix/model.ts';
+import {
+	dismissFixReport,
+	fixFrameResolver,
+	fixReportStore,
+	isFixFeature,
+	showSkippedSubtitles,
+} from '../../script-fix/review.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { messageText, SEVERITY_ICON, SEVERITY_LABELS, SEVERITY_TONE } from '../../sound/check-model.ts';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
@@ -136,7 +146,12 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 	const ghost = useGhostModel(session, seqId);
 	const previewSeq = useProposals(session, (s) => s.preview?.result.document.sequences[seqId]);
 	const feature = proposal?.feature;
-	const model = useMemo(() => buildReviewModel(items, ghost, feature), [items, ghost, feature]);
+	const model = useMemo(
+		() => buildReviewModel(items, ghost, feature, fixFrameResolver(feature, seq)),
+		[items, ghost, feature, seq],
+	);
+	// spec 17 SC-082: a transcript-fix proposal draws its rows as text diffs (same rows, keys and decisions)
+	const fixRows = isFixFeature(feature);
 	// spec 15 EA-003: whether the feature's producer re-plans stale items ("Refresh proposal")
 	const featureInfo = useProposalFeature(engine, session.projectId, feature);
 	// P6-E5: the proposal's Sound Check — the newer of the one kept on it and the last one run here
@@ -368,17 +383,21 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							</div>
 						) : null}
 					</div>
-					<ProposalCheckBar
-						session={session}
-						engine={engine as ProposalCheckEngine | null}
-						connected={engineStatus === 'connected' || !engineState}
-						proposalId={proposal.id}
-						sequenceId={proposal.sequenceId}
-						check={check}
-						items={items}
-						labelOf={(id) => model.byId[id]?.item.label ?? id}
-						onItem={choose}
-					/>
+					{fixRows ? <FixReportBar session={session} proposalId={proposal.id} /> : null}
+					{/* a transcript fix changes words, not the mix: no Sound Check bar for it */}
+					{fixRows ? null : (
+						<ProposalCheckBar
+							session={session}
+							engine={engine as ProposalCheckEngine | null}
+							connected={engineStatus === 'connected' || !engineState}
+							proposalId={proposal.id}
+							sequenceId={proposal.sequenceId}
+							check={check}
+							items={items}
+							labelOf={(id) => model.byId[id]?.item.label ?? id}
+							onItem={choose}
+						/>
+					)}
 					<div
 						ref={listRef}
 						role="listbox"
@@ -410,9 +429,18 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							layout={layout}
 							view={view}
 							current={current}
+							groupActions={
+								fixRows && !readOnly
+									? (groupId) => ({
+											accept: () => void decideGroup(session, 'accept', groupId),
+											clear: () => void decideGroup(session, 'clear', groupId),
+										})
+									: undefined
+							}
 							render={(row) => (
 								<Row
 									key={row.item.id}
+									fix={fixRows ? fixMetaOf(row.item.meta) : null}
 									checkText={itemCheckText(check, row.item.id)}
 									introduces={itemCheck(check, row.item.id).introduces.length}
 									id={`${idPrefix}${row.item.id}`}
@@ -481,6 +509,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							onNoteHandled={() => setNoteFor(null)}
 							idPrefix={idPrefix}
 							refreshable={!!featureInfo?.refreshable}
+							playLabel={fixRows ? t('Play the recording') : undefined}
 						/>
 					) : null}
 					<div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-pr-border px-2 py-1.5">
@@ -555,6 +584,8 @@ function VirtualRows(p: {
 	view: { top: number; height: number };
 	current: string | null;
 	render(row: ReviewRow): ReactNode;
+	/** Per-group Accept / Clear (spec 17 SC-082 "select / deselect per group"; Shift+Enter / Shift+U do the same). */
+	groupActions?: (groupId: string) => { accept(): void; clear(): void };
 }) {
 	const { layout, view } = p;
 	const { start, end } = visibleEntries(layout, view.top, view.height || UNMEASURED_PX);
@@ -601,11 +632,16 @@ function VirtualRows(p: {
 									<div
 										key={`h-${g.group.id}`}
 										aria-hidden="true"
-										className="absolute inset-x-0 bg-pr-panel-alt px-2 text-pr-small font-semibold leading-5 text-pr-muted"
+										className="absolute inset-x-0 flex items-center gap-1 bg-pr-panel-alt px-2 text-pr-small font-semibold leading-5 text-pr-muted"
 										style={{ top: e.top - g.top, height: e.height }}
 										data-review-group={g.group.id}
 									>
-										{g.group.label} · {g.group.rows.length}
+										<span className="min-w-0 flex-1 truncate">
+											{g.group.label} · {g.group.rows.length}
+										</span>
+										{p.groupActions ? (
+											<GroupButtons id={g.group.id} label={g.group.label} {...p.groupActions(g.group.id)} />
+										) : null}
 									</div>
 								) : (
 									<div
@@ -664,9 +700,43 @@ export function rowAriaLabel(row: ReviewRow, seq: Sequence | undefined): string 
 	return parts.join('. ');
 }
 
+/** A group header's ✓ all / · none (pointer only: the keyboard has Shift+Enter / Shift+U on the current item's group). */
+function GroupButtons(p: { id: string; label: string; accept(): void; clear(): void }) {
+	const b = (key: string, glyph: string, title: string, run: () => void) => (
+		<button
+			type="button"
+			tabIndex={-1}
+			title={title}
+			onPointerDown={(e) => e.stopPropagation()}
+			onMouseDown={(e) => e.preventDefault()}
+			onClick={(e) => {
+				e.stopPropagation();
+				run();
+			}}
+			className="inline-flex h-4 items-center rounded-pr-control px-1 font-normal text-pr-muted hover:bg-pr-hover hover:text-pr-text"
+			data-review-group-action={`${p.id}:${key}`}
+		>
+			{glyph}
+		</button>
+	);
+	return (
+		<>
+			{b('accept', `✓ ${t('All')}`, t('Accept every item in {0} (Shift+Enter)', p.label), p.accept)}
+			{b(
+				'clear',
+				`· ${t('None')}`,
+				t('Back to pending: every accepted item in {0} (Shift+U)', p.label),
+				p.clear,
+			)}
+		</>
+	);
+}
+
 function Row(p: {
 	id: string;
 	row: ReviewRow;
+	/** A transcript fix's meta (spec 17 SC-082): the row shows its text diff. */
+	fix?: FixMeta | null;
 	/** The proposal check's badge for this item ("fixes 2 · introduces 1"), null when it says nothing about it. */
 	checkText: string | null;
 	introduces: number;
@@ -693,6 +763,7 @@ function Row(p: {
 	const decided = it.state === 'applied';
 	// spec 17 SC-061: offered unselected (a Maybe transcript fix): Accept all leaves it out until accepted here
 	const unselected = !it.selected && (it.state === 'pending' || it.state === 'stale');
+	const fix = p.fix ?? null;
 	const seg = (d: 'accept' | 'reject' | 'clear', glyph: string, label: string, on: boolean) => (
 		<button
 			type="button"
@@ -739,7 +810,7 @@ function Row(p: {
 			id={p.id}
 			role="option"
 			aria-selected={p.selected}
-			aria-label={`${rowAriaLabel(row, p.seq)}${unselected ? `. ${t('Not selected')}` : ''}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
+			aria-label={`${rowAriaLabel(row, p.seq)}${fix ? `. ${fixAriaText(fix)}` : ''}${unselected ? `. ${t('Not selected')}` : ''}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
 			aria-posinset={p.position.kind === 'row' ? p.position.position + 1 : undefined}
 			aria-setsize={p.setSize}
 			onPointerDown={(e) => {
@@ -769,10 +840,16 @@ function Row(p: {
 					{fmtTc(p.seq, row.frame)}
 				</span>
 				<KindGlyph kind={row.kind} />
-				<span className="min-w-0 flex-1 truncate" title={row.sound ?? it.label}>
-					{row.sound ?? it.label}
-				</span>
-				{tool('play', '▶', t('Play in context (Space)'), p.onPlay, row.frame === null)}
+				{fix ? (
+					<FixDiff meta={fix} label={it.label} />
+				) : (
+					<span className="min-w-0 flex-1 truncate" title={row.sound ?? it.label}>
+						{row.sound ?? it.label}
+					</span>
+				)}
+				{fix
+					? tool('play', '▶', t('Play the recording 1 s around it (Space)'), p.onPlay)
+					: tool('play', '▶', t('Play in context (Space)'), p.onPlay, row.frame === null)}
 				{tool(
 					'alternate',
 					`⇄ ${it.selectedAlternative + 1}/${it.alternatives}`,
@@ -807,6 +884,7 @@ function Row(p: {
 						{t('Not selected')}
 					</span>
 				) : null}
+				{fix ? <FixFacts meta={fix} inSequence={row.frame !== null} /> : null}
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
 				{gainText(row) ? (
 					<span className="max-w-[60%] shrink-0 truncate pr-tabular" title={gainText(row)} data-review-gain>
@@ -827,7 +905,7 @@ function Row(p: {
 					<span className="min-w-0 truncate text-pr-warning" title={problem} data-review-problem>
 						! {problem}
 					</span>
-				) : row.reason ? (
+				) : row.reason && !fix ? (
 					<span className="min-w-0 truncate" title={row.reason}>
 						{row.reason}
 					</span>
@@ -874,6 +952,8 @@ function Details(p: {
 	idPrefix: string;
 	/** The feature's producer re-plans items (Refresh proposal, Reroll). */
 	refreshable: boolean;
+	/** The ▶ button's words (a transcript fix plays its recording, not the timeline). */
+	playLabel?: string;
 }) {
 	const it = p.row.item;
 	const c = useProposalsController(p.session);
@@ -917,7 +997,7 @@ function Details(p: {
 					onClick={() => playReviewItem(p.session, it.id)}
 					data-review-detail="play"
 				>
-					▶ {t('Play in context')}
+					▶ {p.playLabel ?? t('Play in context')}
 				</Button>
 				<Button
 					variant="secondary"
@@ -1202,6 +1282,42 @@ function ItemCheck(p: { check: SoundCheckProposalSummary | null; itemId: string 
 					<span>{t('Fixes {0}', findingLine(f))}</span>
 				</div>
 			))}
+		</div>
+	);
+}
+
+/** Spec 17 SC-084: the last Apply's patch report ("142 fixes applied · 3 subtitles not updated: edited by hand"). */
+function FixReportBar(p: { session: EditorSession; proposalId: string }) {
+	const notice = useStoreSelector(fixReportStore, (s) => s.notice);
+	if (!notice || notice.proposalId !== p.proposalId) return null;
+	const skipped = notice.report.skipped.length;
+	return (
+		<div
+			role="status"
+			className={`flex shrink-0 items-center gap-1.5 border-b border-pr-border px-2 py-1 text-pr-small ${skipped ? 'text-pr-warning' : 'text-pr-success'}`}
+			data-testid="review-fix-report"
+		>
+			<Icon id={skipped ? 'status.warning' : 'status.success'} size={12} />
+			<span className="min-w-0 flex-1 truncate" title={notice.text}>
+				{notice.text}
+			</span>
+			{skipped ? (
+				<Button
+					variant="quiet"
+					onClick={() => showSkippedSubtitles(p.session, notice.report)}
+					data-testid="review-fix-show-skipped"
+				>
+					{t('Show skipped subtitles')}
+				</Button>
+			) : null}
+			<Button
+				variant="quiet"
+				onClick={dismissFixReport}
+				aria-label={t('Dismiss')}
+				data-testid="review-fix-report-dismiss"
+			>
+				×
+			</Button>
 		</div>
 	);
 }

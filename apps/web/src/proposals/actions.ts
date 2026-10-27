@@ -10,6 +10,7 @@ import type { EditorSession, ProposalsController, ReviewItem } from '@jasper/ses
 import { confirmDialog, toast } from '@jasper/ui';
 import { createStore } from 'zustand/vanilla';
 import { t, translateName } from '../i18n/runtime.ts';
+import { fixFrameResolver, isFixFeature, noteFixReport, playFixItem } from '../script-fix/review.ts';
 import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { buildGhostModel, type GhostItem, type GhostModel } from './ghosts.ts';
@@ -67,7 +68,13 @@ export function currentGhostModel(session: EditorSession): GhostModel | null {
 
 export function currentReviewModel(session: EditorSession): ReviewModel {
 	const st = proposalsFor(session).getState();
-	return buildReviewModel(st.items, currentGhostModel(session), st.proposal?.feature);
+	const feature = st.proposal?.feature;
+	return buildReviewModel(
+		st.items,
+		currentGhostModel(session),
+		feature,
+		fixFrameResolver(feature, reviewSequence(session)),
+	);
 }
 
 /** The item the review is on: the last selected one. */
@@ -195,6 +202,41 @@ export function acceptAll(session: EditorSession): Promise<boolean> {
 	return ids.length ? decide(session, 'accept', ids) : Promise.resolve(false);
 }
 
+/**
+ * Accept or clear every item of a group (default: the group of the current item) — spec 17 SC-082 "select / deselect
+ * per group": accepting takes the items offered unselected too (an explicit choice), clearing puts the accepted ones
+ * back to pending. Rejected, applied and invalid items are left as they are.
+ */
+export function decideGroup(
+	session: EditorSession,
+	d: 'accept' | 'clear',
+	groupId?: string,
+): Promise<boolean> {
+	const m = currentReviewModel(session);
+	const cur = currentItemId(session);
+	const g = groupId ?? m.groups.find((x) => x.rows.some((r) => r.item.id === cur))?.id;
+	const group = m.groups.find((x) => x.id === g);
+	if (!group) {
+		announce(t('Select an item first'));
+		return Promise.resolve(false);
+	}
+	const ids = group.rows
+		.map((r) => r.item)
+		.filter((it) =>
+			d === 'accept' ? it.state === 'pending' || it.state === 'stale' : it.state === 'accepted',
+		)
+		.map((it) => it.id);
+	if (!ids.length) {
+		announce(
+			d === 'accept'
+				? t('Nothing left to accept in {0}', group.label)
+				: t('Nothing accepted in {0}', group.label),
+		);
+		return Promise.resolve(false);
+	}
+	return decide(session, d, ids);
+}
+
 /** Reject all: every item not applied, rejected or invalid (setup items nothing needs are settled by the engine). */
 export function rejectAll(session: EditorSession): Promise<boolean> {
 	const ids = proposalsFor(session)
@@ -269,6 +311,15 @@ export function playWithHear(
 /** ▶ an item in context (default the current one): pre-roll → its tail, with the proposal heard. */
 export function playReviewItem(session: EditorSession, itemId?: string): boolean {
 	const id = itemId ?? currentItemId(session);
+	const st = proposalsFor(session).getState();
+	if (id && isFixFeature(st.proposal?.feature)) {
+		// spec 17 SC-082: a transcript fix plays its source recording ±1 s (it may lie outside the sequence)
+		const it = st.items.find((x) => x.id === id);
+		if (!it) return false;
+		const ok = playFixItem(session, it);
+		if (ok) announce(t('Playing {0} in the recording', it.label));
+		return ok;
+	}
 	const model = currentGhostModel(session);
 	const seqId = reviewSequenceId(session);
 	const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
@@ -419,8 +470,12 @@ export async function applyReview(
 			? session.getState().history.entries.find((e) => e.revisionAfter === r.revision && e.origin === 'user')
 			: undefined;
 	const entryId = entry?.id ?? null;
-	// the feature's sentence (spec 15 EA-002): "Applied n of m sounds" (sound design), "Applied n of m cut kits"…
-	const title = reviewVocabulary(p.feature).applyToast(appliedNow, total, author);
+	// the feature's sentence (spec 15 EA-002): "Applied n of m sounds" (sound design), "Applied n of m cut kits"…;
+	// a transcript fix says what its patch did (spec 17 SC-053 / SC-084: "142 fixes applied · 3 subtitles not updated")
+	const fixReport = isFixFeature(p.feature)
+		? noteFixReport(session, proposalId, r.results, appliedNow)
+		: null;
+	const title = fixReport?.title ?? reviewVocabulary(p.feature).applyToast(appliedNow, total, author);
 	const stillApplied = () => entryId !== null && topEntry(session)?.id === entryId;
 	toast({
 		kind: 'success',
@@ -458,6 +513,8 @@ export async function applyReview(
 					void openReview(session, proposalId);
 				},
 			},
+			// the Review panel's report bar has it too (a toast shows its first actions)
+			...(fixReport?.action ? [fixReport.action] : []),
 		],
 	});
 	announce(title);

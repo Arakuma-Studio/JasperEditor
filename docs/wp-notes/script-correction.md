@@ -842,3 +842,137 @@ a GPU box).
   stale items' windows).
 - The estimate's per-model measurement does not tell devices apart (the last measured run of the model wins).
 - Nested sequences are not descended for the scope; only the sequence's own audio clips count.
+
+## Editor UI
+
+Package `scweb` (spec 17 SC-001 UI, SC-002 summary, SC-053 notice, SC-071, SC-074 option, SC-080…086). Code:
+`apps/web/src/script-fix/` (`model.ts` pure helpers, `engine.ts` the typed `transcriptFix` client calls,
+`FixTranscriptDialog.tsx`, `FixRow.tsx`, `review.ts`, `EditOffer.tsx`, `source-audio.ts`), `commands/script-fix.ts`,
+and changes to `panels/text/TranscriptTab.tsx`, `panels/text/cleanup/ScriptDrawer.tsx`, `panels/review/ReviewPanel.tsx`,
+`proposals/actions.ts` / `review.ts`, `speech/GenerateTranscriptDialog.tsx` / `model.ts`, the menus and the keymap.
+
+### Entry points (SC-080)
+
+- Text ▸ Transcript toolbar: **Script…** (toggles the Script drawer; "Script ✓" when one is attached; also in the
+  empty tab, so the script can be attached before transcribing) and **Fix Transcript…** (disabled read-only).
+- Text panel menu: Script…, Fix Transcript…; Sequence ▸ **Fix Transcript from Script…** (after Clean Up Voice…).
+- UI commands `transcript.fix`, `transcript.fixFromScript` (the Sequence menu's label: a menu entry shows its
+  command's label) and `transcript.script`; none has a default shortcut (Keyboard Shortcuts can assign one);
+  agent-exposed. Review keys added: Shift+Enter accept the current item's group, Shift+U back to pending
+  (`proposals.acceptGroup` / `clearGroup`); `conflictsFor` finds no conflict in the Review scope chain (test).
+
+### Script drawer (SC-001 / SC-002)
+
+The existing `ScriptDrawer`, relabelled: History "Attach Script" / "Replace Script" / "Detach Script", button
+"Replace". It now writes `cleanup.configure` for the sequence it is shown for (the Clean Up controller may be on
+another sequence). Under the text: `parseScript(text).summary` — "3 sections · 160 words read · 1 direction (2 words)
+and 2 headings skipped" — with the language of the sequence's first transcript.
+
+### Fix dialog (SC-081)
+
+- Fields: Fix from (Script with its name, Personal glossary with its entry count; a source that cannot be used is
+  shown unchecked and disabled; one stays on), Scope (Whole recordings / Only what the sequence uses / In to Out,
+  disabled without marks), Strictness (Careful / Standard / Generous with one line each), "Show fixes I rejected
+  before (n, offered unselected)". The three settings are written with `scriptFix.configure {settings}` on each change,
+  coalesced into one undo step ("Fix Transcript Settings").
+- Dry run: every change (300 ms debounce, the older run aborted) runs `transcriptFix(…, {mode: 'dryRun'}, {wait})` and
+  shows the aligned / off-script share (weighted by transcript tokens over the media), the candidate count by group
+  (dry run: Spelling and "To check against the audio") and category, the ≈ time of the audio check with its basis
+  ("on this computer (measured on earlier runs)" / "estimated from a reference machine"), the subtitles a fix could
+  not update with the reasons (the patch report before applying, SC-053), media left unscored, `speech.problem` and the
+  first warnings. The result is validated with `TranscriptFixResultSchema`.
+- Run: the propose job, polled every 400 ms, progress bar and stage; Cancel (or closing) cancels the job. A proposal
+  opens in Review (`openReview`, Review panel focused) with "n fixes to review"; nothing to fix is said in the dialog.
+- Disabled with the reason shown (`fixBlocker`): no transcript; no script and no glossary entry; only an unusable
+  source chosen; no speech model installed (the dry run still counts); read-only project; no engine. Every route and
+  job code is said in words (`fixErrorText`): `E_NOT_FOUND`, `E_NO_SOURCE`, `E_NO_TRANSCRIPT`, `E_INVALID_PARAM`,
+  `E_NO_SPEECH_MODEL`, `E_LIMIT`, cancellation, network, else the engine's message with its code.
+
+### Review rows (SC-082)
+
+- The Review panel's own rows, keys, decisions, stale handling and "Not selected" marker; for
+  `transcript-correction` the row's text is the diff (`FixDiff`: up to 3 context words · ~~before~~ → **after** · up to
+  3 words) and its second line the category (Name / English word / Short word / Word), the confidence label and the
+  rule with Δ_tok ("High confidence · Audio check · Δ +3.4 per token"). Rows are timed where the sequence plays the
+  words (`fixFrame`: the media time through the first audio clip that holds it), else "recording 0:12.4".
+- Confidence bands (**assumption, not measured**): Δ_tok ≥ 0 High (the audio prefers the script reading), ≥ −1.5 (the
+  Standard fix margin, SC-034) Medium, lower Low; no Δ (joins, glossary spellings) "No audio check". The groups
+  themselves follow the strictness the run used.
+- ▶ / Space / the details' "Play the recording": the SOURCE recording from 1 s before to 1 s after the edit's span,
+  streamed from the engine's media URL through one `<audio>` element (a fix may lie outside the sequence); playback
+  errors are toasts.
+- Group headers have "✓ All" / "· None" (Shift+Enter / Shift+U): accepting a group takes its unselected Maybe items too
+  (an explicit choice); Accept all keeps leaving them out (SC-061). The Sound Check bar is not shown for this feature.
+- Rejections are remembered by the engine (`scengine` reject listener / accept extension), not by the UI.
+
+### Marks in the transcript (SC-083)
+
+While a `transcript-correction` proposal is under review, the open items (pending, accepted, stale) mark the words
+of their edit span — an insertion marks the word after the gap — with a dotted accent underline (instead of the
+low-confidence wavy one) and the title "Proposed fix: before → after. Click to review it"; a click selects the item
+(`focusItem`) and focuses the Review panel. Rejected and applied items are not marked.
+
+### Patch report (SC-053 / SC-084)
+
+The proposals session slice now returns the accept transaction's per-command `results`; `patchReportOf` sums the
+`transcript.replaceWords` results (clips counted once, other commands ignored) into "N fixes applied · M subtitles not
+updated: edited by hand" (several reasons: "2 edited by hand, 1 on a locked track"). It is the Apply toast's title
+and a bar in the Review panel while that proposal is open, with "Show skipped subtitles" (selects them in their
+sequence, opening it; clips in other sequences counted in a notice; deleted ones left out) and ×.
+
+### Manual-edit offers (SC-071 / SC-085)
+
+After a double-click fix or Correct… succeeds, `editOffer` runs `findReplaceAllInSequence` on the document after the
+edit (the edited span excluded) and the bar offers "Replace all N" (one transaction of one `transcript.replaceWords`
+per transcript, History "Replace All: from → to", one undo step; a refusal such as `E_STALE` is said in the bar) and
+"Remember" (`rememberGlossaryEntry {from: [old], to, lang}` with the transcript's base language). Never automatic;
+× dismisses it. No bar when the correction is empty, or changes only punctuation, or when there is no other occurrence
+and nothing the glossary can hold (same spelling ignoring case). Interpretation (assumption): with no other
+occurrence "Remember" alone is still offered — it is what keeps the name right in future transcriptions (G3).
+
+### Transcribe "Names from" (SC-074)
+
+Generate Transcript gains "Names from: Off (default) / Script / Script + glossary". `promptTerms` composes the model's
+exports (no new model helper): the script's `word` tokens whose norm is in `parseScript(…).properNorms` or that
+`isEnglishWord` accepts (Spanish), without numbers, in the most frequent written form; with the glossary the entries'
+`to` for the language (or without one), ranked by script frequency + taught `count`, ties in order of appearance; ≤ 40
+terms of ≤ 64 characters, deduplicated by normalised form. The dialog lists the first 8; `requestOptions` sends
+`glossary` only when the option is on. For media targets the script is the active sequence's.
+
+### i18n and design
+
+English catalogue regenerated (`pnpm i18n`), Spanish strings in `es.json`, `pnpm i18n:check` clean. Transcript words,
+the diff and the offer's words are marked `data-no-i18n`: the document translator used to turn a transcript word that
+equals a model name ("One") into its translation ("Uno") — a display bug of the Transcript tab fixed here. Design
+tokens only (`check-tokens` ok).
+
+### Validation (build VM, 2026-10-27)
+
+- Tests: `apps/web/test/script-fix-model.test.ts` (blockers, texts, confidence, frames, marks, patch report, offer,
+  prompt terms; fast-check properties for marks, results and prompt terms), `script-fix-dialog.test.tsx` (blockers,
+  dry-run summary, settings in one undo step, Run → Review, Cancel → `cancelJob`, refusals in words),
+  `script-fix-review-rows.test.tsx` (rows, ▶ source window, group decisions, stale row, report with and without
+  skipped subtitles, selection, one undo restores transcript and subtitle), `transcript-tab-editing.test.tsx` (the
+  first Transcript tab editing test: double-click and Correct… fixes, Replace all N in one step, Remember, no offer,
+  dismiss, Script… summary, Fix dialog, marks and click → Review row), `script-fix-commands.test.ts` (commands,
+  menus, no shortcut, key conflicts), `speech.test.tsx` (Names from). The whole web suite: 189 files / 1,307 tests passed.
+- Dev stack on the VM (engine 47946, vite 5216, appdir `wt-scweb/.stage`, whisper-tiny.en): the LJ fixture
+  transcribed, 4 words corrupted, the true text attached through the drawer, Fix Transcript dry run (97 % aligned,
+  4 candidates, ≈ 23 s reference estimate) and Run → 4 fixes (all High, Δ +3.2…+9.2) in Review, marks in the
+  transcript and the jump, Apply → "Fix transcript: 4 fixes", subtitles patched, report shown; Replace all / Remember;
+  Names from carrying the glossary; the same in Spanish with a skipped-subtitle report and "Show skipped subtitles"
+  selecting 3 clips.
+- e2e `e2e/script-fix.spec.ts` (SC-104): the LJ fixture imported and transcribed by whisper-tiny.en (provisioned by
+  `scripts/e2e-prepare.mjs` → `apps/engine/scripts/provision-speech-models.ts`, linked into the throwaway appdir by
+  `e2e/serve.mjs`; the spec fails when the model is not installed), 3 words corrupted (`transcript.create`), Pixel Pop
+  subtitles generated, Script… → Fix Transcript (dry run, Run) → Review rows → Accept all → Apply: History "Fix
+  transcript: N fixes", the words restored, the subtitle clip patched in place (same id, style and effects), the
+  report shown; Ctrl+Z restores transcript and subtitle. Passed with `pnpm e2e e2e/script-fix.spec.ts` and
+  `JASPER_FFMPEG_LGPL_ONLY=1` on the build VM (≈ 42 s for the test).
+
+### Limitations
+
+- ▶ streams the original file: a codec the browser cannot decode is reported, not converted (no proxy used).
+- Right after Apply the rows show "Stale" for about a second until the engine's applied state arrives (the generic
+  proposals preview revalidates against the new document first; not specific to this feature).
+- The Apply toast shows its first two actions; "Show skipped subtitles" stays in the Review bar.

@@ -51,7 +51,11 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
   [`docs/wp-notes/sound-design.md`](docs/wp-notes/sound-design.md)).
 - **Captions and speech.** Caption tracks (SRT, VTT, SCC, MCC, STL, TTML), burn-in, local speech to text with
   word timings and diarization, text-based editing, a personal glossary of names the recogniser gets wrong
-  (Edit ▸ Preferences ▸ Transcription ▸ Glossary: search, edit, import and export JSON).
+  (Edit ▸ Preferences ▸ Transcription ▸ Glossary: search, edit, import and export JSON). Paste the video script once
+  (Text ▸ Transcript ▸ Script…) and Fix Transcript… corrects recognition errors in the transcript and the subtitles
+  made from it: the audio decides each fix, the fixes are reviewed as text diffs in the Review panel and applied as
+  one undo step; after a manual word fix the editor offers "Replace all N" and "Remember"; Transcribe can carry the
+  script's and the glossary's names into the recogniser ("Names from").
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.

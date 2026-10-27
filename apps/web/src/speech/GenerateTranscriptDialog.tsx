@@ -3,11 +3,16 @@
 // speakers), and for a sequence the audio analysis (clip media, or the sequence mix with "only In to Out"). A model
 // that is not downloaded shows its size, source and licence and downloads in place (sha256-verified `model-download`
 // job). Transcribe submits the jobs; the transcripts arrive through the watcher (jobs.ts).
+// Spec 17 SC-074: "Names from: Off / Script / Script + glossary" carries up to 40 names (the script's proper nouns and
+// English words, the personal glossary's spellings) into every window's prompt (`TranscribeOptions.glossary`).
 import type { EngineJob, SpeechModel, SpeechSettings } from '@jasper/api';
+import { readSequenceCleanup, transcriptForMedia } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Checkbox, Dialog, type HostedDialogProps, Select, toast } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { errorText, followJob, formatBytes } from '../processing/engine-jobs.ts';
+import { type NamesFrom, promptTerms } from '../script-fix/model.ts';
 import { useEngine } from '../state/engine.tsx';
 import { transcribeMedia, transcribeSequenceMix } from './jobs.ts';
 import {
@@ -165,6 +170,46 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 	const model = models?.find((m) => m.id === opts?.model);
 	const set = (patch: Partial<GenerateOptions>) => setOpts((o) => (o ? { ...o, ...patch } : o));
 	const hasInOut = !!seq && seq.inPoint !== null && seq.outPoint !== null;
+	// SC-074: the script of the sequence (for media: the active sequence's), the glossary when asked for
+	const scriptSeq =
+		seq ??
+		(session.getState().activeSequenceId ? doc.sequences[session.getState().activeSequenceId!] : undefined);
+	const script = useMemo(() => {
+		try {
+			return scriptSeq ? (readSequenceCleanup(scriptSeq).script ?? null) : null;
+		} catch {
+			return null;
+		}
+	}, [scriptSeq]);
+	const namesFrom: NamesFrom = opts?.namesFrom ?? 'off';
+	const [glossary, setGlossary] = useState<{
+		entries: { to: string; lang?: string; count?: number }[] | null;
+		error: string | null;
+	}>({ entries: null, error: null });
+	useEffect(() => {
+		if (namesFrom !== 'script+glossary' || glossary.entries || glossary.error) return;
+		let live = true;
+		client
+			.listGlossary()
+			.then((r) => live && setGlossary({ entries: r.entries, error: null }))
+			.catch((e) => live && setGlossary({ entries: null, error: errorText(e) }));
+		return () => {
+			live = false;
+		};
+	}, [namesFrom, client, glossary.entries, glossary.error]);
+	const termLanguage = useMemo(() => {
+		if (opts && model?.multilingual && opts.language !== 'auto') return opts.language;
+		if (model && !model.multilingual) return 'en';
+		for (const id of media.all) {
+			const tr = transcriptForMedia(doc, id);
+			if (tr?.language) return tr.language;
+		}
+		return null;
+	}, [opts, model, media.all, doc]);
+	const terms = useMemo(
+		() => promptTerms(script?.text ?? null, termLanguage, namesFrom, glossary.entries ?? []),
+		[script, termLanguage, namesFrom, glossary.entries],
+	);
 
 	const download = async () => {
 		if (!model) return;
@@ -203,7 +248,7 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 	const run = async () => {
 		if (!opts || !model) return false;
 		saveOptions(opts);
-		const options = requestOptions(opts, model.multilingual);
+		const options = requestOptions(opts, model.multilingual, terms);
 		setBusy(true);
 		try {
 			if (target.kind === 'sequence' && opts.analysis === 'mix') {
@@ -348,6 +393,39 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 								label="Keep filler words (verbatim: eh, um, so…)"
 							/>
 						</Row>
+						<Row label={t('Names from')}>
+							<span data-testid="speech-names-from">
+								<Select
+									label={t('Names from')}
+									className="w-56"
+									value={namesFrom}
+									onValueChange={(v) => set({ namesFrom: v as NamesFrom })}
+									options={[
+										{ value: 'off', label: 'Off' },
+										{ value: 'script', label: 'Script' },
+										{ value: 'script+glossary', label: 'Script + glossary' },
+									]}
+								/>
+							</span>
+						</Row>
+						{namesFrom !== 'off' ? (
+							<p className="-mt-2 pl-[132px] text-pr-small text-pr-muted" data-testid="speech-names">
+								{!script && namesFrom === 'script'
+									? t('No script is attached to the sequence: attach one with Script… in Text ▸ Transcript')
+									: glossary.error && namesFrom === 'script+glossary'
+										? t(
+												'The speech glossary could not be read ({0}); only the script’s names are carried',
+												glossary.error,
+											)
+										: terms.length
+											? t(
+													'{0} names carried into the recognition prompt: {1}',
+													terms.length,
+													`${terms.slice(0, 8).join(', ')}${terms.length > 8 ? ', …' : ''}`,
+												)
+											: t('No names found to carry')}
+							</p>
+						) : null}
 						<Row label="Speaker labels">
 							<Select
 								label="Speaker labels"
