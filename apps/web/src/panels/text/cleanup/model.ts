@@ -78,9 +78,6 @@ export const KIND_COLOR: Record<FindingKind, string> = {
 	hallucination: 'var(--pr-label-magenta)',
 };
 
-/** Kinds that mark words (the others are frame runs: pauses, breaths, voice without words). */
-export const WORDLESS_KINDS: ReadonlySet<FindingKind> = new Set(['pause', 'breath', 'untranscribed']);
-
 /** The user's decisions in a review (finding ids of one analysis; retake group id → kept take). */
 export type UiDecisions = {
 	accept: readonly string[];

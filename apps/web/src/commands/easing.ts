@@ -1,13 +1,12 @@
 // Easing commands (Easing panel, Effect Controls key menu, Clip ▸ Keyframe Easing, palette, F9 shortcuts): every
 // action on the keyframe selection is one transaction (one undo step). Refusals and warnings of the document
 // commands are shown as toasts; a command that cannot run says why (`disabledReason`): no keyframe selection,
-// a locked track, a read-only project, a selection the action does not apply to, or a missing document command.
+// a locked track, a read-only project, or a selection the action does not apply to.
 import { EXPRESSION_PRESETS } from '@jasper/expressions';
 import {
 	type Command,
 	copyEase,
 	copyValues,
-	type EaseCurve,
 	EaseCurveSchema,
 	EaseSectionSchema,
 	type Sequence,
@@ -22,11 +21,9 @@ import {
 	cleanupPathCommand,
 	continuousCommand,
 	createPathControllerCommand,
-	type EaseDocCommand,
 	easyEaseCommand,
 	expressionCommands,
 	keysAtPlayheadCommand,
-	missingDocCommand,
 	pasteEaseCommand,
 	pasteValuesCommand,
 	setVelocityCommand,
@@ -38,18 +35,13 @@ import type { CommandCtx, UiCommand } from './types.ts';
 
 type EaseEnv = { session: EditorSession; seq: Sequence; sel: EaseSelection };
 
-function activeSequence(session: EditorSession): Sequence | null {
-	const s = session.getState();
-	return s.activeSequenceId ? (s.document.sequences[s.activeSequenceId] ?? null) : null;
-}
-
 /** The keyframe selection as the easing actions see it (null without a project or sequence). */
 export function easeEnv(ctx: CommandCtx): EaseEnv | null {
 	const session = ctx.session;
 	if (!session) return null;
-	const seq = activeSequence(session);
-	if (!seq) return null;
 	const st = session.getState();
+	const seq = st.activeSequenceId ? st.document.sequences[st.activeSequenceId] : null;
+	if (!seq) return null;
 	const sel = readEaseSelection(session.getCommitted(), seq, st.selection.keyframes, {
 		registries: session.ctx.registries,
 		readOnly: st.readOnly,
@@ -110,18 +102,15 @@ function selectResult(e: EaseEnv, r: TransactionResult | null): void {
 		e.session.selectKeyframes({ clipOrTrackId: keySel.clipOrTrackId, keyframeIds: ids });
 }
 
-/** A command on the keyframe selection, enabled when it can be eased (and its document command exists). */
+/** A command on the keyframe selection, enabled when it can be eased. */
 function selectionCommand(
 	def: Omit<UiCommand, 'scope' | 'run' | 'when' | 'disabledReason'> & {
-		needs?: EaseDocCommand;
 		/** Extra condition on the selection: the reason it is not met, else undefined. */
 		require?(e: EaseEnv, ctx: CommandCtx): string | undefined;
 		run(e: EaseEnv, ctx: CommandCtx, args: unknown): void;
 	},
 ): UiCommand {
 	const reason = (ctx: CommandCtx): string | undefined => {
-		const missing = def.needs ? missingDocCommand(def.needs) : undefined;
-		if (missing) return missing;
 		const r = selectionReason(ctx);
 		if (r) return r;
 		const e = easeEnv(ctx);
@@ -227,7 +216,6 @@ function expressionCommand(text: Text, preset: typeof overshoot): UiCommand {
 }
 
 function keysAtPlayhead(text: Text, mirror: boolean): UiCommand {
-	const label = () => text.label;
 	return selectionCommand({
 		id: text.id,
 		get label() {
@@ -252,12 +240,12 @@ function keysAtPlayhead(text: Text, mirror: boolean): UiCommand {
 			} catch (error) {
 				ctx.ui.toast({
 					kind: 'warning',
-					message: t('{0}: not possible', label()),
+					message: t('{0}: not possible', text.label),
 					detail: error instanceof Error ? error.message : String(error),
 				});
 				return;
 			}
-			const r = runEaseTransaction(ctx, label(), [command], e.seq.id);
+			const r = runEaseTransaction(ctx, text.label, [command], e.seq.id);
 			const pasted = r?.ok
 				? (r.results[0] as { keyframeIds?: string[] } | undefined)?.keyframeIds
 				: undefined;
@@ -265,9 +253,6 @@ function keysAtPlayhead(text: Text, mirror: boolean): UiCommand {
 		},
 	});
 }
-
-/** The curve the palette's Apply uses: the Easing panel's current curve. */
-const currentCurve = (): EaseCurve | null => easeLibrary.get().settings.curve;
 
 export const easingCommands: UiCommand[] = [
 	// After Effects' Keyframe Assistant shortcuts: Easy Ease F9, Easy Ease In Shift+F9, Easy Ease Out Ctrl+Shift+F9.
@@ -302,10 +287,9 @@ export const easingCommands: UiCommand[] = [
 			'Applies a curve (the Easing panel’s, or the one given) to the selected keyframes: between selected keys, or around a single key; sections choose in / middle / out.',
 		argsSchema: ApplyArgs,
 		agentExposed: true,
-		needs: 'keyframe.applyEase',
 		run: (e, ctx, args) => {
 			const a = args as z.infer<typeof ApplyArgs>;
-			const curve = a?.curve ?? currentCurve();
+			const curve = a?.curve ?? easeLibrary.get().settings.curve;
 			if (!curve) {
 				ctx.ui.toast({ kind: 'info', message: t('Choose a curve in the Easing panel') });
 				return;
@@ -342,7 +326,6 @@ export const easingCommands: UiCommand[] = [
 		description: 'Gives the selected keys the copied ease, keeping their times and values.',
 		argsSchema: PasteArgs,
 		agentExposed: true,
-		needs: 'keyframe.pasteEase',
 		require: () => (easeClipboard.get() ? undefined : t('Copy an ease first')),
 		run: (e, ctx, args) => {
 			const clip = easeClipboard.get();
@@ -362,7 +345,6 @@ export const easingCommands: UiCommand[] = [
 		id: 'ease.pasteValues',
 		label: 'Paste Values',
 		description: 'Gives the selected keys the copied values in order, keeping their times and eases.',
-		needs: 'keyframe.pasteValues',
 		require: () => (easeClipboard.get()?.values.length ? undefined : t('Copy keys first')),
 		run: (e, ctx) => {
 			const clip = easeClipboard.get();
@@ -383,7 +365,6 @@ export const easingCommands: UiCommand[] = [
 		argsSchema: VelocityArgs,
 		agentExposed: true,
 		hidden: true,
-		needs: 'keyframe.setVelocity',
 		run: (e, ctx, args) => {
 			const a = args as z.infer<typeof VelocityArgs>;
 			if (!e.sel.keyframeIds.includes(a.keyframeId)) {
@@ -402,7 +383,6 @@ export const easingCommands: UiCommand[] = [
 		id: 'ease.drivePath',
 		label: 'Drive Along Path',
 		description: 'Makes the selected point keys follow their motion path driven by one progress control.',
-		needs: 'keyframe.createPathController',
 		require: (e) => {
 			const points = e.sel.properties.filter((p) => p.spatial);
 			if (points.length !== 1 || e.sel.properties.length !== 1)
@@ -422,7 +402,6 @@ export const easingCommands: UiCommand[] = [
 		id: 'ease.cleanupPath',
 		label: 'Clean Up Motion Path',
 		description: 'Removes the redundant keys of the selected point keys’ motion path, keeping its shape.',
-		needs: 'keyframes.cleanupPath',
 		require: spatialRequired,
 		run: (e, ctx) => {
 			const r = runEaseTransaction(

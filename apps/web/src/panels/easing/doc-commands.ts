@@ -1,35 +1,19 @@
 // Easing panel ▸ the document commands its actions send (one transaction each, so one undo step): the keyframe-ease
 // commands of packages/project (`keyframe.applyEase`, `keyframe.pasteEase`, `keyframe.pasteValues`,
 // `keyframe.setVelocity`, `keyframe.createPathController`, `keyframes.cleanupPath`; schemas in
-// commands/schemas/ease.ts). An action whose command the document model lacks is disabled with a reason
-// (`missingDocCommand`), never sent. Duplicate / Mirror keys at
-// the playhead reuse the keyframe paste (a mirrored paste reverses timing and eases, `reversedKeyTiming`).
+// commands/schemas/ease.ts). Duplicate / Mirror keys at the playhead reuse the keyframe paste
+// (a mirrored paste reverses timing and eases, `reversedKeyTiming`).
 import {
 	buildKeyframesPayload,
 	type Command,
 	type EaseClip,
 	type EaseCurve,
 	type EaseSection,
-	isCommandType,
 	type ParamPath,
 	type ProjectDocument,
 } from '@jasper/project';
-import { t } from '../../i18n/runtime.ts';
 import { type InterpolationPreset, interpolationCommand } from '../effectControls/lib.ts';
 import type { EaseSelection } from './selection.ts';
-
-export type EaseDocCommand =
-	| 'keyframe.applyEase'
-	| 'keyframe.pasteEase'
-	| 'keyframe.pasteValues'
-	| 'keyframe.setVelocity'
-	| 'keyframe.createPathController'
-	| 'keyframes.cleanupPath';
-
-/** Why an action cannot run in this build (its document command is missing), else undefined. */
-export function missingDocCommand(type: EaseDocCommand): string | undefined {
-	return isCommandType(type) ? undefined : t('This build has no {0} command yet', type);
-}
 
 const ids = (keyframeIds: readonly string[]) => [...new Set(keyframeIds)];
 
