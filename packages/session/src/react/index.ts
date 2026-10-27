@@ -141,7 +141,7 @@ export function useTransportFrame(throttleMs = 100): TransportState {
  */
 export function useDerivedPreviewDocument(session: EditorSession): ProjectDocument | null {
 	const active = useStoreSelector(derivedPreviewFor(session).store, (s) => s.active);
-	const gesture = useStoreSelector(session.store, (s) => s.gesture !== null);
-	void gesture; // re-render when a gesture starts or ends
+	// Re-render when a gesture starts or ends.
+	useStoreSelector(session.store, (s) => s.gesture !== null);
 	return derivedPreviewDocument({ active }, session);
 }
