@@ -12180,5 +12180,15 @@
   "Recent Dates": "Fechas recientes",
   "How the iPhone App Store card prints a review younger than a week: 'weekday' (the iOS 14-era App Store of the requester's screenshot: the review's weekday, \"Sun\", counted back from the fixed date 2026-10-25) or 'relative' (today's App Store, iOS 15+: \"Just now\", \"5h ago\", \"2d ago\"). Older reviews print \"3w ago\", \"4mo ago\", \"1y ago\" either way. Used by: app-store-review-ios.": "Cómo muestra la tarjeta de App Store del iPhone una reseña de menos de una semana: 'weekday' (el App Store de la época de iOS 14 de la captura de quien lo pidió: el día de la semana de la reseña, «Sun», contado hacia atrás desde la fecha fija 2026-10-25) o 'relative' (el App Store actual, iOS 15+: «Just now», «5h ago», «2d ago»). Las reseñas más antiguas muestran «3w ago», «4mo ago», «1y ago» en ambos casos. Lo usa: app-store-review-ios.",
   "Weekday (Sun)": "Día de la semana (dom)",
-  "Relative (2d ago)": "Relativa (hace 2 d)"
+  "Relative (2d ago)": "Relativa (hace 2 d)",
+  "{0} fixes": "{0} correcciones",
+  "1 fix": "1 corrección",
+  "Fixes": "Correcciones",
+  "Spelling": "Ortografía",
+  "Maybe": "Quizá",
+  "Fix Transcript Words": "Corregir palabras de la transcripción",
+  "Fix Transcript Settings": "Ajustes de Corregir transcripción",
+  "Not selected": "No seleccionado",
+  "Not selected: Accept all leaves it out; accept it here (Enter) to apply it": "No seleccionado: Aceptar todo lo deja fuera; acéptalo aquí (Intro) para aplicarlo",
+  "Accept every selected item (items offered unselected stay pending)": "Aceptar todos los elementos seleccionados (los ofrecidos sin seleccionar quedan pendientes)"
 }
