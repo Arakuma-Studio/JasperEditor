@@ -26,7 +26,7 @@ export const GLOSSARY_LIMITS = {
 } as const;
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is being replaced
-const CONTROL = /[\u0000-\u001f\u007f-\u009f  ]/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
 /** A glossary text as stored: NFC, control characters and line breaks as spaces, single spaces, trimmed. */
 export function cleanGlossaryText(s: string): string {
