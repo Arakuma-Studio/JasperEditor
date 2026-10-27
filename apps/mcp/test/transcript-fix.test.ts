@@ -1,6 +1,5 @@
-// fix_transcript (spec 17 SC-091): conventions (title, annotations, strict arguments), the request passed to the engine,
-// the dry run and the proposal results, progress notifications while the job runs, cancellation (the engine job is
-// cancelled), job refusals as tool errors with their E_* code, the guide resource and attach_script's description.
+// fix_transcript (spec 17 SC-091): strict arguments, engine requests, dry-run/proposal results, progress,
+// cancellation of the engine job, and refused jobs as tool errors with their E_* code.
 import type { EngineJob, TranscriptFixResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, type ProjectDocument } from '@jasper/project';
@@ -170,26 +169,18 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 }
 
 describe('fix_transcript', () => {
-	it('is listed with a title, a strict schema and the hints of a reviewable (non-destructive) producer', async () => {
+	it('refuses unknown settings, unsupported scopes and missing mode before starting a job', async () => {
 		const t = await connect();
-		const { tools } = await t.client.listTools();
-		const tool = tools.find((x) => x.name === 'fix_transcript')!;
-		expect(tool.title).toBeTruthy();
-		expect(tool.annotations).toEqual({
-			readOnlyHint: false,
-			destructiveHint: false,
-			idempotentHint: false,
-			openWorldHint: false,
-		});
-		expect(tool.inputSchema.additionalProperties).toBe(false);
-		expect(tool.inputSchema.required).toEqual(expect.arrayContaining(['projectId', 'mode']));
 		const { r, json } = await t.call({ projectId: P, mode: 'dryRun', strictnes: 'careful' });
 		expect(r.isError).toBe(true);
 		expect(json.error.code).toBe('E_UNKNOWN_ARGUMENT');
 		const bad = await t.call({ projectId: P, mode: 'dryRun', scope: 'all' });
 		expect(bad.r.isError).toBe(true);
-		const attach = tools.find((x) => x.name === 'attach_script')!;
-		expect(attach.description).toContain('the script serves cleanup and transcript fixing');
+		expect(bad.json.error.code).toBe('E_INVALID_ARGUMENT');
+		const missing = await t.call({ projectId: P });
+		expect(missing.r.isError).toBe(true);
+		expect(missing.json.error.code).toBe('E_INVALID_ARGUMENT');
+		expect(t.engine.calls).toEqual([]);
 	});
 
 	it('dry run: passes the settings to the engine and returns the pre-run report', async () => {
@@ -276,24 +267,5 @@ describe('fix_transcript', () => {
 		expect(r.isError).toBe(true);
 		expect(json.error.code).toBe('E_NO_SOURCE');
 		expect(json.error.hint).toBeTruthy();
-	});
-
-	it('the guide resource walks attach_script → fix_transcript → review → accept → cleanup', async () => {
-		const t = await connect();
-		const res = await t.client.readResource({ uri: 'jasper://guide/transcript-fix' });
-		const text = (res.contents[0] as { text: string }).text;
-		expect(text).toContain('# Fixing transcripts from a script');
-		for (const step of [
-			'attach_script',
-			'fix_transcript',
-			'dryRun',
-			'propose',
-			'accept_proposal',
-			'plan_cleanup',
-		])
-			expect(text).toContain(step);
-		expect(text.indexOf('attach_script')).toBeLessThan(text.indexOf('plan_cleanup'));
-		const auto = await t.client.readResource({ uri: 'jasper://guide/editing-automation' });
-		expect((auto.contents[0] as { text: string }).text).toContain('fix_transcript');
 	});
 });

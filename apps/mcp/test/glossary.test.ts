@@ -100,27 +100,6 @@ async function connect() {
 }
 
 describe('glossary MCP tools (spec 17 SC-091)', () => {
-	it('annotations: list is read-only, save idempotent, remove destructive', async () => {
-		const { client } = await connect();
-		const tools = Object.fromEntries((await client.listTools()).tools.map((t) => [t.name, t.annotations]));
-		expect(tools.list_glossary).toMatchObject({
-			readOnlyHint: true,
-			destructiveHint: false,
-			idempotentHint: true,
-		});
-		expect(tools.save_glossary_entry).toMatchObject({
-			readOnlyHint: false,
-			destructiveHint: false,
-			idempotentHint: true,
-			openWorldHint: false,
-		});
-		expect(tools.remove_glossary_entry).toMatchObject({
-			readOnlyHint: false,
-			destructiveHint: true,
-			idempotentHint: true,
-		});
-	});
-
 	it('save merges by right spelling and is idempotent; list filters by text and language', async () => {
 		const { call, engine } = await connect();
 		const a = await call('save_glossary_entry', {

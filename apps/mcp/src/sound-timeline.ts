@@ -14,7 +14,7 @@ import { canvas, type RgbaImage, ramp } from './sound-sheet.ts';
 
 type Rgb = readonly [number, number, number];
 
-export const STEM_COLOURS: Record<'mix' | 'bed' | 'sfx' | 'music' | 'dialogue' | 'ambience', Rgb> = {
+const STEM_COLOURS: Record<'mix' | 'bed' | 'sfx' | 'music' | 'dialogue' | 'ambience', Rgb> = {
 	mix: [240, 240, 245],
 	bed: [90, 150, 255],
 	sfx: [255, 160, 50],
@@ -29,7 +29,7 @@ const SPEECH: Rgb = [40, 90, 50];
 const WAVE: Rgb = [120, 200, 240];
 const MOTION: Rgb = [230, 230, 120];
 /** The measured picture motion (pixel analysis), drawn over the keyframed motion. */
-export const PIXEL_MOTION: Rgb = [255, 130, 210];
+const PIXEL_MOTION: Rgb = [255, 130, 210];
 const HERO: Rgb = [255, 90, 90];
 const SUPPORT: Rgb = [255, 200, 120];
 const SEVERITY: Record<'error' | 'warning' | 'info', Rgb> = {
@@ -38,7 +38,7 @@ const SEVERITY: Record<'error' | 'warning' | 'info', Rgb> = {
 	info: [150, 150, 160],
 };
 /** Answer marks (spec 12 P6-E7): a shape per status, so colour is never the only cue. */
-export const SYNC_MARKS = {
+const SYNC_MARKS = {
 	ok: { colour: [90, 220, 120] as Rgb, shape: 'filled circle', label: 'OK' },
 	near: { colour: [255, 200, 60] as Rgb, shape: 'hollow diamond', label: 'near' },
 	swell: { colour: [110, 170, 255] as Rgb, shape: 'hollow triangle', label: 'swell' },
@@ -46,7 +46,7 @@ export const SYNC_MARKS = {
 } as const;
 type SyncStatus = keyof typeof SYNC_MARKS;
 /** Section classes (the sections band). */
-export const SECTION_COLOURS: Record<string, Rgb> = {
+const SECTION_COLOURS: Record<string, Rgb> = {
 	dialogue: [70, 170, 95],
 	music: [150, 90, 210],
 	ambience: [50, 160, 160],

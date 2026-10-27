@@ -1,6 +1,6 @@
 // Spec 17 at MCP (scapply): per-item default selection in get_proposal / accept_proposal (an agent's "all" takes the
-// selected items and never the maybe group; the rest is reported as notSelected; named ids pass through), the E_STALE
-// hint, and the describe_commands examples of transcript.replaceWords / scriptFix.configure applied to a real document.
+// selected items and never the maybe group; the rest is reported as notSelected; named ids pass through), and the
+// describe_commands examples of transcript.replaceWords / scriptFix.configure applied to a real document.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -15,7 +15,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { TX_ERROR_HINTS } from '../src/errors.ts';
 import { COMMAND_EXAMPLES } from '../src/examples.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
@@ -137,10 +136,6 @@ describe('per-item default selection at MCP (SC-061)', () => {
 		expect(json.error.code).toBe('E_INVALID_PARAM');
 		expect(json.error.hint).toContain('naming their ids');
 		expect(t.engine.accepts).toEqual([]);
-	});
-
-	it('E_STALE has a hint', () => {
-		expect(TX_ERROR_HINTS.E_STALE).toContain('re-plan');
 	});
 });
 

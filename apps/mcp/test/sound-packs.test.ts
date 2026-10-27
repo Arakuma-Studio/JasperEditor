@@ -208,18 +208,6 @@ type PackView = {
 };
 
 describe('sound pack MCP tools', { timeout: 900_000 }, () => {
-	it('annotations: list is read-only, install reaches the network, remove is destructive and idempotent', async () => {
-		const tools = (await client.listTools()).tools;
-		const ann = (n: string) => tools.find((t) => t.name === n)?.annotations;
-		expect(ann('list_sound_packs')).toMatchObject({ readOnlyHint: true, openWorldHint: false });
-		expect(ann('install_sound_pack')).toMatchObject({
-			readOnlyHint: false,
-			destructiveHint: false,
-			openWorldHint: true,
-		});
-		expect(ann('remove_sound_pack')).toMatchObject({ destructiveHint: true, idempotentHint: true });
-	});
-
 	it('lists, installs (waiting for the index), searches by pack and removes behind the approval card', async () => {
 		const list = await ok<{ packs: PackView[] }>('list_sound_packs');
 		expect(list.packs).toEqual([

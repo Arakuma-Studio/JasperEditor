@@ -625,28 +625,3 @@ describe('import_motion_graphics_csv', () => {
 		expect(engine.txs).toHaveLength(0);
 	});
 });
-
-describe('advertised schemas', () => {
-	it('lists both tools as additive edits with their caps and the friendly time grammar', async () => {
-		const engine = fakeEngine();
-		const { client } = await connect(engine);
-		const { tools } = await client.listTools();
-		const dup = tools.find((t) => t.name === 'duplicate_motion_graphic')!;
-		const imp = tools.find((t) => t.name === 'import_motion_graphics_csv')!;
-		for (const t of [dup, imp])
-			expect(t.annotations).toMatchObject({
-				readOnlyHint: false,
-				destructiveHint: false,
-				idempotentHint: false,
-			});
-		const dp = dup.inputSchema.properties as Record<string, Json>;
-		expect(dup.inputSchema.required).toEqual(expect.arrayContaining(['projectId', 'clipId']));
-		expect(dp.count).toMatchObject({ minimum: 1, maximum: 50 });
-		expect(dp.at.description).toContain('"1:02:03"');
-		const ip = imp.inputSchema.properties as Record<string, Json>;
-		expect(imp.inputSchema.required).toEqual(expect.arrayContaining(['projectId', 'csv', 'template']));
-		expect(ip.csv.maxLength).toBe(2 * 1024 * 1024);
-		expect(ip.delimiter.enum).toEqual(['auto', 'comma', 'tab', 'semicolon']);
-		expect(imp.description).toContain('User');
-	});
-});

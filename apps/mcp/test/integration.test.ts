@@ -261,6 +261,16 @@ describe('MCP over stdio with a token-protected engine', () => {
 	it('serves project resources and the edit-video prompt through MCP', async () => {
 		const doc = await session.client.readResource({ uri: `jasper://projects/${projectId}/document` });
 		expect(JSON.parse((doc.contents[0] as { text: string }).text).projectId).toBe(projectId);
+		for (const uri of [
+			'jasper://guide',
+			'jasper://guide/cleanup',
+			'jasper://guide/transcript-fix',
+			'jasper://guide/editing-automation',
+		]) {
+			const guide = await session.client.readResource({ uri });
+			expect(guide.contents[0]).toMatchObject({ uri, mimeType: 'text/markdown', text: expect.any(String) });
+			expect((guide.contents[0] as { text: string }).text.trim().length).toBeGreaterThan(0);
+		}
 		const prompt = await session.client.getPrompt({
 			name: 'edit-video',
 			arguments: { goal: 'a teaser', projectId },

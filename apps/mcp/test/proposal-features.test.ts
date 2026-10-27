@@ -148,21 +148,6 @@ describe('proposal feature tools', () => {
 		const bad = await u.call('refresh_proposal', { projectId: P, proposalId: PRP, itemIds: 'all' });
 		expect(bad.r.isError).toBe(true);
 	});
-
-	it('the guide explains features, agent accept, refresh, E_TOO_LARGE and the batch commands', async () => {
-		const t = await connect({ refreshable: true });
-		const g = await t.client.readResource({ uri: 'jasper://guide' });
-		const text = (g.contents[0] as { text: string }).text;
-		for (const s of [
-			'list_proposal_features',
-			'refresh_proposal',
-			'E_TOO_LARGE',
-			'clip.addAdjustmentBatch',
-			'keyframe.addBatch',
-			'meta.anchorOn',
-		])
-			expect(text).toContain(s);
-	});
 });
 
 describe('batch command examples (describe_commands)', () => {

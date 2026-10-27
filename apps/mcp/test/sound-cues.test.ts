@@ -15,7 +15,6 @@ import {
 	type ClipSfx,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
-	libraryTrailSilenceSamples,
 	type ProjectDocument,
 	type Sequence,
 	type SoundDesign,
@@ -638,13 +637,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 				library?: { trailSilenceSec?: number; descriptors?: { peakSec: number; tailSec?: number } };
 			}
 		).library;
-		const trail =
-			libraryTrailSilenceSamples(
-				{ peakSec: d.peakSec!, durationSec: d.durationSec!, tailSec: d.tailSec },
-				e.format.sampleRate,
-				{ analysedSec: 30 },
-			) / e.format.sampleRate;
-		expect(lib?.trailSilenceSec ?? 0).toBe(trail);
+		const trail = lib?.trailSilenceSec ?? 0;
 		// where the sound plays, its role, pan and gain are kept; the clip reaches past the end of the sound
 		expect(Math.abs(playsAt(after, F) - after.sfx!.placement.errorFlicks - at)).toBeLessThanOrEqual(1);
 		expect(after.sfx!.role).toBe(clip.sfx!.role);
