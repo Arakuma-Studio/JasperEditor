@@ -23,18 +23,38 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 
 ## 3. Task board
 - ✅ Build/test VM rented and provisioned (Hetzner cpx51, shared vCPU).
-- 🔄 Spike on the user's Mac (alignment, audio verification, false-correction tests, glossary prompting, cost).
+- ✅ Spike on the user's Mac (16 raw recordings, 78 min of speech; figures in spec 17 §0): 6.3 disagreements per
+  speech minute; with the audio check 1 false fix per 558 corrupted script words, 0 fixes in off-script / head-tail /
+  hallucination regions, 77 % of adjudicated recognition errors fixed and 0 of 55 real deviations; 1.9 fixes per
+  speech minute; ≈ 2.4 s per speech minute on the M4 Max (measured, mlx fp16). Glossary prompt: names 73 → 94 % exact
+  but one lost stretch of chatter → optional.
 - ✅ Code map of every affected surface + proposed work-package split (private research folder): no schema bump needed
   if the script stays in `Sequence.cleanup.script` and fixes are commands on existing word fields; needs an index-free
   transcript fix command, an in-place subtitle patch, a worker scoring pass (the existing word-alignment pass already
   decodes a given text once), a new proposal feature, and the UI never sends a Whisper prompt today.
-- ⏳ Spec 17 (`docs/specs/17-script-correction.md`).
-- ⏳ Implementation work packages (parallel, worktrees `.claude/worktrees/sc-<name>`, integration branch
-  `feat/script-correction`).
+- ✅ Spec 17 (`docs/specs/17-script-correction.md`, a58b3157).
+- Implementation (worktrees `.claude/worktrees/sc-<name>`, branches `feat/sc-<name>`, integration branch
+  `feat/script-correction` off `main` a58b3157):
+
+| WP | Scope | Depends on | State |
+|---|---|---|---|
+| scalign | parser, aligner, candidates, windows, Δ, decisions (`packages/project/src/script-fix/`) | — | 🔄 |
+| scapply | `transcript.replaceWords`, subtitle + caption-track patch, `planReplaceWords`, `Sequence.scriptFix`, proposal feature + per-item default selection | — | 🔄 |
+| scscore | worker scoring + forced DTW, `SpeechService.score`, glossary prompt carry + guard | — | 🔄 |
+| scglossary | personal glossary library, routes, client, MCP tools, replace-all finder, Preferences page | — | 🔄 |
+| scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | ⏳ |
+| scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | ⏳ |
+| sccalib | accuracy harness on the Mac with the editor's own code (SC-105) | scengine | ⏳ |
 - ⏳ Integration: fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`.
 
 ## 4. Decisions
-(none yet)
+- D1 No schema bump: the script stays in `Sequence.cleanup.script` (shared, called "Script"); fixes are commands on
+  existing word fields; the only new persisted field is the optional `Sequence.scriptFix` (rejections, settings),
+  which older v10 builds keep on save.
+- D2 Never delete ASR words (ad-libs can't be told from recogniser insertions); numbers, stylised spellings and
+  headings are never rewritten.
+- D3 Glossary prompting is optional and off by default (spike: helps names, once dropped real chatter).
+- D4 Uncertain candidates are offered unselected ("Maybe"); agents never auto-apply them.
 
 ## 5. Costs (estimated from provider rates)
 | Machine | Rate | Since | Note |
@@ -46,4 +66,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - Prompting Whisper with script text can make it output script words that were not said; the spike measures it.
 
 ## 7. Log
-- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done.
+- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched.
