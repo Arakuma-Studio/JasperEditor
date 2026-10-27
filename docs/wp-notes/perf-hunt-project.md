@@ -64,14 +64,12 @@ timing window; each sample runs queries for at least 100 ms.
 
 ## Verification
 
-- The new differential tests passed against the original implementation before
-  editing and the changed implementation afterwards. They compare against
-  independent boundary/gap scans at exact boundaries, fractional positions,
-  empty/missing/duplicate targets, empty tracks, nonfinite positions, changed
-  document identities, undo-like old-version reuse and repeated Immer draft
-  mutations. A fast-check property covers 75 generated non-overlapping projects
-  with up to six tracks and 35 clips per track, querying both sides of every cut
-  as well as random positions.
+- Navigation tests assert authored previous/next boundary and bounded-gap vectors, explicit track targeting,
+  empty queries, and immutable document revisions restored by undo. The generated property checks 75 seeded
+  non-overlapping projects with up to six tracks and 35 clips per track at every cut ± half a frame and random
+  positions. Its oracle uses extrema of the declared boundary set and empty adjacent intervals; result arrays
+  retain every query assertion without repeating assertion setup for each point. Draft-index behavior is owned
+  by the real multi-command regression in `derive-draft-index.test.ts`.
 - `pnpm exec vitest run packages/project/test/edit-navigation.test.ts
   packages/project/test/derive-draft-index.test.ts
   packages/project/test/perf-budgets.test.ts --maxWorkers=2`: three files / six

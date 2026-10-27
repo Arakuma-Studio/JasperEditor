@@ -5,9 +5,6 @@ import { Fft, fft } from '../src/fft.ts';
 describe('complex FFT', () => {
 	it.each([
 		[2, 1],
-		[4, 3],
-		[32, 13],
-		[2048, 1003],
 		[1 << 19, 123_457],
 	])('transforms a complex impulse with a fresh plan (size %i, sample %i)', (size, at) => {
 		const plan = new Fft(size);

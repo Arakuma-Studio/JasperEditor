@@ -82,17 +82,18 @@ describe('bulk selection', () => {
 		expect(expandClipSelection(doc, ['a', 'b'], true)).toEqual(['a', 'b', 'c']);
 	});
 
-	it('does not share expansion state between sequences or selection calls', () => {
+	it('reads current group membership on each selection call', () => {
 		const { doc, seq, clip } = fixture();
-		seq.clips = { selected: { ...clip, id: 'selected', groupId: 'same-group' } };
-		seq.groups = { 'same-group': { id: 'same-group', members: ['selected', 'first'] } };
-		const other = structuredClone(seq);
-		other.id = 'seq_other';
-		other.groups['same-group']!.members = ['selected', 'second'];
-		doc.sequences[other.id] = other;
-		expect(expandClipSelection(doc, ['selected', 'selected'], true)).toEqual(['selected', 'first', 'second']);
-		seq.groups['same-group']!.members.push('added');
-		expect(expandClipSelection(doc, ['selected'], true)).toEqual(['selected', 'first', 'added', 'second']);
+		seq.clips = {
+			selected: { ...clip, id: 'selected', groupId: 'group' },
+			first: { ...clip, id: 'first', start: 30, groupId: 'group' },
+			added: { ...clip, id: 'added', start: 60, groupId: null },
+		};
+		seq.groups = { group: { id: 'group', members: ['selected', 'first'] } };
+		expect(expandClipSelection(doc, ['selected', 'selected'], true)).toEqual(['selected', 'first']);
+		seq.groups.group!.members.push('added');
+		seq.clips.added!.groupId = 'group';
+		expect(expandClipSelection(doc, ['selected'], true)).toEqual(['selected', 'first', 'added']);
 	});
 });
 

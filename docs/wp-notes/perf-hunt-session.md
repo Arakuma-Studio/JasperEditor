@@ -66,6 +66,5 @@ It does not write generated results into tracked files.
 
 Selection coverage includes shared links/groups, duplicate inputs, insertion
 order, independently disabled link/group selection, no recursive expansion of
-implicitly added members, repeated group IDs across sequences, and membership
-changes between calls. The session and property suites cover normal document
+implicitly added members, multiple sequences, and membership changes between calls. The session and property suites cover normal document
 editing and undo/redo integrity. This change does not alter rendering or export.
