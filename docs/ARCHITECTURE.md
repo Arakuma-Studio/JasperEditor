@@ -787,8 +787,10 @@ Auto Sound Pass…). MCP: `plan_sound_design`, `place_sound` (propose mode), `li
 feature; another feature registers its accept policy (`ProposalService.registerPolicy`; default: agents refused).
 Spec 15 §2.1 adds the shared mechanics of the workflow features (`docs/wp-notes/edit-automation.md` "Proposals for new
 features"): the feature table `PROPOSAL_FEATURES` (`proposals/features.ts`: names, Review groups, item nouns, producers,
-where agent accept is decided) with project-level policies for `edit-automation`, `subtitles`, `transcript-cleanup`
+where agent accept is decided) with project-level policies for `edit-automation`, `subtitles`, `transcript-cleanup`, `transcript-correction`
 (Project Settings ▸ Agent Proposals, `settings.agentProposals`, default on; an agent turning one on needs approval),
+per-item default selection (spec 17 SC-061: `selected: false` items are left out of an accept of "all"; an agent's
+"all" never takes a feature's `agentAllExcludes` groups, e.g. Maybe transcript fixes — `acceptAllItemIds`),
 finer anchors (`meta.anchorOn`: decorated clips and cut frames), producer refreshes of stale items
 (`ProposalService.registerRefresher`, `POST …/refresh`, `refresh_proposal`), budgets (`proposalBudget`, 413
 `PROPOSAL_TOO_LARGE` / `E_TOO_LARGE` with the range that fits), batch commands (`clip.addAdjustmentBatch`,
