@@ -44,10 +44,12 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 | scglossary | personal glossary library, routes, client, MCP tools, replace-all finder, Preferences page | — | ✅ merged (2fd86bf9; 518 tests in the touched suites, page exercised in the VM dev stack) |
 | scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | ✅ merged (f40cdebd; real-model LJ test: 10/10 fixes, times ≤ 100 ms, undo exact, corrupted script → 0 fixes; whole job 13.1 s per speech minute on a 10.6-min synthetic input at research density, VM CPU, turbo, load 7.0–7.7, measured — target ≤ 20 s met; 22/22 injected errors fixed, deviations kept; 24cd51d2) |
 | scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | ✅ merged (4bdd7fe3; web 1,307 tests, e2e `script-fix.spec.ts` passes with a full build and LGPL-only FFmpeg; every surface checked in the VM dev stack; confidence bands High ≥ 0 / Medium ≥ −1.5 / Low are an assumption) |
-| sccalib | accuracy harness on the Mac with the editor's own code (SC-105) | scalign, scscore | 🔄 |
+| sccalib | accuracy harness on the Mac with the editor's own code (SC-105) | scalign, scscore | ✅ merged (6e1c2db2; Mac, ONNX fp32 turbo, Standard: false fixes 1/558 corrupted words (0.18 %), 0 audio fixes in off-script/head-tail/hallucination regions (1 no-audio name join in a head-tail slate), recognition errors fixed 38/52 (73 %) with 0/55 real deviations, injected 245/430 (57 %), proper splits/glues 5/10, 2.49 fixes per speech minute; cost 4.27 s CPU / 2.29 s WebGPU per speech minute; CPU = WebGPU decisions; fixed a scoring refusal on a 238-word hallucination loop; windows unpacked by default) |
 - ⏳ Integration: fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`.
 
 ## 4. Decisions
+- D5 Score windows are not packed by default (SC-105: packing let readings use untranscribed speech in gaps and
+  caused every false fix found); packing remains an option.
 - D1 No schema bump: the script stays in `Sequence.cleanup.script` (shared, called "Script"); fixes are commands on
   existing word fields; the only new persisted field is the optional `Sequence.scriptFix` (rejections, settings),
   which older v10 builds keep on save.
@@ -70,4 +72,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 
 ## 7. Log
 - 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged; scweb merged; integrated suite on 4bdd7fe3: typecheck passes, 9,341 tests passed, only the 7 known failures; lint
-  failed on the new e2e spec's formatting only (fixed in c008b648); waiting for sccalib before the final gate.
+  failed on the new e2e spec's formatting only (fixed in c008b648); sccalib merged (spec SC-030 updated: unpacked windows by default); re-measuring SC-037 on the VM with unpacked windows.
