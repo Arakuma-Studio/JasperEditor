@@ -72,6 +72,8 @@ export const EVENT_PAYLOADS = {
 	'subtitleTemplates.changed': z.object({ revision: z.number().int() }),
 	/** Spec 14 TC-030: the user's transcript cleanup presets changed (the Clean Up preset picker refreshes). */
 	'cleanupPresets.changed': z.object({ revision: z.number().int() }),
+	/** Spec 17 SC-070: the personal speech glossary changed (Preferences ▸ Transcription ▸ Glossary refreshes). */
+	'glossary.changed': z.object({ revision: z.number().int() }),
 	/** Spec 15 EA-010: the user's style recipe library changed (Apply Style and Style Recipes refresh). */
 	'styleRecipes.changed': z.object({ revision: z.number().int() }),
 	/** The sound library index changed (an index job finished, a folder was removed); the Sound Library refreshes. */

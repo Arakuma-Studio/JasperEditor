@@ -88,4 +88,12 @@ export const speechCommands: UiCommand[] = [
 		scope: 'global',
 		run: (ctx) => ctx.ui.openDialog(PREFERENCES_DIALOG, { page: 'speech', session: ctx.session ?? null }),
 	},
+	{
+		id: 'speech.glossary',
+		label: 'Speech Glossary…',
+		description: 'Preferences ▸ Transcription ▸ Glossary: names and words the recogniser gets wrong',
+		scope: 'global',
+		run: (ctx) =>
+			ctx.ui.openDialog(PREFERENCES_DIALOG, { page: 'speech-glossary', session: ctx.session ?? null }),
+	},
 ];

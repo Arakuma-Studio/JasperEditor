@@ -315,6 +315,7 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   renders/<jobId>/output.<ext>
   remotion/bundle/                           # cached Remotion serveUrl (dev); packaged builds ship a prebuilt bundle
   presets/effect-presets.json                # user effect preset library (S03:FX-030, wp-m3-presets; /api/effect-presets)
+  speech/glossary.json                       # personal speech glossary (spec 17 SC-070; atomic; /api/speech/glossary)
   projects/<projectId>/proposals/<id>.json   # proposals (spec 12 §2.5, D-51; engine-side, not in the document; ≤ 50, 30-day expiry)
   projects/<projectId>/proposals/<id>.accept-intent  # accept journal (written before the transaction, removed after; settled on read)
   projects/<projectId>/sound-check/<seqId>.json      # each sequence's last full Sound Check report (≤ 32 per project; kept across
