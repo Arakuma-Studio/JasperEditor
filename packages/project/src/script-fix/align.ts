@@ -263,6 +263,21 @@ function kthLargest(a: Float64Array, k: number): number {
 	return a[target]!;
 }
 
+/** [from, to) of at most `cap` entries of ascending `a` nearest `center` (all of `a` when it is short enough). */
+function nearWindow(a: ArrayLike<number>, center: number, cap: number): [number, number] {
+	const n = a.length;
+	if (n <= cap) return [0, n];
+	let lo = 0;
+	let hi = n;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (a[mid]! < center) lo = mid + 1;
+		else hi = mid;
+	}
+	const from = Math.max(0, Math.min(lo - (cap >> 1), n - cap));
+	return [from, from + cap];
+}
+
 /** First index in sorted `a` with a[i] ≥ v. */
 function lowerBound(a: Int32Array, v: number): number {
 	let lo = 0;
@@ -509,15 +524,18 @@ export function alignCore(
 	const sSp = Array.from(sv.ids, (id) => sSpoken[id]!);
 	const sCache = new Map<string, Array<[number, number]>>();
 	const tCache = new Map<string, Array<[number, number]>>();
-	const bByVocab: Array<Array<[number, number, number]> | undefined> = new Array(tv.words.length);
+	// 1:b cells per transcript vocabulary entry and b: script end positions (ascending) and similarities
+	const bByVocab: Array<{ js: number[]; ps: number[] } | undefined>[] = [new Array(tv.words.length), new Array(tv.words.length)];
 	for (const b of [2, 3])
 		for (let j = b - 1; j < S; j++) {
 			const s = sSp.slice(j - b + 1, j + 1).join('');
 			if (s.length < 4) continue;
 			for (const [id, ps] of lookup(s, tIndex, tSpoken, tCache, tCounts)) {
-				let l = bByVocab[id];
-				if (!l) bByVocab[id] = l = [];
-				l.push([b, j, ps]);
+				const byB = bByVocab[b - 2]!;
+				let l = byB[id];
+				if (!l) byB[id] = l = { js: [], ps: [] };
+				l.js.push(j);
+				l.ps.push(ps);
 			}
 		}
 	const mergeScore = (ps: number, n: number) =>
@@ -541,19 +559,33 @@ export function alignCore(
 			rSc.push(mergeScore(ps, Math.max(a, b)));
 			rPs.push(ps);
 		};
+		// a list longer than the cap (a word repeated all over the script) contributes its cells nearest the
+		// previous row's best cell only
+		const center = i > 0 ? rowArg[i - 1]! + 1 : 0;
+		let generationCapped = false;
 		for (const a of [2, 3]) {
 			if (i < a - 1) continue;
 			const s = tSp.slice(i - a + 1, i + 1).join('');
 			if (s.length < 4) continue;
-			for (const [id, ps] of lookup(s, sIndex, sSpoken, sCache, sCounts))
-				for (const j of sv.positions[id]!) add(a, 1, j, ps);
+			for (const [id, ps] of lookup(s, sIndex, sSpoken, sCache, sCounts)) {
+				const pos = sv.positions[id]!;
+				const [from, to] = nearWindow(pos, center, capMerges);
+				if (to - from < pos.length) generationCapped = true;
+				for (let q = from; q < to; q++) add(a, 1, pos[q]!, ps);
+			}
 		}
-		for (const [b, j, ps] of bByVocab[tv.ids[i]!] ?? []) add(1, b, j, ps);
+		for (const b of [2, 3]) {
+			const l = bByVocab[b - 2]![tv.ids[i]!];
+			if (!l) continue;
+			const [from, to] = nearWindow(l.js, center, capMerges);
+			if (to - from < l.js.length) generationCapped = true;
+			for (let q = from; q < to; q++) add(1, b, l.js[q]!, l.ps[q]!);
+		}
 		const n = rA.n;
 		mergeCells += n;
 		if (n <= capMerges) {
 			for (let q = 0; q < n; q++) rKeep.push(q);
-			return { keep: rKeep.arr, n, capped: false };
+			return { keep: rKeep.arr, n, capped: generationCapped };
 		}
 		// degenerate rows: the capMerges best scores (ties: generation order), evaluated in generation order
 		const thr = kthLargest(rSc.arr.slice(0, n), capMerges);
@@ -695,9 +727,8 @@ export function alignCore(
 		else {
 			// a word that occurs more often than the cap: the positions nearest the previous best cell, and the first best
 			rowCapped = true;
-			const at = lowerBound(land, i > 0 ? rowArg[i - 1]! + 1 : 0);
-			const from = Math.max(0, Math.min(at - (capRow >> 1), land.length - capRow));
-			for (let q = from; q < from + capRow; q++) touch(land[q]!);
+			const [from, to] = nearWindow(land, i > 0 ? rowArg[i - 1]! + 1 : 0, capRow);
+			for (let q = from; q < to; q++) touch(land[q]!);
 			touch(sim.firstPos);
 		}
 		const rm = rowMerges_(i);
