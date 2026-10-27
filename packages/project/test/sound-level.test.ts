@@ -9,14 +9,10 @@ import {
 	type ClipSfx,
 	checkInvariants,
 	createCounterIdSource,
-	DELIVERY_INTEGRATED_LUFS,
 	defaultSfxLevel,
 	type LibraryProvenance,
 	loadProject,
 	repairDocument,
-	SFX_DEFAULT_GAIN_MAX_DB,
-	SFX_DEFAULT_GAIN_MIN_DB,
-	SFX_PEAK_CEILING_DBTP,
 	SFX_ROLES,
 	SOUND_DELIVERIES,
 } from '../src/index.ts';
@@ -44,9 +40,14 @@ describe('defaultSfxLevel', () => {
 	});
 
 	it('targets follow the delivery (relative to its integrated target)', () => {
-		for (const delivery of SOUND_DELIVERIES) {
+		for (const [delivery, target] of [
+			['web', -22],
+			['podcast', -24],
+			['broadcast-r128', -31],
+			['atsc-a85', -32],
+		] as const) {
 			const l = defaultSfxLevel({ role: 'support', maxMomentaryLufs: -40, truePeakDb: -60, delivery });
-			expect(l.targetLufs).toBe(DELIVERY_INTEGRATED_LUFS[delivery] - 8);
+			expect(l.targetLufs).toBe(target);
 		}
 		expect(
 			defaultSfxLevel({ role: 'hero', maxMomentaryLufs: -20, delivery: 'broadcast-r128' }).targetLufs,
@@ -85,11 +86,11 @@ describe('defaultSfxLevel', () => {
 			limitedBy: 'peak',
 		});
 		expect(defaultSfxLevel({ role: 'layer', maxMomentaryLufs: 10, truePeakDb: 12 })).toMatchObject({
-			gainDb: SFX_DEFAULT_GAIN_MIN_DB,
+			gainDb: -30,
 			limitedBy: 'range',
 		});
 		expect(defaultSfxLevel({ role: 'hero', maxMomentaryLufs: -70, truePeakDb: -60 })).toMatchObject({
-			gainDb: SFX_DEFAULT_GAIN_MAX_DB,
+			gainDb: 12,
 			limitedBy: 'range',
 		});
 	});
@@ -115,13 +116,16 @@ describe('defaultSfxLevel', () => {
 						delivery,
 					});
 					expect(Number.isFinite(l.gainDb)).toBe(true);
-					expect(l.gainDb).toBeGreaterThanOrEqual(SFX_DEFAULT_GAIN_MIN_DB);
-					expect(l.gainDb).toBeLessThanOrEqual(SFX_DEFAULT_GAIN_MAX_DB);
+					expect(l.gainDb).toBeGreaterThanOrEqual(-30);
+					expect(l.gainDb).toBeLessThanOrEqual(12);
 					const okLoud = typeof loud === 'number' && Number.isFinite(loud) && Math.abs(loud) <= 200;
 					const okPeak = typeof peak === 'number' && Number.isFinite(peak) && Math.abs(peak) <= 200;
 					if (l.limitedBy === 'range') return;
 					if (okLoud) expect(loud + l.gainDb).toBeLessThanOrEqual(l.targetLufs + 0.05);
-					if (okPeak) expect(peak + l.gainDb).toBeLessThanOrEqual(SFX_PEAK_CEILING_DBTP[l.levelClass] + 0.05);
+					if (okPeak)
+						expect(peak + l.gainDb).toBeLessThanOrEqual(
+							{ hero: -6, support: -12, layer: -16, ambience: -20 }[l.levelClass] + 0.05,
+						);
 					else expect(l.gainDb).toBeLessThanOrEqual(0);
 				},
 			),

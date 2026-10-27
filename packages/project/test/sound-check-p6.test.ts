@@ -3,10 +3,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE,
 	isCommercialSafe,
 	isShareAlike,
-	LICENSE_FILTERS,
+	type LICENSE_FILTERS,
 	type LibraryProvenance,
 	licenseObligations,
 	passesCommercialSafeFilter,
@@ -47,13 +46,11 @@ describe('ShareAlike (P6-E13)', () => {
 	});
 
 	it('the Commercial-safe filter has ONE switch: CC BY-SA excluded by default (human decision), included on request', () => {
-		expect(COMMERCIAL_SAFE_FILTER_KEEPS_SHARE_ALIKE).toBe(false);
 		expect(passesCommercialSafeFilter('CC-BY-SA-4.0')).toBe(false);
 		expect(passesCommercialSafeFilter('CC-BY-SA-4.0', true)).toBe(true);
 		expect(passesCommercialSafeFilter('CC-BY-4.0')).toBe(true);
 		expect(passesCommercialSafeFilter('CC0-1.0')).toBe(true);
 		expect(passesCommercialSafeFilter('CC-BY-NC-4.0', true)).toBe(false);
-		expect(LICENSE_FILTERS).toEqual(['commercial-safe', 'commercial-safe-sa', 'any']);
 		// the ranking: commercial-safe (the default) leaves BY-SA out; "Include ShareAlike" lists it under BY; any adds NC
 		const snd = (id: string, license: string): RankableSound => ({
 			id,

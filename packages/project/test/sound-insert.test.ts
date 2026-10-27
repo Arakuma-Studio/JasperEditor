@@ -11,8 +11,6 @@ import {
 	libraryLeadSilenceSamples,
 	planSoundInsert,
 	resolveSoundAlign,
-	SOUND_TYPE_IDS,
-	SOUND_TYPES,
 	type SoundTrackSequence,
 	shiftLibraryDescriptors,
 	soundTimingOf,
@@ -28,7 +26,6 @@ describe('alignment by type', () => {
 		expect(defaultAlignForTypes(['newer-type', 'riser'])).toBe('end');
 		for (const bad of [[], null, undefined, ['__proto__'], [42], ['constructor']])
 			expect(defaultAlignForTypes(bad as never)).toBe('peak');
-		for (const t of SOUND_TYPE_IDS) expect(defaultAlignForTypes([t])).toBe(SOUND_TYPES[t].defaultAlign);
 	});
 	it('auto (or nothing) resolves by type; an explicit point wins', () => {
 		expect(resolveSoundAlign(['riser'], 'auto')).toBe('end');

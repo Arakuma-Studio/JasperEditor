@@ -7,14 +7,12 @@ import {
 	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	createCounterIdSource,
-	DEFAULT_SCRIPT_FIX_SETTINGS,
 	loadProject,
 	makeEnvelope,
 	type ProjectDocument,
 	readSequenceScriptFix,
 	repairDocument,
 	repairSequenceScriptFix,
-	SCRIPT_FIX_MAX_REJECTED,
 	scriptFixRejected,
 	scriptFixSettingsOf,
 	sequenceScriptFixIssue,
@@ -27,7 +25,11 @@ const stateOf = (h: Harness) => (h.seq as { scriptFix?: unknown }).scriptFix;
 describe('scriptFix.configure (SC-055)', () => {
 	it('merges settings, remembers and forgets rejections, clears; undo leaves the previous document', () => {
 		const h = new Harness();
-		expect(scriptFixSettingsOf(h.seq)).toEqual(DEFAULT_SCRIPT_FIX_SETTINGS);
+		expect(scriptFixSettingsOf(h.seq)).toEqual({
+			strictness: 'standard',
+			sources: ['script', 'glossary'],
+			scope: 'recordings',
+		});
 		const before = h.doc;
 		const r = h.ok([
 			{ type: 'scriptFix.configure', settings: { strictness: 'careful' }, reject: ['fp:a', 'fp:b'] },
@@ -60,11 +62,11 @@ describe('scriptFix.configure (SC-055)', () => {
 		);
 		expect(code(h.tx([{ type: 'scriptFix.configure', settings: { colour: 'red' } }]))).toBe('E_SCHEMA');
 		expect(code(h.tx([{ type: 'scriptFix.configure', reject: ['bad\u0001fp'] }]))).toBe('E_SCHEMA');
-		const many = Array.from({ length: SCRIPT_FIX_MAX_REJECTED }, (_, i) => `fp:${i}`);
+		const many = Array.from({ length: 10_000 }, (_, i) => `fp:${i}`);
 		h.ok([{ type: 'scriptFix.configure', reject: many }]);
 		expect(code(h.tx([{ type: 'scriptFix.configure', reject: ['fp:one-more'] }]))).toBe('E_LIMIT');
 		expect(code(h.tx([{ type: 'scriptFix.configure', sequenceId: 'seq_nope' }]))).toBe('E_NOT_FOUND');
-		expect(readSequenceScriptFix(h.seq).rejected).toHaveLength(SCRIPT_FIX_MAX_REJECTED);
+		expect(readSequenceScriptFix(h.seq).rejected).toHaveLength(10_000);
 	});
 });
 
@@ -105,9 +107,9 @@ describe('Sequence.scriptFix reading and repair (SC-055)', () => {
 			expect((Object.values(r.document.sequences)[0] as { scriptFix?: unknown }).scriptFix).toBeUndefined();
 			expect(r.report.map((x) => x.action)).toContain('repair-script-fix');
 		}
-		const huge = Array.from({ length: SCRIPT_FIX_MAX_REJECTED + 50 }, (_, i) => `fp:${i}`);
+		const huge = Array.from({ length: 10_000 + 50 }, (_, i) => `fp:${i}`);
 		const fixed = repairSequenceScriptFix({ rejected: huge })!;
-		expect(fixed.rejected).toHaveLength(SCRIPT_FIX_MAX_REJECTED);
+		expect(fixed.rejected).toHaveLength(10_000);
 		expect(fixed.rejected![0]).toBe('fp:0');
 		expect(sequenceScriptFixIssue(fixed)).toBeNull();
 	});
