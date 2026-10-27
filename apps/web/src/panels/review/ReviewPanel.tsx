@@ -488,6 +488,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							variant="secondary"
 							disabled={readOnly || counts.open === 0}
 							onClick={() => void acceptAll(session)}
+							title={t('Accept every selected item (items offered unselected stay pending)')}
 							data-testid="review-accept-all"
 						>
 							✓ {t('Accept all')}
@@ -690,6 +691,8 @@ function Row(p: {
 	const warn = it.state === 'stale' || it.state === 'invalid';
 	const problem = warn ? problemText(it, p.seq) : null;
 	const decided = it.state === 'applied';
+	// spec 17 SC-061: offered unselected (a Maybe transcript fix): Accept all leaves it out until accepted here
+	const unselected = !it.selected && (it.state === 'pending' || it.state === 'stale');
 	const seg = (d: 'accept' | 'reject' | 'clear', glyph: string, label: string, on: boolean) => (
 		<button
 			type="button"
@@ -736,7 +739,7 @@ function Row(p: {
 			id={p.id}
 			role="option"
 			aria-selected={p.selected}
-			aria-label={`${rowAriaLabel(row, p.seq)}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
+			aria-label={`${rowAriaLabel(row, p.seq)}${unselected ? `. ${t('Not selected')}` : ''}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
 			aria-posinset={p.position.kind === 'row' ? p.position.position + 1 : undefined}
 			aria-setsize={p.setSize}
 			onPointerDown={(e) => {
@@ -795,6 +798,15 @@ function Row(p: {
 				</span>
 			</div>
 			<div className="flex h-[1.375rem] min-w-0 shrink-0 items-center gap-1.5 pl-[66px] text-pr-small leading-[1.375rem] text-pr-muted">
+				{unselected ? (
+					<span
+						className="shrink-0 rounded-pr-control border border-pr-border px-1"
+						title={t('Not selected: Accept all leaves it out; accept it here (Enter) to apply it')}
+						data-review-unselected
+					>
+						{t('Not selected')}
+					</span>
+				) : null}
 				{row.role ? <span className="shrink-0">{row.role}</span> : null}
 				{gainText(row) ? (
 					<span className="max-w-[60%] shrink-0 truncate pr-tabular" title={gainText(row)} data-review-gain>

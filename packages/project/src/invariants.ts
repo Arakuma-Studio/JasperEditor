@@ -16,6 +16,7 @@ import {
 import { repairSubtitleTemplates, subtitleTemplatesIssues } from './captions/subtitles/templates.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import { repairSequenceCleanup, sequenceCleanupIssue } from './cleanup/schema.ts';
+import { repairSequenceScriptFix, sequenceScriptFixIssue } from './script-fix/sequence-state.ts';
 import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
@@ -1555,6 +1556,12 @@ export function runInvariants(
 		const cleanupBad = sequenceCleanupIssue((seq as { cleanup?: unknown }).cleanup);
 		if (cleanupBad)
 			issues.push(inv('INV-CLEANUP', `Sequence ${seq.id} cleanup: ${cleanupBad}`, [...where, 'cleanup']));
+		// spec 17 SC-055: Fix Transcript settings and rejected fixes must be readable (INV-SCRIPTFIX).
+		const scriptFixBad = sequenceScriptFixIssue((seq as { scriptFix?: unknown }).scriptFix);
+		if (scriptFixBad)
+			issues.push(
+				inv('INV-SCRIPTFIX', `Sequence ${seq.id} scriptFix: ${scriptFixBad}`, [...where, 'scriptFix']),
+			);
 		// wp-multicam: a multi-camera source's angles reference its own tracks.
 		const mcSource = (seq as Sequence).multicam;
 		if (mcSource)
@@ -1815,6 +1822,20 @@ export function repairDocument(
 				'repair-cleanup',
 				seq.id,
 				fixed ? 'unreadable cleanup settings dropped, the rest kept' : 'unreadable cleanup state removed',
+			);
+		}
+		// spec 17 SC-055: keep the readable parts of the Fix Transcript state.
+		const sf = seq as { scriptFix?: unknown };
+		if (sequenceScriptFixIssue(sf.scriptFix)) {
+			const fixed = repairSequenceScriptFix(sf.scriptFix);
+			if (fixed) sf.scriptFix = fixed;
+			else delete sf.scriptFix;
+			note(
+				'repair-script-fix',
+				seq.id,
+				fixed
+					? 'unreadable Fix Transcript settings or rejected fixes dropped, the rest kept'
+					: 'unreadable Fix Transcript state removed',
 			);
 		}
 		for (const c of Object.values(seq.clips)) {

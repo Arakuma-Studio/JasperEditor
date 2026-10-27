@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AudioEdgeFades } from '../audio-fade.ts';
 import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { SequenceCleanup } from '../cleanup/schema.ts';
+import type { SequenceScriptFix } from '../script-fix/sequence-state.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
 import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
@@ -1131,6 +1132,11 @@ export const SequenceSchema = z.looseObject({
 	 * checks it (`sequenceCleanupIssue`) and `repairDocument` keeps its readable parts (`repairSequenceCleanup`).
 	 */
 	cleanup: z.custom<SequenceCleanup>(() => true).optional(),
+	/**
+	 * spec 17 SC-055 (optional, v10, no bump): Fix Transcript settings and rejected fix fingerprints. Accepted as any
+	 * value; INV-SCRIPTFIX checks it (`sequenceScriptFixIssue`) and `repairDocument` keeps its readable parts.
+	 */
+	scriptFix: z.custom<SequenceScriptFix>(() => true).optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

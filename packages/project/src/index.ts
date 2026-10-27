@@ -89,6 +89,9 @@ export * from './relink/index.ts';
 export * from './render/index.ts';
 export * from './roto/index.ts';
 export * from './schema/index.ts';
+// spec 17 (scapply): the persisted Fix Transcript state and the proposal item of a transcript fix.
+export * from './script-fix/proposal-item.ts';
+export * from './script-fix/sequence-state.ts';
 export * from './sound/anchor.ts';
 export * from './sound/cue-input.ts';
 export * from './sound/cues/index.ts';

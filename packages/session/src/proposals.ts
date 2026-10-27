@@ -86,6 +86,11 @@ export type ReviewItem = {
 	meta: unknown;
 	/** The meta of the chosen command set: the selected alternative's when it has one, else the item's. */
 	selectedMeta?: unknown;
+	/**
+	 * Spec 17 SC-061: the item's default selection (false: offered unchecked, e.g. a Maybe transcript fix). Accept all
+	 * leaves unselected items out; accepting one explicitly (✓, Enter) takes it.
+	 */
+	selected: boolean;
 };
 
 export type ProposalPreviewState = {
@@ -995,6 +1000,7 @@ export class ProposalsController {
 						? (it.alternatives?.[(it.selectedAlternative ?? 0) - 1]?.meta ?? it.meta)
 						: it.meta,
 				meta: it.meta,
+				selected: it.selected !== false,
 			};
 		});
 		this.store.setState({ items });

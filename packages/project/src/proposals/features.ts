@@ -20,6 +20,7 @@ const SOUND_DESIGN = 'sound-design';
 export const EDIT_AUTOMATION_FEATURE = 'edit-automation';
 export const SUBTITLES_FEATURE = 'subtitles';
 export const TRANSCRIPT_CLEANUP_FEATURE = 'transcript-cleanup';
+export const TRANSCRIPT_CORRECTION_FEATURE = 'transcript-correction';
 
 /** A Review group a producer declares: items carry its id in `meta.group` (or `group`); order = declaration order. */
 export type ProposalFeatureGroup = { id: string; label: string };
@@ -44,6 +45,11 @@ export type ProposalFeatureInfo = {
 	groups: readonly ProposalFeatureGroup[];
 	/** Tools / editor commands that create its proposals (documentation for agents). */
 	producers: readonly string[];
+	/**
+	 * Review groups whose items an agent's accept of "all" never takes, whatever their selection (spec 17 SC-060: Maybe
+	 * fixes); an agent applies them only by naming their ids.
+	 */
+	agentAllExcludes?: readonly string[];
 };
 
 /** The built-in proposal features. */
@@ -119,7 +125,7 @@ export const PROPOSAL_FEATURES: readonly ProposalFeatureInfo[] = [
 		id: TRANSCRIPT_CLEANUP_FEATURE,
 		name: 'Transcript cleanup',
 		description:
-			'Voice and transcript cleanup (spec 14): cuts of restarts, retakes, false starts, fillers, repeats, pauses and off-script talk, and transcript fixes.',
+			'Voice and transcript cleanup (spec 14): cuts of restarts, retakes, false starts, fillers, repeats, pauses and off-script talk.',
 		itemNoun: { one: '1 cut', other: '{0} cuts' },
 		agentAccept: { setting: 'project', default: true },
 		groups: [
@@ -130,10 +136,24 @@ export const PROPOSAL_FEATURES: readonly ProposalFeatureInfo[] = [
 			{ id: 'repeats', label: 'Repeats' },
 			{ id: 'off-script', label: 'Off-script' },
 			{ id: 'pauses', label: 'Pauses' },
-			{ id: 'transcript', label: 'Transcript fixes' },
 			{ id: 'review', label: 'To review' },
 		],
 		producers: ['analyze_voice', 'plan_cleanup', 'Sequence ▸ Clean Up Voice…'],
+	},
+	{
+		id: TRANSCRIPT_CORRECTION_FEATURE,
+		name: 'Transcript fixes',
+		description:
+			'Script-guided transcript correction (spec 17): recognition errors fixed from the script and the personal glossary, each item one transcript.replaceWords that also patches the subtitles and caption tracks showing the words. Groups: fix (checked against the audio), spelling (script spelling of names and loanwords), maybe (offered unselected: an "all" accept never takes them; name their ids to apply them).',
+		itemNoun: { one: '1 fix', other: '{0} fixes' },
+		agentAccept: { setting: 'project', default: true },
+		groups: [
+			{ id: 'fix', label: 'Fixes' },
+			{ id: 'spelling', label: 'Spelling' },
+			{ id: 'maybe', label: 'Maybe' },
+		],
+		producers: ['fix_transcript', 'Text ▸ Fix Transcript…', 'Sequence ▸ Fix Transcript from Script…'],
+		agentAllExcludes: ['maybe'],
 	},
 ];
 
@@ -208,6 +228,32 @@ export function embeddedFeatures(proposal: Pick<Proposal, 'items'>): string[] {
 			out.push(f);
 	}
 	return out;
+}
+
+/** An item's Review group: `meta.group` when it names one, else `group`. */
+export function proposalItemGroup(item: { group?: string; meta?: unknown }): string {
+	const g = (item.meta as { group?: unknown } | undefined)?.group;
+	return typeof g === 'string' && g ? g : (item.group ?? '');
+}
+
+/**
+ * The items an accept of "all" takes (spec 17 SC-061): the pending or stale ones that are selected (`selected` absent
+ * = selected). For an agent (`agent: true`) never the items of the groups the feature keeps out of agent accepts
+ * (`agentAllExcludes`), even when selected: those are applied only by naming their ids.
+ */
+export function acceptAllItemIds(
+	p: Pick<Proposal, 'items' | 'feature'>,
+	opts: { agent?: boolean } = {},
+): string[] {
+	const excluded = opts.agent ? new Set(BY_ID.get(p.feature)?.agentAllExcludes ?? []) : null;
+	return p.items
+		.filter(
+			(it) =>
+				(it.state === 'pending' || it.state === 'stale') &&
+				it.selected !== false &&
+				!(excluded?.size && excluded.has(proposalItemGroup(it))),
+		)
+		.map((it) => it.id);
 }
 
 /** Per sequence of the document, whether agents may apply sound proposals there (spec 12). */
