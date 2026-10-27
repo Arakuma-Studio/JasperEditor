@@ -613,12 +613,12 @@ measurements (WP5), **[E]** estimate or choice.
   cue test).
 - `stage.tsx`: `SocialStage` (centring, zoom, fit, entrance transform), `socialFitZoom`.
 - `contract.ts`: the variant contract. `parts.tsx`: shared parts. `assets.tsx`: picture and emoji touch points.
-- `tiktok.tsx`: the TikTok cards. `unavailable.tsx`: stand-in card. `variants.ts`: `SOCIAL_VARIANT_IMPLS`.
+- `tiktok.tsx`: the TikTok cards. `variants.ts`: the exhaustive `SOCIAL_VARIANT_IMPLS` card map.
 
 ### Adding a variant (WP6b–d)
 
 **The contract** (`packages/motion/src/templates/social-comment/contract.ts`):
-- A variant is a `SocialVariantImpl = { Card, growOrigin, bleed?, unavailable? }`.
+- A variant is a `SocialVariantImpl = { Card, growOrigin, bleed? }`.
 - `Card(props: SocialCardProps)` draws ONE card at **reference px**: the tokcomment CSS px of its blueprint (copy the
   numbers from `ref/<variant>/styles_*.json`). The card sets its own width: 420, or `width: fit-content` with
   `maxWidth: 305` for the Reels and Shorts cards. Never zoom, centre or position the card; the frame does that.
@@ -644,14 +644,14 @@ Never add timelines, timers or animation inside a card. The output must be a pur
 **Wiring a variant:**
 1. Create `instagram.tsx` / `youtube.tsx` / `x.tsx` next to `tiktok.tsx`, exporting one `SocialVariantImpl` per
    variant.
-2. Replace the `unavailableVariant(...)` entry in `variants.ts` with it.
+2. Add its card to the exhaustive `SOCIAL_VARIANT_IMPLS` map in `variants.ts`.
 3. In `packages/mg-templates/src/templates/anime/social-comment.ts`:
    - add the variant to `SOCIAL_COMMENT_READY_VARIANTS` (this adds its gallery preset and lifts the export blocker);
    - fill its `SOCIAL_VARIANT_FONTS` entry (family and weights; the font must exist in the bundled catalogue or the
      remote manifest);
    - check its `PRESET_NAMES` entry.
-4. Update the preset expectations in `packages/mg-templates/test/social-comment-template.test.ts` and the "not
-   available" loop in `packages/motion/test/social-comment.test.tsx`.
+4. Update the preset expectations in `packages/mg-templates/test/social-comment-template.test.ts`; the all-variant
+   card loop in `packages/motion/test/social-comment.test.tsx` checks the new card in both themes.
 
 **Theme tokens:** one `const <VARIANT>_THEME = { light: {…}, dark: {…} }` per card in its own file, with hex colours
 copied from the reference dumps (`styles_light*.json` / `styles_dark*.json`). Colours that come from the platform

@@ -58,13 +58,6 @@ export const SOCIAL_COMMENT_OUTRO_FRAMES = 6;
 /** The intro window in ms at its declared length: the entrance tweens below are written in these ms. */
 const INTRO_REF_MS = (SOCIAL_COMMENT_INTRO_FRAMES * 1000) / ANIME_REFERENCE_FPS;
 
-/** Entrance lengths (design §7.6). */
-export const SOCIAL_ENTRANCE_MS: Readonly<Record<SocialEntrance, number>> = {
-	'classic-pop': 270,
-	'soft-spring': 450,
-	'grow-from-tail': 500,
-	'drop-bounce': 550,
-};
 /** Drop & bounce: the fall, in design px of the stage. */
 export const SOCIAL_DROP_PX = 60;
 /** Grow from tail: the tilt the card settles from, in degrees. */
@@ -83,9 +76,6 @@ export const SOCIAL_THUMP_SCALE = 1.3;
 
 /** Animated values of the card (target 0): scale, opacity, drop (design px), tilt (degrees). */
 export type SocialCardProp = 's' | 'o' | 'y' | 'r';
-/** Animated values of a word unit: scale, opacity; of the heart: thump scale, fill (0 outline … 1 filled). */
-export type SocialUnitProp = 's' | 'o';
-export type SocialHeartProp = 's' | 'f';
 
 /** One animated value of the schedule: target 0 = card, 1…units = word units, 1 + units = heart. */
 export type SocialScheduleTrack = { target: number; prop: string; initial: number; tweens: AnimeTween[] };

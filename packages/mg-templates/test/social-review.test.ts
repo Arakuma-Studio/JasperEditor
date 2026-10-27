@@ -14,7 +14,6 @@ import {
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	clampRating,
 	dateOfDayNumber,
 	dayNumber,
 	fillSocialParams,
@@ -145,12 +144,6 @@ describe('iPhone review ages', () => {
 });
 
 describe('ratings', () => {
-	it('clamps to whole stars 1–5', () => {
-		expect([0, 1, 2.4, 2.6, 5, 9, -3].map(clampRating)).toEqual([1, 1, 2, 3, 5, 5, 1]);
-		expect(clampRating(Number.NaN)).toBe(5);
-		expect(clampRating('3')).toBe(5);
-	});
-
 	it('draws a J-shaped distribution like real stores, deterministically', () => {
 		const N = 20_000;
 		const counts = [0, 0, 0, 0, 0];

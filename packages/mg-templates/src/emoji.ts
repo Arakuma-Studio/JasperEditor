@@ -11,10 +11,6 @@ import { segmentText } from './text-units.ts';
 export const EMOJI_PACK_IDS = ['apple', 'twemoji', 'noto'] as const;
 export type EmojiPackId = (typeof EMOJI_PACK_IDS)[number];
 
-export function isEmojiPackId(v: unknown): v is EmojiPackId {
-	return typeof v === 'string' && (EMOJI_PACK_IDS as readonly string[]).includes(v);
-}
-
 export type EmojiPiece = { kind: 'text'; text: string } | { kind: 'emoji'; grapheme: string };
 
 /** Longest emoji grapheme accepted, in code points (the longest RGI sequences have 10; tag flags 7). */
