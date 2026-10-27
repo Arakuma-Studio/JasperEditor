@@ -66,7 +66,8 @@ describe('score windows respect the SC-092 request limits', () => {
 		const { windows, unplaced } = buildScoreWindows(words, cs);
 		expect(unplaced).toEqual([]);
 		expect(windows.length).toBeGreaterThanOrEqual(2);
-		for (const w of windows) expect(w.toWord - w.fromWord).toBeLessThanOrEqual(SCORE_WINDOW_DEFAULTS.maxWords);
+		for (const w of windows)
+			expect(w.toWord - w.fromWord).toBeLessThanOrEqual(SCORE_WINDOW_DEFAULTS.maxWords);
 		expect(windows.flatMap((w) => w.regions.map((g) => g.candidateId)).sort()).toEqual(['c-loop', 'c-name']);
 		expectValidRequest(windows);
 	});
@@ -136,9 +137,10 @@ describe('score windows respect the SC-092 request limits', () => {
 						fc.integer({ min: 0, max: 1_500_000_000 }),
 					),
 					{
-					minLength: 1,
-					maxLength: 400,
-				}),
+						minLength: 1,
+						maxLength: 400,
+					},
+				),
 				fc.array(
 					fc.tuple(
 						fc.nat(),
@@ -163,7 +165,10 @@ describe('score windows respect the SC-092 request limits', () => {
 					});
 					const { windows, unplaced } = buildScoreWindows(words, cs);
 					expectValidRequest(windows);
-					const seen = [...windows.flatMap((w) => w.regions.map((g) => g.candidateId)), ...unplaced.map((u) => u.candidateId)];
+					const seen = [
+						...windows.flatMap((w) => w.regions.map((g) => g.candidateId)),
+						...unplaced.map((u) => u.candidateId),
+					];
 					expect(seen.sort()).toEqual(cs.map((c) => c.id).sort());
 				},
 			),
