@@ -460,7 +460,7 @@ const LibraryDescriptorsSchema; // {peakSec, onsetSec, headQuietSec, durationSec
 const LibraryProvenanceSchema;  // looseObject {soundId, title, types: string[] (lower-case ids, newer ones kept),
                                 //   source?, license, licenseUrl?, author, sourceUrl?, attribution: string|null,
                                 //   descriptors?, snapshotHash?}
-type LibraryProvenance; type LibrarySource; type LibraryDescriptors; const LIBRARY_LIMITS;
+type LibraryProvenance; type LibraryDescriptors; const LIBRARY_LIMITS;
 function readLibraryProvenance(raw: unknown): LibraryProvenance | null;   // lenient field-by-field read
 function libraryProvenanceIssue(raw: unknown): string | null;            // INV-LIBRARY message
 
@@ -1999,7 +1999,7 @@ function soundDesignIssue(raw): string | null; function clipSfxIssue(raw): strin
 
 // sound/anchor.ts
 function resolveCueAnchor(doc, seq, anchor, opts?: {mgTemplates?}): number | null;  // never throws
-function cueAnchorTargetExists(doc, seq, anchor): boolean;  function cueAnchorRefs(anchor): string[];
+function cueAnchorTargetExists(doc, seq, anchor): boolean;
 function anchorAnimatable(clip, property): Animatable<unknown> | null;
 function textUnitCount(text, 'char'|'word'): number;                        // sound/text-events.ts, re-exported
 function typewriterScheduleMs(units, durationMs, params): {start, slot};   // = @jasper/motion typewriterSchedule
@@ -5869,8 +5869,8 @@ Files: web `apps/web/src/panels/soundCheck/{index.ts, SoundCheckPanel.tsx}`, `so
 `sound/in-context.ts` (`playTimelineWindow` `onEnd`), i18n (`en.json`, `es.json`: 120 strings, `model-strings.json`: 1);
 `packages/ui` icon `panel.soundCheck`; model `packages/project/src/sound/check.ts` (custom target: `SoundCheckTarget`,
 `SOUND_CHECK_TARGET_LIMITS`, `readSoundCheckTarget`, `SOUND_CHECK_CUSTOM_LABEL`, the target in `soundCheckInputsHash` /
-`soundCheckStatus`; verdict markers: `SOUND_CHECK_VERDICT_MARKER`, `soundCheckHumanVerdicts`,
-`soundCheckVerdictMarkerName`), `schema/sound.ts` (`lastCheck.target?`), `commands/schemas/sound.ts` (`setCheck`
+`soundCheckStatus`; verdict markers: `SOUND_CHECK_VERDICT_MARKER`, `soundCheckHumanVerdicts`),
+`schema/sound.ts` (`lastCheck.target?`), `commands/schemas/sound.ts` (`setCheck`
 `summary.target?`); `packages/api/src/sound-check.ts` (`request.target?`, `report.preset.custom?`); engine
 `apps/engine/src/sound-design/check.ts` (the target replaces the preset's numbers; never judged as broadcast; stored);
 MCP `apps/mcp/src/tools/sound-check.ts` (`target`, `humanVerdicts`), `tools/sound.ts` (SOUND_GUIDE "Check"); README.

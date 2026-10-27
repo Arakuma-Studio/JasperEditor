@@ -4,15 +4,11 @@
 // Any change to the maths bumps the effect version and adds a `migrate` (S01:FX-021).
 import type { ColorFn, ColorOpContext, EffectParams } from '../registry/effects.ts';
 import { curveFn } from './curves.ts';
-import { hslToRgb, rgbToHsl, smoothstep as smooth, wheelRgb } from './grade-math.ts';
+import { hslToRgb, LUMA_B, LUMA_G, LUMA_R, rgbToHsl, smoothstep as smooth, wheelRgb } from './grade-math.ts';
 import { offsetCurveFn } from './hue-curves.ts';
 import { creativeLookFn } from './looks.ts';
 import { applyLut, applyLutMix, type Lut, type Rgb } from './lut.ts';
 
-/** Rec.709 luma weights (S06 §3 `Y(v)`). */
-const LUMA_R = 0.2126;
-const LUMA_G = 0.7152;
-const LUMA_B = 0.0722;
 /** BT.1886 simplification used for the linear-light steps: `L = v^2.4`. */
 const DISPLAY_GAMMA = 2.4;
 
@@ -98,24 +94,6 @@ function whiteBalanceGains(temperature: number, tint: number): Rgb {
 	const b = 1 - 0.3 * T + 0.15 * N;
 	const y = LUMA_R * r + LUMA_G * g + LUMA_B * b;
 	return [r / y, g / y, b / y];
-}
-
-/**
- * RGB direction of a colour wheel (S06 §3.1 step 11): hue `θ = atan2(y, x)`, amount `m = min(1, |(x, y)|)`,
- * `d_k = m·cos(θ − φ_k)` with `φ = (0°, 120°, 240°)`.
- */
-function wheelDirection(wheel: readonly [number, number]): Rgb {
-	const [x, y] = wheel;
-	const m = Math.min(1, Math.hypot(x, y));
-	if (m === 0) return [0, 0, 0];
-	const th = Math.atan2(y, x);
-	return [m * Math.cos(th), m * Math.cos(th - (2 * Math.PI) / 3), m * Math.cos(th - (4 * Math.PI) / 3)];
-}
-
-/** Hermite smoothstep with the usual clamp of `t` (S06 §3 `smooth(a, b, x)`). */
-function smoothstep(a: number, b: number, x: number): number {
-	const t = clamp((x - a) / (b - a), 0, 1);
-	return t * t * (3 - 2 * t);
 }
 
 const isZeroVec = (v: readonly [number, number]) => v[0] === 0 && v[1] === 0;
@@ -249,19 +227,19 @@ export function lumetriFn(params: EffectParams, ctx: ColorOpContext): ColorFn | 
 
 	// 11. Colour wheels: lift / gamma / gain on encoded values.
 	const liftOn = !isZeroVec(p.shadowsWheel) || p.shadowsLevel !== 0;
-	const dl = wheelDirection(p.shadowsWheel);
+	const dl = wheelRgb(p.shadowsWheel[0], p.shadowsWheel[1], [0, 0, 0]);
 	const lb = (0.1 * p.shadowsLevel) / 100;
 	const a0 = lb + 0.1 * dl[0];
 	const a1 = lb + 0.1 * dl[1];
 	const a2 = lb + 0.1 * dl[2];
 	const gammaOn = !isZeroVec(p.midtonesWheel) || p.midtonesLevel !== 0;
-	const dm = wheelDirection(p.midtonesWheel);
+	const dm = wheelRgb(p.midtonesWheel[0], p.midtonesWheel[1], [0, 0, 0]);
 	const mb = 1 + (0.5 * p.midtonesLevel) / 100;
 	const e0 = 1 / Math.max(0.05, mb + 0.25 * dm[0]);
 	const e1 = 1 / Math.max(0.05, mb + 0.25 * dm[1]);
 	const e2 = 1 / Math.max(0.05, mb + 0.25 * dm[2]);
 	const gainWheelOn = !isZeroVec(p.highlightsWheel) || p.highlightsLevel !== 0;
-	const dh = wheelDirection(p.highlightsWheel);
+	const dh = wheelRgb(p.highlightsWheel[0], p.highlightsWheel[1], [0, 0, 0]);
 	const hb = 1 + (0.5 * p.highlightsLevel) / 100;
 	const g0 = hb + 0.25 * dh[0];
 	const g1 = hb + 0.25 * dh[1];
@@ -371,7 +349,7 @@ export function lumetriFn(params: EffectParams, ctx: ColorOpContext): ColorFn | 
 		if (toneOn) {
 			const y = LUMA_R * c[0] + LUMA_G * c[1] + LUMA_B * c[2];
 			if (hs !== 0) {
-				const w = hs * smoothstep(0.45, 1, y);
+				const w = hs * smooth(0.45, 1, y);
 				if (hs > 0) {
 					c[0] += w * (1 - c[0]);
 					c[1] += w * (1 - c[1]);
@@ -383,7 +361,7 @@ export function lumetriFn(params: EffectParams, ctx: ColorOpContext): ColorFn | 
 				}
 			}
 			if (ss !== 0) {
-				const w = ss * (1 - smoothstep(0, 0.55, y));
+				const w = ss * (1 - smooth(0, 0.55, y));
 				if (ss > 0) {
 					c[0] += w * (1 - c[0]);
 					c[1] += w * (1 - c[1]);

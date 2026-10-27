@@ -471,29 +471,6 @@ function mgAnchorFrame(
 	return frameOrNull(c.start + local);
 }
 
-/** Ids an anchor refers to (clips, transition, marker, media). */
-export function cueAnchorRefs(anchor: CueAnchor | null | undefined): string[] {
-	if (!isRecord(anchor)) return [];
-	switch (anchor.type) {
-		case 'edit':
-			return [anchor.outgoingClipId, anchor.incomingClipId];
-		case 'transition':
-			return [anchor.transitionId];
-		case 'marker':
-			return [anchor.markerId];
-		case 'scene':
-			return typeof anchor.clipId === 'string' ? [anchor.mediaId, anchor.clipId] : [anchor.mediaId];
-		case 'keyframe':
-		case 'text':
-		case 'mg':
-		case 'clip':
-		case 'beat':
-			return [anchor.clipId];
-		default:
-			return [];
-	}
-}
-
 /**
  * Whether an anchor's target still exists (repair: an anchor whose clip, transition, marker or media is gone is
  * dangling; `edit` needs both clips, `keyframe` its keyframe when it names one). Says nothing about resolvability.

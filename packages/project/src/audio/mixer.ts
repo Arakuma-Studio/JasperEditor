@@ -93,10 +93,6 @@ export function spanOf(clip: RenderAudioClip, fps: Rational, sampleRate: number)
 	];
 }
 
-function layoutOfWidth(w: number): Layout {
-	return layoutFromChannels(w);
-}
-
 function alloc(n: number, frames: number): Float32Array[] {
 	return Array.from({ length: n }, () => new Float32Array(frames));
 }
@@ -370,7 +366,7 @@ export class OfflineMixer {
 			const m = this.master;
 			for (const st of this.strips) {
 				if (st.s.kind !== 'track') continue;
-				const mat = conversionMatrix(layoutOfWidth(st.width), layoutOfWidth(m.width));
+				const mat = conversionMatrix(layoutFromChannels(st.width), layoutFromChannels(m.width));
 				mix(mat, st.input, m.input, n, 1);
 			}
 			this.writeOut(m.input, out, n);
@@ -461,8 +457,8 @@ export class OfflineMixer {
 		}
 		const w = v.buf.length;
 		const tw = st.width;
-		const src = layoutOfWidth(w);
-		const mat = conversionMatrix(src, layoutOfWidth(tw));
+		const src = layoutFromChannels(w);
+		const mat = conversionMatrix(src, layoutFromChannels(tw));
 		const panAnimated = isAnimated(c.pan);
 		const panConst = c.pan.value;
 		for (let i = 0; i < k; i++) {
@@ -578,7 +574,7 @@ export class OfflineMixer {
 		const w = st.width;
 		const ow = dest.length;
 		const fps = this.flicksPerSample;
-		const srcLayout = layoutOfWidth(w);
+		const srcLayout = layoutFromChannels(w);
 		if (ow === 6) {
 			const lanes = s.pan51;
 			const animated =

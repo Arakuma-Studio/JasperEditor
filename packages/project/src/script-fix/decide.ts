@@ -319,15 +319,6 @@ export function decideFix(
 	return keep('below-margin', d);
 }
 
-/** Decides every candidate of a media with the scores of `candidateScores` (input order kept). */
-export function decideFixes(
-	candidates: readonly FixCandidate[],
-	scores: ReadonlyMap<string, CandidateScore>,
-	strictness: StrictnessPreset | DecisionThresholds = 'standard',
-): FixDecision[] {
-	return candidates.map((c) => decideFix(c, scores.get(c.id), strictness));
-}
-
 /**
  * The SC-050 edit of a decided fix: the span its new words lie in, the exact texts of the transcript words in that
  * span (`[]` for `del`; the anchor word's text for a widened `del`), the new words. Null when the decision keeps the

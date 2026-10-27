@@ -441,7 +441,6 @@ export const ReferenceEntrySchema = z.strictObject({
 	chance: z.strictObject(chanceShape),
 	arc: z.array(metricNumber.nullable()).length(REFERENCE_ARC_POINTS).nullable(),
 });
-export type ReferenceEntryInput = z.infer<typeof ReferenceEntrySchema>;
 
 /** A profile file (the store's `<id>.json`, an exported file). The aggregate is recomputed on every read. */
 export const ReferenceProfileFileSchema = z.strictObject({

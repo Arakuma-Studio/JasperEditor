@@ -497,11 +497,6 @@ export type SoundCheckHumanVerdict = {
 	mixChanged?: boolean | null;
 };
 
-/** The marker name of a verdict. */
-export function soundCheckVerdictMarkerName(verdict: keyof typeof SOUND_CHECK_VERDICT_MARKER): string {
-	return SOUND_CHECK_VERDICT_MARKER[verdict];
-}
-
 /** Whether a verdict's subject is where it was (`moved`) or gone, in `seq`. */
 function subjectState(seq: Sequence, s: SoundCheckVerdictSubject): 'here' | 'moved' | 'gone' {
 	if (s.kind === 'clip') {

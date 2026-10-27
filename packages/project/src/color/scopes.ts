@@ -176,32 +176,6 @@ export function signalFromRgba8(
 	return { w: ow, h: oh, rgb };
 }
 
-/** Signal from float RGBA (straight, code values; values outside 0..1 are super-whites / sub-blacks). */
-export function signalFromRgbaFloat(
-	data: ArrayLike<number>,
-	w: number,
-	h: number,
-	maxW = SCOPE_MAX_W,
-	maxH = SCOPE_MAX_H,
-): ScopeSignal {
-	if (!(w > 0 && h > 0) || data.length < w * h * 4) return { w: 0, h: 0, rgb: new Float32Array(0) };
-	const [sx, sy] = steps(w, h, maxW, maxH);
-	const ow = Math.ceil(w / sx);
-	const oh = Math.ceil(h / sy);
-	const rgb = new Float32Array(ow * oh * 3);
-	let o = 0;
-	for (let y = 0; y < h; y += sy)
-		for (let x = 0; x < w; x += sx) {
-			const i = (y * w + x) * 4;
-			const a = data[i + 3]!;
-			rgb[o] = a > 0 ? data[i]! : Number.NaN;
-			rgb[o + 1] = a > 0 ? data[i + 1]! : Number.NaN;
-			rgb[o + 2] = a > 0 ? data[i + 2]! : Number.NaN;
-			o += 3;
-		}
-	return { w: ow, h: oh, rgb };
-}
-
 /** A synthetic signal (tests, generated patterns). */
 export function signalFromFn(
 	w: number,
