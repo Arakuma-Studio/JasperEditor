@@ -404,12 +404,13 @@ describe('per-item default selection (spec 17 SC-060 / SC-061)', { timeout: TIME
 				fix('f1', 10, 'fix'),
 				fix('s1', 20, 'spelling'),
 				fix('m1', 30, 'maybe', false),
-				// a maybe item a caller re-selected: still not in an agent's "all"
+				// a maybe item stored selected (a caller set it): still never in an agent's "all"
 				fix('m2', 40, 'maybe', true),
 			],
 		};
 		const p = await create(app, projectId, draft, AGENT_H);
-		expect(p.items.map((it) => it.selected)).toEqual([undefined, undefined, false, true]);
+		// stored only when false (absent = selected)
+		expect(p.items.map((it) => it.selected)).toEqual([undefined, undefined, false, undefined]);
 		const r = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
 		expect(r.statusCode, r.body).toBe(200);
 		expect(r.json().applied).toEqual(['f1', 's1']);
