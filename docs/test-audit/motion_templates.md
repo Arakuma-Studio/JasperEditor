@@ -3,7 +3,7 @@
 Scope: all 34 assigned test files, 290 named test declarations (parameterized declarations represent every row). The
 per-test contract, source, failure, oracle, seam, refactor resistance, uniqueness and disposition are recorded in
 [motion_templates.json](motion_templates.json): 241 KEEP, 29 DELETE, 11 REWRITE, 9 OPTIMIZE. Test code changes are
-169 additions/1302 removals, net −1133 lines. No snapshot, dependency or configuration was removed; shared fixtures
+176 additions/1302 removals, net −1126 lines. No snapshot, dependency or configuration was removed; shared fixtures
 remain consumed. Embedded manual-calibration matrices, their environment hooks and an unused generated avatar
 fixture were removed. Actual parity, clamp and painted-bounds checks remain.
 
