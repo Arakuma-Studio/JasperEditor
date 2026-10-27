@@ -37,3 +37,28 @@ operation, baseline comparison, machine/load, correctness checks and limits in
 its evidence note. Only measured improvements are integrated. No schema,
 persistence format, editing API, media quality or authentication changes are
 intended.
+
+## Measured results
+
+Function comparisons alternate actual baseline and current implementations on
+the same inputs in one process. Machine: Linux x64, AMD EPYC-Genoa, eight logical
+CPUs, Node 24.22.1, pnpm 10.34.5. Other agents ran builds/tests concurrently;
+the linked notes record load, raw samples, controls and reproduction commands.
+These measurements describe the named workloads, not overall editor speed.
+
+| Production operation | Before | After | Evidence |
+|---|---:|---:|---|
+| Expand selection of 5,000 clips in one group | 340.503 ms | 1.439 ms | [Selection](perf-hunt-session.md) |
+| Media status, 500 media / 3,000 active jobs | 138.33 ms | 69.38 ms | [Engine](perf-hunt-engine.md) |
+| Razor hover, 5,000 clips, warm snap targets | 1.486 ms | 0.0023 ms | [Timeline](perf-hunt-timeline.md) |
+| Next edit, 5,000 clips, warm track indexes | 0.1695 ms | 0.000447 ms | [Navigation](perf-hunt-project.md) |
+| Construct a 1,048,576-point FFT plan | 24.752 ms | 10.293 ms | [Audio](perf-hunt-audio.md) |
+| Synchronize a 30-second 8 kHz audio pair | 241.889 ms | 203.612 ms | [Audio](perf-hunt-audio.md) |
+
+Selection output order, job status objects, navigation results and complex
+forward/inverse FFT bytes match their respective baselines. Pointer behavior is
+covered across playhead changes, edits, undo/redo, markers and tool switches.
+Cold index/target building retains its original work. The queue index adds
+O(retained keyed jobs) memory, and external schedulers still scan. FFT transforms
+with a reused plan remain approximately unchanged. No API or quality tradeoff
+is introduced.
