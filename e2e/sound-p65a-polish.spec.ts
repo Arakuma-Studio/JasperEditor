@@ -200,7 +200,6 @@ test('the Razor inside a video and an audio transition cuts and shortens them', 
 	expect(after).toHaveLength(2);
 	for (const d of after) expect(d).toBeLessThanOrEqual(8);
 	await expect(page.getByText(/E_INVARIANT|INV-010/)).toHaveCount(0);
-	await page.waitForTimeout(400);
 	await page.screenshot({ path: join(outDir, 'razor-after.png') });
 });
 

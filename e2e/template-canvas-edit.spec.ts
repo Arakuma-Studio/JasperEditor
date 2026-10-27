@@ -320,7 +320,6 @@ test('social comment (TikTok comment preset): marks survive typing, the toolbar,
 	await page.keyboard.type('Lake');
 	await page.keyboard.press('Enter');
 	await expect.poll(async () => (await clipParams(id)).displayName).toBe('Luna Lake');
-	await page.waitForTimeout(300);
 	writeFileSync(
 		join(OUT, 'tiktok-comment-after.png'),
 		await page.getByTestId('program-viewport').screenshot(),
@@ -401,7 +400,6 @@ test('social comment (Instagram presets): the post and Reel cards draw; their ha
 		await expect.poll(async () => (await clipParams(id)).text).toBe('Hello ==big world== and more');
 		await page.keyboard.press('Escape');
 		await expect(input()).toHaveCount(0);
-		await page.waitForTimeout(300);
 		writeFileSync(join(OUT, `${preset}-after.png`), await page.getByTestId('program-viewport').screenshot());
 	}
 });

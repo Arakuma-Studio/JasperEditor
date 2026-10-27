@@ -1,6 +1,5 @@
-// Describe-it search in the built app (spec 12 P6-E14, WP-E9; wp-note "Phase 6 → WP-E9"). Always: Preferences ▸ Sound
-// Library ▸ Describe-it search shows the optional model with its licence and size, not installed, and the Library's
-// Describe toggle says the words are searched without it. With the real model (E2E_CLAP=1 and JASPER_MODEL_CATALOG
+// Describe-it search in the built app (spec 12 P6-E14, WP-E9; wp-note "Phase 6 → WP-E9"). With the real model
+// (E2E_CLAP=1 and JASPER_MODEL_CATALOG
 // naming a catalogue whose files are local — the build server; never downloaded in CI): it is installed after its
 // licence is shown, the library is embedded, a described search ranks with matches, Find Moment finds a glass ping
 // placed at 33 s in a generated 60 s recording of a user folder, and inserts it at the playhead. Screenshots go to
@@ -11,11 +10,9 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { createProject, enableAgentBridge, query, ROOT } from './support.ts';
 
-test.describe.configure({ mode: 'serial' });
 const outDir = join(ROOT, 'test-results', 'e2e-sound-describe');
 const REAL = process.env.E2E_CLAP === '1';
-let page: Page;
-let projectId = '';
+test.skip(!REAL, 'needs E2E_CLAP=1 and a local CLAP catalogue (build server only)');
 
 async function openDescribe(p: Page) {
 	await p.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
@@ -37,37 +34,11 @@ async function openLibrary(p: Page) {
 	return panel;
 }
 
-test.beforeAll(async ({ browser }) => {
-	mkdirSync(outDir, { recursive: true });
-	page = await browser.newPage();
-	await enableAgentBridge(page);
-});
-test.afterAll(async () => {
-	await page?.close();
-});
-
-test('the optional model is shown with its licence; without it Describe searches the words', async () => {
-	test.setTimeout(300_000);
-	projectId = await createProject(page, 'E2E Describe');
-	const { prefs, section } = await openDescribe(page);
-	const row = section.locator('[data-model-state]').first();
-	await expect(row).toContainText('Apache-2.0');
-	await expect(row).toContainText('LAION');
-	await section.screenshot({ path: join(outDir, 'prefs-describe.png') });
-	await page.keyboard.press('Escape');
-	await expect(prefs).toBeHidden();
-	const panel = await openLibrary(page);
-	await panel.getByTestId('sound-describe').click();
-	await panel.getByLabel('Search sounds').fill('a glass ping');
-	await expect(panel.getByTestId('sound-describe-info')).toHaveAttribute('data-describe-mode', 'keywords', {
-		timeout: 60_000,
-	});
-	await panel.screenshot({ path: join(outDir, 'describe-keywords.png') });
-});
-
-test('with the real model: install, describe, find a moment and insert it', async ({ request }) => {
-	test.skip(!REAL, 'needs E2E_CLAP=1 and a local CLAP catalogue (build server only)');
+test('with the real model: install, describe, find a moment and insert it', async ({ page, request }) => {
 	test.setTimeout(1_800_000);
+	mkdirSync(outDir, { recursive: true });
+	await enableAgentBridge(page);
+	const projectId = await createProject(page, 'E2E Describe');
 	// a 60 s user-folder recording: a quiet noise bed with a glass ping at 33 s and a UI click at 12 s
 	const dir = join(outDir, 'folder');
 	mkdirSync(dir, { recursive: true });

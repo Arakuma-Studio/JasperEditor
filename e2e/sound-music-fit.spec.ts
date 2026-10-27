@@ -133,7 +133,6 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	await expect(fit.getByTestId('essential-music-landed')).toHaveText(
 		/^The drop lands at 00[:;]00[:;]20[:;]15$/,
 	);
-	await page.waitForTimeout(500);
 	await page.screenshot({ path: join(outDir, '2-landed.png') });
 
 	// Clip ▸ Audio Options ▸ End on Bar on the remix (clicking a piece selects its group: the music clip)
@@ -147,7 +146,6 @@ test('Land the drop on the hero cue, end on a bar line; measured in the export',
 	await expect.poll(async () => (await appliedLabels(page)).at(-1), { timeout: 120_000 }).toBe('End on Bar');
 	const ended = (await audioClips(page)).filter((c) => c.remix).at(-1)!;
 	const endFrame = ended.start + ended.duration;
-	await page.waitForTimeout(500);
 	await page.screenshot({ path: join(outDir, '4-end-on-bar.png') });
 
 	// the native export, measured

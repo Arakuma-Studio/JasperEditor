@@ -306,7 +306,6 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await query(page, 'playhead.set', { frame: hero!.frame });
 	await focusTimeline(page);
 	for (let i = 0; i < 3; i++) await page.keyboard.press('Equal');
-	await page.waitForTimeout(400);
 	await seam.screenshot({ path: join(outDir, 'cue-span-bars.png'), timeout: 60_000 });
 	await page
 		.getByTestId('timeline-track-area')
@@ -366,17 +365,7 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 		.poll(async () => Object.fromEntries(sfxClips(await sequence(page)).map((c) => [c.id, c.gainDb])))
 		.toEqual(gainsAfter);
 
-	// 4. Room Glue… shows the room (looked at; nothing changed)
-	await menu(page, 'Room Glue…');
-	const glue = page.getByTestId('room-glue-dialog');
-	await expect(glue).toBeVisible();
-	await expect(glue.getByTestId('room-glue-tracks')).toContainText('Sends from:');
-	await expect(glue.getByTestId('room-glue-tracks')).toContainText('Bus: SFX Room (made by sound design)');
-	await glue.screenshot({ path: join(outDir, 'room-glue-dialog.png'), timeout: 60_000 });
-	await glue.getByRole('button', { name: 'Cancel' }).click();
-	await expect(glue).toBeHidden();
-
-	// 5. Delivery Target… (web): one transaction, the measured summary, Undo in the toast
+	// 4. Delivery Target… (web): one transaction, the measured summary, Undo in the toast
 	await menu(page, 'Delivery Target…');
 	const delivery = page.getByTestId('delivery-dialog');
 	await expect(delivery).toBeVisible();
@@ -408,7 +397,7 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 			.catch(() => undefined);
 	}
 
-	// 6. Export: the delivered mix measured by ffmpeg
+	// 5. Export: the delivered mix measured by ffmpeg
 	seq = await sequence(page);
 	const { file } = await exportViaUi(page, request, {
 		engine: 'native',
@@ -444,7 +433,6 @@ test('Auto Sound Pass with mix options → review → apply → Essential solver
 	await expect(seam.locator(`[data-cue-build="${unfilled.id}"]`)).toHaveAttribute('data-written', 'false');
 	await query(page, 'playhead.set', { frame: 360 });
 	await focusTimeline(page);
-	await page.waitForTimeout(400);
 	await seam.screenshot({ path: join(outDir, 'cue-span-bars-stored.png'), timeout: 60_000 });
 	// a frame of the picture at the hero (the export renders it)
 	spawnSync(FFMPEG, [

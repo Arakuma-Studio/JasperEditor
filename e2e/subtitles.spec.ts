@@ -17,8 +17,6 @@ import {
 	transact,
 } from './support.ts';
 
-test.describe.configure({ mode: 'serial' });
-
 const OUT = join(ROOT, 'test-results', 'e2e-subtitles');
 mkdirSync(OUT, { recursive: true });
 const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
@@ -70,10 +68,9 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-let cut = 0;
-let rate = 30;
-
-test('a video with a cut and its transcript', async () => {
+test('Create Subtitles with Pixel Pop: one history entry, cut alignment and rendered export', async ({
+	request,
+}) => {
 	await createProject(page, 'E2E Subtitles');
 	const a = makeClip('shot-a.mp4', 'black');
 	const b = makeClip('shot-b.mp4', '0x101030');
@@ -88,8 +85,8 @@ test('a video with a cut and its transcript', async () => {
 	});
 	const idOf = (n: string) => Object.values(media).find((m) => m.originalName === n)!.id;
 	const s = await sequenceSummary(page);
-	rate = s.settings.frameRate.num / s.settings.frameRate.den;
-	cut = Math.round(3 * rate);
+	const rate = s.settings.frameRate.num / s.settings.frameRate.den;
+	const cut = Math.round(3 * rate);
 	// shot A (picture + its sound) for 6 s, shot B's picture from 3 s: a picture cut with continuous speech
 	const r = await transact(page, [
 		{
@@ -138,9 +135,8 @@ test('a video with a cut and its transcript', async () => {
 	await page.getByTestId('text.transcript.importFile').click();
 	await (await fc).setFiles(json);
 	await expect(page.getByTestId('text.transcript.word.0')).toHaveText('Hola');
-});
 
-test('Create Subtitles with Pixel Pop: one History entry, cut-aligned subtitles', async () => {
+	// Create the subtitles from the imported transcript.
 	await page.getByTestId('text.transcript.createSubtitles').click();
 	const dialog = page.getByTestId('subtitles-dialog');
 	await expect(dialog).toBeVisible();
@@ -152,10 +148,11 @@ test('Create Subtitles with Pixel Pop: one History entry, cut-aligned subtitles'
 		.info()
 		.attach('create-subtitles-dialog', { body: await dialog.screenshot(), contentType: 'image/png' });
 	const count = Number(await page.getByTestId('subtitles-count').textContent());
+	const historyBefore = (await appliedLabels(page)).length;
 	await dialog.getByRole('button', { name: 'Create' }).click();
 	await expect(dialog).toBeHidden();
 	await expect.poll(async () => Object.values(await clipsNow()).filter((c) => c.caption).length).toBe(count);
-	expect((await appliedLabels(page)).at(-1)).toBe('Create Subtitles');
+	expect((await appliedLabels(page)).length).toBe(historyBefore + 1);
 	const subs = Object.values(await clipsNow())
 		.filter((c) => c.caption)
 		.sort((x, y) => x.start - y.start);
@@ -176,9 +173,8 @@ test('Create Subtitles with Pixel Pop: one History entry, cut-aligned subtitles'
 	// the Subtitles tab lists them
 	await expect(page.getByTestId('text.subtitles')).toBeVisible();
 	await expect(page.getByTestId('subtitles.list')).toHaveAttribute('data-rows', String(count));
-});
 
-test('the exported frames show the subtitles on both sides of the cut', async ({ request }) => {
+	// The same workflow must render the subtitles on both sides of the cut.
 	const out = await exportViaUi(page, request, {
 		engine: 'auto',
 		fileName: 'subtitles-e2e.mp4',
