@@ -11,6 +11,13 @@ REMOTION_E2E=1 pnpm vitest run <files>      # suites that bundle the composition
 pnpm perf                                   # the benchmarks, including the scale benchmark (§6)
 ```
 
+The [suite audit](test-audit/README.md) records per-test contract decisions, cleanup,
+regression probes and comparable whole-suite profiling. Its runner notes explain the
+model package's conditional Linux thread pool and unchanged global worker limit.
+Playwright workers use the engine’s native binary resolver, including the
+prepared vendor directory; `JASPER_FFMPEG` and `JASPER_FFPROBE` override individual tools.
+`JASPER_FFMPEG_VENDOR=0` disables automatic vendor selection.
+
 Test-only helpers shared by every package live in **`@jasper/testkit`** (`packages/testkit`, a devDependency; never
 imported by app code): golden frames (`@jasper/testkit/golden`), PNG and RGBA helpers (`/png`, `/image`), fuzzing
 (`/fuzz`), ffmpeg/ffprobe oracles (`/oracle`) and headless WebGL (`/browser`). Its own tests are in

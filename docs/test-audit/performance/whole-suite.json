@@ -1,0 +1,443 @@
+{
+  "scope": "Complete default discovered Vitest suite, including seven available Python external-reader cases in both legs. Optional rendering/native/Playwright runs are reported separately.",
+  "environment": {
+    "os": "Ubuntu 24.04",
+    "kernel": "6.8.0-138-generic",
+    "cpu": "AMD EPYC-Genoa, 8 virtual CPUs",
+    "memoryGiB": 15.2,
+    "node": "20.19.0",
+    "pnpm": "10.34.5",
+    "vitest": "4.1.11",
+    "workers": 2,
+    "ffmpeg": "6.1.1, development oracle",
+    "browser": "Chromium 156.0.8078.47",
+    "env": {
+      "JASPER_REQUIRE_ORACLES": "1",
+      "JASPER_BROWSER_EXECUTABLE": "/usr/bin/chromium-browser",
+      "JASPER_FFMPEG_VENDOR": "0",
+      "FC_SEED": "20261027"
+    },
+    "command": "pnpm test --maxWorkers=2 --no-cache --reporter=default --reporter=json --outputFile=/tmp/jasper-test-audit/{before20,after20}.json",
+    "timer": "/usr/bin/time -v",
+    "conditions": "Separate pristine/integrated checkouts; frozen dependencies and real hardlinked media prepared first; no competing builds or test validators during timed pair. OS caches not dropped. Shared-host environment, one whole-suite pair; repeated focused probes recorded separately.",
+    "externalFormatReaders": "Both legs: seven passed with OpenTimelineIO 0.18.1, plugins 0.18.1, FCPXML adapter 1.0.0 and pyaaf2 1.7.1 at /tmp/interchange-venv/bin/python."
+  },
+  "before": {
+    "ref": "b5126551ea50cd9349463bf99a7dafb2f6af1f05",
+    "wallSeconds": 2316.04,
+    "runnerDurationSeconds": 2314.22,
+    "userCpuSeconds": 6050.17,
+    "systemCpuSeconds": 1089.6,
+    "maxProcessRssKiB": 2215988,
+    "fileSummary": "3 failed | 936 passed | 55 skipped (994)",
+    "registeredCases": 9664,
+    "passed": 9355,
+    "failed": 6,
+    "skipped": 303,
+    "failures": [
+      {
+        "path": "packages/motion/test/social-x-fit.test.tsx",
+        "test": "X action bar in Chrome the em bounds of xCountEm hold for the faces drawn",
+        "failure": "AssertionError: fallback face 0: expected 0.636234375 to be less than or equal to 0.63"
+      },
+      {
+        "path": "packages/motion/test/social-x-fit.test.tsx",
+        "test": "X action bar in Chrome longest counts in each column and in all four keep the gap to the next icon, unclipped",
+        "failure": "AssertionError: fallback face replies {\"variant\":\"x-post\",\"theme\":\"light\",\"emojiStyle\":\"auto\",\"avatar\":null,\"showProfile\":true,\"verified\":false,\"reposts\":12,\"views\":12000,\"showReposts\":true,\"showViews\":true,\"rating\":4,\"date\":\"2025-09-24\",\"edited\":false,\"iosAgeStyle\":\"weekday\",\"title\":\"Review title\",\"text\":\"Write any comment and see what happens 😊\",\"truncate\":true,\"entrance\":\"soft-spring\",\"wordReveal\":false,\"likeTick\":false,\"displayName\":\"Display Name\",\"handle\":\"username\",\"timeValue\":2,\"timeUnit\":\"hour\",\"likes\":1200,\"replies\":999999999999}: expected 5.3460731764157545 to be greater than or equal to 5.5"
+      },
+      {
+        "path": "apps/engine/test/automation-overlays.test.ts",
+        "test": "editing automation overlay passes (real engine) reactions from a folder: dry run (nothing stored), proposal, ONE accept, hybrid export; Refresh after an edit",
+        "failure": "AssertionError: expected 'remotion' to be 'hybrid' // Object.is equality"
+      },
+      {
+        "path": "apps/engine/test/automation-overlays.test.ts",
+        "test": "editing automation overlay passes (real engine) overlay slides: one-sided Smooth Slides at the overlay’s free edges; hybrid export",
+        "failure": "AssertionError: expected 'remotion' to be 'hybrid' // Object.is equality"
+      },
+      {
+        "path": "apps/engine/test/automation-overlays.test.ts",
+        "test": "editing automation overlay passes (real engine) stingers: a measured shout + \"!\" → generated TV static (picture and synth noise at −18 dB); hybrid export",
+        "failure": "AssertionError: expected 'remotion' to be 'hybrid' // Object.is equality"
+      },
+      {
+        "path": "packages/interchange/test/otio.test.ts",
+        "test": "OTIO writes media paths relative to a folder when asked",
+        "failure": "AssertionError: expected '{\\n    \"OTIO_SCHEMA\": \"Timeline.1\",\\n…' to contain '\"target_url\": \"../'"
+      }
+    ],
+    "slowestFiles": [
+      {
+        "path": "apps/engine/test/processing-steps.test.ts",
+        "seconds": 134.114
+      },
+      {
+        "path": "packages/compositions/test/fx-gl.test.ts",
+        "seconds": 71.864
+      },
+      {
+        "path": "apps/engine/test/camtrack-solve.test.ts",
+        "seconds": 71.215
+      },
+      {
+        "path": "apps/mcp/test/roto.test.ts",
+        "seconds": 56.606
+      },
+      {
+        "path": "apps/engine/test/sound-check.test.ts",
+        "seconds": 48.27
+      },
+      {
+        "path": "apps/engine/test/fuzz-http.test.ts",
+        "seconds": 48.003
+      },
+      {
+        "path": "apps/engine/test/audio-classify.test.ts",
+        "seconds": 47.517
+      },
+      {
+        "path": "apps/engine/test/sound-check-p6.test.ts",
+        "seconds": 42.646
+      },
+      {
+        "path": "apps/engine/test/camtrack-job.test.ts",
+        "seconds": 40.562
+      },
+      {
+        "path": "packages/compositions/test/fx-sapphire-glows-lighting-gl.test.ts",
+        "seconds": 39.292
+      },
+      {
+        "path": "apps/engine/test/sound-grammar-export.test.ts",
+        "seconds": 34.366
+      },
+      {
+        "path": "packages/compositions/test/fx-compile-budget.test.ts",
+        "seconds": 32.747
+      },
+      {
+        "path": "apps/engine/test/sound-check-review.test.ts",
+        "seconds": 30.804
+      },
+      {
+        "path": "apps/engine/test/processing-colour-range.test.ts",
+        "seconds": 28.36
+      },
+      {
+        "path": "apps/engine/test/subtitle-export.test.ts",
+        "seconds": 27.78
+      }
+    ],
+    "slowestCases": [
+      {
+        "path": "apps/mcp/test/roto.test.ts",
+        "test": "roto tools create_roto → propagate → render_frame / export cut the object out (IoU ≥ 0.93), masks, refusals",
+        "seconds": 52.539646844,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/audio-classify.test.ts",
+        "test": "Auto Tag classification (engine) labelled set: ≥ 90 % on the tuning and on the held-out set (confusion matrices printed)",
+        "seconds": 44.100740163999994,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/fuzz-http.test.ts",
+        "test": "fuzz: @jasper/engine HTTP routes POST /api/speech/probe: never an untyped throw or a hang",
+        "seconds": 40.021662840000005,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/camtrack-job.test.ts",
+        "test": "camtrack jobs solves the camera against the truth, then reuses tracks without deleted points",
+        "seconds": 39.982670593,
+        "status": "passed"
+      },
+      {
+        "path": "packages/compositions/test/fx-compile-budget.test.ts",
+        "test": "fx programs compile fast on SwiftShader every effect and transition program compiles within 5000 ms (× host load unless PERF=1)",
+        "seconds": 32.745215894999994,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/processing-steps.test.ts",
+        "test": "every step keeps frame count, rate and audio (S07 §8 test 2) upscale",
+        "seconds": 31.469637269,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/camtrack-solve.test.ts",
+        "test": "camtrack solve (synthetic scenes) solves radial lens distortion",
+        "seconds": 28.461361644000004,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/preview-loudness-parity.test.ts",
+        "test": "preview loudness = PCM export loudness (headless Chrome) plays the converged delivery gain: within 0.2 LU of the PCM export (the one-pass gain was ≈ 0.7 LU under)",
+        "seconds": 23.487856804,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/processing-remote.test.ts",
+        "test": "remote executor (shims) auto executor runs remotely; the input is cached by fingerprint; the job dir is removed",
+        "seconds": 20.688974135,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/camtrack-solve.test.ts",
+        "test": "camtrack solve (synthetic scenes) Variable Zoom: follows a zoom during the move",
+        "seconds": 19.381928131,
+        "status": "passed"
+      }
+    ],
+    "artifacts": {
+      "json": {
+        "localPath": "/tmp/jasper-test-audit/before20.json",
+        "sha256": "8a5178cc4bd965bfe1531e1dd4712a899e370583a0cb051a6f84990828c7e882"
+      },
+      "log": {
+        "localPath": "/tmp/jasper-test-audit/before20.log",
+        "sha256": "2ad4d8f96a09c72025bef8eb7b08299fe98fad85a262066a58f71a5d8ee4179a"
+      },
+      "time": {
+        "localPath": "/tmp/jasper-test-audit/before20.time",
+        "sha256": "07ee21c0e46899dd589aa566fd19d76780eb378366e0ddf79bd13d413368bbf9"
+      }
+    }
+  },
+  "after": {
+    "ref": "c62e2bb55a1ac3feae26b6332230f41e111f5aa3",
+    "wallSeconds": 1916.28,
+    "runnerDurationSeconds": 1914.67,
+    "userCpuSeconds": 4743.44,
+    "systemCpuSeconds": 926.0,
+    "maxProcessRssKiB": 2866404,
+    "fileSummary": "934 passed | 52 skipped (986)",
+    "registeredCases": 9295,
+    "passed": 9000,
+    "failed": 0,
+    "skipped": 295,
+    "failures": [],
+    "slowestFiles": [
+      {
+        "path": "packages/compositions/test/fx-gl.test.ts",
+        "seconds": 66.708
+      },
+      {
+        "path": "apps/engine/test/camtrack-solve.test.ts",
+        "seconds": 59.895
+      },
+      {
+        "path": "apps/engine/test/processing-steps.test.ts",
+        "seconds": 58.91
+      },
+      {
+        "path": "apps/engine/test/sound-check.test.ts",
+        "seconds": 47.486
+      },
+      {
+        "path": "apps/mcp/test/roto.test.ts",
+        "seconds": 47.417
+      },
+      {
+        "path": "apps/engine/test/audio-classify.test.ts",
+        "seconds": 41.844
+      },
+      {
+        "path": "apps/engine/test/fuzz-http.test.ts",
+        "seconds": 40.83
+      },
+      {
+        "path": "apps/engine/test/sound-check-p6.test.ts",
+        "seconds": 40.412
+      },
+      {
+        "path": "packages/compositions/test/fx-sapphire-glows-lighting-gl.test.ts",
+        "seconds": 36.629
+      },
+      {
+        "path": "apps/engine/test/camtrack-job.test.ts",
+        "seconds": 35.517
+      },
+      {
+        "path": "packages/compositions/test/fx-compile-budget.test.ts",
+        "seconds": 29.06
+      },
+      {
+        "path": "apps/engine/test/sound-check-review.test.ts",
+        "seconds": 28.712
+      },
+      {
+        "path": "apps/engine/test/processing-colour-range.test.ts",
+        "seconds": 28.227
+      },
+      {
+        "path": "apps/engine/test/sound-grammar-export.test.ts",
+        "seconds": 27.65
+      },
+      {
+        "path": "packages/compositions/test/playback-audio.test.tsx",
+        "seconds": 26.275
+      }
+    ],
+    "slowestCases": [
+      {
+        "path": "apps/mcp/test/roto.test.ts",
+        "test": "roto tools create_roto → propagate → render_frame / export cut the object out (IoU ≥ 0.93), masks, refusals",
+        "seconds": 44.061924401,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/audio-classify.test.ts",
+        "test": "Auto Tag classification (engine) labelled set: ≥ 90 % on the tuning and on the held-out set (confusion matrices printed)",
+        "seconds": 38.872404396,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/camtrack-job.test.ts",
+        "test": "camtrack jobs solves the camera against the truth, then reuses tracks without deleted points",
+        "seconds": 34.965019796,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/fuzz-http.test.ts",
+        "test": "fuzz: @jasper/engine HTTP routes POST /api/speech/probe: never an untyped throw or a hang",
+        "seconds": 34.188350727999996,
+        "status": "passed"
+      },
+      {
+        "path": "packages/compositions/test/fx-compile-budget.test.ts",
+        "test": "fx programs compile fast on SwiftShader every effect and transition program compiles within 5000 ms (× host load unless PERF=1)",
+        "seconds": 29.058769230000003,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/camtrack-solve.test.ts",
+        "test": "camtrack solve (synthetic scenes) solves radial lens distortion",
+        "seconds": 23.520083319000005,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/preview-loudness-parity.test.ts",
+        "test": "preview loudness = PCM export loudness (headless Chrome) plays the converged delivery gain: within 0.2 LU of the PCM export (the one-pass gain was ≈ 0.7 LU under)",
+        "seconds": 19.628477411,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/camtrack-solve.test.ts",
+        "test": "camtrack solve (synthetic scenes) Variable Zoom: follows a zoom during the move",
+        "seconds": 16.457607233999997,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/processing-steps.test.ts",
+        "test": "denoise and deblock (S07 §8 test 5) noise sigma of a flat patch drops ≥ 40 % (medium) with every method",
+        "seconds": 14.969902244999998,
+        "status": "passed"
+      },
+      {
+        "path": "apps/engine/test/processing-remote.test.ts",
+        "test": "remote executor (shims) sets up the runtime, processes cached inputs, resumes uploads, and cleans up cancellation and connection failure",
+        "seconds": 14.600179791,
+        "status": "passed"
+      }
+    ],
+    "artifacts": {
+      "json": {
+        "localPath": "/tmp/jasper-test-audit/after20.json",
+        "sha256": "044b37e48ae938c86d32979fc18a0de2ba016eeee1259c49d9f165c881134730"
+      },
+      "log": {
+        "localPath": "/tmp/jasper-test-audit/after20.log",
+        "sha256": "1354ef3a827e8c2223debc3939816d2aa326356caf6181922051020573a1568b"
+      },
+      "time": {
+        "localPath": "/tmp/jasper-test-audit/after20.time",
+        "sha256": "35bf04a7fc0ffb15f6288a99ea0ee8dbfa7a45e24108ed6d9132b2c9c8fac26c"
+      }
+    }
+  },
+  "observed": {
+    "wallSecondsSaved": 399.76,
+    "wallPercentReduction": 17.26,
+    "cpuSecondsSaved": 1470.33,
+    "cpuPercentReduction": 20.59,
+    "baselineCpuSeconds": 7139.77,
+    "finalCpuSeconds": 5669.44,
+    "interpretation": "Observed local command cost reduction; baseline had six diagnosed failures. No measured CI savings, repeated whole-suite confidence interval or aggregate memory reduction is claimed. Fork/thread RSS process boundaries differ; filesystem input counts and OS cache state also differed."
+  },
+  "largestCommonFileReductions": [
+    {
+      "path": "apps/engine/test/processing-steps.test.ts",
+      "beforeSeconds": 134.114,
+      "afterSeconds": 58.91,
+      "savedSeconds": 75.204
+    },
+    {
+      "path": "apps/engine/test/subtitle-export.test.ts",
+      "beforeSeconds": 27.78,
+      "afterSeconds": 13.794,
+      "savedSeconds": 13.986
+    },
+    {
+      "path": "apps/engine/test/processing-remote.test.ts",
+      "beforeSeconds": 27.671,
+      "afterSeconds": 15.108,
+      "savedSeconds": 12.563
+    },
+    {
+      "path": "apps/engine/test/camtrack-solve.test.ts",
+      "beforeSeconds": 71.215,
+      "afterSeconds": 59.895,
+      "savedSeconds": 11.32
+    },
+    {
+      "path": "apps/engine/test/cache.test.ts",
+      "beforeSeconds": 19.109,
+      "afterSeconds": 8.1,
+      "savedSeconds": 11.009
+    },
+    {
+      "path": "apps/mcp/test/roto.test.ts",
+      "beforeSeconds": 56.606,
+      "afterSeconds": 47.417,
+      "savedSeconds": 9.189
+    },
+    {
+      "path": "apps/engine/test/subtitle-png.test.ts",
+      "beforeSeconds": 8.556,
+      "afterSeconds": 0.854,
+      "savedSeconds": 7.702
+    },
+    {
+      "path": "apps/engine/test/fuzz-http.test.ts",
+      "beforeSeconds": 48.003,
+      "afterSeconds": 40.83,
+      "savedSeconds": 7.173
+    },
+    {
+      "path": "packages/project/test/automation-planners.test.ts",
+      "beforeSeconds": 8.182,
+      "afterSeconds": 1.213,
+      "savedSeconds": 6.969
+    },
+    {
+      "path": "apps/engine/test/sound-grammar-export.test.ts",
+      "beforeSeconds": 34.366,
+      "afterSeconds": 27.65,
+      "savedSeconds": 6.716
+    },
+    {
+      "path": "apps/engine/test/audio-deliver.test.ts",
+      "beforeSeconds": 11.099,
+      "afterSeconds": 4.829,
+      "savedSeconds": 6.27
+    },
+    {
+      "path": "apps/mcp/test/grading.test.ts",
+      "beforeSeconds": 22.075,
+      "afterSeconds": 16.287,
+      "savedSeconds": 5.788
+    }
+  ]
+}

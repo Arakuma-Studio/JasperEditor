@@ -193,7 +193,8 @@
     "refactor": "DOM structure and IPC implementation may change while roles/states/security results remain.",
     "unique": "Browser E2E does not run Electron preload/main; dev proxy versus utility-process packaged bootstrap have independent cookie/origin initialization.",
     "reason": "Intentionally expensive platform integration. Writes screenshot plus auth/IPC JSON artifacts; waits poll semantic readiness instead of fixed settle delays.",
-    "validation": "node e2e/desktop-smoke.mjs dev"
+    "validation": "node e2e/desktop-smoke.mjs dev",
+    "validationResult": "Integrated pnpm e2e:desktop passed packaged-like and dev modes; screenshots inspected."
   },
   {
     "path": "e2e/desktop-smoke.mjs",
@@ -207,7 +208,8 @@
     "refactor": "DOM structure and IPC implementation may change while roles/states/security results remain.",
     "unique": "Browser E2E does not run Electron preload/main; dev proxy versus utility-process packaged bootstrap have independent cookie/origin initialization.",
     "reason": "Intentionally expensive platform integration. Writes screenshot plus auth/IPC JSON artifacts; waits poll semantic readiness instead of fixed settle delays.",
-    "validation": "node e2e/desktop-smoke.mjs packaged-like"
+    "validation": "node e2e/desktop-smoke.mjs packaged-like",
+    "validationResult": "Integrated pnpm e2e:desktop passed packaged-like and dev modes; screenshots inspected."
   },
   {
     "path": "e2e/mg-fallback-check.mjs",
@@ -221,7 +223,8 @@
     "refactor": "Engine service organization may change while public capability/planning contract remains.",
     "unique": "Unit planner fixtures cannot prove built engine resolves and negotiates a real executable.",
     "reason": "Unique built-binary capability integration with verifiable e2e-mg-fallback.json artifact.",
-    "validation": "pnpm e2e:mg-fallback"
+    "validation": "pnpm e2e:mg-fallback",
+    "validationResult": "Integrated pnpm e2e:mg-fallback passed ready/native and unavailable/Remotion blocker cases."
   },
   {
     "path": "e2e/packaged-lgpl-check.mjs",
@@ -235,7 +238,8 @@
     "refactor": "Bundler/file organization may change if packaged paths/public capabilities and allowed execution provenance remain valid.",
     "unique": "Development export tests run inside checkout and cannot reveal accidental workspace dependency leakage.",
     "reason": "Intentionally expensive distribution/license regression; preserves movie and JSON artifact. Condition polling waits only until real jobs settle.",
-    "validation": "pnpm e2e:packaged"
+    "validation": "pnpm e2e:packaged",
+    "validationResult": "Integrated package-directory build and pnpm e2e:packaged passed relocated resources-only LGPL export (30 frames), license guard and poisoned-PATH check."
   },
   {
     "path": "e2e/desktop/clipboard.desktop.ts",
@@ -249,7 +253,8 @@
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Single browser-window tests share memory or simulated clipboard and cannot prove cross-process OS format interoperability.",
     "reason": "Unique OS custom-MIME workflow. Destination document attachment and screenshot make the result inspectable. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
-    "validation": "pnpm e2e:desktop-clipboard"
+    "validation": "pnpm e2e:desktop-clipboard",
+    "validationResult": "Integrated Node 20 run passed all 4 clipboard cases (21.8 s); external text and file cases also passed alone (12.2 s and 13.8 s). Initial hard-navigation setup failures were corrected by saving and using Home; no guard bypass."
   },
   {
     "path": "e2e/desktop/clipboard.desktop.ts",
@@ -263,7 +268,8 @@
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Custom Jasper MIME scenario does not exercise foreign text precedence/route.",
     "reason": "Real external helper supplies OS clipboard bytes, not an implementation mock. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
-    "validation": "pnpm e2e:desktop-clipboard"
+    "validation": "pnpm e2e:desktop-clipboard",
+    "validationResult": "Integrated Node 20 run passed all 4 clipboard cases (21.8 s); external text and file cases also passed alone (12.2 s and 13.8 s). Initial hard-navigation setup failures were corrected by saving and using Home; no guard bypass."
   },
   {
     "path": "e2e/desktop/clipboard.desktop.ts",
@@ -277,7 +283,8 @@
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Foreign text/files and custom MIME do not test native image-data extraction/import.",
     "reason": "Two small different images avoid duplicate-import prompt and cover distinct menu/event clipboard routes. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
-    "validation": "pnpm e2e:desktop-clipboard"
+    "validation": "pnpm e2e:desktop-clipboard",
+    "validationResult": "Integrated Node 20 run passed all 4 clipboard cases (21.8 s); external text and file cases also passed alone (12.2 s and 13.8 s). Initial hard-navigation setup failures were corrected by saving and using Home; no guard bypass."
   },
   {
     "path": "e2e/desktop/clipboard.desktop.ts",
@@ -291,6 +298,7 @@
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Image-data paste tests have no filesystem locator; browser clipboard tests cannot verify platform file-list formats.",
     "reason": "Unique desktop file-manager integration; uses audio/video to exercise both native read routes. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
-    "validation": "pnpm e2e:desktop-clipboard"
+    "validation": "pnpm e2e:desktop-clipboard",
+    "validationResult": "Integrated Node 20 run passed all 4 clipboard cases (21.8 s); external text and file cases also passed alone (12.2 s and 13.8 s). Initial hard-navigation setup failures were corrected by saving and using Home; no guard bypass."
   }
 ]

@@ -1,0 +1,280 @@
+{
+  "environment": {
+    "node": "20.19.0",
+    "pnpm": "10.34.5",
+    "nodePathPrefix": "/tmp/node-v20.19.0-linux-x64/bin",
+    "browserForIntegration": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome (153.0.8010.12)",
+    "browserForComparableVitestPair": "/usr/bin/chromium-browser (156.0.8078.47)",
+    "oracleEnv": "JASPER_REQUIRE_ORACLES=1",
+    "nativeToolchain": "CARGO_HOME=/tmp/jasper-rust-cargo RUSTUP_HOME=/tmp/jasper-rustup PATH includes /tmp/jasper-rust-cargo/bin",
+    "buildReuse": "E2E_SKIP_BUILD=1 used only after current engine/web/MCP/native/Remotion builds existed; no production source changed afterwards."
+  },
+  "commands": [
+    {
+      "command": "pnpm install --frozen-lockfile",
+      "result": "passed",
+      "detail": "Frozen dependencies; no dependency or lockfile changes."
+    },
+    {
+      "command": "pnpm lint",
+      "result": "passed",
+      "detail": "Final source/config lint plus tokens, anime, layers and 12336 translations."
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=4096 pnpm typecheck",
+      "result": "passed",
+      "detail": "All packages/apps; Node20.19.0."
+    },
+    {
+      "command": "pnpm test --maxWorkers=2 --no-cache --reporter=default --reporter=json --outputFile=/tmp/jasper-test-audit/after20.json",
+      "result": "passed",
+      "detail": "9000 passed,295 existing opt-in skips,0 failed; complete CI-equivalent run. Same production/Vitest input tree as delivery."
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=4096 pnpm build",
+      "result": "passed",
+      "detail": "All package/app builds. Production inputs unchanged after this build; later changes only affect browser fixtures/config and audit documentation."
+    },
+    {
+      "command": "pnpm --filter @jasper/engine build:remotion",
+      "result": "passed",
+      "detail": "Current bundle f91c91dd7f5cddcd and bundled fonts."
+    },
+    {
+      "command": "pnpm mg:build",
+      "result": "passed",
+      "detail": "Real Rust release build,143.4 seconds; no missing-Cargo skip."
+    },
+    {
+      "command": "cargo test --manifest-path native/mg/Cargo.toml --release --workspace --locked -j 2",
+      "result": "passed",
+      "detail": "13 passed; no ignored tests."
+    },
+    {
+      "command": "pnpm e2e:typecheck",
+      "result": "passed",
+      "detail": "Rechecked after final E2E/config changes."
+    },
+    {
+      "command": "pnpm notices --check",
+      "result": "passed",
+      "detail": "151 packages,35 ported source records; notices unchanged."
+    },
+    {
+      "command": "pnpm ffmpeg:lgpl",
+      "result": "passed",
+      "detail": "Pinned download SHA verified and binary directory prepared."
+    },
+    {
+      "command": "pnpm ffmpeg:check",
+      "result": "passed",
+      "detail": "All vendor FFmpeg artifacts accepted as LGPL."
+    },
+    {
+      "command": "MG_PARITY=1 pnpm exec vitest run apps/engine/test/mg.test.ts packages/mg-templates/test/parity.test.ts apps/engine/test/lgpl-binaries.test.ts apps/engine/test/gaps-export-formats.test.ts apps/engine/test/tracking.test.ts scripts/ffmpeg/lib.test.mjs --maxWorkers=2",
+      "result": "passed",
+      "detail": "52 passed in6 files; no skips. Verified vendor binaries and native renderer available."
+    },
+    {
+      "command": "E2E_SKIP_BUILD=1 DESKTOP_SMOKE_PORT=49440 pnpm e2e:desktop",
+      "result": "partial initial run",
+      "detail": "Both desktop smoke modes passed; clipboard2 passed/2 setup failures before workflow. Save/Home reset corrected these failures."
+    },
+    {
+      "command": "E2E_SKIP_BUILD=1 pnpm e2e:desktop-clipboard",
+      "result": "passed",
+      "detail": "Repaired full4 passed21.8s."
+    },
+    {
+      "command": "E2E_SKIP_BUILD=1 pnpm e2e:desktop-clipboard --grep 'external text'",
+      "result": "passed",
+      "detail": "1 passed alone12.2s."
+    },
+    {
+      "command": "E2E_SKIP_BUILD=1 pnpm e2e:desktop-clipboard --grep 'files copied'",
+      "result": "passed",
+      "detail": "1 passed alone13.8s."
+    },
+    {
+      "command": "MG_CHECK_PORT=49450 pnpm e2e:mg-fallback",
+      "result": "passed",
+      "detail": "Native with binary; Remotion with named blocker when missing."
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @jasper/desktop dist:dir --skip-build",
+      "result": "passed",
+      "detail": "Current Linux directory package; existing script sets --publish never."
+    },
+    {
+      "command": "PACKAGED_CHECK_PORT=49460 pnpm e2e:packaged",
+      "result": "passed",
+      "detail": "Relocated resources-only LGPL capability/licenses/30-frame OpenH264 export. Poisoned PATH binaries never used."
+    },
+    {
+      "command": "E2E_SKIP_BUILD=1 E2E_PORT=49330 pnpm e2e e2e/subtitles.spec.ts --reporter=list,json",
+      "result": "passed",
+      "detail": "Unchanged subtitle workflow passed14.5s,20.2s command after prepared-binary default. No explicit FFmpeg/ffprobe override."
+    },
+    {
+      "command": "E2E_SKIP_BUILD=1 E2E_PORT=49340 JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome PLAYWRIGHT_HTML_OPEN=never PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/jasper-test-audit/integrated-e2e.json pnpm e2e --reporter=list,json,html",
+      "result": "passed",
+      "detail": "138 passed,1 existing CLAP opt-in skip,0 failed,0 flaky; final complete browser run with default binary selection."
+    }
+  ],
+  "extraEvidence": {
+    "pythonReaders": "All7 external format readers passed in both full Vitest runs and the earlier focused6-file run; installed interpreter constant /tmp/interchange-venv/bin/python.",
+    "browserFileAccess": [
+      {
+        "executablePath": "/usr/bin/chromium-browser",
+        "version": "156.0.8078.47",
+        "expectedBytes": 7105268,
+        "error": "locator.evaluate: NotFoundError: A requested file or directory could not be found at the time an operation was processed."
+      },
+      {
+        "executablePath": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+        "version": "153.0.8010.12",
+        "expectedBytes": 7105268,
+        "size": 7105268,
+        "bytes": 7105268,
+        "header": [0, 0, 0, 32, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 2, 0]
+      }
+    ],
+    "binaryDefaults": {
+      "node": "v20.19.0",
+      "cases": [
+        {
+          "name": "prepared vendor",
+          "passed": true,
+          "actual": [
+            "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffmpeg",
+            "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffprobe"
+          ]
+        },
+        {
+          "name": "vendor opt-out",
+          "passed": true,
+          "actual": ["/usr/bin/ffmpeg", "/usr/bin/ffprobe"]
+        },
+        {
+          "name": "explicit invalid overrides retained",
+          "passed": true,
+          "actual": ["/explicit/ffmpeg", "/explicit/ffprobe"]
+        },
+        {
+          "name": "legacy resources priority",
+          "passed": true,
+          "actual": [
+            "/tmp/jasper-e2e-bin-probe-mNTpQ3/bin/ffmpeg",
+            "/tmp/jasper-e2e-bin-probe-mNTpQ3/bin/ffprobe"
+          ]
+        },
+        {
+          "name": "missing tools remain missing",
+          "passed": true,
+          "actual": [null, null]
+        }
+      ]
+    },
+    "binaryProbeMethod": "Five fresh Node20 --import tsx children import the public Playwright config and inspect only selected tool env paths. Authored PATH is /usr/bin:/bin; temporary resources/bin contains fixture path markers never executed; owned temp directory removed. No probe or injection hook added to production.",
+    "independentReview": "Vendor opt-out, musl and legacy resource priority issues in the initial defaults were corrected by reusing existing native resolveBinaries/findVendorDir; final source review found no functional issues."
+  },
+  "initialFailures": {
+    "validVitestBaseline": "6 failures detailed in performance/whole-suite.json; none discarded merely for failing.",
+    "snapBrowserAttempt": "Stopped exit130 after2 file-import setup failures,1 interrupted,4 passed,132 not run. Archived separately; not a complete validation or performance comparison.",
+    "firstFullBrowser": {
+      "startTime": "2026-10-27T11:51:02.056Z",
+      "duration": 1449280.462,
+      "expected": 137,
+      "skipped": 1,
+      "unexpected": 1,
+      "flaky": 0
+    },
+    "firstFullBrowserCause": "Only failure was subtitle fixture needing OpenH264; prepared binary default fixes prerequisite.",
+    "desktopReset": "Hard reload of dirty editor correctly refused unload; repaired through CtrlS/saved-state/Home. No unload guard bypass."
+  },
+  "artifacts": {
+    "final-lint.log": {
+      "localPath": "/tmp/jasper-test-audit/final-lint.log",
+      "sha256": "a42310cb637b6b09207b30863c8da59443f1454fb003c57517467ce71e85c883"
+    },
+    "final-typecheck.log": {
+      "localPath": "/tmp/jasper-test-audit/final-typecheck.log",
+      "sha256": "c7dc029fc956f95b32e25c4a16c84f9584bee173bb6566c148a9fcf18c38dd54"
+    },
+    "final-e2e-typecheck.log": {
+      "localPath": "/tmp/jasper-test-audit/final-e2e-typecheck.log",
+      "sha256": "5d278b3a4fe6066f9ffd83477980986763003489ef85a080c3c4a1648ab7d740"
+    },
+    "integrated-build.log": {
+      "localPath": "/tmp/jasper-test-audit/integrated-build.log",
+      "sha256": "2f6cf03f2e6d626ee111ae06301037385b9156a0992ab7cde5e7bddd803fec3b"
+    },
+    "integrated-native-tests.log": {
+      "localPath": "/tmp/jasper-test-audit/integrated-native-tests.log",
+      "sha256": "34a9f5427d39bd5346cf6dd97325e2442a75268ee3d5bd9d73e4dbab34bb3175"
+    },
+    "integrated-optional-native-lgpl.log": {
+      "localPath": "/tmp/jasper-test-audit/integrated-optional-native-lgpl.log",
+      "sha256": "5346c2480fa518c863366b951fa5a295cc82caaa06bcd649d46ac69927cba34e"
+    },
+    "clipboard-repaired.log": {
+      "localPath": "/tmp/jasper-test-audit/clipboard-repaired.log",
+      "sha256": "d7fb6c5cab84dd40b167fcfc2d4980407e410a7d188d6d4c16567eeb2e92db38"
+    },
+    "clipboard-text-alone.log": {
+      "localPath": "/tmp/jasper-test-audit/clipboard-text-alone.log",
+      "sha256": "7186107232fcd5156959533263079001307df980e605d981b1c896553dece8c7"
+    },
+    "clipboard-files-alone.log": {
+      "localPath": "/tmp/jasper-test-audit/clipboard-files-alone.log",
+      "sha256": "e8b28f6319abb3bc0e5bbbb0dd9459f846f6b6d34d344f0d0faab95da91dfe85"
+    },
+    "integrated-package-dir.log": {
+      "localPath": "/tmp/jasper-test-audit/integrated-package-dir.log",
+      "sha256": "153a7b6dfad4fc9abec36d86c294b2d62eec26d54212ab67d804d63436936609"
+    },
+    "integrated-packaged-check.log": {
+      "localPath": "/tmp/jasper-test-audit/integrated-packaged-check.log",
+      "sha256": "934ea496cda5ff16a61dccbd22b4225bccb4b30414265fddb7d3b761556bca6a"
+    },
+    "subtitles-fixed.log": {
+      "localPath": "/tmp/jasper-test-audit/subtitles-fixed.log",
+      "sha256": "761bec7e403f8f861f60737822d8348eeb4906fe78e4f101349e3b7406e6598a"
+    },
+    "integrated-e2e.log": {
+      "localPath": "/tmp/jasper-test-audit/integrated-e2e.log",
+      "sha256": "15c7d7bf1b621122f25e15ec76c9eb77055aa0af015cd9b561588359e2a53579"
+    },
+    "integrated-e2e.json": {
+      "localPath": "/tmp/jasper-test-audit/integrated-e2e.json",
+      "sha256": "006d5a5c0c20d7d32a64b3d7d894c99dd0a31b45564c1f5ebc6d312e9754ab21"
+    },
+    "integrated-e2e.time": {
+      "localPath": "/tmp/jasper-test-audit/integrated-e2e.time",
+      "sha256": "47d88437a0baa4b5888191060960956440011d441e1f65f23532036296fcf8d5"
+    },
+    "delivery-lint.log": {
+      "localPath": "/tmp/jasper-test-audit/delivery-lint.log",
+      "sha256": "fc67e61709c8ae4c4d80a466802f33b694047760cb98c6e64946133f624cdcd8"
+    },
+    "delivery-notices.log": {
+      "localPath": "/tmp/jasper-test-audit/delivery-notices.log",
+      "sha256": "adc620bb09598b769d9c08528a4120d9226c187269c3a0c093b7a16c2319934a"
+    }
+  },
+  "notRun": "Full opt-in render matrix; extended FUZZ=1; strict PERF=1; real NVIDIA GPU/CUDA; SAM/CLAP catalogues; remote SSH; external prototype parity; real PowerShell; non-Linux packaging/runtime. Relevant selected render/native oracles and normal-budget fuzz/property cases ran.",
+  "finalBrowserStats": {
+    "startTime": "2026-10-27T12:49:09.168Z",
+    "duration": 1249695.1749999998,
+    "expected": 138,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "sameProductionAndVitestInputsAsDefaultMeasurement": "Verified git diff c62e2bb5 HEAD over apps/packages/scripts/native and root Vitest/package inputs; later changes only browser fixtures/configuration and audit documentation.",
+  "finalDocumentationChecks": [
+    "pnpm lint:3752 files, tokens/anime/layers/i18n passed",
+    "pnpm notices --check:151 packages and35 ported records current",
+    "git diff --check:passed"
+  ]
+}

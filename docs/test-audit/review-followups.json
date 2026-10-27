@@ -10,6 +10,13 @@
       "contract": "Subtitle layout preserves every valid input word in order",
       "owner": "packages/project/test/subtitles-layout.test.ts",
       "commit": "91319860"
+    },
+    {
+      "contract": "OTIO relativeTo export and baseDir import preserve a real media reference",
+      "owner": "packages/interchange/test/otio.test.ts",
+      "commit": "c62e2bb5",
+      "positiveCommand": "PATH=/tmp/node-v20.19.0-linux-x64/bin:$PATH FC_SEED=20261027 pnpm exec vitest run packages/interchange/test/otio.test.ts --maxWorkers=2 -t 'writes media paths relative'",
+      "positiveResult": "Passed before and after the temporary mutation; interchange source/test typecheck also passed."
     }
   ],
   "positiveCommand": "PATH=/tmp/node-v20.19.0-linux-x64/bin:$PATH JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/chromium-browser FC_SEED=20261027 pnpm exec vitest run packages/compositions/test/fx-gl.test.ts packages/project/test/subtitles-layout.test.ts --maxWorkers=2 --no-cache -t 'lowered text|subtitles are sorted'",
@@ -32,6 +39,15 @@
       "failedTest": "properties subtitles are sorted, non-overlapping, at least one frame, never cross a hard cut, hold their words",
       "failureExcerpt": "Error: Property failed after 1 tests\n{ seed: 20261027, path: \"0:0:0:0:0:0:0:0:0:0\", endOnFailure: true }\nCounterexample: [{\"gaps\":[[0,1]],\"cuts\":[],\"zones\":[],\"maxWords\":null,\"hold\":null,\"gap\":0,\"min\":0.1,\"rate\":{\"num\":24000,\"den\":1001}}]\nShrunk 9 time(s)\n\nHint: Enable verbose mode in order to have the list of all failing values encountered during the run\n    at buildError (file://node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:16)\n    at throwIfFailed (file://node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2476:8)\n    at reportRunDetails (file://node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2492:14)\n    at Module.assert (file://node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2662:7)\n    at packages/project/test/subtitles-layout.test.ts:491:6\n    at file://node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file://node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file://node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/c",
       "restored": true
+    },
+    {
+      "mutation": "ignore relativeTo and emit absolute file URL",
+      "failedTest": "OTIO writes media paths relative to a folder when asked",
+      "intendedFailure": "expected ../shot.mov, received file:///media/shot.mov",
+      "restored": true,
+      "source": "packages/interchange/src/otio.ts",
+      "test": "packages/interchange/test/otio.test.ts",
+      "exitCode": 1
     }
   ],
   "productionChanges": "None; mutation sources were restored byte-for-byte. Root integrated gates execute the full remaining suite."

@@ -58,9 +58,12 @@ No timing claim is made for removing the empty harness's cold link work.
 - The integrated desktop run passed the custom-format and image workflows but
   exposed setup failures for text/files: hard navigation triggered the correct
   dirty/saving unload guard. The setup now saves and uses the Home button; its
-  browser rerun remains pending until the shared validation lane is available.
+  integrated rerun passed all four cases (21.8 s). The formerly blocked text and
+  file cases also passed alone (12.2 s and 13.8 s), confirming no prerequisite case.
 - Root integration passed both desktop smoke modes and the native-capability
-  fallback check. Those are separate from the native measurements above.
+  fallback check. A release workspace run passed all 13 Rust tests, and packaging
+  plus the relocated resources-only LGPL export check passed. Those are separate
+  from the native measurements above.
 
 Native command (local toolchain paths are environment setup, not repository pins):
 

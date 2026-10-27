@@ -97,7 +97,7 @@ they protect shader compilation freezes, catalog pixels, decoded source routing 
 cheap plan or mock tests cannot prove. Their setup/compilation costs remain a bottleneck; no such behavior was
 moved out of the existing gate.
 
-## Asymmetric transform follow-up: validation pending
+## Asymmetric transform follow-up
 
 The existing lowered pixel case now additionally uses left 30/top 20 padding, anchor (32,18), position (48,18),
 nonuniform scale (0.5,2), and clockwise 90° rotation. Its independent forward map before preview scaling is
@@ -105,6 +105,7 @@ nonuniform scale (0.5,2), and clockwise 90° rotation. Its independent forward m
 (90,57). Both full and half preview resolution check those literal colors and transparency at (116,40). Existing
 translation, outside-paint and shutter assertions remain.
 
-Using left padding in place of top padding for `fromLayer` changes this mapping by (+20,+10), so the red and blue
-witnesses must fail. No tests, builds or mutations were run for this extension while the integration owner's
-isolated baseline was active; its targeted test and this padding-axis mutation await integration validation.
+Using left padding in place of top padding for `fromLayer` changes this mapping by (+20,+10). After the isolated
+baseline finished, the targeted pixel test passed twice, and this padding-axis mutation failed its literal pixel
+assertion. The source was restored byte for byte. [review-followups.json](review-followups.json) records the exact
+command, intended failure and restoration; the integrated full run also executes the complete GL owner.
