@@ -165,7 +165,9 @@ describe('Media Browser helpers', () => {
 			effectAllowed: 'none',
 		} as unknown as DataTransfer;
 		writeHostPathsDrag(dt, ['/media/a.mp4', '/media/b.mov']);
-		expect(data.get('application/x-jasper-host-paths')).toBe('{"paths":["/media/a.mp4","/media/b.mov"]}');
+		expect(JSON.parse(data.get('application/x-jasper-host-paths')!)).toEqual({
+			paths: ['/media/a.mp4', '/media/b.mov'],
+		});
 		data.clear();
 		data.set('application/x-jasper-host-paths', '{"paths":["/media/a.mp4","/media/b.mov"]}');
 		expect(readDataTransfer(dt)).toEqual({

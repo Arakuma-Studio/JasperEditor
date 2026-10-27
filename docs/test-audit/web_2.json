@@ -492,7 +492,7 @@
   {
     "path": "apps/web/test/motion-templates.test.tsx",
     "test": "round-trips the drag payload",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "round-trips the drag payload",
     "source": "docs/specs/05-ui-shell-premiere-design.md MGT-001/002; docs/wp-notes/social-comments.md §7.9; docs/wp-notes/wp-m2-anime-templates.md",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: round-trips the drag payload.",
@@ -500,7 +500,7 @@
     "seam": "Template DataTransfer wire payload, gallery actions and mg commands → session/engine requests",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Template metadata/model tests do not detect gallery search/keyboard/drop orchestration, targeting, locks, explicit-track overwrite or rerender capability gating.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "Retain the literal public MIME and parsed wire fields, independently supplied reader payload and malformed refusal. Assert JSON data rather than incidental stringify whitespace or object-property ordering.",
     "validation": "pnpm exec vitest run apps/web/test/motion-templates.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
@@ -926,7 +926,7 @@
   {
     "path": "apps/web/test/polish-media-browser.test.tsx",
     "test": "a Media Browser drag reads as host paths",
-    "disposition": "KEEP",
+    "disposition": "REWRITE",
     "contract": "a Media Browser drag reads as host paths",
     "source": "docs/wp-notes/polish.md; docs/ARCHITECTURE.md D-47 and §7",
     "bug": "The named action/input/lifecycle produces a wrong caller-visible result: a Media Browser drag reads as host paths.",
@@ -934,7 +934,7 @@
     "seam": "Host-path drag wire, media browser actions and engine dialogs",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Owns local/remote UI behavior, address validation, save-before-navigation and agent navigation refusal; server browse/auth tests do not drive these controls.",
-    "reason": "Distinct named contract below retains its existing behavior assertions; no cheaper equivalent in the audited area supplies the same trigger and observable result.",
+    "reason": "Retain the literal public MIME and parsed wire fields, independently supplied reader payload and malformed refusal. Assert JSON data rather than incidental stringify whitespace or object-property ordering.",
     "validation": "pnpm exec vitest run apps/web/test/polish-media-browser.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
@@ -2978,7 +2978,7 @@
     "seam": "Mounted real ReviewPanel with overflowing proposal, keyboard/scroll/ARIA and visible recompute state",
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Small regular Review scenarios cannot detect rendering every row or offscreen active-descendant failures; 96 rows still exceed overflow and sliced-preview boundaries.",
-    "reason": "Reduce real proposal from500 to96 rows, still >40 bounded DOM window and >64 sliced-preview threshold. Same end/middle keyboard/scroll/ARIA/decision assertions; scoped monotonic clock deterministically exposes pending preview without waiting for host load. No extra production hook.",
+    "reason": "Reduce real proposal from500 to96 rows, still >40 bounded DOM window and >64 sliced-preview threshold. Same end/middle keyboard/scroll/ARIA/decision assertions; scoped monotonic clock deterministically exposes pending preview without waiting for host load. No extra production hook. Remove unused REVIEW_VIRTUAL_ITEMS/REVIEW_VIRTUAL_OUT benchmark controls and synchronous file-writing/timing scaffolding; performance is measured through the runner JSON reporter.",
     "validation": "pnpm exec vitest run apps/web/test/review-virtual.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
   },
   {
@@ -3133,7 +3133,8 @@
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Engine job tests cannot detect missing editor inputs/progress/cancel or lost settings coalescing; model helpers do not mount the dialog.",
     "reason": "Rename to the actually exercised run-refusal behavior and remove unused jobFails fixture branch. Meaningful visible refusal remains; no claim is made to test a failed polled job.",
-    "validation": "pnpm exec vitest run apps/web/test/script-fix-dialog.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
+    "validation": "pnpm exec vitest run apps/web/test/script-fix-dialog.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck",
+    "currentTest": "shows a refusal of the run without blanking the dialog"
   },
   {
     "path": "apps/web/test/script-fix-dialog.test.tsx",
@@ -4561,7 +4562,8 @@
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Template schema/randomizer tests do not drive editor typing, IME, multiselection, read-only, avatar drop or date/rating keyboard interactions.",
     "reason": "Retain platform applicability through Rating group, Review date, actual avatar/count/age controls; drop private row nesting, group placement and redundant default-copy assertions.",
-    "validation": "pnpm exec vitest run apps/web/test/social-review-controls.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
+    "validation": "pnpm exec vitest run apps/web/test/social-review-controls.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck",
+    "currentTest": "Play exposes rating, date and avatar controls without comment counts or age"
   },
   {
     "path": "apps/web/test/social-review-controls.test.tsx",
@@ -4575,7 +4577,8 @@
     "refactor": "Observed values, errors, accessible state or committed history can remain unchanged when internal calculations, identifiers or collaborators are refactored.",
     "unique": "Template schema/randomizer tests do not drive editor typing, IME, multiselection, read-only, avatar drop or date/rating keyboard interactions.",
     "reason": "Retain web date versus iPhone age applicability through named controls and actual edited weekday preview; eliminate private row/class inventory and direct formatter-wrapper restatement.",
-    "validation": "pnpm exec vitest run apps/web/test/social-review-controls.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck"
+    "validation": "pnpm exec vitest run apps/web/test/social-review-controls.test.tsx --maxWorkers=2; pnpm --filter @jasper/web typecheck",
+    "currentTest": "App Store web edits a date, while iPhone edits the age without an avatar"
   },
   {
     "path": "apps/web/test/social-review-controls.test.tsx",

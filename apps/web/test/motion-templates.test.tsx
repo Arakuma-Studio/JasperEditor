@@ -75,9 +75,10 @@ describe('Motion Templates gallery model', () => {
 		} as unknown as DataTransfer;
 		writeMgTemplateDrag(dt, { id: 'lower-third', version: 1 });
 		expect(MG_TEMPLATE_MIME).toBe('application/x-jasper-mg-template');
-		expect(data.get('application/x-jasper-mg-template')).toBe(
-			'{"type":"jasper/mg-template","template":{"id":"lower-third","version":1}}',
-		);
+		expect(JSON.parse(data.get('application/x-jasper-mg-template')!)).toEqual({
+			type: 'jasper/mg-template',
+			template: { id: 'lower-third', version: 1 },
+		});
 		expect(
 			readMgTemplateDrag({
 				getData: () => '{"type":"jasper/mg-template","template":{"id":"lower-third","version":1}}',

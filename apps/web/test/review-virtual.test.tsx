@@ -2,8 +2,7 @@
 // virtualised — only the rows in view (plus the current one) are in the DOM, every option says its place
 // (aria-posinset / aria-setsize), groups stay labelled, End reaches the last item (rendered, aria-activedescendant
 // valid, scrolled into view), scrolling renders the rows there, and a decision re-renders without rebuilding the
-// preview. Render times are written to REVIEW_VIRTUAL_OUT when set (the wp-note's measurement).
-import { writeFileSync } from 'node:fs';
+// preview.
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -48,14 +47,12 @@ describe(`Review panel with ${N} items`, () => {
 		const p = storeProposal(engine, seqId, 'Big pass', frames);
 		await c.setActive(p.id);
 		flush();
-		const t0 = performance.now();
 		render(
 			<SessionProvider session={session}>
 				<ReviewPanel instanceId="rv" visible />
 			</SessionProvider>,
 		);
 		await settle();
-		const firstRenderMs = performance.now() - t0;
 		const list = screen.getByTestId('review-list');
 		expect(list.getAttribute('data-review-rows')).toBe(String(N));
 		const options = () => within(list).getAllByRole('option');
@@ -92,7 +89,6 @@ describe(`Review panel with ${N} items`, () => {
 		expect(list.querySelector('[data-review-pinned-group]')?.textContent).toBe(`Support · ${N}`);
 		// a decision on a row there: accepted at once, the preview is not rebuilt (same object)
 		const before = c.getState().preview;
-		const t1 = performance.now();
 		await act(async () => {
 			fireEvent.pointerDown(list.querySelector(`[data-review-row="${midId}"]`)!, { button: 0 });
 		});
@@ -101,7 +97,6 @@ describe(`Review panel with ${N} items`, () => {
 		});
 		flush();
 		await settle();
-		const decisionMs = performance.now() - t1;
 		expect(c.getState().items.find((it) => it.id === midId)?.state).toBe('accepted');
 		expect(c.getState().preview?.result).toBe(before?.result);
 		expect(list.querySelector(`[data-review-row="${midId}"]`)?.getAttribute('data-review-state')).toBe(
@@ -131,11 +126,6 @@ describe(`Review panel with ${N} items`, () => {
 		} finally {
 			clock.mockRestore();
 		}
-		if (process.env.REVIEW_VIRTUAL_OUT)
-			writeFileSync(
-				process.env.REVIEW_VIRTUAL_OUT,
-				`${JSON.stringify({ items: N, firstRenderMs: Math.round(firstRenderMs), decisionMs: Math.round(decisionMs), domOptions: options().length })}\n`,
-			);
 		c.dispose();
 	});
 });

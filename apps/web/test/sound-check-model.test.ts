@@ -116,7 +116,8 @@ describe('why a fix needs judgement, and unmeasured reasons, in the UI language'
 			'limited by dialogue A1 (the speech band)',
 		);
 		const m = soundCheckMessage('syncUnmeasurable', 'Air whoosh', SOUND_CHECK_UNMEASURED.covered);
-		expect(messageText(m)).toContain('otros sonidos lo tapan');
+		expect(messageText(m)).not.toBe(m.text);
+		expect(messageText(m)).not.toContain(SOUND_CHECK_UNMEASURED.covered);
 		expect(messageText(m)).toContain('Air whoosh');
 	});
 });
