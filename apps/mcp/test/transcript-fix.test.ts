@@ -12,7 +12,11 @@ import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
 const P = 'prj_fix';
-const doc: ProjectDocument = createEmptyProject({ ids: createCounterIdSource(3), name: 'F', preset: 'hd-1080p-30' });
+const doc: ProjectDocument = createEmptyProject({
+	ids: createCounterIdSource(3),
+	name: 'F',
+	preset: 'hd-1080p-30',
+});
 const SEQ = Object.keys(doc.sequences)[0]!;
 
 const result = (mode: 'propose' | 'dryRun'): TranscriptFixResult => ({
@@ -23,7 +27,12 @@ const result = (mode: 'propose' | 'dryRun'): TranscriptFixResult => ({
 	itemCount: mode === 'propose' ? 2 : 0,
 	revision: 3,
 	report: {
-		settings: { sources: ['script', 'glossary'], scope: 'recordings', strictness: 'standard', showRejected: false },
+		settings: {
+			sources: ['script', 'glossary'],
+			scope: 'recordings',
+			strictness: 'standard',
+			showRejected: false,
+		},
 		sourcesUsed: ['script'],
 		perMedia: [
 			{
@@ -76,14 +85,24 @@ const result = (mode: 'propose' | 'dryRun'): TranscriptFixResult => ({
 		speech: { model: 'whisper-tiny.en' },
 		device: mode === 'propose' ? { label: 'CPU' } : null,
 		...(mode === 'dryRun'
-			? { estimate: { seconds: 12.5, windows: 2, readings: 4, basis: 'reference' as const, note: '≈ reference' } }
+			? {
+					estimate: {
+						seconds: 12.5,
+						windows: 2,
+						readings: 4,
+						basis: 'reference' as const,
+						note: '≈ reference',
+					},
+				}
 			: {}),
 		timings: { readMs: 1, alignMs: 5, scoreMs: 0, decideMs: 1, totalMs: 9, speechSeconds: 50 },
 		warnings: [],
 	},
 });
 
-function fakeEngine(opts: { fail?: { code: string; message: string; detail?: unknown }; runningPolls?: number } = {}) {
+function fakeEngine(
+	opts: { fail?: { code: string; message: string; detail?: unknown }; runningPolls?: number } = {},
+) {
 	const calls: { name: string; args: unknown[] }[] = [];
 	let polls = 0;
 	let mode: 'propose' | 'dryRun' = 'propose';
@@ -190,7 +209,14 @@ describe('fix_transcript', () => {
 			args: [
 				P,
 				SEQ,
-				{ mode: 'dryRun', sources: ['script'], scope: 'used', strictness: 'careful', showRejected: true, device: 'cpu' },
+				{
+					mode: 'dryRun',
+					sources: ['script'],
+					scope: 'used',
+					strictness: 'careful',
+					showRejected: true,
+					device: 'cpu',
+				},
 			],
 		});
 		expect(json).toMatchObject({
@@ -205,12 +231,20 @@ describe('fix_transcript', () => {
 	it('propose: waits for the job with progress notifications and names the proposal', async () => {
 		const t = await connect({ runningPolls: 3 });
 		const progress: number[] = [];
-		const r = (await t.client.callTool({ name: 'fix_transcript', arguments: { projectId: P, mode: 'propose' } }, undefined, {
-			onprogress: (p) => progress.push(p.progress),
-		})) as CallToolResult;
+		const r = (await t.client.callTool(
+			{ name: 'fix_transcript', arguments: { projectId: P, mode: 'propose' } },
+			undefined,
+			{
+				onprogress: (p) => progress.push(p.progress),
+			},
+		)) as CallToolResult;
 		expect(r.isError).toBeFalsy();
 		const json = JSON.parse((r.content[0] as { text: string }).text);
-		expect(json).toMatchObject({ proposalId: 'prp_0000000000000009', itemCount: 2, candidates: { byGroup: { fix: 1 } } });
+		expect(json).toMatchObject({
+			proposalId: 'prp_0000000000000009',
+			itemCount: 2,
+			candidates: { byGroup: { fix: 1 } },
+		});
 		expect(json.next).toContain('wait_for_proposal');
 		expect(json.next).toContain('do not regenerate');
 		expect(progress.length).toBeGreaterThan(0);
@@ -220,10 +254,14 @@ describe('fix_transcript', () => {
 		const t = await connect({ runningPolls: 1000 });
 		const ac = new AbortController();
 		const progress: number[] = [];
-		const call = t.client.callTool({ name: 'fix_transcript', arguments: { projectId: P, mode: 'propose' } }, undefined, {
-			signal: ac.signal,
-			onprogress: (p) => progress.push(p.progress),
-		});
+		const call = t.client.callTool(
+			{ name: 'fix_transcript', arguments: { projectId: P, mode: 'propose' } },
+			undefined,
+			{
+				signal: ac.signal,
+				onprogress: (p) => progress.push(p.progress),
+			},
+		);
 		await expect.poll(() => progress.length, { timeout: 5000 }).toBeGreaterThan(0);
 		ac.abort('stop');
 		await expect(call).rejects.toThrow();
@@ -245,7 +283,14 @@ describe('fix_transcript', () => {
 		const res = await t.client.readResource({ uri: 'jasper://guide/transcript-fix' });
 		const text = (res.contents[0] as { text: string }).text;
 		expect(text).toContain('# Fixing transcripts from a script');
-		for (const step of ['attach_script', 'fix_transcript', 'dryRun', 'propose', 'accept_proposal', 'plan_cleanup'])
+		for (const step of [
+			'attach_script',
+			'fix_transcript',
+			'dryRun',
+			'propose',
+			'accept_proposal',
+			'plan_cleanup',
+		])
 			expect(text).toContain(step);
 		expect(text.indexOf('attach_script')).toBeLessThan(text.indexOf('plan_cleanup'));
 		const auto = await t.client.readResource({ uri: 'jasper://guide/editing-automation' });

@@ -87,7 +87,11 @@ export type FixSpeech = {
 	readonly models: FixSpeechModels;
 	/** CPU threads transcription uses (the speech thread cap). */
 	threads?(): number;
-	score(request: SpeechScoreRequest, signal: AbortSignal, opts?: SpeechScoreOptions): Promise<SpeechScoreResult>;
+	score(
+		request: SpeechScoreRequest,
+		signal: AbortSignal,
+		opts?: SpeechScoreOptions,
+	): Promise<SpeechScoreResult>;
 };
 /** The personal glossary library (`SpeechGlossary.list`). */
 export type FixGlossary = {
@@ -282,7 +286,10 @@ export async function prepare(
 	if (settings.sources.includes('glossary')) {
 		const g = deps.glossary();
 		if (!g)
-			warnings.push({ code: 'W_NO_GLOSSARY', message: 'The personal glossary is not available in this engine' });
+			warnings.push({
+				code: 'W_NO_GLOSSARY',
+				message: 'The personal glossary is not available in this engine',
+			});
 		else
 			try {
 				glossary = (await g.list()).entries.map((e) => ({
@@ -311,9 +318,17 @@ export async function prepare(
 			{ sources: settings.sources },
 		);
 	if (settings.sources.includes('script') && !scriptText)
-		warnings.push({ code: 'W_NO_SCRIPT', message: 'No script is attached: only the personal glossary is used' });
+		warnings.push({
+			code: 'W_NO_SCRIPT',
+			message: 'No script is attached: only the personal glossary is used',
+		});
 	if (settings.scope === 'inOut' && seq.inPoint === null && seq.outPoint === null)
-		return refuse(400, 'VALIDATION_FAILED', 'Scope In–Out needs an In or Out mark on the sequence', 'E_INVALID_PARAM');
+		return refuse(
+			400,
+			'VALIDATION_FAILED',
+			'Scope In–Out needs an In or Out mark on the sequence',
+			'E_INVALID_PARAM',
+		);
 	// scope (SC-063)
 	const all = scopeMedia(doc, seq, settings.scope);
 	const media: ScopeMedia[] = [];
@@ -472,7 +487,11 @@ function itemOf(c: FixCandidate, d: FixDecision, edit: ReplaceWordsEdit): Propos
 }
 
 /** Runs steps 3–4 for every media of `p` (one at a time). */
-export async function runPipeline(deps: TranscriptFixDeps, p: Prepared, o: PipelineOptions): Promise<PipelineResult> {
+export async function runPipeline(
+	deps: TranscriptFixDeps,
+	p: Prepared,
+	o: PipelineOptions,
+): Promise<PipelineResult> {
 	const timings = { alignMs: 0, scoreMs: 0, decideMs: 0 };
 	const skipped: Record<string, number> = {};
 	const guard = { candidatesCapped: 0, itemsCapped: 0 };
@@ -505,7 +524,8 @@ export async function runPipeline(deps: TranscriptFixDeps, p: Prepared, o: Pipel
 		let alignment: Extract<ReturnType<typeof alignTranscript>, { ok: true }> | null = null;
 		if (script) {
 			const a = alignTranscript({ words, script, language: lang, mediaId: m.mediaId, transcriptId: t.id });
-			if (!a.ok) throw new JobError('E_LIMIT', `${m.name}: ${a.message}`, false, { mediaId: m.mediaId, ...a.detail });
+			if (!a.ok)
+				throw new JobError('E_LIMIT', `${m.name}: ${a.message}`, false, { mediaId: m.mediaId, ...a.detail });
 			alignment = a;
 		}
 		const found = findFixCandidates({
@@ -646,9 +666,13 @@ export async function runPipeline(deps: TranscriptFixDeps, p: Prepared, o: Pipel
 			const key = engineMediaKey(p.doc.media[x.m.mediaId]);
 			if (x.windows.length) {
 				if (!speech) problem = noAudio('NOT_AVAILABLE', 'The speech service is not running');
-				else if (!model) problem = noAudio('SPEECH_MODEL_NOT_INSTALLED', 'No installed speech model fits its language');
+				else if (!model)
+					problem = noAudio('SPEECH_MODEL_NOT_INSTALLED', 'No installed speech model fits its language');
 				else if (!LANG_RE.test(lang))
-					problem = noAudio('SPEECH_LANGUAGE_UNKNOWN', `The transcript's language "${lang}" is not a language code`);
+					problem = noAudio(
+						'SPEECH_LANGUAGE_UNKNOWN',
+						`The transcript's language "${lang}" is not a language code`,
+					);
 				else if (!key) problem = noAudio('MEDIA_OFFLINE', 'The media is not in the engine store (offline)');
 			}
 			if (x.windows.length && !problem && speech && model && key) {
@@ -691,7 +715,8 @@ export async function runPipeline(deps: TranscriptFixDeps, p: Prepared, o: Pipel
 					if (o.signal.aborted || (e instanceof JobError && e.code === 'JOB_CANCELLED'))
 						throw new JobError('JOB_CANCELLED', 'Cancelled');
 					if (e instanceof JobError && PER_MEDIA_CODES.has(e.code)) problem = noAudio(e.code, e.message);
-					else if (e instanceof JobError) throw new JobError(e.code, `${x.m.name}: ${e.message}`, e.retryable ?? false, e.detail);
+					else if (e instanceof JobError)
+						throw new JobError(e.code, `${x.m.name}: ${e.message}`, e.retryable ?? false, e.detail);
 					else throw new JobError('SPEECH_SCORE_FAILED', `${x.m.name}: ${(e as Error).message}`, false);
 				}
 				timings.scoreMs += Date.now() - s0;
@@ -701,12 +726,17 @@ export async function runPipeline(deps: TranscriptFixDeps, p: Prepared, o: Pipel
 				x.run.report.unscored = problem;
 				warnings.push({
 					code: 'W_UNSCORED',
-					message: `${x.m.name}: the audio check could not run (${problem.message}); its candidates are kept as they are`.slice(0, 400),
+					message:
+						`${x.m.name}: the audio check could not run (${problem.message}); its candidates are kept as they are`.slice(
+							0,
+							400,
+						),
 				});
 			}
 			const d0 = Date.now();
 			for (const d of x.run.decided)
-				if (d.candidate.needsAudio) d.decision = decideFix(d.candidate, scores.get(d.candidate.id) ?? null, strictness);
+				if (d.candidate.needsAudio)
+					d.decision = decideFix(d.candidate, scores.get(d.candidate.id) ?? null, strictness);
 			timings.decideMs += Date.now() - d0;
 		}
 	}
@@ -882,12 +912,17 @@ export type FixProposalReport = {
 	device?: 'auto' | 'cpu' | 'gpu';
 	mediaIds: string[];
 	counts: Record<string, number>;
-	perMedia: Array<{ mediaId: string; name: string; alignedShare: number | null; offScriptShare: number | null }>;
+	perMedia: Array<{
+		mediaId: string;
+		name: string;
+		alignedShare: number | null;
+		offScriptShare: number | null;
+	}>;
 };
 
 export function fixReportOf(p: Pick<Proposal, 'report'>): FixProposalReport | null {
 	const r = p.report as Partial<FixProposalReport> | undefined;
-	if (!r || r.format !== 'jasper-transcript-fix' || r.version !== 1 || !r.settings) return null;
+	if (r?.format !== 'jasper-transcript-fix' || r.version !== 1 || !r.settings) return null;
 	return r as FixProposalReport;
 }
 
@@ -919,11 +954,13 @@ function proposalDraft(p: Prepared, r: PipelineResult, items: ProposalItemInput[
 		`${counts.spelling ?? 0} spelling`,
 		`${counts.maybe ?? 0} maybe (unselected)`,
 	];
-	const aligned = r.media
-		.map((m) => m.alignment)
-		.filter((a): a is AlignmentReport => !!a);
+	const aligned = r.media.map((m) => m.alignment).filter((a): a is AlignmentReport => !!a);
 	const share = aligned.length
-		? aligned.reduce((n, a) => n + a.exactTokens, 0) / Math.max(1, aligned.reduce((n, a) => n + a.transcriptTokens, 0))
+		? aligned.reduce((n, a) => n + a.exactTokens, 0) /
+			Math.max(
+				1,
+				aligned.reduce((n, a) => n + a.transcriptTokens, 0),
+			)
 		: null;
 	const summary = `${parts.join(' · ')} in ${plural(r.media.length, 'recording', 'recordings')}${share !== null ? ` · ${Math.round(share * 100)} % aligned to the script` : ''}. Each fix replaces the words in the transcript and patches the subtitles and caption tracks showing them; accepting is one undo step.`;
 	const report: FixProposalReport = {
@@ -974,7 +1011,10 @@ function parseJobInput(raw: unknown): TranscriptFixJobInput {
 }
 
 /** The `transcript-fix` job runner. */
-export async function runTranscriptFixJob(ctx: JobContext, deps: TranscriptFixDeps): Promise<TranscriptFixResult> {
+export async function runTranscriptFixJob(
+	ctx: JobContext,
+	deps: TranscriptFixDeps,
+): Promise<TranscriptFixResult> {
 	try {
 		return await runJob(ctx, deps);
 	} catch (e) {
@@ -1005,7 +1045,10 @@ async function runJob(ctx: JobContext, deps: TranscriptFixDeps): Promise<Transcr
 	const { items, capped } = p.mode === 'propose' ? proposalItems(r) : { items: [], capped: 0 };
 	r.guard.itemsCapped = capped;
 	const kept = new Set(items.map((it) => it.id));
-	const patch = patchReport(doc, p.mode === 'propose' ? decided.filter((d) => d.item && kept.has(d.item.id)) : decided);
+	const patch = patchReport(
+		doc,
+		p.mode === 'propose' ? decided.filter((d) => d.item && kept.has(d.item.id)) : decided,
+	);
 	const report = () => buildReport(p, r, patch, { readMs, totalMs: Date.now() - t0 });
 	const base = { mode: p.mode, projectId: input.projectId, sequenceId: p.seq.id };
 	if (p.mode === 'dryRun' || !items.length) {
@@ -1044,9 +1087,14 @@ export function transcriptFixRefresher(deps: TranscriptFixDeps) {
 		const rep = fixReportOf(input.proposal);
 		const seqId = input.proposal.sequenceId;
 		if (!rep || !seqId)
-			throw new HttpError(422, 'VALIDATION_FAILED', 'The proposal has no transcript-fix report to re-plan from', {
-				code: 'E_INVALID_PARAM',
-			});
+			throw new HttpError(
+				422,
+				'VALIDATION_FAILED',
+				'The proposal has no transcript-fix report to re-plan from',
+				{
+					code: 'E_INVALID_PARAM',
+				},
+			);
 		const wanted = new Set(input.itemIds);
 		const mediaIds = new Set<string>();
 		for (const it of input.proposal.items)

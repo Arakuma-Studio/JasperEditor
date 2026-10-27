@@ -307,7 +307,6 @@ import {
 	StyleRecipeLibraryResponseSchema,
 	StyleRecipeUpdateRequestSchema,
 } from './style.ts';
-import { TranscriptFixRequestSchema } from './transcript-fix.ts';
 import {
 	SubtitleTemplateDeleteResponseSchema,
 	SubtitleTemplateLibraryResponseSchema,
@@ -315,6 +314,7 @@ import {
 } from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
+import { TranscriptFixRequestSchema } from './transcript-fix.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';

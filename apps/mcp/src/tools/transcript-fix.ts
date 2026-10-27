@@ -12,7 +12,15 @@ import {
 } from '@jasper/api';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
-import { cancelIfAborted, defineTool, EDIT, type Extra, loadDoc, type ToolContext, waitJob } from '../context.ts';
+import {
+	cancelIfAborted,
+	defineTool,
+	EDIT,
+	type Extra,
+	loadDoc,
+	type ToolContext,
+	waitJob,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 
@@ -25,7 +33,9 @@ export const TRANSCRIPT_FIX_GUIDE = `Fixing transcripts from a script (spec 17):
 
 const ModeArg = z
 	.enum(['propose', 'dryRun'])
-	.describe('"dryRun": the fast pre-run report (nothing stored, no audio check); "propose": the audio check and one proposal');
+	.describe(
+		'"dryRun": the fast pre-run report (nothing stored, no audio check); "propose": the audio check and one proposal',
+	);
 
 type Args = {
 	projectId: string;
@@ -72,7 +82,10 @@ function compact(r: TranscriptFixResult) {
 		candidates: rep.candidates,
 		decisions: rep.decisions.slice(0, SHOWN_DECISIONS),
 		...(rep.decisions.length > SHOWN_DECISIONS || rep.decisionsTruncated
-			? { decisionsShown: Math.min(SHOWN_DECISIONS, rep.decisions.length), decisionsTotal: rep.candidates.total }
+			? {
+					decisionsShown: Math.min(SHOWN_DECISIONS, rep.decisions.length),
+					decisionsTotal: rep.candidates.total,
+				}
 			: {}),
 		skipped: rep.skipped,
 		unusedScriptLines: rep.unusedLines.slice(0, 100),
@@ -155,11 +168,15 @@ export function registerTranscriptFixTools(ctx: ToolContext): void {
 					.min(1)
 					.max(2)
 					.optional()
-					.describe('What the fixes come from: "script", "glossary" (default: the sequence\'s settings, else both)'),
+					.describe(
+						'What the fixes come from: "script", "glossary" (default: the sequence\'s settings, else both)',
+					),
 				scope: z
 					.enum(TRANSCRIPT_FIX_SCOPES)
 					.optional()
-					.describe('"recordings" (whole recordings, default) | "used" (only words the sequence uses) | "inOut"'),
+					.describe(
+						'"recordings" (whole recordings, default) | "used" (only words the sequence uses) | "inOut"',
+					),
 				strictness: z
 					.enum(TRANSCRIPT_FIX_STRICTNESS)
 					.optional()

@@ -88,7 +88,9 @@ async function waitJob(id: string, timeoutMs = 900_000): Promise<EngineJob> {
 }
 
 function swapWord(text: string, to: string): string {
-	return text.replace(/[A-Za-z']+/, (m) => (m[0] === m[0]!.toUpperCase() ? to[0]!.toUpperCase() + to.slice(1) : to));
+	return text.replace(/[A-Za-z']+/, (m) =>
+		m[0] === m[0]!.toUpperCase() ? to[0]!.toUpperCase() + to.slice(1) : to,
+	);
 }
 
 /** The transcript with the confusions applied (first occurrence of each), and the corrupted indices. */
@@ -128,7 +130,14 @@ function seed(words: Word[], script: string, model = MODEL) {
 			commands: [
 				mediaRegisterCommand(reg, '$a', '$ai', 'lj'),
 				{ type: 'transcript.create', mediaId: '$a', language: 'en', origin: 'whisper-local', words },
-				{ type: 'clip.place', source: { mediaId: '$a' }, at: 0, tracks: { audio: 'A1' }, video: false, audio: true },
+				{
+					type: 'clip.place',
+					source: { mediaId: '$a' },
+					at: 0,
+					tracks: { audio: 'A1' },
+					video: false,
+					audio: true,
+				},
 				{ type: 'cleanup.configure', sequenceId: seqId, script: { name: 'Script', text: script } },
 			] as never[],
 		},
@@ -169,7 +178,8 @@ describe.skipIf(!enabled)('Fix Transcript with a real Whisper model (spec 17 SC-
 		app = await makeApp({ totalSlots: 8 });
 		const dir = join(app.appdir, 'models', 'speech');
 		mkdirSync(dir, { recursive: true });
-		for (const id of MODELS) if (!existsSync(join(dir, id))) symlinkSync(join(CACHE, id), join(dir, id), 'dir');
+		for (const id of MODELS)
+			if (!existsSync(join(dir, id))) symlinkSync(join(CACHE, id), join(dir, id), 'dir');
 		reg = await register(app, FIXTURE);
 		for (const m of MODELS) {
 			const r = await app.inject({
@@ -210,7 +220,13 @@ describe.skipIf(!enabled)('Fix Transcript with a real Whisper model (spec 17 SC-
 		expect(rep.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
 		expect(res.proposalId).toBeTruthy();
 		const p = (
-			(await app.inject({ method: 'GET', url: `/api/projects/${s.projectId}/proposals/${res.proposalId}`, headers: H })).json() as {
+			(
+				await app.inject({
+					method: 'GET',
+					url: `/api/projects/${s.projectId}/proposals/${res.proposalId}`,
+					headers: H,
+				})
+			).json() as {
 				proposal: Proposal;
 			}
 		).proposal;
@@ -242,7 +258,9 @@ describe.skipIf(!enabled)('Fix Transcript with a real Whisper model (spec 17 SC-
 		});
 		expect(acc.statusCode, acc.body).toBe(200);
 		const after = loadProject(JSON.parse(readFileSync(s.file, 'utf8'))).document;
-		expect(Object.values(after.transcripts)[0]!.words.map((w) => w.text)).toEqual(truthWords.map((w) => w.text));
+		expect(Object.values(after.transcripts)[0]!.words.map((w) => w.text)).toEqual(
+			truthWords.map((w) => w.text),
+		);
 		// the same accept in an editor session is ONE undo step that restores the document exactly
 		const ids = createCounterIdSource(500);
 		const session = new EditorSession({
@@ -276,35 +294,41 @@ describe.skipIf(!enabled)('Fix Transcript with a real Whisper model (spec 17 SC-
 		expect(res.report.candidates.total).toBeGreaterThanOrEqual(8);
 		expect(res.report.candidates.byGroup.fix ?? 0).toBe(0);
 		expect(res.report.candidates.byGroup.spelling ?? 0).toBe(0);
-		expect(res.proposalId === null || res.itemCount === (res.report.candidates.byGroup.maybe ?? 0)).toBe(true);
+		expect(res.proposalId === null || res.itemCount === (res.report.candidates.byGroup.maybe ?? 0)).toBe(
+			true,
+		);
 	}, 900_000);
 
-	it.skipIf(!BENCH)('cost per speech minute (SC-037, whole job)', async () => {
-		const truthWords = transcripts.get(benchModel)!;
-		const { words } = corrupt(truthWords);
-		const runs: number[] = [];
-		let last: TranscriptFixResult | null = null;
-		for (let k = 0; k < 3; k++) {
-			const s = seed(words, scriptOf(truthWords), benchModel);
-			const t0 = Date.now();
-			last = await fix(s);
-			runs.push((Date.now() - t0) / 1000);
-		}
-		runs.sort((a, b) => a - b);
-		const median = runs[1]!;
-		console.log(
-			`FIX_BENCH ${JSON.stringify({
-				model: benchModel,
-				runsSec: runs,
-				medianSec: median,
-				speechMinutes: Math.round(SPEECH_MINUTES * 1000) / 1000,
-				perSpeechMinuteSec: Math.round((median / SPEECH_MINUTES) * 10) / 10,
-				windows: last!.report.perMedia[0]!.windows,
-				readings: last!.report.perMedia[0]!.readings,
-				timings: last!.report.timings,
-				device: last!.report.device,
-				slots: coreServices(app).queue.totalSlots,
-			})}`,
-		);
-	}, 1_800_000);
+	it.skipIf(!BENCH)(
+		'cost per speech minute (SC-037, whole job)',
+		async () => {
+			const truthWords = transcripts.get(benchModel)!;
+			const { words } = corrupt(truthWords);
+			const runs: number[] = [];
+			let last: TranscriptFixResult | null = null;
+			for (let k = 0; k < 3; k++) {
+				const s = seed(words, scriptOf(truthWords), benchModel);
+				const t0 = Date.now();
+				last = await fix(s);
+				runs.push((Date.now() - t0) / 1000);
+			}
+			runs.sort((a, b) => a - b);
+			const median = runs[1]!;
+			console.log(
+				`FIX_BENCH ${JSON.stringify({
+					model: benchModel,
+					runsSec: runs,
+					medianSec: median,
+					speechMinutes: Math.round(SPEECH_MINUTES * 1000) / 1000,
+					perSpeechMinuteSec: Math.round((median / SPEECH_MINUTES) * 10) / 10,
+					windows: last!.report.perMedia[0]!.windows,
+					readings: last!.report.perMedia[0]!.readings,
+					timings: last!.report.timings,
+					device: last!.report.device,
+					slots: coreServices(app).queue.totalSlots,
+				})}`,
+			);
+		},
+		1_800_000,
+	);
 });

@@ -29,8 +29,8 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
-import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
 import { closeApps, makeApp } from './helpers.ts';
 
 const HOST = { host: '127.0.0.1:47900' };
@@ -110,7 +110,13 @@ const AUDIO = (key: string, seconds: number) => ({
 });
 
 let projects = 0;
-type Seeded = { projectId: string; seqId: string; file: string; doc: ProjectDocument; sentences: Array<[number, number]> };
+type Seeded = {
+	projectId: string;
+	seqId: string;
+	file: string;
+	doc: ProjectDocument;
+	sentences: Array<[number, number]>;
+};
 
 /**
  * A saved project: one voice recording with its transcript on A1 (`clipSeconds`: only that much of it; default all),
@@ -143,8 +149,16 @@ function seed(o: { script?: string | null; clipSeconds?: number; inOut?: [number
 				},
 				...(o.script === null
 					? []
-					: [{ type: 'cleanup.configure', sequenceId: seqId, script: { name: 'Script', text: o.script ?? SCRIPT } }]),
-				...(o.inOut ? [{ type: 'sequence.setInOut', sequenceId: seqId, in: o.inOut[0], out: o.inOut[1] }] : []),
+					: [
+							{
+								type: 'cleanup.configure',
+								sequenceId: seqId,
+								script: { name: 'Script', text: o.script ?? SCRIPT },
+							},
+						]),
+				...(o.inOut
+					? [{ type: 'sequence.setInOut', sequenceId: seqId, in: o.inOut[0], out: o.inOut[1] }]
+					: []),
 			],
 		},
 		{ ids, now: () => '2026-10-27T00:00:00.000Z', revision: 0, registries: defaultRegistries() },
@@ -186,11 +200,15 @@ const fakeSpeech = {
 		opts?: { onProgress?(f: number, s: string): void },
 	): Promise<SpeechScoreResult> {
 		fake.calls.push(req);
-		if (fake.mode === 'fail') throw new JobError('SPEECH_SCORE_FAILED', 'jasper-speech crashed (exit 3)', false);
-		if (fake.mode === 'offline') throw new JobError('MEDIA_OFFLINE', 'The media file is not available', false);
+		if (fake.mode === 'fail')
+			throw new JobError('SPEECH_SCORE_FAILED', 'jasper-speech crashed (exit 3)', false);
+		if (fake.mode === 'offline')
+			throw new JobError('MEDIA_OFFLINE', 'The media file is not available', false);
 		if (fake.mode === 'block')
 			await new Promise((_, reject) =>
-				signal.addEventListener('abort', () => reject(new JobError('JOB_CANCELLED', 'Cancelled')), { once: true }),
+				signal.addEventListener('abort', () => reject(new JobError('JOB_CANCELLED', 'Cancelled')), {
+					once: true,
+				}),
 			);
 		opts?.onProgress?.(0.5, 'Scoring');
 		return {
@@ -208,7 +226,12 @@ const fakeSpeech = {
 						start: Math.round(w.start + i * step),
 						end: Math.round(w.start + (i + 1) * step),
 					}));
-					return { id: r.id, logprob: words.reduce((n, x) => n + x.logprob, 0), tokens: words.length + 1, words };
+					return {
+						id: r.id,
+						logprob: words.reduce((n, x) => n + x.logprob, 0),
+						tokens: words.length + 1,
+						words,
+					};
 				}),
 			})),
 			timings: {
@@ -228,11 +251,18 @@ const fakeSpeech = {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-const post = (url: string, payload: unknown, headers: Record<string, string> = EDITOR_H as Record<string, string>) =>
-	app.inject({ method: 'POST', url, headers: json(headers), payload: payload as object });
+const post = (
+	url: string,
+	payload: unknown,
+	headers: Record<string, string> = EDITOR_H as Record<string, string>,
+) => app.inject({ method: 'POST', url, headers: json(headers), payload: payload as object });
 const fixUrl = (s: Seeded) => `/api/projects/${s.projectId}/sequences/${s.seqId}/transcript-fix`;
 
-async function runFix(s: Seeded, body: object, headers: Record<string, string> = EDITOR_H): Promise<{ job: EngineJob; result: TranscriptFixResult }> {
+async function runFix(
+	s: Seeded,
+	body: object,
+	headers: Record<string, string> = EDITOR_H,
+): Promise<{ job: EngineJob; result: TranscriptFixResult }> {
 	const r = await post(fixUrl(s), body, headers);
 	expect(r.statusCode, r.body).toBe(202);
 	const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
@@ -247,7 +277,11 @@ async function failedFix(s: Seeded, body: object) {
 }
 
 async function proposal(s: Seeded, id: string): Promise<Proposal> {
-	const r = await app.inject({ method: 'GET', url: `/api/projects/${s.projectId}/proposals/${id}`, headers: EDITOR_H });
+	const r = await app.inject({
+		method: 'GET',
+		url: `/api/projects/${s.projectId}/proposals/${id}`,
+		headers: EDITOR_H,
+	});
 	expect(r.statusCode, r.body).toBe(200);
 	return (r.json() as { proposal: Proposal }).proposal;
 }
@@ -268,7 +302,12 @@ beforeEach(() => {
 describe('transcript-fix route refusals', () => {
 	it('refuses unknown keys, bad enums and an unknown sequence at once', async () => {
 		const s = seed();
-		for (const body of [{ mode: 'propose', bogus: 1 }, { scope: 'everything' }, { sources: [] }, { sources: ['script', 'script'] }]) {
+		for (const body of [
+			{ mode: 'propose', bogus: 1 },
+			{ scope: 'everything' },
+			{ sources: [] },
+			{ sources: ['script', 'script'] },
+		]) {
 			const r = await post(fixUrl(s), body);
 			expect(r.statusCode, JSON.stringify(body)).toBe(400);
 		}
@@ -316,7 +355,11 @@ describe('dry run', () => {
 		expect(rep.estimate!.seconds).toBeGreaterThan(0);
 		expect(rep.estimate!.note).toMatch(/^≈/);
 		expect(rep.decisions.find((d) => d.kind === 'join')).toMatchObject({ group: 'spelling', rule: 'join' });
-		const list = await app.inject({ method: 'GET', url: `/api/projects/${s.projectId}/proposals`, headers: EDITOR_H });
+		const list = await app.inject({
+			method: 'GET',
+			url: `/api/projects/${s.projectId}/proposals`,
+			headers: EDITOR_H,
+		});
 		expect(list.json().proposals ?? []).toHaveLength(0);
 	});
 });
@@ -326,7 +369,7 @@ describe('propose, review, accept', () => {
 		const s = seed();
 		const { result } = await runFix(s, { mode: 'propose' });
 		expect(fake.calls).toHaveLength(1);
-		expect(fake.calls[0]!.mediaId).toBe('mk_voice' + projects); // the engine media key, not the project id
+		expect(fake.calls[0]!.mediaId).toBe(`mk_voice${projects}`); // the engine media key, not the project id
 		expect(fake.calls[0]!.language).toBe('en');
 		const rep = result.report;
 		expect(rep.candidates.byGroup).toMatchObject({ fix: 1, spelling: 1, maybe: 1, keep: 1 });
@@ -382,11 +425,19 @@ describe('propose, review, accept', () => {
 		const s = seed();
 		const { result } = await runFix(s, { mode: 'propose' }, AGENT_H);
 		const p = await proposal(s, result.proposalId!);
-		const r = await post(`/api/projects/${s.projectId}/proposals/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
+		const r = await post(
+			`/api/projects/${s.projectId}/proposals/${p.id}/accept`,
+			{ itemIds: 'all' },
+			AGENT_H,
+		);
 		expect(r.statusCode, r.body).toBe(200);
 		expect(r.json().applied).toHaveLength(2);
 		const maybe = byLabel(p, 'tested')!;
-		const r2 = await post(`/api/projects/${s.projectId}/proposals/${p.id}/accept`, { itemIds: [maybe.id] }, AGENT_H);
+		const r2 = await post(
+			`/api/projects/${s.projectId}/proposals/${p.id}/accept`,
+			{ itemIds: [maybe.id] },
+			AGENT_H,
+		);
 		expect(r2.statusCode, r2.body).toBe(200);
 		expect(Object.values(saved(s.file).transcripts)[0]!.words.map((w) => w.text)).toContain('test');
 	});
@@ -394,7 +445,9 @@ describe('propose, review, accept', () => {
 	it('rejecting the last open items remembers them in one step', async () => {
 		const s = seed();
 		const { result } = await runFix(s, { mode: 'propose' });
-		const r = await post(`/api/projects/${s.projectId}/proposals/${result.proposalId}/reject`, { itemIds: 'all' });
+		const r = await post(`/api/projects/${s.projectId}/proposals/${result.proposalId}/reject`, {
+			itemIds: 'all',
+		});
 		expect(r.statusCode, r.body).toBe(200);
 		expect(saved(s.file).sequences[s.seqId]!.scriptFix?.rejected).toHaveLength(3);
 	});
@@ -414,7 +467,9 @@ describe('propose, review, accept', () => {
 			{
 				label: 'user edit',
 				origin: 'user',
-				commands: [{ type: 'transcript.editText', transcriptId: t.id, fromWord: k, toWord: k, text: 'Demon' }],
+				commands: [
+					{ type: 'transcript.editText', transcriptId: t.id, fromWord: k, toWord: k, text: 'Demon' },
+				],
 			},
 			{
 				ids: createCounterIdSource(900),
@@ -538,7 +593,11 @@ describe('accept extension', () => {
 		const out = transcriptFixAcceptExtension({ doc: s.doc, proposal: states, itemIds: [b!.id] });
 		expect(out.label).toBe('Fix transcript: 1 fix');
 		expect(out.commands).toEqual([
-			{ type: 'scriptFix.configure', sequenceId: s.seqId, reject: [(a!.meta as { fingerprint: string }).fingerprint] },
+			{
+				type: 'scriptFix.configure',
+				sequenceId: s.seqId,
+				reject: [(a!.meta as { fingerprint: string }).fingerprint],
+			},
 		]);
 		const two = transcriptFixAcceptExtension({ doc: s.doc, proposal: p, itemIds: [b!.id, c!.id] });
 		expect(two).toEqual({ label: 'Fix transcript: 2 fixes', commands: [] });

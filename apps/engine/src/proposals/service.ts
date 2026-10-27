@@ -650,7 +650,9 @@ export class ProposalService {
 			try {
 				await listener({ projectId, proposal: out.proposal, itemIds: out.changed, who });
 			} catch (e) {
-				this.log(`[proposals] the reject listener of "${out.proposal.feature}" failed: ${(e as Error).message}`);
+				this.log(
+					`[proposals] the reject listener of "${out.proposal.feature}" failed: ${(e as Error).message}`,
+				);
 			}
 		return out;
 	}
