@@ -2,7 +2,7 @@
 
 Baseline: `eb28696cfe6d0fccde45b6bbf3e216fe9226fe25`. Scope: the 60 files assigned to `project_4`, containing 651 test declarations/templates. Parameterized templates remain grouped; the two transition case tables list their individual names in the ledger. [The disposition ledger](project_4.json) records each baseline name/path, contract source, oracle, observed seam, refactor resistance, remaining owner and validation command.
 
-Disposition totals: 625 KEEP, 8 DELETE, 1 REWRITE, 15 OPTIMIZE, 2 surviving CONSOLIDATE owners. Nine test files changed, with a net reduction of 134 test lines; no production code, dependencies, configuration, standalone fixtures, snapshots or public exports were removed.
+Disposition totals: 624 KEEP, 8 DELETE, 2 REWRITE, 15 OPTIMIZE, 2 surviving CONSOLIDATE owners. Ten test files changed, with a net reduction of 131 test lines; no production code, dependencies, configuration, standalone fixtures, snapshots or public exports were removed.
 
 ## Decisions
 
@@ -46,3 +46,9 @@ Commands ran with Node 20.19.0 and serialized validation locks:
 Counterfactual checks confirmed intended failures for a +1 dB stored threshold, a changed encoder/decoder magic byte a hidden-track output filter bypass, and a one-byte decoded-level-plane offset. The last probe fails the new native byte-comparison assertion specifically. Every production mutation was restored. The unsupported reversal probe was investigated instead of treating its surviving mutation as a product failure.
 
 The parent integration owns the full lint/typecheck/test/build gate, integrated performance comparison and remote delivery. This workstream did not run browser, GL, native or opt-in render suites because production/UI/render behavior did not change.
+
+## Complete word preservation follow-up
+
+The existing randomized subtitle-layout owner now compares all flattened output word identities with the complete independently generated input sequence. Its generator produces sorted, non-overlapping, nonempty alphanumeric `wN` tokens with positive integral-frame durations; the layout call supplies no output range and uses as-spoken text with no text transforms. The new assertion therefore makes no promise about invalid, whitespace-only or range-clipped words. Existing duplicate, order/timing and cut checks and all 200 property runs remain.
+
+Focused target: `pnpm exec vitest run packages/project/test/subtitles-layout.test.ts --maxWorkers=2 -t "subtitles are sorted"`. Intended mutation: remove the last member of the layout's validated word list before grouping (`valid.pop()` before `displayWords`); the output sequence must then disagree with the independent input sequence. No new test or large fixture was added. This follow-up is committed for parent validation; no tests, typecheck, build, benchmark or mutation was run while the parent's isolated baseline was active.
