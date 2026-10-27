@@ -77,21 +77,19 @@ test('Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review
 }) => {
 	test.setTimeout(1_500_000);
 	await createProject(page, 'E2E Apply Style');
+	// The source is 640 × 360. Keep its full-frame composition without upscaling the entire export to 1080p.
+	expectTransaction(
+		await transact(page, [{ type: 'sequence.updateSettings', settings: { width: 640, height: 360 } }]),
+	);
 	await importFiles(page, ['cleanup-voice.mp4']);
 	const mediaId = await mediaIdForFile(page, 'cleanup-voice.mp4');
 	const items = await query<Record<string, { id: string; kind: string; mediaId?: string }>>(page, 'doc.get', {
 		path: ['items'],
 	});
 	const item = Object.values(items).find((i) => i.kind === 'media' && i.mediaId === mediaId)!;
-	// the 640 × 360 test pattern fills the 1920 × 1080 frame (so its cuts are picture cuts of the whole frame)
+	// The unchanged source fills the sequence at its native size, so every picture cut still covers the full frame.
 	const placed = await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]);
 	expectTransaction(placed);
-	const vid = (placed as { results: { clipIds: string[] }[] }).results[0]!.clipIds[0]!;
-	expectTransaction(
-		await transact(page, [
-			{ type: 'param.set', target: ['clip', vid, 'transform', 'scale'], value: 300 },
-		] as never),
-	);
 	expectTransaction(
 		await transact(page, [
 			{

@@ -1,0 +1,338 @@
+{
+  "status": "validated",
+  "sourceCommit": "c62e2bb55a1ac3feae26b6332230f41e111f5aa3",
+  "scope": "Three retained browser workflows; this is not a full-suite or CI timing claim.",
+  "machine": {
+    "cpu": "AMD EPYC-Genoa Processor (KVM)",
+    "logicalCpus": 8,
+    "kernel": "6.8.0-138-generic",
+    "node": "20.19.0",
+    "pnpm": "10.34.5",
+    "browser": "Chrome for Testing 153; SwiftShader software GL",
+    "workers": 1,
+    "competingWorkloads": "Other agents paused test, browser and build workloads throughout all four timing legs."
+  },
+  "environment": {
+    "JASPER_REQUIRE_ORACLES": "1",
+    "JASPER_BROWSER_EXECUTABLE": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "JASPER_FFMPEG": "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffmpeg",
+    "JASPER_FFPROBE": "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffprobe",
+    "E2E_SKIP_BUILD": "1",
+    "buildReuse": "Current c62e2bb5 engine, web, MCP and Remotion outputs were copied into the owned worktree. No production code differs between legs. Each leg uses a distinct port and fresh appdir."
+  },
+  "raster": {
+    "before": [1920, 1080],
+    "after": [640, 360],
+    "pixelCountRatio": 9
+  },
+  "preserved": [
+    "source media bytes",
+    "complete exported duration",
+    "frame rate",
+    "audio and transcript",
+    "recipe and family weights",
+    "review/history/cut-placement assertions",
+    "every original sample frame",
+    "all pixel thresholds",
+    "movie/frame/screenshot artifacts"
+  ],
+  "measurements": [
+    {
+      "label": "baseline-1",
+      "command": [
+        "pnpm",
+        "e2e",
+        "e2e/apply-style.spec.ts",
+        "e2e/automation.spec.ts",
+        "e2e/automation-overlays.spec.ts",
+        "--workers=1",
+        "--reporter=line,json"
+      ],
+      "port": 50131,
+      "wallSeconds": 385.21452300499914,
+      "exitCode": 0,
+      "productionBuildCommit": "c62e2bb5",
+      "node": "20.19.0",
+      "workers": 1,
+      "browser": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+      "ffmpeg": "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffmpeg",
+      "loadBefore": [0.4375, 1.76416015625, 2.95068359375],
+      "loadAfter": [7.845703125, 6.05859375, 4.509765625],
+      "cpuUserSeconds": 172.01722,
+      "cpuSystemSeconds": 41.990558,
+      "kernel": "6.8.0-138-generic",
+      "logicalCpus": 8,
+      "tests": [
+        {
+          "path": "e2e/apply-style.spec.ts",
+          "test": "Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 221.378
+        },
+        {
+          "path": "e2e/automation-overlays.spec.ts",
+          "test": "Reactions: dialog → proposal → review (accept) → apply → export shows the picture",
+          "status": "passed",
+          "seconds": 34.793
+        },
+        {
+          "path": "e2e/automation.spec.ts",
+          "test": "Decorate Cuts: dialog → proposal → review (reroll, accept) → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 70.651
+        }
+      ],
+      "fixturePreparation": "cold: regenerated unrelated fixture stamps after worktree copy",
+      "cpuMeasurementLimit": "CPU values cover reaped launcher children; detached browser/server descendants are incomplete, so these are not total-suite CPU measurements."
+    },
+    {
+      "label": "candidate-1",
+      "command": [
+        "pnpm",
+        "e2e",
+        "e2e/apply-style.spec.ts",
+        "e2e/automation.spec.ts",
+        "e2e/automation-overlays.spec.ts",
+        "--workers=1",
+        "--reporter=line,json"
+      ],
+      "port": 50132,
+      "wallSeconds": 103.9757157590011,
+      "exitCode": 0,
+      "productionBuildCommit": "c62e2bb5",
+      "node": "20.19.0",
+      "workers": 1,
+      "browser": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+      "ffmpeg": "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffmpeg",
+      "loadBefore": [7.29736328125, 5.974609375, 4.49072265625],
+      "loadAfter": [6.7373046875, 6.24658203125, 4.74462890625],
+      "cpuUserSeconds": 38.959464999999994,
+      "cpuSystemSeconds": 15.587567999999997,
+      "kernel": "6.8.0-138-generic",
+      "logicalCpus": 8,
+      "tests": [
+        {
+          "path": "e2e/apply-style.spec.ts",
+          "test": "Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 43.158
+        },
+        {
+          "path": "e2e/automation-overlays.spec.ts",
+          "test": "Reactions: dialog → proposal → review (accept) → apply → export shows the picture",
+          "status": "passed",
+          "seconds": 30.054
+        },
+        {
+          "path": "e2e/automation.spec.ts",
+          "test": "Decorate Cuts: dialog → proposal → review (reroll, accept) → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 19.438
+        }
+      ],
+      "fixturePreparation": "warm: existing current fixtures reused",
+      "cpuMeasurementLimit": "CPU values cover reaped launcher children; detached browser/server descendants are incomplete, so these are not total-suite CPU measurements."
+    },
+    {
+      "label": "baseline-2",
+      "command": [
+        "pnpm",
+        "e2e",
+        "e2e/apply-style.spec.ts",
+        "e2e/automation.spec.ts",
+        "e2e/automation-overlays.spec.ts",
+        "--workers=1",
+        "--reporter=line,json"
+      ],
+      "port": 50133,
+      "wallSeconds": 336.287929479,
+      "exitCode": 0,
+      "productionBuildCommit": "c62e2bb5",
+      "node": "20.19.0",
+      "workers": 1,
+      "browser": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+      "ffmpeg": "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffmpeg",
+      "loadBefore": [6.7373046875, 6.24658203125, 4.74462890625],
+      "loadAfter": [8.083984375, 7.900390625, 5.958984375],
+      "cpuUserSeconds": 91.46053399999997,
+      "cpuSystemSeconds": 37.396346,
+      "kernel": "6.8.0-138-generic",
+      "logicalCpus": 8,
+      "tests": [
+        {
+          "path": "e2e/apply-style.spec.ts",
+          "test": "Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 222.691
+        },
+        {
+          "path": "e2e/automation-overlays.spec.ts",
+          "test": "Reactions: dialog → proposal → review (accept) → apply → export shows the picture",
+          "status": "passed",
+          "seconds": 33.563
+        },
+        {
+          "path": "e2e/automation.spec.ts",
+          "test": "Decorate Cuts: dialog → proposal → review (reroll, accept) → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 68.964
+        }
+      ],
+      "fixturePreparation": "warm: existing current fixtures reused",
+      "cpuMeasurementLimit": "CPU values cover reaped launcher children; detached browser/server descendants are incomplete, so these are not total-suite CPU measurements."
+    },
+    {
+      "label": "candidate-2",
+      "command": [
+        "pnpm",
+        "e2e",
+        "e2e/apply-style.spec.ts",
+        "e2e/automation.spec.ts",
+        "e2e/automation-overlays.spec.ts",
+        "--workers=1",
+        "--reporter=line,json"
+      ],
+      "port": 50134,
+      "wallSeconds": 101.67105792599978,
+      "exitCode": 0,
+      "productionBuildCommit": "c62e2bb5",
+      "node": "20.19.0",
+      "workers": 1,
+      "browser": "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+      "ffmpeg": "/var/lib/orquester/workspaces/jaspersito/slop-tests-editor/vendor/ffmpeg-lgpl/linux-x64/ffmpeg",
+      "loadBefore": [8.083984375, 7.900390625, 5.958984375],
+      "loadAfter": [7.25048828125, 7.81884765625, 6.13818359375],
+      "cpuUserSeconds": 37.72106400000001,
+      "cpuSystemSeconds": 15.155772999999996,
+      "kernel": "6.8.0-138-generic",
+      "logicalCpus": 8,
+      "tests": [
+        {
+          "path": "e2e/apply-style.spec.ts",
+          "test": "Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 43.178
+        },
+        {
+          "path": "e2e/automation-overlays.spec.ts",
+          "test": "Reactions: dialog → proposal → review (accept) → apply → export shows the picture",
+          "status": "passed",
+          "seconds": 28.721
+        },
+        {
+          "path": "e2e/automation.spec.ts",
+          "test": "Decorate Cuts: dialog → proposal → review (reroll, accept) → apply → export shows the kits",
+          "status": "passed",
+          "seconds": 18.736
+        }
+      ],
+      "fixturePreparation": "warm: existing current fixtures reused",
+      "cpuMeasurementLimit": "CPU values cover reaped launcher children; detached browser/server descendants are incomplete, so these are not total-suite CPU measurements."
+    }
+  ],
+  "comparableWarmCommand": {
+    "baselineLeg": "baseline-2",
+    "candidateLeg": "candidate-2",
+    "beforeSeconds": 336.287929479,
+    "afterSeconds": 101.67105792599978,
+    "savedSeconds": 234.61687155300024,
+    "improvementPercent": 69.76666451171309,
+    "limitation": "Only the warm pair supports the whole-command headline; baseline-1 regenerated unrelated copied fixture stamps. Individual test durations exclude that preparation and all four normal legs passed."
+  },
+  "movies": [
+    {
+      "path": "e2e-apply-style/apply-style-no-kits.mp4",
+      "beforeRaster": [1920, 1080],
+      "afterRaster": [640, 360],
+      "rate": "30000/1001",
+      "decodedFrames": 229,
+      "durationSeconds": 7.641,
+      "streamKinds": ["video", "audio"],
+      "verifiedAcrossLegs": 4
+    },
+    {
+      "path": "e2e-apply-style/apply-style.mp4",
+      "beforeRaster": [1920, 1080],
+      "afterRaster": [640, 360],
+      "rate": "30000/1001",
+      "decodedFrames": 229,
+      "durationSeconds": 7.641,
+      "streamKinds": ["video", "audio"],
+      "verifiedAcrossLegs": 4
+    },
+    {
+      "path": "e2e-automation-overlays/reactions-plain.mp4",
+      "beforeRaster": [1920, 1080],
+      "afterRaster": [640, 360],
+      "rate": "30000/1001",
+      "decodedFrames": 240,
+      "durationSeconds": 8.008,
+      "streamKinds": ["video", "audio"],
+      "verifiedAcrossLegs": 4
+    },
+    {
+      "path": "e2e-automation-overlays/reactions.mp4",
+      "beforeRaster": [1920, 1080],
+      "afterRaster": [640, 360],
+      "rate": "30000/1001",
+      "decodedFrames": 240,
+      "durationSeconds": 8.008,
+      "streamKinds": ["video", "audio"],
+      "verifiedAcrossLegs": 4
+    },
+    {
+      "path": "e2e-automation/automation-kits.mp4",
+      "beforeRaster": [1920, 1080],
+      "afterRaster": [640, 360],
+      "rate": "30000/1001",
+      "decodedFrames": 180,
+      "durationSeconds": 6.006,
+      "streamKinds": ["video", "audio"],
+      "verifiedAcrossLegs": 4
+    },
+    {
+      "path": "e2e-automation/automation-plain.mp4",
+      "beforeRaster": [1920, 1080],
+      "afterRaster": [640, 360],
+      "rate": "30000/1001",
+      "decodedFrames": 180,
+      "durationSeconds": 6.006,
+      "streamKinds": ["video", "audio"],
+      "verifiedAcrossLegs": 4
+    }
+  ],
+  "regressionProof": {
+    "method": "After review and all document/timing assertions, disable the actual FX or Reactions track through track.update. Force the two kit exports through real Remotion so their existing route prerequisite still passes. Preserve every original pixel assertion; each test fails only at its expected rendered-output threshold. No mocks or production changes.",
+    "results": [
+      {
+        "path": "e2e/apply-style.spec.ts",
+        "threshold": ">4",
+        "received": 0.84375
+      },
+      {
+        "path": "e2e/automation.spec.ts",
+        "threshold": ">6",
+        "received": 0.027199074074074073
+      },
+      {
+        "path": "e2e/automation-overlays.spec.ts",
+        "threshold": ">8",
+        "received": 0
+      }
+    ],
+    "sourcesRestored": true,
+    "candidateSha256": {
+      "e2e/apply-style.spec.ts": "6e68844f38c22ffa4796b24755e99fadc1f9144fb9ac4ca745a3b2bd8bdb55dc",
+      "e2e/automation.spec.ts": "f07df00e2ba6d05f00398ef441a9222ebf2dc707da804f98713ab05fcf3582a5",
+      "e2e/automation-overlays.spec.ts": "2f3df24fafd2afc5d0ed57298512b02b4be390ff4b228134b236a9134a76ad0d"
+    }
+  },
+  "visualInspection": "Apply Style extracted kit frames show the same normalized bars and effect. Reactions frames show the same 45%-of-frame source size and wobble. Fresh marker identities seed different allowed slot/flip draws; the size, normalized slot geometry and flip rule are preserved, rather than identical random placement across runs.",
+  "validation": {
+    "normalBrowserRuns": "4 commands / 12 workflow executions passed; 2 candidate repetitions passed; no retries or timeouts changed.",
+    "metadata": "Vendor ffprobe counted decoded frames in all 24 normal-run movies and verified identical rate, duration, frame count and stream kinds for every output across all 4 legs.",
+    "static": "pnpm e2e:typecheck; pnpm exec biome check e2e/apply-style.spec.ts e2e/automation.spec.ts e2e/automation-overlays.spec.ts; git diff --check",
+    "artifacts": "/tmp/jasper-test-audit/browser-automation",
+    "remainingLimits": "Full-suite and CI timing belong to the coordinator. Existing CLAP opt-in is unaffected. The native smoke 1080p format contract remains unchanged. No total-process-tree CPU or peak-memory claim is made."
+  }
+}

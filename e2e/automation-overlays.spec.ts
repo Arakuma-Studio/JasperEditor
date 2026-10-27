@@ -75,6 +75,8 @@ test('Reactions: dialog → proposal → review (accept) → apply → export sh
 	test.setTimeout(1_200_000);
 	await createProject(page, 'E2E Reactions');
 	const r = await transact(page, [
+		// The 1080p still is height-capped to 45% of either 16:9 frame; its normalized placement is unchanged.
+		{ type: 'sequence.updateSettings', settings: { width: 640, height: 360 } },
 		{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [0.1, 0.2, 0.8, 1] },
 		{ type: 'clip.addSolid', at: 60, duration: 60, track: 'V1', color: [0.15, 0.6, 0.2, 1] },
 		{ type: 'clip.addSolid', at: 120, duration: 120, track: 'V1', color: [0.7, 0.2, 0.3, 1] },

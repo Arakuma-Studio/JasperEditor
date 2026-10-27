@@ -128,7 +128,7 @@
   {
     "path": "e2e/apply-style.spec.ts",
     "test": "Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review → apply → export shows the kits",
-    "disposition": "KEEP",
+    "disposition": "OPTIMIZE",
     "contract": "Apply Style: dialog → one proposal (cleanup, subtitles, kits) → review → apply → export shows the kits",
     "source": "docs/specs/15-edit-automation.md EA-012/EA-050; docs/wp-notes/edit-automation.md",
     "bug": "The combined cleanup/subtitles/cut-kit proposal must apply atomically on the shortened timeline and render kit changes only at the resulting cuts. Known generated cleanup speech and undecorated/decorated extracted frames are the independent oracle; separate kit or cleanup tests cannot detect errors translating their combined timing.",
@@ -136,8 +136,8 @@
     "seam": "Real browser user input and public agent/HTTP state, downloaded bytes or rendered/audio output; production panels, engine and MCP use the same interfaces.",
     "refactor": "Helper identifiers, private call shapes, component decomposition and equivalent internal algorithms can change while the stated public outcome remains; API coordinates, legal bytes and explicit glyph requirements are intentional contracts.",
     "unique": "separate kit or cleanup tests cannot detect errors translating their combined timing.",
-    "reason": "Retains the stated independent failure and oracle at the lowest boundary that exercises it; implementation shape is not asserted.",
-    "validation": "pnpm e2e e2e/apply-style.spec.ts --workers=1; pnpm e2e:typecheck (integrated coordinator owns browser execution)"
+    "reason": "Use a 640×360 sequence matching the unchanged cleanup source at natural 100% scale, rather than enlarging source 300% into 1920×1080. Preserve complete media duration, fps, audio, transcript, recipe, all review assertions, every original sample frame/threshold, and both movie/frame/screenshot artifacts. Kit pixel params and subtitle template dimensions scale with sequence short side. Two complete candidate runs passed. Disabling the actual rendered output track failed the original pixel witness after all preceding workflow assertions. All 24 normal-run movies retain identical frame rate, decoded frame count, duration and stream kinds. See performance/browser-automation.json for paired timings and fault results.",
+    "validation": "JASPER_REQUIRE_ORACLES=1 E2E_SKIP_BUILD=1 pnpm e2e e2e/apply-style.spec.ts e2e/automation.spec.ts e2e/automation-overlays.spec.ts --workers=1 --reporter=line,json (current copied builds; identical CfT153/vendor FFmpeg; four alternating normal legs); original pixel assertions rejected three temporary actual-output faults; pnpm e2e:typecheck; scoped Biome; git diff --check"
   },
   {
     "path": "e2e/audio-mix.spec.ts",
@@ -170,7 +170,7 @@
   {
     "path": "e2e/automation-overlays.spec.ts",
     "test": "Reactions: dialog → proposal → review (accept) → apply → export shows the picture",
-    "disposition": "KEEP",
+    "disposition": "OPTIMIZE",
     "contract": "Reactions: dialog → proposal → review (accept) → apply → export shows the picture",
     "source": "docs/specs/15-edit-automation.md EA-023/EA-050",
     "bug": "A reaction marker four frames after a cut must place the supplied still on that cut, through proposal review, and visibly change exported frames during its duration while earlier frames remain equal. The generated still and fixed cut/marker frames are independent of planner internals; generic cut kits do not exercise reaction bin lookup and hybrid image baking.",
@@ -178,13 +178,13 @@
     "seam": "Real browser user input and public agent/HTTP state, downloaded bytes or rendered/audio output; production panels, engine and MCP use the same interfaces.",
     "refactor": "Helper identifiers, private call shapes, component decomposition and equivalent internal algorithms can change while the stated public outcome remains; API coordinates, legal bytes and explicit glyph requirements are intentional contracts.",
     "unique": "generic cut kits do not exercise reaction bin lookup and hybrid image baking.",
-    "reason": "Retains the stated independent failure and oracle at the lowest boundary that exercises it; implementation shape is not asserted.",
-    "validation": "pnpm e2e e2e/automation-overlays.spec.ts --workers=1; pnpm e2e:typecheck (integrated coordinator owns browser execution)"
+    "reason": "Use a 640×360 sequence with the unchanged 1920×1080 source still. Its existing 45%-of-frame height cap yields exactly 45% Motion scale at 1080p and 15% at 360p, preserving normalized rectangle/slot geometry, flip rule and wobble parameters. Both complete movies, every original sample frame, >8/<3 pixel thresholds, timing/placement/review assertions and artifacts remain. Two complete candidate runs passed. Disabling the actual rendered output track failed the original pixel witness after all preceding workflow assertions. All 24 normal-run movies retain identical frame rate, decoded frame count, duration and stream kinds. See performance/browser-automation.json for paired timings and fault results.",
+    "validation": "JASPER_REQUIRE_ORACLES=1 E2E_SKIP_BUILD=1 pnpm e2e e2e/apply-style.spec.ts e2e/automation.spec.ts e2e/automation-overlays.spec.ts --workers=1 --reporter=line,json (current copied builds; identical CfT153/vendor FFmpeg; four alternating normal legs); original pixel assertions rejected three temporary actual-output faults; pnpm e2e:typecheck; scoped Biome; git diff --check"
   },
   {
     "path": "e2e/automation.spec.ts",
     "test": "Decorate Cuts: dialog → proposal → review (reroll, accept) → apply → export shows the kits",
-    "disposition": "KEEP",
+    "disposition": "OPTIMIZE",
     "contract": "Decorate Cuts: dialog → proposal → review (reroll, accept) → apply → export shows the kits",
     "source": "docs/specs/15-edit-automation.md EA-050",
     "bug": "Decorating known cuts must reroll/accept as one history step and render a changed picture near cuts while leaving a distant frame unchanged. Independently supplied flat-color scenes and output-frame differences detect missing kit rendering; reaction overlays do not exercise adjustment kits and rerolls.",
@@ -192,8 +192,8 @@
     "seam": "Real browser user input and public agent/HTTP state, downloaded bytes or rendered/audio output; production panels, engine and MCP use the same interfaces.",
     "refactor": "Helper identifiers, private call shapes, component decomposition and equivalent internal algorithms can change while the stated public outcome remains; API coordinates, legal bytes and explicit glyph requirements are intentional contracts.",
     "unique": "reaction overlays do not exercise adjustment kits and rerolls.",
-    "reason": "Retains the stated independent failure and oracle at the lowest boundary that exercises it; implementation shape is not asserted.",
-    "validation": "pnpm e2e e2e/automation.spec.ts --workers=1; pnpm e2e:typecheck (integrated coordinator owns browser execution)"
+    "reason": "Use a 640×360 sequence and scale the authored square center exactly from [700,400] to [700/3,400/3]; retain its 20% scale and same 16:9 composition. Kit pixel params scale with sequence short side. Both complete movie exports, all original sample frames and >6/<3 pixel thresholds, timing/placement/review assertions and artifacts remain. Two complete candidate runs passed. Disabling the actual rendered output track failed the original pixel witness after all preceding workflow assertions. All 24 normal-run movies retain identical frame rate, decoded frame count, duration and stream kinds. See performance/browser-automation.json for paired timings and fault results.",
+    "validation": "JASPER_REQUIRE_ORACLES=1 E2E_SKIP_BUILD=1 pnpm e2e e2e/apply-style.spec.ts e2e/automation.spec.ts e2e/automation-overlays.spec.ts --workers=1 --reporter=line,json (current copied builds; identical CfT153/vendor FFmpeg; four alternating normal legs); original pixel assertions rejected three temporary actual-output faults; pnpm e2e:typecheck; scoped Biome; git diff --check"
   },
   {
     "path": "e2e/bundle-loading.spec.ts",
