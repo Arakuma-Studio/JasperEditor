@@ -40,7 +40,7 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 |---|---|---|---|
 | scalign | parser, aligner, candidates, windows, Δ, decisions (`packages/project/src/script-fix/`) | — | 🔄 |
 | scapply | `transcript.replaceWords`, subtitle + caption-track patch, `planReplaceWords`, `Sequence.scriptFix`, proposal feature + per-item default selection | — | 🔄 |
-| scscore | worker scoring + forced DTW, `SpeechService.score`, glossary prompt carry + guard | — | 🔄 |
+| scscore | worker scoring + forced DTW, `SpeechService.score`, glossary prompt carry + guard | — | ✅ merged (8afeb29e; VM CPU scoring 19.0 s per speech minute ≤ 20 s target, measured; real-model LJ test 10/10 confusions on tiny.en and turbo, word times ≤ 50 ms) |
 | scglossary | personal glossary library, routes, client, MCP tools, replace-all finder, Preferences page | — | 🔄 |
 | scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | ⏳ |
 | scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | ⏳ |
@@ -66,4 +66,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - Prompting Whisper with script text can make it output script words that were not said; the spike measures it.
 
 ## 7. Log
-- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched.
+- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore merged.
