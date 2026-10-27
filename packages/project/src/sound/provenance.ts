@@ -87,8 +87,6 @@ export const LibrarySourceSchema = z.discriminatedUnion('type', [
 		seed: z.number().int().min(0).max(0xffff_ffff),
 	}),
 ]);
-export type LibrarySource = DeepStrip<z.infer<typeof LibrarySourceSchema>>;
-
 const sec = () => z.number().min(0).max(86_400);
 /** The descriptors placement and the Properties "Sound" section need (spec 12 §2.1); full set in the library. */
 export const LibraryDescriptorsSchema = z.looseObject({
@@ -127,8 +125,6 @@ export const LibraryTakeSchema = z
 		sourceEndSec: sec(),
 	})
 	.refine((t) => t.sourceEndSec > t.sourceStartSec, 'sourceEndSec must be after sourceStartSec');
-export type LibraryTake = DeepStrip<z.infer<typeof LibraryTakeSchema>>;
-
 /**
  * Why a registered library sound is not a sample-exact copy (WP6.5b): longer than `LIBRARY_PAD_MAX_SECONDS`, its copy
  * over the engine's size cap, or not enough free disk space for it when it was registered. Such a sound is used as it

@@ -112,7 +112,6 @@ export interface DurationFit {
  * `vary` = the §2.3 rotation with ±2 % varispeed and ±1 dB. The policy itself is `sound/grammar.ts`.
  */
 export type SoundVariation = 'voice' | 'takes' | 'vary';
-export const SOUND_VARIATIONS = ['voice', 'takes', 'vary'] as const;
 
 const VARIATION_OF: Readonly<Partial<Record<SoundTypeId, SoundVariation>>> = {
 	ui: 'voice',

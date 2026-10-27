@@ -6,7 +6,6 @@
 //   range for log curves, a per-source tone-mapping switch, the PQ content peak, an input LUT, or a space of a custom
 //   OCIO config;
 // - invariants and conservative repairs for both.
-// Everything is optional with read-time defaults (no schema version bump; the integrator bumps once).
 import { z } from 'zod';
 import type { Issue } from '../commands/types.ts';
 import type { MediaAsset } from '../schema/media.ts';

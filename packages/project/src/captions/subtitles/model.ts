@@ -28,7 +28,6 @@ import {
 } from './rules.ts';
 
 export const CAPTION_GROUP_PREFIX = 'cgp';
-export const SUBTITLE_TEMPLATE_PREFIX = 'stm';
 /** Most words one subtitle clip keeps (bounds work on untrusted documents). */
 export const MAX_CAPTION_WORDS = 2000;
 /** Most subtitle groups per sequence / templates per project. */

@@ -150,11 +150,6 @@ function keyDistanceTenths(
 	return prev[m]!;
 }
 
-/** Weighted Levenshtein distance of two keys with the SC-012 cost tables (`weighted: false`: unit costs). */
-export function keyDistance(a: string, b: string, weighted = true): number {
-	return keyDistanceTenths(a, b, weighted) / 10;
-}
-
 /** Most cached keys / similarities before a cache is cleared (bounded memory on long inputs). */
 const CACHE_LIMIT = 200_000;
 const KEY_CACHE: Record<string, Map<string, string>> = { es: new Map(), en: new Map(), '*': new Map() };

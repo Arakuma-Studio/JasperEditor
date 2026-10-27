@@ -13,7 +13,6 @@ export {
 	type AlignStep,
 	alignOptions,
 	alignTranscript,
-	alignTranscripts,
 	type TranscriptToken,
 	transcriptTokens,
 	unusedScriptLines,
@@ -41,7 +40,6 @@ export {
 	DECISION_PRESETS,
 	type DecisionThresholds,
 	decideFix,
-	decideFixes,
 	type FixDecision,
 	type FixedWord,
 	type FixGroup,
@@ -53,7 +51,7 @@ export {
 	type StrictnessPreset,
 	splitByCharacters,
 } from './decide.ts';
-export { keyDistance, PSIM_INDEL_COSTS, PSIM_SUBSTITUTION_COSTS, phoneticKey, psim } from './phonetic.ts';
+export { PSIM_INDEL_COSTS, PSIM_SUBSTITUTION_COSTS, phoneticKey, psim } from './phonetic.ts';
 export {
 	isBrandLike,
 	isHeadingLine,

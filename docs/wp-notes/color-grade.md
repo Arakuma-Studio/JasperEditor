@@ -147,8 +147,8 @@ samples by nearest picking (flat colours land on exact cells); transparent pixel
 - Real time, measured (`scopes.test.ts`, 1080p frame, best of 5, load ≈ 18): decimate 1.9 ms, waveform RGB 5.9 ms,
   YC 5.7 ms, parade RGB-White 11 ms, histogram 4.7 ms, vectorscope YUV 1.9 ms, HLS 5.6 ms — a four-scope layout ≈ 25 ms
   in the worker, ≤ 15 updates/s while playing as before.
-The HDR scale (PQ axis) and working spaces belong to the `color-mgmt` workstream; the maths take float signals
-(`signalFromRgbaFloat`) for it.
+The HDR scale (PQ axis) and working spaces belong to the `color-mgmt` workstream; scope maths take float
+`ScopeSignal` samples, while the current frame readers decimate RGBA8 through `signalFromRgba8`.
 
 ### `scopes_read`
 

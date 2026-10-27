@@ -41,11 +41,6 @@ export function remixStartFrame(clip: AudioClip): number {
 	return clip.remix ? clip.remix.original.start : clip.start;
 }
 
-/** Seconds of the remix's output at sequence frame `frame` (the anchor's `outputSeconds`). */
-export function remixOutputSeconds(clip: AudioClip, frame: number, rate: Rational): number {
-	return (frame - remixStartFrame(clip)) / fpsOf(rate);
-}
-
 /** A remix plan as the engine returns it (`RemixPlanResult`), the fields the command needs. */
 export type RemixPlanLike = {
 	bpm: number;

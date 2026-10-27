@@ -347,15 +347,6 @@ export function alignTranscript(input: AlignInput): AlignmentResult {
 	};
 }
 
-/** Per-media alignment (SC-014): each transcript separately against the whole script, in input order. */
-export function alignTranscripts<T extends Omit<AlignInput, 'script' | 'options'>>(
-	items: readonly T[],
-	script: ParsedScript,
-	options?: Partial<AlignOptions>,
-): Array<{ item: T; result: AlignmentResult }> {
-	return items.map((item) => ({ item, result: alignTranscript({ ...item, script, options }) }));
-}
-
 type CoreResult = {
 	ok: true;
 	steps: AlignStep[];
