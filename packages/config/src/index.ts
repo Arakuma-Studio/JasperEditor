@@ -173,6 +173,8 @@ export function appdirPaths(appdir: string) {
 		subtitleTemplatesFile: join(appdir, 'presets', 'subtitle-templates.json'),
 		/** Spec 14 TC-030: the user's transcript cleanup presets. */
 		cleanupPresetsFile: join(appdir, 'presets', 'cleanup-presets.json'),
+		/** Spec 17 SC-070: the user's personal speech glossary (misrecognised spelling → right spelling). */
+		speechGlossaryFile: join(appdir, 'speech', 'glossary.json'),
 		/** Spec 15 EA-010: the user's style recipes (`index.json` + one `<id>.json` per recipe). */
 		styleRecipesDir: join(appdir, 'style-recipes'),
 		/** wp fonts: the user font library (`library.json` + `files/<fontId>.<ext>`), shared by every project. */

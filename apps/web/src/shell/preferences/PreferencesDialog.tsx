@@ -23,11 +23,13 @@ export function PreferencesDialog(
 	// is looked up again while the dialog stays open on the same page.
 	const epoch = useLanguageEpoch();
 	const current = pages.find((p) => p.id === selected) ?? pages[0];
+	const parent = current?.parent ? pages.find((p) => p.id === current.parent) : undefined;
+	const heading = current ? (parent ? `${parent.title} ▸ ${current.title}` : current.title) : null;
 	return (
 		<Dialog
 			open
 			onOpenChange={(o) => !o && props.close()}
-			title={current ? `Preferences — ${current.title}` : 'Preferences'}
+			title={heading ? `Preferences — ${heading}` : 'Preferences'}
 			size="large"
 			data-testid="preferences-dialog"
 		>
@@ -44,7 +46,8 @@ export function PreferencesDialog(
 							aria-current={p.id === current?.id ? 'page' : undefined}
 							onClick={() => setSelected(p.id)}
 							className={cx(
-								'flex h-6 items-center px-3 text-left text-pr-ui outline-none focus-visible:bg-pr-hover',
+								'flex h-6 items-center text-left text-pr-ui outline-none focus-visible:bg-pr-hover',
+								p.parent ? 'pr-3 pl-6' : 'px-3',
 								p.id === current?.id ? 'bg-pr-selected text-pr-strong' : 'text-pr-text hover:bg-pr-hover',
 							)}
 						>

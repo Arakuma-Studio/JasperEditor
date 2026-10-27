@@ -28,6 +28,9 @@ import {
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type GlossaryImportRequest,
+	type GlossarySaveRequest,
+	type GlossaryUpdateRequest,
 	type GradingScopesRequest,
 	type ImageSequenceRequest,
 	type InterchangeExportRequest,
@@ -938,6 +941,36 @@ export class EngineClient {
 	/** wp fonts: the saved projects that use a library face. */
 	fontUsage(fontId: string) {
 		return this.call('fontUsage', { params: { fontId } });
+	}
+	/** Spec 17 SC-070: the personal speech glossary (entries, read-only state, repairs made on open). */
+	listGlossary() {
+		return this.call('glossaryList');
+	}
+	getGlossaryEntry(entryId: string) {
+		return this.call('glossaryGet', { params: { entryId } });
+	}
+	/** Adds an entry, or merges its spellings into the entry with the same `to` and `lang` (idempotent). */
+	saveGlossaryEntry(req: GlossarySaveRequest) {
+		return this.call('glossarySave', { body: req });
+	}
+	/** SC-071 "Remember": add or merge like `saveGlossaryEntry`, and count one more teaching. */
+	rememberGlossaryEntry(req: GlossarySaveRequest) {
+		return this.call('glossaryRemember', { body: req });
+	}
+	updateGlossaryEntry(entryId: string, patch: GlossaryUpdateRequest) {
+		return this.call('glossaryUpdate', { params: { entryId }, body: patch });
+	}
+	/** Deletes an entry (an agent's request waits for the user's approval in an editor window). */
+	removeGlossaryEntry(entryId: string) {
+		return this.call('glossaryDelete', { params: { entryId } });
+	}
+	/** Merges a glossary file (an export, or a list of `{from, to, lang?}`) into the glossary. */
+	importGlossary(file: GlossaryImportRequest['file']) {
+		return this.call('glossaryImport', { body: { file } });
+	}
+	/** The whole glossary as an importable `jasper-speech-glossary` file. */
+	exportGlossary() {
+		return this.call('glossaryExport');
 	}
 	mgTemplates() {
 		return this.call('mgTemplates');
