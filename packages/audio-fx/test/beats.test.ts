@@ -15,28 +15,6 @@ const worstMs = (beats: number[], truth: number[], sr: number) => {
 };
 
 describe('analyzeBeats', () => {
-	it('a click track: tempo within 1 BPM, every beat on its click within 5 ms', () => {
-		for (const bpm of [90, 100, 120, 128]) {
-			const { audio, clicks } = clickTrack(SR, bpm, 12);
-			const a = analyzeBeats(audio, SR);
-			expect(Math.abs(a.bpm - bpm), String(bpm)).toBeLessThan(1);
-			expect(worstMs(a.beats, clicks, SR), String(bpm)).toBeLessThan(5);
-			expect(a.beats.length).toBeGreaterThanOrEqual(clicks.length - 3);
-		}
-	});
-
-	it('an accented click every 4 beats gives downbeats; an even click track does not', () => {
-		const { audio, clicks } = clickTrack(SR, 120, 12, { accent: 2.5 });
-		const a = analyzeBeats(audio, SR);
-		expect(a.downbeats).not.toBeNull();
-		const down = a.downbeats!.map((i) => a.beats[i]!);
-		const accented = clicks.filter((_, k) => k % 4 === 0);
-		expect(worstMs(down, accented, SR)).toBeLessThan(5);
-		expect(a.downbeatConfidence).toBeGreaterThan(0.1);
-		const even = analyzeBeats(clickTrack(SR, 120, 12).audio, SR);
-		expect(even.downbeats).toBeNull();
-	});
-
 	it('the generated test music: beats on the drums; deterministic; 48 kHz too', () => {
 		const { audio, beats: truth } = testMusic(SR, 120, 8, 3);
 		const a = analyzeBeats(audio, SR);

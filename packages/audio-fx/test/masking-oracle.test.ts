@@ -90,6 +90,7 @@ describe('masking solver on rendered audio', () => {
 			const len = s.channels[0]!.length / SR;
 			const win = { start: p.at, end: Math.min(BED_SEC, p.at + len) };
 			const own = { start: 0, end: win.end - win.start };
+			const truePeak = truePeakDb(s.channels);
 			return {
 				clipId: p.clipId,
 				soundId: p.soundId ?? `${p.recipe}:${p.seed}`,
@@ -99,9 +100,9 @@ describe('masking solver on rendered audio', () => {
 				endSec: win.end,
 				soundBandsDb: bandLevels(s.channels, SR, own),
 				energyProfile: energyProfile(s.channels, SR, own),
-				peakProfileDb: peakProfile(s.channels, SR, own, truePeakDb(s.channels))!,
+				peakProfileDb: peakProfile(s.channels, SR, own, truePeak)!,
 				soundPeakLu: shortTermPeakLu(s.channels, SR, own),
-				truePeakDb: truePeakDb(s.channels),
+				truePeakDb: truePeak,
 				bedBandsDb: bandLevels(bed, SR, win),
 				bedLocalPeakLu: bedLocalPeakLu(bed, SR, win, p.weight),
 				speechOverlap: win.end > SPEECH.start && win.start < SPEECH.end,

@@ -1,0 +1,493 @@
+{
+  "scope": {
+    "testFilesAudited": 50,
+    "sourceDeclarationsAndTemplates": 431,
+    "dispositions": {
+      "KEEP": 412,
+      "REWRITE": 5,
+      "CONSOLIDATE": 8,
+      "DELETE": 2,
+      "OPTIMIZE": 4
+    },
+    "parameterizedTests": "Each template disposition applies to every generated runtime instance. Exploratory full run collected 703 runtime cases in these 50 files; cleanup removes 32 runtime executions. The repository-level final run owns the final runtime total.",
+    "exploratoryRegisteredCases": 703,
+    "runtimeExecutionsRemoved": 32
+  },
+  "cleanup": {
+    "loc": {
+      "testFiles": {
+        "added": 73,
+        "removed": 141,
+        "net": -68
+      },
+      "testHelpers": {
+        "added": 11,
+        "removed": 3,
+        "net": 8
+      },
+      "productionSeams": {
+        "added": 1,
+        "removed": 6,
+        "net": -5
+      }
+    },
+    "removedHelpers": ["sound-synth.test.ts hashRecipe duplicate render helper"],
+    "removedProductionSeams": [
+      "Smoothed.setImmediate (no production caller; set+snap retained)",
+      "SOLVER_CONSTRAINTS export (private constraint table and behavioral priority tests retained)"
+    ],
+    "removedSnapshots": 0,
+    "removedFixtures": 0,
+    "removedDependencies": 0,
+    "oracleReliability": "The retained EBU suites now fail for an unavailable explicit/required FFmpeg instead of silently skipping."
+  },
+  "compatibility": {
+    "referenceNode": "v20.19.0",
+    "comparisonNode": "v24.22.1",
+    "all160PersistedWavsIdentical": true,
+    "referenceFloat32MatchesEveryHistoricalPin": true,
+    "recipes": [
+      {
+        "recipe": "synth.hit",
+        "referenceFloat32Sha128": "43735b04b97f838be2852df069de293c",
+        "node24Float32Sha128": "43735b04b97f838be2852df069de293c",
+        "cachedPcm16WavSha128": "7aad94d10f94e2c107512f78b3e3ea0b",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.boom",
+        "referenceFloat32Sha128": "daefc2a622016395f20a2b239e8f6d0c",
+        "node24Float32Sha128": "daefc2a622016395f20a2b239e8f6d0c",
+        "cachedPcm16WavSha128": "e45af28bf958d93e22f6a7662402f630",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.riser",
+        "referenceFloat32Sha128": "047c1adedbd2184bb5107064a3983e36",
+        "node24Float32Sha128": "f30f585e7992b64193c5e35f9c2f6921",
+        "cachedPcm16WavSha128": "6cb7c6943061038e1a7d3f03e8bef87d",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 8
+      },
+      {
+        "recipe": "synth.reverse",
+        "referenceFloat32Sha128": "38e85285ac079b3602b05aa59844c95d",
+        "node24Float32Sha128": "38e85285ac079b3602b05aa59844c95d",
+        "cachedPcm16WavSha128": "0a95173a7bb24690296e38049fa7986b",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.transition",
+        "referenceFloat32Sha128": "5c658d7acd803ec67f5d765456b774f3",
+        "node24Float32Sha128": "6d955054545b452363c4bc08e38b3b8e",
+        "cachedPcm16WavSha128": "e43b6c9db5d59c5affa611dfa150f22f",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 8
+      },
+      {
+        "recipe": "synth.whoosh",
+        "referenceFloat32Sha128": "0d02a340d5e8454f00382cb7d5c3de6c",
+        "node24Float32Sha128": "0d02a340d5e8454f00382cb7d5c3de6c",
+        "cachedPcm16WavSha128": "9404a80cec00f161f29f9be29b8b8a75",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.swish",
+        "referenceFloat32Sha128": "87531e130d8a66d6d2421626b17f9554",
+        "node24Float32Sha128": "87531e130d8a66d6d2421626b17f9554",
+        "cachedPcm16WavSha128": "715f77a1765b39f5ec904c7219071c0e",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.glitch",
+        "referenceFloat32Sha128": "9234f9256e5f7c505a614a6b9831700d",
+        "node24Float32Sha128": "9234f9256e5f7c505a614a6b9831700d",
+        "cachedPcm16WavSha128": "1bd366aa6d1568d8dd1fd52ef3853e47",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.ui",
+        "referenceFloat32Sha128": "0f0443a0c7fc09b9129c0f0dd19402f9",
+        "node24Float32Sha128": "0f0443a0c7fc09b9129c0f0dd19402f9",
+        "cachedPcm16WavSha128": "43b035f98a6a6462f85ea5d8595ff3f3",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.click",
+        "referenceFloat32Sha128": "4e23d820f401bf4671b11d5596681da3",
+        "node24Float32Sha128": "4e23d820f401bf4671b11d5596681da3",
+        "cachedPcm16WavSha128": "eb9b159ae7bbda2170762a5ceb9f9a8c",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.key",
+        "referenceFloat32Sha128": "afe08cc495cf58c6a69d84e9f0ab26da",
+        "node24Float32Sha128": "afe08cc495cf58c6a69d84e9f0ab26da",
+        "cachedPcm16WavSha128": "83e6cb0247e489aa07c34ccd1dec68a3",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.tick",
+        "referenceFloat32Sha128": "dcffe90653240290416ccba1b6bd8851",
+        "node24Float32Sha128": "dcffe90653240290416ccba1b6bd8851",
+        "cachedPcm16WavSha128": "9489cf41db91142e0b7ef11043655822",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.tap",
+        "referenceFloat32Sha128": "95f86da4905c482002d3ba07453d8bd8",
+        "node24Float32Sha128": "95f86da4905c482002d3ba07453d8bd8",
+        "cachedPcm16WavSha128": "3ee00de58a4401991984354a86f293bd",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.pop",
+        "referenceFloat32Sha128": "4784e6546c2c2a45a77d61dbea6a0134",
+        "node24Float32Sha128": "77ad2eb68a67e6b9a492d76b62600c12",
+        "cachedPcm16WavSha128": "7ffc98c479ada50ba9565f23549b63af",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 3
+      },
+      {
+        "recipe": "synth.thump",
+        "referenceFloat32Sha128": "b1b2b2f23adaf1165f53579b5e76c662",
+        "node24Float32Sha128": "b1b2b2f23adaf1165f53579b5e76c662",
+        "cachedPcm16WavSha128": "b45d5ee2570a84f6ed829f680ed0a065",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.paper",
+        "referenceFloat32Sha128": "f9f53e47c39a9799d9d507fb8004bb1e",
+        "node24Float32Sha128": "f9f53e47c39a9799d9d507fb8004bb1e",
+        "cachedPcm16WavSha128": "40341ab4a6ce13115c132755588516c4",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.chime",
+        "referenceFloat32Sha128": "ff684d0e051f540033f3eccc2dd9c194",
+        "node24Float32Sha128": "ff684d0e051f540033f3eccc2dd9c194",
+        "cachedPcm16WavSha128": "3ffb03d0c73350b36b45a1b96adcddd8",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      },
+      {
+        "recipe": "synth.shimmer",
+        "referenceFloat32Sha128": "6c99841fc37c437f8944e55a8ae77ef5",
+        "node24Float32Sha128": "cdf0f490832d15b6453974474b9ee0e4",
+        "cachedPcm16WavSha128": "5b3b5c339693060a770204fc17f99658",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 4
+      },
+      {
+        "recipe": "synth.zap",
+        "referenceFloat32Sha128": "240dc8e63b55e670a594fe5e3f2a0edc",
+        "node24Float32Sha128": "552d60211328df18970e37b14a1124c1",
+        "cachedPcm16WavSha128": "44808baf6fe7771930984c26838d00d0",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 3
+      },
+      {
+        "recipe": "synth.static",
+        "referenceFloat32Sha128": "2fbc9135652f9e45601d527a5b46e5e7",
+        "node24Float32Sha128": "2fbc9135652f9e45601d527a5b46e5e7",
+        "cachedPcm16WavSha128": "a9e81d3bebceea317a4cac8e9cb51811",
+        "identicalWavVariants": 8,
+        "differentFloat32Variants": 0
+      }
+    ]
+  },
+  "validation": {
+    "affectedInitialNode20Run": {
+      "files": 17,
+      "beforePassed": 346,
+      "afterPassed": 314,
+      "failures": 0,
+      "note": "Completed before the later persisted-WAV pin correction; all other final edits were included."
+    },
+    "typechecks": ["pnpm --filter @jasper/audio-dsp typecheck", "pnpm --filter @jasper/audio-fx typecheck"],
+    "behavioralMutations": [
+      {
+        "mutation": "crossover",
+        "result": "intended contract assertion failed",
+        "tests": [
+          "Multiband Compressor crossovers reach their target after a glide, whatever the control-point phase"
+        ]
+      },
+      {
+        "mutation": "sanitize",
+        "result": "intended contract assertion failed",
+        "tests": ["frame features treats non-finite samples as zero and rejects bad arguments"]
+      },
+      {
+        "oracleGate": "before",
+        "exitCode": 0,
+        "expectedFailure": false
+      },
+      {
+        "oracleGate": "after",
+        "exitCode": 1,
+        "expectedFailure": true
+      }
+    ],
+    "finalSynthValidation": [
+      {
+        "node": "20",
+        "passedTests": 22,
+        "failedTests": 0
+      },
+      {
+        "node": "24",
+        "passedTests": 22,
+        "failedTests": 0
+      },
+      {
+        "mutation": "PCM16 positive quantization half-step changed to 0.4",
+        "result": "cache hash assertion failed",
+        "test": "Jasper Synth every variant of synth.click keeps its cached WAV bytes and passes the judge as click"
+      }
+    ],
+    "staticChecks": [
+      "Scoped pnpm exec biome check --write over changed source/tests/reports (passed; formatting only)",
+      "git diff --check (passed)"
+    ],
+    "baselineFailures": "Exploratory Node 24 run failed five intermediate Float32 recipe pins. Every historical Node 20 Float32 pin matched; all 160 actual cached PCM16 WAV variants had identical full SHA256 across Node 20 and24. Rewriting the byte oracle to persisted version 1 WAVs resolves those false positives without changing samples or SYNTH_VERSION.",
+    "scopeLimit": "Parent integration runs the full lint/typecheck/test/build gates and records full-suite timing. This workstream ran affected targets, both package typechecks, deliberate contract mutations and both Node versions of the final synth suite.",
+    "commandsExecuted": [
+      {
+        "cwd": "repository root (unchanged baseline)",
+        "node": "20.19.0",
+        "argv": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "packages/audio-dsp/test/smooth.test.ts",
+          "packages/audio-dsp/test/loudness-oracle.test.ts",
+          "packages/audio-dsp/test/loudness-oracle-signals.test.ts",
+          "packages/audio-fx/test/registry.test.ts",
+          "packages/audio-dsp/test/voice.test.ts",
+          "packages/audio-fx/test/beats-tempo.test.ts",
+          "packages/audio-fx/test/beats.test.ts",
+          "packages/audio-fx/test/check-curves.test.ts",
+          "packages/audio-fx/test/events.test.ts",
+          "packages/audio-fx/test/loop-window.test.ts",
+          "packages/audio-fx/test/masking-oracle.test.ts",
+          "packages/audio-fx/test/masking.test.ts",
+          "packages/audio-fx/test/regressions-p0.test.ts",
+          "packages/audio-fx/test/remix.test.ts",
+          "packages/audio-fx/test/sound-descriptors.test.ts",
+          "packages/audio-fx/test/sound-review-fixes.test.ts",
+          "packages/audio-fx/test/sound-synth.test.ts",
+          "--maxWorkers=2",
+          "--reporter=json",
+          "--outputFile=/tmp/jasper-test-audit/audio-comparable-before.json"
+        ]
+      },
+      {
+        "cwd": ".claude/worktrees/audio",
+        "node": "20.19.0",
+        "argv": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "packages/audio-dsp/test/smooth.test.ts",
+          "packages/audio-dsp/test/loudness-oracle.test.ts",
+          "packages/audio-dsp/test/loudness-oracle-signals.test.ts",
+          "packages/audio-fx/test/registry.test.ts",
+          "packages/audio-dsp/test/voice.test.ts",
+          "packages/audio-fx/test/beats-tempo.test.ts",
+          "packages/audio-fx/test/beats.test.ts",
+          "packages/audio-fx/test/check-curves.test.ts",
+          "packages/audio-fx/test/events.test.ts",
+          "packages/audio-fx/test/loop-window.test.ts",
+          "packages/audio-fx/test/masking-oracle.test.ts",
+          "packages/audio-fx/test/masking.test.ts",
+          "packages/audio-fx/test/regressions-p0.test.ts",
+          "packages/audio-fx/test/remix.test.ts",
+          "packages/audio-fx/test/sound-descriptors.test.ts",
+          "packages/audio-fx/test/sound-review-fixes.test.ts",
+          "packages/audio-fx/test/sound-synth.test.ts",
+          "--maxWorkers=2",
+          "--reporter=json",
+          "--outputFile=/tmp/jasper-test-audit/audio-comparable-after.json"
+        ]
+      },
+      {
+        "cwd": ".claude/worktrees/audio",
+        "node": "20.19.0",
+        "argv": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "packages/audio-fx/test/sound-synth.test.ts",
+          "--maxWorkers=2",
+          "--reporter=json",
+          "--outputFile=/tmp/jasper-test-audit/audio-synth-final-node20.json"
+        ]
+      },
+      {
+        "cwd": ".claude/worktrees/audio",
+        "node": "24.22.1",
+        "argv": [
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "packages/audio-fx/test/sound-synth.test.ts",
+          "--maxWorkers=2",
+          "--reporter=json",
+          "--outputFile=/tmp/jasper-test-audit/audio-synth-final-node24.json"
+        ]
+      },
+      {
+        "cwd": ".claude/worktrees/audio",
+        "node": "20.19.0",
+        "argv": ["pnpm", "--filter", "@jasper/audio-dsp", "typecheck"]
+      },
+      {
+        "cwd": ".claude/worktrees/audio",
+        "node": "20.19.0",
+        "argv": ["pnpm", "--filter", "@jasper/audio-fx", "typecheck"]
+      }
+    ]
+  },
+  "performance": {
+    "measurementScope": "17 affected files, not the full repository suite. Initial cleanup profile preceded the final cached-WAV oracle correction; final integrated full-suite measurements take precedence.",
+    "machine": {
+      "cpu": "AMD EPYC-Genoa Processor",
+      "logicalProcessors": 8,
+      "memory": "15 GiB host RAM",
+      "os": "Linux 6.8.0-138-generic x86_64",
+      "node": "20.19.0",
+      "pnpm": "10.34.5",
+      "ffmpeg": "6.1.1-3ubuntu5",
+      "runner": "Vitest 4.1.11, --maxWorkers=2",
+      "contention": "Shared host; recorded load before each run is included. Both sequential runs used the same exclusive validation lock; the exploratory full suite had already finished."
+    },
+    "runs": [
+      {
+        "label": "before",
+        "loadBefore": [4.36376953125, 6.984375, 6.38232421875],
+        "resources": {
+          "wallSeconds": 44.07,
+          "userSeconds": 99.78,
+          "systemSeconds": 8.44,
+          "maxRssKb": 322364
+        },
+        "wallSeconds": 44.07526806700025,
+        "exitCode": 0,
+        "totalTests": 346,
+        "passedTests": 346,
+        "failedTests": 0,
+        "fileMs": {
+          "audio-dsp/test/loudness-oracle-signals.test.ts": 4978.01953125,
+          "audio-dsp/test/loudness-oracle.test.ts": 5887.239013671875,
+          "audio-dsp/test/smooth.test.ts": 4.409423828125,
+          "audio-dsp/test/voice.test.ts": 214.525634765625,
+          "audio-fx/test/beats-tempo.test.ts": 6356.77880859375,
+          "audio-fx/test/beats.test.ts": 824.9072265625,
+          "audio-fx/test/check-curves.test.ts": 480.000244140625,
+          "audio-fx/test/events.test.ts": 2634.6953125,
+          "audio-fx/test/loop-window.test.ts": 572.3564453125,
+          "audio-fx/test/masking-oracle.test.ts": 682.259033203125,
+          "audio-fx/test/masking.test.ts": 1380.851806640625,
+          "audio-fx/test/registry.test.ts": 18646.27587890625,
+          "audio-fx/test/regressions-p0.test.ts": 3963.124755859375,
+          "audio-fx/test/remix.test.ts": 5123.442138671875,
+          "audio-fx/test/sound-descriptors.test.ts": 3504.520751953125,
+          "audio-fx/test/sound-review-fixes.test.ts": 161.00341796875,
+          "audio-fx/test/sound-synth.test.ts": 11181.527587890625
+        }
+      },
+      {
+        "label": "after",
+        "loadBefore": [3.41650390625, 6.35107421875, 6.1943359375],
+        "resources": {
+          "wallSeconds": 45.73,
+          "userSeconds": 89.61,
+          "systemSeconds": 8.3,
+          "maxRssKb": 325768
+        },
+        "wallSeconds": 45.73478591100002,
+        "exitCode": 0,
+        "totalTests": 314,
+        "passedTests": 314,
+        "failedTests": 0,
+        "fileMs": {
+          "audio-dsp/test/loudness-oracle-signals.test.ts": 5197.31640625,
+          "audio-dsp/test/loudness-oracle.test.ts": 5727.158935546875,
+          "audio-dsp/test/smooth.test.ts": 3.3212890625,
+          "audio-dsp/test/voice.test.ts": 198.481689453125,
+          "audio-fx/test/beats-tempo.test.ts": 5971.414794921875,
+          "audio-fx/test/beats.test.ts": 540.5458984375,
+          "audio-fx/test/check-curves.test.ts": 539.9296875,
+          "audio-fx/test/events.test.ts": 2077.60107421875,
+          "audio-fx/test/loop-window.test.ts": 574.560302734375,
+          "audio-fx/test/masking-oracle.test.ts": 665.66943359375,
+          "audio-fx/test/masking.test.ts": 1381.440185546875,
+          "audio-fx/test/registry.test.ts": 17748.98193359375,
+          "audio-fx/test/regressions-p0.test.ts": 3935.091064453125,
+          "audio-fx/test/remix.test.ts": 4604.463134765625,
+          "audio-fx/test/sound-descriptors.test.ts": 3276.1376953125,
+          "audio-fx/test/sound-review-fixes.test.ts": 79.0703125,
+          "audio-fx/test/sound-synth.test.ts": 7313.64111328125
+        }
+      }
+    ],
+    "wallSecondsSaved": -1.6595178439997653,
+    "wallPercentImprovement": -3.7651905859700685,
+    "cpuSecondsSaved": 10.310000000000002,
+    "cpuPercentImprovement": 9.526889669192387,
+    "limitation": "No wall-clock improvement is claimed from this pair. The unprofiled worktree registry file started at 27.11 s rather than 7.53 s in baseline and became the tail; its duration cache was absent. Root final comparison disables duration cache for equal scheduling. RSS rose from 322364 to 325768 KiB, so no peak-memory improvement is claimed.",
+    "calculatedAllocationReductionBytes": 506880000,
+    "allocationBasis": "120 extreme-parameter cases × 11 avoided tail-buffer pairs × 2 channels × 48000 samples × 4 bytes. This is aggregate avoided allocation, not measured peak memory. All 12 seconds of tail processing and all finite/subnormal checks remain.",
+    "expensiveRetained": [
+      "registry.test.ts: every processor at extreme settings needs real populated-tail/denormal checks; silence-only or mocked tests cannot substitute.",
+      "EBU Tech3341/3342 oracle suites: published programmes have mandated gating and long-term loudness durations; external FFmpeg keeps the oracle independent.",
+      "sound-synth.test.ts: every indexed version 1 library variant needs compatible bytes and accepted quality; one render serves both contracts."
+    ]
+  },
+  "reproduce": {
+    "affectedTests": [
+      "audio-dsp/test/loudness-oracle-signals.test.ts",
+      "audio-dsp/test/loudness-oracle.test.ts",
+      "audio-dsp/test/smooth.test.ts",
+      "audio-dsp/test/voice.test.ts",
+      "audio-fx/test/beats-tempo.test.ts",
+      "audio-fx/test/beats.test.ts",
+      "audio-fx/test/check-curves.test.ts",
+      "audio-fx/test/events.test.ts",
+      "audio-fx/test/loop-window.test.ts",
+      "audio-fx/test/masking-oracle.test.ts",
+      "audio-fx/test/masking.test.ts",
+      "audio-fx/test/registry.test.ts",
+      "audio-fx/test/regressions-p0.test.ts",
+      "audio-fx/test/remix.test.ts",
+      "audio-fx/test/sound-descriptors.test.ts",
+      "audio-fx/test/sound-review-fixes.test.ts",
+      "audio-fx/test/sound-synth.test.ts"
+    ],
+    "commands": [
+      "Use the exact argument arrays in validation.commandsExecuted with the stated Node version.",
+      "pnpm exec vitest run packages/audio-fx/test/sound-synth.test.ts --maxWorkers=2",
+      "JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG=/tmp/jasper-missing-ffmpeg-oracle pnpm exec vitest run packages/audio-dsp/test/loudness-oracle.test.ts --maxWorkers=2 # must fail collection"
+    ],
+    "compatibilityProbe": "Run this module with node --import tsx --input-type=module on Node 20 and24; compare each recipe/seed WAV hash. All160 hashes matched during this audit.",
+    "compatibilityProbeModule": "import {createHash} from 'node:crypto';\nimport {renderSynth,SYNTH_RECIPES,SYNTH_EXTRA_RECIPES,SYNTH_VARIANTS} from './packages/audio-fx/src/synth/render.ts';\nimport {encodeWav} from './packages/audio-dsp/src/wav.ts';\nfor(const recipe of [...SYNTH_RECIPES,...SYNTH_EXTRA_RECIPES]){\n const raw=createHash('sha256');\n const variants=[];\n for(let seed=0;seed<SYNTH_VARIANTS;seed++){\n  const sound=renderSynth(recipe.id,seed);\n  for(const channel of sound.channels) raw.update(new Uint8Array(channel.buffer,channel.byteOffset,channel.byteLength));\n  variants.push({seed,wav:createHash('sha256').update(encodeWav(sound.channels,sound.sampleRate,'s16')).digest('hex')});\n }\n console.log(JSON.stringify({recipe:recipe.id,float:raw.digest('hex').slice(0,32),variants}));\n}\n"
+  }
+}

@@ -111,16 +111,6 @@ function drums(
 const sameTempo = (got: number, want: number) => Math.abs(got - want) / want < 0.02;
 
 describe('tempo octave', () => {
-	for (const bpm of [60, 75, 90, 120, 150, 174, 200])
-		it(`a ${bpm} BPM click reads ${bpm} BPM (not half, not double), every beat on its click`, () => {
-			const seconds = Math.max(12, (16 * 60) / bpm);
-			const { audio, clicks } = clickTrack(SR, bpm, seconds);
-			const a = analyzeBeats(audio, SR);
-			expect(sameTempo(a.bpm, bpm), `${bpm} read as ${a.bpm.toFixed(2)}`).toBe(true);
-			expect(worstMs(a.beats, clicks, SR)).toBeLessThan(5);
-			expect(a.beats.length).toBeGreaterThanOrEqual(clicks.length - 3);
-		});
-
 	it('fast clicks at 44.1 and 48 kHz and other phases read at their own tempo too', () => {
 		for (const [bpm, sr, offsetSec] of [
 			[150, 44100, 0.1],
@@ -189,6 +179,7 @@ describe('metre: downbeats in 3 or 4', () => {
 		const { audio: click, clicks } = clickTrack(SR, 120, 12, { accent: 2.5 });
 		const c = analyzeBeats(click, SR);
 		expect(c.beatsPerBar).toBe(4);
+		expect(c.downbeatConfidence).toBeGreaterThan(0.1);
 		const down = c.downbeats!.map((i) => c.beats[i]!);
 		expect(
 			worstMs(
@@ -214,16 +205,18 @@ describe('metre: downbeats in 3 or 4', () => {
 });
 
 describe('the whole tempo range', () => {
-	it('clicks every 5 BPM from 55 to 205 read at their own tempo', () => {
-		const wrong: string[] = [];
-		for (let bpm = 55; bpm <= 205; bpm += 5) {
-			const { audio } = clickTrack(SR, bpm, Math.max(12, (16 * 60) / bpm), {
+	it('clicks across 55–205 BPM keep their tempo, with every beat on its click', () => {
+		const tempos = [...Array.from({ length: 31 }, (_, i) => 55 + i * 5), 128, 174];
+		for (const bpm of tempos) {
+			const { audio, clicks } = clickTrack(SR, bpm, Math.max(12, (16 * 60) / bpm), {
 				offsetSec: 0.13 + (bpm % 7) / 20,
 			});
 			const a = analyzeBeats(audio, SR);
-			if (!sameTempo(a.bpm, bpm)) wrong.push(`${bpm}→${a.bpm.toFixed(1)}`);
+			const bpmTolerance = [90, 100, 120, 128].includes(bpm) ? 1 : bpm * 0.02;
+			expect(Math.abs(a.bpm - bpm), `${bpm} read as ${a.bpm.toFixed(2)}`).toBeLessThan(bpmTolerance);
+			expect(worstMs(a.beats, clicks, SR), `${bpm} BPM`).toBeLessThan(5);
+			expect(a.beats.length, `${bpm} BPM`).toBeGreaterThanOrEqual(clicks.length - 3);
 		}
-		expect(wrong).toEqual([]);
 	});
 
 	it('hostile audio: only NO_BEAT, never a crash; results are well formed', () => {

@@ -27,7 +27,7 @@ describe('Smoothed', () => {
 		expect(s.value()).toBe(3);
 	});
 
-	it('withMs, snap and setImmediate', () => {
+	it('withMs and snap', () => {
 		const s = Smoothed.withMs(0, 48000, 1);
 		s.set(1);
 		expect(s.isSmoothing()).toBe(true);
@@ -36,8 +36,5 @@ describe('Smoothed', () => {
 		s.set(2);
 		s.snap();
 		expect(s.value()).toBe(2);
-		s.setImmediate(-1);
-		expect(s.value()).toBe(-1);
-		expect(s.target()).toBe(-1);
 	});
 });

@@ -71,7 +71,7 @@ describe('remix plans', () => {
 	});
 
 	it('is deterministic; Segments changes the number of joints; identity at the source length; too-short targets refused', () => {
-		const a2 = analyzeMusic(music(120, 24).audio, SR);
+		const { a: a2 } = music(120, 24);
 		expect(a2.beats).toEqual(a.beats);
 		const t = 30 * SR;
 		expect(planRemix(a, t)).toEqual(planRemix(a2, t));

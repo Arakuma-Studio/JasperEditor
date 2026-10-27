@@ -13,7 +13,8 @@
 // Tech 3341 ±0.1 LU (M, S, I) and +0.2/−0.4 dB (true peak); Tech 3342 ±1 LU (LRA).
 //
 // ffmpeg is found as $JASPER_FFMPEG, else <repo>/vendor/ffmpeg-lgpl/linux-x64/ffmpeg (LD_LIBRARY_PATH = its
-// directory), else `ffmpeg` on PATH; the suites are skipped when none works.
+// directory), else `ffmpeg` on PATH. Missing optional discovery skips; an unusable explicit path or a required
+// oracle (JASPER_REQUIRE_ORACLES=1) fails collection.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,14 +39,21 @@ function tryFfmpeg(bin: string, libDir?: string): Ffmpeg | null {
 
 export function findFfmpeg(): Ffmpeg | null {
 	const fromEnv = process.env.JASPER_FFMPEG;
-	if (fromEnv) return tryFfmpeg(fromEnv, dirname(fromEnv));
+	if (fromEnv) {
+		const ff = tryFfmpeg(fromEnv, dirname(fromEnv));
+		if (!ff) throw new Error('JASPER_FFMPEG does not provide a working ffmpeg ebur128 oracle');
+		return ff;
+	}
 	const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 	const vendored = join(repo, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffmpeg');
 	if (existsSync(vendored)) {
 		const f = tryFfmpeg(vendored, dirname(vendored));
 		if (f) return f;
 	}
-	return tryFfmpeg('ffmpeg');
+	const ff = tryFfmpeg('ffmpeg');
+	if (!ff && /^(1|true|yes)$/i.test(process.env.JASPER_REQUIRE_ORACLES ?? ''))
+		throw new Error('ffmpeg ebur128 oracle not found and JASPER_REQUIRE_ORACLES=1');
+	return ff;
 }
 
 type Frame = { m: number; s: number; i: number; lra: number; tp: number; sp: number };

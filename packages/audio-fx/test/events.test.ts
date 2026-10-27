@@ -133,8 +133,9 @@ describe('onsets', () => {
 			const x = new Float32Array(3 * SR);
 			const at = SR;
 			x.set(sound, at);
-			const ev = hits(analyse(x)).find((e) => e.ms >= 990 && e.ms <= 1000 + peakSec * 1000);
-			expect(ev, JSON.stringify(hits(analyse(x)))).toBeDefined();
+			const events = hits(analyse(x));
+			const ev = events.find((e) => e.ms >= 990 && e.ms <= 1000 + peakSec * 1000);
+			expect(ev, JSON.stringify(events)).toBeDefined();
 			expect(Math.abs(ev!.peakMs - (1000 + peakSec * 1000))).toBeLessThanOrEqual(1);
 		}
 	});

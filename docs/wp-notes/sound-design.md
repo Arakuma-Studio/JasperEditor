@@ -756,8 +756,11 @@ transient), boom (40–56 Hz drop + low rumble), riser (swept bandpass noise + r
 across), glitch (square, sample-and-hold and bit-crushed grains), ui (two blips), click, key (click + body + thock),
 tick, tap (three modes), pop (upward glide), thump (sub drop + knock), paper (Poisson crackles over rustle), chime
 (bell partials 1, 2, 2.76, 4.07, 5.4), shimmer (12–20 drifting, trembling high partials), zap (band-limited saw
-sweep). Bit-exactness relies on V8's fdlibm `Math.sin/exp/pow/log`, identical on every platform for a given Node; the
-pinned hashes tell when that (or a recipe) changes: then bump `SYNTH_VERSION` and repin.
+sweep). Intermediate Float32 samples use V8's `Math.sin/exp/pow/log` and are deterministic for a given runtime.
+Compatibility hashes pin the library's encoded 16-bit stereo WAVs (`apps/engine/src/sounds/synth.ts`), so a V8 change
+that leaves every persisted sample unchanged does not invalidate the cache. Changes to those WAV bytes require a
+`SYNTH_VERSION` bump and new pins. The audit evidence in `docs/test-audit/audio-results.json` compares every indexed
+variant on Node 20 and Node 24.
 
 #### Verified (measured, this branch, shared host, load 17–48 on 16 cores)
 
