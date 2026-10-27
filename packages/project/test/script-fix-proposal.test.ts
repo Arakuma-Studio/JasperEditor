@@ -249,15 +249,19 @@ describe('transcript fix items (SC-061)', () => {
 		const plan = planAccept(H.doc, p, 'all', 'user', CTX);
 		if (!plan.ok || !plan.composed) throw new Error('no plan');
 		H.ok(plan.composed.tx.commands);
-		expect(H.doc.transcripts[transcriptId]!.words.map((w) => w.text).slice(1, 4)).toEqual(['abrimos', 'Pixel', 'forge']);
+		expect(H.doc.transcripts[transcriptId]!.words.map((w) => w.text).slice(1, 4)).toEqual([
+			'abrimos',
+			'Pixel',
+			'forge',
+		]);
 		// a malformed edit is the producer's bug: refused with the reason
 		const d = { group: 'fix' as const, rule: 'sub', deltaTok: -0.8 };
-		expect(() => transcriptFixItem(candidate, d, { ...edit, words: [{ ...edit.words[0]!, end: sec(1.9) }] })).toThrow(
-			/outside the edit's span/,
-		);
-		expect(() => transcriptFixItem(candidate, d, { ...edit, words: [{ ...edit.words[0]!, text: 'for ge' }] })).toThrow(
-			/without spaces/,
-		);
+		expect(() =>
+			transcriptFixItem(candidate, d, { ...edit, words: [{ ...edit.words[0]!, end: sec(1.9) }] }),
+		).toThrow(/outside the edit's span/);
+		expect(() =>
+			transcriptFixItem(candidate, d, { ...edit, words: [{ ...edit.words[0]!, text: 'for ge' }] }),
+		).toThrow(/without spaces/);
 		expect(transcriptFixEditProblem(edit)).toBeNull();
 	});
 
