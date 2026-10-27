@@ -680,7 +680,7 @@ function patchSequences(
 			}
 			const done =
 				u.kind === 'subtitle'
-					? patchSubtitle(seq, u, x.entries, rate, prevNew)
+					? patchSubtitle(u, x.entries, rate, prevNew)
 					: patchCaption(doc, u, x.entries, rate);
 			if (typeof done === 'string') {
 				work.plan.skipped.push({ ...base, reason: done });
@@ -752,7 +752,6 @@ type CaptionDone = {
 
 /** Splices a subtitle's text and words (styled runs, paragraphs and line breaks kept; offending lines re-broken). */
 function patchSubtitle(
-	seq: Sequence,
 	u: Unit,
 	entries: readonly Entry[],
 	rate: Rational,
