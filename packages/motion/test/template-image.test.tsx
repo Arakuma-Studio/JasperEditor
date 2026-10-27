@@ -86,10 +86,10 @@ describe('TemplateImage', () => {
 			error = e;
 		}
 		expect(error).toBeInstanceOf(TemplateImageError);
-		expect((error as Error).message).toBe(
-			'Template picture med_avatar could not be loaded from https://engine.test/media/broken.png',
-		);
-		expect((error as Error).name).toBe('TemplateImageError');
+		expect((error as TemplateImageError).mediaId).toBe('med_avatar');
+		expect((error as Error).message).toContain('https://engine.test/media/broken.png');
+		expect((error as Error).message).toContain('med_avatar');
+		expect((error as Error).message).not.toMatch(/sig=|secret/);
 		view.unmount();
 	});
 

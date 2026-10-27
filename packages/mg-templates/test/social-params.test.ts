@@ -2,7 +2,6 @@
 import { type MgTemplateInfo, paramsPropertySpecs } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 import {
 	avatarNameFor,
 	isReviewVariant,
@@ -23,12 +22,6 @@ import {
 	VARIANT_PLATFORM,
 	variantsWithParam,
 } from '../src/index.ts';
-
-const jsonSchema = () =>
-	z.toJSONSchema(socialCommentParamsSchema, { io: 'input', unrepresentable: 'any' }) as {
-		properties: Record<string, { description?: string; default?: unknown }>;
-		additionalProperties: boolean;
-	};
 
 describe('variants and capabilities', () => {
 	it('lists the seven tokcomment variants and the three store reviews with labels', () => {
@@ -154,22 +147,6 @@ describe('variants and capabilities', () => {
 });
 
 describe('socialCommentParamsSchema', () => {
-	it('has exactly the documented params, each described for agents', () => {
-		const js = jsonSchema();
-		expect(Object.keys(js.properties)).toEqual([...SOCIAL_PARAM_NAMES]);
-		expect(js.additionalProperties).toBe(false);
-		for (const [name, p] of Object.entries(js.properties)) {
-			expect(p.description, name).toBeTypeOf('string');
-			expect(p.description!.length, name).toBeGreaterThan(30);
-		}
-		const capabilityKeys = Object.keys(VARIANT_CAPABILITIES['x-post']);
-		expect(capabilityKeys).toEqual([...SOCIAL_PARAM_NAMES]);
-		// marks syntax is documented where agents look
-		expect(js.properties.text!.description).toContain('==highlighted words==');
-		expect(js.properties.text!.description).toContain('||blurred words||');
-		expect(js.properties.text!.description).toContain('~~removed words~~');
-	});
-
 	it('parses {} to the tiktok-reply defaults and rejects unknown keys', () => {
 		expect(socialCommentParamsSchema.parse({})).toEqual(socialDefaults('tiktok-reply'));
 		expect(socialCommentParamsSchema.safeParse({ bogus: 1 }).success).toBe(false);

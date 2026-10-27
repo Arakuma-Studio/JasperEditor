@@ -103,7 +103,7 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 	const PROPS: Record<string, ParityProps> = {
 		Sequence: { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } },
 	};
-	const stills: Record<string, Buffer[]> = {};
+	const stills = new Map<string, Promise<Buffer[]>>();
 
 	beforeAll(async () => {
 		r = await import('@remotion/renderer');
@@ -148,25 +148,37 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 		return out;
 	}
 
+	// Generate immutable reference frames on demand: the Player parity case must also run alone.
+	function referenceStills(id: string): Promise<Buffer[]> {
+		let cached = stills.get(id);
+		if (!cached) {
+			cached = (async () => {
+				const composition = await select(id);
+				const still: Buffer[] = [];
+				for (let f = 0; f < N; f++) {
+					const { buffer } = await r.renderStill({
+						composition,
+						serveUrl,
+						frame: f,
+						inputProps: composition.props,
+						imageFormat: 'png',
+						output: null,
+						puppeteerInstance: browser,
+						...browserOpts,
+					});
+					still[f] = buffer!;
+					writeFileSync(join(work, `${id}-still-${f}.png`), buffer!);
+				}
+				return still;
+			})();
+			stills.set(id, cached);
+		}
+		return cached;
+	}
+
 	for (const id of ['Sequence'])
 		it(`${id}: renderStill per frame = renderFrames c1 = c4 = reversed = shuffled (byte-identical PNGs)`, async () => {
-			const composition = await select(id);
-			const still: Buffer[] = [];
-			for (let f = 0; f < N; f++) {
-				const { buffer } = await r.renderStill({
-					composition,
-					serveUrl,
-					frame: f,
-					inputProps: composition.props,
-					imageFormat: 'png',
-					output: null,
-					puppeteerInstance: browser,
-					...browserOpts,
-				});
-				still[f] = buffer!;
-				writeFileSync(join(work, `${id}-still-${f}.png`), buffer!);
-			}
-			stills[id] = still;
+			const still = await referenceStills(id);
 			expect(still[0]!.equals(still[Math.floor(N / 2)]!)).toBe(false);
 			expect(still[Math.floor(N / 2)]!.equals(still[N - 1]!)).toBe(false);
 			const c1 = await frames(id, 1);
@@ -277,7 +289,7 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 
 		for (const id of ['Sequence'])
 			it(`${id}: the Player frame matches renderStill (≤ 3/255 on ≥ 99.5 % of the pixels)`, async () => {
-				expect(stills[id], 'renderStill frames (previous test)').toBeDefined();
+				const expected = await referenceStills(id);
 				const props: ParityProps = {
 					doc,
 					options: { isPreview: true, useProxies: false, transparentBackground: false },
@@ -291,8 +303,8 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 					const shot = await page.screenshot({
 						clip: { x: 0, y: 0, width: SCENE.width, height: SCENE.height },
 					});
-					report[f] = differingFraction(rgba(shot), rgba(stills[id]![f]!), 3);
-					if (f === 0) control = differingFraction(rgba(shot), rgba(stills[id]![Math.floor(N / 2)]!), 3);
+					report[f] = differingFraction(rgba(shot), rgba(expected[f]!), 3);
+					if (f === 0) control = differingFraction(rgba(shot), rgba(expected[Math.floor(N / 2)]!), 3);
 				}
 				expect(control, 'Player frame 0 vs still of the middle frame').toBeGreaterThan(0.005);
 				console.log(

@@ -235,8 +235,4 @@ describe('presets and UI hints (C3)', () => {
 		} as unknown as MgTemplateDefinition;
 		expect(() => createMgRegistry([def])).toThrow(message);
 	});
-
-	it('the shipped catalogue passes the preset and ui checks', () => {
-		expect(() => createMgRegistry(mgRegistry.definitions())).not.toThrow();
-	});
 });

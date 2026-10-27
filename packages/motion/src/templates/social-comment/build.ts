@@ -6,10 +6,10 @@ import type { EasingParam } from 'animejs';
 import { createPausedTimeline, roundValue, seekCanonical } from '../../runtime/index.ts';
 
 /** Card: scale, opacity, drop (design px), tilt (deg). Word unit: s, o. Heart: s (thump), f (fill). */
-export type SocialValues = Record<string, number>;
+type SocialValues = Record<string, number>;
 
 /** The anime.js ease of a schedule ease name: the closed-form template eases are handed over as functions. */
-export function socialEase(name: string): EasingParam {
+function socialEase(name: string): EasingParam {
 	return Object.hasOwn(TEMPLATE_EASE_FUNCTIONS, name) ? TEMPLATE_EASE_FUNCTIONS[name]! : name;
 }
 

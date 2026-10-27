@@ -76,13 +76,19 @@ describe('seeds and randomness (S11:ANM-007)', () => {
 	});
 });
 
+function easeValue(ease: ReturnType<typeof resolveEase>, ms: number): number {
+	const target = { value: 0 };
+	const timeline = createPausedTimeline();
+	timeline.add(target, { value: [0, 1], duration: 1000, ease });
+	seekCanonical(timeline, ms);
+	return target.value;
+}
+
 describe('eases', () => {
 	it('resolves steps and falls back for an unknown ease', () => {
-		expect(resolveEase('outBack')).toBe('outBack');
-		expect(resolveEase('bogus')).toBe('out');
-		const step = resolveEase('steps', { steps: 4 });
-		expect(typeof step).toBe('function');
-		expect((step as (t: number) => number)(0.3)).toBe(0.25);
+		expect(easeValue(resolveEase('outBack'), 300)).toBeCloseTo(easeValue('outBack', 300), 9);
+		expect(easeValue(resolveEase('bogus'), 300)).toBeCloseTo(easeValue('out', 300), 9);
+		expect(easeValue(resolveEase('steps', { steps: 4 }), 300)).toBe(0.25);
 	});
 });
 
@@ -209,9 +215,8 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 	});
 
 	it('resolveEase steps: non-finite counts fall back to 8', () => {
-		const f = resolveEase('steps', { steps: Number.NaN }) as (t: number) => number;
-		expect(f(0.3)).toBe(0.25);
-		expect((resolveEase('steps', { steps: 0 }) as (t: number) => number)(0.6)).toBe(0);
+		expect(easeValue(resolveEase('steps', { steps: Number.NaN }), 300)).toBe(0.25);
+		expect(easeValue(resolveEase('steps', { steps: 0 }), 600)).toBe(0);
 	});
 
 	it('useAnimeValues: StrictMode double renders and a buildKey change give the values of a fresh build', () => {

@@ -20,8 +20,3 @@ export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantI
 	'app-store-review': APP_STORE_REVIEW,
 	'app-store-review-ios': APP_STORE_REVIEW_IOS,
 };
-
-/** Whether a variant has its real card (false: the "not available" card is drawn). */
-export function socialVariantAvailable(variant: SocialVariant): boolean {
-	return !SOCIAL_VARIANT_IMPLS[variant]?.unavailable;
-}

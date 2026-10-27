@@ -5,8 +5,6 @@
 //   (S11:ANM-014), with the long-review clamp measured;
 // - the clamp: a long review is cut to the store's lines (shorter card) and grows back with `truncate` off;
 // - the card fits every canvas (long titles and reviews, 64-character names, clamp on and off);
-// - with SOCIAL_CALIBRATION_DIR set, writes the calibration stills at the scale of the requester's screenshots
-//   (cases from SOCIAL_REVIEW_CASES, a JSON file outside the repo with the screenshots' own texts, plus the generic ones).
 // Fonts: Roboto from @fontsource/roboto (bundled for the engine); SF Pro Text from SOCIAL_SF_PRO_DIR (the manifest's
 // `SF-Pro-Text-{Regular,Semibold}.otf`, never in the repo; without it the App Store cards draw in a fallback face).
 // Emoji: SOCIAL_EMOJI_APPLE_DIR / SOCIAL_EMOJI_NOTO_DIR (`<codepoints>.png`), else flat stand-in squares.
@@ -18,7 +16,6 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
-	readFileSync,
 	writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -27,10 +24,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	emojiGraphemes,
-	resolveEmojiStyle,
 	SOCIAL_DEFAULT_REVIEW_TEXT,
 	type SocialVariant,
-	socialCommentParamsSchema,
 	socialDefaults,
 } from '@jasper/mg-templates';
 import type { HeadlessBrowser } from '@remotion/renderer';
@@ -80,89 +75,7 @@ const LONG_REVIEW =
 const LONG_TITLE =
 	'Absolutely the best planner app I have ever used on any phone, tablet or computer, period';
 
-type Case = { name: string; canvas: string; params: Record<string, unknown>; frame?: number; scale?: number };
-
-/** The scale that draws a 9:16 card at the pixel scale of the requester's screenshot of that store. */
-const REF_SCALE: Readonly<Record<string, number>> = {
-	// image px per reference px (Play dp, legacy App Store CSS px, iPhone pt) over the 1.8 zoom of 9:16
-	'play-store-review': 3.525 / 1.8,
-	'app-store-review': 2.094 / 1.8,
-	// the iPhone screenshot is 0.769 px/pt: render at 2× (the page enlarges the screenshot instead)
-	'app-store-review-ios': 2 / 1.8,
-};
-
-const CALIBRATION: Case[] = [];
-for (const variant of STORE)
-	for (const theme of ['light', 'dark'])
-		CALIBRATION.push(
-			{
-				name: `${variant}_${theme}_default`,
-				canvas: '1080x1920',
-				params: { ...socialDefaults(variant), theme },
-			},
-			{
-				name: `${variant}_${theme}_long`,
-				canvas: '1080x1920',
-				params: { ...socialDefaults(variant), theme, text: LONG_REVIEW, truncate: true, rating: 3 },
-			},
-		);
-for (const variant of STORE)
-	CALIBRATION.push(
-		{
-			name: `${variant}_light_long-untruncated`,
-			canvas: '1080x1920',
-			params: { ...socialDefaults(variant), text: LONG_REVIEW, truncate: false, rating: 5 },
-		},
-		{
-			name: `${variant}_light_long-title-name`,
-			canvas: '1080x1920',
-			params: {
-				...socialDefaults(variant),
-				title: LONG_TITLE,
-				displayName: 'Averyveryveryverylongname With Many Characters And Even More 1',
-				rating: 1,
-			},
-		},
-		{
-			name: `${variant}_light_marks`,
-			canvas: '1080x1920',
-			params: {
-				...socialDefaults(variant),
-				text: 'Write any ==review== and ||see|| what ~~happens~~ @friend #fyp 😊',
-				rating: 2,
-			},
-		},
-		{
-			name: `${variant}_light_avatar-generated`,
-			canvas: '1080x1920',
-			params: { ...socialDefaults(variant), avatar: { generated: 42 }, displayName: 'Luna Park' },
-		},
-	);
-CALIBRATION.push(
-	{
-		name: 'app-store-review-ios_light_edited',
-		canvas: '1080x1920',
-		params: { ...socialDefaults('app-store-review-ios'), edited: true, timeValue: 1, timeUnit: 'year' },
-	},
-	{
-		name: 'play-store-review_light_no-profile',
-		canvas: '1080x1920',
-		params: { ...socialDefaults('play-store-review'), showProfile: false },
-	},
-);
-// the star fill: frames through the tick (entrance ends at 17, the stars fill until ≈ 44, then pulse)
-for (const variant of STORE)
-	for (const frame of [17, 22, 28, 34, 40, 46, 50])
-		CALIBRATION.push({
-			name: `anim_${variant}_stars_f${String(frame).padStart(3, '0')}`,
-			canvas: '1080x1920',
-			params: { ...socialDefaults(variant), likeTick: true, rating: 4 },
-			frame,
-		});
-// the requester's screenshot texts (outside the repo: third-party content)
-if (process.env.SOCIAL_REVIEW_CASES && existsSync(process.env.SOCIAL_REVIEW_CASES))
-	for (const c of JSON.parse(readFileSync(process.env.SOCIAL_REVIEW_CASES, 'utf8')) as Case[])
-		CALIBRATION.push(c);
+type Case = { name: string; canvas: string; params: Record<string, unknown> };
 
 describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout: 1_200_000 }, () => {
 	let r: typeof import('@remotion/renderer');
@@ -218,12 +131,6 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 				}
 		// every emoji the cases draw needs an image of the variant's pack: flat stand-ins where none was given
 		const texts = [SOCIAL_DEFAULT_REVIEW_TEXT, LONG_REVIEW, LONG_TITLE];
-		for (const c of CALIBRATION)
-			texts.push(
-				String(c.params.text ?? ''),
-				String(c.params.displayName ?? ''),
-				String(c.params.title ?? ''),
-			);
 		for (const g of emojiGraphemes(texts.join('\n')))
 			for (const pack of ['apple', 'noto']) {
 				if (emojiFiles[`${pack}:${g}`]) continue;
@@ -258,7 +165,7 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 		mediaFiles: {},
 		emojiFiles,
 	});
-	const still = async (c: Case, frame: number, scale = 1) => {
+	const still = async (c: Case, frame: number) => {
 		const composition = await r.selectComposition({
 			serveUrl,
 			id: `Card-${c.canvas}`,
@@ -270,7 +177,6 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 			composition,
 			serveUrl,
 			frame,
-			scale,
 			inputProps: propsOf(c),
 			imageFormat: 'png',
 			output: null,
@@ -279,15 +185,6 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 		});
 		return buffer!;
 	};
-
-	it('every emoji of the cases has an image of its pack', () => {
-		for (const c of CALIBRATION) {
-			const p = socialCommentParamsSchema.parse(c.params);
-			const pack = resolveEmojiStyle(p.variant, p.emojiStyle);
-			for (const g of emojiGraphemes(`${p.text}\n${p.displayName}\n${p.title}`))
-				expect(emojiFiles[`${pack}:${g}`], `${c.name} ${g}`).toBeDefined();
-		}
-	});
 
 	it('renderStill = renderFrames: byte-identical at rest, the parity standard while the card animates', async () => {
 		const cases: Case[] = [
@@ -419,21 +316,5 @@ describe.runIf(enabled)('store review cards render (REMOTION_E2E=1)', { timeout:
 					expect(box.x1, label).toBeLessThan(box.width - 1);
 					expect(box.y1, label).toBeLessThan(box.height - 1);
 				}
-	});
-
-	it.runIf(!!process.env.SOCIAL_CALIBRATION_DIR)('writes the calibration stills', async () => {
-		const out = process.env.SOCIAL_CALIBRATION_DIR!;
-		mkdirSync(out, { recursive: true });
-		const only = process.env.SOCIAL_CALIBRATION_FILTER
-			? new RegExp(process.env.SOCIAL_CALIBRATION_FILTER)
-			: null;
-		const manifest: Record<string, ReturnType<typeof paintedBox>> = {};
-		for (const c of CALIBRATION.filter((k) => !only || only.test(k.name))) {
-			const variant = String(c.params.variant);
-			const png = await still(c, c.frame ?? 100, c.scale ?? REF_SCALE[variant] ?? 2 / 1.8);
-			writeFileSync(join(out, `${c.name}.png`), png);
-			manifest[c.name] = paintedBox(png);
-		}
-		writeFileSync(join(out, 'boxes.json'), JSON.stringify(manifest, null, 2));
 	});
 });

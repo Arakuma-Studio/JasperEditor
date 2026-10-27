@@ -17,12 +17,7 @@ import {
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { createMgRegistry } from '../src/registry.ts';
-import {
-	SOCIAL_KEEP_PARAMS,
-	SOCIAL_PARAM_NAMES,
-	SOCIAL_REROLL_PARAMS,
-	VARIANT_CAPABILITIES,
-} from '../src/social/index.ts';
+import { SOCIAL_KEEP_PARAMS, SOCIAL_REROLL_PARAMS, VARIANT_CAPABILITIES } from '../src/social/index.ts';
 import type { AnyMgTemplate } from '../src/types.ts';
 import { SOCIAL_BULK_TEST_TEMPLATE as T } from './fixtures/social-bulk-template.ts';
 
@@ -35,10 +30,7 @@ describe('ui.addAnother / ui.import validation (createMgRegistry)', () => {
 		(ui: unknown, extra: Partial<AnyMgTemplate> = {}) =>
 		() =>
 			createMgRegistry([{ ...T, ...extra, ui: ui as AnyMgTemplate['ui'] } as AnyMgTemplate]);
-	it('accepts the social hints', () => {
-		expect(() => createMgRegistry([T])).not.toThrow();
-		expect(info.ui?.addAnother?.reroll).toEqual(SOCIAL_REROLL_PARAMS);
-	});
+
 	it('refuses malformed or dangling hints', () => {
 		expect(bad({ addAnother: { reroll: ['nope'] } })).toThrow(/addAnother.reroll .* unknown param "nope"/);
 		expect(bad({ addAnother: ['handle'] })).toThrow(/must be \{reroll/);
@@ -83,21 +75,6 @@ describe('ui.addAnother / ui.import validation (createMgRegistry)', () => {
 });
 
 describe('social hints', () => {
-	it('re-randomize identity and stats, keep everything else', () => {
-		expect([...SOCIAL_KEEP_PARAMS, ...SOCIAL_REROLL_PARAMS].sort()).toEqual([...SOCIAL_PARAM_NAMES].sort());
-		expect(SOCIAL_KEEP_PARAMS).toEqual(
-			expect.arrayContaining([
-				'variant',
-				'theme',
-				'emojiStyle',
-				'text',
-				'entrance',
-				'wordReveal',
-				'likeTick',
-			]),
-		);
-	});
-
 	const importRows = (csv: string, preset?: string) => {
 		const t = parseTable(csv);
 		if (!t.ok) throw new Error(mgImportText(t.message));

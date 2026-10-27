@@ -31,7 +31,7 @@ export interface GlyphGradientStop {
 
 /** A `<linearGradient gradientUnits="userSpaceOnUse">` in the glyph's `viewBox` coordinates. */
 export interface GlyphLinearGradient {
-	/** Local id; scope it per rendered instance with `scopeGlyphIds` (SVG ids are document-global). */
+	/** Local id within the isolated SVG image that draws the glyph. */
 	readonly id: string;
 	readonly x1: number;
 	readonly y1: number;
@@ -607,16 +607,6 @@ export const APP_STORE_GLYPHS = {
 	},
 } as const satisfies Readonly<Record<string, PlatformGlyph>>;
 
-/** Every platform's glyph set, by platform. */
-export const PLATFORM_GLYPHS = {
-	tiktok: TIKTOK_GLYPHS,
-	instagram: INSTAGRAM_GLYPHS,
-	youtube: YOUTUBE_GLYPHS,
-	x: X_GLYPHS,
-	'play-store': PLAY_STORE_GLYPHS,
-	'app-store': APP_STORE_GLYPHS,
-} as const;
-
 /** TikTok's default avatar (grey disc, white head and shoulders at 75 %): the `Icon_Color-Default_Avatar` of its bundle. */
 export const TIKTOK_DEFAULT_AVATAR: PlatformGlyph = {
 	viewBox: '0 0 48 48',
@@ -674,29 +664,3 @@ export const PLATFORM_DEFAULT_AVATARS: Readonly<Record<SocialPlatform, PlatformD
 		reason: 'App Store review cards show no avatar.',
 	},
 };
-
-/** The glyph's colour for `currentColor` paths in a theme (`fallback` when the glyph has no `defaultColor`). */
-export function glyphColor(glyph: PlatformGlyph, theme: 'light' | 'dark', fallback = 'currentColor'): string {
-	return glyph.defaultColor?.[theme] ?? fallback;
-}
-
-/**
- * The glyph with its gradient ids prefixed by `scope` (and the `url(#…)` fills that name them), so several
- * instances in one document never share an id. `scope` may only hold letters, digits, `-` and `_`; anything else is
- * replaced by `_`. Glyphs without gradients are returned as they are.
- */
-export function scopeGlyphIds(glyph: PlatformGlyph, scope: string): PlatformGlyph {
-	const gradients = glyph.gradients;
-	if (!gradients || gradients.length === 0) return glyph;
-	const safe = String(scope).replace(/[^A-Za-z0-9_-]/g, '_');
-	const ids = new Set(gradients.map((g) => g.id));
-	const scoped = (id: string): string => `${safe}-${id}`;
-	return {
-		...glyph,
-		gradients: gradients.map((g) => ({ ...g, id: scoped(g.id) })),
-		paths: glyph.paths.map((p) => {
-			const m = p.fill === undefined ? null : /^url\(#([^)]+)\)$/.exec(p.fill);
-			return m?.[1] !== undefined && ids.has(m[1]) ? { ...p, fill: `url(#${scoped(m[1])})` } : p;
-		}),
-	};
-}

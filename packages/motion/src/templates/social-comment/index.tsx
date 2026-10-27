@@ -14,7 +14,7 @@ import {
 	socialLikesTick,
 	socialTickCount,
 } from '@jasper/mg-templates';
-import { useId, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useAnimeValues } from '../../runtime/index.ts';
 import { DesignStage, templateFit } from '../common.tsx';
 import type { AnimeTemplateProps } from '../types.ts';
@@ -24,7 +24,6 @@ import type { SocialCardAnim, SocialCardAssets, SocialWordValues } from './contr
 import { SocialStage } from './stage.tsx';
 import { SOCIAL_VARIANT_IMPLS } from './variants.ts';
 
-export { buildSocialComment, buildSocialTick, socialTickProgressAt } from './build.ts';
 export type { SocialCardAnim, SocialCardAssets, SocialCardProps, SocialVariantImpl } from './contract.ts';
 
 const DEFAULTS = socialCommentParamsSchema.parse({});
@@ -64,11 +63,9 @@ export function SocialComment(props: AnimeTemplateProps) {
 				? (values[schedule.heartTarget] as Readonly<{ s: number; f: number }>)
 				: null,
 	};
-	const scope = useId().replace(/[^A-Za-z0-9_-]/g, '_');
 	const assets: SocialCardAssets = {
 		...socialAssetUrls(props),
 		emojiPack: resolveEmojiStyle(p.variant, p.emojiStyle),
-		idScope: `sc${scope}`,
 	};
 	const impl = SOCIAL_VARIANT_IMPLS[p.variant];
 	const { entrance: _e, wordReveal: _w, likeTick: _l, likes: _n, ...layout } = p;

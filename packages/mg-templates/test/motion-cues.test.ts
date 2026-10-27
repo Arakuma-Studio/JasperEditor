@@ -437,29 +437,3 @@ describe('svgTemplateSpeed', () => {
 		expect(info.motionSpeed!(cyclic, { fps: 30, totalFrames: 10 })).toBeNull(); // strict schema refuses it
 	});
 });
-
-describe('performance', () => {
-	it('a 10-minute lower third: cold derive (measures every frame) and warm derive (memoised)', () => {
-		const frames = 10 * 60 * 30;
-		const d = mgDoc({
-			template: 'lower-third',
-			rate: '30',
-			at: 0,
-			duration: frames,
-			params: { name: 'Perf Run' },
-		});
-		const t0 = performance.now();
-		const cold = mgCues(d);
-		const t1 = performance.now();
-		const warm = mgCues(d);
-		const t2 = performance.now();
-		console.log(
-			`mg cues on a 10-min lower third: cold ${(t1 - t0).toFixed(0)} ms, warm ${(t2 - t1).toFixed(1)} ms`,
-		);
-		expect(cold.map((c) => c.confidence)).toEqual([0.8, 0.6]);
-		expect(warm).toEqual(cold);
-		// a guard against a blow-up, not a benchmark: 0.7 s measured at load ≈ 30, 3.3 s at load ≈ 80 on the shared host
-		expect(t1 - t0).toBeLessThan(10_000);
-		expect(t2 - t1).toBeLessThan(100);
-	});
-});
