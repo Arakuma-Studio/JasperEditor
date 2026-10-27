@@ -174,7 +174,11 @@ export function featherProfileAt(
 }
 
 /** Coverage of one mask from its signed distance and outline position (the definition above). */
-export function maskValue(m: PreparedMask, sd: number, arc: number): number {
+export function maskValue(
+	m: Pick<PreparedMask, 'inverted' | 'opacity' | 'feather' | 'expansion' | 'falloff' | 'length' | 'profile'>,
+	sd: number,
+	arc: number,
+): number {
 	const s = sd + m.expansion;
 	const [ro, ri] = featherProfileAt(m.profile, m.length, arc);
 	const lo = Math.max(ro + m.feather / 2, 0.5);
@@ -198,40 +202,6 @@ function edgeDist2(px: number, py: number, ax: number, ay: number, bx: number, b
 	const ex = qx - dx * t;
 	const ey = qy - dy * t;
 	return [ex * ex + ey * ey, t];
-}
-
-/**
- * Brute-force combined coverage at one point (every edge; the definition the tiled rasterisers implement). Null
- * when no mask is active (the caller applies nothing).
- */
-export function maskCoverageAt(masks: readonly PreparedMask[], x: number, y: number): number | null {
-	if (masks.length === 0) return null;
-	let acc = maskModeStart(masks[0]!.mode);
-	for (const m of masks) {
-		const n = m.pts.length / 2;
-		let wind = 0;
-		let d2 = m.band * m.band;
-		let arc = 0;
-		for (let i = 0; i < n; i++) {
-			const j = (i + 1) % n;
-			const ax = m.pts[2 * i]!;
-			const ay = m.pts[2 * i + 1]!;
-			const bx = m.pts[2 * j]!;
-			const by = m.pts[2 * j + 1]!;
-			if (ay <= y !== by <= y) {
-				const xc = ax + ((y - ay) * (bx - ax)) / (by - ay);
-				if (xc < x) wind += by > ay ? 1 : -1;
-			}
-			const [dd, t] = edgeDist2(x, y, ax, ay, bx, by);
-			if (dd < d2) {
-				d2 = dd;
-				arc = m.arcs[i]! + (m.arcs[i + 1]! - m.arcs[i]!) * t;
-			}
-		}
-		const d = Math.sqrt(d2);
-		acc = Math.min(1, Math.max(0, combineMaskMode(m.mode, acc, maskValue(m, wind !== 0 ? d : -d, arc))));
-	}
-	return acc;
 }
 
 // packing (GPU + CPU tiled rasterisers)
@@ -457,20 +427,9 @@ export function rasterizeMaskPack(pack: MaskPack): Float32Array {
 	const listBase = pack.listBase;
 	const out = new Float32Array(W * H);
 	const md = (i: number, c: number) => data[4 * i + c]!;
-	type Info = {
-		mode: number;
-		inverted: boolean;
-		opacity: number;
-		feather: number;
-		expansion: number;
-		band: number;
-		linear: boolean;
-		profileCount: number;
+	type Info = Omit<PreparedMask, 'pts' | 'arcs'> & {
 		edgeBase: number;
 		tileBase: number;
-		profileBase: number;
-		length: number;
-		profile: [number, number, number, number][];
 	};
 	const modes: MaskMode[] = ['none', 'add', 'subtract', 'intersect', 'lighten', 'darken', 'difference'];
 	const infos: Info[] = [];
@@ -479,17 +438,15 @@ export function rasterizeMaskPack(pack: MaskPack): Float32Array {
 		const profileCount = md(b + 1, 3);
 		const profileBase = md(b + 2, 2);
 		infos.push({
-			mode: md(b, 0),
+			mode: modes[md(b, 0)]!,
 			inverted: md(b, 1) > 0.5,
 			opacity: md(b, 2),
 			feather: md(b, 3),
 			expansion: md(b + 1, 0),
 			band: md(b + 1, 1),
-			linear: md(b + 1, 2) > 0.5,
-			profileCount,
+			falloff: md(b + 1, 2) > 0.5 ? 'linear' : 'smooth',
 			edgeBase: md(b + 2, 0),
 			tileBase: md(b + 2, 1),
-			profileBase,
 			length: md(b + 3, 0),
 			profile: Array.from(
 				{ length: profileCount },
@@ -513,7 +470,7 @@ export function rasterizeMaskPack(pack: MaskPack): Float32Array {
 			let acc = 0;
 			for (let m = 0; m < count; m++) {
 				const inf = infos[m]!;
-				const mode = modes[inf.mode]!;
+				const mode = inf.mode;
 				if (m === 0) acc = maskModeStart(mode);
 				const tb = inf.tileBase + tile * TILE_TEXELS;
 				const off = md(tb, 0);
@@ -540,23 +497,7 @@ export function rasterizeMaskPack(pack: MaskPack): Float32Array {
 					}
 				}
 				const d = Math.sqrt(d2);
-				const v = maskValue(
-					{
-						mode,
-						inverted: inf.inverted,
-						opacity: inf.opacity,
-						feather: inf.feather,
-						expansion: inf.expansion,
-						falloff: inf.linear ? 'linear' : 'smooth',
-						pts: new Float64Array(0),
-						arcs: new Float64Array(0),
-						length: inf.length,
-						profile: inf.profile,
-						band: inf.band,
-					},
-					wind !== 0 ? d : -d,
-					arc,
-				);
+				const v = maskValue(inf, wind !== 0 ? d : -d, arc);
 				acc = Math.min(1, Math.max(0, combineMaskMode(mode, acc, v)));
 			}
 			out[y * W + x] = acc;
