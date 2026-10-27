@@ -4,6 +4,7 @@
 // (one undo step; subtitles made from them are patched in place). "Remember" teaches the personal speech glossary
 // (`rememberGlossaryEntry`), so Fix Transcript and future transcriptions know the name. Never automatic, dismissable;
 // each action's outcome (or refusal) is said in the bar.
+import type { EngineClient } from '@jasper/engine-client';
 import type { Command } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button } from '@jasper/ui';
@@ -13,9 +14,7 @@ import { fixErrorText } from './engine.ts';
 import type { EditOffer } from './model.ts';
 
 /** The glossary call the offer makes (the editor's EngineClient). */
-export type RememberEngine = {
-	rememberGlossaryEntry(req: { from: string[]; to: string; lang?: string }): Promise<unknown>;
-};
+export type RememberEngine = Pick<EngineClient, 'rememberGlossaryEntry'>;
 
 export function EditOfferBar(p: {
 	session: EditorSession;

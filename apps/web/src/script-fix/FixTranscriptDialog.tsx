@@ -7,6 +7,7 @@
 // Review. Disabled with the reason when there is no transcript, no script and no glossary, or no speech model.
 // Every failure (a refusal, a job error, an unreadable result) is shown in the dialog; nothing is ever blank.
 import type { EngineJob } from '@jasper/api';
+import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, toast } from '@jasper/ui';
@@ -45,10 +46,7 @@ export function registerFixTranscriptDialog(): void {
 }
 
 /** What the dialog reads besides the fix routes (the speech models and the glossary size). */
-export type FixDialogEngine = FixEngine & {
-	call?(route: 'speechModels'): Promise<unknown>;
-	listGlossary?(): Promise<{ entries: readonly unknown[] }>;
-};
+export type FixDialogEngine = FixEngine & Pick<EngineClient, 'call' | 'listGlossary'>;
 
 export type FixTranscriptDialogProps = {
 	session: EditorSession;
@@ -88,7 +86,7 @@ function useSpeechModelList(engine: FixDialogEngine | null): {
 	});
 	useEffect(() => {
 		let live = true;
-		if (!engine?.call) return;
+		if (!engine) return;
 		engine
 			.call('speechModels')
 			.then((r) => {
@@ -118,7 +116,7 @@ function useGlossarySize(engine: FixDialogEngine | null): { entries: number | nu
 	});
 	useEffect(() => {
 		let live = true;
-		if (!engine?.listGlossary) {
+		if (!engine) {
 			setState({ entries: 0, error: null });
 			return;
 		}
@@ -222,7 +220,7 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 	const blocker = inputs ? fixBlocker(inputs, sources, glossary.entries, models, { forRun: false }) : null;
 	const runBlocker =
 		!engine
-			? t('The engine is not connected, or it cannot fix transcripts: update JasperEditor')
+			? t('The engine is not connected')
 			: readOnly
 				? t('The project is read-only')
 				: inputs

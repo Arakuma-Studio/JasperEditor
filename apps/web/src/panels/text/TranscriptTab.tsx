@@ -42,9 +42,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../i18n/runtime.ts';
 import { focusItem } from '../../proposals/actions.ts';
 import { useProposals } from '../../proposals/state.ts';
-import { EditOfferBar, type RememberEngine } from '../../script-fix/EditOffer.tsx';
-import { canFix } from '../../script-fix/engine.ts';
-import { FIX_TRANSCRIPT_DIALOG, type FixDialogEngine } from '../../script-fix/FixTranscriptDialog.tsx';
+import { EditOfferBar } from '../../script-fix/EditOffer.tsx';
+import { FIX_TRANSCRIPT_DIALOG } from '../../script-fix/FixTranscriptDialog.tsx';
 import {
 	type EditOffer,
 	editOffer,
@@ -136,10 +135,9 @@ export function TranscriptTab({ session, seq, request }: Props) {
 	}, [proposal, reviewItems, doc.transcripts]);
 	const readOnly = useStoreSelector(session.store, (s) => s.readOnly);
 	const openFix = () => {
-		const engine = client && canFix(client) ? (client as unknown as FixDialogEngine) : null;
 		void openDialog(FIX_TRANSCRIPT_DIALOG, {
 			session,
-			engine,
+			engine: client,
 			sequenceId: seq.id,
 			onReview: () => void runtime?.run('panel.focus.review'),
 		});
@@ -470,7 +468,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					session={session}
 					sequenceId={seq.id}
 					offer={offer}
-					engine={client as RememberEngine | null}
+					engine={client}
 					onClose={() => setOffer(null)}
 				/>
 			) : null}

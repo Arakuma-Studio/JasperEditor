@@ -3,29 +3,20 @@
 // full job followed here and in the Jobs panel; Cancel cancels it). Every failure comes back as a `FixRunError` with
 // the engine's code (`E_NO_SOURCE`, `E_NO_TRANSCRIPT`, `E_NO_SPEECH_MODEL`, `E_LIMIT`, a job's error code…), never a
 // throw of something else; job results are validated with zod before use.
-import type { EngineJob } from '@jasper/api';
-import { z } from 'zod';
+import {
+	type EngineJob,
+	type TranscriptFixRequest,
+	type TranscriptFixResult,
+	TranscriptFixResultSchema,
+} from '@jasper/api';
+import type { EngineClient } from '@jasper/engine-client';
 import { t } from '../i18n/runtime.ts';
-import type { FixReportLite, FixScope, FixSource, FixStrictness } from './model.ts';
 
-export type FixRequest = {
-	sources: FixSource[];
-	scope: FixScope;
-	strictness: FixStrictness;
-	showRejected: boolean;
-};
+/** The settings of a run (the request without its mode and device). */
+export type FixRequest = Required<Pick<TranscriptFixRequest, 'sources' | 'scope' | 'strictness' | 'showRejected'>>;
 
 /** The engine calls Fix Transcript makes (the editor's EngineClient; tests pass a fake). */
-export type FixEngine = {
-	transcriptFix(
-		projectId: string,
-		sequenceId: string,
-		req: FixRequest & { mode: 'propose' | 'dryRun' },
-		opts?: { wait?: boolean; signal?: AbortSignal },
-	): Promise<unknown>;
-	getJob(jobId: string): Promise<EngineJob>;
-	cancelJob(jobId: string): Promise<unknown>;
-};
+export type FixEngine = Pick<EngineClient, 'transcriptFix' | 'getJob' | 'cancelJob'>;
 
 export class FixRunError extends Error {
 	constructor(
@@ -37,62 +28,7 @@ export class FixRunError extends Error {
 	}
 }
 
-const Count = z.number().int().min(0).catch(0);
-const Counts = z.record(z.string(), z.number()).catch({});
-const MediaReport = z
-	.looseObject({
-		name: z.string().catch(''),
-		words: Count,
-		wordsInScope: Count,
-		alignment: z
-			.looseObject({
-				transcriptTokens: z.number().catch(0),
-				alignedShare: z.number().catch(0),
-				offScriptShare: z.number().catch(0),
-			})
-			.nullable()
-			.catch(null),
-		unscored: z.object({ code: z.string(), message: z.string() }).optional().catch(undefined),
-	});
-
-/** The parts of `TranscriptFixResult` the editor reads (lenient: an engine may add fields). */
-export const FixResultSchema = z
-	.looseObject({
-		mode: z.enum(['propose', 'dryRun']),
-		proposalId: z.string().nullable(),
-		itemCount: Count,
-		report: z
-			.looseObject({
-				perMedia: z.array(MediaReport).max(10_000),
-				candidates: z
-					.looseObject({ total: Count, byGroup: Counts, byCategory: Counts })
-					.catch({ total: 0, byGroup: {}, byCategory: {} }),
-				skipped: Counts,
-				patch: z
-					.looseObject({
-						edits: Count,
-						patched: Count,
-						skipped: z
-							.array(z.looseObject({ clipId: z.string(), reason: z.string() }))
-							.max(10_000)
-							.catch([]),
-						stale: Count,
-					})
-					.catch({ edits: 0, patched: 0, skipped: [], stale: 0 }),
-				speech: z
-					.looseObject({ model: z.string().nullable().catch(null), problem: z.string().optional() })
-					.catch({ model: null }),
-				estimate: z
-					.looseObject({ seconds: z.number(), basis: z.enum(['measured', 'reference']) })
-					.optional()
-					.catch(undefined),
-				warnings: z
-					.array(z.looseObject({ code: z.string(), message: z.string() }))
-					.max(1000)
-					.catch([]),
-			}),
-	});
-export type FixResult = { mode: 'propose' | 'dryRun'; proposalId: string | null; itemCount: number; report: FixReportLite };
+export type FixResult = TranscriptFixResult;
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'interrupted']);
 const POLL_MS = 400;
@@ -119,16 +55,10 @@ function resultOf(job: EngineJob): FixResult {
 			(job.error as { detail?: unknown } | undefined)?.detail,
 		);
 	}
-	const parsed = FixResultSchema.safeParse(job.result);
+	const parsed = TranscriptFixResultSchema.safeParse(job.result);
 	if (!parsed.success)
 		throw new FixRunError('E_BAD_RESULT', t('The engine returned an unreadable Fix Transcript result'));
-	return parsed.data as unknown as FixResult;
-}
-
-/** Whether this engine offers Fix Transcript (an older engine has no `transcript-fix` route). */
-export function canFix(engine: unknown): engine is FixEngine {
-	const e = engine as Partial<FixEngine> | null;
-	return !!e && typeof e.transcriptFix === 'function' && typeof e.getJob === 'function';
+	return parsed.data;
 }
 
 /** The dry run: counts, the patch report and an estimate, nothing stored (SC-081). */
@@ -211,6 +141,12 @@ export async function proposeFix(
 export function fixErrorText(e: unknown): string {
 	const err = asError(e);
 	switch (err.code) {
+		case 'E_NOT_FOUND':
+			return t('The sequence is not in the project any more (it was deleted or the project was closed)');
+		case 'E_INVALID_PARAM':
+			return t('In to Out needs In and Out marks on the sequence: set them or choose another scope');
+		case 'E_BAD_RESULT':
+			return t('The engine returned an unreadable Fix Transcript result');
 		case 'E_NO_SOURCE':
 			return t('Nothing to fix from: attach the script or add names to your speech glossary first');
 		case 'E_NO_TRANSCRIPT':
@@ -222,6 +158,7 @@ export function fixErrorText(e: unknown): string {
 		case 'E_LIMIT':
 			return t('The transcript or the script is too long to align in one run ({0})', err.message);
 		case 'E_CANCELLED':
+		case 'JOB_CANCELLED':
 			return t('Cancelled');
 		case 'NETWORK':
 			return t('The engine is not reachable: {0}', err.message);

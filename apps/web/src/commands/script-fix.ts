@@ -4,12 +4,7 @@
 // script the fixes and Clean Up read). Neither has a default shortcut (assignable in Keyboard Shortcuts).
 import { t } from '../i18n/runtime.ts';
 import { textPanelRequests } from '../panels/text/state.ts';
-import { canFix } from '../script-fix/engine.ts';
-import {
-	FIX_TRANSCRIPT_DIALOG,
-	type FixDialogEngine,
-	registerFixTranscriptDialog,
-} from '../script-fix/FixTranscriptDialog.tsx';
+import { FIX_TRANSCRIPT_DIALOG, registerFixTranscriptDialog } from '../script-fix/FixTranscriptDialog.tsx';
 import { runCommand } from './registry.ts';
 import { sequenceContext } from './sequence-context.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -39,7 +34,7 @@ export const scriptFixCommands: UiCommand[] = [
 			if (!e) return;
 			ctx.ui.openDialog(FIX_TRANSCRIPT_DIALOG, {
 				session: e.session,
-				engine: canFix(ctx.engine) ? (ctx.engine as unknown as FixDialogEngine) : null,
+				engine: ctx.engine ?? null,
 				sequenceId: e.seq.id,
 				onReview: () => void runCommand('panel.focus.review', ctx),
 			});
