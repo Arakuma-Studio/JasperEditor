@@ -72,7 +72,7 @@ describe('anime template rendering', () => {
 				},
 			};
 			const r = render(<MotionGraphicLayer {...layer} clip={clip} />);
-			expect(r.container.textContent).toContain('not installed');
+			expect(r.container.textContent).toContain('later@9');
 			r.unmount();
 		}
 	});

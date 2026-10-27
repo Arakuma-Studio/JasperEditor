@@ -23,6 +23,7 @@ import {
 	normalizeCurve,
 	type Rgb,
 } from '../src/index.ts';
+import { threadCpuMs } from './cpu-time.ts';
 
 const NO_LUTS: ColorOpContext = { lut: () => null };
 const run = (params: EffectParams, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb => {
@@ -390,17 +391,15 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		};
 		const effects = [fx('a', LUMETRI_EFFECT_ID, params)];
 		bakeColorRun(effects, defaultEffectRegistry, ctx, 33); // warm-up (JIT)
-		// CPU time of this worker (process.cpuUsage), not wall time: parallel test files on a loaded host would
-		// otherwise measure the scheduler instead of the bake.
+		// CPU time of this JavaScript thread, excluding the scheduler and concurrent workers.
 		const times: number[] = [];
 		const wall: number[] = [];
 		for (let i = 0; i < 12; i++) {
-			const u0 = process.cpuUsage();
+			const u0 = threadCpuMs();
 			const t0 = performance.now();
 			bakeColorRun(effects, defaultEffectRegistry, ctx, 33);
 			wall.push(performance.now() - t0);
-			const u = process.cpuUsage(u0);
-			times.push((u.user + u.system) / 1000);
+			times.push(threadCpuMs() - u0);
 		}
 		const best = Math.min(...times);
 		console.info(

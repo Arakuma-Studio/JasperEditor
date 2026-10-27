@@ -2,6 +2,7 @@
 // error; the draws still in flight (rejected when the stream closes its worker pool) are not unhandled rejections,
 // which would end the engine process (seen as "taps pool closed" when a pipelined export restarted its composite).
 import { Writable } from 'node:stream';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { singleTap } from '../src/export/stream/lowered.ts';
 import { planTapStream, type TapMember } from '../src/export/stream/tap-plan.ts';
@@ -13,7 +14,7 @@ const FPS = { num: 30, den: 1 };
 const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
 
 function member(id: string, f0: number, f1: number, source = 'color=c=red'): TapMember {
-	const w = 256;
+	const w = 64;
 	return {
 		clipId: id,
 		f0,
@@ -22,7 +23,7 @@ function member(id: string, f0: number, f1: number, source = 'color=c=red'): Tap
 			{ w, h: w, inputs: [['-f', 'lavfi', '-i', `${source}:s=${w}x${w}:r=1`]], filter: '[0:v]format=rgba' },
 		],
 		frames: Array.from({ length: f1 - f0 }, () => ({
-			rect: [0, 0, 512, 512] as [number, number, number, number],
+			rect: [0, 0, 128, 128] as [number, number, number, number],
 			opacity: 1,
 			level: 0,
 			// Several taps: each frame's draw takes a while, so many are in flight when the sink fails.
@@ -41,22 +42,22 @@ describe('kernel stream failure (AS-074)', () => {
 		const onUnhandled = (e: unknown) => unhandled.push(e);
 		process.on('unhandledRejection', onUnhandled);
 		try {
-			const plan = planTapStream([member('a', 0, 60), member('b', 60, 120)], 1920, 1080, FPS);
+			const plan = planTapStream([member('a', 0, 60), member('b', 60, 120)], 256, 144, FPS);
 			let writes = 0;
 			const sink = new Writable({
 				write(_chunk, _enc, cb) {
 					writes++;
 					if (writes === 3) cb(new Error('EPIPE (composite exited)'));
-					else setTimeout(cb, 5);
+					else setImmediate(cb);
 				},
 			});
 			sink.on('error', () => undefined);
 			const ac = new AbortController();
 			await expect(streamTaps(ff, plan, sink, { workers: 4, signal: ac.signal })).rejects.toThrow(
-				/layer stream/,
+				/layer stream: EPIPE/,
 			);
 			// Let the closed pool's rejections settle.
-			await new Promise((r) => setTimeout(r, 200));
+			await nextTurn();
 			expect(unhandled.map(String)).toEqual([]);
 		} finally {
 			process.off('unhandledRejection', onUnhandled);
@@ -70,20 +71,20 @@ describe('kernel stream failure (AS-074)', () => {
 		try {
 			const plan = planTapStream(
 				[member('a', 0, 40), member('b', 40, 80, 'nosuchsource=c=red')],
-				1920,
-				1080,
+				256,
+				144,
 				FPS,
 			);
 			const sink = new Writable({
 				write(_chunk, _enc, cb) {
-					setTimeout(cb, 20);
+					setImmediate(cb);
 				},
 			});
 			const ac = new AbortController();
 			await expect(streamTaps(ff, plan, sink, { workers: 4, signal: ac.signal })).rejects.toThrow(
 				/picture decoder/,
 			);
-			await new Promise((r) => setTimeout(r, 1500));
+			await nextTurn();
 			expect(unhandled.map(String)).toEqual([]);
 		} finally {
 			process.off('unhandledRejection', onUnhandled);
@@ -97,19 +98,23 @@ describe('kernel stream failure (AS-074)', () => {
 		try {
 			// The second member's still is still baking (pipelined, AS-076) when the first one's frames are written.
 			const late = member('b', 3, 60);
-			late.ready = new Promise((r) => setTimeout(() => r({ ok: true }), 400));
-			const plan = planTapStream([member('a', 0, 3), late], 1920, 1080, FPS);
+			let releaseStill!: () => void;
+			late.ready = new Promise((resolve) => {
+				releaseStill = () => resolve({ ok: true });
+			});
+			const plan = planTapStream([member('a', 0, 3), late], 256, 144, FPS);
 			const sink = new Writable({
 				write(_chunk, _enc, cb) {
-					setTimeout(() => cb(new Error('This socket has been ended by the other party')), 20);
+					setImmediate(() => cb(new Error('This socket has been ended by the other party')));
 				},
 			});
-			sink.on('error', () => undefined);
+			// Let the write fail while the still is pending; release it on the following event-loop turn.
+			sink.once('error', () => setImmediate(releaseStill));
 			const ac = new AbortController();
 			await expect(streamTaps(ff, plan, sink, { workers: 2, signal: ac.signal })).rejects.toThrow(
-				/layer stream/,
+				/layer stream: This socket has been ended/,
 			);
-			await new Promise((r) => setTimeout(r, 800));
+			await nextTurn();
 			expect(unhandled.map(String)).toEqual([]);
 		} finally {
 			process.off('unhandledRejection', onUnhandled);

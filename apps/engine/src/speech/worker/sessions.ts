@@ -57,7 +57,7 @@ function sessionOptions(provider: ProviderId, threads: number, location?: Record
 // float16 ↔ float32 (IEEE 754 half, round to nearest even)
 const f32 = new Float32Array(1);
 const u32 = new Uint32Array(f32.buffer);
-export function toHalf(v: number): number {
+function toHalf(v: number): number {
 	f32[0] = v;
 	const x = u32[0];
 	const sign = (x >>> 16) & 0x8000;
@@ -93,10 +93,6 @@ for (let h = 0; h < 65536; h++) {
 					: s * Number.POSITIVE_INFINITY
 				: s * (1 + m / 1024) * 2 ** (e - 15);
 }
-export function fromHalf(h: number): number {
-	return halfTable[h & 0xffff];
-}
-
 type Meta = { name: string; type?: string };
 function halfNames(meta: unknown): Set<string> {
 	const list = Array.isArray(meta) ? (meta as Meta[]) : [];
@@ -202,17 +198,11 @@ function wrap(
 ): PartSession {
 	const runMain = withHalf(ort, main);
 	const runSteps = steps ? withHalf(ort, steps) : null;
-	// Test hook (real-GPU verification of SG-003): `JASPER_SPEECH_GPU_FAULT_AFTER=<n>` makes the n-th run of a GPU
-	// session throw like a lost device. Unset in normal use.
-	const faultAfter = Number(process.env.JASPER_SPEECH_GPU_FAULT_AFTER ?? 0);
-	let runs = 0;
 	return {
 		provider,
 		fallback,
 		deviceResident,
 		run(feeds, fetches) {
-			if (provider !== 'cpu' && faultAfter > 0 && ++runs >= faultAfter)
-				return Promise.reject(new Error(`injected GPU fault (${provider}, run ${runs})`));
 			// cached decoder steps (use_cache_branch = true) go to the second session in device-resident mode
 			const flag = feeds.use_cache_branch?.data as ArrayLike<unknown> | undefined;
 			const cachedStep = !!runSteps && !!flag && Number(flag[0]) === 1;

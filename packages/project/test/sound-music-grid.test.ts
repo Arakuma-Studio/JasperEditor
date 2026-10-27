@@ -13,7 +13,6 @@ import {
 	STOP_BEFORE_DEFAULT,
 	sequenceStopsOnBar,
 	stopBeforeFor,
-	stopBeforeOnBar,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
@@ -67,22 +66,6 @@ describe('the music grid and the stop on the bar line', () => {
 		// only media 1 … 11 s plays (sequence 2 … 12 s)
 		expect(Math.min(...g.beats) / S).toBeGreaterThanOrEqual(2);
 		expect(Math.max(...g.beats) / S).toBeLessThan(12);
-	});
-
-	it('a stop ends on the last downbeat 0.1–0.5 s before the hit, else a beat, else none', () => {
-		const { h, clipId } = withMusic();
-		const seq = h.seq as Sequence;
-		const g = grid(h, clipId);
-		// hit at 3.0 s (frame 90): the downbeat at 2.6 s is 0.4 s before it
-		expect(stopBeforeOnBar(seq, 90, 0.5, g)).toMatchObject({ on: 'downbeat' });
-		expect(stopBeforeOnBar(seq, 90, 0.5, g)!.seconds).toBeCloseTo(0.4, 9);
-		// a 0.25 s window (2.75 … 2.9 s): no downbeat and no beat in it (beats at 2.6 and 3.1 s) → none
-		expect(stopBeforeOnBar(seq, 90, 0.25, g)).toBeNull();
-		// hit at 3.4 s (frame 102): the beat at 3.1 s
-		expect(stopBeforeOnBar(seq, 102, 0.5, g)).toMatchObject({ on: 'beat' });
-		expect(stopBeforeOnBar(seq, 102, 0.5, g)!.seconds).toBeCloseTo(0.3, 9);
-		// no music under the window: none
-		expect(stopBeforeOnBar(seq, 90, 0.5, [])).toBeNull();
 	});
 
 	it('stopBeforeFor: the default stop on the bar line with the style on, plain with it off or without beats', () => {

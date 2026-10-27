@@ -9,7 +9,6 @@ import {
 	HERO_SHADOW_DB,
 	MAX_MASKING_ITERATIONS,
 	QUIET_BED_OFFSET_LU,
-	SOLVER_CONSTRAINTS,
 	SOLVER_GAIN_MAX_DB,
 	SOLVER_GAIN_MIN_DB,
 	type SolverEvent,
@@ -430,17 +429,6 @@ describe('order and post-verification (an earlier constraint is never silently b
 		expect(one(h, 'hot').limitedBy).toEqual(['consistency', 'headroom', 'conflict:consistency/headroom']);
 		expect(one(h, 'hot').truePeakDb).toBeCloseTo(1.5, 9);
 		expect(h.warnings.some((w) => w.code === 'W_UNRESOLVED')).toBe(false);
-	});
-
-	it('the constraints are applied in the spec order', () => {
-		expect(SOLVER_CONSTRAINTS).toEqual([
-			'clamp',
-			'bed-cap',
-			'hero-shadow',
-			'consistency',
-			'dialogue',
-			'headroom',
-		]);
 	});
 });
 

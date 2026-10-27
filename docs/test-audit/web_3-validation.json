@@ -1,0 +1,116 @@
+{
+  "scope": {
+    "filesAudited": 63,
+    "namedDeclarations": 470,
+    "parameterizedDeclarations": "Count each source template once, not each runtime row.",
+    "dispositions": {
+      "KEEP": 453,
+      "REWRITE": 6,
+      "OPTIMIZE": 10,
+      "DELETE": 1
+    },
+    "netTestLoc": -11,
+    "productionSeamsRemoved": [
+      "sequenceToLayer export from apps/web/src/template-edit/hit.ts; only its same-file production caller remains."
+    ],
+    "infrastructureRemoved": [
+      "Unused template-canvas-edit registration inventory imports; no fixture, dependency or snapshot became orphaned."
+    ]
+  },
+  "environment": {
+    "node": "20.19.0",
+    "pnpm": "10.34.5",
+    "runner": "Vitest 4.1.11, maxWorkers=2, happy-dom",
+    "host": "Linux shared host, 8 logical CPUs, 15 GiB RAM",
+    "comparisonLimit": "Shared host load and import/cache effects were not controlled; observed focused wall-clock difference is not an isolated causal speedup or CI measurement."
+  },
+  "timing": {
+    "beforeWallSeconds": 34.07,
+    "afterWallSeconds": 29.9,
+    "observedWallDifferenceSeconds": 4.17,
+    "observedWallDifferencePercent": 12.24,
+    "beforeTestFileMilliseconds": {
+      "sound-insert.test.ts": 108,
+      "stroke-animation-dock.test.ts": 14,
+      "stroke-animation.test.tsx": 1115,
+      "style-recipes.test.tsx": 2537,
+      "template-canvas-edit.test.tsx": 746,
+      "template-media.test.tsx": 387,
+      "text-styles.test.tsx": 593,
+      "tracking-actions.test.tsx": 286,
+      "tracking-live.test.tsx": 359,
+      "transcript-tab-editing.test.tsx": 594,
+      "transitions-polish.test.tsx": 456
+    },
+    "afterTestFileMilliseconds": {
+      "sound-insert.test.ts": 118,
+      "stroke-animation-dock.test.ts": 10,
+      "stroke-animation.test.tsx": 895,
+      "style-recipes.test.tsx": 640,
+      "template-canvas-edit.test.tsx": 714,
+      "template-media.test.tsx": 450,
+      "text-styles.test.tsx": 586,
+      "tracking-actions.test.tsx": 151,
+      "tracking-live.test.tsx": 173,
+      "transcript-tab-editing.test.tsx": 625,
+      "transitions-polish.test.tsx": 258
+    },
+    "styleDiagnosticSecondPassingRunTestMilliseconds": 495,
+    "discardedFailedAttemptWallSeconds": 125.6,
+    "discardedAttemptReason": "Global fake timers plus RTL findBy asyncWrapper deadlocked on setTimeout(0). Replaced static dialog queries with getBy and kept explicit act/virtual clock flushes; subsequent diagnostic and affected-file run pass."
+  },
+  "validation": [
+    {
+      "command": "pnpm install --frozen-lockfile --offline --ignore-scripts",
+      "result": "PASS"
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/style-recipes.test.tsx apps/web/test/template-canvas-edit.test.tsx apps/web/test/template-media.test.tsx apps/web/test/stroke-animation.test.tsx apps/web/test/stroke-animation-dock.test.ts apps/web/test/text-styles.test.tsx apps/web/test/tracking-actions.test.tsx apps/web/test/tracking-live.test.tsx apps/web/test/transcript-tab-editing.test.tsx apps/web/test/transitions-polish.test.tsx apps/web/test/sound-insert.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/web_3-before.json",
+      "result": "PASS baseline 91/91"
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/style-recipes.test.tsx --maxWorkers=2 --testTimeout=3000",
+      "result": "PASS 8/8; short development diagnostic only, no runner config timeout changed"
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/style-recipes.test.tsx apps/web/test/template-canvas-edit.test.tsx apps/web/test/template-media.test.tsx apps/web/test/stroke-animation.test.tsx apps/web/test/stroke-animation-dock.test.ts apps/web/test/text-styles.test.tsx apps/web/test/tracking-actions.test.tsx apps/web/test/tracking-live.test.tsx apps/web/test/transcript-tab-editing.test.tsx apps/web/test/transitions-polish.test.tsx apps/web/test/sound-insert.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/web_3-after-fixed.json",
+      "result": "PASS final 90/90"
+    },
+    {
+      "command": "pnpm --filter @jasper/web typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "pnpm exec biome check apps/web/src/template-edit/hit.ts apps/web/test/style-recipes.test.tsx apps/web/test/template-canvas-edit.test.tsx apps/web/test/template-media.test.tsx apps/web/test/stroke-animation.test.tsx apps/web/test/text-styles.test.tsx apps/web/test/tracking-actions.test.tsx apps/web/test/tracking-live.test.tsx apps/web/test/transcript-tab-editing.test.tsx apps/web/test/transitions-polish.test.tsx apps/web/test/sound-insert.test.ts docs/test-audit/web_3.json docs/test-audit/web_3-validation.json",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --cached --check",
+      "result": "PASS"
+    }
+  ],
+  "mutationEvidence": [
+    {
+      "mutation": "Set inserted library audio Essential Sound type to music instead of sfx",
+      "newTest": "FAIL as intended: expected music to equal sfx",
+      "originalTest": "PASS: old JSON/truthiness checks miss bug",
+      "command": "pnpm exec vitest run apps/web/test/sound-insert.test.ts --maxWorkers=2 -t \"adds bin, media\""
+    },
+    {
+      "mutation": "Discard valid durationFrames while parsing mixed-validity stored preferences",
+      "newTest": "FAIL as intended: literal duration15 differs from default10",
+      "command": "pnpm exec vitest run apps/web/test/stroke-animation.test.tsx --maxWorkers=2 -t \"keeps valid fields and replaces only the invalid ones\""
+    },
+    {
+      "mutation": "Introduce paired 10px forward/inverse transform offset that still round-trips",
+      "newTest": "FAIL as intended: local y130 differs from independently expected150",
+      "originalTest": "PASS: production-generated point cancels inverse error",
+      "command": "pnpm exec vitest run apps/web/test/template-canvas-edit.test.tsx --maxWorkers=2 -t \"maps through the layer Motion\""
+    }
+  ],
+  "limits": [
+    "Complete suite, E2E, full lint and build belong to final integrated gate; this shard ran affected files and web typecheck.",
+    "Most assigned cases were already pruned in an earlier cleanup; no deletion quota used.",
+    "E2E template-canvas-edit retains real Program double-click registration workflow; no E2E execution claimed here."
+  ]
+}

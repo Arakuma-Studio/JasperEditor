@@ -10,6 +10,7 @@
 //   "Phase 6 → WP-E1"); `ending: 'cut'` leaves it cut at a loud frame
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { type SoundCheckResult, SoundCheckResultSchema } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
 import type { LibraryProvenance, ProjectDocument } from '@jasper/project';
 import { DocBuilder, register, type TestApp } from './helpers.ts';
@@ -210,4 +211,62 @@ export function buildCheckDoc(m: FixtureMedia, o: FixtureOptions = {}): CheckFix
 		},
 		doc: () => b.doc,
 	};
+}
+
+/** A fake but schema-valid result (the store does not care what the report says). */
+export function keptReportFixture(projectId: string, sequenceId: string): SoundCheckResult {
+	return SoundCheckResultSchema.parse({
+		projectId,
+		sequenceId,
+		stored: false,
+		revision: 1,
+		report: {
+			version: 1,
+			projectId,
+			sequenceId,
+			revision: 1,
+			mixHash: 'm',
+			inputsHash: 'i',
+			preset: { id: 'web', label: 'Web', integratedLufs: -14, truePeakDb: -1, source: 'x' },
+			range: { start: 0, end: 30 },
+			rangeTimecode: { start: '00:00:00:00', end: '00:00:01:00' },
+			wholeSequence: true,
+			fps: { num: 30, den: 1 },
+			durationSec: 1,
+			verdict: 'pass',
+			counts: {},
+			issues: [],
+			events: [],
+			listen: [],
+			loudness: {
+				integratedLufs: -14,
+				truePeakDb: -1,
+				samplePeakDb: -1,
+				lra: 1,
+				maxMomentaryLufs: -10,
+				maxShortTermLufs: -12,
+				measurable: true,
+				normalization: { enabled: true, targetLufs: -14, truePeakDb: -1, gainDb: 0 },
+				limiterMaxGrDb: 0,
+				before: { integratedLufs: -14, truePeakDb: -1, samplePeakDb: -1 },
+			},
+			curves: {
+				hopSec: 0.01,
+				startSec: 0,
+				points: 0,
+				window: 'momentary',
+				mix: [],
+				bed: [],
+				sfx: [],
+				music: [],
+				dialogue: [],
+				ambience: [],
+				limiterGrDb: [],
+			},
+			speech: { seconds: 0, segments: [] },
+			stems: {},
+			warnings: [],
+			timings: {},
+		},
+	});
 }

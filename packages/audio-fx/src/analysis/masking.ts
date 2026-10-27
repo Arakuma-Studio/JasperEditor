@@ -105,7 +105,7 @@ export const MASKING_TOLERANCE_DB = 1e-4;
 const OVERLAP_PASSES = 4;
 
 /** The ordered constraints. */
-export const SOLVER_CONSTRAINTS = /* @__PURE__ */ Object.freeze([
+const SOLVER_CONSTRAINTS = /* @__PURE__ */ Object.freeze([
 	'clamp',
 	'bed-cap',
 	'hero-shadow',

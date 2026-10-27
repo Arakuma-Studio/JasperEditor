@@ -107,6 +107,52 @@ describe('tool catalogue conventions', () => {
 		expect(byName.get('set_playhead')).toMatchObject({ readOnlyHint: false, idempotentHint: true });
 		expect(byName.get('install_processing_model')).toMatchObject({ openWorldHint: true });
 		expect(byName.get('test_remote_executor')).toMatchObject({ readOnlyHint: true, openWorldHint: true });
+		for (const name of [
+			'decorate_cuts',
+			'add_punch_ins',
+			'add_ken_burns',
+			'place_reactions',
+			'slide_overlays',
+			'lay_music_bed',
+			'add_stingers',
+			'duplicate_motion_graphic',
+			'import_motion_graphics_csv',
+			'save_style_recipe',
+			'apply_style',
+			'fix_transcript',
+		])
+			expect(byName.get(name), name).toMatchObject({
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: false,
+				openWorldHint: false,
+			});
+		for (const name of [
+			'analyze_voice',
+			'plan_cleanup',
+			'style_check',
+			'get_voice_analysis',
+			'list_sound_packs',
+		])
+			expect(byName.get(name), name).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+		for (const name of ['set_cleanup_settings', 'attach_script', 'save_glossary_entry'])
+			expect(byName.get(name), name).toMatchObject({
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: false,
+			});
+		expect(byName.get('apply_cleanup')).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+		expect(byName.get('remove_glossary_entry')).toMatchObject({
+			destructiveHint: true,
+			idempotentHint: true,
+		});
+		expect(byName.get('install_sound_pack')).toMatchObject({
+			readOnlyHint: false,
+			destructiveHint: false,
+			openWorldHint: true,
+		});
+		expect(byName.get('remove_sound_pack')).toMatchObject({ destructiveHint: true, idempotentHint: true });
 	});
 
 	it('every fixed-shape object of every input schema forbids additional properties', () => {

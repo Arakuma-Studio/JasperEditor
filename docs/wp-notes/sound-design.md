@@ -756,8 +756,11 @@ transient), boom (40–56 Hz drop + low rumble), riser (swept bandpass noise + r
 across), glitch (square, sample-and-hold and bit-crushed grains), ui (two blips), click, key (click + body + thock),
 tick, tap (three modes), pop (upward glide), thump (sub drop + knock), paper (Poisson crackles over rustle), chime
 (bell partials 1, 2, 2.76, 4.07, 5.4), shimmer (12–20 drifting, trembling high partials), zap (band-limited saw
-sweep). Bit-exactness relies on V8's fdlibm `Math.sin/exp/pow/log`, identical on every platform for a given Node; the
-pinned hashes tell when that (or a recipe) changes: then bump `SYNTH_VERSION` and repin.
+sweep). Intermediate Float32 samples use V8's `Math.sin/exp/pow/log` and are deterministic for a given runtime.
+Compatibility hashes pin the library's encoded 16-bit stereo WAVs (`apps/engine/src/sounds/synth.ts`), so a V8 change
+that leaves every persisted sample unchanged does not invalidate the cache. Changes to those WAV bytes require a
+`SYNTH_VERSION` bump and new pins. The audit evidence in `docs/test-audit/audio-results.json` compares every indexed
+variant on Node 20 and Node 24.
 
 #### Verified (measured, this branch, shared host, load 17–48 on 16 cores)
 
@@ -1105,10 +1108,13 @@ Tests: `apps/engine/test/sounds-review.test.ts`, `sounds-search.test.ts`, `packa
     returned `[Function Object]` before (measured in the scratch comparison: a `types: ['constructor']` filter matched
     every sound), now `[]`. `durationFit` guards its type with `isSoundTypeId`.
 
-**Benchmark assertion**: min of 7 runs after a warm-up (up to 3 batches when a load spike hits) < 50 ms; when the
-host's 1-minute load is above 2 per core, the budget grows to 50 ms × load / (2 × cores) (wall time then measures the
-wait for a core: at load 135–144 on this host the same code measured 20–59 ms minimum). Decision recorded here
-because the gate runs on a shared machine.
+**Benchmark assertion**: minimum CPU time of 7 new-query runs after a warm-up < 50 ms. Linux measures the executing
+JavaScript thread through `/proc/thread-self/schedstat`, excluding run-queue waits and other V8 threads: the
+[kernel scheduler documentation](https://www.kernel.org/doc/html/latest/scheduler/sched-stats.html) defines its
+first field as CPU runtime in nanoseconds, and [Linux man-pages](https://man7.org/linux/man-pages/man5/proc_thread-self.5.html)
+defines `thread-self` as the accessing thread. Thread workers refuse an unavailable clock; forked tests retain
+the process-CPU fallback on other hosts. The threshold and seven runs are unchanged; there are no load-scaled
+wall-clock retries. [Runner measurements and validation](../test-audit/runner.md).
 
 **Measured search speed** (16-core shared host; `pnpm vitest run apps/engine/test/sounds-search.test.ts
 --reporter=verbose`, load average ≈ 28–43 during the runs; a synthetic library of 5 000 entries with realistic titles,

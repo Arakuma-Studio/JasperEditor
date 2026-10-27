@@ -149,7 +149,7 @@ function distance(a: string, b: string): number {
 }
 
 /** The accepted key closest to `key`, when it is plausibly a typo. */
-export function suggestKey(key: string, accepted: readonly string[]): string | undefined {
+function suggestKey(key: string, accepted: readonly string[]): string | undefined {
 	let best: { k: string; d: number } | undefined;
 	for (const k of accepted) {
 		const dist = distance(key, k);

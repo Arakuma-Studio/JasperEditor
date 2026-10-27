@@ -1,10 +1,8 @@
 // Sound ranking at library scale and against hostile names (spec 12 §2.1; wp-note "WP1.2 engine library" ▸ "Review
 // fixes", findings 10 and 11): prototype keys name no type, query words are deduplicated and capped, `soundFilterOf`
-// returns literal expected pages/filter results, and ranking 5 000 sounds takes < 50 ms of main-thread CPU time.
-import { readFileSync } from 'node:fs';
+// returns literal expected pages/filter results, and ranking 5 000 sounds takes < 50 ms of executing-thread CPU time.
 import { loadavg } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { isMainThread } from 'node:worker_threads';
 import { describe, expect, it } from 'vitest';
 import {
 	inferTypesFromName,
@@ -19,6 +17,7 @@ import {
 	synonymType,
 	typesInTokens,
 } from '../src/index.ts';
+import { threadCpuMs } from './cpu-time.ts';
 
 const PROTO_KEYS = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'prototype'];
 
@@ -179,26 +178,8 @@ function library(n: number): RankableSound[] {
  */
 const BUDGET_CPU_MS = 50;
 
-/**
- * CPU time (ms) of this thread on the CPU, ns-exact: the first field of Linux's `/proc/self/task/<tid>/schedstat`.
- * Only the main thread is counted — `process.cpuUsage` adds V8's concurrent GC and compiler threads, which made one
- * search "cost" 26 ms of CPU in 12 ms of wall time at load 53. Vitest runs each test file in its own forked process
- * (the default `forks` pool), whose main thread is this one. Elsewhere (no procfs) `process.cpuUsage` stands in.
- */
-function threadCpuMs(): number {
-	try {
-		const ns = Number(readFileSync(`/proc/self/task/${process.pid}/schedstat`, 'utf8').split(' ')[0]);
-		if (Number.isFinite(ns)) return ns / 1e6;
-	} catch {
-		// no procfs: fall through
-	}
-	const c = process.cpuUsage();
-	return (c.user + c.system) / 1000;
-}
-
-/** Main-thread CPU time and wall time (ms) of `fn`. */
+/** Current-thread CPU time and wall time (ms) of `fn`. */
 function cpuTimed(fn: () => void): { cpu: number; wall: number } {
-	if (!isMainThread) throw new Error('the CPU-time budget needs the forks pool (one process per test file)');
 	const c0 = threadCpuMs();
 	const t0 = performance.now();
 	fn();

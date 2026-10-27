@@ -5,7 +5,7 @@
 // is visible where the picked frame index reaches the first frame of the new shot. Scene detection reports frame
 // timestamps as ffprobe prints them (rounded to 1 µs), so the exact mapping must tolerate that rounding both ways —
 // 1 flick (the old command rule) is too strict when a timestamp rounds up, 1 ms (the old cue rule) too loose in slow
-// motion. Rates: 23.976, 29.97 drop-frame and non-drop-frame, 30; speeds 100 %, 50 %, 150 %, 37 %, 3 %, reverse and
+// motion. Rates: 23.976, 29.97, 30; speeds 100 %, 50 %, 150 %, 37 %, 3 %, reverse and
 // a 40 % time remap.
 import { describe, expect, it } from 'vitest';
 import {
@@ -35,10 +35,8 @@ function probedTimes(rate: Rational, seconds: number): number[] {
 
 type Speed = { rate: number; reverse?: boolean; remap?: boolean };
 
-function setup(seqPreset: string, mediaRate: Rational, speed: Speed, dropFrame?: boolean) {
+function setup(seqPreset: string, mediaRate: Rational, speed: Speed) {
 	const h = new Harness({ preset: seqPreset });
-	if (dropFrame !== undefined)
-		h.ok([{ type: 'sequence.updateSettings', sequenceId: h.seqId, settings: { dropFrame } }]);
 	const mediaId = h.registerVideo({ seconds: 40, fps: mediaRate, audio: false });
 	const r = h.ok([
 		{
@@ -81,11 +79,11 @@ function renderedEdits(clip: VideoClip, rate: Rational, times: number[], cutFram
 	return out;
 }
 
-const SEQUENCES: [string, string, boolean | undefined][] = [
-	['23.976', 'hd-1080p-23.976', undefined],
-	['29.97 DF', 'hd-1080p-29.97', true],
-	['29.97 NDF', 'hd-1080p-29.97', false],
-	['30', 'hd-1080p-30', undefined],
+// TIME-005: drop-frame only affects timecode input/display, not these integer-frame/flick inputs.
+const SEQUENCES: [string, string][] = [
+	['23.976', 'hd-1080p-23.976'],
+	['29.97', 'hd-1080p-29.97'],
+	['30', 'hd-1080p-30'],
 ];
 const SPEEDS: [string, Speed][] = [
 	['100 %', { rate: 1 }],
@@ -99,11 +97,10 @@ const SPEEDS: [string, Speed][] = [
 
 describe('shot changes land on the frame the renderers show them', () => {
 	for (const [mediaLabel, mediaRate] of Object.entries(MEDIA_RATES))
-		for (const [seqLabel, preset, df] of SEQUENCES)
+		for (const [seqLabel, preset] of SEQUENCES)
 			for (const [speedLabel, speed] of SPEEDS)
 				it(`${mediaLabel} media in a ${seqLabel} sequence at ${speedLabel}`, () => {
-					const { h, v, mediaId } = setup(preset, mediaRate, speed, df);
-					expect(h.seq.settings.dropFrame).toBe(df ?? h.seq.settings.dropFrame);
+					const { h, v, mediaId } = setup(preset, mediaRate, speed);
 					const times = probedTimes(mediaRate, 40);
 					// a change at every 7th media frame from frame 13 (both rounding directions of the µs timestamps)
 					const cutFrames = Array.from({ length: 30 }, (_, i) => 13 + 7 * i).filter((k) => k < times.length);

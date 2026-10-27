@@ -3,7 +3,7 @@
 // random bytes, every single-byte change, truncations and extensions never throw and are refused or consistent),
 // CRC-32 against zlib, and the summary / page helpers.
 import { crc32 } from 'node:zlib';
-import { VOICE_HOP, voiceFeatures } from '@jasper/audio-dsp';
+import { VOICE_HOP } from '@jasper/audio-dsp';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -12,9 +12,7 @@ import {
 	decodeVoiceAnalysis,
 	encodeVoiceAnalysis,
 	summarizeVoiceAnalysis,
-	VOICE_ANALYSIS_FORMAT,
 	VOICE_ANALYSIS_VERSION,
-	VOICE_WINDOW_FRAMES,
 	type VoiceAnalysis,
 	voiceAnalysisFileBytes,
 	voiceAnalysisPage,
@@ -26,40 +24,37 @@ import {
 const FP = `q1:${'ab'.repeat(32)}`;
 const SR = 16_000;
 
-/** 2.5 min of a −70 dBFS floor with a 150 Hz harmonic tone (−20 dBFS) for 1 s every 5 s. */
-function signal(seconds = 150): Float32Array {
-	const n = seconds * SR;
-	const x = new Float32Array(n);
-	let s = 12345;
-	for (let i = 0; i < n; i++) {
-		s = (s * 1103515245 + 12345) >>> 0;
-		x[i] = ((s / 2 ** 32) * 2 - 1) * 10 ** (-70 / 20) * Math.sqrt(3);
-		const t = i / SR;
-		if (t % 5 < 1)
-			for (let h = 1; h < 10; h++) x[i]! += (0.1 / h) * Math.sin((2 * Math.PI * 150 * h * i) / SR);
-	}
-	return x;
+/** Documented feature-plane boundary: −70 dBFS floor, −20 dBFS voiced speech for 1 s every 5 s.
+ * 150 s keeps the full, second and partial 60 s windows. FFT extraction has its own independent DSP tests.
+ */
+function analysisOf(seconds = 150, silent = false): VoiceAnalysis {
+	const frames = seconds * 100;
+	const level = new Uint8Array(frames).fill(silent ? 0 : 100);
+	const voicing = new Uint8Array(frames);
+	const flatness = new Uint8Array(frames);
+	if (!silent)
+		for (let start = 0; start < frames; start += 500) {
+			level.fill(200, start, Math.min(start + 100, frames));
+			voicing.fill(255, start, Math.min(start + 100, frames));
+		}
+	return buildVoiceAnalysis({
+		fingerprint: FP,
+		stream: 1,
+		samples: seconds * SR,
+		planes: { level, voicing, flatness },
+	});
 }
 
-function analysisOf(x: Float32Array): VoiceAnalysis {
-	return buildVoiceAnalysis({ fingerprint: FP, stream: 1, samples: x.length, planes: voiceFeatures(x) });
-}
-
-const A = analysisOf(signal());
+const A = analysisOf();
 const FILE = encodeVoiceAnalysis(A);
 
 describe('buildVoiceAnalysis', () => {
 	it('classifies, counts and splits the levels into 60 s windows', () => {
-		expect(A.format).toBe(VOICE_ANALYSIS_FORMAT);
-		expect(A.analysisVersion).toBe(VOICE_ANALYSIS_VERSION);
 		expect(A.frameCount).toBe(15_000);
-		expect(A.counts.silence + A.counts.breath + A.counts.speech).toBe(A.frameCount);
-		// 30 tones of ≈ 1 s
-		expect(A.counts.speech).toBeGreaterThan(2900);
-		expect(A.counts.speech).toBeLessThan(3200);
+		expect(A.counts).toEqual({ silence: 12_000, breath: 0, speech: 3000 });
 		expect(voiceRuns(A).filter((r) => r.cls === 'speech')).toHaveLength(30);
 		expect(A.windows.map((w) => [w.startFrame, w.frameCount])).toEqual([
-			[0, VOICE_WINDOW_FRAMES],
+			[0, 6000],
 			[6000, 6000],
 			[12_000, 3000],
 		]);
@@ -67,10 +62,7 @@ describe('buildVoiceAnalysis', () => {
 			expect(w.floorDb!).toBeLessThan(-65);
 			expect(w.speechDb!).toBeGreaterThan(-35);
 		}
-		expect(A.levels.speechThresholdDb).toBeCloseTo(
-			Math.max(A.levels.floorDb! + 0.3 * (A.levels.speechDb! - A.levels.floorDb!), A.levels.floorDb! + 6),
-			10,
-		);
+		expect(A.levels).toMatchObject({ floorDb: -70, speechDb: -20, speechThresholdDb: -55 });
 	});
 
 	it('handles empty and silent streams', () => {
@@ -85,7 +77,7 @@ describe('buildVoiceAnalysis', () => {
 		expect(empty.levels.floorDb).toBeNull();
 		const back = decodeVoiceAnalysis(encodeVoiceAnalysis(empty));
 		expect(back.ok).toBe(true);
-		const silent = analysisOf(new Float32Array(SR * 2));
+		const silent = analysisOf(2, true);
 		expect(silent.levels).toEqual({
 			floorDb: null,
 			speechDb: null,
@@ -111,6 +103,7 @@ describe('buildVoiceAnalysis', () => {
 
 describe('the binary file', () => {
 	it('round-trips exactly and is ≈ 4 bytes per frame', () => {
+		expect(Array.from(FILE.subarray(0, 4))).toEqual([0x4a, 0x56, 0x41, 0x31]);
 		const r = decodeVoiceAnalysis(FILE, {
 			fingerprint: FP,
 			stream: 1,
@@ -118,8 +111,12 @@ describe('the binary file', () => {
 		});
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
-		expect({ ...r.analysis }).toEqual({ ...A });
-		expect(encodeVoiceAnalysis(r.analysis)).toEqual(FILE);
+		// Compare the full header structurally and the byte planes natively, without per-byte matcher traversal.
+		const planeMask = { level: null, voicing: null, flatness: null, classes: null };
+		expect({ ...r.analysis, ...planeMask }).toEqual({ ...A, ...planeMask });
+		for (const key of ['level', 'voicing', 'flatness', 'classes'] as const)
+			expect(Buffer.compare(r.analysis[key], A[key]), key).toBe(0);
+		expect(Buffer.compare(encodeVoiceAnalysis(r.analysis), FILE)).toBe(0);
 		const headerBytes = new DataView(FILE.buffer, FILE.byteOffset).getUint32(4, true);
 		expect(FILE.length).toBe(voiceAnalysisFileBytes(A.frameCount, headerBytes));
 		expect(FILE.length - 4 * A.frameCount).toBeLessThan(1000);
@@ -154,7 +151,7 @@ describe('the binary file', () => {
 });
 
 describe('decodeVoiceAnalysis against hostile input (fuzz)', () => {
-	const small = encodeVoiceAnalysis(analysisOf(signal(5)));
+	const small = encodeVoiceAnalysis(analysisOf(5));
 
 	it('never throws on random bytes', () => {
 		fc.assert(

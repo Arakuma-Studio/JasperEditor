@@ -2,7 +2,7 @@ import { buildRenderSnapshot, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
 import type { ProgramOverlayHostProps } from '../src/extensions/index.ts';
 import { TransitionPointOverlay } from '../src/fx/TransitionPointOverlay.tsx';
@@ -12,7 +12,10 @@ import { makeSession, videoAsset } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
 beforeEach(() => globalThis.localStorage?.clear());
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 /** Two clips cut at 120 with a centred 20-frame transition (span 110…129). */
 function scene(effectId = 'jasper.iris-round') {
@@ -107,6 +110,7 @@ describe('on-canvas point handles of the selected transition', () => {
 	});
 
 	it('draws a crosshair for Center and drags it in one gesture', async () => {
+		vi.useFakeTimers();
 		const { session, id, seq } = scene('jasper.iris-round');
 		const view = { scale: 0.5, x: 10, y: 20 };
 		render(
@@ -122,7 +126,7 @@ describe('on-canvas point handles of the selected transition', () => {
 		});
 		await act(async () => {
 			window.dispatchEvent(new MouseEvent('pointermove', { clientX: 590, clientY: 290 }));
-			await new Promise((r) => setTimeout(r, 40));
+			await vi.advanceTimersByTimeAsync(40);
 			window.dispatchEvent(new MouseEvent('pointerup', { clientX: 590, clientY: 290 }));
 		});
 		// +100 screen px at scale 0.5 = +200 sequence px → x = (960 + 200) / 1920.

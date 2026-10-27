@@ -146,7 +146,6 @@ test('social comments: Add Another gives a new identity and stats, keeps look an
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page)).length).toBe(2);
 	await query(page, 'playhead.set', { frame: second.start + 60 });
-	await page.waitForTimeout(1500);
 	await page
 		.getByTestId('program-player-wrapper')
 		.screenshot({ path: join(OUT, 'social-add-another-program.png') });

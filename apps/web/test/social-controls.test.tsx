@@ -107,30 +107,6 @@ afterEach(() => {
 const rowOf = (view: ReturnType<typeof render>, param: string) =>
 	view.container.querySelector(`[data-row="params.${param}"]`) as HTMLElement | null;
 
-describe('registration and layout', () => {
-	it('renders the four controls on their rows, hides the merged time unit and adds the stats wand', async () => {
-		const { session } = await openSession();
-		const view = properties(session);
-		expect(rowOf(view, 'text')).not.toBeNull();
-		expect(view.container.querySelector('[data-row-block="params.text"] [data-social-text]')).not.toBeNull();
-		expect(
-			view.container.querySelector('[data-row-block="params.avatar"] [data-social-avatar]'),
-		).not.toBeNull();
-		expect(rowOf(view, 'likes')!.querySelector('[data-social-count="likes"]')).not.toBeNull();
-		expect(rowOf(view, 'replies')!.querySelector('[data-social-count="replies"]')).not.toBeNull();
-		expect(rowOf(view, 'timeValue')!.querySelector('[data-social-time]')).not.toBeNull();
-		// timeUnit is edited by the time control: no row of its own
-		expect(rowOf(view, 'timeUnit')).toBeNull();
-		// X-only counts are hidden for TikTok
-		expect(rowOf(view, 'views')).toBeNull();
-		const stats = view.container.querySelector('[data-section$=".stats"]') as HTMLElement;
-		expect(within(stats).getAllByTestId('social-randomize-stats')).toHaveLength(1);
-		// only the stats group gets the wand
-		expect(view.getAllByTestId('social-randomize-stats')).toHaveLength(1);
-		await session.close();
-	});
-});
-
 describe('without the controls registered', () => {
 	it('falls back to default editors, and an object param shows its value read-only (never a blank row)', async () => {
 		off?.();

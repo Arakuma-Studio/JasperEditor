@@ -38,7 +38,7 @@ vi.mock('@jasper/mg-templates', async (importOriginal) => {
 });
 
 const { mgRegistry } = await import('@jasper/mg-templates');
-const { pickTemplateParam, sequenceToLayer, layerToSequence } = await import('../src/template-edit/hit.ts');
+const { pickTemplateParam } = await import('../src/template-edit/hit.ts');
 const { measureTemplateLayer, templateLayerRoot } = await import('../src/template-edit/measure.ts');
 const { templateTextDoubleClick, isAnimeTemplateLayer } = await import('../src/template-edit/register.ts');
 const { TemplateTextEditorHost } = await import('../src/template-edit/TemplateTextEditor.tsx');
@@ -47,7 +47,6 @@ const caretModule = await import('../src/template-edit/caret.ts');
 const { wordAt } = caretModule;
 const { resolveProgramScene } = await import('../src/three-d/scene.ts');
 const { monitorStores } = await import('../src/panels/program/monitor-store.ts');
-const { layerDoubleClickHandlers, programOverlays } = await import('../src/extensions/index.ts');
 
 type LayerMeasurement = import('../src/template-edit/measure.ts').LayerMeasurement;
 
@@ -254,15 +253,6 @@ afterEach(() => {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-describe('registration', () => {
-	it('adds the overlay and a double-click handler that runs before the composition editor and on any point', () => {
-		expect(programOverlays.get('template-text-editor')).toBeTruthy();
-		const h = layerDoubleClickHandlers.get('template-text')!;
-		expect(h.anyPoint).toBe(true);
-		expect(h.order).toBeLessThan(100);
-	});
-});
-
 describe('pickTemplateParam (hit-testing)', () => {
 	const box = (param: string, x: number, y: number, w: number, h: number) => ({
 		param,
@@ -372,22 +362,21 @@ describe('pickTemplateParam (hit-testing)', () => {
 			{ type: 'param.set', target: ['clip', '$t', 'transform', 'rotation'], value: 90 },
 			{ type: 'param.set', target: ['clip', '$t', 'transform', 'scale'], value: 50 },
 		]);
-		const [l] = scene(session);
 		const m: LayerMeasurement = { params: [box('text', 100, 100, 400, 100)], opaque: [] };
-		const inside = layerToSequence(l!, [300, 150]);
-		const back = sequenceToLayer(l!, inside)!;
-		expect(back[0]).toBeCloseTo(300);
-		expect(back[1]).toBeCloseTo(150);
 		const opts = {
 			viewScale: 1,
 			selected: new Set<string>(),
 			isTemplate: isAnimeTemplateLayer,
 			measure: () => m,
 		};
-		expect(pickTemplateParam(scene(session), inside, opts)!.box.param).toBe('text');
+		// Rotation 90° and 50% around [960, 540]: local [300, 150] lands at [1155, 210].
+		const hit = pickTemplateParam(scene(session), [1155, 210], opts)!;
+		expect(hit.box.param).toBe('text');
+		expect(hit.local[0]).toBeCloseTo(300);
+		expect(hit.local[1]).toBeCloseTo(150);
 		// 2 screen px outside the box edge (4 layer px at 50 %): still a hit; 40 screen px: not.
-		expect(pickTemplateParam(scene(session), layerToSequence(l!, [300, 96]), opts)).not.toBeNull();
-		expect(pickTemplateParam(scene(session), layerToSequence(l!, [300, 20]), opts)).toBeNull();
+		expect(pickTemplateParam(scene(session), [1182, 210], opts)).not.toBeNull();
+		expect(pickTemplateParam(scene(session), [1220, 210], opts)).toBeNull();
 	});
 
 	it('the innermost of nested editable boxes wins', () => {

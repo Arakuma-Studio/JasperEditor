@@ -6,7 +6,6 @@ import {
 	SOUND_BED_TYPES,
 	SOUND_EFFECT_TYPES,
 	SOUND_TYPE_IDS,
-	SOUND_TYPES,
 	TYPE_SYNONYMS,
 	tokenizeSoundText,
 } from '../src/index.ts';
@@ -36,15 +35,6 @@ describe('sound taxonomy (spec 12 §2.1)', () => {
 		]);
 		expect(SOUND_BED_TYPES).toEqual(['ambience', 'roomtone']);
 		expect(SOUND_TYPE_IDS).toHaveLength(21);
-	});
-
-	it('aligns risers and reverses by their end, UI by its start, whooshes and hits by the peak', () => {
-		expect(SOUND_TYPES.riser.defaultAlign).toBe('end');
-		expect(SOUND_TYPES.reverse.defaultAlign).toBe('end');
-		expect(SOUND_TYPES.ui.defaultAlign).toBe('start');
-		expect(SOUND_TYPES.whoosh.defaultAlign).toBe('peak');
-		const others = SOUND_EFFECT_TYPES.filter((t) => !['riser', 'reverse', 'ui'].includes(t));
-		for (const t of others) expect(SOUND_TYPES[t].defaultAlign, t).toBe('peak');
 	});
 });
 

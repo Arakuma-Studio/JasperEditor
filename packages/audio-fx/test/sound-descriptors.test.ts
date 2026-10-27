@@ -392,6 +392,8 @@ describe('analyzeSound: edge input', () => {
 		expectWellFormed(d);
 		// ≈ +730 dBTP before the Phase 1 verification; capped so the value fits the project's provenance schema
 		expect(d.truePeakDb!).toBe(DESCRIPTOR_CEILING_DB);
+		for (const level of [d.maxMomentaryLufs, d.integratedLufs, d.truePeakDb])
+			expect(level === null || level <= DESCRIPTOR_CEILING_DB).toBe(true);
 	});
 
 	it('audio after 120 s is ignored while durationSec retains the full recording length', () => {

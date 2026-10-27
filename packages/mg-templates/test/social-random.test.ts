@@ -94,22 +94,31 @@ describe('randomStats', () => {
 	it("follows tokcomment's likes distribution and ratios", () => {
 		const N = 20_000;
 		const bands = [0, 0, 0, 0];
+		let invalidSeed: number | null = null;
 		for (let seed = 0; seed < N; seed++) {
 			const s = randomStats('x-post', seed);
-			expect(s.likes).toBeGreaterThanOrEqual(1);
-			expect(s.likes).toBeLessThanOrEqual(5_000_000);
 			if (s.likes <= 500) bands[0]!++;
 			else if (s.likes <= 10_000) bands[1]!++;
 			else if (s.likes <= 100_000) bands[2]!++;
 			else bands[3]!++;
-			expect(s.replies).toBeGreaterThanOrEqual(Math.floor(s.likes * 0.01));
-			expect(s.replies).toBeLessThanOrEqual(Math.ceil(s.likes * 0.05));
-			expect(s.reposts).toBeGreaterThanOrEqual(Math.floor(s.likes * 0.1));
-			expect(s.reposts).toBeLessThanOrEqual(Math.ceil(s.likes * 0.3));
-			expect(s.views).toBeGreaterThanOrEqual(Math.floor(s.likes * 10));
-			expect(s.views).toBeLessThanOrEqual(Math.ceil(s.likes * 50));
-			expect(s.timeValue).toBeGreaterThanOrEqual(1);
+			if (
+				invalidSeed === null &&
+				!(
+					[s.likes, s.replies, s.reposts, s.views, s.timeValue].every((n) => typeof n === 'number') &&
+					s.likes >= 1 &&
+					s.likes <= 5_000_000 &&
+					s.replies >= Math.floor(s.likes * 0.01) &&
+					s.replies <= Math.ceil(s.likes * 0.05) &&
+					s.reposts >= Math.floor(s.likes * 0.1) &&
+					s.reposts <= Math.ceil(s.likes * 0.3) &&
+					s.views >= Math.floor(s.likes * 10) &&
+					s.views <= Math.ceil(s.likes * 50) &&
+					s.timeValue >= 1
+				)
+			)
+				invalidSeed = seed;
 		}
+		expect(invalidSeed, 'first seed violating the documented count bounds and ratios').toBeNull();
 		// band edges (500, 10k, 100k) are shared by two bands: tolerance covers it
 		const share = bands.map((b) => b / N);
 		expect(share[0]).toBeCloseTo(0.4, 1);

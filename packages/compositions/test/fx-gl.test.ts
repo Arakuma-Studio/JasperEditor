@@ -75,6 +75,36 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					);
 				});
 
+		it('the gallery card fills its poster and keeps missing-asset warnings on the card', async () => {
+			type Rect = { left: number; top: number; right: number; bottom: number; width: number };
+			const { poster, card, warning } = await call<{ poster: Rect; card: Rect; warning: Rect }>(
+				'templatePreview',
+			);
+			expect(card.width).toBeGreaterThan(poster.width * 0.65);
+			expect(card.width).toBeLessThan(poster.width);
+			expect(warning.width).toBeGreaterThan(0);
+			expect(warning.left).toBeGreaterThanOrEqual(card.left);
+			expect(warning.right).toBeLessThanOrEqual(card.right);
+			expect(warning.top).toBeGreaterThanOrEqual(Math.max(poster.top, card.top));
+			expect(warning.bottom).toBeLessThanOrEqual(Math.min(poster.bottom, card.bottom));
+		});
+
+		it('lowered text moves its paint at full and reduced resolution, with shutter blur while moving', async () => {
+			type Sample = { empty: Px; text: Px; shadow: Px };
+			const result = await call<{
+				samples: Sample[];
+				transformedSamples: Sample[];
+				blurred: Px;
+			}>('lowered');
+			for (const sample of [...result.samples, ...result.transformedSamples]) {
+				expect(sample.empty).toEqual([0, 0, 0, 0]);
+				expect(sample.text).toEqual([255, 0, 0, 255]);
+				expect(sample.shadow).toEqual([0, 0, 255, 255]);
+			}
+			expect(result.blurred[3]).toBeGreaterThan(50);
+			expect(result.blurred[3]).toBeLessThan(200);
+		});
+
 		it('keeps the picture upright and premultiplied alpha intact', async () => {
 			const o = await call<{ top: Px; bottom: Px }>('orientation');
 			expect(near(o.top, [255, 0, 0, 255])).toBe(true);

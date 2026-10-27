@@ -72,8 +72,8 @@ describe('Effects ▸ Presets bin (EFX-001, FX-030)', () => {
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'fade' } });
 		});
-		expect(presetRows()).toEqual(['builtin.fade-in', 'builtin.fade-out']);
-		expect(screen.queryByText('No effects match.')).toBeNull();
+		expect(presetRows()).toEqual(expect.arrayContaining(['builtin.fade-in', 'builtin.fade-out']));
+		expect(presetRows()).not.toContain('builtin.blur-in');
 		const entries = session.getState().history.entries.length;
 		act(() => {
 			fireEvent.doubleClick(document.querySelector('[data-preset-id="builtin.fade-in"]')!);
@@ -87,12 +87,13 @@ describe('Effects ▸ Presets bin (EFX-001, FX-030)', () => {
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'blur' } });
 		});
-		expect(presetRows()).toEqual(['builtin.blur-in', 'builtin.blur-out']);
+		expect(presetRows()).toEqual(expect.arrayContaining(['builtin.blur-in', 'builtin.blur-out']));
+		expect(presetRows()).not.toContain('builtin.fade-in');
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'zzz-nothing' } });
 		});
 		expect(screen.queryByTestId('effects-bin-presets')).toBeNull();
-		expect(screen.getByText('No effects match.')).toBeTruthy();
+		expect(presetRows()).toEqual([]);
 	});
 
 	it('shows user bins from the engine library and deletes a preset after confirmation', async () => {

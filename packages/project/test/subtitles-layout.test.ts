@@ -528,6 +528,9 @@ describe('properties', () => {
 				// every word is shown exactly once
 				const shown = r.captions.flatMap((c) => c.words.map((w) => w.text));
 				expect(new Set(shown).size).toBe(shown.length);
+				// Ordered, nonempty wN tokens have positive whole-frame durations and no range/text transform.
+				// Cut alignment must preserve every input word in order, including the last one.
+				expect(shown).toEqual(list.map(([text]) => text));
 			}),
 			{ numRuns: 200 },
 		);

@@ -1,5 +1,7 @@
 // Run: pnpm exec tsx apps/engine/bench/media-status.ts
 // Append --settled for the same readiness checks with no active jobs.
+// --queue-baseline <git-ref> instead compares that revision's JobQueue.list with
+// the current index, sharing the same jobs and current derivative readiness checks.
 // Compares the original status implementation from 8b4c8936 with the current one,
 // alternately, using the same queue, media records and real filesystem readiness checks.
 import assert from 'node:assert/strict';
@@ -16,24 +18,31 @@ import { type MediaRecord, MediaRegistry } from '../src/media/registry.ts';
 import { EncoderService } from '../src/tools/encoders.ts';
 import { Ffmpeg, resolveBinaries } from '../src/tools/ffmpeg.ts';
 
-const BASELINE = '8b4c8936';
+const queueBaselineIndex = process.argv.indexOf('--queue-baseline');
+const queueBaseline = queueBaselineIndex >= 0;
+const BASELINE = queueBaseline ? process.argv[queueBaselineIndex + 1]! : '8b4c8936';
+const sourceArea = queueBaseline ? 'jobs/queue' : 'derivatives/service';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), 'jasper-status-bench-'));
 const baselineFile = fileURLToPath(
-	new URL(`../src/derivatives/.status-baseline-${process.pid}.ts`, import.meta.url),
+	new URL(
+		`../src/${queueBaseline ? 'jobs' : 'derivatives'}/.status-baseline-${process.pid}.ts`,
+		import.meta.url,
+	),
 );
 const kinds = ['keyframes', 'poster', 'sprite', 'peaks', 'proxy-720', 'proxy-540'] as const;
 const settled = process.argv.includes('--settled');
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 try {
-	const source = execFileSync('git', ['show', `${BASELINE}:apps/engine/src/derivatives/service.ts`], {
+	const source = execFileSync('git', ['show', `${BASELINE}:apps/engine/src/${sourceArea}.ts`], {
 		cwd: root,
 		encoding: 'utf8',
 		maxBuffer: 2 * 1024 * 1024,
 	});
 	await writeFile(baselineFile, source);
-	const Legacy = (await import(pathToFileURL(baselineFile).href))
-		.DerivativeService as typeof DerivativeService;
+	const legacyModule = await import(pathToFileURL(baselineFile).href);
+	const Legacy = legacyModule.DerivativeService as typeof DerivativeService | undefined;
+	const legacyList = legacyModule.JobQueue?.prototype.list as JobQueue['list'] | undefined;
 	console.log(
 		JSON.stringify({
 			baseline: BASELINE,
@@ -97,7 +106,16 @@ try {
 				lgplOnly: true,
 			}),
 		};
-		const services = [new Legacy(deps), new DerivativeService(deps)];
+		// Both views use the exact same ids, timestamps and states. Only the list implementation differs.
+		const baselineQueue: JobQueue = legacyList
+			? Object.assign(Object.create(queue), {
+					list: (filter: Parameters<JobQueue['list']>[0]) => legacyList.call(queue, filter),
+				})
+			: queue;
+		const services = [
+			Legacy ? new Legacy(deps) : new DerivativeService({ ...deps, queue: baselineQueue }),
+			new DerivativeService(deps),
+		];
 		const wall: number[][] = [[], []];
 		const cpu: number[][] = [[], []];
 		const read = async (service: DerivativeService) => {

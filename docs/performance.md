@@ -12,6 +12,10 @@ The [performance investigation](wp-notes/performance-hunt.md) records measured c
 Find, Project sorting, bulk selection, resampling, media-status lookup and initial
 JavaScript loading, with baseline comparisons, rerunnable tools and integration checks.
 
+The [second investigation](wp-notes/performance-hunt-2.md) covers grouped
+selection, indexed media-job lookup and edit navigation, pointer snapping,
+expression-editor loading and FFT plan construction, with new paired baselines.
+
 ## 1. Budgets
 
 | Budget | Value | Source | Checked by |

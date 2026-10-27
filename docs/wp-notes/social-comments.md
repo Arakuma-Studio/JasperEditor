@@ -274,18 +274,14 @@ INSTAGRAM_GLYPHS  heartOutline heartFilled verified more
 YOUTUBE_GLYPHS    thumbUp thumbUpFilled thumbDown thumbDownFilled reply replyFilled verified more chevronDown
                   creatorHeart creatorHeartBorder pin
 X_GLYPHS          reply repost like likeFilled views bookmark share more verifiedBlue verifiedGold verifiedGrey grok
-PLATFORM_GLYPHS = { tiktok, instagram, youtube, x }
 TIKTOK_DEFAULT_AVATAR: PlatformGlyph
 PLATFORM_DEFAULT_AVATARS: Record<'tiktok'|'instagram'|'youtube'|'x', { kind: 'glyph'; glyph } | { kind: 'remote'; image: { url; sha256; width; height; format } } | { kind: 'none'; reason }>
-glyphColor(glyph, theme, fallback = 'currentColor'): string
-scopeGlyphIds(glyph, scope): PlatformGlyph   // prefixes gradient ids + their url(#…) fills, per rendered instance
 ```
 
 Rendering contract: draw `<svg viewBox>` with one `<path>` per entry in order; a path without `fill` uses
 `currentColor`, which the template sets to `defaultColor[theme]` (or the state colour it needs). Paths with a
-`fill` keep it (badges, the TikTok default avatar). Only `X_GLYPHS.verifiedGold` has gradients: render it through
-`scopeGlyphIds(glyph, uniqueInstanceId)` and emit `<linearGradient gradientUnits="userSpaceOnUse">` defs, because
-SVG ids are document-global and several cards can share a frame.
+`fill` keep it (badges, the TikTok default avatar). Only `X_GLYPHS.verifiedGold` has gradients. `Glyph` emits a self-contained SVG image through `VectorImage`,
+including `<linearGradient gradientUnits="userSpaceOnUse">` definitions; each image owns its gradient ids.
 
 - **Origins:** the module has 36 glyphs (35 icons and badges plus the TikTok default avatar); 35 come straight from the platforms: the inline SVG their page rendered (`live-dom`),
   an icon component of their own bundle for states a logged-out page does not show (`live-bundle`: TikTok and X
@@ -303,8 +299,9 @@ SVG ids are document-global and several cards can share a frame.
 - **TikTok bubble tail:** not an SVG on any platform surface we could reach (tokcomment draws it with CSS, the
   in-app sticker is not on the web); it stays a template-drawn shape.
 
-Tests: `packages/motion/test/social-glyphs.test.ts` (path grammar, colours, gradient references, fast-check of
-`scopeGlyphIds`, and that `licenses/platform-assets.md` lists every export with the origin the module records).
+Tests: `packages/motion/test/social-glyphs.test.ts` validates SVG path grammar, colours and gradient references,
+and verifies that the licence record contains the remote avatar URLs and hashes. The public card tests verify
+that glyph paths keep their caller colour or their own fixed fill.
 
 ### Remote manifest data — `apps/engine/src/remote-assets/manifest.json`
 
@@ -609,8 +606,8 @@ measurements (WP5), **[E]** estimate or choice.
 `packages/motion/src/templates/social-comment/`:
 - `index.tsx`: `SocialComment` — parses the params (invalid params fall back to the defaults), builds the schedule's
   timelines, hands the extras' values to the card.
-- `build.ts`: `buildSocialComment(schedule)`, `buildSocialTick(tick)`, `socialTickProgressAt` (also used by the
-  cue test).
+- `build.ts`: the component's timeline builders and tick-progress evaluator. Sound-cue tests observe the public
+  rendered component rather than these internal targets.
 - `stage.tsx`: `SocialStage` (centring, zoom, fit, entrance transform), `socialFitZoom`.
 - `contract.ts`: the variant contract. `parts.tsx`: shared parts. `assets.tsx`: picture and emoji touch points.
 - `tiktok.tsx`: the TikTok cards. `variants.ts`: the exhaustive `SOCIAL_VARIANT_IMPLS` card map.
@@ -626,7 +623,7 @@ measurements (WP5), **[E]** estimate or choice.
   - `params`: parsed `SocialCommentParams`;
   - `text`: `{ spans, segments, units }` from `socialCommentSegments`;
   - `anim`: `{ words, likes, heart }`;
-  - `assets`: `{ mediaUrls, imageUrls, emojiUrls, emojiPack, idScope }`.
+  - `assets`: `{ mediaUrls, imageUrls, emojiUrls, emojiPack }`.
 - `growOrigin`: the CSS `transform-origin` of the "grow from tail" entrance, in % of the card box. Use the bubble tail's
   corner on bubble cards (TikTok reply `0% 100%`) and the avatar's corner elsewhere (`0% 0%`).
 - `bleed`: reference px the card paints outside its box per side (a `box-shadow`), so the fit keeps it on screen.
@@ -656,8 +653,7 @@ Never add timelines, timers or animation inside a card. The output must be a pur
 **Theme tokens:** one `const <VARIANT>_THEME = { light: {…}, dark: {…} }` per card in its own file, with hex colours
 copied from the reference dumps (`styles_light*.json` / `styles_dark*.json`). Colours that come from the platform
 measurements carry an [M] / [M-css] comment.
-- Glyph colours: pass `color` to `Glyph`. `glyphColor(glyph, theme)` gives the platform's own when the reference has
-  none.
+- Glyph colours: pass the reference colour (or the glyph's `defaultColor[theme]`) to `Glyph`.
 - Mentions and hashtags go in `CommentText`'s `colors`.
 - These are platform colours, not editor UI, so `scripts/check-tokens.mjs` does not apply to the template's inline
   styles.
@@ -667,7 +663,7 @@ measurements carry an [M] / [M-css] comment.
   - Pass the name the card shows as `name`; the generated avatar's initials come from it.
   - The Properties `social-avatar` preview uses `displayName`. Tell the integrator if a handle-only card passes
     `handle`.
-- `Glyph({ glyph, size, color, scope: assets.idScope, style })`. `size` is a number or `[w, h]`.
+- `Glyph({ glyph, size, color, style })`. `size` is a number or `[w, h]`.
 - `CommentText(...)`: highlight, blur, remove, mentions, emoji, word reveal.
   - It carries `data-template-param="text"` and `data-template-marks="true"` (C5).
 - `TextWithEmoji({ text, fontSize, emoji, assets })` for names. Wrap a name in an element with
@@ -691,28 +687,13 @@ measurements carry an [M] / [M-css] comment.
   rules, counts, replies, `showProfile`, verified.
 - `packages/motion/test/social-comment-render.e2e.test.ts` (`REMOTION_E2E=1`):
   - add the variant to the parity cases and the fit loop (long text, huge counts, 64-character names, every canvas);
-  - add its calibration cases to `CALIBRATION`, named `<variant>_<theme>_<state>` after the tokcomment captures they
-    pair with.
 
-**Calibration workflow.** Everything sits outside the repo: the captures are third-party screenshots.
-1. Inputs:
-   - fonts: `SOCIAL_FONT_DIR` (a directory of woff2 files);
-   - emoji: `SOCIAL_EMOJI_DIR` (Apple PNGs named `<codepoints>.png`, e.g. `1f60a.png`).
-2. Render the stills: `REMOTION_E2E=1 SOCIAL_FONT_DIR=… SOCIAL_EMOJI_DIR=… SOCIAL_CALIBRATION_DIR=<dir>/stills
-   pnpm exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`.
-   - These are hold-frame `renderStill`s at 9:16, scaled 2/1.8 so a 420 px card is 840 px, the scale of the
-     tokcomment captures.
-   - `entry.tsx` loads the faces in `fonts` from the public dir. Extend the font list in the test's `beforeAll` for
-     other families.
-3. Crop and compare with the tools in `/var/lib/orquester/workspaces/jaspersito/research/calibration/tiktok/tools/`;
-   copy them to `calibration/<platform>/tools/`:
-   - `crop.mjs <stills> <cards>`: crops to the opaque card box, over tokcomment's grey #8a8a8a;
-   - `cmp.sh <ref> <ours> <out> [h]`: ref | ours | difference strip;
-   - `inkbox.mjs` and `yellow.mjs`: ink and emoji bounding boxes, for cap height, line width and emoji size;
-   - `page.mjs <dir>`: the side-by-side page (edit its `PAIRS` table).
-4. Iterate until layout, spacing and colour match. List the deliberate differences in this note: real font and
-   glyphs, bug fixes. If the real font's cap height differs from the capture's font, scale the font size to keep the
-   reference's cap height (see the TikTok reply).
+**Regression workflow.** Run the parity and painted-bounds tests with `REMOTION_E2E=1 pnpm exec vitest run
+packages/motion/test/social-comment-render.e2e.test.ts packages/motion/test/social-review-render.e2e.test.ts
+--maxWorkers=2`. Supply the documented font and emoji directories when checking those assets; otherwise the tests
+use their bundled/fallback faces and generated emoji stand-ins. Parity mismatches retain frame PNGs and comparison
+data in the logged artifact directory. The calibration pages below record the original visual research; generating
+manual screenshot matrices is outside the regression suite.
 
 **Assets and determinism rules** (added with the WP2 wiring):
 - **Fonts and images:** don't declare them yourself. `requiredAssets` derives them from `SOCIAL_VARIANT_FONTS`,
@@ -907,9 +888,6 @@ These fixes are in the shared framework:
   `/var/lib/orquester/workspaces/jaspersito/research/calibration/tiktok/index.html`. It sits outside the repository:
   the tokcomment captures are third-party screenshots. Its stills come from Remotion `renderStill` at 2× reference
   px.
-- **Rerunning:** `REMOTION_E2E=1 SOCIAL_FONT_DIR=<tiktok-sans files> SOCIAL_EMOJI_DIR=<cp>.png dir
-  SOCIAL_CALIBRATION_DIR=<out> pnpm exec vitest run packages/motion/test/social-comment-render.e2e.test.ts`. The
-  crop, compare and page tools are in that directory's `tools/`.
 - **Measured matches:**
   - comment card height 228 px against tokcomment's 229 (2×);
   - the comment row's text line within 2 %;
@@ -983,17 +961,14 @@ variables (instagram.com, 2026-10-25) and **[HIG]** Apple's Human Interface Guid
 - **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/instagram/index.html` (outside the
   repository), one row per tokcomment capture of both cards, light and dark, plus long names, 0 likes and replies,
   huge counts, the liked heart, mentions, generated avatar, no profile, and filmstrips of grow-from-tail with word
-  reveal and like tick. Rerun with `REMOTION_E2E=1 SOCIAL_SF_PRO_DIR=<SF-Pro-Text-{Regular,Semibold}.otf>
-  SOCIAL_EMOJI_DIR=<cp>.png dir SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER=instagram pnpm exec
-  vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`, then that directory's
-  `tools/crop.mjs` and `tools/page.mjs`. Additions to the e2e test:
+  reveal and like tick. The retained render suite checks parity and painted bounds with the same optional font
+  and emoji sources:
   - every case starts from its variant's `socialDefaults`, as the captures do (unchanged for TikTok, whose defaults
     are the schema's);
   - `SOCIAL_SF_PRO_DIR` loads SF Pro Text 400/600; without it the Instagram cases render in the host's fallback font;
   - each case's page loads only its variant's font family (as `requiredAssets` does). With every family on every page,
     the TikTok `comment-light-spring` parity case failed 2 of 2 runs (an icon edge 2/255 off at frames 6 and 146) and
     passed without SF Pro; with per-variant fonts the whole parity test passes;
-  - `SOCIAL_CALIBRATION_FILTER=instagram` (a regular expression of case names) renders only the Instagram cases.
 - **Measured matches (2× px):** post card 235 px high against 238, Reel card 191 against 192 (dark, with its border:
   193 against 196); the rest is the 1 px border, which Chrome snaps to whole device pixels under the card's zoom; comment and "Reply" baselines within
   1 px; "View 5 more replies" within 1 px; heart ink box 30 × 26 at the same place; Reel card 509 px wide against 510.
@@ -1077,13 +1052,7 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   "4.8M replies"), the actions and the time never shrink.
 - **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/youtube/index.html` (outside the
   repo): every tokcomment capture side by side with our `renderStill` at 2× and a difference overlay, plus long
-  names, huge counts, no replies, one reply, liked, no profile, mentions, generated avatar and entrance filmstrips. To
-  rerun: Noto PNGs (`<cp>.png`) under `<dir>/noto/` (the render e2e reads `apple/`, `twemoji/` and `noto/`
-  subdirectories), then `REMOTION_E2E=1 SOCIAL_EMOJI_DIR=<dir>
-  SOCIAL_IMAGE_DIR=<dir with youtube-default-avatar.jpg> SOCIAL_CALIBRATION_DIR=<out>
-  SOCIAL_CALIBRATION_FILTER='^(youtube-|anim_youtube)' pnpm exec vitest run
-  packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools in that directory's `tools/`
-  (`filmstrips.sh` added).
+  names, huge counts, no replies, one reply, liked, no profile, mentions, generated avatar and entrance filmstrips.
 - **Measured matches (2×):** comment card 297 × 840 px (tokcomment 299; the 0.5 px edge rows of a 149.5 px card fall
   outside the opaque crop), header, comment and action rows within 1 px, thread end within 2 px; Shorts card 609 × 175
   (610 × 176), header cap within 0 px, comment lines within 1 px.
@@ -1093,7 +1062,7 @@ WP6c (`sc/v-youtube`): `youtube-comment` and `youtube-shorts-reply`, in
   avatars, link colours, Noto emoji, like tick, Shorts card); `mg-cue-timing.test.ts` rows (each entrance
   with both extras, the tick alone at 25 fps, the Shorts card with reveal and an ignored tick);
   `social-comment-template.test.ts` (presets, fonts, required images); `social-comment-layer.test.tsx` (layer path:
-  Roboto faces, Noto emoji image, the default avatar image resolved or missing); `social-comment-render.e2e.test.ts` (parity, fit and calibration cases);
+  Roboto faces, Noto emoji image, the default avatar image resolved or missing); `social-comment-render.e2e.test.ts` (parity and painted-bounds checks);
   `e2e/social-youtube.spec.ts` (`pnpm e2e`: gallery insert of both presets, the card in the Program in Roboto with the
   downloaded default avatar, in-place edit of the handle and a highlight, variant switch).
 - **Render e2e results (`REMOTION_E2E=1`, Chrome 156, this host):** the YouTube parity cases (1:1 dark comment with
@@ -1166,12 +1135,7 @@ Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
 - **Evidence:** `/var/lib/orquester/workspaces/jaspersito/research/calibration/x/index.html` (outside the repo): all 18
   tokcomment captures side by side with our `renderStill` at 2× and a difference overlay, plus generated avatar, huge
   and zero counts, hidden reposts / views, liked (light, dark), no profile, long names, mentions and entrance / extras
-  filmstrips. To rerun: the manifest's Chirp files (`Chirp-*.latin.woff2`) in a directory, Apple PNGs (`<cp>.png`),
-  X's default avatar as `x-default-avatar.png`, then `REMOTION_E2E=1 SOCIAL_CHIRP_DIR=<chirp> SOCIAL_EMOJI_DIR=<emoji>
-  SOCIAL_IMAGE_DIR=<images> SOCIAL_CALIBRATION_DIR=<out>/stills SOCIAL_CALIBRATION_FILTER='^(x-post_|anim_x-)' pnpm
-  exec vitest run packages/motion/test/social-comment-render.e2e.test.ts -t calibration`; tools (`crop.mjs`, `cmp.sh`,
-  `filmstrips.sh`, `page.mjs`) in that directory's `tools/`. The e2e entry takes remote images as `imageFiles`
-  (`imageUrls`).
+  filmstrips. The retained render suite accepts Chirp, emoji and remote-image directories for parity checks.
 - **Measured matches (2×):** card 840 × 230 opaque px for the 840 × 232 capture (the half-covered edge rows fall
   outside the opaque crop); header, post and action rows within 1 px vertically; name width 183 vs 181 px; badge,
   time and More within 2 px horizontally.
@@ -1209,7 +1173,6 @@ Apple (`emojiStyle: auto`). Preset "X · Post" (`social-comment:x-post`).
     emoji, a generated avatar, the X card. Byte for byte at rest; see "Paint determinism" for the entrance;
   - the painted card stays inside every canvas for a 1,400-character marked comment, 1e12 counts and a 64-character
     name;
-  - it writes the calibration stills.
 - **`REMOTION_E2E=1 determinism-render.e2e.test.ts`:** passes with `social-comment@1` in the parity document (6/6).
   The parity scene now resolves the declared template assets: TikTok Sans as data URLs of the bundled files, and the
   emoji as a generated image.
@@ -2296,9 +2259,7 @@ catalogue entry.
 
 Side-by-side page: `/var/lib/orquester/workspaces/jaspersito/research/calibration/store-reviews/index.html` (screenshot
 crop | renderStill at the screenshot's scale | difference; every variant × theme, long reviews, marks, long names;
-star-fill frames). Rerun: `REMOTION_E2E=1 SOCIAL_SF_PRO_DIR=<SF-Pro-Text-*.otf> SOCIAL_EMOJI_APPLE_DIR=<cp>.png
-SOCIAL_REVIEW_CASES=<calibration>/ref-cases.json SOCIAL_CALIBRATION_DIR=<calibration>/stills pnpm exec vitest run
-packages/motion/test/social-review-render.e2e.test.ts -t calibration`, then `tools/crop.mjs` and `tools/page.mjs`.
+star-fill frames).
 Measured: Play name, stars, date, body lines and kebab within 1–2 screenshot px (≈ 0.5 dp) and the same line breaks and
 fade; App Store web rows within 1 CSS px, same wrapping, mask and "more"; iPhone title, stars, name and body rows
 within 1 pt, same line breaks.
@@ -2321,7 +2282,7 @@ property), `social-comment-template.test.ts` (presets), `packages/motion/test/so
 colours, ages, star fill per frame, pulse, seek-order fast-check, clamp with stubbed layout), `social-glyphs.test.ts`
 (new sets and provenance rows), `mg-cue-timing.test.ts` (store rows), `packages/motion/test/social-review-render.e2e.test.ts`
 (`REMOTION_E2E=1`: renderStill = renderFrames during entrance, word reveal and star fill on the three cards; clamp
-on / off; fit on every canvas with 64-character names, 120-character titles and long reviews; calibration stills),
+on / off; fit on every canvas with 64-character names, 120-character titles and long reviews),
 `apps/web/test/social-review-controls.test.tsx` (rows per variant, stars and date with undo / redo, keyboard,
 multi-selection, wand, Randomize Stats, Effect Controls, read-only, garbage values, refusals),
 `apps/mcp/test/social-review.test.ts`, `e2e/social-store-reviews.spec.ts` (built app: gallery insert of the three
@@ -2372,18 +2333,29 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
 
 - The four engagement columns still share the bar equally (x.com's `flex-1`), but each has a minimum width
   (`xActionLayout` in `x.tsx`): icon 15 + icon → count 8 + the count + `X_COUNT_GAP` (6 px) before the next icon.
-  The count's width is bounded by `xCountEm` (em advances measured in Chrome for Chirp 400: digits 0.62, "." 0.27,
-  "," 0.28, K / B 0.66, M 0.87; bounds 0.63 / 0.3 / 0.68 / 0.88; DejaVu Sans fallback within them).
+  The count's width is bounded by `xCountEm`: digits 0.64em, punctuation 0.32em, K/B0.70em and M0.88em.
+  These conservative bounds include Chirp and the DejaVu Sans generic fallback.
 - The bar is 280 px with the avatar (420 − 2 border − 32 padding − 64 avatar column − 42 bookmark / share). One
   six-character count ("321.3K", "999.9M") in any column keeps x.com's 13 px counts and 8 px inset; when all four are
-  long the inset tightens to 4 px, then the counts shrink uniformly (≥ 10 px; four "999.9M" → 12.2 px).
+  long the inset tightens to 4 px, then the counts shrink uniformly (≥ 10 px).
 - The likes column is sized for the widest count its tick passes ("999.9M" on the way to "1,000B"), so the bar does
   not move while the count ticks; every frame stays a pure function of params and time.
-- Tests: `packages/motion/test/social-x-fit.test.tsx` — the budget for the longest counts per column, all four, and
-  fast-check over all counts; in Chrome (runs when a Chrome is found, like the GL tests) the em bounds of the face
-  drawn and the laid-out card: every count unclipped and ≥ 6 px before the next icon, with the fallback face and
+- Tests: `packages/motion/test/social-x-fit.test.tsx` measures the laid-out card in Chrome (when a Chrome is found):
+  longest counts per column, all four at once and the reported QA card, every count unclipped and ≥ 6 px before
+  the next icon (0.5 px measurement tolerance), with the fallback face and
   with Chirp when `SOCIAL_CHIRP_DIR` holds its Regular woff2. The test fails on the previous layout (3.9 px
   between "999.9M" replies and the repost icon in the fallback face).
+
+The real-browser regression also caught an underestimated generic fallback advance. Chromium 156.0.8078.47 on
+Linux selected DejaVu Sans: digits 0.636234375em, punctuation 0.317875em and B 0.686046875em (100px samples,
+tabular numerals; CDP confirmed the font). With 999.9B replies the old bounds left 5.346073px before the repost icon;
+the corrected bounds leave 6.462882px, with no clipping. The existing ≥6px contract and 0.5px measurement tolerance
+are unchanged. A real paused Player and Remotion still at frame 100 were pixel-identical before and after the fix;
+inspected frames and action-bar crops are under ignored `test-results/test-audit/x-count-gap/`.
+
+`social-comment.renderVersion` is 2 so cached layer bakes do not reuse the older drawing. The bake key includes this
+version and the Remotion bundle id; the bundle source hash also includes motion/template sources
+(`apps/engine/src/layer-bake/key.ts`, `apps/engine/src/remotion/service.ts`). No stored project data changes.
 
 ### Gallery previews frame the card (N7)
 
@@ -2410,5 +2382,6 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
 - Generic: no template contract change; any card-like template gets it.
 - So at Program zoom ≥ 100 % the banner is where the card is (before: off screen at the canvas corner).
 - Tests: `packages/compositions/test/template-marker-anchor.test.tsx` (box measurement with scale, no-layout
-  fallback, a social card with a missing font anchored and sized on the card).
+  fallback); `packages/compositions/test/fx-gl.test.ts` renders the gallery card in Chromium and verifies its
+  width relative to the poster and that the warning’s bounds stay inside the visible card.
 

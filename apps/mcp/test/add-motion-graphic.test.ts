@@ -684,19 +684,4 @@ describe('add_motion_graphic: friendly times', () => {
 		expect(e.code).toBe('E_INVALID_ARGUMENT');
 		expect(err(await call({ template: 'card', at: '1:02:03.5s' })).code).toBe('E_INVALID_ARGUMENT');
 	});
-
-	it('advertises the friendly grammar in the tool schema', async () => {
-		const engine = fakeEngine();
-		const { client } = await connect(engine);
-		const { tools } = await client.listTools();
-		const tool = tools.find((t) => t.name === 'add_motion_graphic')!;
-		const at = (
-			tool.inputSchema.properties as Record<string, { anyOf?: { pattern?: string }[]; description?: string }>
-		).at!;
-		const patterns = (at.anyOf ?? []).map((x) => x.pattern).filter(Boolean);
-		expect(patterns.some((p) => p!.includes('ms|s'))).toBe(true);
-		expect(at.description).toContain('"1:02:03"');
-		const items = (tool.inputSchema.properties as Record<string, { maxItems?: number }>).items!;
-		expect(items.maxItems).toBe(200);
-	});
 });

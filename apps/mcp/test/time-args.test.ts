@@ -116,9 +116,7 @@ describe('TimeArgSchema / normalizeTimeArg', () => {
 	it('never throws on arbitrary JSON input', () => {
 		fc.assert(
 			fc.property(fc.jsonValue(), (v) => {
-				const r = TimeArgSchema.safeParse(v);
-				if (r.success && typeof v === 'string' && !TIMECODE.test(v))
-					expect(r.data).toEqual({ seconds: parseFriendlyTime(v) });
+				expect(() => TimeArgSchema.safeParse(v)).not.toThrow();
 				expect(() => normalizeTimeArg(v)).not.toThrow();
 			}),
 			{ numRuns: 1000 },

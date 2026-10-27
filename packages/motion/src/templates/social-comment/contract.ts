@@ -44,8 +44,6 @@ export type SocialCardAssets = {
 	emojiUrls: Readonly<Record<string, string>>;
 	/** The emoji pack the card draws (`resolveEmojiStyle(variant, emojiStyle)`). */
 	emojiPack: SocialEmojiPack;
-	/** Unique per rendered card: prefix of SVG ids (gradients) so several cards can share a frame. */
-	idScope: string;
 };
 
 /** The comment split for drawing (`socialCommentSegments`): styled spans and word segments. */

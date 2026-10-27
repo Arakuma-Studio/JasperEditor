@@ -616,7 +616,7 @@ describe('curve argument parser', () => {
 	});
 });
 
-describe('describe_commands examples and the guide resource', () => {
+describe('describe_commands examples', () => {
 	it('the easing and Trim Paths examples apply to a real document', () => {
 		const ids = createCounterIdSource(3);
 		const doc = createEmptyProject({ ids, name: 'Examples', preset: 'hd-1080p-30' });
@@ -661,13 +661,5 @@ describe('describe_commands examples and the guide resource', () => {
 			);
 			expect(r.result.ok, `${type}: ${JSON.stringify(r.result.ok ? null : r.result.errors)}`).toBe(true);
 		}
-	});
-
-	it('jasper://guide carries the easing and Trim Paths guides', async () => {
-		const t = await connect();
-		const g = await t.client.readResource({ uri: 'jasper://guide' });
-		const text = (g.contents[0] as { text: string }).text;
-		expect(text).toContain('apply_ease');
-		expect(text).toContain('animate_trim_paths');
 	});
 });

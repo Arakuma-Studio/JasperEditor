@@ -25,8 +25,8 @@ import {
 } from '../../engine/test/sound-bed-fixture.ts';
 import { decodePng } from '../src/png.ts';
 import type { RgbaImage } from '../src/sound-sheet.ts';
-import { SYNC_MARKS, type TimelineCells } from '../src/sound-timeline.ts';
-import { cleanEnv, testPort, waitFor } from './helpers.ts';
+import type { TimelineCells } from '../src/sound-timeline.ts';
+import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_LISTEN_TEST_PORT);
@@ -63,7 +63,6 @@ const px = (img: RgbaImage, x: number, y: number) => {
 	const o = (y * img.width + x) * 4;
 	return [img.data[o]!, img.data[o + 1]!, img.data[o + 2]!] as const;
 };
-const same = (a: readonly number[], b: readonly number[]) => a.every((v, i) => v === b[i]);
 /** 16-bit PCM WAV of planar channels. */
 function wav16(ch: Float32Array[], sr: number): Buffer {
 	const n = ch[0]!.length;
@@ -126,11 +125,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
-	if (engine && engine.exitCode === null) {
-		const exited = new Promise((r) => engine!.once('exit', r));
-		engine.kill('SIGTERM');
-		await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-	}
+	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
 }, 30_000);
 
@@ -345,8 +340,10 @@ describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 },
 		expect(cut(90)).toMatchObject({ status: 'ok', shape: 'filled circle' });
 		expect(cut(279)).toMatchObject({ status: 'none', shape: 'cross' });
 		const sync = cells.lanes.find((l) => l.name === 'sync')!;
-		expect(same(px(img, cut(90).x, sync.y + 6), SYNC_MARKS.ok.colour)).toBe(true);
-		expect(same(px(img, cut(279).x, sync.y + 6), SYNC_MARKS.none.colour)).toBe(true);
+		const markPixels = (frame: number) =>
+			Array.from({ length: sync.height }, (_, y) => px(img, cut(frame).x, sync.y + y));
+		expect(markPixels(90).some(([r, g, b]) => g > r + 50 && g > b + 50)).toBe(true);
+		expect(markPixels(279).some(([r, g, b]) => r > g + 50 && r > b + 50)).toBe(true);
 		expect(cells.sections.length).toBeGreaterThanOrEqual(2);
 		expect(cells.sections.some((s) => s.classes.includes('dialogue'))).toBe(true);
 		expect(cells.spectrogram).toMatchObject({ bands: 96 });

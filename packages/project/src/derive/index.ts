@@ -201,19 +201,14 @@ export function sequenceDuration(seq: Pick<Sequence, 'clips'>): number {
 
 export type Gap = { trackId: string; start: number; end: number };
 
-/** Maximal empty ranges between frame 0 and the last clip of a track (S02:TL-019). */
-function gapsOnTrack(seq: Sequence, trackId: string): Gap[] {
-	const out: Gap[] = [];
-	let cursor = 0;
-	for (const c of clipsOnTrack(seq, trackId)) {
-		if (c.start > cursor) out.push({ trackId, start: cursor, end: c.start });
-		cursor = Math.max(cursor, clipEnd(c));
-	}
-	return out;
-}
-
+/** The maximal empty range at `frame`, between frame 0 and the last clip (S02:TL-019). */
 export function gapAt(seq: Sequence, trackId: string, frame: number): Gap | null {
-	return gapsOnTrack(seq, trackId).find((g) => g.start <= frame && frame < g.end) ?? null;
+	const list = clipsOnTrack(seq, trackId);
+	const i = firstEndingAfter(list, frame);
+	const next = list[i];
+	if (!next || next.start <= frame) return null;
+	const start = i > 0 ? clipEnd(list[i - 1]!) : 0;
+	return start <= frame ? { trackId, start, end: next.start } : null;
 }
 
 /** Sorted unique clip boundaries on the given tracks (all tracks by default) (S02:TL-020, A.7). */
@@ -230,12 +225,38 @@ export function editPoints(seq: Sequence, trackIds?: readonly string[]): number[
 }
 
 export function nextEditPoint(seq: Sequence, frame: number, trackIds?: readonly string[]): number | null {
-	return editPoints(seq, trackIds).find((f) => f > frame) ?? null;
+	let next: number | null = null;
+	const ids = trackIds ?? allTracks(seq).map((t) => t.id);
+	for (const id of ids) {
+		const list = clipsOnTrack(seq, id);
+		const c = list[firstEndingAfter(list, frame)];
+		if (!c) continue;
+		const point = c.start > frame ? c.start : clipEnd(c);
+		if (next === null || point < next) next = point;
+	}
+	return next;
 }
 
 export function prevEditPoint(seq: Sequence, frame: number, trackIds?: readonly string[]): number | null {
-	const pts = editPoints(seq, trackIds).filter((f) => f < frame);
-	return pts.length ? pts[pts.length - 1]! : null;
+	let prev: number | null = null;
+	const ids = trackIds ?? allTracks(seq).map((t) => t.id);
+	for (const id of ids) {
+		const list = clipsOnTrack(seq, id);
+		// First clip starting at or after frame; the preceding clip owns the previous boundary.
+		let lo = 0;
+		let hi = list.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (list[mid]!.start < frame) lo = mid + 1;
+			else hi = mid;
+		}
+		const c = list[lo - 1];
+		if (!c) continue;
+		const end = clipEnd(c);
+		const point = end < frame ? end : c.start;
+		if (prev === null || point > prev) prev = point;
+	}
+	return prev;
 }
 
 /** Link partners of a clip (excluding itself). */

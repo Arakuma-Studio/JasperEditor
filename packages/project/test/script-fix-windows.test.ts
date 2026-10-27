@@ -5,14 +5,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { FixCandidate, FixWord } from '../src/script-fix/candidates.ts';
-import {
-	ASR_READING_ID,
-	buildScoreWindows,
-	SCORE_REQUEST_LIMITS,
-	SCORE_WINDOW_DEFAULTS,
-	type ScoreWindow,
-	scoreRequestWindows,
-} from '../src/script-fix/windows.ts';
+import { buildScoreWindows, type ScoreWindow, scoreRequestWindows } from '../src/script-fix/windows.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 
 const F = FLICKS_PER_SECOND;
@@ -32,7 +25,8 @@ function cand(id: string, fromWord: number, toWord: number, script: string[]): F
 
 /** Every window is a valid SC-092 request window. */
 function expectValidRequest(windows: readonly ScoreWindow[]) {
-	const L = SCORE_REQUEST_LIMITS;
+	// SC-092 wire limits are the oracle, independent of the builder's configuration.
+	const L = { idChars: 128, readingsPerWindow: 64, wordsPerReading: 224, wordChars: 128, muteRanges: 64 };
 	for (const w of scoreRequestWindows(windows)) {
 		expect(w.id.length).toBeLessThanOrEqual(L.idChars);
 		expect(w.end - w.start).toBeLessThanOrEqual(30 * F);
@@ -87,8 +81,7 @@ describe('score windows respect the SC-092 request limits', () => {
 		const { windows, unplaced } = buildScoreWindows(words, cs);
 		expect(unplaced).toEqual([]);
 		expect(windows.length).toBeGreaterThanOrEqual(2);
-		for (const w of windows)
-			expect(w.toWord - w.fromWord).toBeLessThanOrEqual(SCORE_WINDOW_DEFAULTS.maxWords);
+		for (const w of windows) expect(w.toWord - w.fromWord).toBeLessThanOrEqual(100);
 		expect(windows.flatMap((w) => w.regions.map((g) => g.candidateId)).sort()).toEqual(['c-loop', 'c-name']);
 		expectValidRequest(windows);
 	});
@@ -101,7 +94,6 @@ describe('score windows respect the SC-092 request limits', () => {
 		expect(windows).toHaveLength(2);
 		expect(windows[1]!.start).toBe(windows[0]!.start);
 		expect(windows[1]!.end).toBe(windows[0]!.end);
-		for (const w of windows) expect(w.readings[0]!.id).toBe(ASR_READING_ID);
 		const placed = windows.flatMap((w) => w.regions.map((g) => g.candidateId));
 		expect(placed).toHaveLength(80);
 		expect(new Set(placed).size).toBe(80);

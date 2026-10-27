@@ -1,5 +1,5 @@
-// Sequence ▸ Automate (spec 15 EA-040): the Automate submenu built from its entry list, the pass commands, and the
-// pass dialog — defaults, the dry-run summary that follows the parameters (counts, coverage, skips, families, export
+// Sequence ▸ Automate (spec 15 EA-040): the pass dialog — defaults and the dry-run summary that follows the
+// parameters (counts, coverage, skips, families, export
 // cost, sounds, budget), Propose: the pass's job runs, review opens on the stored proposal and nothing is applied;
 // Reroll of a review item through the session (the producer's next seed).
 import type { AutomationPassResult, EngineJob, ProposalRefreshResponse } from '@jasper/api';
@@ -7,27 +7,27 @@ import { type Proposal, parsePassParams, passDraft, passItems, planDecorateCuts 
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { AutomationDialog, DryRunSummary, dialogParams } from '../src/automation/AutomationDialog.tsx';
-import { AUTOMATE_MENU } from '../src/automation/menu.ts';
-import { automationCommands } from '../src/commands/automation.ts';
-import { proposalCommands } from '../src/commands/proposals.ts';
 import { isRerollable, rerollReviewItem } from '../src/proposals/actions.ts';
 import { buildGhostModel } from '../src/proposals/ghosts.ts';
 import { buildReviewModel } from '../src/proposals/review.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
 
-afterEach(() => cleanup());
+beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
-const settle = (ms = 300) => act(async () => new Promise((r) => setTimeout(r, ms)));
+const settle = () => act(async () => vi.runAllTimersAsync());
 
 async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 	await act(async () => {
 		fireEvent.keyDown(trigger, { key: 'Enter' });
 	});
-	const option = await screen.findByRole('option', { name });
+	const option = screen.getByRole('option', { name });
 	await act(async () => {
 		fireEvent.keyDown(option, { key: 'Enter' });
 	});
@@ -163,40 +163,10 @@ function setup(pass: AutomationPassResult['pass'], initialParams?: Record<string
 	};
 }
 
-describe('Sequence ▸ Automate', () => {
-	it('the submenu lists the pass commands from its entry list; every entry has a command', () => {
-		const seq = MENUBAR.find((m) => m.id === 'sequence')!;
-		const automate = seq.items.find((i) => i.type === 'submenu' && i.label === 'Automate') as {
-			items: { command?: string; label: string }[];
-		};
-		expect(automate.items.filter((i) => i.command).map((i) => [i.command, i.label])).toEqual([
-			['automation.decorateCuts', 'Decorate Cuts…'],
-			['automation.punchIns', 'Punch-ins…'],
-			['automation.kenBurns', 'Ken Burns…'],
-			['automation.reactions', 'Reactions…'],
-			['automation.slides', 'Slide Overlays…'],
-			['automation.musicBed', 'Music Bed…'],
-			['automation.stingers', 'Stingers…'],
-			['automation.applyStyle', 'Apply Style…'],
-			['automation.styleCheck', 'Style Check'],
-			['automation.styleRecipes', 'Style Recipes…'],
-		]);
-		const ids = new Set(automationCommands.map((c) => c.id));
-		for (const e of AUTOMATE_MENU) expect(ids.has(e.command)).toBe(true);
-		// Style Recipes… also works without an engine (the built-ins and the project's copies)
-		for (const c of automationCommands)
-			expect(c).toMatchObject({
-				agentExposed: true,
-				...(c.id === 'automation.styleRecipes' ? {} : { capability: 'engine' }),
-			});
-		expect(proposalCommands.some((c) => c.id === 'proposals.rerollItem')).toBe(true);
-	});
-});
-
 describe('the pass dialog', () => {
 	it('Decorate Cuts: the dry run follows the parameters; Propose runs the pass, opens review, applies nothing', async () => {
 		const t = setup('decorate-cuts');
-		const dialog = await screen.findByTestId('automation-dialog-decorate-cuts');
+		const dialog = screen.getByTestId('automation-dialog-decorate-cuts');
 		await settle();
 		expect(t.calls[0]).toEqual({
 			pass: 'decorate-cuts',
@@ -228,16 +198,11 @@ describe('the pass dialog', () => {
 		expect(within(dialog).getByTestId('automation-families')).toBeTruthy();
 		expect(within(dialog).getByTestId('automation-repeat').textContent).toContain('23 % same as previous');
 		const rev = t.session.revision;
-		vi.useFakeTimers();
-		try {
-			await act(async () => {
-				fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-			});
-			await act(async () => vi.runAllTimersAsync());
-		} finally {
-			vi.useRealTimers();
-		}
-		expect(t.calls.at(-1)!.req.mode).toBe('propose');
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+		});
+		await act(async () => vi.runAllTimersAsync());
+		expect(t.calls.filter((call) => call.req.mode === 'propose')).toHaveLength(1);
 		expect(t.closed).toHaveLength(1);
 		expect(t.reviewed).toEqual([1]);
 		expect(t.toasts).toEqual(['Proposed 2 cut kits']);
@@ -248,7 +213,7 @@ describe('the pass dialog', () => {
 
 	it('punch-ins: target point and method go into the parameters; starting values of a recipe are kept', async () => {
 		const t = setup('punch-ins', { density: 0.5, seed: 9 });
-		await screen.findByTestId('automation-dialog-punch-ins');
+		screen.getByTestId('automation-dialog-punch-ins');
 		await settle();
 		expect(t.calls[0]!.req.params).toEqual({ density: 0.5, seed: 9 });
 		await chooseOption(screen.getByRole('combobox', { name: 'Zooms toward' }), 'A point');
@@ -270,7 +235,7 @@ describe('the pass dialog', () => {
 				budget: { fits: false, items: 2500, commands: 2500, suggestedRange: { start: 0, end: 4000 } },
 			}),
 		);
-		const dialog = await screen.findByTestId('automation-dialog-ken-burns');
+		const dialog = screen.getByTestId('automation-dialog-ken-burns');
 		await chooseOption(screen.getByRole('combobox', { name: 'Range' }), 'In to Out');
 		await settle();
 		expect(within(dialog).getByTestId('automation-summary-budget').textContent).toContain('frame 4000');
@@ -326,7 +291,7 @@ describe('the overlay pass dialogs (EA-023…EA-026)', () => {
 				sfx: null,
 			}),
 		);
-		const dialog = await screen.findByTestId('automation-dialog-reactions');
+		const dialog = screen.getByTestId('automation-dialog-reactions');
 		await settle();
 		expect(t.calls).toEqual([]);
 		expect(within(dialog).getByTestId('automation-needs-assets').textContent).toContain('reaction pictures');
@@ -404,7 +369,7 @@ describe('the overlay pass dialogs (EA-023…EA-026)', () => {
 				/>
 			</SessionProvider>,
 		);
-		await screen.findByTestId('automation-dialog-music');
+		screen.getByTestId('automation-dialog-music');
 		await settle();
 		expect(calls[0]!.req.params).toEqual({ seed: 1, assets: { bin: 'Música' } });
 		fireEvent.click(screen.getByRole('checkbox', { name: /Duck/ }));
@@ -423,7 +388,7 @@ describe('the overlay pass dialogs (EA-023…EA-026)', () => {
 				],
 			}),
 		);
-		const dialog = await screen.findByTestId('automation-dialog-stingers');
+		const dialog = screen.getByTestId('automation-dialog-stingers');
 		await settle();
 		expect((within(dialog).getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(
 			false,

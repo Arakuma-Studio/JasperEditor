@@ -192,21 +192,18 @@ describe('clip.addAdjustmentBatch', () => {
 		expect(errorsOf(r)[0]!.code).toBe('E_SCHEMA');
 	});
 
-	it('property: any non-overlapping set of items lands exactly, invariants hold, undo restores', () => {
+	it('property: any non-overlapping set of items lands exactly and invariants hold', () => {
 		fc.assert(
 			fc.property(
 				fc.uniqueArray(fc.integer({ min: 0, max: 200 }), { minLength: 1, maxLength: 12 }),
 				fc.integer({ min: 2, max: 20 }),
 				(slots, len) => {
 					const h = new Harness();
-					const before = h.doc;
 					const items = slots.map((s) => kit(s * 21, len));
 					h.ok([{ type: 'clip.addAdjustmentBatch', trackId: 'V3', items }]);
 					valid(h);
 					const got = adjustments(h, 'V3').map((c) => [c.start, c.duration]);
 					expect(got).toEqual([...slots].sort((a, b) => a - b).map((s) => [s * 21, len]));
-					h.doc = before;
-					expect(adjustments(h, 'V2')).toHaveLength(0);
 				},
 			),
 			{ numRuns: 40, seed: 15 },

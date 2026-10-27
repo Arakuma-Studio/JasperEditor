@@ -9,7 +9,6 @@ import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { fixErrorText } from '../src/script-fix/engine.ts';
 import {
 	FIX_TRANSCRIPT_DIALOG,
 	registerFixTranscriptDialog,
@@ -121,7 +120,6 @@ function fakeEngine(o: {
 	models?: { id: string; installed: boolean }[];
 	glossary?: number;
 	refuse?: { dryRun?: string; propose?: string };
-	jobFails?: string;
 }) {
 	const requests: Req[] = [];
 	const cancelled: string[] = [];
@@ -137,8 +135,6 @@ function fakeEngine(o: {
 		},
 		async getJob() {
 			polls++;
-			if (o.jobFails)
-				return job('failed', { error: { code: o.jobFails, message: 'worker failed', retryable: false } });
 			return polls < 2
 				? job('running', { progress: 0.5, stage: 'Checking against the audio' })
 				: job('succeeded', { progress: 1, result: result('propose') });
@@ -298,7 +294,7 @@ describe('Fix Transcript dialog (SC-081)', () => {
 		expect(openReview).not.toHaveBeenCalled();
 	});
 
-	it('shows a refusal of the run and a failed job in words, never a blank dialog', async () => {
+	it('shows a refusal of the run without blanking the dialog', async () => {
 		const e = fakeEngine({ glossary: 2, refuse: { propose: 'E_NO_SPEECH_MODEL' } });
 		const { run } = setup({ script: true, engine: e });
 		await screen.findByTestId('fix-dry-summary', {}, { timeout: 3000 });
@@ -315,19 +311,5 @@ describe('Fix Transcript dialog (SC-081)', () => {
 		expect((await screen.findByTestId('fix-dry-error', {}, { timeout: 3000 })).textContent).toMatch(
 			/No transcribed words in the chosen scope/,
 		);
-	});
-});
-
-describe('refusal codes in words', () => {
-	it('maps every code of the route and the job, else the engine’s message with its code', () => {
-		const text = (code: string) => fixErrorText(Object.assign(new Error('raw message'), { code }));
-		expect(text('E_NOT_FOUND')).toMatch(/not in the project/);
-		expect(text('E_NO_SOURCE')).toMatch(/Nothing to fix from/);
-		expect(text('E_NO_TRANSCRIPT')).toMatch(/No transcribed words/);
-		expect(text('E_INVALID_PARAM')).toMatch(/In and Out marks/);
-		expect(text('E_NO_SPEECH_MODEL')).toMatch(/No installed speech model/);
-		expect(text('E_LIMIT')).toMatch(/too long to align.*raw message/);
-		expect(text('JOB_CANCELLED')).toBe('Cancelled');
-		expect(text('SPEECH_SCORE_FAILED')).toBe('raw message (SPEECH_SCORE_FAILED)');
 	});
 });

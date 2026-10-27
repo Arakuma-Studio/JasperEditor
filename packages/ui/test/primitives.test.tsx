@@ -103,6 +103,14 @@ describe('ScrubbyNumber (AC-CT-1)', () => {
 		expect(onCommit).toHaveBeenCalledTimes(1);
 	});
 
+	it.each([-1, 101, Number.POSITIVE_INFINITY, Number.NaN])(
+		'renders safely with precision %s',
+		(precision) => {
+			render(<ScrubbyNumber label="Scale" value={1.25} precision={precision} />);
+			expect(screen.getByTestId('scrubby').textContent).toMatch(/^\d+(?:\.\d+)?$/);
+		},
+	);
+
 	it('mixed values show a dash and drags report a delta', () => {
 		const onScrubEnd = vi.fn();
 		render(<ScrubbyNumber label="Opacity" value={null} onScrubEnd={onScrubEnd} />);

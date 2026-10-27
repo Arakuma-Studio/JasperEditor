@@ -19,30 +19,7 @@ export type SourcePlayState = {
 
 export const sourcePlayStore = createStore<SourcePlayState>(() => ({ itemId: null, error: null, epoch: 0 }));
 
-/** What the player needs from an <audio> element (tests pass a fake). */
-export type SourceAudioElement = {
-	src: string;
-	preload: string;
-	currentTime: number;
-	onerror: ((this: never, ev: Event | string) => unknown) | null;
-	ontimeupdate: ((this: never, ev: Event) => unknown) | null;
-	onloadedmetadata: ((this: never, ev: Event) => unknown) | null;
-	play(): Promise<void>;
-	pause(): void;
-	removeAttribute(name: string): void;
-	load(): void;
-};
-
-let makeElement: () => SourceAudioElement | null = () =>
-	typeof Audio === 'undefined' ? null : (new Audio() as unknown as SourceAudioElement);
-/** Tests: replace the element factory (returns the previous one). */
-export function setSourceAudioFactory(f: () => SourceAudioElement | null): () => SourceAudioElement | null {
-	const prev = makeElement;
-	makeElement = f;
-	return prev;
-}
-
-let current: { el: SourceAudioElement; timer: ReturnType<typeof setTimeout> | null } | null = null;
+let current: { el: HTMLAudioElement; timer: ReturnType<typeof setTimeout> | null } | null = null;
 
 export function stopSourceAudio(): void {
 	const c = current;
@@ -76,7 +53,7 @@ export function playSourceWindow(itemId: string, url: string, start: number, end
 	};
 	if (!Number.isFinite(start) || !Number.isFinite(end))
 		return fail(t('The fix has no time in the recording'));
-	const el = makeElement();
+	const el = typeof Audio === 'undefined' ? null : new Audio();
 	if (!el) return fail(t('Audio playback is not available here'));
 	const from = Math.max(0, start / S - SOURCE_CONTEXT_SEC);
 	const to = Math.max(from + 0.1, Math.max(start, end) / S + SOURCE_CONTEXT_SEC);

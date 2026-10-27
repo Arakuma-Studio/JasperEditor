@@ -37,6 +37,8 @@ type Entry = {
 	job: EngineJob;
 	input: unknown;
 	seq: number;
+	/** Stable Map insertion order, including entries replaced when start() restores the journal. */
+	listOrder: number;
 	minSlots: number;
 	granted: number;
 	controller: AbortController | null;
@@ -100,6 +102,7 @@ type ExternalJobSource = {
 export class JobQueue {
 	readonly totalSlots: number;
 	private readonly entries = new Map<string, Entry>();
+	private readonly entriesByDedupeKey = new Map<string, Set<string>>();
 	private readonly runners = new Map<JobKind, JobRunner>();
 	private readonly dedupe = new Map<string, string>();
 	private readonly external = new Set<ExternalJobSource>();
@@ -150,7 +153,7 @@ export class JobQueue {
 			}
 			const entry = this.makeEntry(job, input, 1);
 			entry.requeued = !!requeued;
-			this.entries.set(job.id, entry);
+			this.addEntry(entry);
 			if (
 				job.state === 'interrupted' &&
 				!entry.requeued &&
@@ -230,7 +233,7 @@ export class JobQueue {
 		};
 		const minSlots = Math.max(0, Math.min(job.cpuSlots, spec.minSlots ?? job.cpuSlots));
 		const entry = this.makeEntry(job, spec.input, minSlots);
-		this.entries.set(job.id, entry);
+		this.addEntry(entry);
 		if (job.dedupeKey) this.dedupe.set(job.dedupeKey, job.id);
 		this.journal(entry);
 		this.opts.broadcaster?.publish('job.created', structuredClone(job), job.projectId);
@@ -255,7 +258,15 @@ export class JobQueue {
 	/** Jobs newest first. `since` keeps jobs created or finished at/after that ISO time. */
 	list(filter: JobListFilter = {}): EngineJob[] {
 		const out: EngineJob[] = [];
-		const all: { job: EngineJob; own: boolean }[] = [...this.entries.values()].map((e) => ({
+		let entries: Iterable<Entry> = this.entries.values();
+		if (filter.dedupeKeys) {
+			const matched: Entry[] = [];
+			for (const key of filter.dedupeKeys)
+				for (const id of this.entriesByDedupeKey.get(key) ?? []) matched.push(this.entries.get(id)!);
+			// The final date sort is stable: equal timestamps retain the unfiltered list's insertion order.
+			entries = matched.sort((a, b) => a.listOrder - b.listOrder);
+		}
+		const all: { job: EngineJob; own: boolean }[] = Array.from(entries, (e) => ({
 			job: e.job,
 			own: true,
 		}));
@@ -593,6 +604,7 @@ export class JobQueue {
 			if (Date.parse(e.job.finishedAt ?? e.job.createdAt) >= cutoff) return;
 			if (e.waiters.length) return;
 			this.entries.delete(e.job.id);
+			this.unindexEntry(e);
 			dropped++;
 		});
 		this.compactJournal();
@@ -625,11 +637,33 @@ export class JobQueue {
 		}
 	}
 
+	private addEntry(entry: Entry): void {
+		const previous = this.entries.get(entry.job.id);
+		if (previous) this.unindexEntry(previous);
+		this.entries.set(entry.job.id, entry);
+		const key = entry.job.dedupeKey;
+		if (key) {
+			let ids = this.entriesByDedupeKey.get(key);
+			if (!ids) this.entriesByDedupeKey.set(key, (ids = new Set()));
+			ids.add(entry.job.id);
+		}
+	}
+
+	private unindexEntry(entry: Entry): void {
+		const key = entry.job.dedupeKey;
+		if (!key) return;
+		const ids = this.entriesByDedupeKey.get(key);
+		ids?.delete(entry.job.id);
+		if (ids?.size === 0) this.entriesByDedupeKey.delete(key);
+	}
+
 	private makeEntry(job: EngineJob, input: unknown, minSlots: number): Entry {
+		const seq = this.seq++;
 		return {
 			job,
 			input,
-			seq: this.seq++,
+			seq,
+			listOrder: this.entries.get(job.id)?.listOrder ?? seq,
 			minSlots,
 			granted: 0,
 			controller: null,

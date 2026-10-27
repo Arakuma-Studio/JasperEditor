@@ -1,8 +1,7 @@
 // Clean Up tools (spec 14 TC-050 / TC-051): analyze_voice (paged findings, groups, ranges, statistics; sequence,
 // clip and media targets), plan_cleanup (decisions re-plan), apply_cleanup (one "Clean Up Voice: N cuts" transaction
 // with the rejections remembered; stale analysis refused), set_cleanup_settings, attach_script; strict schemas,
-// annotations, errors as tool errors, the "Cleaning up speech" guide and resource. The fake engine runs the real pure
-// analysis on the document like the engine's `cleanup-analysis` job.
+// errors as tool errors. The fake engine runs real pure analysis like the engine's `cleanup-analysis` job.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -229,23 +228,6 @@ async function connect(opts: { script?: boolean } = {}) {
 type Body = Record<string, any>;
 
 describe('Clean Up MCP tools', () => {
-	it('declares strict, annotated tools and the "Cleaning up speech" guide and resource', async () => {
-		const { client } = await connect();
-		const tools = (await client.listTools()).tools;
-		const by = (n: string) => tools.find((t) => t.name === n)!;
-		for (const n of ['analyze_voice', 'plan_cleanup'])
-			expect(by(n).annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
-		expect(by('apply_cleanup').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
-		for (const n of ['set_cleanup_settings', 'attach_script'])
-			expect(by(n).annotations).toMatchObject({ readOnlyHint: false, idempotentHint: true });
-		expect(client.getInstructions()).toContain('Cleaning up speech');
-		const res = await client.readResource({ uri: 'jasper://guide/cleanup' });
-		const text = (res.contents[0] as { text: string }).text;
-		expect(text).toContain('# Cleaning up speech');
-		expect(text).toContain('never cut "untranscribed" findings');
-		expect(text).toContain('largestSilenceLeft');
-	});
-
 	it('analyze_voice: findings with frames, timecodes and reasons, groups, ranges, stats, pages', async () => {
 		const { call, engine } = await connect();
 		const r = await call('analyze_voice', { limit: 5 });
@@ -346,6 +328,7 @@ describe('Clean Up MCP tools', () => {
 		const r = await call('apply_cleanup', { analysisId: a.analysisId, decisions: { reject: ['f1'] } });
 		expect(r.isError).toBe(true);
 		expect((r.body as Body).error.code).toBe('E_STALE');
+		expect((r.body as Body).error.hint).toBeTruthy();
 		expect(engine.txs).toHaveLength(0);
 	});
 

@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { decodePng } from '../../src/png.ts';
-import { cleanEnv, waitFor } from '../helpers.ts';
+import { cleanEnv, stopEngine, waitFor } from '../helpers.ts';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
@@ -94,12 +94,7 @@ export class Qa {
 
 	async stop(): Promise<void> {
 		await this.client?.close().catch(() => {});
-		const e = this.engine;
-		if (e && e.exitCode === null) {
-			const exited = new Promise((r) => e.once('exit', r));
-			e.kill('SIGTERM');
-			await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-		}
+		await stopEngine(this.engine);
 		rmSync(this.appdir, { recursive: true, force: true });
 		rmSync(this.dir, { recursive: true, force: true });
 	}

@@ -1,11 +1,28 @@
 // Runs against the built engine serving the built web app with a temporary appdir.
 // `pnpm e2e` prepares fixtures, binaries, and builds before Playwright starts.
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
+import { resolveBinaries } from './apps/engine/src/tools/ffmpeg';
+import { findVendorDir } from './apps/engine/src/tools/lgpl';
 import { e2eServerTimeoutMs } from './e2e/server-timeout';
 
 const port = Number(process.env.E2E_PORT ?? 48110);
 const baseURL = `http://127.0.0.1:${port}`;
+
+// `pnpm e2e` prepares these binaries for the built engine. Fixture generators in
+// test workers need the same encoders (notably LGPL OpenH264), too.
+const binaries = resolveBinaries({
+	resourcesDir: process.env.JASPER_RESOURCES_DIR,
+	vendorDir: findVendorDir({ from: fileURLToPath(new URL('.', import.meta.url)) }),
+});
+for (const [key, name] of [
+	['JASPER_FFMPEG', 'ffmpeg'],
+	['JASPER_FFPROBE', 'ffprobe'],
+] as const) {
+	const executable = binaries[name];
+	if (!process.env[key] && executable) process.env[key] = executable;
+}
 
 // Security review DEV-1 / AGT-2: the E2E engine is authenticated like a packaged one. The harness plays the desktop
 // shell: it makes the per-run token and editor key, starts the engine with them, and gives the browser (and the

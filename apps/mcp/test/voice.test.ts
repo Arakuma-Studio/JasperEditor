@@ -1,5 +1,5 @@
 // get_voice_analysis (spec 14 TC-001): reads a cached analysis, or runs the engine job and reads it; totals, windows
-// and a downsampled page with class runs; strict arguments, refusals and job failures as tool errors; the guide.
+// and a downsampled page with class runs; strict arguments, refusals and job failures as tool errors.
 import type { EngineJob, VoiceAnalyzeRequest } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
@@ -204,17 +204,6 @@ const Summary = z.object({
 });
 
 describe('get_voice_analysis', () => {
-	it('is a read-only tool with a documented guide', async () => {
-		const { client } = await connect({ cached: true });
-		const tool = (await client.listTools()).tools.find((t) => t.name === 'get_voice_analysis')!;
-		expect(tool.annotations).toMatchObject({
-			readOnlyHint: true,
-			destructiveHint: false,
-			openWorldHint: false,
-		});
-		expect(client.getInstructions()).toContain('get_voice_analysis');
-	});
-
 	it('reads a cached analysis of the first audio stream: totals and 60 s windows', async () => {
 		const { call, engine } = await connect({ cached: true });
 		const r = await call({ mediaId: engine.a });

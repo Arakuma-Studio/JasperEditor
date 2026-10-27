@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -422,8 +422,9 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 	it('falls back to headless when the session disconnects before a request', async () => {
 		const { app, projectId } = await makeEngine();
 		const { ws } = await connectSession(app, projectId);
-		ws.terminate();
-		await new Promise((r) => setTimeout(r, 50));
+		const closed = once(ws, 'close');
+		ws.close();
+		await closed;
 		const r = await postTx(app, projectId, tx([{ type: 'marker.add', frame: 1, name: 'after close' }]));
 		expect(r).toMatchObject({ appliedBy: 'headless', result: { ok: true } });
 	});

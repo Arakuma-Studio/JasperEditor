@@ -81,7 +81,6 @@ describe('parseTable', () => {
 			['1', 'open\n2,3'],
 		]);
 		expect(t.table.issues).toMatchObject([{ kind: 'unclosed-quote', line: 2, record: 1 }]);
-		expect(mgImportText(t.table.issues[0]!.message)).toContain('line 2');
 	});
 
 	it('skips blank lines and rows of empty cells; ragged rows keep their cells', () => {
@@ -123,7 +122,6 @@ describe('parseTable', () => {
 		const many = ['h', ...Array.from({ length: TABLE_MAX_ROWS + 1 }, (_, i) => `${i}`)].join('\n');
 		const r = parseTable(many);
 		expect(r).toMatchObject({ ok: false, code: 'E_TOO_LARGE' });
-		if (!r.ok) expect(mgImportText(r.message)).toContain(`${TABLE_MAX_ROWS} rows`);
 		expect(parseTable(['h', ...Array.from({ length: TABLE_MAX_ROWS }, (_, i) => `${i}`)].join('\n')).ok).toBe(
 			true,
 		);

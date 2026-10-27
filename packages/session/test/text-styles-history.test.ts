@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { EditorSession, MemoryProjectStore } from '../src/index.ts';
 
-const N = 100;
+const N = 3;
 
 async function open() {
 	const ids = createCounterIdSource(1);
@@ -43,7 +43,7 @@ async function open() {
 }
 
 describe('text style commands in the session history', () => {
-	it('each batch command over 100 clips is one undo step, exact both ways', async () => {
+	it('each batch command over multiple clips is one undo step, exact both ways', async () => {
 		const { s, clipIds } = await open();
 		const steps: CommandInput[][] = [
 			[

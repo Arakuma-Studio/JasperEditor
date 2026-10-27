@@ -722,8 +722,7 @@ describe('sound command input is strict and bounded (review, gaps)', () => {
 		];
 		for (const c of bad) {
 			const code = err(h.tx([c]))?.code;
-			// a malformed cue id is refused by the handler; everything else by the schema
-			expect(['E_SCHEMA', 'E_INVALID_PARAM'], JSON.stringify(c).slice(0, 200)).toContain(code);
+			expect(code, JSON.stringify(c).slice(0, 200)).toBe('E_SCHEMA');
 		}
 	});
 });

@@ -123,9 +123,11 @@ describe('audio-fx registry', () => {
 			const l2 = noise(3, 4800, 0.5);
 			const r2 = noise(4, 4800, 0.5);
 			fx.process([l2, r2], 0, l2.length);
+			const zl = new Float32Array(48000);
+			const zr = new Float32Array(48000);
 			for (let k = 0; k < 12; k++) {
-				const zl = new Float32Array(48000);
-				const zr = new Float32Array(48000);
+				zl.fill(0);
+				zr.fill(0);
 				fx.process([zl, zr], 0, zl.length);
 				for (let i = 0; i < zl.length; i++) {
 					const v = zl[i]!;

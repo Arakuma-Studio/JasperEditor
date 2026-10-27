@@ -2887,6 +2887,7 @@
   "Could not import the workspace",
   "Could not install {0}",
   "Could not load the editor. Check your connection and reload.",
+  "Could not load the expression editor.",
   "Could not open project:",
   "Could not pick a screen color",
   "Could not play “{0}”: {1}",

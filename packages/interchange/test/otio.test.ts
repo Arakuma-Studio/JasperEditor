@@ -9,6 +9,7 @@ import { Report } from '../src/report.ts';
 import { framesToFlicks } from '../src/time.ts';
 import { arbProject, BASIC, type Features } from './support/arbitraries.ts';
 import { expectOnlyInterchangeErrors, VENV_PYTHON } from './support/fuzz.ts';
+import { clip as addClip, media, project, sequence } from './support/ir.ts';
 
 const ALL: Features = {
 	...BASIC,
@@ -174,11 +175,16 @@ describe('OTIO', () => {
 	});
 
 	it('writes media paths relative to a folder when asked', () => {
-		const p = fc.sample(arbProject(BASIC), 1)[0]!;
-		const text = exportOtio(p, p.top[0]!, { relativeTo: '/media/sub' }, new Report());
-		expect(text).toContain('"target_url": "../');
+		const p = project();
+		const rate = { num: 25, den: 1 };
+		const mediaId = media(p, '/media/shot.mov', true, false, rate, 1);
+		const sid = sequence(p, 'Relative media', rate);
+		addClip(p, sid, 'video', 0, mediaId, 0, 25, 0);
+		const text = exportOtio(p, sid, { relativeTo: '/media/sub' }, new Report());
+		const exported = JSON.parse(text).tracks.children[0].children[0];
+		expect(exported.media_references[exported.active_media_reference_key].target_url).toBe('../shot.mov');
 		const back = importOtio(text, { baseDir: '/media/sub' }, new Report());
-		for (const m of Object.values(back.media)) if (m.path) expect(m.path.startsWith('/media/')).toBe(true);
+		expect(Object.values(back.media).map((m) => m.path)).toEqual(['/media/shot.mov']);
 	});
 
 	it('only ever throws InterchangeError on corrupt input', () => {

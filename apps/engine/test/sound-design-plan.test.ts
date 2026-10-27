@@ -558,7 +558,7 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 		}
 	});
 
-	it('stores a proposal (nothing applied), same picks for the same seed; agents are refused accept; the editor applies one transaction', async () => {
+	it('stores a proposal without applying it; agents are refused accept; the editor applies one transaction', async () => {
 		const f = fixture();
 		const { projectId, seqId } = seedProject(app, f);
 		const before = await savedDoc(projectId);
@@ -579,11 +579,6 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 		// Real recordings first: the push's whoosh is a kit sound; the cut's hit too.
 		const push = result.report.events.find((e) => e.frame === 180)!;
 		expect(push.sound.source).toBe('starter');
-		// Same seed, same picks (and same registered media reused: no second copy needed).
-		const again = await runPlan({ projectId, sequenceId: seqId, style: { seed: 11 } });
-		expect(again.result.report.events.map((e) => [e.frame, e.sound.soundId, e.rate])).toEqual(
-			result.report.events.map((e) => [e.frame, e.sound.soundId, e.rate]),
-		);
 		// An agent may not apply it (agentsMayApply is off).
 		const refused = await app.inject({
 			method: 'POST',

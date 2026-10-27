@@ -27,8 +27,6 @@ export function Glyph(p: {
 	/** Square size, or `[width, height]` in px. */
 	size: number | readonly [number, number];
 	color?: string;
-	/** Kept for callers; an image's gradient ids are its own, so no scoping is needed. */
-	scope?: string;
 	style?: CSSProperties;
 }) {
 	const g = p.glyph;
@@ -133,7 +131,7 @@ export function SocialAvatar(p: {
 	if (def.kind === 'glyph')
 		return (
 			<div data-social-avatar="default" style={box}>
-				<Glyph glyph={def.glyph} size={p.size} scope={p.assets.idScope} />
+				<Glyph glyph={def.glyph} size={p.size} />
 			</div>
 		);
 	const silhouette = (
@@ -193,7 +191,7 @@ export function TextWithEmoji(p: {
  * frame painted after an animation differed from the same frame painted alone (renderFrames ≠ renderStill,
  * S11:ANM-014). Every element a card transforms per frame carries it.
  */
-export const INK_RING = '0 0 0 3px transparent';
+const INK_RING = '0 0 0 3px transparent';
 
 const q3 = (n: number | undefined, d: number) =>
 	n !== undefined && Number.isFinite(n) ? Math.round(n * 1000) / 1000 : d;

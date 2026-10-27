@@ -230,6 +230,7 @@ describe('proposals slice: preview document and ghosts', () => {
 		t.run();
 		const first = c.getState().preview!;
 		expect(first.document.sequences[seqId]!.markers.map((m) => m.name)).toContain('Whoosh');
+		expect(await c.refreshItems('stale')).toMatchObject({ ok: false, code: 'E_NOT_REFRESHABLE' });
 		engine.replan = (_p, ids, reroll) => ({
 			items: ids.map((id) => ({
 				id,

@@ -115,8 +115,6 @@ const plan = (text: string, opts: { preset?: string } = {}) => {
 	if (!p.ok) throw new Error(mgImportText(p.message));
 	return p.plan;
 };
-const texts = (list: Parameters<typeof mgImportText>[0][]) => list.map(mgImportText);
-
 describe('column mapping', () => {
 	it('matches param names and labels ignoring case and punctuation; aliases; timing; ignored with reasons', () => {
 		const p = plan(
@@ -127,7 +125,7 @@ describe('column mapping', () => {
 				c.kind === 'param'
 					? c.param
 					: c.kind === 'ignored'
-						? `ignored: ${mgImportText(c.reason)}`
+						? `ignored: ${c.reason.code}`
 						: c.kind === 'alias'
 							? 'alias'
 							: c.kind,
@@ -137,24 +135,29 @@ describe('column mapping', () => {
 			'text',
 			'likes',
 			'alias',
-			'ignored: Pictures from web addresses are not imported',
+			'ignored: template',
 			'start',
 			'duration',
-			'ignored: Not a parameter of Comment',
-			'ignored: The column has no name',
-			'ignored: Same column as "Likes"',
+			'ignored: column-unknown',
+			'ignored: column-unnamed',
+			'ignored: column-duplicate',
 		]);
 	});
 
 	it('refuses a header that names nothing, a table without data rows and an unknown preset', () => {
 		const t = parseTable('foo,bar\n1,2');
-		expect(t.ok && planMgImport(t.table, template, { rate })).toMatchObject({ ok: false });
 		const r = t.ok ? planMgImport(t.table, template, { rate }) : null;
-		if (r && !r.ok) expect(mgImportText(r.message)).toContain('first row must name the columns');
+		expect(r).toMatchObject({ ok: false, message: { code: 'no-header' } });
 		const h = parseTable('text');
-		expect(h.ok && planMgImport(h.table, template, { rate })).toMatchObject({ ok: false });
+		expect(h.ok && planMgImport(h.table, template, { rate })).toMatchObject({
+			ok: false,
+			message: { code: 'no-data' },
+		});
 		const ok = parseTable('text\nhi');
-		expect(ok.ok && planMgImport(ok.table, template, { rate, preset: 'nope' })).toMatchObject({ ok: false });
+		expect(ok.ok && planMgImport(ok.table, template, { rate, preset: 'nope' })).toMatchObject({
+			ok: false,
+			message: { code: 'no-preset' },
+		});
 	});
 
 	it('normalizeColumnName ignores case, spaces, separators and a leading @/#', () => {
@@ -196,15 +199,15 @@ describe('cells', () => {
 		const p = plan(
 			'likes,verified,Style,scale,handle,avatar\nabc,maybe,facebook,9,"has space",{bad\n1.5,yes,,1,ok,',
 		);
-		expect(texts(p.rows[0]!.errors)).toEqual([
-			'likes: "abc" is not a number',
-			'verified: "maybe" is not yes / no',
-			'Style: "facebook" is not one of tok-reply, gram-post, ex-post',
-			'scale: 9 is above the maximum 2',
-			'handle: "has space" has characters this field does not take',
-			'avatar: "{bad" is not JSON (this field takes a value like {"mediaId": …})',
+		expect(p.rows[0]!.errors.map(({ code, column }) => [code, column])).toEqual([
+			['not-number', 'likes'],
+			['not-boolean', 'verified'],
+			['not-in-list', 'Style'],
+			['above-maximum', 'scale'],
+			['bad-characters', 'handle'],
+			['not-json', 'avatar'],
 		]);
-		expect(texts(p.rows[1]!.errors)).toEqual(['likes: 1.5 is not a whole number']);
+		expect(p.rows[1]!.errors).toMatchObject([{ code: 'not-integer', column: 'likes', values: [1.5] }]);
 	});
 
 	it('resolves aliases per row by the variant (row, then preset, then defaults)', () => {
@@ -231,7 +234,9 @@ describe('cells', () => {
 	it('a direct column wins over an alias for the same param (warning)', () => {
 		const p = plan('Display Name,User\nGiven,Alias\n,Alias only');
 		expect(p.rows[0]!.params).toEqual({ displayName: 'Given' });
-		expect(texts(p.rows[0]!.warnings)).toEqual(['User: Ignored: the row already sets displayName']);
+		expect(p.rows[0]!.warnings).toEqual([
+			{ code: 'alias-overridden', column: 'User', values: ['displayName'] },
+		]);
 		expect(p.rows[1]!.params).toEqual({ displayName: 'Alias only' });
 	});
 
@@ -244,9 +249,9 @@ describe('cells', () => {
 			[undefined, undefined],
 			[undefined, undefined],
 		]);
-		expect(texts(p.rows[3]!.errors)).toEqual([
-			'start: "soon" is not a time (3, 1.5s, 0:03, 90f)',
-			'duration: The length must be at least 1 frame',
+		expect(p.rows[3]!.errors.map(({ code, column }) => [code, column])).toEqual([
+			['not-time', 'start'],
+			['duration-too-short', 'duration'],
 		]);
 		expect(parseCellTime('1:02:03', rate)).toBe((3600 + 120 + 3) * 30);
 		expect(parseCellTime('-3', rate)).toBeNull();
@@ -254,8 +259,8 @@ describe('cells', () => {
 
 	it('marks extra cells and over-long cells', () => {
 		const p = plan(`text,likes\na,1,extra,more\n"${'x'.repeat(10_050)}",2`);
-		expect(texts(p.rows[0]!.warnings)).toEqual(['2 cell(s) beyond the named columns ignored']);
-		expect(p.rows[1]!.errors.length).toBeGreaterThan(0);
+		expect(p.rows[0]!.warnings).toEqual([{ code: 'extra-cells', values: [2] }]);
+		expect(p.rows[1]!.errors).toContainEqual(expect.objectContaining({ code: 'cell-too-long' }));
 	});
 
 	it('parseCellNumber / coerceCell never throw (fast-check)', () => {

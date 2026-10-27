@@ -2,7 +2,7 @@
 // evicted analysis and an invalid file become EngineErrors.
 import { FAST_SETTINGS } from '@jasper/api';
 import { describe, expect, it } from 'vitest';
-import { EngineClient, EngineError } from '../src/index.ts';
+import { EngineClient } from '../src/index.ts';
 
 function client(handler: (url: string, init: RequestInit) => Response) {
 	const calls: Array<{ url: string; body?: unknown }> = [];
@@ -89,6 +89,6 @@ describe('EngineClient cleanup', () => {
 			code: 'CLEANUP_ANALYSIS_NOT_FOUND',
 		});
 		const bad = client(() => json({ ...file, analysis: { ...file.analysis, findings: [{ id: 1 }] } }));
-		await expect(bad.c.getCleanupAnalysis('cla_1')).rejects.toBeInstanceOf(EngineError);
+		await expect(bad.c.getCleanupAnalysis('cla_1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
 	});
 });

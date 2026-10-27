@@ -2,14 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	angleShutter,
 	centredShutter,
-	mbKeyTimes,
 	mbQuality,
 	mbTapCount,
 	mbTimeWarp,
-	mbUniforms,
 	planMotionBlur,
-	poseTrackLengths,
-	toUniform,
 } from '../src/index.ts';
 
 type Pose = { x: number; y: number; rot: number; zoom: number };
@@ -54,13 +50,6 @@ describe('shutter windows', () => {
 		expect(angleShutter(180, 0)).toEqual({ start: 0, end: 0.5 });
 		expect(angleShutter(0)).toEqual({ start: 0, end: 0 });
 	});
-	it('key times: FX_MB_KEYS evenly over the interval, both ends included', () => {
-		const t = mbKeyTimes(10, centredShutter(1));
-		expect(t).toHaveLength(32);
-		expect(t[0]).toBeCloseTo(9.5);
-		expect(t[31]).toBeCloseTo(10.5);
-		expect(t[1]! - t[0]!).toBeCloseTo(1 / 31);
-	});
 });
 
 describe('tap counts', () => {
@@ -79,14 +68,9 @@ describe('tap counts', () => {
 
 describe('planMotionBlur', () => {
 	const still = () => ({ x: 0, y: 0, rot: 0, zoom: 1 });
-	it('nothing moves → 1 tap and zero-filled arrays of the fixed size', () => {
+	it('nothing moves → 1 tap', () => {
 		const p = plan(still);
 		expect(p.taps).toBe(1);
-		expect(p.packed).toEqual(new Array(128).fill(0));
-		const u = mbUniforms(p);
-		expect(toUniform('u_mbPlan', u.u_mbPlan!).value).toEqual([1, 0, 1, 0]);
-		expect(toUniform('u_mbKeys', u.u_mbKeys!).value).toHaveLength(128);
-		expect(toUniform('u_mbWarp', u.u_mbWarp!).value).toHaveLength(32);
 	});
 	it('an empty shutter → 1 tap even when moving', () => {
 		expect(plan((f) => ({ ...still(), x: f * 40 }), { length: 0 }).taps).toBe(1);
@@ -169,23 +153,5 @@ describe('time warp and helpers', () => {
 		for (let i = 1; i < w.length; i++) expect(w[i]!).toBeGreaterThanOrEqual(w[i - 1]!);
 		const inMiddle = w.filter((s) => s > 1 / 3 && s < 2 / 3).length / w.length;
 		expect(inMiddle).toBeGreaterThan(0.7);
-	});
-	it('track lengths: per segment, the farthest-moving point', () => {
-		const r = poseTrackLengths([
-			[
-				[0, 0],
-				[10, 0],
-			],
-			[
-				[3, 4],
-				[10, 1],
-			],
-			[
-				[3, 4],
-				[10, 1],
-			],
-		]);
-		expect(r.segments).toEqual([5, 0]);
-		expect(r.total).toBe(5);
 	});
 });

@@ -4,19 +4,19 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	type EngineJob,
-	SoundCheckLastResponseSchema,
-	type SoundCheckResult,
-	SoundCheckResultSchema,
-} from '@jasper/api';
+import { type EngineJob, SoundCheckLastResponseSchema, SoundCheckResultSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SoundCheckReportStore } from '../src/sound-design/report-store.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, makeApp, type TestApp } from './helpers.ts';
-import { buildCheckDoc, type FixtureMedia, registerCheckMedia } from './sound-check-fixture.ts';
+import {
+	buildCheckDoc,
+	type FixtureMedia,
+	keptReportFixture,
+	registerCheckMedia,
+} from './sound-check-fixture.ts';
 
 const HOST = { host: '127.0.0.1:47900' };
 const TOKEN = 'tok_kept_0123456789abcdef0123';
@@ -48,64 +48,6 @@ function seed(doc: ProjectDocument): string {
 const post = (url: string, body: unknown, headers: Record<string, string> = AGENT_H) =>
 	app.inject({ method: 'POST', url, headers: json(headers), payload: JSON.stringify(body) });
 
-/** A fake but schema-valid result (the store does not care what the report says). */
-function fakeResult(projectId: string, sequenceId: string): SoundCheckResult {
-	return SoundCheckResultSchema.parse({
-		projectId,
-		sequenceId,
-		stored: false,
-		revision: 1,
-		report: {
-			version: 1,
-			projectId,
-			sequenceId,
-			revision: 1,
-			mixHash: 'm',
-			inputsHash: 'i',
-			preset: { id: 'web', label: 'Web', integratedLufs: -14, truePeakDb: -1, source: 'x' },
-			range: { start: 0, end: 30 },
-			rangeTimecode: { start: '00:00:00:00', end: '00:00:01:00' },
-			wholeSequence: true,
-			fps: { num: 30, den: 1 },
-			durationSec: 1,
-			verdict: 'pass',
-			counts: {},
-			issues: [],
-			events: [],
-			listen: [],
-			loudness: {
-				integratedLufs: -14,
-				truePeakDb: -1,
-				samplePeakDb: -1,
-				lra: 1,
-				maxMomentaryLufs: -10,
-				maxShortTermLufs: -12,
-				measurable: true,
-				normalization: { enabled: true, targetLufs: -14, truePeakDb: -1, gainDb: 0 },
-				limiterMaxGrDb: 0,
-				before: { integratedLufs: -14, truePeakDb: -1, samplePeakDb: -1 },
-			},
-			curves: {
-				hopSec: 0.01,
-				startSec: 0,
-				points: 0,
-				window: 'momentary',
-				mix: [],
-				bed: [],
-				sfx: [],
-				music: [],
-				dialogue: [],
-				ambience: [],
-				limiterGrDb: [],
-			},
-			speech: { seconds: 0, segments: [] },
-			stems: {},
-			warnings: [],
-			timings: {},
-		},
-	});
-}
-
 beforeAll(async () => {
 	appdir = mkdtempSync(join(tmpdir(), 'jasper-kept-appdir-'));
 	app = await makeApp({ appdir, dev: false, token: TOKEN, editorKey: KEY });
@@ -124,25 +66,25 @@ describe('SoundCheckReportStore', () => {
 			log: (m) => logs.push(m),
 		});
 		expect(await store.get('prj_a', 'seq_1')).toBeNull();
-		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_1'), 'job_1')).toBe(true);
-		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_1'), 'job_2')).toBe(true);
+		expect(await store.save('prj_a', keptReportFixture('prj_a', 'seq_1'), 'job_1')).toBe(true);
+		expect(await store.save('prj_a', keptReportFixture('prj_a', 'seq_1'), 'job_2')).toBe(true);
 		expect((await store.get('prj_a', 'seq_1'))!.jobId).toBe('job_2');
 		// Set distinct mtimes explicitly: eviction must not depend on filesystem clock resolution.
 		const folder = join(dir, 'prj_a', 'sound-check');
 		utimesSync(join(folder, 'seq_1.json'), 0, 0);
 		for (let i = 2; i <= 33; i++) {
 			const s = `seq_${i}`;
-			expect(await store.save('prj_a', fakeResult('prj_a', s), `job_${s}`)).toBe(true);
+			expect(await store.save('prj_a', keptReportFixture('prj_a', s), `job_${s}`)).toBe(true);
 			utimesSync(join(folder, `${s}.json`), i, i);
 		}
 		const files = readdirSync(join(dir, 'prj_a', 'sound-check')).sort();
 		expect(files).toEqual(Array.from({ length: 32 }, (_, i) => `seq_${i + 2}.json`).sort());
 		expect(await store.get('prj_a', 'seq_1')).toBeNull();
 		// a sequence id that is not a document id is never a file name
-		expect(await store.save('prj_a', fakeResult('prj_a', '../evil'), 'job_x')).toBe(false);
+		expect(await store.save('prj_a', keptReportFixture('prj_a', '../evil'), 'job_x')).toBe(false);
 		expect(await store.get('prj_a', '../evil')).toBeNull();
 		// over the size bound: not kept, logged, never thrown
-		const oversized = fakeResult('prj_b', 'seq_1');
+		const oversized = keptReportFixture('prj_b', 'seq_1');
 		oversized.report.preset.source = 'x'.repeat(16 * 1024 * 1024);
 		expect(await store.save('prj_b', oversized, 'job_big')).toBe(false);
 		expect(logs.some((l) => l.includes('not kept'))).toBe(true);
@@ -166,10 +108,10 @@ describe('SoundCheckReportStore', () => {
 		);
 		expect(await store.get('prj_a', 'seq_2')).toBeNull();
 		// another sequence's report under this name
-		await store.save('prj_a', fakeResult('prj_a', 'seq_3'), 'job_3');
+		await store.save('prj_a', keptReportFixture('prj_a', 'seq_3'), 'job_3');
 		writeFileSync(
 			join(folder, 'seq_4.json'),
-			JSON.stringify({ version: 1, savedAt: 'x', jobId: null, result: fakeResult('prj_a', 'seq_3') }),
+			JSON.stringify({ version: 1, savedAt: 'x', jobId: null, result: keptReportFixture('prj_a', 'seq_3') }),
 		);
 		expect(await store.get('prj_a', 'seq_4')).toBeNull();
 		const names = readdirSync(folder);

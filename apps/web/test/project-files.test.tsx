@@ -122,7 +122,7 @@ describe('recovery dialog (S01:PER-021, AC-18)', () => {
 		await vi.advanceTimersByTimeAsync(1100);
 		vi.useRealTimers();
 		save.mockRestore();
-		env.store.expireLease(env.projectId);
+		await env.store.acquireLease(env.projectId, 'alive', { takeOver: true });
 		const s2 = await env.open('alive');
 		attachPersistence(s2, { window: null, document: null });
 		const a = createProjectFileActions(s2, { replace: () => undefined, open: () => undefined });

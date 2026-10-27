@@ -1,8 +1,10 @@
 // scripts/fixtures/camtrack.mjs ray-casts a dolly with an exactly known camera for comparison.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { M3, V3 } from '../src/camtrack/core/linalg.ts';
+import { coreServices } from '../src/tools/services.ts';
 import { collinearPathError } from './camera-path-oracle.ts';
 import {
 	closeApps,
@@ -13,6 +15,7 @@ import {
 	makeApp,
 	register,
 	type TestApp,
+	tempAppdir,
 	until,
 } from './helpers.ts';
 
@@ -131,19 +134,55 @@ describe('camtrack jobs', () => {
 		expect(r.tracks).toBe(first.tracks);
 	}, 600_000);
 
-	it('cancels a running job (the child process is killed)', async () => {
-		const job = await post({ mediaKey: key, span: [0, 59], settings: { ...SETTINGS, detailed: true } });
-		await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return j.state === 'running' ? j : null;
-		}, 60_000);
-		const c = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
-		expect(c.statusCode).toBeLessThan(300);
-		const done = await finished(job);
-		expect(done.state).toBe('cancelled');
-	}, 120_000);
+	it('cancelling a camera job terminates its worker process within 5 s', async () => {
+		const dir = tempAppdir('jasper-camtrack-cancel-');
+		const pidFile = join(dir, 'worker.pid');
+		const worker = join(dir, 'camera-worker.mjs');
+		// A real worker protocol peer that stays busy until killed. Camera accuracy is owned by the solve above.
+		writeFileSync(
+			worker,
+			`import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+process.stdout.write(JSON.stringify({ type: 'progress', fraction: 0.25, stage: 'Peer ready' }) + '\\n');
+setInterval(() => {}, 1000);
+`,
+		);
+		const previousWorker = process.env.JASPER_CAMTRACK;
+		process.env.JASPER_CAMTRACK = worker;
+		const queue = coreServices(app).queue;
+		let job: EngineJob | undefined;
+		let pid: number | undefined;
+		try {
+			job = await post({ mediaKey: key, span: [0, 59], settings: SETTINGS });
+			const jobId = job.id;
+			await until(() => existsSync(pidFile) && queue.get(jobId)?.stage === 'Peer ready');
+			pid = Number(readFileSync(pidFile, 'utf8'));
+			expect(Number.isSafeInteger(pid) && pid > 0).toBe(true);
+			const cancel = await app.inject({
+				method: 'POST',
+				url: `/api/jobs/${jobId}/cancel`,
+				headers: H,
+			});
+			expect(cancel.statusCode).toBe(200);
+			await until(() => queue.get(jobId)?.state === 'cancelled', 5000);
+			expect(() => process.kill(pid!, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+		} finally {
+			if (previousWorker === undefined) delete process.env.JASPER_CAMTRACK;
+			else process.env.JASPER_CAMTRACK = previousWorker;
+			if (job) {
+				queue.cancel(job.id);
+				pid ??= existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : undefined;
+				if (pid && Number.isSafeInteger(pid) && pid > 0) {
+					try {
+						process.kill(pid, 'SIGKILL');
+					} catch {
+						/* worker already exited */
+					}
+				}
+				await queue.wait(job.id);
+			}
+		}
+	}, 30_000);
 
 	it('refuses spans shorter than two frames and unknown media', async () => {
 		const short = await app.inject({

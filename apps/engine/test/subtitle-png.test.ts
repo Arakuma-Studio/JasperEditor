@@ -1,29 +1,17 @@
-// spec 13 AS-072: the kernel stream's in-process PNG decode (stream/png.ts) gives exactly what ffmpeg's
-// `format=rgba` decode gives — for the layer bake's own PNGs (unfiltered rows) and for filtered RGBA / RGB PNGs (all
-// five row filters, as Chrome writes them) — and leaves other kinds and other sizes to ffmpeg.
+// spec 13 AS-072: the kernel stream's PNG decode reproduces authored pixels exactly, for the layer bake's own
+// PNGs and FFmpeg-encoded RGBA / RGB PNGs using every row filter. Other kinds and sizes fall back to FFmpeg.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { decodePngRgba } from '../src/export/stream/png.ts';
 import { encodePng } from '../src/export/synthetic.ts';
 import { TEST_FFMPEG } from './helpers.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'jasper-png-'));
-
-function ffDecode(file: string): Buffer {
-	const r = spawnSync(
-		TEST_FFMPEG,
-		['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'],
-		{
-			maxBuffer: 1 << 26,
-		},
-	);
-	if (r.status !== 0) throw new Error(r.stderr.toString());
-	return r.stdout;
-}
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 /** `px` (RGBA) re-encoded by ffmpeg as `pixFmt` with row prediction `pred`. */
 function ffEncode(px: Uint8Array, w: number, h: number, pixFmt: string, pred: string): string {
@@ -54,25 +42,23 @@ const image = fc
 	});
 
 describe('kernel stream PNG decode (AS-072)', () => {
-	it('equals ffmpeg for the bake’s own PNGs and for filtered RGBA and RGB PNGs', async () => {
+	it('reproduces authored pixels for the bake’s PNGs and every RGBA / RGB row filter', async () => {
 		await fc.assert(
-			fc.asyncProperty(
-				image,
-				fc.constantFrom('none', 'sub', 'up', 'avg', 'paeth', 'mixed'),
-				async (im, pred) => {
-					const own = join(dir, 'own.png');
-					writeFileSync(own, encodePng(im.px, im.w, im.h));
-					expect(Buffer.from((await decodePngRgba(readFileSync(own), im.w, im.h))!)).toEqual(ffDecode(own));
-					for (const fmt of ['rgba', 'rgb24']) {
-						const f = ffEncode(im.px, im.w, im.h, fmt, pred);
-						const got = await decodePngRgba(readFileSync(f), im.w, im.h);
-						expect(got, `${fmt} ${pred}`).not.toBeNull();
-						expect(Buffer.from(got!)).toEqual(ffDecode(f));
-					}
-				},
-			),
+			fc.asyncProperty(image, async ({ px, w, h }) => {
+				expect(await decodePngRgba(encodePng(px, w, h), w, h)).toEqual(px);
+			}),
 			{ numRuns: 25 },
 		);
+		// Lossless external encoder: the expected pixels are the input, with opaque alpha for RGB PNGs.
+		const w = 13;
+		const h = 7;
+		const px = Uint8Array.from({ length: w * h * 4 }, (_, i) => (i * 37 + (i % 11) * 61) & 255);
+		for (const pred of ['none', 'sub', 'up', 'avg', 'paeth', 'mixed'])
+			for (const fmt of ['rgba', 'rgb24']) {
+				const file = ffEncode(px, w, h, fmt, pred);
+				const expected = px.map((value, i) => (fmt === 'rgb24' && i % 4 === 3 ? 255 : value));
+				expect(await decodePngRgba(readFileSync(file), w, h), `${fmt} ${pred}`).toEqual(expected);
+			}
 	}, 120_000);
 
 	it('leaves other sizes, palettes and 16-bit PNGs to ffmpeg; a corrupt file throws', async () => {

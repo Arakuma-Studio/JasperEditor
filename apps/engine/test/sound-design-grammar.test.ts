@@ -68,7 +68,7 @@ function audioAsset(seconds: number) {
  * the typing (195–300) on A1, a fast typewriter (35 characters typed in 0.6 s) at 200, four Pop cards 0.5 s apart from
  * 330, three "sfx: click" markers and two "sfx: hit" markers.
  */
-export function typingFixture() {
+function typingFixture() {
 	const ids = createCounterIdSource(91);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Grammar', preset: 'hd-1080p-30' });
 	const seqId = Object.keys(doc.sequences)[0]!;
@@ -389,10 +389,10 @@ describe('the cue grammar in the plan (typing + UI fixture)', () => {
 		// a density given with it wins
 		expect(planOf(f.get(), f.seqId, { personality: 'calm', density: 'rich' }).style.density).toBe('rich');
 		// the sequence's personality is the default
-		f.tx([{ type: 'soundDesign.setSettings', style: { personality: 'calm' } }]);
-		expect(planOf(f.get(), f.seqId).style.grammar.personality).toBe('calm');
-		expect(at(planOf(f.get(), f.seqId), 180)!.cue.types).not.toContain('hit');
-		f.tx([{ type: 'soundDesign.setSettings', style: { personality: null } }]);
+		const personal = typingFixture();
+		personal.tx([{ type: 'soundDesign.setSettings', style: { personality: 'calm' } }]);
+		expect(planOf(personal.get(), personal.seqId).style.grammar.personality).toBe('calm');
+		expect(at(planOf(personal.get(), personal.seqId), 180)!.cue.types).not.toContain('hit');
 	});
 
 	it('a typewriter filled with ticks (no key recording) is typing, not a climbing run: speed 1, one type', () => {

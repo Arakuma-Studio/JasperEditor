@@ -1,8 +1,6 @@
 // Editing automation tools (spec 15 EA-041): decorate_cuts, add_punch_ins, add_ken_burns, place_reactions,
-// slide_overlays, lay_music_bed, add_stingers — conventions (titles,
-// annotations, strict arguments), parameters passed as the pass's plain data (times as frames / seconds /
-// timecode), dry runs answered at once, proposals waited for, E_TOO_LARGE as a tool error with the range, the guide,
-// and refresh_proposal's reroll.
+// slide_overlays, lay_music_bed, add_stingers: strict arguments, parameters as plain data (times as frames / seconds /
+// timecode), dry-run results, waited proposals, E_TOO_LARGE with the range, and refresh_proposal's reroll.
 import type { AutomationPassResult, EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, type ProjectDocument } from '@jasper/project';
@@ -135,30 +133,6 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 }
 
 describe('editing automation tools', () => {
-	it('are listed with titles and edit annotations', async () => {
-		const t = await connect();
-		const { tools } = await t.client.listTools();
-		for (const name of [
-			'decorate_cuts',
-			'add_punch_ins',
-			'add_ken_burns',
-			'place_reactions',
-			'slide_overlays',
-			'lay_music_bed',
-			'add_stingers',
-		]) {
-			const tool = tools.find((x) => x.name === name)!;
-			expect(tool, name).toBeDefined();
-			expect(tool.annotations).toMatchObject({
-				readOnlyHint: false,
-				destructiveHint: false,
-				idempotentHint: false,
-				openWorldHint: false,
-			});
-			expect(tool.inputSchema.additionalProperties).toBe(false);
-		}
-	});
-
 	it('decorate_cuts dry run: parameters as plain data, the range in frames; nothing waited for', async () => {
 		const t = await connect();
 		const { r, json } = await t.call('decorate_cuts', {
@@ -244,7 +218,7 @@ describe('editing automation tools', () => {
 		expect(r.json.error.hint).toContain('suggested range');
 	});
 
-	it('refresh_proposal passes reroll; the guide has the editing automation section', async () => {
+	it('refresh_proposal passes reroll to the producer', async () => {
 		const t = await connect();
 		const r = await t.call('refresh_proposal', {
 			projectId: P,
@@ -254,20 +228,6 @@ describe('editing automation tools', () => {
 		});
 		expect(r.r.isError).toBeFalsy();
 		expect(t.engine.calls.at(-1)!.args[2]).toEqual({ itemIds: ['kit:120'], reroll: true });
-		const g = await t.client.readResource({ uri: 'jasper://guide' });
-		const text = (g.contents[0] as { text: string }).text;
-		for (const s of [
-			'Editing automation',
-			'decorate_cuts',
-			'add_punch_ins',
-			'add_ken_burns',
-			'place_reactions',
-			'slide_overlays',
-			'lay_music_bed',
-			'add_stingers',
-			'reroll: true',
-		])
-			expect(text).toContain(s);
 	});
 
 	it('the overlay passes: plain-data parameters to their engine pass, dry run and propose', async () => {
@@ -302,6 +262,7 @@ describe('editing automation tools', () => {
 		const s = await t.call('slide_overlays', { projectId: P, heads: 1, directions: { down: 1 } });
 		expect(s.r.isError).toBeFalsy();
 		expect(s.json.proposalId).toBe('prp_0000000000000009');
+		expect(s.json.export).toMatchObject({ cost: 'hybrid', effects: ['jasper.smooth-slide'] });
 		expect(t.engine.calls[1]!.args[1]).toBe('slides');
 		const m = await t.call('lay_music_bed', {
 			projectId: P,
@@ -327,12 +288,5 @@ describe('editing automation tools', () => {
 		const bad2 = await t.call('add_stingers', { projectId: P, frames: 0 });
 		expect(bad2.r.isError).toBe(true);
 		expect(t.engine.calls).toHaveLength(4);
-	});
-
-	it('the export note names the hybrid route', async () => {
-		const t = await connect();
-		const { json } = await t.call('slide_overlays', { projectId: P, mode: 'dryRun' });
-		expect(json.export).toMatchObject({ cost: 'hybrid', effects: ['jasper.smooth-slide'] });
-		expect(json.export.note).toMatch(/stays native.*layer bake/);
 	});
 });

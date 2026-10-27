@@ -20,8 +20,6 @@ import {
 	type EffectInstance,
 	evaluate,
 	flicksPerFrame,
-	KIT_MODEL_STRINGS,
-	kitPackIssues,
 	LONG_PACK,
 	type Proposal,
 	type ProposalContext,
@@ -35,9 +33,7 @@ import {
 	refreshAutomationItems,
 	refreshProposalItems,
 	repeatProbability,
-	resolveKitEase,
 	revalidate,
-	SHORTS_SHAKE_PACK,
 	zoomMotion,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -105,16 +101,6 @@ function acceptAll(h: Harness, p: Proposal) {
 }
 
 describe('kit packs (data)', () => {
-	it('built-in packs are valid, their eases resolve and their labels are model strings', () => {
-		for (const p of [SHORTS_SHAKE_PACK, LONG_PACK]) expect(kitPackIssues(p)).toEqual([]);
-		for (const id of ['penner.quart-in', 'penner.quart-out', 'penner.cubic-in', 'penner.circ-out'])
-			expect(resolveKitEase(id)).toMatchObject({ easeOut: expect.any(Object), easeIn: expect.any(Object) });
-		expect(resolveKitEase('penner.nope-in')).toBeNull();
-		expect(KIT_MODEL_STRINGS).toEqual(
-			expect.arrayContaining(['Jolt', 'Whip left', 'Zoom through in', 'Shake']),
-		);
-	});
-
 	it('the repeat penalty keeps the shares and gives P(same family) = 0.23 for the long-form pack', () => {
 		const shares = LONG_PACK.families.map((f) => f.weight);
 		const p = repeatProbability(shares, LONG_PACK.repeatPenalty);
@@ -267,8 +253,31 @@ describe('Decorate Cuts planner', () => {
 
 	it('draws families with the measured shares and few repeats over a long sequence', () => {
 		const many = Array.from({ length: 2400 }, (_, i) => 60 + ((i * 53) % 120));
-		const { h } = aroll(many);
-		const plan = planDecorateCuts(h.doc, h.seqId, { seed: 11 });
+		// Build the distribution fixture directly from one real clip, with isolated nested state.
+		const { h } = aroll(many.slice(0, 1));
+		const template = h.clips('V1')[0]!;
+		const doc = structuredClone(h.doc);
+		const media = Object.keys(doc.media);
+		const F = flicksPerFrame(h.seq.settings.frameRate);
+		let at = 0;
+		doc.sequences[h.seqId]!.clips = Object.fromEntries(
+			many.map((duration, i) => {
+				const mediaId = media[i % 2]!;
+				const c = {
+					...structuredClone(template),
+					id: i === 0 ? template.id : h.ids.next('clp'),
+					mediaId,
+					name: doc.media[mediaId]!.originalName,
+					start: at,
+					duration,
+					sourceIn: at * F,
+				};
+				at += duration;
+				return [c.id, c];
+			}),
+		);
+		expect(checkInvariants(doc)).toEqual([]);
+		const plan = planDecorateCuts(doc, h.seqId, { seed: 11 });
 		const n = plan.kits.length;
 		expect(n).toBeGreaterThan(2000);
 		const share = (id: string) => (plan.families[id] ?? 0) / n;

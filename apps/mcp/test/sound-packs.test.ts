@@ -13,7 +13,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { editorWindow } from './editor-window.ts';
-import { cleanEnv, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_PACKS_TEST_PORT);
@@ -187,11 +187,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
-	if (engine && engine.exitCode === null) {
-		const exited = new Promise((r) => engine!.once('exit', r));
-		engine.kill('SIGTERM');
-		await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-	}
+	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
 }, 30_000);
 
@@ -208,18 +204,6 @@ type PackView = {
 };
 
 describe('sound pack MCP tools', { timeout: 900_000 }, () => {
-	it('annotations: list is read-only, install reaches the network, remove is destructive and idempotent', async () => {
-		const tools = (await client.listTools()).tools;
-		const ann = (n: string) => tools.find((t) => t.name === n)?.annotations;
-		expect(ann('list_sound_packs')).toMatchObject({ readOnlyHint: true, openWorldHint: false });
-		expect(ann('install_sound_pack')).toMatchObject({
-			readOnlyHint: false,
-			destructiveHint: false,
-			openWorldHint: true,
-		});
-		expect(ann('remove_sound_pack')).toMatchObject({ destructiveHint: true, idempotentHint: true });
-	});
-
 	it('lists, installs (waiting for the index), searches by pack and removes behind the approval card', async () => {
 		const list = await ok<{ packs: PackView[] }>('list_sound_packs');
 		expect(list.packs).toEqual([

@@ -8,7 +8,7 @@ import { voiceFeatures } from '@jasper/audio-dsp';
 import { buildVoiceAnalysis, type VoiceAnalysis } from '../src/cleanup/voice-analysis.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 
-export const SR = 16_000;
+const SR = 16_000;
 
 export type SynthEvent =
 	| { say: string; keep: boolean; gapS?: number }
@@ -29,17 +29,15 @@ export type SynthWord = {
 };
 
 export type SynthRecording = {
-	samples: Float32Array;
 	words: SynthWord[];
 	voice: VoiceAnalysis;
 	durationS: number;
 	/** Voiced spans with no word (s). */
 	coughs: Array<[number, number]>;
-	breaths: Array<[number, number]>;
 };
 
 /** mulberry32 */
-export function rng(seed: number): () => number {
+function rng(seed: number): () => number {
 	let a = seed >>> 0;
 	return () => {
 		a = (a + 0x6d2b79f5) >>> 0;
@@ -129,7 +127,7 @@ export function synthRecording(events: readonly SynthEvent[], seed = 1): SynthRe
 	for (let i = 1; i < words.length; i++)
 		if (words[i]!.start < words[i - 1]!.end) words[i]!.start = words[i - 1]!.end;
 	for (const w of words) if (w.end <= w.start) w.end = w.start + 1;
-	return { samples, words, voice, durationS, coughs, breaths };
+	return { words, voice, durationS, coughs };
 }
 
 /** Removal quality of kept pieces (s) against the ground truth, like the prototype's `score`. */

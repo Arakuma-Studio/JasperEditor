@@ -6,17 +6,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	type Lease,
-	SoundCheckLastResponseSchema,
-	type SoundCheckResult,
-	SoundCheckResultSchema,
-} from '@jasper/api';
+import { type Lease, SoundCheckLastResponseSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SoundCheckReportStore } from '../src/sound-design/report-store.ts';
 import { closeApps, DocBuilder, makeApp, type TestApp } from './helpers.ts';
+import { keptReportFixture } from './sound-check-fixture.ts';
 
 const HOST = { host: '127.0.0.1:47900' };
 const TOKEN = 'tok_life_0123456789abcdef0123';
@@ -27,63 +23,6 @@ const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'applicatio
 let app: TestApp;
 let appdir: string;
 let projects = 0;
-
-function fakeResult(projectId: string, sequenceId: string): SoundCheckResult {
-	return SoundCheckResultSchema.parse({
-		projectId,
-		sequenceId,
-		stored: false,
-		revision: 1,
-		report: {
-			version: 1,
-			projectId,
-			sequenceId,
-			revision: 1,
-			mixHash: 'm',
-			inputsHash: 'i',
-			preset: { id: 'web', label: 'Web', integratedLufs: -14, truePeakDb: -1, source: 'x' },
-			range: { start: 0, end: 30 },
-			rangeTimecode: { start: '00:00:00:00', end: '00:00:01:00' },
-			wholeSequence: true,
-			fps: { num: 30, den: 1 },
-			durationSec: 1,
-			verdict: 'pass',
-			counts: {},
-			issues: [],
-			events: [],
-			listen: [],
-			loudness: {
-				integratedLufs: -14,
-				truePeakDb: -1,
-				samplePeakDb: -1,
-				lra: 1,
-				maxMomentaryLufs: -10,
-				maxShortTermLufs: -12,
-				measurable: true,
-				normalization: { enabled: true, targetLufs: -14, truePeakDb: -1, gainDb: 0 },
-				limiterMaxGrDb: 0,
-				before: { integratedLufs: -14, truePeakDb: -1, samplePeakDb: -1 },
-			},
-			curves: {
-				hopSec: 0.01,
-				startSec: 0,
-				points: 0,
-				window: 'momentary',
-				mix: [],
-				bed: [],
-				sfx: [],
-				music: [],
-				dialogue: [],
-				ambience: [],
-				limiterGrDb: [],
-			},
-			speech: { seconds: 0, segments: [] },
-			stems: {},
-			warnings: [],
-			timings: {},
-		},
-	});
-}
 
 /** A saved project with two sequences, each with a kept report (written as the engine's store writes them). */
 async function seeded(): Promise<{
@@ -106,7 +45,7 @@ async function seeded(): Promise<{
 	);
 	const store = new SoundCheckReportStore({ projectDir: (pid) => appdirPaths(appdir).projectDir(pid) });
 	for (const s of [a, b])
-		expect(await store.save(projectId, fakeResult(projectId, s), `job_${s}`)).toBe(true);
+		expect(await store.save(projectId, keptReportFixture(projectId, s), `job_${s}`)).toBe(true);
 	const at = (s: string) => join(appdirPaths(appdir).projectDir(projectId), 'sound-check', `${s}.json`);
 	return { projectId, doc, a, b, file: at };
 }
@@ -222,9 +161,9 @@ describe('SoundCheckReportStore lifecycle', () => {
 			keep: async (_pid, seq) => seq !== 'seq_gone',
 		});
 		for (const s of ['seq_1', 'seq_2', 'seq_3'])
-			expect(await store.save('prj_a', fakeResult('prj_a', s), null)).toBe(true);
+			expect(await store.save('prj_a', keptReportFixture('prj_a', s), null)).toBe(true);
 		writeFileSync(join(dir, 'prj_a', 'sound-check', 'seq_2.json.corrupt-123'), 'x');
-		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_gone'), null)).toBe(false);
+		expect(await store.save('prj_a', keptReportFixture('prj_a', 'seq_gone'), null)).toBe(false);
 		expect((await store.prune('prj_a', new Set(['seq_1']))).sort()).toEqual(['seq_2', 'seq_3']);
 		expect(readdirSync(join(dir, 'prj_a', 'sound-check'))).toEqual(['seq_1.json']);
 		expect(await store.prune('prj_missing', new Set())).toEqual([]);
@@ -234,10 +173,10 @@ describe('SoundCheckReportStore lifecycle', () => {
 			projectDir: (pid) => join(dir, pid),
 			exists: async () => ++calls === 1,
 		});
-		expect(await racing.save('prj_b', fakeResult('prj_b', 'seq_1'), null)).toBe(false);
+		expect(await racing.save('prj_b', keptReportFixture('prj_b', 'seq_1'), null)).toBe(false);
 		expect(existsSync(join(dir, 'prj_b'))).toBe(false);
 		projectThere = false;
-		expect(await store.save('prj_a', fakeResult('prj_a', 'seq_1'), null)).toBe(false);
+		expect(await store.save('prj_a', keptReportFixture('prj_a', 'seq_1'), null)).toBe(false);
 		rmSync(dir, { recursive: true, force: true });
 	});
 });

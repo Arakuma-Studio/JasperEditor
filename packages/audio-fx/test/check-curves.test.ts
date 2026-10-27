@@ -205,24 +205,6 @@ describe('evaluateSfxGain', () => {
 		...over,
 	});
 
-	it('agrees with the solver at the solved gains (lift, peak over bed, true peak, speech lift)', () => {
-		const events = [
-			ev({ clipId: 'a', weight: 'hero' }),
-			ev({ clipId: 'b', speechOverlap: true, startSec: 3, endSec: 3.2 }),
-			ev({ clipId: 'c', weight: 'ambient', bedLocalPeakLu: null, startSec: 6, endSec: 7 }),
-		];
-		const solved = solveSfxGains(events, { programLufs: -16 });
-		for (const [i, r] of solved.events.entries()) {
-			const e = evaluateSfxGain(events[i]!, r.gainDb, { programLufs: -16 });
-			expect(e.liftDb).toBe(r.achievedLiftDb);
-			expect(e.peakOverBedLu).toBe(r.peakOverBedLu);
-			expect(e.truePeakDb).toBe(r.truePeakDb);
-			expect(e.speechBandLiftDb).toBe(r.speechBandLiftDb);
-			expect(e.dominantBands).toEqual(r.dominantBands);
-			expect(e.targetLiftDb).toBe(r.targetLiftDb);
-		}
-	});
-
 	it('property: equals the solver at its solved gains for any events (repeats, heroes, speech, silent beds)', () => {
 		const band = fc.oneof(
 			fc.double({ min: -90, max: 0, noNaN: true }),

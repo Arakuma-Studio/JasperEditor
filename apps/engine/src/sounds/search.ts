@@ -87,7 +87,7 @@ export type DescribeMode =
 	| { describeAsKeywords: string };
 
 /** The ranking request of a search query (family as types, `similarTo` by id); `none`: family and types share nothing. */
-export function rankRequestOf(
+function rankRequestOf(
 	q: SoundSearchQuery,
 	lookup: (id: string) => SoundEntry | undefined,
 	describe?: DescribeMode,

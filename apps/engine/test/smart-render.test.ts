@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RenderPlan } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { analysePackets, smartPieces } from '../src/export/smart.ts';
+import { analysePackets } from '../src/export/smart.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { frameCodes } from './frame-codes.ts';
 import {
@@ -47,42 +47,6 @@ describe('GOP analysis and the copy/render split (pure)', () => {
 		expect(a.gopStarts).toEqual([0, 4]);
 		expect(a.allIntra).toBe(false);
 		expect(analysePackets([pk(0, true), pk(1, true)], 1).allIntra).toBe(true);
-	});
-
-	it('copies whole GOPs inside a run and renders the frames around them', () => {
-		const frames = {
-			codec: 'h264',
-			profile: 'High',
-			pixFmt: 'yuv420p',
-			width: 1,
-			height: 1,
-			times: Array.from({ length: 100 }, (_, i) => i / 30),
-			gopStarts: [0, 30, 60, 90],
-			allIntra: false,
-		};
-		const pieces = smartPieces(
-			{ start: 0, end: 120 },
-			[{ start: 0, end: 85, clipId: 'c', mediaId: 'm', sourceFrame: 10 }],
-			() => frames,
-		);
-		// run shows source 10..95: GOPs 30..60, 60..90 copied (90..100 crosses the run end)
-		expect(pieces).toEqual([
-			{ kind: 'render', start: 0, end: 20 },
-			{ kind: 'copy', start: 20, end: 80, mediaId: 'm', sourceFrame: 30 },
-			{ kind: 'render', start: 80, end: 120 },
-		]);
-		const intra = { ...frames, allIntra: true };
-		expect(
-			smartPieces(
-				{ start: 0, end: 50 },
-				[{ start: 5, end: 45, clipId: 'c', mediaId: 'm', sourceFrame: 3 }],
-				() => intra,
-			),
-		).toEqual([
-			{ kind: 'render', start: 0, end: 5 },
-			{ kind: 'copy', start: 5, end: 45, mediaId: 'm', sourceFrame: 3 },
-			{ kind: 'render', start: 45, end: 50 },
-		]);
 	});
 });
 

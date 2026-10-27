@@ -82,9 +82,24 @@ async function twoTrackDoc() {
 	const d = new DocBuilder();
 	const a = d.addMedia(clipA);
 	const s = d.addMedia(still);
-	d.tx([{ type: 'clip.place', source: { mediaId: a }, at: 0, ref: '$a' }]);
+	d.tx([
+		{
+			type: 'clip.place',
+			source: { mediaId: a },
+			at: 0,
+			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 90 } },
+			ref: '$a',
+		},
+	]);
 	const placed = d.tx([
-		{ type: 'clip.place', source: { mediaId: s }, at: 30, tracks: { video: 'V2' }, ref: '$s' },
+		{
+			type: 'clip.place',
+			source: { mediaId: s },
+			at: 30,
+			tracks: { video: 'V2' },
+			sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
+			ref: '$s',
+		},
 		{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V3', color: [0, 0, 1, 1], ref: '$blue' },
 	]);
 	const stillClip = placed.refs.$s!;
@@ -135,7 +150,7 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 			path: 'native',
 			blockers: [],
 			audio: { mode: 'native-mix' },
-			segments: [{ startFrame: 0, endFrame: 300, mode: 'native', graphicsGroups: [] }],
+			segments: [{ startFrame: 0, endFrame: 90, mode: 'native', graphicsGroups: [] }],
 		});
 		expect(plan.planId).toMatch(/^pln_/);
 		expect(plan.estimate.seconds).toBeGreaterThan(0);
@@ -169,7 +184,7 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		};
 		expect(result).toMatchObject({
 			downloadUrl: `/renders/${job.id}/output`,
-			frames: 300,
+			frames: 90,
 			renderPath: 'native',
 		});
 		expect(events).toContain('export.finished');
@@ -187,15 +202,15 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 			color_primaries: 'bt709',
 			color_transfer: 'bt709',
 		});
-		expect(Number(v.nb_read_frames)).toBe(300);
+		expect(Number(v.nb_read_frames)).toBe(90);
 		expect(a).toMatchObject({ codec_name: 'aac', sample_rate: '48000', channels: 2 });
-		expect(Number(a.duration)).toBeCloseTo(10, 1);
+		expect(Number(a.duration)).toBeCloseTo(3, 1);
 
 		const isBlue = (p: number[]) => p[2]! > 200 && p[1]! < 80 && p[0]! < 80;
 		const isGreen = (p: number[]) => p[1]! > 150 && p[0]! < 80 && p[2]! < 80;
 		expect(isBlue(pixel(file, 10, 480, 200))).toBe(true);
-		expect(isGreen(pixel(file, 90, 480, 200))).toBe(true);
-		const stillRed = pixel(file, 90, 930, 700);
+		expect(isGreen(pixel(file, 70, 480, 200))).toBe(true);
+		const stillRed = pixel(file, 70, 930, 700);
 		expect(stillRed[0]).toBeGreaterThan(200);
 		expect(stillRed[1]).toBeLessThan(60);
 

@@ -15,7 +15,7 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 } from '@jasper/project';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PlanError, planExport } from '../src/export/planner.ts';
 import type { BakeEnvironment } from '../src/layer-bake/key.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
@@ -116,7 +116,7 @@ describe('catalogue and routes', () => {
 		expect(bundled.statusCode).toBe(200);
 	});
 
-	it('serves remote fonts and emoji with the session token or a signed URL, never anonymously', async () => {
+	it('serves authenticated assets, retains cached bytes offline, and acknowledges the first-fetch notice', async () => {
 		const core = coreServices(app);
 		const IMAGE_FILE = `/fonts/images/x-default-avatar-${sha256(AVATAR_BYTES).slice(0, 16)}.jpeg`;
 		for (const path of [`/fonts/remote/${FONT_FILE}`, '/fonts/emoji/apple/1/1f600.png', IMAGE_FILE]) {
@@ -146,6 +146,54 @@ describe('catalogue and routes', () => {
 			headers: H,
 		});
 		expect(other.statusCode).toBe(401);
+		// Cached assets remain usable when network use is disabled.
+		{
+			const get = await app.inject({ method: 'GET', url: '/api/settings/network', headers: AUTH });
+			expect(get.json()).toEqual({ platformAssets: true });
+			const off = await app.inject({
+				method: 'PUT',
+				url: '/api/settings/network',
+				headers: JSON_AUTH,
+				payload: { platformAssets: false },
+			});
+			expect(off.json()).toEqual({ platformAssets: false });
+			const r = await app.inject({ method: 'GET', url: '/fonts/emoji/apple/1/1f680.png', headers: AUTH });
+			expect(r.statusCode).toBe(409);
+			expect(r.json()).toMatchObject({ code: 'REMOTE_ASSETS_OFF', retryable: false });
+			const pre = await app.inject({
+				method: 'POST',
+				url: '/api/remote-assets/prefetch',
+				headers: JSON_AUTH,
+				payload: { emoji: [{ pack: 'apple', graphemes: ['\u{1F680}', GRIN] }] },
+			});
+			expect(pre.json()).toMatchObject({
+				available: 1,
+				missing: [{ kind: 'emoji', error: { code: 'REMOTE_ASSETS_OFF' } }],
+			});
+			const invalid = await app.inject({
+				method: 'PUT',
+				url: '/api/settings/network',
+				headers: JSON_AUTH,
+				payload: { platformAssets: 'yes' },
+			});
+			expect(invalid.statusCode).toBe(400);
+			await app.inject({
+				method: 'PUT',
+				url: '/api/settings/network',
+				headers: JSON_AUTH,
+				payload: { platformAssets: true },
+			});
+		}
+		// Fetches notify once; acknowledging the notice survives subsequent reads.
+		await coreServices(app).remoteAssets.flush();
+		const st = RemoteAssetsStatusSchema.parse(
+			(await app.inject({ method: 'GET', url: '/api/remote-assets', headers: AUTH })).json(),
+		);
+		expect(st.notice.pending).toBe(true);
+		expect(st.notice.items[0]).toMatchObject({ host: server.host });
+		expect(st.manifest.override.status).toBe('loaded');
+		const ack = await app.inject({ method: 'POST', url: '/api/remote-assets/notice/ack', headers: AUTH });
+		expect(RemoteAssetsStatusSchema.parse(ack.json()).notice.pending).toBe(false);
 	});
 
 	it('answers unknown and unavailable assets with error bodies, without caching them', async () => {
@@ -161,56 +209,6 @@ describe('catalogue and routes', () => {
 			headers: AUTH,
 		});
 		expect(badKey.statusCode).toBe(404);
-	});
-
-	it('Settings ▸ Privacy & Network: off stops downloads (409), prefetch names what is missing', async () => {
-		const get = await app.inject({ method: 'GET', url: '/api/settings/network', headers: AUTH });
-		expect(get.json()).toEqual({ platformAssets: true });
-		const off = await app.inject({
-			method: 'PUT',
-			url: '/api/settings/network',
-			headers: JSON_AUTH,
-			payload: { platformAssets: false },
-		});
-		expect(off.json()).toEqual({ platformAssets: false });
-		const r = await app.inject({ method: 'GET', url: '/fonts/emoji/apple/1/1f680.png', headers: AUTH });
-		expect(r.statusCode).toBe(409);
-		expect(r.json()).toMatchObject({ code: 'REMOTE_ASSETS_OFF', retryable: false });
-		const pre = await app.inject({
-			method: 'POST',
-			url: '/api/remote-assets/prefetch',
-			headers: JSON_AUTH,
-			payload: { emoji: [{ pack: 'apple', graphemes: ['\u{1F680}', GRIN] }] },
-		});
-		expect(pre.json()).toMatchObject({
-			available: 1,
-			missing: [{ kind: 'emoji', error: { code: 'REMOTE_ASSETS_OFF' } }],
-		});
-		const invalid = await app.inject({
-			method: 'PUT',
-			url: '/api/settings/network',
-			headers: JSON_AUTH,
-			payload: { platformAssets: 'yes' },
-		});
-		expect(invalid.statusCode).toBe(400);
-		await app.inject({
-			method: 'PUT',
-			url: '/api/settings/network',
-			headers: JSON_AUTH,
-			payload: { platformAssets: true },
-		});
-	});
-
-	it('status and the one-time notice', async () => {
-		await coreServices(app).remoteAssets.flush();
-		const st = RemoteAssetsStatusSchema.parse(
-			(await app.inject({ method: 'GET', url: '/api/remote-assets', headers: AUTH })).json(),
-		);
-		expect(st.notice.pending).toBe(true);
-		expect(st.notice.items[0]).toMatchObject({ host: server.host });
-		expect(st.manifest.override.status).toBe('loaded');
-		const ack = await app.inject({ method: 'POST', url: '/api/remote-assets/notice/ack', headers: AUTH });
-		expect(RemoteAssetsStatusSchema.parse(ack.json()).notice.pending).toBe(false);
 	});
 });
 
@@ -301,6 +299,8 @@ describe('export planner and layer-bake keys', () => {
 	let app: TestApp;
 	beforeAll(async () => {
 		app = await appWithFixtures();
+	});
+	beforeEach(() => {
 		// A template that declares a remote font and the emoji of its title (the social-comment template does this).
 		def.requiredAssets = (p: Record<string, unknown>) => ({
 			fonts: [

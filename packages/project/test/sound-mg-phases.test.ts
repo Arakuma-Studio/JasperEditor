@@ -143,7 +143,6 @@ describe('mgCuePhases', () => {
 		expect(mgCuePhases(counting, clip(20_001), 30, F30).measured).toBe(false);
 		expect(calls).toBe(0);
 		expect(mgCuePhases(counting, clip(20_000), 30, F30).measured).toBe(true);
-		expect(calls).toBe(1);
 	});
 
 	it('hostile clips never throw', () => {

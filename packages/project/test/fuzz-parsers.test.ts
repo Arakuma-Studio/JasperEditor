@@ -11,6 +11,8 @@ import {
 	groupImageSequences,
 	LottieParseError,
 	loadProject,
+	lottieImageAssets,
+	lottieInfo,
 	ModelParseError,
 	migrate,
 	OcioConfig,
@@ -143,7 +145,16 @@ describeFuzz('@jasper/project vector, Lottie, models, image sequences', [
 	textTarget('SVG → shape layers', [SVG], svgToShapeContents, [SvgImportError, SvgPathError]),
 	textTarget('SVG path data', SVG_PATHS, parseSvgPath, SvgPathError),
 	textTarget('Lottie JSON text', [JSON.stringify(LOTTIE)], parseLottie, LottieParseError),
-	jsonTarget('Lottie document', [LOTTIE], parseLottie, LottieParseError),
+	jsonTarget(
+		'Lottie document',
+		[LOTTIE],
+		(raw) => {
+			const document = parseLottie(raw);
+			lottieInfo(document);
+			lottieImageAssets(document);
+		},
+		LottieParseError,
+	),
 	// JSON-aware mutations target counts, offsets, strides and indices to exercise allocation and traversal limits.
 	bytesTarget(
 		'glTF (JSON)',

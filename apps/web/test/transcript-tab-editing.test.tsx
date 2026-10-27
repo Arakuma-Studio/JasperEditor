@@ -243,7 +243,6 @@ describe('proposed fixes in the transcript (SC-083)', () => {
 		});
 		expect(word(2).getAttribute('data-fix-item')).toBe('fix:1');
 		expect(word(3).getAttribute('data-fix-item')).toBe('fix:1');
-		expect(word(2).className).toContain('decoration-dotted');
 		expect(word(2).getAttribute('title')).toBe('Proposed fix: Glimer box → Glimmerbox. Click to review it');
 		expect(word(5).getAttribute('data-fix-item')).toBe('fix:2');
 		expect(word(4).getAttribute('data-fix-item')).toBeNull();

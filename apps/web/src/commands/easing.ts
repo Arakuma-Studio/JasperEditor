@@ -36,7 +36,7 @@ import type { CommandCtx, UiCommand } from './types.ts';
 type EaseEnv = { session: EditorSession; seq: Sequence; sel: EaseSelection };
 
 /** The keyframe selection as the easing actions see it (null without a project or sequence). */
-export function easeEnv(ctx: CommandCtx): EaseEnv | null {
+function easeEnv(ctx: CommandCtx): EaseEnv | null {
 	const session = ctx.session;
 	if (!session) return null;
 	const st = session.getState();
@@ -61,7 +61,7 @@ function selectionReason(ctx: CommandCtx): string | undefined {
 const keyIds = (sel: EaseSelection) => sel.properties.flatMap((p) => p.keys.map((k) => k.id));
 
 /** Every warning of a result, once each (W_EASE_SKIPPED, W_EASE_FLAT_SEGMENT, W_EASE_CLAMPED, …). */
-export function warningText(r: TransactionResult): string | null {
+function warningText(r: TransactionResult): string | null {
 	if (!r.ok || !r.warnings.length) return null;
 	const lines = [...new Set(r.warnings.map((w) => w.message))];
 	return lines.length > 4
@@ -70,7 +70,7 @@ export function warningText(r: TransactionResult): string | null {
 }
 
 /** Applies document commands as one undo step; refusals and warnings become toasts. */
-export function runEaseTransaction(
+function runEaseTransaction(
 	ctx: CommandCtx,
 	label: string,
 	commands: Command[],

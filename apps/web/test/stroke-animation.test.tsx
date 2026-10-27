@@ -24,7 +24,6 @@ import {
 import {
 	DEFAULT_STROKE_PREFS,
 	parseStrokePrefs,
-	STROKE_BUTTON_IDS,
 	StrokePrefsSchema,
 	strokePrefs,
 } from '../src/stroke-animation/prefs.ts';
@@ -151,24 +150,23 @@ describe('preferences', () => {
 	});
 
 	it('keeps valid fields and replaces only the invalid ones', () => {
-		const arb = fc.record({
-			durationFrames: fc.oneof(fc.integer({ min: 1, max: 3600 }), fc.anything()),
-			copies: fc.oneof(fc.integer({ min: 2, max: 64 }), fc.anything()),
-			inOutLag: fc.oneof(fc.double({ min: 0, max: 1, noNaN: true }), fc.anything()),
-			startAt: fc.oneof(fc.constantFrom('playhead', 'clipStart'), fc.anything()),
-			hidden: fc.array(fc.oneof(fc.constantFrom(...STROKE_BUTTON_IDS), fc.string())),
-		});
-		fc.assert(
-			fc.property(arb, (raw) => {
-				const p = parseStrokePrefs({ ...raw, version: 7, extra: 1 });
-				for (const k of ['durationFrames', 'copies', 'inOutLag', 'startAt'] as const) {
-					const valid = StrokePrefsSchema.shape[k].safeParse(raw[k]).success;
-					expect(p[k]).toEqual(valid ? raw[k] : DEFAULT_STROKE_PREFS[k]);
-				}
-				expect(p.hidden.every((h) => STROKE_BUTTON_IDS.includes(h))).toBe(true);
-				expect(new Set(p.hidden).size).toBe(p.hidden.length);
+		expect(
+			parseStrokePrefs({
+				version: 7,
+				durationFrames: 15,
+				copies: 1000,
+				inOutLag: 0.25,
+				startAt: 'clipStart',
+				hidden: ['drawIn', 'unknown', 'drawIn'],
 			}),
-		);
+		).toMatchObject({
+			version: 1,
+			durationFrames: 15,
+			copies: 4,
+			inOutLag: 0.25,
+			startAt: 'clipStart',
+			hidden: ['drawIn'],
+		});
 	});
 
 	it('round-trips through storage and ignores invalid updates', () => {

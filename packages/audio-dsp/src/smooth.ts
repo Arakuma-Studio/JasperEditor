@@ -43,11 +43,6 @@ export class Smoothed {
 		this.remaining = 0;
 	}
 
-	setImmediate(v: number): void {
-		this.targetValue = v;
-		this.snap();
-	}
-
 	/** Advance one sample and return the new value (lands exactly on the target). */
 	tick(): number {
 		if (this.remaining > 0) {

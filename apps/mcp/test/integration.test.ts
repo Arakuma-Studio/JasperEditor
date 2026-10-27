@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_TEST_PORT);
@@ -86,11 +86,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await session?.client.close().catch(() => {});
-	if (engine && engine.exitCode === null) {
-		const exited = new Promise((resolve) => engine!.once('exit', resolve));
-		engine.kill('SIGTERM');
-		await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 8000))]);
-	}
+	await stopEngine(engine);
 	if (appdir) rmSync(appdir, { recursive: true, force: true });
 }, 30_000);
 
@@ -261,6 +257,16 @@ describe('MCP over stdio with a token-protected engine', () => {
 	it('serves project resources and the edit-video prompt through MCP', async () => {
 		const doc = await session.client.readResource({ uri: `jasper://projects/${projectId}/document` });
 		expect(JSON.parse((doc.contents[0] as { text: string }).text).projectId).toBe(projectId);
+		for (const uri of [
+			'jasper://guide',
+			'jasper://guide/cleanup',
+			'jasper://guide/transcript-fix',
+			'jasper://guide/editing-automation',
+		]) {
+			const guide = await session.client.readResource({ uri });
+			expect(guide.contents[0]).toMatchObject({ uri, mimeType: 'text/markdown', text: expect.any(String) });
+			expect((guide.contents[0] as { text: string }).text.trim().length).toBeGreaterThan(0);
+		}
 		const prompt = await session.client.getPrompt({
 			name: 'edit-video',
 			arguments: { goal: 'a teaser', projectId },

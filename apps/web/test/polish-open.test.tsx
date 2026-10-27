@@ -138,10 +138,24 @@ describe('editor boot script (preload + early project fetch)', () => {
 				pdf: { type: 'chunk', fileName: 'assets/vendor-pdf-a.js', imports: ['assets/shared.js'] },
 				shared: { type: 'chunk', fileName: 'assets/shared.js', imports: ['assets/vendor-pdf-a.js'] },
 				lottie: { type: 'chunk', fileName: 'assets/vendor-lottie-b.js' },
+				expression: {
+					type: 'chunk',
+					fileName: 'assets/ExpressionRowEditor-c.js',
+					isDynamicEntry: true,
+					facadeModuleId: 'C:\\project\\apps\\web\\src\\expressions\\ExpressionRowEditor.tsx',
+					imports: ['assets/vendor-codemirror-d.js'],
+				},
+				codemirror: { type: 'chunk', fileName: 'assets/vendor-codemirror-d.js' },
 				panel: { type: 'chunk', fileName: 'assets/panel.js' },
 				asset: { type: 'asset', fileName: 'assets/vendor-screenshot-c.js' },
-			}),
-		).toEqual(['/assets/shared.js', '/assets/vendor-lottie-b.js', '/assets/vendor-pdf-a.js']);
+			}).sort(),
+		).toEqual([
+			'/assets/ExpressionRowEditor-c.js',
+			'/assets/shared.js',
+			'/assets/vendor-codemirror-d.js',
+			'/assets/vendor-lottie-b.js',
+			'/assets/vendor-pdf-a.js',
+		]);
 	});
 
 	function boot(pathname: string, fetchImpl: (url: string) => Promise<unknown>) {

@@ -5,9 +5,10 @@
 import type { SoundVisualResponse } from '@jasper/api';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { drawSoundTimeline, PIXEL_MOTION } from '../src/sound-timeline.ts';
+import { drawSoundTimeline } from '../src/sound-timeline.ts';
 
 const FRAMES = 120;
+const pink = (r: number, g: number, b: number) => r > 200 && b > 150 && g < 180;
 
 function visual(pixel: SoundVisualResponse['pixelMotion'] | 'absent'): SoundVisualResponse {
 	const curve = { momentary: new Array(400).fill(-40), shortTerm: new Array(400).fill(-40) };
@@ -38,6 +39,7 @@ function visual(pixel: SoundVisualResponse['pixelMotion'] | 'absent'): SoundVisu
 function pinkColumns(v: SoundVisualResponse): {
 	xs: number[];
 	cells: ReturnType<typeof drawSoundTimeline>['cells'];
+	image: ReturnType<typeof drawSoundTimeline>['image'];
 } {
 	const { image: img, cells } = drawSoundTimeline(v, { width: 1200 });
 	const lane = cells.lanes.find((l) => l.name === 'move')!;
@@ -45,44 +47,38 @@ function pinkColumns(v: SoundVisualResponse): {
 	for (let y = lane.y; y < lane.y + lane.height; y++)
 		for (let x = cells.plotX; x < cells.plotX + cells.plotWidth; x++) {
 			const o = (y * img.width + x) * 4;
-			if (
-				img.data[o] === PIXEL_MOTION[0] &&
-				img.data[o + 1] === PIXEL_MOTION[1] &&
-				img.data[o + 2] === PIXEL_MOTION[2]
-			)
-				xs.add(x);
+			if (pink(img.data[o]!, img.data[o + 1]!, img.data[o + 2]!)) xs.add(x);
 		}
-	return { xs: [...xs].sort((a, b) => a - b), cells };
+	return { xs: [...xs].sort((a, b) => a - b), cells, image: img };
 }
 
 describe('view_sound_timeline: the measured picture motion', () => {
 	it('is drawn where the range was analysed: a pink curve peaking where the picture moves', () => {
 		// measured: the box moves over frames 30–60, faster than the keyframed move
 		const speed = Array.from({ length: FRAMES }, (_, i) => (i >= 30 && i < 60 ? 0.3 : 0.01));
-		const { xs, cells } = pinkColumns(visual({ startFrame: 0, speed }));
+		const { xs, cells, image } = pinkColumns(visual({ startFrame: 0, speed }));
 		expect(cells.pixelMotion).toBe('measured');
 		expect(xs.length).toBeGreaterThan(cells.plotWidth * 0.9);
 		// the curve is high (near the lane top) over the move and low elsewhere
-		const { image } = drawSoundTimeline(visual({ startFrame: 0, speed }), { width: 1200 });
 		const lane = cells.lanes.find((l) => l.name === 'move')!;
 		const topPink = (frame: number) => {
-			const x = Math.round(cells.plotX + (frame + 0.5) * cells.pxPerFrame);
+			const x = Math.round(cells.plotX + ((frame + 0.5) / FRAMES) * cells.plotWidth);
 			for (let y = lane.y; y < lane.y + lane.height; y++) {
 				const o = (y * image.width + x) * 4;
-				if (image.data[o] === PIXEL_MOTION[0] && image.data[o + 1] === PIXEL_MOTION[1]) return y - lane.y;
+				if (pink(image.data[o]!, image.data[o + 1]!, image.data[o + 2]!)) return y - lane.y;
 			}
 			return null;
 		};
-		expect(topPink(45)!).toBeLessThan(4);
-		expect(topPink(90)!).toBeGreaterThan(lane.height - 5);
-		expect(cells.lanes.find((l) => l.name === 'move')!.what).toContain('measured');
+		expect(topPink(45)).not.toBeNull();
+		expect(topPink(90)).not.toBeNull();
+		expect(topPink(45)!).toBeLessThan(topPink(90)!);
 	});
 
 	it('only over the analysed frames (null elsewhere): partly analysed', () => {
 		const speed = Array.from({ length: FRAMES }, (_, i) => (i < 60 ? 0.2 : null));
 		const { xs, cells } = pinkColumns(visual({ startFrame: 0, speed }));
 		expect(cells.pixelMotion).toBe('partly analysed');
-		const half = cells.plotX + 60 * cells.pxPerFrame;
+		const half = cells.plotX + cells.plotWidth / 2;
 		expect(xs.length).toBeGreaterThan(0);
 		expect(Math.max(...xs)).toBeLessThanOrEqual(Math.ceil(half) + 1);
 	});

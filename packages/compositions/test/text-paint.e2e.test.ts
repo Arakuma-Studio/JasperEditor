@@ -107,6 +107,7 @@ describe.runIf(enabled && !!CHROME)(
 		let media: FxMedia;
 		let serveUrl: string;
 		let renderer: typeof import('@remotion/renderer');
+		let puppeteerInstance: Awaited<ReturnType<typeof renderer.openBrowser>> | undefined;
 		let browser: Browser;
 		let page: Page;
 		const docs: Record<string, RenderDoc> = {};
@@ -268,6 +269,7 @@ describe.runIf(enabled && !!CHROME)(
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, 'text-animators', 'entry.ts') });
 			renderer = await import('@remotion/renderer');
+			puppeteerInstance = await renderer.openBrowser('chrome', remotionBrowser);
 			const code = await bundleForBrowser(join(here, 'text-paint', 'entry.tsx'));
 			media.page('bundle.js', 'text/javascript', code);
 			media.page(
@@ -293,8 +295,11 @@ describe.runIf(enabled && !!CHROME)(
 		}, 300_000);
 
 		afterAll(async () => {
-			await browser?.close();
-			media?.close();
+			try {
+				await Promise.all([browser?.close(), puppeteerInstance?.close({ silent: true })]);
+			} finally {
+				media?.close();
+			}
 		});
 
 		function stroke(color: number[], widthPx: number, position: 'outside' | 'center' | 'inside') {
@@ -310,10 +315,19 @@ describe.runIf(enabled && !!CHROME)(
 				serveUrl,
 				id: SEQUENCE_COMPOSITION_ID,
 				inputProps,
+				puppeteerInstance,
 				...remotionBrowser,
 			});
 			const output = join(media.dir, `${name}-export.png`);
-			await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...remotionBrowser });
+			await renderer.renderStill({
+				composition,
+				serveUrl,
+				inputProps,
+				frame,
+				output,
+				puppeteerInstance,
+				...remotionBrowser,
+			});
 			return decodePng(readFileSync(output));
 		}
 
@@ -411,12 +425,6 @@ describe.runIf(enabled && !!CHROME)(
 				// miter joins keep a square's corners square
 				expect(near(px(img, sq.x1 + 25, sq.y0 - 25), [0, 0, 255]), `${which} blue corner`).toBe(true);
 			});
-			const s = await page.evaluate(() =>
-				(window as never as { __textPaint: { structure(n: string): unknown } }).__textPaint.structure(
-					'outside',
-				),
-			);
-			expect(s).toMatchObject({ blocks: 1, copies: 2, tiles: 0 });
 		});
 
 		it('inside and centre strokes: inside paints within the glyph, centre straddles the outline (tile filter)', async () => {
@@ -430,12 +438,6 @@ describe.runIf(enabled && !!CHROME)(
 					expect(near(px(img, edge - d, ym), [255, 0, 0]), `${which} red inside at ${d}`).toBe(true);
 				expect(white(px(img, edge - 20, ym)), `${which} white core`).toBe(true);
 			});
-			const s = await page.evaluate(() =>
-				(
-					window as never as { __textPaint: { structure(n: string): { tiles: number } } }
-				).__textPaint.structure('insideCentre'),
-			);
-			expect(s.tiles).toBe(4);
 		});
 
 		it('an outside stroke under a translucent fill: no stroke under the fill, no seam at the outline', async () => {

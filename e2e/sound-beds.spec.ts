@@ -276,7 +276,6 @@ test('room tone fills the dialogue hole from Sound Check; an ambience bed per sc
 	// the whole sequence in the timeline (Zoom to Sequence)
 	await page.getByTestId('timeline-track-area').click({ position: { x: 5, y: 5 } });
 	await page.keyboard.press('Backslash');
-	await page.waitForTimeout(800);
 	await page.getByTestId('timeline-track-area').screenshot({ path: join(outDir, '5-timeline.png') });
 	// ducked under the dialogue: Volume keyframes on the pieces the dialogue plays over
 	const ducked = await query<Record<string, { volumeDb?: { keyframes?: unknown[] } }>>(page, 'doc.get', {

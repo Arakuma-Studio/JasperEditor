@@ -168,33 +168,6 @@ describe('Lottie parsing', () => {
 		expect(lottieFrameAt(info, -1)).toBe(10);
 		expect(lottieFrameAt(info, Number.NaN)).toBe(10);
 	});
-
-	it('rejects or accepts arbitrary JSON without crashing (fuzz)', () => {
-		fc.assert(
-			fc.property(fc.jsonValue({ maxDepth: 6 }), (v) => {
-				try {
-					const d = parseLottie(v);
-					lottieInfo(d);
-					lottieImageAssets(d);
-				} catch (e) {
-					expect(e).toBeInstanceOf(LottieParseError);
-				}
-			}),
-		);
-		fc.assert(
-			fc.property(fc.jsonValue({ maxDepth: 4 }), fc.nat(5), (junk, i) => {
-				const d = structuredClone(LOTTIE) as Record<string, unknown>;
-				const layers = d.layers as unknown[];
-				layers[i % layers.length] = junk;
-				d.assets = i % 2 ? [junk] : d.assets;
-				try {
-					lottieInfo(parseLottie(d));
-				} catch (e) {
-					expect(e).toBeInstanceOf(LottieParseError);
-				}
-			}),
-		);
-	});
 });
 
 /** Lottie's keyframe value at layer frame `t` (cubic-bezier ease between `k0` and its next key). */

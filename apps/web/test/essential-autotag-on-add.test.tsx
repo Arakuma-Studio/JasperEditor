@@ -6,11 +6,10 @@ import type { EngineClient } from '@jasper/engine-client';
 import { type AudioClip, essentialAutoTag, readEssentialSound, type Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, toasts } from '@jasper/ui';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseAudioPrefs } from '../src/audio/prefs.ts';
-import { addedClipsToTag, autoTaggable, watchAutoTagOnAdd } from '../src/audio-fx/auto-tag-on-add.tsx';
-import { audioTypeClips } from '../src/audio-fx/ops.ts';
+import { audioPrefs, parseAudioPrefs } from '../src/audio/prefs.ts';
+import { watchAutoTagOnAdd } from '../src/audio-fx/auto-tag-on-add.tsx';
 import { createCommandContext } from '../src/commands/context.ts';
 import { runCommand } from '../src/commands/registry.ts';
 import { clipMenuExtensions, type MenuItemSpec } from '../src/extensions/index.ts';
@@ -28,10 +27,16 @@ const { EssentialSoundPanel } = await import('../src/panels/essentialSound/Essen
 const { registerAllCommands } = await import('../src/commands/index.ts');
 
 beforeAll(() => registerAllCommands());
-beforeEach(() => toasts.dismissAll());
+beforeEach(() => {
+	toasts.dismissAll();
+	audioPrefs.set({ autoTagInTimeline: false });
+	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+});
 afterEach(() => {
 	cleanup();
 	closeAllDialogs();
+	audioPrefs.set({ autoTagInTimeline: false });
+	vi.useRealTimers();
 });
 
 /** A session with two audio media registered, and an engine that answers every clip with `category`. */
@@ -119,7 +124,7 @@ function fixture(category: 'dialogue' | 'music' | 'sfx' | 'ambience' = 'music') 
 	return { session, seqId, media, engine, requests, seq, labels, place, holdAnswers };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 20));
+const settle = () => act(async () => vi.runAllTimersAsync());
 
 describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () => {
 	it('is off by default and read tolerantly', () => {
@@ -130,7 +135,7 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 
 	it('off: adding a clip asks the engine nothing', async () => {
 		const f = fixture();
-		const stop = watchAutoTagOnAdd(f.session, f.engine, { debounceMs: 0, enabled: () => false });
+		const stop = watchAutoTagOnAdd(f.session, f.engine);
 		f.place(0, 0);
 		await settle();
 		expect(f.requests).toHaveLength(0);
@@ -139,11 +144,11 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 
 	it('on: a clip the user adds is tagged in its own "Auto Tag Audio Types" step, marked auto', async () => {
 		const f = fixture('music');
-		const stop = watchAutoTagOnAdd(f.session, f.engine, { debounceMs: 0, enabled: () => true });
+		audioPrefs.set({ autoTagInTimeline: true });
+		const stop = watchAutoTagOnAdd(f.session, f.engine);
 		const id = f.place(0, 0);
-		await waitFor(() =>
-			expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('music'),
-		);
+		await settle();
+		expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('music');
 		expect(f.requests).toHaveLength(1);
 		expect(f.requests[0]!.clipIds).toEqual([id]);
 		expect(f.requests[0]!.sequenceId).toBe(f.seqId);
@@ -159,11 +164,13 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		stop();
 	});
 
-	it('skips razor parts, typed clips, agents, locked tracks and clips typed or deleted before the answer', async () => {
+	it('skips razor parts, agents and clips manually typed or locked before classification completes', async () => {
 		const f = fixture('sfx');
-		const stop = watchAutoTagOnAdd(f.session, f.engine, { debounceMs: 0, enabled: () => true });
+		audioPrefs.set({ autoTagInTimeline: true });
+		const stop = watchAutoTagOnAdd(f.session, f.engine);
 		const id = f.place(0, 0);
-		await waitFor(() => expect(f.labels().at(-1)).toBe('Auto Tag Audio Types'));
+		await settle();
+		expect(f.labels().at(-1)).toBe('Auto Tag Audio Types');
 		// clear the type, then razor: the right part is not "added"
 		f.session.apply({
 			label: 'Clear',
@@ -185,7 +192,8 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		// typed before the answer arrives: kept as the user set it, nothing else to tag → no transaction
 		const release = f.holdAnswers();
 		const late = f.place(1, 0, 'A2');
-		await waitFor(() => expect(f.requests).toHaveLength(2));
+		await settle();
+		expect(f.requests).toHaveLength(2);
 		f.session.apply({
 			label: 'Set Audio Type to Dialogue',
 			origin: 'user',
@@ -196,10 +204,10 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		await settle();
 		expect(readEssentialSound((f.seq().clips[late] as AudioClip).essential)?.type).toBe('dialogue');
 		expect(f.labels()).toHaveLength(before);
-		stop();
-		// a clip on a locked track is not tagged
+		// A clip locked while classification is in flight stays untyped.
+		const releaseLocked = f.holdAnswers();
 		const other = f.place(0, 400, 'A2');
-		expect(autoTaggable(f.seq(), other)).toBe(true);
+		await settle();
 		const r = f.session.apply({
 			label: 'Lock',
 			origin: 'user',
@@ -207,31 +215,36 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 			commands: [{ type: 'track.update', trackId: 'A2', patch: { locked: true } }] as never[],
 		});
 		expect(r.ok).toBe(true);
-		expect(autoTaggable(f.seq(), other)).toBe(false);
-		expect(autoTaggable(f.seq(), 'clp_missing')).toBe(false);
+		releaseLocked();
+		await settle();
+		expect((f.seq().clips[other] as AudioClip).essential).toBeUndefined();
+		stop();
 	});
 
 	it('waits for a drag in progress before it applies', async () => {
 		const f = fixture('ambience');
-		const stop = watchAutoTagOnAdd(f.session, f.engine, { debounceMs: 0, enabled: () => true });
+		audioPrefs.set({ autoTagInTimeline: true });
+		const stop = watchAutoTagOnAdd(f.session, f.engine);
 		const release = f.holdAnswers();
 		const id = f.place(0, 0);
-		await waitFor(() => expect(f.requests).toHaveLength(1));
+		await settle();
+		expect(f.requests).toHaveLength(1);
 		const g = f.session.beginGesture('Drag');
 		release();
 		await settle();
 		expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)).toBeNull();
 		g.cancel();
-		await waitFor(() =>
-			expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('ambience'),
-		);
+		await settle();
+		expect(readEssentialSound((f.seq().clips[id] as AudioClip).essential)?.type).toBe('ambience');
 		stop();
 	});
 
-	it('addedClipsToTag ignores the clips of a duplicated sequence', () => {
+	it('ignores the clips of a duplicated sequence', async () => {
 		const f = fixture();
+		audioPrefs.set({ autoTagInTimeline: true });
+		const stop = watchAutoTagOnAdd(f.session, f.engine);
 		f.place(0, 0);
-		const before = f.session.getCommitted();
+		await settle();
 		const r = f.session.apply({
 			label: 'Duplicate',
 			origin: 'user',
@@ -239,16 +252,18 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		});
 		expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
 		if (!r.ok) return;
-		expect(addedClipsToTag(before, f.session.getCommitted(), r.created).size).toBe(0);
+		await settle();
+		expect(f.requests).toHaveLength(1);
+		stop();
 	});
 });
 
 describe('Essential Sound: select all clips of a tag', () => {
 	function typed() {
 		const f = fixture();
-		const a = f.place(0, 0, 'A1');
-		const b = f.place(1, 0, 'A2');
 		const c = f.place(0, 400, 'A1');
+		const b = f.place(1, 0, 'A2');
+		const a = f.place(0, 0, 'A1');
 		const r = f.session.apply({
 			label: 'types',
 			origin: 'user',
@@ -261,12 +276,7 @@ describe('Essential Sound: select all clips of a tag', () => {
 		return { ...f, a, b, c };
 	}
 
-	it('audioTypeClips lists each type in timeline order', () => {
-		const f = typed();
-		expect(audioTypeClips(f.seq())).toEqual({ dialogue: [f.a, f.c], music: [f.b], sfx: [], ambience: [] });
-	});
-
-	it('the panel shows the tags in the sequence; a click selects only those audio clips', async () => {
+	it('the panel shows the tags in the sequence; a click selects only those audio clips', () => {
 		const f = typed();
 		mocks.client = f.engine;
 		const view = () => (
@@ -276,14 +286,14 @@ describe('Essential Sound: select all clips of a tag', () => {
 		);
 		const r = render(view());
 		const off = f.session.store.subscribe(() => r.rerender(view()));
-		const strip = await screen.findByTestId('essential-tags');
+		const strip = screen.getByTestId('essential-tags');
 		expect(strip.textContent).toContain('Dialogue 2');
 		expect(strip.textContent).toContain('Music 1');
 		expect(screen.queryByTestId('essential-tag-sfx')).toBeNull();
 		fireEvent.click(screen.getByRole('button', { name: 'Select all Dialogue clips (2)' }));
 		expect(f.session.getState().selection.timeline.clips).toEqual([f.a, f.c]);
 		// the panel now edits them (the strip stays)
-		await waitFor(() => expect(screen.getByTestId('essential-current-type').textContent).toBe('Dialogue'));
+		expect(screen.getByTestId('essential-current-type').textContent).toBe('Dialogue');
 		fireEvent.click(screen.getByTestId('essential-tag-music'));
 		expect(f.session.getState().selection.timeline.clips).toEqual([f.b]);
 		off();

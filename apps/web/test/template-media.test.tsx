@@ -146,11 +146,14 @@ describe('template media params in Properties', () => {
 });
 
 describe('template media params in Effect Controls', () => {
-	it('shows the same picker (no stopwatch: media params are static)', () => {
-		const { session } = setup();
+	it('edits a static image reference from Effect Controls', () => {
+		const { session, img, clipId } = setup();
 		renderWithSession(session, <EffectControlsPanel instanceId="ec-media" visible />);
 		const picker = screen.getByTestId('prop-params.avatar') as HTMLSelectElement;
-		expect(picker.tagName).toBe('SELECT');
+		act(() => fireEvent.change(picker, { target: { value: img.mediaId } }));
+		expect(avatarOf(session, clipId)).toEqual({ mediaId: img.mediaId });
+		act(() => session.undo());
+		expect(avatarOf(session, clipId)).toBeNull();
 		expect(screen.queryByTestId('stopwatch-params.avatar')).toBeNull();
 	});
 });

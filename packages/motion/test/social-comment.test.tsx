@@ -24,9 +24,7 @@ import {
 import type { SocialCardAssets } from '../src/templates/social-comment/contract.ts';
 import { INSTAGRAM_DEFAULT_AVATAR } from '../src/templates/social-comment/instagram.tsx';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
-import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
 import { vectorMarkupOf } from '../src/templates/social-comment/vector.tsx';
-import { xActionLayout, xActionsWidth } from '../src/templates/social-comment/x.tsx';
 
 const Impl = ANIME_TEMPLATE_IMPLS['social-comment@1']!;
 
@@ -86,7 +84,6 @@ const ASSETS: SocialCardAssets = {
 	imageUrls: {},
 	emojiUrls: { 'apple:😊': 'http://x/1f60a.png' },
 	emojiPack: 'apple',
-	idScope: 't',
 };
 
 describe('social-comment@1 cards', () => {
@@ -543,31 +540,6 @@ describe('social-comment@1 X post card', () => {
 		zero.unmount();
 	});
 
-	it('huge counts stay short; columns get the room their counts need (no touching), and clip as a last guard', () => {
-		const r = view({ replies: 1_234_567, reposts: 999_999_999_999, likes: 1e12, views: 987_654_321_000 });
-		const c = r.container;
-		expect(['replies', 'reposts', 'likes', 'views'].map((n) => part(c, n)!.textContent)).toEqual([
-			'1.2M',
-			'999.9B',
-			'1,000B',
-			'987.6B',
-		]);
-		// App QA N6: the bar is laid out for these counts (xActionLayout, test/social-x-fit.test.tsx measures it)
-		// (the likes column for the widest count its tick passes: "999.9M" on the way to "1,000B")
-		const bar = xActionLayout(['1.2M', '999.9B', '999.9M', '987.6B'], true);
-		let total = 0;
-		for (const [i, n] of ['replies', 'reposts', 'likes', 'views'].entries()) {
-			const col = part(c, `${n}-action`)!;
-			expect(col.style.flex).toBe('1 1 0px');
-			expect(col.style.minWidth).toBe(`${bar.minWidths[i]}px`);
-			expect(col.style.overflow).toBe('hidden');
-			expect(part(c, n)!.style.fontSize).toBe(`${bar.countPx}px`);
-			total += bar.minWidths[i]!;
-		}
-		expect(total).toBeLessThanOrEqual(xActionsWidth(true));
-		r.unmount();
-	});
-
 	it('like tick: the count ticks up, then the heart fills and the count turns magenta (#F91880)', () => {
 		const p = { ...X, likeTick: true, likes: 12_345 };
 		const v = render(at(p, 0));
@@ -824,15 +796,5 @@ describe('social-comment@1 shared parts', () => {
 		// an emoji the pack does not deliver is a visible marker (EmojiImage → MissingAssetMarker), never a host glyph
 		expect(c.querySelector('[data-missing-asset="emoji"]')!.getAttribute('aria-label')).toMatch(/🤔/);
 		r.unmount();
-	});
-
-	it('fit zoom: the canvas scale unless the card is too tall or wide; a measured card at any zoom gives one answer', () => {
-		const design = { width: 1080, height: 1920 };
-		expect(socialFitZoom({ w: 0, h: 0 }, 1.8, 1.8, design)).toBe(1.8);
-		expect(socialFitZoom({ w: 756, h: 300 }, 1.8, 1.8, design)).toBe(1.8);
-		const tall = socialFitZoom({ w: 756, h: 5000 }, 1.8, 1.8, design);
-		expect(tall).toBeLessThan(1.8);
-		expect((5000 / 1.8) * tall).toBeLessThanOrEqual(1920 * 0.88 + 1);
-		expect(socialFitZoom({ w: 420 * tall, h: (5000 / 1.8) * tall }, tall, 1.8, design)).toBeCloseTo(tall, 3);
 	});
 });

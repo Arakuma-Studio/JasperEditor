@@ -217,9 +217,10 @@ describe('frame features', () => {
 		const y = x.slice();
 		y[800] = Number.NaN;
 		y[801] = Number.POSITIVE_INFINITY;
-		const f = voiceFeatures(y);
-		for (const p of [f.level, f.voicing, f.flatness])
-			for (const v of p) expect(Number.isInteger(v)).toBe(true);
+		const clean = x.slice();
+		clean[800] = 0;
+		clean[801] = 0;
+		expect(voiceFeatures(y)).toEqual(voiceFeatures(clean));
 		const ex = new VoiceFeatureExtractor();
 		const out = { level: new Uint8Array(2), voicing: new Uint8Array(2), flatness: new Uint8Array(2) };
 		expect(() => ex.compute(x, 0, 0, 3, out)).toThrow(RangeError);

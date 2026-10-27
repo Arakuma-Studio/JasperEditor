@@ -46,14 +46,4 @@ for (const [name, doc] of Object.entries(docs)) {
 		await whenFacesSettled(faces);
 		return measureTextBox(content, box, faces);
 	},
-	/** Counts of the painted copies of the first text layer (fast path vs filter tiles). */
-	structure(name: string) {
-		const root = document.getElementById(name)!;
-		return {
-			blocks: root.querySelectorAll('[data-text-block]').length,
-			copies: root.querySelectorAll('[data-text-copy]').length,
-			tiles: root.querySelectorAll('[data-text-tile]').length,
-			shadows: root.querySelectorAll('[data-text-shadow]').length,
-		};
-	},
 };

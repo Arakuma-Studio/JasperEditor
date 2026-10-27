@@ -22,7 +22,7 @@ const MAX_PASSES = 3;
 const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
 
 /** The zoom that fits a card measured `w × h` layout px at zoom `k` into the stage (never above `max`). */
-export function socialFitZoom(
+function socialFitZoom(
 	measured: { w: number; h: number },
 	k: number,
 	max: number,

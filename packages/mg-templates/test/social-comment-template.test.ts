@@ -1,26 +1,21 @@
 // social-comment@1 (design 2026-10-25 §7.6): definition, the shared schedule (entrances, extras, exit), the text units
-// of the word reveal, the like tick count and the closed-form eases. The real anime.js timelines are compared with the
-// schedule frame by frame in @jasper/motion `test/mg-cue-timing.test.ts`.
+// of the word reveal, the like tick count and the closed-form eases. Public template renders are compared with the
+// derived sound cues frame by frame in @jasper/motion `test/mg-cue-timing.test.ts`.
 import {
 	applyTransaction,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	paramsPropertySpecs,
 } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-	ANIME_CATALOG,
 	animeTemplateTiming,
 	easeFunction,
 	mgRegistry,
 	REMOTE_IMAGE_IDS,
 	SOCIAL_ENTRANCES,
-	SOCIAL_EXIT_SCALE,
-	SOCIAL_REVEAL_MAX_SPAN_MS,
 	SOCIAL_VARIANT_FONTS,
-	SOCIAL_WORD_STAGGER_MS,
 	type SocialScheduleInput,
 	socialCardScale,
 	socialComment,
@@ -69,23 +64,6 @@ const value = (s: ReturnType<typeof socialCommentSchedule>, target: number, prop
 };
 
 describe('social-comment@1 definition', () => {
-	it('is a registered anime template in "Social comments" with an implementation key and defaults that parse', () => {
-		expect(ANIME_CATALOG).toContain(socialComment);
-		const info = mgRegistry.get('social-comment', 1)!;
-		expect(info).toMatchObject({ renderer: 'anime', category: 'Social comments', defaultDurationSeconds: 5 });
-		expect(info.motionSpeed).toBeTypeOf('function');
-		expect(socialComment.renderVersion).toBe(1);
-		expect(socialComment.paramsSchema.safeParse(socialComment.defaults).success).toBe(true);
-		expect(socialComment.canvases.map((c) => `${c.width}x${c.height}`)).toEqual([
-			'1920x1080',
-			'1080x1920',
-			'1080x1080',
-		]);
-		// the declared intro holds the longest entrance (550 ms), the outro is the 200 ms exit
-		expect((socialComment.introFrames * 1000) / 30).toBeGreaterThanOrEqual(550);
-		expect((socialComment.outroFrames * 1000) / 30).toBe(200);
-	});
-
 	it('zooms the card to 60–75 % of the width on 9:16 and keeps it proportional on the other canvases', () => {
 		expect((420 * socialCardScale({ width: 1080, height: 1920 })) / 1080).toBeGreaterThanOrEqual(0.6);
 		expect((420 * socialCardScale({ width: 1080, height: 1920 })) / 1080).toBeLessThanOrEqual(0.75);
@@ -108,7 +86,7 @@ describe('social-comment@1 schedule', () => {
 				expect(value(s, 0, 'r', ms) ?? 0).toBe(0);
 			}
 			expect(s.exitStart).toBeCloseTo(t.totalMs - t.outroMs, 9);
-			expect(value(s, 0, 's', t.totalMs)).toBe(SOCIAL_EXIT_SCALE);
+			expect(value(s, 0, 's', t.totalMs)).toBe(0.82);
 			expect(value(s, 0, 'o', t.totalMs)).toBe(0);
 		}
 	});
@@ -150,13 +128,13 @@ describe('social-comment@1 schedule', () => {
 		const starts = s.tracks.filter((t) => t.target > 0 && t.prop === 's').map((t) => t.tweens[0]!.start);
 		expect(starts).toHaveLength(8);
 		expect(starts[0]).toBeCloseTo(s.entranceEnd, 9);
-		for (let i = 1; i < 8; i++) expect(starts[i]! - starts[i - 1]!).toBeCloseTo(SOCIAL_WORD_STAGGER_MS, 9);
+		for (let i = 1; i < 8; i++) expect(starts[i]! - starts[i - 1]!).toBeCloseTo(90, 9);
 		// hidden before its turn, shown at rest
 		expect(value(s, 8, 'o', starts[7]! - 1)).toBe(0);
 		expect(value(s, 8, 's', s.exitStart)).toBe(1);
 		const long = socialCommentSchedule(input({ ...timingAt(10), units: 300 }));
 		const ls = long.tracks.filter((t) => t.target > 0 && t.prop === 's').map((t) => t.tweens[0]!.start);
-		expect(ls[ls.length - 1]! - ls[0]!).toBeCloseTo(SOCIAL_REVEAL_MAX_SPAN_MS, 6);
+		expect(ls[ls.length - 1]! - ls[0]!).toBeCloseTo(2400, 6);
 	});
 
 	it('like tick: 900 ms count from the entrance end, then the heart thumps and fills (hold: filled, count final)', () => {
@@ -460,35 +438,6 @@ describe('social-comment@1 required assets', () => {
 			],
 			emoji: { pack: 'apple', graphemes: ['😀'] },
 			images: ['x-default-avatar'],
-		});
-		const info = mgRegistry.getDefinition('social-comment', 1)!;
-		expect((info as { requiredAssets?: unknown }).requiredAssets).toBe(socialCommentRequiredAssets);
-	});
-});
-
-describe('social-comment@1 Properties menus', () => {
-	it('show the entrance, style, theme and emoji names instead of their ids (values stay the ids agents use)', () => {
-		const specs = paramsPropertySpecs(mgRegistry.get('social-comment', 1)!);
-		const labels = (k: string) => {
-			const s = specs.find((x) => x.key === `params.${k}`)!;
-			return Object.fromEntries(s.options!.map((o, i) => [o, s.optionLabels![i]]));
-		};
-		expect(labels('entrance')).toEqual({
-			'classic-pop': 'Classic pop',
-			'soft-spring': 'Soft spring',
-			'grow-from-tail': 'Grow from tail',
-			'drop-bounce': 'Drop & bounce',
-		});
-		expect(labels('variant')).toMatchObject({
-			'tiktok-reply': 'TikTok · Comment reply',
-			'x-post': 'X · Post',
-		});
-		expect(labels('theme')).toEqual({ light: 'Light', dark: 'Dark' });
-		expect(labels('emojiStyle')).toEqual({
-			auto: 'Platform',
-			apple: 'Apple',
-			twemoji: 'Twemoji',
-			noto: 'Noto',
 		});
 	});
 });

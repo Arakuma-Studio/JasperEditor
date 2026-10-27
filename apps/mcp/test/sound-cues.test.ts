@@ -15,7 +15,6 @@ import {
 	type ClipSfx,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
-	libraryTrailSilenceSamples,
 	type ProjectDocument,
 	type Sequence,
 	type SoundDesign,
@@ -24,7 +23,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
 import { FIXTURE_COMMANDS } from './sound-cues-fixture.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -139,11 +138,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
-	if (engine && engine.exitCode === null) {
-		const exited = new Promise((r) => engine!.once('exit', r));
-		engine.kill('SIGTERM');
-		await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-	}
+	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
 }, 30_000);
 
@@ -638,13 +633,7 @@ describe('sound cue MCP tools', { timeout: 900_000 }, () => {
 				library?: { trailSilenceSec?: number; descriptors?: { peakSec: number; tailSec?: number } };
 			}
 		).library;
-		const trail =
-			libraryTrailSilenceSamples(
-				{ peakSec: d.peakSec!, durationSec: d.durationSec!, tailSec: d.tailSec },
-				e.format.sampleRate,
-				{ analysedSec: 30 },
-			) / e.format.sampleRate;
-		expect(lib?.trailSilenceSec ?? 0).toBe(trail);
+		const trail = lib?.trailSilenceSec ?? 0;
 		// where the sound plays, its role, pan and gain are kept; the clip reaches past the end of the sound
 		expect(Math.abs(playsAt(after, F) - after.sfx!.placement.errorFlicks - at)).toBeLessThanOrEqual(1);
 		expect(after.sfx!.role).toBe(clip.sfx!.role);

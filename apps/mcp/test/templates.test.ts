@@ -25,6 +25,14 @@ const titleParams = z.strictObject({
 	lines: z.number().int().min(0).max(6).default(1),
 	alignment: z.enum(['left', 'center', 'right']).default('center'),
 	underline: z.boolean().default(true),
+	avatar: z
+		.object({ mediaId: z.string() })
+		.nullable()
+		.default(null)
+		.meta({
+			'x-jasper-kind': 'media',
+			'x-jasper-media-kinds': ['image'],
+		}),
 });
 const lowerParams = z.strictObject({
 	name: z.string().max(60).default('Name'),
@@ -260,6 +268,11 @@ describe('list_motion_templates (S11:ANA-003)', () => {
 			keyframable: true,
 		});
 		expect(anime.params.find((p) => p.name === 'title')?.keyframable).toBe(false);
+		expect(anime.params.find((p) => p.name === 'avatar')).toMatchObject({
+			type: 'media image',
+			default: null,
+			keyframable: false,
+		});
 		const ff = body.templates.find((t) => t.id === 'lower-third')!;
 		expect(ff).toMatchObject({ renderer: 'fframes', native: true });
 		expect(ff.params.find((p) => p.name === 'size')?.keyframable).toBe(false);

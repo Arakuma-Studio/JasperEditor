@@ -4,7 +4,6 @@
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
-	LIBRARY_INEXACT_REASONS,
 	LibraryProvenanceSchema,
 	type ProjectDocument,
 	readLibraryProvenance,
@@ -18,7 +17,7 @@ const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
 describe('LibraryProvenance.inexact', () => {
 	it('the schema carries the reason; the strict agent path accepts what the engine returns', () => {
-		for (const reason of LIBRARY_INEXACT_REASONS) {
+		for (const reason of ['too-long', 'too-large', 'disk-space'] as const) {
 			const library = { ...LIB, inexact: { reason } };
 			expect(LibraryProvenanceSchema.safeParse(library).success).toBe(true);
 			const cmd = { type: 'media.register', asset: { ...videoAsset({ kind: 'audio' }), library } };

@@ -3,13 +3,7 @@
 // mapped to a `string` spec and `param.set` refused every object, so no UI or agent could change it (regression).
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-	type Clip,
-	createStaticMgRegistry,
-	defaultRegistries,
-	type MgTemplateInfo,
-	paramsPropertySpecs,
-} from '../src/index.ts';
+import { type Clip, createStaticMgRegistry, defaultRegistries, type MgTemplateInfo } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
 const avatar = z.union([
@@ -52,13 +46,6 @@ function setup() {
 }
 
 describe('object and union template params', () => {
-	it('map to JSON property specs', () => {
-		const specs = paramsPropertySpecs(card);
-		expect(specs.find((s) => s.key === 'params.avatar')?.kind).toBe('json');
-		expect(specs.find((s) => s.key === 'params.box')?.kind).toBe('json');
-		expect(specs.find((s) => s.key === 'params.name')?.kind).toBe('string');
-	});
-
 	it('can be set to every member of the union and refuse values the schema rejects', () => {
 		const { h, id, params } = setup();
 		const set = (value: unknown) =>

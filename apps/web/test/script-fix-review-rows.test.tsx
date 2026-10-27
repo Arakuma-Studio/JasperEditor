@@ -6,21 +6,19 @@ import type { ProjectDocument, TextClip } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { ReviewPanel } from '../src/panels/review/ReviewPanel.tsx';
 import { acceptAll, applyReview, decideGroup, playReviewItem } from '../src/proposals/actions.ts';
 import { dismissFixReport, fixReportStore } from '../src/script-fix/review.ts';
-import {
-	type SourceAudioElement,
-	setSourceAudioFactory,
-	sourcePlayStore,
-} from '../src/script-fix/source-audio.ts';
+import { sourcePlayStore, stopSourceAudio } from '../src/script-fix/source-audio.ts';
 import { fixItems, fixSession } from './script-fix-helpers.ts';
 
 afterEach(() => {
 	cleanup();
 	dismissFixReport();
+	stopSourceAudio();
+	vi.unstubAllGlobals();
 });
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 const row = (id: string) => document.querySelector(`[data-review-row="${id}"]`) as HTMLElement;
@@ -102,46 +100,47 @@ describe('transcript fixes as Review rows (SC-082)', () => {
 		const maybe = row('fix:3');
 		expect(maybe.querySelector('[data-fix-confidence]')?.getAttribute('data-fix-confidence')).toBe('low');
 		expect(maybe.querySelector('[data-review-unselected]')?.textContent).toBe('Not selected');
+		expect(maybe.getAttribute('aria-label')).toContain('Not selected');
 		expect(screen.getByTestId('review-list').textContent).toMatch(/Fixes[\s\S]*Spelling[\s\S]*Maybe/);
 	});
 
 	it('▶ plays the source recording from 1 s before to 1 s after the words', async () => {
 		const { session, mediaKey } = await reviewFixture();
-		const played: Partial<SourceAudioElement>[] = [];
-		const prev = setSourceAudioFactory(() => {
-			const el = {
-				src: '',
-				preload: '',
-				currentTime: 0,
-				onerror: null,
-				ontimeupdate: null,
-				onloadedmetadata: null,
-				play: () => Promise.resolve(),
-				pause: () => undefined,
-				removeAttribute: () => undefined,
-				load: () => undefined,
-			} as SourceAudioElement;
-			played.push(el);
-			return el;
+		const played: Partial<HTMLAudioElement>[] = [];
+		vi.stubGlobal(
+			'Audio',
+			class {
+				src = '';
+				preload: HTMLAudioElement['preload'] = '';
+				currentTime = 0;
+				onerror = null;
+				ontimeupdate = null;
+				onloadedmetadata = null;
+				constructor() {
+					played.push(this);
+				}
+				play() {
+					return Promise.resolve();
+				}
+				pause() {}
+				removeAttribute() {}
+				load() {}
+			},
+		);
+		act(() => {
+			fireEvent.click(row('fix:2').querySelector('[data-review-tool="play"]')!);
 		});
-		try {
-			act(() => {
-				fireEvent.click(row('fix:2').querySelector('[data-review-tool="play"]')!);
-			});
-			expect(played).toHaveLength(1);
-			expect(played[0]!.src).toBe(`/media/${mediaKey}`);
-			expect(played[0]!.currentTime).toBeCloseTo(1.0, 5); // 2.0 s − 1 s
-			expect(sourcePlayStore.getState().itemId).toBe('fix:2');
-			// past the end (2.6 s + 1 s) it stops by itself
-			played[0]!.currentTime = 3.7;
-			act(() => (played[0]!.ontimeupdate as () => void)());
-			expect(sourcePlayStore.getState().itemId).toBeNull();
-			// Space (the review key) takes the same path
-			expect(playReviewItem(session, 'fix:1')).toBe(true);
-			expect(played[1]!.currentTime).toBeCloseTo(0, 5);
-		} finally {
-			setSourceAudioFactory(prev);
-		}
+		expect(played).toHaveLength(1);
+		expect(played[0]!.src).toBe(`/media/${mediaKey}`);
+		expect(played[0]!.currentTime).toBeCloseTo(1.0, 5); // 2.0 s − 1 s
+		expect(sourcePlayStore.getState().itemId).toBe('fix:2');
+		// past the end (2.6 s + 1 s) it stops by itself
+		played[0]!.currentTime = 3.7;
+		act(() => (played[0]!.ontimeupdate as () => void)());
+		expect(sourcePlayStore.getState().itemId).toBeNull();
+		// Space (the review key) takes the same path
+		expect(playReviewItem(session, 'fix:1')).toBe(true);
+		expect(played[1]!.currentTime).toBeCloseTo(0, 5);
 	});
 
 	it('accepts and clears a whole group; Accept all leaves Maybe out', async () => {

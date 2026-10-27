@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RemoteProbeResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SshRemote } from '../src/processing/remote.ts';
+import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
 	ensureFixtures,
@@ -48,17 +49,6 @@ function writeShim(name: string, text: string): string {
 	writeFileSync(p, text);
 	chmodSync(p, 0o755);
 	return p;
-}
-
-async function waitJob(id: string, timeoutMs = 300_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		200,
-	);
 }
 
 async function expectProcessedArtifact(result: ProcessResult) {
@@ -111,150 +101,153 @@ afterAll(async () => {
 });
 
 describe('remote executor (shims)', () => {
-	it('probe before setup reports the runtime is not installed', async () => {
-		await putRemote();
-		const r = await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H });
-		expect(r.statusCode).toBe(200);
-		const p = r.json() as RemoteProbeResult;
-		expect(p.node).toMatch(/^v\d+/);
-		expect(p.runtimeReady).toBe(false);
-		expect(p.ok).toBe(false);
-	});
-
-	it('setup installs an executable runtime that the probe reports ready', async () => {
-		const r = await app.inject({ method: 'POST', url: '/api/processing/remote/setup', headers: H });
-		expect(r.statusCode).toBe(200);
-		const job = await waitJob((r.json() as EngineJob).id);
-		expect(job.error).toBeUndefined();
-		expect(job.state).toBe('succeeded');
-		const p = (
-			await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H })
-		).json() as RemoteProbeResult;
-		expect(p.runtimeReady).toBe(true);
-		expect(p.ok).toBe(true);
-		const caps = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json();
-		expect(caps.features.processing.remote.configured).toBe(true);
-		expect(caps.features.processing.remote.lastProbe.ok).toBe(true);
-	}, 300_000);
-
-	it('auto executor runs remotely; the input is cached by fingerprint; the job dir is removed', async () => {
-		const m = await register(app, fixture('clip-b.mp4'));
-		const r = await app.inject({
-			method: 'POST',
-			url: `/api/media/${m.mediaKey}/process`,
-			headers: JSON_H,
-			payload: { steps: [{ op: 'denoise', method: 'fftdnoiz', strength: 0.2 }], executor: 'auto' },
-		});
-		const job = await waitJob((r.json() as EngineJob).id);
-		expect(job.error).toBeUndefined();
-		const res = job.result as ProcessResult;
-		expect(res.executor).toBe('remote');
-		expect(readdirSync(join(remoteDir, 'jobs'))).toEqual([]);
-		const cache = readdirSync(join(remoteDir, 'cache'));
-		expect(cache).toHaveLength(1);
-		expect(readFileSync(join(remoteDir, 'cache', cache[0])).equals(readFileSync(fixture('clip-b.mp4')))).toBe(
-			true,
-		);
-		await expectProcessedArtifact(res);
-		const r2 = await app.inject({
-			method: 'POST',
-			url: `/api/media/${m.mediaKey}/process`,
-			headers: JSON_H,
-			payload: { steps: [{ op: 'deblock', filter: 'strong' }], executor: 'remote' },
-		});
-		const job2 = await waitJob((r2.json() as EngineJob).id);
-		expect(job2.error).toBeUndefined();
-		expect(readdirSync(join(remoteDir, 'cache'))).toEqual(cache);
-		await expectProcessedArtifact(job2.result as ProcessResult);
-	}, 300_000);
-
-	it('an interrupted upload retries to the exact source bytes without leaving a partial file', async () => {
-		const big = join(shimDir, 'big.bin');
-		writeFileSync(big, Buffer.alloc(24 * 1024 * 1024, 7));
-		const slow = writeShim('rsync-slow', '#!/usr/bin/env bash\nexec rsync --bwlimit=4000 "$@"\n');
-		const settings = JSON.parse(readFileSync(join(app.appdir, 'engine', 'engine.json'), 'utf8')).processing
-			.remote;
-		const slowRemote = new SshRemote(settings, join(app.appdir, 'tmp', 'ssh'), {
-			...process.env,
-			JASPER_RSYNC: slow,
-		});
-		const dest = join(remoteDir, 'cache', 'resume-test.bin');
-		const ac = new AbortController();
-		const first = slowRemote.upload(big, dest, { signal: ac.signal });
-		await until(() => existsSync(`${dest}.part`) && statSync(`${dest}.part`).size > 0, 20_000, 20);
-		ac.abort();
-		await expect(first).rejects.toMatchObject({ code: 'CANCELLED' });
-		const partial = statSync(`${dest}.part`).size;
-		expect(partial).toBeGreaterThan(0);
-		expect(partial).toBeLessThan(24 * 1024 * 1024);
-		const fast = new SshRemote(settings, join(app.appdir, 'tmp', 'ssh'), process.env);
-		await fast.upload(big, dest);
-		expect(statSync(dest).size).toBe(24 * 1024 * 1024);
-		expect(readFileSync(dest).equals(readFileSync(big))).toBe(true);
-		expect(existsSync(`${dest}.part`)).toBe(false);
-	}, 120_000);
-
-	it('cancel kills the remote process group and leaves no job directory', async () => {
-		const m = await register(app, fixture('clip-a.mp4'));
-		const r = await app.inject({
-			method: 'POST',
-			url: `/api/media/${m.mediaKey}/process`,
-			headers: JSON_H,
-			payload: { steps: [{ op: 'denoise', method: 'nlmeans', strength: 1 }], executor: 'remote' },
-		});
-		const id = (r.json() as EngineJob).id;
-		const pidFile = join(remoteDir, 'jobs', id, 'pid');
-		await until(() => existsSync(pidFile), 60_000, 50);
-		const pid = Number(readFileSync(pidFile, 'utf8').trim());
-		// jasper-proc is running remotely once it reported its start event (stage "Remote · Processing N frames").
-		const running = await until(
-			async () => {
-				const j = (
-					await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })
-				).json() as EngineJob;
-				return /Processing|Step/.test(j.stage ?? '') || j.state !== 'running' ? j : null;
-			},
-			60_000,
-			100,
-		);
-		expect(running.error).toBeUndefined();
-		expect(running.state).toBe('running');
-		await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
-		const done = await waitJob(id, 30_000);
-		expect(done.state).toBe('cancelled');
-		await until(() => !existsSync(join(remoteDir, 'jobs', id)), 20_000, 100);
-		let alive = true;
-		try {
-			process.kill(pid, 0);
-		} catch {
-			alive = false;
+	it('sets up the runtime, processes cached inputs, resumes uploads, and cleans up cancellation and connection failure', async () => {
+		// probe before setup reports the runtime is not installed
+		{
+			await putRemote();
+			const r = await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H });
+			expect(r.statusCode).toBe(200);
+			const p = r.json() as RemoteProbeResult;
+			expect(p.node).toMatch(/^v\d+/);
+			expect(p.runtimeReady).toBe(false);
+			expect(p.ok).toBe(false);
 		}
-		expect(alive).toBe(false);
-	}, 180_000);
-
-	it('a broken connection fails with REMOTE_CONNECTION_LOST (retryable), never falls back to local', async () => {
-		const dead = writeShim(
-			'ssh-dead',
-			'#!/usr/bin/env bash\necho "ssh: connect to host gpu-box.test port 22: Connection refused" >&2\nexit 255\n',
-		);
-		const saved = process.env.JASPER_SSH;
-		process.env.JASPER_SSH = dead;
-		try {
+		// setup installs an executable runtime that the probe reports ready
+		{
+			const r = await app.inject({ method: 'POST', url: '/api/processing/remote/setup', headers: H });
+			expect(r.statusCode).toBe(200);
+			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
+			expect(job.error).toBeUndefined();
+			expect(job.state).toBe('succeeded');
+			const p = (
+				await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H })
+			).json() as RemoteProbeResult;
+			expect(p.runtimeReady).toBe(true);
+			expect(p.ok).toBe(true);
+			const caps = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json();
+			expect(caps.features.processing.remote.configured).toBe(true);
+			expect(caps.features.processing.remote.lastProbe.ok).toBe(true);
+		}
+		// auto executor runs remotely; the input is cached by fingerprint; the job dir is removed
+		{
 			const m = await register(app, fixture('clip-b.mp4'));
 			const r = await app.inject({
 				method: 'POST',
 				url: `/api/media/${m.mediaKey}/process`,
 				headers: JSON_H,
-				payload: { steps: [{ op: 'deblock', filter: 'weak', block: 16 }], executor: 'remote' },
+				payload: { steps: [{ op: 'denoise', method: 'atadenoise', strength: 0.2 }], executor: 'auto' },
 			});
-			const job = await waitJob((r.json() as EngineJob).id);
-			expect(job.state).toBe('failed');
-			expect(job.error?.code).toBe('REMOTE_CONNECTION_LOST');
-			expect(job.error?.retryable).toBe(true);
-		} finally {
-			process.env.JASPER_SSH = saved;
+			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
+			expect(job.error).toBeUndefined();
+			const res = job.result as ProcessResult;
+			expect(res.executor).toBe('remote');
+			expect(readdirSync(join(remoteDir, 'jobs'))).toEqual([]);
+			const cache = readdirSync(join(remoteDir, 'cache'));
+			expect(cache).toHaveLength(1);
+			expect(
+				readFileSync(join(remoteDir, 'cache', cache[0])).equals(readFileSync(fixture('clip-b.mp4'))),
+			).toBe(true);
+			await expectProcessedArtifact(res);
+			const r2 = await app.inject({
+				method: 'POST',
+				url: `/api/media/${m.mediaKey}/process`,
+				headers: JSON_H,
+				payload: { steps: [{ op: 'deblock', filter: 'strong' }], executor: 'remote' },
+			});
+			const job2 = await coreServices(app).queue.wait((r2.json() as EngineJob).id);
+			expect(job2.error).toBeUndefined();
+			expect(readdirSync(join(remoteDir, 'cache'))).toEqual(cache);
+			await expectProcessedArtifact(job2.result as ProcessResult);
 		}
-	}, 60_000);
+		// an interrupted upload retries to the exact source bytes without leaving a partial file
+		{
+			const big = join(shimDir, 'big.bin');
+			writeFileSync(big, Buffer.alloc(24 * 1024 * 1024, 7));
+			const slow = writeShim('rsync-slow', '#!/usr/bin/env bash\nexec rsync --bwlimit=4000 "$@"\n');
+			const settings = JSON.parse(readFileSync(join(app.appdir, 'engine', 'engine.json'), 'utf8')).processing
+				.remote;
+			const slowRemote = new SshRemote(settings, join(app.appdir, 'tmp', 'ssh'), {
+				...process.env,
+				JASPER_RSYNC: slow,
+			});
+			const dest = join(remoteDir, 'cache', 'resume-test.bin');
+			const ac = new AbortController();
+			const first = slowRemote.upload(big, dest, { signal: ac.signal });
+			await until(() => existsSync(`${dest}.part`) && statSync(`${dest}.part`).size > 0, 20_000, 20);
+			ac.abort();
+			await expect(first).rejects.toMatchObject({ code: 'CANCELLED' });
+			const partial = statSync(`${dest}.part`).size;
+			expect(partial).toBeGreaterThan(0);
+			expect(partial).toBeLessThan(24 * 1024 * 1024);
+			const fast = new SshRemote(settings, join(app.appdir, 'tmp', 'ssh'), process.env);
+			await fast.upload(big, dest);
+			expect(statSync(dest).size).toBe(24 * 1024 * 1024);
+			expect(readFileSync(dest).equals(readFileSync(big))).toBe(true);
+			expect(existsSync(`${dest}.part`)).toBe(false);
+		}
+		// cancel kills the remote process group and leaves no job directory
+		{
+			const m = await register(app, fixture('clip-a.mp4'));
+			const r = await app.inject({
+				method: 'POST',
+				url: `/api/media/${m.mediaKey}/process`,
+				headers: JSON_H,
+				payload: { steps: [{ op: 'denoise', method: 'nlmeans', strength: 1 }], executor: 'remote' },
+			});
+			const id = (r.json() as EngineJob).id;
+			const pidFile = join(remoteDir, 'jobs', id, 'pid');
+			await until(() => existsSync(pidFile), 60_000, 50);
+			const pid = Number(readFileSync(pidFile, 'utf8').trim());
+			// jasper-proc is running remotely once it reported its start event (stage "Remote · Processing N frames").
+			const running = await until(
+				async () => {
+					const j = (
+						await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })
+					).json() as EngineJob;
+					return /Processing|Step/.test(j.stage ?? '') || j.state !== 'running' ? j : null;
+				},
+				60_000,
+				100,
+			);
+			expect(running.error).toBeUndefined();
+			expect(running.state).toBe('running');
+			await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
+			const done = await coreServices(app).queue.wait(id);
+			expect(done.state).toBe('cancelled');
+			await until(() => !existsSync(join(remoteDir, 'jobs', id)), 20_000, 100);
+			let alive = true;
+			try {
+				process.kill(pid, 0);
+			} catch {
+				alive = false;
+			}
+			expect(alive).toBe(false);
+		}
+		// a broken connection fails with REMOTE_CONNECTION_LOST (retryable), never falls back to local
+		{
+			const dead = writeShim(
+				'ssh-dead',
+				'#!/usr/bin/env bash\necho "ssh: connect to host gpu-box.test port 22: Connection refused" >&2\nexit 255\n',
+			);
+			const saved = process.env.JASPER_SSH;
+			process.env.JASPER_SSH = dead;
+			try {
+				const m = await register(app, fixture('clip-b.mp4'));
+				const r = await app.inject({
+					method: 'POST',
+					url: `/api/media/${m.mediaKey}/process`,
+					headers: JSON_H,
+					payload: { steps: [{ op: 'deblock', filter: 'weak', block: 16 }], executor: 'remote' },
+				});
+				const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
+				expect(job.state).toBe('failed');
+				expect(job.error?.code).toBe('REMOTE_CONNECTION_LOST');
+				expect(job.error?.retryable).toBe(true);
+			} finally {
+				process.env.JASPER_SSH = saved;
+			}
+		}
+	}, 300_000);
 });
 
 const REAL = process.env.JASPER_TEST_SSH;
@@ -286,7 +279,7 @@ describe.skipIf(!REAL)('remote executor over real SSH (JASPER_TEST_SSH)', () => 
 			});
 			expect(put.statusCode).toBe(200);
 			const setup = await app.inject({ method: 'POST', url: '/api/processing/remote/setup', headers: H });
-			const sj = await waitJob((setup.json() as EngineJob).id, 600_000);
+			const sj = await coreServices(app).queue.wait((setup.json() as EngineJob).id);
 			expect(sj.error).toBeUndefined();
 			const m = await register(app, fixture('clip-b.mp4'));
 			const r = await app.inject({
@@ -295,7 +288,7 @@ describe.skipIf(!REAL)('remote executor over real SSH (JASPER_TEST_SSH)', () => 
 				headers: JSON_H,
 				payload: { steps: [{ op: 'denoise', method: 'atadenoise', strength: 0.3 }], executor: 'remote' },
 			});
-			const job = await waitJob((r.json() as EngineJob).id);
+			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
 			expect(job.error).toBeUndefined();
 			expect((job.result as ProcessResult).executor).toBe('remote');
 			await expectProcessedArtifact(job.result as ProcessResult);

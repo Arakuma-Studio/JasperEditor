@@ -56,9 +56,8 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
   feature)`). Producers add a group by adding it to `PROPOSAL_FEATURES` (a label → `pnpm i18n` → Spanish).
 - Feature sentences go through `apps/web/src/proposals/vocabulary.ts`: `reviewVocabulary(feature)` →
   `{groupOf, cardSentence?, itemsText, applyToast}`; the generic one uses the feature's noun ("ui-agent proposes Decorate
-  Cuts: 214 edits", "Applied 12 of 40 cuts from …"); `registerReviewVocabulary(feature, v)` for a producer that needs
-  more. Sound design is migrated onto the registry unchanged (role grouping Hero / Support / Bed / Layers, "n sounds on
-  k new tracks", "Applied n of m sounds"; its review tests pass unchanged).
+  Cuts: 214 edits", "Applied 12 of 40 cuts from …"). Sound design uses its own vocabulary (role grouping
+  Hero / Support / Bed / Layers, "n sounds on k new tracks", "Applied n of m sounds").
 - Ghosts (`apps/web/src/proposals/ghosts.ts`, drawn by `GhostLayer.tsx`): clip ghosts carry the clip kind
   (adjustment ◐ and text T marks); **key bands** for keyframes an item adds or changes on a clip (also all keys of a
   clip it creates: an adjustment kit's blur curve) at the keys' sequence frames, with a diamond per key; **transition
@@ -129,8 +128,7 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
 2. Use the batch commands: one command per item; a setup item (`meta.setup: true`) creates the FX track.
 3. Call `proposalBudget(items)` first; over the caps refuse with `E_TOO_LARGE` and `suggestedRange`.
 4. Create the proposal with the feature id (`edit-automation`, `subtitles`, `transcript-cleanup`); register a refresher
-   on the engine's `ProposalService`; add your Review groups to `PROPOSAL_FEATURES` and, only if the noun is not
-   enough, a vocabulary with `registerReviewVocabulary`.
+   on the engine's `ProposalService`; add your Review groups and item noun to `PROPOSAL_FEATURES`.
 
 ### Verification (VM `wt-proposals`, branch `feat/wf-proposals`)
 
@@ -301,7 +299,7 @@ the whole export goes through the Remotion renderer (tested in `apps/engine/test
 
 ### Export cost of 100 kits (EA-033, measured)
 
-`KITS_BENCH=1 pnpm exec vitest run apps/engine/test/automation-kits-bench.test.ts` (results in
+`pnpm exec tsx apps/engine/bench/automation-kits.ts` (results in
 `apps/engine/bench/automation-kits.results.json`): a 1080p 30 fps edit of 101 flat pictures of 2 s with a small square
 over them (100 cuts, 6 060 frames = 202 s), H.264 CRF 20 "fast", exported as it is and with 100 kits from Decorate
 Cuts (seed 1, no sounds), same settings, wall time of the export job. Build VM: AMD EPYC-Rome, 16 vCPU, 31 GB, software
@@ -350,7 +348,7 @@ default.
 
 ### Verification (VM `wt-kits`)
 
-- `packages/project/test/automation-planners.test.ts` (20): kit packs valid, eases resolve; repeat penalty keeps the
+- `packages/project/test/automation-planners.test.ts`: repeat penalty keeps the
   shares and gives 0.23; per-side eased batch keys; every kit centred on its cut exactly and disjoint (example and
   fast-check property over random edits, seeds and both aspects); determinism; shorts pack; close cuts → shorter
   family / `too-close`; edges, transitions, decorated cuts; coverage, spacing, range, track, refusals; family shares

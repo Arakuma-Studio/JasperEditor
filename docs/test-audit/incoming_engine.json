@@ -1,0 +1,64 @@
+[
+  {
+    "path": "apps/engine/test/jobs.test.ts",
+    "test": "keeps filtered history, stable timestamp ties and repeated keys through completion and retry",
+    "survivingTest": "lists retained attempts in insertion order and applies filters to keyed history",
+    "disposition": "REWRITE",
+    "contract": "Keyed list calls retain both the cancelled attempt and retry, preserve stable equal-timestamp order independent of requested-key order, and honor active/project/kind/since filters.",
+    "source": "S04 JB-014/JB-030/JB-041 and GET /api/jobs filter contract; docs/wp-notes/perf-hunt-engine.md requires unchanged list/filter/history behavior under the new index.",
+    "bug": "A key-to-single-job shortcut drops retained attempts; key traversal changes ordering; a shared project/kind filter bug returns jobs outside the requested scope.",
+    "oracle": "Literal expected sequences of first.id, second.id and retried.id, with explicit empty export-kind result and active/history/since results. No call to list computes an expectation.",
+    "seam": "JobQueue.submit/cancel/retry/list public methods, consumed by HTTP jobs routes and DerivativeService.status; only Date is controlled to make timestamp ties deterministic.",
+    "refactor": "Any index or scan implementation can replace the queue internals while returning the same caller-visible IDs and ordering. No private fields, call counts or source strings asserted.",
+    "unique": "The existing detached/external-source case has one internal attempt per key; retry/cancellation tests do not query retained keyed history or filter composition. This is the lowest stable owner of these list results.",
+    "reason": "The incoming test used list(filter).filter(...) as its own expected value, allowing common filter bugs to pass. Replace that oracle with seven small literal result cases, use a contrasting kind, remove the unsupported not-a-date vector, and fake only Date.",
+    "validation": "JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/engine/test/jobs.test.ts --maxWorkers=2; pnpm --filter @jasper/engine typecheck",
+    "supersedesExistingRows": [],
+    "auditScope": "New incoming test from origin/main b5126551; absent from the original engine_1 ledger. Unchanged jobs tests are not re-audited here.",
+    "baselineObservation": {
+      "test": "keeps filtered history, stable timestamp ties and repeated keys through completion and retry",
+      "status": "passed",
+      "ms": 7.62,
+      "environment": "Node 20.19.0, Vitest 4.1.11, maxWorkers=2; shared host"
+    },
+    "afterObservation": {
+      "test": "lists retained attempts in insertion order and applies filters to keyed history",
+      "status": "passed",
+      "ms": 5.784,
+      "environment": "Node 20.19.0, Vitest 4.1.11, maxWorkers=2; shared host"
+    },
+    "mutationEvidence": "Disabling the production project filter leaves the incoming original test green; the rewrite fails its explicit project-specific ID sequence.",
+    "supportingInfrastructure": "apps/engine/bench/job-lookups.ts retained unchanged: standalone historical/current workload comparison and result-equivalence diagnostic, outside Vitest/required CI. No test-only production seam was added."
+  },
+  {
+    "path": "apps/engine/test/jobs.test.ts",
+    "test": "keeps key lookups identical to full listing after journal replacement, duplicate-key recovery and pruning",
+    "survivingTest": "restores keyed journal history in stable order and drops pruned keys from lookups",
+    "disposition": "REWRITE",
+    "contract": "Valid journal recovery preserves all retained jobs under repeated keys and existing insertion order; terminal jobs older than seven days beyond the newest 500 disappear from memory and keyed lookups.",
+    "source": "S04 JB-030 and CA-020 persistence/retention contracts; docs/wp-notes/perf-hunt-engine.md explicitly preserves journal replacement, duplicate-key history and equal-timestamp ordering.",
+    "bug": "Journal replay resets insertion ordinals and reorders existing jobs, or pruning leaves indexed IDs whose entries no longer exist, crashing subsequent caller lookups.",
+    "oracle": "Literal restored ID order [first, other, duplicate], then exactly four removed jobs from 504 valid terminal records under the documented 500-job retention floor; old keys return [] and job_finished_500 remains.",
+    "seam": "JobQueue constructor/start/cancel/wait/prune/list plus the documented jobs.jsonl wire format, with a supplied clock. No internal index or insertion counter is inspected.",
+    "refactor": "A new data structure or journal reader passes if valid serialized jobs recover in the same observable order and pruned jobs are no longer returned. Fixture chronology and expected IDs are independent of queue algorithms.",
+    "unique": "Existing crash-recovery tests do not combine pre-start replacement with duplicate-key history. cache.test.ts checks ordinary prune retention, but never keyed lookup after removal; it cannot catch stale index references.",
+    "reason": "Replace the queue-as-own-oracle comparisons with explicit IDs. Two pre-start entries make replacement-order bugs observable. Seed 501 fresh valid completed journal records in one write instead of 501 submit/fail/journal cycles, then advance the clock eight days and prune.",
+    "validation": "JASPER_REQUIRE_ORACLES=1 pnpm exec vitest run apps/engine/test/jobs.test.ts --maxWorkers=2; pnpm --filter @jasper/engine typecheck",
+    "supersedesExistingRows": [],
+    "auditScope": "New incoming test from origin/main b5126551; absent from the original engine_1 ledger. Unchanged jobs tests are not re-audited here.",
+    "baselineObservation": {
+      "test": "keeps key lookups identical to full listing after journal replacement, duplicate-key recovery and pruning",
+      "status": "passed",
+      "ms": 38.095,
+      "environment": "Node 20.19.0, Vitest 4.1.11, maxWorkers=2; shared host"
+    },
+    "afterObservation": {
+      "test": "restores keyed journal history in stable order and drops pruned keys from lookups",
+      "status": "passed",
+      "ms": 15.7,
+      "environment": "Node 20.19.0, Vitest 4.1.11, maxWorkers=2; shared host"
+    },
+    "mutationEvidence": "Resetting the replacement insertion ordinal fails the explicit recovered order; omitting prune-time deindexing fails the empty keyed lookup with the real stale-entry crash.",
+    "supportingInfrastructure": "The 501-record fixture is the minimum boundary beyond the independently specified 500 retained jobs. Existing temp-directory cleanup remains shared; no new helper, configuration or production injection hook."
+  }
+]

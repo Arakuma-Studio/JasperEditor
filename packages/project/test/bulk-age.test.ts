@@ -162,19 +162,19 @@ describe('age columns in the import plan', () => {
 	it('a unit column wins over the unit of an age cell (warning)', () => {
 		const p = plan('Comment,Time,Unit\nA,3h,day\nB,3h,hour');
 		expect(p.rows[0]!.params).toEqual({ text: 'A', timeValue: 3, timeUnit: 'day' });
-		expect(p.rows[0]!.warnings.map(mgImportText)).toEqual([
-			'Time: The unit of "3h" is not used: the row already sets timeUnit',
+		expect(p.rows[0]!.warnings).toEqual([
+			{ code: 'age-unit-overridden', values: ['3h', 'timeUnit'], column: 'Time' },
 		]);
 		expect(p.rows[1]!.warnings).toEqual([]);
 	});
 
 	it('reports cells that are not ages, units the template does not offer and counts out of range', () => {
 		const p = plan('Comment,Time\nA,soon\nB,45s\nC,12000h\nD,1.5h');
-		expect(p.rows.map((r) => r.errors.map(mgImportText))).toEqual([
-			['Time: "soon" is not an age (3h, 2 weeks, 10 months, 1y, 5 min, just now)'],
-			['Time: "45s": the unit second is not offered (use minute, hour, day, week, month, year)'],
-			['Time: 12000 is above the maximum 9999'],
-			['Time: "1.5h" is not an age (3h, 2 weeks, 10 months, 1y, 5 min, just now)'],
+		expect(p.rows.map((r) => r.errors)).toEqual([
+			[{ code: 'not-age', values: ['soon'], column: 'Time' }],
+			[{ code: 'age-unit-not-offered', values: ['45s', 'second', UNITS.join(', ')], column: 'Time' }],
+			[{ code: 'above-maximum', values: [12000, 9999], column: 'Time' }],
+			[{ code: 'not-age', values: ['1.5h'], column: 'Time' }],
 		]);
 		expect(p.rows.every((r) => !('timeValue' in r.params))).toBe(true);
 	});
@@ -187,7 +187,7 @@ describe('age columns in the import plan', () => {
 		]) {
 			const p = plan('Comment,Time,Posted\nA,3h,3h', template(age ?? null));
 			expect(p.columns[1]).toMatchObject({ kind: 'ignored' });
-			expect(p.rows[0]!.errors.map(mgImportText)).toEqual(['Posted: "3h" is not a number']);
+			expect(p.rows[0]!.errors).toEqual([{ code: 'not-number', values: ['3h'], column: 'Posted' }]);
 		}
 	});
 

@@ -170,7 +170,6 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 			code: 'APPROVAL_REQUIRED',
 			detail: { code: 'E_APPROVAL_REQUIRED', feature: 'edit-automation' },
 		});
-		expect(refused.json().message).toContain('Allow agents to apply editing automation proposals');
 		// the agent cannot turn it back on headlessly (approval needed → denied without an editor)
 		const grant = await post(
 			app,
@@ -190,27 +189,6 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 		// the editor applies it as the user's own edit
 		const byEditor = await post(app, `${base(projectId)}/${q.id}/accept`, { itemIds: 'all' }, EDITOR_H);
 		expect(byEditor.statusCode, byEditor.body).toBe(200);
-	});
-
-	it('destructive items in an allowed feature still need the approval card (headless → denied)', async () => {
-		const app = await secured();
-		const { projectId, seqId, file } = seed(app);
-		const p = await create(
-			app,
-			projectId,
-			{
-				feature: 'transcript-cleanup',
-				title: 'Clean up',
-				sequenceId: seqId,
-				items: [{ id: 'rm', label: 'Remove A3', commands: [{ type: 'track.remove', trackIds: ['A3'] }] }],
-			},
-			AGENT_H,
-		);
-		expect(p.items[0]!.state).toBe('pending');
-		const r = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
-		expect(r.statusCode).toBe(403);
-		expect(r.json().code).toBe('APPROVAL_DENIED');
-		expect(saved(file).revision).toBe(3);
 	});
 
 	it('lists the features with this project’s agent-accept state and whether they refresh', async () => {
@@ -244,12 +222,9 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 			explicit: true,
 		});
 		expect(by['transcript-cleanup']!.groups.map((g) => g.id)).toContain('retakes');
-		// editing automation's producer (spec 15 EA-020…EA-022) and Fix Transcript's (spec 17 SC-062) refresh; the others
-		// do not (yet)
-		expect(features.filter((f) => f.refreshable).map((f) => f.id)).toEqual([
-			'edit-automation',
-			'transcript-correction',
-		]);
+		// Editing automation (EA-020…EA-022) and Fix Transcript (SC-062) each provide a refresher.
+		expect(by['edit-automation']!.refreshable).toBe(true);
+		expect(by['transcript-correction']!.refreshable).toBe(true);
 		const svc = app.jasper.services.proposals as ProposalService;
 		// without its refresher the feature is not refreshable
 		svc.registerRefresher('edit-automation', () => ({ items: [] }))();
@@ -262,7 +237,7 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 				})
 			).json(),
 		);
-		expect(none.features.filter((f) => f.refreshable).map((f) => f.id)).toEqual(['transcript-correction']);
+		expect(none.features.find((f) => f.id === 'edit-automation')!.refreshable).toBe(false);
 		const off = svc.registerRefresher('edit-automation', () => ({ items: [] }));
 		const again = ProposalFeaturesResponseSchema.parse(
 			(

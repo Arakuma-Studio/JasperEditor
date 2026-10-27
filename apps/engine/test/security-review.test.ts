@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { createServer as createHttpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
@@ -499,25 +500,49 @@ describe('ZIP-1: bundle zip entries are streamed and cut at their declared size'
 		expect(existsSync(join(dir, 'out2', 'big.bin'))).toBe(false);
 	});
 
-	it('a large entry is not held in memory (128 MiB entry, peak buffers under 64 MiB)', async () => {
+	it('extracts a 128 MiB entry with under 64 MiB peak RSS growth in an isolated process', async () => {
 		const dir = tempAppdir('jasper-zip-');
 		const big = join(dir, 'big.zip');
 		const size = 128 * 1024 * 1024;
 		writeFileSync(big, zipOf('big.bin', Buffer.alloc(size)));
-		global.gc?.();
-		const base = process.memoryUsage().arrayBuffers;
-		let peak = 0;
-		const timer = setInterval(() => {
-			peak = Math.max(peak, process.memoryUsage().arrayBuffers - base);
-		}, 2);
-		try {
-			expect(await extractZip(big, join(dir, 'out'))).toBe(1);
-		} finally {
-			clearInterval(timer);
-		}
+		const bundle = join(dir, 'extractor.mjs');
+		const { build } = await import('esbuild');
+		await build({
+			entryPoints: [fileURLToPath(new URL('../src/mg-bundles/zip.ts', import.meta.url))],
+			outfile: bundle,
+			bundle: true,
+			platform: 'node',
+			format: 'esm',
+			target: 'node20',
+			logLevel: 'silent',
+		});
+		// A fresh process excludes the fixture's 128 MiB allocation and earlier Vitest work.
+		// Collect unreachable stream chunks explicitly; retained whole-entry buffers remain
+		// live. The RSS high-water mark also catches synchronous materialization that blocks a sampler.
+		const child = spawnSync(
+			process.execPath,
+			[
+				'--expose-gc',
+				'--input-type=module',
+				'-e',
+				`import { extractZip } from ${JSON.stringify(pathToFileURL(bundle).href)};
+				global.gc();
+				const before = process.resourceUsage().maxRSS;
+				const collect = setInterval(() => global.gc(), 10);
+				try {
+					const files = await extractZip(${JSON.stringify(big)}, ${JSON.stringify(join(dir, 'out'))});
+					console.log(JSON.stringify({ files, peakRss: process.resourceUsage().maxRSS, peakGrowth: (process.resourceUsage().maxRSS - before) * 1024 }));
+				} finally { clearInterval(collect); }`,
+			],
+			{ encoding: 'utf8', timeout: 60_000 },
+		);
+		expect(child.status, child.stderr || String(child.error ?? '')).toBe(0);
+		const measured = JSON.parse(child.stdout) as { files: number; peakRss: number; peakGrowth: number };
+		expect(measured.files).toBe(1);
+		expect(measured.peakRss).toBeGreaterThan(0);
 		expect(statSync(join(dir, 'out', 'big.bin')).size).toBe(size);
+		expect(measured.peakGrowth, JSON.stringify(measured)).toBeLessThan(64 * 1024 * 1024);
 		rmSync(dir, { recursive: true, force: true });
-		expect(peak).toBeLessThan(64 * 1024 * 1024);
 	}, 120_000);
 });
 

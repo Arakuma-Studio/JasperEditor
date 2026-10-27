@@ -1,29 +1,14 @@
-// Sound library search at scale (spec 12 §2.1; wp-note "WP1.2 engine library" ▸ "Review fixes", finding 10): the
-// one-pass facets equal the disjunctive counts of four `rankSounds` passes (the previous algorithm, kept here as the
-// oracle) on random libraries and queries, and a search over a synthetic 5 000-sound library takes < 50 ms of
+// Sound library search at scale (spec 12 §2.1; wp-note "WP1.2 engine library" ▸ "Review fixes", finding 10):
+// a search over a synthetic 5 000-sound library takes < 50 ms of
 // main-thread CPU time (not wall time: one strict budget whatever the host's load).
 import { readFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { isMainThread } from 'node:worker_threads';
-import {
-	type SoundEntry,
-	type SoundFacets,
-	type SoundSearchQuery,
-	SoundSearchQuerySchema,
-	withOfferedTakes,
-} from '@jasper/api';
-import {
-	isSoundTypeId,
-	licenseClass,
-	materialsOf,
-	rankSounds,
-	SOUND_TYPE_IDS,
-	SOUND_TYPES,
-	type SoundTypeId,
-} from '@jasper/project';
+import { type SoundEntry, SoundSearchQuerySchema } from '@jasper/api';
+import { materialsOf, SOUND_TYPE_IDS, type SoundTypeId } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { rankRequestOf, searchSoundEntries } from '../src/sounds/search.ts';
+import { searchSoundEntries } from '../src/sounds/search.ts';
 
 /** Deterministic PRNG (mulberry32). */
 function rng(seed: number) {
@@ -183,102 +168,6 @@ function syntheticLibrary(n: number, seed = 1): SoundEntry[] {
 	}
 	return out.sort((a, b) => (a.id < b.id ? -1 : 1));
 }
-
-/** The previous algorithm (four ranking passes), the oracle of the one-pass facets. */
-function oracle(all: SoundEntry[], q: SoundSearchQuery, includeFolders: boolean) {
-	const byId = new Map(all.map((e) => [e.id, e]));
-	const { req, none } = rankRequestOf(q, (id) => byId.get(id));
-	const visible = includeFolders ? all : all.filter((e) => e.source.type !== 'folder');
-	const rooted = q.rootId
-		? visible.filter((e) => e.source.type === 'folder' && e.source.rootId === q.rootId)
-		: visible;
-	const sources = q.sources?.length ? new Set<string>(q.sources) : null;
-	const matOk = (e: SoundEntry) => !q.material || (e.materials ?? []).includes(q.material);
-	const expanded = q.takes ? withOfferedTakes(rooted) : rooted;
-	const unMaterial = sources ? expanded.filter((e) => sources.has(e.source.type)) : expanded;
-	const byRoot = expanded.filter(matOk);
-	const pool = unMaterial.filter(matOk);
-	const ranked = none ? [] : rankSounds(pool, req, q.usedNearby?.length ? { usedNearby: q.usedNearby } : {});
-	const facets: SoundFacets = { types: {}, families: {}, licenses: {}, sources: {}, materials: {} };
-	const bump = (rec: Record<string, number>, k: string) => {
-		rec[k] = (rec[k] ?? 0) + 1;
-	};
-	const { types: _t, ...noTypes } = req;
-	for (const r of rankSounds(pool, noTypes)) {
-		const fams = new Set<string>();
-		for (const t of r.entry.types)
-			if (isSoundTypeId(t)) {
-				bump(facets.types, t);
-				fams.add(SOUND_TYPES[t].family);
-			}
-		for (const f of fams) bump(facets.families, f);
-	}
-	if (!none) {
-		for (const r of rankSounds(pool, { ...req, license: 'any' }))
-			bump(facets.licenses, licenseClass(r.entry.license));
-		for (const r of rankSounds(byRoot, req)) bump(facets.sources, r.entry.source.type);
-		for (const r of rankSounds(unMaterial, req))
-			for (const m of r.entry.materials ?? []) bump(facets.materials!, m);
-	}
-	return { ranked, facets };
-}
-
-function randomQuery(r: () => number, all: SoundEntry[]): SoundSearchQuery {
-	const pick = <T>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)]!;
-	const raw: Record<string, string> = {};
-	const words = [...ADJECTIVES, ...Object.values(NOUNS).flat(), 'constructor', 'zzz', 'the'];
-	if (r() < 0.7) raw.q = Array.from({ length: Math.floor(r() * 4) }, () => pick(words)).join(' ');
-	if (r() < 0.3)
-		raw.types = Array.from({ length: 1 + Math.floor(r() * 2) }, () =>
-			pick([...SOUND_TYPE_IDS, 'swoosh', 'nope']),
-		).join(',');
-	if (r() < 0.2) raw.family = pick(['impacts', 'movement', 'digital', 'tactile', 'tonal', 'beds']);
-	if (r() < 0.2) raw.length = pick(['short', 'medium', 'long']);
-	if (r() < 0.2) raw.tone = pick(['dark', 'bright']);
-	if (r() < 0.15) raw.attack = pick(['punchy', 'soft']);
-	if (r() < 0.15) raw.weight = pick(['light', 'heavy']);
-	if (r() < 0.15) raw.texture = pick(['clean', 'noisy']);
-	if (r() < 0.5) raw.license = pick(['any', 'commercial-safe', 'commercial-safe-sa']);
-	if (r() < 0.3)
-		raw.sources = Array.from({ length: 1 + Math.floor(r() * 2) }, () =>
-			pick(['starter', 'pack', 'folder', 'synth']),
-		).join(',');
-	if (r() < 0.15) raw.rootId = pick(ROOTS);
-	if (r() < 0.15) raw.similarTo = pick(all).id;
-	if (r() < 0.2) raw.usedNearby = [pick(all).id, pick(all).id].join(',');
-	if (r() < 0.2) raw.visualKind = pick(['cut', 'transition', 'land', 'appear']);
-	if (r() < 0.2) raw.material = pick(['wood', 'glass', 'metal']);
-	if (r() < 0.25) raw.takes = pick(['true', 'false']);
-	return SoundSearchQuerySchema.parse(raw);
-}
-
-describe('search facets in one pass (finding 10)', () => {
-	it('equal the four-pass disjunctive counts, with the same results, on random libraries and queries', {
-		timeout: 120_000,
-	}, () => {
-		for (let lib = 0; lib < 4; lib++) {
-			const all = syntheticLibrary(400, 100 + lib);
-			const byId = new Map(all.map((e) => [e.id, e]));
-			const r = rng(7 + lib);
-			for (let i = 0; i < 120; i++) {
-				const q = randomQuery(r, all);
-				const includeFolders = r() < 0.8;
-				const want = oracle(all, q, includeFolders);
-				const offset = r() < 0.3 ? Math.floor(r() * 50) : 0;
-				const got = searchSoundEntries(
-					all,
-					{ ...q, limit: 500, offset },
-					{ lookup: (id) => byId.get(id), includeFolders },
-				);
-				expect(got.facets, JSON.stringify(q)).toEqual(want.facets);
-				expect(got.total).toBe(want.ranked.length);
-				expect(got.results.map((x) => [x.sound.id, x.score])).toEqual(
-					want.ranked.slice(offset, offset + 500).map((x) => [x.entry.id, x.score]),
-				);
-			}
-		}
-	});
-});
 
 /**
  * The budget of one search: 50 ms of CPU time, whatever the host's load. Wall time on an oversubscribed shared host

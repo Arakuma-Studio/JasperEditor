@@ -597,7 +597,8 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	description:
 		'A TikTok, Instagram, YouTube or X comment card, or a Google Play / App Store review, that looks like a screenshot and pops onto the screen; optional word-by-word reveal and like count tick (stars filling on reviews).',
 	renderer: 'anime',
-	renderVersion: 1,
+	// X count spacing includes the generic sans-serif fallback's actual glyph advances.
+	renderVersion: 2,
 	posterAt: 2.5,
 	paramsSchema: socialCommentParamsSchema,
 	defaults: DEFAULTS,

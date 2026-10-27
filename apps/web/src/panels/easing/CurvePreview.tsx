@@ -58,7 +58,6 @@ export function CurvePreview(props: { curve: EaseCurve; playing: boolean; label?
 			role="img"
 			aria-label={props.label ?? 'Curve preview'}
 			data-testid="ease-preview"
-			data-animated={animate ? 'true' : 'false'}
 		>
 			<div className="relative h-[12px] rounded-pr-control bg-pr-field">
 				<div className="absolute inset-y-0 border-pr-border-subtle border-l" style={{ left: pct(0) }} />

@@ -4,7 +4,6 @@
 // what the document-bound preview evaluation draws.
 import {
 	buildRenderSnapshot,
-	evaluateEaseCurve,
 	evaluateVectorShape,
 	flicksPerFrame,
 	type ProjectDocument,
@@ -12,9 +11,6 @@ import {
 	type ShapeClip,
 	type ShapeItem,
 	shapeGeom,
-	TRIM_ANIMATION_STYLES,
-	TRIM_ENTER_EASE,
-	TRIM_EXIT_EASE,
 	type TrimAnimationStyle,
 	type VectorShapeData,
 } from '@jasper/project';
@@ -26,6 +22,7 @@ beforeAll(async () => {
 	await loadExpressionEngine();
 });
 
+const STYLES = ['in', 'out', 'inOut', 'middleIn', 'middleOut', 'divideIn', 'divideOut'] as const;
 const F = flicksPerFrame({ num: 30, den: 1 });
 const D = 8;
 const LAG = 0.5;
@@ -184,7 +181,7 @@ function expectIntervals(got: Iv[], want: Iv[], label: string) {
 const XS = [0, 0.25, 0.5, 1];
 
 describe('visible parts of every style', () => {
-	for (const style of TRIM_ANIMATION_STYLES)
+	for (const style of STYLES)
 		for (const reverse of [false, true])
 			for (const animateOffset of [false, true])
 				it(`${style}${reverse ? ' reversed' : ''}${animateOffset ? ' + offset' : ''}`, {
@@ -211,14 +208,16 @@ describe('visible parts of every style', () => {
 				});
 
 	it('default eases: progress follows the entering / exiting curves', { timeout: 120_000 }, () => {
-		for (const [style, curve] of [
-			['in', TRIM_ENTER_EASE],
-			['middleOut', TRIM_EXIT_EASE],
+		// docs/wp-notes/shapes.md §12: cubic x controls 1/3, 2/3 make t=x.
+		// Enter y=x+x²−x³; exit y=2x²−x³, sampled at x=1/4, 1/2, 3/4.
+		for (const [style, progress] of [
+			['in', [0.296875, 0.625, 0.890625]],
+			['middleOut', [0.109375, 0.375, 0.703125]],
 		] as const) {
 			const d = setup(OPEN.contents, { style, reverse: true });
 			const bound = contentsIn(bindDocumentExpressions(d.doc), d);
-			for (const x of [0.25, 0.5, 0.75]) {
-				const p = evaluateEaseCurve(curve, x);
+			for (const [i, x] of [0.25, 0.5, 0.75].entries()) {
+				const p = progress[i]!;
 				expectIntervals(measured(bound, x * D, lineMap), visible(style, true, p), `${style} x=${x}`);
 			}
 		}
@@ -232,7 +231,7 @@ describe('visible parts of every style', () => {
 	const which = (p: P) => (Math.abs(p[1] - 50) < 1e-6 ? 1 : 0);
 	for (const mode of ['simultaneous', 'individual'] as const)
 		it(`several paths, ${mode}`, { timeout: 300_000 }, () => {
-			for (const style of TRIM_ANIMATION_STYLES)
+			for (const style of STYLES)
 				for (const reverse of [false, true]) {
 					const d = new Doc();
 					d.tx([
@@ -273,23 +272,36 @@ describe('visible parts of every style', () => {
 });
 
 describe('re-running gives the same picture as a fresh run', () => {
-	it('every style pair', { timeout: 600_000 }, () => {
-		for (const [i, first] of TRIM_ANIMATION_STYLES.entries())
-			for (const [j, second] of TRIM_ANIMATION_STYLES.entries()) {
-				const reverse = (i + j) % 2 === 1;
-				const o = { style: second, reverse, curve: LINEAR, animateOffset: j % 3 === 0 };
-				const rerun = setup(CLOSED.contents, { style: first, copies: 3, animateOffset: true });
-				rerun.tx([
-					{ type: 'shape.animateTrim', clipIds: ['$s'], durationFrames: D, inOutLag: LAG, copies: N, ...o },
-				]);
-				const fresh = setup(CLOSED.contents, o);
-				const a = contentsIn(bindDocumentExpressions(rerun.doc), rerun);
-				const b = contentsIn(bindDocumentExpressions(fresh.doc), fresh);
-				for (const x of [0.5, 1])
-					expect(measured(a, x * D, squareMap), `${first} → ${second} x=${x}`).toEqual(
-						measured(b, x * D, squareMap),
-					);
-			}
+	it('replaces links, division and keyframes when styles change', () => {
+		// Each documented style appears as source and destination. Exercise links being added/removed,
+		// division/merging, a changed copy count and the delayed inOut tail instead of every style pair.
+		for (const [first, firstReverse, second, reverse, animateOffset] of [
+			['in', false, 'middleIn', true, true],
+			['middleIn', true, 'out', false, false],
+			['out', false, 'divideIn', false, false],
+			['divideIn', false, 'divideOut', true, true],
+			['divideOut', false, 'inOut', false, false],
+			['inOut', false, 'middleOut', true, false],
+			['middleOut', true, 'in', false, true],
+		] as const) {
+			const o = { style: second, reverse, curve: LINEAR, animateOffset };
+			const rerun = setup(CLOSED.contents, {
+				style: first,
+				reverse: firstReverse,
+				copies: 3,
+				animateOffset: true,
+			});
+			rerun.tx([
+				{ type: 'shape.animateTrim', clipIds: ['$s'], durationFrames: D, inOutLag: LAG, copies: N, ...o },
+			]);
+			const fresh = setup(CLOSED.contents, o);
+			const a = contentsIn(bindDocumentExpressions(rerun.doc), rerun);
+			const b = contentsIn(bindDocumentExpressions(fresh.doc), fresh);
+			for (const x of second === 'inOut' ? [0.5, 1, 1.5] : [0.5, 1])
+				expect(measured(a, x * D, squareMap), `${first} → ${second} x=${x}`).toEqual(
+					measured(b, x * D, squareMap),
+				);
+		}
 	});
 });
 

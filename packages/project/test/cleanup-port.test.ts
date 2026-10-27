@@ -85,12 +85,6 @@ const KIND: Record<string, FindingKind> = {
 };
 
 describe('cleanup port vs the research prototype', () => {
-	it('has cases for both presets with every rule firing', () => {
-		expect(fixture.cases.length).toBe(16);
-		const seen = new Set(fixture.cases.flatMap((c) => c.expect.reasons.filter((r): r is string => !!r)));
-		expect([...seen].sort()).toEqual(Object.keys(KIND).sort());
-	});
-
 	for (const c of fixture.cases) {
 		it(`seed ${c.seed} ${c.preset}${c.script ? ' with script' : ''}: same labels and kept ranges`, () => {
 			const level = b64(c.level);

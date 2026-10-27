@@ -213,12 +213,13 @@ describe('tracking overlay', () => {
 			const x = from[0] + ((to[0] - from[0]) * i) / 3;
 			const y = from[1] + ((to[1] - from[1]) * i) / 3;
 			fireEvent.pointerMove(window, { clientX: x, clientY: y, pointerId: 1 });
-			await act(async () => void (await new Promise((r) => setTimeout(r, 20))));
+			await act(async () => vi.advanceTimersByTimeAsync(20));
 		}
 		fireEvent.pointerUp(window, { clientX: to[0], clientY: to[1], pointerId: 1 });
 	}
 
 	it('drags an edge (two corners) and the body (all corners), one entry each', async () => {
+		vi.useFakeTimers();
 		const { session, plate, seqId } = trackingSession();
 		const id = addTracker(session, plate, 'planar');
 		session.select('timeline', [plate], 'replace', { linked: false });

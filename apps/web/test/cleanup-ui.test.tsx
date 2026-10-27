@@ -6,29 +6,30 @@
 // opens the mode.
 import { derivedPreviewFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCommand, isCommandEnabled, registerAllCommands } from '../src/commands/index.ts';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
 import type { CommandCtx } from '../src/commands/types.ts';
 import { CleanupMode } from '../src/panels/text/cleanup/CleanupMode.tsx';
-import {
-	CleanupController,
-	cleanupFor,
-	setCleanupControllerForTest,
-} from '../src/panels/text/cleanup/controller.ts';
+import { type CleanupController, cleanupFor } from '../src/panels/text/cleanup/controller.ts';
 import { KIND_ORDER } from '../src/panels/text/cleanup/model.ts';
 import { textPanelRequests } from '../src/panels/text/state.ts';
 import { cleanupSession, fakeCleanupEngine, seqLength, seqOf } from './cleanup-helpers.ts';
 
 beforeAll(() => registerAllCommands());
-afterEach(() => cleanup());
+beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
+
+const settle = () => act(async () => vi.runAllTimersAsync());
 
 function setup(opts: { script?: boolean } = {}) {
 	const engine = fakeCleanupEngine();
 	const s = cleanupSession(engine.client, opts);
-	const c = new CleanupController(s.session, { pollMs: 1, useWorker: false });
-	setCleanupControllerForTest(s.session, c);
+	const c = cleanupFor(s.session);
 	c.setMode('cleanup');
 	const ui = render(
 		<SessionProvider session={s.session}>
@@ -49,8 +50,9 @@ const ctxOf = (session: CommandCtx['session']): CommandCtx =>
 
 async function analyze(c: CleanupController) {
 	fireEvent.click(screen.getByTestId('text.cleanup.analyze'));
-	await waitFor(() => expect(c.getState().phase).toBe('review'));
-	await screen.findByTestId('text.cleanup.review');
+	await settle();
+	expect(c.getState().phase).toBe('review');
+	screen.getByTestId('text.cleanup.review');
 }
 
 describe('Clean Up mode', () => {
@@ -91,27 +93,31 @@ describe('Clean Up mode', () => {
 		act(() => {
 			c.decide('reject', f.id);
 		});
-		await waitFor(() => expect(c.getState().planning).toBe(false));
-		await waitFor(() => expect(c.getState().analysis!.plan.stats.outputDuration).toBeGreaterThan(before));
+		await settle();
+		expect(c.getState().planning).toBe(false);
+		expect(c.getState().analysis!.plan.stats.outputDuration).toBeGreaterThan(before);
 		expect(c.isAccepted(f.id)).toBe(false);
 		// per kind from the list header
 		fireEvent.click(screen.getByTestId('text.cleanup.view.findings'));
 		const kind = c.getState().analysis!.findings.find((x) => x.kind === 'pause')!.kind;
 		fireEvent.click(screen.getByTestId(`text.cleanup.kind.${kind}.reject`));
-		await waitFor(() => expect(c.getState().decisions.rejectKinds).toContain('pause'));
-		await waitFor(() => expect(c.getState().planning).toBe(false));
+		expect(c.getState().decisions.rejectKinds).toContain('pause');
+		await settle();
+		expect(c.getState().planning).toBe(false);
 		// retake choice: keep the first take instead of the last
 		const g = c.getState().analysis!.groups[0]!;
 		act(() => {
 			c.chooseTake(g.id, 0);
 		});
-		await waitFor(() => expect(c.getState().analysis!.groups[0]!.chosen).toBe(0));
+		await settle();
+		expect(c.getState().analysis!.groups[0]!.chosen).toBe(0);
 		// a settings change re-plans without a new analysis (no staleness)
 		const out1 = c.getState().analysis!.plan.stats.outputDuration;
 		act(() => {
 			c.configure({ settings: { overrides: { gaps: { maxGapS: 2 } } }, mergeOverrides: true });
 		});
-		await waitFor(() => expect(c.getState().analysis!.settings.gaps.maxGapS).toBe(2));
+		await settle();
+		expect(c.getState().analysis!.settings.gaps.maxGapS).toBe(2);
 		expect(c.getState().stale).toBe(false);
 		expect(c.getState().analysis!.plan.stats.outputDuration).not.toBe(out1);
 		expect(seqOf(session, seqId).cleanup).toMatchObject({
@@ -120,13 +126,16 @@ describe('Clean Up mode', () => {
 	});
 
 	it('Play result plays a derived timeline without touching the document; Stop maps the playhead back', async () => {
-		const { c, session } = setup();
+		const { c, session, seqId } = setup();
 		await analyze(c);
 		const doc = session.getCommitted();
 		const history = session.getState().history.entries.length;
 		fireEvent.click(screen.getByTestId('text.cleanup.playResult'));
 		const dp = derivedPreviewFor(session).getState().active!;
 		expect(dp.kind).toBe('cleanup.result');
+		const removedFrames = c.getState().analysis!.plan.ranges.reduce((sum, r) => sum + r.end - r.start, 0);
+		const originalLength = seqLength(doc.sequences[seqId]!);
+		expect(seqLength(dp.document.sequences[seqId]!)).toBe(originalLength - removedFrames);
 		expect(session.getCommitted()).toBe(doc);
 		expect(session.transport.getState().playing).toBe(true);
 		expect(screen.getByTestId('text.cleanup.stop')).toBeTruthy();
@@ -138,7 +147,9 @@ describe('Clean Up mode', () => {
 		expect(session.getState().history.entries.length).toBe(history);
 		// Play removed: only the removed parts
 		expect(c.playRemoved().ok).toBe(true);
-		expect(derivedPreviewFor(session).getState().active!.kind).toBe('cleanup.removed');
+		const removed = derivedPreviewFor(session).getState().active!;
+		expect(removed.kind).toBe('cleanup.removed');
+		expect(seqLength(removed.document.sequences[seqId]!)).toBe(removedFrames);
 		c.stopPreview();
 	});
 
@@ -149,8 +160,9 @@ describe('Clean Up mode', () => {
 		act(() => {
 			c.decide('reject', f.id);
 		});
-		await waitFor(() => expect(c.getState().planning).toBe(false));
-		await waitFor(() => expect(c.applyBlocker()).toBeNull());
+		await settle();
+		expect(c.getState().planning).toBe(false);
+		expect(c.applyBlocker()).toBeNull();
 		const seq0 = seqOf(session, seqId);
 		const cuts = c.getState().analysis!.plan.ranges.length;
 		const removed = c.getState().analysis!.plan.ranges.reduce((n, r) => n + r.end - r.start, 0);
@@ -180,7 +192,7 @@ describe('Clean Up mode', () => {
 				commands: [{ type: 'range.extract', from: 0, to: 3 }] as never[],
 			});
 		});
-		await waitFor(() => expect(c.getState().stale).toBe(true));
+		expect(c.getState().stale).toBe(true);
 		expect(screen.getByTestId('text.cleanup.stale')).toBeTruthy();
 		expect(c.apply()).toMatchObject({ ok: false });
 		expect(c.playResult()).toMatchObject({ ok: false });
@@ -191,16 +203,19 @@ describe('Clean Up mode', () => {
 		const { c, engine, session } = setup();
 		engine.failNext = { code: 'E_UNSUPPORTED', message: 'Clean Up works on clips at 100 % speed' };
 		fireEvent.click(screen.getByTestId('text.cleanup.analyze'));
-		await screen.findByTestId('text.cleanup.error');
+		await act(async () => {});
+		screen.getByTestId('text.cleanup.error');
 		expect(screen.getByTestId('text.cleanup.error').textContent).toContain('100 % speed');
 		expect(c.getState().phase).toBe('idle');
 		// cancel while running
 		engine.hold = true;
 		const run = c.analyze();
-		await waitFor(() => expect(c.getState().jobId).not.toBeNull());
+		await act(async () => {});
+		expect(c.getState().jobId).not.toBeNull();
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('text.cleanup.cancel'));
 		});
+		await settle();
 		await run;
 		expect(c.getState().phase).toBe('idle');
 		expect(engine.calls.some((x) => x.startsWith('cancel'))).toBe(true);

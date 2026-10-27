@@ -159,7 +159,6 @@ test('Auto Tag tags speech, music and an effect; Suggest Cues puts no hero under
 	expect((await essentialOf(page, ids.$s!))?.tagged).toBeUndefined();
 	// tagging and confirming moved nothing
 	expect(await clips(page)).toEqual(placedRows);
-	await page.waitForTimeout(500);
 	await page.screenshot({ path: join(outDir, 'confirmed.png') });
 
 	// two full-frame solids slam to a stop: at frame ≈ 98 (under the speech) and ≈ 458 (after it)

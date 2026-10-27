@@ -16,10 +16,10 @@ import {
 	threadCap,
 } from '../src/speech/providers.ts';
 import { runSpeechJob } from '../src/speech/worker/run.ts';
-import { createPartSession, fromHalf, toHalf } from '../src/speech/worker/sessions.ts';
+import { createPartSession } from '../src/speech/worker/sessions.ts';
 import { chooseCalibratedDecoder, WhisperModel } from '../src/speech/worker/whisper.ts';
-import { shortReason } from '../src/tools/ort.ts';
-import { fakeModelDir, fakeOrt, noiseAudio } from './speech-fake-ort.ts';
+import { type Ort, shortReason } from '../src/tools/ort.ts';
+import { FakeTensor, fakeModelDir, fakeOrt, noiseAudio } from './speech-fake-ort.ts';
 
 const cpu: ProviderStatus = { id: 'cpu', available: true };
 const GB = 1024 ** 3;
@@ -271,17 +271,43 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 		).rejects.toThrow(/beam search needs a CPU-resident decoder cache/);
 	});
 
-	it('float16 conversion round-trips within half precision', () => {
-		fc.assert(
-			fc.property(fc.float({ min: -60000, max: 60000, noNaN: true }), (v) => {
-				const back = fromHalf(toHalf(v));
-				return Math.abs(back - v) <= Math.max(Math.abs(v) * 2 ** -10, 2 ** -24);
-			}),
-		);
-		expect(fromHalf(toHalf(1))).toBe(1);
-		expect(fromHalf(toHalf(Number.POSITIVE_INFINITY))).toBe(Number.POSITIVE_INFINITY);
-		expect(Number.isNaN(fromHalf(toHalf(Number.NaN)))).toBe(true);
-		expect(fromHalf(toHalf(1e6))).toBe(Number.POSITIVE_INFINITY);
+	it('converts float32 feeds and float16 outputs at the ONNX session boundary', async () => {
+		// IEEE 754 binary16 words: normal values, the smallest subnormal, signed infinities and ties-to-even.
+		const values = [1, -2, 2 ** -24, Number.POSITIVE_INFINITY, 1 + 2 ** -11, 1 + 3 * 2 ** -11, 2 ** -25];
+		const half = [0x3c00, 0xc000, 0x0001, 0x7c00, 0x3c00, 0x3c02, 0x0000];
+		const binding = {
+			Tensor: FakeTensor,
+			InferenceSession: {
+				async create() {
+					return {
+						inputMetadata: [{ name: 'input', type: 'float16' }],
+						async run(feeds: Record<string, FakeTensor>) {
+							expect(feeds.input!.type).toBe('float16');
+							expect(Array.from(feeds.input!.data)).toEqual(half);
+							return {
+								output: new FakeTensor('float16', Uint16Array.from([0x3c00, 0xc000, 0x0001, 0xfc00]), [4]),
+							};
+						},
+						async release() {},
+					};
+				},
+			},
+		} as unknown as Pick<Ort, 'Tensor' | 'InferenceSession'>;
+		const session = await createPartSession(binding, 'model.onnx', { provider: 'cpu', threads: 1 });
+		try {
+			const result = await session.run({
+				input: new FakeTensor('float32', Float32Array.from(values), [values.length]) as never,
+			});
+			expect(result.output!.type).toBe('float32');
+			expect(Array.from(result.output!.data as Float32Array)).toEqual([
+				1,
+				-2,
+				2 ** -24,
+				Number.NEGATIVE_INFINITY,
+			]);
+		} finally {
+			await session.release();
+		}
 	});
 });
 
@@ -356,34 +382,6 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
 			),
 		).rejects.toThrow('device lost');
-	});
-
-	it('the GPU fault hook fails a GPU session mid-job and only GPU sessions', async () => {
-		const dir = fakeModelDir();
-		const f = fakeOrt();
-		process.env.JASPER_SPEECH_GPU_FAULT_AFTER = '1';
-		try {
-			const out = await runSpeechJob(
-				{
-					modelDir: dir,
-					modelId: 'fake',
-					input: { f32: '' },
-					language: 'en',
-					device: { encoder: 'webgpu', decoder: 'cpu' },
-				},
-				{ ort: f.ort, audio: noiseAudio(3, (t) => t % 1 < 0.6) },
-			);
-			expect(out.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
-			expect(out.device.fallbacks).toContainEqual(
-				expect.objectContaining({
-					stage: 'job',
-					from: 'webgpu',
-					reason: 'injected GPU fault (webgpu, run 1)',
-				}),
-			);
-		} finally {
-			delete process.env.JASPER_SPEECH_GPU_FAULT_AFTER;
-		}
 	});
 
 	it('a CPU failure is not retried', async () => {

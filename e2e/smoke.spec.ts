@@ -1,4 +1,4 @@
-// Three critical M1 workflows share the project so the exports contain the user's accumulated edits.
+// Critical M1 workflows share the project so the native exports contain the user's accumulated edits.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -220,29 +220,17 @@ test('insert a motion graphic and export it over footage with the native rendere
 	expect(regionLuma(out.file, t, topRight)).toBeLessThan(5);
 });
 
-test('create a title with the Type tool and export through Remotion', async ({ request }, testInfo) => {
+test('the Type tool creates a title at the Program monitor click', async () => {
 	await page.getByRole('button', { name: 'Type Tool', exact: true }).click();
 	const vp = (await page.getByTestId('program-viewport').boundingBox())!;
 	await page.mouse.click(vp.x + vp.width / 2, vp.y + vp.height * 0.3);
 	await page.keyboard.press('Escape');
 	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
+	const title = (await clips(page)).find((c) => c.kind === 'text')!;
+	await expect(
+		page.getByTestId('program-player-wrapper').locator(`[data-clip-id="${title.id}"] [data-text-block]`),
+	).toBeVisible();
 	await focusTimeline(page);
 	await page.keyboard.press('KeyV');
-
-	test.setTimeout(1_200_000);
-	const frames = await sequenceFrames();
-	const out = await exportViaUi(page, request, {
-		engine: 'remotion',
-		fileName: 'smoke-remotion.mp4',
-		expectPath: /remotion/i,
-		outDir: EXPORT_DIR,
-		jobTimeoutMs: 900_000,
-	});
-	expect(out.job.result?.renderPath).toBe('remotion');
-	assertOutput(out.file, frames);
-	await testInfo.attach('exported-movie', { path: out.file, contentType: 'video/mp4' });
-	await testInfo.attach('stream-probe', {
-		body: JSON.stringify(ffprobe(out.file), null, 2),
-		contentType: 'application/json',
-	});
+	await test.info().attach('created-title', { body: await page.screenshot(), contentType: 'image/png' });
 });

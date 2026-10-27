@@ -1,6 +1,12 @@
 import {
+	applyTransaction,
 	bakeLut,
+	buildRenderSnapshot,
+	clipContentTime,
+	createCounterIdSource,
+	createEmptyProject,
 	defaultEffectRegistry,
+	defaultRegistries,
 	defineShaderEffect,
 	type EffectParams,
 	type EffectSpec,
@@ -10,11 +16,13 @@ import {
 	GLSL_LUT,
 	lutParam,
 	planGpuEffect,
+	resolveLayerProps,
 } from '@jasper/project';
 import { meanGrid } from '@jasper/testkit/image';
 import { TRANSFORM } from '../../../project/src/registry/fx/premiere-adjust-color-keying/transform.ts';
 import { chainGpuStandIn } from '../../src/fx/builtins.ts';
 import { FxShaderError, fxHost, runLutPass, runShaderPlan } from '../../src/fx/host.ts';
+import { fxLowered, loweredCanvasProgram } from '../../src/fx/lowered.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 import { TEST_FX } from '../fx-examples.ts';
 
@@ -192,6 +200,158 @@ const identity = defineShaderEffect({
 });
 
 const api = {
+	async templatePreview() {
+		return (await import('./template-preview.tsx')).templatePreviewGeometry();
+	},
+
+	/** Observe the lowered Canvas 2D renderer's pixels, without depending on its tap encoding. */
+	async lowered() {
+		const ids = createCounterIdSource(1);
+		const context = { ids, now: () => 't', revision: 0, registries: defaultRegistries() };
+		const result = applyTransaction(
+			createEmptyProject({ ids, name: 'Lowered', preset: 'hd-1080p-30' }),
+			{
+				label: 'setup',
+				origin: 'user',
+				commands: [
+					{
+						type: 'clip.addText',
+						at: 0,
+						duration: 30,
+						track: 'V1',
+						ref: '$t',
+						content: {
+							text: 'Paint',
+							style: { shadow: { color: [0, 0, 1, 1], angleDeg: 0, distancePx: 12, blurPx: 0 } },
+						},
+						box: { width: 64, height: 36, autoSize: 'none' },
+					},
+					{
+						type: 'effect.add',
+						target: { clipId: '$t' },
+						effectId: 'jasper.transform',
+						ref: '$fx',
+						params: { position: [0.75, 0.5], useCompShutterAngle: false, shutterAngle: 360 },
+					},
+					{
+						type: 'keyframe.add',
+						target: ['effect', '$fx', 'position'],
+						at: { sequenceFrame: 0 },
+						value: [0.25, 0.5],
+					},
+					{
+						type: 'keyframe.add',
+						target: ['effect', '$fx', 'position'],
+						at: { sequenceFrame: 1 },
+						value: [0.75, 0.5],
+					},
+				],
+			},
+			context,
+		);
+		if (!result.result.ok) throw new Error(JSON.stringify(result.result.errors));
+		const snap = buildRenderSnapshot(result.document, Object.keys(result.document.sequences)[0]!, {
+			resolveMedia: () => null,
+			resolveFont: () => null,
+		});
+		const clip = snap.videoTracks[0]!.clips[0]!;
+		const transformed = applyTransaction(
+			result.document,
+			{
+				label: 'nonuniform scale and rotation',
+				origin: 'user',
+				commands: [
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'uniformScale'], value: false },
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'scaleWidth'], value: 50 },
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'scaleHeight'], value: 200 },
+					{ type: 'param.set', target: ['effect', result.result.refs.$fx!, 'rotation'], value: 90 },
+				],
+			},
+			context,
+		);
+		if (!transformed.result.ok) throw new Error(JSON.stringify(transformed.result.errors));
+		const transformedClip = buildRenderSnapshot(
+			transformed.document,
+			Object.keys(transformed.document.sequences)[0]!,
+			{ resolveMedia: () => null, resolveFont: () => null },
+		).videoTracks[0]!.clips[0]!;
+		const samples = [];
+		const transformedSamples = [];
+		let blurred: Px | null = null;
+		for (const scale of [1, 0.5]) {
+			const width = 128 * scale;
+			const height = 100 * scale;
+			const props = resolveLayerProps(clip, clipContentTime(clip, 15, { num: 30, den: 1 }));
+			const program = loweredCanvasProgram({
+				clip,
+				props,
+				frame: 15,
+				fps: 30,
+				layout: { padding: { left: 32, top: 32 }, pxScale: scale, width, height },
+			});
+			if (!program) throw new Error('the text transform was not lowered');
+			const source = canvas(width, height, (ctx) => {
+				ctx.scale(scale, scale);
+				ctx.fillStyle = '#f00';
+				ctx.fillRect(32, 32, 64, 36);
+				// A painted shadow outside the text box must travel with the text.
+				ctx.fillStyle = '#00f';
+				ctx.fillRect(98, 40, 8, 8);
+			});
+			const target = canvas(width, height);
+			const effect = fxLowered(program);
+			await effect.definition.apply({ source, target, params: effect.params, width, height } as never);
+			samples.push({
+				empty: px(target, 36 * scale, 50 * scale),
+				text: px(target, 52 * scale, 50 * scale),
+				shadow: px(target, 116 * scale, 44 * scale),
+			});
+			if (scale === 1) {
+				const moving = loweredCanvasProgram({
+					clip,
+					props: resolveLayerProps(clip, clipContentTime(clip, 0.5, { num: 30, den: 1 })),
+					frame: 0.5,
+					fps: 30,
+					layout: { padding: { left: 32, top: 32 }, pxScale: 1, width, height },
+				})!;
+				const blur = fxLowered(moving);
+				await blur.definition.apply({ source, target, params: blur.params, width, height } as never);
+				blurred = px(target, 32, 50);
+			}
+			const transformedSource = canvas(width, height, (ctx) => {
+				ctx.scale(scale, scale);
+				ctx.fillStyle = '#f00';
+				ctx.fillRect(30, 20, 64, 36);
+				ctx.fillStyle = '#00f';
+				ctx.fillRect(96, 28, 8, 8);
+			});
+			const transformedProgram = loweredCanvasProgram({
+				clip: transformedClip,
+				props: resolveLayerProps(transformedClip, clipContentTime(transformedClip, 15, { num: 30, den: 1 })),
+				frame: 15,
+				fps: 30,
+				layout: { padding: { left: 30, top: 20 }, pxScale: scale, width, height },
+			})!;
+			const transformedEffect = fxLowered(transformedProgram);
+			await transformedEffect.definition.apply({
+				source: transformedSource,
+				target,
+				params: transformedEffect.params,
+				width,
+				height,
+			} as never);
+			// Anchor (32,18), position (48,18), scale (0.5,2), clockwise 90°:
+			// layer (x,y) → canvas (114−2y,22+0.5x), before preview scaling.
+			// Thus red source (36,32) lands at (50,40); blue (70,12) at (90,57).
+			transformedSamples.push({
+				empty: px(target, 116 * scale, 40 * scale),
+				text: px(target, 50 * scale, 40 * scale),
+				shadow: px(target, 90 * scale, 57 * scale),
+			});
+		}
+		return { samples, transformedSamples, blurred };
+	},
+
 	/**
 	 * Fingerprints (4×4 mean RGB) of one GPU effect at defaults and perturbed settings on the golden test card, frame 12:
 	 * compared with goldens/fx-fingerprints.json by fx-gl.test.ts (JASPER_BLESS=1 re-blesses). Rendering failures propagate and fail the golden comparison.

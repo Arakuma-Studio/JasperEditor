@@ -87,7 +87,6 @@ describe('Remotion bundle source hash (S11:FIX-009)', () => {
 	it('changes with the lockfile and with the sources of every bundled workspace package', () => {
 		const w = workspace();
 		const h0 = remotion.sourceHash(w.entry);
-		expect(h0).toMatch(/^[0-9a-f]{16}$/);
 		expect(remotion.sourceHash(w.entry)).toBe(h0);
 		writeFileSync(join(w.root, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n# animejs 4.5.1\n");
 		const h1 = remotion.sourceHash(w.entry);

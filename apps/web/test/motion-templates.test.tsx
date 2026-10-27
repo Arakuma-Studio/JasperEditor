@@ -75,9 +75,10 @@ describe('Motion Templates gallery model', () => {
 		} as unknown as DataTransfer;
 		writeMgTemplateDrag(dt, { id: 'lower-third', version: 1 });
 		expect(MG_TEMPLATE_MIME).toBe('application/x-jasper-mg-template');
-		expect(data.get('application/x-jasper-mg-template')).toBe(
-			'{"type":"jasper/mg-template","template":{"id":"lower-third","version":1}}',
-		);
+		expect(JSON.parse(data.get('application/x-jasper-mg-template')!)).toEqual({
+			type: 'jasper/mg-template',
+			template: { id: 'lower-third', version: 1 },
+		});
 		expect(
 			readMgTemplateDrag({
 				getData: () => '{"type":"jasper/mg-template","template":{"id":"lower-third","version":1}}',
@@ -194,24 +195,6 @@ describe('template insert never overwrites (first-free placement, social-comment
 		expect(r.ok).toBe(true);
 		const a = insertMotionTemplate(session, { id: 'lower-third', version: 1 }, { at: 0 });
 		expect(seqOf(session).clips[a]!.trackId).toBe(v3);
-		await session.close();
-	});
-
-	it('preset inserts (WP3a) stack the same way and keep the preset params', async () => {
-		unregister = registerCommands(mgCommands);
-		const session = await openSession();
-		const ctx = createCommandContext({ engine: fakeEngine(), session });
-		await runCommand('mg.insert', ctx, { templateId: 'counter', preset: 'percentage', at: 0 });
-		await runCommand('mg.insert', ctx, { templateId: 'counter', preset: 'percentage', at: 0 });
-		const seq = seqOf(session);
-		const placed = Object.values(seq.clips).map((c) => ({
-			track: `V${seq.videoTracks.findIndex((t) => t.id === c.trackId) + 1}`,
-			params: c.kind === 'motion-graphic' ? c.params : null,
-		}));
-		expect(placed.map((p) => p.track).sort()).toEqual(['V1', 'V2']);
-		const def = mgRegistry.getDefinition('counter', 1)!;
-		const preset = def.presets!.find((p) => p.id === 'percentage')!;
-		for (const p of placed) expect(p.params).toMatchObject(preset.params);
 		await session.close();
 	});
 

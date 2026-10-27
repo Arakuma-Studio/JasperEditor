@@ -158,7 +158,7 @@ async function startExport(a: TestApp, d: DocBuilder, s: Record<string, unknown>
 
 describe('kernel streams (spec 13 AS-072)', () => {
 	it('stills with sub-pixel Motion on one track: one pipe, and the same frames as one input per layer', async () => {
-		const n = 12;
+		const n = 3;
 		const d = await stillsDoc(app, n);
 		const s = settings(d.seqId, n * 8);
 		const planned = await coreServices(app).exports.plan({
@@ -287,7 +287,7 @@ describe('kernel streams (spec 13 AS-072)', () => {
 
 describe('composite base (spec 13 AS-076)', () => {
 	it('an opaque full-frame video under the subtitles is the base: one blend fewer, the same frames', async () => {
-		const n = 6;
+		const n = 3;
 		const d = await stillsDoc(app, n, makeVideo(n * 8 + 4));
 		const s = settings(d.seqId, n * 8);
 		const planned = await coreServices(app).exports.plan({

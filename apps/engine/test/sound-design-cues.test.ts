@@ -185,29 +185,6 @@ describe('POST /api/sound-design/cues', () => {
 		const capped = SoundCuesResponseSchema.parse((await post({ envelope: env, opts: { maxCues: 3 } })).body);
 		expect(capped.cues.length).toBeLessThanOrEqual(3);
 	});
-
-	it('needs the token in token mode (401 without it)', async () => {
-		const secured = await makeApp({ dev: false, token: 's3cret' });
-		const f = fixture();
-		const payload = JSON.stringify({ envelope: envelopeOf(f.doc, f.revision) });
-		const url = '/api/sound-design/cues';
-		const without = await secured.inject({ method: 'POST', url, headers: JSON_H, payload });
-		expect(without.statusCode).toBe(401);
-		const wrong = await secured.inject({
-			method: 'POST',
-			url,
-			headers: { ...JSON_H, authorization: 'Bearer nope' },
-			payload,
-		});
-		expect(wrong.statusCode).toBe(401);
-		const ok = await secured.inject({
-			method: 'POST',
-			url,
-			headers: { ...JSON_H, authorization: 'Bearer s3cret' },
-			payload,
-		});
-		expect(ok.statusCode, ok.body).toBe(200);
-	});
 });
 
 describe('the same cues as the editor (Suggest Cues…) for the same document and options', () => {

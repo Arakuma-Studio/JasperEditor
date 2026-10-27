@@ -18,17 +18,8 @@ import type { AgentService } from '../agent/service.ts';
 import { JobError } from '../jobs/types.ts';
 import { liveDocument } from './plan.ts';
 
-/**
- * Test seams (never set in production): `afterMeasure` runs after the job measured and before it checks the edit
- * again; `beforeApply` after the check and before the transaction.
- */
-export const soundDesignApplyHooks: {
-	afterMeasure?: (projectId: string) => Promise<void>;
-	beforeApply?: (projectId: string) => Promise<void>;
-} = {};
-
 /** What the mix of `seqId` depends on, for the conflict check (mix inputs + the delivery the solve used). */
-export function measuredMixKey(doc: ProjectDocument, seqId: string): string {
+function measuredMixKey(doc: ProjectDocument, seqId: string): string {
 	const seq = doc.sequences[seqId] as Sequence | undefined;
 	if (!seq) return '';
 	return `${mixFingerprint(doc, seqId)}|${soundDesignSettingsOf(seq).delivery}`;
@@ -56,7 +47,6 @@ export async function applyMeasuredMix(
 		what: string;
 	},
 ): Promise<number | null> {
-	await soundDesignApplyHooks.afterMeasure?.(req.projectId);
 	const now = await liveDocument(agent, req.projectId);
 	if (now.revision === null)
 		throw new JobError(
@@ -70,7 +60,6 @@ export async function applyMeasuredMix(
 			`${req.what}: the mix changed while it was being measured (an edit to the sequence's audio, its mixer or its media); run it again on the new mix`,
 			true,
 		);
-	await soundDesignApplyHooks.beforeApply?.(req.projectId);
 	const measured = req.measured.sequences[req.sequenceId] as Sequence | undefined;
 	const guard = {
 		type: 'soundDesign.expectMix',

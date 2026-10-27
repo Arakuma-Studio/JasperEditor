@@ -73,8 +73,8 @@ export class CleanupPlanner {
 	private pending = new Map<number, { resolve(o: PlanOutcome): void; t0: number; req: PlanRequest }>();
 	private disposed = false;
 
-	constructor(useWorker = typeof Worker !== 'undefined' && typeof window !== 'undefined') {
-		if (!useWorker) return;
+	constructor() {
+		if (typeof Worker === 'undefined' || typeof window === 'undefined') return;
 		try {
 			this.worker = new Worker(new URL('./plan.worker.ts', import.meta.url), { type: 'module' });
 			this.worker.onmessage = (e: MessageEvent<WorkerOut>) => this.deliver(e.data.id, e.data.result);

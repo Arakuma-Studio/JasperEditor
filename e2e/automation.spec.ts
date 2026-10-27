@@ -66,12 +66,14 @@ test('Decorate Cuts: dialog → proposal → review (reroll, accept) → apply �
 	test.setTimeout(1_200_000);
 	await createProject(page, 'E2E Decorate Cuts');
 	const r = await transact(page, [
+		// Kit params scale with the sequence; preserve the same 16:9 composition at one ninth of the pixels.
+		{ type: 'sequence.updateSettings', settings: { width: 640, height: 360 } },
 		{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [0.1, 0.2, 0.8, 1] },
 		{ type: 'clip.addSolid', at: 60, duration: 60, track: 'V1', color: [0.15, 0.6, 0.2, 1] },
 		{ type: 'clip.addSolid', at: 120, duration: 60, track: 'V1', color: [0.7, 0.2, 0.3, 1] },
 		{ type: 'clip.addSolid', at: 0, duration: 180, track: 'V2', color: [0.95, 0.8, 0.1, 1], ref: '$sq' },
 		{ type: 'param.set', target: ['clip', '$sq', 'transform', 'scale'], value: 20 },
-		{ type: 'param.set', target: ['clip', '$sq', 'transform', 'position'], value: [700, 400] },
+		{ type: 'param.set', target: ['clip', '$sq', 'transform', 'position'], value: [700 / 3, 400 / 3] },
 	] as never);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
 	// the undecorated edit, exported for reference

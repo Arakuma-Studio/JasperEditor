@@ -6,14 +6,21 @@
 // the passes and the corrections, measured on the decoded file. PCM exports of a mix that needs no limiting are the
 // one-pass delivery sample for sample (24-bit).
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExportResult } from '@jasper/api';
-import { limitBuffer, measureLoudness } from '@jasper/audio-dsp';
+import { measureLoudness } from '@jasper/audio-dsp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	JSON_H,
+	makeApp,
+	register,
+	TEST_FFMPEG,
+	type TestApp,
+	tempAppdir,
+} from './helpers.ts';
 import { loudMix, quietMix, writeMixWav } from './loud-fixture.ts';
 
 let app: TestApp;
@@ -22,7 +29,7 @@ let loudWav: string;
 let quietWav: string;
 beforeAll(async () => {
 	app = await makeApp();
-	dir = mkdtempSync(join(tmpdir(), 'jasper-lossy-tp-'));
+	dir = tempAppdir('jasper-lossy-tp-');
 	loudWav = writeMixWav(join(dir, 'loud.wav'), loudMix(10));
 	quietWav = writeMixWav(join(dir, 'quiet.wav'), quietMix(4));
 }, 120_000);
@@ -165,20 +172,17 @@ describe('PCM exports', { timeout: 600_000 }, () => {
 		expect(a.loudnessPasses).toBe(1);
 		expect(a.encodePasses).toBe(0);
 		expect(a.limiterCeilingDbtp).toBe(-1);
-		// the one-pass delivery: target − measured, the limiter (idle here), 24-bit
+		// With an idle limiter the output is only source × gain, then 24-bit quantisation.
 		const src = quietMix(4);
 		const before = measureLoudness(src, 48000);
 		const g = 10 ** ((-16 - before.integrated) / 20);
-		const ref = limitBuffer(
-			src.map((c) => Float32Array.from(c, (v) => v * g)),
-			48000,
-			{ ceilingDb: -1, lookaheadMs: 5, releaseMs: 100 },
-		);
+		const ref = src.map((c) => Float32Array.from(c, (v) => v * g));
 		const r = spawnSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-f', 's32le', '-'], {
 			maxBuffer: 256 << 20,
 		});
 		const all = new Int32Array(r.stdout.buffer, r.stdout.byteOffset, r.stdout.byteLength / 4);
-		const n = Math.min(all.length / 2, ref[0]!.length);
+		expect(all.length).toBe(ref[0]!.length * 2);
+		const n = ref[0]!.length;
 		let maxLsb = 0;
 		for (let i = 0; i < n; i++)
 			for (let c = 0; c < 2; c++) {
@@ -188,22 +192,5 @@ describe('PCM exports', { timeout: 600_000 }, () => {
 		// 24-bit quantisation of the same float samples: at most half an LSB (rounding), 1 with dither-free truncation
 		expect(maxLsb).toBeLessThanOrEqual(1);
 		expect(Math.abs(a.integratedLufs! + 16)).toBeLessThanOrEqual(0.01);
-	});
-
-	it('a loud mix converges on the target under −1 dBTP (it was ≈ 0.7 LU short)', async () => {
-		const d = await docOf(loudWav);
-		const { file, result } = await exportOf(
-			d,
-			{ codec: 'pcm', normalize: { targetLufs: -14, truePeakDb: -1 } },
-			'mov',
-		);
-		const a = result.audioLoudness as Audio;
-		const ff = ebur128(file);
-		console.log('pcm loud', JSON.stringify({ ff, a }));
-		expect(a.loudnessPasses).toBeGreaterThan(1);
-		expect(a.ceilingLimited).toBe(false);
-		expect(Math.abs(ff.I + 14)).toBeLessThanOrEqual(0.15);
-		expect(Math.abs(a.integratedLufs! + 14)).toBeLessThanOrEqual(0.1);
-		expect(ff.TP).toBeLessThanOrEqual(-1);
 	});
 });

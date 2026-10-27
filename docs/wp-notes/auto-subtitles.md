@@ -594,7 +594,7 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   lowered taps (Program monitor Canvas 2D path, native kernel) use the same canvas for every stage. Regression
   tests: `subtitle-parity.e2e.test.ts` "template effects keep the stroke and shadow beyond the text box" (an
   identity Transform and a still S_Shake equal the plain text, native and composition: SSIM 1.0000; before the fix
-  no paint outside the box), `fx-lowered.test.ts` (canvas and stages contain the paint).
+  no paint outside the box), `fx-gl.test.ts` (the lowered Canvas 2D renderer moves the text and outside-box paint at full and reduced resolution, and blurs moving paint).
 - Text boxes still marked `layoutPending` (made without a text measurer) bake their layer stills grown up front
   (a quarter of the box + two font sizes), so a pipelined export does not restart for a wrapped line.
 
@@ -747,7 +747,7 @@ the changed files, the Transform / motion-blur GL suites, and with REMOTION_E2E=
 New tests: `subtitle-lowered.test.ts` (kernel vs reference, maps vs shader formulas, refusals, memory estimate, run
 grouping), `subtitle-export.test.ts` (kernel streams, run masters, composite base, preflight, killed and failing
 compositors), `subtitle-taps-failure.test.ts` and `subtitle-png.test.ts` (regressions and in-process decode),
-`packages/compositions/test/fx-lowered.test.ts`.
+`packages/compositions/test/fx-gl.test.ts` (lowered preview pixels).
 
 Limitations:
 - Cold short exports are 1.54× (target 1.3×), above.

@@ -90,13 +90,17 @@ describe('cleanup review helpers', () => {
 			jlFrames: 0,
 		});
 		const before = H.seq;
+		const revision = H.revision;
 		const r = H.ok(cmds);
 		expect(r.ok).toBe(true);
+		expect(H.revision).toBe(revision + 1);
 		// one transaction: the rejection is stored and the sequence got shorter by the removed frames
 		expect((H.seq.cleanup as { rejected?: string[] }).rejected).toEqual([rm.fingerprint]);
 		const len = (s: typeof before) => Math.max(...Object.values(s.clips).map((c) => c.start + c.duration));
 		const removed = b.plan.ranges.reduce((n, x) => n + x.end - x.start, 0);
 		expect(len(before) - len(H.seq)).toBe(removed);
+		// Stats report seconds; compare on the sequence frame grid instead of pinning display precision.
+		expect(Math.round(b.plan.stats.outputDuration * 30)).toBe(len(H.seq));
 		// a later analysis keeps the rejected finding without any decision
 		const c = analyzeSequenceCleanup({ doc: H.doc, seq: H.seq, voice: () => rec.voice });
 		if (!c.ok) throw new Error(c.message);

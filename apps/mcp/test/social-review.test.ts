@@ -18,7 +18,6 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import { TEMPLATES_GUIDE } from '../src/tools/templates.ts';
 
 const registries = defaultRegistries(mgRegistry);
 const SOCIAL = mgRegistry.catalogJson().find((t) => t.id === 'social-comment')!;
@@ -91,7 +90,6 @@ describe('store reviews through the MCP tools (real social-comment@1)', () => {
 		])
 			expect(text).toContain(ref);
 		for (const p of ['rating', 'date', 'title', 'edited', 'truncate']) expect(text).toContain(p);
-		expect(TEMPLATES_GUIDE).toContain('social-comment:app-store-review');
 	});
 
 	it('add_motion_graphic with a store preset fills the review from the seed and keeps given values', async () => {

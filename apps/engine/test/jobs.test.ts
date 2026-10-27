@@ -85,6 +85,76 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(external[0]?.title).toBe('a');
 	});
 
+	it('lists retained attempts in insertion order and applies filters to keyed history', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-10-27T00:00:00Z'));
+		try {
+			const q = makeQueue({ journal: null });
+			q.registerRunner('analysis', hang);
+			const spec = { kind: 'analysis' as const, priority: 'user' as const, cpuSlots: 1 };
+			const first = q.submit({ ...spec, title: 'first', dedupeKey: 'a', projectId: 'p1' });
+			const second = q.submit({ ...spec, title: 'second', dedupeKey: 'b', projectId: 'p2' });
+			q.cancel(first.id);
+			const retried = q.retry(first.id);
+			const dedupeKeys = new Set(['b', 'missing', 'a']);
+			for (const [filter, ids] of [
+				[{ dedupeKeys }, [first.id, second.id, retried.id]],
+				[{ dedupeKeys, active: true }, [second.id, retried.id]],
+				[{ dedupeKeys, projectId: 'p1' }, [first.id, retried.id]],
+				[{ dedupeKeys, kind: 'export' }, []],
+				[{ dedupeKeys, since: '2099-01-01T00:00:00Z' }, [second.id, retried.id]],
+				[{ dedupeKeys: new Set(['a']) }, [first.id, retried.id]],
+				[{ dedupeKeys: new Set(['a']), active: true }, [retried.id]],
+			] as const)
+				expect(q.list(filter).map((job) => job.id)).toEqual(ids);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('restores keyed journal history in stable order and drops pruned keys from lookups', async () => {
+		const dir = tempAppdir('jasper-lookup-journal-');
+		const journal = join(dir, 'jobs.jsonl');
+		let time = Date.parse('2026-09-01T00:00:00Z');
+		const q = new JobQueue({
+			journalPath: journal,
+			tmpDir: join(dir, 'tmp'),
+			now: () => new Date(time),
+			totalSlots: 1,
+		});
+		queues.push(q);
+		q.registerRunner('analysis', hang);
+		const spec = { kind: 'analysis' as const, priority: 'user' as const, cpuSlots: 1 };
+		const first = q.submit({ ...spec, title: 'before start', dedupeKey: 'same' });
+		const other = q.submit({ ...spec, title: 'other', dedupeKey: 'other' });
+		const duplicate = { ...first, id: 'job_duplicate_key' };
+		// Fresh terminal records survive recovery; eight days later only the newest 500 remain (S04 CA-020).
+		const finished = Array.from({ length: 501 }, (_, i) => ({
+			...first,
+			id: `job_finished_${i}`,
+			title: `finished-${i}`,
+			dedupeKey: `finished:${i}`,
+			state: 'succeeded',
+			progress: 1,
+			finishedAt: first.createdAt,
+		}));
+		writeFileSync(
+			journal,
+			`${[first, duplicate, other, ...finished].map((job) => JSON.stringify({ job })).join('\n')}\n`,
+		);
+		q.start();
+		const restored = [first.id, other.id, duplicate.id];
+		expect(q.list({ dedupeKeys: new Set(['other', 'same']) }).map((job) => job.id)).toEqual(restored);
+		for (const id of restored) q.cancel(id);
+		await Promise.all(restored.map((id) => q.wait(id)));
+		time += 8 * 24 * 3600 * 1000;
+		expect(q.prune()).toBe(4);
+		expect(q.list({ dedupeKeys: new Set(['same', 'other', 'finished:0']) })).toEqual([]);
+		expect(q.list({ dedupeKeys: new Set(['finished:500']) }).map((job) => job.id)).toEqual([
+			'job_finished_500',
+		]);
+	});
+
 	it('runs lanes in priority order within the CPU slots and dedupes by key', async () => {
 		const q = makeQueue({ slots: 2 });
 		const order: string[] = [];

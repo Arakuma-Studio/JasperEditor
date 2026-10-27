@@ -66,11 +66,6 @@ export class HostLimiter {
 			next?.();
 		}
 	}
-
-	/** Downloads running for `host` (tests). */
-	activeFor(host: string): number {
-		return this.active.get(host) ?? 0;
-	}
 }
 
 export type Fetched = { bytes: Buffer; contentType: string; url: string };

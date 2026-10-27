@@ -1,7 +1,6 @@
 // Style recipe tools (spec 15 EA-010…EA-013, EA-041): list_style_recipes, get_style_recipe, save_style_recipe,
-// apply_style, style_check — conventions (titles, annotations, strict arguments at any depth), requests passed to the
-// engine (times as frames / seconds / timecode), dry runs answered at once, proposals waited for, E_TOO_LARGE, the
-// project copy through one transaction, and the "Editing automation" guide resource with the recommended workflow.
+// apply_style, style_check: strict arguments, engine requests (times as frames / seconds / timecode), dry runs,
+// waited proposals, E_TOO_LARGE, and the project copy through one transaction.
 import type { ApplyStyleResult, EngineJob, StyleCheckResponse } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -205,27 +204,6 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 }
 
 describe('style recipe tools', () => {
-	it('are listed with titles, strict schemas and the right annotations', async () => {
-		const t = await connect();
-		const { tools } = await t.client.listTools();
-		const expectHints = (name: string, readOnly: boolean) => {
-			const tool = tools.find((x) => x.name === name)!;
-			expect(tool, name).toBeDefined();
-			expect(tool.title).toBeTruthy();
-			expect(tool.annotations).toMatchObject({
-				readOnlyHint: readOnly,
-				destructiveHint: false,
-				openWorldHint: false,
-			});
-			expect(tool.inputSchema.additionalProperties).toBe(false);
-		};
-		expectHints('list_style_recipes', true);
-		expectHints('get_style_recipe', true);
-		expectHints('style_check', true);
-		expectHints('save_style_recipe', false);
-		expectHints('apply_style', false);
-	});
-
 	it('apply_style dry run: recipe, seed, stages and the range in frames; nothing waited for', async () => {
 		const t = await connect();
 		const { r, json } = await t.call('apply_style', {
@@ -280,22 +258,19 @@ describe('style recipe tools', () => {
 
 	it('strict arguments at any depth: unknown keys and stage names are refused before the engine is called', async () => {
 		const t = await connect();
-		const a = await t
-			.call('apply_style', { projectId: P, recipeID: 'x' })
-			.catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
+		const a = await t.call('apply_style', { projectId: P, recipeID: 'x' });
 		expect(a.r.isError).toBe(true);
-		const b = await t
-			.call('apply_style', { projectId: P, passes: { kits: true } })
-			.catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
+		expect(a.json.error.code).toBe('E_UNKNOWN_ARGUMENT');
+		const b = await t.call('apply_style', { projectId: P, passes: { kits: true } });
 		expect(b.r.isError).toBe(true);
-		const c = await t
-			.call('save_style_recipe', {
-				name: 'x',
-				basedOn: 'builtin:fast-long-form',
-				passes: { 'ken-burns': { enabled: true, params: { shre: 1 } } },
-			})
-			.catch((e) => ({ r: { isError: true, content: [{ text: String(e) }] }, json: {} }));
+		expect(b.json.error.code).toBe('E_INVALID_ARGUMENT');
+		const c = await t.call('save_style_recipe', {
+			name: 'x',
+			basedOn: 'builtin:fast-long-form',
+			passes: { 'ken-burns': { enabled: true, params: { shre: 1 } } },
+		});
 		expect(c.r.isError).toBe(true);
+		expect(c.json.error.code).toBe('E_UNKNOWN_ARGUMENT');
 		expect(t.engine.calls.filter((x) => x.name !== 'styleRecipe')).toEqual([]);
 	});
 
@@ -355,15 +330,5 @@ describe('style recipe tools', () => {
 			lookHere: [{ timecode: '00:00:03:00', frame: 90 }],
 		});
 		expect(json.next).toContain('set_playhead');
-	});
-
-	it('the "Editing automation" guide resource carries the recommended workflow', async () => {
-		const t = await connect();
-		const r = await t.client.readResource({ uri: 'jasper://guide/editing-automation' });
-		const text = (r.contents[0] as { text: string }).text;
-		expect(text).toContain('# Editing automation');
-		expect(text).toContain('cleanup → subtitles → apply_style');
-		expect(text).toContain('style_check');
-		expect(text).toContain('apply_style');
 	});
 });
