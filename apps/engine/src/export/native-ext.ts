@@ -10,6 +10,14 @@ import type {
 } from '@jasper/project';
 import type { PlannedExport } from './planner.ts';
 
+/** First drawn / one-past-last frame of a clip in an export range, including transition handles. */
+export function layerSpan(c: RenderVisualClip, range: { start: number; end: number }): [number, number] {
+	return [
+		Math.max(c.start - (c.headHandle ?? 0), range.start),
+		Math.min(c.start + c.duration + (c.tailHandle ?? 0), range.end),
+	];
+}
+
 /**
  * A pre-rendered picture that replaces part of a layer's pipeline in the native composite.
  * - `layer`: replaces the decoded source only. Frames are `intrinsicBox`-sized (scaled if not); the builder

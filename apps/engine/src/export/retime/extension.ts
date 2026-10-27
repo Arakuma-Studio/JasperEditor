@@ -14,7 +14,12 @@ import { JobError } from '../../jobs/types.ts';
 import { alphaDecoder } from '../../media/alpha.ts';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
 import { inColor, SWS_FLAGS } from '../native.ts';
-import type { LayerOverride, NativeExtension, NativePrepareContext } from '../native-ext.ts';
+import {
+	type LayerOverride,
+	layerSpan,
+	type NativeExtension,
+	type NativePrepareContext,
+} from '../native-ext.ts';
 import type { PlannedExport } from '../planner.ts';
 import { ChunkedFrames, cachedFrameTimes } from './frames.ts';
 import { planRetime } from './plan.ts';
@@ -44,13 +49,6 @@ export type RetimeDeps = {
  */
 function retimeClaims(c: RenderVisualClip): boolean {
 	return c.kind === 'video' && !!c.retime && 'mediaId' in c.source && !isLinearFrameSampling(c);
-}
-
-function layerSpan(c: RenderVisualClip, range: { start: number; end: number }): [number, number] {
-	return [
-		Math.max(c.start - (c.headHandle ?? 0), range.start),
-		Math.min(c.start + c.duration + (c.tailHandle ?? 0), range.end),
-	];
 }
 
 export function createRetimeExtension(deps: RetimeDeps): NativeExtension {

@@ -384,8 +384,3 @@ export function PaintedText({ plan, render, width, height, maxSizePx, background
 	}
 	return <>{out}</>;
 }
-
-/** True when a plan draws more than the plain fill (strokes or shadows). */
-export function paintsMoreThanFill(plan: TextPaintPlan): boolean {
-	return plan.bands.length > 0 || plan.shadows.length > 0;
-}

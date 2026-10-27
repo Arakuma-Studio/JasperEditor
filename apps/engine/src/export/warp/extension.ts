@@ -30,6 +30,7 @@ import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
 	layerOverride,
+	layerSpan,
 	type NativeExtension,
 	type NativePrepareContext,
 } from '../native-ext.ts';
@@ -67,14 +68,6 @@ function warpClaims(c: RenderVisualClip): boolean {
 		c.effects.some((fx) => fx.enabled && fx.effectId === CORNER_PIN_EFFECT_ID) ||
 		(c.kind === 'animated-image' && layerAnimated(c))
 	);
-}
-
-/** First drawn / one-past-last frame of a clip in an export range (with transition handles, like the builder). */
-function layerSpan(c: RenderVisualClip, range: { start: number; end: number }): [number, number] {
-	return [
-		Math.max(c.start - (c.headHandle ?? 0), range.start),
-		Math.min(c.start + c.duration + (c.tailHandle ?? 0), range.end),
-	];
 }
 
 const r9 = (x: number) => {
