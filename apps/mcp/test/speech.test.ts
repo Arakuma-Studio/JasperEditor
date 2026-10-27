@@ -374,6 +374,28 @@ describe('speech MCP tools', () => {
 		});
 	});
 
+	it('passes a glossary (spec 17 SC-074) and refuses more than 40 terms or terms over 64 characters', async () => {
+		const { call, engine } = await connect();
+		const r = await call('transcribe', {
+			mediaId: engine.a,
+			glossary: [' NovaPlay Studio ', 'Glimmerbox', 'Pixelforge'],
+		});
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		const post = engine.posts.find((p) => p.name === 'mediaTranscribe')!;
+		expect(post.opts.body).toEqual({
+			glossary: ['NovaPlay Studio', 'Glimmerbox', 'Pixelforge'],
+			projectId: 'prj_test',
+		});
+		const many = await call('transcribe', {
+			mediaId: engine.b,
+			glossary: Array.from({ length: 41 }, (_, i) => `Term${i}`),
+		});
+		expect(many.isError).toBe(true);
+		const long = await call('transcribe', { mediaId: engine.b, glossary: ['x'.repeat(65)] });
+		expect(long.isError).toBe(true);
+		expect(engine.posts.filter((p) => p.name === 'mediaTranscribe')).toHaveLength(1);
+	});
+
 	it('a sequence in media mode transcribes only untranscribed clip media; wait: false then jobIds commits', async () => {
 		const { call, engine } = await connect();
 		await call('transcribe', { mediaId: engine.a });

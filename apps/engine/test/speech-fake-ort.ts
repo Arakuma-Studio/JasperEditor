@@ -19,11 +19,22 @@ export const EOT = 26;
 export const TS_BEGIN = 32;
 export const VOCAB = TS_BEGIN + 1501;
 
-/** A model directory the worker can load with the fake binding. */
-export function fakeModelDir(): string {
+/** Token id of the space in an `encodable` fake model (replaces 'z'). */
+export const SPACE = 25;
+
+/**
+ * A model directory the worker can load with the fake binding. `encodable` (spec 17 scoring and glossary tests):
+ * the tokenizer has a BPE merge (so it can encode) and token 25 is the space ('Ġ') instead of 'z', so
+ * `encode(' ab')` = [25, 0, 1] and decoded text splits into words.
+ */
+export function fakeModelDir(opts: { encodable?: boolean } = {}): string {
 	const dir = mkdtempSync(join(tmpdir(), 'jasper-fake-whisper-'));
 	const vocab: Record<string, number> = {};
 	for (let i = 0; i < 26; i++) vocab[String.fromCharCode(97 + i)] = i;
+	if (opts.encodable) {
+		delete vocab.z;
+		vocab['\u0120'] = SPACE;
+	}
 	const added = [
 		['<|endoftext|>', 26],
 		['<|startoftranscript|>', 27],
@@ -38,7 +49,7 @@ export function fakeModelDir(): string {
 	writeFileSync(
 		join(dir, 'tokenizer.json'),
 		JSON.stringify({
-			model: { vocab, merges: [] },
+			model: { vocab, merges: opts.encodable ? ['x y'] : [] },
 			added_tokens: added.map(([content, id]) => ({ id, content })),
 		}),
 	);
@@ -75,12 +86,23 @@ export type FakeOrtOptions = {
 	runError?(part: 'encoder' | 'decoder', provider: string, run: number): string | null;
 	/** Delay per decoder run (ms) by provider (calibration tests). */
 	decoderDelayMs?(provider: string): number;
+	/** Delay per encoder run (ms; cancellation tests). */
+	encoderDelayMs?(): number;
+	/**
+	 * Decoder logits of one position (spec 17 tests): `history` = the row's tokens up to and including this position
+	 * (cached steps included); `row` holds the default logits and may be changed.
+	 */
+	logits?(history: readonly number[], row: Float32Array): void;
+	/** Cross-attention of one position over the 1500 frames (default uniform); `history` as for `logits`. */
+	cross?(history: readonly number[], row: Float32Array, layer: number, head: number): void;
 };
 
 /** The fake binding: `InferenceSession.create` + `Tensor`, recording every session. */
 export function fakeOrt(opts: FakeOrtOptions = {}) {
 	const sessions: SessionRecord[] = [];
 	const disposed: FakeTensor[] = [];
+	/** Token history per batch row, keyed by the decoder cache tensor that carries it to the next step. */
+	const histories = new WeakMap<object, number[][]>();
 	const H = FAKE_CFG.decoder_attention_heads;
 	const DH = FAKE_CFG.d_model / H;
 	const L = FAKE_CFG.decoder_layers;
@@ -145,6 +167,8 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 						const rerr = opts.runError?.(part, provider, rec.runs.length);
 						if (rerr) throw new Error(rerr);
 						if (part === 'encoder') {
+							const ed = opts.encoderDelayMs?.() ?? 0;
+							if (ed) await new Promise((r) => setTimeout(r, ed));
 							return {
 								last_hidden_state: tensor('float32', new Float32Array(1500 * FAKE_CFG.d_model), [
 									1,
@@ -159,6 +183,14 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 						const [B, T] = ids.dims as [number, number];
 						const past = feeds['past_key_values.0.decoder.key'] as FakeTensor;
 						const P = past ? (past.dims[2] ?? 0) : 0;
+						const idData = ids.data as BigInt64Array;
+						const before = (past && histories.get(past)) || [];
+						const hist: number[][] = [];
+						for (let b = 0; b < B; b++) {
+							const h = cached ? [...(before[b] ?? [])] : [];
+							for (let t = 0; t < T; t++) h.push(Number(idData[b * T + t]));
+							hist.push(h);
+						}
 						const logits = new Float32Array(B * T * VOCAB).fill(-5);
 						for (let b = 0; b < B; b++)
 							for (let t = 0; t < T; t++) {
@@ -166,6 +198,10 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 								// <|0.00|> first, then end-of-text: an empty window in two steps
 								logits[row + EOT] = 2;
 								logits[row + TS_BEGIN] = 5;
+								if (opts.logits) {
+									const h = hist[b]!;
+									opts.logits(h.slice(0, h.length - T + t + 1), logits.subarray(row, row + VOCAB));
+								}
 							}
 						const out: Record<string, FakeTensor> = { logits: tensor('float32', logits, [B, T, VOCAB]) };
 						for (let l = 0; l < L; l++)
@@ -184,12 +220,18 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 											[B, H, 1500, DH],
 											gpuOut(`present.${l}.encoder.${kv}`),
 										);
-								out[`cross_attentions.${l}`] = tensor(
-									'float32',
-									new Float32Array(B * H * T * 1500).fill(1 / 1500),
-									[B, H, T, 1500],
-								);
+								const ca = new Float32Array(B * H * T * 1500).fill(1 / 1500);
+								if (opts.cross)
+									for (let b = 0; b < B; b++)
+										for (let h = 0; h < H; h++)
+											for (let t = 0; t < T; t++) {
+												const hb = hist[b]!;
+												const o = ((b * H + h) * T + t) * 1500;
+												opts.cross(hb.slice(0, hb.length - T + t + 1), ca.subarray(o, o + 1500), l, h);
+											}
+								out[`cross_attentions.${l}`] = tensor('float32', ca, [B, H, T, 1500]);
 							}
+						histories.set(out['present.0.decoder.key'] as FakeTensor, hist);
 						if (!fetches) return out;
 						const sel: Record<string, FakeTensor> = {};
 						for (const f of fetches) sel[f] = out[f] as FakeTensor;
