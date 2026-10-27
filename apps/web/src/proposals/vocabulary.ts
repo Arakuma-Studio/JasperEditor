@@ -1,8 +1,8 @@
 // Review vocabulary per proposal feature (spec 15 EA-002): how the Review panel groups a feature's items (the groups
 // and their order come from the producer's declaration in `PROPOSAL_FEATURES`; items name their group in `meta.group`,
-// else `group`), and the feature's sentences (the proposal card, the Apply toast, the item noun) through a small
-// registry. Sound design registers its own (grouping by `meta.role`, "n sounds on k new tracks", "Applied n of m
-// sounds"); a feature without an entry gets the generic one, which names items with the feature's noun. Group names
+// else `group`), and the feature's sentences (the proposal card, the Apply toast, the item noun) through its
+// vocabulary. Sound design uses its own grouping by `meta.role`, "n sounds on k new tracks" and "Applied n of m
+// sounds"; other features use their declared groups and noun. Group names
 // and nouns are model strings (translated with the rest of the catalogue).
 import { proposalFeatureInfo, SOUND_DESIGN_FEATURE } from '@jasper/project';
 import type { ReviewItem } from '@jasper/session';
@@ -11,7 +11,7 @@ import { t } from '../i18n/runtime.ts';
 /** The counts a proposal card's sentence uses (from a preview of its undecided items). */
 export type CardCounts = { sounds: number; newTracks: number; items: number };
 
-export type ReviewVocabulary = {
+type ReviewVocabulary = {
 	/** The group an item is listed under (lower case; `setup`, `tracks`, `other` are the review's own). */
 	groupOf(item: Pick<ReviewItem, 'group' | 'meta'>): string;
 	/** "<agent> proposes <title>: …" (null: the generic sentence). */
@@ -35,7 +35,7 @@ function fold(key: string): string {
 }
 
 /** The generic vocabulary of a feature: `meta.group`, else `group`; the feature's noun (else "items"). */
-export function genericVocabulary(feature: string): ReviewVocabulary {
+function genericVocabulary(feature: string): ReviewVocabulary {
 	const info = proposalFeatureInfo(feature);
 	const itemsText = (n: number) =>
 		info
@@ -73,27 +73,10 @@ const SOUND_VOCABULARY: ReviewVocabulary = {
 	applyToast: (applied, total, author) => t('Applied {0} of {1} sounds from {2}', applied, total, author),
 };
 
-const REGISTRY = new Map<string, ReviewVocabulary>([[SOUND_DESIGN_FEATURE, SOUND_VOCABULARY]]);
-
-/**
- * Registers a feature's own vocabulary (a producer whose sentences need more than its noun). Returns the undo.
- * Features without one use `genericVocabulary`.
- */
-export function registerReviewVocabulary(feature: string, v: ReviewVocabulary): () => void {
-	const prev = REGISTRY.get(feature);
-	REGISTRY.set(feature, v);
-	return () => {
-		if (REGISTRY.get(feature) !== v) return;
-		if (prev) REGISTRY.set(feature, prev);
-		else REGISTRY.delete(feature);
-	};
-}
-
 const generic = new Map<string, ReviewVocabulary>();
-/** The vocabulary of a feature (its registered one, else the generic one). */
+/** Sound design's role vocabulary, otherwise the feature's declared groups and noun. */
 export function reviewVocabulary(feature: string): ReviewVocabulary {
-	const own = REGISTRY.get(feature);
-	if (own) return own;
+	if (feature === SOUND_DESIGN_FEATURE) return SOUND_VOCABULARY;
 	let g = generic.get(feature);
 	if (!g) {
 		g = genericVocabulary(feature);

@@ -56,9 +56,8 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
   feature)`). Producers add a group by adding it to `PROPOSAL_FEATURES` (a label → `pnpm i18n` → Spanish).
 - Feature sentences go through `apps/web/src/proposals/vocabulary.ts`: `reviewVocabulary(feature)` →
   `{groupOf, cardSentence?, itemsText, applyToast}`; the generic one uses the feature's noun ("ui-agent proposes Decorate
-  Cuts: 214 edits", "Applied 12 of 40 cuts from …"); `registerReviewVocabulary(feature, v)` for a producer that needs
-  more. Sound design is migrated onto the registry unchanged (role grouping Hero / Support / Bed / Layers, "n sounds on
-  k new tracks", "Applied n of m sounds"; its review tests pass unchanged).
+  Cuts: 214 edits", "Applied 12 of 40 cuts from …"). Sound design uses its own vocabulary (role grouping
+  Hero / Support / Bed / Layers, "n sounds on k new tracks", "Applied n of m sounds").
 - Ghosts (`apps/web/src/proposals/ghosts.ts`, drawn by `GhostLayer.tsx`): clip ghosts carry the clip kind
   (adjustment ◐ and text T marks); **key bands** for keyframes an item adds or changes on a clip (also all keys of a
   clip it creates: an adjustment kit's blur curve) at the keys' sequence frames, with a diamond per key; **transition
@@ -129,8 +128,7 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
 2. Use the batch commands: one command per item; a setup item (`meta.setup: true`) creates the FX track.
 3. Call `proposalBudget(items)` first; over the caps refuse with `E_TOO_LARGE` and `suggestedRange`.
 4. Create the proposal with the feature id (`edit-automation`, `subtitles`, `transcript-cleanup`); register a refresher
-   on the engine's `ProposalService`; add your Review groups to `PROPOSAL_FEATURES` and, only if the noun is not
-   enough, a vocabulary with `registerReviewVocabulary`.
+   on the engine's `ProposalService`; add your Review groups and item noun to `PROPOSAL_FEATURES`.
 
 ### Verification (VM `wt-proposals`, branch `feat/wf-proposals`)
 

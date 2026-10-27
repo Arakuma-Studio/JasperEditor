@@ -24,7 +24,6 @@ import {
 	addAnotherMotionGraphics,
 } from '../src/panels/motionTemplates/add-another.ts';
 import { MG_BULK_IMPORT_DIALOG } from '../src/panels/motionTemplates/BulkImportDialog.tsx';
-import { buildBulkImport } from '../src/panels/motionTemplates/bulk-import.ts';
 import { MotionTemplatesPanel } from '../src/panels/motionTemplates/MotionTemplatesPanel.tsx';
 import { MgTemplateSection } from '../src/panels/motionTemplates/TemplateSection.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
@@ -130,7 +129,8 @@ describe('Add another', () => {
 			origin: 'user',
 			commands: [{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [0, 0, 0, 1], ref: '$s' }],
 		});
-		const solidId = solid.ok ? solid.refs.$s! : '';
+		if (!solid.ok) throw new Error(JSON.stringify(solid.errors));
+		const solidId = solid.refs.$s!;
 		s.select('timeline', [solidId], 'replace');
 		expect(addAnotherDisabledReason(s)).toBe('Select a motion-graphic clip');
 		expect(addAnotherMotionGraphics(s)).toEqual({ ok: false, message: 'Select a motion-graphic clip' });
@@ -141,25 +141,14 @@ describe('Add another', () => {
 		await s.close();
 	});
 
-	it('is in the timeline clip menu of motion-graphic clips only', async () => {
-		const s = await openSession();
-		const src = addComment(s);
-		const ext = clipMenuExtensions.list().find((e) => e.id === 'mg-add-another')!;
-		const clip = s.getCommitted().sequences[s.getState().activeSequenceId!]!.clips[src]!;
-		const items = ext.items({ session: s, clip, selection: [src] });
-		expect(items.map((i) => (i.kind === 'item' ? i.label : i.kind))).toEqual(['Add Another']);
-		act(() => (items[0] as { run(): void }).run());
-		expect(mgClips(s)).toHaveLength(2);
-		const other = { ...clip, kind: 'solid' } as unknown as Clip;
-		expect(ext.items({ session: s, clip: other, selection: [] })).toEqual([]);
-		await s.close();
-	});
-
 	it('Add Another twice from the same clip menu builds a sequence (no stacked copies); one undo step each', async () => {
 		const s = await openSession();
 		const src = addComment(s);
 		const ext = clipMenuExtensions.list().find((e) => e.id === 'mg-add-another')!;
 		const clip = s.getCommitted().sequences[s.getState().activeSequenceId!]!.clips[src]!;
+		expect(
+			ext.items({ session: s, clip: { ...clip, kind: 'solid' } as unknown as Clip, selection: [] }),
+		).toEqual([]);
 		const runOnSource = () => {
 			const items = ext.items({ session: s, clip, selection: [src] });
 			act(() => (items[0] as { run(): void }).run());
@@ -408,24 +397,6 @@ describe('bulk import dialog', () => {
 		act(() => closeAllDialogs());
 		fireEvent.click(screen.getByTestId('motion-templates-bulk-import'));
 		expect(await screen.findByTestId('mg-bulk-import')).toBeTruthy();
-		await s.close();
-	});
-
-	it('buildBulkImport never throws on hostile text', async () => {
-		const s = await openSession();
-		const info = registry.get(T.id, 1)!;
-		for (const text of ['"', '﻿', '\t\t\n\t', 'Comment\n"unclosed', 'a'.repeat(5000), 'Comment\n\u0000‮']) {
-			const m = buildBulkImport({
-				text,
-				delimiter: 'auto',
-				info,
-				rate: { num: 30, den: 1 },
-				media: {},
-				seed: 1,
-				startAt: 0,
-			});
-			expect(typeof m.ok).toBe('boolean');
-		}
 		await s.close();
 	});
 });

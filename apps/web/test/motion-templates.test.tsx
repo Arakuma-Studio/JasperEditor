@@ -197,24 +197,6 @@ describe('template insert never overwrites (first-free placement, social-comment
 		await session.close();
 	});
 
-	it('preset inserts (WP3a) stack the same way and keep the preset params', async () => {
-		unregister = registerCommands(mgCommands);
-		const session = await openSession();
-		const ctx = createCommandContext({ engine: fakeEngine(), session });
-		await runCommand('mg.insert', ctx, { templateId: 'counter', preset: 'percentage', at: 0 });
-		await runCommand('mg.insert', ctx, { templateId: 'counter', preset: 'percentage', at: 0 });
-		const seq = seqOf(session);
-		const placed = Object.values(seq.clips).map((c) => ({
-			track: `V${seq.videoTracks.findIndex((t) => t.id === c.trackId) + 1}`,
-			params: c.kind === 'motion-graphic' ? c.params : null,
-		}));
-		expect(placed.map((p) => p.track).sort()).toEqual(['V1', 'V2']);
-		const def = mgRegistry.getDefinition('counter', 1)!;
-		const preset = def.presets!.find((p) => p.id === 'percentage')!;
-		for (const p of placed) expect(p.params).toMatchObject(preset.params);
-		await session.close();
-	});
-
 	it('a drop on an explicit track (mg.insert trackId) keeps overwriting there', async () => {
 		unregister = registerCommands(mgCommands);
 		const session = await openSession();

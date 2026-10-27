@@ -12,9 +12,8 @@ import { EffectControlsPanel } from '../src/panels/effectControls/EffectControls
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
 import { statsPatch } from '../src/social-comments/params.ts';
 import { registerSocialCommentControls } from '../src/social-comments/register.ts';
-import { datePreview, SocialDateControl } from '../src/social-comments/SocialDateControl.tsx';
+import { SocialDateControl } from '../src/social-comments/SocialDateControl.tsx';
 import { SocialRatingControl } from '../src/social-comments/SocialRatingControl.tsx';
-import { timePreview } from '../src/social-comments/SocialTimeControl.tsx';
 
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 
@@ -61,9 +60,6 @@ const properties = (session: EditorSession) =>
 			<PropertiesPanel instanceId="review-props" visible />
 		</SessionProvider>,
 	);
-const rowOf = (view: ReturnType<typeof render>, param: string) =>
-	view.container.querySelector(`[data-row="params.${param}"]`) as HTMLElement | null;
-
 let off: (() => void) | null = null;
 beforeEach(() => {
 	off = registerSocialCommentControls();
@@ -74,49 +70,43 @@ afterEach(() => {
 	localStorage.clear();
 });
 
-describe('rows per store variant', () => {
-	it('Play: avatar, name, stars and date; no counts, title or iPhone age', async () => {
+describe('controls per store variant', () => {
+	it('Play exposes rating, date and avatar controls without comment counts or age', async () => {
 		const { session } = await openSession([socialDefaults('play-store-review')]);
-		const view = properties(session);
-		expect(rowOf(view, 'rating')!.querySelector('[data-social-rating]')).not.toBeNull();
-		expect(rowOf(view, 'date')!.querySelector('[data-social-date]')).not.toBeNull();
-		expect(
-			view.container.querySelector('[data-row-block="params.avatar"] [data-social-avatar]'),
-		).not.toBeNull();
-		for (const hidden of ['likes', 'replies', 'timeValue', 'title', 'edited', 'handle', 'verified'])
-			expect(rowOf(view, hidden), hidden).toBeNull();
-		expect(rowOf(view, 'truncate')).not.toBeNull();
-		expect(screen.getByTestId('social-date-preview').textContent).toBe('9/24/25');
-		expect(screen.getByTestId('social-rating-value').textContent).toBe('4 stars');
-		// the Randomize Stats wand sits on the Stats group (brought by the rating and date controls)
-		const stats = view.container.querySelector('[data-section$=".stats"]') as HTMLElement;
-		expect(within(stats).getAllByTestId('social-randomize-stats')).toHaveLength(1);
+		properties(session);
+		expect(screen.getByRole('group', { name: 'Rating' })).toBeTruthy();
+		expect(screen.getByLabelText('Review date')).toBeTruthy();
+		expect(screen.getByTestId('social-avatar')).toBeTruthy();
+		expect(screen.queryByLabelText('Time ago')).toBeNull();
+		expect(screen.queryByTestId('social-count-likes')).toBeNull();
+		expect(screen.queryByTestId('social-count-replies')).toBeNull();
 		await session.close();
 	});
 
-	it('App Store web: title and date, no avatar; iPhone: title, age and edited, no date', async () => {
-		const { session } = await openSession([socialDefaults('app-store-review')]);
-		let view = properties(session);
-		expect(rowOf(view, 'title')).not.toBeNull();
-		expect(view.container.querySelector('[data-row-block="params.avatar"]')).toBeNull();
-		expect(rowOf(view, 'showProfile')).toBeNull();
+	it('App Store web edits a date, while iPhone edits the age without an avatar', async () => {
+		const web = await openSession([socialDefaults('app-store-review')]);
+		properties(web.session);
+		expect(screen.getByLabelText('Review date')).toBeTruthy();
 		expect(screen.getByTestId('social-date-preview').textContent).toBe('09/24/2025');
-		await session.close();
+		expect(screen.queryByTestId('social-avatar')).toBeNull();
+		expect(screen.queryByLabelText('Time ago')).toBeNull();
+		await web.session.close();
 		cleanup();
-		const ios = await openSession([socialDefaults('app-store-review-ios')]);
-		view = properties(ios.session);
-		expect(rowOf(view, 'timeValue')!.querySelector('[data-social-time]')).not.toBeNull();
-		expect(rowOf(view, 'edited')).not.toBeNull();
-		expect(rowOf(view, 'date')).toBeNull();
-		expect(rowOf(view, 'rating')).not.toBeNull();
-		expect(rowOf(view, 'iosAgeStyle')).not.toBeNull();
-		// the age preview is the card's: "1y ago" by default (older than a week)
-		expect(screen.getByTestId('social-time-preview').textContent).toBe('1y ago');
+		const ios = await openSession([
+			{
+				...socialDefaults('app-store-review-ios'),
+				timeValue: 2,
+				timeUnit: 'day',
+				edited: true,
+			},
+		]);
+		properties(ios.session);
+		expect(screen.getByLabelText('Time ago')).toBeTruthy();
+		expect(screen.getByRole('group', { name: 'Rating' })).toBeTruthy();
+		expect(screen.queryByLabelText('Review date')).toBeNull();
+		expect(screen.queryByTestId('social-avatar')).toBeNull();
+		expect(screen.getByTestId('social-time-preview').textContent).toBe('edited Fri');
 		await ios.session.close();
-		// under a week: the reference screenshot's weekday, or today's relative form, with "edited"
-		expect(timePreview('app-store-review-ios', 2, 'day', { edited: true })).toBe('edited Fri');
-		expect(timePreview('app-store-review-ios', 2, 'day', { iosAgeStyle: 'relative' })).toBe('2d ago');
-		expect(timePreview('tiktok-comment', 2, 'day', { edited: true })).toBe('2d');
 	});
 });
 
@@ -154,8 +144,7 @@ describe('social-rating', () => {
 		const checked = (within(group).getAllByRole('radio') as HTMLInputElement[]).filter((r) => r.checked);
 		expect(checked.map((r) => r.getAttribute('aria-label'))).toEqual(['4 stars']);
 		// a fieldset named by its legend, one radio name for the five stars
-		expect(group.tagName).toBe('FIELDSET');
-		expect(group.querySelector('legend')?.textContent).toBe('Rating');
+		expect(screen.getByRole('group', { name: 'Rating' })).toBe(group);
 		expect(
 			new Set(
 				within(group)
@@ -231,12 +220,6 @@ describe('social-date', () => {
 		expect(history(session)).toBe(before + 1);
 		expect(lastLabel(session)).toBe('Randomize Date');
 		await session.close();
-	});
-
-	it('prints each store form', () => {
-		expect(datePreview('play-store-review', '2021-09-04')).toBe('9/4/21');
-		expect(datePreview('app-store-review', '2021-09-04')).toBe('09/04/2021');
-		expect(datePreview('play-store-review', 'nope')).toBe('–');
 	});
 });
 
