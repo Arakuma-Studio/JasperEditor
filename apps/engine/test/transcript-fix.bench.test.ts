@@ -47,7 +47,9 @@ const SHORT = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
 const LONG = join(ROOT, 'fixtures', 'media', 'lj-long.flac');
 const REPEATS = 11;
 const enabled =
-	process.env.TRANSCRIPT_FIX_BENCH === '1' && existsSync(LONG) && (await store.installed(store.entry(MODEL)!));
+	process.env.TRANSCRIPT_FIX_BENCH === '1' &&
+	existsSync(LONG) &&
+	(await store.installed(store.entry(MODEL)!));
 
 type Truth = { utterances: Array<{ text: string; start: number; end: number }>; durationSeconds: number };
 const truth = JSON.parse(readFileSync(SHORT.replace(/\.flac$/, '.json'), 'utf8')) as Truth;
@@ -135,7 +137,14 @@ function seed(words: Word[], text: string) {
 			commands: [
 				mediaRegisterCommand(reg, '$a', '$ai', 'lj-long'),
 				{ type: 'transcript.create', mediaId: '$a', language: 'en', origin: 'whisper-local', words },
-				{ type: 'clip.place', source: { mediaId: '$a' }, at: 0, tracks: { audio: 'A1' }, video: false, audio: true },
+				{
+					type: 'clip.place',
+					source: { mediaId: '$a' },
+					at: 0,
+					tracks: { audio: 'A1' },
+					video: false,
+					audio: true,
+				},
 				{ type: 'cleanup.configure', sequenceId: seqId, script: { name: 'Script', text } },
 			] as never[],
 		},
@@ -222,11 +231,18 @@ describe.skipIf(!enabled)('Fix Transcript cost on 10.6 min of speech (SC-037)', 
 			deltaTok: d.deltaTok === null ? null : Math.round(d.deltaTok * 1e6) / 1e6,
 		}));
 		if (process.env.TRANSCRIPT_FIX_BENCH_OUT)
-			writeFileSync(process.env.TRANSCRIPT_FIX_BENCH_OUT, JSON.stringify({ model: MODEL, decisions }, null, 1));
+			writeFileSync(
+				process.env.TRANSCRIPT_FIX_BENCH_OUT,
+				JSON.stringify({ model: MODEL, decisions }, null, 1),
+			);
 		console.log(
 			`FIX_LONG_BENCH ${JSON.stringify({
 				model: MODEL,
-				machine: { cpus: availableParallelism(), cpu: cpus()[0]?.model, slots: coreServices(app).queue.totalSlots },
+				machine: {
+					cpus: availableParallelism(),
+					cpu: cpus()[0]?.model,
+					slots: coreServices(app).queue.totalSlots,
+				},
 				speechMinutes: Math.round(SPEECH_MINUTES * 1000) / 1000,
 				injectedErrors: errors,
 				candidates: rep.candidates,
