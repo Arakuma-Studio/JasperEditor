@@ -33,3 +33,10 @@ export function assertBin(doc: DDoc, binId: string | null | undefined, h: Handle
 	if (!bin) h.fail('E_NOT_FOUND', `Bin not found: ${binId}`);
 	if (bin.kind !== 'bin') h.fail('E_INVALID_PARAM', `Item ${binId} is not a bin`);
 }
+
+/** Bin that holds an item (null = root). */
+export function parentBinOf(doc: DDoc, itemId: string): string | null {
+	for (const it of Object.values(doc.items))
+		if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
+	return null;
+}

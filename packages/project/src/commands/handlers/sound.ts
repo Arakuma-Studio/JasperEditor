@@ -66,7 +66,7 @@ import { sequenceHandlers } from './sequence.ts';
 import { refreshDefaultLevel, sfxDefaultLevel } from './sound-levels.ts';
 import { followCueMix, syncRoomSends } from './sound-mix.ts';
 import { structureHandlers } from './structure.ts';
-import { type HandlerMap, peek, peekKeys } from './util.ts';
+import { clone, type HandlerMap, peek, peekKeys } from './util.ts';
 
 export const SOUND_DESIGN_OWNER = 'sound-design' as const;
 
@@ -104,7 +104,7 @@ function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'
 		});
 	if (cmd.asset.kind !== 'audio')
 		h.fail('E_INVALID_PARAM', `The new copy must be audio media, not ${cmd.asset.kind}`, { path: ['asset'] });
-	const library = plainCopy(cmd.asset.library) as LibraryProvenance;
+	const library = clone(cmd.asset.library) as LibraryProvenance;
 	const bad = libraryDescriptorIssue(library);
 	if (bad) h.fail('E_INVALID_PARAM', bad, { path: ['asset', 'library', 'descriptors'] });
 	const plan = libraryCopyShift(
@@ -121,7 +121,7 @@ function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'
 		h.fail('E_INVALID_PARAM', `The new copy is already in the project as ${same.id}`, { path: ['asset'] });
 	const shift = plan.shiftFlicks;
 	// The new file as `media.relink` would see it, for the coverage check before anything changes.
-	const next = { ...plainCopy(old), ...plainCopy(cmd.asset), id: old.id, kind: 'audio' } as MediaAsset;
+	const next = { ...clone(old), ...clone(cmd.asset), id: old.id, kind: 'audio' } as MediaAsset;
 	const users: { seq: DSeq; clip: DClip }[] = [];
 	for (const sid of keysOf(doc.sequences)) {
 		const raw = peekIn(doc.sequences as Record<string, Sequence>, sid)!;
@@ -154,8 +154,8 @@ function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'
 	const stream = cmd.asset.probe.streams.find((x) => x.type === 'audio');
 	replaceMediaFile(doc, old.id, shift, 'refuse', h, () => {
 		old.fingerprint = cmd.asset.fingerprint;
-		old.locators = plainCopy(cmd.asset.locators) as never;
-		old.probe = plainCopy(cmd.asset.probe) as never;
+		old.locators = clone(cmd.asset.locators) as never;
+		old.probe = clone(cmd.asset.probe) as never;
 		old.sizeBytes = cmd.asset.sizeBytes;
 		old.container = cmd.asset.container;
 		old.originalName = cmd.asset.originalName;
@@ -180,8 +180,6 @@ function upgradeLibraryCopy(doc: DDoc, cmd: CommandOf<'media.upgradeLibraryCopy'
 
 // ---------------------------------------------------------------------------------------------------------------
 // Cue lookup
-
-const plainCopy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** A sequence's sound design (created empty when `create`), or null. */
 function soundDesignOf(seq: DSeq, create: true): Draft<SoundDesign>;
@@ -300,7 +298,7 @@ function moveClips(seq: DSeq, moves: readonly ClipMove[], h: HandlerContext): vo
 function cueFromInput(c: SoundCueInput, id: string): SoundCue {
 	const { id: _id, ref: _ref, ...rest } = c;
 	const out: Record<string, unknown> = { id };
-	for (const [k, v] of Object.entries(rest)) if (v !== undefined) out[k] = plainCopy(v);
+	for (const [k, v] of Object.entries(rest)) if (v !== undefined) out[k] = clone(v);
 	return out as SoundCue;
 }
 
@@ -358,10 +356,10 @@ function updateCue(doc: DDoc, cmd: CommandOf<'soundCue.update'>, h: HandlerConte
 	for (const k of CLEARABLE) {
 		const v = cmd[k];
 		if (v === null) delete r[k];
-		else if (v !== undefined) r[k] = plainCopy(v);
+		else if (v !== undefined) r[k] = clone(v);
 	}
 	for (const k of ['kind', 'weight', 'source', 'muted'] as const) if (cmd[k] !== undefined) r[k] = cmd[k];
-	if (cmd.anchor !== undefined) cue.anchor = cmd.anchor === null ? null : (plainCopy(cmd.anchor) as never);
+	if (cmd.anchor !== undefined) cue.anchor = cmd.anchor === null ? null : (clone(cmd.anchor) as never);
 	// An offset is relative to the anchor: it goes with it, and means nothing without one.
 	if (!cue.anchor || cue.anchorOffset === 0) delete r.anchorOffset;
 	if (cmd.anchorOffset && !cue.anchor)
@@ -1074,12 +1072,12 @@ function settingsOf(seq: DSeq): Draft<SoundDesignSettings> {
 	const sd = soundDesignOf(seq, true);
 	if (!sd.settings) sd.settings = readSoundDesignSettings(undefined) as Draft<SoundDesignSettings>;
 	else if (!readSoundDesignSettingsValid(sd.settings))
-		sd.settings = readSoundDesignSettings(plainCopy(sd.settings)) as never;
+		sd.settings = readSoundDesignSettings(clone(sd.settings)) as never;
 	return sd.settings!;
 }
 
 function readSoundDesignSettingsValid(s: unknown): boolean {
-	return JSON.stringify(readSoundDesignSettings(plainCopy(s))) === JSON.stringify(plainCopy(s));
+	return JSON.stringify(readSoundDesignSettings(clone(s))) === JSON.stringify(clone(s));
 }
 
 function setPalette(doc: DDoc, cmd: CommandOf<'soundDesign.setPalette'>, h: HandlerContext) {
@@ -1114,7 +1112,7 @@ function setSettings(doc: DDoc, cmd: CommandOf<'soundDesign.setSettings'>, h: Ha
 	}
 	if (cmd.style !== undefined) {
 		// P6-E10: merged field by field; null takes a field back to its default (removed), an empty style is removed
-		const st = { ...(plainCopy(s.style ?? {}) as Record<string, unknown>) };
+		const st = { ...(clone(s.style ?? {}) as Record<string, unknown>) };
 		for (const [k, v] of Object.entries(cmd.style)) {
 			if (v === undefined) continue;
 			if (v === null) delete st[k];
@@ -1144,7 +1142,7 @@ function setSettings(doc: DDoc, cmd: CommandOf<'soundDesign.setSettings'>, h: Ha
 			s.roomBus = t.id;
 		}
 	}
-	return { sequenceId: seq.id, settings: plainCopy(s) };
+	return { sequenceId: seq.id, settings: clone(s) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1307,9 +1305,9 @@ function setCheck(doc: DDoc, cmd: CommandOf<'soundDesign.setCheck'>, h: HandlerC
 		return { sequenceId: seq.id, lastCheck: null };
 	}
 	const sd = soundDesignOf(seq, true);
-	const summary = plainCopy(cmd.summary) as SoundCheckSummary;
+	const summary = clone(cmd.summary) as SoundCheckSummary;
 	sd.lastCheck = summary as Draft<SoundCheckSummary>;
-	return { sequenceId: seq.id, lastCheck: plainCopy(summary) };
+	return { sequenceId: seq.id, lastCheck: clone(summary) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1339,7 +1337,7 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 	const cueId = subject?.kind === 'cue' ? subject.id : null;
 	// the verdicts of this moment: same frame and subject, or unbound / subject-less ones at the frame (a more specific
 	// verdict takes them over)
-	const existing = soundCheckHumanVerdicts({ markers: plainCopy(markers) }).filter(
+	const existing = soundCheckHumanVerdicts({ markers: clone(markers) }).filter(
 		(v) =>
 			v.frame === frame &&
 			(!v.bound || (v.clipId === null && v.cueId === null) || (v.clipId === clipId && v.cueId === cueId)),
@@ -1369,11 +1367,11 @@ function setVerdict(doc: DDoc, cmd: CommandOf<'soundDesign.setVerdict'>, h: Hand
 	} as const;
 	if (keep) {
 		const m = (seq.markers as DMarker[]).find((x) => x.id === keep.markerId)!;
-		Object.assign(m, plainCopy(fields));
+		Object.assign(m, clone(fields));
 		return { markerId: m.id, removed };
 	}
 	const id = h.newId(doc, 'mrk');
-	(seq.markers as DMarker[]).push({ id, frame, duration: 0, ...plainCopy(fields) } as DMarker);
+	(seq.markers as DMarker[]).push({ id, frame, duration: 0, ...clone(fields) } as DMarker);
 	seq.markers.sort((a, b) => a.frame - b.frame);
 	return { markerId: id, removed };
 }
@@ -1439,11 +1437,10 @@ function acknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.acknowledgeIssu
 		...(cmd.message ? { message: cmd.message.slice(0, SOUND_DESIGN_LIMITS.ackMessage) } : {}),
 	};
 	const next: Record<string, SoundAcknowledgement> = {};
-	for (const [k, v] of Object.entries(acks))
-		if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
+	for (const [k, v] of Object.entries(acks)) if (k !== cmd.key) next[k] = clone(v) as SoundAcknowledgement;
 	next[cmd.key] = entry;
 	sd.acknowledged = next as Draft<Record<string, SoundAcknowledgement>>;
-	return { key: cmd.key, acknowledged: plainCopy(entry) };
+	return { key: cmd.key, acknowledged: clone(entry) };
 }
 
 function unacknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.unacknowledgeIssue'>, h: HandlerContext) {
@@ -1452,10 +1449,9 @@ function unacknowledgeIssue(doc: DDoc, cmd: CommandOf<'soundDesign.unacknowledge
 	const acks = sd?.acknowledged as Record<string, SoundAcknowledgement> | undefined;
 	if (!sd || !acks || !Object.hasOwn(acks, cmd.key))
 		h.fail('E_NOT_FOUND', `No acknowledged finding ${cmd.key} in ${seq.id}`, { path: ['key'] });
-	const removed = plainCopy(acks![cmd.key]!) as SoundAcknowledgement;
+	const removed = clone(acks![cmd.key]!) as SoundAcknowledgement;
 	const next: Record<string, SoundAcknowledgement> = {};
-	for (const [k, v] of Object.entries(acks!))
-		if (k !== cmd.key) next[k] = plainCopy(v) as SoundAcknowledgement;
+	for (const [k, v] of Object.entries(acks!)) if (k !== cmd.key) next[k] = clone(v) as SoundAcknowledgement;
 	if (Object.keys(next).length) sd!.acknowledged = next as Draft<Record<string, SoundAcknowledgement>>;
 	else delete sd!.acknowledged;
 	return { key: cmd.key, removed };
