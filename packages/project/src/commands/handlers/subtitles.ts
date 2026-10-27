@@ -104,14 +104,13 @@ import { estimateTextBox, layoutText } from './clip-core.ts';
 import { presetHandlers } from './preset.ts';
 import { structureHandlers } from './structure.ts';
 import { applyInitialTextAnimation } from './text-animation.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { clone, type HandlerMap, idList } from './util.ts';
 
 export const SUBTITLES_OWNER = 'subtitles' as const;
 
 type DText = Draft<Extract<Clip, { kind: 'text' }>>;
 type TextClip = Extract<Clip, { kind: 'text' }>;
 
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const plainDoc = (doc: DDoc) => latest(doc) as ProjectDocument;
 const plainSeq = (seq: DSeq) => latest(seq) as Sequence;
 const DEFAULT_TEMPLATE_ID = 'builtin:subtitles';

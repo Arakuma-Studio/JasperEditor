@@ -59,7 +59,7 @@ import {
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { placeSource } from './clip-core.ts';
-import { assertBin, detachItem, insertItem } from './project-items.ts';
+import { assertBin, detachItem, insertItem, parentBinOf } from './project-items.ts';
 import { type HandlerMap, idList, clone as plain } from './util.ts';
 
 function syncSpec(cmd: {
@@ -211,13 +211,6 @@ function itemSources(
 		});
 	}
 	return out;
-}
-
-/** Bin that holds an item (null = root). */
-function parentBinOf(doc: DDoc, itemId: string): string | null {
-	for (const it of Object.values(doc.items))
-		if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
-	return null;
 }
 
 function settingsFromMedia(asset: MediaAsset | undefined, base: SequenceSettings): SequenceSettings {

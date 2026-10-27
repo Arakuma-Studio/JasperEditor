@@ -6,7 +6,6 @@ import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { contentDurationFlicks } from '../../registry/kinds.ts';
 import type {
-	Clip,
 	ClipMarker,
 	NestVideoClip,
 	RemapKeyframe,
@@ -88,10 +87,6 @@ function remapOf(clip: DVideo): TimeRemap {
 	return r?.enabled ? (r as TimeRemap) : newRemap();
 }
 
-function mediaDurationOf(doc: DDoc, clip: DClip): number | null {
-	return contentDurationFlicks(doc, clip as Clip);
-}
-
 function failEdit(e: unknown, h: HandlerContext): never {
 	if (e instanceof RemapEditError) h.fail('E_INVALID_PARAM', e.message);
 	throw e;
@@ -132,7 +127,7 @@ function setRemap(
 	const rate = rateOf(seq);
 	clampRamps(remap);
 	clip.timeRemap = remap as DVideo['timeRemap'];
-	const dur = mediaDurationOf(doc, clip);
+	const dur = contentDurationFlicks(doc, clip);
 	let want = wanted;
 	const plain = clip as unknown as VideoClip;
 	if (!remapFramesInMedia(plain, clip.start, clip.start, rate, dur))
@@ -262,7 +257,7 @@ export function removeTimeRemap(doc: DDoc, seq: DSeq, c: DClip, h: HandlerContex
 	const v = c as DVideo;
 	if (!v.timeRemap) return;
 	delete v.timeRemap;
-	const dur = mediaDurationOf(doc, c);
+	const dur = contentDurationFlicks(doc, c);
 	if (dur === null || c.kind !== 'video') return;
 	const step = stepOf(seq, c);
 	const max = Math.max(1, Math.floor((dur - c.sourceIn) / step + 1e-3));

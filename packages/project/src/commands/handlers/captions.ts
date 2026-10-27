@@ -59,7 +59,7 @@ import {
 	splitClipAt,
 	trackClips,
 } from '../placement.ts';
-import type { CaptionRulesInput, CommandOf, TimeInput } from '../schemas/index.ts';
+import type { CaptionRulesInput, CommandOf } from '../schemas/index.ts';
 import { levelPauseRanges, voiceArgument } from './cleanup.ts';
 import { commonFields, ensureDefaultFont } from './clip-common.ts';
 import { clipEditHandlers } from './clip-edit.ts';
@@ -137,8 +137,6 @@ function speakerKeyFor(speakers: Record<string, { name: string }>, name: string)
 	return key;
 }
 
-const plainName = captionClipName;
-
 /** A block to place as one caption clip: sequence frames and words in sequence time (flicks). */
 export type PlacedBlock = {
 	start: number;
@@ -196,7 +194,7 @@ export function placeCaptionClips(
 				b.start,
 				b.end - b.start,
 				CAPTION_CONTENT_ORIGIN,
-				plainName(text),
+				captionClipName(text),
 				'mango',
 			),
 			kind: 'captions',
@@ -264,10 +262,6 @@ function blocksToPlaced(
 			words: blocks.flatMap((b, i) => toPlaced(b, i === 0 ? 'none' : 'segment')),
 		},
 	];
-}
-
-function seqWordsOf(doc: DDoc, seq: DSeq): SeqWord[] {
-	return sequenceWords(doc as ProjectDocument, seq as Sequence);
 }
 
 function wordSpan(words: readonly SeqWord[], from: number, to: number, h: HandlerContext): [number, number] {
@@ -544,10 +538,6 @@ function applyStyle(
 	return { clipIds };
 }
 
-function frameOrNull(seq: DSeq, t: TimeInput | undefined, h: HandlerContext): number | null {
-	return t === undefined ? null : h.frame(seq, t);
-}
-
 function addCaptions(doc: DDoc, cmd: CommandOf<'clip.addCaptions'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const tr = doc.transcripts[cmd.transcriptId];
@@ -581,8 +571,8 @@ function addCaptions(doc: DDoc, cmd: CommandOf<'clip.addCaptions'>, h: HandlerCo
 				breakBefore: w.breakBefore,
 			});
 		}
-	} else if (tr.mediaId && seqWordsOf(doc, seq).some((w) => w.transcriptId === tr.id)) {
-		words = seqWordsOf(doc, seq)
+	} else if (tr.mediaId && sequenceWords(doc, seq).some((w) => w.transcriptId === tr.id)) {
+		words = sequenceWords(doc, seq)
 			.filter((w) => w.transcriptId === tr.id)
 			.map((w) => ({
 				text: w.text,
@@ -632,7 +622,7 @@ function createCaptionsFromTranscript(
 	h: HandlerContext,
 ) {
 	const seq = h.sequence(doc, cmd.sequenceId);
-	const all = seqWordsOf(doc, seq);
+	const all = sequenceWords(doc, seq);
 	if (!all.length) h.fail('E_INVALID_PARAM', 'The sequence has no transcribed dialogue');
 	let [from, to] = [cmd.fromWord ?? 0, cmd.toWord ?? all.length - 1];
 	[from, to] = wordSpan(all, from, to, h);
@@ -779,7 +769,7 @@ function setText(doc: DDoc, cmd: CommandOf<'caption.setText'>, h: HandlerContext
 			t.words.splice(at < 0 ? t.words.length : at, 0, ...(next as Draft<TranscriptWord>[]));
 		}
 		t.words = normalizeWords(plain(t.words)) as Draft<TranscriptWord>[];
-		clip.name = plainName(cmd.text);
+		clip.name = captionClipName(cmd.text);
 	}
 	if (cmd.speaker !== undefined) {
 		const now = captionClipWords(doc as ProjectDocument, clip as CaptionsClip, rate);
@@ -890,8 +880,8 @@ function mergeCaptions(doc: DDoc, cmd: CommandOf<'caption.merge'>, h: HandlerCon
 function setTimes(doc: DDoc, cmd: CommandOf<'caption.setTimes'>, h: HandlerContext) {
 	const { seq, clip, track } = captionClip(doc, cmd.clipId, h);
 	assertUnlocked(track, h);
-	const s = frameOrNull(seq, cmd.start, h) ?? clip.start;
-	const e = frameOrNull(seq, cmd.end, h) ?? end(clip);
+	const s = cmd.start === undefined ? clip.start : h.frame(seq, cmd.start);
+	const e = cmd.end === undefined ? end(clip) : h.frame(seq, cmd.end);
 	if (s < 0 || e - s < 1)
 		h.fail('E_INVALID_PARAM', 'A caption must be at least one frame long and start at or after 0');
 	const others = trackClips(seq, clip.trackId).filter((c) => c.id !== clip.id);
@@ -1083,7 +1073,7 @@ export const captionHandlers = {
 	},
 	'transcript.select': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const words = seqWordsOf(doc, seq);
+		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
 		seq.inPoint = r[0];
@@ -1092,7 +1082,7 @@ export const captionHandlers = {
 	},
 	'transcript.extract': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const words = seqWordsOf(doc, seq);
+		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
 		clipEditHandlers['range.extract']!(
@@ -1104,7 +1094,7 @@ export const captionHandlers = {
 	},
 	'transcript.lift': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const words = seqWordsOf(doc, seq);
+		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
 		clipEditHandlers['range.lift']!(doc, { type: 'range.lift', sequenceId: seq.id, from: r[0], to: r[1] }, h);
@@ -1115,7 +1105,7 @@ export const captionHandlers = {
 		if (!doc.sequences[cmd.targetSequenceId])
 			h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.targetSequenceId}`);
 		if (cmd.targetSequenceId === seq.id) h.fail('E_INVALID_PARAM', 'Insert into another sequence');
-		const words = seqWordsOf(doc, seq);
+		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const [from, to] = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
 		// a copy of the source sequence holding just [from, to) of its picture and sound clips
@@ -1157,7 +1147,7 @@ export const captionHandlers = {
 	},
 	'transcript.removeFillers': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const words = seqWordsOf(doc, seq);
+		const words = sequenceWords(doc, seq);
 		const lo = cmd.fromWord ?? 0;
 		const hi = Math.min(cmd.toWord ?? words.length - 1, words.length - 1);
 		const all = cmd.fillers
@@ -1170,7 +1160,7 @@ export const captionHandlers = {
 	},
 	'transcript.removePauses': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const all = seqWordsOf(doc, seq);
+		const all = sequenceWords(doc, seq);
 		const lo = cmd.fromWord ?? 0;
 		const hi = Math.min(cmd.toWord ?? all.length - 1, all.length - 1);
 		const words = all.slice(lo, hi + 1);

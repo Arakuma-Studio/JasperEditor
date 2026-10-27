@@ -121,11 +121,6 @@ function clipOfKind<K extends 'camera' | 'light'>(
 	return { seq, clip: clip as never };
 }
 
-/** Content time of a param `at` on a clip (for reading current values). */
-function timeAt(h: HandlerContext, seq: DSeq, clip: DClip, at?: ParamAt): number {
-	return h.clipContentTime(seq, clip, at);
-}
-
 const v3 = (v: unknown, d: Vec3): Vec3 =>
 	Array.isArray(v) && v.length === 3 ? [finiteOr(v[0], d[0]), finiteOr(v[1], d[1]), finiteOr(v[2], d[2])] : d;
 
@@ -150,7 +145,7 @@ function applyCameraSettings(
 			cam.transform.orientation.keyframes.length === 0
 		) {
 			// One-node from two-node: keep the view by turning the Orientation towards the old Point of Interest.
-			const t = timeAt(h, seq, clip, at);
+			const t = h.clipContentTime(seq, clip, at);
 			const eye = v3(evaluate(cam.transform.position as never, t), [0, 0, -1000]);
 			const poi = v3(evaluate(cam.transform.pointOfInterest as never, t), [0, 0, 0]);
 			const rx = finiteOr(evaluate(cam.transform.rotationX as never, t), 0);
@@ -167,7 +162,7 @@ function applyCameraSettings(
 	else if (o.lockToZoom && zoom !== undefined) setParam(doc, h, clip.id, 'camera.focusDistance', zoom, at);
 	if (o.aperture !== undefined) setParam(doc, h, clip.id, 'camera.aperture', o.aperture, at);
 	else if (o.fStop !== undefined) {
-		const t = timeAt(h, seq, clip, at);
+		const t = h.clipContentTime(seq, clip, at);
 		const z = zoom ?? finiteOr(evaluate(cam.zoom as never, t), 1);
 		const focal = focalLengthForZoom(z, frame, cam.filmSize, cam.measureFilmSize);
 		setParam(doc, h, clip.id, 'camera.aperture', aperturePxFromMm(focal / o.fStop, frame.width), at);
@@ -307,7 +302,7 @@ function cameraTool(
 ): { position: Vec3; pointOfInterest: Vec3 } {
 	const { seq, clip } = clipOfKind(doc, h, clipId, 'camera');
 	const tr = clip.camera.transform;
-	const t = timeAt(h, seq, clip, at);
+	const t = h.clipContentTime(seq, clip, at);
 	const eye = v3(evaluate(tr.position as never, t), [0, 0, -1000]);
 	const poi = v3(evaluate(tr.pointOfInterest as never, t), [0, 0, 0]);
 	const zoom = finiteOr(evaluate(clip.camera.zoom as never, t), 1000);

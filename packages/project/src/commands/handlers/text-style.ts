@@ -28,7 +28,7 @@ import { ensureDefaultFont } from './clip-common.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { buildParams } from './effect.ts';
 import { effectOwnerBox, newKeyframe, ruleFromParam, upsertKeyframe, validateValue } from './param.ts';
-import { type HandlerMap, idList, peek, peekKeys } from './util.ts';
+import { clone, type HandlerMap, idList, peek, peekKeys } from './util.ts';
 
 export const TEXT_STYLE_OWNER = 'text-styles' as const;
 
@@ -42,8 +42,6 @@ function nameClips(list: readonly { id: string; kind?: string }[]): string {
 	const shown = list.slice(0, LIST_MAX).map((c) => (c.kind ? `${c.id} (${c.kind})` : c.id));
 	return list.length > LIST_MAX ? `${shown.join(', ')} and ${list.length - LIST_MAX} more` : shown.join(', ');
 }
-
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Text clips whose caption belongs to `groupId` (spec 13 AS-003 `TextClip.caption.groupId`), in every sequence. */
 function groupClipIds(doc: DDoc, groupId: string): string[] {

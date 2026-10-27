@@ -23,7 +23,7 @@ import { contentWindow, rippleTrimGroup, trimLimits } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { placeSource } from './clip-core.ts';
 import { rollRange, rollTrim } from './clip-edit.ts';
-import { insertItem } from './project-items.ts';
+import { insertItem, parentBinOf } from './project-items.ts';
 import type { HandlerMap } from './util.ts';
 
 const FALLBACK_RATE: Rational = { num: 30, den: 1 };
@@ -509,12 +509,6 @@ function checkRange(inF: number, outF: number, bounds: { in: number; out: number
 }
 const FALLBACK_TOL = flicksPerFrame(FALLBACK_RATE);
 
-function parentBin(doc: DDoc, itemId: string): string | null {
-	for (const it of Object.values(doc.items))
-		if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
-	return null;
-}
-
 export const editUxHandlers = {
 	'clip.sourceEdit': sourceEditHandler,
 	'clip.trimEdits': trimEditsHandler,
@@ -538,7 +532,7 @@ export const editUxHandlers = {
 			marks: { in: null, out: null },
 		};
 		doc.items[id] = sub as Draft<ProjectItem>;
-		const bin = cmd.binId !== undefined ? cmd.binId : parentBin(doc, item.id);
+		const bin = cmd.binId !== undefined ? cmd.binId : parentBinOf(doc, item.id);
 		if (bin && doc.items[bin]?.kind !== 'bin') h.fail('E_NOT_FOUND', `Bin not found: ${bin}`);
 		insertItem(doc, id, bin, undefined);
 		h.defineRef(cmd.ref, id);
