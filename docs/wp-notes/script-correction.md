@@ -148,8 +148,10 @@ median of 3 runs):
 ≈ 13 s per speech minute on long recordings (estimate; basis: the research's 2.3 packed windows per speech minute ×
 5.05 s + 8.6 readings × 0.17 s, load amortised). Mac and NVIDIA figures: not measured here (SC-105 harness / a GPU box).
 
-**Glossary on a real model**: see the `SCORE_GLOSSARY` line of the e2e run (turbo, terms Wilkins / Abingdon /
-pantaloons: all carried, WER ≤ 4 %).
+**Glossary on a real model** (measured, same VM): turbo greedy with the glossary Wilkins / Abingdon / pantaloons
+carried (3 terms, 11 prompt tokens): WER 2.56 % (§11.7 of the speech wp-note: 1.92 % without), "Abingdon" spelled
+right, 0 guard events. One English clip only; the research's Spanish glossary effects (names 73 % → 94 % exact,
+some chatter dropped) are not re-measured here.
 
 ### Limitations
 
