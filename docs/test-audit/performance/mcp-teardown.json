@@ -1,0 +1,52 @@
+{
+  "scope": "MCP fixture-engine teardown: 26 test files and the opt-in QA harness",
+  "change": "One test-only stopEngine helper replaces 27 duplicate shutdown blocks. It clears the losing deadline timer and exit listener. After the existing eight-second SIGTERM grace period it SIGKILLs only its owned child, awaits actual exit, and throws a visible fixture timeout failure.",
+  "machine": {
+    "node": "v20.19.0",
+    "pnpm": "10.34.5",
+    "cpuModel": "AMD EPYC-Genoa Processor",
+    "logicalCpus": 8,
+    "memoryBytes": 16366505984,
+    "platform": "linux",
+    "release": "6.8.0-138-generic",
+    "arch": "x64",
+    "loadSampleAfterRuns": [2.79, 3.63, 5.76]
+  },
+  "runner": {
+    "command": "JASPER_REQUIRE_ORACLES=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/chromium pnpm exec vitest run apps/mcp/test/sound-motion.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile=<report>",
+    "workers": 2,
+    "conditions": "Same worktree, Node/pnpm, fixture inputs and flags. Agent test jobs serialized with /tmp/jasper-validation.lock. Fresh Vitest process per sample; installed dependencies/OS cache warm. Shared host load and import/analysis variance remain uncontrolled."
+  },
+  "representativeFileWallSeconds": {
+    "before": [20.45, 18.34],
+    "final": [18.08, 18.26],
+    "beforeMean": 19.395,
+    "finalMean": 18.17,
+    "observedMeanSaved": 1.225,
+    "observedMeanSavedPercent": 6.32,
+    "intermediateNormalExitCleanupVersion": [21.65, 20.35],
+    "interpretation": "Final samples are lower, but intermediate samples were higher and imports/startup dominate. No attributable Vitest or CI speedup is established from these small shared-host samples."
+  },
+  "realChildLifetimeProbe": {
+    "baselineSeconds": 8.67,
+    "finalSeconds": 0.63,
+    "observation": "Without a test runner force-closing the worker, the old losing timer retains the parent process for eight seconds after child exit. The shared helper releases it; this is a resource-lifetime measurement, not CI runtime."
+  },
+  "deadlineProbe": {
+    "elapsedMs": 8005.519668999999,
+    "signal": "SIGKILL",
+    "childExited": true,
+    "visibleTimeoutFailure": true
+  },
+  "validation": {
+    "representativeBefore": "2/2 runs passed",
+    "representativeFinal": "2/2 runs passed",
+    "mcpTypecheck": "passed",
+    "realIntegrationAndPacks": "12 tests passed after consolidation of graceful shutdown",
+    "conventions": "9 tests passed on final source",
+    "deadline": "A real child ignoring SIGTERM is dead with SIGKILL after the same eight-second grace period and stopEngine rejects with the expected visible timeout failure.",
+    "healthyChild": "A real normally terminating child exits promptly without a losing timer; stopping the already exited child again is a no-op.",
+    "limits": "The opt-in QA/Remotion suites were not rerun for the helper-only change; the integrated root gate remains the full-suite validation owner."
+  },
+  "contractSource": "User test-infrastructure cleanup requirement and AGENTS.md §0: child/process failures must be visible and work must not remain dead-but-running."
+}

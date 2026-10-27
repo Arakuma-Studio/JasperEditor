@@ -10,7 +10,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FixedEngineLink } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import { cleanEnv, testPort } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -128,11 +128,7 @@ describe('colour tools against a real engine (S06 §9 test 8)', () => {
 
 	afterAll(async () => {
 		await client?.close().catch(() => {});
-		if (engine && engine.exitCode === null) {
-			const exited = new Promise((r) => engine!.once('exit', r));
-			engine.kill('SIGTERM');
-			await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-		}
+		await stopEngine(engine);
 		if (appdir) rmSync(appdir, { recursive: true, force: true });
 	}, 30_000);
 

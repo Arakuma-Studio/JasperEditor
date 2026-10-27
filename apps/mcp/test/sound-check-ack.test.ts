@@ -20,7 +20,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { provenance, writeBedFixture, writeTick } from '../../engine/test/sound-bed-fixture.ts';
-import { cleanEnv, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_ACK_TEST_PORT);
@@ -97,11 +97,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
-	if (engine && engine.exitCode === null) {
-		const exited = new Promise((r) => engine!.once('exit', r));
-		engine.kill('SIGTERM');
-		await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-	}
+	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
 }, 30_000);
 

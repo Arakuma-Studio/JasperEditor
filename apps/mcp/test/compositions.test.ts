@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, testPort } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -63,11 +63,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 
 	afterAll(async () => {
 		await client?.close().catch(() => {});
-		if (engine && engine.exitCode === null) {
-			const exited = new Promise((r) => engine!.once('exit', r));
-			engine.kill('SIGTERM');
-			await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-		}
+		await stopEngine(engine);
 		if (appdir) rmSync(appdir, { recursive: true, force: true });
 	}, 30_000);
 

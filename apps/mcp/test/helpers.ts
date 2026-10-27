@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 
 export function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
@@ -44,4 +45,36 @@ export async function testPort(override?: string): Promise<number> {
 			);
 		});
 	});
+}
+
+/** Reaps the fixture engine; exceeding its eight-second SIGTERM grace period is a test failure. */
+export async function stopEngine(child: ChildProcess | null): Promise<void> {
+	if (!child || child.exitCode !== null || child.signalCode !== null) return;
+	let timeout: ReturnType<typeof setTimeout> | undefined;
+	let timedOut = false;
+	let onExit!: () => void;
+	const exited = new Promise<void>((resolve) => {
+		onExit = resolve;
+		child.once('exit', onExit);
+	});
+	try {
+		child.kill('SIGTERM');
+		await Promise.race([
+			exited,
+			new Promise<void>((resolve) => {
+				timeout = setTimeout(() => {
+					timedOut = true;
+					resolve();
+				}, 8000);
+			}),
+		]);
+		if (timedOut) {
+			child.kill('SIGKILL');
+			await exited;
+			throw new Error('Fixture engine did not exit within 8000 ms after SIGTERM; SIGKILL was required');
+		}
+	} finally {
+		clearTimeout(timeout);
+		child.removeListener('exit', onExit);
+	}
 }

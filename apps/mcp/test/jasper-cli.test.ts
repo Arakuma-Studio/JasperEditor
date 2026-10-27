@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, writeToolImages } from '../src/jasper-cli.ts';
 import { decodePng } from '../src/png.ts';
-import { cleanEnv, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.JASPER_CLI_TEST_PORT);
@@ -127,11 +127,7 @@ describe('jasper against a real engine', () => {
 	}, 180_000);
 
 	afterAll(async () => {
-		if (engine && engine.exitCode === null) {
-			const exited = new Promise((r) => engine!.once('exit', r));
-			engine.kill('SIGTERM');
-			await Promise.race([exited, new Promise((r) => setTimeout(r, 8000))]);
-		}
+		await stopEngine(engine);
 		if (appdir) rmSync(appdir, { recursive: true, force: true });
 		if (work) rmSync(work, { recursive: true, force: true });
 	}, 30_000);

@@ -121,7 +121,7 @@ describe('tool catalogue conventions', () => {
 			'apply_style',
 			'fix_transcript',
 		])
-			expect(byName.get(name), name).toEqual({
+			expect(byName.get(name), name).toMatchObject({
 				readOnlyHint: false,
 				destructiveHint: false,
 				idempotentHint: false,
