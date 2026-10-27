@@ -8,9 +8,9 @@
 // kept), the patch report is shown; one undo restores both.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { expect, type Page, test } from '@playwright/test';
 import { type EngineJob, EngineJobSchema } from '../packages/api/src/jobs.ts';
 import type { TranscriptionResult } from '../packages/api/src/speech.ts';
-import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
 	createProject,
@@ -165,7 +165,10 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	const subs0 = await subtitleClips();
 	// the first "black" in time ("the black books"; the fixture later says "a black stock", which is right)
 	const styled = [...subs0].sort((a, b) => a.start - b.start).find((c) => /\bblack\b/i.test(c.content.text))!;
-	expect(styled, `a subtitle shows the corrupted word: ${JSON.stringify(subs0.map((c) => c.content.text).slice(0, 4))}`).toBeTruthy();
+	expect(
+		styled,
+		`a subtitle shows the corrupted word: ${JSON.stringify(subs0.map((c) => c.content.text).slice(0, 4))}`,
+	).toBeTruthy();
 
 	// Text ▸ Transcript ▸ Script…: paste the true text, attach
 	await focusTimeline(page);
