@@ -106,11 +106,11 @@ const job = (state: EngineJob['state'], over: Partial<EngineJob> = {}): EngineJo
 	id: 'job_1',
 	kind: 'transcript-fix',
 	title: 'Fix transcript',
-	origin: 'user',
+	origin: { type: 'user' },
 	state,
 	progress: null,
 	createdAt: '2026-10-27T00:00:00.000Z',
-	priority: 'normal',
+	priority: 'user',
 	cpuSlots: 1,
 	...over,
 });

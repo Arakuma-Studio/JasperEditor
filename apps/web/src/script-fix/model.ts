@@ -72,7 +72,7 @@ export function fixInputs(doc: ProjectDocument, seq: Sequence): FixInputs {
 	let script: FixInputs['script'] = null;
 	try {
 		const s = readSequenceCleanup(seq).script;
-		script = s && s.text.trim() ? { name: s.name, text: s.text } : null;
+		script = s?.text.trim() ? { name: s.name, text: s.text } : null;
 	} catch {
 		script = null;
 	}
