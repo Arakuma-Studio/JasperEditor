@@ -51,7 +51,7 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
   FFmpeg all LGPL; real speech-model suites (`SPEECH_E2E=1`, turbo + tiny.en + tiny): 12 passed, 3 opt-in benches
   skipped; Remotion suites: compositions 157/157, motion 14 (+2 skipped), engine 53/53; `pnpm e2e` (LGPL-only, full
   build, incl. `script-fix.spec.ts`): 138 passed, 2 skipped. Merged to local `main`.
-- ⏳ Push `main` to origin — waiting for the user's authorization.
+- ✅ Pushed `main` to origin with the user's authorization (2026-10-27, d5efb1b8..eb5ef1ad).
 
 ## 4. Decisions
 - D5 Score windows are packed with the gap audio muted (SC-105: unmuted packing let readings use untranscribed speech
