@@ -1,4 +1,5 @@
 import type { MgPrerenderRequest, RegisteredMedia } from '@jasper/api';
+import { LOCAL_ENGINE_ID } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	buildRenderSnapshot,
@@ -43,7 +44,6 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { clipSummary } from '../format.ts';
-import { LOCAL_ENGINE_ID } from '../media.ts';
 
 export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (composition clips):
 - import_mg_bundle {projectId, path} imports a Remotion project folder (remotion and every @remotion/* package pinned to exactly 4.0.499, dependencies installed; its own remotion.config.ts applies) or a built bundle folder. Each composition becomes placeable; watch: true rebuilds on save and the open editor relinks automatically.

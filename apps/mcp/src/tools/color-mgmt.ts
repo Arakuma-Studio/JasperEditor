@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { mediaRegisterCommand } from '@jasper/api';
 import {
 	COLOR_SPACES,
 	colorSpace,
@@ -25,7 +26,6 @@ import {
 	transact,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { mediaRegisterCommand } from '../media.ts';
 
 export const COLOR_MGMT_GUIDE = `Colour management (working spaces, HDR, log footage, OCIO):
 - Every sequence has a working colour space (get_color_settings): rec709 (default), srgb, rec2020, p3d65, displayp3, rec2100-pq, rec2100-hlg, or a linear variant ("rec709-linear": Linearize Working Space). The composite holds that space's signal; the Program monitor shows it through a display transform (Rec. 2020/P3 → Rec. 709 primaries, HDR tone mapped with BT.2390) and exports write it (or another space: start_export settings.video.colorSpace, bitDepth 8/10/12, hdrMetadata {maxCll, maxFall, masteringDisplay}). set_working_color_space changes it with blendLinear (Blend Using 1.0 Gamma: linear-light compositing, rendered on the Remotion path), autoToneMap (HDR/log media into SDR), sdrWhiteNits (HDR graphics white, 203 = BT.2408) and hdrPeakNits (PQ mastering peak). Blend Using 1.0 Gamma composites every layer on the GPU; with adjustment layers, other blend modes or 3D layers between the blended tracks the whole stack is drawn by one flat GPU compositor (any combination renders).

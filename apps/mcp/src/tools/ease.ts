@@ -106,7 +106,6 @@ export const CurveArg = z.union([
 			`A multi-point curve: ${MAX_EASE_POINTS} points at most, first (0, 0), last (1, 1), x strictly increasing; missing handles are linear`,
 		),
 ]);
-export type CurveInput = z.infer<typeof CurveArg>;
 
 /** CSS easing keywords → the built-in preset with the same timing. */
 const CSS_KEYWORDS: Record<string, string> = {

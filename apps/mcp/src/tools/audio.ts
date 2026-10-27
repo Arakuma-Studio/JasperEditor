@@ -4,6 +4,7 @@ import type {
 	EngineJob,
 	LoudnessNormalizeResult,
 } from '@jasper/api';
+import { LOCAL_ENGINE_ID } from '@jasper/api';
 import {
 	AUTOMATION_MODES,
 	DUCK_DEFAULTS,
@@ -33,7 +34,6 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
-import { LOCAL_ENGINE_ID } from '../media.ts';
 
 export const AUDIO_GUIDE = `Audio buses (Audio Track Mixer, loudness): every audio track, submix ("S1"…) and the Mix ("Mix") is a mixer strip — fader (volumeDb, −96 = −∞ … +15), pan (−100 … 100: −3 dB constant-power pan for mono tracks, balance for stereo), 5.1 panner (lanes pan51.x/y/center/lfe when the strip feeds a 5.1 bus), mute, solo (routing-aware), record-arm, automation mode (off | read | latch | touch | write), up to 5 effect slots (track effects via apply_commands effect.add; mixer.setInsertPosition puts one after the fader) and up to 5 sends (pre/post-fader) to later submixes; output = the Mix or a later submix. get_mixer shows every strip with its current values; set_mixer_strip changes settings; add_submix / add_send build buses; write_automation writes a lane over a time range (sample-accurate keyframes, one undo step). Track / Mix channel formats are mono, stereo or 5.1 (set_mixer_strip channelFormat; the Mix: strip "Mix"), sequence audio is 44.1 / 48 / 96 kHz (apply_commands sequence.updateSettings {audioSampleRate}); exports fold a 5.1 Mix to stereo (ITU-R BS.775) or write discrete 5.1 (start_export audioChannels: 6).
 Loudness: measure_loudness gives ITU-R BS.1770-4 / EBU R128 integrated loudness (LUFS), loudness range (LU), true peak (dBTP), sample peak and max momentary / short-term for the sequence, an In/Out or frame range, soloed tracks, or single clips (levels "source" = without clip gain). set_loudness_normalization normalises the Mix to a target (−14 streaming, −16 podcast, −23 EBU R128, −24 ATSC) with a true-peak limit — heard in the preview and applied two-pass on export; analyze: true stores the measurement used by the preview. normalize_media_loudness makes a normalised WAV version of a media and can switch audio clips to it. set_audio_gain is Premiere's Audio Gain (set, adjust, normalizeMax, normalizeAll; the normalise modes measure peaks for you). auto_duck lowers music clips under dialogue (trigger tracks or clips) with Premiere's Sensitivity / Reduce By / Fades. Voice-over recording needs a microphone in the editor window (Sequence ▸ Record Voice-over); agents cannot record.`;

@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { mediaRegisterCommand } from '@jasper/api';
 import {
 	type Animatable,
 	type Clip,
@@ -39,7 +40,6 @@ import {
 	transact,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { mediaRegisterCommand } from '../media.ts';
 
 type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels' | 'secondary' | 'vignette' | 'sections';
 

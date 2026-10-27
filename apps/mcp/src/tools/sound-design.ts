@@ -4,6 +4,7 @@
 // Cue derivation runs on the engine (`POST /api/sound-design/cues`: it has the motion-graphic template registry),
 // placement and swaps are ordinary undoable commands (`soundCue.*`, `soundDesign.place`, `soundDesign.swap`).
 import {
+	mediaRegisterCommand,
 	type RegisterSoundResponse,
 	SfxRebalanceResultSchema,
 	SOUND_EFFECTS_BIN,
@@ -98,7 +99,6 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError, TX_ERROR_HINTS } from '../errors.ts';
 import { pickSequence } from '../format.ts';
-import { mediaRegisterCommand } from '../media.ts';
 import { livePlayhead } from './color.ts';
 import { importCommands, type Registered, resolveAudioTrack, SoundIdArg, soundCall } from './sound.ts';
 import { proposalCheckNext, proposalCheckSummary } from './sound-check.ts';

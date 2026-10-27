@@ -1,4 +1,5 @@
 import type { MediaJobResult, ReframeResult, RegisteredMedia, WarpAnalysisResult } from '@jasper/api';
+import { mediaRegisterCommand } from '@jasper/api';
 import {
 	AUDIO_DISPLAY_FORMATS,
 	attachedProxyFrom,
@@ -46,7 +47,6 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
-import { mediaRegisterCommand } from '../media.ts';
 
 export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - find searches the Project panel (scope "project": name, label, type, path, codec, frameSize, any) or a sequence (scope "timeline": clipName, sourceName, text, marker, any) with up to two criteria (contains, matches, begins, ends, notContains), match all/any and matchCase, like Premiere's Edit ▸ Find. Timeline hits come in frame order with timecodes.

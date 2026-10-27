@@ -9,6 +9,7 @@ import {
 	INTERCHANGE_FORMATS,
 	type InterchangeExportResult,
 	type InterchangeImportResponse,
+	LOCAL_ENGINE_ID,
 	MEDIA_STATUS_BATCH_MAX,
 	RELINK_CRITERIA,
 	RELINK_MAX_ASSETS,
@@ -42,7 +43,6 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
-import { LOCAL_ENGINE_ID } from '../media.ts';
 
 import { failedJobError } from './templates.ts';
 

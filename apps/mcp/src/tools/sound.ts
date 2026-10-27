@@ -8,6 +8,7 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import {
 	type EngineJob,
+	mediaRegisterCommand,
 	type RegisterSoundResponse,
 	SOUND_DESCRIBE_MAX_CHARS,
 	SOUND_EFFECTS_BIN,
@@ -78,7 +79,6 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
-import { mediaRegisterCommand } from '../media.ts';
 import { composeGrid, encodePng } from '../png.ts';
 import { drawSoundCell, drawSoundDetail, isTruncated, type RgbaImage } from '../sound-sheet.ts';
 import { livePlayhead } from './color.ts';

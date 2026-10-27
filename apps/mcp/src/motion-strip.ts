@@ -7,7 +7,7 @@
 import type { MotionAnalysisResult } from '@jasper/api';
 import { MOVE_ON } from '@jasper/project';
 import { drawText, fitText, LINE_HEIGHT, textWidth } from './pixel-font.ts';
-import { canvas, type RgbaImage } from './sound-sheet.ts';
+import { blend, canvas, type RgbaImage } from './sound-sheet.ts';
 
 type Rgb = readonly [number, number, number];
 const TEXT: Rgb = [235, 235, 240];
@@ -23,13 +23,6 @@ const MAX_POINTS = 200_000;
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-function blend(img: RgbaImage, x: number, y: number, c: Rgb, a = 1): void {
-	if (x < 0 || y < 0 || x >= img.width || y >= img.height) return;
-	const o = (y * img.width + x) * 4;
-	img.data[o] = Math.round(img.data[o]! * (1 - a) + c[0] * a);
-	img.data[o + 1] = Math.round(img.data[o + 1]! * (1 - a) + c[1] * a);
-	img.data[o + 2] = Math.round(img.data[o + 2]! * (1 - a) + c[2] * a);
-}
 function fillRect(img: RgbaImage, x: number, y: number, w: number, h: number, c: Rgb, a = 1): void {
 	for (let yy = Math.max(0, Math.round(y)); yy < Math.min(img.height, Math.round(y + h)); yy++)
 		for (let xx = Math.max(0, Math.round(x)); xx < Math.min(img.width, Math.round(x + w)); xx++)

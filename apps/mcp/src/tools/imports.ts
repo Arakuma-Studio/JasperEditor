@@ -7,7 +7,7 @@ import type {
 	RegisteredMedia,
 	VectorPagesResponse,
 } from '@jasper/api';
-import { toLayeredImportLayers } from '@jasper/api';
+import { mediaRegisterCommand, toLayeredImportLayers } from '@jasper/api';
 import {
 	type Command,
 	FLICKS_PER_SECOND,
@@ -48,7 +48,6 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaSummary, pickSequence } from '../format.ts';
-import { mediaRegisterCommand } from '../media.ts';
 
 export const IMPORTS_GUIDE = `Imports (Lottie, SVG, PDF/AI, PSD, image sequences, still formats) and Interpret Footage:
 - import_media takes Lottie (.json/.lottie: an animated clip drawn frame-exactly on every path), SVG/SVGZ and PDF/AI (vector stills, sharp at any scale; a PDF imports its first page — import_pdf_pages picks pages), PSD/PSB (flattened), EXR (half/float), TIFF (8/16-bit), TGA, BMP, DPX, HEIC/HEIF, JPEG XL, plus the usual video/audio/image files.

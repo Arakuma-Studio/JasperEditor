@@ -52,7 +52,7 @@ The frame-source mechanism of Remotion 4.0.499 (canvas `createEffect` effects on
   `color/curves`, `color/lumetri`, `registry/color-effects`.
 - `packages/compositions/src/types.ts`: `RenderOptions.colorBypassClipIds?`; `SequenceComposition.tsx` wraps the
   tracks in `ColorDocContext.Provider` (one hunk); `LayerBox` gains optional `effects`/`overlay` props.
-- `apps/web/src/import/assets.ts`, `apps/mcp/src/media.ts`: copy `RegisteredMedia.lut` into the asset.
+- `apps/web/src/import/assets.ts`, `packages/api/src/media.ts`: copy `RegisteredMedia.lut` into the asset.
 - `packages/project/test/keyframe-effect.test.ts`: M1 colour native-string assertions replaced (no `eq`/`hue`).
 
 ## Licences

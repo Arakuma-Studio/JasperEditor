@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { mediaRegisterCommand } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	BUILTIN_PRESETS,
@@ -26,7 +27,6 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaSummary, projectSummary } from '../format.ts';
-import { mediaRegisterCommand } from '../media.ts';
 
 const PRESET_IDS = BUILTIN_PRESETS.map((p) => p.id) as [string, ...string[]];
 

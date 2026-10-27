@@ -10,7 +10,7 @@
 // same mark). Pure (no I/O); never throws on hostile data (lengths are clamped, non-numbers drawn as silence).
 import type { SoundListenResult, SoundVisualResponse } from '@jasper/api';
 import { drawText, fitText, LINE_HEIGHT, textWidth } from './pixel-font.ts';
-import { canvas, type RgbaImage, ramp } from './sound-sheet.ts';
+import { blend, canvas, type RgbaImage, ramp } from './sound-sheet.ts';
 
 type Rgb = readonly [number, number, number];
 
@@ -63,13 +63,6 @@ const MAX_POINTS = 120 * 100 + 1;
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
-function blend(img: RgbaImage, x: number, y: number, c: Rgb, a = 1): void {
-	if (x < 0 || y < 0 || x >= img.width || y >= img.height) return;
-	const o = (y * img.width + x) * 4;
-	img.data[o] = Math.round(img.data[o]! * (1 - a) + c[0] * a);
-	img.data[o + 1] = Math.round(img.data[o + 1]! * (1 - a) + c[1] * a);
-	img.data[o + 2] = Math.round(img.data[o + 2]! * (1 - a) + c[2] * a);
-}
 function fillRect(img: RgbaImage, x: number, y: number, w: number, h: number, c: Rgb, a = 1): void {
 	for (let yy = Math.max(0, Math.round(y)); yy < Math.min(img.height, Math.round(y + h)); yy++)
 		for (let xx = Math.max(0, Math.round(x)); xx < Math.min(img.width, Math.round(x + w)); xx++)

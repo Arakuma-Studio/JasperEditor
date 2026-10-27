@@ -58,7 +58,7 @@ export function canvas(width: number, height: number, bg: Rgb = BG): RgbaImage {
 	return { width, height, data };
 }
 
-function blend(img: RgbaImage, x: number, y: number, c: Rgb, a = 1): void {
+export function blend(img: RgbaImage, x: number, y: number, c: Rgb, a = 1): void {
 	if (x < 0 || y < 0 || x >= img.width || y >= img.height) return;
 	const o = (y * img.width + x) * 4;
 	img.data[o] = Math.round(img.data[o]! * (1 - a) + c[0] * a);
