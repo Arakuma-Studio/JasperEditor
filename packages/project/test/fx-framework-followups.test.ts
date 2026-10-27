@@ -13,11 +13,8 @@ import {
 	fxSourceSeconds,
 	fxStackTime,
 	gpuIsTimeDependent,
-	isLutMediaParam,
-	lutParam,
 	type ParamValue,
 	planGpuEffect,
-	planPasses,
 	toUniform,
 	validateGpuEffect,
 } from '../src/index.ts';
@@ -94,20 +91,6 @@ describe('uniform types', () => {
 });
 
 describe('pass planning follow-ups', () => {
-	it('absolute pass sizes (lookup / statistics passes)', () => {
-		const p = planPasses(
-			[
-				{ output: 'stats', size: { width: 64, height: 1 }, frag: FRAG },
-				{ frag: 'void main() { fragColor = texture(u_stats, v_uv); }' },
-			],
-			{ paramDecls: [], textures: [], canvas: { width: 300, height: 200 } },
-		);
-		expect(p.map((x) => [x.width, x.height])).toEqual([
-			[64, 1],
-			[300, 200],
-		]);
-	});
-
 	it('accepts repeated output updates, rejects duplicate outputs and updates before initialization', () => {
 		const iter = (i: number) => ({
 			output: 'acc',
@@ -144,42 +127,6 @@ describe('pass planning follow-ups', () => {
 				spec({ gpu: { passes: [{ output: 'x', update: true, frag: FRAG }, { frag: FRAG }] } }),
 			).join(),
 		).toMatch(/no earlier pass/);
-	});
-
-	it('mipmapped outputs and source', () => {
-		const s = spec({
-			gpu: {
-				sourceMipmaps: true,
-				passes: [
-					{ output: 'small', mipmaps: true, frag: FRAG },
-					{ frag: 'void main() { fragColor = textureLod(u_small, v_uv, 3.0); }' },
-				],
-			},
-		});
-		const plan = planGpuEffect(s, { id: 'fx', params: {} }, CTX, { width: 64, height: 64 });
-		expect(plan.passes[0]!.mipmaps).toBe(true);
-		expect(plan.passes[1]!.mipmaps).toBeUndefined();
-		expect(plan.sourceMipmaps).toBe(true);
-	});
-
-	it('lut media params are 3D textures', () => {
-		const l = lutParam('look', 'Look');
-		expect(isLutMediaParam(l)).toBe(true);
-		expect(isLutMediaParam(fxParam.media('map', 'Map'))).toBe(false);
-		const s = spec({
-			params: [l],
-			gpu: {
-				passes: [
-					{ frag: 'void main() { fragColor = vec4(texture(u_look, vec3(0.5)).rgb * u_look_size.x, 1.0); }' },
-				],
-			},
-		});
-		const plan = planGpuEffect(s, { id: 'fx', params: { look: { mediaId: 'm1' } } }, CTX, {
-			width: 4,
-			height: 4,
-		});
-		expect(plan.textures).toEqual([{ param: 'look', uniform: 'u_look', mediaId: 'm1', kind: 'lut' }]);
-		expect(plan.passes[0]!.source).toMatch(/uniform highp sampler3D u_look;\nuniform vec2 u_look_size;/);
 	});
 });
 

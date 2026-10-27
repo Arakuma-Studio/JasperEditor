@@ -16,7 +16,10 @@ Branch `feat/keyframes-blend`. References: EffectCraft `crates/keyframe/src/lib.
   bracket and stops on a **step** criterion (|Δt| ≤ 1e-15).
 - **Test** `packages/project/test/keyframes-ease-precision.test.ts`:
   - fast-check property test, 3 000 random eases (influences down to 1e-3 and up to 1 − 1e-12, slopes −4 … 8). It
-    checks against an exact BigInt fixed-point reference (2⁻³²⁰, 200 bisection steps) to ≤ 1e-9 (× slope scale).
+    checks against an exact BigInt fixed-point reference (2⁻³²⁰, 80 bisection steps) to ≤ 1e-9 (× slope scale).
+    The sampled slope range bounds the value curve derivative by 45; 2⁻⁸⁰ parameter uncertainty plus conversion
+    rounding gives reference error
+    below 4e-23, well below the tightest 1e-12 assertion.
   - The 100 % / 100 % midpoint within 1e-12.
   - A sweep of the formerly failing region (now < 1e-12).
 

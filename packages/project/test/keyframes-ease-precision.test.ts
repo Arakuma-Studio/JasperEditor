@@ -1,4 +1,5 @@
-// BigInt fixed-point reference: 2^-320 resolution, bisection to 2^-200 on the curve parameter.
+// BigInt fixed-point reference: 2^-320 resolution, bisection to 2^-80 on the curve parameter.
+// For the sampled slopes (-4…8), |dy/dt| ≤ 45, so reference error < 4e-23 (assertions require 1e-12…1e-9).
 // Overlapping-influence samples: EffectCraft crates/keyframe/src/lib.rs
 // `temporal_ease_matches_live_ae_with_overlapping_influences`, AE 26.3x87.
 import fc from 'fast-check';
@@ -37,7 +38,7 @@ function reference(u: number, out: Ease, inn: Ease): number {
 	const U = fx(u);
 	let lo = 0n;
 	let hi = ONE;
-	for (let i = 0; i < 200; i++) {
+	for (let i = 0; i < 80; i++) {
 		const mid = (lo + hi) >> 1n;
 		if (cubic(x1, x2, mid) < U) lo = mid;
 		else hi = mid;

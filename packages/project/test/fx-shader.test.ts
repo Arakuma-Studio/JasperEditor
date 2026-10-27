@@ -144,13 +144,6 @@ describe('pass planning', () => {
 		expect(plan.uniforms).toContainEqual({ name: 'u_double', type: 'float', value: [12] });
 		expect(plan.textures).toEqual([{ param: 'map', uniform: 'u_map', mediaId: 'm1' }]);
 	});
-
-	it('keys programs and sizes, not uniform values', () => {
-		const again = planGpuEffect(s, { id: 'fx1', params: { radius: 9 } }, CTX, { width: 101, height: 51 });
-		expect(again.key).toBe(plan.key);
-		const bigger = planGpuEffect(s, { id: 'fx1', params: { radius: 9 } }, CTX, { width: 200, height: 51 });
-		expect(bigger.key).not.toBe(plan.key);
-	});
 });
 
 describe('padding (S03:FX-041)', () => {

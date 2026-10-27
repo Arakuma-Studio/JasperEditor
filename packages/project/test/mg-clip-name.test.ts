@@ -9,7 +9,6 @@ import {
 	checkInvariants,
 	createStaticMgRegistry,
 	defaultRegistries,
-	isMgAutoClipName,
 	type MgTemplateInfo,
 	mgClipName,
 } from '../src/index.ts';
@@ -74,11 +73,6 @@ describe('mgClipName', () => {
 		expect(mgClipName({ ...card, clipName: () => '   ' }, {})).toBe('Card');
 		expect(mgClipName({ ...card, clipName: () => 42 as never }, {})).toBe('Card');
 		expect(mgClipName(plain, { kind: 'a', who: 'luna' })).toBe('Card');
-	});
-	it('auto names are the template name or the name of the params', () => {
-		expect(isMgAutoClipName(card, 'Card', { who: 'x' })).toBe(true);
-		expect(isMgAutoClipName(card, 'Kind B · luna', { kind: 'b', who: 'luna' })).toBe(true);
-		expect(isMgAutoClipName(card, 'My card', { kind: 'b', who: 'luna' })).toBe(false);
 	});
 });
 

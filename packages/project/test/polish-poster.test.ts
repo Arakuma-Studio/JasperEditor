@@ -47,10 +47,12 @@ describe('item.setPoster', () => {
 		expect(refused(h, [{ type: 'item.setPoster', itemId: bin, time: { seconds: 1 } }]).errors[0]!.code).toBe(
 			'E_INVALID_PARAM',
 		);
-		expect(refused(h, [{ type: 'item.setPoster', itemId: 'itm_missing', time: null }]).errors.length).toBe(1);
-		expect(
-			refused(h, [{ type: 'item.setPoster', itemId, time: { seconds: -1 } } as never]).errors[0]!.code,
-		).toMatch(/E_/);
+		expect(refused(h, [{ type: 'item.setPoster', itemId: 'itm_missing', time: null }]).errors[0]!.code).toBe(
+			'E_NOT_FOUND',
+		);
+		expect(refused(h, [{ type: 'item.setPoster', itemId, time: { seconds: -1 } }]).errors[0]!.code).toBe(
+			'E_SCHEMA',
+		);
 		expect(poster(h, itemId)).toBeUndefined();
 	});
 });
