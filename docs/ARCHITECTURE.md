@@ -565,7 +565,7 @@ export interface CommandCtx { session: EditorSession | null; transport: Transpor
 - `src/theme/fonts.css`: Source Sans 3 (400/600/400 italic) from `@fontsource/source-sans-3`, `font-display: swap`; tabular numerals utility.
 - `src/labels.ts`: `LABEL_DEFAULTS: Record<MediaKindKey, LabelColor>` (S05:DT-021) and presets JSON.
 - `src/z.ts`: z-index constants. `src/icons/`: icon registry keyed by semantic id (lucide + our glyphs, S05:IC-001…005). `src/cursors/`: SVG cursors (S05:IC-010).
-- Primitives (WP-00 ships tokens + a minimal `Button`/`IconButton`/`Panel`/`Timecode`; WP-2A ships the full set): IconButton, TextButton, TextField, SearchField, Select, Checkbox, Toggle, ColorSwatch, **ScrubbyNumber** (S05:CT-020…025, one undo step per scrub via callbacks `onScrubStart/onScrub/onScrubEnd`), Slider, Menu/ContextMenu (Radix), Tooltip, Dialog, Toast, Tabs, ScrollArea, TreeList (virtualized), Timecode display/entry.
+- Primitives (WP-00 ships tokens + a minimal `Button`/`IconButton`/`Panel`/`Timecode`; WP-2A ships the full set): IconButton, TextButton, TextField, SearchField, Select, Checkbox, Toggle, ColorSwatch, **ScrubbyNumber** (S05:CT-020…025, one undo step per scrub via callbacks `onScrubStart/onScrub/onScrubEnd`), Slider, Menu/ContextMenu (Radix), Tooltip, Dialog, Toast, Tabs, Timecode display/entry. Project and Media Browser panels own their virtualized rows.
 - `theme-boot.js` (external script, CSP-safe) applies `data-pr-theme`/`data-pr-contrast`/`data-pr-density` before first paint (S05:DT-003).
 
 ### 7.5 Routing and bootstrap

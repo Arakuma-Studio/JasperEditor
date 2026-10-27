@@ -1,4 +1,4 @@
-import { ScrollArea as RScroll, Tabs as RTabs } from 'radix-ui';
+import { Tabs as RTabs } from 'radix-ui';
 import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
@@ -48,32 +48,6 @@ export function Tabs({ items, value, defaultValue, onValueChange, className, kee
 				</RTabs.Content>
 			))}
 		</RTabs.Root>
-	);
-}
-
-export function ScrollArea({
-	children,
-	className,
-	viewportClassName,
-}: {
-	children: ReactNode;
-	className?: string;
-	viewportClassName?: string;
-}) {
-	return (
-		<RScroll.Root type="hover" className={cx('relative min-h-0 overflow-hidden', className)}>
-			<RScroll.Viewport className={cx('size-full', viewportClassName)}>{children}</RScroll.Viewport>
-			{(['vertical', 'horizontal'] as const).map((o) => (
-				<RScroll.Scrollbar
-					key={o}
-					orientation={o}
-					className="flex touch-none p-px select-none data-[orientation=horizontal]:h-2 data-[orientation=horizontal]:flex-col data-[orientation=vertical]:w-2"
-				>
-					<RScroll.Thumb className="relative flex-1 rounded-[4px] bg-pr-border-strong" />
-				</RScroll.Scrollbar>
-			))}
-			<RScroll.Corner />
-		</RScroll.Root>
 	);
 }
 

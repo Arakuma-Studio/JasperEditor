@@ -129,10 +129,6 @@ export function diffImage(a: Rgba8, b: Rgba8): Rgba8 {
 	return out;
 }
 
-export function readPng(path: string): Rgba8 {
-	return decodePng(readFileSync(path));
-}
-
 /** Writes a PNG (creating directories); returns its size in bytes. */
 export function writePng(path: string, img: Rgba8): number {
 	const bytes = encodePng(img);
@@ -191,7 +187,7 @@ export function checkGolden(golden: string, actual: Rgba8, tol: Tolerance, opts:
 		throw new GoldenMismatch(
 			`${rel(golden)}: missing golden; generate it with JASPER_BLESS=1 and review the PNG`,
 		);
-	const expected = readPng(golden);
+	const expected = decodePng(readFileSync(golden));
 	if (expected.width !== actual.width || expected.height !== actual.height) {
 		writePng(join(failuresDir(), `${name}.actual.png`), actual);
 		throw new GoldenMismatch(
