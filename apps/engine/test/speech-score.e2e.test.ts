@@ -19,6 +19,7 @@ import { loadCatalog } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import type { SpeechService } from '../src/speech/service.ts';
 import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { wordErrorRate } from './speech-wer.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
 const store = new SpeechModelStore(CACHE, loadCatalog({}).speech);
@@ -239,6 +240,18 @@ describe.skipIf(!enabled)('speech scoring with real Whisper models (spec 17 SC-1
 			}
 			for (const r of report) console.log(`SCORE_MARGIN ${JSON.stringify(r)}`);
 		}, 1_800_000);
+
+	it('a glossary carried into every window (SC-074) keeps the accuracy and is reported with its guard', async () => {
+		const model = MODELS[MODELS.length - 1]!;
+		const res = await transcribe(model, { glossary: ['Wilkins', 'Abingdon', 'pantaloons'] });
+		const reference = truth.utterances.map((u) => u.text).join(' ');
+		const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
+		console.log(`SCORE_GLOSSARY ${JSON.stringify({ model, wer, guard: res.guard?.glossary })}`);
+		expect(res.guard?.glossary).toMatchObject({ terms: 3 });
+		expect(res.guard?.glossary?.tokens).toBeGreaterThan(3);
+		expect(wer).toBeLessThanOrEqual(0.04);
+		expect(res.words.some((w) => cleanupNorm(w.text) === 'abingdon')).toBe(true);
+	}, 1_800_000);
 
 	it.skipIf(!BENCH)(
 		'SC-037: scoring cost per speech minute (and transcription for comparison)',
