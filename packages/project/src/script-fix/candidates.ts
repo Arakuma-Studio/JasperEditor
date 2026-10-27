@@ -536,19 +536,18 @@ function joinCandidate(
 	const sw = sToks.map((t) => t.text);
 	const t0 = ctx.words[from]!.start;
 	const t1 = ctx.words[to - 1]!.end;
-	if (asrWords.some((w) => /\d/.test(w)) || sw.some((w) => /\d/.test(w)))
-		{
-			skip('number', asrWords, sw, t0, t1);
-			return;
-		}
+	if (asrWords.some((w) => /\d/.test(w)) || sw.some((w) => /\d/.test(w))) {
+		skip('number', asrWords, sw, t0, t1);
+		return;
+	}
 	if (sToks.some((t) => STYLISED.test(t.norm))) {
-			skip('stylised', asrWords, sw, t0, t1);
-			return;
-		}
+		skip('stylised', asrWords, sw, t0, t1);
+		return;
+	}
 	if (sToks.some((t) => t.kind !== 'word')) {
-			skip('direction', asrWords, sw, t0, t1);
-			return;
-		}
+		skip('direction', asrWords, sw, t0, t1);
+		return;
+	}
 	const shown = displayWords(
 		sToks.map((t) => ({ text: t.text, proper: isProperToken(t, ctx.proper) })),
 		asrWords,
