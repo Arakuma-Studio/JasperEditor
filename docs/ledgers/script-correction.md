@@ -43,7 +43,7 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 | scscore | worker scoring + forced DTW, `SpeechService.score`, glossary prompt carry + guard | — | ✅ merged (8afeb29e; VM CPU scoring 19.0 s per speech minute ≤ 20 s target, measured; real-model LJ test 10/10 confusions on tiny.en and turbo, word times ≤ 50 ms) |
 | scglossary | personal glossary library, routes, client, MCP tools, replace-all finder, Preferences page | — | ✅ merged (2fd86bf9; 518 tests in the touched suites, page exercised in the VM dev stack) |
 | scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | ✅ merged (f40cdebd; real-model LJ test: 10/10 fixes, times ≤ 100 ms, undo exact, corrupted script → 0 fixes; whole job 13.1 s per speech minute on a 10.6-min synthetic input at research density, VM CPU, turbo, load 7.0–7.7, measured — target ≤ 20 s met; 22/22 injected errors fixed, deviations kept; 24cd51d2) |
-| scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | 🔄 |
+| scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | ✅ merged (4bdd7fe3; web 1,307 tests, e2e `script-fix.spec.ts` passes with a full build and LGPL-only FFmpeg; every surface checked in the VM dev stack; confidence bands High ≥ 0 / Medium ≥ −1.5 / Low are an assumption) |
 | sccalib | accuracy harness on the Mac with the editor's own code (SC-105) | scalign, scscore | 🔄 |
 - ⏳ Integration: fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`.
 
@@ -69,4 +69,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - Prompting Whisper with script text can make it output script words that were not said; the spike measures it.
 
 ## 7. Log
-- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged.
+- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged; scweb merged; integrated suite running.
