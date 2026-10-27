@@ -3,8 +3,9 @@
 Baseline: `eb28696c` on `main`, initially identical to `origin/main`. Fifteen area reviewers used
 isolated branches/worktrees, followed by integration and two independent reviews. The audit covered
 application and package source, tests, scripts, E2E infrastructure, root configuration and the native
-renderer. The prohibited reference material was excluded. Dependency versions, project schemas,
-shipped migrations, golden images and synthesis hashes were not changed.
+renderer. The prohibited reference material was excluded. Our cleanup did not change dependency versions,
+project schemas, shipped migrations, golden images or synthesis recipes. Integration retains the incoming
+PCM16 WAV hash contract and X fallback-font spacing correction described below.
 
 Deletion evidence combines searches across explicit repository roots, import/export inspection,
 registration and namespace-use checks, implementation comparison and existing tests. Explicit roots
@@ -21,7 +22,7 @@ These are private workspace packages; undocumented consumers outside this reposi
 | Text-style `styleOverridesOf`, `linkedEffectiveStyle`, `mergeStyleFields` | Uncalled helpers; active commands already implement field merging. | Link/override semantics are covered by existing text-style tests. Updated stale documentation pointers. |
 | Geometry/animation `vertexCount`, `apply4`, `framesOf`, graphics `FLICKS`, `documentExpressions`, `effectiveInInterpolation`, `hasKeyframes` | No imported or local callers, including same-name-symbol disambiguation. | Evaluator, expression, vector, graphics and animator tests retained. |
 | Registry/schema `GLSL_TR_LIBRARY`, `defaultsOf`, `AXIS_TAG`, `BOTH_SIDED_INTERPOLATIONS` | Unused constants/helpers; active shader chunks and validators remain. | No shader body or persisted representation changed. Project typecheck and affected registry/keyframe suites. |
-| Three handler JSON-copy implementations | Exact duplication of existing `commands/handlers/util.clone`. | Immer/detached-copy risk. Command results, exact undo/redo, sound upgrades/verdicts and acknowledgements tested. |
+| Three handler JSON-copy implementations | Duplicate JSON-copy operations now use existing draft-aware `commands/handlers/util.clone`. | Immer/detached-copy risk. Command results, exact undo/redo, sound upgrades/verdicts and acknowledgements tested. |
 | Multicam/subclip parent-bin lookup | Identical loops now share `project-items.parentBinOf`. | Bin choice/order risk; multicam and subclip tests pass. |
 | Caption name alias, transcript/optional-frame wrappers, camera content-time wrapper, time-remap duration wrapper | Forwarded unchanged arguments to existing helpers. | Defaults, time units and refusal behavior preserved; captions, camera, remap, processed-source and history suites. |
 | `remixOutputSeconds`, `soundCheckVerdictMarkerName`, `cueAnchorRefs`, `SUBTITLE_TEMPLATE_PREFIX`, `SOUND_VARIATIONS`, `signalFromRgbaFloat` | No code callers; actual scopes read RGBA8 and live sound/template paths have their own implementations. | Private unused-export risk; music, verdict, anchors, subtitle and scope tests retained. |
@@ -82,6 +83,32 @@ evidence-backed deletion was made. Distinct span-merging semantics, platform fal
 undo/refusal/invariant checks, compatibility APIs, process failure handling and persistence protections
 remain. A low line count or a single caller alone was not a reason to delete useful coverage.
 
+## Incoming integration
+
+`origin/main` advanced by 57 commits to `3213ec5c` during verification. Merge `1a0ddf6a` preserves that
+performance and test-audit work. Reviewers checked incoming production changes, deleted-test ownership,
+independent oracles and integration with the cleanup; the [incoming audit](../test-audit/README.md)
+records that work's separate measurements. Its performance figures are not measurements of our cleanup.
+
+The two test conflicts retain the precise audio/SFX assertion and registered-card coverage, while removing
+an import whose test was deleted upstream and a check for the deleted unavailable-card scaffold. The incoming
+FFT, navigation, grouped-selection and keyed-job indexes remain. The X fallback spacing bugfix keeps its
+render-version increment and rendered oracle. Incoming synthesis checks pin the actual versioned PCM16 WAV
+cache representation against historical Node 20 output and cross-runtime evidence; raw floating-point hash
+portability is no longer claimed. No synthesis recipe or version changed.
+
+The two TreeList `KEEP` records in `docs/test-audit/core_support.json` describe the incoming checkpoint.
+This audit supersedes them: the unused component and its exclusive tests were removed together as recorded
+above. Existing application tree implementations remain covered.
+
+Review also identified incoming coverage gaps in cleanup-list scrolling, absolute-size GPU passes,
+voice-analysis wiring and disjunctive source/licence facets. Focused independent witnesses are restored
+before the merged gate; their fault-injection evidence is recorded with the integrated results.
+
 ## Verification
+
+Before remote integration, the settled full run passed 940 files / 9,363 tests, with 52 files / 301 tests
+skipped and zero failures (2,298.33 seconds). The complete browser run passed 138 tests with two skips in
+31.0 minutes. These counts describe `00a6f197` and do not claim coverage of the incoming merge.
 
 Integration verification results and limitations are recorded here after the settled-tree gate.

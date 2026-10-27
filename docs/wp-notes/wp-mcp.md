@@ -52,7 +52,7 @@ one executable ESM file, 1.7 MB, everything inlined). `pnpm build` builds it too
 | `src/errors.ts` | `ToolError`, hints per `E_*` / engine code, `toErrorResult` |
 | `src/format.ts` | project/sequence/clip summaries (frames + timecode), the `get_timeline` text table |
 | `src/tools/{projects,editing,render}.ts` | the tools |
-| `src/examples.ts`, `src/export-presets.ts`, `src/media.ts` | `describe_commands` examples, export presets, `media.register` command builder |
+| `src/examples.ts`, `src/export-presets.ts`, `packages/api/src/media.ts` | `describe_commands` examples, export presets, shared `media.register` command builder |
 
 Transports: **stdio** (primary) and **Streamable HTTP at the engine's `/mcp`** (`apps/engine/src/routes/mcp.ts`:
 same `createJasperMcpServer`, one instance per MCP session, max 32 sessions, 30 min idle, engine auth).

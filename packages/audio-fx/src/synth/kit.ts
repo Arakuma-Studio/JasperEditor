@@ -1,6 +1,6 @@
 // Jasper Synth building blocks (spec 12 §2.1): a seeded PRNG and small, deterministic DSP helpers in float64.
-// No Math.random, no time, no environment: the same recipe and seed give the same samples, bit for bit (the
-// transcendental functions are V8's fdlibm ports, the same on every platform).
+// No Math.random or wall clock: the same recipe and seed repeat samples within a Node/V8 runtime. Persisted PCM16
+// WAV compatibility across supported runtimes is pinned by sound-synth.test.ts.
 import { Biquad, designBiquad, type FilterType } from '@jasper/audio-dsp';
 
 /** SplitMix32 (Steele, Lea & Flood 2014, 32-bit variant): a tiny, well-mixed, seedable generator. */

@@ -98,7 +98,7 @@ drops, `inspector.applyEffect`) now sends one `effect.addMany` instead of N `eff
   styles (deviations kept through `clip.update` and `param.set`, reset of chosen fields, rename uniqueness, delete,
   locked tracks), lenient load + repair (malformed keys, unreadable styles, dangling links, bad overrides,
   idempotent), batch effects (keys from In / Out, per-target values, delta, stopwatch, keyframes, removal).
-- `packages/session/test/text-styles-history.test.ts`: every batch command over 100 clips is one History entry;
+- `packages/session/test/text-styles-history.test.ts`: every batch command over multiple clips is one History entry;
   undo / redo give the exact documents.
 - `apps/web/test/text-styles.test.tsx`: mixed display (split swatch, Mixed, –), relative scrub = one entry
   "Shadow Blur (3 clips)", stroke list, Text Style section (Mixed, apply to all, reset), Same Style, Effect Controls
