@@ -31,7 +31,7 @@ protocol fixture; no remote host or SSH credentials are needed.
 | Golden frames | `packages/compositions/test/golden-scenes.e2e.test.ts`, fingerprints in `fx-gl` / `transition-gl`, `fx-motion-blur-gl` | §2 |
 | Oracle | engine export, loudness, probe tests | §5 |
 | Remotion renders | `*.e2e.test.ts` with `REMOTION_E2E=1` | bundling ≈ 15–40 s; needs ffmpeg and a Chrome |
-| Playwright | `e2e/*.spec.ts` (`pnpm e2e`) | the built app end to end |
+| Playwright | `e2e/*.spec.ts` (`pnpm e2e`) | the built app end to end; the preparation also installs whisper-tiny.en from the pinned, sha256-verified catalogue into `target/speech-models` (or `JASPER_SPEECH_MODELS_DIR`) for `e2e/script-fix.spec.ts`, which fails without it |
 | Performance | `scripts/performance.mjs` (`pnpm perf`), timing budgets in tests | §6 |
 
 Opt-in switches: `REMOTION_E2E=1` (Remotion renders), `FUZZ=1` (long fuzz), `PERF=1` (exact budgets), `MG_E2E=1`

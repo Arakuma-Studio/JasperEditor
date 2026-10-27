@@ -934,7 +934,13 @@ tokens only (`check-tokens` ok).
   transcript and the jump, Apply → "Fix transcript: 4 fixes", subtitles patched, report shown; Replace all / Remember;
   Names from carrying the glossary; the same in Spanish with a skipped-subtitle report and "Show skipped subtitles"
   selecting 3 clips.
-- e2e `e2e/script-fix.spec.ts` (SC-104): see the final report of the package for its run.
+- e2e `e2e/script-fix.spec.ts` (SC-104): the LJ fixture imported and transcribed by whisper-tiny.en (provisioned by
+  `scripts/e2e-prepare.mjs` → `apps/engine/scripts/provision-speech-models.ts`, linked into the throwaway appdir by
+  `e2e/serve.mjs`; the spec fails when the model is not installed), 3 words corrupted (`transcript.create`), Pixel Pop
+  subtitles generated, Script… → Fix Transcript (dry run, Run) → Review rows → Accept all → Apply: History "Fix
+  transcript: N fixes", the words restored, the subtitle clip patched in place (same id, style and effects), the
+  report shown; Ctrl+Z restores transcript and subtitle. Passed with `pnpm e2e e2e/script-fix.spec.ts` and
+  `JASPER_FFMPEG_LGPL_ONLY=1` on the build VM (≈ 42 s for the test).
 
 ### Limitations
 
