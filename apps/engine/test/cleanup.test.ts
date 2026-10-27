@@ -130,6 +130,9 @@ describe.skipIf(!HAVE_FFMPEG)('cleanup-analysis job', () => {
 		const file = CleanupAnalysisFileSchema.parse(g.json());
 		expect(file.analysisId).toBe(res.analysisId);
 		expect(file.revision).toBe(-1);
+		expect(file.analysis.media).toEqual([
+			expect.objectContaining({ mediaId, voice: true, edgeMode: 'level' }),
+		]);
 		expect(res.stats).toEqual(file.analysis.plan.stats);
 		// again: the voice analysis comes from the cache
 		const again = resultOf(
