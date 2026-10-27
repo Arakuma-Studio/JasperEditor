@@ -89,7 +89,14 @@ const indel = (c: string) => INDEL_TENTHS.get(c) ?? 10;
  * Weighted Levenshtein distance of two keys with the SC-012 cost tables, in tenths (`weighted: false`: unit costs,
  * still in tenths).
  */
-function keyDistanceTenths(a: string, b: string, weighted: boolean): number {
+let rowA = new Float64Array(64);
+let rowB = new Float64Array(64);
+
+/**
+ * Weighted Levenshtein distance of two keys with the SC-012 cost tables, in tenths (`weighted: false`: unit costs,
+ * still in tenths). Stops early with +Infinity once every entry of a row exceeds `limit` (the distance can only grow).
+ */
+function keyDistanceTenths(a: string, b: string, weighted: boolean, limit = Number.POSITIVE_INFINITY): number {
 	const n = a.length;
 	const m = b.length;
 	const del = weighted ? indel : () => 10;
@@ -103,21 +110,30 @@ function keyDistanceTenths(a: string, b: string, weighted: boolean): number {
 		for (const c of a) s += del(c);
 		return s;
 	}
-	let prev = new Float64Array(m + 1);
-	let cur = new Float64Array(m + 1);
+	if (rowA.length < m + 1) {
+		rowA = new Float64Array(2 * (m + 1));
+		rowB = new Float64Array(2 * (m + 1));
+	}
+	let prev = rowA;
+	let cur = rowB;
+	prev[0] = 0;
 	for (let j = 1; j <= m; j++) prev[j] = prev[j - 1]! + del(b[j - 1]!);
 	for (let i = 1; i <= n; i++) {
 		const ca = a[i - 1]!;
 		const da = del(ca);
 		cur[0] = prev[0]! + da;
+		let rowMin = cur[0]!;
 		for (let j = 1; j <= m; j++) {
 			const cb = b[j - 1]!;
 			const sub = ca === cb ? 0 : weighted ? (SUB.get(ca + cb) ?? 10) : 10;
 			const x = prev[j - 1]! + sub;
 			const y = prev[j]! + da;
 			const z = cur[j - 1]! + del(cb);
-			cur[j] = x < y ? (x < z ? x : z) : y < z ? y : z;
+			const v = x < y ? (x < z ? x : z) : y < z ? y : z;
+			cur[j] = v;
+			if (v < rowMin) rowMin = v;
 		}
+		if (rowMin > limit) return Number.POSITIVE_INFINITY;
 		const t = prev;
 		prev = cur;
 		cur = t;
@@ -173,7 +189,12 @@ export function psimAtLeast(a: string, b: string, lang: ScriptFixLanguage, min: 
 	if (a === b) return 1;
 	const ka = cachedKey(a, lang);
 	const kb = cachedKey(b, lang);
+	if (lang !== null && ka === kb) return 0.95;
 	const len = Math.max(ka.length, kb.length);
-	if (len > 0 && 1 - (Math.abs(ka.length - kb.length) * MIN_INDEL) / len < min) return 0;
-	return psim(a, b, lang);
+	if (len === 0) return 0;
+	if (1 - (Math.abs(ka.length - kb.length) * MIN_INDEL) / len < min) return 0;
+	const d = keyDistanceTenths(ka, kb, lang !== null, (1 - min) * 10 * len + 1e-9);
+	if (d === Number.POSITIVE_INFINITY) return 0;
+	const s = 1 - d / (10 * len);
+	return s > 0 ? s : 0;
 }

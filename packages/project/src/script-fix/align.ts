@@ -207,19 +207,22 @@ class Grow<T extends Int32Array | Int16Array | Uint8Array | Float64Array> {
 }
 
 /** Bigram index of a vocabulary's phonetic keys. */
-function keyIndex(keys: readonly string[]): { postings: Map<string, number[]>; sizes: Int32Array } {
+type KeyIndex = { postings: Map<string, number[]>; sizes: Int32Array; grams: string[][] };
+function keyIndex(keys: readonly string[]): KeyIndex {
 	const postings = new Map<string, number[]>();
 	const sizes = new Int32Array(keys.length);
+	const grams: string[][] = [];
 	keys.forEach((k, id) => {
 		const g = bigrams(k);
 		sizes[id] = g.length;
+		grams.push(g);
 		for (const x of g) {
 			let p = postings.get(x);
 			if (!p) postings.set(x, (p = []));
 			p.push(id);
 		}
 	});
-	return { postings, sizes };
+	return { postings, sizes, grams };
 }
 
 type Vocab = { ids: Int32Array; words: string[]; positions: number[][] };
@@ -408,32 +411,43 @@ export function alignCore(
 	const sCounts = new Int32Array(sv.words.length);
 	const tCounts = new Int32Array(tv.words.length);
 	const found: number[] = [];
+	/**
+	 * Vocabulary entries sharing ≥ half of the bigrams of `s`'s key with psim ≥ mergeMinPsim. Candidates come from the
+	 * postings of the (|g| − need + 1) rarest bigrams only (any entry sharing `need` bigrams shares one of those), then
+	 * the shared count is verified exactly.
+	 */
 	function lookup(
 		s: string,
-		index: { postings: Map<string, number[]>; sizes: Int32Array },
+		index: KeyIndex,
 		spoken: readonly string[],
 		cache: Map<string, Array<[number, number]>>,
-		cnt: Int32Array,
+		mark: Int32Array,
 	): Array<[number, number]> {
 		let hit = cache.get(s);
 		if (hit) return hit;
 		const g = bigrams(cachedKey(s, lang));
+		const need = Math.max(1, Math.floor(0.5 * g.length));
+		const df = (x: string) => index.postings.get(x)?.length ?? 0;
+		const order = [...g].sort((x, y) => df(x) - df(y) || (x < y ? -1 : x > y ? 1 : 0));
+		const gs = new Set(g);
 		found.length = 0;
-		for (const x of g) {
-			const post = index.postings.get(x);
+		for (let q = 0; q < order.length - need + 1; q++) {
+			const post = index.postings.get(order[q]!);
 			if (post)
-				for (let q = 0; q < post.length; q++) {
-					const id = post[q]!;
-					if (cnt[id] === 0) found.push(id);
-					cnt[id]!++;
+				for (let r = 0; r < post.length; r++) {
+					const id = post[r]!;
+					if (mark[id] === 0) {
+						mark[id] = 1;
+						found.push(id);
+					}
 				}
 		}
-		const need = Math.max(1, Math.floor(0.5 * g.length));
 		found.sort((a, b) => a - b);
 		hit = [];
 		for (const id of found) {
-			const c = cnt[id]!;
-			cnt[id] = 0;
+			mark[id] = 0;
+			let c = 0;
+			for (const x of index.grams[id]!) if (gs.has(x)) c++;
 			if (c < need) continue;
 			const ps = psimAtLeast(s, spoken[id]!, lang, opt.mergeMinPsim);
 			if (ps >= opt.mergeMinPsim) hit.push([id, ps]);
